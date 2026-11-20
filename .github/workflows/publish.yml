@@ -37,3 +37,17 @@ jobs:
     steps:
       - id: publish
         uses: actions/deploy-pages@v4
+      - name: Verify deployed Collection
+        env:
+          PAGE_URL: ${{ steps.publish.outputs.page_url }}
+        run: |
+          base="${PAGE_URL%/}"
+          for attempt in 1 2 3 4 5 6; do
+            if curl --fail --silent --show-error --location "$base/collection/" -o /tmp/wand-collection.html &&
+               curl --fail --silent --show-error --location "$base/ddv/collection/v1.25/index.json" -o /tmp/wand-catalog.json; then
+              break
+            fi
+            sleep 3
+          done
+          grep -q 'Collection' /tmp/wand-collection.html
+          node -e 'const fs=require("fs");const x=JSON.parse(fs.readFileSync("/tmp/wand-catalog.json","utf8"));if(x.n!==12552||x.shards.length!==18)process.exit(1)'
