@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   LOCAL_KEY, MAX_WORKSPACES, createCollectionState, validateCollectionState,
   readCollectionState, persistCollectionState, activeWorkspace, addWorkspace,
-  renameWorkspace, removeWorkspace, setCollectionEntry,
+  renameWorkspace, removeWorkspace, setCollectionEntry, setCollectionStatuses,
   exportCollectionState, importCollectionState, collectionProgress
 } from '../src/lib/collection/state.mjs';
 import { CATEGORY_ORDER, categorySummaries, filterItems } from '../src/lib/collection/taxonomy.mjs';
@@ -59,4 +59,18 @@ test('filtering matches cross-language labels and personal status without guessi
   assert.equal(filterItems(data,{state:'missing',entries:{}}).length,0);
   assert.equal(filterItems(data,{state:'owned',entries:{101:{status:'owned'}}}).length,1);
   assert.equal(categorySummaries(data,{101:{status:'owned'}}).find(x=>x.id==='Furniture').owned,1);
+});
+
+test('bulk Collection edits preserve unrelated attributes and other workspaces', () => {
+  let state = setCollectionEntry(createCollectionState(), 101, {quantity:4, favorite:true});
+  state = addWorkspace(state, 'Another', 'local-2');
+  state = setCollectionStatuses(state, [101,102], 'owned');
+  assert.equal(state.workspaces[0].entries[101].quantity,4);
+  assert.equal(state.workspaces[0].entries[101].status,undefined);
+  assert.equal(state.workspaces[1].entries[101].status,'owned');
+  assert.equal(state.workspaces[1].entries[102].status,'owned');
+  state = setCollectionStatuses(state, [101], null);
+  assert.equal(state.workspaces[1].entries[101],undefined);
+  assert.equal(state.workspaces[1].entries[102].status,'owned');
+  assert.throws(()=>setCollectionStatuses(state,['invalid'],'owned'));
 });
