@@ -6,7 +6,7 @@
   export let large:boolean=false;
   export let sourcePath:string|null=null;
   let failed=false;
-  $: href=gameImageHref(base,itemId,sourcePath);
+  $: href=gameImageHref(base,itemId,sourcePath ?? '');
   $: if (href) failed=false;
 </script>
 <span class="artwork" class:large>

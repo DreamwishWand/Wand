@@ -25,7 +25,7 @@ export function gameImagePath(itemId) {
   if (!pin || !/^[a-f0-9]{64}$/.test(pin.hash)) return null;
   return `ddv/item-images/${GAME_IMAGE_VARIANT}/${pin.hash.slice(0,2)}/${pin.hash}.webp`;
 }
-export function gameImageHref(basePath, itemId, sourcePath = null) {
+export function gameImageHref(basePath, itemId, sourcePath = '') {
   const historical = typeof sourcePath === 'string' && /^ddv\/game-thumbnails\/r39\/[0-9a-f]{2}\/[0-9a-f]{64}\.webp$/.test(sourcePath) ? sourcePath : null;
   const path = gameImagePath(itemId) ?? historical;
   if (!path) return null;
