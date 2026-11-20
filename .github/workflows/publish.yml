@@ -19,6 +19,7 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
+      - run: python3 scripts/build-collection-images.py
       - run: npm test
       - run: npm run check
       - run: npm run build
@@ -51,6 +52,8 @@ jobs:
           done
           grep -q 'Collection' /tmp/wand-collection.html
           node -e 'const fs=require("fs");const x=JSON.parse(fs.readFileSync("/tmp/wand-catalog.json","utf8"));if(x.n!==12552||x.shards.length!==18)process.exit(1)'
+          curl --fail --silent --show-error --location "$base/ddv/collection/item-images-r39.json" -o /tmp/wand-r39-images.json
+          node -e 'const fs=require("fs");const x=JSON.parse(fs.readFileSync("/tmp/wand-r39-images.json","utf8"));if(x.matched<100||x.versionParityVerified!==false)process.exit(1)'
           for hash in be04cf5698b094a1597bac8ceafa9c43d696c4bf75c8be8db2504ce764b58489 4f1ed414b3f554a69dbc7b4e682507274c58ad327ace7e22808469aa1e56eff4 461f6484256c69e5a528adc3af7054301841fc324c237d8bc0d4534830345bec; do
             shard="${hash:0:2}"
             url="$base/ddv/item-images/steam-1.25.3-schema626-lossless160-v1/$shard/$hash.webp"

@@ -40,6 +40,7 @@
   let selectedIds:number[] = [];
   let selectedItemId:number|null = null;
   let importInput:HTMLInputElement;
+  let gameImageMap:Record<string,string> = {};
   let mobileInspector = false;
   let inspectorClose:HTMLButtonElement;
   let inspectorTrigger:HTMLElement|null = null;
@@ -81,6 +82,17 @@
       const runtime = await loadCollectionRuntime(base);
       index = runtime.index;
       rawRows = runtime.rows;
+      try {
+        const response = await fetch(`${base}/ddv/collection/item-images-r39.json`);
+        if (response.ok) {
+          const imageIndex = await response.json();
+          if (imageIndex.schema === 'wand.collection.item-images.r39@1' && imageIndex.items && typeof imageIndex.items === 'object') {
+            gameImageMap = imageIndex.items;
+          }
+        }
+      } catch {
+        gameImageMap = {};
+      }
     } catch (error) {
       loadError = error instanceof Error ? error.message : String(error);
     } finally {
@@ -323,7 +335,7 @@
                         on:click={(event)=>selectionMode?toggleSelected(item.itemId):void showItem(item.itemId,event)}
                         aria-pressed={selectionMode?selectedIds.includes(item.itemId):selectedItemId===item.itemId}
                         aria-label={selectionMode?`${item.label} を選択`:`${item.label} の詳細`}>
-                        <span class="item-icon" aria-hidden="true">{#if selectionMode}{selectedIds.includes(item.itemId)?'☑':'☐'}{:else}<ItemArtwork itemId={item.itemId} />{/if}</span>
+                        <span class="item-icon" aria-hidden="true">{#if selectionMode}{selectedIds.includes(item.itemId)?'☑':'☐'}{:else}<ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null} />{/if}</span>
                         <span class="item-card-copy"><strong>{item.label}</strong><span>{categoryLabel(locale,item.family)}</span></span>
                       </button>
                       <button type="button" class="item-state-toggle" disabled={Boolean(storeError)||selectionMode}
@@ -365,7 +377,7 @@
         {#if selectedItem}
           <aside class="item-inspector" role={mobileInspector?"dialog":undefined} aria-modal={mobileInspector?"true":undefined} aria-label="アイテム情報">
             <div class="inspector-heading"><span>ITEM DETAILS</span><button type="button" bind:this={inspectorClose} on:click={closeItem} aria-label="詳細を閉じる">×</button></div>
-            <div class="inspector-art"><ItemArtwork itemId={selectedItem.itemId} alt={selectedItem.label} large /></div>
+            <div class="inspector-art"><ItemArtwork itemId={selectedItem.itemId} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large /></div>
             <h2>{selectedItem.label}</h2>
             <p class="inspector-meta">{categoryLabel(locale,selectedItem.family)} · #{selectedItem.itemId}</p>
             <div class="inspector-section"><h3>分類</h3>
@@ -403,7 +415,7 @@
             </div>
           </aside>
         {:else}
-          <aside class="item-inspector empty-inspector"><div class="inspector-empty-symbol">✦</div><h2>Item Details</h2><p>アイテムを選択すると、データとローカル収集状況を確認できます。</p><p class="inspector-hint">参照データ：Nintendo Switch DDV v1.25.0。対応する一部アイテムにはSteam v1.25.3由来のゲーム画像を表示します。セーブの読み込み・書き戻し、個別詳細ページは未接続です。</p></aside>
+          <aside class="item-inspector empty-inspector"><div class="inspector-empty-symbol">✦</div><h2>Item Details</h2><p>アイテムを選択すると、データとローカル収集状況を確認できます。</p><p class="inspector-hint">参照データ：Nintendo Switch DDV v1.25.0。対応するアイテムにはゲーム由来の画像を表示します。画像の出典はSteam v1.25.3またはSwitch v1.24.13で、両バージョンの画像同一性は保証されません。セーブの読み込み・書き戻し、個別詳細ページは未接続です。</p></aside>
         {/if}
       </div>
     </div>

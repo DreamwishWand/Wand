@@ -5,3 +5,5 @@ build
 .env
 .env.*
 !.env.example
+static/ddv/game-thumbnails/
+static/ddv/collection/item-images-r39.json

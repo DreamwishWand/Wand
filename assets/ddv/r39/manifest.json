@@ -1,0 +1,256 @@
+{
+  "schemaVersion": 1,
+  "artifact": "DDV_GAME_THUMBNAIL_DERIVATIVE_MANIFEST",
+  "databaseGeneration": "v3.5",
+  "wandGeneration": "R39",
+  "platform": "Switch",
+  "gameVersion": "1.24.13",
+  "policy": {
+    "canonicalSource": "DDV Game Asset portable lossless PNG pack",
+    "identity": "source PNG SHA-256 -> derivative path",
+    "format": "WebP",
+    "maxWidth": 160,
+    "maxHeight": 160,
+    "quality": 88,
+    "method": 4,
+    "resample": "LANCZOS",
+    "alpha": "preserved",
+    "canonical": false,
+    "sharding": "source PNG SHA-256 first 5 bits"
+  },
+  "coverage": {
+    "uniqueSourcePng": 12082,
+    "uniqueThumbnails": 12082,
+    "shards": 32,
+    "allDerivativeDecodeVerified": true,
+    "allShardCrcClean": true,
+    "totalShardBytes": 85464564
+  },
+  "sourcePortableManifestSha256": "f0ea2248bc7a91d9a8afb655bf142150798aa96fbde1fd91ae028927b4ef3aba",
+  "shards": [
+    {
+      "shard": "00",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_00.zip",
+      "bytes": 2550658,
+      "sha256": "da7f8c99c55e84ce4b278b6cd414037b3a6746b55ba1b62a716c0e7b2a1a1e95",
+      "uniqueThumbnails": 361
+    },
+    {
+      "shard": "01",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_01.zip",
+      "bytes": 2779336,
+      "sha256": "c47764c873d681025e51fddf2fc6e1c7c3157af9ccfd469d46e0dfef32b03d6e",
+      "uniqueThumbnails": 385
+    },
+    {
+      "shard": "02",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_02.zip",
+      "bytes": 2541540,
+      "sha256": "fcdc1d4e6b75d61a60439739accf4d02c7dc7d30e1ff863822e56411bea2f081",
+      "uniqueThumbnails": 368
+    },
+    {
+      "shard": "03",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_03.zip",
+      "bytes": 2606410,
+      "sha256": "03866ab4c68662262ab8ebf07bdbf4b2eb6e0feb7c2cf7cd6bff777de1eaa40d",
+      "uniqueThumbnails": 370
+    },
+    {
+      "shard": "04",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_04.zip",
+      "bytes": 2333402,
+      "sha256": "8dafe96aad9ee61d7edec7075826d501459e9cfd35cd8d717e53eebfb83ab2b4",
+      "uniqueThumbnails": 343
+    },
+    {
+      "shard": "05",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_05.zip",
+      "bytes": 2607574,
+      "sha256": "92acee51f6bd850f5b9c08a2c3f2e9f95314818acb8d6dd503a78211d0e80882",
+      "uniqueThumbnails": 368
+    },
+    {
+      "shard": "06",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_06.zip",
+      "bytes": 2541472,
+      "sha256": "9556e99a1bf17271e7a15e6513e8eceb6d763381f7537255eb50624cdfb95ce7",
+      "uniqueThumbnails": 365
+    },
+    {
+      "shard": "07",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_07.zip",
+      "bytes": 2668508,
+      "sha256": "02686480f37761ff84e103f083a658c52b01a77fe4624b34daaa0328750693cb",
+      "uniqueThumbnails": 376
+    },
+    {
+      "shard": "08",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_08.zip",
+      "bytes": 2631020,
+      "sha256": "53343459fbdffe36ffbdb8c371bbb360605c484a81a1a9c04297031cb458e18e",
+      "uniqueThumbnails": 374
+    },
+    {
+      "shard": "09",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_09.zip",
+      "bytes": 2379626,
+      "sha256": "1a78b8398665685a8b2f7a908afbed38f7292c66989243b1185e5bbd8b85beb0",
+      "uniqueThumbnails": 340
+    },
+    {
+      "shard": "0a",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_0a.zip",
+      "bytes": 2919846,
+      "sha256": "6c77675b43261de15bbb44c9f8cf8cd622ae95458e0c423d98953e4fb03020ae",
+      "uniqueThumbnails": 406
+    },
+    {
+      "shard": "0b",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_0b.zip",
+      "bytes": 2931366,
+      "sha256": "817816f2e944ab895e1008fded2e361e805a890cef49779fe03170e84dcada1a",
+      "uniqueThumbnails": 397
+    },
+    {
+      "shard": "0c",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_0c.zip",
+      "bytes": 2609392,
+      "sha256": "abdf48d501ecf53a8ada0a770e42c3934e4556606c82ca0a7c4cca32fd82b4e9",
+      "uniqueThumbnails": 365
+    },
+    {
+      "shard": "0d",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_0d.zip",
+      "bytes": 2808336,
+      "sha256": "52ecf93cb31a108b51e889408c043361fa96babca728090bbedacdd362054ec2",
+      "uniqueThumbnails": 391
+    },
+    {
+      "shard": "0e",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_0e.zip",
+      "bytes": 2589074,
+      "sha256": "3535cd4188ec1a47a1c29ecb707d5c4865631a0ab790016f97b385c9bdbca783",
+      "uniqueThumbnails": 377
+    },
+    {
+      "shard": "0f",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_0f.zip",
+      "bytes": 2559104,
+      "sha256": "c2080b4868f7f19027ddb3ac76d3f530acf9cd11d1355f2fb611a59dad091d60",
+      "uniqueThumbnails": 363
+    },
+    {
+      "shard": "10",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_10.zip",
+      "bytes": 2670516,
+      "sha256": "dbcdef7c89fcbbe4d169aa2095df7ce8d510eb009bff8c07510f6f1579aea13d",
+      "uniqueThumbnails": 390
+    },
+    {
+      "shard": "11",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_11.zip",
+      "bytes": 2855544,
+      "sha256": "6ff1debda92e5bb24ecbe4b176f389826f3431be865092d51a613c853f9a1e9f",
+      "uniqueThumbnails": 402
+    },
+    {
+      "shard": "12",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_12.zip",
+      "bytes": 2872786,
+      "sha256": "4a024457ce926cb6147b0200cc9795089d8490803324f46edc5832b1d4868d21",
+      "uniqueThumbnails": 378
+    },
+    {
+      "shard": "13",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_13.zip",
+      "bytes": 2390556,
+      "sha256": "f2914f479a4eb61ffe0b9b8189e12663ca6321d6d13ad68634b9e6900ace0e63",
+      "uniqueThumbnails": 340
+    },
+    {
+      "shard": "14",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_14.zip",
+      "bytes": 2750726,
+      "sha256": "22beae5a408881f4b14eab2b79f35f681f9620d4191e238cf336c177c8599172",
+      "uniqueThumbnails": 399
+    },
+    {
+      "shard": "15",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_15.zip",
+      "bytes": 2407510,
+      "sha256": "d3a7394f8f29b5f6e85031861d8a3725d84fbe5fcc304c64745449619672163d",
+      "uniqueThumbnails": 340
+    },
+    {
+      "shard": "16",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_16.zip",
+      "bytes": 2786766,
+      "sha256": "dbc98cf057647917502901af7dbb81e438165f8d293d476b63dfaddeabf42a26",
+      "uniqueThumbnails": 394
+    },
+    {
+      "shard": "17",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_17.zip",
+      "bytes": 2650806,
+      "sha256": "8d72e8007d50c8195317a00a2ca4e0b44b3278bc79376d0000940bd8c4b23881",
+      "uniqueThumbnails": 384
+    },
+    {
+      "shard": "18",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_18.zip",
+      "bytes": 3078478,
+      "sha256": "a44755eab7d7594c89baeae75c40e0c72364078809d4a983e8aa686c6bc1fb8f",
+      "uniqueThumbnails": 423
+    },
+    {
+      "shard": "19",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_19.zip",
+      "bytes": 2473496,
+      "sha256": "18bcc9476f2bcf8199b471dbc25e5d4b8b6ddca4cbde97a2fafad90e9c09882c",
+      "uniqueThumbnails": 350
+    },
+    {
+      "shard": "1a",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_1a.zip",
+      "bytes": 2860170,
+      "sha256": "0b38ed8ca16e658c61d0ee2cd0262221812a5c07b783a39a31a5ea8a6729f879",
+      "uniqueThumbnails": 405
+    },
+    {
+      "shard": "1b",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_1b.zip",
+      "bytes": 2695722,
+      "sha256": "9675c1a8acae5286b0eb80adc4b9934a17861c2244aa345c9f1222018a0d2036",
+      "uniqueThumbnails": 381
+    },
+    {
+      "shard": "1c",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_1c.zip",
+      "bytes": 2475178,
+      "sha256": "e2b3b8fdcdbbebb639eb3562e5e95f6c40b9e047eec0b5150a7c3ac3b456087a",
+      "uniqueThumbnails": 356
+    },
+    {
+      "shard": "1d",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_1d.zip",
+      "bytes": 2878280,
+      "sha256": "c53cc9bc4fb62780146761c3dd8d9b4e4b93b422db91788b8a9205ad0de37260",
+      "uniqueThumbnails": 408
+    },
+    {
+      "shard": "1e",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_1e.zip",
+      "bytes": 2824948,
+      "sha256": "9e47530c1a9cfefd2bdf26a98a0a4084c4da4503b3f90f9eb01aa0d21e1ff90c",
+      "uniqueThumbnails": 390
+    },
+    {
+      "shard": "1f",
+      "file": "DDV_GAME_THUMBNAILS_WEBP_v1.24.13_shard_1f.zip",
+      "bytes": 2736418,
+      "sha256": "7b500675a983a848cd5e1dc1f5b7b84b7bf7ab4f8d5963dbc1deabe0404e99f7",
+      "uniqueThumbnails": 393
+    }
+  ]
+}
