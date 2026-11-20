@@ -88,6 +88,18 @@ a { color: inherit; }
 .items-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
 .item-card { text-align: left; display: flex; align-items: center; gap: 10px; background: #211a2c; border: 1px solid #ffffff16; color: #edddfa; border-radius: 10px; padding: 11px; min-width: 0; }
 .item-card:hover { border-color: #986abb; }
+.item-card-body { min-width: 0; flex: 1; display: flex; align-items: center; gap: 10px; text-align: left; padding: 0; border: 0; background: transparent; color: inherit; }
+.item-state-toggle { flex: none; width: 34px; height: 34px; border: 1px solid #a684c064; background: #352645; color: #d2b4f2; border-radius: 9px; font-size: 16px; font-weight: 700; }
+.item-state-toggle.owned { border-color: #84b99a88; background: #284136; color: #b5ebc8; }
+.item-card.bulk-selected { border-color: #b18bd7; background: #392747; }
+.result-group-title { font-size: 14px; color: #d7bde9; margin: 22px 0 11px; display: flex; gap: 12px; align-items: baseline; }
+.result-group-title span { font-size: 11px; color: #9686a9; }
+.result-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.bulk-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; background: #30233f; border: 1px solid #a77dce4d; padding: 10px; border-radius: 11px; margin: 10px 0 20px; }
+.bulk-actions span { margin-right: auto; color: #e7d5f6; font-size: 12px; font-weight: 700; }
+.bulk-actions button { color: #eee0fa; background: #ffffff14; border: 1px solid #ffffff2e; padding: 8px 10px; border-radius: 8px; font-size: 11px; }
+.bulk-actions button:hover:not(:disabled) { border-color: #ca9ff3; }
+
 .item-card.current { background: #362742; border-color: #bf8beb; }
 .item-icon { width: 40px; height: 42px; border-radius: 9px; background: linear-gradient(135deg,#413052,#2a2540); display: grid; place-items: center; color: #aa90c1; flex: none; }
 .item-card-copy { display: flex; flex-direction: column; min-width: 0; gap: 5px; flex: 1; }
@@ -137,6 +149,9 @@ a { color: inherit; }
   .empty-inspector { display: none; }
   .facet-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .items-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media(max-width: 820px) {
+  .bulk-actions { position: sticky; bottom: 8px; z-index: 3; box-shadow: 0 10px 20px #0008; }
 }
 @media(max-width: 550px) {
   .site-header { height: 67px; padding: 0 16px; gap: 18px; }
