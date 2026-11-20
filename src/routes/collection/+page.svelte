@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { base } from '$app/paths';
   import { loadCollectionRuntime, decodeCollectionRecord, collectionFacetLabel } from '$lib/collection/catalog.mjs';
   import {
@@ -39,6 +39,9 @@
   let selectedIds:number[] = [];
   let selectedItemId:number|null = null;
   let importInput:HTMLInputElement;
+  let mobileInspector = false;
+  let inspectorClose:HTMLButtonElement;
+  let inspectorTrigger:HTMLElement|null = null;
 
   $: workspace = activeWorkspace(state);
   $: entries = workspace?.entries ?? {};
@@ -84,11 +87,12 @@
     }
   });
 
-  function commit(next:any) {
-    if (storeError) return;
+  function commit(next:any, repair=false) {
+    if (storeError && !repair) return;
     try {
       const stored = persistCollectionState(localStorage,next);
       state = stored;
+      storeError = '';
       infoMessage = 'このブラウザのローカル記録を更新しました。DDVのセーブファイルは変更していません。';
     } catch (error) {
       storeError = error instanceof Error ? error.message : 'ローカル保存に失敗しました。';
@@ -107,6 +111,20 @@
     } catch (error) {
       infoMessage=error instanceof Error?error.message:String(error);
     }
+  }
+  async function showItem(itemId:number, event:MouseEvent) {
+    inspectorTrigger=event.currentTarget as HTMLElement;
+    selectedItemId=itemId;
+    if(mobileInspector) {
+      await tick();
+      inspectorClose?.focus({preventScroll:true});
+    }
+  }
+  async function closeItem() {
+    selectedItemId=null;
+    await tick();
+    if(inspectorTrigger?.isConnected) inspectorTrigger.focus({preventScroll:true});
+    inspectorTrigger=null;
   }
   function toggleSelected(itemId:number) {
     selectedIds=selectedIds.includes(itemId)?selectedIds.filter(id=>id!==itemId):[...selectedIds,itemId];
@@ -164,13 +182,22 @@
       if(file.size>10000000)throw new Error('バックアップファイルが大きすぎます。');
       const restored=importCollectionState(await file.text());
       if(!window.confirm('現在のローカル記録をすべて置き換えます。先にバックアップを保存しましたか？'))return;
-      commit(restored);selectedItemId=null;clearScope();
+      commit(restored,true);selectedItemId=null;clearScope();
     }catch(error){infoMessage=error instanceof Error?error.message:'読み込みに失敗しました。';}
     finally{el.value='';}
   }
+  onMount(() => {
+    const media=window.matchMedia('(max-width: 820px)');
+    mobileInspector=media.matches;
+    const changed=(event:MediaQueryListEvent)=>{ mobileInspector=event.matches; };
+    media.addEventListener('change',changed);
+    return ()=>media.removeEventListener('change',changed);
+  });
   function labelWorld(id:string) { return index?collectionFacetLabel(index,'world',id,locale):id; }
   function labelUniverse(id:string) { return index?collectionFacetLabel(index,'universe',id,locale):id; }
 </script>
+
+<svelte:window on:keydown={(event:KeyboardEvent)=>{ if(event.key==='Escape' && mobileInspector && selectedItemId!==null) void closeItem(); }} />
 
 <svelte:head>
   <title>Collection | Dreamwish Wand</title>
@@ -210,7 +237,7 @@
       <button type="button" title="名前変更" disabled={Boolean(storeError)} on:click={editWorkspaceName}>名前変更</button>
       <button type="button" title="記録削除" disabled={Boolean(storeError)||state.workspaces.length<2} on:click={deleteWorkspace}>削除</button>
       <button type="button" disabled={Boolean(storeError)} on:click={downloadBackup}>バックアップ出力</button>
-      <button type="button" disabled={Boolean(storeError)} on:click={()=>importInput.click()}>復元</button>
+      <button type="button" on:click={()=>importInput.click()}>復元</button>
       <input bind:this={importInput} class="visually-hidden" type="file" accept=".json,application/json" aria-label="Collectionバックアップを選択" on:change={restoreBackup}/>
     </div>
   </section>
@@ -292,7 +319,7 @@
                   {#each group.items as item (item.itemId)}
                     <div class="item-card" class:current={selectedItemId===item.itemId} class:bulk-selected={selectedIds.includes(item.itemId)}>
                       <button type="button" class="item-card-body"
-                        on:click={()=>selectionMode?toggleSelected(item.itemId):selectedItemId=item.itemId}
+                        on:click={(event)=>selectionMode?toggleSelected(item.itemId):void showItem(item.itemId,event)}
                         aria-pressed={selectionMode?selectedIds.includes(item.itemId):selectedItemId===item.itemId}
                         aria-label={selectionMode?`${item.label} を選択`:`${item.label} の詳細`}>
                         <span class="item-icon" aria-hidden="true">{selectionMode?(selectedIds.includes(item.itemId)?'☑':'☐'):'✦'}</span>
@@ -335,8 +362,8 @@
           {/if}
         </div>
         {#if selectedItem}
-          <aside class="item-inspector" aria-label="アイテム情報">
-            <div class="inspector-heading"><span>ITEM DETAILS</span><button type="button" on:click={()=>selectedItemId=null} aria-label="詳細を閉じる">×</button></div>
+          <aside class="item-inspector" role={mobileInspector?"dialog":undefined} aria-modal={mobileInspector?"true":undefined} aria-label="アイテム情報">
+            <div class="inspector-heading"><span>ITEM DETAILS</span><button type="button" bind:this={inspectorClose} on:click={closeItem} aria-label="詳細を閉じる">×</button></div>
             <div class="inspector-art" aria-hidden="true">✦</div>
             <h2>{selectedItem.label}</h2>
             <p class="inspector-meta">{categoryLabel(locale,selectedItem.family)} · #{selectedItem.itemId}</p>
