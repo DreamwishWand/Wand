@@ -274,7 +274,7 @@
             {#if selectionMode && filtered.length}
               <div class="bulk-actions" role="group" aria-label="Collectionの一括記録">
                 <span>{selectedIds.length} 件選択</span>
-                <button type="button" on:click={()=>selectedIds=[...new Set(visibleItems.map((item:any)=>item.itemId))]}>表示中を選択</button>
+                <button type="button" on:click={()=>selectedIds=[...new Set<number>(visibleItems.map((item:any)=>Number(item.itemId)))]}>表示中を選択</button>
                 <button type="button" on:click={()=>selectedIds=[]} disabled={!selectedIds.length}>選択解除</button>
                 <button type="button" on:click={()=>applyBulk('owned')} disabled={!selectedIds.length}>所持 / 解放</button>
                 <button type="button" on:click={()=>applyBulk('missing')} disabled={!selectedIds.length}>未所持</button>
