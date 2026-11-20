@@ -124,6 +124,27 @@ export function setCollectionEntry(state, itemId, changes) {
   });
 }
 
+export function setCollectionStatuses(state, itemIds, status) {
+  if (!Array.isArray(itemIds) || itemIds.length > 20000 || (status !== null && !VALID_STATUS.has(status)))
+    throw new Error('Invalid bulk collection operation.');
+  const workspace = activeWorkspace(state);
+  const entries = { ...workspace.entries };
+  for (const value of itemIds) {
+    const id = String(value);
+    if (!/^[1-9]\\d{0,11}$/.test(id) || !Number.isSafeInteger(Number(id)))
+      throw new Error('Invalid bulk item ID.');
+    const entry = { ...(entries[id] ?? {}) };
+    if (status === null) delete entry.status;
+    else entry.status = status;
+    if (Object.keys(entry).length) entries[id] = entry;
+    else delete entries[id];
+  }
+  return validateCollectionState({
+    ...state,
+    workspaces: state.workspaces.map((item) => item.id === state.active ? { ...item, entries } : item)
+  });
+}
+
 export function exportCollectionState(state) {
   return JSON.stringify(validateCollectionState(state), null, 2);
 }
