@@ -57,7 +57,7 @@
     : [];
   $: selectionLabel = facets.find((item:any) => item.id===selected)?.label ?? '';
   $: filtered = filterItems(records,{
-    query:search,category:mode==='category'?selected:'',world:mode==='world'?selected:'',
+    query:search,category:search.trim()?'':mode==='category'?selected:'',world:mode==='world'?selected:'',
     universe:mode==='universe'?selected:'',expansion,state:status,entries
   }).sort((a:any,b:any)=>a.label.localeCompare(b.label,locale));
   $: visibleItems = filtered.slice(0,visible);
