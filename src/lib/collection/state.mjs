@@ -131,7 +131,7 @@ export function setCollectionStatuses(state, itemIds, status) {
   const entries = { ...workspace.entries };
   for (const value of itemIds) {
     const id = String(value);
-    if (!/^[1-9]\\d{0,11}$/.test(id) || !Number.isSafeInteger(Number(id)))
+    if (!/^[1-9]\d{0,11}$/.test(id) || !Number.isSafeInteger(Number(id)))
       throw new Error('Invalid bulk item ID.');
     const entry = { ...(entries[id] ?? {}) };
     if (status === null) delete entry.status;
