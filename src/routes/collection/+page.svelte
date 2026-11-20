@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { base } from '$app/paths';
+  import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
   import { loadCollectionRuntime, decodeCollectionRecord, collectionFacetLabel } from '$lib/collection/catalog.mjs';
   import {
     createCollectionState, readCollectionState, persistCollectionState, activeWorkspace,
@@ -322,7 +323,7 @@
                         on:click={(event)=>selectionMode?toggleSelected(item.itemId):void showItem(item.itemId,event)}
                         aria-pressed={selectionMode?selectedIds.includes(item.itemId):selectedItemId===item.itemId}
                         aria-label={selectionMode?`${item.label} を選択`:`${item.label} の詳細`}>
-                        <span class="item-icon" aria-hidden="true">{selectionMode?(selectedIds.includes(item.itemId)?'☑':'☐'):'✦'}</span>
+                        <span class="item-icon" aria-hidden="true">{#if selectionMode}{selectedIds.includes(item.itemId)?'☑':'☐'}{:else}<ItemArtwork itemId={item.itemId} />{/if}</span>
                         <span class="item-card-copy"><strong>{item.label}</strong><span>{categoryLabel(locale,item.family)}</span></span>
                       </button>
                       <button type="button" class="item-state-toggle" disabled={Boolean(storeError)||selectionMode}
@@ -364,7 +365,7 @@
         {#if selectedItem}
           <aside class="item-inspector" role={mobileInspector?"dialog":undefined} aria-modal={mobileInspector?"true":undefined} aria-label="アイテム情報">
             <div class="inspector-heading"><span>ITEM DETAILS</span><button type="button" bind:this={inspectorClose} on:click={closeItem} aria-label="詳細を閉じる">×</button></div>
-            <div class="inspector-art" aria-hidden="true">✦</div>
+            <div class="inspector-art"><ItemArtwork itemId={selectedItem.itemId} alt={selectedItem.label} large /></div>
             <h2>{selectedItem.label}</h2>
             <p class="inspector-meta">{categoryLabel(locale,selectedItem.family)} · #{selectedItem.itemId}</p>
             <div class="inspector-section"><h3>分類</h3>
@@ -402,7 +403,7 @@
             </div>
           </aside>
         {:else}
-          <aside class="item-inspector empty-inspector"><div class="inspector-empty-symbol">✦</div><h2>Item Details</h2><p>アイテムを選択すると、データとローカル収集状況を確認できます。</p><p class="inspector-hint">データソース：Nintendo Switch DDV v1.25.0。セーブの読み込み・書き戻し、画像表示、個別詳細ページは未接続です。</p></aside>
+          <aside class="item-inspector empty-inspector"><div class="inspector-empty-symbol">✦</div><h2>Item Details</h2><p>アイテムを選択すると、データとローカル収集状況を確認できます。</p><p class="inspector-hint">参照データ：Nintendo Switch DDV v1.25.0。対応する一部アイテムにはSteam v1.25.3由来のゲーム画像を表示します。セーブの読み込み・書き戻し、個別詳細ページは未接続です。</p></aside>
         {/if}
       </div>
     </div>
