@@ -4,7 +4,7 @@
   import { loadCollectionRuntime, decodeCollectionRecord, collectionFacetLabel } from '$lib/collection/catalog.mjs';
   import {
     createCollectionState, readCollectionState, persistCollectionState, activeWorkspace,
-    addWorkspace, setActiveWorkspace, renameWorkspace, removeWorkspace, setCollectionEntry,
+    addWorkspace, setActiveWorkspace, renameWorkspace, removeWorkspace, setCollectionEntry, setCollectionStatuses,
     exportCollectionState, importCollectionState, collectionProgress
   } from '$lib/collection/state.mjs';
   import { CATEGORY_ORDER, categoryLabel, categorySummaries, filterItems } from '$lib/collection/taxonomy.mjs';
@@ -35,6 +35,8 @@
   let expansion = '';
   let filtersOpen = false;
   let visible = 72;
+  let selectionMode = false;
+  let selectedIds:number[] = [];
   let selectedItemId:number|null = null;
   let importInput:HTMLInputElement;
 
@@ -58,6 +60,8 @@
     query:search,category:mode==='category'?selected:'',world:mode==='world'?selected:'',
     universe:mode==='universe'?selected:'',expansion,state:status,entries
   }).sort((a:any,b:any)=>a.label.localeCompare(b.label,locale));
+  $: visibleItems = filtered.slice(0,visible);
+  $: groupedItems = CATEGORY_ORDER.map((id:string) => ({ id, items:visibleItems.filter((item:any)=>item.family===id) })).filter((group:any)=>group.items.length);
   $: selectedItem = selectedItemId===null ? null : records.find((item:any)=>item.itemId===selectedItemId) ?? null;
   $: selectedEntry = selectedItem ? entries[String(selectedItem.itemId)] ?? {} : {};
   $: overall = collectionProgress(records,entries);
@@ -95,14 +99,36 @@
     try { commit(setCollectionEntry(state,selectedItem.itemId,change)); }
     catch (error) { infoMessage = error instanceof Error ? error.message : String(error); }
   }
+  function toggleItemStatus(itemId:number) {
+    if (storeError) return;
+    try {
+      const current = entries[String(itemId)]?.status;
+      commit(setCollectionEntry(state,itemId,{status:current==='owned'?'missing':'owned'}));
+    } catch (error) {
+      infoMessage=error instanceof Error?error.message:String(error);
+    }
+  }
+  function toggleSelected(itemId:number) {
+    selectedIds=selectedIds.includes(itemId)?selectedIds.filter(id=>id!==itemId):[...selectedIds,itemId];
+  }
+  function applyBulk(next:'owned'|'missing'|null) {
+    if (storeError || !selectedIds.length) return;
+    try {
+      commit(setCollectionStatuses(state,selectedIds,next));
+      selectedIds=[];
+      selectionMode=false;
+    } catch (error) {
+      infoMessage=error instanceof Error?error.message:String(error);
+    }
+  }
   function chooseMode(next:'category'|'world'|'universe') {
-    mode=next;selected='';selectedItemId=null;visible=72;
+    mode=next;selected='';selectedItemId=null;visible=72;selectedIds=[];
   }
   function chooseFacet(id:string) {
-    selected=id;selectedItemId=null;visible=72;
+    selected=id;selectedItemId=null;visible=72;selectedIds=[];
   }
   function clearScope() {
-    selected='';search='';status='all';expansion='';selectedItemId=null;visible=72;
+    selected='';search='';status='all';expansion='';selectedItemId=null;visible=72;selectedIds=[];
   }
   function newWorkspace() {
     const name=window.prompt('新しいローカル記録の名前（最大80文字）');
@@ -175,7 +201,7 @@
     <div class="personal-left">
       <span class="personal-symbol">✧</span>
       <div><strong>My Collection</strong><span>ローカル記録 · セーブファイル未接続</span></div>
-      <select aria-label="ローカル記録を選択" value={state.active} on:change={(event)=>commit(setActiveWorkspace(state,(event.currentTarget as HTMLSelectElement).value))} disabled={Boolean(storeError)}>
+      <select aria-label="ローカル記録を選択" value={state.active} on:change={(event)=>{commit(setActiveWorkspace(state,(event.currentTarget as HTMLSelectElement).value));selectedIds=[];selectedItemId=null;}} disabled={Boolean(storeError)}>
         {#each state.workspaces as work}<option value={work.id}>{work.name}</option>{/each}
       </select>
     </div>
@@ -210,7 +236,7 @@
         <div class="toolbar">
           <label class="search-box">
             <span aria-hidden="true">⌕</span>
-            <input type="search" aria-label="8言語のアイテム名とIDで検索" bind:value={search} on:input={()=>{visible=72;selectedItemId=null;}} placeholder="アイテム名・Item IDを検索"/>
+            <input type="search" aria-label="8言語のアイテム名とIDで検索" bind:value={search} on:input={()=>{visible=72;selectedItemId=null;selectedIds=[];}} placeholder="アイテム名・Item IDを検索"/>
           </label>
           <button type="button" class="subtle-button" aria-expanded={filtersOpen} on:click={()=>filtersOpen=!filtersOpen}>フィルター {filtersOpen?'▴':'▾'}</button>
         </div>
@@ -219,11 +245,11 @@
         <div class="filter-panel">
           <fieldset><legend>収集状況（手動記録）</legend>
             {#each [{id:'all',name:'すべて'},{id:'owned',name:'所持 / 解放'},{id:'missing',name:'未所持'}] as option}
-              <button type="button" class:chosen={status===option.id} aria-pressed={status===option.id} on:click={()=>{status=option.id as typeof status;visible=72;}}>{option.name}</button>
+              <button type="button" class:chosen={status===option.id} aria-pressed={status===option.id} on:click={()=>{status=option.id as typeof status;visible=72;selectedIds=[];}}>{option.name}</button>
             {/each}
           </fieldset>
           <label class="filter-label">追加コンテンツ
-            <select bind:value={expansion} on:change={()=>visible=72}>
+            <select bind:value={expansion} on:change={()=>{visible=72;selectedIds=[];}}>
               <option value="">すべて</option>
               {#each index.e as id}<option value={id}>{id}</option>{/each}
             </select>
@@ -239,22 +265,50 @@
                 <button type="button" on:click={clearScope}>{mode==='category'?'Categories':mode==='world'?'Worlds':'Universes'}</button>
                 {#if selected}<span> / {selectionLabel}</span>{/if}
               </div>
-              <span class="result-count">{filtered.length.toLocaleString(locale)} 件</span>
+              <div class="result-actions">
+                <span class="result-count">{filtered.length.toLocaleString(locale)} 件</span>
+                <button type="button" class="subtle-button" disabled={Boolean(storeError)} aria-pressed={selectionMode}
+                  on:click={()=>{selectionMode=!selectionMode;selectedIds=[];selectedItemId=null;}}>{selectionMode?'選択を終了':'複数選択'}</button>
+              </div>
             </div>
+            {#if selectionMode && filtered.length}
+              <div class="bulk-actions" role="group" aria-label="Collectionの一括記録">
+                <span>{selectedIds.length} 件選択</span>
+                <button type="button" on:click={()=>selectedIds=[...new Set(visibleItems.map((item:any)=>item.itemId))]}>表示中を選択</button>
+                <button type="button" on:click={()=>selectedIds=[]} disabled={!selectedIds.length}>選択解除</button>
+                <button type="button" on:click={()=>applyBulk('owned')} disabled={!selectedIds.length}>所持 / 解放</button>
+                <button type="button" on:click={()=>applyBulk('missing')} disabled={!selectedIds.length}>未所持</button>
+                <button type="button" on:click={()=>applyBulk(null)} disabled={!selectedIds.length}>未記録</button>
+              </div>
+            {/if}
             {#if !filtered.length}
               <div class="empty-panel">条件に一致するアイテムはありません。未記録のアイテムは「未所持」として扱いません。</div>
             {:else}
-              <div class="items-grid">
-                {#each filtered.slice(0,visible) as item (item.itemId)}
-                  <button type="button" class="item-card" class:current={selectedItemId===item.itemId}
-                    on:click={()=>selectedItemId=item.itemId} aria-pressed={selectedItemId===item.itemId}>
-                    <div class="item-icon"><span aria-hidden="true">✦</span></div>
-                    <div class="item-card-copy"><strong>{item.label}</strong><span>{categoryLabel(locale,item.family)}</span></div>
-                    {#if entries[String(item.itemId)]?.status==='owned'}<span class="state-dot owned" aria-label="所持">●</span>
-                    {:else if entries[String(item.itemId)]?.status==='missing'}<span class="state-dot missing" aria-label="未所持">○</span>{/if}
-                  </button>
-                {/each}
-              </div>
+              {#each groupedItems as group (group.id)}
+                {#if !selected || search.trim() || mode!=='category'}
+                  <h3 class="result-group-title">{categoryLabel(locale,group.id)} <span>{group.items.length}</span></h3>
+                {/if}
+                <div class="items-grid">
+                  {#each group.items as item (item.itemId)}
+                    <div class="item-card" class:current={selectedItemId===item.itemId} class:bulk-selected={selectedIds.includes(item.itemId)}>
+                      <button type="button" class="item-card-body"
+                        on:click={()=>selectionMode?toggleSelected(item.itemId):selectedItemId=item.itemId}
+                        aria-pressed={selectionMode?selectedIds.includes(item.itemId):selectedItemId===item.itemId}
+                        aria-label={selectionMode?`${item.label} を選択`:`${item.label} の詳細`}>
+                        <span class="item-icon" aria-hidden="true">{selectionMode?(selectedIds.includes(item.itemId)?'☑':'☐'):'✦'}</span>
+                        <span class="item-card-copy"><strong>{item.label}</strong><span>{categoryLabel(locale,item.family)}</span></span>
+                      </button>
+                      <button type="button" class="item-state-toggle" disabled={Boolean(storeError)||selectionMode}
+                        class:owned={entries[String(item.itemId)]?.status==='owned'}
+                        on:click={()=>toggleItemStatus(item.itemId)}
+                        aria-label={entries[String(item.itemId)]?.status==='owned'?`${item.label} を未所持にする`:`${item.label} を所持済みにする`}
+                        title={entries[String(item.itemId)]?.status==='owned'?'所持済み：押すと未所持':'押すと所持済みに記録'}>
+                        {entries[String(item.itemId)]?.status==='owned'?'✓':'＋'}
+                      </button>
+                    </div>
+                  {/each}
+                </div>
+              {/each}
               {#if visible<filtered.length}
                 <button class="more-button" type="button" on:click={()=>visible+=72}>さらに表示（残り {(filtered.length-visible).toLocaleString(locale)} 件）</button>
               {/if}
