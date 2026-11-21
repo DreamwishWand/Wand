@@ -36,6 +36,14 @@ The isolated Rust/WASM-compatible crate at crates/ddv-save-schema exposes typed 
 
 Both JSON registries are recursively immutable when loaded by the JS adapter. The database never authorizes writes. A positive shape witness is neither a strict Codec proof nor an external Build proof.
 
+## DB-00 canonical Item ID integration
+
+`src/lib/save/db00-join.mjs` and its TypeScript declarations connect only an already validated `wand.game-db.snapshot@1` to an exact historical Save Build candidate. The adapter calls DB-00's `validateSnapshot` and `canonicalId` directly; a legacy numeric save Item ID becomes a canonical decimal string, with no name-based or cross-version ID remapping.
+
+The snapshot platform, game version and **non-null exact Build ID** must match the Save registry entry. A missing or changed Build ID, unsupported Save schema or platform mismatch throws. Matched IDs have classification `catalog_item_candidate`; unmatched IDs in partial coverage are `unresolved_in_partial_catalog` rather than evidence of invalid ownership or save corruption. For complete catalog coverage, an ID may only be described as `not_in_exact_catalog`.
+
+Current public DB-00 uses `legacy_collection` as its active pointer: that runtime is **not** a full `wand.game-db.snapshot@1`, and the DB-05 adapter deliberately rejects it until a matching versioned snapshot is provided. Neither a catalog join nor an observed field path proves Build provenance, decoded-save reference closure, ownership, Writer or export permission. No current Save Editor session is automatically opened or connected by this module.
+
 ## Read-only private SRC-06 handoff
 
 Use only the private redacted SRC-06 save-structure.json, never a personal raw save. Run:
