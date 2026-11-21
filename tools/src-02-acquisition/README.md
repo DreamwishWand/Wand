@@ -279,3 +279,46 @@ stock, surplus, cross-goal alternatives, duplicated recipes, unknown cooking
 yields, malformed inputs and single-recipe compatibility. The Steam v1.26.2
 private corpus smoke test covers all 1,943 source recipes in 98 non-publishing
 baskets (20 recipes per basket; last basket smaller).
+
+
+## Item ID / desired-quantity basket for Collection & Guide consumers
+
+The existing `planRecipeBasket` accepts explicit recipe executions and is most
+appropriate when a user opens a particular crafting recipe. Collection and
+Guide instead often know only a **native Item ID and requested quantity**.
+Use `planItemBasket` or `planItemRequirements` from
+`src/lib/acquisition/planner.mjs` with a verified private SRC-02 database:
+
+```js
+import {planItemBasket} from './src/lib/acquisition/planner.mjs';
+const report = planItemBasket(verifiedPrivateAcquisitionDatabase, [
+  {itemId: sourceBackedItemIdA, quantity: 3},
+  {itemId: sourceBackedItemIdB, quantity: 2}
+], {inventory: {[ownedItemId]: 1},
+    recipeChoices: {[ambiguousOutputItemId]: selectedCraftingRecipeId}});
+// report.goals, requiredMaterials, steps, blockers and unresolvedSelectors
+```
+
+`planItemBasket()` normalizes and sorts at most 200 goals by Item ID and
+combines duplicate quantities (1–1,000,000 per target). It draws from one
+caller-provided *hypothetical* inventory and the same craft-surplus pool as
+`planRecipeBasket()`. Only **crafting** recipes with a source-verified positive
+`resultQuantity` are used to turn an Item quantity into recipe batches.
+Multiple crafting recipes require explicit `recipeChoices`, unless inventory
+already satisfies the demand. Products without a verified crafting source remain
+as plain quantities in `requiredMaterials`, with source-backed acquisition
+candidates attached where available; this never means the Item cannot exist.
+
+**Cooking yields are unverified:** an Item target whose only recorded creation
+path is cooking emits a `cooking_yield_unverified` blocker and a leaf demand,
+not a guessed `quantity` of cooking batches. If the user explicitly wants to
+cook, switch to the source-recipe-based `planRecipeBasket()` and pass batches;
+its cooked output count remains `null`. If the hypothetical inventory already
+covers the entire meal Item demand, no cooking blocker is needed.
+
+The basket output schema is `wand.db02.item-basket@1`; for a single target,
+`planItemRequirements()` returns `wand.db02.item-plan@1` with `targetItemId`
+and `targetQuantity`. Both preserve the existing negative verification claims:
+`recipeEligibilityEvaluated=false`, `acquisitionAvailabilityVerified=false`.
+Unverified server offers, prices, player inventory, DLC entitlements, or event
+availability are not inferred. All Item/recipe records remain in private Drive.
