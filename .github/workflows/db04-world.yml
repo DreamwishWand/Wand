@@ -43,5 +43,32 @@ jobs:
             $errors | Format-List | Out-String | Write-Error
             exit 1
           }
+      - name: Fail closed on invalid private native evidence before extraction
+        shell: pwsh
+        run: |
+          $game = Join-Path $env:RUNNER_TEMP "db04-source-preflight"
+          $output = Join-Path $env:RUNNER_TEMP "db04-no-incomplete-output"
+          New-Item -ItemType Directory -Path $game -Force | Out-Null
+          Set-Content -LiteralPath (Join-Path $game "FullVersion.txt") -Value "1.26.2"
+          $bad = Join-Path $game "missing-dump.cs"
+          $failed = $false
+          try {
+            & "./tools/db-04-world/run.ps1" -GameRoot $game -OutputRoot $output -Il2CppDumpPath $bad -Il2CppDumpGameVersion "1.26.2"
+          } catch {
+            $failed = $true
+          }
+          if (-not $failed -or (Test-Path -LiteralPath $output)) {
+            throw "Invalid IL2CPP capture arguments created an incomplete DB-04 snapshot"
+          }
+          Set-Content -LiteralPath $bad -Value "// synthetic matching version"
+          $failed = $false
+          try {
+            & "./tools/db-04-world/run.ps1" -GameRoot $game -OutputRoot $output -Il2CppDumpPath $bad -Il2CppDumpGameVersion "1.26.2"
+          } catch {
+            $failed = $true
+          }
+          if (-not $failed -or (Test-Path -LiteralPath $output)) {
+            throw "Missing GameAssembly.dll silently triggered metadata-only capture"
+          }
       - name: Test browser-facing world catalog
         run: node --test tests/world.test.mjs
