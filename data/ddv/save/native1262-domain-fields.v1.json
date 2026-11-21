@@ -1,0 +1,2807 @@
+{
+  "schema": "wand.db05.native1262-domain-fields@1",
+  "source": {
+    "kind": "IL2CPP_dump_cs_protobuf_tags",
+    "gameBuild": "steam-1.26.2-archived-dump",
+    "sourceHash": "0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08",
+    "v1261DumpByteIdentical": true,
+    "executableVerified": false
+  },
+  "evidence": {
+    "observations": 3,
+    "sourceNamesOnly": true,
+    "actualMapKeysRedacted": true,
+    "observedFieldsNotExhaustive": true,
+    "nullableChildObjectStructureNotAlwaysObserved": true
+  },
+  "policy": {
+    "writerAuthorized": false,
+    "exportAuthorized": false,
+    "strictCodecRoundTripVerified": false,
+    "platformAndVersionAsCompatibilityGates": false
+  },
+  "fields": [
+    {
+      "path": "/Player/ContainerInventories/{id}/Inventory[]/State/MealData",
+      "nativeMessage": "ItemState",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "MealData",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/ContainerInventories/{id}/Inventory[]/State/MealData/IngredientsUsed",
+      "nativeMessage": "MealData",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "RepeatedField<int>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/ContainerInventories/{id}/Inventory[]/State/MealData/SceneRestriction",
+      "nativeMessage": "MealData",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "Nullable<int>",
+      "observedJsonKinds": [
+        "null"
+      ],
+      "allowedJsonKinds": [
+        "null"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/AchievementsData[]/AchievementID",
+      "nativeMessage": "AchievementData",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/AchievementsData[]/CurAmount",
+      "nativeMessage": "AchievementData",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/AchievementsData[]/ClaimedRewardMilestone",
+      "nativeMessage": "AchievementData",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/AchievementsData[]/State",
+      "nativeMessage": "AchievementData",
+      "protobufFieldNumber": 5,
+      "nativePropertyType": "AchievementState",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/AchievementsData[]/TypesCollected",
+      "nativeMessage": "AchievementData",
+      "protobufFieldNumber": 6,
+      "nativePropertyType": "RepeatedField<int>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/AchievementsData[]/ItemsUsed",
+      "nativeMessage": "AchievementData",
+      "protobufFieldNumber": 8,
+      "nativePropertyType": "RepeatedField<int>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/AchievementsData[]/MaxAmount",
+      "nativeMessage": "AchievementData",
+      "protobufFieldNumber": 9,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/MountItemID",
+      "nativeMessage": "Mount",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/Customization",
+      "nativeMessage": "Mount",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "Mount.Types.CustomizationData",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/FavoriteItems",
+      "nativeMessage": "Mount",
+      "protobufFieldNumber": 4,
+      "nativePropertyType": "RepeatedField<PreferredItemSlot>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/BondingPoints",
+      "nativeMessage": "Mount",
+      "protobufFieldNumber": 5,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/BondingLevel",
+      "nativeMessage": "Mount",
+      "protobufFieldNumber": 6,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/BondingActivitiesDoneToday",
+      "nativeMessage": "Mount",
+      "protobufFieldNumber": 7,
+      "nativePropertyType": "RepeatedField<MountBondingData.Types.BondingActivityType>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/BondingActivitiesCurrentDay",
+      "nativeMessage": "Mount",
+      "protobufFieldNumber": 8,
+      "nativePropertyType": "Timestamp",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/GlowExpiration",
+      "nativeMessage": "Mount",
+      "protobufFieldNumber": 9,
+      "nativePropertyType": "Timestamp",
+      "observedJsonKinds": [
+        "null",
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "null",
+        "string"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/RideDistanceSinceLastBondingPoint",
+      "nativeMessage": "Mount",
+      "protobufFieldNumber": 10,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/Upgrades",
+      "nativeMessage": "Mount",
+      "protobufFieldNumber": 11,
+      "nativePropertyType": "RepeatedField<int>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/ValleyAbilityForLevel",
+      "nativeMessage": "Mount",
+      "protobufFieldNumber": 12,
+      "nativePropertyType": "MapField<int, int>",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/Customization/Customizations",
+      "nativeMessage": "Mount.Types.CustomizationData",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "RepeatedField<MountCustomization>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/FavoriteItems[]/PreferredItemId",
+      "nativeMessage": "PreferredItemSlot",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/FavoriteItems[]/Gifted",
+      "nativeMessage": "PreferredItemSlot",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "bool",
+      "observedJsonKinds": [
+        "boolean"
+      ],
+      "allowedJsonKinds": [
+        "boolean"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/FavoriteItems[]/TimesRerolled",
+      "nativeMessage": "PreferredItemSlot",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/Customization/Customizations[]/Name",
+      "nativeMessage": "MountCustomization",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "string",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/Customization/Customizations[]/Gear",
+      "nativeMessage": "MountCustomization",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "MapField<int, int>",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/Customization/Customizations[]/Coat",
+      "nativeMessage": "MountCustomization",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "MountCoat",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/Customization/Customizations[]/ManeColorIndex",
+      "nativeMessage": "MountCustomization",
+      "protobufFieldNumber": 4,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/Customization/Customizations[]/ManeHighlightColorIndex",
+      "nativeMessage": "MountCustomization",
+      "protobufFieldNumber": 5,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/Customization/Customizations[]/HoofColorIndex",
+      "nativeMessage": "MountCustomization",
+      "protobufFieldNumber": 6,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/Customization/Customizations[]/Eyeball",
+      "nativeMessage": "MountCustomization",
+      "protobufFieldNumber": 7,
+      "nativePropertyType": "Eyeball",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/Customization/Customizations[]/Coat/PatternIndex",
+      "nativeMessage": "MountCoat",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/Customization/Customizations[]/Coat/ColorIndex1",
+      "nativeMessage": "MountCoat",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/Customization/Customizations[]/Coat/ColorIndex2",
+      "nativeMessage": "MountCoat",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/Customization/Customizations[]/Coat/ColorIndex3",
+      "nativeMessage": "MountCoat",
+      "protobufFieldNumber": 4,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/Customization/Customizations[]/Eyeball/EyeballItemID",
+      "nativeMessage": "Eyeball",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/Customization/Customizations[]/Eyeball/ColorIndex1",
+      "nativeMessage": "Eyeball",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/Customization/Customizations[]/Eyeball/ColorIndex2",
+      "nativeMessage": "Eyeball",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/Player/Mounts[]/Customization/Customizations[]/Eyeball/ColorIndex3",
+      "nativeMessage": "Eyeball",
+      "protobufFieldNumber": 4,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "player",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/PlayerHouses[]/Floors[]/Rooms/{id}/Name",
+      "nativeMessage": "House.Types.Room",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "string",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/PlayerHouses[]/Floors[]/Rooms/{id}/FloorGridID",
+      "nativeMessage": "House.Types.Room",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "uint",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/PlayerHouses[]/Floors[]/Rooms/{id}/WallGridIDs",
+      "nativeMessage": "House.Types.Room",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "MapField<int, uint>",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/PlayerHouses[]/Floors[]/Rooms/{id}/RoomPrefabAddress",
+      "nativeMessage": "House.Types.Room",
+      "protobufFieldNumber": 4,
+      "nativePropertyType": "string",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/PlayerHouses[]/Floors[]/Rooms/{id}/Flooring",
+      "nativeMessage": "House.Types.Room",
+      "protobufFieldNumber": 5,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/PlayerHouses[]/Floors[]/Rooms/{id}/Wallpapers",
+      "nativeMessage": "House.Types.Room",
+      "protobufFieldNumber": 6,
+      "nativePropertyType": "MapField<int, int>",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/PlayerHouses[]/Floors[]/Rooms/{id}/WallpaperOffsetById",
+      "nativeMessage": "House.Types.Room",
+      "protobufFieldNumber": 7,
+      "nativePropertyType": "MapField<int, float>",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/PlayerHouses[]/Floors[]/Rooms/{id}/Ceiling",
+      "nativeMessage": "House.Types.Room",
+      "protobufFieldNumber": 8,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/PlayerHouses[]/Floors[]/BoughtRooms/{id}/GridDataPaths",
+      "nativeMessage": "House.Types.Floor.Types.AdditionalRoomsList",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "RepeatedField<string>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/BuildingInfos/{id}/GridIDs/List",
+      "nativeMessage": "BuildingInfo.Types.GridIDList",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "RepeatedField<uint>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/SubGrid",
+      "nativeMessage": "GridState",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "SubGrid",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/GardenData",
+      "nativeMessage": "GridState",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "GardenData",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/HouseData",
+      "nativeMessage": "GridState",
+      "protobufFieldNumber": 5,
+      "nativePropertyType": "HouseData",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/StallData",
+      "nativeMessage": "GridState",
+      "protobufFieldNumber": 6,
+      "nativePropertyType": "StallData",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/FishingStallData",
+      "nativeMessage": "GridState",
+      "protobufFieldNumber": 7,
+      "nativePropertyType": "FishingStallData",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/Storage",
+      "nativeMessage": "GridState",
+      "protobufFieldNumber": 11,
+      "nativePropertyType": "StorageGridData",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/Keyhole",
+      "nativeMessage": "GridState",
+      "protobufFieldNumber": 13,
+      "nativePropertyType": "KeyholeGridData",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/Toggle",
+      "nativeMessage": "GridState",
+      "protobufFieldNumber": 14,
+      "nativePropertyType": "ToggleGridData",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/ItemList",
+      "nativeMessage": "GridState",
+      "protobufFieldNumber": 16,
+      "nativePropertyType": "ItemListGridData",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/BuildingWithSkinData",
+      "nativeMessage": "GridState",
+      "protobufFieldNumber": 22,
+      "nativePropertyType": "BuildingWithSkinData",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/FenceMode",
+      "nativeMessage": "GridState",
+      "protobufFieldNumber": 23,
+      "nativePropertyType": "FenceModeGridData",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/SubGrid/GridID",
+      "nativeMessage": "SubGrid",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "uint",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/SubGrid/DesignID",
+      "nativeMessage": "SubGrid",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "Nullable<int>",
+      "observedJsonKinds": [
+        "null"
+      ],
+      "allowedJsonKinds": [
+        "null"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/GardenData/Slots",
+      "nativeMessage": "GardenData",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "RepeatedField<GardenData.Types.GardeningSlot>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/HouseData/Built",
+      "nativeMessage": "HouseData",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "bool",
+      "observedJsonKinds": [
+        "boolean"
+      ],
+      "allowedJsonKinds": [
+        "boolean"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/HouseData/UpgradeState",
+      "nativeMessage": "HouseData",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "UpgradeState",
+      "observedJsonKinds": [
+        "null",
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "null",
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/HouseData/PlayerHouseIndex",
+      "nativeMessage": "HouseData",
+      "protobufFieldNumber": 4,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/StallData/UpgradeState",
+      "nativeMessage": "StallData",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "UpgradeState",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/StallData/ShopData",
+      "nativeMessage": "StallData",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "ShopData",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/StallData/CurrentSkinItemID",
+      "nativeMessage": "StallData",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/FishingStallData/UpgradeState",
+      "nativeMessage": "FishingStallData",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "UpgradeState",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/FishingStallData/LastCollect",
+      "nativeMessage": "FishingStallData",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "Timestamp",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/FishingStallData/PendingFishes",
+      "nativeMessage": "FishingStallData",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "RepeatedField<MultiReward>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/Storage/ContainerInventoryID",
+      "nativeMessage": "StorageGridData",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "uint",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/Storage/DefaultContainerInventoryData",
+      "nativeMessage": "StorageGridData",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "string",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/Storage/UnlockKeyItemID",
+      "nativeMessage": "StorageGridData",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/Storage/UnlockLocId",
+      "nativeMessage": "StorageGridData",
+      "protobufFieldNumber": 4,
+      "nativePropertyType": "string",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/Storage/DesignID",
+      "nativeMessage": "StorageGridData",
+      "protobufFieldNumber": 5,
+      "nativePropertyType": "Nullable<int>",
+      "observedJsonKinds": [
+        "null"
+      ],
+      "allowedJsonKinds": [
+        "null"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/Keyhole/KeyholeConfigDataGUID",
+      "nativeMessage": "KeyholeGridData",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "string",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/Toggle/Value",
+      "nativeMessage": "ToggleGridData",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "Nullable<bool>",
+      "observedJsonKinds": [
+        "null"
+      ],
+      "allowedJsonKinds": [
+        "null"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/Toggle/DesignID",
+      "nativeMessage": "ToggleGridData",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "Nullable<int>",
+      "observedJsonKinds": [
+        "null"
+      ],
+      "allowedJsonKinds": [
+        "null"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/ItemList/Items",
+      "nativeMessage": "ItemListGridData",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "RepeatedField<int>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/BuildingWithSkinData/UpgradeState",
+      "nativeMessage": "BuildingWithSkinData",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "UpgradeState",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/BuildingWithSkinData/CurrentSkinItemID",
+      "nativeMessage": "BuildingWithSkinData",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/FenceMode/Diagonal",
+      "nativeMessage": "FenceModeGridData",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "bool",
+      "observedJsonKinds": [
+        "boolean"
+      ],
+      "allowedJsonKinds": [
+        "boolean"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/GardenData/Slots[]/PlantedSeedItemID",
+      "nativeMessage": "GardenData.Types.GardeningSlot",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/GardenData/Slots[]/LastActivity",
+      "nativeMessage": "GardenData.Types.GardeningSlot",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "Timestamp",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/GardenData/Slots[]/Harvest",
+      "nativeMessage": "GardenData.Types.GardeningSlot",
+      "protobufFieldNumber": 4,
+      "nativePropertyType": "TreeAndBushData",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/HouseData/UpgradeState/Level",
+      "nativeMessage": "UpgradeState",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/StallData/UpgradeState/Level",
+      "nativeMessage": "UpgradeState",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State/StallData/ShopData/LastRefresh",
+      "nativeMessage": "ShopData",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "Timestamp",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/DiffGrids/{id}/ModifiedObjects/{id}/ItemID",
+      "nativeMessage": "GridObject",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/DiffGrids/{id}/ModifiedObjects/{id}/X",
+      "nativeMessage": "GridObject",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/DiffGrids/{id}/ModifiedObjects/{id}/Y",
+      "nativeMessage": "GridObject",
+      "protobufFieldNumber": 4,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/DiffGrids/{id}/ModifiedObjects/{id}/Orientation",
+      "nativeMessage": "GridObject",
+      "protobufFieldNumber": 5,
+      "nativePropertyType": "GridOrientation",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/DiffGrids/{id}/ModifiedObjects/{id}/State",
+      "nativeMessage": "GridObject",
+      "protobufFieldNumber": 6,
+      "nativePropertyType": "GridState",
+      "observedJsonKinds": [
+        "null",
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "null",
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/DiffGrids/{id}/ModifiedObjects/{id}/State/SubGrid/GridID",
+      "nativeMessage": "SubGrid",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "uint",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/GridCollection/DiffGrids/{id}/ModifiedObjects/{id}/State/Storage/ContainerInventoryID",
+      "nativeMessage": "StorageGridData",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "uint",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/MissionSlots/{id}/Slots",
+      "nativeMessage": "MissionQueue",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "RepeatedField<MissionSlot>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/MissionSlots/{id}/Slots[]/CharacterId",
+      "nativeMessage": "MissionSlot",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/MissionSlots/{id}/Slots[]/MissionId",
+      "nativeMessage": "MissionSlot",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/MissionSlots/{id}/Slots[]/CurrentStepIndex",
+      "nativeMessage": "MissionSlot",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/MissionSlots/{id}/Slots[]/MissionSteps",
+      "nativeMessage": "MissionSlot",
+      "protobufFieldNumber": 4,
+      "nativePropertyType": "RepeatedField<MissionStep>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/MissionSlots/{id}/Slots[]/MissionChoice",
+      "nativeMessage": "MissionSlot",
+      "protobufFieldNumber": 5,
+      "nativePropertyType": "MissionChoice",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/MissionSlots/{id}/Slots[]/MissionNextChoice",
+      "nativeMessage": "MissionSlot",
+      "protobufFieldNumber": 6,
+      "nativePropertyType": "MissionChoice",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/MissionSlots/{id}/Slots[]/ItemsToGive",
+      "nativeMessage": "MissionSlot",
+      "protobufFieldNumber": 8,
+      "nativePropertyType": "RepeatedField<ItemFilterData>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/MissionSlots/{id}/Slots[]/ItemsToGiveAmount",
+      "nativeMessage": "MissionSlot",
+      "protobufFieldNumber": 9,
+      "nativePropertyType": "RepeatedField<int>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/MissionSlots/{id}/Slots[]/SlotId",
+      "nativeMessage": "MissionSlot",
+      "protobufFieldNumber": 10,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/MissionSlots/{id}/Slots[]/Class",
+      "nativeMessage": "MissionSlot",
+      "protobufFieldNumber": 11,
+      "nativePropertyType": "MissionSlotClass",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/MissionSlots/{id}/Slots[]/State",
+      "nativeMessage": "MissionSlot",
+      "protobufFieldNumber": 12,
+      "nativePropertyType": "MissionSlotState",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/MissionSlots/{id}/Slots[]/ExpirationTime",
+      "nativeMessage": "MissionSlot",
+      "protobufFieldNumber": 13,
+      "nativePropertyType": "Timestamp",
+      "observedJsonKinds": [
+        "null"
+      ],
+      "allowedJsonKinds": [
+        "null"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/MissionSlots/{id}/Slots[]/StartTime",
+      "nativeMessage": "MissionSlot",
+      "protobufFieldNumber": 20,
+      "nativePropertyType": "Timestamp",
+      "observedJsonKinds": [
+        "null",
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "null",
+        "string"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/MissionSlots/{id}/Slots[]/EndTime",
+      "nativeMessage": "MissionSlot",
+      "protobufFieldNumber": 21,
+      "nativePropertyType": "Timestamp",
+      "observedJsonKinds": [
+        "null"
+      ],
+      "allowedJsonKinds": [
+        "null"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/MissionSlots/{id}/Slots[]/Rewards",
+      "nativeMessage": "MissionSlot",
+      "protobufFieldNumber": 23,
+      "nativePropertyType": "MultiReward",
+      "observedJsonKinds": [
+        "null",
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "null",
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/MissionSlots/{id}/Slots[]/RewardPresents",
+      "nativeMessage": "MissionSlot",
+      "protobufFieldNumber": 24,
+      "nativePropertyType": "MultiReward",
+      "observedJsonKinds": [
+        "null"
+      ],
+      "allowedJsonKinds": [
+        "null"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/MissionSlots/{id}/Slots[]/AdditionalRewards",
+      "nativeMessage": "MissionSlot",
+      "protobufFieldNumber": 25,
+      "nativePropertyType": "MultiReward",
+      "observedJsonKinds": [
+        "null"
+      ],
+      "allowedJsonKinds": [
+        "null"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/MissionSlots/{id}/Slots[]/MissionSteps[]/SubSteps",
+      "nativeMessage": "MissionStep",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "RepeatedField<MissionSubStep>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/MissionSlots/{id}/Slots[]/MissionSteps[]/SubSteps[]/Objectives",
+      "nativeMessage": "MissionSubStep",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "RepeatedField<MissionObjective>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "sampledAtLeastOneOriginal": true,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/Villages[]/AccessibilityConditions/Operator",
+      "nativeMessage": "ConditionsList",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "BoolOperator",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/Villages[]/AccessibilityConditions/Conditions",
+      "nativeMessage": "ConditionsList",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "RepeatedField<ConditionOneOf>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/Villages[]/Areas/{id}/MiningRocks[]/Full",
+      "nativeMessage": "MiningRock",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "MiningRock.Types.FullState",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/Villages[]/Areas/{id}/MiningRocks[]/Special",
+      "nativeMessage": "MiningRock",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "MiningRock.Types.FullState",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/Villages[]/Areas/{id}/MiningRocks[]/LastHit",
+      "nativeMessage": "MiningRock",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "Timestamp",
+      "observedJsonKinds": [
+        "null"
+      ],
+      "allowedJsonKinds": [
+        "null"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/Villages[]/Areas/{id}/MiningRocks[]/Full/MiningDataItemID",
+      "nativeMessage": "MiningRock.Types.FullState",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/Villages[]/Areas/{id}/MiningRocks[]/Full/NumberOfHits",
+      "nativeMessage": "MiningRock.Types.FullState",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/Villages[]/Areas/{id}/MiningRocks[]/Full/NumberOfHitsNeeded",
+      "nativeMessage": "MiningRock.Types.FullState",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/Villages[]/Areas/{id}/MiningRocks[]/Special/MiningDataItemID",
+      "nativeMessage": "MiningRock.Types.FullState",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/Villages[]/Areas/{id}/MiningRocks[]/Special/NumberOfHits",
+      "nativeMessage": "MiningRock.Types.FullState",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/Villages[]/Areas/{id}/MiningRocks[]/Special/NumberOfHitsNeeded",
+      "nativeMessage": "MiningRock.Types.FullState",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/Villages[]/AccessibilityConditions/Conditions[]/CommonConditions",
+      "nativeMessage": "ConditionOneOf",
+      "protobufFieldNumber": 5,
+      "nativePropertyType": "ConditionCommon",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/Villages[]/AccessibilityConditions/Conditions[]/CommonConditions/Condition",
+      "nativeMessage": "ConditionCommon",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    },
+    {
+      "path": "/World/Villages[]/AccessibilityConditions/Conditions[]/CommonConditions/Inversed",
+      "nativeMessage": "ConditionCommon",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "bool",
+      "observedJsonKinds": [
+        "boolean"
+      ],
+      "allowedJsonKinds": [
+        "boolean"
+      ],
+      "sampledAtLeastOneOriginal": false,
+      "observedIn": [
+        "owner-private-steam-schema643",
+        "owner-private-switch-schema643",
+        "owner-private-switch-schema626"
+      ],
+      "domain": "world",
+      "sourceNativeBuild": "steam-1.26.2-archived-dump",
+      "writable": false
+    }
+  ]
+}
