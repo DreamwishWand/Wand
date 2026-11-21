@@ -78,6 +78,49 @@ class AcquisitionTest(unittest.TestCase):
         self.assertEqual(paths[0]['minimumStallLevel'], 3)
         self.assertEqual(src02.duration_seconds(f(2, 500_000_000)), 0.5)
 
+    def test_stall_source_and_upgrade_cost(self):
+        cost = f(1, 80000000) + f(2, 500)
+        upgrade = f(1, 2) + f(3, cost) + f(11, f(1, 3))
+        stall = entry(100000, 20000000, f(2, b'Gardening_Stall2_Meadow'),
+                      f(9, b'GardeningStall'), f(10, 2090000056),
+                      f(10, 2090000052), f(13, f(1, 80000000)),
+                      f(16, upgrade))
+        records = src02.parse_stall_sources(stall, {2090000056, 2090000052})
+        self.assertEqual(len(records), 1)
+        row = records[0]
+        self.assertEqual(row['stallId'], 20100000)
+        self.assertEqual(row['slotLootTableIds'], [2090000056, 2090000052])
+        self.assertEqual(row['unlockCosts'], [{'itemId': 80000000, 'amount': None}])
+        self.assertEqual(row['upgrades'][0]['cost']['amount'], 500)
+        self.assertEqual(row['upgrades'][0]['benefitType'], 'gardening')
+        self.assertEqual(row['inventoryStatus'], 'static_loot_candidates_only')
+
+    def test_stall_loot_missing_ref_fail_closed(self):
+        stall = entry(100000, 20000000, f(2, b'Example_Stall'),
+                      f(9, b'ExampleData'), f(10, 2090000010))
+        with self.assertRaisesRegex(ValueError, 'UNRESOLVED_STALL_LOOT_TABLE'):
+            src02.parse_stall_sources(stall, set())
+        # Same ID range includes unrelated building classes; do not classify by ID alone.
+        unrelated = entry(100001, 20000000, f(2, b'Garden'), f(11, 10000001))
+        self.assertEqual(src02.parse_stall_sources(unrelated, set()), [])
+
+    def test_diff_stalls_and_duplicate_key_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            a, b = path/'a', path/'b'; a.mkdir(); b.mkdir()
+            for name in ['recipes.jsonl','acquisitions.jsonl','loot-tables.jsonl','shop-offers.jsonl']:
+                (a/name).write_text('', encoding='utf8')
+                (b/name).write_text('', encoding='utf8')
+            # Legacy snapshot has no stall-sources.jsonl; treat this specific family as new.
+            (b/'stall-sources.jsonl').write_text(json.dumps({'stallId':20100000})+'\n',encoding='utf8')
+            src02.diff_sets(a,b,path/'diff.json')
+            diff = json.loads((path/'diff.json').read_text())
+            self.assertEqual(diff['sets']['stall-sources.jsonl']['added'], ['20100000'])
+            (a/'recipes.jsonl').write_text('\n'.join([
+                json.dumps({'recipeId':1}), json.dumps({'recipeId':1})])+'\n')
+            with self.assertRaisesRegex(ValueError, 'DUPLICATE'):
+                src02.diff_sets(a,b,path/'diff.json')
+
     def test_rejects_corruption(self):
         with self.assertRaises(ValueError):
             src02.wire(b'\x0a\x03X')
@@ -91,7 +134,7 @@ class AcquisitionTest(unittest.TestCase):
             path = Path(directory)
             a, b = path / 'old', path / 'new'
             a.mkdir(); b.mkdir()
-            for filename in ['recipes.jsonl','acquisitions.jsonl','loot-tables.jsonl','shop-offers.jsonl']:
+            for filename in ['recipes.jsonl','acquisitions.jsonl','loot-tables.jsonl','shop-offers.jsonl','stall-sources.jsonl']:
                 (a / filename).write_text('',encoding='utf8')
                 (b / filename).write_text('',encoding='utf8')
             (a/'recipes.jsonl').write_text(json.dumps({'recipeId':1,'resultQuantity':1})+'\n')

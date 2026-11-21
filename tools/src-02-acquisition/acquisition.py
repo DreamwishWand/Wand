@@ -16,6 +16,7 @@ PINNED = {
     'activity': '2b9be2e95fde793ab081429d8a162b96fb7b927cc14635acee321948e4c04296',
     'loot': '580db9ed81c37890fd1f8fab121a5d328c967d8c22ee253ff4c2b431d008d99c',
     'activity_item': '4f4d3393887aececfcef16569cebc8dd7df08d03ba7b7c89083fe15bb7309dc2',
+    'building': 'e8ee2f1637518b9f233c2e0b667493a44eee11ad5f137e182bc555f797c5f6e0',
 }
 MAX_FILE = 16 * 1024 * 1024
 MAX_MESSAGE = 1024 * 1024
@@ -282,6 +283,75 @@ def parse_gardening(data):
     return paths
 
 
+
+def item_amount(block):
+    """ItemAmount protobuf: 1=Id, 2=Amount. Missing Amount is not a known free price."""
+    fields = wire(block)
+    item_id = single(fields, 1, 0, True)
+    amount = single(fields, 2, 0)
+    if not item_id or amount is not None and amount < 0:
+        raise ValueError('INVALID_COST_ITEM_AMOUNT')
+    return {'itemId': item_id, 'amount': amount}
+
+
+BENEFIT_TYPES = {10: 'fishing', 11: 'gardening', 12: 'kitchen',
+                 13: 'garden', 14: 'house', 15: 'restaurant',
+                 16: 'store', 17: 'mountStable'}
+
+
+def upgrade_data(block):
+    fields = wire(block)
+    cost = single(fields, 3, 2)
+    benefits = [(number, raw) for number, kind, raw in fields
+                if number in BENEFIT_TYPES and kind == 2]
+    if len(benefits) > 1:
+        raise ValueError('INVALID_UPGRADE_BENEFIT_ONEOF')
+    return {'level': single(fields, 1, 0),
+            'requiredPlayerLevel': single(fields, 2, 0),
+            'cost': item_amount(cost) if cost is not None else None,
+            'benefitType': BENEFIT_TYPES[benefits[0][0]] if benefits else None,
+            'benefitDigest': sha(benefits[0][1]) if benefits else None}
+
+
+def parse_stall_sources(data, available_loot_ids):
+    """Only native StallBuildingItemData that explicitly references ShopData + slot loot.
+
+    This describes a possible inventory source, NOT current stock, purchase price,
+    probability, scheduled sales, or any guarantee that a candidate is purchasable.
+    Non-shop building records in the same ID range are intentionally not classified.
+    """
+    results = []
+    for stall_id, fields in frames(data, 20000000):
+        if not 20100000 <= stall_id < 20200000:
+            continue
+        shop_data = text_value(fields, 9)  # StallBuildingItemData.ShopData: string key
+        slot_tables = ids(fields, 10)  # SlotLootTableItemID, repeated int
+        if shop_data is None and not slot_tables:
+            continue
+        if not shop_data or not slot_tables:
+            raise ValueError(f'INCOMPLETE_STALL_SHOP_SOURCE_{stall_id}')
+        if any(table_id not in available_loot_ids for table_id in slot_tables):
+            raise ValueError(f'UNRESOLVED_STALL_LOOT_TABLE_{stall_id}')
+        costs = [item_amount(raw) for raw in values(fields, 13, 2)]
+        upgrades = [upgrade_data(raw) for raw in values(fields, 16, 2)]
+        name = text_value(fields, 2)
+        if not name:
+            raise ValueError('INVALID_STALL_NAME')
+        results.append({
+            'stallId': stall_id, 'nameKey': name,
+            'shopDataKey': shop_data,
+            'employeeItemIds': ids(fields, 7),
+            'slotLootTableIds': slot_tables,  # order and repetitions are significant
+            'unlockWithItemId': single(fields, 11, 0),
+            'unlockAtLevel': single(fields, 12, 0),
+            'unlockCosts': costs,
+            'upgrades': upgrades,
+            'inventoryStatus': 'static_loot_candidates_only',
+            'source': {'kind': 'game_native', 'file': 'itemlist/Building.json',
+                       'definitionId': stall_id}
+        })
+    return results
+
 def read_items(path):
     result = {}
     with path.open('r', encoding='utf-8') as stream:
@@ -307,16 +377,28 @@ def dump_rows(path, rows):
 
 
 def load_rows(path, key):
-    return {str(r[key]): r for line in path.read_text(encoding='utf-8').splitlines()
-            if line.strip() for r in [json.loads(line)]}
+    rows = {}
+    for line_no, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        value = row[key]
+        if value is None or isinstance(value, bool) or str(value) in rows:
+            raise ValueError(f'INVALID_OR_DUPLICATE_DIFF_KEY_{path.name}_{line_no}')
+        rows[str(value)] = row
+    return rows
 
 
 def diff_sets(old, new, out):
     files = {'recipes.jsonl':'recipeId', 'acquisitions.jsonl':'pathId',
-             'loot-tables.jsonl':'lootTableId', 'shop-offers.jsonl':'offerId'}
+             'loot-tables.jsonl':'lootTableId', 'shop-offers.jsonl':'offerId',
+             'stall-sources.jsonl':'stallId'}
     comparisons = {}
     for filename, key in files.items():
-        before = load_rows(old / filename, key)
+        # Pre-stall SRC-02 exports are valid historical snapshots. An absent
+        # old stall-sources file means the newly supported family was not yet extracted.
+        previous = old / filename
+        before = {} if filename == 'stall-sources.jsonl' and not previous.exists() else load_rows(previous, key)
         after = load_rows(new / filename, key)
         changes = sorted(k for k in before.keys() & after.keys() if before[k] != after[k])
         comparisons[filename] = {'added': sorted(after.keys() - before.keys()),
@@ -338,21 +420,23 @@ def run(args):
         raise ValueError('SRC01_ITEM_COUNT_MISMATCH')
     content = {}
     for role, path in [('activity', args.activity), ('loot', args.loot),
-                       ('activity_item', args.activity_item)]:
+                       ('activity_item', args.activity_item), ('building', args.building)]:
         if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_FILE:
             raise ValueError(f'INVALID_SOURCE_{role}')
         content[role] = path.read_bytes()
         if sha(content[role]) != PINNED[role]:
             raise ValueError(f'UNVERIFIED_SOURCE_SHA256_{role}')
-    if args.out.resolve() in [p.resolve() for p in (args.items, args.activity, args.loot, args.activity_item, args.src01_manifest)]:
+    if args.out.resolve() in [p.resolve() for p in (args.items, args.activity, args.loot, args.activity_item, args.building, args.src01_manifest)]:
         raise ValueError('OUTPUT_OVERLAPS_INPUT')
     recipes, paths, unparsed = parse_activity(content['activity'])
     tables, loot_paths = parse_loot(content['loot'])
+    stalls = parse_stall_sources(content['building'], {t['lootTableId'] for t in tables})
     paths.extend(loot_paths)
     paths.extend(parse_gardening(content['activity_item']))
     recipes.sort(key=lambda x: x['recipeId'])
     paths.sort(key=lambda x: x['pathId'])
     tables.sort(key=lambda x: x['lootTableId'])
+    stalls.sort(key=lambda x: x['stallId'])
     related = defaultdict(lambda: {'recipesProducedBy': [], 'recipesUsedBy': [], 'acquisitionPaths': [], 'growPathsForSeed': []})
     linked = set()
     for rec in recipes:
@@ -374,6 +458,8 @@ def run(args):
                   'missingInPartialSrc01': sorted(linked - item_map.keys()),
                   'unsupportedActivityDefinitions': unparsed,
                   'unverified': ['live shop inventory/rotation', 'shop prices and limits',
+                      'stall slot loot selection rules and offer eligibility',
+                      'ShopData string lookup and effective stock/cost',
                       'quest/event availability and rewards not linked from source',
                       'dynamic loot filters and drop probabilities',
                       'cooking recipe result quantity (not encoded)',
@@ -386,16 +472,21 @@ def run(args):
     dump_rows(out / 'acquisitions.jsonl', paths)
     dump_rows(out / 'loot-tables.jsonl', tables)
     dump_rows(out / 'shop-offers.jsonl', [])
+    dump_rows(out / 'stall-sources.jsonl', stalls)
     dump_rows(out / 'related-items.jsonl', indexes)
     dump_json(out / 'unresolved.json', unresolved)
     counts = {'recipes': len(recipes), 'cooking': sum(r['type']=='cooking' for r in recipes),
               'crafting': sum(r['type']=='crafting' for r in recipes),
               'acquisitions': len(paths), 'lootTables': len(tables), 'growing': sum(p['type']=='growing' for p in paths),
-              'shopOffersVerified': 0, 'sourceItems': len(item_map),
+              'shopOffersVerified': 0, 'stallsWithStaticLoot': len(stalls),
+              'stallLootSlots': sum(len(row['slotLootTableIds']) for row in stalls),
+              'distinctStallLootTables': len({x for row in stalls for x in row['slotLootTableIds']}),
+              'sourceItems': len(item_map),
               'linkedItemIds': len(related), 'unresolvedLinkedItemIds': len(linked-item_map.keys()),
               'unsupportedActivityDefinitions': len(unparsed)}
     dump_json(out / 'report.json', {'schema': 'wand.src02.report@1', 'status': 'partial_native_extraction', 'counts': counts})
     files = ['recipes.jsonl','acquisitions.jsonl','loot-tables.jsonl','shop-offers.jsonl',
+             'stall-sources.jsonl',
              'related-items.jsonl','report.json','unresolved.json']
     manifest = {'schema': SCHEMA, 'status': 'partial_native_extraction',
                 'platform': args.platform, 'gameVersion': args.version,
@@ -404,7 +495,8 @@ def run(args):
                            'activityDataSha256': sha(content['activity']),
                            'lootTableSha256': sha(content['loot']),
                            'activityItemSha256': sha(content['activity_item']),
-                           'nativeTypeEvidence': 'Steam v1.26.1 dump.cs: RecipeItemData, CraftingRecipeItemData, FishingDataItemData, MiningDataItemData, TimeBendingDataItemData, LootTableItemData, SeedItemData'},
+                           'buildingSha256': sha(content['building']),
+                           'nativeTypeEvidence': 'Steam v1.26.1 dump.cs: RecipeItemData, CraftingRecipeItemData, FishingDataItemData, MiningDataItemData, TimeBendingDataItemData, LootTableItemData, SeedItemData, StallBuildingItemData, UpgradeData, ItemAmount'},
                 'counts': counts, 'files': {file: sha((out/file).read_bytes()) for file in files}}
     dump_json(out / 'manifest.json', manifest)
     if args.previous:
@@ -419,6 +511,7 @@ def main():
     ex.add_argument('--activity', type=Path, required=True)
     ex.add_argument('--loot', type=Path, required=True)
     ex.add_argument('--activity-item', type=Path, required=True)
+    ex.add_argument('--building', type=Path, required=True)
     ex.add_argument('--items', type=Path, required=True)
     ex.add_argument('--src01-manifest', type=Path, required=True)
     ex.add_argument('--out', type=Path, required=True)
