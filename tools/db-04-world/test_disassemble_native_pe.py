@@ -104,7 +104,7 @@ class NativeWindowDisassemblyTests(unittest.TestCase):
         source["status"] = "pe64_binary_identified_no_version_matched_dump"
         del source["dumpCsSha256"]
         del source["dumpCsVersionAssertion"]
-        with self.assertRaisesRegex(ValueError, "version-matched"):
+        with self.assertRaisesRegex(ValueError, "original-source-correlated"):
             disassemble_private_windows(source)
 
         valid = source_report()
