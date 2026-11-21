@@ -1,3 +1,5 @@
+export { createSaveGuideProgressBridge, getSaveGuideLinkRules, SAVE_GUIDE_JOIN_CONTRACT } from './guide-links.mjs';
+export type { SaveGuideBridge, SaveGuideAudit, SaveGuideSource } from './guide-links.mjs';
 export { createSaveSourceCatalogBridge, getSaveCatalogLinkRules, SAVE_CROSS_CATALOG_CONTRACT, SAVE_CROSS_CATALOG_AUDIT_CONTRACT } from './catalog-links.mjs';
 export { getSaveReferenceRelations, probeSaveReferences, compareSaveReferenceProbes, SAVE_REFERENCE_PROBE_CONTRACT, SAVE_REFERENCE_COMPARISON_CONTRACT } from './references.mjs';
 export type SavePlatform = 'switch' | 'steam-windows';

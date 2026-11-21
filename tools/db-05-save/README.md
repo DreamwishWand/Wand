@@ -785,3 +785,33 @@ Malformed input returns a fixed anonymous error. The synthetic parity gate
 `node tools/db-05-save/compare_unified_shape.mjs` compares the entire Rust/JS
 shape observations and blocks divergent implementations in CI. All input
 fixtures are synthetic; no private save files belong in Git or CI fixtures.
+
+
+## DB-05 to DB-03 exact mission-slot evidence (read-only)
+
+The new source-backed manifest `data/ddv/save/guide-link-rules.v1.json`
+defines `/World/MissionSlots/{id}/Slots[]/MissionId`, the native
+`MissionSlot` integer field 2. The public JS adapter
+`createSaveGuideProgressBridge(index)` validates a local owner-private
+`wand.db03.quest-search@1` search index through DB-03's existing
+`validateGuideSearch`. It offers `auditSave(decoded)` as a bounded
+read-only exact numeric ID candidate join against **playable missions only**.
+An ID missing from that subset is `unresolved_in_playable_quest_subset`,
+**not** evidence that a native quest does not exist.
+
+Reports contain only a static rule label, status and anonymous counters.
+Private saved map keys, player values, native quest IDs and localized
+names are never included. Default scan cap: 256 observed references;
+truncated traversal is inconclusive. `MissionId=0` is a sentinel, not
+an owned/completed mission. 626/643/platform differences do not select
+separate code paths: only the actual decoded structure is observed.
+
+The Guide index validator checks metadata and index structure, but this
+bridge does not independently hash the proprietary original Mission.json
+bytes. No external source+save build attestation, progress/completion proof,
+entitlement or Writer/export permission is granted. The separate
+`Player.AchievementsData[]/AchievementID` namespace cannot be joined to
+the playable Mission index; a separately source-verified DutyAch adapter
+is required. No private game content or owner saves are committed.
+
+CI: `node --test tests/save-guide-links.test.mjs`.
