@@ -891,6 +891,56 @@ class PipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "object count mismatch"):
             validate_snapshot(self.out)
 
+    def test_snapshot_rejects_forged_native_gridobject_identity_and_per_grid_count(self):
+        source = self.base / "SceneLayouts/Village04/NativeGrids.json"
+        source.write_bytes(field(1, field(2,
+            field(2, "GridData/Villages/Village04-Test.json") +
+            field(5, field(1, 7) +
+                  field(2, field(1, 7) + field(2, 40000001) +
+                        field(3, 2) + field(4, 3))))))
+        extract(self.game, self.out)
+        self.assertEqual(validate_snapshot(self.out)["counts"]["layoutObjects"], 1)
+        manifest_file = self.out / "manifest.json"
+        original_manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+        layout_file = self.out / "layoutObjects.json"
+        original_layout_bytes = layout_file.read_bytes()
+        original_rows = json.loads(original_layout_bytes.decode("utf-8"))
+
+        for field_name, forged in [
+            ("gridObjectIdNative", 9),
+            ("gridIdNative", 2),
+            ("layoutObjectId", "SceneLayouts/Village04/NativeGrids.json#grid=0#object=9"),
+        ]:
+            forged_rows = json.loads(original_layout_bytes.decode("utf-8"))
+            forged_rows[0][field_name] = forged
+            layout_file.write_text(json.dumps(forged_rows), encoding="utf-8")
+            updated_manifest = json.loads(json.dumps(original_manifest))
+            updated_manifest["outputSha256"]["layoutObjects.json"] = hashlib.sha256(
+                layout_file.read_bytes()).hexdigest()
+            manifest_file.write_text(json.dumps(updated_manifest), encoding="utf-8")
+            with self.subTest(field=field_name):
+                with self.assertRaisesRegex(ValueError, "GridObject identity"):
+                    validate_snapshot(self.out)
+
+        # A matching top-level count is not enough if an individual Grid.ID
+        # entry claims a different number of original GridObject records.
+        self.assertEqual(len(original_rows), 1)
+        layout_file.write_bytes(original_layout_bytes)
+        manifest_file.write_text(json.dumps(original_manifest), encoding="utf-8")
+        self.assertEqual(validate_snapshot(self.out)["counts"]["layoutObjects"], 1)
+        layouts_file = self.out / "layouts.json"
+        layouts = json.loads(layouts_file.read_text(encoding="utf-8"))
+        target = next(row for row in layouts
+                      if row["layoutId"] == "SceneLayouts/Village04/NativeGrids.json")
+        target["nativeGridEntries"][0]["defaultObjectCount"] = 2
+        layouts_file.write_text(json.dumps(layouts), encoding="utf-8")
+        modified_manifest = json.loads(json.dumps(original_manifest))
+        modified_manifest["outputSha256"]["layouts.json"] = hashlib.sha256(
+            layouts_file.read_bytes()).hexdigest()
+        manifest_file.write_text(json.dumps(modified_manifest), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "per-grid object count mismatch"):
+            validate_snapshot(self.out)
+
     def test_legacy_verified_partial_snapshot_without_default_placements(self):
         extract(self.game, self.out)
         path = self.out / "layoutObjects.json"

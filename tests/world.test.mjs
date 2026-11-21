@@ -798,7 +798,8 @@ test('default layout Grid factor and object identity must be uniquely source lin
   assert.equal(unknown.callerGridFactorProvenanceVerified, false);
 
   const cases = [
-    ['wrong native grid ID', data => { data.layoutObjects[0].gridIdNative = 99; },
+    ['missing native grid mapping', data => {
+      data.layouts[0].nativeGridEntries[0].gridIdNative = 99; },
       'missing_or_ambiguous_native_grid_reference'],
     ['ambiguous native grid ID', data => { data.layouts[0].nativeGridEntries.push(
       {...data.layouts[0].nativeGridEntries[0]}); },
@@ -903,6 +904,28 @@ test('native default placement records cannot claim verified world positions or 
   const b = fixture();
   b.layoutObjects[0].layoutId = 'SceneLayouts/missing.json';
   assert.throws(() => createWorldCatalog(b), /absent native layout/);
+});
+
+test('browser catalog rejects forged default GridObject map identity', () => {
+  for (const [field, forged] of [
+    ['gridObjectIdNative', 8],
+    ['gridIdNative', 1],
+    ['gridObjectIdNative', -1],
+    ['gridIdNative', 0x100000000],
+    ['layoutObjectId', 'SceneLayouts/Village04/Main.json#grid=0#object=8'],
+  ]) {
+    const data = fixture();
+    data.layoutObjects[0][field] = forged;
+    assert.throws(() => createWorldCatalog(data), /Invalid native default object/,
+      field + ':' + forged);
+  }
+  const data = fixture();
+  data.layoutObjects[0].gridObjectIdNative = 0;
+  data.layoutObjects[0].layoutObjectId =
+    'SceneLayouts/Village04/Main.json#grid=0#object=0';
+  const catalog = createWorldCatalog(data);
+  assert.equal(getDefaultLayoutObjects(catalog, 'SceneLayouts/Village04/Main.json')
+    [0].gridObjectIdNative, 0);
 });
 
 function nativeRoomGrid() {

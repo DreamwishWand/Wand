@@ -163,26 +163,48 @@ def validate_snapshot(directory):
     for record in families["grids"].values():
         checked_grid(record, source_game_version=manifest.get("gameVersion"))
     for row in families["layoutObjects"].values():
-        if str(row.get("layoutId")) not in families["layouts"]:
+        layout_id = row.get("layoutId")
+        layout = families["layouts"].get(str(layout_id))
+        if layout is None:
             raise ValueError("layoutObject references absent source layout")
-        if (type(row.get("x")) is not int or type(row.get("y")) is not int or
-            type(row.get("gridObjectIdNative")) is not int or
+        grid_id = row.get("gridIdNative")
+        object_id = row.get("gridObjectIdNative")
+        if (layout.get("layoutKind") != "nativeGridCollection" or
+            not isinstance(layout_id, str) or
+            type(grid_id) is not int or not 0 <= grid_id <= 0xffffffff or
+            type(object_id) is not int or not 0 <= object_id <= 0xffffffff or
+            row.get("layoutObjectId") !=
+                f"{layout_id}#grid={grid_id}#object={object_id}" or
+            type(row.get("x")) is not int or type(row.get("y")) is not int or
             type(row.get("itemId")) is not int or
             row.get("worldCoordinatesVerified") is not False or
             row.get("fixedImmovableVerified") is not False):
-            raise ValueError("invalid game-native initial placement record")
+            raise ValueError("invalid game-native GridObject identity or initial placement")
     for layout in families["layouts"].values():
         if layout.get("layoutKind") != "nativeGridCollection":
             continue
         layout_id = layout["layoutId"]
-        expected = layout.get("defaultObjectCount")
-        actual = sum(row["layoutId"] == layout_id
-                     for row in families["layoutObjects"].values())
-        if expected != actual:
+        rows = [row for row in families["layoutObjects"].values()
+                if row["layoutId"] == layout_id]
+        if layout.get("defaultObjectCount") != len(rows):
             raise ValueError("default GridCollection object count mismatch")
-        grid_ids = {g.get("gridIdNative") for g in layout.get("nativeGridEntries", [])}
-        for row in families["layoutObjects"].values():
-            if row["layoutId"] == layout_id and row.get("gridIdNative") not in grid_ids:
+        entries = layout.get("nativeGridEntries")
+        if not isinstance(entries, list):
+            raise ValueError("invalid native GridCollection grid list")
+        grid_ids = set()
+        for grid in entries:
+            if not isinstance(grid, dict):
+                raise ValueError("invalid native GridCollection grid entry")
+            grid_id = grid.get("gridIdNative")
+            if (type(grid_id) is not int or not 0 <= grid_id <= 0xffffffff or
+                grid_id in grid_ids):
+                raise ValueError("duplicate or invalid native GridCollection grid ID")
+            grid_ids.add(grid_id)
+            grid_rows = [row for row in rows if row["gridIdNative"] == grid_id]
+            if grid.get("defaultObjectCount") != len(grid_rows):
+                raise ValueError("native GridCollection per-grid object count mismatch")
+        for row in rows:
+            if row["gridIdNative"] not in grid_ids:
                 raise ValueError("default object references absent native grid ID")
     # Source subsets are allowed to omit referenced grid/layout files.
     for layout in families["layouts"].values():
