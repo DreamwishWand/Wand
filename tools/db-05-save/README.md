@@ -46,7 +46,7 @@ Optional SHA-pinned SRC-01 manifest verification and cross-version root witness 
 
     python tools/db-05-save/ingest.py --structure /private/save-structure.json --previous /private/old-save-structure.json --items /private/src01/items.jsonl --items-manifest /private/src01/manifest.json --out /private/new-db05-run
 
-The output db05-private-summary.json is private. Store it in an owner-private Drive folder after review. This utility reports only four allowlisted root paths and redacts deeper paths. Source save files are never modified.
+The output db05-private-summary.json is private. Store it in an owner-private Drive folder after review. The utility now recognizes the four legacy root fields plus 66 published Rust-source legacy schema-626 field paths, mapping numeric dictionary keys to their canonical placeholders (for example, /{id} to /{containerId}). It never emits the original dictionary key values, unknown field names, or other unrecognized paths; those are counted only. A cross-version comparison reports **observed witness differences**, not proof of native schema migration or deletion; SRC-06 scanner redaction, array/map coverage and player-specific structures can affect observed paths. Source save files are never modified.
 
 ## Synthetic tests
 
