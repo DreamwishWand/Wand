@@ -1,0 +1,446 @@
+{
+  "schema": "wand.db05.legacy626-fields@1",
+  "source": "public_legacy_rust_code",
+  "evidenceStatus": "historical_parser_contract_not_current_save_verified",
+  "saveSchemaVersion": 626,
+  "readOnly": true,
+  "writerAuthorized": false,
+  "codecsNotReimplemented": true,
+  "buildScoping": "only listed exact legacy candidate builds; not current game attestation",
+  "fields": [
+    {
+      "domain": "inventory",
+      "path": "/Player/ListInventories",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs + semantic_writer.rs",
+      "constraint": "Map of persisted inventory routes",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "inventory",
+      "path": "/Player/ListInventories/{routeId}",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs + semantic_writer.rs",
+      "constraint": "Canonical numeric key, saved ID must match route",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "inventory",
+      "path": "/Player/ListInventories/{routeId}/ID",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs + semantic_writer.rs",
+      "constraint": "u32; furniture catalog route may be 0",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "inventory",
+      "path": "/Player/ListInventories/{routeId}/CompatibleItemType",
+      "type": "string",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs + semantic_writer.rs",
+      "constraint": "Exact saved ItemType token",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "inventory",
+      "path": "/Player/ListInventories/{routeId}/Inventory",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs + semantic_writer.rs",
+      "constraint": "Item ID keyed object map",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "inventory",
+      "path": "/Player/ListInventories/{routeId}/Inventory/{itemId}",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs + semantic_writer.rs",
+      "constraint": "Canonical numeric Item ID key; DB-01 join unverified",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "inventory",
+      "path": "/Player/ListInventories/{routeId}/Inventory/{itemId}/Amount",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs + semantic_writer.rs",
+      "constraint": "Legacy stock reader requires nonnegative i32; Writer OFF",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "chests",
+      "path": "/Player/ContainerInventories",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs",
+      "constraint": "Container ID keyed map",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs",
+      "constraint": "Saved ID must match canonical map key",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}/ID",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs",
+      "constraint": "Nonzero u32",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}/BelongsToPlayer",
+      "type": "boolean",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs",
+      "constraint": "Legacy scoped editor requires true; does not prove entitlement",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}/ParentItemID",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs",
+      "constraint": "Positive u32; DB-01 relation unresolved",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}/Size",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs",
+      "constraint": "Legacy scoped adapter requires range 1..256, agrees with slot array length",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}/Inventory",
+      "type": "array",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs",
+      "constraint": "Array of saved slots",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}/Inventory[]/ItemID",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs",
+      "constraint": "Nonzero u32; exact ID join not yet proven for current source",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}/Inventory[]/Amount",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs",
+      "constraint": "Legacy scoped adapter requires existing positive Amount; Writer OFF",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "collection",
+      "path": "/Player/CollectionSets",
+      "type": "array",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs",
+      "constraint": "Legacy private Group readset",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "collection",
+      "path": "/Player/CollectionSets[]/CollectionDefinitionID",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs",
+      "constraint": "Positive i32; namespace 212 observed by scoped reader",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "collection",
+      "path": "/Player/CollectionSets[]/GroupData",
+      "type": "array",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs",
+      "constraint": "Group structure; no completion/eligibility inferred",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "collection",
+      "path": "/Player/CollectionSets[]/GroupData[]/GroupIndex",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs",
+      "constraint": "Optional, equals physical position when present",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "collection",
+      "path": "/Player/CollectionSets[]/GroupData[]/State",
+      "type": "string|integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs",
+      "constraint": "Optional saved token; no enum string/numeric equivalence inferred",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "collection",
+      "path": "/Player/CollectionSets[]/GroupData[]/GroupsCollectionItems",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs",
+      "constraint": "Item ID keyed map",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "collection",
+      "path": "/Player/CollectionSets[]/GroupData[]/GroupsCollectionItems/{itemId}",
+      "type": "boolean",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs",
+      "constraint": "Saved physical collection flag; no ownership/rights inference",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "grids",
+      "path": "/World/GridCollection",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
+      "constraint": "Legacy exact Steam626 stored grid reference",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "grids",
+      "path": "/World/GridCollection/DiffGrids",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
+      "constraint": "Grid ID keyed map, maximum 50,000 in legacy reader",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "grids",
+      "path": "/World/GridCollection/DiffGrids/{gridId}",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
+      "constraint": "Canonical grid ID key",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "grids",
+      "path": "/World/GridCollection/DiffGrids/{gridId}/ID",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
+      "constraint": "Unsigned safe integer, equals key",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "grids",
+      "path": "/World/GridCollection/DiffGrids/{gridId}/DefaultLayoutGridID",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
+      "constraint": "Optional; 0 remains literal, not a valid native reference",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "grids",
+      "path": "/World/GridCollection/DiffGrids/{gridId}/GridDefaultLayoutPath",
+      "type": "string",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
+      "constraint": "Optional unresolved external layout, max 4096 bytes in legacy reader",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "grids",
+      "path": "/World/GridCollection/DiffGrids/{gridId}/GridDefaultLayoutType",
+      "type": "string",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
+      "constraint": "Optional unresolved external layout, max 4096 bytes in legacy reader",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "grids",
+      "path": "/World/GridCollection/DiffGrids/{gridId}/DefaultGridHashCode",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
+      "constraint": "Optional signed i32",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "grids",
+      "path": "/World/GridCollection/DiffGrids/{gridId}/DefaultGridDataHashCode",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
+      "constraint": "Optional signed i32",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "grids",
+      "path": "/World/GridCollection/DiffGrids/{gridId}/ModifiedObjects",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
+      "constraint": "Optional ObjectID keyed map; <=16,384 IDs per grid in legacy reader",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "grids",
+      "path": "/World/GridCollection/DiffGrids/{gridId}/ModifiedObjects/{objectId}/ID",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
+      "constraint": "Unsigned safe integer, equals key",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "grids",
+      "path": "/World/GridCollection/DiffGrids/{gridId}/RemovedObjects",
+      "type": "array|object",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
+      "constraint": "Optional stored removed IDs; dual shape; effective precedence unknown",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    }
+  ]
+}
