@@ -264,7 +264,13 @@
           {#each languages as language}<option value={language.id}>{language.label}</option>{/each}
         </select>
       </label>
-      <span class="source-pill">{runtime?.metadata.platform??'Nintendo Switch'} · v{runtime?.metadata.version??'1.25.0'}</span>
+      <span class="source-pill">
+        {#if runtime}
+          {runtime.metadata.platform}{#if runtime.metadata.version} · v{runtime.metadata.version}{/if}
+        {:else}
+          データを確認中
+        {/if}
+      </span>
     </div>
   </header>
 
