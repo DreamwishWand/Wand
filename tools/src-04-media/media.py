@@ -354,9 +354,10 @@ def command_build(args):
                 ("asset", item["assetId"]) for item in assets]:
                 links.extend(supplied.get(selector, []))
             links = list({(link["itemId"], link["method"], link["evidence"]): link for link in links}.values())
-            if not links and not args.include_unmapped:
+            if not links:
                 problems.append({"type": "unmapped_image", "path": relative, "sha256": sha})
-                continue
+                if not args.include_unmapped:
+                    continue
             try:
                 with Image.open(source) as image:
                     image.load()
