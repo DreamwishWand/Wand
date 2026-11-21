@@ -9,12 +9,13 @@ from pathlib import Path
 
 # Reuse SRC-01's canonical protobuf varint decoder, not a second item decoder.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src-01-items'))
-from steam1262 import varint  # noqa: E402
+from steam1262 import varint, parse_category  # noqa: E402
 
 SCHEMA = 'wand.src02@1'
 PINNED = {
     'activity': '2b9be2e95fde793ab081429d8a162b96fb7b927cc14635acee321948e4c04296',
     'loot': '580db9ed81c37890fd1f8fab121a5d328c967d8c22ee253ff4c2b431d008d99c',
+    'activity_item': '4f4d3393887aececfcef16569cebc8dd7df08d03ba7b7c89083fe15bb7309dc2',
 }
 MAX_FILE = 16 * 1024 * 1024
 MAX_MESSAGE = 1024 * 1024
@@ -234,6 +235,53 @@ def parse_loot(data):
     return tables, acquisitions
 
 
+
+def duration_seconds(raw):
+    if raw is None:
+        return None
+    fields = wire(raw)
+    seconds = single(fields, 1, 0) or 0
+    nanos = single(fields, 2, 0)
+    if seconds < 0 or (nanos is not None and not 0 <= nanos < 1_000_000_000):
+        raise ValueError('INVALID_SEED_DURATION')
+    return seconds + (nanos or 0) / 1_000_000_000 if nanos else seconds
+
+
+def parse_gardening(data):
+    # SRC-01 is authoritative for the item frame and ID/name mapping.
+    native_items = parse_category(data, 'ActivityItem')
+    records = list(frames(data, 30000000))
+    if len(native_items) != len(records):
+        raise ValueError('SRC01_ACTIVITY_ITEM_COUNT_MISMATCH')
+    paths = []
+    for native, (seed_id, fields) in zip(native_items, records):
+        name = text_value(fields, 2)
+        if native['itemId'] != seed_id or native['rawNameField'] != name:
+            raise ValueError('SRC01_ACTIVITY_ITEM_RECORD_MISMATCH')
+        # Exact SeedItemData subtype from source ID/name contract: do not treat
+        # unrelated ActivityItemData field 13 as a ProducedItemID.
+        if not (name.startswith(('Crop!', 'FruitTree!')) and name.endswith('_Seed')):
+            continue
+        if single(fields, 12, 0, True) != 1:
+            raise ValueError('SEED_DOES_NOT_PRODUCE_ITEM')
+        output, amount = single(fields, 13, 0, True), single(fields, 14, 0, True)
+        if output <= 0 or amount <= 0:
+            raise ValueError('INVALID_SEED_PRODUCTION')
+        paths.append({'pathId': f'growing:{seed_id}', 'type': 'growing',
+                      'itemId': output, 'seedItemId': seed_id,
+                      'nameKey': name, 'producedAmount': amount,
+                      'growthSeconds': duration_seconds(single(fields, 9, 2)),
+                      'productionSeconds': duration_seconds(single(fields, 15, 2)),
+                      'wateringCount': single(fields, 10, 0),
+                      'growthPeriods': single(fields, 16, 0),
+                      'destructAfterGrowth': single(fields, 17, 0),
+                      'villageAreaIds': ids(fields, 21),
+                      'minimumStallLevel': single(fields, 22, 0),
+                      'source': {'kind':'game_native','file':'itemlist/ActivityItem.json',
+                                 'definitionId': seed_id}})
+    return paths
+
+
 def read_items(path):
     result = {}
     with path.open('r', encoding='utf-8') as stream:
@@ -289,21 +337,23 @@ def run(args):
     if src01.get('itemCount') != len(item_map):
         raise ValueError('SRC01_ITEM_COUNT_MISMATCH')
     content = {}
-    for role, path in [('activity', args.activity), ('loot', args.loot)]:
+    for role, path in [('activity', args.activity), ('loot', args.loot),
+                       ('activity_item', args.activity_item)]:
         if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_FILE:
             raise ValueError(f'INVALID_SOURCE_{role}')
         content[role] = path.read_bytes()
         if sha(content[role]) != PINNED[role]:
             raise ValueError(f'UNVERIFIED_SOURCE_SHA256_{role}')
-    if args.out.resolve() in [p.resolve() for p in (args.items, args.activity, args.loot, args.src01_manifest)]:
+    if args.out.resolve() in [p.resolve() for p in (args.items, args.activity, args.loot, args.activity_item, args.src01_manifest)]:
         raise ValueError('OUTPUT_OVERLAPS_INPUT')
     recipes, paths, unparsed = parse_activity(content['activity'])
     tables, loot_paths = parse_loot(content['loot'])
     paths.extend(loot_paths)
+    paths.extend(parse_gardening(content['activity_item']))
     recipes.sort(key=lambda x: x['recipeId'])
     paths.sort(key=lambda x: x['pathId'])
     tables.sort(key=lambda x: x['lootTableId'])
-    related = defaultdict(lambda: {'recipesProducedBy': [], 'recipesUsedBy': [], 'acquisitionPaths': []})
+    related = defaultdict(lambda: {'recipesProducedBy': [], 'recipesUsedBy': [], 'acquisitionPaths': [], 'growPathsForSeed': []})
     linked = set()
     for rec in recipes:
         related[rec['resultItemId']]['recipesProducedBy'].append(rec['recipeId'])
@@ -315,6 +365,9 @@ def run(args):
     for path in paths:
         related[path['itemId']]['acquisitionPaths'].append(path['pathId'])
         linked.add(path['itemId'])
+        if path['type'] == 'growing':
+            related[path['seedItemId']]['growPathsForSeed'].append(path['pathId'])
+            linked.add(path['seedItemId'])
     indexes = [{'itemId': iid, 'inSrc01': iid in item_map,
                 **{k: sorted(set(v)) for k,v in related[iid].items()}} for iid in sorted(related)]
     unresolved = {'schema': 'wand.src02.unresolved@1',
@@ -337,7 +390,7 @@ def run(args):
     dump_json(out / 'unresolved.json', unresolved)
     counts = {'recipes': len(recipes), 'cooking': sum(r['type']=='cooking' for r in recipes),
               'crafting': sum(r['type']=='crafting' for r in recipes),
-              'acquisitions': len(paths), 'lootTables': len(tables),
+              'acquisitions': len(paths), 'lootTables': len(tables), 'growing': sum(p['type']=='growing' for p in paths),
               'shopOffersVerified': 0, 'sourceItems': len(item_map),
               'linkedItemIds': len(related), 'unresolvedLinkedItemIds': len(linked-item_map.keys()),
               'unsupportedActivityDefinitions': len(unparsed)}
@@ -350,7 +403,8 @@ def run(args):
                            'src01ItemsSha256': sha(data),
                            'activityDataSha256': sha(content['activity']),
                            'lootTableSha256': sha(content['loot']),
-                           'nativeTypeEvidence': 'Steam v1.26.1 dump.cs: RecipeItemData, CraftingRecipeItemData, FishingDataItemData, MiningDataItemData, TimeBendingDataItemData, LootTableItemData'},
+                           'activityItemSha256': sha(content['activity_item']),
+                           'nativeTypeEvidence': 'Steam v1.26.1 dump.cs: RecipeItemData, CraftingRecipeItemData, FishingDataItemData, MiningDataItemData, TimeBendingDataItemData, LootTableItemData, SeedItemData'},
                 'counts': counts, 'files': {file: sha((out/file).read_bytes()) for file in files}}
     dump_json(out / 'manifest.json', manifest)
     if args.previous:
@@ -364,6 +418,7 @@ def main():
     ex = p.add_parser('extract')
     ex.add_argument('--activity', type=Path, required=True)
     ex.add_argument('--loot', type=Path, required=True)
+    ex.add_argument('--activity-item', type=Path, required=True)
     ex.add_argument('--items', type=Path, required=True)
     ex.add_argument('--src01-manifest', type=Path, required=True)
     ex.add_argument('--out', type=Path, required=True)
