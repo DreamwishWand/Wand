@@ -12,14 +12,21 @@ from pathlib import Path
 
 SCHEMA = 'wand.db05.native1261-observed-field-witnesses@1'
 MESSAGES = {'Profile', 'ProfilePlayer', 'ProfileWorld'}
-CLASS_HEADER = re.compile(r'^public sealed class (Profile|ProfilePlayer|ProfileWorld) :')
+CLASS_HEADER = re.compile(r'^public sealed class ([A-Za-z][A-Za-z0-9_]*) :')
+NESTED_SCHEMA = 'wand.db05.native1261-nested-field-witnesses@1'
+NESTED_CLASSES = frozenset({
+    'Pet', 'Cookbook', 'ToolInfo', 'RoyalDutyProgress', 'MultiItemInstance',
+    'FastTravel', 'Village', 'House', 'DecorationPresetData', 'FloatingIsland',
+    'BuildingInfo', 'Critter', 'GridCollection', 'PremadeDecorationPresets'
+})
 FIELD_NUMBER = re.compile(r'^\s*public const int ([A-Za-z0-9_]+)FieldNumber = ([0-9]+);')
 PROPERTY = re.compile(r'^\s*public (.+?) ([A-Za-z0-9_]+) \{ get;')
 NATIVE_PREFIX = {'Profile': '', 'ProfilePlayer': '/Player', 'ProfileWorld': '/World'}
 
 
-def read_native_types(dump_path):
+def read_native_types(dump_path, additional_classes=()):
     """Stream 89MB+ native dumps without creating an extra save/JSON buffer."""
+    allowed = MESSAGES | set(additional_classes)
     known = {}
     current = None
     section = None
@@ -31,7 +38,7 @@ def read_native_types(dump_path):
     with Path(dump_path).open('r', encoding='utf-8-sig', errors='strict') as stream:
         for line in stream:
             match = CLASS_HEADER.match(line)
-            if match:
+            if match and match.group(1) in allowed:
                 commit()
                 current = match.group(1)
                 section = None
@@ -119,6 +126,64 @@ def inspect_native_fields(dump_path, manifest, allow_new_source=False):
     }
 
 
+def inspect_nested_native_fields(dump_path, manifest, allow_new_source=False):
+    """Read only: verify known nested path template, Protobuf number and C# type.
+
+    New or changed source files require explicit --allow-new-source. Matching
+    never authorizes use of private save values, serialization, or writing.
+    """
+    if not isinstance(manifest, dict) or manifest.get('schema') != NESTED_SCHEMA:
+        raise ValueError('DB05_NESTED_NATIVE_MANIFEST_REQUIRED')
+    source = manifest.get('source')
+    fields = manifest.get('fields')
+    if not isinstance(source, dict) or not isinstance(fields, list) or not fields:
+        raise ValueError('DB05_NESTED_NATIVE_MANIFEST_INVALID')
+    expected = source.get('sha256')
+    if not isinstance(expected, str) or not re.fullmatch(r'[a-f0-9]{64}', expected):
+        raise ValueError('DB05_NESTED_NATIVE_SHA256_REQUIRED')
+    actual = hash_file(dump_path)
+    if actual != expected and not allow_new_source:
+        raise ValueError('DB05_NESTED_NATIVE_SOURCE_HASH_MISMATCH')
+    native = read_native_types(dump_path, NESTED_CLASSES)
+    required = {row.get('nativeMessage') for row in fields if isinstance(row, dict)}
+    if not required.issubset(NESTED_CLASSES) or not required.issubset(native):
+        raise ValueError('DB05_NESTED_NATIVE_CLASSES_MISSING')
+    observed = set()
+    mismatches = []
+    for row in fields:
+        if not isinstance(row, dict) or row.get('writable') is not False:
+            raise ValueError('DB05_NESTED_NATIVE_FIELD_INVALID')
+        message, path = row.get('nativeMessage'), row.get('path')
+        if message not in NESTED_CLASSES or not isinstance(path, str):
+            raise ValueError('DB05_NESTED_NATIVE_CLASS_OR_PATH_INVALID')
+        if not re.fullmatch(
+            r'/(?:Player|World)/(?:[A-Za-z][A-Za-z0-9]*(?:\[\])?|\{id\})(?:/(?:[A-Za-z][A-Za-z0-9]*(?:\[\])?|\{id\}))+',
+            path
+        ):
+            raise ValueError('DB05_NESTED_NATIVE_PATH_INVALID')
+        property_name = path.rsplit('/', 1)[-1]
+        if not re.fullmatch(r'[A-Za-z][A-Za-z0-9]*', property_name):
+            raise ValueError('DB05_NESTED_NATIVE_NOT_DIRECT_PROPERTY')
+        if path in observed:
+            raise ValueError('DB05_NESTED_DUPLICATE_FIELD_PATH')
+        observed.add(path)
+        item = native[message]
+        if item['numbers'].get(property_name) != row.get('protobufFieldNumber') or (
+            item['types'].get(property_name) != row.get('nativePropertyType')
+        ):
+            mismatches.append(path)
+    return {
+        'schema': 'wand.db05.nested-native-dump-verification@1',
+        'sourceMatchesPinnedDigest': actual == expected,
+        'registeredFieldCount': len(fields),
+        'matchedFieldCount': len(fields) - len(mismatches),
+        'differentPublicPaths': sorted(mismatches),
+        'currentGameNativeAttested': False,
+        'strictCodecVerified': False,
+        'writerAuthorized': False
+    }
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--dump', required=True, type=Path)
@@ -126,10 +191,14 @@ def main(argv=None):
                         default=Path(__file__).resolve().parents[2] /
                         'data/ddv/save/native1261-observed-fields.v1.json')
     parser.add_argument('--allow-new-source', action='store_true')
+    parser.add_argument('--nested', action='store_true', help='Verify nested native field manifest')
     args = parser.parse_args(argv)
+    if args.nested and args.manifest == Path(__file__).resolve().parents[2] / 'data/ddv/save/native1261-observed-fields.v1.json':
+        args.manifest = args.manifest.parent / 'native1261-nested-fields.v1.json'
     manifest = json.loads(args.manifest.read_text(encoding='utf-8'))
     try:
-        result = inspect_native_fields(args.dump, manifest, args.allow_new_source)
+        result = (inspect_nested_native_fields(args.dump, manifest, args.allow_new_source)
+                  if args.nested else inspect_native_fields(args.dump, manifest, args.allow_new_source))
     except (ValueError, UnicodeError, OSError):
         print('DB05_NATIVE_VERIFICATION_FAILED')
         return 1

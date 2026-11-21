@@ -2,6 +2,7 @@ import registry from '../../../data/ddv/save/registry.v1.json' with { type: 'jso
 import legacyFields from '../../../data/ddv/save/legacy626-fields.v1.json' with { type: 'json' };
 import commonFields from '../../../data/ddv/save/common626643-fields.v1.json' with { type: 'json' };
 import nativeFields from '../../../data/ddv/save/native1261-observed-fields.v1.json' with { type: 'json' };
+import nestedFields from '../../../data/ddv/save/native1261-nested-fields.v1.json' with { type: 'json' };
 
 function deepFreeze(value) {
   if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -14,6 +15,7 @@ deepFreeze(registry);
 deepFreeze(legacyFields);
 deepFreeze(commonFields);
 deepFreeze(nativeFields);
+deepFreeze(nestedFields);
 
 export const SAVE_REGISTRY_SCHEMA = 'wand.db05.save-registry@1';
 export const SAVE_INSPECTION_CONTRACT = 'wand.db05.save-readonly-inspection@1';
@@ -329,6 +331,91 @@ export function compareNativeSaveStructures(previous, current) {
     status, domains: Object.freeze(domains),
     platformAndVersionUsedAsGates: false,
     sourceGameBuild: 'steam-1.26.1',
+    currentGameNativeTypeAttestation: false,
+    exhaustive: false, strictDecoderVerified: false,
+    writerAuthorized: false, exportAuthorized: false
+  });
+}
+
+
+export const SAVE_NESTED_SHAPE_PROBE_CONTRACT = 'wand.db05.nested-shape-probe@1';
+export const SAVE_NESTED_SHAPE_COMPARE_CONTRACT = 'wand.db05.nested-shape-comparison@1';
+const NESTED_SAVE_DOMAINS = Object.freeze(['player', 'world']);
+
+/** Native v1.26.1 nested Protobuf properties witnessed in three private saves. */
+export function getNestedSaveFields() { return nestedFields; }
+
+/** Unknown fields, user map keys, contents, and IDs are never returned. */
+export function probeNestedSaveStructure(decoded) {
+  const domains = NESTED_SAVE_DOMAINS.map(domain => {
+    const fields = nestedFields.fields.filter(f => f.domain === domain);
+    const observations = fields.map(field => Object.freeze({
+      path: field.path,
+      ...observeKnownField(decoded, { path: field.path, type: field.allowedJsonKinds.join('|') })
+    }));
+    const observed = observations.filter(o => o.status === 'observed');
+    const conflicting = observations.filter(o => o.status === 'type_conflict');
+    const sampled = observations.some(o => o.sampled);
+    return Object.freeze({
+      domain,
+      status: conflicting.length ? 'shape_conflict'
+        : observed.length ? sampled ? 'sampled_candidate' : 'shape_candidate' : 'not_observed',
+      registeredFieldCount: fields.length,
+      observedFieldCount: observed.length,
+      observedFields: Object.freeze(observed.map(o => Object.freeze({ path: o.path, kinds: o.kinds }))),
+      conflictingPaths: Object.freeze(conflicting.map(o => o.path)),
+      sampled, writerAuthorized: false
+    });
+  });
+  return Object.freeze({
+    contract: SAVE_NESTED_SHAPE_PROBE_CONTRACT,
+    registeredFieldCount: nestedFields.fields.length,
+    nativeGameBuildAttested: false,
+    platformAndVersionUsedAsGates: false,
+    exhaustive: false, strictDecoderVerified: false,
+    domains: Object.freeze(domains), writerAuthorized: false
+  });
+}
+
+export function compareNestedSaveStructures(previous, current) {
+  const a = probeNestedSaveStructure(previous);
+  const b = probeNestedSaveStructure(current);
+  const domains = a.domains.map((left, i) => {
+    const right = b.domains[i];
+    const oldKinds = new Map(left.observedFields.map(f => [f.path, f.kinds.join('|')]));
+    const newKinds = new Map(right.observedFields.map(f => [f.path, f.kinds.join('|')]));
+    const addedKnownPaths = [...newKinds.keys()].filter(p => !oldKinds.has(p)).sort();
+    const missingKnownPaths = [...oldKinds.keys()].filter(p => !newKinds.has(p)).sort();
+    const changedKinds = [...oldKinds.keys()].filter(p => newKinds.has(p) && oldKinds.get(p) !== newKinds.get(p));
+    const conflictingKnownPaths = [...new Set([
+      ...left.conflictingPaths, ...right.conflictingPaths
+    ])].sort();
+    const changedKindPaths = changedKinds.sort();
+    const status = conflictingKnownPaths.length ? 'observed_type_conflict'
+      : !oldKinds.size || !newKinds.size ? 'insufficient_evidence'
+      : left.sampled || right.sampled ? 'sampled_inconclusive'
+      : addedKnownPaths.length || missingKnownPaths.length || changedKindPaths.length ? 'observed_witness_difference'
+      : 'same_observed_nested_fields';
+    return Object.freeze({
+      domain: left.domain, status,
+      addedKnownPaths: Object.freeze(addedKnownPaths),
+      missingKnownPaths: Object.freeze(missingKnownPaths),
+      conflictingKnownPaths: Object.freeze(conflictingKnownPaths),
+      changedKindPaths: Object.freeze(changedKindPaths),
+      writerAuthorized: false
+    });
+  });
+  const invalidRoot = !inspectDecodedSave(previous, null).rootShapeValid ||
+    !inspectDecodedSave(current, null).rootShapeValid;
+  return Object.freeze({
+    contract: SAVE_NESTED_SHAPE_COMPARE_CONTRACT,
+    status: invalidRoot ? 'invalid_root'
+      : domains.some(d => d.status === 'observed_type_conflict') ? 'observed_type_conflict'
+      : domains.some(d => d.status === 'insufficient_evidence' || d.status === 'sampled_inconclusive') ? 'inconclusive'
+      : domains.some(d => d.status === 'observed_witness_difference') ? 'observed_witness_difference'
+      : 'same_observed_nested_fields',
+    domains: Object.freeze(domains),
+    platformAndVersionUsedAsGates: false, sourceGameBuild: 'steam-1.26.1',
     currentGameNativeTypeAttestation: false,
     exhaustive: false, strictDecoderVerified: false,
     writerAuthorized: false, exportAuthorized: false

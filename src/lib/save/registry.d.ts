@@ -160,6 +160,69 @@ export function probeNativeSaveStructure(decoded: unknown): NativeSaveShapeProbe
 export function compareNativeSaveStructures(previous: unknown, current: unknown): NativeSaveComparison;
 export const SAVE_NATIVE_SHAPE_PROBE_CONTRACT: 'wand.db05.native-shape-probe@1';
 export const SAVE_NATIVE_SHAPE_COMPARE_CONTRACT: 'wand.db05.native-shape-comparison@1';
+export type NestedSaveDomain = 'player' | 'world';
+export type NestedSaveField = Readonly<{
+  domain: NestedSaveDomain;
+  path: string;
+  nativeMessage: string;
+  protobufFieldNumber: number;
+  nativePropertyType: string;
+  observedJsonKinds: readonly ('object'|'array'|'integer'|'boolean'|'string'|'null')[];
+  allowedJsonKinds: readonly ('object'|'array'|'integer'|'boolean'|'string'|'null')[];
+  observedIn: readonly string[];
+  sourceNativeBuild: 'steam-1.26.1';
+  writable: false;
+}>;
+export type NestedSaveShapeDomain = Readonly<{
+  domain: NestedSaveDomain;
+  status: 'shape_conflict' | 'shape_candidate' | 'sampled_candidate' | 'not_observed';
+  registeredFieldCount: number;
+  observedFieldCount: number;
+  observedFields: readonly Readonly<{path:string;kinds:readonly string[]}>[];
+  conflictingPaths: readonly string[];
+  sampled: boolean;
+  writerAuthorized: false;
+}>;
+export type NestedSaveShapeProbe = Readonly<{
+  contract: 'wand.db05.nested-shape-probe@1';
+  registeredFieldCount: number;
+  nativeGameBuildAttested: false;
+  platformAndVersionUsedAsGates: false;
+  exhaustive: false;
+  strictDecoderVerified: false;
+  domains: readonly NestedSaveShapeDomain[];
+  writerAuthorized: false;
+}>;
+export type NestedSaveComparison = Readonly<{
+  contract: 'wand.db05.nested-shape-comparison@1';
+  status: 'invalid_root'|'observed_type_conflict'|'inconclusive'|
+    'observed_witness_difference'|'same_observed_nested_fields';
+  domains: readonly Readonly<{
+    domain: NestedSaveDomain;
+    status: 'observed_type_conflict'|'insufficient_evidence'|'sampled_inconclusive'|
+      'observed_witness_difference'|'same_observed_nested_fields';
+    addedKnownPaths: readonly string[];
+    missingKnownPaths: readonly string[];
+    conflictingKnownPaths: readonly string[];
+    changedKindPaths: readonly string[];
+    writerAuthorized: false;
+  }>[];
+  platformAndVersionUsedAsGates: false;
+  sourceGameBuild: 'steam-1.26.1';
+  currentGameNativeTypeAttestation: false;
+  exhaustive: false;
+  strictDecoderVerified: false;
+  writerAuthorized: false;
+  exportAuthorized: false;
+}>;
+export const SAVE_NESTED_SHAPE_PROBE_CONTRACT: 'wand.db05.nested-shape-probe@1';
+export const SAVE_NESTED_SHAPE_COMPARE_CONTRACT: 'wand.db05.nested-shape-comparison@1';
+export function getNestedSaveFields(): Readonly<{
+  schema: 'wand.db05.native1261-nested-field-witnesses@1';
+  fields: readonly NestedSaveField[];
+}>;
+export function probeNestedSaveStructure(decoded: unknown): NestedSaveShapeProbe;
+export function compareNestedSaveStructures(previous: unknown,current: unknown): NestedSaveComparison;
 export type FieldWitness = Readonly<{ path: string; type: string }>;
 export function getSaveRegistry(): Readonly<Record<string, unknown>>;
 export type LegacyIdReference = Readonly<{namespace:string;catalog:string|null;extraction:'map_key'|'value';join:'exact_numeric_only';currentCatalogCoverageVerified:false;status:'legacy_source_only';note:string}>;
