@@ -95,6 +95,26 @@ appear in a valid nonnegative viewport. These buckets summarize *recorded
 X/Y source fields*, never game-verified occupied terrain cells, collisions or
 save-game objects.
 
+## Local Village / Area source preview
+
+The developer-only `/world/preview/` page accepts a private, self-consistent
+`package_snapshot.py` ZIP in a browser Worker. Alongside direct original
+GridCollection layouts, its source selector now exposes each original
+`nativeDefaultVillageData` **AreaType → GridLayoutPath** reference separately.
+These are distinct views even when multiple village areas reference the same
+GridCollection. The displayed native Grid.ID, GridData path, anchored object
+records and bounded 64-object pages are still the original grid-local source
+fields; no global world-coordinate transform is performed. A village-area
+reference whose GridCollection is absent from the partial snapshot is visibly
+marked unavailable rather than replaced with an invented layout.
+
+`src/lib/world/preview-views.mjs` shares the exact selection and routing
+logic with the Worker. Native village reads call the existing
+`getNativeVillageAreaAnchorWindow` API, retaining their village layout ID,
+AreaType code and native GridCollection path. The same strict version gate
+continues to reject Steam v1.26.2 packed-terrain decoding. No save file or
+game binary is sent to a server or written by this preview.
+
 ## Original GridObject identity integrity
 
 Each original GridObject is identified by the exact GridCollection layout
