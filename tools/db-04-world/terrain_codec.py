@@ -48,7 +48,7 @@ def _validate_dimensions(size_x: int, size_y: int) -> None:
 
 def describe_native_packing(size_x: int, size_y: int,
                             palette: Sequence[int], packed: bytes,
-                            *, source_game_version: str = "1.26.1") -> dict:
+                            *, source_game_version: str) -> dict:
     """Preserve raw bytes; interpret packing only with original-version proof."""
     _validate_dimensions(size_x, size_y)
     if (not isinstance(palette, (list, tuple)) or not palette or
@@ -109,7 +109,8 @@ def _flat_index(packed: bytes, bits: int, index: int) -> int:
 
 def count_packed_palette_indices(size_x: int, size_y: int,
                                  palette: Sequence[int],
-                                 packed: bytes) -> list[int] | None:
+                                 packed: bytes,
+                                 *, source_game_version: str) -> list[int] | None:
     """Exact source-byte palette index histogram without allocating a 2D grid.
 
     This counts *candidate-codec* cell values, not gameplay placement legality.
@@ -117,7 +118,9 @@ def count_packed_palette_indices(size_x: int, size_y: int,
     The histogram is keyed by original palette index, preserving repeated
     uint32 palette values without collapsing them.
     """
-    evidence = describe_native_packing(size_x, size_y, palette, packed)
+    evidence = describe_native_packing(
+        size_x, size_y, palette, packed,
+        source_game_version=source_game_version)
     if not evidence["decoded"]:
         return None
     bits = evidence["cellBits"]
@@ -149,8 +152,11 @@ def count_packed_palette_indices(size_x: int, size_y: int,
 
 
 def floor_at(size_x: int, size_y: int, palette: Sequence[int],
-             packed: bytes, x: int, y: int) -> int:
-    evidence = describe_native_packing(size_x, size_y, palette, packed)
+             packed: bytes, x: int, y: int,
+             *, source_game_version: str) -> int:
+    evidence = describe_native_packing(
+        size_x, size_y, palette, packed,
+        source_game_version=source_game_version)
     if not evidence["decoded"]:
         raise ValueError("native floor encoding unresolved for this palette")
     if (type(x) is not int or type(y) is not int or
@@ -161,9 +167,12 @@ def floor_at(size_x: int, size_y: int, palette: Sequence[int],
 
 def decode_window(size_x: int, size_y: int, palette: Sequence[int],
                   packed: bytes, x: int, y: int,
-                  width: int, height: int) -> list[list[int]]:
+                  width: int, height: int,
+                  *, source_game_version: str) -> list[list[int]]:
     """Return rows in display Y-major order; native cells are X-major."""
-    evidence = describe_native_packing(size_x, size_y, palette, packed)
+    evidence = describe_native_packing(
+        size_x, size_y, palette, packed,
+        source_game_version=source_game_version)
     if not evidence["decoded"]:
         raise ValueError("native floor encoding unresolved for this palette")
     if (any(type(n) is not int for n in (x, y, width, height)) or

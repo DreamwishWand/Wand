@@ -143,7 +143,7 @@ class NativeWireTests(unittest.TestCase):
         checked_grid(current, source_game_version="1.26.2")
 
         forged = dict(current, terrainDecoding=describe_native_packing(
-            3, 3, palette, packed))
+            3, 3, palette, packed, source_game_version="1.26.1"))
         with self.assertRaisesRegex(ValueError, "evidence mismatches"):
             checked_grid(forged, source_game_version="1.26.2")
         forged_flag = dict(current, nativeFloorIndexToLocalXYCorroborated=True)
@@ -254,6 +254,35 @@ class NativeWireTests(unittest.TestCase):
                           layout["areaLayoutReferences"]], ["Beach", "Meadow"])
         self.assertEqual(layout["areaLayoutReferences"][0]["nativeAreaTypeCode"], 0)
 
+    def test_terrain_helpers_require_explicit_native_game_version(self):
+        packed = bytes((0b10100101,))
+        palette = [0, 1024, 2048]
+        with self.assertRaisesRegex(TypeError, "source_game_version"):
+            describe_native_packing(2, 2, palette, packed)
+        with self.assertRaisesRegex(TypeError, "source_game_version"):
+            count_packed_palette_indices(2, 2, palette, packed)
+        with self.assertRaisesRegex(TypeError, "source_game_version"):
+            floor_at(2, 2, palette, packed, 0, 0)
+        with self.assertRaisesRegex(TypeError, "source_game_version"):
+            decode_window(2, 2, palette, packed, 0, 0, 2, 2)
+
+        unverified = describe_native_packing(
+            2, 2, palette, packed, source_game_version="1.26.2")
+        self.assertEqual(unverified["status"],
+                         "native_packing_not_verified_for_game_version")
+        self.assertFalse(unverified["decoded"])
+        self.assertIsNone(count_packed_palette_indices(
+            2, 2, palette, packed, source_game_version="1.26.2"))
+        with self.assertRaisesRegex(ValueError, "unresolved"):
+            floor_at(2, 2, palette, packed, 0, 0,
+                     source_game_version="1.26.2")
+        with self.assertRaisesRegex(ValueError, "unresolved"):
+            decode_window(2, 2, palette, packed, 0, 0, 2, 2,
+                          source_game_version="1.26.2")
+        with self.assertRaisesRegex(ValueError, "missing source game version"):
+            describe_native_packing(
+                2, 2, palette, packed, source_game_version="")
+
     def test_correlated_native_12x16_room_is_exact_rectangular_border(self):
         # Synthetic independent encoding of the 192/192 observed Steam source
         # pattern, no copyrighted game bytes are committed to this test.
@@ -265,12 +294,12 @@ class NativeWireTests(unittest.TestCase):
                 bit = (x * size_y + y) * 2
                 packed[bit // 8] |= palette_id << (6 - bit % 8)
         palette = [0, 3072, 1024]
-        evidence = describe_native_packing(size_x, size_y, palette, bytes(packed))
+        evidence = describe_native_packing(size_x, size_y, palette, bytes(packed), source_game_version="1.26.1")
         self.assertTrue(evidence["decoded"])
         self.assertFalse(evidence["nativeCodeBodyVerified"])
         self.assertEqual(evidence["sampleBasedEncodingEvidence"], EVIDENCE)
         actual = decode_window(size_x, size_y, palette, bytes(packed),
-                               0, 0, size_x, size_y)
+                               0, 0, size_x, size_y, source_game_version="1.26.1")
         self.assertEqual(actual[0], [3072] * size_x)
         self.assertEqual(actual[1], [3072] + [1024] * 10 + [3072])
         self.assertEqual(actual[-1], [3072] * size_x)
@@ -278,29 +307,29 @@ class NativeWireTests(unittest.TestCase):
                              if actual[y][x] == (3072 if x in (0, 11) or
                                   y in (0, 15) else 1024)), 192)
         self.assertEqual(floor_at(size_x, size_y, palette, bytes(packed),
-                                  5, 5), 1024)
+                                  5, 5, source_game_version="1.26.1"), 1024)
         with self.assertRaisesRegex(ValueError, "outside"):
-            floor_at(size_x, size_y, palette, bytes(packed), 12, 0)
+            floor_at(size_x, size_y, palette, bytes(packed), 12, 0, source_game_version="1.26.1")
 
     def test_native_1bit_compaction_and_partial_byte_padding(self):
         palette = [0, 1024]
         packed = bytes((0b11111111, 0b10000000))  # nine cells, 7 padded bits
-        evidence = describe_native_packing(3, 3, palette, packed)
+        evidence = describe_native_packing(3, 3, palette, packed, source_game_version="1.26.1")
         self.assertTrue(evidence["decoded"])
         self.assertEqual(evidence["cellBits"], 1)
-        self.assertEqual(decode_window(3, 3, palette, packed, 0, 0, 3, 3),
+        self.assertEqual(decode_window(3, 3, palette, packed, 0, 0, 3, 3, source_game_version="1.26.1"),
                          [[1024] * 3] * 3)
         with self.assertRaisesRegex(ValueError, "padding"):
-            describe_native_packing(3, 3, palette, bytes((255, 129)))
+            describe_native_packing(3, 3, palette, bytes((255, 129)), source_game_version="1.26.1")
         with self.assertRaisesRegex(ValueError, "length"):
-            describe_native_packing(3, 3, palette, bytes((255,)))
+            describe_native_packing(3, 3, palette, bytes((255,)), source_game_version="1.26.1")
         with self.assertRaisesRegex(ValueError, "palette"):
-            describe_native_packing(2, 2, [0, 1024, 2048], bytes((255,)))
+            describe_native_packing(2, 2, [0, 1024, 2048], bytes((255,)), source_game_version="1.26.1")
 
     def test_original_native_four_bit_palette_and_grid_axis_order(self):
         palette = [0, 8, 16, 32, 64]
         packed = bytes((0x01, 0x23, 0x41, 0x03, 0x20))
-        evidence = describe_native_packing(3, 3, palette, packed)
+        evidence = describe_native_packing(3, 3, palette, packed, source_game_version="1.26.1")
         self.assertTrue(evidence["decoded"])
         self.assertEqual(evidence["cellBits"], 4)
         self.assertEqual(evidence["packing"], "x_major_msb_first")
@@ -308,44 +337,44 @@ class NativeWireTests(unittest.TestCase):
         self.assertIn("original_metadata_v31",
                       evidence["sampleBasedEncodingEvidence"])
         self.assertEqual(count_packed_palette_indices(
-            3, 3, palette, packed), [2, 2, 2, 2, 1])
-        self.assertEqual(floor_at(3, 3, palette, packed, 1, 1), 64)
+            3, 3, palette, packed, source_game_version="1.26.1"), [2, 2, 2, 2, 1])
+        self.assertEqual(floor_at(3, 3, palette, packed, 1, 1, source_game_version="1.26.1"), 64)
         self.assertEqual(decode_window(
-            3, 3, palette, packed, 0, 0, 3, 3), [
+            3, 3, palette, packed, 0, 0, 3, 3, source_game_version="1.26.1"), [
                 [0, 32, 0], [8, 64, 32], [16, 8, 16],
             ])
         with self.assertRaisesRegex(ValueError, "padding"):
             describe_native_packing(
-                3, 3, palette, bytes((0x01, 0x23, 0x41, 0x03, 0x2f)))
+                3, 3, palette, bytes((0x01, 0x23, 0x41, 0x03, 0x2f)), source_game_version="1.26.1")
         with self.assertRaisesRegex(ValueError, "index missing"):
             describe_native_packing(
-                3, 3, palette, bytes((0xf1, 0x23, 0x41, 0x03, 0x20)))
+                3, 3, palette, bytes((0xf1, 0x23, 0x41, 0x03, 0x20)), source_game_version="1.26.1")
 
         sixteen = list(range(16))
         self.assertEqual(floor_at(
-            2, 2, sixteen, bytes((0x0f, 0x89)), 0, 1), 15)
+            2, 2, sixteen, bytes((0x0f, 0x89)), 0, 1, source_game_version="1.26.1"), 15)
         self.assertEqual(count_packed_palette_indices(
-            2, 2, sixteen, bytes((0x0f, 0x89)))[15], 1)
+            2, 2, sixteen, bytes((0x0f, 0x89)), source_game_version="1.26.1")[15], 1)
         self.assertEqual(describe_native_packing(
-            1, 2, [0], bytes((0,)))["cellBits"], 1)
+            1, 2, [0], bytes((0,)), source_game_version="1.26.1")["cellBits"], 1)
         unsupported = describe_native_packing(
-            2, 2, list(range(17)), bytes((0, 0)))
+            2, 2, list(range(17)), bytes((0, 0)), source_game_version="1.26.1")
         self.assertEqual(unsupported["status"], "unresolved_palette_cardinality")
         self.assertFalse(unsupported["decoded"])
         with self.assertRaisesRegex(ValueError, "unresolved"):
             decode_window(2, 2, list(range(17)), bytes((0, 0)),
-                          0, 0, 2, 2)
+                          0, 0, 2, 2, source_game_version="1.26.1")
 
     def test_source_palette_index_histogram_exact_counts_and_tail(self):
         self.assertEqual(count_packed_palette_indices(
-            2, 2, [0, 1024, 2048], bytes((0b10100101,))), [0, 2, 2])
+            2, 2, [0, 1024, 2048], bytes((0b10100101,)), source_game_version="1.26.1"), [0, 2, 2])
         self.assertEqual(count_packed_palette_indices(
-            3, 3, [0, 1024], bytes((0xff, 0x80))), [0, 9])
+            3, 3, [0, 1024], bytes((0xff, 0x80)), source_game_version="1.26.1"), [0, 9])
         self.assertIsNone(count_packed_palette_indices(
-            5, 5, list(range(17)), bytes(25)))
+            5, 5, list(range(17)), bytes(25), source_game_version="1.26.1"))
         with self.assertRaisesRegex(ValueError, "index missing"):
             count_packed_palette_indices(
-                2, 2, [0, 1024, 2048], bytes((0xff,)))
+                2, 2, [0, 1024, 2048], bytes((0xff,)), source_game_version="1.26.1")
 
     def test_original_gridarea_layer_index_is_x_major_and_not_occupancy(self):
         source = [1, 2, 4, 8, 16, 32]
