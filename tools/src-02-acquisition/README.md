@@ -47,6 +47,10 @@ py -3 -m unittest discover -s tools/src-02-acquisition -p "test_*.py" -v
 node --test tests/acquisition*.test.mjs
 ```
 
+## Exact-source stall candidate ↔ configured price overlap (private only)
+
+See [SHOP-PRICE-OVERLAP.md](SHOP-PRICE-OVERLAP.md) and `src/lib/acquisition/private-stall-price-overlap.mjs`. Authenticates **both** the real SRC-02 r5 ZIP and the independently pinned ProtoDB price release; joins matching native Stall ShopData keys and exact Item IDs without inventing the current shop, rotation or sale price. Verified source totals: 65 stalls, 50 with a static price definition for every enumerated candidate, 15 with none, 0 partial; 745 distinct candidate occurrences per stall (683 price-defined, 62 not), 606 distinct candidate Item IDs globally. All unlisted prices remain **unknown**, not zero/free; all returned results are nonpublishable and explicitly not a live-offer or stock check.
+
 ## Exact native ProtoDB shop and static price evidence (separate private release)
 
 See [PROTO-DB-SHOP-PRICES.md](PROTO-DB-SHOP-PRICES.md). Steam 1.26.2 original ProtoDB source and the trusted r5 SRC-02 ZIP yield **44** typed shops (**218** slots), **10** static price databases (**988** item-price records, **1,348** configured purchase currency costs and **711** sell currency amounts), **1** unevaluated dynamic price source and **65/65** exact native shop-key/slot-count stall matches. Three amount fields are absent and remain `null`, not zero. Source-proven, owner-private manifest SHA-256: `641f1b5c5268f136de7bf345f372f06bde923ce0f1f24871225a97913091e975`.
