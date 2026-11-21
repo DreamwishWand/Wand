@@ -212,47 +212,31 @@ final DB-01 private-only manifest. It does not upload files, edit saves,
 commit data or change GitHub Pages. This is a **prepared command**, not a claim
 that the original full 28 files or eight entire localization archives have
 already been processed in ChatGPT.
-## Complete-source reuse across Steam patch versions
 
-The private archived v1.26.1 Steam original has **38 of 39** source itemlists with
-full SHA-256 exactly identical to independently SHA-pinned Steam v1.26.2 data.
-`tools/src-01-items/recover_unchanged1262.py` now recovers **20,425**
-additional *full-file-verified* 1.26.2 definitions (33 nonempty extra categories
-and one verified empty), while refusing changed `Condition.json`. Together
-with 13,202 four-class native items, the verified current-source union is
-**33,627 definition IDs**. The 132 previous complete-probe definitions are
-already included in the 20,425, not appended again.
+## SHA-identical archived-source recovery → normalized 33,627 definitions
 
-The tool verifies **53 fully embedded, CRC-checked current v1.26.2 LocDB members**
-from the existing format probe, including 1.26.2 BoardGame/PhotoMode members.
-This provides **241 definitions with all eight official names**, and **506 with
-at least one official name**. No v1.26.1 ZIP locale texts are reused. All
-8 entire v1.26.2 localization ZIP archives differ from their older versions,
-so most current names remain unresolved.
-Full procedure, verification boundary and private CLI:
-[`tools/src-01-items/RECOVER-UNCHANGED-1262.md`](../src-01-items/RECOVER-UNCHANGED-1262.md).
-Use the resulting private `wand.src01.extended@1` folder as the **replacement**
-`--extended` source to `tools/db-01-items/build.py`; never merge it with the old
-132-definition ext folder, since IDs overlap. It is not a complete catalog:
-`Condition.json` for v1.26.2 remains unavailable.
+See [`RECOVERED-PARTIAL.md`](RECOVERED-PARTIAL.md) for the private **38/39 source**
+recovery build, 33,627 verified definition IDs (13,202 native item types +
+20,425 unclassified definitions), all-eight-locale verification for 241 rows,
+and exact-coverage comparison with the earlier 13,334-row partial baseline.
+Neither old Switch taxonomy nor prior-version whole LocDB ZIPs are promoted.
 
 
-## Complete-source reuse: normalized private 33,627 definition baseline
+## Owner-private historical locale candidate overlay (not verified current names)
 
-The recovered-source compiler `build_recovered_partial.py` accepts the
-source-verified 13,202 native records and the separate SHA-identical archival
-20,425 extended definitions, rejects changed `Condition.json`, and produces
-private `wand.db01.partial-manifest@3` data for all **33,627** source-backed
-definition IDs. Source IDs are not ownership or collectibility assertions.
+The existing archived Steam v1.26.1 ZIP originals and Steam v1.26.2
+format-probe member size/CRC32/first-8KiB metadata agree for **15 categories ×
+8 locales = 120 member pairs**. They do **not** prove full current member
+SHA-256 equality. `build_correlated_names.py` independently validates all
+original archive checksums and the exact 33,627-item private DB-01 source hash,
+then produces **12,883 records with eight-language historical candidates**, of
+which 3,657 official current locale values independently match and none differ.
 
-`src/lib/items/catalog.mjs` supports this exact versioned private schema,
-validates the 38/39 binary-source equality proof, checks the pinned old and
-current source fingerprints and **all eight current official name counts**
-(241 full eight-locale; 506 any). Its DB-00 adapter excludes unclassified
-definitions and does not authorize publication or save writing.
-
-See [`RECOVERED-PARTIAL.md`](RECOVERED-PARTIAL.md) for build usage, known
-missing `Condition.json`, absent full current LocDB ZIP files, and a
-same-game-version coverage-safe diff with the previous 13,334-row partial
-baseline (13,334 shared IDs, 20,293 newly-covered IDs, no game-added claims).
-
+The output has separate schema `wand.db01.historical-locale-correlations@1`
+and `mergeIntoCanonicalPermitted:false`, and remains private. The consumer
+`src/lib/items/historical-candidates.mjs` requires a hash-verified source
+catalog, checks the overlay hash and Item ID/key alignment, prefers source-
+verified current names, and only permits historical values when the caller
+explicitly sets `allowHistorical:true`. Do not import these into official
+current `names` or publish them. See
+[`HISTORICAL-LOCALE-CORRELATIONS.md`](HISTORICAL-LOCALE-CORRELATIONS.md).
