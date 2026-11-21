@@ -121,6 +121,25 @@ if (Test-Path -LiteralPath $gameAssembly -PathType Leaf) {
     }
     Write-Host "DB-04: privately pinning native PE64 GameAssembly evidence"
     Run-Python -Arguments $nativeArgs
+
+    # When the matching IL2CPP dump is already supplied and the optional,
+    # version-pinned disassembler is installed, decode the captured ORIGINAL
+    # byte windows automatically. Missing Capstone does not block game-data
+    # extraction or claim that disassembly was performed.
+    if ($Il2CppDumpPath) {
+        $capstoneCheck = & $python @pythonPrefix -c "import importlib.util, importlib.metadata; print(int(importlib.util.find_spec('capstone') is not None and importlib.metadata.version('capstone') == '5.0.9'))"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Could not inspect optional Capstone disassembler availability"
+        }
+        if (($capstoneCheck | Out-String).Trim() -eq "1") {
+            Write-Host "DB-04: privately decoding native x86-64 method windows (no semantic claims)"
+            Run-Python -Arguments @((Join-Path $tools "disassemble_native_pe.py"),
+                                     "--snapshot", $ready)
+        }
+        else {
+            Write-Host "DB-04: optional Capstone 5.0.9 unavailable; native instruction decoding skipped"
+        }
+    }
 }
 else {
     Write-Host "DB-04: native PE metadata not collected (GameAssembly.dll absent)"
