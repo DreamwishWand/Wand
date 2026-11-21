@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   WORLD_SCHEMA, createWorldCatalog, getNativeFootprint, getNativeScene,
-  getLayoutGridReferences, getNativeFloorPalette, describeNativeLayerMask,
+  getLayoutGridReferences, getNativeFloorPalette, getNativeWorld,
+  getNativeAreasForScene, describeNativeLayerMask,
   describeNativeFloorMask, checkNativeEditRestriction, assessPlacement,
 } from '../src/lib/world/catalog.mjs';
 
@@ -17,6 +18,10 @@ function fixture() {
       gridEditRestrictions: { canMove: { value: false, nativeWireField: '25.1.1' } },
     }],
     scenes: [{ sceneId: 1540000000, nativeName: 'Village!Village04', parentWorldId: null }],
+    worlds: [{ worldId: 'village-layout:Main', worldIdKind: 'derivedLayoutKey',
+      defaultGridLayoutPath: 'SceneLayouts/Village04/Main.json' }],
+    areas: [{ areaId: '1540000000:3', parentSceneId: 1540000000,
+      nativeAreaTypeCode: 3, nativeAreaTypeName: 'Urban' }],
     grids: [{ gridId: 'GridData/Villages/Meadow.json', terrainFlagsVerified: false,
       nativeFloorTypePalette: [0, 4, 256, 512] }],
     layouts: [{ layoutId: 'SceneLayouts/Village04/Main.json',
@@ -62,6 +67,15 @@ test('invalid snapshots and silently inferred occupancy are rejected', () => {
   const bad = fixture();
   bad.manifest.schema = 'other';
   assert.throws(() => createWorldCatalog(bad), /Unsupported/);
+});
+
+test('world and biome area lookups retain explicit source-linked IDs', () => {
+  const catalog = createWorldCatalog(fixture());
+  assert.equal(getNativeWorld(catalog, 'village-layout:Main').worldIdKind, 'derivedLayoutKey');
+  const found = getNativeAreasForScene(catalog, 1540000000);
+  assert.equal(found.length, 1);
+  assert.equal(found[0].nativeAreaTypeName, 'Urban');
+  assert.equal(getNativeAreasForScene(catalog, 1540000001).length, 0);
 });
 
 test('IL2CPP native layer and floor enum bits are mapped without asserting placement', () => {
