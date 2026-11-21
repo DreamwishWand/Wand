@@ -67,7 +67,7 @@ assertion of no offers. The optional SRC-01 manifest is independently byte-hashe
 and checked against source Item ID count, target, and item data digest.
 
 For a private Node runtime use `loadVerifiedAcquisitionBundle(directory,
-{ src01ManifestPath })` from `verify_bundle.mjs`. It returns the parsed records
+{ src01ManifestPath, expectedManifestSha256 })` from `verify_bundle.mjs`. It returns the immutable parsed records
 and marks the bundle `privateSource: true`. Do not import this Node-only file in
 a browser route or copy the private JSONL into `static/` or Pages.
 
@@ -85,6 +85,35 @@ static-source links, not live retail offers.
 Tests: `node --test tests/acquisition*.test.mjs`. Full private Steam v1.26.2
 source bundle was independently verified without copying a single proprietary
 row into the public repository.
+
+## Trusted private runtime: pinned manifest and immutable data
+
+The `manifest.json` SHA-256 inside SRC-02's `LATEST.json` must come from a
+**separately trusted** release pointer. A self-consistent `manifest.json` plus
+matching file hashes is *not*, by itself, external provenance: both could have
+been rewritten. For the DB-00 integration, use the Node-only pinned entrypoint:
+
+```js
+import { loadPinnedAcquisitionCatalogJoin } from
+  './tools/src-02-acquisition/verify_bundle.mjs';
+const join = await loadPinnedAcquisitionCatalogJoin(db00Snapshot, {
+  directory: '/private/SRC-02/r4',
+  expectedManifestSha256: trustedLatest.currentSnapshotManifestSha256,
+  src01ManifestPath: '/private/SRC-01/manifest.json',
+});
+// join.lookup(itemId) reports static candidates, not actual availability.
+```
+
+The loader checks the independent expected manifest digest **before parsing**,
+verifies all dataset hashes and SRC-01 origin (when supplied), checks counts
+and references, and deep-freezes all parsed private data. `createAcquisitionCatalogJoin`
+rejects ordinary unverified or mutable bundles; this runtime guard alone is
+not a cryptographic attestation. A verified flag supplied by a caller does not
+replace the trusted external SHA-256 check. In the CLI, add
+`--expected-manifest-sha256 HASH` to the `verify` command for pinned operation.
+Without that option, the report states `internally_consistent_private` rather
+than suggesting that the snapshot is externally authenticated. Do not import
+this Node-only module or private game rows from public browser bundles.
 
 ## Native condition data is structural evidence, not a player-state evaluator
 

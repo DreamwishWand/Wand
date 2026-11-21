@@ -4,8 +4,9 @@ import { mkdtemp, writeFile, readFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { loadVerifiedAcquisitionBundle } from '../tools/src-02-acquisition/verify_bundle.mjs';
+import { loadVerifiedAcquisitionBundle, loadPinnedAcquisitionCatalogJoin } from '../tools/src-02-acquisition/verify_bundle.mjs';
 import { createAcquisitionCatalogJoin } from '../src/lib/acquisition/db00-join.mjs';
+import { createAcquisitionDatabase } from '../src/lib/acquisition/index.mjs';
 
 const hash = b => createHash('sha256').update(b).digest('hex');
 const srcSha = 'a'.repeat(64), itemSha = 'b'.repeat(64);
@@ -188,4 +189,87 @@ test('forged source member field and forged member count fail even after digest 
     await writeFile(join(root,'manifest.json'),JSON.stringify(manifest)+'\n');
     await assert.rejects(loadVerifiedAcquisitionBundle(root),/REPORT_COUNTS_MISMATCH|COUNT_ingredientSelectorMembers/);
   } finally {await rm(root,{recursive:true,force:true});}
+});
+
+test('private verified bundle is deeply immutable and refuses unverified direct join', async () => {
+  const {root, manifest} = await fixture(true);
+  try {
+    const parsed = await loadVerifiedAcquisitionBundle(root);
+    assert.equal(Object.isFrozen(parsed), true);
+    assert.equal(Object.isFrozen(parsed.manifest), true);
+    assert.equal(Object.isFrozen(parsed.manifest.files), true);
+    assert.equal(Object.isFrozen(parsed.recipes), true);
+    assert.equal(Object.isFrozen(parsed.recipes[0]), true);
+    assert.equal(Object.isFrozen(parsed.recipes[0].ingredients), true);
+    assert.equal(Object.isFrozen(parsed.ingredientMembership[0].tagIds), true);
+    const db = createAcquisitionDatabase(parsed);
+    const candidateRows = db.getIngredientSelectorCandidates(2001400014);
+    assert.equal(Object.isFrozen(candidateRows), true);
+    assert.equal(Object.isFrozen(candidateRows[0]), true);
+    assert.throws(() => { candidateRows[0].itemId = 999; }, TypeError);
+    assert.throws(() => { candidateRows.push({itemId:999}); }, TypeError);
+    assert.equal(db.getIngredientSelectorCandidates(2001400014)[0].itemId, 30200000);
+    const slotRows = db.getPossibleStallSlotsForItem(11);
+    assert.equal(Object.isFrozen(slotRows), true);
+    assert.equal(Object.isFrozen(slotRows[0]), true);
+    assert.equal(Object.isFrozen(slotRows[0].candidateGroupIndexes), true);
+    assert.throws(() => { slotRows[0].candidateGroupIndexes.push(9); }, TypeError);
+    assert.equal(db.getPossibleStallSlotsForItem(11)[0].candidateGroupIndexes[0], 0);
+    assert.throws(() => { parsed.manifest.gameVersion = '1.26.1'; }, TypeError);
+    assert.throws(() => { parsed.recipes[0].resultItemId = 99; }, TypeError);
+    assert.throws(() => { parsed.ingredientMembership[0].tagIds.push(2001200011); }, TypeError);
+    const { verified, privateSource, manifestSha256, ...untrusted } = parsed;
+    assert.throws(() => createAcquisitionCatalogJoin(snapshot(manifest), untrusted),
+      /SRC02_VERIFIED_PRIVATE_BUNDLE_REQUIRED/);
+    assert.throws(() => createAcquisitionCatalogJoin(snapshot(manifest), {
+      ...untrusted, verified:true, privateSource:true, manifestSha256,
+    }), /SRC02_VERIFIED_PRIVATE_BUNDLE_REQUIRED/);
+    assert.equal(createAcquisitionCatalogJoin(snapshot(manifest), parsed).lookup(10).itemId, '10');
+  } finally { await rm(root, { recursive:true, force:true }); }
+});
+
+test('pinned catalog join rejects external manifest changes before accepting internally valid records', async () => {
+  const {root, manifest, sourcePath} = await fixture();
+  try {
+    const originalSha = hash(await readFile(join(root, 'manifest.json')));
+    assert.equal((await loadPinnedAcquisitionCatalogJoin(snapshot(manifest), {
+      directory:root, src01ManifestPath:sourcePath,
+      expectedManifestSha256:originalSha,
+    })).lookup(11).classification,'unresolved_in_partial_catalog');
+    await assert.rejects(loadPinnedAcquisitionCatalogJoin(snapshot(manifest), {
+      directory:root,
+    }), /TRUSTED_MANIFEST_SHA256_REQUIRED/);
+    await assert.rejects(loadPinnedAcquisitionCatalogJoin(snapshot(manifest), {
+      directory:root, expectedManifestSha256:'not-a-sha',
+    }), /TRUSTED_MANIFEST_SHA256_REQUIRED/);
+    manifest.extraMetadata = 'forged but internally valid';
+    await writeFile(join(root,'manifest.json'), JSON.stringify(manifest)+'\n');
+    assert.equal((await loadVerifiedAcquisitionBundle(root)).verified, true,
+      'internally valid bundle has no independent origin attestation');
+    await assert.rejects(loadPinnedAcquisitionCatalogJoin(snapshot(manifest), {
+      directory:root, expectedManifestSha256:originalSha,
+    }), /TRUSTED_MANIFEST_SHA256_MISMATCH/);
+    await assert.rejects(loadVerifiedAcquisitionBundle(root, {
+      expectedManifestSha256:originalSha,
+    }), /TRUSTED_MANIFEST_SHA256_MISMATCH/);
+  } finally { await rm(root, { recursive:true, force:true }); }
+});
+
+test('pinned loader rejects non-regular digest and unexpected SRC-01 origin', async () => {
+  const {root, manifest, sourcePath} = await fixture();
+  try {
+    const expectedManifestSha256 = hash(await readFile(join(root,'manifest.json')));
+    const s = snapshot(manifest);
+    s.target.sourceSha256 = 'c'.repeat(64);
+    await assert.rejects(loadPinnedAcquisitionCatalogJoin(s, {
+      directory:root, expectedManifestSha256, src01ManifestPath:sourcePath,
+    }), /SRC02_DB00_EXACT_SOURCE_MISMATCH/);
+    await writeFile(sourcePath, '{}');
+    await assert.rejects(loadPinnedAcquisitionCatalogJoin(snapshot(manifest), {
+      directory:root, expectedManifestSha256, src01ManifestPath:sourcePath,
+    }), /SRC01_MANIFEST_DIGEST_MISMATCH/);
+    await assert.rejects(loadVerifiedAcquisitionBundle(root, {
+      expectedManifestSha256:expectedManifestSha256.toUpperCase(),
+    }), /INVALID_EXPECTED_MANIFEST_SHA256/);
+  } finally { await rm(root, { recursive:true, force:true }); }
 });

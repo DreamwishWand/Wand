@@ -32,4 +32,14 @@ export interface Db02CatalogJoin {
   getPossibleStallsForItem(id: number): ReadonlyArray<Record<string, unknown>>;
   getPossibleStallSlotsForItem(id: number): ReadonlyArray<Record<string, unknown>>;
 }
-export function createAcquisitionCatalogJoin(snapshot: Record<string, unknown>, bundle: Record<string, unknown>): Db02CatalogJoin;
+/** Requires a deeply immutable, privately loaded SRC-02 bundle. For verified
+ * external provenance in Node, use loadPinnedAcquisitionCatalogJoin. */
+export interface VerifiedAcquisitionBundle {
+  readonly verified: true;
+  readonly privateSource: true;
+  readonly manifestSha256: string;
+  readonly manifest: Readonly<Record<string, unknown>>;
+  readonly recipes: readonly Record<string, unknown>[];
+  readonly relatedItems: readonly Record<string, unknown>[];
+}
+export function createAcquisitionCatalogJoin(snapshot: Record<string, unknown>, bundle: VerifiedAcquisitionBundle): Db02CatalogJoin;

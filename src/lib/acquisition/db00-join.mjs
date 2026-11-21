@@ -7,6 +7,12 @@ export const ACQUISITION_DB00_JOIN_CONTRACT = 'wand.db02.db00-candidate-join@1';
 export function createAcquisitionCatalogJoin(snapshot, bundle) {
   if (snapshot?.schema !== SNAPSHOT_SCHEMA) throw new TypeError('DB00_SNAPSHOT_REQUIRED');
   validateSnapshot(snapshot);
+  if (bundle?.verified !== true || bundle.privateSource !== true ||
+      !/^[a-f0-9]{64}$/.test(bundle.manifestSha256 ?? '') ||
+      !Object.isFrozen(bundle) || !Object.isFrozen(bundle.manifest) ||
+      !Object.isFrozen(bundle.recipes) || !Object.isFrozen(bundle.relatedItems)) {
+    throw new TypeError('SRC02_VERIFIED_PRIVATE_BUNDLE_REQUIRED');
+  }
   if (bundle?.manifest?.schema !== 'wand.src02@1' || bundle.manifest.status !== 'partial_native_extraction')
     throw new TypeError('SRC02_BUNDLE_MANIFEST_REQUIRED');
   if (bundle.manifest.platform !== snapshot.target.platform ||
