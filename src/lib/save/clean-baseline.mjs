@@ -81,18 +81,20 @@ function walk(root,path,receive){
 }
 function observe(root){
   return Object.freeze(RULES.map(rule=>{
-    let observed=0,kindDifferences=0,childCount=0;
+    let observed=0,kindDifferences=0,childCount=0,oversize=false;
     const r=walk(root,rule.path,node=>{
       observed++;
       const kind=kindOf(node);
       if(kind!==rule.kind)kindDifferences++;
       if((kind==='array'||kind==='object')&&kind===rule.kind){
-        childCount+=Array.isArray(node)?node.length:Object.keys(node).length;
+        const size=Array.isArray(node)?node.length:Object.keys(node).length;
+        childCount+=size;
+        if(size>MAX_BRANCH)oversize=true;
       }
     });
     return Object.freeze({
       id:rule.id,observed,expectedKind:rule.kind,kindDifferences,
-      childCount,branchIssues:r.branchIssues,sampled:r.sampled
+      childCount,branchIssues:r.branchIssues,sampled:r.sampled||oversize
     });
   }));
 }
@@ -132,7 +134,8 @@ export function createCleanSaveBaseline(decoded,claim){
       for(let i=0;i<baseline.length;i++){
         const previous=baseline[i],next=current[i];
         if(previous.observed && !next.observed)missing.push(previous.id);
-        if(next.kindDifferences>0||next.branchIssues>0)typeDifferences.push(next.id);
+        if(next.kindDifferences>previous.kindDifferences ||
+           next.branchIssues>previous.branchIssues)typeDifferences.push(next.id);
         if(previous.observed!==next.observed||
            previous.childCount!==next.childCount)countDifferences.push(next.id);
         if(previous.sampled||next.sampled)sampled.push(next.id);
