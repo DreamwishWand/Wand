@@ -519,7 +519,9 @@ def parse_grid_structure(raw, *, source_game_version):
                    source_game_version=source_game_version)
                if compacted is not None else {
                    "status": "not_compacted", "decoded": False})
-    palette_counts = (count_packed_palette_indices(x, y, palette, compacted)
+    palette_counts = (count_packed_palette_indices(
+                          x, y, palette, compacted,
+                          source_game_version=source_game_version)
                       if compacted is not None and packing["decoded"] else None)
     return {
         "sizeX": x, "sizeY": y,
