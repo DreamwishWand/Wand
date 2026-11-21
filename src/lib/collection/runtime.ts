@@ -266,15 +266,41 @@ export class CollectionRuntime {
         const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
         if (legacy !== null) this.engine.load_state(legacy);
         const normalized = this.engine.state_json();
-        await writeIdb(db,normalized,null);
-        if (await readIdb(db) !== normalized)
-          throw new Error('COLLECTION_MIGRATION_READBACK_MISMATCH');
-        this.persistedState = normalized;
+        try {
+          await writeIdb(db,normalized,null);
+          if (await readIdb(db) !== normalized)
+            throw new Error('COLLECTION_MIGRATION_READBACK_MISMATCH');
+          this.persistedState = normalized;
+        } catch (error) {
+          // Another tab may have completed first-open migration while this tab
+          // was reading the legacy key. Never overwrite its winning state.
+          if (!(error instanceof Error && error.message === 'COLLECTION_STORAGE_CONFLICT'))
+            throw error;
+          const winner = await readIdb(db);
+          if (winner === undefined) throw new Error('COLLECTION_MIGRATION_WINNER_MISSING');
+          this.engine.load_state(winner);
+          this.persistedState = winner;
+        }
       }
       this.db = db;
     } catch (error) {
       db.close();
       throw error;
+    }
+  }
+  /** Explicit recovery after an optimistic write conflict. Revalidate stored
+   * state in Rust before accepting it. Never silently merge or overwrite tabs. */
+  async reloadLatest(): Promise<void> {
+    if (this.busy) throw new Error('COLLECTION_WRITE_BUSY');
+    if (!this.db) throw new Error('COLLECTION_STORAGE_NOT_READY');
+    this.busy = true;
+    try {
+      const latest = await readIdb(this.db);
+      if (latest === undefined) throw new Error('COLLECTION_STORAGE_MISSING');
+      this.engine.load_state(latest);
+      this.persistedState = latest;
+    } finally {
+      this.busy = false;
     }
   }
   get state(): CollectionState {

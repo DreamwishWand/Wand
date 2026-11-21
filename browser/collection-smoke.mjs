@@ -86,6 +86,21 @@ try{
   await page.waitForFunction(()=>document.querySelector('.item-state-toggle')?.textContent?.trim()==='＋');
   await staleTab.locator('.item-state-toggle').first().click();
   await staleTab.getByRole('alert').filter({hasText:'COLLECTION_STORAGE_CONFLICT'}).waitFor();
+  // User-initiated reload must rebase the stale tab on the winning IndexedDB
+  // version, then permit a fresh CAS write without a full page reload.
+  await staleTab.getByRole('button',{name:'最新の記録を読み直す'}).click();
+  await staleTab.getByRole('alert').filter({hasText:'COLLECTION_STORAGE_CONFLICT'}).waitFor({state:'detached'});
+  await staleTab.waitForFunction(()=>document.querySelector('.item-state-toggle')?.textContent?.trim()==='＋');
+  await staleTab.locator('.item-state-toggle').first().click();
+  await staleTab.waitForFunction(()=>document.querySelector('.item-state-toggle')?.textContent?.trim()==='✓');
+  // The formerly winning tab is now stale: it must fail closed and recover too.
+  await page.locator('.item-state-toggle').first().click();
+  await page.getByRole('alert').filter({hasText:'COLLECTION_STORAGE_CONFLICT'}).waitFor();
+  await page.getByRole('button',{name:'最新の記録を読み直す'}).click();
+  await page.getByRole('alert').filter({hasText:'COLLECTION_STORAGE_CONFLICT'}).waitFor({state:'detached'});
+  await page.waitForFunction(()=>document.querySelector('.item-state-toggle')?.textContent?.trim()==='✓');
+  await page.locator('.item-state-toggle').first().click();
+  await page.waitForFunction(()=>document.querySelector('.item-state-toggle')?.textContent?.trim()==='＋');
   await staleTab.close();
   await page.reload();
   await page.locator('.summary-strip').waitFor({timeout:60000});
@@ -190,6 +205,8 @@ try{
   await page.locator('.summary-strip').waitFor({timeout:20000});
   assert.match(await page.locator('.summary-strip').innerText(),/1/);
   assert.match(await page.locator('.source-pill').innerText(),/Steam\s*·\s*v1\.26\.2/);
+  assert.match(await page.locator('.empty-inspector .inspector-hint').innerText(),/Steam\s*·\s*DDV v1\.26\.2/);
+  assert.doesNotMatch(await page.locator('.empty-inspector .inspector-hint').innerText(),/Nintendo Switch DDV v1\.25\.0/);
   const releaseSearch=page.getByRole('searchbox',{name:/8言語/});
   await releaseSearch.fill('検証済みの靴');
   await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
