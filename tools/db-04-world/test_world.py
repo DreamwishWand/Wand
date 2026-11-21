@@ -1,9 +1,12 @@
 import base64
+import hashlib
 import json
 import struct
 import tempfile
 import unittest
 from pathlib import Path
+
+from verify_bundle import validate_snapshot
 
 from world import (STREAM, diff_records, encode_varint, explicit_references,
                    extract, footprint, parse_grid_structure, parse_itemlist,
@@ -278,6 +281,37 @@ class PipelineTests(unittest.TestCase):
         delta = json.loads((newer / "diff.json").read_text())
         self.assertEqual(delta["status"], "compared")
         self.assertEqual(delta["entities"]["objects"]["changed"][0]["id"], "40000001")
+
+    def test_snapshot_verifier_checks_manifest_and_native_links(self):
+        extract(self.game, self.out)
+        verified = validate_snapshot(self.out)
+        self.assertEqual(verified["status"],
+                         "integrity_verified_not_placement_verified")
+        self.assertEqual(verified["counts"]["objects"], 2)
+        self.assertEqual(verified["counts"]["layoutObjects"], 0)
+        # Byte-level corruption is a hard integrity error.
+        file = self.out / "objects.json"
+        file.write_bytes(file.read_bytes() + b" ")
+        with self.assertRaisesRegex(ValueError, "SHA mismatch"):
+            validate_snapshot(self.out)
+
+    def test_snapshot_verifier_rejects_mismatched_layout_cardinality(self):
+        path = self.base / "SceneLayouts/Village04/NativeGrids.json"
+        path.write_bytes(field(1, field(2,
+            field(2, "GridData/Villages/Village04-Test.json") +
+            field(5, field(2, field(2, 40000001) + field(3, 2) + field(4, 3))))))
+        extract(self.game, self.out)
+        self.assertEqual(validate_snapshot(self.out)["counts"]["layoutObjects"], 1)
+        # Update hash to prove this check is independent of SHA matching.
+        objects_path = self.out / "layoutObjects.json"
+        objects_path.write_text("[]\n", encoding="utf-8")
+        manifest_path = self.out / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["outputSha256"]["layoutObjects.json"] = hashlib.sha256(
+            objects_path.read_bytes()).hexdigest()
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "object count mismatch"):
+            validate_snapshot(self.out)
 
     def test_refuse_game_output_overlap(self):
         with self.assertRaisesRegex(ValueError, "overlap"):
