@@ -561,6 +561,12 @@ class PipelineTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def _use_original_terrain_version(self):
+        # The packed GridData getter has native code proof for 1.26.1 only.
+        # Keep setUp at 1.26.2 to exercise the default fail-closed path.
+        (self.game / "FullVersion.txt").write_text(
+            "1.26.1\n", encoding="utf-8")
+
     def test_pipeline_extracts_actual_default_layout_object_data(self):
         layout = (field(1, field(2,
             field(2, "GridData/Villages/Village04-Test.json") +
@@ -626,6 +632,7 @@ class PipelineTests(unittest.TestCase):
                          "unverified_source_coverage")
 
     def test_private_native_footprint_hypothesis_comparison_distinguishes_anchor_models(self):
+        self._use_original_terrain_version()
         grid_path = self.base / "GridData/Villages/Village04-Test.json"
         grid_path.write_bytes(field(1, 3) + field(2, 3) +
             field(4, struct.pack("<III", 0, 1024, 2048)) +
@@ -678,6 +685,7 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue(truncated["truncatedByMaxObjects"])
 
     def test_uniform_single_cell_examples_cannot_discriminate_projection_models(self):
+        self._use_original_terrain_version()
         native_grid = (field(2, "GridData/Villages/Village04-Test.json") +
             field(5, field(1, 1) + field(2, field(1, 1) +
                                         field(2, 40000001))))
@@ -701,6 +709,7 @@ class PipelineTests(unittest.TestCase):
         self.assertFalse(evidence["placementLegalityVerified"])
 
     def test_native_default_layout_grid_origin_audit_is_not_placement_permission(self):
+        self._use_original_terrain_version()
         grid_path = self.base / "GridData/Villages/Village04-Test.json"
         grid_path.write_bytes(
             field(1, 2) + field(2, 2) +
@@ -731,6 +740,7 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(len(data["diagnosticSamples"]), 2)
 
     def test_four_bit_native_grid_extraction_and_verified_private_snapshot(self):
+        self._use_original_terrain_version()
         target = self.base / "GridData/Villages/Village04-Test.json"
         original = bytes((0x01, 0x23, 0x41, 0x03, 0x20))
         target.write_bytes(
@@ -752,6 +762,7 @@ class PipelineTests(unittest.TestCase):
             self.assertIsNone(archive.testzip())
 
     def test_hash_matching_histogram_corruption_is_rejected(self):
+        self._use_original_terrain_version()
         target = self.base / "GridData/Villages/Village04-Test.json"
         target.write_bytes(
             field(1, 2) + field(2, 2) +
@@ -771,6 +782,29 @@ class PipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "histogram mismatches"):
             validate_snapshot(self.out)
 
+    def test_current_version_snapshot_preserves_raw_unverified_terrain(self):
+        # FullVersion.txt remains 1.26.2; original 1.26.1 getter semantics
+        # must not be inherited when extracting this archive.
+        target = self.base / "GridData/Villages/Village04-Test.json"
+        original = bytes((0x01, 0x23, 0x41, 0x03, 0x20))
+        target.write_bytes(
+            field(1, 3) + field(2, 3) +
+            field(4, struct.pack("<IIIII", 0, 8, 16, 32, 64)) +
+            field(5, original))
+        report = extract(self.game, self.out)
+        self.assertEqual(report["nativePackedGridHistogramCount"], 0)
+        data = json.loads((self.out / "grids.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(data), 1)
+        grid_data = data[0]
+        self.assertEqual(grid_data["terrainDecoding"]["status"],
+                         "native_packing_not_verified_for_game_version")
+        self.assertFalse(grid_data["terrainDecoding"]["decoded"])
+        self.assertFalse(grid_data["nativeFloorIndexToLocalXYCorroborated"])
+        self.assertIsNone(grid_data["nativePaletteIndexCellCounts"])
+        self.assertEqual(base64.b64decode(
+            grid_data["compactedFloorTypesBase64"]), original)
+        self.assertEqual(validate_snapshot(self.out)["counts"]["grids"], 1)
+
     def test_grid_parse_failure_is_explicit_not_silent(self):
         extract(self.game, self.out)
         report = json.loads((self.out / "report.json").read_text())
@@ -781,6 +815,7 @@ class PipelineTests(unittest.TestCase):
         self.assertFalse(grid["terrainDecoding"]["decoded"])
 
     def test_snapshot_terrain_decode_evidence_must_match_original_bytes(self):
+        self._use_original_terrain_version()
         target = self.base / "GridData/Villages/Village04-Test.json"
         target.write_bytes(
             field(1, 12) + field(2, 16) +
