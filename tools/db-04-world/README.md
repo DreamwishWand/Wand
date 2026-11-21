@@ -82,6 +82,17 @@ full-layout scans while navigating individual grids. Page order is the
 verified source snapshot's fixed `layoutObjects.json` record order; retain
 the same verified snapshot for every page to avoid missing/duplicated items.
 
+**Spatial lookup:** the browser catalog privately indexes original GridObject
+anchors into fixed 32×32 *native grid-local coordinate* buckets per source
+layout and Grid.ID. Small editor viewports inspect only their intersecting
+buckets, not all objects in a grid. Bounded pages and aggregate in-window
+counts retain the original snapshot record order across buckets even when
+native GridObject IDs are not monotonic. Negative and out-of-grid source
+anchors are still included in full per-grid cardinality checks, but cannot
+appear in a valid nonnegative viewport. These buckets summarize *recorded
+X/Y source fields*, never game-verified occupied terrain cells, collisions or
+save-game objects.
+
 ## Original GridObject identity integrity
 
 Each original GridObject is identified by the exact GridCollection layout
