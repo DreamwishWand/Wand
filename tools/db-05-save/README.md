@@ -767,3 +767,21 @@ Codec or export access. Source JSON stays inside the
 synthetic CI process; **never pass an owner-private save
 to this example**. No production Rust/WASM browser
 integration is inferred from this parity check.
+
+
+## Rust 440-template unified shape probe (synthetic parity)
+
+The independent Rust module `crates/ddv-save-schema/src/unified_shape.rs` now observes the
+same **440 public field templates** in six checked-in source classes used by
+JavaScript `probeUnifiedSaveStructure()`. It borrows a decoded JSON document,
+reports only predeclared public paths, JSON kind names and anonymous counts,
+and keeps platform/build/schema number out of compatibility gates.
+
+`probe_unified_shape_json()` is a WASM-compatible entrypoint **only for data
+already validated by the strict external Codec**. Its serde_json parser does
+not enforce duplicate-key rejection, and this module does not decrypt P1G,
+retain original bytes, authorize Writer/export, or connect to the browser UI.
+Malformed input returns a fixed anonymous error. The synthetic parity gate
+`node tools/db-05-save/compare_unified_shape.mjs` compares the entire Rust/JS
+shape observations and blocks divergent implementations in CI. All input
+fixtures are synthetic; no private save files belong in Git or CI fixtures.
