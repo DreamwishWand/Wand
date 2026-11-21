@@ -18,6 +18,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: v0.13.1
+      - run: cargo test --manifest-path crates/wand-collection-core/Cargo.toml
+      - run: wasm-pack build crates/wand-collection-core --release --target web --out-dir ../../src/lib/collection/wasm/pkg
       - run: npm install --no-audit --no-fund
       - run: python3 scripts/build-collection-images.py
       - run: npm test
@@ -25,6 +33,7 @@ jobs:
       - run: npm run build
         env:
           BASE_PATH: /Wand
+      - run: test -n "$(find build -type f -name '*.wasm' -print -quit)"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

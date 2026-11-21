@@ -4,7 +4,7 @@
   import { attachHistoricalStoreLabels } from './saved-store-preview.mjs';
   import { attachDb01PrivateNames } from './private-db01-names-view.mjs';
 
-  export let records: Array<{itemId:number;label:string;family:string}> = [];
+  export let resolveHistorical:(id:number)=>({itemId:number;label:string;family:string}|null) = ()=>null;
   export let locale = 'ja';
   export let gameImageMap: Record<string,string> = {};
 
@@ -101,7 +101,9 @@
               (result.result.saveSchema !== null &&
               (!Number.isSafeInteger(result.result.saveSchema) || result.result.saveSchema < 0)))
             throw new TypeError('LOCAL_P1G_INVALID_WORKER_REPLY');
-          preview = attachHistoricalStoreLabels(result.result.summary,records);
+          const historical=(result.result.summary?.items??[]).map((item:{itemId:number})=>resolveHistorical(item.itemId))
+            .filter((item:unknown):item is {itemId:number;label:string;family:string}=>item!==null);
+          preview = attachHistoricalStoreLabels(result.result.summary,historical);
           saveSchema = result.result.saveSchema;
         } catch { failedRead(); }
       };
