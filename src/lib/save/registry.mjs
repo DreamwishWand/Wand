@@ -1,5 +1,5 @@
 export { getSaveAchievementObservationFields, inspectSaveAchievementProgress, SAVE_ACHIEVEMENT_PROGRESS_CONTRACT } from './achievement-progress.mjs';
-export { createSaveAchievementBridge, getSaveAchievementLinkRules, SAVE_ACHIEVEMENT_JOIN_CONTRACT } from './achievement-links.mjs';
+export { createSaveAchievementBridge, getSaveAchievementLinkRules, SAVE_ACHIEVEMENT_JOIN_CONTRACT, getSaveAchievementNativeBehaviorEvidence, SAVE_DUTY_PROGRESS_EVIDENCE_CONTRACT } from './achievement-links.mjs';
 export { createSaveGuideProgressBridge, getSaveGuideLinkRules, SAVE_GUIDE_JOIN_CONTRACT } from './guide-links.mjs';
 export { createSaveSourceCatalogBridge, getSaveCatalogLinkRules, SAVE_CROSS_CATALOG_CONTRACT, SAVE_CROSS_CATALOG_AUDIT_CONTRACT } from './catalog-links.mjs';
 export { getSaveReferenceRelations, probeSaveReferences, compareSaveReferenceProbes, SAVE_REFERENCE_PROBE_CONTRACT, SAVE_REFERENCE_COMPARISON_CONTRACT } from './references.mjs';
