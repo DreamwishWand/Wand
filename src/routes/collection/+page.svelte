@@ -6,13 +6,6 @@
   import { CollectionRuntime, type CollectionState, type CollectionItem, type CollectionFacet, type CollectionProgress } from '$lib/collection/runtime';
   import { collectionFamilyLabel } from '$lib/collection/copy';
 
-  const CATEGORY_ORDER = [
-    'Furniture','Landscaping','Roads & Fences','Wallpaper & Flooring','Buildings',
-    'Environment Effects','Clothing','Appearance','Touch of Magic','Photo Mode',
-    'Tools','Upgrades','Characters','Companions','Critters','Mounts','Crafting',
-    'Meals','Ingredients','Foraging','Fish','Gems','Timebending','Memories',
-    'Board Game','Snippets','Lorekeeper Tales','Quest Puzzles','Exhibition'
-  ];
   const languages = [
     { id:'ja',label:'日本語' },{ id:'en',label:'English' },{ id:'fr',label:'Français' },
     { id:'it',label:'Italiano' },{ id:'de',label:'Deutsch' },{ id:'es-ES',label:'Español' },
@@ -64,7 +57,9 @@
   $: entries=workspace?.entries??{};
   $: selectionLabel=facets.find(x=>x.id===selected)?.label??'';
   $: visibleItems=filtered;
-  $: groupedItems=[...new Set([...CATEGORY_ORDER,...visibleItems.map(x=>x.family)])]
+  // The Rust engine owns category identity and ordering, including future
+  // DB-00 additions. Do not maintain a second Svelte category registry.
+  $: groupedItems=[...new Set([...facets.map(x=>x.id),...visibleItems.map(x=>x.family)])]
     .map(id=>({id,items:visibleItems.filter(x=>x.family===id)}))
     .filter(group=>group.items.length);
   $: selectedItem=selectedItemId!==null && runtime?runtime.item(selectedItemId,locale):null;
@@ -99,7 +94,6 @@
     if(!runtime)return;
     try{
       facets=runtime.facets('category',locale);
-      facets.sort((a,b)=>CATEGORY_ORDER.indexOf(a.id)-CATEGORY_ORDER.indexOf(b.id));
       const collected:CollectionItem[]=[];
       let next=0;
       let total=0;
@@ -265,7 +259,8 @@
     </div>
     <div class="collection-head-actions">
       <label class="language-picker">表示言語
-        <select bind:value={locale} aria-label="アイテム表示言語">
+        <select value={locale} aria-label="アイテム表示言語"
+          on:change={(event)=>{locale=(event.currentTarget as HTMLSelectElement).value;refresh();}}>
           {#each languages as language}<option value={language.id}>{language.label}</option>{/each}
         </select>
       </label>
