@@ -1,3 +1,5 @@
+import {expectedOriginalGuideShardSha} from './shard-fingerprints.mjs';
+
 /** DB-03 browser-only Guide reader. No remote uploads or account calls. */
 export const GUIDE_SEARCH_SCHEMA = 'wand.db03.quest-search@1';
 export const GUIDE_DETAIL_SCHEMA = 'wand.db03.quest-detail-shards@1';
@@ -166,11 +168,15 @@ export function guideVerifiedSourceBridge(index) {
 
 
 
-async function jsonFile(file, maxSize, withSourceDigest = false) {
+async function jsonFile(file, maxSize, withSourceDigest = false, expectedFullFileSha256 = null) {
   assert(file && typeof file.arrayBuffer === 'function' && Number.isSafeInteger(file.size) &&
     file.size > 0 && file.size <= maxSize, 'file missing or too large');
   const bytes = await file.arrayBuffer();
   assert(bytes.byteLength <= maxSize && bytes.byteLength === file.size, 'file byte count mismatch');
+  if (expectedFullFileSha256) {
+    assert(await digestBytes(bytes) === expectedFullFileSha256,
+      'owner-original quest detail shard full-file SHA-256 mismatch');
+  }
   const parsed = JSON.parse(new TextDecoder('utf-8', {fatal:true}).decode(bytes));
   if (withSourceDigest && isObj(parsed)) {
     GUIDE_SEARCH_FINGERPRINTS.set(parsed, await digestBytes(bytes));
@@ -333,7 +339,15 @@ export async function importGuideDetail(index, id, file) {
   assert(row, 'quest not in loaded source index');
   const expectedName = row.detail.file.split('/').at(-1);
   assert(file && file.name === expectedName, 'wrong detail shard selected: expected ' + expectedName);
-  const doc = await jsonFile(file, MAX_SHARD_BYTES);
+  // Only the exact original privately sourced search index activates the
+  // 32 complete-shard byte pins; synthetic/custom indexes retain existing
+  // per-record hash semantics without pretending to be owner originals.
+  const originalOwnerIndex = GUIDE_SEARCH_FINGERPRINTS.get(index) ===
+    VERIFIED_1262_BRIDGE.originalSearchSha256 &&
+    index.target.platform === 'Steam' && index.target.gameVersion === '1.26.1' &&
+    index.source.sha256 === VERIFIED_1262_BRIDGE.missionSourceSha256;
+  const doc = await jsonFile(file, MAX_SHARD_BYTES, false,
+    originalOwnerIndex ? expectedOriginalGuideShardSha(expectedName) : null);
   assert(isObj(doc) && doc.schema === GUIDE_DETAIL_SCHEMA &&
     sameTarget(doc.target, index.target) && isObj(doc.source) &&
     doc.source.file === index.source.file && doc.source.sha256 === index.source.sha256 &&
