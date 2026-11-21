@@ -1,8 +1,7 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import ItemArtwork from './ItemArtwork.svelte';
-  import { decodeP1gPackagedProfile } from './private-p1g-codec.js';
-  import { inspectDecodedWorldStores } from '../acquisition/world-store-save.mjs';
-  import { createSavedStorePreview } from './saved-store-preview.mjs';
+  import { attachHistoricalStoreLabels } from './saved-store-preview.mjs';
 
   export let records: Array<{itemId:number;label:string;family:string}> = [];
   export let locale = 'ja';
@@ -17,15 +16,25 @@
   let fileInput: HTMLInputElement;
   let saveSchema: number|null = null;
 
-  // No DB-02 private source corpus is published to the static site. This
-  // inspector deliberately cannot assert an equivalence to the 65 static stalls.
-  const noPrivateStallData = Object.freeze({getStallStaticCatalog:(_id:number)=>null});
+  // No DB-02 private source corpus is published to the static site.
+  // The Worker receives only ciphertext; the UI receives only ID counts.
+  let activeWorker: Worker|null = null;
+  let requestSequence = 0;
+
+  function stopWorker() {
+    requestSequence++;
+    if (activeWorker) activeWorker.terminate();
+    activeWorker = null;
+  }
+  onDestroy(stopWorker);
   $: shown = preview ? preview.items.filter((item:any)=>
     !query.trim() || String(item.itemId).includes(query.trim()) ||
     (item.historicalLabel??'').toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())
   ) : [];
 
   function clear() {
+    stopWorker();
+    busy = false;
     preview = null;
     saveSchema = null;
     errorMessage = '';
@@ -35,34 +44,60 @@
     if (fileInput) fileInput.value = '';
   }
 
+  function failedRead() {
+    errorMessage = 'このセーブは読み取れませんでした。対応するP1G形式・データ構造を確認してください。元のファイルは変更されていません。';
+    preview = null;
+    saveSchema = null;
+  }
+
   async function openLocalFile(event:Event) {
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
     if (!file || busy) return;
     clear();
     busy = true;
+    const request = requestSequence;
     let encrypted:Uint8Array|null = null;
+    let worker:Worker|null = null;
     try {
       if (file.size < 16 || file.size > 32*1024*1024)
         throw new TypeError('PROFILE_SIZE_LIMIT');
       encrypted = new Uint8Array(await file.arrayBuffer());
-      // The P1G decoder checks the AES/ZIP envelope and uses duplicate-key and
-      // unsafe-number-rejecting JSON validation. No save bytes leave the browser.
-      const decoded = await decodeP1gPackagedProfile(encrypted);
-      const save = JSON.parse(decoded.jsonText);
-      const evidence = inspectDecodedWorldStores(noPrivateStallData,save);
-      const summary = createSavedStorePreview(evidence,records);
-      saveSchema = Number.isSafeInteger(save.GameInfo?.Version) ? save.GameInfo.Version : null;
-      preview = summary;
+      if (request !== requestSequence) return; // dismissed during file read
+      worker = new Worker(new URL('./saved-store.worker.mjs', import.meta.url),{type:'module'});
+      activeWorker = worker;
+      const w = worker;
+      const finish = (result:any) => {
+        if (activeWorker !== w || request !== requestSequence) return;
+        w.terminate();
+        activeWorker = null;
+        busy = false;
+        try {
+          if (result?.kind !== 'result' || result.result?.kind !== 'saved-store-summary' ||
+              (result.result.saveSchema !== null &&
+              (!Number.isSafeInteger(result.result.saveSchema) || result.result.saveSchema < 0)))
+            throw new TypeError('LOCAL_P1G_INVALID_WORKER_REPLY');
+          preview = attachHistoricalStoreLabels(result.result.summary,records);
+          saveSchema = result.result.saveSchema;
+        } catch { failedRead(); }
+      };
+      w.onmessage = event => finish(event.data);
+      w.onerror = event => { event.preventDefault(); finish({kind:'error'}); };
+      w.onmessageerror = () => finish({kind:'error'});
+      // Transfer rather than clone: source ciphertext leaves the main thread.
+      // The dedicated Worker wipes it and terminates after this one task.
+      w.postMessage({command:'inspect-local-p1g',ciphertext:encrypted},[encrypted.buffer]);
+      encrypted = null;
     } catch {
-      // No raw error contents, bytes, file names, JSON, or personal fields in UI.
-      errorMessage = 'このセーブは読み取れませんでした。対応するP1G形式・データ構造を確認してください。元のファイルは変更されていません。';
-      preview = null;
-      saveSchema = null;
+      if (request === requestSequence) {
+        worker?.terminate();
+        activeWorker = null;
+        busy = false;
+        failedRead();
+      }
     } finally {
-      if (encrypted) encrypted.fill(0);
+      if (encrypted && encrypted.byteLength) encrypted.fill(0);
       input.value = '';
-      busy = false;
     }
   }
 </script>
@@ -72,10 +107,10 @@
     <div>
       <span class="store-eyebrow">LOCAL / READ-ONLY</span>
       <h2>セーブ内の店舗商品</h2>
-      <p>DDVのP1G形式セーブをブラウザー内で開き、保存されている店舗の商品参照だけを一覧にします。ファイルの送信・編集・保存は行いません。</p>
+      <p>DDVのP1G形式セーブを専用のブラウザー内Workerで開き、保存されている店舗の商品参照だけを一覧にします。ファイルの送信・編集・保存は行いません。</p>
     </div>
-    {#if preview}
-      <button type="button" class="store-clear" on:click={clear}>読み込み結果を消去</button>
+    {#if preview || busy}
+      <button type="button" class="store-clear" on:click={clear}>{busy?'読み込みを中止':'読み込み結果を消去'}</button>
     {/if}
   </div>
   <div class="store-import">

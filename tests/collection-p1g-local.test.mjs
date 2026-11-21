@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {createCipheriv} from 'node:crypto';
 import {deflateRawSync} from 'node:zlib';
 import {decodeP1gPackagedProfile,p1gPackagedProfileCodec} from '../src/lib/collection/private-p1g-codec.js';
-import {createSavedStorePreview} from '../src/lib/collection/saved-store-preview.mjs';
+import {createSavedStorePreview, attachHistoricalStoreLabels} from '../src/lib/collection/saved-store-preview.mjs';
+import {inspectEncryptedSavedStore} from '../src/lib/collection/saved-store-worker-core.mjs';
 import {inspectDecodedWorldStores} from '../src/lib/acquisition/world-store-save.mjs';
 
 // A wholly synthetic Node AES/ZIP source profile; never read owner originals.
@@ -50,4 +51,37 @@ test('dedicated public-site reader does not expose save Writer API',()=>{
 });
 test('rejects malformed encrypted profiles without dispatching network operations',async()=>{
  await assert.rejects(()=>decodeP1gPackagedProfile(new Uint8Array(17)),/INVALID_ENCRYPTED_PROFILE_LENGTH/);
+});
+
+
+test('one-shot worker core decodes encrypted P1G and returns ID-only data', async()=>{
+ const source=makeFixture({GameInfo:{Version:643},Player:{Secret:'private test field'},
+ World:{Stores:[{BuildingItemID:1,Displays:[{DisplayItemID:100,DisplayInfo:{Slots:[
+  {Item:{id:40000001,amount:24},IsAvailable:true,CurrencyId:10},
+  {Item:{id:40000001,amount:11},IsAvailable:false},
+  {Item:null,IsAvailable:true}
+ ]}}]}]}});
+ const result=await inspectEncryptedSavedStore(source);
+ assert.equal(result.kind,'saved-store-summary');
+ assert.equal(result.saveSchema,643);
+ assert.equal(result.summary.distinctItemCount,1);
+ assert.equal(result.summary.savedStoreCount,1);
+ assert.equal(result.summary.savedItemReferenceCount,2);
+ assert.equal(result.summary.savedSlotsWithoutItem,1);
+ const ui=attachHistoricalStoreLabels(structuredClone(result.summary),
+  [{itemId:40000001,label:'Historical',family:'Furniture'}]);
+ assert.equal(ui.items[0].historicalLabel,'Historical');
+ assert.equal(ui.items[0].referenceCount,2);
+ const reply=JSON.stringify(result);
+ assert.ok(!reply.includes('private test field'));
+ assert.ok(!reply.includes('amount'));
+ assert.ok(!reply.includes('CurrencyId'));
+ assert.ok(!reply.includes('IsAvailable'));
+ assert.equal(ui.ownershipVerified,false);
+ assert.equal(ui.liveInventoryVerified,false);
+});
+
+test('worker core rejects oversize or misaligned ciphertext before decoding',async()=>{
+ await assert.rejects(()=>inspectEncryptedSavedStore(new Uint8Array(15)),/LOCAL_P1G_INVALID_CIPHERTEXT/);
+ await assert.rejects(()=>inspectEncryptedSavedStore(new Uint8Array(33)),/LOCAL_P1G_INVALID_CIPHERTEXT/);
 });

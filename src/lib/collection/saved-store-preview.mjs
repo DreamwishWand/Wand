@@ -67,3 +67,78 @@ export function createSavedStorePreview(evidence, historicalRecords = []) {
     ownershipVerified:false,liveInventoryVerified:false,pricesVerified:false,
     privateOnly:true,publishable:false,items:Object.freeze(items)});
 }
+
+/**
+ * Attach optional *historical* public labels on the main thread, after the
+ * Worker has already discarded the decoded save. Reject unexpected fields in
+ * the worker's compact result rather than treating arbitrary data as items.
+ * Never upgrades a label, image, saved offer, or collection ownership claim.
+ */
+export function attachHistoricalStoreLabels(summary, historicalRecords = []) {
+  if (summary?.contract !== SAVED_STORE_PREVIEW_CONTRACT ||
+      summary.privateOnly !== true || summary.publishable !== false ||
+      summary.strictCodecVerified !== false ||
+      summary.sourceVersionEquivalenceVerified !== false ||
+      summary.ownershipVerified !== false || summary.liveInventoryVerified !== false ||
+      summary.pricesVerified !== false || !Array.isArray(summary.items) ||
+      !['observed_decoded_structure','not_observed'].includes(summary.status) ||
+      !Number.isSafeInteger(summary.savedStoreCount) || summary.savedStoreCount < 0 || summary.savedStoreCount > 256 ||
+      !Number.isSafeInteger(summary.savedSlotCount) || summary.savedSlotCount < 0 || summary.savedSlotCount > 16384 ||
+      !Number.isSafeInteger(summary.savedSlotsWithoutItem) || summary.savedSlotsWithoutItem < 0 ||
+      summary.savedSlotsWithoutItem > summary.savedSlotCount ||
+      summary.savedItemReferenceCount !== summary.savedSlotCount - summary.savedSlotsWithoutItem ||
+      summary.distinctItemCount !== summary.items.length || summary.items.length > 16384 ||
+      summary.fieldObserved !== (summary.status === 'observed_decoded_structure'))
+    fail('SAVED_STORE_PREVIEW_INVALID_WORKER_SUMMARY');
+  if (!Array.isArray(historicalRecords) || historicalRecords.length > 50000)
+    fail('SAVED_STORE_PREVIEW_BAD_HISTORICAL_ROWS');
+  const history = new Map();
+  for (const row of historicalRecords) {
+    if (!positive(row?.itemId) || history.has(row.itemId))
+      fail('SAVED_STORE_PREVIEW_INVALID_HISTORICAL_ROW');
+    history.set(row.itemId,row);
+  }
+  const seen = new Set();
+  let references = 0;
+  const items = summary.items.map(item => {
+    if (!positive(item?.itemId) || seen.has(item.itemId) ||
+        !Number.isSafeInteger(item.referenceCount) || item.referenceCount < 1 ||
+        !Number.isSafeInteger(item.storeReferenceCount) || item.storeReferenceCount < 1 ||
+        item.storeReferenceCount > summary.savedStoreCount ||
+        item.referenceCount < item.storeReferenceCount)
+      fail('SAVED_STORE_PREVIEW_INVALID_WORKER_ITEM');
+    seen.add(item.itemId);
+    references += item.referenceCount;
+    const historyRow=history.get(item.itemId);
+    return Object.freeze({
+      itemId:item.itemId,
+      referenceCount:item.referenceCount,
+      storeReferenceCount:item.storeReferenceCount,
+      historicalMatch:!!historyRow,
+      historicalLabel:historyRow && typeof historyRow.label==='string' && historyRow.label.trim()
+        ? historyRow.label : null,
+      historicalFamily:historyRow && typeof historyRow.family==='string' && historyRow.family.trim()
+        ? historyRow.family : null,
+      historicalReferenceOnly:true,
+      playerOwnedVerified:false,availableForPurchaseVerified:false,
+      shopPrice:null,publishable:false
+    });
+  });
+  if (references !== summary.savedItemReferenceCount ||
+      (summary.status === 'not_observed' && summary.savedStoreCount !== 0))
+    fail('SAVED_STORE_PREVIEW_INVALID_WORKER_COUNTS');
+  return Object.freeze({
+    contract:SAVED_STORE_PREVIEW_CONTRACT,
+    status:summary.status,fieldObserved:summary.fieldObserved,
+    savedStoreCount:summary.savedStoreCount,
+    savedSlotCount:summary.savedSlotCount,
+    savedSlotsWithoutItem:summary.savedSlotsWithoutItem,
+    savedItemReferenceCount:summary.savedItemReferenceCount,
+    distinctItemCount:items.length,
+    historicalMatchedCount:items.filter(item=>item.historicalMatch).length,
+    historicalCatalogSource:'Nintendo Switch v1.25.0',
+    sourceVersionEquivalenceVerified:false,strictCodecVerified:false,
+    ownershipVerified:false,liveInventoryVerified:false,pricesVerified:false,
+    privateOnly:true,publishable:false,items:Object.freeze(items)
+  });
+}
