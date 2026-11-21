@@ -904,6 +904,56 @@ mod tests {
         assert_eq!(result["total"],2);
     }
     #[test]
+    fn owner_local_db01_names_are_isolated_from_public_release_ingest() {
+        let names=json!({
+            "en":"Current Shoe","fr":"Chaussure actuelle","it":"Scarpa attuale",
+            "de":"Aktueller Schuh","es-ES":"Zapato actual","ja":"現在の靴",
+            "zh-CN":"目前的鞋","pt-BR":"Sapato atual"
+        });
+        let source=json!({
+            "id":"40005160","names":names,"nameStatus":"verified",
+            "category":"Furniture","stateClass":"READ_ONLY",
+            "stateSemantic":"UNLOCK_OR_AVAILABILITY",
+            "worlds":[],"universes":[],"contentIds":[],"releaseIds":[],
+            "relations":[],"sourceRefs":["private-db01-v1262"]
+        });
+        let shard=json!({"schema":DB00_SNAPSHOT_SCHEMA,"offset":0,"count":1,
+            "items":[source]}).to_string();
+        let index=json!({
+            "schema":DB00_RELEASE_SCHEMA,
+            "id":"db01-steam-1-26-2-owner-local-verified","count":1,
+            "target":{"platform":"Steam","gameVersion":"1.26.2","buildId":null},
+            "sources":[{"id":"private-db01-v1262","visibility":"private"}],
+            "releases":[],
+            "shards":[{"file":"items-000.json","offset":0,"count":1,
+                "bytes":shard.len(),"sha256":"a".repeat(64)}]
+        }).to_string();
+        let mut public=CollectionEngine::default();
+        assert!(public.load_db00_index_impl(&index).is_err());
+        let mut local=CollectionEngine::default();
+        local.load_owner_local_db00_index_impl(&index).unwrap();
+        local.append_db00_shard_impl(&shard).unwrap();
+        local.finish_db00_impl().unwrap();
+        let meta:Value=serde_json::from_str(&local.metadata_impl().unwrap()).unwrap();
+        assert_eq!(meta["version"],"1.26.2");
+        assert_eq!(meta["platform"],"Steam");
+        let result:Value=serde_json::from_str(&local.query_impl(
+            r#"{"locale":"ja","category":"Furniture","search":"現在の靴","limit":12}"#
+        ).unwrap()).unwrap();
+        assert_eq!(result["total"],1);
+        assert_eq!(result["items"][0]["label"],"現在の靴");
+        let mut bad_item:Value=serde_json::from_str(&shard).unwrap();
+        bad_item["items"][0]["names"].as_object_mut().unwrap().remove("ja");
+        let bad_shard=bad_item.to_string();
+        let mut bad_index:Value=serde_json::from_str(&index).unwrap();
+        bad_index["shards"][0]["bytes"]=json!(bad_shard.len());
+        let mut rejected=CollectionEngine::default();
+        rejected.load_owner_local_db00_index_impl(&bad_index.to_string()).unwrap();
+        assert_eq!(rejected.append_db00_shard_impl(&bad_shard),
+            Err("COLLECTION_LOCAL_DB01_NAMES_REQUIRED".into()));
+        assert!(rejected.rows.is_empty());
+    }
+    #[test]
     fn canonical_categories_preserve_all_29_entries() {
         assert_eq!(CATEGORY_ORDER.len(),29);
         assert_eq!(CATEGORY_ORDER.iter().collect::<HashSet<_>>().len(),29);
