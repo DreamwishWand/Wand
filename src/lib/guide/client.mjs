@@ -152,6 +152,7 @@ export async function importGuideFolder(files) {
   const index = await importGuideSearch(chosen.file);
   const needed = new Set(index.records.map(row => row.detail.file.split('/').at(-1)));
   /** @type {Record<string, File>} */
+  /** @type {Record<string, File>} */
   const shardFiles = {};
   for (const file of files) {
     const path = typeof file.webkitRelativePath === 'string' && file.webkitRelativePath
@@ -197,16 +198,77 @@ export async function importGuideDetail(index, id, file) {
   return record;
 }
 
+/** Resolve only source-localized descriptions, never fabricate quest instructions. */
+export function guideSourceText(definition, locale = 'ja') {
+  assert(GUIDE_LOCALES.includes(locale), 'unsupported detail locale');
+  if (!isObj(definition) || !isObj(definition.plainText)) return {text:'', locale:null};
+  const sourceLocale = typeof definition.plainText[locale] === 'string' && definition.plainText[locale].trim()
+    ? locale : typeof definition.plainText.en === 'string' && definition.plainText.en.trim() ? 'en' : null;
+  if (!sourceLocale) return {text:'', locale:null};
+  // Original plainText already strips <nobr> and soft hyphens; some game UI
+  // markup survives. Render only literal text (Svelte escapes output).
+  const text = definition.plainText[sourceLocale]
+    .replace(/<br\s*\/?\s*>/gi, '\n')
+    .replace(/<\/?(?:nobr|smallcaps|nbsp)\s*>/gi, '')
+    .replace(/&nbsp;|\u00a0/gi, ' ')
+    .replace(/[\u00ad\u200b-\u200d\ufeff]/g, '')
+    .trim();
+  return {text, locale:sourceLocale};
+}
+
+/** Show *source-defined candidates*, never interpret alternative items as all required. */
+export function guideItemTargets(targets) {
+  if (!isObj(targets) || targets.schema !== 'wand.db03.mission-items@1') {
+    return {configuredQuantity:null, candidates:[], totalCandidates:0};
+  }
+  const amount = targets.amount;
+  const configuredQuantity = isObj(amount) && amount.kind === 'value' &&
+    Number.isSafeInteger(amount.value) && amount.value >= 0 ? amount.value : null;
+  const candidates = [];
+  const seen = new Set();
+  for (const selector of Array.isArray(targets.selectors) ? targets.selectors : []) {
+    for (const item of Array.isArray(selector?.itemCandidates) ? selector.itemCandidates : []) {
+      if (!isId(item?.id)) continue;
+      const role = item.role === 'direct' ? 'direct' : 'alternative';
+      const key = item.id + ':' + role;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (candidates.length < 32) candidates.push({id:item.id, role});
+    }
+  }
+  return {configuredQuantity, candidates, totalCandidates:seen.size};
+}
+
+/** Faithful, human-readable steps with individual original objective descriptions. */
 export function detailStepRows(record, locale = 'ja') {
   assert(GUIDE_LOCALES.includes(locale), 'unsupported detail locale');
   const steps = record?.structured?.stepsDetailed;
   if (!Array.isArray(steps)) return [];
   return steps.map((step, i) => {
     const subs = Array.isArray(step.subSteps) ? step.subSteps : [];
-    const descriptions = step.descriptions ?? {};
-    const text = Object.values(descriptions).flatMap(d => d?.plainText?.[locale] || d?.plainText?.en || []).find(Boolean) || '';
-    return {id:String(step.stepId ?? i+1), title:String(step.stepName ?? `Step ${i+1}`), text,
-      objectives: subs.flatMap(sub => Array.isArray(sub.objectives) ? sub.objectives.map(o =>
-        ({kind:String(o.type ?? 'unknown'), id:String(o.objectiveId ?? '')})) : [])};
+    const description = guideSourceText(step.descriptions?.stepDescription ??
+      step.descriptions?.stepDescriptionMobile, locale);
+    const story = guideSourceText(step.descriptions?.storyDescription, locale);
+    const objectives = [];
+    for (const [subIndex, sub] of subs.entries()) {
+      const subText = guideSourceText(sub.descriptions?.stepDescription ??
+        sub.descriptions?.stepDescriptionMobile, locale);
+      const nativeObjectives = Array.isArray(sub.objectives) ? sub.objectives : [];
+      for (const [objectiveIndex, objective] of nativeObjectives.entries()) {
+        const source = guideSourceText(objective.descriptions?.stepDescription ??
+          objective.descriptions?.stepDescriptionMobile, locale);
+        const inherited = source.text ? source : objectiveIndex === 0 ? subText : {text:'',locale:null};
+        objectives.push({
+          kind:String(objective.type ?? 'unknown'), id:String(objective.objectiveId ?? ''),
+          text:inherited.text, textSource:inherited.locale,
+          descriptionLevel:source.text ? 'objective' : inherited.text ? 'subStep' : null,
+          subStepIndex:subIndex,
+          ...guideItemTargets(objective.itemTargets)
+        });
+      }
+    }
+    return {id:String(step.stepId ?? i+1), title:String(step.stepName ?? `Step ${i+1}`),
+      text:description.text, textSource:description.locale,
+      storyText:story.text, storyTextSource:story.locale, objectives};
   });
 }
