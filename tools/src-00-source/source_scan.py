@@ -157,6 +157,40 @@ def read_steam_build_id(root, paths, errors):
     }
 
 
+VERSION_PATTERN = re.compile(r"(?<![0-9.])(?:v)?([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,4}(?:\.[0-9]{1,4})?)(?![0-9.])", re.I)
+
+
+def read_game_version(root, paths, supplied, errors):
+    evidence = []
+    for relative in paths:
+        if relative.lower().rsplit("/", 1)[-1] != "fullversion.txt":
+            continue
+        file = root / Path(relative)
+        try:
+            if file.stat().st_size > 4096:
+                continue
+            raw = file.read_bytes()
+            if b"\x00" in raw:
+                data = raw.decode("utf-16", errors="replace")
+            else:
+                data = raw.decode("utf-8-sig", errors="replace")
+            matches = sorted(set(VERSION_PATTERN.findall(data)))
+            if len(matches) == 1:
+                evidence.append({"source": relative, "value": matches[0], "sha256": hashlib.sha256(raw).hexdigest(), "type": "fullversion_text"})
+            elif len(matches) > 1:
+                errors.append({"operation": "read_game_version", "path": relative, "reason": "Multiple candidate versions in the same file"})
+        except OSError as exc:
+            errors.append({"operation": "read_game_version", "path": relative, "reason": type(exc).__name__})
+    values = {entry["value"] for entry in evidence}
+    versions_have_different_sources = len({entry["sha256"] for entry in evidence}) > 1
+    if len(values) > 1 or versions_have_different_sources or (len(values) == 1 and supplied and supplied not in values):
+        errors.append({"operation": "read_game_version", "reason": "Conflicting game version evidence"})
+        return {"value": None, "status": "conflict", "evidence": evidence[:SAMPLES]}
+    if len(values) == 1:
+        return {"value": next(iter(values)), "status": "verified_from_file", "evidence": evidence[:SAMPLES]}
+    return {"value": supplied, "status": "user_provided" if supplied else "unconfirmed", "evidence": []}
+
+
 def hash_file(path):
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -367,7 +401,11 @@ def main():
         errors.append({"operation": "identify_build_id", "reason": "Multiple distinct build identifiers found in one input root"})
     if len(files) != len(entries):
         errors.append({"operation": "completeness", "reason": "One or more discovered files could not be hashed"})
-    version = {"value": args.version if args.version else None, "status": "user_provided" if args.version else "unconfirmed", "evidence": []}
+    version = read_game_version(root, paths, args.version, errors)
+    hashed_files = {entry["path"]: entry["sha256"] for entry in files}
+    for evidence in version["evidence"]:
+        if hashed_files.get(evidence["source"]) != evidence["sha256"]:
+            errors.append({"operation": "read_game_version", "path": evidence["source"], "reason": "FileChangedAfterHash"})
     complete = not errors and not conflicts and bool(files)
     manifest = {
         "schema_version": SCHEMA,
