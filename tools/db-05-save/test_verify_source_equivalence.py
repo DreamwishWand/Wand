@@ -143,5 +143,31 @@ class ArchivedNativeSourceTests(unittest.TestCase):
                 inspect_source_equivalence(path,evidence,bad)
 
 
+    def test_checked_in_real_archive_evidence_is_consistent_with_all_226_native_fields(self):
+        root=Path(__file__).resolve().parents[2] / 'data/ddv/save'
+        evidence=json.loads((root/'native1262-dump-equivalence.v1.json').read_text(encoding='utf-8'))
+        native=[json.loads((root/name).read_text(encoding='utf-8')) for name in
+                ('native1261-observed-fields.v1.json',
+                 'native1261-nested-fields.v1.json',
+                 'native1261-deep-fields.v1.json')]
+        expected='0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08'
+        self.assertEqual(evidence['schema'],EVIDENCE_SCHEMA)
+        self.assertEqual(evidence['baseline']['sha256'],expected)
+        self.assertEqual(evidence['candidate']['sha256'],expected)
+        self.assertEqual(evidence['baseline']['bytes'],89453137)
+        self.assertEqual(evidence['candidate']['bytes'],89453137)
+        self.assertTrue(evidence['comparison']['sourceContentsEqual'])
+        self.assertEqual([len(x['fields']) for x in native],[85,58,83])
+        self.assertEqual(sum(len(x['fields']) for x in native),226)
+        self.assertEqual(evidence['comparison']['registeredNativeFieldTemplates'],226)
+        self.assertEqual(evidence['comparison']['legacyAndOtherKnownTemplates'],82)
+        self.assertEqual(evidence['comparison']['totalKnownTemplates'],308)
+        self.assertTrue(all(x['source']['sha256']==expected for x in native))
+        self.assertFalse(evidence['scope']['currentExecutableBytesCompared'])
+        self.assertFalse(evidence['scope']['realSaveRoundTripVerified'])
+        self.assertFalse(evidence['scope']['writerAuthorized'])
+        self.assertFalse(evidence['scope']['completeSchemaProven'])
+
+
 if __name__=='__main__':
     unittest.main()
