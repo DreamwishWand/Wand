@@ -47,8 +47,10 @@ def _capstone():
 def disassemble_private_windows(native_pe_report, *, engine=None):
     """Decode a contiguous prefix of each bounded original PE byte window."""
     source = validate_private_report(native_pe_report)
-    if source["status"] != "version_asserted_il2cpp_rva_byte_windows_captured":
-        raise ValueError("version-matched native method windows required")
+    if source["status"] not in (
+            "version_asserted_il2cpp_rva_byte_windows_captured",
+            "original_metadata_v31_native_method_windows_captured"):
+        raise ValueError("original-source-correlated native method windows required")
     cs = engine if engine is not None else _capstone()
     decoder = cs.Cs(cs.CS_ARCH_X86, cs.CS_MODE_64)
     decoder.detail = True
