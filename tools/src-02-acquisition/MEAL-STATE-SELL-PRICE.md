@@ -78,6 +78,47 @@ These are distinct concepts:
 All inputs are **local only**. No public site upload, user-save writer,
 payment-price assertion or game-original publication is authorized.
 
+
+## Independently authenticated native star-price settings (Steam v1.26.2)
+
+The exact original `ddv_Data/StreamingAssets/protoDb.bin` (1,335,720 bytes, independent SHA-256
+`dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623`)
+contains top-level entry `Cooking` (#6, zero-based) with native envelope
+`Definitions.Activities.CookingData`, exact body SHA-256
+`c7f88137699c319dbdcbf3d8a006b0db50399d48683143b5e75ac908365bc1c2`.
+The native `RecipeStarResults` field #5 contains **exactly five source-configured star tiers**.
+
+The read-only `src/lib/acquisition/private-cooking-star-settings.mjs` loader authenticates
+**both** original SHA-256 fingerprints before decoding the five original rows.
+It preserves the `Star`, `MinDiscoveredInfoPercentage`, `MaxDiscoveredInfoPercentage`,
+`SellPriceIngredientPercentage` and **separate**
+`ManaRecoveredIngredientPercentage` fields. Missing serialized percentage values remain
+`null` with an explicit presence flag, not fabricated zeros. Game configuration row
+content is returned **only when original private bytes are supplied at runtime**;
+the public repository contains neither the original binary nor the row catalog.
+
+`loadPrivateMealPricingView` supports an optional `protoDbBytes` argument.
+Only when the exact original file is provided does the view set
+`nativeStarSettingsVerified:true` and expose `getSourceStarResult(star)`.
+Without that file, `nativeStarSettingsVerified:false` and the star query returns `null`;
+it does not fill in guessed percentages. **These are star-configuration source values,
+not a proven mathematical formula for the final cooked meal price.** Rounding, defaults,
+fallback ingredient selection and total value operations still require native IL2CPP
+method-body evidence.
+
+Actual local original-byte validation (Node 22.16.0) of the three original
+source releases, including a full 618-meal JS inspection, returned
+`EXACT_PRIVATE_MEAL_STATE_JS_PASS` and `authenticatedNativeStarResults:5`.
+The exact GitHub source blobs were checked against local runtime files.
+Reproduce locally, without adding original source files to the public checkout:
+
+```sh
+node tools/src-02-acquisition/smoke_private_meal_state_runtime.mjs \
+  --r5-zip /private/SRC-02/db02-private-src02-r5-condition-corrected.zip \
+  --price-zip /private/SRC-02/db02-steam-v1.26.2-private-protodb-shops-prices.zip \
+  --protodb /private/game-source/Steam/v1.26.2/ddv_Data/StreamingAssets/protoDb.bin
+```
+
 ## Actual exact-source runtime smoke
 
 Use the two owner-private releases. Example:

@@ -47,6 +47,19 @@ py -3 -m unittest discover -s tools/src-02-acquisition -p "test_*.py" -v
 node --test tests/acquisition*.test.mjs
 ```
 
+## Original native cooking star settings (private, source-pinned)
+
+`private-cooking-star-settings.mjs` authenticates the exact Steam v1.26.2
+`protoDb.bin` and `Definitions.Activities.CookingData` wire bytes before
+exposing the five native `RecipeStarResults` and their
+`SellPriceIngredientPercentage` settings. The existing private
+`loadPrivateMealPricingView` supports optional `protoDbBytes` input and only
+returns verified star values when this third independently checked original is
+provided. **No computed meal sell price, rounding rule or native method
+implementation is implied.** See
+[MEAL-STATE-SELL-PRICE.md](MEAL-STATE-SELL-PRICE.md) and private local smoke
+`smoke_private_meal_state_runtime.mjs --r5-zip ... --price-zip ... --protodb ...`.
+
 ## Ingredient-dependent meal sell-price evidence (Steam v1.26.2)
 
 See [MEAL-STATE-SELL-PRICE.md](MEAL-STATE-SELL-PRICE.md). Native `ItemState.MealData.IngredientsUsed` records per-instance ingredients and `MealItemData.GetSellPrice(ItemState,...)` / `TotalIngredientsSellPrice(...,ingredientsUsed)` are state-aware sell-price methods. The exact r5 source has **625 cooking recipes → 618 different Meal Item IDs**; `Cooking_Meal_PriceDatabase` has **312 configured purchase rows but zero static sell rows**. This is distinct from the multiple source price-database keys observed across stalls. `meal-price-evidence.mjs` now decodes and preserves ingredient composition in a read-only evidence API, never substitutes purchase prices for sell values and never guesses numeric meal sale prices. `smoke_private_meal_state_runtime.mjs` authenticates private source releases and verifies all 618 outputs using synthetic item states.

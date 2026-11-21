@@ -1,5 +1,6 @@
 /** Per-instance meal ingredients and state-dependent sell-price evidence. */
 import type {StaticItemPriceDefinition} from './private-shop-prices.mjs';
+import type {VerifiedPrivateCookingStarSettings,NativeCookingStarResult} from './private-cooking-star-settings.mjs';
 export declare const DB02_MEAL_PRICE_EVIDENCE_CONTRACT:
   'wand.db02.meal-price-evidence@1';
 export interface MealIngredientAmount {
@@ -63,6 +64,9 @@ export interface PrivateMealPricingView {
   readonly currentOffersVerified:false;
   readonly realizedSellPricesVerified:false;
   readonly nativePriceFormulaEvaluated:false;
+  readonly nativeStarSettingsVerified:boolean;
+  readonly nativeCookingStarSettings:VerifiedPrivateCookingStarSettings|null;
+  getSourceStarResult(star:number):NativeCookingStarResult|null;
   readonly publishable:false;
   readonly writable:false;
   inspect(mealItemId:number,itemStateBytes:Uint8Array):PrivateMealPriceEvidence;
@@ -71,6 +75,7 @@ export declare function loadPrivateMealPricingView(input:{
   acquisitionArchiveBytes:Uint8Array;
   priceManifestBytes:Uint8Array|ArrayBuffer;
   priceFiles:Readonly<Record<string,Uint8Array|ArrayBuffer>>;
+  protoDbBytes?:Uint8Array;
 }):Promise<PrivateMealPricingView>;
 export declare function compareMealIngredientStates(
   left:PrivateMealPriceEvidence,right:PrivateMealPriceEvidence
