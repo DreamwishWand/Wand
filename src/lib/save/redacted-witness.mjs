@@ -1,6 +1,6 @@
 // DB-05 read-only bridge: consume ONLY sanitized SRC-06 -> DB-05 ingest witnesses.
 // Never accept raw save JSON, raw SRC-06 reports, personal ID keys, or unknown paths.
-import { getLegacySaveFields, getCommonSaveFields, getNativeSaveFields, getNestedSaveFields } from './registry.mjs';
+import { getLegacySaveFields, getCommonSaveFields, getNativeSaveFields, getNestedSaveFields , getDeepSaveFields } from './registry.mjs';
 
 export const REDACTED_SAVE_WITNESS_CONTRACT = 'wand.db05.redacted-witness-comparison@1';
 const PUBLIC_ROOT_PATHS = Object.freeze(['/GameInfo', '/GameInfo/Version', '/Player', '/World']);
@@ -11,7 +11,8 @@ const KNOWN_FIELDS = new Map([
   ...getLegacySaveFields().fields.map(field => [field.path, field.domain]),
   ...getCommonSaveFields().fields.map(field => [field.path, field.domain]),
   ...getNativeSaveFields().fields.map(field => [field.path, field.domain]),
-  ...getNestedSaveFields().fields.map(field => [field.path, field.domain])
+  ...getNestedSaveFields().fields.map(field => [field.path, field.domain]),
+  ...getDeepSaveFields().fields.map(field => [field.path, field.domain])
 ]);
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const sorted = list => [...list].sort();
