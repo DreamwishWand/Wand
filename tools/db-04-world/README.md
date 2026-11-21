@@ -64,6 +64,43 @@ The package is explicitly partial unless verified complete source coverage
 has been established. A successful command is not proof of gameplay collision
 or placeability and does not certify the machine-code decoder.
 
+## Mandatory native RVA corroboration against PE64 unwind starts
+
+**A matching Steam version string does not prove that `dump.cs` RVAs
+correspond to the original `GameAssembly.dll`.** The native PE64 AMD64
+exception directory (`.pdata` / `RUNTIME_FUNCTION`) provides original
+function unwind start/end ranges. The new `pe_unwind.py` independently
+checks the source PE exception directory and every targeted IL2CPP method:
+
+```bash
+python tools/db-04-world/pe_unwind.py \
+  --game-root "/private/Steam-game" \
+  --dump-cs "/private/Il2CppDump/dump.cs" \
+  --dump-game-version "1.26.1"
+```
+
+An RVA is accepted for a named native byte window **only if it equals the
+start of one original PE64 unwind function**. An RVA inside another unwind
+interval, missing from the exception table, or disagreeing with the source
+DLL causes a clear failure. The summary contains only bounded RVA/method
+diagnostics and SHA-256 provenance. `run.ps1` performs the same check as
+a **pre-extraction preflight** when a `dump.cs` is provided; mismatched
+native evidence never creates a new source snapshot. Direct
+`native_pe_evidence.py` capture enforces the same gate rather than
+bypassing it.
+
+Each accepted private native method window is additionally bounded by
+the original unwind end RVA, so the next native function is not read as
+part of the purported GridData method. The source report records the
+unwind table digest and per-window corroborated unwind range.
+
+This is a **necessary entry-boundary check, not sufficient symbol proof**.
+PE unwind metadata may not describe leaf methods with no unwind entry,
+and exact start equality does not authenticate which managed method owns
+that native address. Such cases remain unresolved; do not assign an
+unverified `dump.cs` RVA, disassembly or reconstructed index/rotation
+rule to the game.
+
 ## Native GameAssembly PE64 source evidence (private, version-gated)
 
 The Windows one-shot `run.ps1` now optionally captures original local
