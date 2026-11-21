@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { ITEM_LOCALES } from './records.mjs';
-import { DB01_CANONICAL_SCHEMA, DB01_PARTIAL_SCHEMA, validateDb01Manifest,
+import { DB01_CANONICAL_SCHEMA, DB01_PARTIAL_SCHEMA, DB01_RECOVERED_SCHEMA, validateDb01Manifest,
   createPrivateItemCatalog, openPrivateItemCatalog } from './catalog.mjs';
 import { DB01_DB00_JOIN_CONTRACT, createDb01Db00Patch } from './db00-join.mjs';
 import { applyPatch, SNAPSHOT_SCHEMA } from '../game-db/model.mjs';
@@ -194,4 +194,98 @@ test('DB-00 applies private same-source candidate patch without publishing', asy
   assert.equal(next.items.length,1);
   assert.deepEqual(next.items[0].names,{ja:'公式名称'});
   assert.equal(next.items[0].category,null);
+});
+
+
+const RECOVERED_CATEGORIES = [
+  'ActivityItem', 'Clothing', 'Furniture', 'Trimming',
+  'ActivityData', 'AvatarFeature', 'BoardGame', 'Building', 'Character',
+  'CollectionSet', 'Companion', 'ConditionalEvent', 'Currency', 'Dialogue',
+  'Display', 'DutyAch', 'Environment', 'Formula', 'Ftue', 'LootTable',
+  'Makeup', 'MemoryShard', 'Mission', 'MountGear', 'PhotoMode',
+  'PointOfInterest', 'Preference', 'Profession', 'RecurringEvent', 'Scene',
+  'Set', 'Skin', 'Story', 'Tag', 'Tool', 'TouchOfMagic', 'Upgrade',
+];
+
+function recoveredSyntheticFixture() {
+  const rows = Array.from({ length: 506 }, (_, i) => {
+    const cat = RECOVERED_CATEGORIES[i % RECOVERED_CATEGORIES.length];
+    const rec = row(110000000 + i, cat, ['ActivityItem', 'Clothing', 'Furniture', 'Trimming'].includes(cat)
+      ? 'item' : 'definition_unclassified');
+    for (const locale of i < 241 ? ITEM_LOCALES : ['en']) {
+      rec.names[locale] = `Synthetic-${i}-${locale}`;
+      rec.verification.names[locale] = 'exact_locdb_join';
+    }
+    return rec;
+  });
+  const output = new TextEncoder().encode(rows.map(v => JSON.stringify(v)).join('\n')+'\n');
+  const counts = Object.fromEntries(RECOVERED_CATEGORIES.map(cat => [cat,
+    rows.filter(v => v.nativeCategory === cat).length]));
+  const same = [...RECOVERED_CATEGORIES.map(cat => cat + '.json'), 'ItemCondition.json'];
+  const localeCounts = Object.fromEntries(ITEM_LOCALES.map(loc => [loc,
+    rows.filter(v => v.names[loc] !== null).length]));
+  const manifest = {
+    schema: DB01_RECOVERED_SCHEMA, platform: 'Steam', gameVersion: '1.26.2',
+    status: 'private_38_of_39_full_native_source_evidence',
+    publicationStatus: 'PRIVATE_ONLY_NO_PUBLIC_ITEMS',
+    count: rows.length, byNativeCategory: counts,
+    catalogDomains: {
+      collectionItem: rows.filter(v => v.catalogDomain === 'item').length,
+      unclassifiedDefinition: rows.filter(v => v.catalogDomain !== 'item').length,
+    },
+    fullCorpusParsed: false, historicalReferenceJoined: false,
+    sourceFilesFullyShaVerified: 38, sourceFilesTotal: 39,
+    unresolvedCategories: ['Condition'],
+    outputSha256: { 'items.jsonl': createHash('sha256').update(output).digest('hex') },
+    verifiedCurrentLocalization: {
+      fullCurrentLocaleMemberCount: 53,
+      currentEightLocaleNamedDefinitions: 241,
+      currentAnyLocaleNamedDefinitions: 506,
+      currentExactNamesByLocale: localeCounts,
+    },
+    sources: [{ schema: 'wand.src01.steam-native@1', manifestSha256: sha('d'),
+      verifiedCategories: RECOVERED_CATEGORIES.slice(0, 4) },
+    { schema: 'wand.src01.extended@1', manifestSha256: sha('f'),
+      itemsSha256: sha('a'), probeSha256: '07fd8ebb1c528f852a0e00ce54cf4964f93931b9155bc9e2aab1bd857986d00a',
+      fullSourceBytesShaVerifiedCategories: [...RECOVERED_CATEGORIES.slice(4).map(cat => cat+'.json'),
+        'ItemCondition.json'],
+      reuseEvidence: {
+        schema: 'wand.src01.identical-binary-reuse@1',
+        olderBaselineVersion: '1.26.1', currentTargetVersion: '1.26.2',
+        olderFullVersionSha256: 'a59c942d093c60740a447efb3bede638d3a3ee60c00ca01f898500413d670401',
+        categoryFilesNotReusable: ['Condition.json'],
+        sameFullBytesSha256Files: same,
+      },
+    }],
+  };
+  return { rows, manifest, output };
+}
+
+test('source-recovered manifest opens private 38/39 coverage and checks all named-locale totals', async () => {
+  const { manifest, output } = recoveredSyntheticFixture();
+  const catalog = await openPrivateItemCatalog(manifest, output);
+  assert.equal(catalog.source.manifestSchema, DB01_RECOVERED_SCHEMA);
+  assert.equal(catalog.source.dataSha256Verified, true);
+  assert.equal(catalog.source.fullCorpusParsed, false);
+  assert.equal(catalog.currentNativeItems().length, manifest.catalogDomains.collectionItem);
+  assert.equal(catalog.unclassifiedDefinitions().length, manifest.catalogDomains.unclassifiedDefinition);
+  assert.equal(catalog.getDisplayItem(110000000, 'ja').displayName, 'Synthetic-0-ja');
+  assert.equal(catalog.getDisplayItem(110000260, 'ja').displayName, null);
+  assert.equal(catalog.search('Synthetic-260-en', { includeUnclassified: true }).length, 1);
+});
+
+test('source-recovered manifest rejects changed source boundary and forged locale completeness', async () => {
+  const { manifest, output } = recoveredSyntheticFixture();
+  for (const alter of [
+    m => { m.gameVersion = '1.26.3'; },
+    m => { m.unresolvedCategories = []; },
+    m => { m.sources[1].reuseEvidence.sameFullBytesSha256Files.pop(); },
+    m => { m.sources[1].fullSourceBytesShaVerifiedCategories = ['ItemCondition.json']; },
+    m => { m.verifiedCurrentLocalization.currentEightLocaleNamedDefinitions = 240; },
+    m => { m.verifiedCurrentLocalization.currentExactNamesByLocale.ja = 242; },
+    m => { m.publicationStatus = 'public'; },
+  ]) {
+    const tampered = structuredClone(manifest); alter(tampered);
+    await assert.rejects(openPrivateItemCatalog(tampered, output), /DB01_/);
+  }
 });

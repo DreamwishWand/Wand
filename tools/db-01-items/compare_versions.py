@@ -18,6 +18,9 @@ SCHEMA = 'wand.db01.version-diff@1'
 MANIFEST_SCHEMA = 'wand.db01.version-diff-manifest@1'
 CANONICAL = 'wand.db01.items@1'
 PARTIAL = 'wand.db01.partial-manifest@2'
+RECOVERED = 'wand.db01.partial-manifest@3'
+RECOVERED_TARGET_PROBE_SHA = '07fd8ebb1c528f852a0e00ce54cf4964f93931b9155bc9e2aab1bd857986d00a'
+RECOVERED_OLDER_VERSION_SHA = 'a59c942d093c60740a447efb3bede638d3a3ee60c00ca01f898500413d670401'
 CATEGORIES = frozenset(('ActivityItem', 'Furniture', 'Clothing', 'Trimming'))
 LOCALES = ('en', 'fr', 'it', 'de', 'es-ES', 'ja', 'zh-CN', 'pt-BR')
 SHA = re.compile(r'[a-f0-9]{64}\Z')
@@ -66,7 +69,7 @@ def write_json(path, payload):
 
 def verified_categories(manifest):
     schema = manifest.get('schema')
-    check(schema in (CANONICAL, PARTIAL), 'UNSUPPORTED_INPUT_SCHEMA')
+    check(schema in (CANONICAL, PARTIAL, RECOVERED), 'UNSUPPORTED_INPUT_SCHEMA')
     check(manifest.get('platform') == 'Steam' and
           isinstance(manifest.get('gameVersion'), str) and
           VERSION.fullmatch(manifest['gameVersion']), 'TARGET_NOT_STEAM_SEMVER')
@@ -92,8 +95,7 @@ def verified_categories(manifest):
               'CANONICAL_DOMAIN_COUNTS_REQUIRED')
     else:
         sources = manifest.get('sources')
-        check(manifest.get('status') == 'partial_verified_native_plus_six_full_probe_classes' and
-              manifest.get('fullCorpusParsed') is False and isinstance(sources, list) and
+        check(manifest.get('fullCorpusParsed') is False and isinstance(sources, list) and
               len(sources) == 2 and sources[0].get('schema') == 'wand.src01.steam-native@1' and
               sources[1].get('schema') == 'wand.src01.extended@1' and
               SHA.fullmatch(sources[0].get('manifestSha256', '')) and
@@ -104,9 +106,38 @@ def verified_categories(manifest):
         check(isinstance(native, list) and set(native) == CATEGORIES and
               isinstance(extra, list) and len(set(extra)) == len(extra) and
               all(isinstance(filename, str) and filename.endswith('.json') and
-                  CATEGORY.fullmatch(filename[:-5]) for filename in extra) and
-              set(counts) == set(native) | {name[:-5] for name in extra},
+                  CATEGORY.fullmatch(filename[:-5]) for filename in extra),
               'PARTIAL_SOURCE_CATEGORY_MISMATCH')
+        if schema == PARTIAL:
+            check(manifest.get('status') == 'partial_verified_native_plus_six_full_probe_classes' and
+                  set(counts) == set(native) | {name[:-5] for name in extra},
+                  'PARTIAL_SOURCE_CATEGORY_MISMATCH')
+        else:
+            proof = sources[1].get('reuseEvidence', {})
+            matched = proof.get('sameFullBytesSha256Files', [])
+            check(manifest['gameVersion'] == '1.26.2' and
+                  manifest.get('status') == 'private_38_of_39_full_native_source_evidence' and
+                  manifest.get('historicalReferenceJoined') is False and
+                  manifest.get('sourceFilesFullyShaVerified') == 38 and
+                  manifest.get('sourceFilesTotal') == 39 and
+                  manifest.get('unresolvedCategories') == ['Condition'] and
+                  proof.get('schema') == 'wand.src01.identical-binary-reuse@1' and
+                  proof.get('olderBaselineVersion') == '1.26.1' and
+                  proof.get('currentTargetVersion') == manifest['gameVersion'] and
+                  proof.get('olderFullVersionSha256') == RECOVERED_OLDER_VERSION_SHA and
+                  sources[1].get('probeSha256') == RECOVERED_TARGET_PROBE_SHA and
+                  proof.get('categoryFilesNotReusable') == ['Condition.json'] and
+                  isinstance(matched, list) and len(matched) == 38 and
+                  len(set(matched)) == 38 and
+                  len(extra) == 34 and 'ItemCondition.json' in extra and
+                  set(matched) == {name+'.json' for name in native} | set(extra) and
+                  set(counts).issubset(set(native) | {name[:-5] for name in extra}) and
+                  set(counts).issuperset(native) and
+                  all(isinstance(value, int) and value > 0 for value in counts.values()) and
+                  manifest.get('verifiedCurrentLocalization', {}).get('fullCurrentLocaleMemberCount') == 53 and
+                  manifest.get('verifiedCurrentLocalization', {}).get('currentEightLocaleNamedDefinitions') == 241 and
+                  manifest.get('verifiedCurrentLocalization', {}).get('currentAnyLocaleNamedDefinitions') == 506,
+                  'RECOVERED_VERSION_PROVENANCE_REQUIRED')
     # Coverage is *category-scoped*. Do not convert it to game-wide completeness.
     return counts, total
 
@@ -184,6 +215,12 @@ def load_private_version(folder):
         check(manifest.get('catalogDomains', {}).get('collectionItem') == count_item and
               manifest.get('catalogDomains', {}).get('unclassifiedDefinition') == count_extra,
               'PARTIAL_DOMAIN_COUNT_MISMATCH')
+        if manifest['schema'] == RECOVERED:
+            names = manifest['verifiedCurrentLocalization']['currentExactNamesByLocale']
+            check(isinstance(names, dict) and set(names) == set(LOCALES) and
+                  all(type(names[locale]) is int and names[locale] == sum(
+                      bool(row['names'][locale]) for row in rows.values())
+                      for locale in LOCALES), 'RECOVERED_LOCALE_COUNT_MISMATCH')
     return {
         'manifest': manifest, 'manifestSha256': sha(manifest_path),
         'dataSha256': digest, 'categories': category_counts,
