@@ -110,19 +110,19 @@ def checked_grid(grid, *, source_game_version="1.26.1"):
         if (len(data) != grid.get("nativeCompactedByteCount") or
                 hashlib.sha256(data).hexdigest() != grid.get("nativeCompactedSha256")):
             raise ValueError("grid packed-byte integrity mismatch")
+        computed = describe_native_packing(
+            x, y, grid.get("nativeFloorTypePalette"), data,
+            source_game_version=source_game_version)
         declared = grid.get("terrainDecoding")
         if declared is not None:
             if not isinstance(declared, dict):
                 raise ValueError("invalid terrain decoding evidence")
-            computed = describe_native_packing(
-                x, y, grid.get("nativeFloorTypePalette"), data,
-                source_game_version=source_game_version)
             if declared != computed:
                 raise ValueError("terrain decoding evidence mismatches native bytes")
-            if ("nativeFloorIndexToLocalXYCorroborated" in grid and
-                    grid["nativeFloorIndexToLocalXYCorroborated"] is not
-                    computed["decoded"]):
-                raise ValueError("native terrain index proof flag mismatches source version")
+        if ("nativeFloorIndexToLocalXYCorroborated" in grid and
+                grid["nativeFloorIndexToLocalXYCorroborated"] is not
+                computed["decoded"]):
+            raise ValueError("native terrain index proof flag mismatches source version")
         if "nativePaletteIndexCellCounts" in grid:
             counted = (count_packed_palette_indices(
                 x, y, grid.get("nativeFloorTypePalette"), data)
