@@ -62,6 +62,7 @@ class AcquisitionTest(unittest.TestCase):
         tables, paths = src02.parse_loot(blob)
         self.assertEqual(tables[0]['groups'][0]['weight'], 90)
         self.assertFalse(paths[0]['contextVerified'])
+        self.assertEqual(paths[0]['pathId'], 'loot:2090000000:0:0')
         self.assertEqual(paths[0]['itemId'], 30200045)
 
     def test_rejects_corruption(self):
