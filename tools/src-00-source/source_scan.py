@@ -402,6 +402,10 @@ def main():
     if len(files) != len(entries):
         errors.append({"operation": "completeness", "reason": "One or more discovered files could not be hashed"})
     version = read_game_version(root, paths, args.version, errors)
+    hashed_files = {entry["path"]: entry["sha256"] for entry in files}
+    for evidence in version["evidence"]:
+        if hashed_files.get(evidence["source"]) != evidence["sha256"]:
+            errors.append({"operation": "read_game_version", "path": evidence["source"], "reason": "FileChangedAfterHash"})
     complete = not errors and not conflicts and bool(files)
     manifest = {
         "schema_version": SCHEMA,
