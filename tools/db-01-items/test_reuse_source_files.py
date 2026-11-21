@@ -72,6 +72,26 @@ class PrivateSourceReuseTests(unittest.TestCase):
         self.assertEqual(second['status'],'reused')
         self.assertEqual(Path(second['report']).read_bytes(),Path(first['report']).read_bytes())
 
+    def test_copied_current_hash_cache_survives_missing_prior_archive_file(self):
+        first=reuse.run(self.target,self.prior,self.out)
+        (self.prior/self.a).unlink()
+        second=reuse.run(self.target,self.prior,self.out)
+        self.assertEqual(second['status'],'reused')
+        self.assertEqual(second['cachedFiles'],2)
+        self.assertEqual(second['reusedFiles'],2)
+        self.assertEqual(second['needsCurrentSource'],1)
+        self.assertEqual(Path(first['workspace']),Path(second['workspace']))
+
+    def test_late_invalid_scan_row_fails_without_partial_copies(self):
+        data=self.expected[self.a]
+        safe={'path':self.a,'size':len(data),'sha256':sha(data)}
+        unsafe={'path':'ddv_Data/StreamingAssets/itemlist/../../escape',
+                'size':1,'sha256':sha(b'x')}
+        self.write_scan(records=[safe,unsafe])
+        with self.assertRaisesRegex(ValueError,'BAD_RELATIVE_PATH'):
+            reuse.run(self.target,self.prior,self.out)
+        self.assertFalse(self.out.exists())
+
     def test_wrong_trusted_scan_pin_fails_before_creating_private_outputs(self):
         with self.assertRaisesRegex(ValueError,'TARGET_SCAN_SHA_MISMATCH'):
             reuse.run(self.target,self.prior,self.out,expected_scan_sha256='0'*64)
