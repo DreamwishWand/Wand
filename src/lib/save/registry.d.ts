@@ -1,3 +1,5 @@
+export {getEditorReadset,inspectEditorReadset,SAVE_EDITOR_READSET_CONTRACT} from './editor-readset.mjs';
+export type {EditorReadsetDomain,EditorReadsetManifest,EditorReadsetRule,EditorReadsetFieldObservation,EditorReadsetDomainObservation,EditorReadsetObservation} from './editor-readset.mjs';
 export {createCleanSaveBaseline,getCleanSaveBaselineRules,SAVE_CLEAN_BASELINE_CONTRACT} from './clean-baseline.mjs';
 export type {SaveCleanBaseline,SaveCleanBaselineReference,SaveCleanBaselineComparison,SaveCleanFieldObservation} from './clean-baseline.mjs';
 export {createSaveDutyMilestoneBridge, getSaveDutyMilestoneWireContract, SAVE_DUTY_MILESTONE_JOIN_CONTRACT} from './duty-milestones.mjs';
