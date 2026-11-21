@@ -432,8 +432,8 @@ lookup tables**, `_cos` and `_sin`, scaled by **100**. The source
 metadata's two 64-byte static-array initializer fields have exact SHA-256
 names `33E08F575894FB4DC07B1049D58D185ED5B751ABFA51420694C73EC2742B13DE`
 and `5B6E0D7F418632DFDBED128C7F41C18AC7EEC9BA8785F67EAC3F3582CDA2B719`.
-The original DLL and metadata hashes and all five function-body hashes
-are independently checked by `gridarea_rotation.py` and **never
+The original DLL and metadata hashes and all seven pinned function-body hashes
+(including 16-way size selection) are independently checked by `gridarea_rotation.py` and **never
 committed as original machine-code bytes**.
 
 The native arithmetic is *integer* and truncates each signed product
@@ -475,7 +475,36 @@ python tools/db-04-world/gridarea_rotation.py \
   --dll "/private/Steam/GameAssembly.dll"
 ```
 
-**Critical separation:** This proves a native **vector** transformation,
+### Source-native 16-way unscaled bounding dimensions
+
+The original `GridArea.GetSizeForOrientation` (RVA `0x3923750`,
+301 source bytes) selects the cardinal width/height directly; for
+orientations **1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15** it dispatches to
+`MoreRotationSize` (RVA `0x3923880`, 282 source bytes), which computes:
+
+```text
+baseWidth  = trunc32((abs(cos[o])*SizeX + abs(sin[o])*SizeY) / 100)
+baseHeight = trunc32((abs(cos[o])*SizeY + abs(sin[o])*SizeX) / 100)
+```
+
+Unlike vector rotation, **the sum precedes /100**. Cardinal 0/8
+preserve width/height; 4/12 swap them. The *full* original function then
+applies `gridTessellationFactor / area.TessellationFactor`, so the new
+public function is explicitly the **1:1 ratio specialization**, not an
+unqualified world-scale footprint bound.
+
+The Python `gridarea_orientation_base_size(sizeX, sizeY, code)`
+and the browser
+`getNativeFootprintOrientationBaseDimensions(catalog, itemId, code)`
+return the unscaled 16-way base dimensions. The browser rejects
+unsupported versions with no dimensions, while the Python function is
+scoped to Steam v1.26.1. Both report
+`fullNativeTessellationScalingApplied: false`,
+`rotatedGridAreaCellMappingVerified: false`, and
+`placementLegalityVerified: false`.
+
+**Critical separation:** This proves native **vector transformations and
+unscaled bounding dimensions**,
 not how an item's `GridAreaData.LayerValues` should be remapped to
 rotated grid cells, how a `GridObject.X/Y` anchor is applied,
 which layer flags mean physical occupancy, or whether an edit is legal.
