@@ -45,6 +45,59 @@ export type SaveShapeProbe = Readonly<{
   codecVerified: false;
   writerAuthorized: false;
 }>;
+export type CommonSaveDomain = 'world' | 'progression' | 'cosmetics';
+export type CommonSaveField = Readonly<{
+  domain: CommonSaveDomain;
+  path: string;
+  type: string;
+  publicSource: string;
+  sourceStatus: 'historical_public_runtime_path_not_current_native_type_attestation';
+  observedStatus: 'observed_type_in_three_private_626_643_saves';
+  coverageScope: 'three_owner_originals_only';
+  codecClosureVerified: false;
+  writable: false;
+}>;
+export type CommonSaveProbeDomain = Readonly<{
+  domain: CommonSaveDomain;
+  status: 'shape_conflict' | 'shape_candidate' | 'sampled_candidate' | 'not_observed';
+  observedFieldCount: number;
+  observedFields: readonly Readonly<{path:string; kinds:readonly string[]}>[];
+  conflictingPaths: readonly string[];
+  sampled: boolean;
+  writerAuthorized: false;
+}>;
+export type CommonSaveShapeProbe = Readonly<{
+  contract: 'wand.db05.common-shape-probe@1';
+  platformAndVersionUsedAsGates: false;
+  completeness: 'known_16_templates_only';
+  domains: readonly CommonSaveProbeDomain[];
+  exhaustive: false;
+  strictDecoderVerified: false;
+  writerAuthorized: false;
+}>;
+export type CommonSaveComparisonDomain = Readonly<{
+  domain: CommonSaveDomain;
+  status: 'observed_type_conflict'|'insufficient_evidence'|'sampled_inconclusive'|'observed_witness_difference'|'same_known_common_shape';
+  addedKnownPaths: readonly string[];
+  missingKnownPaths: readonly string[];
+  conflictingKnownPaths: readonly string[];
+  writerAuthorized: false;
+}>;
+export type CommonSaveComparison = Readonly<{
+  contract: 'wand.db05.common-shape-comparison@1';
+  status: 'observed_type_conflict'|'inconclusive'|'observed_witness_difference'|'same_known_common_shape';
+  platformAndVersionUsedAsGates: false;
+  domains: readonly CommonSaveComparisonDomain[];
+  exhaustive: false;
+  strictDecoderVerified: false;
+  writerAuthorized: false;
+  exportAuthorized: false;
+}>;
+export function getCommonSaveFields(): Readonly<{schema:'wand.db05.common626643-field-witnesses@1';fields:readonly CommonSaveField[]}>;
+export function probeCommonSaveStructure(decoded: unknown): CommonSaveShapeProbe;
+export function compareCommonSaveStructures(previous: unknown,current: unknown): CommonSaveComparison;
+export const SAVE_COMMON_SHAPE_PROBE_CONTRACT: 'wand.db05.common-shape-probe@1';
+export const SAVE_COMMON_SHAPE_COMPARE_CONTRACT: 'wand.db05.common-shape-comparison@1';
 export type FieldWitness = Readonly<{ path: string; type: string }>;
 export function getSaveRegistry(): Readonly<Record<string, unknown>>;
 export type LegacyIdReference = Readonly<{namespace:string;catalog:string|null;extraction:'map_key'|'value';join:'exact_numeric_only';currentCatalogCoverageVerified:false;status:'legacy_source_only';note:string}>;
