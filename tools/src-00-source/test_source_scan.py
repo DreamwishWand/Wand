@@ -88,6 +88,17 @@ class SourceScanTests(unittest.TestCase):
         self.assertFalse(self.read("source-report.json")["ready_for_downstream"])
         self.assertEqual(self.read("source-report.json")["game_version"]["status"], "conflict")
 
+    def test_same_game_version_with_different_full_builds_conflicts(self):
+        (self.root / "GameAssembly.dll").write_bytes(b"assembly")
+        (self.root / "steam_api64.dll").write_bytes(b"steam")
+        (self.root / "FullVersion.txt").write_text("releases_1.25-v1.25.3-44-g123-incremental-22\n", encoding="utf-8")
+        streaming = self.root / "ddv_Data" / "StreamingAssets"
+        streaming.mkdir(parents=True)
+        (streaming / "FullVersion.txt").write_text("releases_1.25-v1.25.3-45-g124-incremental-22\n", encoding="utf-8")
+        result = self.run_scan()
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(self.read("source-report.json")["game_version"]["status"], "conflict")
+
     def test_explicit_version_conflict(self):
         (self.root / "GameAssembly.dll").write_bytes(b"assembly")
         (self.root / "steam_api64.dll").write_bytes(b"steam")
