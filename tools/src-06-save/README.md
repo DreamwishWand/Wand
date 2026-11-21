@@ -22,7 +22,7 @@ To inspect both simultaneously:
 & tools/src-06-save/run.ps1 -GameRoot "D:\Games\Disney Dreamlight Valley" -Save "D:\Private\DDV\decoded-save.json" -Out "$env:LOCALAPPDATA\WandSrc06\combined-001"
 ```
 
-`--build-id` adds an **operator declaration** (not a verified Build ID); use the exact string if available. Omit it if unknown. Each `--out` must be a **new nonexistent directory**, outside the save directory and game root. An original encrypted/packed save can be selected: its format will be reported as `unknown_or_encoded_container`, without attempting decryption. Never rename an encrypted file to `.json` to imply it is decoded.
+`--build-id` adds an **operator declaration** (not a verified Build ID); use the exact string if available. Omit it if unknown. Unknown Build ID strings are withheld from reports. Each `--out` must be a **new nonexistent directory**, outside the save directory, game root, and public repository. An original encrypted/packed save can be selected: its format will be reported as `unknown_or_encoded_container`, without attempting decryption. Never rename an encrypted file to `.json` to imply it is decoded.
 
 ## Output (local only)
 

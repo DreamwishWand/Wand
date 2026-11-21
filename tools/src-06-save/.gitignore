@@ -7,5 +7,7 @@ __pycache__/
 *.save
 *.dat
 *.p1g
+*.json
 *.jsonl
+INCOMPLETE
 fixture-private*/

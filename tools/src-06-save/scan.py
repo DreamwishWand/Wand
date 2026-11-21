@@ -339,9 +339,9 @@ def output_json(folder, name, value):
 
 def safe_folder(out, roots):
     out = out.expanduser().resolve()
-    for root in roots:
+    for root in roots + [Path(__file__).resolve().parents[2]]:
         if root is not None and (out == root or root in out.parents):
-            raise StructureError('output must be outside every input root')
+            raise StructureError('output must be outside inputs and the source repository')
     out.mkdir(parents=True, exist_ok=False)
     return out
 
@@ -362,13 +362,17 @@ def execute(argv=None):
         ap.error('--game-root must be a directory')
     if save and not save.is_file():
         ap.error('--save must be a file')
+    if save and save.stat().st_size > 256 * 1024 * 1024:
+        ap.error('--save exceeds legacy decoded input size limit (256 MiB)')
     if game and save and (save == game or game in save.parents):
         ap.error('save must be separately selected outside the game root')
     roots = [game, save, save.parent if save else None]
     out = safe_folder(args.out, roots)
+    safe_build_id = args.build_id if args.build_id in {r['buildId'] for r in COMPAT} else None
     report = {'tool': 'SRC-06', 'operation': 'read_only_structural_witness',
               'source': {'legacyCore': SOURCE}, 'operatorDeclarations':
-                  {'platform': args.platform, 'buildId': args.build_id, 'verified': False},
+                  {'platform': args.platform, 'buildId': safe_build_id,
+                   'unregisteredBuildIdWithheld': bool(args.build_id and not safe_build_id), 'verified': False},
               'inputPresent': {'game': game is not None, 'save': save is not None},
               'writerAuthorized': False, 'onlineRightsValidated': False}
     try:
@@ -396,7 +400,7 @@ def execute(argv=None):
             output_json(out, 'save-structure.json', structure)
         observed = report.get('schemaObserved')
         report['compatibility'] = [{**r, 'match': 'candidate_only' if observed == r['schema']
-                      and args.platform == r['platform'] and args.build_id == r['buildId']
+                      and args.platform == r['platform'] and safe_build_id == r['buildId']
                       else 'not_assessed_or_mismatched'} for r in COMPAT]
         output_json(out, 'version-matrix.json', {'entries': report['compatibility'],
                   'assurance': 'historical_source_assertions_not_current_build_provenance'})

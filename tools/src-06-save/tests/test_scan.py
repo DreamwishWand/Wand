@@ -65,6 +65,18 @@ class ScannerTests(unittest.TestCase):
                 import shutil
                 shutil.rmtree(outside, ignore_errors=True)
 
+    def test_arbitrary_build_id_is_not_exported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'input').mkdir()
+            save = root / 'input' / 'a.json'
+            save.write_text('{"GameInfo":{"Version":626},"Player":{},"World":{}}')
+            out = execute(['--save', str(save), '--out', str(root / 'reports'),
+                           '--build-id', 'private-token-123'])
+            body = (out / 'manifest.json').read_text()
+            self.assertNotIn('private-token-123', body)
+            self.assertTrue(json.loads(body)['operatorDeclarations']['unregisteredBuildIdWithheld'])
+
     def test_invalid_json_is_not_validated(self):
         with tempfile.TemporaryDirectory() as tmp:
             file = Path(tmp) / 'bad.json'
