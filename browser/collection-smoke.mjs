@@ -65,8 +65,16 @@ try{
   assert.deepEqual(JSON.parse(stored.legacy),seed);
   assert.equal(JSON.parse(stored.value).workspaces[0].entries['99999999'].discovered,true);
   const search=page.getByRole('searchbox',{name:/8言語/});
+  // Locale changes must re-query Rust, not leave cached cards in the prior locale.
+  // Item 40005160 has source-verified Japanese/English names; it is a unique search match.
+  const language=page.getByRole('combobox',{name:'アイテム表示言語'});
   await search.fill('40005160');
   await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
+  await page.waitForFunction(()=>document.querySelector('.item-card-copy strong')?.textContent?.trim()==='ガラスの靴');
+  await language.selectOption('en');
+  await page.waitForFunction(()=>document.querySelector('.item-card-copy strong')?.textContent?.trim()==='Glass Shoe');
+  await language.selectOption('ja');
+  await page.waitForFunction(()=>document.querySelector('.item-card-copy strong')?.textContent?.trim()==='ガラスの靴');
   assert.match(await page.locator('.item-card').first().innerText(),/家具|Furniture/);
   // Both tabs opened the same IndexedDB version. A stale writer must fail closed.
   const staleTab=await context.newPage();
@@ -94,6 +102,7 @@ try{
   await search.fill('');
   // Category is the only root navigation. World/Universe are semantic filters.
   await page.locator('.facet-card').first().waitFor();
+  assert.match(await page.locator('.facet-card').first().innerText(),/家具|Furniture/);
   assert.equal(await page.locator('.mode-tabs').count(),0);
   await page.getByRole('button',{name:/フィルター/}).click();
   assert.equal(await page.getByRole('combobox',{name:'ワールドで絞り込み'}).count(),1);
@@ -180,6 +189,7 @@ try{
   await page.reload();
   await page.locator('.summary-strip').waitFor({timeout:20000});
   assert.match(await page.locator('.summary-strip').innerText(),/1/);
+  assert.match(await page.locator('.source-pill').innerText(),/Steam\s*·\s*v1\.26\.2/);
   const releaseSearch=page.getByRole('searchbox',{name:/8言語/});
   await releaseSearch.fill('検証済みの靴');
   await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);

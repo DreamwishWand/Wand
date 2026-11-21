@@ -72,7 +72,7 @@ export type PublicDb01Item = Pick<Db01Item,'itemId'|'names'|'nativeCategory'>;
 export interface CollectionRuntimeMetadata {
   snapshot: string;
   platform: string;
-  version: string;
+  version: string | null;
   expansions: readonly string[];
   worlds: readonly string[];
   universes: readonly string[];
