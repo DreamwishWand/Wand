@@ -1154,3 +1154,95 @@ export function getNativeFootprintTessellatedOrientedWindow(
     placementLegalityVerified: false,
   };
 }
+
+
+// A native DEFAULT GridCollection carries its own Grid.TessellationFactor.
+// Resolve an exact GridObject -> GridCollection grid ID association, never a
+// nearest-grid guess or an inferred factor from another save/world instance.
+function resolveDefaultObjectNativeGridFactor(catalog, layoutObjectId) {
+  const source = catalog.layoutObjects.get(String(layoutObjectId));
+  const common = {
+    layoutObjectId: String(layoutObjectId),
+    callerGridFactorProvenanceVerified: false,
+    worldCoordinatesVerified: false,
+    currentSaveObjectVerified: false,
+    gridObjectAnchorVerified: false,
+    occupancyPredicateVerified: false,
+    placementLegalityVerified: false,
+  };
+  if (!source) return {...common, status: 'unknown_default_layout_object'};
+  const layout = catalog.layouts.get(String(source.layoutId));
+  if (layout?.layoutKind !== 'nativeGridCollection' ||
+      !Array.isArray(layout.nativeGridEntries)) {
+    return {...common, status: 'missing_native_grid_collection_layout'};
+  }
+  const matches = layout.nativeGridEntries.filter(entry =>
+    entry.gridIdNative === source.gridIdNative);
+  if (matches.length !== 1) {
+    return {...common, status: 'missing_or_ambiguous_native_grid_reference'};
+  }
+  const entry = matches[0];
+  if (!Number.isInteger(entry.tessellationFactor) ||
+      entry.tessellationFactor < 1 || entry.tessellationFactor > 256 ||
+      typeof entry.gridDataPath !== 'string' || !entry.gridDataPath ||
+      !Number.isInteger(source.orientationCode) ||
+      source.orientationCode < 0 || source.orientationCode > 15) {
+    return {...common, status: 'invalid_native_default_grid_tessellation_or_orientation'};
+  }
+  if (!catalog.objects.get(idText(source.itemId))?.footprint) {
+    return {...common, status: 'default_item_gridarea_unavailable'};
+  }
+  return {
+    ...common, status: 'source_linked_default_grid_tessellation',
+    callerGridFactorProvenanceVerified: true,
+    layoutId: source.layoutId,
+    gridIdNative: source.gridIdNative,
+    originalItemId: source.itemId,
+    originalOrientationCode: source.orientationCode,
+    callerGridTessellationFactor: entry.tessellationFactor,
+    gridDataPath: entry.gridDataPath,
+    sourceGridDataLoaded: catalog.grids.has(entry.gridDataPath),
+    sourcePositionBasis: 'original_default_grid_local_not_current_save',
+  };
+}
+
+/**
+ * Default GridObject raw layer masks at an oriented OBJECT-LOCAL coordinate.
+ * This binds the caller factor to an exact native GridCollection grid entry.
+ * It does NOT apply GridObject.X/Y: native anchor semantics remain unknown.
+ */
+export function getNativeDefaultLayoutObjectLayerAt(
+    catalog, layoutObjectId, x, y) {
+  const ref = resolveDefaultObjectNativeGridFactor(catalog, layoutObjectId);
+  if (ref.callerGridFactorProvenanceVerified !== true) return ref;
+  const cell = getNativeFootprintTessellatedOrientedLayerAt(
+    catalog, ref.originalItemId, x, y,
+    ref.originalOrientationCode, ref.callerGridTessellationFactor);
+  return {
+    ...cell, ...ref,
+    status: cell.status,
+    nativeTessellationCoordinateConversionVerified:
+      cell.nativeTessellationCoordinateConversionVerified === true,
+    itemFactoryRoutePerRecordVerified: false,
+  };
+}
+
+/**
+ * Bounded, source-linked DEFAULT GridObject raw footprint. Rows are
+ * orientation-relative, not translated into world or scene coordinates.
+ */
+export function getNativeDefaultLayoutObjectLayerWindow(
+    catalog, layoutObjectId, rect) {
+  const ref = resolveDefaultObjectNativeGridFactor(catalog, layoutObjectId);
+  if (ref.callerGridFactorProvenanceVerified !== true) return ref;
+  const view = getNativeFootprintTessellatedOrientedWindow(
+    catalog, ref.originalItemId, ref.originalOrientationCode,
+    ref.callerGridTessellationFactor, rect);
+  return {
+    ...view, ...ref,
+    status: view.status,
+    nativeTessellationCoordinateConversionVerified:
+      view.nativeTessellationCoordinateConversionVerified === true,
+    itemFactoryRoutePerRecordVerified: false,
+  };
+}
