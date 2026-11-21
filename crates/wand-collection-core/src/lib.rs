@@ -17,6 +17,72 @@ const CATEGORY_ORDER: [&str; 29] = [
 ];
 const LOCALES: [&str; 8] = ["en", "fr", "it", "de", "es-ES", "ja", "zh-CN", "pt-BR"];
 
+
+const DB00_RELEASE_SCHEMA: &str = "wand.game-db.release@1";
+const DB00_SNAPSHOT_SCHEMA: &str = "wand.game-db.snapshot@1";
+fn intern(dictionary: &mut Vec<String>, value: String) -> usize {
+    if let Some(index) = dictionary.iter().position(|entry| entry == &value) { index }
+    else { let index = dictionary.len(); dictionary.push(value); index }
+}
+#[derive(Deserialize)]
+struct Db00Source {
+    id: String,
+    visibility: String,
+}
+#[derive(Deserialize)]
+struct Db00Release {
+    id: String,
+}
+#[derive(Deserialize)]
+struct Db00Target {
+    platform: String,
+    #[serde(rename="gameVersion")]
+    game_version: Option<String>,
+    #[serde(rename="buildId")]
+    build_id: Option<String>,
+}
+#[derive(Deserialize)]
+struct Db00Index {
+    schema: String,
+    id: String,
+    count: usize,
+    target: Db00Target,
+    sources: Vec<Db00Source>,
+    releases: Vec<Db00Release>,
+    shards: Vec<ShardMeta>,
+}
+#[derive(Deserialize)]
+struct Db00Shard {
+    schema: String,
+    offset: usize,
+    count: usize,
+    items: Vec<Db00Item>,
+}
+#[derive(Deserialize)]
+struct Db00Item {
+    id: String,
+    names: HashMap<String,String>,
+    #[serde(rename="nameStatus")]
+    name_status: String,
+    category: Option<String>,
+    #[serde(rename="stateClass")]
+    state_class: Option<String>,
+    #[serde(rename="stateSemantic")]
+    state_semantic: Option<String>,
+    #[serde(default)]
+    worlds: Vec<String>,
+    #[serde(default)]
+    universes: Vec<String>,
+    #[serde(default,rename="contentIds")]
+    content_ids: Vec<String>,
+    #[serde(default,rename="releaseIds")]
+    release_ids: Vec<String>,
+    #[serde(default,rename="sourceRefs")]
+    source_refs: Vec<String>,
+    #[serde(default)]
+    relations: Vec<String>,
+}
+
 #[derive(Clone, Deserialize)]
 struct ManifestTarget {
     platform: String,
@@ -143,9 +209,9 @@ fn valid_workspace_id(s: &str) -> bool {
         && s.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
 }
 fn valid_item_id(s: &str) -> bool {
-    s.len() <= 12 && !s.is_empty() && !s.starts_with('0')
+    s.len() <= 16 && !s.is_empty() && !s.starts_with('0')
         && s.bytes().all(|b| b.is_ascii_digit())
-        && s.parse::<u64>().is_ok_and(|n| n > 0 && n <= 999_999_999_999)
+        && s.parse::<u64>().is_ok_and(|n| n > 0 && n <= 9_007_199_254_740_991)
 }
 fn valid_state(s: &State) -> Result<(), String> {
     if s.schema != STATE_SCHEMA || s.workspaces.is_empty() || s.workspaces.len() > MAX_WORKSPACES {
@@ -244,6 +310,10 @@ pub struct CollectionEngine {
     rows: Vec<Item>,
     lookup: HashMap<u64, usize>,
     state: State,
+    db00_mode: bool,
+    db00_sources: HashSet<String>,
+    db00_releases: HashSet<String>,
+    db00_relations: Vec<(u64,u64)>,
 }
 
 impl Default for CollectionEngine {
@@ -253,6 +323,10 @@ impl Default for CollectionEngine {
             rows: Vec::new(),
             lookup: HashMap::new(),
             state: State::default(),
+            db00_mode: false,
+            db00_sources: HashSet::new(),
+            db00_releases: HashSet::new(),
+            db00_relations: Vec::new(),
         }
     }
 }
@@ -263,7 +337,120 @@ impl CollectionEngine {
         self.index = Some(index);
         self.rows.clear();
         self.lookup.clear();
+        self.db00_mode = false;
+        self.db00_sources.clear();
+        self.db00_releases.clear();
+        self.db00_relations.clear();
         Ok(())
+    }
+    fn load_db00_index_impl(&mut self, source: &str) -> Result<(),String> {
+        let published: Db00Index = serde_json::from_str(source).map_err(|_|"COLLECTION_DB00_INDEX_JSON")?;
+        if published.schema != DB00_RELEASE_SCHEMA || published.id.is_empty()
+            || published.count == 0 || published.count > MAX_ROWS
+            || published.target.platform.is_empty() || published.sources.is_empty()
+            || published.sources.iter().any(|entry|entry.visibility!="public_reference" || entry.id.is_empty())
+        { return Err("COLLECTION_DB00_PUBLISHABLE_INDEX_REQUIRED".into()); }
+        let sources:HashSet<String> = published.sources.iter().map(|entry|entry.id.clone()).collect();
+        let releases:HashSet<String> = published.releases.iter().map(|entry|entry.id.clone()).collect();
+        if sources.len()!=published.sources.len() || releases.len()!=published.releases.len()
+            || published.shards.is_empty()
+        { return Err("COLLECTION_DB00_INDEX_DUPLICATE".into()); }
+        let mut count = 0usize;
+        for shard in &published.shards {
+            if shard.offset != count || shard.count == 0 || shard.count > 10000
+                || shard.bytes == 0 || shard.sha256.len() != 64
+                || !shard.sha256.bytes().all(|b| b.is_ascii_hexdigit())
+                || !shard.file.starts_with("items-") || !shard.file.ends_with(".json")
+                || shard.file.bytes().any(|b|!(b.is_ascii_alphanumeric() || b==b'-' || b==b'.'))
+            { return Err("COLLECTION_DB00_INDEX_SHARDS".into()); }
+            count = count.checked_add(shard.count).ok_or("COLLECTION_DB00_INDEX_OVERFLOW")?;
+        }
+        if count != published.count {return Err("COLLECTION_DB00_INDEX_COUNT".into());}
+        self.index = Some(Index {
+            schema: DB00_RELEASE_SCHEMA.into(),
+            target: ManifestTarget {
+                platform: published.target.platform,
+                game_version: published.target.game_version.unwrap_or_else(||"unknown".into()),
+                build_id: published.target.build_id.unwrap_or_else(||"unknown".into()),
+            },
+            families: vec!["Unclassified".into()],
+            state_classes: vec!["READ_ONLY".into()],
+            semantics: vec!["UNLOCK_OR_AVAILABILITY".into()],
+            worlds: Vec::new(), universes: Vec::new(), expansions: Vec::new(),
+            world_labels: Vec::new(), universe_labels: Vec::new(),
+            count:published.count, shards:published.shards,
+        });
+        self.rows.clear();
+        self.lookup.clear();
+        self.db00_mode=true;
+        self.db00_sources=sources;
+        self.db00_releases=releases;
+        self.db00_relations.clear();
+        Ok(())
+    }
+    fn append_db00_shard_impl(&mut self, source: &str) -> Result<(),String> {
+        if !self.db00_mode {return Err("COLLECTION_DB00_INDEX_REQUIRED".into());}
+        let index=self.index.as_mut().ok_or("COLLECTION_DB00_INDEX_REQUIRED")?;
+        let meta=index.shards.iter().find(|shard|shard.offset==self.rows.len())
+            .ok_or("COLLECTION_DB00_SHARD_ORDER")?;
+        if source.as_bytes().len()!=meta.bytes {return Err("COLLECTION_DB00_SHARD_BYTES".into());}
+        let shard:Db00Shard=serde_json::from_str(source).map_err(|_|"COLLECTION_DB00_SHARD_JSON")?;
+        if shard.schema!=DB00_SNAPSHOT_SCHEMA || shard.offset!=meta.offset
+            || shard.count!=meta.count || shard.items.len()!=meta.count
+        {return Err("COLLECTION_DB00_SHARD_CONTRACT".into());}
+        let mut staged=Vec::with_capacity(shard.items.len());
+        let mut staged_relations=Vec::new();
+        let mut ids=HashSet::new();
+        for row in shard.items {
+            if !valid_item_id(&row.id) {return Err("COLLECTION_DB00_ITEM_ID".into());}
+            let id=row.id.parse::<u64>().map_err(|_|"COLLECTION_DB00_ITEM_ID")?;
+            if !ids.insert(id) || self.lookup.contains_key(&id)
+                || row.name_status!="verified" || row.names.keys().any(|l|!LOCALES.contains(&l.as_str()))
+                || row.source_refs.is_empty()
+                || row.source_refs.iter().any(|r|!self.db00_sources.contains(r))
+                || row.release_ids.iter().any(|r|!self.db00_releases.contains(r))
+            {return Err("COLLECTION_DB00_ITEM_UNVERIFIED".into());}
+            for related in row.relations {
+                if !valid_item_id(&related) {return Err("COLLECTION_DB00_RELATION_ID".into());}
+                staged_relations.push((id,related.parse::<u64>().map_err(|_|"COLLECTION_DB00_RELATION_ID")?));
+            }
+            let family=intern(&mut index.families,row.category.unwrap_or_else(||"Unclassified".into()));
+            let semantic=intern(&mut index.semantics,row.state_semantic.unwrap_or_else(||"UNLOCK_OR_AVAILABILITY".into()));
+            intern(&mut index.state_classes,row.state_class.unwrap_or_else(||"READ_ONLY".into()));
+            let world:Vec<usize>=row.worlds.into_iter().map(|v|intern(&mut index.worlds,v)).collect();
+            let universe:Vec<usize>=row.universes.into_iter().map(|v|intern(&mut index.universes,v)).collect();
+            let expansion:Vec<usize>=row.content_ids.into_iter().map(|v|intern(&mut index.expansions,v)).collect();
+            let labels:Vec<String>=LOCALES.iter().map(|lang|display(row.names.get(*lang).map(|s|s.as_str()).unwrap_or(""))).collect();
+            let search=labels.join(" ").to_lowercase();
+            staged.push(Item {id,family,semantic,world,universe,expansion,labels,search});
+        }
+        index.world_labels=index.worlds.iter().map(|label|vec![label.clone();8]).collect();
+        index.universe_labels=index.universes.iter().map(|label|vec![label.clone();8]).collect();
+        for item in staged {
+            self.lookup.insert(item.id,self.rows.len());
+            self.rows.push(item);
+        }
+        self.db00_relations.extend(staged_relations);
+        Ok(())
+    }
+    fn finish_db00_impl(&self)->Result<(),String>{
+        if !self.db00_mode {return Err("COLLECTION_DB00_INDEX_REQUIRED".into());}
+        self.ready()?;
+        if self.db00_relations.iter().any(|(_,to)|!self.lookup.contains_key(to))
+        {return Err("COLLECTION_DB00_DANGLING_RELATION".into());}
+        Ok(())
+    }
+    fn metadata_impl(&self)->Result<String,String>{
+        let index=self.ready()?;
+        output(&json!({
+            "version":index.target.game_version,
+            "platform":index.target.platform,
+            "expansions":index.expansions,
+            "worlds":index.worlds,
+            "universes":index.universes,
+            "worldLabels":index.world_labels,
+            "universeLabels":index.universe_labels
+        }))
     }
     fn append_shard_impl(&mut self, source: &str) -> Result<(), String> {
         let index = self.index.as_ref().ok_or("COLLECTION_INDEX_REQUIRED")?;
@@ -281,7 +468,7 @@ impl CollectionEngine {
         let mut staged = Vec::with_capacity(shard.rows.len());
         let mut ids = HashSet::new();
         for (id, family, class, semantic, world, universe, expansion, labels) in shard.rows {
-            if id == 0 || id > 999_999_999_999 || !ids.insert(id)
+            if id == 0 || id > 9_007_199_254_740_991 || !ids.insert(id)
                 || self.lookup.contains_key(&id) || family >= index.families.len()
                 || class >= index.state_classes.len() || semantic >= index.semantics.len()
                 || labels.len() != 8 || world.iter().any(|&v| v >= index.worlds.len())
@@ -425,7 +612,7 @@ impl CollectionEngine {
         Ok(())
     }
     fn set_entry_impl(&mut self, id: u64, change: &str) -> Result<(), String> {
-        if id == 0 || id > 999_999_999_999 { return Err("COLLECTION_ITEM_ID_INVALID".into()); }
+        if id == 0 || id > 9_007_199_254_740_991 { return Err("COLLECTION_ITEM_ID_INVALID".into()); }
         let update: Value = serde_json::from_str(change).map_err(|_|"COLLECTION_CHANGE_INVALID")?;
         let m = update.as_object().ok_or("COLLECTION_CHANGE_INVALID")?;
         if m.keys().any(|k| !["status","quantity","discovered","favorite"].contains(&k.as_str())) {
@@ -452,7 +639,7 @@ impl CollectionEngine {
     fn bulk_impl(&mut self, ids_json: &str, status: &str) -> Result<(), String> {
         if !["owned","missing","unknown"].contains(&status) {return Err("COLLECTION_BULK_STATUS".into());}
         let ids: Vec<u64> = serde_json::from_str(ids_json).map_err(|_|"COLLECTION_BULK_IDS")?;
-        if ids.len() > 20_000 || ids.iter().any(|id|*id == 0 || *id > 999_999_999_999) {
+        if ids.len() > 20_000 || ids.iter().any(|id|*id == 0 || *id > 9_007_199_254_740_991) {
             return Err("COLLECTION_BULK_INVALID".into());
         }
         self.with_state(|state| {
@@ -505,6 +692,18 @@ impl CollectionEngine {
     pub fn new() -> CollectionEngine {CollectionEngine::default()}
     pub fn load_index(&mut self, source: &str) -> Result<(), JsValue> {
         self.load_index_impl(source).map_err(|e|JsValue::from_str(&e))
+    }
+    pub fn load_db00_index(&mut self, source: &str) -> Result<(), JsValue> {
+        self.load_db00_index_impl(source).map_err(|e|JsValue::from_str(&e))
+    }
+    pub fn append_db00_shard(&mut self, source: &str) -> Result<(), JsValue> {
+        self.append_db00_shard_impl(source).map_err(|e|JsValue::from_str(&e))
+    }
+    pub fn finish_db00(&self) -> Result<(), JsValue> {
+        self.finish_db00_impl().map_err(|e|JsValue::from_str(&e))
+    }
+    pub fn metadata_json(&self) -> Result<String,JsValue> {
+        self.metadata_impl().map_err(|e|JsValue::from_str(&e))
     }
     pub fn append_shard(&mut self, source: &str) -> Result<(), JsValue> {
         self.append_shard_impl(source).map_err(|e|JsValue::from_str(&e))
@@ -560,6 +759,59 @@ mod tests {
         let result=core.query_impl(r#"{"locale":"ja","search":"40005160","limit":72}"#).unwrap();
         let value:Value=serde_json::from_str(&result).unwrap();
         assert_eq!(value["total"],1);
+    }
+    #[test]
+    fn db00_publishable_release_switch_and_old_state_survive() {
+        let item=json!({
+            "id":"700000001","names":{"en":"Test Chair","ja":"テストのいす"},
+            "nameStatus":"verified","category":"Furniture","subcategory":null,
+            "stateClass":"TRACKED","stateSemantic":"OWNERSHIP_AND_DISCOVERY",
+            "worlds":["IsDreamlightValley"],"universes":["Mickey"],
+            "contentIds":["Expansion03"],"releaseIds":["expansion-3"],
+            "relations":[],"sourceRefs":["approved-reference"]
+        });
+        let shard=json!({"schema":DB00_SNAPSHOT_SCHEMA,"offset":0,"count":1,"items":[item]}).to_string();
+        let index=json!({
+            "schema":DB00_RELEASE_SCHEMA,"id":"approved-snapshot",
+            "count":1,"target":{"platform":"Steam","gameVersion":"1.26.2","buildId":null},
+            "sources":[{"id":"approved-reference","visibility":"public_reference"}],
+            "releases":[{"id":"expansion-3"}],
+            "shards":[{"file":"items-000.json","offset":0,"count":1,"bytes":shard.len(),
+                "sha256":"a".repeat(64)}]
+        }).to_string();
+        let mut engine=CollectionEngine::default();
+        engine.load_state(r#"{"schema":"wand.collection.local@1","active":"local-1","workspaces":[{"id":"local-1","name":"Kept","entries":{"700000001":{"status":"owned","favorite":true},"999999999":{"quantity":12}}}]}"#).unwrap();
+        engine.load_db00_index_impl(&index).unwrap();
+        engine.append_db00_shard_impl(&shard).unwrap();
+        engine.finish_db00_impl().unwrap();
+        let filtered:Value=serde_json::from_str(&engine.query_impl(r#"{"locale":"ja","search":"テスト","category":"Furniture","world":"IsDreamlightValley","expansion":"Expansion03","limit":40}"#).unwrap()).unwrap();
+        assert_eq!(filtered["total"],1);
+        assert_eq!(filtered["items"][0]["label"],"テストのいす");
+        assert_eq!(filtered["items"][0]["status"],"owned");
+        assert_eq!(engine.state.workspaces[0].entries["999999999"].quantity,Some(12));
+        let meta:Value=serde_json::from_str(&engine.metadata_impl().unwrap()).unwrap();
+        assert_eq!(meta["version"],"1.26.2");
+        assert_eq!(meta["worlds"][0],"IsDreamlightValley");
+    }
+    #[test]
+    fn db00_private_or_unverified_sources_are_never_loaded() {
+        let base=json!({
+            "schema":DB00_RELEASE_SCHEMA,"id":"published",
+            "count":1,"target":{"platform":"Steam","gameVersion":null,"buildId":null},
+            "sources":[{"id":"private","visibility":"private"}],"releases":[],
+            "shards":[{"file":"items-000.json","offset":0,"count":1,"bytes":400,"sha256":"a".repeat(64)}]
+        });
+        let mut engine=CollectionEngine::default();
+        assert!(engine.load_db00_index_impl(&base.to_string()).is_err());
+        let mut public=base.clone();
+        public["sources"][0]["visibility"]=json!("public_reference");
+        engine.load_db00_index_impl(&public.to_string()).unwrap();
+        let shard=json!({"schema":DB00_SNAPSHOT_SCHEMA,"offset":0,"count":1,"items":[{
+            "id":"1","names":{},"nameStatus":"unverified","category":"Furniture",
+            "sourceRefs":["private"],"releaseIds":[],"relations":[]
+        }]}).to_string();
+        assert!(engine.append_db00_shard_impl(&shard).is_err());
+        assert_eq!(engine.rows.len(),0);
     }
     #[test]
     fn canonical_categories_preserve_all_29_entries() {

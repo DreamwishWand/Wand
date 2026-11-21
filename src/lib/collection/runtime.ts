@@ -89,6 +89,22 @@ interface PublicLegacyIndex {
   ul: string[][];
   shards: { file: string; offset: number; count: number; bytes: number; sha256: string }[];
 }
+interface PublicDb00Index {
+  schema: 'wand.game-db.release@1';
+  id: string;
+  count: number;
+  target: { platform: string; gameVersion: string|null; buildId: string|null };
+  shards: { file: string; offset: number; count: number; bytes: number; sha256: string }[];
+}
+interface ActiveDb00Pointer {
+  schema: string;
+  kind: string;
+  path: string;
+  snapshot: string;
+  publication: string;
+  indexSha256?: string;
+  target?: { platform: string; gameVersion: string|null; buildId: string|null };
+}
 function asset(base: string, path: string): string {
   if (!/^\/?(?:[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*)?$/.test(base)
       || !/^ddv\/[A-Za-z0-9_./-]+$/.test(path)
@@ -152,39 +168,75 @@ export class CollectionRuntime {
     this.metadata = metadata;
   }
   static async open(base: string): Promise<CollectionRuntime> {
-    const active = JSON.parse(await download(asset(base,ACTIVE))) as {
-      schema?: string; kind?: string; path?: string; snapshot?: string;
-      publication?: string;
-    };
-    if (active.schema !== 'wand.game-db.active@1')
+    const active = JSON.parse(await download(asset(base,ACTIVE))) as ActiveDb00Pointer;
+    if (active.schema !== 'wand.game-db.active@1'
+      || typeof active.snapshot !== 'string' || !active.snapshot) {
       throw new Error('COLLECTION_DB00_POINTER_INVALID');
-    if (active.kind !== 'legacy_collection' || active.path !== VERIFIED_LEGACY
-      || active.publication !== 'existing_verified_public_reference') {
-      throw new Error('COLLECTION_PUBLIC_SNAPSHOT_NOT_AVAILABLE');
     }
-    const source = await download(asset(base,VERIFIED_LEGACY+'/index.json'));
-    const manifest = JSON.parse(source) as PublicLegacyIndex;
-    if (manifest.s !== 'wand.collection.runtime@1') throw new Error('COLLECTION_INDEX_INVALID');
     await init(wasmUrl);
     const engine = new CollectionEngine();
-    engine.load_index(source);
-    const expected = manifest.shards.reduce((sum,s) => sum+s.count,0);
-    if (expected !== manifest.n) throw new Error('COLLECTION_INDEX_COUNT_MISMATCH');
-    for (const shard of manifest.shards) {
-      const text = await download(asset(base,VERIFIED_LEGACY+'/'+shard.file),shard.bytes,shard.sha256);
-      engine.append_shard(text);
+    let metadata: CollectionRuntimeMetadata;
+    try {
+      if (active.kind === 'legacy_collection') {
+        if (active.path !== VERIFIED_LEGACY
+          || active.publication !== 'existing_verified_public_reference') {
+          throw new Error('COLLECTION_PUBLIC_SNAPSHOT_NOT_AVAILABLE');
+        }
+        const source = await download(asset(base,VERIFIED_LEGACY+'/index.json'));
+        const manifest = JSON.parse(source) as PublicLegacyIndex;
+        if (manifest.s !== 'wand.collection.runtime@1')
+          throw new Error('COLLECTION_INDEX_INVALID');
+        engine.load_index(source);
+        const expected = manifest.shards.reduce((sum,shard)=>sum+shard.count,0);
+        if (expected !== manifest.n) throw new Error('COLLECTION_INDEX_COUNT_MISMATCH');
+        for (const shard of manifest.shards) {
+          const text = await download(asset(base,VERIFIED_LEGACY+'/'+shard.file),shard.bytes,shard.sha256);
+          engine.append_shard(text);
+        }
+        metadata = {
+          snapshot: active.snapshot, version: manifest.t.gameVersion,
+          expansions:manifest.e, worlds:manifest.w, universes:manifest.u,
+          worldLabels:manifest.wl, universeLabels:manifest.ul
+        };
+      } else if (active.kind === 'db_snapshot') {
+        if (active.publication !== 'validated_public_snapshot'
+          || typeof active.path !== 'string'
+          || !/^ddv\/game-db\/releases\/[A-Za-z0-9._-]+$/.test(active.path)
+          || active.path.includes('..')
+          || typeof active.indexSha256 !== 'string'
+          || !/^[a-f0-9]{64}$/.test(active.indexSha256)
+          || !active.target) {
+          throw new Error('COLLECTION_DB00_PUBLIC_RELEASE_REQUIRED');
+        }
+        const source = await download(asset(base,active.path+'/index.json'),null,active.indexSha256);
+        const manifest = JSON.parse(source) as PublicDb00Index;
+        if (manifest.schema !== 'wand.game-db.release@1'
+          || manifest.id !== active.snapshot
+          || manifest.target.platform !== active.target.platform
+          || manifest.target.gameVersion !== active.target.gameVersion
+          || manifest.target.buildId !== active.target.buildId) {
+          throw new Error('COLLECTION_DB00_PUBLIC_RELEASE_MISMATCH');
+        }
+        engine.load_db00_index(source);
+        for (const shard of manifest.shards) {
+          if (!/^items-[0-9]{3,}\.json$/.test(shard.file))
+            throw new Error('COLLECTION_DB00_SHARD_PATH');
+          const text=await download(asset(base,active.path+'/'+shard.file),shard.bytes,shard.sha256);
+          engine.append_db00_shard(text);
+        }
+        engine.finish_db00();
+        const catalog=JSON.parse(engine.metadata_json()) as Omit<CollectionRuntimeMetadata,'snapshot'>;
+        metadata={...catalog,snapshot:active.snapshot};
+      } else {
+        throw new Error('COLLECTION_DB00_POINTER_KIND');
+      }
+      const runtime = new CollectionRuntime(engine,metadata);
+      await runtime.loadStorage();
+      return runtime;
+    } catch (error) {
+      engine.free();
+      throw error;
     }
-    const runtime = new CollectionRuntime(engine, {
-      snapshot: active.snapshot ?? 'legacy-switch-1.25.0',
-      version: manifest.t.gameVersion,
-      expansions:manifest.e,
-      worlds:manifest.w,
-      universes:manifest.u,
-      worldLabels:manifest.wl,
-      universeLabels:manifest.ul
-    });
-    await runtime.loadStorage();
-    return runtime;
   }
   private async loadStorage(): Promise<void> {
     const db = await openIdb();
