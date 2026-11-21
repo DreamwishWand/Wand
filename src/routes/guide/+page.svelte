@@ -147,17 +147,21 @@
       return;
     }
     const selection = new Map(chosen.map((file) => [file.name, file]));
+    const useV2 = selection.has('condition-native-index-v2.json') ||
+      selection.has('condition-native-index-manifest-v2.json');
+    const indexName = useV2 ? 'condition-native-index-v2.json' : 'condition-native-index.json';
+    const manifestName = useV2 ? 'condition-native-index-manifest-v2.json' :
+      'condition-native-index-manifest.json';
     if (chosen.length !== 2 || selection.size !== 2 ||
-        !selection.has('condition-native-index.json') ||
-        !selection.has('condition-native-index-manifest.json')) {
-      conditionError = 'condition-native-index.json と condition-native-index-manifest.json の2ファイルを選択してください。';
+        !selection.has(indexName) || !selection.has(manifestName)) {
+      conditionError = '同じ形式のConditionインデックスとマニフェストの2ファイルを選択してください（v2推奨）。';
       return;
     }
     loadingConditions = true;
     try {
       const result = await importCurrentGuideConditions(
-        selection.get('condition-native-index.json')!,
-        selection.get('condition-native-index-manifest.json')!,
+        selection.get(indexName)!,
+        selection.get(manifestName)!,
         sourceBridge
       );
       if (request === conditionEpoch && activeIndex === searchIndex) {
@@ -280,7 +284,7 @@
       </section>
       <section class="guide-condition-import" aria-label="Steam 1.26.2 Condition originals">
         <strong>Steam 1.26.2の静的Condition定義（任意）</strong>
-        <p>非公開の <code>condition-native-index.json</code> と <code>condition-native-index-manifest.json</code> を2つ同時に選択すると、原本のSHA-256を照合し、各クエストへの条件参照を表示します。ファイルは端末内で処理します。</p>
+        <p>推奨：非公開の <code>condition-native-index-v2.json</code> と <code>condition-native-index-manifest-v2.json</code> を2つ同時に選択してください。v1の従来ファイルにも対応します。原本SHA-256を照合し、クエストへの静的条件参照を表示します。ファイルは端末内で処理します。</p>
         <label>Conditionインデックスと検証マニフェスト
           <input type="file" accept=".json,application/json" multiple on:change={chooseConditions}
             disabled={loadingIndex || loadingConditions} aria-label="Select current Condition index and manifest" />
@@ -288,7 +292,7 @@
         {#if loadingConditions}<p role="status">Condition全件と原本のハッシュを検証しています…</p>{/if}
         {#if conditionError}<p class="guide-error" role="alert">{conditionError}</p>{/if}
         {#if conditionRegistry}
-          <p class="guide-condition-loaded" role="status">Steam {conditionRegistry.targetVersion}：{conditionRegistry.count.toLocaleString()}件の原本Conditionを検証しました。クエスト一覧は{searchIndex.target.gameVersion}のままです。</p>
+          <p class="guide-condition-loaded" role="status">Steam {conditionRegistry.targetVersion}（Condition v{conditionRegistry.formatVersion}）：{conditionRegistry.count.toLocaleString()}件の定義と{conditionRegistry.missionReferenceCount.toLocaleString()}件のミッション参照を検証しました。クエスト一覧は{searchIndex.target.gameVersion}のままです。</p>
         {/if}
       </section>
     {/if}
@@ -375,15 +379,20 @@
           {#if conditionRegistry}
             <section class="guide-source-facts" aria-label="Current Condition source mission references">
               <h3>Steam {conditionRegistry.targetVersion}のConditionが参照するクエスト（{currentConditionMentions.total}件）</h3>
-              <p>Condition原本中のMissionStepStatusがこのクエストIDを参照している箇所です。解放条件・攻略順・進行状況・実際の利用箇所を示すものではありません。AND/OR/NOTは原本の条件分岐をそのまま表します。</p>
+              <p>Condition原本に記載されたこのミッションIDへの静的参照です。v2では完了・進行中・状態・ステップ・目標条件なども含みます。解放条件・攻略順・進行状況・実際の利用箇所を示すものではありません。AND/OR/NOTは原本の条件分岐を保持します。</p>
               {#if conditionDisplayRows.length}
                 <ul class="guide-mission-references">
                   {#each conditionDisplayRows as mention (mention.conditionId + mention.sourcePath)}
                     <li>
-                      <span class="guide-mission-reference-kind">Condition ID {mention.conditionId} · {mention.operator} · MissionStepStatus</span>
+                      <span class="guide-mission-reference-kind">Condition ID {mention.conditionId} · {mention.operator} · {mention.kind}</span>
                       <span>{mention.sourceName.replaceAll('!', ' / ')}</span>
                       <small>原本パス: {mention.sourcePath}</small>
-                      <span>ステップID: {mention.stepId !== undefined ? mention.stepId : '原本に値なし'} · 定義上の状態: {mention.status !== undefined ? mention.status + ' (' + mention.statusCode + ')' : '原本に値なし'}</span>
+                      {#if mention.stepId !== undefined}<span>ステップID: {mention.stepId}</span>{/if}
+                      {#if mention.subStepId !== undefined}<span>サブステップID: {mention.subStepId}</span>{/if}
+                      {#if mention.objectiveId !== undefined}<span>目標ID: {mention.objectiveId}</span>{/if}
+                      {#if mention.status !== undefined}<span>原本上のステップ状態指定: {mention.status} ({mention.statusCode})</span>{/if}
+                      {#if mention.missionState !== undefined}<span>原本上のミッション状態比較: {mention.comparisonOperator ?? '比較子なし'} · {mention.missionState} ({mention.missionStateCode})</span>{/if}
+                      {#if mention.inversed === true}<small>原本で反転フラグが指定されています。</small>{/if}
                       {#if mention.sourceStepIndex !== undefined}
                         <small>詳細原本に実在するステップ：{mention.sourceStepIndex + 1}番目{#if mention.sourceStepName} · {mention.sourceStepName}{/if}</small>
                         {#if mention.localizedStepDescription}
@@ -397,7 +406,7 @@
                   <p>先頭{conditionDisplayRows.length}件のみ表示しています。</p>
                 {/if}
               {:else}
-                <p>このミッションIDへの明示的なMissionStepStatus参照は、選択したCondition原本にありません。</p>
+                <p>このミッションIDへの対象形式の参照は、選択したCondition原本にありません。</p>
               {/if}
             </section>
           {/if}
