@@ -160,13 +160,16 @@ single-cell footprint may fit all four models identically; those records
 provide *no discriminating evidence* and must not be used to promote an
 orientation or anchor convention.
 
-The evaluator now enforces a deterministic total candidate-cell budget
-(default 2,000,000 projected source cells across all four models, configurable
-with `--max-cells`). Results disclose `candidateCellsEvaluated`,
-`candidateCellBudget`, `truncatedByCellBudget`, `truncatedByMaxObjects`,
+The evaluator now enforces a deterministic total footprint-layer scan budget
+(default 2,000,000 raw native footprint layer slots across all four models, configurable
+with `--max-cells`). Results disclose `candidateLayerSlotsBudgeted`,
+`candidateLayerSlotBudget`, `truncatedByCellBudget`, `truncatedByMaxObjects`,
 `unprocessedLayoutObjects`, and count objects excluded by an exhausted budget.
-The private one-shot ZIP uses both the existing 5,000-object cap and the
-cell budget to prevent unexpectedly expensive processing of large native
+The budget charges **all original fixed32 cells**, including zero-valued
+ones, before considering the projections; sparse large shapes therefore
+cannot bypass the runtime guard. The private one-shot ZIP uses both the
+existing 5,000-object cap and the
+layer-slot budget to prevent unexpectedly expensive processing of large native
 footprints. Its statistics are diagnostic, not a placement legality score.
 
 ## Native terrain cell counts and default-object origin audit
