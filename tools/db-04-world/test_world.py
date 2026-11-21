@@ -15,6 +15,9 @@ from native_pe_evidence import (
     capture_native_pe, file_offset_for_rva, pe64_sections,
     target_methods_from_dump, validate_private_report, write_private_report,
 )
+from disassemble_native_pe import (
+    disassemble_private_windows, write_private_disassembly,
+)
 from package_snapshot import package_snapshot
 from verify_bundle import validate_snapshot
 from terrain_codec import (describe_native_packing, floor_at, decode_window,
@@ -743,6 +746,24 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(found["methodWindows"][0]["rawWindowHex"],
                              report["methodWindows"][0]["rawWindowHex"])
             self.assertFalse(found["placementLegalityVerified"])
+
+        # The original byte window may decode only a PREFIX, which is
+        # diagnostic and never a statement about an entire native function.
+        disasm = disassemble_private_windows(report)
+        self.assertFalse(disasm["nativeFunctionBoundaryVerified"])
+        self.assertFalse(disasm["nativeControlFlowVerified"])
+        write_private_disassembly(
+            disasm, report, self.out / "native-disassembly.json")
+        assembled = package_snapshot(self.out, self.root / "pe-and-asm.zip")
+        self.assertTrue(assembled["nativeDisassemblyIncluded"])
+        self.assertEqual(assembled["nativeDisassemblyInstructionCount"],
+                         disasm["totalInstructions"])
+        with zipfile.ZipFile(self.root / "pe-and-asm.zip") as archive:
+            listing = json.loads(
+                archive.read("diagnostics/native-disassembly.json"))
+            self.assertEqual(listing["nativePEEvidenceSha256"],
+                             disasm["nativePEEvidenceSha256"])
+            self.assertFalse(listing["nativeCodeBodyVerified"])
 
         altered = dict(report)
         altered["gameVersion"] = "1.26.1"
