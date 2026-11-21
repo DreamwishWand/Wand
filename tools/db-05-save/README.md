@@ -10,6 +10,18 @@ This is a **standalone schema contract**, not a replacement for the legacy Dream
 - Historical Rust structural evidence covers GameInfo.Version, GameInfo, Player, and World only. Inventory, Chest, Wardrobe, Appearance, Quest, Grid and World placement remain unresolved.
 - All rights, ownership, Writer and export authorizations stay false. Unknown fields MUST be preserved using the original bytes, not by reconstructing a JSON object.
 
+
+## Historical schema 626 field map (35 paths)
+
+`data/ddv/save/legacy626-fields.v1.json` captures **35 source-code-supported field path candidates**, not a decoded-current-save survey. Every record is version 626 scoped, lists exact legacy build candidate(s), includes an original Rust file provenance, and sets `observedStatus=legacy_source_code_only` and `writable=false`. The mapping is also exported by `getLegacySaveFields()` in JS/TypeScript and `legacy_fields()` in Rust. Domains:
+
+- Inventory: `Player.ListInventories` route IDs, `CompatibleItemType`, item IDs, `Amount`.
+- Chest: `Player.ContainerInventories`, `BelongsToPlayer`, `ParentItemID`, `Size`, indexed slots, `ItemID`, `Amount` (legacy Steam 626 only).
+- Collection: `Player.CollectionSets`, `CollectionDefinitionID`, `GroupData`, `GroupsCollectionItems` and saved `State`.
+- World: `World.GridCollection.DiffGrids`, grid IDs, default layout references, saved modified/removed objects (legacy Steam 626 only).
+
+The existing Rust source scopes and limits remain authoritative for their own historical operations. The DB does not infer Item/Quest/World ID coverage, award eligibility or ownership, and does not relax the existing Writer permissions.
+
 ## Source integration
 
 The JS/TypeScript adapter at src/lib/save/registry.mjs exports matchSaveBuild, inspectDecodedSave, borrowUntouchedDecodedSave, makeGameIdIndex, matchGameId and diffSaveWitnesses. The declarations are in registry.d.ts. The adapter consumes **strictly decoded** documents only; it is not a Codec.
@@ -18,7 +30,7 @@ The isolated Rust/WASM-compatible crate at crates/ddv-save-schema exposes typed 
 
     cargo test --manifest-path crates/ddv-save-schema/Cargo.toml
 
-The database never authorizes writes. A positive shape witness is neither a strict Codec proof nor an external Build proof.
+Both JSON registries are recursively immutable when loaded by the JS adapter. The database never authorizes writes. A positive shape witness is neither a strict Codec proof nor an external Build proof.
 
 ## Read-only private SRC-06 handoff
 
