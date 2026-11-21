@@ -97,7 +97,9 @@ jobs:
         with:
           version: v0.13.1
       - name: Build browser-linkable Rust/WASM DB-05 runtime
-        run: wasm-pack build crates/ddv-save-schema --release --target web --features wasm --out-dir ../../src/lib/save/wasm/pkg
+        run: |
+          rustup target add wasm32-unknown-unknown
+          wasm-pack build crates/ddv-save-schema --release --target web --features wasm --out-dir ../../src/lib/save/wasm/pkg
       - name: Rust WASM read-only reference graph target
         run: |
           rustup target add wasm32-unknown-unknown
