@@ -308,7 +308,7 @@ def add_verified(rels, family, record, target_family, target_id, path, indexes):
 
 def diff(previous, records):
     old, new = {}, {}
-    for fam in SOURCES:
+    for fam in (*SOURCES, "rewards"):
         file = previous / "guide" / (fam + ".json")
         if file.is_file():
             for row in json.loads(file.read_text(encoding="utf-8"))["records"]:
@@ -319,6 +319,85 @@ def diff(previous, records):
             "removed": [{"family": k[0], "id": k[1]} for k in sorted(old.keys()-new.keys())],
             "changed": [{"family": k[0], "id": k[1]} for k in sorted(old.keys() & new.keys()) if old[k] != new[k]]}
 
+
+
+def read_friendship_rewards(origin):
+    """Import only the game's DEFAULT friendship-level reward table, if present."""
+    path = origin / "friendship_levels_default.json"
+    if not path.is_file():
+        return [], None
+    data = source_data(path)
+    source_hash = sha(data)
+    parsed = json.loads(data.decode("utf-8-sig"))
+    if not isinstance(parsed, list):
+        raise ValueError("INVALID_FRIENDSHIP_REWARD_TABLE")
+    rewards, seen_levels = [], set()
+    for row in parsed:
+        level, xp = row.get("Level"), row.get("XP")
+        if type(level) is not int or level in seen_levels or type(xp) is not int or xp < 0:
+            raise ValueError("INVALID_FRIENDSHIP_REWARD_LEVEL")
+        seen_levels.add(level)
+        for stage in ("FirstIntermediateReward", "SecondIntermediateReward",
+                      "ThirdIntermediateReward", "CompletedReward"):
+            for index, award in enumerate(row.get(stage, [])):
+                if not isinstance(award, dict) or type(award.get("ID")) is not int or \
+                        type(award.get("Amount")) is not int:
+                    raise ValueError("INVALID_FRIENDSHIP_REWARD_ENTRY")
+                rewards.append({"id": f"default:{level}:{stage}:{index}",
+                                "level": level, "xp": xp, "rewardStage": stage,
+                                "nativeRewardId": str(award["ID"]),
+                                "amount": award["Amount"],
+                                "scope": "default_friendship_level_not_character_specific",
+                                "source": {"file": "ddv_Data/StreamingAssets/friendship_levels_default.json",
+                                           "sha256": source_hash}})
+    return rewards, {"file": "friendship_levels_default.json", "sha256": source_hash,
+                     "bytes": len(data), "records": len(rewards)}
+
+
+def structured_condition_overlays(origin, rows, indexes, relations, unresolved):
+    """Attach actual source JSON predicates; never guess them from protobuf numbers."""
+    summary = {"conditions": 0, "conditionalEvents": 0}
+    for fam, folder in (("conditions", "Condition"), ("conditionalEvents", "ConditionalEvent")):
+        by_id = {r["id"]: r for r in rows[fam]}
+        directory = origin / folder
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.glob("*.json")):
+            data = source_data(path)
+            payload = json.loads(data.decode("utf-8-sig"))
+            if not isinstance(payload, dict) or type(payload.get("ID")) is not int:
+                unresolved.append({"kind": "malformed_structured_definition", "file": path.name})
+                continue
+            id_ = str(payload["ID"])
+            native = by_id.get(id_)
+            if native is None:
+                unresolved.append({"kind": "unmatched_structured_definition", "file": path.name,
+                                   "id": id_, "family": fam})
+                continue
+            if payload.get("Name") != native["rawName"]:
+                unresolved.append({"kind": "structured_name_mismatch", "file": path.name,
+                                   "id": id_, "family": fam})
+                continue
+            native["structuredDefinition"] = payload
+            native["structuredSource"] = {"file": f"ddv_Data/StreamingAssets/{folder}/{path.name}",
+                                           "sha256": sha(data)}
+            summary[fam] += 1
+            # Extract only a named, schema-observed MissionStepStatus condition.
+            def walk(value, loc="$", depth=0):
+                if depth > 20:
+                    return
+                if isinstance(value, dict):
+                    status = value.get("MissionStepStatus")
+                    if isinstance(status, dict) and type(status.get("Mission")) is int:
+                        add_verified(relations, fam, native, "quests", status["Mission"],
+                                     loc + ".MissionStepStatus.Mission", indexes)
+                    for k, v in value.items():
+                        walk(v, loc + "." + k, depth + 1)
+                elif isinstance(value, list):
+                    for i, v in enumerate(value):
+                        walk(v, loc + f"[{i}]", depth + 1)
+            walk(payload)
+    return summary
 
 def extract(game, out, version, platform, item_index=None, previous=None):
     game, out = game.resolve(), out.resolve()
@@ -418,6 +497,8 @@ def extract(game, out, version, platform, item_index=None, previous=None):
                             candidates.append({"fromFamily": fam, "fromId": rec["id"],
                                                "toFamily": known[id_], "toId": str(id_),
                                                "wirePath": path, "status": "candidate_not_semantically_verified"})
+        overlay_counts = structured_condition_overlays(origin, rows, indexes, relations, unresolved)
+        reward_rows, reward_source = read_friendship_rewards(origin)
         relations.sort(key=lambda x: (x["fromFamily"], x["fromId"], x["toFamily"], x["toId"], x["sourceField"]))
         candidates.sort(key=lambda x: (x["fromFamily"], x["fromId"], x["toFamily"], x["toId"], x["wirePath"]))
         unresolved.extend(r for r in relations if r["status"] == "unresolved")
@@ -426,6 +507,9 @@ def extract(game, out, version, platform, item_index=None, previous=None):
             save(out / "guide" / (fam + ".json"),
                  {"schema": SCHEMA, "family": fam, "target": target,
                   "records": sorted(rows[fam], key=lambda x: int(x["id"]))})
+        save(out / "guide" / "rewards.json", {"schema": SCHEMA, "family": "rewards",
+                 "target": target, "records": reward_rows,
+                 "scope": "default_friendship_levels_only"})
         save(out / "database" / "relations.json", {"schema": SCHEMA, "relations": relations,
                                                       "target": target})
         save(out / "database" / "candidate-refs.json", {"schema": SCHEMA,
@@ -442,8 +526,9 @@ def extract(game, out, version, platform, item_index=None, previous=None):
                              "bytes": len(files[fam]), "records": len(rows[fam])} for fam in files}
         manifest = {"schema": SCHEMA, "target": target, "status": status,
                     "sources": source_info, "localizationSources": locale.provenance,
+                    "friendshipRewardSource": reward_source, "structuredDefinitions": overlay_counts,
                     "itemIndexSha256": sha(item_index.read_bytes()) if item_index else None,
-                    "counts": {fam: len(rows[fam]) for fam in SOURCES},
+                    "counts": {**{fam: len(rows[fam]) for fam in SOURCES}, "rewards": len(reward_rows)},
                     "missingSources": missing_families,
                     "sourceFieldRelations": len(relations),
                     "unresolvedRelations": sum(r["status"] == "unresolved" for r in relations),
@@ -461,8 +546,12 @@ def extract(game, out, version, platform, item_index=None, previous=None):
                                    "missingLocales": len(translation_missing),
                                    "localizedStepKeys": localized_step_keys})
         if previous:
-            save(out / "diff.json", {"schema": SCHEMA, "previous": str(previous),
-                                    "target": target, **diff(previous, rows)})
+            save(out / "diff.json", {"schema": SCHEMA, "status": "COMPARED",
+                                    "previous": str(previous), "target": target, **diff(previous, {**rows, "rewards": reward_rows})})
+        else:
+            save(out / "diff.json", {"schema": SCHEMA, "status": "BASELINE_NO_PREVIOUS",
+                                    "previous": None, "target": target,
+                                    "note": "No earlier source snapshot supplied; no change claim is made."})
         print(stable({"status": status, "counts": manifest["counts"],
                       "relations": len(relations), "candidateRefs": len(candidates),
                       "output": str(out)}))
