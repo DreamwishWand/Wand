@@ -16,6 +16,10 @@ const CATEGORY_ORDER: [&str; 29] = [
     "Board Game","Snippets","Lorekeeper Tales","Quest Puzzles","Exhibition"
 ];
 const LOCALES: [&str; 8] = ["en", "fr", "it", "de", "es-ES", "ja", "zh-CN", "pt-BR"];
+const UNKNOWN_NAME_LABELS: [&str;8] = [
+    "Name unverified", "Nom non vérifié", "Nome non verificato", "Name nicht bestätigt",
+    "Nombre sin verificar", "名称未確認", "名称未核实", "Nome não verificado"
+];
 
 
 const DB00_RELEASE_SCHEMA: &str = "wand.game-db.release@1";
@@ -148,6 +152,7 @@ struct Item {
     expansion: Vec<usize>,
     labels: Vec<String>,
     search: String,
+    name_verified: bool,
 }
 
 #[derive(Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -272,6 +277,8 @@ struct Query {
     status: String,
     offset: usize,
     limit: usize,
+    #[serde(rename="nameStatus")]
+    name_status: String,
 }
 fn checked_index(source: &str) -> Result<Index, String> {
     let index: Index = serde_json::from_str(source).map_err(|_| "COLLECTION_INDEX_JSON")?;
@@ -314,6 +321,7 @@ pub struct CollectionEngine {
     db00_sources: HashSet<String>,
     db00_releases: HashSet<String>,
     db00_relations: Vec<(u64,u64)>,
+    owner_local_complete: bool,
 }
 
 impl Default for CollectionEngine {
@@ -327,6 +335,7 @@ impl Default for CollectionEngine {
             db00_sources: HashSet::new(),
             db00_releases: HashSet::new(),
             db00_relations: Vec::new(),
+            owner_local_complete: false,
         }
     }
 }
@@ -338,6 +347,7 @@ impl CollectionEngine {
         self.rows.clear();
         self.lookup.clear();
         self.db00_mode = false;
+        self.owner_local_complete = false;
         self.db00_sources.clear();
         self.db00_releases.clear();
         self.db00_relations.clear();
@@ -359,7 +369,8 @@ impl CollectionEngine {
             || published.sources.iter().any(|entry|entry.visibility!=visibility || entry.id.is_empty())
         { return Err("COLLECTION_DB00_PUBLISHABLE_INDEX_REQUIRED".into()); }
         if visibility=="private"
-            && (published.id!="db01-steam-1-26-2-owner-local-verified"
+            && ( (published.id!="db01-steam-1-26-2-owner-local-verified"
+                && published.id!="db01-steam-1-26-2-owner-local-complete")
                 || published.target.platform!="Steam"
                 || published.target.game_version.as_deref()!=Some("1.26.2")
                 || published.count>13_202 || published.sources.len()!=1
@@ -398,6 +409,8 @@ impl CollectionEngine {
         self.rows.clear();
         self.lookup.clear();
         self.db00_mode=true;
+        self.owner_local_complete=visibility=="private"
+            && published.id=="db01-steam-1-26-2-owner-local-complete";
         self.db00_sources=sources;
         self.db00_releases=releases;
         self.db00_relations.clear();
@@ -419,18 +432,25 @@ impl CollectionEngine {
         let mut staged=Vec::with_capacity(shard.items.len());
         let mut staged_relations=Vec::new();
         let mut ids=HashSet::new();
+        let owner_local=self.db00_sources.contains("private-db01-v1262");
         for row in shard.items {
             if !valid_item_id(&row.id) {return Err("COLLECTION_DB00_ITEM_ID".into());}
-            if index.target.platform=="Steam" && index.target.game_version=="1.26.2"
-                && self.db00_sources.contains("private-db01-v1262")
-                && (row.names.len()!=LOCALES.len()
-                    || LOCALES.iter().any(|locale|
-                        row.names.get(*locale).is_none_or(|name|
-                            name.trim().is_empty() || name.len()>512)))
-            { return Err("COLLECTION_LOCAL_DB01_NAMES_REQUIRED".into()); }
+            let name_verified=row.name_status=="verified";
+            if owner_local {
+                // A verified name requires every locale. Only the SHA-pinned
+                // complete owner-local release may contain *unnamed* source IDs.
+                let fully_named=row.names.len()==LOCALES.len()
+                    && LOCALES.iter().all(|locale| row.names.get(*locale)
+                        .is_some_and(|name| !name.trim().is_empty() && name.len()<=512));
+                if !((name_verified && fully_named)
+                    || (self.owner_local_complete && row.name_status=="unverified"
+                        && row.names.is_empty())) {
+                    return Err("COLLECTION_LOCAL_DB01_NAMES_REQUIRED".into());
+                }
+            }
             let id=row.id.parse::<u64>().map_err(|_|"COLLECTION_DB00_ITEM_ID")?;
             if !ids.insert(id) || self.lookup.contains_key(&id)
-                || row.name_status!="verified" || row.names.keys().any(|l|!LOCALES.contains(&l.as_str()))
+                || (!owner_local && !name_verified) || row.names.keys().any(|l|!LOCALES.contains(&l.as_str()))
                 || row.source_refs.is_empty()
                 || row.source_refs.iter().any(|r|!self.db00_sources.contains(r))
                 || row.release_ids.iter().any(|r|!self.db00_releases.contains(r))
@@ -447,7 +467,7 @@ impl CollectionEngine {
             let expansion:Vec<usize>=row.content_ids.into_iter().map(|v|intern(&mut staged_index.expansions,v)).collect();
             let labels:Vec<String>=LOCALES.iter().map(|lang|display(row.names.get(*lang).map(|s|s.as_str()).unwrap_or(""))).collect();
             let search=labels.join(" ").to_lowercase();
-            staged.push(Item {id,family,semantic,world,universe,expansion,labels,search});
+            staged.push(Item {id,family,semantic,world,universe,expansion,labels,search,name_verified});
         }
         staged_index.world_labels=staged_index.worlds.iter().map(|label|vec![label.clone();8]).collect();
         staged_index.universe_labels=staged_index.universes.iter().map(|label|vec![label.clone();8]).collect();
@@ -510,7 +530,7 @@ impl CollectionEngine {
             }
             let labels: Vec<String> = labels.iter().map(|label| display(label.as_deref().unwrap_or(""))).collect();
             let search = labels.join(" ").to_lowercase();
-            staged.push(Item { id, family, semantic, world, universe, expansion, labels, search });
+            staged.push(Item { id, family, semantic, world, universe, expansion, labels, search, name_verified:true });
         }
         for item in staged {
             self.lookup.insert(item.id, self.rows.len());
@@ -537,12 +557,17 @@ impl CollectionEngine {
     }
     fn item_json(&self, index: &Index, item: &Item, loc: usize) -> Value {
         let entry = self.entry(item.id);
-        let label = item.labels.get(loc).filter(|s| !s.is_empty())
-            .or_else(|| item.labels.iter().find(|s| !s.is_empty()))
-            .cloned().unwrap_or_else(|| format!("Item {}", item.id));
+        let label = if !item.name_verified {
+            UNKNOWN_NAME_LABELS[loc].to_string()
+        } else {
+            item.labels.get(loc).filter(|s| !s.is_empty())
+                .or_else(|| item.labels.iter().find(|s| !s.is_empty()))
+                .cloned().unwrap_or_else(|| format!("Item {}", item.id))
+        };
         json!({
             "itemId":item.id,
             "label": label,
+            "nameVerified":item.name_verified,
             "family":index.families[item.family],
             "stateSemantic": index.semantics[item.semantic],
             "worlds":item.world.iter().map(|&i| index.worlds[i].as_str()).collect::<Vec<_>>(),
@@ -560,6 +585,7 @@ impl CollectionEngine {
         if query.limit == 0 || query.limit > 200 || query.offset > MAX_ROWS
             || query.search.len() > 512
             || !["", "all", "owned", "missing", "unknown"].contains(&query.status.as_str())
+            || !["", "all", "verified", "unverified"].contains(&query.name_status.as_str())
         { return Err("COLLECTION_QUERY_BOUNDS".into()); }
         let loc = locale_index(&query.locale);
         let term = query.search.trim().to_lowercase();
@@ -570,11 +596,15 @@ impl CollectionEngine {
             && one_of(&query.universe,&index.universes,&r.universe)
             && one_of(&query.expansion,&index.expansions,&r.expansion)
             && (query.status.is_empty() || query.status == "all" || self.status(r.id) == query.status)
+            && (query.name_status.is_empty() || query.name_status=="all"
+                || (query.name_status=="verified" && r.name_verified)
+                || (query.name_status=="unverified" && !r.name_verified))
         }).collect();
         matches.sort_unstable_by(|a,b| {
+            b.name_verified.cmp(&a.name_verified).then(
             a.labels.get(loc).unwrap_or(&String::new()).to_lowercase()
                 .cmp(&b.labels.get(loc).unwrap_or(&String::new()).to_lowercase())
-                .then(a.id.cmp(&b.id))
+                .then(a.id.cmp(&b.id)))
         });
         let total = matches.len();
         let page = matches.into_iter().skip(query.offset).take(query.limit)
