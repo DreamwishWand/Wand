@@ -1268,3 +1268,74 @@ export function getNativeDefaultLayoutObjectLayerWindow(
     itemFactoryRoutePerRecordVerified: false,
   };
 }
+
+
+/**
+ * Steam 1.26.1 original GridArea.GetStrideFor(Nullable<int>, int).
+ * No override (confirmed source null) returns 1, independent of factor;
+ * a present override returns signed-int32 IMUL(override, callerGridFactor).
+ * Does not establish permitted placement, collision or occupied cells.
+ */
+export function getNativeFootprintComputedStride(catalog, itemId, callerGridFactor) {
+  if (!Number.isInteger(callerGridFactor) ||
+      callerGridFactor < 1 || callerGridFactor > 256) {
+    throw new TypeError('Invalid original GridArea stride caller grid factor');
+  }
+  const footprint = catalog.objects.get(idText(itemId))?.footprint;
+  if (!footprint) return null;
+  const common = {
+    itemId, callerGridTessellationFactor: callerGridFactor,
+    callerGridFactorExplicitlyProvided: true,
+    callerGridFactorProvenanceVerified: false,
+    sourceFactoryRoutePerRecordVerified: false,
+    strideOverridePlacementSemanticsVerified: false,
+    gridObjectAnchorVerified: false,
+    occupancyPredicateVerified: false,
+    placementLegalityVerified: false,
+  };
+  if (catalog.manifest.gameVersion !== '1.26.1') {
+    return {...common, status: 'native_stride_not_verified_for_game_version',
+      nativeStrideCalculationVerified: false};
+  }
+  // Older DB-04 snapshots omitted field 6.5 entirely. Their missing
+  // property is UNKNOWN, not a confirmed nullable null. Never treat it
+  // as native GetStrideFor(null) just because JS nullish-coalesces.
+  if (!Object.prototype.hasOwnProperty.call(footprint, 'strideOverride')) {
+    return {...common, status: 'legacy_snapshot_stride_source_unavailable',
+      nativeStrideCalculationVerified: false};
+  }
+  const override = footprint.strideOverride;
+  return {
+    ...common,
+    status: 'source_correlated_gridarea_get_stride_for',
+    strideOverride: override,
+    nativeComputedStride: override === null ? 1 :
+      Math.imul(override, callerGridFactor),
+    nativeStrideCalculationVerified: true,
+    strideOverrideSourceVerified:
+      footprint.strideOverrideSourceVerified === true,
+    sourceGameVersion: '1.26.1',
+  };
+}
+
+/**
+ * Use exact original GridCollection native Grid factor for one DEFAULT
+ * GridObject; source default arrangement is not a live-save placement.
+ */
+export function getNativeDefaultLayoutObjectComputedStride(catalog, layoutObjectId) {
+  const ref = getNativeDefaultLayoutObjectLayerAt(catalog, layoutObjectId, 0, 0);
+  if (ref?.callerGridFactorProvenanceVerified !== true) return ref;
+  const stride = getNativeFootprintComputedStride(
+    catalog, ref.originalItemId, ref.callerGridTessellationFactor);
+  return {
+    ...stride, ...ref,
+    status: stride.status,
+    nativeStrideCalculationVerified:
+      stride.nativeStrideCalculationVerified === true,
+    callerGridFactorProvenanceVerified: true,
+    sourceFactoryRoutePerRecordVerified: false,
+    currentSaveObjectVerified: false,
+    worldCoordinatesVerified: false,
+    placementLegalityVerified: false,
+  };
+}
