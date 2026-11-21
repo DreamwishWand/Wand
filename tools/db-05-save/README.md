@@ -1030,3 +1030,53 @@ All edit/export privileges remain false.
 CI: `python -m unittest discover -s tools/db-05-save -p 'test_*.py'`
 and `node --test tests/save-duty-milestones.test.mjs`
 (synthetic records only).
+
+
+## DB-01 native reward definitions: exact DutyAch source SHA cross-version join
+
+The owner-private Steam v1.26.2 DB-01 accepted release
+(`wand.db01.private-shards@2`, 39/39 original itemlists, 302/302
+read-shards) preserves the exact **DutyAch.json source SHA-256**
+from the Steam v1.26.1 original used for DB-03/DB-05:
+`1eae65460b71efd2d1c27904ff6b8ca30898d1c2a3220b9ef90b1dd9cef7c479`.
+This byte identity concerns **DutyAch.json only**, not executable
+behavior, game runtime, other files, save status or entitlements.
+
+The owner-private snapshot audit found **635** DutyAch definitions,
+**396** typed-milestone definitions, **1,646** typed milestone entries
+and **77** unique nonzero configured reward IDs. All **1,646** reward
+references match a DB-01 v1.26.2 native definition. Of these, **52**
+references belong to `catalogDomain:'item'`; **1,594** belong to
+`catalogDomain:'definition_unclassified'` including Currency.
+These are configuration references, NOT owned items or grants.
+An unclassified native definition is not a verified inventory item.
+
+`src/lib/save/duty-rewards.ts` exports
+`inspectDb05DutyRewardsInDb01(catalog, privateDuties, privateMilestones)`.
+Call it with the owner-private, SHA-checking DB-01 TypeScript client
+created by `createDb01CatalogClient`, the owner-private DB-03
+`guide/duties.json` and the DB-05 private milestone projection.
+The adapter validates the previously verified DB-03/DB-05 projection
+contract, then reads the DutyAch source category shard and requires
+**every** ID, original native field-2 key and original-source SHA
+metadata to match the private source before it compares any rewards.
+A different declared game version is allowed only for matching
+original DutyAch bytes, not assumed on the version label alone.
+
+Configured nonzero reward IDs are resolved via bounded
+`Db01CatalogClient.getItems` requests. The API returns **only static
+labels and anonymous numbers** of exact source matches, unresolved
+IDs, native item-domain IDs, and other native-definition IDs.
+No actual item/achievement IDs, names, thresholds, quantities,
+saved values, account data or DLC rights leave this bridge.
+
+Runtime checks compare metadata authenticated by DB-01's private
+shard client, not original game bytes. An independently audited
+private release remains mandatory before trusting its source hashes.
+Missing reward definitions in a partial index stay unresolved.
+An owner-modified save with removed mission or achievement objects
+is never automatically called corrupt or incomplete. This adapter
+does not read a save or authorize writing, exporting, reward claims,
+item ownership, entitlement, or collectibility.
+
+CI: `node --experimental-strip-types --test tests/save-duty-reward-db01.test.mjs`
