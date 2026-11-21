@@ -202,6 +202,108 @@ export function getLayoutGridReferences(catalog, layoutId) {
   }));
 }
 
+// Raw native GridData remains private. Use a lazy, source-corroborated
+// decoder only for 1/2-bit packed palettes; this is NOT a placement checker.
+const decodedGridCache = new WeakMap();
+
+function packedGridForPreview(catalog, gridId) {
+  const grid = catalog.grids.get(String(gridId));
+  if (!grid) return { status: 'unknown_grid' };
+  const evidence = grid.terrainDecoding;
+  if (evidence?.decoded !== true || evidence?.packing !== 'x_major_msb_first' ||
+      ![1, 2].includes(evidence.cellBits)) {
+    return { status: 'unresolved_native_packing' };
+  }
+  if (evidence.nativeCodeBodyVerified !== false ||
+      evidence.placementLegalityVerified !== false) {
+    throw new TypeError('Invalid provenance for preview native grid decoding');
+  }
+  const sx = grid.sizeX, sy = grid.sizeY;
+  const palette = grid.nativeFloorTypePalette;
+  const bits = evidence.cellBits;
+  if (!Number.isSafeInteger(sx) || !Number.isSafeInteger(sy) ||
+      sx <= 0 || sy <= 0 || sx * sy > 16777216 ||
+      !Array.isArray(palette) || palette.length < 2 ||
+      palette.length > (1 << bits) ||
+      (bits === 1 && palette.length !== 2) ||
+      !palette.every(v => Number.isSafeInteger(v) && v >= 0 && v <= 0xffffffff) ||
+      typeof grid.compactedFloorTypesBase64 !== 'string') {
+    throw new TypeError('Invalid source-derived native compacted grid');
+  }
+  let gridCache = decodedGridCache.get(catalog);
+  if (!gridCache) {
+    gridCache = new Map();
+    decodedGridCache.set(catalog, gridCache);
+  }
+  if (gridCache.has(gridId)) return gridCache.get(gridId);
+  const text = atob(grid.compactedFloorTypesBase64);
+  const packed = Uint8Array.from(text, char => char.charCodeAt(0));
+  if (packed.length !== Math.ceil(sx * sy * bits / 8) ||
+      packed.length !== grid.nativeCompactedByteCount) {
+    throw new TypeError('Native compacted grid length mismatch');
+  }
+  const remaining = (sx * sy * bits) % 8;
+  if (remaining && (packed[packed.length - 1] & ((1 << (8 - remaining)) - 1))) {
+    throw new TypeError('Native compacted grid padding mismatch');
+  }
+  const entry = { sizeX: sx, sizeY: sy, palette: [...palette], bits,
+    packed, evidence: evidence.sampleBasedEncodingEvidence ?? null };
+  gridCache.set(String(gridId), entry);
+  return entry;
+}
+
+function previewFloorValue(grid, x, y) {
+  const bitOffset = (x * grid.sizeY + y) * grid.bits;
+  const shift = 8 - grid.bits - (bitOffset % 8);
+  const index = (grid.packed[bitOffset >> 3] >> shift) & ((1 << grid.bits) - 1);
+  if (index >= grid.palette.length) {
+    throw new TypeError('Native compacted grid palette index is invalid');
+  }
+  return grid.palette[index];
+}
+
+/**
+ * Return a source-corroborated grid-local floor value. Neither this API nor
+ * floor masks establish placement permission or world-space origin.
+ */
+export function getNativeTerrainTile(catalog, gridId, x, y) {
+  const grid = packedGridForPreview(catalog, gridId);
+  if (grid.status) return { status: grid.status };
+  if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y) ||
+      x < 0 || y < 0 || x >= grid.sizeX || y >= grid.sizeY) {
+    return { status: 'outside_native_grid' };
+  }
+  const nativeValue = previewFloorValue(grid, x, y);
+  return { status: 'source_corroborated_grid_local_preview', x, y, nativeValue,
+    ...describeNativeFloorMask(nativeValue),
+    worldCoordinatesVerified: false, placementLegalityVerified: false,
+    nativeCodeBodyVerified: false, sampleBasedEncodingEvidence: grid.evidence };
+}
+
+/** 2D Y-row-major presentation; bytes themselves are native X-major packed. */
+export function getNativeTerrainWindow(catalog, gridId, rect) {
+  const grid = packedGridForPreview(catalog, gridId);
+  if (grid.status) return { status: grid.status };
+  if (!isRecord(rect)) throw new TypeError('Native grid preview rectangle required');
+  const { x, y, width, height } = rect;
+  if (![x, y, width, height].every(Number.isSafeInteger) ||
+      x < 0 || y < 0 || width <= 0 || height <= 0 ||
+      width > 256 || height > 256 ||
+      x + width > grid.sizeX || y + height > grid.sizeY) {
+    return { status: 'outside_native_grid_or_preview_limit' };
+  }
+  const rows = [];
+  for (let yy = y; yy < y + height; yy++) {
+    const row = [];
+    for (let xx = x; xx < x + width; xx++) row.push(previewFloorValue(grid, xx, yy));
+    rows.push(row);
+  }
+  return { status: 'source_corroborated_grid_local_preview',
+    x, y, width, height, rows,
+    worldCoordinatesVerified: false, placementLegalityVerified: false,
+    nativeCodeBodyVerified: false, sampleBasedEncodingEvidence: grid.evidence };
+}
+
 export function assessPlacement(catalog, itemId, proposed) {
   const item = catalog.objects.get(idText(itemId));
   if (!item) return { status: 'unresolved', reasons: ['unknown_item_id'] };

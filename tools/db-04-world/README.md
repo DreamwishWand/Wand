@@ -8,7 +8,7 @@ This lane implements a **read-only, partial, game-native database**, not a save 
 - `GridAreaData` fields 1/2 contain native `SizeX`/`SizeY`; field 3 is exactly `SizeX * SizeY` little-endian 32-bit layer values; field 4 is `AcceptedFloorTypesFlag`. Those mappings were cross-checked with a game-native `StreamingAssets/Furniture/...json` definition and full-file cardinality checks.
 - `itemlist/Scene.json`: indexed native Scene IDs/names; native scene-kind numeric value is kept without assigning an unsupported world/biome role.
 - `protoDb.bin` entries `Worlds` (`Definitions.WorldData`), `DefaultVillages` (`Meta.DefaultVillageList`) and `Village04Layout1` (`Definitions.Scene.VillageAreaData`): game-defined world names, Scene IDs, explicit parent world references, default layout paths and VillageAreaType/ground/water NavMesh IDs. The six villages include five conditional layouts, but those layout paths are **not** native world IDs.
-- `GridData/**/*.json`: despite the suffix these are **binary**. Verified IL2CPP `Definitions.Grid.GridData` fields 1/2 are SizeX/SizeY, field 3 is repeated native fixed32 FloorTypes, field 4 a fixed32 palette, and field 5 compacted index bytes. All raw palette values and Base64 packed bytes are preserved without guessing bit order, XY axis order or world coordinates.
+- `GridData/**/*.json`: despite the suffix these are **binary**. Verified IL2CPP `Definitions.Grid.GridData` fields 1/2 are SizeX/SizeY, field 3 is repeated native fixed32 FloorTypes, field 4 a fixed32 palette, and field 5 compacted index bytes. All raw palette values and Base64 packed bytes are preserved. **1/2-bit packed grids can now be previewed** with empirically corroborated X-major/MSB-first grid-local coordinates. The native decoder machine-code body is **not** verified, and neither global world coordinates nor placement legality can be inferred. 3-bit+ packing remains unresolved.
 - `Definitions.Grid.GridLayers` and `Definitions.Grid.GridFloorType` enums have verified bit names (e.g. 68 = Low|Blocking, 3072 = Floor|Wall). The meaning of those masks does **not** itself establish a full placement/collision algorithm.
 - `SceneLayouts/**/*.json`: `Meta.GridCollection` is decoded using its native Grid map, GridDataPath, TessellationFactor and Grid.Objects map. Each original default-layout object keeps its **native** `GridObject.ID`, `ItemID`, `X`, `Y`, and `GridOrientation` (0–15), plus only a hash/size of its optional state. These are **grid-local starting positions**, **not** world-space coordinates or user save data. An initial object is **not automatically permanent/immovable**.
 - `Meta.DefaultVillageData` scene layouts also expose `GridLayoutPaths`, an explicit native map from `VillageAreaType` to separate `SceneLayouts/` files. For unrecognized protobuf layouts, the extractor retains literal source-path evidence without inventing links.
@@ -57,6 +57,22 @@ Ownership boundaries: DB-05 supplies per-save placed objects and coordinates; SR
 Validated original `SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json` against IL2CPP `Meta.Grids.Grid` and `GridObject`: one native grid references `GridData/Villages/Village04-MeadowLevel-GridData.json` and contains exactly **902** distinct GridObject IDs with exact matching protobuf map keys. Each object's Item ID and grid-local X/Y/orientation are native fields; sampled coordinates range X=1–194 and Y=0–90, all within the native grid's 196×100 dimensions. The original `DefaultVillageLayout01.json` explicitly maps eight area-type codes (0–7) to separate default grid layout paths. Not all 902 objects are guaranteed to be unmovable, and no placement legality is inferred.
 
 The full source ingestion will write `layoutObjects.json` and include it in the checksum manifest and version-to-version diff. A legacy previous snapshot that lacks `layoutObjects.json` yields an explicit incomplete-diff status for this family rather than inventing added/deleted objects.
+
+## Read-only 2D native terrain preview (Steam v1.26.1 source evidence)
+
+The original `Room12x16-GridData.json` (SHA-256 `c5ce1b0084087479292d2092e10b8963194ead168531c5c221893ab53a0b26e6`) is **192/192** correct under X-major / MSB-first 2-bit packing: a single-cell outer `Floor|Wall` border and a 10×14 interior `Floor`. The alternative axis/bit-order combinations match only 152/192 cells. The original `Village04-MeadowLevel-GridData.json` and 902 initial `GridObject` records independently support this candidate: **742/743** relevant Furniture/Building object origins match the native `AcceptedFloorTypesFlag`, and the only mismatch is a 11×11 default rock at the grid boundary. This checks terrain decoding consistency, **not** object collision or placeability.
+
+With the extracted JSON files in the **private** `SRC-05` snapshot, reproduce all four candidate scores:
+
+```bash
+python tools/db-04-world/terrain_evidence.py --snapshot "/path/to/private/DB04-output"
+```
+
+The CLI verifies the manifest and pins the original Steam 1.26.1 Room, Meadow and MeadowGrids source SHA-256 values before publishing its statistical result. Private original assets and native JSON records are not committed to public Git.
+
+The browser adapter supports `getNativeTerrainTile(catalog, gridId, x, y)` and `getNativeTerrainWindow(catalog, gridId, { x, y, width, height })` (each dimension at most 256). The returned `rows` are Y-major for display, **but bytes use X-major layout**. It explicitly returns `status: source_corroborated_grid_local_preview`, `nativeCodeBodyVerified: false`, `worldCoordinatesVerified: false`, and `placementLegalityVerified: false`. Unsupported palettes or missing source data return an unresolved result, never a guessed value.
+
+The Python extractor also attaches non-destructive `terrainDecoding` metadata to private `grids.json`. `verify_bundle.py` independently recomputes this metadata from source-derived Base64 bytes. For native `GridData` values not yet independently validated (such as 3-bit+ palette formats), decoding remains disabled.
 
 ## Snapshot integrity / game-update deltas
 

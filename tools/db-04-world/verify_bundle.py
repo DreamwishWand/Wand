@@ -12,6 +12,8 @@ import re
 import sys
 from pathlib import Path
 
+from terrain_codec import describe_native_packing
+
 SCHEMA = "wand.db04.world@1"
 FAMILIES = {
     "objects": "itemId",
@@ -91,6 +93,14 @@ def checked_grid(grid):
         if (len(data) != grid.get("nativeCompactedByteCount") or
                 hashlib.sha256(data).hexdigest() != grid.get("nativeCompactedSha256")):
             raise ValueError("grid packed-byte integrity mismatch")
+        declared = grid.get("terrainDecoding")
+        if declared is not None:
+            if not isinstance(declared, dict):
+                raise ValueError("invalid terrain decoding evidence")
+            computed = describe_native_packing(
+                x, y, grid.get("nativeFloorTypePalette"), data)
+            if declared != computed:
+                raise ValueError("terrain decoding evidence mismatches native bytes")
 
 
 def validate_snapshot(directory):

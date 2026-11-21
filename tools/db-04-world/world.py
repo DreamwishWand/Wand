@@ -16,6 +16,7 @@ from collections import Counter
 from pathlib import Path
 
 from verify_bundle import validate_snapshot
+from terrain_codec import describe_native_packing
 
 SCHEMA = "wand.db04.world@1"
 STREAM = Path("ddv_Data/StreamingAssets")
@@ -490,6 +491,9 @@ def parse_grid_structure(raw):
         status = "native_uncompacted_floor_values"
     else:
         status = "native_compacted_palette_and_index_bytes"
+    packing = (describe_native_packing(x, y, palette, compacted)
+               if compacted is not None else {
+                   "status": "not_compacted", "decoded": False})
     return {
         "sizeX": x, "sizeY": y,
         "nativeFloorTypes": floor_types or None,
@@ -498,6 +502,8 @@ def parse_grid_structure(raw):
         if compacted is not None else None,
         "nativeCompactedByteCount": len(compacted) if compacted is not None else None,
         "nativeCompactedSha256": digest(compacted) if compacted is not None else None,
+        "terrainDecoding": packing,
+        "nativeFloorIndexToLocalXYCorroborated": packing["decoded"],
         "floorTypeEnumSymbols": {str(value): name for value, name in GRID_FLOOR_TYPES.items()},
         "cellIndexToXYVerified": False,
         "compactedBitOrderVerified": False,
@@ -903,7 +909,7 @@ def extract(game, out, previous=None):
         "schema": SCHEMA,
         "unknownSemantics": [
             "Scene parent-world/biome hierarchy is not established by native Scene ID alone",
-            "GridData floor-type enum and palettes are verified, but compacted index bit order and 2D coordinate indexing are not",
+            "GridData packed 1-2 bit local X/Y decoding matches 1.26.1 native room geometry and default Meadow object origins, but the original native decoder code body is not yet verified",
             "Footprint layer values are native uint32 values; their bit meanings and XY indexing are unverified",
             "AcceptedFloorTypesFlag is a raw mask, not a validated placement permission",
             "Rotation order, wall/floor placement, road/fence adjacency and terrain transitions are unverified",
