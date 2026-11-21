@@ -1,3 +1,4 @@
+import base64
 import json
 import struct
 import tempfile
@@ -5,7 +6,8 @@ import unittest
 from pathlib import Path
 
 from world import (STREAM, diff_records, encode_varint, explicit_references,
-                   extract, footprint, parse_itemlist, restrictions, wire_fields)
+                   extract, footprint, parse_grid_structure, parse_itemlist,
+                   restrictions, wire_fields)
 
 
 def field(number, value, wire=None):
@@ -64,6 +66,27 @@ class NativeWireTests(unittest.TestCase):
             wire_fields(b"\x0a\xff")
         with self.assertRaises(ValueError):
             wire_fields(b"\x08\x80\x00")
+
+    def test_native_grid_fixed32_palette_and_compacted_payload(self):
+        palette = struct.pack("<III", 0, 3072, 1024)
+        compacted = b"\\x55" * 48
+        raw = (field(1, 12) + field(2, 16) +
+               field(4, palette) + field(5, compacted))
+        grid = parse_grid_structure(raw)
+        self.assertEqual((grid["sizeX"], grid["sizeY"]), (12, 16))
+        self.assertEqual(grid["nativeFloorTypePalette"], [0, 3072, 1024])
+        self.assertEqual(base64.b64decode(grid["compactedFloorTypesBase64"]), compacted)
+        self.assertEqual(grid["floorTypeEnumSymbols"]["1024"], "Floor")
+        self.assertFalse(grid["compactedBitOrderVerified"])
+        self.assertFalse(grid["cellIndexToXYVerified"])
+
+    def test_native_uncompacted_grid_fixed32_values(self):
+        raw = field(1, 2) + field(2, 2) + field(3, struct.pack("<IIII", 4, 4, 512, 0))
+        grid = parse_grid_structure(raw)
+        self.assertEqual(grid["nativeFloorTypes"], [4, 4, 512, 0])
+        self.assertEqual(grid["status"], "native_uncompacted_floor_values")
+        with self.assertRaises(ValueError):
+            parse_grid_structure(field(1, 1) + field(2, 1) + field(4, b"\\x01"))
 
     def test_native_building_alternate_wire_fields_are_not_scene_ids_or_footprints(self):
         from world import footprint
