@@ -176,13 +176,14 @@ def read_game_version(root, paths, supplied, errors):
                 data = raw.decode("utf-8-sig", errors="replace")
             matches = sorted(set(VERSION_PATTERN.findall(data)))
             if len(matches) == 1:
-                evidence.append({"source": relative, "value": matches[0], "type": "fullversion_text"})
+                evidence.append({"source": relative, "value": matches[0], "sha256": hashlib.sha256(raw).hexdigest(), "type": "fullversion_text"})
             elif len(matches) > 1:
                 errors.append({"operation": "read_game_version", "path": relative, "reason": "Multiple candidate versions in the same file"})
         except OSError as exc:
             errors.append({"operation": "read_game_version", "path": relative, "reason": type(exc).__name__})
     values = {entry["value"] for entry in evidence}
-    if len(values) > 1 or (len(values) == 1 and supplied and supplied not in values):
+    versions_have_different_sources = len({entry["sha256"] for entry in evidence}) > 1
+    if len(values) > 1 or versions_have_different_sources or (len(values) == 1 and supplied and supplied not in values):
         errors.append({"operation": "read_game_version", "reason": "Conflicting game version evidence"})
         return {"value": None, "status": "conflict", "evidence": evidence[:SAMPLES]}
     if len(values) == 1:
