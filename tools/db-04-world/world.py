@@ -5,6 +5,7 @@ No guessed world hierarchy, terrain mask, orientation, or save-state coordinates
 Game-derived outputs MUST remain outside the Git repository.
 """
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -282,29 +283,96 @@ def native_objects(root, sources):
     return results, scenes, missing
 
 
+# Verified against IL2CPP Definitions.Grid.GridData class fields in Steam 1.26.1.
+# Field4 is the native palette (repeated uint32); field5 is packed index bytes.
+# Index bit order/stride and 2D placement remain unverified.
+GRID_FLOOR_TYPES = {
+    1: "Beach", 2: "Wetland", 4: "Meadow", 8: "Urban",
+    16: "Savannah", 32: "Forest", 64: "DarkMountains", 128: "Cliff",
+    256: "Shore", 512: "Water", 1024: "Floor", 2048: "Wall",
+    4096: "Surface", 8192: "AtlanteanOutpost", 16384: "Desert",
+    32768: "Jungle", 65536: "Mythology", 131072: "FairyTales",
+    262144: "BlockAutomaticSpawning", 524288: "Library",
+    1048576: "Puzzle", 2097152: "PuzzleSurface", 4194304: "Rockies",
+    8388608: "Fashion", 16777216: "Wishland", 33554432: "OutsideFloor",
+    67108864: "Honeywood", 134217728: "Pirates",
+    268435456: "Candy", 536870912: "Kingdom",
+}
+
+
+def repeated_uint32(fields, number):
+    values = []
+    for field, wire, raw in fields:
+        if field != number:
+            continue
+        if wire == 0:
+            values.append(raw)
+        elif wire == 2:
+            # Google.Protobuf FieldCodec<uint> supports packed varints, not LE uint32s.
+            pos = 0
+            while pos < len(raw):
+                value, pos = varint(raw, pos)
+                if value > 0xffffffff:
+                    raise ValueError("invalid uint32 in native grid")
+                values.append(value)
+        else:
+            raise ValueError("unexpected repeated uint32 wire type")
+    return values
+
+
+def parse_grid_structure(raw):
+    fields = wire_fields(raw)
+    x, y = one(fields, 1, 0, True), one(fields, 2, 0, True)
+    if x <= 0 or y <= 0 or x * y > 16_777_216:
+        raise ValueError("invalid native GridData dimensions")
+    floor_types = repeated_uint32(fields, 3)
+    palette = repeated_uint32(fields, 4)
+    compacted = one(fields, 5, 2)
+    if not palette and compacted is not None:
+        raise ValueError("packed grid without a floor-type palette")
+    if floor_types and len(floor_types) != x * y:
+        raise ValueError("direct floor type list size does not match dimensions")
+    if floor_types and compacted is not None:
+        raise ValueError("multiple active native terrain representations")
+    if not floor_types and compacted is None:
+        # A truly empty/incomplete grid needs explicit unresolved status.
+        status = "dimensions_only"
+    elif compacted is None:
+        status = "native_uncompacted_floor_values"
+    else:
+        status = "native_compacted_palette_and_index_bytes"
+    return {
+        "sizeX": x, "sizeY": y,
+        "nativeFloorTypes": floor_types or None,
+        "nativeFloorTypePalette": palette,
+        "compactedFloorTypesBase64": base64.b64encode(compacted).decode("ascii")
+        if compacted is not None else None,
+        "nativeCompactedByteCount": len(compacted) if compacted is not None else None,
+        "nativeCompactedSha256": digest(compacted) if compacted is not None else None,
+        "floorTypeEnumSymbols": {str(value): name for value, name in GRID_FLOOR_TYPES.items()},
+        "cellIndexToXYVerified": False,
+        "compactedBitOrderVerified": False,
+        "terrainFlagValuesVerified": True,  # Enum in the game's IL2CPP metadata
+        "status": status,
+    }
+
+
 def grid_assets(root, sources):
     grids = []
     for relative in optional_files(root, STREAM / "GridData", sources):
         raw = source_bytes(root, relative, sources)
         try:
-            fields = wire_fields(raw)
-            field_one = one(fields, 1, 0)
-            field_two = one(fields, 2, 0)
-            opaque = one(fields, 5, 2)
-            status = "wire_structure_only"
+            entry = parse_grid_structure(raw)
         except (ValueError, UnicodeError):
-            field_one, field_two, opaque = None, None, None
-            status = "unrecognized_binary_structure"
-        grids.append({
+            entry = {"status": "unrecognized_binary_structure",
+                     "cellIndexToXYVerified": False,
+                     "compactedBitOrderVerified": False}
+        entry.update({
             "gridId": relative.relative_to(STREAM).as_posix(),
             "sourcePartition": relative.relative_to(STREAM / "GridData").parts[0],
-            "nativeIntegerField1": field_one, "nativeIntegerField2": field_two,
-            "nativePayloadField5Bytes": len(opaque) if opaque is not None else None,
-            "nativePayloadField5Sha256": digest(opaque) if opaque is not None else None,
-            "cellToWorldCoordinatesVerified": False,
-            "terrainFlagsVerified": False, "status": status,
             "source": {"path": relative.as_posix()},
         })
+        grids.append(entry)
     return grids
 
 
@@ -435,7 +503,7 @@ def extract(game, out, previous=None):
         "schema": SCHEMA,
         "unknownSemantics": [
             "Scene parent-world/biome hierarchy is not established by native Scene ID alone",
-            "GridData protobuf payload field 5 is opaque: do not infer terrain or blocked cells",
+            "GridData floor-type enum and palettes are verified, but compacted index bit order and 2D coordinate indexing are not",
             "Footprint layer values are native uint32 values; their bit meanings and XY indexing are unverified",
             "AcceptedFloorTypesFlag is a raw mask, not a validated placement permission",
             "Rotation order, wall/floor placement, road/fence adjacency and terrain transitions are unverified",
