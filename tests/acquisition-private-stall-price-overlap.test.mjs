@@ -24,5 +24,5 @@ test('private price release alone cannot substitute for source-pinned acquisitio
   await assert.rejects(loadPrivateStallPriceOverlap({
     acquisitionArchiveBytes:text('not an authenticated zip'),
     priceManifestBytes:text('{}'),priceFiles:{}
-  }),/PRIVATE_SRC02_ARCHIVE_SIZE/);
+  }),/PRIVATE_SRC02_EOCD_MISSING/);
 });
