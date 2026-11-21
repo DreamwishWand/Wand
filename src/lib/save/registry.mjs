@@ -20,6 +20,10 @@ const integer = value => Number.isSafeInteger(value) && value >= 0;
 
 export function getSaveRegistry() { return registry; }
 export function getLegacySaveFields() { return legacyFields; }
+export function getLegacySaveIdReferences(namespace = '') {
+  if (typeof namespace !== 'string') throw new TypeError('INVALID_ID_NAMESPACE');
+  return Object.freeze(legacyFields.fields.filter(field => field.idReference && (!namespace || field.idReference.namespace === namespace)));
+}
 
 export function matchSaveBuild({ platform, identityKind, identity, schemaVersion }) {
   if (typeof platform !== 'string' || typeof identityKind !== 'string' || typeof identity !== 'string') return null;
