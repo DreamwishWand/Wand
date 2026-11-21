@@ -14,7 +14,10 @@ const paths = [
   {path:'/Player/ContainerInventories/{containerId}/Inventory[]/Amount',type:'integer'},
   {path:'/Player/CollectionSets',type:'array'},
   {path:'/World/GridCollection/DiffGrids',type:'object'},
-  {path:'/Player/AvatarIsMale',type:'boolean'}
+  {path:'/Player/AvatarIsMale',type:'boolean'},
+  {path:'/World/Characters',type:'array'},
+  {path:'/Player/AchievementsData',type:'array'},
+  {path:'/Player/Mounts',type:'array'}
 ];
 const summary = (schemaObserved, witnesses = paths) => ({
   schema: 'wand.db05.ingest@1',
@@ -39,7 +42,7 @@ test('version 626 vs 643: equal observed shapes, no platform/build gates', () =>
   left.platform = 'Steam';
   const result = compareRedactedSaveWitnesses(left,right);
   assert.equal(result.status,'same_observed_witnesses');
-  assert.equal(result.domains.length,5);
+  assert.equal(result.domains.length,8);
   assert.ok(result.domains.every(d=>d.status==='same_observed_witnesses'));
   assert.equal(result.platformAndVersionUsedAsGates,false);
   assert.equal(result.writerAuthorized,false);
