@@ -7,6 +7,7 @@ import {
   getDefaultVillageAreaLayoutRefs, getDefaultLayoutGridEntries, describeNativeLayerMask,
   describeNativeFloorMask, checkNativeEditRestriction, assessPlacement,
   getNativeTerrainTile, getNativeTerrainWindow, getNativeTerrainDistribution,
+  getNativeDefaultLayoutViewport, getNativeVillageAreaViewport,
 } from '../src/lib/world/catalog.mjs';
 
 function fixture() {
@@ -240,4 +241,103 @@ test('histogram metadata missing or inconsistent cannot silently claim valid geo
   bad.grids.push(wrong);
   assert.throws(() => getNativeTerrainDistribution(createWorldCatalog(bad),
     'GridData/Rooms/TestRoom.json'), /histogram integrity/);
+});
+
+function preparedVillageViewportFixture() {
+  const data = fixture();
+  const room = nativeRoomGrid();
+  data.grids = [room];
+  data.layouts[0].nativeGridEntries[0].gridDataPath = room.gridId;
+  data.layouts[0].gridReferences[0].path = room.gridId;
+  data.layouts[0].nativeGridEntries[0].defaultObjectCount = 2;
+  data.layoutObjects[0].x = 5;
+  data.layoutObjects[0].y = 5;
+  data.layoutObjects.push({
+    ...data.layoutObjects[0],
+    layoutObjectId: 'SceneLayouts/Village04/Main.json#grid=0#object=9',
+    gridObjectIdNative: 9, x: 11, y: 15, itemId: 40000002,
+    orientationCode: 4, orientationName: 'Right',
+  });
+  return data;
+}
+
+test('native village area viewport composes only explicitly linked terrain and anchor positions', () => {
+  const catalog = createWorldCatalog(preparedVillageViewportFixture());
+  const result = getNativeVillageAreaViewport(
+    catalog, 'SceneLayouts/Village04/Default.json', 3, 0,
+    { x: 4, y: 3, width: 3, height: 4 });
+  assert.equal(result.status, 'source_corroborated_grid_local_preview');
+  assert.equal(result.villageLayoutId, 'SceneLayouts/Village04/Default.json');
+  assert.equal(result.gridLayoutPath, 'SceneLayouts/Village04/Main.json');
+  assert.equal(result.gridDataPath, 'GridData/Rooms/TestRoom.json');
+  assert.equal(result.nativeAreaTypeCode, 3);
+  assert.equal(result.nativeAreaTypeName, 'Urban');
+  assert.deepEqual(result.terrainRows, Array(4).fill(null).map(() => [1024, 1024, 1024]));
+  assert.equal(result.viewAnchorCount, 1);
+  assert.equal(result.totalNativeDefaultObjectAnchors, 2);
+  assert.deepEqual(result.defaultObjectAnchors.map(item => [item.itemId, item.x, item.y]),
+    [[40000001, 5, 5]]);
+  assert.equal(result.worldCoordinatesVerified, false);
+  assert.equal(result.fullFootprintOccupancyVerified, false);
+  assert.equal(result.placementLegalityVerified, false);
+  assert.equal(result.nativeCodeBodyVerified, false);
+  const standalone = getNativeDefaultLayoutViewport(catalog,
+    'SceneLayouts/Village04/Main.json', 0,
+    { x: 11, y: 15, width: 1, height: 1 });
+  assert.equal(standalone.viewAnchorCount, 1);
+  assert.deepEqual([standalone.defaultObjectAnchors[0].x,
+    standalone.defaultObjectAnchors[0].y], [11, 15]);
+  assert.equal(standalone.terrainRows[0][0], 3072);
+});
+
+test('native village 2D API fails closed for missing and ambiguous source links', () => {
+  const root = 'SceneLayouts/Village04/Default.json';
+  const target = 'SceneLayouts/Village04/Main.json';
+  const rect = { x: 0, y: 0, width: 3, height: 3 };
+  const full = createWorldCatalog(preparedVillageViewportFixture());
+  assert.equal(getNativeVillageAreaViewport(full, root, 100, 0, rect).status,
+    'unknown_native_village_area');
+  assert.equal(getNativeVillageAreaViewport(full, 'unknown', 3, 0, rect).status,
+    'unknown_native_village_layout');
+  assert.equal(getNativeDefaultLayoutViewport(full, root, 0, rect).status,
+    'not_native_grid_collection');
+  assert.equal(getNativeDefaultLayoutViewport(full, target, 500, rect).status,
+    'unknown_native_grid_in_layout');
+  assert.throws(() => getNativeDefaultLayoutViewport(full, target, -1, rect),
+    /unsigned 32-bit integer/);
+
+  const noArea = preparedVillageViewportFixture();
+  noArea.layouts[1].areaLayoutReferences[0].gridLayoutPath = 'SceneLayouts/not-present.json';
+  assert.equal(getNativeVillageAreaViewport(createWorldCatalog(noArea),
+    root, 3, 0, rect).status,
+  'missing_referenced_area_layout_in_source_subset');
+
+  const noGrid = preparedVillageViewportFixture();
+  noGrid.layouts[0].nativeGridEntries[0].gridDataPath = 'GridData/not-present.json';
+  assert.equal(getNativeDefaultLayoutViewport(createWorldCatalog(noGrid), target,
+    0, rect).status, 'missing_referenced_grid_in_source_subset');
+
+  const incomplete = preparedVillageViewportFixture();
+  incomplete.layouts[0].nativeGridEntries[0].defaultObjectCount = 3;
+  assert.equal(getNativeDefaultLayoutViewport(createWorldCatalog(incomplete),
+    target, 0, rect).status, 'incomplete_native_default_object_source');
+
+  const duplicate = preparedVillageViewportFixture();
+  duplicate.layouts[1].areaLayoutReferences.push({
+    nativeAreaTypeCode: 3, nativeAreaTypeName: 'Meadow',
+    gridLayoutPath: 'SceneLayouts/other.json',
+  });
+  assert.throws(() => getNativeVillageAreaViewport(
+    createWorldCatalog(duplicate), root, 3, 0, rect),
+    /Duplicate native area type code/);
+});
+
+test('viewport never assumes an out-of-frame anchor occupies no visible cells', () => {
+  const catalog = createWorldCatalog(preparedVillageViewportFixture());
+  const result = getNativeDefaultLayoutViewport(catalog,
+    'SceneLayouts/Village04/Main.json', 0, { x: 0, y: 0, width: 2, height: 2 });
+  assert.equal(result.viewAnchorCount, 0);
+  assert.equal(result.totalNativeDefaultObjectAnchors, 2);
+  assert.equal(result.fullFootprintOccupancyVerified, false);
+  assert.equal(result.sourceScopeVerified, false);
 });
