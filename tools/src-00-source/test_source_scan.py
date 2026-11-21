@@ -58,6 +58,44 @@ class SourceScanTests(unittest.TestCase):
         self.assertEqual(diff["modified"]["count"], 1)
         self.assertEqual(diff["unchanged_count"], 1)
 
+    def test_game_version_from_fullversion_and_cache(self):
+        (self.root / "GameAssembly.dll").write_bytes(b"assembly")
+        (self.root / "steam_api64.dll").write_bytes(b"steam")
+        (self.root / "FullVersion.txt").write_text("1.26.1+abcdef\n", encoding="utf-8")
+        streaming = self.root / "ddv_Data" / "StreamingAssets"
+        streaming.mkdir(parents=True)
+        (streaming / "FullVersion.txt").write_text("1.26.1+abcdef\n", encoding="utf-8")
+        result = self.run_scan()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = self.read("source-report.json")
+        self.assertEqual(report["game_version"]["status"], "verified_from_file")
+        self.assertEqual(report["game_version"]["value"], "1.26.1")
+        self.assertEqual(len(report["game_version"]["evidence"]), 2)
+        self.assertTrue(report["ready_for_downstream"])
+        again = self.run_scan()
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertEqual(self.read("source-report.json")["reused_hashes"], 4)
+
+    def test_disagreeing_fullversion_marks_incomplete(self):
+        (self.root / "GameAssembly.dll").write_bytes(b"assembly")
+        (self.root / "steam_api64.dll").write_bytes(b"steam")
+        (self.root / "FullVersion.txt").write_text("1.26.1\n", encoding="utf-8")
+        streaming = self.root / "ddv_Data" / "StreamingAssets"
+        streaming.mkdir(parents=True)
+        (streaming / "FullVersion.txt").write_text("1.25.3\n", encoding="utf-8")
+        result = self.run_scan()
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(self.read("source-report.json")["ready_for_downstream"])
+        self.assertEqual(self.read("source-report.json")["game_version"]["status"], "conflict")
+
+    def test_explicit_version_conflict(self):
+        (self.root / "GameAssembly.dll").write_bytes(b"assembly")
+        (self.root / "steam_api64.dll").write_bytes(b"steam")
+        (self.root / "FullVersion.txt").write_text("1.26.1\n", encoding="utf-8")
+        result = self.run_scan("--version", "1.25.3")
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(self.read("source-report.json")["game_version"]["status"], "conflict")
+
     def test_switch_nso_id(self):
         exefs = self.root / "exefs"
         exefs.mkdir()
