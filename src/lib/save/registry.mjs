@@ -1,4 +1,5 @@
 import registry from '../../../data/ddv/save/registry.v1.json' with { type: 'json' };
+import legacyFields from '../../../data/ddv/save/legacy626-fields.v1.json' with { type: 'json' };
 
 export const SAVE_REGISTRY_SCHEMA = 'wand.db05.save-registry@1';
 export const SAVE_INSPECTION_CONTRACT = 'wand.db05.save-readonly-inspection@1';
@@ -8,6 +9,7 @@ const plain = value => value !== null && typeof value === 'object' && !Array.isA
 const integer = value => Number.isSafeInteger(value) && value >= 0;
 
 export function getSaveRegistry() { return registry; }
+export function getLegacySaveFields() { return legacyFields; }
 
 export function matchSaveBuild({ platform, identityKind, identity, schemaVersion }) {
   if (typeof platform !== 'string' || typeof identityKind !== 'string' || typeof identity !== 'string') return null;
