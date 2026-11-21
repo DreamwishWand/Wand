@@ -7,7 +7,9 @@ All output stays outside the Git repository. This never edits game files or save
 param(
     [string]$GameRoot = "C:\Program Files (x86)\Steam\steamapps\common\Disney Dreamlight Valley",
     [string]$OutputRoot = "$env:USERPROFILE\Documents\DreamwishWand\DB04",
-    [string]$PreviousSnapshot = ""
+    [string]$PreviousSnapshot = "",
+    [string]$Il2CppDumpPath = "",
+    [string]$Il2CppDumpGameVersion = ""
 )
 
 Set-StrictMode -Version Latest
@@ -72,7 +74,38 @@ Run-Python -Arguments @((Join-Path $tools "verify_bundle.py"),
 
 # Only completed and verified results receive a stable private snapshot path.
 Move-Item -LiteralPath $partial -Destination $ready -ErrorAction Stop
-Write-Host "DB-04: packaging verified partial snapshot (no binaries or player saves)"
+
+# Capture native PE64 metadata and, only with a caller-supplied version-matched
+# IL2CPP dump.cs, bounded private GridData method byte windows. Never infer a
+# 1.26.2 method RVA from 1.26.1. This does not disassemble native code.
+$gameAssembly = Join-Path $GameRoot "GameAssembly.dll"
+if ($Il2CppDumpPath -and -not $Il2CppDumpGameVersion) {
+    throw "A provided IL2CPP dump.cs requires -Il2CppDumpGameVersion"
+}
+if (-not $Il2CppDumpPath -and $Il2CppDumpGameVersion) {
+    throw "-Il2CppDumpGameVersion requires -Il2CppDumpPath"
+}
+if (Test-Path -LiteralPath $gameAssembly -PathType Leaf) {
+    $nativeArgs = @(
+        (Join-Path $tools "native_pe_evidence.py"),
+        "--game-root", $GameRoot,
+        "--out", (Join-Path $ready "native-pe-evidence.json")
+    )
+    if ($Il2CppDumpPath) {
+        $dumpFile = [System.IO.Path]::GetFullPath($Il2CppDumpPath)
+        if (-not (Test-Path -LiteralPath $dumpFile -PathType Leaf)) {
+            throw "Original version-matched IL2CPP dump.cs does not exist"
+        }
+        $nativeArgs += @("--dump-cs", $dumpFile,
+                         "--dump-game-version", $Il2CppDumpGameVersion)
+    }
+    Write-Host "DB-04: privately pinning native PE64 GameAssembly evidence"
+    Run-Python -Arguments $nativeArgs
+}
+else {
+    Write-Host "DB-04: native PE metadata not collected (GameAssembly.dll absent)"
+}
+Write-Host "DB-04: packaging verified partial snapshot (no full binaries or player saves)"
 Run-Python -Arguments @((Join-Path $tools "package_snapshot.py"),
                          "--snapshot", $ready,
                          "--zip", $zip)
