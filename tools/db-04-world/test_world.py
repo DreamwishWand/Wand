@@ -250,7 +250,7 @@ class NativeWireTests(unittest.TestCase):
         self.assertEqual(native["status"],
                          "unsupported_noncardinal_orientation_hypothesis")
         self.assertNotIn("cells", native)
-        with self.assertRaisesRegex(ValueError, "orientation"):
+        with self.assertRaisesRegex(ValueError, "GridOrientation"):
             candidate_layer_cells(2, 3, [64] * 6, cell_order="x_major",
                                   orientation_code=16, anchor_mode="top_left",
                                   x=0, y=0)
