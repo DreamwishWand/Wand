@@ -234,3 +234,55 @@ a review-required mismatch. Even 85/85 matching fields in a new native
 dump cannot automatically verify Codec round-trip, references, new
 fields, current-build attestation or Writer safety. Raw private saves
 must remain outside Git, and this verifier accepts **no save input**.
+
+## Native v1.26.1 nested Protobuf field witnesses (58 new public paths)
+
+`data/ddv/save/native1261-nested-fields.v1.json` records **58 unique
+nested paths** whose names, direct parent Protobuf message classes,
+field numbers and C# property types originate from the SHA-256-pinned
+Steam **v1.26.1** `Il2CppDump/dump.cs`. These nested paths were
+observed in each of the three separate owner-private 626/643 save
+originals. Three other candidate paths already belonged to the prior
+66-field registry and were **excluded rather than counted twice**.
+Thus 66 historical + 16 common + 85 direct native + 58 nested native
+= **225 distinct known public field templates**.
+
+The nested groups cover pet relationships and nullable timestamps,
+cookbook favorites, tools, Royal Duties, backpack overflow, fast travel,
+villages, houses, decoration presets, floating islands, building
+metadata, critters and grid structures. Non-public map keys and personal
+values are never stored. For example, `/World/FloatingIslands/{id}/Unlocked`
+is a public template, while a path containing an actual numeric island ID
+is rejected by the public comparison API. The private SRC-06 importer
+normalizes that ID to the known template before a report can be used.
+
+`observedJsonKinds` contains only actual JSON *type names* from these
+three owner-private save originals. Some timestamps were observed as
+`null` or `string`; `Village.AccessibilityConditions` was
+`null` or `object`. A decoration-preset `ShareInfo` field was
+`null` in all three saves. Although native metadata identifies its
+message type, a non-null `ShareInfo` object was **not observed**, so
+the registry does not claim its child structure is validated.
+`allowedJsonKinds` records this limited nullable candidate separately.
+
+New read-only functions `getNestedSaveFields()`,
+`probeNestedSaveStructure(decoded)`, and
+`compareNestedSaveStructures(a,b)` identify known shape observations,
+missing witnesses, type conflicts, and harmless nullable-kind drift.
+The latter is reported as `changedKindPaths` with
+`observed_witness_difference`, **not** as a proved incompatibility.
+As with all other DB-05 probes, large repeated fields/maps are sampled,
+the source build is v1.26.1 rather than the current v1.26.2 game
+binary, and Writer/export authority remains permanently **false**.
+
+The source-verification tool also supports validating all nested native
+field tags and property types:
+
+```bash
+python tools/db-05-save/verify_native_dump.py --dump /private/Il2CppDump/dump.cs --nested
+```
+
+For a different native game-source version, add
+`--allow-new-source` for **comparison only**. The verifier uses
+streaming input, emits public field names and counts only, requires the
+exact pinned digest by default, and does not read a save file.
