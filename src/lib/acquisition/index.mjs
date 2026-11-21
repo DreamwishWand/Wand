@@ -23,7 +23,8 @@ export function createAcquisitionDatabase({ manifest, recipes = [], acquisitions
     if (!validId(itemId)) throw new Error('Invalid Item ID');
     if ((rel.recipesProducedBy || []).some(id => !byRecipe.has(id)) ||
         (rel.recipesUsedBy || []).some(id => !byRecipe.has(id)) ||
-        (rel.acquisitionPaths || []).some(id => !byPath.has(id))) {
+        (rel.acquisitionPaths || []).some(id => !byPath.has(id)) ||
+        (rel.growPathsForSeed || []).some(id => !byPath.has(id))) {
       throw new Error(`Broken reference for Item ID ${itemId}`);
     }
   }
@@ -37,6 +38,7 @@ export function createAcquisitionDatabase({ manifest, recipes = [], acquisitions
       madeBy: (links.recipesProducedBy || []).map(getRecipe),
       usedBy: (links.recipesUsedBy || []).map(getRecipe),
       acquisitionPaths: (links.acquisitionPaths || []).map(key => byPath.get(key)),
+      growsInto: (links.growPathsForSeed || []).map(key => byPath.get(key)),
       // Empty/unknown offers are not evidence an item is not for sale.
       shopOffers: [...byShop.values()].filter(row => row.itemId === id),
       source: { platform: manifest.platform, gameVersion: manifest.gameVersion },
