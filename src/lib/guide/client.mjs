@@ -425,7 +425,7 @@ export function guideStaticFacts(record, locale = 'ja') {
   const friendship = sourceRewards.friendshipOverride;
   if (isObj(friendship) && (Number.isSafeInteger(friendship.min) ||
       Number.isSafeInteger(friendship.max))) {
-    rewards.push({label:'原本の友情報酬設定（上書き値）',
+    rewards.push({label:'原本の親密度報酬設定（上書き値）',
       min:Number.isSafeInteger(friendship.min) ? friendship.min : null,
       max:Number.isSafeInteger(friendship.max) ? friendship.max : null});
   }
