@@ -22,7 +22,7 @@ from disassemble_native_pe import (
     disassemble_private_windows, write_private_disassembly,
 )
 from package_snapshot import package_snapshot
-from verify_bundle import validate_snapshot
+from verify_bundle import checked_footprint, validate_snapshot
 from terrain_codec import (describe_native_packing, floor_at, decode_window,
                            count_packed_palette_indices, EVIDENCE)
 
@@ -68,6 +68,57 @@ class NativeWireTests(unittest.TestCase):
         self.assertEqual(cells["acceptedFloorTypesFlag"], 2048)
         self.assertFalse(cells["cellIndexToXYVerified"])
         self.assertFalse(cells["layerMaskSemanticsVerified"])
+
+    def test_original_nullable_stride_override_wire5_preserves_absence_and_zero(self):
+        def native_stride(payload=None):
+            shape = grid(2, 2, [1, 2, 4, 8])
+            if payload is not None:
+                shape += field(5, payload)
+            raw = indexed(40000000, 12, "TestWithStride", shape)
+            return footprint(parse_itemlist(raw, "Furniture")[40000012][0])
+
+        absent = native_stride()
+        self.assertIsNone(absent["strideOverride"])
+        self.assertFalse(absent["strideOverrideSourceVerified"])
+        self.assertNotIn("strideOverride", absent["nativeWireFields"])
+        checked_footprint({"itemId": 40000012, "footprint": absent})
+        for value in (1, 2, 3, 4):
+            stride = native_stride(field(1, value))
+            self.assertEqual(stride["strideOverride"], value)
+            self.assertTrue(stride["strideOverrideSourceVerified"])
+            self.assertEqual(stride["nativeWireFields"]["strideOverride"], "6.5")
+            self.assertFalse(stride["strideOverridePlacementSemanticsVerified"])
+            checked_footprint({"itemId": 40000012, "footprint": stride})
+
+        # Nullable<int> explicit 0 is a length-zero wrapper, NOT null.
+        zero = native_stride(b"")
+        self.assertEqual(zero["strideOverride"], 0)
+        self.assertTrue(zero["strideOverrideSourceVerified"])
+        negative = native_stride(field(1, 0xffffffff))
+        self.assertEqual(negative["strideOverride"], -1)
+        self.assertFalse(negative["strideOverridePlacementSemanticsVerified"])
+
+        bad_wrappers = (
+            field(1, 1) + field(1, 2),  # duplicate nested value
+            field(2, 1),                 # unsupported nested field
+            field(1, 0x100000000),      # invalid int32 representation
+        )
+        for raw in bad_wrappers:
+            with self.assertRaises(ValueError):
+                native_stride(raw)
+        malformed = grid(2, 2, [1, 2, 4, 8]) + field(5, 3, wire=0)
+        raw = indexed(40000000, 13, "WrongStrideWire", malformed)
+        with self.assertRaisesRegex(ValueError, "wrong-wire"):
+            footprint(parse_itemlist(raw, "Furniture")[40000013][0])
+
+        # Even if a manifest hash is recomputed, it cannot promote a
+        # source-null stride to a claimed explicit positive value.
+        forged = dict(absent, strideOverride=2)
+        with self.assertRaisesRegex(ValueError, "stride override evidence"):
+            checked_footprint({"itemId": 40000012, "footprint": forged})
+        forged = dict(absent, strideOverrideSourceVerified=True)
+        with self.assertRaisesRegex(ValueError, "stride override evidence"):
+            checked_footprint({"itemId": 40000012, "footprint": forged})
 
     def test_reject_invalid_grid_and_duplicate_record(self):
         record = indexed(40000000, 2, "Test", grid(2, 2, [1, 2]))

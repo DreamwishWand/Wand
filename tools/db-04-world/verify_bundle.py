@@ -67,6 +67,21 @@ def checked_footprint(item):
         not isinstance(layers, list) or len(layers) != x * y or
         any(type(v) is not int or v < 0 or v > 0xffffffff for v in layers)):
         raise ValueError(f"invalid native footprint on item {item.get('itemId')}")
+    # Newer original-source snapshots retain protobuf Nullable<int> field
+    # 6.5. Legacy source previews had no such key and remain accepted.
+    if "strideOverride" in footprint:
+        stride = footprint["strideOverride"]
+        present = footprint.get("strideOverrideSourceVerified")
+        wire = footprint.get("nativeWireFields")
+        if (type(present) is not bool or
+                (present and (type(stride) is not int or
+                              not -0x80000000 <= stride <= 0x7fffffff)) or
+                (not present and stride is not None) or
+                not isinstance(wire, dict) or
+                wire.get("strideOverride") != ("6.5" if present else None) or
+                footprint.get("strideOverridePlacementSemanticsVerified")
+                is not False):
+            raise ValueError("invalid source GridAreaData stride override evidence")
     if footprint.get("cellIndexToXYVerified") is not False:
         raise ValueError("unverified footprint indexing must remain false")
 

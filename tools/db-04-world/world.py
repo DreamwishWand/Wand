@@ -148,6 +148,19 @@ def footprint(fields):
     height = one(inner, 2, 0, True)
     layers = one(inner, 3, 2, True)
     floor_flag = one(inner, 4, 0)
+    # Original GridAreaData.StrideOverride is Nullable<int> wire field 5.
+    # A *present* field 5 is a protobuf int32 wrapper with an optional
+    # nested scalar field 1. An empty wrapper means explicit int32 zero,
+    # while an absent outer field means null; do not conflate them.
+    raw_stride = one(inner, 5, 2)
+    stride = None
+    if raw_stride is not None:
+        wrapper = wire_fields(raw_stride)
+        if any(number != 1 or wire != 0
+               for number, wire, _ in wrapper):
+            raise ValueError("invalid source GridAreaData nullable stride wrapper")
+        value = one(wrapper, 1, 0)
+        stride = native_int32(value) if value is not None else 0
     if not 0 < width <= 256 or not 0 < height <= 256 or width * height > 16384:
         raise ValueError("invalid native footprint dimensions")
     if len(layers) != width * height * 4:
@@ -156,8 +169,14 @@ def footprint(fields):
         "sizeX": width, "sizeY": height,
         "layerValues": list(struct.unpack("<" + "I" * (width * height), layers)),
         "acceptedFloorTypesFlag": floor_flag,
-        "nativeWireFields": {"sizeX": "6.1", "sizeY": "6.2",
-                             "layerValues": "6.3", "acceptedFloorTypesFlag": "6.4"},
+        "strideOverride": stride,
+        "strideOverrideSourceVerified": raw_stride is not None,
+        "nativeWireFields": {
+            "sizeX": "6.1", "sizeY": "6.2",
+            "layerValues": "6.3", "acceptedFloorTypesFlag": "6.4",
+            **({"strideOverride": "6.5"} if raw_stride is not None else {}),
+        },
+        "strideOverridePlacementSemanticsVerified": False,
         "cellIndexToXYVerified": False,
         "layerMaskSemanticsVerified": False,
     }
