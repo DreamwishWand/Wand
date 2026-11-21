@@ -43,6 +43,37 @@ and checks extended source/category hashes and counts. Input manifest hashes
 are part of the incremental build key, so changes to name provenance invalidate
 previous cached outputs even if item contents are unchanged.
 
+## Source-prefix observations from the 28 incomplete itemlist files
+
+Even though the 28 larger itemlists cannot be fully verified without the original
+Steam files, `format-probe.json` contains the first 8,192 bytes from each. The
+separate `probe_prefix.py` utility recovers **only the complete frames within
+those captured prefixes**, checking the first three keys, IDs and frame lengths
+against the original probe. It drops the incomplete trailing frame instead of
+attempting recovery. It does not claim to verify the SHA-256 of an inaccessible
+full source file, and **must not be provided to `build.py --extended`**.
+
+```powershell
+py -3 tools/src-01-items/probe_prefix.py --probe "D:\WandData\SRC-01\Steam-v1.26.2\format-probe.json" --out "D:\WandData\SRC-01\Steam-v1.26.2-prefix-evidence"
+```
+
+The 2026-11-21 Steam 1.26.2 probe yielded 1,482 observed definitions across
+28 partial source files (none overlaps the 13,334 fully verified records).
+Eight-locale joins are possible for some complete embedded LocDB members:
+103 prefix-only definitions have exact non-placeholder names in all eight
+locales. Names carrying `{Placeholder}`, `{LegacyPlaceholder}` or
+`{DoNotTranslate}` markers are kept in `locdbNonDisplayValues` rather than
+promoted to renderable `names`. The prefix report explicitly counts the 13
+non-display source values per locale. Partial category coverage and
+full-file SHA-256 verification remain unresolved. These are **diagnostic
+source observations**, not extra canonical or collectible items.
+
+The manifest uses the **different** schema `wand.src01.prefix-evidence@1`,
+`mergeIntoCanonicalPermitted: false`, records a separate SHA-256 for each
+captured prefix, and marks the full-file SHA as a claim not independently
+verified. When the actual full Steam sources are available, `extend1262.py`
+should replace (not append) these prefix observations with whole-file evidence.
+
 ## Extended definitions (only if original Steam game files are available)
 
 ```powershell
