@@ -82,8 +82,8 @@ export function validateQuestItemFlowStructure(payload) {
     if(link.flowKind==='substep_handoff_definition')
       check(typeof link.keepItems==='boolean' &&
         Number.isSafeInteger(link.configuredAmount) && link.configuredAmount>=0 &&
-        (link.stepId===null || validId(link.stepId)) &&
-        (link.subStepId===null || validId(link.subStepId)),'INVALID_HANDOFF_DEFINITION');
+        (link.stepId===null || (Number.isSafeInteger(link.stepId)&&link.stepId>=0)) &&
+        (link.subStepId===null || (Number.isSafeInteger(link.subStepId)&&link.subStepId>=0)),'INVALID_HANDOFF_DEFINITION');
     // Packed cleanup occurrences are intentionally retained individually.
     const key = JSON.stringify(link);
     check(!seen.has(key),'DUPLICATE_FLOW_ROW');
