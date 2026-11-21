@@ -42,7 +42,8 @@
     ? new Set(searchIndex.records.map((r: any) => r.detail.file)).size : 0;
 
   function resetPage() { page = 0; }
-  function characterLabel(id: string) {
+  function characterLabel(value: unknown): string {
+    const id = String(value ?? '');
     const names = characterNames[id];
     const sourceName = names?.[locale] || names?.en;
     return sourceName ? `${sourceName} · ${id}` : id;
