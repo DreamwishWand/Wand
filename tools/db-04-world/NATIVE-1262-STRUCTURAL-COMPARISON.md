@@ -76,19 +76,28 @@ destination PE unwind function bytes are identical across game builds.
 Audited source pair is the same four SHA-256-pinned originals listed above.
 A local execution over these originals produced:
 
-| Original GridData method | Relocation-only changed instructions | Distinct external direct target pairs | Byte-identical complete callees | Uncorroborated target pairs |
-| --- | ---: | ---: | ---: | ---: |
-| `get_Item` | 25 | 9 | 4 | 5 |
-| `set_Item` | 34 | 8 | 4 | 4 |
-| `IProtobufOnBinarize.OnBinarize` | 108 | 27 | 8 | 19 |
-| `GetNumberOfBitsPerPosition` | 5 | 2 | 2 | 0 |
+| Original GridData method | Changed instructions (relative only) | Direct target pairs | Byte-identical | Relocation-only code structure | Unmapped / unresolved |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `get_Item` | 25 | 9 | 4 | 3 | 2 |
+| `set_Item` | 34 | 8 | 4 | 2 | 2 |
+| `IProtobufOnBinarize.OnBinarize` | 108 | 27 | 8 | 17 | 2 |
+| `GetNumberOfBitsPerPosition` | 5 | 2 | 2 | 0 | 0 |
 
-This checks direct targets only. Unknown/unmapped thunks and byte-different
-callees are **not** declared equivalent. RIP-relative source data targets are
-also counted but their semantic equivalence is not established. Therefore
+The second-stage audit also disassembles bounded, exact-PE-unwind direct
+callee functions. **22** of the **28** previously uncorroborated direct
+target pairs have relocation-only instruction differences, while **6**
+remain without confirmed complete unwind function boundaries. There were
+**zero structurally divergent mapped callees** in this bounded direct
+sample. In total: 18 byte-identical, 22 relocation-only and 6 unmapped
+out of 46 method/target-pair observations.
+
+These are direct-target checks only, not a recursive proof. A byte-different
+callee whose instruction changes are only relative references may still
+execute different downstream code or load different data. RIP-relative
+source-data targets have not been semantically correlated. Consequently,
 `get_Item`'s successful palette path and bit-width helper are more strongly
-corroborated than the entire transitive call graph, while the complete native
-decoder compatibility gate **remains closed for Steam 1.26.2**.
+corroborated than the entire transitive call graph, while the native terrain
+decoder gate **remains closed for Steam 1.26.2**.
 
 Run privately (GNU binutils objdump required; original binaries never leave
 the operator machine):
