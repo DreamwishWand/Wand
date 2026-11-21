@@ -23,7 +23,7 @@ CATEGORY_HASHES = {
     "Trimming": "a330a5b44860faece7eecb9c07acf3064b15010c97837d9d450f54a7b2ff966c",
 }
 NOBR = re.compile(r"</?nobr>", re.I)
-ZERO_WIDTH = re.compile("[\u200b\u200c\u200d\ufeff]")
+ZERO_WIDTH = re.compile("[\u00ad\u200b\u200c\u200d\ufeff]")
 MAX_LOC_FILE_BYTES = 16 * 1024 * 1024
 MAX_ENTRIES = 200000
 
@@ -198,7 +198,7 @@ def read_locale_category(game, locale, category):
         raise ValueError("INCOMPLETE_LOCALIZATION_MEMBER")
     return decode_locbin(data), {
         "archive": archive_path.name, "entry": member,
-        "archiveSha256": sha_file(archive_path), "entrySha256": hashlib.sha256(data).hexdigest(),
+        "entrySha256": hashlib.sha256(data).hexdigest(),
         "entries": None, "bytes": len(data),
     }
 
@@ -227,7 +227,6 @@ def build_localized(game, source, out):
         missing[locale] = {}
         for category in CATEGORY_HASHES:
             text_by_key, meta = read_locale_category(game, locale, category)
-            meta.pop("archiveSha256")
             meta["entries"] = len(text_by_key)
             archives[locale]["categories"][category] = meta
             matched = 0
