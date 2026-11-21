@@ -14,7 +14,10 @@ NATIVE_FAMILIES = ('quests', 'characters', 'stories', 'worlds', 'duties',
 FILE_NAMES = {**{f:'guide/'+f+'.json' for f in NATIVE_FAMILIES},
               'rewards':'guide/rewards.json',
               'designChallenges':'guide/design-challenges.json',
-              'starPathFtue':'guide/starpath-ftue.json'}
+              'starPathFtue':'guide/starpath-ftue.json',
+              'miniEvents':'guide/mini-events.json',
+              'floatingFestivals':'guide/floating-festivals.json',
+              'expansions':'guide/expansions.json'}
 
 
 def load_json(path):
@@ -26,7 +29,12 @@ def available(manifest, family):
         return family in manifest.get('sources', {})
     if family=='rewards':
         return manifest.get('friendshipRewardSource') is not None
-    return manifest.get('protoDbStatic',{}).get('status')=='STATIC_SOURCE_ONLY'
+    static = manifest.get('protoDbStatic', {})
+    if family in ('miniEvents','floatingFestivals','expansions'):
+        # Older extractors did not implement these source projections. Their
+        # absence is not a game content removal; skip until both are available.
+        return static.get('status') == 'STATIC_SOURCE_ONLY' and family in static
+    return static.get('status') == 'STATIC_SOURCE_ONLY'
 
 
 def signature(row, family):
@@ -50,7 +58,7 @@ def signature(row, family):
     # description keys and original step-localized strings are stable since
     # the initial native schema. Any native string/key change is detected by
     # nativeWireSha256 even when a new derived mapping is not compared here.
-    if family in ('designChallenges','starPathFtue'):
+    if family in ('designChallenges','starPathFtue','miniEvents','floatingFestivals','expansions'):
         texts=row.get('text',{})
     else:
         texts={'topLevel':row.get('localizedText',{}),
@@ -91,9 +99,14 @@ def compare_snapshots(previous, current, current_manifest=None):
             # Missing from both snapshots is not evidence of a new change.
             continue
         if not old_has or not new_has:
-            skipped.append({'family':family,'reason':
-                'source_absent_from_previous_snapshot' if not old_has else
-                'source_absent_from_current_snapshot'})
+            # New ProtoDB families may be absent from an older *extractor*,
+            # even when that same protoDb.bin was present in both snapshots.
+            # Do not mislabel missing schema support as missing game content.
+            suffix = ('previous_snapshot' if not old_has else 'current_snapshot')
+            reason = ('static_projection_unavailable_in_' + suffix
+                      if family in ('miniEvents','floatingFestivals','expansions')
+                      else 'source_absent_from_' + suffix)
+            skipped.append({'family':family,'reason':reason})
             continue
         old_file=previous/relative
         new_file=current/relative
