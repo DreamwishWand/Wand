@@ -245,7 +245,8 @@ def process_bundle(game, output, path, item_index, expected_sha, expected_bytes,
     env = UnityPy.load(str(path))
     paths = container_paths(env)
     # Sprite and Texture2D use UnityPy's native pixel decoder; no custom codec.
-    for obj in env.objects:
+    objects = env.objects.values() if isinstance(env.objects, dict) else env.objects
+    for obj in objects:
         kind = obj.type.name
         if kind not in {"Sprite", "Texture2D"}:
             continue
