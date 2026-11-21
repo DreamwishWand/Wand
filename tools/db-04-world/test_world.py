@@ -146,6 +146,9 @@ class NativeWireTests(unittest.TestCase):
             3, 3, palette, packed))
         with self.assertRaisesRegex(ValueError, "evidence mismatches"):
             checked_grid(forged, source_game_version="1.26.2")
+        forged_flag = dict(current, nativeFloorIndexToLocalXYCorroborated=True)
+        with self.assertRaisesRegex(ValueError, "index proof flag"):
+            checked_grid(forged_flag, source_game_version="1.26.2")
         # If a future game changes its packing, no 1.26.1 bit/padding
         # assumption may discard the raw input on import.
         future = parse_grid_structure(
