@@ -89,4 +89,12 @@ if (-not (Test-Path -LiteralPath $shardsTarget)) {
 }
 Write-Host ('Private SQLite: ' + $sqliteTarget)
 Write-Host ('Private TypeScript read shards: ' + $shardsTarget)
+# Verify every emitted ID/category/locale/history shard against the private SQLite
+# before considering this local release ready. This is an independent full-corpus
+# audit, not just a check of hashes stored in the shard manifest itself.
+$auditScript = Join-Path $repo 'tools\db-01-items\audit_shards.py'
+$auditTarget = Join-Path $outRoot ("db01-$fingerprint-audit.json")
+Invoke-PythonChecked $auditScript @('--sqlite', $sqliteTarget, '--shards', $shardsTarget, '--expected-source-items-sha256', $manifest.outputSha256.'items.jsonl', '--report', $auditTarget)
+Write-Host ('Private audit report: ' + $auditTarget)
+
 Write-Host 'Only trusted local clients may access these files. They are not public site assets.'
