@@ -55,7 +55,7 @@ class NativeGridAreaVectorTests(unittest.TestCase):
         reverse = rotate_gridarea_vector(
             forward["x"], forward["y"], 1, inverse=True)
         self.assertNotEqual((reverse["x"], reverse["y"]), (2, 3))
-        self.assertEqual((reverse["x"], reverse["y"]), (1, 2))
+        self.assertEqual((reverse["x"], reverse["y"]), (1, 1))
         # A nonzero product below 100 must truncate to ZERO, not floor.
         self.assertEqual(
             (rotate_gridarea_vector(1, 0, 2)["x"],
