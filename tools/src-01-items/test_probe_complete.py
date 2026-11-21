@@ -2,6 +2,7 @@ import base64
 import hashlib
 import json
 import tempfile
+import zlib
 import unittest
 from pathlib import Path
 
@@ -67,6 +68,42 @@ class TestProbeComplete(unittest.TestCase):
         examples[1]["frameKey"] = 8
         with self.assertRaisesRegex(ValueError, "ID_BASE"):
             probe_complete.records_for_complete_source("Tool.json", test_info(blob, examples))
+
+    def test_complete_locbin_exact_category_key_join(self):
+        blob, examples = test_records()
+        first_key = "Tool.Tool_1_DisplayName"
+        def string_field(number, text):
+            return make_field(number, 2, text.encode("utf-8"))
+        entries = [string_field(1, f"Tool_{key}_DisplayName") +
+                   string_field(2, f"Localized {key}") for key in (1, 2, 3)]
+        loc_binary = b"".join(make_field(1, 2, entry) for entry in entries)
+        crc = f"{zlib.crc32(loc_binary) & 0xffffffff:08x}"
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            loc = {"archiveEntries": 1, "source":
+                       "ddv_Data/StreamingAssets/Localization/LocDB_en-US.zip",
+                   "sha256": "a" * 64, "members": {"Tool": {
+                       "bytes": len(loc_binary), "crc32": crc,
+                       "headBase64": base64.b64encode(loc_binary).decode()}}}
+            probe = {"schema": "wand.src01.format-probe@1", "gameVersion": "1.26.2",
+                     "platform": "Steam", "itemlistCandidates": {
+                          "Tool.json": test_info(blob, examples),
+                          "Other.json": {**test_info(blob[:20], examples, size=len(blob) + 100),
+                             "source": "ddv_Data/StreamingAssets/itemlist/Other.json"}},
+                     "localization": {"en": loc}}
+            (root / "probe.json").write_text(json.dumps(probe))
+            result = probe_complete.build(root / "probe.json", root / "out")
+            self.assertEqual(result["localizedByLocale"]["en"], 3)
+            data = [json.loads(line) for line in (root / "out/definitions.jsonl").read_text().splitlines()]
+            self.assertEqual(data[0]["names"]["en"], "Localized 1")
+            self.assertEqual(data[0]["localizationKey"], first_key)
+            self.assertIsNone(data[0]["names"]["ja"])
+            manifest = json.loads((root / "out/manifest.json").read_text())
+            self.assertEqual(manifest["localizationEvidence"]["en"]["members"]["Tool"]["crc32"], crc)
+            probe["localization"]["en"]["members"]["Tool"]["crc32"] = "a" * 8
+            (root / "probe.json").write_text(json.dumps(probe))
+            with self.assertRaisesRegex(ValueError, "CRC_MISMATCH"):
+                probe_complete.build(root / "probe.json", root / "out2")
 
     def test_combined_partial_manifest_marks_remaining_unverified(self):
         blob, examples = test_records()
