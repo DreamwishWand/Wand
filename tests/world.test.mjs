@@ -73,6 +73,60 @@ test('native footprint is copied without supplying guessed 2D cell coordinates',
   assert.equal(footprint.cellIndexToXYVerified, false);
 });
 
+test('native GridAreaData.Nullable StrideOverride survives raw source and cannot grant placement', () => {
+  const data = fixture();
+  data.manifest.gameVersion = '1.26.1';
+  data.objects[0].footprint = {
+    ...data.objects[0].footprint,
+    strideOverride: 2,
+    strideOverrideSourceVerified: true,
+    nativeWireFields: {strideOverride: '6.5'},
+    strideOverridePlacementSemanticsVerified: false,
+  };
+  const catalog = createWorldCatalog(data);
+  const item = getNativeFootprint(catalog, 40000001);
+  assert.equal(item.strideOverride, 2);
+  assert.equal(item.strideOverrideSourceVerified, true);
+  assert.equal(item.strideOverrideSourceWireField, '6.5');
+  assert.equal(item.strideOverridePlacementSemanticsVerified, false);
+  assert.equal(assessPlacement(catalog, 40000001, {x: 1, y: 2}).status,
+    'unresolved');
+
+  const zero = fixture();
+  zero.objects[0].footprint = {
+    ...zero.objects[0].footprint,
+    strideOverride: 0,
+    strideOverrideSourceVerified: true,
+    nativeWireFields: {strideOverride: '6.5'},
+    strideOverridePlacementSemanticsVerified: false,
+  };
+  assert.equal(getNativeFootprint(createWorldCatalog(zero), 40000001)
+    .strideOverride, 0);
+  const absent = getNativeFootprint(createWorldCatalog(fixture()), 40000001);
+  assert.equal(absent.strideOverride, null);
+  assert.equal(absent.strideOverrideSourceVerified, false);
+  assert.equal(absent.strideOverrideSourceWireField, null);
+
+  for (const bad of [
+    {strideOverride: '2'},
+    {strideOverride: 2147483648},
+    {strideOverride: true},
+    {strideOverride: 2, strideOverrideSourceVerified: false},
+    {strideOverride: null, strideOverrideSourceVerified: true},
+    {strideOverride: 2, strideOverrideSourceVerified: true},
+    {strideOverride: 2, strideOverrideSourceVerified: true,
+      nativeWireFields: {strideOverride: '6.4'}},
+    {strideOverride: 2, strideOverridePlacementSemanticsVerified: true},
+  ]) {
+    const source = fixture();
+    source.objects[0].footprint = {
+      ...source.objects[0].footprint, ...bad,
+    };
+    assert.throws(() => createWorldCatalog(source),
+      /Unverified or malformed native placement footprint/);
+  }
+});
+
 test('original GridArea native getter indexes unrotated layer values X-major, without inventing placement', () => {
   const data = fixture();
   const original = [1, 2, 4, 8, 16, 32];
