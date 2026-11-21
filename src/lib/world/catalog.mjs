@@ -651,11 +651,10 @@ function packedGridForPreview(catalog, gridId) {
   const grid = catalog.grids.get(String(gridId));
   if (!grid) return { status: 'unknown_grid' };
   const evidence = grid.terrainDecoding;
-  // Original GridData.get_Item and bit-width machine code was checked only
-  // on Steam v1.26.1. An unverified game version cannot inherit that proof,
-  // even if its input JSON claims the same decoded packing metadata.
-  if (evidence?.status === 'native_packing_not_verified_for_game_version' ||
-      (evidence?.decoded === true && catalog.manifest.gameVersion !== '1.26.1')) {
+  // This read-only decoder has original native-code proof ONLY for 1.26.1.
+  // Reject every other version before consulting even forged decoded flags.
+  if (catalog.manifest.gameVersion !== '1.26.1' ||
+      evidence?.status === 'native_packing_not_verified_for_game_version') {
     return { status: 'native_terrain_packing_not_verified_for_game_version' };
   }
   if (evidence?.decoded !== true || evidence?.packing !== 'x_major_msb_first' ||
@@ -770,6 +769,12 @@ export function getNativeTerrainWindow(catalog, gridId, rect) {
 export function getNativeTerrainDistribution(catalog, gridId) {
   const grid = catalog.grids.get(String(gridId));
   if (!grid) return { status: 'unknown_grid' };
+  // Match tile/window status: unknown-version source bytes never become a
+  // histogram, even when their private JSON misstates a decoded flag.
+  if (catalog.manifest.gameVersion !== '1.26.1' ||
+      grid.terrainDecoding?.status === 'native_packing_not_verified_for_game_version') {
+    return { status: 'native_terrain_packing_not_verified_for_game_version' };
+  }
   if (grid.terrainDecoding?.decoded !== true ||
       grid.terrainDecoding?.packing !== 'x_major_msb_first') {
     return { status: 'unresolved_native_packing' };
