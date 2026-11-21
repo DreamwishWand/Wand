@@ -1,5 +1,21 @@
 # SRC-04 MEDIA: Steam v1.26.2 one-click workflow
 
+## Final image variant policy: thumbnail + original (2026-11-21)
+
+Owner decision: **exactly two generated WebP variants per image identity**, with lossless compression for both:
+- `thumbnail`: at most 128 px along the longest edge (no upscaling), for catalog, search, and grid cards.
+- `original`: the full decoded Unity pixel width/height, no resizing, for Item detail pages and zoom. It must be actual lossless WebP (`lossless=True`, `exact=True`), not just an extension named .webp.
+- **No separately generated 512 px `detail` variant in the final media contract.** All details must resolve to `original`. CSS can scale visual display dimensions without changing the transferred source pixels.
+- Keep `imageIdentity`, `itemId`, GUID, image content hash and exact source integrity checks; reuse a single image across multiple Item IDs and avoid redundant decoding.
+- The existing v1 private media overlay uses `thumbnail`+`detail` and must remain readable until a complete, independently validated v2 `thumbnail`+`original` index exists. Do **not** relabel a 512px detail image as original. Switch readers atomically to v2 after the new files and hashes have been verified.
+- Every variant must be hashed, width/height recorded, and `publicationApproved=false` maintained until explicit distribution clearance.
+
+**Important observed bug / corrective migration:** `native1262.py` delegates to `media.generate_variant()`, which uses `lossless=True` for its original 9,182 GUIDs. However, `catalog_missing_pixels.py` and the supplied standalone `src04_last_two.py` write their 358+2 recovered GUIDs with `format='WEBP', quality=90, method=6`, which is **lossy** (and both also shrink the detail variant to 512px). Therefore the local 13,202/13,202 complete metadata index does **not** imply that all existing WebP bytes are lossless. The 360 recovered image GUIDs must be re-decoded from their verified Unity bundle/object pointers and re-encoded losslessly; the four known original-bundle images with native edge >512px also require full-size decoding. The other 9,178 original GUIDs have native dimensions <=512px in the verified source metadata; their existing 512-bounded lossless detail files may be reused as pixel-identical originals only after inspecting hashes and actual lossless encoding, with correctly revised `images/original/...` metadata. Original decoded texture dimensions for the 360 recovered images still need to be measured, not guessed.
+
+**Do not delete existing v1 files or change public media flags until all 9,542 GUIDs are migrated and all 13,202 Item IDs revalidated.** No additional full 23,021-image extraction is needed.
+
+---
+
 **Recommended for the confirmed Windows Steam installation.** Download the [SRC04-MEDIA.cmd](SRC04-MEDIA.cmd) file from this development branch and double-click it. Python 3 with the Windows py launcher and initial internet access to install dependencies are required. **No local Git clone or manual path selection is required.**
 
 The launcher downloads **one bundled start.ps1** (Raw URL with public GitHub Contents API fallback), then unpacks the embedded source files into %LOCALAPPDATA%\DreamwishWand\SRC-04\code without further GitHub source requests. It installs Pillow/UnityPy if needed, and uses:
