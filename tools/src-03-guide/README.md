@@ -1,3 +1,5 @@
+**Typed mission schema:** [`MISSION-SEMANTICS.md`](MISSION-SEMANTICS.md) documents the IL2CPP-verified quest/condition/objective mapping, mission-vs-group classification, source-backed reward ranges, and conservative reference edges. The source-backed `mission_schema.py` and `mission_semantics.py` are loaded by `native_guide.py` and require no external Python packages.
+
 > **Steam native Guide sources (DB-03):** The real `ddv_Data/StreamingAssets/itemlist/*.json` files are binary framed protobuf-wire data, **not JSON documents**. For the source-backed extractor, use [`native_guide.py`](native_guide.py) and [`NATIVE-GUIDE.md`](NATIVE-GUIDE.md). The legacy `guide.py` and `rules.json` below apply only to separately exported, verified JSON schemas. The native Steam v1.26.1 snapshot remains **PARTIAL**; Star Path/reward semantics and live event availability are not inferred.
 
 # SRC-03 Guide Data (offline Windows extractor)
