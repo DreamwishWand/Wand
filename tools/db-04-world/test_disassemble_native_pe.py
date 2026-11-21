@@ -36,6 +36,9 @@ def source_report(code=None):
         "rawMethodWindowSize": len(code),
         "dumpCsSha256": "1" * 64,
         "dumpCsVersionAssertion": "1.26.2",
+        "peUnwindStartCorroborated": True,
+        "peUnwindTableSha256": "3" * 64,
+        "peUnwindRecordCount": 1,
         "methodWindows": [{
             "symbol": "Definitions.Grid.GridData.get_Item",
             "rva": 0x1020,
@@ -46,6 +49,8 @@ def source_report(code=None):
             "rawWindowHex": code.hex(),
             "windowIsEntireMethod": False,
             "codeSemanticsVerified": False,
+            "peUnwindStartCorroborated": True,
+            "peUnwindFunctionEndRva": 0x1020 + len(code),
         }],
     }
 
