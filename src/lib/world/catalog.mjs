@@ -772,6 +772,148 @@ export function getNativeTerrainDistribution(catalog, gridId) {
 }
 
 /**
+ * Read-only source-record anchor viewport for an original DEFAULT GridCollection.
+ *
+ * The GridData dimensions and GridObject X/Y fields are raw source data. This
+ * preview intentionally requires NO packed-terrain decoder, native floor mask
+ * interpretation, footprint occupancy or GridArea rotation. On new game
+ * versions the anchors remain inspectable while native terrain code is gated.
+ * Its filter means "recorded anchor lies in this rectangle", NOT "all cells
+ * of the object outside the rectangle are unoccupied".
+ */
+export function getNativeDefaultLayoutAnchorWindow(
+    catalog, layoutId, nativeGridId, rect) {
+  const id = String(layoutId);
+  const layout = catalog.layouts.get(id);
+  if (!layout) return { status: 'unknown_native_layout' };
+  if (layout.layoutKind !== 'nativeGridCollection') {
+    return { status: 'not_native_grid_collection' };
+  }
+  if (!Number.isSafeInteger(nativeGridId) || nativeGridId < 0 ||
+      nativeGridId > 0xffffffff) {
+    throw new TypeError('Native Grid.ID must be an unsigned 32-bit integer');
+  }
+  if (!Array.isArray(layout.nativeGridEntries)) {
+    throw new TypeError('Malformed native grid collection');
+  }
+  const matches = layout.nativeGridEntries.filter(
+    entry => entry.gridIdNative === nativeGridId);
+  if (matches.length === 0) return { status: 'unknown_native_grid_in_layout' };
+  if (matches.length !== 1) throw new TypeError('Ambiguous duplicate native Grid.ID');
+  const entry = matches[0];
+  if (typeof entry.gridDataPath !== 'string' || !entry.gridDataPath) {
+    throw new TypeError('Missing explicit native GridDataPath');
+  }
+  const grid = catalog.grids.get(entry.gridDataPath);
+  if (!grid) return {
+    status: 'missing_referenced_grid_in_source_subset',
+    sourceLayoutId: id, gridIdNative: nativeGridId, gridDataPath: entry.gridDataPath,
+  };
+  const sx = grid.sizeX, sy = grid.sizeY;
+  if (!Number.isSafeInteger(sx) || !Number.isSafeInteger(sy) ||
+      sx <= 0 || sy <= 0 || sx * sy > 16777216) {
+    return {
+      status: 'native_grid_dimensions_unavailable',
+      sourceLayoutId: id, gridIdNative: nativeGridId, gridDataPath: entry.gridDataPath,
+    };
+  }
+  if (!isRecord(rect)) throw new TypeError('Native anchor viewport rectangle required');
+  const { x, y, width, height } = rect;
+  if (![x, y, width, height].every(Number.isSafeInteger) ||
+      x < 0 || y < 0 || width < 1 || height < 1 ||
+      width > 256 || height > 256 || x + width > sx || y + height > sy) {
+    return {
+      status: 'outside_native_grid_or_preview_limit',
+      sourceLayoutId: id, gridIdNative: nativeGridId, gridDataPath: entry.gridDataPath,
+    };
+  }
+  const native = (catalog.layoutObjectsByLayout.get(id) ?? []).filter(
+    record => record.gridIdNative === nativeGridId);
+  if (!Number.isSafeInteger(entry.defaultObjectCount) ||
+      entry.defaultObjectCount < 0 ||
+      entry.defaultObjectCount !== native.length) {
+    return {
+      status: 'incomplete_native_default_object_source',
+      sourceLayoutId: id, gridIdNative: nativeGridId,
+    };
+  }
+  const anchors = native.filter(record =>
+    record.x >= x && record.x < x + width &&
+    record.y >= y && record.y < y + height).map(record => ({
+      layoutObjectId: record.layoutObjectId,
+      gridObjectIdNative: record.gridObjectIdNative,
+      itemId: record.itemId,
+      x: record.x, y: record.y,
+      orientationCode: record.orientationCode,
+      orientationName: record.orientationName ?? null,
+      positionBasis: 'nativeGridLocalSourceRecord',
+      fullFootprintVerified: false,
+      fixedImmovableVerified: false,
+    }));
+  return {
+    status: 'source_native_default_layout_anchors_only',
+    sourceLayoutId: id, gridIdNative: nativeGridId,
+    gridDataPath: entry.gridDataPath,
+    nativeGridSizeX: sx, nativeGridSizeY: sy,
+    rect: { x, y, width, height },
+    defaultObjectAnchors: anchors,
+    totalNativeDefaultObjectAnchors: native.length,
+    viewAnchorCount: anchors.length,
+    terrainDecoded: false,
+    nativeGridLocalCoordinatesOnly: true,
+    worldCoordinatesVerified: false,
+    gridObjectAnchorConventionVerified: false,
+    fullFootprintOccupancyVerified: false,
+    currentSaveObjectVerified: false,
+    placementLegalityVerified: false,
+    nativeCodeBodyVerified: false,
+    sourceScopeVerified: catalog.manifest.sourceScopeVerified === true,
+  };
+}
+
+/**
+ * Resolve the source-defined DEFAULT village area path, then show raw anchors
+ * without requiring the v1.26.1-only native packed-terrain interpretation.
+ */
+export function getNativeVillageAreaAnchorWindow(
+    catalog, villageLayoutId, nativeAreaTypeCode, nativeGridId, rect) {
+  const id = String(villageLayoutId);
+  const village = catalog.layouts.get(id);
+  if (!village) return { status: 'unknown_native_village_layout' };
+  if (village.layoutKind !== 'nativeDefaultVillageData') {
+    return { status: 'not_native_default_village_data' };
+  }
+  if (!Number.isSafeInteger(nativeAreaTypeCode)) {
+    throw new TypeError('Native village area code must be an integer');
+  }
+  if (!Array.isArray(village.areaLayoutReferences)) {
+    throw new TypeError('Malformed native village area reference map');
+  }
+  const matches = village.areaLayoutReferences.filter(
+    area => area.nativeAreaTypeCode === nativeAreaTypeCode);
+  if (matches.length === 0) return { status: 'unknown_native_village_area' };
+  if (matches.length !== 1) throw new TypeError('Duplicate native area type code');
+  const area = matches[0];
+  if (typeof area.gridLayoutPath !== 'string' || !area.gridLayoutPath) {
+    throw new TypeError('Missing native village area GridLayoutPath');
+  }
+  if (!catalog.layouts.has(area.gridLayoutPath)) {
+    return {
+      status: 'missing_referenced_area_layout_in_source_subset',
+      villageLayoutId: id, nativeAreaTypeCode,
+      expectedGridLayoutPath: area.gridLayoutPath,
+    };
+  }
+  const anchors = getNativeDefaultLayoutAnchorWindow(
+    catalog, area.gridLayoutPath, nativeGridId, rect);
+  return {
+    ...anchors, villageLayoutId: id, nativeAreaTypeCode,
+    nativeAreaTypeName: area.nativeAreaTypeName ?? null,
+    gridLayoutPath: area.gridLayoutPath,
+  };
+}
+
+/**
  * Compose the source-defined initial layout's native grid-local 2D viewport.
  *
  * This is NOT a user's save map, a world-coordinate transform, or a placement
