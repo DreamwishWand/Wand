@@ -51,14 +51,17 @@
   $: summaries = categorySummaries(records,entries);
   $: facets = index
     ? mode === 'category' ? summaries.map(item => ({
-        id:item.id,label:categoryLabel(locale,item.id),total:item.total,tracked:item.tracked
+        id:item.id,label:categoryLabel(locale,item.id),total:item.total,owned:item.owned
       }))
-      : (mode === 'world' ? index.w : index.u).map((id:string) => ({
-        id,
-        label:collectionFacetLabel(index,mode,id,locale),
-        total:records.filter(record => mode==='world'?record.worlds.includes(id):record.universes.includes(id)).length,
-        tracked:records.filter(record => (mode==='world'?record.worlds.includes(id):record.universes.includes(id)) && entries[String(record.itemId)]?.status).length
-      }))
+      : (mode === 'world' ? index.w : index.u).map((id:string) => {
+        const scoped = records.filter(record => mode==='world'?record.worlds.includes(id):record.universes.includes(id));
+        return {
+          id,
+          label:collectionFacetLabel(index,mode,id,locale),
+          total:scoped.length,
+          owned:scoped.filter(record => entries[String(record.itemId)]?.status==='owned').length
+        };
+      })
     : [];
   $: selectionLabel = facets.find((item:any) => item.id===selected)?.label ?? '';
   $: filtered = filterItems(records,{
@@ -262,7 +265,7 @@
   {:else}
     <div class="summary-strip">
       <div><strong>{overall.total.toLocaleString(locale)}</strong><span>参照データ</span></div>
-      <div><strong>{overall.owned.toLocaleString(locale)}</strong><span>所持・解放の手動記録</span></div>
+      <div><strong>{overall.owned.toLocaleString(locale)} / {overall.total.toLocaleString(locale)}</strong><span>所持・解放の手動記録 / 参照件数</span></div>
       <div><strong>{overall.missing.toLocaleString(locale)}</strong><span>未所持の手動記録</span></div>
       <div><strong>{overall.unknown.toLocaleString(locale)}</strong><span>未記録</span></div>
     </div>
@@ -306,7 +309,7 @@
                 {#if selected}<span> / {selectionLabel}</span>{/if}
               </div>
               <div class="result-actions">
-                <span class="result-count">{filtered.length.toLocaleString(locale)} 件</span>
+                <span class="result-count">{filtered.length.toLocaleString(locale)} 件{#if selected} · 所持記録 {(facets.find((facet:any)=>facet.id===selected)?.owned??0).toLocaleString(locale)} / {(facets.find((facet:any)=>facet.id===selected)?.total??0).toLocaleString(locale)}{/if}</span>
                 <button type="button" class="subtle-button" disabled={Boolean(storeError)} aria-pressed={selectionMode}
                   on:click={()=>{selectionMode=!selectionMode;selectedIds=[];selectedItemId=null;}}>{selectionMode?'選択を終了':'複数選択'}</button>
               </div>
@@ -365,7 +368,7 @@
                   <strong>{facet.label}</strong>
                   {#if facet.total>0}
                     <span>{facet.total.toLocaleString(locale)} items</span>
-                    <small>{facet.tracked} 手動記録済み</small>
+                    <small aria-label="手動所持記録数／対象総数">{facet.owned.toLocaleString(locale)} / {facet.total.toLocaleString(locale)} 所持記録</small>
                   {:else}
                     <span>参照データ未対応</span>
                   {/if}
