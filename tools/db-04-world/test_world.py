@@ -383,6 +383,8 @@ class PipelineTests(unittest.TestCase):
             "// Namespace: Definitions.Grid\n"
             "public class GridData\n"
             "{\n"
+            "    // RVA: 0x1010 Offset: 0x410 VA: 0x180001010\n"
+            "    public GridFloorType get_Item(GridPosition position) { }\n"
             "    // RVA: 0x1020 Offset: 0x420 VA: 0x180001020\n"
             "    public GridFloorType get_Item(int x, int y) { }\n"
             "}\n"
