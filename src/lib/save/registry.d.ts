@@ -16,6 +16,8 @@ export type SaveAssessment = Readonly<{
   buildCandidate: string | null;
   saveSchemaVersion: number | null;
   rootShapeValid: boolean;
+  compatibilityBasis: 'decoded_field_shape';
+  shapeProbe: SaveShapeProbe;
   issues: readonly string[];
   strictDecoderVerified: false;
   externalBuildVerified: false;
@@ -24,6 +26,24 @@ export type SaveAssessment = Readonly<{
   ownershipMutationAuthorized: false;
   exportAuthorized: false;
 }>;
+export type SaveDomainShape = Readonly<{
+  domain: 'inventory' | 'chests' | 'collection' | 'grids' | 'appearance';
+  status: 'shape_candidate' | 'sampled_candidate' | 'shape_conflict' | 'not_observed';
+  observedFieldCount: number;
+  conflictingPaths: readonly string[];
+  sampled: boolean;
+  source: 'legacy_rust_field_candidates_only';
+  writerAuthorized: false;
+}>;
+export type SaveShapeProbe = Readonly<{
+  contract: 'wand.db05.save-shape-probe@1';
+  compatibilityBasis: 'decoded_field_shape';
+  platformAndVersionUsedAsGates: false;
+  domains: readonly SaveDomainShape[];
+  exhaustive: false;
+  codecVerified: false;
+  writerAuthorized: false;
+}>;
 export type FieldWitness = Readonly<{ path: string; type: string }>;
 export function getSaveRegistry(): Readonly<Record<string, unknown>>;
 export type LegacyIdReference = Readonly<{namespace:string;catalog:string|null;extraction:'map_key'|'value';join:'exact_numeric_only';currentCatalogCoverageVerified:false;status:'legacy_source_only';note:string}>;
@@ -31,6 +51,7 @@ export type LegacyField = Readonly<{domain:string;path:string;type:string;builds
 export function getLegacySaveFields(): Readonly<{schema:string;saveSchemaVersion:number;fields:ReadonlyArray<LegacyField>}>;
 export function getLegacySaveIdReferences(namespace?: string): readonly LegacyField[];
 export function matchSaveBuild(build: Partial<SaveBuildIdentity>): SaveBuildCandidate | null;
+export function probeSaveStructure(decoded: unknown): SaveShapeProbe;
 export function inspectDecodedSave(decoded: unknown, declaredBuild: Partial<SaveBuildIdentity> | null): SaveAssessment;
 export function borrowUntouchedDecodedSave<T>(decoded: T, declaredBuild: Partial<SaveBuildIdentity> | null): { original: T; assessment: SaveAssessment };
 export function makeGameIdIndex<T extends Record<string, unknown>>(rows: readonly T[], key?: string): Map<number, T>;
@@ -43,5 +64,6 @@ export function diffSaveWitnesses(previous: readonly FieldWitness[], current: re
   authoritative: false;
   basis: 'observed_witnesses_only';
 };
+export const SAVE_SHAPE_PROBE_CONTRACT: 'wand.db05.save-shape-probe@1';
 export const SAVE_REGISTRY_SCHEMA: 'wand.db05.save-registry@1';
 export const SAVE_INSPECTION_CONTRACT: 'wand.db05.save-readonly-inspection@1';

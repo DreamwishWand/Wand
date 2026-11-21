@@ -37,6 +37,7 @@ pub struct DeclaredBuild<'a> {
 pub struct ReadOnlyAssessment {
     pub build_candidate: Option<String>,
     pub save_schema_version: Option<u64>,
+    pub compatibility_basis: &'static str,
     pub root_shape_valid: bool,
     pub issues: Vec<&'static str>,
     pub strict_decoder_verified: bool,
@@ -85,31 +86,21 @@ pub fn legacy_fields() -> Result<LegacyFieldMap, serde_json::Error> {
     serde_json::from_str(LEGACY_FIELDS)
 }
 
-/// Shape inspection borrows a decoded Value. Passing this is not Codec proof.
-/// The caller must separately retain the complete original bytes and verify
-/// duplicate keys, full encoding, source build, and unknown reference closure.
-pub fn inspect_decoded(document: &Value, build: &DeclaredBuild<'_>) -> ReadOnlyAssessment {
-    let known = registry().ok().and_then(|registry| {
-        registry.builds.into_iter().find(|candidate| {
-            candidate.platform == build.platform
-                && candidate.identity_kind == build.identity_kind
-                && candidate.identity == build.identity
-                && candidate.schema_version == build.schema_version
-        })
-    });
+/// The observed decoded field shape is independent of platform/build/version.
+/// The Codec still owns strict parsing, and this assessment cannot grant writes.
+pub fn inspect_structure(document: &Value) -> ReadOnlyAssessment {
     let mut issues = Vec::new();
-    if known.is_none() { issues.push("BUILD_OR_SCHEMA_NOT_REGISTERED"); }
     if !document.is_object() { issues.push("ROOT_MUST_BE_OBJECT"); }
     let info = document.get("GameInfo");
     if !info.is_some_and(Value::is_object) { issues.push("GAMEINFO_MUST_BE_OBJECT"); }
     let save_schema_version = info.and_then(|v| v.get("Version")).and_then(Value::as_u64);
     if save_schema_version.is_none() { issues.push("GAMEINFO_VERSION_MUST_BE_UNSIGNED_INTEGER"); }
-    if known.is_some() && save_schema_version != Some(build.schema_version) { issues.push("SAVE_SCHEMA_MISMATCH"); }
     if !document.get("Player").is_some_and(Value::is_object) { issues.push("PLAYER_MUST_BE_OBJECT"); }
     if !document.get("World").is_some_and(Value::is_object) { issues.push("WORLD_MUST_BE_OBJECT"); }
     ReadOnlyAssessment {
-        build_candidate: known.map(|candidate| candidate.key),
+        build_candidate: None,
         save_schema_version,
+        compatibility_basis: "decoded_field_shape",
         root_shape_valid: issues.is_empty(),
         issues,
         strict_decoder_verified: false,
@@ -118,6 +109,21 @@ pub fn inspect_decoded(document: &Value, build: &DeclaredBuild<'_>) -> ReadOnlyA
         writer_authorized: false,
         export_authorized: false,
     }
+}
+
+/// Backwards compatible metadata lookup; candidate Build is never a gate
+/// for decoded structural inspection. Caller-supplied Build is unverified.
+pub fn inspect_decoded(document: &Value, build: &DeclaredBuild<'_>) -> ReadOnlyAssessment {
+    let mut assessment = inspect_structure(document);
+    assessment.build_candidate = registry().ok().and_then(|registry| {
+        registry.builds.into_iter().find(|candidate| {
+            candidate.platform == build.platform
+                && candidate.identity_kind == build.identity_kind
+                && candidate.identity == build.identity
+                && candidate.schema_version == build.schema_version
+        }).map(|candidate| candidate.key)
+    });
+    assessment
 }
 
 #[cfg(test)]
@@ -152,7 +158,12 @@ mod tests {
         assert!(!ok.writer_authorized && !ok.export_authorized && !ok.external_build_verified);
         let mut wrong = switch626();
         wrong.schema_version = 643;
-        assert!(!inspect_decoded(&doc, &wrong).root_shape_valid);
+        assert!(inspect_decoded(&doc, &wrong).root_shape_valid);
+        assert!(inspect_decoded(&doc, &wrong).build_candidate.is_none());
+        assert_eq!(inspect_structure(&doc).compatibility_basis, "decoded_field_shape");
+        let version_changed = serde_json::json!({"GameInfo":{"Version":643},"Player":{},"World":{}});
+        assert!(inspect_structure(&version_changed).root_shape_valid);
+        assert_eq!(inspect_decoded(&version_changed, &switch626()).save_schema_version, Some(643));
         assert!(!inspect_decoded(&serde_json::json!({}), &switch626()).root_shape_valid);
     }
 }

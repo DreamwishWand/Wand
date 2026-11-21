@@ -8,7 +8,12 @@
     "decodedDocumentRequired": true,
     "strictDecoderRequired": true,
     "buildAttestation": "external_evidence_required",
-    "numericIds": "exact_match_only_no_name_or_range_remapping"
+    "numericIds": "exact_match_only_no_name_or_range_remapping",
+    "compatibilityBasis": "decoded_field_shape_and_types",
+    "platformRole": "provenance_only_not_structural_gate",
+    "gameVersionRole": "provenance_only_not_structural_gate",
+    "schemaVersionRole": "observed_metadata_not_structural_gate",
+    "domainMatching": "historical_known_field_shapes_are_read_only_candidates_not_codec_or_writer_authority"
   },
   "builds": [
     {
