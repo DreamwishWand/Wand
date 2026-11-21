@@ -170,6 +170,77 @@ class SqliteStoreTest(unittest.TestCase):
             self.assertEqual(c.execute('SELECT native_source_manifest_sha256 FROM catalog').fetchone()[0],m['inputs']['nativeManifest'])
             self.assertEqual(c.execute('SELECT full_corpus_parsed FROM catalog').fetchone()[0],0)
 
+    def test_canonical_complete_source_inventory_preserves_full_coverage_through_audit(self):
+        import audit_shards as auditor
+        m=json.loads((self.src/'manifest.json').read_bytes())
+        m['schema']='wand.db01.items@1'
+        m['publicationStatus']='private_not_approved_for_public_catalog'
+        m['inputs']={'nativeManifest':sha(b'complete-original-source-scan'),
+                     'native':sha(b'complete-native-data')}
+        m['counts']={'currentDefinitions':2}
+        m['sourceFilesFullyShaVerified']=3
+        m['sourceFilesTotal']=3
+        m['fullCorpusParsed']=True
+        m['source']={
+            'originalScanSha256':sha(b'complete-original-source-scan'),
+            'individualOriginalFileHashes':{
+                f'ddv_Data/StreamingAssets/itemlist/{cat}.json':{
+                    'sha256':sha(cat.encode()), 'bytes':len(cat)
+                } for cat in ('ActivityItem','Character','ItemCondition')
+            },
+        }
+        (self.src/'manifest.json').write_bytes(dumps(m))
+        target=self.root/'complete-source.sqlite'
+        store.build(self.src,target)
+        with sqlite3.connect(target) as c:
+            full,verified,total=c.execute(
+                'SELECT full_corpus_parsed,source_files_verified,source_files_total FROM catalog'
+            ).fetchone()
+            self.assertEqual((full,verified,total),(1,3,3))
+        export=self.root/'complete-source-shards'
+        shards.export(target,export)
+        manifest=json.loads((export/'manifest.json').read_bytes())
+        self.assertTrue(manifest['fullCorpusParsed'])
+        self.assertEqual((manifest['sourceFilesVerified'],manifest['sourceFilesTotal']),(3,3))
+        report=auditor.audit(target,export,
+            expected_source_items_sha256=m['outputSha256']['items.jsonl'])
+        self.assertEqual(report['status'],'PASS')
+        self.assertTrue(report['sourceCoverageComplete'])
+        self.assertEqual(report['definitions'],2)
+
+    def test_canonical_full_source_rejects_missing_or_conflicting_original_evidence(self):
+        m=json.loads((self.src/'manifest.json').read_bytes())
+        m['schema']='wand.db01.items@1'
+        m['publicationStatus']='private_not_approved_for_public_catalog'
+        m['inputs']={'nativeManifest':sha(b'new-native-source'),'native':sha(b'new-native-items')}
+        m['counts']={'currentDefinitions':2}
+        m['sourceFilesFullyShaVerified']=2
+        m['sourceFilesTotal']=3
+        m['fullCorpusParsed']=True
+        (self.src/'manifest.json').write_bytes(dumps(m))
+        with self.assertRaisesRegex(ValueError,'INCOMPLETE_CANONICAL_SOURCE'):
+            store.build(self.src,self.root/'incomplete.sqlite')
+        m['sourceFilesFullyShaVerified']=3
+        (self.src/'manifest.json').write_bytes(dumps(m))
+        with self.assertRaisesRegex(ValueError,'MISSING_COMPLETED_SOURCE_EVIDENCE'):
+            store.build(self.src,self.root/'no-proof.sqlite')
+        m['source']={
+            'originalScanSha256':sha(b'scan'),
+            'individualOriginalFileHashes':{
+                f'ddv_Data/StreamingAssets/itemlist/{cat}.json':{
+                    'sha256':sha(cat.encode()),'bytes':len(cat)
+                } for cat in ('ActivityItem','Character','ItemCondition')
+            },
+        }
+        m['source']['individualOriginalFileHashes']['ddv_Data/StreamingAssets/itemlist/Character.json']['sha256']=sha(b'tampered-original')
+        (self.src/'manifest.json').write_bytes(dumps(m))
+        with self.assertRaisesRegex(ValueError,'COMPLETED_SOURCE_ROW_SHA_MISMATCH'):
+            store.build(self.src,self.root/'conflict.sqlite')
+        m['source']['individualOriginalFileHashes'].pop('ddv_Data/StreamingAssets/itemlist/ItemCondition.json')
+        (self.src/'manifest.json').write_bytes(dumps(m))
+        with self.assertRaisesRegex(ValueError,'INVALID_COMPLETED_SOURCE_LEDGER'):
+            store.build(self.src,self.root/'missing-itemlist.sqlite')
+
     def test_missing_and_duplicate_original_native_keys_are_rejected(self):
         rowset=sample()
         rowset[0].pop('nativeNameField')

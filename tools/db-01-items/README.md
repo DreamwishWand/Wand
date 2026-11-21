@@ -89,6 +89,39 @@ Original-source instructions and evidence limits remain documented in:
 complete current LocDB ZIPs. DLC, ownership, collectibility, world relationships
 and current classification are unresolved until evidence is acquired.
 
+## Full-original-source coverage: Steam 1.26.2 acceptance
+
+The current owner-private Steam 1.26.2 source-backed candidate has completed
+**39/39 original itemlist files**, including the changed `Condition.json`;
+eight target-version LocDB archives were separately SHA-256 checked.
+The independent `audit_shards.py` passed on the complete read model:
+
+- 39,067 source definitions (5,440 newly included Condition definitions);
+- 13,202 confirmed native *item-category* definitions; the remaining 25,865
+  native definitions have unclassified gameplay semantics;
+- 111,088 exact current names (13,886 for each of eight locales);
+- 302/302 private shards, 39,067 unique native-category keys, SQLite structural,
+  source-to-record, current-name index and canonical-byte checks PASS;
+- no historical candidates, no inferred ownership, DLC rights or publishing.
+
+Canonical manifests now preserve `fullCorpusParsed=true` **only** when they
+also carry explicit verified/total original-file coverage, a source-scan SHA
+and complete per-file SHA-256/byte ledgers covering every original itemlist
+family (including empty files). Every SQLite source record must agree with
+its declared original-category SHA; missing or conflicting evidence fails
+closed before an operational SQLite database is accepted.
+
+This metadata gate is NOT an independent signature or proof that an arbitrary
+caller-supplied source manifest is trustworthy. The private release still needs
+trusted source archive byte verification, an independently pinned source SHA,
+and the full SQLite-to-shard audit. The `sourceCoverageComplete` audit field
+means **the itemlist source universe declared by the trusted current scan**,
+not every DDV asset or proven gameplay/entitlement semantics.
+
+The fully audited private SQLite/catalog/shards remain exclusively in the
+owner's SRC-01 Google Drive folder, never public GitHub or Pages. The public
+repository contains only reusable scripts and synthetic test fixtures.
+
 ## Runtime manifest ledger integrity (without original-game upload dependency)
 
 The TypeScript client validates the SHA-256/size/count ledger before any private
