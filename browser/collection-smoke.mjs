@@ -66,17 +66,15 @@ try{
   assert.equal(JSON.parse(stored.value).workspaces[0].entries['99999999'].discovered,true);
   const search=page.getByRole('searchbox',{name:/8言語/});
   // Locale changes must re-query Rust, not leave cached cards in the prior locale.
-  // Belle (10000002) is source-verified as "ベル" in Japanese and "Belle" in English.
+  // Item 40005160 has source-verified Japanese/English names; it is a unique search match.
   const language=page.getByRole('combobox',{name:'アイテム表示言語'});
-  await search.fill('10000002');
-  await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
-  await page.waitForFunction(()=>document.querySelector('.item-card-copy strong')?.textContent?.trim()==='ベル');
-  await language.selectOption('en');
-  await page.waitForFunction(()=>document.querySelector('.item-card-copy strong')?.textContent?.trim()==='Belle');
-  await language.selectOption('ja');
-  await page.waitForFunction(()=>document.querySelector('.item-card-copy strong')?.textContent?.trim()==='ベル');
   await search.fill('40005160');
   await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
+  await page.waitForFunction(()=>document.querySelector('.item-card-copy strong')?.textContent?.trim()==='ガラスの靴');
+  await language.selectOption('en');
+  await page.waitForFunction(()=>document.querySelector('.item-card-copy strong')?.textContent?.trim()==='Glass Shoe');
+  await language.selectOption('ja');
+  await page.waitForFunction(()=>document.querySelector('.item-card-copy strong')?.textContent?.trim()==='ガラスの靴');
   assert.match(await page.locator('.item-card').first().innerText(),/家具|Furniture/);
   // Both tabs opened the same IndexedDB version. A stale writer must fail closed.
   const staleTab=await context.newPage();
