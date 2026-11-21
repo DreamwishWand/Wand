@@ -191,7 +191,7 @@ class NativeWireTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "length"):
             describe_native_packing(3, 3, palette, bytes((255,)))
         with self.assertRaisesRegex(ValueError, "palette"):
-            describe_native_packing(2, 2, [0, 1024, 2048], b"\\xff")
+            describe_native_packing(2, 2, [0, 1024, 2048], bytes((255,)))
 
     def test_native_palette_3bit_or_higher_remains_explicitly_unresolved(self):
         p = describe_native_packing(5, 5, [0, 1, 2, 3, 4], bytes(25))
