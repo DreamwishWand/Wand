@@ -462,3 +462,39 @@ test('Guide hashes raw selected search bytes, not untrusted JSON SHA fields or s
   assert.equal(guideVerifiedSourceBridge(imported),null);
   assert.equal(sha(raw),sha(Buffer.from(bytes)));
 });
+
+test('one-folder Guide import discovers exact sibling Condition v2 pair without reading it eagerly',async()=>{
+  const {files}=folderFixture('Steam-v1.26.2-Guide/');
+  const reads={reads:0};
+  files.push(localFile('Steam-v1.26.2-Guide/condition-native-index-v2.json','not yet read',reads));
+  files.push(localFile('Steam-v1.26.2-Guide/condition-native-index-manifest-v2.json','not yet read',reads));
+  files.push(localFile('Steam-v1.26.2-Guide/source-proof/condition-native-index-v2.json','wrong nested file',reads));
+  const result=await importGuideFolder(files);
+  assert.equal(result.currentConditionFiles.indexFile.name,'condition-native-index-v2.json');
+  assert.equal(result.currentConditionFiles.manifestFile.name,'condition-native-index-manifest-v2.json');
+  assert.equal(reads.reads,0); // strict byte/SHA verification belongs to UI import
+});
+
+test('one-folder Condition sidecar omission, duplication and mixed-version pair fail closed',async()=>{
+  const {files}=folderFixture();
+  const v2i=localFile('snapshot/condition-native-index-v2.json','{}');
+  const v2m=localFile('snapshot/condition-native-index-manifest-v2.json','{}');
+  const v1i=localFile('snapshot/condition-native-index.json','{}');
+  const v1m=localFile('snapshot/condition-native-index-manifest.json','{}');
+  await assert.rejects(importGuideFolder([...files,v2i]),/incomplete Condition index\/manifest pair/);
+  await assert.rejects(importGuideFolder([...files,v2i,v1m]),/incomplete Condition index\/manifest pair/);
+  await assert.rejects(importGuideFolder([...files,v2i,v2m,v2i]),/duplicate Guide Condition sidecar/);
+  const both=await importGuideFolder([...files,v2i,v2m,v1i,v1m]);
+  assert.equal(both.currentConditionFiles.indexFile,v2i); // v2 preferred
+  assert.equal(both.currentConditionFiles.manifestFile,v2m);
+  const baseline=await importGuideFolder(files);
+  assert.equal(baseline.currentConditionFiles,null); // old folder still works
+});
+
+test('one-folder Condition files from another directory are not silently applied',async()=>{
+  const {files}=folderFixture('old/'); 
+  files.push(localFile('new/condition-native-index-v2.json','{}'));
+  files.push(localFile('new/condition-native-index-manifest-v2.json','{}'));
+  const result=await importGuideFolder(files);
+  assert.equal(result.currentConditionFiles,null);
+});
