@@ -159,3 +159,54 @@ test('invalid source file coverage and historical baseline are rejected',async()
   f.manifest.files[path]={sha256:sha(data),bytes:data.length,count:1};
   await assert.rejects(createDb01CatalogClient(f.manifest,f.load).getName(262,'ja',{allowHistorical:true}),/INVALID_HISTORY_ROW/);
 });
+
+
+test('bounded batch lookup preserves ID order, missing rows and duplicates with one load per bucket',async()=>{
+  const f=fixture(false), db=createDb01CatalogClient(f.manifest,f.load);
+  const rows=await db.getItems([262,5,999,5]);
+  assert.deepEqual(rows.map(row=>row?.itemId??null),[262,5,null,5]);
+  assert.equal(rows[1],rows[3]);
+  assert.ok(Object.isFrozen(rows));
+  assert.ok(rows[0] && Object.isFrozen(rows[0]));
+  assert.deepEqual(new Set(f.calls),new Set(['id/06.json','id/05.json','id/e7.json']));
+  assert.equal(f.calls.length,3);
+  assert.equal((await db.getItem(5))?.itemId,5);
+  assert.equal(f.calls.length,3);
+});
+test('batch rejects unbounded and invalid IDs without opening any private assets',async()=>{
+  const f=fixture(), db=createDb01CatalogClient(f.manifest,f.load);
+  assert.deepEqual(await db.getItems([]),[]);
+  await assert.rejects(db.getItems([5,0]),/INVALID_BATCH_IDS/);
+  await assert.rejects(db.getItems([5,1.1]),/INVALID_BATCH_IDS/);
+  await assert.rejects(db.getItems([NaN]),/INVALID_BATCH_IDS/);
+  await assert.rejects(db.getItems(Array(4097).fill(5)),/INVALID_BATCH_IDS/);
+  await assert.rejects(db.getItems('5'),/INVALID_BATCH_IDS/);
+  assert.deepEqual(f.calls,[]);
+});
+test('batch caps concurrent private shard loads at eight and validates 20 different buckets',async()=>{
+  const f=fixture(false);
+  let concurrent=0, maximum=0;
+  const read=async path=>{
+    concurrent++;
+    maximum=Math.max(maximum,concurrent);
+    try{
+      await new Promise(resolve=>setImmediate(resolve));
+      return f.load(path);
+    }finally{concurrent--;}
+  };
+  const db=createDb01CatalogClient(f.manifest,read);
+  const rows=await db.getItems(Array.from({length:20},(_,i)=>1000+i));
+  assert.equal(rows.length,20);
+  assert.ok(rows.every(row=>row===null));
+  assert.equal(f.calls.length,20);
+  assert.ok(maximum<=8 && maximum>1);
+});
+test('one invalid requested bucket rejects entire batch, without partial result',async()=>{
+  const f=fixture(false);
+  const wrong=[{...first,itemId:6}];
+  const bytes=new TextEncoder().encode(JSON.stringify(wrong)+'\n');
+  f.raw.set('id/05.json',bytes);
+  f.manifest.files['id/05.json']={sha256:sha(bytes),bytes:bytes.length,count:1};
+  const db=createDb01CatalogClient(f.manifest,f.load);
+  await assert.rejects(db.getItems([262,5]),/WRONG_ID_BUCKET/);
+});

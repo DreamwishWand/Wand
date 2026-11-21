@@ -50,6 +50,9 @@ import { createDb01Db00Patch } from '$lib/items/db00-join.ts';
 const client = createDb01CatalogClient(privateManifest, async (relativePath) =>
   new Uint8Array(await privateFileProvider(relativePath)));
 const item = await client.getItem(30000031);   // one SHA-checked ID bucket
+const matches = await client.getItems([30000031, 30000032, 30000031]);
+// Bounded 4096-ID request, up to eight concurrent unique ID buckets;
+// returns ordered (Db01Item | null)[] for Save, Guide and Collection joins.
 const items = await client.getCategory('Furniture'); // one category shard
 const labels = await client.searchExactNames('Belle', 'en'); // one locale index
 const official = await client.getName(10000001, 'ja'); // null if unverified
