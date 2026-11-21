@@ -86,7 +86,7 @@ def checked_footprint(item):
         raise ValueError("unverified footprint indexing must remain false")
 
 
-def checked_grid(grid):
+def checked_grid(grid, *, source_game_version="1.26.1"):
     x, y = grid.get("sizeX"), grid.get("sizeY")
     if x is not None or y is not None:
         if type(x) is not int or type(y) is not int or not (
@@ -115,12 +115,14 @@ def checked_grid(grid):
             if not isinstance(declared, dict):
                 raise ValueError("invalid terrain decoding evidence")
             computed = describe_native_packing(
-                x, y, grid.get("nativeFloorTypePalette"), data)
+                x, y, grid.get("nativeFloorTypePalette"), data,
+                source_game_version=source_game_version)
             if declared != computed:
                 raise ValueError("terrain decoding evidence mismatches native bytes")
         if "nativePaletteIndexCellCounts" in grid:
-            counted = count_packed_palette_indices(
+            counted = (count_packed_palette_indices(
                 x, y, grid.get("nativeFloorTypePalette"), data)
+                if computed["decoded"] else None)
             if grid["nativePaletteIndexCellCounts"] != counted:
                 raise ValueError("terrain palette histogram mismatches packed bytes")
 
@@ -155,7 +157,7 @@ def validate_snapshot(directory):
     for record in families["objects"].values():
         checked_footprint(record)
     for record in families["grids"].values():
-        checked_grid(record)
+        checked_grid(record, source_game_version=manifest.get("gameVersion"))
     for row in families["layoutObjects"].values():
         if str(row.get("layoutId")) not in families["layouts"]:
             raise ValueError("layoutObject references absent source layout")
