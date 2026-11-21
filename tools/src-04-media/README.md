@@ -17,7 +17,13 @@ The launcher downloads **one bundled start.ps1** (Raw URL with public GitHub Con
 
 When Google Drive for Desktop syncs an **existing** exact Dreamwish Wand/Development/Sources/SRC-04 MEDIA folder under a standard My Drive root, the launcher copies only the manifest/report/catalog-probe JSONs there. It never copies game images or source binaries to Drive or GitHub. If that sync folder does not exist, it keeps the reports locally and says so.
 
-**Open technical gate:** 9,542 unique SRC-01 GUIDs are known, but the exact Addressables catalog GUID-to-Sprite mapping and actual game-file extraction success have not yet been empirically verified. Unresolved GUIDs remain unresolved and are counted in the reports. The public Wand media interface does not expose these private manifest paths.
+**Observed Steam v1.26.2 result (2026-11-21):** the user-provided native report confirms 40/40 bundles, 23,021 decoded images, zero decode failures, and 9,542 as-yet-unmapped GUIDs. The catalog probe shows all 9,542 GUID strings in both `catalog.keyData.bin` and `catalog.InternalIds.bin`, but mere presence does not prove the GUID-to-Sprite relation. The additional read-only `catalog_link.py` tool decodes GUID keys through bucket and entry tables to inspect exact internal IDs and only accepts exact equality with Unity container paths. The public Wand media interface still does not expose private derived images.
+
+**No image re-extraction needed for catalog analysis:** download the `SRC04-Catalog-Link.zip` package (or run the repository's Python script) and execute:
+
+    py -3 tools/src-04-media/catalog_link.py --game "C:\Program Files (x86)\Steam\steamapps\common\Disney Dreamlight Valley" --out "%USERPROFILE%\Documents\DreamwishWand\SRC-04 MEDIA\Steam-v1.26.2"
+
+The linked catalog is verified against the four SHA-256 digests recorded in the submitted `catalog-probe.json`. Outputs are `catalog-link-report.json` (small diagnostic evidence) and `catalog-links-private.json` (local unpublished exact matches). If the target catalog has changed, this command fails closed rather than mixing incompatible sources. No UnityPy, Pillow, bundle scanning, PNG/WebP conversion, upload, or publication is performed. Upload only `catalog-link-report.json` for follow-up analysis.
 
 For sample only, run start.ps1 with -SampleOnly. To preserve full-resolution source pixels separately when larger than 512px, use start.ps1 -KeepOriginals; the standard double-click run generates thumbnail/detail only.
 
