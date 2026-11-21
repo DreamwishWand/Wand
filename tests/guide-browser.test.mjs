@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { createHash } from 'node:crypto';
 import { GUIDE_SEARCH_SCHEMA, GUIDE_DETAIL_SCHEMA, validateGuideSearch, searchGuide,
-  canonicalQuestRecord, importGuideSearch, importGuideDetail, detailStepRows, guideItemTargets, guideSourceText, guideCharacterLabels, guideGroupInfo, guideStaticFacts, formatGuideConditionTree } from '../src/lib/guide/client.mjs';
+  canonicalQuestRecord, importGuideSearch, importGuideDetail, detailStepRows, guideItemTargets, guideSourceText, guideCharacterLabels, guideGroupInfo, guideStaticFacts, formatGuideConditionTree, guideMissionReferences } from '../src/lib/guide/client.mjs';
 
 const SHA='a'.repeat(64), WIRE='b'.repeat(64);
 const target={gameVersion:'1.26.1', platform:'Steam'};
@@ -357,4 +357,73 @@ test('quest source conditions, activation branches and reward ranges remain stat
   assert.deepEqual(facts.rewards.map(x=>[x.min,x.max]),[[0,30],[50,80],[null,100]]);
   assert.equal(guideStaticFacts({},'en').rewards.length,0);
   assert.throws(()=>guideStaticFacts(record,'xx'),/unsupported detail locale/);
+});
+
+
+test('Guide resolves only exact native Mission predicates to same-source searchable quests',()=>{
+  const {index, full}=fixture();
+  const next={...structuredClone(index.records[0]),id:'2070000700',
+    names:{en:'Source-only second quest'}, internalName:'Story!Other'};
+  index.records.push(next);
+  index.counts.missions=2;index.counts.sourceNativeRecords=4;
+  full.structured.conditions={
+    availableConditions:{operator:'AND',conditions:[
+      {type:'MissionCompleted',missionId:'2070000700'},
+      {type:'SubConditions',nested:{operator:'OR',conditions:[
+        {type:'CommonConditions',conditionId:'2070000700'},
+        {type:'MissionStatus',missionId:'2070000999'},
+        {type:'Unknown',missionId:'2070000700'}
+      ]}}
+    ]},
+    unlockConditions:{operator:'NOT',conditions:[
+      {type:'MissionStepCompleted',missionId:'2070000620',stepId:10}
+    ]}
+  };
+  full.structured.activationPolicies={
+    autoAcceptOptions:[{conditions:{operator:'AND',conditions:[
+      {type:'MissionObjectiveStatus',missionId:'2070000700',objectiveId:5}
+    ]}}],
+    uiUnlockConditions:[{conditions:null}],
+    ownerOverrides:[{conditions:{operator:'OR',conditions:[
+      {type:'StoryCompleted',storyId:'2070000700'}
+    ]}}]
+  };
+  const links=guideMissionReferences(full,index,'ja');
+  assert.deepEqual(links.map(x=>[x.predicate,x.id,x.targetInSearchIndex]),[
+    ['MissionCompleted','2070000700',true],
+    ['MissionStatus','2070000999',false],
+    ['MissionStepCompleted','2070000620',true],
+    ['MissionObjectiveStatus','2070000700',true]
+  ]);
+  assert.equal(links[0].targetName,'Source-only second quest');
+  assert.equal(links[0].targetNameSource,'en');
+  assert.equal(links[0].targetRow, next);
+  assert.equal(links[1].targetName,null);
+  assert.equal(links[1].targetRow,null);
+  assert.equal(links[2].section,'解放条件');
+  assert.equal(links[3].section,'自動受諾オプション 1');
+  assert.match(links[1].sourcePath,/SubConditions/);
+  assert.ok(links.every(x=>!('required' in x) && !('completed' in x)));
+});
+
+test('Guide condition links reject mixed original game source and do not infer absent reference edges',()=>{
+  const {index,full}=fixture();
+  assert.deepEqual(guideMissionReferences(full,index),[]);
+  assert.throws(()=>guideMissionReferences(full,index,'fake'),/unsupported reference locale/);
+  const mix=structuredClone(full);
+  mix.source.sha256='c'.repeat(64);
+  assert.throws(()=>guideMissionReferences(mix,index),/mission reference source mismatch/);
+  mix.source.sha256=SHA;mix.nativeWireSha256='c'.repeat(64);
+  assert.throws(()=>guideMissionReferences(mix,index),/mission reference source mismatch/);
+  mix.nativeWireSha256=WIRE;
+  mix.structured.conditions={availableConditions:{operator:'AND',conditions:[
+    {type:'MissionAvailable',missionId:'0'},
+    {type:'MissionCompleted',missionId:'0001'},
+    {type:'ConditionCompleted',missionId:'2070000620'}
+  ]}};
+  assert.deepEqual(guideMissionReferences(mix,index),[]);
+  mix.structured.conditions.availableConditions={operator:'AND',conditions:[
+    {type:'SubConditions',nested:{operator:'AND',conditions:[]}}
+  ]};
+  assert.deepEqual(guideMissionReferences(mix,index),[]);
 });

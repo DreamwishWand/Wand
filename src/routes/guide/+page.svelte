@@ -1,7 +1,7 @@
 <script lang="ts">
   import {
     GUIDE_LOCALES, importGuideSearch, importGuideFolder, importGuideDetail, searchGuide,
-    detailStepRows, guideStaticFacts, MAX_SHARD_BYTES
+    detailStepRows, guideStaticFacts, guideMissionReferences, MAX_SHARD_BYTES
   } from '$lib/guide/client.mjs';
 
   const languageLabels: Record<string, string> = {
@@ -42,6 +42,7 @@
   $: selectedRow = selectedId && searchIndex ? searchIndex.records.find((r: any) => r.id === selectedId) : null;
   $: detailSteps = selectedDetail ? detailStepRows(selectedDetail, locale) : [];
   $: staticFacts = selectedDetail ? guideStaticFacts(selectedDetail, locale) : {conditions:[], policies:[], rewards:[]};
+  $: missionReferences = selectedDetail && searchIndex ? guideMissionReferences(selectedDetail, searchIndex, locale) : [];
   $: siblingQuests = selectedRow && groupInfo[selectedRow.groupId] && searchIndex
     ? groupInfo[selectedRow.groupId].missionIds.map((id: string) => searchIndex.records.find((r: any) => r.id === id)).filter(Boolean) : [];
   $: requiredShards = searchIndex
@@ -323,6 +324,31 @@
                 {/each}
               </section>
             {/if}
+            {#if missionReferences.length}
+              <section class="guide-source-facts" aria-label="Source-typed quest references">
+                <h3>原本の条件式が参照するクエスト</h3>
+                <p>条件分岐に登場する参照です。必須の前提クエスト、攻略順、解放済みの判定ではありません。原本の条件式は上の欄で確認できます。</p>
+                <ul class="guide-mission-references">
+                  {#each missionReferences as reference (reference.sourcePath + reference.id)}
+                    <li>
+                      <span class="guide-mission-reference-kind">{reference.section} · {reference.predicate}</span>
+                      {#if reference.targetInSearchIndex}
+                        {#if reference.id === selectedId}
+                          <span>{reference.targetName} · ID {reference.id}（現在のクエスト）</span>
+                        {:else}
+                          <button type="button" on:click={() => showDetail(reference.targetRow)}>{reference.targetName} · ID {reference.id}</button>
+                        {/if}
+                        {#if reference.targetNameSource !== locale}
+                          <small>名称出典: {reference.targetNameSource}</small>
+                        {/if}
+                      {:else}
+                        <span>ID {reference.id}（選択中の検索索引には未収録）</span>
+                      {/if}
+                    </li>
+                  {/each}
+                </ul>
+              </section>
+            {/if}
             {#if staticFacts.rewards.length}
               <section class="guide-source-facts" aria-label="Source-configured rewards">
                 <h3>原本に設定された報酬値</h3>
@@ -471,6 +497,11 @@
   .guide-source-tree { background:#281f33; border:1px solid #ffffff1f; border-radius:9px; padding:11px 13px; margin-top:9px; }
   .guide-source-tree summary { cursor:pointer; color:#d9bfec; font-size:12px; }
   .guide-source-tree pre { margin:12px 0 2px; padding:11px; background:#17111e; border-radius:7px; color:#cab8dc; font-size:10px; white-space:pre-wrap; overflow-wrap:anywhere; max-height:340px; overflow:auto; }
+  .guide-mission-references { list-style:none; padding:0; display:grid; gap:8px; }
+  .guide-mission-references li { background:#291f34; border:1px solid #ffffff19; border-radius:9px; padding:10px 12px; display:grid; gap:5px; color:#d9c6e7; font-size:12px; overflow-wrap:anywhere; }
+  .guide-mission-reference-kind,.guide-mission-references small { color:#b29bc3; font-size:10px; }
+  .guide-mission-references button { border:1px solid #a47dc055; background:#322541; color:#eddbfa; font:inherit; text-align:left; border-radius:7px; padding:8px 10px; overflow-wrap:anywhere; }
+  .guide-mission-references button:hover,.guide-mission-references button:focus-visible { border-color:#c79af4; }
   .guide-source-rewards { color:#ddcbe9; font-size:12px; line-height:1.8; padding-left:18px; }
   .guide-verified { color:#bad7b6; font-size:11px; }
   .guide-related p { font-size:11px; color:#ac9bbf; line-height:1.7; }

@@ -440,6 +440,67 @@ export function guideStaticFacts(record, locale = 'ja') {
   return {conditions, policies, rewards};
 }
 
+/** Only source-typed Mission predicates can navigate to another playable quest.
+ * An edge is a *mention in a condition branch*, not proof of a required prerequisite.
+ * This runs only after importGuideDetail has verified the original record hash.
+ */
+export function guideMissionReferences(record, index, locale = 'ja') {
+  validateGuideSearch(index);
+  assert(GUIDE_LOCALES.includes(locale), 'unsupported reference locale');
+  const sourceRow = isObj(record) && index.records.find(row => row.id === record.id);
+  assert(sourceRow && record.recordKind === 'mission' &&
+    record.nativeWireSha256 === sourceRow.detail.nativeWireSha256 &&
+    record.source?.file === index.source.file &&
+    record.source?.sha256 === index.source.sha256,
+    'mission reference source mismatch');
+  const typed = isObj(record.structured) ? record.structured : {};
+  const byId = new Map(index.records.map(row => [row.id, row]));
+  const allowed = new Set([
+    'MissionAvailable', 'MissionCompleted', 'MissionOngoing', 'MissionStatus',
+    'MissionStepCompleted', 'MissionStepStatus', 'MissionObjectiveCompleted',
+    'MissionObjectiveStatus', 'MissionObjectiveSkipped', 'MissionObjectiveProgression'
+  ]);
+  const references = [];
+  function walk(tree, section, path, depth) {
+    if (!isObj(tree) || !Array.isArray(tree.conditions)) return;
+    assert(depth <= 24, 'source reference tree too deep');
+    for (const [i, condition] of tree.conditions.entries()) {
+      if (!isObj(condition)) continue;
+      const field = path + '.conditions[' + i + ']';
+      if (condition.type === 'SubConditions') {
+        walk(condition.nested, section, field + '.SubConditions', depth + 1);
+        continue;
+      }
+      if (!allowed.has(condition.type) || !isId(condition.missionId)) continue;
+      const row = byId.get(condition.missionId) ?? null;
+      const label = row ? labelFor(row, locale) : null;
+      references.push({
+        id:condition.missionId, predicate:condition.type, section,
+        sourcePath:field, targetInSearchIndex:row !== null,
+        targetName:label?.text ?? null, targetNameSource:label?.source ?? null,
+        targetRow:row
+      });
+    }
+  }
+  const roots = isObj(typed.conditions) ? typed.conditions : {};
+  for (const [key, title] of [
+    ['availableConditions', '利用条件'], ['unlockConditions', '解放条件']
+  ]) walk(roots[key], title, key, 0);
+  const policies = isObj(typed.activationPolicies) ? typed.activationPolicies : {};
+  for (const [key, label] of [
+    ['autoAcceptOptions', '自動受諾オプション'],
+    ['uiUnlockConditions', 'UI表示条件'],
+    ['ownerOverrides', '担当キャラクター上書き設定']
+  ]) {
+    const entries = Array.isArray(policies[key]) ? policies[key] : [];
+    for (const [i, entry] of entries.entries()) {
+      if (isObj(entry)) walk(entry.conditions, label + ' ' + (i + 1),
+        key + '[' + i + ']', 0);
+    }
+  }
+  return references;
+}
+
 /** Faithful, human-readable steps with individual original objective descriptions. */
 export function detailStepRows(record, locale = 'ja') {
   assert(GUIDE_LOCALES.includes(locale), 'unsupported detail locale');
