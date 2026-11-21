@@ -577,6 +577,11 @@ class PipelineTests(unittest.TestCase):
             self.assertIn("layoutObjects.json", names)
             self.assertIn("diagnostics/verification.json", names)
             self.assertIn("diagnostics/layout-terrain-audit.json", names)
+            self.assertIn("diagnostics/footprint-hypotheses.json", names)
+            candidate = json.loads(archive.read(
+                "diagnostics/footprint-hypotheses.json"))
+            self.assertFalse(candidate["placementLegalityVerified"])
+            self.assertFalse(candidate["footprintLayerIndexOrderVerified"])
             self.assertTrue(all(name.endswith(".json") for name in names))
             self.assertFalse(any(name.endswith((".dll", ".bin", ".sav"))
                                  for name in names))
