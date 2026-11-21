@@ -81,3 +81,15 @@ test('bridges existing Collection runtime records by exact Item ID without save 
   assert.equal(matchGameId(index, 40000000)?.family, 'Furniture');
   assert.equal(matchGameId(index, 40000001), null);
 });
+
+test('legacy Rust field map covers schema626 without authorizing editing or current builds', async () => {
+  const { getLegacySaveFields } = await import('../src/lib/save/registry.mjs');
+  const map = getLegacySaveFields();
+  assert.equal(map.schema, 'wand.db05.legacy626-fields@1');
+  assert.equal(map.saveSchemaVersion, 626);
+  assert.equal(map.fields.length, 35);
+  assert.ok(map.fields.every(x => x.writable === false && x.observedStatus === 'legacy_source_code_only'));
+  const amount = map.fields.find(x => x.path === '/Player/ContainerInventories/{containerId}/Inventory[]/Amount');
+  assert.deepEqual(amount.builds, ['steam-1.25.3-626']);
+  assert.equal(map.fields.some(x => x.builds.includes('switch-643')), false);
+});
