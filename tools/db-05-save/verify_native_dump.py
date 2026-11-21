@@ -12,13 +12,22 @@ from pathlib import Path
 
 SCHEMA = 'wand.db05.native1261-observed-field-witnesses@1'
 MESSAGES = {'Profile', 'ProfilePlayer', 'ProfileWorld'}
-CLASS_HEADER = re.compile(r'^public sealed class ([A-Za-z][A-Za-z0-9_]*) :')
+CLASS_HEADER = re.compile(r'^public sealed class ([A-Za-z][A-Za-z0-9_.]*) :')
 NESTED_SCHEMA = 'wand.db05.native1261-nested-field-witnesses@1'
+DEEP_SCHEMA = 'wand.db05.native1261-deep-field-witnesses@1'
 NESTED_CLASSES = frozenset({
     'Pet', 'Cookbook', 'ToolInfo', 'RoyalDutyProgress', 'MultiItemInstance',
     'FastTravel', 'Village', 'House', 'DecorationPresetData', 'FloatingIsland',
     'BuildingInfo', 'Critter', 'GridCollection', 'PremadeDecorationPresets'
 })
+DEEP_CLASSES = frozenset({
+    'ItemInstance', 'ListInventory', 'ListInventory.Types.Data', 'Grid',
+    'DiffGrid', 'GridObject', 'House.Types.Floor', 'House.Types.Room',
+    'Village.Types.VillageArea', 'CookingHistory', 'Character', 'Story',
+    'ObjectLimitData', 'ToolUpgrades', 'FishingPerVillageArea', 'StoreInfo',
+    'CharacterRestaurantOrder'
+})
+
 FIELD_NUMBER = re.compile(r'^\s*public const int ([A-Za-z0-9_]+)FieldNumber = ([0-9]+);')
 PROPERTY = re.compile(r'^\s*public (.+?) ([A-Za-z0-9_]+) \{ get;')
 NATIVE_PREFIX = {'Profile': '', 'ProfilePlayer': '/Player', 'ProfileWorld': '/World'}
@@ -132,8 +141,9 @@ def inspect_nested_native_fields(dump_path, manifest, allow_new_source=False):
     New or changed source files require explicit --allow-new-source. Matching
     never authorizes use of private save values, serialization, or writing.
     """
-    if not isinstance(manifest, dict) or manifest.get('schema') != NESTED_SCHEMA:
+    if not isinstance(manifest, dict) or manifest.get('schema') not in (NESTED_SCHEMA, DEEP_SCHEMA):
         raise ValueError('DB05_NESTED_NATIVE_MANIFEST_REQUIRED')
+    allowed_classes = NESTED_CLASSES if manifest['schema'] == NESTED_SCHEMA else DEEP_CLASSES
     source = manifest.get('source')
     fields = manifest.get('fields')
     if not isinstance(source, dict) or not isinstance(fields, list) or not fields:
@@ -144,9 +154,11 @@ def inspect_nested_native_fields(dump_path, manifest, allow_new_source=False):
     actual = hash_file(dump_path)
     if actual != expected and not allow_new_source:
         raise ValueError('DB05_NESTED_NATIVE_SOURCE_HASH_MISMATCH')
-    native = read_native_types(dump_path, NESTED_CLASSES)
     required = {row.get('nativeMessage') for row in fields if isinstance(row, dict)}
-    if not required.issubset(NESTED_CLASSES) or not required.issubset(native):
+    if not required.issubset(allowed_classes):
+        raise ValueError('DB05_NESTED_NATIVE_CLASS_OR_PATH_INVALID')
+    native = read_native_types(dump_path, required)
+    if not required.issubset(native):
         raise ValueError('DB05_NESTED_NATIVE_CLASSES_MISSING')
     observed = set()
     mismatches = []
@@ -192,13 +204,18 @@ def main(argv=None):
                         'data/ddv/save/native1261-observed-fields.v1.json')
     parser.add_argument('--allow-new-source', action='store_true')
     parser.add_argument('--nested', action='store_true', help='Verify nested native field manifest')
+    parser.add_argument('--deep', action='store_true', help='Verify deep world/inventory field manifest')
     args = parser.parse_args(argv)
+    if args.nested and args.deep:
+        parser.error('Choose exactly one of --nested and --deep')
+    if args.deep and args.manifest == Path(__file__).resolve().parents[2] / 'data/ddv/save/native1261-observed-fields.v1.json':
+        args.manifest = args.manifest.parent / 'native1261-deep-fields.v1.json'
     if args.nested and args.manifest == Path(__file__).resolve().parents[2] / 'data/ddv/save/native1261-observed-fields.v1.json':
         args.manifest = args.manifest.parent / 'native1261-nested-fields.v1.json'
     manifest = json.loads(args.manifest.read_text(encoding='utf-8'))
     try:
         result = (inspect_nested_native_fields(args.dump, manifest, args.allow_new_source)
-                  if args.nested else inspect_native_fields(args.dump, manifest, args.allow_new_source))
+                  if args.nested or args.deep else inspect_native_fields(args.dump, manifest, args.allow_new_source))
     except (ValueError, UnicodeError, OSError):
         print('DB05_NATIVE_VERIFICATION_FAILED')
         return 1
