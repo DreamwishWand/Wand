@@ -1,3 +1,30 @@
+export interface SaveDiagnosticAchievementFieldView {
+  readonly id:string;
+  readonly label:string;
+  readonly observed:number;
+  readonly absent:number;
+  readonly typeIssues:number;
+  readonly checkedElements:number;
+  readonly nestedTypeIssues:number;
+  readonly sampled:boolean;
+}
+export interface SaveDiagnosticAchievementObservation {
+  readonly status:
+    'not_observed'|'observed_empty'|'container_type_difference'|
+    'observed_kind_difference'|'sampled_observation'|'observed_field_kinds';
+  readonly containerPresent:boolean;
+  readonly containerKindValid:boolean;
+  readonly inspectedRows:number;
+  readonly invalidRows:number;
+  readonly sampled:boolean;
+  readonly fields:readonly SaveDiagnosticAchievementFieldView[];
+  readonly modifiedSaveMayOmitMissionObjects:true;
+  readonly absenceIsNotEvidenceOfCorruption:true;
+  readonly completionVerified:false;
+  readonly saveIntegrityVerified:false;
+  readonly writerAuthorized:false;
+  readonly exportAuthorized:false;
+}
 export interface SaveDiagnosticReferenceView {
   readonly id: string;
   readonly label: string;
@@ -20,12 +47,13 @@ export interface SaveDiagnosticShapeDomainView {
   readonly sampled: boolean;
 }
 export interface SaveDiagnosticView {
-  readonly contract: 'wand.db05.browser-readonly-diagnostics@1';
+  readonly contract: 'wand.db05.browser-readonly-diagnostics@2';
   readonly referenceStatus: string;
   readonly rootValid: true;
   readonly knownPublicTemplates: number;
   readonly referenceRules: readonly SaveDiagnosticReferenceView[];
   readonly shapeDomains: readonly SaveDiagnosticShapeDomainView[];
+  readonly achievementObservation:SaveDiagnosticAchievementObservation;
   readonly privateIdsIncluded: false;
   readonly privateValuesIncluded: false;
   readonly fullSchemaVerified: false;
@@ -59,7 +87,7 @@ export interface SaveDiagnosticCatalogView {
   readonly writerAuthorized: false;
   readonly exportAuthorized: false;
 }
-export const SAVE_DIAGNOSTIC_VIEW_CONTRACT: 'wand.db05.browser-readonly-diagnostics@1';
+export const SAVE_DIAGNOSTIC_VIEW_CONTRACT: 'wand.db05.browser-readonly-diagnostics@2';
 export function makeSaveDiagnosticView(decoded: unknown): SaveDiagnosticView;
 export function makeSaveCatalogAuditView(audit: unknown): SaveDiagnosticCatalogView;
 /** Strictly validate and reconstruct a structured-clone reply from a local save Worker. */
