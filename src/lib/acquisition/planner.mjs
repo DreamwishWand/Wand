@@ -40,6 +40,24 @@ function toMap(value, label, positive = false) {
   }
   return map;
 }
+function selectorChoices(value) {
+  if (value == null) return new Map();
+  if (typeof value !== 'object' || Array.isArray(value) ||
+      (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null)) {
+    throw new TypeError('Invalid ingredient choices');
+  }
+  const choices = new Map();
+  for (const [slot, target] of Object.entries(value)) {
+    if (!/^[1-9][0-9]*:(?:0|[1-9][0-9]*)$/.test(slot) ||
+        !Number.isSafeInteger(Number(slot.split(':')[0])) ||
+        !Number.isSafeInteger(Number(slot.split(':')[1]))) {
+      throw new TypeError('Invalid ingredient slot key');
+    }
+    choices.set(slot, itemId(target, 'ingredient choice Item ID'));
+  }
+  return choices;
+}
+
 function sortedRows(map, mapper) {
   return [...map.entries()].sort(([a], [b]) => a - b).map(mapper);
 }
@@ -53,7 +71,7 @@ function sortedRows(map, mapper) {
  * a save. `recipeChoices` maps numeric Item IDs to explicit recipe IDs.
  */
 export function planRecipeRequirements(db, recipeId, {
-  batches = 1, inventory = {}, recipeChoices = {},
+  batches = 1, inventory = {}, recipeChoices = {}, ingredientChoices = {},
   expandSingleRecipe = true, maxDepth = 12,
 } = {}) {
   if (!db || typeof db.getRecipe !== 'function' ||
@@ -74,6 +92,9 @@ export function planRecipeRequirements(db, recipeId, {
   if (typeof expandSingleRecipe !== 'boolean') throw new TypeError('Invalid singleton expansion setting');
   const inventoryLeft = toMap(inventory, 'inventory');
   const choices = toMap(recipeChoices, 'recipe choices', true);
+  const selectedIngredients = selectorChoices(ingredientChoices);
+  const usedIngredientChoiceKeys = new Set();
+  const selectorSelections = [];
   const producedSurplus = new Map();
   const usedInventory = new Map();
   const needs = new Map();
@@ -154,21 +175,69 @@ export function planRecipeRequirements(db, recipeId, {
     if (++operationCount > 10000) throw new RangeError('Material plan too large');
     if (!Array.isArray(recipe.ingredients) || !recipe.ingredients.length)
       throw new TypeError(`Missing source ingredients for recipe ${recipe.recipeId}`);
+    const membershipAvailable = db.ingredientMembershipScope === 'three_observed_cooking_native_classes';
+    const candidatesFor = selectors => {
+      if (!membershipAvailable || typeof db.getIngredientSelectorCandidates !== 'function') return [];
+      const candidates = new Map();
+      for (const selectorId of selectors) for (const member of db.getIngredientSelectorCandidates(selectorId)) {
+        if (!Number.isSafeInteger(member.itemId) || member.itemId <= 0) {
+          throw new TypeError('Invalid source-backed selector candidate');
+        }
+        if (!candidates.has(member.itemId)) candidates.set(member.itemId, new Set());
+        candidates.get(member.itemId).add(selectorId);
+      }
+      return [...candidates.entries()].sort(([a], [b]) => a-b)
+        .map(([id, tags]) => ({itemId:id,matchedSelectorIds:[...tags].sort((a,b)=>a-b)}));
+    };
     for (let index = 0; index < recipe.ingredients.length; index++) {
       const ingredient = recipe.ingredients[index];
       const perBatch = quantity(ingredient.quantity, 'source ingredient quantity', 1);
       const total = checkedMultiply(perBatch, count);
       if (ingredient.kind === 'item') {
         needItem(itemId(ingredient.itemId, 'ingredient Item ID'), total, stack, depth);
-      } else if (ingredient.kind === 'anyTag' && Number.isSafeInteger(ingredient.tagId) && ingredient.tagId > 0) {
-        selectors.push({ recipeId: recipe.recipeId, ingredientIndex: index,
-          kind: 'anyTag', tagId: ingredient.tagId, quantity: total,
-          resolution: 'tag_item_membership_not_verified' });
-      } else if (ingredient.kind === 'tagAlternatives' && Array.isArray(ingredient.tagIds) &&
-        ingredient.tagIds.length > 0 && ingredient.tagIds.every(id => Number.isSafeInteger(id) && id > 0)) {
-        selectors.push({ recipeId: recipe.recipeId, ingredientIndex: index,
-          kind: 'tagAlternatives', tagIds: [...ingredient.tagIds], quantity: total,
-          resolution: 'tag_alternatives_not_verified' });
+      } else if (ingredient.kind === 'anyTag' || ingredient.kind === 'tagAlternatives' ||
+                 ingredient.kind === 'itemAlternatives') {
+        let selectorIds = [];
+        let alternatives = [];
+        if (ingredient.kind === 'anyTag') {
+          selectorIds = [itemId(ingredient.tagId, 'source selector ID')];
+        } else if (ingredient.kind === 'tagAlternatives') {
+          if (!Array.isArray(ingredient.tagIds) || !ingredient.tagIds.length) {
+            throw new TypeError('Empty tag selector alternatives');
+          }
+          selectorIds = ingredient.tagIds.map(id => itemId(id, 'source selector ID'));
+        } else {
+          if (!Array.isArray(ingredient.itemIds) || !ingredient.itemIds.length) {
+            throw new TypeError('Empty item selector alternatives');
+          }
+          alternatives = ingredient.itemIds.map(id => itemId(id, 'source alternative Item ID'));
+        }
+        const candidates = ingredient.kind === 'itemAlternatives' ?
+          [...new Set(alternatives)].sort((a,b)=>a-b).map(itemId => ({itemId,matchedSelectorIds:[]})) :
+          candidatesFor(selectorIds);
+        const key = `${recipe.recipeId}:${index}`;
+        const pick = selectedIngredients.get(key);
+        if (pick !== undefined) {
+          usedIngredientChoiceKeys.add(key);
+          const candidate = candidates.find(x => x.itemId === pick);
+          if (!candidate) throw new TypeError(`Invalid selected ingredient for ${key}`);
+          needItem(pick, total, stack, depth);
+          selectorSelections.push({recipeId:recipe.recipeId,ingredientIndex:index,
+            itemId:pick,quantity:total,matchedSelectorIds:candidate.matchedSelectorIds,
+            availabilityVerified:false});
+        } else {
+          selectors.push({recipeId:recipe.recipeId,ingredientIndex:index,
+            kind:ingredient.kind,
+            ...(ingredient.kind === 'anyTag' ? {tagId:selectorIds[0]} :
+              ingredient.kind === 'tagAlternatives' ? {tagIds:selectorIds} : {itemIds:alternatives}),
+            quantity:total, candidateItemIds:candidates.map(x=>x.itemId),
+            resolution:ingredient.kind === 'itemAlternatives' ? 'explicit_item_alternative_choice_required' :
+              !membershipAvailable ? 'tag_item_membership_not_verified' :
+              candidates.length ? 'partial_source_candidates_selection_required' :
+                'not_found_in_partial_native_cooking_index',
+            membershipCoverage:membershipAvailable ? 'three_observed_cooking_native_classes' : 'not_supplied',
+            availabilityVerified:false});
+        }
       } else {
         throw new TypeError(`Unrecognized source ingredient selector in recipe ${recipe.recipeId}`);
       }
@@ -182,6 +251,9 @@ export function planRecipeRequirements(db, recipeId, {
       eligibilityEvaluated: false });
   }
   runRecipe(root, batches, [itemId(root.resultItemId, 'result Item ID')], 0);
+  if (usedIngredientChoiceKeys.size !== selectedIngredients.size) {
+    throw new TypeError('Unused ingredient choice (not a source ingredient slot)');
+  }
   return {
     schema: 'wand.db02.material-plan@1',
     source: { ...db.source },
@@ -190,7 +262,7 @@ export function planRecipeRequirements(db, recipeId, {
     status: blockers.length || selectors.length ? 'requires_explicit_choices' : 'static_material_quantities_resolved',
     materialsFullySpecified: !blockers.length && !selectors.length,
     recipeEligibilityEvaluated: false, acquisitionAvailabilityVerified: false,
-    steps, unresolvedSelectors: selectors, blockers,
+    steps, unresolvedSelectors: selectors, selectorSelections, blockers,
     requiredMaterials: sortedRows(needs, ([id, entry]) => ({ ...entry,
       acquisitionPaths: db.getAcquisitionPaths(id),
       possibleStalls: db.getPossibleStallsForItem(id),

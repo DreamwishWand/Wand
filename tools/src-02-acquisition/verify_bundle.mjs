@@ -15,6 +15,7 @@ const DATASETS = Object.freeze({
   'shop-offers.jsonl': 'shopOffers',
   'stall-sources.jsonl': 'stallSources',
   'related-items.jsonl': 'relatedItems',
+  'ingredient-selector-membership.jsonl': 'ingredientMembership',
   'condition-gates.jsonl': 'conditionGates',
   'condition-definitions.jsonl': 'conditionDefinitions',
   'report.json': 'report',
@@ -45,7 +46,7 @@ function rows(bytes, filename) {
 
 function countChecks(bundle) {
   const { manifest, report, unresolved, recipes, acquisitions, lootTables,
-    stallSources, shopOffers, relatedItems, conditionGates, conditionDefinitions } = bundle;
+    stallSources, shopOffers, relatedItems, conditionGates, conditionDefinitions, ingredientMembership } = bundle;
   const expected = manifest.counts;
   check(expected && typeof expected === 'object' && report.schema === 'wand.src02.report@1' &&
     report.status === manifest.status && JSON.stringify(expected) === JSON.stringify(report.counts),
@@ -62,6 +63,10 @@ function countChecks(bundle) {
   equality('stallLootSlots', stallSources.reduce((n, row) => n + row.slotLootTableIds.length, 0));
   equality('distinctStallLootTables', new Set(stallSources.flatMap(row => row.slotLootTableIds)).size);
   equality('linkedItemIds', relatedItems.length);
+  if (ingredientMembership !== null) {
+    equality('ingredientSelectorMembers', ingredientMembership.length);
+    check(expected.ingredientSelectorSourceDefinitions === 4050, 'INGREDIENT_SOURCE_DEFINITION_COUNT');
+  }
   equality('conditionGates', conditionGates.length);
   equality('conditionDefinitions', conditionDefinitions.length);
   equality('conditionGateUsages', conditionGates.reduce((sum, gate) => sum + gate.usedBy.length, 0));
@@ -75,6 +80,11 @@ function countChecks(bundle) {
   equality('unsupportedActivityDefinitions', unresolved.unsupportedActivityDefinitions.length);
   equality('unresolvedLinkedItemIds', unresolved.missingInPartialSrc01.length);
   const missing = new Set(unresolved.missingInPartialSrc01);
+  if (ingredientMembership !== null) {
+    check(Array.isArray(unresolved.selectorsNotFoundInObservedCookingFamilies) &&
+      unresolved.selectorsNotFoundInObservedCookingFamilies.length === expected.ingredientSelectorIdsWithoutObservedMembers,
+      'UNRESOLVED_INGREDIENT_SELECTORS');
+  }
   check(missing.size === unresolved.missingInPartialSrc01.length &&
     relatedItems.every(row => row.inSrc01 === !missing.has(row.itemId)) &&
     relatedItems.filter(row => !row.inSrc01).length === missing.size &&
@@ -95,11 +105,16 @@ export async function loadVerifiedAcquisitionBundle(directory, { src01ManifestPa
     manifest.source && SHA.test(manifest.source.src01ManifestSha256) &&
     SHA.test(manifest.source.src01ItemsSha256) &&
     SHA.test(manifest.source.conditionSha256), 'UNSUPPORTED_MANIFEST');
+  const hasMembership = manifest.files?.['ingredient-selector-membership.jsonl'] !== undefined;
+  const dataSets = { ...DATASETS };
+  if (!hasMembership) delete dataSets['ingredient-selector-membership.jsonl'];
+  check(hasMembership === (manifest.counts?.ingredientSelectorMembers !== undefined),
+    'INGREDIENT_MEMBERSHIP_LEDGER_STATUS');
   check(manifest.files && typeof manifest.files === 'object' &&
-    JSON.stringify(Object.keys(manifest.files).sort()) === JSON.stringify(Object.keys(DATASETS).sort()),
+    JSON.stringify(Object.keys(manifest.files).sort()) === JSON.stringify(Object.keys(dataSets).sort()),
     'FILE_LEDGER_MISMATCH');
-  const loaded = { manifest };
-  for (const [file, key] of Object.entries(DATASETS)) {
+  const loaded = { manifest, ingredientMembership: null };
+  for (const [file, key] of Object.entries(dataSets)) {
     check(SHA.test(manifest.files[file]), 'INVALID_DIGEST_' + file);
     const bytes = await bytesFromRegularFile(join(root, file));
     check(digest(bytes) === manifest.files[file], 'DIGEST_MISMATCH_' + file);
