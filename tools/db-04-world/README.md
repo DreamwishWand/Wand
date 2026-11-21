@@ -2,6 +2,17 @@
 
 This lane implements a **read-only, partial, game-native database**, not a save editor or a speculative map generator. It deliberately does **not** mark the entire world graph or placement rules as complete.
 
+**Original native-code version boundary:** `getNativeFootprintLayerAt`,
+`getNativeFootprintLayerWindow`, and `getNativeFootprintCardinalDimensions`
+only report their original GridArea indexing and cardinal-size calculations
+as verified for **Steam v1.26.1**, whose original IL2CPP code was examined.
+For v1.26.2 or an unknown version they return explicit source-not-verified
+statuses and never return synthesized native layer cells or cardinal sizes.
+`getNativeFootprint` still exposes the original per-item raw layer array
+without claiming that a later version's machine-code indexing is identical.
+Even byte-identical v1.26.2 Furniture/Building source files do not prove
+the native GridArea implementation is byte-identical across releases.
+
 ## Verified input formats
 
 - Steam game source `ddv_Data/StreamingAssets/itemlist/Furniture.json` and `Building.json`: indexed protobuf records with exact integer item IDs, native names and `GridAreaData` (wire field 6).
