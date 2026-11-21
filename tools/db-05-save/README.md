@@ -114,3 +114,28 @@ node tools/db-05-save/compare.mjs --previous "$env:LOCALAPPDATA\\WandDb05\\old\\
 
 The `--out` file must not already exist; output within a Git repository is rejected, and no input is modified. Keep all reports private because even redacted structural witnesses can be sensitive. The current SRC-06 Drive output folder has no actual reports, so **no real Steam 1.26.2 or Switch 643 structural compatibility conclusion is made** by this code. Ingest evidence is from a lexical scanner, not the strict Rust Codec. Thus `authoritative=false`, `complete=false`, and all Writer, ownership mutation, export and original-overwrite authorizations remain false.
 
+## Read-only structural findings from original 626/643 saves (2026-11-21)
+
+The owner supplied an updated encrypted Steam profile, and the existing P1G
+interoperability algorithm decrypted it locally as a ZIP archive containing
+one `profile` JSON entry. The decoded `GameInfo.Version` is 643. Two
+separately retained, plaintext Switch-origin saves report schema 626 and 643.
+Neither platform is used as a structural compatibility gate.
+
+A local, read-only exhaustive walk of the **66 public historical path
+templates** found their observed JSON type sets consistent across the three
+originals except for a previously incorrect historical DB-05 type
+restriction on the *known* chest path
+`/Player/ContainerInventories/{containerId}/ParentItemID`.
+All three originals contain both JSON `integer` and `null` at that known
+path. Its allowed candidate kind is therefore `integer|null`.
+`null` never becomes a valid catalog Item ID or ownership proof.
+One pre-existing appearance path was present in a Steam 643 sample but
+not observed in the other originals; absence is not proof of incompatibility.
+
+This is local private-save **shape evidence only**, not a proof of Codec
+round-trip, unknown/new field preservation, complete schema closure, or
+Writer authorization. Personal saves, raw JSON, user identifiers,
+envelope hashes, and private structural reports must remain outside Git.
+Only this historical **public field definition** and synthetic tests are
+committed.
