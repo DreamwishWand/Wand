@@ -46,5 +46,10 @@ export function createAcquisitionCatalogJoin(snapshot, bundle) {
     getRecipe: db.getRecipe,
     getPossibleStallsForItem: db.getPossibleStallsForItem,
     getPossibleStallSlotsForItem: db.getPossibleStallSlotsForItem,
+    getConditionGate: db.getConditionGate,
+    getConditionDefinition: db.getConditionDefinition,
+    getRecipeCondition: db.getRecipeCondition,
+    getAcquisitionCondition: db.getAcquisitionCondition,
+    getLootGroupCondition: db.getLootGroupCondition,
   });
 }

@@ -17,6 +17,7 @@ PINNED = {
     'loot': '580db9ed81c37890fd1f8fab121a5d328c967d8c22ee253ff4c2b431d008d99c',
     'activity_item': '4f4d3393887aececfcef16569cebc8dd7df08d03ba7b7c89083fe15bb7309dc2',
     'building': 'e8ee2f1637518b9f233c2e0b667493a44eee11ad5f137e182bc555f797c5f6e0',
+    'condition': 'f9716fd7e80631213812ed2c93f802ee7ef73a0874214044d8e4304c555dc150',
 }
 MAX_FILE = 16 * 1024 * 1024
 MAX_MESSAGE = 1024 * 1024
@@ -352,6 +353,140 @@ def parse_stall_sources(data, available_loot_ids):
         })
     return results
 
+# Field tags are ConditionOneOf.*FieldNumber, grounded in Steam 1.26.1
+# IL2CPP dump.cs, checked against Steam 1.26.2 wire records.
+CONDITION_KIND = {
+    5: 'commonConditions', 10: 'subConditions', 20: 'alwaysTrue',
+    25: 'alwaysFalse', 30: 'areaUnlocked', 90: 'currentScene',
+    125: 'eventTime', 140: 'expansion', 185: 'hourglass',
+    195: 'inventory', 220: 'keyholeStatus', 245: 'memoryShard',
+    255: 'missionCompleted', 270: 'missionStatus',
+    280: 'missionStepCompleted', 285: 'missionStepStatus',
+    295: 'missionObjectiveStatus', 450: 'storyCompleted',
+    470: 'toolUnlocked',
+}
+BOOL_OPERATOR = {0: 'and', 1: 'or', 2: 'not'}
+
+
+def parse_condition_list(block, depth=0):
+    """Preserve boolean structure and typed leaves, never evaluate player state.
+
+    Other condition payloads remain SHA-only because their parameter semantics
+    may depend on live game profile, expansions, date, and server configuration.
+    """
+    if depth > 32:
+        raise ValueError('CONDITION_NESTING_TOO_DEEP')
+    data = wire(block)
+    if any(number not in (1, 2) for number, _, _ in data):
+        raise ValueError('UNEXPECTED_CONDITIONS_LIST_FIELD')
+    number = single(data, 1, 0)
+    if number is not None and number not in BOOL_OPERATOR:
+        raise ValueError('INVALID_BOOL_OPERATOR')
+    predicates = []
+    for entry in values(data, 2, 2):
+        one = wire(entry)
+        if len(one) != 1 or one[0][1] != 2:
+            raise ValueError('INVALID_CONDITION_ONEOF')
+        tag, _, payload = one[0]
+        row = {'kind': CONDITION_KIND.get(tag, 'unmapped'), 'fieldNumber': tag,
+               'payloadSha256': sha(payload)}
+        if tag == 5:
+            common = wire(payload)
+            condition_id = single(common, 1, 0, True)
+            if condition_id <= 0:
+                raise ValueError('INVALID_COMMON_CONDITION_REFERENCE')
+            row['conditionId'] = condition_id
+            row['inversed'] = bool(single(common, 2, 0) or 0)
+        elif tag == 10:
+            row['subConditions'] = parse_condition_list(payload, depth + 1)
+        predicates.append(row)
+    if len(predicates) > 256:
+        raise ValueError('TOO_MANY_CONDITION_PREDICATES')
+    return {'operator': BOOL_OPERATOR[number if number is not None else 0],
+            'operatorExplicit': number is not None, 'predicates': predicates,
+            'status': 'static_predicate_structure_only'}
+
+
+def common_refs(tree):
+    for node in tree['predicates']:
+        if node['fieldNumber'] == 5:
+            yield node['conditionId']
+        elif node['fieldNumber'] == 10:
+            yield from common_refs(node['subConditions'])
+
+
+def extract_condition_evidence(activity, loot, condition):
+    """Index only the predicates actually used by SRC-02, plus common refs.
+
+    This is not a second global quest-conditions database (DB-03 owns Guide).
+    Duplicate predicates are content-addressed; provenance retains each use.
+    """
+    condition_rows = list(frames(condition, 2130000000))
+    all_definitions = {condition_id: (name, single(fields, 6, 2, True))
+                       for condition_id, fields in condition_rows
+                       for name in [text_value(fields, 2)]}
+    if any(not name for name, _ in all_definitions.values()):
+        raise ValueError('INVALID_CONDITION_SOURCE_NAME')
+    gates = {}
+    def attach(payload, origin):
+        if not payload:
+            return
+        digest = sha(payload)
+        if digest not in gates:
+            gates[digest] = {'conditionDigest': digest,
+                'tree': parse_condition_list(payload), 'usedBy': [],
+                'availabilityEvaluated': False}
+        gates[digest]['usedBy'].append(origin)
+
+    for activity_id, fields in frames(activity, 2050000000):
+        code = activity_id - 2050000000
+        if 300000 <= code < 400000:
+            appear = single(fields, 9, 2)
+            gate = single(wire(appear), 5, 2) if appear else None
+            attach(gate, {'kind': 'recipe', 'recipeId': activity_id})
+        elif 100000 <= code < 200000:
+            attach(single(fields, 19, 2), {'kind': 'path', 'pathId': f'fishing:{activity_id}'})
+        elif 400000 <= code < 500000:
+            attach(single(fields, 13, 2), {'kind': 'path', 'pathId': f'timebending:{activity_id}'})
+    for table_id, fields in frames(loot, 2090000000):
+        table = single(fields, 6, 2, True)
+        for group_index, group in enumerate(values(wire(table), 1, 2)):
+            group_fields = wire(group)
+            attach(single(group_fields, 101, 2), {'kind': 'loot_group',
+                   'lootTableId': table_id, 'groupIndex': group_index})
+            for index, cond in enumerate(values(group_fields, 11, 2)):
+                attach(single(wire(cond), 1, 2), {'kind': 'loot_conditional_block',
+                      'lootTableId': table_id, 'groupIndex': group_index,
+                      'conditionalIndex': index})
+    resolved = {}
+    resolving = set()
+    def resolve_ref(condition_id):
+        if condition_id in resolving:
+            raise ValueError(f'CYCLIC_COMMON_CONDITION_{condition_id}')
+        if condition_id in resolved:
+            return
+        if condition_id not in all_definitions:
+            raise ValueError(f'UNRESOLVED_COMMON_CONDITION_{condition_id}')
+        resolving.add(condition_id)
+        name, raw = all_definitions[condition_id]
+        tree = parse_condition_list(raw)
+        for target in common_refs(tree):
+            resolve_ref(target)
+        resolving.remove(condition_id)
+        resolved[condition_id] = {'conditionId': condition_id, 'nameKey': name,
+                                 'tree': tree, 'conditionDigest': sha(raw),
+                                 'availabilityEvaluated': False,
+                                 'source': {'kind': 'game_native',
+                                            'file': 'itemlist/Condition.json',
+                                            'definitionId': condition_id}}
+    for gate in gates.values():
+        for condition_id in common_refs(gate['tree']):
+            resolve_ref(condition_id)
+    return (sorted(gates.values(), key=lambda x: x['conditionDigest']),
+            [resolved[i] for i in sorted(resolved)], len(all_definitions),
+            sum(len(gate['usedBy']) for gate in gates.values()))
+
+
 def read_items(path):
     result = {}
     with path.open('r', encoding='utf-8') as stream:
@@ -395,14 +530,21 @@ def load_rows(path, key):
 def diff_sets(old, new, out):
     files = {'recipes.jsonl':'recipeId', 'acquisitions.jsonl':'pathId',
              'loot-tables.jsonl':'lootTableId', 'shop-offers.jsonl':'offerId',
-             'stall-sources.jsonl':'stallId'}
+             'stall-sources.jsonl':'stallId',
+             'condition-gates.jsonl':'conditionDigest',
+             'condition-definitions.jsonl':'conditionId'}
     comparisons = {}
     for filename, key in files.items():
         # Pre-stall SRC-02 exports are valid historical snapshots. An absent
         # old stall-sources file means the newly supported family was not yet extracted.
         previous = old / filename
-        before = {} if filename == 'stall-sources.jsonl' and not previous.exists() else load_rows(previous, key)
-        after = load_rows(new / filename, key)
+        is_added_family = filename in ('stall-sources.jsonl', 'condition-gates.jsonl',
+                                       'condition-definitions.jsonl')
+        before = {} if is_added_family and not previous.exists() else load_rows(previous, key)
+        current = new / filename
+        # Historical test fixtures/snapshots predating this extracted family
+        # may omit it on both sides; a real new snapshot must include it.
+        after = {} if is_added_family and not current.exists() and not previous.exists() else load_rows(current, key)
         changes = sorted(k for k in before.keys() & after.keys() if before[k] != after[k])
         comparisons[filename] = {'added': sorted(after.keys() - before.keys()),
                                   'removed': sorted(before.keys() - after.keys()), 'changed': changes}
@@ -423,19 +565,23 @@ def run(args):
         raise ValueError('SRC01_ITEM_COUNT_MISMATCH')
     content = {}
     for role, path in [('activity', args.activity), ('loot', args.loot),
-                       ('activity_item', args.activity_item), ('building', args.building)]:
+                       ('activity_item', args.activity_item), ('building', args.building),
+                       ('condition', args.condition)]:
         if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_FILE:
             raise ValueError(f'INVALID_SOURCE_{role}')
         content[role] = path.read_bytes()
         if sha(content[role]) != PINNED[role]:
             raise ValueError(f'UNVERIFIED_SOURCE_SHA256_{role}')
-    if args.out.resolve() in [p.resolve() for p in (args.items, args.activity, args.loot, args.activity_item, args.building, args.src01_manifest)]:
+    if args.out.resolve() in [p.resolve() for p in (args.items, args.activity, args.loot, args.activity_item, args.building,
+                                                               args.condition, args.src01_manifest)]:
         raise ValueError('OUTPUT_OVERLAPS_INPUT')
     recipes, paths, unparsed = parse_activity(content['activity'])
     tables, loot_paths = parse_loot(content['loot'])
     stalls = parse_stall_sources(content['building'], {t['lootTableId'] for t in tables})
     paths.extend(loot_paths)
     paths.extend(parse_gardening(content['activity_item']))
+    gates, condition_definitions, condition_source_count, gate_usages = extract_condition_evidence(
+        content['activity'], content['loot'], content['condition'])
     recipes.sort(key=lambda x: x['recipeId'])
     paths.sort(key=lambda x: x['pathId'])
     tables.sort(key=lambda x: x['lootTableId'])
@@ -468,7 +614,8 @@ def run(args):
                       'cooking recipe result quantity (not encoded)',
                       'generic cooking ingredient tags and alternatives require tag resolver',
                       'uninterpreted encoded conditions and visibility gates',
-                      'location enum labels and world unlock state'],
+                      'location enum labels and world unlock state',
+                      'predicate parameters hashed and never evaluated against player profile'],
                   'notAStatementOfAbsence': True}
     out = args.out
     dump_rows(out / 'recipes.jsonl', recipes)
@@ -477,6 +624,8 @@ def run(args):
     dump_rows(out / 'shop-offers.jsonl', [])
     dump_rows(out / 'stall-sources.jsonl', stalls)
     dump_rows(out / 'related-items.jsonl', indexes)
+    dump_rows(out / 'condition-gates.jsonl', gates)
+    dump_rows(out / 'condition-definitions.jsonl', condition_definitions)
     dump_json(out / 'unresolved.json', unresolved)
     counts = {'recipes': len(recipes), 'cooking': sum(r['type']=='cooking' for r in recipes),
               'crafting': sum(r['type']=='crafting' for r in recipes),
@@ -486,11 +635,16 @@ def run(args):
               'distinctStallLootTables': len({x for row in stalls for x in row['slotLootTableIds']}),
               'sourceItems': len(item_map),
               'linkedItemIds': len(related), 'unresolvedLinkedItemIds': len(linked-item_map.keys()),
-              'unsupportedActivityDefinitions': len(unparsed)}
+              'unsupportedActivityDefinitions': len(unparsed),
+              'conditionSourceDefinitions': condition_source_count,
+              'conditionGates': len(gates),
+              'conditionDefinitions': len(condition_definitions),
+              'conditionGateUsages': gate_usages}
     dump_json(out / 'report.json', {'schema': 'wand.src02.report@1', 'status': 'partial_native_extraction', 'counts': counts})
     files = ['recipes.jsonl','acquisitions.jsonl','loot-tables.jsonl','shop-offers.jsonl',
              'stall-sources.jsonl',
-             'related-items.jsonl','report.json','unresolved.json']
+             'related-items.jsonl','condition-gates.jsonl','condition-definitions.jsonl',
+             'report.json','unresolved.json']
     manifest = {'schema': SCHEMA, 'status': 'partial_native_extraction',
                 'platform': args.platform, 'gameVersion': args.version,
                 'source': {'src01ManifestSha256': sha(args.src01_manifest.read_bytes()),
@@ -499,7 +653,8 @@ def run(args):
                            'lootTableSha256': sha(content['loot']),
                            'activityItemSha256': sha(content['activity_item']),
                            'buildingSha256': sha(content['building']),
-                           'nativeTypeEvidence': 'Steam v1.26.1 dump.cs: RecipeItemData, CraftingRecipeItemData, FishingDataItemData, MiningDataItemData, TimeBendingDataItemData, LootTableItemData, SeedItemData, StallBuildingItemData, UpgradeData, ItemAmount'},
+                           'conditionSha256': sha(content['condition']),
+                           'nativeTypeEvidence': 'Steam v1.26.1 dump.cs: RecipeItemData, CraftingRecipeItemData, FishingDataItemData, MiningDataItemData, TimeBendingDataItemData, LootTableItemData, SeedItemData, StallBuildingItemData, UpgradeData, ItemAmount, ConditionItemData, ConditionsList, ConditionOneOf, ConditionCommon'},
                 'counts': counts, 'files': {file: sha((out/file).read_bytes()) for file in files}}
     dump_json(out / 'manifest.json', manifest)
     if args.previous:
@@ -515,6 +670,7 @@ def main():
     ex.add_argument('--loot', type=Path, required=True)
     ex.add_argument('--activity-item', type=Path, required=True)
     ex.add_argument('--building', type=Path, required=True)
+    ex.add_argument('--condition', type=Path, required=True)
     ex.add_argument('--items', type=Path, required=True)
     ex.add_argument('--src01-manifest', type=Path, required=True)
     ex.add_argument('--out', type=Path, required=True)

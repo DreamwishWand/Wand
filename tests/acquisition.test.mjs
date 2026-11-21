@@ -72,3 +72,33 @@ test('fails closed when static stall references missing loot table', () => {
     inventoryStatus: 'static_loot_candidates_only' }];
   assert.throws(() => createAcquisitionDatabase(input), /Unresolved stall loot table/);
 });
+
+
+test('content-addressed conditions preserve cross-referenced predicate structure without evaluating', () => {
+  const input = sample();
+  const digest = 'c'.repeat(64);
+  input.recipes[0].conditionDigest = digest;
+  input.conditionGates = [{ conditionDigest: digest, availabilityEvaluated: false,
+    usedBy: [{kind:'recipe',recipeId:2050300004}],
+    tree: {status:'static_predicate_structure_only',operator:'or', predicates:[
+      {fieldNumber:5,kind:'commonConditions',payloadSha256:'a'.repeat(64),
+        conditionId:2130000012,inversed:true}]}}];
+  input.conditionDefinitions = [{conditionId:2130000012,conditionDigest:'b'.repeat(64),
+    availabilityEvaluated:false,tree:{status:'static_predicate_structure_only',operator:'and',
+    predicates:[{kind:'areaUnlocked',fieldNumber:30,payloadSha256:'d'.repeat(64)}]}}];
+  const db = createAcquisitionDatabase(input);
+  assert.equal(db.getRecipeCondition(2050300004)?.conditionDigest,digest);
+  assert.equal(db.getConditionGate(digest).tree.predicates[0].conditionId,2130000012);
+  assert.equal(db.getConditionDefinition(2130000012).availabilityEvaluated,false);
+  assert.equal(db.getAcquisitionCondition('growing:30400010'),null);
+  const missing=structuredClone(input);
+  missing.conditionDefinitions=[];
+  assert.throws(()=>createAcquisitionDatabase(missing),/Unresolved common condition/);
+  const corrupt=structuredClone(input);
+  corrupt.recipes[0].conditionDigest='e'.repeat(64);
+  assert.throws(()=>createAcquisitionDatabase(corrupt),/Unresolved condition digest/);
+  const cycle=structuredClone(input);
+  cycle.conditionDefinitions[0].tree.predicates=[{fieldNumber:5,
+    payloadSha256:'f'.repeat(64),conditionId:2130000012}];
+  assert.throws(()=>createAcquisitionDatabase(cycle),/Cyclic common condition/);
+});
