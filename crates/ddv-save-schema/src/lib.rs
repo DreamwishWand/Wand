@@ -1,6 +1,8 @@
 //! DB-05: immutable save-schema metadata used after an existing strict Codec.
 //! No P1G decoder, no session admission, no Writer or re-serialization.
 pub mod reference_graph;
+pub mod unified_shape;
+pub use unified_shape::{inspect_unified_shape, probe_unified_shape_json, UnifiedShape};
 pub use reference_graph::{inspect_references, probe_save_references_json, ReferenceProbe, RuleObservation};
 
 use serde::Deserialize;
