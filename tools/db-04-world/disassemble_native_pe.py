@@ -35,9 +35,12 @@ def _capstone():
         raise RuntimeError(
             "Optional Capstone==5.0.9 is required for private native "
             "disassembly") from error
-    if capstone.__version__ != ENGINE_VERSION:
+    # The Python package's distribution release is what we pin. The module's
+    # __version__ is a native core version and need not match that release.
+    from importlib.metadata import version
+    if version("capstone") != ENGINE_VERSION:
         raise RuntimeError(
-            "Unsupported Capstone version: require pinned 5.0.9")
+            "Unsupported Capstone distribution version: require pinned 5.0.9")
     return capstone
 
 
