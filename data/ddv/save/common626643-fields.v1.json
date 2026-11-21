@@ -1,0 +1,206 @@
+{
+  "schema": "wand.db05.common626643-field-witnesses@1",
+  "evidenceStatus": "observed_private_save_field_types_with_historical_public_source_names",
+  "comparisonBasis": "decoded_field_structure_and_types",
+  "samples": [
+    {
+      "label": "private_original_schema626",
+      "schemaVersion": 626
+    },
+    {
+      "label": "private_original_schema643_A",
+      "schemaVersion": 643
+    },
+    {
+      "label": "private_original_schema643_B",
+      "schemaVersion": 643
+    }
+  ],
+  "samplePlatformUsedAsCompatibilityGate": false,
+  "fields": [
+    {
+      "domain": "world",
+      "path": "/World/Characters",
+      "type": "array",
+      "publicSource": "DreamwishWand/web/src/lib/ddv/core/items/steam626-native-fields.mjs",
+      "sourceStatus": "historical_public_runtime_path_not_current_native_type_attestation",
+      "observedStatus": "observed_type_in_three_private_626_643_saves",
+      "coverageScope": "three_owner_originals_only",
+      "codecClosureVerified": false,
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/SkinID",
+      "type": "integer",
+      "publicSource": "DreamwishWand/web/src/lib/ddv/core/items/steam626-native-fields.mjs",
+      "sourceStatus": "historical_public_runtime_path_not_current_native_type_attestation",
+      "observedStatus": "observed_type_in_three_private_626_643_saves",
+      "coverageScope": "three_owner_originals_only",
+      "codecClosureVerified": false,
+      "writable": false
+    },
+    {
+      "domain": "cosmetics",
+      "path": "/World/CastleSkinItemID",
+      "type": "integer",
+      "publicSource": "DreamwishWand/web/src/lib/ddv/core/items/steam626-native-fields.mjs",
+      "sourceStatus": "historical_public_runtime_path_not_current_native_type_attestation",
+      "observedStatus": "observed_type_in_three_private_626_643_saves",
+      "coverageScope": "three_owner_originals_only",
+      "codecClosureVerified": false,
+      "writable": false
+    },
+    {
+      "domain": "cosmetics",
+      "path": "/World/PlazaSkinItemID",
+      "type": "integer",
+      "publicSource": "DreamwishWand/web/src/lib/ddv/core/items/steam626-native-fields.mjs",
+      "sourceStatus": "historical_public_runtime_path_not_current_native_type_attestation",
+      "observedStatus": "observed_type_in_three_private_626_643_saves",
+      "coverageScope": "three_owner_originals_only",
+      "codecClosureVerified": false,
+      "writable": false
+    },
+    {
+      "domain": "cosmetics",
+      "path": "/Player/Mounts",
+      "type": "array",
+      "publicSource": "DreamwishWand/web/src/lib/ddv/core/items/steam626-native-fields.mjs",
+      "sourceStatus": "historical_public_runtime_path_not_current_native_type_attestation",
+      "observedStatus": "observed_type_in_three_private_626_643_saves",
+      "coverageScope": "three_owner_originals_only",
+      "codecClosureVerified": false,
+      "writable": false
+    },
+    {
+      "domain": "progression",
+      "path": "/Player/AchievementsData",
+      "type": "array",
+      "publicSource": "DreamwishWand/web/static/ddv/core/save/v1.25/progression-reference-index-v125.part02.jsfrag",
+      "sourceStatus": "historical_public_runtime_path_not_current_native_type_attestation",
+      "observedStatus": "observed_type_in_three_private_626_643_saves",
+      "coverageScope": "three_owner_originals_only",
+      "codecClosureVerified": false,
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Keyholes",
+      "type": "object",
+      "publicSource": "DreamwishWand/web/static/ddv/core/save/v1.25/progression-reference-index-v125.part02.jsfrag",
+      "sourceStatus": "historical_public_runtime_path_not_current_native_type_attestation",
+      "observedStatus": "observed_type_in_three_private_626_643_saves",
+      "coverageScope": "three_owner_originals_only",
+      "codecClosureVerified": false,
+      "writable": false
+    },
+    {
+      "domain": "progression",
+      "path": "/World/MissionSlots",
+      "type": "object",
+      "publicSource": "DreamwishWand/web/static/ddv/core/save/v1.25/progression-reference-index-v125.part04.jsfrag",
+      "sourceStatus": "historical_public_runtime_path_not_current_native_type_attestation",
+      "observedStatus": "observed_type_in_three_private_626_643_saves",
+      "coverageScope": "three_owner_originals_only",
+      "codecClosureVerified": false,
+      "writable": false
+    },
+    {
+      "domain": "progression",
+      "path": "/Player/DutySlots",
+      "type": "object",
+      "publicSource": "DreamwishWand/web/static/ddv/core/save/v1.25/progression-reference-index-v125.part04.jsfrag",
+      "sourceStatus": "historical_public_runtime_path_not_current_native_type_attestation",
+      "observedStatus": "observed_type_in_three_private_626_643_saves",
+      "coverageScope": "three_owner_originals_only",
+      "codecClosureVerified": false,
+      "writable": false
+    },
+    {
+      "domain": "progression",
+      "path": "/Player/BattlePassStates",
+      "type": "object",
+      "publicSource": "DreamwishWand/web/static/ddv/core/save/v1.25/progression-reference-index-v125.part04.jsfrag",
+      "sourceStatus": "historical_public_runtime_path_not_current_native_type_attestation",
+      "observedStatus": "observed_type_in_three_private_626_643_saves",
+      "coverageScope": "three_owner_originals_only",
+      "codecClosureVerified": false,
+      "writable": false
+    },
+    {
+      "domain": "progression",
+      "path": "/Player/EvolveStatesProfile",
+      "type": "object",
+      "publicSource": "DreamwishWand/web/static/ddv/core/save/v1.25/progression-reference-index-v125.part04.jsfrag",
+      "sourceStatus": "historical_public_runtime_path_not_current_native_type_attestation",
+      "observedStatus": "observed_type_in_three_private_626_643_saves",
+      "coverageScope": "three_owner_originals_only",
+      "codecClosureVerified": false,
+      "writable": false
+    },
+    {
+      "domain": "progression",
+      "path": "/World/QuestInfo",
+      "type": "object",
+      "publicSource": "DreamwishWand/web/static/ddv/core/save/v1.25/progression-reference-index-v125.part05.jsfrag",
+      "sourceStatus": "historical_public_runtime_path_not_current_native_type_attestation",
+      "observedStatus": "observed_type_in_three_private_626_643_saves",
+      "coverageScope": "three_owner_originals_only",
+      "codecClosureVerified": false,
+      "writable": false
+    },
+    {
+      "domain": "progression",
+      "path": "/World/QuestInfo/MissionsCompleted",
+      "type": "array",
+      "publicSource": "DreamwishWand/web/static/ddv/core/save/v1.25/progression-reference-index-v125.part05.jsfrag",
+      "sourceStatus": "historical_public_runtime_path_not_current_native_type_attestation",
+      "observedStatus": "observed_type_in_three_private_626_643_saves",
+      "coverageScope": "three_owner_originals_only",
+      "codecClosureVerified": false,
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/SceneryPuzzles",
+      "type": "array",
+      "publicSource": "DreamwishWand/web/static/ddv/core/save/v1.25/progression-reference-index-v125.part05.jsfrag",
+      "sourceStatus": "historical_public_runtime_path_not_current_native_type_attestation",
+      "observedStatus": "observed_type_in_three_private_626_643_saves",
+      "coverageScope": "three_owner_originals_only",
+      "codecClosureVerified": false,
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Realms",
+      "type": "object",
+      "publicSource": "DreamwishWand/web/static/ddv/core/save/v1.25/progression-reference-index-v125.part05.jsfrag",
+      "sourceStatus": "historical_public_runtime_path_not_current_native_type_attestation",
+      "observedStatus": "observed_type_in_three_private_626_643_saves",
+      "coverageScope": "three_owner_originals_only",
+      "codecClosureVerified": false,
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/Player/LastUsedLinkedEnvironmentEnter",
+      "type": "object",
+      "publicSource": "DreamwishWand/web/static/ddv/core/save/v1.25/progression-reference-index-v125.part01.jsfrag",
+      "sourceStatus": "historical_public_runtime_path_not_current_native_type_attestation",
+      "observedStatus": "observed_type_in_three_private_626_643_saves",
+      "coverageScope": "three_owner_originals_only",
+      "codecClosureVerified": false,
+      "writable": false
+    }
+  ],
+  "policy": {
+    "releaseOrPlatformCompatibilityEstablished": false,
+    "completeNativeSaveSchema": false,
+    "strictCodecRoundTripVerified": false,
+    "writerAuthorized": false,
+    "ownershipVerified": false,
+    "personalSaveBytesStored": false
+  }
+}
