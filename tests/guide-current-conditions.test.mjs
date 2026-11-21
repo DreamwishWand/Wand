@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readFile} from 'node:fs/promises';
 import {
-  indexStaticConditionMentions, currentConditionMentionsForQuest,
+  indexStaticConditionMentions, currentConditionMentionsForQuest, withVerifiedConditionStepDetails,
   assertGuideConditionBridge, importCurrentGuideConditions,
   GUIDE_CONDITION_INDEX_SHA, GUIDE_CONDITION_MAX_FILE_BYTES
 } from '../src/lib/guide/current-conditions.mjs';
@@ -87,4 +87,49 @@ test('actual owner-private original index + manifest import and 1262 Jack Sparro
   assert(out.rows.some(x=>x.conditionId==='2130007038' && x.stepId===12 && x.statusCode===2));
   assert(!out.rows.some(x=>x.conditionId==='2130006145' && x.stepId===6));
   assert.equal(out.total,imported.byMission.get('2070001661').length);
+});
+
+test('joins only native step ID to the SHA-verified original quest description', () => {
+  const detail={id:'2070001661',recordKind:'mission',
+    source:{file:'ddv_Data/StreamingAssets/itemlist/Mission.json',
+      sha256:'f13958b52234f4cda92f0dd0bfff50be8a7f6625c8478785e2a077a5c7933d24'},
+    structured:{stepsDetailed:[{stepId:6,stepName:'Group06'}, {stepId:9,stepName:'Group10'},
+      {stepId:12,stepName:'Group11'}]}};
+  const stepRows=[{id:'6',text:'old stage',textSource:'ja'},
+    {id:'9',text:'new stage',textSource:'ja'}, {id:'12',text:'next stage',textSource:'ja'}];
+  const mentions=[{conditionId:'2130006145',stepId:9},{conditionId:'2130007038',stepId:12}];
+  const linked=withVerifiedConditionStepDetails(detail,stepRows,mentions,'2070001661');
+  assert.equal(linked[0].sourceStepIndex,1);
+  assert.equal(linked[0].sourceStepName,'Group10');
+  assert.equal(linked[0].localizedStepDescription,'new stage');
+  assert.equal(linked[0].localizedStepDescriptionLanguage,'ja');
+  assert.equal(linked[1].sourceStepIndex,2);
+  assert.equal(linked[1].sourceStepName,'Group11');
+  assert.equal(Object.hasOwn(linked[0],'prerequisite'),false);
+});
+
+test('rejects wrong quest or source fingerprint and never guesses absent native IDs', () => {
+  const detail={id:'2070001661',recordKind:'mission',
+    source:{file:'ddv_Data/StreamingAssets/itemlist/Mission.json',
+      sha256:'f13958b52234f4cda92f0dd0bfff50be8a7f6625c8478785e2a077a5c7933d24'},
+    structured:{stepsDetailed:[{stepId:9,stepName:'Group10'},{stepName:'missing original ID'}]}};
+  const steps=[{id:'9',text:'match',textSource:'en'},{id:'2',text:'fallback index text'}];
+  const rows=[{stepId:9},{stepId:2},{stepId:17},{}];
+  assert.equal(withVerifiedConditionStepDetails(detail,steps,rows,'2070001660'),rows);
+  assert.equal(withVerifiedConditionStepDetails({...detail,source:{...detail.source,sha256:H}},steps,rows,detail.id),rows);
+  const resolved=withVerifiedConditionStepDetails(detail,steps,rows,detail.id);
+  assert.equal(resolved[0].localizedStepDescription,'match');
+  assert.equal(resolved[1],rows[1]);
+  assert.equal(resolved[2],rows[2]);
+  assert.equal(resolved[3],rows[3]);
+});
+
+test('duplicate native step IDs never produce an ambiguous match', () => {
+  const detail={id:'2070001661',recordKind:'mission',
+    source:{file:'ddv_Data/StreamingAssets/itemlist/Mission.json',
+      sha256:'f13958b52234f4cda92f0dd0bfff50be8a7f6625c8478785e2a077a5c7933d24'},
+    structured:{stepsDetailed:[{stepId:9,stepName:'Group10'},{stepId:9,stepName:'Duplicate'}]}};
+  const rows=[{stepId:9}];
+  assert.equal(withVerifiedConditionStepDetails(detail,
+    [{id:'9',text:'A'},{id:'9',text:'B'}],rows,detail.id)[0],rows[0]);
 });
