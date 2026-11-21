@@ -49,6 +49,17 @@ if (evidence.status === 'observed_decoded_structure') {
 }
 ```
 
+**Private saved-shape evidence:** An owner-private Steam P1G schema-643 fixture
+uses lowercase `id` and `amount` for nested `ItemAmount`, while its outer
+`StoreInfo`, `StoreDisplay`, and `DisplaySlot` field names retain their source
+spellings. The bridge accepts the observed lower-camel form and older PascalCase
+form, rejecting conflicting dual spellings rather than guessing precedence.
+Only aggregate evidence is stored in a restricted owner Drive audit; no personal
+save values, Item IDs, source item records, or profile bytes belong here.
+DB-05 has independently shown that the archived Steam v1.26.1 and v1.26.2
+`dump.cs` copies have equal SHA-256, but this does not establish current game
+executable identity or universal save-Codec compatibility.
+
 The bridge returns **new, recursively immutable metadata** and never includes
 `World`, full save contents, timestamps, `WeightedItems`, or source JSON objects.
 Store/display ordering and saved Item ID, amount, `IsAvailable`, `CurrencyId`
@@ -66,5 +77,4 @@ Every record explicitly leaves `staticStallIdentityVerified`,
 ownership claim is derived. `publishable` and `saveWriterAuthorized` are false.
 
 **Validation:** `node --test tests/acquisition-world-stores.test.mjs`, plus the
-normal `node --test tests/acquisition*.test.mjs` CI suite. All tests are synthetic;
-no actual private save content or proprietary itemlist rows belong in GitHub.
+normal `node --test tests/acquisition*.test.mjs` CI suite. Public regression tests use synthetic records matching the privately observed schema-643 case; the real-source one-save audit stays in the owner-private Drive. No actual private save content or proprietary itemlist rows belong in GitHub.

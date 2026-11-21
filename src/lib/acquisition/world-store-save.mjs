@@ -18,12 +18,21 @@ const countLimit = (value, max, code) => Array.isArray(value) && value.length <=
 const intField = (value, code, allowZero = false) =>
   value === null ? null : ((POS(value) || (allowZero && value === 0)) ? value : block(code));
 
+// A privately decoded Steam schema-643 P1G profile uses lower-camel `id` and
+// `amount` inside ItemAmount even while outer StoreInfo keys use PascalCase.
+// Accept the source-declared PascalCase spelling for older decoders, but never
+// silently prefer one value if both spellings are present.
+function itemAmountValue(item, camel, pascal) {
+  if (has(item, camel) && has(item, pascal)) block('WORLD_STORE_AMBIGUOUS_ITEM_AMOUNT_KEYS');
+  return has(item, camel) ? item[camel] : optional(item, pascal);
+}
+
 function readSlot(row, storeIndex, displayIndex, slotIndex) {
   if (!obj(row)) block('WORLD_STORE_INVALID_DISPLAY_SLOT');
   const item = optional(row, 'Item');
   if (item !== null && !obj(item)) block('WORLD_STORE_INVALID_ITEM_AMOUNT');
-  const itemId = item === null ? null : intField(optional(item, 'Id'), 'WORLD_STORE_INVALID_ITEM_ID', true);
-  const amount = item === null ? null : optional(item, 'Amount');
+  const itemId = item === null ? null : intField(itemAmountValue(item, 'id', 'Id'), 'WORLD_STORE_INVALID_ITEM_ID', true);
+  const amount = item === null ? null : itemAmountValue(item, 'amount', 'Amount');
   if (amount !== null && (!I32(amount) || amount < -1)) block('WORLD_STORE_INVALID_ITEM_AMOUNT');
   const currencyId = intField(optional(row, 'CurrencyId'), 'WORLD_STORE_INVALID_CURRENCY', true);
   const available = optional(row, 'IsAvailable');
