@@ -464,8 +464,13 @@ def command_merge(args):
             problems.extend(load_json(report).get("problems", []))
     matched = defaultdict(list)
     source_hashes = defaultdict(list)
+    for key in available:
+        inventory_path = output / "inventory" / ("shard-" + key + ".json")
+        if inventory_path.exists():
+            for record in load_json(inventory_path).get("records", []):
+                if record.get("status") == "ok" and record.get("sha256"):
+                    source_hashes[record["sha256"]].append(record["path"])
     for image in images:
-        source_hashes[image["sourceSha256"]].append(image["sourcePath"])
         for link in image.get("links", []):
             matched[link["itemId"]].append(image)
     conflicts = {}
@@ -475,7 +480,7 @@ def command_merge(args):
             conflicts[item] = sorted(hashes)
     for sha, paths in source_hashes.items():
         if len(paths) > 1:
-            problems.append({"type": "duplicate_source_cross_shard",
+            problems.append({"type": "duplicate_source_all_shards",
                              "sha256": sha, "paths": sorted(paths)})
     catalog = load_catalog(args.catalog)
     missing = sorted(catalog - set(matched), key=int) if catalog is not None else None
