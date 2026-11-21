@@ -119,6 +119,10 @@ def checked_grid(grid, *, source_game_version="1.26.1"):
                 source_game_version=source_game_version)
             if declared != computed:
                 raise ValueError("terrain decoding evidence mismatches native bytes")
+            if ("nativeFloorIndexToLocalXYCorroborated" in grid and
+                    grid["nativeFloorIndexToLocalXYCorroborated"] is not
+                    computed["decoded"]):
+                raise ValueError("native terrain index proof flag mismatches source version")
         if "nativePaletteIndexCellCounts" in grid:
             counted = (count_packed_palette_indices(
                 x, y, grid.get("nativeFloorTypePalette"), data)
