@@ -50,6 +50,16 @@ if ($Il2CppDumpPath) {
     if (-not (Test-Path -LiteralPath $dumpFile -PathType Leaf)) {
         throw "Original version-matched IL2CPP dump.cs does not exist"
     }
+    # Validate the claimed dump version against the game's actual version
+    # before extracting any DB-04 snapshot or creating its output directory.
+    $gameVersionText = Get-Content -LiteralPath (Join-Path $GameRoot "FullVersion.txt") -Raw -Encoding UTF8
+    $actualVersion = [regex]::Match(
+        $gameVersionText, '(?<![0-9.])([0-9]+\.[0-9]+\.[0-9]+)(?![0-9.])'
+    )
+    if (-not $actualVersion.Success -or
+        $actualVersion.Groups[1].Value -cne $Il2CppDumpGameVersion) {
+        throw "IL2CPP dump version differs from original Steam game version"
+    }
     if (-not (Test-Path -LiteralPath $gameAssembly -PathType Leaf)) {
         throw "Requested native RVA capture requires GameAssembly.dll"
     }
