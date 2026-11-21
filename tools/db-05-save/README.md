@@ -535,3 +535,71 @@ valid zero IDs, broken storage links, missing container indexes,
 private malformed map keys, duplicate or mismatched object IDs,
 large-map sampling and comparison ambiguity. Private decoded
 saves remain entirely outside the Git repository.
+
+## DB-05 → DB-01/DB-04 private read-only catalog link
+
+`data/ddv/save/catalog-link-rules.v1.json` defines **eight** public
+candidate references already grounded in the 440 known DB-05 fields.
+`src/lib/save/catalog-links.mjs` exposes
+`createSaveSourceCatalogBridge(db01,db04)`. The injected `db01`
+must be the existing **private** DB-01 v2 lazy catalog client (or an
+equivalent interface with the same source contract); `db04`
+must be the existing **partial** `createWorldCatalog(...)` output.
+No new catalog or client loader is created here, and **no private
+DB-01 shard files, native sources, user saves or game assets**
+are copied to the public repository.
+
+The eight candidate families are chest slots, ListInventory item
+map keys, CollectionSet item map keys, placed grid object ItemID,
+diff-grid modified-object ItemID, mount ItemID, village SceneItemId,
+and save GridDataPath. All item lookups are **exact positive integer
+IDs** using `db01.getItem(id)`, which preserves the existing
+SHA-256-verified lazy ID-bucket semantics. DB-04 lookups use its
+separate `objects` or `scenes` maps for those native identifiers.
+Crucially, **DB-04 `grids` are keyed by source paths** such as
+`GridData/Villages/Meadow.json`, *not* the save's numeric Grid.ID.
+Only the save's exact `GridDataPath` may be compared to that key.
+No path coercion, filename matching or numeric grid ID equivalence
+is inferred.
+
+Two deliberately different APIs are provided:
+
+- `bridge.lookupItem(id)`: an **explicit local caller-only**
+  retrieval of the partial DB-01 item definition and partial DB-04
+  world object, returning a candidate classification. This output
+  includes the explicitly requested item ID and source records.
+  It must not be logged as a public save audit.
+- `await bridge.auditSave(decoded, limits?)`: scans the decoded
+  profile **in memory** and returns only fixed public path templates,
+  observed/matched/unresolved/malformed/sampled counters and source
+  version labels. It never emits private map keys, numerical save IDs,
+  grid source path values, item names or user data. Lookups are bounded
+  to 256 references per family and 128 distinct DB-01 IDs; extra
+  observations are marked inconclusive, not interpreted as absent.
+
+A missing ID is `unresolvedInPartialCatalog`, **not** evidence
+that the item is nonexistent, unowned, invalid, unavailable, or that
+the save is corrupt. An item returned as
+`definition_unclassified` is not silently promoted to an
+`item` domain. Zero-valued item references are reported as possible
+empty sentinels without producing a DB-01 lookup. Missing paths,
+malformed references, and truncated lookups remain separately visible.
+
+**Source provenance limit:** DB-01 is currently a Steam **1.26.2**
+partial private catalog; DB-04 is primarily from the **1.26.1**
+native world archive, although a consumer can supply any verified
+partial DB-04 source in future. Matching a numeric item ID or the
+textual version label across these catalogs proves neither a common
+source lineage nor an identical save schema. The bridge records
+`sourceVersionLabelsEqual` and
+`sourceAndSaveJointlyVerified=false`, but never upgrades either
+catalog to joint-authoritative status. It does not enforce game
+version/platform labels as save shape gates.
+
+Neither the cross-catalog lookup nor a report with all candidate IDs
+matched establishes ownership, DLC entitlement, verified collision/
+placement, actual save reference closure, byte-exact game build
+equivalence, Writer safety, or export authorization. All such
+permissions remain **false**, and all catalogs remain partial.
+The GitHub CI uses only synthetic saves and synthetic DB-01/DB-04
+catalog providers; no owner-private source is committed.
