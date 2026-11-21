@@ -67,3 +67,8 @@ jobs:
         run: python3 -m unittest discover -s tools/db-05-save -p 'test_*.py' -v
       - name: Rust borrowed-document schema contract
         run: cargo test --manifest-path crates/ddv-save-schema/Cargo.toml
+      - name: Rust WASM read-only reference graph target
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo build --manifest-path crates/ddv-save-schema/Cargo.toml --target wasm32-unknown-unknown --features wasm --release
+          test -s crates/ddv-save-schema/target/wasm32-unknown-unknown/release/ddv_save_schema.wasm
