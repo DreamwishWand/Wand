@@ -815,3 +815,38 @@ the playable Mission index; a separately source-verified DutyAch adapter
 is required. No private game content or owner saves are committed.
 
 CI: `node --test tests/save-guide-links.test.mjs`.
+
+
+## DB-05 -> DB-03 DutyAch achievement ID candidates (read-only)
+
+The declared save path is `Player.AchievementsData[]/AchievementID`
+(native `AchievementData` field 1, `int`). It is included among the
+440 public, source-backed path templates observed in the three saved
+626/643 samples.
+
+`createSaveAchievementBridge(dutyIndex)` accepts the *owner-private*
+`guide/duties.json`, emitted by DB-03 `native_guide.py` from the original
+`ddv_Data/StreamingAssets/itemlist/DutyAch.json`. It checks the native
+Guide schema/family, target metadata, unique canonical IDs, per-record
+source file, uniform source SHA-256, native wire digest and frame index.
+This is **metadata validation only**: it does not re-hash the original
+proprietary DutyAch.json bytes. Independently verify the original
+source and generated index before trusting the source identity.
+
+`auditSave(decoded)` compares actual positive saved AchievementID numbers
+to these private native DutyAch ID candidates. Its public return value
+contains a fixed family label, status and **anonymous counters only**.
+The scan is bounded to 256 rows by default; truncation is explicit.
+A zero ID is a sentinel, malformed IDs are separate, and an unknown
+ID is `unresolved_in_supplied_duty_index`, never a claim that the
+game has no such achievement or a save is corrupt. The save's platform
+and version are provenance, never gates for structural inspection.
+
+No `CurAmount`, `MaxAmount`, `State`, claimed rewards, timestamps, actual
+saved IDs, localized labels, personal fields or game-source bytes are
+returned or committed. The adapter does not prove full history,
+completion, progress, entitlement, ownership, Codec round-trip safety,
+or Writer/export authorization. Active quest Mission IDs belong to
+the **separate** Mission index and are not DutyAch IDs.
+
+Test: `node --test tests/save-achievement-links.test.mjs`.
