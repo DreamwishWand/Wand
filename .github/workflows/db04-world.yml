@@ -8,6 +8,7 @@ on:
       - 'tests/world.test.mjs'
       - 'tests/world-local-snapshot.test.mjs'
       - 'tests/world-preview-views.test.mjs'
+      - 'tests/world-native-version-gate.test.mjs'
       - '.github/workflows/db04-world.yml'
   push:
     branches: [main]
@@ -17,6 +18,7 @@ on:
       - 'tests/world.test.mjs'
       - 'tests/world-local-snapshot.test.mjs'
       - 'tests/world-preview-views.test.mjs'
+      - 'tests/world-native-version-gate.test.mjs'
       - '.github/workflows/db04-world.yml'
   workflow_dispatch:
 
@@ -86,4 +88,4 @@ jobs:
             throw "Missing GameAssembly.dll silently triggered metadata-only capture"
           }
       - name: Test browser-facing world catalog
-        run: node --test tests/world.test.mjs tests/world-local-snapshot.test.mjs tests/world-preview-views.test.mjs
+        run: node --test tests/world.test.mjs tests/world-local-snapshot.test.mjs tests/world-preview-views.test.mjs tests/world-native-version-gate.test.mjs
