@@ -823,6 +823,62 @@ mod tests {
         assert_eq!(engine.rows.len(),0);
     }
     #[test]
+    fn rejected_db00_shard_is_atomic_and_versionless_release_stays_unknown() {
+        let first=json!({
+            "id":"101","names":{"en":"Source One"},"nameStatus":"verified",
+            "category":"NewFamily","stateClass":"TRACKED",
+            "stateSemantic":"OWNERSHIP_AND_DISCOVERY",
+            "worlds":["FirstWorld"],"universes":["FirstUniverse"],
+            "contentIds":["FirstExpansion"],"releaseIds":[],
+            "relations":[],"sourceRefs":["public-source"]
+        });
+        let mut second=first.clone();
+        second["id"]=json!("102");
+        second["sourceRefs"]=json!(["private-source"]);
+        let invalid=json!({"schema":DB00_SNAPSHOT_SCHEMA,"offset":0,"count":2,
+            "items":[first.clone(),second.clone()]}).to_string();
+        second["sourceRefs"]=json!(["public-source"]);
+        let mut valid=json!({"schema":DB00_SNAPSHOT_SCHEMA,"offset":0,"count":2,
+            "items":[first,second]}).to_string();
+        // Only the source reference changes. Preserve the original pinned
+        // byte length with valid JSON whitespace to exercise retry semantics.
+        while valid.len()<invalid.len() {valid.push(' ');}
+        assert_eq!(valid.len(),invalid.len());
+        let index=json!({
+            "schema":DB00_RELEASE_SCHEMA,"id":"versionless-release","count":2,
+            "target":{"platform":"Steam","gameVersion":null,"buildId":null},
+            "sources":[{"id":"public-source","visibility":"public_reference"}],
+            "releases":[],
+            "shards":[{"file":"items-000.json","offset":0,"count":2,
+                "bytes":invalid.len(),"sha256":"a".repeat(64)}]
+        }).to_string();
+        let mut engine=CollectionEngine::default();
+        engine.load_db00_index_impl(&index).unwrap();
+        let before=engine.index.as_ref().unwrap().clone();
+        assert!(engine.append_db00_shard_impl(&invalid).is_err());
+        assert!(engine.rows.is_empty());
+        assert!(engine.lookup.is_empty());
+        assert!(engine.db00_relations.is_empty());
+        let after=engine.index.as_ref().unwrap();
+        assert_eq!(after.families,before.families);
+        assert_eq!(after.semantics,before.semantics);
+        assert_eq!(after.state_classes,before.state_classes);
+        assert_eq!(after.worlds,before.worlds);
+        assert_eq!(after.universes,before.universes);
+        assert_eq!(after.expansions,before.expansions);
+        assert_eq!(after.world_labels,before.world_labels);
+        assert_eq!(after.universe_labels,before.universe_labels);
+        engine.append_db00_shard_impl(&valid).unwrap();
+        engine.finish_db00_impl().unwrap();
+        let metadata:Value=serde_json::from_str(&engine.metadata_impl().unwrap()).unwrap();
+        assert!(metadata["version"].is_null());
+        assert_eq!(metadata["platform"],"Steam");
+        let result:Value=serde_json::from_str(&engine.query_impl(
+            r#"{"locale":"en","category":"NewFamily","limit":10}"#
+        ).unwrap()).unwrap();
+        assert_eq!(result["total"],2);
+    }
+    #[test]
     fn canonical_categories_preserve_all_29_entries() {
         assert_eq!(CATEGORY_ORDER.len(),29);
         assert_eq!(CATEGORY_ORDER.iter().collect::<HashSet<_>>().len(),29);
