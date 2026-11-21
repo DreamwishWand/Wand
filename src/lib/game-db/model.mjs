@@ -209,3 +209,22 @@ export function applyPatch(snapshot, patch) {
   return validateSnapshot({ ...snapshot, sources, releases, items: [...known.values()].sort((a, b) => Number(a.id) - Number(b.id)),
     publishable: snapshot.publishable && sources.every((source) => source.visibility === 'public_reference') });
 }
+
+export function buildSearchIndex(snapshot, locale = 'en') {
+  validateSnapshot(snapshot);
+  assert(LOCALES.includes(locale), 'unsupported search locale');
+  const postings = new Map();
+  for (const item of snapshot.items) {
+    const label = item.names[locale] ?? item.names.en ?? '';
+    const text = [item.id, label, item.category ?? '', ...item.worlds, ...item.universes].join(' ').toLocaleLowerCase();
+    // Unicode tokens support all launch locales without losing non-Latin characters.
+    const words = new Set(text.match(/[\p{L}\p{N}]+/gu) ?? []);
+    for (const word of words) {
+      const hits = postings.get(word) ?? [];
+      hits.push(item.id);
+      postings.set(word, hits);
+    }
+  }
+  return { schema: 'wand.game-db.search@1', snapshot: snapshot.id, locale,
+    terms: Object.fromEntries([...postings.entries()].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) };
+}

@@ -7,8 +7,8 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { validateCollectionRuntimeIndex } from '../src/lib/collection/catalog.mjs';
 import { SNAPSHOT_SCHEMA, PATCH_SCHEMA, validateSnapshot, legacyItem, nativeItem,
-  diffSnapshots, applyPatch, searchItems } from '../src/lib/game-db/model.mjs';
-import { loadCurrentGameDatabase, loadActiveCollectionRuntime, loadActivePointer } from '../src/lib/game-db/client.mjs';
+  diffSnapshots, applyPatch, searchItems, buildSearchIndex } from '../src/lib/game-db/model.mjs';
+import { loadCurrentGameDatabase, loadActiveCollectionRuntime, loadActivePointer, loadCurrentSearchIndex } from '../src/lib/game-db/client.mjs';
 
 const root = resolve(new URL('..', import.meta.url).pathname);
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -79,6 +79,7 @@ test('DB-00 patch rejects conflicts and preserves validated IDs', () => {
   const merged = applyPatch(base, patch);
   assert.deepEqual(merged.items.map((row) => row.id), ['123', '456']);
   assert.deepEqual(searchItems(merged, 'item 456').map((row) => row.id), ['456']);
+  assert.deepEqual(buildSearchIndex(merged, 'en').terms.item, ['123', '456']);
   assert.throws(() => applyPatch(base, { ...patch, items: [item(123, { category: 'Clothing' })] }), /conflicting/);
   assert.throws(() => applyPatch(base, { ...patch, target: { ...base.target, gameVersion: '1.25.0' } }), /target mismatch/);
 });
@@ -141,6 +142,30 @@ test('real 12,552-record import -> versioned SHA-pinned build -> verify is deter
     const data = JSON.parse(await readFile(join(out, 'index.json'), 'utf8'));
     assert.equal(data.count, 12552);
     assert.equal(data.shards.length, 18);
+    assert.equal(data.search.length, 8);
+    assert.equal(data.search[5].locale, 'ja');
+    // Exercise the next-release path through the same SvelteKit client as production.
+    const activeBytes = await readFile(pointer);
+    async function nextReleaseFetch(url) {
+      if (url === '/Wand/ddv/game-db/active.json') return new Response(activeBytes, { status: 200 });
+      const prefix = '/Wand/ddv/game-db/releases/legacy-switch-1.25.0/';
+      if (!url.startsWith(prefix)) return new Response('', { status: 404 });
+      try {
+        return new Response(await readFile(join(out, url.slice(prefix.length))), { status: 200 });
+      } catch (error) {
+        if (error.code === 'ENOENT') return new Response('', { status: 404 });
+        throw error;
+      }
+    }
+    const current = await loadCurrentGameDatabase('/Wand', nextReleaseFetch);
+    assert.equal(current.kind, 'db_snapshot');
+    assert.equal(current.items.length, 12552);
+    const searchIndex = await loadCurrentSearchIndex('/Wand', 'ja', nextReleaseFetch);
+    assert.equal(searchIndex.locale, 'ja');
+    assert.ok(Object.keys(searchIndex.terms).length > 0);
+    const compatible = await loadActiveCollectionRuntime('/Wand', nextReleaseFetch);
+    assert.equal(compatible.rows.length, 12552);
+
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 test('SRC-01 partial native import retains unknown build ID and blocks public distribution', async () => {
@@ -170,5 +195,31 @@ test('SRC-01 partial native import retains unknown build ID and blocks public di
     assert.equal(JSON.stringify(privateSnapshot).includes('INTERNAL_NAME_NOT_LOCALIZED'), false);
     const publish = cli('build', '--snapshot', snapshotPath, '--out', join(directory, 'public'), '--public');
     assert.notEqual(publish.status, 0);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('SRC-00 registration preserves unknown Steam build ID without raw files', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'wand-db00-source-'));
+  try {
+    const scan = { schema_version: 1, files: [{ path: 'FullVersion.txt', sha256: sha }] };
+    const report = { schema_version: 1, status: 'complete', ready_for_downstream: true,
+      file_count: 1, sha256_file_count: 1, error_count: 0, dataset_fingerprint: sha,
+      platform: { value: 'steam', status: 'verified_from_files' },
+      game_version: { value: '1.26.2', status: 'verified_from_file' },
+      build_id: { value: null, status: 'unconfirmed' } };
+    const manifest = join(directory, 'source-manifest.json');
+    const reportPath = join(directory, 'source-report.json');
+    const output = join(directory, 'registration.json');
+    await writeFile(manifest, JSON.stringify(scan));
+    await writeFile(reportPath, JSON.stringify(report));
+    const result = cli('register-source', '--manifest', manifest, '--report', reportPath, '--out', output);
+    assert.equal(result.status, 0, result.stderr);
+    const record = JSON.parse(await readFile(output, 'utf8'));
+    assert.equal(record.gameVersion, '1.26.2');
+    assert.equal(record.platform, 'steam');
+    assert.equal(record.buildId, null);
+    assert.equal(record.visibility, 'private');
+    assert.equal(record.sourceManifestSha256, hash(await readFile(manifest)));
+    assert.equal(JSON.stringify(record).includes('FullVersion.txt'), false);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

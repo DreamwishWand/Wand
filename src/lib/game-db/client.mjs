@@ -129,3 +129,20 @@ export async function loadActiveCollectionRuntime(base = '', fetchImpl = globalT
   const database = await loadCurrentGameDatabase(base, fetchImpl);
   return collectionCompatibility(database);
 }
+
+export async function loadCurrentSearchIndex(base = '', locale = 'en', fetchImpl = globalThis.fetch) {
+  if (!LOCALES.includes(locale)) throw new TypeError('Unsupported game database search locale');
+  const pointer = await loadActivePointer(base, fetchImpl);
+  if (!pointer || pointer.kind === 'legacy_collection') return null; // Existing Collection uses its verified runtime.
+  const releaseIndex = await checkedJSON(asset(base, pointer.path + '/index.json'), pointer.indexSha256, null, fetchImpl);
+  const entry = releaseIndex.search?.find((source) => source.locale === locale);
+  if (!entry || entry.file !== 'search-' + locale + '.json' || !/^[0-9a-f]{64}$/.test(entry.sha256 ?? '')) {
+    throw new TypeError('Missing locale search index');
+  }
+  const search = await checkedJSON(asset(base, pointer.path + '/' + entry.file), entry.sha256, entry.bytes, fetchImpl);
+  if (search.schema !== 'wand.game-db.search@1' || search.snapshot !== pointer.snapshot ||
+      search.locale !== locale || !search.terms || typeof search.terms !== 'object') {
+    throw new TypeError('Invalid locale search index');
+  }
+  return search;
+}

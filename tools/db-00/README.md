@@ -70,3 +70,13 @@ Retain the private source manifest in Drive, record its version and SHA-256, and
 ## Verification
 
 npm test covers actual 12,552-record import, deterministic repeat builds, digest verification, comparable same-version diff, browser fetch simulation, referential integrity, multi-release records, partial-coverage semantics, and the non-public native import gate. Existing .github/workflows/collection.yml runs these tests on pull requests; no duplicate QA workflow is introduced.
+
+## SRC-00 original source registration
+
+The SRC-00 source inventory is never committed. Where its source-manifest.json and source-report.json are available, register a small private provenance record:
+
+    node tools/db-00/cli.mjs register-source --manifest /private/SRC-00/source-manifest.json --report /private/SRC-00/source-report.json --out /private/source-registration.json
+
+Registration requires a completed error-free scan, one SHA-256 per source file, and a valid dataset fingerprint. It computes the source manifest and report SHA-256 without copying any original file list into the record. Version and build ID come only from the SRC-00 evidence states. For the currently verified Steam v1.26.2 scan the build ID is null (unconfirmed).
+
+Published release builds also emit a separate SHA-pinned inverted search index for each of the eight game locales. The SvelteKit client can retrieve one via loadCurrentSearchIndex(base, locale, fetchImpl). The legacy Collection remains searchable through its already-published runtime.

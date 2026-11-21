@@ -5,7 +5,7 @@ import { readFile, writeFile, mkdir, readdir, rename } from 'node:fs/promises';
 import { dirname, join, resolve, basename } from 'node:path';
 import { validateCollectionRuntimeIndex } from '../../src/lib/collection/catalog.mjs';
 import { SNAPSHOT_SCHEMA, RELEASE_SCHEMA, ACTIVE_SCHEMA, validateSnapshot,
-  legacyItem, nativeItem, diffSnapshots, searchItems, applyPatch } from '../../src/lib/game-db/model.mjs';
+  legacyItem, nativeItem, diffSnapshots, searchItems, applyPatch, buildSearchIndex, LOCALES } from '../../src/lib/game-db/model.mjs';
 
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const text = (value) => JSON.stringify(value, null, 2) + '\n';
@@ -125,8 +125,15 @@ async function writeDistribution(snapshot, out, shardSize = 700) {
     await atomic(join(out, file), payload);
     shards.push({ file, offset, count: items.length, bytes: payload.length, sha256: hash(payload) });
   }
+  const search = [];
+  for (const locale of LOCALES) {
+    const file = 'search-' + locale + '.json';
+    const bytes = Buffer.from(JSON.stringify(buildSearchIndex(snapshot, locale)) + '\n', 'utf8');
+    await atomic(join(out, file), bytes);
+    search.push({ locale, file, bytes: bytes.length, sha256: hash(bytes) });
+  }
   const index = {
-    schema: RELEASE_SCHEMA, id: snapshot.id, target: snapshot.target,
+    schema: RELEASE_SCHEMA, id: snapshot.id, search, target: snapshot.target,
     coverage: snapshot.coverage, sources: snapshot.sources, releases: snapshot.releases,
     count: snapshot.items.length, shards
   };
@@ -149,6 +156,18 @@ async function verifyDistribution(root) {
     offset += shard.count;
   }
   if (offset !== index.count) throw new Error('Release count mismatch');
+  if (!Array.isArray(index.search) || index.search.length !== LOCALES.length) throw new Error('Missing search indexes');
+  for (const [position, entry] of index.search.entries()) {
+    if (entry.locale !== LOCALES[position] || entry.file !== 'search-' + entry.locale + '.json')
+      throw new Error('Search locale index mismatch');
+    const bytes = await readFile(join(root, entry.file));
+    if (bytes.length !== entry.bytes || hash(bytes) !== entry.sha256) throw new Error('Search SHA-256 failure');
+    const parsed = JSON.parse(bytes.toString('utf8'));
+    if (parsed.schema !== 'wand.game-db.search@1' || parsed.snapshot !== index.id ||
+      parsed.locale !== entry.locale || !parsed.terms || typeof parsed.terms !== 'object') {
+      throw new Error('Search format mismatch');
+    }
+  }
   return validateSnapshot({ schema: SNAPSHOT_SCHEMA, id: index.id, target: index.target,
     coverage: index.coverage, sources: index.sources, releases: index.releases,
     publishable: true, items: all });
@@ -168,14 +187,51 @@ async function activate(options) {
   await atomic(required(options, 'out'), text(next));
   return next;
 }
+
+async function sourceRegistration(manifestPath, reportPath) {
+  const manifestBytes = await readFile(manifestPath);
+  const reportBytes = await readFile(reportPath);
+  const report = JSON.parse(reportBytes.toString('utf8'));
+  const manifest = JSON.parse(manifestBytes.toString('utf8'));
+  if (report.schema_version !== 1 || report.status !== 'complete' ||
+    report.ready_for_downstream !== true || report.error_count !== 0 ||
+    report.sha256_file_count !== report.file_count ||
+    !/^[0-9a-f]{64}$/.test(report.dataset_fingerprint ?? '')) {
+    throw new Error('SRC-00 incomplete or unverifiable');
+  }
+  const version = report.game_version;
+  const platform = report.platform;
+  const build = report.build_id;
+  const record = {
+    schema: 'wand.game-db.source@1',
+    sourceId: 'src00-' + String(platform.value).toLowerCase() + '-' + String(version.value ?? 'unconfirmed'),
+    platform: platform.value, gameVersion: version.status === 'verified_from_file' ? version.value : null,
+    buildId: build.status === 'verified_from_file' ? build.value : null,
+    buildIdEvidenceStatus: build.status,
+    sourceManifestSha256: hash(manifestBytes),
+    sourceReportSha256: hash(reportBytes),
+    datasetFingerprint: report.dataset_fingerprint,
+    fileCount: report.file_count,
+    verifiedSha256FileCount: report.sha256_file_count,
+    visibility: 'private',
+    archiveLocation: 'Drive Game Source Archive; exact URL tracked separately'
+  };
+  if (!record.platform || !manifest || typeof manifest !== 'object') throw new Error('Invalid original manifest');
+  return record;
+}
+
 export async function main(argv = process.argv.slice(2)) {
   const [command, ...args] = argv;
   const o = opts(args);
   if (!command || command === 'help') {
-    console.log('Commands: import-legacy, import-native, validate, diff, merge, search, build, verify-build, activate');
+    console.log('Commands: register-source, import-legacy, import-native, validate, diff, merge, search, build, verify-build, activate');
     return;
   }
-  if (command === 'import-legacy') {
+  if (command === 'register-source') {
+    const record = await sourceRegistration(required(o, 'manifest'), required(o, 'report'));
+    await atomic(required(o, 'out'), text(record));
+    console.log('Registered source ' + record.sourceId + '; build ID evidence: ' + record.buildIdEvidenceStatus);
+  } else if (command === 'import-legacy') {
     const snapshot = await legacySnapshot(resolve(required(o, 'catalog')));
     await atomic(required(o, 'out'), text(snapshot));
     console.log('Imported legacy Collection: ' + snapshot.items.length);
