@@ -152,11 +152,48 @@ def validate_source(manifest: dict) -> dict:
         require(type(counts.get('currentDefinitions')) is int and
                 counts['currentDefinitions'] > 0, 'COUNT')
         m['count'] = counts['currentDefinitions']
-        m['sourceFilesFullyShaVerified'] = len(m['byNativeCategory'])
-        # The number of source categories observed is *not* a claim of whole
-        # game-file completeness. Caller must inspect own source coverage.
-        m['sourceFilesTotal'] = len(m['byNativeCategory'])
-        m['fullCorpusParsed'] = False
+        # Without explicit source inventory evidence, observed nonempty native
+        # categories are NOT evidence of complete original itemlist coverage.
+        coverage_fields = ('sourceFilesFullyShaVerified', 'sourceFilesTotal', 'fullCorpusParsed')
+        if any(field in m for field in coverage_fields):
+            require(all(field in m for field in coverage_fields) and
+                    type(m['sourceFilesFullyShaVerified']) is int and
+                    type(m['sourceFilesTotal']) is int and
+                    type(m['fullCorpusParsed']) is bool and
+                    0 <= m['sourceFilesFullyShaVerified'] <= m['sourceFilesTotal'],
+                    'INVALID_CANONICAL_COVERAGE')
+        else:
+            m['sourceFilesFullyShaVerified'] = len(m['byNativeCategory'])
+            m['sourceFilesTotal'] = len(m['byNativeCategory'])
+            m['fullCorpusParsed'] = False
+        if m['fullCorpusParsed']:
+            require(m['sourceFilesFullyShaVerified'] == m['sourceFilesTotal'] and
+                    m['sourceFilesTotal'] >= len(m['byNativeCategory']),
+                    'INCOMPLETE_CANONICAL_SOURCE')
+            source = m.get('source')
+            require(isinstance(source, dict) and
+                    isinstance(source.get('originalScanSha256'), str) and
+                    HASH.fullmatch(source['originalScanSha256']) and
+                    isinstance(source.get('individualOriginalFileHashes'), dict),
+                    'MISSING_COMPLETED_SOURCE_EVIDENCE')
+            original_files = source['individualOriginalFileHashes']
+            itemlists = {path: meta for path, meta in original_files.items()
+                         if isinstance(path, str) and
+                         path.startswith('ddv_Data/StreamingAssets/itemlist/')}
+            require(len(itemlists) == m['sourceFilesTotal'] and
+                    all(isinstance(meta, dict) and isinstance(meta.get('sha256'), str) and
+                        HASH.fullmatch(meta['sha256']) and
+                        type(meta.get('bytes')) is int and meta['bytes'] >= 0
+                        for meta in itemlists.values()) and
+                    all(f'ddv_Data/StreamingAssets/itemlist/{category}.json' in itemlists
+                        for category in m['byNativeCategory']),
+                    'INVALID_COMPLETED_SOURCE_LEDGER')
+            require(all(path.endswith('.json') and
+                        re.fullmatch(r'[A-Za-z][A-Za-z0-9]*', path.rsplit('/', 1)[-1][:-5])
+                        for path in itemlists), 'INVALID_COMPLETED_SOURCE_PATH')
+            m['_verifiedOriginalItemlistHashes'] = {
+                path: meta['sha256'] for path, meta in itemlists.items()
+            }
         m['_nativeSourceManifestSha256'] = inputs['nativeManifest']
     return m
 
@@ -264,11 +301,11 @@ def build(catalog_dir: Path, output: Path, history_dir: Path | None = None) -> d
             con.executescript(SQL)
             con.execute('PRAGMA user_version = 2')
             con.execute('BEGIN IMMEDIATE')
-            con.execute('INSERT INTO catalog (id,store_schema,source_schema,platform,game_version,manifest_sha256,native_source_manifest_sha256,items_sha256,definition_count,source_files_verified,source_files_total,full_corpus_parsed,publication_authorized,historical_manifest_sha256,historical_items_sha256) VALUES (1,?,?,?,?,?,?,?,?,?,?,0,0,?,?)',
+            con.execute('INSERT INTO catalog (id,store_schema,source_schema,platform,game_version,manifest_sha256,native_source_manifest_sha256,items_sha256,definition_count,source_files_verified,source_files_total,full_corpus_parsed,publication_authorized,historical_manifest_sha256,historical_items_sha256) VALUES (1,?,?,?,?,?,?,?,?,?,?,?,0,?,?)',
                 (SCHEMA, m['schema'], m['platform'], m['gameVersion'], manifest_hash,
                 m['_nativeSourceManifestSha256'], m['outputSha256']['items.jsonl'], m['count'],
                 m['sourceFilesFullyShaVerified'], m['sourceFilesTotal'],
-                history_manifest_hash, history_hash))
+                int(m['fullCorpusParsed']), history_manifest_hash, history_hash))
             for row in rows:
                 item_id, exact = validate_record(row, m)
                 require(item_id not in seen, 'DUPLICATE_ID')
@@ -279,6 +316,10 @@ def build(catalog_dir: Path, output: Path, history_dir: Path | None = None) -> d
                 seen_keys.add(native_identity)
                 counts[cat] += 1
                 source = row['source']
+                verified_originals = m.get('_verifiedOriginalItemlistHashes')
+                if verified_originals is not None:
+                    require(source['sha256'] == verified_originals.get(source['file']),
+                            'COMPLETED_SOURCE_ROW_SHA_MISMATCH')
                 con.execute('INSERT INTO definition VALUES(?,?,?,?,?,?,?,?)',
                     (item_id, cat, row['catalogDomain'], row.get('localizationKey'), row['nativeNameField'],
                      source['file'], source['sha256'], json.dumps(row, sort_keys=True, separators=(',', ':'), ensure_ascii=False)))
