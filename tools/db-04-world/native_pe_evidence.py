@@ -118,17 +118,26 @@ def pe64_sections(path: Path) -> list[dict]:
 def file_offset_for_rva(sections, rva: int, size: int) -> tuple[int, dict]:
     if type(rva) is not int or not 0 <= rva <= 0xffffffff:
         raise ValueError("invalid original native method RVA")
+    if type(size) is not int or not 32 <= size <= MAX_WINDOW:
+        raise ValueError("invalid native PE evidence window length")
+    # Bytes past a PE section's VirtualSize are file-alignment padding, not
+    # mapped executable code. Virtual zero-fill beyond SizeOfRawData has no
+    # original binary bytes to capture. Both are excluded.
     matches = [entry for entry in sections if
                entry["virtualAddress"] <= rva <
-               entry["virtualAddress"] + entry["rawSize"]]
+               entry["virtualAddress"] + min(entry["rawSize"],
+                                              entry["virtualSize"])]
     if len(matches) != 1:
         raise ValueError("method RVA is not in one source executable section")
     entry = matches[0]
     delta = rva - entry["virtualAddress"]
+    available = min(entry["rawSize"], entry["virtualSize"]) - delta
+    if available < 32:
+        raise ValueError("native method RVA has fewer than 32 source code bytes")
     return entry["rawOffset"] + delta, {
         "section": entry["name"],
-        "bytesAvailableInSection": entry["rawSize"] - delta,
-        "readLength": min(size, entry["rawSize"] - delta),
+        "bytesAvailableInSection": available,
+        "readLength": min(size, available),
     }
 
 
@@ -161,8 +170,17 @@ def target_methods_from_dump(path: Path) -> list[dict]:
                 continue
             if pending_rva is None:
                 continue
+            # An RVA comment must be followed by a real declaration, never
+            # opportunistically associated with a matching comment line.
+            if line.lstrip().startswith("//"):
+                continue
             method = METHOD_RE.search(line)
             if method is None:
+                # Do not let a stale RVA leak into a later matching method.
+                # Blank lines, attributes and opening/closing braces are
+                # permitted; unrelated method declarations terminate it.
+                if "(" in line or (";" in line and "{" not in line):
+                    pending_rva = None
                 continue
             key = f"{fqtype}.{method.group(1)}"
             if key in found:
