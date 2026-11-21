@@ -48,8 +48,13 @@ function observeKnownField(document, field) {
   let nodes = [document], sampled = false;
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i], next = [], final = i === tokens.length - 1;
+    let blocked = false;
     for (const node of nodes) {
-      if (!plain(node)) continue;
+      if (!plain(node)) {
+        // A value on an observed parent branch has the wrong container type.
+        blocked = true;
+        continue;
+      }
       if (/^\{[A-Za-z][A-Za-z0-9]*\}$/.test(token)) {
         const keys = Object.keys(node);
         if (keys.length > SHAPE_WILDCARD_LIMIT) sampled = true;
@@ -72,11 +77,13 @@ function observeKnownField(document, field) {
       }
     }
     nodes = next;
-    if (!nodes.length) return { status: 'not_observed', sampled };
+    if (!nodes.length) return { status: blocked ? 'type_conflict' : 'not_observed', sampled, kinds: Object.freeze([]) };
+    if (blocked) return { status: 'type_conflict', sampled, kinds: Object.freeze([]) };
   }
+  const kinds = Object.freeze([...new Set(nodes.map(shapeType))].sort());
   return {
-    status: nodes.every(v => field.type.split('|').includes(shapeType(v))) ? 'observed' : 'type_conflict',
-    sampled
+    status: kinds.every(kind => field.type.split('|').includes(kind)) ? 'observed' : 'type_conflict',
+    sampled, kinds
   };
 }
 
@@ -95,6 +102,8 @@ export function probeSaveStructure(decoded) {
       anchorObserved ? (sampled ? 'sampled_candidate' : 'shape_candidate') : 'not_observed';
     byDomain.push(Object.freeze({
       domain, status, observedFieldCount: observed.length,
+      // Only public, predeclared field templates and JSON kinds; no IDs or values.
+      observedFields: Object.freeze(observed.map(o => Object.freeze({ path: o.path, kinds: o.kinds }))),
       conflictingPaths: Object.freeze(conflicting.map(o => o.path)),
       sampled, source: 'legacy_rust_field_candidates_only', writerAuthorized: false
     }));
@@ -107,6 +116,65 @@ export function probeSaveStructure(decoded) {
     exhaustive: false,
     codecVerified: false,
     writerAuthorized: false
+  });
+}
+
+export const SAVE_STRUCTURE_COMPARISON_CONTRACT = 'wand.db05.save-structure-comparison@1';
+
+/**
+ * Compare only public, historically known JSON path templates and JSON types.
+ * Neither a matching signature nor a missing optional field grants Codec/Writer
+ * compatibility. Platform/Build/version are deliberately not inputs.
+ */
+export function compareSaveStructures(previous, current) {
+  const before = inspectDecodedSave(previous, null);
+  const after = inspectDecodedSave(current, null);
+  const domains = before.shapeProbe.domains.map((left, index) => {
+    const right = after.shapeProbe.domains[index];
+    const a = new Map(left.observedFields.map(row => [row.path, row.kinds]));
+    const b = new Map(right.observedFields.map(row => [row.path, row.kinds]));
+    const sharedChanged = [...a.keys()].filter(path => b.has(path) &&
+      a.get(path).join('|') !== b.get(path).join('|'));
+    const conflicts = [...new Set([...left.conflictingPaths, ...right.conflictingPaths, ...sharedChanged])].sort();
+    const added = [...b.keys()].filter(path => !a.has(path)).sort();
+    const removed = [...a.keys()].filter(path => !b.has(path)).sort();
+    const status = conflicts.length ? 'structural_conflict'
+      : left.status === 'not_observed' || right.status === 'not_observed' ? 'insufficient_evidence'
+      : left.sampled || right.sampled ? 'sampled_inconclusive'
+      : added.length || removed.length ? 'observed_shape_drift'
+      : 'same_known_field_shape';
+    return Object.freeze({
+      domain: left.domain, status,
+      addedKnownPaths: Object.freeze(added),
+      removedKnownPaths: Object.freeze(removed),
+      conflictingKnownPaths: Object.freeze(conflicts),
+      previousObservedFieldCount: left.observedFieldCount,
+      currentObservedFieldCount: right.observedFieldCount,
+      writerAuthorized: false
+    });
+  });
+  const validRoots = before.rootShapeValid && after.rootShapeValid;
+  const overall = !validRoots ? 'invalid_root'
+    : domains.some(d => d.status === 'structural_conflict') ? 'structural_conflict'
+    : domains.some(d => d.status === 'insufficient_evidence' || d.status === 'sampled_inconclusive') ? 'inconclusive'
+    : domains.some(d => d.status === 'observed_shape_drift') ? 'observed_shape_drift'
+    : 'same_known_field_shape';
+  return Object.freeze({
+    contract: SAVE_STRUCTURE_COMPARISON_CONTRACT,
+    compatibilityBasis: 'decoded_field_shape',
+    platformAndVersionUsedAsGates: false,
+    status: overall,
+    rootIssues: Object.freeze({
+      previous: before.issues,
+      current: after.issues
+    }),
+    domains: Object.freeze(domains),
+    knownPathsOnly: true,
+    exhaustive: false,
+    strictDecoderVerified: false,
+    referenceClosureVerified: false,
+    writerAuthorized: false,
+    exportAuthorized: false
   });
 }
 
