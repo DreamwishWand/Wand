@@ -139,3 +139,39 @@ Writer authorization. Personal saves, raw JSON, user identifiers,
 envelope hashes, and private structural reports must remain outside Git.
 Only this historical **public field definition** and synthetic tests are
 committed.
+
+## 16 additional common fields, observed across private 626/643 originals
+
+`data/ddv/save/common626643-fields.v1.json` supplements (does not replace) the
+existing 66-path historical registry. Exactly **16 public-name fields** were
+located in past Wand source code and their JSON types were observed in each of
+three owner-private save originals: one schema 626 and two schema 643.
+
+Domains: world (6), progression (7), cosmetics (3). Examples:
+`/World/Characters` (array), `/World/Characters[]/SkinID` (integer),
+`/World/QuestInfo/MissionsCompleted` (array), `/Player/AchievementsData`
+(array), `/Player/BattlePassStates` (object), `/World/Realms` (object).
+No user-save values, map keys, names, raw JSON, or original bytes are
+embedded in the registry or committed to GitHub.
+
+The source field names originate from historical public Wand
+`steam626-native-fields.mjs` and `progression-reference-index-v125`
+sources, **not from a newly verified game-native C# type mapping**. Actual
+types were independently observed from the 626/643 save originals. This is
+observational schema evidence only; it does not establish entitlement,
+availability, editable ownership, Codec round-trip or Writer safety.
+
+`getCommonSaveFields()`, `probeCommonSaveStructure(decoded)` and
+`compareCommonSaveStructures(before,after)` expose read-only structural
+witnesses without comparing platform or version labels. Large arrays are
+sampled and do not yield exhaustive proof. Existing `probeSaveStructure`
+and `compareSaveStructures` continue operating on the historical 66 paths,
+preserving compatibility with established callers.
+
+The SRC-06 -> DB-05 private `ingest.py` allowlist now includes the extra
+16 templates, so these names survive redaction while all unrecognized and
+numeric-key paths remain redacted. `compareRedactedSaveWitnesses` now returns
+8 independently judged domains (five historical, plus world, progression,
+cosmetics). New domains that are unobserved remain inconclusive, not a false
+structural equivalence. All upstream reports remain private, and all
+authorizations remain false.
