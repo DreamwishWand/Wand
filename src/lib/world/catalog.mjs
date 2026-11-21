@@ -2,6 +2,47 @@
 // This API never invents 2D coordinates, path/fence connectivity or permissions.
 export const WORLD_SCHEMA = 'wand.db04.world@1';
 
+
+/** Native IL2CPP enum GridLayers (not a collision/placement algorithm). */
+export const GRID_LAYER_FLAGS = Object.freeze({
+  1: 'Ground', 2: 'Floor', 4: 'Low', 8: 'Medium',
+  16: 'High', 32: 'Clear', 64: 'Blocking',
+});
+
+/** Native IL2CPP enum GridFloorType (Steam baseline 1.26.1). */
+export const GRID_FLOOR_FLAGS = Object.freeze({
+  1: 'Beach', 2: 'Wetland', 4: 'Meadow', 8: 'Urban',
+  16: 'Savannah', 32: 'Forest', 64: 'DarkMountains', 128: 'Cliff',
+  256: 'Shore', 512: 'Water', 1024: 'Floor', 2048: 'Wall',
+  4096: 'Surface', 8192: 'AtlanteanOutpost', 16384: 'Desert',
+  32768: 'Jungle', 65536: 'Mythology', 131072: 'FairyTales',
+  262144: 'BlockAutomaticSpawning', 524288: 'Library',
+  1048576: 'Puzzle', 2097152: 'PuzzleSurface', 4194304: 'Rockies',
+  8388608: 'Fashion', 16777216: 'Wishland', 33554432: 'OutsideFloor',
+  67108864: 'Honeywood', 134217728: 'Pirates',
+  268435456: 'Candy', 536870912: 'Kingdom',
+});
+
+function symbolicNativeMask(value, dictionary) {
+  if (!Number.isSafeInteger(value) || value < 0 || value > 0xffffffff) {
+    throw new TypeError('Invalid native uint32 mask');
+  }
+  // Bitwise operators in JS are signed int32; use arithmetic for the full mask.
+  let remainder = value;
+  const names = [];
+  for (const [bit, name] of Object.entries(dictionary)) {
+    const flag = Number(bit);
+    if (Math.floor(remainder / flag) % 2 === 1) {
+      names.push(name);
+      remainder -= flag;
+    }
+  }
+  return { symbols: names, unrecognizedBits: remainder };
+}
+
+export const describeNativeLayerMask = mask => symbolicNativeMask(mask, GRID_LAYER_FLAGS);
+export const describeNativeFloorMask = mask => symbolicNativeMask(mask, GRID_FLOOR_FLAGS);
+
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const idText = value => typeof value === 'number' ? String(value) : value;
 const uniqueMap = (rows, key) => {
@@ -72,6 +113,14 @@ export function checkNativeEditRestriction(catalog, itemId, action) {
 // These records are NOT a save-specific world snapshot (reserved for DB-05).
 export function getNativeScene(catalog, sceneId) {
   return catalog.scenes.get(idText(sceneId)) ?? null;
+}
+
+export function getNativeFloorPalette(catalog, gridId) {
+  const native = catalog.grids.get(String(gridId));
+  if (!native || !Array.isArray(native.nativeFloorTypePalette)) return null;
+  return native.nativeFloorTypePalette.map(value => ({
+    nativeValue: value, ...describeNativeFloorMask(value),
+  }));
 }
 
 export function getLayoutGridReferences(catalog, layoutId) {
