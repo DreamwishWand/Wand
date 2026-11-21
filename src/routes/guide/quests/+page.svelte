@@ -1,7 +1,7 @@
 <script lang="ts">
   import {onMount} from 'svelte';
   import {base} from '$app/paths';
-  import {PUBLIC_GUIDE_LOCALES,verifyPublicQuestIndex,filterPublicQuests,loadPublicQuestPart} from '$lib/guide/public-guide.mjs';
+  import {PUBLIC_GUIDE_LOCALES,verifyPublicQuestIndex,filterPublicQuests,loadPublicQuestPart,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
 
   const LANG:Record<string,string>={ja:'日本語',en:'English',fr:'Français',it:'Italiano',de:'Deutsch','es-ES':'Español','zh-CN':'简体中文','pt-BR':'Português'};
   let catalog:any=null;
@@ -24,9 +24,9 @@
   $: characters=catalog?[...new Set(catalog.quests.map((x:any)=>x.characterId).filter(Boolean))].sort() as string[]:[];
   $: objectives=catalog?[...new Set(catalog.quests.flatMap((x:any)=>x.objectiveKinds))].sort() as string[]:[];
 
-  function label(names:Record<string,string>|null|undefined,fallback='') {return names?.[locale]||names?.en||Object.values(names||{})[0]||fallback;}
-  function questName(row:any) {return label(row.names,row.internalName||row.id);}
-  function characterName(id:string|undefined) {return label(catalog?.characters?.[id||''],id||'');}
+  function label(names:Record<string,string>|null|undefined,fallback='',language='ja') {return formatPublicGuideText(names?.[language]||names?.en||Object.values(names||{})[0]||fallback);}
+  function questName(row:any,language:string) {return label(row.names,row.internalName||row.id,language);}
+  function characterName(id:string|undefined,language:string) {return label(catalog?.characters?.[id||''],id||'',language);}
   function setSearch() {limit=40;}
 
   async function loadCatalog() {
@@ -81,7 +81,7 @@
     <div class="searchbar">
       <label>クエストを検索<input aria-label="クエスト名・IDを検索" placeholder="クエスト名・キャラクター名・ID" bind:value={query} on:input={setSearch}/></label>
       <label>表示言語<select aria-label="表示言語" bind:value={locale} on:change={setSearch}>{#each PUBLIC_GUIDE_LOCALES as language}<option value={language}>{LANG[language]}</option>{/each}</select></label>
-      <label>キャラクター<select aria-label="キャラクターで絞り込み" bind:value={character} on:change={setSearch}><option value="">すべて</option>{#each characters as id}<option value={id}>{characterName(id)}</option>{/each}</select></label>
+      <label>キャラクター<select aria-label="キャラクターで絞り込み" bind:value={character} on:change={setSearch}><option value="">すべて</option>{#each characters as id}<option value={id}>{characterName(id,locale)}</option>{/each}</select></label>
       <label>目標の種類<select aria-label="目標で絞り込み" bind:value={objective} on:change={setSearch}><option value="">すべて</option>{#each objectives as kind}<option value={kind}>{kind}</option>{/each}</select></label>
     </div>
     <div class="workspace">
@@ -89,8 +89,8 @@
         <p class="count">{filtered.total.toLocaleString()}件のクエスト</p>
         {#each filtered.rows as row (row.id)}
           <button class:active={selectedRow?.id===row.id} class="quest-row" on:click={()=>openQuest(row)}>
-            <strong>{questName(row)}</strong>
-            <small>{characterName(row.characterId)} · {row.id}</small>
+            <strong>{questName(row,locale)}</strong>
+            <small>{characterName(row.characterId,locale)} · {row.id}</small>
           </button>
         {/each}
         {#if filtered.total>limit}<button class="load-more" on:click={()=>limit+=40}>さらに表示（残り{(filtered.total-limit).toLocaleString()}件）</button>{/if}
@@ -100,7 +100,7 @@
         {#if !selectedRow}
           <p class="placeholder">左の一覧からクエストを選択してください。</p>
         {:else}
-          <div class="detail-header"><span>クエストID {selectedRow.id}</span><h2>{questName(selectedRow)}</h2><p>{characterName(selectedRow.characterId)}</p></div>
+          <div class="detail-header"><span>クエストID {selectedRow.id}</span><h2>{questName(selectedRow,locale)}</h2><p>{characterName(selectedRow.characterId,locale)}</p></div>
           {#if detailLoading}<p class="status">目標データを検証しています…</p>{/if}
           {#if detailError}<p class="error" role="alert">{detailError}</p>{/if}
           {#if selected}
@@ -109,11 +109,11 @@
             </div>
             {#each selected.steps as step (step.index)}
               <section class="step"><h3>ステップ {step.index+1}</h3>
-                {#if label(step.text)}<p>{label(step.text)}</p>{/if}
+                {#if label(step.text,'',locale)}<p>{label(step.text,'',locale)}</p>{/if}
                 {#each step.subSteps as sub (sub.index)}
                   {#if sub.objectives.length}<ol>
                     {#each sub.objectives as goal, i (i)}
-                      <li><span>{label(goal.text,goal.type)}</span><small>{goal.type}{goal.objectiveId?' · ID '+goal.objectiveId:''}</small></li>
+                      <li><span>{label(goal.text,goal.type,locale)}</span><small>{goal.type}{goal.objectiveId?' · ID '+goal.objectiveId:''}</small></li>
                     {/each}
                   </ol>{/if}
                 {/each}

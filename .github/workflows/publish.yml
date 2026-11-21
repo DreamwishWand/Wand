@@ -34,6 +34,15 @@ jobs:
         env:
           BASE_PATH: /Wand
       - run: test -n "$(find build -type f -name '*.wasm' -print -quit)"
+      - name: Verify public Quest Guide is included in Pages artifact
+        run: |
+          test -s build/guide/quests/index.html
+          grep -q 'クエストガイド' build/guide/quests/index.html
+          cmp static/guide/public/quest-index.json build/guide/public/quest-index.json
+          for i in $(seq 0 7); do
+            part=$(printf '%02d' "$i")
+            cmp "static/guide/public/quest-details-$part.json" "build/guide/public/quest-details-$part.json"
+          done
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -45,6 +54,7 @@ jobs:
       name: github-pages
       url: ${{ steps.publish.outputs.page_url }}
     steps:
+      - uses: actions/checkout@v4
       - id: publish
         uses: actions/deploy-pages@v4
       - name: Verify deployed Collection
@@ -92,3 +102,52 @@ jobs:
           test -s /tmp/wand-save-diagnostics.html
           grep -q 'セーブ構造診断' /tmp/wand-save-diagnostics.html
           grep -q 'noindex' /tmp/wand-save-diagnostics.html
+
+      - name: Verify deployed public Quest Guide and eight source-pinned objective partitions
+        env:
+          PAGE_URL: ${{ steps.publish.outputs.page_url }}
+        run: |
+          set -euo pipefail
+          base="${PAGE_URL%/}"
+          ready=false
+          for attempt in 1 2 3 4 5 6 7 8; do
+            if curl --fail --silent --show-error --location "$base/guide/quests/" -o /tmp/wand-guide-quests.html &&
+               curl --fail --silent --show-error --location "$base/guide/public/quest-index.json" -o /tmp/wand-guide-index.json &&
+               cmp -s static/guide/public/quest-index.json /tmp/wand-guide-index.json; then
+              ready=true
+              break
+            fi
+            sleep 3
+          done
+          test "$ready" = true
+          grep -q 'クエストガイド' /tmp/wand-guide-quests.html
+          for i in $(seq 0 7); do
+            part=$(printf '%02d' "$i")
+            curl --fail --silent --show-error --location --retry 3 --retry-all-errors               "$base/guide/public/quest-details-$part.json" -o "/tmp/wand-guide-part-$part.json"
+          done
+          node --input-type=module <<'NODE'
+          import {readFileSync} from 'node:fs';
+          import {createHash} from 'node:crypto';
+          import assert from 'node:assert/strict';
+          const index = JSON.parse(readFileSync('/tmp/wand-guide-index.json', 'utf8'));
+          assert.equal(index.schema, 'wand.db03.public-guide-quests@1');
+          assert.deepEqual(index.counts, {quests:733, steps:7878, objectives:11782, detailParts:8});
+          assert.equal(index.target.gameVersion,'1.26.2');
+          assert.equal(index.quests.length,733);
+          let seen = 0, steps = 0, objectives = 0;
+          for(let i=0;i<8;i++){
+            const number=String(i).padStart(2,'0');
+            const name='quest-details-'+number+'.json';
+            const bytes=readFileSync('/tmp/wand-guide-part-'+number+'.json');
+            assert.equal(bytes.byteLength,index.detailFiles[name].bytes,name+' bytes');
+            assert.equal(createHash('sha256').update(bytes).digest('hex'),index.detailFiles[name].sha256,name+' sha256');
+            const part=JSON.parse(bytes.toString('utf8'));
+            assert.equal(part.schema,'wand.db03.public-guide-details@1');
+            assert.equal(part.part,i);
+            for(const quest of part.quests){
+              seen++;steps+=quest.steps.length;objectives+=quest.objectiveCount;
+            }
+          }
+          assert.deepEqual([seen,steps,objectives],[733,7878,11782]);
+          console.log('Deployed public Quest Guide: HTML, exact index and all 8 source-hashed detail parts verified.');
+          NODE

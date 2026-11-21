@@ -16,6 +16,7 @@ a { color: inherit; }
 .brand { display: inline-flex; align-items: center; gap: 11px; font-weight: 600; font-size: 19px; text-decoration: none; letter-spacing: -.04em; white-space: nowrap; }
 .brand strong { color: #d5b7fe; }
 .brand-mark { display: grid; place-items: center; height: 32px; width: 32px; background: #44305e; color: #f6d9ff; border-radius: 10px; font-size: 22px; }
+.site-nav { display: flex; align-items: center; gap: 20px; }
 .nav-link { text-decoration: none; color: #e9dcfc; font-size: 13px; font-weight: 600; }
 .nav-link:hover { color: white; }
 .site-label { margin-left: auto; color: #a99cba; font-size: 12px; white-space: nowrap; }
@@ -175,6 +176,12 @@ a { color: inherit; }
   .facet-card strong { font-size: 12px; }
   .items-grid { grid-template-columns: 1fr; }
   .item-card-copy strong { white-space: normal; }
+}
+@media(max-width: 550px) {
+  .site-header { height: auto; min-height: 67px; flex-wrap: wrap; padding: 12px 16px; gap: 10px; }
+  .site-header .brand { flex: 1 1 auto; }
+  .site-nav { order: 3; width: 100%; flex: 1 0 100%; justify-content: space-between; gap: 10px; }
+  .site-nav .nav-link { font-size: 12px; }
 }
 @media(prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }

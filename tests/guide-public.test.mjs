@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {verifyPublicQuestIndex,filterPublicQuests,verifyPublicQuestPart,loadPublicQuestPart} from '../src/lib/guide/public-guide.mjs';
+import {verifyPublicQuestIndex,filterPublicQuests,verifyPublicQuestPart,loadPublicQuestPart,formatPublicGuideText} from '../src/lib/guide/public-guide.mjs';
 import {readFile} from 'node:fs/promises';
 const fixture=new URL('../static/guide/public/', import.meta.url);
 const local=name=>new URL(name,fixture);
@@ -37,4 +37,12 @@ test('detail download hash rejects post-publication mutation',async()=>{
   assert.equal((await loadPublicQuestPart(index,0,'/guide/public/quest-details-00.json',fetcher)).part,0);
   const altered=Buffer.from(file);altered[44]^=1;
   await assert.rejects(loadPublicQuestPart(index,0,'/',async()=>({ok:true,arrayBuffer:async()=>altered.buffer.slice(altered.byteOffset,altered.byteOffset+altered.byteLength)})),/fingerprint/);
+});
+
+test('source objective formatting stays readable without injecting HTML or inventing placeholder values',()=>{
+  assert.equal(formatPublicGuideText('<ActivityItem>リンゴ</ActivityItem>を集めよう'),'リンゴを集めよう');
+  assert.equal(formatPublicGuideText('A<nbsp>B'), 'A B');
+  assert.equal(formatPublicGuideText('{ItemName}を{TargetAmount}個'),'{ItemName}を{TargetAmount}個');
+  assert.equal(formatPublicGuideText('<nobr>日本語</nobr>\u200b<smallcaps>表記</smallcaps>'),'日本語表記');
+  assert.equal(formatPublicGuideText(null),'');
 });
