@@ -6,6 +6,7 @@ from pathlib import Path
 from gridarea_tessellation import (
     DLL_SHA256, SOURCE_METHODS, GETGRIDAREA_UNWIND, TRYGET_UNWIND,
     gridarea_scaled_source_cell, gridarea_scaled_layer_window,
+    source_gridarea_computed_stride, STRIDE_METHOD_UNWIND,
     verify_original_item_gridarea_tessellation,
 )
 from gridarea_cardinal_local import cardinal_layer_window
@@ -13,6 +14,39 @@ from gridarea_oblique_local import oblique_layer_window
 
 
 class OriginalItemTessellationTests(unittest.TestCase):
+    def test_original_native_stride_null_one_else_int32_override_times_factor(self):
+        self.assertEqual(STRIDE_METHOD_UNWIND, (
+            (0x39241A0, 0x3924200),
+            (0x3924200, 0x392426C)))
+        self.assertEqual([m[0] for m in SOURCE_METHODS[-2:]], [
+            "GridArea.GetStrideFor(instance)",
+            "GridArea.GetStrideFor(static)",
+        ])
+        for factor in (1, 2, 3, 4, 256):
+            with self.subTest(factor=factor):
+                missing = source_gridarea_computed_stride(None, factor)
+                self.assertEqual(missing["nativeComputedStride"], 1)
+                self.assertTrue(missing["nativeStrideCalculationVerified"])
+                self.assertFalse(missing["strideOverridePlacementSemanticsVerified"])
+                self.assertFalse(missing["placementLegalityVerified"])
+                for value in (0, 1, 2, 3, 4, -1):
+                    actual = source_gridarea_computed_stride(value, factor)
+                    expected = ((value * factor + 0x80000000) & 0xffffffff) - 0x80000000
+                    self.assertEqual(actual["nativeComputedStride"], expected)
+                    self.assertFalse(actual["callerGridFactorProvenanceVerified"])
+        overflow = source_gridarea_computed_stride(0x7fffffff, 2)
+        self.assertEqual(overflow["nativeComputedStride"], -2)
+        legacy = source_gridarea_computed_stride(
+            None, 2, source_record_complete=False)
+        self.assertEqual(legacy["status"],
+                         "legacy_snapshot_stride_source_unavailable")
+        self.assertNotIn("nativeComputedStride", legacy)
+        self.assertFalse(legacy["nativeStrideCalculationVerified"])
+        for value, factor in ((None, 0), (None, 257), (2, False),
+                              (True, 2), (2.5, 3), (2**31, 1)):
+            with self.assertRaisesRegex(ValueError, "nullable stride"):
+                source_gridarea_computed_stride(value, factor)
+
     def test_original_factory_and_transform_source_identity_pins(self):
         self.assertEqual(len(DLL_SHA256), 64)
         self.assertEqual(SOURCE_METHODS[0][0], "GridAreaData.GetGridArea")
