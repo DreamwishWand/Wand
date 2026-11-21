@@ -78,7 +78,9 @@ export declare function compareMealIngredientStates(
   mealItemId:number;
   sameSerializedIngredientMultiset:boolean;
   differentIngredientComposition:boolean;
-  pricesMayDiffer:boolean;
+  ingredientDifferenceCouldAffectPrice:boolean;
+  pricesMayDiffer:true;
+  priceEqualityVerified:false;
   pricesCompared:false;
   actualSellPrices:null;
   publishable:false;
