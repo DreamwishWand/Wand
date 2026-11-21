@@ -58,4 +58,33 @@ class IngestTests(unittest.TestCase):
                 run(original,d / 'out')
 
 
+    def test_historical_known_deep_paths_are_canonicalized_without_ids(self):
+        sample = self.report(626, 'string')
+        sample['fieldWitnesses'].extend([
+            {'path': '/Player/ContainerInventories/1535/Inventory[]/Amount', 'type': 'integer'},
+            {'path': '/Player/ListInventories/{id}/Inventory/{id}/Amount', 'types': ['integer']},
+            {'path': '/Player/PersonalSecret/888/Token', 'type': 'string'},
+        ])
+        result = inspect_report(sample)
+        paths = {row['path'] for row in result['publicWitnesses']}
+        self.assertIn('/Player/ContainerInventories/{containerId}/Inventory[]/Amount', paths)
+        self.assertIn('/Player/ListInventories/{routeId}/Inventory/{itemId}/Amount', paths)
+        self.assertEqual(result['otherWitnessCount'], 2)
+        emitted = json.dumps(result)
+        for secret in ['1535', '888', 'PersonalSecret', 'Token']:
+            self.assertNotIn(secret, emitted)
+
+    def test_historical_deep_witness_type_delta_is_observational_only(self):
+        old = self.report(626, 'string')
+        new = self.report(643, 'number')
+        path = '/Player/ContainerInventories/{id}/Inventory[]/Amount'
+        old['fieldWitnesses'].append({'path': path, 'type': 'integer'})
+        new['fieldWitnesses'].append({'path': path, 'type': 'number'})
+        comparison = diff(inspect_report(old), inspect_report(new))
+        self.assertEqual(comparison['typeChanged'], [
+            '/Player/ContainerInventories/{containerId}/Inventory[]/Amount'])
+        self.assertFalse(comparison['authoritative'])
+        self.assertEqual(comparison['undisclosedWitnessCountDelta'], 0)
+
+
 if __name__ == '__main__': unittest.main()
