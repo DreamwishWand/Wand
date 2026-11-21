@@ -130,3 +130,19 @@ published/privately exported acquisition-condition references based on the
 older source must be treated as **not verified for v1.26.2** and cannot be
 joined to DB-01's current catalog. Current `Condition.json` remains missing;
 this change is a source-integrity repair, not condition data completion.
+
+
+## DB-01 → DB-02 private static source join
+
+The final TypeScript runtime now provides `src/lib/items/db02-join.ts`.
+It accepts only the existing DB-01 v2 private catalog plus an independently
+trusted, byte-SHA-checked DB-02 manifest and a separately verified same-version
+`Condition.json` source SHA. The required Steam 1.26.2 Condition SHA from
+`format-probe.json` is
+`9eb5e7800a2485b1dfb3e148a7bcff5d6c6b6ed72797ed2331a902ab44188f4c`;
+the older 1.26.1 source SHA is forbidden. The join leaves availability,
+ownership, DLC entitlement, save writing and publication all **false**.
+
+Until genuine current Steam 1.26.2 Condition bytes are obtained, DB-02 cannot
+be fully re-extracted and this bridge must not be activated against previously
+mislabeled condition outputs. See [`DB02-JOIN.md`](DB02-JOIN.md).
