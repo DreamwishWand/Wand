@@ -83,7 +83,8 @@ def selected(args, relative):
 
 
 def source_provenance(args):
-    return {"platform": args.platform, "gameVersion": args.game_version, "buildId": args.build_id}
+    return {"platform": args.platform, "gameVersion": args.game_version, "buildId": args.build_id,
+            "metadataVerification": "operator_supplied"}
 
 
 def scan_one(root, path):
