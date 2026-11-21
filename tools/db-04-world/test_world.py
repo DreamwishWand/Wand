@@ -208,13 +208,44 @@ class NativeWireTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "palette"):
             describe_native_packing(2, 2, [0, 1024, 2048], bytes((255,)))
 
-    def test_native_palette_3bit_or_higher_remains_explicitly_unresolved(self):
-        p = describe_native_packing(5, 5, [0, 1, 2, 3, 4], bytes(25))
-        self.assertEqual(p["status"], "unresolved_palette_cardinality")
-        self.assertFalse(p["decoded"])
+    def test_original_native_four_bit_palette_and_grid_axis_order(self):
+        palette = [0, 8, 16, 32, 64]
+        packed = bytes((0x01, 0x23, 0x41, 0x03, 0x20))
+        evidence = describe_native_packing(3, 3, palette, packed)
+        self.assertTrue(evidence["decoded"])
+        self.assertEqual(evidence["cellBits"], 4)
+        self.assertEqual(evidence["packing"], "x_major_msb_first")
+        self.assertFalse(evidence["nativeCodeBodyVerified"])
+        self.assertIn("original_metadata_v31",
+                      evidence["sampleBasedEncodingEvidence"])
+        self.assertEqual(count_packed_palette_indices(
+            3, 3, palette, packed), [2, 2, 2, 2, 1])
+        self.assertEqual(floor_at(3, 3, palette, packed, 1, 1), 64)
+        self.assertEqual(decode_window(
+            3, 3, palette, packed, 0, 0, 3, 3), [
+                [0, 32, 0], [8, 64, 32], [16, 8, 16],
+            ])
+        with self.assertRaisesRegex(ValueError, "padding"):
+            describe_native_packing(
+                3, 3, palette, bytes((0x01, 0x23, 0x41, 0x03, 0x2f)))
+        with self.assertRaisesRegex(ValueError, "index missing"):
+            describe_native_packing(
+                3, 3, palette, bytes((0xf1, 0x23, 0x41, 0x03, 0x20)))
+
+        sixteen = list(range(16))
+        self.assertEqual(floor_at(
+            2, 2, sixteen, bytes((0x0f, 0x89)), 0, 1), 15)
+        self.assertEqual(count_packed_palette_indices(
+            2, 2, sixteen, bytes((0x0f, 0x89)))[15], 1)
+        self.assertEqual(describe_native_packing(
+            1, 2, [0], bytes((0,)))["cellBits"], 1)
+        unsupported = describe_native_packing(
+            2, 2, list(range(17)), bytes((0, 0)))
+        self.assertEqual(unsupported["status"], "unresolved_palette_cardinality")
+        self.assertFalse(unsupported["decoded"])
         with self.assertRaisesRegex(ValueError, "unresolved"):
-            decode_window(5, 5, [0, 1, 2, 3, 4],
-                          bytes(25), 0, 0, 2, 2)
+            decode_window(2, 2, list(range(17)), bytes((0, 0)),
+                          0, 0, 2, 2)
 
     def test_source_palette_index_histogram_exact_counts_and_tail(self):
         self.assertEqual(count_packed_palette_indices(
@@ -222,7 +253,7 @@ class NativeWireTests(unittest.TestCase):
         self.assertEqual(count_packed_palette_indices(
             3, 3, [0, 1024], bytes((0xff, 0x80))), [0, 9])
         self.assertIsNone(count_packed_palette_indices(
-            5, 5, [0, 1, 2, 3, 4], bytes(25)))
+            5, 5, list(range(17)), bytes(25)))
         with self.assertRaisesRegex(ValueError, "index missing"):
             count_packed_palette_indices(
                 2, 2, [0, 1024, 2048], bytes((0xff,)))
