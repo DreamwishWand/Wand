@@ -14,6 +14,8 @@ import {
   getNativeFootprintTessellatedOrientedWindow,
   getNativeDefaultLayoutObjectLayerAt,
   getNativeDefaultLayoutObjectLayerWindow,
+  getNativeFootprintComputedStride,
+  getNativeDefaultLayoutObjectComputedStride,
   getNativeFootprintObliqueOrientedLayerAt,
   getNativeFootprintObliqueOrientedWindow,
   getNativeFootprintCardinalOrientedLayerAt,
@@ -124,6 +126,89 @@ test('native GridAreaData.Nullable StrideOverride survives raw source and cannot
     };
     assert.throws(() => createWorldCatalog(source),
       /Unverified or malformed native placement footprint/);
+  }
+});
+
+test('source-native GridArea.GetStrideFor preserves nullable default and signed int32 math', () => {
+  const data = fixture();
+  data.manifest.gameVersion = '1.26.1';
+  data.objects[0].footprint = {
+    ...data.objects[0].footprint,
+    strideOverride: 2,
+    strideOverrideSourceVerified: true,
+    nativeWireFields: {strideOverride: '6.5'},
+    strideOverridePlacementSemanticsVerified: false,
+  };
+  data.layouts[0].nativeGridEntries[0].tessellationFactor = 3;
+  const catalog = createWorldCatalog(data);
+  const item = getNativeFootprintComputedStride(catalog, 40000001, 3);
+  assert.equal(item.nativeComputedStride, 6);
+  assert.equal(item.nativeStrideCalculationVerified, true);
+  assert.equal(item.callerGridFactorProvenanceVerified, false);
+  assert.equal(item.strideOverrideSourceVerified, true);
+  assert.equal(item.strideOverridePlacementSemanticsVerified, false);
+  assert.equal(item.placementLegalityVerified, false);
+
+  // Exact default layout Grid ID supplies the independent caller factor.
+  const defaultObjectId = data.layoutObjects[0].layoutObjectId;
+  const sourced = getNativeDefaultLayoutObjectComputedStride(catalog, defaultObjectId);
+  assert.equal(sourced.nativeComputedStride, 6);
+  assert.equal(sourced.callerGridTessellationFactor, 3);
+  assert.equal(sourced.callerGridFactorProvenanceVerified, true);
+  assert.equal(sourced.itemFactoryRoutePerRecordVerified, false);
+  assert.equal(sourced.worldCoordinatesVerified, false);
+  assert.equal(sourced.placementLegalityVerified, false);
+  assert.equal(getNativeDefaultLayoutObjectComputedStride(
+    catalog, 'missing').status, 'unknown_default_layout_object');
+
+  const rawNull = fixture();
+  rawNull.manifest.gameVersion = '1.26.1';
+  rawNull.objects[0].footprint = {
+    ...rawNull.objects[0].footprint,
+    strideOverride: null,
+    strideOverrideSourceVerified: false,
+    strideOverridePlacementSemanticsVerified: false,
+  };
+  assert.equal(getNativeFootprintComputedStride(
+    createWorldCatalog(rawNull), 40000001, 3).nativeComputedStride, 1);
+  const rawZero = fixture();
+  rawZero.manifest.gameVersion = '1.26.1';
+  rawZero.objects[0].footprint = {
+    ...rawZero.objects[0].footprint,
+    strideOverride: 0,
+    strideOverrideSourceVerified: true,
+    nativeWireFields: {strideOverride: '6.5'},
+    strideOverridePlacementSemanticsVerified: false,
+  };
+  assert.equal(getNativeFootprintComputedStride(
+    createWorldCatalog(rawZero), 40000001, 3).nativeComputedStride, 0);
+  const rawSigned = fixture();
+  rawSigned.manifest.gameVersion = '1.26.1';
+  rawSigned.objects[0].footprint = {
+    ...rawSigned.objects[0].footprint,
+    strideOverride: 2147483647,
+    strideOverrideSourceVerified: true,
+    nativeWireFields: {strideOverride: '6.5'},
+    strideOverridePlacementSemanticsVerified: false,
+  };
+  assert.equal(getNativeFootprintComputedStride(
+    createWorldCatalog(rawSigned), 40000001, 2).nativeComputedStride, -2);
+
+  // Legacy snapshots never extracted field 6.5. Missing is not NULL.
+  const legacy = fixture();
+  legacy.manifest.gameVersion = '1.26.1';
+  const unknown = getNativeFootprintComputedStride(
+    createWorldCatalog(legacy), 40000001, 2);
+  assert.equal(unknown.status, 'legacy_snapshot_stride_source_unavailable');
+  assert.equal(unknown.nativeComputedStride, undefined);
+  assert.equal(unknown.nativeStrideCalculationVerified, false);
+  const unsupported = getNativeFootprintComputedStride(
+    createWorldCatalog(fixture()), 40000001, 2);
+  assert.equal(unsupported.status, 'native_stride_not_verified_for_game_version');
+  assert.equal(unsupported.nativeComputedStride, undefined);
+  for (const factor of [0, -1, 257, false, 1.5]) {
+    assert.throws(() => getNativeFootprintComputedStride(
+      catalog, 40000001, factor), /stride caller grid factor/);
   }
 });
 

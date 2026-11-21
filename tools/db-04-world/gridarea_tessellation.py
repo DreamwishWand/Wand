@@ -37,6 +37,10 @@ SOURCE_METHODS = (
      "b846c804ed1f0b469012d33ed9a1a1e9caddd6fbf2b1a3196ebf18559dbf9ead"),
     ("GridArea.TryGetGridLocalPosition", 0x3923BB0, 0x3923D79,
      "e93c5fb29af0e647e1fa0b3443f3e0b5be2cdea3b48e79643c4bfd453ffe0fab"),
+    ("GridArea.GetStrideFor(instance)", 0x39241A0, 0x3924200,
+     "7178291ab336a2e05631763003c7d1c016779ff6f69eb69697b4184b0e99abce"),
+    ("GridArea.GetStrideFor(static)", 0x3924200, 0x392426C,
+     "8768912978fad51027cbe0938a5fa2570d855b046e3bb20acaa6197ecd9f651f"),
 )
 GETGRIDAREA_UNWIND = (
     (0x38FA210, 0x38FA271),
@@ -49,6 +53,10 @@ TRYGET_UNWIND = (
     (0x3923C87, 0x3923D79),
 )
 MAX_GRID_FACTOR = 256
+STRIDE_METHOD_UNWIND = (
+    (0x39241A0, 0x3924200),
+    (0x3924200, 0x392426C),
+)
 MAX_I32 = 0x7fffffff
 
 
@@ -63,7 +71,7 @@ def verify_original_item_gridarea_tessellation(game_assembly) -> dict:
     records, _, pdata_sha = read_pe_runtime_functions(path)
     regions = {(start, end) for start, end, _ in records}
     if any(pair not in regions for pair in
-           GETGRIDAREA_UNWIND + TRYGET_UNWIND):
+           GETGRIDAREA_UNWIND + TRYGET_UNWIND + STRIDE_METHOD_UNWIND):
         raise ValueError("original GridArea tessellation source unwind mismatch")
     sections = pe64_sections(path)
     with path.open("rb") as binary:
@@ -87,9 +95,49 @@ def verify_original_item_gridarea_tessellation(game_assembly) -> dict:
         "itemFactoryRouteVerified": True,
         "otherFactoryRoutesVerified": False,
         "callerGridTessellationFactorInferred": False,
+        "nativeStrideCalculationMethodBodiesVerified": True,
         "gridObjectAnchorVerified": False,
         "occupancyPredicateVerified": False,
         "placementLegalityVerified": False,
+    }
+
+
+def source_gridarea_computed_stride(stride_override, grid_factor: int,
+                                   *, source_record_complete: bool = True) -> dict:
+    """Original GridArea.GetStrideFor: null -> 1, value -> int32(value*factor).
+
+    A missing property in a *legacy snapshot* is not evidence of a nullable
+    null, hence source_record_complete must be supplied explicitly.
+    This is a raw source calculation, NOT placement validity or occupancy.
+    """
+    if (type(grid_factor) is not int or not 1 <= grid_factor <= MAX_GRID_FACTOR
+            or type(source_record_complete) is not bool or
+            (stride_override is not None and
+             (type(stride_override) is not int or not
+              -0x80000000 <= stride_override <= 0x7fffffff))):
+        raise ValueError("invalid original GridArea nullable stride/grid factor")
+    base = {
+        "callerGridTessellationFactor": grid_factor,
+        "strideOverride": stride_override,
+        "callerGridFactorExplicitlyProvided": True,
+        "callerGridFactorProvenanceVerified": False,
+        "sourceFactoryRoutePerRecordVerified": False,
+        "strideOverridePlacementSemanticsVerified": False,
+        "gridObjectAnchorVerified": False,
+        "occupancyPredicateVerified": False,
+        "placementLegalityVerified": False,
+    }
+    if not source_record_complete:
+        return {**base, "status": "legacy_snapshot_stride_source_unavailable",
+                "nativeStrideCalculationVerified": False}
+    value = 1 if stride_override is None else (
+        (stride_override * grid_factor + 0x80000000) & 0xffffffff) - 0x80000000
+    return {
+        **base,
+        "status": "source_correlated_gridarea_get_stride_for",
+        "nativeComputedStride": value,
+        "nativeStrideCalculationVerified": True,
+        "sourceGameVersion": "1.26.1",
     }
 
 

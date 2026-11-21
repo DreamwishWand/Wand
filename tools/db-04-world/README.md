@@ -667,6 +667,53 @@ record identities remain private; only aggregate source counts are
 documented. Older verified snapshots without this field are accepted
 without fabricating a native value.
 
+### Original native GetStrideFor arithmetic (source-only, no placement claim)
+
+Beyond merely preserving the optional GridAreaData.StrideOverride field,
+original Steam 1.26.1 function bodies confirm the read-only **integer
+calculation** performed by GridArea.GetStrideFor:
+
+- Instance method: token 0x0600344F, PE RVA 0x39241A0–0x3924200,
+  96 original bytes, SHA-256
+  7178291ab336a2e05631763003c7d1c016779ff6f69eb69697b4184b0e99abce
+- Static nullable overload: token 0x06003450, PE RVA
+  0x3924200–0x392426C, 108 original bytes, SHA-256
+  8768912978fad51027cbe0938a5fa2570d855b046e3bb20acaa6197ecd9f651f
+
+Both methods have exact original PE64 .pdata function start/end ranges.
+The instance method forwards its GridArea.StrideOverride and the caller
+grid factor to the static method. The static code tests nullable
+HasValue; if absent, it returns **1**, regardless of the grid factor.
+If present, it returns **signed int32 product
+StrideOverride.Value * callerGridTessellationFactor** (native IMUL
+overflow wraps).
+
+This is now exposed through Python
+source_gridarea_computed_stride(stride_override, grid_factor,
+source_record_complete=True) and the read-only browser API:
+
+~~~js
+const s = getNativeFootprintComputedStride(
+  catalog, itemId, callerGridFactor);
+const linked = getNativeDefaultLayoutObjectComputedStride(
+  catalog, originalLayoutObjectId);
+~~~
+
+The latter obtains a Grid factor from a UNIQUE source default
+GridCollection/Grid ID (see preceding section) and records
+callerGridFactorProvenanceVerified:true. It is not evidence of
+the factor in a current save. Source code is version-pinned to Steam
+1.26.1.
+
+Legacy snapshots with no strideOverride property **cannot be treated
+as a source-confirmed nullable null** and yield
+legacy_snapshot_stride_source_unavailable instead of a numeric result.
+The APIs distinguish nativeStrideCalculationVerified:true from
+strideOverridePlacementSemanticsVerified:false. Knowing the number
+returned by GetStrideFor does **not** establish the rules under which
+the game checks an object position, flags actual occupied cells or
+authorizes an edit. All related permission and anchor flags stay false.
+
 ## Original item GridArea tessellation path and explicit caller-grid factor
 
 New Steam v1.26.1 original-source evidence resolves the difference between
