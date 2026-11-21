@@ -1,3 +1,5 @@
+**Condition AST:** [`CONDITION-AST.md`](CONDITION-AST.md) documents 87 source-defined condition kinds, nested AND/OR/NOT semantics and typed character/scene/common-condition references. The private `database/condition-ast.json` index is static and read-only; it does not prove live availability, progress, or automatic prerequisites.
+
 **Source-aware diffs:** [`VERSION-DIFF.md`](VERSION-DIFF.md) documents conservative `version_diff.py`: missing native source never means deleted game content; the comparison covers versioned quest/character/event families, default rewards, and static ProtoDB definitions, using native wire fingerprints and exact source localization. `diff.json` explicitly reports `comparedFamilies` and `uncomparedFamilies`.
 
 **Mission item selectors:** [`MISSION-ITEM-TARGETS.md`](MISSION-ITEM-TARGETS.md) documents source-typed `mission_items.py` and `database/item-objective-links.json` (fixed items, alternatives, dynamic filters and source-configured amounts/ranges). A selector candidate is **not** a guarantee the item is required; SRC-01 ID membership is partial and not independently verified across game versions.
