@@ -9,6 +9,33 @@ This compiler consumes existing SRC-01 private extractions and the committed Swi
 - Existing Switch 1.25.0 `static/ddv/collection/v1.25/index.json` plus 18 checksum-verified shards (12,552 records).
 - Existing private `format-probe.json` (35 more itemlist files: 34 sample-probed definition containers, one verified empty `ItemCondition.json`). `extend1262.py` verifies original source hashes against this probe and decodes raw native definitions; field semantics beyond the specifically observed ID/key strings stay unclassified.
 
+## Recover fully embedded source files before requesting PC work
+
+The private `format-probe.json` already embeds the entire original bytes for six small
+Steam 1.26.2 itemlist source files (BoardGame, Currency, Display, Environment,
+PhotoMode, Profession). Unlike the larger 28 nonempty files, these can be
+SHA-256-verified and decoded without asking the owner to run another Windows command.
+`ItemCondition.json` is additionally verified empty. Run:
+
+```powershell
+py -3 tools/src-01-items/probe_complete.py --probe "D:\WandData\SRC-01\Steam-v1.26.2\format-probe.json" --out "D:\WandData\SRC-01\Steam-v1.26.2-probe-complete"
+```
+
+The generated `definitions.jsonl`, `manifest.json`, `report.json`, and `unresolved.json`
+are private, source-derived data. `manifest.json` uses `wand.src01.extended@1`,
+marks remaining 28 source types explicitly unresolved and records full SHA-256
+checks for all recovered files. This is a **partial extended** dataset: names
+stay null because the actual eight LocDB archives were not supplied; field-4
+GUIDs are only candidates. Pass the folder to `--extended` in the DB-01 builder.
+After the original full itemlists become available, replace the partial extended
+folder with output of `extend1262.py` (do not merge duplicate IDs).
+
+The DB-01 builder rejects unlocalized source rows with claimed official names,
+requires exact per-locale LocDB archive/member provenance for populated names,
+and checks extended source/category hashes and counts. Input manifest hashes
+are part of the incremental build key, so changes to name provenance invalidate
+previous cached outputs even if item contents are unchanged.
+
 ## Extended definitions (only if original Steam game files are available)
 
 ```powershell

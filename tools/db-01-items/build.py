@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import tempfile
 from collections import Counter
 from datetime import datetime, timezone
@@ -16,6 +17,14 @@ LOCALES = ("en", "fr", "it", "de", "es-ES", "ja", "zh-CN", "pt-BR")
 REFERENCE_LOCALES = ("EN", "FR", "IT", "DE", "ES-ES", "JA", "ZH-CN", "PT-BR")
 NATIVE_CATEGORIES = frozenset(("ActivityItem", "Furniture", "Clothing", "Trimming"))
 MAX_ID = 2**53 - 1
+HASH = re.compile(r"[0-9a-f]{64}\Z")
+GUID = re.compile(r"guid:[0-9a-f]{32}\Z")
+LOCALE_ARCHIVES = {"en": "en-US", "fr": "fr", "it": "it", "de": "de",
+                   "es-ES": "es", "ja": "ja", "zh-CN": "zh-CN", "pt-BR": "pt-BR"}
+
+
+def valid_hash(value):
+    return isinstance(value, str) and HASH.fullmatch(value) is not None
 
 
 def digest(path):
@@ -155,10 +164,15 @@ def load_native(source):
         raise ValueError("DUPLICATE_NATIVE_SOURCE")
     for row in native:
         file = row.get("source", {})
-        if row.get("nativeCategory") not in NATIVE_CATEGORIES or \
-                file.get("platform") != "Steam" or file.get("gameVersion") != manifest["gameVersion"] or \
-                file.get("file") not in source_files or not isinstance(row.get("rawNameField"), str) or \
-                not row["rawNameField"] or not isinstance(row.get("iconGuid"), str):
+        category = row.get("nativeCategory")
+        expected_file = f"ddv_Data/StreamingAssets/itemlist/{category}.json"
+        if category not in NATIVE_CATEGORIES or file.get("platform") != "Steam" or \
+                file.get("gameVersion") != manifest["gameVersion"] or file.get("file") != expected_file or \
+                not valid_hash(source_files.get(expected_file)) or \
+                not isinstance(row.get("rawNameField"), str) or not row["rawNameField"] or \
+                not isinstance(row.get("iconGuid"), str) or GUID.fullmatch(row["iconGuid"]) is None or \
+                not isinstance(row.get("names"), dict) or set(row["names"]) != set(LOCALES) or \
+                any(value is not None for value in row["names"].values()):
             raise ValueError(f"UNTRUSTED_NATIVE_ROW:{row.get('itemId')}")
     localized_manifest_path = source / "localization-manifest.json"
     localized_path = source / "items-localized.jsonl"
@@ -183,12 +197,30 @@ def load_native(source):
                                      ("nativeCategory", "rawNameField", "iconGuid", "source")) or \
                     row.get("localizationKey") != row["rawNameField"] + "_DisplayName" or \
                     set(row.get("names", {})) != set(LOCALES) or \
-                    any(v is not None and not isinstance(v, str) for v in row["names"].values()):
+                    any(v is not None and (not isinstance(v, str) or not v.strip())
+                        for v in row["names"].values()):
                 raise ValueError(f"LOCALIZATION_ROW_MISMATCH:{row['itemId']}")
+            for locale, value in row["names"].items():
+                if value is None:
+                    continue
+                archive = localization.get("localizationEvidence", {}).get(locale, {})
+                evidence = archive.get("categories", {}).get(row["nativeCategory"], {})
+                if archive.get("archive") != f"LocDB_{LOCALE_ARCHIVES[locale]}.zip" or \
+                        not valid_hash(archive.get("sha256")) or \
+                        evidence.get("entry") != f"{row['nativeCategory']}.locbin" or \
+                        not valid_hash(evidence.get("entrySha256")):
+                    raise ValueError(f"LOCALIZATION_EVIDENCE_MISSING:{row['itemId']}:{locale}")
+        actual_any = sum(any(v is not None for v in row["names"].values()) for row in localized)
+        actual_all = sum(all(v is not None for v in row["names"].values()) for row in localized)
+        if (localization.get("localizedAtLeastOneCount") != actual_any or
+                localization.get("localizedAllEightCount") != actual_all):
+            raise ValueError("LOCALIZATION_MANIFEST_COUNT_MISMATCH")
         native = localized
     return native, {"nativeManifest": manifest, "nativeHash": digest(path),
+                    "nativeManifestHash": digest(source / "manifest.json"),
                     "localizationManifest": localization,
                     "localizationHash": digest(localized_path) if localization else None,
+                    "localizationManifestHash": digest(localized_manifest_path) if localization else None,
                     "sourceHashes": source_files}
 
 
@@ -203,12 +235,52 @@ def load_extended(folder, game_version):
     rows = list(json_lines(data_path))
     if len(rows) != manifest.get("definitionCount"):
         raise ValueError("EXTENDED_COUNT_MISMATCH")
+    categories = manifest.get("categories", {})
+    if not isinstance(categories, dict) or not categories or not valid_hash(manifest.get("probeSha256")):
+        raise ValueError("EXTENDED_CATEGORY_MANIFEST_MISSING")
+    counted = Counter()
     for row in rows:
         src = row.get("source", {})
+        category = row.get("nativeCategory")
+        filename = f"{category}.json"
+        category_meta = categories.get(filename, {})
+        expected_file = f"ddv_Data/StreamingAssets/itemlist/{filename}"
         if src.get("platform") != "Steam" or src.get("gameVersion") != game_version or \
-                not src.get("file") or not src.get("sha256") or not row.get("nativeCategory"):
+                src.get("file") != expected_file or src.get("sha256") != category_meta.get("sha256") or \
+                category_meta.get("source") != expected_file or \
+                category_meta.get("status") != "native_wire_verified" or \
+                not valid_hash(src.get("sha256")) or \
+                row.get("iconGuid") is not None or \
+                not isinstance(row.get("names"), dict) or set(row["names"]) != set(LOCALES) or \
+                (row.get("localizationKey") is not None and not (
+                    isinstance(row["localizationKey"], str) and
+                    row["localizationKey"].startswith(category + ".") and
+                    row["localizationKey"].endswith("_DisplayName"))):
             raise ValueError(f"UNTRUSTED_EXTENDED_ROW:{row['itemId']}")
-    return rows, {"manifest": manifest, "hash": digest(data_path)}
+        for locale, name in row["names"].items():
+            if name is None:
+                continue
+            if not isinstance(name, str) or not name.strip() or not row.get("localizationKey"):
+                raise ValueError(f"EXTENDED_NAME_INVALID:{row['itemId']}:{locale}")
+            archives = manifest.get("localizationEvidence", {})
+            archive = archives.get(locale, {})
+            member = archive.get("members", {}).get(category, {})
+            if archive.get("archive") != f"LocDB_{LOCALE_ARCHIVES[locale]}.zip" or \
+                    not valid_hash(archive.get("sha256")) or \
+                    member.get("entry") != f"{category}.locbin" or \
+                    not valid_hash(member.get("entrySha256")):
+                raise ValueError(f"EXTENDED_LOCALIZATION_EVIDENCE_MISSING:{row['itemId']}:{locale}")
+        counted[filename] += 1
+    for filename, category_meta in categories.items():
+        if category_meta.get("status") == "verified_empty":
+            if counted[filename] != 0 or category_meta.get("count") != 0:
+                raise ValueError(f"EXTENDED_EMPTY_CATEGORY_MISMATCH:{filename}")
+        elif category_meta.get("status") != "native_wire_verified" or \
+                not valid_hash(category_meta.get("sha256")) or \
+                counted[filename] != category_meta.get("count"):
+            raise ValueError(f"EXTENDED_CATEGORY_COUNT_MISMATCH:{filename}")
+    return rows, {"manifest": manifest, "hash": digest(data_path),
+                  "manifestHash": digest(folder / "manifest.json")}
 
 
 def normalized(row, original, evidence, *, domain):
@@ -245,9 +317,13 @@ def build(source, reference, output, extended=None, force=False):
     native, meta = load_native(source)
     previous, reference_meta = reference_collection(reference)
     extra, extra_meta = load_extended(extended, meta["nativeManifest"]["gameVersion"])
-    inputs = {"native": meta["nativeHash"], "localized": meta["localizationHash"],
+    inputs = {"native": meta["nativeHash"], "nativeManifest": meta["nativeManifestHash"],
+              "localized": meta["localizationHash"],
+              "localizationManifest": meta["localizationManifestHash"],
               "referenceIndex": reference_meta["indexSha256"],
-              "extended": extra_meta["hash"] if extra_meta else None, "schema": SCHEMA}
+              "extended": extra_meta["hash"] if extra_meta else None,
+              "extendedManifest": extra_meta["manifestHash"] if extra_meta else None,
+              "schema": SCHEMA}
     build_key = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
     manifest_path = output / "manifest.json"
     if not force and manifest_path.is_file():

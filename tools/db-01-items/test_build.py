@@ -66,6 +66,89 @@ class TestDb01(unittest.TestCase):
             (out / "diff.json").write_text("{}")
             self.assertEqual(module.build(native, old, out)["status"], "built")
 
+    def test_unlocalized_native_names_must_remain_null(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            native, old, out = make_fixture(Path(tmp))
+            rows = list(module.json_lines(native / "items.jsonl"))
+            rows[0]["names"]["en"] = "Unverified invented label"
+            module.save_jsonl(native / "items.jsonl", rows)
+            manifest = module.read_json(native / "manifest.json")
+            manifest["itemsSha256"] = module.digest(native / "items.jsonl")
+            write_json(native / "manifest.json", manifest)
+            with self.assertRaisesRegex(ValueError, "UNTRUSTED_NATIVE_ROW"):
+                module.build(native, old, out)
+
+    def test_localized_names_require_exact_archive_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            native, old, out = make_fixture(Path(tmp))
+            rows = list(module.json_lines(native / "items.jsonl"))
+            for row in rows:
+                row["localizationKey"] = row["rawNameField"] + "_DisplayName"
+            rows[0]["names"]["ja"] = "アメジスト"
+            module.save_jsonl(native / "items-localized.jsonl", rows)
+            manifest = {"schema": "wand.src01.localized-names@1", "gameVersion": "1.26.2",
+                        "platform": "Steam", "sourceItemSha256": module.digest(native / "items.jsonl"),
+                        "itemsSha256": module.digest(native / "items-localized.jsonl"),
+                        "localizedAtLeastOneCount": 1, "localizedAllEightCount": 0,
+                        "localizationEvidence": {}}
+            write_json(native / "localization-manifest.json", manifest)
+            with self.assertRaisesRegex(ValueError, "LOCALIZATION_EVIDENCE_MISSING"):
+                module.build(native, old, out)
+            manifest["localizationEvidence"] = {
+                "ja": {"archive": "LocDB_ja.zip", "sha256": "a" * 64,
+                       "categories": {"ActivityItem": {"entry": "ActivityItem.locbin",
+                                                    "entrySha256": "b" * 64}}}}
+            write_json(native / "localization-manifest.json", manifest)
+            self.assertEqual(module.build(native, old, out)["status"], "built")
+            normalized = list(module.json_lines(out / "items.jsonl"))
+            self.assertEqual(normalized[0]["verification"]["names"]["ja"], "exact_locdb_join")
+            self.assertEqual(module.build(native, old, out)["status"], "unchanged")
+            manifest["localizationEvidence"]["ja"]["categories"]["ActivityItem"]["entrySha256"] = "c" * 64
+            write_json(native / "localization-manifest.json", manifest)
+            self.assertEqual(module.build(native, old, out)["status"], "built")
+
+    def test_extended_provenance_and_unverified_names(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            native, old, out = make_fixture(Path(tmp))
+            ext = Path(tmp) / "extended"
+            ext.mkdir()
+            sha = "c" * 64
+            row = {"itemId": 110000001, "nativeCategory": "Tool", "rawNameField": "Shovel",
+                   "localizationKey": "Tool.Shovel_DisplayName",
+                   "names": dict.fromkeys(module.LOCALES), "iconGuid": None,
+                   "imageGuidField4Candidate": "guid:" + "e" * 32,
+                   "source": {"platform": "Steam", "gameVersion": "1.26.2",
+                              "file": "ddv_Data/StreamingAssets/itemlist/Tool.json", "sha256": sha}}
+            module.save_jsonl(ext / "definitions.jsonl", [row])
+            meta = {"schema": "wand.src01.extended@1", "gameVersion": "1.26.2",
+                    "platform": "Steam", "definitionCount": 1, "probeSha256": "b" * 64,
+                    "itemsSha256": module.digest(ext / "definitions.jsonl"),
+                    "categories": {"Tool.json": {"count": 1, "status": "native_wire_verified",
+                         "sha256": sha, "source": "ddv_Data/StreamingAssets/itemlist/Tool.json"}},
+                    "localizationEvidence": {}, "unresolvedCategories": ["Building"]}
+            write_json(ext / "manifest.json", meta)
+            self.assertEqual(module.build(native, old, out, ext)["additionalDefinitionRecords"], 1)
+            extra = list(module.json_lines(out / "items.jsonl"))[-1]
+            self.assertEqual(extra["catalogDomain"], "definition_unclassified")
+            self.assertIsNone(extra["image"]["iconGuid"])
+            row["names"]["en"] = "Shovel"
+            module.save_jsonl(ext / "definitions.jsonl", [row])
+            meta["itemsSha256"] = module.digest(ext / "definitions.jsonl")
+            write_json(ext / "manifest.json", meta)
+            with self.assertRaisesRegex(ValueError, "LOCALIZATION_EVIDENCE_MISSING"):
+                module.build(native, old, out, ext)
+            meta["localizationEvidence"] = {"en": {"archive": "LocDB_en-US.zip",
+                "sha256": "d" * 64, "members": {"Tool": {"entry": "Tool.locbin",
+                                                        "entrySha256": "e" * 64}}}}
+            write_json(ext / "manifest.json", meta)
+            self.assertEqual(module.build(native, old, out, ext)["additionalDefinitionRecords"], 1)
+            row["source"]["sha256"] = "f" * 64
+            module.save_jsonl(ext / "definitions.jsonl", [row])
+            meta["itemsSha256"] = module.digest(ext / "definitions.jsonl")
+            write_json(ext / "manifest.json", meta)
+            with self.assertRaisesRegex(ValueError, "UNTRUSTED_EXTENDED_ROW"):
+                module.build(native, old, out, ext)
+
     def test_tampered_shard_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
             native, old, out = make_fixture(Path(tmp))
