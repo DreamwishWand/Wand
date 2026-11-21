@@ -327,8 +327,35 @@ export async function importGuideFolder(files) {
     shardFiles[name] = file;
   }
   assert(Object.keys(shardFiles).length > 0, 'Guide folder has no matching detail shards');
-  return {index, shardFiles, characterNames, groupInfo, matchedShards: Object.keys(shardFiles).length,
-    requiredShards: needed.size};
+
+  // A privately assembled Guide folder may carry original current Condition
+  // files beside guide/. Do not read or trust them here: the caller must
+  // authenticate both raw files through importCurrentGuideConditions.
+  // Only exact sibling paths under this verified quest-search root qualify.
+  const sidecars = new Map();
+  for (const file of files) {
+    const path = typeof file.webkitRelativePath === 'string' && file.webkitRelativePath
+      ? file.webkitRelativePath : file.name;
+    if (!path.startsWith(prefix) || path.slice(prefix.length).includes('/')) continue;
+    const name = path.slice(prefix.length);
+    if (!['condition-native-index-v2.json','condition-native-index-manifest-v2.json',
+          'condition-native-index.json','condition-native-index-manifest.json'].includes(name)) continue;
+    assert(!sidecars.has(name), 'duplicate Guide Condition sidecar: ' + name);
+    sidecars.set(name, file);
+  }
+  const pairs = [
+    ['condition-native-index-v2.json','condition-native-index-manifest-v2.json'],
+    ['condition-native-index.json','condition-native-index-manifest.json']
+  ];
+  for (const [first,second] of pairs) {
+    assert(sidecars.has(first) === sidecars.has(second),
+      'Guide folder contains an incomplete Condition index/manifest pair');
+  }
+  const preferred = pairs.find(([first]) => sidecars.has(first));
+  const currentConditionFiles = preferred
+    ? {indexFile:sidecars.get(preferred[0]), manifestFile:sidecars.get(preferred[1])} : null;
+  return {index, shardFiles, characterNames, groupInfo, currentConditionFiles,
+    matchedShards: Object.keys(shardFiles).length, requiredShards: needed.size};
 }
 
 /** Verify chosen file, native identity and full 64-digit record content digest. */
