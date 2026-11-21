@@ -16,7 +16,7 @@ from collections import Counter
 from pathlib import Path
 
 from verify_bundle import validate_snapshot
-from terrain_codec import describe_native_packing
+from terrain_codec import describe_native_packing, count_packed_palette_indices
 
 SCHEMA = "wand.db04.world@1"
 STREAM = Path("ddv_Data/StreamingAssets")
@@ -494,6 +494,8 @@ def parse_grid_structure(raw):
     packing = (describe_native_packing(x, y, palette, compacted)
                if compacted is not None else {
                    "status": "not_compacted", "decoded": False})
+    palette_counts = (count_packed_palette_indices(x, y, palette, compacted)
+                      if compacted is not None else None)
     return {
         "sizeX": x, "sizeY": y,
         "nativeFloorTypes": floor_types or None,
@@ -503,6 +505,7 @@ def parse_grid_structure(raw):
         "nativeCompactedByteCount": len(compacted) if compacted is not None else None,
         "nativeCompactedSha256": digest(compacted) if compacted is not None else None,
         "terrainDecoding": packing,
+        "nativePaletteIndexCellCounts": palette_counts,
         "nativeFloorIndexToLocalXYCorroborated": packing["decoded"],
         "floorTypeEnumSymbols": {str(value): name for value, name in GRID_FLOOR_TYPES.items()},
         "cellIndexToXYVerified": False,
@@ -518,8 +521,17 @@ def grid_assets(root, sources):
         raw = source_bytes(root, relative, sources)
         try:
             entry = parse_grid_structure(raw)
-        except (ValueError, UnicodeError):
+        except (ValueError, UnicodeError) as error:
+            # Do not silently turn a corrupted/unsupported native GridData
+            # file into a "good" empty grid. Preserve a per-file reason and
+            # exclude it from 2D rendering; do not stop unrelated extraction.
+            reason = str(error)[:160]
             entry = {"status": "unrecognized_binary_structure",
+                     "parseError": reason,
+                     "terrainDecoding": {"status": "parse_failed",
+                                         "decoded": False},
+                     "nativePaletteIndexCellCounts": None,
+                     "nativeFloorIndexToLocalXYCorroborated": False,
                      "cellIndexToXYVerified": False,
                      "compactedBitOrderVerified": False}
         entry.update({
@@ -938,7 +950,13 @@ def extract(game, out, previous=None):
         "sceneCount": len(scenes), "worldCount": len(worlds),
         "areaCount": len(areas), "objectCount": len(objects),
         "withNativeFootprint": sum(row["footprint"] is not None for row in objects),
-        "gridFileCount": len(grids), "layoutFileCount": len(layouts),
+        "gridFileCount": len(grids),
+        "nativeGridDecodeFailures": sum(row["status"] == "unrecognized_binary_structure"
+                                        for row in grids),
+        "nativePackedGridHistogramCount": sum(
+            row.get("nativePaletteIndexCellCounts") is not None
+            for row in grids),
+        "layoutFileCount": len(layouts),
         "defaultLayoutObjectCount": len(layout_objects),
         "typedGridCollectionCount": sum(row["layoutKind"] == "nativeGridCollection"
                                         for row in layouts),
