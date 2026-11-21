@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { GAME_IMAGE_PINS, gameImagePath, gameImageHref } from '../src/lib/collection/game-images.mjs';
+import { GAME_IMAGE_PINS, gameImagePath, gameImageHref } from '../src/lib/collection/game-images.ts';
 
 test('packaged game images retain verified ItemID, size and WebP content digests', async () => {
   assert.equal(Object.keys(GAME_IMAGE_PINS).length, 3);

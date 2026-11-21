@@ -4,7 +4,7 @@ export const GAME_IMAGE_SOURCE = Object.freeze({
   gameVersion: '1.25.3',
   schema: 626
 });
-export const GAME_IMAGE_PINS = Object.freeze({
+export const GAME_IMAGE_PINS:Readonly<Record<string,Readonly<{hash:string;bytes:number}>>> = Object.freeze({
   '40300045': Object.freeze({
     hash: 'be04cf5698b094a1597bac8ceafa9c43d696c4bf75c8be8db2504ce764b58489',
     bytes: 15310
@@ -18,14 +18,14 @@ export const GAME_IMAGE_PINS = Object.freeze({
     bytes: 5796
   })
 });
-export function gameImagePath(itemId) {
+export function gameImagePath(itemId:number|string):string|null {
   const key = String(itemId);
   if (!/^[1-9][0-9]{0,15}$/.test(key)) return null;
   const pin = Object.hasOwn(GAME_IMAGE_PINS, key) ? GAME_IMAGE_PINS[key] : null;
   if (!pin || !/^[a-f0-9]{64}$/.test(pin.hash)) return null;
   return `ddv/item-images/${GAME_IMAGE_VARIANT}/${pin.hash.slice(0,2)}/${pin.hash}.webp`;
 }
-export function gameImageHref(basePath, itemId, sourcePath = '') {
+export function gameImageHref(basePath:string, itemId:number|string, sourcePath:string = ''):string|null {
   const historical = typeof sourcePath === 'string' && /^ddv\/game-thumbnails\/r39\/[0-9a-f]{2}\/[0-9a-f]{64}\.webp$/.test(sourcePath) ? sourcePath : null;
   const path = gameImagePath(itemId) ?? historical;
   if (!path) return null;
