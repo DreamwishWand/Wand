@@ -609,6 +609,18 @@ def extract(game, out, version, platform, item_index=None, previous=None):
              'evaluation': 'not_evaluated_static_source_only',
              'interpretation': 'Preserve AND/OR/NOT; pointers are not automatic prerequisites',
              'records': condition_index})
+        activation_index = [
+            {'missionId': row['id'], 'nativeWireSha256': row['nativeWireSha256'],
+             'sourceFileSha256': row['source']['sha256'],
+             'policies': row['structured']['activationPolicies']}
+            for row in rows['quests'] if row['recordKind'] == 'mission'
+            and any(row['structured']['activationPolicies'].values())
+        ]
+        save(out / 'database' / 'quest-activation-policies.json', {
+            'schema':'wand.db03.quest-activation-policies@1','target':target,
+            'evaluation':'not_evaluated_static_source_only',
+            'interpretation':'Auto-accept, UI unlock and owner selection are separate conditional policies, not prerequisite edges',
+            'records':activation_index})
         save(out / 'database' / 'item-objective-links.json', {
                   'schema': 'wand.db03.item-objective-links@1', 'target': target,
                   'indexCoverage': 'optional_partial_SRC01_membership_only_not_version_verification',
@@ -645,6 +657,10 @@ def extract(game, out, version, platform, item_index=None, previous=None):
                     "decodedObjectiveTypeCount": len({obj["type"]
                         for r in rows["quests"] for step in r.get("structured", {}).get("stepsDetailed", [])
                         for sub in step["subSteps"] for obj in sub["objectives"]}),
+                    "activationPolicyMissions": len(activation_index),
+                    "autoAcceptOptions": sum(len(x['policies']['autoAcceptOptions']) for x in activation_index),
+                    "uiUnlockConditions": sum(len(x['policies']['uiUnlockConditions']) for x in activation_index),
+                    "ownerOverrideBranches": sum(len(x['policies']['ownerOverrides']) for x in activation_index),
                     "conditionAstMissions": len(condition_index),
                     "recognizedConditionKinds": len({node['type']
                         for row in condition_index
