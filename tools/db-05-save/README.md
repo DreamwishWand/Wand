@@ -850,3 +850,45 @@ or Writer/export authorization. Active quest Mission IDs belong to
 the **separate** Mission index and are not DutyAch IDs.
 
 Test: `node --test tests/save-achievement-links.test.mjs`.
+
+
+## Owner-modified saves: achievement observations without corruption claims
+
+The supplied owner save files are **not guaranteed to be pristine game saves**.
+Mission-related objects, quests and saved references may have been intentionally
+deleted or changed. A field's absence in these samples is NOT evidence that
+the original game omits that field, that it has a default value, that an
+achievement is incomplete, or that the edited save is corrupt.
+
+`data/ddv/save/achievement-observation-fields.v1.json` records seven
+source-backed native `AchievementData` members (the numeric ID,
+`CurAmount`, `ClaimedRewardMilestone`, opaque `State`, repeated
+`TypesCollected`, repeated `ItemsUsed`, and `MaxAmount`). Names and
+JSON type expectations are sourced from the previously verified
+Steam v1.26.2 archived native IL2CPP metadata, cross-referenced to
+the observed 626/643 save shapes. These field names do **not** establish
+state-machine semantics or real completion thresholds.
+
+`inspectSaveAchievementProgress(decoded, {maxRecords})` is a separate
+read-only observation API. It accepts already-strictly-decoded save
+objects, checks only the minimal GameInfo/Player/World root, and returns
+anonymous counts for present/absent native field kinds. Native `int` is
+counted within the signed 32-bit range; opaque State enum strings are
+not decoded, and repeated int arrays are inspected only to bounded depth
+(256 achievements, 128 elements per repeated array by default). Missing
+individual achievement fields, `World.MissionSlots`, QuestInfo, or
+mission-related world objects are **never automatically restored** or
+interpreted as corruption. Unknown user fields are untouched.
+
+An unexpected native kind is reported as an *observed type difference*,
+not a determination that a modified save is broken. The result never
+includes actual saved IDs, personal names, private map keys, enum values,
+progress amounts, timestamps, item values or proprietary game source.
+Progress, completion, entitlement, save integrity, Codec round-trip,
+Writer and export remain **unverified/disabled**. The original source
+must be independently confirmed before treating an observed native
+field as required game behavior.
+
+Regression: `node --test tests/save-achievement-progress.test.mjs`
+(synthetic modified 626/643 saves, deleted mission branches, unknown enum
+strings, unexpected kinds, bounded observations and privacy checks).
