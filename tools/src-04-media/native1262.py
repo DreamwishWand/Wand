@@ -8,7 +8,7 @@ import importlib.util
 import json
 import re
 import sys
-from collections import Counter, defaultdict
+from collections import defaultdict
 from pathlib import Path
 
 from media import digest, generate_variant, save_json
@@ -113,6 +113,16 @@ def catalog_probe(game, output, item_index):
     save_json(output / "evidence" / "catalog-probe.json", info)
 
 
+def cached_outputs_ok(output, record, verify_existing=False):
+    for variant in record.get("variants", {}).values():
+        candidate = output / variant["path"]
+        if not candidate.is_file() or candidate.stat().st_size != variant.get("bytes"):
+            return False
+        if verify_existing and digest(candidate) != variant.get("sha256"):
+            return False
+    return bool(record.get("variants"))
+
+
 def ref_of(obj):
     asset_file = str(getattr(getattr(obj, "assets_file", None), "name", ""))
     return (asset_file, str(obj.path_id))
@@ -182,7 +192,8 @@ def process_bundle(game, output, path, item_index, keep_originals=False, verify_
     content_sha = digest(path)
     checkpoint = output / "bundles" / (content_sha + ".json")
     old = json.loads(checkpoint.read_text(encoding="utf-8")) if checkpoint.is_file() else {}
-    if old.get("complete") and old.get("containerSha256") == content_sha and not verify_existing:
+    if old.get("complete") and old.get("containerSha256") == content_sha and all(
+            cached_outputs_ok(output, image, verify_existing) for image in old.get("images", [])):
         return old
     old_by_asset = {row["assetId"]: row for row in old.get("images", [])}
     records = []
@@ -198,9 +209,8 @@ def process_bundle(game, output, path, item_index, keep_originals=False, verify_
         asset_file, object_id = ref_of(obj)
         native_id = f"unity:{content_sha}:{asset_file}:{object_id}:{kind}"
         previous = old_by_asset.get(native_id)
-        if previous and not verify_existing:
-            if all((output / meta["path"]).is_file()
-                   for meta in previous.get("variants", {}).values()):
+        if previous:
+            if cached_outputs_ok(output, previous, verify_existing):
                 records.append(previous)
                 continue
         try:
@@ -249,6 +259,10 @@ def process_bundle(game, output, path, item_index, keep_originals=False, verify_
         except Exception as exc:
             issues.append({"type": "decode_error", "assetId": native_id,
                            "error": str(exc)[:300]})
+        if (len(records) + len(issues)) % 100 == 0:
+            save_json(checkpoint, {"schema": SCHEMA, "containerPath": relative,
+                      "containerSha256": content_sha, "complete": False,
+                      "images": records, "issues": issues, "publicationApproved": False})
     info = {"schema": SCHEMA, "containerPath": relative, "containerSha256": content_sha,
             "complete": True, "decodedNew": decoded, "images": records,
             "issues": issues, "publicationApproved": False}
@@ -256,31 +270,24 @@ def process_bundle(game, output, path, item_index, keep_originals=False, verify_
     return info
 
 
-def combined(output, item_index, items_sha, candidates, selected, error_details, verify_existing):
+def combined(output, item_index, items_sha, candidates, selected, checkpoints, error_details):
     by_item = defaultdict(list)
     by_guid = defaultdict(list)
     all_images = []
     all_issues = list(error_details)
-    failed = []
     for path in selected:
-        if path in failed:
+        if path not in checkpoints:
             continue
-        matching = list((output / "bundles").glob("*.json"))
-        # Index only completed checkpoints whose canonical game-relative path matches.
-        for record_path in matching:
-            record = json.loads(record_path.read_text(encoding="utf-8"))
-            if record.get("containerPath") != path:
-                continue
-            if not record.get("complete"):
-                continue
-            for image in record.get("images", []):
-                all_images.append(image)
-                for item in image.get("itemIds", []):
-                    by_item[item].append(image)
-                for guid in image.get("exactGuids", []):
-                    by_guid[guid].append(image)
-            all_issues.extend(record.get("issues", []))
-            break
+        record = checkpoints[path]
+        if not record.get("complete") or record.get("containerPath") != path:
+            continue
+        for image in record.get("images", []):
+            all_images.append(image)
+            for item in image.get("itemIds", []):
+                by_item[item].append(image)
+            for guid in image.get("exactGuids", []):
+                by_guid[guid].append(image)
+        all_issues.extend(record.get("issues", []))
     item_manifest = {}
     ambiguous = {}
     for item, images in by_item.items():
@@ -346,10 +353,13 @@ def main():
             raise ValueError("No generated icon bundles found; do not scan unrelated game files.")
         selected = candidates[:options.limit_bundles] if options.limit_bundles else candidates
         errors = []
+        checkpoints = {}
         for count, path in enumerate(selected, 1):
+            relative = path.relative_to(game).as_posix()
             try:
                 result = process_bundle(game, output, path, index,
                                         options.keep_originals, options.verify_existing)
+                checkpoints[relative] = result
                 print(f"[{count}/{len(selected)}] {path.name}: {len(result['images'])} images", flush=True)
             except Exception as exc:
                 errors.append({"type": "bundle_error", "bundle": path.name, "error": str(exc)[:300]})
@@ -357,7 +367,7 @@ def main():
         report = combined(output, index, items_sha,
                           [p.relative_to(game).as_posix() for p in candidates],
                           [p.relative_to(game).as_posix() for p in selected],
-                          errors, options.verify_existing)
+                          checkpoints, errors)
         print(json.dumps({key: report[key] for key in
               ["candidateBundleCount", "extractedImages", "matchedItems",
                "matchedUniqueGuids", "unmatchedGuidCount", "complete"]}))
