@@ -694,3 +694,52 @@ save is used in public CI. Success authorizes read-only
 diagnostics **only**; it does not prove byte-for-byte
 re-encoding, unmodified unknown-field preservation,
 ownership/entitlements, or safe editing.
+
+## Native Rust reference graph and WASM build (read-only, 2026-11-21)
+
+`crates/ddv-save-schema/src/reference_graph.rs` now uses the *same
+versioned* public `data/ddv/save/reference-relations.v1.json`
+manifest as `src/lib/save/references.mjs`. Its function
+`inspect_references(&serde_json::Value)` checks all **14** internal
+save ID relations (container, grid, object-map identity;
+storage/subgrid links; house, building, village and island grid links).
+The JSON-only boundary `probe_save_references_json(decoded_json)`
+returns a **fixed redacted result** containing 14 public rule
+templates, aggregate counts and statuses. It never emits actual
+map keys, numeric save IDs, account fields or raw values.
+
+The scan caps each map/array to **4096** children and each
+individual traversal to **65,536** visited nodes, including
+intermediate nodes, to protect against deeply nested structures.
+Partial work is marked `sampled_inconclusive`.
+Missing destination indexes report `insufficient_evidence`,
+not fabricated dangling or corrupt references. Grid ID `0`
+is allowed. Any anomalies are *diagnostics*, not an assertion
+that a save is invalid.
+
+`Cargo.toml` enables `wasm` as an **optional** feature using
+`wasm-bindgen`. CI now runs both native Rust unit tests and a
+`wasm32-unknown-unknown` release build, verifying a
+`ddv_save_schema.wasm` exists. These prove Rust compilation
+and availability of a WASM-compatible read-only entrypoint;
+**they do not install/ship the generated JS binding glue,
+integrate the browser Worker, or replace the JavaScript P1G
+decoder yet**. All site diagnostics continue to use the
+existing safe JS reader until the WASM runtime is separately
+integrated and verified.
+
+Native unit tests use synthetic schema 626/643 documents and
+verify ID-key consistency, zero IDs, missing target indexes,
+nonmatching IDs, bounded maps, input immutability, and no
+private ID leaks in JSON output. These tests do not compare
+original save bytes, verify Codec roundtrips, or certify any
+Writer/export functionality. `referenceClosureVerified=false`,
+`writerAuthorized=false`, `exportAuthorized=false` remain
+mandatory.
+
+`serde_json::from_str` in the standalone WASM entrypoint is
+**not** a replacement for the strict duplicate-key,
+unsafe-number, ZIP/CRC or P1G validation currently owned
+by the JavaScript Codec. A future browser/WASM integration
+must keep the strict Codec boundary and parity-test Rust
+against the existing JS reference observations.
