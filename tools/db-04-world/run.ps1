@@ -67,11 +67,13 @@ if ($Il2CppDumpPath) {
     # Reject a dump that maps into the interiors of other PE unwind functions
     # before creating any private snapshot output or running game extraction.
     Write-Host "DB-04: checking original GameAssembly PE64 unwind function starts"
-    & $python @pythonPrefix (Join-Path $PSScriptRoot "pe_unwind.py") @(
+    $peAuditArgs = @(
+        (Join-Path $PSScriptRoot "pe_unwind.py"),
         "--game-root", $GameRoot,
         "--dump-cs", $dumpFile,
         "--dump-game-version", $Il2CppDumpGameVersion
     )
+    & $python @pythonPrefix @peAuditArgs
     if ($LASTEXITCODE -ne 0) {
         throw "Original IL2CPP method RVAs cannot be corroborated against PE unwind starts"
     }
