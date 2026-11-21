@@ -1,3 +1,5 @@
+**Additional archived catalogue:** [`PROTO-DB-GUIDE-CATALOG.md`](PROTO-DB-GUIDE-CATALOG.md) documents source-typed mini events, floating festivals and expansion definitions (no live availability or DLC entitlement claims).
+
 # DB-03 — static ProtoDB Guide definitions
 
 Steam v1.26.1 ships `ddv_Data/StreamingAssets/protoDb.bin`, a protobuf-wire collection of typed definitions. `protodb_static.py`, invoked by `native_guide.py` when this file exists, extracts **static** `Definitions.DesignChallengeData` and `Definitions.StarPathFtueConfig` entries. All source bytes stay in the owner's private Game Source Archive; generated definitions stay in private SRC-03 Drive.
