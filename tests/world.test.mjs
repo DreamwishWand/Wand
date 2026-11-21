@@ -905,6 +905,28 @@ test('native default placement records cannot claim verified world positions or 
   assert.throws(() => createWorldCatalog(b), /absent native layout/);
 });
 
+test('browser catalog rejects forged default GridObject map identity', () => {
+  for (const [field, forged] of [
+    ['gridObjectIdNative', 8],
+    ['gridIdNative', 1],
+    ['gridObjectIdNative', -1],
+    ['gridIdNative', 0x100000000],
+    ['layoutObjectId', 'SceneLayouts/Village04/Main.json#grid=0#object=8'],
+  ]) {
+    const data = fixture();
+    data.layoutObjects[0][field] = forged;
+    assert.throws(() => createWorldCatalog(data), /Invalid native default object/,
+      field + ':' + forged);
+  }
+  const data = fixture();
+  data.layoutObjects[0].gridObjectIdNative = 0;
+  data.layoutObjects[0].layoutObjectId =
+    'SceneLayouts/Village04/Main.json#grid=0#object=0';
+  const catalog = createWorldCatalog(data);
+  assert.equal(getDefaultLayoutObjects(catalog, 'SceneLayouts/Village04/Main.json')
+    [0].gridObjectIdNative, 0);
+});
+
 function nativeRoomGrid() {
   // Native source observation (Steam 1.26.1): 12x16 border Floor|Wall,
   // interior Floor. Synthesize wire-compatible index packing without assets.
