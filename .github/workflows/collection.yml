@@ -29,3 +29,4 @@ jobs:
           BASE_PATH: /Wand
       - run: npx playwright install --with-deps chromium
       - run: node browser/collection-smoke.mjs
+      - run: node browser/guide-smoke.mjs
