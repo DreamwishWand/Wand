@@ -1,4 +1,5 @@
 """Game-file backed ProtoDB Guide projection (static, never live state)."""
+from protodb_guide_catalog import KINDS, project_entry
 
 SCHEMA = 'wand.db03.protodb-static@1'
 LOCALES = ('en', 'fr', 'it', 'de', 'es-ES', 'ja', 'zh-CN', 'pt-BR')
@@ -64,7 +65,7 @@ class LiveopsResolver:
 
 def project_protodb(origin, out, target, resolver, wire_fields, text_field,
                     int_field, sha, source_data, save, plain_display,
-                    quest_ids=None):
+                    quest_ids=None, duty_ids=None, world_ids=None):
     """Read the verified 1=entry, 1=name/2=envelope ProtoDB frame structure.
 
     The envelope is metadata (1=path,2=update,3=name,4=filepath,
@@ -72,11 +73,13 @@ def project_protodb(origin, out, target, resolver, wire_fields, text_field,
     """
     file = origin / 'protoDb.bin'
     if not file.is_file():
-        return {'status': 'not_present', 'designChallenges': 0, 'starPathFtue': 0}
+        return {'status': 'not_present', 'designChallenges': 0, 'starPathFtue': 0,
+                'miniEvents': 0, 'floatingFestivals': 0, 'expansions': 0}
     raw = source_data(file)
     digest = sha(raw)
     resolver = LiveopsResolver(resolver, wire_fields)
     design, ftue, unresolved = [], [], []
+    extra = {family: [] for family in KINDS.values()}
     names = set()
     for idx, (field, wire, body) in enumerate(wire_fields(raw)):
         if (field, wire) != (1,2):
@@ -90,7 +93,7 @@ def project_protodb(origin, out, target, resolver, wire_fields, text_field,
         values = wire_fields(envelope[0])
         class_name = text_field(values,5)
         data = [v for n,w,v in values if (n,w)==(6,2)]
-        if class_name not in ('Definitions.DesignChallengeData','Definitions.StarPathFtueConfig'):
+        if class_name not in ('Definitions.DesignChallengeData','Definitions.StarPathFtueConfig') and class_name not in KINDS:
             continue
         if len(data) != 1:
             unresolved.append({'kind':'proto_db_entry_without_unique_payload','entry':name})
@@ -135,6 +138,13 @@ def project_protodb(origin, out, target, resolver, wire_fields, text_field,
             quest = base.get('ftueQuestMission')
             base['ftueQuestLinkStatus'] = ('resolved' if str(quest) in quest_ids else 'unresolved') if quest and quest_ids is not None else 'unchecked'
             ftue.append(base)
+        elif class_name in KINDS:
+            row = project_entry(name, class_name, data[0], wire_fields, text_field,
+                int_field, sha, lambda key, where: exact_localization(key, resolver,
+                    plain_display, unresolved, where), quest_ids, duty_ids, world_ids)
+            row['source'] = base['source']
+            row['envelope'] = base['envelope']
+            extra[KINDS[class_name]].append(row)
         else:
             unresolved.append({'kind':'other_starpath_ftue_class_name','entry':name,'type':class_name})
     design.sort(key=lambda rec:rec['id'])
@@ -143,12 +153,20 @@ def project_protodb(origin, out, target, resolver, wire_fields, text_field,
           'records':design,'availability':'not_evaluated'})
     save(out/'guide'/'starpath-ftue.json', {'schema':SCHEMA,'target':target,
           'records':ftue,'availability':'not_evaluated'})
+    for family, filename in (('miniEvents','mini-events.json'),
+                             ('floatingFestivals','floating-festivals.json'),
+                             ('expansions','expansions.json')):
+        extra[family].sort(key=lambda row:row['id'])
+        save(out/'guide'/filename, {'schema':SCHEMA,'target':target,'family':family,
+              'records':extra[family],
+              'availability':'archived_source_only_not_current_liveops'})
     manifest={'schema':SCHEMA,'target':target,'status':'STATIC_SOURCE_ONLY',
               'source':{'file':'ddv_Data/StreamingAssets/protoDb.bin','sha256':digest,'bytes':len(raw)},
               'counts':{'designChallenges':len(design),
                         'dreamSnaps':sum(x['definitionKind']=='dreamSnaps' for x in design),
                         'otherDesignChallenges':sum(x['definitionKind']=='otherDesignChallenge' for x in design),
-                        'starPathFtue':len(ftue)},'issues':len(unresolved),
+                        'starPathFtue':len(ftue),
+                        **{name:len(rows) for name,rows in extra.items()}},'issues':len(unresolved),
               'note':'Archived definitions are not evidence of current server availability.'}
     save(out/'protodb-static-manifest.json',manifest)
     save(out/'protodb-static-unresolved.json',{'schema':SCHEMA,'issues':unresolved})
