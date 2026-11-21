@@ -968,3 +968,65 @@ actual ID, progress value, enum string or milestone value is
 published by this PR. Writer and export remain prohibited.
 
 CI: `node --test tests/save-duty-progress-evidence.test.mjs`.
+
+
+## Actual native DutyAch milestones and configured reward IDs (owner-private)
+
+The checked-in **schema-only** source contract at
+`data/ddv/save/duty-milestone-wire-contract.v1.json` records original
+archived Steam IL2CPP protobuf members (dump.cs SHA-256 pinned):
+`Definitions.Items.AchievementItemData.Milestones` is repeated
+field **13**; its `AchievementMilestone` child has `Milestone`
+(field **1**, int), `RewardItem` (field **2**, int) and
+`RewardAmount` (field **3**, int). This proves the field interpretation
+in the inspected Steam build only; the raw game source is private.
+
+`tools/db-05-save/duty_milestones.py` reads original binary
+`ddv_Data/StreamingAssets/itemlist/DutyAch.json` with the canonical
+DB-03 native wire parser and matches **every** frame ID/index/wire
+SHA-256 to an existing owner-private `guide/duties.json` from the
+same original file. It refuses incomplete, cross-version or
+SHA-mismatched private indexes. For each repeated field 13 payload
+only exact three-member, ordered, signed-int32 `AchievementMilestone`
+wire triples are promoted to a typed source milestone.
+Unknown, mixed, out-of-order or future field 13 variants remain
+`opaque_or_mixed_field13`, with NO guessed condition or reward.
+No field 13 is `no_field13_observed`, not proof the underlying
+achievement has no further task or reward logic.
+
+Run **locally or against private Drive materialized sources**:
+
+```bash
+python tools/db-05-save/duty_milestones.py \
+  --native /PRIVATE/DutyAch.json \
+  --duties /PRIVATE/guide/duties.json \
+  --output /PRIVATE/db05-duty-milestones.private.json
+```
+
+Never place the resulting private index, original source or owner
+save inside Git; the exporter rejects a Git checkout as an output
+directory. Only anonymous summary counts are printed.
+
+The source-only definition projection can be passed to
+`createSaveDutyMilestoneBridge(privateDuties, privateProjection)`.
+The JavaScript bridge validates exact private DB-03 ID, original
+source SHA metadata, every record wire SHA, exact frame indexes,
+typed monotonic milestones, and aggregate counts. It then inspects
+an already strictly decoded possibly **owner-modified** save using
+the exact numeric AchievementID join, returning anonymous counts of
+configured milestone entries and saved numeric value comparisons:
+`CurAmount >= Milestone` and
+`ClaimedRewardMilestone >= Milestone`. These are **arithmetic
+positions only**, never a proof of completion, reward eligibility,
+grant, ownership or safe Writer state. Unknown/removed save records
+remain neutral. Private actual IDs, threshold values, item IDs,
+quantities, raw state names and strings do not leave the bridge.
+
+Only the offline exporter hashes the original private DutyAch bytes;
+the JS bridge validates internal private metadata only, and does
+not imply that a private save was produced by the same build.
+All edit/export privileges remain false.
+
+CI: `python -m unittest discover -s tools/db-05-save -p 'test_*.py'`
+and `node --test tests/save-duty-milestones.test.mjs`
+(synthetic records only).

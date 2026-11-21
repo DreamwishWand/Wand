@@ -1,3 +1,4 @@
+export {createSaveDutyMilestoneBridge, getSaveDutyMilestoneWireContract, SAVE_DUTY_MILESTONE_JOIN_CONTRACT} from './duty-milestones.mjs';
 export { getSaveAchievementObservationFields, inspectSaveAchievementProgress, SAVE_ACHIEVEMENT_PROGRESS_CONTRACT } from './achievement-progress.mjs';
 export { createSaveAchievementBridge, getSaveAchievementLinkRules, SAVE_ACHIEVEMENT_JOIN_CONTRACT, getSaveAchievementNativeBehaviorEvidence, SAVE_DUTY_PROGRESS_EVIDENCE_CONTRACT } from './achievement-links.mjs';
 export { createSaveGuideProgressBridge, getSaveGuideLinkRules, SAVE_GUIDE_JOIN_CONTRACT } from './guide-links.mjs';

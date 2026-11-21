@@ -1,0 +1,60 @@
+{
+  "schema": "wand.db05.duty-milestone-wire-contract@1",
+  "sourceEvidence": {
+    "archivedNativeDump": "steam-1.26.1-Il2CppDump-dump.cs",
+    "sourceDumpSha256": "0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08",
+    "nativeSourceFile": "ddv_Data/StreamingAssets/itemlist/DutyAch.json",
+    "nativeSourceHashTrackedPrivately": true,
+    "immutableSourceNotCommitted": true,
+    "parsedDefinitionFamily": "Definitions.Items.AchievementItemData",
+    "fieldNumber": 13,
+    "fieldName": "Milestones",
+    "cardinality": "repeated",
+    "elementMessage": "Definitions.Items.AchievementMilestone",
+    "elementFields": [
+      {
+        "number": 1,
+        "name": "Milestone",
+        "nativeType": "int"
+      },
+      {
+        "number": 2,
+        "name": "RewardItem",
+        "nativeType": "int"
+      },
+      {
+        "number": 3,
+        "name": "RewardAmount",
+        "nativeType": "int"
+      }
+    ]
+  },
+  "unknownVariantPolicy": {
+    "untypedField13": "opaque_not_inferred",
+    "mixedTypedAndOpaque": "opaque_not_inferred",
+    "field13Absent": "no_field13_observed_not_no_achievement",
+    "unverifiedConditionFields": "opaque_do_not_infer_prerequisites"
+  },
+  "savedFieldJoin": {
+    "path": "/Player/AchievementsData[]/AchievementID",
+    "sourceIdPath": "/records[]/id",
+    "key": "exact_positive_safe_integer",
+    "comparisonFields": [
+      "CurAmount",
+      "ClaimedRewardMilestone"
+    ],
+    "comparisonSemantics": "numeric_threshold_position_only_never_completion_claimability_or_reward_ownership"
+  },
+  "policy": {
+    "ownerModifiedSaveMayOmitObjects": true,
+    "sourceBuildSaveJointAttestation": false,
+    "originalSourceRehashedByBrowser": false,
+    "sourceOriginalEvidenceVerifiedByOfflineExporterOnly": true,
+    "allDefinitionsMapped": false,
+    "tierEligibilityVerified": false,
+    "rewardGrantVerified": false,
+    "itemOwnershipVerified": false,
+    "exportAuthorized": false,
+    "writerAuthorized": false
+  }
+}
