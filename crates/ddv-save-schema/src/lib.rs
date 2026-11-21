@@ -66,6 +66,19 @@ pub struct LegacyField {
     pub kind: String,
     pub builds: Vec<String>,
     pub writable: bool,
+    #[serde(rename = "idReference")]
+    pub id_reference: Option<LegacyIdReference>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacyIdReference {
+    pub namespace: String,
+    pub catalog: Option<String>,
+    pub extraction: String,
+    pub join: String,
+    pub current_catalog_coverage_verified: bool,
+    pub status: String,
 }
 
 pub fn legacy_fields() -> Result<LegacyFieldMap, serde_json::Error> {
@@ -125,6 +138,9 @@ mod tests {
         assert_eq!(fields.fields.len(), 66);
         assert!(fields.fields.iter().any(|f| f.path == "/Player/MaleAvatar/Eyeball/ColorIndex2"));
         assert!(fields.fields.iter().all(|field| !field.writable));
+        assert_eq!(fields.fields.iter().filter(|f| f.id_reference.is_some()).count(), 17);
+        assert_eq!(fields.fields.iter().filter(|f| f.id_reference.as_ref().is_some_and(|r| r.namespace == "item")).count(), 14);
+        assert!(fields.fields.iter().filter_map(|f| f.id_reference.as_ref()).all(|r| r.join == "exact_numeric_only" && !r.current_catalog_coverage_verified));
         assert!(reg.builds.iter().all(|build| build.status == "legacy_contract_candidate"));
     }
 
