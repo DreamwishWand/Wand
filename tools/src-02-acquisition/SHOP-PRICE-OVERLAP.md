@@ -71,6 +71,18 @@ node tools/src-02-acquisition/smoke_private_stall_price_runtime.mjs \\
 
 The runner checks the original ZIP SHA, safely reads the private price ZIP in memory, invokes the actual `loadPrivateStallPriceOverlap` API, and emits only aggregate counters; it does **not** publish data or write source extracts. **The real-data JS runtime runner's successful completion must be separately observed**; synthetic CI validates its fail-closed behavior but cannot access the owner's game-source ZIPs.
 
+## End-to-end native-source JavaScript verification (2026-11-22)
+
+The **actual JavaScript main-branch sources** were retrieved by GitHub file SHA and executed with the two **original SHA-verified private ZIPs** using Node 22.16.0, not mock data. The final runner produced `EXACT_PRIVATE_JS_SOURCE_SMOKE_PASS`, confirmed source manifest SHA-256 pins `ec1efd589dd5390f11f5a99411bcf3f1c6bc34309ddfa68e51589c078601f31c` and `641f1b5c5268f136de7bf345f372f06bde923ce0f1f24871225a97913091e975`, and exactly reproduced 65 stalls, 745 candidate occurrences, 683 configured price-row intersections, 62 without, plus the 29/18/3/15 source-database distribution.
+
+The new `getSourceStallItemPriceReferences(stallId,itemId)` lookup returns original source price rows **only when the Item ID is in that stall's enumerated static candidate set**, along with source loot-table slot references, separately currency-matching and alternative purchase costs, and explicit `currentShopOfferVerified:false`, `shopSpecificDatabaseSelectionVerified:false`, `effectivePriceVerified:false`, `availabilityVerified:false`, `publishable:false`. An item missing from static candidate pools is **not** declared unsold or unavailable. Unknown stall IDs return `null`, invalid native IDs fail closed.
+
+The updated real-data smoke rechecked **all 745 per-stall candidate lookups** and 65 out-of-catalog Item ID lookups. All returned expected source-only values and non-sale status. No private item rows, prices, or saves were sent to GitHub or published.
+
+### Runtime price database selection is not proven
+
+The owner-held IL2CPP `dump.cs` (Steam 1.26.1, SHA-256 `0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08`) declares `Definitions.Shops.Shop` with fields 1–9: Slots, Fatigue, RefreshCost, RefreshBaseIncrease, RefreshIncreasePercent, RefreshIncreaseCap, SupportsDailySellCap, IsDispenser and RestrictItemsToCurrentScene. It **does not have a serialized price database selector field**. Its `Definitions.Shops.ShopSlot` has Fatigue and CurrencyId; `Definitions.Shops.ItemPrices` independently has `Prices` and `SellPrices`. `ItemPriceDatabases.TryGetPrice(Item,Item,out int)` exists as a runtime method, but **dump.cs provides only its signature, not the implementation**. The version-matched 1.26.2 ProtoDB original was byte-verified against the 1.26.1 archive, but the IL2CPP method implementation is **not proven identical** to 1.26.2. A source currency match, even unique, is therefore **not proof of actual runtime price selection**, stock, sale eligibility, daily rotation or discount. Preserve the unknown fields until native runtime code or an independently observed transaction supplies the missing evidence.
+
 ## Private local verification
 
 Use the real r5 ZIP and the owner-private ProtoDB price release stored in **SRC-02 Google Drive**; no re-extraction from local game files is required. Provide `Uint8Array` buffers for `acquisitionArchiveBytes`, `priceManifestBytes` and the price JSONL `priceFiles` dictionary. The runtime checks every source release pin and requires the exact observed aggregate counts above; altered versions fail closed instead of silently producing a mixed-version report.
