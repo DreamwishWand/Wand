@@ -12,7 +12,7 @@ import re
 import sys
 from pathlib import Path
 
-from terrain_codec import describe_native_packing
+from terrain_codec import describe_native_packing, count_packed_palette_indices
 
 SCHEMA = "wand.db04.world@1"
 FAMILIES = {
@@ -83,6 +83,8 @@ def checked_grid(grid):
         any(type(v) is not int or not 0 <= v <= 0xffffffff for v in values)):
         raise ValueError("malformed native grid direct floor array")
     packed = grid.get("compactedFloorTypesBase64")
+    if packed is None and grid.get("nativePaletteIndexCellCounts") is not None:
+        raise ValueError("unbacked native terrain palette histogram")
     if packed is not None:
         if not isinstance(packed, str):
             raise ValueError("invalid native packed base64")
@@ -101,6 +103,11 @@ def checked_grid(grid):
                 x, y, grid.get("nativeFloorTypePalette"), data)
             if declared != computed:
                 raise ValueError("terrain decoding evidence mismatches native bytes")
+        if "nativePaletteIndexCellCounts" in grid:
+            counted = count_packed_palette_indices(
+                x, y, grid.get("nativeFloorTypePalette"), data)
+            if grid["nativePaletteIndexCellCounts"] != counted:
+                raise ValueError("terrain palette histogram mismatches packed bytes")
 
 
 def validate_snapshot(directory):
