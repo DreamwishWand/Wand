@@ -27,6 +27,7 @@ function Download-Source([string]$repoPath, [string]$fileName) {
 $main = Download-Source "tools/src-04-media/native1262.py" "native1262.py"
 $null = Download-Source "tools/src-04-media/media.py" "media.py"
 $null = Download-Source "tools/src-01-items/steam1262.py" "steam1262.py"
+$null = Download-Source "tools/src-04-media/source-index-1262.csv" "source-index-1262.csv"
 $requirements = Download-Source "tools/src-04-media/requirements-unity.txt" "requirements-unity.txt"
 
 if (-not (Test-Path -LiteralPath $game -PathType Container)) {
