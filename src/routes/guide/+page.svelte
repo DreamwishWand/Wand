@@ -3,6 +3,7 @@
     GUIDE_LOCALES, importGuideSearch, importGuideFolder, importGuideDetail, searchGuide,
     detailStepRows, guideStaticFacts, guideMissionReferences, guideVerifiedSourceBridge, MAX_SHARD_BYTES
   } from '$lib/guide/client.mjs';
+  import {importCurrentGuideConditions, currentConditionMentionsForQuest} from '$lib/guide/current-conditions.mjs';
 
   const languageLabels: Record<string, string> = {
     ja: '日本語', en: 'English', fr: 'Français', it: 'Italiano', de: 'Deutsch',
@@ -29,6 +30,10 @@
   let groupInfo: Record<string, {id:string,rawName:string,names:Record<string,string>,missionIds:string[]}> = {};
   let loadEpoch = 0;
   let detailEpoch = 0;
+  let conditionEpoch = 0;
+  let conditionRegistry: any = null;
+  let conditionError = '';
+  let loadingConditions = false;
 
   $: filtered = searchIndex ? searchGuide(searchIndex, {
     query: query.slice(0, 128), locale, character, group, update, objective, scopeToken,
@@ -41,6 +46,8 @@
   $: scopeTokens = searchIndex ? [...new Set(searchIndex.records.flatMap((r: any) => r.sourceScopeTokens))].sort() : [];
   $: selectedRow = selectedId && searchIndex ? searchIndex.records.find((r: any) => r.id === selectedId) : null;
   $: sourceBridge = searchIndex ? guideVerifiedSourceBridge(searchIndex) : null;
+  $: currentConditionMentions = conditionRegistry && selectedId
+    ? currentConditionMentionsForQuest(conditionRegistry, selectedId) : {total: 0, rows: []};
   $: detailSteps = selectedDetail ? detailStepRows(selectedDetail, locale) : [];
   $: staticFacts = selectedDetail ? guideStaticFacts(selectedDetail, locale) : {conditions:[], policies:[], rewards:[]};
   $: missionReferences = selectedDetail && searchIndex ? guideMissionReferences(selectedDetail, searchIndex, locale) : [];
@@ -71,6 +78,10 @@
 
   function resetSource() {
     detailEpoch++;
+    conditionEpoch++;
+    conditionRegistry = null;
+    conditionError = '';
+    loadingConditions = false;
     searchIndex = null;
     shardFiles = {};
     characterNames = {};
@@ -119,6 +130,40 @@
       if (request === loadEpoch) importError = error instanceof Error ? error.message : String(error);
     } finally {
       if (request === loadEpoch) loadingIndex = false;
+    }
+  }
+
+  async function chooseConditions(event: Event) {
+    const chosen = Array.from((event.currentTarget as HTMLInputElement).files || []);
+    const request = ++conditionEpoch;
+    const activeIndex = searchIndex;
+    conditionRegistry = null;
+    conditionError = '';
+    if (!sourceBridge) {
+      conditionError = '原本SHA-256を確認したSteam 1.26.1のGuide検索索引が必要です。';
+      return;
+    }
+    const selection = new Map(chosen.map((file) => [file.name, file]));
+    if (chosen.length !== 2 || selection.size !== 2 ||
+        !selection.has('condition-native-index.json') ||
+        !selection.has('condition-native-index-manifest.json')) {
+      conditionError = 'condition-native-index.json と condition-native-index-manifest.json の2ファイルを選択してください。';
+      return;
+    }
+    loadingConditions = true;
+    try {
+      const result = await importCurrentGuideConditions(
+        selection.get('condition-native-index.json')!,
+        selection.get('condition-native-index-manifest.json')!,
+        sourceBridge
+      );
+      if (request === conditionEpoch && activeIndex === searchIndex) {
+        conditionRegistry = result;
+      }
+    } catch (error) {
+      if (request === conditionEpoch) conditionError = error instanceof Error ? error.message : String(error);
+    } finally {
+      if (request === conditionEpoch) loadingConditions = false;
     }
   }
 
@@ -230,6 +275,19 @@
         <p>選択した検索索引の元ファイルSHA-256を照合しました。Steam {sourceBridge.baselineVersion}と{sourceBridge.targetVersion}では、Mission原本および8言語の翻訳ファイル内容が一致しています。</p>
         <p>ただしCondition原本には新規{sourceBridge.addedConditionRecords}件・変更{sourceBridge.changedConditionRecords}件があります。現在の解放条件、進行状況、DLC所有権、オンラインイベント開催状況の判定ではありません。表示データの取得元バージョンは{searchIndex.target.gameVersion}のままです。</p>
       </section>
+      <section class="guide-condition-import" aria-label="Steam 1.26.2 Condition originals">
+        <strong>Steam 1.26.2の静的Condition定義（任意）</strong>
+        <p>非公開の <code>condition-native-index.json</code> と <code>condition-native-index-manifest.json</code> を2つ同時に選択すると、原本のSHA-256を照合し、各クエストへの条件参照を表示します。ファイルは端末内で処理します。</p>
+        <label>Conditionインデックスと検証マニフェスト
+          <input type="file" accept=".json,application/json" multiple on:change={chooseConditions}
+            disabled={loadingIndex || loadingConditions} aria-label="Select current Condition index and manifest" />
+        </label>
+        {#if loadingConditions}<p role="status">Condition全件と原本のハッシュを検証しています…</p>{/if}
+        {#if conditionError}<p class="guide-error" role="alert">{conditionError}</p>{/if}
+        {#if conditionRegistry}
+          <p class="guide-condition-loaded" role="status">Steam {conditionRegistry.targetVersion}：{conditionRegistry.count.toLocaleString()}件の原本Conditionを検証しました。クエスト一覧は{searchIndex.target.gameVersion}のままです。</p>
+        {/if}
+      </section>
     {/if}
 
     <div class="guide-workspace">
@@ -311,6 +369,29 @@
           <p class="guide-detail-meta">原本の静的クエスト情報 · {selectedRow.objectiveKinds.join(' / ')}</p>
           {#if loadingDetail}<p role="status">詳細ファイルを検証しています…</p>{/if}
           {#if detailError}<p class="guide-detail-note" role="status">{detailError}</p>{/if}
+          {#if conditionRegistry}
+            <section class="guide-source-facts" aria-label="Current Condition source mission references">
+              <h3>Steam {conditionRegistry.targetVersion}のConditionが参照するクエスト（{currentConditionMentions.total}件）</h3>
+              <p>Condition原本中のMissionStepStatusがこのクエストIDを参照している箇所です。解放条件・攻略順・進行状況・実際の利用箇所を示すものではありません。AND/OR/NOTは原本の条件分岐をそのまま表します。</p>
+              {#if currentConditionMentions.rows.length}
+                <ul class="guide-mission-references">
+                  {#each currentConditionMentions.rows as mention (mention.conditionId + mention.sourcePath)}
+                    <li>
+                      <span class="guide-mission-reference-kind">Condition ID {mention.conditionId} · {mention.operator} · MissionStepStatus</span>
+                      <span>{mention.sourceName.replaceAll('!', ' / ')}</span>
+                      <small>原本パス: {mention.sourcePath}</small>
+                      <span>ステップID: {mention.stepId !== undefined ? mention.stepId : '原本に値なし'} · 定義上の状態: {mention.status !== undefined ? mention.status + ' (' + mention.statusCode + ')' : '原本に値なし'}</span>
+                    </li>
+                  {/each}
+                </ul>
+                {#if currentConditionMentions.total > currentConditionMentions.rows.length}
+                  <p>先頭{currentConditionMentions.rows.length}件のみ表示しています。</p>
+                {/if}
+              {:else}
+                <p>このミッションIDへの明示的なMissionStepStatus参照は、選択したCondition原本にありません。</p>
+              {/if}
+            </section>
+          {/if}
           {#if selectedDetail}
             {#if displayText(selectedDetail, 'availableDescription')}<p class="guide-detail-description">{displayText(selectedDetail, 'availableDescription')}</p>{/if}
             {#if staticFacts.conditions.length || staticFacts.policies.length}
@@ -450,7 +531,14 @@
   .guide-import { padding:22px 24px; border:1px solid #a179b447; border-radius:16px; background:linear-gradient(135deg,#2d223d,#211a2c); }
   .guide-import-intro strong { font-size:15px; }
   .guide-import-intro p { color:#b9a9c8; font-size:12px; line-height:1.8; margin:8px 0 16px; }
-  .guide-import code { background:#1d1529; padding:3px 6px; border-radius:5px; }
+  .guide-import code,.guide-condition-import code { background:#1d1529; padding:3px 6px; border-radius:5px; }
+  .guide-condition-import { padding:16px 20px; margin:14px 0 0; border:1px solid #ffffff28; border-radius:12px; background:#1c1727; display:grid; gap:9px; }
+  .guide-condition-import strong { color:#e8d7f3; font-size:13px; }
+  .guide-condition-import p { color:#bdb0ca; font-size:12px; line-height:1.7; margin:0; }
+  .guide-condition-import label { color:#dbcfed; display:grid; gap:8px; font-size:11px; max-width:640px; }
+  .guide-condition-import .guide-error { color:#ffb9af; }
+  .guide-condition-import .guide-condition-loaded { color:#bcddb9; }
+  
   .guide-folder-input { color:#f2e5fa; display:grid; gap:8px; font-size:12px; font-weight:650; margin:14px 0 6px; max-width:640px; }
   .guide-manual { margin:17px 0 0; color:#bda9d0; font-size:12px; }
   .guide-manual summary { cursor:pointer; padding:8px 0; }
