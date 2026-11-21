@@ -324,11 +324,15 @@ def combined(output, item_index, items_sha, candidates, selected, checkpoints, e
             "evidence": first["identityMethod"], "publicationApproved": False
         }
     missed = sorted(set(item_index) - set(by_guid))
+    decoded_failures = sum(issue.get("type") == "decode_error" for issue in all_issues)
+    processing_complete = (len(selected) == len(candidates) and not error_details
+                           and decoded_failures == 0)
     save_json(output / "manifest-native.json", {
         "schema": SCHEMA, "gameVersion": "1.26.2", "platform": "Steam Windows",
         "src01ItemsSha256": items_sha, "images": all_images, "items": item_manifest,
         "publicationApproved": False,
-        "complete": len(selected) == len(candidates) and not error_details,
+        "complete": processing_complete,
+        "identityCoverageComplete": not missed and not ambiguous,
         "resolution": "exact_guid_only"
     })
     report = {
@@ -339,7 +343,8 @@ def combined(output, item_index, items_sha, candidates, selected, checkpoints, e
         "unmatchedGuidSample": ["guid:" + g for g in missed[:200]],
         "candidateBundleCount": len(candidates), "selectedBundles": selected,
         "issues": all_issues, "publicationApproved": False,
-        "complete": len(selected) == len(candidates) and not error_details,
+        "complete": processing_complete, "decodeFailures": decoded_failures,
+        "identityCoverageComplete": not missed and not ambiguous,
         "sourceStatus": "verified_steam_1.26.2",
         "guidResolutionStatus": "pending_catalog_mapping" if missed else "complete"
     }
