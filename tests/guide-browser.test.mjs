@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { createHash } from 'node:crypto';
 import { GUIDE_SEARCH_SCHEMA, GUIDE_DETAIL_SCHEMA, validateGuideSearch, searchGuide,
-  canonicalQuestRecord, importGuideSearch, importGuideDetail, detailStepRows, guideItemTargets, guideSourceText, guideCharacterLabels } from '../src/lib/guide/client.mjs';
+  canonicalQuestRecord, importGuideSearch, importGuideDetail, detailStepRows, guideItemTargets, guideSourceText, guideCharacterLabels, guideGroupInfo } from '../src/lib/guide/client.mjs';
 
 const SHA='a'.repeat(64), WIRE='b'.repeat(64);
 const target={gameVersion:'1.26.1', platform:'Steam'};
@@ -251,4 +251,58 @@ test('character data in another root cannot contaminate same-folder source',asyn
   files.push(localFile('snapshot/guide/characters.json',JSON.stringify(bad)));
   files.push(localFile('snapshot/guide/characters.json',JSON.stringify(bad)));
   await assert.rejects(importGuideFolder(files),/duplicate native character/);
+});
+
+// Original QuestGroup missionIds are source listing membership, not progression DAG.
+function groupFixture() {
+  const {index}=fixture();
+  return {schema:'wand.db03.quest-catalogue@1',target,source:{...source},
+    counts:{missions:1,questGroups:1,unclassified:1,nativeSourceRecords:3},
+    missions:[{id:index.records[0].id,groupId:index.records[0].groupId,nativeWireSha256:WIRE}],
+    questGroups:[{id:'2070200092',recordKind:'questGroup',rawName:'Village!Wizard!Merlin',
+      names:{},nativeWireSha256:WIRE,missionIds:['2070000620']}]};
+}
+test('source-catalogue group join is exact and displays original unlocalized group',()=>{
+  const {index}=fixture(); const joined=guideGroupInfo(groupFixture(),index);
+  assert.equal(joined['2070200092'].rawName,'Village!Wizard!Merlin');
+  assert.deepEqual(joined['2070200092'].missionIds,['2070000620']);
+  assert.equal(searchGuide(index,{query:'Wizard',groupInfo:joined}).total,1);
+  assert.equal(searchGuide(index,{query:'Wizard',groupInfo:joined}).results[0].matchedLocale,'sourceGroup');
+  assert.equal(searchGuide(index,{query:'Wizard'}).total,0);
+});
+test('character names search quests with labeled provenance, without changing IDs',()=>{
+  const {index}=fixture();
+  const labels={'10000035':{ja:'合成キャラクター名',en:'Merlin Synthetic'}};
+  assert.equal(searchGuide(index,{query:'マーリン',characterNames:labels}).total,0);
+  assert.equal(searchGuide(index,{query:'合成キャラクター',characterNames:labels}).results[0].matchedLocale,'character:ja');
+  assert.equal(searchGuide(index,{query:'Merlin',characterNames:labels}).results[0].matchedLocale,'character:en');
+});
+test('quest-group join rejects mixed-source, orphan and duplicate membership',()=>{
+  const {index}=fixture(),a=groupFixture();
+  a.source.sha256='c'.repeat(64);
+  assert.throws(()=>guideGroupInfo(a,index),/from another build/);
+  a.source.sha256=SHA;a.questGroups[0].missionIds=['2070000650'];
+  assert.throws(()=>guideGroupInfo(a,index),/wrong-group/);
+  a.questGroups[0].missionIds=['2070000620','2070000620'];
+  assert.throws(()=>guideGroupInfo(a,index),/duplicate/);
+  a.questGroups[0].missionIds=[];
+  assert.throws(()=>guideGroupInfo(a,index),/coverage incomplete/);
+});
+test('folder import reads optional 1.6MB catalogue but not private detail shards',async()=>{
+  const {files,index,shardReads,unrelatedReads}=folderFixture();
+  const counter={reads:0};
+  files.push(localFile('snapshot/guide/quest-catalogue.json',JSON.stringify(groupFixture()),counter));
+  const imported=await importGuideFolder(files);
+  assert.equal(Object.keys(imported.groupInfo).length,1);
+  assert.equal(counter.reads,1);
+  assert.equal(shardReads.reads,0);assert.equal(unrelatedReads.reads,0);
+  const missing=await importGuideFolder(files.filter(x=>x.name!=='quest-catalogue.json'));
+  assert.deepEqual(missing.groupInfo,{});
+  files.push(localFile('snapshot/guide/quest-catalogue.json',JSON.stringify(groupFixture())));
+  await assert.rejects(importGuideFolder(files),/duplicate quest catalogue/);
+});
+test('unrelated versioned folder cannot inject quest-group names',async()=>{
+  const {files}=folderFixture();
+  files.push(localFile('different/guide/quest-catalogue.json',JSON.stringify(groupFixture())));
+  assert.deepEqual((await importGuideFolder(files)).groupInfo,{});
 });

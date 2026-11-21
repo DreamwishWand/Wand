@@ -25,12 +25,13 @@
   let info = '';
   let shardFiles: Record<string, File> = {};
   let characterNames: Record<string, Record<string,string>> = {};
+  let groupInfo: Record<string, {id:string,rawName:string,names:Record<string,string>,missionIds:string[]}> = {};
   let loadEpoch = 0;
   let detailEpoch = 0;
 
   $: filtered = searchIndex ? searchGuide(searchIndex, {
     query: query.slice(0, 128), locale, character, group, update, objective,
-    offset: page * 40, limit: 40
+    characterNames, groupInfo, offset: page * 40, limit: 40
   }) : {total: 0, results: [], nextOffset: null};
   $: characters = searchIndex ? [...new Set(searchIndex.records.map((r: any) => r.characterId).filter(Boolean))].sort() : [];
   $: groups = searchIndex ? [...new Set(searchIndex.records.map((r: any) => r.groupId).filter(Boolean))].sort() : [];
@@ -38,6 +39,8 @@
   $: objectives = searchIndex ? [...new Set(searchIndex.records.flatMap((r: any) => r.objectiveKinds))].sort() : [];
   $: selectedRow = selectedId && searchIndex ? searchIndex.records.find((r: any) => r.id === selectedId) : null;
   $: detailSteps = selectedDetail ? detailStepRows(selectedDetail, locale) : [];
+  $: siblingQuests = selectedRow && groupInfo[selectedRow.groupId] && searchIndex
+    ? groupInfo[selectedRow.groupId].missionIds.map((id: string) => searchIndex.records.find((r: any) => r.id === id)).filter(Boolean) : [];
   $: requiredShards = searchIndex
     ? new Set(searchIndex.records.map((r: any) => r.detail.file)).size : 0;
 
@@ -47,6 +50,12 @@
     const names = characterNames[id];
     const sourceName = names?.[locale] || names?.en;
     return sourceName ? `${sourceName} · ${id}` : id;
+  }
+  function groupLabel(value: unknown): string {
+    const id = String(value ?? '');
+    const group = groupInfo[id];
+    const label = group?.names?.[locale] || group?.names?.en || group?.rawName.replaceAll('!', ' / ');
+    return label ? `${label} · ${id}` : id;
   }
   function displayName(row: any) {
     return row.names[locale] || row.names.en || row.internalName || row.id;
@@ -60,6 +69,7 @@
     searchIndex = null;
     shardFiles = {};
     characterNames = {};
+    groupInfo = {};
     selectedId = '';
     selectedDetail = null;
     detailError = '';
@@ -80,7 +90,8 @@
       searchIndex = result.index;
       shardFiles = result.shardFiles;
       characterNames = result.characterNames;
-      info = `${searchIndex.target.platform} ${searchIndex.target.gameVersion}：検索索引と詳細ファイル ${result.matchedShards}/${result.requiredShards} 個とキャラクター名 ${Object.keys(result.characterNames).length} 件を接続しました。データは送信せず、詳細は選択時だけ読み込みます。`;
+      groupInfo = result.groupInfo;
+      info = `${searchIndex.target.platform} ${searchIndex.target.gameVersion}：検索索引と詳細ファイル ${result.matchedShards}/${result.requiredShards} 個とキャラクター名 ${Object.keys(result.characterNames).length} 件、原本クエストグループ ${Object.keys(result.groupInfo).length} 件を接続しました。データは送信せず、詳細は選択時だけ読み込みます。`;
     } catch (error) {
       if (request === loadEpoch) importError = error instanceof Error ? error.message : String(error);
     } finally {
@@ -224,8 +235,9 @@
             <label>グループID
               <select bind:value={group} on:change={resetPage}>
                 <option value="">すべて</option>
-                {#each groups as value}<option value={value}>{value}</option>{/each}
+                {#each groups as value}<option value={value}>{groupLabel(value)}</option>{/each}
               </select>
+              <small>名称は原本の内部識別名で、正式な翻訳名ではありません。</small>
             </label>
             <label>更新区分
               <select bind:value={update} on:change={resetPage}>
@@ -249,6 +261,13 @@
                 <span class="guide-quest-title">{row.displayName}</span>
                 <span class="guide-quest-sub">ID {row.id} · {row.objectiveKinds.slice(0, 3).join(' · ') || '目標未分類'}</span>
                 {#if row.displayNameSource !== locale}<span class="guide-name-source">名称出典: {row.displayNameSource}</span>{/if}
+                {#if row.matchedLocale?.startsWith('character:')}
+                  <span class="guide-name-source">検索一致: キャラクター名 ({row.matchedLocale.slice(10)})</span>
+                {:else if row.matchedLocale === 'sourceGroup'}
+                  <span class="guide-name-source">検索一致: 原本グループ識別名</span>
+                {:else if row.matchedLocale?.startsWith('group:')}
+                  <span class="guide-name-source">検索一致: 原本グループ名 ({row.matchedLocale.slice(6)})</span>
+                {/if}
               </button>
             </li>
           {/each}
@@ -266,6 +285,7 @@
           <p class="guide-eyebrow">QUEST DETAIL · {selectedRow.id}</p>
           <h2>{displayName(selectedRow)}</h2>
           {#if selectedRow.characterId}<p class="guide-detail-meta">キャラクター: {characterLabel(selectedRow.characterId)}</p>{/if}
+          {#if selectedRow.groupId}<p class="guide-detail-meta">原本グループ: {groupLabel(selectedRow.groupId)}</p>{/if}
           <p class="guide-detail-meta">原本の静的クエスト情報 · {selectedRow.objectiveKinds.join(' / ')}</p>
           {#if loadingDetail}<p role="status">詳細ファイルを検証しています…</p>{/if}
           {#if detailError}<p class="guide-detail-note" role="status">{detailError}</p>{/if}
@@ -314,6 +334,17 @@
               <p class="guide-detail-note">この原本にはステップ定義がありません。</p>
             {/if}
             <p class="guide-verified">原本レコードのSHA-256を検証しました。進行状況の表示ではありません。</p>
+            {#if siblingQuests.length > 1}
+              <section class="guide-related" aria-label="Same source quest group">
+                <h3>同じ原本グループ内のクエスト</h3>
+                <p>原本の掲載順です。解放順、前提関係、プレイ推奨順を意味しません。</p>
+                <ul>
+                  {#each siblingQuests as related (related.id)}
+                    <li><button type="button" class:chosen={related.id === selectedId} aria-current={related.id === selectedId ? 'true' : undefined} on:click={() => showDetail(related)}>{displayName(related)}</button></li>
+                  {/each}
+                </ul>
+              </section>
+            {/if}
           {/if}
         {:else}
           <div class="guide-placeholder"><span aria-hidden="true">✧</span><h2>クエストを選択</h2><p>一覧からクエストを選ぶと、対応する詳細ファイルを検証して表示します。</p></div>
@@ -359,6 +390,7 @@
   .guide-search-label input { width:100%; }
   .guide-facets { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
   .guide-facets select { width:100%; min-width:0; }
+  .guide-facets small { font-size:10px; color:#ac9bbf; line-height:1.5; }
   .guide-result-count { font-size:12px; color:#aa9bbd; margin:19px 0 12px; }
   .guide-results { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
   .guide-results button { display:grid; gap:5px; width:100%; text-align:left; background:#241b30; color:#f1e7fb; border:1px solid #ffffff1d; border-radius:11px; padding:14px 15px; }
@@ -378,8 +410,6 @@
   .guide-steps { margin:0; padding-left:21px; color:#d6c5e4; }
   .guide-steps li { padding:8px 0 18px; line-height:1.75; font-size:12px; }
   .guide-steps p { color:#bcaecc; white-space:pre-wrap; }
-  .guide-objectives { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
-  .guide-objectives span { color:#dfcff1; border:1px solid #b08bdb47; border-radius:8px; background:#382948; padding:4px 8px; font-size:11px; }
   .guide-step-description { white-space:pre-wrap; color:#eadbf4!important; }
   .guide-story { margin:12px 0; background:#241b31; padding:9px 11px; border-radius:9px; }
   .guide-story summary, .guide-candidates summary { cursor:pointer; color:#cba5e8; font-size:11px; }
@@ -395,6 +425,10 @@
   .guide-candidates ul { margin:8px 0; padding-left:18px; color:#d0c0df; }
   .guide-candidates small, .guide-candidates p { color:#a895b8; font-size:10px; }
   .guide-verified { color:#bad7b6; font-size:11px; }
+  .guide-related p { font-size:11px; color:#ac9bbf; line-height:1.7; }
+  .guide-related ul { list-style:none; padding:0; display:grid; gap:7px; }
+  .guide-related button { border:1px solid #ffffff25; background:#2e2239; color:#e5d4f4; border-radius:8px; padding:9px 11px; width:100%; text-align:left; font-size:12px; }
+  .guide-related button.chosen { border-color:#c4a0e8; background:#433052; }
   .guide-placeholder,.guide-waiting { text-align:center; color:#b6a7c6; display:grid; place-content:center; gap:10px; min-height:300px; padding:30px; }
   .guide-placeholder span,.guide-waiting span { color:#bc95e0; font-size:48px; }
   .guide-placeholder h2,.guide-waiting h2 { color:#eadcf7; margin:0; font-size:20px; }

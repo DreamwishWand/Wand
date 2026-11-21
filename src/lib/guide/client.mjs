@@ -59,7 +59,7 @@ function labelFor(row, locale) {
 
 /** Client-side deterministic search, no network dependency. */
 export function searchGuide(index, { query = '', locale = 'ja', character = '', group = '', update = '',
-  objective = '', allLocales = false, offset = 0, limit = 40 } = {}) {
+  objective = '', allLocales = false, characterNames = {}, groupInfo = {}, offset = 0, limit = 40 } = {}) {
   validateGuideSearch(index);
   assert(GUIDE_LOCALES.includes(locale), 'unsupported locale');
   assert(typeof query === 'string' && query.length <= 128, 'invalid query');
@@ -76,11 +76,19 @@ export function searchGuide(index, { query = '', locale = 'ja', character = '', 
     if (words.length) {
       if (q === row.id) { rank = -1; matched = 'nativeId'; }
       else {
-        const labels = [[locale, row.names[locale]]];
-        if (allLocales) labels.push(...Object.entries(row.names).filter(([key]) => key !== locale));
-        else if (locale !== 'en') labels.push(['en', row.names.en]);
+        const labels = [[locale, row.names[locale], 0]];
+        if (allLocales) labels.push(...Object.entries(row.names).filter(([key]) => key !== locale)
+          .map(([lang,value]) => [lang, value, 0]));
+        else if (locale !== 'en') labels.push(['en', row.names.en, 0]);
+        const charLabels = characterNames[row.characterId] ?? {};
+        if (charLabels[locale]) labels.push(['character:' + locale, charLabels[locale], 4]);
+        if (locale !== 'en' && charLabels.en) labels.push(['character:en', charLabels.en, 4]);
+        const groupRecord = groupInfo[row.groupId];
+        if (groupRecord?.rawName) labels.push(['sourceGroup', groupRecord.rawName, 7]);
+        if (groupRecord?.names?.[locale]) labels.push(['group:' + locale, groupRecord.names[locale], 7]);
+        if (locale !== 'en' && groupRecord?.names?.en) labels.push(['group:en', groupRecord.names.en, 7]);
         const matches = labels.filter(([, value]) => typeof value === 'string' && words.every(w => clean(value).includes(w)))
-          .map(([lang, value]) => ({lang, rank:clean(value) === q ? 0 : clean(value).startsWith(q) ? 1 : clean(value).includes(q) ? 2 : 3}));
+          .map(([lang, value, base]) => ({lang, rank:base + (clean(value) === q ? 0 : clean(value).startsWith(q) ? 1 : clean(value).includes(q) ? 2 : 3)}));
         if (!matches.length) continue;
         matches.sort((a,b) => a.rank - b.rank || a.lang.localeCompare(b.lang));
         rank = matches[0].rank; matched = matches[0].lang;
@@ -151,6 +159,58 @@ export function guideCharacterLabels(payload, index) {
   return labels;
 }
 
+/** Join an optional same-source quest catalogue to the compact verified index.
+ * Group membership is an original listing relation, not a prerequisite or play order.
+ */
+export function guideGroupInfo(payload, index) {
+  validateGuideSearch(index);
+  const counts = payload?.counts;
+  assert(isObj(payload) && payload.schema === 'wand.db03.quest-catalogue@1' &&
+    sameTarget(payload.target, index.target) && isObj(payload.source) &&
+    payload.source.file === index.source.file && payload.source.sha256 === index.source.sha256 &&
+    isObj(counts) && counts.missions === index.counts.missions &&
+    counts.questGroups === index.counts.excludedQuestGroups &&
+    counts.unclassified === index.counts.excludedUnclassified &&
+    counts.nativeSourceRecords === index.counts.sourceNativeRecords &&
+    Array.isArray(payload.missions) && payload.missions.length === index.records.length &&
+    Array.isArray(payload.questGroups) && payload.questGroups.length === counts.questGroups,
+    'source quest catalogue is incomplete or from another build');
+  const expected = new Map(index.records.map(row => [row.id, row]));
+  const foundMissions = new Set();
+  for (const mission of payload.missions) {
+    const row = expected.get(mission?.id);
+    assert(row && !foundMissions.has(mission.id) && mission.nativeWireSha256 === row.detail.nativeWireSha256 &&
+      mission.groupId === row.groupId, 'quest catalogue mission identity/group mismatch');
+    foundMissions.add(mission.id);
+  }
+  /** @type {Record<string, {id:string,rawName:string,names:Record<string,string>,missionIds:string[]}>} */
+  const groups = {};
+  const referenced = new Set();
+  for (const group of payload.questGroups) {
+    assert(isObj(group) && isId(group.id) && !Object.hasOwn(groups,group.id) &&
+      group.recordKind === 'questGroup' && isHash(group.nativeWireSha256) &&
+      typeof group.rawName === 'string' && group.rawName.length > 0 && group.rawName.length <= 512 &&
+      isObj(group.names) && Object.entries(group.names).every(([lang,value]) =>
+        GUIDE_LOCALES.includes(lang) && typeof value === 'string' && value.trim() && value.length <= 4096) &&
+      Array.isArray(group.missionIds) && group.missionIds.length <= index.records.length,
+      'invalid or duplicate original quest group');
+    const memberSet = new Set();
+    for (const id of group.missionIds) {
+      const mission = expected.get(id);
+      assert(isId(id) && mission && mission.groupId === group.id && !memberSet.has(id) &&
+        !referenced.has(id), 'quest group contains absent/duplicate/wrong-group mission');
+      memberSet.add(id);
+      referenced.add(id);
+    }
+    groups[group.id] = {id:group.id,rawName:group.rawName,names:group.names,missionIds:group.missionIds};
+  }
+  for (const mission of index.records) {
+    assert(!mission.groupId || (Object.hasOwn(groups,mission.groupId) && referenced.has(mission.id)),
+      'quest group membership coverage incomplete');
+  }
+  return groups;
+}
+
 /** Accept a locally selected Guide directory without uploading or preloading shards.
  *
  * A browser `webkitdirectory` selection returns File.webkitRelativePath paths
@@ -186,8 +246,13 @@ export async function importGuideFolder(files) {
   /** @type {Record<string, Record<string, string>>} */
   const characterNames = characterFiles.length
     ? guideCharacterLabels(await jsonFile(characterFiles[0], MAX_SEARCH_BYTES), index) : {};
+  const cataloguePath = prefix + 'guide/quest-catalogue.json';
+  const catalogues = files.filter(file => (file.webkitRelativePath || file.name) === cataloguePath);
+  assert(catalogues.length <= 1, 'duplicate quest catalogue file');
+  /** @type {Record<string, {id:string,rawName:string,names:Record<string,string>,missionIds:string[]}>} */
+  const groupInfo = catalogues.length
+    ? guideGroupInfo(await jsonFile(catalogues[0], MAX_SEARCH_BYTES), index) : {};
   const needed = new Set(index.records.map(row => row.detail.file.split('/').at(-1)));
-  /** @type {Record<string, File>} */
   /** @type {Record<string, File>} */
   const shardFiles = {};
   for (const file of files) {
@@ -203,7 +268,7 @@ export async function importGuideFolder(files) {
     shardFiles[name] = file;
   }
   assert(Object.keys(shardFiles).length > 0, 'Guide folder has no matching detail shards');
-  return {index, shardFiles, characterNames, matchedShards: Object.keys(shardFiles).length,
+  return {index, shardFiles, characterNames, groupInfo, matchedShards: Object.keys(shardFiles).length,
     requiredShards: needed.size};
 }
 
