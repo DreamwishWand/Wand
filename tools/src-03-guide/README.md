@@ -1,3 +1,5 @@
+**Archived Guide events and expansions:** [`PROTO-DB-GUIDE-CATALOG.md`](PROTO-DB-GUIDE-CATALOG.md) adds static MiniEventData, FloatingFestivalData and ExpansionData catalogues, plus a safe 15-family version-diff contract. No event availability, reward grant or DLC entitlement is inferred.
+
 **Static quest item flows:** [`QUEST-ITEM-FLOWS.md`](QUEST-ITEM-FLOWS.md) describes the source-typed intro item selectors, substep BringItem handoff settings, packed post-mission cleanup IDs, and weighted/conditional additional reward loot. `database/quest-item-flows.json` is a private read-only candidate/reference index, **not** verified inventory changes or guaranteed rewards.
 
 **Quest activation policies:** [`QUEST-ACTIVATION.md`](QUEST-ACTIVATION.md) documents separate source-defined auto-accept choices, UI-unlock conditions and conditional owner overrides. The read-only private `database/quest-activation-policies.json` is not a prerequisite DAG, live progress state or entitlement check.
