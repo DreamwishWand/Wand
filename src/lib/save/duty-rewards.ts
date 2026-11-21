@@ -68,11 +68,11 @@ export interface Db05Db01DutyRewardEvidence {
   readonly zeroRewardIdMarkers:number;
   readonly db01GameVersion:string;
   readonly db03DefinitionGameVersion:string;
-  readonly originalDutySourceByteHashEqualAcrossVersions:true;
+  readonly sourceSha256MetadataMatchedAcrossVersions:true;
   readonly exactOriginalDutySourceIdentityMatched:true;
   readonly nativeItemDomainIsNotRewardOwnership:true;
   readonly sourceOriginalBytesRehashedByThisBridge:false;
-  readonly db01ShardsShaCheckedByClient:true;
+  readonly db01ClientExpectedToShaVerifyShards:true;
   readonly originalGameSourceAndSaveJointlyVerified:false;
   readonly rewardGrantedVerified:false;
   readonly rewardClaimableVerified:false;
@@ -216,11 +216,11 @@ export async function inspectDb05DutyRewardsInDb01(
     zeroRewardIdMarkers:input.zeroRewardIdMarkers,
     db01GameVersion:catalog.source.gameVersion,
     db03DefinitionGameVersion:input.version,
-    originalDutySourceByteHashEqualAcrossVersions:true,
+    sourceSha256MetadataMatchedAcrossVersions:true,
     exactOriginalDutySourceIdentityMatched:true,
     nativeItemDomainIsNotRewardOwnership:true,
     sourceOriginalBytesRehashedByThisBridge:false,
-    db01ShardsShaCheckedByClient:true,
+    db01ClientExpectedToShaVerifyShards:true,
     originalGameSourceAndSaveJointlyVerified:false,
     rewardGrantedVerified:false,
     rewardClaimableVerified:false,
