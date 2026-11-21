@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { createHash } from 'node:crypto';
 import { GUIDE_SEARCH_SCHEMA, GUIDE_DETAIL_SCHEMA, validateGuideSearch, searchGuide,
-  canonicalQuestRecord, importGuideSearch, importGuideDetail, detailStepRows, guideItemTargets, guideSourceText, guideCharacterLabels, guideGroupInfo } from '../src/lib/guide/client.mjs';
+  canonicalQuestRecord, importGuideSearch, importGuideDetail, detailStepRows, guideItemTargets, guideSourceText, guideCharacterLabels, guideGroupInfo, guideStaticFacts, formatGuideConditionTree } from '../src/lib/guide/client.mjs';
 
 const SHA='a'.repeat(64), WIRE='b'.repeat(64);
 const target={gameVersion:'1.26.1', platform:'Steam'};
@@ -305,4 +305,53 @@ test('unrelated versioned folder cannot inject quest-group names',async()=>{
   const {files}=folderFixture();
   files.push(localFile('different/guide/quest-catalogue.json',JSON.stringify(groupFixture())));
   assert.deepEqual((await importGuideFolder(files)).groupInfo,{});
+});
+
+
+test('source condition trees retain nested AND/OR/NOT and unevaluated typed references',()=>{
+  const tree={operator:'AND',conditions:[
+    {type:'MissionCompleted',missionId:'2070000022',inversed:true,nativeWireSha256:SHA},
+    {type:'SubConditions',nested:{operator:'OR',conditions:[
+      {type:'CharacterFriendship',characterId:'10000055',friendshipLevel:4,
+        comparisonOperator:'GreaterThanOrEqual'},
+      {type:'Unknown',wireSha256:WIRE}
+    ]}}
+  ]};
+  const formatted=formatGuideConditionTree(tree);
+  assert.match(formatted,/AND \[/);
+  assert.match(formatted,/MissionCompleted \(missionId="2070000022", inversed=true\)/);
+  assert.match(formatted,/OR \[/);
+  assert.match(formatted,/CharacterFriendship .*friendshipLevel=4/);
+  assert.match(formatted,/Unknown/);
+  assert.doesNotMatch(formatted,/nativeWireSha256|wireSha256/);
+  assert.equal(formatGuideConditionTree(null),null);
+});
+
+test('quest source conditions, activation branches and reward ranges remain static-only',()=>{
+  const conditions={operator:'NOT',conditions:[{type:'MissionStatus',
+    missionId:'2070000022',missionState:'Completed'}]};
+  const record={structured:{
+    conditions:{availableConditions:conditions,unlockConditions:{operator:'AND',conditions:[]}},
+    activationPolicies:{
+      autoAcceptOptions:[{choice:'Any',choiceFromProtoDefault:true,conditions}],
+      uiUnlockConditions:[{text:{plainText:{ja:'表示',en:'Visible'}},conditions:null}],
+      ownerOverrides:[{ownerKind:'custom',customPayloadSha256:WIRE,conditions}]
+    },
+    rewardsDecoded:{
+      friendshipOverride:{min:0,max:30},
+      currency:[{currencyId:'80000000',amountMin:50,amountMax:80},
+                {currencyId:null,amountMin:null,amountMax:100}]
+    }
+  }};
+  const facts=guideStaticFacts(record,'ja');
+  assert.equal(facts.conditions.length,2);
+  assert.match(facts.conditions[0].expression,/NOT \[/);
+  assert.equal(facts.policies.length,3);
+  assert.match(facts.policies[0].note,/protobuf既定値/);
+  assert.match(facts.policies[1].note,/原文=表示/);
+  assert.match(facts.policies[2].note,/不透明な原本設定/);
+  assert.equal(facts.policies[1].expression,null);
+  assert.deepEqual(facts.rewards.map(x=>[x.min,x.max]),[[0,30],[50,80],[null,100]]);
+  assert.equal(guideStaticFacts({},'en').rewards.length,0);
+  assert.throws(()=>guideStaticFacts(record,'xx'),/unsupported detail locale/);
 });

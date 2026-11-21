@@ -1,7 +1,7 @@
 <script lang="ts">
   import {
     GUIDE_LOCALES, importGuideSearch, importGuideFolder, importGuideDetail, searchGuide,
-    detailStepRows, MAX_SHARD_BYTES
+    detailStepRows, guideStaticFacts, MAX_SHARD_BYTES
   } from '$lib/guide/client.mjs';
 
   const languageLabels: Record<string, string> = {
@@ -39,6 +39,7 @@
   $: objectives = searchIndex ? [...new Set(searchIndex.records.flatMap((r: any) => r.objectiveKinds))].sort() : [];
   $: selectedRow = selectedId && searchIndex ? searchIndex.records.find((r: any) => r.id === selectedId) : null;
   $: detailSteps = selectedDetail ? detailStepRows(selectedDetail, locale) : [];
+  $: staticFacts = selectedDetail ? guideStaticFacts(selectedDetail, locale) : {conditions:[], policies:[], rewards:[]};
   $: siblingQuests = selectedRow && groupInfo[selectedRow.groupId] && searchIndex
     ? groupInfo[selectedRow.groupId].missionIds.map((id: string) => searchIndex.records.find((r: any) => r.id === id)).filter(Boolean) : [];
   $: requiredShards = searchIndex
@@ -291,6 +292,37 @@
           {#if detailError}<p class="guide-detail-note" role="status">{detailError}</p>{/if}
           {#if selectedDetail}
             {#if displayText(selectedDetail, 'availableDescription')}<p class="guide-detail-description">{displayText(selectedDetail, 'availableDescription')}</p>{/if}
+            {#if staticFacts.conditions.length || staticFacts.policies.length}
+              <section class="guide-source-facts" aria-label="Static source conditions">
+                <h3>原本の利用・解放条件</h3>
+                <p>ゲーム原本の条件木と分岐設定です。現在の解放状況・達成状態・確定した前提クエストを示すものではありません。</p>
+                {#each staticFacts.conditions as condition}
+                  <details class="guide-source-tree">
+                    <summary>{condition.label}</summary>
+                    <pre>{condition.expression}</pre>
+                  </details>
+                {/each}
+                {#each staticFacts.policies as policy}
+                  <details class="guide-source-tree">
+                    <summary>{policy.label}</summary>
+                    {#if policy.note}<p>{policy.note}</p>{/if}
+                    {#if policy.expression}<pre>{policy.expression}</pre>
+                    {:else}<p>この分岐には条件木の定義がありません。無条件の解放を意味しません。</p>{/if}
+                  </details>
+                {/each}
+              </section>
+            {/if}
+            {#if staticFacts.rewards.length}
+              <section class="guide-source-facts" aria-label="Source-configured rewards">
+                <h3>原本に設定された報酬値</h3>
+                <p>静的な設定値です。実際の獲得、付与保証、所持状況を示しません。通貨IDは原本の識別子です。</p>
+                <ul class="guide-source-rewards">
+                  {#each staticFacts.rewards as reward}
+                    <li>{reward.label}: {reward.min ?? '不明'} – {reward.max ?? '不明'}</li>
+                  {/each}
+                </ul>
+              </section>
+            {/if}
             <h3>ステップ・目標の定義</h3>
             {#if detailSteps.length}
               <ol class="guide-steps">
@@ -424,6 +456,11 @@
   .guide-candidates { margin:10px 0 0; font-size:11px; }
   .guide-candidates ul { margin:8px 0; padding-left:18px; color:#d0c0df; }
   .guide-candidates small, .guide-candidates p { color:#a895b8; font-size:10px; }
+  .guide-source-facts p { font-size:11px; color:#ad9bbc; line-height:1.7; overflow-wrap:anywhere; }
+  .guide-source-tree { background:#281f33; border:1px solid #ffffff1f; border-radius:9px; padding:11px 13px; margin-top:9px; }
+  .guide-source-tree summary { cursor:pointer; color:#d9bfec; font-size:12px; }
+  .guide-source-tree pre { margin:12px 0 2px; padding:11px; background:#17111e; border-radius:7px; color:#cab8dc; font-size:10px; white-space:pre-wrap; overflow-wrap:anywhere; max-height:340px; overflow:auto; }
+  .guide-source-rewards { color:#ddcbe9; font-size:12px; line-height:1.8; padding-left:18px; }
   .guide-verified { color:#bad7b6; font-size:11px; }
   .guide-related p { font-size:11px; color:#ac9bbf; line-height:1.7; }
   .guide-related ul { list-style:none; padding:0; display:grid; gap:7px; }

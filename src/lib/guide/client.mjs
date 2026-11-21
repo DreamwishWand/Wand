@@ -340,6 +340,105 @@ export function guideItemTargets(targets) {
   return {configuredQuantity, candidates, totalCandidates:seen.size};
 }
 
+/** Render the original boolean AST without evaluating it or promoting it to a prerequisite DAG. */
+export function formatGuideConditionTree(tree) {
+  if (!isObj(tree) || !Array.isArray(tree.conditions)) return null;
+  const lines = [];
+  function visit(node, depth) {
+    assert(depth <= 24 && isObj(node) && Array.isArray(node.conditions),
+      'invalid source condition tree');
+    const indent = '  '.repeat(depth);
+    // Parenthesized groups retain AND/OR/NOT, including empty original groups.
+    lines.push(indent + String(node.operator ?? 'Unknown') + ' [');
+    for (const child of node.conditions) {
+      if (!isObj(child)) {
+        lines.push(indent + '  Unknown (opaque condition)');
+        continue;
+      }
+      if (child.type === 'SubConditions' && isObj(child.nested)) {
+        lines.push(indent + '  SubConditions:');
+        visit(child.nested, depth + 2);
+        continue;
+      }
+      const metadata = Object.entries(child)
+        .filter(([key, value]) => !['type', 'nested', 'nativeWireSha256',
+          'wireSha256', 'protobufField'].includes(key) &&
+          (typeof value === 'string' || typeof value === 'number' ||
+           typeof value === 'boolean') && value !== null)
+        .map(([key, value]) => key + '=' + JSON.stringify(value));
+      // Unknown leaves are opaque, even when the corresponding source digest exists.
+      lines.push(indent + '  ' + String(child.type ?? 'Unknown') +
+        (metadata.length ? ' (' + metadata.join(', ') + ')' : ''));
+    }
+    lines.push(indent + ']');
+  }
+  visit(tree, 0);
+  return lines.join('\n');
+}
+
+/** Static quest metadata only: no player progress, unlock evaluation or granted rewards. */
+export function guideStaticFacts(record, locale = 'ja') {
+  assert(GUIDE_LOCALES.includes(locale), 'unsupported detail locale');
+  const typed = isObj(record?.structured) ? record.structured : {};
+  const conditions = [], policies = [], rewards = [];
+  const sourceConditions = isObj(typed.conditions) ? typed.conditions : {};
+  for (const [key, label] of [
+    ['availableConditions', '原本の利用条件'], ['unlockConditions', '原本の解放条件']
+  ]) {
+    const expression = formatGuideConditionTree(sourceConditions[key]);
+    if (expression !== null) conditions.push({label, expression});
+  }
+  const sourcePolicies = isObj(typed.activationPolicies) ? typed.activationPolicies : {};
+  for (const [key, label] of [
+    ['autoAcceptOptions', '自動受諾オプション'],
+    ['uiUnlockConditions', 'UI表示条件'],
+    ['ownerOverrides', '担当キャラクターの上書き設定']
+  ]) {
+    const entries = Array.isArray(sourcePolicies[key]) ? sourcePolicies[key] : [];
+    for (const [index, entry] of entries.entries()) {
+      if (!isObj(entry)) continue;
+      const qualifiers = [];
+      if (key === 'autoAcceptOptions' && typeof entry.choice === 'string')
+        qualifiers.push('choice=' + entry.choice +
+          (entry.choiceFromProtoDefault === true ? ' (protobuf既定値)' : ''));
+      if (key === 'ownerOverrides') {
+        if (entry.ownerKind === 'character' && isId(entry.characterId))
+          qualifiers.push('characterId=' + entry.characterId);
+        else if (entry.ownerKind === 'custom')
+          qualifiers.push('custom (不透明な原本設定)');
+        else qualifiers.push('ownerKind=' + String(entry.ownerKind ?? 'unknown'));
+      }
+      if (key === 'uiUnlockConditions') {
+        const localized = guideSourceText(entry.text, locale);
+        if (localized.text) qualifiers.push('原文=' + localized.text +
+          (localized.locale !== locale ? ' (' + localized.locale + ')' : ''));
+        else if (typeof entry.textKey === 'string') qualifiers.push('textKey=' + entry.textKey);
+      }
+      policies.push({
+        label: label + ' ' + (index + 1),
+        note: qualifiers.join(' · '),
+        expression: formatGuideConditionTree(entry.conditions)
+      });
+    }
+  }
+  const sourceRewards = isObj(typed.rewardsDecoded) ? typed.rewardsDecoded : {};
+  const friendship = sourceRewards.friendshipOverride;
+  if (isObj(friendship) && (Number.isSafeInteger(friendship.min) ||
+      Number.isSafeInteger(friendship.max))) {
+    rewards.push({label:'原本の親密度報酬設定（上書き値）',
+      min:Number.isSafeInteger(friendship.min) ? friendship.min : null,
+      max:Number.isSafeInteger(friendship.max) ? friendship.max : null});
+  }
+  for (const [index, currency] of (Array.isArray(sourceRewards.currency) ? sourceRewards.currency : []).entries()) {
+    if (!isObj(currency)) continue;
+    rewards.push({label:'原本の通貨報酬候補 ' + (index + 1) +
+      '（Currency ID: ' + String(currency.currencyId ?? '未指定') + '）',
+      min:Number.isSafeInteger(currency.amountMin) ? currency.amountMin : null,
+      max:Number.isSafeInteger(currency.amountMax) ? currency.amountMax : null});
+  }
+  return {conditions, policies, rewards};
+}
+
 /** Faithful, human-readable steps with individual original objective descriptions. */
 export function detailStepRows(record, locale = 'ja') {
   assert(GUIDE_LOCALES.includes(locale), 'unsupported detail locale');
