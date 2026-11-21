@@ -117,7 +117,9 @@ class ConditionNativeDiffTests(unittest.TestCase):
     def test_native_framing_and_duplicate_id_validation(self):
         with self.assertRaises(ValueError):
             record_digests(b'\x01\x04bad')
-        with self.assertRaisesRegex(ValueError,'DUPLICATE_NATIVE_ID'):
+        # Repeated frame offsets are rejected by the underlying native parser
+        # even before a duplicate native ID could enter the projection.
+        with self.assertRaisesRegex(ValueError,'INVALID_NATIVE_FRAME'):
             record_digests(records([(0,'a'),(1,'b')])+records([(0,'c')]))
         with self.assertRaisesRegex(ValueError,'ZERO_NATIVE_RECORDS'):
             record_digests(b'')
