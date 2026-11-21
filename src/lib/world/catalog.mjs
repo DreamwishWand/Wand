@@ -89,6 +89,11 @@ function validateFootprint(footprint) {
   }
 }
 
+// 32x32 grid-local source-anchor buckets. This indexes recorded GridObject X/Y
+// anchors, not occupied cells or user-save positions. Internal to each catalog.
+const SOURCE_ANCHOR_BUCKET_SIDE = 32;
+const sourceAnchorBuckets = new WeakMap();
+
 export function createWorldCatalog(bundle) {
   if (!isRecord(bundle) || !isRecord(bundle.manifest) || bundle.manifest.schema !== WORLD_SCHEMA ||
       bundle.manifest.status !== 'partial_game_native_evidence') {
@@ -105,6 +110,7 @@ export function createWorldCatalog(bundle) {
   // Reuse exact native Grid.ID buckets across viewport and anchor queries.
   // A large original GridCollection may contain many unrelated grids.
   const layoutObjectsByGrid = new Map();
+  const spatialBuckets = new Map();
   for (const object of layoutObjects.values()) {
     if (!layouts.has(object.layoutId)) {
       throw new TypeError('DB-04 default object references an absent native layout');
@@ -132,11 +138,23 @@ export function createWorldCatalog(bundle) {
     gridRows.push(object);
     buckets.set(object.gridIdNative, gridRows);
     layoutObjectsByGrid.set(object.layoutId, buckets);
+    const layoutBins = spatialBuckets.get(object.layoutId) ?? new Map();
+    const gridBins = layoutBins.get(object.gridIdNative) ?? new Map();
+    const bucketKey = `${Math.floor(object.x / SOURCE_ANCHOR_BUCKET_SIDE)}:${Math.floor(object.y / SOURCE_ANCHOR_BUCKET_SIDE)}`;
+    const entries = gridBins.get(bucketKey) ?? [];
+    // Store source-grid ordinal so multi-bucket results retain the exact
+    // original snapshot record order used by existing pagination.
+    entries.push({record: object, sourceOrdinal: gridRows.length - 1});
+    gridBins.set(bucketKey, entries);
+    layoutBins.set(object.gridIdNative, gridBins);
+    spatialBuckets.set(object.layoutId, layoutBins);
   }
   for (const item of objects.values()) validateFootprint(item.footprint);
-  return { manifest: bundle.manifest, objects, scenes, grids, layouts, worlds, areas,
+  const catalog = { manifest: bundle.manifest, objects, scenes, grids, layouts, worlds, areas,
     layoutObjects, layoutObjectsByLayout, layoutObjectsByGrid,
     unresolved: isRecord(bundle.unresolved) ? bundle.unresolved : null };
+  sourceAnchorBuckets.set(catalog, spatialBuckets);
+  return catalog;
 }
 
 export function getNativeFootprint(catalog, itemId) {
@@ -863,28 +881,43 @@ export function getNativeDefaultLayoutAnchorWindow(
       sourceLayoutId: id, gridIdNative: nativeGridId,
     };
   }
-  const anchors = [];
-  let matchingAnchorCount = 0;
-  for (const record of native) {
-    if (record.x < x || record.x >= x + width ||
-        record.y < y || record.y >= y + height) continue;
-    if (page === null ||
-        (matchingAnchorCount >= page.offset &&
-         matchingAnchorCount - page.offset < page.limit)) {
-      anchors.push({
-        layoutObjectId: record.layoutObjectId,
-        gridObjectIdNative: record.gridObjectIdNative,
-        itemId: record.itemId,
-        x: record.x, y: record.y,
-        orientationCode: record.orientationCode,
-        orientationName: record.orientationName ?? null,
-        positionBasis: 'nativeGridLocalSourceRecord',
-        fullFootprintVerified: false,
-        fixedImmovableVerified: false,
-      });
+  // Query only the source-anchor buckets intersecting this grid-local
+  // viewport. Out-of-grid, missing, negative and nonmatching native records
+  // still count toward the original GridCollection cardinality above.
+  const index = sourceAnchorBuckets.get(catalog);
+  if (!index) throw new TypeError('DB-04 anchor viewport requires an indexed catalog');
+  const gridBins = index.get(id)?.get(nativeGridId);
+  const selected = [];
+  const minBX = Math.floor(x / SOURCE_ANCHOR_BUCKET_SIDE);
+  const maxBX = Math.floor((x + width - 1) / SOURCE_ANCHOR_BUCKET_SIDE);
+  const minBY = Math.floor(y / SOURCE_ANCHOR_BUCKET_SIDE);
+  const maxBY = Math.floor((y + height - 1) / SOURCE_ANCHOR_BUCKET_SIDE);
+  for (let bx = minBX; bx <= maxBX; bx++) {
+    for (let by = minBY; by <= maxBY; by++) {
+      for (const entry of gridBins?.get(`${bx}:${by}`) ?? []) {
+        const { record } = entry;
+        if (record.x >= x && record.x < x + width &&
+            record.y >= y && record.y < y + height) selected.push(entry);
+      }
     }
-    matchingAnchorCount++;
   }
+  // Native GridObject IDs are not necessarily sorted or consecutive. Use
+  // original source record order, never ID order or bucket traversal order.
+  selected.sort((a, b) => a.sourceOrdinal - b.sourceOrdinal);
+  const matchingAnchorCount = selected.length;
+  const pageRecords = page === null ? selected
+    : selected.slice(page.offset, page.offset + page.limit);
+  const anchors = pageRecords.map(({record}) => ({
+    layoutObjectId: record.layoutObjectId,
+    gridObjectIdNative: record.gridObjectIdNative,
+    itemId: record.itemId,
+    x: record.x, y: record.y,
+    orientationCode: record.orientationCode,
+    orientationName: record.orientationName ?? null,
+    positionBasis: 'nativeGridLocalSourceRecord',
+    fullFootprintVerified: false,
+    fixedImmovableVerified: false,
+  }));
   return {
     status: 'source_native_default_layout_anchors_only',
     sourceLayoutId: id, gridIdNative: nativeGridId,
