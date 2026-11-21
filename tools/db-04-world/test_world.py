@@ -7,7 +7,8 @@ from pathlib import Path
 
 from world import (STREAM, diff_records, encode_varint, explicit_references,
                    extract, footprint, parse_grid_structure, parse_itemlist,
-                   parse_world_registry, restrictions, wire_fields)
+                   parse_world_registry, grid_collection_layout,
+                   default_village_layout, restrictions, wire_fields)
 
 
 def field(number, value, wire=None):
@@ -98,6 +99,53 @@ class NativeWireTests(unittest.TestCase):
         self.assertEqual(problems, [])
         self.assertEqual(catalog[1]["worldIdKind"], "derivedLayoutKey")
 
+    def test_source_default_grid_collection_has_real_native_coordinates(self):
+        path = STREAM / "SceneLayouts/Village04/MeadowGrids.json"
+        # Object ID zero is a protobuf default, omitted in both map and object.
+        zero_object = (field(2, 40600004) + field(3, 61) +
+                       field(4, 77) + field(5, 12))
+        four_object = (field(1, 4) + field(2, 40000001) +
+                       field(3, 12) + field(4, 5) + field(5, 4) +
+                       field(6, b"state"))
+        data = field(1, field(2,
+            field(2, "GridData/Villages/Village04-MeadowLevel-GridData.json") +
+            field(4, 1) +
+            field(5, field(2, zero_object)) +
+            field(5, field(1, 4) + field(2, four_object)) +
+            field(6, 5))) + field(3, 1)
+        parsed = grid_collection_layout(data, path)
+        self.assertIsNotNone(parsed)
+        layout, objects = parsed
+        self.assertEqual(layout["layoutKind"], "nativeGridCollection")
+        self.assertEqual(layout["defaultObjectCount"], 2)
+        self.assertEqual(layout["nativeGridEntries"][0]["tessellationFactor"], 1)
+        self.assertEqual(objects[0]["itemId"], 40600004)
+        self.assertEqual((objects[0]["x"], objects[0]["y"]), (61, 77))
+        self.assertEqual(objects[0]["orientationName"], "Left")
+        self.assertEqual(objects[1]["orientationName"], "Right")
+        self.assertFalse(objects[0]["fixedImmovableVerified"])
+        self.assertFalse(objects[0]["worldCoordinatesVerified"])
+        self.assertEqual(objects[1]["stateByteCount"], 5)
+        # Real protobuf map object ID mismatch is a corrupt source.
+        corrupted = data.replace(field(1, 4) + field(2, four_object),
+                                 field(1, 3) + field(2, four_object))
+        with self.assertRaisesRegex(ValueError, "disagree"):
+            grid_collection_layout(corrupted, path)
+
+    def test_default_village_grid_layout_map_exact_area_paths(self):
+        path = STREAM / "SceneLayouts/Village04/DefaultVillageLayout01.json"
+        data = (field(1, field(2, 1540000000) +
+                       field(3, "Village04Layout1")) +
+                field(2, field(2, "SceneLayouts/Village04/BeachGrids.json")) +
+                field(2, field(1, 2) +
+                      field(2, "SceneLayouts/Village04/MeadowGrids.json")))
+        layout = default_village_layout(data, path)
+        self.assertEqual(layout["layoutKind"], "nativeDefaultVillageData")
+        self.assertEqual(layout["defaultVillageSceneId"], 1540000000)
+        self.assertEqual([a["nativeAreaTypeName"] for a in
+                          layout["areaLayoutReferences"]], ["Beach", "Meadow"])
+        self.assertEqual(layout["areaLayoutReferences"][0]["nativeAreaTypeCode"], 0)
+
     def test_native_grid_fixed32_palette_and_compacted_payload(self):
         palette = struct.pack("<III", 0, 3072, 1024)
         compacted = b"\x55" * 48
@@ -181,6 +229,25 @@ class PipelineTests(unittest.TestCase):
 
     def tearDown(self):
         self.tmp.cleanup()
+
+    def test_pipeline_extracts_actual_default_layout_object_data(self):
+        layout = (field(1, field(2,
+            field(2, "GridData/Villages/Village04-Test.json") +
+            field(5, field(2, field(2, 40000001) +
+                            field(3, 9) + field(4, 10) + field(5, 4))))) +
+                  field(3, 1))
+        target = self.base / "SceneLayouts/Village04/MeadowGrids.json"
+        target.write_bytes(layout)
+        report = extract(self.game, self.out)
+        self.assertEqual(report["defaultLayoutObjectCount"], 1)
+        self.assertEqual(report["typedGridCollectionCount"], 1)
+        native_objects = json.loads((self.out / "layoutObjects.json").read_text())
+        self.assertEqual(native_objects[0]["itemId"], 40000001)
+        self.assertEqual((native_objects[0]["x"], native_objects[0]["y"]), (9, 10))
+        self.assertEqual(native_objects[0]["gridObjectIdNative"], 0)
+        self.assertEqual(native_objects[0]["orientationName"], "Right")
+        self.assertIn("layoutObjects.json", json.loads(
+            (self.out / "manifest.json").read_text())["outputSha256"])
 
     def test_extraction_retains_native_data_and_unresolved_evidence(self):
         report = extract(self.game, self.out)
