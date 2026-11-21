@@ -187,19 +187,19 @@ class NativeWireTests(unittest.TestCase):
         self.assertEqual(decode_window(3, 3, palette, packed, 0, 0, 3, 3),
                          [[1024] * 3] * 3)
         with self.assertRaisesRegex(ValueError, "padding"):
-            describe_native_packing(3, 3, palette, b"\\xff\\x81")
+            describe_native_packing(3, 3, palette, bytes((255, 129)))
         with self.assertRaisesRegex(ValueError, "length"):
-            describe_native_packing(3, 3, palette, b"\\xff")
+            describe_native_packing(3, 3, palette, bytes((255,)))
         with self.assertRaisesRegex(ValueError, "palette"):
             describe_native_packing(2, 2, [0, 1024, 2048], b"\\xff")
 
     def test_native_palette_3bit_or_higher_remains_explicitly_unresolved(self):
-        p = describe_native_packing(5, 5, [0, 1, 2, 3, 4], b"\\x00" * 25)
+        p = describe_native_packing(5, 5, [0, 1, 2, 3, 4], bytes(25))
         self.assertEqual(p["status"], "unresolved_palette_cardinality")
         self.assertFalse(p["decoded"])
         with self.assertRaisesRegex(ValueError, "unresolved"):
             decode_window(5, 5, [0, 1, 2, 3, 4],
-                          b"\\x00" * 25, 0, 0, 2, 2)
+                          bytes(25), 0, 0, 2, 2)
 
     def test_native_grid_fixed32_palette_and_compacted_payload(self):
         palette = struct.pack("<III", 0, 3072, 1024)
