@@ -13,5 +13,6 @@ jobs:
           node-version: 22
       - run: npm install --no-audit --no-fund
       - run: npm test
+      - run: node --experimental-strip-types --test tests/collection-db01-core.check.mjs
       - run: npm run check
       - run: npm run build
