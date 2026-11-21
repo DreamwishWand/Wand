@@ -107,7 +107,15 @@ export function createWorldCatalog(bundle) {
       throw new TypeError('DB-04 default object references an absent native layout');
     }
     if (!Number.isSafeInteger(object.x) || !Number.isSafeInteger(object.y) ||
+        !Number.isSafeInteger(object.gridIdNative) ||
+        object.gridIdNative < 0 || object.gridIdNative > 0xffffffff ||
         !Number.isSafeInteger(object.gridObjectIdNative) ||
+        object.gridObjectIdNative < 0 || object.gridObjectIdNative > 0xffffffff ||
+        // The original GridCollection map key and GridObject.ID were checked
+        // by extraction. Never let a divergent exported composite ID point a
+        // save/editor join at a different native object after JSON mutation.
+        object.layoutObjectId !==
+          `${object.layoutId}#grid=${object.gridIdNative}#object=${object.gridObjectIdNative}` ||
         !Number.isSafeInteger(object.itemId) ||
         object.worldCoordinatesVerified !== false ||
         object.fixedImmovableVerified !== false) {
