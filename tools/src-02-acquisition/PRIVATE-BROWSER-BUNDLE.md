@@ -1,37 +1,38 @@
-# DB-02 private browser ZIP: fail-closed admission, not a data release
+# DB-02 private browser ZIP: validated r5, private-only admission
 
-**Current status (2026-11-21): BLOCKED / NO APPROVED STEAM v1.26.2 ZIP.**
-The formerly named `Steam-v1.26.2-ACQ-r4-ingredients-20261121` contains
-`source.conditionSha256 = f9716fd7...` from an original Steam **v1.26.1**
-`Condition.json`. The independently recorded **v1.26.2** original has SHA-256
-`9eb5e7800a2485b1dfb3e148a7bcff5d6c6b6ed72797ed2331a902ab44188f4c`.
-Even an internally consistent SHA-256 chain and the old r4 manifest pin
+**Current status (2026-11-21): Steam v1.26.2 r5 VERIFIED FOR OWNER-PRIVATE USE.**
+The authentic Steam v1.26.2 `Condition.json` (571,341 bytes) was independently
+SHA-verified to `9eb5e7800a2485b1dfb3e148a7bcff5d6c6b6ed72797ed2331a902ab44188f4c`
+and used to rebuild r5. Its exact SRC-02 manifest SHA-256 is
+`ec1efd589dd5390f11f5a99411bcf3f1c6bc34309ddfa68e51589c078601f31c`.
+The owner-private browser ZIP `db02-private-src02-r5-condition-corrected.zip`
+(271,320 bytes; Drive file ID `1gc76Y7OQYonTreOMWJLWyPFpf26vv009`)
+is present under SRC-02 / Browser Private / Steam-v1.26.2-r5-current-condition-20261121.
+Its independently recorded SHA-256 in `LATEST.json` is
+`7914b88b4d7c546ee362a907d9a66691debcafc54caefb0815254edc10fa7fb8`.
+
+The former r4 `Condition.json` came from Steam v1.26.1 and its manifest SHA
 `323f666cd30ae1e784879d4664ca57a845559734d147193b7d7177fd59eb938d`
-**cannot authorize stale condition definitions, gates, acquisition eligibility,
-or a current-version DB-01 join**. Main's authoritative Node verifier and
-DB-00 join already reject r4. This new browser loader implements the same
-source-identity gate; the stale private test ZIP was removed from Drive.
-No current-version `Condition.json` bytes have been source-authenticated in
-this stream. Do not claim current v1.26.2 acquisition source completion.
+remains revoked. Node, DB-00 and browser admission all reject this stale
+source. r5 is **partial, not publishable**, and proves neither live offers,
+sale prices, game rights, player ownership nor runtime condition eligibility.
 
-## Pending owner-private packaging (AFTER source P0 is resolved)
-
-From a freshly re-extracted and independently audited exact-version source:
+## Owner-private re-packaging (optional; only with the independently pinned r5)
 
 ```sh
 python tools/src-02-acquisition/pack_private_browser.py \
-  --dir /owner/private/SRC-02/NEW_ACCEPTED_SNAPSHOT \
+  --dir /owner/private/SRC-02/Steam-v1.26.2-ACQ-r5-current-condition-20261121 \
   --src01-manifest /owner/private/SRC-01/manifest.json \
-  --expected-manifest-sha256 NEW_INDEPENDENTLY_TRUSTED_SHA256 \
-  --out /owner/private/SRC-02/new-accepted-private-browser.zip
+  --expected-manifest-sha256 ec1efd589dd5390f11f5a99411bcf3f1c6bc34309ddfa68e51589c078601f31c \
+  --out /owner/private/SRC-02/r5-private-browser.zip
 ```
 
-The packer calls the authoritative Node `verify_bundle.mjs` first; it rejects
-old r4, invalid source versions, bad SHA, broken rows, symlinked direct inputs,
-public Git destinations and overwrite. Only after validation does it pack
-exactly 12 files (`manifest.json` and 11 hashed data files). Nothing is placed
-in public Pages, GitHub, or app static assets. The current owner-private r4
-ZIP is **not** a distributable release and must not be reused.
+The packer invokes the authoritative Node `verify_bundle.mjs` and rejects
+revoked r4, source mismatches, broken rows, symlinks, public Git destinations
+and overwrite. It packages exactly 12 files (the manifest plus 11 SHA-ledgered
+files). Never place private ZIPs or extracted rows in `static/`, public GitHub
+or Pages. User-selected browser imports must remain local and explicitly
+source-pinned.
 
 ## Browser-side contract
 
@@ -53,12 +54,12 @@ the old r4 SHA-256 as a supposedly trusted hash.
 import {loadPrivateSrc02BrowserBundle,CURRENT_STEAM_1262_CONDITION_SHA256}
   from '$lib/acquisition/private-browser-bundle.mjs';
 
-// AFTER the owner has re-extracted and audited current original source:
+// Owner-private r5 release, independently pinned against LATEST.json:
 const source = await loadPrivateSrc02BrowserBundle(
   new Uint8Array(await localUserChosenFile.arrayBuffer()), {
     platform:'Steam',gameVersion:'1.26.2',
-    manifestSha256: independentlyReviewedNewManifestSha,
-    src01ManifestSha256: independentlyReviewedSrc01ManifestSha,
+    manifestSha256: 'ec1efd589dd5390f11f5a99411bcf3f1c6bc34309ddfa68e51589c078601f31c',
+    src01ManifestSha256: '1ebf7a19792bb229ca7e0cec533b1471e4f2c0e695a9d413bbcf305022f6',
     currentConditionSha256:CURRENT_STEAM_1262_CONDITION_SHA256
   });
 const nativeEvidence = source.getItem(31000001); // static paths only
@@ -70,6 +71,4 @@ or infer price, stock, currency, rights, DLC or Writer authorization. Private
 source rows must remain in a disposable local Worker and not be posted to a
 public server. The concurrent Collection Rust/WASM migration is untouched.
 
-CI uses synthetic source fixtures only. Real old-r4 negative smoke verifies
-rejection; the rejected ZIP itself is not committed, published or retained as
-an active Drive deliverable.
+CI uses synthetic source fixtures only. Separate owner-private r5 smoke and SHA-256 audits passed; old-r4 negative smoke verifies rejection. Neither owner-private game data nor the r5 ZIP may be published through GitHub or Pages.
