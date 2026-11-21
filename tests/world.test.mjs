@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {
   WORLD_SCHEMA, createWorldCatalog, getNativeFootprint, getNativeScene,
   getLayoutGridReferences, getNativeFloorPalette, getNativeWorld,
-  getNativeAreasForScene, describeNativeLayerMask,
+  getNativeAreasForScene, getDefaultLayoutObjects,
+  getDefaultVillageAreaLayoutRefs, getDefaultLayoutGridEntries, describeNativeLayerMask,
   describeNativeFloorMask, checkNativeEditRestriction, assessPlacement,
 } from '../src/lib/world/catalog.mjs';
 
@@ -24,8 +25,24 @@ function fixture() {
       nativeAreaTypeCode: 3, nativeAreaTypeName: 'Urban' }],
     grids: [{ gridId: 'GridData/Villages/Meadow.json', terrainFlagsVerified: false,
       nativeFloorTypePalette: [0, 4, 256, 512] }],
-    layouts: [{ layoutId: 'SceneLayouts/Village04/Main.json',
-      gridReferences: [{ path: 'GridData/Villages/Meadow.json', wireField: '1.2' }] }],
+    layouts: [
+      { layoutId: 'SceneLayouts/Village04/Main.json',
+        layoutKind: 'nativeGridCollection',
+        gridReferences: [{ path: 'GridData/Villages/Meadow.json', wireField: '1.2' }],
+        nativeGridEntries: [{ gridIdNative: 0, gridDataPath: 'GridData/Villages/Meadow.json',
+          tessellationFactor: 1, defaultObjectCount: 1 }] },
+      { layoutId: 'SceneLayouts/Village04/Default.json',
+        layoutKind: 'nativeDefaultVillageData',
+        areaLayoutReferences: [{ nativeAreaTypeCode: 3, nativeAreaTypeName: 'Urban',
+          gridLayoutPath: 'SceneLayouts/Village04/Main.json' }] },
+    ],
+    layoutObjects: [{
+      layoutObjectId: 'SceneLayouts/Village04/Main.json#grid=0#object=7',
+      layoutId: 'SceneLayouts/Village04/Main.json',
+      gridObjectIdNative: 7, gridIdNative: 0, itemId: 40000001,
+      x: 61, y: 77, orientationCode: 12, orientationName: 'Left',
+      worldCoordinatesVerified: false, fixedImmovableVerified: false,
+    }],
     unresolved: { unknownSemantics: ['terrain'] },
   };
 }
@@ -85,4 +102,28 @@ test('IL2CPP native layer and floor enum bits are mapped without asserting place
   assert.deepEqual(getNativeFloorPalette(createWorldCatalog(fixture()), 'GridData/Villages/Meadow.json')
     .map(x => x.symbols), [[], ['Meadow'], ['Shore'], ['Water']]);
   assert.throws(() => describeNativeLayerMask(-1), /Invalid/);
+});
+
+test('default layout positions are source-defined and never treated as immutable', () => {
+  const catalog = createWorldCatalog(fixture());
+  const rows = getDefaultLayoutObjects(catalog, 'SceneLayouts/Village04/Main.json');
+  assert.equal(rows.length, 1);
+  assert.deepEqual([rows[0].x, rows[0].y], [61, 77]);
+  assert.equal(rows[0].orientationName, 'Left');
+  assert.equal(rows[0].fixedImmovableVerified, false);
+  assert.equal(rows[0].worldCoordinatesVerified, false);
+  rows[0].x = 999;
+  assert.equal(getDefaultLayoutObjects(catalog, 'SceneLayouts/Village04/Main.json')[0].x, 61);
+  assert.equal(getDefaultLayoutObjects(catalog, 'SceneLayouts/Village04/Main.json', 2).length, 0);
+  assert.equal(getDefaultLayoutGridEntries(catalog, 'SceneLayouts/Village04/Main.json')[0].knownGridData, true);
+  assert.equal(getDefaultVillageAreaLayoutRefs(catalog, 'SceneLayouts/Village04/Default.json')[0].knownLayout, true);
+});
+
+test('native default placement records cannot claim verified world positions or fixedness', () => {
+  const a = fixture();
+  a.layoutObjects[0].worldCoordinatesVerified = true;
+  assert.throws(() => createWorldCatalog(a), /Invalid native default object/);
+  const b = fixture();
+  b.layoutObjects[0].layoutId = 'SceneLayouts/missing.json';
+  assert.throws(() => createWorldCatalog(b), /absent native layout/);
 });
