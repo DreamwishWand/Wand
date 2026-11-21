@@ -94,9 +94,9 @@ export function createSaveGuideProgressBridge(guideIndex) {
     contract: SAVE_GUIDE_JOIN_CONTRACT,
     source: guideSource,
     auditSave(decoded, options={}) {
+      if (!object(options)) throw new TypeError('DB05_DB03_AUDIT_LIMIT_INVALID');
       const limit=options.maxReferences??MAX_REFERENCES;
-      if (!Number.isSafeInteger(limit) || limit<1 || limit>MAX_REFERENCES ||
-          !object(options))
+      if (!Number.isSafeInteger(limit) || limit<1 || limit>MAX_REFERENCES)
         throw new TypeError('DB05_DB03_AUDIT_LIMIT_INVALID');
       const valid=inspectDecodedSave(decoded,null);
       if (!valid.rootShapeValid)
