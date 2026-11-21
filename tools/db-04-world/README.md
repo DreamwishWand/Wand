@@ -66,6 +66,22 @@ The original `getNativeDefaultLayoutViewport` /
 `getNativeVillageAreaViewport` APIs still require corroborated terrain
 decoding and retain their existing contract.
 
+**Large original layouts:** pass an optional `{offset, limit}` argument as the
+last parameter to `getNativeDefaultLayoutAnchorWindow` or
+`getNativeVillageAreaAnchorWindow`. `offset` is a zero-based ordinal among
+anchors **inside the requested native grid-local rectangle**; `limit` is
+1–512. Results report `matchingNativeDefaultAnchorCount` (all in-frame raw
+anchor records), `viewAnchorCount` (just the returned page),
+`totalNativeDefaultObjectAnchors` (all original objects in that native
+Grid.ID), `hasNextPage`, and `nextOffset` or null. A paged result
+does not assert anything about occupied cells, collision, placement or the
+user's current save. Omitting the argument preserves the existing complete
+window API and result shape. The catalog now indexes source GridObject
+records once by exact layout and native Grid.ID, eliminating repeated
+full-layout scans while navigating individual grids. Page order is the
+verified source snapshot's fixed `layoutObjects.json` record order; retain
+the same verified snapshot for every page to avoid missing/duplicated items.
+
 ## Original GridObject identity integrity
 
 Each original GridObject is identified by the exact GridCollection layout

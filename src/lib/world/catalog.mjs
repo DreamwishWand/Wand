@@ -102,6 +102,9 @@ export function createWorldCatalog(bundle) {
   const areas = uniqueMap(bundle.areas ?? [], 'areaId');
   const layoutObjects = uniqueMap(bundle.layoutObjects ?? [], 'layoutObjectId');
   const layoutObjectsByLayout = new Map();
+  // Reuse exact native Grid.ID buckets across viewport and anchor queries.
+  // A large original GridCollection may contain many unrelated grids.
+  const layoutObjectsByGrid = new Map();
   for (const object of layoutObjects.values()) {
     if (!layouts.has(object.layoutId)) {
       throw new TypeError('DB-04 default object references an absent native layout');
@@ -124,10 +127,15 @@ export function createWorldCatalog(bundle) {
     const rows = layoutObjectsByLayout.get(object.layoutId) ?? [];
     rows.push(object);
     layoutObjectsByLayout.set(object.layoutId, rows);
+    const buckets = layoutObjectsByGrid.get(object.layoutId) ?? new Map();
+    const gridRows = buckets.get(object.gridIdNative) ?? [];
+    gridRows.push(object);
+    buckets.set(object.gridIdNative, gridRows);
+    layoutObjectsByGrid.set(object.layoutId, buckets);
   }
   for (const item of objects.values()) validateFootprint(item.footprint);
   return { manifest: bundle.manifest, objects, scenes, grids, layouts, worlds, areas,
-    layoutObjects, layoutObjectsByLayout,
+    layoutObjects, layoutObjectsByLayout, layoutObjectsByGrid,
     unresolved: isRecord(bundle.unresolved) ? bundle.unresolved : null };
 }
 
@@ -532,9 +540,11 @@ export function getNativeAreasForScene(catalog, sceneId) {
 // A default layout is an original-game starting arrangement; whether a
 // particular object is permanent or movable must be checked separately.
 export function getDefaultLayoutObjects(catalog, layoutId, nativeGridId = null) {
-  const rows = catalog.layoutObjectsByLayout.get(String(layoutId)) ?? [];
-  return rows.filter(row => nativeGridId === null ||
-      row.gridIdNative === nativeGridId).map(row => ({
+  const id = String(layoutId);
+  const rows = nativeGridId === null
+    ? (catalog.layoutObjectsByLayout.get(id) ?? [])
+    : (catalog.layoutObjectsByGrid.get(id)?.get(nativeGridId) ?? []);
+  return rows.map(row => ({
     layoutObjectId: row.layoutObjectId,
     gridObjectIdNative: row.gridObjectIdNative,
     gridIdNative: row.gridIdNative,
@@ -790,7 +800,16 @@ export function getNativeTerrainDistribution(catalog, gridId) {
  * of the object outside the rectangle are unoccupied".
  */
 export function getNativeDefaultLayoutAnchorWindow(
-    catalog, layoutId, nativeGridId, rect) {
+    catalog, layoutId, nativeGridId, rect, page = null) {
+  // Optional bounded paging avoids materializing enormous anchor lists in the
+  // editor. Omitting it preserves the original legacy window result contract.
+  if (page !== null && (!isRecord(page) ||
+      !Number.isSafeInteger(page.offset) || page.offset < 0 ||
+      page.offset > 1000000 ||
+      !Number.isSafeInteger(page.limit) || page.limit < 1 ||
+      page.limit > 512)) {
+    throw new TypeError('Invalid native anchor pagination offset/limit');
+  }
   const id = String(layoutId);
   const layout = catalog.layouts.get(id);
   if (!layout) return { status: 'unknown_native_layout' };
@@ -835,8 +854,7 @@ export function getNativeDefaultLayoutAnchorWindow(
       sourceLayoutId: id, gridIdNative: nativeGridId, gridDataPath: entry.gridDataPath,
     };
   }
-  const native = (catalog.layoutObjectsByLayout.get(id) ?? []).filter(
-    record => record.gridIdNative === nativeGridId);
+  const native = catalog.layoutObjectsByGrid.get(id)?.get(nativeGridId) ?? [];
   if (!Number.isSafeInteger(entry.defaultObjectCount) ||
       entry.defaultObjectCount < 0 ||
       entry.defaultObjectCount !== native.length) {
@@ -845,19 +863,28 @@ export function getNativeDefaultLayoutAnchorWindow(
       sourceLayoutId: id, gridIdNative: nativeGridId,
     };
   }
-  const anchors = native.filter(record =>
-    record.x >= x && record.x < x + width &&
-    record.y >= y && record.y < y + height).map(record => ({
-      layoutObjectId: record.layoutObjectId,
-      gridObjectIdNative: record.gridObjectIdNative,
-      itemId: record.itemId,
-      x: record.x, y: record.y,
-      orientationCode: record.orientationCode,
-      orientationName: record.orientationName ?? null,
-      positionBasis: 'nativeGridLocalSourceRecord',
-      fullFootprintVerified: false,
-      fixedImmovableVerified: false,
-    }));
+  const anchors = [];
+  let matchingAnchorCount = 0;
+  for (const record of native) {
+    if (record.x < x || record.x >= x + width ||
+        record.y < y || record.y >= y + height) continue;
+    if (page === null ||
+        (matchingAnchorCount >= page.offset &&
+         matchingAnchorCount - page.offset < page.limit)) {
+      anchors.push({
+        layoutObjectId: record.layoutObjectId,
+        gridObjectIdNative: record.gridObjectIdNative,
+        itemId: record.itemId,
+        x: record.x, y: record.y,
+        orientationCode: record.orientationCode,
+        orientationName: record.orientationName ?? null,
+        positionBasis: 'nativeGridLocalSourceRecord',
+        fullFootprintVerified: false,
+        fixedImmovableVerified: false,
+      });
+    }
+    matchingAnchorCount++;
+  }
   return {
     status: 'source_native_default_layout_anchors_only',
     sourceLayoutId: id, gridIdNative: nativeGridId,
@@ -867,6 +894,13 @@ export function getNativeDefaultLayoutAnchorWindow(
     defaultObjectAnchors: anchors,
     totalNativeDefaultObjectAnchors: native.length,
     viewAnchorCount: anchors.length,
+    ...(page === null ? {} : {
+      matchingNativeDefaultAnchorCount: matchingAnchorCount,
+      pageOffset: page.offset, pageLimit: page.limit,
+      hasNextPage: page.offset + anchors.length < matchingAnchorCount,
+      nextOffset: page.offset + anchors.length < matchingAnchorCount
+        ? page.offset + anchors.length : null,
+    }),
     terrainDecoded: false,
     nativeGridLocalCoordinatesOnly: true,
     worldCoordinatesVerified: false,
@@ -884,7 +918,7 @@ export function getNativeDefaultLayoutAnchorWindow(
  * without requiring the v1.26.1-only native packed-terrain interpretation.
  */
 export function getNativeVillageAreaAnchorWindow(
-    catalog, villageLayoutId, nativeAreaTypeCode, nativeGridId, rect) {
+    catalog, villageLayoutId, nativeAreaTypeCode, nativeGridId, rect, page = null) {
   const id = String(villageLayoutId);
   const village = catalog.layouts.get(id);
   if (!village) return { status: 'unknown_native_village_layout' };
@@ -913,7 +947,7 @@ export function getNativeVillageAreaAnchorWindow(
     };
   }
   const anchors = getNativeDefaultLayoutAnchorWindow(
-    catalog, area.gridLayoutPath, nativeGridId, rect);
+    catalog, area.gridLayoutPath, nativeGridId, rect, page);
   return {
     ...anchors, villageLayoutId: id, nativeAreaTypeCode,
     nativeAreaTypeName: area.nativeAreaTypeName ?? null,
@@ -960,8 +994,7 @@ export function getNativeDefaultLayoutViewport(catalog, layoutId, nativeGridId, 
     return { status: terrain.status, sourceLayoutId: id,
       gridIdNative: nativeGridId, gridDataPath: entry.gridDataPath };
   }
-  const all = catalog.layoutObjectsByLayout.get(id) ?? [];
-  const native = all.filter(item => item.gridIdNative === nativeGridId);
+  const native = catalog.layoutObjectsByGrid.get(id)?.get(nativeGridId) ?? [];
   if (!Number.isSafeInteger(entry.defaultObjectCount) ||
       entry.defaultObjectCount < 0 ||
       entry.defaultObjectCount !== native.length) {
