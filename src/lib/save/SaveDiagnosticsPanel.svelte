@@ -1,27 +1,32 @@
 <script lang="ts">
   import {
-    makeSaveDiagnosticView, makeSaveCatalogAuditView
+    makeSaveDiagnosticView, makeSaveCatalogAuditView, sanitizeSaveDiagnosticView
   } from './diagnostic-view.mjs';
   import type { SaveSourceCatalogBridge } from './catalog-links.mjs';
 
   export let decoded: unknown = null;
+  /** The Worker returns this anonymous summary; never raw save data. */
+  export let report: ReturnType<typeof makeSaveDiagnosticView> | null = null;
   export let bridge: SaveSourceCatalogBridge | null = null;
 
   let previousDecoded: unknown = null;
+  let previousReport: typeof report = null;
   let requestSerial = 0;
   let catalogView: ReturnType<typeof makeSaveCatalogAuditView> | null = null;
   let catalogError = '';
   let loadingCatalog = false;
 
-  $: if (previousDecoded !== decoded) {
+  $: if (previousDecoded !== decoded || previousReport !== report) {
     previousDecoded = decoded;
+    previousReport = report;
     requestSerial++;
     catalogView = null;
     catalogError = '';
     loadingCatalog = false;
   }
 
-  $: summary = decoded === null ? null : makeSaveDiagnosticView(decoded);
+  $: summary = report !== null ? sanitizeSaveDiagnosticView(report) :
+    (decoded === null ? null : makeSaveDiagnosticView(decoded));
 
   const statusLabels: Record<string,string> = {
     observed_consistent: '観測範囲で整合',
@@ -113,12 +118,12 @@
         <h3>DB-01・DB-04カタログ照合</h3>
         <p class="muted">検証済みの非公開DB-01クライアントと部分DB-04カタログが接続された場合のみ照合できます。未登録IDはアイテム不存在を意味しません。</p>
       </div>
-      <button type="button" disabled={!bridge || loadingCatalog} on:click={runCatalogAudit}>
+      <button type="button" disabled={!bridge || decoded === null || loadingCatalog} on:click={runCatalogAudit}>
         {loadingCatalog ? '照合中…' : 'カタログ参照を確認'}
       </button>
     </div>
-    {#if !bridge}
-      <p class="muted">カタログの読込元は未接続です。内部参照の診断のみを表示しています。</p>
+    {#if !bridge || decoded === null}
+      <p class="muted">カタログの読込元、または別途検証済みの復号済みデータは未接続です。内部参照の診断のみを表示しています。</p>
     {/if}
     {#if catalogError}<p role="alert" class="error">{catalogError}</p>{/if}
     {#if catalogView}
