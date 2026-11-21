@@ -112,7 +112,7 @@ test('legacy ID witnesses do not conflate grid, world, quest, and catalog Item I
   const all = getLegacySaveIdReferences();
   const items = getLegacySaveIdReferences('item');
   assert.equal(all.length, 17);
-  assert.equal(items.length, 13);
+  assert.equal(items.length, 14);
   assert.ok(items.every(x => x.idReference.catalog === 'DB-01'));
   assert.ok(items.every(x => x.idReference.join === 'exact_numeric_only' && x.idReference.currentCatalogCoverageVerified === false));
   assert.equal(getLegacySaveIdReferences('quest').length, 0);
