@@ -18,3 +18,9 @@ static/ddv/collection/item-images-r39.json
 **/decoded-save.json
 **/save-structure.json
 **/db05-private-summary.json
+
+# DB-01 final private SQLite and on-demand shards: never publish/game-derived data.
+**/*.sqlite
+**/*.sqlite3
+.db01-private/
+**/private-shards/
