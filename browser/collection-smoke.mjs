@@ -188,7 +188,8 @@ try{
   await page.getByRole('button',{name:'バックアップ出力'}).click();
   const releaseBackup=JSON.parse(await readFile(await (await releaseBackupPromise).path(),'utf8'));
   assert.equal(releaseBackup.workspaces[0].entries['99999999'].discovered,true);
-  assert.equal(releaseBackup.workspaces[0].entries['40005160'].status,'missing');
+  // The explicit backup restore above replaced the edited state with seed (owned).
+  assert.equal(releaseBackup.workspaces[0].entries['40005160'].status,'owned');
   await page.route('**/'+releaseRoot+'/index.json',route=>route.fulfill({
     status:200,contentType:'application/json',body:JSON.stringify({
       ...releaseIndex,sources:[{id:'private-source',visibility:'private',sha256:'b'.repeat(64)}]
