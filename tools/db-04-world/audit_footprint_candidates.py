@@ -60,7 +60,10 @@ def audit_footprint_candidates(snapshot, *, max_objects=20000,
     grids = _by_id(read_json(root / "grids.json"), "gridId")
     layouts = _by_id(read_json(root / "layouts.json"), "layoutId")
     objects = _by_id(read_json(root / "objects.json"), "itemId")
-    native = read_json(root / "layoutObjects.json")
+    native_path = root / "layoutObjects.json"
+    # A legacy verified preview can predate the layoutObjects family.
+    # Report no comparable entries rather than breaking private ZIP packaging.
+    native = read_json(native_path) if native_path.is_file() else []
 
     hypotheses = projection_hypotheses()
     totals = {
