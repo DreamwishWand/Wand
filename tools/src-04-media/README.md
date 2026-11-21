@@ -102,6 +102,20 @@ The local item map was generated in both JSONL and a human-readable CSV, with a 
 The next discovery problem is the remaining 360 unique GUIDs, especially 348 unresolved Trimming Item IDs. Resolve by exact source relationships outside the existing 24 generated-icon bundles; do not infer mappings by image names, platform, or game-version labels.
 
 ---
+## Final two GUIDs resolved — full Item-ID icon coverage (2026-11-21)
+
+The owner-uploaded `catalog-last-two-report.json` (SHA-256 `2b482001fc2aea84c020f99f38661bb6fcac87909add82c2551be3ca50e222e8`) records **602/602 SHA-pinned bundles scanned** with zero errors, zero conflicting identity candidates, and both previously unresolved GUIDs recovered by exact `AssetBundle.m_Container` key plus local serialized `Texture2D` path ID. Both belong to `houses_assets_assets/playerhouse_cottageaviary_4c9e1e93.bundle`, source SHA-256 `6b9876d620aacb97e942d958d70b7103958bbb512f10f4d65e1677d45233299e`:
+
+- `160000214` / `CottageAviaryHouseWallpaper!color01`: `c98d99e05824631469c50afe67b4d841`, path ID `-4079636770385994334`.
+- `160100144` / `CottageAviaryHouseFloor!color01`: `db4746eaf4051004d901485113f0c812`, path ID `-6765701721341310771`.
+
+The local report confirms both image objects decoded and states `sourceFilesModified=false`, `publicationApproved=false`, with **13,202/13,202 native Item IDs mapped**, **9,542/9,542 icon GUIDs mapped**, and zero unresolved items/GUIDs in this SRC-01 corpus. The final private item map `item-icon-map-final-private.jsonl` has operator-reported SHA-256 `80772618dad8ff8e26a581119c95cfb5a122499fd7252f9c163d9fe8da0a2cad`. The private 256-bucket `private-media-overlay-latest/manifest.json` has operator-reported SHA-256 `3e85aee5b34d7f20c7384fb5b2d83c21c33be83ec9f8ac3fffa807f72e98f5a0`. These are **local operator report claims**: neither complete private file nor image bytes were uploaded for independent verification.
+
+The runtime-generated manifest deliberately keeps `coverage.complete=false` and `scope=four_native_item_categories_partial_icon_coverage` as conservative *broader media scope* metadata, even though `verifiedItems=totalItems=13202` and `unresolvedItems=unresolvedGuids=0` for this exact item-list corpus. The DB-01 consumer should expose a separate derived `itemIconCoverageComplete` boolean; never use the broad scope bit as an image publication permit.
+
+A separate main-based integration PR (not part of this historical branch) adds the SHA-pinned private DB-01 media reader, tests, and a derived corpus coverage indicator. The public media resolver still requires explicit `publicationApproved=true`; no game-derived images have been deployed or public source data introduced.
+
+---
 ## SRC-04 358-pixel recovery confirmed (2026-11-21)
 
 The owner's `catalog-missing-pixels-report.json` is a **completed runtime report** with schema `wand.src04.missing-pixels@1`: `214/214` target bundles finished, `failedBundleCount=0`, 358 new exact GUIDs and 2,414 newly mapped Item IDs; 9,540/9,542 unique icon GUIDs and 13,200/13,202 Item IDs now verified (99.98% coverage), with 2 GUIDs / 2 Item IDs remaining. Existing decoded images were not replaced. The report asserts `sourceFilesModified=false`, `publicationApproved=false`, and a completed local `item-icon-map-extended-private.jsonl` with SHA-256 `6fc23756874818c66661d322221b38ccae5328ecbf398b890b934714e3968ca8`. The private file's bytes have NOT been uploaded here: that digest is an operator-runtime claim, not an independently rehashed attached artifact.
