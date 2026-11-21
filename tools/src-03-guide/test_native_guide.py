@@ -96,6 +96,38 @@ class NativeGuideTests(unittest.TestCase):
         self.assertIn({'family': 'duties', 'id': '2110000001'}, diff['changed'])
         self.assertNotEqual(path.read_bytes(), prior)
 
+    def test_structured_conditions_friendship_rewards_and_reward_diff(self):
+        (self.src / 'Condition').mkdir()
+        (self.src / 'Condition' / 'QuestComplete.json').write_text(json.dumps({
+            'ID': 2130000001, 'Name': 'QuestComplete',
+            'Conditions': {'Conditions': [{'MissionStepStatus': {
+                'Mission': self.quest, 'StepID': 1, 'Status': 'Completed'}}]}}
+        ), encoding='utf-8')
+        path = self.src / 'friendship_levels_default.json'
+        path.write_text(json.dumps([{'Level': 1, 'XP': 40,
+               'CompletedReward': [{'ID': 80000000, 'Amount': 5}]}]), encoding='utf-8')
+        db.extract(self.game, self.out, '1.26.1', 'Steam', self.items)
+        self.assertEqual(len(json.loads((self.out / 'guide/rewards.json').read_text())['records']), 1)
+        cond = json.loads((self.out / 'guide/conditions.json').read_text())['records'][0]
+        self.assertEqual(cond['structuredDefinition']['Conditions']['Conditions'][0]
+                         ['MissionStepStatus']['Mission'], self.quest)
+        rels = json.loads((self.out / 'database/relations.json').read_text())['relations']
+        self.assertTrue(any(r['fromFamily'] == 'conditions' and r['toId'] == str(self.quest)
+                            and r['status'] == 'resolved' for r in rels))
+        report = json.loads((self.out / 'manifest.json').read_text())
+        self.assertEqual(report['structuredDefinitions']['conditions'], 1)
+        self.assertEqual(report['counts']['rewards'], 1)
+        self.assertEqual(json.loads((self.out / 'diff.json').read_text())['status'],
+                         'BASELINE_NO_PREVIOUS')
+        path.write_text(json.dumps([{'Level': 1, 'XP': 40,
+               'CompletedReward': [{'ID': 80000000, 'Amount': 10}]}]), encoding='utf-8')
+        out2 = self.root / 'out2'
+        db.extract(self.game, out2, '1.26.2', 'Steam', self.items, previous=self.out)
+        change = json.loads((out2 / 'diff.json').read_text())
+        self.assertIn({'family': 'rewards', 'id': 'default:1:CompletedReward:0'},
+                      change['changed'])
+        self.assertEqual(change['status'], 'COMPARED')
+
     def test_reject_bad_frames_and_inputs(self):
         with self.assertRaises(ValueError):
             db.varint(b'\x80\x00', 0)
