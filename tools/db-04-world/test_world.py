@@ -417,7 +417,7 @@ class PipelineTests(unittest.TestCase):
         furniture_path = self.base / "itemlist/Furniture.json"
         furniture_path.write_bytes(indexed(40000000, 1, "TestBench",
                                           grid(2, 1, [68, 0], floor=2048)))
-        object_zero = field(2, 40000001)
+        object_zero = field(2, 40000001) + field(3, 1)
         object_one = (field(1, 1) + field(2, 40000001) +
                       field(3, 2) + field(4, 2) + field(5, 4))
         object_two = (field(1, 2) + field(2, 40000001) +
