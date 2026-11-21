@@ -63,6 +63,7 @@ export interface PrivateShopPriceView {
   readonly effectivePriceVerified:false;
   readonly dynamicPricesEvaluated:false;
   readonly ownershipVerified:false;
+  listSourceStallShopRelations():readonly StaticStallShopRelation[];
   getSourceItemPriceDefinitions(itemId:number):readonly StaticItemPriceDefinition[];
   getSourceShopConfiguration(shopKey:string):StaticShopConfiguration|null;
   getSourceStallShopConfiguration(stallId:number):

@@ -133,6 +133,8 @@ export async function loadPrivateShopPriceView(input){
     'RELEASE_COUNTS_MISMATCH');
   for(const [id,rows] of pricesByItem)
     pricesByItem.set(id,Object.freeze(rows.sort((a,b)=>a.databaseKey.localeCompare(b.databaseKey))));
+  const sourceStallRelations=Object.freeze([...stallsById.values()]
+    .sort((a,b)=>a.stallId-b.stallId));
   const queryId=value=>{checkId(value);return value;};
   const queryShop=key=>{ok(typeof key==='string'&&key.length>0&&key.length<=256,
     'INVALID_SHOP_KEY');return key;};
@@ -145,6 +147,7 @@ export async function loadPrivateShopPriceView(input){
     counts:freezeDeep({...counts}),
     offersVerified:false,stockVerified:false,effectivePriceVerified:false,
     dynamicPricesEvaluated:false,ownershipVerified:false,
+    listSourceStallShopRelations:()=>sourceStallRelations,
     getSourceItemPriceDefinitions:itemId=>pricesByItem.get(queryId(itemId))??Object.freeze([]),
     getSourceShopConfiguration:key=>shopsByKey.get(queryShop(key))??null,
     getSourceStallShopConfiguration:stallId=>{
