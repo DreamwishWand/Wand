@@ -798,7 +798,8 @@ test('default layout Grid factor and object identity must be uniquely source lin
   assert.equal(unknown.callerGridFactorProvenanceVerified, false);
 
   const cases = [
-    ['wrong native grid ID', data => { data.layoutObjects[0].gridIdNative = 99; },
+    ['missing native grid mapping', data => {
+      data.layouts[0].nativeGridEntries[0].gridIdNative = 99; },
       'missing_or_ambiguous_native_grid_reference'],
     ['ambiguous native grid ID', data => { data.layouts[0].nativeGridEntries.push(
       {...data.layouts[0].nativeGridEntries[0]}); },
