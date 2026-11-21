@@ -32,3 +32,13 @@ jobs:
         run: python -m unittest discover -s tools/db-01-items -p 'test_*.py' -v
       - name: Test shared browser item record helpers and private DB-00 bridge
         run: node --test src/lib/items/*.test.mjs
+      - name: Parse one-shot private Windows runner
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile('tools/db-01-items/run-all.ps1', [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Host $_.Message }
+            throw 'DB01 PowerShell parser errors'
+          }

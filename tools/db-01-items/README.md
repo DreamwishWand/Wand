@@ -188,13 +188,27 @@ is unverified.
 
 Tests: `node --test src/lib/items/*.test.mjs` (including end-to-end DB-00 patch
 application and corrupted-JSONL SHA refusal).
-## Full LocDB sentinel protection
 
-The full original-ZIP decoders (`localize1262.py` and
-`extend1262.py`) now use `verified_display_name()`. Values beginning with
-`{Placeholder}`, `{LegacyPlaceholder}` or `{DoNotTranslate}`
-(case-insensitive, including after `<nobr>` cleanup) are **not** counted
-or emitted as official display names. The DB-01 compiler independently rejects
-these values even if supplied by a localized input claiming source provenance.
-The field stays unresolved; no historical/machine-translated substitute is
-silently inserted.
+## One-shot Windows full-source extraction (when local game files are available)
+
+The optional `tools/db-01-items/run-all.ps1` orchestrator executes all four
+already-tested CLI stages in sequence: four native itemlists, exact eight-locale
+LocDB joins, all other SHA-pinned itemlists, and the DB-01 compiler with the
+existing Switch 1.25.0 Collection reference. It is designed to replace several
+separate manual Windows runs with a **single local command**. It needs the
+owner's original Steam v1.26.2 game folder and existing private
+`format-probe.json`, and fails closed on version/hash mismatch. It cannot
+complete when the installed game has been updated to another version.
+
+```powershell
+& 'tools\db-01-items\run-all.ps1' -Probe 'D:\WandData\SRC-01\Steam-v1.26.2\format-probe.json' -Out 'D:\WandData\DB-01\steam-1.26.2'
+```
+
+`-Game` defaults to the standard Steam installation directory and may be
+overridden. The script refuses output paths nested in (or containing) the
+public repository, game installation or probe folder, checks child-process exit
+codes, disables Python bytecode creation in the repository, and confirms the
+final DB-01 private-only manifest. It does not upload files, edit saves,
+commit data or change GitHub Pages. This is a **prepared command**, not a claim
+that the original full 28 files or eight entire localization archives have
+already been processed in ChatGPT.
