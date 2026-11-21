@@ -558,6 +558,20 @@ class PipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "object count mismatch"):
             validate_snapshot(self.out)
 
+    def test_legacy_verified_partial_snapshot_without_default_placements(self):
+        extract(self.game, self.out)
+        path = self.out / "layoutObjects.json"
+        path.unlink()
+        manifest_file = self.out / "manifest.json"
+        manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+        manifest["outputSha256"].pop("layoutObjects.json")
+        manifest_file.write_text(json.dumps(manifest), encoding="utf-8")
+        scores = audit_footprint_candidates(self.out)
+        self.assertEqual(scores["nativeLayoutObjectCount"], 0)
+        self.assertFalse(scores["placementLegalityVerified"])
+        packed = package_snapshot(self.out, self.root / "legacy-private.zip")
+        self.assertEqual(packed["footprintHypothesisObjectCount"], 0)
+
     def test_private_zip_is_reproducible_and_contains_no_game_binaries(self):
         extract(self.game, self.out)
         first = self.root / "private-a.zip"
