@@ -439,6 +439,7 @@ export function getNativeFootprintCardinalOrientedWindow(
     gridToAreaTessellationRatioAssumed: '1:1',
     fullNativeTessellationScalingApplied: false,
     rawLayerValuesNotOccupancy: true,
+    rawLayerValueNotVerifiedOccupancy: true,
     gridObjectAnchorVerified: false,
     occupancyPredicateVerified: false,
     placementLegalityVerified: false,
