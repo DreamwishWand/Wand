@@ -218,6 +218,23 @@ class NativeGuideTests(unittest.TestCase):
         self.assertEqual(manifest['itemObjectiveSelectorLinks'],1)
         self.assertEqual(manifest['itemObjectiveUniqueCandidateIds'],1)
 
+    def test_condition_ast_index_preserves_boolean_tree(self):
+        conditional = sf(20, sf(2, sf(10, vf(1,1)+sf(2,sf(65,vf(1,self.char))))))
+        mission = vf(1,self.quest)+sf(2,'Story!MyQuest')+conditional+sf(40,b'')
+        group = vf(1,self.quest_group)+sf(2,'Story!Group')
+        (self.src/'itemlist'/'Mission.json').write_bytes(
+            frame(1,mission)+frame(200001,group))
+        db.extract(self.game,self.out,'1.26.1','Steam')
+        index=json.loads((self.out/'database/condition-ast.json').read_text())
+        self.assertEqual(index['evaluation'],'not_evaluated_static_source_only')
+        self.assertEqual(len(index['records']),1)
+        node=index['records'][0]['availableConditions']['conditions'][0]['nested']
+        self.assertEqual(node['operator'],'OR')
+        self.assertEqual(node['conditions'][0]['characterId'],str(self.char))
+        manifest=json.loads((self.out/'manifest.json').read_text())
+        self.assertEqual(manifest['conditionAstMissions'],1)
+        self.assertEqual(manifest['recognizedConditionKinds'],2)
+
     def test_reject_bad_frames_and_inputs(self):
         with self.assertRaises(ValueError):
             db.varint(b'\x80\x00', 0)

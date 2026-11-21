@@ -407,6 +407,14 @@ def structured_condition_overlays(origin, rows, indexes, relations, unresolved):
             walk(payload)
     return summary
 
+def collect_condition_nodes(tree):
+    """Traverse source-backed AST for metrics only, preserving boolean grouping."""
+    for child in tree.get('conditions', []):
+        yield child
+        if 'nested' in child:
+            yield from collect_condition_nodes(child['nested'])
+
+
 def extract(game, out, version, platform, item_index=None, previous=None):
     game, out = game.resolve(), out.resolve()
     if not version.strip() or not game.is_dir() or game == out or game in out.parents or out in game.parents:
@@ -587,6 +595,20 @@ def extract(game, out, version, platform, item_index=None, previous=None):
         save(out / "database" / "mission-record-kinds.json", {
                   "schema": SCHEMA, "target": target, "records": kinds,
                   "note": "Groups and ambiguous definitions must not appear as playable quests."})
+        # Lightweight condition AST for Guide consumers: preserve full boolean
+        # semantics, never compute player progress or actual prerequisites.
+        condition_index = [
+            {'missionId': row['id'], 'nativeWireSha256': row['nativeWireSha256'],
+             'sourceFileSha256': row['source']['sha256'],
+             'availableConditions': row['structured']['conditions'].get('availableConditions'),
+             'unlockConditions': row['structured']['conditions'].get('unlockConditions')}
+            for row in rows['quests'] if row['recordKind'] == 'mission'
+        ]
+        save(out / 'database' / 'condition-ast.json', {
+             'schema': 'wand.db03.condition-ast@1', 'target': target,
+             'evaluation': 'not_evaluated_static_source_only',
+             'interpretation': 'Preserve AND/OR/NOT; pointers are not automatic prerequisites',
+             'records': condition_index})
         save(out / 'database' / 'item-objective-links.json', {
                   'schema': 'wand.db03.item-objective-links@1', 'target': target,
                   'indexCoverage': 'optional_partial_SRC01_membership_only_not_version_verification',
@@ -623,6 +645,12 @@ def extract(game, out, version, platform, item_index=None, previous=None):
                     "decodedObjectiveTypeCount": len({obj["type"]
                         for r in rows["quests"] for step in r.get("structured", {}).get("stepsDetailed", [])
                         for sub in step["subSteps"] for obj in sub["objectives"]}),
+                    "conditionAstMissions": len(condition_index),
+                    "recognizedConditionKinds": len({node['type']
+                        for row in condition_index
+                        for tree in (row['availableConditions'], row['unlockConditions'])
+                        if tree is not None
+                        for node in collect_condition_nodes(tree)}),
                     "itemObjectiveSelectorLinks": len(item_objective_links),
                     "itemObjectiveUniqueCandidateIds": len({x['itemId'] for x in item_objective_links}),
                     "sourceFieldRelations": len(relations),
