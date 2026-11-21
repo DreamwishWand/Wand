@@ -5,7 +5,8 @@
  * No raw save file, decoder, Writer, or import/export of game content.
  */
 import { readFileSync, statSync, existsSync, writeFileSync } from 'node:fs';
-import { resolve, dirname, join, parse } from 'node:path';
+import { resolve, dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { compareRedactedSaveWitnesses } from '../../src/lib/save/redacted-witness.mjs';
 
 const LIMIT_BYTES = 1_000_000;
@@ -51,7 +52,7 @@ export function runComparison(argv) {
   writeFileSync(output, JSON.stringify(report, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
   return report;
 }
-if (process.argv[1] && resolve(process.argv[1]) === new URL(import.meta.url).pathname) {
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try { runComparison(process.argv.slice(2)); }
   catch (error) {
     // Generic failure marker; never echo potentially sensitive file paths/values.
