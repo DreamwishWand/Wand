@@ -125,6 +125,22 @@ under `<private-out>/steam-<version>/db01-<fingerprint>/`.
   -History "D:\WandData\DB-01\v1.27.0-history" -Out "D:\WandData\DB-01\releases"
 ```
 
+When the next game's SRC-01 reader has produced a verified native output,
+the normalization step no longer requires old Switch Collection files:
+
+```powershell
+python tools/db-01-items/build.py `
+  --source "D:\WandData\SRC-01\Steam-v1.27.0-native" `
+  --out "D:\WandData\DB-01\v1.27.0-catalog"
+# Then use -Catalog as shown above. --extended is optional when independently
+# verified additional native definitions are available.
+```
+
+With no `--reference`, the normalized catalog has `referenceIndex:null`,
+`historicalReference:null` and no old-collection classification metadata.
+The optional legacy `--reference` remains supported only for evidence
+continuity, never as evidence that a 1.25 name, DLC or ownership is current.
+
 The runner now has two explicit parameter sets: the default **Catalog** mode is
 version-neutral and does **not** load old v1.25 Collection references or
 run Steam 1.26.2 extractors; **LegacySteam1262** mode (`-Probe ... -Game ...`)
