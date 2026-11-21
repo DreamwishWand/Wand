@@ -91,14 +91,18 @@
   onDestroy(stop);
 
   function requestWindow(reset = true) {
-    if (!worker || !selectedGrid || !selectedGrid.knownGridData ||
-        !Number.isSafeInteger(selectedGrid.sizeX) ||
-        !Number.isSafeInteger(selectedGrid.sizeY) ||
-        selectedGrid.sizeX! < 1 || selectedGrid.sizeY! < 1) {
+    // Resolve against current selections synchronously: Svelte's reactive
+    // derived variables may not update until after an event handler returns.
+    const chosen = layouts.find(a => a.layoutId === selectedLayoutId)?.grids
+      .find(g => String(g.gridIdNative) === selectedGridId);
+    if (!worker || !chosen || !chosen.knownGridData ||
+        !Number.isSafeInteger(chosen.sizeX) ||
+        !Number.isSafeInteger(chosen.sizeY) ||
+        chosen.sizeX! < 1 || chosen.sizeY! < 1) {
       viewport = null;
       return;
     }
-    const sx = selectedGrid.sizeX!, sy = selectedGrid.sizeY!;
+    const sx = chosen.sizeX!, sy = chosen.sizeY!;
     x = Math.min(Math.max(0, Number.isSafeInteger(x) ? x : 0), sx - 1);
     y = Math.min(Math.max(0, Number.isSafeInteger(y) ? y : 0), sy - 1);
     width = Math.min(Math.max(1, Number.isSafeInteger(width) ? width : 16), 32, sx - x);
@@ -110,12 +114,13 @@
     const id = ++requestId;
     worker.postMessage({
       command:'view', requestId:id,
-      layoutId:selectedLayoutId, gridIdNative:selectedGrid.gridIdNative,
+      layoutId:selectedLayoutId, gridIdNative:chosen.gridIdNative,
       rect:{x,y,width,height}, offset,
     });
   }
   function changeLayout() {
-    selectedGridId = gridOptions.length ? String(gridOptions[0].gridIdNative) : '';
+    const grids = layouts.find(a => a.layoutId === selectedLayoutId)?.grids ?? [];
+    selectedGridId = grids.length ? String(grids[0].gridIdNative) : '';
     x = 0; y = 0; width = 16; height = 16;
     viewport = null;
     requestWindow();
