@@ -135,9 +135,10 @@
       "path": "/Player/ContainerInventories",
       "type": "object",
       "builds": [
-        "steam-1.25.3-626"
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
       ],
-      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs",
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs + product_switch626_chest.rs",
       "constraint": "Container ID keyed map",
       "observedStatus": "legacy_source_code_only",
       "writable": false
@@ -147,9 +148,10 @@
       "path": "/Player/ContainerInventories/{containerId}",
       "type": "object",
       "builds": [
-        "steam-1.25.3-626"
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
       ],
-      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs",
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs + product_switch626_chest.rs",
       "constraint": "Saved ID must match canonical map key",
       "observedStatus": "legacy_source_code_only",
       "writable": false
@@ -159,9 +161,10 @@
       "path": "/Player/ContainerInventories/{containerId}/BelongsToPlayer",
       "type": "boolean",
       "builds": [
-        "steam-1.25.3-626"
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
       ],
-      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs",
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs + product_switch626_chest.rs",
       "constraint": "Legacy scoped editor requires true; does not prove entitlement",
       "observedStatus": "legacy_source_code_only",
       "writable": false
@@ -171,9 +174,10 @@
       "path": "/Player/ContainerInventories/{containerId}/ID",
       "type": "integer",
       "builds": [
-        "steam-1.25.3-626"
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
       ],
-      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs",
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs + product_switch626_chest.rs",
       "constraint": "Nonzero u32",
       "observedStatus": "legacy_source_code_only",
       "writable": false
@@ -183,9 +187,10 @@
       "path": "/Player/ContainerInventories/{containerId}/Inventory",
       "type": "array",
       "builds": [
-        "steam-1.25.3-626"
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
       ],
-      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs",
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs + product_switch626_chest.rs",
       "constraint": "Array of saved slots",
       "observedStatus": "legacy_source_code_only",
       "writable": false
@@ -195,10 +200,11 @@
       "path": "/Player/ContainerInventories/{containerId}/Inventory[]/Amount",
       "type": "integer",
       "builds": [
-        "steam-1.25.3-626"
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
       ],
-      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs",
-      "constraint": "Legacy scoped adapter requires existing positive Amount; Writer OFF",
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs + product_switch626_chest.rs",
+      "constraint": "Persisted existing Amount; historical exact Switch crop scoped path and Steam source path; no general Writer authorization",
       "observedStatus": "legacy_source_code_only",
       "writable": false
     },
@@ -207,9 +213,10 @@
       "path": "/Player/ContainerInventories/{containerId}/Inventory[]/ItemID",
       "type": "integer",
       "builds": [
-        "steam-1.25.3-626"
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
       ],
-      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs",
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs + product_switch626_chest.rs",
       "constraint": "Nonzero u32; exact ID join not yet proven for current source",
       "observedStatus": "legacy_source_code_only",
       "writable": false,
@@ -228,9 +235,10 @@
       "path": "/Player/ContainerInventories/{containerId}/ParentItemID",
       "type": "integer",
       "builds": [
-        "steam-1.25.3-626"
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
       ],
-      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs",
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs + product_switch626_chest.rs",
       "constraint": "Positive u32; DB-01 relation unresolved",
       "observedStatus": "legacy_source_code_only",
       "writable": false,
@@ -249,10 +257,11 @@
       "path": "/Player/ContainerInventories/{containerId}/Size",
       "type": "integer",
       "builds": [
-        "steam-1.25.3-626"
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
       ],
-      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs",
-      "constraint": "Legacy scoped adapter requires range 1..256, agrees with slot array length",
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs + product_switch626_chest.rs",
+      "constraint": "Legacy scoped paths: Steam size 1..256; exact Switch crop chest selection requires slot <48; not a generic cross-platform bound",
       "observedStatus": "legacy_source_code_only",
       "writable": false
     },
