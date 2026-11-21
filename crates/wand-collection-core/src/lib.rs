@@ -395,6 +395,13 @@ impl CollectionEngine {
             count = count.checked_add(shard.count).ok_or("COLLECTION_DB00_INDEX_OVERFLOW")?;
         }
         if count != published.count {return Err("COLLECTION_DB00_INDEX_COUNT".into());}
+        let public_native_itemlist=visibility=="public_reference"
+            && published.id=="steam-1.26.2-native-itemlist-v1"
+            && published.target.platform=="Steam"
+            && published.target.game_version.as_deref()==Some("1.26.2")
+            && published.count==13_202
+            && published.sources.len()==1
+            && published.sources[0].id=="public-steam-1262-normalized";
         self.index = Some(Index {
             schema: DB00_RELEASE_SCHEMA.into(),
             target: ManifestTarget {
@@ -414,13 +421,7 @@ impl CollectionEngine {
         self.db00_mode=true;
         self.owner_local_complete=visibility=="private"
             && published.id=="db01-steam-1-26-2-owner-local-complete";
-        self.public_native_itemlist=visibility=="public_reference"
-            && published.id=="steam-1.26.2-native-itemlist-v1"
-            && published.target.platform=="Steam"
-            && published.target.game_version.as_deref()==Some("1.26.2")
-            && published.count==13_202
-            && published.sources.len()==1
-            && published.sources[0].id=="public-steam-1262-normalized";
+        self.public_native_itemlist=public_native_itemlist;
         self.db00_sources=sources;
         self.db00_releases=releases;
         self.db00_relations.clear();
