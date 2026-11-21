@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeSaveDiagnosticView, makeSaveCatalogAuditView,
-  SAVE_DIAGNOSTIC_VIEW_CONTRACT } from '../src/lib/save/diagnostic-view.mjs';
+  sanitizeSaveDiagnosticView, SAVE_DIAGNOSTIC_VIEW_CONTRACT } from '../src/lib/save/diagnostic-view.mjs';
 
 function fixture(version=643){
   return {
