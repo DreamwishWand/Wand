@@ -1,5 +1,6 @@
 /** Per-instance meal ingredients and state-dependent sell-price evidence. */
 import type {StaticItemPriceDefinition} from './private-shop-prices.mjs';
+import type {ConfiguredIngredientSellEvidence} from './meal-ingredient-sell-evidence.mjs';
 import type {VerifiedPrivateCookingStarSettings,NativeCookingStarResult} from './private-cooking-star-settings.mjs';
 export declare const DB02_MEAL_PRICE_EVIDENCE_CONTRACT:
   'wand.db02.meal-price-evidence@1';
@@ -34,6 +35,9 @@ export interface PrivateMealPriceEvidence {
   readonly staticCookingRecipeIds:readonly number[];
   readonly cookingRecipeCoverage:'partial_native_extraction';
   readonly recordedIngredients:readonly MealIngredientAmount[];
+  readonly sourceIngredientStaticSellEvidence:ConfiguredIngredientSellEvidence;
+  readonly ingredientStaticPriceDatabaseOriginalVerified:true;
+  readonly staticIngredientAmountsNotEffectiveSellValues:true;
   readonly cookingRecipeIngredientMatchVerified:false;
   readonly stateDependentSellPriceMethod:'MealItemData.GetSellPrice(ItemState,Item)';
   readonly ingredientSellPriceMethod:'MealItemData.TotalIngredientsSellPrice(RecipeItemData,IEnumerable)';
