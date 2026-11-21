@@ -615,6 +615,13 @@ function packedGridForPreview(catalog, gridId) {
   const grid = catalog.grids.get(String(gridId));
   if (!grid) return { status: 'unknown_grid' };
   const evidence = grid.terrainDecoding;
+  // Original GridData.get_Item and bit-width machine code was checked only
+  // on Steam v1.26.1. An unverified game version cannot inherit that proof,
+  // even if its input JSON claims the same decoded packing metadata.
+  if (evidence?.status === 'native_packing_not_verified_for_game_version' ||
+      (evidence?.decoded === true && catalog.manifest.gameVersion !== '1.26.1')) {
+    return { status: 'native_terrain_packing_not_verified_for_game_version' };
+  }
   if (evidence?.decoded !== true || evidence?.packing !== 'x_major_msb_first' ||
       ![1, 2, 4].includes(evidence.cellBits)) {
     return { status: 'unresolved_native_packing' };
