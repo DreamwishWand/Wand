@@ -443,3 +443,16 @@ pipeline labeled the output Steam 1.26.2. Those condition-derived counts are
 **not accepted as current 1.26.2 evidence**. They are historical observations
 pending a full re-extraction from the independently pinned 1.26.2 original
 (`9eb5e7800a2485b1dfb3e148a7bcff5d6c6b6ed72797ed2331a902ab44188f4c`). Do not join the older condition bundle into DB-01 1.26.2.
+
+
+### P0 admission gate for Steam 1.26.2 condition source
+
+`loadVerifiedAcquisitionBundle()` and the DB-00 acquisition adapter now
+refuse a purported v1.26.2 bundle if `source.conditionSha256` differs from
+the independent SRC-01 1.26.2 probe SHA-256 `9eb5e7800a2485b1dfb3e148a7bcff5d6c6b6ed72797ed2331a902ab44188f4c`.
+The archived Steam 1.26.1 file SHA `f9716fd7e80631213812ed2c93f802ee7ef73a0874214044d8e4304c555dc150` is explicitly
+not current. This gate rejects even fully internally hashed old bundles and
+old manifests with caller-supplied SHA. Historical data must be treated as
+**not verified for 1.26.2** until the genuine updated Condition original is
+obtained and the source extraction is rerun. This does not claim the current
+original has been acquired.

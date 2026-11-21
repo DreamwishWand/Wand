@@ -8,6 +8,8 @@ import { createAcquisitionDatabase } from '../../src/lib/acquisition/index.mjs';
 import { createAcquisitionCatalogJoin } from '../../src/lib/acquisition/db00-join.mjs';
 
 const SHA = /^[0-9a-f]{64}$/;
+// SHA-256 of original Steam 1.26.2 Condition.json from the independent SRC-01 format probe.
+export const CURRENT_STEAM_1262_CONDITION_SHA256 = '9eb5e7800a2485b1dfb3e148a7bcff5d6c6b6ed72797ed2331a902ab44188f4c';
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
 const DATASETS = Object.freeze({
   'recipes.jsonl': 'recipes',
@@ -131,6 +133,8 @@ export async function loadVerifiedAcquisitionBundle(directory, { src01ManifestPa
     manifest.source && SHA.test(manifest.source.src01ManifestSha256) &&
     SHA.test(manifest.source.src01ItemsSha256) &&
     SHA.test(manifest.source.conditionSha256), 'UNSUPPORTED_MANIFEST');
+  check(manifest.source.conditionSha256 === CURRENT_STEAM_1262_CONDITION_SHA256,
+    'STALE_OR_UNVERIFIED_CONDITION_SOURCE');
   const hasMembership = manifest.files?.['ingredient-selector-membership.jsonl'] !== undefined;
   const dataSets = { ...DATASETS };
   if (!hasMembership) delete dataSets['ingredient-selector-membership.jsonl'];

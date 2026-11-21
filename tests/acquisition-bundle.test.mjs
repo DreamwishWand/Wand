@@ -10,6 +10,8 @@ import { createAcquisitionDatabase } from '../src/lib/acquisition/index.mjs';
 
 const hash = b => createHash('sha256').update(b).digest('hex');
 const srcSha = 'a'.repeat(64), itemSha = 'b'.repeat(64);
+const currentConditionSha = '9eb5e7800a2485b1dfb3e148a7bcff5d6c6b6ed72797ed2331a902ab44188f4c';
+const archivedConditionSha = 'f9716fd7e80631213812ed2c93f802ee7ef73a0874214044d8e4304c555dc150';
 const source = { schema: 'wand.src01.steam-native@1', platform: 'Steam', gameVersion: '1.26.2',
   itemsSha256: itemSha, itemCount: 2 };
 const sourceBytes = Buffer.from(JSON.stringify(source));
@@ -64,7 +66,7 @@ async function fixture(withMembership = false) {
   const manifest = {schema:'wand.src02@1', status:'partial_native_extraction',
     platform:'Steam',gameVersion:'1.26.2',source:{
       src01ManifestSha256:hash(sourceBytes),src01ItemsSha256:itemSha,
-      conditionSha256:srcSha},
+      conditionSha256:currentConditionSha},
     files,counts};
   await writeFile(join(root,'manifest.json'), JSON.stringify(manifest)+'\n');
   const sourcePath = join(root,'src01-manifest.json');
@@ -104,6 +106,21 @@ test('full private bundle digests and DB-00 exact-origin join', async () => {
     assert.equal(join.lookup(100).classification,'unresolved_in_partial_catalog');
     assert.equal(createAcquisitionCatalogJoin(snapshot(manifest,true),bundle).lookup(100).classification,'not_in_exact_catalog');
   } finally {await rm(root,{recursive:true,force:true});}
+});
+
+test('rejects stale 1.26.1 Condition even when the DB02 private bundle is internally hashed or externally pinned', async () => {
+  const {root,manifest}=await fixture();
+  try {
+    manifest.source.conditionSha256=archivedConditionSha;
+    const bytes=Buffer.from(JSON.stringify(manifest));
+    await writeFile(join(root,'manifest.json'),bytes);
+    const pinned=hash(bytes);
+    await assert.rejects(loadVerifiedAcquisitionBundle(root),
+      /STALE_OR_UNVERIFIED_CONDITION_SOURCE/);
+    await assert.rejects(loadVerifiedAcquisitionBundle(root,{expectedManifestSha256:pinned}),
+      /STALE_OR_UNVERIFIED_CONDITION_SOURCE/);
+    assert.notEqual(currentConditionSha,archivedConditionSha);
+  } finally { await rm(root,{recursive:true,force:true}); }
 });
 
 test('rejects tampered payload even when JSON remains parseable',async()=>{
