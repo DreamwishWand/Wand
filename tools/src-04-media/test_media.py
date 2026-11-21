@@ -127,6 +127,7 @@ class MediaPipelineTests(unittest.TestCase):
         report = json.loads((self.output / "report.json").read_text(encoding="utf-8"))
         types = {problem["type"] for problem in report["problems"]}
         self.assertIn("corrupt", types)
+        self.assertIn("unmapped_image", types)
         self.assertIn("under_128px", types)
         self.assertIn("under_512px", types)
         self.scan("--limit", "1")
