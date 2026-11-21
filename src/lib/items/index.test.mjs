@@ -106,3 +106,56 @@ test('invalid caller arguments rejected without downloads',async()=>{
   await assert.rejects(db.searchExactNames('x','xx'),/INVALID_LOCALE/);
   assert.deepEqual(f.calls,[]);
 });
+
+test('SHA verification and JSON parsing use the same immutable bytes',async()=>{
+  const f=fixture(false);
+  const payload=f.raw.get('id/05.json');
+  const originalCrypto=globalThis.crypto;
+  const descriptor=Object.getOwnPropertyDescriptor(globalThis,'crypto');
+  const originalDigest=originalCrypto.subtle.digest.bind(originalCrypto.subtle);
+  Object.defineProperty(globalThis,'crypto',{configurable:true,value:{subtle:{
+    digest:async (...args)=>{
+      const digest=await originalDigest(...args);
+      // Simulate a loader reusing its own buffer after the async SHA calculation.
+      payload.fill(32);
+      return digest;
+    },
+  }}});
+  try{
+    const db=createDb01CatalogClient(f.manifest,f.load);
+    assert.equal((await db.getItem(5))?.names.en,'Royal Cup');
+    assert.equal(payload[0],32);
+  }finally{
+    if(descriptor) Object.defineProperty(globalThis,'crypto',descriptor);
+    else delete globalThis.crypto;
+  }
+});
+test('locale index validates duplicate rows even after search result limit',async()=>{
+  const f=fixture(false);
+  const path='locale/en.json';
+  const data=new TextEncoder().encode(JSON.stringify([[5,'Royal Cup'],[5,'Duplicate']])+'\n');
+  f.raw.set(path,data);
+  f.manifest.files[path]={sha256:sha(data),bytes:data.length,count:2};
+  const db=createDb01CatalogClient(f.manifest,f.load);
+  await assert.rejects(db.searchExactNames('Royal','en',1),/DUPLICATE_NAME_INDEX_ID/);
+});
+test('historical candidate validates every record, including after matching item',async()=>{
+  const f=fixture();
+  const path='historical/06.json';
+  const data=new TextEncoder().encode(JSON.stringify([
+    [262,'ja','昔の名前','1.26.1'],[262,'ja','重複した名前','1.26.1'],
+  ])+'\n');
+  f.raw.set(path,data);
+  f.manifest.files[path]={sha256:sha(data),bytes:data.length,count:2};
+  const db=createDb01CatalogClient(f.manifest,f.load);
+  await assert.rejects(db.getName(262,'ja',{allowHistorical:true}),/DUPLICATE_HISTORY_ENTRY/);
+});
+test('invalid source file coverage and historical baseline are rejected',async()=>{
+  const f=fixture();
+  assert.throws(()=>validateDb01Shards({...f.manifest,sourceFilesVerified:-1}),/INVALID_COVERAGE/);
+  const path='historical/06.json';
+  const data=new TextEncoder().encode(JSON.stringify([[262,'ja','昔の名前','unknown']])+'\n');
+  f.raw.set(path,data);
+  f.manifest.files[path]={sha256:sha(data),bytes:data.length,count:1};
+  await assert.rejects(createDb01CatalogClient(f.manifest,f.load).getName(262,'ja',{allowHistorical:true}),/INVALID_HISTORY_ROW/);
+});
