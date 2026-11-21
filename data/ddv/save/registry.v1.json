@@ -1,0 +1,148 @@
+{
+  "schema": "wand.db05.save-registry@1",
+  "policy": {
+    "access": "read_only_mapping",
+    "writerAuthorized": false,
+    "ownershipMutationAuthorized": false,
+    "unknownFields": "preserve_original_bytes_do_not_reserialize",
+    "decodedDocumentRequired": true,
+    "strictDecoderRequired": true,
+    "buildAttestation": "external_evidence_required",
+    "numericIds": "exact_match_only_no_name_or_range_remapping"
+  },
+  "builds": [
+    {
+      "key": "switch-1.25.0-624",
+      "platform": "switch",
+      "gameVersion": "1.25.0",
+      "schemaVersion": 624,
+      "identityKind": "switch_bid",
+      "identity": "52BD625D9B4E0053",
+      "status": "legacy_contract_candidate",
+      "evidence": "DreamwishWand/web historical Rust product_session.rs; independent current-game verification required"
+    },
+    {
+      "key": "switch-1.25.3-626",
+      "platform": "switch",
+      "gameVersion": "1.25.3",
+      "schemaVersion": 626,
+      "identityKind": "switch_bid",
+      "identity": "9A239D3DB569756D",
+      "status": "legacy_contract_candidate",
+      "evidence": "DreamwishWand/web historical Rust product_session.rs; independent current-game verification required"
+    },
+    {
+      "key": "steam-1.25.3-626",
+      "platform": "steam-windows",
+      "gameVersion": "1.25.3",
+      "schemaVersion": 626,
+      "identityKind": "steam_full_version",
+      "identity": "releases_1.25-v1.25.3-44-g0b41250d9ac0-incremental-22",
+      "status": "legacy_contract_candidate",
+      "evidence": "DreamwishWand/web historical Rust product_session.rs; independent current-game verification required"
+    }
+  ],
+  "saveContainers": [
+    {
+      "platform": "switch",
+      "schemaCandidate": 626,
+      "identity": null,
+      "status": "filename_only_opaque",
+      "evidence": "Private Save Originals: .profile file labelled v626; content not decoded"
+    },
+    {
+      "platform": "switch",
+      "schemaCandidate": 643,
+      "identity": null,
+      "status": "filename_only_opaque",
+      "evidence": "Private Save Originals: .profile file labelled v643; content not decoded"
+    }
+  ],
+  "fields": [
+    {
+      "path": "/GameInfo",
+      "type": "object",
+      "required": true,
+      "semantic": "metadata",
+      "status": "legacy_rust_validated_shape",
+      "writable": false
+    },
+    {
+      "path": "/GameInfo/Version",
+      "type": "integer",
+      "required": true,
+      "semantic": "save_schema_version",
+      "status": "legacy_rust_validated_shape",
+      "writable": false
+    },
+    {
+      "path": "/Player",
+      "type": "object",
+      "required": true,
+      "semantic": "player_document",
+      "status": "legacy_rust_validated_shape",
+      "writable": false
+    },
+    {
+      "path": "/World",
+      "type": "object",
+      "required": true,
+      "semantic": "world_document",
+      "status": "legacy_rust_validated_shape",
+      "writable": false
+    }
+  ],
+  "idNamespaces": [
+    {
+      "kind": "item",
+      "catalog": "DB-01",
+      "sourceSchema": "wand.src01.steam-native@1",
+      "key": "itemId",
+      "join": "exact_integer",
+      "coverage": "partial_13202_steam_1.26.2"
+    },
+    {
+      "kind": "quest",
+      "catalog": "DB-03",
+      "key": "questId",
+      "join": "exact_integer",
+      "coverage": "unresolved"
+    },
+    {
+      "kind": "world",
+      "catalog": "DB-04",
+      "key": "worldId",
+      "join": "exact_integer",
+      "coverage": "unresolved"
+    }
+  ],
+  "catalogSources": [
+    {
+      "kind": "item",
+      "platform": "steam-windows",
+      "gameVersion": "1.26.2",
+      "sourceSchema": "wand.src01.steam-native@1",
+      "itemCount": 13202,
+      "sourceSha256": "3ff0043692c88699d1cb44f4a953095c5f5fcd1afd700761396f13cca96851bf",
+      "scope": "ActivityItem,Furniture,Clothing,Trimming; partial native item universe; does not establish save compatibility"
+    }
+  ],
+  "unresolvedDomains": [
+    "inventory",
+    "chests",
+    "ownership",
+    "quantities",
+    "wardrobe",
+    "appearance",
+    "quest_progress",
+    "world_placement",
+    "time_state",
+    "codec_roundtrip",
+    "unknown_field_preservation",
+    "switch_643_build_identity",
+    "steam_1262_save_schema",
+    "save_item_reference_paths",
+    "quest_reference_paths",
+    "world_reference_paths"
+  ]
+}
