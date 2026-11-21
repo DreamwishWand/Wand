@@ -65,6 +65,22 @@ class ScannerTests(unittest.TestCase):
                 import shutil
                 shutil.rmtree(outside, ignore_errors=True)
 
+    def test_enum_values_and_reference_candidates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            game = root / 'game'
+            game.mkdir()
+            (game / 'dump.cs').write_text(
+                'public class PlayerSaveData\n{\n public GridSaveData Grid;\n}\n'
+                'public class GridSaveData\n{\n public int ID;\n}\n'
+                'public enum ItemCategory\n{\n Furniture = 1,\n Clothing = 2,\n}\n', encoding='utf-8')
+            out = execute(['--game-root', str(game), '--out', str(root / 'report')])
+            records = {t['name']: t for t in json.loads((out / 'static-types.json').read_text())['candidateTypes']}
+            self.assertEqual('enum', records['ItemCategory']['kind'])
+            self.assertEqual(1, records['ItemCategory']['fields'][0]['declaredValue'])
+            self.assertIn('GridSaveData', records['PlayerSaveData']['relatedTypeCandidates'])
+            self.assertFalse(records['PlayerSaveData']['relationsVerified'])
+
     def test_arbitrary_build_id_is_not_exported(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

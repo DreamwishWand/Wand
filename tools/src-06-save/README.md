@@ -27,7 +27,7 @@ To inspect both simultaneously:
 ## Output (local only)
 
 - `manifest.json`: provenance separation, platform/Build declarations, status and denial flags
-- `static-types.json` (when game provided): Unity file indicators and conservative C# type/field candidates
+- `static-types.json` (when game provided): Unity file indicators and conservative C# type, field, enum and reference candidates
 - `save-structure.json` (when save provided): safe, aggregate JSON structural paths and unknown-key buckets
 - `rust-type-candidates.json`: `serde_json::Value` placeholders and observed JSON types, not authoritative Rust types
 - `version-matrix.json`: **historical** source registry candidates for schema 624/626, not validated current compatibility

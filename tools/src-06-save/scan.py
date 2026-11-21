@@ -286,6 +286,7 @@ def static_scan(root):
     type_rx = re.compile(r'^\s*(?:(?:public|private|protected|internal|abstract|sealed|partial|static)\s+)*(class|struct|enum)\s+([A-Za-z_]\w*)')
     field_rx = re.compile(r'^\s*(?:(?:public|private|protected|internal)\s+)(?:(?:static|readonly|const|volatile)\s+)*([\w.<>\[\],? ]{1,96})\s+([A-Za-z_]\w*)\s*(?:;|=)')
     relevant = re.compile(r'(?:save|profile|player|inventor|backpack|chest|storage|collect|appear|avatar|world|grid|place|quest|item|furniture)', re.I)
+    enum_rx = re.compile(r'^\s*([A-Za-z_]\w*)\s*(?:=\s*(-?(?:0x[0-9A-Fa-f]+|\d+)))?\s*,?\s*(?://.*)?$')
     for base, dirs, files in os.walk(root, followlinks=False):
         dirs[:] = sorted(d for d in dirs if not (Path(base) / d).is_symlink() and d not in ('.git', 'node_modules'))
         for name in sorted(files):
@@ -319,11 +320,27 @@ def static_scan(root):
                         types.append(active)
                     continue
                 if active is not None and len(active['fields']) < 64:
-                    m = field_rx.match(line)
-                    if m:
-                        fieldname = m.group(2)
-                        active['fields'].append({'name': fieldname if not BLOCKED.search(fieldname) else '{sensitive-field}',
-                                                 'declaredType': m.group(1).strip() if not BLOCKED.search(fieldname) else '{withheld}'})
+                    if active['kind'] == 'enum':
+                        m = enum_rx.match(line)
+                        if m and not BLOCKED.search(m.group(1)):
+                            raw = m.group(2)
+                            active['fields'].append({'name': m.group(1),
+                                                     'declaredValue': int(raw, 0) if raw else None})
+                    else:
+                        m = field_rx.match(line)
+                        if m:
+                            fieldname = m.group(2)
+                            active['fields'].append({'name': fieldname if not BLOCKED.search(fieldname) else '{sensitive-field}',
+                                                     'declaredType': m.group(1).strip() if not BLOCKED.search(fieldname) else '{withheld}'})
+    type_names = {t['name'] for t in types if not BLOCKED.search(t['name'])}
+    for t in types:
+        linked = set()
+        for f in t['fields']:
+            if 'declaredType' in f:
+                linked.update(set(re.findall(r'[A-Za-z_]\w*', f['declaredType'])) & type_names)
+        linked.discard(t['name'])
+        t['relatedTypeCandidates'] = sorted(linked)[:64]
+        t['relationsVerified'] = False
     return {'status': 'static_evidence_inventory', 'filesSeen': file_count,
             'extensionCounts': dict(sorted(counts.items())),
             'unityIndicators': candidates[:200], 'candidateTypes': types,
