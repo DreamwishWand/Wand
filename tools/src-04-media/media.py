@@ -36,12 +36,26 @@ def shard(relative_path):
     return hashlib.sha256(relative_path.encode("utf-8")).hexdigest()[0]
 
 
+def is_unity(path):
+    if path.suffix.lower() in UNITY:
+        return True
+    try:
+        with path.open("rb") as stream:
+            return stream.read(8).startswith((b"UnityFS", b"UnityRaw", b"UnityWeb"))
+    except OSError:
+        return False
+
+
 def candidates(root, extensions):
     if root.is_file():
         yield root
         return
     for path in root.rglob("*"):
-        if path.is_file() and path.suffix.lower() in extensions:
+        if not path.is_file():
+            continue
+        if path.suffix.lower() in extensions:
+            yield path
+        elif path.suffix == "" and (extensions & UNITY) and is_unity(path):
             yield path
 
 
@@ -74,7 +88,7 @@ def source_provenance(args):
 
 def scan_one(root, path):
     record = {"path": rel(root, path), "bytes": path.stat().st_size}
-    if path.suffix.lower() in UNITY:
+    if is_unity(path):
         record["type"] = "unity_container"
         record["status"] = "needs_extraction"
         record["sha256"] = digest(path)
@@ -101,6 +115,8 @@ def command_scan(args):
     assert_output_separate(root, output)
     if not root.exists():
         raise FileNotFoundError(root)
+    if not root.is_dir():
+        raise ValueError("scan requires an input directory.")
     groups = defaultdict(list)
     seen = 0
     truncated = False
@@ -389,7 +405,7 @@ def command_build(args):
         finished = inventory["complete"] and not truncated
         save_json(output / "manifest" / ("shard-" + key + ".json"), {
             "schema": SCHEMA, "shard": key, "complete": finished,
-            "source": inventory["source"], "images": result,
+            "input": str(root), "source": inventory["source"], "images": result,
             "mappingNote": "R39 links require exact source PNG SHA-256. Other-version ID parity is not independently established.",
             "publicationApproved": False
         })
@@ -432,12 +448,14 @@ def command_merge(args):
     available = []
     problems = []
     completed = []
+    provenance = set()
     for key in SHARDS:
         path = output / "manifest" / ("shard-" + key + ".json")
         if not path.exists():
             continue
         manifest = load_json(path)
         available.append(key)
+        provenance.add((manifest.get("input"), json.dumps(manifest.get("source"), sort_keys=True)))
         if manifest.get("complete"):
             completed.append(key)
         images.extend(manifest.get("images", []))
@@ -472,7 +490,11 @@ def command_merge(args):
                       if link["itemId"] == item], "source": first["source"],
             "assetIds": first["assetIds"]
         }
-    complete = len(completed) == 16
+    if len(provenance) > 1:
+        problems.append({"type": "mixed_input_or_provenance", "sources": [
+            {"input": item[0], "source": json.loads(item[1])} for item in sorted(provenance)
+        ]})
+    complete = len(completed) == 16 and len(provenance) == 1
     save_json(output / "manifest.json", {
         "schema": SCHEMA, "complete": complete, "shards": available,
         "publicationApproved": False, "items": mapped, "images": images,
