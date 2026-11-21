@@ -50,10 +50,10 @@ def root_key(path):
 def file_metadata(stat):
     return {
         "size": stat.st_size,
-        "mtime_ns": stat.st_mtime_ns,
-        "ctime_ns": stat.st_ctime_ns,
-        "device": stat.st_dev,
-        "inode": stat.st_ino,
+        "mtime_ns": str(stat.st_mtime_ns),
+        "ctime_ns": str(stat.st_ctime_ns),
+        "device": str(stat.st_dev),
+        "inode": str(stat.st_ino),
     }
 
 
@@ -81,10 +81,22 @@ def kind_of(relative):
     return "other"
 
 
-def inspect_platform(paths):
-    lower = [path.lower() for path in paths]
+def inspect_platform(root, paths):
     steam = [p for p in paths if p.lower().rsplit("/", 1)[-1] in ("gameassembly.dll", "unityplayer.dll")]
-    switch = [p for p in paths if p.lower().endswith(("/exefs/main", "/exefs/main.nso", "/exefs/main.npdm")) or p.lower().startswith(("exefs/", "romfs/")) or "/exefs/" in p.lower() or "/romfs/" in p.lower()]
+    switch = [p for p in paths if p.lower().endswith(("/exefs/main", "/exefs/main.nso", "/exefs/main.npdm", ".nca", ".nsp", ".xci", ".nso")) or p.lower().startswith(("exefs/", "romfs/")) or "/exefs/" in p.lower() or "/romfs/" in p.lower()]
+    for relative in paths:
+        if relative.lower().rsplit("/", 1)[-1] not in ("main", "main.nso"):
+            continue
+        try:
+            with (root / Path(relative)).open("rb") as handle:
+                if handle.read(4) == b"NSO0" and relative not in switch:
+                    switch.append(relative)
+        except OSError:
+            pass
+    steam_roots = {p.rpartition("/")[0] for p in steam if p.lower().endswith("gameassembly.dll")}
+    switch_roots = {p.lower().split("/exefs/")[0] if "/exefs/" in p.lower() else "" for p in switch if p.lower().endswith(("/exefs/main", "/exefs/main.nso"))}
+    if len(steam_roots) > 1 or len(switch_roots) > 1:
+        return "conflict", {"steam": steam[:SAMPLES], "switch": switch[:SAMPLES], "reason": "multiple installation roots"}
     if steam and switch:
         return "conflict", {"steam": steam[:SAMPLES], "switch": switch[:SAMPLES]}
     if steam:
@@ -96,7 +108,7 @@ def inspect_platform(paths):
 
 def read_switch_build_id(root, paths, errors):
     found = []
-    candidates = [p for p in paths if p.lower().rsplit("/", 1)[-1] in ("main", "main.nso") and (p.lower().startswith("exefs/") or "/exefs/" in p.lower())]
+    candidates = [p for p in paths if p.lower().rsplit("/", 1)[-1] in ("main", "main.nso")]
     for relative in candidates:
         try:
             with (root / Path(relative)).open("rb") as handle:
@@ -160,7 +172,7 @@ def inventory(root, errors, skipped):
         for name in sorted(directories):
             child = folder_path / name
             rel = child.relative_to(root).as_posix()
-            if child.is_symlink():
+            if child.is_symlink() or (hasattr(child, "is_junction") and child.is_junction()) or not is_within(child.resolve(), root):
                 skipped.append(rel)
             else:
                 remaining.append(name)
@@ -168,7 +180,7 @@ def inventory(root, errors, skipped):
         for name in sorted(filenames):
             path = folder_path / name
             relative = path.relative_to(root).as_posix()
-            if path.is_symlink():
+            if path.is_symlink() or not is_within(path.resolve(), root):
                 skipped.append(relative)
             else:
                 items.append((relative, path))
@@ -226,7 +238,7 @@ def build_report(manifest, diff, skipped):
         "schema_version": SCHEMA,
         "generated_at": manifest["generated_at"],
         "status": manifest["status"],
-        "ready_for_downstream": manifest["status"] == "complete" and manifest["platform"]["value"] is not None and manifest["build_id"]["status"] != "conflict",
+        "ready_for_downstream": manifest["status"] == "complete" and manifest["platform"]["value"] is not None and bool(manifest["game_version"]["value"] or manifest["build_id"]["value"]) and manifest["build_id"]["status"] != "conflict",
         "title": manifest["title"],
         "platform": manifest["platform"],
         "game_version": manifest["game_version"],
@@ -249,6 +261,7 @@ def build_report(manifest, diff, skipped):
             "User-supplied game versions are not independently verified.",
             "Reused hashes depend on unchanged file metadata; --rehash verifies all contents.",
             "Unconfirmed identifiers are not inferred from asset names or Unity engine versions.",
+            "For downstream use, supply --version when neither a game version nor a build identifier can be verified.",
         ],
     }
 
@@ -330,9 +343,11 @@ def main():
         return 130
 
     paths = [entry[0] for entry in entries]
-    detected_platform, evidence = inspect_platform(paths)
+    detected_platform, evidence = inspect_platform(root, paths)
     conflicts = detected_platform == "conflict" or (args.platform != "auto" and detected_platform not in ("unknown", args.platform))
     selected_platform = detected_platform if args.platform == "auto" else args.platform
+    if old and old.get("platform", {}).get("value") not in (None, selected_platform) and not conflicts:
+        conflicts = True
     if conflicts:
         errors.append({"operation": "identify_platform", "reason": "Conflicting Steam/Switch evidence or explicit platform disagrees with files"})
     platform = {
