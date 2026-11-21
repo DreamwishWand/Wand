@@ -4,6 +4,7 @@ import {
   DB02_MEAL_PRICE_EVIDENCE_CONTRACT,DB02_MEAL_PRICE_VIEW_CONTRACT,
   decodeMealItemStateEvidence,compareMealIngredientStates,loadPrivateMealPricingView
 } from '../src/lib/acquisition/meal-price-evidence.mjs';
+import {runPrivateMealPriceSmoke} from '../tools/src-02-acquisition/smoke_private_meal_state_runtime.mjs';
 
 // Synthetic protobuf fragments: never real game assets or private saves.
 const vint=x=>{
@@ -88,4 +89,9 @@ test('private data loader rejects unauthenticated files, not converted to a pric
     acquisitionArchiveBytes:new Uint8Array(0),
     priceManifestBytes:fake,priceFiles:{}
   }),/PRIVATE_SRC02_ARCHIVE_SIZE/);
+});
+
+test('private real-source smoke never silently falls back to fake ZIPs',async()=>{
+  await assert.rejects(runPrivateMealPriceSmoke(
+    '/no-such-private-release/r5.zip','/no-such-private-release/prices.zip'),/ENOENT/);
 });
