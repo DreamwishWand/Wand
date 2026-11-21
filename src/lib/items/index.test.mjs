@@ -255,3 +255,14 @@ test('manifest resists an in-flight loader rewriting source verification metadat
   assert.equal((await db.getItem(5))?.itemId,5);
   assert.equal(f.calls.length,1);
 });
+
+
+test('complete future source manifest remains valid when every source file is verified',()=>{
+  const f=fixture(false);
+  f.manifest.sourceFilesVerified=f.manifest.sourceFilesTotal;
+  f.manifest.fullCorpusParsed=true;
+  assert.doesNotThrow(()=>validateDb01Shards(f.manifest));
+  const db=createDb01CatalogClient(f.manifest,f.load);
+  assert.equal(db.source.fullCorpusParsed,true);
+  assert.deepEqual(f.calls,[]);
+});
