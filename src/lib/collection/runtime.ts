@@ -439,6 +439,12 @@ export class CollectionRuntime {
   setBulk(ids:number[],status:'owned'|'missing'|'unknown'):Promise<void> {
     return this.mutate(() => this.engine.set_bulk(JSON.stringify(ids),status));
   }
+  /** Apply to every matching catalog row, not just the currently rendered page.
+   * Rust evaluates the same predicate as query_page and changes all IDs before
+   * one IndexedDB compare-and-swap commit; failed persistence rolls back. */
+  setBulkMatching(filter:CollectionFilter,status:'owned'|'missing'|'unknown'):Promise<void> {
+    return this.mutate(() => { this.engine.bulk_matching(JSON.stringify(filter),status); });
+  }
   workspace(action:'select'|'add'|'rename'|'delete',id:string,name=''):Promise<void> {
     return this.mutate(() => this.engine.workspace_action(action,id,name));
   }
