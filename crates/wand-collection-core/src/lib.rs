@@ -344,12 +344,27 @@ impl CollectionEngine {
         Ok(())
     }
     fn load_db00_index_impl(&mut self, source: &str) -> Result<(),String> {
+        self.load_db00_index_visibility_impl(source,"public_reference")
+    }
+    // A user-selected, SHA-pinned private catalog is never fetched from the
+    // public active pointer and is never written into IndexedDB.
+    fn load_owner_local_db00_index_impl(&mut self, source: &str) -> Result<(),String> {
+        self.load_db00_index_visibility_impl(source,"private")
+    }
+    fn load_db00_index_visibility_impl(&mut self, source: &str, visibility: &str) -> Result<(),String> {
         let published: Db00Index = serde_json::from_str(source).map_err(|_|"COLLECTION_DB00_INDEX_JSON")?;
         if published.schema != DB00_RELEASE_SCHEMA || published.id.is_empty()
             || published.count == 0 || published.count > MAX_ROWS
             || published.target.platform.is_empty() || published.sources.is_empty()
-            || published.sources.iter().any(|entry|entry.visibility!="public_reference" || entry.id.is_empty())
+            || published.sources.iter().any(|entry|entry.visibility!=visibility || entry.id.is_empty())
         { return Err("COLLECTION_DB00_PUBLISHABLE_INDEX_REQUIRED".into()); }
+        if visibility=="private"
+            && (published.id!="db01-steam-1-26-2-owner-local-verified"
+                || published.target.platform!="Steam"
+                || published.target.game_version.as_deref()!=Some("1.26.2")
+                || published.count>13_202 || published.sources.len()!=1
+                || published.sources[0].id!="private-db01-v1262")
+        { return Err("COLLECTION_LOCAL_DB01_TARGET_REQUIRED".into()); }
         let sources:HashSet<String> = published.sources.iter().map(|entry|entry.id.clone()).collect();
         let releases:HashSet<String> = published.releases.iter().map(|entry|entry.id.clone()).collect();
         if sources.len()!=published.sources.len() || releases.len()!=published.releases.len()
@@ -406,6 +421,13 @@ impl CollectionEngine {
         let mut ids=HashSet::new();
         for row in shard.items {
             if !valid_item_id(&row.id) {return Err("COLLECTION_DB00_ITEM_ID".into());}
+            if index.target.platform=="Steam" && index.target.game_version=="1.26.2"
+                && self.db00_sources.contains("private-db01-v1262")
+                && (row.names.len()!=LOCALES.len()
+                    || LOCALES.iter().any(|locale|
+                        row.names.get(*locale).is_none_or(|name|
+                            name.trim().is_empty() || name.len()>512)))
+            { return Err("COLLECTION_LOCAL_DB01_NAMES_REQUIRED".into()); }
             let id=row.id.parse::<u64>().map_err(|_|"COLLECTION_DB00_ITEM_ID")?;
             if !ids.insert(id) || self.lookup.contains_key(&id)
                 || row.name_status!="verified" || row.names.keys().any(|l|!LOCALES.contains(&l.as_str()))
@@ -704,6 +726,9 @@ impl CollectionEngine {
     }
     pub fn load_db00_index(&mut self, source: &str) -> Result<(), JsValue> {
         self.load_db00_index_impl(source).map_err(|e|JsValue::from_str(&e))
+    }
+    pub fn load_owner_local_db00_index(&mut self, source: &str) -> Result<(), JsValue> {
+        self.load_owner_local_db00_index_impl(source).map_err(|e|JsValue::from_str(&e))
     }
     pub fn append_db00_shard(&mut self, source: &str) -> Result<(), JsValue> {
         self.append_db00_shard_impl(source).map_err(|e|JsValue::from_str(&e))
