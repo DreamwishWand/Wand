@@ -396,6 +396,7 @@ def command_build(args):
                         "assetIds": [item["assetId"] for item in assets],
                         "links": links, "variants": outputs, "recipe": RECIPE
                     })
+                    old[sha] = {"variants": outputs}
             except (OSError, ValueError, UnidentifiedImageError, Image.DecompressionBombError) as exc:
                 problems.append({"type": "decode_or_encode_failure", "path": relative,
                                  "error": str(exc)[:300]})
