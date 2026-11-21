@@ -7,12 +7,11 @@ outside Git. No Codec, ownership or Writer permission is produced.
 """
 import argparse
 from collections import Counter, deque
-import hashlib
 import json
 from pathlib import Path
 import re
 
-from verify_native_dump import FIELD_NUMBER, PROPERTY
+from verify_native_dump import FIELD_NUMBER, PROPERTY, hash_file
 
 DISCOVERY_SCHEMA = 'wand.db05.private-native-shape-discovery@1'
 CLASS_HEADER = re.compile(r'^public sealed class ([A-Za-z][A-Za-z0-9_.]*) : .*IMessage')
@@ -247,7 +246,7 @@ def run(source, private_profiles, destination, registry_dir=None,
                           node_limit=node_limit)
         result['source']={
             'kind':'il2cpp_native_metadata_only',
-            'sha256':hashlib.sha256(source.read_bytes()).hexdigest(),
+            'sha256':hash_file(source),
             'byteLength':source.stat().st_size,
             'sourceGameBuildNotInferredFromFilename':True
         }
