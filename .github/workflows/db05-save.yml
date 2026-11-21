@@ -1,0 +1,45 @@
+name: DB-05 Save schema contract
+on:
+  push:
+    branches: [db-05-save-registry-readonly-20261121]
+    paths:
+      - 'data/ddv/save/**'
+      - 'src/lib/save/**'
+      - 'crates/ddv-save-schema/**'
+      - 'tools/db-05-save/**'
+      - 'tests/save-schema.test.mjs'
+      - 'tests/save-db00-join.test.mjs'
+      - '.github/workflows/db05-save.yml'
+  pull_request:
+    paths:
+      - 'data/ddv/save/**'
+      - 'src/lib/save/**'
+      - 'crates/ddv-save-schema/**'
+      - 'tools/db-05-save/**'
+      - 'tests/save-schema.test.mjs'
+      - 'tests/save-db00-join.test.mjs'
+      - '.github/workflows/db05-save.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  readonly-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Reject committed private save and scanner report files
+        run: |
+          if git ls-files data/ddv/save tools/db-05-save | grep -Ei '([.]profile$|/profile[.]json$|/decoded-save[.]json$|/save-structure[.]json$|/db05-private-summary[.]json$)'; then
+            echo 'Private save or report must never be committed'
+            exit 1
+          fi
+      - name: JavaScript and Collection bridge
+        run: node --test tests/save-schema.test.mjs tests/save-db00-join.test.mjs
+      - name: Private report importer (synthetic only)
+        run: python3 -m unittest discover -s tools/db-05-save -p 'test_*.py' -v
+      - name: Rust borrowed-document schema contract
+        run: cargo test --manifest-path crates/ddv-save-schema/Cargo.toml
