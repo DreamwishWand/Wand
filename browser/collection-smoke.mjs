@@ -83,7 +83,12 @@ try{
   assert.equal(backup.workspaces[0].entries['40005160'].quantity,7);
   assert.equal(backup.workspaces[0].entries['40005160'].status,'missing');
   await search.fill('');
-  await page.getByRole('button',{name:'Category',exact:true}).click();
+  // Category is the only root navigation. World/Universe are semantic filters.
+  await page.locator('.facet-card').first().waitFor();
+  assert.equal(await page.locator('.mode-tabs').count(),0);
+  await page.getByRole('button',{name:/フィルター/}).click();
+  assert.equal(await page.getByRole('combobox',{name:'ワールドで絞り込み'}).count(),1);
+  assert.equal(await page.getByRole('combobox',{name:'ユニバースで絞り込み'}).count(),1);
   const facet=page.locator('.facet-card').filter({hasText:/家具|Furniture/}).first();
   try {
     await facet.click({timeout:10000});
