@@ -7,7 +7,7 @@ from pathlib import Path
 
 from world import (STREAM, diff_records, encode_varint, explicit_references,
                    extract, footprint, parse_grid_structure, parse_itemlist,
-                   restrictions, wire_fields)
+                   parse_world_registry, restrictions, wire_fields)
 
 
 def field(number, value, wire=None):
@@ -66,6 +66,37 @@ class NativeWireTests(unittest.TestCase):
             wire_fields(b"\x0a\xff")
         with self.assertRaises(ValueError):
             wire_fields(b"\x08\x80\x00")
+
+    def test_protodb_worlds_villages_and_explicit_area_relations(self):
+        realm = (field(1, "Worlds!Example") +
+                 field(20, 2000500001) +
+                 field(21, "SceneLayouts/Realms/Example/Example.json") +
+                 field(22, 1540000001))
+        worlds = field(1, realm)
+        villages = (field(1, "SceneLayouts/Village04/DefaultVillageLayout01.json") +
+                    field(2, field(1, "SceneLayouts/Expansion01/Default.json") +
+                          field(2, b"opaque_conditions")))
+        # AreaType 0 is a protobuf default, even when field1 is absent.
+        area_data = (field(1, 1540000000) +
+                     field(2, field(7, 3) + field(8, 4)) +
+                     field(2, field(1, 3) + field(7, 9) + field(8, 10)))
+        def record(key, typename, payload):
+            return field(1, field(1, key) +
+                         field(2, field(5, typename) + field(6, payload)))
+        db = (record("Worlds", "Definitions.WorldData", worlds) +
+              record("DefaultVillages", "Meta.DefaultVillageList", villages) +
+              record("Village04Layout1", "Definitions.Scene.VillageAreaData", area_data))
+        catalog, areas, problems = parse_world_registry(
+            db, {1540000000, 1540000001})
+        self.assertEqual(len(catalog), 3)
+        self.assertEqual(len(areas), 2)
+        self.assertEqual(areas[0]["nativeAreaTypeName"], "Beach")
+        self.assertFalse(areas[0]["nativeAreaTypeFieldPresent"])
+        self.assertEqual(areas[1]["nativeAreaTypeName"], "Urban")
+        self.assertEqual(catalog[0]["sceneId"], 1540000001)
+        self.assertEqual(catalog[0]["universeTagItemId"], 2000500001)
+        self.assertEqual(problems, [])
+        self.assertEqual(catalog[1]["worldIdKind"], "derivedLayoutKey")
 
     def test_native_grid_fixed32_palette_and_compacted_payload(self):
         palette = struct.pack("<III", 0, 3072, 1024)
