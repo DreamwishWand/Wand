@@ -17,6 +17,7 @@ import zipfile
 from mission_semantics import extract_quest_details
 from protodb_static import project_protodb
 from version_diff import compare_snapshots
+from guide_event_links import project_event_links
 
 SCHEMA = "wand.db03.native-guide@1"
 LOCALES = {"en": "en-US", "fr": "fr", "it": "it", "de": "de", "es-ES": "es",
@@ -701,6 +702,8 @@ def extract(game, out, version, platform, item_index=None, previous=None):
         protodb_summary = project_protodb(origin, out, target, locale, wire_fields,
             text_field, int_field, sha, source_data, save, plain_display,
             indexes.get("quests"), indexes.get("duties"), indexes.get("worlds"))
+        event_links_summary = project_event_links(out, target, indexes,
+            item_index is not None, protodb_summary.get('status'), save)
         manifest = {"schema": SCHEMA, "target": target, "status": status,
                     "sources": source_info, "localizationSources": locale.provenance,
                     "friendshipRewardSource": reward_source, "structuredDefinitions": overlay_counts,
@@ -708,6 +711,7 @@ def extract(game, out, version, platform, item_index=None, previous=None):
                     "counts": {**{fam: len(rows[fam]) for fam in SOURCES}, "rewards": len(reward_rows)},
                     "missingSources": missing_families,
                     "protoDbStatic": protodb_summary,
+                    "guideEventLinks": event_links_summary,
                     "missionRecordKinds": dict(collections.Counter(r["recordKind"] for r in kinds)),
                     "decodedObjectiveCount": sum(len(sub["objectives"])
                         for r in rows["quests"] for step in r.get("structured", {}).get("stepsDetailed", [])
