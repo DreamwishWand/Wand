@@ -161,3 +161,19 @@ Building footprints absent. The owner-private overlay has 256 SHA-verified
 on-demand files and is separate from the canonical SQLite and 557 item shards;
 no source recompilation, competing runtime, world-coordinate inference,
 placement permission, ownership, or public publishing is authorized.
+
+
+## DB-01 ↔ DB-03 original-Mission-source static item references
+
+[`DB03-QUEST-ITEM-REFERENCES.md`](DB03-QUEST-ITEM-REFERENCES.md) documents
+the offline, source-SHA-verified private join to DB-03 Guide. The same original
+`Mission.json` bytes are SHA-256-identical for source Steam v1.26.1 and
+DB-01 target Steam v1.26.2. A permanent Python verifier checks all the
+source pins, all **6,414** source-configured quest item references and **3,287**
+distinct referenced Item IDs, including **509** occurrences absent from DB-03's
+older partial SRC-01 item index. The output is a separate, owner-private
+256-bucket lookup. The typed `src/lib/items/db03-evidence.ts` reads one
+source-pinned bucket per Item ID and never promotes alternatives, additional
+loot, static handoffs or cleanup references to guaranteed rewards/requirements.
+No SQLite migration, second runtime, licensed text publication, inferred
+player state, or placement/save permissions.
