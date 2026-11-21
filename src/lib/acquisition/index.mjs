@@ -53,7 +53,12 @@ export function createAcquisitionDatabase({ manifest, recipes = [], acquisitions
     link(member.cookingIngredientTypeId, member, 'cooking_ingredient_type');
     for (const tag of member.tagIds) link(tag, member, 'item_tag');
   }
-  for (const value of selectorMembers.values()) value.sort((a, b) => a.itemId - b.itemId);
+  // Derived candidate indexes must be immutable too: the verified source JSON
+  // is deeply frozen, but these arrays and link wrappers were created afterward.
+  for (const [id, value] of selectorMembers) {
+    value.sort((a, b) => a.itemId - b.itemId);
+    selectorMembers.set(id, Object.freeze(value.map(row => Object.freeze(row))));
+  }
   if (ingredientEvidencePresent && manifest.counts?.ingredientSelectorMembers !== undefined &&
       manifest.counts.ingredientSelectorMembers !== byIngredientMember.size) {
     throw new Error('Ingredient selector count does not match manifest');
@@ -163,6 +168,13 @@ export function createAcquisitionDatabase({ manifest, recipes = [], acquisitions
         possibleStallsByItem.get(itemId).push(candidate);
       }
     });
+  }
+  for (const [id, slots] of possibleStallsByItem) {
+    for (const slot of slots) {
+      Object.freeze(slot.candidateGroupIndexes);
+      Object.freeze(slot);
+    }
+    possibleStallsByItem.set(id, Object.freeze(slots));
   }
   const possibleStallSlots = id => validId(id) ? (possibleStallsByItem.get(id) ?? []) : [];
   const possibleStalls = id => {
