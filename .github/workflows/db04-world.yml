@@ -31,5 +31,17 @@ jobs:
           node-version: '22'
       - name: Test native world evidence extraction
         run: python -m unittest discover -s tools/db-04-world -p 'test_*.py' -v
+      - name: Validate Windows one-shot PowerShell source syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "tools/db-04-world/run.ps1", [ref]$tokens, [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | Format-List | Out-String | Write-Error
+            exit 1
+          }
       - name: Test browser-facing world catalog
         run: node --test tests/world.test.mjs

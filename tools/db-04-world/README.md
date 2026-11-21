@@ -28,6 +28,42 @@ To compare the **next** game version, supply `--previous "PATH_TO_PREVIOUS_DB04_
 
 Source of truth: `FullVersion.txt` must contain exactly one parsable version. File provenance uses relative game paths, SHA-256 and byte counts. The version is evidence from that file, not proof of storefront update availability. No game binaries or derived asset records are committed to public Git.
 
+## One-shot Steam local source acquisition (Windows)
+
+For a complete installed Steam source folder, use **one** PC invocation to
+extract, validate, audit, and package all DB-04 material:
+
+```powershell
+& ".\tools\db-04-world\run.ps1" -GameRoot "C:\Program Files (x86)\Steam\steamapps\common\Disney Dreamlight Valley"
+```
+
+Optional: `-OutputRoot "D:\Private\Wand\DB04"` and
+`-PreviousSnapshot "D:\Private\Wand\DB04\Steam-YYYYMMDD-HHMMSS"`.
+The previous snapshot must itself pass integrity verification. The game is
+read-only, all outputs are created under the private output root, and neither
+user saves nor source assets are copied into public Git. Failed extraction
+remains under a timestamped `.partial-Steam-...` folder rather than
+masquerading as verified evidence.
+
+Successful runs produce a timestamped verified directory and one private ZIP
+containing only the manifest-registered JSON families plus
+`diagnostics/verification.json` and
+`diagnostics/layout-terrain-audit.json`. Packaging independently checks
+SHA-256, source references, record counts and compressed terrain evidence.
+The archive uses stable ZIP metadata and reproducible file ordering, rejects
+overwriting an existing destination, and is intended for private
+[SRC-05 WORLD DATA](https://drive.google.com/drive/folders/1P5VW5Yr9YqYNoZfv7yHRCwqZcZapi0-Q).
+
+Packaging can also be run separately on an existing verified snapshot:
+
+```bash
+python tools/db-04-world/package_snapshot.py --snapshot "/private/snapshot" --zip "/private/snapshot.zip"
+```
+
+The package is explicitly partial unless verified complete source coverage
+has been established. A successful command is not proof of gameplay collision
+or placeability and does not certify the machine-code decoder.
+
 ## Generated private files
 
 Upload these together to the private [SRC-05 WORLD DATA folder](https://drive.google.com/drive/folders/1P5VW5Yr9YqYNoZfv7yHRCwqZcZapi0-Q):

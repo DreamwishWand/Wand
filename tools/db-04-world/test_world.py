@@ -4,9 +4,11 @@ import json
 import struct
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 from audit_layout_terrain import audit_snapshot
+from package_snapshot import package_snapshot
 from verify_bundle import validate_snapshot
 from terrain_codec import (describe_native_packing, floor_at, decode_window,
                            count_packed_palette_indices, EVIDENCE)
@@ -478,6 +480,47 @@ class PipelineTests(unittest.TestCase):
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "object count mismatch"):
             validate_snapshot(self.out)
+
+    def test_private_zip_is_reproducible_and_contains_no_game_binaries(self):
+        extract(self.game, self.out)
+        first = self.root / "private-a.zip"
+        second = self.root / "private-b.zip"
+        a = package_snapshot(self.out, first)
+        b = package_snapshot(self.out, second)
+        self.assertEqual(a["zipSha256"], b["zipSha256"])
+        self.assertEqual(a["zipBytes"], b["zipBytes"])
+        self.assertEqual(a["status"], "verified_private_partial_snapshot_package")
+        self.assertFalse(a["includesOriginalGameBinaries"])
+        self.assertFalse(a["includesPlayerSaves"])
+        self.assertFalse(a["placementLegalityVerified"])
+        with zipfile.ZipFile(first) as archive:
+            names = set(archive.namelist())
+            self.assertIn("manifest.json", names)
+            self.assertIn("grids.json", names)
+            self.assertIn("layoutObjects.json", names)
+            self.assertIn("diagnostics/verification.json", names)
+            self.assertIn("diagnostics/layout-terrain-audit.json", names)
+            self.assertTrue(all(name.endswith(".json") for name in names))
+            self.assertFalse(any(name.endswith((".dll", ".bin", ".sav"))
+                                 for name in names))
+            self.assertIsNone(archive.testzip())
+
+    def test_private_zip_rejects_overwrites_git_trees_and_modified_hashes(self):
+        extract(self.game, self.out)
+        dest = self.root / "first.zip"
+        package_snapshot(self.out, dest)
+        with self.assertRaisesRegex(ValueError, "overwrite"):
+            package_snapshot(self.out, dest)
+
+        git = self.root / "git"
+        (git / ".git").mkdir(parents=True)
+        with self.assertRaisesRegex(ValueError, "Git worktree"):
+            package_snapshot(self.out, git / "private.zip")
+
+        raw = self.out / "objects.json"
+        raw.write_bytes(raw.read_bytes() + b" ")
+        with self.assertRaisesRegex(ValueError, "SHA mismatch"):
+            package_snapshot(self.out, self.root / "tampered.zip")
 
     def test_refuse_game_output_overlap(self):
         with self.assertRaisesRegex(ValueError, "overlap"):
