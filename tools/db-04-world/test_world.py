@@ -69,7 +69,7 @@ class NativeWireTests(unittest.TestCase):
 
     def test_native_grid_fixed32_palette_and_compacted_payload(self):
         palette = struct.pack("<III", 0, 3072, 1024)
-        compacted = b"\\x55" * 48
+        compacted = b"\x55" * 48
         raw = (field(1, 12) + field(2, 16) +
                field(4, palette) + field(5, compacted))
         grid = parse_grid_structure(raw)
@@ -86,7 +86,7 @@ class NativeWireTests(unittest.TestCase):
         self.assertEqual(grid["nativeFloorTypes"], [4, 4, 512, 0])
         self.assertEqual(grid["status"], "native_uncompacted_floor_values")
         with self.assertRaises(ValueError):
-            parse_grid_structure(field(1, 1) + field(2, 1) + field(4, b"\\x01"))
+            parse_grid_structure(field(1, 1) + field(2, 1) + field(4, b"\x01"))
 
     def test_native_building_alternate_wire_fields_are_not_scene_ids_or_footprints(self):
         from world import footprint
