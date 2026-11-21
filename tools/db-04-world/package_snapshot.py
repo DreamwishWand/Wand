@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Pack a verified PRIVATE DB-04 Steam snapshot into a reproducible ZIP.
 
-Only manifest-registered output JSON, manifest.json and two generated private
+Only manifest-registered output JSON, manifest.json and three generated private
 diagnostics are included. Original game binaries, player saves and images
 are never bundled. A ZIP is not a claim of complete game source coverage.
 """
@@ -15,6 +15,7 @@ import zipfile
 from pathlib import Path
 
 from audit_layout_terrain import audit_snapshot
+from audit_footprint_candidates import audit_footprint_candidates
 from verify_bundle import read_json, validate_snapshot
 
 MAX_MEMBERS = 100
@@ -61,6 +62,8 @@ def package_snapshot(snapshot: Path, output_zip: Path) -> dict:
 
     verification = validate_snapshot(root)
     diagnostics = audit_snapshot(root, max_samples=50)
+    hypothesis_diagnostics = audit_footprint_candidates(
+        root, max_objects=5000, max_examples=20)
     manifest = read_json(root / "manifest.json")
     output_hashes = manifest["outputSha256"]
     names = ["manifest.json", *sorted(output_hashes)]
@@ -94,9 +97,14 @@ def package_snapshot(snapshot: Path, output_zip: Path) -> dict:
                 _zip_entry("diagnostics/layout-terrain-audit.json"),
                 _content(diagnostics), compress_type=zipfile.ZIP_DEFLATED,
                 compresslevel=8)
+            archive.writestr(
+                _zip_entry("diagnostics/footprint-hypotheses.json"),
+                _content(hypothesis_diagnostics),
+                compress_type=zipfile.ZIP_DEFLATED, compresslevel=8)
         with zipfile.ZipFile(tmp, "r") as archive:
             expected = set(names + ["diagnostics/verification.json",
-                                     "diagnostics/layout-terrain-audit.json"])
+                                     "diagnostics/layout-terrain-audit.json",
+                                     "diagnostics/footprint-hypotheses.json"])
             if set(archive.namelist()) != expected:
                 raise ValueError("private snapshot ZIP member verification failed")
             for name, expected_hash in output_hashes.items():
@@ -124,6 +132,9 @@ def package_snapshot(snapshot: Path, output_zip: Path) -> dict:
         "snapshotSourceScopeComplete": verification["sourceScopeVerified"],
         "outputFileCount": len(names),
         "auditDefaultObjectCount": diagnostics["defaultObjectCount"],
+        "footprintHypothesisObjectCount": hypothesis_diagnostics[
+            "layoutObjectsConsidered"],
+        "footprintHypothesesUnverified": True,
         "placementLegalityVerified": False,
         "includesOriginalGameBinaries": False,
         "includesPlayerSaves": False,

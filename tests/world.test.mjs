@@ -7,6 +7,7 @@ import {
   getDefaultVillageAreaLayoutRefs, getDefaultLayoutGridEntries, describeNativeLayerMask,
   describeNativeFloorMask, checkNativeEditRestriction, assessPlacement,
   getNativeTerrainTile, getNativeTerrainWindow, getNativeTerrainDistribution,
+  getNativeFootprintCandidateCells,
   getNativeDefaultLayoutViewport, getNativeVillageAreaViewport,
 } from '../src/lib/world/catalog.mjs';
 
@@ -340,4 +341,59 @@ test('viewport never assumes an out-of-frame anchor occupies no visible cells', 
   assert.equal(result.totalNativeDefaultObjectAnchors, 2);
   assert.equal(result.fullFootprintOccupancyVerified, false);
   assert.equal(result.sourceScopeVerified, false);
+});
+
+test('source footprint candidate geometry is explicitly unverified across cardinal axes', () => {
+  const catalog = createWorldCatalog(fixture());
+  const xmajor = getNativeFootprintCandidateCells(catalog, 40000001,
+    { x: 5, y: 6 }, {
+      cellOrder: 'x_major', anchorModel: 'top_left', orientationCode: 4,
+    });
+  assert.equal(xmajor.status, 'explicit_unverified_footprint_projection');
+  assert.deepEqual(xmajor.cells.map(c => [c.x, c.y, c.originalLayerValue]),
+    [[5, 7, 68], [5, 6, 76]]);
+  assert.equal(xmajor.nonzeroNativeLayerCellCount, 2);
+  assert.equal(xmajor.rotationTransformVerified, false);
+  assert.equal(xmajor.cellIndexToXYVerified, false);
+  assert.equal(xmajor.occupancyPredicateVerified, false);
+  assert.equal(xmajor.placementLegalityVerified, false);
+
+  const centered = getNativeFootprintCandidateCells(catalog, 40000001,
+    { x: 5, y: 6 }, {
+      cellOrder: 'x_major', anchorModel: 'center_floor', orientationCode: 4,
+    });
+  assert.deepEqual(centered.cells.map(c => [c.x, c.y]), [[5, 6], [5, 5]]);
+  const reversed = getNativeFootprintCandidateCells(catalog, 40000001,
+    { x: 5, y: 6 }, {
+      cellOrder: 'y_major', anchorModel: 'top_left', orientationCode: 12,
+    });
+  assert.deepEqual(reversed.cells.map(c => [c.x, c.y]), [[5, 6], [5, 7]]);
+});
+
+test('unsupported noncardinal footprint rotations are unresolved, never guessed', () => {
+  const catalog = createWorldCatalog(fixture());
+  const original = getNativeFootprintCandidateCells(catalog, 40000001,
+    { x: 0, y: 0 }, { cellOrder: 'x_major',
+      anchorModel: 'top_left', orientationCode: 7 });
+  assert.equal(original.status, 'unsupported_noncardinal_orientation_hypothesis');
+  assert.equal(original.placementLegalityVerified, false);
+  assert.equal(original.cells, undefined);
+  assert.throws(() => getNativeFootprintCandidateCells(catalog, 40000001,
+    { x: 0, y: 0 }, {
+      cellOrder: 'x_major', anchorModel: 'top_left', orientationCode: 16,
+    }), /GridOrientation/);
+  assert.throws(() => getNativeFootprintCandidateCells(catalog, 40000001,
+    { x: 0, y: 0 }, {
+      cellOrder: 'unknown', anchorModel: 'top_left', orientationCode: 0,
+    }), /Explicit unverified/);
+  assert.throws(() => getNativeFootprintCandidateCells(catalog, 40000001,
+    { x: Infinity, y: 0 }, {
+      cellOrder: 'x_major', anchorModel: 'top_left', orientationCode: 0,
+    }), /anchor required/);
+  assert.equal(getNativeFootprintCandidateCells(catalog, 999,
+    { x: 0, y: 0 }, {
+      cellOrder: 'x_major', anchorModel: 'top_left', orientationCode: 0,
+    }).status, 'unknown_item_id');
+  assert.equal(assessPlacement(catalog, 40000001, { x: 5, y: 6 }).status,
+    'unresolved');
 });

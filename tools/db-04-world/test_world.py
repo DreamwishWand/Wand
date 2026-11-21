@@ -7,6 +7,9 @@ import unittest
 import zipfile
 from pathlib import Path
 
+from audit_footprint_candidates import audit_footprint_candidates
+from footprint_hypotheses import (
+    candidate_layer_cells, projection_hypotheses, validate_footprint)
 from audit_layout_terrain import audit_snapshot
 from package_snapshot import package_snapshot
 from verify_bundle import validate_snapshot
@@ -216,6 +219,44 @@ class NativeWireTests(unittest.TestCase):
             count_packed_palette_indices(
                 2, 2, [0, 1024, 2048], bytes((0xff,)))
 
+    def test_cardinal_projection_geometry_is_explicitly_a_hypothesis(self):
+        values = [1, 0, 4, 0, 8, 16]
+        for code, expected in [
+            (0, {(5, 6), (6, 6), (7, 6), (7, 7)}),
+            (4, {(5, 8), (5, 7), (5, 6), (6, 6)}),
+            (8, {(7, 7), (6, 7), (5, 7), (5, 6)}),
+            (12, {(6, 6), (6, 7), (6, 8), (5, 8)}),
+        ]:
+            candidate = candidate_layer_cells(
+                3, 2, values, cell_order="x_major",
+                orientation_code=code, anchor_mode="top_left", x=5, y=6)
+            actual = {(c["x"], c["y"]) for c in candidate["cells"]}
+            self.assertEqual(actual, expected)
+            self.assertFalse(candidate["rotationTransformVerified"])
+            self.assertFalse(candidate["occupancyPredicateVerified"])
+            self.assertFalse(candidate["placementLegalityVerified"])
+            self.assertEqual(candidate["nonzeroNativeLayerCellCount"], 4)
+        self.assertEqual(len(projection_hypotheses()), 4)
+        different = candidate_layer_cells(
+            3, 2, values, cell_order="y_major",
+            orientation_code=0, anchor_mode="top_left", x=5, y=6)
+        self.assertNotEqual([c["originalFlatIndex"] for c in different["cells"]],
+                            [c["originalFlatIndex"] for c in candidate["cells"]])
+
+    def test_unsupported_native_noncardinal_rotation_never_projected(self):
+        native = candidate_layer_cells(
+            2, 3, [64] * 6, cell_order="x_major",
+            orientation_code=7, anchor_mode="center_floor", x=2, y=2)
+        self.assertEqual(native["status"],
+                         "unsupported_noncardinal_orientation_hypothesis")
+        self.assertNotIn("cells", native)
+        with self.assertRaisesRegex(ValueError, "GridOrientation"):
+            candidate_layer_cells(2, 3, [64] * 6, cell_order="x_major",
+                                  orientation_code=16, anchor_mode="top_left",
+                                  x=0, y=0)
+        with self.assertRaisesRegex(ValueError, "fixed32"):
+            validate_footprint(3, 3, [1] * 8)
+
     def test_native_grid_fixed32_palette_and_compacted_payload(self):
         palette = struct.pack("<III", 0, 3072, 1024)
         compacted = b"\x55" * 48
@@ -368,6 +409,42 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(objects["membershipConfidence"],
                          "unverified_source_coverage")
 
+    def test_private_native_footprint_hypothesis_comparison_distinguishes_anchor_models(self):
+        grid_path = self.base / "GridData/Villages/Village04-Test.json"
+        grid_path.write_bytes(field(1, 3) + field(2, 3) +
+            field(4, struct.pack("<III", 0, 1024, 2048)) +
+            field(5, bytes((0xaa, 0xaa, 0x80))))
+        furniture_path = self.base / "itemlist/Furniture.json"
+        furniture_path.write_bytes(indexed(40000000, 1, "TestBench",
+                                          grid(2, 1, [68, 0], floor=2048)))
+        object_zero = field(2, 40000001) + field(3, 1)
+        object_one = (field(1, 1) + field(2, 40000001) +
+                      field(3, 2) + field(4, 2) + field(5, 4))
+        object_two = (field(1, 2) + field(2, 40000001) +
+                      field(3, 1) + field(4, 1) + field(5, 7))
+        native_grid = (field(2, "GridData/Villages/Village04-Test.json") +
+            field(5, field(2, object_zero)) +
+            field(5, field(1, 1) + field(2, object_one)) +
+            field(5, field(1, 2) + field(2, object_two)))
+        (self.base / "SceneLayouts/Village04/Hypothesis.json").write_bytes(
+            field(1, field(2, native_grid)))
+        extract(self.game, self.out)
+        scores = audit_footprint_candidates(self.out, max_objects=200)
+        self.assertEqual(scores["nativeLayoutObjectCount"], 3)
+        self.assertEqual(scores["layoutObjectsConsidered"], 3)
+        self.assertEqual(scores["excludedSourceConditions"]
+                         ["nonCardinalOrientationNotModeled"], 1)
+        self.assertFalse(scores["footprintLayerIndexOrderVerified"])
+        self.assertFalse(scores["placementLegalityVerified"])
+        top = scores["hypotheses"]["x_major+top_left"]["counts"]
+        centered = scores["hypotheses"]["x_major+center_floor"]["counts"]
+        self.assertEqual(top["objectsWithComparableOriginalSources"], 2)
+        self.assertEqual(centered["objectsWithComparableOriginalSources"], 2)
+        self.assertEqual(top["rawLayerCellsOutsideGrid"], 1)
+        self.assertEqual(centered.get("rawLayerCellsOutsideGrid", 0), 0)
+        truncated = audit_footprint_candidates(self.out, max_objects=1)
+        self.assertTrue(truncated["truncatedByMaxObjects"])
+
     def test_native_default_layout_grid_origin_audit_is_not_placement_permission(self):
         grid_path = self.base / "GridData/Villages/Village04-Test.json"
         grid_path.write_bytes(
@@ -481,6 +558,20 @@ class PipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "object count mismatch"):
             validate_snapshot(self.out)
 
+    def test_legacy_verified_partial_snapshot_without_default_placements(self):
+        extract(self.game, self.out)
+        path = self.out / "layoutObjects.json"
+        path.unlink()
+        manifest_file = self.out / "manifest.json"
+        manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+        manifest["outputSha256"].pop("layoutObjects.json")
+        manifest_file.write_text(json.dumps(manifest), encoding="utf-8")
+        scores = audit_footprint_candidates(self.out)
+        self.assertEqual(scores["nativeLayoutObjectCount"], 0)
+        self.assertFalse(scores["placementLegalityVerified"])
+        packed = package_snapshot(self.out, self.root / "legacy-private.zip")
+        self.assertEqual(packed["footprintHypothesisObjectCount"], 0)
+
     def test_private_zip_is_reproducible_and_contains_no_game_binaries(self):
         extract(self.game, self.out)
         first = self.root / "private-a.zip"
@@ -500,6 +591,11 @@ class PipelineTests(unittest.TestCase):
             self.assertIn("layoutObjects.json", names)
             self.assertIn("diagnostics/verification.json", names)
             self.assertIn("diagnostics/layout-terrain-audit.json", names)
+            self.assertIn("diagnostics/footprint-hypotheses.json", names)
+            candidate = json.loads(archive.read(
+                "diagnostics/footprint-hypotheses.json"))
+            self.assertFalse(candidate["placementLegalityVerified"])
+            self.assertFalse(candidate["footprintLayerIndexOrderVerified"])
             self.assertTrue(all(name.endswith(".json") for name in names))
             self.assertFalse(any(name.endswith((".dll", ".bin", ".sav"))
                                  for name in names))
