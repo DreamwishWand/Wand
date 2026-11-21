@@ -1080,3 +1080,58 @@ does not read a save or authorize writing, exporting, reward claims,
 item ownership, entitlement, or collectibility.
 
 CI: `node --experimental-strip-types --test tests/save-duty-reward-db01.test.mjs`
+
+
+## Owner-declared clean new-save baseline — private reference regression
+
+`src/lib/save/clean-baseline.mjs` provides
+`createCleanSaveBaseline(strictlyDecodedSave, {
+ownerDeclaredClean:true, ownerDeclaredNoCheats:true,
+ownerDeclaredNoRestrictedObjectEdits:true})`.
+These properties mean **owner declarations**, not technical proof
+that no cheats or movement/removal of immovable objects occurred.
+A baseline captures only 23 fixed, public game field templates
+and their aggregate kinds/child counts. It retains no raw save,
+map keys, numeric IDs, names, progress values or accounts.
+The function explicitly does not determine source Build,
+codec-roundtrip safety, complete editor schema, or Writer access.
+
+The private owner-provided **Switch 1.26.2 freshly started**
+encrypted save was strictly decrypted/read outside this public
+repository, and its 23 fixed candidate paths were observed,
+with 0 kind differences and no bounded sampling. In this particular
+clean reference, 390 AchievementData and 686 DiffGrids entries were
+already present. **Absence of 245 DutyAch definitions from the fresh
+save does not establish corruption or missing game content.**
+Likewise initial DiffGrids do not imply player modification.
+These are owner-private observations, not universal invariants.
+No original profile bytes or actual save keys are committed.
+
+Use `baseline.compare(candidate)` on an already strictly decoded
+second save. It returns only static field IDs for optional
+unobserved paths, candidate type differences, cardinality drift
+and sampling. In particular it never interprets absent mission
+objects, changed counts, different schema numbers or unknown fields
+as cheats, improper placement, corruption or Writer eligibility.
+
+To create an owner-private report directly from two encrypted
+local files (second file optional), run the CLI from repository root:
+
+```bash
+node tools/db-05-save/clean-baseline-cli.mjs \
+  --clean /PRIVATE/clean-profile.json \
+  --candidate /PRIVATE/other-profile.json \
+  --out /PRIVATE/clean-baseline-evidence.json \
+  --owner-declared-clean \
+  --owner-declared-no-cheats \
+  --owner-declared-no-restricted-edits
+```
+
+The CLI reuses the strict, read-only P1G decoder and safely
+writes anonymous evidence outside the public Git checkout only.
+The input bytes and decrypted user JSON never enter the report.
+It refuses to overwrite the input or an existing report.
+Actual user saves and their private baseline reports must remain
+outside GitHub, static hosting and CI fixtures.
+
+CI: `node --test tests/save-clean-baseline.test.mjs`
