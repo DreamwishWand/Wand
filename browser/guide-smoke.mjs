@@ -47,6 +47,7 @@ try {
   assert.equal(await page.locator('.detail').innerText().then(value => value.includes('<ActivityItem>')), false, 'do not display raw game text tags');
 
   await page.getByRole('combobox', {name: '表示言語'}).selectOption('en');
+  await page.waitForFunction(() => document.querySelector('.detail-header h2')?.textContent?.includes('Welcome to Dreamlight Valley'));
   assert.match(await page.locator('.detail-header').innerText(), /Welcome to Dreamlight Valley/);
   assert.match(await page.locator('.detail').innerText(), /Try to enter the House/);
   await search.fill('Welcome to Dreamlight Valley');
