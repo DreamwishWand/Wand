@@ -68,8 +68,17 @@ try{
   await search.fill('40005160');
   await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
   assert.match(await page.locator('.item-card').first().innerText(),/家具|Furniture/);
+  // Both tabs opened the same IndexedDB version. A stale writer must fail closed.
+  const staleTab=await context.newPage();
+  await staleTab.goto(url);
+  await staleTab.locator('.summary-strip').waitFor();
+  await staleTab.getByRole('searchbox',{name:/8言語/}).fill('40005160');
+  await staleTab.locator('.item-state-toggle').first().waitFor();
   await page.locator('.item-state-toggle').first().click();
   await page.waitForFunction(()=>document.querySelector('.item-state-toggle')?.textContent?.trim()==='＋');
+  await staleTab.locator('.item-state-toggle').first().click();
+  await staleTab.getByRole('alert').filter({hasText:'COLLECTION_STORAGE_CONFLICT'}).waitFor();
+  await staleTab.close();
   await page.reload();
   await page.locator('.summary-strip').waitFor({timeout:60000});
   const now=await page.locator('.summary-strip').innerText();
