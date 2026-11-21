@@ -129,9 +129,16 @@ def parse_itemlist(data, kind):
 
 
 def footprint(fields):
-    raw = one(fields, 6, 2)
-    if raw is None:
+    # Building field 6 is also a varint for some native variants. Do not
+    # interpret that scalar as GridAreaData or reject the entire source.
+    variants = [(wire, data) for number, wire, data in fields if number == 6]
+    if not variants:
         return None
+    if len(variants) != 1:
+        raise ValueError("ambiguous native field 6")
+    if variants[0][0] != 2:
+        return None
+    raw = variants[0][1]
     inner = wire_fields(raw)
     width = one(inner, 1, 0, True)
     height = one(inner, 2, 0, True)
@@ -251,12 +258,22 @@ def native_objects(root, sources):
             if layout is not None and (not layout.startswith("SceneLayouts/") or
                                        not layout.endswith(".json") or not safe_reference(layout)):
                 raise ValueError("unsafe native building layout reference")
-            scene_id = one(fields, 10, 0) if kind == "Building" else None
+            # Field 10 may also be length-delimited for different building
+            # definitions. A non-integer field10 must never be an inferred Scene ID.
+            scene_values = [(wire, value) for field, wire, value in fields if field == 10]
+            if len(scene_values) > 1:
+                raise ValueError("ambiguous native field 10")
+            scene_id = (scene_values[0][1] if kind == "Building" and scene_values
+                        and scene_values[0][0] == 0 else None)
             results.append({
                 "itemId": native_id, "nativeType": kind, "nativeName": name,
                 "localizationKey": label_key, "footprint": grid,
                 "gridEditRestrictions": restrictions(fields),
                 "sceneReferenceNativeField10": scene_id,
+                "unresolvedField6WireTypes": [wire for field, wire, _ in fields
+                                              if field == 6 and wire != 2],
+                "unresolvedField10WireTypes": [wire for field, wire, _ in fields
+                                               if field == 10 and wire != 0],
                 "sceneLayoutPathNativeField42": layout,
                 "orientationOrderVerified": False,
                 "placeableInWorldVerified": False,
