@@ -168,7 +168,7 @@ try{
   assert.equal(await page.getByRole('button',{name:'複数選択'}).count(),1);
   await page.getByRole('button',{name:'複数選択'}).click();
   await page.locator('.item-card-body').first().click();
-  await page.getByRole('group',{name:'Collectionの一括記録'}).getByRole('button',{name:'所持 / 解放'}).click();
+  await page.getByRole('group',{name:'Collectionの一括記録'}).getByRole('button',{name:'所持 / 解放',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('.summary-strip')?.textContent?.includes('1 / 13,202'));
   const restoreChooser=page.waitForEvent('filechooser');
   await page.getByRole('button',{name:'復元'}).click();
