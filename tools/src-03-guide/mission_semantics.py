@@ -6,6 +6,7 @@ availability/ownership or player progression is calculated here.
 from mission_schema import (OBJECTIVE_KINDS, CONDITION_KINDS, BOOL_OPERATORS,
                             MISSION_STATUS_OPERATORS, UI_CATEGORIES, MISSION_TYPES)
 from mission_items import project_objective_items
+from condition_semantics import enrich_condition
 
 
 def fields_of(wire_fields, fields, number, wire):
@@ -44,6 +45,12 @@ def condition_tree(payload, wire_fields, int_field, sha, links, path='conditions
     if depth > 24:
         raise ValueError('CONDITION_TREE_DEPTH_EXCEEDED')
     ff = wire_fields(payload)
+    def _text_field(fields, field):
+        vals = [v for n, w, v in fields if (n, w) == (field, 2)]
+        if len(vals) != 1: return None
+        try: value = vals[0].decode('utf-8')
+        except UnicodeDecodeError: return None
+        return value if value and not any(ord(c) < 32 for c in value) else None
     operator = int_field(ff, 1)
     node = {'operator': BOOL_OPERATORS.get(operator, f'Unknown({operator})') if operator is not None else 'AND',
             'nativeWireSha256': sha(payload), 'conditions': []}
@@ -94,6 +101,8 @@ def condition_tree(payload, wire_fields, int_field, sha, links, path='conditions
                 leaf['storyId'] = str(target)
                 links.append({'toFamily':'stories', 'toId':str(target), 'predicate':kind,
                               'sourceField':loc+'.story', 'conditionPath':loc})
+        enrich_condition(kind, value, leaf, wire_fields, int_field,
+                         _text_field, links, loc)
         node['conditions'].append(leaf)
     return node
 
