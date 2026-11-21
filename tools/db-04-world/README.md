@@ -13,6 +13,18 @@ without claiming that a later version's machine-code indexing is identical.
 Even byte-identical v1.26.2 Furniture/Building source files do not prove
 the native GridArea implementation is byte-identical across releases.
 
+**Packed GridData has the same native-code boundary.** The X-major/MSB-first
+1/2/4-bit decoder was established against Steam **v1.26.1** original native
+methods. Private extraction from v1.26.2 or any other uncorroborated game
+version now preserves raw Base64 bytes, SHA-256, byte count, palette and
+dimensions but marks `terrainDecoding.decoded=false` and does not synthesize a
+palette-index cell histogram. `verify_bundle.py` checks the evidence against
+the snapshot's manifest game version. The browser terrain tile, window and
+distribution APIs explicitly return
+`native_terrain_packing_not_verified_for_game_version` rather than interpreting
+such bytes or trusting a copied decoded flag from an older snapshot. New
+original-version evidence is required before enabling those previews.
+
 ## Verified input formats
 
 - Steam game source `ddv_Data/StreamingAssets/itemlist/Furniture.json` and `Building.json`: indexed protobuf records with exact integer item IDs, native names and `GridAreaData` (wire field 6).

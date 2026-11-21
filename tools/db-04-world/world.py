@@ -489,7 +489,7 @@ def repeated_uint32(fields, number):
     return values
 
 
-def parse_grid_structure(raw):
+def parse_grid_structure(raw, *, source_game_version="1.26.1"):
     fields = wire_fields(raw)
     x, y = one(fields, 1, 0, True), one(fields, 2, 0, True)
     if x <= 0 or y <= 0 or x * y > 16_777_216:
@@ -510,11 +510,13 @@ def parse_grid_structure(raw):
         status = "native_uncompacted_floor_values"
     else:
         status = "native_compacted_palette_and_index_bytes"
-    packing = (describe_native_packing(x, y, palette, compacted)
+    packing = (describe_native_packing(
+                   x, y, palette, compacted,
+                   source_game_version=source_game_version)
                if compacted is not None else {
                    "status": "not_compacted", "decoded": False})
     palette_counts = (count_packed_palette_indices(x, y, palette, compacted)
-                      if compacted is not None else None)
+                      if compacted is not None and packing["decoded"] else None)
     return {
         "sizeX": x, "sizeY": y,
         "nativeFloorTypes": floor_types or None,
@@ -534,12 +536,13 @@ def parse_grid_structure(raw):
     }
 
 
-def grid_assets(root, sources):
+def grid_assets(root, sources, *, source_game_version="1.26.1"):
     grids = []
     for relative in optional_files(root, STREAM / "GridData", sources):
         raw = source_bytes(root, relative, sources)
         try:
-            entry = parse_grid_structure(raw)
+            entry = parse_grid_structure(
+                raw, source_game_version=source_game_version)
         except (ValueError, UnicodeError) as error:
             # Do not silently turn a corrupted/unsupported native GridData
             # file into a "good" empty grid. Preserve a per-file reason and
@@ -917,7 +920,7 @@ def extract(game, out, previous=None):
         if scene is not None and world["worldIdKind"] == "nativeWorldName":
             scene["parentWorldId"] = world["worldId"]
             scene["worldHierarchyVerified"] = True
-    grids = grid_assets(game, sources)
+    grids = grid_assets(game, sources, source_game_version=matches[0])
     layouts, layout_objects = scene_layouts(game, sources)
     conflicts, overrides = validate_overrides(game, sources, objects)
     source_paths = {row["path"] for row in sources}
@@ -940,7 +943,7 @@ def extract(game, out, previous=None):
         "schema": SCHEMA,
         "unknownSemantics": [
             "Scene parent-world/biome hierarchy is not established by native Scene ID alone",
-            "GridData packed 1-2 bit local X/Y decoding matches 1.26.1 native room geometry and default Meadow object origins, but the original native decoder code body is not yet verified",
+            "GridData packed 1/2/4-bit source-local decoding has original Steam 1.26.1 evidence only; other game versions retain raw bytes without verified coordinate interpretation",
             "Footprint layer values are native uint32 values; their bit meanings and XY indexing are unverified",
             "AcceptedFloorTypesFlag is a raw mask, not a validated placement permission",
             "Rotation order, wall/floor placement, road/fence adjacency and terrain transitions are unverified",

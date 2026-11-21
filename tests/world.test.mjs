@@ -903,8 +903,47 @@ function nativeRoomGrid() {
   };
 }
 
-test('original native four-bit GridData decoding keeps x-major cells and MSB nibble order', () => {
+function originalTerrainFixture() {
   const data = fixture();
+  data.manifest.gameVersion = '1.26.1';
+  return data;
+}
+
+test('later game versions cannot inherit original GridData native indexing proof', () => {
+  for (const gameVersion of ['1.26.2', '1.27.0']) {
+    const source = fixture();
+    source.manifest.gameVersion = gameVersion;
+    const rawGrid = nativeRoomGrid();
+    source.grids.push(rawGrid);
+    const catalog = createWorldCatalog(source);
+    // Native FloorType palette is game-sourced and still inspectable.
+    assert.deepEqual(getNativeFloorPalette(catalog, rawGrid.gridId)
+      .map(row => row.nativeValue), rawGrid.nativeFloorTypePalette);
+    for (const outcome of [
+      getNativeTerrainTile(catalog, rawGrid.gridId, 0, 0),
+      getNativeTerrainWindow(catalog, rawGrid.gridId,
+        {x: 0, y: 0, width: 1, height: 1}),
+      getNativeTerrainDistribution(catalog, rawGrid.gridId),
+    ]) {
+      assert.equal(outcome.status,
+        'native_terrain_packing_not_verified_for_game_version');
+      assert.equal(outcome.nativeValue, undefined);
+      assert.equal(outcome.rows, undefined);
+      assert.equal(outcome.values, undefined);
+    }
+    rawGrid.terrainDecoding = {
+      status: 'native_packing_not_verified_for_game_version',
+      decoded: false, sourceGameVersion: gameVersion,
+      verifiedNativeGameVersion: '1.26.1',
+      nativeCodeBodyVerified: false, placementLegalityVerified: false,
+    };
+    assert.equal(getNativeTerrainTile(catalog, rawGrid.gridId, 0, 0).status,
+      'native_terrain_packing_not_verified_for_game_version');
+  }
+});
+
+test('original native four-bit GridData decoding keeps x-major cells and MSB nibble order', () => {
+  const data = originalTerrainFixture();
   const base = nativeRoomGrid();
   const bytes = Buffer.from([0x01, 0x23, 0x41, 0x03, 0x20]);
   const fourBit = {
@@ -931,7 +970,7 @@ test('original native four-bit GridData decoding keeps x-major cells and MSB nib
   assert.equal(view.nativeCodeBodyVerified, false);
   assert.equal(view.placementLegalityVerified, false);
 
-  const invalid = fixture();
+  const invalid = originalTerrainFixture();
   invalid.grids.push({
     ...fourBit,
     compactedFloorTypesBase64: Buffer.from([0xf1, 0x23, 0x41, 0x03, 0x20])
@@ -939,7 +978,7 @@ test('original native four-bit GridData decoding keeps x-major cells and MSB nib
   });
   assert.throws(() => getNativeTerrainTile(
     createWorldCatalog(invalid), fourBit.gridId, 0, 0), /palette index is invalid/);
-  const padding = fixture();
+  const padding = originalTerrainFixture();
   padding.grids.push({
     ...fourBit,
     compactedFloorTypesBase64: Buffer.from([0x01, 0x23, 0x41, 0x03, 0x2f])
@@ -948,7 +987,7 @@ test('original native four-bit GridData decoding keeps x-major cells and MSB nib
   assert.throws(() => getNativeTerrainTile(
     createWorldCatalog(padding), fourBit.gridId, 0, 0), /padding mismatch/);
 
-  const oversized = fixture();
+  const oversized = originalTerrainFixture();
   oversized.grids.push({
     ...fourBit,
     nativeFloorTypePalette: Array.from({ length: 17 }, (_, i) => i),
@@ -959,7 +998,7 @@ test('original native four-bit GridData decoding keeps x-major cells and MSB nib
 });
 
 test('source-corroborated native 12x16 Room terrain renders as exact wall border', () => {
-  const data = fixture();
+  const data = originalTerrainFixture();
   data.grids.push(nativeRoomGrid());
   const catalog = createWorldCatalog(data);
   const grid = getNativeTerrainWindow(catalog, 'GridData/Rooms/TestRoom.json',
@@ -983,25 +1022,25 @@ test('source-corroborated native 12x16 Room terrain renders as exact wall border
 });
 
 test('partial grid or invalid packing never silently produces invented terrain', () => {
-  const data = fixture();
+  const data = originalTerrainFixture();
   assert.equal(getNativeTerrainTile(createWorldCatalog(data),
     'GridData/Villages/Meadow.json', 0, 0).status, 'unresolved_native_packing');
 
-  const wrong = fixture();
+  const wrong = originalTerrainFixture();
   const room = nativeRoomGrid();
   room.terrainDecoding.nativeCodeBodyVerified = true;
   wrong.grids.push(room);
   assert.throws(() => getNativeTerrainTile(createWorldCatalog(wrong),
     'GridData/Rooms/TestRoom.json', 1, 1), /provenance/);
 
-  const bad = fixture();
+  const bad = originalTerrainFixture();
   const invalid = nativeRoomGrid();
   invalid.nativeCompactedByteCount++;
   bad.grids.push(invalid);
   assert.throws(() => getNativeTerrainTile(createWorldCatalog(bad),
     'GridData/Rooms/TestRoom.json', 1, 1), /length mismatch/);
 
-  const wrongPalette = fixture();
+  const wrongPalette = originalTerrainFixture();
   const room3 = nativeRoomGrid();
   room3.nativeFloorTypePalette = [0, 3072];
   wrongPalette.grids.push(room3);
@@ -1012,7 +1051,7 @@ test('partial grid or invalid packing never silently produces invented terrain',
 
 
 test('source-packed native floor histogram is an exact preview-only legend', () => {
-  const data = fixture();
+  const data = originalTerrainFixture();
   data.grids.push(nativeRoomGrid());
   const catalog = createWorldCatalog(data);
   const d = getNativeTerrainDistribution(catalog, 'GridData/Rooms/TestRoom.json');
@@ -1030,7 +1069,7 @@ test('source-packed native floor histogram is an exact preview-only legend', () 
 });
 
 test('browser terrain histogram detects same-total falsification against original packed bytes', () => {
-  const data = fixture();
+  const data = originalTerrainFixture();
   const room = nativeRoomGrid();
   // The overall native grid size remains 192, so a sum-only check would pass.
   room.nativePaletteIndexCellCounts = [0, 51, 141];
@@ -1042,7 +1081,7 @@ test('browser terrain histogram detects same-total falsification against origina
 });
 
 test('browser terrain rejects invalid source palette symbols outside the requested window', () => {
-  const data = fixture();
+  const data = originalTerrainFixture();
   const room = nativeRoomGrid();
   const bytes = Buffer.from(room.compactedFloorTypesBase64, 'base64');
   // Original room has three palette entries (0,1,2): native symbol 3
@@ -1058,13 +1097,13 @@ test('browser terrain rejects invalid source palette symbols outside the request
 });
 
 test('browser terrain verifies packed Base64 size before decoding large or padded inputs', () => {
-  const bad = fixture();
+  const bad = originalTerrainFixture();
   const room = nativeRoomGrid();
   room.compactedFloorTypesBase64 += 'AAAA';
   bad.grids.push(room);
   assert.throws(() => getNativeTerrainTile(createWorldCatalog(bad), room.gridId, 0, 0),
     /Native compacted grid length mismatch/);
-  const missing = fixture();
+  const missing = originalTerrainFixture();
   const badCount = nativeRoomGrid();
   badCount.nativeCompactedByteCount = null;
   missing.grids.push(badCount);
@@ -1073,14 +1112,14 @@ test('browser terrain verifies packed Base64 size before decoding large or padde
 });
 
 test('histogram metadata missing or inconsistent cannot silently claim valid geometry', () => {
-  const absent = fixture();
+  const absent = originalTerrainFixture();
   const noHistogram = nativeRoomGrid();
   delete noHistogram.nativePaletteIndexCellCounts;
   absent.grids.push(noHistogram);
   assert.equal(getNativeTerrainDistribution(createWorldCatalog(absent),
     'GridData/Rooms/TestRoom.json').status, 'histogram_not_extracted');
 
-  const bad = fixture();
+  const bad = originalTerrainFixture();
   const wrong = nativeRoomGrid();
   wrong.nativePaletteIndexCellCounts = [0, 53, 140];
   bad.grids.push(wrong);
@@ -1089,7 +1128,7 @@ test('histogram metadata missing or inconsistent cannot silently claim valid geo
 });
 
 function preparedVillageViewportFixture() {
-  const data = fixture();
+  const data = originalTerrainFixture();
   const room = nativeRoomGrid();
   data.grids = [room];
   data.layouts[0].nativeGridEntries[0].gridDataPath = room.gridId;

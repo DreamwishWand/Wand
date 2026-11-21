@@ -47,8 +47,9 @@ def _validate_dimensions(size_x: int, size_y: int) -> None:
 
 
 def describe_native_packing(size_x: int, size_y: int,
-                            palette: Sequence[int], packed: bytes) -> dict:
-    """Validate palette symbols, source byte length and trailing padding."""
+                            palette: Sequence[int], packed: bytes,
+                            *, source_game_version: str = "1.26.1") -> dict:
+    """Preserve raw bytes; interpret packing only with original-version proof."""
     _validate_dimensions(size_x, size_y)
     if (not isinstance(palette, (list, tuple)) or not palette or
             len(palette) > 65536 or
@@ -57,6 +58,20 @@ def describe_native_packing(size_x: int, size_y: int,
         raise ValueError("invalid native compacted floor palette")
     if not isinstance(packed, bytes):
         raise ValueError("native packed-floor payload must be bytes")
+    if not isinstance(source_game_version, str) or not source_game_version:
+        raise ValueError("missing source game version for native GridData proof")
+    # Original IL2CPP grid getter/bit-width semantics have been validated
+    # against Steam 1.26.1 only. For newer archives, preserve source bytes
+    # without applying this decoder, sizing rule, padding rule or histogram.
+    if source_game_version != "1.26.1":
+        return {
+            "status": "native_packing_not_verified_for_game_version",
+            "decoded": False,
+            "sourceGameVersion": source_game_version,
+            "verifiedNativeGameVersion": "1.26.1",
+            "nativeCodeBodyVerified": False,
+            "placementLegalityVerified": False,
+        }
     bits = validated_cell_bits(len(palette))
     if bits is None:
         return {"status": "unresolved_palette_cardinality", "decoded": False,
