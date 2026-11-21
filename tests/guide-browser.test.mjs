@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { createHash } from 'node:crypto';
 import { GUIDE_SEARCH_SCHEMA, GUIDE_DETAIL_SCHEMA, validateGuideSearch, searchGuide,
-  canonicalQuestRecord, importGuideSearch, importGuideDetail, detailStepRows } from '../src/lib/guide/client.mjs';
+  canonicalQuestRecord, importGuideSearch, importGuideDetail, detailStepRows, guideItemTargets, guideSourceText } from '../src/lib/guide/client.mjs';
 
 const SHA='a'.repeat(64), WIRE='b'.repeat(64);
 const target={gameVersion:'1.26.1', platform:'Steam'};
@@ -47,7 +47,7 @@ test('rejects unsupported locales, pagination and source-invalid filters',()=>{
 test('accepts source-correct one-file detail import and extracts objectives',async()=>{
   const {index,file,full}=fixture();const obj=await importGuideDetail(index,full.id,file);
   assert.deepEqual(obj,full);
-  assert.deepEqual(detailStepRows(obj,'ja')[0].objectives,[{kind:'CraftItem',id:'2'}]);
+  assert.deepEqual(detailStepRows(obj,'ja')[0].objectives.map(x=>({kind:x.kind,id:x.id})),[{kind:'CraftItem',id:'2'}]);
 });
 test('refuses mixed versions, wrong file, content substitution and wrong native hash',async()=>{
   const {index,file,shard,full}=fixture();
@@ -150,4 +150,64 @@ test('partial local folder reports exactly how many shard files are accessible',
   assert.equal(selected.matchedShards,1);
   assert.equal(selected.requiredShards,2);
   assert.deepEqual(Object.keys(selected.shardFiles),['part-23.json']);
+});
+
+// Source descriptions are distinct from UI buttons, guessed requirements and player state.
+test('localized step and objective text prefer authored Japanese with provenance',()=>{
+  const doc=record('1234','合成');
+  const loc=(ja,en)=>({plainText:{ja,en},localizationKey:'Synthetic.StepDescription'});
+  const step=doc.structured.stepsDetailed[0];
+  step.descriptions={ongoingRequestButton:loc('何をすればいい？','What should I do?'),stepDescription:loc('  調べよう  ','Investigate'),storyDescription:loc('過去の物語','Past story')};
+  step.subSteps[0].objectives[0].descriptions={stepDescription:loc('<nobr>木材を</nobr>\u200b集めよう','Gather wood')};
+  const row=detailStepRows(doc,'ja')[0];
+  assert.equal(row.text,'調べよう');assert.equal(row.storyText,'過去の物語');
+  assert.equal(row.objectives[0].text,'木材を集めよう');
+  assert.equal(row.objectives[0].textSource,'ja');
+  assert.equal(row.objectives[0].descriptionLevel,'objective');
+  assert.equal(row.objectives[0].configuredQuantity,null);
+});
+
+test('English fallback is explicit, and UI-only button strings never become instructions',()=>{
+  const doc=record('1234','合成');
+  const step=doc.structured.stepsDetailed[0];
+  step.descriptions={ongoingRequestButton:{plainText:{ja:'何をすればいい？'}},storyDescription:{plainText:{en:'Story info'}}};
+  step.subSteps[0].objectives[0].descriptions={stepDescription:{plainText:{en:'<smallcaps>Find</smallcaps><br>the item'}}};
+  const row=detailStepRows(doc,'ja')[0];
+  assert.equal(row.text,'');assert.equal(row.storyText,'Story info');
+  assert.equal(row.objectives[0].text,'Find\nthe item');assert.equal(row.objectives[0].textSource,'en');
+  assert.equal(guideSourceText({plainText:{it:'Solo italiano'}},'ja').text,'');
+});
+
+test('substep description fallback is source-labeled, not duplicated for every objective',()=>{
+  const doc=record('1234','合成');const sub=doc.structured.stepsDetailed[0].subSteps[0];
+  sub.descriptions={stepDescription:{plainText:{ja:'サブステップの説明'}}};
+  sub.objectives.push({type:'VisitArea',objectiveId:null});
+  const row=detailStepRows(doc,'ja')[0];
+  assert.equal(row.objectives[0].text,'サブステップの説明');
+  assert.equal(row.objectives[0].descriptionLevel,'subStep');
+  assert.equal(row.objectives[1].text,'');
+});
+
+test('source-configured quantity and alternative IDs are candidates not inferred requirements',()=>{
+  const doc=record('1234','合成');const obj=doc.structured.stepsDetailed[0].subSteps[0].objectives[0];
+  obj.itemTargets={schema:'wand.db03.mission-items@1',amount:{kind:'value',value:6},selectors:[
+    {itemCandidates:[{id:'30200087',role:'alternative'},{id:'30200086',role:'alternative'}]},
+    {itemCandidates:[{id:'30200087',role:'alternative'}]}
+  ]};
+  const row=detailStepRows(doc,'ja')[0].objectives[0];
+  assert.equal(row.configuredQuantity,6);assert.equal(row.totalCandidates,2);
+  assert.deepEqual(row.candidates,[{id:'30200087',role:'alternative'},{id:'30200086',role:'alternative'}]);
+  assert.equal(row.text,'');
+});
+
+test('unsupported amount schema, expression and unsafe candidate IDs are never displayed as definite',()=>{
+  assert.deepEqual(guideItemTargets({amount:{kind:'value',value:2},selectors:[]}),{configuredQuantity:null,candidates:[],totalCandidates:0});
+  const target={schema:'wand.db03.mission-items@1',amount:{kind:'formula',value:99},selectors:[{itemCandidates:[{id:'../../escape',role:'direct'},{id:'123',role:'direct'}]}]};
+  assert.deepEqual(guideItemTargets(target),{configuredQuantity:null,candidates:[{id:'123',role:'direct'}],totalCandidates:1});
+});
+
+test('locale unknown fails closed; missing descriptions are not fabricated',()=>{
+  assert.throws(()=>detailStepRows(record('1','x'),'ko'),/unsupported detail locale/);
+  assert.throws(()=>guideSourceText(null,'ko'),/unsupported detail locale/);
+  assert.equal(detailStepRows(record('1','x'),'ja')[0].objectives[0].text,'');
 });

@@ -45,3 +45,37 @@ matching detail shards; five widely spaced real mission IDs were loaded and thei
 full canonical record hashes checked. **14** synthetic Node Guide tests pass,
 including seven new directory-import/security regressions. The new input does not
 claim current live game version or player progress.
+
+## Source-backed objective descriptions in the browser (DB-03, 2026-11-21)
+
+`detailStepRows(record, locale)` now uses the original `structured.stepsDetailed[]`
+source projection to show each step's `stepDescription` (never the unrelated
+`ongoingRequestButton` UI prompt); its optional `storyDescription` is presented
+only inside a collapsed spoiler warning. Each actual `subSteps[].objectives[]`
+gets its own source `stepDescription` / mobile fallback. Where absent, the
+substep description is shown once only, not duplicated across objectives; when
+no supported source description exists, the UI indicates it is unavailable.
+The precise localization source is preserved: requested locale first, original
+English only as a *labeled* fallback, no synthetic translation. Source markup
+`<nobr>`, `<smallcaps>`, `<br>` etc. is normalized to readable plain text, with
+Svelte auto-escaping all data as text (no raw HTML injection).
+
+For objectives carrying `wand.db03.mission-items@1` selectors, the UI shows the
+native configured **numeric** amount only if `amount.kind == value`; unknown or
+dynamic expressions remain null. Individual item IDs are explicitly labeled
+**source candidates** (direct reference versus selector alternative), never
+asserted to be a complete required-items checklist. Only the first 32 distinct
+candidate entries are displayed to bound the UI, with the full count disclosed;
+item names and inventory/progress are not inferred. These are **static game
+rules**, not current player state, availability or server-side reward outcomes.
+
+Independent local validation used owner-private Steam v1.26.1 originals: all
+**733/733** mission full-record SHA-256 digests still match the source index
+across **32** shards. The enhanced renderer traversed **7,878** native steps,
+**11,782** typed objectives; **10,571** objectives showed authored localized
+text (including strictly source-derived substep-description fallbacks), **4,817**
+showed source-configured integer quantities, **4,710** had source item candidate
+IDs, and **1,905** steps offered a story-description panel. Six additional
+synthetic tests bring focused Guide browser tests to **20**, without embedding
+any private game data. The source baseline and status remain unchanged:
+Steam **v1.26.1**, `PARTIAL`.
