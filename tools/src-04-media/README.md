@@ -56,6 +56,17 @@ Run only the v2 CMD; do not rerun the full media extraction. For verification, u
 
 ---
 
+## Remaining 360 GUIDs: targeted source-location audit
+
+The missing set has 360 GUIDs affecting 2,416 Item IDs. A single placeholder-like shared GUID is used by 2,028 items, mostly quest/furniture definitions; its role is NOT asserted as a confirmed placeholder until traced. Other unresolved entries include 348 Trimming items (wallpaper/flooring) and a handful of clothing definitions.
+
+The separate `catalog_missing_probe.py` utility reads only the installed SHA-pinned Addressables catalog, previously completed SRC-01 item cache, and the `catalog-identity-links-private.json` identity map. It follows GUID key -> catalog entry -> dependency group -> exact bundle location. It writes `catalog-missing-report.json`, containing candidate source group names, counted GUIDs, and metadata-only locations. No icon decoding, file uploads, or game asset changes.
+
+Exact reference is NOT a verified image identity; do not fill the 360 gaps from colocation alone. Source SHA mismatch aborts and asks for a new source snapshot instead of mixing versions.
+
+On Windows the operator can run the one-click `SRC04-MISSING.cmd` (standalone embedded Python, no ZIP or network) against the existing Steam-v1.26.2 output directory. Upload ONLY `catalog-missing-report.json`, or the saved `catalog-missing-console.log` if it fails. Do not rerun the completed 40-bundle extraction.
+
+---
 ## Private SRC-04 to DB-01 media overlay (2026-11-21)
 
 The complete privately joined SRC-04 Item ID map has now been exported into **256 content-hashed ID buckets** with a SHA-256 manifest, without copying image bytes to GitHub. The verified snapshot has **13,202 native items; 10,786 exact image links; 2,416 unresolved items; 9,182 unique resolved GUIDs; 360 unresolved GUIDs**.
