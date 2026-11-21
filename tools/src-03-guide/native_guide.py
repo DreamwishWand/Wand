@@ -20,6 +20,7 @@ from version_diff import compare_snapshots
 from guide_event_links import project_event_links
 from quest_catalogue import project_quest_catalogue
 from quest_detail_shards import project_quest_shards
+from quest_search import make_from_paths
 
 SCHEMA = "wand.db03.native-guide@1"
 LOCALES = {"en": "en-US", "fr": "fr", "it": "it", "de": "de", "es-ES": "es",
@@ -653,6 +654,10 @@ def extract(game, out, version, platform, item_index=None, previous=None):
                   "note": "Groups and ambiguous definitions must not appear as playable quests."})
         quest_catalogue_summary = project_quest_catalogue(rows['quests'],target,out,save)
         quest_shard_summary = project_quest_shards(rows['quests'],target,out,save)
+        quest_search_summary = make_from_paths(
+            out/'guide'/'quest-catalogue.json',
+            out/'database'/'quest-detail-shard-index.json',
+            out/'guide'/'quest-search.json')['counts']
         # Lightweight condition AST for Guide consumers: preserve full boolean
         # semantics, never compute player progress or actual prerequisites.
         condition_index = [
@@ -718,6 +723,7 @@ def extract(game, out, version, platform, item_index=None, previous=None):
                     "guideEventLinks": event_links_summary,
                     "questCatalogue": quest_catalogue_summary,
                     "questDetailShards": quest_shard_summary,
+                    "questSearch": quest_search_summary,
                     "missionRecordKinds": dict(collections.Counter(r["recordKind"] for r in kinds)),
                     "decodedObjectiveCount": sum(len(sub["objectives"])
                         for r in rows["quests"] for step in r.get("structured", {}).get("stepsDetailed", [])
