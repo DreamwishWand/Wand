@@ -1,3 +1,4 @@
+export { createSaveSourceCatalogBridge, getSaveCatalogLinkRules, SAVE_CROSS_CATALOG_CONTRACT, SAVE_CROSS_CATALOG_AUDIT_CONTRACT } from './catalog-links.mjs';
 export { getSaveReferenceRelations, probeSaveReferences, compareSaveReferenceProbes, SAVE_REFERENCE_PROBE_CONTRACT, SAVE_REFERENCE_COMPARISON_CONTRACT } from './references.mjs';
 import registry from '../../../data/ddv/save/registry.v1.json' with { type: 'json' };
 import legacyFields from '../../../data/ddv/save/legacy626-fields.v1.json' with { type: 'json' };
