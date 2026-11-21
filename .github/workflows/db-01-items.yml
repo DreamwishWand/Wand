@@ -1,0 +1,34 @@
+name: DB-01 item database checks
+
+on:
+  pull_request:
+    paths:
+      - 'tools/src-01-items/**'
+      - 'tools/db-01-items/**'
+      - 'src/lib/items/**'
+      - '.github/workflows/db-01-items.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/src-01-items/**'
+      - 'tools/db-01-items/**'
+      - 'src/lib/items/**'
+      - '.github/workflows/db-01-items.yml'
+  workflow_dispatch:
+
+jobs:
+  item-parser-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test existing SRC-01 and extended wire decoders
+        run: python -m unittest discover -s tools/src-01-items -p 'test_*.py' -v
+      - name: Test DB-01 normalization and integrity checks
+        run: python -m unittest discover -s tools/db-01-items -p 'test_*.py' -v
+      - name: Test shared browser item record helpers
+        run: node --test src/lib/items/records.test.mjs
