@@ -126,7 +126,7 @@
     });
   }
   function changeLayout() {
-    const grids = layouts.find(a => a.layoutId === selectedViewKey)?.grids ?? [];
+    const grids = layouts.find(a => a.viewKey === selectedViewKey)?.grids ?? [];
     selectedGridId = grids.length ? String(grids[0].gridIdNative) : '';
     x = 0; y = 0; width = 16; height = 16;
     viewport = null;
@@ -179,7 +179,7 @@
         integrity = String(result.integrity);
         manifestFilesVerified = Number(result.manifestFilesVerified);
         layouts = result.layouts as LayoutOption[];
-        selectedViewKey = layouts[0]?.layoutId ?? '';
+        selectedViewKey = layouts[0]?.viewKey ?? '';
         selectedGridId = layouts[0]?.grids[0] ?
           String(layouts[0].grids[0].gridIdNative) : '';
         infoMessage = 'ローカルZIP内のマニフェスト整合性を確認しました。原本の真正性までは証明していません。';
