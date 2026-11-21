@@ -9,6 +9,9 @@ import {
   getNativeTerrainTile, getNativeTerrainWindow, getNativeTerrainDistribution,
   getNativeFootprintCandidateCells,
   getNativeFootprintLayerAt, getNativeFootprintLayerWindow,
+  getNativeFootprintOrientedLayerAt, getNativeFootprintOrientedWindow,
+  getNativeFootprintObliqueOrientedLayerAt,
+  getNativeFootprintObliqueOrientedWindow,
   getNativeFootprintCardinalOrientedLayerAt,
   getNativeFootprintCardinalOrientedWindow,
   getNativeGridAreaRotatedVector, getNativeGridAreaUnrotatedVector,
@@ -326,6 +329,107 @@ test('cardinal GridArea mapping does not assign unverified noncardinal or newer-
   const view = getNativeFootprintCardinalOrientedWindow(
     newer, 40000001, 8, {x: 0, y: 0, width: 1, height: 1});
   assert.equal(view.rows, undefined);
+});
+
+test('original source GridArea twelve oblique directions map raw layer masks, not occupancy', () => {
+  const data = fixture();
+  data.manifest.gameVersion = '1.26.1';
+  data.objects[0].footprint = {
+    ...data.objects[0].footprint,
+    sizeX: 3, sizeY: 2, layerValues: [11, 12, 21, 22, 31, 32],
+  };
+  const catalog = createWorldCatalog(data);
+  const source = new Map([
+    [1, [[32, 22, 12], [31, 21, 11]]],
+    [2, [[null, 12, 12], [32, 22, 11], [32, 31, null]]],
+    [3, [[12, 11], [22, 21], [32, 31]]],
+    [5, [[12, 11], [22, 21], [32, 31]]],
+    [6, [[12, 11, null], [12, 22, 31], [null, 32, 32]]],
+    [7, [[11, 21, 31], [12, 22, 32]]],
+    [9, [[11, 21, 31], [12, 22, 32]]],
+    [10, [[null, 31, 32], [11, 22, 32], [12, 12, null]]],
+    [11, [[31, 32], [21, 22], [11, 12]]],
+    [13, [[31, 32], [21, 22], [11, 12]]],
+    [14, [[32, 32, null], [31, 22, 12], [null, 11, 12]]],
+    [15, [[32, 22, 12], [31, 21, 11]]],
+  ]);
+  for (const [code, rows] of source) {
+    const rect = {x: 0, y: 0, width: rows[0].length, height: rows.length};
+    const view = getNativeFootprintOrientedWindow(catalog, 40000001, code, rect);
+    assert.deepEqual(view.rows, rows);
+    assert.equal(view.nativeNoncardinalPositionTransformVerified, true);
+    assert.equal(view.gridToAreaTessellationRatioAssumed, '1:1');
+    assert.equal(view.unmappedOutputCellCount,
+      rows.flat().filter(value => value === null).length);
+    assert.equal(view.nullMeansOutsideSourceGridArea, true);
+    assert.equal(view.fullNativeTessellationScalingApplied, false);
+    assert.equal(view.gridObjectAnchorVerified, false);
+    assert.equal(view.occupancyPredicateVerified, false);
+    assert.equal(view.placementLegalityVerified, false);
+    for (let y = 0; y < rows.length; y++) for (let x = 0; x < rows[0].length; x++) {
+      const cell = getNativeFootprintOrientedLayerAt(catalog, 40000001, x, y, code);
+      if (rows[y][x] === null) {
+        assert.equal(cell.inside, false);
+        assert.equal(cell.nativeValue, undefined);
+        assert.equal(cell.originalFlatIndex, undefined);
+      } else {
+        assert.equal(cell.nativeValue, rows[y][x]);
+        assert.equal(cell.rawLayerValueNotVerifiedOccupancy, true);
+        assert.equal(cell.originalFlatIndex,
+          cell.originalLocalX * 2 + cell.originalLocalY);
+      }
+      assert.equal(cell.occupancyPredicateVerified, false);
+    }
+    const copy = getNativeFootprintObliqueOrientedWindow(
+      catalog, 40000001, code, rect);
+    copy.rows[0][0] = 999;
+    assert.deepEqual(
+      getNativeFootprintObliqueOrientedWindow(catalog, 40000001, code, rect).rows,
+      rows);
+  }
+  // The unified API reuses the separately proven cardinal source mapping.
+  const cardinal = getNativeFootprintOrientedWindow(catalog, 40000001, 8,
+    {x: 0, y: 0, width: 3, height: 2});
+  assert.deepEqual(cardinal.rows, [[11, 21, 31], [12, 22, 32]]);
+  assert.equal(cardinal.nativeCardinalPositionTransformVerified, true);
+});
+
+test('original oblique position fails closed on unsupported versions and bounds', () => {
+  const newer = createWorldCatalog(fixture()); // 1.26.2
+  const unavailable = getNativeFootprintOrientedLayerAt(
+    newer, 40000001, 0, 0, 2);
+  assert.equal(unavailable.status,
+    'native_oblique_local_position_unverified_for_game_version');
+  assert.equal(unavailable.nativeValue, undefined);
+  assert.equal(unavailable.nativeNoncardinalPositionTransformVerified, false);
+  assert.equal(unavailable.placementLegalityVerified, false);
+  const view = getNativeFootprintOrientedWindow(
+    newer, 40000001, 2, {x: 0, y: 0, width: 1, height: 1});
+  assert.equal(view.rows, undefined);
+  assert.equal(view.nativeNoncardinalPositionTransformVerified, false);
+
+  const data = fixture();
+  data.manifest.gameVersion = '1.26.1';
+  data.objects[0].footprint = {
+    ...data.objects[0].footprint,
+    sizeX: 3, sizeY: 2, layerValues: [11, 12, 21, 22, 31, 32],
+  };
+  const catalog = createWorldCatalog(data);
+  const outside = getNativeFootprintObliqueOrientedLayerAt(
+    catalog, 40000001, 0, 0, 2);
+  assert.equal(outside.inside, false);
+  assert.equal(outside.nativeValue, undefined);
+  assert.equal(outside.status, 'outside_original_gridarea');
+  assert.throws(() => getNativeFootprintOrientedLayerAt(
+    catalog, 40000001, 1, 0, 16), /orientation/);
+  assert.throws(() => getNativeFootprintOrientedWindow(
+    catalog, 40000001, -1, {x: 0, y: 0, width: 1, height: 1}),
+    /orientation/);
+  assert.throws(() => getNativeFootprintObliqueOrientedWindow(
+    catalog, 40000001, 2, {x: 1, y: 0, width: 3, height: 1}),
+    /outside bounds/);
+  assert.equal(getNativeFootprintObliqueOrientedLayerAt(
+    catalog, 1, 0, 0, 2), null);
 });
 
 test('explicit restrictions deny but missing flags never authorize placement', () => {
