@@ -376,14 +376,59 @@ footprints, 16-way rotation geometry, permanent objects, water access, and
 path/fence collision are not inferred. Outputs may contain original-game
 positions and therefore remain in private SRC-05, not the public repository.
 
+## Source-verified GridArea base layer access (read-only)
+
+The **original** Steam v1.26.1 `global-metadata.dat` v31 method
+`Definitions.Grid.GridArea.get_Item(int x, int y)` resolves via the native
+method-pointer table to RVA `0x3923370` (token `0x0600343F`).
+Its original PE64 machine code multiplies `x * SizeY` and adds `y` to
+index `GridArea.area`. Thus **unrotated GridArea layer indexing is X-major**.
+The corresponding original
+`GridArea.GetHorizontalSizeForOrientation` (RVA `0x3923570`) and
+`GetVerticalSizeForOrientation` (RVA `0x3923660`) also establish
+cardinal base-dimension selection: 0/8 preserve `SizeX/SizeY`, while
+4/12 swap them. These statements are limited to **unscaled base dimensions**
+and the unrotated layer getter; no tessellation factor is applied.
+
+The Python helpers `native_gridarea_layer_at`,
+`native_gridarea_layer_window`, and
+`native_gridarea_cardinal_dimensions` expose these source-supported facts.
+The browser provides:
+
+```js
+const cell = getNativeFootprintLayerAt(catalog, itemId, 1, 0);
+const unrotated = getNativeFootprintLayerWindow(
+  catalog, itemId, {x: 0, y: 0, width: 3, height: 2});
+const dimensions = getNativeFootprintCardinalDimensions(
+  catalog, itemId, 4);
+```
+
+Layer values are **raw uint32 GridLayers flags**, not "occupied cells".
+Coordinates are **local to the unrotated GridArea**, not the scene or
+grid's `GridObject.X/Y` origin. Every new API reports
+`nativeGetterIndexVerified: true` or
+`nativeCardinalSizeVerified: true` only for the corresponding narrow
+operation, while all anchor, rotated-cell mapping, occupancy predicate and
+placement legality claims remain false. Existing snapshot fields
+`cellIndexToXYVerified: false` are retained for legacy partial-source
+provenance; the new APIs do not silently rewrite or upgrade the entire
+original asset record.
+
+The legacy four-model hypothesis audit remains available for reproducibility.
+**Its Y-major branch is a counterfactual diagnostic control**, not an equally
+supported alternative after this source-native getter confirmation. Neither
+its anchor model nor its 90-degree projection formula has been validated
+against the original game's rotated-area algorithm.
+
 ## Unverified cardinal footprint models — evidence-only diagnostic
 
 The original game's `Definitions.Grid.GridAreaData` exposes `SizeX`,
 `SizeY`, native fixed32 `LayerValues`, and `AcceptedFloorTypesFlag`.
 `Meta.Grids.GridObject` supplies a grid-local anchor and a 16-entry
-`GridOrientation` enum. **The native machine-code body has not established
-how layer values map to (x,y), which layer masks imply occupied cells, how
-rotations transform that footprint, or where anchors lie relative to it.**
+`GridOrientation` enum. **The native machine-code body establishes X-major indexing
+of unrotated GridArea layers and cardinal width/height swaps. It has not
+established which layer masks imply occupied cells, how rotated cell positions
+are mapped, or where an item's anchor lies relative to them.**
 
 To investigate without claiming placement permission, run:
 
@@ -391,9 +436,10 @@ To investigate without claiming placement permission, run:
 python tools/db-04-world/audit_footprint_candidates.py --snapshot "/private/DB04-output" --max-objects 20000
 ```
 
-The script first verifies the private DB-04 manifest. It then compares four
-explicit geometric hypotheses: raw fixed32 **X-major vs Y-major** index order,
-crossed with an anchor interpreted as **top-left vs center-floor**.
+The script first verifies the private DB-04 manifest. It retains four
+historical geometric diagnostic models: native **X-major** and a now
+source-contradicted **Y-major negative control**, crossed with unverified
+**top-left vs center-floor** anchor interpretations.
 Only orientation codes **0/4/8/12** use basic 90-degree *hypothetical*
 geometry; the other twelve codes are explicitly excluded as unresolved.
 A nonzero original raw layer mask is counted as a **candidate cell**, not
