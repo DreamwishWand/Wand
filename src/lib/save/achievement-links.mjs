@@ -5,6 +5,7 @@
  * No actual achievement IDs, map keys, localized source text or state values.
  */
 import rules from '../../../data/ddv/save/achievement-link-rules.v1.json' with { type: 'json' };
+import nativeEvidence from '../../../data/ddv/save/achievement-native-behavior-evidence.v1.json' with { type: 'json' };
 import { inspectDecodedSave } from './registry.mjs';
 
 export const SAVE_ACHIEVEMENT_JOIN_CONTRACT = 'wand.db05.db03-duty-achievement-candidates@1';
@@ -12,6 +13,9 @@ const GUIDE_SCHEMA = 'wand.db03.native-guide@1';
 const DUTY_SOURCE = 'ddv_Data/StreamingAssets/itemlist/DutyAch.json';
 const MAX_DUTY_ROWS = 100_000;
 const MAX_ACHIEVEMENTS = 256;
+const INT32_MIN = -(2**31);
+const INT32_MAX = 2**31-1;
+const validInt32 = value => typeof value === 'number' && Number.isSafeInteger(value) && value >= INT32_MIN && value <= INT32_MAX;
 const HASH = /^[a-f0-9]{64}$/;
 const ID = /^[1-9][0-9]*$/;
 const record = x => x !== null && typeof x === 'object' && !Array.isArray(x);
@@ -26,7 +30,49 @@ function freezeDeep(value) {
   return value;
 }
 freezeDeep(rules);
+freezeDeep(nativeEvidence);
 export function getSaveAchievementLinkRules() { return rules; }
+export function getSaveAchievementNativeBehaviorEvidence() { return nativeEvidence; }
+
+export const SAVE_DUTY_PROGRESS_EVIDENCE_CONTRACT = 'wand.db05.db03-duty-progress-observation@1';
+const FIELD_LABELS = Object.freeze([
+  Object.freeze({id:'current_amount',key:'CurAmount',kind:'int32'}),
+  Object.freeze({id:'max_amount',key:'MaxAmount',kind:'int32'}),
+  Object.freeze({id:'claimed_reward_milestone',key:'ClaimedRewardMilestone',kind:'int32'}),
+  Object.freeze({id:'state',key:'State',kind:'opaque_enum_string'})
+]);
+
+/** Count only observed field kinds for exact-matched native DutyAch IDs. */
+function scanMatchedDutyFields(save, knownIds, maxReferences) {
+  const rows=save.Player.AchievementsData;
+  let matchedRecords=0, invalidRecords=0;
+  const groups=FIELD_LABELS.map(field=>({
+    field:field.id, observed:0, absent:0, kindDifferent:0
+  }));
+  if (rows === undefined) {
+    return {matchedRecords,invalidRecords,sampled:false,groups};
+  }
+  if (!Array.isArray(rows)) {
+    return {matchedRecords,invalidRecords:1,sampled:false,groups};
+  }
+  const sampled=rows.length>maxReferences;
+  for(const row of rows.slice(0,maxReferences)){
+    if (!record(row)){invalidRecords++;continue;}
+    if (!has(row,'AchievementID') || !validId(row.AchievementID)) continue;
+    if (!knownIds.has(String(row.AchievementID))) continue;
+    matchedRecords++;
+    for(let i=0;i<FIELD_LABELS.length;i++){
+      const field=FIELD_LABELS[i], result=groups[i];
+      if(!has(row,field.key)){result.absent++;continue;}
+      result.observed++;
+      const value=row[field.key];
+      if(field.kind==='int32'?!validInt32(value):typeof value!=='string'){
+        result.kindDifferent++;
+      }
+    }
+  }
+  return {matchedRecords,invalidRecords,sampled,groups};
+}
 
 function validSourceId(value) {
   return typeof value === 'string' && ID.test(value) &&
@@ -121,6 +167,50 @@ export function createSaveAchievementBridge(dutyIndex) {
   return Object.freeze({
     contract:SAVE_ACHIEVEMENT_JOIN_CONTRACT,
     source,
+    /**
+     * Read-only field-kind observations for only the IDs found in the
+     * supplied private native DutyAch index. No rewards, completion or
+     * State/CurAmount values are emitted, and no version gate is inferred.
+     */
+    auditProgressEvidence(decoded,options={}) {
+      if (!record(options)) throw new TypeError('DB05_ACHIEVEMENT_AUDIT_LIMIT_INVALID');
+      const maxReferences=options.maxReferences??MAX_ACHIEVEMENTS;
+      if (!Number.isSafeInteger(maxReferences) ||
+          maxReferences<1 || maxReferences>MAX_ACHIEVEMENTS)
+        throw new TypeError('DB05_ACHIEVEMENT_AUDIT_LIMIT_INVALID');
+      if (!inspectDecodedSave(decoded,null).rootShapeValid)
+        throw new TypeError('DB05_ACHIEVEMENT_SAVE_ROOT_INVALID');
+      const out=scanMatchedDutyFields(decoded,dutyIds,maxReferences);
+      const fields=Object.freeze(out.groups.map(item=>Object.freeze(item)));
+      const fieldKindDifferences=fields.reduce((sum,item)=>sum+item.kindDifferent,0);
+      const status=out.invalidRecords||fieldKindDifferences
+        ? 'observed_kind_difference'
+        : out.sampled ? 'sampled_inconclusive'
+        : !out.matchedRecords ? 'no_exact_duty_matches'
+        : 'matched_native_duty_field_kinds';
+      return Object.freeze({
+        contract:SAVE_DUTY_PROGRESS_EVIDENCE_CONTRACT,
+        status,
+        nativeBehaviorEvidenceScope:'switch_1_26_1_static_only',
+        linkedIndexSource:'owner_private_db03_duties_metadata_only',
+        matchedRecords:out.matchedRecords,
+        invalidRecords:out.invalidRecords,
+        sampled:out.sampled,
+        fields,
+        observedOnly:true,
+        gameSourceOriginalBytesRehashed:false,
+        gameBuildJointlyVerified:false,
+        completeNativeDutyThresholdsVerified:false,
+        stateMachineVerified:false,
+        achievementCompletionVerified:false,
+        rewardGrantVerified:false,
+        savePersistenceVerified:false,
+        ownerModifiedSaveMayOmitObjects:true,
+        missingAchievementsDoNotImplyIncomplete:true,
+        writerAuthorized:false,
+        exportAuthorized:false
+      });
+    },
     auditSave(decoded,options={}) {
       if (!record(options)) throw new TypeError('DB05_ACHIEVEMENT_AUDIT_LIMIT_INVALID');
       const cap=options.maxReferences??MAX_ACHIEVEMENTS;
