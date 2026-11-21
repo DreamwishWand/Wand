@@ -43,3 +43,42 @@ Tests:
 py -3 -m unittest discover -s tools/src-02-acquisition -p "test_*.py" -v
 node --test tests/acquisition.test.mjs
 ```
+
+## DB-00 private bundle verification and exact-origin join
+
+Before using a SRC-02 snapshot with any Collection/Guide consumer, verify every
+private output against the snapshot's SHA-256 file ledger and the original
+SRC-01 manifest:
+
+```sh
+node tools/src-02-acquisition/verify_bundle.mjs verify \
+  --dir /private/SRC-02/Steam-v1.26.2 \
+  --src01-manifest /private/SRC-01/Steam-v1.26.2/manifest.json
+```
+
+The verifier is read-only and dependency-free. It rejects modified files,
+symlinks, wrong versions, missing/extra manifest ledger entries, duplicated
+record keys, broken recipe/stall/loot references, and inconsistent extraction
+counts. A one-newline, zero-record `shop-offers.jsonl` is valid and **not** an
+assertion of no offers. The optional SRC-01 manifest is independently byte-hashed
+and checked against source Item ID count, target, and item data digest.
+
+For a private Node runtime use `loadVerifiedAcquisitionBundle(directory,
+{ src01ManifestPath })` from `verify_bundle.mjs`. It returns the parsed records
+and marks the bundle `privateSource: true`. Do not import this Node-only file in
+a browser route or copy the private JSONL into `static/` or Pages.
+
+For cross-stream use the platform-independent `createAcquisitionCatalogJoin(db00Snapshot,
+verifiedBundle)` in `src/lib/acquisition/db00-join.mjs`. This requires the
+**same platform, gameVersion and SRC-01 manifest SHA-256** as the DB-00 snapshot's
+target. It uses DB-00 `canonicalId` and `validateSnapshot`, retaining DB-00
+partial coverage semantics. Its classification concerns catalog membership
+**only**, not whether an item can currently be purchased or collected. All
+returned join objects are marked `publishable: false`, with verified sale,
+price, event eligibility, entitlement and ownership states set to false or
+unknown. `getRecipe` and `getPossibleStallsForItem` are explicit
+static-source links, not live retail offers.
+
+Tests: `node --test tests/acquisition*.test.mjs`. Full private Steam v1.26.2
+source bundle was independently verified without copying a single proprietary
+row into the public repository.
