@@ -19,6 +19,7 @@ NATIVE_CATEGORIES = frozenset(("ActivityItem", "Furniture", "Clothing", "Trimmin
 MAX_ID = 2**53 - 1
 HASH = re.compile(r"[0-9a-f]{64}\Z")
 GUID = re.compile(r"guid:[0-9a-f]{32}\Z")
+NONDISPLAY_MARKER = re.compile(r"^\s*\{(?:Placeholder|LegacyPlaceholder|DoNotTranslate)\}", re.I)
 LOCALE_ARCHIVES = {"en": "en-US", "fr": "fr", "it": "it", "de": "de",
                    "es-ES": "es", "ja": "ja", "zh-CN": "zh-CN", "pt-BR": "pt-BR"}
 
@@ -197,7 +198,7 @@ def load_native(source):
                                      ("nativeCategory", "rawNameField", "iconGuid", "source")) or \
                     row.get("localizationKey") != row["rawNameField"] + "_DisplayName" or \
                     set(row.get("names", {})) != set(LOCALES) or \
-                    any(v is not None and (not isinstance(v, str) or not v.strip())
+                    any(v is not None and (not isinstance(v, str) or not v.strip() or NONDISPLAY_MARKER.match(v))
                         for v in row["names"].values()):
                 raise ValueError(f"LOCALIZATION_ROW_MISMATCH:{row['itemId']}")
             for locale, value in row["names"].items():
@@ -260,7 +261,7 @@ def load_extended(folder, game_version):
         for locale, name in row["names"].items():
             if name is None:
                 continue
-            if not isinstance(name, str) or not name.strip() or not row.get("localizationKey"):
+            if not isinstance(name, str) or not name.strip() or NONDISPLAY_MARKER.match(name) or not row.get("localizationKey"):
                 raise ValueError(f"EXTENDED_NAME_INVALID:{row['itemId']}:{locale}")
             archives = manifest.get("localizationEvidence", {})
             archive = archives.get(locale, {})

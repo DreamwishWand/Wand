@@ -32,6 +32,13 @@ class TestLocalizedNames(unittest.TestCase):
         value = "<nobr>アグラバー</nobr>\u200b<nobr>宮殿</nobr>"
         self.assertEqual(module.clean_display_name(value), "アグラバー宮殿")
 
+    def test_non_display_locdb_values_are_not_official_names(self):
+        for sentinel in ('{Placeholder}', '{LegacyPlaceholder}anything',
+                         '{DoNotTranslate}key', '<nobr>{placeholder}test</nobr>'):
+            self.assertIsNone(module.verified_display_name(sentinel))
+        self.assertIsNone(module.verified_display_name('  '))
+        self.assertEqual(module.verified_display_name('<nobr>アグラバー</nobr>'), 'アグラバー')
+
     def test_reject_duplicate_key(self):
         with self.assertRaisesRegex(ValueError, "DUPLICATE_LOCALIZATION_KEY"):
             module.decode_locbin(entry("Test_DisplayName", "one") + entry("Test_DisplayName", "two"))
