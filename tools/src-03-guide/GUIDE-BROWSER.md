@@ -154,3 +154,29 @@ claiming current v1.26.2 unlock conditions or current translated instructions.
 ## Source-defined content-scope filter
 
 The original `quest-search.json` carries `sourceScopeTokens` for each static playable mission. The Guide browser now exposes a filter populated only from tokens actually present in the selected owner-private index. Matching is exact and source-defined; unknown tokens return no results, and records with no tag are never silently assigned to a game edition or expansion. These tokens are internal original identifiers, **not** verified localized labels, DLC ownership checks, server availability, or a substitute for a current-version source refresh. The filter runs locally alongside character, group, update and objective filters without loading additional quest shards. Node regression tests cover exact matches, empty filter and mismatch rejection.
+
+## Source-typed mission-reference navigation (2026-11-21)
+
+The Guide detail inspector now offers **local navigation for original Mission condition
+references** taken exclusively from an already source-hash-verified selected quest
+detail (`structured.conditions` and `structured.activationPolicies`).
+`guideMissionReferences(record, index, locale)` traverses nested original
+`ConditionsList` groups and only recognizes source-typed `MissionAvailable`,
+`MissionCompleted`, `MissionOngoing`, `MissionStatus`, Mission step and objective
+predicates with a valid native `missionId` field. It never treats `CommonConditions`
+or `StoryCompleted` IDs as Mission IDs and never guesses integer references.
+
+The link target is resolved only within the **same** selected local quest-search
+index, with matching Steam build, Mission source SHA-256 and native wire fingerprint
+of the current quest. Search-index misses are displayed as `not in selected index`,
+not as missing from the game. Linked quest details are loaded through the existing
+per-record SHA-256-verified on-demand shard flow. No extra file is read on index
+import, and no data is sent to a backend.
+
+Each displayed relationship retains its original predicate kind, policy/condition
+section and nested source path. This remains an **unevaluated condition mention**
+inside a boolean/conditional policy branch, not a confirmed required prerequisite,
+quest sequence, completion or eligibility determination. Synthetic Node tests
+cover nested OR branches, self-links, same-source English fallback labels,
+out-of-index targets, false CommonConditions/Story matches and cross-version
+source/wire mismatch.
