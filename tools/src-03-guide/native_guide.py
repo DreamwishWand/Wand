@@ -112,6 +112,24 @@ def wire_fields(data):
     return result
 
 
+def canonical_wire(fields):
+    """Byte-faithful protobuf-wire reconstruction of validated source fields.
+
+    Used for per-definition diff fingerprints even before field semantics are mapped.
+    """
+    result = bytearray()
+    for number, wire, value in fields:
+        result.extend(encode_varint((number << 3) | wire))
+        if wire == 0:
+            result.extend(encode_varint(value))
+        elif wire == 2:
+            result.extend(encode_varint(len(value)))
+            result.extend(value)
+        else:
+            result.extend(value)
+    return bytes(result)
+
+
 def native_frames(data):
     pos, index, frame_base, used = 0, 0, None, set()
     while pos < len(data):
@@ -284,6 +302,7 @@ def as_record(family, native, frame, index, file_hash):
     if raw is None:
         raise ValueError("INVALID_NATIVE_NAME_FIELD")
     rec = {"id": str(native), "rawName": raw, "nameKey": None,
+           "nativeWireSha256": sha(canonical_wire(fields)),
            "names": {}, "textKeys": {}, "localizedText": {}, "plainText": {},
            "sourceScopeTokens": sorted(set(SCOPE_TOKENS.findall(raw)), key=str.casefold),
            "source": {"file": f"ddv_Data/StreamingAssets/itemlist/{SOURCES[family]}.json",
@@ -472,7 +491,8 @@ def extract(game, out, version, platform, item_index=None, previous=None):
                                 if loc not in values:
                                     translation_missing.append({"family": fam, "id": rec["id"], "step": len(steps),
                                                                 "locale": loc, "key": key})
-                        steps.append({"index": len(steps), "localizationKeys": keys,
+                        steps.append({"index": len(steps), "nativeWireSha256": sha(value),
+                                      "localizationKeys": keys,
                                       "localizedText": translations})
                     rec["steps"] = steps
                     rec["nativeStepCount"] = len(steps)
@@ -537,6 +557,7 @@ def extract(game, out, version, platform, item_index=None, previous=None):
                     "notes": ["Only native static definitions; no live event status inferred.",
                               "ID and name-key mapping validated by native frames and exact locbin lookup.",
                               "Candidate wire matches are not verified reward or prerequisite edges.",
+                              "Native wire SHA-256 fingerprints detect changes in opaque fields without inventing their semantics.",
                               "Star Path definitions require additional source validation."]}
         save(out / "manifest.json", manifest)
         save(out / "report.json", {"schema": SCHEMA, "status": status,
