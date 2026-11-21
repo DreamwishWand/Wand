@@ -19,7 +19,7 @@ function Download-Source([string]$repoPath, [string]$fileName) {
     $target = Join-Path $install $fileName
     $temp = "$target.partial"
     Invoke-WebRequest -Uri "$baseUrl/$repoPath" -OutFile $temp -UseBasicParsing
-    if ((Get-Item $temp).Length -lt 40) { throw "Downloaded file unexpectedly small: $repoPath" }
+    if ((Get-Item $temp).Length -lt 10) { throw "Downloaded file unexpectedly small: $repoPath" }
     Move-Item -LiteralPath $temp -Destination $target -Force
     return $target
 }
@@ -33,8 +33,12 @@ if (-not (Test-Path -LiteralPath $game -PathType Container)) {
     throw "Steam game folder not found: $game"
 }
 
-& py -3 -c "import PIL, UnityPy" 2>$null
-if ($LASTEXITCODE -ne 0) {
+$modulesReady = $false
+try {
+    & py -3 -c "import PIL, UnityPy" *> $null
+    $modulesReady = ($LASTEXITCODE -eq 0)
+} catch { $modulesReady = $false }
+if (-not $modulesReady) {
     Write-Host "Installing image extraction dependencies (Pillow and UnityPy)..."
     & py -3 -m pip install --user -r $requirements
     if ($LASTEXITCODE -ne 0) { throw "Python dependency installation failed" }
