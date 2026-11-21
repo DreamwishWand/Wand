@@ -15,6 +15,7 @@
   let group = '';
   let update = '';
   let objective = '';
+  let scopeToken = '';
   let page = 0;
   let selectedId = '';
   let selectedDetail: any = null;
@@ -30,13 +31,14 @@
   let detailEpoch = 0;
 
   $: filtered = searchIndex ? searchGuide(searchIndex, {
-    query: query.slice(0, 128), locale, character, group, update, objective,
+    query: query.slice(0, 128), locale, character, group, update, objective, scopeToken,
     characterNames, groupInfo, offset: page * 40, limit: 40
   }) : {total: 0, results: [], nextOffset: null};
   $: characters = searchIndex ? [...new Set(searchIndex.records.map((r: any) => r.characterId).filter(Boolean))].sort() : [];
   $: groups = searchIndex ? [...new Set(searchIndex.records.map((r: any) => r.groupId).filter(Boolean))].sort() : [];
   $: updates = searchIndex ? [...new Set(searchIndex.records.map((r: any) => r.sourceUpdateGroup).filter(Boolean))].sort() : [];
   $: objectives = searchIndex ? [...new Set(searchIndex.records.flatMap((r: any) => r.objectiveKinds))].sort() : [];
+  $: scopeTokens = searchIndex ? [...new Set(searchIndex.records.flatMap((r: any) => r.sourceScopeTokens))].sort() : [];
   $: selectedRow = selectedId && searchIndex ? searchIndex.records.find((r: any) => r.id === selectedId) : null;
   $: detailSteps = selectedDetail ? detailStepRows(selectedDetail, locale) : [];
   $: staticFacts = selectedDetail ? guideStaticFacts(selectedDetail, locale) : {conditions:[], policies:[], rewards:[]};
@@ -74,7 +76,7 @@
     selectedId = '';
     selectedDetail = null;
     detailError = '';
-    query = ''; character = ''; group = ''; update = ''; objective = ''; page = 0;
+    query = ''; character = ''; group = ''; update = ''; objective = ''; scopeToken = ''; page = 0;
     info = '';
     importError = '';
   }
@@ -252,6 +254,15 @@
                 {#each objectives as value}<option value={value}>{value}</option>{/each}
               </select>
             </label>
+            {#if scopeTokens.length}
+              <label>原本のコンテンツ区分
+                <select bind:value={scopeToken} on:change={resetPage}>
+                  <option value="">すべて</option>
+                  {#each scopeTokens as value}<option value={value}>{value}</option>{/each}
+                </select>
+                <small>原本に記録された識別子です。DLC所有状況を示すものではありません。</small>
+              </label>
+            {/if}
           </div>
         </div>
         <div class="guide-result-count">{filtered.total.toLocaleString()}件の検索結果 · {Math.min(page * 40 + 1, filtered.total)}–{Math.min((page + 1) * 40, filtered.total)}件目</div>

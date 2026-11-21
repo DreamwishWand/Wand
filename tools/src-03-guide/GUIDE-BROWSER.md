@@ -150,3 +150,7 @@ conditions, source-only activation and optional reward bounds.
 This is a viewer for the archived build's static values. The Steam v1.26.2
 Condition source and localization corpus must be verified separately before
 claiming current v1.26.2 unlock conditions or current translated instructions.
+
+## Source-defined content-scope filter
+
+The original `quest-search.json` carries `sourceScopeTokens` for each static playable mission. The Guide browser now exposes a filter populated only from tokens actually present in the selected owner-private index. Matching is exact and source-defined; unknown tokens return no results, and records with no tag are never silently assigned to a game edition or expansion. These tokens are internal original identifiers, **not** verified localized labels, DLC ownership checks, server availability, or a substitute for a current-version source refresh. The filter runs locally alongside character, group, update and objective filters without loading additional quest shards. Node regression tests cover exact matches, empty filter and mismatch rejection.

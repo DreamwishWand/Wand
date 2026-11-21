@@ -59,18 +59,19 @@ function labelFor(row, locale) {
 
 /** Client-side deterministic search, no network dependency. */
 export function searchGuide(index, { query = '', locale = 'ja', character = '', group = '', update = '',
-  objective = '', allLocales = false, characterNames = {}, groupInfo = {}, offset = 0, limit = 40 } = {}) {
+  objective = '', scopeToken = '', allLocales = false, characterNames = {}, groupInfo = {}, offset = 0, limit = 40 } = {}) {
   validateGuideSearch(index);
   assert(GUIDE_LOCALES.includes(locale), 'unsupported locale');
   assert(typeof query === 'string' && query.length <= 128, 'invalid query');
   assert((!character || isId(character)) && (!group || isId(group)), 'invalid filter ID');
-  assert([update, objective].every(v => typeof v === 'string' && v.length <= 256), 'invalid filter string');
+  assert([update, objective, scopeToken].every(v => typeof v === 'string' && v.length <= 256), 'invalid filter string');
   assert(typeof allLocales === 'boolean' && Number.isInteger(offset) && offset >= 0 &&
     Number.isInteger(limit) && limit > 0 && limit <= 100, 'invalid pagination/options');
   const q = clean(query), words = q.split(/\s+/).filter(Boolean), found = [];
   for (const row of index.records) {
     if ((character && row.characterId !== character) || (group && row.groupId !== group) ||
-        (update && row.sourceUpdateGroup !== update) || (objective && !row.objectiveKinds.includes(objective))) continue;
+        (update && row.sourceUpdateGroup !== update) || (objective && !row.objectiveKinds.includes(objective)) ||
+        (scopeToken && !row.sourceScopeTokens.includes(scopeToken))) continue;
     const display = labelFor(row, locale);
     let rank = 0, matched = null;
     if (words.length) {
