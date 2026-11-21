@@ -137,3 +137,54 @@ node --test src/lib/items/records.test.mjs
 ```
 
 **Data storage:** generated Steam/game-derived records, source probes, manifests, diff and unresolved belong in owner-private `SRC-01 ITEMS` Drive (or a private DB-01 versioned folder). Do not commit generated game data or raw assets to the public repository. The GitHub changes are parser/consumer/tests/documentation only. No website publication occurs automatically.
+
+## Owner-private runtime API and DB-00 handoff
+
+`src/lib/items/catalog.mjs` provides a shared, read-only catalog for Collection,
+Guide, Decorate and Save Editor. It accepts **only** the DB-01 compiler's
+`wand.db01.items@1` manifest or the separately designated owner-private
+`wand.db01.partial-manifest@2` (13,334 currently observed full-source definitions).
+Neither format authorizes site publication. It rejects the two diagnostic
+`wand.src01.*-evidence@1` prefix schemas entirely.
+
+```js
+import { openPrivateItemCatalog } from './src/lib/items/catalog.mjs';
+import { createDb01Db00Patch } from './src/lib/items/db00-join.mjs';
+
+// Both inputs are owner-local/private. No fetch or website upload is performed.
+const catalog = await openPrivateItemCatalog(manifest, new Uint8Array(itemsJsonl));
+const item = catalog.getDisplayItem(30000031, 'ja');
+// item.displayName is null until current Steam LocDB is verified for that ID.
+const matches = catalog.search('30000031', { locale: 'ja' });
+
+// Only for a matching owner-private Steam DB-00 target whose sourceSha256
+// equals catalog.source.sourceManifestSha256 and whose buildId is null.
+const handoff = createDb01Db00Patch(catalog, verifiedSteamTarget);
+// Pass handoff.patch to DB-00 applyPatch; do not switch the public pointer.
+```
+
+The catalog SHA-256-verifies the entire JSONL before decoding, checks all
+per-row source and locale-verification states, validates category/domain totals,
+and freezes cloned records. `createPrivateItemCatalog(manifest, parsedRows)` is
+available for trusted pre-parsed inputs but **cannot** feed the DB-00 bridge
+because the raw bytes have not been hash checked.
+
+Names are only rendered when their locale is marked `exact_locdb_join`, with
+fallback permitted only when explicitly requested. Other strings and raw
+internal identifiers are never presented as official display names. Icon GUIDs
+are exposed only for the four validated native types; other native definition
+families are kept separate from the `item` domain. The existing Switch 1.25.0
+Collection taxonomy, worlds, universes, and old names stay in
+`historicalReference` and are never silently inserted into current Steam fields.
+
+`src/lib/items/db00-join.mjs` produces an explicitly private, source-matched
+DB-00 candidate patch containing the four validated native categories only.
+Other definitions, item ownership, DLC eligibility, placement geometry, save
+writing, and publication remain unresolved. The patch contains a **private**
+source ledger entry and must not enable public site data. This adapter does
+not touch the existing Collection runtime, DB-00 active pointer or GitHub Pages
+assets. It intentionally fails closed if the target source/version/build ID
+is unverified.
+
+Tests: `node --test src/lib/items/*.test.mjs` (including end-to-end DB-00 patch
+application and corrupted-JSONL SHA refusal).
