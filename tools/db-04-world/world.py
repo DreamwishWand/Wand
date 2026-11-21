@@ -590,12 +590,15 @@ def grid_collection_layout(data, relative):
     map_entries = [part for f, w, part in root if (f, w) == (1, 2)]
     if not map_entries:
         return None  # empty file cannot prove its native message type
-    first_entry = wire_fields(map_entries[0])
-    native = one(first_entry, 2, 2)
-    if native is None:
-        return None
-    native_fields = wire_fields(native)
-    grid_data_path = text_field(native_fields, 2)
+    try:
+        first_entry = wire_fields(map_entries[0])
+        native = one(first_entry, 2, 2)
+        if native is None:
+            return None
+        native_fields = wire_fields(native)
+        grid_data_path = text_field(native_fields, 2)
+    except (ValueError, UnicodeError):
+        return None  # not known GridCollection, preserve via unresolved fallback
     if not grid_data_path or not grid_data_path.startswith("GridData/"):
         return None  # e.g. DefaultVillageData.Village, not a GridCollection
     if len(map_entries) > 8192:
