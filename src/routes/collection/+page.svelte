@@ -43,7 +43,8 @@
   let infoMessage='';
   let busy=false;
   let locale='ja';
-  let mode:'category'|'world'|'universe'='category';
+  let worldFilter='';
+  let universeFilter='';
   let selected='';
   let search='';
   let status:'all'|'owned'|'missing'|'unknown'='all';
@@ -68,7 +69,7 @@
     .filter(group=>group.items.length);
   $: selectedItem=selectedItemId!==null && runtime?runtime.item(selectedItemId,locale):null;
   $: selectedEntry=selectedItem?entries[String(selectedItem.itemId)]??{}:{};
-  $: isBrowsing=Boolean(selected||search.trim()||status!=='all'||expansion);
+  $: isBrowsing=Boolean(selected||search.trim()||status!=='all'||expansion||worldFilter||universeFilter);
 
   function categoryLabel(lang:string,id:string):string {
     const special:Record<string,Record<string,string>>={
@@ -97,15 +98,15 @@
   function refresh():void {
     if(!runtime)return;
     try{
-      facets=runtime.facets(mode,locale);
-      if(mode==='category')facets.sort((a,b)=>CATEGORY_ORDER.indexOf(a.id)-CATEGORY_ORDER.indexOf(b.id));
+      facets=runtime.facets('category',locale);
+      facets.sort((a,b)=>CATEGORY_ORDER.indexOf(a.id)-CATEGORY_ORDER.indexOf(b.id));
       const collected:CollectionItem[]=[];
       let next=0;
       let total=0;
       do{
         const page=runtime.query({
-          locale,search,category:search.trim()?'':mode==='category'?selected:'',
-          world:mode==='world'?selected:'',universe:mode==='universe'?selected:'',
+          locale,search,category:selected,
+          world:worldFilter,universe:universeFilter,
           expansion,status,offset:next,limit:Math.min(200,visible-next)
         });
         total=page.total;
@@ -170,11 +171,8 @@
       selectedIds=[];selectionMode=false;
     });
   }
-  function chooseMode(next:'category'|'world'|'universe'):void{
-    mode=next;selected='';resetView();
-  }
   function chooseFacet(id:string):void{selected=id;resetView();}
-  function clearScope():void{selected='';search='';status='all';expansion='';resetView();}
+  function clearScope():void{selected='';search='';status='all';expansion='';worldFilter='';universeFilter='';resetView();}
   function changeWorkspace(id:string):void{
     if(!runtime)return;
     void commit(async()=>{await runtime!.workspace('select',id);selectedItemId=null;selectedIds=[];});
@@ -310,21 +308,28 @@
     </div>
     <div class="collection-workspace">
       <div class="workspace-top">
-        <div class="mode-tabs" role="group" aria-label="Collectionの分類">
-          <button type="button" class:active={mode==='category'} aria-pressed={mode==='category'} on:click={()=>chooseMode('category')}>Category</button>
-          <button type="button" class:active={mode==='world'} aria-pressed={mode==='world'} on:click={()=>chooseMode('world')}>World</button>
-          <button type="button" class:active={mode==='universe'} aria-pressed={mode==='universe'} on:click={()=>chooseMode('universe')}>Universe</button>
-        </div>
         <div class="toolbar">
           <label class="search-box">
             <span aria-hidden="true">⌕</span>
-            <input type="search" aria-label="8言語のアイテム名とIDで検索" bind:value={search} on:input={resetView} placeholder="アイテム名・Item IDを検索"/>
+            <input type="search" aria-label="8言語のアイテム名で検索" bind:value={search} on:input={resetView} placeholder="アイテム名を検索"/>
           </label>
           <button type="button" class="subtle-button" aria-expanded={filtersOpen} on:click={()=>filtersOpen=!filtersOpen}>フィルター {filtersOpen?'▴':'▾'}</button>
         </div>
       </div>
       {#if filtersOpen}
         <div class="filter-panel">
+          <label class="filter-label">ワールド
+            <select aria-label="ワールドで絞り込み" bind:value={worldFilter} on:change={resetView}>
+              <option value="">すべて</option>
+              {#each runtime?.metadata.worlds??[] as id}<option value={id}>{labelWorld(id)}</option>{/each}
+            </select>
+          </label>
+          <label class="filter-label">ユニバース
+            <select aria-label="ユニバースで絞り込み" bind:value={universeFilter} on:change={resetView}>
+              <option value="">すべて</option>
+              {#each runtime?.metadata.universes??[] as id}<option value={id}>{labelUniverse(id)}</option>{/each}
+            </select>
+          </label>
           <fieldset><legend>収集状況（手動記録）</legend>
             {#each [{id:'all',name:'すべて'},{id:'owned',name:'所持 / 解放'},{id:'missing',name:'未所持'}] as option}
               <button type="button" class:chosen={status===option.id} aria-pressed={status===option.id} on:click={()=>{status=option.id as typeof status;resetView();}}>{option.name}</button>
@@ -344,7 +349,7 @@
           {#if isBrowsing}
             <div class="results-heading">
               <div class="breadcrumbs">
-                <button type="button" on:click={clearScope}>{mode==='category'?'Categories':mode==='world'?'Worlds':'Universes'}</button>
+                <button type="button" on:click={clearScope}>Categories</button>
                 {#if selected}<span> / {selectionLabel}</span>{/if}
               </div>
               <div class="result-actions">
@@ -367,7 +372,7 @@
               <div class="empty-panel">条件に一致するアイテムはありません。未記録のアイテムは「未所持」として扱いません。</div>
             {:else}
               {#each groupedItems as group (group.id)}
-                {#if !selected || search.trim() || mode!=='category'}
+                {#if !selected || search.trim()}
                   <h3 class="result-group-title">{categoryLabel(locale,group.id)} <span>{group.items.length}</span></h3>
                 {/if}
                 <div class="items-grid">
@@ -397,14 +402,14 @@
             {/if}
           {:else}
             <div class="section-lead">
-              <h2>{mode==='category'?'カテゴリから探す':mode==='world'?'ワールドから探す':'ユニバースから探す'}</h2>
+              <h2>カテゴリから探す</h2>
               <p>カテゴリを選ぶと、登録されているアイテムを確認できます。</p>
             </div>
             <div class="facet-grid">
               {#each facets as facet (facet.id)}
                 <button type="button" class="facet-card" disabled={facet.total===0} on:click={()=>chooseFacet(facet.id)}>
                   <span class="facet-flourish" aria-hidden="true">✧</span>
-                  <strong>{mode==='category'?categoryLabel(locale,facet.id):facet.label}</strong>
+                  <strong>{categoryLabel(locale,facet.id)}</strong>
                   {#if facet.total>0}
                     <span>{facet.total.toLocaleString(locale)} items</span>
                     <small aria-label="手動所持記録数／対象総数">{facet.owned.toLocaleString(locale)} / {facet.total.toLocaleString(locale)} 所持記録</small>
@@ -421,7 +426,7 @@
             <div class="inspector-heading"><span>ITEM DETAILS</span><button type="button" bind:this={inspectorClose} on:click={closeItem} aria-label="詳細を閉じる">×</button></div>
             <div class="inspector-art"><ItemArtwork itemId={selectedItem.itemId} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large /></div>
             <h2>{selectedItem.label}</h2>
-            <p class="inspector-meta">{categoryLabel(locale,selectedItem.family)} · #{selectedItem.itemId}</p>
+            <p class="inspector-meta">{categoryLabel(locale,selectedItem.family)}</p>
             <div class="inspector-section"><h3>分類</h3>
               <dl>
                 <dt>個人状態の種類</dt><dd>{terminology[selectedItem.stateSemantic]??selectedItem.stateSemantic}</dd>
