@@ -236,3 +236,46 @@ the native ActivityItem source digest, 469 typed rows, 13 selector IDs,
 loader cross-checks those counts and native row contracts; tampering or a
 missing required r4 dataset fails closed. The new version diff only asserts
 *observed source-row changes*, not actual release availability.
+
+## Multi-goal material basket (DB-02; no new game data)
+
+`planRecipeBasket(db, goals, options)` in `src/lib/acquisition/planner.mjs`
+combines up to 200 *explicit source recipe* goals into one conservative materials
+simulation. Each goal is `{ recipeId, batches?: number }`; a recipe ID identifies
+an actual `cooking` or `crafting` source recipe, not a user-visible item name.
+Identical recipe IDs are summed (up to one million executions per recipe), then
+sorted by native recipe ID. Ordering does not depend on request order. All goals
+share a single caller-supplied hypothetical inventory, intermediate-material
+surplus pool, and `recipeChoices` / `ingredientChoices` decision set.
+
+```js
+import { planRecipeBasket } from './src/lib/acquisition/planner.mjs';
+const plan = planRecipeBasket(verifiedPrivateAcquisitionDatabase, [
+  { recipeId: firstVerifiedRecipeId, batches: 2 },
+  { recipeId: secondVerifiedRecipeId }
+], {
+  inventory: { [verifiedMaterialItemId]: 5 },
+  recipeChoices: { [ambiguousOutputItemId]: selectedNativeRecipeId },
+  ingredientChoices: { [`${firstVerifiedRecipeId}:0`]: selectedNativeIngredientId }
+});
+// plan.goals, plan.requiredMaterials, plan.steps, plan.unresolvedSelectors
+```
+
+The result has schema `wand.db02.material-basket@1`, normalized goal records
+(including nullable source-defined output quantities), item-sorted required
+material totals with static acquisition candidates, actual planned crafting
+steps, unresolved selectors, blockers, remaining hypothetical inventory and
+remaining intermediate surplus. **It is not a player progress report.** A
+crafting recipe that is locked or requires DLC may still appear in static
+simulation; live offers, prices, ownership and eligibility are never inferred
+(`recipeEligibilityEvaluated=false`, `acquisitionAvailabilityVerified=false`).
+
+No recipes or raw game files are published by this API. Consumers must first
+call `loadVerifiedAcquisitionBundle` for the private SRC-02 data and then
+`createAcquisitionDatabase`. The legacy single-recipe
+`planRecipeRequirements` API now shares the same basket engine while retaining
+its `wand.db02.material-plan@1` response contract. Tests cover shared demand,
+stock, surplus, cross-goal alternatives, duplicated recipes, unknown cooking
+yields, malformed inputs and single-recipe compatibility. The Steam v1.26.2
+private corpus smoke test covers all 1,943 source recipes in 98 non-publishing
+baskets (20 recipes per basket; last basket smaller).

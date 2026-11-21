@@ -90,3 +90,25 @@ export function planRecipeRequirements(
   recipeId: number | string,
   options?: PlanOptions
 ): MaterialPlan;
+
+export interface RecipeBasketGoal {
+  /** Exact native recipe ID; repeated goals are combined before planning. */
+  recipeId: number | string;
+  /** Number of source recipe executions, default 1. */
+  batches?: number;
+}
+export interface MaterialBasket extends Omit<MaterialPlan,
+  'schema' | 'rootRecipeId' | 'rootResultItemId' | 'batches' | 'outputQuantity'> {
+  readonly schema: 'wand.db02.material-basket@1';
+  readonly goals: Array<{
+    readonly recipeId: number;
+    readonly resultItemId: number;
+    readonly batches: number;
+    readonly outputQuantity: number | null;
+  }>;
+}
+export function planRecipeBasket(
+  db: Parameters<typeof planRecipeRequirements>[0],
+  goals: RecipeBasketGoal[],
+  options?: Omit<PlanOptions, 'batches'>
+): MaterialBasket;
