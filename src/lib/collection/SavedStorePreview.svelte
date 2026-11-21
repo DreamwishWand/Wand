@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte';
   import ItemArtwork from './ItemArtwork.svelte';
   import { attachHistoricalStoreLabels } from './saved-store-preview.mjs';
+  import { attachDb01PrivateNames } from './private-db01-names-view.mjs';
 
   export let records: Array<{itemId:number;label:string;family:string}> = [];
   export let locale = 'ja';
@@ -15,6 +16,13 @@
   let showImages = false;
   let fileInput: HTMLInputElement;
   let saveSchema: number|null = null;
+  let exactNameOverlay:any = null;
+  let exactNameError = '';
+  let exactNameBusy = false;
+  let allowPrivateHistorical = false;
+  let exactNameInput:HTMLInputElement;
+  let activeNameWorker:Worker|null = null;
+  let nameSequence = 0;
 
   // No DB-02 private source corpus is published to the static site.
   // The Worker receives only ciphertext; the UI receives only ID counts.
@@ -26,14 +34,29 @@
     if (activeWorker) activeWorker.terminate();
     activeWorker = null;
   }
+  function stopNameWorker() {
+    nameSequence++;
+    if(activeNameWorker) activeNameWorker.terminate();
+    activeNameWorker=null;
+    exactNameBusy=false;
+  }
   onDestroy(stopWorker);
-  $: shown = preview ? preview.items.filter((item:any)=>
+  onDestroy(stopNameWorker);
+  $: labeledPreview = preview && exactNameOverlay
+    ? attachDb01PrivateNames(preview,exactNameOverlay,locale,{allowHistorical:allowPrivateHistorical}) : preview;
+  $: shown = labeledPreview ? labeledPreview.items.filter((item:any)=>
     !query.trim() || String(item.itemId).includes(query.trim()) ||
+    (item.currentExactName??'').toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()) ||
+    (item.privateHistoricalCandidate??'').toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()) ||
     (item.historicalLabel??'').toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())
   ) : [];
 
   function clear() {
     stopWorker();
+    stopNameWorker();
+    exactNameOverlay = null;
+    allowPrivateHistorical = false;
+    exactNameError = '';
     busy = false;
     preview = null;
     saveSchema = null;
@@ -42,6 +65,7 @@
     showImages = false;
     limit = 48;
     if (fileInput) fileInput.value = '';
+    if (exactNameInput) exactNameInput.value = '';
   }
 
   function failedRead() {
@@ -100,6 +124,55 @@
       input.value = '';
     }
   }
+
+  async function openDb01LocalZip(event:Event) {
+    const input=event.currentTarget as HTMLInputElement;
+    const file=input.files?.[0];
+    if(!file||!preview||busy||exactNameBusy)return;
+    stopNameWorker();
+    exactNameOverlay=null;
+    allowPrivateHistorical=false;
+    exactNameError='';
+    exactNameBusy=true;
+    const request=nameSequence;
+    let archive:Uint8Array|null=null;
+    let worker:Worker|null=null;
+    try {
+      if(file.size<22||file.size>40*1024*1024)throw new Error('PRIVATE_DB01_ZIP_SIZE');
+      archive=new Uint8Array(await file.arrayBuffer());
+      if(request!==nameSequence)return;
+      worker=new Worker(new URL('./private-db01-names.worker.mjs',import.meta.url),{type:'module'});
+      activeNameWorker=worker;
+      const w=worker;
+      const finish=(result:any)=>{
+        if(activeNameWorker!==w||request!==nameSequence)return;
+        w.terminate();activeNameWorker=null;exactNameBusy=false;
+        try {
+          if(result?.kind!=='result'||!result.result)throw new TypeError('PRIVATE_DB01_RESULT');
+          // No private names are written to Collection state or storage.
+          attachDb01PrivateNames(preview,result.result,locale);
+          exactNameOverlay=result.result;
+        } catch {
+          exactNameOverlay=null;
+          exactNameError='DB-01の検証済みZIPを確認できませんでした。原本は変更されていません。';
+        }
+      };
+      w.onmessage=event=>finish(event.data);
+      w.onerror=event=>{event.preventDefault();finish({kind:'error'});};
+      w.onmessageerror=()=>finish({kind:'error'});
+      w.postMessage({command:'inspect-private-db01',archive,
+        itemIds:preview.items.map((item:any)=>item.itemId)},[archive.buffer]);
+      archive=null;
+    } catch {
+      if(request===nameSequence){
+        worker?.terminate();activeNameWorker=null;exactNameBusy=false;
+        exactNameError='DB-01の検証済みZIPを確認できませんでした。';
+      }
+    } finally {
+      if(archive&&archive.byteLength)archive.fill(0);
+      input.value='';
+    }
+  }
 </script>
 
 <section class="saved-store-preview" aria-label="セーブ内の店舗商品・読み取り専用プレビュー">
@@ -139,7 +212,23 @@
       <span>商品参照 <strong>{preview.savedItemReferenceCount}</strong></span>
       <span>商品種類 <strong>{preview.distinctItemCount}</strong></span>
     </div>
-    <p class="store-warning">名称・画像は公開済みの別バージョンの Collection 資料との <strong>Item ID 一致による参考表示</strong>です。同一バージョンの名称・画像であることは未確認です。</p>
+    <p class="store-warning">標準の名称・画像は旧バージョンの参考情報です。実セーブのゲーム版は未確定であり、現在の販売・購入状況を表しません。</p>
+    <div class="private-db01-import">
+      <label class="store-file">検証済み Steam v1.26.2 DB-01 資料（任意）
+        <input bind:this={exactNameInput} type="file" accept=".zip,application/zip" aria-label="非公開 DB-01 ZIP をローカルで選択"
+          on:change={openDb01LocalZip} disabled={exactNameBusy || busy}/>
+      </label>
+      {#if exactNameBusy}<span role="status">この端末内で DB-01 の出典と名称を検証中…</span>{/if}
+      {#if exactNameOverlay}
+        <span role="status">Steam v1.26.2 の正式確認済み名称：{labeledPreview.exactSourceNameCount}種類。セーブ版一致は未確認です。</span>
+        <label><input type="checkbox" bind:checked={allowPrivateHistorical}/> v1.26.1 由来の参考名候補を表示（v1.26.2未検証）</label>
+        {#if allowPrivateHistorical}<span>旧版参考名候補：{labeledPreview.historicalCandidateCount}種類</span>{/if}
+      {/if}
+      {#if exactNameError}<span role="alert" class="store-error">{exactNameError}</span>{/if}
+      {#if exactNameBusy}<button type="button" class="store-clear" on:click={stopNameWorker}>検証を中止</button>{/if}
+      {#if exactNameOverlay}<button type="button" class="store-clear" on:click={()=>{exactNameOverlay=null;}}>名称を解除</button>{/if}
+      <p>ZIP は外部へ送信しません。独立した SHA-256 検証に成功したデータだけを使用します。旧版の名称候補は明示的に選んだ場合のみ、正式名称と区別して表示します。</p>
+    </div>
     {#if preview.items.length}
       <div class="store-controls">
         <input type="search" aria-label="保存された商品IDまたは参考名で検索" placeholder="Item ID / 参考名" bind:value={query} on:input={()=>limit=48}/>
@@ -153,8 +242,8 @@
               <span class="store-art"><ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null} alt="参考画像"/></span>
             {/if}
             <div class="store-detail">
-              <strong>{item.historicalLabel ?? `Item ID ${item.itemId}`}</strong>
-              <small>ID {item.itemId} {#if item.historicalLabel}· 旧版参考名{/if}</small>
+              <strong>{item.currentExactName ?? item.privateHistoricalCandidate ?? item.historicalLabel ?? `Item ID ${item.itemId}`}</strong>
+              <small>ID {item.itemId} {#if item.currentExactName}· Steam v1.26.2 原本確認名{#if item.currentExactNameLocale!==locale} ({item.currentExactNameLocale}){/if} · セーブ版同一性未確認{:else if item.privateHistoricalCandidate}· Steam v1.26.1 参考名候補（v1.26.2未検証）{:else if item.historicalLabel}· 旧版参考名{/if}</small>
               <small>保存参照 {item.referenceCount}件 / 店舗 {item.storeReferenceCount}件</small>
             </div>
           </div>
@@ -186,6 +275,8 @@
   .store-warning { font-size:.76rem; }
   .store-controls { display:flex; gap:14px; flex-wrap:wrap; align-items:center; margin:14px 0 8px; font-size:.8rem; }
   .store-controls input[type='search'] { padding:9px 10px; border:1px solid rgba(134,108,158,.5); border-radius:9px; color:inherit; background:transparent; max-width:280px; }
+  .private-db01-import {display:flex; flex-wrap:wrap; align-items:center; gap:10px; border:1px dashed rgba(134,108,158,.45); padding:12px; border-radius:10px; margin:12px 0;}
+  .private-db01-import p{width:100%;margin:0;font-size:.76rem;opacity:.8;}
   .store-items { display:grid; grid-template-columns:repeat(auto-fill,minmax(215px,1fr)); gap:8px; margin-top:12px; }
   .store-item { display:flex; gap:10px; align-items:center; padding:10px; border:1px solid rgba(141,112,170,.2); border-radius:10px; min-width:0; }
   .store-art { width:54px; height:54px; flex:none; }
