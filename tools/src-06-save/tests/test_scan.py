@@ -27,6 +27,7 @@ class ScannerTests(unittest.TestCase):
             all_text = ''.join(p.read_text() for p in result.glob('*.json'))
             self.assertEqual(626, structure['schemaObserved'])
             self.assertTrue(structure['rootRequiredFieldsPresent'])
+            self.assertTrue(structure['rootRequiredObjectsObserved'])
             self.assertIn('/Player/Inventory/{id}/Amount', [x['path'] for x in structure['fieldWitnesses']])
             self.assertNotIn('secret123', all_text)
             self.assertNotIn('private@example.com', all_text)

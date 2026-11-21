@@ -12,7 +12,7 @@ CHUNK = 65536
 MAX_DEPTH = 128
 MAX_FIELDS = 50000
 MAX_FILES = 150000
-MAX_CS_BYTES = 16 * 1024 * 1024
+MAX_CS_BYTES = 256 * 1024 * 1024
 KNOWN_KEYS = frozenset('''GameInfo Version Player World Inventory InventoryLists Backpack Storage Chest Chests
 Collection Collections CollectedItems Collected ItemCollections OwnedItems Items Item ID Amount Marker
 CompatibleItemType GridCollection Grids DiffGrids Objects Villages Areas GridIDs SceneItemId
@@ -267,6 +267,8 @@ class Witness:
                                      'references, ownership, codec, and Writer not validated'],
             'schemaObserved': self.schema,
             'rootRequiredFieldsPresent': all(x in self.root_keys for x in ('GameInfo', 'Player', 'World')),
+            'rootRequiredObjectsObserved': all(self.fields.get('/' + x, {}).get('types') == {'object'}
+                                               for x in ('GameInfo', 'Player', 'World')), 
             'fieldWitnesses': [{'path': p, 'types': sorted(self.fields[p]['types']),
                                 'occurrences': self.fields[p]['occurrences'],
                                 **({'maxArrayLength': self.fields[p]['max_array_length']}
@@ -306,32 +308,31 @@ def static_scan(root):
                 continue
             if p.stat().st_size > MAX_CS_BYTES or len(types) >= 500:
                 continue
-            with p.open('r', encoding='utf-8-sig', errors='replace') as f:
-                lines = f.readlines()
             active = None
-            for line in lines:
-                found = type_rx.match(line)
-                if found:
-                    name_ = found.group(2)
-                    active = None
-                    if relevant.search(name_) and len(types) < 500:
-                        active = {'name': name_, 'kind': found.group(1), 'fields': [],
-                                  'evidence': 'candidate_extracted_csharp', 'saveFieldBindingVerified': False}
-                        types.append(active)
-                    continue
-                if active is not None and len(active['fields']) < 64:
-                    if active['kind'] == 'enum':
-                        m = enum_rx.match(line)
-                        if m and not BLOCKED.search(m.group(1)):
-                            raw = m.group(2)
-                            active['fields'].append({'name': m.group(1),
-                                                     'declaredValue': int(raw, 0) if raw else None})
-                    else:
-                        m = field_rx.match(line)
-                        if m:
-                            fieldname = m.group(2)
-                            active['fields'].append({'name': fieldname if not BLOCKED.search(fieldname) else '{sensitive-field}',
-                                                     'declaredType': m.group(1).strip() if not BLOCKED.search(fieldname) else '{withheld}'})
+            with p.open('r', encoding='utf-8-sig', errors='replace') as f:
+                for line in f:
+                    found = type_rx.match(line)
+                    if found:
+                        name_ = found.group(2)
+                        active = None
+                        if relevant.search(name_) and len(types) < 500:
+                            active = {'name': name_, 'kind': found.group(1), 'fields': [],
+                                      'evidence': 'candidate_extracted_csharp', 'saveFieldBindingVerified': False}
+                            types.append(active)
+                        continue
+                    if active is not None and len(active['fields']) < 64:
+                        if active['kind'] == 'enum':
+                            m = enum_rx.match(line)
+                            if m and not BLOCKED.search(m.group(1)):
+                                raw = m.group(2)
+                                active['fields'].append({'name': m.group(1),
+                                                         'declaredValue': int(raw, 0) if raw else None})
+                        else:
+                            m = field_rx.match(line)
+                            if m:
+                                fieldname = m.group(2)
+                                active['fields'].append({'name': fieldname if not BLOCKED.search(fieldname) else '{sensitive-field}',
+                                                         'declaredType': m.group(1).strip() if not BLOCKED.search(fieldname) else '{withheld}'})
     type_names = {t['name'] for t in types if not BLOCKED.search(t['name'])}
     for t in types:
         linked = set()
