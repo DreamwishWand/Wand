@@ -8,6 +8,25 @@ from mission_schema import (OBJECTIVE_KINDS, CONDITION_KINDS, BOOL_OPERATORS,
 from mission_items import project_objective_items
 from condition_semantics import enrich_condition
 from activation_policies import parse_mission_policies
+from mission_item_flows import decode_bringsubstep, decode_mission_item_flows
+
+
+def _packed_varint(data, pos):
+    """Canonical decoder for packed protobuf int32 IDs, independent of CLI."""
+    start=pos
+    value=0
+    for shift in range(0,70,7):
+        if pos >= len(data): raise ValueError('TRUNCATED_PACKED_ID')
+        octet=data[pos];pos+=1
+        if shift==63 and octet>1:raise ValueError('OVERFLOW_PACKED_ID')
+        value |= (octet & 127)<<shift
+        if octet<128:
+            encoded=[];v=value
+            while v>127:encoded.append((v & 127)|128);v >>= 7
+            encoded.append(v)
+            if data[start:pos]!=bytes(encoded):raise ValueError('NONCANONICAL_PACKED_ID')
+            return value,pos
+    raise ValueError('UNTERMINATED_PACKED_ID')
 
 
 def fields_of(wire_fields, fields, number, wire):
@@ -124,6 +143,9 @@ def extract_quest_details(fields, quest_id, helpers, locale, missing):
                 meta['uiCategory'] = UI_CATEGORIES.get(val, f'Unknown({val})')
     result['activationPolicies'] = parse_mission_policies(fields, quest_id, helpers,
         locale, missing, result['typedRelations'], condition_tree, localized_key)
+    result['itemFlows'] = decode_mission_item_flows(fields,quest_id,helpers,
+        locale,missing,result['typedRelations'],condition_tree,localized_key,
+        _packed_varint)
     update = text_field(fields, 12)
     if update: meta['updateVersion'] = update
     for num,label in ((20,'availableConditions'),(21,'unlockConditions')):
@@ -147,6 +169,10 @@ def extract_quest_details(fields, quest_id, helpers, locale, missing):
                    'descriptions':string_fields(sub_fields,{3:'stepDescription',4:'stepDescriptionMobile'},
                        text_field,locale,plain_display,missing,{'family':'quests','id':quest_id,
                            'step':i,'subStep':j}), 'objectives': []}
+            handoff = decode_bringsubstep(sub_fields,quest_id,i,j,helpers,locale,
+                missing,result['typedRelations'],localized_key)
+            if handoff is not None:
+                sub['extraBringItem'] = handoff
             for k, raw_objective in enumerate(fields_of(wire_fields,sub_fields,50,2)):
                 obj_fields = wire_fields(raw_objective)
                 ones = [(code,val) for code,w,val in obj_fields if w==2 and code in OBJECTIVE_KINDS]
