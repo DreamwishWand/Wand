@@ -26,7 +26,19 @@ function Download-Source([string]$repoPath, [string]$fileName) {
 
 $main = Download-Source "tools/src-04-media/native1262.py" "native1262.py"
 $null = Download-Source "tools/src-04-media/media.py" "media.py"
-$null = Download-Source "tools/src-01-items/steam1262.py" "steam1262.py"
+# SRC-01 was committed to main after the SRC-04 branch was created.
+# Fetch this cross-stream dependency from the branch where it exists.
+$src01Url = "https://raw.githubusercontent.com/DreamwishWand/Wand/main/tools/src-01-items/steam1262.py"
+$src01Target = Join-Path $install "steam1262.py"
+$src01Temp = "$src01Target.partial"
+try {
+    Invoke-WebRequest -Uri $src01Url -OutFile $src01Temp -UseBasicParsing
+    if ((Get-Item $src01Temp).Length -lt 1000) { throw "SRC-01 decoder download is unexpectedly short" }
+    Move-Item -LiteralPath $src01Temp -Destination $src01Target -Force
+} catch {
+    Remove-Item -LiteralPath $src01Temp -Force -ErrorAction SilentlyContinue
+    throw "Failed to fetch the SRC-01 decoder from GitHub main: $($_.Exception.Message)"
+}
 $null = Download-Source "tools/src-04-media/source-index-1262.csv" "source-index-1262.csv"
 $requirements = Download-Source "tools/src-04-media/requirements-unity.txt" "requirements-unity.txt"
 
