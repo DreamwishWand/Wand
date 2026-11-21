@@ -1184,3 +1184,49 @@ remain disabled. Editor implementation may consume this readset
 as *candidate evidence*, not as an assertion of write safety.
 
 CI: `node --test tests/save-editor-readset.test.mjs`
+
+
+## Actual browser Worker Rust/WASM reference graph execution
+
+The previous DB-05 Rust crate compiled to wasm32 but was not loaded
+or executed by the browser. The developer `/save/diagnostics/` route
+now invokes the compiled `ddv-save-schema` module **inside its
+one-shot isolated Web Worker** after strict P1G or JSON parsing.
+`src/lib/save/save-wasm-reference.mjs` instantiates the runtime
+from `src/lib/save/wasm/pkg` (built by wasm-pack in Collection
+CI and Pages publishing). Rust `probe_save_references_json` executes
+the same 14 source-backed reference graph rules as the JS reader.
+The Worker compares full redacted Rust and JS reports, then
+returns a **fixed anonymous parity status only**:
+`matched`, `diverged`, `skipped_large_save` or `unavailable`.
+No raw IDs, field values, usernames or private saves cross the
+Worker boundary; only a generated WASM binary is published.
+
+The strict JS P1G Codec remains the **sole input decryption/CRC/
+ZIP/UTF-8/duplicate-key/unsafe-integer gate**. Rust `serde_json`
+does not replace that Codec and does not prove round-trip
+preservation. Rust and JS results are compared only for reference
+diagnostics, not as proof of absolute game correctness.
+For exceptionally large (over 24 Mi-character) JSON input,
+the second WASM parse is deliberately skipped to bound memory;
+JS read-only diagnostics remain available with an explicit status.
+If the WASM runtime cannot load, the UI says so instead of
+silently claiming Rust ran; JS diagnostics are still usable.
+A Rust/JS discrepancy is displayed as inconclusive diagnostic
+evidence, not a corruption or Writer safety verdict.
+
+CI builds browser glue using:
+
+```bash
+wasm-pack build crates/ddv-save-schema --release --target web \
+  --out-dir ../../src/lib/save/wasm/pkg --features wasm
+```
+
+and executes `browser/save-wasm-smoke.mjs` against the generated
+Pages-style Vite output with a **synthetic** JSON save. The smoke
+requires an actual `.wasm` network response and a successful
+14-rule parity message; it also verifies duplicate keys are
+rejected prior to publishing a WASM result.
+All owner-private save files, source bytes and decoded strings
+remain outside the public artifact. Rust/WASM Writer and
+lossless SaveSession serialization are still **not implemented**.

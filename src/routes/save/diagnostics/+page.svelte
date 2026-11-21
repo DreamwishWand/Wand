@@ -81,9 +81,21 @@
             throw new TypeError('DB05_BAD_WORKER_RESULT');
           }
           report = sanitizeSaveDiagnosticView(body.summary);
-          infoMessage = format === 'p1g'
+          const wasm = body.wasmReferenceParity as Record<string, unknown> | null | undefined;
+          const status = wasm?.contract === 'wand.db05.wasm-reference-parity@1' &&
+            wasm.writerAuthorized === false && wasm.exportAuthorized === false
+            ? wasm.status : 'unavailable';
+          const wasmText = status === 'matched' && wasm?.wasmExecuted === true &&
+            wasm.rulesCompared === 14 && wasm.wasmAndJsEqual === true
+            ? ' Rust/WASMによる内部参照14規則の検査はJSと一致しました。'
+            : status === 'diverged'
+              ? ' Rust/WASMとJSの参照検査結果に差異があります（安全性の判定ではありません）。'
+              : status === 'skipped_large_save'
+                ? ' サイズ制限によりRust/WASM参照検査は省略されました。'
+                : ' Rust/WASM参照検査は利用できず、JSの読み取り専用診断のみ実行しました。';
+          infoMessage = (format === 'p1g'
             ? 'P1Gセーブを専用Worker内で復号・検査しました。画面には匿名化した結果だけを返しています。'
-            : 'JSONを専用Worker内で検査しました。画面には匿名化した結果だけを返しています。';
+            : 'JSONを専用Worker内で検査しました。画面には匿名化した結果だけを返しています。') + wasmText;
         } catch {
           report = null;
           errorMessage = 'このセーブを診断できませんでした。元ファイルは変更していません。';

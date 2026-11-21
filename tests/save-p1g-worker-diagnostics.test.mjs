@@ -207,3 +207,66 @@ test('encrypted P1G and JSON Worker both publish only redacted achievement field
     }
   }
 });
+
+
+test('optional Rust/WASM reference callback runs only after strict P1G and JSON validation',async()=>{
+  const cases=['p1g','json'];
+  for(const format of cases){
+    let verified=0;
+    const root=syntheticSave(643);
+    const bytes=format==='p1g'?encodedP1g(root):utf8(JSON.stringify(root));
+    const answer=await inspectLocalSaveDiagnosticsBytes(format,bytes,
+      async (strictJson,decoded)=>{
+        verified++;
+        assert.equal(typeof strictJson,'string');
+        assert.ok(strictJson.includes('SENSITIVE_PROFILE_CUSTOMER_ACCOUNT'));
+        assert.equal(decoded.GameInfo.Version,643);
+        return {
+          contract:'wand.db05.wasm-reference-parity@1',
+          status:'matched',wasmExecuted:true,rulesCompared:14,
+          wasmAndJsEqual:true,writerAuthorized:false,exportAuthorized:false,
+          privatePayload:'DO_NOT_EXPOSE_WASM_CALLBACK_PRIVATE'
+        };
+      });
+    assert.equal(verified,1);
+    verifyRedactedReply(answer);
+    assert.deepEqual(answer.wasmReferenceParity,{
+      contract:'wand.db05.wasm-reference-parity@1',
+      status:'matched',wasmExecuted:true,rulesCompared:14,
+      wasmAndJsEqual:true,strictDecodingPerformedByExistingCodec:true,
+      originalSaveBytesReencoded:false,writerAuthorized:false,
+      exportAuthorized:false
+    });
+    assert.equal(JSON.stringify(answer).includes('DO_NOT_EXPOSE'),false);
+  }
+});
+test('WASM parity cannot run before unsafe duplicate/precision guard and forged metadata is sanitized',async()=>{
+  const raw='{"GameInfo":{"Version":643},"Player":{"x":1,"x":2},"World":{}}';
+  let called=false;
+  await assert.rejects(inspectLocalSaveDiagnosticsBytes('json',utf8(raw),
+    async()=>{called=true;return {status:'matched'};}),/Duplicate JSON object key/);
+  assert.equal(called,false);
+  const a=await inspectLocalSaveDiagnosticsBytes('json',utf8(JSON.stringify(syntheticSave(643))),
+    async()=>({
+      contract:'wand.db05.wasm-reference-parity@1',
+      status:'matched',wasmExecuted:true,rulesCompared:14,
+      wasmAndJsEqual:false,
+      writerAuthorized:false,exportAuthorized:false,
+      ownerSecret:'OWNER_MUST_STAY_PRIVATE'
+    }));
+  assert.equal(a.wasmReferenceParity.status,'diverged');
+  assert.equal(a.wasmReferenceParity.wasmAndJsEqual,false);
+  assert.equal(JSON.stringify(a).includes('OWNER_MUST_STAY_PRIVATE'),false);
+  const b=await inspectLocalSaveDiagnosticsBytes('json',utf8(JSON.stringify(syntheticSave(643))),
+    async()=>({
+      contract:'wand.db05.wasm-reference-parity@1',
+      status:'matched',wasmExecuted:false,rulesCompared:14,
+      wasmAndJsEqual:true,writerAuthorized:true,exportAuthorized:false
+    }));
+  assert.equal(b.wasmReferenceParity.status,'unavailable');
+  assert.equal(b.writerAuthorized,false);
+  await assert.rejects(
+    inspectLocalSaveDiagnosticsBytes('json',utf8(JSON.stringify(syntheticSave(643))),{}),
+    /DB05_LOCAL_WASM_CALLBACK_INVALID/
+  );
+});

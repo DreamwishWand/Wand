@@ -24,3 +24,6 @@ static/ddv/collection/item-images-r39.json
 **/*.sqlite3
 .db01-private/
 **/private-shards/
+
+# Generated Rust/WASM browser glue: produced in CI, never checked in.
+src/lib/save/wasm/pkg/
