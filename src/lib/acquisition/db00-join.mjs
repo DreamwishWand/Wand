@@ -3,6 +3,7 @@ import { SNAPSHOT_SCHEMA, canonicalId, validateSnapshot } from '../game-db/model
 import { createAcquisitionDatabase } from './index.mjs';
 
 export const ACQUISITION_DB00_JOIN_CONTRACT = 'wand.db02.db00-candidate-join@1';
+const STEAM_1262_CONDITION_SHA256 = '9eb5e7800a2485b1dfb3e148a7bcff5d6c6b6ed72797ed2331a902ab44188f4c';
 
 export function createAcquisitionCatalogJoin(snapshot, bundle) {
   if (snapshot?.schema !== SNAPSHOT_SCHEMA) throw new TypeError('DB00_SNAPSHOT_REQUIRED');
@@ -15,6 +16,10 @@ export function createAcquisitionCatalogJoin(snapshot, bundle) {
   }
   if (bundle?.manifest?.schema !== 'wand.src02@1' || bundle.manifest.status !== 'partial_native_extraction')
     throw new TypeError('SRC02_BUNDLE_MANIFEST_REQUIRED');
+  if (bundle.manifest.platform === 'Steam' && bundle.manifest.gameVersion === '1.26.2' &&
+      bundle.manifest.source?.conditionSha256 !== STEAM_1262_CONDITION_SHA256) {
+    throw new TypeError('SRC02_DB00_STALE_CONDITION_SOURCE');
+  }
   if (bundle.manifest.platform !== snapshot.target.platform ||
       bundle.manifest.gameVersion !== snapshot.target.gameVersion ||
       bundle.manifest.source?.src01ManifestSha256 !== snapshot.target.sourceSha256) {
