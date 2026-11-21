@@ -22,7 +22,7 @@ function options(argv) {
   const result = {};
   for (let i = 0; i < argv.length; ++i) {
     const key = argv[i];
-    assert(/^--[a-z-]+$/.test(key) && argv[i + 1] && !argv[i + 1].startsWith('--'), 'INVALID_ARGUMENT');
+    assert(/^--[a-z0-9-]+$/.test(key) && argv[i + 1] && !argv[i + 1].startsWith('--'), 'INVALID_ARGUMENT');
     assert(!(key.slice(2) in result), 'DUPLICATE_ARGUMENT');
     result[key.slice(2)] = argv[++i];
   }
