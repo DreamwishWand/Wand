@@ -154,10 +154,11 @@ function valueFingerprint(item) {
 }
 export function diffSnapshots(before, after) {
   validateSnapshot(before); validateSnapshot(after);
-  const comparable = before.coverage.scope === after.coverage.scope &&
+  const comparable = before.target.platform === after.target.platform &&
+    before.coverage.scope === after.coverage.scope &&
     JSON.stringify([...before.coverage.categories].sort()) === JSON.stringify([...after.coverage.categories].sort());
   if (!comparable) return { schema: 'wand.game-db.diff@1', from: before.id, to: after.id,
-    comparable: false, reason: 'Coverage scope or category set differs; no addition/deletion assertion is valid.' };
+    comparable: false, reason: 'Platform, coverage scope or category set differs; no addition/deletion assertion is valid.' };
   const old = new Map(before.items.map((item) => [item.id, item]));
   const current = new Map(after.items.map((item) => [item.id, item]));
   const added = [], changed = [], reclassified = [], removed = [];
