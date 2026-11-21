@@ -48,18 +48,22 @@ try{
     console.error('BROWSER_PAGE_URL',page.url());
     throw error;
   }
-  assert.match(await page.locator('.summary-strip').innerText(),/12,552/);
-  assert.match(await page.locator('.summary-strip').innerText(),/1 \/ 12,552/);
-  // A fabricated local catalog is rejected without replacing the public
-  // source, leaking file contents, or changing the IndexedDB user record.
-  const badLocalChooser=page.waitForEvent('filechooser');
-  await page.getByRole('button',{name:'v1.26.2 データをローカルで開く'}).click();
-  const badLocalFile=await badLocalChooser;
-  await badLocalFile.setFiles({name:'invalid-steam-db01.json',mimeType:'application/json',
-    buffer:Buffer.from('{"schema":"wand.collection.owner-local-db01@1"}')});
-  await page.getByRole('status').filter({hasText:'COLLECTION_LOCAL_DB01_UNRECOGNIZED_FILE'}).waitFor();
-  assert.match(await page.locator('.source-pill').innerText(),/Nintendo Switch/);
-  assert.match(await page.locator('.summary-strip').innerText(),/12,552/);
+  assert.match(await page.locator('.summary-strip').innerText(),/13,202/);
+  assert.match(await page.locator('.summary-strip').innerText(),/1 \/ 13,202/);
+  assert.match(await page.locator('.source-pill').innerText(),/Steam\s*·\s*v1\.26\.2/);
+  assert.equal(await page.getByRole('button',{name:'v1.26.2 データをローカルで開く'}).count(),0);
+  assert.match(await page.getByRole('status').first().innerText(),/11,492/);
+  // All 13,202 native IDs are available. The 1,710 that lack exact
+  // source names must remain explicitly unnamed, not invented.
+  await page.getByRole('button',{name:/フィルター/}).click();
+  await page.getByRole('group',{name:'正式名称の確認状況'})
+    .getByRole('button',{name:'名称未確認'}).click();
+  await page.waitForFunction(()=>document.querySelector('.result-count')?.textContent?.includes('1,710'));
+  assert.match(await page.locator('.item-card-copy').first().innerText(),/名称未確認/);
+  await page.getByRole('group',{name:'正式名称の確認状況'})
+    .getByRole('button',{name:'すべて'}).click();
+  await page.getByRole('button',{name:/フィルター/}).click();
+  assert.match(await page.locator('.summary-strip').innerText(),/13,202/);
   const stored=await page.evaluate(async()=>{
     const req=indexedDB.open('dreamwishwand-collection',1);
     const db=await new Promise((resolve,reject)=>{
@@ -116,7 +120,7 @@ try{
   await page.locator('.summary-strip').waitFor({timeout:60000});
   const now=await page.locator('.summary-strip').innerText();
   assert.match(now,/1/);
-  assert.match(now,/12,552/);
+  assert.match(now,/13,202/);
   const downloadPromise=page.waitForEvent('download');
   await page.getByRole('button',{name:'バックアップ出力'}).click();
   const download=await downloadPromise;
@@ -149,7 +153,7 @@ try{
   await page.getByRole('button',{name:'複数選択'}).click();
   await page.locator('.item-card-body').first().click();
   await page.getByRole('group',{name:'Collectionの一括記録'}).getByRole('button',{name:'所持 / 解放'}).click();
-  await page.waitForFunction(()=>document.querySelector('.summary-strip')?.textContent?.includes('1 / 12,552'));
+  await page.waitForFunction(()=>document.querySelector('.summary-strip')?.textContent?.includes('1 / 13,202'));
   const restoreChooser=page.waitForEvent('filechooser');
   await page.getByRole('button',{name:'復元'}).click();
   const chooser=await restoreChooser;
@@ -157,7 +161,7 @@ try{
   await chooser.setFiles({
     name:'legacy-collection-backup.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(seed))
   });
-  await page.waitForFunction(()=>document.querySelector('.summary-strip')?.textContent?.includes('1 / 12,552'));
+  await page.waitForFunction(()=>document.querySelector('.summary-strip')?.textContent?.includes('1 / 13,202'));
   const recoveredPromise=page.waitForEvent('download');
   await page.getByRole('button',{name:'バックアップ出力'}).click();
   const recovered=JSON.parse(await readFile(await (await recoveredPromise).path(),'utf8'));
@@ -165,9 +169,9 @@ try{
   page.once('dialog',dialog=>void dialog.accept('Second'));
   await page.getByRole('button',{name:'＋ 新規'}).click();
   await page.waitForFunction(()=>document.querySelectorAll('select[aria-label="ローカル記録を選択"] option').length===2);
-  assert.equal((await page.locator('.summary-strip').innerText()).includes('0 / 12,552'),true);
+  assert.equal((await page.locator('.summary-strip').innerText()).includes('0 / 13,202'),true);
   await page.getByRole('combobox',{name:'ローカル記録を選択'}).selectOption('local-1');
-  await page.waitForFunction(()=>document.querySelector('.summary-strip')?.textContent?.includes('1 / 12,552'));
+  await page.waitForFunction(()=>document.querySelector('.summary-strip')?.textContent?.includes('1 / 13,202'));
   await page.setViewportSize({width:390,height:844});
   const byName=page.getByRole('searchbox',{name:/8言語/});
   await byName.fill('Glass Shoe');
@@ -238,7 +242,7 @@ try{
   await page.unrouteAll();
   await page.reload();
   await page.locator('.summary-strip').waitFor({timeout:20000});
-  assert.match(await page.locator('.summary-strip').innerText(),/12,552/);
+  assert.match(await page.locator('.summary-strip').innerText(),/13,202/);
   await context.close();
   console.log('Collection browser WASM/IndexedDB/migration/search/paging smoke passed');
 } finally {

@@ -322,6 +322,7 @@ pub struct CollectionEngine {
     db00_releases: HashSet<String>,
     db00_relations: Vec<(u64,u64)>,
     owner_local_complete: bool,
+    public_native_itemlist: bool,
 }
 
 impl Default for CollectionEngine {
@@ -336,6 +337,7 @@ impl Default for CollectionEngine {
             db00_releases: HashSet::new(),
             db00_relations: Vec::new(),
             owner_local_complete: false,
+            public_native_itemlist: false,
         }
     }
 }
@@ -348,6 +350,7 @@ impl CollectionEngine {
         self.lookup.clear();
         self.db00_mode = false;
         self.owner_local_complete = false;
+        self.public_native_itemlist = false;
         self.db00_sources.clear();
         self.db00_releases.clear();
         self.db00_relations.clear();
@@ -392,6 +395,13 @@ impl CollectionEngine {
             count = count.checked_add(shard.count).ok_or("COLLECTION_DB00_INDEX_OVERFLOW")?;
         }
         if count != published.count {return Err("COLLECTION_DB00_INDEX_COUNT".into());}
+        let public_native_itemlist=visibility=="public_reference"
+            && published.id=="steam-1.26.2-native-itemlist-v1"
+            && published.target.platform=="Steam"
+            && published.target.game_version.as_deref()==Some("1.26.2")
+            && published.count==13_202
+            && published.sources.len()==1
+            && published.sources[0].id=="public-steam-1262-normalized";
         self.index = Some(Index {
             schema: DB00_RELEASE_SCHEMA.into(),
             target: ManifestTarget {
@@ -411,6 +421,7 @@ impl CollectionEngine {
         self.db00_mode=true;
         self.owner_local_complete=visibility=="private"
             && published.id=="db01-steam-1-26-2-owner-local-complete";
+        self.public_native_itemlist=public_native_itemlist;
         self.db00_sources=sources;
         self.db00_releases=releases;
         self.db00_relations.clear();
@@ -436,6 +447,15 @@ impl CollectionEngine {
         for row in shard.items {
             if !valid_item_id(&row.id) {return Err("COLLECTION_DB00_ITEM_ID".into());}
             let name_verified=row.name_status=="verified";
+            if self.public_native_itemlist {
+                let complete=row.names.len()==LOCALES.len()
+                    && LOCALES.iter().all(|locale|row.names.get(*locale)
+                        .is_some_and(|name|!name.trim().is_empty() && name.len()<=512));
+                if !((name_verified && complete)
+                    || (row.name_status=="unverified" && row.names.is_empty())) {
+                    return Err("COLLECTION_DB00_NATIVE_NAMES_INVALID".into());
+                }
+            }
             if owner_local {
                 // A verified name requires every locale. Only the SHA-pinned
                 // complete owner-local release may contain *unnamed* source IDs.
@@ -450,7 +470,8 @@ impl CollectionEngine {
             }
             let id=row.id.parse::<u64>().map_err(|_|"COLLECTION_DB00_ITEM_ID")?;
             if !ids.insert(id) || self.lookup.contains_key(&id)
-                || (!owner_local && !name_verified) || row.names.keys().any(|l|!LOCALES.contains(&l.as_str()))
+                || (!owner_local && !self.public_native_itemlist && !name_verified)
+                || row.names.keys().any(|l|!LOCALES.contains(&l.as_str()))
                 || row.source_refs.is_empty()
                 || row.source_refs.iter().any(|r|!self.db00_sources.contains(r))
                 || row.release_ids.iter().any(|r|!self.db00_releases.contains(r))

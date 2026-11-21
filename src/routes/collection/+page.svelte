@@ -17,7 +17,8 @@
     QUANTITY_STOCK:'所持数',
     RECIPE_UNLOCK:'レシピ解放',
     UNLOCKED_LOCKED:'解放状況',
-    UNLOCK_OR_AVAILABILITY:'利用可能・解放'
+    UNLOCK_OR_AVAILABILITY:'利用可能・解放',
+    UNVERIFIED:'セーブ状態未検証'
   };
   const defaultState:CollectionState={
     schema:'wand.collection.local@1',active:'local-1',
@@ -322,10 +323,12 @@
           {#each languages as language}<option value={language.id}>{language.label}</option>{/each}
         </select>
       </label>
-      <button type="button" class="subtle-button" disabled={busy||loading}
-        on:click={()=>runtime?.isOwnerLocal?void usePublicCatalog():localCatalogInput.click()}>
-        {runtime?.isOwnerLocal?'公開データに戻す':'v1.26.2 データをローカルで開く'}
-      </button>
+      {#if runtime?.isOwnerLocal || (runtime && runtime.metadata.snapshot!=='steam-1.26.2-native-itemlist-v1')}
+        <button type="button" class="subtle-button" disabled={busy||loading}
+          on:click={()=>runtime?.isOwnerLocal?void usePublicCatalog():localCatalogInput.click()}>
+          {runtime?.isOwnerLocal?'公開データに戻す':'v1.26.2 データをローカルで開く'}
+        </button>
+      {/if}
       <input bind:this={localCatalogInput} class="visually-hidden" type="file"
         accept=".json,application/json" aria-label="Steam v1.26.2のオーナーローカルカタログ"
         on:change={useOwnerLocalCatalog}/>
@@ -340,17 +343,22 @@
     </div>
   </header>
 
-  {#if runtime?.isOwnerLocal}
+  {#if runtime?.isOwnerLocal || runtime?.metadata.nameCoverage}
     <div class="info-banner" role="status">
-      Steam v1.26.2：{overall.total.toLocaleString(locale)} / {runtime.ownerLocalCoverage?.itemDefinitions.toLocaleString(locale)}件をローカルで表示中。
-      8言語の正式名称を確認済み：{runtime.ownerLocalCoverage?.nameVerified.toLocaleString(locale)}件。
-      {#if overall.total===runtime.ownerLocalCoverage?.itemDefinitions}
-        名称未確認：{runtime.ownerLocalCoverage?.nameUnverified.toLocaleString(locale)}件。名称は推測せず「名称未確認」として表示します。
+      Steam v1.26.2：{overall.total.toLocaleString(locale)} /
+      {(runtime.ownerLocalCoverage??runtime.metadata.nameCoverage)?.itemDefinitions.toLocaleString(locale)}件のItemListデータを表示中。
+      8言語の正式名称を確認済み：
+      {(runtime.ownerLocalCoverage??runtime.metadata.nameCoverage)?.nameVerified.toLocaleString(locale)}件。
+      {#if overall.total===(runtime.ownerLocalCoverage??runtime.metadata.nameCoverage)?.itemDefinitions}
+        名称未確認：
+        {(runtime.ownerLocalCoverage??runtime.metadata.nameCoverage)?.nameUnverified.toLocaleString(locale)}件。
+        名称は推測せず「名称未確認」と表示します。
       {:else}
-        名称未確認の{runtime.ownerLocalCoverage?.nameUnverified.toLocaleString(locale)}件は、この旧版ファイルには含まれません。
+        名称未確認の
+        {(runtime.ownerLocalCoverage??runtime.metadata.nameCoverage)?.nameUnverified.toLocaleString(locale)}件は、この旧版ファイルには含まれません。
       {/if}
-      詳細なカテゴリ・ワールド・ユニバースは未検証のため原本分類のみ表示します。
-      ゲームデータはサーバーへ送信・保存されません。
+      大分類のみ原本由来です。詳細カテゴリ・ワールド・ユニバース・セーブ上の所有状態は未検証です。
+      {#if runtime.isOwnerLocal}選択したゲームデータはサーバーへ送信・保存されません。{/if}
     </div>
   {/if}
   {#if storeError}
@@ -420,7 +428,7 @@
               {#each runtime?.metadata.universes??[] as id}<option value={id}>{labelUniverse(id)}</option>{/each}
             </select>
           </label>
-          {#if runtime?.isOwnerLocal && overall.total===runtime.ownerLocalCoverage?.itemDefinitions}
+          {#if (runtime?.isOwnerLocal || runtime?.metadata.nameCoverage) && overall.total===(runtime.ownerLocalCoverage??runtime.metadata.nameCoverage)?.itemDefinitions}
             <fieldset><legend>正式名称の確認状況</legend>
               {#each [{id:'all',name:'すべて'},{id:'verified',name:'名称確認済み'},{id:'unverified',name:'名称未確認'}] as option}
                 <button type="button" class:chosen={nameStatus===option.id} aria-pressed={nameStatus===option.id}

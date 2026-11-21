@@ -1,13 +1,20 @@
 {
   "schema": "wand.game-db.active@1",
-  "snapshot": "legacy-switch-1.25.0",
-  "kind": "legacy_collection",
-  "path": "ddv/collection/v1.25",
+  "snapshot": "steam-1.26.2-native-itemlist-v1",
+  "kind": "db_snapshot",
+  "path": "ddv/game-db/releases/steam-1.26.2-native-itemlist-v1",
+  "indexSha256": "06912b156823d920d1b3a2b937ebff3d06e1ca670043db616c907c683b46599f",
   "target": {
-    "platform": "Nintendo Switch",
-    "gameVersion": "1.25.0",
-    "buildId": "52BD625D9B4E0053"
+    "platform": "Steam",
+    "gameVersion": "1.26.2",
+    "buildId": null
   },
-  "publication": "existing_verified_public_reference",
-  "history": []
+  "publication": "validated_public_snapshot",
+  "history": [
+    {
+      "kind": "legacy_collection",
+      "snapshot": "legacy-switch-1.25.0",
+      "path": "ddv/collection/v1.25"
+    }
+  ]
 }

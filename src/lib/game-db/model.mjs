@@ -67,7 +67,7 @@ export function validateItem(item) {
   assert(item.nameStatus === 'verified' || item.nameStatus === 'unverified', 'missing label verification state');
   if (item.nameStatus === 'unverified') assert(Object.keys(item.names).length === 0, 'unverified names cannot be published as verified');
   assert(item.category === null || (typeof item.category === 'string' && item.category.length > 0), 'invalid category');
-  assert(item.subcategory === null || (typeof item.subcategory === 'string' && item.subcategory.length > 0), 'invalid subcategory');
+  assert(item.subcategory == null || (typeof item.subcategory === 'string' && item.subcategory.length > 0), 'invalid subcategory');
   for (const key of ['worlds', 'universes', 'contentIds', 'releaseIds', 'relations']) {
     uniqueStrings(item[key] ?? [], key + ' for ' + item.id);
   }
@@ -110,7 +110,30 @@ export function validateSnapshot(snapshot) {
   }
   if (snapshot.publishable) {
     assert(snapshot.sources.every((source) => source.visibility === 'public_reference'), 'private sources cannot be published');
-    assert(snapshot.items.every((item) => item.nameStatus === 'verified'), 'unverified names cannot be published');
+    // Only the explicitly source-audited Steam 1.26.2 ItemList release
+    // may publish IDs whose eight exact names are not known. Its labels
+    // remain empty; the UI must never synthesize official names.
+    const auditedUnnamed = snapshot.id === 'steam-1.26.2-native-itemlist-v1'
+      && snapshot.target.platform === 'Steam'
+      && snapshot.target.gameVersion === '1.26.2'
+      && snapshot.coverage.scope === 'steam-v1.26.2-native-itemlist'
+      && snapshot.coverage.itemDefinitions === 13202
+      && snapshot.coverage.nameVerified === 11492
+      && snapshot.coverage.nameUnverified === 1710
+      && snapshot.items.length === 13202
+      && snapshot.sources.length === 1
+      && snapshot.sources[0].id === 'public-steam-1262-normalized';
+    if (auditedUnnamed) {
+      const named = snapshot.items.filter((item) => item.nameStatus === 'verified');
+      const unnamed = snapshot.items.filter((item) => item.nameStatus === 'unverified');
+      assert(named.length === 11492 && unnamed.length === 1710
+        && named.every((item) => LOCALES.every((locale) => typeof item.names[locale] === 'string'))
+        && unnamed.every((item) => Object.keys(item.names).length === 0),
+        'Steam 1.26.2 source-audited name coverage mismatch');
+    } else {
+      assert(snapshot.items.every((item) => item.nameStatus === 'verified'),
+        'unverified names cannot be published');
+    }
   }
   return snapshot;
 }
