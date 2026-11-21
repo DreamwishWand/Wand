@@ -214,6 +214,7 @@ test('source-native GridArea.GetStrideFor preserves nullable default and signed 
 
 test('original GridArea native getter indexes unrotated layer values X-major, without inventing placement', () => {
   const data = fixture();
+  data.manifest.gameVersion = '1.26.1';
   const original = [1, 2, 4, 8, 16, 32];
   data.objects[0].footprint = {
     ...data.objects[0].footprint,
@@ -252,6 +253,7 @@ test('original GridArea native getter indexes unrotated layer values X-major, wi
 
 test('source cardinal GridArea dimensions swap axes but do not infer rotated layer positions', () => {
   const data = fixture();
+  data.manifest.gameVersion = '1.26.1';
   data.objects[0].footprint = {
     ...data.objects[0].footprint,
     sizeX: 3, sizeY: 2, layerValues: [1, 2, 4, 8, 16, 32],
@@ -276,6 +278,49 @@ test('source cardinal GridArea dimensions swap axes but do not infer rotated lay
   assert.throws(() => getNativeFootprintCardinalDimensions(
     catalog, 40000001, 16), /GridOrientation/);
   assert.equal(getNativeFootprintCardinalDimensions(catalog, 1111111, 0), null);
+});
+
+test('raw GridArea interpretation never claims 1.26.1 native proof on later versions', () => {
+  for (const gameVersion of ['1.26.2', '1.27.0']) {
+    const source = fixture();
+    source.manifest.gameVersion = gameVersion;
+    const catalog = createWorldCatalog(source);
+
+    // Raw source-derived masks remain available without inventing a native
+    // GridArea.get_Item indexing proof for a different GameAssembly.
+    assert.deepEqual(getNativeFootprint(catalog, 40000001).layerValues, [68, 76]);
+    const cell = getNativeFootprintLayerAt(catalog, 40000001, 0, 0);
+    assert.equal(cell.status, 'native_gridarea_base_index_not_verified_for_game_version');
+    assert.equal(cell.nativeGetterIndexVerified, false);
+    assert.equal(cell.nativeValue, undefined);
+    assert.equal(cell.originalFlatIndex, undefined);
+    assert.equal(cell.placementLegalityVerified, false);
+
+    const window = getNativeFootprintLayerWindow(catalog, 40000001,
+      {x: 0, y: 0, width: 2, height: 1});
+    assert.equal(window.status, 'native_gridarea_base_index_not_verified_for_game_version');
+    assert.equal(window.nativeGetterIndexVerified, false);
+    assert.equal(window.rows, undefined);
+    assert.equal(window.placementLegalityVerified, false);
+
+    for (const orientationCode of [0, 4, 8, 12]) {
+      const size = getNativeFootprintCardinalDimensions(catalog, 40000001,
+        orientationCode);
+      assert.equal(size.status, 'native_gridarea_cardinal_dimensions_not_verified_for_game_version');
+      assert.equal(size.nativeCardinalSizeVerified, false);
+      assert.equal(size.sizeX, undefined);
+      assert.equal(size.sizeY, undefined);
+      assert.equal(size.placementLegalityVerified, false);
+    }
+    // Even in unsupported versions, invalid coordinates and orientations
+    // must not bypass boundary validation or become accepted input.
+    assert.throws(() => getNativeFootprintLayerAt(catalog, 40000001, 2, 0),
+      /position/);
+    assert.throws(() => getNativeFootprintLayerWindow(catalog, 40000001,
+      {x: 0, y: 0, width: 3, height: 1}), /window/);
+    assert.throws(() => getNativeFootprintCardinalDimensions(
+      catalog, 40000001, 16), /GridOrientation/);
+  }
 });
 
 test('Steam v1.26.1 original GridArea integer vector transforms cover all 16 orientations', () => {
