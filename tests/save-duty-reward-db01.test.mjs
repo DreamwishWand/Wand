@@ -72,7 +72,7 @@ function catalogFixture(config={}){
   if(config.changeDutySha) dutyRows[0].sourceSha256='f'.repeat(64);
   if(config.changeDutyKey) dutyRows[0].nativeKey='FORGED_NAME';
   if(config.omitDuty)all.shift();
-  if(config.omitReward)all.pop();
+  if(config.omitReward)all.splice(all.findIndex(row=>row.itemId===9001),1);
   const raw=new Map(),files={},calls=[];
   const categories=['DutyAch','Currency','Furniture'];
   function add(path,rows){
@@ -150,7 +150,7 @@ test('unresolved RewardItem ID stays unknown; no guessed item nor corruption',as
   assert.equal(report.rewardReferencesWithNativeDefinition,1);
   assert.equal(report.rewardReferencesWithoutNativeDefinition,1);
   assert.equal(report.distinctRewardIdsWithoutNativeDefinition,1);
-  assert.equal(report.rewardReferencesWithItemDomain,0);
+  assert.equal(report.rewardReferencesWithItemDomain,1);
   assert.equal(report.rewardOwnershipVerified,false);
 });
 test('DutyAch mismatched source SHA/native key and missing source definition fail closed',async()=>{
