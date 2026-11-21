@@ -18,6 +18,7 @@ on:
       - 'tests/save-catalog-links.test.mjs'
       - 'tests/save-guide-links.test.mjs'
       - 'tests/save-achievement-links.test.mjs'
+      - 'tests/save-duty-progress-evidence.test.mjs'
       - 'tests/save-achievement-progress.test.mjs'
       - 'tests/save-diagnostic-view.test.mjs'
       - 'tests/save-p1g-worker-diagnostics.test.mjs'
@@ -42,6 +43,7 @@ on:
       - 'tests/save-catalog-links.test.mjs'
       - 'tests/save-guide-links.test.mjs'
       - 'tests/save-achievement-links.test.mjs'
+      - 'tests/save-duty-progress-evidence.test.mjs'
       - 'tests/save-achievement-progress.test.mjs'
       - 'tests/save-diagnostic-view.test.mjs'
       - 'tests/save-p1g-worker-diagnostics.test.mjs'
@@ -68,7 +70,7 @@ jobs:
             exit 1
           fi
       - name: JavaScript and Collection bridge
-        run: node --test tests/save-common-shape.test.mjs tests/save-native-shape.test.mjs tests/save-nested-shape.test.mjs tests/save-unified-shape.test.mjs tests/save-domain-shape.test.mjs tests/save-references.test.mjs tests/save-catalog-links.test.mjs tests/save-guide-links.test.mjs tests/save-achievement-links.test.mjs tests/save-achievement-progress.test.mjs tests/save-diagnostic-view.test.mjs tests/save-p1g-worker-diagnostics.test.mjs tests/save-schema.test.mjs tests/save-db00-join.test.mjs tests/save-redacted-witness.test.mjs tests/save-redacted-cli.test.mjs
+        run: node --test tests/save-common-shape.test.mjs tests/save-native-shape.test.mjs tests/save-nested-shape.test.mjs tests/save-unified-shape.test.mjs tests/save-domain-shape.test.mjs tests/save-references.test.mjs tests/save-catalog-links.test.mjs tests/save-guide-links.test.mjs tests/save-achievement-links.test.mjs tests/save-duty-progress-evidence.test.mjs tests/save-achievement-progress.test.mjs tests/save-diagnostic-view.test.mjs tests/save-p1g-worker-diagnostics.test.mjs tests/save-schema.test.mjs tests/save-db00-join.test.mjs tests/save-redacted-witness.test.mjs tests/save-redacted-cli.test.mjs
       - name: Private report importer (synthetic only)
         run: python3 -m unittest discover -s tools/db-05-save -p 'test_*.py' -v
       - name: Rust borrowed-document schema contract

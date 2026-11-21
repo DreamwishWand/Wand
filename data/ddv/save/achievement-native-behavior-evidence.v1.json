@@ -1,0 +1,68 @@
+{
+  "schema": "wand.db05.achievement-native-behavior-evidence@1",
+  "sourceEvidence": {
+    "sourceKind": "owner_held_unmodified_native_code_static_analysis",
+    "game": "Disney Dreamlight Valley",
+    "observedPlatform": "Nintendo Switch",
+    "observedVersion": "1.26.1",
+    "buildId": "3346726B2F640E01",
+    "evidenceStatus": "native_static_inspection_only",
+    "originalExecutableBytesVerifiedByThisAdapter": false,
+    "runtimeBehaviorVerified": false,
+    "savePersistenceVerified": false,
+    "sourceBuildAndSaveJointlyVerified": false,
+    "steam1262BehaviorVerified": false,
+    "otherPlatformsVerified": false
+  },
+  "fieldEvidence": [
+    {
+      "id": "current_amount",
+      "savePath": "/Player/AchievementsData[]/CurAmount",
+      "nativeMember": "AchievementData.CurAmount",
+      "sourceSpecificObservation": "On examined Switch 1.26.1 native path, SetProgress assigns CurAmount and checks whether it changed before a milestone-update path",
+      "inferenceBoundary": "Does not establish definition goal, completion, reward, or current Steam behavior"
+    },
+    {
+      "id": "max_amount",
+      "savePath": "/Player/AchievementsData[]/MaxAmount",
+      "nativeMember": "AchievementData.MaxAmount",
+      "sourceSpecificObservation": "Native int32 member identified; no full rule connecting this value to definition thresholds established",
+      "inferenceBoundary": "Do not treat as authoritative completion requirement or auto-clamp CurAmount"
+    },
+    {
+      "id": "claimed_reward_milestone",
+      "savePath": "/Player/AchievementsData[]/ClaimedRewardMilestone",
+      "nativeMember": "AchievementData.ClaimedRewardMilestone",
+      "sourceSpecificObservation": "Examined ClaimRewards success path stores maximum of prior claimed threshold and just-claimed milestone threshold",
+      "inferenceBoundary": "Does not prove grant success for all reward classes, ownership, persistence, or all-build consistency"
+    },
+    {
+      "id": "state",
+      "savePath": "/Player/AchievementsData[]/State",
+      "nativeMember": "AchievementData.State",
+      "sourceSpecificObservation": "AchievementState.Completed has numeric enum value 1 in examined native build",
+      "inferenceBoundary": "Saved JSON enum spelling and state-machine transitions are not exhaustively proven; do not infer completion from arbitrary save values"
+    }
+  ],
+  "sourceDefinitionJoin": {
+    "targetPrivateIndex": "guide/duties.json",
+    "targetSchema": "wand.db03.native-guide@1",
+    "family": "duties",
+    "originalSource": "ddv_Data/StreamingAssets/itemlist/DutyAch.json",
+    "onlyJoinKey": "Player.AchievementsData[].AchievementID",
+    "sourceBytesHashVerifiedByBridge": false,
+    "allDutyRewardTiersVerified": false,
+    "completionConditionsVerified": false
+  },
+  "policy": {
+    "exactIdLookupOnly": true,
+    "noMissingRecordCompletionInference": true,
+    "ownerModifiedSavesMayOmitObjects": true,
+    "numericValuesNotExposed": true,
+    "enumValuesNotExposed": true,
+    "noSourceVersionSaveGate": true,
+    "noAutoRepair": true,
+    "writerAuthorized": false,
+    "exportAuthorized": false
+  }
+}

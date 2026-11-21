@@ -926,3 +926,45 @@ unmodified save, Codec round-trip, account ownership, or editing rights.
 
 CI: `node --test tests/save-diagnostic-view.test.mjs
 tests/save-p1g-worker-diagnostics.test.mjs`.
+
+
+## DB-03 DutyAch + native achievement progression evidence (scoped)
+
+`data/ddv/save/achievement-native-behavior-evidence.v1.json` records
+four native source observations for `CurAmount`, `MaxAmount`,
+`ClaimedRewardMilestone` and `State` separately from private save
+observations. Its provenance is **owner-held Nintendo Switch v1.26.1
+static native instruction analysis** (Build ID `3346726B2F640E01`).
+This does not establish Steam v1.26.2's identical runtime behavior,
+hardware correctness, persistence, general reward-class success,
+or any exact DutyAch reward tier/goal values.
+
+Within that **specific inspected native path**, `SetProgress` assigns
+`CurAmount` and compares old/new values before milestone update.
+`ClaimRewards` records the maximum of the old claimed threshold and
+the just-claimed milestone after its normal reward-success branch.
+`AchievementState.Completed` has native enum value `1` in this build.
+`MaxAmount` is an identified native `int` field, not a verified source
+of all final-stage requirements or a safe clamp target. None of
+these observations permits `State` text decoding, completion rules,
+reward grants or save mutations for all categories and builds.
+
+`createSaveAchievementBridge(privateDutyIndex).auditProgressEvidence(decoded)`
+uses **only the exact matched achievement IDs** from the already
+validated private `guide/duties.json` index. It returns four static
+field keys and *anonymous* observed/absent/native-kind-difference
+counts, a matched-record count, malformed-row count and explicit
+sampling. Matched rows with no progress fields are recorded as
+absent, **not incomplete**. Unmatched IDs never contribute progress
+evidence. The implementation does not compare actual progress
+values, decode State names, invent missing achievements, repair
+deleted mission objects, or assert any completion/reward ownership.
+
+The adapter validates private Guide index structure and source SHA
+*metadata* but cannot re-hash the owner-held DutyAch source in a
+browser; original source and save build attestation are separate.
+No original proprietary source, owner save, private Guide index,
+actual ID, progress value, enum string or milestone value is
+published by this PR. Writer and export remain prohibited.
+
+CI: `node --test tests/save-duty-progress-evidence.test.mjs`.
