@@ -16,6 +16,7 @@ import tempfile
 from pathlib import Path
 
 from pe_unwind import correlate_rvas
+from native_method_pointers import resolve_native_grid_methods
 
 MAX_DLL_BYTES = 1024 * 1024 * 1024
 MAX_DUMP_BYTES = 256 * 1024 * 1024
@@ -208,7 +209,7 @@ def target_methods_from_dump(path: Path) -> list[dict]:
 
 
 def capture_native_pe(game_root, *, dump_cs=None, dump_game_version=None,
-                      window_bytes=DEFAULT_WINDOW):
+                      metadata_file=None, window_bytes=DEFAULT_WINDOW):
     if type(window_bytes) is not int or not 32 <= window_bytes <= MAX_WINDOW:
         raise ValueError("native PE method window bytes must be 32..1024")
     root = Path(game_root).resolve(strict=True)
@@ -231,6 +232,49 @@ def capture_native_pe(game_root, *, dump_cs=None, dump_game_version=None,
         "methodWindows": [],
         "rawMethodWindowSize": window_bytes,
     }
+    # Prefer methods resolved from the ORIGINAL GameAssembly and ORIGINAL
+    # global-metadata.dat over dump.cs addresses from another binary build.
+    if metadata_file is not None:
+        if dump_cs is not None or dump_game_version is not None:
+            raise ValueError("original metadata method pointers cannot be mixed with dump.cs RVAs")
+        resolution = resolve_native_grid_methods(dll, metadata_file)
+        if resolution["originalDllSha256"] != evidence["dllSha256"]:
+            raise ValueError("original native metadata resolution changed DLL identity")
+        evidence.update({
+            "peUnwindStartCorroborated": True,
+            "peUnwindTableSha256": resolution["peUnwindTableSha256"],
+            "peUnwindRecordCount": resolution["peUnwindRecordCount"],
+            "originalMetadataSha256": resolution["originalMetadataSha256"],
+            "originalMetadataVersion": resolution["metadataVersion"],
+            "originalNativeModuleName": resolution["moduleName"],
+            "originalModuleMethodPointerTableSha256": (
+                resolution["moduleMethodPointerTableSha256"]),
+            "originalMethodTokenPointerCorroborated": True,
+        })
+        with dll.open("rb") as binary:
+            for method in resolution["methods"]:
+                remaining = method["peUnwindFunctionEndRva"] - method["rva"]
+                if remaining < 32:
+                    raise ValueError("original native PE method has fewer than 32 code bytes")
+                offset, mapping = file_offset_for_rva(
+                    sections, method["rva"], min(window_bytes, remaining))
+                binary.seek(offset)
+                raw = binary.read(mapping["readLength"])
+                if len(raw) != mapping["readLength"]:
+                    raise ValueError("short original native method byte window")
+                evidence["methodWindows"].append({
+                    **method, "fileOffset": offset,
+                    "sectionName": mapping["section"],
+                    "windowLength": len(raw),
+                    "windowSha256": hashlib.sha256(raw).hexdigest(),
+                    "rawWindowHex": raw.hex(),
+                    "windowIsEntireMethod": False,
+                    "codeSemanticsVerified": False,
+                    "peUnwindStartCorroborated": True,
+                })
+        evidence["sourceRvaMappingVerified"] = True
+        evidence["status"] = "original_metadata_v31_native_method_windows_captured"
+        return validate_private_report(evidence)
     if dump_cs is None:
         if dump_game_version is not None:
             raise ValueError("IL2CPP dump version provided without source dump.cs")
@@ -328,6 +372,21 @@ def validate_private_report(report: dict, *, game_version=None):
         if (windows or report.get("sourceRvaMappingVerified") is not False or
                 "dumpCsSha256" in report or "dumpCsVersionAssertion" in report):
             raise ValueError("native PE metadata-only report falsely claims matched RVAs")
+    elif status == "original_metadata_v31_native_method_windows_captured":
+        if (not windows or report.get("sourceRvaMappingVerified") is not True or
+                report.get("peUnwindStartCorroborated") is not True or
+                report.get("originalMethodTokenPointerCorroborated") is not True or
+                report.get("originalMetadataVersion") != 31 or
+                not isinstance(report.get("originalNativeModuleName"), str) or
+                not report["originalNativeModuleName"].endswith(".dll") or
+                "dumpCsSha256" in report or "dumpCsVersionAssertion" in report or
+                type(report.get("peUnwindRecordCount")) is not int or
+                not 1 <= report["peUnwindRecordCount"] <= 600_000 or
+                any(not isinstance(report.get(field), str) or
+                    not re.fullmatch(r"[0-9a-f]{64}", report[field])
+                    for field in ("peUnwindTableSha256", "originalMetadataSha256",
+                                  "originalModuleMethodPointerTableSha256"))):
+            raise ValueError("invalid original-source native metadata pointer evidence")
     elif status == "version_asserted_il2cpp_rva_byte_windows_captured":
         if (not windows or report.get("sourceRvaMappingVerified") is not True or
                 report.get("dumpCsVersionAssertion") != version or
@@ -353,6 +412,16 @@ def validate_private_report(report: dict, *, game_version=None):
                 symbol in seen):
             raise ValueError("duplicate or unrecognized IL2CPP method symbol")
         seen.add(symbol)
+        if status == "original_metadata_v31_native_method_windows_captured":
+            if (type(window.get("token")) is not int or
+                    window["token"] >> 24 != 6 or
+                    window.get("tokenRid") != (window["token"] & 0xffffff) or
+                    type(window.get("parameterCount")) is not int or
+                    not 0 <= window["parameterCount"] <= 32 or
+                    type(window.get("typeDefinitionIndex")) is not int or
+                    window["typeDefinitionIndex"] < 0 or
+                    window.get("nativeMethodIdentityVerified") is not False):
+                raise ValueError("invalid original native token-to-method evidence")
         raw_hex = window.get("rawWindowHex")
         if (not isinstance(raw_hex, str) or
                 not re.fullmatch(r"[0-9a-f]{64,2048}", raw_hex) or
@@ -405,6 +474,7 @@ def main():
     cli = argparse.ArgumentParser(description=__doc__)
     cli.add_argument("--game-root", type=Path, required=True)
     cli.add_argument("--dump-cs", type=Path)
+    cli.add_argument("--metadata", type=Path)
     cli.add_argument("--dump-game-version")
     cli.add_argument("--window-bytes", type=int, default=DEFAULT_WINDOW)
     cli.add_argument("--out", type=Path, required=True)
@@ -413,7 +483,7 @@ def main():
         report = capture_native_pe(
             args.game_root, dump_cs=args.dump_cs,
             dump_game_version=args.dump_game_version,
-            window_bytes=args.window_bytes)
+            metadata_file=args.metadata, window_bytes=args.window_bytes)
         write_private_report(report, args.out)
         print(json.dumps({
             "status": report["status"],
