@@ -280,7 +280,22 @@ class PipelineTests(unittest.TestCase):
         extract(self.game, newer, self.out)
         delta = json.loads((newer / "diff.json").read_text())
         self.assertEqual(delta["status"], "compared")
+        self.assertFalse(delta["sourceMembershipVerified"])
         self.assertEqual(delta["entities"]["objects"]["changed"][0]["id"], "40000001")
+
+    def test_unverified_source_scopes_cannot_assert_true_additions(self):
+        extract(self.game, self.out)
+        original = self.base / "itemlist/Furniture.json"
+        extra = indexed(40000000, 2, "NewItem", grid(1, 1, [68]))
+        original.write_bytes(original.read_bytes() + extra)
+        newer = self.root / "new"
+        extract(self.game, newer, self.out)
+        delta = json.loads((newer / "diff.json").read_text())
+        objects = delta["entities"]["objects"]
+        self.assertEqual(objects["added"], [])
+        self.assertEqual(objects["candidateAdded"], ["40000002"])
+        self.assertEqual(objects["membershipConfidence"],
+                         "unverified_source_coverage")
 
     def test_snapshot_verifier_checks_manifest_and_native_links(self):
         extract(self.game, self.out)
