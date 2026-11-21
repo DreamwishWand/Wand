@@ -18,6 +18,7 @@ from mission_semantics import extract_quest_details
 from protodb_static import project_protodb
 from version_diff import compare_snapshots
 from guide_event_links import project_event_links
+from quest_catalogue import project_quest_catalogue
 
 SCHEMA = "wand.db03.native-guide@1"
 LOCALES = {"en": "en-US", "fr": "fr", "it": "it", "de": "de", "es-ES": "es",
@@ -649,6 +650,7 @@ def extract(game, out, version, platform, item_index=None, previous=None):
         save(out / "database" / "mission-record-kinds.json", {
                   "schema": SCHEMA, "target": target, "records": kinds,
                   "note": "Groups and ambiguous definitions must not appear as playable quests."})
+        quest_catalogue_summary = project_quest_catalogue(rows['quests'],target,out,save)
         # Lightweight condition AST for Guide consumers: preserve full boolean
         # semantics, never compute player progress or actual prerequisites.
         condition_index = [
@@ -712,6 +714,7 @@ def extract(game, out, version, platform, item_index=None, previous=None):
                     "missingSources": missing_families,
                     "protoDbStatic": protodb_summary,
                     "guideEventLinks": event_links_summary,
+                    "questCatalogue": quest_catalogue_summary,
                     "missionRecordKinds": dict(collections.Counter(r["recordKind"] for r in kinds)),
                     "decodedObjectiveCount": sum(len(sub["objectives"])
                         for r in rows["quests"] for step in r.get("structured", {}).get("stepsDetailed", [])
