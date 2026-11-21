@@ -1,18 +1,17 @@
 # SRC-04 MEDIA: Steam v1.26.2 one-click workflow
 
-## Final image variant policy: thumbnail + original (2026-11-21)
+## FINAL OWNER DECISION — IMG-2 lossless variants (2026-11-21)
 
-Owner decision: **exactly two generated WebP variants per image identity**, with lossless compression for both:
-- `thumbnail`: at most 128 px along the longest edge (no upscaling), for catalog, search, and grid cards.
-- `original`: the full decoded Unity pixel width/height, no resizing, for Item detail pages and zoom. It must be actual lossless WebP (`lossless=True`, `exact=True`), not just an extension named .webp.
-- **No separately generated 512 px `detail` variant in the final media contract.** All details must resolve to `original`. CSS can scale visual display dimensions without changing the transferred source pixels.
-- Keep `imageIdentity`, `itemId`, GUID, image content hash and exact source integrity checks; reuse a single image across multiple Item IDs and avoid redundant decoding.
-- The existing v1 private media overlay uses `thumbnail`+`detail` and must remain readable until a complete, independently validated v2 `thumbnail`+`original` index exists. Do **not** relabel a 512px detail image as original. Switch readers atomically to v2 after the new files and hashes have been verified.
-- Every variant must be hashed, width/height recorded, and `publicationApproved=false` maintained until explicit distribution clearance.
+**Status: APPROVED SPECIFICATION (implementation migration remains outstanding).** Exactly **two** generated image variants for each source-exact image identity, both WebP lossless:
 
-**Important observed bug / corrective migration:** `native1262.py` delegates to `media.generate_variant()`, which uses `lossless=True` for its original 9,182 GUIDs. However, `catalog_missing_pixels.py` and the supplied standalone `src04_last_two.py` write their 358+2 recovered GUIDs with `format='WEBP', quality=90, method=6`, which is **lossy** (and both also shrink the detail variant to 512px). Therefore the local 13,202/13,202 complete metadata index does **not** imply that all existing WebP bytes are lossless. The 360 recovered image GUIDs must be re-decoded from their verified Unity bundle/object pointers and re-encoded losslessly; the four known original-bundle images with native edge >512px also require full-size decoding. The other 9,178 original GUIDs have native dimensions <=512px in the verified source metadata; their existing 512-bounded lossless detail files may be reused as pixel-identical originals only after inspecting hashes and actual lossless encoding, with correctly revised `images/original/...` metadata. Original decoded texture dimensions for the 360 recovered images still need to be measured, not guessed.
+1. `thumbnail`: maximum long edge **128 physical pixels**; downscale with high-quality resampling; never upscale a smaller source; encode **after** resizing as actual WebP lossless (`lossless=True`, preserve alpha).
+2. `original`: full **native decoded pixel dimensions** (no resize); encode as actual WebP lossless (`lossless=True`, preserve alpha). Used on item detail pages; use CSS to constrain the visible dimensions.
 
-**Do not delete existing v1 files or change public media flags until all 9,542 GUIDs are migrated and all 13,202 Item IDs revalidated.** No additional full 23,021-image extraction is needed.
+Use `thumbnail` for **Collection, Explore, search and other list/grid surfaces**. Use `original` for **item detail pages**. **Do not generate/serve a separate 256px or 512px `detail` variant**. Do not upscale native pixels. Deduplicate images by stable source-identity/content hashes. Both variants retain SHA-256, byte length, width/height, source SHA and exact Item ID/GUID mapping.
+
+**Migration requirements:** v1 metadata currently uses `thumbnail`+`detail`, and existing thumbnail/detail files must not be deleted until a complete, verified v2 `thumbnail`+`original` manifest/index exists. The v2 consumer must resolve the new keys explicitly, not rebrand an up-to-512px `detail` as `original`. Existing decoded outputs from the first 9,182 GUIDs were written with `lossless=True`, but the later 358+2 GUID recovery tools used `quality=90` without `lossless=True`: both thumbnails and detail files from these 360 GUIDs are **lossy and require re-encoding from Unity source pixels**, not transcoding from lossy outputs. Four of the earlier source GUID images exceed 512px and also require full-size decoding. Verify encoding, decoded pixel dimensions and resulting hashes; keep the old v1 manifest readable until replacement is atomic. Actual remaining 360 source image dimensions have not yet been fully reported.
+
+**Security:** keep the full source and generated pixels private with `publicationApproved=false`; publication/CDN upload requires a separately authorized release step. Owner's decision on variant shape alone does **not** authorize public release.
 
 ---
 
