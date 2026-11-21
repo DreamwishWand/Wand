@@ -1,0 +1,68 @@
+{
+  "schema": "wand.game-db.patch@1",
+  "target": {
+    "platform": "Steam",
+    "gameVersion": "1.26.2",
+    "buildId": null,
+    "sourceSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "sources": [
+    {
+      "id": "db01-example",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "visibility": "private",
+      "description": "Placeholder only; replace with verified Drive provenance"
+    }
+  ],
+  "releases": [
+    {
+      "id": "example-free-update",
+      "kind": "free_update",
+      "label": "Example free update",
+      "gameVersion": null,
+      "contentIds": []
+    },
+    {
+      "id": "example-expansion",
+      "kind": "expansion",
+      "label": "Example expansion",
+      "gameVersion": null,
+      "contentIds": [
+        "Expansion03"
+      ]
+    },
+    {
+      "id": "example-adventure-pack",
+      "kind": "adventure_pack",
+      "label": "Example adventure pack",
+      "gameVersion": null,
+      "contentIds": [
+        "WinnieDLC"
+      ]
+    }
+  ],
+  "items": [
+    {
+      "id": "40000001",
+      "names": {},
+      "nameStatus": "unverified",
+      "category": null,
+      "subcategory": null,
+      "worlds": [],
+      "universes": [],
+      "contentIds": [
+        "Expansion03",
+        "WinnieDLC"
+      ],
+      "releaseIds": [
+        "example-free-update",
+        "example-expansion",
+        "example-adventure-pack"
+      ],
+      "relations": [],
+      "sourceRefs": [
+        "db01-example"
+      ]
+    }
+  ]
+}
