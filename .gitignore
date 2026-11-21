@@ -11,3 +11,10 @@ static/ddv/collection/item-images-r39.json
 # DB-00 private extraction and staging
 .db00-private/
 .db00-output/
+
+# Never commit personal save containers or DB-05 private evidence.
+**/*.profile
+**/profile.json
+**/decoded-save.json
+**/save-structure.json
+**/db05-private-summary.json
