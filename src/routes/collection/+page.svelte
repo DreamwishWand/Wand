@@ -4,7 +4,7 @@
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
   import SavedStorePreview from '$lib/collection/SavedStorePreview.svelte';
   import { CollectionRuntime, type CollectionState, type CollectionItem, type CollectionFacet, type CollectionProgress } from '$lib/collection/runtime';
-  import { collectionFamilyLabel } from '$lib/collection/copy.js';
+  import { collectionFamilyLabel } from '$lib/collection/copy';
 
   const CATEGORY_ORDER = [
     'Furniture','Landscaping','Roads & Fences','Wallpaper & Flooring','Buildings',
