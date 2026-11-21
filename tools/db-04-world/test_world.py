@@ -352,6 +352,29 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(objects["membershipConfidence"],
                          "unverified_source_coverage")
 
+    def test_snapshot_terrain_decode_evidence_must_match_original_bytes(self):
+        target = self.base / "GridData/Villages/Village04-Test.json"
+        target.write_bytes(
+            field(1, 12) + field(2, 16) +
+            field(4, struct.pack("<III", 0, 3072, 1024)) +
+            field(5, bytes((0b01010101,)) * 48))
+        extract(self.game, self.out)
+        verified = validate_snapshot(self.out)
+        self.assertEqual(verified["counts"]["grids"], 1)
+        grids_file = self.out / "grids.json"
+        grids = json.loads(grids_file.read_text())
+        self.assertEqual(grids[0]["terrainDecoding"]["cellBits"], 2)
+        self.assertFalse(grids[0]["terrainDecoding"]["nativeCodeBodyVerified"])
+        grids[0]["terrainDecoding"]["cellBits"] = 1
+        grids_file.write_text(json.dumps(grids), encoding="utf-8")
+        manifest_file = self.out / "manifest.json"
+        manifest = json.loads(manifest_file.read_text())
+        manifest["outputSha256"]["grids.json"] = hashlib.sha256(
+            grids_file.read_bytes()).hexdigest()
+        manifest_file.write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "evidence mismatches"):
+            validate_snapshot(self.out)
+
     def test_snapshot_verifier_checks_manifest_and_native_links(self):
         extract(self.game, self.out)
         verified = validate_snapshot(self.out)
