@@ -16,6 +16,8 @@ on:
       - 'tests/save-domain-shape.test.mjs'
       - 'tests/save-references.test.mjs'
       - 'tests/save-catalog-links.test.mjs'
+      - 'tests/save-diagnostic-view.test.mjs'
+      - 'src/routes/save/diagnostics/**'
       - 'tests/save-redacted-witness.test.mjs'
       - 'tests/save-redacted-cli.test.mjs'
       - '.github/workflows/db05-save.yml'
@@ -34,6 +36,8 @@ on:
       - 'tests/save-domain-shape.test.mjs'
       - 'tests/save-references.test.mjs'
       - 'tests/save-catalog-links.test.mjs'
+      - 'tests/save-diagnostic-view.test.mjs'
+      - 'src/routes/save/diagnostics/**'
       - 'tests/save-redacted-witness.test.mjs'
       - 'tests/save-redacted-cli.test.mjs'
       - '.github/workflows/db05-save.yml'
@@ -56,7 +60,7 @@ jobs:
             exit 1
           fi
       - name: JavaScript and Collection bridge
-        run: node --test tests/save-common-shape.test.mjs tests/save-native-shape.test.mjs tests/save-nested-shape.test.mjs tests/save-unified-shape.test.mjs tests/save-domain-shape.test.mjs tests/save-references.test.mjs tests/save-catalog-links.test.mjs tests/save-schema.test.mjs tests/save-db00-join.test.mjs tests/save-redacted-witness.test.mjs tests/save-redacted-cli.test.mjs
+        run: node --test tests/save-common-shape.test.mjs tests/save-native-shape.test.mjs tests/save-nested-shape.test.mjs tests/save-unified-shape.test.mjs tests/save-domain-shape.test.mjs tests/save-references.test.mjs tests/save-catalog-links.test.mjs tests/save-diagnostic-view.test.mjs tests/save-schema.test.mjs tests/save-db00-join.test.mjs tests/save-redacted-witness.test.mjs tests/save-redacted-cli.test.mjs
       - name: Private report importer (synthetic only)
         run: python3 -m unittest discover -s tools/db-05-save -p 'test_*.py' -v
       - name: Rust borrowed-document schema contract
