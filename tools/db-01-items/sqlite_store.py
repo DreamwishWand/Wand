@@ -16,7 +16,7 @@ import tempfile
 from collections import Counter
 from pathlib import Path
 
-SCHEMA = 'wand.db01.sqlite@1'
+SCHEMA = 'wand.db01.sqlite@2'
 MANIFESTS = {'wand.db01.partial-manifest@3', 'wand.db01.items@1'}
 LOCALES = ('en', 'fr', 'it', 'de', 'es-ES', 'ja', 'zh-CN', 'pt-BR')
 FOUR_CLASSES = {'ActivityItem', 'Furniture', 'Clothing', 'Trimming'}
@@ -29,7 +29,7 @@ SQL = '''
 PRAGMA foreign_keys = ON;
 CREATE TABLE catalog (
  id INTEGER PRIMARY KEY CHECK (id = 1),
- store_schema TEXT NOT NULL CHECK (store_schema = 'wand.db01.sqlite@1'),
+ store_schema TEXT NOT NULL CHECK (store_schema = 'wand.db01.sqlite@2'),
  source_schema TEXT NOT NULL,
  platform TEXT NOT NULL,
  game_version TEXT NOT NULL,
@@ -49,11 +49,13 @@ CREATE TABLE definition (
  native_category TEXT NOT NULL,
  catalog_domain TEXT NOT NULL CHECK (catalog_domain IN ('item','definition_unclassified')),
  localization_key TEXT,
+ native_key TEXT NOT NULL,
  source_file TEXT NOT NULL,
  source_sha256 TEXT NOT NULL,
  record_json TEXT NOT NULL
 );
 CREATE INDEX definition_category ON definition(native_category, item_id);
+CREATE UNIQUE INDEX definition_native_identity ON definition(native_category, native_key);
 CREATE INDEX definition_source ON definition(source_sha256);
 CREATE TABLE exact_name (
  item_id INTEGER NOT NULL REFERENCES definition(item_id),
@@ -163,6 +165,10 @@ def validate_record(row: dict, manifest: dict) -> tuple[int, list[tuple[str, str
     require(type(row) is dict, 'ROW_NOT_OBJECT')
     item_id = row.get('itemId')
     require(type(item_id) is int and 0 < item_id <= 9007199254740991, 'INVALID_ITEM_ID')
+    native_key = row.get('nativeNameField')
+    require(isinstance(native_key, str) and 0 < len(native_key) <= 256 and
+            native_key.strip() == native_key and all(ord(ch) >= 32 for ch in native_key),
+            'INVALID_NATIVE_KEY')
     cat = row.get('nativeCategory')
     src = row.get('source', {})
     match = FILE.fullmatch(src.get('file', ''))
@@ -248,6 +254,7 @@ def build(catalog_dir: Path, output: Path, history_dir: Path | None = None) -> d
     counts: Counter[str] = Counter()
     loc_count: Counter[str] = Counter()
     seen: set[int] = set()
+    seen_keys: set[tuple[str, str]] = set()
     output.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix='.db01-tmp-', suffix='.sqlite', dir=output.parent)
     os.close(fd)
@@ -255,7 +262,7 @@ def build(catalog_dir: Path, output: Path, history_dir: Path | None = None) -> d
         con = sqlite3.connect(tmp)
         try:
             con.executescript(SQL)
-            con.execute('PRAGMA user_version = 1')
+            con.execute('PRAGMA user_version = 2')
             con.execute('BEGIN IMMEDIATE')
             con.execute('INSERT INTO catalog (id,store_schema,source_schema,platform,game_version,manifest_sha256,native_source_manifest_sha256,items_sha256,definition_count,source_files_verified,source_files_total,full_corpus_parsed,publication_authorized,historical_manifest_sha256,historical_items_sha256) VALUES (1,?,?,?,?,?,?,?,?,?,?,0,0,?,?)',
                 (SCHEMA, m['schema'], m['platform'], m['gameVersion'], manifest_hash,
@@ -267,10 +274,13 @@ def build(catalog_dir: Path, output: Path, history_dir: Path | None = None) -> d
                 require(item_id not in seen, 'DUPLICATE_ID')
                 seen.add(item_id)
                 cat = row['nativeCategory']
+                native_identity = (cat, row['nativeNameField'])
+                require(native_identity not in seen_keys, 'DUPLICATE_NATIVE_KEY')
+                seen_keys.add(native_identity)
                 counts[cat] += 1
                 source = row['source']
-                con.execute('INSERT INTO definition VALUES(?,?,?,?,?,?,?)',
-                    (item_id, cat, row['catalogDomain'], row.get('localizationKey'),
+                con.execute('INSERT INTO definition VALUES(?,?,?,?,?,?,?,?)',
+                    (item_id, cat, row['catalogDomain'], row.get('localizationKey'), row['nativeNameField'],
                      source['file'], source['sha256'], json.dumps(row, sort_keys=True, separators=(',', ':'), ensure_ascii=False)))
                 for locale, value in exact:
                     con.execute('INSERT INTO exact_name VALUES(?,?,?,?)', (item_id, locale, value, 'exact_locdb_join'))
@@ -308,7 +318,7 @@ def build(catalog_dir: Path, output: Path, history_dir: Path | None = None) -> d
         require(not output.exists(), 'REFUSE_OVERWRITE')
         os.link(tmp, output)
         return {'schema':SCHEMA, 'platform':m['platform'], 'gameVersion':m['gameVersion'],
-                'definitions':len(seen), 'exactNames':sum(loc_count.values()),
+                'definitions':len(seen), 'nativeKeys':len(seen_keys), 'exactNames':sum(loc_count.values()),
                 'historicalCandidates':len(history_rows), 'sha256':sha_bytes(output.read_bytes()),
                 'privateOnly':True, 'file':str(output)}
     finally:

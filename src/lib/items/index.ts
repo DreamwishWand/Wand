@@ -1,5 +1,5 @@
 /** DB-01 final typed, lazy read API. No private data or file URLs are embedded. */
-export const DB01_SHARDS_SCHEMA = 'wand.db01.private-shards@1' as const;
+export const DB01_SHARDS_SCHEMA = 'wand.db01.private-shards@2' as const;
 export const DB01_LOCALES = ['en','fr','it','de','es-ES','ja','zh-CN','pt-BR'] as const;
 export type Db01Locale = typeof DB01_LOCALES[number];
 export type Db01CatalogDomain = 'item' | 'definition_unclassified';
@@ -9,6 +9,8 @@ export interface Db01Item {
   readonly nativeCategory: string;
   readonly catalogDomain: Db01CatalogDomain;
   readonly localizationKey: string | null;
+  /** Source-exact wire field 2: an identity, not a game semantic classification. */
+  readonly nativeKey: string;
   readonly sourceSha256: string;
   readonly verifiedIconGuid: string | null;
   readonly names: Readonly<Record<Db01Locale, string | null>>;
@@ -57,6 +59,10 @@ function isObj(value: unknown): value is Record<string, unknown> {
 }
 function localeIsValid(value: string): value is Db01Locale { return LOCALE_SET.has(value); }
 function isItemId(id: number): boolean { return Number.isSafeInteger(id) && id > 0; }
+function nativeKeySafe(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= 256 &&
+    value.trim() === value && !/[\x00-\x1f]/.test(value);
+}
 function stringSafe(value: unknown): value is string {
   return typeof value === 'string' && !!value.trim() && !NONDISPLAY.test(value);
 }
@@ -110,6 +116,7 @@ function checkItem(row: unknown, manifest: Db01ShardManifest): asserts row is Db
   check(typeof row.nativeCategory === 'string' && manifest.categories.includes(row.nativeCategory) &&
     (row.catalogDomain === 'item' || row.catalogDomain === 'definition_unclassified') &&
     (row.localizationKey === null || typeof row.localizationKey === 'string') &&
+    nativeKeySafe(row.nativeKey) &&
     typeof row.sourceSha256 === 'string' && SHA.test(row.sourceSha256), 'INVALID_ITEM_SOURCE');
   const expected = ['ActivityItem','Furniture','Clothing','Trimming'].includes(row.nativeCategory) ? 'item' : 'definition_unclassified';
   check(row.catalogDomain === expected, 'INVALID_ITEM_DOMAIN');
@@ -127,6 +134,7 @@ export interface Db01CatalogClient {
   readonly source: Readonly<Pick<Db01ShardManifest,'platform'|'gameVersion'|'definitions'|'currentNativeItemDefinitions'|'nativeSourceManifestSha256'|'fullCorpusParsed'|'privateOnly'|'sourceItemsSha256'>>;
   getItem(id: number): Promise<Readonly<Db01Item> | null>;
   getCategory(category: string): Promise<readonly Readonly<Db01Item>[]>;
+  getByNativeKey(category: string, nativeKey: string): Promise<Readonly<Db01Item> | null>;
   searchExactNames(query: string, locale: Db01Locale, limit?: number): Promise<readonly Db01NameResult[]>;
   getName(id: number, locale: Db01Locale, options?: {allowHistorical?: boolean}): Promise<Db01NameResult | null>;
 }
@@ -164,12 +172,17 @@ export function createDb01CatalogClient(rawManifest: unknown, loadBytes: Db01Loa
   function parseRows(data: unknown, path: string): readonly Readonly<Db01Item>[] {
     check(Array.isArray(data), 'INVALID_SHARD');
     const seen = new Set<number>();
+    const seenKeys = new Set<string>();
     for (const value of data) {
       checkItem(value,manifest);
       check(!seen.has(value.itemId), 'DUPLICATE_SHARD_ID');
       seen.add(value.itemId);
       if (path.startsWith('id/')) check(bucket(value.itemId) === path.slice(3,5), 'WRONG_ID_BUCKET');
-      if (path.startsWith('category/')) check(value.nativeCategory === path.slice(9,-5), 'WRONG_CATEGORY_SHARD');
+      if (path.startsWith('category/')) {
+        check(value.nativeCategory === path.slice(9,-5), 'WRONG_CATEGORY_SHARD');
+        check(!seenKeys.has(value.nativeKey), 'DUPLICATE_NATIVE_KEY');
+        seenKeys.add(value.nativeKey);
+      }
     }
     for (const row of data as Db01Item[]) {
       Object.freeze(row.names);
@@ -187,6 +200,14 @@ export function createDb01CatalogClient(rawManifest: unknown, loadBytes: Db01Loa
     check(CATEGORY.test(category) && manifest.categories.includes(category), 'INVALID_CATEGORY');
     const path=`category/${category}.json`;
     return parseRows(await loadJson(path),path);
+  }
+  /** Exact raw native-key lookup, with no inferred DLC, item class or owner state. */
+  async function getByNativeKey(category:string, nativeKey:string):Promise<Readonly<Db01Item>|null> {
+    check(CATEGORY.test(category) && manifest.categories.includes(category), 'INVALID_CATEGORY');
+    check(nativeKeySafe(nativeKey), 'INVALID_NATIVE_KEY');
+    const matches=(await getCategory(category)).filter(row=>row.nativeKey===nativeKey);
+    check(matches.length<=1, 'DUPLICATE_NATIVE_KEY');
+    return matches[0]??null;
   }
   async function searchExactNames(query:string,locale:Db01Locale,limit=100):Promise<readonly Db01NameResult[]> {
     check(localeIsValid(locale), 'INVALID_LOCALE');
@@ -231,6 +252,6 @@ export function createDb01CatalogClient(rawManifest: unknown, loadBytes: Db01Loa
       definitions:manifest.definitions,currentNativeItemDefinitions:manifest.currentNativeItemDefinitions,
       nativeSourceManifestSha256:manifest.nativeSourceManifestSha256,fullCorpusParsed:manifest.fullCorpusParsed,
       privateOnly:manifest.privateOnly,sourceItemsSha256:manifest.sourceItemsSha256}),
-    getItem,getCategory,searchExactNames,getName,
+    getItem,getCategory,getByNativeKey,searchExactNames,getName,
   });
 }

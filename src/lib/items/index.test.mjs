@@ -6,8 +6,8 @@ import { createDb01CatalogClient, validateDb01Shards, DB01_LOCALES, DB01_SHARDS_
 const sha = v => createHash('sha256').update(v).digest('hex');
 const cats = ['ActivityItem', 'Character'];
 const names = (en = null, ja = null) => ({en,fr:null,it:null,de:null,'es-ES':null,ja,'zh-CN':null,'pt-BR':null});
-const first = {itemId:5,nativeCategory:'ActivityItem',catalogDomain:'item',localizationKey:'ActivityItem.X',sourceSha256:sha('source-A'),verifiedIconGuid:'guid:'+'1'.repeat(32),names:names('Royal Cup')};
-const second = {itemId:262,nativeCategory:'Character',catalogDomain:'definition_unclassified',localizationKey:'Character.Y',sourceSha256:sha('source-B'),verifiedIconGuid:null,names:names(null,null)};
+const first = {itemId:5,nativeCategory:'ActivityItem',catalogDomain:'item',localizationKey:'ActivityItem.X',nativeKey:'Crafting!SyntheticCup',sourceSha256:sha('source-A'),verifiedIconGuid:'guid:'+'1'.repeat(32),names:names('Royal Cup')};
+const second = {itemId:262,nativeCategory:'Character',catalogDomain:'definition_unclassified',localizationKey:'Character.Y',nativeKey:'Character!Synthetic',sourceSha256:sha('source-B'),verifiedIconGuid:null,names:names(null,null)};
 function fixture(history=true) {
   const raw = new Map();
   const files = {};
@@ -50,6 +50,15 @@ test('category lookup loads only the category shard', async()=>{
   assert.deepEqual((await db.getCategory('Character')).map(x=>x.itemId),[262]);
   assert.deepEqual(f.calls,['category/Character.json']);
   await assert.rejects(db.getCategory('Condition'),/INVALID_CATEGORY/);
+});
+test('source-native identity lookup loads only its category and never infers item status', async()=>{
+  const f=fixture(), db=createDb01CatalogClient(f.manifest,f.load);
+  assert.equal((await db.getByNativeKey('ActivityItem','Crafting!SyntheticCup'))?.itemId,5);
+  assert.equal((await db.getByNativeKey('Character','Character!Synthetic'))?.catalogDomain,'definition_unclassified');
+  assert.equal(await db.getByNativeKey('Character','Unknown!Key'),null);
+  assert.deepEqual(f.calls,['category/ActivityItem.json','category/Character.json']);
+  await assert.rejects(db.getByNativeKey('Character',' BadKey '),/INVALID_NATIVE_KEY/);
+  await assert.rejects(db.getByNativeKey('Condition','Anything'),/INVALID_CATEGORY/);
 });
 test('search index reads only selected locale and never historic candidates', async()=>{
   const f=fixture(), db=createDb01CatalogClient(f.manifest,f.load);

@@ -66,3 +66,7 @@ command. The report is an owner-private verification artifact and must not be
 treated as an authorization for public data disclosure. Retain source and
 version-specific audit reports separately for the approximately eight-week
 free-update cycle and annual expansions/adventure packs.
+The v2 contract additionally validates the unique original-source identity
+`(native_category,native_key)` in every record and in each emitted category
+shard. Any missing, mutated, duplicated or cross-version key is rejected. Old
+v1 manifests are deliberately incompatible with the v2 runtime.
