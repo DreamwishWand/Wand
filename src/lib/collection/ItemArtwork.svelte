@@ -1,6 +1,6 @@
 <script lang="ts">
   import { base } from '$app/paths';
-  import { gameImageHref } from './game-images.mjs';
+  import { gameImageHref } from './game-images';
   export let itemId:number;
   export let alt:string='';
   export let large:boolean=false;

@@ -3,216 +3,250 @@
   import { base } from '$app/paths';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
   import SavedStorePreview from '$lib/collection/SavedStorePreview.svelte';
-  import { decodeCollectionRecord, collectionFacetLabel } from '$lib/collection/catalog.mjs';
-  import { loadActiveCollectionRuntime } from '$lib/game-db/client.mjs';
-  import {
-    createCollectionState, readCollectionState, persistCollectionState, activeWorkspace,
-    addWorkspace, setActiveWorkspace, renameWorkspace, removeWorkspace, setCollectionEntry, setCollectionStatuses,
-    exportCollectionState, importCollectionState, collectionProgress
-  } from '$lib/collection/state.mjs';
-  import { CATEGORY_ORDER, categoryLabel, categorySummaries, filterItems } from '$lib/collection/taxonomy.mjs';
+  import { CollectionRuntime, type CollectionState, type CollectionItem, type CollectionFacet, type CollectionProgress } from '$lib/collection/runtime';
+  import { collectionFamilyLabel } from '$lib/collection/copy';
 
+  const CATEGORY_ORDER = [
+    'Furniture','Landscaping','Roads & Fences','Wallpaper & Flooring','Buildings',
+    'Environment Effects','Clothing','Appearance','Touch of Magic','Photo Mode',
+    'Tools','Upgrades','Characters','Companions','Critters','Mounts','Crafting',
+    'Meals','Ingredients','Foraging','Fish','Gems','Timebending','Memories',
+    'Board Game','Snippets','Lorekeeper Tales','Quest Puzzles','Exhibition'
+  ];
   const languages = [
-    { id:'ja', label:'日本語' }, { id:'en', label:'English' }, { id:'fr', label:'Français' },
-    { id:'it', label:'Italiano' }, { id:'de', label:'Deutsch' }, { id:'es-ES', label:'Español' },
-    { id:'zh-CN', label:'简体中文' }, { id:'pt-BR', label:'Português' }
+    { id:'ja',label:'日本語' },{ id:'en',label:'English' },{ id:'fr',label:'Français' },
+    { id:'it',label:'Italiano' },{ id:'de',label:'Deutsch' },{ id:'es-ES',label:'Español' },
+    { id:'zh-CN',label:'简体中文' },{ id:'pt-BR',label:'Português' }
   ];
   const terminology:Record<string,string> = {
-    'OWNERSHIP_AND_DISCOVERY':'所有・発見', 'OWNERSHIP_STOCK_AND_DISCOVERY':'所有・所持数・発見',
-    'QUANTITY_STOCK':'所持数', 'RECIPE_UNLOCK':'レシピ解放',
-    'UNLOCKED_LOCKED':'解放状況', 'UNLOCK_OR_AVAILABILITY':'利用可能・解放'
+    OWNERSHIP_AND_DISCOVERY:'所有・発見',
+    OWNERSHIP_STOCK_AND_DISCOVERY:'所有・所持数・発見',
+    QUANTITY_STOCK:'所持数',
+    RECIPE_UNLOCK:'レシピ解放',
+    UNLOCKED_LOCKED:'解放状況',
+    UNLOCK_OR_AVAILABILITY:'利用可能・解放'
   };
-
-  let index:any = null;
-  let rawRows:any[] = [];
-  let loadError = '';
-  let loading = true;
-  let storeError = '';
-  let infoMessage = '';
-  let state:any = createCollectionState();
-  let locale = 'ja';
-  let mode:'category'|'world'|'universe' = 'category';
-  let selected = '';
-  let search = '';
-  let status:'all'|'owned'|'missing' = 'all';
-  let expansion = '';
-  let filtersOpen = false;
-  let visible = 72;
-  let selectionMode = false;
-  let selectedIds:number[] = [];
-  let selectedItemId:number|null = null;
+  const defaultState:CollectionState={
+    schema:'wand.collection.local@1',active:'local-1',
+    workspaces:[{id:'local-1',name:'My Collection',entries:{}}]
+  };
+  let runtime:CollectionRuntime|null=null;
+  let state:CollectionState=defaultState;
+  let index:any=null;
+  let facets:CollectionFacet[]=[];
+  let filtered:CollectionItem[]=[];
+  let totalMatches=0;
+  let overall:CollectionProgress={owned:0,missing:0,unknown:0,discovered:0,total:0};
+  let loadError='';
+  let loading=true;
+  let storeError='';
+  let infoMessage='';
+  let busy=false;
+  let locale='ja';
+  let worldFilter='';
+  let universeFilter='';
+  let selected='';
+  let search='';
+  let status:'all'|'owned'|'missing'|'unknown'='all';
+  let expansion='';
+  let filtersOpen=false;
+  let visible=72;
+  let selectionMode=false;
+  let selectedIds:number[]=[];
+  let selectedItemId:number|null=null;
   let importInput:HTMLInputElement;
-  let gameImageMap:Record<string,string> = {};
-  let mobileInspector = false;
+  let gameImageMap:Record<string,string>={};
+  let mobileInspector=false;
   let inspectorClose:HTMLButtonElement;
-  let inspectorTrigger:HTMLElement|null = null;
+  let inspectorTrigger:HTMLElement|null=null;
 
-  $: workspace = activeWorkspace(state);
-  $: entries = workspace?.entries ?? {};
-  $: records = index ? rawRows.map(row => decodeCollectionRecord(index,row,locale)) : [];
-  $: summaries = categorySummaries(records,entries);
-  $: facets = index
-    ? mode === 'category' ? summaries.map(item => ({
-        id:item.id,label:categoryLabel(locale,item.id),total:item.total,owned:item.owned
-      }))
-      : (mode === 'world' ? index.w : index.u).map((id:string) => {
-        const scoped = records.filter(record => mode==='world'?record.worlds.includes(id):record.universes.includes(id));
-        return {
-          id,
-          label:collectionFacetLabel(index,mode,id,locale),
-          total:scoped.length,
-          owned:scoped.filter(record => entries[String(record.itemId)]?.status==='owned').length
-        };
-      })
-    : [];
-  $: selectionLabel = facets.find((item:any) => item.id===selected)?.label ?? '';
-  $: filtered = filterItems(records,{
-    query:search,category:search.trim()?'':mode==='category'?selected:'',world:mode==='world'?selected:'',
-    universe:mode==='universe'?selected:'',expansion,state:status,entries
-  }).sort((a:any,b:any)=>a.label.localeCompare(b.label,locale));
-  $: visibleItems = filtered.slice(0,visible);
-  $: groupedItems = CATEGORY_ORDER.map((id:string) => ({ id, items:visibleItems.filter((item:any)=>item.family===id) })).filter((group:any)=>group.items.length);
-  $: selectedItem = selectedItemId===null ? null : records.find((item:any)=>item.itemId===selectedItemId) ?? null;
-  $: selectedEntry = selectedItem ? entries[String(selectedItem.itemId)] ?? {} : {};
-  $: overall = collectionProgress(records,entries);
-  $: isBrowsing = Boolean(selected || search.trim() || status!=='all' || expansion);
+  $: workspace=state.workspaces.find(x=>x.id===state.active)??state.workspaces[0];
+  $: entries=workspace?.entries??{};
+  $: selectionLabel=facets.find(x=>x.id===selected)?.label??'';
+  $: visibleItems=filtered;
+  $: groupedItems=[...new Set([...CATEGORY_ORDER,...visibleItems.map(x=>x.family)])]
+    .map(id=>({id,items:visibleItems.filter(x=>x.family===id)}))
+    .filter(group=>group.items.length);
+  $: selectedItem=selectedItemId!==null && runtime?runtime.item(selectedItemId,locale):null;
+  $: selectedEntry=selectedItem?entries[String(selectedItem.itemId)]??{}:{};
+  $: isBrowsing=Boolean(selected||search.trim()||status!=='all'||expansion||worldFilter||universeFilter);
 
-  onMount(async () => {
-    try {
-      state = readCollectionState(localStorage);
-    } catch (error) {
-      storeError = '保存されたCollection記録を読み取れません。上書きを防ぐため編集を停止しました。';
-    }
-    try {
-      const runtime = await loadActiveCollectionRuntime(base);
-      index = runtime.index;
-      rawRows = runtime.rows;
-      try {
-        const response = await fetch(`${base}/ddv/collection/item-images-r39.json`);
-        if (response.ok) {
-          const imageIndex = await response.json();
-          if (imageIndex.schema === 'wand.collection.item-images.r39@1' && imageIndex.items && typeof imageIndex.items === 'object') {
-            gameImageMap = imageIndex.items;
-          }
-        }
-      } catch {
-        gameImageMap = {};
+  function categoryLabel(lang:string,id:string):string {
+    const special:Record<string,Record<string,string>>={
+      ja:{Memories:'思い出','Quest Puzzles':'クエストのパズル',Exhibition:'展示'},
+      en:{Memories:'Memories','Quest Puzzles':'Quest Puzzles',Exhibition:'Exhibition'},
+      fr:{Memories:'Souvenirs','Quest Puzzles':'Énigmes de quête',Exhibition:'Exposition'},
+      it:{Memories:'Ricordi','Quest Puzzles':'Enigmi delle missioni',Exhibition:'Esposizione'},
+      de:{Memories:'Erinnerungen','Quest Puzzles':'Quest-Rätsel',Exhibition:'Ausstellung'},
+      'es-ES':{Memories:'Recuerdos','Quest Puzzles':'Puzles de misiones',Exhibition:'Exposición'},
+      'zh-CN':{Memories:'回忆','Quest Puzzles':'任务谜题',Exhibition:'展览'},
+      'pt-BR':{Memories:'Memórias','Quest Puzzles':'Quebra-cabeças de missões',Exhibition:'Exposição'}
+    };
+    return special[lang]?.[id]??collectionFamilyLabel(lang,id)??id;
+  }
+  function labelFacet(kind:'world'|'universe',id:string):string {
+    if(!runtime)return id;
+    const meta=runtime.metadata;
+    const list=kind==='world'?meta.worlds:meta.universes;
+    const labels=kind==='world'?meta.worldLabels:meta.universeLabels;
+    const i=list.indexOf(id);
+    const lang=['en','fr','it','de','es-ES','ja','zh-CN','pt-BR'].indexOf(locale);
+    return i<0?id:labels[i]?.[lang<0?0:lang]??labels[i]?.[0]??id;
+  }
+  function labelWorld(id:string):string{return labelFacet('world',id);}
+  function labelUniverse(id:string):string{return labelFacet('universe',id);}
+  function refresh():void {
+    if(!runtime)return;
+    try{
+      facets=runtime.facets('category',locale);
+      facets.sort((a,b)=>CATEGORY_ORDER.indexOf(a.id)-CATEGORY_ORDER.indexOf(b.id));
+      const collected:CollectionItem[]=[];
+      let next=0;
+      let total=0;
+      do{
+        const page=runtime.query({
+          locale,search,category:selected,
+          world:worldFilter,universe:universeFilter,
+          expansion,status,offset:next,limit:Math.min(200,visible-next)
+        });
+        total=page.total;
+        collected.push(...page.items);
+        next+=page.items.length;
+        if(page.items.length===0)break;
+      }while(next<Math.min(total,visible));
+      filtered=collected;
+      totalMatches=total;
+      overall=runtime.progress;
+      state=runtime.state;
+    }catch(error){storeError=error instanceof Error?error.message:String(error);}
+  }
+  function resetView():void{visible=72;selectedIds=[];selectedItemId=null;refresh();}
+  function observeMore(node:HTMLElement) {
+    if(typeof IntersectionObserver==='undefined')return {destroy:()=>{}};
+    const observer=new IntersectionObserver(entries=>{
+      if(entries.some(x=>x.isIntersecting)&&visible<totalMatches&&!busy){
+        visible+=72;refresh();
       }
-    } catch (error) {
-      loadError = error instanceof Error ? error.message : String(error);
-    } finally {
-      loading = false;
-    }
-  });
-
-  function commit(next:any, repair=false) {
-    if (storeError && !repair) return;
-    try {
-      const stored = persistCollectionState(localStorage,next);
-      state = stored;
-      storeError = '';
-      infoMessage = 'このブラウザのローカル記録を更新しました。DDVのセーブファイルは変更していません。';
-    } catch (error) {
-      storeError = error instanceof Error ? error.message : 'ローカル保存に失敗しました。';
-    }
+    },{rootMargin:'400px'});
+    observer.observe(node);
+    return {destroy:()=>observer.disconnect()};
   }
-  function changeEntry(change:Record<string,unknown>) {
-    if (!selectedItem || storeError) return;
-    try { commit(setCollectionEntry(state,selectedItem.itemId,change)); }
-    catch (error) { infoMessage = error instanceof Error ? error.message : String(error); }
+  async function commit(action:()=>Promise<void>,repair=false):Promise<void>{
+    if(!runtime||busy||(storeError&&!repair))return;
+    busy=true;
+    try{
+      await action();
+      storeError='';
+      refresh();
+      infoMessage='ブラウザ内のCollection記録を更新しました。DDVセーブファイルは変更していません。';
+    }catch(error){storeError=error instanceof Error?error.message:String(error);}
+    finally{busy=false;}
   }
-  function toggleItemStatus(itemId:number) {
-    if (storeError) return;
-    try {
-      const current = entries[String(itemId)]?.status;
-      commit(setCollectionEntry(state,itemId,{status:current==='owned'?'missing':'owned'}));
-    } catch (error) {
-      infoMessage=error instanceof Error?error.message:String(error);
-    }
+  function changeEntry(change:Record<string,unknown>):void{
+    if(selectedItem&&runtime)void commit(()=>runtime!.setEntry(selectedItem!.itemId,change));
   }
-  async function showItem(itemId:number, event:MouseEvent) {
+  function toggleItemStatus(id:number):void{
+    if(!runtime)return;
+    const current=entries[String(id)]?.status;
+    void commit(()=>runtime!.setEntry(id,{status:current==='owned'?'missing':'owned'}));
+  }
+  async function showItem(id:number,event:MouseEvent):Promise<void>{
     inspectorTrigger=event.currentTarget as HTMLElement;
-    selectedItemId=itemId;
-    if(mobileInspector) {
-      await tick();
-      inspectorClose?.focus({preventScroll:true});
-    }
+    selectedItemId=id;
+    if(mobileInspector){await tick();inspectorClose?.focus({preventScroll:true});}
   }
-  async function closeItem() {
-    selectedItemId=null;
-    await tick();
-    if(inspectorTrigger?.isConnected) inspectorTrigger.focus({preventScroll:true});
+  async function closeItem():Promise<void>{
+    selectedItemId=null;await tick();
+    if(inspectorTrigger?.isConnected)inspectorTrigger.focus({preventScroll:true});
     inspectorTrigger=null;
   }
-  function toggleSelected(itemId:number) {
-    selectedIds=selectedIds.includes(itemId)?selectedIds.filter(id=>id!==itemId):[...selectedIds,itemId];
+  function toggleSelected(id:number):void{
+    selectedIds=selectedIds.includes(id)?selectedIds.filter(x=>x!==id):[...selectedIds,id];
   }
-  function applyBulk(next:'owned'|'missing'|null) {
-    if (storeError || !selectedIds.length) return;
-    try {
-      commit(setCollectionStatuses(state,selectedIds,next));
-      selectedIds=[];
-      selectionMode=false;
-    } catch (error) {
-      infoMessage=error instanceof Error?error.message:String(error);
-    }
+  function applyBulk(next:'owned'|'missing'|null):void{
+    if(!runtime||!selectedIds.length)return;
+    const ids=[...selectedIds];
+    void commit(async()=>{
+      await runtime!.setBulk(ids,next??'unknown');
+      selectedIds=[];selectionMode=false;
+    });
   }
-  function chooseMode(next:'category'|'world'|'universe') {
-    mode=next;selected='';selectedItemId=null;visible=72;selectedIds=[];
+  function chooseFacet(id:string):void{selected=id;resetView();}
+  function clearScope():void{selected='';search='';status='all';expansion='';worldFilter='';universeFilter='';resetView();}
+  function changeWorkspace(id:string):void{
+    if(!runtime)return;
+    void commit(async()=>{await runtime!.workspace('select',id);selectedItemId=null;selectedIds=[];});
   }
-  function chooseFacet(id:string) {
-    selected=id;selectedItemId=null;visible=72;selectedIds=[];
-  }
-  function clearScope() {
-    selected='';search='';status='all';expansion='';selectedItemId=null;visible=72;selectedIds=[];
-  }
-  function newWorkspace() {
+  function newWorkspace():void{
+    if(!runtime)return;
     const name=window.prompt('新しいローカル記録の名前（最大80文字）');
-    if (!name?.trim()) return;
-    try { commit(addWorkspace(state,name,'local-'+crypto.randomUUID()));selectedItemId=null; }
-    catch (error) { infoMessage=error instanceof Error?error.message:String(error); }
+    if(name?.trim())void commit(()=>runtime!.workspace('add','local-'+crypto.randomUUID(),name));
   }
-  function editWorkspaceName() {
-    if (!workspace) return;
+  function editWorkspaceName():void{
+    if(!runtime||!workspace)return;
     const name=window.prompt('記録の名前',workspace.name);
-    if (name?.trim()) commit(renameWorkspace(state,state.active,name));
+    if(name?.trim())void commit(()=>runtime!.workspace('rename',workspace.id,name));
   }
-  function deleteWorkspace() {
-    if (state.workspaces.length<2) return;
-    if (!window.confirm('現在のローカル記録を削除しますか？この操作は元に戻せません。バックアップの書き出しを推奨します。'))return;
-    commit(removeWorkspace(state,state.active));
-    selectedItemId=null;
+  function deleteWorkspace():void{
+    if(!runtime||state.workspaces.length<2)return;
+    if(!window.confirm('現在の記録を削除します。先にバックアップを保存しましたか？'))return;
+    void commit(()=>runtime!.workspace('delete',state.active));
   }
-  function downloadBackup() {
-    const text=exportCollectionState(state);
-    const objectUrl=URL.createObjectURL(new Blob([text],{type:'application/json'}));
-    const anchor=document.createElement('a');
-    anchor.href=objectUrl;
-    anchor.download='dreamwish-wand-collection-backup.json';
-    document.body.append(anchor);anchor.click();anchor.remove();
-    setTimeout(()=>URL.revokeObjectURL(objectUrl),2000);
+  function downloadBackup():void{
+    if(!runtime)return;
+    const data=runtime.exportBackup();
+    const url=URL.createObjectURL(new Blob([data],{type:'application/json'}));
+    const a=document.createElement('a');
+    a.href=url;a.download='dreamwish-wand-collection-backup.json';
+    document.body.append(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),2000);
   }
-  async function restoreBackup(event:Event) {
-    const el=event.currentTarget as HTMLInputElement;
-    const file=el.files?.[0];
-    if(!file)return;
-    try {
-      if(file.size>10000000)throw new Error('バックアップファイルが大きすぎます。');
-      const restored=importCollectionState(await file.text());
+  async function restoreBackup(event:Event):Promise<void>{
+    const input=event.currentTarget as HTMLInputElement;
+    const file=input.files?.[0];
+    if(!file||!runtime)return;
+    try{
+      if(file.size>10_000_000)throw new Error('COLLECTION_BACKUP_TOO_LARGE');
+      const data=await file.text();
       if(!window.confirm('現在のローカル記録をすべて置き換えます。先にバックアップを保存しましたか？'))return;
-      commit(restored,true);selectedItemId=null;clearScope();
-    }catch(error){infoMessage=error instanceof Error?error.message:'読み込みに失敗しました。';}
-    finally{el.value='';}
+      await commit(()=>runtime!.restore(data),true);
+      selectedItemId=null;clearScope();
+    }catch(error){infoMessage=error instanceof Error?error.message:String(error);}
+    finally{input.value='';}
   }
-  onMount(() => {
+  onMount(()=>{
+    let alive=true;
     const media=window.matchMedia('(max-width: 820px)');
     mobileInspector=media.matches;
-    const changed=(event:MediaQueryListEvent)=>{ mobileInspector=event.matches; };
+    const changed=(e:MediaQueryListEvent)=>{mobileInspector=e.matches;};
     media.addEventListener('change',changed);
-    return ()=>media.removeEventListener('change',changed);
+    void(async()=>{
+      try{
+        const loaded=await CollectionRuntime.open(base);
+        if(!alive){loaded.close();return;}
+        runtime=loaded;
+        index={e:loaded.metadata.expansions,w:loaded.metadata.worlds,u:loaded.metadata.universes};
+        refresh();
+        try{
+          const response=await fetch(base+'/ddv/collection/item-images-r39.json');
+          if(response.ok){
+            const images=await response.json();
+            if(images.schema==='wand.collection.item-images.r39@1'&&images.items&&typeof images.items==='object')
+              gameImageMap=images.items;
+          }
+        }catch{}
+      }catch(error){if(alive)loadError=error instanceof Error?error.message:String(error);}
+      finally{if(alive)loading=false;}
+    })();
+    return()=>{alive=false;media.removeEventListener('change',changed);runtime?.close();};
   });
-  function labelWorld(id:string) { return index?collectionFacetLabel(index,'world',id,locale):id; }
-  function labelUniverse(id:string) { return index?collectionFacetLabel(index,'universe',id,locale):id; }
+  function historicalLookup(itemId:number):{itemId:number;label:string;family:string}|null{
+    if(!runtime)return null;
+    try{
+      const item=runtime.item(itemId,locale);
+      return {itemId:item.itemId,label:item.label,family:item.family};
+    }catch{return null;}
+  }
 </script>
 
 <svelte:window on:keydown={(event:KeyboardEvent)=>{ if(event.key==='Escape' && mobileInspector && selectedItemId!==null) void closeItem(); }} />
@@ -235,7 +269,7 @@
           {#each languages as language}<option value={language.id}>{language.label}</option>{/each}
         </select>
       </label>
-      <span class="source-pill">Nintendo Switch · v1.25.0</span>
+      <span class="source-pill">{runtime?.metadata.platform??'Nintendo Switch'} · v{runtime?.metadata.version??'1.25.0'}</span>
     </div>
   </header>
 
@@ -246,7 +280,7 @@
     <div class="personal-left">
       <span class="personal-symbol">✧</span>
       <div><strong>My Collection</strong><span>ローカル記録 · セーブファイル未接続</span></div>
-      <select aria-label="ローカル記録を選択" value={state.active} on:change={(event)=>{commit(setActiveWorkspace(state,(event.currentTarget as HTMLSelectElement).value));selectedIds=[];selectedItemId=null;}} disabled={Boolean(storeError)}>
+      <select aria-label="ローカル記録を選択" value={state.active} on:change={(event)=>changeWorkspace((event.currentTarget as HTMLSelectElement).value)} disabled={Boolean(storeError)}>
         {#each state.workspaces as work}<option value={work.id}>{work.name}</option>{/each}
       </select>
     </div>
@@ -265,7 +299,7 @@
   {:else if loadError}
     <div class="error-banner" role="alert">データの検証または読み込みに失敗しました。{loadError}</div>
   {:else}
-    <SavedStorePreview {records} {locale} {gameImageMap} />
+    <SavedStorePreview resolveHistorical={historicalLookup} {locale} {gameImageMap} />
     <div class="summary-strip">
       <div><strong>{overall.total.toLocaleString(locale)}</strong><span>参照データ</span></div>
       <div><strong>{overall.owned.toLocaleString(locale)} / {overall.total.toLocaleString(locale)}</strong><span>所持・解放の手動記録 / 参照件数</span></div>
@@ -274,28 +308,35 @@
     </div>
     <div class="collection-workspace">
       <div class="workspace-top">
-        <div class="mode-tabs" role="group" aria-label="Collectionの分類">
-          <button type="button" class:active={mode==='category'} aria-pressed={mode==='category'} on:click={()=>chooseMode('category')}>Category</button>
-          <button type="button" class:active={mode==='world'} aria-pressed={mode==='world'} on:click={()=>chooseMode('world')}>World</button>
-          <button type="button" class:active={mode==='universe'} aria-pressed={mode==='universe'} on:click={()=>chooseMode('universe')}>Universe</button>
-        </div>
         <div class="toolbar">
           <label class="search-box">
             <span aria-hidden="true">⌕</span>
-            <input type="search" aria-label="8言語のアイテム名とIDで検索" bind:value={search} on:input={()=>{visible=72;selectedItemId=null;selectedIds=[];}} placeholder="アイテム名・Item IDを検索"/>
+            <input type="search" aria-label="8言語のアイテム名で検索" bind:value={search} on:input={resetView} placeholder="アイテム名を検索"/>
           </label>
           <button type="button" class="subtle-button" aria-expanded={filtersOpen} on:click={()=>filtersOpen=!filtersOpen}>フィルター {filtersOpen?'▴':'▾'}</button>
         </div>
       </div>
       {#if filtersOpen}
         <div class="filter-panel">
+          <label class="filter-label">ワールド
+            <select aria-label="ワールドで絞り込み" bind:value={worldFilter} on:change={resetView}>
+              <option value="">すべて</option>
+              {#each runtime?.metadata.worlds??[] as id}<option value={id}>{labelWorld(id)}</option>{/each}
+            </select>
+          </label>
+          <label class="filter-label">ユニバース
+            <select aria-label="ユニバースで絞り込み" bind:value={universeFilter} on:change={resetView}>
+              <option value="">すべて</option>
+              {#each runtime?.metadata.universes??[] as id}<option value={id}>{labelUniverse(id)}</option>{/each}
+            </select>
+          </label>
           <fieldset><legend>収集状況（手動記録）</legend>
             {#each [{id:'all',name:'すべて'},{id:'owned',name:'所持 / 解放'},{id:'missing',name:'未所持'}] as option}
-              <button type="button" class:chosen={status===option.id} aria-pressed={status===option.id} on:click={()=>{status=option.id as typeof status;visible=72;selectedIds=[];}}>{option.name}</button>
+              <button type="button" class:chosen={status===option.id} aria-pressed={status===option.id} on:click={()=>{status=option.id as typeof status;resetView();}}>{option.name}</button>
             {/each}
           </fieldset>
           <label class="filter-label">追加コンテンツ
-            <select bind:value={expansion} on:change={()=>{visible=72;selectedIds=[];}}>
+            <select bind:value={expansion} on:change={resetView}>
               <option value="">すべて</option>
               {#each index.e as id}<option value={id}>{id}</option>{/each}
             </select>
@@ -308,11 +349,11 @@
           {#if isBrowsing}
             <div class="results-heading">
               <div class="breadcrumbs">
-                <button type="button" on:click={clearScope}>{mode==='category'?'Categories':mode==='world'?'Worlds':'Universes'}</button>
+                <button type="button" on:click={clearScope}>Categories</button>
                 {#if selected}<span> / {selectionLabel}</span>{/if}
               </div>
               <div class="result-actions">
-                <span class="result-count">{filtered.length.toLocaleString(locale)} 件{#if selected} · 所持記録 {(facets.find((facet:any)=>facet.id===selected)?.owned??0).toLocaleString(locale)} / {(facets.find((facet:any)=>facet.id===selected)?.total??0).toLocaleString(locale)}{/if}</span>
+                <span class="result-count">{totalMatches.toLocaleString(locale)} 件{#if selected} · 所持記録 {(facets.find((facet:any)=>facet.id===selected)?.owned??0).toLocaleString(locale)} / {(facets.find((facet:any)=>facet.id===selected)?.total??0).toLocaleString(locale)}{/if}</span>
                 <button type="button" class="subtle-button" disabled={Boolean(storeError)} aria-pressed={selectionMode}
                   on:click={()=>{selectionMode=!selectionMode;selectedIds=[];selectedItemId=null;}}>{selectionMode?'選択を終了':'複数選択'}</button>
               </div>
@@ -327,11 +368,11 @@
                 <button type="button" on:click={()=>applyBulk(null)} disabled={!selectedIds.length}>未記録</button>
               </div>
             {/if}
-            {#if !filtered.length}
+            {#if !totalMatches}
               <div class="empty-panel">条件に一致するアイテムはありません。未記録のアイテムは「未所持」として扱いません。</div>
             {:else}
               {#each groupedItems as group (group.id)}
-                {#if !selected || search.trim() || mode!=='category'}
+                {#if !selected || search.trim()}
                   <h3 class="result-group-title">{categoryLabel(locale,group.id)} <span>{group.items.length}</span></h3>
                 {/if}
                 <div class="items-grid">
@@ -355,20 +396,20 @@
                   {/each}
                 </div>
               {/each}
-              {#if visible<filtered.length}
-                <button class="more-button" type="button" on:click={()=>visible+=72}>さらに表示（残り {(filtered.length-visible).toLocaleString(locale)} 件）</button>
+              {#if visible<totalMatches}
+                <div class="more-button" use:observeMore aria-label="スクロールで続きを自動読み込み">読み込み中…</div>
               {/if}
             {/if}
           {:else}
             <div class="section-lead">
-              <h2>{mode==='category'?'カテゴリから探す':mode==='world'?'ワールドから探す':'ユニバースから探す'}</h2>
+              <h2>カテゴリから探す</h2>
               <p>カテゴリを選ぶと、登録されているアイテムを確認できます。</p>
             </div>
             <div class="facet-grid">
               {#each facets as facet (facet.id)}
                 <button type="button" class="facet-card" disabled={facet.total===0} on:click={()=>chooseFacet(facet.id)}>
                   <span class="facet-flourish" aria-hidden="true">✧</span>
-                  <strong>{facet.label}</strong>
+                  <strong>{categoryLabel(locale,facet.id)}</strong>
                   {#if facet.total>0}
                     <span>{facet.total.toLocaleString(locale)} items</span>
                     <small aria-label="手動所持記録数／対象総数">{facet.owned.toLocaleString(locale)} / {facet.total.toLocaleString(locale)} 所持記録</small>
@@ -385,7 +426,7 @@
             <div class="inspector-heading"><span>ITEM DETAILS</span><button type="button" bind:this={inspectorClose} on:click={closeItem} aria-label="詳細を閉じる">×</button></div>
             <div class="inspector-art"><ItemArtwork itemId={selectedItem.itemId} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large /></div>
             <h2>{selectedItem.label}</h2>
-            <p class="inspector-meta">{categoryLabel(locale,selectedItem.family)} · #{selectedItem.itemId}</p>
+            <p class="inspector-meta">{categoryLabel(locale,selectedItem.family)}</p>
             <div class="inspector-section"><h3>分類</h3>
               <dl>
                 <dt>個人状態の種類</dt><dd>{terminology[selectedItem.stateSemantic]??selectedItem.stateSemantic}</dd>

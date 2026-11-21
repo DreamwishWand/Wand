@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { validateCollectionRuntimeIndex, decodeCollectionRecord } from '../src/lib/collection/catalog.mjs';
-import { CATEGORY_ORDER } from '../src/lib/collection/taxonomy.mjs';
 
 const root = new URL('../static/ddv/collection/v1.25/', import.meta.url);
 
@@ -32,5 +31,5 @@ test('the complete v1.25 reference corpus matches its own immutable manifest', a
   assert.equal(count,index.n);
   assert.equal(count,12552);
   assert.ok(families.has('Furniture'));
-  assert.equal(CATEGORY_ORDER.filter(name=>families.has(name)).length,26);
+  assert.equal(families.size,26);
 });
