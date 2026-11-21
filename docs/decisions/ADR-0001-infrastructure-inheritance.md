@@ -35,7 +35,7 @@ The owner approved precisely two lossless WebP variants per decoded image:
 | `thumbnail` | Collection, Explore, list/search grids | Longest side ≤128px, resize with quality filtering, no upscaling |
 | `original` | Item details | Exact native decoded pixel width/height, no resizing |
 
-Steam v1.26.2 SRC-01/SRC-04 processing reported 13,202 mapped Item IDs and 9,542 native image GUIDs. The final private v2 256-shard index was independently inspected as metadata. V2 source manifests and generated files remain **private**. Actual WebP byte-level validation and production delivery have separate release gates.
+Steam v1.26.2 SRC-01/SRC-04 processing reported 13,202 mapped Item IDs and 9,542 native image GUIDs. The final private v2 256-shard index was independently inspected as metadata. V2 source manifests and generated files remain **private**. Actual WebP byte-level validation and production delivery have separate release gates. **Update (2026-11-22): local WebP byte-level verification passed; production delivery remains unperformed.**
 
 ### R2 delivery boundary
 
@@ -56,3 +56,16 @@ Keep the **agreed product/security/storage principles**; reimplement delivery, t
 2. Build an idempotent R2 sync tool that supports dry-run, SHA-backed incremental upload, prefix/version staging, report-only mode, and safe rollback. Do not perform a production upload in this ADR.
 3. Prepare a separate publish-gated media manifest (Item ID → thumbnail/original hashed objects) that strips private source fields and is activated only after rights review.
 4. Implement the Cloudflare production deployment and CDN media reader independently from the legacy workflow; make the cutover reversible.
+
+## SRC-04 Steam v1.26.2 — completed local verification (2026-11-22)
+
+Local execution report `wand.src04.r2-stage@1` (reviewed from owner-supplied output) confirmed `complete=true`, `status=verified_local`:
+
+- `filesVerified=19054`: 9,527 thumbnails and 9,527 native originals
+- Verified total: `854529084` bytes (~814.94 MiB)
+- Item/identity coverage: 13,202 Item IDs, 9,542 unique GUIDs; 256 verified shards
+- Exact v2 private manifest SHA-256: `fd2d07d541293a19ac7b845e996ccf4e3af41270c79daaa56b2ff74316a45e9f`
+- Local auditor checked SHA-256, WebP RIFF VP8L losslessness, and decoded dimensions; `sourceFilesModified=false`
+- **No R2 transfer**, DNS/CDN changes, or public release: `publicationApproved=false`, `uploadedToPublic=false`
+
+Treat image extraction, v2 indexing, and local byte verification as **finished for Steam v1.26.2**. Do not rerun these expensive tasks unless the inputs change or new evidence indicates a defect. Remaining step: provision/confirm an actual **private** R2 bucket and perform an explicit remote plan, then separately authorize an upload.
