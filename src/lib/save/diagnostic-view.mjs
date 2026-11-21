@@ -1,7 +1,7 @@
 /** DB-05 browser presentation adapter. No source values or private ID keys escape. */
 import {
   getSaveReferenceRelations, probeSaveReferences, probeUnifiedSaveStructure,
-  inspectDecodedSave
+  inspectDecodedSave, getUnifiedSaveShapeCatalog
 } from './registry.mjs';
 
 export const SAVE_DIAGNOSTIC_VIEW_CONTRACT = 'wand.db05.browser-readonly-diagnostics@1';
@@ -111,5 +111,85 @@ export function makeSaveCatalogAuditView(audit) {
     sourceJointlyVerified: false,
     families, privateIdsIncluded: false, privateValuesIncluded: false,
     writerAuthorized: false, exportAuthorized: false
+  });
+}
+
+/**
+ * Treat Worker messages as untrusted structured-clone results. Reconstruct
+ * only locally enumerated IDs, labels, statuses and bounded integer counts.
+ * Unknown fields, raw save paths and user data cannot reach Svelte.
+ */
+export function sanitizeSaveDiagnosticView(input) {
+  const fail = () => { throw new TypeError('DB05_DIAGNOSTIC_WORKER_REPLY_INVALID'); };
+  const obj = value => value !== null && typeof value === 'object' &&
+    !Array.isArray(value);
+  const number = value => {
+    if (!Number.isSafeInteger(value) || value < 0) fail();
+    return value;
+  };
+  const refStatuses = new Set([
+    'observed_consistent','observed_anomaly','not_observed',
+    'insufficient_evidence','sampled_inconclusive'
+  ]);
+  const globalStatuses = new Set(['observed_consistent','observed_anomaly','inconclusive']);
+  const shapeStatuses = new Set(['shape_candidate','sampled_candidate','shape_conflict','not_observed']);
+  const source = getSaveReferenceRelations();
+  const shape = getUnifiedSaveShapeCatalog();
+  if (!obj(input) || input.contract !== SAVE_DIAGNOSTIC_VIEW_CONTRACT ||
+      input.rootValid !== true || input.knownPublicTemplates !== shape.publicTemplateCount ||
+      input.writerAuthorized !== false || input.exportAuthorized !== false ||
+      input.privateIdsIncluded !== false || input.privateValuesIncluded !== false ||
+      !globalStatuses.has(input.referenceStatus) ||
+      !Array.isArray(input.referenceRules) ||
+      input.referenceRules.length !== source.rules.length ||
+      !Array.isArray(input.shapeDomains) ||
+      input.shapeDomains.length !== shape.domains.length) fail();
+  const refs = new Map();
+  for (const row of input.referenceRules) {
+    if (!obj(row) || !source.rules.some(rule => rule.id === row.id) ||
+        refs.has(row.id) || !refStatuses.has(row.status) ||
+        typeof row.sampled !== 'boolean') fail();
+    refs.set(row.id, row);
+  }
+  const referenceRules = frozen(source.rules.map(rule => {
+    const row=refs.get(rule.id);
+    if (!row) fail();
+    return frozen({
+      id:rule.id, label: labels[rule.id] ?? '参照整合性',
+      status:row.status,
+      observed:number(row.observed),resolved:number(row.resolved),
+      unresolved:number(row.unresolved),missing:number(row.missing),
+      malformed:number(row.malformed),typeIssues:number(row.typeIssues),
+      sampled:row.sampled
+    });
+  }));
+  const domains = new Map();
+  for (const row of input.shapeDomains) {
+    if (!obj(row) || !shape.domains.includes(row.domain) ||
+        domains.has(row.domain) || !shapeStatuses.has(row.status) ||
+        typeof row.sampled !== 'boolean') fail();
+    domains.set(row.domain,row);
+  }
+  const shapeDomains = frozen(shape.domains.map(domain => {
+    const row=domains.get(domain);
+    if (!row) fail();
+    const registered=number(row.registered), observed=number(row.observed);
+    const conflicting=number(row.conflicting);
+    if (observed > registered || conflicting > registered ||
+        observed+conflicting > registered) fail();
+    return frozen({
+      domain, status:row.status, registered, observed, conflicting, sampled:row.sampled
+    });
+  }));
+  return frozen({
+    contract:SAVE_DIAGNOSTIC_VIEW_CONTRACT,
+    referenceStatus:input.referenceStatus,
+    rootValid:true,
+    knownPublicTemplates:shape.publicTemplateCount,
+    referenceRules, shapeDomains,
+    privateIdsIncluded:false, privateValuesIncluded:false,
+    fullSchemaVerified:false, strictDecoderVerified:false,
+    referenceClosureVerified:false, ownershipVerified:false,
+    writerAuthorized:false, exportAuthorized:false
   });
 }

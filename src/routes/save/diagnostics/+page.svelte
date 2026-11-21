@@ -1,63 +1,120 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import SaveDiagnosticsPanel from '$lib/save/SaveDiagnosticsPanel.svelte';
-  import { makeSaveDiagnosticView } from '$lib/save/diagnostic-view.mjs';
+  import { sanitizeSaveDiagnosticView } from '$lib/save/diagnostic-view.mjs';
+  import type { SaveDiagnosticView } from '$lib/save/diagnostic-view.mjs';
 
-  // This developer-only route is intentionally not linked in site navigation.
-  // It cannot decode encrypted .profile files and must never be called an editor.
+  // Development-only route. The existing read-only P1G codec is JavaScript,
+  // NOT a new Rust/WASM Writer. No encrypted data is sent to page components.
   const MAX_JSON_BYTES = 128 * 1024 * 1024;
-  let decoded: unknown = null;
+  const MAX_ENCRYPTED_BYTES = 32 * 1024 * 1024;
+  let report: SaveDiagnosticView | null = null;
   let isReading = false;
   let errorMessage = '';
   let infoMessage = '';
   let fileInput: HTMLInputElement | null = null;
-  let serial = 0;
+  let activeWorker: Worker | null = null;
+  let requestSerial = 0;
+
+  function stopWorker() {
+    requestSerial++;
+    activeWorker?.terminate();
+    activeWorker = null;
+  }
+  onDestroy(stopWorker);
+
+  function clearDecoded() {
+    stopWorker();
+    report = null;
+    errorMessage = '';
+    infoMessage = 'ブラウザ内の診断結果を破棄しました。';
+    isReading = false;
+    if (fileInput) fileInput.value = '';
+  }
 
   async function onFileChange(event: Event) {
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
-    const current = ++serial;
-    decoded = null;
+    stopWorker();
+    report = null;
     errorMessage = '';
     infoMessage = '';
+    isReading = false;
     if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.json') || file.size === 0 || file.size > MAX_JSON_BYTES) {
-      errorMessage = '復号済みJSON形式（最大128 MiB）のみ読み込めます。暗号化された.profileは非対応です。';
+    const lower = file.name.toLowerCase();
+    const format = lower.endsWith('.json') ? 'json' :
+      /\.(profile|dat|bin)$/.test(lower) ? 'p1g' : null;
+    if (!format ||
+        (format === 'json' ? file.size < 1 || file.size > MAX_JSON_BYTES :
+         file.size < 16 || file.size > MAX_ENCRYPTED_BYTES || file.size % 16 !== 0)) {
+      errorMessage = '復号済みJSON（最大128 MiB）またはP1G暗号化セーブ（最大32 MiB）を選択してください。';
       input.value = '';
       return;
     }
+
+    const request = requestSerial;
     isReading = true;
+    let bytes: Uint8Array | null = null;
+    let worker: Worker | null = null;
     try {
-      const contents = await file.text();
-      if (current !== serial) return;
-      const candidate: unknown = JSON.parse(contents);
-      makeSaveDiagnosticView(candidate); // strict root preflight; never prints input.
-      if (current !== serial) return;
-      decoded = candidate;
-      infoMessage = '復号済みJSONをブラウザ内で読み込みました。データのアップロード、保存、書き換えは行っていません。';
+      bytes = new Uint8Array(await file.arrayBuffer());
+      if (request !== requestSerial) return;
+      worker = new Worker(
+        new URL('../../../lib/save/save-diagnostics.worker.mjs', import.meta.url),
+        { type: 'module' }
+      );
+      activeWorker = worker;
+      const ownedWorker = worker;
+      const finish = (message: unknown) => {
+        if (request !== requestSerial || activeWorker !== ownedWorker) return;
+        ownedWorker.terminate();
+        activeWorker = null;
+        isReading = false;
+        try {
+          const result = message as Record<string, unknown> | null;
+          const body = result?.result as Record<string, unknown> | null;
+          if (result?.kind !== 'result' ||
+              body?.kind !== 'save-diagnostics-summary' ||
+              body.contract !== 'wand.db05.local-save-worker@1' ||
+              body.format !== format ||
+              body.writerAuthorized !== false || body.exportAuthorized !== false) {
+            throw new TypeError('DB05_BAD_WORKER_RESULT');
+          }
+          report = sanitizeSaveDiagnosticView(body.summary);
+          infoMessage = format === 'p1g'
+            ? 'P1Gセーブを専用Worker内で復号・検査しました。画面には匿名化した結果だけを返しています。'
+            : 'JSONを専用Worker内で検査しました。画面には匿名化した結果だけを返しています。';
+        } catch {
+          report = null;
+          errorMessage = 'このセーブを診断できませんでした。元ファイルは変更していません。';
+        }
+      };
+      worker.onmessage = event => finish(event.data);
+      worker.onerror = event => { event.preventDefault(); finish({kind:'error'}); };
+      worker.onmessageerror = () => finish({kind:'error'});
+      // Transfer the sole file buffer to the Worker, which wipes it on exit.
+      worker.postMessage({
+        command: 'inspect-local-save-diagnostics', format, bytes
+      }, [bytes.buffer]);
+      bytes = null;
     } catch {
-      if (current === serial) {
-        decoded = null;
-        errorMessage = 'JSONの構造を読み取れませんでした。復号済みDDVセーブのGameInfo・Player・Worldが必要です。';
+      if (request === requestSerial) {
+        worker?.terminate();
+        activeWorker = null;
+        isReading = false;
+        report = null;
+        errorMessage = 'このセーブを診断できませんでした。元ファイルは変更していません。';
       }
     } finally {
-      if (current === serial) isReading = false;
+      if (bytes && bytes.byteLength) bytes.fill(0);
       input.value = '';
     }
-  }
-
-  function clearDecoded() {
-    ++serial;
-    decoded = null;
-    errorMessage = '';
-    infoMessage = 'ブラウザ内の診断対象を破棄しました。';
-    isReading = false;
-    if (fileInput) fileInput.value = '';
   }
 </script>
 
 <svelte:head>
   <title>Save Diagnostics (開発用) | Dreamwish Wand</title>
-  <meta name="description" content="Dreamwish Wand DB-05 private/local developer diagnostics for pre-decoded DDV save JSON. No save editing." />
+  <meta name="description" content="Dreamwish Wand DB-05 browser-local read-only diagnostics for DDV P1G or pre-decoded JSON. No save editing." />
   <meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
@@ -65,29 +122,29 @@
   <header>
     <div class="eyebrow">DEVELOPMENT · DB-05 SAVE</div>
     <h1>セーブ構造診断</h1>
-    <p>読み取り専用の開発者向け確認ページです。現時点では復号済みのJSONのみ対応します。暗号化されたセーブファイルの読み込み、編集、保存は実装していません。</p>
+    <p>読み取り専用の開発者向け確認ページです。暗号化P1Gセーブまたは復号済みJSONの診断に対応します。復号は専用Workerで行い、元ファイルの編集・保存は実装していません。</p>
   </header>
   <div class="local-picker">
     <div>
-      <h2>ローカルの復号済みJSONを読み込む</h2>
-      <p>ファイルを選択した端末のブラウザ内だけで処理します。元のファイルは変更されません。</p>
-      <p>通常のゲームセーブ（.profile）の直接読み込みには対応していません。</p>
+      <h2>ローカルのセーブを診断する</h2>
+      <p>ローカルの専用Workerで構造を検査します。セーブ本体は画面に渡さず、元のファイルも変更されません。</p>
+      <p>読み取り専用P1G Codecを再利用します。未対応形式やCodec検証失敗時は診断を停止します。Writerはありません。</p>
     </div>
     <label class="file-input-label">
-      復号済みJSONを選択
-      <input bind:this={fileInput} type="file" accept=".json,application/json"
-        on:change={onFileChange} disabled={isReading} aria-label="復号済みJSONを選択" />
+      DDVセーブを選択
+      <input bind:this={fileInput} type="file" accept=".profile,.dat,.bin,.json,application/json,application/octet-stream"
+        on:change={onFileChange} disabled={isReading} aria-label="DDVセーブまたは復号済みJSONを選択" />
     </label>
     <button class="clear-button" type="button" on:click={clearDecoded}
-      disabled={decoded === null && !isReading}>読み込み内容を破棄</button>
+      disabled={report === null && !isReading}>読み込み内容を破棄</button>
   </div>
   {#if isReading}<p class="notice" role="status">ブラウザ内で構造を確認しています…</p>{/if}
   {#if errorMessage}<p class="error" role="alert">{errorMessage}</p>{/if}
   {#if infoMessage}<p class="notice" role="status">{infoMessage}</p>{/if}
-  {#if decoded !== null}
-    <SaveDiagnosticsPanel {decoded} />
+  {#if report !== null}
+    <SaveDiagnosticsPanel {report} />
   {:else}
-    <div class="empty-state">復号済みのセーブデータがまだ指定されていません。診断結果はここに表示されます。</div>
+    <div class="empty-state">セーブファイルがまだ指定されていません。匿名化した診断結果はここに表示されます。</div>
   {/if}
   <p class="disclaimer">本機能は開発中の構造検証専用です。正式なSave Editorではありません。完全な互換性、所有権、書き換えの安全性は判定しません。</p>
 </section>

@@ -62,3 +62,5 @@ export interface SaveDiagnosticCatalogView {
 export const SAVE_DIAGNOSTIC_VIEW_CONTRACT: 'wand.db05.browser-readonly-diagnostics@1';
 export function makeSaveDiagnosticView(decoded: unknown): SaveDiagnosticView;
 export function makeSaveCatalogAuditView(audit: unknown): SaveDiagnosticCatalogView;
+/** Strictly validate and reconstruct a structured-clone reply from a local save Worker. */
+export function sanitizeSaveDiagnosticView(input: unknown): SaveDiagnosticView;
