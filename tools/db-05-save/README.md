@@ -93,3 +93,24 @@ if (diagnostic.status === 'structural_conflict') {
 }
 ```
 
+## SRC-06 private redacted witness bridge
+
+The DB-05 ingest tool produces **private** `wand.db05.ingest@1` summaries with known public path templates and redacted `publicWitnesses` types. The new `src/lib/save/redacted-witness.mjs` compares two such summaries, without requiring raw save bytes or handing private source data to the browser:
+
+```js
+import { compareRedactedSaveWitnesses } from './src/lib/save/redacted-witness.mjs';
+const diagnostic = compareRedactedSaveWitnesses(privateSummaryA, privateSummaryB);
+```
+
+It accepts only the sanitized DB-05 ingest envelope, rejects unknown field paths, unsanitized numeric map keys, duplicate fields, invalid JSON type labels and raw SRC-06 scanner reports. It never serializes user values, unknown field names or source paths. Game version, Build ID and platform are **not compatibility gates**. It classifies observed type conflicts, additional/omitted known witnesses, numeric-kind ambiguity and insufficient coverage independently by domain.
+
+A private local CLI consumes **only the two redacted ingest reports** and writes a new JSON report in a private directory. For Windows PowerShell, once genuine strictly decoded structural evidence exists, a typical sequence is:
+
+```powershell
+py -3 tools/db-05-save/ingest.py --structure "C:\\Private\\src06-old\\save-structure.json" --out "$env:LOCALAPPDATA\\WandDb05\\old"
+py -3 tools/db-05-save/ingest.py --structure "C:\\Private\\src06-new\\save-structure.json" --out "$env:LOCALAPPDATA\\WandDb05\\new"
+node tools/db-05-save/compare.mjs --previous "$env:LOCALAPPDATA\\WandDb05\\old\\db05-private-summary.json" --current "$env:LOCALAPPDATA\\WandDb05\\new\\db05-private-summary.json" --out "$env:LOCALAPPDATA\\WandDb05\\comparison.json"
+```
+
+The `--out` file must not already exist; output within a Git repository is rejected, and no input is modified. Keep all reports private because even redacted structural witnesses can be sensitive. The current SRC-06 Drive output folder has no actual reports, so **no real Steam 1.26.2 or Switch 643 structural compatibility conclusion is made** by this code. Ingest evidence is from a lexical scanner, not the strict Rust Codec. Thus `authoritative=false`, `complete=false`, and all Writer, ownership mutation, export and original-overwrite authorizations remain false.
+
