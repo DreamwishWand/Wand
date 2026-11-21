@@ -65,7 +65,23 @@ function validateFootprint(footprint) {
   if (footprint === null) return;
   if (!isRecord(footprint) || !Number.isInteger(footprint.sizeX) || !Number.isInteger(footprint.sizeY) ||
       footprint.sizeX < 1 || footprint.sizeY < 1 || footprint.sizeX > 256 || footprint.sizeY > 256 ||
-      footprint.sizeX * footprint.sizeY > 16384 || !Array.isArray(footprint.layerValues) ||
+      footprint.sizeX * footprint.sizeY > 16384 ||
+      (footprint.strideOverride !== undefined &&
+       footprint.strideOverride !== null &&
+       (!Number.isInteger(footprint.strideOverride) ||
+        footprint.strideOverride < -2147483648 ||
+        footprint.strideOverride > 2147483647)) ||
+      (footprint.strideOverrideSourceVerified !== undefined &&
+       (typeof footprint.strideOverrideSourceVerified !== 'boolean' ||
+        (footprint.strideOverrideSourceVerified &&
+         !Number.isInteger(footprint.strideOverride)) ||
+        (!footprint.strideOverrideSourceVerified &&
+         footprint.strideOverride != null))) ||
+      (footprint.strideOverridePlacementSemanticsVerified !== undefined &&
+       footprint.strideOverridePlacementSemanticsVerified !== false) ||
+      (footprint.strideOverrideSourceVerified === true &&
+       footprint.nativeWireFields?.strideOverride !== '6.5') ||
+      !Array.isArray(footprint.layerValues) ||
       footprint.layerValues.length !== footprint.sizeX * footprint.sizeY ||
       !footprint.layerValues.every(n => Number.isSafeInteger(n) && n >= 0 && n <= 4294967295) ||
       footprint.cellIndexToXYVerified !== false || footprint.layerMaskSemanticsVerified !== false) {
@@ -115,6 +131,12 @@ export function getNativeFootprint(catalog, itemId) {
     sizeX: record.footprint.sizeX, sizeY: record.footprint.sizeY,
     layerValues: [...record.footprint.layerValues],
     acceptedFloorTypesFlag: record.footprint.acceptedFloorTypesFlag,
+    strideOverride: record.footprint.strideOverride ?? null,
+    strideOverrideSourceVerified:
+      record.footprint.strideOverrideSourceVerified === true,
+    strideOverrideSourceWireField:
+      record.footprint.strideOverrideSourceVerified === true ? '6.5' : null,
+    strideOverridePlacementSemanticsVerified: false,
     cellIndexToXYVerified: false, layerMaskSemanticsVerified: false,
   };
 }
