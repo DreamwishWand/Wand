@@ -1,5 +1,15 @@
 name: DB-05 Save schema contract
 on:
+  push:
+    branches: [db-05-save-registry-readonly-20261121]
+    paths:
+      - 'data/ddv/save/**'
+      - 'src/lib/save/**'
+      - 'crates/ddv-save-schema/**'
+      - 'tools/db-05-save/**'
+      - 'tests/save-schema.test.mjs'
+      - 'tests/save-db00-join.test.mjs'
+      - '.github/workflows/db05-save.yml'
   pull_request:
     paths:
       - 'data/ddv/save/**'
