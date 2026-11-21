@@ -228,6 +228,49 @@ test('source-packed native floor histogram is an exact preview-only legend', () 
     'GridData/Villages/Meadow.json').status, 'unresolved_native_packing');
 });
 
+test('browser terrain histogram detects same-total falsification against original packed bytes', () => {
+  const data = fixture();
+  const room = nativeRoomGrid();
+  // The overall native grid size remains 192, so a sum-only check would pass.
+  room.nativePaletteIndexCellCounts = [0, 51, 141];
+  data.grids.push(room);
+  const catalog = createWorldCatalog(data);
+  assert.equal(getNativeTerrainTile(catalog, room.gridId, 0, 0).nativeValue, 3072);
+  assert.throws(() => getNativeTerrainDistribution(catalog, room.gridId),
+    /histogram mismatches packed source bytes/);
+});
+
+test('browser terrain rejects invalid source palette symbols outside the requested window', () => {
+  const data = fixture();
+  const room = nativeRoomGrid();
+  const bytes = Buffer.from(room.compactedFloorTypesBase64, 'base64');
+  // Original room has three palette entries (0,1,2): native symbol 3
+  // must never be silently interpreted as a valid terrain mask.
+  bytes[bytes.length - 1] = 0xff;
+  room.compactedFloorTypesBase64 = bytes.toString('base64');
+  data.grids.push(room);
+  const catalog = createWorldCatalog(data);
+  assert.throws(() => getNativeTerrainTile(catalog, room.gridId, 5, 5),
+    /palette index is invalid/);
+  assert.throws(() => getNativeTerrainWindow(catalog, room.gridId,
+    { x: 0, y: 0, width: 1, height: 1 }), /palette index is invalid/);
+});
+
+test('browser terrain verifies packed Base64 size before decoding large or padded inputs', () => {
+  const bad = fixture();
+  const room = nativeRoomGrid();
+  room.compactedFloorTypesBase64 += 'AAAA';
+  bad.grids.push(room);
+  assert.throws(() => getNativeTerrainTile(createWorldCatalog(bad), room.gridId, 0, 0),
+    /Native compacted grid length mismatch/);
+  const missing = fixture();
+  const badCount = nativeRoomGrid();
+  badCount.nativeCompactedByteCount = null;
+  missing.grids.push(badCount);
+  assert.throws(() => getNativeTerrainTile(createWorldCatalog(missing),
+    badCount.gridId, 0, 0), /Native compacted grid length mismatch/);
+});
+
 test('histogram metadata missing or inconsistent cannot silently claim valid geometry', () => {
   const absent = fixture();
   const noHistogram = nativeRoomGrid();

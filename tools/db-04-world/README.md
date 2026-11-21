@@ -108,7 +108,18 @@ The CLI verifies the manifest and pins the original Steam 1.26.1 Room, Meadow an
 
 The browser adapter supports `getNativeTerrainTile(catalog, gridId, x, y)` and `getNativeTerrainWindow(catalog, gridId, { x, y, width, height })` (each dimension at most 256). The returned `rows` are Y-major for display, **but bytes use X-major layout**. It explicitly returns `status: source_corroborated_grid_local_preview`, `nativeCodeBodyVerified: false`, `worldCoordinatesVerified: false`, and `placementLegalityVerified: false`. Unsupported palettes or missing source data return an unresolved result, never a guessed value.
 
-The Python extractor also attaches non-destructive `terrainDecoding` metadata to private `grids.json`. `verify_bundle.py` independently recomputes this metadata from source-derived Base64 bytes. For native `GridData` values not yet independently validated (such as 3-bit+ palette formats), decoding remains disabled.
+The Python extractor also attaches non-destructive `terrainDecoding` metadata to private `grids.json`. `verify_bundle.py` independently recomputes this metadata from source-derived Base64 bytes.
+
+The browser adapter now also validates **all** compacted palette indices
+once per grid, including those outside the requested viewport, and recomputes
+palette-index cell counts from source bytes before presenting
+`getNativeTerrainDistribution()`. A forged histogram with the correct total
+but wrong per-index counts is rejected. Packed Base64 size is checked *before*
+decoding. This provides browser-side consistency checks even when a caller has
+not used the private `verify_bundle.py` CLI; it is still not a cryptographic
+source-authenticity check or native machine-code decoder verification.
+
+ For native `GridData` values not yet independently validated (such as 3-bit+ palette formats), decoding remains disabled.
 
 ## Source-linked default-village 2D viewports (read-only)
 

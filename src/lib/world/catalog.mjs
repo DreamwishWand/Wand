@@ -206,6 +206,29 @@ export function getLayoutGridReferences(catalog, layoutId) {
 // decoder only for 1/2-bit packed palettes; this is NOT a placement checker.
 const decodedGridCache = new WeakMap();
 
+// Verify every source-packed palette symbol once per grid; do not trust
+// user-provided JSON summaries merely because their totals are correct.
+// This is a byte-level consistency check, not native machine-code proof.
+function countNativePackedPaletteIndices(packed, bits, cellCount, paletteLength) {
+  const counts = Array(paletteLength).fill(0);
+  const cellsPerByte = 8 / bits;
+  const mask = (1 << bits) - 1;
+  let seen = 0;
+  for (let i = 0; i < packed.length && seen < cellCount; i++) {
+    const count = Math.min(cellsPerByte, cellCount - seen);
+    for (let pos = 0; pos < count; pos++) {
+      const index = (packed[i] >> (8 - bits * (pos + 1))) & mask;
+      if (index >= paletteLength) {
+        throw new TypeError('Native compacted grid palette index is invalid');
+      }
+      counts[index]++;
+    }
+    seen += count;
+  }
+  if (seen !== cellCount) throw new TypeError('Incomplete native packed terrain');
+  return counts;
+}
+
 function packedGridForPreview(catalog, gridId) {
   const grid = catalog.grids.get(String(gridId));
   if (!grid) return { status: 'unknown_grid' };
@@ -235,20 +258,28 @@ function packedGridForPreview(catalog, gridId) {
     gridCache = new Map();
     decodedGridCache.set(catalog, gridCache);
   }
-  if (gridCache.has(gridId)) return gridCache.get(gridId);
+  const key = String(gridId);
+  if (gridCache.has(key)) return gridCache.get(key);
+  const expectedBytes = Math.ceil(sx * sy * bits / 8);
+  const expectedBase64Length = Math.ceil(expectedBytes / 3) * 4;
+  if (grid.compactedFloorTypesBase64.length !== expectedBase64Length ||
+      expectedBytes !== grid.nativeCompactedByteCount) {
+    throw new TypeError('Native compacted grid length mismatch');
+  }
   const text = atob(grid.compactedFloorTypesBase64);
   const packed = Uint8Array.from(text, char => char.charCodeAt(0));
-  if (packed.length !== Math.ceil(sx * sy * bits / 8) ||
-      packed.length !== grid.nativeCompactedByteCount) {
+  if (packed.length !== expectedBytes) {
     throw new TypeError('Native compacted grid length mismatch');
   }
   const remaining = (sx * sy * bits) % 8;
   if (remaining && (packed[packed.length - 1] & ((1 << (8 - remaining)) - 1))) {
     throw new TypeError('Native compacted grid padding mismatch');
   }
+  const observedCounts = countNativePackedPaletteIndices(
+    packed, bits, sx * sy, palette.length);
   const entry = { sizeX: sx, sizeY: sy, palette: [...palette], bits,
-    packed, evidence: evidence.sampleBasedEncodingEvidence ?? null };
-  gridCache.set(String(gridId), entry);
+    packed, observedCounts, evidence: evidence.sampleBasedEncodingEvidence ?? null };
+  gridCache.set(key, entry);
   return entry;
 }
 
@@ -330,6 +361,12 @@ export function getNativeTerrainDistribution(catalog, gridId) {
       sx * sy > 16777216 || !counts.every(n => Number.isSafeInteger(n) && n >= 0) ||
       counts.reduce((a, b) => a + b, 0) !== sx * sy) {
     throw new TypeError('Invalid native terrain histogram integrity');
+  }
+  const source = packedGridForPreview(catalog, gridId);
+  if (source.status) return { status: source.status };
+  if (source.observedCounts.length !== counts.length ||
+      counts.some((count, index) => count !== source.observedCounts[index])) {
+    throw new TypeError('Native terrain histogram mismatches packed source bytes');
   }
   return {
     status: 'source_corroborated_grid_local_summary',
