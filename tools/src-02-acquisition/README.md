@@ -378,3 +378,61 @@ as retail prices. `publishable=false`: private game-source rows remain private.
 
 Use a separately trusted manifest pin when loading the bundle; do not present
 candidate completeness, shop stock or current pricing in Guide or Collection.
+
+## Read-only saved stall ShopData evidence (DB-02 / DB-05 bridge)
+
+`src/lib/acquisition/stall-save.mjs` exports
+`decodeStallDataEvidence(bytes)` and `inspectSavedStallShop(db, stallId, bytes)`.
+The **input is an already extracted native `Definitions.Activities.StallData`
+protobuf submessage**, not a full save. DB-02 cannot decrypt, locate, decode,
+serialize, edit or re-encode the original Steam or Switch save. A separately
+validated DB-05/SRC-06 Codec must identify a stall and extract its exact
+submessage before calling this read-only utility. The native field map comes
+from the owner-held **Steam v1.26.1 IL2CPP** dump; the format's compatibility
+with Steam v1.26.2 or another build has **not yet been established by a genuine
+save fixture**. The current integration is therefore a source-typed candidate
+with synthetic tests, not a production-ready reader for arbitrary saves.
+
+Named native field contracts:
+
+- `Definitions.Activities.StallData.ShopData = 2` (length-delimited)
+- `Definitions.Activities.ShopData.LastRefresh = 1` (Timestamp),
+  `NumRefresh = 2` (int32), `Slots = 3` (repeated ShopSlot), `Seed = 4` (int32)
+- `Definitions.Activities.ShopSlot.SlotId = 1` (int32), `Item = 2`
+  (`ItemAmount`), `MaxAmount = 3` (int32), `Regen = 4` (Duration)
+- `ItemAmount.Id = 1`, `ItemAmount.Amount = 2`; native `Infinite = -1`
+
+**Do not confuse** this `ShopData` with the separate
+`Meta.PlayerBoutique.ShopData`, whose field 2 is a list of Item IDs, or with
+`Definitions.Store.StoreData`, a global clothing/furniture store configuration.
+The saved `ShopData` contract does **not contain a product sale price**. Serialized
+`ItemAmount.Amount` and `ShopSlot.MaxAmount` are preserved with their exact
+field provenance but **not asserted as live stock**, and a timestamp is not
+proof that the shop is currently open, stocked or refreshed. The RNG seed is
+intentionally not exposed. Missing fields remain `null`; `-1` retains the
+native infinity sentinel without claiming unlimited current supply.
+
+Example (only after an independent Codec has validated the original save):
+
+```js
+import { inspectSavedStallShop } from './src/lib/acquisition/stall-save.mjs';
+const report = inspectSavedStallShop(verifiedPrivateDb02Database,
+  verifiedNativeStallId, independentlyExtractedStallDataBytes);
+// report.slots[].itemId / serializedItemAmount / staticCandidateListed
+// report.liveInventoryVerified === false
+// report.salePricesVerified === false
+// report.saveCodecVerified === false
+// report.writable === false; report.publishable === false
+```
+
+A static candidate match means only that this saved Item ID appears in the
+corresponding static slot's enumerated candidate set; it does **not** prove
+slot-ID-to-static-slot mapping or sale availability. A non-match is inconclusive
+because the static selection includes dynamic filters, conditional eligibility
+and potentially different game versions. Every returned object is immutable;
+input bytes are never retained or written. Malformed/truncated protobuf fields,
+noncanonical/overflowing varints, duplicate known scalars or slot IDs, and
+oversized submessages fail closed. Synthetic tests:
+`node --test tests/acquisition-stall-save.test.mjs`. Genuine save evidence,
+Codec/Writer proof, platform version compatibility and future sale-pricing
+sources are **not** part of this change.
