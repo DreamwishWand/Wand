@@ -106,7 +106,9 @@ def package_snapshot(snapshot: Path, output_zip: Path) -> dict:
                         h.update(block)
                 if h.hexdigest() != expected_hash:
                     raise ValueError(f"packaged output content mismatch: {name}")
-            archive.testzip()
+            damaged = archive.testzip()
+            if damaged is not None:
+                raise ValueError(f"private snapshot ZIP CRC mismatch: {damaged}")
         if output.exists():
             raise ValueError("destination ZIP created concurrently")
         os.replace(tmp, output)
