@@ -1,3 +1,5 @@
+export { createSaveAchievementBridge, getSaveAchievementLinkRules, SAVE_ACHIEVEMENT_JOIN_CONTRACT } from './achievement-links.mjs';
+export type { SaveAchievementBridge, SaveAchievementAudit, SaveAchievementSource } from './achievement-links.mjs';
 export { createSaveGuideProgressBridge, getSaveGuideLinkRules, SAVE_GUIDE_JOIN_CONTRACT } from './guide-links.mjs';
 export type { SaveGuideBridge, SaveGuideAudit, SaveGuideSource } from './guide-links.mjs';
 export { createSaveSourceCatalogBridge, getSaveCatalogLinkRules, SAVE_CROSS_CATALOG_CONTRACT, SAVE_CROSS_CATALOG_AUDIT_CONTRACT } from './catalog-links.mjs';
