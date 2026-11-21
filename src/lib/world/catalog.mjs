@@ -319,6 +319,138 @@ export function getNativeFootprintOrientationBaseDimensions(catalog, itemId, ori
     nativeOrientationBaseSizeVerified: true, sourceGameVersion: '1.26.1' };
 }
 
+/**
+ * Steam v1.26.1 original GridArea.TryGetGridLocalPosition:
+ * native entry RVA 0x3923BB0, source byte range through 0x3923D79,
+ * three original PE .pdata unwind fragments. At equal source/input
+ * tessellation factors, its 0/4/8/12 cardinal branches map an
+ * orientation-frame local position back into unrotated GridArea coordinates.
+ * This does NOT establish an actual GridObject world anchor or footprint
+ * occupancy: the current source snapshot does not contain its area ratio.
+ */
+function sourceCardinalGridAreaPosition(catalog, footprint, x, y, orientationCode) {
+  if (![x, y, orientationCode].every(Number.isInteger) ||
+      x < -2147483648 || x > 2147483647 ||
+      y < -2147483648 || y > 2147483647 ||
+      orientationCode < 0 || orientationCode > 15) {
+    throw new TypeError('Invalid original GridArea position/orientation');
+  }
+  const common = {
+    orientationCode, gridToAreaTessellationRatioAssumed: '1:1',
+    fullNativeTessellationScalingApplied: false,
+    gridObjectAnchorVerified: false,
+    occupancyPredicateVerified: false, placementLegalityVerified: false,
+  };
+  if (catalog.manifest.gameVersion !== '1.26.1') {
+    return {
+      ...common, status: 'native_cardinal_local_position_unverified_for_game_version',
+      nativeCardinalPositionTransformVerified: false,
+    };
+  }
+  if (![0, 4, 8, 12].includes(orientationCode)) {
+    return {
+      ...common, status: 'noncardinal_local_position_unresolved',
+      nativeCardinalPositionTransformVerified: false,
+    };
+  }
+  const sx = footprint.sizeX, sy = footprint.sizeY;
+  if (x < 0 || y < 0) {
+    return {
+      ...common, status: 'outside_original_gridarea',
+      nativeCardinalPositionTransformVerified: true, inside: false,
+    };
+  }
+  let localX, localY;
+  if (orientationCode === 0) {
+    localX = sx - 1 - x; localY = sy - 1 - y;
+  } else if (orientationCode === 4) {
+    localX = y; localY = sy - 1 - x;
+  } else if (orientationCode === 8) {
+    localX = x; localY = y;
+  } else {
+    localX = sx - 1 - y; localY = x;
+  }
+  if (localX < 0 || localY < 0 || localX >= sx || localY >= sy) {
+    return {
+      ...common, status: 'outside_original_gridarea',
+      nativeCardinalPositionTransformVerified: true, inside: false,
+    };
+  }
+  return {
+    ...common, status: 'source_correlated_cardinal_local_position',
+    nativeCardinalPositionTransformVerified: true,
+    inside: true,
+    originalLocalX: localX, originalLocalY: localY,
+    originalFlatIndex: localX * sy + localY,
+    positionBasis: 'unrotated_gridarea_local',
+  };
+}
+
+/** Source-indexed RAW layer value for a cardinal orientation-frame cell. */
+export function getNativeFootprintCardinalOrientedLayerAt(
+    catalog, itemId, x, y, orientationCode) {
+  const footprint = catalog.objects.get(idText(itemId))?.footprint;
+  if (!footprint) return null;
+  const position = sourceCardinalGridAreaPosition(
+    catalog, footprint, x, y, orientationCode);
+  if (position.inside !== true) return { itemId, ...position };
+  const nativeValue = footprint.layerValues[position.originalFlatIndex];
+  return {
+    itemId, x, y, ...position, nativeValue,
+    ...describeNativeLayerMask(nativeValue),
+    rawLayerValueNotVerifiedOccupancy: true,
+  };
+}
+
+/** Bounded Y-major RAW GridLayers matrix, with no anchor or collision claim. */
+export function getNativeFootprintCardinalOrientedWindow(
+    catalog, itemId, orientationCode, rect) {
+  const footprint = catalog.objects.get(idText(itemId))?.footprint;
+  if (!footprint) return null;
+  const initial = sourceCardinalGridAreaPosition(
+    catalog, footprint, 0, 0, orientationCode);
+  if (initial.nativeCardinalPositionTransformVerified !== true) {
+    return { itemId, ...initial };
+  }
+  if (!isRecord(rect)) throw new TypeError('Missing original oriented GridArea window');
+  const { x, y, width, height } = rect;
+  const originalX = footprint.sizeX, originalY = footprint.sizeY;
+  const swap = orientationCode === 4 || orientationCode === 12;
+  const sx = swap ? originalY : originalX;
+  const sy = swap ? originalX : originalY;
+  if (![x, y, width, height].every(Number.isInteger) ||
+      x < 0 || y < 0 || width < 1 || height < 1 ||
+      width > 256 || height > 256 || x + width > sx || y + height > sy) {
+    throw new TypeError('Original oriented GridArea window outside bounds');
+  }
+  const rows = [];
+  for (let yy = y; yy < y + height; yy++) {
+    const row = [];
+    for (let xx = x; xx < x + width; xx++) {
+      const position = sourceCardinalGridAreaPosition(
+        catalog, footprint, xx, yy, orientationCode);
+      if (position.inside !== true) {
+        throw new TypeError('Source cardinal layer coordinate unexpectedly outside');
+      }
+      row.push(footprint.layerValues[position.originalFlatIndex]);
+    }
+    rows.push(row);
+  }
+  return {
+    status: 'source_correlated_cardinal_oriented_gridarea_layers',
+    itemId, orientationCode,
+    x, y, width, height,
+    orientedSizeX: sx, orientedSizeY: sy,
+    rows, nativeCardinalPositionTransformVerified: true,
+    gridToAreaTessellationRatioAssumed: '1:1',
+    fullNativeTessellationScalingApplied: false,
+    rawLayerValuesNotOccupancy: true,
+    gridObjectAnchorVerified: false,
+    occupancyPredicateVerified: false,
+    placementLegalityVerified: false,
+  };
+}
+
 // Explicit "false" is a valid native restriction; missing flags are NOT permission.
 export function checkNativeEditRestriction(catalog, itemId, action) {
   const allowed = new Set(['canMove', 'canRotate', 'canBeRemoved', 'canBeSelected', 'canSwitchGrid']);

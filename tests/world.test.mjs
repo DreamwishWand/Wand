@@ -9,6 +9,8 @@ import {
   getNativeTerrainTile, getNativeTerrainWindow, getNativeTerrainDistribution,
   getNativeFootprintCandidateCells,
   getNativeFootprintLayerAt, getNativeFootprintLayerWindow,
+  getNativeFootprintCardinalOrientedLayerAt,
+  getNativeFootprintCardinalOrientedWindow,
   getNativeGridAreaRotatedVector, getNativeGridAreaUnrotatedVector,
   getNativeFootprintOrientationBaseDimensions,
   getNativeFootprintCardinalDimensions,
@@ -238,6 +240,92 @@ test('native vector rotation refuses to claim source proof on other game version
   assert.equal(rotated.x, undefined);
   assert.equal(rotated.rotatedGridAreaCellMappingVerified, false);
   assert.equal(rotated.placementLegalityVerified, false);
+});
+
+test('Steam 1.26.1 original GridArea cardinal local position gives exact raw oriented layers', () => {
+  const data = fixture();
+  data.manifest.gameVersion = '1.26.1';
+  data.objects[0].footprint = {
+    ...data.objects[0].footprint, sizeX: 3, sizeY: 2,
+    layerValues: [11, 12, 21, 22, 31, 32],
+  };
+  const catalog = createWorldCatalog(data);
+  const expected = new Map([
+    [0, [[32, 22, 12], [31, 21, 11]]],
+    [4, [[12, 11], [22, 21], [32, 31]]],
+    [8, [[11, 21, 31], [12, 22, 32]]],
+    [12, [[31, 32], [21, 22], [11, 12]]],
+  ]);
+  for (const [orientationCode, rows] of expected) {
+    const window = getNativeFootprintCardinalOrientedWindow(
+      catalog, 40000001, orientationCode,
+      {x: 0, y: 0, width: rows[0].length, height: rows.length});
+    assert.deepEqual(window.rows, rows);
+    assert.equal(window.nativeCardinalPositionTransformVerified, true);
+    assert.equal(window.gridToAreaTessellationRatioAssumed, '1:1');
+    assert.equal(window.fullNativeTessellationScalingApplied, false);
+    assert.equal(window.gridObjectAnchorVerified, false);
+    assert.equal(window.occupancyPredicateVerified, false);
+    assert.equal(window.placementLegalityVerified, false);
+    for (let y = 0; y < rows.length; y++) for (let x = 0; x < rows[0].length; x++) {
+      const layer = getNativeFootprintCardinalOrientedLayerAt(
+        catalog, 40000001, x, y, orientationCode);
+      assert.equal(layer.nativeValue, rows[y][x]);
+      assert.equal(layer.originalFlatIndex,
+        layer.originalLocalX * 2 + layer.originalLocalY);
+      assert.equal(layer.rawLayerValueNotVerifiedOccupancy, true);
+      assert.equal(layer.gridObjectAnchorVerified, false);
+    }
+    window.rows[0][0] = 999;
+    assert.equal(getNativeFootprintCardinalOrientedLayerAt(
+      catalog, 40000001, 0, 0, orientationCode).nativeValue, rows[0][0]);
+    const part = getNativeFootprintCardinalOrientedWindow(
+      catalog, 40000001, orientationCode, {x: 1, y: 0, width: 1, height: 1});
+    assert.deepEqual(part.rows, [[rows[0][1]]]);
+  }
+
+  assert.equal(getNativeFootprintCardinalOrientedLayerAt(
+    catalog, 1000, 0, 0, 8), null);
+  assert.equal(getNativeFootprintCardinalOrientedWindow(
+    catalog, 1000, 8, {x: 0, y: 0, width: 1, height: 1}), null);
+  assert.throws(() => getNativeFootprintCardinalOrientedLayerAt(
+    catalog, 40000001, 0, 0, 16), /position\/orientation/);
+  assert.throws(() => getNativeFootprintCardinalOrientedWindow(
+    catalog, 40000001, 4, {x: 0, y: 0, width: 3, height: 1}),
+    /outside bounds/);
+  const outside = getNativeFootprintCardinalOrientedLayerAt(
+    catalog, 40000001, -1, 0, 8);
+  assert.equal(outside.status, 'outside_original_gridarea');
+  assert.equal(outside.inside, false);
+  assert.equal(outside.nativeValue, undefined);
+  assert.equal(outside.placementLegalityVerified, false);
+});
+
+test('cardinal GridArea mapping does not assign unverified noncardinal or newer-version cells', () => {
+  const old = fixture();
+  old.manifest.gameVersion = '1.26.1';
+  const catalog = createWorldCatalog(old);
+  for (const code of [1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15]) {
+    const cell = getNativeFootprintCardinalOrientedLayerAt(
+      catalog, 40000001, 0, 0, code);
+    assert.equal(cell.status, 'noncardinal_local_position_unresolved');
+    assert.equal(cell.nativeValue, undefined);
+    assert.equal(cell.nativeCardinalPositionTransformVerified, false);
+    assert.equal(cell.placementLegalityVerified, false);
+    const view = getNativeFootprintCardinalOrientedWindow(
+      catalog, 40000001, code, {x: 0, y: 0, width: 1, height: 1});
+    assert.equal(view.rows, undefined);
+    assert.equal(view.nativeCardinalPositionTransformVerified, false);
+  }
+  const newer = createWorldCatalog(fixture()); // 1.26.2 not source verified
+  const result = getNativeFootprintCardinalOrientedLayerAt(
+    newer, 40000001, 0, 0, 8);
+  assert.equal(result.status, 'native_cardinal_local_position_unverified_for_game_version');
+  assert.equal(result.nativeValue, undefined);
+  assert.equal(result.nativeCardinalPositionTransformVerified, false);
+  const view = getNativeFootprintCardinalOrientedWindow(
+    newer, 40000001, 8, {x: 0, y: 0, width: 1, height: 1});
+  assert.equal(view.rows, undefined);
 });
 
 test('explicit restrictions deny but missing flags never authorize placement', () => {

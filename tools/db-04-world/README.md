@@ -515,6 +515,61 @@ Every related API reports
 `placementLegalityVerified: false`. Do **not** replace the unresolved
 footprint placement system with these vector operations alone.
 
+## Original GridArea cardinal oriented layer mapping (Steam v1.26.1)
+
+The original **GridArea.TryGetGridLocalPosition** (token 0x0600344A,
+RVA 0x3923BB0) converts an orientation-frame local position into the
+original unrotated GridArea coordinates. The native function comprises
+three contiguous PE64 unwind segments, starting at 0x3923BB0, 0x3923C12,
+and 0x3923C87 and ending at 0x3923D79. The first 98-byte unwind entry
+alone does **not** cover the native method. The private-source auditor
+gridarea_cardinal_local.py verifies the original DLL digest, all three
+source unwind segments and the whole contiguous 457-byte method span.
+
+For equal original area and caller tessellation factors (**1:1 only**),
+the original native cardinal cases map input (x,y) into source-local
+(originalX,originalY):
+
+| Orientation | Original X | Original Y |
+|---|---|---|
+| 0 | SizeX - 1 - x | SizeY - 1 - y |
+| 4 | y | SizeY - 1 - x |
+| 8 | x | y |
+| 12 | SizeX - 1 - y | x |
+
+The original GridArea.get_Item(x,y) uses X-major fixed32 layer indexing,
+originalX * SizeY + originalY. **Orientation 8 is the identity** of the
+original method and orientation 0 reverses both axes. Previous
+hypothesis-based orientation-0 identity projections are not native proof.
+
+Read-only browser APIs:
+- getNativeFootprintCardinalOrientedLayerAt(catalog,itemId,x,y,orientationCode)
+- getNativeFootprintCardinalOrientedWindow(catalog,itemId,orientationCode,{x,y,width,height})
+
+The window returns a Y-major matrix of **original raw GridLayers flags**,
+not inferred occupied cells. Only cardinal 0/4/8/12 are available. On
+other source versions, noncardinal rotations, or invalid positions the
+APIs fail closed without asserting native layer values. The corresponding
+Python research functions are cardinal_local_position and
+cardinal_layer_window. To rerun private source verification:
+
+~~~bash
+python tools/db-04-world/gridarea_cardinal_local.py --dll "/private/Steam/GameAssembly.dll"
+~~~
+
+The original function also scales coordinates by the caller and
+GridArea tessellation factors when these differ. The current source
+snapshot has not established each item's actual GridArea tessellation,
+so this API deliberately specializes only the **1:1 case** and
+reports that assumption. The returned nativeCardinalPositionTransformVerified
+is conditional on this ratio and the verified Steam v1.26.1 code.
+
+**Still unresolved:** the twelve noncardinal branches delegated to
+MoreRotationGetGridLocalPosition, actual per-object tessellation,
+GridObject anchor offsets, physical cell occupancy, collisions and
+placement legality. Occupancy and placement verification flags remain
+false, and none of these mappings authorize editing.
+
 ## Unverified cardinal footprint models — evidence-only diagnostic
 
 The original game's `Definitions.Grid.GridAreaData` exposes `SizeX`,
