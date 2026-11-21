@@ -461,6 +461,29 @@ class PipelineTests(unittest.TestCase):
         truncated = audit_footprint_candidates(self.out, max_objects=1)
         self.assertTrue(truncated["truncatedByMaxObjects"])
 
+    def test_uniform_single_cell_examples_cannot_discriminate_projection_models(self):
+        native_grid = (field(2, "GridData/Villages/Village04-Test.json") +
+            field(5, field(1, 1) + field(2, field(1, 1) +
+                                        field(2, 40000001))))
+        (self.base / "SceneLayouts/Village04/OneCellGrids.json").write_bytes(
+            field(1, field(2, native_grid)))
+        (self.base / "itemlist/Furniture.json").write_bytes(
+            indexed(40000000, 1, "TestBench",
+                    grid(1, 1, [68], floor=1024)))
+        (self.base / "GridData/Villages/Village04-Test.json").write_bytes(
+            field(1, 2) + field(2, 2) +
+            field(4, struct.pack("<II", 0, 1024)) +
+            field(5, bytes((0b11110000,))))
+        extract(self.game, self.out)
+        evidence = audit_footprint_candidates(self.out)
+        discrimination = evidence["crossHypothesisDiscrimination"]
+        self.assertEqual(discrimination["objectsWithComparableHypotheses"], 1)
+        self.assertEqual(discrimination.get("objectsWithGeometricHypothesisDifferences", 0), 0)
+        self.assertEqual(discrimination.get("objectsWithDifferentTerrainOutcomes", 0), 0)
+        self.assertEqual(discrimination["objectsWithIdenticalGeometryAndTerrainOutcomes"], 1)
+        self.assertEqual(evidence["candidateCellsEvaluated"], 4)
+        self.assertFalse(evidence["placementLegalityVerified"])
+
     def test_native_default_layout_grid_origin_audit_is_not_placement_permission(self):
         grid_path = self.base / "GridData/Villages/Village04-Test.json"
         grid_path.write_bytes(
