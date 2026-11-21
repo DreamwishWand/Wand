@@ -1,0 +1,766 @@
+{
+  "schema": "wand.db05.editor-readset@1",
+  "evidence": {
+    "sourceKind": "owner_declared_unmodified_new_save",
+    "platform": "Nintendo Switch",
+    "gameVersion": "1.26.2",
+    "gameVersionEvidence": "owner_declared_not_embedded_full_version",
+    "schemaVersionObserved": 643,
+    "ownerNoCheatsDeclared": true,
+    "ownerNoRestrictedEditsDeclared": true,
+    "freshReferenceIsUniversalSchema": false,
+    "sourceBuildIndependentlyVerified": false,
+    "actualIDsAndValuesExcluded": true,
+    "privateOriginalAndReportsExcluded": true
+  },
+  "traversal": {
+    "maxBranchEntries": 16384,
+    "maxVisitsPerField": 65536
+  },
+  "domains": [
+    "inventory",
+    "chests",
+    "collection",
+    "achievements",
+    "missions",
+    "world"
+  ],
+  "fields": [
+    {
+      "id": "list_inventory_map",
+      "domain": "inventory",
+      "path": "/Player/ListInventories",
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "list_inventory_record",
+      "domain": "inventory",
+      "path": "/Player/ListInventories/{inventoryId}",
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "list_inventory_identity",
+      "domain": "inventory",
+      "path": "/Player/ListInventories/{inventoryId}/ID",
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "list_inventory_items",
+      "domain": "inventory",
+      "path": "/Player/ListInventories/{inventoryId}/Inventory",
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "list_inventory_entry",
+      "domain": "inventory",
+      "path": "/Player/ListInventories/{inventoryId}/Inventory/{itemId}",
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": "DB01:item-id-map-key-candidate",
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "list_inventory_quantity",
+      "domain": "inventory",
+      "path": "/Player/ListInventories/{inventoryId}/Inventory/{itemId}/Amount",
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "list_inventory_marker",
+      "domain": "inventory",
+      "path": "/Player/ListInventories/{inventoryId}/Inventory/{itemId}/Marker",
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "container_map",
+      "domain": "chests",
+      "path": "/Player/ContainerInventories",
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "container_record",
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}",
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "container_identity",
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}/ID",
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "container_size",
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}/Size",
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "container_extra_size",
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}/ExtraSize",
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "container_belongs_to_player",
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}/BelongsToPlayer",
+      "allowedJsonKinds": [
+        "boolean"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "container_parent_item",
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}/ParentItemID",
+      "allowedJsonKinds": [
+        "integer",
+        "null"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": "DB01:parent-item-candidate-nullable",
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "container_slots",
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}/Inventory",
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "container_slot_record",
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}/Inventory[]",
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "container_slot_item",
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}/Inventory[]/ItemID",
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": "DB01:item-id-candidate",
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "container_slot_quantity",
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}/Inventory[]/Amount",
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "container_slot_state",
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}/Inventory[]/State",
+      "allowedJsonKinds": [
+        "object",
+        "null"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "collection_sets",
+      "domain": "collection",
+      "path": "/Player/CollectionSets",
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "collection_record",
+      "domain": "collection",
+      "path": "/Player/CollectionSets[]",
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "collection_definition",
+      "domain": "collection",
+      "path": "/Player/CollectionSets[]/CollectionDefinitionID",
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "collection_groups",
+      "domain": "collection",
+      "path": "/Player/CollectionSets[]/GroupData",
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "collection_group_record",
+      "domain": "collection",
+      "path": "/Player/CollectionSets[]/GroupData[]",
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "collection_group_index",
+      "domain": "collection",
+      "path": "/Player/CollectionSets[]/GroupData[]/GroupIndex",
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "collection_group_state",
+      "domain": "collection",
+      "path": "/Player/CollectionSets[]/GroupData[]/State",
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "collection_group_items",
+      "domain": "collection",
+      "path": "/Player/CollectionSets[]/GroupData[]/GroupsCollectionItems",
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": "DB01:group-item-map-key-candidate",
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "achievement_records",
+      "domain": "achievements",
+      "path": "/Player/AchievementsData",
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "achievement_record",
+      "domain": "achievements",
+      "path": "/Player/AchievementsData[]",
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "achievement_id",
+      "domain": "achievements",
+      "path": "/Player/AchievementsData[]/AchievementID",
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": "DB03:DutyAch-exact-id-candidate",
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "achievement_current",
+      "domain": "achievements",
+      "path": "/Player/AchievementsData[]/CurAmount",
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "achievement_max",
+      "domain": "achievements",
+      "path": "/Player/AchievementsData[]/MaxAmount",
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "achievement_claimed",
+      "domain": "achievements",
+      "path": "/Player/AchievementsData[]/ClaimedRewardMilestone",
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "achievement_state",
+      "domain": "achievements",
+      "path": "/Player/AchievementsData[]/State",
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "achievement_types_collected",
+      "domain": "achievements",
+      "path": "/Player/AchievementsData[]/TypesCollected",
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "achievement_items_used",
+      "domain": "achievements",
+      "path": "/Player/AchievementsData[]/ItemsUsed",
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "mission_slot_groups",
+      "domain": "missions",
+      "path": "/World/MissionSlots",
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "mission_slot_group",
+      "domain": "missions",
+      "path": "/World/MissionSlots/{groupId}",
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "mission_slot_entries",
+      "domain": "missions",
+      "path": "/World/MissionSlots/{groupId}/Slots",
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "mission_slot_record",
+      "domain": "missions",
+      "path": "/World/MissionSlots/{groupId}/Slots[]",
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "mission_id",
+      "domain": "missions",
+      "path": "/World/MissionSlots/{groupId}/Slots[]/MissionId",
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": "DB03:Mission-exact-id-candidate",
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "missions_completed",
+      "domain": "missions",
+      "path": "/World/QuestInfo/MissionsCompleted",
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "grid_collection",
+      "domain": "world",
+      "path": "/World/GridCollection",
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "grid_map",
+      "domain": "world",
+      "path": "/World/GridCollection/Grids",
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "grid_record",
+      "domain": "world",
+      "path": "/World/GridCollection/Grids/{gridId}",
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "grid_identity",
+      "domain": "world",
+      "path": "/World/GridCollection/Grids/{gridId}/ID",
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "grid_source_path",
+      "domain": "world",
+      "path": "/World/GridCollection/Grids/{gridId}/GridDataPath",
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": "DB04:exact-grid-source-path-candidate",
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "grid_objects",
+      "domain": "world",
+      "path": "/World/GridCollection/Grids/{gridId}/Objects",
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "grid_object",
+      "domain": "world",
+      "path": "/World/GridCollection/Grids/{gridId}/Objects/{objectId}",
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "grid_object_item",
+      "domain": "world",
+      "path": "/World/GridCollection/Grids/{gridId}/Objects/{objectId}/ItemID",
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": "DB01:item-id-candidate",
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "grid_object_state",
+      "domain": "world",
+      "path": "/World/GridCollection/Grids/{gridId}/Objects/{objectId}/State",
+      "allowedJsonKinds": [
+        "object",
+        "null"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "diff_grid_map",
+      "domain": "world",
+      "path": "/World/GridCollection/DiffGrids",
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "diff_grid_record",
+      "domain": "world",
+      "path": "/World/GridCollection/DiffGrids/{gridId}",
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "diff_grid_identity",
+      "domain": "world",
+      "path": "/World/GridCollection/DiffGrids/{gridId}/ID",
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "diff_modified_objects",
+      "domain": "world",
+      "path": "/World/GridCollection/DiffGrids/{gridId}/ModifiedObjects",
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "diff_modified_object",
+      "domain": "world",
+      "path": "/World/GridCollection/DiffGrids/{gridId}/ModifiedObjects/{objectId}",
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "diff_modified_item",
+      "domain": "world",
+      "path": "/World/GridCollection/DiffGrids/{gridId}/ModifiedObjects/{objectId}/ItemID",
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": "DB01:item-id-candidate",
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "diff_modified_state",
+      "domain": "world",
+      "path": "/World/GridCollection/DiffGrids/{gridId}/ModifiedObjects/{objectId}/State",
+      "allowedJsonKinds": [
+        "object",
+        "null"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "diff_removed_objects",
+      "domain": "world",
+      "path": "/World/GridCollection/DiffGrids/{gridId}/RemovedObjects",
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    },
+    {
+      "id": "world_player_houses",
+      "domain": "world",
+      "path": "/World/PlayerHouses",
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "observationEvidence": "owner_declared_clean_schema643_structural_observation",
+      "referenceCandidate": null,
+      "requiredInAllSaves": false,
+      "writable": false
+    }
+  ],
+  "policy": {
+    "unobservedDoesNotImplyCorruption": true,
+    "cleanDiffObjectsCanAlreadyExist": true,
+    "nullableContainerParentAllowed": true,
+    "sourceJoinIsCandidateOnly": true,
+    "differentGameVersionIsNotStructuralFailure": true,
+    "unknownFieldsMustNotBeReconstructed": true,
+    "saveCodecRoundtripVerified": false,
+    "ownershipEntitlementVerified": false,
+    "editorWriterAuthorized": false,
+    "exportAuthorized": false
+  }
+}
