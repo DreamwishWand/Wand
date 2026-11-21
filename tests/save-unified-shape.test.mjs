@@ -129,6 +129,7 @@ test('known nullable grid state can change from null to object without type conf
   const stateField=getDeepSaveFields().fields.find(f=>
     f.path==='/World/GridCollection/Grids/{id}/Objects/{id}/State');
   assert.deepEqual(stateField.observedJsonKinds,['null','object']);
+  a.World.GridCollection.Grids['9999'].Objects['9999'].State=null;
   b.World.GridCollection.Grids['9999'].Objects['9999'].State={Kind:'private'};
   const c=compareUnifiedSaveStructures(a,b);
   const w=c.domains.find(x=>x.domain==='world');
