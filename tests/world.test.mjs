@@ -1332,6 +1332,84 @@ test('large source-only anchor windows paginate by native Grid.ID with stable so
   }
 });
 
+test('spatially indexed source anchors preserve cross-bucket source order and paging', () => {
+  const data = preparedVillageViewportFixture();
+  data.manifest.gameVersion = '1.26.2';
+  data.grids[0] = {
+    gridId: data.grids[0].gridId, sizeX: 128, sizeY: 128,
+    terrainDecoding: {
+      decoded: false, status: 'native_packing_not_verified_for_game_version',
+    },
+  };
+  const base = data.layoutObjects[0];
+  const layout = base.layoutId;
+  // IDs are purposely not source-ordered. Several originals lie outside the
+  // grid or on a 32-cell bucket boundary; they remain source records.
+  data.layoutObjects = Array.from({length: 1200}, (_, n) => {
+    const nativeId = 1200 - n;
+    const x = n % 89 === 0 ? -1 : n % 91 === 0 ? 128 : (n * 17) % 128;
+    const y = n % 97 === 0 ? -3 : n % 101 === 0 ? 128 : (n * 73) % 128;
+    return {
+      ...base,
+      gridObjectIdNative: nativeId,
+      layoutObjectId: `${layout}#grid=0#object=${nativeId}`,
+      x, y,
+    };
+  });
+  data.layoutObjects.push(...[
+    {x: 31, y: 31}, {x: 32, y: 31},
+    {x: 31, y: 32}, {x: 32, y: 32},
+    {x: 127, y: 127},
+  ].map(({x, y}, n) => ({
+    ...base, x, y, gridObjectIdNative: n + 2000,
+    layoutObjectId: `${layout}#grid=0#object=${n + 2000}`,
+  })));
+  data.layouts[0].nativeGridEntries[0].defaultObjectCount =
+    data.layoutObjects.length;
+  data.layouts[0].defaultObjectCount = data.layoutObjects.length;
+  const catalog = createWorldCatalog(data);
+  const windows = [
+    {x: 0, y: 0, width: 128, height: 128},
+    {x: 30, y: 30, width: 67, height: 67},
+    {x: 31, y: 31, width: 2, height: 2},
+    {x: 120, y: 120, width: 8, height: 8},
+    {x: 90, y: 0, width: 1, height: 128},
+  ];
+  for (const rect of windows) {
+    const expected = data.layoutObjects.filter(({x, y}) =>
+      x >= rect.x && x < rect.x + rect.width &&
+      y >= rect.y && y < rect.y + rect.height)
+      .map(record => record.gridObjectIdNative);
+    const full = getNativeDefaultLayoutAnchorWindow(catalog, layout, 0, rect);
+    assert.equal(full.status, 'source_native_default_layout_anchors_only');
+    assert.equal(full.terrainDecoded, false);
+    assert.equal(full.totalNativeDefaultObjectAnchors, data.layoutObjects.length);
+    assert.equal(full.viewAnchorCount, expected.length);
+    assert.deepEqual(full.defaultObjectAnchors.map(
+      a => a.gridObjectIdNative), expected);
+    let combined = [];
+    for (let offset = 0; offset < expected.length; offset += 97) {
+      const page = getNativeDefaultLayoutAnchorWindow(catalog, layout, 0,
+        rect, {offset, limit: 97});
+      assert.equal(page.matchingNativeDefaultAnchorCount, expected.length);
+      assert.equal(page.viewAnchorCount, Math.min(97, expected.length - offset));
+      assert.equal(page.placementLegalityVerified, false);
+      assert.equal(page.hasNextPage, offset + 97 < expected.length);
+      combined.push(...page.defaultObjectAnchors.map(
+        a => a.gridObjectIdNative));
+    }
+    assert.deepEqual(combined, expected);
+  }
+  const boundary = getNativeVillageAreaAnchorWindow(catalog,
+    'SceneLayouts/Village04/Default.json', 3, 0,
+    {x: 31, y: 31, width: 2, height: 2});
+  assert.deepEqual(boundary.defaultObjectAnchors.slice(-4)
+    .map(a => [a.x, a.y]), [
+    [31, 31], [32, 31], [31, 32], [32, 32],
+  ]);
+  assert.equal(boundary.placementLegalityVerified, false);
+});
+
 test('source-only anchor viewport rejects missing or ambiguous native references', () => {
   const baseline = preparedVillageViewportFixture();
   baseline.manifest.gameVersion = '1.26.2';
