@@ -122,6 +122,18 @@ A one-click Windows CMD derived from the completed private plan is supplied to t
 
 ---
 
+## SRC-04 missing-object metadata audit (2026-11-21)
+
+The user-supplied `catalog-missing-object-report.json` is a completed, SHA-verified local metadata scan of **220 / 220** planned AssetBundles, with **zero failed bundles**. All **360** previously unresolved icon GUIDs are accounted for: **358** have an exact serialized AssetBundle key -> local Unity path_id -> image object link; **2** belong to broad dependency groups and remain unscanned. Exactly **344** image GUIDs point to `Texture2D` alone, while **14** point to both a `Sprite` and a `Texture2D`. These are metadata identities, **not decoded or byte-verified WebP images**.
+
+The 358 exact identities occur in **214** of the inspected bundles; six inspected bundles contain no exact match needed for pixel decoding. They cover **2,414** of the currently unresolved **2,416** Item IDs, including the one placeholder GUID reused by **2,028** Item IDs. If all targeted pixels decode and are stored correctly, the combined private Item-ID icon coverage would become **13,200 / 13,202**, leaving two GUIDs and two Item IDs unresolved. This is a **projection** pending Windows pixel decoding, not a verified current result.
+
+The local follow-up `SRC04-MISSING-PIXELS.cmd` produced outside the GitHub tree accepts only the exact uploaded report SHA-256 `b97deb80a60315e2734fa7193f92922626a16195453b8c180fa0743684ae7807` and the SRC-01 item cache SHA-256 `3ff0043692c88699d1cb44f4a953095c5f5fcd1afd700761396f13cca96851bf`. It attempts pixel extraction **only for the 358 exact objects from 214 SHA-pinned bundles**, validates source bundle hashes, checkpoints each bundle, writes thumbnail/detail WebP into the existing local content-addressed layout without replacing previous content, and writes `catalog-missing-pixels-report.json` plus `catalog-missing-pixels-links-private.json`. On completion it also attempts a separate `item-icon-map-extended-private.jsonl` from the exact original identity mapping, without overwriting the previous JSONL or private overlay.
+
+Keep every derived image and GUID image record local/private (`publicationApproved=false`). No repo image commit, cloud upload, public Pages display, or API publication is implied. The other two GUIDs remain unresolved until more selective evidence exists.
+
+---
+
 ## Confirmed GUID image identity coverage (2026-11-21)
 
 The user's complete `catalog-identity-report.json` from revision 2 confirms:
