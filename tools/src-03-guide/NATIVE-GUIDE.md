@@ -6,7 +6,7 @@
 
 Tested with the owner-held Steam **v1.26.1** Game Source Archive: `ddv_Data/StreamingAssets/itemlist/{Mission,Character,Story,Scene,DutyAch,RecurringEvent,Condition,ConditionalEvent,Ftue}.json`, the corresponding eight `Localization/LocDB_*.zip`, optional `friendship_levels_default.json` and per-definition `Condition/*.json` / `ConditionalEvent/*.json`, and the SRC-01 native item-index JSONL. The source bytes are **never committed to GitHub**. The extracted snapshot is version-bound; matching some file SHA-256 digests in the v1.26.2 format survey does not establish that all contents, localizations, or live events in v1.26.2 are identical.
 
-The parser validates every framing length, repeated frame offset, canonical varint, protobuf-wire syntax, native ID and offset arithmetic. It computes source hashes and keeps original localization keys, all eight exact key-matched `locbin` values, and cleaned display strings separately. No machine translation or inferred availability is used. Missing name keys are left unresolved.
+The parser validates every framing length, repeated frame offset, canonical varint, protobuf-wire syntax, native ID and offset arithmetic. It computes source hashes and a separate SHA-256 of every validated native definition and quest-step wire payload, so changes to still-opaque objectives, predicates, or rewards are detected as **changes without claiming understood semantics**. It keeps original localization keys, all eight exact key-matched `locbin` values, and cleaned display strings separately. No machine translation or inferred availability is used. Missing name keys are left unresolved.
 
 Mappings observed against native source:
 
