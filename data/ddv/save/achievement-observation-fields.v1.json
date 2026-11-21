@@ -1,0 +1,105 @@
+{
+  "schema": "wand.db05.achievement-observation-fields@1",
+  "source": "steam_1262_native_AchievementData_IL2CPP_fields_and_three_owner_626_643_shape_observations",
+  "evidenceScope": "observed_field_json_kinds_and_native_property_names_only",
+  "parent": "/Player/AchievementsData",
+  "missingFieldPolicy": "not_observed_never_assume_default_or_corruption",
+  "modifiedSavePolicy": "owner_supplied_saves_may_intentionally_omit_mission_objects_and_other_data",
+  "policy": {
+    "readOnly": true,
+    "originalSavePreserved": true,
+    "observedValuesNeverPublished": true,
+    "noDefaultReconstruction": true,
+    "missingMissionObjectsAreOptional": true,
+    "nativeSemanticsOfProgressAndStateNotAttested": true,
+    "completeDefinitionCoverageVerified": false,
+    "platformAndVersionAsShapeGates": false,
+    "originalSourceBytesRehashedByProbe": false,
+    "codecVerifiedByProbe": false,
+    "saveIntegrityVerified": false,
+    "ownershipVerified": false,
+    "writerAuthorized": false,
+    "exportAuthorized": false
+  },
+  "fields": [
+    {
+      "id": "achievement_id",
+      "path": "/Player/AchievementsData[]/AchievementID",
+      "nativeMessage": "AchievementData",
+      "fieldNumber": 1,
+      "nativeType": "int",
+      "jsonKinds": [
+        "integer"
+      ],
+      "meaning": "native_achievement_identifier_candidate_only"
+    },
+    {
+      "id": "current_amount",
+      "path": "/Player/AchievementsData[]/CurAmount",
+      "nativeMessage": "AchievementData",
+      "fieldNumber": 2,
+      "nativeType": "int",
+      "jsonKinds": [
+        "integer"
+      ],
+      "meaning": "saved_int_observation_not_progress_attestation"
+    },
+    {
+      "id": "claimed_reward_milestone",
+      "path": "/Player/AchievementsData[]/ClaimedRewardMilestone",
+      "nativeMessage": "AchievementData",
+      "fieldNumber": 3,
+      "nativeType": "int",
+      "jsonKinds": [
+        "integer"
+      ],
+      "meaning": "saved_int_observation_not_entitlement_attestation"
+    },
+    {
+      "id": "state",
+      "path": "/Player/AchievementsData[]/State",
+      "nativeMessage": "AchievementData",
+      "fieldNumber": 5,
+      "nativeType": "AchievementState",
+      "jsonKinds": [
+        "string"
+      ],
+      "meaning": "opaque_enum_name_no_completion_inference"
+    },
+    {
+      "id": "types_collected",
+      "path": "/Player/AchievementsData[]/TypesCollected",
+      "nativeMessage": "AchievementData",
+      "fieldNumber": 6,
+      "nativeType": "RepeatedField<int>",
+      "jsonKinds": [
+        "array"
+      ],
+      "itemKind": "integer",
+      "meaning": "opaque_native_integer_array"
+    },
+    {
+      "id": "items_used",
+      "path": "/Player/AchievementsData[]/ItemsUsed",
+      "nativeMessage": "AchievementData",
+      "fieldNumber": 8,
+      "nativeType": "RepeatedField<int>",
+      "jsonKinds": [
+        "array"
+      ],
+      "itemKind": "integer",
+      "meaning": "opaque_native_integer_array"
+    },
+    {
+      "id": "max_amount",
+      "path": "/Player/AchievementsData[]/MaxAmount",
+      "nativeMessage": "AchievementData",
+      "fieldNumber": 9,
+      "nativeType": "int",
+      "jsonKinds": [
+        "integer"
+      ],
+      "meaning": "saved_int_observation_not_game_defined_target"
+    }
+  ]
+}
