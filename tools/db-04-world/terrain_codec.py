@@ -11,6 +11,7 @@ This proves useful grid-local rendering consistency, NOT the implementation
 of the game's decoder or complete placement/collision/rotation legality.
 """
 from __future__ import annotations
+from collections import Counter
 from typing import Sequence
 
 EVIDENCE = "steam_1.26.1_room12x16_border_192of192_and_meadow_origin_742of743"
@@ -76,6 +77,48 @@ def _flat_index(packed: bytes, bits: int, index: int) -> int:
     offset = index * bits
     shift = 8 - bits - (offset % 8)
     return (packed[offset // 8] >> shift) & ((1 << bits) - 1)
+
+
+
+def count_packed_palette_indices(size_x: int, size_y: int,
+                                 palette: Sequence[int],
+                                 packed: bytes) -> list[int] | None:
+    """Exact source-byte palette index histogram without allocating a 2D grid.
+
+    This counts *candidate-codec* cell values, not gameplay placement legality.
+    An unsupported native palette width returns None instead of guessed bins.
+    The histogram is keyed by original palette index, preserving repeated
+    uint32 palette values without collapsing them.
+    """
+    evidence = describe_native_packing(size_x, size_y, palette, packed)
+    if not evidence["decoded"]:
+        return None
+    bits = evidence["cellBits"]
+    mask = (1 << bits) - 1
+    cells = size_x * size_y
+    cells_per_byte = 8 // bits
+    complete_bytes, tail_cells = divmod(cells, cells_per_byte)
+    counts = [0] * len(palette)
+
+    # Counting 256 byte codes once, rather than allocating 16M decoded cells,
+    # keeps large native GridData inputs bounded by packed source size.
+    for byte, repeats in Counter(packed[:complete_bytes]).items():
+        for position in range(cells_per_byte):
+            palette_index = (byte >> (8 - bits * (position + 1))) & mask
+            if palette_index >= len(palette):
+                raise ValueError("compacted floor index missing from native palette")
+            counts[palette_index] += repeats
+
+    if tail_cells:
+        tail = packed[complete_bytes]
+        for position in range(tail_cells):
+            palette_index = (tail >> (8 - bits * (position + 1))) & mask
+            if palette_index >= len(palette):
+                raise ValueError("compacted floor index missing from native palette")
+            counts[palette_index] += 1
+    if sum(counts) != cells:
+        raise ValueError("native terrain cell histogram cardinality mismatch")
+    return counts
 
 
 def floor_at(size_x: int, size_y: int, palette: Sequence[int],
