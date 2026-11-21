@@ -63,6 +63,20 @@ if ($Il2CppDumpPath) {
     if (-not (Test-Path -LiteralPath $gameAssembly -PathType Leaf)) {
         throw "Requested native RVA capture requires GameAssembly.dll"
     }
+    # A matching version string alone cannot guarantee matching native RVAs.
+    # Reject a dump that maps into the interiors of other PE unwind functions
+    # before creating any private snapshot output or running game extraction.
+    Write-Host "DB-04: checking original GameAssembly PE64 unwind function starts"
+    $peAuditArgs = @(
+        (Join-Path $PSScriptRoot "pe_unwind.py"),
+        "--game-root", $GameRoot,
+        "--dump-cs", $dumpFile,
+        "--dump-game-version", $Il2CppDumpGameVersion
+    )
+    & $python @pythonPrefix @peAuditArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "Original IL2CPP method RVAs cannot be corroborated against PE unwind starts"
+    }
 }
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $partial = Join-Path $OutputRoot (".partial-Steam-" + $stamp)

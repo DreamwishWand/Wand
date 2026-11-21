@@ -15,6 +15,7 @@ from native_pe_evidence import (
     capture_native_pe, file_offset_for_rva, pe64_sections,
     target_methods_from_dump, validate_private_report, write_private_report,
 )
+from pe_unwind import correlate_rvas, read_pe_runtime_functions
 from disassemble_native_pe import (
     disassemble_private_windows, write_private_disassembly,
 )
@@ -355,13 +356,25 @@ class PipelineTests(unittest.TestCase):
         struct.pack_into("<I", binary, 0x3c, 0x80)
         binary[0x80:0x84] = bytes((80, 69, 0, 0))
         struct.pack_into("<HHIIIHH", binary, 0x84,
-                         0x8664, 1, 0, 0, 0, 240, 0x2022)
+                         0x8664, 2, 0, 0, 0, 240, 0x2022)
+        # IMAGE_DIRECTORY_ENTRY_EXCEPTION points to a real, synthetic
+        # AMD64 RUNTIME_FUNCTION interval. Matching a version string alone
+        # must not be sufficient to accept an IL2CPP method RVA.
+        struct.pack_into("<II", binary, 0x98 + 112 + 3 * 8,
+                         0x2000, 12)
         binary[0x98:0x9a] = bytes((0x0b, 0x02))
         section_offset = 0x98 + 240
         binary[section_offset:section_offset + 5] = b".text"
         struct.pack_into("<IIII", binary, section_offset + 8,
                          0x1000, 0x1000, 0x1000, 0x400)
         struct.pack_into("<I", binary, section_offset + 36, 0x60000020)
+        pdata_section = section_offset + 40
+        binary[pdata_section:pdata_section + 6] = b".pdata"
+        struct.pack_into("<IIII", binary, pdata_section + 8,
+                         0x200, 0x2000, 0x200, 0x1400)
+        struct.pack_into("<I", binary, pdata_section + 36, 0x40000040)
+        struct.pack_into("<III", binary, 0x1400,
+                         0x1020, 0x1060, 0x2100)
         raw = bytes(range(64))
         binary[0x420:0x420 + len(raw)] = raw
         (self.game / "GameAssembly.dll").write_bytes(binary)
@@ -370,6 +383,8 @@ class PipelineTests(unittest.TestCase):
             "// Namespace: Definitions.Grid\n"
             "public class GridData\n"
             "{\n"
+            "    // RVA: 0x1010 Offset: 0x410 VA: 0x180001010\n"
+            "    public GridFloorType get_Item(GridPosition position) { }\n"
             "    // RVA: 0x1020 Offset: 0x420 VA: 0x180001020\n"
             "    public GridFloorType get_Item(int x, int y) { }\n"
             "}\n"
@@ -704,6 +719,10 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(report["status"],
                          "version_asserted_il2cpp_rva_byte_windows_captured")
         self.assertTrue(report["sourceRvaMappingVerified"])
+        self.assertTrue(report["peUnwindStartCorroborated"])
+        self.assertEqual(report["peUnwindRecordCount"], 1)
+        self.assertEqual(report["methodWindows"][0]["peUnwindFunctionEndRva"],
+                         0x1060)
         self.assertFalse(report["nativeCodeBodyVerified"])
         self.assertFalse(report["nativeFootprintRotationVerified"])
         self.assertEqual(len(report["methodWindows"]), 1)
@@ -726,6 +745,30 @@ class PipelineTests(unittest.TestCase):
                               dump_game_version="1.26.1")
         with self.assertRaisesRegex(ValueError, "version provided"):
             capture_native_pe(self.game, dump_game_version="1.26.2")
+
+    def test_identical_version_does_not_make_pe_interior_rva_valid(self):
+        dump, _ = self._write_native_pe_fixture()
+        matches = target_methods_from_dump(dump)
+        audit = correlate_rvas(self.game / "GameAssembly.dll", matches)
+        self.assertTrue(audit["allTargetRvasAtPeUnwindStarts"])
+        self.assertEqual(audit["originalPeUnwindRecordCount"], 1)
+        self.assertEqual(audit["counts"]["exact_pe_unwind_function_start"], 1)
+        self.assertEqual(len(read_pe_runtime_functions(
+            self.game / "GameAssembly.dll")[0]), 1)
+
+        altered = dump.read_text(encoding="utf-8").replace(
+            "RVA: 0x1020", "RVA: 0x1021")
+        dump.write_text(altered, encoding="utf-8")
+        audit = correlate_rvas(
+            self.game / "GameAssembly.dll", target_methods_from_dump(dump))
+        self.assertFalse(audit["allTargetRvasAtPeUnwindStarts"])
+        self.assertEqual(audit["counts"]["inside_other_pe_unwind_function"], 1)
+        self.assertEqual(audit["methods"][0]["unwindFunctionBeginRva"], 0x1020)
+        self.assertEqual(audit["methods"][0]["distanceFromRuntimeFunctionStart"],
+                         1)
+        with self.assertRaisesRegex(ValueError, "disagrees"):
+            capture_native_pe(
+                self.game, dump_cs=dump, dump_game_version="1.26.2")
 
     def test_native_pe_report_is_private_bounded_and_packageable(self):
         dump, _ = self._write_native_pe_fixture()
