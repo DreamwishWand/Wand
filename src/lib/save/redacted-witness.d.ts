@@ -2,7 +2,7 @@ export type RedactedWitnessKind =
   'array' | 'object' | 'string' | 'number' | 'integer' | 'boolean' | 'null' | 'unverified';
 export type RedactedWitnessDomain =
   'inventory' | 'chests' | 'collection' | 'grids' | 'appearance' |
-  'world' | 'progression' | 'cosmetics';
+  'world' | 'progression' | 'cosmetics' | 'player' | 'profile';
 export interface RedactedWitnessDifference {
   readonly path: string;
   readonly relation: 'numeric_ambiguity' | 'type_conflict' | 'type_set_drift';

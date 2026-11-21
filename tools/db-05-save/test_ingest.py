@@ -107,4 +107,26 @@ class IngestTests(unittest.TestCase):
         self.assertFalse(inspected['writerAuthorized'])
 
 
+    def test_native_field_names_are_redacted_and_known_only(self):
+        report = self.report(643, 'string')
+        report['fieldWitnesses'].extend([
+            {'path': '/Player/CurrencyAmounts', 'type': 'object'},
+            {'path': '/Player/OutfitPresets', 'type': 'array'},
+            {'path': '/World/DecorationPresets', 'type': 'array'},
+            {'path': '/FreeTimers', 'type': 'array'},
+            {'path': '/World/PrivateUserField/99123', 'type': 'string'}
+        ])
+        result = inspect_report(report)
+        emitted = json.dumps(result)
+        known = {x['path'] for x in result['publicWitnesses']}
+        for path in ['/Player/CurrencyAmounts', '/Player/OutfitPresets',
+                     '/World/DecorationPresets', '/FreeTimers']:
+            self.assertIn(path, known)
+        self.assertNotIn('PrivateUserField', emitted)
+        self.assertNotIn('99123', emitted)
+        self.assertEqual(result['otherWitnessCount'], 2)
+        self.assertFalse(result['decoderAndBuildVerified'])
+        self.assertFalse(result['writerAuthorized'])
+
+
 if __name__ == '__main__': unittest.main()

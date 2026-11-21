@@ -175,3 +175,62 @@ numeric-key paths remain redacted. `compareRedactedSaveWitnesses` now returns
 cosmetics). New domains that are unobserved remain inconclusive, not a false
 structural equivalence. All upstream reports remain private, and all
 authorizations remain false.
+
+## Native-source typed save witnesses — 85 additional direct fields
+
+`data/ddv/save/native1261-observed-fields.v1.json` records **85 distinct,
+publicly named, direct Protobuf fields** from `Profile` (13), `ProfilePlayer`
+(35), and `ProfileWorld` (37). For each field it retains the class name,
+Protobuf field number, native C# property type, and observed JSON kind.
+These are **additional to** the legacy 66 and common 16 fields: total 167
+nonoverlapping, read-only field templates.
+
+**Native source:** the owner's Game Source Archive, Steam v1.26.1
+`Il2CppDump/dump.cs` (SHA-256 pinned in the manifest). The snapshot is
+not the currently running Steam v1.26.2 binary, and this manifest never
+claims that the v1.26.1 dump attests the exact current native build.
+**Save observations:** three separate owner-private originals (one
+`GameInfo.Version=626`, two `GameInfo.Version=643`) each contained
+these 85 direct fields with JSON kinds consistent with the v1.26.1
+native property types. Platform labels and version numbers do not gate
+structural matching.
+
+Examples include inventory ID counters, currency map *shape*, equipment,
+crafting, outfit/decoration presets, pets, world buildings, villages,
+recurring events and weather. The registry excludes private save values,
+names, numeric map keys, entitlement contents, and all raw game-file bytes.
+It records no ownership grants or mutation permissions.
+
+Read-only APIs: `getNativeSaveFields()`,
+`probeNativeSaveStructure(decoded)`,
+`compareNativeSaveStructures(previous,current)`. Reports only public
+field templates, observed JSON kinds, drift/conflict/uncertainty and
+explicit `writerAuthorized=false`; no Codec, Writer or export authority.
+
+The SRC-06 → DB-05 private witness allowlist now comprises 167 known
+field templates plus four root path templates. This enables non-sensitive
+type differences from future updates to be compared without publishing
+the underlying save. The redacted comparator now returns ten named
+diagnostic domains (including `profile` and `player`). No private
+report is checked into the repository.
+
+For a new game update, validate the previously confirmed types against
+a **locally available** native dump, without requesting private-save
+reuploads:
+
+```bash
+python tools/db-05-save/verify_native_dump.py --dump /private/source/Il2CppDump/dump.cs
+```
+
+The default requires the exact SHA-256 pinned in the v1.26.1 manifest.
+A different game-source version is explicitly opt-in for *comparison only*:
+
+```bash
+python tools/db-05-save/verify_native_dump.py --dump /private/new-version/dump.cs --allow-new-source
+```
+
+A changed or missing native field number/property type is reported as
+a review-required mismatch. Even 85/85 matching fields in a new native
+dump cannot automatically verify Codec round-trip, references, new
+fields, current-build attestation or Writer safety. Raw private saves
+must remain outside Git, and this verifier accepts **no save input**.

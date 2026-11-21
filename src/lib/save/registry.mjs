@@ -1,6 +1,7 @@
 import registry from '../../../data/ddv/save/registry.v1.json' with { type: 'json' };
 import legacyFields from '../../../data/ddv/save/legacy626-fields.v1.json' with { type: 'json' };
 import commonFields from '../../../data/ddv/save/common626643-fields.v1.json' with { type: 'json' };
+import nativeFields from '../../../data/ddv/save/native1261-observed-fields.v1.json' with { type: 'json' };
 
 function deepFreeze(value) {
   if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -12,6 +13,7 @@ function deepFreeze(value) {
 deepFreeze(registry);
 deepFreeze(legacyFields);
 deepFreeze(commonFields);
+deepFreeze(nativeFields);
 
 export const SAVE_REGISTRY_SCHEMA = 'wand.db05.save-registry@1';
 export const SAVE_INSPECTION_CONTRACT = 'wand.db05.save-readonly-inspection@1';
@@ -247,6 +249,89 @@ export function compareCommonSaveStructures(previous, current) {
     status,platformAndVersionUsedAsGates:false,
     domains:Object.freeze(domains),
     exhaustive:false,strictDecoderVerified:false,writerAuthorized:false,exportAuthorized:false
+  });
+}
+
+
+export const SAVE_NATIVE_SHAPE_PROBE_CONTRACT = 'wand.db05.native-shape-probe@1';
+export const SAVE_NATIVE_SHAPE_COMPARE_CONTRACT = 'wand.db05.native-shape-comparison@1';
+const NATIVE_SHAPE_DOMAINS = Object.freeze(['profile', 'player', 'world']);
+
+/** Native types from the exact pinned Steam 1.26.1 dump; observed on three owner saves. */
+export function getNativeSaveFields() { return nativeFields; }
+
+/** Bounded public-path/type probe; no save values, identifiers or rights emitted. */
+export function probeNativeSaveStructure(decoded) {
+  const domains = NATIVE_SHAPE_DOMAINS.map(domain => {
+    const fields = nativeFields.fields.filter(f => f.domain === domain);
+    const observations = fields.map(f => ({ path: f.path, ...observeKnownField(decoded, { path: f.path, type: f.jsonType }) }));
+    const observed = observations.filter(f => f.status === 'observed');
+    const conflicting = observations.filter(f => f.status === 'type_conflict');
+    const sampled = observations.some(f => f.sampled);
+    const status = conflicting.length ? 'shape_conflict'
+      : observed.length ? (sampled ? 'sampled_candidate' : 'shape_candidate') : 'not_observed';
+    return Object.freeze({
+      domain, status,
+      registeredFieldCount: fields.length,
+      observedFieldCount: observed.length,
+      observedFields: Object.freeze(observed.map(o => Object.freeze({ path: o.path, kinds: o.kinds }))),
+      conflictingPaths: Object.freeze(conflicting.map(o => o.path)),
+      sampled, writerAuthorized: false
+    });
+  });
+  return Object.freeze({
+    contract: SAVE_NATIVE_SHAPE_PROBE_CONTRACT,
+    compatibilityBasis: 'observed_native_field_types',
+    nativeGameBuildAttested: false,
+    platformAndVersionUsedAsGates: false,
+    domains: Object.freeze(domains),
+    registeredFieldCount: nativeFields.fields.length,
+    exhaustive: false, strictDecoderVerified: false, writerAuthorized: false
+  });
+}
+
+/** Neither a match nor a mismatch across the 85 known fields authorizes writing. */
+export function compareNativeSaveStructures(previous, current) {
+  const left = probeNativeSaveStructure(previous);
+  const right = probeNativeSaveStructure(current);
+  const domains = left.domains.map((oldDomain, i) => {
+    const newDomain = right.domains[i];
+    const a = new Map(oldDomain.observedFields.map(f => [f.path, f.kinds.join('|')]));
+    const b = new Map(newDomain.observedFields.map(f => [f.path, f.kinds.join('|')]));
+    const addedKnownPaths = [...b.keys()].filter(path => !a.has(path)).sort();
+    const missingKnownPaths = [...a.keys()].filter(path => !b.has(path)).sort();
+    const changedKinds = [...a.keys()].filter(path => b.has(path) && a.get(path) !== b.get(path));
+    const conflictingKnownPaths = [...new Set([
+      ...oldDomain.conflictingPaths, ...newDomain.conflictingPaths, ...changedKinds
+    ])].sort();
+    const status = conflictingKnownPaths.length ? 'observed_type_conflict'
+      : oldDomain.status === 'not_observed' || newDomain.status === 'not_observed' ? 'insufficient_evidence'
+      : oldDomain.sampled || newDomain.sampled ? 'sampled_inconclusive'
+      : addedKnownPaths.length || missingKnownPaths.length ? 'observed_witness_difference'
+      : 'same_observed_native_fields';
+    return Object.freeze({
+      domain: oldDomain.domain, status,
+      addedKnownPaths: Object.freeze(addedKnownPaths),
+      missingKnownPaths: Object.freeze(missingKnownPaths),
+      conflictingKnownPaths: Object.freeze(conflictingKnownPaths),
+      writerAuthorized: false
+    });
+  });
+  const invalidRoot = !inspectDecodedSave(previous, null).rootShapeValid ||
+    !inspectDecodedSave(current, null).rootShapeValid;
+  const status = invalidRoot ? 'invalid_root'
+    : domains.some(d => d.status === 'observed_type_conflict') ? 'observed_type_conflict'
+    : domains.some(d => d.status === 'insufficient_evidence' || d.status === 'sampled_inconclusive') ? 'inconclusive'
+    : domains.some(d => d.status === 'observed_witness_difference') ? 'observed_witness_difference'
+    : 'same_observed_native_fields';
+  return Object.freeze({
+    contract: SAVE_NATIVE_SHAPE_COMPARE_CONTRACT,
+    status, domains: Object.freeze(domains),
+    platformAndVersionUsedAsGates: false,
+    sourceGameBuild: 'steam-1.26.1',
+    currentGameNativeTypeAttestation: false,
+    exhaustive: false, strictDecoderVerified: false,
+    writerAuthorized: false, exportAuthorized: false
   });
 }
 

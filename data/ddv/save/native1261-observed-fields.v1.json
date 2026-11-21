@@ -1,0 +1,1221 @@
+{
+  "schema": "wand.db05.native1261-observed-field-witnesses@1",
+  "source": {
+    "kind": "il2cpp_dump_native_protobuf_fields",
+    "gameBuild": "steam-1.26.1",
+    "archive": "Game Source Archive/Steam/Baselines/v1.26.1__2026-11-18/06_Steam_Build_Assets/Il2CppDump/dump.cs",
+    "sha256": "0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08",
+    "currentGameBuildMatched": false
+  },
+  "evidence": {
+    "jsonTypesObserved": "three_separate_owner_private_decoded_save_originals",
+    "saveSchemaVersionsObserved": [
+      626,
+      643
+    ],
+    "allThreeSamplesObserved": true,
+    "privateValuesRetainedInRepository": false,
+    "unknownFieldsCovered": false
+  },
+  "policy": {
+    "compatibilityBasis": "decoded_field_types_not_platform_or_version",
+    "codecRoundTripVerified": false,
+    "currentBuildNativeTypesVerified": false,
+    "referenceClosureVerified": false,
+    "writerAuthorized": false,
+    "ownershipMutationAuthorized": false,
+    "exportAuthorized": false
+  },
+  "fields": [
+    {
+      "domain": "profile",
+      "path": "/FreeTimers",
+      "nativeMessage": "Profile",
+      "protobufFieldNumber": 23,
+      "nativePropertyType": "RepeatedField<TimerType>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "profile",
+      "path": "/WeedController",
+      "nativeMessage": "Profile",
+      "protobufFieldNumber": 29,
+      "nativePropertyType": "WeedController",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "profile",
+      "path": "/CriticalSuccess",
+      "nativeMessage": "Profile",
+      "protobufFieldNumber": 31,
+      "nativePropertyType": "CriticalSuccess",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "profile",
+      "path": "/UsedPreferredItemIDs",
+      "nativeMessage": "Profile",
+      "protobufFieldNumber": 32,
+      "nativePropertyType": "RepeatedField<int>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "profile",
+      "path": "/UsedUniquePreferredItemIDs",
+      "nativeMessage": "Profile",
+      "protobufFieldNumber": 33,
+      "nativePropertyType": "RepeatedField<int>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "profile",
+      "path": "/LastDailyReset",
+      "nativeMessage": "Profile",
+      "protobufFieldNumber": 43,
+      "nativePropertyType": "Timestamp",
+      "jsonType": "string",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "profile",
+      "path": "/LastWeeklyReset",
+      "nativeMessage": "Profile",
+      "protobufFieldNumber": 44,
+      "nativePropertyType": "Timestamp",
+      "jsonType": "string",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "profile",
+      "path": "/ConditionalEventHistory",
+      "nativeMessage": "Profile",
+      "protobufFieldNumber": 46,
+      "nativePropertyType": "ConditionalEventHistoryData",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "profile",
+      "path": "/SeenCraftingRecipes",
+      "nativeMessage": "Profile",
+      "protobufFieldNumber": 47,
+      "nativePropertyType": "RepeatedField<int>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "profile",
+      "path": "/DismantleLimit",
+      "nativeMessage": "Profile",
+      "protobufFieldNumber": 48,
+      "nativePropertyType": "MapField<int, int>",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "profile",
+      "path": "/TrackedActivities",
+      "nativeMessage": "Profile",
+      "protobufFieldNumber": 49,
+      "nativePropertyType": "RepeatedField<TrackedActivity>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "profile",
+      "path": "/CurrentTrackedActivity",
+      "nativeMessage": "Profile",
+      "protobufFieldNumber": 50,
+      "nativePropertyType": "int",
+      "jsonType": "integer",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "profile",
+      "path": "/FloatingFestival",
+      "nativeMessage": "Profile",
+      "protobufFieldNumber": 51,
+      "nativePropertyType": "FloatingFestivalHistoryData",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/Level",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "int",
+      "jsonType": "integer",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/Xp",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "int",
+      "jsonType": "integer",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/NextContainerInventoryID",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 5,
+      "nativePropertyType": "uint",
+      "jsonType": "integer",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/NextListInventoryID",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 7,
+      "nativePropertyType": "uint",
+      "jsonType": "integer",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/CurrencyAmounts",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 8,
+      "nativePropertyType": "MapField<int, int>",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/Tools",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 9,
+      "nativePropertyType": "RepeatedField<ToolInfo>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/ToolUpgrades",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 60,
+      "nativePropertyType": "MapField<int, ToolUpgrades>",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/BackpackOverflow",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 62,
+      "nativePropertyType": "MultiItemInstance",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/Mana",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 10,
+      "nativePropertyType": "int",
+      "jsonType": "integer",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/ManaHasAlreadyMissed",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 11,
+      "nativePropertyType": "bool",
+      "jsonType": "boolean",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/OutfitPresets",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 61,
+      "nativePropertyType": "RepeatedField<OutfitPreset>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/Cookbook",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 18,
+      "nativePropertyType": "Cookbook",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/CookingHistory",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 19,
+      "nativePropertyType": "RepeatedField<CookingHistory>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/UnlockedCraftingRecipes",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 20,
+      "nativePropertyType": "RepeatedField<int>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/Buffs",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 21,
+      "nativePropertyType": "RepeatedField<Buff>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/Pets",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 22,
+      "nativePropertyType": "RepeatedField<Pet>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/AssignedPets",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 23,
+      "nativePropertyType": "RepeatedField<int>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/FishRecords",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 24,
+      "nativePropertyType": "MapField<int, FishRecord>",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/RoyalDutyProgress",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 26,
+      "nativePropertyType": "RoyalDutyProgress",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/FemaleClothingDesigns",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 35,
+      "nativePropertyType": "MapField<int, DesignMap>",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/MaleClothingDesigns",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 36,
+      "nativePropertyType": "MapField<int, DesignMap>",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/NextClothingDesignID",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 37,
+      "nativePropertyType": "int",
+      "jsonType": "integer",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/ClothingDesignLimitReachedCount",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 38,
+      "nativePropertyType": "int",
+      "jsonType": "integer",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/MemoryShards",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 39,
+      "nativePropertyType": "MapField<int, int>",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/LimitedActions",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 44,
+      "nativePropertyType": "ProfileLimits",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/ActivityBonusReward",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 45,
+      "nativePropertyType": "ActivityBonusReward",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/CompletedFtueEvents",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 48,
+      "nativePropertyType": "RepeatedField<int>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/TimePlayedInMinutes",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 49,
+      "nativePropertyType": "int",
+      "jsonType": "integer",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/FastTravelFavorites",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 52,
+      "nativePropertyType": "RepeatedField<FastTravel>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/LastUsedBoardGameFigurines",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 65,
+      "nativePropertyType": "RepeatedField<int>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/BoardGameRankingPoints",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 66,
+      "nativePropertyType": "int",
+      "jsonType": "integer",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/NumberOfBoardGameWins",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 68,
+      "nativePropertyType": "int",
+      "jsonType": "integer",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/Stories",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 70,
+      "nativePropertyType": "RepeatedField<Story>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/PremadeDecorationPresets",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 84,
+      "nativePropertyType": "PremadeDecorationPresets",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/SelectedEmoteItemIDs",
+      "nativeMessage": "ProfilePlayer",
+      "protobufFieldNumber": 413,
+      "nativePropertyType": "RepeatedField<int>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Villages",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "RepeatedField<Village>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/PlayerHouses",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "RepeatedField<House>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/PendingFishes",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 6,
+      "nativePropertyType": "MapField<uint, PendingFish>",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/NextPendingFishID",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 7,
+      "nativePropertyType": "uint",
+      "jsonType": "integer",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Shops",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 8,
+      "nativePropertyType": "RepeatedField<Shop>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/UnlockedBuildings",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 9,
+      "nativePropertyType": "RepeatedField<int>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/BuildingInfos",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 10,
+      "nativePropertyType": "MapField<int, BuildingInfo>",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/OffGridBuildings",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 11,
+      "nativePropertyType": "MapField<int, OffGridBuilding>",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/CharacterRestaurantOrders",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 12,
+      "nativePropertyType": "RepeatedField<CharacterRestaurantOrder>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Critters",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 13,
+      "nativePropertyType": "RepeatedField<Critter>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/BurningState",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 14,
+      "nativePropertyType": "BurningState",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Stores",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 15,
+      "nativePropertyType": "RepeatedField<StoreInfo>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/LastDiscussions",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 19,
+      "nativePropertyType": "RepeatedField<DiscussionRecord>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/FriendshipChoices",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 20,
+      "nativePropertyType": "MapField<int, ListId>",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/DialogueFlags",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 21,
+      "nativePropertyType": "RepeatedField<int>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/CastleLevel",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 22,
+      "nativePropertyType": "int",
+      "jsonType": "integer",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/WishingWellLevel",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 23,
+      "nativePropertyType": "int",
+      "jsonType": "integer",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/KitchenStallLevel",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 24,
+      "nativePropertyType": "int",
+      "jsonType": "integer",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/PreviousWeathers",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 43,
+      "nativePropertyType": "RepeatedField<string>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/CurrentWeather",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 25,
+      "nativePropertyType": "string",
+      "jsonType": "string",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/NextWeatherCheck",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 26,
+      "nativePropertyType": "Timestamp",
+      "jsonType": "string",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/TimeZoneOffset",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 27,
+      "nativePropertyType": "Duration",
+      "jsonType": "string",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/LastTimeZoneChange",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 28,
+      "nativePropertyType": "Timestamp",
+      "jsonType": "string",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/RecurringEvents",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 29,
+      "nativePropertyType": "MapField<uint, RecurringEvent>",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/NextRecurringEventID",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 30,
+      "nativePropertyType": "uint",
+      "jsonType": "integer",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/FishedVillageAreas",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 31,
+      "nativePropertyType": "RepeatedField<FishingPerVillageArea>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Levers",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 33,
+      "nativePropertyType": "MapField<string, Lever>",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/TimeLostTreasures",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 34,
+      "nativePropertyType": "MapField<uint, TimeLostTreasure>",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Snippets",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 36,
+      "nativePropertyType": "MapField<uint, Snippet>",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Stalls",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 44,
+      "nativePropertyType": "StallInfos",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/FurnitureDesigns",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 50,
+      "nativePropertyType": "ItemDesignMap",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/DecorationPresets",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 51,
+      "nativePropertyType": "RepeatedField<DecorationPresetData>",
+      "jsonType": "array",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/DecorationPresetsShareCounter",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 52,
+      "nativePropertyType": "int",
+      "jsonType": "integer",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/ExtraLimitObject",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 60,
+      "nativePropertyType": "bool",
+      "jsonType": "boolean",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/BoutiqueList",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 70,
+      "nativePropertyType": "BoutiqueList",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/BoutiqueChallenges",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 71,
+      "nativePropertyType": "BoutiqueChallenges",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/FloatingIslands",
+      "nativeMessage": "ProfileWorld",
+      "protobufFieldNumber": 40,
+      "nativePropertyType": "MapField<int, FloatingIsland>",
+      "jsonType": "object",
+      "observedIn": [
+        "private_schema626",
+        "private_schema643_A",
+        "private_schema643_B"
+      ],
+      "writerAuthorized": false
+    }
+  ]
+}

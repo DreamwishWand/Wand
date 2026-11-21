@@ -17,7 +17,9 @@ const paths = [
   {path:'/Player/AvatarIsMale',type:'boolean'},
   {path:'/World/Characters',type:'array'},
   {path:'/Player/AchievementsData',type:'array'},
-  {path:'/Player/Mounts',type:'array'}
+  {path:'/Player/Mounts',type:'array'},
+  {path:'/Player/OutfitPresets',type:'array'},
+  {path:'/FreeTimers',type:'array'}
 ];
 const summary = (schemaObserved, witnesses = paths) => ({
   schema: 'wand.db05.ingest@1',
@@ -42,7 +44,7 @@ test('version 626 vs 643: equal observed shapes, no platform/build gates', () =>
   left.platform = 'Steam';
   const result = compareRedactedSaveWitnesses(left,right);
   assert.equal(result.status,'same_observed_witnesses');
-  assert.equal(result.domains.length,8);
+  assert.equal(result.domains.length,10);
   assert.ok(result.domains.every(d=>d.status==='same_observed_witnesses'));
   assert.equal(result.platformAndVersionUsedAsGates,false);
   assert.equal(result.writerAuthorized,false);
@@ -115,7 +117,7 @@ test('reject private keys and even numeric IDs before constructing output', () =
 test('duplicate fields, excessive witnesses and unknown kinds fail closed', () => {
   const repeated=summary(643,[...paths,paths[0]]);
   assert.throws(()=>compareRedactedSaveWitnesses(summary(626),repeated),/DUPLICATE_PUBLIC_WITNESS_PATH/);
-  const huge=summary(643,Array.from({length:100},()=>paths[0]));
+  const huge=summary(643,Array.from({length:200},()=>paths[0]));
   assert.throws(()=>compareRedactedSaveWitnesses(summary(626),huge),/PUBLIC_WITNESS_LIMIT/);
   const invalid=summary(643,paths.map(v=>v.path.endsWith('/Amount')?{...v,type:'secret_type'}:v));
   assert.throws(()=>compareRedactedSaveWitnesses(summary(626),invalid),/INVALID_PUBLIC_WITNESS_KIND/);

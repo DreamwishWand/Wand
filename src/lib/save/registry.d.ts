@@ -98,6 +98,68 @@ export function probeCommonSaveStructure(decoded: unknown): CommonSaveShapeProbe
 export function compareCommonSaveStructures(previous: unknown,current: unknown): CommonSaveComparison;
 export const SAVE_COMMON_SHAPE_PROBE_CONTRACT: 'wand.db05.common-shape-probe@1';
 export const SAVE_COMMON_SHAPE_COMPARE_CONTRACT: 'wand.db05.common-shape-comparison@1';
+export type NativeSaveFieldDomain = 'profile' | 'player' | 'world';
+export type NativeSaveField = Readonly<{
+  domain: NativeSaveFieldDomain;
+  path: string;
+  nativeMessage: 'Profile' | 'ProfilePlayer' | 'ProfileWorld';
+  protobufFieldNumber: number;
+  nativePropertyType: string;
+  jsonType: 'array' | 'object' | 'integer' | 'boolean' | 'string';
+  observedIn: readonly ('private_schema626' | 'private_schema643_A' | 'private_schema643_B')[];
+  writerAuthorized: false;
+}>;
+export type NativeSaveShapeDomain = Readonly<{
+  domain: NativeSaveFieldDomain;
+  status: 'shape_conflict' | 'shape_candidate' | 'sampled_candidate' | 'not_observed';
+  registeredFieldCount: number;
+  observedFieldCount: number;
+  observedFields: readonly Readonly<{ path: string; kinds: readonly string[] }>[];
+  conflictingPaths: readonly string[];
+  sampled: boolean;
+  writerAuthorized: false;
+}>;
+export type NativeSaveShapeProbe = Readonly<{
+  contract: 'wand.db05.native-shape-probe@1';
+  compatibilityBasis: 'observed_native_field_types';
+  nativeGameBuildAttested: false;
+  platformAndVersionUsedAsGates: false;
+  domains: readonly NativeSaveShapeDomain[];
+  registeredFieldCount: number;
+  exhaustive: false;
+  strictDecoderVerified: false;
+  writerAuthorized: false;
+}>;
+export type NativeSaveComparisonDomain = Readonly<{
+  domain: NativeSaveFieldDomain;
+  status: 'observed_type_conflict' | 'insufficient_evidence' | 'sampled_inconclusive' |
+    'observed_witness_difference' | 'same_observed_native_fields';
+  addedKnownPaths: readonly string[];
+  missingKnownPaths: readonly string[];
+  conflictingKnownPaths: readonly string[];
+  writerAuthorized: false;
+}>;
+export type NativeSaveComparison = Readonly<{
+  contract: 'wand.db05.native-shape-comparison@1';
+  status: 'invalid_root' | 'observed_type_conflict' | 'inconclusive' |
+    'observed_witness_difference' | 'same_observed_native_fields';
+  domains: readonly NativeSaveComparisonDomain[];
+  platformAndVersionUsedAsGates: false;
+  sourceGameBuild: 'steam-1.26.1';
+  currentGameNativeTypeAttestation: false;
+  exhaustive: false;
+  strictDecoderVerified: false;
+  writerAuthorized: false;
+  exportAuthorized: false;
+}>;
+export function getNativeSaveFields(): Readonly<{
+  schema: 'wand.db05.native1261-observed-field-witnesses@1';
+  fields: readonly NativeSaveField[];
+}>;
+export function probeNativeSaveStructure(decoded: unknown): NativeSaveShapeProbe;
+export function compareNativeSaveStructures(previous: unknown, current: unknown): NativeSaveComparison;
+export const SAVE_NATIVE_SHAPE_PROBE_CONTRACT: 'wand.db05.native-shape-probe@1';
+export const SAVE_NATIVE_SHAPE_COMPARE_CONTRACT: 'wand.db05.native-shape-comparison@1';
 export type FieldWitness = Readonly<{ path: string; type: string }>;
 export function getSaveRegistry(): Readonly<Record<string, unknown>>;
 export type LegacyIdReference = Readonly<{namespace:string;catalog:string|null;extraction:'map_key'|'value';join:'exact_numeric_only';currentCatalogCoverageVerified:false;status:'legacy_source_only';note:string}>;
