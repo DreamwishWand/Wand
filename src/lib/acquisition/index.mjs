@@ -1,4 +1,5 @@
 /** SRC-02 portable query API. Pass verified, version-matched private data at runtime. */
+import { createStaticStallCatalogIndex } from './stall-catalog.mjs';
 const validId = (id) => Number.isSafeInteger(id) && id > 0;
 const SHA = /^[0-9a-f]{64}$/;
 
@@ -22,6 +23,12 @@ export function createAcquisitionDatabase({ manifest, recipes = [], acquisitions
   const byShop = unique(shopOffers, 'offerId');
   const byStall = unique(stallSources, 'stallId');
   const byItem = unique(relatedItems, 'itemId');
+  const shopOffersByItem = new Map();
+  for (const offer of byShop.values()) {
+    if (!validId(offer.itemId)) throw new Error('Invalid shop offer Item ID');
+    if (!shopOffersByItem.has(offer.itemId)) shopOffersByItem.set(offer.itemId, []);
+    shopOffersByItem.get(offer.itemId).push(offer);
+  }
   const ingredientEvidencePresent = ingredientMembership !== null;
   if (manifest.files?.['ingredient-selector-membership.jsonl'] && !ingredientEvidencePresent) {
     throw new Error('Ingredient selector membership dataset missing');
@@ -195,6 +202,7 @@ export function createAcquisitionDatabase({ manifest, recipes = [], acquisitions
     }
     return [...distinct.values()];
   };
+  const stallCatalogs = createStaticStallCatalogIndex({manifest, stallSources, lootTables});
   for (const [itemId, rel] of byItem) {
     if (!validId(itemId)) throw new Error('Invalid Item ID');
     if ((rel.recipesProducedBy || []).some(id => !byRecipe.has(id)) ||
@@ -216,7 +224,7 @@ export function createAcquisitionDatabase({ manifest, recipes = [], acquisitions
       acquisitionPaths: (links.acquisitionPaths || []).map(key => byPath.get(key)),
       growsInto: (links.growPathsForSeed || []).map(key => byPath.get(key)),
       // Empty/unknown offers are not evidence an item is not for sale.
-      shopOffers: [...byShop.values()].filter(row => row.itemId === id),
+      shopOffers: [...(shopOffersByItem.get(id) ?? [])],
       possibleStalls: possibleStalls(id),
       source: { platform: manifest.platform, gameVersion: manifest.gameVersion },
     } : { itemId: id, status: 'unresolved_or_no_verified_link',
@@ -231,6 +239,9 @@ export function createAcquisitionDatabase({ manifest, recipes = [], acquisitions
     getIngredientSelectorMembership: id => byIngredientMember.get(id) ?? null,
     getLootTable: id => byLoot.get(id) ?? null,
     getStallSource: id => byStall.get(id) ?? null,
+    getStallStaticCatalog: stallCatalogs.getStallStaticCatalog,
+    getStallsByShopDataKey: stallCatalogs.getStallsByShopDataKey,
+    listStallStaticCatalogs: stallCatalogs.listStallStaticCatalogs,
     getConditionGate: digest => byGate.get(digest) ?? null,
     getConditionDefinition: id => byCondition.get(id) ?? null,
     getRecipeCondition: id => byGate.get(byRecipe.get(id)?.conditionDigest) ?? null,

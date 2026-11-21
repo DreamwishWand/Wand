@@ -1,3 +1,4 @@
+import type { StaticStallCatalog } from './stall-catalog.mjs';
 export const ACQUISITION_DB00_JOIN_CONTRACT: 'wand.db02.db00-candidate-join@1';
 export type AcquisitionClassification = 'catalog_item_candidate' | 'not_in_exact_catalog' | 'unresolved_in_partial_catalog';
 export interface Db02CatalogLookup {
@@ -31,6 +32,9 @@ export interface Db02CatalogJoin {
   getLootGroupCondition(tableId: number, groupIndex: number): Readonly<Record<string, unknown>> | null;
   getPossibleStallsForItem(id: number): ReadonlyArray<Record<string, unknown>>;
   getPossibleStallSlotsForItem(id: number): ReadonlyArray<Record<string, unknown>>;
+  getStallStaticCatalog(id: number): StaticStallCatalog | null;
+  getStallsByShopDataKey(key: string): ReadonlyArray<StaticStallCatalog>;
+  listStallStaticCatalogs(): ReadonlyArray<StaticStallCatalog>;
 }
 /** Requires a deeply immutable, privately loaded SRC-02 bundle. For verified
  * external provenance in Node, use loadPinnedAcquisitionCatalogJoin. */
