@@ -14,7 +14,7 @@ py -3 tools/src-02-acquisition/acquisition.py extract `
   --out "D:\WandData\SRC-02\Steam-v1.26.2"
 ```
 
-**Version contract:** Exactly Steam v1.26.2 and byte-for-byte verified `ActivityData.json`, `LootTable.json`, `ActivityItem.json`, `Building.json`, and `Condition.json` are supported in this revision. The earlier four source hashes match the Steam v1.26.2 SRC-01 probe. `Condition.json` is separately SHA-pinned against the Steam v1.26.2 source (`f9716fd7e80631213812ed2c93f802ee7ef73a0874214044d8e4304c555dc150`). No cross-version condition-byte equivalence is assumed. Extraction aborts before writing if the source hashes or SRC-01 manifest do not match. A later game version needs a new verified source profile and decoder compatibility review, not an unchecked version flag.
+**Version contract and 2026-11-21 P0 source correction:** Exactly Steam v1.26.2 is supported. The current version's independently captured SRC-01 `format-probe.json` (SHA-256 `07fd8ebb1c528f852a0e00ce54cf4964f93931b9155bc9e2aab1bd857986d00a`) records `Condition.json` SHA-256 `9eb5e7800a2485b1dfb3e148a7bcff5d6c6b6ed72797ed2331a902ab44188f4c` and size 571,341 bytes. The former hardcoded `f9716fd7e80631213812ed2c93f802ee7ef73a0874214044d8e4304c555dc150` is the *older Steam v1.26.1* original and is NOT valid as the current `Condition.json`. Extraction now fails closed on that stale file. The other four pinned source files were independently confirmed to match current v1.26.2 source SHA values. Do not reuse/approve previously generated 'v1.26.2' acquisition condition indexes until rebuilt and audited with the actual current Condition original. The updated original has not been retrieved for this stream; this SHA correction alone does not mean the 1.26.2 condition-derived data has been generated. A later game version requires a separately verified source profile; a version flag alone is insufficient.
 
 **Verified field mappings:** Steam IL2CPP `dump.cs` types `RecipeItemData`, `CraftingRecipeItemData`, `FishingDataItemData`, `MiningDataItemData`, `TimeBendingDataItemData`, `LootTableItemData`, `SubLootTable`, `ItemWithState`, `SeedItemData`, `StallBuildingItemData`, `UpgradeData`, `ItemAmount`, `ConditionItemData`, `ConditionsList`, `ConditionOneOf`, `ConditionCommon`, and `BoolOperator`. They provide numeric protobuf field contracts; source frames are identified by their `ID` field and the validated `2050000000 + key` / `2090000000 + key` / `20000000 + key` rules, and SRC-01 validates `30000000 + key` for seeds. `Formula.json` is an arithmetic formula database, not a cooking recipe file.
 
@@ -436,3 +436,10 @@ oversized submessages fail closed. Synthetic tests:
 `node --test tests/acquisition-stall-save.test.mjs`. Genuine save evidence,
 Codec/Writer proof, platform version compatibility and future sale-pricing
 sources are **not** part of this change.
+**P0 provenance correction (2026-11-21):** The previously reported 5,439
+`Condition.json` records and their 220 gates / 13 linked definitions were
+extracted under a source SHA later identified as Steam 1.26.1, even though the
+pipeline labeled the output Steam 1.26.2. Those condition-derived counts are
+**not accepted as current 1.26.2 evidence**. They are historical observations
+pending a full re-extraction from the independently pinned 1.26.2 original
+(`9eb5e7800a2485b1dfb3e148a7bcff5d6c6b6ed72797ed2331a902ab44188f4c`). Do not join the older condition bundle into DB-01 1.26.2.

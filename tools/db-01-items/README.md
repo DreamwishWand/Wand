@@ -118,3 +118,15 @@ private assets from the trusted source catalog before use; v1 assets are not
 silently accepted as v2 and no parallel runtime API is maintained. The
 release audit enforces source-record identity, original category, and
 unique native key across the entire version.
+
+## P0 DB-02 cross-version Condition source gate (2026-11-21)
+
+The independent Steam v1.26.2 SRC-01 format probe (SHA-256
+`07fd8ebb1c528f852a0e00ce54cf4964f93931b9155bc9e2aab1bd857986d00a`)
+records `Condition.json` SHA-256 `9eb5e7800a2485b1dfb3e148a7bcff5d6c6b6ed72797ed2331a902ab44188f4c`. Earlier SRC-02 code
+mistakenly pinned the archived Steam v1.26.1 SHA-256 `f9716fd7e80631213812ed2c93f802ee7ef73a0874214044d8e4304c555dc150` as
+current. The SRC-02 extractor now rejects that old source. Any previously
+published/privately exported acquisition-condition references based on the
+older source must be treated as **not verified for v1.26.2** and cannot be
+joined to DB-01's current catalog. Current `Condition.json` remains missing;
+this change is a source-integrity repair, not condition data completion.

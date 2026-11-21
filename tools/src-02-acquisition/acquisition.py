@@ -17,7 +17,7 @@ PINNED = {
     'loot': '580db9ed81c37890fd1f8fab121a5d328c967d8c22ee253ff4c2b431d008d99c',
     'activity_item': '4f4d3393887aececfcef16569cebc8dd7df08d03ba7b7c89083fe15bb7309dc2',
     'building': 'e8ee2f1637518b9f233c2e0b667493a44eee11ad5f137e182bc555f797c5f6e0',
-    'condition': 'f9716fd7e80631213812ed2c93f802ee7ef73a0874214044d8e4304c555dc150',
+    'condition': '9eb5e7800a2485b1dfb3e148a7bcff5d6c6b6ed72797ed2331a902ab44188f4c',
 }
 MAX_FILE = 16 * 1024 * 1024
 MAX_MESSAGE = 1024 * 1024

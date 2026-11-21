@@ -32,6 +32,16 @@ def entry(idx, base, *fields):
 
 
 class AcquisitionTest(unittest.TestCase):
+
+    def test_condition_source_pins_current_probe_not_archived_baseline(self):
+        # Steam v1.26.2 original source hash from SHA-verified SRC-01 format-probe.json.
+        # The archived v1.26.1 Condition.json differs and must never enter a 1.26.2 build.
+        current = '9eb5e7800a2485b1dfb3e148a7bcff5d6c6b6ed72797ed2331a902ab44188f4c'
+        stale = 'f9716fd7e80631213812ed2c93f802ee7ef73a0874214044d8e4304c555dc150'
+        self.assertEqual(src02.PINNED['condition'], current)
+        self.assertNotEqual(src02.PINNED['condition'], stale)
+        self.assertNotEqual(current, stale)
+
     def test_crafting_and_cooking(self):
         meal = entry(4, 2050000000, f(2, b'Meal!Test'), f(7, 30300005),
                      f(11, f(1, 31100053)), f(11, f(2, 2001400000)))
