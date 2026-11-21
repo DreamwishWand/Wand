@@ -4,6 +4,7 @@ Uses SRC-01's hash-pinned parser and UnityPy. No game writes, no network upload,
 no publication, and no unverified name-based Item ID matching.
 """
 import argparse
+import csv
 import importlib.util
 import json
 import re
@@ -21,6 +22,24 @@ GUID = re.compile(r"^guid:[0-9a-f]{32}$")
 GUID_TOKEN = re.compile(r"(?<![a-zA-Z0-9])(?:guid:)?([0-9a-f]{32})(?![a-zA-Z0-9])", re.I)
 SCHEMA = "wand.src04.steam-native@1"
 FULLVERSION_SHA256 = "e0aad8c7c19ebd3f441161db4d27f7838dd62b261927a974793f54fc0a81fc98"
+SRC00_FINGERPRINT = "374267a623c7f191d96f73f7f4240fe2a3d5a7349aa8e136537713b02a6cf09e"
+
+
+def load_bundle_pins():
+    index_file = Path(__file__).with_name("source-index-1262.csv")
+    if not index_file.is_file():
+        raise FileNotFoundError("Pinned SRC-00 1.26.2 bundle index is missing")
+    pins = {}
+    with index_file.open("r", encoding="utf-8", newline="") as stream:
+        for row in csv.DictReader(stream):
+            name, sha, size = row["bundle"], row["sha256"], int(row["bytes"])
+            if (name in pins or not name.endswith(".bundle") or
+                not re.fullmatch(r"[0-9a-f]{64}", sha) or size < 1):
+                raise ValueError("Invalid or duplicate SRC-00 bundle pin")
+            pins[name] = (sha, size)
+    if len(pins) != 40:
+        raise ValueError(f"SRC-00 icon index expected 40 bundles; got {len(pins)}")
+    return pins
 
 
 def steam_parser():
@@ -202,13 +221,18 @@ def image_variants(image, output, key, old, keep_originals, verify_existing):
     return variants
 
 
-def process_bundle(game, output, path, item_index, keep_originals=False, verify_existing=False):
+def process_bundle(game, output, path, item_index, expected_sha, expected_bytes,
+                   keep_originals=False, verify_existing=False):
     try:
         import UnityPy
     except ImportError as exc:
         raise RuntimeError("Install UnityPy and Pillow before extraction.") from exc
     relative = path.relative_to(game).as_posix()
+    if path.stat().st_size != expected_bytes:
+        raise ValueError(f"SRC-00 icon bundle byte size mismatch: {relative}")
     content_sha = digest(path)
+    if content_sha != expected_sha:
+        raise ValueError(f"SRC-00 icon bundle digest mismatch: {relative}")
     checkpoint = output / "bundles" / (content_sha + ".json")
     old = json.loads(checkpoint.read_text(encoding="utf-8")) if checkpoint.is_file() else {}
     if old.get("complete") and old.get("containerSha256") == content_sha and all(
@@ -372,16 +396,18 @@ def main():
         folder = game / ICON_FOLDER
         if not folder.is_dir():
             raise FileNotFoundError(f"Native generated icons bundle folder not found: {folder}")
+        pins = load_bundle_pins()
         candidates = sorted(p for p in folder.glob("*.bundle") if p.is_file() and not p.is_symlink())
-        if not candidates:
-            raise ValueError("No generated icon bundles found; do not scan unrelated game files.")
+        if set(p.name for p in candidates) != set(pins):
+            raise ValueError("Steam icon bundle listing differs from verified SRC-00 index")
         selected = candidates[:options.limit_bundles] if options.limit_bundles else candidates
         errors = []
         checkpoints = {}
         for count, path in enumerate(selected, 1):
             relative = path.relative_to(game).as_posix()
             try:
-                result = process_bundle(game, output, path, index,
+                expected_sha, expected_bytes = pins[path.name]
+                result = process_bundle(game, output, path, index, expected_sha, expected_bytes,
                                         options.keep_originals, options.verify_existing)
                 checkpoints[relative] = result
                 print(f"[{count}/{len(selected)}] {path.name}: {len(result['images'])} images", flush=True)
@@ -392,6 +418,8 @@ def main():
                           [p.relative_to(game).as_posix() for p in candidates],
                           [p.relative_to(game).as_posix() for p in selected],
                           checkpoints, errors)
+        report["src00DatasetFingerprint"] = SRC00_FINGERPRINT
+        save_json(output / "report-native.json", report)
         print(json.dumps({key: report[key] for key in
               ["candidateBundleCount", "extractedImages", "matchedItems",
                "matchedUniqueGuids", "unmatchedGuidCount", "complete"]}))
