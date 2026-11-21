@@ -10,6 +10,7 @@
 import {loadPrivateSrc02BrowserBundle,CURRENT_STEAM_1262_CONDITION_SHA256}
   from './private-browser-bundle.mjs';
 import {loadPrivateShopPriceView} from './private-shop-prices.mjs';
+import {loadPrivateCookingStarSettings} from './private-cooking-star-settings.mjs';
 
 export const DB02_MEAL_PRICE_VIEW_CONTRACT='wand.db02.private-meal-pricing-view@1';
 export const DB02_MEAL_PRICE_EVIDENCE_CONTRACT='wand.db02.meal-price-evidence@1';
@@ -170,7 +171,7 @@ function inspectAuthenticatedMeal({acquisitionBundle,shopPriceView,mealItemId,it
  * caller-provided \u0027verified\u0027 view objects are trusted.
  */
 export async function loadPrivateMealPricingView({
-  acquisitionArchiveBytes,priceManifestBytes,priceFiles
+  acquisitionArchiveBytes,priceManifestBytes,priceFiles,protoDbBytes
 }={}){
   const acquisitionBundle=await loadPrivateSrc02BrowserBundle(
     acquisitionArchiveBytes,{
@@ -182,6 +183,8 @@ export async function loadPrivateMealPricingView({
   const shopPriceView=await loadPrivateShopPriceView({
     manifestBytes:priceManifestBytes,files:priceFiles
   });
+  const nativeStars=protoDbBytes===undefined?null:
+    await loadPrivateCookingStarSettings(protoDbBytes);
   check(acquisitionBundle?.verified===true&&
     acquisitionBundle.manifestSha256===SRC02_R5_SHA&&
     acquisitionBundle.source?.platform==='Steam'&&
@@ -197,6 +200,12 @@ export async function loadPrivateMealPricingView({
     verifiedPrivateSources:true,
     currentOffersVerified:false,realizedSellPricesVerified:false,
     nativePriceFormulaEvaluated:false,publishable:false,writable:false,
+    nativeStarSettingsVerified:nativeStars!==null,
+    nativeCookingStarSettings:nativeStars,
+    getSourceStarResult:star=>{
+      check(Number.isSafeInteger(star)&&star>=1&&star<=5,'INVALID_STAR_RATING');
+      return nativeStars?.getStarResult(star)??null;
+    },
     inspect:(mealItemId,itemStateBytes)=>inspectAuthenticatedMeal({
       acquisitionBundle,shopPriceView,mealItemId,itemStateBytes
     })
