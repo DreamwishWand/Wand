@@ -47,7 +47,7 @@ Integrate a Stream patch using the structure from contracts/patch.example.json:
 
     node tools/db-00/cli.mjs merge --snapshot /private/baseline.json --patch /private/db01.patch.json --out /private/merged.json
 
-Patch merging is conflict-strict. If two Streams disagree, reconcile the evidence before merging.
+Patch merging adds verified names, relations, release associations and formerly unknown classifications to existing IDs, preserving both source references. Conflicting values for an already verified locale or classification fail closed. Reconcile the evidence before merging.
 
 To create a candidate pointer after a validated, publishable build:
 

@@ -223,3 +223,29 @@ test('SRC-00 registration preserves unknown Steam build ID without raw files', a
     assert.equal(JSON.stringify(record).includes('FullVersion.txt'), false);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test('DB-00 enriches private native Item IDs with independently verified Stream fields', () => {
+  const nativeSource = { id: 'native', sha256: sha, visibility: 'private' };
+  const localizedSource = { id: 'localization', sha256: 'b'.repeat(64), visibility: 'private' };
+  const base = snapshot('native-base', [{
+    ...item(40000001), names: {}, nameStatus: 'unverified', category: null,
+    sourceRefs: ['native']
+  }], { publishable: false, sources: [nativeSource] });
+  const update = {
+    schema: PATCH_SCHEMA, target: base.target, sources: [localizedSource], releases: [],
+    items: [item(40000001, { names: { en: 'Verified', ja: '検証済み' }, nameStatus: 'verified',
+      sourceRefs: ['localization'] })]
+  };
+  const merged = applyPatch(base, update);
+  assert.equal(merged.items.length, 1);
+  assert.equal(merged.items[0].names.ja, '検証済み');
+  assert.equal(merged.items[0].category, 'Furniture');
+  assert.deepEqual(merged.items[0].sourceRefs, ['localization', 'native']);
+  assert.equal(merged.publishable, false);
+  assert.throws(() => applyPatch(merged, { ...update, items: [item(40000001, {
+    names: { ja: '不一致' }, sourceRefs: ['localization']
+  })] }), /conflicting verified label/);
+  assert.throws(() => validateSnapshot(snapshot('illegal-raw', [item(40000001, {
+    rawNameField: 'never distribute'
+  })])), /unexpected item field/);
+});
