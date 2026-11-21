@@ -74,6 +74,41 @@ The browser adapter supports `getNativeTerrainTile(catalog, gridId, x, y)` and `
 
 The Python extractor also attaches non-destructive `terrainDecoding` metadata to private `grids.json`. `verify_bundle.py` independently recomputes this metadata from source-derived Base64 bytes. For native `GridData` values not yet independently validated (such as 3-bit+ palette formats), decoding remains disabled.
 
+## Native terrain cell counts and default-object origin audit
+
+DB-04 now extracts `nativePaletteIndexCellCounts` for source-corroborated 1/2-bit
+compacted grids. Each integer counts exact native **palette indices**, keeping
+duplicate palette values distinct. Counting runs on packed source bytes without
+allocating a full decoded 2D grid. The counts sum to `SizeX × SizeY` and are
+independently recomputed during `verify_bundle.py`, not merely trusted because
+the JSON file has a matching hash. Unrecognized GridData structures preserve
+`parseError`, do **not** quietly claim a decoded grid, and are counted in
+`report.json` as `nativeGridDecodeFailures`.
+
+World Editor/Decorate consumers can call
+`getNativeTerrainDistribution(catalog, gridId)` for a read-only legend with
+`paletteIndex`, `nativeValue`, `symbols`, and `cellCount`. The result has
+`worldCoordinatesVerified: false`, `nativeCodeBodyVerified: false`, and
+`placementLegalityVerified: false`. Legacy snapshots missing a histogram
+return `histogram_not_extracted`; unsupported formats return
+`unresolved_native_packing`.
+
+To audit **original default layout anchors** against their own GridData:
+
+```bash
+python tools/db-04-world/audit_layout_terrain.py --snapshot "/path/to/private/DB04-output"
+```
+
+This verifies the private bundle's hashes first; cross-references layout
+GridObject IDs to source GridCollection GridDataPath, reports anchors within
+native grid bounds, and counts raw floor-flag/AcceptedFloorTypesFlag
+intersections at each grid-local *anchor*. It separately accounts for missing
+GridData, unresolved packing, unknown item masks and apparent mismatches.
+**These counts are diagnostic, not proof of placeability.** Full occupied
+footprints, 16-way rotation geometry, permanent objects, water access, and
+path/fence collision are not inferred. Outputs may contain original-game
+positions and therefore remain in private SRC-05, not the public repository.
+
 ## Snapshot integrity / game-update deltas
 
 Validate **private** output before consumers ingest it:

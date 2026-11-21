@@ -6,8 +6,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from audit_layout_terrain import audit_snapshot
 from verify_bundle import validate_snapshot
-from terrain_codec import describe_native_packing, floor_at, decode_window, EVIDENCE
+from terrain_codec import (describe_native_packing, floor_at, decode_window,
+                           count_packed_palette_indices, EVIDENCE)
 
 from world import (STREAM, diff_records, encode_varint, explicit_references,
                    extract, footprint, parse_grid_structure, parse_itemlist,
@@ -201,6 +203,17 @@ class NativeWireTests(unittest.TestCase):
             decode_window(5, 5, [0, 1, 2, 3, 4],
                           bytes(25), 0, 0, 2, 2)
 
+    def test_source_palette_index_histogram_exact_counts_and_tail(self):
+        self.assertEqual(count_packed_palette_indices(
+            2, 2, [0, 1024, 2048], bytes((0b10100101,))), [0, 2, 2])
+        self.assertEqual(count_packed_palette_indices(
+            3, 3, [0, 1024], bytes((0xff, 0x80))), [0, 9])
+        self.assertIsNone(count_packed_palette_indices(
+            5, 5, [0, 1, 2, 3, 4], bytes(25)))
+        with self.assertRaisesRegex(ValueError, "index missing"):
+            count_packed_palette_indices(
+                2, 2, [0, 1024, 2048], bytes((0xff,)))
+
     def test_native_grid_fixed32_palette_and_compacted_payload(self):
         palette = struct.pack("<III", 0, 3072, 1024)
         compacted = b"\x55" * 48
@@ -209,6 +222,7 @@ class NativeWireTests(unittest.TestCase):
         grid = parse_grid_structure(raw)
         self.assertEqual((grid["sizeX"], grid["sizeY"]), (12, 16))
         self.assertEqual(grid["nativeFloorTypePalette"], [0, 3072, 1024])
+        self.assertEqual(grid["nativePaletteIndexCellCounts"], [0, 192, 0])
         self.assertEqual(base64.b64decode(grid["compactedFloorTypesBase64"]), compacted)
         self.assertEqual(grid["floorTypeEnumSymbols"]["1024"], "Floor")
         self.assertTrue(grid["terrainDecoding"]["decoded"])
@@ -351,6 +365,65 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(objects["candidateAdded"], ["40000002"])
         self.assertEqual(objects["membershipConfidence"],
                          "unverified_source_coverage")
+
+    def test_native_default_layout_grid_origin_audit_is_not_placement_permission(self):
+        grid_path = self.base / "GridData/Villages/Village04-Test.json"
+        grid_path.write_bytes(
+            field(1, 2) + field(2, 2) +
+            field(4, struct.pack("<III", 0, 1024, 2048)) +
+            field(5, bytes((0b10100101,))))
+        anchor_0 = field(2, 40000001)  # native object zero, anchor (0,0)
+        anchor_1 = field(1, 1) + field(2, 40000001) + field(3, 1)
+        anchor_2 = field(1, 2) + field(2, 40000001) + field(3, 2)
+        blob = (field(2, "GridData/Villages/Village04-Test.json") +
+                field(5, field(2, anchor_0)) +
+                field(5, field(1, 1) + field(2, anchor_1)) +
+                field(5, field(1, 2) + field(2, anchor_2)))
+        (self.base / "SceneLayouts/Village04/NativeGrids.json").write_bytes(
+            field(1, field(2, blob)))
+        report = extract(self.game, self.out)
+        self.assertEqual(report["nativePackedGridHistogramCount"], 1)
+        self.assertEqual(report["nativeGridDecodeFailures"], 0)
+        data = audit_snapshot(self.out)
+        self.assertEqual(data["status"], "source_origin_terrain_diagnostic_only")
+        counts = data["counts"]
+        self.assertEqual(counts["nativeDefaultObjectsScanned"], 3)
+        self.assertEqual(counts["anchorsInsideNativeGrid"], 2)
+        self.assertEqual(counts["anchorOutsideGridOrUnknownDimensions"], 1)
+        self.assertEqual(counts["nativeMaskAtAnchorIntersects"], 1)
+        self.assertEqual(counts["nativeMaskAtAnchorDisjoint"], 1)
+        self.assertFalse(data["placementLegalityVerified"])
+        self.assertFalse(data["fullFootprintOccupancyVerified"])
+        self.assertEqual(len(data["diagnosticSamples"]), 2)
+
+    def test_hash_matching_histogram_corruption_is_rejected(self):
+        target = self.base / "GridData/Villages/Village04-Test.json"
+        target.write_bytes(
+            field(1, 2) + field(2, 2) +
+            field(4, struct.pack("<III", 0, 1024, 2048)) +
+            field(5, bytes((0b10100101,))))
+        extract(self.game, self.out)
+        self.assertEqual(validate_snapshot(self.out)["counts"]["grids"], 1)
+        filename = self.out / "grids.json"
+        grids = json.loads(filename.read_text(encoding="utf-8"))
+        grids[0]["nativePaletteIndexCellCounts"][0] += 1
+        filename.write_text(json.dumps(grids), encoding="utf-8")
+        manifest_file = self.out / "manifest.json"
+        manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+        manifest["outputSha256"]["grids.json"] = hashlib.sha256(
+            filename.read_bytes()).hexdigest()
+        manifest_file.write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "histogram mismatches"):
+            validate_snapshot(self.out)
+
+    def test_grid_parse_failure_is_explicit_not_silent(self):
+        extract(self.game, self.out)
+        report = json.loads((self.out / "report.json").read_text())
+        self.assertEqual(report["nativeGridDecodeFailures"], 1)
+        grid = json.loads((self.out / "grids.json").read_text())[0]
+        self.assertEqual(grid["status"], "unrecognized_binary_structure")
+        self.assertTrue(grid["parseError"])
+        self.assertFalse(grid["terrainDecoding"]["decoded"])
 
     def test_snapshot_terrain_decode_evidence_must_match_original_bytes(self):
         target = self.base / "GridData/Villages/Village04-Test.json"

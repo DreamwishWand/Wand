@@ -6,7 +6,7 @@ import {
   getNativeAreasForScene, getDefaultLayoutObjects,
   getDefaultVillageAreaLayoutRefs, getDefaultLayoutGridEntries, describeNativeLayerMask,
   describeNativeFloorMask, checkNativeEditRestriction, assessPlacement,
-  getNativeTerrainTile, getNativeTerrainWindow,
+  getNativeTerrainTile, getNativeTerrainWindow, getNativeTerrainDistribution,
 } from '../src/lib/world/catalog.mjs';
 
 function fixture() {
@@ -143,6 +143,7 @@ function nativeRoomGrid() {
     gridId: 'GridData/Rooms/TestRoom.json',
     sizeX: sx, sizeY: sy,
     nativeFloorTypePalette: [0, 3072, 1024],
+    nativePaletteIndexCellCounts: [0, 52, 140],
     compactedFloorTypesBase64: Buffer.from(bytes).toString('base64'),
     nativeCompactedByteCount: bytes.length,
     terrainDecoding: {
@@ -204,4 +205,39 @@ test('partial grid or invalid packing never silently produces invented terrain',
   wrongPalette.grids.push(room3);
   assert.throws(() => getNativeTerrainTile(createWorldCatalog(wrongPalette),
     'GridData/Rooms/TestRoom.json', 1, 1), /palette index/);
+});
+
+
+test('source-packed native floor histogram is an exact preview-only legend', () => {
+  const data = fixture();
+  data.grids.push(nativeRoomGrid());
+  const catalog = createWorldCatalog(data);
+  const d = getNativeTerrainDistribution(catalog, 'GridData/Rooms/TestRoom.json');
+  assert.equal(d.status, 'source_corroborated_grid_local_summary');
+  assert.equal(d.totalCells, 192);
+  assert.deepEqual(d.values.map(v => v.cellCount), [0, 52, 140]);
+  assert.deepEqual(d.values[1].symbols, ['Floor', 'Wall']);
+  assert.deepEqual(d.values[2].symbols, ['Floor']);
+  assert.equal(d.worldCoordinatesVerified, false);
+  assert.equal(d.placementLegalityVerified, false);
+  assert.equal(d.nativeCodeBodyVerified, false);
+  assert.equal(getNativeTerrainDistribution(catalog, 'missing').status, 'unknown_grid');
+  assert.equal(getNativeTerrainDistribution(catalog,
+    'GridData/Villages/Meadow.json').status, 'unresolved_native_packing');
+});
+
+test('histogram metadata missing or inconsistent cannot silently claim valid geometry', () => {
+  const absent = fixture();
+  const noHistogram = nativeRoomGrid();
+  delete noHistogram.nativePaletteIndexCellCounts;
+  absent.grids.push(noHistogram);
+  assert.equal(getNativeTerrainDistribution(createWorldCatalog(absent),
+    'GridData/Rooms/TestRoom.json').status, 'histogram_not_extracted');
+
+  const bad = fixture();
+  const wrong = nativeRoomGrid();
+  wrong.nativePaletteIndexCellCounts = [0, 53, 140];
+  bad.grids.push(wrong);
+  assert.throws(() => getNativeTerrainDistribution(createWorldCatalog(bad),
+    'GridData/Rooms/TestRoom.json'), /histogram integrity/);
 });

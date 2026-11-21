@@ -304,6 +304,45 @@ export function getNativeTerrainWindow(catalog, gridId, rect) {
     nativeCodeBodyVerified: false, sampleBasedEncodingEvidence: grid.evidence };
 }
 
+/**
+ * Count original native terrain palette indices without exposing all 2D cells.
+ * The histogram comes from source-packed bytes checked by verify_bundle.py;
+ * it is a visual/analytical legend, never placement permission.
+ */
+export function getNativeTerrainDistribution(catalog, gridId) {
+  const grid = catalog.grids.get(String(gridId));
+  if (!grid) return { status: 'unknown_grid' };
+  if (grid.terrainDecoding?.decoded !== true ||
+      grid.terrainDecoding?.packing !== 'x_major_msb_first') {
+    return { status: 'unresolved_native_packing' };
+  }
+  if (grid.terrainDecoding?.nativeCodeBodyVerified !== false ||
+      grid.terrainDecoding?.placementLegalityVerified !== false) {
+    throw new TypeError('Invalid native terrain histogram provenance');
+  }
+  const counts = grid.nativePaletteIndexCellCounts;
+  const palette = grid.nativeFloorTypePalette;
+  const sx = grid.sizeX, sy = grid.sizeY;
+  if (counts == null) return { status: 'histogram_not_extracted' };
+  if (!Array.isArray(counts) || !Array.isArray(palette) ||
+      counts.length !== palette.length || !Number.isSafeInteger(sx) ||
+      !Number.isSafeInteger(sy) || sx < 1 || sy < 1 ||
+      sx * sy > 16777216 || !counts.every(n => Number.isSafeInteger(n) && n >= 0) ||
+      counts.reduce((a, b) => a + b, 0) !== sx * sy) {
+    throw new TypeError('Invalid native terrain histogram integrity');
+  }
+  return {
+    status: 'source_corroborated_grid_local_summary',
+    sizeX: sx, sizeY: sy, totalCells: sx * sy,
+    worldCoordinatesVerified: false, placementLegalityVerified: false,
+    nativeCodeBodyVerified: false,
+    values: counts.map((cellCount, index) => ({
+      paletteIndex: index, nativeValue: palette[index], cellCount,
+      ...describeNativeFloorMask(palette[index]),
+    })),
+  };
+}
+
 export function assessPlacement(catalog, itemId, proposed) {
   const item = catalog.objects.get(idText(itemId));
   if (!item) return { status: 'unresolved', reasons: ['unknown_item_id'] };
