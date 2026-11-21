@@ -2,6 +2,7 @@
   import { onMount, tick } from 'svelte';
   import { base } from '$app/paths';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
+  import SavedStorePreview from '$lib/collection/SavedStorePreview.svelte';
   import { decodeCollectionRecord, collectionFacetLabel } from '$lib/collection/catalog.mjs';
   import { loadActiveCollectionRuntime } from '$lib/game-db/client.mjs';
   import {
@@ -264,6 +265,7 @@
   {:else if loadError}
     <div class="error-banner" role="alert">データの検証または読み込みに失敗しました。{loadError}</div>
   {:else}
+    <SavedStorePreview {records} {locale} {gameImageMap} />
     <div class="summary-strip">
       <div><strong>{overall.total.toLocaleString(locale)}</strong><span>参照データ</span></div>
       <div><strong>{overall.owned.toLocaleString(locale)} / {overall.total.toLocaleString(locale)}</strong><span>所持・解放の手動記録 / 参照件数</span></div>

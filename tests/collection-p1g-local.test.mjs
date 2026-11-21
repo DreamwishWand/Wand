@@ -1,0 +1,53 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createCipheriv} from 'node:crypto';
+import {deflateRawSync} from 'node:zlib';
+import {decodeP1gPackagedProfile,p1gPackagedProfileCodec} from '../src/lib/collection/private-p1g-codec.js';
+import {createSavedStorePreview} from '../src/lib/collection/saved-store-preview.mjs';
+import {inspectDecodedWorldStores} from '../src/lib/acquisition/world-store-save.mjs';
+
+// A wholly synthetic Node AES/ZIP source profile; never read owner originals.
+const KEY=Buffer.from('62357168683873614A38556C444A557A545A5864325467366D626F3857386e35','hex');
+const NAME=Buffer.from('profile');
+function crc32(bytes){let c=0xffffffff;for(const b of bytes){c^=b;for(let i=0;i<8;i++)c=c&1?(0xedb88320^(c>>>1)):(c>>>1);}return(c^0xffffffff)>>>0;}
+function makeFixture(decoded){
+ const p=Buffer.from(JSON.stringify(decoded)),compressed=deflateRawSync(p);
+ const local=Buffer.alloc(30+NAME.length+compressed.length);
+ local.writeUInt32LE(0x04034b50,0);local.writeUInt16LE(20,4);local.writeUInt16LE(8,8);
+ local.writeUInt32LE(crc32(p),14);local.writeUInt32LE(compressed.length,18);
+ local.writeUInt32LE(p.length,22);local.writeUInt16LE(NAME.length,26);
+ NAME.copy(local,30);compressed.copy(local,30+NAME.length);
+ const central=Buffer.alloc(46+NAME.length);
+ central.writeUInt32LE(0x02014b50,0);central.writeUInt16LE(20,4);central.writeUInt16LE(20,6);
+ central.writeUInt16LE(8,10);central.writeUInt32LE(crc32(p),16);
+ central.writeUInt32LE(compressed.length,20);central.writeUInt32LE(p.length,24);
+ central.writeUInt16LE(NAME.length,28);NAME.copy(central,46);
+ const end=Buffer.alloc(22);end.writeUInt32LE(0x06054b50,0);end.writeUInt16LE(1,8);
+ end.writeUInt16LE(1,10);end.writeUInt32LE(central.length,12);
+ end.writeUInt32LE(local.length,16);
+ const enc=createCipheriv('aes-256-ecb',KEY,null);enc.setAutoPadding(true);
+ return new Uint8Array(Buffer.concat([enc.update(Buffer.concat([local,central,end])),enc.final()]));
+}
+test('browser P1G read-only codec opens synthetic saved shops and produces Collection preview',async()=>{
+ const source=makeFixture({GameInfo:{Version:643},Player:{},World:{Stores:[{
+  BuildingItemID:123,Displays:[{DisplayItemID:789,DisplayInfo:{Slots:[
+   {Item:{id:40000001,amount:1},IsAvailable:true,CurrencyId:10},
+   {Item:null,IsAvailable:true}
+  ]}}]}]}});
+ const raw=await decodeP1gPackagedProfile(source);
+ assert.equal(raw.metadata.profileVersion,643);
+ const saved=JSON.parse(raw.jsonText);
+ const evidence=inspectDecodedWorldStores({getStallStaticCatalog:()=>null},saved);
+ const summary=createSavedStorePreview(evidence,[{itemId:40000001,label:'Reference only',family:'Furniture'}]);
+ assert.equal(summary.distinctItemCount,1);
+ assert.equal(summary.savedSlotsWithoutItem,1);
+ assert.equal(summary.items[0].historicalReferenceOnly,true);
+ assert.equal(summary.items[0].playerOwnedVerified,false);
+ assert.equal(summary.pricesVerified,false);
+});
+test('dedicated public-site reader does not expose save Writer API',()=>{
+ assert.equal(p1gPackagedProfileCodec.createEncodedProfile,undefined);
+});
+test('rejects malformed encrypted profiles without dispatching network operations',async()=>{
+ await assert.rejects(()=>decodeP1gPackagedProfile(new Uint8Array(17)),/INVALID_ENCRYPTED_PROFILE_LENGTH/);
+});
