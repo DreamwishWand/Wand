@@ -129,6 +129,13 @@ class AcquisitionTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             src02.ingredient(f(1, 4) + f(2, 5), False)
 
+    def test_empty_jsonl_is_uploadable_but_not_an_offer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'shop-offers.jsonl'
+            src02.dump_rows(path, [])
+            self.assertEqual(path.read_bytes(), b'\n')
+            self.assertEqual(src02.load_rows(path, 'offerId'), {})
+
     def test_diff_detects_changed_and_removed(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
