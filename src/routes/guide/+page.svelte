@@ -24,6 +24,7 @@
   let importError = '';
   let info = '';
   let shardFiles: Record<string, File> = {};
+  let characterNames: Record<string, Record<string,string>> = {};
   let loadEpoch = 0;
   let detailEpoch = 0;
 
@@ -41,6 +42,12 @@
     ? new Set(searchIndex.records.map((r: any) => r.detail.file)).size : 0;
 
   function resetPage() { page = 0; }
+  function characterLabel(value: unknown): string {
+    const id = String(value ?? '');
+    const names = characterNames[id];
+    const sourceName = names?.[locale] || names?.en;
+    return sourceName ? `${sourceName} · ${id}` : id;
+  }
   function displayName(row: any) {
     return row.names[locale] || row.names.en || row.internalName || row.id;
   }
@@ -52,6 +59,7 @@
     detailEpoch++;
     searchIndex = null;
     shardFiles = {};
+    characterNames = {};
     selectedId = '';
     selectedDetail = null;
     detailError = '';
@@ -71,7 +79,8 @@
       if (request !== loadEpoch) return;
       searchIndex = result.index;
       shardFiles = result.shardFiles;
-      info = `${searchIndex.target.platform} ${searchIndex.target.gameVersion}：検索索引と詳細ファイル ${result.matchedShards}/${result.requiredShards} 個を接続しました。データは送信せず、詳細は選択時だけ読み込みます。`;
+      characterNames = result.characterNames;
+      info = `${searchIndex.target.platform} ${searchIndex.target.gameVersion}：検索索引と詳細ファイル ${result.matchedShards}/${result.requiredShards} 個とキャラクター名 ${Object.keys(result.characterNames).length} 件を接続しました。データは送信せず、詳細は選択時だけ読み込みます。`;
     } catch (error) {
       if (request === loadEpoch) importError = error instanceof Error ? error.message : String(error);
     } finally {
@@ -209,7 +218,7 @@
             <label>キャラクターID
               <select bind:value={character} on:change={resetPage}>
                 <option value="">すべて</option>
-                {#each characters as value}<option value={value}>{value}</option>{/each}
+                {#each characters as value}<option value={value}>{characterLabel(value)}</option>{/each}
               </select>
             </label>
             <label>グループID
@@ -256,6 +265,7 @@
         {#if selectedRow}
           <p class="guide-eyebrow">QUEST DETAIL · {selectedRow.id}</p>
           <h2>{displayName(selectedRow)}</h2>
+          {#if selectedRow.characterId}<p class="guide-detail-meta">キャラクター: {characterLabel(selectedRow.characterId)}</p>{/if}
           <p class="guide-detail-meta">原本の静的クエスト情報 · {selectedRow.objectiveKinds.join(' / ')}</p>
           {#if loadingDetail}<p role="status">詳細ファイルを検証しています…</p>{/if}
           {#if detailError}<p class="guide-detail-note" role="status">{detailError}</p>{/if}

@@ -79,3 +79,28 @@ IDs, and **1,905** steps offered a story-description panel. Six additional
 synthetic tests bring focused Guide browser tests to **20**, without embedding
 any private game data. The source baseline and status remain unchanged:
 Steam **v1.26.1**, `PARTIAL`.
+
+## Source character labels on the Guide filter (DB-03, 2026-11-21)
+
+When a user selects the private Guide extraction directory, the browser now
+optionally reads `guide/characters.json` (a ~219KB static native projection) and
+uses its **exact source-localized names** next to IDs in the character facet and
+quest inspector. The native document is accepted only with the same game-version
+and platform, the expected `wand.db03.native-guide@1` schema, `characters`
+family, source `Character.json` identity, stable 64-digit SHA-256 fingerprints,
+unique native IDs and exact supported locales. The UI falls back to the native
+numeric ID whenever this optional document or a locale is absent; unknown names
+are never invented. Misplaced same-name data from another selected folder is
+ignored, while duplicates and invalid same-folder native character documents
+fail closed.
+
+No original game assets are sent to a server; selecting this folder reads only
+the compact `quest-search.json` and optional `characters.json` (~219KB), not the
+~98MB full quest source nor its 32 shards. Original Steam v1.26.1 sample verified
+**86/86** distinct quest-associated character IDs with native character name
+entries, **733** missions and **32/32** shard references while reading **zero**
+shard files. The focused Guide browser tests now total **23** synthetic tests.
+An identical target version does not independently establish that the original
+character and Mission archives came from the exact same game build: this is
+local optional label enrichment, not a claim of independently signed source
+matching or of game progress/availability.

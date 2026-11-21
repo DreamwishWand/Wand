@@ -121,6 +121,36 @@ export async function importGuideSearch(file) {
   return validateGuideSearch(await jsonFile(file, MAX_SEARCH_BYTES));
 }
 
+/** Optional same-target character labels from native extracted character definitions.
+ * They enrich a local filter only; never change mission IDs or search coverage.
+ */
+export function guideCharacterLabels(payload, index) {
+  validateGuideSearch(index);
+  assert(isObj(payload) && payload.schema === 'wand.db03.native-guide@1' &&
+    payload.family === 'characters' && sameTarget(payload.target, index.target) &&
+    Array.isArray(payload.records) && payload.records.length > 0 && payload.records.length <= 10000,
+    'character labels require a same-version native character source');
+  const referenced = new Set(index.records.map(row => row.characterId).filter(Boolean));
+  /** @type {Record<string, Record<string, string>>} */
+  const labels = {};
+  const seen = new Set();
+  let sourceSha = null;
+  for (const row of payload.records) {
+    assert(isObj(row) && isId(row.id) && !seen.has(row.id) &&
+      isHash(row.nativeWireSha256) && isObj(row.source) &&
+      row.source.file === 'ddv_Data/StreamingAssets/itemlist/Character.json' &&
+      isHash(row.source.sha256) && isObj(row.names) &&
+      Object.entries(row.names).every(([lang, value]) => GUIDE_LOCALES.includes(lang) &&
+        typeof value === 'string' && value.trim() && value.length <= 4096),
+      'invalid or duplicate source character label');
+    if (sourceSha !== null) assert(sourceSha === row.source.sha256, 'mixed character source fingerprints');
+    sourceSha = row.source.sha256;
+    seen.add(row.id);
+    if (referenced.has(row.id)) labels[row.id] = row.names;
+  }
+  return labels;
+}
+
 /** Accept a locally selected Guide directory without uploading or preloading shards.
  *
  * A browser `webkitdirectory` selection returns File.webkitRelativePath paths
@@ -150,6 +180,12 @@ export async function importGuideFolder(files) {
   const chosen = candidates[0];
   const prefix = chosen.path.slice(0, -'guide/quest-search.json'.length);
   const index = await importGuideSearch(chosen.file);
+  const characterPath = prefix + 'guide/characters.json';
+  const characterFiles = files.filter(file => (file.webkitRelativePath || file.name) === characterPath);
+  assert(characterFiles.length <= 1, 'duplicate native character data file');
+  /** @type {Record<string, Record<string, string>>} */
+  const characterNames = characterFiles.length
+    ? guideCharacterLabels(await jsonFile(characterFiles[0], MAX_SEARCH_BYTES), index) : {};
   const needed = new Set(index.records.map(row => row.detail.file.split('/').at(-1)));
   /** @type {Record<string, File>} */
   /** @type {Record<string, File>} */
@@ -167,7 +203,7 @@ export async function importGuideFolder(files) {
     shardFiles[name] = file;
   }
   assert(Object.keys(shardFiles).length > 0, 'Guide folder has no matching detail shards');
-  return {index, shardFiles, matchedShards: Object.keys(shardFiles).length,
+  return {index, shardFiles, characterNames, matchedShards: Object.keys(shardFiles).length,
     requiredShards: needed.size};
 }
 
