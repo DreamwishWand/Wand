@@ -259,3 +259,38 @@ test('invalid document root is reported without mutating original values', () =>
   assert.ok(result.rootIssues.current.includes('WORLD_MUST_BE_OBJECT'));
   assert.deepEqual(previous, baseline);
 });
+
+test('actual 626/643 chest field shape allows nullable parent ID, not ownership', () => {
+  const fixture = {
+    GameInfo: { Version: 643 }, World: {}, Player: {
+      ContainerInventories: {
+        '1': { ID: 1, ParentItemID: null, Inventory: [], Size: 16 },
+        '2': { ID: 2, ParentItemID: 40000001, Inventory: [], Size: 16 }
+      }
+    }
+  };
+  const field = getLegacySaveFields().fields.find(
+    x => x.path === '/Player/ContainerInventories/{containerId}/ParentItemID');
+  assert.equal(field.type, 'integer|null');
+  assert.equal(field.idReference?.currentCatalogCoverageVerified, false);
+  const probe = probeSaveStructure(fixture);
+  const chest = probe.domains.find(x => x.domain === 'chests');
+  assert.equal(chest.status, 'shape_candidate');
+  assert.deepEqual(chest.observedFields.find(x => x.path === field.path).kinds,
+    ['integer', 'null']);
+  assert.equal(probe.writerAuthorized, false);
+  assert.equal(inspectDecodedSave(fixture, null).rootShapeValid, true);
+});
+
+test('real-save nullable parent shape still refuses invalid chest parent strings', () => {
+  const fixture = {
+    GameInfo: { Version: 626 }, World: {}, Player: {
+      ContainerInventories: { '1': { ParentItemID: 'not_an_item_id' } }
+    }
+  };
+  const chest = probeSaveStructure(fixture).domains.find(x => x.domain === 'chests');
+  assert.equal(chest.status, 'shape_conflict');
+  assert.deepEqual(chest.conflictingPaths,
+    ['/Player/ContainerInventories/{containerId}/ParentItemID']);
+  assert.equal(chest.writerAuthorized, false);
+});
