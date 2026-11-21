@@ -189,7 +189,7 @@ try{
   await page.reload();
   await page.locator('.summary-strip').waitFor({timeout:20000});
   assert.match(await page.locator('.summary-strip').innerText(),/1/);
-  assert.match(await page.locator('.source-pill').innerText(),/Steam\\s*·\\s*v1\\.26\\.2/);
+  assert.match(await page.locator('.source-pill').innerText(),/Steam\s*·\s*v1\.26\.2/);
   const releaseSearch=page.getByRole('searchbox',{name:/8言語/});
   await releaseSearch.fill('検証済みの靴');
   await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
