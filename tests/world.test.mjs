@@ -10,6 +10,7 @@ import {
   getNativeFootprintCandidateCells,
   getNativeFootprintLayerAt, getNativeFootprintLayerWindow,
   getNativeGridAreaRotatedVector, getNativeGridAreaUnrotatedVector,
+  getNativeFootprintOrientationBaseDimensions,
   getNativeFootprintCardinalDimensions,
   getNativeDefaultLayoutViewport, getNativeVillageAreaViewport,
 } from '../src/lib/world/catalog.mjs';
@@ -181,6 +182,52 @@ test('Steam v1.26.1 original GridArea integer vector transforms cover all 16 ori
     /Invalid native GridArea/);
   assert.throws(() => getNativeGridAreaRotatedVector(catalog, 2147483648, 0, 0),
     /Invalid native GridArea/);
+});
+
+test('source-native 16-way GridArea bounding size uses unscaled integer dimensions only', () => {
+  const data = fixture();
+  data.manifest.gameVersion = '1.26.1';
+  data.objects[0].footprint = {
+    ...data.objects[0].footprint,
+    sizeX: 3, sizeY: 2,
+    layerValues: [1, 2, 4, 8, 16, 32],
+  };
+  const catalog = createWorldCatalog(data);
+  const expected = [
+    [3, 2], [3, 2], [3, 3], [2, 3],
+    [2, 3], [2, 3], [3, 3], [3, 2],
+    [3, 2], [3, 2], [3, 3], [2, 3],
+    [2, 3], [2, 3], [3, 3], [3, 2],
+  ];
+  for (let code = 0; code < 16; code++) {
+    const size = getNativeFootprintOrientationBaseDimensions(
+      catalog, 40000001, code);
+    assert.deepEqual([size.sizeX, size.sizeY], expected[code]);
+    assert.equal(size.sourceGameVersion, '1.26.1');
+    assert.equal(size.nativeOrientationBaseSizeVerified, true);
+    assert.equal(size.gridToAreaTessellationRatioAssumed, '1:1');
+    assert.equal(size.fullNativeTessellationScalingApplied, false);
+    assert.equal(size.rotatedGridAreaCellMappingVerified, false);
+    assert.equal(size.gridObjectAnchorVerified, false);
+    assert.equal(size.occupancyPredicateVerified, false);
+    assert.equal(size.placementLegalityVerified, false);
+  }
+  assert.equal(getNativeFootprintOrientationBaseDimensions(
+    catalog, 999999, 3), null);
+  assert.throws(() => getNativeFootprintOrientationBaseDimensions(
+    catalog, 40000001, -1), /GridOrientation/);
+  assert.throws(() => getNativeFootprintOrientationBaseDimensions(
+    catalog, 40000001, 16), /GridOrientation/);
+
+  // Unverified other versions may not inherit Steam 1.26.1 native dimensions.
+  const other = createWorldCatalog(fixture());
+  const unverified = getNativeFootprintOrientationBaseDimensions(
+    other, 40000001, 3);
+  assert.equal(unverified.status,
+    'native_orientation_base_size_not_verified_for_game_version');
+  assert.equal(unverified.nativeOrientationBaseSizeVerified, false);
+  assert.equal(unverified.sizeX, undefined);
+  assert.equal(unverified.placementLegalityVerified, false);
 });
 
 test('native vector rotation refuses to claim source proof on other game versions', () => {
