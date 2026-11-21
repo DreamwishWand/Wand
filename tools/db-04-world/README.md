@@ -180,6 +180,44 @@ footprints, 16-way rotation geometry, permanent objects, water access, and
 path/fence collision are not inferred. Outputs may contain original-game
 positions and therefore remain in private SRC-05, not the public repository.
 
+## Unverified cardinal footprint models — evidence-only diagnostic
+
+The original game's `Definitions.Grid.GridAreaData` exposes `SizeX`,
+`SizeY`, native fixed32 `LayerValues`, and `AcceptedFloorTypesFlag`.
+`Meta.Grids.GridObject` supplies a grid-local anchor and a 16-entry
+`GridOrientation` enum. **The native machine-code body has not established
+how layer values map to (x,y), which layer masks imply occupied cells, how
+rotations transform that footprint, or where anchors lie relative to it.**
+
+To investigate without claiming placement permission, run:
+
+```bash
+python tools/db-04-world/audit_footprint_candidates.py --snapshot "/private/DB04-output" --max-objects 20000
+```
+
+The script first verifies the private DB-04 manifest. It then compares four
+explicit geometric hypotheses: raw fixed32 **X-major vs Y-major** index order,
+crossed with an anchor interpreted as **top-left vs center-floor**.
+Only orientation codes **0/4/8/12** use basic 90-degree *hypothetical*
+geometry; the other twelve codes are explicitly excluded as unresolved.
+A nonzero original raw layer mask is counted as a **candidate cell**, not
+verified physical occupancy. The audit reports bounded source-backed samples,
+candidate cells inside/outside original GridData, and terrain-floor mask
+intersections. These comparisons are **not** game placement/collision proof:
+even a perfect terrain agreement cannot verify the occupied-cell predicate,
+an object's anchor or move/remove eligibility.
+
+For interactive World Editor research,
+`getNativeFootprintCandidateCells(catalog, itemId, {x,y},
+{cellOrder,anchorModel,orientationCode})` exposes the identical
+hypothesis-labelled cell projection in JavaScript. Both implementations
+explicitly return `rotationTransformVerified: false`,
+`occupancyPredicateVerified: false`,
+`cellIndexToXYVerified: false`, and
+`placementLegalityVerified: false`. Non-cardinal transforms do not invent
+cells, and `assessPlacement()` never uses these hypothetical offsets for an
+affirmative placement result.
+
 ## Snapshot integrity / game-update deltas
 
 Validate **private** output before consumers ingest it:
