@@ -523,19 +523,214 @@ def grid_assets(root, sources):
     return grids
 
 
+# SceneLayouts/GridCollection is authoritative default-game state, not
+# a player's save snapshot. Fields below are mapped to Steam IL2CPP types:
+# Meta.GridCollection -> Meta.Grids.Grid -> Meta.Grids.GridObject.
+ORIENTATION_NAMES = (
+    "Up", "UpUpRight", "UpRight", "UpRightRight",
+    "Right", "DownRightRight", "DownRight", "DownDownRight",
+    "Down", "DownDownLeft", "DownLeft", "DownLeftLeft",
+    "Left", "UpLeftLeft", "UpLeft", "UpUpLeft",
+)
+
+
+def native_int32(value):
+    if value is None:
+        return 0  # protobuf omitted scalar has its declared default
+    if value <= 0xffffffff:
+        return value - (1 << 32) if value >= 0x80000000 else value
+    if (1 << 64) - (1 << 31) <= value < (1 << 64):
+        return (value & 0xffffffff) - (1 << 32)
+    raise ValueError("invalid protobuf int32")
+
+
+def native_uint32(value):
+    if value is None:
+        return 0
+    if not 0 <= value <= 0xffffffff:
+        raise ValueError("invalid protobuf uint32")
+    return value
+
+
+def native_layout_object(payload, map_id, grid_id, layout_id, relative):
+    """Use exact protobuf declared fields; omitted X/Y/orientation default to 0."""
+    obj = wire_fields(payload)
+    native_id = native_uint32(one(obj, 1, 0))
+    if native_id != map_id:
+        raise ValueError("GridObject protobuf map key and ID disagree")
+    item_id = native_int32(one(obj, 2, 0))
+    x = native_int32(one(obj, 3, 0))
+    y = native_int32(one(obj, 4, 0))
+    orientation = native_int32(one(obj, 5, 0))
+    raw_state = one(obj, 6, 2)
+    return {
+        "layoutObjectId": f"{layout_id}#grid={grid_id}#object={native_id}",
+        "layoutObjectIdKind": "derivedLayoutGridObjectComposite",
+        "layoutId": layout_id,
+        "gridIdNative": grid_id, "gridObjectIdNative": native_id,
+        "itemId": item_id, "itemIdFieldPresent": any(f == 2 for f, _, _ in obj),
+        "x": x, "y": y, "orientationCode": orientation,
+        "orientationName": ORIENTATION_NAMES[orientation]
+        if 0 <= orientation < len(ORIENTATION_NAMES) else None,
+        "stateByteCount": len(raw_state) if raw_state is not None else 0,
+        "stateSha256": digest(raw_state) if raw_state is not None else None,
+        "fromNativeCode": one(obj, 7, 0),
+        "positionBasis": "nativeGridLocal",
+        "worldCoordinatesVerified": False, "fixedImmovableVerified": False,
+        "source": {"path": relative.as_posix(),
+                   "nativeType": "Meta.Grids.GridObject",
+                   "nativeFields": {"id": 1, "itemId": 2, "x": 3,
+                                    "y": 4, "orientation": 5, "state": 6}},
+    }
+
+
+def grid_collection_layout(data, relative):
+    """Return None only if not a GridCollection; malformed known types fail."""
+    root = wire_fields(data)
+    map_entries = [part for f, w, part in root if (f, w) == (1, 2)]
+    if not map_entries:
+        return None  # empty file cannot prove its native message type
+    first_entry = wire_fields(map_entries[0])
+    native = one(first_entry, 2, 2)
+    if native is None:
+        return None
+    native_fields = wire_fields(native)
+    grid_data_path = text_field(native_fields, 2)
+    if not grid_data_path or not grid_data_path.startswith("GridData/"):
+        return None  # e.g. DefaultVillageData.Village, not a GridCollection
+    if len(map_entries) > 8192:
+        raise ValueError("excessive native GridCollection grid count")
+    layout_id = relative.relative_to(STREAM).as_posix()
+    grids, objects, keys = [], [], set()
+    for message in map_entries:
+        entry = wire_fields(message)
+        map_grid_id = native_uint32(one(entry, 1, 0))
+        if map_grid_id in keys:
+            raise ValueError("duplicate native GridCollection grid key")
+        keys.add(map_grid_id)
+        blob = one(entry, 2, 2, True)
+        fields = wire_fields(blob)
+        grid_id = native_uint32(one(fields, 1, 0))
+        if grid_id != map_grid_id:
+            raise ValueError("grid map key and native Grid.ID disagree")
+        data_path = text_field(fields, 2, True)
+        if not (data_path.startswith("GridData/") and
+                data_path.endswith(".json") and safe_reference(data_path)):
+            raise ValueError("invalid explicit GridData path")
+        default_path = text_field(fields, 3)
+        if default_path is not None and not (
+            default_path.startswith("SceneLayouts/") and
+            default_path.endswith(".json") and safe_reference(default_path)
+        ):
+            raise ValueError("invalid native GridDefaultLayoutPath")
+        tessellation = native_int32(one(fields, 4, 0))
+        if not 0 <= tessellation <= 256:
+            raise ValueError("unsupported native TessellationFactor")
+        seen_objects = set()
+        for f, wire, item in fields:
+            if f != 5:
+                continue
+            if wire != 2 or len(objects) >= 250000:
+                raise ValueError("invalid or excessive native Grid.Objects")
+            object_entry = wire_fields(item)
+            object_map_key = native_uint32(one(object_entry, 1, 0))
+            if object_map_key in seen_objects:
+                raise ValueError("duplicate GridObject map key")
+            seen_objects.add(object_map_key)
+            value = one(object_entry, 2, 2, True)
+            objects.append(native_layout_object(
+                value, object_map_key, grid_id, layout_id, relative))
+        grids.append({
+            "gridIdNative": grid_id, "gridDataPath": data_path,
+            "gridDefaultLayoutPath": default_path,
+            "tessellationFactor": tessellation,
+            "nextGridObjectIdNative": native_uint32(one(fields, 6, 0)),
+            "defaultObjectCount": len(seen_objects),
+            "gridDataPathWireField": "1.2.2",
+        })
+    return ({
+        "layoutId": layout_id, "layoutKind": "nativeGridCollection",
+        "gridReferences": [{"path": row["gridDataPath"],
+                            "wireField": row["gridDataPathWireField"]}
+                           for row in grids],
+        "nativeGridEntries": grids,
+        "defaultObjectCount": len(objects),
+        "diffGridEntriesUnparsed": sum(1 for f, w, _ in root if f == 2 and w == 2),
+        "worldCoordinatesVerified": False,
+        "fixedObjectsVerified": False,
+        "source": {"path": relative.as_posix(),
+                   "nativeType": "Meta.GridCollection"},
+    }, objects)
+
+
+def default_village_layout(data, relative):
+    """Meta.DefaultVillageData with explicit area->GridLayoutPath map."""
+    root = wire_fields(data)
+    villages = [value for f, w, value in root if (f, w) == (1, 2)]
+    paths = [value for f, w, value in root if (f, w) == (2, 2)]
+    if len(villages) != 1 or not paths:
+        return None
+    village = wire_fields(villages[0])
+    scene_id = one(village, 2, 0)  # Village.SceneItemId
+    area_data_name = text_field(village, 3)  # Village.VillageAreaDataName
+    if scene_id is None or not area_data_name:
+        return None
+    areas, area_keys = [], set()
+    for message in paths:
+        entry = wire_fields(message)
+        area_type = native_int32(one(entry, 1, 0))
+        if area_type in area_keys:
+            raise ValueError("duplicate DefaultVillageData GridLayoutPaths key")
+        area_keys.add(area_type)
+        path = text_field(entry, 2, True)
+        if not (path.startswith("SceneLayouts/") and
+                path.endswith(".json") and safe_reference(path)):
+            raise ValueError("invalid default village GridLayoutPaths reference")
+        areas.append({
+            "nativeAreaTypeCode": area_type,
+            "nativeAreaTypeName": VILLAGE_AREA_NAMES.get(area_type),
+            "gridLayoutPath": path,
+        })
+    layout_id = relative.relative_to(STREAM).as_posix()
+    return {
+        "layoutId": layout_id, "layoutKind": "nativeDefaultVillageData",
+        "defaultVillageSceneId": native_int32(scene_id),
+        "nativeVillageAreaDataName": area_data_name,
+        "areaLayoutReferences": sorted(
+            areas, key=lambda row: row["nativeAreaTypeCode"]),
+        "gridReferences": [],
+        "nativeGridEntries": [], "defaultObjectCount": 0,
+        "worldCoordinatesVerified": False, "fixedObjectsVerified": False,
+        "source": {"path": relative.as_posix(),
+                   "nativeType": "Meta.DefaultVillageData"},
+    }
+
+
 def scene_layouts(root, sources):
-    layouts = []
+    layouts, layout_objects = [], []
     for relative in optional_files(root, STREAM / "SceneLayouts", sources):
         data = source_bytes(root, relative, sources)
+        parsed = grid_collection_layout(data, relative)
+        if parsed is not None:
+            layout, objects = parsed
+            layouts.append(layout)
+            layout_objects.extend(objects)
+            continue
+        default = default_village_layout(data, relative)
+        if default is not None:
+            layouts.append(default)
+            continue
         links = explicit_references(data)
         refs = sorted({(entry["path"], entry["wireField"]) for entry in links})
         layouts.append({
             "layoutId": relative.relative_to(STREAM).as_posix(),
+            "layoutKind": "unresolvedBinaryLayout",
             "gridReferences": [{"path": path, "wireField": field} for path, field in refs],
-            "coordinatesVerified": False, "fixedObjectsVerified": False,
+            "nativeGridEntries": [], "defaultObjectCount": None,
+            "worldCoordinatesVerified": False, "fixedObjectsVerified": False,
             "source": {"path": relative.as_posix()},
         })
-    return layouts
+    return layouts, layout_objects
 
 
 def validate_overrides(root, sources, objects):
@@ -594,9 +789,15 @@ def make_diff(previous, outputs):
     result = {"schema": SCHEMA, "status": "compared", "entities": {}}
     for name, key in (("scenes", "sceneId"), ("objects", "itemId"),
                       ("grids", "gridId"), ("layouts", "layoutId"),
-                      ("worlds", "worldId"), ("areas", "areaId")):
+                      ("worlds", "worldId"), ("areas", "areaId"),
+                      ("layoutObjects", "layoutObjectId")):
         file = previous / (name + ".json")
         if not file.is_file():
+            if name == "layoutObjects":
+                result["entities"][name] = {
+                    "status": "previous_snapshot_lacks_layout_objects",
+                    "note": "No default-object diff is inferred for a legacy snapshot."}
+                continue
             raise ValueError(f"missing prior snapshot: {file.name}")
         old = json.loads(file.read_text(encoding="utf-8"))
         if not isinstance(old, list):
@@ -648,12 +849,23 @@ def extract(game, out, previous=None):
             scene["parentWorldId"] = world["worldId"]
             scene["worldHierarchyVerified"] = True
     grids = grid_assets(game, sources)
-    layouts = scene_layouts(game, sources)
+    layouts, layout_objects = scene_layouts(game, sources)
     conflicts, overrides = validate_overrides(game, sources, objects)
     source_paths = {row["path"] for row in sources}
     missing_refs = sorted({
         ref["path"] for layout in layouts for ref in layout["gridReferences"]
         if (STREAM / ref["path"]).as_posix() not in source_paths
+    })
+    missing_area_layouts = sorted({
+        ref["gridLayoutPath"]
+        for layout in layouts
+        for ref in layout.get("areaLayoutReferences", [])
+        if (STREAM / ref["gridLayoutPath"]).as_posix() not in source_paths
+    })
+    known_object_ids = {obj["itemId"] for obj in objects}
+    object_types_outside_db04 = sorted({
+        row["itemId"] for row in layout_objects
+        if row["itemId"] not in known_object_ids
     })
     unresolved = {
         "schema": SCHEMA,
@@ -667,11 +879,14 @@ def extract(game, out, previous=None):
         ],
         "missingFootprintsByCategory": dict(sorted(missing.items())),
         "unresolvedExplicitGridReferences": missing_refs,
+        "unresolvedDefaultVillageAreaLayouts": missing_area_layouts,
+        "layoutObjectIdsNotInDB04FurnitureBuilding": object_types_outside_db04,
         "nativeOverrideConflicts": conflicts,
         "worldRegistryUnresolved": hierarchy_unresolved,
     }
     outputs = {"scenes": scenes, "objects": objects, "grids": grids,
-               "layouts": layouts, "worlds": worlds, "areas": areas}
+               "layouts": layouts, "layoutObjects": layout_objects,
+               "worlds": worlds, "areas": areas}
     delta = make_diff(previous, outputs)
     out.mkdir(parents=True, exist_ok=True)
     hashes = {}
@@ -686,6 +901,11 @@ def extract(game, out, previous=None):
         "areaCount": len(areas), "objectCount": len(objects),
         "withNativeFootprint": sum(row["footprint"] is not None for row in objects),
         "gridFileCount": len(grids), "layoutFileCount": len(layouts),
+        "defaultLayoutObjectCount": len(layout_objects),
+        "typedGridCollectionCount": sum(row["layoutKind"] == "nativeGridCollection"
+                                        for row in layouts),
+        "typedDefaultVillageCount": sum(row["layoutKind"] == "nativeDefaultVillageData"
+                                       for row in layouts),
         "furnitureOverridesInspected": overrides,
         "nativeOverrideConflictCount": len(conflicts), "unresolvedGridReferenceCount": len(missing_refs),
     }
