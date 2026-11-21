@@ -158,8 +158,36 @@ test('source-native GridArea.GetStrideFor preserves nullable default and signed 
   assert.equal(sourced.itemFactoryRoutePerRecordVerified, false);
   assert.equal(sourced.worldCoordinatesVerified, false);
   assert.equal(sourced.placementLegalityVerified, false);
+  assert.equal(sourced.nativeValue, undefined);
+  assert.equal(sourced.inside, undefined);
+  assert.equal(sourced.nativeTessellationCoordinateConversionVerified, undefined);
   assert.equal(getNativeDefaultLayoutObjectComputedStride(
     catalog, 'missing').status, 'unknown_default_layout_object');
+
+  // Stride comes from a source nullable override and exact Grid factor.
+  // Orientation-specific raw cells must never be a prerequisite: for an
+  // oblique initial object, (0,0) may be outside its rotated footprint.
+  const oblique = fixture();
+  oblique.manifest.gameVersion = '1.26.1';
+  oblique.objects[0].footprint = {
+    ...oblique.objects[0].footprint,
+    strideOverride: 2,
+    strideOverrideSourceVerified: true,
+    nativeWireFields: {strideOverride: '6.5'},
+    strideOverridePlacementSemanticsVerified: false,
+  };
+  oblique.layoutObjects[0].orientationCode = 7;
+  oblique.layouts[0].nativeGridEntries[0].tessellationFactor = 3;
+  const obliqueCatalog = createWorldCatalog(oblique);
+  const obliqueStride = getNativeDefaultLayoutObjectComputedStride(
+    obliqueCatalog, oblique.layoutObjects[0].layoutObjectId);
+  assert.equal(obliqueStride.status, 'source_correlated_gridarea_get_stride_for');
+  assert.equal(obliqueStride.nativeComputedStride, 6);
+  assert.equal(obliqueStride.originalOrientationCode, 7);
+  assert.equal(obliqueStride.callerGridFactorProvenanceVerified, true);
+  assert.equal(obliqueStride.nativeValue, undefined);
+  assert.equal(obliqueStride.inside, undefined);
+  assert.equal(obliqueStride.placementLegalityVerified, false);
 
   const rawNull = fixture();
   rawNull.manifest.gameVersion = '1.26.1';
