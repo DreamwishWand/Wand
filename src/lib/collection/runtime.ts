@@ -85,6 +85,7 @@ export interface CollectionFilter {
 export type PublicDb01Item = Pick<Db01Item,'itemId'|'names'|'nativeCategory'>;
 export interface CollectionRuntimeMetadata {
   snapshot: string;
+  nameCoverage?: Readonly<{ itemDefinitions:number;nameVerified:number;nameUnverified:number }> | null;
   platform: string;
   version: string | null;
   expansions: readonly string[];
@@ -106,6 +107,7 @@ interface PublicLegacyIndex {
 }
 interface PublicDb00Index {
   schema: 'wand.game-db.release@1';
+  coverage?: { scope:string;itemDefinitions?:number;nameVerified?:number;nameUnverified?:number;semanticCategoriesVerified?:boolean };
   id: string;
   count: number;
   target: { platform: string; gameVersion: string|null; buildId: string|null };
@@ -264,6 +266,15 @@ export class CollectionRuntime {
           || manifest.target.buildId !== active.target.buildId) {
           throw new Error('COLLECTION_DB00_PUBLIC_RELEASE_MISMATCH');
         }
+        if (manifest.id === 'steam-1.26.2-native-itemlist-v1' &&
+          (manifest.count !== 13_202
+            || manifest.coverage?.scope !== 'steam-v1.26.2-native-itemlist'
+            || manifest.coverage.itemDefinitions !== 13_202
+            || manifest.coverage.nameVerified !== 11_492
+            || manifest.coverage.nameUnverified !== 1_710
+            || manifest.coverage.semanticCategoriesVerified !== false)) {
+          throw new Error('COLLECTION_DB00_SOURCE_COVERAGE_INVALID');
+        }
         engine.load_db00_index(source);
         for (const shard of manifest.shards) {
           if (!/^items-[0-9]{3,}\.json$/.test(shard.file))
@@ -273,7 +284,12 @@ export class CollectionRuntime {
         }
         engine.finish_db00();
         const catalog=JSON.parse(engine.metadata_json()) as Omit<CollectionRuntimeMetadata,'snapshot'>;
-        metadata={...catalog,snapshot:active.snapshot};
+        const coverage = manifest.coverage;
+        metadata={...catalog,snapshot:active.snapshot,
+          nameCoverage:coverage?.scope==='steam-v1.26.2-native-itemlist'
+            ? {itemDefinitions:coverage.itemDefinitions!,nameVerified:coverage.nameVerified!,nameUnverified:coverage.nameUnverified!}
+            : null
+        };
       } else {
         throw new Error('COLLECTION_DB00_POINTER_KIND');
       }
