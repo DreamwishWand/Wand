@@ -1,0 +1,30 @@
+{
+  "schema": "wand.db05.db03-quest-links@1",
+  "source": "native_1262_save_field_and_private_db03_playable_quest_search",
+  "families": [
+    {
+      "id": "active_mission_slot",
+      "catalog": "db03_playable_quest",
+      "path": "/World/MissionSlots/{id}/Slots[]/MissionId",
+      "extraction": "positive_integer_value",
+      "nativeMessage": "MissionSlot",
+      "nativePropertyType": "int",
+      "nativeProtobufFieldNumber": 2,
+      "sourceStatus": "observed_steam1262_dump_and_private_626_643",
+      "note": "An active MissionId is only an exact native ID candidate. Missing entries in a playable-quest subset are not absent game content."
+    }
+  ],
+  "policy": {
+    "readOnly": true,
+    "privateSaveValuesExported": false,
+    "privateGuideRecordsExported": false,
+    "guideOriginalSourceShaVerifiedByBridge": false,
+    "guideSearchFileTrustedOnlyAfterSeparateSourceVerification": true,
+    "platformAndVersionUsedAsCompatibilityGates": false,
+    "completeQuestHistoryVerified": false,
+    "progressVerified": false,
+    "ownershipVerified": false,
+    "writerAuthorized": false,
+    "exportAuthorized": false
+  }
+}
