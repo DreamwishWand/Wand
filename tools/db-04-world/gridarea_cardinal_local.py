@@ -179,3 +179,20 @@ def cardinal_layer_window(size_x: int, size_y: int,
         "occupancyPredicateVerified": False,
         "placementLegalityVerified": False,
     }
+
+
+def main():
+    import argparse
+    import json
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--dll", type=Path, required=True)
+    args = parser.parse_args()
+    try:
+        print(json.dumps(verify_original_cardinal_local_method(args.dll),
+                         sort_keys=True, indent=2))
+    except (ValueError, TypeError, OSError) as exc:
+        parser.exit(1, f"DB-04 original GridArea cardinal source mismatch: {exc}\n")
+
+
+if __name__ == "__main__":
+    main()
