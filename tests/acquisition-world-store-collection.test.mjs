@@ -17,7 +17,7 @@ function join({complete=false, extraItems=[]}={}) {
       item('345',{nameStatus:'verified', names:{ja:'確認済みの名称',en:'Verified name'}}),
       item('990',{nativeCategory:'Clothing'}),...extraItems]};
   const bundle={verified:true,privateSource:true,manifestSha256:'c'.repeat(64),
-    manifest:{schema:'wand.src02@1',status:'partial_native_extraction',platform:'Steam',gameVersion:'1.26.2',source:{src01ManifestSha256:sourceSha}},
+    manifest:{schema:'wand.src02@1',status:'partial_native_extraction',platform:'Steam',gameVersion:'1.26.2',source:{src01ManifestSha256:sourceSha,conditionSha256:'9eb5e7800a2485b1dfb3e148a7bcff5d6c6b6ed72797ed2331a902ab44188f4c'}},
     recipes:[],relatedItems:[],stallSources:[],lootTables:[]};
   for(const key of ['recipes','relatedItems','stallSources','lootTables'])Object.freeze(bundle[key]);
   Object.freeze(bundle.manifest.source);Object.freeze(bundle.manifest);Object.freeze(bundle);
