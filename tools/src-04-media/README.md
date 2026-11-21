@@ -2,7 +2,7 @@
 
 **Recommended for the confirmed Windows Steam installation.** Download the [SRC04-MEDIA.cmd](SRC04-MEDIA.cmd) file from this development branch and double-click it. Python 3 with the Windows py launcher and initial internet access to install dependencies are required. **No local Git clone or manual path selection is required.**
 
-The launcher downloads the development tools to %LOCALAPPDATA%\DreamwishWand\SRC-04\code, installs Pillow/UnityPy if needed, and uses:
+The launcher downloads **one bundled start.ps1** (Raw URL with public GitHub Contents API fallback), then unpacks the embedded source files into %LOCALAPPDATA%\DreamwishWand\SRC-04\code without further GitHub source requests. It installs Pillow/UnityPy if needed, and uses:
 
 - Input: C:\Program Files (x86)\Steam\steamapps\common\Disney Dreamlight Valley (read-only).
 - Local output (automatically created): %USERPROFILE%\Documents\DreamwishWand\SRC-04 MEDIA\Steam-v1.26.2.
