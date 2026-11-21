@@ -145,6 +145,13 @@ object collections return explicit statuses instead of fabricating terrain.
 The input remains the exact private source archive; public Git contains only
 the decoder, adapter and synthetic regression tests.
 
+The existing one-shot private `package_snapshot.py` additionally generates
+`diagnostics/footprint-hypotheses.json` inside its verified private ZIP.
+This is automatic when running `run.ps1` against the installed Steam game;
+no second PC extraction is required. The comparison is capped at 5,000 native
+default objects and records whether the sample was truncated. The generated
+scorecard remains explicitly unverified and is not published to Git.
+
 ## Native terrain cell counts and default-object origin audit
 
 DB-04 now extracts `nativePaletteIndexCellCounts` for source-corroborated 1/2-bit
