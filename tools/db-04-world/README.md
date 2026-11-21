@@ -708,6 +708,49 @@ Steam v1.26.1 gated. Neither a raw mask nor repeated source cell
 establishes the object anchor, physical occupancy, movement restrictions,
 collisions, or legal editor placement. All these flags remain false.
 
+### Binding an original default GridObject to its native Grid factor
+
+The original SceneLayouts GridCollection records each Grid's
+TessellationFactor (protobuf field 4), separately from its GridObject
+map (field 5). DB-04 already extracts both the grid's native ID,
+GridDataPath and factor into layouts.json, and the GridObject's
+original ItemID, orientation and grid ID into layoutObjects.json.
+
+The read-only World API now joins these records by their **exact original
+layout ID and native grid ID**, requires **exactly one matching Grid
+entry** and a valid positive factor (1..256), then computes the
+object-local raw GridArea layer matrix using the original
+GridAreaData.GetGridArea factory path and the source-native
+TryGetGridLocalPosition conversion:
+
+~~~js
+const view = getNativeDefaultLayoutObjectLayerWindow(
+  catalog, 'SceneLayouts/Village04/Main.json#grid=0#object=7',
+  {x: 0, y: 0, width: 4, height: 6});
+const cell = getNativeDefaultLayoutObjectLayerAt(
+  catalog, 'SceneLayouts/Village04/Main.json#grid=0#object=7',
+  3, 5);
+~~~
+
+When successfully joined, the result includes
+callerGridFactorProvenanceVerified: true, source layout ID, native Grid
+ID, GridDataPath, factor, original ItemID, and orientation. A missing,
+duplicate or invalid Grid entry **cannot** silently fall back to 1.
+Missing GridData in a *partial* source archive is reported as a
+sourceGridDataLoaded boolean, without misrepresenting the source-proven
+GridCollection factor itself.
+
+This does **not** establish that an object's current game-save Grid,
+TessellationFactor, or transform matches the **default** game source.
+Nor does it prove that a particular item record used the native
+GridAreaData.GetGridArea factory route rather than another constructor.
+Returned currentSaveObjectVerified,
+worldCoordinatesVerified, itemFactoryRoutePerRecordVerified,
+gridObjectAnchorVerified, occupancyPredicateVerified and
+placementLegalityVerified remain false. The API **does not add the
+GridObject.X/Y anchor**, because the object's position/reference
+convention has not been proven.
+
 ## Unverified cardinal footprint models — evidence-only diagnostic
 
 The original game's `Definitions.Grid.GridAreaData` exposes `SizeX`,
