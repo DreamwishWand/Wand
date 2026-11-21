@@ -12,6 +12,8 @@ import {
   getNativeFootprintOrientedLayerAt, getNativeFootprintOrientedWindow,
   getNativeFootprintTessellatedOrientedLayerAt,
   getNativeFootprintTessellatedOrientedWindow,
+  getNativeDefaultLayoutObjectLayerAt,
+  getNativeDefaultLayoutObjectLayerWindow,
   getNativeFootprintObliqueOrientedLayerAt,
   getNativeFootprintObliqueOrientedWindow,
   getNativeFootprintCardinalOrientedLayerAt,
@@ -529,6 +531,94 @@ test('tessellation API refuses unsupported revisions, invalid factors and unprov
     /outside bounds/);
   assert.equal(getNativeFootprintTessellatedOrientedLayerAt(
     catalog, 999, 0, 0, 8, 2), null);
+});
+
+test('native Default GridCollection factor is linked to exact GridObject, not guessed', () => {
+  const native = fixture();
+  native.manifest.gameVersion = '1.26.1';
+  native.layouts[0].nativeGridEntries[0].tessellationFactor = 2;
+  native.objects[0].footprint = {
+    ...native.objects[0].footprint,
+    sizeX: 3, sizeY: 2, layerValues: [11, 12, 21, 22, 31, 32],
+  };
+  const catalog = createWorldCatalog(native);
+  const id = native.layoutObjects[0].layoutObjectId;
+  const window = getNativeDefaultLayoutObjectLayerWindow(catalog, id,
+    {x: 0, y: 0, width: 4, height: 6});
+  assert.deepEqual(window.rows, [
+    [31,31,32,32], [31,31,32,32],
+    [21,21,22,22], [21,21,22,22],
+    [11,11,12,12], [11,11,12,12],
+  ]);
+  assert.equal(window.callerGridTessellationFactor, 2);
+  assert.equal(window.originalItemId, 40000001);
+  assert.equal(window.originalOrientationCode, 12);
+  assert.equal(window.layoutObjectId, id);
+  assert.equal(window.gridIdNative, 0);
+  assert.equal(window.gridDataPath, 'GridData/Villages/Meadow.json');
+  assert.equal(window.sourceGridDataLoaded, true);
+  assert.equal(window.callerGridFactorProvenanceVerified, true);
+  assert.equal(window.nativeTessellationCoordinateConversionVerified, true);
+  assert.equal(window.itemFactoryRoutePerRecordVerified, false);
+  assert.equal(window.worldCoordinatesVerified, false);
+  assert.equal(window.currentSaveObjectVerified, false);
+  assert.equal(window.gridObjectAnchorVerified, false);
+  assert.equal(window.occupancyPredicateVerified, false);
+  assert.equal(window.placementLegalityVerified, false);
+  const cell = getNativeDefaultLayoutObjectLayerAt(catalog, id, 3, 5);
+  assert.equal(cell.nativeValue, 12);
+  assert.equal(cell.callerGridFactorProvenanceVerified, true);
+  assert.equal(cell.originalFlatIndex, 1);
+  window.rows[0][0] = 999;
+  assert.equal(getNativeDefaultLayoutObjectLayerAt(catalog, id, 0, 0).nativeValue, 31);
+
+  // Default layout source link is NOT evidence of a CURRENT SAVE object.
+  assert.equal(cell.currentSaveObjectVerified, false);
+  assert.equal(cell.worldCoordinatesVerified, false);
+});
+
+test('default layout Grid factor and object identity must be uniquely source linked', () => {
+  const id = fixture().layoutObjects[0].layoutObjectId;
+  const unknown = getNativeDefaultLayoutObjectLayerAt(
+    createWorldCatalog(fixture()), 'missing-layout-object', 0, 0);
+  assert.equal(unknown.status, 'unknown_default_layout_object');
+  assert.equal(unknown.callerGridFactorProvenanceVerified, false);
+
+  const cases = [
+    ['wrong native grid ID', data => { data.layoutObjects[0].gridIdNative = 99; },
+      'missing_or_ambiguous_native_grid_reference'],
+    ['ambiguous native grid ID', data => { data.layouts[0].nativeGridEntries.push(
+      {...data.layouts[0].nativeGridEntries[0]}); },
+      'missing_or_ambiguous_native_grid_reference'],
+    ['zero native grid factor', data => {
+      data.layouts[0].nativeGridEntries[0].tessellationFactor = 0; },
+      'invalid_native_default_grid_tessellation_or_orientation'],
+    ['missing footprint', data => { data.objects[0].footprint = null; },
+      'default_item_gridarea_unavailable'],
+    ['non-gridcollection layout', data => {
+      data.layouts[0].layoutKind = 'nativeDefaultVillageData'; },
+      'missing_native_grid_collection_layout'],
+  ];
+  for (const [label, change, status] of cases) {
+    const data = fixture();
+    change(data);
+    const result = getNativeDefaultLayoutObjectLayerWindow(
+      createWorldCatalog(data), id, {x: 0, y: 0, width: 1, height: 1});
+    assert.equal(result.status, status, label);
+    assert.equal(result.callerGridFactorProvenanceVerified, false, label);
+    assert.equal(result.rows, undefined, label);
+    assert.equal(result.placementLegalityVerified, false, label);
+  }
+
+  const version = getNativeDefaultLayoutObjectLayerWindow(
+    createWorldCatalog(fixture()), id,
+    {x: 0, y: 0, width: 1, height: 1});
+  assert.equal(version.status, 'native_tessellation_not_verified_for_game_version');
+  assert.equal(version.callerGridFactorProvenanceVerified, true);
+  assert.equal(version.nativeTessellationCoordinateConversionVerified, false);
+  assert.equal(version.rows, undefined);
+  assert.equal(version.worldCoordinatesVerified, false);
+  assert.equal(version.placementLegalityVerified, false);
 });
 
 test('explicit restrictions deny but missing flags never authorize placement', () => {
