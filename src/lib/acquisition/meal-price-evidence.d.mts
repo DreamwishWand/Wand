@@ -1,0 +1,88 @@
+/** Per-instance meal ingredients and state-dependent sell-price evidence. */
+import type {StaticItemPriceDefinition} from './private-shop-prices.mjs';
+export declare const DB02_MEAL_PRICE_EVIDENCE_CONTRACT:
+  'wand.db02.meal-price-evidence@1';
+export interface MealIngredientAmount {
+  readonly itemId:number;readonly count:number;
+}
+export interface SerializedMealStateEvidence {
+  readonly contract:typeof DB02_MEAL_PRICE_EVIDENCE_CONTRACT;
+  readonly nativeType:'Definitions.Items.ItemState';
+  readonly nativeMealFieldNumber:1;
+  readonly nativeIngredientsUsedFieldNumber:1;
+  readonly mealDataPresent:boolean;
+  readonly ingredientsRecorded:boolean;
+  readonly serializedIngredientIds:readonly number[]|null;
+  readonly ingredientAmounts:readonly MealIngredientAmount[];
+  readonly distinctIngredientCount:number;
+  readonly sourceStateOnly:true;
+  readonly saveCodecVerified:false;
+  readonly nativeBuildCompatibilityVerified:false;
+  readonly salePrice:null;
+  readonly retailPrice:null;
+  readonly salePriceComputed:false;
+  readonly publishable:false;
+  readonly writable:false;
+}
+export interface PrivateMealPriceEvidence {
+  readonly contract:typeof DB02_MEAL_PRICE_EVIDENCE_CONTRACT;
+  readonly mealItemId:number;
+  readonly platform:'Steam';
+  readonly gameVersion:'1.26.2';
+  readonly state:SerializedMealStateEvidence;
+  readonly staticCookingRecipeIds:readonly number[];
+  readonly cookingRecipeCoverage:'partial_native_extraction';
+  readonly recordedIngredients:readonly MealIngredientAmount[];
+  readonly cookingRecipeIngredientMatchVerified:false;
+  readonly stateDependentSellPriceMethod:'MealItemData.GetSellPrice(ItemState,Item)';
+  readonly ingredientSellPriceMethod:'MealItemData.TotalIngredientsSellPrice(RecipeItemData,IEnumerable)';
+  readonly cookingStarAdjustmentField:'CookingData.RecipeStarResult.SellPriceIngredientPercentage';
+  readonly nativeImplementationBodyVerified:false;
+  readonly requiresActualSerializedIngredients:true;
+  readonly hasSerializedIngredients:boolean;
+  readonly purchasePriceSourceRows:readonly StaticItemPriceDefinition[];
+  readonly purchasePriceIsNotSellPrice:true;
+  readonly missingStaticSellValueMeansZero:false;
+  readonly sellPrice:null;
+  readonly sellPriceComputed:false;
+  readonly playerStateVerified:false;
+  readonly saveCodecVerified:false;
+  readonly publishable:false;
+  readonly writable:false;
+}
+export declare function decodeMealItemStateEvidence(
+  bytes:Uint8Array
+):SerializedMealStateEvidence;
+export declare function inspectPrivateMealSellPrice(input:{
+  acquisitionBundle:{
+    contract:'wand.src02.private-browser-bundle@1';
+    verified:true;
+    privateSource:true;
+    publishable:false;
+    manifestSha256:string;
+    source:{platform:string;gameVersion:string};
+    getItem(id:number):unknown;
+  };
+  shopPriceView:{
+    contract:'wand.db02.private-shop-prices@1';
+    verified:true;
+    privateSource:true;
+    publishable:false;
+    sourceManifestSha256:string;
+    src02R5ManifestSha256:string;
+    getSourceItemPriceDefinitions(id:number):readonly StaticItemPriceDefinition[];
+  };
+  mealItemId:number;
+  itemStateBytes:Uint8Array;
+}):PrivateMealPriceEvidence;
+export declare function compareMealIngredientStates(
+  left:PrivateMealPriceEvidence,right:PrivateMealPriceEvidence
+):Readonly<{
+  mealItemId:number;
+  sameSerializedIngredientMultiset:boolean;
+  differentIngredientComposition:boolean;
+  pricesMayDiffer:boolean;
+  pricesCompared:false;
+  actualSellPrices:null;
+  publishable:false;
+}>;
