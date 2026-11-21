@@ -130,6 +130,7 @@ class MediaPipelineTests(unittest.TestCase):
         self.assertIn("under_128px", types)
         self.assertIn("under_512px", types)
         self.scan("--limit", "1")
+        self.build("--include-unmapped")
         partial = self.merge()
         self.assertFalse(partial["complete"])
 
