@@ -85,7 +85,7 @@ Original-source instructions and evidence limits remain documented in:
 - [`../src-01-items/RECOVER-UNCHANGED-1262.md`](../src-01-items/RECOVER-UNCHANGED-1262.md)
   — exact 38/39 SHA-identical originals from the prior Steam archive.
 
-**Remaining original-data gaps:** changed v1.26.2 `Condition.json` and eight
+**Remaining unverified-in-Drive inputs (upload still in progress):** changed v1.26.2 `Condition.json` and eight
 complete current LocDB ZIPs. DLC, ownership, collectibility, world relationships
 and current classification are unresolved until evidence is acquired.
 
@@ -106,6 +106,87 @@ manifest during later asynchronous reads cannot retarget hash verification.
 A separately trusted manifest provenance/SHA and the complete independent
 `audit_shards.py` release audit are still required: consistent but forged
 source metadata cannot be authenticated by runtime self-consistency alone.
+
+## Multi-version update pipeline and SHA-exact original-file reuse
+
+**New version-independent operational entrypoint:** `release_pipeline.py` accepts
+an independently verified, owner-private DB-01 normalized `manifest.json` +
+`items.jsonl` catalog. It derives the Steam game version from the verified source
+manifest (or checks an explicitly provided expected version) and writes an
+immutable source-SHA-keyed SQLite v2 / TypeScript-shard / full-audit release
+under `<private-out>/steam-<version>/db01-<fingerprint>/`.
+
+```powershell
+./tools/db-01-items/run-all.ps1 -Catalog "D:\WandData\DB-01\v1.27.0-catalog" `
+  -ExpectedVersion "1.27.0" -Out "D:\WandData\DB-01\releases"
+
+# Optional: historical candidates stay separate and explicitly opt-in.
+./tools/db-01-items/run-all.ps1 -Catalog "D:\WandData\DB-01\v1.27.0-catalog" `
+  -History "D:\WandData\DB-01\v1.27.0-history" -Out "D:\WandData\DB-01\releases"
+```
+
+When the next game's SRC-01 reader has produced a verified native output,
+the normalization step no longer requires old Switch Collection files:
+
+```powershell
+python tools/db-01-items/build.py `
+  --source "D:\WandData\SRC-01\Steam-v1.27.0-native" `
+  --out "D:\WandData\DB-01\v1.27.0-catalog"
+# Then use -Catalog as shown above. --extended is optional when independently
+# verified additional native definitions are available.
+```
+
+With no `--reference`, the normalized catalog has `referenceIndex:null`,
+`historicalReference:null` and no old-collection classification metadata.
+The optional legacy `--reference` remains supported only for evidence
+continuity, never as evidence that a 1.25 name, DLC or ownership is current.
+
+The runner now has two explicit parameter sets: the default **Catalog** mode is
+version-neutral and does **not** load old v1.25 Collection references or
+run Steam 1.26.2 extractors; **LegacySteam1262** mode (`-Probe ... -Game ...`)
+preserves the existing SHA-pinned raw 1.26.2 extraction, with no attempt to
+retarget its fixed assumptions to a future game build. New original versions
+must first be extracted using independently validated SRC-01 readers to produce
+the normalized input catalog. This release stage does **not** magically decode
+new unknown original game formats.
+
+The runner verifies source `items.jsonl` SHA-256 and checks an optional
+independently trusted `--expected-manifest-sha256` and
+`--expected-source-items-sha256`. The fingerprint includes the full source
+manifest, row data, historical source digest and history inclusion mode. A
+repeat on identical inputs reuses the **same** SQLite and shard files while
+re-auditing all assets; changed bytes or game versions create a new immutable
+release rather than overwriting a previous one. A corrupt or substituted
+existing output fails closed instead of being silently reused.
+
+**Original-file reuse before normalization** is handled by
+`reuse_source_files.py`, consuming the existing
+`tools/src-00-source/source_scan.py` `source-manifest.json`. This utility
+checks the **complete SHA-256 of the prior original bytes** against the exact
+target scan digest before copying into a new private workspace. It filters to
+`ddv_Data/StreamingAssets/itemlist/` and `Localization/` by default,
+rejects symlinks and traversal, and leaves mismatched/unavailable sources in
+`needs_current_source` (not absent from the game or Drive).
+
+```powershell
+python tools/db-01-items/reuse_source_files.py `
+  --target-scan "D:\WandData\Steam-v1.27.0\source-manifest.json" `
+  --prior-game "D:\WandData\Steam-v1.26.2-originals" `
+  --out "D:\WandData\DB-01\source-reuse"
+```
+
+For independently pinned target-scan bytes, additionally pass
+`--expected-scan-sha256`. A SRC-00 scan created with `--rehash` is preferred
+to one that reused filesystem metadata as a hash cache. The target scan's
+file SHA is a *claim* until independently anchored to trusted original bytes;
+this tool never treats a previous-version name, CRC, timestamp or folder match
+as proof of identical current content. It does not modify the installed game.
+
+**End-to-end CI:** `test_release_pipeline.py` and
+`test_reuse_source_files.py` run complete synthetic SQLite → 256 ID shards
+→ locale/category/history shards → independent release audit, CLI replay,
+multiple versions, SHA-based reuse, symlink/traversal/corruption rejection and
+preexisting-cache validation. They never include copyrighted game bytes.
 
 ## Production release-integrity gate
 

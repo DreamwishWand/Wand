@@ -310,13 +310,19 @@ def normalized(row, original, evidence, *, domain):
 
 
 def build(source, reference, output, extended=None, force=False):
-    source, reference, output = map(lambda v: Path(v).resolve(), (source, reference, output))
+    source, output = Path(source).resolve(), Path(output).resolve()
+    # Legacy Switch Collection is optional historical context, never a
+    # dependency of canonical Steam extraction for future game versions.
+    reference = Path(reference).resolve() if reference else None
     extended = Path(extended).resolve() if extended else None
     for root in (source, reference, extended):
         if root is not None and (output == root or output in root.parents or root in output.parents):
             raise ValueError("OUTPUT_OVERLAPS_SOURCE")
     native, meta = load_native(source)
-    previous, reference_meta = reference_collection(reference)
+    previous, reference_meta = (
+        reference_collection(reference) if reference is not None else
+        ({}, {'indexSha256': None, 'count': 0, 'target': None})
+    )
     extra, extra_meta = load_extended(extended, meta["nativeManifest"]["gameVersion"])
     inputs = {"native": meta["nativeHash"], "nativeManifest": meta["nativeManifestHash"],
               "localized": meta["localizationHash"],
@@ -405,7 +411,7 @@ def build(source, reference, output, extended=None, force=False):
 def main():
     parser = argparse.ArgumentParser(description="Build private, evidence-preserving Wand DB-01 item data")
     parser.add_argument("--source", type=Path, required=True, help="SRC-01 Steam extraction folder")
-    parser.add_argument("--reference", type=Path, required=True, help="static/ddv/collection/v1.25")
+    parser.add_argument("--reference", type=Path, help="Optional legacy Collection reference; never required for future releases")
     parser.add_argument("--extended", type=Path, help="Optional extended native definitions folder")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--force", action="store_true")

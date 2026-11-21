@@ -48,6 +48,25 @@ def make_fixture(root):
 
 
 class TestDb01(unittest.TestCase):
+    def test_canonical_build_without_legacy_collection_reference(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            native, _, out = make_fixture(Path(tmp))
+            result = module.build(native, None, out)
+            self.assertEqual(result['status'], 'built')
+            self.assertEqual(result['currentDefinitions'], 2)
+            self.assertEqual(result['oldCollection'], 0)
+            self.assertEqual(result['oldNotObserved'], 0)
+            self.assertEqual(result['newOnly'], 2)
+            manifest = module.read_json(out / 'manifest.json')
+            self.assertIsNone(manifest['inputs']['referenceIndex'])
+            diff = module.read_json(out / 'diff.json')
+            self.assertIsNone(diff['old'])
+            self.assertIsNone(diff['removedIds'])
+            self.assertEqual(diff['newOnlyIds'], [30000031, 40000001])
+            for row in module.json_lines(out / 'items.jsonl'):
+                self.assertIsNone(row['historicalReference'])
+                self.assertTrue(all(name is None for name in row['names'].values()))
+            self.assertEqual(module.build(native, None, out)['status'], 'unchanged')
     def test_build_diff_and_cache(self):
         with tempfile.TemporaryDirectory() as tmp:
             native, old, out = make_fixture(Path(tmp))
