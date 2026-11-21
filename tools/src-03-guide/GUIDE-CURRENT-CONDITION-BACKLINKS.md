@@ -27,3 +27,11 @@ For mission `2070001661` (the Jack Sparrow mission), original Condition `2130006
 `node --test tests/guide-current-conditions.test.mjs` covers nested OR references, optional omitted fields, unknown opaque predicates, duplicate source IDs, malformed AST and unverified/forged input rejection. One additional test reads *actual owner-private files only when available* via `DB03_PRIVATE_CONDITION_DIR`, and verifies all 5,440 definitions and these two v1.26.2 mission references. Public CI skips the private-fixture test rather than distributing source data.
 
 The Guide's existing SHA-gated lazy quest-shard import remains unchanged, as do DB-03 source-contract and Collection CI gates.
+
+## Source-verified quest step descriptions (2026-11-21)
+
+When the user opens an individual quest detail shard, the browser has already verified that detail record against its exact private search-index record SHA-256. In this state, `withVerifiedConditionStepDetails` may associate a current Condition `MissionStepStatus.stepId` with an **identical original numeric step ID** in the already-selected mission's `structured.stepsDetailed`.
+
+The displayed step ordinal, native `stepName` and localized description come **only** from this verified original mission detail. The join checks the source Mission SHA, exact mission ID, original numeric step ID (not an array position or fallback) and the matching locally displayed step row. Ambiguous duplicate step IDs, missing protobuf step fields, wrong Mission source or unselected detail files leave the annotation blank. This does not imply the player is presently on that step or that the Condition is an enforced prerequisite.
+
+Synthetic tests cover genuine numeric-ID joins, alternate-language descriptions, missing source IDs, wrong version/hash, wrong mission ID and duplicate native IDs.
