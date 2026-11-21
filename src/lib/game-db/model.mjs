@@ -67,7 +67,7 @@ export function validateItem(item) {
   assert(item.nameStatus === 'verified' || item.nameStatus === 'unverified', 'missing label verification state');
   if (item.nameStatus === 'unverified') assert(Object.keys(item.names).length === 0, 'unverified names cannot be published as verified');
   assert(item.category === null || (typeof item.category === 'string' && item.category.length > 0), 'invalid category');
-  assert(item.subcategory === null || (typeof item.subcategory === 'string' && item.subcategory.length > 0), 'invalid subcategory');
+  assert(item.subcategory == null || (typeof item.subcategory === 'string' && item.subcategory.length > 0), 'invalid subcategory');
   for (const key of ['worlds', 'universes', 'contentIds', 'releaseIds', 'relations']) {
     uniqueStrings(item[key] ?? [], key + ' for ' + item.id);
   }
