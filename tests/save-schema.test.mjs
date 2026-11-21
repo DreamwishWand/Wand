@@ -106,3 +106,18 @@ test('registry sources are deeply immutable at runtime', async () => {
   assert.equal(Object.isFrozen(legacy.fields[0]), true);
   assert.throws(() => { source.builds[0].schemaVersion = 643; }, TypeError);
 });
+
+test('legacy ID witnesses do not conflate grid, world, quest, and catalog Item IDs', async () => {
+  const { getLegacySaveIdReferences } = await import('../src/lib/save/registry.mjs');
+  const all = getLegacySaveIdReferences();
+  const items = getLegacySaveIdReferences('item');
+  assert.equal(all.length, 17);
+  assert.equal(items.length, 13);
+  assert.ok(items.every(x => x.idReference.catalog === 'DB-01'));
+  assert.ok(items.every(x => x.idReference.join === 'exact_numeric_only' && x.idReference.currentCatalogCoverageVerified === false));
+  assert.equal(getLegacySaveIdReferences('quest').length, 0);
+  const grid = getLegacySaveIdReferences('grid');
+  assert.equal(grid.length, 1);
+  assert.equal(grid[0].idReference.catalog, null);
+  assert.throws(() => getLegacySaveIdReferences(626), TypeError);
+});
