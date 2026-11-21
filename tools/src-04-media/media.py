@@ -348,7 +348,8 @@ def command_build(args):
             links = [{"itemId": item, "method": "r39_exact_source_sha256",
                       "evidence": "R39 v1.24.13 query-index", "evidenceVerified": True}
                      for item in sorted(r39.get(sha, set()), key=int)]
-            assets = unity.get(relative, [])
+            assets = [asset for asset in unity.get(relative, [])
+                      if asset.get("extractedSha256") == sha]
             for selector in [("sha", sha), ("path", relative)] + [
                 ("asset", item["assetId"]) for item in assets]:
                 links.extend(supplied.get(selector, []))
