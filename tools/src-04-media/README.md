@@ -32,6 +32,14 @@ Synthetic checks:
     py -3 -m unittest discover -s tools/src-04-media -p "test_*.py" -v
     node --test tests/media-artwork.test.mjs
 
+## Catalog dependency evidence (2026-11-21)
+
+The user-provided catalog-dependency-report.json confirms all 9,542 SRC-01 icon GUIDs have valid catalog keys and 239 dependency groups. 9,182 GUIDs resolve to one of 24 extracted generated-icon bundles; the remaining 360 refer to other groups. No GUID-to-image identity links have been verified. A shared AssetBundle is not proof of any particular image identity.
+
+The generated icon bundles contain 21,209 candidate images: furniture contains 4,750 related GUIDs, clothing 2,026, and requestitem 1,004. Neither bundle order nor similar image names may be used to assign item IDs. Existing 23,021 decoded images remain intact; no repeat pixel extraction is required.
+
+Next targeted local diagnostic is serialized AssetBundle.m_Container / UnityPy Environment.container metadata for four small bundles, using an exact GUID key and exact (assets_file, path_id) pointer to establish any image identity. Standalone SRC04-IDENTITY.cmd was supplied for the Windows operator; empirical result is still pending. Never upload or publish the derived game images. Keep publicationApproved=false.
+
 ---
 
 ## Advanced manual workflow and historical R39 compatibility
