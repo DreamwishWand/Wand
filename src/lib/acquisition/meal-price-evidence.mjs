@@ -216,6 +216,7 @@ export function compareMealIngredientStates(left,right){
   return frozen({mealItemId:left.mealItemId,
     sameSerializedIngredientMultiset:same,
     differentIngredientComposition:!same,
-    pricesMayDiffer:!same,pricesCompared:false,
+    ingredientDifferenceCouldAffectPrice:!same,
+    pricesMayDiffer:true,priceEqualityVerified:false,pricesCompared:false,
     actualSellPrices:null,publishable:false});
 }
