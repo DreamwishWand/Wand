@@ -81,7 +81,8 @@ export function validateDb01Shards(manifest: unknown): asserts manifest is Db01S
     Number.isInteger(manifest.currentNativeItemDefinitions) && Number(manifest.currentNativeItemDefinitions)>0 &&
     Number(manifest.currentNativeItemDefinitions)<=Number(manifest.definitions) &&
     Number.isInteger(manifest.sourceFilesVerified) && Number.isInteger(manifest.sourceFilesTotal) &&
-    Number(manifest.sourceFilesVerified) <= Number(manifest.sourceFilesTotal), 'INVALID_COVERAGE');
+    Number(manifest.sourceFilesVerified) > 0 &&
+    Number(manifest.sourceFilesTotal) >= Number(manifest.sourceFilesVerified), 'INVALID_COVERAGE');
   check(typeof manifest.fullCorpusParsed === 'boolean', 'INVALID_CORPUS_STATUS');
   check(Array.isArray(manifest.categories) && manifest.categories.length > 0 &&
     manifest.categories.every((c:unknown) => typeof c === 'string' && CATEGORY.test(c)) &&
@@ -160,7 +161,9 @@ export function createDb01CatalogClient(rawManifest: unknown, loadBytes: Db01Loa
       const raw = await crypto.subtle.digest('SHA-256', stableBytes);
       const digest = Array.from(new Uint8Array(raw), b=>b.toString(16).padStart(2,'0')).join('');
       check(digest === meta.sha256, 'ASSET_HASH_MISMATCH');
-      const json: unknown = JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
+      // Parse exactly the immutable snapshot that was SHA-256 verified, not the
+      // caller-owned Uint8Array, which may change while digest() is pending.
+      const json: unknown = JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(stableBytes));
       check(Array.isArray(json) && json.length === meta.count, 'ASSET_COUNT_MISMATCH');
       return json;
     })();
@@ -218,12 +221,15 @@ export function createDb01CatalogClient(rawManifest: unknown, loadBytes: Db01Loa
     check(Array.isArray(rows), 'INVALID_LOCALE_SHARD');
     const target=query.trim().toLocaleLowerCase(locale);
     const matches:Db01NameResult[]=[];
+    const seen=new Set<number>();
     for (const pair of rows) {
       check(Array.isArray(pair) && pair.length === 2 &&
         typeof pair[0] === 'number' && isItemId(pair[0]) && stringSafe(pair[1]), 'INVALID_NAME_INDEX');
-      if (pair[1].toLocaleLowerCase(locale).includes(target)) {
+      check(!seen.has(pair[0]), 'DUPLICATE_NAME_INDEX_ID');
+      seen.add(pair[0]);
+      // Validate the complete SHA-pinned shard, including entries after the result limit.
+      if (matches.length < limit && pair[1].toLocaleLowerCase(locale).includes(target)) {
         matches.push({itemId:pair[0],locale,value:pair[1],evidence:'current_exact_locdb_join',baselineVersion:null});
-        if (matches.length === limit) break;
       }
     }
     return matches;
@@ -237,15 +243,21 @@ export function createDb01CatalogClient(rawManifest: unknown, loadBytes: Db01Loa
     if(!options.allowHistorical || !manifest.historicalCandidatesIncluded)return null;
     const history=await loadJson(`historical/${bucket(id)}.json`);
     check(Array.isArray(history), 'INVALID_HISTORY_SHARD');
+    const seen=new Set<string>();
+    let candidate:Db01NameResult|null=null;
     for(const tuple of history){
       check(Array.isArray(tuple) && tuple.length===4 && isItemId(tuple[0]) &&
         localeIsValid(tuple[1]) && stringSafe(tuple[2]) &&
-        typeof tuple[3]==='string' && tuple[3]!==manifest.gameVersion &&
-        bucket(tuple[0])===bucket(id), 'INVALID_HISTORY_ROW');
+        typeof tuple[3]==='string' && /^\d+\.\d+\.\d+$/.test(tuple[3]) &&
+        tuple[3]!==manifest.gameVersion && bucket(tuple[0])===bucket(id), 'INVALID_HISTORY_ROW');
+      const key=`${tuple[0]}:${tuple[1]}`;
+      check(!seen.has(key), 'DUPLICATE_HISTORY_ENTRY');
+      seen.add(key);
+      // Never return early: every entry in a trusted shard must satisfy the contract.
       if(tuple[0]===id && tuple[1]===locale)
-        return {itemId:id,locale,value:tuple[2],evidence:'historical_prefix_crc_correlated_unverified_current',baselineVersion:tuple[3]};
+        candidate={itemId:id,locale,value:tuple[2],evidence:'historical_prefix_crc_correlated_unverified_current',baselineVersion:tuple[3]};
     }
-    return null;
+    return candidate;
   }
   return Object.freeze({
     source:Object.freeze({platform:manifest.platform,gameVersion:manifest.gameVersion,
