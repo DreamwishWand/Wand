@@ -122,7 +122,8 @@ mod tests {
         assert_eq!(reg.builds.len(), 3);
         let fields = legacy_fields().unwrap();
         assert_eq!(fields.save_schema_version, 626);
-        assert_eq!(fields.fields.len(), 35);
+        assert_eq!(fields.fields.len(), 66);
+        assert!(fields.fields.iter().any(|f| f.path == "/Player/MaleAvatar/Eyeball/ColorIndex2"));
         assert!(fields.fields.iter().all(|field| !field.writable));
         assert!(reg.builds.iter().all(|build| build.status == "legacy_contract_candidate"));
     }
