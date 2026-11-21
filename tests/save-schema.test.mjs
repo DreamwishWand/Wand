@@ -94,8 +94,9 @@ test('legacy Rust field map covers schema626 without authorizing editing or curr
   assert.ok(map.fields.some(x => x.path === '/Player/FemaleAvatar/ClothingCustomization/{itemId}'));
   assert.ok(map.fields.every(x => x.writable === false && x.observedStatus === 'legacy_source_code_only'));
   const amount = map.fields.find(x => x.path === '/Player/ContainerInventories/{containerId}/Inventory[]/Amount');
-  assert.deepEqual(amount.builds, ['steam-1.25.3-626']);
+  assert.deepEqual(amount.builds, ['steam-1.25.3-626', 'switch-1.25.3-626']);
   assert.equal(map.fields.some(x => x.builds.includes('switch-643')), false);
+  assert.equal(map.fields.filter(x => x.domain === 'chests' && x.builds.includes('switch-1.25.3-626')).length, 9);
 });
 
 test('registry sources are deeply immutable at runtime', async () => {
