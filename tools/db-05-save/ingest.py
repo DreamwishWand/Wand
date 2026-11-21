@@ -6,15 +6,40 @@ remain private until they are explicitly reviewed for structural sensitivity.
 import argparse
 import hashlib
 import json
+import re
+from functools import lru_cache
 from pathlib import Path
 
 SCHEMA = 'wand.db05.ingest@1'
 PUBLIC_PATHS = frozenset(('/GameInfo', '/GameInfo/Version', '/Player', '/World'))
 SAFE_KINDS = frozenset(('object', 'array', 'string', 'number', 'integer', 'boolean', 'null'))
+MAP_KEY = re.compile(r'/([0-9]+|\{(?:id|routeId|containerId|itemId|slot|gridId|objectId)\})(?=/|$)')
 
 
 def load_json(path):
     return json.loads(path.read_text(encoding='utf-8'))
+
+
+def normalized_public_path(path):
+    # Numeric map keys (including genuine IDs) never leave this scope.
+    return MAP_KEY.sub('/{id}', path)
+
+
+@lru_cache(maxsize=1)
+def legacy_public_paths():
+    path = Path(__file__).resolve().parents[2] / 'data' / 'ddv' / 'save' / 'legacy626-fields.v1.json'
+    source = load_json(path)
+    if source.get('schema') != 'wand.db05.legacy626-fields@1':
+        raise ValueError('DB05_LEGACY_FIELD_REGISTRY_REQUIRED')
+    known = {normalized_public_path(path): path for path in PUBLIC_PATHS}
+    for row in source.get('fields', []):
+        if not isinstance(row, dict) or row.get('writable') is not False or not isinstance(row.get('path'), str):
+            raise ValueError('INVALID_DB05_PUBLIC_FIELD')
+        key = normalized_public_path(row['path'])
+        if key in known and known[key] != row['path']:
+            raise ValueError('DB05_PUBLIC_FIELD_ALIAS_COLLISION')
+        known[key] = row['path']
+    return known
 
 
 def inspect_report(report):
@@ -23,6 +48,7 @@ def inspect_report(report):
     if report.get('status') == 'unknown_or_encoded_container':
         raise ValueError('ENCODED_SAVE_HAS_NO_FIELD_WITNESS')
     witnesses = {}
+    allowlisted = legacy_public_paths()
     undisclosed = 0
     for row in report['fieldWitnesses']:
         if not isinstance(row, dict) or not isinstance(row.get('path'), str):
@@ -33,10 +59,11 @@ def inspect_report(report):
             kind = ','.join(sorted(set(x for x in kind if isinstance(x, str) and x in SAFE_KINDS)))
         if not isinstance(kind, str) or not kind or any(x not in SAFE_KINDS for x in kind.split(',')):
             kind = 'unverified'
-        if path in PUBLIC_PATHS:
-            if path in witnesses and witnesses[path] != kind:
+        canonical = allowlisted.get(normalized_public_path(path))
+        if canonical is not None:
+            if canonical in witnesses and witnesses[canonical] != kind:
                 raise ValueError('CONFLICTING_PUBLIC_WITNESS')
-            witnesses[path] = kind
+            witnesses[canonical] = kind
         else:
             undisclosed += 1
     version = report.get('schemaObserved')
@@ -47,6 +74,7 @@ def inspect_report(report):
             'rootRequiredObjectsObserved': report.get('rootRequiredObjectsObserved') is True,
             'publicWitnesses': [{'path': p, 'type': k} for p, k in sorted(witnesses.items())],
             'otherWitnessCount': undisclosed,
+            'historicalKnownFieldScope': 'legacy626_source_only_not_current_game_proof',
             'decoderAndBuildVerified': False,
             'writerAuthorized': False}
 
@@ -59,7 +87,8 @@ def diff(a, b):
             'removed': sorted(set(left) - set(right)),
             'typeChanged': sorted(p for p in set(left) & set(right) if left[p] != right[p]),
             'authoritative': False,
-            'note': 'Only four allowlisted legacy root-level paths. Other fields intentionally redacted.'}
+            'undisclosedWitnessCountDelta': b['otherWitnessCount'] - a['otherWitnessCount'],
+            'note': 'Only publicly sourced legacy field names are retained. Scanner omissions and profile contents can change counts; not a native save-schema change claim.'}
 
 
 def inspect_items(items_path, manifest_path):
