@@ -902,16 +902,18 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(validate_snapshot(self.out)["counts"]["layoutObjects"], 1)
         manifest_file = self.out / "manifest.json"
         original_manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+        layout_file = self.out / "layoutObjects.json"
+        original_layout_bytes = layout_file.read_bytes()
+        original_rows = json.loads(original_layout_bytes.decode("utf-8"))
 
         for field_name, forged in [
             ("gridObjectIdNative", 9),
             ("gridIdNative", 2),
             ("layoutObjectId", "SceneLayouts/Village04/NativeGrids.json#grid=0#object=9"),
         ]:
-            layout_file = self.out / "layoutObjects.json"
-            original_rows = json.loads(layout_file.read_text(encoding="utf-8"))
-            original_rows[0][field_name] = forged
-            layout_file.write_text(json.dumps(original_rows), encoding="utf-8")
+            forged_rows = json.loads(original_layout_bytes.decode("utf-8"))
+            forged_rows[0][field_name] = forged
+            layout_file.write_text(json.dumps(forged_rows), encoding="utf-8")
             updated_manifest = json.loads(json.dumps(original_manifest))
             updated_manifest["outputSha256"]["layoutObjects.json"] = hashlib.sha256(
                 layout_file.read_bytes()).hexdigest()
@@ -923,13 +925,7 @@ class PipelineTests(unittest.TestCase):
         # A matching top-level count is not enough if an individual Grid.ID
         # entry claims a different number of original GridObject records.
         self.assertEqual(len(original_rows), 1)
-        layout_file.write_text(
-            json.dumps([dict(original_rows[0],
-                             gridObjectIdNative=7,
-                             gridIdNative=0,
-                             layoutObjectId=
-                             "SceneLayouts/Village04/NativeGrids.json#grid=0#object=7")]),
-            encoding="utf-8")
+        layout_file.write_bytes(original_layout_bytes)
         manifest_file.write_text(json.dumps(original_manifest), encoding="utf-8")
         self.assertEqual(validate_snapshot(self.out)["counts"]["layoutObjects"], 1)
         layouts_file = self.out / "layouts.json"
