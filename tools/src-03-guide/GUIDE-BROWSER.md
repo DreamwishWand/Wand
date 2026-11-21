@@ -180,3 +180,40 @@ quest sequence, completion or eligibility determination. Synthetic Node tests
 cover nested OR branches, self-links, same-source English fallback labels,
 out-of-index targets, false CommonConditions/Story matches and cross-version
 source/wire mismatch.
+
+## Exact private search-index source equivalence banner (2026-11-21)
+
+The Guide route now displays a **strictly scoped Steam 1.26.2 original-content
+equivalence note** only when the user's locally selected `quest-search.json`
+is the **exact byte-for-byte SHA-256-pinned owner-private Steam 1.26.1
+search-index file** already validated against 733 original Mission definitions:
+
+`26c29bc0df15161602d75578c9842c5b7cca56caee0d6dd1031180949cceb30d`
+
+The browser performs SHA-256 on the **raw index bytes during the same single
+file read** as JSON import (no reserialization or additional file read).
+The result is held in a module-private `WeakMap`, never accepted from a JSON
+property or user-provided metadata. The source claim is gated additionally by
+the original `1.26.1 / Steam` version/platform, Mission source SHA-256
+`f13958b52234f4cda92f0dd0bfff50be8a7f6625c8478785e2a077a5c7933d24`,
+and exact 733 playable/289 group/8 unclassified/1030 total census.
+
+The already-verified **native original 1.26.2 Mission full-file byte equality**
+plus exact 8-locale decompressed `LocDB` payload equality
+([`LOCALE-PAYLOAD-BRIDGE.md`](LOCALE-PAYLOAD-BRIDGE.md)) supports a
+limited localized quest-content equivalence claim for **this original index**.
+This is not an automatic conversion, upgrade or relabel of the index's source
+version: `index.target.gameVersion` remains **1.26.1**, and older private
+shards still remain hash-verified against that original index when selected.
+
+The current native `Condition.json` **changed**: 1 added and 1 modified
+definition ID ([`CONDITION-NATIVE-DIFF.md`](CONDITION-NATIVE-DIFF.md)).
+Consequently the UI explicitly excludes confirmed prerequisite truth, live
+unlocks/progress, purchased entitlements or server events. A different original
+index, modified/rewritten JSON, forged SHA field, wrong source version, or
+missing index will never display the compatibility note. No game text or private
+index file is included in public JavaScript or its tests.
+
+This is only a provenance indicator; full current-version condition mapping
+remains a separate DB-03 deliverable. Synthetic Node tests exercise the
+fail-closed behavior and attacker-controlled fingerprint fields.

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { createHash } from 'node:crypto';
 import { GUIDE_SEARCH_SCHEMA, GUIDE_DETAIL_SCHEMA, validateGuideSearch, searchGuide,
-  canonicalQuestRecord, importGuideSearch, importGuideDetail, detailStepRows, guideItemTargets, guideSourceText, guideCharacterLabels, guideGroupInfo, guideStaticFacts, formatGuideConditionTree, guideMissionReferences } from '../src/lib/guide/client.mjs';
+  canonicalQuestRecord, importGuideSearch, importGuideDetail, detailStepRows, guideItemTargets, guideSourceText, guideCharacterLabels, guideGroupInfo, guideStaticFacts, formatGuideConditionTree, guideMissionReferences, guideVerifiedSourceBridge } from '../src/lib/guide/client.mjs';
 
 const SHA='a'.repeat(64), WIRE='b'.repeat(64);
 const target={gameVersion:'1.26.1', platform:'Steam'};
@@ -426,4 +426,39 @@ test('Guide condition links reject mixed original game source and do not infer a
     {type:'SubConditions',nested:{operator:'AND',conditions:[]}}
   ]};
   assert.deepEqual(guideMissionReferences(mix,index),[]);
+});
+
+
+test('Guide exact-source compatibility is absent for unpinned synthetic or unimported objects',async()=>{
+  const {index}=fixture();
+  assert.equal(guideVerifiedSourceBridge(index),null);
+  const raw=JSON.stringify(index);
+  const bytes=new TextEncoder().encode(raw);
+  const imported=await importGuideSearch({
+    size:bytes.length,async arrayBuffer(){return bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength);}
+  });
+  assert.equal(imported.target.gameVersion,'1.26.1');
+  assert.equal(guideVerifiedSourceBridge(imported),null);
+  assert.deepEqual(imported,index);
+  assert.equal(Object.hasOwn(imported,'_originalSearchFileSha256'),false);
+  const forged=structuredClone(index);
+  forged._originalSearchFileSha256='26c29bc0df15161602d75578c9842c5b7cca56caee0d6dd1031180949cceb30d';
+  assert.equal(guideVerifiedSourceBridge(forged),null);
+});
+
+test('Guide hashes raw selected search bytes, not untrusted JSON SHA fields or source reserialization',async()=>{
+  const {index}=fixture();
+  const raw=JSON.stringify({...index,
+    _originalSearchFileSha256:'26c29bc0df15161602d75578c9842c5b7cca56caee0d6dd1031180949cceb30d'});
+  const bytes=new TextEncoder().encode(raw);
+  const file={size:bytes.length,async arrayBuffer(){return bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength)}};
+  const imported=await importGuideSearch(file);
+  assert.equal(guideVerifiedSourceBridge(imported),null);
+  // The full original JSON, including a malicious self-declared fingerprint,
+  // remains the same; only the private WeakMap computed from raw bytes is trusted.
+  assert.equal(imported._originalSearchFileSha256,
+    '26c29bc0df15161602d75578c9842c5b7cca56caee0d6dd1031180949cceb30d');
+  imported.target.gameVersion='1.26.2';
+  assert.equal(guideVerifiedSourceBridge(imported),null);
+  assert.equal(sha(raw),sha(Buffer.from(bytes)));
 });

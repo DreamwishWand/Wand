@@ -1,7 +1,7 @@
 <script lang="ts">
   import {
     GUIDE_LOCALES, importGuideSearch, importGuideFolder, importGuideDetail, searchGuide,
-    detailStepRows, guideStaticFacts, guideMissionReferences, MAX_SHARD_BYTES
+    detailStepRows, guideStaticFacts, guideMissionReferences, guideVerifiedSourceBridge, MAX_SHARD_BYTES
   } from '$lib/guide/client.mjs';
 
   const languageLabels: Record<string, string> = {
@@ -40,6 +40,7 @@
   $: objectives = searchIndex ? [...new Set(searchIndex.records.flatMap((r: any) => r.objectiveKinds))].sort() : [];
   $: scopeTokens = searchIndex ? [...new Set(searchIndex.records.flatMap((r: any) => r.sourceScopeTokens))].sort() : [];
   $: selectedRow = selectedId && searchIndex ? searchIndex.records.find((r: any) => r.id === selectedId) : null;
+  $: sourceBridge = searchIndex ? guideVerifiedSourceBridge(searchIndex) : null;
   $: detailSteps = selectedDetail ? detailStepRows(selectedDetail, locale) : [];
   $: staticFacts = selectedDetail ? guideStaticFacts(selectedDetail, locale) : {conditions:[], policies:[], rewards:[]};
   $: missionReferences = selectedDetail && searchIndex ? guideMissionReferences(selectedDetail, searchIndex, locale) : [];
@@ -222,6 +223,14 @@
       <div><strong>{Object.keys(shardFiles).length}/{requiredShards}</strong><span>読み込み可能な詳細ファイル</span></div>
       <div><strong>{searchIndex.target.gameVersion}</strong><span>取得元のゲームバージョン</span></div>
     </section>
+
+    {#if sourceBridge}
+      <section class="guide-source-compatibility" aria-label="Verified source content equivalence">
+        <strong>Steam {sourceBridge.targetVersion}との原本内容一致（範囲限定）</strong>
+        <p>選択した検索索引の元ファイルSHA-256を照合しました。Steam {sourceBridge.baselineVersion}と{sourceBridge.targetVersion}では、Mission原本および8言語の翻訳ファイル内容が一致しています。</p>
+        <p>ただしCondition原本には新規{sourceBridge.addedConditionRecords}件・変更{sourceBridge.changedConditionRecords}件があります。現在の解放条件、進行状況、DLC所有権、オンラインイベント開催状況の判定ではありません。表示データの取得元バージョンは{searchIndex.target.gameVersion}のままです。</p>
+      </section>
+    {/if}
 
     <div class="guide-workspace">
       <section class="guide-list" aria-label="Quest search results">
@@ -453,6 +462,9 @@
   .guide-stats div { padding:17px 19px; border-radius:13px; background:#1c1727; border:1px solid #ffffff16; display:grid; gap:8px; }
   .guide-stats strong { font-size:22px; font-variant-numeric:tabular-nums; }
   .guide-stats span { color:#a89cb8; font-size:11px; }
+  .guide-source-compatibility { padding:16px 20px; margin:18px 0 0; border:1px solid #ffffff2e; border-radius:12px; background:#1c1727; }
+  .guide-source-compatibility strong { color:#e8d7f3; font-size:13px; }
+  .guide-source-compatibility p { color:#bdb0ca; font-size:12px; line-height:1.75; margin:7px 0 0; }
   .guide-workspace { display:grid; grid-template-columns:minmax(0,1fr) minmax(290px,36%); background:#171320; border:1px solid #ffffff1c; border-radius:16px; overflow:hidden; min-height:540px; margin-top:18px; }
   .guide-list { padding:23px; min-width:0; }
   .guide-toolbar { display:grid; gap:15px; }
