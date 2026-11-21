@@ -66,6 +66,20 @@ The original `getNativeDefaultLayoutViewport` /
 `getNativeVillageAreaViewport` APIs still require corroborated terrain
 decoding and retain their existing contract.
 
+## Original GridObject identity integrity
+
+Each original GridObject is identified by the exact GridCollection layout
+path, unsigned native Grid.ID and unsigned native GridObject.ID:
+`<layoutId>#grid=<gridIdNative>#object=<gridObjectIdNative>`. Extraction
+already checks the native protobuf map keys against the Grid/Graph object
+IDs. The private snapshot verifier and browser catalog now independently
+reject mismatched exported composite IDs, negative/out-of-range native IDs,
+and SHA-consistent modifications. The verifier also checks each native
+GridCollection entry's `defaultObjectCount` against its own original
+GridObject records, rather than trusting only the layout-wide total.
+These are source-record identity checks, not current-save identity matches
+or placement/occupancy claims.
+
 ## Verified input formats
 
 - Steam game source `ddv_Data/StreamingAssets/itemlist/Furniture.json` and `Building.json`: indexed protobuf records with exact integer item IDs, native names and `GridAreaData` (wire field 6).
