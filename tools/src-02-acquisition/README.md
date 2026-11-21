@@ -47,6 +47,22 @@ py -3 -m unittest discover -s tools/src-02-acquisition -p "test_*.py" -v
 node --test tests/acquisition*.test.mjs
 ```
 
+## Per-instance ingredient static sell-source coverage
+
+The owner-private SHA-verified r5 cooking recipes have **371 distinct fixed
+ingredient Item IDs**, of which **211** have a single original static
+soft-currency `ItemPrices.SellPrices` amount and **160** do not.
+`meal-ingredient-sell-evidence.mjs` and the authenticated private meal
+pricing view now classify source-configured unit-sell evidence for each
+recorded meal ingredient and quantity (purchase/sell values are never
+interchanged). No source row absence implies free, unsellable or price zero.
+The native `ItemPriceDatabases.GetSoftCurrencySellPrice` and
+`MealItemData.TotalIngredientsSellPrice` executable bodies remain
+unverified; **no final meal sell-price calculation is performed**.
+The actual-private JavaScript smoke verifies all 371 Item IDs without
+printing original price rows. See
+[MEAL-STATE-SELL-PRICE.md](MEAL-STATE-SELL-PRICE.md).
+
 ## Original native cooking star settings (private, source-pinned)
 
 `private-cooking-star-settings.mjs` authenticates the exact Steam v1.26.2

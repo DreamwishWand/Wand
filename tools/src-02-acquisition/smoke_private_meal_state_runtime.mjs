@@ -108,6 +108,46 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
     else withoutStaticPurchaseRow++;
     inspected++;
   }
+  // Native per-instance SOURCE SellPrices census, never a cooking price formula.
+  // Each inspected ItemState here has a single SYNTHETIC ingredient; these
+  // contexts are not claimed to satisfy a game's cooking recipe.
+  const fixedIngredients=new Map();
+  for(const recipe of cooking){
+    for(const ing of recipe.ingredients){
+      if(ing.kind==='item'&&!fixedIngredients.has(ing.itemId))
+        fixedIngredients.set(ing.itemId,recipe.resultItemId);
+    }
+  }
+  requireValue(fixedIngredients.size===371,'STATIC_FIXED_INGREDIENT_CENSUS');
+  let withConfiguredSoftSell=0,withoutConfiguredSoftSell=0;
+  for(const [ingredientId,mealId] of fixedIngredients){
+    const evidence=view.inspect(mealId,fakeMealData([ingredientId]));
+    const source=evidence.sourceIngredientStaticSellEvidence;
+    requireValue(
+      evidence.ingredientStaticPriceDatabaseOriginalVerified===true&&
+      evidence.staticIngredientAmountsNotEffectiveSellValues===true&&
+      source.ingredientRows.length===1&&
+      source.ingredientRows[0].ingredientItemId===ingredientId&&
+      source.inputSourceAuthenticated===false&&
+      source.actualNativeIngredientPricesVerified===false&&
+      source.mealSellPriceComputed===false&&
+      source.realizedMealSellPrice===null,
+      'INGREDIENT_SELL_SOURCE_BOUNDARY');
+    if(source.ingredientsWithSingleConfiguredStaticAmount===1){
+      requireValue(source.ingredientRows[0].sourceStaticSellOptions.length===1&&
+        source.ingredientRows[0].sourceStaticSellOptions[0].currencyId===80000000,
+        'NATIVE_SOFT_SELL_CURRENCY');
+      withConfiguredSoftSell++;
+    }else{
+      requireValue(source.ingredientsWithoutObservedStaticSoftAmount===1&&
+        source.ingredientRows[0].configuredUnitSoftSellAmount===null,
+        'UNKNOWN_INGREDIENT_SOURCE_STATUS');
+      withoutConfiguredSoftSell++;
+    }
+  }
+  requireValue(withConfiguredSoftSell===211&&
+    withoutConfiguredSoftSell===160,'FIXED_INGREDIENT_SELL_CENSUS');
+
   const firstId=mealIds.values().next().value;
   const left=view.inspect(firstId,syntheticA);
   const right=view.inspect(firstId,syntheticB);
@@ -129,6 +169,9 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
     staticPurchaseRows:withStaticPurchaseRow,
     mealsWithoutStaticPurchaseRows:withoutStaticPurchaseRow,
     originalStaticMealSellPriceRows:0,
+    uniqueFixedRecipeIngredients:fixedIngredients.size,
+    fixedIngredientItemsWithConfiguredSoftSell:withConfiguredSoftSell,
+    fixedIngredientItemsWithoutStaticSoftSell:withoutConfiguredSoftSell,
     authenticatedNativeStarResults,
     salePriceComputed:false,
     serializedIngredientsRetained:true,

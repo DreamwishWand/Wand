@@ -79,6 +79,46 @@ All inputs are **local only**. No public site upload, user-save writer,
 payment-price assertion or game-original publication is authorized.
 
 
+## Ingredient unit sell-price SOURCE coverage (original Steam v1.26.2)
+
+Native `MealItemData.GetSellPrice(ItemState,...)` and
+`TotalIngredientsSellPrice(RecipeItemData, ingredientsUsed)` consume the
+instance material list. To prepare for eventual verified formula integration,
+the read-only `src/lib/acquisition/meal-ingredient-sell-evidence.mjs`
+classifies `ItemPriceDatabase.ItemPrices.SellPrices` definitions **per
+recorded ingredient Item ID and quantity**, filtering soft currency ID
+`80000000`. The source rows come through the already SHA-pinned private
+`loadPrivateShopPriceView` in `loadPrivateMealPricingView`; the pure
+classifier itself returns `inputSourceAuthenticated:false`, so its standalone
+results cannot masquerade as an authenticated original.
+
+The exact owner-private SRC-02 r5 cooking definitions contain **371 distinct
+fixed ingredient Item IDs** across 625 cooking recipes. A crossjoin with the
+exact private static ProtoDB price release yields **211** IDs with one
+serialized soft-currency `SellPrices` cost each and **160** IDs with no
+observed static soft-currency sell definition. All 211 stored options have a
+present serialized amount and currency `80000000`. The **160 missing** do
+not prove a zero price or that those ingredients cannot be sold. Runtime
+price lookup may use dynamic databases or default price rules; the known
+`ItemPriceDatabases.GetSoftCurrencySellPrice(Item,ItemState,int)` signature
+is not its implementation.
+
+The new `view.inspect(mealId, itemStateBytes).sourceIngredientStaticSellEvidence`
+provides original static `SellPrices` candidate definitions and quantities,
+while `ingredientStaticPriceDatabaseOriginalVerified:true` confirms the
+enclosing privately authenticated loader. Any source missing an amount field
+returns `null` (NOT zero). Multiple native definitions are preserved as
+ambiguous (NOT arbitrarily selected). `actualNativeIngredientPricesVerified`
+and `mealSellPriceComputed` always remain false. **This implementation
+does not sum prices, apply the star percentages, or claim a computed
+meal transaction value.**
+
+The owner-private JS smoke verifies all **371** fixed ingredient Item IDs
+against the actual independently authenticated source through the real API,
+counting **211** configured unit-soft-sell definitions and **160**
+not present in observed static price rows; it prints only aggregate counts.
+No licensed original price rows or user saves are published.
+
 ## Independently authenticated native star-price settings (Steam v1.26.2)
 
 The exact original `ddv_Data/StreamingAssets/protoDb.bin` (1,335,720 bytes, independent SHA-256
