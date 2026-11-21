@@ -88,11 +88,14 @@ def run(target_scan: Path, prior: Path, out: Path, *,
         require(not (directory / '.git').exists() and
                 not ((directory / 'package.json').exists() and
                      (directory / 'src').is_dir()), 'OUTPUT_INSIDE_REPOSITORY')
-    scan_sha=sha(target_scan)
+    # Hash and parse the same immutable byte snapshot: the source inventory
+    # cannot switch its path/digest ledger between two separate reads.
+    scan_bytes = target_scan.read_bytes()
+    scan_sha=hashlib.sha256(scan_bytes).hexdigest()
     require(expected_scan_sha256 is None or
             (HEX.fullmatch(expected_scan_sha256) and expected_scan_sha256 == scan_sha),
             'TARGET_SCAN_SHA_MISMATCH')
-    manifest=json.loads(target_scan.read_bytes())
+    manifest=json.loads(scan_bytes)
     require(type(manifest) is dict and manifest.get('schema_version') == 1 and
             manifest.get('status') == 'complete' and
             manifest.get('platform',{}).get('value') == 'steam',
@@ -109,6 +112,8 @@ def run(target_scan: Path, prior: Path, out: Path, *,
     reused=[]
     needs_current=[]
     seen=set()
+    prepared=[]
+    # Fully validate the untrusted scan before copying any private bytes.
     for item in records:
         require(type(item) is dict, 'INVALID_TARGET_RECORD')
         rel=safe_relative(item.get('path'))
@@ -118,15 +123,22 @@ def run(target_scan: Path, prior: Path, out: Path, *,
         require(type(item.get('size')) is int and item['size'] >= 0 and
                 isinstance(item.get('sha256'),str) and HEX.fullmatch(item['sha256']),
                 'INVALID_TARGET_DIGEST')
-        if not any(path.startswith(prefix) for prefix in prefixes):
-            continue
-        # Entire previous-version bytes are hashed, not inferred from metadata.
-        if not matches_target(item,prior,rel):
+        if any(path.startswith(prefix) for prefix in prefixes):
+            prepared.append((item,rel,path))
+    for item,rel,path in prepared:
+        destination_file=destination / rel
+        require(not destination.is_symlink() and
+                not destination.parent.is_symlink() and
+                no_symlink_components(destination,rel), 'SYMLINK_OUTPUT')
+        if destination_file.exists() or destination_file.is_symlink():
+            # An existing private copied original is reusable even if the old
+            # archive becomes unavailable, but its content must still hash.
+            result=write_copy_checked(prior / rel,destination_file,item)
+        elif matches_target(item,prior,rel):
+            result=write_copy_checked(prior / rel,destination_file,item)
+        else:
             needs_current.append({'path':path,'status':'needs_current_source'})
             continue
-        destination_file=destination / rel
-        require(no_symlink_components(destination,rel), 'SYMLINK_OUTPUT')
-        result=write_copy_checked(prior / rel,destination_file,item)
         copied += result=='copied'
         cached += result=='cached'
         reused.append({'path':path,'sha256':item['sha256']})
