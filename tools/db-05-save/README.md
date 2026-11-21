@@ -22,6 +22,8 @@ This is a **standalone schema contract**, not a replacement for the legacy Dream
 
 - Appearance: `Player.AvatarIsMale`, male/female avatar, hair colors, saved clothing slots, incompatible clothes, makeup, eyeball and customization map. These are old scoped readset candidates, not generalized editing or proof of rights.
 
+17 historical ID-reference positions are annotated in the field map: 14 candidate Item ID positions with `catalog=DB-01`, plus CollectionDefinition, Grid and World Object IDs with **no catalog alignment**. The adapter exposes `getLegacySaveIdReferences(namespace?)`; Rust exposes the nested `LegacyIdReference` type. Every reference has `join=exact_numeric_only`, `currentCatalogCoverageVerified=false`. A saved grid ID is **not** automatically a DB-04 World ID; a Collection Definition is **not** a DB-03 Quest ID. No reference closure is claimed.
+
 The existing Rust source scopes and limits remain authoritative for their own historical operations. The DB does not infer Item/Quest/World ID coverage, award eligibility or ownership, and does not relax the existing Writer permissions.
 
 ## Source integration
