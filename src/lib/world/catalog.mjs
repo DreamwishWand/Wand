@@ -1039,3 +1039,118 @@ export function getNativeFootprintOrientedWindow(
     ? getNativeFootprintCardinalOrientedWindow(catalog, itemId, orientationCode, rect)
     : getNativeFootprintObliqueOrientedWindow(catalog, itemId, orientationCode, rect);
 }
+
+
+/**
+ * Steam 1.26.1 source: GridAreaData.GetGridArea (token 0x0600309F)
+ * lazy-creates the *item* GridArea with TessellationFactor=1. The separate
+ * GridArea.TryGetGridLocalPosition (0x3923BB0) first converts caller grid
+ * coordinates by trunc(x/gridTessellationFactor)*areaFactor before rotation.
+ * A supplied factor is NOT proof of any particular world/save Grid factor.
+ */
+export function getNativeFootprintTessellatedOrientedLayerAt(
+    catalog, itemId, x, y, orientationCode, callerGridFactor) {
+  if (!Number.isInteger(orientationCode) || orientationCode < 0 || orientationCode > 15 ||
+      !Number.isInteger(callerGridFactor) || callerGridFactor < 1 || callerGridFactor > 256 ||
+      !Number.isInteger(x) || !Number.isInteger(y) ||
+      x < -2147483648 || x > 2147483647 ||
+      y < -2147483648 || y > 2147483647) {
+    throw new TypeError('Invalid original item GridArea orientation/grid factor/position');
+  }
+  const footprint = catalog.objects.get(idText(itemId))?.footprint;
+  if (!footprint) return null;
+  const common = {
+    itemId, orientationCode,
+    callerGridTessellationFactor: callerGridFactor,
+    callerGridFactorExplicitlyProvided: true,
+    callerGridFactorProvenanceVerified: false,
+    itemAreaTessellationFactorSourceValue: 1,
+    itemGetGridAreaFactorySourceVerified: true,
+    nativeTessellationCoordinateConversionVerified: true,
+    gridObjectAnchorVerified: false,
+    occupancyPredicateVerified: false,
+    placementLegalityVerified: false,
+  };
+  if (catalog.manifest.gameVersion !== '1.26.1') {
+    return {
+      ...common, status: 'native_tessellation_not_verified_for_game_version',
+      nativeTessellationCoordinateConversionVerified: false,
+      itemGetGridAreaFactorySourceVerified: false,
+    };
+  }
+  const originalSize = getNativeFootprintOrientationBaseDimensions(
+    catalog, itemId, orientationCode);
+  const orientedSizeX = originalSize.sizeX * callerGridFactor;
+  const orientedSizeY = originalSize.sizeY * callerGridFactor;
+  const dims = { ...common, orientedSizeX, orientedSizeY,
+    sourceGameVersion: '1.26.1' };
+  if (x < 0 || y < 0 || x >= orientedSizeX || y >= orientedSizeY) {
+    return { ...dims, inside: false, status: 'outside_oriented_gridarea' };
+  }
+  // Native transforms nonnegative caller-grid coordinates to area units
+  // BEFORE its cardinal/oblique direction-specific source-cell lookup.
+  const normalizedInputX = Math.trunc(x / callerGridFactor);
+  const normalizedInputY = Math.trunc(y / callerGridFactor);
+  const source = getNativeFootprintOrientedLayerAt(
+    catalog, itemId, normalizedInputX, normalizedInputY, orientationCode);
+  if (source?.inside !== true) {
+    return { ...dims, inside: false, status: 'outside_original_gridarea' };
+  }
+  return {
+    ...dims, inside: true,
+    status: 'source_correlated_item_gridarea_explicit_tessellation',
+    normalizedInputX, normalizedInputY,
+    originalLocalX: source.originalLocalX,
+    originalLocalY: source.originalLocalY,
+    originalFlatIndex: source.originalFlatIndex,
+    positionBasis: 'unrotated_item_gridarea_local',
+    nativeValue: source.nativeValue,
+    ...describeNativeLayerMask(source.nativeValue),
+    rawLayerValueNotVerifiedOccupancy: true,
+  };
+}
+
+/** Bounded read-only source masks; null means UNMAPPED, not unoccupied. */
+export function getNativeFootprintTessellatedOrientedWindow(
+    catalog, itemId, orientationCode, callerGridFactor, rect) {
+  const footprint = catalog.objects.get(idText(itemId))?.footprint;
+  if (!footprint) return null;
+  if (!isRecord(rect)) throw new TypeError('Missing original tessellated GridArea viewport');
+  const probe = getNativeFootprintTessellatedOrientedLayerAt(
+    catalog, itemId, 0, 0, orientationCode, callerGridFactor);
+  if (probe.nativeTessellationCoordinateConversionVerified !== true) return probe;
+  const {x, y, width, height} = rect;
+  const sx = probe.orientedSizeX, sy = probe.orientedSizeY;
+  if (![x, y, width, height].every(Number.isInteger) ||
+      x < 0 || y < 0 || width < 1 || height < 1 ||
+      width > 256 || height > 256 || x + width > sx || y + height > sy) {
+    throw new TypeError('Original tessellated GridArea viewport outside bounds');
+  }
+  const rows = [];
+  let unmappedOutputCellCount = 0;
+  for (let yy = y; yy < y + height; yy++) {
+    const row = [];
+    for (let xx = x; xx < x + width; xx++) {
+      const cell = getNativeFootprintTessellatedOrientedLayerAt(
+        catalog, itemId, xx, yy, orientationCode, callerGridFactor);
+      if (cell.inside === true) row.push(cell.nativeValue);
+      else {row.push(null); unmappedOutputCellCount++;}
+    }
+    rows.push(row);
+  }
+  return {
+    status: 'source_correlated_item_gridarea_scaled_raw_layers',
+    itemId, orientationCode, callerGridTessellationFactor: callerGridFactor,
+    orientedSizeX: sx, orientedSizeY: sy,
+    x, y, width, height, rows, unmappedOutputCellCount,
+    nullMeansUnmappedNotUnoccupied: true,
+    itemAreaTessellationFactorSourceValue: 1,
+    callerGridFactorExplicitlyProvided: true,
+    callerGridFactorProvenanceVerified: false,
+    nativeTessellationCoordinateConversionVerified: true,
+    sourceGameVersion: '1.26.1',
+    gridObjectAnchorVerified: false,
+    occupancyPredicateVerified: false,
+    placementLegalityVerified: false,
+  };
+}
