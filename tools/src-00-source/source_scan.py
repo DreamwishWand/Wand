@@ -4,12 +4,13 @@ import json
 import os
 import re
 import sys
+import time
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
 SCHEMA = 1
-CHECKPOINT_INTERVAL = 32
+CHECKPOINT_INTERVAL = 128
 SAMPLES = 20
 
 
@@ -67,13 +68,15 @@ def kind_of(relative):
         return "il2cpp"
     if name in ("unityplayer.dll", "globalgamemanagers", "resources.assets", "boot.config", "app.info") or name.endswith((".assets", ".bundle", ".unity3d")):
         return "unity"
+    if "/extracted/" in "/" + lower or "/dump/" in "/" + lower or "/dumps/" in "/" + lower or "/typetrees/" in "/" + lower:
+        return "existing_extraction"
     if "/localization/" in "/" + lower or "/localisation/" in "/" + lower or "/locales/" in "/" + lower or "/languages/" in "/" + lower or "stringtable" in name or name.endswith((".locres", ".po", ".mo")):
         return "localization"
     if name.endswith((".nca", ".nsp", ".xci", ".nso")) or "/exefs/" in "/" + lower or "/romfs/" in "/" + lower or name == "main.npdm":
         return "switch_content"
-    if "/streamingassets/" in "/" + lower or name.endswith((".ress", ".resource", ".resS".lower(), ".assetbundle", ".ab", ".bank", ".fsb", ".wem", ".png", ".jpg", ".jpeg", ".dds", ".webp", ".ogg", ".wem")):
+    if "/streamingassets/" in "/" + lower or name.endswith((".ress", ".resource", ".assetbundle", ".ab", ".bank", ".fsb", ".wem", ".png", ".jpg", ".jpeg", ".dds", ".webp", ".ogg")):
         return "assets"
-    if name.endswith((".json", ".csv", ".tsv", ".xml", ".txt", ".bytes")) or "/extracted/" in "/" + lower or "/dump/" in "/" + lower:
+    if name.endswith((".json", ".csv", ".tsv", ".xml", ".txt", ".bytes")):
         return "data_or_extracted"
     return "other"
 
@@ -223,7 +226,7 @@ def build_report(manifest, diff, skipped):
         "schema_version": SCHEMA,
         "generated_at": manifest["generated_at"],
         "status": manifest["status"],
-        "ready_for_downstream": manifest["status"] == "complete" and manifest["platform"]["status"] != "conflict" and manifest["build_id"]["status"] != "conflict",
+        "ready_for_downstream": manifest["status"] == "complete" and manifest["platform"]["value"] is not None and manifest["build_id"]["status"] != "conflict",
         "title": manifest["title"],
         "platform": manifest["platform"],
         "game_version": manifest["game_version"],
@@ -278,6 +281,8 @@ def main():
     checkpoint_path = out / "source-checkpoint.json"
     old = load_json(final_path)
     checkpoint = load_json(checkpoint_path)
+    if any(record and record.get("root_key") != key for record in (old, checkpoint)):
+        parser.error("--out already contains results for a different source root; choose a separate output folder")
     old_map = previous_map(old, key)
     checkpoint_map = previous_map(checkpoint, key)
     cache = {**old_map, **checkpoint_map}
@@ -294,6 +299,8 @@ def main():
             "started_or_updated_at": utc_now(), "status": "incomplete", "files": files,
         })
 
+    next_checkpoint = CHECKPOINT_INTERVAL
+    last_checkpoint = time.monotonic()
     try:
         for index, (relative, path) in enumerate(entries, 1):
             try:
@@ -313,8 +320,10 @@ def main():
                 files.append({"path": relative, **before, "sha256": digest, "hash_source": origin, "kind": kind_of(relative)})
             except (OSError, RuntimeError) as exc:
                 errors.append({"operation": "stat_or_hash", "path": relative, "reason": str(exc) if isinstance(exc, RuntimeError) else type(exc).__name__})
-            if index % CHECKPOINT_INTERVAL == 0:
+            if index >= next_checkpoint or time.monotonic() - last_checkpoint >= 60:
                 save_checkpoint()
+                next_checkpoint = max(next_checkpoint * 2, index + CHECKPOINT_INTERVAL)
+                last_checkpoint = time.monotonic()
     except KeyboardInterrupt:
         save_checkpoint()
         print("Interrupted. Re-run the same command to resume from the checkpoint.", file=sys.stderr)
