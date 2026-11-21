@@ -1,12 +1,12 @@
 {
   "schema": "wand.db05.legacy626-fields@1",
   "source": "public_legacy_rust_code",
-  "evidenceStatus": "historical_parser_contract_not_current_save_verified",
+  "evidenceStatus": "historical_parser_contract_candidate_for_structural_probe_not_current_save_verified",
   "saveSchemaVersion": 626,
   "readOnly": true,
   "writerAuthorized": false,
   "codecsNotReimplemented": true,
-  "buildScoping": "only listed exact legacy candidate builds; not current game attestation",
+  "buildScoping": "historical provenance tags only; compatible structure must be observed, irrespective of platform/version",
   "fields": [
     {
       "domain": "appearance",
