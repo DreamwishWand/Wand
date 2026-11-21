@@ -61,10 +61,10 @@ class SourceScanTests(unittest.TestCase):
     def test_game_version_from_fullversion_and_cache(self):
         (self.root / "GameAssembly.dll").write_bytes(b"assembly")
         (self.root / "steam_api64.dll").write_bytes(b"steam")
-        (self.root / "FullVersion.txt").write_text("1.26.1+abcdef\n", encoding="utf-8")
+        (self.root / "FullVersion.txt").write_text("releases_1.26-v1.26.1-633-gabcdef-incremental-22\n", encoding="utf-8")
         streaming = self.root / "ddv_Data" / "StreamingAssets"
         streaming.mkdir(parents=True)
-        (streaming / "FullVersion.txt").write_text("1.26.1+abcdef\n", encoding="utf-8")
+        (streaming / "FullVersion.txt").write_text("releases_1.26-v1.26.1-633-gabcdef-incremental-22\n", encoding="utf-8")
         result = self.run_scan()
         self.assertEqual(result.returncode, 0, result.stderr)
         report = self.read("source-report.json")
