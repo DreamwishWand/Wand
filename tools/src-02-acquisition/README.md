@@ -47,6 +47,12 @@ py -3 -m unittest discover -s tools/src-02-acquisition -p "test_*.py" -v
 node --test tests/acquisition*.test.mjs
 ```
 
+## Exact native ProtoDB shop and static price evidence (separate private release)
+
+See [PROTO-DB-SHOP-PRICES.md](PROTO-DB-SHOP-PRICES.md). Steam 1.26.2 original ProtoDB source and the trusted r5 SRC-02 ZIP yield **44** typed shops (**218** slots), **10** static price databases (**988** item-price records, **1,348** configured purchase currency costs and **711** sell currency amounts), **1** unevaluated dynamic price source and **65/65** exact native shop-key/slot-count stall matches. Three amount fields are absent and remain `null`, not zero. Source-proven, owner-private manifest SHA-256: `641f1b5c5268f136de7bf345f372f06bde923ce0f1f24871225a97913091e975`.
+
+Use `tools/src-02-acquisition/protodb_shop_prices.py` for private extraction and `src/lib/acquisition/private-shop-prices.mjs` to load the independently SHA-pinned private release in a local-only consumer. These are **source-configured base price definitions**, not validated live shop offers, current stock, effective transaction prices, entitlements or player progress. The r5 `shop-offers.jsonl` remains intentionally empty until a separately authenticated live offers source is available. Neither original game bytes nor private derived datasets may be placed in public GitHub/Pages.
+
 ## DB-00 private bundle verification and exact-origin join
 
 Before using a SRC-02 snapshot with any Collection/Guide consumer, verify every
