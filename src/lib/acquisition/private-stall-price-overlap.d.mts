@@ -3,6 +3,7 @@
  * No current offers, runtime price selection, stock or eligibility verification.
  */
 import type {StaticItemPriceDefinition} from './private-shop-prices.mjs';
+import type {SourceConfiguredCurrencyCost} from './source-price-currency.mjs';
 
 export declare const DB02_STALL_PRICE_OVERLAP_CONTRACT:
   'wand.db02.private-stall-price-overlap@1';
@@ -11,6 +12,10 @@ export interface SourcePriceCandidate {
   readonly itemId:number;
   readonly priceDatabaseKeys:readonly string[];
   readonly sourcePriceDefinitionPresent:boolean;
+  readonly shopConfiguredCurrencyIds:readonly number[];
+  readonly sourceConfiguredMatchingPurchaseCosts:readonly SourceConfiguredCurrencyCost[];
+  readonly sourceConfiguredOtherCurrencyPurchaseCosts:readonly SourceConfiguredCurrencyCost[];
+  readonly sourcePriceNeverEffectiveShopPrice:true;
   readonly status:
     'source_configured_price_candidate' |
     'not_listed_in_observed_static_price_databases';
@@ -33,6 +38,8 @@ export interface SourceStallPriceCoverage {
   readonly stallId:number;
   readonly shopKey:string;
   readonly slotCount:number;
+  readonly shopConfiguredCurrencyIds:readonly number[];
+  readonly candidatePriceDatabaseKeys:readonly string[];
   readonly candidates:readonly SourcePriceCandidate[];
   readonly slots:readonly SourceSlotPriceCoverage[];
   readonly enumeratedCandidateCount:number;
@@ -58,6 +65,11 @@ export interface SourcePriceOverlapCounts {
   readonly candidateOccurrencesWithStaticPrices:683;
   readonly candidateOccurrencesWithoutStaticPrices:62;
   readonly distinctEnumeratedCandidateItems:606;
+  readonly oneDatabaseStalls:29;
+  readonly twoDatabaseStalls:18;
+  readonly threeDatabaseStalls:3;
+  readonly configuredMatchingPurchaseCostOccurrences:683;
+  readonly otherCurrencyPurchaseCostOccurrences:162;
 }
 export interface SourcePriceOverlapView {
   readonly contract:typeof DB02_STALL_PRICE_OVERLAP_CONTRACT;
