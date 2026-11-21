@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   WORLD_SCHEMA, createWorldCatalog, getNativeFootprint, getNativeScene,
-  getLayoutGridReferences, checkNativeEditRestriction, assessPlacement,
+  getLayoutGridReferences, getNativeFloorPalette, describeNativeLayerMask,
+  describeNativeFloorMask, checkNativeEditRestriction, assessPlacement,
 } from '../src/lib/world/catalog.mjs';
 
 function fixture() {
@@ -16,7 +17,8 @@ function fixture() {
       gridEditRestrictions: { canMove: { value: false, nativeWireField: '25.1.1' } },
     }],
     scenes: [{ sceneId: 1540000000, nativeName: 'Village!Village04', parentWorldId: null }],
-    grids: [{ gridId: 'GridData/Villages/Meadow.json', terrainFlagsVerified: false }],
+    grids: [{ gridId: 'GridData/Villages/Meadow.json', terrainFlagsVerified: false,
+      nativeFloorTypePalette: [0, 4, 256, 512] }],
     layouts: [{ layoutId: 'SceneLayouts/Village04/Main.json',
       gridReferences: [{ path: 'GridData/Villages/Meadow.json', wireField: '1.2' }] }],
     unresolved: { unknownSemantics: ['terrain'] },
@@ -60,4 +62,13 @@ test('invalid snapshots and silently inferred occupancy are rejected', () => {
   const bad = fixture();
   bad.manifest.schema = 'other';
   assert.throws(() => createWorldCatalog(bad), /Unsupported/);
+});
+
+test('IL2CPP native layer and floor enum bits are mapped without asserting placement', () => {
+  assert.deepEqual(describeNativeLayerMask(68), { symbols: ['Low', 'Blocking'], unrecognizedBits: 0 });
+  assert.deepEqual(describeNativeLayerMask(128), { symbols: [], unrecognizedBits: 128 });
+  assert.deepEqual(describeNativeFloorMask(3072), { symbols: ['Floor', 'Wall'], unrecognizedBits: 0 });
+  assert.deepEqual(getNativeFloorPalette(createWorldCatalog(fixture()), 'GridData/Villages/Meadow.json')
+    .map(x => x.symbols), [[], ['Meadow'], ['Shore'], ['Water']]);
+  assert.throws(() => describeNativeLayerMask(-1), /Invalid/);
 });
