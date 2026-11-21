@@ -301,22 +301,22 @@ GRID_FLOOR_TYPES = {
 
 
 def repeated_uint32(fields, number):
+    # Native GridData uses packed FIXED32, not varint (e.g. 00 0c 00 00
+    # for the enum mask 3072). Confirmed by native room grid samples.
     values = []
     for field, wire, raw in fields:
         if field != number:
             continue
-        if wire == 0:
-            values.append(raw)
+        if wire == 5:
+            if len(raw) != 4:
+                raise ValueError("truncated fixed32 grid field")
+            values.append(struct.unpack("<I", raw)[0])
         elif wire == 2:
-            # Google.Protobuf FieldCodec<uint> supports packed varints, not LE uint32s.
-            pos = 0
-            while pos < len(raw):
-                value, pos = varint(raw, pos)
-                if value > 0xffffffff:
-                    raise ValueError("invalid uint32 in native grid")
-                values.append(value)
+            if len(raw) % 4:
+                raise ValueError("packed grid fixed32 byte count invalid")
+            values.extend(struct.unpack("<" + "I" * (len(raw) // 4), raw))
         else:
-            raise ValueError("unexpected repeated uint32 wire type")
+            raise ValueError("unexpected fixed32 grid field wire type")
     return values
 
 
