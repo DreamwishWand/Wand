@@ -118,17 +118,26 @@ def pe64_sections(path: Path) -> list[dict]:
 def file_offset_for_rva(sections, rva: int, size: int) -> tuple[int, dict]:
     if type(rva) is not int or not 0 <= rva <= 0xffffffff:
         raise ValueError("invalid original native method RVA")
+    if type(size) is not int or not 32 <= size <= MAX_WINDOW:
+        raise ValueError("invalid native PE evidence window length")
+    # Bytes past a PE section's VirtualSize are file-alignment padding, not
+    # mapped executable code. Virtual zero-fill beyond SizeOfRawData has no
+    # original binary bytes to capture. Both are excluded.
     matches = [entry for entry in sections if
                entry["virtualAddress"] <= rva <
-               entry["virtualAddress"] + entry["rawSize"]]
+               entry["virtualAddress"] + min(entry["rawSize"],
+                                              entry["virtualSize"])]
     if len(matches) != 1:
         raise ValueError("method RVA is not in one source executable section")
     entry = matches[0]
     delta = rva - entry["virtualAddress"]
+    available = min(entry["rawSize"], entry["virtualSize"]) - delta
+    if available < 32:
+        raise ValueError("native method RVA has fewer than 32 source code bytes")
     return entry["rawOffset"] + delta, {
         "section": entry["name"],
-        "bytesAvailableInSection": entry["rawSize"] - delta,
-        "readLength": min(size, entry["rawSize"] - delta),
+        "bytesAvailableInSection": available,
+        "readLength": min(size, available),
     }
 
 
@@ -161,8 +170,17 @@ def target_methods_from_dump(path: Path) -> list[dict]:
                 continue
             if pending_rva is None:
                 continue
+            # An RVA comment must be followed by a real declaration, never
+            # opportunistically associated with a matching comment line.
+            if line.lstrip().startswith("//"):
+                continue
             method = METHOD_RE.search(line)
             if method is None:
+                # Do not let a stale RVA leak into a later matching method.
+                # Blank lines, attributes and opening/closing braces are
+                # permitted; unrelated method declarations terminate it.
+                if "(" in line or (";" in line and "{" not in line):
+                    pending_rva = None
                 continue
             key = f"{fqtype}.{method.group(1)}"
             if key in found:
@@ -238,33 +256,79 @@ def capture_native_pe(game_root, *, dump_cs=None, dump_game_version=None,
 
 
 def validate_private_report(report: dict, *, game_version=None):
+    """Fail closed if a private report claims stronger evidence than captured."""
     if not isinstance(report, dict) or report.get("schema") != (
             "wand.db04.native-pe-evidence@1"):
         raise ValueError("invalid private native PE evidence schema")
-    if game_version is not None and report.get("gameVersion") != game_version:
+    version = report.get("gameVersion")
+    if not isinstance(version, str) or not VERSION.fullmatch(version):
+        raise ValueError("invalid native PE game version")
+    if game_version is not None and version != game_version:
         raise ValueError("private native PE evidence game version mismatch")
+    if report.get("peMachine") != "AMD64" or (
+            type(report.get("dllSizeBytes")) is not int or
+            not 4096 <= report["dllSizeBytes"] <= MAX_DLL_BYTES or
+            type(report.get("executableSectionCount")) is not int or
+            not 1 <= report["executableSectionCount"] <= 96):
+        raise ValueError("invalid native PE original binary identity")
     for field in ("nativeCodeBodyVerified", "disassemblyVerified",
                   "nativeFootprintRotationVerified",
                   "nativeFloorIndexToXYVerified", "placementLegalityVerified"):
         if report.get(field) is not False:
             raise ValueError("unsupported native PE evidence verification claim")
-    if not re.fullmatch(r"[0-9a-f]{64}", report.get("dllSha256", "")):
+    if (type(report.get("rawMethodWindowSize")) is not int or
+            not 32 <= report["rawMethodWindowSize"] <= MAX_WINDOW):
+        raise ValueError("invalid native PE method window configuration")
+    if not isinstance(report.get("dllSha256"), str) or not re.fullmatch(
+            r"[0-9a-f]{64}", report["dllSha256"]):
         raise ValueError("private native DLL digest missing")
     windows = report.get("methodWindows")
     if not isinstance(windows, list) or len(windows) > MAX_METHODS:
         raise ValueError("invalid private native method windows")
+
+    status = report.get("status")
+    if status == "pe64_binary_identified_no_version_matched_dump":
+        if (windows or report.get("sourceRvaMappingVerified") is not False or
+                "dumpCsSha256" in report or "dumpCsVersionAssertion" in report):
+            raise ValueError("native PE metadata-only report falsely claims matched RVAs")
+    elif status == "version_asserted_il2cpp_rva_byte_windows_captured":
+        if (not windows or report.get("sourceRvaMappingVerified") is not True or
+                report.get("dumpCsVersionAssertion") != version or
+                not isinstance(report.get("dumpCsSha256"), str) or
+                not re.fullmatch(r"[0-9a-f]{64}", report["dumpCsSha256"])):
+            raise ValueError("native PE evidence lacks version-asserted IL2CPP source")
+    else:
+        raise ValueError("invalid native PE evidence status")
+
+    seen = set()
     for window in windows:
+        if not isinstance(window, dict):
+            raise ValueError("malformed native PE method window")
+        symbol = window.get("symbol")
+        if (not isinstance(symbol, str) or
+                not any(symbol.startswith(t + ".") for t in TARGET_TYPES) or
+                symbol in seen):
+            raise ValueError("duplicate or unrecognized IL2CPP method symbol")
+        seen.add(symbol)
         raw_hex = window.get("rawWindowHex")
         if (not isinstance(raw_hex, str) or
                 not re.fullmatch(r"[0-9a-f]{64,2048}", raw_hex) or
                 len(raw_hex) % 2 or
-                window.get("windowLength") != len(raw_hex) // 2 or
+                type(window.get("windowLength")) is not int or
+                not 32 <= window["windowLength"] <= report["rawMethodWindowSize"] or
+                window["windowLength"] != len(raw_hex) // 2 or
                 hashlib.sha256(bytes.fromhex(raw_hex)).hexdigest()
                 != window.get("windowSha256") or
-                window.get("codeSemanticsVerified") is not False):
+                window.get("codeSemanticsVerified") is not False or
+                window.get("windowIsEntireMethod") is not False or
+                type(window.get("rva")) is not int or
+                not 0 <= window["rva"] <= 0xffffffff or
+                type(window.get("fileOffset")) is not int or
+                window["fileOffset"] < 0 or
+                window["fileOffset"] + window["windowLength"] >
+                report["dllSizeBytes"]):
             raise ValueError("native PE method window digest or source claim invalid")
     return report
-
 
 def write_private_report(report, target: Path):
     target = Path(target).resolve()

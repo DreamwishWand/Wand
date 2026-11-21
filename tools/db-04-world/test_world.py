@@ -770,6 +770,70 @@ class PipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "DOS header"):
             capture_native_pe(self.game)
 
+    def test_private_native_pe_status_and_version_claims_fail_closed(self):
+        dump, _ = self._write_native_pe_fixture()
+        matched = capture_native_pe(
+            self.game, dump_cs=dump,
+            dump_game_version="1.26.2", window_bytes=64)
+        plain = capture_native_pe(self.game)
+        plain["sourceRvaMappingVerified"] = True
+        with self.assertRaisesRegex(ValueError, "falsely claims"):
+            validate_private_report(plain)
+        plain["sourceRvaMappingVerified"] = False
+        plain["dumpCsVersionAssertion"] = "1.26.2"
+        with self.assertRaisesRegex(ValueError, "falsely claims"):
+            validate_private_report(plain)
+
+        report = dict(matched)
+        report["dumpCsVersionAssertion"] = "1.26.1"
+        with self.assertRaisesRegex(ValueError, "version-asserted"):
+            validate_private_report(report)
+        report = dict(matched)
+        report["sourceRvaMappingVerified"] = False
+        with self.assertRaisesRegex(ValueError, "version-asserted"):
+            validate_private_report(report)
+        report = dict(matched)
+        report["status"] = "pe64_binary_identified_no_version_matched_dump"
+        with self.assertRaisesRegex(ValueError, "falsely claims"):
+            validate_private_report(report)
+
+        report = dict(matched)
+        report["methodWindows"] = [dict(matched["methodWindows"][0])]
+        report["methodWindows"][0]["windowIsEntireMethod"] = True
+        with self.assertRaisesRegex(ValueError, "digest or source claim"):
+            validate_private_report(report)
+        report["methodWindows"][0]["windowIsEntireMethod"] = False
+        report["methodWindows"][0]["fileOffset"] = matched["dllSizeBytes"]
+        with self.assertRaisesRegex(ValueError, "digest or source claim"):
+            validate_private_report(report)
+
+    def test_pe64_rva_must_be_mapped_native_code_not_file_padding(self):
+        self._write_native_pe_fixture()
+        sections = pe64_sections(self.game / "GameAssembly.dll")
+        sections[0]["virtualSize"] = 0x80
+        self.assertEqual(file_offset_for_rva(sections, 0x1020, 64)[0], 0x420)
+        with self.assertRaisesRegex(ValueError, "not in one"):
+            file_offset_for_rva(sections, 0x1080, 64)
+        with self.assertRaisesRegex(ValueError, "fewer than 32"):
+            file_offset_for_rva(sections, 0x1070, 64)
+        with self.assertRaisesRegex(ValueError, "window length"):
+            file_offset_for_rva(sections, 0x1020, 0)
+
+    def test_il2cpp_rva_must_not_flow_into_unrelated_method_declaration(self):
+        dump, _ = self._write_native_pe_fixture()
+        dump.write_text(
+            "// Namespace: Definitions.Grid\n"
+            "public class GridData\n"
+            "{\n"
+            "    // RVA: 0x1020 Offset: 0x420 VA: 0x180001020\n"
+            "    public int unrelated(int x) { }\n"
+            "    public int get_Item(int x) { }\n"
+            "}\n", encoding="utf-8")
+        self.assertEqual(target_methods_from_dump(dump), [])
+        with self.assertRaisesRegex(ValueError, "no target GridData"):
+            capture_native_pe(self.game, dump_cs=dump,
+                              dump_game_version="1.26.2", window_bytes=64)
+
     def test_refuse_game_output_overlap(self):
         with self.assertRaisesRegex(ValueError, "overlap"):
             extract(self.game, self.game / "outputs")
