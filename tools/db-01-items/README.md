@@ -212,3 +212,23 @@ final DB-01 private-only manifest. It does not upload files, edit saves,
 commit data or change GitHub Pages. This is a **prepared command**, not a claim
 that the original full 28 files or eight entire localization archives have
 already been processed in ChatGPT.
+## Complete-source reuse across Steam patch versions
+
+The private archived v1.26.1 Steam original has **38 of 39** source itemlists with
+full SHA-256 exactly identical to independently SHA-pinned Steam v1.26.2 data.
+`tools/src-01-items/recover_unchanged1262.py` now recovers **20,425**
+additional *full-file-verified* 1.26.2 definitions (33 nonempty extra categories
+and one verified empty), while refusing changed `Condition.json`. Together
+with 13,202 four-class native items, the verified current-source union is
+**33,627 definition IDs**. The 132 previous complete-probe definitions are
+already included in the 20,425, not appended again.
+
+The tool merges the 66 fully SHA/CRC-verified names from the *current* v1.26.2
+complete ZIP-member probes, **not** v1.26.1 ZIPs. All eight whole localization
+archives differ between the versions, so most current names remain unresolved.
+Full procedure, verification boundary and private CLI:
+[`tools/src-01-items/RECOVER-UNCHANGED-1262.md`](../src-01-items/RECOVER-UNCHANGED-1262.md).
+Use the resulting private `wand.src01.extended@1` folder as the **replacement**
+`--extended` source to `tools/db-01-items/build.py`; never merge it with the old
+132-definition ext folder, since IDs overlap. It is not a complete catalog:
+`Condition.json` for v1.26.2 remains unavailable.
