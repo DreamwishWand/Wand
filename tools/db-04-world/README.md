@@ -102,6 +102,47 @@ To establish those behaviors requires version-matched disassembly and
 independent source comparison. This is a one-shot capture path, not a claim
 that native reverse engineering is already finished.
 
+## Private x86-64 disassembly from captured original PE windows
+
+When `run.ps1` is supplied with a version-asserted, matching
+`-Il2CppDumpPath`, it now attempts a **real x86-64 instruction decode**
+of the source SHA-verified `GameAssembly.dll` byte windows captured by
+`native_pe_evidence.py`. This uses optional, pinned
+[Capstone 5.0.9](https://pypi.org/project/capstone/5.0.9/), never a custom
+opcode guesser. The extra decode occurs in the **same extraction invocation**
+when the Python environment already has that exact package. Otherwise the
+verified DB-04 extraction proceeds normally, prints an explicit skip message,
+and never claims that a disassembly occurred.
+
+For an existing verified private snapshot that already contains
+`native-pe-evidence.json`, the decoder can also be run independently:
+
+```bash
+python -m pip install -r tools/db-04-world/requirements-native-disassembly.txt
+python tools/db-04-world/disassemble_native_pe.py --snapshot "/private/Steam-snapshot"
+```
+
+The command writes `native-disassembly.json` only into that private
+snapshot and refuses a public Git worktree. The ordinary deterministic
+`package_snapshot.py` then includes it as
+`diagnostics/native-disassembly.json` alongside the original byte-window
+evidence. Every emitted instruction has its RVA, on-disk file offset,
+original instruction bytes, mnemonic and operands. The packager rechecks
+the original PE report SHA binding and **every instruction's byte-for-byte
+contiguity** against the source window. Control-flow classification
+(call/jump/return) is only an instruction-group hint.
+
+Important limitations: linear decoding of a bounded source window does
+not discover a function's entry control-flow reachability, true end address,
+calls outside the window, or which following bytes belong to another method.
+For this reason `nativeFunctionBoundaryVerified`,
+`nativeControlFlowVerified`, `nativeCodeBodyVerified`,
+`nativeFloorIndexToXYVerified`, `nativeFootprintRotationVerified`,
+and `placementLegalityVerified` stay **false**. Disassembly provides
+material for further reverse engineering, not proof of the game's placement
+rules. No DLL, dump.cs, private machine bytes or instruction listings are
+committed to public Git.
+
 ## Generated private files
 
 Upload these together to the private [SRC-05 WORLD DATA folder](https://drive.google.com/drive/folders/1P5VW5Yr9YqYNoZfv7yHRCwqZcZapi0-Q):
