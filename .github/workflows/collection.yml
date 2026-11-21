@@ -20,6 +20,7 @@ jobs:
       - run: cargo test --manifest-path crates/wand-collection-core/Cargo.toml
       - run: cargo check --manifest-path crates/wand-collection-core/Cargo.toml --target wasm32-unknown-unknown
       - run: wasm-pack build crates/wand-collection-core --release --target web --out-dir ../../src/lib/collection/wasm/pkg
+      - run: wasm-pack build crates/ddv-save-schema --release --target web --features wasm --out-dir ../../src/lib/save/wasm/pkg
       - run: npm install --no-audit --no-fund
       - run: npm test
       - run: node --experimental-strip-types --test tests/collection-db01-core.check.mjs
