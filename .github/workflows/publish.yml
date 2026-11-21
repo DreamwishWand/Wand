@@ -61,3 +61,18 @@ jobs:
             echo "$hash  /tmp/$hash.webp" | sha256sum -c -
             grep -iq '^content-type: image/webp' "/tmp/$hash.headers"
           done
+
+      - name: Verify deployed DB-05 developer diagnostics route
+        env:
+          PAGE_URL: ${{ steps.publish.outputs.page_url }}
+        run: |
+          base="${PAGE_URL%/}"
+          for attempt in 1 2 3 4 5 6; do
+            if curl --fail --silent --show-error --location "$base/save/diagnostics/" -o /tmp/wand-save-diagnostics.html; then
+              break
+            fi
+            sleep 3
+          done
+          test -s /tmp/wand-save-diagnostics.html
+          grep -q 'セーブ構造診断' /tmp/wand-save-diagnostics.html
+          grep -q 'noindex' /tmp/wand-save-diagnostics.html
