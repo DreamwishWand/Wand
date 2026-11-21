@@ -1,0 +1,35 @@
+name: DB-04 World checks
+
+on:
+  pull_request:
+    paths:
+      - 'tools/db-04-world/**'
+      - 'src/lib/world/**'
+      - 'tests/world.test.mjs'
+      - '.github/workflows/db04-world.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/db-04-world/**'
+      - 'src/lib/world/**'
+      - 'tests/world.test.mjs'
+      - '.github/workflows/db04-world.yml'
+  workflow_dispatch:
+
+jobs:
+  db04:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test native world evidence extraction
+        run: python -m unittest discover -s tools/db-04-world -p 'test_*.py' -v
+      - name: Test browser-facing world catalog
+        run: node --test tests/world.test.mjs
