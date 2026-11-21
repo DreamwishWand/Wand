@@ -8,7 +8,7 @@ This lane implements a **read-only, partial, game-native database**, not a save 
 - `GridAreaData` fields 1/2 contain native `SizeX`/`SizeY`; field 3 is exactly `SizeX * SizeY` little-endian 32-bit layer values; field 4 is `AcceptedFloorTypesFlag`. Those mappings were cross-checked with a game-native `StreamingAssets/Furniture/...json` definition and full-file cardinality checks.
 - `itemlist/Scene.json`: indexed native Scene IDs/names; native scene-kind numeric value is kept without assigning an unsupported world/biome role.
 - `protoDb.bin` entries `Worlds` (`Definitions.WorldData`), `DefaultVillages` (`Meta.DefaultVillageList`) and `Village04Layout1` (`Definitions.Scene.VillageAreaData`): game-defined world names, Scene IDs, explicit parent world references, default layout paths and VillageAreaType/ground/water NavMesh IDs. The six villages include five conditional layouts, but those layout paths are **not** native world IDs.
-- `GridData/**/*.json`: despite the suffix these are **binary**. Verified IL2CPP `Definitions.Grid.GridData` fields 1/2 are SizeX/SizeY, field 3 is repeated native fixed32 FloorTypes, field 4 a fixed32 palette, and field 5 compacted index bytes. All raw palette values and Base64 packed bytes are preserved. **1/2-bit packed grids can now be previewed** with empirically corroborated X-major/MSB-first grid-local coordinates. The native decoder machine-code body is **not** verified, and neither global world coordinates nor placement legality can be inferred. 3-bit+ packing remains unresolved.
+- `GridData/**/*.json`: despite the suffix these are **binary**. Verified IL2CPP `Definitions.Grid.GridData` fields 1/2 are SizeX/SizeY, field 3 is repeated native fixed32 FloorTypes, field 4 a fixed32 palette, and field 5 compacted index bytes. All raw palette values and Base64 packed bytes are preserved. **1/2/4-bit packed grids can now be previewed** with original-GameAssembly-correlated X-major/MSB-first grid-local coordinates. The Steam 1.26.1 GridData getter and bit-width native instruction sequences were inspected after resolving their correct method tokens from global-metadata.dat v31. This proves neither global world coordinates nor placement legality. Palettes with more than 16 entries remain unsupported.
 - `Definitions.Grid.GridLayers` and `Definitions.Grid.GridFloorType` enums have verified bit names (e.g. 68 = Low|Blocking, 3072 = Floor|Wall). The meaning of those masks does **not** itself establish a full placement/collision algorithm.
 - `SceneLayouts/**/*.json`: `Meta.GridCollection` is decoded using its native Grid map, GridDataPath, TessellationFactor and Grid.Objects map. Each original default-layout object keeps its **native** `GridObject.ID`, `ItemID`, `X`, `Y`, and `GridOrientation` (0–15), plus only a hash/size of its optional state. These are **grid-local starting positions**, **not** world-space coordinates or user save data. An initial object is **not automatically permanent/immovable**.
 - `Meta.DefaultVillageData` scene layouts also expose `GridLayoutPaths`, an explicit native map from `VillageAreaType` to separate `SceneLayouts/` files. For unrecognized protobuf layouts, the extractor retains literal source-path evidence without inventing links.
@@ -277,7 +277,7 @@ decoding. This provides browser-side consistency checks even when a caller has
 not used the private `verify_bundle.py` CLI; it is still not a cryptographic
 source-authenticity check or native machine-code decoder verification.
 
- For native `GridData` values not yet independently validated (such as 3-bit+ palette formats), decoding remains disabled.
+ Original GridData.get_Item uses fixed-width 1, 2 or 4 bits, not a 3-bit encoding. Palette sizes 1–2 map to 1 bit, 3–4 to 2 bits, and 5–16 to 4 bits. Larger palettes remain explicitly unresolved rather than silently treating them as 4-bit data. The current private source snapshot metadata still records `nativeCodeBodyVerified: false` because it does not itself contain the original machine-code proof; the independently verified Steam 1.26.1 native method evidence is stored privately, not bundled as unverified universal game-version claims.
 
 ## Source-linked default-village 2D viewports (read-only)
 
@@ -295,7 +295,7 @@ const preview = getNativeVillageAreaViewport(
 The adapter explicitly walks `Meta.DefaultVillageData.GridLayoutPaths`
 (area code → original GridCollection path), then
 `Meta.GridCollection.Grids[nativeGridId].GridDataPath`, then the original
-native 1-/2-bit compacted grid and its grid-local default `GridObject.X/Y`
+native 1-/2-/4-bit compacted grid and its grid-local default `GridObject.X/Y`
 anchors. To view a GridCollection directly, call
 `getNativeDefaultLayoutViewport(catalog, gridCollectionPath, nativeGridId, rect)`.
 Rectangles are limited by the existing 256×256-cell API.
@@ -343,7 +343,7 @@ footprints. Its statistics are diagnostic, not a placement legality score.
 
 ## Native terrain cell counts and default-object origin audit
 
-DB-04 now extracts `nativePaletteIndexCellCounts` for source-corroborated 1/2-bit
+DB-04 now extracts `nativePaletteIndexCellCounts` for source-corroborated 1/2/4-bit
 compacted grids. Each integer counts exact native **palette indices**, keeping
 duplicate palette values distinct. Counting runs on packed source bytes without
 allocating a full decoded 2D grid. The counts sum to `SizeX × SizeY` and are

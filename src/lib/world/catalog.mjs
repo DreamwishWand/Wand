@@ -202,8 +202,9 @@ export function getLayoutGridReferences(catalog, layoutId) {
   }));
 }
 
-// Raw native GridData remains private. Use a lazy, source-corroborated
-// decoder only for 1/2-bit packed palettes; this is NOT a placement checker.
+// Raw native GridData remains private. Steam 1.26.1 source-native
+// GridData.get_Item and GetNumberOfBitsPerPosition confirm 1/2/4-bit
+// MSB-first packed palettes. This is NOT a placement checker.
 const decodedGridCache = new WeakMap();
 
 // Verify every source-packed palette symbol once per grid; do not trust
@@ -234,7 +235,7 @@ function packedGridForPreview(catalog, gridId) {
   if (!grid) return { status: 'unknown_grid' };
   const evidence = grid.terrainDecoding;
   if (evidence?.decoded !== true || evidence?.packing !== 'x_major_msb_first' ||
-      ![1, 2].includes(evidence.cellBits)) {
+      ![1, 2, 4].includes(evidence.cellBits)) {
     return { status: 'unresolved_native_packing' };
   }
   if (evidence.nativeCodeBodyVerified !== false ||
@@ -246,9 +247,11 @@ function packedGridForPreview(catalog, gridId) {
   const bits = evidence.cellBits;
   if (!Number.isSafeInteger(sx) || !Number.isSafeInteger(sy) ||
       sx <= 0 || sy <= 0 || sx * sy > 16777216 ||
-      !Array.isArray(palette) || palette.length < 2 ||
+      !Array.isArray(palette) || palette.length < 1 ||
       palette.length > (1 << bits) ||
-      (bits === 1 && palette.length !== 2) ||
+      (bits === 1 && palette.length > 2) ||
+      (bits === 2 && (palette.length < 3 || palette.length > 4)) ||
+      (bits === 4 && (palette.length < 5 || palette.length > 16)) ||
       !palette.every(v => Number.isSafeInteger(v) && v >= 0 && v <= 0xffffffff) ||
       typeof grid.compactedFloorTypesBase64 !== 'string') {
     throw new TypeError('Invalid source-derived native compacted grid');

@@ -1,4 +1,4 @@
-"""Read-only native GridData packed-floor decoding for validated 1/2-bit cases.
+"""Read-only original GridData packed-floor decoding for 1/2/4-bit cases.
 
 Source-based, empirical validation for Steam 1.26.1:
 - Room12x16 grid produces a 192/192 exact rectangular wall border.
@@ -7,8 +7,11 @@ Source-based, empirical validation for Steam 1.26.1:
 The single disagreement is a native 11x11 boundary rock (175, 0), for which
 the *origin* alone cannot establish all occupied-cell placement conditions.
 
-This proves useful grid-local rendering consistency, NOT the implementation
-of the game's decoder or complete placement/collision/rotation legality.
+Steam 1.26.1 source-native disassembly additionally confirms the compiled
+get_Item(int,int) uses flat index x*SizeY+y and MSB-first packed bit extraction;
+GetNumberOfBitsPerPosition returns 1 for palette <=2, 2 for 3..4, and 4 for
+larger counts. No evidence supports palette sizes >16. Native placement,
+world transforms, and collision semantics are unrelated and remain unverified.
 """
 from __future__ import annotations
 from collections import Counter
@@ -17,14 +20,22 @@ from typing import Sequence
 EVIDENCE = "steam_1.26.1_room12x16_border_192of192_and_meadow_origin_742of743"
 PACKING = "x_major_msb_first"
 MAX_CELLS = 16_777_216
+FOUR_BIT_NATIVE_EVIDENCE = (
+    "steam_1.26.1_original_metadata_v31_griddata_get_item_"
+    "get_number_of_bits_per_position_x64_body"
+)
 
 
 def validated_cell_bits(palette_size: int) -> int | None:
-    """Beyond 2 bits/cell, do not guess the game's byte-boundary packing."""
-    if palette_size == 2:
+    """Match native GetNumberOfBitsPerPosition for representable palettes."""
+    if type(palette_size) is not int:
+        return None
+    if 1 <= palette_size <= 2:
         return 1
-    if palette_size in (3, 4):
+    if 3 <= palette_size <= 4:
         return 2
+    if 5 <= palette_size <= 16:
+        return 4
     return None
 
 
@@ -65,7 +76,8 @@ def describe_native_packing(size_x: int, size_y: int,
                 raise ValueError("compacted floor index missing from native palette")
     return {"status": "cross_validated_native_samples", "decoded": True,
             "nativeCodeBodyVerified": False,
-            "sampleBasedEncodingEvidence": EVIDENCE,
+            "sampleBasedEncodingEvidence": (
+                EVIDENCE if bits in (1, 2) else FOUR_BIT_NATIVE_EVIDENCE),
             "packing": PACKING, "cellBits": bits,
             "cellIndexFormula": "x*sizeY+y",
             "byteBitOrder": "most_significant_first",

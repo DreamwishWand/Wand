@@ -158,6 +158,61 @@ function nativeRoomGrid() {
   };
 }
 
+test('original native four-bit GridData decoding keeps x-major cells and MSB nibble order', () => {
+  const data = fixture();
+  const base = nativeRoomGrid();
+  const bytes = Buffer.from([0x01, 0x23, 0x41, 0x03, 0x20]);
+  const fourBit = {
+    ...base,
+    gridId: 'GridData/Rooms/FourBit.json',
+    sizeX: 3, sizeY: 3,
+    nativeFloorTypePalette: [0, 8, 16, 32, 64],
+    nativePaletteIndexCellCounts: [2, 2, 2, 2, 1],
+    compactedFloorTypesBase64: bytes.toString('base64'),
+    nativeCompactedByteCount: bytes.length,
+    terrainDecoding: {
+      ...base.terrainDecoding, cellBits: 4,
+      sampleBasedEncodingEvidence: 'synthetic-native-v31-four-bit',
+    },
+  };
+  data.grids.push(fourBit);
+  const catalog = createWorldCatalog(data);
+  const view = getNativeTerrainWindow(catalog, fourBit.gridId,
+    { x: 0, y: 0, width: 3, height: 3 });
+  assert.deepEqual(view.rows, [[0, 32, 0], [8, 64, 32], [16, 8, 16]]);
+  assert.equal(getNativeTerrainTile(catalog, fourBit.gridId, 1, 1).nativeValue, 64);
+  assert.deepEqual(getNativeTerrainDistribution(catalog, fourBit.gridId)
+    .values.map(v => v.cellCount), [2, 2, 2, 2, 1]);
+  assert.equal(view.nativeCodeBodyVerified, false);
+  assert.equal(view.placementLegalityVerified, false);
+
+  const invalid = fixture();
+  invalid.grids.push({
+    ...fourBit,
+    compactedFloorTypesBase64: Buffer.from([0xf1, 0x23, 0x41, 0x03, 0x20])
+      .toString('base64'),
+  });
+  assert.throws(() => getNativeTerrainTile(
+    createWorldCatalog(invalid), fourBit.gridId, 0, 0), /palette index is invalid/);
+  const padding = fixture();
+  padding.grids.push({
+    ...fourBit,
+    compactedFloorTypesBase64: Buffer.from([0x01, 0x23, 0x41, 0x03, 0x2f])
+      .toString('base64'),
+  });
+  assert.throws(() => getNativeTerrainTile(
+    createWorldCatalog(padding), fourBit.gridId, 0, 0), /padding mismatch/);
+
+  const oversized = fixture();
+  oversized.grids.push({
+    ...fourBit,
+    nativeFloorTypePalette: Array.from({ length: 17 }, (_, i) => i),
+  });
+  assert.throws(() => getNativeTerrainTile(
+    createWorldCatalog(oversized), fourBit.gridId, 0, 0),
+    /Invalid source-derived native compacted grid/);
+});
+
 test('source-corroborated native 12x16 Room terrain renders as exact wall border', () => {
   const data = fixture();
   data.grids.push(nativeRoomGrid());
@@ -206,7 +261,8 @@ test('partial grid or invalid packing never silently produces invented terrain',
   room3.nativeFloorTypePalette = [0, 3072];
   wrongPalette.grids.push(room3);
   assert.throws(() => getNativeTerrainTile(createWorldCatalog(wrongPalette),
-    'GridData/Rooms/TestRoom.json', 1, 1), /palette index/);
+    'GridData/Rooms/TestRoom.json', 1, 1),
+    /Invalid source-derived native compacted grid/);
 });
 
 
