@@ -1376,6 +1376,7 @@ export function getNativeDefaultLayoutObjectComputedStride(catalog, layoutObject
       stride.nativeStrideCalculationVerified === true,
     callerGridFactorProvenanceVerified: true,
     sourceFactoryRoutePerRecordVerified: false,
+    itemFactoryRoutePerRecordVerified: false,
     currentSaveObjectVerified: false,
     worldCoordinatesVerified: false,
     placementLegalityVerified: false,
