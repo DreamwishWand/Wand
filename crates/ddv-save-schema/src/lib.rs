@@ -5,6 +5,7 @@ use serde_json::Value;
 
 pub const CONTRACT: &str = "wand.db05.save-readonly-inspection@1";
 const REGISTRY: &str = include_str!("../../../data/ddv/save/registry.v1.json");
+const LEGACY_FIELDS: &str = include_str!("../../../data/ddv/save/legacy626-fields.v1.json");
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -47,6 +48,28 @@ pub struct ReadOnlyAssessment {
 
 pub fn registry() -> Result<Registry, serde_json::Error> {
     serde_json::from_str(REGISTRY)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacyFieldMap {
+    pub schema: String,
+    pub save_schema_version: u64,
+    pub fields: Vec<LegacyField>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LegacyField {
+    pub domain: String,
+    pub path: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub builds: Vec<String>,
+    pub writable: bool,
+}
+
+pub fn legacy_fields() -> Result<LegacyFieldMap, serde_json::Error> {
+    serde_json::from_str(LEGACY_FIELDS)
 }
 
 /// Shape inspection borrows a decoded Value. Passing this is not Codec proof.
@@ -97,6 +120,10 @@ mod tests {
         let reg = registry().unwrap();
         assert_eq!(reg.schema, "wand.db05.save-registry@1");
         assert_eq!(reg.builds.len(), 3);
+        let fields = legacy_fields().unwrap();
+        assert_eq!(fields.save_schema_version, 626);
+        assert_eq!(fields.fields.len(), 35);
+        assert!(fields.fields.iter().all(|field| !field.writable));
         assert!(reg.builds.iter().all(|build| build.status == "legacy_contract_candidate"));
     }
 
