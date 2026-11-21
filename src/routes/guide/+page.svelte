@@ -659,9 +659,6 @@
   .guide-placeholder p,.guide-waiting p { font-size:12px; line-height:1.8; max-width:420px; }
   @media (max-width:850px) { .guide-workspace { grid-template-columns:1fr; } .guide-detail { border-left:0; border-top:1px solid #ffffff1b; } .guide-hero { align-items:start; flex-direction:column; } }
   @media (max-width:570px) { .guide-stats { grid-template-columns:repeat(2,1fr); } .guide-file-inputs,.guide-facets { grid-template-columns:1fr; } .guide-page { padding-top:26px; } }
-</style>
-
-<style>
   .guide-public-entry{padding:16px 20px;border:1px solid #80649b;border-radius:12px;background:#281e38;color:#f8efff;margin-bottom:18px}
   .guide-public-entry p{color:#cfbddf;margin:8px 0}
   .guide-public-entry a{color:#ead3ff;font-weight:700;text-decoration:underline}
