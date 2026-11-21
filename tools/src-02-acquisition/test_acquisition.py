@@ -185,5 +185,47 @@ class AcquisitionTest(unittest.TestCase):
             self.assertEqual(data['sets']['shop-offers.jsonl']['removed'], ['x'])
 
 
+class IngredientSelectorTest(unittest.TestCase):
+    def test_cooking_type_and_tag_fields_by_observed_class(self):
+        crop = entry(200000, 30000000, f(2, b'Vegetable!Test'),
+                     f(11, 2001400014), f(30, 2001200019), f(30, 2001200028))
+        fish = entry(1000000, 30000000, f(2, b'TestFish'),
+                     f(10, 2001400000), f(14, 2001200019))
+        ingredient = entry(1100000, 30000000, f(2, b'TestIngredient'),
+                           f(8, 2001400006), f(13, 2001200011))
+        recipe = [{'ingredients':[{'kind':'anyTag','tagId':2001400014},
+                                 {'kind':'tagAlternatives','tagIds':[2001200019,2001200011]}]}]
+        rows, stats, missing = src02.parse_ingredient_selector_membership(crop+fish+ingredient, recipe)
+        self.assertEqual([r['nativeClass'] for r in rows], ['CropItemData','FishItemData','IngredientItemData'])
+        self.assertEqual(rows[0]['tagIds'],[2001200019,2001200028])
+        self.assertEqual(rows[0]['source']['cookingIngredientTypeField'],11)
+        self.assertEqual(rows[1]['source']['tagsField'],14)
+        self.assertEqual(rows[2]['source']['tagsField'],13)
+        self.assertEqual(stats['selectorIdsReferenced'],3)
+        self.assertEqual(stats['selectorIdsWithObservedMembers'],3)
+        self.assertEqual(stats['selectorUses'],3)
+        self.assertEqual(missing,[])
+
+    def test_unsupported_family_and_unknown_selector_stay_unresolved(self):
+        seed = entry(400010,30000000,f(2,b'Crop!Carrot_Seed'),f(13,30200000),f(31,2001200019))
+        crop = entry(200000,30000000,f(2,b'Vegetable!Test'),f(11,2001400014))
+        rows,stat,missing = src02.parse_ingredient_selector_membership(
+            seed + crop, [{'ingredients':[{'kind':'anyTag','tagId':2001200019}]}])
+        self.assertEqual(len(rows),1)
+        self.assertEqual(stat['selectorIdsWithoutObservedMembers'],1)
+        self.assertEqual(missing,[2001200019])
+
+    def test_wrong_ingredient_fields_and_duplicate_tags_fail_closed(self):
+        invalid = entry(200000,30000000,f(2,b'BadCrop'),f(11,2001400014),f(30,2001200001),f(30,2001200001))
+        with self.assertRaisesRegex(ValueError,'INVALID_COOKING_INGREDIENT_TAGS'):
+            src02.parse_ingredient_selector_membership(invalid,[])
+        wrong = entry(1000000,30000000,f(2,b'BadFish'),f(11,2001400000))
+        with self.assertRaisesRegex(ValueError,'INVALID_FIELD_10'):
+            src02.parse_ingredient_selector_membership(wrong,[])
+        namespace = entry(1100000,30000000,f(2,b'BadIngredient'),f(8,2001200001))
+        with self.assertRaisesRegex(ValueError,'INVALID_COOKING_INGREDIENT_TYPE'):
+            src02.parse_ingredient_selector_membership(namespace,[])
+
+
 if __name__ == '__main__':
     unittest.main()

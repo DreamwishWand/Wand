@@ -35,11 +35,23 @@ export interface MaterialPlan {
   readonly unresolvedSelectors: Array<{
     readonly recipeId: number;
     readonly ingredientIndex: number;
-    readonly kind: 'anyTag' | 'tagAlternatives';
+    readonly kind: 'anyTag' | 'tagAlternatives' | 'itemAlternatives';
     readonly tagId?: number;
     readonly tagIds?: number[];
+    readonly itemIds?: number[];
+    readonly candidateItemIds: number[];
+    readonly membershipCoverage: 'three_observed_cooking_native_classes' | 'not_supplied';
+    readonly availabilityVerified: false;
     readonly quantity: number;
     readonly resolution: string;
+  }>;
+  readonly selectorSelections: Array<{
+    readonly recipeId: number;
+    readonly ingredientIndex: number;
+    readonly itemId: number;
+    readonly quantity: number;
+    readonly matchedSelectorIds: number[];
+    readonly availabilityVerified: false;
   }>;
   readonly blockers: Array<{
     readonly itemId: number;
@@ -60,6 +72,8 @@ export interface PlanOptions {
   inventory?: Record<string | number, number>;
   /** When multiple crafting recipes produce one item, select an explicit recipe. */
   recipeChoices?: Record<string | number, number>;
+  /** Explicit choice by source recipeId:zero-based ingredientIndex; must be in verified candidates. */
+  ingredientChoices?: Record<string, number>;
   expandSingleRecipe?: boolean;
   maxDepth?: number;
 }
@@ -67,6 +81,8 @@ export function planRecipeRequirements(
   db: {
     source: { platform: string; gameVersion: string };
     getRecipe(id: number): any;
+    ingredientMembershipScope?: 'three_observed_cooking_native_classes' | 'not_supplied';
+    getIngredientSelectorCandidates?(id: number): Array<{itemId: number}>;
     getRecipesForItem(id: number): any[];
     getAcquisitionPaths(id: number): Readonly<Record<string, unknown>>[];
     getPossibleStallsForItem(id: number): Readonly<Record<string, unknown>>[];

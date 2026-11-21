@@ -182,3 +182,57 @@ inventory, DLC entitlement, quest progression, or current live shop offers.
 Run `node --test tests/acquisition*.test.mjs` for the planner and source contract
 regressions. The full 1,943-recipe Steam v1.26.2 corpus is exercised separately
 from the owner's private Drive snapshot; it is not committed as a test fixture.
+
+
+## Native cooking ingredient selectors (Steam v1.26.2 r4)
+
+The original game uses **two distinct numerical selector families** in
+`RecipeItemData.Types.Ingredient`: `Any` (field 2) stores a
+`CookingIngredientType` Item ID (observed `20014xxxxx`); `TagsList` (field 4)
+stores one or more `IHasTags.Tags` Item IDs (observed `20012xxxxx`).
+`Tag.json` *labels* are not required for exact ID membership; this revision
+**does not** claim to have decoded the full `Tag.json` source or localized names.
+
+SRC-02 now scans the entire SHA-256-pinned Steam v1.26.2
+`itemlist/ActivityItem.json` (4,050 native definitions), but promotes only
+cooking-capable ID families with matching IL2CPP 1.26.1 protobuf field
+contracts: `CropItemData` (native IDs `302xxxxx`, type field 11, tags field 30),
+`FishItemData` (`310xxxxx`, type field 10, tags field 14), and
+`IngredientItemData` (`311xxxxx`, type field 8, tags field 13).
+The field and ID-family combination is *observed source evidence*, not a
+serialized subtype discriminator. All 469 observations are retained in
+`ingredient-selector-membership.jsonl` with exact source definition IDs,
+field numbers, type IDs and tag IDs. No item descriptions, guessed category
+labels or Tag.json records are fabricated.
+
+The 625 cooking definitions contain 238 selector-ID uses across 181 recipes,
+covering 13 distinct selector IDs. All 13 have at least one typed candidate
+among these three observed native families. Membership is **partial**: it is
+not proof every possible valid ingredient is enumerated, that an item is
+available in this player's game, or that the recipe can currently be cooked.
+Do not treat a zero-result selector from this partial index as impossibility.
+
+Use `db.getIngredientSelectorCandidates(selectorId)` for an explicit candidate
+list, and `db.getIngredientSelectorMembership(itemId)` to inspect the native
+source evidence. Both return source-backed static relationships, never
+availability. Pass the *verified* bundle with `ingredientMembership` to
+`createAcquisitionDatabase` (r3 and prior pre-membership snapshots remain
+valid but provide no candidates).
+
+For material estimates, `planRecipeRequirements(db, recipeId, {
+ingredientChoices: { '2050000009:0': 31000000 } })` selects one candidate for
+one **zero-based** ingredient slot of the exact native recipe ID. The planner
+only consumes a selected item after verifying source membership. Otherwise it
+preserves a candidate list in `unresolvedSelectors` without choosing a
+substitute itself. `tagAlternatives` are a union of verified candidate sets;
+explicit `itemAlternatives` (if encountered in future versions) use only the
+source-listed IDs. Total quantities, hypothetical inventory and nested
+crafting are computed exactly as before. All reports retain
+`recipeEligibilityEvaluated=false` and `acquisitionAvailabilityVerified=false`.
+
+The output manifest includes `ingredient-selector-membership.jsonl`'s SHA-256,
+the native ActivityItem source digest, 469 typed rows, 13 selector IDs,
+238 uses and the verified 4,050 source-definition count. The private bundle
+loader cross-checks those counts and native row contracts; tampering or a
+missing required r4 dataset fails closed. The new version diff only asserts
+*observed source-row changes*, not actual release availability.

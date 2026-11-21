@@ -4,7 +4,7 @@ const SHA = /^[0-9a-f]{64}$/;
 
 export function createAcquisitionDatabase({ manifest, recipes = [], acquisitions = [],
   lootTables = [], shopOffers = [], stallSources = [], relatedItems = [],
-  conditionGates = null, conditionDefinitions = null }) {
+  conditionGates = null, conditionDefinitions = null, ingredientMembership = null }) {
   if (manifest?.schema !== 'wand.src02@1') throw new Error('Unsupported acquisition manifest');
   if (!manifest.gameVersion || !manifest.platform) throw new Error('Missing source version');
   const unique = (rows, key) => {
@@ -22,6 +22,58 @@ export function createAcquisitionDatabase({ manifest, recipes = [], acquisitions
   const byShop = unique(shopOffers, 'offerId');
   const byStall = unique(stallSources, 'stallId');
   const byItem = unique(relatedItems, 'itemId');
+  const ingredientEvidencePresent = ingredientMembership !== null;
+  if (manifest.files?.['ingredient-selector-membership.jsonl'] && !ingredientEvidencePresent) {
+    throw new Error('Ingredient selector membership dataset missing');
+  }
+  const selectorMembers = new Map();
+  const byIngredientMember = unique(ingredientMembership ?? [], 'itemId');
+  const classes = { CropItemData: [302, 11, 30], FishItemData: [310, 10, 14],
+    IngredientItemData: [311, 8, 13] };
+  const link = (selectorId, member, kind) => {
+    if (!selectorMembers.has(selectorId)) selectorMembers.set(selectorId, []);
+    selectorMembers.get(selectorId).push({ itemId: member.itemId, nativeClass: member.nativeClass,
+      matchedBy: kind, source: member.source, availabilityVerified: false });
+  };
+  for (const member of byIngredientMember.values()) {
+    const fields = classes[member.nativeClass];
+    if (!validId(member.itemId) || !fields || Math.floor(member.itemId / 100000) !== fields[0] ||
+        !Number.isSafeInteger(member.cookingIngredientTypeId) ||
+        member.cookingIngredientTypeId < 2001400000 || member.cookingIngredientTypeId >= 2001500000 ||
+        !Array.isArray(member.tagIds) || new Set(member.tagIds).size !== member.tagIds.length ||
+        member.tagIds.some(id => !Number.isSafeInteger(id) || id < 2001200000 || id >= 2001300000) ||
+        member.source?.kind !== 'game_native' ||
+        member.source.classEvidence !== 'observed_native_id_family_and_named_field_contract' ||
+        member.source.file !== 'itemlist/ActivityItem.json' ||
+        member.source.definitionId !== member.itemId ||
+        member.source.cookingIngredientTypeField !== fields[1] ||
+        member.source.tagsField !== fields[2]) {
+      throw new Error(`Invalid typed ingredient selector membership ${member.itemId}`);
+    }
+    link(member.cookingIngredientTypeId, member, 'cooking_ingredient_type');
+    for (const tag of member.tagIds) link(tag, member, 'item_tag');
+  }
+  for (const value of selectorMembers.values()) value.sort((a, b) => a.itemId - b.itemId);
+  if (ingredientEvidencePresent && manifest.counts?.ingredientSelectorMembers !== undefined &&
+      manifest.counts.ingredientSelectorMembers !== byIngredientMember.size) {
+    throw new Error('Ingredient selector count does not match manifest');
+  }
+  if (ingredientEvidencePresent && manifest.counts?.ingredientSelectorIdsReferenced !== undefined) {
+    const used = new Set();
+    let uses = 0;
+    for (const recipe of byRecipe.values()) for (const ing of recipe.ingredients ?? []) {
+      const ids = ing.kind === 'anyTag' ? [ing.tagId] :
+        ing.kind === 'tagAlternatives' ? ing.tagIds : [];
+      for (const id of ids) { used.add(id); uses++; }
+    }
+    const count = name => manifest.counts[name];
+    if (count('ingredientSelectorIdsReferenced') !== used.size ||
+        count('ingredientSelectorUses') !== uses ||
+        count('ingredientSelectorIdsWithObservedMembers') !== [...used].filter(id => selectorMembers.has(id)).length ||
+        count('ingredientSelectorIdsWithoutObservedMembers') !== [...used].filter(id => !selectorMembers.has(id)).length) {
+      throw new Error('Ingredient selector usage count does not match manifest');
+    }
+  }
   if ((conditionGates === null) !== (conditionDefinitions === null)) {
     throw new Error('Incomplete condition evidence pair');
   }
@@ -162,6 +214,9 @@ export function createAcquisitionDatabase({ manifest, recipes = [], acquisitions
   return Object.freeze({
     source: Object.freeze({ platform: manifest.platform, gameVersion: manifest.gameVersion }),
     getRecipe,
+    ingredientMembershipScope: ingredientEvidencePresent ? 'three_observed_cooking_native_classes' : 'not_supplied',
+    getIngredientSelectorCandidates: id => validId(id) ? (selectorMembers.get(id) ?? []) : [],
+    getIngredientSelectorMembership: id => byIngredientMember.get(id) ?? null,
     getLootTable: id => byLoot.get(id) ?? null,
     getStallSource: id => byStall.get(id) ?? null,
     getConditionGate: digest => byGate.get(digest) ?? null,

@@ -285,6 +285,67 @@ def parse_gardening(data):
 
 
 
+# Only these three cooking-capable ActivityItem families have field/ID layouts
+# checked against the owner-held Steam 1.26.1 IL2CPP dump.cs and actual 1.26.2
+# wire records. Other IHasTags classes are NOT silently treated as ingredients.
+COOKING_FAMILIES = {
+    302: ('CropItemData', 11, 30),
+    310: ('FishItemData', 10, 14),
+    311: ('IngredientItemData', 8, 13),
+}
+
+
+def parse_ingredient_selector_membership(data, recipes):
+    """Typed native candidate membership for recipe Ingredient.Any / TagsList.
+
+    Ingredient.Any is an ICookingIngredient.CookingIngredientType Item ID
+    (20014xxxxx); TagsList refers to IHasTags.Tags Item IDs (20012xxxxx).
+    These are separate namespaces even though the old JSONL used 'anyTag'
+    for both. No Tag.json labels or runtime item eligibility are inferred.
+    """
+    members = []
+    by_selector = defaultdict(set)
+    for item_id, fields in frames(data, 30000000):
+        family = item_id // 100000
+        if family not in COOKING_FAMILIES:
+            continue
+        native_type, type_field, tags_field = COOKING_FAMILIES[family]
+        type_id = single(fields, type_field, 0, True)
+        if type_id is None or not 2001400000 <= type_id < 2001500000:
+            raise ValueError(f'INVALID_COOKING_INGREDIENT_TYPE_{item_id}')
+        tags = ids(fields, tags_field)
+        if len(tags) != len(set(tags)) or any(not 2001200000 <= tag < 2001300000 for tag in tags):
+            raise ValueError(f'INVALID_COOKING_INGREDIENT_TAGS_{item_id}')
+        if not text_value(fields, 2):
+            raise ValueError(f'INVALID_COOKING_INGREDIENT_NAME_{item_id}')
+        member = {'itemId': item_id, 'nativeClass': native_type,
+                  'cookingIngredientTypeId': type_id, 'tagIds': sorted(tags),
+                  'source': {'kind': 'game_native', 'file': 'itemlist/ActivityItem.json',
+                             'definitionId': item_id,
+                             'classEvidence': 'observed_native_id_family_and_named_field_contract',
+                             'cookingIngredientTypeField': type_field,
+                             'tagsField': tags_field}}
+        members.append(member)
+        by_selector[type_id].add(item_id)
+        for tag in tags:
+            by_selector[tag].add(item_id)
+    members.sort(key=lambda x: x['itemId'])
+    used_ids = []
+    for recipe in recipes:
+        for ingredient_row in recipe['ingredients']:
+            if ingredient_row['kind'] == 'anyTag':
+                used_ids.append(ingredient_row['tagId'])
+            if ingredient_row['kind'] == 'tagAlternatives':
+                used_ids.extend(ingredient_row['tagIds'])
+    all_used = sorted(set(used_ids))
+    missing = [item for item in all_used if not by_selector.get(item)]
+    return members, {'selectorIdsReferenced': len(all_used),
+                     'selectorUses': len(used_ids),
+                     'selectorIdsWithObservedMembers': len(all_used) - len(missing),
+                     'selectorIdsWithoutObservedMembers': len(missing)}, missing
+
+
+
 def item_amount(block):
     """ItemAmount protobuf: 1=Id, 2=Amount. Missing Amount is not a known free price."""
     fields = wire(block)
@@ -532,14 +593,15 @@ def diff_sets(old, new, out):
              'loot-tables.jsonl':'lootTableId', 'shop-offers.jsonl':'offerId',
              'stall-sources.jsonl':'stallId',
              'condition-gates.jsonl':'conditionDigest',
-             'condition-definitions.jsonl':'conditionId'}
+             'condition-definitions.jsonl':'conditionId',
+             'ingredient-selector-membership.jsonl':'itemId'}
     comparisons = {}
     for filename, key in files.items():
         # Pre-stall SRC-02 exports are valid historical snapshots. An absent
         # old stall-sources file means the newly supported family was not yet extracted.
         previous = old / filename
         is_added_family = filename in ('stall-sources.jsonl', 'condition-gates.jsonl',
-                                       'condition-definitions.jsonl')
+                                       'condition-definitions.jsonl', 'ingredient-selector-membership.jsonl')
         before = {} if is_added_family and not previous.exists() else load_rows(previous, key)
         current = new / filename
         # Historical test fixtures/snapshots predating this extracted family
@@ -580,6 +642,8 @@ def run(args):
     stalls = parse_stall_sources(content['building'], {t['lootTableId'] for t in tables})
     paths.extend(loot_paths)
     paths.extend(parse_gardening(content['activity_item']))
+    ingredient_members, selector_stats, missing_selectors = parse_ingredient_selector_membership(
+        content['activity_item'], recipes)
     gates, condition_definitions, condition_source_count, gate_usages = extract_condition_evidence(
         content['activity'], content['loot'], content['condition'])
     recipes.sort(key=lambda x: x['recipeId'])
@@ -604,6 +668,7 @@ def run(args):
     indexes = [{'itemId': iid, 'inSrc01': iid in item_map,
                 **{k: sorted(set(v)) for k,v in related[iid].items()}} for iid in sorted(related)]
     unresolved = {'schema': 'wand.src02.unresolved@1',
+                  'selectorsNotFoundInObservedCookingFamilies': missing_selectors,
                   'missingInPartialSrc01': sorted(linked - item_map.keys()),
                   'unsupportedActivityDefinitions': unparsed,
                   'unverified': ['live shop inventory/rotation', 'shop prices and limits',
@@ -612,7 +677,7 @@ def run(args):
                       'quest/event availability and rewards not linked from source',
                       'dynamic loot filters and drop probabilities',
                       'cooking recipe result quantity (not encoded)',
-                      'generic cooking ingredient tags and alternatives require tag resolver',
+                      'ingredient selectors only mapped for three observed cooking-capable native classes; Tag.json labels and other classes not verified',
                       'uninterpreted encoded conditions and visibility gates',
                       'location enum labels and world unlock state',
                       'predicate parameters hashed and never evaluated against player profile'],
@@ -626,6 +691,7 @@ def run(args):
     dump_rows(out / 'related-items.jsonl', indexes)
     dump_rows(out / 'condition-gates.jsonl', gates)
     dump_rows(out / 'condition-definitions.jsonl', condition_definitions)
+    dump_rows(out / 'ingredient-selector-membership.jsonl', ingredient_members)
     dump_json(out / 'unresolved.json', unresolved)
     counts = {'recipes': len(recipes), 'cooking': sum(r['type']=='cooking' for r in recipes),
               'crafting': sum(r['type']=='crafting' for r in recipes),
@@ -639,11 +705,15 @@ def run(args):
               'conditionSourceDefinitions': condition_source_count,
               'conditionGates': len(gates),
               'conditionDefinitions': len(condition_definitions),
-              'conditionGateUsages': gate_usages}
+              'conditionGateUsages': gate_usages,
+              'ingredientSelectorMembers': len(ingredient_members),
+              'ingredientSelectorSourceDefinitions': len(list(frames(content['activity_item'], 30000000))),
+              **{'ingredient' + name[0].upper() + name[1:]: value for name, value in selector_stats.items()}}
     dump_json(out / 'report.json', {'schema': 'wand.src02.report@1', 'status': 'partial_native_extraction', 'counts': counts})
     files = ['recipes.jsonl','acquisitions.jsonl','loot-tables.jsonl','shop-offers.jsonl',
              'stall-sources.jsonl',
              'related-items.jsonl','condition-gates.jsonl','condition-definitions.jsonl',
+             'ingredient-selector-membership.jsonl',
              'report.json','unresolved.json']
     manifest = {'schema': SCHEMA, 'status': 'partial_native_extraction',
                 'platform': args.platform, 'gameVersion': args.version,
