@@ -105,6 +105,30 @@ test('a nullable mount expiration is type-set drift, not unsupported ownership s
   assert.ok(!JSON.stringify(result).includes('2026-11-21'));
 });
 
+test('ten null-only observations retain native-derived non-null possibilities without invented evidence',()=>{
+  const manifest=getDomainSaveFields();
+  const nullable=manifest.fields.filter(f=>
+    f.observedJsonKinds.length===1 && f.observedJsonKinds[0]==='null');
+  assert.equal(nullable.length,10);
+  assert.equal(manifest.evidence.allowedKindExtraIsNativeDerivedNotObserved,true);
+  assert.ok(nullable.every(f=>f.allowedJsonKinds.length===2 && f.allowedJsonKinds.includes('null')));
+  const property=nullable.find(f=>f.path==='/Player/ContainerInventories/{id}/Inventory[]/State/MealData/SceneRestriction');
+  assert.deepEqual(property.observedJsonKinds,['null']);
+  assert.deepEqual(property.allowedJsonKinds,['integer','null']);
+  const timestamp=nullable.find(f=>f.path==='/World/MissionSlots/{id}/Slots[]/ExpirationTime');
+  assert.deepEqual(timestamp.allowedJsonKinds,['null','string']);
+  const reward=nullable.find(f=>f.path==='/World/MissionSlots/{id}/Slots[]/RewardPresents');
+  assert.deepEqual(reward.allowedJsonKinds,['null','object']);
+  const old=syntheticSave(626),next=syntheticSave(643);
+  old.Player.ContainerInventories['99232']={Inventory:[{State:{MealData:{SceneRestriction:null}}}]};
+  next.Player.ContainerInventories['99232']={Inventory:[{State:{MealData:{SceneRestriction:1}}}]};
+  const compared=compareUnifiedSaveStructures(old,next);
+  const inventory=compared.domains.find(d=>d.domain==='inventory');
+  const player=compared.domains.find(d=>d.domain==='player');
+  assert.equal(compared.status==='observed_type_conflict',false);
+  assert.ok(player.changedKindPaths.includes(property.path));
+});
+
 test('incorrect house flooring and achievement milestone types yield known-only conflicts',()=>{
   const left=syntheticSave(626),right=syntheticSave(643);
   right.World.PlayerHouses[0].Floors[0].Rooms['99232'].Flooring='private';
