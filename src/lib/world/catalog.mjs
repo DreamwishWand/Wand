@@ -153,6 +153,19 @@ export function getNativeFootprintLayerAt(catalog, itemId, x, y) {
       x < 0 || y < 0 || x >= footprint.sizeX || y >= footprint.sizeY) {
     throw new TypeError('Invalid original GridArea base layer position');
   }
+  // Proven from the original Steam 1.26.1 GridArea.get_Item binary,
+  // not from the source code of all later game revisions.
+  if (catalog.manifest.gameVersion !== '1.26.1') {
+    return {
+      itemId, x, y,
+      status: 'native_gridarea_base_index_not_verified_for_game_version',
+      nativeGetterIndexVerified: false,
+      rotatedCellMappingVerified: false,
+      anchorModelVerified: false,
+      occupancyPredicateVerified: false,
+      placementLegalityVerified: false,
+    };
+  }
   const originalFlatIndex = x * footprint.sizeY + y;
   const nativeValue = footprint.layerValues[originalFlatIndex];
   return {
@@ -179,6 +192,17 @@ export function getNativeFootprintLayerWindow(catalog, itemId, rect) {
       width > 256 || height > 256 ||
       x + width > footprint.sizeX || y + height > footprint.sizeY) {
     throw new TypeError('Invalid original GridArea layer window');
+  }
+  if (catalog.manifest.gameVersion !== '1.26.1') {
+    return {
+      itemId, x, y, width, height,
+      status: 'native_gridarea_base_index_not_verified_for_game_version',
+      nativeGetterIndexVerified: false,
+      rotatedCellMappingVerified: false,
+      anchorModelVerified: false,
+      occupancyPredicateVerified: false,
+      placementLegalityVerified: false,
+    };
   }
   const rows = [];
   for (let yy = y; yy < y + height; yy++) {
@@ -210,6 +234,13 @@ export function getNativeFootprintCardinalDimensions(catalog, itemId, orientatio
   if (!footprint) return null;
   if (!Number.isSafeInteger(orientationCode) || orientationCode < 0 || orientationCode > 15) {
     throw new TypeError('Invalid native GridOrientation value');
+  }
+  if (catalog.manifest.gameVersion !== '1.26.1') {
+    return {
+      status: 'native_gridarea_cardinal_dimensions_not_verified_for_game_version',
+      itemId, orientationCode, nativeCardinalSizeVerified: false,
+      rotatedCellMappingVerified: false, placementLegalityVerified: false,
+    };
   }
   if (![0, 4, 8, 12].includes(orientationCode)) {
     return {
