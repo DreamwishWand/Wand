@@ -267,10 +267,36 @@
                 {#each detailSteps as step, index}
                   <li>
                     <strong>ステップ {index + 1}</strong>
-                    {#if step.text}<p>{step.text}</p>{/if}
-                    <div class="guide-objectives">
-                      {#each step.objectives as obj}<span>{obj.kind}</span>{/each}
-                    </div>
+                    {#if step.text}
+                      <p class="guide-step-description">{step.text}{#if step.textSource !== locale}<span class="guide-text-source">{step.textSource}原文</span>{/if}</p>
+                    {/if}
+                    {#if step.storyText}
+                      <details class="guide-story"><summary>ストーリー説明（ネタバレを含む場合があります）</summary>
+                        <p>{step.storyText}{#if step.storyTextSource !== locale}<span class="guide-text-source">{step.storyTextSource}原文</span>{/if}</p>
+                      </details>
+                    {/if}
+                    {#if step.objectives.length}
+                      <ul class="guide-objective-list">
+                        {#each step.objectives as obj}
+                          <li>
+                            {#if obj.text}
+                              <p class="guide-objective-text">{obj.text}{#if obj.textSource !== locale}<span class="guide-text-source">{obj.textSource}原文</span>{/if}</p>
+                            {:else}
+                              <p class="guide-objective-missing">目標説明が原本にありません。</p>
+                            {/if}
+                            <span class="guide-objective-kind">{obj.kind}</span>
+                            {#if obj.configuredQuantity !== null}<span class="guide-objective-quantity">原本設定数: {obj.configuredQuantity}</span>{/if}
+                            {#if obj.candidates.length}
+                              <details class="guide-candidates"><summary>アイテム参照候補 {obj.totalCandidates}件（原本ID）</summary>
+                                <ul>{#each obj.candidates as item}<li>{item.id} <small>{item.role === 'alternative' ? '選択候補' : '直接参照'}</small></li>{/each}</ul>
+                                {#if obj.totalCandidates > obj.candidates.length}<p>先頭{obj.candidates.length}件のみ表示しています。</p>{/if}
+                                <p>候補はすべて同時に必要とは限りません。アイテム名や所持数は判定していません。</p>
+                              </details>
+                            {/if}
+                          </li>
+                        {/each}
+                      </ul>
+                    {/if}
                   </li>
                 {/each}
               </ol>
@@ -344,6 +370,20 @@
   .guide-steps p { color:#bcaecc; white-space:pre-wrap; }
   .guide-objectives { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
   .guide-objectives span { color:#dfcff1; border:1px solid #b08bdb47; border-radius:8px; background:#382948; padding:4px 8px; font-size:11px; }
+  .guide-step-description { white-space:pre-wrap; color:#eadbf4!important; }
+  .guide-story { margin:12px 0; background:#241b31; padding:9px 11px; border-radius:9px; }
+  .guide-story summary, .guide-candidates summary { cursor:pointer; color:#cba5e8; font-size:11px; }
+  .guide-story p { white-space:pre-wrap; }
+  .guide-objective-list { list-style:none; padding:0; display:grid; gap:10px; margin:14px 0 0; }
+  .guide-objective-list>li { border:1px solid #ffffff1a; background:#291f34; padding:12px 14px; border-radius:10px; }
+  .guide-objective-text { margin:0 0 10px; color:#f1e4ff!important; font-size:13px; white-space:pre-wrap; }
+  .guide-objective-missing { margin:0 0 10px; font-size:11px; color:#a89bb8!important; }
+  .guide-objective-kind, .guide-objective-quantity { display:inline-block; margin:0 6px 4px 0; font-size:10px; border:1px solid #a47dc04f; border-radius:6px; padding:3px 7px; color:#cab3dc; }
+  .guide-objective-quantity { border-color:#5e9f7e70; color:#bddbc7; }
+  .guide-text-source { font-size:10px; font-weight:normal; margin-left:8px; color:#ae9abf; }
+  .guide-candidates { margin:10px 0 0; font-size:11px; }
+  .guide-candidates ul { margin:8px 0; padding-left:18px; color:#d0c0df; }
+  .guide-candidates small, .guide-candidates p { color:#a895b8; font-size:10px; }
   .guide-verified { color:#bad7b6; font-size:11px; }
   .guide-placeholder,.guide-waiting { text-align:center; color:#b6a7c6; display:grid; place-content:center; gap:10px; min-height:300px; padding:30px; }
   .guide-placeholder span,.guide-waiting span { color:#bc95e0; font-size:48px; }
