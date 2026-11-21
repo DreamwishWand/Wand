@@ -390,7 +390,7 @@ impl CollectionEngine {
     }
     fn append_db00_shard_impl(&mut self, source: &str) -> Result<(),String> {
         if !self.db00_mode {return Err("COLLECTION_DB00_INDEX_REQUIRED".into());}
-        let index=self.index.as_mut().ok_or("COLLECTION_DB00_INDEX_REQUIRED")?;
+        let index=self.index.as_ref().ok_or("COLLECTION_DB00_INDEX_REQUIRED")?;
         let meta=index.shards.iter().find(|shard|shard.offset==self.rows.len())
             .ok_or("COLLECTION_DB00_SHARD_ORDER")?;
         if source.as_bytes().len()!=meta.bytes {return Err("COLLECTION_DB00_SHARD_BYTES".into());}
@@ -398,6 +398,9 @@ impl CollectionEngine {
         if shard.schema!=DB00_SNAPSHOT_SCHEMA || shard.offset!=meta.offset
             || shard.count!=meta.count || shard.items.len()!=meta.count
         {return Err("COLLECTION_DB00_SHARD_CONTRACT".into());}
+        // Stage the dictionary too: a rejected row must not leave phantom
+        // categories, semantics, world/universe or expansion IDs behind.
+        let mut staged_index=index.clone();
         let mut staged=Vec::with_capacity(shard.items.len());
         let mut staged_relations=Vec::new();
         let mut ids=HashSet::new();
@@ -414,18 +417,20 @@ impl CollectionEngine {
                 if !valid_item_id(&related) {return Err("COLLECTION_DB00_RELATION_ID".into());}
                 staged_relations.push((id,related.parse::<u64>().map_err(|_|"COLLECTION_DB00_RELATION_ID")?));
             }
-            let family=intern(&mut index.families,row.category.unwrap_or_else(||"Unclassified".into()));
-            let semantic=intern(&mut index.semantics,row.state_semantic.unwrap_or_else(||"UNLOCK_OR_AVAILABILITY".into()));
-            intern(&mut index.state_classes,row.state_class.unwrap_or_else(||"READ_ONLY".into()));
-            let world:Vec<usize>=row.worlds.into_iter().map(|v|intern(&mut index.worlds,v)).collect();
-            let universe:Vec<usize>=row.universes.into_iter().map(|v|intern(&mut index.universes,v)).collect();
-            let expansion:Vec<usize>=row.content_ids.into_iter().map(|v|intern(&mut index.expansions,v)).collect();
+            let family=intern(&mut staged_index.families,row.category.unwrap_or_else(||"Unclassified".into()));
+            let semantic=intern(&mut staged_index.semantics,row.state_semantic.unwrap_or_else(||"UNLOCK_OR_AVAILABILITY".into()));
+            intern(&mut staged_index.state_classes,row.state_class.unwrap_or_else(||"READ_ONLY".into()));
+            let world:Vec<usize>=row.worlds.into_iter().map(|v|intern(&mut staged_index.worlds,v)).collect();
+            let universe:Vec<usize>=row.universes.into_iter().map(|v|intern(&mut staged_index.universes,v)).collect();
+            let expansion:Vec<usize>=row.content_ids.into_iter().map(|v|intern(&mut staged_index.expansions,v)).collect();
             let labels:Vec<String>=LOCALES.iter().map(|lang|display(row.names.get(*lang).map(|s|s.as_str()).unwrap_or(""))).collect();
             let search=labels.join(" ").to_lowercase();
             staged.push(Item {id,family,semantic,world,universe,expansion,labels,search});
         }
-        index.world_labels=index.worlds.iter().map(|label|vec![label.clone();8]).collect();
-        index.universe_labels=index.universes.iter().map(|label|vec![label.clone();8]).collect();
+        staged_index.world_labels=staged_index.worlds.iter().map(|label|vec![label.clone();8]).collect();
+        staged_index.universe_labels=staged_index.universes.iter().map(|label|vec![label.clone();8]).collect();
+        // No shared Collection state is touched until every item is valid.
+        self.index=Some(staged_index);
         for item in staged {
             self.lookup.insert(item.id,self.rows.len());
             self.rows.push(item);
@@ -443,7 +448,11 @@ impl CollectionEngine {
     fn metadata_impl(&self)->Result<String,String>{
         let index=self.ready()?;
         output(&json!({
-            "version":index.target.game_version,
+            "version": if self.db00_mode && index.target.game_version=="unknown" {
+                None
+            } else {
+                Some(index.target.game_version.as_str())
+            },
             "platform":index.target.platform,
             "expansions":index.expansions,
             "worlds":index.worlds,
@@ -812,6 +821,62 @@ mod tests {
         }]}).to_string();
         assert!(engine.append_db00_shard_impl(&shard).is_err());
         assert_eq!(engine.rows.len(),0);
+    }
+    #[test]
+    fn rejected_db00_shard_is_atomic_and_versionless_release_stays_unknown() {
+        let first=json!({
+            "id":"101","names":{"en":"Source One"},"nameStatus":"verified",
+            "category":"NewFamily","stateClass":"TRACKED",
+            "stateSemantic":"OWNERSHIP_AND_DISCOVERY",
+            "worlds":["FirstWorld"],"universes":["FirstUniverse"],
+            "contentIds":["FirstExpansion"],"releaseIds":[],
+            "relations":[],"sourceRefs":["public-source"]
+        });
+        let mut second=first.clone();
+        second["id"]=json!("102");
+        second["sourceRefs"]=json!(["private-source"]);
+        let invalid=json!({"schema":DB00_SNAPSHOT_SCHEMA,"offset":0,"count":2,
+            "items":[first.clone(),second.clone()]}).to_string();
+        second["sourceRefs"]=json!(["public-source"]);
+        let mut valid=json!({"schema":DB00_SNAPSHOT_SCHEMA,"offset":0,"count":2,
+            "items":[first,second]}).to_string();
+        // Only the source reference changes. Preserve the original pinned
+        // byte length with valid JSON whitespace to exercise retry semantics.
+        while valid.len()<invalid.len() {valid.push(' ');}
+        assert_eq!(valid.len(),invalid.len());
+        let index=json!({
+            "schema":DB00_RELEASE_SCHEMA,"id":"versionless-release","count":2,
+            "target":{"platform":"Steam","gameVersion":null,"buildId":null},
+            "sources":[{"id":"public-source","visibility":"public_reference"}],
+            "releases":[],
+            "shards":[{"file":"items-000.json","offset":0,"count":2,
+                "bytes":invalid.len(),"sha256":"a".repeat(64)}]
+        }).to_string();
+        let mut engine=CollectionEngine::default();
+        engine.load_db00_index_impl(&index).unwrap();
+        let before=engine.index.as_ref().unwrap().clone();
+        assert!(engine.append_db00_shard_impl(&invalid).is_err());
+        assert!(engine.rows.is_empty());
+        assert!(engine.lookup.is_empty());
+        assert!(engine.db00_relations.is_empty());
+        let after=engine.index.as_ref().unwrap();
+        assert_eq!(after.families,before.families);
+        assert_eq!(after.semantics,before.semantics);
+        assert_eq!(after.state_classes,before.state_classes);
+        assert_eq!(after.worlds,before.worlds);
+        assert_eq!(after.universes,before.universes);
+        assert_eq!(after.expansions,before.expansions);
+        assert_eq!(after.world_labels,before.world_labels);
+        assert_eq!(after.universe_labels,before.universe_labels);
+        engine.append_db00_shard_impl(&valid).unwrap();
+        engine.finish_db00_impl().unwrap();
+        let metadata:Value=serde_json::from_str(&engine.metadata_impl().unwrap()).unwrap();
+        assert!(metadata["version"].is_null());
+        assert_eq!(metadata["platform"],"Steam");
+        let result:Value=serde_json::from_str(&engine.query_impl(
+            r#"{"locale":"en","category":"NewFamily","limit":10}"#
+        ).unwrap()).unwrap();
+        assert_eq!(result["total"],2);
     }
     #[test]
     fn canonical_categories_preserve_all_29_entries() {
