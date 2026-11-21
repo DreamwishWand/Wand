@@ -26,8 +26,8 @@ const tags=Object.freeze({contract:DB02_TAG_LOCALES_CONTRACT,verified:true,
   privateSource:true,publishable:false,platform:'Steam',gameVersion:'1.26.2',
   manifestSha256:DB02_TAG_LOCALES_RELEASE_SHA256,
   parentTagManifestSha256:DB02_TAG_EVIDENCE_MANIFEST_SHA256,
-  getRecipeSelectorName(id,locale){return id===T?Object.freeze({tagId:id,locale,
-    value:`${locale}-SyntheticTag`,evidence:'steam1262_exact_tag_locbin'}):null;}});
+  getRecipeSelectorName(id,locale){return [T,TYPE].includes(id)?Object.freeze({tagId:id,locale,
+    value:`${locale}-Synthetic${id===T?'Tag':'Type'}`,evidence:'steam1262_exact_tag_locbin'}):null;}});
 
 test('exact private r5 and localized Tag evidence combine without claiming availability',()=>{
   const v=createPrivateRecipeSelectorView(acq,tags,'ja');
@@ -43,7 +43,8 @@ test('exact private r5 and localized Tag evidence combine without claiming avail
   assert.deepEqual(first.candidateItemIds,[30200001,30200003]);
   assert.equal(second.selectors[0].localizationVerified,false);
   assert.equal(second.selectors[1].selectorKind,'cooking_ingredient_type');
-  assert.equal(second.selectors[1].localizedName,null);
+  assert.equal(second.selectors[1].localizedName,'ja-SyntheticType');
+  assert.equal(second.selectors[1].localizationVerified,true);
   assert.equal(second.selectors[2].localizedName,'ja-SyntheticTag');
   assert.deepEqual(second.candidateItemIds,[30200001,30200002,30200003]);
   assert.deepEqual(alternatives.candidateItemIds,[30200001,30200003]);
