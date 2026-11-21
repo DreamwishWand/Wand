@@ -28,6 +28,7 @@ on:
       - 'tests/save-diagnostic-view.test.mjs'
       - 'tests/save-p1g-worker-diagnostics.test.mjs'
       - 'src/routes/save/diagnostics/**'
+      - 'src/lib/save/save-wasm-reference.mjs'
       - 'tests/save-redacted-witness.test.mjs'
       - 'tests/save-redacted-cli.test.mjs'
       - '.github/workflows/db05-save.yml'
@@ -58,6 +59,7 @@ on:
       - 'tests/save-diagnostic-view.test.mjs'
       - 'tests/save-p1g-worker-diagnostics.test.mjs'
       - 'src/routes/save/diagnostics/**'
+      - 'src/lib/save/save-wasm-reference.mjs'
       - 'tests/save-redacted-witness.test.mjs'
       - 'tests/save-redacted-cli.test.mjs'
       - '.github/workflows/db05-save.yml'
@@ -91,6 +93,11 @@ jobs:
         run: node tools/db-05-save/compare_js_rust.mjs
       - name: Cross-language Rust/JS 440-field shape parity (synthetic only)
         run: node tools/db-05-save/compare_unified_shape.mjs
+      - uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: v0.13.1
+      - name: Build browser-linkable Rust/WASM DB-05 runtime
+        run: wasm-pack build crates/ddv-save-schema --release --target web --features wasm --out-dir ../../src/lib/save/wasm/pkg
       - name: Rust WASM read-only reference graph target
         run: |
           rustup target add wasm32-unknown-unknown
