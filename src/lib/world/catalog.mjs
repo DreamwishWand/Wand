@@ -80,8 +80,10 @@ export function createWorldCatalog(bundle) {
   const scenes = uniqueMap(bundle.scenes, 'sceneId');
   const grids = uniqueMap(bundle.grids, 'gridId');
   const layouts = uniqueMap(bundle.layouts, 'layoutId');
+  const worlds = uniqueMap(bundle.worlds ?? [], 'worldId');
+  const areas = uniqueMap(bundle.areas ?? [], 'areaId');
   for (const item of objects.values()) validateFootprint(item.footprint);
-  return { manifest: bundle.manifest, objects, scenes, grids, layouts,
+  return { manifest: bundle.manifest, objects, scenes, grids, layouts, worlds, areas,
     unresolved: isRecord(bundle.unresolved) ? bundle.unresolved : null };
 }
 
@@ -111,6 +113,15 @@ export function checkNativeEditRestriction(catalog, itemId, action) {
 }
 
 // These records are NOT a save-specific world snapshot (reserved for DB-05).
+export function getNativeWorld(catalog, worldId) {
+  return catalog.worlds.get(String(worldId)) ?? null;
+}
+
+export function getNativeAreasForScene(catalog, sceneId) {
+  const id = idText(sceneId);
+  return [...catalog.areas.values()].filter(area => String(area.parentSceneId) === id);
+}
+
 export function getNativeScene(catalog, sceneId) {
   return catalog.scenes.get(idText(sceneId)) ?? null;
 }
