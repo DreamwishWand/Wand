@@ -1252,6 +1252,86 @@ test('default/village raw anchor windows work on 1.26.2 without packed terrain p
   assert.equal(empty.fullFootprintOccupancyVerified, false);
 });
 
+test('large source-only anchor windows paginate by native Grid.ID with stable source order', () => {
+  const data = preparedVillageViewportFixture();
+  data.manifest.gameVersion = '1.26.2';
+  const source = data.layoutObjects[0];
+  const id = source.layoutId;
+  // Multiple original GridObject records can share a raw anchor. This does
+  // not mean the objects have verified overlapping occupied cells.
+  data.layoutObjects = Array.from({length: 300}, (_, n) => ({
+    ...source, gridObjectIdNative: n,
+    layoutObjectId: `${id}#grid=0#object=${n}`,
+    x: 5, y: 5,
+  }));
+  data.layoutObjects.push({
+    ...source, gridObjectIdNative: 9, gridIdNative: 2,
+    layoutObjectId: `${id}#grid=2#object=9`,
+    x: 5, y: 5,
+  });
+  data.layouts[0].nativeGridEntries[0].defaultObjectCount = 300;
+  data.layouts[0].nativeGridEntries.push({
+    ...data.layouts[0].nativeGridEntries[0], gridIdNative: 2,
+    defaultObjectCount: 1,
+  });
+  data.layouts[0].defaultObjectCount = 301;
+  const catalog = createWorldCatalog(data);
+  const rect = {x: 4, y: 3, width: 3, height: 4};
+  const original = getNativeDefaultLayoutAnchorWindow(catalog, id, 0, rect);
+  assert.equal(original.viewAnchorCount, 300);
+  assert.equal(original.pageOffset, undefined);
+  assert.equal(original.terrainDecoded, false);
+
+  const pages = [0, 128, 256].map(offset =>
+    getNativeDefaultLayoutAnchorWindow(catalog, id, 0, rect,
+      {offset, limit: 128}));
+  assert.deepEqual(pages.map(p => p.viewAnchorCount), [128, 128, 44]);
+  assert.deepEqual(pages.map(p => p.hasNextPage), [true, true, false]);
+  assert.deepEqual(pages.map(p => p.nextOffset), [128, 256, null]);
+  assert.deepEqual(pages.map(p => p.matchingNativeDefaultAnchorCount),
+    [300, 300, 300]);
+  assert.deepEqual(pages.flatMap(p =>
+    p.defaultObjectAnchors.map(a => a.gridObjectIdNative)),
+    Array.from({length: 300}, (_, n) => n));
+  for (const page of pages) {
+    assert.equal(page.totalNativeDefaultObjectAnchors, 300);
+    assert.equal(page.terrainDecoded, false);
+    assert.equal(page.placementLegalityVerified, false);
+    assert.equal(page.worldCoordinatesVerified, false);
+  }
+  const beyond = getNativeDefaultLayoutAnchorWindow(catalog, id, 0, rect,
+    {offset: 999, limit: 20});
+  assert.equal(beyond.viewAnchorCount, 0);
+  assert.equal(beyond.matchingNativeDefaultAnchorCount, 300);
+  assert.equal(beyond.hasNextPage, false);
+  assert.equal(beyond.nextOffset, null);
+  const gridTwo = getNativeDefaultLayoutAnchorWindow(catalog, id, 2, rect,
+    {offset: 0, limit: 20});
+  assert.equal(gridTwo.viewAnchorCount, 1);
+  assert.equal(gridTwo.totalNativeDefaultObjectAnchors, 1);
+  assert.equal(gridTwo.defaultObjectAnchors[0].gridObjectIdNative, 9);
+  assert.equal(getDefaultLayoutObjects(catalog, id, 2).length, 1);
+
+  const village = getNativeVillageAreaAnchorWindow(catalog,
+    'SceneLayouts/Village04/Default.json', 3, 0, rect,
+    {offset: 128, limit: 128});
+  assert.equal(village.viewAnchorCount, 128);
+  assert.equal(village.matchingNativeDefaultAnchorCount, 300);
+  assert.equal(village.nextOffset, 256);
+  assert.equal(village.nativeAreaTypeCode, 3);
+  assert.deepEqual(village.defaultObjectAnchors.map(a => a.gridObjectIdNative),
+    Array.from({length: 128}, (_, n) => n + 128));
+
+  for (const bad of [
+    {}, {offset: -1, limit: 1}, {offset: 0, limit: 0},
+    {offset: 0, limit: 513}, {offset: 1.5, limit: 5},
+    {offset: 1000001, limit: 1}, [], {offset: 0, limit: '25'},
+  ]) {
+    assert.throws(() => getNativeDefaultLayoutAnchorWindow(catalog,
+      id, 0, rect, bad), /Invalid native anchor pagination/);
+  }
+});
+
 test('source-only anchor viewport rejects missing or ambiguous native references', () => {
   const baseline = preparedVillageViewportFixture();
   baseline.manifest.gameVersion = '1.26.2';
