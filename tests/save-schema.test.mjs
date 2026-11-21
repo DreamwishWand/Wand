@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   getSaveRegistry, matchSaveBuild, inspectDecodedSave, borrowUntouchedDecodedSave,
-  makeGameIdIndex, matchGameId, diffSaveWitnesses
+  makeGameIdIndex, matchGameId, diffSaveWitnesses, probeSaveStructure
 } from '../src/lib/save/registry.mjs';
 
 const build = { platform: 'switch', identityKind: 'switch_bid', identity: '9A239D3DB569756D', schemaVersion: 626 };
@@ -40,13 +40,61 @@ test('original object and nested unknown fields survive untouched', () => {
   assert.deepEqual(source, baseline);
 });
 
-test('unknown build, nonmatching save schema and invalid required root are fail closed', () => {
-  assert.equal(inspectDecodedSave(synthetic(), { ...build, identity: 'not-registered' }).rootShapeValid, false);
-  assert.ok(inspectDecodedSave(synthetic(), { ...build, schemaVersion: 643 }).issues.includes('BUILD_OR_SCHEMA_NOT_REGISTERED'));
-  assert.ok(inspectDecodedSave({ ...synthetic(), GameInfo: { Version: 643 } }, build).issues.includes('SAVE_SCHEMA_MISMATCH'));
+test('structure is primary; platform, Build and save version are metadata only', () => {
+  const unregistered = inspectDecodedSave(synthetic(), { ...build, identity: 'not-registered' });
+  assert.equal(unregistered.rootShapeValid, true);
+  assert.equal(unregistered.buildCandidate, null);
+  const later = inspectDecodedSave({ ...synthetic(), GameInfo: { Version: 643 } }, build);
+  assert.equal(later.rootShapeValid, true);
+  assert.equal(later.saveSchemaVersion, 643);
+  assert.equal(later.compatibilityBasis, 'decoded_field_shape');
+  assert.equal(later.shapeProbe.platformAndVersionUsedAsGates, false);
+  assert.equal(inspectDecodedSave(synthetic(), null).rootShapeValid, true);
   assert.ok(inspectDecodedSave({ ...synthetic(), World: [] }, build).issues.includes('WORLD_MUST_BE_OBJECT'));
   assert.ok(inspectDecodedSave({ ...synthetic(), GameInfo: { Version: '626' } }, build).issues.includes('GAMEINFO_VERSION_MUST_BE_NONNEGATIVE_SAFE_INTEGER'));
   assert.throws(() => borrowUntouchedDecodedSave({}, build));
+});
+
+test('same structural fields are compatible candidates across version/platform labels', () => {
+  const save = {
+    GameInfo: { Version: 643 }, World: { GridCollection: { DiffGrids: {} } },
+    Player: {
+      ListInventories: { '3': { ID: 3, Inventory: {'40000001': { Amount: 5 }} } },
+      ContainerInventories: { '10': { ID: 10, Inventory: [{ ItemID: 40000001, Amount: 5 }] } },
+      CollectionSets: [{ CollectionDefinitionID: 21200001, GroupData: [] }],
+      MaleAvatar: { HairColorIndex: 1 }, AvatarIsMale: true
+    }
+  };
+  const shape = probeSaveStructure(save);
+  for (const domain of ['inventory','chests','collection','grids','appearance']) {
+    const row = shape.domains.find(d => d.domain === domain);
+    assert.equal(row.status, 'shape_candidate');
+    assert.ok(row.observedFieldCount > 0);
+  }
+  assert.equal(shape.exhaustive, false);
+  assert.equal(shape.writerAuthorized, false);
+  assert.equal(inspectDecodedSave(save, null).rootShapeValid, true);
+});
+
+test('only observed field/type mismatch invalidates a domain shape candidate', () => {
+  const save = synthetic();
+  assert.equal(probeSaveStructure(save).domains.find(d => d.domain === 'chests').status, 'not_observed');
+  save.Player.ContainerInventories = []; // historical schema expects a map
+  const chest = probeSaveStructure(save).domains.find(d => d.domain === 'chests');
+  assert.equal(chest.status, 'shape_conflict');
+  assert.deepEqual(chest.conflictingPaths, ['/Player/ContainerInventories']);
+  assert.equal(inspectDecodedSave(save, null).rootShapeValid, true);
+});
+
+test('large save arrays are sampled and never promoted to exhaustive proof', () => {
+  const save = synthetic();
+  save.Player.CollectionSets = Array.from({ length: 64 }, () => ({
+    CollectionDefinitionID: 21200001, GroupData: []
+  }));
+  const domain = probeSaveStructure(save).domains.find(d => d.domain === 'collection');
+  assert.equal(domain.status, 'sampled_candidate');
+  assert.equal(domain.sampled, true);
+  assert.equal(domain.writerAuthorized, false);
 });
 
 test('ID references require exact numeric match and reject collisions', () => {
