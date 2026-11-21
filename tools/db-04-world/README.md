@@ -564,11 +564,77 @@ so this API deliberately specializes only the **1:1 case** and
 reports that assumption. The returned nativeCardinalPositionTransformVerified
 is conditional on this ratio and the verified Steam v1.26.1 code.
 
-**Still unresolved:** the twelve noncardinal branches delegated to
-MoreRotationGetGridLocalPosition, actual per-object tessellation,
+The twelve noncardinal branches delegated to
+MoreRotationGetGridLocalPosition are now independently decoded in the
+section below. **Still unresolved:** actual per-object tessellation,
 GridObject anchor offsets, physical cell occupancy, collisions and
 placement legality. Occupancy and placement verification flags remain
-false, and none of these mappings authorize editing.
+false, and none of these source cell mappings authorize editing.
+
+## Source-native twelve oblique orientations: GridArea cell-centre lookup
+
+The original **GridArea.MoreRotationGetGridLocalPosition**
+(token 0x0600344B, PE64 RVA 0x3923D80–0x3923FDB)
+has been inspected against Steam v1.26.1's original GameAssembly.dll.
+Its entire 603-byte machine-code function has SHA-256
+befff8088fb717e1cef8501fb9c66b956f4e54fff24e8067a325ed493477ad9b
+and exactly matches its original PE64 unwind function interval.
+This is the real implementation called for native orientation codes
+**1/2/3/5/6/7/9/10/11/13/14/15**.
+
+For equal input and source GridArea tessellation factors (**1:1**),
+the method converts an oriented-grid cell (x,y) using:
+
+~~~text
+orientedW = trunc((abs(cos[o])*SizeX + abs(sin[o])*SizeY) / 100)
+orientedH = trunc((abs(cos[o])*SizeY + abs(sin[o])*SizeX) / 100)
+cx = int32(x*100 + 50 - orientedW*50)
+cy = int32(y*100 + 50 - orientedH*50)
+ux = int32(trunc(int32(cx*cos[o])/100) + trunc(int32(cy*sin[o])/100) + SizeX*50)
+uy = int32(trunc(int32(cy*cos[o])/100) - trunc(int32(cx*sin[o])/100) + SizeY*50)
+originalX = trunc(ux/100); originalY = trunc(uy/100)
+~~~
+
+The method rejects negative intermediate (ux,uy), and the enclosing
+TryGetGridLocalPosition rejects source coordinates outside the ORIGINAL
+SizeX by SizeY rectangle. Each multiplication follows the source 32-bit
+signed IMUL rules; signed divisions truncate toward zero. The browser
+returns **no layer value** when the source position is outside the native
+area, not an automatically empty/unoccupied object cell.
+
+New Python research module:
+tools/db-04-world/gridarea_oblique_local.py
+
+Its private CLI verifies original DLL SHA-256, the original PE64
+unwind function range and the complete 603-byte body digest:
+
+~~~bash
+python tools/db-04-world/gridarea_oblique_local.py --dll "/private/Steam/GameAssembly.dll"
+~~~
+
+Browser read-only APIs:
+- getNativeFootprintObliqueOrientedLayerAt(catalog,itemId,x,y,orientationCode)
+- getNativeFootprintObliqueOrientedWindow(catalog,itemId,orientationCode,{x,y,width,height})
+- getNativeFootprintOrientedLayerAt(catalog,itemId,x,y,orientationCode)
+- getNativeFootprintOrientedWindow(catalog,itemId,orientationCode,{x,y,width,height})
+
+The last two combine this method with the four previously
+source-corroborated cardinal branches, covering **all 16
+GridOrientation values** for Steam v1.26.1 at assumed 1:1 scaling.
+
+The viewport contains original uint32 GridLayers flags in Y-major display
+rows; *null* signifies that a displayed oblique cell has **no valid
+source GridArea coordinate**. It does NOT mean the grid cell is walkable
+or suitable for a new object. Oblique integer rotation can map multiple
+output cells onto the SAME source cell, and should not be interpreted as
+a one-to-one pixel/occupancy transformation.
+
+**Limits:** Game version other than 1.26.1 returns no source-confirmed
+oblique layers. Current DB-04 data does not prove per-item
+GridArea.TessellationFactor relative to the caller. GridObject world
+anchor offsets, layers interpreted as actual occupancy, collisions,
+special object rules and legal placement are still **unverified**.
+All edit/placement permissions remain unchanged and unresolved.
 
 ## Unverified cardinal footprint models — evidence-only diagnostic
 
