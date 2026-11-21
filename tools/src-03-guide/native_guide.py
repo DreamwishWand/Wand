@@ -579,6 +579,59 @@ def extract(game, out, version, platform, item_index=None, previous=None):
                                     'sourceField': ('protobuf.40[' + str(step['index']) + '].20['
                                         + str(sub['index']) + '].50[' + str(obj['index']) + ']'),
                                     'sourceObjectiveSha256': obj['nativeWireSha256']})
+        # Source-defined transfers and rewards: alternatives and weighted loot
+        # are candidate references, not guaranteed player inventory changes.
+        item_flows = []
+        for quest in rows['quests']:
+            if quest.get('recordKind') != 'mission':
+                continue
+            typed=quest.get('structured',{})
+            flows=typed.get('itemFlows',{})
+            def append(item_id, kind, path, sha_value, **metadata):
+                if item_id is None:
+                    return
+                item_flows.append({'questId':quest['id'],'flowKind':kind,
+                    'itemId':str(item_id),'sourceField':path,
+                    'nativeWireSha256':sha_value,
+                    'indexMembership':('present' if str(item_id) in indexes['items']
+                        else 'not_in_supplied_index') if item_index else 'unchecked',
+                    **metadata})
+            for grant in flows.get('introItemsToGive',[]):
+                sel=grant.get('itemSelector') or {}
+                for candidate in sel.get('itemCandidates',[]):
+                    append(candidate['id'],'intro_item_grant_candidate',
+                        f"protobuf.33[{grant['index']}].ItemToGive",
+                        grant['sourceWireSha256'],selectorMode=sel.get('nested',sel).get('mode'),
+                        candidateRole=candidate['role'],
+                        configuredAmount=grant.get('configuredAmount'))
+            for idx,item in enumerate(flows.get('itemsToDeleteAfterMission',[])):
+                append(item,'post_mission_cleanup_reference',f'protobuf.63[{idx}]',
+                    quest['nativeWireSha256'])
+            loot=flows.get('additionalRewards') or {}
+            for table in loot.get('subLootTables',[]):
+                for item in table['items']:
+                    append(item['itemId'],'additional_reward_loot_candidate',
+                        f"protobuf.61.1[{table['index']}].10[{item['index']}]",
+                        item['sourceWireSha256'],selection='not_guaranteed',
+                        lootSubtableIndex=table['index'])
+                for bucket in table['conditionalItems']:
+                    for item in bucket['items']:
+                        append(item['itemId'],'conditional_reward_loot_candidate',
+                            f"protobuf.61.1[{table['index']}].11[{bucket['index']}].2[{item['index']}]",
+                            item['sourceWireSha256'],selection='not_guaranteed',
+                            lootSubtableIndex=table['index'],
+                            conditionSha256=bucket['sourceWireSha256'])
+            for step in typed.get('stepsDetailed',[]):
+                for sub in step['subSteps']:
+                    handoff=sub.get('extraBringItem')
+                    if handoff is None:continue
+                    for item in handoff['itemsToGive']:
+                        append(item['itemId'],'substep_handoff_definition',
+                            f"protobuf.40[{step['index']}].20[{sub['index']}].20.14[{item['index']}]",
+                            item['sourceWireSha256'],configuredAmount=item['amount'],
+                            keepItems=handoff['keepItems'],stepId=step['stepId'],
+                            subStepId=sub['subStepId'])
+        item_flows.sort(key=lambda r:(r['questId'],r['flowKind'],r['sourceField'],r['itemId']))
         overlay_counts = structured_condition_overlays(origin, rows, indexes, relations, unresolved)
         reward_rows, reward_source = read_friendship_rewards(origin)
         relations.sort(key=lambda x: (x["fromFamily"], x["fromId"], x["toFamily"], x["toId"], x["sourceField"]))
@@ -626,6 +679,11 @@ def extract(game, out, version, platform, item_index=None, previous=None):
                   'indexCoverage': 'optional_partial_SRC01_membership_only_not_version_verification',
                   'meaning': 'Selector candidates, NOT all simultaneously required items',
                   'links': item_objective_links})
+        save(out / 'database' / 'quest-item-flows.json', {
+                   'schema':'wand.db03.item-flows@1','target':target,
+                   'meaning':'STATIC candidates and item references; not guaranteed player state',
+                   'indexCoverage':'optional_partial_SRC01_membership_only',
+                   'links':item_flows})
         save(out / "database" / "relations.json", {"schema": SCHEMA, "relations": relations,
                                                       "target": target})
         save(out / "database" / "candidate-refs.json", {"schema": SCHEMA,
@@ -634,7 +692,7 @@ def extract(game, out, version, platform, item_index=None, previous=None):
         save(out / "unresolved.json", {"issues": unresolved,
                   "missingLocalization": translation_missing,
                   "unverifiedSemantics": ["Star Path liveops definitions and rewards",
-                      "Mission step objective predicates", "Mission prerequisites and reward payloads",
+                      "Mission step objective predicates", "Mission prerequisites and dynamic loot outcomes",
                       "Event availability, server state and schedule", "Expansion/adventure-pack entitlement flags"]})
         missing_families = sorted(set(SOURCES) - set(files))
         status = "NEEDS_SOURCE_MAPPING" if not rows["quests"] else "PARTIAL"
@@ -668,6 +726,8 @@ def extract(game, out, version, platform, item_index=None, previous=None):
                         if tree is not None
                         for node in collect_condition_nodes(tree)}),
                     "itemObjectiveSelectorLinks": len(item_objective_links),
+                     "questItemFlowLinks": len(item_flows),
+                     "questItemFlowKinds": dict(collections.Counter(x["flowKind"] for x in item_flows)),
                     "itemObjectiveUniqueCandidateIds": len({x['itemId'] for x in item_objective_links}),
                     "sourceFieldRelations": len(relations),
                     "unresolvedRelations": sum(r["status"] == "unresolved" for r in relations),

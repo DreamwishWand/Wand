@@ -1,3 +1,5 @@
+**Static quest item flows:** [`QUEST-ITEM-FLOWS.md`](QUEST-ITEM-FLOWS.md) describes the source-typed intro item selectors, substep BringItem handoff settings, packed post-mission cleanup IDs, and weighted/conditional additional reward loot. `database/quest-item-flows.json` is a private read-only candidate/reference index, **not** verified inventory changes or guaranteed rewards.
+
 **Quest activation policies:** [`QUEST-ACTIVATION.md`](QUEST-ACTIVATION.md) documents separate source-defined auto-accept choices, UI-unlock conditions and conditional owner overrides. The read-only private `database/quest-activation-policies.json` is not a prerequisite DAG, live progress state or entitlement check.
 
 **Condition AST:** [`CONDITION-AST.md`](CONDITION-AST.md) documents 87 source-defined condition kinds, nested AND/OR/NOT semantics and typed character/scene/common-condition references. The private `database/condition-ast.json` index is static and read-only; it does not prove live availability, progress, or automatic prerequisites.

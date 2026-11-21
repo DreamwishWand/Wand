@@ -1,0 +1,23 @@
+# DB-03 — source-typed quest item flows and reward candidates
+
+Baseline: owner-held **Steam v1.26.1** `ddv_Data/StreamingAssets/itemlist/Mission.json` and `Il2CppDump/dump.cs`. This extractor is **read-only**. A static configuration is not proof a player will receive, hand over, lose or own an item, and is not evidence of the availability of any online event.
+
+## Source contracts
+
+`mission_item_flows.py` decodes only field tags validated against the original `Definitions.Items` and loot protobuf classes:
+
+- `MissionItemData.ItemsToGive` (repeated field **33**) holds `AnyItemSelectorWithAmount { ItemToGive = 1, ItemToGiveAmount = 2 }`. Selector oneof and `StepAmount` are decoded by the existing `mission_items.py` module. Weighted alternatives and filter-only selectors are preserved, not asserted as fixed mandatory items or certain grants.
+- `MissionSubStepData.BringItem` (oneof field **20**) contains `MissionSubStepData.Types.ExtraBringItem { ReadyDescription = 1, KeepItems = 2, SkipAvatarGiveAnimation = 3, SkipConfirmationPopup = 4, BringDialogueType = 10, BringDialogue = 11, TargetScene = 12, WrongSceneDescription = 13, ItemsToGive = 14 }`; `ItemsToGive` contains repeated `ItemToGiveAmount { ItemToGive = 1, Amount = 2 }`. KeepItems omitted in protobuf is annotated as a source/default false; it does **not** imply an observed inventory mutation. Localized text keys resolve through exact eight-language archives; target scene IDs produce source-typed world relations.
+- `MissionItemData.ItemsToDeleteAfterMission` is a **packed or unpacked** repeated int32 field **63**. A packed field can contain multiple IDs; each ID is retained separately. The field name describes static cleanup configuration, not proof the item was deleted from the player's save.
+- `MissionItemData.OverrideRewards` (oneof field **60**) is `OverrideRewards { Rewards = repeated int32 field 31 }`. Values remain `overrideRewardReferences`; they are **not** converted to guaranteed item grants or cross-family item edges without a stronger semantic contract.
+- `MissionItemData.AdditionnalRewards` (field **61**, original source spelling) is `LootTable { SubLootTables = repeated SubLootTable field 1 }`. `SubLootTable` includes Min=1, Max=2, Weight=3, Empty=4, PrioToNewItems=5, repeated `ItemWithState` Items=10 (ItemID=1, State=2), repeated conditional items=11, loot types=12, rarities=30–32, filters=100, and `AvailableWhen` conditions=101. Item IDs in this table are **loot candidates**; weighted, conditional, filtered or empty outcomes must not be portrayed as certain. Unknown item-state and filter details are retained by source SHA-256, not invented.
+
+Data is exposed at `structured.itemFlows` on each static quest and `structured.stepsDetailed[].subSteps[].extraBringItem`. A new compact `database/quest-item-flows.json` index joins explicit candidate/reference item IDs with `questId`, exact protobuf source path, SHA-256, possible configured quantity/selector mode, and optional partial SRC-01 membership. The 4 flow kinds are `intro_item_grant_candidate`, `substep_handoff_definition`, `post_mission_cleanup_reference`, and `additional_reward_loot_candidate`. Conditional loot candidate entries are supported even if absent from the checked baseline.
+
+## Real source validation
+
+The verified Steam v1.26.1 baseline has **70** `MissionItemData.ItemsToGive` entries, **989** `ExtraBringItem` substeps (of which 293 have explicit `ItemsToGive` entries), **271** packed cleanup fields (representing **824** distinct *occurrences* of post-quest ID references), **243** `AdditionnalRewards` entries (330 explicit item-candidate occurrences), and **4** `OverrideRewards` entries. The index contains **1,517** static reference occurrences across **1,352** unique IDs and 461 quests, not distinct actual inventory actions. Verified source-field Guide relations rise from 4,110 to **4,217** through 107 exact target-scene references; **0 unresolved** relations. The previously indexed 4,897 quest objective item candidates are unaffected.
+
+A version-comparison rerun against the unchanged v1.26.1 game source compares 12 Guide families and records **0 added / 0 removed / 0 changed**. Changes to the extractor itself are not game updates. There is **no** authoritative Steam v1.26.2 Guide source in the supplied update folder and no verified live Star Path catalogue. This dataset remains `PARTIAL`.
+
+Run `python -m unittest discover -s tools/src-03-guide -p 'test_*.py' -q`. The baseline implementation passes **44** Python standard-library tests. Private game source, generated translations and derived datasets remain in owner-controlled Drive, not the public GitHub repository.
