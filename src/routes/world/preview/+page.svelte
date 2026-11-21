@@ -9,7 +9,14 @@
     sizeY: number | null;
     defaultObjectCount: number;
   };
-  type LayoutOption = {layoutId: string; grids: GridOption[]};
+  type LayoutOption = {
+    viewKey: string; label: string; layoutId: string;
+    kind: 'gridCollection' | 'villageArea';
+    villageLayoutId?: string; nativeAreaTypeCode?: number;
+    nativeAreaTypeName?: string | null;
+    missingReferencedLayout?: boolean;
+    grids: GridOption[];
+  };
   type Anchor = {
     layoutObjectId: string;
     gridObjectIdNative: number;
@@ -41,7 +48,7 @@
   let integrity = '';
   let manifestFilesVerified = 0;
   let layouts: LayoutOption[] = [];
-  let selectedLayoutId = '';
+  let selectedViewKey = '';
   let selectedGridId = '';
   let x = 0; let y = 0; let width = 16; let height = 16;
   let offset = 0;
@@ -50,7 +57,7 @@
   let selectedCell: {x:number;y:number} | null = null;
   let fileInput: HTMLInputElement | null = null;
 
-  $: selectedLayout = layouts.find(a => a.layoutId === selectedLayoutId);
+  $: selectedLayout = layouts.find(a => a.viewKey === selectedViewKey);
   $: gridOptions = selectedLayout?.grids ?? [];
   $: selectedGrid = gridOptions.find(a => String(a.gridIdNative) === selectedGridId);
   $: markersByCell = new Map((viewport?.markers ?? []).map(a => [`${a.x}:${a.y}`, a.count]));
@@ -78,7 +85,7 @@
     version = '';
     platform = '';
     layouts = [];
-    selectedLayoutId = '';
+    selectedViewKey = '';
     selectedGridId = '';
     viewport = null;
     selectedCell = null;
@@ -93,7 +100,7 @@
   function requestWindow(reset = true) {
     // Resolve against current selections synchronously: Svelte's reactive
     // derived variables may not update until after an event handler returns.
-    const chosen = layouts.find(a => a.layoutId === selectedLayoutId)?.grids
+    const chosen = layouts.find(a => a.viewKey === selectedViewKey)?.grids
       .find(g => String(g.gridIdNative) === selectedGridId);
     if (!worker || !chosen || !chosen.knownGridData ||
         !Number.isSafeInteger(chosen.sizeX) ||
@@ -114,12 +121,12 @@
     const id = ++requestId;
     worker.postMessage({
       command:'view', requestId:id,
-      layoutId:selectedLayoutId, gridIdNative:chosen.gridIdNative,
+      viewKey:selectedViewKey, gridIdNative:chosen.gridIdNative,
       rect:{x,y,width,height}, offset,
     });
   }
   function changeLayout() {
-    const grids = layouts.find(a => a.layoutId === selectedLayoutId)?.grids ?? [];
+    const grids = layouts.find(a => a.layoutId === selectedViewKey)?.grids ?? [];
     selectedGridId = grids.length ? String(grids[0].gridIdNative) : '';
     x = 0; y = 0; width = 16; height = 16;
     viewport = null;
@@ -172,7 +179,7 @@
         integrity = String(result.integrity);
         manifestFilesVerified = Number(result.manifestFilesVerified);
         layouts = result.layouts as LayoutOption[];
-        selectedLayoutId = layouts[0]?.layoutId ?? '';
+        selectedViewKey = layouts[0]?.layoutId ?? '';
         selectedGridId = layouts[0]?.grids[0] ?
           String(layouts[0].grids[0].gridIdNative) : '';
         infoMessage = 'ローカルZIP内のマニフェスト整合性を確認しました。原本の真正性までは証明していません。';
@@ -236,7 +243,7 @@
     <div class="world-stats">
       <div><small>原本内の宣言バージョン</small><strong>{platform} {version}</strong></div>
       <div><small>SHA-256一致</small><strong>{manifestFilesVerified}ファイル</strong></div>
-      <div><small>原本レイアウト</small><strong>{layouts.length}件</strong></div>
+      <div><small>参照可能な原本ビュー</small><strong>{layouts.length}件</strong></div>
       <div><small>配置可否の検証</small><strong>未対応</strong></div>
     </div>
     {#if integrity !== 'manifest_sha256_self_consistent_not_original_source_authenticated'}
@@ -244,10 +251,10 @@
     {/if}
     <div class="world-panel">
       <div class="selector-row">
-        <label>原本レイアウト
-          <select bind:value={selectedLayoutId} on:change={changeLayout}>
+        <label>原本GridCollection / Village Area
+          <select bind:value={selectedViewKey} on:change={changeLayout}>
             {#each layouts as layout}
-              <option value={layout.layoutId}>{layout.layoutId}</option>
+              <option value={layout.viewKey}>{layout.label}</option>
             {/each}
           </select>
         </label>
@@ -261,6 +268,13 @@
           </select>
         </label>
       </div>
+      {#if selectedLayout?.kind === 'villageArea'}
+        <p class="note">VillageのAreaType {selectedLayout.nativeAreaTypeCode}
+          （{selectedLayout.nativeAreaTypeName ?? '名前未収録'}）から
+          {selectedLayout.layoutId} への原本参照を追跡しています。
+          {selectedLayout.missingReferencedLayout ? '参照先レイアウトは原本ZIPに未収録です。' : ''}
+          ワールド座標への変換は行いません。</p>
+      {/if}
       {#if selectedGrid}
         <p class="note">選択Grid内の初期配置記録：{selectedGrid.defaultObjectCount ?? '不明'}件。
           地形データ：{selectedGrid.knownGridData ? '原本レコードあり' : '参照先未収録'}。
@@ -325,7 +339,7 @@
         <div class="paging">
           <button type="button" on:click={() => setOffset(Math.max(0,offset-64))}
             disabled={viewing || offset === 0}>前の64件</button>
-          <span>{offset + 1}～{offset + (viewport.page.viewAnchorCount ?? 0)} ／
+          <span>{(viewport.page.matchingNativeDefaultAnchorCount ?? 0) === 0 ? 0 : offset + 1}～{offset + (viewport.page.viewAnchorCount ?? 0)} ／
             {viewport.page.matchingNativeDefaultAnchorCount ?? 0}</span>
           <button type="button" on:click={() => setOffset(viewport?.page.nextOffset ?? offset)}
             disabled={viewing || !viewport.page.hasNextPage}>次の64件</button>
