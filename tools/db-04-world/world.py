@@ -678,6 +678,16 @@ def default_village_layout(data, relative):
     area_data_name = text_field(village, 3)  # Village.VillageAreaDataName
     if scene_id is None or not area_data_name:
         return None
+    # Village.CustomLocationPositionsPath and separated paths are
+    # source-defined but not decoded as 2D coordinates here.
+    custom_paths = [value.decode("utf-8") for field, wire, value in village
+                    if (field, wire) in ((6, 2), (7, 2))]
+    for custom in custom_paths:
+        if not (custom.startswith("SceneLayouts/") and
+                custom.endswith(".json") and safe_reference(custom)):
+            raise ValueError("invalid native custom location path")
+    separated_area_names = [value.decode("utf-8") for field, wire, value in root
+                            if (field, wire) == (3, 2)]
     areas, area_keys = [], set()
     for message in paths:
         entry = wire_fields(message)
@@ -699,6 +709,8 @@ def default_village_layout(data, relative):
         "layoutId": layout_id, "layoutKind": "nativeDefaultVillageData",
         "defaultVillageSceneId": native_int32(scene_id),
         "nativeVillageAreaDataName": area_data_name,
+        "customLocationPaths": custom_paths,
+        "separatedAreasRaw": separated_area_names,
         "areaLayoutReferences": sorted(
             areas, key=lambda row: row["nativeAreaTypeCode"]),
         "gridReferences": [],
