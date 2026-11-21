@@ -166,7 +166,7 @@ def inspect_nested_native_fields(dump_path, manifest, allow_new_source=False):
         if not isinstance(row, dict) or row.get('writable') is not False:
             raise ValueError('DB05_NESTED_NATIVE_FIELD_INVALID')
         message, path = row.get('nativeMessage'), row.get('path')
-        if message not in NESTED_CLASSES or not isinstance(path, str):
+        if message not in allowed_classes or not isinstance(path, str):
             raise ValueError('DB05_NESTED_NATIVE_CLASS_OR_PATH_INVALID')
         if not re.fullmatch(
             r'/(?:Player|World)/(?:[A-Za-z][A-Za-z0-9]*(?:\[\])?|\{id\})(?:/(?:[A-Za-z][A-Za-z0-9]*(?:\[\])?|\{id\}))+',
