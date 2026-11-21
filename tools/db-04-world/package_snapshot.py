@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Pack a verified PRIVATE DB-04 Steam snapshot into a reproducible ZIP.
 
-Only manifest-registered output JSON, manifest.json and three generated private
-diagnostics are included. Original game binaries, player saves and images
+Only manifest-registered output JSON, manifest.json, generated private
+diagnostics, and optionally source-matched native PE evidence are included. Original game binaries, player saves and images
 are never bundled. A ZIP is not a claim of complete game source coverage.
 """
 import argparse
@@ -16,6 +16,7 @@ from pathlib import Path
 
 from audit_layout_terrain import audit_snapshot
 from audit_footprint_candidates import audit_footprint_candidates
+from native_pe_evidence import validate_private_report
 from verify_bundle import read_json, validate_snapshot
 
 MAX_MEMBERS = 100
@@ -66,6 +67,15 @@ def package_snapshot(snapshot: Path, output_zip: Path) -> dict:
         root, max_objects=5000, max_examples=20)
     manifest = read_json(root / "manifest.json")
     output_hashes = manifest["outputSha256"]
+    native_pe_file = root / "native-pe-evidence.json"
+    pe_report = None
+    if native_pe_file.is_symlink():
+        raise ValueError("unsafe native PE evidence symlink")
+    if native_pe_file.exists():
+        if not native_pe_file.is_file() or native_pe_file.stat().st_size > 131072:
+            raise ValueError("invalid native PE report file")
+        pe_report = validate_private_report(
+            read_json(native_pe_file), game_version=verification["gameVersion"])
     names = ["manifest.json", *sorted(output_hashes)]
     if len(names) > MAX_MEMBERS or len(set(names)) != len(names):
         raise ValueError("invalid count of private manifest files")
@@ -101,10 +111,17 @@ def package_snapshot(snapshot: Path, output_zip: Path) -> dict:
                 _zip_entry("diagnostics/footprint-hypotheses.json"),
                 _content(hypothesis_diagnostics),
                 compress_type=zipfile.ZIP_DEFLATED, compresslevel=8)
+            if pe_report is not None:
+                archive.writestr(
+                    _zip_entry("diagnostics/native-pe-evidence.json"),
+                    _content(pe_report), compress_type=zipfile.ZIP_DEFLATED,
+                    compresslevel=8)
         with zipfile.ZipFile(tmp, "r") as archive:
             expected = set(names + ["diagnostics/verification.json",
                                      "diagnostics/layout-terrain-audit.json",
                                      "diagnostics/footprint-hypotheses.json"])
+            if pe_report is not None:
+                expected.add("diagnostics/native-pe-evidence.json")
             if set(archive.namelist()) != expected:
                 raise ValueError("private snapshot ZIP member verification failed")
             for name, expected_hash in output_hashes.items():
@@ -135,6 +152,10 @@ def package_snapshot(snapshot: Path, output_zip: Path) -> dict:
         "footprintHypothesisObjectCount": hypothesis_diagnostics[
             "layoutObjectsConsidered"],
         "footprintHypothesesUnverified": True,
+        "nativePEEvidenceIncluded": pe_report is not None,
+        "nativePEMethodWindowCount": (
+            len(pe_report["methodWindows"]) if pe_report is not None else 0),
+        "nativeCodeBodyVerified": False,
         "placementLegalityVerified": False,
         "includesOriginalGameBinaries": False,
         "includesPlayerSaves": False,

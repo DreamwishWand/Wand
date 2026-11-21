@@ -11,6 +11,10 @@ from audit_footprint_candidates import audit_footprint_candidates
 from footprint_hypotheses import (
     candidate_layer_cells, projection_hypotheses, validate_footprint)
 from audit_layout_terrain import audit_snapshot
+from native_pe_evidence import (
+    capture_native_pe, file_offset_for_rva, pe64_sections,
+    target_methods_from_dump, validate_private_report, write_private_report,
+)
 from package_snapshot import package_snapshot
 from verify_bundle import validate_snapshot
 from terrain_codec import (describe_native_packing, floor_at, decode_window,
@@ -342,6 +346,38 @@ class PipelineTests(unittest.TestCase):
             json.dumps({"ID": 40000001, "Name": "ConflictingSourceName"}),
             encoding="utf-8")
 
+    def _write_native_pe_fixture(self):
+        binary = bytearray(0x2000)
+        binary[:2] = b"MZ"
+        struct.pack_into("<I", binary, 0x3c, 0x80)
+        binary[0x80:0x84] = bytes((80, 69, 0, 0))
+        struct.pack_into("<HHIIIHH", binary, 0x84,
+                         0x8664, 1, 0, 0, 0, 240, 0x2022)
+        binary[0x98:0x9a] = bytes((0x0b, 0x02))
+        section_offset = 0x98 + 240
+        binary[section_offset:section_offset + 5] = b".text"
+        struct.pack_into("<IIII", binary, section_offset + 8,
+                         0x1000, 0x1000, 0x1000, 0x400)
+        struct.pack_into("<I", binary, section_offset + 36, 0x60000020)
+        raw = bytes(range(64))
+        binary[0x420:0x420 + len(raw)] = raw
+        (self.game / "GameAssembly.dll").write_bytes(binary)
+        dump = self.root / "private-dump.cs"
+        dump.write_text(
+            "// Namespace: Definitions.Grid\n"
+            "public class GridData\n"
+            "{\n"
+            "    // RVA: 0x1020 Offset: 0x420 VA: 0x180001020\n"
+            "    public GridFloorType get_Item(int x, int y) { }\n"
+            "}\n"
+            "// Namespace: Other\n"
+            "public class GridData\n"
+            "{\n"
+            "    // RVA: 0x1040 Offset: 0x440 VA: 0x180001040\n"
+            "    public GridFloorType get_Item(int x, int y) { }\n"
+            "}\n", encoding="utf-8")
+        return dump, raw
+
     def tearDown(self):
         self.tmp.cleanup()
 
@@ -656,6 +692,83 @@ class PipelineTests(unittest.TestCase):
         raw.write_bytes(raw.read_bytes() + b" ")
         with self.assertRaisesRegex(ValueError, "SHA mismatch"):
             package_snapshot(self.out, self.root / "tampered.zip")
+
+    def test_private_pe_capture_uses_only_matching_il2cpp_rvas(self):
+        dump, raw = self._write_native_pe_fixture()
+        report = capture_native_pe(self.game, dump_cs=dump,
+                                   dump_game_version="1.26.2",
+                                   window_bytes=64)
+        self.assertEqual(report["status"],
+                         "version_asserted_il2cpp_rva_byte_windows_captured")
+        self.assertTrue(report["sourceRvaMappingVerified"])
+        self.assertFalse(report["nativeCodeBodyVerified"])
+        self.assertFalse(report["nativeFootprintRotationVerified"])
+        self.assertEqual(len(report["methodWindows"]), 1)
+        window = report["methodWindows"][0]
+        self.assertEqual(window["symbol"], "Definitions.Grid.GridData.get_Item")
+        self.assertEqual(window["rva"], 0x1020)
+        self.assertEqual(window["fileOffset"], 0x420)
+        self.assertEqual(window["sectionName"], ".text")
+        self.assertEqual(window["rawWindowHex"], raw.hex())
+        self.assertFalse(window["windowIsEntireMethod"])
+        validate_private_report(report, game_version="1.26.2")
+
+        plain = capture_native_pe(self.game)
+        self.assertEqual(plain["status"],
+                         "pe64_binary_identified_no_version_matched_dump")
+        self.assertEqual(plain["methodWindows"], [])
+        self.assertFalse(plain["sourceRvaMappingVerified"])
+        with self.assertRaisesRegex(ValueError, "differs"):
+            capture_native_pe(self.game, dump_cs=dump,
+                              dump_game_version="1.26.1")
+        with self.assertRaisesRegex(ValueError, "version provided"):
+            capture_native_pe(self.game, dump_game_version="1.26.2")
+
+    def test_native_pe_report_is_private_bounded_and_packageable(self):
+        dump, _ = self._write_native_pe_fixture()
+        extract(self.game, self.out)
+        report = capture_native_pe(self.game, dump_cs=dump,
+                                   dump_game_version="1.26.2",
+                                   window_bytes=64)
+        file = self.out / "native-pe-evidence.json"
+        write_private_report(report, file)
+        with self.assertRaisesRegex(ValueError, "new JSON target"):
+            write_private_report(report, file)
+        summary = package_snapshot(self.out, self.root / "pe-evidence.zip")
+        self.assertTrue(summary["nativePEEvidenceIncluded"])
+        self.assertEqual(summary["nativePEMethodWindowCount"], 1)
+        self.assertFalse(summary["nativeCodeBodyVerified"])
+        with zipfile.ZipFile(self.root / "pe-evidence.zip") as archive:
+            found = json.loads(archive.read("diagnostics/native-pe-evidence.json"))
+            self.assertEqual(found["methodWindows"][0]["rawWindowHex"],
+                             report["methodWindows"][0]["rawWindowHex"])
+            self.assertFalse(found["placementLegalityVerified"])
+
+        altered = dict(report)
+        altered["gameVersion"] = "1.26.1"
+        file.write_text(json.dumps(altered), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "version mismatch"):
+            package_snapshot(self.out, self.root / "wrong-native-version.zip")
+
+    def test_native_pe_invalid_rvas_or_patched_windows_are_rejected(self):
+        dump, _ = self._write_native_pe_fixture()
+        sections = pe64_sections(self.game / "GameAssembly.dll")
+        self.assertEqual(file_offset_for_rva(sections, 0x1020, 64)[0], 0x420)
+        with self.assertRaisesRegex(ValueError, "not in one"):
+            file_offset_for_rva(sections, 0x2000, 64)
+        methods = target_methods_from_dump(dump)
+        self.assertEqual(len(methods), 1)
+        report = capture_native_pe(self.game, dump_cs=dump,
+                                   dump_game_version="1.26.2",
+                                   window_bytes=64)
+        report["methodWindows"][0]["rawWindowHex"] = "00" * 64
+        with self.assertRaisesRegex(ValueError, "digest"):
+            validate_private_report(report)
+        source = self.game / "GameAssembly.dll"
+        original = source.read_bytes()
+        source.write_bytes(b"oops" + original[4:])
+        with self.assertRaisesRegex(ValueError, "DOS header"):
+            capture_native_pe(self.game)
 
     def test_refuse_game_output_overlap(self):
         with self.assertRaisesRegex(ValueError, "overlap"):
