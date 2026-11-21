@@ -9,6 +9,7 @@ import {
   getNativeTerrainTile, getNativeTerrainWindow, getNativeTerrainDistribution,
   getNativeFootprintCandidateCells,
   getNativeFootprintLayerAt, getNativeFootprintLayerWindow,
+  getNativeGridAreaRotatedVector, getNativeGridAreaUnrotatedVector,
   getNativeFootprintCardinalDimensions,
   getNativeDefaultLayoutViewport, getNativeVillageAreaViewport,
 } from '../src/lib/world/catalog.mjs';
@@ -126,6 +127,70 @@ test('source cardinal GridArea dimensions swap axes but do not infer rotated lay
   assert.throws(() => getNativeFootprintCardinalDimensions(
     catalog, 40000001, 16), /GridOrientation/);
   assert.equal(getNativeFootprintCardinalDimensions(catalog, 1111111, 0), null);
+});
+
+test('Steam v1.26.1 original GridArea integer vector transforms cover all 16 orientations', () => {
+  const data = fixture();
+  data.manifest.gameVersion = '1.26.1';
+  const catalog = createWorldCatalog(data);
+  const rotations = [
+    [-2, -3], [-2, -2], [-3, -1], [-2, 0],
+    [-3, 2], [-2, 2], [-1, 3], [0, 2],
+    [2, 3], [2, 2], [3, 1], [2, 0],
+    [3, -2], [2, -2], [1, -3], [0, -2],
+  ];
+  const inverse = [
+    [-2, -3], [0, -2], [1, -3], [2, -2],
+    [3, -2], [2, 0], [3, 1], [2, 2],
+    [2, 3], [0, 2], [-1, 3], [-2, 2],
+    [-3, 2], [-2, 0], [-3, -1], [-2, -2],
+  ];
+  for (let code = 0; code < 16; code++) {
+    const rot = getNativeGridAreaRotatedVector(catalog, 2, 3, code);
+    const back = getNativeGridAreaUnrotatedVector(catalog, 2, 3, code);
+    assert.deepEqual([rot.x, rot.y], rotations[code]);
+    assert.deepEqual([back.x, back.y], inverse[code]);
+    assert.equal(rot.coefficientScale, 100);
+    assert.equal(rot.sourceGameVersion, '1.26.1');
+    assert.equal(rot.nativeVectorRotationVerified, true);
+    assert.equal(rot.rotatedGridAreaCellMappingVerified, false);
+    assert.equal(rot.gridObjectAnchorVerified, false);
+    assert.equal(rot.occupancyPredicateVerified, false);
+    assert.equal(rot.placementLegalityVerified, false);
+  }
+
+  // Inverse is lossy for oblique rotations: native division truncates EACH
+  // signed product toward zero, not once at the end or with Math.round().
+  const rotated = getNativeGridAreaRotatedVector(catalog, 2, 3, 1);
+  assert.deepEqual([rotated.x, rotated.y], [-2, -2]);
+  const recovered = getNativeGridAreaUnrotatedVector(
+    catalog, rotated.x, rotated.y, 1);
+  assert.deepEqual([recovered.x, recovered.y], [1, 1]);
+  assert.deepEqual(
+    [getNativeGridAreaRotatedVector(catalog, 1, 0, 2).x,
+      getNativeGridAreaRotatedVector(catalog, 1, 0, 2).y], [0, 0]);
+
+  // 32-bit native signed IMUL overflow, not JS floating-point multiplication.
+  const large = getNativeGridAreaRotatedVector(catalog, 2147483647, 0, 4);
+  assert.deepEqual([large.x, large.y], [0, -1]);
+  assert.throws(() => getNativeGridAreaRotatedVector(catalog, 0, 0, 16),
+    /Invalid native GridArea/);
+  assert.throws(() => getNativeGridAreaRotatedVector(catalog, 0, 0, -1),
+    /Invalid native GridArea/);
+  assert.throws(() => getNativeGridAreaRotatedVector(catalog, 0.5, 0, 0),
+    /Invalid native GridArea/);
+  assert.throws(() => getNativeGridAreaRotatedVector(catalog, 2147483648, 0, 0),
+    /Invalid native GridArea/);
+});
+
+test('native vector rotation refuses to claim source proof on other game versions', () => {
+  const catalog = createWorldCatalog(fixture()); // fixture is v1.26.2
+  const rotated = getNativeGridAreaRotatedVector(catalog, 2, 3, 4);
+  assert.equal(rotated.status, 'native_rotation_not_verified_for_game_version');
+  assert.equal(rotated.nativeVectorRotationVerified, false);
+  assert.equal(rotated.x, undefined);
+  assert.equal(rotated.rotatedGridAreaCellMappingVerified, false);
+  assert.equal(rotated.placementLegalityVerified, false);
 });
 
 test('explicit restrictions deny but missing flags never authorize placement', () => {
