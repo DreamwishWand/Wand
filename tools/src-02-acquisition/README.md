@@ -91,3 +91,49 @@ row into the public repository.
 Steam v1.26.2 `Condition.json` has 5,439 records. Only the 13 `ConditionItemData` records reached through explicit `ConditionCommon` pointers from 220 content-addressed, acquisition-relevant `ConditionsList` payloads are materialized. These 220 gates occur at 404 concrete source positions, including recipes and loot subgroup restrictions. The boolean tree shape and oneof predicate type are **native evidence**; individual predicate parameters remain SHA-only unless a field mapping is verified. A gate's `availabilityEvaluated=false` is mandatory, and never means the gate is false. In particular, do not show locked/unlocked, scheduled sale, event reward or required DLC ownership without live state evidence.
 
 The verified private bundle loader (`verify_bundle.mjs`) checks both condition indexes and all condition-digest references from recipes, fishing paths and loot groups. It fails closed for a missing `ConditionCommon` definition, cyclic references, malformed trees, mismatched counts, and unknown digests. The DB-00 join forwards those condition query APIs without converting them into entitlement or stock evidence. Check `manifest.json`'s `conditionSha256` and count ledger before consuming a new snapshot.
+
+## Extended DB-01 source coverage audit (no item or reward inference)
+
+DB-01's Steam v1.26.2 catalog extends the four-class SRC-01 extraction with
+six additional **native definition classes**. Definitions in `Currency`,
+`BoardGame`, `PhotoMode`, `Profession`, `Display` and `Environment` are recorded
+as `definition_unclassified`, not presumed collectible items. Never rewrite
+`related-items.jsonl`'s `inSrc01` flag just because a matching *definition* now
+exists. Run this read-only source audit against the private inputs:
+
+```sh
+node tools/src-02-acquisition/audit_catalog.mjs audit \
+  --src02-manifest /private/SRC-02/r3/manifest.json \
+  --related /private/SRC-02/r3/related-items.jsonl \
+  --db01-manifest /private/DB-01/13334/manifest.json \
+  --db01-items /private/DB-01/13334/items.jsonl \
+  --src01-manifest /private/SRC-01/manifest.json \
+  --extended-manifest /private/SRC-01/extended/manifest.json \
+  --guide-manifest /private/DB-03/manifest.json \
+  --out /private/SRC-02/audits/db01-13334-audit.json
+```
+
+`audit_catalog.mjs` verifies the SHA-256 of the 13,334-row DB-01 JSONL and
+SRC-02's related-item JSONL, all four linked manifests, native source category
+hashes/counts, exact version and platform, per-row frame provenance, duplicate
+IDs and supplied item membership. It refuses changed content, unsupported
+`catalogDomain` promotion, symlink inputs and ambiguous source joins. Its
+report schema is `wand.db02.db01-evidence@1`; it includes **only** the 70 IDs
+outside the original SRC-01 set, with classifications
+`native_definition_only_unclassified` or
+`unresolved_in_partial_native_index`. Additional native definition matches do
+not change the original SRC-02 extraction or certify acquisition eligibility.
+
+The browser-safe `createAcquisitionCatalogEvidence(audit, {src02ManifestSha256,
+db01ManifestSha256})` in `src/lib/acquisition/catalog-evidence.mjs` makes the
+supplemental status queryable by ID. Both expected SHA values must come from a
+separately trusted provider; calculating them from the unauthenticated audit
+would not be a useful security check. An unlisted ID returns `null` rather than
+implying absence. The audit and the DB-01 corpus remain **private**; do not add
+raw item definitions to the public application.
+
+DB-03 Guide's current Steam v1.26.1 manifest is *not* version-compatible with
+DB-02 Steam v1.26.2. The optional `--guide-manifest` field records
+`blocked_cross_version`. Even a matching version alone would not establish a
+quest reward: mission selector candidates are objective inputs, not rewards,
+and `rewardRelationVerified` is always false pending source-semantic evidence.
