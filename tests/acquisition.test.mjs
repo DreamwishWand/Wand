@@ -38,3 +38,37 @@ test('fails closed for invalid schema, duplicate IDs, and broken relation', () =
   const c = sample(); c.relatedItems[0].recipesProducedBy = [1];
   assert.throws(() => createAcquisitionDatabase(c));
 });
+
+
+test('static stall loot is a candidate, not a current sales offer', () => {
+  const input = sample();
+  input.lootTables = [{ lootTableId: 2090000056, groups: [
+    { index: 0, candidates: [
+      { itemId: 31700017, conditionDigest: null },
+      { itemId: 31700017, conditionDigest: 'opaque' },
+    ], hasDynamicTypeFilters: false },
+  ] }];
+  input.stallSources = [{ stallId: 20100000, nameKey: 'Gardening_Stall2_Meadow',
+    shopDataKey: 'GardeningStall', slotLootTableIds: [2090000056, 2090000056],
+    inventoryStatus: 'static_loot_candidates_only' }];
+  const db = createAcquisitionDatabase(input);
+  const slots = db.getPossibleStallSlotsForItem(31700017);
+  assert.equal(slots.length, 2); // preserve repeated slot references
+  assert.deepEqual(slots.map(x => x.slotIndex), [0, 1]);
+  assert.equal(slots[0].candidateGroupIndexes.length, 1); // duplicate within group deduped
+  assert.equal(slots[0].hasConditionalFilter, true);
+  const matches = db.getPossibleStallsForItem(31700017);
+  assert.equal(matches.length, 1); // UI-level stall deduplication
+  assert.equal(matches[0].slots.length, 2);
+  assert.equal(matches[0].status, 'static_candidate_not_verified_for_sale');
+  assert.equal(db.getItem(31700017).shopOffers.length, 0);
+  assert.equal(db.getItem(31700017).possibleStalls.length, 1);
+  assert.equal(db.getStallSource(20100000).shopDataKey, 'GardeningStall');
+});
+
+test('fails closed when static stall references missing loot table', () => {
+  const input = sample();
+  input.stallSources = [{ stallId: 20100000, slotLootTableIds: [2090000056],
+    inventoryStatus: 'static_loot_candidates_only' }];
+  assert.throws(() => createAcquisitionDatabase(input), /Unresolved stall loot table/);
+});
