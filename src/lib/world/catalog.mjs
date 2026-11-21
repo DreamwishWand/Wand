@@ -82,8 +82,26 @@ export function createWorldCatalog(bundle) {
   const layouts = uniqueMap(bundle.layouts, 'layoutId');
   const worlds = uniqueMap(bundle.worlds ?? [], 'worldId');
   const areas = uniqueMap(bundle.areas ?? [], 'areaId');
+  const layoutObjects = uniqueMap(bundle.layoutObjects ?? [], 'layoutObjectId');
+  const layoutObjectsByLayout = new Map();
+  for (const object of layoutObjects.values()) {
+    if (!layouts.has(object.layoutId)) {
+      throw new TypeError('DB-04 default object references an absent native layout');
+    }
+    if (!Number.isSafeInteger(object.x) || !Number.isSafeInteger(object.y) ||
+        !Number.isSafeInteger(object.gridObjectIdNative) ||
+        !Number.isSafeInteger(object.itemId) ||
+        object.worldCoordinatesVerified !== false ||
+        object.fixedImmovableVerified !== false) {
+      throw new TypeError('Invalid native default object evidence');
+    }
+    const rows = layoutObjectsByLayout.get(object.layoutId) ?? [];
+    rows.push(object);
+    layoutObjectsByLayout.set(object.layoutId, rows);
+  }
   for (const item of objects.values()) validateFootprint(item.footprint);
   return { manifest: bundle.manifest, objects, scenes, grids, layouts, worlds, areas,
+    layoutObjects, layoutObjectsByLayout,
     unresolved: isRecord(bundle.unresolved) ? bundle.unresolved : null };
 }
 
@@ -120,6 +138,48 @@ export function getNativeWorld(catalog, worldId) {
 export function getNativeAreasForScene(catalog, sceneId) {
   const id = idText(sceneId);
   return [...catalog.areas.values()].filter(area => String(area.parentSceneId) === id);
+}
+
+// A default layout is an original-game starting arrangement; whether a
+// particular object is permanent or movable must be checked separately.
+export function getDefaultLayoutObjects(catalog, layoutId, nativeGridId = null) {
+  const rows = catalog.layoutObjectsByLayout.get(String(layoutId)) ?? [];
+  return rows.filter(row => nativeGridId === null ||
+      row.gridIdNative === nativeGridId).map(row => ({
+    layoutObjectId: row.layoutObjectId,
+    gridObjectIdNative: row.gridObjectIdNative,
+    gridIdNative: row.gridIdNative,
+    itemId: row.itemId,
+    x: row.x, y: row.y,
+    orientationCode: row.orientationCode,
+    orientationName: row.orientationName,
+    positionBasis: 'nativeGridLocal',
+    worldCoordinatesVerified: false,
+    fixedImmovableVerified: false,
+  }));
+}
+
+export function getDefaultVillageAreaLayoutRefs(catalog, layoutId) {
+  const layout = catalog.layouts.get(String(layoutId));
+  if (!layout || layout.layoutKind !== 'nativeDefaultVillageData') return [];
+  return (layout.areaLayoutReferences ?? []).map(ref => ({
+    nativeAreaTypeCode: ref.nativeAreaTypeCode,
+    nativeAreaTypeName: ref.nativeAreaTypeName ?? null,
+    gridLayoutPath: ref.gridLayoutPath,
+    knownLayout: catalog.layouts.has(ref.gridLayoutPath),
+  }));
+}
+
+export function getDefaultLayoutGridEntries(catalog, layoutId) {
+  const layout = catalog.layouts.get(String(layoutId));
+  if (!layout || layout.layoutKind !== 'nativeGridCollection') return [];
+  return (layout.nativeGridEntries ?? []).map(entry => ({
+    gridIdNative: entry.gridIdNative,
+    gridDataPath: entry.gridDataPath,
+    tessellationFactor: entry.tessellationFactor,
+    defaultObjectCount: entry.defaultObjectCount,
+    knownGridData: catalog.grids.has(entry.gridDataPath),
+  }));
 }
 
 export function getNativeScene(catalog, sceneId) {
