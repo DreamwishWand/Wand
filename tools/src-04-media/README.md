@@ -102,6 +102,22 @@ The local item map was generated in both JSONL and a human-readable CSV, with a 
 The next discovery problem is the remaining 360 unique GUIDs, especially 348 unresolved Trimming Item IDs. Resolve by exact source relationships outside the existing 24 generated-icon bundles; do not infer mappings by image names, platform, or game-version labels.
 
 ---
+## SRC-04 358-pixel recovery confirmed (2026-11-21)
+
+The owner's `catalog-missing-pixels-report.json` is a **completed runtime report** with schema `wand.src04.missing-pixels@1`: `214/214` target bundles finished, `failedBundleCount=0`, 358 new exact GUIDs and 2,414 newly mapped Item IDs; 9,540/9,542 unique icon GUIDs and 13,200/13,202 Item IDs now verified (99.98% coverage), with 2 GUIDs / 2 Item IDs remaining. Existing decoded images were not replaced. The report asserts `sourceFilesModified=false`, `publicationApproved=false`, and a completed local `item-icon-map-extended-private.jsonl` with SHA-256 `6fc23756874818c66661d322221b38ccae5328ecbf398b890b934714e3968ca8`. The private file's bytes have NOT been uploaded here: that digest is an operator-runtime claim, not an independently rehashed attached artifact.
+
+Unresolved exact source records (Steam 1.26.2, `Trimming.json`):
+
+- Item ID `160000214`, `CottageAviaryHouseWallpaper!color01`, GUID `c98d99e05824631469c50afe67b4d841`.
+- Item ID `160100144`, `CottageAviaryHouseFloor!color01`, GUID `db4746eaf4051004d901485113f0c812`.
+
+Both GUIDs have an unusually broad catalog dependency group of 686 bundle *names*, which is not direct image identity. 602 SHA-pinned candidate bundle files were present in the supplied verified SRC-00 Steam source manifest (total approximately 2.44 GiB); 84 dependency names are absent from that local source manifest. The most distinctive available candidate is `ddv_Data/StreamingAssets/aa/win/houses_assets_assets/playerhouse_cottageaviary_4c9e1e93.bundle` (10,837,441 bytes; SHA-256 `6b9876d620aacb97e942d958d70b7103958bbb512f10f4d65e1677d45233299e`). This is a **priority search hypothesis**, not an inferred GUID->image match.
+
+`SRC04-LAST-TWO.cmd` is a standalone local follow-up runner. It checks the exact previous runtime report, the already-completed 13,200-item private map hash and SRC-01 cache before touching output, then scans only Unity serialized metadata across the available candidates (prioritized house first) with per-bundle SHA-256 verification and resumable checkpoints. Only an exact unique GUID key -> local path ID -> single Sprite or Texture2D can authorize a new pixel decode. Global cross-bundle ambiguity fails closed. The runner creates a separate `item-icon-map-final-private.jsonl` only if at least one previously unresolved GUID is newly verified; it never modifies the old 13,200-row map or the preexisting 23,021 images. Diagnostic output is `catalog-last-two-report.json`. All outputs remain private and `publicationApproved=false`.
+
+**Current authoritative achieved coverage is 13,200/13,202**. Full coverage is not assumed until the last-two report proves it. No public media deployment is authorized.
+
+---
 ## Missing GUID location audit and targeted object scan (2026-11-21)
 
 The owner-provided `catalog-missing-report.json` (schema `wand.src04.missing-locations@1`) verifies that all **360** unresolved GUIDs have Addressables bundle dependencies; this is **not** evidence that those bundles contain displayable images. Of the **2,416** affected Item IDs:
