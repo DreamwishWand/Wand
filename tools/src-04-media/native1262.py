@@ -102,18 +102,37 @@ def catalog_probe(game, output, item_index):
             info["allGuidTokenCount"] = len(tokens)
         except (OSError, UnicodeError, ValueError) as exc:
             info["error"] = str(exc)[:200]
+    pattern = re.compile(rb"(?<![A-Za-z0-9])(?:guid:)?([0-9a-fA-F]{32})(?![A-Za-z0-9])")
     for suffix in ["InternalIds", "bucketData", "entryData", "extraData", "keyData"]:
         path = base / ("catalog." + suffix + ".bin")
         if path.is_file():
+            raw = path.read_bytes()
+            samples = []
+            unique = set()
+            for match in pattern.finditer(raw):
+                value = match.group(1).decode("ascii").lower()
+                unique.add(value)
+                if value in item_index and len(samples) < 30:
+                    samples.append({
+                        "guid": "guid:" + value, "offset": match.start(),
+                        "before16Hex": raw[max(0, match.start() - 16):match.start()].hex(),
+                        "after16Hex": raw[match.end():match.end() + 16].hex()
+                    })
             info["binaryParts"].append({
                 "file": path.relative_to(game).as_posix(),
                 "sha256": digest(path),
-                "bytes": path.stat().st_size
+                "bytes": len(raw), "first64Hex": raw[:64].hex(),
+                "literalGuidCount": len(unique),
+                "matchingItemGuidCount": len(unique & item_index.keys()),
+                "matchingItemGuidSamples": samples
             })
     save_json(output / "evidence" / "catalog-probe.json", info)
 
 
-def cached_outputs_ok(output, record, verify_existing=False):
+def cached_outputs_ok(output, record, verify_existing=False, keep_originals=False):
+    if keep_originals and max(record.get("sourceWidth", 0), record.get("sourceHeight", 0)) > 512:
+        if "original" not in record.get("variants", {}):
+            return False
     for variant in record.get("variants", {}).values():
         candidate = output / variant["path"]
         if not candidate.is_file() or candidate.stat().st_size != variant.get("bytes"):
@@ -193,7 +212,7 @@ def process_bundle(game, output, path, item_index, keep_originals=False, verify_
     checkpoint = output / "bundles" / (content_sha + ".json")
     old = json.loads(checkpoint.read_text(encoding="utf-8")) if checkpoint.is_file() else {}
     if old.get("complete") and old.get("containerSha256") == content_sha and all(
-            cached_outputs_ok(output, image, verify_existing) for image in old.get("images", [])):
+            cached_outputs_ok(output, image, verify_existing, keep_originals) for image in old.get("images", [])):
         return old
     old_by_asset = {row["assetId"]: row for row in old.get("images", [])}
     records = []
@@ -210,7 +229,7 @@ def process_bundle(game, output, path, item_index, keep_originals=False, verify_
         native_id = f"unity:{content_sha}:{asset_file}:{object_id}:{kind}"
         previous = old_by_asset.get(native_id)
         if previous:
-            if cached_outputs_ok(output, previous, verify_existing):
+            if cached_outputs_ok(output, previous, verify_existing, keep_originals):
                 records.append(previous)
                 continue
         try:
