@@ -103,7 +103,12 @@ function validatePrivateProjection(duties,milestones){
       if(r.evidenceState==='opaque_or_mixed_field13')opaque++;
       else missing++;
     }
-    records.set(r.id,r);
+    // Snapshot verified numeric thresholds; caller mutation of the private
+    // projection must never change subsequent audit interpretation.
+    records.set(r.id,Object.freeze({
+      evidenceState:r.evidenceState,
+      milestones:Object.freeze(r.milestones.map(m=>Object.freeze({milestone:m.milestone})))
+    }));
   }
   const s=milestones.summary;
   if(s.nativeRows!==records.size||s.typedMilestoneDefinitions!==typed||
