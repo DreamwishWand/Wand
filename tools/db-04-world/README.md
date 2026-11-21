@@ -5,7 +5,7 @@ This lane implements a **read-only, partial, game-native database**, not a save 
 ## Verified input formats
 
 - Steam game source `ddv_Data/StreamingAssets/itemlist/Furniture.json` and `Building.json`: indexed protobuf records with exact integer item IDs, native names and `GridAreaData` (wire field 6).
-- `GridAreaData` fields 1/2 contain native `SizeX`/`SizeY`; field 3 is exactly `SizeX * SizeY` little-endian 32-bit layer values; field 4 is `AcceptedFloorTypesFlag`. Those mappings were cross-checked with a game-native `StreamingAssets/Furniture/...json` definition and full-file cardinality checks.
+- `GridAreaData` fields 1/2 contain native `SizeX`/`SizeY`; field 3 is exactly `SizeX * SizeY` little-endian 32-bit layer values; field 4 is `AcceptedFloorTypesFlag`; optional field 5 is `Nullable<int32> StrideOverride` (source wire path `6.5`). These mappings were cross-checked with the original native `StreamingAssets/Furniture/...json` definitions and full-file cardinality checks.
 - `itemlist/Scene.json`: indexed native Scene IDs/names; native scene-kind numeric value is kept without assigning an unsupported world/biome role.
 - `protoDb.bin` entries `Worlds` (`Definitions.WorldData`), `DefaultVillages` (`Meta.DefaultVillageList`) and `Village04Layout1` (`Definitions.Scene.VillageAreaData`): game-defined world names, Scene IDs, explicit parent world references, default layout paths and VillageAreaType/ground/water NavMesh IDs. The six villages include five conditional layouts, but those layout paths are **not** native world IDs.
 - `GridData/**/*.json`: despite the suffix these are **binary**. Verified IL2CPP `Definitions.Grid.GridData` fields 1/2 are SizeX/SizeY, field 3 is repeated native fixed32 FloorTypes, field 4 a fixed32 palette, and field 5 compacted index bytes. All raw palette values and Base64 packed bytes are preserved. **1/2/4-bit packed grids can now be previewed** with original-GameAssembly-correlated X-major/MSB-first grid-local coordinates. The Steam 1.26.1 GridData getter and bit-width native instruction sequences were inspected after resolving their correct method tokens from global-metadata.dat v31. This proves neither global world coordinates nor placement legality. Palettes with more than 16 entries remain unsupported.
@@ -635,6 +635,37 @@ GridArea.TessellationFactor relative to the caller. GridObject world
 anchor offsets, layers interpreted as actual occupancy, collisions,
 special object rules and legal placement are still **unverified**.
 All edit/placement permissions remain unchanged and unresolved.
+
+## Native nullable GridAreaData.StrideOverride — preserved without interpretation
+
+The Steam 1.26.1 original IL2CPP class GridAreaData defines
+StrideOverride as **Nullable<int32> protobuf field 5**. When the item
+record carries a GridAreaData in its own field 6, the corresponding
+source path is **6.5**. Its encoded value is a length-delimited
+protobuf int32 wrapper whose scalar is field 1. The difference between
+an ABSENT outer wrapper (null) and an explicitly PRESENT empty
+wrapper (int32 zero) matters and is preserved.
+
+A full private scan of the original Steam 1.26.1 ItemList sources found:
+- Furniture: 252 explicit stride records among 6,746 GridAreaData records.
+  Value counts: 1→104; 2→137; 3→5; 4→6.
+- Building: 3 explicit stride records among 394 GridAreaData records
+  (478 building records total); all three have value 2.
+
+The extractor now retains strideOverride: null|int32,
+strideOverrideSourceVerified and original nativeWireFields.strideOverride
+when present. The verified private snapshot also checks these flags,
+the source wire path and the exact signed int32 type. The browser
+getNativeFootprint(...) exposes the same nullable raw value and source
+field but reports strideOverridePlacementSemanticsVerified:false.
+
+**Do not use this value as a collision radius, decoration placement
+stride, occupancy predicate or editor move/add permission.** Those
+native validation calls and how a GridArea's stride override is
+consumed are not yet independently proven. The original bytes and
+record identities remain private; only aggregate source counts are
+documented. Older verified snapshots without this field are accepted
+without fabricating a native value.
 
 ## Original item GridArea tessellation path and explicit caller-grid factor
 
