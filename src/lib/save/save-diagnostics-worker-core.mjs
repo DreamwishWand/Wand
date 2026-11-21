@@ -23,7 +23,8 @@ function sanitizeWasmEvidence(raw) {
   const executed=valid && obj.wasmExecuted===true &&
     Number.isSafeInteger(obj.rulesCompared) && obj.rulesCompared===14;
   const status=valid && (obj.status==='matched'||obj.status==='diverged')
-    ? (executed?obj.status:'unavailable')
+    ? (executed?(obj.status==='matched' && obj.wasmAndJsEqual!==true
+        ? 'diverged':obj.status):'unavailable')
     : valid && (obj.status==='skipped_large_save'||obj.status==='unavailable')
       ? obj.status:'unavailable';
   return Object.freeze({
