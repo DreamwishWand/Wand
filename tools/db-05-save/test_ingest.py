@@ -129,4 +129,30 @@ class IngestTests(unittest.TestCase):
         self.assertFalse(result['writerAuthorized'])
 
 
+    def test_nested_fields_are_allowlisted_but_actual_map_keys_never_leave(self):
+        raw = self.report(643, 'string')
+        raw['fieldWitnesses'].extend([
+            {'path':'/Player/Pets[]/LastSelfieDate','type':'null,string'},
+            {'path':'/Player/Cookbook/Recipes','type':'array'},
+            {'path':'/World/FloatingIslands/99123/Unlocked','type':'boolean'},
+            {'path':'/World/DecorationPresets[]/ShareInfo','type':'null'},
+            {'path':'/Player/PrivatePetMemo','type':'string'}
+        ])
+        inspected = inspect_report(raw)
+        paths = {field['path'] for field in inspected['publicWitnesses']}
+        for path in [
+            '/Player/Pets[]/LastSelfieDate',
+            '/Player/Cookbook/Recipes',
+            '/World/FloatingIslands/{id}/Unlocked',
+            '/World/DecorationPresets[]/ShareInfo'
+        ]:
+            self.assertIn(path,paths)
+        output=json.dumps(inspected)
+        self.assertNotIn('99123',output)
+        self.assertNotIn('PrivatePetMemo',output)
+        self.assertNotIn('PrivateAccount',output)
+        self.assertEqual(inspected['otherWitnessCount'],2)
+        self.assertFalse(inspected['writerAuthorized'])
+
+
 if __name__ == '__main__': unittest.main()
