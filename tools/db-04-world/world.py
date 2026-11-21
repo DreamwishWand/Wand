@@ -234,6 +234,153 @@ def optional_files(root, relative, sources):
     return [p.relative_to(root) for p in paths]
 
 
+# Native WorldData, VillageAreaData and DefaultVillageList types verified
+# against Steam 1.26.1 IL2CPP metadata. The namespaced "village-layout:"
+# keys are database IDs only; they are NOT game-provided world IDs.
+VILLAGE_AREA_NAMES = {
+    0: "Beach", 1: "Wetland", 2: "Meadow", 3: "Urban",
+    4: "Savannah", 5: "Forest", 6: "DarkMountains", 7: "Cliff",
+    8: "AtlanteanOutpost01", 9: "AtlanteanOutpost02",
+    10: "AtlanteanOutpost03", 11: "AtlanteanOutpost04",
+    12: "Desert01", 13: "Desert02", 14: "Desert03", 15: "Desert04",
+    16: "Jungle01", 17: "Jungle02", 18: "Jungle03", 19: "Jungle04",
+    20: "Mythology01", 21: "Mythology02", 22: "Mythology03", 23: "Mythology04",
+    24: "FairyTales01", 25: "FairyTales02", 26: "FairyTales03", 27: "FairyTales04",
+    28: "Library01", 29: "Library02", 30: "Library03",
+    31: "Rockies01", 32: "Rockies02", 33: "Rockies03",
+    34: "Rockies04", 35: "Rockies05",
+    36: "Fashion01", 37: "Fashion02", 38: "Fashion03", 39: "Fashion04",
+    40: "Wishland01", 41: "Wishland02", 42: "Wishland03", 43: "Wishland04",
+    44: "Honeywood01", 45: "Honeywood02", 46: "Honeywood03", 47: "Honeywood04",
+    48: "Pirates01", 49: "Pirates02", 50: "Pirates03", 51: "Pirates04",
+    52: "Candy01", 53: "Candy02", 54: "Candy03", 55: "Candy04",
+    56: "Kingdom01", 57: "Kingdom02", 58: "Kingdom03",
+    59: "Kingdom04", 60: "Kingdom05",
+    61: "UnderwaterPirates", 62: "UnderwaterCandy", 63: "UnderwaterKingdom",
+}
+
+
+def parse_world_registry(data, known_scene_ids):
+    """Parse explicit world hierarchy from protoDb.bin, not inferred names."""
+    needed_types = {
+        "Worlds": "Definitions.WorldData",
+        "DefaultVillages": "Meta.DefaultVillageList",
+        "Village04Layout1": "Definitions.Scene.VillageAreaData",
+    }
+    entries = {}
+    for field, wire, raw in wire_fields(data):
+        if (field, wire) != (1, 2):
+            raise ValueError("unknown protoDb top-level schema")
+        outer = wire_fields(raw)
+        name = text_field(outer, 1, True)
+        if name not in needed_types:
+            continue
+        if name in entries:
+            raise ValueError("duplicate world-registry protoDb entry")
+        metadata = wire_fields(one(outer, 2, 2, True))
+        typename = text_field(metadata, 5, True)
+        if typename != needed_types[name]:
+            raise ValueError("conflicting protoDb native world schema")
+        entries[name] = one(metadata, 6, 2, True)
+    result, areas, unresolved = [], [], []
+    world_data = entries.get("Worlds")
+    if world_data is not None:
+        for field, wire, payload in wire_fields(world_data):
+            if (field, wire) != (1, 2):
+                continue  # WorldData.IncrementalPrice is field 2.
+            native = wire_fields(payload)
+            name = text_field(native, 1, True)
+            parent = text_field(native, 2)
+            scene_id = one(native, 22, 0, True)
+            layout = text_field(native, 21, True)
+            if not safe_reference(layout) or not layout.startswith("SceneLayouts/"):
+                raise ValueError("invalid native world layout reference")
+            if scene_id not in known_scene_ids:
+                unresolved.append({"reason": "native_world_scene_missing", "worldName": name,
+                                   "sceneId": scene_id})
+            result.append({
+                "worldId": name, "worldIdKind": "nativeWorldName",
+                "nativeWorldName": name, "worldType": "realm",
+                "parentWorldId": parent, "sceneId": scene_id,
+                "universeTagItemId": one(native, 20, 0),
+                "defaultGridLayoutPath": layout,
+                "conditionalUnlockUnknown": True,
+                "source": {"path": (STREAM / "protoDb.bin").as_posix(),
+                           "entry": "Worlds", "nativeFields": [1, 2, 20, 21, 22]},
+            })
+    village_data = entries.get("DefaultVillages")
+    if village_data is not None:
+        for field, wire, payload in wire_fields(village_data):
+            if wire != 2 or field not in (1, 2):
+                continue
+            path = payload.decode("utf-8") if field == 1 else text_field(
+                wire_fields(payload), 1, True)
+            if not safe_reference(path) or not path.startswith("SceneLayouts/"):
+                raise ValueError("invalid native default village layout")
+            result.append({
+                "worldId": "village-layout:" + path, "worldIdKind": "derivedLayoutKey",
+                "nativeWorldName": None, "worldType": "village_layout",
+                "parentWorldId": None, "sceneId": None,
+                "universeTagItemId": None, "defaultGridLayoutPath": path,
+                "conditionalUnlockUnknown": field == 2,
+                "source": {"path": (STREAM / "protoDb.bin").as_posix(),
+                           "entry": "DefaultVillages", "nativeFields": [field]},
+            })
+    area_data = entries.get("Village04Layout1")
+    if area_data is not None:
+        native = wire_fields(area_data)
+        parent_scene = one(native, 1, 0, True)
+        if parent_scene not in known_scene_ids:
+            unresolved.append({"reason": "village_scene_missing",
+                               "sceneId": parent_scene})
+        for _, wire, payload in (row for row in native if row[0] == 2):
+            if wire != 2:
+                raise ValueError("invalid village area protobuf")
+            entry = wire_fields(payload)
+            area_type = one(entry, 1, 0)
+            area_type = 0 if area_type is None else area_type  # protobuf enum default
+            if area_type not in VILLAGE_AREA_NAMES:
+                unresolved.append({"reason": "unknown_village_area_enum",
+                                   "areaTypeCode": area_type})
+            areas.append({
+                "areaId": f"{parent_scene}:{area_type}",
+                "areaIdKind": "sceneAndAreaTypeComposite",
+                "parentSceneId": parent_scene,
+                "nativeAreaTypeCode": area_type,
+                "nativeAreaTypeName": VILLAGE_AREA_NAMES.get(area_type),
+                "nativeAreaTypeFieldPresent": one(entry, 1, 0) is not None,
+                "unlockPlayerLevel": one(entry, 2, 0),
+                "groundNavMeshAreaId": one(entry, 7, 0),
+                "waterNavMeshAreaId": one(entry, 8, 0),
+                "source": {"path": (STREAM / "protoDb.bin").as_posix(),
+                           "entry": "Village04Layout1", "nativeFields": [1, 2]},
+            })
+    # References are strict; never make dangling parent-world links silently.
+    known_world_names = {r["worldId"] for r in result if r["worldIdKind"] == "nativeWorldName"}
+    for row in result:
+        if row["parentWorldId"] and row["parentWorldId"] not in known_world_names:
+            unresolved.append({"reason": "world_parent_missing",
+                               "worldName": row["worldId"],
+                               "parentWorldId": row["parentWorldId"]})
+    for name in needed_types:
+        if name not in entries:
+            unresolved.append({"reason": "missing_protoDb_world_registry_entry",
+                               "entry": name})
+    if len(set(row["worldId"] for row in result)) != len(result):
+        raise ValueError("duplicate native or derived world registry ID")
+    if len(set(row["areaId"] for row in areas)) != len(areas):
+        raise ValueError("duplicate scene/area IDs")
+    return result, areas, unresolved
+
+
+def world_registry(root, sources, known_scene_ids):
+    relative = STREAM / "protoDb.bin"
+    if not (root / relative).is_file():
+        return [], [], [{"reason": "protoDb.bin_not_available"}]
+    data = source_bytes(root, relative, sources)
+    return parse_world_registry(data, known_scene_ids)
+
+
 def native_objects(root, sources):
     results, scenes, missing = [], [], Counter()
     for kind in ("Scene", "Building", "Furniture"):
@@ -446,7 +593,8 @@ def make_diff(previous, outputs):
                 "note": "An initial snapshot cannot establish update deltas."}
     result = {"schema": SCHEMA, "status": "compared", "entities": {}}
     for name, key in (("scenes", "sceneId"), ("objects", "itemId"),
-                      ("grids", "gridId"), ("layouts", "layoutId")):
+                      ("grids", "gridId"), ("layouts", "layoutId"),
+                      ("worlds", "worldId"), ("areas", "areaId")):
         file = previous / (name + ".json")
         if not file.is_file():
             raise ValueError(f"missing prior snapshot: {file.name}")
@@ -491,6 +639,14 @@ def extract(game, out, previous=None):
     if len(matches) != 1:
         raise ValueError("FullVersion.txt does not establish a single game version")
     objects, scenes, missing = native_objects(game, sources)
+    worlds, areas, hierarchy_unresolved = world_registry(
+        game, sources, {scene["sceneId"] for scene in scenes})
+    by_scene = {scene["sceneId"]: scene for scene in scenes}
+    for world in worlds:
+        scene = by_scene.get(world["sceneId"])
+        if scene is not None and world["worldIdKind"] == "nativeWorldName":
+            scene["parentWorldId"] = world["worldId"]
+            scene["worldHierarchyVerified"] = True
     grids = grid_assets(game, sources)
     layouts = scene_layouts(game, sources)
     conflicts, overrides = validate_overrides(game, sources, objects)
@@ -512,20 +668,22 @@ def extract(game, out, previous=None):
         "missingFootprintsByCategory": dict(sorted(missing.items())),
         "unresolvedExplicitGridReferences": missing_refs,
         "nativeOverrideConflicts": conflicts,
+        "worldRegistryUnresolved": hierarchy_unresolved,
     }
-    outputs = {"scenes": scenes, "objects": objects, "grids": grids, "layouts": layouts}
+    outputs = {"scenes": scenes, "objects": objects, "grids": grids,
+               "layouts": layouts, "worlds": worlds, "areas": areas}
     delta = make_diff(previous, outputs)
     out.mkdir(parents=True, exist_ok=True)
     hashes = {}
     for name, rows in outputs.items():
         hashes[name + ".json"] = write_json(out / (name + ".json"), rows)
-    hashes["worlds.json"] = write_json(out / "worlds.json", [])
     hashes["unresolved.json"] = write_json(out / "unresolved.json", unresolved)
     hashes["diff.json"] = write_json(out / "diff.json", delta)
     report = {
         "schema": SCHEMA, "gameVersion": matches[0],
         "status": "native_partial_world_extraction",
-        "sceneCount": len(scenes), "objectCount": len(objects),
+        "sceneCount": len(scenes), "worldCount": len(worlds),
+        "areaCount": len(areas), "objectCount": len(objects),
         "withNativeFootprint": sum(row["footprint"] is not None for row in objects),
         "gridFileCount": len(grids), "layoutFileCount": len(layouts),
         "furnitureOverridesInspected": overrides,
