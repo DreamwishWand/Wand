@@ -150,13 +150,28 @@ function readIdb(db: IDBDatabase): Promise<string | undefined> {
     request.onerror = () => reject(request.error ?? Error('COLLECTION_INDEXEDDB_READ_FAILED'));
   });
 }
-function writeIdb(db: IDBDatabase, payload: string): Promise<void> {
+/** Compare-and-swap in one readwrite transaction. Parallel tabs must never
+ * silently overwrite each other's Collection records or backup restores. */
+function writeIdb(db: IDBDatabase, payload: string, expected: string | null): Promise<void> {
   return new Promise((resolve,reject) => {
     const transaction = db.transaction(STORE_NAME,'readwrite');
-    transaction.objectStore(STORE_NAME).put(payload,STATE_KEY);
+    const store = transaction.objectStore(STORE_NAME);
+    const read = store.get(STATE_KEY);
+    let conflict = false;
+    read.onsuccess = () => {
+      const current = read.result === undefined ? null : read.result;
+      if (current !== expected) {
+        conflict = true;
+        transaction.abort();
+      } else {
+        store.put(payload,STATE_KEY);
+      }
+    };
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error ?? Error('COLLECTION_INDEXEDDB_WRITE_FAILED'));
-    transaction.onabort = () => reject(transaction.error ?? Error('COLLECTION_INDEXEDDB_ABORTED'));
+    transaction.onabort = () => reject(conflict
+      ? Error('COLLECTION_STORAGE_CONFLICT')
+      : (transaction.error ?? Error('COLLECTION_INDEXEDDB_ABORTED')));
   });
 }
 export class CollectionRuntime {
@@ -164,6 +179,7 @@ export class CollectionRuntime {
   private readonly engine: CollectionEngine;
   private db: IDBDatabase | null = null;
   private busy = false;
+  private persistedState: string | null = null;
   private constructor(engine: CollectionEngine, metadata: CollectionRuntimeMetadata) {
     this.engine = engine;
     this.metadata = metadata;
@@ -245,13 +261,15 @@ export class CollectionRuntime {
       const persisted = await readIdb(db);
       if (persisted !== undefined) {
         this.engine.load_state(persisted);
+        this.persistedState = persisted;
       } else {
         const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
         if (legacy !== null) this.engine.load_state(legacy);
         const normalized = this.engine.state_json();
-        await writeIdb(db,normalized);
+        await writeIdb(db,normalized,null);
         if (await readIdb(db) !== normalized)
           throw new Error('COLLECTION_MIGRATION_READBACK_MISMATCH');
+        this.persistedState = normalized;
       }
       this.db = db;
     } catch (error) {
@@ -282,8 +300,9 @@ export class CollectionRuntime {
     try {
       action();
       const updated = this.engine.state_json();
-      await writeIdb(this.db,updated);
+      await writeIdb(this.db,updated,this.persistedState);
       if (await readIdb(this.db) !== updated) throw new Error('COLLECTION_WRITE_READBACK_MISMATCH');
+      this.persistedState = updated;
     } catch (error) {
       this.engine.load_state(before);
       throw error;
