@@ -24,6 +24,7 @@ import {
   getNativeFootprintOrientationBaseDimensions,
   getNativeFootprintCardinalDimensions,
   getNativeDefaultLayoutViewport, getNativeVillageAreaViewport,
+  getNativeDefaultLayoutAnchorWindow, getNativeVillageAreaAnchorWindow,
 } from '../src/lib/world/catalog.mjs';
 
 function fixture() {
@@ -1172,6 +1173,111 @@ function preparedVillageViewportFixture() {
   });
   return data;
 }
+
+test('default/village raw anchor windows work on 1.26.2 without packed terrain proof', () => {
+  const data = preparedVillageViewportFixture();
+  data.manifest.gameVersion = '1.26.2';
+  // The file's original Grid dimensions and default GridObject records are
+  // source data; no packed palette-index/position interpretation is assumed.
+  const grid = data.grids[0];
+  data.grids = [{
+    gridId: grid.gridId, sizeX: grid.sizeX, sizeY: grid.sizeY,
+    nativeFloorTypePalette: grid.nativeFloorTypePalette,
+    terrainDecoding: {
+      status: 'native_packing_not_verified_for_game_version',
+      decoded: false, sourceGameVersion: '1.26.2',
+      verifiedNativeGameVersion: '1.26.1',
+      nativeCodeBodyVerified: false, placementLegalityVerified: false,
+    },
+  }];
+  const catalog = createWorldCatalog(data);
+  const area = 'SceneLayouts/Village04/Default.json';
+  const layout = 'SceneLayouts/Village04/Main.json';
+  const rect = { x: 4, y: 3, width: 3, height: 4 };
+  assert.equal(getNativeDefaultLayoutViewport(catalog, layout, 0, rect).status,
+    'native_terrain_packing_not_verified_for_game_version');
+  const source = getNativeDefaultLayoutAnchorWindow(catalog, layout, 0, rect);
+  assert.equal(source.status, 'source_native_default_layout_anchors_only');
+  assert.equal(source.terrainDecoded, false);
+  assert.equal(source.viewAnchorCount, 1);
+  assert.equal(source.totalNativeDefaultObjectAnchors, 2);
+  assert.deepEqual(source.defaultObjectAnchors.map(a => [a.x, a.y]), [[5, 5]]);
+  assert.equal(source.nativeGridSizeX, 12);
+  assert.equal(source.nativeGridSizeY, 16);
+  assert.deepEqual(source.rect, rect);
+  assert.equal(source.worldCoordinatesVerified, false);
+  assert.equal(source.gridObjectAnchorConventionVerified, false);
+  assert.equal(source.fullFootprintOccupancyVerified, false);
+  assert.equal(source.placementLegalityVerified, false);
+  assert.equal(source.currentSaveObjectVerified, false);
+  assert.equal(source.sourceScopeVerified, false);
+  source.defaultObjectAnchors[0].x = 100;
+  assert.equal(getNativeDefaultLayoutAnchorWindow(catalog, layout, 0, rect)
+    .defaultObjectAnchors[0].x, 5);
+
+  const village = getNativeVillageAreaAnchorWindow(catalog, area, 3, 0, rect);
+  assert.equal(village.status, source.status);
+  assert.equal(village.villageLayoutId, area);
+  assert.equal(village.gridLayoutPath, layout);
+  assert.equal(village.nativeAreaTypeCode, 3);
+  assert.equal(village.nativeAreaTypeName, 'Urban');
+  assert.deepEqual(village.defaultObjectAnchors.map(a => [a.x, a.y]), [[5, 5]]);
+  const empty = getNativeDefaultLayoutAnchorWindow(catalog, layout, 0,
+    { x: 0, y: 0, width: 2, height: 2 });
+  assert.equal(empty.viewAnchorCount, 0);
+  assert.equal(empty.totalNativeDefaultObjectAnchors, 2);
+  assert.equal(empty.fullFootprintOccupancyVerified, false);
+});
+
+test('source-only anchor viewport rejects missing or ambiguous native references', () => {
+  const baseline = preparedVillageViewportFixture();
+  baseline.manifest.gameVersion = '1.26.2';
+  const rect = { x: 4, y: 3, width: 3, height: 4 };
+  const area = 'SceneLayouts/Village04/Default.json';
+  const layout = 'SceneLayouts/Village04/Main.json';
+  const catalog = createWorldCatalog(baseline);
+  assert.equal(getNativeVillageAreaAnchorWindow(catalog, area, 99, 0, rect).status,
+    'unknown_native_village_area');
+  assert.equal(getNativeVillageAreaAnchorWindow(catalog, 'missing', 3, 0, rect).status,
+    'unknown_native_village_layout');
+  assert.equal(getNativeDefaultLayoutAnchorWindow(catalog, area, 0, rect).status,
+    'not_native_grid_collection');
+  assert.equal(getNativeDefaultLayoutAnchorWindow(catalog, layout, 999, rect).status,
+    'unknown_native_grid_in_layout');
+  assert.throws(() => getNativeDefaultLayoutAnchorWindow(catalog, layout, -1, rect),
+    /unsigned 32-bit integer/);
+  assert.equal(getNativeDefaultLayoutAnchorWindow(catalog, layout, 0,
+    { x: 11, y: 15, width: 2, height: 2 }).status,
+  'outside_native_grid_or_preview_limit');
+
+  const missing = preparedVillageViewportFixture();
+  missing.layouts[0].nativeGridEntries[0].gridDataPath = 'GridData/absent.json';
+  assert.equal(getNativeDefaultLayoutAnchorWindow(createWorldCatalog(missing),
+    layout, 0, rect).status, 'missing_referenced_grid_in_source_subset');
+
+  const noDimensions = preparedVillageViewportFixture();
+  delete noDimensions.grids[0].sizeY;
+  assert.equal(getNativeDefaultLayoutAnchorWindow(createWorldCatalog(noDimensions),
+    layout, 0, rect).status, 'native_grid_dimensions_unavailable');
+
+  const incomplete = preparedVillageViewportFixture();
+  incomplete.layouts[0].nativeGridEntries[0].defaultObjectCount = 3;
+  assert.equal(getNativeDefaultLayoutAnchorWindow(createWorldCatalog(incomplete),
+    layout, 0, rect).status, 'incomplete_native_default_object_source');
+
+  const duplicates = preparedVillageViewportFixture();
+  duplicates.layouts[0].nativeGridEntries.push({
+    ...duplicates.layouts[0].nativeGridEntries[0],
+  });
+  assert.throws(() => getNativeDefaultLayoutAnchorWindow(
+    createWorldCatalog(duplicates), layout, 0, rect),
+  /Ambiguous duplicate native Grid.ID/);
+
+  const missingArea = preparedVillageViewportFixture();
+  missingArea.layouts[1].areaLayoutReferences[0].gridLayoutPath = 'SceneLayouts/missing.json';
+  assert.equal(getNativeVillageAreaAnchorWindow(createWorldCatalog(missingArea),
+    area, 3, 0, rect).status, 'missing_referenced_area_layout_in_source_subset');
+});
 
 test('native village area viewport composes only explicitly linked terrain and anchor positions', () => {
   const catalog = createWorldCatalog(preparedVillageViewportFixture());
