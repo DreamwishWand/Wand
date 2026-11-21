@@ -1,5 +1,5 @@
 export type MaterialPlanBlockerReason = 'recipe_choice_required' | 'cyclic_recipe_chain' |
-  'maximum_depth_reached' | 'unknown_crafting_yield';
+  'maximum_depth_reached' | 'unknown_crafting_yield' | 'cooking_yield_unverified';
 export interface MaterialPlanStep {
   readonly recipeId: number;
   readonly resultItemId: number;
@@ -112,3 +112,32 @@ export function planRecipeBasket(
   goals: RecipeBasketGoal[],
   options?: Omit<PlanOptions, 'batches'>
 ): MaterialBasket;
+
+/** Native Item ID + desired quantity is the Collection/Guide-facing entrypoint.
+ * It expands only source-verified crafting yields, never assumes cooking yield. */
+export interface ItemBasketGoal {
+  readonly itemId: number | string;
+  /** Number of Item units desired, not number of recipe executions. */
+  readonly quantity?: number;
+}
+export interface ItemBasket extends Omit<MaterialPlan,
+  'schema' | 'rootRecipeId' | 'rootResultItemId' | 'batches' | 'outputQuantity'> {
+  readonly schema: 'wand.db02.item-basket@1';
+  readonly goals: Array<{ readonly itemId: number; readonly quantity: number }>;
+}
+export interface ItemPlan extends Omit<MaterialPlan,
+  'schema' | 'rootRecipeId' | 'rootResultItemId' | 'batches' | 'outputQuantity'> {
+  readonly schema: 'wand.db02.item-plan@1';
+  readonly targetItemId: number;
+  readonly targetQuantity: number;
+}
+export function planItemBasket(
+  db: Parameters<typeof planRecipeRequirements>[0],
+  goals: ItemBasketGoal[],
+  options?: Omit<PlanOptions, 'batches'>
+): ItemBasket;
+export function planItemRequirements(
+  db: Parameters<typeof planRecipeRequirements>[0],
+  itemId: number | string,
+  options?: Omit<PlanOptions, 'batches'> & {quantity?: number}
+): ItemPlan;

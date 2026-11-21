@@ -68,10 +68,7 @@ function sortedRows(map, mapper) {
  * inventory, one produced-surplus pool and one set of explicit decisions.
  * Nothing about the basket proves player progress or recipe availability.
  */
-export function planRecipeBasket(db, goals, {
-  inventory = {}, recipeChoices = {}, ingredientChoices = {},
-  expandSingleRecipe = true, maxDepth = 12,
-} = {}) {
+function validateDatabase(db) {
   if (!db || typeof db.getRecipe !== 'function' ||
       typeof db.getRecipesForItem !== 'function' ||
       typeof db.getAcquisitionPaths !== 'function' ||
@@ -79,6 +76,11 @@ export function planRecipeBasket(db, goals, {
       typeof db.source?.platform !== 'string' || !db.source.gameVersion) {
     throw new TypeError('Verified SRC-02 acquisition database required');
   }
+}
+
+/** Explicit source recipe executions (legacy basket contract). */
+export function planRecipeBasket(db, goals, options = {}) {
+  validateDatabase(db);
   if (!Array.isArray(goals) || !goals.length || goals.length > 200)
     throw new RangeError('Recipe basket must contain 1 to 200 goals');
   const goalCounts = new Map();
@@ -106,6 +108,42 @@ export function planRecipeBasket(db, goals, {
     return { recipe, recipeId: id, resultItemId: recipe.resultItemId,
       batches, outputQuantity: count === null ? null : checkedMultiply(batches, count) };
   });
+  return planCore(db, targets, 'recipes', options);
+}
+
+/**
+ * Collection/Guide entrypoint: specify native Item IDs and quantities, not
+ * recipe executions. Only exact, known-yield crafting recipes may be expanded.
+ * Cooking output yield is unknown in SRC-02; this remains blocked and explicit
+ * recipe batches can instead be simulated through planRecipeBasket().
+ */
+export function planItemBasket(db, goals, options = {}) {
+  validateDatabase(db);
+  if (!Array.isArray(goals) || !goals.length || goals.length > 200)
+    throw new RangeError('Item basket must contain 1 to 200 goals');
+  const goalCounts = new Map();
+  for (const goal of goals) {
+    if (!goal || typeof goal !== 'object' || Array.isArray(goal) ||
+        Object.getPrototypeOf(goal) !== Object.prototype ||
+        Object.keys(goal).some(k => k !== 'itemId' && k !== 'quantity')) {
+      throw new TypeError('Invalid item basket goal');
+    }
+    const id = itemId(goal.itemId, 'target Item ID');
+    const count = quantity(goal.quantity ?? 1, 'target quantity', 1);
+    if (count > MAX_BATCHES) throw new RangeError('Target quantity exceeds safety limit');
+    const combined = checkedAdd(goalCounts.get(id) ?? 0, count);
+    if (combined > MAX_BATCHES) throw new RangeError('Combined target quantity exceeds safety limit');
+    goalCounts.set(id, combined);
+  }
+  const targets = [...goalCounts.entries()].sort(([a], [b]) => a - b)
+    .map(([id, count]) => ({itemId:id,quantity:count}));
+  return planCore(db, targets, 'items', options);
+}
+
+function planCore(db, targets, mode, {
+  inventory = {}, recipeChoices = {}, ingredientChoices = {},
+  expandSingleRecipe = true, maxDepth = 12,
+} = {}) {
   if (!Number.isInteger(maxDepth) || maxDepth < 0 || maxDepth > MAX_DEPTH)
     throw new RangeError('Invalid maximum recursion depth');
   if (typeof expandSingleRecipe !== 'boolean') throw new TypeError('Invalid singleton expansion setting');
@@ -160,10 +198,18 @@ export function planRecipeBasket(db, goals, {
       selected = candidates[0];
     }
     if (!selected) {
-      const reason = candidates.length ? 'recipe_choice_required' : 'no_crafting_recipe';
-      missing(id, count, reason, candidates.map(r => r.recipeId));
-      if (candidates.length) blockers.push({ itemId: id, quantity: count, reason,
-        recipeCandidateIds: candidates.map(r => r.recipeId) });
+      // A requested prepared meal cannot be translated from Item count into
+      // batches because native cooking recipes expose no verified yield.
+      // Never imply a single batch supplies the requested meal quantity.
+      const cooking = mode === 'items' && stack.length === 0 && !candidates.length ?
+        db.getRecipesForItem(id).filter(r => r?.type === 'cooking' && r.resultItemId === id &&
+          Number.isSafeInteger(r.recipeId)).sort((a,b) => a.recipeId - b.recipeId) : [];
+      const reason = candidates.length ? 'recipe_choice_required' :
+        cooking.length ? 'cooking_yield_unverified' : 'no_crafting_recipe';
+      const recipeIds = (candidates.length ? candidates : cooking).map(r => r.recipeId);
+      missing(id, count, reason, recipeIds);
+      if (recipeIds.length) blockers.push({ itemId: id, quantity: count, reason,
+        recipeCandidateIds: recipeIds });
       return;
     }
     if (stack.includes(id)) {
@@ -270,16 +316,19 @@ export function planRecipeBasket(db, goals, {
       eligibilityEvaluated: false });
   }
   for (const target of targets) {
-    runRecipe(target.recipe, target.batches, [target.resultItemId], 0);
+    if (mode === 'recipes') runRecipe(target.recipe, target.batches, [target.resultItemId], 0);
+    else needItem(target.itemId, target.quantity, [], 0);
   }
   if (usedIngredientChoiceKeys.size !== selectedIngredients.size) {
     throw new TypeError('Unused ingredient choice (not a source ingredient slot)');
   }
   return {
-    schema: 'wand.db02.material-basket@1',
+    schema: mode === 'recipes' ? 'wand.db02.material-basket@1' : 'wand.db02.item-basket@1',
     source: { ...db.source },
-    goals: targets.map(({recipeId, resultItemId, batches, outputQuantity}) =>
-      ({recipeId, resultItemId, batches, outputQuantity})),
+    goals: mode === 'recipes' ?
+      targets.map(({recipeId, resultItemId, batches, outputQuantity}) =>
+        ({recipeId, resultItemId, batches, outputQuantity})) :
+      targets.map(({itemId, quantity}) => ({itemId, quantity})),
     status: blockers.length || selectors.length ? 'requires_explicit_choices' : 'static_material_quantities_resolved',
     materialsFullySpecified: !blockers.length && !selectors.length,
     recipeEligibilityEvaluated: false, acquisitionAvailabilityVerified: false,
@@ -305,4 +354,16 @@ export function planRecipeRequirements(db, recipeId, options = {}) {
     rootRecipeId: goal.recipeId, rootResultItemId: goal.resultItemId,
     batches: goal.batches, outputQuantity: goal.outputQuantity,
   };
+}
+
+/** Convenience single-item view, analogous to planRecipeRequirements(). */
+export function planItemRequirements(db, id, options = {}) {
+  if (!options || typeof options !== 'object' || Array.isArray(options))
+    throw new TypeError('Invalid item plan options');
+  const { quantity: requested = 1, ...rest } = options;
+  const report = planItemBasket(db, [{itemId:id, quantity:requested}], rest);
+  const [goal] = report.goals;
+  const {goals, ...fields} = report;
+  return { ...fields, schema:'wand.db02.item-plan@1',
+    targetItemId:goal.itemId, targetQuantity:goal.quantity };
 }
