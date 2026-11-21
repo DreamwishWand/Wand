@@ -47,6 +47,10 @@ py -3 -m unittest discover -s tools/src-02-acquisition -p "test_*.py" -v
 node --test tests/acquisition*.test.mjs
 ```
 
+## Owner-private static price currency cross-check and exact-source smoke
+
+The 2026-11-21 two-release source audit in [SHOP-PRICE-OVERLAP.md](SHOP-PRICE-OVERLAP.md) confirms **29 stalls with candidate items from one static price DB, 18 from two, 3 from three, 15 with none**, all 65 configured with native currency ID `80000000`. **683** price-defined per-stall candidate occurrences have one matching original **purchase** currency cost; **162** extra purchase-cost entries use other currencies. The corresponding local-only UI helper is `source-price-currency.mjs`, and the release-authenticated join uses it without inventing a selected per-shop price database or a current sale price. Reproduce using `audit_private_stall_price_overlap.py` with the two owner-private ZIPs. Never publish those ZIPs.
+
 ## Exact-source stall candidate ↔ configured price overlap (private only)
 
 See [SHOP-PRICE-OVERLAP.md](SHOP-PRICE-OVERLAP.md) and `src/lib/acquisition/private-stall-price-overlap.mjs`. Authenticates **both** the real SRC-02 r5 ZIP and the independently pinned ProtoDB price release; joins matching native Stall ShopData keys and exact Item IDs without inventing the current shop, rotation or sale price. Verified source totals: 65 stalls, 50 with a static price definition for every enumerated candidate, 15 with none, 0 partial; 745 distinct candidate occurrences per stall (683 price-defined, 62 not), 606 distinct candidate Item IDs globally. All unlisted prices remain **unknown**, not zero/free; all returned results are nonpublishable and explicitly not a live-offer or stock check.
