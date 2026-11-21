@@ -3,7 +3,7 @@
   import { base } from '$app/paths';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
   import SavedStorePreview from '$lib/collection/SavedStorePreview.svelte';
-  import { CollectionRuntime, type CollectionState, type CollectionItem, type CollectionFacet, type CollectionProgress } from '$lib/collection/runtime';
+  import { CollectionRuntime, type CollectionState, type CollectionItem, type CollectionFacet, type CollectionProgress, type CollectionFilter } from '$lib/collection/runtime';
   import { collectionFamilyLabel } from '$lib/collection/copy';
 
   const languages = [
@@ -92,6 +92,13 @@
   }
   function labelWorld(id:string):string{return labelFacet('world',id);}
   function labelUniverse(id:string):string{return labelFacet('universe',id);}
+  function currentFilter(offset:number,limit:number):CollectionFilter {
+    return {
+      locale,search,category:selected,
+      world:worldFilter,universe:universeFilter,
+      expansion,status,nameStatus,offset,limit
+    };
+  }
   function refresh():void {
     if(!runtime)return;
     try{
@@ -100,11 +107,7 @@
       let next=0;
       let total=0;
       do{
-        const page=runtime.query({
-          locale,search,category:selected,
-          world:worldFilter,universe:universeFilter,
-          expansion,status,nameStatus,offset:next,limit:Math.min(200,visible-next)
-        });
+        const page=runtime.query(currentFilter(next,Math.min(200,visible-next)));
         total=page.total;
         collected.push(...page.items);
         next+=page.items.length;
@@ -182,6 +185,18 @@
     void commit(async()=>{
       await runtime!.setBulk(ids,next??'unknown');
       selectedIds=[];selectionMode=false;
+    });
+  }
+  function applyFilteredBulk(next:'owned'|'missing'|'unknown'):void {
+    if(!runtime||busy||storeError||totalMatches===0)return;
+    const count=totalMatches;
+    const label=next==='owned'?'所持 / 解放':next==='missing'?'未所持':'未記録';
+    if(!window.confirm(`現在の条件に一致する全${count.toLocaleString(locale)}件を「${label}」に変更します。画面に未表示のアイテムも対象です。実行しますか？`))return;
+    const filter=currentFilter(0,1);
+    void commit(async()=>{
+      await runtime!.setBulkMatching(filter,next);
+      selectedIds=[];
+      selectionMode=false;
     });
   }
   function chooseFacet(id:string):void{selected=id;resetView();}
@@ -472,6 +487,11 @@
                 <button type="button" on:click={()=>applyBulk('owned')} disabled={!selectedIds.length}>所持 / 解放</button>
                 <button type="button" on:click={()=>applyBulk('missing')} disabled={!selectedIds.length}>未所持</button>
                 <button type="button" on:click={()=>applyBulk(null)} disabled={!selectedIds.length}>未記録</button>
+                <span class="bulk-all-separator" aria-hidden="true">｜</span>
+                <span>条件一致の全{totalMatches.toLocaleString(locale)}件：</span>
+                <button type="button" disabled={busy||Boolean(storeError)} on:click={()=>applyFilteredBulk('owned')}>全件を所持 / 解放</button>
+                <button type="button" disabled={busy||Boolean(storeError)} on:click={()=>applyFilteredBulk('missing')}>全件を未所持</button>
+                <button type="button" disabled={busy||Boolean(storeError)} on:click={()=>applyFilteredBulk('unknown')}>全件を未記録</button>
               </div>
             {/if}
             {#if !totalMatches}

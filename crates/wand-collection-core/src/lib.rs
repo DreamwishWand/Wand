@@ -600,17 +600,15 @@ impl CollectionEngine {
             "favorite":entry.and_then(|e|e.favorite),
         })
     }
-    fn query_impl(&self, source: &str) -> Result<String, String> {
-        let index = self.ready()?;
-        let query: Query = serde_json::from_str(source).map_err(|_|"COLLECTION_QUERY_INVALID")?;
-        if query.limit == 0 || query.limit > 200 || query.offset > MAX_ROWS
-            || query.search.len() > 512
+    // Both paging and full-filter writes use the same predicate. In particular,
+    // limit/offset only affect display, never the set that a bulk action changes.
+    fn matching_rows<'a>(&'a self, index: &Index, query: &Query) -> Result<Vec<&'a Item>, String> {
+        if query.search.len() > 512
             || !["", "all", "owned", "missing", "unknown"].contains(&query.status.as_str())
             || !["", "all", "verified", "unverified"].contains(&query.name_status.as_str())
         { return Err("COLLECTION_QUERY_BOUNDS".into()); }
-        let loc = locale_index(&query.locale);
         let term = query.search.trim().to_lowercase();
-        let mut matches: Vec<&Item> = self.rows.iter().filter(|r| {
+        Ok(self.rows.iter().filter(|r| {
             (term.is_empty() || r.search.contains(&term) || r.id.to_string().contains(&term))
             && (query.category.is_empty() || index.families[r.family] == query.category)
             && one_of(&query.world,&index.worlds,&r.world)
@@ -620,7 +618,15 @@ impl CollectionEngine {
             && (query.name_status.is_empty() || query.name_status=="all"
                 || (query.name_status=="verified" && r.name_verified)
                 || (query.name_status=="unverified" && !r.name_verified))
-        }).collect();
+        }).collect())
+    }
+    fn query_impl(&self, source: &str) -> Result<String, String> {
+        let index = self.ready()?;
+        let query: Query = serde_json::from_str(source).map_err(|_|"COLLECTION_QUERY_INVALID")?;
+        if query.limit == 0 || query.limit > 200 || query.offset > MAX_ROWS
+        { return Err("COLLECTION_QUERY_BOUNDS".into()); }
+        let loc = locale_index(&query.locale);
+        let mut matches = self.matching_rows(index, &query)?;
         matches.sort_unstable_by(|a,b| {
             b.name_verified.cmp(&a.name_verified).then(
             a.labels.get(loc).unwrap_or(&String::new()).to_lowercase()
@@ -736,6 +742,17 @@ impl CollectionEngine {
             Ok(())
         })
     }
+    fn bulk_matching_impl(&mut self, source: &str, status: &str) -> Result<usize, String> {
+        // Compute all matching IDs before modifying state: applying a status
+        // filter must not cause the remaining matched rows to disappear mid-write.
+        let index = self.ready()?;
+        let query: Query = serde_json::from_str(source).map_err(|_|"COLLECTION_QUERY_INVALID")?;
+        let ids: Vec<u64> = self.matching_rows(index, &query)?
+            .into_iter().map(|item| item.id).collect();
+        let count = ids.len();
+        self.bulk_impl(&output(&ids)?, status)?;
+        Ok(count)
+    }
     fn workspace_impl(&mut self, action: &str, id: &str, name: &str) -> Result<(), String> {
         self.with_state(|state| {
             match action {
@@ -819,6 +836,9 @@ impl CollectionEngine {
     }
     pub fn set_bulk(&mut self, ids: &str, status: &str) -> Result<(), JsValue> {
         self.bulk_impl(ids,status).map_err(|e|JsValue::from_str(&e))
+    }
+    pub fn bulk_matching(&mut self, query: &str, status: &str) -> Result<usize, JsValue> {
+        self.bulk_matching_impl(query,status).map_err(|e|JsValue::from_str(&e))
     }
     pub fn workspace_action(&mut self, action: &str, id: &str, name: &str) -> Result<(), JsValue> {
         self.workspace_impl(action,id,name).map_err(|e|JsValue::from_str(&e))
@@ -1051,6 +1071,51 @@ mod tests {
         previous.load_owner_local_db00_index_impl(&index.to_string()).unwrap();
         assert_eq!(previous.append_db00_shard_impl(&payload),
             Err("COLLECTION_LOCAL_DB01_NAMES_REQUIRED".into()));
+    }
+    #[test]
+    fn filtered_bulk_changes_all_matching_rows_beyond_visible_page() {
+        let make = |id: &str, name: &str, category: &str| json!({
+            "id":id,"names":{"en":name,"ja":name},"nameStatus":"verified",
+            "category":category,"sourceRefs":["public-source"],
+            "releaseIds":[],"relations":[]
+        });
+        let shard=json!({"schema":DB00_SNAPSHOT_SCHEMA,"offset":0,"count":4,"items":[
+            make("101","First Chair","Furniture"),
+            make("102","Second Chair","Furniture"),
+            make("103","Other Chair","Clothing"),
+            make("104","Third Chair","Furniture")
+        ]}).to_string();
+        let index=json!({
+            "schema":DB00_RELEASE_SCHEMA,"id":"test-filtered-bulk","count":4,
+            "target":{"platform":"Steam","gameVersion":"1.26.2","buildId":null},
+            "sources":[{"id":"public-source","visibility":"public_reference"}],
+            "releases":[],"shards":[{"file":"items-000.json","offset":0,"count":4,
+                "bytes":shard.len(),"sha256":"a".repeat(64)}]
+        }).to_string();
+        let mut engine=CollectionEngine::default();
+        engine.load_db00_index_impl(&index).unwrap();
+        engine.append_db00_shard_impl(&shard).unwrap();
+        engine.finish_db00_impl().unwrap();
+        engine.set_entry_impl(101,r#"{"status":"missing","favorite":true}"#).unwrap();
+        engine.set_entry_impl(102,r#"{"status":"missing","quantity":3}"#).unwrap();
+        engine.set_entry_impl(103,r#"{"status":"missing"}"#).unwrap();
+        let matching=r#"{"locale":"en","search":"Chair","category":"Furniture","status":"missing","offset":1,"limit":1}"#;
+        let first_page:Value=serde_json::from_str(&engine.query_impl(matching).unwrap()).unwrap();
+        assert_eq!(first_page["total"],2);
+        assert_eq!(first_page["items"].as_array().unwrap().len(),1);
+        assert_eq!(engine.bulk_matching_impl(matching,"owned").unwrap(),2);
+        let entries=&engine.state.workspaces[0].entries;
+        assert_eq!(entries["101"].status.as_deref(),Some("owned"));
+        assert_eq!(entries["101"].favorite,Some(true));
+        assert_eq!(entries["102"].status.as_deref(),Some("owned"));
+        assert_eq!(entries["102"].quantity,Some(3));
+        assert_eq!(entries["103"].status.as_deref(),Some("missing"));
+        assert!(!entries.contains_key("104"));
+        let before=engine.state.clone();
+        assert_eq!(engine.bulk_matching_impl(matching,"owned").unwrap(),0);
+        assert!(engine.bulk_matching_impl(matching,"invalid").is_err());
+        assert!(engine.bulk_matching_impl(r#"{"status":"invalid"}"#,"missing").is_err());
+        assert!(engine.state==before);
     }
     #[test]
     fn canonical_categories_preserve_all_29_entries() {
