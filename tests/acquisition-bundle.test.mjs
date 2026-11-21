@@ -20,6 +20,8 @@ const original = () => ({
   'shop-offers.jsonl': [],
   'stall-sources.jsonl': [{ stallId: 20100000, nameKey: 'Meadow', shopDataKey: 'Meadow',
     slotLootTableIds: [2090000001], inventoryStatus: 'static_loot_candidates_only' }],
+  'condition-gates.jsonl': [],
+  'condition-definitions.jsonl': [],
   'related-items.jsonl': [
     { itemId: 10, inSrc01: true, recipesProducedBy: [], recipesUsedBy: [],
       growPathsForSeed: ['growing:10'], acquisitionPaths: [] },
@@ -32,11 +34,13 @@ const original = () => ({
 const manifestCounts = { recipes: 1, cooking: 1, crafting: 0, acquisitions: 1, growing: 1,
   lootTables: 1, shopOffersVerified: 0, stallsWithStaticLoot: 1, stallLootSlots: 1,
   distinctStallLootTables: 1, linkedItemIds: 2, sourceItems: 2,
-  unresolvedLinkedItemIds: 1, unsupportedActivityDefinitions: 0 };
+  unresolvedLinkedItemIds: 1, unsupportedActivityDefinitions: 0,
+  conditionSourceDefinitions: 0, conditionGates: 0, conditionDefinitions: 0,
+  conditionGateUsages: 0 };
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'wand-src02-'));
   const data = original();
-  data['report.json'] = {schema:'wand.src02.report@1',status:'partial_native_extraction',counts:manifestCounts};
+  data['report.json'] = {schema:'wand.src02.report@1',status:'partial_native_extraction',counts:structuredClone(manifestCounts)};
   const files = {};
   for (const [name, rows] of Object.entries(data)) {
     const bytes = name.endsWith('.jsonl') ?
@@ -46,8 +50,9 @@ async function fixture() {
   }
   const manifest = {schema:'wand.src02@1', status:'partial_native_extraction',
     platform:'Steam',gameVersion:'1.26.2',source:{
-      src01ManifestSha256:hash(sourceBytes),src01ItemsSha256:itemSha},
-    files,counts:manifestCounts};
+      src01ManifestSha256:hash(sourceBytes),src01ItemsSha256:itemSha,
+      conditionSha256:srcSha},
+    files,counts:structuredClone(manifestCounts)};
   await writeFile(join(root,'manifest.json'), JSON.stringify(manifest)+'\n');
   const sourcePath = join(root,'src01-manifest.json');
   await writeFile(sourcePath, sourceBytes);
@@ -125,5 +130,20 @@ test('rejects a symlinked dataset before reading bytes',async()=>{
     await writeFile(join(root,'other.txt'),content);
     await symlink(join(root,'other.txt'),filename);
     await assert.rejects(loadVerifiedAcquisitionBundle(root),/NOT_REGULAR_FILE_OR_OVERSIZE/);
+  } finally {await rm(root,{recursive:true,force:true});}
+});
+
+
+test('rejects forged condition-gate count even if all file digests are authentic',async()=>{
+  const {root,manifest}=await fixture();
+  try {
+    const gate={conditionDigest:'e'.repeat(64),availabilityEvaluated:false,
+      usedBy:[{kind:'recipe',recipeId:2050000004}],
+      tree:{status:'static_predicate_structure_only',operator:'and',predicates:[]}};
+    const bytes=Buffer.from(JSON.stringify(gate)+'\n');
+    await writeFile(join(root,'condition-gates.jsonl'),bytes);
+    manifest.files['condition-gates.jsonl']=hash(bytes);
+    await writeFile(join(root,'manifest.json'),JSON.stringify(manifest)+'\n');
+    await assert.rejects(loadVerifiedAcquisitionBundle(root),/COUNT_conditionGates/);
   } finally {await rm(root,{recursive:true,force:true});}
 });

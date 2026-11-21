@@ -104,6 +104,38 @@ class AcquisitionTest(unittest.TestCase):
         unrelated = entry(100001, 20000000, f(2, b'Garden'), f(11, 10000001))
         self.assertEqual(src02.parse_stall_sources(unrelated, set()), [])
 
+    def test_condition_gate_and_common_condition_references(self):
+        # ConditionItemData(6) -> ConditionsList(2) -> ConditionOneOf(5)
+        # -> ConditionCommon(1), with two source users of the same predicate.
+        common = f(5, f(1, 2130000012) + f(2, 1))
+        reused_gate = f(1, 1) + f(2, common)
+        definition = entry(12, 2130000000, f(2, b'FTUE!Gate'),
+                           f(6, f(2, f(30, f(1, 4)))))
+        craft_appear = f(5, reused_gate)
+        craft1 = entry(300001, 2050000000, f(2, b'Craft!A'), f(9, craft_appear))
+        craft2 = entry(300002, 2050000000, f(2, b'Craft!B'), f(9, craft_appear))
+        gates, definitions, total, usages = src02.extract_condition_evidence(
+            craft1 + craft2, b'', definition)
+        self.assertEqual((len(gates), len(definitions), total, usages), (1, 1, 1, 2))
+        self.assertEqual(gates[0]['tree']['operator'], 'or')
+        self.assertEqual(gates[0]['tree']['predicates'][0]['conditionId'], 2130000012)
+        self.assertTrue(gates[0]['tree']['predicates'][0]['inversed'])
+        self.assertEqual(definitions[0]['tree']['predicates'][0]['kind'], 'areaUnlocked')
+        self.assertFalse(definitions[0]['availabilityEvaluated'])
+
+    def test_condition_reference_missing_or_cyclic_rejected(self):
+        ref = f(2, f(5, f(1, 2130000001)))
+        craft = entry(300001, 2050000000, f(2, b'Craft!A'), f(9, f(5, ref)))
+        with self.assertRaisesRegex(ValueError, 'UNRESOLVED_COMMON_CONDITION'):
+            src02.extract_condition_evidence(craft, b'', b'')
+        definition = entry(1, 2130000000, f(2, b'Loop'), f(6, ref))
+        with self.assertRaisesRegex(ValueError, 'CYCLIC_COMMON_CONDITION'):
+            src02.extract_condition_evidence(craft, b'', definition)
+        with self.assertRaisesRegex(ValueError, 'INVALID_CONDITION_ONEOF'):
+            src02.parse_condition_list(f(2, f(5, b'') + f(10, b'')))
+        with self.assertRaisesRegex(ValueError, 'INVALID_BOOL_OPERATOR'):
+            src02.parse_condition_list(f(1, 9))
+
     def test_diff_stalls_and_duplicate_key_error(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)

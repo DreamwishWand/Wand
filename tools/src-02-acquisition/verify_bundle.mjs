@@ -15,6 +15,8 @@ const DATASETS = Object.freeze({
   'shop-offers.jsonl': 'shopOffers',
   'stall-sources.jsonl': 'stallSources',
   'related-items.jsonl': 'relatedItems',
+  'condition-gates.jsonl': 'conditionGates',
+  'condition-definitions.jsonl': 'conditionDefinitions',
   'report.json': 'report',
   'unresolved.json': 'unresolved',
 });
@@ -43,7 +45,7 @@ function rows(bytes, filename) {
 
 function countChecks(bundle) {
   const { manifest, report, unresolved, recipes, acquisitions, lootTables,
-    stallSources, shopOffers, relatedItems } = bundle;
+    stallSources, shopOffers, relatedItems, conditionGates, conditionDefinitions } = bundle;
   const expected = manifest.counts;
   check(expected && typeof expected === 'object' && report.schema === 'wand.src02.report@1' &&
     report.status === manifest.status && JSON.stringify(expected) === JSON.stringify(report.counts),
@@ -60,6 +62,12 @@ function countChecks(bundle) {
   equality('stallLootSlots', stallSources.reduce((n, row) => n + row.slotLootTableIds.length, 0));
   equality('distinctStallLootTables', new Set(stallSources.flatMap(row => row.slotLootTableIds)).size);
   equality('linkedItemIds', relatedItems.length);
+  equality('conditionGates', conditionGates.length);
+  equality('conditionDefinitions', conditionDefinitions.length);
+  equality('conditionGateUsages', conditionGates.reduce((sum, gate) => sum + gate.usedBy.length, 0));
+  check(Number.isSafeInteger(expected.conditionSourceDefinitions) &&
+    expected.conditionSourceDefinitions >= conditionDefinitions.length,
+    'CONDITION_SOURCE_DEFINITION_COUNT');
   check(unresolved.schema === 'wand.src02.unresolved@1' &&
     Array.isArray(unresolved.missingInPartialSrc01) &&
     Array.isArray(unresolved.unsupportedActivityDefinitions) &&
@@ -85,7 +93,8 @@ export async function loadVerifiedAcquisitionBundle(directory, { src01ManifestPa
   check(manifest.schema === 'wand.src02@1' && manifest.status === 'partial_native_extraction' &&
     manifest.platform === 'Steam' && manifest.gameVersion === '1.26.2' &&
     manifest.source && SHA.test(manifest.source.src01ManifestSha256) &&
-    SHA.test(manifest.source.src01ItemsSha256), 'UNSUPPORTED_MANIFEST');
+    SHA.test(manifest.source.src01ItemsSha256) &&
+    SHA.test(manifest.source.conditionSha256), 'UNSUPPORTED_MANIFEST');
   check(manifest.files && typeof manifest.files === 'object' &&
     JSON.stringify(Object.keys(manifest.files).sort()) === JSON.stringify(Object.keys(DATASETS).sort()),
     'FILE_LEDGER_MISMATCH');

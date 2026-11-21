@@ -24,6 +24,11 @@ export interface Db02CatalogJoin {
   readonly eligibilityVerified: false;
   lookup(value: number | string): Db02CatalogLookup;
   getRecipe(id: number): Readonly<Record<string, unknown>> | null;
+  getConditionGate(digest: string): Readonly<Record<string, unknown>> | null;
+  getConditionDefinition(id: number): Readonly<Record<string, unknown>> | null;
+  getRecipeCondition(id: number): Readonly<Record<string, unknown>> | null;
+  getAcquisitionCondition(pathId: string): Readonly<Record<string, unknown>> | null;
+  getLootGroupCondition(tableId: number, groupIndex: number): Readonly<Record<string, unknown>> | null;
   getPossibleStallsForItem(id: number): ReadonlyArray<Record<string, unknown>>;
   getPossibleStallSlotsForItem(id: number): ReadonlyArray<Record<string, unknown>>;
 }

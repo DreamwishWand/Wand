@@ -1,8 +1,10 @@
 /** SRC-02 portable query API. Pass verified, version-matched private data at runtime. */
 const validId = (id) => Number.isSafeInteger(id) && id > 0;
+const SHA = /^[0-9a-f]{64}$/;
 
 export function createAcquisitionDatabase({ manifest, recipes = [], acquisitions = [],
-  lootTables = [], shopOffers = [], stallSources = [], relatedItems = [] }) {
+  lootTables = [], shopOffers = [], stallSources = [], relatedItems = [],
+  conditionGates = null, conditionDefinitions = null }) {
   if (manifest?.schema !== 'wand.src02@1') throw new Error('Unsupported acquisition manifest');
   if (!manifest.gameVersion || !manifest.platform) throw new Error('Missing source version');
   const unique = (rows, key) => {
@@ -20,6 +22,53 @@ export function createAcquisitionDatabase({ manifest, recipes = [], acquisitions
   const byShop = unique(shopOffers, 'offerId');
   const byStall = unique(stallSources, 'stallId');
   const byItem = unique(relatedItems, 'itemId');
+  if ((conditionGates === null) !== (conditionDefinitions === null)) {
+    throw new Error('Incomplete condition evidence pair');
+  }
+  const conditionEvidence = conditionGates !== null;
+  const byGate = unique(conditionGates ?? [], 'conditionDigest');
+  const byCondition = unique(conditionDefinitions ?? [], 'conditionId');
+  if (conditionEvidence) {
+    const checkTree = (tree, seen = new Set()) => {
+      if (tree?.status !== 'static_predicate_structure_only' ||
+          !['and', 'or', 'not'].includes(tree.operator) ||
+          !Array.isArray(tree.predicates)) throw new Error('Invalid condition tree');
+      for (const node of tree.predicates) {
+        if (!Number.isInteger(node.fieldNumber) || !SHA.test(node.payloadSha256)) {
+          throw new Error('Invalid condition predicate');
+        }
+        if (node.fieldNumber === 5) {
+          if (!validId(node.conditionId) || !byCondition.has(node.conditionId)) {
+            throw new Error('Unresolved common condition ' + node.conditionId);
+          }
+          if (seen.has(node.conditionId)) throw new Error('Cyclic common condition');
+          checkTree(byCondition.get(node.conditionId).tree, new Set([...seen, node.conditionId]));
+        } else if (node.fieldNumber === 10) checkTree(node.subConditions, seen);
+      }
+    };
+    for (const [digest, gate] of byGate) {
+      if (!SHA.test(digest) || gate.availabilityEvaluated !== false ||
+          !Array.isArray(gate.usedBy) || !gate.usedBy.length) throw new Error('Invalid condition gate');
+      checkTree(gate.tree);
+    }
+    for (const [id, def] of byCondition) {
+      if (!validId(id) || !SHA.test(def.conditionDigest) || def.availabilityEvaluated !== false) {
+        throw new Error('Invalid condition definition');
+      }
+      checkTree(def.tree, new Set([id]));
+    }
+    const checkDigest = digest => {
+      if (digest && (!SHA.test(digest) || !byGate.has(digest))) {
+        throw new Error('Unresolved condition digest ' + digest);
+      }
+    };
+    for (const recipe of byRecipe.values()) checkDigest(recipe.conditionDigest);
+    for (const path of byPath.values()) checkDigest(path.conditionDigest);
+    for (const loot of byLoot.values()) for (const group of loot.groups) {
+      checkDigest(group.eligibilityDigest);
+      for (const candidate of group.candidates) checkDigest(candidate.conditionDigest);
+    }
+  }
   // A stall's slot table is a source-backed *candidate pool*, never a live offer.
   // Build once, so Guide/Collection queries do not repeatedly walk every loot table.
   const possibleStallsByItem = new Map();
@@ -115,6 +164,14 @@ export function createAcquisitionDatabase({ manifest, recipes = [], acquisitions
     getRecipe,
     getLootTable: id => byLoot.get(id) ?? null,
     getStallSource: id => byStall.get(id) ?? null,
+    getConditionGate: digest => byGate.get(digest) ?? null,
+    getConditionDefinition: id => byCondition.get(id) ?? null,
+    getRecipeCondition: id => byGate.get(byRecipe.get(id)?.conditionDigest) ?? null,
+    getAcquisitionCondition: pathId => byGate.get(byPath.get(pathId)?.conditionDigest) ?? null,
+    getLootGroupCondition: (tableId, groupIndex) => {
+      const group = byLoot.get(tableId)?.groups?.[groupIndex];
+      return byGate.get(group?.eligibilityDigest) ?? null;
+    },
     getPossibleStallsForItem: possibleStalls,
     getPossibleStallSlotsForItem: possibleStallSlots,
     getItem: forItem,
