@@ -128,7 +128,7 @@ test('unexpected native kinds and non-JSON-shaped rows reported as observations 
   assert.equal(byId.state.typeIssues,1);
   assert.equal(byId.types_collected.checkedElements,3);
   assert.equal(byId.types_collected.nestedTypeIssues,2);
-  assert.equal(byId.items_used.nestedTypeIssues,1);
+  assert.equal(byId.items_used.nestedTypeIssues,2); // string and out-of-native-int32 range
   assert.equal(r.saveIntegrityVerified,false);
   assert.equal(JSON.stringify(r).includes('PRIVATE_BAD_TYPE'),false);
   assert.equal(JSON.stringify(r).includes('UNKNOWN_YET'),false);
