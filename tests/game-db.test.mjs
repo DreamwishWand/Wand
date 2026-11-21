@@ -96,7 +96,7 @@ test('existing public Collection is compatible with normalized DB-00 IDs and loc
   assert.equal(index.n, 12552);
   assert.equal(index.shards.length, 18);
 });
-test('SvelteKit client loads active pointer and immutable legacy corpus', async () => {
+test('SvelteKit client loads active Steam v1.26.2 release and retains separate immutable legacy archive', async () => {
   async function fileFetch(url) {
     const relative = url.replace(/^\/Wand\//, '');
     try {
@@ -108,12 +108,17 @@ test('SvelteKit client loads active pointer and immutable legacy corpus', async 
     }
   }
   const pointer = await loadActivePointer('/Wand', fileFetch);
-  assert.equal(pointer.snapshot, 'legacy-switch-1.25.0');
+  assert.equal(pointer.snapshot, 'steam-1.26.2-native-itemlist-v1');
+  assert.equal(pointer.target.platform, 'Steam');
+  assert.equal(pointer.target.gameVersion, '1.26.2');
   const db = await loadCurrentGameDatabase('/Wand', fileFetch);
-  assert.equal(db.items.length, 12552);
-  assert.equal(db.items[0].id, String(db.legacy.rows[0][0]));
+  assert.equal(db.kind, 'db_snapshot');
+  assert.equal(db.items.length, 13202);
+  assert.equal(db.items.filter(x=>x.nameStatus==='unverified').length, 1710);
   const runtime = await loadActiveCollectionRuntime('/Wand', fileFetch);
-  assert.equal(runtime.rows.length, 12552);
+  assert.equal(runtime.rows.length, 13202);
+  const ja = await loadCurrentSearchIndex('/Wand','ja',fileFetch);
+  assert.ok(ja.terms['40005160'].includes('40005160'));
 });
 test('real 12,552-record import -> versioned SHA-pinned build -> verify is deterministic', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'wand-db00-'));
