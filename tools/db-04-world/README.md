@@ -48,7 +48,7 @@ Upload these together to the private [SRC-05 WORLD DATA folder](https://drive.go
 
 The browser adapter at `src/lib/world/catalog.mjs` supports indexed native IDs, original default-layout object positions, village area layout links, and conservative negative edit restriction checks. It **never** returns a positive placement-validity decision based on raw flags. Rendering an authoritative 2D terrain/occupied-cell map still requires separately verified compacted-index bit order, XY axis/origin, fixed objects and adjacency/rotation rules. Known enum names alone do not grant placement validity.
 
-A **source-subset preview** is stored privately in [SRC-05: Steam 1.26.1 native partial preview](https://drive.google.com/file/d/1SMKmvtyCV04lzxngg_3MHIEgYCx8zkrp/view). It contains all three available itemlist source originals plus three sample grid files, two sample layouts and the actual protoDb world registry. Its grids/layouts are **not exhaustive**. The complete game-root extraction is a separate run of `world.py` and is not implied by this preview.
+A **source-subset preview** is stored privately in [SRC-05: Steam 1.26.1 native partial preview](https://drive.google.com/file/d/1SMKmvtyCV04lzxngg_3MHIEgYCx8zkrp/view). A [newer verified default-layout snapshot](https://drive.google.com/file/d/1h3qjbjkC5BEd0J8l4TLueewScKsHLvYj/view) includes `layoutObjects.json` with 902 actual default Meadow objects and eight native area-layout links. Both contain only three original itemlists and three grid samples with two scene-layout files and protoDb; **neither is exhaustive**. The complete game-root extraction is a separate run of `world.py` and is not implied by these previews.
 
 Ownership boundaries: DB-05 supplies per-save placed objects and coordinates; SRC-04 MEDIA supplies large-scale images and 3D asset conversion; SRC-01 ITEMS owns the general item taxonomy, names and localization.
 
@@ -57,6 +57,18 @@ Ownership boundaries: DB-05 supplies per-save placed objects and coordinates; SR
 Validated original `SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json` against IL2CPP `Meta.Grids.Grid` and `GridObject`: one native grid references `GridData/Villages/Village04-MeadowLevel-GridData.json` and contains exactly **902** distinct GridObject IDs with exact matching protobuf map keys. Each object's Item ID and grid-local X/Y/orientation are native fields; sampled coordinates range X=1–194 and Y=0–90, all within the native grid's 196×100 dimensions. The original `DefaultVillageLayout01.json` explicitly maps eight area-type codes (0–7) to separate default grid layout paths. Not all 902 objects are guaranteed to be unmovable, and no placement legality is inferred.
 
 The full source ingestion will write `layoutObjects.json` and include it in the checksum manifest and version-to-version diff. A legacy previous snapshot that lacks `layoutObjects.json` yields an explicit incomplete-diff status for this family rather than inventing added/deleted objects.
+
+## Snapshot integrity / game-update deltas
+
+Validate **private** output before consumers ingest it:
+
+```bash
+python tools/db-04-world/verify_bundle.py --snapshot "/path/to/Steam-1.26.1-extracted"
+```
+
+The validator checks every manifest SHA-256, protobuf-derived footprint dimensions, encoded terrain byte hashes and the GridCollection→Grid→GridObject cardinality and ID references. Missing external layout or grid files in a **partial** archive are warnings, never fabricated records. Passing integrity verification **does not** certify placement legality or complete source coverage.
+
+Use `--previous` with a preceding verified snapshot to generate `diff.json`. Changes to shared IDs are listed by field; potential additions and removals are labelled `candidateAdded`/`candidateRemoved`, not authoritative `added`/`removed`, because full game-source coverage is not yet independently established for both inputs. A prior snapshot with mismatched source hash fails rather than generating potentially misleading updates.
 
 ## Tests
 
