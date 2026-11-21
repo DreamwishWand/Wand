@@ -1135,3 +1135,52 @@ Actual user saves and their private baseline reports must remain
 outside GitHub, static hosting and CI fixtures.
 
 CI: `node --test tests/save-clean-baseline.test.mjs`
+
+
+## Editor target readset from owner-declared fresh unmodified schema 643
+
+`data/ddv/save/editor-readset.v1.json` records **60 fixed paths**
+observed in the owner's separately declared clean initial Switch
+save (schema 643, game version 1.26.2 by owner declaration).
+It covers ListInventories, ContainerInventories, CollectionSets,
+AchievementsData, MissionSlots and GridCollection/Grids/DiffGrids.
+It is a **structural observation readset**, not a complete game
+schema or authorized Writer field list. All paths set `writable:false`
+and `requiredInAllSaves:false`; source IDs, names, actual map keys and
+player data are excluded.
+
+Important **direct clean-save observations**:
+
+- A fresh profile already contains **230** ordinary grids and
+  **686** diff grids, including **521** saved ModifiedObjects entries.
+  Diff-grid modification entries alone cannot prove that the user
+  changed normally immovable game-world objects.
+- ListInventory item entries use an ID-keyed map with `Amount` integer
+  and `Marker` string; source-native item-ID joins remain candidates
+  unless corroborated by private DB-01 originals.
+- ContainerInventory slots are an array of ItemID/Amount rows.
+  Container `ParentItemID` is **integer|null** in the clean reference,
+  not integer-only. Slot `State` is **object|null**.
+- Collection group content is nested under CollectionSets[]/GroupData[];
+  collection DefinitionIDs are not the Mission ID namespace.
+- World Grids/{id}/Objects/{id} and DiffGrids/{id}/ModifiedObjects/{id}
+  already exist in the clean save. Their State fields are
+  **object|null** and cannot be treated as proof of item ownership.
+  Grids are identified by local map ID, whereas DB-04's actual
+  source Grid definitions are joined by exact `GridDataPath` only.
+- MissionSlot MissionId is an exact candidate for DB-03's native
+  Mission ID, while AchievementID belongs to the separate DutyAch
+  namespace. Missing records or removed mission objects remain neutral.
+
+`inspectEditorReadset(decoded)` observes at most 16,384 children
+per branch and 65,536 visits per field; a large grid object map is
+covered without the 32-node historical sampled-only shape limit.
+It reports only fixed public field IDs, observed/kind-difference
+counts and explicit sampling by domain; no private values or map
+keys leave the API. Build/version labels never gate structure.
+Unknown paths are neither rejected nor normalized. All Writer,
+export, entitlement, game-claim and strict-roundtrip guarantees
+remain disabled. Editor implementation may consume this readset
+as *candidate evidence*, not as an assertion of write safety.
+
+CI: `node --test tests/save-editor-readset.test.mjs`
