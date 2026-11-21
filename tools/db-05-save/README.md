@@ -36,13 +36,17 @@ The isolated Rust/WASM-compatible crate at crates/ddv-save-schema exposes typed 
 
 Both JSON registries are recursively immutable when loaded by the JS adapter. The database never authorizes writes. A positive shape witness is neither a strict Codec proof nor an external Build proof.
 
-## DB-00 canonical Item ID integration
+## Compatibility policy — decoded structure first
 
-`src/lib/save/db00-join.mjs` and its TypeScript declarations connect only an already validated `wand.game-db.snapshot@1` to an exact historical Save Build candidate. The adapter calls DB-00's `validateSnapshot` and `canonicalId` directly; a legacy numeric save Item ID becomes a canonical decimal string, with no name-based or cross-version ID remapping.
+**Ignore platform, game-version and Build-ID differences when classifying save-data structure.** Retain those identifiers only as provenance and historical regression evidence. A save's `GameInfo.Version` value is also observed metadata, not an equality gate. The Codec (outside DB-05) must still strictly decode the original save, and no shape observation alone authorizes writing.
 
-The snapshot platform, game version and **non-null exact Build ID** must match the Save registry entry. A missing or changed Build ID, unsupported Save schema or platform mismatch throws. Matched IDs have classification `catalog_item_candidate`; unmatched IDs in partial coverage are `unresolved_in_partial_catalog` rather than evidence of invalid ownership or save corruption. For complete catalog coverage, an ID may only be described as `not_in_exact_catalog`.
+`probeSaveStructure(decoded)` checks 66 known historical path candidates in five independently assessed domains: inventory, chests, collection, grids and appearance. It reports observed path counts, explicit type conflicts, missing/untested domains and bounded sampling. Missing optional fields are **not** treated as incompatible; conflicts in actually observed paths yield `shape_conflict`. The result is only `shape_candidate` or `sampled_candidate`, never an asserted full compatibility or Codec guarantee. Historical `builds` arrays document source evidence, not per-platform reader enablement.
 
-Current public DB-00 uses `legacy_collection` as its active pointer: that runtime is **not** a full `wand.game-db.snapshot@1`, and the DB-05 adapter deliberately rejects it until a matching versioned snapshot is provided. Neither a catalog join nor an observed field path proves Build provenance, decoded-save reference closure, ownership, Writer or export permission. No current Save Editor session is automatically opened or connected by this module.
+`inspectDecodedSave(decoded, optionalBuild)` checks the required structural root (`GameInfo.Version` as unsigned integer, `Player` and `World` objects). It reports optional historical Build metadata without rejecting unregistered builds, newer save schema numbers or different platforms. The original object stays untouched. Decode/round-trip proof and Writer permission remain external.
+
+`src/lib/save/db00-join.mjs` accepts any **validated DB-00 `wand.game-db.snapshot@1`** plus a decoded Save passing the root structure check. Its exact positive decimal Item-ID join intentionally does **not** compare catalog platform, release version or Build ID to the save. Missing IDs in a partial catalog remain `unresolved_in_partial_catalog`; an ID absent from a complete snapshot is `not_in_catalog_snapshot`. A catalog match does not imply historical availability, current native validity, entitlement, Save Codec safety or Writer authorization.
+
+Keep DB-00's provenance/version fields for catalog accuracy, but never use them as hard gates for structural Save compatibility. Use explicit structural mismatch and external Codec/Writer safety checks as separate concerns.
 
 ## Read-only private SRC-06 handoff
 
