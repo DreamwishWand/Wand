@@ -26,6 +26,7 @@ export type SaveAssessment = Readonly<{
 }>;
 export type FieldWitness = Readonly<{ path: string; type: string }>;
 export function getSaveRegistry(): Readonly<Record<string, unknown>>;
+export function getLegacySaveFields(): Readonly<{schema: string; saveSchemaVersion: number; fields: ReadonlyArray<{domain:string;path:string;type:string;builds:string[];constraint:string;writable:false}>}>;
 export function matchSaveBuild(build: Partial<SaveBuildIdentity>): SaveBuildCandidate | null;
 export function inspectDecodedSave(decoded: unknown, declaredBuild: Partial<SaveBuildIdentity> | null): SaveAssessment;
 export function borrowUntouchedDecodedSave<T>(decoded: T, declaredBuild: Partial<SaveBuildIdentity> | null): { original: T; assessment: SaveAssessment };
