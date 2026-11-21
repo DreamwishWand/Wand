@@ -102,6 +102,26 @@ The local item map was generated in both JSONL and a human-readable CSV, with a 
 The next discovery problem is the remaining 360 unique GUIDs, especially 348 unresolved Trimming Item IDs. Resolve by exact source relationships outside the existing 24 generated-icon bundles; do not infer mappings by image names, platform, or game-version labels.
 
 ---
+## Missing GUID location audit and targeted object scan (2026-11-21)
+
+The owner-provided `catalog-missing-report.json` (schema `wand.src04.missing-locations@1`) verifies that all **360** unresolved GUIDs have Addressables bundle dependencies; this is **not** evidence that those bundles contain displayable images. Of the **2,416** affected Item IDs:
+
+- **346 distinct Trimming GUIDs / 348 items** refer mostly to individual wall/floor/material bundles. They may represent a Unity Material, scene object, texture, or other non-Sprite asset; do not automatically treat any matching texture as its official item icon.
+- **14 other GUIDs / 2,068 items** include the shared `04495f960b1edba4181ec51efa5e07d9` GUID referenced by 2,028 Item IDs. Its location group includes `usedplaceholders_assets_all.bundle`; this suggests a shared placeholder or utility asset but is not independently proven.
+- The report mentions **873 unique bundle filenames** because **two** GUIDs have dependency groups of **686** bundles. These are too broad to scan naively and are deferred.
+
+`missing_plan.py` compiles the SHA-pinned *private* SRC-00 source inventory and the checked missing-location report to a narrow, deterministic `wand.src04.missing-object-plan@1`: **220 distinct primary AssetBundles covering 358 GUIDs**, with the 2 broad-dependency GUIDs explicitly skipped. The pinned bundle input sizes total **725,242,696 bytes**. Shader, MonoScript and other shared runtime dependency bundles are excluded only as *search-priority hints*; their existence does not prove or disprove item-image identity. The tool does not extract images.
+
+Run locally with private source inventory (outside the repository):
+
+```bash
+python tools/src-04-media/missing_plan.py --missing /private/catalog-missing-report.json --source-manifest /private/src00/source-manifest.json --out /private/src04/missing-object-plan.json
+```
+
+A one-click Windows CMD derived from the completed private plan is supplied to the owner separately, with SHA-256 pins and UnityPy read-only container inspection. It records exact GUID-bearing serialized container keys and local object *types* (e.g. Sprite, Material, GameObject), without reading/decoding pixel arrays, producing `catalog-missing-object-report.json` and resumable per-bundle checkpoints. **The result remains a diagnostic**: a matching Material, dependency group, or scene object must not be silently converted into a verified icon mapping or published to the live website. No new verified item-icon count is claimed pending the user's runtime report.
+
+---
+
 ## Confirmed GUID image identity coverage (2026-11-21)
 
 The user's complete `catalog-identity-report.json` from revision 2 confirms:
