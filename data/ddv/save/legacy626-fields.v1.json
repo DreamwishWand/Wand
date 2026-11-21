@@ -45,7 +45,16 @@
       "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs",
       "constraint": "Positive i32; namespace 212 observed by scoped reader",
       "observedStatus": "legacy_source_code_only",
-      "writable": false
+      "writable": false,
+      "idReference": {
+        "namespace": "collection_definition",
+        "catalog": null,
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Not a Quest ID; DB-03 mapping unresolved"
+      }
     },
     {
       "domain": "collection",
@@ -97,7 +106,16 @@
       "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs",
       "constraint": "Saved physical collection flag; no ownership/rights inference",
       "observedStatus": "legacy_source_code_only",
-      "writable": false
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "map_key",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Legacy stored collection item ID; game eligibility/ownership cannot be inferred"
+      }
     },
     {
       "domain": "collection",
@@ -194,7 +212,16 @@
       "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs",
       "constraint": "Nonzero u32; exact ID join not yet proven for current source",
       "observedStatus": "legacy_source_code_only",
-      "writable": false
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Legacy Steam626 chest slot item; current SRC01 coverage not guaranteed"
+      }
     },
     {
       "domain": "chests",
@@ -206,7 +233,16 @@
       "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs",
       "constraint": "Positive u32; DB-01 relation unresolved",
       "observedStatus": "legacy_source_code_only",
-      "writable": false
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Legacy Steam626 container parent item; current SRC01 coverage not guaranteed"
+      }
     },
     {
       "domain": "chests",
@@ -257,7 +293,16 @@
       "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
       "constraint": "Slot 0..17; saved 0 preserved as literal, positive clothing ID prefix 5",
       "observedStatus": "legacy_source_code_only",
-      "writable": false
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Clothing item ID prefix 5; current SRC01 Clothing coverage unverified"
+      }
     },
     {
       "domain": "appearance",
@@ -283,7 +328,16 @@
       "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
       "constraint": "Positive canonical clothing ID key prefix 5; signed design scalar may be negative or zero",
       "observedStatus": "legacy_source_code_only",
-      "writable": false
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "map_key",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Clothing item ID; saved design value is NOT an Item ID"
+      }
     },
     {
       "domain": "appearance",
@@ -322,7 +376,16 @@
       "source": "DreamwishWand/web/crates/ddv-save-core/src/product_eyeball_color2.rs",
       "constraint": "Exact historical fixed operation tested ID 70000010; no generic ownership inference",
       "observedStatus": "legacy_source_code_only",
-      "writable": false
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Eyeball prefix 7 not in SRC01 four extracted categories"
+      }
     },
     {
       "domain": "appearance",
@@ -372,7 +435,16 @@
       "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
       "constraint": "Slot 0..17; saved 0 preserved, positive clothing ID prefix 5",
       "observedStatus": "legacy_source_code_only",
-      "writable": false
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Clothing item ID prefix 5; current SRC01 Clothing coverage unverified"
+      }
     },
     {
       "domain": "appearance",
@@ -411,7 +483,16 @@
       "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
       "constraint": "Recorded makeup item ID positive with prefix 14; individual fixed-slot operations stricter",
       "observedStatus": "legacy_source_code_only",
-      "writable": false
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Makeup item ID prefix 14 not in SRC01 four extracted categories"
+      }
     },
     {
       "domain": "inventory",
@@ -489,7 +570,16 @@
       "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs + semantic_writer.rs",
       "constraint": "Canonical numeric Item ID key; DB-01 join unverified",
       "observedStatus": "legacy_source_code_only",
-      "writable": false
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "map_key",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "SRC01 family partial; exact ID only"
+      }
     },
     {
       "domain": "inventory",
@@ -541,7 +631,16 @@
       "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
       "constraint": "Slot 0..17; saved 0 preserved as literal, positive clothing ID prefix 5",
       "observedStatus": "legacy_source_code_only",
-      "writable": false
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Clothing item ID prefix 5; current SRC01 Clothing coverage unverified"
+      }
     },
     {
       "domain": "appearance",
@@ -567,7 +666,16 @@
       "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
       "constraint": "Positive canonical clothing ID key prefix 5; signed design scalar may be negative or zero",
       "observedStatus": "legacy_source_code_only",
-      "writable": false
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "map_key",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Clothing item ID; saved design value is NOT an Item ID"
+      }
     },
     {
       "domain": "appearance",
@@ -606,7 +714,16 @@
       "source": "DreamwishWand/web/crates/ddv-save-core/src/product_eyeball_color2.rs",
       "constraint": "Exact historical fixed operation tested ID 70000010; no generic ownership inference",
       "observedStatus": "legacy_source_code_only",
-      "writable": false
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Eyeball prefix 7 not in SRC01 four extracted categories"
+      }
     },
     {
       "domain": "appearance",
@@ -656,7 +773,16 @@
       "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
       "constraint": "Slot 0..17; saved 0 preserved, positive clothing ID prefix 5",
       "observedStatus": "legacy_source_code_only",
-      "writable": false
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Clothing item ID prefix 5; current SRC01 Clothing coverage unverified"
+      }
     },
     {
       "domain": "appearance",
@@ -695,7 +821,16 @@
       "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
       "constraint": "Recorded makeup item ID positive with prefix 14; individual fixed-slot operations stricter",
       "observedStatus": "legacy_source_code_only",
-      "writable": false
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Makeup item ID prefix 14 not in SRC01 four extracted categories"
+      }
     },
     {
       "domain": "grids",
@@ -803,7 +938,16 @@
       "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
       "constraint": "Unsigned safe integer, equals key",
       "observedStatus": "legacy_source_code_only",
-      "writable": false
+      "writable": false,
+      "idReference": {
+        "namespace": "grid",
+        "catalog": null,
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Grid ID is NOT verified to be DB-04 world ID"
+      }
     },
     {
       "domain": "grids",
@@ -827,7 +971,16 @@
       "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
       "constraint": "Unsigned safe integer, equals key",
       "observedStatus": "legacy_source_code_only",
-      "writable": false
+      "writable": false,
+      "idReference": {
+        "namespace": "world_object",
+        "catalog": null,
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Object ID; DB-04 stable ID closure unresolved"
+      }
     },
     {
       "domain": "grids",
@@ -841,5 +994,7 @@
       "observedStatus": "legacy_source_code_only",
       "writable": false
     }
-  ]
+  ],
+  "mappingStatus": "legacy626_reference_positions_no_current_catalog_closure",
+  "catalogJoinValidated": false
 }
