@@ -10,6 +10,7 @@ from pathlib import Path
 
 SCHEMA = 'wand.db05.ingest@1'
 PUBLIC_PATHS = frozenset(('/GameInfo', '/GameInfo/Version', '/Player', '/World'))
+SAFE_KINDS = frozenset(('object', 'array', 'string', 'number', 'integer', 'boolean', 'null'))
 
 
 def load_json(path):
@@ -27,10 +28,12 @@ def inspect_report(report):
         if not isinstance(row, dict) or not isinstance(row.get('path'), str):
             raise ValueError('INVALID_SRC06_FIELD_WITNESS')
         path = row['path']
-        kind = row.get('type')
+        kind = row.get('type', row.get('types', row.get('kinds')))
+        if isinstance(kind, list):
+            kind = ','.join(sorted(set(x for x in kind if isinstance(x, str) and x in SAFE_KINDS)))
+        if kind not in SAFE_KINDS and (not isinstance(kind, str) or not kind or any(x not in SAFE_KINDS for x in kind.split(','))):
+            kind = 'unverified'
         if path in PUBLIC_PATHS:
-            if not isinstance(kind, str):
-                raise ValueError('INVALID_PUBLIC_WITNESS_KIND')
             if path in witnesses and witnesses[path] != kind:
                 raise ValueError('CONFLICTING_PUBLIC_WITNESS')
             witnesses[path] = kind
@@ -91,6 +94,8 @@ def run(structure, out, previous=None, items=None, manifest=None):
     if previous: inputs.append(Path(previous).resolve(strict=True))
     if items: inputs.append(Path(items).resolve(strict=True))
     if manifest: inputs.append(Path(manifest).resolve(strict=True))
+    if any((parent / '.git').exists() for parent in (out, *out.parents)):
+        raise ValueError('OUTPUT_INSIDE_GIT_REPOSITORY')
     if out.exists() or any(out == p or p in out.parents or out in p.parents for p in inputs):
         raise ValueError('OUTPUT_MUST_BE_NEW_AND_DISJOINT')
     if (items is None) != (manifest is None):
