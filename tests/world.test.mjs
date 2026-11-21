@@ -8,6 +8,8 @@ import {
   describeNativeFloorMask, checkNativeEditRestriction, assessPlacement,
   getNativeTerrainTile, getNativeTerrainWindow, getNativeTerrainDistribution,
   getNativeFootprintCandidateCells,
+  getNativeFootprintLayerAt, getNativeFootprintLayerWindow,
+  getNativeFootprintCardinalDimensions,
   getNativeDefaultLayoutViewport, getNativeVillageAreaViewport,
 } from '../src/lib/world/catalog.mjs';
 
@@ -58,6 +60,72 @@ test('native footprint is copied without supplying guessed 2D cell coordinates',
   footprint.layerValues[0] = 99;
   assert.equal(getNativeFootprint(catalog, 40000001).layerValues[0], 68);
   assert.equal(footprint.cellIndexToXYVerified, false);
+});
+
+test('original GridArea native getter indexes unrotated layer values X-major, without inventing placement', () => {
+  const data = fixture();
+  const original = [1, 2, 4, 8, 16, 32];
+  data.objects[0].footprint = {
+    ...data.objects[0].footprint,
+    sizeX: 3, sizeY: 2, layerValues: original,
+  };
+  const catalog = createWorldCatalog(data);
+  assert.deepEqual(
+    [getNativeFootprintLayerAt(catalog, 40000001, 0, 0).nativeValue,
+     getNativeFootprintLayerAt(catalog, 40000001, 0, 1).nativeValue,
+     getNativeFootprintLayerAt(catalog, 40000001, 1, 0).nativeValue,
+     getNativeFootprintLayerAt(catalog, 40000001, 2, 1).nativeValue],
+    [1, 2, 4, 32],
+  );
+  const at = getNativeFootprintLayerAt(catalog, 40000001, 2, 1);
+  assert.equal(at.originalFlatIndex, 5);
+  assert.equal(at.sourceGetterIndexFormula, 'x*sizeY+y');
+  assert.deepEqual(at.symbols, ['Clear']);
+  assert.equal(at.nativeGetterIndexVerified, true);
+  assert.equal(at.occupancyPredicateVerified, false);
+  assert.equal(at.placementLegalityVerified, false);
+  const window = getNativeFootprintLayerWindow(catalog, 40000001,
+    { x: 0, y: 0, width: 3, height: 2 });
+  assert.deepEqual(window.rows, [[1, 4, 16], [2, 8, 32]]);
+  window.rows[0][0] = 999;
+  assert.equal(getNativeFootprintLayerAt(catalog, 40000001, 0, 0).nativeValue, 1);
+  assert.equal(window.nativeGetterIndexVerified, true);
+  assert.equal(window.rotatedCellMappingVerified, false);
+  assert.throws(() => getNativeFootprintLayerAt(catalog, 40000001, 3, 0), /position/);
+  assert.throws(() => getNativeFootprintLayerAt(catalog, 40000001, 0.5, 0), /position/);
+  assert.throws(() => getNativeFootprintLayerWindow(catalog, 40000001,
+    { x: 1, y: 0, width: 3, height: 2 }), /window/);
+  assert.equal(getNativeFootprintLayerAt(catalog, 1111111, 0, 0), null);
+  assert.equal(getNativeFootprintLayerWindow(catalog, 1111111,
+    { x: 0, y: 0, width: 1, height: 1 }), null);
+});
+
+test('source cardinal GridArea dimensions swap axes but do not infer rotated layer positions', () => {
+  const data = fixture();
+  data.objects[0].footprint = {
+    ...data.objects[0].footprint,
+    sizeX: 3, sizeY: 2, layerValues: [1, 2, 4, 8, 16, 32],
+  };
+  const catalog = createWorldCatalog(data);
+  for (const orientationCode of [0, 4, 8, 12]) {
+    const result = getNativeFootprintCardinalDimensions(catalog, 40000001, orientationCode);
+    assert.deepEqual([result.sizeX, result.sizeY],
+      orientationCode % 8 === 0 ? [3, 2] : [2, 3]);
+    assert.equal(result.nativeCardinalSizeVerified, true);
+    assert.equal(result.tessellationScalingApplied, false);
+    assert.equal(result.rotatedCellMappingVerified, false);
+    assert.equal(result.occupancyPredicateVerified, false);
+    assert.equal(result.placementLegalityVerified, false);
+  }
+  for (const orientationCode of [1, 3, 5, 7, 9, 11, 13, 15]) {
+    const result = getNativeFootprintCardinalDimensions(catalog, 40000001, orientationCode);
+    assert.equal(result.status, 'noncardinal_gridarea_dimensions_not_derived');
+    assert.equal(result.nativeCardinalSizeVerified, false);
+    assert.equal(result.sizeX, undefined);
+  }
+  assert.throws(() => getNativeFootprintCardinalDimensions(
+    catalog, 40000001, 16), /GridOrientation/);
+  assert.equal(getNativeFootprintCardinalDimensions(catalog, 1111111, 0), null);
 });
 
 test('explicit restrictions deny but missing flags never authorize placement', () => {
