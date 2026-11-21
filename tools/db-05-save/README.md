@@ -473,3 +473,65 @@ Neither a matching type nor a synthetically passing structure
 authorizes save encoding, mutations, DLC ownership, purchases,
 entitlements, or exporting a modified save. Writer safety and
 unknown-field preserving round trips must be separately proven.
+
+## Read-only internal save reference graph (DB-05)
+
+`data/ddv/save/reference-relations.v1.json` defines **14 public
+native-source-backed reference rules** connecting existing 440 field
+templates. The rules include:
+
+- Map-key ↔ embedded `ID` checks for player containers, full grids,
+  diff grids, full-grid objects and diff modified objects;
+- Full/diff grid object `State.Storage.ContainerInventoryID` →
+  `Player.ContainerInventories` map keys;
+- Full/diff grid object `State.SubGrid.GridID` → observed full/diff
+  grid keys;
+- House room floor and wall grids, building grid lists, village area
+  grids and floating-island grids → observed full/diff grid keys.
+
+The owner-private Steam schema 643, Switch schema 643, and Switch
+schema 626 originals were inspected **locally** for the relevant
+candidate links, without uploading extracted personal IDs or counts.
+On those three originals, the checked container/grid/object map keys
+matched their embedded IDs, and the sampled storage, subgrid, room,
+building, village and island grid references were resolvable inside
+the same decoded save. This is *observational evidence*, not proof
+that every save, future version or partial profile satisfies
+complete reference closure.
+
+`probeSaveReferences(decoded)` accepts one already-decoded save
+**in memory**; `compareSaveReferenceProbes(old, new)` compares
+privacy-redacted numeric counters between two decoded saves.
+`getSaveReferenceRelations()` exposes the frozen, versioned
+public rule contract. All are exported from
+`src/lib/save/registry.mjs` and implemented in
+`src/lib/save/references.mjs`.
+
+Each rule returns its **public path template**, mode
+(`id_matches_map_key` or `ref_exists`), observed/resolved/
+unresolved/missing/malformed/type-issue counts and a sampled flag.
+Raw map keys, object identifiers, save values and generated paths
+with actual IDs never appear. A mismatch returns
+`observed_anomaly`, which is **not** a finding that the save is
+corrupt; absent target indexes return `insufficient_evidence`,
+not a false missing-reference alert. If a repeated field/map is
+larger than a bounded scan permits, its status becomes
+`sampled_inconclusive`. A `0` grid ID can be a valid map
+key; no blanket zero-as-null rule is applied.
+
+The two-save comparison deliberately uses **counts and statuses
+only**. A different but still resolvable ID with unchanged counts
+will not be detected; `same_observed_counts` is *not* proof of
+identity or semantic equivalence. The probe does not mutate its
+input or consult external DB-01 item catalogs or DB-04 world
+registries. No game version/platform compatibility gate,
+ownership permission, cross-catalog completeness claim,
+Codec validation, Writer or export capability is granted:
+`referenceClosureVerified=false`,
+`writerAuthorized=false`, `exportAuthorized=false`.
+
+The GitHub CI runs only synthetic reference fixtures, including
+valid zero IDs, broken storage links, missing container indexes,
+private malformed map keys, duplicate or mismatched object IDs,
+large-map sampling and comparison ambiguity. Private decoded
+saves remain entirely outside the Git repository.
