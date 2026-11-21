@@ -27,7 +27,7 @@ function fixture(history=true) {
     sourceManifestSha256:sha('source-manifest'),nativeSourceManifestSha256:sha('native-manifest'),sourceItemsSha256:sha('source-items'),
     definitions:2,currentNativeItemDefinitions:1,sourceFilesVerified:38,sourceFilesTotal:39,fullCorpusParsed:false,
     privateOnly:true,publicationAuthorized:false,bucketCount:256,
-    locales:[...DB01_LOCALES],categories:cats,historicalCandidatesIncluded:history,
+    locales:[...DB01_LOCALES],categories:[...cats],historicalCandidatesIncluded:history,
     historicalManifestSha256:history?sha('history'):null,files};
   const calls=[];
   const load=async path=>{calls.push(path); return raw.get(path);};
