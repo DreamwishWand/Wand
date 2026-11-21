@@ -1,7 +1,7 @@
 name: DB-05 Save schema contract
 on:
   push:
-    branches: [db-05-save-main-sync-20261121]
+    branches: [db05-structure-first-compat-20261121]
     paths:
       - 'data/ddv/save/**'
       - 'src/lib/save/**'
