@@ -1,0 +1,56 @@
+name: DB-03 Guide source contract
+
+on:
+  pull_request:
+    paths:
+      - 'tools/src-03-guide/**'
+      - '.github/workflows/db03-guide.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/src-03-guide/**'
+      - '.github/workflows/db03-guide.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-guide-schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Reject accidental publication of original or derived game assets
+        run: |
+          python - <<'PY'
+          import subprocess
+          from pathlib import PurePosixPath
+
+          tracked = subprocess.check_output(
+              ['git', 'ls-files', 'tools/src-03-guide'],
+              text=True,
+          ).splitlines()
+          forbidden_names = {
+              'dump.cs', 'Mission.json', 'protoDb.bin', 'quests.json',
+              'relations.json', 'candidate-refs.json', 'manifest.json',
+              'item-objective-links.json', 'quest-item-flows.json',
+              'condition-ast.json', 'quest-activation-policies.json',
+          }
+          forbidden = [
+              path for path in tracked
+              if PurePosixPath(path).name in forbidden_names
+              or path.lower().endswith(('.bin', '.zip', '.locbin', '.jsonl'))
+              or any('/' + folder + '/' in path for folder in
+                     ('source', 'Steam', 'guide', 'database'))
+          ]
+          if forbidden:
+              raise SystemExit('Private source/derived files cannot be committed: '
+                               + ', '.join(forbidden))
+          print('No private native game artifacts tracked in tools/src-03-guide')
+          PY
+      - name: Run complete offline DB-03 Python source-contract tests
+        run: python -m unittest discover -s tools/src-03-guide -p 'test_*.py' -v
