@@ -65,6 +65,19 @@ class AcquisitionTest(unittest.TestCase):
         self.assertEqual(paths[0]['pathId'], 'loot:2090000000:0:0')
         self.assertEqual(paths[0]['itemId'], 30200045)
 
+    def test_gardening_uses_src01_item_mapping(self):
+        seed = entry(400010, 30000000, f(2, b'Crop!Carrot_Seed'),
+                     f(4, b'guid:' + b'a' * 32),
+                     f(9, f(1, 900)), f(10, 1), f(12, 1),
+                     f(13, 30200000), f(14, 1), f(21, 1), f(22, 3))
+        paths = src02.parse_gardening(seed)
+        self.assertEqual(len(paths), 1)
+        self.assertEqual(paths[0]['pathId'], 'growing:30400010')
+        self.assertEqual(paths[0]['itemId'], 30200000)
+        self.assertEqual(paths[0]['growthSeconds'], 900)
+        self.assertEqual(paths[0]['minimumStallLevel'], 3)
+        self.assertEqual(src02.duration_seconds(f(2, 500_000_000)), 0.5)
+
     def test_rejects_corruption(self):
         with self.assertRaises(ValueError):
             src02.wire(b'\x0a\x03X')
