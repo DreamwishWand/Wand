@@ -9,6 +9,8 @@ on:
       - 'tools/db-05-save/**'
       - 'tests/save-schema.test.mjs'
       - 'tests/save-db00-join.test.mjs'
+      - 'tests/save-redacted-witness.test.mjs'
+      - 'tests/save-redacted-cli.test.mjs'
       - '.github/workflows/db05-save.yml'
   pull_request:
     paths:
@@ -18,6 +20,8 @@ on:
       - 'tools/db-05-save/**'
       - 'tests/save-schema.test.mjs'
       - 'tests/save-db00-join.test.mjs'
+      - 'tests/save-redacted-witness.test.mjs'
+      - 'tests/save-redacted-cli.test.mjs'
       - '.github/workflows/db05-save.yml'
   workflow_dispatch:
 permissions:
@@ -38,7 +42,7 @@ jobs:
             exit 1
           fi
       - name: JavaScript and Collection bridge
-        run: node --test tests/save-schema.test.mjs tests/save-db00-join.test.mjs
+        run: node --test tests/save-schema.test.mjs tests/save-db00-join.test.mjs tests/save-redacted-witness.test.mjs tests/save-redacted-cli.test.mjs
       - name: Private report importer (synthetic only)
         run: python3 -m unittest discover -s tools/db-05-save -p 'test_*.py' -v
       - name: Rust borrowed-document schema contract
