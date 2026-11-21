@@ -4,6 +4,7 @@
  * No game data is sent, altered or relabelled.
  */
 import {guideVerifiedSourceBridge} from './client.mjs';
+import {ORIGINAL_GUIDE_SHARD_AUDIT_SHA, ORIGINAL_GUIDE_SHARD_TOTAL_BYTES} from './shard-fingerprints.mjs';
 import {
   GUIDE_CONDITION_INDEX_V2_SHA, GUIDE_CONDITION_SOURCE_SHA,
   GUIDE_CONDITION_PROBE_SHA, GUIDE_CONDITION_V2_MISSION_REFERENCES
@@ -12,12 +13,17 @@ import {
 export const GUIDE_SOURCE_COMPOSITE_SCHEMA = 'wand.db03.guide-source-composite@1';
 export const GUIDE_SOURCE_COMPOSITE_SHA = 'c38c436bddc0bab2f1d6237fd5536e14c778bf39159e55e3c081c74182fe2d38';
 export const GUIDE_SOURCE_COMPOSITE_BYTES = 8748;
+export const GUIDE_SOURCE_COMPOSITE_V2_SCHEMA = 'wand.db03.guide-source-composite@2';
+export const GUIDE_SOURCE_COMPOSITE_V2_SHA = '96f937c8c07ac6d8b799458299a3014fc1b94d005df172dba03b6d76d298a88c';
+export const GUIDE_SOURCE_COMPOSITE_V2_BYTES = 12664;
+export const GUIDE_FRIENDSHIP_ORIGINAL_SHA = '90c16a1b54bd6e0aac6176bcd164493295f867cfe536d272638b7841a651db22';
 const ORIGINAL_QUEST_SHA = '26c29bc0df15161602d75578c9842c5b7cca56caee0d6dd1031180949cceb30d';
 
 /** This helper accepts *already verified* source objects only: the actual
  * browser entry point below gets the bridge from the quest index WeakMap.
  * It deliberately does not claim completeness for live events, saves, other
- * data families, or every original quest-detail shard's raw bytes.
+ * data families or the current player state; complete owner-original
+ * lazy shard bytes and the global friendship source are separately audited.
  */
 export function composeVerifiedGuideSources(sourceBridge, currentConditions) {
   const b = sourceBridge, c = currentConditions;
@@ -35,7 +41,7 @@ export function composeVerifiedGuideSources(sourceBridge, currentConditions) {
       c.missionReferenceCount !== GUIDE_CONDITION_V2_MISSION_REFERENCES ||
       !(c.byMission instanceof Map)) return null;
   return Object.freeze({
-    schema: GUIDE_SOURCE_COMPOSITE_SCHEMA,
+    schema: GUIDE_SOURCE_COMPOSITE_V2_SCHEMA,
     targetGameVersion: '1.26.2',
     targetPlatform: 'Steam',
     questSearchOriginalVersion: '1.26.1',
@@ -51,10 +57,17 @@ export function composeVerifiedGuideSources(sourceBridge, currentConditions) {
     currentConditionMissionMentions: c.missionReferenceCount,
     conditionIndexSha256: c.indexSha256,
     independentTargetProbeSha256: GUIDE_CONDITION_PROBE_SHA,
-    ownerPrivateCompositeSha256: GUIDE_SOURCE_COMPOSITE_SHA,
+    ownerPrivateCompositeSha256: GUIDE_SOURCE_COMPOSITE_V2_SHA,
+    baselineSourceCompositeSha256: GUIDE_SOURCE_COMPOSITE_SHA,
+    ownerPrivateCompositeBytes: GUIDE_SOURCE_COMPOSITE_V2_BYTES,
+    originalQuestShardAuditSha256: ORIGINAL_GUIDE_SHARD_AUDIT_SHA,
+    totalOriginalQuestShardBytes: ORIGINAL_GUIDE_SHARD_TOTAL_BYTES,
+    friendshipDefaultOriginalSha256: GUIDE_FRIENDSHIP_ORIGINAL_SHA,
     originalQuestFilesRelabelled: false,
     originalQuestShardBytesCheckedAtOpen: true,
-    allQuestShardFileBytesAttestedByComposite: false,
+    allQuestShardFileBytesAttestedByComposite: true,
+    all733QuestDetailRecordsVerified: true,
+    friendshipDefaultCrossVersionEqualityVerified: true,
     playerProgressVerified: false,
     runtimeConditionConsumptionVerified: false,
     serverOrLiveStarPathVerified: false,
