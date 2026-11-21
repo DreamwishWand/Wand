@@ -207,6 +207,72 @@ export function getNativeFootprintCardinalDimensions(catalog, itemId, orientatio
   };
 }
 
+// Steam v1.26.1 ORIGINAL GridArea static initializer _cos/_sin tables,
+// SHA256 names 33E08F57... and 5B6E0D7F..., and exact source PE64 bodies
+// GridArea.GetRotated (0x3924D30) / GetUnRotated (0x3924C10).
+// Entries are signed integer coefficients scaled by 100, *not* JS trig.
+// A source version gate prevents silently applying this binary's logic to
+// newer game revisions whose original machine code has not been rechecked.
+const GRIDAREA_ROT_COS = Object.freeze([
+  -100, -92, -71, -38, 0, 38, 71, 92,
+  100, 92, 71, 38, 0, -38, -71, -92,
+]);
+const GRIDAREA_ROT_SIN = Object.freeze([
+  0, 38, 71, 92, 100, 92, 71, 38,
+  0, -38, -71, -92, -100, -92, -71, -38,
+]);
+
+function nativeGridAreaVector(catalog, x, y, orientationCode, inverse) {
+  if (!catalog?.manifest || !Number.isInteger(x) || !Number.isInteger(y) ||
+      x < -2147483648 || x > 2147483647 ||
+      y < -2147483648 || y > 2147483647 ||
+      !Number.isInteger(orientationCode) ||
+      orientationCode < 0 || orientationCode > 15) {
+    throw new TypeError('Invalid native GridArea signed vector/orientation');
+  }
+  const common = {
+    orientationCode, operation: inverse ? 'GetUnRotated' : 'GetRotated',
+    rotatedGridAreaCellMappingVerified: false,
+    gridObjectAnchorVerified: false,
+    occupancyPredicateVerified: false,
+    placementLegalityVerified: false,
+  };
+  if (catalog.manifest.gameVersion !== '1.26.1') {
+    return {
+      ...common, status: 'native_rotation_not_verified_for_game_version',
+      nativeVectorRotationVerified: false,
+    };
+  }
+  const cos = GRIDAREA_ROT_COS[orientationCode];
+  const sin = GRIDAREA_ROT_SIN[orientationCode];
+  // GameAssembly uses 32-bit IMUL then integer truncation of EACH product
+  // divided by 100; do not combine before division and do not Math.round().
+  const xc = Math.trunc(Math.imul(x, cos) / 100);
+  const ys = Math.trunc(Math.imul(y, sin) / 100);
+  const xs = Math.trunc(Math.imul(x, sin) / 100);
+  const yc = Math.trunc(Math.imul(y, cos) / 100);
+  return {
+    ...common,
+    x: (inverse ? xc + ys : xc - ys) | 0,
+    y: (inverse ? yc - xs : yc + xs) | 0,
+    status: 'steam_1_26_1_source_matched_integer_vector_rotation',
+    coefficientScale: 100,
+    nativeIntegerTruncationVerified: true,
+    nativeVectorRotationVerified: true,
+    sourceGameVersion: '1.26.1',
+  };
+}
+
+/** Native GridArea.GetRotated: vector only, not a footprint transformation. */
+export function getNativeGridAreaRotatedVector(catalog, x, y, orientationCode) {
+  return nativeGridAreaVector(catalog, x, y, orientationCode, false);
+}
+
+/** Native GridArea.GetUnRotated; integer truncation can prevent round-trips. */
+export function getNativeGridAreaUnrotatedVector(catalog, x, y, orientationCode) {
+  return nativeGridAreaVector(catalog, x, y, orientationCode, true);
+}
+
 // Explicit "false" is a valid native restriction; missing flags are NOT permission.
 export function checkNativeEditRestriction(catalog, itemId, action) {
   const allowed = new Set(['canMove', 'canRotate', 'canBeRemoved', 'canBeSelected', 'canSwitchGrid']);
