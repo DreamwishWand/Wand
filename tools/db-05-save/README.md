@@ -438,7 +438,7 @@ collection sets, mount customization; house floors, rooms and
 wallpaper settings; village rocks and unlock prerequisites; grid
 object storage and farming states; and active mission-slot progression.
 `observedJsonKinds` reports JSON **type names**, never original values.
-For **77 of the 132** new fields, at least one observation used bounded
+Ten fields observed only as `null` have `allowedJsonKinds` expanded using the native nullable/message type (`Nullable<int>`, `Nullable<bool>`, `Timestamp`, or `MultiReward`) as an explicitly **unobserved but plausible** non-null shape. Their `observedJsonKinds` remain strictly `["null"]`; no non-null child structure is asserted.\n\nFor **77 of the 132** new fields, at least one observation used bounded
 wildcard sampling. These findings are read-only shape *candidates*,
 not a complete survey of every item/object in all saves. Even
 `observedJsonKinds: ["null"]` is not evidence of a non-null message
