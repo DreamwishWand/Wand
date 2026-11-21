@@ -61,6 +61,13 @@ jobs:
           done
           grep -q 'Collection' /tmp/wand-collection.html
           node -e 'const fs=require("fs");const x=JSON.parse(fs.readFileSync("/tmp/wand-catalog.json","utf8"));if(x.n!==12552||x.shards.length!==18)process.exit(1)'
+          curl --fail --silent --show-error --location "$base/ddv/game-db/active.json" -o /tmp/wand-game-active.json
+          node -e 'const fs=require("fs");const x=JSON.parse(fs.readFileSync("/tmp/wand-game-active.json","utf8"));if(x.kind!=="db_snapshot"||x.snapshot!=="steam-1.26.2-native-itemlist-v1"||x.target.gameVersion!=="1.26.2"||x.indexSha256!=="06912b156823d920d1b3a2b937ebff3d06e1ca670043db616c907c683b46599f")process.exit(1)'
+          curl --fail --silent --show-error --location "$base/ddv/game-db/releases/steam-1.26.2-native-itemlist-v1/index.json" -o /tmp/wand-game-index.json
+          echo "06912b156823d920d1b3a2b937ebff3d06e1ca670043db616c907c683b46599f  /tmp/wand-game-index.json" | sha256sum -c -
+          node -e 'const fs=require("fs");const x=JSON.parse(fs.readFileSync("/tmp/wand-game-index.json","utf8"));if(x.count!==13202||x.shards.length!==14||x.search.length!==8||x.coverage.nameVerified!==11492||x.coverage.nameUnverified!==1710)process.exit(1)'
+          curl --fail --silent --show-error --location "$base/ddv/game-db/releases/steam-1.26.2-native-itemlist-v1/items-000.json" -o /tmp/wand-item-shard0.json
+          echo "ea84ad8bf4e681fc637e555335dc11ffc9550cfa624b8eb3cc52372bfb689e13  /tmp/wand-item-shard0.json" | sha256sum -c -
           curl --fail --silent --show-error --location "$base/ddv/collection/item-images-r39.json" -o /tmp/wand-r39-images.json
           node -e 'const fs=require("fs");const x=JSON.parse(fs.readFileSync("/tmp/wand-r39-images.json","utf8"));if(x.matched<100||x.versionParityVerified!==false)process.exit(1)'
           for hash in be04cf5698b094a1597bac8ceafa9c43d696c4bf75c8be8db2504ce764b58489 4f1ed414b3f554a69dbc7b4e682507274c58ad327ace7e22808469aa1e56eff4 461f6484256c69e5a528adc3af7054301841fc324c237d8bc0d4534830345bec; do
