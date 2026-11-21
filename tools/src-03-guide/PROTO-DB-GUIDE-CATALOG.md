@@ -21,3 +21,66 @@ The existing `design-challenges.json` (183 records, including 182 DreamSnaps) an
 **52** Python standard-library synthetic source-contract tests protect the schema, bad protobuf values, localizations and source-aware diffs. Run `python -m unittest discover -s tools/src-03-guide -p 'test_*.py' -q`. No raw game data, player saves or generated licensed text is committed to public GitHub; derived catalogues stay in private SRC-03 Drive.
 
 **Remaining:** Steam **v1.26.2** Guide original archive folder is empty in owner Drive at this point; no independent v1.26.2 comparison is claimed. Current seasonal Star Path, dynamic online events and account-dependent expansion entitlement require separately verified evidence. Overall `status=PARTIAL`.
+
+## Steam 1.26.2 full ProtoDB source bridge (2026-11-21)
+
+Both original, archived Steam v1.26.1 and v1.26.2
+`ddv_Data/StreamingAssets/protoDb.bin` files were retrieved from the owner-held
+Game Source Archive, not inferred from file names or another project's output.
+
+The two **complete** source files are **1,335,720 bytes each** and are
+byte-identical, independently confirming SHA-256
+`dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623`.
+The earlier `wand.db03.protodb-static@1` owner-private manifest pins that
+exact original baseline SHA-256, source file/path and native static family
+coverage.
+
+The `protodb_source_bridge.py` offline tool checks that original manifest,
+the old and target binary SHA-256, source lengths, original native protobuf
+envelope structure and **2,246** native ProtoDB entries. Only if the complete
+bytes are equal does it emit
+`status=IDENTICAL_ARCHIVED_STATIC_SOURCE` and preserve static source
+family census:
+
+| Source-only family | Definitions |
+| --- | ---: |
+| Design challenges | 183 (including 182 DreamSnaps and one other) |
+| Star Path FTUE intro | 1 |
+| Mini events | 19 |
+| Floating festivals | 5 |
+| Expansions | 6 |
+
+These are **archived source definitions**, never real-time event statuses or
+player entitlement claims. The real current Star Path seasons do not reside
+in this local ProtoDB and remain unavailable from this source; the audited
+same original file has 0 `BattlePassSeasonData` season definitions and one
+`StarPathFtueConfig` introduction. ProtoDB identity proves only that the
+serialized definitions represented by this file are identical; it does not
+prove other game source families unchanged.
+
+If a target version changes any original ProtoDB byte, the bridge reports
+`TARGET_CHANGED_REEXTRACT_REQUIRED` and a **zero-family reuse list**:
+no static list or reward reference is inferred to be unchanged.
+
+### Private invocation
+
+```sh
+python tools/src-03-guide/protodb_source_bridge.py \
+  --baseline-protodb /private/Steam-v1.26.1/protoDb.bin \
+  --target-protodb /private/Steam-v1.26.2/protoDb.bin \
+  --baseline-manifest /private/SRC-03/Steam-v1.26.1/protodb-static-manifest.json \
+  --target-version 1.26.2 \
+  --target-sha256 dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623 \
+  --expected-entries 2246 \
+  --out /private/SRC-03/Steam-v1.26.2/protodb-source-bridge.private.json
+```
+
+The real-source report exists in Drive at
+`SRC-03 GUIDE DATA/Steam-v1.26.2/protodb-source-bridge.private.json`,
+not in GitHub. No original game strings or full records are committed.
+
+This bridge is **independent** of separate verified Mission and eight-language
+localization payload equality; independently changed `Condition.json`
+cannot be reused. Tests exercise identical/changed original binaries, native
+entry validation, pinned old/new SHA, wrong platform/version, count gates and
+owner-private outputs.
