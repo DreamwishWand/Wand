@@ -205,7 +205,7 @@ try{
   await page.locator('.summary-strip').waitFor({timeout:20000});
   assert.match(await page.locator('.summary-strip').innerText(),/1/);
   assert.match(await page.locator('.source-pill').innerText(),/Steam\s*·\s*v1\.26\.2/);
-  assert.match(await page.locator('.empty-inspector .inspector-hint').innerText(),/Steam DDV v1\.26\.2/);
+  assert.match(await page.locator('.empty-inspector .inspector-hint').innerText(),/Steam\s*·\s*DDV v1\.26\.2/);
   assert.doesNotMatch(await page.locator('.empty-inspector .inspector-hint').innerText(),/Nintendo Switch DDV v1\.25\.0/);
   const releaseSearch=page.getByRole('searchbox',{name:/8言語/});
   await releaseSearch.fill('検証済みの靴');
