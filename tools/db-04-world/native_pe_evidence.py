@@ -15,6 +15,8 @@ import struct
 import tempfile
 from pathlib import Path
 
+from pe_unwind import correlate_rvas
+
 MAX_DLL_BYTES = 1024 * 1024 * 1024
 MAX_DUMP_BYTES = 256 * 1024 * 1024
 MAX_WINDOW = 1024
@@ -231,12 +233,36 @@ def capture_native_pe(game_root, *, dump_cs=None, dump_game_version=None,
     methods = target_methods_from_dump(dump_path)
     if not methods:
         raise ValueError("corresponding dump.cs has no target GridData methods")
+    correlation = correlate_rvas(dll, methods)
+    if not correlation["allTargetRvasAtPeUnwindStarts"]:
+        mismatches = [
+            row["symbol"] for row in correlation["methods"] if
+            row["status"] != "exact_pe_unwind_function_start"
+        ]
+        raise ValueError(
+            "IL2CPP method RVA disagrees with GameAssembly PE64 .pdata "
+            "function starts (possible different build): " +
+            ", ".join(mismatches[:8]))
+    by_symbol = {
+        row["symbol"]: row for row in correlation["methods"]
+    }
+    evidence["peUnwindStartCorroborated"] = True
+    evidence["peUnwindTableSha256"] = (
+        correlation["originalPeUnwindTableSha256"])
+    evidence["peUnwindRecordCount"] = (
+        correlation["originalPeUnwindRecordCount"])
     evidence["dumpCsSha256"] = sha256_file(dump_path)
     evidence["dumpCsVersionAssertion"] = dump_game_version
     with dll.open("rb") as binary:
         for method in methods:
+            unwind = by_symbol[method["symbol"]]
+            # Never capture the next PE unwind function as though it were
+            # part of this GridData/GridAreaData method.
+            maximum = unwind["unwindFunctionEndRva"] - method["rva"]
+            if maximum < 32:
+                raise ValueError("native PE function cannot provide 32 code bytes")
             offset, mapping = file_offset_for_rva(
-                sections, method["rva"], window_bytes)
+                sections, method["rva"], min(window_bytes, maximum))
             binary.seek(offset)
             raw = binary.read(mapping["readLength"])
             if len(raw) != mapping["readLength"]:
@@ -249,6 +275,8 @@ def capture_native_pe(game_root, *, dump_cs=None, dump_game_version=None,
                 "rawWindowHex": raw.hex(),
                 "windowIsEntireMethod": False,
                 "codeSemanticsVerified": False,
+                "peUnwindStartCorroborated": True,
+                "peUnwindFunctionEndRva": unwind["unwindFunctionEndRva"],
             })
     evidence["sourceRvaMappingVerified"] = True
     evidence["status"] = "version_asserted_il2cpp_rva_byte_windows_captured"
@@ -295,7 +323,13 @@ def validate_private_report(report: dict, *, game_version=None):
         if (not windows or report.get("sourceRvaMappingVerified") is not True or
                 report.get("dumpCsVersionAssertion") != version or
                 not isinstance(report.get("dumpCsSha256"), str) or
-                not re.fullmatch(r"[0-9a-f]{64}", report["dumpCsSha256"])):
+                not re.fullmatch(r"[0-9a-f]{64}", report["dumpCsSha256"]) or
+                report.get("peUnwindStartCorroborated") is not True or
+                not isinstance(report.get("peUnwindTableSha256"), str) or
+                not re.fullmatch(r"[0-9a-f]{64}",
+                                 report["peUnwindTableSha256"]) or
+                type(report.get("peUnwindRecordCount")) is not int or
+                not 1 <= report["peUnwindRecordCount"] <= 600_000):
             raise ValueError("native PE evidence lacks version-asserted IL2CPP source")
     else:
         raise ValueError("invalid native PE evidence status")
@@ -326,7 +360,12 @@ def validate_private_report(report: dict, *, game_version=None):
                 type(window.get("fileOffset")) is not int or
                 window["fileOffset"] < 0 or
                 window["fileOffset"] + window["windowLength"] >
-                report["dllSizeBytes"]):
+                report["dllSizeBytes"] or
+                window.get("peUnwindStartCorroborated") is not True or
+                type(window.get("peUnwindFunctionEndRva")) is not int or
+                not window["rva"] < window["peUnwindFunctionEndRva"] or
+                window["rva"] + window["windowLength"] >
+                window["peUnwindFunctionEndRva"]):
             raise ValueError("native PE method window digest or source claim invalid")
     return report
 
