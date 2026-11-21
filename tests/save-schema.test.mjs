@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   getSaveRegistry, matchSaveBuild, inspectDecodedSave, borrowUntouchedDecodedSave,
-  makeGameIdIndex, matchGameId, diffSaveWitnesses, probeSaveStructure
+  makeGameIdIndex, matchGameId, diffSaveWitnesses, probeSaveStructure, compareSaveStructures
 } from '../src/lib/save/registry.mjs';
 
 const build = { platform: 'switch', identityKind: 'switch_bid', identity: '9A239D3DB569756D', schemaVersion: 626 };
@@ -171,4 +171,91 @@ test('legacy ID witnesses do not conflate grid, world, quest, and catalog Item I
   assert.equal(grid.length, 1);
   assert.equal(grid[0].idReference.catalog, null);
   assert.throws(() => getLegacySaveIdReferences(626), TypeError);
+});
+
+const structureFixture = (schema = 626) => ({
+  GameInfo: { Version: schema },
+  Player: {
+    AvatarIsMale: true,
+    MaleAvatar: { HairColorIndex: 1 },
+    ListInventories: { '3': { ID: 3, Inventory: { '40000001': { Amount: 10 } } } },
+    ContainerInventories: { '10': { ID: 10, Inventory: [{ ItemID: 40000001, Amount: 5 }] } },
+    CollectionSets: [{ CollectionDefinitionID: 21200001, GroupData: [] }]
+  },
+  World: { GridCollection: { DiffGrids: {} } }
+});
+
+test('structural comparison ignores platform, build and GameInfo.Version labels', () => {
+  const before = structureFixture(626);
+  const after = structureFixture(643);
+  after.Player.ListInventories['7'] = before.Player.ListInventories['3'];
+  delete after.Player.ListInventories['3'];
+  after.Player.MaleAvatar.HairColorIndex = 8;
+  after.Player.ContainerInventories['10'].Inventory[0].Amount = 39;
+  after.Player.PersonalUnknownField = 'private payload not emitted';
+  const result = compareSaveStructures(before, after);
+  assert.equal(result.status, 'same_known_field_shape');
+  assert.equal(result.platformAndVersionUsedAsGates, false);
+  assert.equal(result.domains.length, 5);
+  assert.ok(result.domains.every(d => d.status === 'same_known_field_shape'));
+  assert.equal(result.writerAuthorized, false);
+  assert.equal(result.exhaustive, false);
+  assert.equal(JSON.stringify(result).includes('private payload'), false);
+  assert.equal(JSON.stringify(result).includes('40000001'), false);
+});
+
+test('known field extension reports a structural drift, never blanket incompatibility', () => {
+  const previous = structureFixture();
+  const current = structureFixture(643);
+  current.Player.MaleAvatar.HairHighlightColor = 4;
+  const result = compareSaveStructures(previous, current);
+  const domain = result.domains.find(d => d.domain === 'appearance');
+  assert.equal(result.status, 'observed_shape_drift');
+  assert.equal(domain.status, 'observed_shape_drift');
+  assert.deepEqual(domain.addedKnownPaths, ['/Player/MaleAvatar/HairHighlightColor']);
+  assert.equal(result.exportAuthorized, false);
+});
+
+test('observed nested field kind conflict takes precedence over unknown-version metadata', () => {
+  const previous = structureFixture(626);
+  const current = structureFixture(643);
+  current.Player.ContainerInventories['10'].Inventory[0].Amount = 'not numeric';
+  const result = compareSaveStructures(previous, current);
+  assert.equal(result.status, 'structural_conflict');
+  assert.ok(result.domains.find(d => d.domain === 'chests').conflictingKnownPaths
+    .includes('/Player/ContainerInventories/{containerId}/Inventory[]/Amount'));
+});
+
+test('malformed observed map child is a conflict instead of a silently missing field', () => {
+  const previous = structureFixture();
+  const current = structureFixture(643);
+  current.Player.ListInventories['3'] = 123;
+  const domain = compareSaveStructures(previous, current).domains.find(d => d.domain === 'inventory');
+  assert.equal(domain.status, 'structural_conflict');
+  assert.ok(domain.conflictingKnownPaths.includes('/Player/ListInventories/{routeId}'));
+});
+
+test('incomplete and sampled evidence never asserts structural equivalence', () => {
+  const previous = structureFixture();
+  const current = structureFixture(643);
+  delete current.Player.CollectionSets;
+  const missing = compareSaveStructures(previous, current);
+  assert.equal(missing.status, 'inconclusive');
+  assert.equal(missing.domains.find(d => d.domain === 'collection').status, 'insufficient_evidence');
+  const sampled = structureFixture(643);
+  sampled.Player.CollectionSets = Array.from({ length: 64 }, (_, i) => ({
+    CollectionDefinitionID: i + 1, GroupData: []
+  }));
+  const sample = compareSaveStructures(previous, sampled);
+  assert.equal(sample.status, 'inconclusive');
+  assert.equal(sample.domains.find(d => d.domain === 'collection').status, 'sampled_inconclusive');
+});
+
+test('invalid document root is reported without mutating original values', () => {
+  const previous = structureFixture();
+  const baseline = structuredClone(previous);
+  const result = compareSaveStructures(previous, { GameInfo: { Version: '643' }, Player: {}, World: [] });
+  assert.equal(result.status, 'invalid_root');
+  assert.ok(result.rootIssues.current.includes('WORLD_MUST_BE_OBJECT'));
+  assert.deepEqual(previous, baseline);
 });

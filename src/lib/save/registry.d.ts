@@ -30,6 +30,7 @@ export type SaveDomainShape = Readonly<{
   domain: 'inventory' | 'chests' | 'collection' | 'grids' | 'appearance';
   status: 'shape_candidate' | 'sampled_candidate' | 'shape_conflict' | 'not_observed';
   observedFieldCount: number;
+  observedFields: readonly Readonly<{ path: string; kinds: readonly string[] }>[];
   conflictingPaths: readonly string[];
   sampled: boolean;
   source: 'legacy_rust_field_candidates_only';
@@ -52,6 +53,31 @@ export function getLegacySaveFields(): Readonly<{schema:string;saveSchemaVersion
 export function getLegacySaveIdReferences(namespace?: string): readonly LegacyField[];
 export function matchSaveBuild(build: Partial<SaveBuildIdentity>): SaveBuildCandidate | null;
 export function probeSaveStructure(decoded: unknown): SaveShapeProbe;
+export type SaveStructureComparisonDomain = Readonly<{
+  domain: SaveDomainShape['domain'];
+  status: 'structural_conflict' | 'insufficient_evidence' | 'sampled_inconclusive' | 'observed_shape_drift' | 'same_known_field_shape';
+  addedKnownPaths: readonly string[];
+  removedKnownPaths: readonly string[];
+  conflictingKnownPaths: readonly string[];
+  previousObservedFieldCount: number;
+  currentObservedFieldCount: number;
+  writerAuthorized: false;
+}>;
+export type SaveStructureComparison = Readonly<{
+  contract: 'wand.db05.save-structure-comparison@1';
+  compatibilityBasis: 'decoded_field_shape';
+  platformAndVersionUsedAsGates: false;
+  status: 'invalid_root' | 'structural_conflict' | 'inconclusive' | 'observed_shape_drift' | 'same_known_field_shape';
+  rootIssues: Readonly<{ previous: readonly string[]; current: readonly string[] }>;
+  domains: readonly SaveStructureComparisonDomain[];
+  knownPathsOnly: true;
+  exhaustive: false;
+  strictDecoderVerified: false;
+  referenceClosureVerified: false;
+  writerAuthorized: false;
+  exportAuthorized: false;
+}>;
+export function compareSaveStructures(previous: unknown, current: unknown): SaveStructureComparison;
 export function inspectDecodedSave(decoded: unknown, declaredBuild: Partial<SaveBuildIdentity> | null): SaveAssessment;
 export function borrowUntouchedDecodedSave<T>(decoded: T, declaredBuild: Partial<SaveBuildIdentity> | null): { original: T; assessment: SaveAssessment };
 export function makeGameIdIndex<T extends Record<string, unknown>>(rows: readonly T[], key?: string): Map<number, T>;
@@ -64,6 +90,7 @@ export function diffSaveWitnesses(previous: readonly FieldWitness[], current: re
   authoritative: false;
   basis: 'observed_witnesses_only';
 };
+export const SAVE_STRUCTURE_COMPARISON_CONTRACT: 'wand.db05.save-structure-comparison@1';
 export const SAVE_SHAPE_PROBE_CONTRACT: 'wand.db05.save-shape-probe@1';
 export const SAVE_REGISTRY_SCHEMA: 'wand.db05.save-registry@1';
 export const SAVE_INSPECTION_CONTRACT: 'wand.db05.save-readonly-inspection@1';
