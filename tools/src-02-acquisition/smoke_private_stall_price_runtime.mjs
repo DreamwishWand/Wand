@@ -102,13 +102,35 @@ export async function runPrivateShopRuntimeSmoke(r5ZipPath,priceZipPath){
     result.effectivePricesVerified===false&&result.stockVerified===false,
     'RUNTIME_EVIDENCE_FLAGS');
   const counts=result.counts;
+  let checkedCandidateReferences=0,checkedUnknownCandidates=0;
+  for(const stall of result.listStallPriceCoverage()){
+    for(const candidate of stall.candidates){
+      const lookup=result.getSourceStallItemPriceReferences(stall.stallId,candidate.itemId);
+      check(lookup?.candidateInEnumeratedStaticLoot===true &&
+        lookup.priceDatabaseKeys.length===candidate.priceDatabaseKeys.length &&
+        lookup.matchingPurchaseCostDefinitions.length===
+          candidate.sourceConfiguredMatchingPurchaseCosts.length &&
+        lookup.currentShopOfferVerified===false &&
+        lookup.shopSpecificDatabaseSelectionVerified===false &&
+        lookup.effectivePriceVerified===false && lookup.publishable===false,
+        'SOURCE_ITEM_LOOKUP_DISAGREEMENT');
+      checkedCandidateReferences++;
+    }
+    const absent=result.getSourceStallItemPriceReferences(stall.stallId,2147483647);
+    check(absent?.candidateInEnumeratedStaticLoot===false &&
+      absent.sourcePriceRows.length===0 &&
+      absent.currentShopOfferVerified===false,'ABSENT_CANDIDATE_NOT_UNKNOWN');
+    checkedUnknownCandidates++;
+  }
+  check(checkedCandidateReferences===counts.enumeratedCandidateOccurrences &&
+    checkedUnknownCandidates===counts.stalls,'CANDIDATE_QUERY_CENSUS');
   return Object.freeze({
     status:'EXACT_PRIVATE_JS_SOURCE_SMOKE_PASS',
     gameVersion:result.gameVersion,sourceManifests:Object.freeze({
       src02R5:result.acquisitionSourceManifestSha256,
       protoDbShopPrices:result.priceSourceManifestSha256
     }),
-    counts,
+    counts,checkedCandidateReferences,checkedUnknownCandidates,
     currentOffersVerified:false,effectivePricesVerified:false,
     runtimeDatabaseSelectionVerified:false,privateOnly:true,publishable:false
   });
