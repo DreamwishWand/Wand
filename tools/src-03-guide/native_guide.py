@@ -552,6 +552,39 @@ def extract(game, out, version, platform, item_index=None, previous=None):
                             candidates.append({"fromFamily": fam, "fromId": rec["id"],
                                                "toFamily": known[id_], "toId": str(id_),
                                                "wirePath": path, "status": "candidate_not_semantically_verified"})
+        # Native selector projection for DB-01 cross-references. Weighted
+        # alternatives are NOT independent required items, and the optional
+        # SRC-01 index may not cover all item kinds or match this source build.
+        item_objective_links = []
+        for quest in rows['quests']:
+            if quest.get('recordKind') != 'mission':
+                continue
+            for step in quest.get('structured', {}).get('stepsDetailed', []):
+                for sub in step['subSteps']:
+                    for obj in sub['objectives']:
+                        item_targets = obj.get('itemTargets')
+                        if item_targets is None:
+                            continue
+                        for selector in item_targets['selectors']:
+                            for reference in selector['itemCandidates']:
+                                item_id = reference['id']
+                                inner = selector.get('nested', selector)
+                                item_objective_links.append({
+                                    'questId': quest['id'], 'stepId': step['stepId'],
+                                    'subStepId': sub['subStepId'],
+                                    'objectiveId': obj['objectiveId'],
+                                    'objectiveKind': obj['type'],
+                                    'selectorRole': selector['role'],
+                                    'selectorMode': inner.get('mode', 'unresolved'),
+                                    'candidateRole': reference['role'],
+                                    'generatorKind': reference['generatorKind'],
+                                    'itemId': item_id,
+                                    'amountDefinition': item_targets.get('amount'),
+                                    'indexMembership': ('present' if item_id in indexes['items']
+                                        else 'not_in_supplied_index') if item_index else 'unchecked',
+                                    'sourceField': ('protobuf.40[' + str(step['index']) + '].20['
+                                        + str(sub['index']) + '].50[' + str(obj['index']) + ']'),
+                                    'sourceObjectiveSha256': obj['nativeWireSha256']})
         overlay_counts = structured_condition_overlays(origin, rows, indexes, relations, unresolved)
         reward_rows, reward_source = read_friendship_rewards(origin)
         relations.sort(key=lambda x: (x["fromFamily"], x["fromId"], x["toFamily"], x["toId"], x["sourceField"]))
@@ -568,6 +601,11 @@ def extract(game, out, version, platform, item_index=None, previous=None):
         save(out / "database" / "mission-record-kinds.json", {
                   "schema": SCHEMA, "target": target, "records": kinds,
                   "note": "Groups and ambiguous definitions must not appear as playable quests."})
+        save(out / 'database' / 'item-objective-links.json', {
+                  'schema': 'wand.db03.item-objective-links@1', 'target': target,
+                  'indexCoverage': 'optional_partial_SRC01_membership_only_not_version_verification',
+                  'meaning': 'Selector candidates, NOT all simultaneously required items',
+                  'links': item_objective_links})
         save(out / "database" / "relations.json", {"schema": SCHEMA, "relations": relations,
                                                       "target": target})
         save(out / "database" / "candidate-refs.json", {"schema": SCHEMA,
@@ -599,6 +637,8 @@ def extract(game, out, version, platform, item_index=None, previous=None):
                     "decodedObjectiveTypeCount": len({obj["type"]
                         for r in rows["quests"] for step in r.get("structured", {}).get("stepsDetailed", [])
                         for sub in step["subSteps"] for obj in sub["objectives"]}),
+                    "itemObjectiveSelectorLinks": len(item_objective_links),
+                    "itemObjectiveUniqueCandidateIds": len({x['itemId'] for x in item_objective_links}),
                     "sourceFieldRelations": len(relations),
                     "unresolvedRelations": sum(r["status"] == "unresolved" for r in relations),
                     "candidateWireMatches": len(candidates),

@@ -5,6 +5,7 @@ availability/ownership or player progression is calculated here.
 """
 from mission_schema import (OBJECTIVE_KINDS, CONDITION_KINDS, BOOL_OPERATORS,
                             MISSION_STATUS_OPERATORS, UI_CATEGORIES, MISSION_TYPES)
+from mission_items import project_objective_items
 
 
 def fields_of(wire_fields, fields, number, wire):
@@ -155,6 +156,10 @@ def extract_quest_details(fields, quest_id, helpers, locale, missing):
                         'TalkToCharacter': (3, 'worlds', 'targetScene'),
                         'FollowCharacter': (10, 'worlds', 'targetScene'),
                     }
+                    item_targets = project_objective_items(obj['type'], payload,
+                                                          wire_fields, int_field, sha)
+                    if item_targets is not None:
+                        obj['itemTargets'] = item_targets
                     if obj['type'] in target_rules:
                         target_field, target_family, target_label = target_rules[obj['type']]
                         details = wire_fields(payload)

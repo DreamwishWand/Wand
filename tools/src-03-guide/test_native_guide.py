@@ -191,6 +191,33 @@ class NativeGuideTests(unittest.TestCase):
         self.assertEqual(obj_edges[0]['predicate'], 'UnlockCharacter.character')
         self.assertTrue(all(r['status']=='resolved' for r in edges+obj_edges))
 
+    def test_item_selector_links_are_candidates_not_required_items(self):
+        # Source-backed oneof: CraftItem.Target -> ItemSelector.Item ->
+        # MissionItemGenerator.Item -> GeneratorItem.Item.
+        item_id=30000031
+        selector=sf(1,sf(1,vf(1,item_id)))
+        qty=sf(1,vf(1,3))
+        objective=vf(8,19)+sf(9,'CraftGoal')+sf(130,sf(1,selector)+sf(2,qty))
+        sub=sf(50,objective)
+        step=sf(20,sub)
+        quest=(vf(1,self.quest)+sf(2,'Story!MyQuest')+sf(3,
+            'Story/MyQuest.Story!MyQuest_DisplayName')+sf(40,step))
+        group=vf(1,self.quest_group)+sf(2,'Story!Group')
+        (self.src/'itemlist'/'Mission.json').write_bytes(
+            frame(1,quest)+frame(200001,group))
+        db.extract(self.game,self.out,'1.26.1','Steam',self.items)
+        data=json.loads((self.out/'database/item-objective-links.json').read_text())
+        self.assertEqual(len(data['links']),1)
+        link=data['links'][0]
+        self.assertEqual(link['itemId'],str(item_id))
+        self.assertEqual(link['candidateRole'],'direct')
+        self.assertEqual(link['indexMembership'],'present')
+        self.assertEqual(link['amountDefinition']['value'],3)
+        self.assertIn('NOT all simultaneously required items',data['meaning'])
+        manifest=json.loads((self.out/'manifest.json').read_text())
+        self.assertEqual(manifest['itemObjectiveSelectorLinks'],1)
+        self.assertEqual(manifest['itemObjectiveUniqueCandidateIds'],1)
+
     def test_reject_bad_frames_and_inputs(self):
         with self.assertRaises(ValueError):
             db.varint(b'\x80\x00', 0)

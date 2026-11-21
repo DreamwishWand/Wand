@@ -1,3 +1,5 @@
+**Mission item selectors:** [`MISSION-ITEM-TARGETS.md`](MISSION-ITEM-TARGETS.md) documents source-typed `mission_items.py` and `database/item-objective-links.json` (fixed items, alternatives, dynamic filters and source-configured amounts/ranges). A selector candidate is **not** a guarantee the item is required; SRC-01 ID membership is partial and not independently verified across game versions.
+
 **Static DreamSnaps / Star Path introduction:** [`PROTO-DB-STATIC.md`](PROTO-DB-STATIC.md) describes source-backed `protoDb.bin` extraction through `protodb_static.py`. Archived event definitions and tutorial configuration do **not** establish current server-side event availability.
 
 **Typed mission schema:** [`MISSION-SEMANTICS.md`](MISSION-SEMANTICS.md) documents the IL2CPP-verified quest/condition/objective mapping, mission-vs-group classification, source-backed reward ranges, and conservative reference edges. The source-backed `mission_schema.py` and `mission_semantics.py` are loaded by `native_guide.py` and require no external Python packages.
