@@ -56,6 +56,24 @@ Run only the v2 CMD; do not rerun the full media extraction. For verification, u
 
 ---
 
+## Confirmed GUID image identity coverage (2026-11-21)
+
+The user's complete `catalog-identity-report.json` from revision 2 confirms:
+
+- `processedBundleCount=targetBundleCount=24`; `totalVerifiedUniqueGuids=9,182` of 9,542 unique SRC-01 icon GUIDs (96.23%); 360 GUIDs have references outside the 24 generated-icon bundles.
+- All 9,182 verified GUIDs have exact Unity `AssetBundle.m_Container` keys and matching checkpoint `path_id`s; 9,130 are Sprite-backed and 52 Texture2D-only; zero missing object pointers, ambiguous GUIDs, cross-bundle conflicts, errors, or warnings.
+- The 23,021-image extraction was already complete and need not be repeated. The 24 identity-scanned bundles contain 21,209 decoded Sprite/Texture2D objects, not necessarily the same number of distinct icons.
+- **The shared report is not the complete 9,182-row mapping**: `verifiedGuidToImage` is intentionally truncated to at most 40 examples per bundle. The full mapping is saved locally at `catalog-identity-links-private.json`; do not infer complete item mappings from report examples.
+
+`join_item_icons.py` now implements the exact GUID -> Item ID join using the existing SRC-01 cache (`source-items/items.jsonl` plus SHA-256 manifest), the local full identity-links file, and its completed 24-bundle audit report. It does not read or modify game files or PNG/WebP images. The script validates all 9,182 identities and verifies that the reports and source cache match. It writes `item-icon-map-private.jsonl` (all 13,202 Item IDs, exact image refs or explicit unresolved), `item-icon-unresolved-private.json` (unresolved GUID list + associated Item IDs) and `item-icon-join-report.json` (counts and source checksums). All outputs are private and `publicationApproved=false`.
+
+Run against the existing output directory without re-extraction:
+
+    py -3 tools/src-04-media/join_item_icons.py --out "%USERPROFILE%\Documents\DreamwishWand\SRC-04 MEDIA\Steam-v1.26.2"
+
+The source game-version and platform labels are carried as provenance only, never used as the mapping identity or compatibility key. New icon bundles in future source builds should be selected by verified structural provenance and source hashes rather than a platform label.
+
+---
 ## Advanced manual workflow and historical R39 compatibility
 
 Windows-compatible, local-only source image inspection and conversion for Dreamwish Wand. This tool never modifies the game's files, the site's static assets, GitHub Pages, or R2. The operator specifies an independent local output directory.
