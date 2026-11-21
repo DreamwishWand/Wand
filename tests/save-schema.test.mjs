@@ -93,3 +93,14 @@ test('legacy Rust field map covers schema626 without authorizing editing or curr
   assert.deepEqual(amount.builds, ['steam-1.25.3-626']);
   assert.equal(map.fields.some(x => x.builds.includes('switch-643')), false);
 });
+
+test('registry sources are deeply immutable at runtime', async () => {
+  const { getLegacySaveFields } = await import('../src/lib/save/registry.mjs');
+  const source = getSaveRegistry();
+  const legacy = getLegacySaveFields();
+  assert.equal(Object.isFrozen(source), true);
+  assert.equal(Object.isFrozen(source.builds[0]), true);
+  assert.equal(Object.isFrozen(legacy.fields), true);
+  assert.equal(Object.isFrozen(legacy.fields[0]), true);
+  assert.throws(() => { source.builds[0].schemaVersion = 643; }, TypeError);
+});
