@@ -31,9 +31,9 @@ python tools/src-03-guide/guide_shard_source_audit.py \
   --baseline-manifest /private/Steam-v1.26.1/manifest.json \
   --baseline-search /private/Steam-v1.26.1/guide/quest-search.json \
   --target-probe /private/Steam-v1.26.2/format-probe.json \
-  --baseline-friendship /private/Steam-v1.26.1/friendship_levels_default.json \
-  --target-friendship /private/Steam-v1.26.2/friendship_levels_default.json \
-  --shard-dir /private/Steam-v1.26.1/guide/quest-shards \
+  --friendship-baseline /private/Steam-v1.26.1/friendship_levels_default.json \
+  --friendship-target /private/Steam-v1.26.2/friendship_levels_default.json \
+  --shards-dir /private/Steam-v1.26.1/guide/quest-shards \
   --out /private/Steam-v1.26.2/guide-shards-friendship-audit.private.json
 ```
 
@@ -41,7 +41,7 @@ python tools/src-03-guide/guide_shard_source_audit.py \
 
 ```sh
 python tools/src-03-guide/guide_composite_integrity_v2.py \
-  --baseline-composite /private/Steam-v1.26.2/guide-source-composite-1.26.2.json \
+  --source-composite /private/Steam-v1.26.2/guide-source-composite-1.26.2.json \
   --shard-audit /private/Steam-v1.26.2/guide-shards-friendship-audit.private.json \
   --out /private/Steam-v1.26.2/guide-source-composite-1.26.2-v2.json
 ```
