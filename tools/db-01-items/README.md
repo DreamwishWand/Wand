@@ -89,6 +89,24 @@ Original-source instructions and evidence limits remain documented in:
 complete current LocDB ZIPs. DLC, ownership, collectibility, world relationships
 and current classification are unresolved until evidence is acquired.
 
+## Runtime manifest ledger integrity (without original-game upload dependency)
+
+The TypeScript client validates the SHA-256/size/count ledger before any private
+asset is fetched. In particular, the sum of all 256 ID bucket counts and the
+sum of native-category counts must both equal `definitions`; the four verified
+item-native categories must equal `currentNativeItemDefinitions`. Per-locale
+entry counts cannot exceed definitions; optional historical entry counts
+cannot exceed eight candidates per definition. A fully parsed corpus cannot
+declare missing verified sources. These are **metadata consistency checks**,
+not evidence of complete v1.26.2 original-game upload.
+
+After validation, the client freezes an independent in-memory copy of its
+manifest and all file SHA/size/count entries. A caller mutating its original
+manifest during later asynchronous reads cannot retarget hash verification.
+A separately trusted manifest provenance/SHA and the complete independent
+`audit_shards.py` release audit are still required: consistent but forged
+source metadata cannot be authenticated by runtime self-consistency alone.
+
 ## Production release-integrity gate
 
 `tools/db-01-items/audit_shards.py` is the independent **private pre-release
