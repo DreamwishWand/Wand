@@ -87,4 +87,24 @@ class IngestTests(unittest.TestCase):
         self.assertEqual(comparison['undisclosedWitnessCountDelta'], 0)
 
 
+    def test_real_observed_common_public_fields_are_allowlisted_without_values(self):
+        report = self.report(643, 'string')
+        report['fieldWitnesses'].extend([
+            {'path':'/World/Characters', 'type':'array'},
+            {'path':'/World/Characters[]/SkinID', 'type':'integer'},
+            {'path':'/Player/AchievementsData', 'type':'array'},
+            {'path':'/Player/Mounts', 'type':'array'},
+            {'path':'/Player/UnknownPrivateFlag', 'type':'boolean'}
+        ])
+        inspected = inspect_report(report)
+        witness_paths = {x['path'] for x in inspected['publicWitnesses']}
+        self.assertIn('/World/Characters', witness_paths)
+        self.assertIn('/World/Characters[]/SkinID', witness_paths)
+        self.assertIn('/Player/AchievementsData', witness_paths)
+        self.assertIn('/Player/Mounts', witness_paths)
+        self.assertNotIn('/Player/UnknownPrivateFlag', witness_paths)
+        self.assertEqual(inspected['otherWitnessCount'], 2)
+        self.assertFalse(inspected['writerAuthorized'])
+
+
 if __name__ == '__main__': unittest.main()
