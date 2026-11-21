@@ -743,3 +743,27 @@ unsafe-number, ZIP/CRC or P1G validation currently owned
 by the JavaScript Codec. A future browser/WASM integration
 must keep the strict Codec boundary and parity-test Rust
 against the existing JS reference observations.
+
+## Exact cross-language reference graph parity gate
+
+`tools/db-05-save/compare_js_rust.mjs` executes the existing
+`probeSaveReferences` JS implementation and the Rust
+`probe_save_references_json` implementation (via the
+`crates/ddv-save-schema/examples/reference_probe.rs` local
+CLI) against the *same* eight synthetic inputs. It compares
+the complete JSON report objects using strict deep equality,
+including the 14 rule IDs, modes, statuses, per-rule counts,
+sample flags, index sizes, and all safety prohibitions.
+
+The fixtures cover Steam/Switch-shaped schema 626 and 643,
+missing container/diff-grid target indexes, mismatched map
+identities, dangling storage/room links, malformed private
+map keys, field type conflicts, >4096-member sampled maps,
+and invalid roots. GitHub Actions runs this gate **after
+Rust tests** and before compiling the WASM target; any
+divergence fails the DB-05 workflow. The example writes
+*only anonymized Rust reports* to stdout and has no Writer,
+Codec or export access. Source JSON stays inside the
+synthetic CI process; **never pass an owner-private save
+to this example**. No production Rust/WASM browser
+integration is inferred from this parity check.
