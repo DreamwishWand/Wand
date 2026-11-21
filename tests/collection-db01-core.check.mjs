@@ -35,7 +35,7 @@ function fixture({tamper=false}={}){
  const manifestBytes=packed(manifest);
  const trusted={platform:'Steam',gameVersion:'1.26.2',manifestSha256:digest(manifestBytes),
   nativeSourceManifestSha256:manifest.nativeSourceManifestSha256,sourceItemsSha256:manifest.sourceItemsSha256};
- if(tamper)files['id/64.json']=packed([{...item,names:{...item.names,ja:'TAMPERED'}}]);
+ if(tamper)files['id/64.json']=packed([{...item,names:{...item.names,en:'Verified name'}}]);
  const archive=zip([['private-shards/manifest.json',manifestBytes],...Object.entries(files).map(([k,v])=>['private-shards/'+k,v])]);
  return{archive,trusted};
 }
