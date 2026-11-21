@@ -89,3 +89,48 @@ test('no mutable aliases or personal save payload in returned evidence',()=>{
 test('explicitly null Stores is invalid rather than absent',()=>{
   assert.throws(()=>inspectDecodedWorldStores(db,{GameInfo:{Version:643},Player:{},World:{Stores:null}}),/WORLD_STORE_INVALID_STORES/);
 });
+
+
+test('private schema-643 ItemAmount lower-camel id and amount are decoded',()=>{
+  const realShape={Item:{id:345,amount:4},IsAvailable:true,CurrencyId:99};
+  const x=inspectDecodedWorldStores(db,root([store(123,[realShape])]));
+  assert.deepEqual([x.stores[0].slots[0].itemId,x.stores[0].slots[0].serializedAmount],[345,4]);
+  assert.equal(x.stores[0].slots[0].stockVerified,false);
+  assert.equal(x.stores[0].slots[0].salePrice,null);
+});
+
+test('both ItemAmount key spellings present are rejected without precedence',()=>{
+  const rows=[
+    {Item:{id:345,Id:345,amount:4},IsAvailable:true,CurrencyId:99},
+    {Item:{id:345,amount:4,Amount:4},IsAvailable:true,CurrencyId:99}
+  ];
+  for(const row of rows){
+    assert.throws(()=>inspectDecodedWorldStores(db,root([store(123,[row])])),
+      /WORLD_STORE_AMBIGUOUS_ITEM_AMOUNT_KEYS/);
+  }
+});
+
+test('lower-camel ItemAmount invalid types and negative count are rejected',()=>{
+  for(const entry of [{id:'345',amount:4},{id:345,amount:-2},{id:345,amount:'4'}]) {
+    assert.throws(()=>inspectDecodedWorldStores(db,root([store(123,[{Item:entry}])])),
+      /WORLD_STORE_INVALID_ITEM_(ID|AMOUNT)/);
+  }
+});
+
+test('lower-camel infinite sentinel is preserved but never claimed stock',()=>{
+  const x=inspectDecodedWorldStores(db,root([store(123,[{Item:{id:345,amount:-1}}])]));
+  assert.equal(x.stores[0].slots[0].serializedInfiniteSentinel,true);
+  assert.equal(x.stores[0].slots[0].stockVerified,false);
+});
+
+test('saved IsAvailable=true with null Item is not a purchasable offer',()=>{
+  const x=inspectDecodedWorldStores(db,root([store(123,[
+    {Item:null,IsAvailable:true,CurrencyId:99}
+  ])]));
+  const saved=x.stores[0].slots[0];
+  assert.equal(saved.itemId,null);
+  assert.equal(saved.serializedIsAvailable,true);
+  assert.equal(saved.liveAvailabilityVerified,false);
+  assert.equal(saved.priceVerified,false);
+  assert.equal(saved.salePrice,null);
+});
