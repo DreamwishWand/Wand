@@ -80,3 +80,21 @@ The SRC-00 source inventory is never committed. Where its source-manifest.json a
 Registration requires a completed error-free scan, one SHA-256 per source file, and a valid dataset fingerprint. It computes the source manifest and report SHA-256 without copying any original file list into the record. Version and build ID come only from the SRC-00 evidence states. For the currently verified Steam v1.26.2 scan the build ID is null (unconfirmed).
 
 Published release builds also emit a separate SHA-pinned inverted search index for each of the eight game locales. The SvelteKit client can retrieve one via loadCurrentSearchIndex(base, locale, fetchImpl). The legacy Collection remains searchable through its already-published runtime.
+
+## Private DB-01 SQLite v2 → DB-00 ingester (no duplicated parser)
+
+DB-01 owns extraction, SQLite v2 and the typed, SHA-checking TypeScript shard client. DB-00 now supplies only an offline adapter that reuses the existing src/lib/items/index.ts and src/lib/items/db00-join.ts rather than parsing SQLite a second time. Run on the audited owner's private, extracted DB-01 v2 shard directory; do not commit either the inputs or output.
+
+    node --experimental-strip-types tools/db-00/import-db01-v2.mjs \
+      --shards /owner/private/db01-v2/private-shards \
+      --audit /owner/private/db01-v2/private-v2-identity-audit.json \
+      --expected-manifest-sha256 <independently pinned manifest digest> \
+      --expected-sqlite-sha256 <independently pinned SQLite digest> \
+      --expected-source-items-sha256 <original verified DB-01 JSONL digest> \
+      --out /owner/private/db00-steam-1262-<digest>.json
+
+All three expected SHA arguments are required. Obtain them from the owner's separately trusted release ledger; hashes stored inside the same untrusted bundle do not establish independent authenticity. The adapter checks the v2 schema, immutable private-release audit, manifest, four original Item categories through the existing SHA-checking TypeScript client, exact current localized names, and the number of unclassified definitions excluded. It refuses overwrite, output into Git, symlinked shard files and corrupted assets.
+
+The current Steam 1.26.2 audit records 33,627 native definitions, 13,202 four-class Item IDs, 20,425 unclassified definitions and 557 SHA-pinned private shards. The output has 13,202 Item records with only genuinely verified current names (some item records may have no names); it NEVER turns unrelated mission/condition/guide records into collection items or converts 103,064 historical locale candidates into current names. It preserves both original native-manifest and DB-01 compiled-manifest SHA provenance, an unknown build ID (null), and publishable:false. It does not modify static/ddv/game-db/active.json.
+
+Important: the adapter targets the same four-category original game files as DB-01; other DB Streams own acquisition, quest, world and save facts, and DB-00 must not reinterpret their category identities. Normalized private snapshot data is an integration input, not a public Collection release. A new game version needs a separately audited private DB-01 v2 release; never reuse the old manifest/SHA pins across updates.

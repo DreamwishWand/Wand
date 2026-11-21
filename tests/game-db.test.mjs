@@ -70,6 +70,9 @@ test('DB-00 makes only comparable coverage diffs and rejects inferred deletions'
   assert.equal(diffSnapshots(old, snapshot('different', [], {
     coverage: { scope: 'other', complete: false, categories: ['Furniture'] }
   })).comparable, false);
+  assert.equal(diffSnapshots(old, snapshot('other-platform', [], {
+    target: {...old.target, platform: 'Nintendo Switch'}
+  })).comparable,false);
 });
 test('DB-00 patch rejects conflicts and preserves validated IDs', () => {
   const base = snapshot('sample', [item(123)]);
