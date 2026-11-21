@@ -9,6 +9,8 @@ const DB_NAME = 'dreamwishwand-collection';
 const STORE_NAME = 'state';
 const STATE_KEY = 'current';
 const MAX_FILE_BYTES = 10_000_000;
+const OWNER_LOCAL_DB01_BYTES = 6_744_949;
+const OWNER_LOCAL_DB01_SHA256 = '6e4aa04fa043633a4d7badb7e5b25e9b70fa56f5b0bea002d0d4846ca11d8ef8';
 
 export interface CollectionEntry {
   status?: 'owned' | 'missing';
@@ -97,6 +99,13 @@ interface PublicDb00Index {
   target: { platform: string; gameVersion: string|null; buildId: string|null };
   shards: { file: string; offset: number; count: number; bytes: number; sha256: string }[];
 }
+interface OwnerLocalDb01Bundle {
+  schema: 'wand.collection.owner-local-db01@1';
+  index: PublicDb00Index & { sources: { id:string;visibility:string }[] };
+  shards: string[];
+  coverage: { itemDefinitions:number; nameVerified:number; nameUnverified:number };
+  sourceAuditSha256: string;
+}
 interface ActiveDb00Pointer {
   schema: string;
   kind: string;
@@ -114,14 +123,18 @@ function asset(base: string, path: string): string {
   }
   return (base ? '/' + base.replace(/^\/+|\/+$/g,'') : '') + '/' + path;
 }
+async function digestSha256(bytes: ArrayBuffer): Promise<string> {
+  if (!globalThis.crypto?.subtle) throw new Error('COLLECTION_CRYPTO_UNAVAILABLE');
+  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),
+    x => x.toString(16).padStart(2,'0')).join('');
+}
 async function download(url: string, expectedBytes: number | null = null, expectedHash: string | null = null): Promise<string> {
   const response = await fetch(url, { credentials:'same-origin' });
   if (!response.ok || response.redirected) throw new Error('COLLECTION_ASSET_UNAVAILABLE');
   const bytes = await response.arrayBuffer();
   if (expectedBytes !== null && bytes.byteLength !== expectedBytes) throw new Error('COLLECTION_ASSET_SIZE_MISMATCH');
   if (expectedHash !== null) {
-    const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),
-      x => x.toString(16).padStart(2,'0')).join('');
+    const hash = await digestSha256(bytes);
     if (hash !== expectedHash) throw new Error('COLLECTION_ASSET_HASH_MISMATCH');
   }
   return new TextDecoder('utf-8',{fatal:true}).decode(bytes);
@@ -176,13 +189,18 @@ function writeIdb(db: IDBDatabase, payload: string, expected: string | null): Pr
 }
 export class CollectionRuntime {
   readonly metadata: CollectionRuntimeMetadata;
+  readonly isOwnerLocal: boolean;
+  readonly ownerLocalCoverage: Readonly<{ itemDefinitions:number;nameVerified:number;nameUnverified:number }> | null;
   private readonly engine: CollectionEngine;
   private db: IDBDatabase | null = null;
   private busy = false;
   private persistedState: string | null = null;
-  private constructor(engine: CollectionEngine, metadata: CollectionRuntimeMetadata) {
+  private constructor(engine: CollectionEngine, metadata: CollectionRuntimeMetadata,
+    ownerLocalCoverage: OwnerLocalDb01Bundle['coverage'] | null = null) {
     this.engine = engine;
     this.metadata = metadata;
+    this.isOwnerLocal = ownerLocalCoverage !== null;
+    this.ownerLocalCoverage = ownerLocalCoverage;
   }
   static async open(base: string): Promise<CollectionRuntime> {
     const active = JSON.parse(await download(asset(base,ACTIVE))) as ActiveDb00Pointer;
@@ -248,6 +266,56 @@ export class CollectionRuntime {
         throw new Error('COLLECTION_DB00_POINTER_KIND');
       }
       const runtime = new CollectionRuntime(engine,metadata);
+      await runtime.loadStorage();
+      return runtime;
+    } catch (error) {
+      engine.free();
+      throw error;
+    }
+  }
+  /** Import only the exact SHA-pinned owner-local Steam v1.26.2 bundle.
+   * This is never fetched or persisted; IndexedDB stores Collection entries only.
+   * A public DB-00 active pointer can never reach this private Rust loader. */
+  static async openOwnerLocalDb01(file: File): Promise<CollectionRuntime> {
+    if (file.size !== OWNER_LOCAL_DB01_BYTES) throw new Error('COLLECTION_LOCAL_DB01_UNRECOGNIZED_FILE');
+    const bytes = await file.arrayBuffer();
+    if (await digestSha256(bytes) !== OWNER_LOCAL_DB01_SHA256)
+      throw new Error('COLLECTION_LOCAL_DB01_HASH_MISMATCH');
+    let bundle: OwnerLocalDb01Bundle;
+    try {
+      bundle = JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)) as OwnerLocalDb01Bundle;
+    } catch { throw new Error('COLLECTION_LOCAL_DB01_JSON_INVALID'); }
+    const idx=bundle.index;
+    if (bundle.schema !== 'wand.collection.owner-local-db01@1'
+      || !idx || idx.schema !== 'wand.game-db.release@1'
+      || idx.id !== 'db01-steam-1-26-2-owner-local-verified'
+      || idx.count !== 11_492 || idx.target.platform !== 'Steam'
+      || idx.target.gameVersion !== '1.26.2' || idx.target.buildId !== null
+      || idx.sources?.length !== 1 || idx.sources[0].id !== 'private-db01-v1262'
+      || idx.sources[0].visibility !== 'private'
+      || bundle.coverage?.itemDefinitions !== 13_202
+      || bundle.coverage?.nameVerified !== 11_492
+      || bundle.coverage?.nameUnverified !== 1_710
+      || !Array.isArray(bundle.shards) || bundle.shards.length !== idx.shards?.length
+      || !/^[a-f0-9]{64}$/.test(bundle.sourceAuditSha256)) {
+      throw new Error('COLLECTION_LOCAL_DB01_CONTRACT_INVALID');
+    }
+    await init(wasmUrl);
+    const engine = new CollectionEngine();
+    try {
+      engine.load_owner_local_db00_index(JSON.stringify(idx));
+      for (let i=0; i<idx.shards.length; i++) {
+        const payload=bundle.shards[i];
+        if (typeof payload !== 'string') throw new Error('COLLECTION_LOCAL_DB01_SHARD_INVALID');
+        const bytes=new TextEncoder().encode(payload);
+        if (bytes.byteLength !== idx.shards[i].bytes
+          || await digestSha256(bytes.buffer as ArrayBuffer) !== idx.shards[i].sha256)
+          throw new Error('COLLECTION_LOCAL_DB01_SHARD_HASH_MISMATCH');
+        engine.append_db00_shard(payload);
+      }
+      engine.finish_db00();
+      const catalog=JSON.parse(engine.metadata_json()) as Omit<CollectionRuntimeMetadata,'snapshot'>;
+      const runtime=new CollectionRuntime(engine,{...catalog,snapshot:idx.id},bundle.coverage);
       await runtime.loadStorage();
       return runtime;
     } catch (error) {
