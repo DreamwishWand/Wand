@@ -110,6 +110,41 @@ The browser adapter supports `getNativeTerrainTile(catalog, gridId, x, y)` and `
 
 The Python extractor also attaches non-destructive `terrainDecoding` metadata to private `grids.json`. `verify_bundle.py` independently recomputes this metadata from source-derived Base64 bytes. For native `GridData` values not yet independently validated (such as 3-bit+ palette formats), decoding remains disabled.
 
+## Source-linked default-village 2D viewports (read-only)
+
+World Editor, Decorate and Presets can now request a **native grid-local**
+source-backed composition directly from private DB-04 JSON:
+
+```js
+const preview = getNativeVillageAreaViewport(
+  catalog, "SceneLayouts/Village04/DefaultVillageLayout01.json",
+  nativeAreaTypeCode, nativeGridId,
+  { x: 0, y: 0, width: 64, height: 64 }
+);
+```
+
+The adapter explicitly walks `Meta.DefaultVillageData.GridLayoutPaths`
+(area code → original GridCollection path), then
+`Meta.GridCollection.Grids[nativeGridId].GridDataPath`, then the original
+native 1-/2-bit compacted grid and its grid-local default `GridObject.X/Y`
+anchors. To view a GridCollection directly, call
+`getNativeDefaultLayoutViewport(catalog, gridCollectionPath, nativeGridId, rect)`.
+Rectangles are limited by the existing 256×256-cell API.
+
+Successful results contain `terrainRows` (display Y-major),
+`defaultObjectAnchors` (original native IDs, Item IDs and 16-step orientation),
+the source GridData path, total native anchor count, and the number of **anchors
+inside** the visible window. They are *not* save-state positions, world-space
+geometry, occupied-cell masks or permission to place/remove objects. An object
+whose anchor is outside the viewport could still occupy visible cells; do not
+treat missing anchor markers as free space. Native 16-way orientation enum
+names are metadata, not proven footprint transformations.
+
+Missing area mappings, layout files, grid sources and incomplete default
+object collections return explicit statuses instead of fabricating terrain.
+The input remains the exact private source archive; public Git contains only
+the decoder, adapter and synthetic regression tests.
+
 ## Native terrain cell counts and default-object origin audit
 
 DB-04 now extracts `nativePaletteIndexCellCounts` for source-corroborated 1/2-bit
