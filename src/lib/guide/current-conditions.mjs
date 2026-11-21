@@ -7,6 +7,20 @@ export const GUIDE_CONDITION_SOURCE_SHA = '9eb5e7800a2485b1dfb3e148a7bcff5d6c6b6
 export const GUIDE_CONDITION_INDEX_SHA = 'd1b43f2f62746c2b8aa9a0d4f8a8a7d35467e498e8b27bf815ea0659d71e7b69';
 export const GUIDE_CONDITION_PROBE_SHA = '07fd8ebb1c528f852a0e00ce54cf4964f93931b9155bc9e2aab1bd857986d00a';
 export const GUIDE_CONDITION_INDEX_BYTES = 3888435;
+export const GUIDE_CONDITION_V2_SCHEMA = 'wand.db03.condition-native-index@2';
+export const GUIDE_CONDITION_V2_MANIFEST_SCHEMA = 'wand.db03.condition-native-index-manifest@2';
+export const GUIDE_CONDITION_INDEX_V2_SHA = 'aa04c61c973874881443a370a50009f5ad6156d9e1b83ec4553045561c41b08f';
+export const GUIDE_CONDITION_INDEX_V2_BYTES = 4093730;
+export const GUIDE_CONDITION_V2_MISSION_REFERENCES = 4960;
+const MISSION_REFERENCE_TAGS = Object.freeze({
+  MissionAvailable:250, MissionCompleted:255, MissionOngoing:260, MissionStatus:270,
+  MissionStepCompleted:280, MissionStepStatus:285, MissionObjectiveCompleted:290,
+  MissionObjectiveStatus:295, MissionObjectiveSkipped:297, MissionObjectiveProgression:300
+});
+const STEP_REFERENCE_KINDS = new Set([
+  'MissionStepCompleted','MissionStepStatus','MissionObjectiveCompleted',
+  'MissionObjectiveStatus','MissionObjectiveSkipped','MissionObjectiveProgression'
+]);
 export const GUIDE_CONDITION_SOURCE_BYTES = 571341;
 export const GUIDE_CONDITION_NATIVE_COUNT = 5440;
 export const GUIDE_CONDITION_MAX_FILE_BYTES = 6 * 1024 * 1024;
@@ -35,18 +49,20 @@ function target(value) {
  * The standalone function is testable with synthetic records; full provenance
  * is enforced by importCurrentGuideConditions before any result is displayed.
  */
-export function indexStaticConditionMentions(records) {
+export function indexStaticConditionMentions(records, {extended = false} = {}) {
   requireValid(Array.isArray(records) && records.length > 0 && records.length <= 10000,
     'invalid Condition source census');
   const seen = new Set();
   const byMission = new Map();
   const kindCounts = new Map();
   let total = 0, explicitStepLeaves = 0, commonPointers = 0;
+  let missionReferenceLeaves = 0, nonStepMissionReferenceLeaves = 0;
+  const missionReferencesByKind = new Map();
   const referencedMissions = new Set();
   const pushMention = (missionId, row) => {
     if (!byMission.has(missionId)) byMission.set(missionId, []);
     byMission.get(missionId).push(row);
-    referencedMissions.add(missionId);
+    // Only original MissionStepStatus references participate in the v1 census.
   };
   const walk = (tree, original, path, depth) => {
     requireValid(depth <= 16 && isObject(tree) &&
@@ -76,6 +92,44 @@ export function indexStaticConditionMentions(records) {
           commonPointers++;
         }
       }
+      if (extended && Object.hasOwn(MISSION_REFERENCE_TAGS, leaf.kind) &&
+          leaf.kind !== 'MissionStepStatus') {
+        requireValid(leaf.sourceTag === MISSION_REFERENCE_TAGS[leaf.kind] &&
+          typeof leaf.missionId === 'string' && ID.test(leaf.missionId),
+          'invalid v2 source-typed mission ID/kind');
+        for (const prop of ['stepId','subStepId','objectiveId']) {
+          if (OWN(leaf,prop)) requireValid(Number.isSafeInteger(leaf[prop]) && leaf[prop] >= 0,
+            'invalid v2 native step/substep/objective ID');
+        }
+        if (OWN(leaf,'stepId') && STEP_REFERENCE_KINDS.has(leaf.kind)) {
+          requireValid(leaf.nativeStepIdVerified === true, 'unverified current Mission step ID');
+        }
+        if (OWN(leaf,'inversed')) requireValid(typeof leaf.inversed === 'boolean',
+          'invalid source inversed flag');
+        if (OWN(leaf,'missionStateCode')) requireValid(leaf.kind === 'MissionStatus' &&
+          Number.isSafeInteger(leaf.missionStateCode) && typeof leaf.missionState === 'string',
+          'invalid source mission state code');
+        if (OWN(leaf,'comparisonOperatorCode')) requireValid(leaf.kind === 'MissionStatus' &&
+          Number.isSafeInteger(leaf.comparisonOperatorCode) &&
+          typeof leaf.comparisonOperator === 'string', 'invalid source mission comparison');
+        missionReferenceLeaves++;
+        nonStepMissionReferenceLeaves++;
+        missionReferencesByKind.set(leaf.kind,(missionReferencesByKind.get(leaf.kind)||0)+1);
+        pushMention(leaf.missionId, {
+          conditionId:original.id,sourceName:original.sourceName,
+          conditionWireSha256:original.nativeWireSha256,
+          sourcePath:branch,operator:tree.operator,kind:leaf.kind,
+          ...(OWN(leaf,'stepId') ? {stepId:leaf.stepId} : {}),
+          ...(OWN(leaf,'subStepId') ? {subStepId:leaf.subStepId} : {}),
+          ...(OWN(leaf,'objectiveId') ? {objectiveId:leaf.objectiveId} : {}),
+          ...(OWN(leaf,'inversed') ? {inversed:leaf.inversed} : {}),
+          ...(OWN(leaf,'missionStateCode') ? {missionStateCode:leaf.missionStateCode,
+            missionState:leaf.missionState} : {}),
+          ...(OWN(leaf,'comparisonOperatorCode') ? {comparisonOperatorCode:leaf.comparisonOperatorCode,
+            comparisonOperator:leaf.comparisonOperator} : {})
+        });
+        continue;
+      }
       if (leaf.kind !== 'MissionStepStatus') continue;
       requireValid(leaf.sourceTag === 285 &&
         ['source_explicit_fields_only','opaque_unexpected_wire_shape'].includes(leaf.scalarInterpretation),
@@ -97,6 +151,13 @@ export function indexStaticConditionMentions(records) {
         'invalid source mission ID');
       explicitStepLeaves++;
       if (!OWN(leaf, 'missionId')) continue;
+      referencedMissions.add(leaf.missionId);
+      if (extended) {
+        if (OWN(leaf,'stepId')) requireValid(leaf.nativeStepIdVerified === true,
+          'unverified original MissionStepStatus native step');
+        missionReferenceLeaves++;
+        missionReferencesByKind.set(leaf.kind,(missionReferencesByKind.get(leaf.kind)||0)+1);
+      }
       pushMention(leaf.missionId, {
         conditionId: original.id, sourceName: original.sourceName,
         conditionWireSha256: original.nativeWireSha256,
@@ -116,6 +177,11 @@ export function indexStaticConditionMentions(records) {
     walk(row.conditions, row, 'conditions', 0);
   }
   return {byMission, census: {
+    ...(extended ? {
+      missionReferenceLeaves, nonStepMissionReferenceLeaves,
+      missionReferencesByKind:Object.fromEntries([...missionReferencesByKind.entries()]
+        .sort(([a],[b])=>a.localeCompare(b)))
+    } : {}),
     definitionCount: seen.size,
     kindTotal: total,
     sourceKinds: Object.fromEntries([...kindCounts.entries()].sort(([a],[b]) => a.localeCompare(b))),
@@ -155,19 +221,24 @@ export function assertGuideConditionBridge(bridge) {
 
 export async function importCurrentGuideConditions(indexFile, manifestFile, verifiedBridge) {
   assertGuideConditionBridge(verifiedBridge);
+  const isV2 = indexFile?.name === 'condition-native-index-v2.json';
+  const indexName = isV2 ? 'condition-native-index-v2.json' : 'condition-native-index.json';
+  const manifestName = isV2 ? 'condition-native-index-manifest-v2.json' :
+    'condition-native-index-manifest.json';
   const [indexRaw, manifestRaw] = await Promise.all([
-    readSelectedJson(indexFile, 'condition-native-index.json', GUIDE_CONDITION_MAX_FILE_BYTES),
-    readSelectedJson(manifestFile, 'condition-native-index-manifest.json', 128 * 1024)
+    readSelectedJson(indexFile, indexName, GUIDE_CONDITION_MAX_FILE_BYTES),
+    readSelectedJson(manifestFile, manifestName, 128 * 1024)
   ]);
   const data = indexRaw.json, manifest = manifestRaw.json;
-  requireValid(indexRaw.sha === GUIDE_CONDITION_INDEX_SHA &&
-    indexFile.size === GUIDE_CONDITION_INDEX_BYTES, 'original private Condition index fingerprint mismatch');
-  requireValid(isObject(data) && data.schema === GUIDE_CONDITION_SCHEMA &&
+  requireValid(indexRaw.sha === (isV2 ? GUIDE_CONDITION_INDEX_V2_SHA : GUIDE_CONDITION_INDEX_SHA) &&
+    indexFile.size === (isV2 ? GUIDE_CONDITION_INDEX_V2_BYTES : GUIDE_CONDITION_INDEX_BYTES),
+    'original private Condition index fingerprint mismatch');
+  requireValid(isObject(data) && data.schema === (isV2 ? GUIDE_CONDITION_V2_SCHEMA : GUIDE_CONDITION_SCHEMA) &&
     target(data.target) && provenance(data.source) &&
     data.evaluation === 'static_native_definitions_only' &&
     Array.isArray(data.records) && data.records.length === GUIDE_CONDITION_NATIVE_COUNT,
     'invalid current Condition definition source');
-  requireValid(isObject(manifest) && manifest.schema === GUIDE_CONDITION_MANIFEST_SCHEMA &&
+  requireValid(isObject(manifest) && manifest.schema === (isV2 ? GUIDE_CONDITION_V2_MANIFEST_SCHEMA : GUIDE_CONDITION_MANIFEST_SCHEMA) &&
     target(manifest.target) && provenance(manifest.source) &&
     manifest.privateIndexSha256 === indexRaw.sha &&
     manifest.privateIndexBytes === indexFile.size &&
@@ -178,16 +249,33 @@ export async function importCurrentGuideConditions(indexFile, manifestFile, veri
     manifest.limits?.runtimeOrSaveStateVerified === false &&
     manifest.limits?.currentStarPathOrLiveEventVerified === false,
     'invalid or mixed-build private Condition manifest');
-  const lookup = indexStaticConditionMentions(data.records);
+  if (isV2) {
+    const missionSource = data.missionSource;
+    requireValid(isObject(missionSource) &&
+      missionSource.file === 'ddv_Data/StreamingAssets/itemlist/Mission.json' &&
+      missionSource.sha256 === MISSION_SOURCE_SHA &&
+      missionSource.bytes === 4373535 && missionSource.records === 1030 &&
+      isObject(manifest.missionSource) &&
+      Object.entries(missionSource).every(([key,value])=>manifest.missionSource[key] === value) &&
+      manifest.limits?.missionReferenceDirection === 'STATIC_SOURCE_MENTION_NOT_PREREQUISITE' &&
+      manifest.limits?.missionPredicateTruthEvaluated === false,
+      'unverified source Mission join provenance');
+  }
+  const lookup = indexStaticConditionMentions(data.records, {extended:isV2});
   requireValid(isObject(manifest.counts), 'missing Condition source census');
   for (const [key,value] of Object.entries(lookup.census)) {
-    requireValid((key === 'sourceKinds'
-        ? isObject(manifest.counts.sourceKinds) &&
-          Object.keys(value).length === Object.keys(manifest.counts.sourceKinds).length &&
-          Object.entries(value).every(([kind,count]) => manifest.counts.sourceKinds[kind] === count)
+    requireValid(((key === 'sourceKinds' || key === 'missionReferencesByKind')
+        ? isObject(manifest.counts[key]) &&
+          Object.keys(value).length === Object.keys(manifest.counts[key]).length &&
+          Object.entries(value).every(([kind,count]) => manifest.counts[key][kind] === count)
         : value === manifest.counts[key]),
       `original Condition source census mismatch: ${key}`);
   }
+  if (isV2) requireValid(
+    lookup.census.missionReferenceLeaves === GUIDE_CONDITION_V2_MISSION_REFERENCES &&
+    lookup.census.nonStepMissionReferenceLeaves === 1858 &&
+    Object.keys(lookup.census.missionReferencesByKind).length === 9,
+    'unexpected current mission reference census');
   requireValid(lookup.census.definitionCount === GUIDE_CONDITION_NATIVE_COUNT &&
     lookup.census.kindTotal === 9861 &&
     lookup.census.missionStepStatusExplicitScalarLeaves === 3102 &&
@@ -195,6 +283,9 @@ export async function importCurrentGuideConditions(indexFile, manifestFile, veri
     lookup.census.distinctMissionIdsInExplicitStepReferences === 421,
     'unexpected current Condition source definition census');
   return {byMission: lookup.byMission, count: lookup.census.definitionCount,
+    missionReferenceCount:isV2 ? lookup.census.missionReferenceLeaves :
+      lookup.census.missionStepStatusExplicitScalarLeaves,
+    formatVersion:isV2 ? 2 : 1,
     targetVersion: data.target.gameVersion, sourceSha256: data.source.sha256,
     indexSha256: indexRaw.sha, evaluation: 'static_native_definitions_only'};
 }

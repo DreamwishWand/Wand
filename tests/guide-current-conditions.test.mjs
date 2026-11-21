@@ -133,3 +133,59 @@ test('duplicate native step IDs never produce an ambiguous match', () => {
   assert.equal(withVerifiedConditionStepDetails(detail,
     [{id:'9',text:'A'},{id:'9',text:'B'}],rows,detail.id)[0],rows[0]);
 });
+test('v2: source-typed nonstep Mission mentions are included, with explicit absent fields', () => {
+  const a=row('2130000010',tree([
+    {ordinal:0,kind:'MissionCompleted',sourceTag:255,payloadSha256:H,
+     missionId:'2070001661',inversed:true},
+    {ordinal:1,kind:'MissionStatus',sourceTag:270,payloadSha256:H,
+     missionId:'2070001661',comparisonOperatorCode:0,comparisonOperator:'Equal',
+     missionStateCode:8,missionState:'Completed'},
+    {ordinal:2,kind:'MissionObjectiveStatus',sourceTag:295,payloadSha256:H,
+     missionId:'2070001661',stepId:9,nativeStepIdVerified:true,
+     subStepId:3,objectiveId:1},
+    step('2070001661',12,2,3)
+  ]));
+  a.conditions.children[3].nativeStepIdVerified=true;
+  const out=indexStaticConditionMentions([a],{extended:true});
+  const found=currentConditionMentionsForQuest({...out,evaluation:'static_native_definitions_only'},'2070001661');
+  assert.equal(found.total,4);
+  assert.deepEqual(found.rows.map(x=>x.kind),['MissionCompleted','MissionStatus','MissionObjectiveStatus','MissionStepStatus']);
+  assert.equal(found.rows[0].inversed,true);
+  assert.equal(found.rows[1].missionState,'Completed');
+  assert.equal(found.rows[2].subStepId,3);
+  assert.equal(found.rows[2].objectiveId,1);
+  assert.equal(found.rows[2].stepId,9);
+  assert.equal(out.census.missionReferenceLeaves,4);
+  assert.equal(out.census.nonStepMissionReferenceLeaves,3);
+  assert.equal(out.census.distinctMissionIdsInExplicitStepReferences,1);
+  assert.equal(JSON.stringify(out.census).includes('playerProgress'),false);
+});
+
+test('v2: a mistyped nonstep source and unverified step never join', () => {
+  const a=row('2130000012',tree([{ordinal:0,kind:'MissionCompleted',sourceTag:260,payloadSha256:H,
+    missionId:'2070001661'}]));
+  assert.throws(()=>indexStaticConditionMentions([a],{extended:true}),/source-typed mission ID/);
+  const b=row('2130000013',tree([{ordinal:0,kind:'MissionObjectiveStatus',sourceTag:295,payloadSha256:H,
+    missionId:'2070001661',stepId:1}]));
+  assert.throws(()=>indexStaticConditionMentions([b],{extended:true}),/unverified current Mission step ID/);
+  // Explicitly unknown tags remain opaque and do not create Mission links.
+  const c=row('2130000014',tree([{ordinal:0,kind:'Unknown',sourceTag:777,payloadSha256:H,
+    missionId:'2070001661'}]));
+  assert.equal(indexStaticConditionMentions([c],{extended:true}).byMission.size,0);
+});
+
+test('actual owner-private v2 Condition index and manifest, all 4,960 source Mission predicates',async t=>{
+  const folder=process.env.DB03_PRIVATE_CONDITION_V2_DIR;
+  if(!folder)return t.skip('owner-private v2 source fixture not present in public CI');
+  const raw=await readFile(folder+'/condition-native-index-v2.json');
+  const manifest=await readFile(folder+'/condition-native-index-manifest-v2.json');
+  const result=await importCurrentGuideConditions(
+    file('condition-native-index-v2.json',raw),
+    file('condition-native-index-manifest-v2.json',manifest),bridge);
+  assert.equal(result.count,5440);
+  assert.equal(result.formatVersion,2);
+  assert.equal(result.missionReferenceCount,4960);
+  const jack=currentConditionMentionsForQuest(result,'2070001661',100);
+  assert(jack.rows.some(x=>x.conditionId==='2130006145' && x.kind==='MissionStepStatus' && x.stepId===9));
+  assert(jack.rows.some(x=>x.conditionId==='2130007038' && x.kind==='MissionStepStatus' && x.stepId===12));
+});
