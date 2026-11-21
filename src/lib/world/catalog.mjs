@@ -1,3 +1,5 @@
+import { GRIDAREA_ROT_COS, GRIDAREA_ROT_SIN, nativeObliqueSourceLocalPosition } from './oblique.mjs';
+
 // Read-only DB-04 adapter for World Editor, Decorate, Presets and Collection.
 // This API never invents 2D coordinates, path/fence connectivity or permissions.
 export const WORLD_SCHEMA = 'wand.db04.world@1';
@@ -213,14 +215,6 @@ export function getNativeFootprintCardinalDimensions(catalog, itemId, orientatio
 // Entries are signed integer coefficients scaled by 100, *not* JS trig.
 // A source version gate prevents silently applying this binary's logic to
 // newer game revisions whose original machine code has not been rechecked.
-const GRIDAREA_ROT_COS = Object.freeze([
-  -100, -92, -71, -38, 0, 38, 71, 92,
-  100, 92, 71, 38, 0, -38, -71, -92,
-]);
-const GRIDAREA_ROT_SIN = Object.freeze([
-  0, 38, 71, 92, 100, 92, 71, 38,
-  0, -38, -71, -92, -100, -92, -71, -38,
-]);
 
 function nativeGridAreaVector(catalog, x, y, orientationCode, inverse) {
   if (!catalog?.manifest || !Number.isInteger(x) || !Number.isInteger(y) ||
