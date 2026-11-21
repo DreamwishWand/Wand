@@ -154,7 +154,7 @@ try{
   // 144 cards currently rendered. Confirm the write and exact owned/missing
   // totals through the real Rust/WASM → IndexedDB → Svelte round-trip.
   const matchingCount=Number((await page.locator('.result-count').innerText())
-    .match(/^([0-9,]+)/)?.[1].replaceAll(','));
+    .match(/([0-9][0-9,]*)\s*件/)?.[1].replaceAll(','));
   assert.ok(matchingCount>144,'fixture should have offscreen filtered matches');
   await page.getByRole('button',{name:'複数選択'}).click();
   page.once('dialog',dialog=>void dialog.accept());
