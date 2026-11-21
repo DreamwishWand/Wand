@@ -121,6 +121,55 @@ export async function importGuideSearch(file) {
   return validateGuideSearch(await jsonFile(file, MAX_SEARCH_BYTES));
 }
 
+/** Accept a locally selected Guide directory without uploading or preloading shards.
+ *
+ * A browser `webkitdirectory` selection returns File.webkitRelativePath paths
+ * such as `guide/quest-search.json` or `snapshot/guide/quest-search.json`.
+ * The path is treated as a relative grouping hint, never a filesystem URL.
+ * Only one matching source index is allowed, and detail files must share its
+ * parent prefix. No unrelated original files are read, and shard bytes stay
+ * unread until the user opens an individual quest.
+ */
+export async function importGuideFolder(files) {
+  assert(Array.isArray(files) && files.length > 0 && files.length <= 10000,
+    'Guide folder must contain between 1 and 10000 files');
+  const candidates = [];
+  for (const file of files) {
+    assert(file && typeof file.name === 'string' && typeof file.arrayBuffer === 'function' &&
+      Number.isSafeInteger(file.size) && file.size >= 0, 'invalid Guide folder file');
+    const path = typeof file.webkitRelativePath === 'string' && file.webkitRelativePath
+      ? file.webkitRelativePath : file.name;
+    assert(path.length <= 1024 && !path.includes('\\') && !path.includes('\0') &&
+      path.split('/').every(segment => segment !== '' && segment !== '.' && segment !== '..'),
+      'invalid relative Guide file path');
+    if (path === 'guide/quest-search.json' || path.endsWith('/guide/quest-search.json')) {
+      candidates.push({path, file});
+    }
+  }
+  assert(candidates.length === 1, 'Guide folder requires exactly one guide/quest-search.json');
+  const chosen = candidates[0];
+  const prefix = chosen.path.slice(0, -'guide/quest-search.json'.length);
+  const index = await importGuideSearch(chosen.file);
+  const needed = new Set(index.records.map(row => row.detail.file.split('/').at(-1)));
+  /** @type {Record<string, File>} */
+  const shardFiles = {};
+  for (const file of files) {
+    const path = typeof file.webkitRelativePath === 'string' && file.webkitRelativePath
+      ? file.webkitRelativePath : file.name;
+    if (!path.startsWith(prefix + 'guide/quest-shards/')) continue;
+    const name = path.slice((prefix + 'guide/quest-shards/').length);
+    if (!/^(?:part-(?:0\d|[12]\d|3[01])\.json)$/.test(name) || !needed.has(name)) continue;
+    assert(!Object.prototype.hasOwnProperty.call(shardFiles, name),
+      'duplicate Guide detail shard in selected folder: ' + name);
+    assert(file.size > 0 && file.size <= MAX_SHARD_BYTES,
+      'Guide detail shard missing or too large: ' + name);
+    shardFiles[name] = file;
+  }
+  assert(Object.keys(shardFiles).length > 0, 'Guide folder has no matching detail shards');
+  return {index, shardFiles, matchedShards: Object.keys(shardFiles).length,
+    requiredShards: needed.size};
+}
+
 /** Verify chosen file, native identity and full 64-digit record content digest. */
 export async function importGuideDetail(index, id, file) {
   validateGuideSearch(index);

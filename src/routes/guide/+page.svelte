@@ -1,7 +1,7 @@
 <script lang="ts">
   import {
-    GUIDE_LOCALES, importGuideSearch, importGuideDetail, searchGuide,
-    detailStepRows
+    GUIDE_LOCALES, importGuideSearch, importGuideFolder, importGuideDetail, searchGuide,
+    detailStepRows, MAX_SHARD_BYTES
   } from '$lib/guide/client.mjs';
 
   const languageLabels: Record<string, string> = {
@@ -24,6 +24,8 @@
   let importError = '';
   let info = '';
   let shardFiles: Record<string, File> = {};
+  let loadEpoch = 0;
+  let detailEpoch = 0;
 
   $: filtered = searchIndex ? searchGuide(searchIndex, {
     query: query.slice(0, 128), locale, character, group, update, objective,
@@ -35,6 +37,8 @@
   $: objectives = searchIndex ? [...new Set(searchIndex.records.flatMap((r: any) => r.objectiveKinds))].sort() : [];
   $: selectedRow = selectedId && searchIndex ? searchIndex.records.find((r: any) => r.id === selectedId) : null;
   $: detailSteps = selectedDetail ? detailStepRows(selectedDetail, locale) : [];
+  $: requiredShards = searchIndex
+    ? new Set(searchIndex.records.map((r: any) => r.detail.file)).size : 0;
 
   function resetPage() { page = 0; }
   function displayName(row: any) {
@@ -44,28 +48,57 @@
     return record?.plainText?.[key]?.[locale] || record?.plainText?.[key]?.en || '';
   }
 
-  async function chooseIndex(event: Event) {
-    const file = (event.currentTarget as HTMLInputElement).files?.[0];
-    if (!file) return;
-    loadingIndex = true;
-    importError = '';
-    info = '';
+  function resetSource() {
+    detailEpoch++;
     searchIndex = null;
     shardFiles = {};
     selectedId = '';
     selectedDetail = null;
+    detailError = '';
+    query = ''; character = ''; group = ''; update = ''; objective = ''; page = 0;
+    info = '';
+    importError = '';
+  }
+
+  async function chooseFolder(event: Event) {
+    const files = (event.currentTarget as HTMLInputElement).files;
+    if (!files?.length) return;
+    const request = ++loadEpoch;
+    resetSource();
+    loadingIndex = true;
     try {
-      searchIndex = await importGuideSearch(file);
-      query = ''; character = ''; group = ''; update = ''; objective = ''; page = 0;
-      info = `Steam ${searchIndex.target.gameVersion} / ${searchIndex.target.platform} の静的クエスト定義を読み込みました。端末からのアップロードは行っていません。`;
+      const result = await importGuideFolder(Array.from(files));
+      if (request !== loadEpoch) return;
+      searchIndex = result.index;
+      shardFiles = result.shardFiles;
+      info = `${searchIndex.target.platform} ${searchIndex.target.gameVersion}：検索索引と詳細ファイル ${result.matchedShards}/${result.requiredShards} 個を接続しました。データは送信せず、詳細は選択時だけ読み込みます。`;
     } catch (error) {
-      importError = error instanceof Error ? error.message : String(error);
+      if (request === loadEpoch) importError = error instanceof Error ? error.message : String(error);
     } finally {
-      loadingIndex = false;
+      if (request === loadEpoch) loadingIndex = false;
+    }
+  }
+
+  async function chooseIndex(event: Event) {
+    const file = (event.currentTarget as HTMLInputElement).files?.[0];
+    if (!file) return;
+    const request = ++loadEpoch;
+    resetSource();
+    loadingIndex = true;
+    try {
+      const result = await importGuideSearch(file);
+      if (request !== loadEpoch) return;
+      searchIndex = result;
+      info = `${searchIndex.target.platform} ${searchIndex.target.gameVersion} の静的クエスト定義を読み込みました。端末からのアップロードは行っていません。`;
+    } catch (error) {
+      if (request === loadEpoch) importError = error instanceof Error ? error.message : String(error);
+    } finally {
+      if (request === loadEpoch) loadingIndex = false;
     }
   }
 
   async function showDetail(row: any) {
+    const request = ++detailEpoch;
     selectedId = row.id;
     selectedDetail = null;
     detailError = '';
@@ -73,15 +106,18 @@
     const file = shardFiles[name];
     if (!file) {
       detailError = `このクエストの詳細を開くには ${name} を選択してください。`;
+      loadingDetail = false;
       return;
     }
     loadingDetail = true;
+    const index = searchIndex;
     try {
-      selectedDetail = await importGuideDetail(searchIndex, row.id, file);
+      const detail = await importGuideDetail(index, row.id, file);
+      if (request === detailEpoch) selectedDetail = detail;
     } catch (error) {
-      detailError = error instanceof Error ? error.message : String(error);
+      if (request === detailEpoch) detailError = error instanceof Error ? error.message : String(error);
     } finally {
-      loadingDetail = false;
+      if (request === detailEpoch) loadingDetail = false;
     }
   }
 
@@ -93,6 +129,10 @@
     for (const file of Array.from(selected)) {
       if (!/^part-(?:0\d|[12]\d|3[01])\.json$/.test(file.name)) {
         detailError = 'part-00.json 〜 part-31.json のファイルのみ選択できます。';
+        return;
+      }
+      if (file.size <= 0 || file.size > MAX_SHARD_BYTES) {
+        detailError = `詳細ファイルのサイズが不正です: ${file.name}`;
         return;
       }
       next[file.name] = file;
@@ -129,8 +169,14 @@
   <section class="guide-import" aria-label="Guide local source files">
     <div class="guide-import-intro">
       <strong>ローカルデータを接続</strong>
-      <p>まず <code>quest-search.json</code> を選択してください。詳細を見る際は対応する <code>part-XX.json</code> を指定します。すべてブラウザ内で処理します。</p>
+      <p>推奨：<code>guide/quest-search.json</code> と <code>guide/quest-shards/</code> を含むフォルダを選択してください。個々の詳細ファイルは必要になった時だけ読み込みます。ファイルは外部に送信しません。</p>
     </div>
+    <label class="guide-folder-input">Guideデータのフォルダを選択（推奨）
+      <input type="file" webkitdirectory on:change={chooseFolder} aria-label="Select private Guide folder" disabled={loadingIndex} />
+    </label>
+    <details class="guide-manual">
+      <summary>個別のJSONファイルを選択する</summary>
+      <p class="guide-manual-note">フォルダ選択に対応しない環境では、検索索引と必要な詳細ファイルを別々に選択できます。</p>
     <div class="guide-file-inputs">
       <label>検索索引
         <input type="file" accept=".json,application/json" on:change={chooseIndex} aria-label="Select quest-search.json" />
@@ -139,6 +185,7 @@
         <input type="file" accept=".json,application/json" multiple disabled={!searchIndex} on:change={chooseShards} aria-label="Select quest detail shard files" />
       </label>
     </div>
+    </details>
     {#if loadingIndex}<p class="guide-note" role="status">検索索引を検証しています…</p>{/if}
     {#if importError}<p class="guide-error" role="alert">{importError}</p>{/if}
     {#if info}<p class="guide-note" role="status">{info}</p>{/if}
@@ -148,7 +195,7 @@
     <section class="guide-stats" aria-label="Source coverage">
       <div><strong>{searchIndex.counts.missions.toLocaleString()}</strong><span>クエスト定義</span></div>
       <div><strong>{searchIndex.counts.excludedQuestGroups.toLocaleString()}</strong><span>独立表示しないグループ</span></div>
-      <div><strong>{Object.keys(shardFiles).length}/32</strong><span>読み込み可能な詳細ファイル</span></div>
+      <div><strong>{Object.keys(shardFiles).length}/{requiredShards}</strong><span>読み込み可能な詳細ファイル</span></div>
       <div><strong>{searchIndex.target.gameVersion}</strong><span>取得元のゲームバージョン</span></div>
     </section>
 
@@ -259,6 +306,10 @@
   .guide-import-intro strong { font-size:15px; }
   .guide-import-intro p { color:#b9a9c8; font-size:12px; line-height:1.8; margin:8px 0 16px; }
   .guide-import code { background:#1d1529; padding:3px 6px; border-radius:5px; }
+  .guide-folder-input { color:#f2e5fa; display:grid; gap:8px; font-size:12px; font-weight:650; margin:14px 0 6px; max-width:640px; }
+  .guide-manual { margin:17px 0 0; color:#bda9d0; font-size:12px; }
+  .guide-manual summary { cursor:pointer; padding:8px 0; }
+  .guide-manual-note { color:#ac9bbf; font-size:11px; line-height:1.7; }
   .guide-file-inputs { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
   .guide-note { font-size:12px; color:#bcddb9; margin:14px 0 0; }
   .guide-error { font-size:12px; color:#ffb9af; margin:14px 0 0; }
