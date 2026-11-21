@@ -151,6 +151,7 @@ export async function importGuideFolder(files) {
   const prefix = chosen.path.slice(0, -'guide/quest-search.json'.length);
   const index = await importGuideSearch(chosen.file);
   const needed = new Set(index.records.map(row => row.detail.file.split('/').at(-1)));
+  /** @type {Record<string, File>} */
   const shardFiles = {};
   for (const file of files) {
     const path = typeof file.webkitRelativePath === 'string' && file.webkitRelativePath
