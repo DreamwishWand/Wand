@@ -168,6 +168,29 @@ export async function loadPrivateStallPriceOverlap({
     counts,
     listStallPriceCoverage:()=>entries,
     getStallPriceCoverage:id=>stallsById.get(validItem(id))??null,
+    getSourceStallItemPriceReferences:(stallId,itemId)=>{
+      const stall=stallsById.get(validItem(stallId));
+      const id=validItem(itemId);
+      if(!stall)return null; // Unknown stall is not proof a location does not exist.
+      const candidate=stall.candidates.find(row=>row.itemId===id)??null;
+      const slots=freeze(stall.slots.filter(slot=>slot.candidates.some(c=>c.itemId===id))
+        .map(slot=>freeze({slotIndex:slot.slotIndex,lootTableId:slot.lootTableId,
+          staticCandidateOnly:true,runtimeSlotMappingVerified:false})));
+      const sourcePriceRows=candidate?pricing.getSourceItemPriceDefinitions(id):EMPTY;
+      return freeze({stallId,itemId:id,shopKey:stall.shopKey,
+        candidateInEnumeratedStaticLoot:!!candidate,
+        staticSourceSlots:slots,
+        sourcePriceRows,
+        shopConfiguredCurrencyIds:stall.shopConfiguredCurrencyIds,
+        matchingPurchaseCostDefinitions:candidate?.sourceConfiguredMatchingPurchaseCosts??EMPTY,
+        alternativeCurrencyPurchaseCostDefinitions:
+          candidate?.sourceConfiguredOtherCurrencyPurchaseCosts??EMPTY,
+        priceDatabaseKeys:candidate?.priceDatabaseKeys??EMPTY,
+        // Price lookup is source-scoped, not a real-time shop purchase operation.
+        currentShopOfferVerified:false,shopSpecificDatabaseSelectionVerified:false,
+        effectivePriceVerified:false,availabilityVerified:false,
+        playerEligibilityVerified:false,publishable:false});
+    },
     getPossibleStaticPriceReferencesForItem:id=>{
       const itemId=validItem(id);
       const definitions=pricing.getSourceItemPriceDefinitions(itemId);

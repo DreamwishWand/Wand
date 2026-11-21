@@ -87,6 +87,29 @@ export interface SourcePriceOverlapView {
   readonly counts:SourcePriceOverlapCounts;
   listStallPriceCoverage():readonly SourceStallPriceCoverage[];
   getStallPriceCoverage(stallId:number):SourceStallPriceCoverage|null;
+  getSourceStallItemPriceReferences(stallId:number,itemId:number):Readonly<{
+    stallId:number;
+    itemId:number;
+    shopKey:string;
+    candidateInEnumeratedStaticLoot:boolean;
+    staticSourceSlots:readonly Readonly<{
+      slotIndex:number;
+      lootTableId:number;
+      staticCandidateOnly:true;
+      runtimeSlotMappingVerified:false;
+    }>[];
+    sourcePriceRows:readonly StaticItemPriceDefinition[];
+    shopConfiguredCurrencyIds:readonly number[];
+    matchingPurchaseCostDefinitions:readonly SourceConfiguredCurrencyCost[];
+    alternativeCurrencyPurchaseCostDefinitions:readonly SourceConfiguredCurrencyCost[];
+    priceDatabaseKeys:readonly string[];
+    currentShopOfferVerified:false;
+    shopSpecificDatabaseSelectionVerified:false;
+    effectivePriceVerified:false;
+    availabilityVerified:false;
+    playerEligibilityVerified:false;
+    publishable:false;
+  }>|null;
   getPossibleStaticPriceReferencesForItem(itemId:number):Readonly<{
     itemId:number;
     definitions:readonly StaticItemPriceDefinition[];
