@@ -65,6 +65,13 @@ class NativeWireTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             wire_fields(b"\x08\x80\x00")
 
+    def test_native_building_alternate_wire_fields_are_not_scene_ids_or_footprints(self):
+        from world import footprint
+        # The actual game has Building.field6 wire0 and field10 wire2 variants.
+        fields = wire_fields(field(6, 1) + field(10, b"opaque"))
+        self.assertIsNone(footprint(fields))
+        self.assertEqual([(n, w) for n, w, _ in fields], [(6, 0), (10, 2)])
+
     def test_verified_explicit_restrictions_only(self):
         raw = field(25, field(1, field(1, 0)) +
                     field(2, field(1, 1)) + field(8, b""))
