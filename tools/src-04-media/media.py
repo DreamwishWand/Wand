@@ -173,7 +173,8 @@ def command_extract(args):
         complete = True
         try:
             environment = UnityPy.load(str(path))
-            for obj in environment.objects:
+            objects = environment.objects.values() if isinstance(environment.objects, dict) else environment.objects
+            for obj in objects:
                 if obj.type.name not in {"Sprite", "Texture2D"}:
                     continue
                 asset_file = str(getattr(getattr(obj, "assets_file", None), "name", "unknown"))
