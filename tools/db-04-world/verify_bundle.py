@@ -86,7 +86,7 @@ def checked_footprint(item):
         raise ValueError("unverified footprint indexing must remain false")
 
 
-def checked_grid(grid, *, source_game_version="1.26.1"):
+def checked_grid(grid, *, source_game_version):
     x, y = grid.get("sizeX"), grid.get("sizeY")
     if x is not None or y is not None:
         if type(x) is not int or type(y) is not int or not (

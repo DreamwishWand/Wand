@@ -25,6 +25,20 @@ distribution APIs explicitly return
 such bytes or trusting a copied decoded flag from an older snapshot. New
 original-version evidence is required before enabling those previews.
 
+The Python entrypoints `parse_grid_structure`, `grid_assets`, and
+`checked_grid` now require an **explicit** `source_game_version` argument.
+The normal extractor obtains it from the installed game's `FullVersion.txt`;
+the private snapshot verifier obtains it from the verified manifest. Both
+private terrain audits independently use the verified snapshot version instead
+of assuming the Steam 1.26.1 native decoder. This guards future callers
+against accidental default-version promotion.
+
+`getNativeDefaultLayoutObjectComputedStride` resolves the original
+GridCollection's Grid factor directly. It does not sample the footprint's
+object-local `(0,0)` cell: an oblique object may have no mapped layer there,
+and the original nullable `GetStrideFor` calculation is independent of that
+raw-layer preview.
+
 ## Verified input formats
 
 - Steam game source `ddv_Data/StreamingAssets/itemlist/Furniture.json` and `Building.json`: indexed protobuf records with exact integer item IDs, native names and `GridAreaData` (wire field 6).

@@ -23,7 +23,7 @@ def _by_id(records, key):
     return {str(entry[key]): entry for entry in records}
 
 
-def _grid_decoder(row):
+def _grid_decoder(row, *, source_game_version):
     raw = row.get("compactedFloorTypesBase64")
     evidence = row.get("terrainDecoding")
     if not isinstance(raw, str) or not isinstance(evidence, dict):
@@ -34,7 +34,8 @@ def _grid_decoder(row):
         return None
     packed = base64.b64decode(raw, validate=True)
     verified = describe_native_packing(
-        row["sizeX"], row["sizeY"], row["nativeFloorTypePalette"], packed)
+        row["sizeX"], row["sizeY"], row["nativeFloorTypePalette"], packed,
+        source_game_version=source_game_version)
     if verified != evidence:
         raise ValueError("original GridData decoder evidence mismatch")
     return (packed, row["sizeY"], row["nativeFloorTypePalette"],
@@ -110,7 +111,8 @@ def audit_footprint_candidates(snapshot, *, max_objects=20000,
             missing["nativeItemAcceptedFloorMaskUnavailable"] += 1
             continue
         if path not in decoded:
-            decoded[path] = _grid_decoder(grid)
+            decoded[path] = _grid_decoder(
+                grid, source_game_version=verified["gameVersion"])
         decoder = decoded[path]
         if decoder is None:
             missing["terrainCodecNotCorroborated"] += 1

@@ -432,7 +432,7 @@ class NativeWireTests(unittest.TestCase):
         compacted = b"\x55" * 48
         raw = (field(1, 12) + field(2, 16) +
                field(4, palette) + field(5, compacted))
-        grid = parse_grid_structure(raw)
+        grid = parse_grid_structure(raw, source_game_version="1.26.1")
         self.assertEqual((grid["sizeX"], grid["sizeY"]), (12, 16))
         self.assertEqual(grid["nativeFloorTypePalette"], [0, 3072, 1024])
         self.assertEqual(grid["nativePaletteIndexCellCounts"], [0, 192, 0])
@@ -444,13 +444,35 @@ class NativeWireTests(unittest.TestCase):
         self.assertFalse(grid["compactedBitOrderVerified"])
         self.assertFalse(grid["cellIndexToXYVerified"])
 
+    def test_native_grid_parser_and_verifier_demand_explicit_version(self):
+        # Four valid 1-bit cells followed by four required zero pad bits.
+        packed = (field(1, 2) + field(2, 2) +
+                  field(4, struct.pack("<II", 0, 1024)) +
+                  field(5, bytes((0xf0,))))
+        with self.assertRaises(TypeError):
+            parse_grid_structure(packed)
+        with self.assertRaisesRegex(ValueError, "source game version"):
+            parse_grid_structure(packed, source_game_version="")
+        decoded = parse_grid_structure(
+            packed, source_game_version="1.26.1")
+        with self.assertRaises(TypeError):
+            checked_grid(decoded)
+        checked_grid(decoded, source_game_version="1.26.1")
+        current = parse_grid_structure(
+            packed, source_game_version="1.26.2")
+        checked_grid(current, source_game_version="1.26.2")
+        with self.assertRaisesRegex(ValueError, "evidence mismatches"):
+            checked_grid(decoded, source_game_version="1.26.2")
+
     def test_native_uncompacted_grid_fixed32_values(self):
         raw = field(1, 2) + field(2, 2) + field(3, struct.pack("<IIII", 4, 4, 512, 0))
-        grid = parse_grid_structure(raw)
+        grid = parse_grid_structure(raw, source_game_version="1.26.1")
         self.assertEqual(grid["nativeFloorTypes"], [4, 4, 512, 0])
         self.assertEqual(grid["status"], "native_uncompacted_floor_values")
         with self.assertRaises(ValueError):
-            parse_grid_structure(field(1, 1) + field(2, 1) + field(4, b"\x01"))
+            parse_grid_structure(
+                field(1, 1) + field(2, 1) + field(4, b"\x01"),
+                source_game_version="1.26.1")
 
     def test_native_building_alternate_wire_fields_are_not_scene_ids_or_footprints(self):
         from world import footprint

@@ -1361,17 +1361,22 @@ export function getNativeFootprintComputedStride(catalog, itemId, callerGridFact
  * GridObject; source default arrangement is not a live-save placement.
  */
 export function getNativeDefaultLayoutObjectComputedStride(catalog, layoutObjectId) {
-  const ref = getNativeDefaultLayoutObjectLayerAt(catalog, layoutObjectId, 0, 0);
-  if (ref?.callerGridFactorProvenanceVerified !== true) return ref;
+  // GetStrideFor depends on the nullable ItemList field and this Grid's
+  // tessellation, not on whether object-local (0,0) maps into a rotated
+  // GridArea cell. Resolve provenance directly: layerAt() is unrelated and
+  // may be outside the actual oblique footprint at local origin.
+  const ref = resolveDefaultObjectNativeGridFactor(catalog, layoutObjectId);
+  if (ref.callerGridFactorProvenanceVerified !== true) return ref;
   const stride = getNativeFootprintComputedStride(
     catalog, ref.originalItemId, ref.callerGridTessellationFactor);
   return {
-    ...stride, ...ref,
+    ...ref, ...stride,
     status: stride.status,
     nativeStrideCalculationVerified:
       stride.nativeStrideCalculationVerified === true,
     callerGridFactorProvenanceVerified: true,
     sourceFactoryRoutePerRecordVerified: false,
+    itemFactoryRoutePerRecordVerified: false,
     currentSaveObjectVerified: false,
     worldCoordinatesVerified: false,
     placementLegalityVerified: false,

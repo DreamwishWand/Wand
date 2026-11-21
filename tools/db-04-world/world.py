@@ -489,7 +489,11 @@ def repeated_uint32(fields, number):
     return values
 
 
-def parse_grid_structure(raw, *, source_game_version="1.26.1"):
+def parse_grid_structure(raw, *, source_game_version):
+    # Callers must provide the exact source version; the standalone parser
+    # must not silently treat an unknown archive as the proven 1.26.1 build.
+    if not isinstance(source_game_version, str) or not source_game_version:
+        raise ValueError("missing original GridData source game version")
     fields = wire_fields(raw)
     x, y = one(fields, 1, 0, True), one(fields, 2, 0, True)
     if x <= 0 or y <= 0 or x * y > 16_777_216:
@@ -536,7 +540,7 @@ def parse_grid_structure(raw, *, source_game_version="1.26.1"):
     }
 
 
-def grid_assets(root, sources, *, source_game_version="1.26.1"):
+def grid_assets(root, sources, *, source_game_version):
     grids = []
     for relative in optional_files(root, STREAM / "GridData", sources):
         raw = source_bytes(root, relative, sources)
