@@ -256,3 +256,21 @@ missing `Condition.json`, absent full current LocDB ZIP files, and a
 same-game-version coverage-safe diff with the previous 13,334-row partial
 baseline (13,334 shared IDs, 20,293 newly-covered IDs, no game-added claims).
 
+## Owner-private historical locale candidate overlay (not verified current names)
+
+The existing archived Steam v1.26.1 ZIP originals and Steam v1.26.2
+format-probe member size/CRC32/first-8KiB metadata agree for **15 categories ×
+8 locales = 120 member pairs**. They do **not** prove full current member
+SHA-256 equality. `build_correlated_names.py` independently validates all
+original archive checksums and the exact 33,627-item private DB-01 source hash,
+then produces **12,883 records with eight-language historical candidates**, of
+which 3,657 official current locale values independently match and none differ.
+
+The output has separate schema `wand.db01.historical-locale-correlations@1`
+and `mergeIntoCanonicalPermitted:false`, and remains private. The consumer
+`src/lib/items/historical-candidates.mjs` requires a hash-verified source
+catalog, checks the overlay hash and Item ID/key alignment, prefers source-
+verified current names, and only permits historical values when the caller
+explicitly sets `allowHistorical:true`. Do not import these into official
+current `names` or publish them. See
+[`HISTORICAL-LOCALE-CORRELATIONS.md`](HISTORICAL-LOCALE-CORRELATIONS.md).

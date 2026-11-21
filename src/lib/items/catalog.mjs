@@ -204,7 +204,9 @@ function makePrivateCatalog(manifest, records, dataSha256Verified) {
   const list = Object.freeze([...byId.values()].map(freezeDeep));
   const source = Object.freeze({platform:manifest.platform, gameVersion:manifest.gameVersion,
     manifestSchema:manifest.schema, fullCorpusParsed:false, privateOnly:true,
-    publicationAuthorized:false, dataSha256Verified, itemCount, unclassifiedDefinitions:definitionCount,
+    publicationAuthorized:false, dataSha256Verified,
+    dataSha256: dataSha256Verified ? manifest.outputSha256["items.jsonl"] : null,
+    itemCount, unclassifiedDefinitions:definitionCount,
     sourceManifestSha256: manifest.schema === DB01_CANONICAL_SCHEMA
       ? manifest.inputs.nativeManifest : manifest.sources[0].manifestSha256});
   return Object.freeze({
