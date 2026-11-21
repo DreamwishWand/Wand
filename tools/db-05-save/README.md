@@ -614,11 +614,7 @@ existing private `SaveSourceCatalogBridge`. The page is not
 listed in the normal navigation, has a `noindex,nofollow` meta
 tag, and is **not presented as the final Save Editor**.
 
-- The file picker accepts `.json` up to 128 MiB, verifies
-  `GameInfo/Player/World` structure in memory, and never
-  writes the selected contents to a server, URL, IndexedDB,
-  `localStorage`, telemetry, download, or Git. Clicking
-  "読み込み内容を破棄" clears the current object reference.
+- The file picker now accepts both **encrypted P1G `.profile` / `.dat` / `.bin` (≤32 MiB)** and **previously decoded `.json` (≤128 MiB)**. All file bytes are transferred to a one-shot dedicated browser Worker (not cloned). The Worker wipes its transferred bytes, decodes and parses the content privately, and returns only allowlisted anonymous counts. The page keeps no decoded profile object, ciphertext, or JSON text. Nothing is written to a server, URL, IndexedDB, `localStorage`, telemetry, download, or Git. Clicking "読み込み内容を破棄" terminates an in-flight Worker and clears its result.
 - `makeSaveDiagnosticView()` shows the **440** public known
   structure templates, structural domain coverage and the
   **14** internal save reference rules. It exposes only
@@ -636,8 +632,7 @@ tag, and is **not presented as the final Save Editor**.
   thrown source exceptions. Browser UI code is tested with
   synthetic 626/643 documents.
 
-An **encrypted** `.profile` save is **not** supported by this
-page. The separate production Codec/WASM decoder and
+The developer page now **does accept** encrypted P1G using the **existing JavaScript Collection read-only decoder** (`src/lib/collection/private-p1g-codec.js`) reused from the already shipped saved-store Worker. This is **not** the proposed Rust/WASM save Codec/Writer, and save encoding or export remains unavailable. The separate production Codec/WASM decoder and
 unknown-field-preserving Writer remain necessary for the full
 Save Editor; this route is a diagnostics integration seam,
 not a replacement or a read-only public release. It also
@@ -652,3 +647,50 @@ had no files. A verified v1.26.2 DB-04 world bundle was
 not available in the checked folders. Identical IL2CPP
 `dump.cs` across 1.26.1/1.26.2 does not substitute for
 1.26.2 world assets or a trusted source ledger.
+
+
+## P1G Worker-backed DB-05 diagnostics integration
+
+`src/lib/save/save-diagnostics-worker-core.mjs` reuses the
+**existing local read-only** Collection P1G codec and the
+strict, duplicate-key/unsafe-integer-rejecting JSON parser.
+`src/lib/save/save-diagnostics.worker.mjs` accepts only the
+one-shot command `inspect-local-save-diagnostics` with a
+transferred `Uint8Array` and a fixed `json` or `p1g` format.
+The Worker returns a `save-diagnostics-summary` object with
+the **440 public structural templates**, **14 internal
+reference rules**, observed counts, and only fixed public
+labels. No raw JSON, profile ciphertext, private map keys,
+ID values, names, account fields or arbitrary errors cross
+the Worker boundary.
+
+The main-thread `sanitizeSaveDiagnosticView()` verifies the
+exact result contract and rebuilds the display model from
+locally declared rule IDs and domain names. It rejects unknown
+IDs, duplicate rows, malformed counters, unexpected types,
+and any attempt to grant Writer/export permissions. The
+component `SaveDiagnosticsPanel.svelte` accepts this
+pre-sanitized `report`; the old `decoded` prop remains
+available for explicitly trusted internal callers only.
+The optional DB-01/DB-04 in-memory catalog bridge is not
+injected into the public worker route; that control remains
+disabled until a separately verified private source
+integration is provided.
+
+Both encrypted and unencrypted file inputs are decoded
+within the Worker. The main thread retains only the
+anonymous result and references to the one-shot Worker
+while it is active; the Worker wipes the original byte
+buffer and exits. User cancellation terminates that
+Worker. Errors are sanitized to fixed Japanese text,
+not underlying keys, file names or decoder exceptions.
+
+The P1G path is validated by synthetic Node AES-256/ZIP
+test inputs for schema 626 and 643. The same tests cover
+duplicate JSON keys, out-of-range integers, ciphertext
+alignment, Worker privacy, corrupted data, report ID
+forgery, and source data redaction. No actual private
+save is used in public CI. Success authorizes read-only
+diagnostics **only**; it does not prove byte-for-byte
+re-encoding, unmodified unknown-field preservation,
+ownership/entitlements, or safe editing.
