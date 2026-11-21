@@ -82,7 +82,8 @@ def kind_of(relative):
 
 
 def inspect_platform(root, paths):
-    steam = [p for p in paths if p.lower().rsplit("/", 1)[-1] in ("gameassembly.dll", "unityplayer.dll")]
+    pc = [p for p in paths if p.lower().rsplit("/", 1)[-1] in ("gameassembly.dll", "unityplayer.dll")]
+    steam = [p for p in paths if p.lower().rsplit("/", 1)[-1] in ("steam_api64.dll", "steam_api.dll") or re.fullmatch(r"appmanifest_\d+\.acf", p.lower().rsplit("/", 1)[-1])]
     switch = [p for p in paths if p.lower().endswith(("/exefs/main", "/exefs/main.nso", "/exefs/main.npdm", ".nca", ".nsp", ".xci", ".nso")) or p.lower().startswith(("exefs/", "romfs/")) or "/exefs/" in p.lower() or "/romfs/" in p.lower()]
     for relative in paths:
         if relative.lower().rsplit("/", 1)[-1] not in ("main", "main.nso"):
@@ -93,16 +94,18 @@ def inspect_platform(root, paths):
                     switch.append(relative)
         except OSError:
             pass
-    steam_roots = {p.rpartition("/")[0] for p in steam if p.lower().endswith("gameassembly.dll")}
+    steam_roots = {p.rpartition("/")[0] for p in pc if p.lower().endswith("gameassembly.dll")}
     switch_roots = {p.lower().split("/exefs/")[0] if "/exefs/" in p.lower() else "" for p in switch if p.lower().endswith(("/exefs/main", "/exefs/main.nso"))}
     if len(steam_roots) > 1 or len(switch_roots) > 1:
-        return "conflict", {"steam": steam[:SAMPLES], "switch": switch[:SAMPLES], "reason": "multiple installation roots"}
-    if steam and switch:
-        return "conflict", {"steam": steam[:SAMPLES], "switch": switch[:SAMPLES]}
+        return "conflict", {"steam": steam[:SAMPLES], "windows_pc": pc[:SAMPLES], "switch": switch[:SAMPLES], "reason": "multiple installation roots"}
+    if (steam or pc) and switch:
+        return "conflict", {"steam": steam[:SAMPLES], "windows_pc": pc[:SAMPLES], "switch": switch[:SAMPLES]}
     if steam:
-        return "steam", {"steam": steam[:SAMPLES]}
+        return "steam", {"steam": steam[:SAMPLES], "windows_pc": pc[:SAMPLES]}
     if switch:
         return "switch", {"switch": switch[:SAMPLES]}
+    if pc:
+        return "pc_unverified", {"windows_pc": pc[:SAMPLES]}
     return "unknown", {}
 
 
@@ -180,7 +183,7 @@ def inventory(root, errors, skipped):
         for name in sorted(filenames):
             path = folder_path / name
             relative = path.relative_to(root).as_posix()
-            if path.is_symlink() or not is_within(path.resolve(), root):
+            if path.is_symlink():
                 skipped.append(relative)
             else:
                 items.append((relative, path))
@@ -344,15 +347,15 @@ def main():
 
     paths = [entry[0] for entry in entries]
     detected_platform, evidence = inspect_platform(root, paths)
-    conflicts = detected_platform == "conflict" or (args.platform != "auto" and detected_platform not in ("unknown", args.platform))
-    selected_platform = detected_platform if args.platform == "auto" else args.platform
+    conflicts = detected_platform == "conflict" or (args.platform == "switch" and detected_platform == "pc_unverified") or (args.platform != "auto" and detected_platform not in ("unknown", "pc_unverified", args.platform))
+    selected_platform = ("unknown" if detected_platform == "pc_unverified" else detected_platform) if args.platform == "auto" else args.platform
     if old and old.get("platform", {}).get("value") not in (None, selected_platform) and not conflicts:
         conflicts = True
     if conflicts:
         errors.append({"operation": "identify_platform", "reason": "Conflicting Steam/Switch evidence or explicit platform disagrees with files"})
     platform = {
         "value": None if conflicts or selected_platform == "unknown" else selected_platform,
-        "status": "conflict" if conflicts else "verified_from_files" if detected_platform != "unknown" else "user_provided" if args.platform != "auto" else "unconfirmed",
+        "status": "conflict" if conflicts else "verified_from_files" if detected_platform in ("steam", "switch") else "user_provided" if args.platform != "auto" else "unconfirmed",
         "evidence": evidence,
     }
     build_id = (
