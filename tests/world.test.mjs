@@ -6,6 +6,7 @@ import {
   getNativeAreasForScene, getDefaultLayoutObjects,
   getDefaultVillageAreaLayoutRefs, getDefaultLayoutGridEntries, describeNativeLayerMask,
   describeNativeFloorMask, checkNativeEditRestriction, assessPlacement,
+  getNativeTerrainTile, getNativeTerrainWindow,
 } from '../src/lib/world/catalog.mjs';
 
 function fixture() {
@@ -126,4 +127,81 @@ test('native default placement records cannot claim verified world positions or 
   const b = fixture();
   b.layoutObjects[0].layoutId = 'SceneLayouts/missing.json';
   assert.throws(() => createWorldCatalog(b), /absent native layout/);
+});
+
+function nativeRoomGrid() {
+  // Native source observation (Steam 1.26.1): 12x16 border Floor|Wall,
+  // interior Floor. Synthesize wire-compatible index packing without assets.
+  const sx = 12, sy = 16;
+  const bytes = new Uint8Array(sx * sy / 4);
+  for (let x = 0; x < sx; x++) for (let y = 0; y < sy; y++) {
+    const index = (x === 0 || x === sx - 1 || y === 0 || y === sy - 1) ? 1 : 2;
+    const bit = (x * sy + y) * 2;
+    bytes[bit >>> 3] |= index << (6 - (bit % 8));
+  }
+  return {
+    gridId: 'GridData/Rooms/TestRoom.json',
+    sizeX: sx, sizeY: sy,
+    nativeFloorTypePalette: [0, 3072, 1024],
+    compactedFloorTypesBase64: Buffer.from(bytes).toString('base64'),
+    nativeCompactedByteCount: bytes.length,
+    terrainDecoding: {
+      status: 'cross_validated_native_samples',
+      decoded: true, packing: 'x_major_msb_first',
+      cellBits: 2, nativeCodeBodyVerified: false,
+      placementLegalityVerified: false,
+      sampleBasedEncodingEvidence: 'source-synthetic-room-pattern',
+    },
+  };
+}
+
+test('source-corroborated native 12x16 Room terrain renders as exact wall border', () => {
+  const data = fixture();
+  data.grids.push(nativeRoomGrid());
+  const catalog = createWorldCatalog(data);
+  const grid = getNativeTerrainWindow(catalog, 'GridData/Rooms/TestRoom.json',
+    { x: 0, y: 0, width: 12, height: 16 });
+  assert.equal(grid.status, 'source_corroborated_grid_local_preview');
+  assert.equal(grid.rows.length, 16);
+  assert.deepEqual(grid.rows[0], Array(12).fill(3072));
+  assert.deepEqual(grid.rows[1], [3072, ...Array(10).fill(1024), 3072]);
+  assert.deepEqual(grid.rows.at(-1), Array(12).fill(3072));
+  assert.equal(grid.worldCoordinatesVerified, false);
+  assert.equal(grid.placementLegalityVerified, false);
+  const floor = getNativeTerrainTile(catalog, 'GridData/Rooms/TestRoom.json', 5, 5);
+  assert.equal(floor.nativeValue, 1024);
+  assert.deepEqual(floor.symbols, ['Floor']);
+  assert.equal(getNativeTerrainTile(catalog, 'GridData/Rooms/TestRoom.json', 12, 0).status,
+    'outside_native_grid');
+  assert.equal(getNativeTerrainTile(catalog, 'unknown-grid', 0, 0).status, 'unknown_grid');
+  assert.equal(getNativeTerrainWindow(catalog, 'GridData/Rooms/TestRoom.json',
+    { x: 0, y: 0, width: 257, height: 1 }).status,
+    'outside_native_grid_or_preview_limit');
+});
+
+test('partial grid or invalid packing never silently produces invented terrain', () => {
+  const data = fixture();
+  assert.equal(getNativeTerrainTile(createWorldCatalog(data),
+    'GridData/Villages/Meadow.json', 0, 0).status, 'unresolved_native_packing');
+
+  const wrong = fixture();
+  const room = nativeRoomGrid();
+  room.terrainDecoding.nativeCodeBodyVerified = true;
+  wrong.grids.push(room);
+  assert.throws(() => getNativeTerrainTile(createWorldCatalog(wrong),
+    'GridData/Rooms/TestRoom.json', 1, 1), /provenance/);
+
+  const bad = fixture();
+  const invalid = nativeRoomGrid();
+  invalid.nativeCompactedByteCount++;
+  bad.grids.push(invalid);
+  assert.throws(() => getNativeTerrainTile(createWorldCatalog(bad),
+    'GridData/Rooms/TestRoom.json', 1, 1), /length mismatch/);
+
+  const wrongPalette = fixture();
+  const room3 = nativeRoomGrid();
+  room3.nativeFloorTypePalette = [0, 3072];
+  wrongPalette.grids.push(room3);
+  assert.throws(() => getNativeTerrainTile(createWorldCatalog(wrongPalette),
+    'GridData/Rooms/TestRoom.json', 1, 1), /palette index/);
 });
