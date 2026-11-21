@@ -364,18 +364,18 @@ class PipelineTests(unittest.TestCase):
         (self.game / "GameAssembly.dll").write_bytes(binary)
         dump = self.root / "private-dump.cs"
         dump.write_text(
-            "// Namespace: Definitions.Grid\\n"
-            "public class GridData\\n"
-            "{\\n"
-            "    // RVA: 0x1020 Offset: 0x420 VA: 0x180001020\\n"
-            "    public GridFloorType get_Item(int x, int y) { }\\n"
-            "}\\n"
-            "// Namespace: Other\\n"
-            "public class GridData\\n"
-            "{\\n"
-            "    // RVA: 0x1040 Offset: 0x440 VA: 0x180001040\\n"
-            "    public GridFloorType get_Item(int x, int y) { }\\n"
-            "}\\n", encoding="utf-8")
+            "// Namespace: Definitions.Grid\n"
+            "public class GridData\n"
+            "{\n"
+            "    // RVA: 0x1020 Offset: 0x420 VA: 0x180001020\n"
+            "    public GridFloorType get_Item(int x, int y) { }\n"
+            "}\n"
+            "// Namespace: Other\n"
+            "public class GridData\n"
+            "{\n"
+            "    // RVA: 0x1040 Offset: 0x440 VA: 0x180001040\n"
+            "    public GridFloorType get_Item(int x, int y) { }\n"
+            "}\n", encoding="utf-8")
         return dump, raw
 
     def tearDown(self):
