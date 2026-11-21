@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   composeVerifiedGuideSources, guideVerifiedStaticComposite,
-  GUIDE_SOURCE_COMPOSITE_SHA, GUIDE_SOURCE_COMPOSITE_BYTES
+  GUIDE_SOURCE_COMPOSITE_SHA, GUIDE_SOURCE_COMPOSITE_BYTES,
+  GUIDE_SOURCE_COMPOSITE_V2_SCHEMA, GUIDE_SOURCE_COMPOSITE_V2_SHA, GUIDE_SOURCE_COMPOSITE_V2_BYTES,
+  GUIDE_FRIENDSHIP_ORIGINAL_SHA
 } from '../src/lib/guide/source-composite.mjs';
 
 const bridge={baselineVersion:'1.26.1',targetVersion:'1.26.2',
@@ -24,12 +26,22 @@ test('nine original static Guide source families compose without relabelling Que
   assert.equal(result.currentReextractedConditionFamilies,1);
   assert.equal(result.localeMemberPayloadsCompared,142816);
   assert.equal(result.currentConditionMissionMentions,4960);
-  assert.equal(result.ownerPrivateCompositeSha256,GUIDE_SOURCE_COMPOSITE_SHA);
+  assert.equal(result.schema,GUIDE_SOURCE_COMPOSITE_V2_SCHEMA);
+  assert.equal(result.ownerPrivateCompositeSha256,GUIDE_SOURCE_COMPOSITE_V2_SHA);
+  assert.equal(result.baselineSourceCompositeSha256,GUIDE_SOURCE_COMPOSITE_SHA);
+  assert.equal(result.ownerPrivateCompositeBytes,GUIDE_SOURCE_COMPOSITE_V2_BYTES);
+  assert.equal(result.totalOriginalQuestShardBytes,98001716);
+  assert.equal(result.friendshipDefaultOriginalSha256,GUIDE_FRIENDSHIP_ORIGINAL_SHA);
+  assert.equal(result.originalQuestShardAuditSha256,'99a539aad1884c92cc92337f52c6651879dc2f27493a9185dec36ff05863c4bf');
   assert.equal(result.originalQuestFilesRelabelled,false);
   assert.equal(result.serverOrLiveStarPathVerified,false);
-  assert.equal(result.allQuestShardFileBytesAttestedByComposite,false);
+  assert.equal(result.allQuestShardFileBytesAttestedByComposite,true);
+  assert.equal(result.all733QuestDetailRecordsVerified,true);
+  assert.equal(result.friendshipDefaultCrossVersionEqualityVerified,true);
+  assert.equal(result.originalQuestShardBytesCheckedAtOpen,true);
   assert.equal(Object.isFrozen(result),true);
   assert.equal(GUIDE_SOURCE_COMPOSITE_BYTES,8748);
+  assert.equal(GUIDE_SOURCE_COMPOSITE_V2_BYTES,12664);
 });
 
 test('unverified search index cannot obtain owner-original static composite evidence',()=>{
@@ -49,4 +61,14 @@ test('synthetic compatibility claims or wrong source version cannot forge this v
   assert.equal(composeVerifiedGuideSources({...bridge,targetVersion:'1.26.3'},conditions),null);
   assert.equal(composeVerifiedGuideSources({...bridge,originalSearchIndexSha256:'0'.repeat(64)},conditions),null);
   assert.equal(composeVerifiedGuideSources({...bridge,localePayloadsEqual:7},conditions),null);
+});
+
+
+test('new full-shard proof does not imply live Guide or player progress', () => {
+  const r=composeVerifiedGuideSources(bridge,conditions);
+  assert.equal(r.serverOrLiveStarPathVerified,false);
+  assert.equal(r.runtimeConditionConsumptionVerified,false);
+  assert.equal(r.playerProgressVerified,false);
+  assert.equal(r.originalQuestFilesRelabelled,false);
+  assert.equal(r.gameTextPublished,false);
 });
