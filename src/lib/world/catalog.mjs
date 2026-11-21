@@ -949,6 +949,7 @@ export function getNativeFootprintObliqueOrientedLayerAt(
     itemId, orientationCode, gridToAreaTessellationRatioAssumed: '1:1',
     fullNativeTessellationScalingApplied: false,
     rawLayerValuesNotOccupancy: true,
+    rawLayerValueNotVerifiedOccupancy: true,
     gridObjectAnchorVerified: false,
     occupancyPredicateVerified: false, placementLegalityVerified: false,
   };
