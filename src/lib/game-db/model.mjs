@@ -45,7 +45,21 @@ export function validateRelease(release) {
 }
 export function validateItem(item) {
   assert(item && typeof item === 'object', 'item is not an object');
+  const accepted = new Set(['id','names','nameStatus','category','subcategory',
+    'stateClass','stateSemantic','nativeCategory','worlds','universes',
+    'contentIds','releaseIds','relations','sourceRefs','media','attributes']);
+  for (const field of Object.keys(item)) assert(accepted.has(field), 'unexpected item field ' + field);
   canonicalId(item.id);
+  if (item.media != null) {
+    assert(typeof item.media === 'object' && !Array.isArray(item.media) &&
+      /^[0-9a-f]{64}$/.test(item.media.sha256 ?? '') &&
+      /^ddv\/item-images\/[a-zA-Z0-9_.\/-]+\.webp$/.test(item.media.path ?? '') &&
+      !item.media.path.includes('..'), 'unverified media reference for ' + item.id);
+  }
+  if (item.attributes != null) {
+    assert(typeof item.attributes === 'object' && !Array.isArray(item.attributes) &&
+      JSON.stringify(item.attributes).length <= 20000, 'invalid item attributes');
+  }
   assert(item.names && typeof item.names === 'object' && !Array.isArray(item.names), 'invalid localized names for ' + item.id);
   for (const [locale, name] of Object.entries(item.names)) {
     assert(LOCALES.includes(locale) && typeof name === 'string' && name.trim().length > 0, 'unverified locale label for ' + item.id);
@@ -122,20 +136,20 @@ export function legacyItem(index, row) {
   };
   return validateItem(item);
 }
-export function nativeItem(row) {
+export function nativeItem(row, sourceId = 'src01-steam-1262') {
   const item = {
     id: canonicalId(row.itemId), names: {}, nameStatus: 'unverified',
     category: null, subcategory: null,
     nativeCategory: row.nativeCategory,
     worlds: [], universes: [], contentIds: [], releaseIds: [], relations: [],
-    sourceRefs: ['src01-steam-1262']
+    sourceRefs: [sourceId]
   };
   return validateItem(item);
 }
 function valueFingerprint(item) {
   // Provenance differences alone are not game data changes.
   const keys = ['names', 'nameStatus', 'category', 'subcategory', 'stateClass',
-    'stateSemantic', 'worlds', 'universes', 'contentIds', 'releaseIds', 'relations', 'nativeCategory', 'media'];
+    'stateSemantic', 'worlds', 'universes', 'contentIds', 'releaseIds', 'relations', 'nativeCategory', 'media', 'attributes'];
   return JSON.stringify(keys.map((key) => item[key] ?? null));
 }
 export function diffSnapshots(before, after) {
@@ -174,6 +188,32 @@ export function searchItems(snapshot, query, locale = 'en', limit = 100) {
   });
   return results.slice(0, Math.max(0, Math.min(500, limit)));
 }
+function mergeItem(existing, incoming) {
+  const merged = { ...existing, names: { ...existing.names } };
+  for (const [locale, name] of Object.entries(incoming.names)) {
+    const prior = merged.names[locale];
+    if (prior !== undefined && prior !== name) {
+      throw new TypeError('Game DB: conflicting verified label ' + existing.id + ' (' + locale + ')');
+    }
+    merged.names[locale] = name;
+  }
+  merged.nameStatus = existing.nameStatus === 'verified' || incoming.nameStatus === 'verified'
+    ? 'verified' : 'unverified';
+  for (const key of ['category', 'subcategory', 'stateClass', 'stateSemantic', 'nativeCategory', 'media', 'attributes']) {
+    const before = existing[key];
+    const next = incoming[key];
+    if (next == null) continue;
+    if (before != null && JSON.stringify(before) !== JSON.stringify(next)) {
+      throw new TypeError('Game DB: conflicting verified field ' + existing.id + ' (' + key + ')');
+    }
+    merged[key] = next;
+  }
+  for (const key of ['worlds', 'universes', 'contentIds', 'releaseIds', 'relations', 'sourceRefs']) {
+    merged[key] = [...new Set([...(existing[key] ?? []), ...(incoming[key] ?? [])])].sort();
+  }
+  return validateItem(merged);
+}
+
 export function applyPatch(snapshot, patch) {
   validateSnapshot(snapshot);
   assert(patch?.schema === PATCH_SCHEMA, 'invalid patch schema');
@@ -188,10 +228,7 @@ export function applyPatch(snapshot, patch) {
     assert(!patched.has(item.id), 'duplicate patched ID');
     patched.add(item.id);
     const previous = known.get(item.id);
-    if (previous && valueFingerprint(previous) !== valueFingerprint(item)) {
-      throw new TypeError('Game DB: conflicting full-item patch ' + item.id + '; reconcile source fields explicitly');
-    }
-    known.set(item.id, previous ?? item);
+    known.set(item.id, previous ? mergeItem(previous, item) : item);
   }
   const releases = [...snapshot.releases];
   for (const release of patch.releases ?? []) {

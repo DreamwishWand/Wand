@@ -87,6 +87,9 @@ async function nativeSnapshot(manifestPath, itemsPath) {
     !Array.isArray(manifest.sourceFiles) || !manifest.sourceFiles.length) {
     throw new Error('Unsupported SRC-01 manifest or unsafe verified-name claim');
   }
+  const sourceDigest = hash(manifestBytes);
+  const sourceId = 'src01-' + manifest.platform.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' +
+    manifest.gameVersion.replace(/[^0-9a-z]+/gi, '-') + '-' + sourceDigest.slice(0, 12);
   const bytes = await readFile(itemsPath);
   if (hash(bytes) !== manifest.itemsSha256) throw new Error('Native items SHA-256 mismatch');
   const seen = new Set();
@@ -94,7 +97,7 @@ async function nativeSnapshot(manifestPath, itemsPath) {
   for (const line of bytes.toString('utf8').split(/\r?\n/)) {
     if (!line) continue;
     const row = JSON.parse(line);
-    const item = nativeItem(row);
+    const item = nativeItem(row, sourceId);
     if (seen.has(item.id)) throw new Error('Duplicate native Item ID ' + item.id);
     if (row.source?.platform !== manifest.platform || row.source?.gameVersion !== manifest.gameVersion ||
       !manifest.sourceFiles.some((file) => file.path === row.source.file)) throw new Error('Native provenance mismatch: ' + item.id);
@@ -103,10 +106,10 @@ async function nativeSnapshot(manifestPath, itemsPath) {
   }
   if (items.length !== manifest.itemCount) throw new Error('Native source count mismatch');
   const snapshot = {
-    schema: SNAPSHOT_SCHEMA, id: 'src01-steam-' + manifest.gameVersion.replace(/[^0-9.]/g, '-'),
-    target: target(manifest.platform, manifest.gameVersion, null, hash(manifestBytes)),
+    schema: SNAPSHOT_SCHEMA, id: sourceId,
+    target: target(manifest.platform, manifest.gameVersion, null, sourceDigest),
     coverage: { scope: 'src01-partial-native-items', complete: false, categories: [...manifest.validatedNativeCategories].sort() },
-    publishable: false, sources: [{ id: 'src01-steam-1262', sha256: hash(manifestBytes),
+    publishable: false, sources: [{ id: sourceId, sha256: sourceDigest,
       visibility: 'private', description: 'Partial SHA-verified native extraction. Localized names unverified.' }],
     releases: [], items: items.sort((a, b) => Number(a.id) - Number(b.id))
   };
@@ -204,7 +207,7 @@ async function sourceRegistration(manifestPath, reportPath) {
   const build = report.build_id;
   const record = {
     schema: 'wand.game-db.source@1',
-    sourceId: 'src00-' + String(platform.value).toLowerCase() + '-' + String(version.value ?? 'unconfirmed'),
+    sourceId: 'src00-' + String(platform.value).toLowerCase() + '-' + String(version.value ?? 'unconfirmed') + '-' + hash(manifestBytes).slice(0, 12),
     platform: platform.value, gameVersion: version.status === 'verified_from_file' ? version.value : null,
     buildId: build.status === 'verified_from_file' ? build.value : null,
     buildIdEvidenceStatus: build.status,
