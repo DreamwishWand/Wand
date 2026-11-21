@@ -131,6 +131,7 @@ export function guideCharacterLabels(payload, index) {
     Array.isArray(payload.records) && payload.records.length > 0 && payload.records.length <= 10000,
     'character labels require a same-version native character source');
   const referenced = new Set(index.records.map(row => row.characterId).filter(Boolean));
+  /** @type {Record<string, Record<string, string>>} */
   const labels = {};
   const seen = new Set();
   let sourceSha = null;
@@ -182,6 +183,7 @@ export async function importGuideFolder(files) {
   const characterPath = prefix + 'guide/characters.json';
   const characterFiles = files.filter(file => (file.webkitRelativePath || file.name) === characterPath);
   assert(characterFiles.length <= 1, 'duplicate native character data file');
+  /** @type {Record<string, Record<string, string>>} */
   const characterNames = characterFiles.length
     ? guideCharacterLabels(await jsonFile(characterFiles[0], MAX_SEARCH_BYTES), index) : {};
   const needed = new Set(index.records.map(row => row.detail.file.split('/').at(-1)));
