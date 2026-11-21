@@ -4,6 +4,7 @@ import commonFields from '../../../data/ddv/save/common626643-fields.v1.json' wi
 import nativeFields from '../../../data/ddv/save/native1261-observed-fields.v1.json' with { type: 'json' };
 import nestedFields from '../../../data/ddv/save/native1261-nested-fields.v1.json' with { type: 'json' };
 import deepFields from '../../../data/ddv/save/native1261-deep-fields.v1.json' with { type: 'json' };
+import domainFields from '../../../data/ddv/save/native1262-domain-fields.v1.json' with { type: 'json' };
 
 function deepFreeze(value) {
   if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -18,6 +19,7 @@ deepFreeze(commonFields);
 deepFreeze(nativeFields);
 deepFreeze(nestedFields);
 deepFreeze(deepFields);
+deepFreeze(domainFields);
 
 export const SAVE_REGISTRY_SCHEMA = 'wand.db05.save-registry@1';
 export const SAVE_INSPECTION_CONTRACT = 'wand.db05.save-readonly-inspection@1';
@@ -437,7 +439,8 @@ const ALL_PUBLIC_SHAPE_FIELDS = Object.freeze([
   ...commonFields.fields.map(f => ({ domain: f.domain, path: f.path, type: f.type })),
   ...nativeFields.fields.map(f => ({ domain: f.domain, path: f.path, type: f.jsonType })),
   ...nestedFields.fields.map(f => ({ domain: f.domain, path: f.path, type: f.allowedJsonKinds.join('|') })),
-  ...deepFields.fields.map(f => ({ domain: f.domain, path: f.path, type: f.allowedJsonKinds.join('|') }))
+  ...deepFields.fields.map(f => ({ domain: f.domain, path: f.path, type: f.allowedJsonKinds.join('|') })),
+  ...domainFields.fields.map(f => ({ domain: f.domain, path: f.path, type: f.allowedJsonKinds.join('|') }))
 ]);
 const ALL_PUBLIC_SHAPE_DOMAINS = Object.freeze(
   [...new Set(ALL_PUBLIC_SHAPE_FIELDS.map(f => f.domain))].sort()
@@ -447,11 +450,14 @@ const ALL_PUBLIC_SHAPE_COUNTS = Object.freeze({
   common: commonFields.fields.length,
   native: nativeFields.fields.length,
   nativeNested: nestedFields.fields.length,
-  nativeDeep: deepFields.fields.length
+  nativeDeep: deepFields.fields.length,
+  nativeDomain: domainFields.fields.length
 });
 
 /** Public field metadata only; never returns save values or real map keys. */
 export function getDeepSaveFields() { return deepFields; }
+/** Additional real-save-observed deep save fields, native metadata only. */
+export function getDomainSaveFields() { return domainFields; }
 export function getUnifiedSaveShapeCatalog() {
   return Object.freeze({
     contract: 'wand.db05.unified-shape-catalog@1',
