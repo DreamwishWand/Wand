@@ -177,6 +177,15 @@ def target_methods_from_dump(path: Path) -> list[dict]:
             if line.lstrip().startswith("//"):
                 continue
             method = METHOD_RE.search(line)
+            if method is not None and method.group(1) == "get_Item" and (
+                    not re.search(
+                        r"\bget_Item\s*\(\s*int\s+\w+\s*,\s*int\s+\w+\s*\)",
+                        line)):
+                # GridData exposes an overloaded GridPosition getter. Only
+                # the x,y overload is relevant to native packed-floor offset
+                # verification. Do not mark both with the same symbol.
+                pending_rva = None
+                continue
             if method is None:
                 # Do not let a stale RVA leak into a later matching method.
                 # Blank lines, attributes and opening/closing braces are
