@@ -1,0 +1,48 @@
+{
+  "schema": "wand.src03.rules@1",
+  "families": {
+    "quests": {
+      "files": ["*quest*.json", "*mission*.json", "*quest*.jsonl", "*mission*.jsonl"],
+      "collections": ["$", "Quests", "quests", "QuestDefinitions", "Data.Quests", "Data.QuestDefinitions", "Records", "entries"],
+      "id": ["ID", "Id", "id", "QuestID", "QuestId"],
+      "title": ["Name", "Title", "DisplayName"],
+      "titleKey": ["NameKey", "TitleKey", "DisplayNameKey", "LocKey", "LocalizationKey"],
+      "fields": {
+        "type": ["QuestType", "Type"],
+        "requirements": ["Requirements", "Prerequisites", "UnlockConditions"],
+        "dependencies": ["QuestDependencies", "RequiredQuestIds", "PrerequisiteQuestIds"],
+        "steps": ["Steps", "QuestSteps"],
+        "objectives": ["Objectives", "QuestObjectives"],
+        "rewards": ["Rewards", "QuestRewards"]
+      }
+    },
+    "starPaths": {
+      "files": ["*starpath*.json", "*star_path*.json", "*seasonpass*.json", "*starpath*.jsonl"],
+      "collections": ["$", "StarPaths", "starPaths", "StarPathDefinitions", "Data.StarPaths", "Records", "entries"],
+      "id": ["ID", "Id", "id", "StarPathID", "StarPathId"],
+      "title": ["Name", "Title", "DisplayName"],
+      "titleKey": ["NameKey", "TitleKey", "DisplayNameKey", "LocKey", "LocalizationKey"],
+      "fields": {
+        "type": ["Type", "StarPathType"],
+        "tasks": ["Tasks", "Duties", "Objectives"],
+        "rewards": ["Rewards", "RewardTiers", "RewardPages"],
+        "requirements": ["Requirements", "UnlockConditions"],
+        "dates": ["Dates", "StartDate", "EndDate", "ExpirationDate", "ExpiresAt"]
+      }
+    },
+    "events": {
+      "files": ["*event*.json", "*festival*.json", "*event*.jsonl"],
+      "collections": ["$", "Events", "events", "EventDefinitions", "Data.Events", "Records", "entries"],
+      "id": ["ID", "Id", "id", "EventID", "EventId"],
+      "title": ["Name", "Title", "DisplayName"],
+      "titleKey": ["NameKey", "TitleKey", "DisplayNameKey", "LocKey", "LocalizationKey"],
+      "fields": {
+        "type": ["Type", "EventType"],
+        "requirements": ["Requirements", "UnlockConditions"],
+        "tasks": ["Tasks", "Objectives"],
+        "rewards": ["Rewards", "EventRewards"],
+        "dates": ["Dates", "StartDate", "EndDate", "ExpirationDate", "ExpiresAt"]
+      }
+    }
+  }
+}
