@@ -53,28 +53,25 @@ export interface PrivateMealPriceEvidence {
 export declare function decodeMealItemStateEvidence(
   bytes:Uint8Array
 ):SerializedMealStateEvidence;
-export declare function inspectPrivateMealSellPrice(input:{
-  acquisitionBundle:{
-    contract:'wand.src02.private-browser-bundle@1';
-    verified:true;
-    privateSource:true;
-    publishable:false;
-    manifestSha256:string;
-    source:{platform:string;gameVersion:string};
-    getItem(id:number):unknown;
-  };
-  shopPriceView:{
-    contract:'wand.db02.private-shop-prices@1';
-    verified:true;
-    privateSource:true;
-    publishable:false;
-    sourceManifestSha256:string;
-    src02R5ManifestSha256:string;
-    getSourceItemPriceDefinitions(id:number):readonly StaticItemPriceDefinition[];
-  };
-  mealItemId:number;
-  itemStateBytes:Uint8Array;
-}):PrivateMealPriceEvidence;
+export declare const DB02_MEAL_PRICE_VIEW_CONTRACT:
+  'wand.db02.private-meal-pricing-view@1';
+export interface PrivateMealPricingView {
+  readonly contract:typeof DB02_MEAL_PRICE_VIEW_CONTRACT;
+  readonly platform:'Steam';
+  readonly gameVersion:'1.26.2';
+  readonly verifiedPrivateSources:true;
+  readonly currentOffersVerified:false;
+  readonly realizedSellPricesVerified:false;
+  readonly nativePriceFormulaEvaluated:false;
+  readonly publishable:false;
+  readonly writable:false;
+  inspect(mealItemId:number,itemStateBytes:Uint8Array):PrivateMealPriceEvidence;
+}
+export declare function loadPrivateMealPricingView(input:{
+  acquisitionArchiveBytes:Uint8Array;
+  priceManifestBytes:Uint8Array|ArrayBuffer;
+  priceFiles:Readonly<Record<string,Uint8Array|ArrayBuffer>>;
+}):Promise<PrivateMealPricingView>;
 export declare function compareMealIngredientStates(
   left:PrivateMealPriceEvidence,right:PrivateMealPriceEvidence
 ):Readonly<{
