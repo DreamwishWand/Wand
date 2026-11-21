@@ -16,8 +16,6 @@ const MAX_DUTY_RECORDS = 100_000;
 const MAX_REWARD_REFERENCES = 200_000;
 const MAX_UNIQUE_REWARDS = 4096;
 const HASH = /^[a-f0-9]{64}$/;
-const positiveId = (s: string) => /^[1-9][0-9]*$/.test(s) &&
-  Number.isSafeInteger(Number(s)) && String(Number(s)) === s;
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 function requireEvidence(condition: unknown, code: string): asserts condition {
