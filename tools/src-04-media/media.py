@@ -147,15 +147,25 @@ def command_extract(args):
         bundles += 1
         container_sha = digest(path)
         output_index = output / "evidence" / ("unity-" + container_sha + ".json")
-        if output_index.exists() and not args.force:
+        existing_index = load_json(output_index) if output_index.exists() and not args.force else {}
+        if existing_index.get("complete"):
             print(f"extract skip indexed: {relative}")
             continue
+        old_images = {item["assetId"]: item for item in existing_index.get("images", [])}
         records = []
         complete = True
         try:
             environment = UnityPy.load(str(path))
             for obj in environment.objects:
                 if obj.type.name not in {"Sprite", "Texture2D"}:
+                    continue
+                asset_file = str(getattr(getattr(obj, "assets_file", None), "name", "unknown"))
+                path_id = str(obj.path_id)
+                asset_id = "unity:" + container_sha + ":" + asset_file + ":" + path_id + ":" + obj.type.name
+                image_id = hashlib.sha256(asset_id.encode("utf-8")).hexdigest()
+                target = output / "extracted" / image_id[:2] / (image_id + ".png")
+                if asset_id in old_images and target.exists():
+                    records.append(old_images[asset_id])
                     continue
                 if args.limit_images is not None and images >= args.limit_images:
                     complete = False
@@ -165,11 +175,6 @@ def command_extract(args):
                     picture = data.image
                     if picture is None:
                         raise ValueError("Unity object contains no decodable image")
-                    asset_file = str(getattr(getattr(obj, "assets_file", None), "name", "unknown"))
-                    path_id = str(obj.path_id)
-                    asset_id = "unity:" + container_sha + ":" + asset_file + ":" + path_id + ":" + obj.type.name
-                    image_id = hashlib.sha256(asset_id.encode("utf-8")).hexdigest()
-                    target = output / "extracted" / image_id[:2] / (image_id + ".png")
                     target.parent.mkdir(parents=True, exist_ok=True)
                     if not target.exists() or args.force:
                         picture.save(target, format="PNG")
