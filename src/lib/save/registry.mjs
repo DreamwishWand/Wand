@@ -388,18 +388,20 @@ export function compareNestedSaveStructures(previous, current) {
     const missingKnownPaths = [...oldKinds.keys()].filter(p => !newKinds.has(p)).sort();
     const changedKinds = [...oldKinds.keys()].filter(p => newKinds.has(p) && oldKinds.get(p) !== newKinds.get(p));
     const conflictingKnownPaths = [...new Set([
-      ...left.conflictingPaths, ...right.conflictingPaths, ...changedKinds
+      ...left.conflictingPaths, ...right.conflictingPaths
     ])].sort();
+    const changedKindPaths = changedKinds.sort();
     const status = conflictingKnownPaths.length ? 'observed_type_conflict'
       : !oldKinds.size || !newKinds.size ? 'insufficient_evidence'
       : left.sampled || right.sampled ? 'sampled_inconclusive'
-      : addedKnownPaths.length || missingKnownPaths.length ? 'observed_witness_difference'
+      : addedKnownPaths.length || missingKnownPaths.length || changedKindPaths.length ? 'observed_witness_difference'
       : 'same_observed_nested_fields';
     return Object.freeze({
       domain: left.domain, status,
       addedKnownPaths: Object.freeze(addedKnownPaths),
       missingKnownPaths: Object.freeze(missingKnownPaths),
       conflictingKnownPaths: Object.freeze(conflictingKnownPaths),
+      changedKindPaths: Object.freeze(changedKindPaths),
       writerAuthorized: false
     });
   });
