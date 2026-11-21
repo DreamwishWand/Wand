@@ -58,6 +58,8 @@ test('ID references require exact numeric match and reject collisions', () => {
   assert.equal(matchGameId(index, 0), null);
   assert.throws(() => makeGameIdIndex([{itemId:1},{itemId:1}]), /DUPLICATE/);
   assert.throws(() => makeGameIdIndex([{itemId:'1'}]), /INVALID/);
+  assert.throws(() => makeGameIdIndex([{itemId:0}]), /INVALID/);
+  assert.throws(() => makeGameIdIndex([{itemId:-1}]), /INVALID/);
 });
 
 test('deterministic schema difference reports adds, removals, type changes, never authority', () => {
