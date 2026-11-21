@@ -42,7 +42,7 @@ try{
   await page.locator('input[type=file]').setInputFiles({
     name:'synthetic.json',mimeType:'application/json',buffer:bytes
   });
-  const status=page.getByRole('status');
+  const status=page.locator('p[role="status"].notice');
   await page.getByText(/Rust\/WASMによる内部参照14規則の検査はJSと一致しました/).waitFor({timeout:25000});
   assert.match(await status.innerText(),/Rust\/WASMによる内部参照14規則/);
   assert.ok(loadedWasm.some(v=>v.status===200&&v.url.includes('ddv_save_schema_bg')),
