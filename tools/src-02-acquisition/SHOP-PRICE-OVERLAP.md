@@ -61,7 +61,15 @@ python tools/src-02-acquisition/audit_private_stall_price_overlap.py \
   --price-zip /private/SRC-02/db02-steam-v1.26.2-private-protodb-shops-prices.zip
 ```
 
-It fails closed on incorrect ZIP SHA-256, manifest hashes, member ledgers, changed source versions, slot/name mismatches or unexpected census changes and prints **aggregate-only** JSON. Synthetic CI negative tests do not ship private source rows. The offline Python audit verifies source cross-correspondence **independently of** the JS runtime; it does not by itself establish that the JS loader has executed successfully on raw proprietary files. An exact private JS runtime smoke is still a separate validation item.
+It fails closed on incorrect ZIP SHA-256, manifest hashes, member ledgers, changed source versions, slot/name mismatches or unexpected census changes and prints **aggregate-only** JSON. Synthetic CI negative tests do not ship private source rows. The offline Python audit verifies source cross-correspondence **independently of** the JS runtime; it does not by itself establish that the JS loader has executed successfully on raw proprietary files. A separate **true end-to-end JavaScript smoke runner** is now implemented in `smoke_private_stall_price_runtime.mjs`, also requiring only the two exact **local** ZIPs:
+
+```sh
+node tools/src-02-acquisition/smoke_private_stall_price_runtime.mjs \\
+  --r5-zip /private/SRC-02/db02-private-src02-r5-condition-corrected.zip \\
+  --price-zip /private/SRC-02/db02-steam-v1.26.2-private-protodb-shops-prices.zip
+```
+
+The runner checks the original ZIP SHA, safely reads the private price ZIP in memory, invokes the actual `loadPrivateStallPriceOverlap` API, and emits only aggregate counters; it does **not** publish data or write source extracts. **The real-data JS runtime runner's successful completion must be separately observed**; synthetic CI validates its fail-closed behavior but cannot access the owner's game-source ZIPs.
 
 ## Private local verification
 
