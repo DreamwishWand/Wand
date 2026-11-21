@@ -25,7 +25,6 @@
   };
   let runtime:CollectionRuntime|null=null;
   let state:CollectionState=defaultState;
-  let index:any=null;
   let facets:CollectionFacet[]=[];
   let filtered:CollectionItem[]=[];
   let totalMatches=0;
@@ -219,7 +218,6 @@
         const loaded=await CollectionRuntime.open(base);
         if(!alive){loaded.close();return;}
         runtime=loaded;
-        index={e:loaded.metadata.expansions,w:loaded.metadata.worlds,u:loaded.metadata.universes};
         refresh();
         try{
           const response=await fetch(base+'/ddv/collection/item-images-r39.json');
@@ -339,7 +337,7 @@
           <label class="filter-label">追加コンテンツ
             <select bind:value={expansion} on:change={resetView}>
               <option value="">すべて</option>
-              {#each index.e as id}<option value={id}>{id}</option>{/each}
+              {#each runtime?.metadata.expansions??[] as id}<option value={id}>{id}</option>{/each}
             </select>
           </label>
           <button type="button" class="subtle-button" on:click={clearScope}>条件を解除</button>
