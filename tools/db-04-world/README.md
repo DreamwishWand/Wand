@@ -10,7 +10,8 @@ This lane implements a **read-only, partial, game-native database**, not a save 
 - `protoDb.bin` entries `Worlds` (`Definitions.WorldData`), `DefaultVillages` (`Meta.DefaultVillageList`) and `Village04Layout1` (`Definitions.Scene.VillageAreaData`): game-defined world names, Scene IDs, explicit parent world references, default layout paths and VillageAreaType/ground/water NavMesh IDs. The six villages include five conditional layouts, but those layout paths are **not** native world IDs.
 - `GridData/**/*.json`: despite the suffix these are **binary**. Verified IL2CPP `Definitions.Grid.GridData` fields 1/2 are SizeX/SizeY, field 3 is repeated native fixed32 FloorTypes, field 4 a fixed32 palette, and field 5 compacted index bytes. All raw palette values and Base64 packed bytes are preserved without guessing bit order, XY axis order or world coordinates.
 - `Definitions.Grid.GridLayers` and `Definitions.Grid.GridFloorType` enums have verified bit names (e.g. 68 = Low|Blocking, 3072 = Floor|Wall). The meaning of those masks does **not** itself establish a full placement/collision algorithm.
-- `SceneLayouts/**/*.json`: many are binary protobuf. The tool records literal `GridData/` and `SceneLayouts/` paths only when those strings occur in protobuf fields, with field-path provenance. Filename similarity is **not** used to invent relations.
+- `SceneLayouts/**/*.json`: `Meta.GridCollection` is decoded using its native Grid map, GridDataPath, TessellationFactor and Grid.Objects map. Each original default-layout object keeps its **native** `GridObject.ID`, `ItemID`, `X`, `Y`, and `GridOrientation` (0–15), plus only a hash/size of its optional state. These are **grid-local starting positions**, **not** world-space coordinates or user save data. An initial object is **not automatically permanent/immovable**.
+- `Meta.DefaultVillageData` scene layouts also expose `GridLayoutPaths`, an explicit native map from `VillageAreaType` to separate `SceneLayouts/` files. For unrecognized protobuf layouts, the extractor retains literal source-path evidence without inventing links.
 - `Furniture/**/*.json`: supplementary JSON overrides. Mismatching item ID/name pairs are retained in `unresolved.json`, never silently joined.
 
 Observed on accessible Steam 1.26.1 archive originals: 6,746 furniture entries with GridAreaData, 478 buildings (394 have GridAreaData and 84 do not), 194 scenes, 18 native realm-world entries, six default/conditional village-layout references, and eight defined area records for Village04. Additional future enum members do **not** prove corresponding areas exist in every current save. Steam 1.26.2 original-world archive completeness is not established. Source provenance for IL2CPP enum fields: `dump.cs` SHA-256 `0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08`.
@@ -37,18 +38,25 @@ Upload these together to the private [SRC-05 WORLD DATA folder](https://drive.go
 | `objects.json` | native furniture/building Item IDs, validated footprints and raw flags |
 | `scenes.json` | scene IDs, native labels and only verified WorldData world links |
 | `grids.json` | native grid dimensions, floor-type palette, packed bytes and unresolved indexing |
-| `layouts.json` | explicit scene-layout to grid source-path references |
+| `layouts.json` | native GridCollection/GridData references, tessellation, default object counts, and native DefaultVillageData area→layout references |
+| `layoutObjects.json` | initial GridObject positions (grid-local integer X/Y, native orientation and Item ID), not player-save placements |
 | `worlds.json` | 18 native realm world entries and six provenance-labeled village-layout keys (from accessible 1.26.1 source) |
 | `areas.json` | native area-type codes and parent scene, grounded by VillageAreaData |
 | `diff.json` | added, removed and field-changed records across two snapshots |
 | `unresolved.json` | remaining semantics, missing footprints, unresolved references and data conflicts |
 | `report.json` | observed extraction totals; no completion claim |
 
-The browser adapter at `src/lib/world/catalog.mjs` supports indexed lookups by native ID and conservative negative edit restriction checks. It **never** returns a positive placement-validity decision based on raw flags. Rendering an authoritative 2D terrain/occupied-cell map still requires separately verified compacted-index bit order, XY axis/origin, fixed objects and adjacency/rotation rules. Known enum names alone do not grant placement validity.
+The browser adapter at `src/lib/world/catalog.mjs` supports indexed native IDs, original default-layout object positions, village area layout links, and conservative negative edit restriction checks. It **never** returns a positive placement-validity decision based on raw flags. Rendering an authoritative 2D terrain/occupied-cell map still requires separately verified compacted-index bit order, XY axis/origin, fixed objects and adjacency/rotation rules. Known enum names alone do not grant placement validity.
 
 A **source-subset preview** is stored privately in [SRC-05: Steam 1.26.1 native partial preview](https://drive.google.com/file/d/1SMKmvtyCV04lzxngg_3MHIEgYCx8zkrp/view). It contains all three available itemlist source originals plus three sample grid files, two sample layouts and the actual protoDb world registry. Its grids/layouts are **not exhaustive**. The complete game-root extraction is a separate run of `world.py` and is not implied by this preview.
 
 Ownership boundaries: DB-05 supplies per-save placed objects and coordinates; SRC-04 MEDIA supplies large-scale images and 3D asset conversion; SRC-01 ITEMS owns the general item taxonomy, names and localization.
+
+## Original native-layout evidence (Steam 1.26.1 subset)
+
+Validated original `SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json` against IL2CPP `Meta.Grids.Grid` and `GridObject`: one native grid references `GridData/Villages/Village04-MeadowLevel-GridData.json` and contains exactly **902** distinct GridObject IDs with exact matching protobuf map keys. Each object's Item ID and grid-local X/Y/orientation are native fields; sampled coordinates range X=1–194 and Y=0–90, all within the native grid's 196×100 dimensions. The original `DefaultVillageLayout01.json` explicitly maps eight area-type codes (0–7) to separate default grid layout paths. Not all 902 objects are guaranteed to be unmovable, and no placement legality is inferred.
+
+The full source ingestion will write `layoutObjects.json` and include it in the checksum manifest and version-to-version diff. A legacy previous snapshot that lacks `layoutObjects.json` yields an explicit incomplete-diff status for this family rather than inventing added/deleted objects.
 
 ## Tests
 
