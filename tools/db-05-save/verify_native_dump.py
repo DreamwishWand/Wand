@@ -145,7 +145,8 @@ def inspect_nested_native_fields(dump_path, manifest, allow_new_source=False):
     if actual != expected and not allow_new_source:
         raise ValueError('DB05_NESTED_NATIVE_SOURCE_HASH_MISMATCH')
     native = read_native_types(dump_path, NESTED_CLASSES)
-    if not NESTED_CLASSES.issubset(native):
+    required = {row.get('nativeMessage') for row in fields if isinstance(row, dict)}
+    if not required.issubset(NESTED_CLASSES) or not required.issubset(native):
         raise ValueError('DB05_NESTED_NATIVE_CLASSES_MISSING')
     observed = set()
     mismatches = []
@@ -156,7 +157,7 @@ def inspect_nested_native_fields(dump_path, manifest, allow_new_source=False):
         if message not in NESTED_CLASSES or not isinstance(path, str):
             raise ValueError('DB05_NESTED_NATIVE_CLASS_OR_PATH_INVALID')
         if not re.fullmatch(
-            r'/(?:Player|World)/(?:[A-Za-z][A-Za-z0-9]*(?:\\[\\])?|\\{id\\})(?:/(?:[A-Za-z][A-Za-z0-9]*(?:\\[\\])?|\\{id\\}))+',
+            r'/(?:Player|World)/(?:[A-Za-z][A-Za-z0-9]*(?:\[\])?|\{id\})(?:/(?:[A-Za-z][A-Za-z0-9]*(?:\[\])?|\{id\}))+',
             path
         ):
             raise ValueError('DB05_NESTED_NATIVE_PATH_INVALID')
