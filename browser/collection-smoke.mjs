@@ -150,6 +150,21 @@ try{
   await page.locator('.more-button').scrollIntoViewIfNeeded();
   await page.waitForFunction(()=>document.querySelectorAll('.item-card').length>72,{timeout:20000});
   assert.equal(browserErrors.length,0,browserErrors.join('\n'));
+  // A filtered batch applies to the entire category, not just the 72 or
+  // 144 cards currently rendered. Confirm the write and exact owned/missing
+  // totals through the real Rust/WASM → IndexedDB → Svelte round-trip.
+  const matchingCount=Number((await page.locator('.result-count').innerText())
+    .match(/^([\\d,]+)/)?.[1].replaceAll(','));
+  assert.ok(matchingCount>144,'fixture should have offscreen filtered matches');
+  await page.getByRole('button',{name:'複数選択'}).click();
+  page.once('dialog',dialog=>void dialog.accept());
+  await page.getByRole('group',{name:'Collectionの一括記録'})
+    .getByRole('button',{name:'全件を未所持'}).click();
+  await page.waitForFunction(count=>{
+    const text=document.querySelector('.summary-strip')?.querySelectorAll('strong')[2]?.textContent?.replaceAll(',','').trim();
+    return text===String(count);
+  },matchingCount,{timeout:20000});
+  assert.equal(await page.getByRole('button',{name:'複数選択'}).count(),1);
   await page.getByRole('button',{name:'複数選択'}).click();
   await page.locator('.item-card-body').first().click();
   await page.getByRole('group',{name:'Collectionの一括記録'}).getByRole('button',{name:'所持 / 解放'}).click();
