@@ -461,3 +461,19 @@ obtained and the source extraction is rerun. This P0 blocker was resolved by the
 - **Current r5**: Steam v1.26.2 Condition.json 571,341 bytes, independently SHA-verified as `9eb5e7800a2485b1dfb3e148a7bcff5d6c6b6ed72797ed2331a902ab44188f4c`. SHA-pinned re-extraction: **5,440** source Condition definitions, **220** condition gates, **13** linked condition definitions. r5 manifest SHA-256 `ec1efd589dd5390f11f5a99411bcf3f1c6bc34309ddfa68e51589c078601f31c`. Node verifier, full acquisition relation checks and local browser loader PASS. The old r4 SHA `323f666c...` is revoked. The owner-private Drive `LATEST.json` now points to r5; no private source rows are committed to GitHub.
 - **Supplemental current Tag evidence**: entire original `Tag.json` SHA `bc537ad3278483cb6b64a344fa70f73dca7e66ff146b1e0d032e2f209ba813a4`; **409** native tags and **32** distinct recipe/ingredient-referenced Tag IDs (13 recipe selectors, 21 membership tags, with 2 overlapping). Private evidence manifest SHA `26eb6d5e84683aae8e26b8720fd98fa7d0b5a3e607650b380c97e4f7de519ba6`. The typed, immutable reader is `src/lib/acquisition/native-tag-evidence.mjs`; the source and report remain private. These are raw IDs/Name/DisplayName localization keys **not verified translated text**.
 - No new live shop price, player eligibility, inventory, rights, save-writing, or public dataset is authorized. The r5 source snapshot remains partial, separate from the supplemental Tag evidence.
+
+
+### 2026-11-21 exact eight-language Tag translations
+
+A supplemental, owner-private `wand.db02.native-tag-locales@1` release now
+joins the **full, exact Steam v1.26.2** localization originals (`LocDB_en-US`,
+`fr`, `it`, `de`, `es`, `ja`, `zh-CN`, `pt-BR`) to all **409** source TagItemData
+DisplayName keys via the byte-exact `Tag.locbin` members. Every full ZIP
+SHA-256 matches the independently captured Steam v1.26.2 source probe;
+**3,272/3,272** Tag localized names are source-exact with no unmatched keys.
+This is not global item-name coverage and does not grant eligibility or
+availability claims. Private release manifest SHA-256:
+`f6f990d77f30c1d34e2b902cac5c78e6953f07509a5332e33e115397a9d582e0`.
+Use `loadVerifiedNativeTagLocales()` with verified native Tag evidence and an
+independently pinned locale release SHA. See `TAG-LOCALES.md`. No raw ZIP,
+localized strings or game binaries are included in public source or Pages.
