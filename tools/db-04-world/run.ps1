@@ -33,6 +33,27 @@ else {
     $launcher = Get-Command python -ErrorAction Stop
 }
 $python = $launcher.Source
+
+# Validate optional native evidence arguments before any extraction or
+# snapshot move. A requested RVA capture must never silently fall back to
+# metadata-only output, or leave a misleading completed snapshot on error.
+if ($Il2CppDumpPath -and -not $Il2CppDumpGameVersion) {
+    throw "A provided IL2CPP dump.cs requires -Il2CppDumpGameVersion"
+}
+if (-not $Il2CppDumpPath -and $Il2CppDumpGameVersion) {
+    throw "-Il2CppDumpGameVersion requires -Il2CppDumpPath"
+}
+$dumpFile = ""
+$gameAssembly = Join-Path $GameRoot "GameAssembly.dll"
+if ($Il2CppDumpPath) {
+    $dumpFile = [System.IO.Path]::GetFullPath($Il2CppDumpPath)
+    if (-not (Test-Path -LiteralPath $dumpFile -PathType Leaf)) {
+        throw "Original version-matched IL2CPP dump.cs does not exist"
+    }
+    if (-not (Test-Path -LiteralPath $gameAssembly -PathType Leaf)) {
+        throw "Requested native RVA capture requires GameAssembly.dll"
+    }
+}
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $partial = Join-Path $OutputRoot (".partial-Steam-" + $stamp)
 $ready = Join-Path $OutputRoot ("Steam-" + $stamp)
@@ -78,13 +99,6 @@ Move-Item -LiteralPath $partial -Destination $ready -ErrorAction Stop
 # Capture native PE64 metadata and, only with a caller-supplied version-matched
 # IL2CPP dump.cs, bounded private GridData method byte windows. Never infer a
 # 1.26.2 method RVA from 1.26.1. This does not disassemble native code.
-$gameAssembly = Join-Path $GameRoot "GameAssembly.dll"
-if ($Il2CppDumpPath -and -not $Il2CppDumpGameVersion) {
-    throw "A provided IL2CPP dump.cs requires -Il2CppDumpGameVersion"
-}
-if (-not $Il2CppDumpPath -and $Il2CppDumpGameVersion) {
-    throw "-Il2CppDumpGameVersion requires -Il2CppDumpPath"
-}
 if (Test-Path -LiteralPath $gameAssembly -PathType Leaf) {
     $nativeArgs = @(
         (Join-Path $tools "native_pe_evidence.py"),
@@ -92,10 +106,6 @@ if (Test-Path -LiteralPath $gameAssembly -PathType Leaf) {
         "--out", (Join-Path $ready "native-pe-evidence.json")
     )
     if ($Il2CppDumpPath) {
-        $dumpFile = [System.IO.Path]::GetFullPath($Il2CppDumpPath)
-        if (-not (Test-Path -LiteralPath $dumpFile -PathType Leaf)) {
-            throw "Original version-matched IL2CPP dump.cs does not exist"
-        }
         $nativeArgs += @("--dump-cs", $dumpFile,
                          "--dump-game-version", $Il2CppDumpGameVersion)
     }
