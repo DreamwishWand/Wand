@@ -273,6 +273,52 @@ export function getNativeGridAreaUnrotatedVector(catalog, x, y, orientationCode)
   return nativeGridAreaVector(catalog, x, y, orientationCode, true);
 }
 
+/**
+ * Original GridArea.GetSizeForOrientation / MoreRotationSize for ALL 16
+ * orientations, specialized to grid/area tessellation ratio 1:1.
+ * Return unscaled BASE bounding dimensions only, never rotated cell masks.
+ * Steam v1.26.1 source-native method bodies at 0x3923750 and 0x3923880.
+ */
+export function getNativeFootprintOrientationBaseDimensions(catalog, itemId, orientationCode) {
+  const footprint = catalog.objects.get(idText(itemId))?.footprint;
+  if (!footprint) return null;
+  if (!Number.isInteger(orientationCode) || orientationCode < 0 || orientationCode > 15) {
+    throw new TypeError('Invalid native GridOrientation value');
+  }
+  const common = {
+    itemId, orientationCode,
+    gridToAreaTessellationRatioAssumed: '1:1',
+    fullNativeTessellationScalingApplied: false,
+    rotatedGridAreaCellMappingVerified: false,
+    gridObjectAnchorVerified: false,
+    occupancyPredicateVerified: false,
+    placementLegalityVerified: false,
+  };
+  if (catalog.manifest.gameVersion !== '1.26.1') {
+    return { ...common,
+      status: 'native_orientation_base_size_not_verified_for_game_version',
+      nativeOrientationBaseSizeVerified: false };
+  }
+  const sx = footprint.sizeX, sy = footprint.sizeY;
+  let rotatedX, rotatedY;
+  if (orientationCode === 0 || orientationCode === 8) {
+    rotatedX = sx; rotatedY = sy;
+  } else if (orientationCode === 4 || orientationCode === 12) {
+    rotatedX = sy; rotatedY = sx;
+  } else {
+    const c = Math.abs(GRIDAREA_ROT_COS[orientationCode]);
+    const sn = Math.abs(GRIDAREA_ROT_SIN[orientationCode]);
+    // Original MoreRotationSize does an integer /100 of the SUM of products.
+    // Unlike vector rotation, do not divide each term separately.
+    rotatedX = Math.trunc((Math.imul(c, sx) + Math.imul(sn, sy)) / 100);
+    rotatedY = Math.trunc((Math.imul(c, sy) + Math.imul(sn, sx)) / 100);
+  }
+  return { ...common,
+    sizeX: rotatedX, sizeY: rotatedY,
+    status: 'steam_1_26_1_source_matched_gridarea_base_dimensions',
+    nativeOrientationBaseSizeVerified: true, sourceGameVersion: '1.26.1' };
+}
+
 // Explicit "false" is a valid native restriction; missing flags are NOT permission.
 export function checkNativeEditRestriction(catalog, itemId, action) {
   const allowed = new Set(['canMove', 'canRotate', 'canBeRemoved', 'canBeSelected', 'canSwitchGrid']);
