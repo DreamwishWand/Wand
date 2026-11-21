@@ -420,6 +420,72 @@ supported alternative after this source-native getter confirmation. Neither
 its anchor model nor its 90-degree projection formula has been validated
 against the original game's rotated-area algorithm.
 
+## Original GridArea 16-orientation integer vector rotation (Steam v1.26.1)
+
+The Steam v1.26.1 **original** `GameAssembly.dll` and original IL2CPP
+`global-metadata.dat` v31 now establish the implementation of
+`Definitions.Grid.GridArea.GetRotated` and `GetUnRotated`. The PE64
+method bodies are at RVA `0x3924D30` and `0x3924C10`; they call the
+original `Cos`/`Sin` accessors at `0x3924B10`/`0x3924B90`.
+The native static constructor initializes two **16-entry signed integer
+lookup tables**, `_cos` and `_sin`, scaled by **100**. The source
+metadata's two 64-byte static-array initializer fields have exact SHA-256
+names `33E08F575894FB4DC07B1049D58D185ED5B751ABFA51420694C73EC2742B13DE`
+and `5B6E0D7F418632DFDBED128C7F41C18AC7EEC9BA8785F67EAC3F3582CDA2B719`.
+The original DLL and metadata hashes and all five function-body hashes
+are independently checked by `gridarea_rotation.py` and **never
+committed as original machine-code bytes**.
+
+The native arithmetic is *integer* and truncates each signed product
+toward zero **separately**, with 32-bit multiplication semantics:
+
+```text
+rotatedX = trunc32(x*cos[o]/100) - trunc32(y*sin[o]/100)
+rotatedY = trunc32(x*sin[o]/100) + trunc32(y*cos[o]/100)
+inverseX = trunc32(x*cos[o]/100) + trunc32(y*sin[o]/100)
+inverseY = trunc32(y*cos[o]/100) - trunc32(x*sin[o]/100)
+```
+
+The implementation preserves signed-int32 multiplication overflow as the
+original x86 `imul` does. `trunc32` here means signed truncation
+toward zero **after the native signed 32-bit product**, not a floating
+rotation or rounding. An oblique rotation followed by its inverse may
+therefore lose coordinates.
+
+Browser APIs are read-only, accept original-grid-local **vectors only**,
+and are **strictly version-gated** to `catalog.manifest.gameVersion ===
+'1.26.1'`:
+
+```js
+const p = getNativeGridAreaRotatedVector(catalog, 2, 3, 4);
+const q = getNativeGridAreaUnrotatedVector(catalog, p.x, p.y, 4);
+```
+
+For other game versions they return
+`status: native_rotation_not_verified_for_game_version` with **no
+calculated coordinates**. The equivalent Python
+`rotate_gridarea_vector(x, y, orientation, inverse=False)`
+is explicitly Steam v1.26.1-specific. To check a private installation
+against the original native signatures without distributing original
+bytes:
+
+```bash
+python tools/db-04-world/gridarea_rotation.py \
+  --metadata "/private/Steam/ddv_Data/il2cpp_data/Metadata/global-metadata.dat" \
+  --dll "/private/Steam/GameAssembly.dll"
+```
+
+**Critical separation:** This proves a native **vector** transformation,
+not how an item's `GridAreaData.LayerValues` should be remapped to
+rotated grid cells, how a `GridObject.X/Y` anchor is applied,
+which layer flags mean physical occupancy, or whether an edit is legal.
+Every related API reports
+`rotatedGridAreaCellMappingVerified: false`,
+`gridObjectAnchorVerified: false`,
+`occupancyPredicateVerified: false`, and
+`placementLegalityVerified: false`. Do **not** replace the unresolved
+footprint placement system with these vector operations alone.
+
 ## Unverified cardinal footprint models — evidence-only diagnostic
 
 The original game's `Definitions.Grid.GridAreaData` exposes `SizeX`,
