@@ -108,8 +108,31 @@ export function validateDb01Shards(manifest: unknown): asserts manifest is Db01S
   for (const value of Object.values(manifest.files)) {
     check(isObj(value) && typeof value.sha256 === 'string' && SHA.test(value.sha256) &&
       Number.isInteger(value.bytes) && Number(value.bytes) >= 3 && Number(value.bytes) < 12_000_000 &&
-      Number.isInteger(value.count) && Number(value.count) >= 0, 'INVALID_ASSET_METADATA');
+      Number.isSafeInteger(value.count) && Number(value.count) >= 0, 'INVALID_ASSET_METADATA');
   }
+  // These are metadata-only checks, so corrupted release ledgers are rejected
+  // before downloading any private source files. The offline release auditor
+  // performs the separate, full source-to-shard relational verification.
+  const count = (path:string) => manifest.files[path].count;
+  const idTotal = Array.from({length:256},(_,i)=>count(`id/${i.toString(16).padStart(2,'0')}.json`))
+    .reduce((a,b)=>a+b,0);
+  // Deliberately avoid inferring domain from non-item native categories.
+  const allCategories = manifest.categories as string[];
+  const categoriesTotal = allCategories.reduce((total,category)=>total+count(`category/${category}.json`),0);
+  const nativeTotal = allCategories.filter(category=>
+    ['ActivityItem','Furniture','Clothing','Trimming'].includes(category))
+    .reduce((total,category)=>total+count(`category/${category}.json`),0);
+  check(idTotal === manifest.definitions && categoriesTotal === manifest.definitions &&
+    nativeTotal === manifest.currentNativeItemDefinitions, 'SHARD_LEDGER_TOTAL_MISMATCH');
+  check(DB01_LOCALES.every(locale=>count(`locale/${locale}.json`) <= manifest.definitions),
+    'LOCALE_LEDGER_OVERFLOW');
+  if (manifest.historicalCandidatesIncluded) {
+    const historyTotal = Array.from({length:256},(_,i)=>
+      count(`historical/${i.toString(16).padStart(2,'0')}.json`)).reduce((a,b)=>a+b,0);
+    check(historyTotal <= manifest.definitions * DB01_LOCALES.length, 'HISTORY_LEDGER_OVERFLOW');
+  }
+  check(!manifest.fullCorpusParsed ||
+    manifest.sourceFilesVerified === manifest.sourceFilesTotal, 'INCOMPLETE_CORPUS_LEDGER');
 }
 
 function checkItem(row: unknown, manifest: Db01ShardManifest): asserts row is Db01Item {
@@ -145,7 +168,16 @@ export interface Db01CatalogClient {
 /** No whole-catalog load: memoized category, locale and ID-bucket reads are SHA-pinned. */
 export function createDb01CatalogClient(rawManifest: unknown, loadBytes: Db01LoadBytes): Db01CatalogClient {
   validateDb01Shards(rawManifest);
-  const manifest = rawManifest;
+  // A caller can reuse and mutate its own parsed JSON object, including while
+  // asynchronous File/ZIP reads are in flight. Snapshot the complete verified
+  // ledger instead of trusting mutable caller-owned hash/byte/count metadata.
+  const manifest: Db01ShardManifest = Object.freeze({
+    ...rawManifest,
+    categories: Object.freeze([...rawManifest.categories]),
+    locales: Object.freeze([...rawManifest.locales]),
+    files: Object.freeze(Object.fromEntries(Object.entries(rawManifest.files).map(
+      ([path,meta])=>[path,Object.freeze({...meta})]))),
+  });
   check(typeof loadBytes === 'function', 'LOADER_REQUIRED');
   const reads = new Map<string, Promise<unknown>>();
   async function loadJson(path: string): Promise<unknown> {
