@@ -488,7 +488,7 @@
             </div>
           </aside>
         {:else}
-          <aside class="item-inspector empty-inspector"><div class="inspector-empty-symbol">✦</div><h2>Item Details</h2><p>アイテムを選択すると、データとローカル収集状況を確認できます。</p><p class="inspector-hint">参照データ：{runtime?.metadata.platform??'公開ゲームDB'}{#if runtime?.metadata.version} DDV v{runtime.metadata.version}{/if}。一部の画像には別バージョンのゲーム由来素材を使用しており、データとの同一性は保証されません。セーブ内の一部情報は上部で読み取り専用プレビューできますが、Collectionへの自動反映・セーブへの書き戻し・個別詳細ページは未接続です。</p></aside>
+          <aside class="item-inspector empty-inspector"><div class="inspector-empty-symbol">✦</div><h2>Item Details</h2><p>アイテムを選択すると、データとローカル収集状況を確認できます。</p><p class="inspector-hint">参照データ：{runtime?.metadata.platform??'公開ゲームDB'}{#if runtime?.metadata.version}{' · DDV v'}{runtime.metadata.version}{/if}。一部の画像には別バージョンのゲーム由来素材を使用しており、データとの同一性は保証されません。セーブ内の一部情報は上部で読み取り専用プレビューできますが、Collectionへの自動反映・セーブへの書き戻し・個別詳細ページは未接続です。</p></aside>
         {/if}
       </div>
     </div>
