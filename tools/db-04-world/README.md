@@ -64,6 +64,44 @@ The package is explicitly partial unless verified complete source coverage
 has been established. A successful command is not proof of gameplay collision
 or placeability and does not certify the machine-code decoder.
 
+## Native GameAssembly PE64 source evidence (private, version-gated)
+
+The Windows one-shot `run.ps1` now optionally captures original local
+`GameAssembly.dll` **PE32+ AMD64** identity, section mapping and SHA-256,
+without uploading or packaging the full game binary. When `GameAssembly.dll`
+is absent, the normal DB-04 world-data extraction continues without it.
+Without an IL2CPP dump corresponding to the **same exact game version**, the
+report contains *only* PE metadata: no guessed v1.26.1 method RVAs are
+applied to Steam v1.26.2.
+
+If the PC already has its own matching `dump.cs` from Il2CppDumper, a
+single existing source-extraction invocation can additionally request
+bounded original-machine-code byte windows for
+`Definitions.Grid.GridData` and `GridAreaData`:
+
+```powershell
+& ".\tools\db-04-world\run.ps1" `
+  -Il2CppDumpPath "D:\Private\DDV\v1.26.2\dump.cs" `
+  -Il2CppDumpGameVersion "1.26.2"
+```
+
+The caller-provided dump version must equal the game's `FullVersion.txt`;
+the dump file is source-identified by SHA-256, but the stated version cannot
+be independently proven from a C# text dump alone. The PE parser verifies
+`MZ`, `PE32+`, AMD64 machine type, executable section ranges and bounded
+RVA→original-file-offset mapping. Every included byte window is individually
+SHA-256-checked. The output is placed in the **private** ZIP at
+`diagnostics/native-pe-evidence.json` and never committed to public Git.
+
+**Important:** byte windows are evidence of a PE offset, **not** proof of a
+function's entire implementation or its semantics. The tool deliberately
+does not disassemble code or promote
+`nativeCodeBodyVerified`, `nativeFloorIndexToXYVerified`,
+`nativeFootprintRotationVerified` or `placementLegalityVerified` to true.
+To establish those behaviors requires version-matched disassembly and
+independent source comparison. This is a one-shot capture path, not a claim
+that native reverse engineering is already finished.
+
 ## Generated private files
 
 Upload these together to the private [SRC-05 WORLD DATA folder](https://drive.google.com/drive/folders/1P5VW5Yr9YqYNoZfv7yHRCwqZcZapi0-Q):
