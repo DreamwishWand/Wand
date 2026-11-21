@@ -47,6 +47,10 @@ py -3 -m unittest discover -s tools/src-02-acquisition -p "test_*.py" -v
 node --test tests/acquisition*.test.mjs
 ```
 
+## Ingredient-dependent meal sell-price evidence (Steam v1.26.2)
+
+See [MEAL-STATE-SELL-PRICE.md](MEAL-STATE-SELL-PRICE.md). Native `ItemState.MealData.IngredientsUsed` records per-instance ingredients and `MealItemData.GetSellPrice(ItemState,...)` / `TotalIngredientsSellPrice(...,ingredientsUsed)` are state-aware sell-price methods. The exact r5 source has **625 cooking recipes → 618 different Meal Item IDs**; `Cooking_Meal_PriceDatabase` has **312 configured purchase rows but zero static sell rows**. This is distinct from the multiple source price-database keys observed across stalls. `meal-price-evidence.mjs` now decodes and preserves ingredient composition in a read-only evidence API, never substitutes purchase prices for sell values and never guesses numeric meal sale prices. `smoke_private_meal_state_runtime.mjs` authenticates private source releases and verifies all 618 outputs using synthetic item states.
+
 ## Owner-private static price currency cross-check and exact-source smoke
 
 The 2026-11-21 two-release source audit in [SHOP-PRICE-OVERLAP.md](SHOP-PRICE-OVERLAP.md) confirms **29 stalls with candidate items from one static price DB, 18 from two, 3 from three, 15 with none**, all 65 configured with native currency ID `80000000`. **683** price-defined per-stall candidate occurrences have one matching original **purchase** currency cost; **162** extra purchase-cost entries use other currencies. The corresponding local-only UI helper is `source-price-currency.mjs`, and the release-authenticated join uses it without inventing a selected per-shop price database or a current sale price. Reproduce using `audit_private_stall_price_overlap.py` with the two owner-private ZIPs. Never publish those ZIPs.
