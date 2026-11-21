@@ -83,6 +83,17 @@ def legacy_public_paths():
         if key in known:
             raise ValueError('DB05_DEEP_PUBLIC_FIELD_COLLISION')
         known[key] = row['path']
+    domain_path = Path(__file__).resolve().parents[2] / 'data' / 'ddv' / 'save' / 'native1262-domain-fields.v1.json'
+    domain = load_json(domain_path)
+    if domain.get('schema') != 'wand.db05.native1262-domain-fields@1':
+        raise ValueError('DB05_DOMAIN_FIELD_REGISTRY_REQUIRED')
+    for row in domain.get('fields', []):
+        if not isinstance(row, dict) or row.get('writable') is not False or not isinstance(row.get('path'), str):
+            raise ValueError('INVALID_DB05_DOMAIN_PUBLIC_FIELD')
+        key = normalized_public_path(row['path'])
+        if key in known:
+            raise ValueError('DB05_DOMAIN_PUBLIC_FIELD_COLLISION')
+        known[key] = row['path']
     return known
 
 
@@ -118,7 +129,7 @@ def inspect_report(report):
             'rootRequiredObjectsObserved': report.get('rootRequiredObjectsObserved') is True,
             'publicWitnesses': [{'path': p, 'type': k} for p, k in sorted(witnesses.items())],
             'otherWitnessCount': undisclosed,
-            'historicalKnownFieldScope': 'legacy626_common626643_native1261_nested_and_deep_readonly_candidates_not_codec_proof',
+            'historicalKnownFieldScope': 'legacy626_common626643_native1261_nested_deep_and_domain_readonly_candidates_not_codec_proof',
             'decoderAndBuildVerified': False,
             'writerAuthorized': False}
 

@@ -54,9 +54,9 @@ test('all five provenance classes contain 308 structurally unique paths',()=>{
   assert.equal(paths.length,308);
   assert.equal(new Set(paths).size,308);
   const catalog=getUnifiedSaveShapeCatalog();
-  assert.equal(catalog.publicTemplateCount,308);
+  assert.equal(catalog.publicTemplateCount,440);
   assert.deepEqual(catalog.sourceCounts,{
-    legacy:66,common:16,native:85,nativeNested:58,nativeDeep:83
+    legacy:66,common:16,native:85,nativeNested:58,nativeDeep:83,nativeDomain:132
   });
   assert.equal(catalog.writerAuthorized,false);
 });
@@ -78,7 +78,7 @@ test('83 native deep fields have source tags, precise observed types and no writ
 test('unified probe reaches 83 deep paths with no version/platform gates',()=>{
   for(const schema of [626,643]){
     const x=probeUnifiedSaveStructure(buildDocument(schema));
-    assert.equal(x.publicTemplateCount,308);
+    assert.equal(x.publicTemplateCount,440);
     assert.equal(x.platformAndVersionUsedAsGates,false);
     assert.equal(x.nativeBuildAttested,false);
     assert.ok(x.domains.find(d=>d.domain==='world').observedFields.length>=73);

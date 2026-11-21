@@ -279,6 +279,23 @@ export type UnifiedShapeComparison = Readonly<{
 }>;
 export const SAVE_UNIFIED_SHAPE_PROBE_CONTRACT: 'wand.db05.unified-shape-probe@1';
 export const SAVE_UNIFIED_SHAPE_COMPARISON_CONTRACT: 'wand.db05.unified-shape-comparison@1';
+export type DomainSaveField = Readonly<{
+  domain: 'player' | 'world';
+  path: string;
+  nativeMessage: string;
+  protobufFieldNumber: number;
+  nativePropertyType: string;
+  observedJsonKinds: readonly string[];
+  allowedJsonKinds: readonly string[];
+  sampledAtLeastOneOriginal: boolean;
+  observedIn: readonly string[];
+  sourceNativeBuild: 'steam-1.26.2-archived-dump';
+  writable: false;
+}>;
+export function getDomainSaveFields(): Readonly<{
+  schema: 'wand.db05.native1262-domain-fields@1';
+  fields: readonly DomainSaveField[];
+}>;
 export function getDeepSaveFields(): Readonly<{
   schema: 'wand.db05.native1261-deep-field-witnesses@1';
   fields: readonly DeepSaveField[];
@@ -286,7 +303,7 @@ export function getDeepSaveFields(): Readonly<{
 export function getUnifiedSaveShapeCatalog(): Readonly<{
   contract: 'wand.db05.unified-shape-catalog@1';
   publicTemplateCount: number;
-  sourceCounts: Readonly<{legacy:number;common:number;native:number;nativeNested:number;nativeDeep:number}>;
+  sourceCounts: Readonly<{legacy:number;common:number;native:number;nativeNested:number;nativeDeep:number;nativeDomain:number}>;
   domains: readonly string[];
   compatibilityGate: 'decoded_shape_not_build_or_platform';
   currentNativeBuildAttested: false;

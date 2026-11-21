@@ -419,3 +419,57 @@ These counts are exploratory, not 1,202 approved registry entries.
 Do **not** commit that private output. Synthetic Python CI tests
 cover determinism of output contents, redaction, map placeholders,
 known-path deduplication, sampling, and refusal to write inside Git.
+
+## Steam v1.26.2 archive: 132 additional domain-specific save witnesses
+
+`data/ddv/save/native1262-domain-fields.v1.json` registers **132 new
+public JSON path templates** from the owner-provided, SHA-256-pinned
+Steam **v1.26.2 archived IL2CPP `dump.cs`** and the three owner-private
+Steam/Switch original saves (schemas 643/643/626). The two archived
+1.26.1/1.26.2 source dumps are byte-identical; executable/Codec
+identity is *not* claimed. The 132 were manually screened from
+**138** native-source-defined, observed candidates, with **six
+overlaps** rejected against all five pre-existing registries. There
+are now **440 unique public DB-05 field templates** (66 + 16 + 85
++ 58 + 83 + 132).
+
+The additions cover inventory meal-state substructures; achievements,
+collection sets, mount customization; house floors, rooms and
+wallpaper settings; village rocks and unlock prerequisites; grid
+object storage and farming states; and active mission-slot progression.
+`observedJsonKinds` reports JSON **type names**, never original values.
+Ten fields observed only as `null` have `allowedJsonKinds` expanded using the native nullable/message type (`Nullable<int>`, `Nullable<bool>`, `Timestamp`, or `MultiReward`) as an explicitly **unobserved but plausible** non-null shape. Their `observedJsonKinds` remain strictly `["null"]`; no non-null child structure is asserted.\n\nFor **77 of the 132** new fields, at least one observation used bounded
+wildcard sampling. These findings are read-only shape *candidates*,
+not a complete survey of every item/object in all saves. Even
+`observedJsonKinds: ["null"]` is not evidence of a non-null message
+shape. Personal names, player IDs, map keys, raw save JSON and any
+decrypted or encrypted save bytes are never included in the public
+registry.
+
+`getDomainSaveFields()` returns this frozen catalog. Existing
+`probeUnifiedSaveStructure` and `compareUnifiedSaveStructures`
+now cover all **440** known public templates, without introducing
+version/platform compatibility gates or any Writer/export permission.
+The private SRC-06 ingest and redacted witness comparator accept only
+the 132 new exact templates in addition to pre-existing allowlisted
+paths, and reject actual map identifiers.
+
+The new **read-only** native-source verification command validates
+Protobuf *parent and child message chains*, including repeated
+fields and map value classes, and checks all 132 direct field
+numbers and native C# types:
+
+```bash
+python tools/db-05-save/verify_domain_native_fields.py --dump /private/v1.26.2/Il2CppDump/dump.cs
+```
+
+It hashes the complete file and fails on unexpected source bytes.
+`--source-changed-review` is an explicit **review-only** comparison
+mode for future game updates. Its output contains *only* approved
+public templates and type/tag comparison status. An arbitrary map
+key or private path is rejected; private saves are **not** inputs.
+
+Neither a matching type nor a synthetically passing structure
+authorizes save encoding, mutations, DLC ownership, purchases,
+entitlements, or exporting a modified save. Writer safety and
+unknown-field preserving round trips must be separately proven.
