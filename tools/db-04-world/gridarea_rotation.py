@@ -31,6 +31,10 @@ INT32_MAX = 0x7fffffff
 # Source native PE64 method-body hashes/byte ranges from the exact matching
 # original Steam DLL. These are identification evidence, not code bytes.
 METHODS = (
+    ("GridArea.GetSizeForOrientation", 0x3923750, 301,
+     "5ede14586a2253be7176cf5bbb16a7602d4c15088e6670d53b65690aa7db3b1d"),
+    ("GridArea.MoreRotationSize", 0x3923880, 282,
+     "3e9c084604e538814566756fb9d3592296ff0042cdf1d96c4dedd366cd17a09a"),
     ("GridArea.Cos", 0x3924b10, 115,
      "2f689185fbf77e8945223f3c41e2ed35a901edd2ab0a51eb9106d8dc1c5d7438"),
     ("GridArea.Sin", 0x3924b90, 116,
@@ -75,6 +79,46 @@ def rotate_gridarea_vector(x: int, y: int, orientation: int, *,
         "nativeIntegerTruncationVerified": True,
         "nativeVectorRotationVerified": True,
         "coefficientScale": 100,
+        "rotatedGridAreaCellMappingVerified": False,
+        "gridObjectAnchorVerified": False,
+        "occupancyPredicateVerified": False,
+        "placementLegalityVerified": False,
+    }
+
+
+def gridarea_orientation_base_size(size_x: int, size_y: int,
+                                   orientation: int) -> dict:
+    """Original GridArea.GetSizeForOrientation specialized to 1:1 tessellation.
+
+    Cardinal 0/8 return (SizeX,SizeY), 4/12 swap. Noncardinal branches
+    dispatch to native MoreRotationSize with abs(Cos/Sin), integer /100
+    on each *SUM* of products. The real method also scales by
+    gridTessellationFactor/area.TessellationFactor; only base 1:1 here.
+    No rotated cell membership or shape/anchor legality is inferred.
+    """
+    if (type(size_x) is not int or type(size_y) is not int or
+            not 1 <= size_x <= 256 or not 1 <= size_y <= 256 or
+            size_x * size_y > 16384 or type(orientation) is not int or
+            not 0 <= orientation <= 15):
+        raise ValueError("invalid original GridArea base dimensions/orientation")
+    if orientation in (0, 8):
+        x, y = size_x, size_y
+    elif orientation in (4, 12):
+        x, y = size_y, size_x
+    else:
+        c, sn = abs(COS[orientation]), abs(SIN[orientation])
+        x = _trunc_div_100(_int32(
+            _int32(c * size_x) + _int32(sn * size_y)))
+        y = _trunc_div_100(_int32(
+            _int32(c * size_y) + _int32(sn * size_x)))
+    return {
+        "status": "steam_1_26_1_source_matched_gridarea_base_dimensions",
+        "orientationCode": orientation,
+        "sizeX": x,
+        "sizeY": y,
+        "gridToAreaTessellationRatioAssumed": "1:1",
+        "nativeOrientationBaseSizeVerified": True,
+        "fullNativeTessellationScalingApplied": False,
         "rotatedGridAreaCellMappingVerified": False,
         "gridObjectAnchorVerified": False,
         "occupancyPredicateVerified": False,
