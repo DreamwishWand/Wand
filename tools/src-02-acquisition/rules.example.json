@@ -1,0 +1,57 @@
+{
+  "rules": [
+    {
+      "id": "example-offer-to-reward",
+      "glob": "**/offers.json",
+      "records": "Offers[*]",
+      "entity_type": "Offer",
+      "id": "OfferID",
+      "method": "PremiumShop",
+      "fields": {
+        "price": "Price.Amount",
+        "currency_id": "Price.CurrencyID",
+        "starts_at": "StartAt",
+        "ends_at": "EndAt",
+        "package_enabled_flag": "Enabled",
+        "conditions": "Conditions[*]"
+      },
+      "links": [
+        {"records": "Rewards[*]", "id": "RewardID", "target_type": "Reward", "relation": "includes_reward"}
+      ]
+    },
+    {
+      "id": "example-reward-to-item",
+      "glob": "**/rewards.jsonl",
+      "records": "$",
+      "entity_type": "Reward",
+      "id": "RewardID",
+      "links": [
+        {"records": "Items[*]", "id": "ItemID", "target_type": "Item", "relation": "grants_item", "fields": {"quantity": "Quantity"}}
+      ]
+    },
+    {
+      "id": "example-quest-to-reward",
+      "glob": "**/quests.json",
+      "records": "Quests[*]",
+      "entity_type": "Quest",
+      "id": "QuestID",
+      "method": "FriendshipQuest",
+      "fields": {"prerequisites": "Requirements[*]"},
+      "links": [
+        {"records": "RewardIDs[*]", "id": "$", "target_type": "Reward", "relation": "awards_reward"}
+      ]
+    },
+    {
+      "id": "example-recipe-to-item",
+      "glob": "**/recipes.json",
+      "records": "Recipes[*]",
+      "entity_type": "Recipe",
+      "id": "RecipeID",
+      "method": "Crafting",
+      "fields": {"ingredients": "Inputs[*]", "required_unlock": "UnlockRequirement"},
+      "links": [
+        {"records": "Outputs[*]", "id": "ItemID", "target_type": "Item", "relation": "creates_item", "fields": {"quantity": "Quantity"}}
+      ]
+    }
+  ]
+}
