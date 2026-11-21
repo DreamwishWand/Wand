@@ -15,6 +15,7 @@ import tempfile
 import zipfile
 
 from mission_semantics import extract_quest_details
+from protodb_static import project_protodb
 
 SCHEMA = "wand.db03.native-guide@1"
 LOCALES = {"en": "en-US", "fr": "fr", "it": "it", "de": "de", "es-ES": "es",
@@ -581,12 +582,16 @@ def extract(game, out, version, platform, item_index=None, previous=None):
         status = "NEEDS_SOURCE_MAPPING" if not rows["quests"] else "PARTIAL"
         source_info = {fam: {"file": f"itemlist/{SOURCES[fam]}.json", "sha256": hashes[fam],
                              "bytes": len(files[fam]), "records": len(rows[fam])} for fam in files}
+        protodb_summary = project_protodb(origin, out, target, locale, wire_fields,
+            text_field, int_field, sha, source_data, save, plain_display,
+            indexes.get("quests"))
         manifest = {"schema": SCHEMA, "target": target, "status": status,
                     "sources": source_info, "localizationSources": locale.provenance,
                     "friendshipRewardSource": reward_source, "structuredDefinitions": overlay_counts,
                     "itemIndexSha256": sha(item_index.read_bytes()) if item_index else None,
                     "counts": {**{fam: len(rows[fam]) for fam in SOURCES}, "rewards": len(reward_rows)},
                     "missingSources": missing_families,
+                    "protoDbStatic": protodb_summary,
                     "missionRecordKinds": dict(collections.Counter(r["recordKind"] for r in kinds)),
                     "decodedObjectiveCount": sum(len(sub["objectives"])
                         for r in rows["quests"] for step in r.get("structured", {}).get("stepsDetailed", [])
