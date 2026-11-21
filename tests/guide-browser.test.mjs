@@ -36,12 +36,15 @@ test('multilingual Japanese NFKC, English fallback, numeric ID and facets',()=>{
   assert.equal(searchGuide(index,{query:'PARTY'}).results[0].matchedLocale,'en');
   assert.equal(searchGuide(index,{query:'2070000620'}).results[0].matchedLocale,'nativeId');
   assert.equal(searchGuide(index,{character:'10000035',group:'2070200092',objective:'CraftItem'}).total,1);
+  assert.equal(searchGuide(index,{scopeToken:'Expansion01'}).total,1);
+  assert.equal(searchGuide(index,{scopeToken:'Expansion02'}).total,0);
+  assert.equal(searchGuide(index,{scopeToken:'',character:'10000035'}).total,1);
   assert.equal(searchGuide(index,{character:'999'}).total,0);
   assert.equal(searchGuide(index,{query:'no match'}).total,0);
 });
 test('rejects unsupported locales, pagination and source-invalid filters',()=>{
   const {index}=fixture();
-  for (const args of [{locale:'xx'},{limit:0},{offset:-1},{query:'a'.repeat(129)},{group:'../x'}])
+  for (const args of [{locale:'xx'},{limit:0},{offset:-1},{query:'a'.repeat(129)},{group:'../x'},{scopeToken:42}])
     assert.throws(()=>searchGuide(index,args));
 });
 test('accepts source-correct one-file detail import and extracts objectives',async()=>{
