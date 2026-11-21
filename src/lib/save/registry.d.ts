@@ -204,6 +204,7 @@ export type NestedSaveComparison = Readonly<{
     addedKnownPaths: readonly string[];
     missingKnownPaths: readonly string[];
     conflictingKnownPaths: readonly string[];
+    changedKindPaths: readonly string[];
     writerAuthorized: false;
   }>[];
   platformAndVersionUsedAsGates: false;
