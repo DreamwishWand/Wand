@@ -98,6 +98,9 @@ test('full private bundle digests and DB-00 exact-origin join', async () => {
     assert.equal(join.lookup(11).currentAvailabilityVerified,false);
     assert.equal(join.lookup(11).ownedOrUnlocked,'unknown');
     assert.equal(join.getPossibleStallsForItem(11)[0].status,'static_candidate_not_verified_for_sale');
+    assert.equal(join.getStallStaticCatalog(20100000).currentInventoryVerified, false);
+    assert.equal(join.listStallStaticCatalogs().length, 1);
+    assert.equal(join.getStallsByShopDataKey('Meadow')[0].stallId, 20100000);
     assert.equal(join.lookup(100).classification,'unresolved_in_partial_catalog');
     assert.equal(createAcquisitionCatalogJoin(snapshot(manifest,true),bundle).lookup(100).classification,'not_in_exact_catalog');
   } finally {await rm(root,{recursive:true,force:true});}

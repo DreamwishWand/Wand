@@ -351,3 +351,30 @@ and `targetQuantity`. Both preserve the existing negative verification claims:
 `recipeEligibilityEvaluated=false`, `acquisitionAvailabilityVerified=false`.
 Unverified server offers, prices, player inventory, DLC entitlements, or event
 availability are not inferred. All Item/recipe records remain in private Drive.
+
+## Static stall catalogue, not shop inventory (SRC-02)
+
+The native `StallBuildingItemData` fields `ShopData=9`, repeated
+`SlotLootTableItemID=10`, `UnlockWith=11`, `UnlockAtLevel=12`, repeated
+`UnlockCost=13`, and repeated `UpgradeInfo=16` are present in the owner-held
+Steam v1.26.1 IL2CPP symbols and extracted from the SHA-verified Steam v1.26.2
+`Building.json` into 65 `stall-sources.jsonl` records. Their 335 ordered slots
+refer to source-backed loot tables. **Neither these item candidates nor the
+unlock/upgrade costs are live shop offers or sale prices.** The `ShopData` key
+is a grouping key, not proof of a stable set of current merchandise. Slot
+conditions, dynamic filters and player unlock progress are unverified.
+
+The read-only, browser-safe `createAcquisitionDatabase(verifiedBundle)` now
+exposes `getStallStaticCatalog(stallId)`, `getStallsByShopDataKey(shopDataKey)`
+and `listStallStaticCatalogs()`. The same methods are available on the pinned
+DB-00 join. All derived results, candidate arrays and building-cost rows are
+immutable. Each stall returns sorted distinct *explicit* candidate Item IDs,
+but preserves repeated source slot references and condition/dynamic flags.
+For every slot, `enumeratedCandidatesExhaustive=false`, `currentSlotStock=null`
+and `currentSalePrice=null` until verified runtime ShopData is available. A
+missing `ItemAmount.Amount` is `null`, **never a zero-cost unlock or upgrade**.
+`buildingCosts.costsAreBuildingNotSalePrices=true` prevents accidental rendering
+as retail prices. `publishable=false`: private game-source rows remain private.
+
+Use a separately trusted manifest pin when loading the bundle; do not present
+candidate completeness, shop stock or current pricing in Guide or Collection.
