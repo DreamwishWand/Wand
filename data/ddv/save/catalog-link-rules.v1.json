@@ -1,0 +1,73 @@
+{
+  "schema": "wand.db05.db01-db04-join-rules@1",
+  "source": "public_save_structure_templates_only",
+  "policy": {
+    "readOnly": true,
+    "sourceGameVersionEqualityIsNotProof": true,
+    "partialDb01Catalog": true,
+    "partialDb04Catalog": true,
+    "saveAndCatalogProvenanceJointlyAttested": false,
+    "db04GridIdIsNativeSourcePathNotSaveNumericGridId": true,
+    "writerAuthorized": false,
+    "ownershipVerified": false,
+    "exportAuthorized": false
+  },
+  "families": [
+    {
+      "id": "chest_item",
+      "catalog": "item",
+      "path": "/Player/ContainerInventories/{id}/Inventory[]/ItemID",
+      "extraction": "integer_value",
+      "note": "A chest slot item reference is an ID candidate, not proof of ownership"
+    },
+    {
+      "id": "inventory_item_key",
+      "catalog": "item",
+      "path": "/Player/ListInventories/{id}/Inventory/{id}",
+      "extraction": "canonical_map_key",
+      "note": "ListInventory map keys are item IDs, while its child Amount is not an ID"
+    },
+    {
+      "id": "collection_item_key",
+      "catalog": "item",
+      "path": "/Player/CollectionSets[]/GroupData[]/GroupsCollectionItems/{id}",
+      "extraction": "canonical_map_key",
+      "note": "Collection entries do not prove item eligibility or owned entitlement"
+    },
+    {
+      "id": "placed_grid_object_item",
+      "catalog": "item",
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/ItemID",
+      "extraction": "integer_value",
+      "note": "Default/full grid object item ID, not grid instance ID or placement authority"
+    },
+    {
+      "id": "modified_grid_object_item",
+      "catalog": "item",
+      "path": "/World/GridCollection/DiffGrids/{id}/ModifiedObjects/{id}/ItemID",
+      "extraction": "integer_value",
+      "note": "Diff grid modified object item ID, not item ownership"
+    },
+    {
+      "id": "mount_item",
+      "catalog": "item",
+      "path": "/Player/Mounts[]/MountItemID",
+      "extraction": "integer_value",
+      "note": "Mount ID might have definition_unclassified DB-01 category"
+    },
+    {
+      "id": "village_scene",
+      "catalog": "scene",
+      "path": "/World/Villages[]/SceneItemId",
+      "extraction": "integer_value",
+      "note": "Scene ID resolves to DB-04 scene; never equate with a world or layout ID"
+    },
+    {
+      "id": "native_grid_source_path",
+      "catalog": "grid_source",
+      "path": "/World/GridCollection/Grids/{id}/GridDataPath",
+      "extraction": "exact_source_path",
+      "note": "DB-04 grids use GridData source paths, NEVER numeric save grid IDs"
+    }
+  ]
+}
