@@ -63,7 +63,8 @@
   $: entries=workspace?.entries??{};
   $: selectionLabel=facets.find(x=>x.id===selected)?.label??'';
   $: visibleItems=filtered;
-  $: groupedItems=CATEGORY_ORDER.map(id=>({id,items:visibleItems.filter(x=>x.family===id)}))
+  $: groupedItems=[...new Set([...CATEGORY_ORDER,...visibleItems.map(x=>x.family)])]
+    .map(id=>({id,items:visibleItems.filter(x=>x.family===id)}))
     .filter(group=>group.items.length);
   $: selectedItem=selectedItemId!==null && runtime?runtime.item(selectedItemId,locale):null;
   $: selectedEntry=selectedItem?entries[String(selectedItem.itemId)]??{}:{};
@@ -270,7 +271,7 @@
           {#each languages as language}<option value={language.id}>{language.label}</option>{/each}
         </select>
       </label>
-      <span class="source-pill">Nintendo Switch · v1.25.0</span>
+      <span class="source-pill">{runtime?.metadata.platform??'Nintendo Switch'} · v{runtime?.metadata.version??'1.25.0'}</span>
     </div>
   </header>
 

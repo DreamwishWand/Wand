@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { chromium } from 'playwright';
 
 const url = 'http://127.0.0.1:4173/Wand/collection/';
@@ -97,6 +98,66 @@ try{
   await page.locator('.more-button').scrollIntoViewIfNeeded();
   await page.waitForFunction(()=>document.querySelectorAll('.item-card').length>72,{timeout:20000});
   assert.equal(browserErrors.length,0,browserErrors.join('\n'));
+  const releaseRoot='ddv/game-db/releases/approved-fixture';
+  const publishedItem={
+    id:'40005160',names:{en:'Verified Glass Shoe',ja:'検証済みの靴'},
+    nameStatus:'verified',category:'Furniture',subcategory:null,
+    stateClass:'TRACKED',stateSemantic:'OWNERSHIP_AND_DISCOVERY',
+    worlds:['IsDreamlightValley'],universes:['Cinderella'],
+    contentIds:['Expansion03'],releaseIds:[],relations:[],sourceRefs:['public-source']
+  };
+  const shardText=JSON.stringify({
+    schema:'wand.game-db.snapshot@1',offset:0,count:1,items:[publishedItem]
+  })+'\n';
+  const sha=value=>createHash('sha256').update(value).digest('hex');
+  const releaseIndex={
+    schema:'wand.game-db.release@1',id:'approved-fixture',
+    count:1,target:{platform:'Steam',gameVersion:'1.26.2',buildId:null,sourceSha256:'a'.repeat(64)},
+    coverage:{scope:'fixture',complete:true,categories:['Furniture']},
+    sources:[{id:'public-source',sha256:'b'.repeat(64),visibility:'public_reference'}],
+    releases:[],search:[],
+    shards:[{file:'items-000.json',offset:0,count:1,bytes:Buffer.byteLength(shardText),sha256:sha(shardText)}]
+  };
+  const indexText=JSON.stringify(releaseIndex)+'\n';
+  const activePointer={
+    schema:'wand.game-db.active@1',kind:'db_snapshot',snapshot:'approved-fixture',
+    path:releaseRoot,indexSha256:sha(indexText),
+    target:{platform:'Steam',gameVersion:'1.26.2',buildId:null},
+    publication:'validated_public_snapshot'
+  };
+  await page.route('**/ddv/game-db/active.json',route=>route.fulfill({
+    status:200,contentType:'application/json',body:JSON.stringify(activePointer)
+  }));
+  await page.route('**/'+releaseRoot+'/index.json',route=>route.fulfill({
+    status:200,contentType:'application/json',body:indexText
+  }));
+  await page.route('**/'+releaseRoot+'/items-000.json',route=>route.fulfill({
+    status:200,contentType:'application/json',body:shardText
+  }));
+  await page.reload();
+  await page.locator('.summary-strip').waitFor({timeout:20000});
+  assert.match(await page.locator('.summary-strip').innerText(),/1/);
+  const releaseSearch=page.getByRole('searchbox',{name:/8言語/});
+  await releaseSearch.fill('検証済みの靴');
+  await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
+  assert.match(await page.locator('.item-card').first().innerText(),/検証済みの靴/);
+  const releaseBackupPromise=page.waitForEvent('download');
+  await page.getByRole('button',{name:'バックアップ出力'}).click();
+  const releaseBackup=JSON.parse(await readFile(await (await releaseBackupPromise).path(),'utf8'));
+  assert.equal(releaseBackup.workspaces[0].entries['99999999'].discovered,true);
+  assert.equal(releaseBackup.workspaces[0].entries['40005160'].status,'missing');
+  await page.route('**/'+releaseRoot+'/index.json',route=>route.fulfill({
+    status:200,contentType:'application/json',body:JSON.stringify({
+      ...releaseIndex,sources:[{id:'private-source',visibility:'private',sha256:'b'.repeat(64)}]
+    })+'\n'
+  }));
+  await page.reload();
+  await page.getByRole('alert').filter({hasText:'データの検証または読み込みに失敗'}).waitFor({timeout:20000});
+  assert.equal(await page.locator('.summary-strip').count(),0);
+  await page.unrouteAll();
+  await page.reload();
+  await page.locator('.summary-strip').waitFor({timeout:20000});
+  assert.match(await page.locator('.summary-strip').innerText(),/12,552/);
   await context.close();
   console.log('Collection browser WASM/IndexedDB/migration/search/paging smoke passed');
 } finally {

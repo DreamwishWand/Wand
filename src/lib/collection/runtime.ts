@@ -71,6 +71,7 @@ export interface CollectionFilter {
 export type PublicDb01Item = Pick<Db01Item,'itemId'|'names'|'nativeCategory'>;
 export interface CollectionRuntimeMetadata {
   snapshot: string;
+  platform: string;
   version: string;
   expansions: readonly string[];
   worlds: readonly string[];
@@ -194,7 +195,7 @@ export class CollectionRuntime {
           engine.append_shard(text);
         }
         metadata = {
-          snapshot: active.snapshot, version: manifest.t.gameVersion,
+          snapshot: active.snapshot, platform: manifest.t.platform, version: manifest.t.gameVersion,
           expansions:manifest.e, worlds:manifest.w, universes:manifest.u,
           worldLabels:manifest.wl, universeLabels:manifest.ul
         };
