@@ -929,3 +929,112 @@ export function assessPlacement(catalog, itemId, proposed) {
     'terrain_and_connectivity_rules_unverified',
   ] };
 }
+
+
+/** Original Steam 1.26.1 oblique GridArea local lookup, 1:1 tessellation.
+ * Returns a RAW layer mask only for a mapped source GridArea cell.
+ * A missing cell is NOT evidence of free world space or legal placement.
+ */
+export function getNativeFootprintObliqueOrientedLayerAt(
+    catalog, itemId, x, y, orientationCode) {
+  const footprint = catalog.objects.get(idText(itemId))?.footprint;
+  if (!footprint) return null;
+  if (!Number.isInteger(orientationCode) ||
+      orientationCode < 0 || orientationCode > 15 ||
+      [0, 4, 8, 12].includes(orientationCode)) {
+    throw new TypeError('Original oblique GridArea requires noncardinal direction');
+  }
+  const common = {
+    itemId, orientationCode, gridToAreaTessellationRatioAssumed: '1:1',
+    fullNativeTessellationScalingApplied: false,
+    rawLayerValuesNotOccupancy: true,
+    gridObjectAnchorVerified: false,
+    occupancyPredicateVerified: false, placementLegalityVerified: false,
+  };
+  if (catalog.manifest.gameVersion !== '1.26.1') {
+    return { ...common, status: 'native_oblique_local_position_unverified_for_game_version',
+      nativeNoncardinalPositionTransformVerified: false };
+  }
+  const position = nativeObliqueSourceLocalPosition(
+    footprint.sizeX, footprint.sizeY, x, y, orientationCode);
+  if (position.inside !== true) {
+    return { ...common, ...position, nativeNoncardinalPositionTransformVerified: true };
+  }
+  const nativeValue = footprint.layerValues[position.originalFlatIndex];
+  return {
+    ...common, x, y, ...position,
+    nativeNoncardinalPositionTransformVerified: true,
+    nativeValue, ...describeNativeLayerMask(nativeValue),
+    positionBasis: 'unrotated_gridarea_local',
+  };
+}
+
+/** Oblique raw-layer viewport. Null means OUTSIDE original GridArea, not empty space. */
+export function getNativeFootprintObliqueOrientedWindow(
+    catalog, itemId, orientationCode, rect) {
+  const footprint = catalog.objects.get(idText(itemId))?.footprint;
+  if (!footprint) return null;
+  const probe = getNativeFootprintObliqueOrientedLayerAt(
+    catalog, itemId, 0, 0, orientationCode);
+  if (probe.nativeNoncardinalPositionTransformVerified !== true) return probe;
+  if (!isRecord(rect)) throw new TypeError('Missing original oblique GridArea window');
+  const { x, y, width, height } = rect;
+  const sx = probe.orientedSizeX, sy = probe.orientedSizeY;
+  if (![x, y, width, height].every(Number.isInteger) ||
+      x < 0 || y < 0 || width < 1 || height < 1 ||
+      width > 256 || height > 256 || x + width > sx || y + height > sy) {
+    throw new TypeError('Original oblique GridArea viewport outside bounds');
+  }
+  const rows = [];
+  let unmappedOutputCellCount = 0;
+  for (let yy = y; yy < y + height; yy++) {
+    const row = [];
+    for (let xx = x; xx < x + width; xx++) {
+      const cell = nativeObliqueSourceLocalPosition(
+        footprint.sizeX, footprint.sizeY, xx, yy, orientationCode);
+      if (!cell.inside) {
+        row.push(null);
+        unmappedOutputCellCount++;
+      } else {
+        row.push(footprint.layerValues[cell.originalFlatIndex]);
+      }
+    }
+    rows.push(row);
+  }
+  return {
+    status: 'source_correlated_noncardinal_oriented_gridarea_layers',
+    itemId, orientationCode, orientedSizeX: sx, orientedSizeY: sy,
+    x, y, width, height, rows, unmappedOutputCellCount,
+    nullMeansOutsideSourceGridArea: true,
+    nativeNoncardinalPositionTransformVerified: true,
+    gridToAreaTessellationRatioAssumed: '1:1',
+    fullNativeTessellationScalingApplied: false,
+    rawLayerValuesNotOccupancy: true,
+    gridObjectAnchorVerified: false, occupancyPredicateVerified: false,
+    placementLegalityVerified: false,
+  };
+}
+
+/** All 16 orientation codes, source-specific RAW GridLayers, NEVER edit permission. */
+export function getNativeFootprintOrientedLayerAt(
+    catalog, itemId, x, y, orientationCode) {
+  if (!Number.isInteger(orientationCode) ||
+      orientationCode < 0 || orientationCode > 15) {
+    throw new TypeError('Invalid original GridArea orientation');
+  }
+  return [0, 4, 8, 12].includes(orientationCode)
+    ? getNativeFootprintCardinalOrientedLayerAt(catalog, itemId, x, y, orientationCode)
+    : getNativeFootprintObliqueOrientedLayerAt(catalog, itemId, x, y, orientationCode);
+}
+
+/** All 16 orientations; a null raw layer means unmapped, NOT an unoccupied cell. */
+export function getNativeFootprintOrientedWindow(
+    catalog, itemId, orientationCode, rect) {
+  if (!Number.isInteger(orientationCode) ||
+      orientationCode < 0 || orientationCode > 15) {
+    throw new TypeError('Invalid original GridArea orientation');
+  }
+  return [0, 4, 8, 12].includes(orientationCode)
+    ? getNativeFootprintCardinalOrientedWindow(catalog, itemId, orientationCode, rect)
+    : getNativeFootprintObliqueOrientedWindow(catalog, itemId, orientationCode, rect);
+}
