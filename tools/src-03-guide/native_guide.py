@@ -16,6 +16,7 @@ import zipfile
 
 from mission_semantics import extract_quest_details
 from protodb_static import project_protodb
+from version_diff import compare_snapshots
 
 SCHEMA = "wand.db03.native-guide@1"
 LOCALES = {"en": "en-US", "fr": "fr", "it": "it", "de": "de", "es-ES": "es",
@@ -326,21 +327,6 @@ def add_verified(rels, family, record, target_family, target_id, path, indexes):
            "toId": str(target_id), "sourceField": path,
            "status": "resolved" if str(target_id) in indexes.get(target_family, set()) else "unresolved"}
     rels.append(rec)
-
-
-def diff(previous, records):
-    old, new = {}, {}
-    for fam in (*SOURCES, "rewards"):
-        file = previous / "guide" / (fam + ".json")
-        if file.is_file():
-            for row in json.loads(file.read_text(encoding="utf-8"))["records"]:
-                old[(fam, row["id"])] = {k: v for k, v in row.items() if k != "source"}
-        for row in records.get(fam, []):
-            new[(fam, row["id"])] = {k: v for k, v in row.items() if k != "source"}
-    return {"added": [{"family": k[0], "id": k[1]} for k in sorted(new.keys()-old.keys())],
-            "removed": [{"family": k[0], "id": k[1]} for k in sorted(old.keys()-new.keys())],
-            "changed": [{"family": k[0], "id": k[1]} for k in sorted(old.keys() & new.keys()) if old[k] != new[k]]}
-
 
 
 def read_friendship_rewards(origin):
@@ -657,8 +643,8 @@ def extract(game, out, version, platform, item_index=None, previous=None):
                                    "missingLocales": len(translation_missing),
                                    "localizedStepKeys": localized_step_keys})
         if previous:
-            save(out / "diff.json", {"schema": SCHEMA, "status": "COMPARED",
-                                    "previous": str(previous), "target": target, **diff(previous, {**rows, "rewards": reward_rows})})
+            save(out / "diff.json", {"previous": str(previous),
+                                    **compare_snapshots(previous, out, manifest)})
         else:
             save(out / "diff.json", {"schema": SCHEMA, "status": "BASELINE_NO_PREVIOUS",
                                     "previous": None, "target": target,
