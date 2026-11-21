@@ -1219,7 +1219,7 @@ CI builds browser glue using:
 
 ```bash
 wasm-pack build crates/ddv-save-schema --release --target web \
-  --features wasm --out-dir ../../src/lib/save/wasm/pkg
+  --out-dir ../../src/lib/save/wasm/pkg --features wasm
 ```
 
 and executes `browser/save-wasm-smoke.mjs` against the generated
