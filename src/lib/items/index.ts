@@ -147,7 +147,9 @@ export function createDb01CatalogClient(rawManifest: unknown, loadBytes: Db01Loa
       const bytes = payload instanceof ArrayBuffer ? new Uint8Array(payload) : payload;
       check(bytes instanceof Uint8Array && bytes.byteLength === meta.bytes, 'ASSET_SIZE_MISMATCH');
       check(globalThis.crypto?.subtle, 'SHA_UNAVAILABLE');
-      const raw = await crypto.subtle.digest('SHA-256', bytes);
+      const stableBytes = new Uint8Array(bytes.byteLength);
+      stableBytes.set(bytes);
+      const raw = await crypto.subtle.digest('SHA-256', stableBytes);
       const digest = Array.from(new Uint8Array(raw), b=>b.toString(16).padStart(2,'0')).join('');
       check(digest === meta.sha256, 'ASSET_HASH_MISMATCH');
       const json: unknown = JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
