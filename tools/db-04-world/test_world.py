@@ -442,8 +442,47 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(centered["objectsWithComparableOriginalSources"], 2)
         self.assertEqual(top["rawLayerCellsOutsideGrid"], 1)
         self.assertEqual(centered.get("rawLayerCellsOutsideGrid", 0), 0)
+        self.assertEqual(scores["candidateLayerSlotsBudgeted"], 16)
+        discrimination = scores["crossHypothesisDiscrimination"]
+        self.assertEqual(discrimination["objectsWithComparableHypotheses"], 2)
+        self.assertGreater(discrimination["objectsWithGeometricHypothesisDifferences"], 0)
+        self.assertGreater(discrimination["objectsWithDifferentTerrainOutcomes"], 0)
+        self.assertEqual(scores["unprocessedLayoutObjects"], 0)
+        self.assertFalse(scores["truncatedByCellBudget"])
+        by_cells = audit_footprint_candidates(self.out, max_cells=8)
+        self.assertTrue(by_cells["truncatedByCellBudget"])
+        self.assertFalse(by_cells["truncatedByMaxObjects"])
+        self.assertEqual(by_cells["candidateLayerSlotsBudgeted"], 8)
+        self.assertEqual(by_cells["layoutObjectsConsidered"], 2)
+        self.assertEqual(by_cells["unprocessedLayoutObjects"], 1)
+        self.assertEqual(by_cells["excludedSourceConditions"]["candidateCellBudgetReached"], 1)
+        with self.assertRaisesRegex(ValueError, "audit limits"):
+            audit_footprint_candidates(self.out, max_cells=0)
         truncated = audit_footprint_candidates(self.out, max_objects=1)
         self.assertTrue(truncated["truncatedByMaxObjects"])
+
+    def test_uniform_single_cell_examples_cannot_discriminate_projection_models(self):
+        native_grid = (field(2, "GridData/Villages/Village04-Test.json") +
+            field(5, field(1, 1) + field(2, field(1, 1) +
+                                        field(2, 40000001))))
+        (self.base / "SceneLayouts/Village04/OneCellGrids.json").write_bytes(
+            field(1, field(2, native_grid)))
+        (self.base / "itemlist/Furniture.json").write_bytes(
+            indexed(40000000, 1, "TestBench",
+                    grid(1, 1, [68], floor=1024)))
+        (self.base / "GridData/Villages/Village04-Test.json").write_bytes(
+            field(1, 2) + field(2, 2) +
+            field(4, struct.pack("<II", 0, 1024)) +
+            field(5, bytes((0b11110000,))))
+        extract(self.game, self.out)
+        evidence = audit_footprint_candidates(self.out)
+        discrimination = evidence["crossHypothesisDiscrimination"]
+        self.assertEqual(discrimination["objectsWithComparableHypotheses"], 1)
+        self.assertEqual(discrimination.get("objectsWithGeometricHypothesisDifferences", 0), 0)
+        self.assertEqual(discrimination.get("objectsWithDifferentTerrainOutcomes", 0), 0)
+        self.assertEqual(discrimination["objectsWithIdenticalGeometryAndTerrainOutcomes"], 1)
+        self.assertEqual(evidence["candidateLayerSlotsBudgeted"], 4)
+        self.assertFalse(evidence["placementLegalityVerified"])
 
     def test_native_default_layout_grid_origin_audit_is_not_placement_permission(self):
         grid_path = self.base / "GridData/Villages/Village04-Test.json"

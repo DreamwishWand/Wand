@@ -51,9 +51,10 @@ def _terrain_value(decoder, x, y):
 
 
 def audit_footprint_candidates(snapshot, *, max_objects=20000,
-                               max_examples=12):
+                               max_examples=12, max_cells=2_000_000):
     if (type(max_objects) is not int or not 1 <= max_objects <= 250000 or
-            type(max_examples) is not int or not 0 <= max_examples <= 100):
+            type(max_examples) is not int or not 0 <= max_examples <= 100 or
+            type(max_cells) is not int or not 1 <= max_cells <= 100_000_000):
         raise ValueError("invalid native candidate audit limits")
     root = Path(snapshot).resolve(strict=True)
     verified = validate_snapshot(root)
@@ -76,6 +77,9 @@ def audit_footprint_candidates(snapshot, *, max_objects=20000,
     missing = Counter()
     decoded = {}
     considered = 0
+    candidate_cells_evaluated = 0
+    stopped_at_cell_budget = False
+    discrimination = Counter()
 
     # Deterministic subset in a partial source archive; never claim exhaustive.
     for row in sorted(native, key=lambda obj: obj["layoutObjectId"]):
@@ -115,6 +119,23 @@ def audit_footprint_candidates(snapshot, *, max_objects=20000,
         if orientation not in (0, 4, 8, 12):
             missing["nonCardinalOrientationNotModeled"] += 1
             continue
+        # A full GridAreaData array is traversed for every hypothetical
+        # orientation, including its zero-valued fixed32 layer slots. Budget
+        # those total scan slots, not just nonzero cells, so sparse 256x256
+        # footprints cannot evade the workload cap.
+        candidate_cost = shape["sizeX"] * shape["sizeY"] * len(hypotheses)
+        if candidate_cells_evaluated + candidate_cost > max_cells:
+            missing["candidateCellBudgetReached"] += 1
+            stopped_at_cell_budget = True
+            break
+        candidate_cells_evaluated += candidate_cost
+        nonzero_count = sum(layer != 0 for layer in shape["layerValues"])
+        if not nonzero_count:
+            missing["noNonzeroNativeFootprintLayerCells"] += 1
+            continue
+        geometry = set()
+        terrain_outcomes = set()
+        discrimination["objectsWithComparableHypotheses"] += 1
 
         for order, anchor in hypotheses:
             name = f"{order}+{anchor}"
@@ -128,6 +149,7 @@ def audit_footprint_candidates(snapshot, *, max_objects=20000,
             score["objectsWithComparableOriginalSources"] += 1
             orientation_score["objectsWithComparableOriginalSources"] += 1
             c = projection["cells"]
+            geometry.add(frozenset((cell["x"], cell["y"]) for cell in c))
             score["nonzeroRawLayerCellsExamined"] += len(c)
             orientation_score["nonzeroRawLayerCellsExamined"] += len(c)
             outside = 0
@@ -143,6 +165,7 @@ def audit_footprint_candidates(snapshot, *, max_objects=20000,
                     matches += 1
                 else:
                     mismatch += 1
+            terrain_outcomes.add((outside, mismatch, matches))
             for counter in (score, orientation_score):
                 counter["rawLayerCellsOutsideGrid"] += outside
                 counter["rawLayerCellsFloorMaskIntersect"] += matches
@@ -159,6 +182,12 @@ def audit_footprint_candidates(snapshot, *, max_objects=20000,
                     "disjointCandidateCellCount": mismatch,
                     "comparableCandidateCellCount": matches + mismatch,
                 })
+        discrimination["objectsWithGeometricHypothesisDifferences"] += (
+            len(geometry) > 1)
+        discrimination["objectsWithDifferentTerrainOutcomes"] += (
+            len(terrain_outcomes) > 1)
+        discrimination["objectsWithIdenticalGeometryAndTerrainOutcomes"] += (
+            len(geometry) == 1 and len(terrain_outcomes) == 1)
     return {
         "schema": "wand.db04.world@1",
         "status": "unverified_footprint_projection_candidate_comparison",
@@ -166,7 +195,13 @@ def audit_footprint_candidates(snapshot, *, max_objects=20000,
         "sourceScopeVerified": verified["sourceScopeVerified"],
         "nativeLayoutObjectCount": len(native),
         "layoutObjectsConsidered": considered,
-        "truncatedByMaxObjects": len(native) > considered,
+        "candidateLayerSlotsBudgeted": candidate_cells_evaluated,
+        "candidateLayerSlotBudget": max_cells,
+        "truncatedByCellBudget": stopped_at_cell_budget,
+        "truncatedByMaxObjects": (not stopped_at_cell_budget and
+                                  len(native) > considered),
+        "unprocessedLayoutObjects": len(native) - considered,
+        "crossHypothesisDiscrimination": dict(sorted(discrimination.items())),
         "excludedSourceConditions": dict(sorted(missing.items())),
         "hypotheses": {
             key: {
@@ -198,11 +233,12 @@ def main():
     parser.add_argument("--snapshot", required=True, type=Path)
     parser.add_argument("--max-objects", type=int, default=20000)
     parser.add_argument("--max-examples", type=int, default=12)
+    parser.add_argument("--max-cells", type=int, default=2_000_000)
     args = parser.parse_args()
     try:
         result = audit_footprint_candidates(
             args.snapshot, max_objects=args.max_objects,
-            max_examples=args.max_examples)
+            max_examples=args.max_examples, max_cells=args.max_cells)
         print(json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2))
     except (ValueError, OSError, TypeError, KeyError, UnicodeError,
             json.JSONDecodeError) as error:
