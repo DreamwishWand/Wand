@@ -442,6 +442,22 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(centered["objectsWithComparableOriginalSources"], 2)
         self.assertEqual(top["rawLayerCellsOutsideGrid"], 1)
         self.assertEqual(centered.get("rawLayerCellsOutsideGrid", 0), 0)
+        self.assertEqual(scores["candidateCellsEvaluated"], 8)
+        discrimination = scores["crossHypothesisDiscrimination"]
+        self.assertEqual(discrimination["objectsWithComparableHypotheses"], 2)
+        self.assertGreater(discrimination["objectsWithGeometricHypothesisDifferences"], 0)
+        self.assertGreater(discrimination["objectsWithDifferentTerrainOutcomes"], 0)
+        self.assertEqual(scores["unprocessedLayoutObjects"], 0)
+        self.assertFalse(scores["truncatedByCellBudget"])
+        by_cells = audit_footprint_candidates(self.out, max_cells=4)
+        self.assertTrue(by_cells["truncatedByCellBudget"])
+        self.assertFalse(by_cells["truncatedByMaxObjects"])
+        self.assertEqual(by_cells["candidateCellsEvaluated"], 4)
+        self.assertEqual(by_cells["layoutObjectsConsidered"], 2)
+        self.assertEqual(by_cells["unprocessedLayoutObjects"], 1)
+        self.assertEqual(by_cells["excludedSourceConditions"]["candidateCellBudgetReached"], 1)
+        with self.assertRaisesRegex(ValueError, "audit limits"):
+            audit_footprint_candidates(self.out, max_cells=0)
         truncated = audit_footprint_candidates(self.out, max_objects=1)
         self.assertTrue(truncated["truncatedByMaxObjects"])
 
