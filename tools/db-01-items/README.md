@@ -22,11 +22,18 @@ py -3 tools/src-01-items/probe_complete.py --probe "D:\WandData\SRC-01\Steam-v1.
 ```
 
 The generated `definitions.jsonl`, `manifest.json`, `report.json`, and `unresolved.json`
-are private, source-derived data. `manifest.json` uses `wand.src01.extended@1`,
+are private, source-derived data. In addition to 132 verified native definitions,
+fully embedded eight-locale LocDB members for `BoardGame.locbin` and `PhotoMode.locbin`
+are independently checked against ZIP-member CRC-32 and joined to the exact
+localization keys: 66 definitions have eight matching localized names (528
+locale values). The native field-3 key includes a `Category.` prefix, whereas
+`Category.locbin` stores keys without that prefix. The extended original-file
+parser uses this verified exact category-local lookup too. `manifest.json` uses `wand.src01.extended@1`,
 marks remaining 28 source types explicitly unresolved and records full SHA-256
-checks for all recovered files. This is a **partial extended** dataset: names
-stay null because the actual eight LocDB archives were not supplied; field-4
-GUIDs are only candidates. Pass the folder to `--extended` in the DB-01 builder.
+checks for all recovered files. This is a **partial extended** dataset:
+66 definitions have exact matches across all eight locale files embedded in the
+probe; other names remain null until the actual LocDB archives are available.
+Field-4 GUIDs are only candidates. Pass the folder to `--extended` in the DB-01 builder.
 After the original full itemlists become available, replace the partial extended
 folder with output of `extend1262.py` (do not merge duplicate IDs).
 

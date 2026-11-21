@@ -9,6 +9,7 @@ import base64
 import binascii
 import hashlib
 import json
+import zlib
 from collections import Counter
 from pathlib import Path
 
@@ -100,6 +101,49 @@ def build(probe_path, out):
     if not rows or not unresolved:
         raise ValueError("UNEXPECTED_PROBE_COVERAGE")
     rows.sort(key=lambda row: row["itemId"])
+    by_category = {}
+    for row in rows:
+        by_category.setdefault(row["nativeCategory"], []).append(row)
+    # Complete LocDB members embedded in this same probe can be decoded exactly,
+    # without acquiring the archive or pretending a truncated prefix is complete.
+    evidence = {}
+    localized_counts = {locale: 0 for locale in localize1262.LOCALES}
+    for locale, suffix in localize1262.LOCALES.items():
+        archive = probe.get("localization", {}).get(locale, {})
+        archive_file = f"LocDB_{suffix}.zip"
+        archive_source = f"ddv_Data/StreamingAssets/Localization/{archive_file}"
+        archive_hash = archive.get("sha256")
+        if archive.get("source") != archive_source or not isinstance(archive_hash, str) or len(archive_hash) != 64:
+            continue
+        evidence[locale] = {"archive": archive_file, "source": archive_source,
+                            "sha256": archive_hash, "members": {}}
+        for category, definitions in by_category.items():
+            member = archive.get("members", {}).get(category)
+            if not isinstance(member, dict):
+                continue
+            try:
+                loc_raw = base64.b64decode(member.get("headBase64", ""), validate=True)
+            except (binascii.Error, ValueError) as error:
+                raise ValueError(f"INVALID_LOCALIZATION_PROBE_BASE64:{locale}:{category}") from error
+            if len(loc_raw) > member.get("bytes", -1):
+                raise ValueError(f"LOCALIZATION_PROBE_OVERRUN:{locale}:{category}")
+            if len(loc_raw) != member["bytes"]:
+                continue
+            crc = f"{zlib.crc32(loc_raw) & 0xffffffff:08x}"
+            if crc != member.get("crc32"):
+                raise ValueError(f"COMPLETE_LOCALIZATION_CRC_MISMATCH:{locale}:{category}")
+            table = localize1262.decode_locbin(loc_raw)
+            evidence[locale]["members"][category] = {
+                "entry": f"{category}.locbin", "entrySha256": hashlib.sha256(loc_raw).hexdigest(),
+                "bytes": len(loc_raw), "crc32": crc, "entries": len(table),
+                "verification": "original_zip_member_complete_probe_bytes_crc32_verified",
+            }
+            for row in definitions:
+                lookup = extend1262.category_localization_key(row, category)
+                value = localize1262.clean_display_name(table[lookup]) if lookup in table else ""
+                if value:
+                    row["names"][locale] = value
+                    localized_counts[locale] += 1
     out.mkdir(parents=True, exist_ok=True)
     target = out / "definitions.jsonl"
     localize1262.write_jsonl(target, rows)
@@ -110,26 +154,32 @@ def build(probe_path, out):
         "definitionCount": len(rows), "itemsFile": "definitions.jsonl",
         "itemsSha256": localize1262.sha_file(target),
         "probeSha256": localize1262.sha_file(probe_path),
-        "categories": by_filename, "localizationEvidence": {},
+        "categories": by_filename, "localizationEvidence": evidence,
         "unresolvedCategories": sorted(unresolved),
+        "localizedByLocale": localized_counts,
+        "localizationKeyRule": "definition_field3_Category.Key -> Category.locbin key Key",
         "verificationScope": "full original file bytes present in probe; hash-checked; source wire IDs",
-        "notClaims": ["every definition is a collectible item", "verified 8-language names",
+        "notClaims": ["every definition is a collectible item", "all 132 names localized",
                       "field-4 GUID is an icon", "full 35-category catalog", "current DLC membership"],
     }
     localize1262.write_json(out / "manifest.json", manifest)
     localize1262.write_json(out / "report.json", {
         "schema": "wand.src01.complete-probe-report@1", "definitions": len(rows),
         "fullFileCount": len(by_filename), "unresolvedFileCount": len(unresolved),
-        "byCategory": counts, "noLocaleNameClaims": True,
+        "byCategory": counts, "localizedByLocale": localized_counts,
+        "fullyLocalizedDefinitions": sum(all(row["names"][locale] for locale in localize1262.LOCALES)
+                                          for row in rows),
     })
     localize1262.write_json(out / "unresolved.json", {
         "schema": "wand.src01.complete-probe-unresolved@1",
         "notFullSourceInProbe": sorted(unresolved),
-        "unverifiedFields": ["display names", "current user-facing category", "icon role",
+        "missingNamesByLocale": {locale: len(rows) - count for locale, count in localized_counts.items()},
+        "unverifiedFields": ["remaining display names", "current user-facing category", "icon role",
                              "attributes", "worlds", "universes", "expansions", "adventure packs"],
     })
     return {"definitions": len(rows), "verifiedFullFiles": len(by_filename),
-            "unresolvedSourceFiles": len(unresolved), "byCategory": counts}
+            "unresolvedSourceFiles": len(unresolved), "byCategory": counts,
+            "localizedByLocale": localized_counts}
 
 
 def main():

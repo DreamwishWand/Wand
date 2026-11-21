@@ -39,6 +39,13 @@ class TestExtendedDefinitions(unittest.TestCase):
         self.assertIsNone(rows[0]["category"])
         self.assertIsNone(rows[0]["names"]["ja"])
 
+    def test_category_key_is_stripped_only_for_exact_namespace(self):
+        self.assertEqual(extend1262.category_localization_key(
+            {"localizationKey": "BoardGame.Mickey!Mickey_DisplayName"}, "BoardGame"),
+            "Mickey!Mickey_DisplayName")
+        self.assertIsNone(extend1262.category_localization_key(
+            {"localizationKey": "Different.Mickey_DisplayName"}, "BoardGame"))
+
     def test_duplicate_frame_key_fails_closed(self):
         one = wrap(1, definition(1, 110000000))
         with self.assertRaisesRegex(ValueError, "DUPLICATE_NATIVE_FRAME"):

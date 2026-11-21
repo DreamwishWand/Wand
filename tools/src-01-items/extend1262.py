@@ -108,6 +108,13 @@ def parse_definition(frame_key, data, base, category, source, file_digest):
     }
 
 
+def category_localization_key(record, category):
+    """Native field 3 is `Category.Key`, but Category.locbin stores `Key`."""
+    key = record.get("localizationKey")
+    prefix = category + "."
+    return key[len(prefix):] if isinstance(key, str) and key.startswith(prefix) else None
+
+
 def pinned_category(game, filename, spec):
     """Require full SHA, record alignment, and agreement with the original probe's three samples."""
     source = spec.get("source")
@@ -198,7 +205,7 @@ def build(game, probe_path, out, include_localization=True):
                 evidence["entries"] = len(table)
                 archive_evidence[locale]["members"][category] = evidence
                 for record in records:
-                    key = record["localizationKey"]
+                    key = category_localization_key(record, category)
                     display = localize1262.clean_display_name(table[key]) if key in table else ""
                     if display:
                         record["names"][locale] = display
