@@ -615,7 +615,7 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(validate_snapshot(self.out)["counts"]["grids"], 1)
         self.assertEqual(base64.b64decode(
             source[0]["compactedFloorTypesBase64"]), original)
-         packed = package_snapshot(self.out, self.root / "four-bit-private.zip")
+        packed = package_snapshot(self.out, self.root / "four-bit-private.zip")
         self.assertFalse(packed["placementLegalityVerified"])
         with zipfile.ZipFile(self.root / "four-bit-private.zip") as archive:
             self.assertIsNone(archive.testzip())
