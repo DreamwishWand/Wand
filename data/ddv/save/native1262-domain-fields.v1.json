@@ -12,7 +12,9 @@
     "sourceNamesOnly": true,
     "actualMapKeysRedacted": true,
     "observedFieldsNotExhaustive": true,
-    "nullableChildObjectStructureNotAlwaysObserved": true
+    "nullableChildObjectStructureNotAlwaysObserved": true,
+    "allowedKindExtraIsNativeDerivedNotObserved": true,
+    "nullOnlyFieldsWithCandidateNonNullType": 10
   },
   "policy": {
     "writerAuthorized": false,
@@ -72,6 +74,7 @@
         "null"
       ],
       "allowedJsonKinds": [
+        "integer",
         "null"
       ],
       "sampledAtLeastOneOriginal": true,
@@ -1334,6 +1337,7 @@
         "null"
       ],
       "allowedJsonKinds": [
+        "integer",
         "null"
       ],
       "sampledAtLeastOneOriginal": true,
@@ -1651,6 +1655,7 @@
         "null"
       ],
       "allowedJsonKinds": [
+        "integer",
         "null"
       ],
       "sampledAtLeastOneOriginal": true,
@@ -1693,6 +1698,7 @@
         "null"
       ],
       "allowedJsonKinds": [
+        "boolean",
         "null"
       ],
       "sampledAtLeastOneOriginal": true,
@@ -1714,6 +1720,7 @@
         "null"
       ],
       "allowedJsonKinds": [
+        "integer",
         "null"
       ],
       "sampledAtLeastOneOriginal": true,
@@ -2346,7 +2353,8 @@
         "null"
       ],
       "allowedJsonKinds": [
-        "null"
+        "null",
+        "string"
       ],
       "sampledAtLeastOneOriginal": true,
       "observedIn": [
@@ -2390,7 +2398,8 @@
         "null"
       ],
       "allowedJsonKinds": [
-        "null"
+        "null",
+        "string"
       ],
       "sampledAtLeastOneOriginal": true,
       "observedIn": [
@@ -2434,7 +2443,8 @@
         "null"
       ],
       "allowedJsonKinds": [
-        "null"
+        "null",
+        "object"
       ],
       "sampledAtLeastOneOriginal": true,
       "observedIn": [
@@ -2455,7 +2465,8 @@
         "null"
       ],
       "allowedJsonKinds": [
-        "null"
+        "null",
+        "object"
       ],
       "sampledAtLeastOneOriginal": true,
       "observedIn": [
@@ -2602,7 +2613,8 @@
         "null"
       ],
       "allowedJsonKinds": [
-        "null"
+        "null",
+        "string"
       ],
       "sampledAtLeastOneOriginal": false,
       "observedIn": [
