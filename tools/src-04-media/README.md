@@ -56,6 +56,25 @@ Run only the v2 CMD; do not rerun the full media extraction. For verification, u
 
 ---
 
+## Private SRC-04 to DB-01 media overlay (2026-11-21)
+
+The complete privately joined SRC-04 Item ID map has now been exported into **256 content-hashed ID buckets** with a SHA-256 manifest, without copying image bytes to GitHub. The verified snapshot has **13,202 native items; 10,786 exact image links; 2,416 unresolved items; 9,182 unique resolved GUIDs; 360 unresolved GUIDs**.
+
+Implemented code:
+
+- `tools/src-04-media/export_private_overlay.py`: source- and join-hash checked, fail-closed, Python-standard-library exporter; no overwrite, no output inside Git repositories, no guessed mappings.
+- `src/lib/items/media-overlay.ts`: private-only TypeScript DB-01 read adapter. Lazy one-ID-bucket loading, SHA-256 byte verification, exact DB-01 `verifiedIconGuid` correspondence, explicit unresolved status. It returns local provenance paths, not public URLs. Optional `readVerifiedImage()` checks the image bytes against their pinned hashes before use. No publish/deploy/save-write actions.
+- `tools/src-04-media/test_export_private_overlay.py` and `src/lib/items/media-overlay.test.mjs`: synthetic tests for lazy loads, SHA mismatch, bad provenance/path, and public-activation rejection.
+
+The operator-private package `SRC04-private-media-overlay-20261121.zip` contains manifest plus 256 shards, **no WebP, no raw Unity bundles, no original save data**. The archive is an evidence artifact, **not** a public static deployable. Never put the files in `static/` or a public repository. Media source platform/version values remain provenance-only; source item SHA and GUID are the identity checks.
+
+To reproduce this snapshot from the exact private SRC-01 and SRC-04 files (outside a Git checkout):
+
+    python tools/src-04-media/export_private_overlay.py --source-items /private/SRC-01/items.jsonl --source-manifest /private/SRC-01/manifest.json --map /private/SRC-04/SRC04-item-icon-map.jsonl --join-report /private/SRC-04/SRC04-item-icon-join-report.json --out /private/SRC-04/db01-media-overlay
+
+Source images are still only on the owner PC. The output may be consumed by an explicitly provided local/private byte reader, but public media serving requires a separate rights, asset-byte integrity, and destination approval gate. Future updates must regenerate the exact source/manifest joins, never quietly reuse stale assets.
+
+---
 ## Verified Item-ID join outcome (2026-11-21)
 
 The full 9,182-GUID identity map was supplied and successfully joined with the original, SHA-verified 13,202-item SRC-01 JSONL dataset. Source file SHA-256: `3ff0043692c88699d1cb44f4a953095c5f5fcd1afd700761396f13cca96851bf`. Input identity map SHA-256: `401d3b0fd1c24ddad255b0948889ffceeb344e14fb16ca13c3952ee6a69a1172`.
