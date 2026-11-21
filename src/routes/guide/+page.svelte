@@ -3,7 +3,7 @@
     GUIDE_LOCALES, importGuideSearch, importGuideFolder, importGuideDetail, searchGuide,
     detailStepRows, guideStaticFacts, guideMissionReferences, guideVerifiedSourceBridge, MAX_SHARD_BYTES
   } from '$lib/guide/client.mjs';
-  import {importCurrentGuideConditions, currentConditionMentionsForQuest} from '$lib/guide/current-conditions.mjs';
+  import {importCurrentGuideConditions, currentConditionMentionsForQuest, withVerifiedConditionStepDetails} from '$lib/guide/current-conditions.mjs';
 
   const languageLabels: Record<string, string> = {
     ja: '日本語', en: 'English', fr: 'Français', it: 'Italiano', de: 'Deutsch',
@@ -49,6 +49,9 @@
   $: currentConditionMentions = conditionRegistry && selectedId
     ? currentConditionMentionsForQuest(conditionRegistry, selectedId) : {total: 0, rows: []};
   $: detailSteps = selectedDetail ? detailStepRows(selectedDetail, locale) : [];
+  $: conditionDisplayRows = selectedDetail && selectedId && conditionRegistry
+    ? withVerifiedConditionStepDetails(selectedDetail, detailSteps, currentConditionMentions.rows, selectedId)
+    : currentConditionMentions.rows;
   $: staticFacts = selectedDetail ? guideStaticFacts(selectedDetail, locale) : {conditions:[], policies:[], rewards:[]};
   $: missionReferences = selectedDetail && searchIndex ? guideMissionReferences(selectedDetail, searchIndex, locale) : [];
   $: siblingQuests = selectedRow && groupInfo[selectedRow.groupId] && searchIndex
@@ -373,19 +376,25 @@
             <section class="guide-source-facts" aria-label="Current Condition source mission references">
               <h3>Steam {conditionRegistry.targetVersion}のConditionが参照するクエスト（{currentConditionMentions.total}件）</h3>
               <p>Condition原本中のMissionStepStatusがこのクエストIDを参照している箇所です。解放条件・攻略順・進行状況・実際の利用箇所を示すものではありません。AND/OR/NOTは原本の条件分岐をそのまま表します。</p>
-              {#if currentConditionMentions.rows.length}
+              {#if conditionDisplayRows.length}
                 <ul class="guide-mission-references">
-                  {#each currentConditionMentions.rows as mention (mention.conditionId + mention.sourcePath)}
+                  {#each conditionDisplayRows as mention (mention.conditionId + mention.sourcePath)}
                     <li>
                       <span class="guide-mission-reference-kind">Condition ID {mention.conditionId} · {mention.operator} · MissionStepStatus</span>
                       <span>{mention.sourceName.replaceAll('!', ' / ')}</span>
                       <small>原本パス: {mention.sourcePath}</small>
                       <span>ステップID: {mention.stepId !== undefined ? mention.stepId : '原本に値なし'} · 定義上の状態: {mention.status !== undefined ? mention.status + ' (' + mention.statusCode + ')' : '原本に値なし'}</span>
+                      {#if mention.sourceStepIndex !== undefined}
+                        <small>詳細原本に実在するステップ：{mention.sourceStepIndex + 1}番目{#if mention.sourceStepName} · {mention.sourceStepName}{/if}</small>
+                        {#if mention.localizedStepDescription}
+                          <p>{mention.localizedStepDescription}{#if mention.localizedStepDescriptionLanguage !== locale}（{mention.localizedStepDescriptionLanguage ?? '出典不明'}原文）{/if}</p>
+                        {/if}
+                      {/if}
                     </li>
                   {/each}
                 </ul>
-                {#if currentConditionMentions.total > currentConditionMentions.rows.length}
-                  <p>先頭{currentConditionMentions.rows.length}件のみ表示しています。</p>
+                {#if currentConditionMentions.total > conditionDisplayRows.length}
+                  <p>先頭{conditionDisplayRows.length}件のみ表示しています。</p>
                 {/if}
               {:else}
                 <p>このミッションIDへの明示的なMissionStepStatus参照は、選択したCondition原本にありません。</p>
