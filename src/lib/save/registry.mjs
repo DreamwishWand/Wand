@@ -17,6 +17,7 @@ export const SAVE_INSPECTION_CONTRACT = 'wand.db05.save-readonly-inspection@1';
 const own = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const integer = value => Number.isSafeInteger(value) && value >= 0;
+const positiveId = value => Number.isSafeInteger(value) && value > 0;
 
 export function getSaveRegistry() { return registry; }
 export function getLegacySaveFields() { return legacyFields; }
@@ -71,7 +72,7 @@ export function makeGameIdIndex(rows, key = 'itemId') {
   if (!Array.isArray(rows) || typeof key !== 'string' || !/^[A-Za-z][A-Za-z0-9]*$/.test(key)) throw new TypeError('INVALID_ID_CATALOG');
   const index = new Map();
   for (const row of rows) {
-    if (!plain(row) || !integer(row[key])) throw new TypeError('INVALID_CATALOG_ID');
+    if (!plain(row) || !positiveId(row[key])) throw new TypeError('INVALID_CATALOG_ID');
     if (index.has(row[key])) throw new TypeError('DUPLICATE_CATALOG_ID');
     index.set(row[key], row);
   }
@@ -79,7 +80,7 @@ export function makeGameIdIndex(rows, key = 'itemId') {
 }
 
 export function matchGameId(index, id) {
-  if (!(index instanceof Map) || !integer(id)) return null;
+  if (!(index instanceof Map) || !positiveId(id)) return null;
   return index.get(id) ?? null;
 }
 
