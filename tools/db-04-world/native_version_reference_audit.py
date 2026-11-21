@@ -172,6 +172,22 @@ def mapped_callee_sha(pe, raw, rva):
     return hashlib.sha256(raw[offset:offset + size]).hexdigest()
 
 
+def mapped_callee_bytes(pe, raw, rva):
+    # A relocated callee can be structurally aligned without having identical
+    # bytes, but only for a complete, mapped and bounded PE unwind function.
+    index = bisect_left(pe.runtime_starts, rva)
+    if index == len(pe.runtime_starts) or pe.runtime_starts[index] != rva:
+        return None
+    size = pe.runtime_ends[rva] - rva
+    if not 1 <= size <= MAX_WINDOW:
+        return None
+    try:
+        offset = pe.va_to_file(pe.image_base + rva, size, executable=True)
+    except ValueError:
+        return None
+    return bytes(raw[offset:offset + size])
+
+
 def run_audit(old_dll, old_metadata, new_dll, new_metadata, *, objdump="objdump"):
     for version, dll, meta in (
             ("1.26.1", old_dll, old_metadata),
@@ -216,20 +232,34 @@ def run_audit(old_dll, old_metadata, new_dll, new_metadata, *, objdump="objdump"
                                           start_b, executable=objdump)
                 summary = compare_methods(decoded_a, decoded_b, start_a, start_b)
                 destinations = set(summary.pop("externalDirectTargets"))
-                matching, unverified = 0, 0
+                matching, relocated, divergent, unmapped = 0, 0, 0, 0
                 for dst_a, dst_b in destinations:
                     digest_a = mapped_callee_sha(pe_a, a, dst_a)
                     digest_b = mapped_callee_sha(pe_b, b, dst_b)
                     if digest_a is not None and digest_a == digest_b:
                         matching += 1
-                    else:
-                        unverified += 1
+                        continue
+                    code_a = mapped_callee_bytes(pe_a, a, dst_a)
+                    code_b = mapped_callee_bytes(pe_b, b, dst_b)
+                    if code_a is None or code_b is None:
+                        unmapped += 1
+                        continue
+                    try:
+                        decoded_a = decode_window(code_a, dst_a, executable=objdump)
+                        decoded_b = decode_window(code_b, dst_b, executable=objdump)
+                        compare_methods(decoded_a, decoded_b, dst_a, dst_b)
+                        relocated += 1
+                    except ValueError:
+                        divergent += 1
                 reports.append({
                     "symbol": before["symbol"], "tokenRid": key[0],
                     "functionByteCount": length_a, **summary,
                     "distinctExternalTargets": len(destinations),
                     "byteIdenticalDirectCallees": matching,
-                    "uncorroboratedDirectTargets": unverified,
+                    "relocationOnlyDirectCallees": relocated,
+                    "divergentDirectCallees": divergent,
+                    "unmappedDirectTargets": unmapped,
+                    "uncorroboratedDirectTargets": relocated + divergent + unmapped,
                 })
     return {
         "schema": "wand.db04.native-version-reference-audit@1",
