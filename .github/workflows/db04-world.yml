@@ -61,6 +61,15 @@ jobs:
             throw "Invalid IL2CPP capture arguments created an incomplete DB-04 snapshot"
           }
           Set-Content -LiteralPath $bad -Value "// synthetic matching version"
+          $mismatchFailed = $false
+          try {
+            & "./tools/db-04-world/run.ps1" -GameRoot $game -OutputRoot $output -Il2CppDumpPath $bad -Il2CppDumpGameVersion "1.26.1"
+          } catch {
+            $mismatchFailed = $_.Exception.Message -match "differs"
+          }
+          if (-not $mismatchFailed -or (Test-Path -LiteralPath $output)) {
+            throw "Mismatched Steam/IL2CPP dump version did not stop before extraction"
+          }
           $failed = $false
           try {
             & "./tools/db-04-world/run.ps1" -GameRoot $game -OutputRoot $output -Il2CppDumpPath $bad -Il2CppDumpGameVersion "1.26.2"
