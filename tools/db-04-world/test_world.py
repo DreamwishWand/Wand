@@ -445,9 +445,10 @@ class NativeWireTests(unittest.TestCase):
         self.assertFalse(grid["cellIndexToXYVerified"])
 
     def test_native_grid_parser_and_verifier_demand_explicit_version(self):
+        # Four valid 1-bit cells followed by four required zero pad bits.
         packed = (field(1, 2) + field(2, 2) +
                   field(4, struct.pack("<II", 0, 1024)) +
-                  field(5, bytes((0xff,))))
+                  field(5, bytes((0xf0,))))
         with self.assertRaises(TypeError):
             parse_grid_structure(packed)
         with self.assertRaisesRegex(ValueError, "source game version"):
