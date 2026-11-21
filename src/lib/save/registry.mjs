@@ -1,6 +1,16 @@
 import registry from '../../../data/ddv/save/registry.v1.json' with { type: 'json' };
 import legacyFields from '../../../data/ddv/save/legacy626-fields.v1.json' with { type: 'json' };
 
+function deepFreeze(value) {
+  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+    for (const nested of Object.values(value)) deepFreeze(nested);
+    Object.freeze(value);
+  }
+  return value;
+}
+deepFreeze(registry);
+deepFreeze(legacyFields);
+
 export const SAVE_REGISTRY_SCHEMA = 'wand.db05.save-registry@1';
 export const SAVE_INSPECTION_CONTRACT = 'wand.db05.save-readonly-inspection@1';
 
