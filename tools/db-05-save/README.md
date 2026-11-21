@@ -74,3 +74,22 @@ Real decoded-save validation, Rust compilation and production integration are se
 3. DB-01/03/04 exact Item/Quest/World save reference path evidence, with an explicit source version; no heuristic ID remapping.
 4. Deep inventory, chests, ownership, quantity, wardrobe, appearance, progress, placement and version-diff field maps.
 5. Lossless unknown-field byte preservation and genuine fixture contract regression before any Writer feature can separately be admitted.
+
+## Structural comparison — DB-05 read-only candidate witness
+
+`compareSaveStructures(previous, current)` compares two decoded in-memory save objects. It **does not** compare Switch/Steam identifiers, Build IDs, `GameInfo.Version` values, item quantities, names, or other scalar save values.
+
+The comparison returns `wand.db05.save-structure-comparison@1` with per-domain classifications: `same_known_field_shape`, `observed_shape_drift`, `structural_conflict`, `insufficient_evidence`, or `sampled_inconclusive`. The overall result may be `invalid_root` or `inconclusive`. Observed fields and differences contain only **public historical field templates and JSON type names**, never map-key identifiers, user-defined field names or save values.
+
+All structural candidates are bounded to 66 **historical** Rust-backed field definitions. Missing optional fields are not automatically conflicts; malformed observed nested containers and JSON type changes are. Arrays/maps beyond the sampling limit yield inconclusive evidence, never full compatibility assertions. If two saves share the same known shape, they may still differ in unrecognized/new fields, Codec layout, DLC rights or required Writer semantics. Consequently these results are **read-only diagnostics**, not permission to re-encode, export or overwrite a save.
+
+Example:
+```js
+import { compareSaveStructures } from './src/lib/save/registry.mjs';
+// Inputs must already be decoded by an independently validated Codec:
+const diagnostic = compareSaveStructures(decodedBefore, decodedAfter);
+if (diagnostic.status === 'structural_conflict') {
+  // Use the per-domain conflictingKnownPaths in a non-sensitive diagnostic.
+}
+```
+
