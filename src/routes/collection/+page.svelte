@@ -135,6 +135,23 @@
     }catch(error){storeError=error instanceof Error?error.message:String(error);}
     finally{busy=false;}
   }
+  async function reloadLatestRecord():Promise<void> {
+    if (!runtime || busy) return;
+    busy=true;
+    try {
+      await runtime.reloadLatest();
+      storeError='';
+      selectedItemId=null;
+      selectedIds=[];
+      selectionMode=false;
+      refresh();
+      if (!storeError) infoMessage='ほかのタブで保存された最新のローカル記録を読み込みました。';
+    } catch (error) {
+      storeError=error instanceof Error?error.message:String(error);
+    } finally {
+      busy=false;
+    }
+  }
   function changeEntry(change:Record<string,unknown>):void{
     if(selectedItem&&runtime)void commit(()=>runtime!.setEntry(selectedItem!.itemId,change));
   }
@@ -272,7 +289,17 @@
     </div>
   </header>
 
-  {#if storeError}<div class="error-banner" role="alert">{storeError}　ブラウザのデータは削除していません。</div>{/if}
+  {#if storeError}
+    <div class="error-banner" role="alert">
+      {#if storeError==='COLLECTION_STORAGE_CONFLICT'}
+        別のタブでCollectionの記録が更新されました。古い記録による上書きを防止しています。
+        <button type="button" disabled={busy} on:click={()=>void reloadLatestRecord()}>最新の記録を読み直す</button>
+        <small>COLLECTION_STORAGE_CONFLICT</small>
+      {:else}
+        {storeError}　ブラウザのデータは削除していません。
+      {/if}
+    </div>
+  {/if}
   {#if infoMessage}<div class="info-banner" role="status">{infoMessage}<button type="button" on:click={()=>infoMessage=''} aria-label="通知を閉じる">×</button></div>{/if}
 
   <section class="personal-bar" aria-label="Personal Collection">
@@ -461,7 +488,7 @@
             </div>
           </aside>
         {:else}
-          <aside class="item-inspector empty-inspector"><div class="inspector-empty-symbol">✦</div><h2>Item Details</h2><p>アイテムを選択すると、データとローカル収集状況を確認できます。</p><p class="inspector-hint">参照データ：Nintendo Switch DDV v1.25.0。対応するアイテムにはゲーム由来の画像を表示します。画像の出典はSteam v1.25.3またはSwitch v1.24.13で、両バージョンの画像同一性は保証されません。セーブの読み込み・書き戻し、個別詳細ページは未接続です。</p></aside>
+          <aside class="item-inspector empty-inspector"><div class="inspector-empty-symbol">✦</div><h2>Item Details</h2><p>アイテムを選択すると、データとローカル収集状況を確認できます。</p><p class="inspector-hint">参照データ：{runtime?.metadata.platform??'公開ゲームDB'}{#if runtime?.metadata.version} DDV v{runtime.metadata.version}{/if}。一部の画像には別バージョンのゲーム由来素材を使用しており、データとの同一性は保証されません。セーブ内の一部情報は上部で読み取り専用プレビューできますが、Collectionへの自動反映・セーブへの書き戻し・個別詳細ページは未接続です。</p></aside>
         {/if}
       </div>
     </div>
