@@ -74,6 +74,32 @@ captured prefix, and marks the full-file SHA as a claim not independently
 verified. When the actual full Steam sources are available, `extend1262.py`
 should replace (not append) these prefix observations with whole-file evidence.
 
+## Diagnostic LocDB prefix joins for the four complete native itemlists
+
+The same private `format-probe.json` includes incomplete first-8,192-byte
+`ActivityItem.locbin`, `Furniture.locbin`, `Clothing.locbin`, and `Trimming.locbin`
+archives in all 8 supported locales. `probe_locprefix.py` parses complete
+localization entries from those captured prefixes and joins **only exact**
+`rawNameField + "_DisplayName"` keys to the 13,202 native entries whose IDs
+and full source-file hashes are validated with the existing DB-01 loader.
+
+```powershell
+py -3 tools/src-01-items/probe_locprefix.py --probe "D:\WandData\SRC-01\Steam-v1.26.2\format-probe.json" --native "D:\WandData\SRC-01\Steam-v1.26.2" --out "D:\WandData\SRC-01\Steam-v1.26.2-locale-prefix"
+```
+
+The 2026-11-21 input yields **429** source-key match observations, including
+**427** records with at least one non-control-marker display-name candidate,
+**226** matching all eight prefix captures, and two marker-only records.
+These are not official validated current names until the full source LocDB
+members/archives can be checked. The separate output
+`observed-locale-prefix-names.jsonl` and manifest
+`wand.src01.locale-prefix-evidence@1` record full native input hashes,
+per-member *prefix* hashes, exact match counts, full-member CRC verification
+state, and `mergeIntoCanonicalPermitted: false`. Never overwrite
+`items-localized.jsonl` or the canonical DB-01 `names` with these samples.
+`{DoNotTranslate}`, `{Placeholder}`, and `{LegacyPlaceholder}` markers are
+preserved as non-display observations, not silently shown as UI labels.
+
 ## Extended definitions (only if original Steam game files are available)
 
 ```powershell
