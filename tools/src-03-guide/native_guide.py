@@ -700,7 +700,7 @@ def extract(game, out, version, platform, item_index=None, previous=None):
                              "bytes": len(files[fam]), "records": len(rows[fam])} for fam in files}
         protodb_summary = project_protodb(origin, out, target, locale, wire_fields,
             text_field, int_field, sha, source_data, save, plain_display,
-            indexes.get("quests"))
+            indexes.get("quests"), indexes.get("duties"), indexes.get("worlds"))
         manifest = {"schema": SCHEMA, "target": target, "status": status,
                     "sources": source_info, "localizationSources": locale.provenance,
                     "friendshipRewardSource": reward_source, "structuredDefinitions": overlay_counts,

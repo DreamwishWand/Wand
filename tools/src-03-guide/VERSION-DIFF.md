@@ -23,3 +23,7 @@ Full Steam v1.26.1 snapshot compared with a freshly regenerated v1.26.1 snapshot
 The owner's Game Source Archive Steam v1.26.2 folder did not contain a Guide source export at the time of this implementation, so **no verified v1.26.2 Guide difference is asserted**.
 
 Standard-library tests: `python -m unittest discover -s tools/src-03-guide -p 'test_*.py' -v`. Proprietary raw/derived game data remain in private Drive, not the public GitHub repository.
+
+## Extended ProtoDB catalogue comparison
+
+The static source-backed `miniEvents`, `floatingFestivals`, and `expansions` projections are compared when each snapshot has the corresponding extractor projection and original ProtoDB source. If the prior projection did not exist because the parser lacked support, report `static_projection_unavailable_in_previous_snapshot`; this is not missing or removed game content. Fresh-to-fresh Steam v1.26.1 extraction now compares **15** source categories with **zero** game-data changes; the 12-family baseline remains a historical result. Archived timestamps and candidate references are not current live availability.
