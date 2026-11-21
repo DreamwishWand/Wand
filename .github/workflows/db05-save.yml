@@ -69,6 +69,8 @@ jobs:
         run: cargo test --manifest-path crates/ddv-save-schema/Cargo.toml
       - name: Cross-language Rust/JS save reference parity (synthetic only)
         run: node tools/db-05-save/compare_js_rust.mjs
+      - name: Cross-language Rust/JS 440-field shape parity (synthetic only)
+        run: node tools/db-05-save/compare_unified_shape.mjs
       - name: Rust WASM read-only reference graph target
         run: |
           rustup target add wasm32-unknown-unknown
