@@ -10,7 +10,7 @@
     "observedMapKeyIdentityMatches": true,
     "observedStorageAndSubgridLinksResolved": true,
     "observedBuildingAndVillageGridLinksResolved": true,
-    "notExhaustiveAcrossPlayers": false
+    "notExhaustiveAcrossPlayers": true
   },
   "policy": {
     "readOnly": true,
