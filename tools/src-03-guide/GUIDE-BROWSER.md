@@ -125,3 +125,28 @@ source is explicitly labeled in the search result and original quest ID is uncha
 
 No game source texts are introduced into the public repository, static deployment, or requests.
 All existing security checks for local folder boundaries and per-record SHA-256 still apply.
+
+## Source-only condition trees and configured rewards (DB-03, 2026-11-21)
+
+The verified individual `quest-shards/part-XX.json` mission detail already contains
+the source-typed `structured.conditions`, `structured.activationPolicies` and
+`structured.rewardsDecoded` fields. The `/guide/` inspector now renders their
+original AST operators (including nested AND/OR/NOT groups), condition kinds,
+original typed reference IDs, activation choices, owner branches, and configured
+friendship/currency reward ranges. The source-only presentation never flattens
+conditions into a "required quest" list or evaluates them against a player,
+save file, online event state or owned DLC. Currency IDs are not guessed into
+display names, and reward configuration never implies a guaranteed grant.
+
+The new `guideStaticFacts` and `formatGuideConditionTree` browser helpers use
+only **already SHA-256-verified, user-selected** full quest records. Missing
+conditions/rewards remain absent rather than becoming false zeroes; missing
+range endpoints appear as unknown, while configured numeric zero remains zero.
+Opaque custom-owner branches remain opaque. The read-only UI does not request
+an extra large source file, upload data or change the source contract.
+Synthetic Node regressions include nested boolean conditions, unresolved
+conditions, source-only activation and optional reward bounds.
+
+This is a viewer for the archived build's static values. The Steam v1.26.2
+Condition source and localization corpus must be verified separately before
+claiming current v1.26.2 unlock conditions or current translated instructions.
