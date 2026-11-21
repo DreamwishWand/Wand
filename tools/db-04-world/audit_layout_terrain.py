@@ -87,9 +87,10 @@ def audit_snapshot(snapshot: Path, *, max_samples=25):
                 terrain_cache[grid_path] = None
             else:
                 raw = base64.b64decode(packed, validate=True)
-                evidence = describe_native_packing(grid["sizeX"], grid["sizeY"],
-                                                   grid["nativeFloorTypePalette"],
-                                                   raw)
+                evidence = describe_native_packing(
+                    grid["sizeX"], grid["sizeY"],
+                    grid["nativeFloorTypePalette"], raw,
+                    source_game_version=integrity["gameVersion"])
                 if evidence != meta:
                     raise ValueError("corrupted grid decoding evidence")
                 terrain_cache[grid_path] = (raw, grid["nativeFloorTypePalette"],
