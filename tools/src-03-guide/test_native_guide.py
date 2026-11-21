@@ -235,6 +235,26 @@ class NativeGuideTests(unittest.TestCase):
         self.assertEqual(manifest['conditionAstMissions'],1)
         self.assertEqual(manifest['recognizedConditionKinds'],2)
 
+    def test_activation_policy_index_excludes_groups(self):
+        raw = vf(1,self.quest)+sf(2,'Story!MyQuest')
+        raw += sf(23, sf(2, sf(2,sf(65,vf(1,self.char)))))
+        raw += sf(22, sf(1,sf(2,sf(20,b'')))+sf(2,'Story/MyQuest.Story!Step01_StepDescription'))
+        raw += sf(19, sf(1,sf(2,sf(20,b'')))+vf(2,self.char))
+        raw += sf(40,b'')
+        group=vf(1,self.quest_group)+sf(2,'Story!Group')
+        (self.src/'itemlist'/'Mission.json').write_bytes(frame(1,raw)+frame(200001,group))
+        db.extract(self.game,self.out,'1.26.1','Steam')
+        index=json.loads((self.out/'database/quest-activation-policies.json').read_text())
+        self.assertEqual(index['evaluation'],'not_evaluated_static_source_only')
+        self.assertEqual(len(index['records']),1)
+        self.assertEqual(index['records'][0]['missionId'],str(self.quest))
+        manifest=json.loads((self.out/'manifest.json').read_text())
+        self.assertEqual(manifest['autoAcceptOptions'],1)
+        self.assertEqual(manifest['uiUnlockConditions'],1)
+        self.assertEqual(manifest['ownerOverrideBranches'],1)
+        rels=json.loads((self.out/'database/relations.json').read_text())['relations']
+        self.assertEqual(len([r for r in rels if r.get('predicate')=='OwnerOverride.character']),1)
+
     def test_reject_bad_frames_and_inputs(self):
         with self.assertRaises(ValueError):
             db.varint(b'\x80\x00', 0)
