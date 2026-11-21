@@ -1,3 +1,4 @@
+export { getSaveReferenceRelations, probeSaveReferences, compareSaveReferenceProbes, SAVE_REFERENCE_PROBE_CONTRACT, SAVE_REFERENCE_COMPARISON_CONTRACT } from './references.mjs';
 export type SavePlatform = 'switch' | 'steam-windows';
 export type SaveBuildIdentity = Readonly<{
   platform: SavePlatform;

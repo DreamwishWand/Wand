@@ -1,0 +1,146 @@
+{
+  "schema": "wand.db05.save-reference-relations@1",
+  "nativeSource": "Steam v1.26.1 and v1.26.2 archived identical IL2CPP dump.cs, SHA-256 0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08",
+  "evidence": {
+    "ownerPrivateSavesInspected": 3,
+    "saveSchemaVersionsObserved": [
+      626,
+      643
+    ],
+    "observedMapKeyIdentityMatches": true,
+    "observedStorageAndSubgridLinksResolved": true,
+    "observedBuildingAndVillageGridLinksResolved": true,
+    "notExhaustiveAcrossPlayers": true
+  },
+  "policy": {
+    "readOnly": true,
+    "rawIdsInReport": false,
+    "unknownMapKeysInReport": false,
+    "sourceBuildAsCompatibilityGate": false,
+    "referenceClosureVerified": false,
+    "foreignCatalogClosureVerified": false,
+    "writerAuthorized": false,
+    "exportAuthorized": false
+  },
+  "indexTemplates": {
+    "container": "/Player/ContainerInventories",
+    "grid": [
+      "/World/GridCollection/Grids",
+      "/World/GridCollection/DiffGrids"
+    ]
+  },
+  "rules": [
+    {
+      "id": "container_key_identity",
+      "sourcePublicTemplate": "/Player/ContainerInventories/{containerId}/ID",
+      "traversalTemplate": "/Player/ContainerInventories/{containerId}/ID",
+      "mode": "id_matches_map_key",
+      "targetIndex": null,
+      "note": "Known chest/container map keys must match their embedded Protobuf ID; sample-only consistency, not writer validation"
+    },
+    {
+      "id": "grid_key_identity",
+      "sourcePublicTemplate": "/World/GridCollection/Grids/{id}/ID",
+      "traversalTemplate": "/World/GridCollection/Grids/{id}/ID",
+      "mode": "id_matches_map_key",
+      "targetIndex": null,
+      "note": "Full grid map key compared with Grid.ID"
+    },
+    {
+      "id": "diff_grid_key_identity",
+      "sourcePublicTemplate": "/World/GridCollection/DiffGrids/{gridId}/ID",
+      "traversalTemplate": "/World/GridCollection/DiffGrids/{gridId}/ID",
+      "mode": "id_matches_map_key",
+      "targetIndex": null,
+      "note": "Diff grid map key compared with DiffGrid.ID"
+    },
+    {
+      "id": "grid_object_key_identity",
+      "sourcePublicTemplate": "/World/GridCollection/Grids/{id}/Objects/{id}/ID",
+      "traversalTemplate": "/World/GridCollection/Grids/{id}/Objects/{id}/ID",
+      "mode": "id_matches_map_key",
+      "targetIndex": null,
+      "note": "Placed grid-object map key compared with GridObject.ID"
+    },
+    {
+      "id": "diff_object_key_identity",
+      "sourcePublicTemplate": "/World/GridCollection/DiffGrids/{id}/ModifiedObjects/{id}/ID",
+      "traversalTemplate": "/World/GridCollection/DiffGrids/{id}/ModifiedObjects/{id}/ID",
+      "mode": "id_matches_map_key",
+      "targetIndex": null,
+      "note": "Modified grid-object key compared with embedded ID"
+    },
+    {
+      "id": "placed_storage_to_container",
+      "sourcePublicTemplate": "/World/GridCollection/Grids/{id}/Objects/{id}/State/Storage/ContainerInventoryID",
+      "traversalTemplate": "/World/GridCollection/Grids/{id}/Objects/{id}/State/Storage/ContainerInventoryID",
+      "mode": "ref_exists",
+      "targetIndex": "container",
+      "note": "Placed chest or storage object references Player.ContainerInventories map key"
+    },
+    {
+      "id": "modified_storage_to_container",
+      "sourcePublicTemplate": "/World/GridCollection/DiffGrids/{id}/ModifiedObjects/{id}/State/Storage/ContainerInventoryID",
+      "traversalTemplate": "/World/GridCollection/DiffGrids/{id}/ModifiedObjects/{id}/State/Storage/ContainerInventoryID",
+      "mode": "ref_exists",
+      "targetIndex": "container",
+      "note": "Modified storage object references Player.ContainerInventories map key"
+    },
+    {
+      "id": "placed_subgrid_to_grid",
+      "sourcePublicTemplate": "/World/GridCollection/Grids/{id}/Objects/{id}/State/SubGrid/GridID",
+      "traversalTemplate": "/World/GridCollection/Grids/{id}/Objects/{id}/State/SubGrid/GridID",
+      "mode": "ref_exists",
+      "targetIndex": "grid",
+      "note": "Placed subgrid links to an observed full or diff grid"
+    },
+    {
+      "id": "modified_subgrid_to_grid",
+      "sourcePublicTemplate": "/World/GridCollection/DiffGrids/{id}/ModifiedObjects/{id}/State/SubGrid/GridID",
+      "traversalTemplate": "/World/GridCollection/DiffGrids/{id}/ModifiedObjects/{id}/State/SubGrid/GridID",
+      "mode": "ref_exists",
+      "targetIndex": "grid",
+      "note": "Modified subgrid links to an observed full or diff grid"
+    },
+    {
+      "id": "house_floor_to_grid",
+      "sourcePublicTemplate": "/World/PlayerHouses[]/Floors[]/Rooms/{id}/FloorGridID",
+      "traversalTemplate": "/World/PlayerHouses[]/Floors[]/Rooms/{id}/FloorGridID",
+      "mode": "ref_exists",
+      "targetIndex": "grid",
+      "note": "Room floor grid references observed grid IDs"
+    },
+    {
+      "id": "house_walls_to_grid",
+      "sourcePublicTemplate": "/World/PlayerHouses[]/Floors[]/Rooms/{id}/WallGridIDs",
+      "traversalTemplate": "/World/PlayerHouses[]/Floors[]/Rooms/{id}/WallGridIDs/{id}",
+      "mode": "ref_exists",
+      "targetIndex": "grid",
+      "note": "Room wall map values reference observed grids"
+    },
+    {
+      "id": "building_info_to_grid",
+      "sourcePublicTemplate": "/World/BuildingInfos/{id}/GridIDs/List",
+      "traversalTemplate": "/World/BuildingInfos/{id}/GridIDs/List[]",
+      "mode": "ref_exists",
+      "targetIndex": "grid",
+      "note": "Building grid ID list references observed grids"
+    },
+    {
+      "id": "village_area_to_grid",
+      "sourcePublicTemplate": "/World/Villages[]/Areas/{id}/GridIDs",
+      "traversalTemplate": "/World/Villages[]/Areas/{id}/GridIDs[]",
+      "mode": "ref_exists",
+      "targetIndex": "grid",
+      "note": "Village area grid ID list references observed grids; zero may be a legitimate ID"
+    },
+    {
+      "id": "floating_island_to_grid",
+      "sourcePublicTemplate": "/World/FloatingIslands/{id}/GridIDs",
+      "traversalTemplate": "/World/FloatingIslands/{id}/GridIDs[]",
+      "mode": "ref_exists",
+      "targetIndex": "grid",
+      "note": "Floating island grid IDs reference observed grids"
+    }
+  ]
+}
