@@ -1,5 +1,6 @@
 import registry from '../../../data/ddv/save/registry.v1.json' with { type: 'json' };
 import legacyFields from '../../../data/ddv/save/legacy626-fields.v1.json' with { type: 'json' };
+import commonFields from '../../../data/ddv/save/common626643-fields.v1.json' with { type: 'json' };
 
 function deepFreeze(value) {
   if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -10,6 +11,7 @@ function deepFreeze(value) {
 }
 deepFreeze(registry);
 deepFreeze(legacyFields);
+deepFreeze(commonFields);
 
 export const SAVE_REGISTRY_SCHEMA = 'wand.db05.save-registry@1';
 export const SAVE_INSPECTION_CONTRACT = 'wand.db05.save-readonly-inspection@1';
@@ -171,6 +173,80 @@ export function compareSaveStructures(previous, current) {
     referenceClosureVerified: false,
     writerAuthorized: false,
     exportAuthorized: false
+  });
+}
+
+export const SAVE_COMMON_SHAPE_PROBE_CONTRACT = 'wand.db05.common-shape-probe@1';
+export const SAVE_COMMON_SHAPE_COMPARE_CONTRACT = 'wand.db05.common-shape-comparison@1';
+const COMMON_DOMAINS = Object.freeze(['world','progression','cosmetics']);
+
+/** All 16 public path templates are independent of version and platform. */
+export function getCommonSaveFields() { return commonFields; }
+
+/**
+ * Distinct from the 66 historical legacy paths: observed common save fields
+ * only. Exact game-source type binding remains unverified.
+ */
+export function probeCommonSaveStructure(decoded) {
+  const domains = COMMON_DOMAINS.map(domain => {
+    const candidates = commonFields.fields.filter(f => f.domain === domain);
+    const observations = candidates.map(f => Object.freeze({
+      path: f.path, ...observeKnownField(decoded, f)
+    }));
+    const observed = observations.filter(x => x.status === 'observed');
+    const conflicting = observations.filter(x => x.status === 'type_conflict');
+    const sampled = observations.some(x => x.sampled);
+    const status = conflicting.length ? 'shape_conflict'
+      : observed.length ? (sampled ? 'sampled_candidate' : 'shape_candidate')
+      : 'not_observed';
+    return Object.freeze({
+      domain, status, observedFieldCount: observed.length,
+      observedFields: Object.freeze(observed.map(x => Object.freeze({ path:x.path, kinds:x.kinds }))),
+      conflictingPaths: Object.freeze(conflicting.map(x => x.path)),
+      sampled, writerAuthorized:false
+    });
+  });
+  return Object.freeze({
+    contract:SAVE_COMMON_SHAPE_PROBE_CONTRACT,
+    platformAndVersionUsedAsGates:false,
+    completeness:'known_16_templates_only',
+    domains:Object.freeze(domains),
+    exhaustive:false, strictDecoderVerified:false, writerAuthorized:false
+  });
+}
+
+/** Read-only comparison of newly observed common path types. */
+export function compareCommonSaveStructures(previous, current) {
+  const before = probeCommonSaveStructure(previous);
+  const after = probeCommonSaveStructure(current);
+  const domains = before.domains.map((left,index) => {
+    const right=after.domains[index];
+    const a=new Map(left.observedFields.map(f=>[f.path,f.kinds.join('|')]));
+    const b=new Map(right.observedFields.map(f=>[f.path,f.kinds.join('|')]));
+    const addedKnownPaths=[...b.keys()].filter(p=>!a.has(p)).sort();
+    const missingKnownPaths=[...a.keys()].filter(p=>!b.has(p)).sort();
+    const kindChangedPaths=[...a.keys()].filter(p=>b.has(p)&&a.get(p)!==b.get(p)).sort();
+    const conflictingKnownPaths=[...new Set([...left.conflictingPaths,...right.conflictingPaths,...kindChangedPaths])].sort();
+    const status=conflictingKnownPaths.length ? 'observed_type_conflict'
+      : !a.size||!b.size ? 'insufficient_evidence'
+      : left.sampled||right.sampled ? 'sampled_inconclusive'
+      : addedKnownPaths.length||missingKnownPaths.length ? 'observed_witness_difference'
+      : 'same_known_common_shape';
+    return Object.freeze({domain:left.domain,status,
+      addedKnownPaths:Object.freeze(addedKnownPaths),
+      missingKnownPaths:Object.freeze(missingKnownPaths),
+      conflictingKnownPaths:Object.freeze(conflictingKnownPaths),
+      writerAuthorized:false});
+  });
+  const status=domains.some(d=>d.status==='observed_type_conflict') ? 'observed_type_conflict'
+    : domains.some(d=>d.status==='insufficient_evidence'||d.status==='sampled_inconclusive') ? 'inconclusive'
+    : domains.some(d=>d.status==='observed_witness_difference') ? 'observed_witness_difference'
+    : 'same_known_common_shape';
+  return Object.freeze({
+    contract:SAVE_COMMON_SHAPE_COMPARE_CONTRACT,
+    status,platformAndVersionUsedAsGates:false,
+    domains:Object.freeze(domains),
+    exhaustive:false,strictDecoderVerified:false,writerAuthorized:false,exportAuthorized:false
   });
 }
 
