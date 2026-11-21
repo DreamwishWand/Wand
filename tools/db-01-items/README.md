@@ -212,15 +212,49 @@ final DB-01 private-only manifest. It does not upload files, edit saves,
 commit data or change GitHub Pages. This is a **prepared command**, not a claim
 that the original full 28 files or eight entire localization archives have
 already been processed in ChatGPT.
+## Complete-source reuse across Steam patch versions
 
-## SHA-identical archived-source recovery → normalized 33,627 definitions
+The private archived v1.26.1 Steam original has **38 of 39** source itemlists with
+full SHA-256 exactly identical to independently SHA-pinned Steam v1.26.2 data.
+`tools/src-01-items/recover_unchanged1262.py` now recovers **20,425**
+additional *full-file-verified* 1.26.2 definitions (33 nonempty extra categories
+and one verified empty), while refusing changed `Condition.json`. Together
+with 13,202 four-class native items, the verified current-source union is
+**33,627 definition IDs**. The 132 previous complete-probe definitions are
+already included in the 20,425, not appended again.
 
-See [`RECOVERED-PARTIAL.md`](RECOVERED-PARTIAL.md) for the private **38/39 source**
-recovery build, 33,627 verified definition IDs (13,202 native item types +
-20,425 unclassified definitions), all-eight-locale verification for 241 rows,
-and exact-coverage comparison with the earlier 13,334-row partial baseline.
-Neither old Switch taxonomy nor prior-version whole LocDB ZIPs are promoted.
+The tool verifies **53 fully embedded, CRC-checked current v1.26.2 LocDB members**
+from the existing format probe, including 1.26.2 BoardGame/PhotoMode members.
+This provides **241 definitions with all eight official names**, and **506 with
+at least one official name**. No v1.26.1 ZIP locale texts are reused. All
+8 entire v1.26.2 localization ZIP archives differ from their older versions,
+so most current names remain unresolved.
+Full procedure, verification boundary and private CLI:
+[`tools/src-01-items/RECOVER-UNCHANGED-1262.md`](../src-01-items/RECOVER-UNCHANGED-1262.md).
+Use the resulting private `wand.src01.extended@1` folder as the **replacement**
+`--extended` source to `tools/db-01-items/build.py`; never merge it with the old
+132-definition ext folder, since IDs overlap. It is not a complete catalog:
+`Condition.json` for v1.26.2 remains unavailable.
 
+
+## Complete-source reuse: normalized private 33,627 definition baseline
+
+The recovered-source compiler `build_recovered_partial.py` accepts the
+source-verified 13,202 native records and the separate SHA-identical archival
+20,425 extended definitions, rejects changed `Condition.json`, and produces
+private `wand.db01.partial-manifest@3` data for all **33,627** source-backed
+definition IDs. Source IDs are not ownership or collectibility assertions.
+
+`src/lib/items/catalog.mjs` supports this exact versioned private schema,
+validates the 38/39 binary-source equality proof, checks the pinned old and
+current source fingerprints and **all eight current official name counts**
+(241 full eight-locale; 506 any). Its DB-00 adapter excludes unclassified
+definitions and does not authorize publication or save writing.
+
+See [`RECOVERED-PARTIAL.md`](RECOVERED-PARTIAL.md) for build usage, known
+missing `Condition.json`, absent full current LocDB ZIP files, and a
+same-game-version coverage-safe diff with the previous 13,334-row partial
+baseline (13,334 shared IDs, 20,293 newly-covered IDs, no game-added claims).
 
 ## Owner-private historical locale candidate overlay (not verified current names)
 
