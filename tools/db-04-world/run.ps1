@@ -45,6 +45,8 @@ if (-not $Il2CppDumpPath -and $Il2CppDumpGameVersion) {
 }
 $dumpFile = ""
 $gameAssembly = Join-Path $GameRoot "GameAssembly.dll"
+$originalMetadata = Join-Path $GameRoot "ddv_Data\il2cpp_data\Metadata\global-metadata.dat"
+$hasOriginalMetadata = (Test-Path -LiteralPath $originalMetadata -PathType Leaf)
 if ($Il2CppDumpPath) {
     $dumpFile = [System.IO.Path]::GetFullPath($Il2CppDumpPath)
     if (-not (Test-Path -LiteralPath $dumpFile -PathType Leaf)) {
@@ -63,19 +65,37 @@ if ($Il2CppDumpPath) {
     if (-not (Test-Path -LiteralPath $gameAssembly -PathType Leaf)) {
         throw "Requested native RVA capture requires GameAssembly.dll"
     }
-    # A matching version string alone cannot guarantee matching native RVAs.
-    # Reject a dump that maps into the interiors of other PE unwind functions
-    # before creating any private snapshot output or running game extraction.
-    Write-Host "DB-04: checking original GameAssembly PE64 unwind function starts"
-    $peAuditArgs = @(
-        (Join-Path $PSScriptRoot "pe_unwind.py"),
-        "--game-root", $GameRoot,
-        "--dump-cs", $dumpFile,
-        "--dump-game-version", $Il2CppDumpGameVersion
+    if (-not $hasOriginalMetadata) {
+        # Legacy dump-only path remains strict. When ORIGINAL metadata is
+        # available its token-indexed method pointers supersede dump.cs RVAs.
+        Write-Host "DB-04: validating legacy dump.cs RVA against native PE unwind starts"
+        $peAuditArgs = @(
+            (Join-Path $PSScriptRoot "pe_unwind.py"),
+            "--game-root", $GameRoot,
+            "--dump-cs", $dumpFile,
+            "--dump-game-version", $Il2CppDumpGameVersion
+        )
+        & $python @pythonPrefix @peAuditArgs
+        if ($LASTEXITCODE -ne 0) {
+            throw "Original IL2CPP method RVAs cannot be corroborated against PE unwind starts"
+        }
+    }
+    else {
+        Write-Host "DB-04: original metadata supersedes legacy dump.cs RVAs"
+    }
+}
+if ($hasOriginalMetadata -and (Test-Path -LiteralPath $gameAssembly -PathType Leaf)) {
+    # Resolve token -> module method pointers from the GAME'S OWN metadata,
+    # before any snapshot is created. Never add a fixed 0x300 workaround.
+    Write-Host "DB-04: correlating original IL2CPP method tokens, PE pointers and unwind starts"
+    $nativeResolveArgs = @(
+        (Join-Path $PSScriptRoot "native_method_pointers.py"),
+        "--dll", $gameAssembly,
+        "--metadata", $originalMetadata
     )
-    & $python @pythonPrefix @peAuditArgs
+    & $python @pythonPrefix @nativeResolveArgs | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        throw "Original IL2CPP method RVAs cannot be corroborated against PE unwind starts"
+        throw "Original GameAssembly/global-metadata native pointers cannot be corroborated"
     }
 }
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -129,7 +149,10 @@ if (Test-Path -LiteralPath $gameAssembly -PathType Leaf) {
         "--game-root", $GameRoot,
         "--out", (Join-Path $ready "native-pe-evidence.json")
     )
-    if ($Il2CppDumpPath) {
+    if ($hasOriginalMetadata) {
+        $nativeArgs += @("--metadata", $originalMetadata)
+    }
+    elseif ($Il2CppDumpPath) {
         $nativeArgs += @("--dump-cs", $dumpFile,
                          "--dump-game-version", $Il2CppDumpGameVersion)
     }
@@ -140,7 +163,7 @@ if (Test-Path -LiteralPath $gameAssembly -PathType Leaf) {
     # version-pinned disassembler is installed, decode the captured ORIGINAL
     # byte windows automatically. Missing Capstone does not block game-data
     # extraction or claim that disassembly was performed.
-    if ($Il2CppDumpPath) {
+    if ($Il2CppDumpPath -or $hasOriginalMetadata) {
         $capstoneCheck = & $python @pythonPrefix -c "import importlib.util, importlib.metadata; print(int(importlib.util.find_spec('capstone') is not None and importlib.metadata.version('capstone') == '5.0.9'))"
         if ($LASTEXITCODE -ne 0) {
             throw "Could not inspect optional Capstone disassembler availability"
