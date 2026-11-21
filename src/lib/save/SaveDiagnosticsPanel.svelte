@@ -45,6 +45,14 @@
     zero_sentinels_only: 'ゼロ値のみ'
   };
   const labelStatus = (code: string) => statusLabels[code] ?? '未確定';
+  const achievementStatusLabels: Record<string,string> = {
+    not_observed:'記録なし（削除または未保存の可能性）',
+    observed_empty:'空の実績記録',
+    container_type_difference:'配列形式との差異を観測',
+    observed_kind_difference:'保存データの型の差異を観測',
+    sampled_observation:'一部の記録のみ検査',
+    observed_field_kinds:'公開定義の型を観測'
+  };
 
   async function runCatalogAudit() {
     if (!bridge || decoded === null || loadingCatalog) return;
@@ -108,6 +116,32 @@
         <tbody>
           {#each summary.shapeDomains as row (row.domain)}
             <tr><th scope="row">{row.domain}</th><td>{labelStatus(row.status)}</td><td>{row.registered}</td><td>{row.observed}</td><td>{row.conflicting}</td></tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+
+    <h3>実績フィールドの観測（改変セーブ対応）</h3>
+    <p class="muted">
+      {achievementStatusLabels[summary.achievementObservation.status]} · 検査した記録 {summary.achievementObservation.inspectedRows} 件
+      {summary.achievementObservation.sampled ? ' · 一部のみ検査' : ''}
+    </p>
+    <p class="muted">
+      保存済みのフィールドの有無と型だけを検査します。ミッション関連オブジェクトや実績の欠落を
+      破損・未達成と判定せず、自動補完も行いません。状態名・進捗値・達成条件・報酬の意味は未検証です。
+    </p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th scope="col">実績フィールド</th><th scope="col">観測</th><th scope="col">未記録</th><th scope="col">型の差異</th><th scope="col">配列検査数</th></tr></thead>
+        <tbody>
+          {#each summary.achievementObservation.fields as field (field.id)}
+            <tr>
+              <th scope="row">{field.label}</th>
+              <td>{field.observed}</td>
+              <td>{field.absent}</td>
+              <td>{field.typeIssues + field.nestedTypeIssues}</td>
+              <td>{field.checkedElements}{field.sampled ? ' · 一部' : ''}</td>
+            </tr>
           {/each}
         </tbody>
       </table>
