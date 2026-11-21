@@ -1,4 +1,34 @@
-# SRC-04 MEDIA
+# SRC-04 MEDIA: Steam v1.26.2 one-click workflow
+
+**Recommended for the confirmed Windows Steam installation.** Download the [SRC04-MEDIA.cmd](SRC04-MEDIA.cmd) file from this development branch and double-click it. Python 3 with the Windows py launcher and initial internet access to install dependencies are required. **No local Git clone or manual path selection is required.**
+
+The launcher downloads the development tools to %LOCALAPPDATA%\DreamwishWand\SRC-04\code, installs Pillow/UnityPy if needed, and uses:
+
+- Input: C:\Program Files (x86)\Steam\steamapps\common\Disney Dreamlight Valley (read-only).
+- Local output (automatically created): %USERPROFILE%\Documents\DreamwishWand\SRC-04 MEDIA\Steam-v1.26.2.
+- Two SRC-00 pinned bundles for smoke testing, followed by all **40** generated-icon bundles (approximately 625 MB of bundle input). No full 22,281-file extraction.
+- The existing SRC-01 steam1262.py parser, verifying four known protobuf itemlists and the game version; 13,202 Item IDs and their native GUIDs. No replacement decoder.
+- The focused SRC-00-derived source-index-1262.csv, pinning bundle filenames, byte sizes, and SHA-256 hashes.
+- UnityPy's Sprite/Texture2D decoder for native source pixel dimensions and 128px/512px no-upscale WebP derivatives.
+- Exact GUID matches only (asset's original serialized name or Unity AssetBundle container key), with common GUIDs mapped to multiple Item IDs. No fuzzy filename/name guessing.
+- A bounded Addressables catalog structural probe (catalog JSON shape, binary headers and GUID byte offsets), persisted privately in evidence/catalog-probe.json. A GUID seen in binary data is not yet evidence of its precise Sprite binding.
+- Incremental bundle checkpoints, resume, hash verification, corruption/resolution findings, and conflict rejection.
+- Native manifests and reports: manifest-native.json, report-native.json. Both use publicationApproved=false.
+
+When Google Drive for Desktop syncs an **existing** exact Dreamwish Wand/Development/Sources/SRC-04 MEDIA folder under a standard My Drive root, the launcher copies only the manifest/report/catalog-probe JSONs there. It never copies game images or source binaries to Drive or GitHub. If that sync folder does not exist, it keeps the reports locally and says so.
+
+**Open technical gate:** 9,542 unique SRC-01 GUIDs are known, but the exact Addressables catalog GUID-to-Sprite mapping and actual game-file extraction success have not yet been empirically verified. Unresolved GUIDs remain unresolved and are counted in the reports. The public Wand media interface does not expose these private manifest paths.
+
+For sample only, run start.ps1 with -SampleOnly. To preserve full-resolution source pixels separately when larger than 512px, use start.ps1 -KeepOriginals; the standard double-click run generates thumbnail/detail only.
+
+Synthetic checks:
+
+    py -3 -m unittest discover -s tools/src-04-media -p "test_*.py" -v
+    node --test tests/media-artwork.test.mjs
+
+---
+
+## Advanced manual workflow and historical R39 compatibility
 
 Windows-compatible, local-only source image inspection and conversion for Dreamwish Wand. This tool never modifies the game's files, the site's static assets, GitHub Pages, or R2. The operator specifies an independent local output directory.
 
