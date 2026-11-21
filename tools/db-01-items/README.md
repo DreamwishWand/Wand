@@ -146,3 +146,18 @@ ownership, DLC entitlement, save writing and publication all **false**.
 Until genuine current Steam 1.26.2 Condition bytes are obtained, DB-02 cannot
 be fully re-extracted and this bridge must not be activated against previously
 mislabeled condition outputs. See [`DB02-JOIN.md`](DB02-JOIN.md).
+
+
+## Source-exact DB-04 Furniture / Building overlay (private)
+
+[DB04-NATIVE-EVIDENCE.md](DB04-NATIVE-EVIDENCE.md) describes the permanent
+Python offline corroborator and typed TypeScript runtime bridge. Two complete
+original itemlist files, Furniture.json and Building.json, are byte-identical
+between the independently checked Steam v1.26.1 world snapshot and the Steam
+v1.26.2 SQLite source. Only those two definition families are eligible:
+7,224 exact ID/native-name joins, 6,746 restored Furniture localization
+**keys** (not translated names), 7,140 original-footprint dimensions, 84
+Building footprints absent. The owner-private overlay has 256 SHA-verified
+on-demand files and is separate from the canonical SQLite and 557 item shards;
+no source recompilation, competing runtime, world-coordinate inference,
+placement permission, ownership, or public publishing is authorized.
