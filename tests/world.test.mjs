@@ -261,7 +261,8 @@ test('partial grid or invalid packing never silently produces invented terrain',
   room3.nativeFloorTypePalette = [0, 3072];
   wrongPalette.grids.push(room3);
   assert.throws(() => getNativeTerrainTile(createWorldCatalog(wrongPalette),
-    'GridData/Rooms/TestRoom.json', 1, 1), /palette index/);
+    'GridData/Rooms/TestRoom.json', 1, 1),
+    /Invalid source-derived native compacted grid/);
 });
 
 
