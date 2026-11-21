@@ -30,8 +30,11 @@ jobs:
         run: python -m unittest discover -s tools/src-01-items -p 'test_*.py' -v
       - name: Test DB-01 normalization and integrity checks
         run: python -m unittest discover -s tools/db-01-items -p 'test_*.py' -v
-      - name: Test shared browser item record helpers and private DB-00 bridge
-        run: node --test src/lib/items/*.test.mjs
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test final TypeScript DB-01 API, private indexes and DB-00 bridge
+        run: node --experimental-strip-types --test src/lib/items/*.test.mjs
       - name: Parse one-shot private Windows runner
         shell: pwsh
         run: |

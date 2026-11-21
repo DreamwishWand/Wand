@@ -73,3 +73,20 @@ if ($manifest.schema -ne 'wand.db01.items@1' -or $manifest.gameVersion -ne '1.26
 Write-Host ('DB-01 complete: ' + $manifest.counts.currentDefinitions + ' verified native definitions')
 Write-Host ('Private output: ' + $catalog)
 Write-Host 'Publication: NOT AUTHORIZED. No files were uploaded or committed.'
+
+# Final runtime artifacts: SQLite is the operational owner-private query store.
+# Both filenames incorporate source JSONL SHA to support versioned immutable outputs.
+$fingerprint = $manifest.outputSha256.'items.jsonl'.Substring(0, 12)
+$sqliteTarget = Join-Path $outRoot ("db01-$fingerprint.sqlite")
+$shardsTarget = Join-Path $outRoot ("db01-$fingerprint-shards")
+$sqliteScript = Join-Path $repo 'tools\db-01-items\sqlite_store.py'
+$shardsScript = Join-Path $repo 'tools\db-01-items\export_shards.py'
+if (-not (Test-Path -LiteralPath $sqliteTarget)) {
+    Invoke-PythonChecked $sqliteScript @('--catalog', $catalog, '--out', $sqliteTarget)
+}
+if (-not (Test-Path -LiteralPath $shardsTarget)) {
+    Invoke-PythonChecked $shardsScript @('--sqlite', $sqliteTarget, '--out', $shardsTarget)
+}
+Write-Host ('Private SQLite: ' + $sqliteTarget)
+Write-Host ('Private TypeScript read shards: ' + $shardsTarget)
+Write-Host 'Only trusted local clients may access these files. They are not public site assets.'

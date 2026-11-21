@@ -30,8 +30,17 @@ Generated owner-private outputs:
 
 No historic name ever overwrites a verified current name. No public GitHub/Pages dataset is generated.
 
-## Consumer API
+## Final TypeScript consumer API
 
-`src/lib/items/historical-candidates.mjs` accepts validated private DB-01 catalog, the separate historical manifest and hash-checked JSONL bytes. All caller input is local. In default mode, `getName(itemId, locale)` returns only current official names; **`allowHistorical:true` is required** to see historical candidates. Candidate responses are structured and explicitly marked `historical_prefix_crc_correlated_unverified_current`; they do not imply ownership, category, DLC rights, availability, or current official translation. The existing public Collection runtime is unchanged.
+The owner-private historical JSONL is imported into the separate
+`historical_name_candidate` table by `sqlite_store.py --history`; its source
+version and SHA-256 remain recorded. `export_shards.py --include-historical`
+creates **separate** SHA-checked historical ID buckets, never official locale
+indexes. `src/lib/items/index.ts` returns only current exact verified names by
+default. **`getName(itemId, locale, {allowHistorical:true})`** is required to
+view a candidate, whose response evidence is explicitly
+`historical_prefix_crc_correlated_unverified_current`. No game rights,
+classification, ownership or current translation is inferred. No public
+Collection runtime is activated.
 
 Current game full eight-locale ZIP originals must be obtained and verified separately before historical candidates can be promoted to actual 1.26.2 names. Do not use this overlay to mark current names verified or to publish localized assets.

@@ -58,22 +58,21 @@ recomputes on input changes, and fails if input/output directories overlap.
 **No file is emitted into a public repository or uploaded automatically.**
 The generated output must remain private to the owner.
 
-## Load and query without publishing
+## Final SQLite + TypeScript runtime (no duplicated JS API)
 
-`src/lib/items/catalog.mjs` accepts this **exact private source contract**:
+Compile this verified, version-specific JSONL into the owner-private SQLite
+operational store and lazy TypeScript assets:
 
-```js
-import { openPrivateItemCatalog } from './src/lib/items/catalog.mjs';
-const catalog = await openPrivateItemCatalog(manifest, jsonlBytes);
-const item = catalog.getDisplayItem(30000031, 'ja');
+```powershell
+py -3 tools/db-01-items/sqlite_store.py --catalog 'D:\WandData\DB-01\Steam-v1.26.2-recovered-33627' --out 'D:\WandData\DB-01\steam-1.26.2.sqlite'
+py -3 tools/db-01-items/export_shards.py --sqlite 'D:\WandData\DB-01\steam-1.26.2.sqlite' --out 'D:\WandData\DB-01\steam-1.26.2-shards'
 ```
 
-`openPrivateItemCatalog` hashes the raw JSONL, verifies the private manifest,
-checks all source and locale claims, and keeps the returned records immutable.
-The DB-00 adapter `createDb01Db00Patch` offers only the four source-verified
-native types as **private candidate references**; it excludes the unclassified
-20,425 definitions. A Save Editor, Collection, Decorate or Guide consumer must
-not infer permissions or current taxonomy from this index.
+`src/lib/items/index.ts` validates each requested shard SHA and exposes
+`getItem`, `getCategory`, `searchExactNames` and `getName`. The DB-00 adapter
+`src/lib/items/db00-join.ts` emits private-only exact-source candidate patches
+for the four verified native item classes; it excludes all 20,425 other
+definitions and never authorizes save edits or publication.
 
 ## Compare with the preceding partial 13,334-record baseline
 
@@ -93,7 +92,7 @@ The diff leaves game-wide added/removed IDs and semantic changes `null`.
 
 ```powershell
 py -3 -m unittest discover -s tools/db-01-items -p 'test_*.py' -v
-node --test src/lib/items/*.test.mjs
+node --experimental-strip-types --test src/lib/items/*.test.mjs
 ```
 
 The recovered script and synthetic tests are safe to publish; original raw

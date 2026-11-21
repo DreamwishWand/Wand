@@ -1,276 +1,87 @@
-# DB-01 ITEMS — evidence-preserving shared catalog
+# DB-01 ITEMS — final implementation contract
 
-This compiler consumes existing SRC-01 private extractions and the committed Switch 1.25.0 Collection reference. It does **not** extract images, change saves, invent taxonomy/relationships, or publish private data. Python 3.10+ standard library only.
+**Status:** production-architecture code; source datasets remain owner-private. No
+unverified labels, inferred rights, shop/availability claims or writer permissions.
 
-## Inputs already available
+- **Extraction/evidence:** Python (offline, on verified Steam originals), no rewrite planned.
+- **Operational catalog:** versioned, normalized, read-only SQLite; source SHA-256 and
+  original-version provenance are retained, and historic names cannot enter exact names.
+- **Runtime API:** **TypeScript**, `src/lib/items/index.ts` and `db00-join.ts`.
+  It fetches only an ID bucket, category or locale index from a private asset source,
+  SHA-256-verifies every requested file, and never loads the entire 38.7MB JSONL.
+- **UI:** Svelte 5 + TypeScript (already chosen in the application).
+- **Save binary processing:** Rust/WASM (separate Save Editor ownership).
+- No JavaScript DB-01 runtime to port later; all active DB-01 consumer code is TS.
 
-- Existing Steam 1.26.2 `tools/src-01-items/steam1262.py` and `SRC-01 ITEMS/items.jsonl` (13,202 definitions across ActivityItem, Furniture, Clothing, Trimming) with source `manifest.json`.
-- Existing Steam 1.26.2 `localize1262.py` (exact eight-locale LocDB joins). If the private `items-localized.jsonl` **and** `localization-manifest.json` have been generated, the compiler validates both and uses them automatically; otherwise names stay unresolved. It does not use old Switch names as current Steam names.
-- Existing Switch 1.25.0 `static/ddv/collection/v1.25/index.json` plus 18 checksum-verified shards (12,552 records).
-- Existing private `format-probe.json` (35 more itemlist files: 34 sample-probed definition containers, one verified empty `ItemCondition.json`). `extend1262.py` verifies original source hashes against this probe and decodes raw native definitions; field semantics beyond the specifically observed ID/key strings stay unclassified.
+## Owner-private build, from repository root
 
-## Recover fully embedded source files before requesting PC work
+First generate the verified private source JSONL using the source/version-specific
+SRC-01 readers (`steam1262.py`, `localize1262.py`, `recover_unchanged1262.py`
+when source-hash matches) and `build_recovered_partial.py` or the more general
+`build.py`. For v1.26.2 there are **33,627** distinct definitions, but 38/39
+files are SHA-verified, **not** a complete game corpus.
 
-The private `format-probe.json` already embeds the entire original bytes for six small
-Steam 1.26.2 itemlist source files (BoardGame, Currency, Display, Environment,
-PhotoMode, Profession). Unlike the larger 28 nonempty files, these can be
-SHA-256-verified and decoded without asking the owner to run another Windows command.
-`ItemCondition.json` is additionally verified empty. Run:
-
-```powershell
-py -3 tools/src-01-items/probe_complete.py --probe "D:\WandData\SRC-01\Steam-v1.26.2\format-probe.json" --out "D:\WandData\SRC-01\Steam-v1.26.2-probe-complete"
-```
-
-The generated `definitions.jsonl`, `manifest.json`, `report.json`, and `unresolved.json`
-are private, source-derived data. In addition to 132 verified native definitions,
-fully embedded eight-locale LocDB members for `BoardGame.locbin` and `PhotoMode.locbin`
-are independently checked against ZIP-member CRC-32 and joined to the exact
-localization keys: 66 definitions have eight matching localized names (528
-locale values). The native field-3 key includes a `Category.` prefix, whereas
-`Category.locbin` stores keys without that prefix. The extended original-file
-parser uses this verified exact category-local lookup too. `manifest.json` uses `wand.src01.extended@1`,
-marks remaining 28 source types explicitly unresolved and records full SHA-256
-checks for all recovered files. This is a **partial extended** dataset:
-66 definitions have exact matches across all eight locale files embedded in the
-probe; other names remain null until the actual LocDB archives are available.
-Field-4 GUIDs are only candidates. Pass the folder to `--extended` in the DB-01 builder.
-After the original full itemlists become available, replace the partial extended
-folder with output of `extend1262.py` (do not merge duplicate IDs).
-
-The DB-01 builder rejects unlocalized source rows with claimed official names,
-requires exact per-locale LocDB archive/member provenance for populated names,
-and checks extended source/category hashes and counts. Input manifest hashes
-are part of the incremental build key, so changes to name provenance invalidate
-previous cached outputs even if item contents are unchanged.
-
-## Source-prefix observations from the 28 incomplete itemlist files
-
-Even though the 28 larger itemlists cannot be fully verified without the original
-Steam files, `format-probe.json` contains the first 8,192 bytes from each. The
-separate `probe_prefix.py` utility recovers **only the complete frames within
-those captured prefixes**, checking the first three keys, IDs and frame lengths
-against the original probe. It drops the incomplete trailing frame instead of
-attempting recovery. It does not claim to verify the SHA-256 of an inaccessible
-full source file, and **must not be provided to `build.py --extended`**.
+From its private output:
 
 ```powershell
-py -3 tools/src-01-items/probe_prefix.py --probe "D:\WandData\SRC-01\Steam-v1.26.2\format-probe.json" --out "D:\WandData\SRC-01\Steam-v1.26.2-prefix-evidence"
+py -3 tools/db-01-items/sqlite_store.py `
+  --catalog 'D:\WandData\DB-01\Steam-v1.26.2-recovered-33627' `
+  --history 'D:\WandData\DB-01\Steam-v1.26.2-historical-locale-candidates' `
+  --out 'D:\WandData\DB-01\steam-1.26.2.sqlite'
+
+py -3 tools/db-01-items/export_shards.py `
+  --sqlite 'D:\WandData\DB-01\steam-1.26.2.sqlite' `
+  --out 'D:\WandData\DB-01\steam-1.26.2-shards' `
+  --include-historical
 ```
 
-The 2026-11-21 Steam 1.26.2 probe yielded 1,482 observed definitions across
-28 partial source files (none overlaps the 13,334 fully verified records).
-Eight-locale joins are possible for some complete embedded LocDB members:
-103 prefix-only definitions have exact non-placeholder names in all eight
-locales. Names carrying `{Placeholder}`, `{LegacyPlaceholder}` or
-`{DoNotTranslate}` markers are kept in `locdbNonDisplayValues` rather than
-promoted to renderable `names`. The prefix report explicitly counts the 13
-non-display source values per locale. Partial category coverage and
-full-file SHA-256 verification remain unresolved. These are **diagnostic
-source observations**, not extra canonical or collectible items.
+`--history` and `--include-historical` are optional. Historical candidates remain
+explicit and are never returned unless a caller sets `allowHistorical:true`.
+The one-shot `tools/db-01-items/run-all.ps1` also creates private SQLite and
+non-historical read-shards after the complete source extraction passes all gates.
+On later versions, the same SQLite+TypeScript layer consumes independently
+verified **`wand.db01.items@1`** output without hardcoded 1.26.2 checks.
 
-The manifest uses the **different** schema `wand.src01.prefix-evidence@1`,
-`mergeIntoCanonicalPermitted: false`, records a separate SHA-256 for each
-captured prefix, and marks the full-file SHA as a claim not independently
-verified. When the actual full Steam sources are available, `extend1262.py`
-should replace (not append) these prefix observations with whole-file evidence.
+```ts
+import { createDb01CatalogClient } from '$lib/items/index.ts';
+import { createDb01Db00Patch } from '$lib/items/db00-join.ts';
 
-## Diagnostic LocDB prefix joins for the four complete native itemlists
-
-The same private `format-probe.json` includes incomplete first-8,192-byte
-`ActivityItem.locbin`, `Furniture.locbin`, `Clothing.locbin`, and `Trimming.locbin`
-archives in all 8 supported locales. `probe_locprefix.py` parses complete
-localization entries from those captured prefixes and joins **only exact**
-`rawNameField + "_DisplayName"` keys to the 13,202 native entries whose IDs
-and full source-file hashes are validated with the existing DB-01 loader.
-
-```powershell
-py -3 tools/src-01-items/probe_locprefix.py --probe "D:\WandData\SRC-01\Steam-v1.26.2\format-probe.json" --native "D:\WandData\SRC-01\Steam-v1.26.2" --out "D:\WandData\SRC-01\Steam-v1.26.2-locale-prefix"
+// Private-origin/local File loader; caller is responsible for access controls.
+const client = createDb01CatalogClient(privateManifest, async (relativePath) =>
+  new Uint8Array(await privateFileProvider(relativePath)));
+const item = await client.getItem(30000031);   // one SHA-checked ID bucket
+const items = await client.getCategory('Furniture'); // one category shard
+const labels = await client.searchExactNames('Belle', 'en'); // one locale index
+const official = await client.getName(10000001, 'ja'); // null if unverified
+const maybeOld = await client.getName(10000001, 'ja', {allowHistorical:true});
 ```
 
-The 2026-11-21 input yields **429** source-key match observations, including
-**427** records with at least one non-control-marker display-name candidate,
-**226** matching all eight prefix captures, and two marker-only records.
-These are not official validated current names until the full source LocDB
-members/archives can be checked. The separate output
-`observed-locale-prefix-names.jsonl` and manifest
-`wand.src01.locale-prefix-evidence@1` record full native input hashes,
-per-member *prefix* hashes, exact match counts, full-member CRC verification
-state, and `mergeIntoCanonicalPermitted: false`. Never overwrite
-`items-localized.jsonl` or the canonical DB-01 `names` with these samples.
-`{DoNotTranslate}`, `{Placeholder}`, and `{LegacyPlaceholder}` markers are
-preserved as non-display observations, not silently shown as UI labels.
+Never place generated `*.sqlite`, shard folders, source JSONL, localization ZIPs
+or game-derived indexes in GitHub or `static/` without explicit rights approval.
+The files are local/private by default; neither the CLI nor the TS API publishes.
 
-## Extended definitions (only if original Steam game files are available)
+## Verification and legacy evidence
 
-```powershell
-py -3 tools/src-01-items/extend1262.py --game "C:\Program Files (x86)\Steam\steamapps\common\Disney Dreamlight Valley" --probe "D:\WandData\SRC-01\Steam-v1.26.2\format-probe.json" --out "D:\WandData\SRC-01\Steam-v1.26.2-extended"
+```bash
+python -m unittest discover -s tools/db-01-items -p 'test_*.py' -v
+node --experimental-strip-types --test src/lib/items/*.test.mjs
+npm run check
 ```
 
-This reads the 34 SHA-pinned files, checks all frame IDs against their keys, and exact-joins `field 3` display-name keys only when corresponding category-specific LocDB entries exist. Some native types (missions, conditions, dialogue, etc.) are **not** asserted to be inventory items. Field-4 GUIDs for these types are explicitly labeled candidates; no guessed icon mapping is published.
+Older `.mjs` DB-01 runtime modules were removed in the TS cutover. Their source
+is preserved in Git history, **not** maintained as a parallel implementation.
+Original-source instructions and evidence limits remain documented in:
 
-## Build private normalized data
+- [`RECOVERED-PARTIAL.md`](RECOVERED-PARTIAL.md) — 33,627 source-verified IDs,
+  13,202 four-category items and 20,425 unclassified definitions.
+- [`HISTORICAL-LOCALE-CORRELATIONS.md`](HISTORICAL-LOCALE-CORRELATIONS.md) —
+  12,883 eight-language historical candidates; 120 CRC/prefix matches do not
+  establish current-version whole-member SHA equality.
+- [`VERSION-DIFF.md`](VERSION-DIFF.md) — honest coverage-aware source version
+  comparison, including no invented game removals.
+- [`../src-01-items/RECOVER-UNCHANGED-1262.md`](../src-01-items/RECOVER-UNCHANGED-1262.md)
+  — exact 38/39 SHA-identical originals from the prior Steam archive.
 
-```powershell
-py -3 tools/db-01-items/build.py --source "D:\WandData\SRC-01\Steam-v1.26.2" --reference "static\ddv\collection\v1.25" --extended "D:\WandData\SRC-01\Steam-v1.26.2-extended" --out "D:\WandData\DB-01\Steam-v1.26.2"
-```
-
-Omit `--extended` when its outputs are not yet available. The source folder must contain the native `manifest.json` and `items.jsonl`; it may also contain the localized outputs. The output must not overlap any source directory. Run from a repo checkout containing the reference shards. The pipeline validates source hashes, preserves every Item ID and original file/platform/version, and avoids work if the source fingerprints and output checksums have not changed. Use `--force` to deliberately rebuild.
-
-Outputs in the **private** versioned directory:
-
-- `items.jsonl`: current Steam native definitions, `catalogDomain: item` only for the four validated categories, `definition_unclassified` for other itemlist types. Always contains field-specific verification, explicit nulls for unknown values, and separate `historicalReference` when available.
-- `reference-only.jsonl`: records present in the older Switch Collection but **not observed** in this partial Steam extraction; not claims of removal.
-- `diff.json`: exact ID intersection, new-only IDs, old-not-observed IDs and changes in names only where both versions have actual names; `removedIds` and `meaningChangedIds` remain null.
-- `unresolved.json`: missing language counts and unverified semantic fields.
-- `manifest.json`: input fingerprints, output SHA-256 hashes, counts and private publication status (written last as a commit marker).
-
-All eight languages are stored under `en`, `fr`, `it`, `de`, `es-ES`, `ja`, `zh-CN`, and `pt-BR`. No historical world/universe/expansion values are silently promoted to Steam 1.26.2 assertions. Item ID stability alone is not evidence of semantic identity.
-
-`src/lib/items/records.mjs` provides a shared read contract for Collection, Decorate, Guide and Save Editor. It only returns official names whose exact localization join was verified, validates current source evidence, and returns verified icon GUIDs without the unclassified field-4 candidates.
-
-## Validation
-
-```powershell
-py -3 -m unittest discover -s tools/db-01-items -p "test_*.py" -v
-py -3 -m unittest discover -s tools/src-01-items -p "test_*.py" -v
-node --test src/lib/items/records.test.mjs
-```
-
-**Data storage:** generated Steam/game-derived records, source probes, manifests, diff and unresolved belong in owner-private `SRC-01 ITEMS` Drive (or a private DB-01 versioned folder). Do not commit generated game data or raw assets to the public repository. The GitHub changes are parser/consumer/tests/documentation only. No website publication occurs automatically.
-
-## Owner-private runtime API and DB-00 handoff
-
-`src/lib/items/catalog.mjs` provides a shared, read-only catalog for Collection,
-Guide, Decorate and Save Editor. It accepts **only** the DB-01 compiler's
-`wand.db01.items@1` manifest or the separately designated owner-private
-`wand.db01.partial-manifest@2` (13,334 currently observed full-source definitions).
-Neither format authorizes site publication. It rejects the two diagnostic
-`wand.src01.*-evidence@1` prefix schemas entirely.
-
-```js
-import { openPrivateItemCatalog } from './src/lib/items/catalog.mjs';
-import { createDb01Db00Patch } from './src/lib/items/db00-join.mjs';
-
-// Both inputs are owner-local/private. No fetch or website upload is performed.
-const catalog = await openPrivateItemCatalog(manifest, new Uint8Array(itemsJsonl));
-const item = catalog.getDisplayItem(30000031, 'ja');
-// item.displayName is null until current Steam LocDB is verified for that ID.
-const matches = catalog.search('30000031', { locale: 'ja' });
-
-// Only for a matching owner-private Steam DB-00 target whose sourceSha256
-// equals catalog.source.sourceManifestSha256 and whose buildId is null.
-const handoff = createDb01Db00Patch(catalog, verifiedSteamTarget);
-// Pass handoff.patch to DB-00 applyPatch; do not switch the public pointer.
-```
-
-The catalog SHA-256-verifies the entire JSONL before decoding, checks all
-per-row source and locale-verification states, validates category/domain totals,
-and freezes cloned records. `createPrivateItemCatalog(manifest, parsedRows)` is
-available for trusted pre-parsed inputs but **cannot** feed the DB-00 bridge
-because the raw bytes have not been hash checked.
-
-Names are only rendered when their locale is marked `exact_locdb_join`, with
-fallback permitted only when explicitly requested. Other strings and raw
-internal identifiers are never presented as official display names. Icon GUIDs
-are exposed only for the four validated native types; other native definition
-families are kept separate from the `item` domain. The existing Switch 1.25.0
-Collection taxonomy, worlds, universes, and old names stay in
-`historicalReference` and are never silently inserted into current Steam fields.
-
-`src/lib/items/db00-join.mjs` produces an explicitly private, source-matched
-DB-00 candidate patch containing the four validated native categories only.
-Other definitions, item ownership, DLC eligibility, placement geometry, save
-writing, and publication remain unresolved. The patch contains a **private**
-source ledger entry and must not enable public site data. This adapter does
-not touch the existing Collection runtime, DB-00 active pointer or GitHub Pages
-assets. It intentionally fails closed if the target source/version/build ID
-is unverified.
-
-Tests: `node --test src/lib/items/*.test.mjs` (including end-to-end DB-00 patch
-application and corrupted-JSONL SHA refusal).
-
-## One-shot Windows full-source extraction (when local game files are available)
-
-The optional `tools/db-01-items/run-all.ps1` orchestrator executes all four
-already-tested CLI stages in sequence: four native itemlists, exact eight-locale
-LocDB joins, all other SHA-pinned itemlists, and the DB-01 compiler with the
-existing Switch 1.25.0 Collection reference. It is designed to replace several
-separate manual Windows runs with a **single local command**. It needs the
-owner's original Steam v1.26.2 game folder and existing private
-`format-probe.json`, and fails closed on version/hash mismatch. It cannot
-complete when the installed game has been updated to another version.
-
-```powershell
-& 'tools\db-01-items\run-all.ps1' -Probe 'D:\WandData\SRC-01\Steam-v1.26.2\format-probe.json' -Out 'D:\WandData\DB-01\steam-1.26.2'
-```
-
-`-Game` defaults to the standard Steam installation directory and may be
-overridden. The script refuses output paths nested in (or containing) the
-public repository, game installation or probe folder, checks child-process exit
-codes, disables Python bytecode creation in the repository, and confirms the
-final DB-01 private-only manifest. It does not upload files, edit saves,
-commit data or change GitHub Pages. This is a **prepared command**, not a claim
-that the original full 28 files or eight entire localization archives have
-already been processed in ChatGPT.
-## Complete-source reuse across Steam patch versions
-
-The private archived v1.26.1 Steam original has **38 of 39** source itemlists with
-full SHA-256 exactly identical to independently SHA-pinned Steam v1.26.2 data.
-`tools/src-01-items/recover_unchanged1262.py` now recovers **20,425**
-additional *full-file-verified* 1.26.2 definitions (33 nonempty extra categories
-and one verified empty), while refusing changed `Condition.json`. Together
-with 13,202 four-class native items, the verified current-source union is
-**33,627 definition IDs**. The 132 previous complete-probe definitions are
-already included in the 20,425, not appended again.
-
-The tool verifies **53 fully embedded, CRC-checked current v1.26.2 LocDB members**
-from the existing format probe, including 1.26.2 BoardGame/PhotoMode members.
-This provides **241 definitions with all eight official names**, and **506 with
-at least one official name**. No v1.26.1 ZIP locale texts are reused. All
-8 entire v1.26.2 localization ZIP archives differ from their older versions,
-so most current names remain unresolved.
-Full procedure, verification boundary and private CLI:
-[`tools/src-01-items/RECOVER-UNCHANGED-1262.md`](../src-01-items/RECOVER-UNCHANGED-1262.md).
-Use the resulting private `wand.src01.extended@1` folder as the **replacement**
-`--extended` source to `tools/db-01-items/build.py`; never merge it with the old
-132-definition ext folder, since IDs overlap. It is not a complete catalog:
-`Condition.json` for v1.26.2 remains unavailable.
-
-
-## Complete-source reuse: normalized private 33,627 definition baseline
-
-The recovered-source compiler `build_recovered_partial.py` accepts the
-source-verified 13,202 native records and the separate SHA-identical archival
-20,425 extended definitions, rejects changed `Condition.json`, and produces
-private `wand.db01.partial-manifest@3` data for all **33,627** source-backed
-definition IDs. Source IDs are not ownership or collectibility assertions.
-
-`src/lib/items/catalog.mjs` supports this exact versioned private schema,
-validates the 38/39 binary-source equality proof, checks the pinned old and
-current source fingerprints and **all eight current official name counts**
-(241 full eight-locale; 506 any). Its DB-00 adapter excludes unclassified
-definitions and does not authorize publication or save writing.
-
-See [`RECOVERED-PARTIAL.md`](RECOVERED-PARTIAL.md) for build usage, known
-missing `Condition.json`, absent full current LocDB ZIP files, and a
-same-game-version coverage-safe diff with the previous 13,334-row partial
-baseline (13,334 shared IDs, 20,293 newly-covered IDs, no game-added claims).
-
-## Owner-private historical locale candidate overlay (not verified current names)
-
-The existing archived Steam v1.26.1 ZIP originals and Steam v1.26.2
-format-probe member size/CRC32/first-8KiB metadata agree for **15 categories ×
-8 locales = 120 member pairs**. They do **not** prove full current member
-SHA-256 equality. `build_correlated_names.py` independently validates all
-original archive checksums and the exact 33,627-item private DB-01 source hash,
-then produces **12,883 records with eight-language historical candidates**, of
-which 3,657 official current locale values independently match and none differ.
-
-The output has separate schema `wand.db01.historical-locale-correlations@1`
-and `mergeIntoCanonicalPermitted:false`, and remains private. The consumer
-`src/lib/items/historical-candidates.mjs` requires a hash-verified source
-catalog, checks the overlay hash and Item ID/key alignment, prefers source-
-verified current names, and only permits historical values when the caller
-explicitly sets `allowHistorical:true`. Do not import these into official
-current `names` or publish them. See
-[`HISTORICAL-LOCALE-CORRELATIONS.md`](HISTORICAL-LOCALE-CORRELATIONS.md).
+**Remaining original-data gaps:** changed v1.26.2 `Condition.json` and eight
+complete current LocDB ZIPs. DLC, ownership, collectibility, world relationships
+and current classification are unresolved until evidence is acquired.
