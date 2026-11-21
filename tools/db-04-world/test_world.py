@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 from verify_bundle import validate_snapshot
+from terrain_codec import describe_native_packing, floor_at, decode_window, EVIDENCE
 
 from world import (STREAM, diff_records, encode_varint, explicit_references,
                    extract, footprint, parse_grid_structure, parse_itemlist,
@@ -149,6 +150,57 @@ class NativeWireTests(unittest.TestCase):
                           layout["areaLayoutReferences"]], ["Beach", "Meadow"])
         self.assertEqual(layout["areaLayoutReferences"][0]["nativeAreaTypeCode"], 0)
 
+    def test_correlated_native_12x16_room_is_exact_rectangular_border(self):
+        # Synthetic independent encoding of the 192/192 observed Steam source
+        # pattern, no copyrighted game bytes are committed to this test.
+        size_x, size_y = 12, 16
+        packed = bytearray((size_x * size_y * 2) // 8)
+        for x in range(size_x):
+            for y in range(size_y):
+                palette_id = 1 if (x in (0, 11) or y in (0, 15)) else 2
+                bit = (x * size_y + y) * 2
+                packed[bit // 8] |= palette_id << (6 - bit % 8)
+        palette = [0, 3072, 1024]
+        evidence = describe_native_packing(size_x, size_y, palette, bytes(packed))
+        self.assertTrue(evidence["decoded"])
+        self.assertFalse(evidence["nativeCodeBodyVerified"])
+        self.assertEqual(evidence["sampleBasedEncodingEvidence"], EVIDENCE)
+        actual = decode_window(size_x, size_y, palette, bytes(packed),
+                               0, 0, size_x, size_y)
+        self.assertEqual(actual[0], [3072] * size_x)
+        self.assertEqual(actual[1], [3072] + [1024] * 10 + [3072])
+        self.assertEqual(actual[-1], [3072] * size_x)
+        self.assertEqual(sum(1 for y in range(size_y) for x in range(size_x)
+                             if actual[y][x] == (3072 if x in (0, 11) or
+                                  y in (0, 15) else 1024)), 192)
+        self.assertEqual(floor_at(size_x, size_y, palette, bytes(packed),
+                                  5, 5), 1024)
+        with self.assertRaisesRegex(ValueError, "outside"):
+            floor_at(size_x, size_y, palette, bytes(packed), 12, 0)
+
+    def test_native_1bit_compaction_and_partial_byte_padding(self):
+        palette = [0, 1024]
+        packed = bytes((0b11111111, 0b10000000))  # nine cells, 7 padded bits
+        evidence = describe_native_packing(3, 3, palette, packed)
+        self.assertTrue(evidence["decoded"])
+        self.assertEqual(evidence["cellBits"], 1)
+        self.assertEqual(decode_window(3, 3, palette, packed, 0, 0, 3, 3),
+                         [[1024] * 3] * 3)
+        with self.assertRaisesRegex(ValueError, "padding"):
+            describe_native_packing(3, 3, palette, b"\\xff\\x81")
+        with self.assertRaisesRegex(ValueError, "length"):
+            describe_native_packing(3, 3, palette, b"\\xff")
+        with self.assertRaisesRegex(ValueError, "palette"):
+            describe_native_packing(2, 2, [0, 1024, 2048], b"\\xff")
+
+    def test_native_palette_3bit_or_higher_remains_explicitly_unresolved(self):
+        p = describe_native_packing(5, 5, [0, 1, 2, 3, 4], b"\\x00" * 25)
+        self.assertEqual(p["status"], "unresolved_palette_cardinality")
+        self.assertFalse(p["decoded"])
+        with self.assertRaisesRegex(ValueError, "unresolved"):
+            decode_window(5, 5, [0, 1, 2, 3, 4],
+                          b"\\x00" * 25, 0, 0, 2, 2)
+
     def test_native_grid_fixed32_palette_and_compacted_payload(self):
         palette = struct.pack("<III", 0, 3072, 1024)
         compacted = b"\x55" * 48
@@ -159,6 +211,9 @@ class NativeWireTests(unittest.TestCase):
         self.assertEqual(grid["nativeFloorTypePalette"], [0, 3072, 1024])
         self.assertEqual(base64.b64decode(grid["compactedFloorTypesBase64"]), compacted)
         self.assertEqual(grid["floorTypeEnumSymbols"]["1024"], "Floor")
+        self.assertTrue(grid["terrainDecoding"]["decoded"])
+        self.assertFalse(grid["terrainDecoding"]["nativeCodeBodyVerified"])
+        self.assertTrue(grid["nativeFloorIndexToLocalXYCorroborated"])
         self.assertFalse(grid["compactedBitOrderVerified"])
         self.assertFalse(grid["cellIndexToXYVerified"])
 
