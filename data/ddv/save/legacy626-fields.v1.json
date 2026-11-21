@@ -1,0 +1,1009 @@
+{
+  "schema": "wand.db05.legacy626-fields@1",
+  "source": "public_legacy_rust_code",
+  "evidenceStatus": "historical_parser_contract_not_current_save_verified",
+  "saveSchemaVersion": 626,
+  "readOnly": true,
+  "writerAuthorized": false,
+  "codecsNotReimplemented": true,
+  "buildScoping": "only listed exact legacy candidate builds; not current game attestation",
+  "fields": [
+    {
+      "domain": "appearance",
+      "path": "/Player/AvatarIsMale",
+      "type": "boolean",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/product_eyeball_color2.rs",
+      "constraint": "Saved active avatar branch flag; no inferred identity or entitlement",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "collection",
+      "path": "/Player/CollectionSets",
+      "type": "array",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs",
+      "constraint": "Legacy private Group readset",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "collection",
+      "path": "/Player/CollectionSets[]/CollectionDefinitionID",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs",
+      "constraint": "Positive i32; namespace 212 observed by scoped reader",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false,
+      "idReference": {
+        "namespace": "collection_definition",
+        "catalog": null,
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Not a Quest ID; DB-03 mapping unresolved"
+      }
+    },
+    {
+      "domain": "collection",
+      "path": "/Player/CollectionSets[]/GroupData",
+      "type": "array",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs",
+      "constraint": "Group structure; no completion/eligibility inferred",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "collection",
+      "path": "/Player/CollectionSets[]/GroupData[]/GroupIndex",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs",
+      "constraint": "Optional, equals physical position when present",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "collection",
+      "path": "/Player/CollectionSets[]/GroupData[]/GroupsCollectionItems",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs",
+      "constraint": "Item ID keyed map",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "collection",
+      "path": "/Player/CollectionSets[]/GroupData[]/GroupsCollectionItems/{itemId}",
+      "type": "boolean",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs",
+      "constraint": "Saved physical collection flag; no ownership/rights inference",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "map_key",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Legacy stored collection item ID; game eligibility/ownership cannot be inferred"
+      }
+    },
+    {
+      "domain": "collection",
+      "path": "/Player/CollectionSets[]/GroupData[]/State",
+      "type": "string|integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs",
+      "constraint": "Optional saved token; no enum string/numeric equivalence inferred",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "chests",
+      "path": "/Player/ContainerInventories",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs + product_switch626_chest.rs",
+      "constraint": "Container ID keyed map",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs + product_switch626_chest.rs",
+      "constraint": "Saved ID must match canonical map key",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}/BelongsToPlayer",
+      "type": "boolean",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs + product_switch626_chest.rs",
+      "constraint": "Legacy scoped editor requires true; does not prove entitlement",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}/ID",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs + product_switch626_chest.rs",
+      "constraint": "Nonzero u32",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}/Inventory",
+      "type": "array",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs + product_switch626_chest.rs",
+      "constraint": "Array of saved slots",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}/Inventory[]/Amount",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs + product_switch626_chest.rs",
+      "constraint": "Persisted existing Amount; historical exact Switch crop scoped path and Steam source path; no general Writer authorization",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}/Inventory[]/ItemID",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs + product_switch626_chest.rs",
+      "constraint": "Nonzero u32; exact ID join not yet proven for current source",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Legacy Steam626 chest slot item; current SRC01 coverage not guaranteed"
+      }
+    },
+    {
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}/ParentItemID",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs + product_switch626_chest.rs",
+      "constraint": "Positive u32; DB-01 relation unresolved",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Legacy Steam626 container parent item; current SRC01 coverage not guaranteed"
+      }
+    },
+    {
+      "domain": "chests",
+      "path": "/Player/ContainerInventories/{containerId}/Size",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs + product_switch626_chest.rs",
+      "constraint": "Legacy scoped paths: Steam size 1..256; exact Switch crop chest selection requires slot <48; not a generic cross-platform bound",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/FemaleAvatar",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
+      "constraint": "Legacy avatar readset, maximum 1 MiB branch in observer",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/FemaleAvatar/Clothes",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
+      "constraint": "Optional slot map; legacy bounded scan has maximum 18 slots",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/FemaleAvatar/Clothes/{slot}",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
+      "constraint": "Slot 0..17; saved 0 preserved as literal, positive clothing ID prefix 5",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Clothing item ID prefix 5; current SRC01 Clothing coverage unverified"
+      }
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/FemaleAvatar/ClothingCustomization",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
+      "constraint": "Optional Item ID keyed customization map, up to 256 entries",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/FemaleAvatar/ClothingCustomization/{itemId}",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
+      "constraint": "Positive canonical clothing ID key prefix 5; signed design scalar may be negative or zero",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "map_key",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Clothing item ID; saved design value is NOT an Item ID"
+      }
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/FemaleAvatar/Eyeball",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/product_eyeball_color2.rs",
+      "constraint": "Fixed Eyeball source reader; not an exhaustive avatar definition",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/FemaleAvatar/Eyeball/ColorIndex2",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/product_eyeball_color2.rs",
+      "constraint": "Historical fixed one-scalar source; no generic Writer grant",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/FemaleAvatar/Eyeball/EyeballItemID",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/product_eyeball_color2.rs",
+      "constraint": "Exact historical fixed operation tested ID 70000010; no generic ownership inference",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Eyeball prefix 7 not in SRC01 four extracted categories"
+      }
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/FemaleAvatar/HairColorIndex",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
+      "constraint": "Optional canonical signed i32; legacy palette candidate [0,90) only in exact hair operation",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/FemaleAvatar/HairHighlightColor",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
+      "constraint": "Optional canonical signed i32; observed field spelling is HairHighlightColor",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/FemaleAvatar/IncompatibleClothes",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
+      "constraint": "Optional incompatible-clothing slot map, not entitlement",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/FemaleAvatar/IncompatibleClothes/{slot}",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
+      "constraint": "Slot 0..17; saved 0 preserved, positive clothing ID prefix 5",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Clothing item ID prefix 5; current SRC01 Clothing coverage unverified"
+      }
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/FemaleAvatar/Makeup",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
+      "constraint": "Optional bounded makeup slot map, <=32 slots",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/FemaleAvatar/Makeup/{slot}/ColorIndex1",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/product_makeup_color1.rs",
+      "constraint": "Historical fixed-slot ColorIndex1 reader; not a generic palette or Writer grant",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/FemaleAvatar/Makeup/{slot}/MakeupItemID",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
+      "constraint": "Recorded makeup item ID positive with prefix 14; individual fixed-slot operations stricter",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Makeup item ID prefix 14 not in SRC01 four extracted categories"
+      }
+    },
+    {
+      "domain": "inventory",
+      "path": "/Player/ListInventories",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs + semantic_writer.rs",
+      "constraint": "Map of persisted inventory routes",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "inventory",
+      "path": "/Player/ListInventories/{routeId}",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs + semantic_writer.rs",
+      "constraint": "Canonical numeric key, saved ID must match route",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "inventory",
+      "path": "/Player/ListInventories/{routeId}/CompatibleItemType",
+      "type": "string",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs + semantic_writer.rs",
+      "constraint": "Exact saved ItemType token",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "inventory",
+      "path": "/Player/ListInventories/{routeId}/ID",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs + semantic_writer.rs",
+      "constraint": "u32; furniture catalog route may be 0",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "inventory",
+      "path": "/Player/ListInventories/{routeId}/Inventory",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs + semantic_writer.rs",
+      "constraint": "Item ID keyed object map",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "inventory",
+      "path": "/Player/ListInventories/{routeId}/Inventory/{itemId}",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs + semantic_writer.rs",
+      "constraint": "Canonical numeric Item ID key; DB-01 join unverified",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "map_key",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "SRC01 family partial; exact ID only"
+      }
+    },
+    {
+      "domain": "inventory",
+      "path": "/Player/ListInventories/{routeId}/Inventory/{itemId}/Amount",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/private_collection_read.rs + semantic_writer.rs",
+      "constraint": "Legacy stock reader requires nonnegative i32; Writer OFF",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/MaleAvatar",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
+      "constraint": "Legacy avatar readset, maximum 1 MiB branch in observer",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/MaleAvatar/Clothes",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
+      "constraint": "Optional slot map; legacy bounded scan has maximum 18 slots",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/MaleAvatar/Clothes/{slot}",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
+      "constraint": "Slot 0..17; saved 0 preserved as literal, positive clothing ID prefix 5",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Clothing item ID prefix 5; current SRC01 Clothing coverage unverified"
+      }
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/MaleAvatar/ClothingCustomization",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
+      "constraint": "Optional Item ID keyed customization map, up to 256 entries",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/MaleAvatar/ClothingCustomization/{itemId}",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
+      "constraint": "Positive canonical clothing ID key prefix 5; signed design scalar may be negative or zero",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "map_key",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Clothing item ID; saved design value is NOT an Item ID"
+      }
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/MaleAvatar/Eyeball",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/product_eyeball_color2.rs",
+      "constraint": "Fixed Eyeball source reader; not an exhaustive avatar definition",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/MaleAvatar/Eyeball/ColorIndex2",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/product_eyeball_color2.rs",
+      "constraint": "Historical fixed one-scalar source; no generic Writer grant",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/MaleAvatar/Eyeball/EyeballItemID",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/product_eyeball_color2.rs",
+      "constraint": "Exact historical fixed operation tested ID 70000010; no generic ownership inference",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Eyeball prefix 7 not in SRC01 four extracted categories"
+      }
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/MaleAvatar/HairColorIndex",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
+      "constraint": "Optional canonical signed i32; legacy palette candidate [0,90) only in exact hair operation",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/MaleAvatar/HairHighlightColor",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
+      "constraint": "Optional canonical signed i32; observed field spelling is HairHighlightColor",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/MaleAvatar/IncompatibleClothes",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
+      "constraint": "Optional incompatible-clothing slot map, not entitlement",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/MaleAvatar/IncompatibleClothes/{slot}",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
+      "constraint": "Slot 0..17; saved 0 preserved, positive clothing ID prefix 5",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Clothing item ID prefix 5; current SRC01 Clothing coverage unverified"
+      }
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/MaleAvatar/Makeup",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
+      "constraint": "Optional bounded makeup slot map, <=32 slots",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/MaleAvatar/Makeup/{slot}/ColorIndex1",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/product_makeup_color1.rs",
+      "constraint": "Historical fixed-slot ColorIndex1 reader; not a generic palette or Writer grant",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "appearance",
+      "path": "/Player/MaleAvatar/Makeup/{slot}/MakeupItemID",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626",
+        "switch-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/appearance_observer.rs",
+      "constraint": "Recorded makeup item ID positive with prefix 14; individual fixed-slot operations stricter",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false,
+      "idReference": {
+        "namespace": "item",
+        "catalog": "DB-01",
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Makeup item ID prefix 14 not in SRC01 four extracted categories"
+      }
+    },
+    {
+      "domain": "grids",
+      "path": "/World/GridCollection",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
+      "constraint": "Legacy exact Steam626 stored grid reference",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "grids",
+      "path": "/World/GridCollection/DiffGrids",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
+      "constraint": "Grid ID keyed map, maximum 50,000 in legacy reader",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "grids",
+      "path": "/World/GridCollection/DiffGrids/{gridId}",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
+      "constraint": "Canonical grid ID key",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "grids",
+      "path": "/World/GridCollection/DiffGrids/{gridId}/DefaultGridDataHashCode",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
+      "constraint": "Optional signed i32",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "grids",
+      "path": "/World/GridCollection/DiffGrids/{gridId}/DefaultGridHashCode",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
+      "constraint": "Optional signed i32",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "grids",
+      "path": "/World/GridCollection/DiffGrids/{gridId}/DefaultLayoutGridID",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
+      "constraint": "Optional; 0 remains literal, not a valid native reference",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "grids",
+      "path": "/World/GridCollection/DiffGrids/{gridId}/GridDefaultLayoutPath",
+      "type": "string",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
+      "constraint": "Optional unresolved external layout, max 4096 bytes in legacy reader",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "grids",
+      "path": "/World/GridCollection/DiffGrids/{gridId}/GridDefaultLayoutType",
+      "type": "string",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
+      "constraint": "Optional unresolved external layout, max 4096 bytes in legacy reader",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "grids",
+      "path": "/World/GridCollection/DiffGrids/{gridId}/ID",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
+      "constraint": "Unsigned safe integer, equals key",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false,
+      "idReference": {
+        "namespace": "grid",
+        "catalog": null,
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Grid ID is NOT verified to be DB-04 world ID"
+      }
+    },
+    {
+      "domain": "grids",
+      "path": "/World/GridCollection/DiffGrids/{gridId}/ModifiedObjects",
+      "type": "object",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
+      "constraint": "Optional ObjectID keyed map; <=16,384 IDs per grid in legacy reader",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    },
+    {
+      "domain": "grids",
+      "path": "/World/GridCollection/DiffGrids/{gridId}/ModifiedObjects/{objectId}/ID",
+      "type": "integer",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
+      "constraint": "Unsigned safe integer, equals key",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false,
+      "idReference": {
+        "namespace": "world_object",
+        "catalog": null,
+        "extraction": "value",
+        "join": "exact_numeric_only",
+        "currentCatalogCoverageVerified": false,
+        "status": "legacy_source_only",
+        "note": "Object ID; DB-04 stable ID closure unresolved"
+      }
+    },
+    {
+      "domain": "grids",
+      "path": "/World/GridCollection/DiffGrids/{gridId}/RemovedObjects",
+      "type": "array|object",
+      "builds": [
+        "steam-1.25.3-626"
+      ],
+      "source": "DreamwishWand/web/crates/ddv-save-core/src/saved_diffgrids_index.rs",
+      "constraint": "Optional stored removed IDs; dual shape; effective precedence unknown",
+      "observedStatus": "legacy_source_code_only",
+      "writable": false
+    }
+  ],
+  "mappingStatus": "legacy626_reference_positions_no_current_catalog_closure",
+  "catalogJoinValidated": false
+}
