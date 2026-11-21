@@ -5,1348 +5,1159 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-# SRC-04 source is packaged into this launcher. There are no runtime GitHub
-# requests for individual Python source files; stale branch Raw URLs cannot
-# strand the setup in the middle of installation.
+# ASCII-only PowerShell 5.1-compatible launcher. No UTF-8 BOM requirement:
+# all bundled source files are encoded as ASCII Base64 and restored as bytes.
+# No per-source runtime GitHub requests are performed.
 $install = Join-Path $env:LOCALAPPDATA 'DreamwishWand\SRC-04\code'
 $out = Join-Path $env:USERPROFILE 'Documents\DreamwishWand\SRC-04 MEDIA\Steam-v1.26.2'
 $game = 'C:\Program Files (x86)\Steam\steamapps\common\Disney Dreamlight Valley'
 New-Item -ItemType Directory -Path $install, $out -Force | Out-Null
 
-function Install-EmbeddedSource([string]$name, [string]$content) {
+function Install-EmbeddedSource([string]$name, [string]$encoded) {
     $path = Join-Path $install $name
     $temp = "$path.partial"
-    [System.IO.File]::WriteAllText($temp, $content, (New-Object System.Text.UTF8Encoding($false)))
-    if ((Get-Item -LiteralPath $temp).Length -lt 10) {
+    $bytes = [Convert]::FromBase64String(($encoded -replace '\s', ''))
+    if ($bytes.Length -lt 10) {
         throw "Embedded source is empty: $name"
     }
-    Move-Item -LiteralPath $temp -Destination $path -Force
+    try {
+        [IO.File]::WriteAllBytes($temp, $bytes)
+        Move-Item -LiteralPath $temp -Destination $path -Force
+    } finally {
+        Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
+    }
 }
 
 Write-Host 'SRC-04: installing pinned source bundle (offline; no additional GitHub downloads)...'
 
 $embedded = @'
-"""SRC-04 Steam 1.26.2 native-icon extraction.
-
-Uses SRC-01's hash-pinned parser and UnityPy. No game writes, no network upload,
-no publication, and no unverified name-based Item ID matching.
-"""
-import argparse
-import csv
-import importlib.util
-import json
-import re
-import sys
-from collections import defaultdict
-from pathlib import Path
-
-from media import digest, generate_variant, save_json
-
-GAME_DEFAULT = Path(r"C:\Program Files (x86)\Steam\steamapps\common\Disney Dreamlight Valley")
-OUT_DEFAULT = Path.home() / "Documents" / "DreamwishWand" / "SRC-04 MEDIA" / "Steam-v1.26.2"
-ICON_FOLDER = Path("ddv_Data/StreamingAssets/aa/win/ui-images-generatedicons_assets_assets")
-CATALOG_FOLDER = Path("ddv_Data/StreamingAssets/aa")
-GUID = re.compile(r"^guid:[0-9a-f]{32}$")
-GUID_TOKEN = re.compile(r"(?<![a-zA-Z0-9])(?:guid:)?([0-9a-f]{32})(?![a-zA-Z0-9])", re.I)
-SCHEMA = "wand.src04.steam-native@1"
-FULLVERSION_SHA256 = "e0aad8c7c19ebd3f441161db4d27f7838dd62b261927a974793f54fc0a81fc98"
-SRC00_FINGERPRINT = "374267a623c7f191d96f73f7f4240fe2a3d5a7349aa8e136537713b02a6cf09e"
-
-
-def load_bundle_pins():
-    index_file = Path(__file__).with_name("source-index-1262.csv")
-    if not index_file.is_file():
-        raise FileNotFoundError("Pinned SRC-00 1.26.2 bundle index is missing")
-    pins = {}
-    with index_file.open("r", encoding="utf-8", newline="") as stream:
-        for row in csv.DictReader(stream):
-            name, sha, size = row["bundle"], row["sha256"], int(row["bytes"])
-            if (name in pins or not name.endswith(".bundle") or
-                not re.fullmatch(r"[0-9a-f]{64}", sha) or size < 1):
-                raise ValueError("Invalid or duplicate SRC-00 bundle pin")
-            pins[name] = (sha, size)
-    if len(pins) != 40:
-        raise ValueError(f"SRC-00 icon index expected 40 bundles; got {len(pins)}")
-    return pins
-
-
-def steam_parser():
-    script_dir = Path(__file__).resolve().parent
-    candidates = [
-        script_dir / "steam1262.py",
-        script_dir.parent / "src-01-items" / "steam1262.py",
-    ]
-    for path in candidates:
-        if path.is_file():
-            spec = importlib.util.spec_from_file_location("wand_steam1262", path)
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            if module.GAME_VERSION != "1.26.2" or module.FULLVERSION_SHA256 != FULLVERSION_SHA256:
-                raise ValueError("Unrecognized SRC-01 decoder provenance")
-            return module
-    raise FileNotFoundError("Verified SRC-01 steam1262.py must be next to this script or in tools/src-01-items/")
-
-
-def verify_source(game, decoder):
-    if not game.is_dir() or game.is_symlink():
-        raise FileNotFoundError(f"Game directory is not accessible: {game}")
-    version = game / "FullVersion.txt"
-    if not version.is_file() or digest(version) != FULLVERSION_SHA256:
-        raise ValueError("Game version digest differs from verified Steam 1.26.2")
-    for name, (_, expected_sha) in decoder.CATEGORIES.items():
-        path = game / "ddv_Data" / "StreamingAssets" / "itemlist" / (name + ".json")
-        if not path.is_file() or path.is_symlink() or digest(path) != expected_sha:
-            raise ValueError(f"SRC-01 native itemlist differs from verified Steam 1.26.2: {name}")
-
-
-def read_items(game, output, decoder):
-    folder = output / "source-items"
-    items_file, manifest_file = folder / "items.jsonl", folder / "manifest.json"
-    if items_file.exists() and manifest_file.exists():
-        manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
-        if (manifest.get("schema") == decoder.SCHEMA and
-            manifest.get("gameVersion") == "1.26.2" and
-            manifest.get("itemsSha256") == digest(items_file)):
-            print("SRC-01 verified item cache reused", flush=True)
-        else:
-            raise ValueError("Existing SRC-01 cache has mismatched provenance. Delete it after review.")
-    else:
-        if items_file.exists() != manifest_file.exists():
-            raise ValueError("Incomplete SRC-01 cache. Inspect output/source-items before rerunning.")
-        decoder.run(game, folder)
-    result = defaultdict(list)
-    item_ids = set()
-    with items_file.open("r", encoding="utf-8") as stream:
-        for line in stream:
-            row = json.loads(line)
-            guid = row["iconGuid"]
-            item_id = str(row["itemId"])
-            if not GUID.fullmatch(guid) or item_id in item_ids:
-                raise ValueError("Unexpected SRC-01 GUID or duplicate Item ID")
-            item_ids.add(item_id)
-            result[guid[5:]].append(item_id)
-    if len(item_ids) != 13202:
-        raise ValueError(f"Unexpected SRC-01 row count: {len(item_ids)}")
-    return dict(result), digest(items_file)
-
-
-def catalog_probe(game, output, item_index):
-    base = game / CATALOG_FOLDER
-    catalog = base / "catalog.json"
-    info = {"schema": SCHEMA, "kind": "addressables_catalog_probe",
-            "catalog": CATALOG_FOLDER.joinpath("catalog.json").as_posix(),
-            "sourceSha256": None, "keys": [], "matchedGuidTokens": [],
-            "binaryParts": [], "publicationApproved": False}
-    if catalog.is_file():
-        info["sourceSha256"] = digest(catalog)
-        try:
-            doc = json.loads(catalog.read_text(encoding="utf-8-sig"))
-            info["keys"] = list(doc.keys()) if isinstance(doc, dict) else []
-            # Exact literal GUID tokens are observational evidence ONLY; an
-            # Addressables GUID-to-resource mapping requires a decoded location.
-            tokens = set(GUID_TOKEN.findall(catalog.read_text(encoding="utf-8-sig")))
-            info["matchedGuidTokens"] = sorted(g.lower() for g in tokens if g.lower() in item_index)[:100]
-            info["allGuidTokenCount"] = len(tokens)
-        except (OSError, UnicodeError, ValueError) as exc:
-            info["error"] = str(exc)[:200]
-    pattern = re.compile(rb"(?<![A-Za-z0-9])(?:guid:)?([0-9a-fA-F]{32})(?![A-Za-z0-9])")
-    for suffix in ["InternalIds", "bucketData", "entryData", "extraData", "keyData"]:
-        path = base / ("catalog." + suffix + ".bin")
-        if path.is_file():
-            raw = path.read_bytes()
-            samples = []
-            unique = set()
-            for match in pattern.finditer(raw):
-                value = match.group(1).decode("ascii").lower()
-                unique.add(value)
-                if value in item_index and len(samples) < 30:
-                    samples.append({
-                        "guid": "guid:" + value, "offset": match.start(),
-                        "before16Hex": raw[max(0, match.start() - 16):match.start()].hex(),
-                        "after16Hex": raw[match.end():match.end() + 16].hex()
-                    })
-            info["binaryParts"].append({
-                "file": path.relative_to(game).as_posix(),
-                "sha256": digest(path),
-                "bytes": len(raw), "first64Hex": raw[:64].hex(),
-                "literalGuidCount": len(unique),
-                "matchingItemGuidCount": len(unique & item_index.keys()),
-                "matchingItemGuidSamples": samples
-            })
-    save_json(output / "evidence" / "catalog-probe.json", info)
-
-
-def cached_outputs_ok(output, record, verify_existing=False, keep_originals=False):
-    if keep_originals and max(record.get("sourceWidth", 0), record.get("sourceHeight", 0)) > 512:
-        if "original" not in record.get("variants", {}):
-            return False
-    for variant in record.get("variants", {}).values():
-        candidate = output / variant["path"]
-        if not candidate.is_file() or candidate.stat().st_size != variant.get("bytes"):
-            return False
-        if verify_existing and digest(candidate) != variant.get("sha256"):
-            return False
-    return bool(record.get("variants"))
-
-
-def ref_of(obj):
-    asset_file = str(getattr(getattr(obj, "assets_file", None), "name", ""))
-    return (asset_file, str(obj.path_id))
-
-
-def container_paths(env):
-    result = defaultdict(list)
-    entries = getattr(env, "container", {})
-    try:
-        iterator = entries.items() if isinstance(entries, dict) else iter(entries)
-        for name, obj in iterator:
-            if isinstance(obj, (list, tuple)):
-                obj = obj[0] if obj else None
-            if obj is not None and hasattr(obj, "path_id"):
-                result[ref_of(obj)].append(str(name))
-    except (TypeError, ValueError, AttributeError):
-        pass
-    return result
-
-
-def exact_guids(strings, item_index):
-    # Paths and serialized asset names may contain native GUIDs. This is not
-    # fuzzy name similarity. Only exact 32-byte hex tokens joined to SRC-01 are used.
-    found = set()
-    for text in strings:
-        for raw in GUID_TOKEN.findall(text):
-            normalized = raw.lower()
-            if normalized in item_index:
-                found.add(normalized)
-    return sorted(found)
-
-
-def image_variants(image, output, key, old, keep_originals, verify_existing):
-    variants = {}
-    for label, size in (("thumbnail", 128), ("detail", 512)):
-        path = output / "images" / label / key[:2] / (key + ".webp")
-        previous = old.get(label, {})
-        meta, _ = generate_variant(image, size, path, previous, verify_existing)
-        meta["path"] = path.relative_to(output).as_posix()
-        variants[label] = meta
-    if keep_originals and max(image.size) > 512:
-        path = output / "images" / "original" / key[:2] / (key + ".png")
-        previous = old.get("original", {})
-        good = path.is_file() and previous.get("bytes") == path.stat().st_size
-        if good and verify_existing:
-            good = previous.get("sha256") == digest(path)
-        if not good:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            temp = path.with_suffix(".png.tmp")
-            image.save(temp, format="PNG")
-            temp.replace(path)
-        variants["original"] = {
-            "path": path.relative_to(output).as_posix(),
-            "sha256": digest(path),
-            "bytes": path.stat().st_size,
-            "width": image.width, "height": image.height
-        }
-    return variants
-
-
-def process_bundle(game, output, path, item_index, expected_sha, expected_bytes,
-                   keep_originals=False, verify_existing=False):
-    try:
-        import UnityPy
-    except ImportError as exc:
-        raise RuntimeError("Install UnityPy and Pillow before extraction.") from exc
-    relative = path.relative_to(game).as_posix()
-    if path.stat().st_size != expected_bytes:
-        raise ValueError(f"SRC-00 icon bundle byte size mismatch: {relative}")
-    content_sha = digest(path)
-    if content_sha != expected_sha:
-        raise ValueError(f"SRC-00 icon bundle digest mismatch: {relative}")
-    checkpoint = output / "bundles" / (content_sha + ".json")
-    old = json.loads(checkpoint.read_text(encoding="utf-8")) if checkpoint.is_file() else {}
-    if old.get("complete") and old.get("containerSha256") == content_sha and all(
-            cached_outputs_ok(output, image, verify_existing, keep_originals) for image in old.get("images", [])):
-        return old
-    old_by_asset = {row["assetId"]: row for row in old.get("images", [])}
-    records = []
-    issues = []
-    decoded = 0
-    env = UnityPy.load(str(path))
-    paths = container_paths(env)
-    # Sprite and Texture2D use UnityPy's native pixel decoder; no custom codec.
-    objects = env.objects.values() if isinstance(env.objects, dict) else env.objects
-    for obj in objects:
-        kind = obj.type.name
-        if kind not in {"Sprite", "Texture2D"}:
-            continue
-        asset_file, object_id = ref_of(obj)
-        native_id = f"unity:{content_sha}:{asset_file}:{object_id}:{kind}"
-        previous = old_by_asset.get(native_id)
-        if previous:
-            if cached_outputs_ok(output, previous, verify_existing, keep_originals):
-                records.append(previous)
-                continue
-        try:
-            data = obj.read()
-            image = data.image
-            if image is None:
-                raise ValueError("No decoded pixels")
-            image.load()
-            name = str(getattr(data, "m_Name", ""))
-            refs = sorted(set(paths.get((asset_file, object_id), [])))
-            guids = exact_guids([name] + refs, item_index)
-            # Multiple GUIDs can refer to one source image. We preserve
-            # all exact links; never substitute numeric Unity path_id as Item ID.
-            items = sorted({id for guid in guids for id in item_index[guid]}, key=int)
-            # PNG is the canonical decoded-pixel hash and avoids mixing input
-            # encoded bytes with derived-image hashes.
-            from io import BytesIO
-            buffer = BytesIO()
-            image.save(buffer, format="PNG")
-            source_sha = __import__("hashlib").sha256(buffer.getvalue()).hexdigest()
-            variants = image_variants(image, output, source_sha,
-                                      previous.get("variants", {}) if previous and
-                                      previous.get("decodedSha256") == source_sha else {},
-                                      keep_originals, verify_existing)
-            record = {
-                "assetId": native_id, "assetClass": kind, "assetName": name,
-                "unityPathId": object_id, "unityAssetsFile": asset_file,
-                "containerPaths": refs, "containerSha256": content_sha,
-                "containerPath": relative, "sourcePlatform": "Steam Windows",
-                "gameVersion": "1.26.2", "decodedSha256": source_sha,
-                "sourceWidth": image.width, "sourceHeight": image.height,
-                "exactGuids": guids, "itemIds": items,
-                "identityMethod": "exact_guid_in_serialized_name_or_bundle_container"
-                                  if guids else None,
-                "identityVerified": bool(guids), "variants": variants,
-                "publicationApproved": False
-            }
-            records.append(record)
-            decoded += 1
-            if max(image.size) < 128:
-                issues.append({"type": "under_128px", "assetId": native_id,
-                               "size": list(image.size)})
-            elif max(image.size) < 512:
-                issues.append({"type": "under_512px", "assetId": native_id,
-                               "size": list(image.size)})
-        except Exception as exc:
-            issues.append({"type": "decode_error", "assetId": native_id,
-                           "error": str(exc)[:300]})
-        if (len(records) + len(issues)) % 100 == 0:
-            save_json(checkpoint, {"schema": SCHEMA, "containerPath": relative,
-                      "containerSha256": content_sha, "complete": False,
-                      "images": records, "issues": issues, "publicationApproved": False})
-    info = {"schema": SCHEMA, "containerPath": relative, "containerSha256": content_sha,
-            "complete": True, "decodedNew": decoded, "images": records,
-            "issues": issues, "publicationApproved": False}
-    save_json(checkpoint, info)
-    return info
-
-
-def combined(output, item_index, items_sha, candidates, selected, checkpoints, error_details):
-    by_item = defaultdict(list)
-    by_guid = defaultdict(list)
-    all_images = []
-    all_issues = list(error_details)
-    for path in selected:
-        if path not in checkpoints:
-            continue
-        record = checkpoints[path]
-        if not record.get("complete") or record.get("containerPath") != path:
-            continue
-        for image in record.get("images", []):
-            all_images.append(image)
-            for item in image.get("itemIds", []):
-                by_item[item].append(image)
-            for guid in image.get("exactGuids", []):
-                by_guid[guid].append(image)
-        all_issues.extend(record.get("issues", []))
-    item_manifest = {}
-    ambiguous = {}
-    for item, images in by_item.items():
-        unique = {r["decodedSha256"] for r in images}
-        if len(unique) > 1:
-            ambiguous[item] = sorted(unique)
-            continue
-        first = images[0]
-        item_manifest[item] = {
-            "guid": first["exactGuids"], "assetId": first["assetId"],
-            "decodedSha256": first["decodedSha256"], "variants": first["variants"],
-            "sourceWidth": first["sourceWidth"], "sourceHeight": first["sourceHeight"],
-            "containerSha256": first["containerSha256"], "containerPath": first["containerPath"],
-            "sourcePlatform": "Steam Windows", "gameVersion": "1.26.2",
-            "evidence": first["identityMethod"], "publicationApproved": False
-        }
-    missed = sorted(set(item_index) - set(by_guid))
-    decoded_failures = sum(issue.get("type") == "decode_error" for issue in all_issues)
-    processing_complete = (len(selected) == len(candidates) and not error_details
-                           and decoded_failures == 0)
-    save_json(output / "manifest-native.json", {
-        "schema": SCHEMA, "gameVersion": "1.26.2", "platform": "Steam Windows",
-        "src01ItemsSha256": items_sha, "images": all_images, "items": item_manifest,
-        "publicationApproved": False,
-        "complete": processing_complete,
-        "identityCoverageComplete": not missed and not ambiguous,
-        "resolution": "exact_guid_only"
-    })
-    report = {
-        "schema": SCHEMA, "totalItems": sum(len(x) for x in item_index.values()),
-        "totalUniqueGuids": len(item_index), "extractedImages": len(all_images),
-        "matchedUniqueGuids": len(by_guid), "matchedItems": len(item_manifest),
-        "ambiguousItemIds": ambiguous, "unmatchedGuidCount": len(missed),
-        "unmatchedGuidSample": ["guid:" + g for g in missed[:200]],
-        "candidateBundleCount": len(candidates), "selectedBundles": selected,
-        "issues": all_issues, "publicationApproved": False,
-        "complete": processing_complete, "decodeFailures": decoded_failures,
-        "identityCoverageComplete": not missed and not ambiguous,
-        "sourceStatus": "verified_steam_1.26.2",
-        "guidResolutionStatus": "pending_catalog_mapping" if missed else "complete"
-    }
-    save_json(output / "report-native.json", report)
-    return report
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Steam 1.26.2 icon GUID native extraction; no upload")
-    parser.add_argument("--game", type=Path, default=GAME_DEFAULT)
-    parser.add_argument("--out", type=Path, default=OUT_DEFAULT)
-    parser.add_argument("--limit-bundles", type=int, default=2,
-                        help="Default two bundles for smoke test. Set to 0 for full 40-bundle batch.")
-    parser.add_argument("--keep-originals", action="store_true")
-    parser.add_argument("--verify-existing", action="store_true")
-    options = parser.parse_args()
-    game, output = options.game.resolve(), options.out.resolve()
-    if game == output or game in output.parents or output in game.parents:
-        parser.error("Input and output must be separate.")
-    try:
-        decoder = steam_parser()
-        verify_source(game, decoder)
-        index, items_sha = read_items(game, output, decoder)
-        catalog_probe(game, output, index)
-        folder = game / ICON_FOLDER
-        if not folder.is_dir():
-            raise FileNotFoundError(f"Native generated icons bundle folder not found: {folder}")
-        pins = load_bundle_pins()
-        candidates = sorted(p for p in folder.glob("*.bundle") if p.is_file() and not p.is_symlink())
-        if set(p.name for p in candidates) != set(pins):
-            raise ValueError("Steam icon bundle listing differs from verified SRC-00 index")
-        selected = candidates[:options.limit_bundles] if options.limit_bundles else candidates
-        errors = []
-        checkpoints = {}
-        for count, path in enumerate(selected, 1):
-            relative = path.relative_to(game).as_posix()
-            try:
-                expected_sha, expected_bytes = pins[path.name]
-                result = process_bundle(game, output, path, index, expected_sha, expected_bytes,
-                                        options.keep_originals, options.verify_existing)
-                checkpoints[relative] = result
-                print(f"[{count}/{len(selected)}] {path.name}: {len(result['images'])} images", flush=True)
-            except Exception as exc:
-                errors.append({"type": "bundle_error", "bundle": path.name, "error": str(exc)[:300]})
-                print(f"[{count}/{len(selected)}] failed: {path.name}: {exc}", file=sys.stderr, flush=True)
-        report = combined(output, index, items_sha,
-                          [p.relative_to(game).as_posix() for p in candidates],
-                          [p.relative_to(game).as_posix() for p in selected],
-                          checkpoints, errors)
-        report["src00DatasetFingerprint"] = SRC00_FINGERPRINT
-        save_json(output / "report-native.json", report)
-        print(json.dumps({key: report[key] for key in
-              ["candidateBundleCount", "extractedImages", "matchedItems",
-               "matchedUniqueGuids", "unmatchedGuidCount", "complete"]}))
-        return 1 if errors else 0
-    except (OSError, ValueError, RuntimeError) as exc:
-        parser.exit(2, f"SRC-04 error: {exc}\n")
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+IiIiU1JDLTA0IFN0ZWFtIDEuMjYuMiBuYXRpdmUtaWNvbiBleHRyYWN0aW9uLgoKVXNlcyBTUkMt
+MDEncyBoYXNoLXBpbm5lZCBwYXJzZXIgYW5kIFVuaXR5UHkuIE5vIGdhbWUgd3JpdGVzLCBubyBu
+ZXR3b3JrIHVwbG9hZCwKbm8gcHVibGljYXRpb24sIGFuZCBubyB1bnZlcmlmaWVkIG5hbWUtYmFz
+ZWQgSXRlbSBJRCBtYXRjaGluZy4KIiIiCmltcG9ydCBhcmdwYXJzZQppbXBvcnQgY3N2CmltcG9y
+dCBpbXBvcnRsaWIudXRpbAppbXBvcnQganNvbgppbXBvcnQgcmUKaW1wb3J0IHN5cwpmcm9tIGNv
+bGxlY3Rpb25zIGltcG9ydCBkZWZhdWx0ZGljdApmcm9tIHBhdGhsaWIgaW1wb3J0IFBhdGgKCmZy
+b20gbWVkaWEgaW1wb3J0IGRpZ2VzdCwgZ2VuZXJhdGVfdmFyaWFudCwgc2F2ZV9qc29uCgpHQU1F
+X0RFRkFVTFQgPSBQYXRoKHIiQzpcUHJvZ3JhbSBGaWxlcyAoeDg2KVxTdGVhbVxzdGVhbWFwcHNc
+Y29tbW9uXERpc25leSBEcmVhbWxpZ2h0IFZhbGxleSIpCk9VVF9ERUZBVUxUID0gUGF0aC5ob21l
+KCkgLyAiRG9jdW1lbnRzIiAvICJEcmVhbXdpc2hXYW5kIiAvICJTUkMtMDQgTUVESUEiIC8gIlN0
+ZWFtLXYxLjI2LjIiCklDT05fRk9MREVSID0gUGF0aCgiZGR2X0RhdGEvU3RyZWFtaW5nQXNzZXRz
+L2FhL3dpbi91aS1pbWFnZXMtZ2VuZXJhdGVkaWNvbnNfYXNzZXRzX2Fzc2V0cyIpCkNBVEFMT0df
+Rk9MREVSID0gUGF0aCgiZGR2X0RhdGEvU3RyZWFtaW5nQXNzZXRzL2FhIikKR1VJRCA9IHJlLmNv
+bXBpbGUociJeZ3VpZDpbMC05YS1mXXszMn0kIikKR1VJRF9UT0tFTiA9IHJlLmNvbXBpbGUociIo
+PzwhW2EtekEtWjAtOV0pKD86Z3VpZDopPyhbMC05YS1mXXszMn0pKD8hW2EtekEtWjAtOV0pIiwg
+cmUuSSkKU0NIRU1BID0gIndhbmQuc3JjMDQuc3RlYW0tbmF0aXZlQDEiCkZVTExWRVJTSU9OX1NI
+QTI1NiA9ICJlMGFhZDhjN2MxOWViZDNmNDQxMTYxZGI0ZDI3Zjc4MzhkZDYyYjI2MTkyN2E5NzQ3
+OTNmNTRmYzBhODFmYzk4IgpTUkMwMF9GSU5HRVJQUklOVCA9ICIzNzQyNjdhNjIzYzdmMTkxZDk2
+ZjczZjdmNDI0MGZlMmEzZDVhNzM0OWFhOGUxMzY1Mzc3MTNiMDJhNmNmMDllIgoKCmRlZiBsb2Fk
+X2J1bmRsZV9waW5zKCk6CiAgICBpbmRleF9maWxlID0gUGF0aChfX2ZpbGVfXykud2l0aF9uYW1l
+KCJzb3VyY2UtaW5kZXgtMTI2Mi5jc3YiKQogICAgaWYgbm90IGluZGV4X2ZpbGUuaXNfZmlsZSgp
+OgogICAgICAgIHJhaXNlIEZpbGVOb3RGb3VuZEVycm9yKCJQaW5uZWQgU1JDLTAwIDEuMjYuMiBi
+dW5kbGUgaW5kZXggaXMgbWlzc2luZyIpCiAgICBwaW5zID0ge30KICAgIHdpdGggaW5kZXhfZmls
+ZS5vcGVuKCJyIiwgZW5jb2Rpbmc9InV0Zi04IiwgbmV3bGluZT0iIikgYXMgc3RyZWFtOgogICAg
+ICAgIGZvciByb3cgaW4gY3N2LkRpY3RSZWFkZXIoc3RyZWFtKToKICAgICAgICAgICAgbmFtZSwg
+c2hhLCBzaXplID0gcm93WyJidW5kbGUiXSwgcm93WyJzaGEyNTYiXSwgaW50KHJvd1siYnl0ZXMi
+XSkKICAgICAgICAgICAgaWYgKG5hbWUgaW4gcGlucyBvciBub3QgbmFtZS5lbmRzd2l0aCgiLmJ1
+bmRsZSIpIG9yCiAgICAgICAgICAgICAgICBub3QgcmUuZnVsbG1hdGNoKHIiWzAtOWEtZl17NjR9
+Iiwgc2hhKSBvciBzaXplIDwgMSk6CiAgICAgICAgICAgICAgICByYWlzZSBWYWx1ZUVycm9yKCJJ
+bnZhbGlkIG9yIGR1cGxpY2F0ZSBTUkMtMDAgYnVuZGxlIHBpbiIpCiAgICAgICAgICAgIHBpbnNb
+bmFtZV0gPSAoc2hhLCBzaXplKQogICAgaWYgbGVuKHBpbnMpICE9IDQwOgogICAgICAgIHJhaXNl
+IFZhbHVlRXJyb3IoZiJTUkMtMDAgaWNvbiBpbmRleCBleHBlY3RlZCA0MCBidW5kbGVzOyBnb3Qg
+e2xlbihwaW5zKX0iKQogICAgcmV0dXJuIHBpbnMKCgpkZWYgc3RlYW1fcGFyc2VyKCk6CiAgICBz
+Y3JpcHRfZGlyID0gUGF0aChfX2ZpbGVfXykucmVzb2x2ZSgpLnBhcmVudAogICAgY2FuZGlkYXRl
+cyA9IFsKICAgICAgICBzY3JpcHRfZGlyIC8gInN0ZWFtMTI2Mi5weSIsCiAgICAgICAgc2NyaXB0
+X2Rpci5wYXJlbnQgLyAic3JjLTAxLWl0ZW1zIiAvICJzdGVhbTEyNjIucHkiLAogICAgXQogICAg
+Zm9yIHBhdGggaW4gY2FuZGlkYXRlczoKICAgICAgICBpZiBwYXRoLmlzX2ZpbGUoKToKICAgICAg
+ICAgICAgc3BlYyA9IGltcG9ydGxpYi51dGlsLnNwZWNfZnJvbV9maWxlX2xvY2F0aW9uKCJ3YW5k
+X3N0ZWFtMTI2MiIsIHBhdGgpCiAgICAgICAgICAgIG1vZHVsZSA9IGltcG9ydGxpYi51dGlsLm1v
+ZHVsZV9mcm9tX3NwZWMoc3BlYykKICAgICAgICAgICAgc3BlYy5sb2FkZXIuZXhlY19tb2R1bGUo
+bW9kdWxlKQogICAgICAgICAgICBpZiBtb2R1bGUuR0FNRV9WRVJTSU9OICE9ICIxLjI2LjIiIG9y
+IG1vZHVsZS5GVUxMVkVSU0lPTl9TSEEyNTYgIT0gRlVMTFZFUlNJT05fU0hBMjU2OgogICAgICAg
+ICAgICAgICAgcmFpc2UgVmFsdWVFcnJvcigiVW5yZWNvZ25pemVkIFNSQy0wMSBkZWNvZGVyIHBy
+b3ZlbmFuY2UiKQogICAgICAgICAgICByZXR1cm4gbW9kdWxlCiAgICByYWlzZSBGaWxlTm90Rm91
+bmRFcnJvcigiVmVyaWZpZWQgU1JDLTAxIHN0ZWFtMTI2Mi5weSBtdXN0IGJlIG5leHQgdG8gdGhp
+cyBzY3JpcHQgb3IgaW4gdG9vbHMvc3JjLTAxLWl0ZW1zLyIpCgoKZGVmIHZlcmlmeV9zb3VyY2Uo
+Z2FtZSwgZGVjb2Rlcik6CiAgICBpZiBub3QgZ2FtZS5pc19kaXIoKSBvciBnYW1lLmlzX3N5bWxp
+bmsoKToKICAgICAgICByYWlzZSBGaWxlTm90Rm91bmRFcnJvcihmIkdhbWUgZGlyZWN0b3J5IGlz
+IG5vdCBhY2Nlc3NpYmxlOiB7Z2FtZX0iKQogICAgdmVyc2lvbiA9IGdhbWUgLyAiRnVsbFZlcnNp
+b24udHh0IgogICAgaWYgbm90IHZlcnNpb24uaXNfZmlsZSgpIG9yIGRpZ2VzdCh2ZXJzaW9uKSAh
+PSBGVUxMVkVSU0lPTl9TSEEyNTY6CiAgICAgICAgcmFpc2UgVmFsdWVFcnJvcigiR2FtZSB2ZXJz
+aW9uIGRpZ2VzdCBkaWZmZXJzIGZyb20gdmVyaWZpZWQgU3RlYW0gMS4yNi4yIikKICAgIGZvciBu
+YW1lLCAoXywgZXhwZWN0ZWRfc2hhKSBpbiBkZWNvZGVyLkNBVEVHT1JJRVMuaXRlbXMoKToKICAg
+ICAgICBwYXRoID0gZ2FtZSAvICJkZHZfRGF0YSIgLyAiU3RyZWFtaW5nQXNzZXRzIiAvICJpdGVt
+bGlzdCIgLyAobmFtZSArICIuanNvbiIpCiAgICAgICAgaWYgbm90IHBhdGguaXNfZmlsZSgpIG9y
+IHBhdGguaXNfc3ltbGluaygpIG9yIGRpZ2VzdChwYXRoKSAhPSBleHBlY3RlZF9zaGE6CiAgICAg
+ICAgICAgIHJhaXNlIFZhbHVlRXJyb3IoZiJTUkMtMDEgbmF0aXZlIGl0ZW1saXN0IGRpZmZlcnMg
+ZnJvbSB2ZXJpZmllZCBTdGVhbSAxLjI2LjI6IHtuYW1lfSIpCgoKZGVmIHJlYWRfaXRlbXMoZ2Ft
+ZSwgb3V0cHV0LCBkZWNvZGVyKToKICAgIGZvbGRlciA9IG91dHB1dCAvICJzb3VyY2UtaXRlbXMi
+CiAgICBpdGVtc19maWxlLCBtYW5pZmVzdF9maWxlID0gZm9sZGVyIC8gIml0ZW1zLmpzb25sIiwg
+Zm9sZGVyIC8gIm1hbmlmZXN0Lmpzb24iCiAgICBpZiBpdGVtc19maWxlLmV4aXN0cygpIGFuZCBt
+YW5pZmVzdF9maWxlLmV4aXN0cygpOgogICAgICAgIG1hbmlmZXN0ID0ganNvbi5sb2FkcyhtYW5p
+ZmVzdF9maWxlLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKSkKICAgICAgICBpZiAobWFuaWZl
+c3QuZ2V0KCJzY2hlbWEiKSA9PSBkZWNvZGVyLlNDSEVNQSBhbmQKICAgICAgICAgICAgbWFuaWZl
+c3QuZ2V0KCJnYW1lVmVyc2lvbiIpID09ICIxLjI2LjIiIGFuZAogICAgICAgICAgICBtYW5pZmVz
+dC5nZXQoIml0ZW1zU2hhMjU2IikgPT0gZGlnZXN0KGl0ZW1zX2ZpbGUpKToKICAgICAgICAgICAg
+cHJpbnQoIlNSQy0wMSB2ZXJpZmllZCBpdGVtIGNhY2hlIHJldXNlZCIsIGZsdXNoPVRydWUpCiAg
+ICAgICAgZWxzZToKICAgICAgICAgICAgcmFpc2UgVmFsdWVFcnJvcigiRXhpc3RpbmcgU1JDLTAx
+IGNhY2hlIGhhcyBtaXNtYXRjaGVkIHByb3ZlbmFuY2UuIERlbGV0ZSBpdCBhZnRlciByZXZpZXcu
+IikKICAgIGVsc2U6CiAgICAgICAgaWYgaXRlbXNfZmlsZS5leGlzdHMoKSAhPSBtYW5pZmVzdF9m
+aWxlLmV4aXN0cygpOgogICAgICAgICAgICByYWlzZSBWYWx1ZUVycm9yKCJJbmNvbXBsZXRlIFNS
+Qy0wMSBjYWNoZS4gSW5zcGVjdCBvdXRwdXQvc291cmNlLWl0ZW1zIGJlZm9yZSByZXJ1bm5pbmcu
+IikKICAgICAgICBkZWNvZGVyLnJ1bihnYW1lLCBmb2xkZXIpCiAgICByZXN1bHQgPSBkZWZhdWx0
+ZGljdChsaXN0KQogICAgaXRlbV9pZHMgPSBzZXQoKQogICAgd2l0aCBpdGVtc19maWxlLm9wZW4o
+InIiLCBlbmNvZGluZz0idXRmLTgiKSBhcyBzdHJlYW06CiAgICAgICAgZm9yIGxpbmUgaW4gc3Ry
+ZWFtOgogICAgICAgICAgICByb3cgPSBqc29uLmxvYWRzKGxpbmUpCiAgICAgICAgICAgIGd1aWQg
+PSByb3dbImljb25HdWlkIl0KICAgICAgICAgICAgaXRlbV9pZCA9IHN0cihyb3dbIml0ZW1JZCJd
+KQogICAgICAgICAgICBpZiBub3QgR1VJRC5mdWxsbWF0Y2goZ3VpZCkgb3IgaXRlbV9pZCBpbiBp
+dGVtX2lkczoKICAgICAgICAgICAgICAgIHJhaXNlIFZhbHVlRXJyb3IoIlVuZXhwZWN0ZWQgU1JD
+LTAxIEdVSUQgb3IgZHVwbGljYXRlIEl0ZW0gSUQiKQogICAgICAgICAgICBpdGVtX2lkcy5hZGQo
+aXRlbV9pZCkKICAgICAgICAgICAgcmVzdWx0W2d1aWRbNTpdXS5hcHBlbmQoaXRlbV9pZCkKICAg
+IGlmIGxlbihpdGVtX2lkcykgIT0gMTMyMDI6CiAgICAgICAgcmFpc2UgVmFsdWVFcnJvcihmIlVu
+ZXhwZWN0ZWQgU1JDLTAxIHJvdyBjb3VudDoge2xlbihpdGVtX2lkcyl9IikKICAgIHJldHVybiBk
+aWN0KHJlc3VsdCksIGRpZ2VzdChpdGVtc19maWxlKQoKCmRlZiBjYXRhbG9nX3Byb2JlKGdhbWUs
+IG91dHB1dCwgaXRlbV9pbmRleCk6CiAgICBiYXNlID0gZ2FtZSAvIENBVEFMT0dfRk9MREVSCiAg
+ICBjYXRhbG9nID0gYmFzZSAvICJjYXRhbG9nLmpzb24iCiAgICBpbmZvID0geyJzY2hlbWEiOiBT
+Q0hFTUEsICJraW5kIjogImFkZHJlc3NhYmxlc19jYXRhbG9nX3Byb2JlIiwKICAgICAgICAgICAg
+ImNhdGFsb2ciOiBDQVRBTE9HX0ZPTERFUi5qb2lucGF0aCgiY2F0YWxvZy5qc29uIikuYXNfcG9z
+aXgoKSwKICAgICAgICAgICAgInNvdXJjZVNoYTI1NiI6IE5vbmUsICJrZXlzIjogW10sICJtYXRj
+aGVkR3VpZFRva2VucyI6IFtdLAogICAgICAgICAgICAiYmluYXJ5UGFydHMiOiBbXSwgInB1Ymxp
+Y2F0aW9uQXBwcm92ZWQiOiBGYWxzZX0KICAgIGlmIGNhdGFsb2cuaXNfZmlsZSgpOgogICAgICAg
+IGluZm9bInNvdXJjZVNoYTI1NiJdID0gZGlnZXN0KGNhdGFsb2cpCiAgICAgICAgdHJ5OgogICAg
+ICAgICAgICBkb2MgPSBqc29uLmxvYWRzKGNhdGFsb2cucmVhZF90ZXh0KGVuY29kaW5nPSJ1dGYt
+OC1zaWciKSkKICAgICAgICAgICAgaW5mb1sia2V5cyJdID0gbGlzdChkb2Mua2V5cygpKSBpZiBp
+c2luc3RhbmNlKGRvYywgZGljdCkgZWxzZSBbXQogICAgICAgICAgICAjIEV4YWN0IGxpdGVyYWwg
+R1VJRCB0b2tlbnMgYXJlIG9ic2VydmF0aW9uYWwgZXZpZGVuY2UgT05MWTsgYW4KICAgICAgICAg
+ICAgIyBBZGRyZXNzYWJsZXMgR1VJRC10by1yZXNvdXJjZSBtYXBwaW5nIHJlcXVpcmVzIGEgZGVj
+b2RlZCBsb2NhdGlvbi4KICAgICAgICAgICAgdG9rZW5zID0gc2V0KEdVSURfVE9LRU4uZmluZGFs
+bChjYXRhbG9nLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgtc2lnIikpKQogICAgICAgICAgICBp
+bmZvWyJtYXRjaGVkR3VpZFRva2VucyJdID0gc29ydGVkKGcubG93ZXIoKSBmb3IgZyBpbiB0b2tl
+bnMgaWYgZy5sb3dlcigpIGluIGl0ZW1faW5kZXgpWzoxMDBdCiAgICAgICAgICAgIGluZm9bImFs
+bEd1aWRUb2tlbkNvdW50Il0gPSBsZW4odG9rZW5zKQogICAgICAgIGV4Y2VwdCAoT1NFcnJvciwg
+VW5pY29kZUVycm9yLCBWYWx1ZUVycm9yKSBhcyBleGM6CiAgICAgICAgICAgIGluZm9bImVycm9y
+Il0gPSBzdHIoZXhjKVs6MjAwXQogICAgcGF0dGVybiA9IHJlLmNvbXBpbGUocmIiKD88IVtBLVph
+LXowLTldKSg/Omd1aWQ6KT8oWzAtOWEtZkEtRl17MzJ9KSg/IVtBLVphLXowLTldKSIpCiAgICBm
+b3Igc3VmZml4IGluIFsiSW50ZXJuYWxJZHMiLCAiYnVja2V0RGF0YSIsICJlbnRyeURhdGEiLCAi
+ZXh0cmFEYXRhIiwgImtleURhdGEiXToKICAgICAgICBwYXRoID0gYmFzZSAvICgiY2F0YWxvZy4i
+ICsgc3VmZml4ICsgIi5iaW4iKQogICAgICAgIGlmIHBhdGguaXNfZmlsZSgpOgogICAgICAgICAg
+ICByYXcgPSBwYXRoLnJlYWRfYnl0ZXMoKQogICAgICAgICAgICBzYW1wbGVzID0gW10KICAgICAg
+ICAgICAgdW5pcXVlID0gc2V0KCkKICAgICAgICAgICAgZm9yIG1hdGNoIGluIHBhdHRlcm4uZmlu
+ZGl0ZXIocmF3KToKICAgICAgICAgICAgICAgIHZhbHVlID0gbWF0Y2guZ3JvdXAoMSkuZGVjb2Rl
+KCJhc2NpaSIpLmxvd2VyKCkKICAgICAgICAgICAgICAgIHVuaXF1ZS5hZGQodmFsdWUpCiAgICAg
+ICAgICAgICAgICBpZiB2YWx1ZSBpbiBpdGVtX2luZGV4IGFuZCBsZW4oc2FtcGxlcykgPCAzMDoK
+ICAgICAgICAgICAgICAgICAgICBzYW1wbGVzLmFwcGVuZCh7CiAgICAgICAgICAgICAgICAgICAg
+ICAgICJndWlkIjogImd1aWQ6IiArIHZhbHVlLCAib2Zmc2V0IjogbWF0Y2guc3RhcnQoKSwKICAg
+ICAgICAgICAgICAgICAgICAgICAgImJlZm9yZTE2SGV4IjogcmF3W21heCgwLCBtYXRjaC5zdGFy
+dCgpIC0gMTYpOm1hdGNoLnN0YXJ0KCldLmhleCgpLAogICAgICAgICAgICAgICAgICAgICAgICAi
+YWZ0ZXIxNkhleCI6IHJhd1ttYXRjaC5lbmQoKTptYXRjaC5lbmQoKSArIDE2XS5oZXgoKQogICAg
+ICAgICAgICAgICAgICAgIH0pCiAgICAgICAgICAgIGluZm9bImJpbmFyeVBhcnRzIl0uYXBwZW5k
+KHsKICAgICAgICAgICAgICAgICJmaWxlIjogcGF0aC5yZWxhdGl2ZV90byhnYW1lKS5hc19wb3Np
+eCgpLAogICAgICAgICAgICAgICAgInNoYTI1NiI6IGRpZ2VzdChwYXRoKSwKICAgICAgICAgICAg
+ICAgICJieXRlcyI6IGxlbihyYXcpLCAiZmlyc3Q2NEhleCI6IHJhd1s6NjRdLmhleCgpLAogICAg
+ICAgICAgICAgICAgImxpdGVyYWxHdWlkQ291bnQiOiBsZW4odW5pcXVlKSwKICAgICAgICAgICAg
+ICAgICJtYXRjaGluZ0l0ZW1HdWlkQ291bnQiOiBsZW4odW5pcXVlICYgaXRlbV9pbmRleC5rZXlz
+KCkpLAogICAgICAgICAgICAgICAgIm1hdGNoaW5nSXRlbUd1aWRTYW1wbGVzIjogc2FtcGxlcwog
+ICAgICAgICAgICB9KQogICAgc2F2ZV9qc29uKG91dHB1dCAvICJldmlkZW5jZSIgLyAiY2F0YWxv
+Zy1wcm9iZS5qc29uIiwgaW5mbykKCgpkZWYgY2FjaGVkX291dHB1dHNfb2sob3V0cHV0LCByZWNv
+cmQsIHZlcmlmeV9leGlzdGluZz1GYWxzZSwga2VlcF9vcmlnaW5hbHM9RmFsc2UpOgogICAgaWYg
+a2VlcF9vcmlnaW5hbHMgYW5kIG1heChyZWNvcmQuZ2V0KCJzb3VyY2VXaWR0aCIsIDApLCByZWNv
+cmQuZ2V0KCJzb3VyY2VIZWlnaHQiLCAwKSkgPiA1MTI6CiAgICAgICAgaWYgIm9yaWdpbmFsIiBu
+b3QgaW4gcmVjb3JkLmdldCgidmFyaWFudHMiLCB7fSk6CiAgICAgICAgICAgIHJldHVybiBGYWxz
+ZQogICAgZm9yIHZhcmlhbnQgaW4gcmVjb3JkLmdldCgidmFyaWFudHMiLCB7fSkudmFsdWVzKCk6
+CiAgICAgICAgY2FuZGlkYXRlID0gb3V0cHV0IC8gdmFyaWFudFsicGF0aCJdCiAgICAgICAgaWYg
+bm90IGNhbmRpZGF0ZS5pc19maWxlKCkgb3IgY2FuZGlkYXRlLnN0YXQoKS5zdF9zaXplICE9IHZh
+cmlhbnQuZ2V0KCJieXRlcyIpOgogICAgICAgICAgICByZXR1cm4gRmFsc2UKICAgICAgICBpZiB2
+ZXJpZnlfZXhpc3RpbmcgYW5kIGRpZ2VzdChjYW5kaWRhdGUpICE9IHZhcmlhbnQuZ2V0KCJzaGEy
+NTYiKToKICAgICAgICAgICAgcmV0dXJuIEZhbHNlCiAgICByZXR1cm4gYm9vbChyZWNvcmQuZ2V0
+KCJ2YXJpYW50cyIpKQoKCmRlZiByZWZfb2Yob2JqKToKICAgIGFzc2V0X2ZpbGUgPSBzdHIoZ2V0
+YXR0cihnZXRhdHRyKG9iaiwgImFzc2V0c19maWxlIiwgTm9uZSksICJuYW1lIiwgIiIpKQogICAg
+cmV0dXJuIChhc3NldF9maWxlLCBzdHIob2JqLnBhdGhfaWQpKQoKCmRlZiBjb250YWluZXJfcGF0
+aHMoZW52KToKICAgIHJlc3VsdCA9IGRlZmF1bHRkaWN0KGxpc3QpCiAgICBlbnRyaWVzID0gZ2V0
+YXR0cihlbnYsICJjb250YWluZXIiLCB7fSkKICAgIHRyeToKICAgICAgICBpdGVyYXRvciA9IGVu
+dHJpZXMuaXRlbXMoKSBpZiBpc2luc3RhbmNlKGVudHJpZXMsIGRpY3QpIGVsc2UgaXRlcihlbnRy
+aWVzKQogICAgICAgIGZvciBuYW1lLCBvYmogaW4gaXRlcmF0b3I6CiAgICAgICAgICAgIGlmIGlz
+aW5zdGFuY2Uob2JqLCAobGlzdCwgdHVwbGUpKToKICAgICAgICAgICAgICAgIG9iaiA9IG9ialsw
+XSBpZiBvYmogZWxzZSBOb25lCiAgICAgICAgICAgIGlmIG9iaiBpcyBub3QgTm9uZSBhbmQgaGFz
+YXR0cihvYmosICJwYXRoX2lkIik6CiAgICAgICAgICAgICAgICByZXN1bHRbcmVmX29mKG9iaild
+LmFwcGVuZChzdHIobmFtZSkpCiAgICBleGNlcHQgKFR5cGVFcnJvciwgVmFsdWVFcnJvciwgQXR0
+cmlidXRlRXJyb3IpOgogICAgICAgIHBhc3MKICAgIHJldHVybiByZXN1bHQKCgpkZWYgZXhhY3Rf
+Z3VpZHMoc3RyaW5ncywgaXRlbV9pbmRleCk6CiAgICAjIFBhdGhzIGFuZCBzZXJpYWxpemVkIGFz
+c2V0IG5hbWVzIG1heSBjb250YWluIG5hdGl2ZSBHVUlEcy4gVGhpcyBpcyBub3QKICAgICMgZnV6
+enkgbmFtZSBzaW1pbGFyaXR5LiBPbmx5IGV4YWN0IDMyLWJ5dGUgaGV4IHRva2VucyBqb2luZWQg
+dG8gU1JDLTAxIGFyZSB1c2VkLgogICAgZm91bmQgPSBzZXQoKQogICAgZm9yIHRleHQgaW4gc3Ry
+aW5nczoKICAgICAgICBmb3IgcmF3IGluIEdVSURfVE9LRU4uZmluZGFsbCh0ZXh0KToKICAgICAg
+ICAgICAgbm9ybWFsaXplZCA9IHJhdy5sb3dlcigpCiAgICAgICAgICAgIGlmIG5vcm1hbGl6ZWQg
+aW4gaXRlbV9pbmRleDoKICAgICAgICAgICAgICAgIGZvdW5kLmFkZChub3JtYWxpemVkKQogICAg
+cmV0dXJuIHNvcnRlZChmb3VuZCkKCgpkZWYgaW1hZ2VfdmFyaWFudHMoaW1hZ2UsIG91dHB1dCwg
+a2V5LCBvbGQsIGtlZXBfb3JpZ2luYWxzLCB2ZXJpZnlfZXhpc3RpbmcpOgogICAgdmFyaWFudHMg
+PSB7fQogICAgZm9yIGxhYmVsLCBzaXplIGluICgoInRodW1ibmFpbCIsIDEyOCksICgiZGV0YWls
+IiwgNTEyKSk6CiAgICAgICAgcGF0aCA9IG91dHB1dCAvICJpbWFnZXMiIC8gbGFiZWwgLyBrZXlb
+OjJdIC8gKGtleSArICIud2VicCIpCiAgICAgICAgcHJldmlvdXMgPSBvbGQuZ2V0KGxhYmVsLCB7
+fSkKICAgICAgICBtZXRhLCBfID0gZ2VuZXJhdGVfdmFyaWFudChpbWFnZSwgc2l6ZSwgcGF0aCwg
+cHJldmlvdXMsIHZlcmlmeV9leGlzdGluZykKICAgICAgICBtZXRhWyJwYXRoIl0gPSBwYXRoLnJl
+bGF0aXZlX3RvKG91dHB1dCkuYXNfcG9zaXgoKQogICAgICAgIHZhcmlhbnRzW2xhYmVsXSA9IG1l
+dGEKICAgIGlmIGtlZXBfb3JpZ2luYWxzIGFuZCBtYXgoaW1hZ2Uuc2l6ZSkgPiA1MTI6CiAgICAg
+ICAgcGF0aCA9IG91dHB1dCAvICJpbWFnZXMiIC8gIm9yaWdpbmFsIiAvIGtleVs6Ml0gLyAoa2V5
+ICsgIi5wbmciKQogICAgICAgIHByZXZpb3VzID0gb2xkLmdldCgib3JpZ2luYWwiLCB7fSkKICAg
+ICAgICBnb29kID0gcGF0aC5pc19maWxlKCkgYW5kIHByZXZpb3VzLmdldCgiYnl0ZXMiKSA9PSBw
+YXRoLnN0YXQoKS5zdF9zaXplCiAgICAgICAgaWYgZ29vZCBhbmQgdmVyaWZ5X2V4aXN0aW5nOgog
+ICAgICAgICAgICBnb29kID0gcHJldmlvdXMuZ2V0KCJzaGEyNTYiKSA9PSBkaWdlc3QocGF0aCkK
+ICAgICAgICBpZiBub3QgZ29vZDoKICAgICAgICAgICAgcGF0aC5wYXJlbnQubWtkaXIocGFyZW50
+cz1UcnVlLCBleGlzdF9vaz1UcnVlKQogICAgICAgICAgICB0ZW1wID0gcGF0aC53aXRoX3N1ZmZp
+eCgiLnBuZy50bXAiKQogICAgICAgICAgICBpbWFnZS5zYXZlKHRlbXAsIGZvcm1hdD0iUE5HIikK
+ICAgICAgICAgICAgdGVtcC5yZXBsYWNlKHBhdGgpCiAgICAgICAgdmFyaWFudHNbIm9yaWdpbmFs
+Il0gPSB7CiAgICAgICAgICAgICJwYXRoIjogcGF0aC5yZWxhdGl2ZV90byhvdXRwdXQpLmFzX3Bv
+c2l4KCksCiAgICAgICAgICAgICJzaGEyNTYiOiBkaWdlc3QocGF0aCksCiAgICAgICAgICAgICJi
+eXRlcyI6IHBhdGguc3RhdCgpLnN0X3NpemUsCiAgICAgICAgICAgICJ3aWR0aCI6IGltYWdlLndp
+ZHRoLCAiaGVpZ2h0IjogaW1hZ2UuaGVpZ2h0CiAgICAgICAgfQogICAgcmV0dXJuIHZhcmlhbnRz
+CgoKZGVmIHByb2Nlc3NfYnVuZGxlKGdhbWUsIG91dHB1dCwgcGF0aCwgaXRlbV9pbmRleCwgZXhw
+ZWN0ZWRfc2hhLCBleHBlY3RlZF9ieXRlcywKICAgICAgICAgICAgICAgICAgIGtlZXBfb3JpZ2lu
+YWxzPUZhbHNlLCB2ZXJpZnlfZXhpc3Rpbmc9RmFsc2UpOgogICAgdHJ5OgogICAgICAgIGltcG9y
+dCBVbml0eVB5CiAgICBleGNlcHQgSW1wb3J0RXJyb3IgYXMgZXhjOgogICAgICAgIHJhaXNlIFJ1
+bnRpbWVFcnJvcigiSW5zdGFsbCBVbml0eVB5IGFuZCBQaWxsb3cgYmVmb3JlIGV4dHJhY3Rpb24u
+IikgZnJvbSBleGMKICAgIHJlbGF0aXZlID0gcGF0aC5yZWxhdGl2ZV90byhnYW1lKS5hc19wb3Np
+eCgpCiAgICBpZiBwYXRoLnN0YXQoKS5zdF9zaXplICE9IGV4cGVjdGVkX2J5dGVzOgogICAgICAg
+IHJhaXNlIFZhbHVlRXJyb3IoZiJTUkMtMDAgaWNvbiBidW5kbGUgYnl0ZSBzaXplIG1pc21hdGNo
+OiB7cmVsYXRpdmV9IikKICAgIGNvbnRlbnRfc2hhID0gZGlnZXN0KHBhdGgpCiAgICBpZiBjb250
+ZW50X3NoYSAhPSBleHBlY3RlZF9zaGE6CiAgICAgICAgcmFpc2UgVmFsdWVFcnJvcihmIlNSQy0w
+MCBpY29uIGJ1bmRsZSBkaWdlc3QgbWlzbWF0Y2g6IHtyZWxhdGl2ZX0iKQogICAgY2hlY2twb2lu
+dCA9IG91dHB1dCAvICJidW5kbGVzIiAvIChjb250ZW50X3NoYSArICIuanNvbiIpCiAgICBvbGQg
+PSBqc29uLmxvYWRzKGNoZWNrcG9pbnQucmVhZF90ZXh0KGVuY29kaW5nPSJ1dGYtOCIpKSBpZiBj
+aGVja3BvaW50LmlzX2ZpbGUoKSBlbHNlIHt9CiAgICBpZiBvbGQuZ2V0KCJjb21wbGV0ZSIpIGFu
+ZCBvbGQuZ2V0KCJjb250YWluZXJTaGEyNTYiKSA9PSBjb250ZW50X3NoYSBhbmQgYWxsKAogICAg
+ICAgICAgICBjYWNoZWRfb3V0cHV0c19vayhvdXRwdXQsIGltYWdlLCB2ZXJpZnlfZXhpc3Rpbmcs
+IGtlZXBfb3JpZ2luYWxzKSBmb3IgaW1hZ2UgaW4gb2xkLmdldCgiaW1hZ2VzIiwgW10pKToKICAg
+ICAgICByZXR1cm4gb2xkCiAgICBvbGRfYnlfYXNzZXQgPSB7cm93WyJhc3NldElkIl06IHJvdyBm
+b3Igcm93IGluIG9sZC5nZXQoImltYWdlcyIsIFtdKX0KICAgIHJlY29yZHMgPSBbXQogICAgaXNz
+dWVzID0gW10KICAgIGRlY29kZWQgPSAwCiAgICBlbnYgPSBVbml0eVB5LmxvYWQoc3RyKHBhdGgp
+KQogICAgcGF0aHMgPSBjb250YWluZXJfcGF0aHMoZW52KQogICAgIyBTcHJpdGUgYW5kIFRleHR1
+cmUyRCB1c2UgVW5pdHlQeSdzIG5hdGl2ZSBwaXhlbCBkZWNvZGVyOyBubyBjdXN0b20gY29kZWMu
+CiAgICBvYmplY3RzID0gZW52Lm9iamVjdHMudmFsdWVzKCkgaWYgaXNpbnN0YW5jZShlbnYub2Jq
+ZWN0cywgZGljdCkgZWxzZSBlbnYub2JqZWN0cwogICAgZm9yIG9iaiBpbiBvYmplY3RzOgogICAg
+ICAgIGtpbmQgPSBvYmoudHlwZS5uYW1lCiAgICAgICAgaWYga2luZCBub3QgaW4geyJTcHJpdGUi
+LCAiVGV4dHVyZTJEIn06CiAgICAgICAgICAgIGNvbnRpbnVlCiAgICAgICAgYXNzZXRfZmlsZSwg
+b2JqZWN0X2lkID0gcmVmX29mKG9iaikKICAgICAgICBuYXRpdmVfaWQgPSBmInVuaXR5Ontjb250
+ZW50X3NoYX06e2Fzc2V0X2ZpbGV9OntvYmplY3RfaWR9OntraW5kfSIKICAgICAgICBwcmV2aW91
+cyA9IG9sZF9ieV9hc3NldC5nZXQobmF0aXZlX2lkKQogICAgICAgIGlmIHByZXZpb3VzOgogICAg
+ICAgICAgICBpZiBjYWNoZWRfb3V0cHV0c19vayhvdXRwdXQsIHByZXZpb3VzLCB2ZXJpZnlfZXhp
+c3RpbmcsIGtlZXBfb3JpZ2luYWxzKToKICAgICAgICAgICAgICAgIHJlY29yZHMuYXBwZW5kKHBy
+ZXZpb3VzKQogICAgICAgICAgICAgICAgY29udGludWUKICAgICAgICB0cnk6CiAgICAgICAgICAg
+IGRhdGEgPSBvYmoucmVhZCgpCiAgICAgICAgICAgIGltYWdlID0gZGF0YS5pbWFnZQogICAgICAg
+ICAgICBpZiBpbWFnZSBpcyBOb25lOgogICAgICAgICAgICAgICAgcmFpc2UgVmFsdWVFcnJvcigi
+Tm8gZGVjb2RlZCBwaXhlbHMiKQogICAgICAgICAgICBpbWFnZS5sb2FkKCkKICAgICAgICAgICAg
+bmFtZSA9IHN0cihnZXRhdHRyKGRhdGEsICJtX05hbWUiLCAiIikpCiAgICAgICAgICAgIHJlZnMg
+PSBzb3J0ZWQoc2V0KHBhdGhzLmdldCgoYXNzZXRfZmlsZSwgb2JqZWN0X2lkKSwgW10pKSkKICAg
+ICAgICAgICAgZ3VpZHMgPSBleGFjdF9ndWlkcyhbbmFtZV0gKyByZWZzLCBpdGVtX2luZGV4KQog
+ICAgICAgICAgICAjIE11bHRpcGxlIEdVSURzIGNhbiByZWZlciB0byBvbmUgc291cmNlIGltYWdl
+LiBXZSBwcmVzZXJ2ZQogICAgICAgICAgICAjIGFsbCBleGFjdCBsaW5rczsgbmV2ZXIgc3Vic3Rp
+dHV0ZSBudW1lcmljIFVuaXR5IHBhdGhfaWQgYXMgSXRlbSBJRC4KICAgICAgICAgICAgaXRlbXMg
+PSBzb3J0ZWQoe2lkIGZvciBndWlkIGluIGd1aWRzIGZvciBpZCBpbiBpdGVtX2luZGV4W2d1aWRd
+fSwga2V5PWludCkKICAgICAgICAgICAgIyBQTkcgaXMgdGhlIGNhbm9uaWNhbCBkZWNvZGVkLXBp
+eGVsIGhhc2ggYW5kIGF2b2lkcyBtaXhpbmcgaW5wdXQKICAgICAgICAgICAgIyBlbmNvZGVkIGJ5
+dGVzIHdpdGggZGVyaXZlZC1pbWFnZSBoYXNoZXMuCiAgICAgICAgICAgIGZyb20gaW8gaW1wb3J0
+IEJ5dGVzSU8KICAgICAgICAgICAgYnVmZmVyID0gQnl0ZXNJTygpCiAgICAgICAgICAgIGltYWdl
+LnNhdmUoYnVmZmVyLCBmb3JtYXQ9IlBORyIpCiAgICAgICAgICAgIHNvdXJjZV9zaGEgPSBfX2lt
+cG9ydF9fKCJoYXNobGliIikuc2hhMjU2KGJ1ZmZlci5nZXR2YWx1ZSgpKS5oZXhkaWdlc3QoKQog
+ICAgICAgICAgICB2YXJpYW50cyA9IGltYWdlX3ZhcmlhbnRzKGltYWdlLCBvdXRwdXQsIHNvdXJj
+ZV9zaGEsCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgcHJldmlvdXMuZ2V0
+KCJ2YXJpYW50cyIsIHt9KSBpZiBwcmV2aW91cyBhbmQKICAgICAgICAgICAgICAgICAgICAgICAg
+ICAgICAgICAgICAgICBwcmV2aW91cy5nZXQoImRlY29kZWRTaGEyNTYiKSA9PSBzb3VyY2Vfc2hh
+IGVsc2Uge30sCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAga2VlcF9vcmln
+aW5hbHMsIHZlcmlmeV9leGlzdGluZykKICAgICAgICAgICAgcmVjb3JkID0gewogICAgICAgICAg
+ICAgICAgImFzc2V0SWQiOiBuYXRpdmVfaWQsICJhc3NldENsYXNzIjoga2luZCwgImFzc2V0TmFt
+ZSI6IG5hbWUsCiAgICAgICAgICAgICAgICAidW5pdHlQYXRoSWQiOiBvYmplY3RfaWQsICJ1bml0
+eUFzc2V0c0ZpbGUiOiBhc3NldF9maWxlLAogICAgICAgICAgICAgICAgImNvbnRhaW5lclBhdGhz
+IjogcmVmcywgImNvbnRhaW5lclNoYTI1NiI6IGNvbnRlbnRfc2hhLAogICAgICAgICAgICAgICAg
+ImNvbnRhaW5lclBhdGgiOiByZWxhdGl2ZSwgInNvdXJjZVBsYXRmb3JtIjogIlN0ZWFtIFdpbmRv
+d3MiLAogICAgICAgICAgICAgICAgImdhbWVWZXJzaW9uIjogIjEuMjYuMiIsICJkZWNvZGVkU2hh
+MjU2Ijogc291cmNlX3NoYSwKICAgICAgICAgICAgICAgICJzb3VyY2VXaWR0aCI6IGltYWdlLndp
+ZHRoLCAic291cmNlSGVpZ2h0IjogaW1hZ2UuaGVpZ2h0LAogICAgICAgICAgICAgICAgImV4YWN0
+R3VpZHMiOiBndWlkcywgIml0ZW1JZHMiOiBpdGVtcywKICAgICAgICAgICAgICAgICJpZGVudGl0
+eU1ldGhvZCI6ICJleGFjdF9ndWlkX2luX3NlcmlhbGl6ZWRfbmFtZV9vcl9idW5kbGVfY29udGFp
+bmVyIgogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgaWYgZ3VpZHMgZWxzZSBOb25l
+LAogICAgICAgICAgICAgICAgImlkZW50aXR5VmVyaWZpZWQiOiBib29sKGd1aWRzKSwgInZhcmlh
+bnRzIjogdmFyaWFudHMsCiAgICAgICAgICAgICAgICAicHVibGljYXRpb25BcHByb3ZlZCI6IEZh
+bHNlCiAgICAgICAgICAgIH0KICAgICAgICAgICAgcmVjb3Jkcy5hcHBlbmQocmVjb3JkKQogICAg
+ICAgICAgICBkZWNvZGVkICs9IDEKICAgICAgICAgICAgaWYgbWF4KGltYWdlLnNpemUpIDwgMTI4
+OgogICAgICAgICAgICAgICAgaXNzdWVzLmFwcGVuZCh7InR5cGUiOiAidW5kZXJfMTI4cHgiLCAi
+YXNzZXRJZCI6IG5hdGl2ZV9pZCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICJzaXpl
+IjogbGlzdChpbWFnZS5zaXplKX0pCiAgICAgICAgICAgIGVsaWYgbWF4KGltYWdlLnNpemUpIDwg
+NTEyOgogICAgICAgICAgICAgICAgaXNzdWVzLmFwcGVuZCh7InR5cGUiOiAidW5kZXJfNTEycHgi
+LCAiYXNzZXRJZCI6IG5hdGl2ZV9pZCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICJz
+aXplIjogbGlzdChpbWFnZS5zaXplKX0pCiAgICAgICAgZXhjZXB0IEV4Y2VwdGlvbiBhcyBleGM6
+CiAgICAgICAgICAgIGlzc3Vlcy5hcHBlbmQoeyJ0eXBlIjogImRlY29kZV9lcnJvciIsICJhc3Nl
+dElkIjogbmF0aXZlX2lkLAogICAgICAgICAgICAgICAgICAgICAgICAgICAiZXJyb3IiOiBzdHIo
+ZXhjKVs6MzAwXX0pCiAgICAgICAgaWYgKGxlbihyZWNvcmRzKSArIGxlbihpc3N1ZXMpKSAlIDEw
+MCA9PSAwOgogICAgICAgICAgICBzYXZlX2pzb24oY2hlY2twb2ludCwgeyJzY2hlbWEiOiBTQ0hF
+TUEsICJjb250YWluZXJQYXRoIjogcmVsYXRpdmUsCiAgICAgICAgICAgICAgICAgICAgICAiY29u
+dGFpbmVyU2hhMjU2IjogY29udGVudF9zaGEsICJjb21wbGV0ZSI6IEZhbHNlLAogICAgICAgICAg
+ICAgICAgICAgICAgImltYWdlcyI6IHJlY29yZHMsICJpc3N1ZXMiOiBpc3N1ZXMsICJwdWJsaWNh
+dGlvbkFwcHJvdmVkIjogRmFsc2V9KQogICAgaW5mbyA9IHsic2NoZW1hIjogU0NIRU1BLCAiY29u
+dGFpbmVyUGF0aCI6IHJlbGF0aXZlLCAiY29udGFpbmVyU2hhMjU2IjogY29udGVudF9zaGEsCiAg
+ICAgICAgICAgICJjb21wbGV0ZSI6IFRydWUsICJkZWNvZGVkTmV3IjogZGVjb2RlZCwgImltYWdl
+cyI6IHJlY29yZHMsCiAgICAgICAgICAgICJpc3N1ZXMiOiBpc3N1ZXMsICJwdWJsaWNhdGlvbkFw
+cHJvdmVkIjogRmFsc2V9CiAgICBzYXZlX2pzb24oY2hlY2twb2ludCwgaW5mbykKICAgIHJldHVy
+biBpbmZvCgoKZGVmIGNvbWJpbmVkKG91dHB1dCwgaXRlbV9pbmRleCwgaXRlbXNfc2hhLCBjYW5k
+aWRhdGVzLCBzZWxlY3RlZCwgY2hlY2twb2ludHMsIGVycm9yX2RldGFpbHMpOgogICAgYnlfaXRl
+bSA9IGRlZmF1bHRkaWN0KGxpc3QpCiAgICBieV9ndWlkID0gZGVmYXVsdGRpY3QobGlzdCkKICAg
+IGFsbF9pbWFnZXMgPSBbXQogICAgYWxsX2lzc3VlcyA9IGxpc3QoZXJyb3JfZGV0YWlscykKICAg
+IGZvciBwYXRoIGluIHNlbGVjdGVkOgogICAgICAgIGlmIHBhdGggbm90IGluIGNoZWNrcG9pbnRz
+OgogICAgICAgICAgICBjb250aW51ZQogICAgICAgIHJlY29yZCA9IGNoZWNrcG9pbnRzW3BhdGhd
+CiAgICAgICAgaWYgbm90IHJlY29yZC5nZXQoImNvbXBsZXRlIikgb3IgcmVjb3JkLmdldCgiY29u
+dGFpbmVyUGF0aCIpICE9IHBhdGg6CiAgICAgICAgICAgIGNvbnRpbnVlCiAgICAgICAgZm9yIGlt
+YWdlIGluIHJlY29yZC5nZXQoImltYWdlcyIsIFtdKToKICAgICAgICAgICAgYWxsX2ltYWdlcy5h
+cHBlbmQoaW1hZ2UpCiAgICAgICAgICAgIGZvciBpdGVtIGluIGltYWdlLmdldCgiaXRlbUlkcyIs
+IFtdKToKICAgICAgICAgICAgICAgIGJ5X2l0ZW1baXRlbV0uYXBwZW5kKGltYWdlKQogICAgICAg
+ICAgICBmb3IgZ3VpZCBpbiBpbWFnZS5nZXQoImV4YWN0R3VpZHMiLCBbXSk6CiAgICAgICAgICAg
+ICAgICBieV9ndWlkW2d1aWRdLmFwcGVuZChpbWFnZSkKICAgICAgICBhbGxfaXNzdWVzLmV4dGVu
+ZChyZWNvcmQuZ2V0KCJpc3N1ZXMiLCBbXSkpCiAgICBpdGVtX21hbmlmZXN0ID0ge30KICAgIGFt
+YmlndW91cyA9IHt9CiAgICBmb3IgaXRlbSwgaW1hZ2VzIGluIGJ5X2l0ZW0uaXRlbXMoKToKICAg
+ICAgICB1bmlxdWUgPSB7clsiZGVjb2RlZFNoYTI1NiJdIGZvciByIGluIGltYWdlc30KICAgICAg
+ICBpZiBsZW4odW5pcXVlKSA+IDE6CiAgICAgICAgICAgIGFtYmlndW91c1tpdGVtXSA9IHNvcnRl
+ZCh1bmlxdWUpCiAgICAgICAgICAgIGNvbnRpbnVlCiAgICAgICAgZmlyc3QgPSBpbWFnZXNbMF0K
+ICAgICAgICBpdGVtX21hbmlmZXN0W2l0ZW1dID0gewogICAgICAgICAgICAiZ3VpZCI6IGZpcnN0
+WyJleGFjdEd1aWRzIl0sICJhc3NldElkIjogZmlyc3RbImFzc2V0SWQiXSwKICAgICAgICAgICAg
+ImRlY29kZWRTaGEyNTYiOiBmaXJzdFsiZGVjb2RlZFNoYTI1NiJdLCAidmFyaWFudHMiOiBmaXJz
+dFsidmFyaWFudHMiXSwKICAgICAgICAgICAgInNvdXJjZVdpZHRoIjogZmlyc3RbInNvdXJjZVdp
+ZHRoIl0sICJzb3VyY2VIZWlnaHQiOiBmaXJzdFsic291cmNlSGVpZ2h0Il0sCiAgICAgICAgICAg
+ICJjb250YWluZXJTaGEyNTYiOiBmaXJzdFsiY29udGFpbmVyU2hhMjU2Il0sICJjb250YWluZXJQ
+YXRoIjogZmlyc3RbImNvbnRhaW5lclBhdGgiXSwKICAgICAgICAgICAgInNvdXJjZVBsYXRmb3Jt
+IjogIlN0ZWFtIFdpbmRvd3MiLCAiZ2FtZVZlcnNpb24iOiAiMS4yNi4yIiwKICAgICAgICAgICAg
+ImV2aWRlbmNlIjogZmlyc3RbImlkZW50aXR5TWV0aG9kIl0sICJwdWJsaWNhdGlvbkFwcHJvdmVk
+IjogRmFsc2UKICAgICAgICB9CiAgICBtaXNzZWQgPSBzb3J0ZWQoc2V0KGl0ZW1faW5kZXgpIC0g
+c2V0KGJ5X2d1aWQpKQogICAgZGVjb2RlZF9mYWlsdXJlcyA9IHN1bShpc3N1ZS5nZXQoInR5cGUi
+KSA9PSAiZGVjb2RlX2Vycm9yIiBmb3IgaXNzdWUgaW4gYWxsX2lzc3VlcykKICAgIHByb2Nlc3Np
+bmdfY29tcGxldGUgPSAobGVuKHNlbGVjdGVkKSA9PSBsZW4oY2FuZGlkYXRlcykgYW5kIG5vdCBl
+cnJvcl9kZXRhaWxzCiAgICAgICAgICAgICAgICAgICAgICAgICAgIGFuZCBkZWNvZGVkX2ZhaWx1
+cmVzID09IDApCiAgICBzYXZlX2pzb24ob3V0cHV0IC8gIm1hbmlmZXN0LW5hdGl2ZS5qc29uIiwg
+ewogICAgICAgICJzY2hlbWEiOiBTQ0hFTUEsICJnYW1lVmVyc2lvbiI6ICIxLjI2LjIiLCAicGxh
+dGZvcm0iOiAiU3RlYW0gV2luZG93cyIsCiAgICAgICAgInNyYzAxSXRlbXNTaGEyNTYiOiBpdGVt
+c19zaGEsICJpbWFnZXMiOiBhbGxfaW1hZ2VzLCAiaXRlbXMiOiBpdGVtX21hbmlmZXN0LAogICAg
+ICAgICJwdWJsaWNhdGlvbkFwcHJvdmVkIjogRmFsc2UsCiAgICAgICAgImNvbXBsZXRlIjogcHJv
+Y2Vzc2luZ19jb21wbGV0ZSwKICAgICAgICAiaWRlbnRpdHlDb3ZlcmFnZUNvbXBsZXRlIjogbm90
+IG1pc3NlZCBhbmQgbm90IGFtYmlndW91cywKICAgICAgICAicmVzb2x1dGlvbiI6ICJleGFjdF9n
+dWlkX29ubHkiCiAgICB9KQogICAgcmVwb3J0ID0gewogICAgICAgICJzY2hlbWEiOiBTQ0hFTUEs
+ICJ0b3RhbEl0ZW1zIjogc3VtKGxlbih4KSBmb3IgeCBpbiBpdGVtX2luZGV4LnZhbHVlcygpKSwK
+ICAgICAgICAidG90YWxVbmlxdWVHdWlkcyI6IGxlbihpdGVtX2luZGV4KSwgImV4dHJhY3RlZElt
+YWdlcyI6IGxlbihhbGxfaW1hZ2VzKSwKICAgICAgICAibWF0Y2hlZFVuaXF1ZUd1aWRzIjogbGVu
+KGJ5X2d1aWQpLCAibWF0Y2hlZEl0ZW1zIjogbGVuKGl0ZW1fbWFuaWZlc3QpLAogICAgICAgICJh
+bWJpZ3VvdXNJdGVtSWRzIjogYW1iaWd1b3VzLCAidW5tYXRjaGVkR3VpZENvdW50IjogbGVuKG1p
+c3NlZCksCiAgICAgICAgInVubWF0Y2hlZEd1aWRTYW1wbGUiOiBbImd1aWQ6IiArIGcgZm9yIGcg
+aW4gbWlzc2VkWzoyMDBdXSwKICAgICAgICAiY2FuZGlkYXRlQnVuZGxlQ291bnQiOiBsZW4oY2Fu
+ZGlkYXRlcyksICJzZWxlY3RlZEJ1bmRsZXMiOiBzZWxlY3RlZCwKICAgICAgICAiaXNzdWVzIjog
+YWxsX2lzc3VlcywgInB1YmxpY2F0aW9uQXBwcm92ZWQiOiBGYWxzZSwKICAgICAgICAiY29tcGxl
+dGUiOiBwcm9jZXNzaW5nX2NvbXBsZXRlLCAiZGVjb2RlRmFpbHVyZXMiOiBkZWNvZGVkX2ZhaWx1
+cmVzLAogICAgICAgICJpZGVudGl0eUNvdmVyYWdlQ29tcGxldGUiOiBub3QgbWlzc2VkIGFuZCBu
+b3QgYW1iaWd1b3VzLAogICAgICAgICJzb3VyY2VTdGF0dXMiOiAidmVyaWZpZWRfc3RlYW1fMS4y
+Ni4yIiwKICAgICAgICAiZ3VpZFJlc29sdXRpb25TdGF0dXMiOiAicGVuZGluZ19jYXRhbG9nX21h
+cHBpbmciIGlmIG1pc3NlZCBlbHNlICJjb21wbGV0ZSIKICAgIH0KICAgIHNhdmVfanNvbihvdXRw
+dXQgLyAicmVwb3J0LW5hdGl2ZS5qc29uIiwgcmVwb3J0KQogICAgcmV0dXJuIHJlcG9ydAoKCmRl
+ZiBtYWluKCk6CiAgICBwYXJzZXIgPSBhcmdwYXJzZS5Bcmd1bWVudFBhcnNlcihkZXNjcmlwdGlv
+bj0iU3RlYW0gMS4yNi4yIGljb24gR1VJRCBuYXRpdmUgZXh0cmFjdGlvbjsgbm8gdXBsb2FkIikK
+ICAgIHBhcnNlci5hZGRfYXJndW1lbnQoIi0tZ2FtZSIsIHR5cGU9UGF0aCwgZGVmYXVsdD1HQU1F
+X0RFRkFVTFQpCiAgICBwYXJzZXIuYWRkX2FyZ3VtZW50KCItLW91dCIsIHR5cGU9UGF0aCwgZGVm
+YXVsdD1PVVRfREVGQVVMVCkKICAgIHBhcnNlci5hZGRfYXJndW1lbnQoIi0tbGltaXQtYnVuZGxl
+cyIsIHR5cGU9aW50LCBkZWZhdWx0PTIsCiAgICAgICAgICAgICAgICAgICAgICAgIGhlbHA9IkRl
+ZmF1bHQgdHdvIGJ1bmRsZXMgZm9yIHNtb2tlIHRlc3QuIFNldCB0byAwIGZvciBmdWxsIDQwLWJ1
+bmRsZSBiYXRjaC4iKQogICAgcGFyc2VyLmFkZF9hcmd1bWVudCgiLS1rZWVwLW9yaWdpbmFscyIs
+IGFjdGlvbj0ic3RvcmVfdHJ1ZSIpCiAgICBwYXJzZXIuYWRkX2FyZ3VtZW50KCItLXZlcmlmeS1l
+eGlzdGluZyIsIGFjdGlvbj0ic3RvcmVfdHJ1ZSIpCiAgICBvcHRpb25zID0gcGFyc2VyLnBhcnNl
+X2FyZ3MoKQogICAgZ2FtZSwgb3V0cHV0ID0gb3B0aW9ucy5nYW1lLnJlc29sdmUoKSwgb3B0aW9u
+cy5vdXQucmVzb2x2ZSgpCiAgICBpZiBnYW1lID09IG91dHB1dCBvciBnYW1lIGluIG91dHB1dC5w
+YXJlbnRzIG9yIG91dHB1dCBpbiBnYW1lLnBhcmVudHM6CiAgICAgICAgcGFyc2VyLmVycm9yKCJJ
+bnB1dCBhbmQgb3V0cHV0IG11c3QgYmUgc2VwYXJhdGUuIikKICAgIHRyeToKICAgICAgICBkZWNv
+ZGVyID0gc3RlYW1fcGFyc2VyKCkKICAgICAgICB2ZXJpZnlfc291cmNlKGdhbWUsIGRlY29kZXIp
+CiAgICAgICAgaW5kZXgsIGl0ZW1zX3NoYSA9IHJlYWRfaXRlbXMoZ2FtZSwgb3V0cHV0LCBkZWNv
+ZGVyKQogICAgICAgIGNhdGFsb2dfcHJvYmUoZ2FtZSwgb3V0cHV0LCBpbmRleCkKICAgICAgICBm
+b2xkZXIgPSBnYW1lIC8gSUNPTl9GT0xERVIKICAgICAgICBpZiBub3QgZm9sZGVyLmlzX2Rpcigp
+OgogICAgICAgICAgICByYWlzZSBGaWxlTm90Rm91bmRFcnJvcihmIk5hdGl2ZSBnZW5lcmF0ZWQg
+aWNvbnMgYnVuZGxlIGZvbGRlciBub3QgZm91bmQ6IHtmb2xkZXJ9IikKICAgICAgICBwaW5zID0g
+bG9hZF9idW5kbGVfcGlucygpCiAgICAgICAgY2FuZGlkYXRlcyA9IHNvcnRlZChwIGZvciBwIGlu
+IGZvbGRlci5nbG9iKCIqLmJ1bmRsZSIpIGlmIHAuaXNfZmlsZSgpIGFuZCBub3QgcC5pc19zeW1s
+aW5rKCkpCiAgICAgICAgaWYgc2V0KHAubmFtZSBmb3IgcCBpbiBjYW5kaWRhdGVzKSAhPSBzZXQo
+cGlucyk6CiAgICAgICAgICAgIHJhaXNlIFZhbHVlRXJyb3IoIlN0ZWFtIGljb24gYnVuZGxlIGxp
+c3RpbmcgZGlmZmVycyBmcm9tIHZlcmlmaWVkIFNSQy0wMCBpbmRleCIpCiAgICAgICAgc2VsZWN0
+ZWQgPSBjYW5kaWRhdGVzWzpvcHRpb25zLmxpbWl0X2J1bmRsZXNdIGlmIG9wdGlvbnMubGltaXRf
+YnVuZGxlcyBlbHNlIGNhbmRpZGF0ZXMKICAgICAgICBlcnJvcnMgPSBbXQogICAgICAgIGNoZWNr
+cG9pbnRzID0ge30KICAgICAgICBmb3IgY291bnQsIHBhdGggaW4gZW51bWVyYXRlKHNlbGVjdGVk
+LCAxKToKICAgICAgICAgICAgcmVsYXRpdmUgPSBwYXRoLnJlbGF0aXZlX3RvKGdhbWUpLmFzX3Bv
+c2l4KCkKICAgICAgICAgICAgdHJ5OgogICAgICAgICAgICAgICAgZXhwZWN0ZWRfc2hhLCBleHBl
+Y3RlZF9ieXRlcyA9IHBpbnNbcGF0aC5uYW1lXQogICAgICAgICAgICAgICAgcmVzdWx0ID0gcHJv
+Y2Vzc19idW5kbGUoZ2FtZSwgb3V0cHV0LCBwYXRoLCBpbmRleCwgZXhwZWN0ZWRfc2hhLCBleHBl
+Y3RlZF9ieXRlcywKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIG9wdGlv
+bnMua2VlcF9vcmlnaW5hbHMsIG9wdGlvbnMudmVyaWZ5X2V4aXN0aW5nKQogICAgICAgICAgICAg
+ICAgY2hlY2twb2ludHNbcmVsYXRpdmVdID0gcmVzdWx0CiAgICAgICAgICAgICAgICBwcmludChm
+Ilt7Y291bnR9L3tsZW4oc2VsZWN0ZWQpfV0ge3BhdGgubmFtZX06IHtsZW4ocmVzdWx0WydpbWFn
+ZXMnXSl9IGltYWdlcyIsIGZsdXNoPVRydWUpCiAgICAgICAgICAgIGV4Y2VwdCBFeGNlcHRpb24g
+YXMgZXhjOgogICAgICAgICAgICAgICAgZXJyb3JzLmFwcGVuZCh7InR5cGUiOiAiYnVuZGxlX2Vy
+cm9yIiwgImJ1bmRsZSI6IHBhdGgubmFtZSwgImVycm9yIjogc3RyKGV4YylbOjMwMF19KQogICAg
+ICAgICAgICAgICAgcHJpbnQoZiJbe2NvdW50fS97bGVuKHNlbGVjdGVkKX1dIGZhaWxlZDoge3Bh
+dGgubmFtZX06IHtleGN9IiwgZmlsZT1zeXMuc3RkZXJyLCBmbHVzaD1UcnVlKQogICAgICAgIHJl
+cG9ydCA9IGNvbWJpbmVkKG91dHB1dCwgaW5kZXgsIGl0ZW1zX3NoYSwKICAgICAgICAgICAgICAg
+ICAgICAgICAgICBbcC5yZWxhdGl2ZV90byhnYW1lKS5hc19wb3NpeCgpIGZvciBwIGluIGNhbmRp
+ZGF0ZXNdLAogICAgICAgICAgICAgICAgICAgICAgICAgIFtwLnJlbGF0aXZlX3RvKGdhbWUpLmFz
+X3Bvc2l4KCkgZm9yIHAgaW4gc2VsZWN0ZWRdLAogICAgICAgICAgICAgICAgICAgICAgICAgIGNo
+ZWNrcG9pbnRzLCBlcnJvcnMpCiAgICAgICAgcmVwb3J0WyJzcmMwMERhdGFzZXRGaW5nZXJwcmlu
+dCJdID0gU1JDMDBfRklOR0VSUFJJTlQKICAgICAgICBzYXZlX2pzb24ob3V0cHV0IC8gInJlcG9y
+dC1uYXRpdmUuanNvbiIsIHJlcG9ydCkKICAgICAgICBwcmludChqc29uLmR1bXBzKHtrZXk6IHJl
+cG9ydFtrZXldIGZvciBrZXkgaW4KICAgICAgICAgICAgICBbImNhbmRpZGF0ZUJ1bmRsZUNvdW50
+IiwgImV4dHJhY3RlZEltYWdlcyIsICJtYXRjaGVkSXRlbXMiLAogICAgICAgICAgICAgICAibWF0
+Y2hlZFVuaXF1ZUd1aWRzIiwgInVubWF0Y2hlZEd1aWRDb3VudCIsICJjb21wbGV0ZSJdfSkpCiAg
+ICAgICAgcmV0dXJuIDEgaWYgZXJyb3JzIGVsc2UgMAogICAgZXhjZXB0IChPU0Vycm9yLCBWYWx1
+ZUVycm9yLCBSdW50aW1lRXJyb3IpIGFzIGV4YzoKICAgICAgICBwYXJzZXIuZXhpdCgyLCBmIlNS
+Qy0wNCBlcnJvcjoge2V4Y31cbiIpCgoKaWYgX19uYW1lX18gPT0gIl9fbWFpbl9fIjoKICAgIHJh
+aXNlIFN5c3RlbUV4aXQobWFpbigpKQo=
 '@
-Install-EmbeddedSource -name 'native1262.py' -content $embedded
+Install-EmbeddedSource -name 'native1262.py' -encoded $embedded
 Remove-Variable embedded
 
 $embedded = @'
-import argparse
-import csv
-import gzip
-import hashlib
-import io
-import json
-import re
-import shutil
-from collections import defaultdict
-from pathlib import Path
-
-from PIL import Image, UnidentifiedImageError
-
-SCHEMA = "wand.media.local@1"
-RECIPE = "lossless-webp-lanczos-v1"
-RASTER = {".png", ".webp", ".jpg", ".jpeg", ".tif", ".tiff", ".tga", ".bmp", ".dds"}
-UNITY = {".assets", ".bundle", ".unity3d", ".assetbundle"}
-HEXDIGEST = re.compile(r"^[0-9a-f]{64}$")
-ITEM_ID = re.compile(r"^[1-9][0-9]{0,15}$")
-SHARDS = "0123456789abcdef"
-
-
-def digest(path):
-    h = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            h.update(block)
-    return h.hexdigest()
-
-
-def rel(root, path):
-    return path.resolve().relative_to(root.resolve()).as_posix()
-
-
-def shard(relative_path):
-    return hashlib.sha256(relative_path.encode("utf-8")).hexdigest()[0]
-
-
-def is_unity(path):
-    if path.suffix.lower() in UNITY:
-        return True
-    try:
-        with path.open("rb") as stream:
-            return stream.read(8).startswith((b"UnityFS", b"UnityRaw", b"UnityWeb"))
-    except OSError:
-        return False
-
-
-def candidates(root, extensions):
-    if root.is_file():
-        yield root
-        return
-    for path in root.rglob("*"):
-        if not path.is_file():
-            continue
-        if path.suffix.lower() in extensions:
-            yield path
-        elif path.suffix == "" and (extensions & UNITY) and is_unity(path):
-            yield path
-
-
-def save_json(path, value):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + ".tmp")
-    with temporary.open("w", encoding="utf-8", newline="\n") as handle:
-        json.dump(value, handle, ensure_ascii=False, indent=2, sort_keys=True)
-        handle.write("\n")
-    temporary.replace(path)
-
-
-def load_json(path):
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def assert_output_separate(source, output):
-    src, out = source.resolve(), output.resolve()
-    if src == out or (src.is_dir() and src in out.parents):
-        raise ValueError("Output must be outside the input directory.")
-
-
-def selected(args, relative):
-    return args.shard == "all" or shard(relative) == args.shard
-
-
-def source_provenance(args):
-    return {"platform": args.platform, "gameVersion": args.game_version, "buildId": args.build_id,
-            "metadataVerification": "operator_supplied"}
-
-
-def scan_one(root, path):
-    record = {"path": rel(root, path), "bytes": path.stat().st_size}
-    if is_unity(path):
-        record["type"] = "unity_container"
-        record["status"] = "needs_extraction"
-        record["sha256"] = digest(path)
-        return record
-    try:
-        with Image.open(path) as image:
-            record["width"], record["height"] = image.size
-            record["format"] = image.format
-            image.verify()
-        record["sha256"] = digest(path)
-        record["type"] = "raster"
-        record["status"] = "ok"
-        if not record["width"] or not record["height"]:
-            raise ValueError("Zero-sized image.")
-    except (OSError, ValueError, UnidentifiedImageError, Image.DecompressionBombError) as exc:
-        record["type"] = "raster"
-        record["status"] = "corrupt"
-        record["error"] = str(exc)[:300]
-    return record
-
-
-def command_scan(args):
-    root, output = args.input.resolve(), args.output.resolve()
-    assert_output_separate(root, output)
-    if not root.exists():
-        raise FileNotFoundError(root)
-    if not root.is_dir():
-        raise ValueError("scan requires an input directory.")
-    groups = defaultdict(list)
-    seen = 0
-    truncated = False
-    extensions = RASTER | UNITY
-    for path in candidates(root, extensions):
-        relative = rel(root, path)
-        if not selected(args, relative):
-            continue
-        if args.limit is not None and seen >= args.limit:
-            truncated = True
-            break
-        entry = scan_one(root, path)
-        groups[shard(relative)].append(entry)
-        seen += 1
-    processed_shards = [args.shard] if args.shard != "all" else list(SHARDS)
-    for key in processed_shards:
-        records = sorted(groups[key], key=lambda item: item["path"])
-        save_json(output / "inventory" / ("shard-" + key + ".json"), {
-            "schema": SCHEMA, "input": str(root), "source": source_provenance(args),
-            "shard": key, "complete": not truncated, "records": records
-        })
-        print(f"scan {key}: {len(records)} records ({'partial' if truncated else 'complete'})")
-    return 0
-
-
-def command_extract(args):
-    try:
-        import UnityPy
-    except ImportError as exc:
-        raise RuntimeError("Unity extraction requires: python -m pip install UnityPy") from exc
-    root, output = args.input.resolve(), args.output.resolve()
-    assert_output_separate(root, output)
-    if not root.exists():
-        raise FileNotFoundError(root)
-    bundles = 0
-    images = 0
-    failures = []
-    for path in candidates(root, UNITY):
-        relative = rel(root, path) if root.is_dir() else path.name
-        if not selected(args, relative):
-            continue
-        container_sha = digest(path)
-        output_index = output / "evidence" / ("unity-" + container_sha + ".json")
-        existing_index = load_json(output_index) if output_index.exists() and not args.force else {}
-        if existing_index.get("complete"):
-            print(f"extract skip indexed: {relative}")
-            continue
-        if args.limit_files is not None and bundles >= args.limit_files:
-            break
-        bundles += 1
-        old_images = {item["assetId"]: item for item in existing_index.get("images", [])}
-        records = []
-        complete = True
-        try:
-            environment = UnityPy.load(str(path))
-            objects = environment.objects.values() if isinstance(environment.objects, dict) else environment.objects
-            for obj in objects:
-                if obj.type.name not in {"Sprite", "Texture2D"}:
-                    continue
-                asset_file = str(getattr(getattr(obj, "assets_file", None), "name", "unknown"))
-                path_id = str(obj.path_id)
-                asset_id = "unity:" + container_sha + ":" + asset_file + ":" + path_id + ":" + obj.type.name
-                image_id = hashlib.sha256(asset_id.encode("utf-8")).hexdigest()
-                target = output / "extracted" / image_id[:2] / (image_id + ".png")
-                if asset_id in old_images and target.exists():
-                    records.append(old_images[asset_id])
-                    continue
-                if args.limit_images is not None and images >= args.limit_images:
-                    complete = False
-                    break
-                try:
-                    data = obj.read() if hasattr(obj, "read") else obj.parse_as_object()
-                    picture = data.image
-                    if picture is None:
-                        raise ValueError("Unity object contains no decodable image")
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    if not target.exists() or args.force:
-                        picture.save(target, format="PNG")
-                    records.append({
-                        "assetId": asset_id, "assetName": str(getattr(data, "m_Name", "")),
-                        "kind": obj.type.name, "pathId": path_id, "assetsFile": asset_file,
-                        "containerPath": relative, "containerSha256": container_sha,
-                        "path": rel(output / "extracted", target),
-                        "extractedSha256": digest(target), "width": picture.width,
-                        "height": picture.height
-                    })
-                    images += 1
-                except Exception as exc:
-                    failures.append({"container": relative, "pathId": str(obj.path_id), "error": str(exc)[:300]})
-        except Exception as exc:
-            complete = False
-            failures.append({"container": relative, "error": str(exc)[:300]})
-        save_json(output_index, {
-            "schema": SCHEMA, "source": source_provenance(args),
-            "container": relative, "containerSha256": container_sha,
-            "complete": complete, "images": records
-        })
-        print(f"extract {relative}: {len(records)} images")
-        if args.limit_images is not None and images >= args.limit_images:
-            break
-    save_json(output / "report" / "extract-latest.json", {
-        "schema": SCHEMA, "bundlesAttempted": bundles, "images": images,
-        "failures": failures, "source": source_provenance(args)
-    })
-    return 0
-
-
-def read_r39(path):
-    if path is None:
-        return {}
-    if path.is_dir():
-        parts = sorted(path.glob("query-index.part[0-9][0-9]"))
-        if not parts:
-            raise FileNotFoundError("R39 query-index.partNN files not found.")
-        numbers = [int(p.name[-2:]) for p in parts]
-        if numbers != list(range(len(numbers))):
-            raise ValueError("R39 query-index parts are incomplete.")
-        binary = b"".join(p.read_bytes() for p in parts)
-        data = json.loads(gzip.decompress(binary))
-    else:
-        with gzip.open(path, "rt", encoding="utf-8") as source:
-            data = json.load(source)
-    if data.get("gameVersion") != "1.24.13" or not isinstance(data.get("items"), list):
-        raise ValueError("Unsupported R39 index or source version.")
-    by_hash = defaultdict(set)
-    for record in data["items"]:
-        sha = record.get("icon", {}).get("sha256") if isinstance(record.get("icon"), dict) else None
-        item_id = str(record.get("itemID", ""))
-        if isinstance(sha, str) and HEXDIGEST.fullmatch(sha) and ITEM_ID.fullmatch(item_id):
-            by_hash[sha].add(item_id)
-    return by_hash
-
-
-def read_external_mapping(path):
-    result = defaultdict(list)
-    if path is None:
-        return result
-    with path.open("r", encoding="utf-8-sig", newline="") as stream:
-        reader = csv.DictReader(stream)
-        if not reader.fieldnames or "item_id" not in reader.fieldnames:
-            raise ValueError("Mapping CSV must contain item_id.")
-        for line, row in enumerate(reader, 2):
-            item = str(row.get("item_id", "")).strip()
-            sha = str(row.get("source_sha256", "")).strip().lower()
-            asset_id = str(row.get("asset_id", "")).strip()
-            source_path = str(row.get("source_path", "")).strip().replace("\\", "/")
-            evidence = str(row.get("evidence", "")).strip()
-            if not ITEM_ID.fullmatch(item) or not (sha and HEXDIGEST.fullmatch(sha) or asset_id or source_path):
-                raise ValueError(f"Invalid mapping CSV at line {line}")
-            if source_path.startswith("/") or ".." in Path(source_path).parts:
-                raise ValueError(f"Unsafe source_path at CSV line {line}")
-            key = ("sha", sha) if sha else ("asset", asset_id) if asset_id else ("path", source_path)
-            result[key].append({"itemId": item, "method": "supplied_mapping",
-                                "evidence": evidence, "evidenceVerified": False})
-    return result
-
-
-def read_unity_evidence(output):
-    index = defaultdict(list)
-    for path in sorted((output / "evidence").glob("unity-*.json")):
-        document = load_json(path)
-        for item in document.get("images", []):
-            index[item["path"]].append(item)
-    return index
-
-
-def read_existing_manifest(output, key):
-    path = output / "manifest" / ("shard-" + key + ".json")
-    return load_json(path) if path.exists() else {}
-
-
-def generate_variant(image, max_edge, target, previous=None, verify=False):
-    if previous and target.is_file() and previous.get("bytes") == target.stat().st_size:
-        if not verify or previous.get("sha256") == digest(target):
-            return previous, True
-    target.parent.mkdir(parents=True, exist_ok=True)
-    picture = image.copy()
-    picture.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
-    if picture.mode not in ("RGB", "RGBA"):
-        picture = picture.convert("RGBA" if "A" in picture.getbands() or "transparency" in picture.info else "RGB")
-    temporary = target.with_name(target.name + ".tmp")
-    picture.save(temporary, format="WEBP", lossless=True, method=4, exact=True)
-    temporary.replace(target)
-    return {"path": target, "width": picture.width, "height": picture.height,
-            "bytes": target.stat().st_size, "sha256": digest(target)}, False
-
-
-def command_build(args):
-    root, output = args.input.resolve(), args.output.resolve()
-    assert_output_separate(root, output)
-    r39 = read_r39(args.r39_index)
-    supplied = read_external_mapping(args.mapping)
-    unity = read_unity_evidence(output)
-    for key in ([args.shard] if args.shard != "all" else list(SHARDS)):
-        inventory_path = output / "inventory" / ("shard-" + key + ".json")
-        if not inventory_path.exists():
-            if args.shard != "all":
-                raise FileNotFoundError(inventory_path)
-            continue
-        inventory = load_json(inventory_path)
-        if Path(inventory["input"]).resolve() != root:
-            raise ValueError(f"Inventory root mismatch: {inventory_path}")
-        previous = read_existing_manifest(output, key)
-        old = {entry["sourceSha256"]: entry for entry in previous.get("images", [])
-               if entry.get("recipe") == RECIPE}
-        result = []
-        problems = []
-        seen = defaultdict(list)
-        count = 0
-        truncated = False
-        for record in inventory["records"]:
-            if args.limit is not None and count >= args.limit:
-                truncated = True
-                break
-            count += 1
-            if record["status"] != "ok":
-                problems.append({"type": record["status"], "path": record["path"],
-                                 "error": record.get("error")})
-                continue
-            relative = record["path"]
-            source = (root / relative).resolve()
-            if root != source and root not in source.parents:
-                problems.append({"type": "unsafe_path", "path": relative})
-                continue
-            if not source.exists() or digest(source) != record["sha256"]:
-                problems.append({"type": "missing_or_changed_source", "path": relative})
-                continue
-            sha = record["sha256"]
-            seen[sha].append(relative)
-            links = [{"itemId": item, "method": "r39_exact_source_sha256",
-                      "evidence": "R39 v1.24.13 query-index", "evidenceVerified": True}
-                     for item in sorted(r39.get(sha, set()), key=int)]
-            assets = [asset for asset in unity.get(relative, [])
-                      if asset.get("extractedSha256") == sha]
-            for selector in [("sha", sha), ("path", relative)] + [
-                ("asset", item["assetId"]) for item in assets]:
-                links.extend(supplied.get(selector, []))
-            links = list({(link["itemId"], link["method"], link["evidence"]): link for link in links}.values())
-            if not links:
-                problems.append({"type": "unmapped_image", "path": relative, "sha256": sha})
-                if not args.include_unmapped:
-                    continue
-            try:
-                with Image.open(source) as image:
-                    image.load()
-                    width, height = image.size
-                    outputs = {}
-                    old_outputs = old.get(sha, {}).get("variants", {})
-                    skipped = 0
-                    for name, size in (("thumbnail", 128), ("detail", 512)):
-                        target = output / "images" / name / sha[:2] / (sha + ".webp")
-                        metadata, hit = generate_variant(
-                            image, size, target, old_outputs.get(name), args.verify_existing)
-                        metadata["path"] = rel(output, target)
-                        outputs[name] = metadata
-                        skipped += int(hit)
-                    if args.keep_originals and max(width, height) > 512:
-                        target = output / "images" / "original" / sha[:2] / (sha + ".png")
-                        old_meta = old_outputs.get("original", {})
-                        if not (target.is_file() and old_meta.get("bytes") == target.stat().st_size
-                                and (not args.verify_existing or old_meta.get("sha256") == digest(target))):
-                            target.parent.mkdir(parents=True, exist_ok=True)
-                            temporary = target.with_name(target.name + ".tmp")
-                            image.save(temporary, format="PNG")
-                            temporary.replace(target)
-                        outputs["original"] = {
-                            "path": rel(output, target), "width": width, "height": height,
-                            "bytes": target.stat().st_size, "sha256": digest(target)
-                        }
-                    if max(width, height) < 128:
-                        problems.append({"type": "under_128px", "path": relative,
-                                         "width": width, "height": height})
-                    if max(width, height) < 512:
-                        problems.append({"type": "under_512px", "path": relative,
-                                         "width": width, "height": height})
-                    result.append({
-                        "sourcePath": relative, "sourceSha256": sha,
-                        "sourceBytes": record["bytes"], "sourceFormat": record["format"],
-                        "sourceDimensions": [width, height], "source": inventory["source"],
-                        "assetIds": [item["assetId"] for item in assets],
-                        "links": links, "variants": outputs, "recipe": RECIPE
-                    })
-                    old[sha] = {"variants": outputs}
-            except (OSError, ValueError, UnidentifiedImageError, Image.DecompressionBombError) as exc:
-                problems.append({"type": "decode_or_encode_failure", "path": relative,
-                                 "error": str(exc)[:300]})
-        for sha, paths in seen.items():
-            if len(paths) > 1:
-                problems.append({"type": "duplicate_source", "sha256": sha, "paths": paths})
-        finished = inventory["complete"] and not truncated
-        save_json(output / "manifest" / ("shard-" + key + ".json"), {
-            "schema": SCHEMA, "shard": key, "complete": finished,
-            "input": str(root), "source": inventory["source"], "images": result,
-            "mappingNote": "R39 links require exact source PNG SHA-256. Other-version ID parity is not independently established.",
-            "publicationApproved": False
-        })
-        save_json(output / "report" / ("shard-" + key + ".json"), {
-            "schema": SCHEMA, "shard": key, "complete": finished,
-            "scanned": count, "converted": len(result),
-            "matched": sum(bool(x["links"]) for x in result), "problems": problems
-        })
-        print(f"build {key}: {len(result)} images, {len(problems)} findings, {'partial' if not finished else 'complete'}")
-    return 0
-
-
-def load_catalog(path):
-    if path is None:
-        return None
-    files = sorted(path.glob("records-*.json")) if path.is_dir() else [path]
-    ids = set()
-    for item in files:
-        if item.suffix.lower() == ".csv":
-            with item.open(encoding="utf-8-sig", newline="") as handle:
-                for row in csv.DictReader(handle):
-                    ids.add(str(row.get("item_id") or row.get("itemId") or row.get("itemID")))
-        elif item.suffix.lower() == ".jsonl":
-            for line in item.read_text(encoding="utf-8").splitlines():
-                if line.strip():
-                    row = json.loads(line)
-                    ids.add(str(row.get("itemId") or row.get("itemID") or row.get("item_id")))
-        else:
-            payload = load_json(item)
-            records = payload.get("r", payload.get("items", [])) if isinstance(payload, dict) else payload
-            for row in records:
-                ids.add(str(row[0] if isinstance(row, list) else
-                            row.get("itemId") or row.get("itemID") or row.get("item_id")))
-    return {item for item in ids if ITEM_ID.fullmatch(item)}
-
-
-def command_merge(args):
-    output = args.output.resolve()
-    images = []
-    available = []
-    problems = []
-    completed = []
-    provenance = set()
-    for key in SHARDS:
-        path = output / "manifest" / ("shard-" + key + ".json")
-        if not path.exists():
-            continue
-        manifest = load_json(path)
-        available.append(key)
-        provenance.add((manifest.get("input"), json.dumps(manifest.get("source"), sort_keys=True)))
-        if manifest.get("complete"):
-            completed.append(key)
-        images.extend(manifest.get("images", []))
-        report = output / "report" / ("shard-" + key + ".json")
-        if report.exists():
-            problems.extend(load_json(report).get("problems", []))
-    matched = defaultdict(list)
-    source_hashes = defaultdict(list)
-    for key in available:
-        inventory_path = output / "inventory" / ("shard-" + key + ".json")
-        if inventory_path.exists():
-            for record in load_json(inventory_path).get("records", []):
-                if record.get("status") == "ok" and record.get("sha256"):
-                    source_hashes[record["sha256"]].append(record["path"])
-    for image in images:
-        for link in image.get("links", []):
-            matched[link["itemId"]].append(image)
-    conflicts = {}
-    for item, records in matched.items():
-        hashes = {record["sourceSha256"] for record in records}
-        if len(hashes) > 1:
-            conflicts[item] = sorted(hashes)
-    for sha, paths in source_hashes.items():
-        if len(paths) > 1:
-            problems.append({"type": "duplicate_source_all_shards",
-                             "sha256": sha, "paths": sorted(paths)})
-    catalog = load_catalog(args.catalog)
-    missing = sorted(catalog - set(matched), key=int) if catalog is not None else None
-    mapped = {}
-    for item, records in matched.items():
-        if item in conflicts:
-            continue
-        first = records[0]
-        mapped[item] = {
-            "sourceSha256": first["sourceSha256"], "variants": first["variants"],
-            "links": [link for record in records for link in record["links"]
-                      if link["itemId"] == item], "source": first["source"],
-            "assetIds": first["assetIds"]
-        }
-    if len(provenance) > 1:
-        problems.append({"type": "mixed_input_or_provenance", "sources": [
-            {"input": item[0], "source": json.loads(item[1])} for item in sorted(provenance)
-        ]})
-    complete = len(completed) == 16 and len(provenance) == 1
-    save_json(output / "manifest.json", {
-        "schema": SCHEMA, "complete": complete, "shards": available,
-        "publicationApproved": False, "items": mapped, "images": images,
-        "ambiguousItemIds": conflicts
-    })
-    save_json(output / "report.json", {
-        "schema": SCHEMA, "complete": complete, "shardsPresent": available,
-        "shardsComplete": completed, "images": len(images),
-        "mappedItemIds": len(mapped), "ambiguousItemIds": conflicts,
-        "catalogItemIds": len(catalog) if catalog is not None else None,
-        "missingItemIds": missing, "problems": problems,
-        "publicationApproved": False
-    })
-    print(f"merge: {len(images)} images, {len(mapped)} unambiguous item IDs, "
-          f"{len(conflicts)} conflicting item IDs, complete={complete}")
-    return 0
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Dreamwish Wand local-only media inspection and conversion")
-    sub = parser.add_subparsers(dest="action", required=True)
-    scan = sub.add_parser("scan", help="Inspect local images and Unity containers")
-    extract = sub.add_parser("extract", help="Extract a bounded sample from Unity assets")
-    build = sub.add_parser("build", help="Create local WebP variants from scanned images")
-    merge = sub.add_parser("merge", help="Combine local shard outputs and mapping reports")
-    for command in (scan, extract, build):
-        command.add_argument("--input", type=Path, required=True)
-        command.add_argument("--output", type=Path, required=True)
-        command.add_argument("--shard", choices=["all", *SHARDS], default="all")
-    for command in (scan, extract):
-        command.add_argument("--platform", required=True)
-        command.add_argument("--game-version", required=True)
-        command.add_argument("--build-id", default=None)
-    scan.add_argument("--limit", type=int)
-    extract.add_argument("--limit-files", type=int, default=2)
-    extract.add_argument("--limit-images", type=int, default=20)
-    extract.add_argument("--force", action="store_true")
-    build.add_argument("--limit", type=int)
-    build.add_argument("--r39-index", type=Path)
-    build.add_argument("--mapping", type=Path)
-    build.add_argument("--include-unmapped", action="store_true")
-    build.add_argument("--keep-originals", action="store_true")
-    build.add_argument("--verify-existing", action="store_true")
-    merge.add_argument("--output", type=Path, required=True)
-    merge.add_argument("--catalog", type=Path)
-    args = parser.parse_args()
-    if getattr(args, "limit", None) is not None and args.limit < 1:
-        parser.error("--limit must be a positive integer")
-    try:
-        return {"scan": command_scan, "extract": command_extract,
-                "build": command_build, "merge": command_merge}[args.action](args)
-    except (OSError, ValueError, RuntimeError, KeyError, json.JSONDecodeError) as exc:
-        parser.exit(2, f"error: {exc}\n")
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+aW1wb3J0IGFyZ3BhcnNlCmltcG9ydCBjc3YKaW1wb3J0IGd6aXAKaW1wb3J0IGhhc2hsaWIKaW1w
+b3J0IGlvCmltcG9ydCBqc29uCmltcG9ydCByZQppbXBvcnQgc2h1dGlsCmZyb20gY29sbGVjdGlv
+bnMgaW1wb3J0IGRlZmF1bHRkaWN0CmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aAoKZnJvbSBQSUwg
+aW1wb3J0IEltYWdlLCBVbmlkZW50aWZpZWRJbWFnZUVycm9yCgpTQ0hFTUEgPSAid2FuZC5tZWRp
+YS5sb2NhbEAxIgpSRUNJUEUgPSAibG9zc2xlc3Mtd2VicC1sYW5jem9zLXYxIgpSQVNURVIgPSB7
+Ii5wbmciLCAiLndlYnAiLCAiLmpwZyIsICIuanBlZyIsICIudGlmIiwgIi50aWZmIiwgIi50Z2Ei
+LCAiLmJtcCIsICIuZGRzIn0KVU5JVFkgPSB7Ii5hc3NldHMiLCAiLmJ1bmRsZSIsICIudW5pdHkz
+ZCIsICIuYXNzZXRidW5kbGUifQpIRVhESUdFU1QgPSByZS5jb21waWxlKHIiXlswLTlhLWZdezY0
+fSQiKQpJVEVNX0lEID0gcmUuY29tcGlsZShyIl5bMS05XVswLTldezAsMTV9JCIpClNIQVJEUyA9
+ICIwMTIzNDU2Nzg5YWJjZGVmIgoKCmRlZiBkaWdlc3QocGF0aCk6CiAgICBoID0gaGFzaGxpYi5z
+aGEyNTYoKQogICAgd2l0aCBwYXRoLm9wZW4oInJiIikgYXMgc3RyZWFtOgogICAgICAgIGZvciBi
+bG9jayBpbiBpdGVyKGxhbWJkYTogc3RyZWFtLnJlYWQoMTAyNCAqIDEwMjQpLCBiIiIpOgogICAg
+ICAgICAgICBoLnVwZGF0ZShibG9jaykKICAgIHJldHVybiBoLmhleGRpZ2VzdCgpCgoKZGVmIHJl
+bChyb290LCBwYXRoKToKICAgIHJldHVybiBwYXRoLnJlc29sdmUoKS5yZWxhdGl2ZV90byhyb290
+LnJlc29sdmUoKSkuYXNfcG9zaXgoKQoKCmRlZiBzaGFyZChyZWxhdGl2ZV9wYXRoKToKICAgIHJl
+dHVybiBoYXNobGliLnNoYTI1NihyZWxhdGl2ZV9wYXRoLmVuY29kZSgidXRmLTgiKSkuaGV4ZGln
+ZXN0KClbMF0KCgpkZWYgaXNfdW5pdHkocGF0aCk6CiAgICBpZiBwYXRoLnN1ZmZpeC5sb3dlcigp
+IGluIFVOSVRZOgogICAgICAgIHJldHVybiBUcnVlCiAgICB0cnk6CiAgICAgICAgd2l0aCBwYXRo
+Lm9wZW4oInJiIikgYXMgc3RyZWFtOgogICAgICAgICAgICByZXR1cm4gc3RyZWFtLnJlYWQoOCku
+c3RhcnRzd2l0aCgoYiJVbml0eUZTIiwgYiJVbml0eVJhdyIsIGIiVW5pdHlXZWIiKSkKICAgIGV4
+Y2VwdCBPU0Vycm9yOgogICAgICAgIHJldHVybiBGYWxzZQoKCmRlZiBjYW5kaWRhdGVzKHJvb3Qs
+IGV4dGVuc2lvbnMpOgogICAgaWYgcm9vdC5pc19maWxlKCk6CiAgICAgICAgeWllbGQgcm9vdAog
+ICAgICAgIHJldHVybgogICAgZm9yIHBhdGggaW4gcm9vdC5yZ2xvYigiKiIpOgogICAgICAgIGlm
+IG5vdCBwYXRoLmlzX2ZpbGUoKToKICAgICAgICAgICAgY29udGludWUKICAgICAgICBpZiBwYXRo
+LnN1ZmZpeC5sb3dlcigpIGluIGV4dGVuc2lvbnM6CiAgICAgICAgICAgIHlpZWxkIHBhdGgKICAg
+ICAgICBlbGlmIHBhdGguc3VmZml4ID09ICIiIGFuZCAoZXh0ZW5zaW9ucyAmIFVOSVRZKSBhbmQg
+aXNfdW5pdHkocGF0aCk6CiAgICAgICAgICAgIHlpZWxkIHBhdGgKCgpkZWYgc2F2ZV9qc29uKHBh
+dGgsIHZhbHVlKToKICAgIHBhdGgucGFyZW50Lm1rZGlyKHBhcmVudHM9VHJ1ZSwgZXhpc3Rfb2s9
+VHJ1ZSkKICAgIHRlbXBvcmFyeSA9IHBhdGgud2l0aF9uYW1lKHBhdGgubmFtZSArICIudG1wIikK
+ICAgIHdpdGggdGVtcG9yYXJ5Lm9wZW4oInciLCBlbmNvZGluZz0idXRmLTgiLCBuZXdsaW5lPSJc
+biIpIGFzIGhhbmRsZToKICAgICAgICBqc29uLmR1bXAodmFsdWUsIGhhbmRsZSwgZW5zdXJlX2Fz
+Y2lpPUZhbHNlLCBpbmRlbnQ9Miwgc29ydF9rZXlzPVRydWUpCiAgICAgICAgaGFuZGxlLndyaXRl
+KCJcbiIpCiAgICB0ZW1wb3JhcnkucmVwbGFjZShwYXRoKQoKCmRlZiBsb2FkX2pzb24ocGF0aCk6
+CiAgICByZXR1cm4ganNvbi5sb2FkcyhwYXRoLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKSkK
+CgpkZWYgYXNzZXJ0X291dHB1dF9zZXBhcmF0ZShzb3VyY2UsIG91dHB1dCk6CiAgICBzcmMsIG91
+dCA9IHNvdXJjZS5yZXNvbHZlKCksIG91dHB1dC5yZXNvbHZlKCkKICAgIGlmIHNyYyA9PSBvdXQg
+b3IgKHNyYy5pc19kaXIoKSBhbmQgc3JjIGluIG91dC5wYXJlbnRzKToKICAgICAgICByYWlzZSBW
+YWx1ZUVycm9yKCJPdXRwdXQgbXVzdCBiZSBvdXRzaWRlIHRoZSBpbnB1dCBkaXJlY3RvcnkuIikK
+CgpkZWYgc2VsZWN0ZWQoYXJncywgcmVsYXRpdmUpOgogICAgcmV0dXJuIGFyZ3Muc2hhcmQgPT0g
+ImFsbCIgb3Igc2hhcmQocmVsYXRpdmUpID09IGFyZ3Muc2hhcmQKCgpkZWYgc291cmNlX3Byb3Zl
+bmFuY2UoYXJncyk6CiAgICByZXR1cm4geyJwbGF0Zm9ybSI6IGFyZ3MucGxhdGZvcm0sICJnYW1l
+VmVyc2lvbiI6IGFyZ3MuZ2FtZV92ZXJzaW9uLCAiYnVpbGRJZCI6IGFyZ3MuYnVpbGRfaWQsCiAg
+ICAgICAgICAgICJtZXRhZGF0YVZlcmlmaWNhdGlvbiI6ICJvcGVyYXRvcl9zdXBwbGllZCJ9CgoK
+ZGVmIHNjYW5fb25lKHJvb3QsIHBhdGgpOgogICAgcmVjb3JkID0geyJwYXRoIjogcmVsKHJvb3Qs
+IHBhdGgpLCAiYnl0ZXMiOiBwYXRoLnN0YXQoKS5zdF9zaXplfQogICAgaWYgaXNfdW5pdHkocGF0
+aCk6CiAgICAgICAgcmVjb3JkWyJ0eXBlIl0gPSAidW5pdHlfY29udGFpbmVyIgogICAgICAgIHJl
+Y29yZFsic3RhdHVzIl0gPSAibmVlZHNfZXh0cmFjdGlvbiIKICAgICAgICByZWNvcmRbInNoYTI1
+NiJdID0gZGlnZXN0KHBhdGgpCiAgICAgICAgcmV0dXJuIHJlY29yZAogICAgdHJ5OgogICAgICAg
+IHdpdGggSW1hZ2Uub3BlbihwYXRoKSBhcyBpbWFnZToKICAgICAgICAgICAgcmVjb3JkWyJ3aWR0
+aCJdLCByZWNvcmRbImhlaWdodCJdID0gaW1hZ2Uuc2l6ZQogICAgICAgICAgICByZWNvcmRbImZv
+cm1hdCJdID0gaW1hZ2UuZm9ybWF0CiAgICAgICAgICAgIGltYWdlLnZlcmlmeSgpCiAgICAgICAg
+cmVjb3JkWyJzaGEyNTYiXSA9IGRpZ2VzdChwYXRoKQogICAgICAgIHJlY29yZFsidHlwZSJdID0g
+InJhc3RlciIKICAgICAgICByZWNvcmRbInN0YXR1cyJdID0gIm9rIgogICAgICAgIGlmIG5vdCBy
+ZWNvcmRbIndpZHRoIl0gb3Igbm90IHJlY29yZFsiaGVpZ2h0Il06CiAgICAgICAgICAgIHJhaXNl
+IFZhbHVlRXJyb3IoIlplcm8tc2l6ZWQgaW1hZ2UuIikKICAgIGV4Y2VwdCAoT1NFcnJvciwgVmFs
+dWVFcnJvciwgVW5pZGVudGlmaWVkSW1hZ2VFcnJvciwgSW1hZ2UuRGVjb21wcmVzc2lvbkJvbWJF
+cnJvcikgYXMgZXhjOgogICAgICAgIHJlY29yZFsidHlwZSJdID0gInJhc3RlciIKICAgICAgICBy
+ZWNvcmRbInN0YXR1cyJdID0gImNvcnJ1cHQiCiAgICAgICAgcmVjb3JkWyJlcnJvciJdID0gc3Ry
+KGV4YylbOjMwMF0KICAgIHJldHVybiByZWNvcmQKCgpkZWYgY29tbWFuZF9zY2FuKGFyZ3MpOgog
+ICAgcm9vdCwgb3V0cHV0ID0gYXJncy5pbnB1dC5yZXNvbHZlKCksIGFyZ3Mub3V0cHV0LnJlc29s
+dmUoKQogICAgYXNzZXJ0X291dHB1dF9zZXBhcmF0ZShyb290LCBvdXRwdXQpCiAgICBpZiBub3Qg
+cm9vdC5leGlzdHMoKToKICAgICAgICByYWlzZSBGaWxlTm90Rm91bmRFcnJvcihyb290KQogICAg
+aWYgbm90IHJvb3QuaXNfZGlyKCk6CiAgICAgICAgcmFpc2UgVmFsdWVFcnJvcigic2NhbiByZXF1
+aXJlcyBhbiBpbnB1dCBkaXJlY3RvcnkuIikKICAgIGdyb3VwcyA9IGRlZmF1bHRkaWN0KGxpc3Qp
+CiAgICBzZWVuID0gMAogICAgdHJ1bmNhdGVkID0gRmFsc2UKICAgIGV4dGVuc2lvbnMgPSBSQVNU
+RVIgfCBVTklUWQogICAgZm9yIHBhdGggaW4gY2FuZGlkYXRlcyhyb290LCBleHRlbnNpb25zKToK
+ICAgICAgICByZWxhdGl2ZSA9IHJlbChyb290LCBwYXRoKQogICAgICAgIGlmIG5vdCBzZWxlY3Rl
+ZChhcmdzLCByZWxhdGl2ZSk6CiAgICAgICAgICAgIGNvbnRpbnVlCiAgICAgICAgaWYgYXJncy5s
+aW1pdCBpcyBub3QgTm9uZSBhbmQgc2VlbiA+PSBhcmdzLmxpbWl0OgogICAgICAgICAgICB0cnVu
+Y2F0ZWQgPSBUcnVlCiAgICAgICAgICAgIGJyZWFrCiAgICAgICAgZW50cnkgPSBzY2FuX29uZShy
+b290LCBwYXRoKQogICAgICAgIGdyb3Vwc1tzaGFyZChyZWxhdGl2ZSldLmFwcGVuZChlbnRyeSkK
+ICAgICAgICBzZWVuICs9IDEKICAgIHByb2Nlc3NlZF9zaGFyZHMgPSBbYXJncy5zaGFyZF0gaWYg
+YXJncy5zaGFyZCAhPSAiYWxsIiBlbHNlIGxpc3QoU0hBUkRTKQogICAgZm9yIGtleSBpbiBwcm9j
+ZXNzZWRfc2hhcmRzOgogICAgICAgIHJlY29yZHMgPSBzb3J0ZWQoZ3JvdXBzW2tleV0sIGtleT1s
+YW1iZGEgaXRlbTogaXRlbVsicGF0aCJdKQogICAgICAgIHNhdmVfanNvbihvdXRwdXQgLyAiaW52
+ZW50b3J5IiAvICgic2hhcmQtIiArIGtleSArICIuanNvbiIpLCB7CiAgICAgICAgICAgICJzY2hl
+bWEiOiBTQ0hFTUEsICJpbnB1dCI6IHN0cihyb290KSwgInNvdXJjZSI6IHNvdXJjZV9wcm92ZW5h
+bmNlKGFyZ3MpLAogICAgICAgICAgICAic2hhcmQiOiBrZXksICJjb21wbGV0ZSI6IG5vdCB0cnVu
+Y2F0ZWQsICJyZWNvcmRzIjogcmVjb3JkcwogICAgICAgIH0pCiAgICAgICAgcHJpbnQoZiJzY2Fu
+IHtrZXl9OiB7bGVuKHJlY29yZHMpfSByZWNvcmRzICh7J3BhcnRpYWwnIGlmIHRydW5jYXRlZCBl
+bHNlICdjb21wbGV0ZSd9KSIpCiAgICByZXR1cm4gMAoKCmRlZiBjb21tYW5kX2V4dHJhY3QoYXJn
+cyk6CiAgICB0cnk6CiAgICAgICAgaW1wb3J0IFVuaXR5UHkKICAgIGV4Y2VwdCBJbXBvcnRFcnJv
+ciBhcyBleGM6CiAgICAgICAgcmFpc2UgUnVudGltZUVycm9yKCJVbml0eSBleHRyYWN0aW9uIHJl
+cXVpcmVzOiBweXRob24gLW0gcGlwIGluc3RhbGwgVW5pdHlQeSIpIGZyb20gZXhjCiAgICByb290
+LCBvdXRwdXQgPSBhcmdzLmlucHV0LnJlc29sdmUoKSwgYXJncy5vdXRwdXQucmVzb2x2ZSgpCiAg
+ICBhc3NlcnRfb3V0cHV0X3NlcGFyYXRlKHJvb3QsIG91dHB1dCkKICAgIGlmIG5vdCByb290LmV4
+aXN0cygpOgogICAgICAgIHJhaXNlIEZpbGVOb3RGb3VuZEVycm9yKHJvb3QpCiAgICBidW5kbGVz
+ID0gMAogICAgaW1hZ2VzID0gMAogICAgZmFpbHVyZXMgPSBbXQogICAgZm9yIHBhdGggaW4gY2Fu
+ZGlkYXRlcyhyb290LCBVTklUWSk6CiAgICAgICAgcmVsYXRpdmUgPSByZWwocm9vdCwgcGF0aCkg
+aWYgcm9vdC5pc19kaXIoKSBlbHNlIHBhdGgubmFtZQogICAgICAgIGlmIG5vdCBzZWxlY3RlZChh
+cmdzLCByZWxhdGl2ZSk6CiAgICAgICAgICAgIGNvbnRpbnVlCiAgICAgICAgY29udGFpbmVyX3No
+YSA9IGRpZ2VzdChwYXRoKQogICAgICAgIG91dHB1dF9pbmRleCA9IG91dHB1dCAvICJldmlkZW5j
+ZSIgLyAoInVuaXR5LSIgKyBjb250YWluZXJfc2hhICsgIi5qc29uIikKICAgICAgICBleGlzdGlu
+Z19pbmRleCA9IGxvYWRfanNvbihvdXRwdXRfaW5kZXgpIGlmIG91dHB1dF9pbmRleC5leGlzdHMo
+KSBhbmQgbm90IGFyZ3MuZm9yY2UgZWxzZSB7fQogICAgICAgIGlmIGV4aXN0aW5nX2luZGV4Lmdl
+dCgiY29tcGxldGUiKToKICAgICAgICAgICAgcHJpbnQoZiJleHRyYWN0IHNraXAgaW5kZXhlZDog
+e3JlbGF0aXZlfSIpCiAgICAgICAgICAgIGNvbnRpbnVlCiAgICAgICAgaWYgYXJncy5saW1pdF9m
+aWxlcyBpcyBub3QgTm9uZSBhbmQgYnVuZGxlcyA+PSBhcmdzLmxpbWl0X2ZpbGVzOgogICAgICAg
+ICAgICBicmVhawogICAgICAgIGJ1bmRsZXMgKz0gMQogICAgICAgIG9sZF9pbWFnZXMgPSB7aXRl
+bVsiYXNzZXRJZCJdOiBpdGVtIGZvciBpdGVtIGluIGV4aXN0aW5nX2luZGV4LmdldCgiaW1hZ2Vz
+IiwgW10pfQogICAgICAgIHJlY29yZHMgPSBbXQogICAgICAgIGNvbXBsZXRlID0gVHJ1ZQogICAg
+ICAgIHRyeToKICAgICAgICAgICAgZW52aXJvbm1lbnQgPSBVbml0eVB5LmxvYWQoc3RyKHBhdGgp
+KQogICAgICAgICAgICBvYmplY3RzID0gZW52aXJvbm1lbnQub2JqZWN0cy52YWx1ZXMoKSBpZiBp
+c2luc3RhbmNlKGVudmlyb25tZW50Lm9iamVjdHMsIGRpY3QpIGVsc2UgZW52aXJvbm1lbnQub2Jq
+ZWN0cwogICAgICAgICAgICBmb3Igb2JqIGluIG9iamVjdHM6CiAgICAgICAgICAgICAgICBpZiBv
+YmoudHlwZS5uYW1lIG5vdCBpbiB7IlNwcml0ZSIsICJUZXh0dXJlMkQifToKICAgICAgICAgICAg
+ICAgICAgICBjb250aW51ZQogICAgICAgICAgICAgICAgYXNzZXRfZmlsZSA9IHN0cihnZXRhdHRy
+KGdldGF0dHIob2JqLCAiYXNzZXRzX2ZpbGUiLCBOb25lKSwgIm5hbWUiLCAidW5rbm93biIpKQog
+ICAgICAgICAgICAgICAgcGF0aF9pZCA9IHN0cihvYmoucGF0aF9pZCkKICAgICAgICAgICAgICAg
+IGFzc2V0X2lkID0gInVuaXR5OiIgKyBjb250YWluZXJfc2hhICsgIjoiICsgYXNzZXRfZmlsZSAr
+ICI6IiArIHBhdGhfaWQgKyAiOiIgKyBvYmoudHlwZS5uYW1lCiAgICAgICAgICAgICAgICBpbWFn
+ZV9pZCA9IGhhc2hsaWIuc2hhMjU2KGFzc2V0X2lkLmVuY29kZSgidXRmLTgiKSkuaGV4ZGlnZXN0
+KCkKICAgICAgICAgICAgICAgIHRhcmdldCA9IG91dHB1dCAvICJleHRyYWN0ZWQiIC8gaW1hZ2Vf
+aWRbOjJdIC8gKGltYWdlX2lkICsgIi5wbmciKQogICAgICAgICAgICAgICAgaWYgYXNzZXRfaWQg
+aW4gb2xkX2ltYWdlcyBhbmQgdGFyZ2V0LmV4aXN0cygpOgogICAgICAgICAgICAgICAgICAgIHJl
+Y29yZHMuYXBwZW5kKG9sZF9pbWFnZXNbYXNzZXRfaWRdKQogICAgICAgICAgICAgICAgICAgIGNv
+bnRpbnVlCiAgICAgICAgICAgICAgICBpZiBhcmdzLmxpbWl0X2ltYWdlcyBpcyBub3QgTm9uZSBh
+bmQgaW1hZ2VzID49IGFyZ3MubGltaXRfaW1hZ2VzOgogICAgICAgICAgICAgICAgICAgIGNvbXBs
+ZXRlID0gRmFsc2UKICAgICAgICAgICAgICAgICAgICBicmVhawogICAgICAgICAgICAgICAgdHJ5
+OgogICAgICAgICAgICAgICAgICAgIGRhdGEgPSBvYmoucmVhZCgpIGlmIGhhc2F0dHIob2JqLCAi
+cmVhZCIpIGVsc2Ugb2JqLnBhcnNlX2FzX29iamVjdCgpCiAgICAgICAgICAgICAgICAgICAgcGlj
+dHVyZSA9IGRhdGEuaW1hZ2UKICAgICAgICAgICAgICAgICAgICBpZiBwaWN0dXJlIGlzIE5vbmU6
+CiAgICAgICAgICAgICAgICAgICAgICAgIHJhaXNlIFZhbHVlRXJyb3IoIlVuaXR5IG9iamVjdCBj
+b250YWlucyBubyBkZWNvZGFibGUgaW1hZ2UiKQogICAgICAgICAgICAgICAgICAgIHRhcmdldC5w
+YXJlbnQubWtkaXIocGFyZW50cz1UcnVlLCBleGlzdF9vaz1UcnVlKQogICAgICAgICAgICAgICAg
+ICAgIGlmIG5vdCB0YXJnZXQuZXhpc3RzKCkgb3IgYXJncy5mb3JjZToKICAgICAgICAgICAgICAg
+ICAgICAgICAgcGljdHVyZS5zYXZlKHRhcmdldCwgZm9ybWF0PSJQTkciKQogICAgICAgICAgICAg
+ICAgICAgIHJlY29yZHMuYXBwZW5kKHsKICAgICAgICAgICAgICAgICAgICAgICAgImFzc2V0SWQi
+OiBhc3NldF9pZCwgImFzc2V0TmFtZSI6IHN0cihnZXRhdHRyKGRhdGEsICJtX05hbWUiLCAiIikp
+LAogICAgICAgICAgICAgICAgICAgICAgICAia2luZCI6IG9iai50eXBlLm5hbWUsICJwYXRoSWQi
+OiBwYXRoX2lkLCAiYXNzZXRzRmlsZSI6IGFzc2V0X2ZpbGUsCiAgICAgICAgICAgICAgICAgICAg
+ICAgICJjb250YWluZXJQYXRoIjogcmVsYXRpdmUsICJjb250YWluZXJTaGEyNTYiOiBjb250YWlu
+ZXJfc2hhLAogICAgICAgICAgICAgICAgICAgICAgICAicGF0aCI6IHJlbChvdXRwdXQgLyAiZXh0
+cmFjdGVkIiwgdGFyZ2V0KSwKICAgICAgICAgICAgICAgICAgICAgICAgImV4dHJhY3RlZFNoYTI1
+NiI6IGRpZ2VzdCh0YXJnZXQpLCAid2lkdGgiOiBwaWN0dXJlLndpZHRoLAogICAgICAgICAgICAg
+ICAgICAgICAgICAiaGVpZ2h0IjogcGljdHVyZS5oZWlnaHQKICAgICAgICAgICAgICAgICAgICB9
+KQogICAgICAgICAgICAgICAgICAgIGltYWdlcyArPSAxCiAgICAgICAgICAgICAgICBleGNlcHQg
+RXhjZXB0aW9uIGFzIGV4YzoKICAgICAgICAgICAgICAgICAgICBmYWlsdXJlcy5hcHBlbmQoeyJj
+b250YWluZXIiOiByZWxhdGl2ZSwgInBhdGhJZCI6IHN0cihvYmoucGF0aF9pZCksICJlcnJvciI6
+IHN0cihleGMpWzozMDBdfSkKICAgICAgICBleGNlcHQgRXhjZXB0aW9uIGFzIGV4YzoKICAgICAg
+ICAgICAgY29tcGxldGUgPSBGYWxzZQogICAgICAgICAgICBmYWlsdXJlcy5hcHBlbmQoeyJjb250
+YWluZXIiOiByZWxhdGl2ZSwgImVycm9yIjogc3RyKGV4YylbOjMwMF19KQogICAgICAgIHNhdmVf
+anNvbihvdXRwdXRfaW5kZXgsIHsKICAgICAgICAgICAgInNjaGVtYSI6IFNDSEVNQSwgInNvdXJj
+ZSI6IHNvdXJjZV9wcm92ZW5hbmNlKGFyZ3MpLAogICAgICAgICAgICAiY29udGFpbmVyIjogcmVs
+YXRpdmUsICJjb250YWluZXJTaGEyNTYiOiBjb250YWluZXJfc2hhLAogICAgICAgICAgICAiY29t
+cGxldGUiOiBjb21wbGV0ZSwgImltYWdlcyI6IHJlY29yZHMKICAgICAgICB9KQogICAgICAgIHBy
+aW50KGYiZXh0cmFjdCB7cmVsYXRpdmV9OiB7bGVuKHJlY29yZHMpfSBpbWFnZXMiKQogICAgICAg
+IGlmIGFyZ3MubGltaXRfaW1hZ2VzIGlzIG5vdCBOb25lIGFuZCBpbWFnZXMgPj0gYXJncy5saW1p
+dF9pbWFnZXM6CiAgICAgICAgICAgIGJyZWFrCiAgICBzYXZlX2pzb24ob3V0cHV0IC8gInJlcG9y
+dCIgLyAiZXh0cmFjdC1sYXRlc3QuanNvbiIsIHsKICAgICAgICAic2NoZW1hIjogU0NIRU1BLCAi
+YnVuZGxlc0F0dGVtcHRlZCI6IGJ1bmRsZXMsICJpbWFnZXMiOiBpbWFnZXMsCiAgICAgICAgImZh
+aWx1cmVzIjogZmFpbHVyZXMsICJzb3VyY2UiOiBzb3VyY2VfcHJvdmVuYW5jZShhcmdzKQogICAg
+fSkKICAgIHJldHVybiAwCgoKZGVmIHJlYWRfcjM5KHBhdGgpOgogICAgaWYgcGF0aCBpcyBOb25l
+OgogICAgICAgIHJldHVybiB7fQogICAgaWYgcGF0aC5pc19kaXIoKToKICAgICAgICBwYXJ0cyA9
+IHNvcnRlZChwYXRoLmdsb2IoInF1ZXJ5LWluZGV4LnBhcnRbMC05XVswLTldIikpCiAgICAgICAg
+aWYgbm90IHBhcnRzOgogICAgICAgICAgICByYWlzZSBGaWxlTm90Rm91bmRFcnJvcigiUjM5IHF1
+ZXJ5LWluZGV4LnBhcnROTiBmaWxlcyBub3QgZm91bmQuIikKICAgICAgICBudW1iZXJzID0gW2lu
+dChwLm5hbWVbLTI6XSkgZm9yIHAgaW4gcGFydHNdCiAgICAgICAgaWYgbnVtYmVycyAhPSBsaXN0
+KHJhbmdlKGxlbihudW1iZXJzKSkpOgogICAgICAgICAgICByYWlzZSBWYWx1ZUVycm9yKCJSMzkg
+cXVlcnktaW5kZXggcGFydHMgYXJlIGluY29tcGxldGUuIikKICAgICAgICBiaW5hcnkgPSBiIiIu
+am9pbihwLnJlYWRfYnl0ZXMoKSBmb3IgcCBpbiBwYXJ0cykKICAgICAgICBkYXRhID0ganNvbi5s
+b2FkcyhnemlwLmRlY29tcHJlc3MoYmluYXJ5KSkKICAgIGVsc2U6CiAgICAgICAgd2l0aCBnemlw
+Lm9wZW4ocGF0aCwgInJ0IiwgZW5jb2Rpbmc9InV0Zi04IikgYXMgc291cmNlOgogICAgICAgICAg
+ICBkYXRhID0ganNvbi5sb2FkKHNvdXJjZSkKICAgIGlmIGRhdGEuZ2V0KCJnYW1lVmVyc2lvbiIp
+ICE9ICIxLjI0LjEzIiBvciBub3QgaXNpbnN0YW5jZShkYXRhLmdldCgiaXRlbXMiKSwgbGlzdCk6
+CiAgICAgICAgcmFpc2UgVmFsdWVFcnJvcigiVW5zdXBwb3J0ZWQgUjM5IGluZGV4IG9yIHNvdXJj
+ZSB2ZXJzaW9uLiIpCiAgICBieV9oYXNoID0gZGVmYXVsdGRpY3Qoc2V0KQogICAgZm9yIHJlY29y
+ZCBpbiBkYXRhWyJpdGVtcyJdOgogICAgICAgIHNoYSA9IHJlY29yZC5nZXQoImljb24iLCB7fSku
+Z2V0KCJzaGEyNTYiKSBpZiBpc2luc3RhbmNlKHJlY29yZC5nZXQoImljb24iKSwgZGljdCkgZWxz
+ZSBOb25lCiAgICAgICAgaXRlbV9pZCA9IHN0cihyZWNvcmQuZ2V0KCJpdGVtSUQiLCAiIikpCiAg
+ICAgICAgaWYgaXNpbnN0YW5jZShzaGEsIHN0cikgYW5kIEhFWERJR0VTVC5mdWxsbWF0Y2goc2hh
+KSBhbmQgSVRFTV9JRC5mdWxsbWF0Y2goaXRlbV9pZCk6CiAgICAgICAgICAgIGJ5X2hhc2hbc2hh
+XS5hZGQoaXRlbV9pZCkKICAgIHJldHVybiBieV9oYXNoCgoKZGVmIHJlYWRfZXh0ZXJuYWxfbWFw
+cGluZyhwYXRoKToKICAgIHJlc3VsdCA9IGRlZmF1bHRkaWN0KGxpc3QpCiAgICBpZiBwYXRoIGlz
+IE5vbmU6CiAgICAgICAgcmV0dXJuIHJlc3VsdAogICAgd2l0aCBwYXRoLm9wZW4oInIiLCBlbmNv
+ZGluZz0idXRmLTgtc2lnIiwgbmV3bGluZT0iIikgYXMgc3RyZWFtOgogICAgICAgIHJlYWRlciA9
+IGNzdi5EaWN0UmVhZGVyKHN0cmVhbSkKICAgICAgICBpZiBub3QgcmVhZGVyLmZpZWxkbmFtZXMg
+b3IgIml0ZW1faWQiIG5vdCBpbiByZWFkZXIuZmllbGRuYW1lczoKICAgICAgICAgICAgcmFpc2Ug
+VmFsdWVFcnJvcigiTWFwcGluZyBDU1YgbXVzdCBjb250YWluIGl0ZW1faWQuIikKICAgICAgICBm
+b3IgbGluZSwgcm93IGluIGVudW1lcmF0ZShyZWFkZXIsIDIpOgogICAgICAgICAgICBpdGVtID0g
+c3RyKHJvdy5nZXQoIml0ZW1faWQiLCAiIikpLnN0cmlwKCkKICAgICAgICAgICAgc2hhID0gc3Ry
+KHJvdy5nZXQoInNvdXJjZV9zaGEyNTYiLCAiIikpLnN0cmlwKCkubG93ZXIoKQogICAgICAgICAg
+ICBhc3NldF9pZCA9IHN0cihyb3cuZ2V0KCJhc3NldF9pZCIsICIiKSkuc3RyaXAoKQogICAgICAg
+ICAgICBzb3VyY2VfcGF0aCA9IHN0cihyb3cuZ2V0KCJzb3VyY2VfcGF0aCIsICIiKSkuc3RyaXAo
+KS5yZXBsYWNlKCJcXCIsICIvIikKICAgICAgICAgICAgZXZpZGVuY2UgPSBzdHIocm93LmdldCgi
+ZXZpZGVuY2UiLCAiIikpLnN0cmlwKCkKICAgICAgICAgICAgaWYgbm90IElURU1fSUQuZnVsbG1h
+dGNoKGl0ZW0pIG9yIG5vdCAoc2hhIGFuZCBIRVhESUdFU1QuZnVsbG1hdGNoKHNoYSkgb3IgYXNz
+ZXRfaWQgb3Igc291cmNlX3BhdGgpOgogICAgICAgICAgICAgICAgcmFpc2UgVmFsdWVFcnJvcihm
+IkludmFsaWQgbWFwcGluZyBDU1YgYXQgbGluZSB7bGluZX0iKQogICAgICAgICAgICBpZiBzb3Vy
+Y2VfcGF0aC5zdGFydHN3aXRoKCIvIikgb3IgIi4uIiBpbiBQYXRoKHNvdXJjZV9wYXRoKS5wYXJ0
+czoKICAgICAgICAgICAgICAgIHJhaXNlIFZhbHVlRXJyb3IoZiJVbnNhZmUgc291cmNlX3BhdGgg
+YXQgQ1NWIGxpbmUge2xpbmV9IikKICAgICAgICAgICAga2V5ID0gKCJzaGEiLCBzaGEpIGlmIHNo
+YSBlbHNlICgiYXNzZXQiLCBhc3NldF9pZCkgaWYgYXNzZXRfaWQgZWxzZSAoInBhdGgiLCBzb3Vy
+Y2VfcGF0aCkKICAgICAgICAgICAgcmVzdWx0W2tleV0uYXBwZW5kKHsiaXRlbUlkIjogaXRlbSwg
+Im1ldGhvZCI6ICJzdXBwbGllZF9tYXBwaW5nIiwKICAgICAgICAgICAgICAgICAgICAgICAgICAg
+ICAgICAiZXZpZGVuY2UiOiBldmlkZW5jZSwgImV2aWRlbmNlVmVyaWZpZWQiOiBGYWxzZX0pCiAg
+ICByZXR1cm4gcmVzdWx0CgoKZGVmIHJlYWRfdW5pdHlfZXZpZGVuY2Uob3V0cHV0KToKICAgIGlu
+ZGV4ID0gZGVmYXVsdGRpY3QobGlzdCkKICAgIGZvciBwYXRoIGluIHNvcnRlZCgob3V0cHV0IC8g
+ImV2aWRlbmNlIikuZ2xvYigidW5pdHktKi5qc29uIikpOgogICAgICAgIGRvY3VtZW50ID0gbG9h
+ZF9qc29uKHBhdGgpCiAgICAgICAgZm9yIGl0ZW0gaW4gZG9jdW1lbnQuZ2V0KCJpbWFnZXMiLCBb
+XSk6CiAgICAgICAgICAgIGluZGV4W2l0ZW1bInBhdGgiXV0uYXBwZW5kKGl0ZW0pCiAgICByZXR1
+cm4gaW5kZXgKCgpkZWYgcmVhZF9leGlzdGluZ19tYW5pZmVzdChvdXRwdXQsIGtleSk6CiAgICBw
+YXRoID0gb3V0cHV0IC8gIm1hbmlmZXN0IiAvICgic2hhcmQtIiArIGtleSArICIuanNvbiIpCiAg
+ICByZXR1cm4gbG9hZF9qc29uKHBhdGgpIGlmIHBhdGguZXhpc3RzKCkgZWxzZSB7fQoKCmRlZiBn
+ZW5lcmF0ZV92YXJpYW50KGltYWdlLCBtYXhfZWRnZSwgdGFyZ2V0LCBwcmV2aW91cz1Ob25lLCB2
+ZXJpZnk9RmFsc2UpOgogICAgaWYgcHJldmlvdXMgYW5kIHRhcmdldC5pc19maWxlKCkgYW5kIHBy
+ZXZpb3VzLmdldCgiYnl0ZXMiKSA9PSB0YXJnZXQuc3RhdCgpLnN0X3NpemU6CiAgICAgICAgaWYg
+bm90IHZlcmlmeSBvciBwcmV2aW91cy5nZXQoInNoYTI1NiIpID09IGRpZ2VzdCh0YXJnZXQpOgog
+ICAgICAgICAgICByZXR1cm4gcHJldmlvdXMsIFRydWUKICAgIHRhcmdldC5wYXJlbnQubWtkaXIo
+cGFyZW50cz1UcnVlLCBleGlzdF9vaz1UcnVlKQogICAgcGljdHVyZSA9IGltYWdlLmNvcHkoKQog
+ICAgcGljdHVyZS50aHVtYm5haWwoKG1heF9lZGdlLCBtYXhfZWRnZSksIEltYWdlLlJlc2FtcGxp
+bmcuTEFOQ1pPUykKICAgIGlmIHBpY3R1cmUubW9kZSBub3QgaW4gKCJSR0IiLCAiUkdCQSIpOgog
+ICAgICAgIHBpY3R1cmUgPSBwaWN0dXJlLmNvbnZlcnQoIlJHQkEiIGlmICJBIiBpbiBwaWN0dXJl
+LmdldGJhbmRzKCkgb3IgInRyYW5zcGFyZW5jeSIgaW4gcGljdHVyZS5pbmZvIGVsc2UgIlJHQiIp
+CiAgICB0ZW1wb3JhcnkgPSB0YXJnZXQud2l0aF9uYW1lKHRhcmdldC5uYW1lICsgIi50bXAiKQog
+ICAgcGljdHVyZS5zYXZlKHRlbXBvcmFyeSwgZm9ybWF0PSJXRUJQIiwgbG9zc2xlc3M9VHJ1ZSwg
+bWV0aG9kPTQsIGV4YWN0PVRydWUpCiAgICB0ZW1wb3JhcnkucmVwbGFjZSh0YXJnZXQpCiAgICBy
+ZXR1cm4geyJwYXRoIjogdGFyZ2V0LCAid2lkdGgiOiBwaWN0dXJlLndpZHRoLCAiaGVpZ2h0Ijog
+cGljdHVyZS5oZWlnaHQsCiAgICAgICAgICAgICJieXRlcyI6IHRhcmdldC5zdGF0KCkuc3Rfc2l6
+ZSwgInNoYTI1NiI6IGRpZ2VzdCh0YXJnZXQpfSwgRmFsc2UKCgpkZWYgY29tbWFuZF9idWlsZChh
+cmdzKToKICAgIHJvb3QsIG91dHB1dCA9IGFyZ3MuaW5wdXQucmVzb2x2ZSgpLCBhcmdzLm91dHB1
+dC5yZXNvbHZlKCkKICAgIGFzc2VydF9vdXRwdXRfc2VwYXJhdGUocm9vdCwgb3V0cHV0KQogICAg
+cjM5ID0gcmVhZF9yMzkoYXJncy5yMzlfaW5kZXgpCiAgICBzdXBwbGllZCA9IHJlYWRfZXh0ZXJu
+YWxfbWFwcGluZyhhcmdzLm1hcHBpbmcpCiAgICB1bml0eSA9IHJlYWRfdW5pdHlfZXZpZGVuY2Uo
+b3V0cHV0KQogICAgZm9yIGtleSBpbiAoW2FyZ3Muc2hhcmRdIGlmIGFyZ3Muc2hhcmQgIT0gImFs
+bCIgZWxzZSBsaXN0KFNIQVJEUykpOgogICAgICAgIGludmVudG9yeV9wYXRoID0gb3V0cHV0IC8g
+ImludmVudG9yeSIgLyAoInNoYXJkLSIgKyBrZXkgKyAiLmpzb24iKQogICAgICAgIGlmIG5vdCBp
+bnZlbnRvcnlfcGF0aC5leGlzdHMoKToKICAgICAgICAgICAgaWYgYXJncy5zaGFyZCAhPSAiYWxs
+IjoKICAgICAgICAgICAgICAgIHJhaXNlIEZpbGVOb3RGb3VuZEVycm9yKGludmVudG9yeV9wYXRo
+KQogICAgICAgICAgICBjb250aW51ZQogICAgICAgIGludmVudG9yeSA9IGxvYWRfanNvbihpbnZl
+bnRvcnlfcGF0aCkKICAgICAgICBpZiBQYXRoKGludmVudG9yeVsiaW5wdXQiXSkucmVzb2x2ZSgp
+ICE9IHJvb3Q6CiAgICAgICAgICAgIHJhaXNlIFZhbHVlRXJyb3IoZiJJbnZlbnRvcnkgcm9vdCBt
+aXNtYXRjaDoge2ludmVudG9yeV9wYXRofSIpCiAgICAgICAgcHJldmlvdXMgPSByZWFkX2V4aXN0
+aW5nX21hbmlmZXN0KG91dHB1dCwga2V5KQogICAgICAgIG9sZCA9IHtlbnRyeVsic291cmNlU2hh
+MjU2Il06IGVudHJ5IGZvciBlbnRyeSBpbiBwcmV2aW91cy5nZXQoImltYWdlcyIsIFtdKQogICAg
+ICAgICAgICAgICBpZiBlbnRyeS5nZXQoInJlY2lwZSIpID09IFJFQ0lQRX0KICAgICAgICByZXN1
+bHQgPSBbXQogICAgICAgIHByb2JsZW1zID0gW10KICAgICAgICBzZWVuID0gZGVmYXVsdGRpY3Qo
+bGlzdCkKICAgICAgICBjb3VudCA9IDAKICAgICAgICB0cnVuY2F0ZWQgPSBGYWxzZQogICAgICAg
+IGZvciByZWNvcmQgaW4gaW52ZW50b3J5WyJyZWNvcmRzIl06CiAgICAgICAgICAgIGlmIGFyZ3Mu
+bGltaXQgaXMgbm90IE5vbmUgYW5kIGNvdW50ID49IGFyZ3MubGltaXQ6CiAgICAgICAgICAgICAg
+ICB0cnVuY2F0ZWQgPSBUcnVlCiAgICAgICAgICAgICAgICBicmVhawogICAgICAgICAgICBjb3Vu
+dCArPSAxCiAgICAgICAgICAgIGlmIHJlY29yZFsic3RhdHVzIl0gIT0gIm9rIjoKICAgICAgICAg
+ICAgICAgIHByb2JsZW1zLmFwcGVuZCh7InR5cGUiOiByZWNvcmRbInN0YXR1cyJdLCAicGF0aCI6
+IHJlY29yZFsicGF0aCJdLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAiZXJyb3Ii
+OiByZWNvcmQuZ2V0KCJlcnJvciIpfSkKICAgICAgICAgICAgICAgIGNvbnRpbnVlCiAgICAgICAg
+ICAgIHJlbGF0aXZlID0gcmVjb3JkWyJwYXRoIl0KICAgICAgICAgICAgc291cmNlID0gKHJvb3Qg
+LyByZWxhdGl2ZSkucmVzb2x2ZSgpCiAgICAgICAgICAgIGlmIHJvb3QgIT0gc291cmNlIGFuZCBy
+b290IG5vdCBpbiBzb3VyY2UucGFyZW50czoKICAgICAgICAgICAgICAgIHByb2JsZW1zLmFwcGVu
+ZCh7InR5cGUiOiAidW5zYWZlX3BhdGgiLCAicGF0aCI6IHJlbGF0aXZlfSkKICAgICAgICAgICAg
+ICAgIGNvbnRpbnVlCiAgICAgICAgICAgIGlmIG5vdCBzb3VyY2UuZXhpc3RzKCkgb3IgZGlnZXN0
+KHNvdXJjZSkgIT0gcmVjb3JkWyJzaGEyNTYiXToKICAgICAgICAgICAgICAgIHByb2JsZW1zLmFw
+cGVuZCh7InR5cGUiOiAibWlzc2luZ19vcl9jaGFuZ2VkX3NvdXJjZSIsICJwYXRoIjogcmVsYXRp
+dmV9KQogICAgICAgICAgICAgICAgY29udGludWUKICAgICAgICAgICAgc2hhID0gcmVjb3JkWyJz
+aGEyNTYiXQogICAgICAgICAgICBzZWVuW3NoYV0uYXBwZW5kKHJlbGF0aXZlKQogICAgICAgICAg
+ICBsaW5rcyA9IFt7Iml0ZW1JZCI6IGl0ZW0sICJtZXRob2QiOiAicjM5X2V4YWN0X3NvdXJjZV9z
+aGEyNTYiLAogICAgICAgICAgICAgICAgICAgICAgImV2aWRlbmNlIjogIlIzOSB2MS4yNC4xMyBx
+dWVyeS1pbmRleCIsICJldmlkZW5jZVZlcmlmaWVkIjogVHJ1ZX0KICAgICAgICAgICAgICAgICAg
+ICAgZm9yIGl0ZW0gaW4gc29ydGVkKHIzOS5nZXQoc2hhLCBzZXQoKSksIGtleT1pbnQpXQogICAg
+ICAgICAgICBhc3NldHMgPSBbYXNzZXQgZm9yIGFzc2V0IGluIHVuaXR5LmdldChyZWxhdGl2ZSwg
+W10pCiAgICAgICAgICAgICAgICAgICAgICBpZiBhc3NldC5nZXQoImV4dHJhY3RlZFNoYTI1NiIp
+ID09IHNoYV0KICAgICAgICAgICAgZm9yIHNlbGVjdG9yIGluIFsoInNoYSIsIHNoYSksICgicGF0
+aCIsIHJlbGF0aXZlKV0gKyBbCiAgICAgICAgICAgICAgICAoImFzc2V0IiwgaXRlbVsiYXNzZXRJ
+ZCJdKSBmb3IgaXRlbSBpbiBhc3NldHNdOgogICAgICAgICAgICAgICAgbGlua3MuZXh0ZW5kKHN1
+cHBsaWVkLmdldChzZWxlY3RvciwgW10pKQogICAgICAgICAgICBsaW5rcyA9IGxpc3QoeyhsaW5r
+WyJpdGVtSWQiXSwgbGlua1sibWV0aG9kIl0sIGxpbmtbImV2aWRlbmNlIl0pOiBsaW5rIGZvciBs
+aW5rIGluIGxpbmtzfS52YWx1ZXMoKSkKICAgICAgICAgICAgaWYgbm90IGxpbmtzOgogICAgICAg
+ICAgICAgICAgcHJvYmxlbXMuYXBwZW5kKHsidHlwZSI6ICJ1bm1hcHBlZF9pbWFnZSIsICJwYXRo
+IjogcmVsYXRpdmUsICJzaGEyNTYiOiBzaGF9KQogICAgICAgICAgICAgICAgaWYgbm90IGFyZ3Mu
+aW5jbHVkZV91bm1hcHBlZDoKICAgICAgICAgICAgICAgICAgICBjb250aW51ZQogICAgICAgICAg
+ICB0cnk6CiAgICAgICAgICAgICAgICB3aXRoIEltYWdlLm9wZW4oc291cmNlKSBhcyBpbWFnZToK
+ICAgICAgICAgICAgICAgICAgICBpbWFnZS5sb2FkKCkKICAgICAgICAgICAgICAgICAgICB3aWR0
+aCwgaGVpZ2h0ID0gaW1hZ2Uuc2l6ZQogICAgICAgICAgICAgICAgICAgIG91dHB1dHMgPSB7fQog
+ICAgICAgICAgICAgICAgICAgIG9sZF9vdXRwdXRzID0gb2xkLmdldChzaGEsIHt9KS5nZXQoInZh
+cmlhbnRzIiwge30pCiAgICAgICAgICAgICAgICAgICAgc2tpcHBlZCA9IDAKICAgICAgICAgICAg
+ICAgICAgICBmb3IgbmFtZSwgc2l6ZSBpbiAoKCJ0aHVtYm5haWwiLCAxMjgpLCAoImRldGFpbCIs
+IDUxMikpOgogICAgICAgICAgICAgICAgICAgICAgICB0YXJnZXQgPSBvdXRwdXQgLyAiaW1hZ2Vz
+IiAvIG5hbWUgLyBzaGFbOjJdIC8gKHNoYSArICIud2VicCIpCiAgICAgICAgICAgICAgICAgICAg
+ICAgIG1ldGFkYXRhLCBoaXQgPSBnZW5lcmF0ZV92YXJpYW50KAogICAgICAgICAgICAgICAgICAg
+ICAgICAgICAgaW1hZ2UsIHNpemUsIHRhcmdldCwgb2xkX291dHB1dHMuZ2V0KG5hbWUpLCBhcmdz
+LnZlcmlmeV9leGlzdGluZykKICAgICAgICAgICAgICAgICAgICAgICAgbWV0YWRhdGFbInBhdGgi
+XSA9IHJlbChvdXRwdXQsIHRhcmdldCkKICAgICAgICAgICAgICAgICAgICAgICAgb3V0cHV0c1tu
+YW1lXSA9IG1ldGFkYXRhCiAgICAgICAgICAgICAgICAgICAgICAgIHNraXBwZWQgKz0gaW50KGhp
+dCkKICAgICAgICAgICAgICAgICAgICBpZiBhcmdzLmtlZXBfb3JpZ2luYWxzIGFuZCBtYXgod2lk
+dGgsIGhlaWdodCkgPiA1MTI6CiAgICAgICAgICAgICAgICAgICAgICAgIHRhcmdldCA9IG91dHB1
+dCAvICJpbWFnZXMiIC8gIm9yaWdpbmFsIiAvIHNoYVs6Ml0gLyAoc2hhICsgIi5wbmciKQogICAg
+ICAgICAgICAgICAgICAgICAgICBvbGRfbWV0YSA9IG9sZF9vdXRwdXRzLmdldCgib3JpZ2luYWwi
+LCB7fSkKICAgICAgICAgICAgICAgICAgICAgICAgaWYgbm90ICh0YXJnZXQuaXNfZmlsZSgpIGFu
+ZCBvbGRfbWV0YS5nZXQoImJ5dGVzIikgPT0gdGFyZ2V0LnN0YXQoKS5zdF9zaXplCiAgICAgICAg
+ICAgICAgICAgICAgICAgICAgICAgICAgYW5kIChub3QgYXJncy52ZXJpZnlfZXhpc3Rpbmcgb3Ig
+b2xkX21ldGEuZ2V0KCJzaGEyNTYiKSA9PSBkaWdlc3QodGFyZ2V0KSkpOgogICAgICAgICAgICAg
+ICAgICAgICAgICAgICAgdGFyZ2V0LnBhcmVudC5ta2RpcihwYXJlbnRzPVRydWUsIGV4aXN0X29r
+PVRydWUpCiAgICAgICAgICAgICAgICAgICAgICAgICAgICB0ZW1wb3JhcnkgPSB0YXJnZXQud2l0
+aF9uYW1lKHRhcmdldC5uYW1lICsgIi50bXAiKQogICAgICAgICAgICAgICAgICAgICAgICAgICAg
+aW1hZ2Uuc2F2ZSh0ZW1wb3JhcnksIGZvcm1hdD0iUE5HIikKICAgICAgICAgICAgICAgICAgICAg
+ICAgICAgIHRlbXBvcmFyeS5yZXBsYWNlKHRhcmdldCkKICAgICAgICAgICAgICAgICAgICAgICAg
+b3V0cHV0c1sib3JpZ2luYWwiXSA9IHsKICAgICAgICAgICAgICAgICAgICAgICAgICAgICJwYXRo
+IjogcmVsKG91dHB1dCwgdGFyZ2V0KSwgIndpZHRoIjogd2lkdGgsICJoZWlnaHQiOiBoZWlnaHQs
+CiAgICAgICAgICAgICAgICAgICAgICAgICAgICAiYnl0ZXMiOiB0YXJnZXQuc3RhdCgpLnN0X3Np
+emUsICJzaGEyNTYiOiBkaWdlc3QodGFyZ2V0KQogICAgICAgICAgICAgICAgICAgICAgICB9CiAg
+ICAgICAgICAgICAgICAgICAgaWYgbWF4KHdpZHRoLCBoZWlnaHQpIDwgMTI4OgogICAgICAgICAg
+ICAgICAgICAgICAgICBwcm9ibGVtcy5hcHBlbmQoeyJ0eXBlIjogInVuZGVyXzEyOHB4IiwgInBh
+dGgiOiByZWxhdGl2ZSwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAi
+d2lkdGgiOiB3aWR0aCwgImhlaWdodCI6IGhlaWdodH0pCiAgICAgICAgICAgICAgICAgICAgaWYg
+bWF4KHdpZHRoLCBoZWlnaHQpIDwgNTEyOgogICAgICAgICAgICAgICAgICAgICAgICBwcm9ibGVt
+cy5hcHBlbmQoeyJ0eXBlIjogInVuZGVyXzUxMnB4IiwgInBhdGgiOiByZWxhdGl2ZSwKICAgICAg
+ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAid2lkdGgiOiB3aWR0aCwgImhlaWdo
+dCI6IGhlaWdodH0pCiAgICAgICAgICAgICAgICAgICAgcmVzdWx0LmFwcGVuZCh7CiAgICAgICAg
+ICAgICAgICAgICAgICAgICJzb3VyY2VQYXRoIjogcmVsYXRpdmUsICJzb3VyY2VTaGEyNTYiOiBz
+aGEsCiAgICAgICAgICAgICAgICAgICAgICAgICJzb3VyY2VCeXRlcyI6IHJlY29yZFsiYnl0ZXMi
+XSwgInNvdXJjZUZvcm1hdCI6IHJlY29yZFsiZm9ybWF0Il0sCiAgICAgICAgICAgICAgICAgICAg
+ICAgICJzb3VyY2VEaW1lbnNpb25zIjogW3dpZHRoLCBoZWlnaHRdLCAic291cmNlIjogaW52ZW50
+b3J5WyJzb3VyY2UiXSwKICAgICAgICAgICAgICAgICAgICAgICAgImFzc2V0SWRzIjogW2l0ZW1b
+ImFzc2V0SWQiXSBmb3IgaXRlbSBpbiBhc3NldHNdLAogICAgICAgICAgICAgICAgICAgICAgICAi
+bGlua3MiOiBsaW5rcywgInZhcmlhbnRzIjogb3V0cHV0cywgInJlY2lwZSI6IFJFQ0lQRQogICAg
+ICAgICAgICAgICAgICAgIH0pCiAgICAgICAgICAgICAgICAgICAgb2xkW3NoYV0gPSB7InZhcmlh
+bnRzIjogb3V0cHV0c30KICAgICAgICAgICAgZXhjZXB0IChPU0Vycm9yLCBWYWx1ZUVycm9yLCBV
+bmlkZW50aWZpZWRJbWFnZUVycm9yLCBJbWFnZS5EZWNvbXByZXNzaW9uQm9tYkVycm9yKSBhcyBl
+eGM6CiAgICAgICAgICAgICAgICBwcm9ibGVtcy5hcHBlbmQoeyJ0eXBlIjogImRlY29kZV9vcl9l
+bmNvZGVfZmFpbHVyZSIsICJwYXRoIjogcmVsYXRpdmUsCiAgICAgICAgICAgICAgICAgICAgICAg
+ICAgICAgICAgICJlcnJvciI6IHN0cihleGMpWzozMDBdfSkKICAgICAgICBmb3Igc2hhLCBwYXRo
+cyBpbiBzZWVuLml0ZW1zKCk6CiAgICAgICAgICAgIGlmIGxlbihwYXRocykgPiAxOgogICAgICAg
+ICAgICAgICAgcHJvYmxlbXMuYXBwZW5kKHsidHlwZSI6ICJkdXBsaWNhdGVfc291cmNlIiwgInNo
+YTI1NiI6IHNoYSwgInBhdGhzIjogcGF0aHN9KQogICAgICAgIGZpbmlzaGVkID0gaW52ZW50b3J5
+WyJjb21wbGV0ZSJdIGFuZCBub3QgdHJ1bmNhdGVkCiAgICAgICAgc2F2ZV9qc29uKG91dHB1dCAv
+ICJtYW5pZmVzdCIgLyAoInNoYXJkLSIgKyBrZXkgKyAiLmpzb24iKSwgewogICAgICAgICAgICAi
+c2NoZW1hIjogU0NIRU1BLCAic2hhcmQiOiBrZXksICJjb21wbGV0ZSI6IGZpbmlzaGVkLAogICAg
+ICAgICAgICAiaW5wdXQiOiBzdHIocm9vdCksICJzb3VyY2UiOiBpbnZlbnRvcnlbInNvdXJjZSJd
+LCAiaW1hZ2VzIjogcmVzdWx0LAogICAgICAgICAgICAibWFwcGluZ05vdGUiOiAiUjM5IGxpbmtz
+IHJlcXVpcmUgZXhhY3Qgc291cmNlIFBORyBTSEEtMjU2LiBPdGhlci12ZXJzaW9uIElEIHBhcml0
+eSBpcyBub3QgaW5kZXBlbmRlbnRseSBlc3RhYmxpc2hlZC4iLAogICAgICAgICAgICAicHVibGlj
+YXRpb25BcHByb3ZlZCI6IEZhbHNlCiAgICAgICAgfSkKICAgICAgICBzYXZlX2pzb24ob3V0cHV0
+IC8gInJlcG9ydCIgLyAoInNoYXJkLSIgKyBrZXkgKyAiLmpzb24iKSwgewogICAgICAgICAgICAi
+c2NoZW1hIjogU0NIRU1BLCAic2hhcmQiOiBrZXksICJjb21wbGV0ZSI6IGZpbmlzaGVkLAogICAg
+ICAgICAgICAic2Nhbm5lZCI6IGNvdW50LCAiY29udmVydGVkIjogbGVuKHJlc3VsdCksCiAgICAg
+ICAgICAgICJtYXRjaGVkIjogc3VtKGJvb2woeFsibGlua3MiXSkgZm9yIHggaW4gcmVzdWx0KSwg
+InByb2JsZW1zIjogcHJvYmxlbXMKICAgICAgICB9KQogICAgICAgIHByaW50KGYiYnVpbGQge2tl
+eX06IHtsZW4ocmVzdWx0KX0gaW1hZ2VzLCB7bGVuKHByb2JsZW1zKX0gZmluZGluZ3MsIHsncGFy
+dGlhbCcgaWYgbm90IGZpbmlzaGVkIGVsc2UgJ2NvbXBsZXRlJ30iKQogICAgcmV0dXJuIDAKCgpk
+ZWYgbG9hZF9jYXRhbG9nKHBhdGgpOgogICAgaWYgcGF0aCBpcyBOb25lOgogICAgICAgIHJldHVy
+biBOb25lCiAgICBmaWxlcyA9IHNvcnRlZChwYXRoLmdsb2IoInJlY29yZHMtKi5qc29uIikpIGlm
+IHBhdGguaXNfZGlyKCkgZWxzZSBbcGF0aF0KICAgIGlkcyA9IHNldCgpCiAgICBmb3IgaXRlbSBp
+biBmaWxlczoKICAgICAgICBpZiBpdGVtLnN1ZmZpeC5sb3dlcigpID09ICIuY3N2IjoKICAgICAg
+ICAgICAgd2l0aCBpdGVtLm9wZW4oZW5jb2Rpbmc9InV0Zi04LXNpZyIsIG5ld2xpbmU9IiIpIGFz
+IGhhbmRsZToKICAgICAgICAgICAgICAgIGZvciByb3cgaW4gY3N2LkRpY3RSZWFkZXIoaGFuZGxl
+KToKICAgICAgICAgICAgICAgICAgICBpZHMuYWRkKHN0cihyb3cuZ2V0KCJpdGVtX2lkIikgb3Ig
+cm93LmdldCgiaXRlbUlkIikgb3Igcm93LmdldCgiaXRlbUlEIikpKQogICAgICAgIGVsaWYgaXRl
+bS5zdWZmaXgubG93ZXIoKSA9PSAiLmpzb25sIjoKICAgICAgICAgICAgZm9yIGxpbmUgaW4gaXRl
+bS5yZWFkX3RleHQoZW5jb2Rpbmc9InV0Zi04Iikuc3BsaXRsaW5lcygpOgogICAgICAgICAgICAg
+ICAgaWYgbGluZS5zdHJpcCgpOgogICAgICAgICAgICAgICAgICAgIHJvdyA9IGpzb24ubG9hZHMo
+bGluZSkKICAgICAgICAgICAgICAgICAgICBpZHMuYWRkKHN0cihyb3cuZ2V0KCJpdGVtSWQiKSBv
+ciByb3cuZ2V0KCJpdGVtSUQiKSBvciByb3cuZ2V0KCJpdGVtX2lkIikpKQogICAgICAgIGVsc2U6
+CiAgICAgICAgICAgIHBheWxvYWQgPSBsb2FkX2pzb24oaXRlbSkKICAgICAgICAgICAgcmVjb3Jk
+cyA9IHBheWxvYWQuZ2V0KCJyIiwgcGF5bG9hZC5nZXQoIml0ZW1zIiwgW10pKSBpZiBpc2luc3Rh
+bmNlKHBheWxvYWQsIGRpY3QpIGVsc2UgcGF5bG9hZAogICAgICAgICAgICBmb3Igcm93IGluIHJl
+Y29yZHM6CiAgICAgICAgICAgICAgICBpZHMuYWRkKHN0cihyb3dbMF0gaWYgaXNpbnN0YW5jZShy
+b3csIGxpc3QpIGVsc2UKICAgICAgICAgICAgICAgICAgICAgICAgICAgIHJvdy5nZXQoIml0ZW1J
+ZCIpIG9yIHJvdy5nZXQoIml0ZW1JRCIpIG9yIHJvdy5nZXQoIml0ZW1faWQiKSkpCiAgICByZXR1
+cm4ge2l0ZW0gZm9yIGl0ZW0gaW4gaWRzIGlmIElURU1fSUQuZnVsbG1hdGNoKGl0ZW0pfQoKCmRl
+ZiBjb21tYW5kX21lcmdlKGFyZ3MpOgogICAgb3V0cHV0ID0gYXJncy5vdXRwdXQucmVzb2x2ZSgp
+CiAgICBpbWFnZXMgPSBbXQogICAgYXZhaWxhYmxlID0gW10KICAgIHByb2JsZW1zID0gW10KICAg
+IGNvbXBsZXRlZCA9IFtdCiAgICBwcm92ZW5hbmNlID0gc2V0KCkKICAgIGZvciBrZXkgaW4gU0hB
+UkRTOgogICAgICAgIHBhdGggPSBvdXRwdXQgLyAibWFuaWZlc3QiIC8gKCJzaGFyZC0iICsga2V5
+ICsgIi5qc29uIikKICAgICAgICBpZiBub3QgcGF0aC5leGlzdHMoKToKICAgICAgICAgICAgY29u
+dGludWUKICAgICAgICBtYW5pZmVzdCA9IGxvYWRfanNvbihwYXRoKQogICAgICAgIGF2YWlsYWJs
+ZS5hcHBlbmQoa2V5KQogICAgICAgIHByb3ZlbmFuY2UuYWRkKChtYW5pZmVzdC5nZXQoImlucHV0
+IiksIGpzb24uZHVtcHMobWFuaWZlc3QuZ2V0KCJzb3VyY2UiKSwgc29ydF9rZXlzPVRydWUpKSkK
+ICAgICAgICBpZiBtYW5pZmVzdC5nZXQoImNvbXBsZXRlIik6CiAgICAgICAgICAgIGNvbXBsZXRl
+ZC5hcHBlbmQoa2V5KQogICAgICAgIGltYWdlcy5leHRlbmQobWFuaWZlc3QuZ2V0KCJpbWFnZXMi
+LCBbXSkpCiAgICAgICAgcmVwb3J0ID0gb3V0cHV0IC8gInJlcG9ydCIgLyAoInNoYXJkLSIgKyBr
+ZXkgKyAiLmpzb24iKQogICAgICAgIGlmIHJlcG9ydC5leGlzdHMoKToKICAgICAgICAgICAgcHJv
+YmxlbXMuZXh0ZW5kKGxvYWRfanNvbihyZXBvcnQpLmdldCgicHJvYmxlbXMiLCBbXSkpCiAgICBt
+YXRjaGVkID0gZGVmYXVsdGRpY3QobGlzdCkKICAgIHNvdXJjZV9oYXNoZXMgPSBkZWZhdWx0ZGlj
+dChsaXN0KQogICAgZm9yIGtleSBpbiBhdmFpbGFibGU6CiAgICAgICAgaW52ZW50b3J5X3BhdGgg
+PSBvdXRwdXQgLyAiaW52ZW50b3J5IiAvICgic2hhcmQtIiArIGtleSArICIuanNvbiIpCiAgICAg
+ICAgaWYgaW52ZW50b3J5X3BhdGguZXhpc3RzKCk6CiAgICAgICAgICAgIGZvciByZWNvcmQgaW4g
+bG9hZF9qc29uKGludmVudG9yeV9wYXRoKS5nZXQoInJlY29yZHMiLCBbXSk6CiAgICAgICAgICAg
+ICAgICBpZiByZWNvcmQuZ2V0KCJzdGF0dXMiKSA9PSAib2siIGFuZCByZWNvcmQuZ2V0KCJzaGEy
+NTYiKToKICAgICAgICAgICAgICAgICAgICBzb3VyY2VfaGFzaGVzW3JlY29yZFsic2hhMjU2Il1d
+LmFwcGVuZChyZWNvcmRbInBhdGgiXSkKICAgIGZvciBpbWFnZSBpbiBpbWFnZXM6CiAgICAgICAg
+Zm9yIGxpbmsgaW4gaW1hZ2UuZ2V0KCJsaW5rcyIsIFtdKToKICAgICAgICAgICAgbWF0Y2hlZFts
+aW5rWyJpdGVtSWQiXV0uYXBwZW5kKGltYWdlKQogICAgY29uZmxpY3RzID0ge30KICAgIGZvciBp
+dGVtLCByZWNvcmRzIGluIG1hdGNoZWQuaXRlbXMoKToKICAgICAgICBoYXNoZXMgPSB7cmVjb3Jk
+WyJzb3VyY2VTaGEyNTYiXSBmb3IgcmVjb3JkIGluIHJlY29yZHN9CiAgICAgICAgaWYgbGVuKGhh
+c2hlcykgPiAxOgogICAgICAgICAgICBjb25mbGljdHNbaXRlbV0gPSBzb3J0ZWQoaGFzaGVzKQog
+ICAgZm9yIHNoYSwgcGF0aHMgaW4gc291cmNlX2hhc2hlcy5pdGVtcygpOgogICAgICAgIGlmIGxl
+bihwYXRocykgPiAxOgogICAgICAgICAgICBwcm9ibGVtcy5hcHBlbmQoeyJ0eXBlIjogImR1cGxp
+Y2F0ZV9zb3VyY2VfYWxsX3NoYXJkcyIsCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgInNo
+YTI1NiI6IHNoYSwgInBhdGhzIjogc29ydGVkKHBhdGhzKX0pCiAgICBjYXRhbG9nID0gbG9hZF9j
+YXRhbG9nKGFyZ3MuY2F0YWxvZykKICAgIG1pc3NpbmcgPSBzb3J0ZWQoY2F0YWxvZyAtIHNldCht
+YXRjaGVkKSwga2V5PWludCkgaWYgY2F0YWxvZyBpcyBub3QgTm9uZSBlbHNlIE5vbmUKICAgIG1h
+cHBlZCA9IHt9CiAgICBmb3IgaXRlbSwgcmVjb3JkcyBpbiBtYXRjaGVkLml0ZW1zKCk6CiAgICAg
+ICAgaWYgaXRlbSBpbiBjb25mbGljdHM6CiAgICAgICAgICAgIGNvbnRpbnVlCiAgICAgICAgZmly
+c3QgPSByZWNvcmRzWzBdCiAgICAgICAgbWFwcGVkW2l0ZW1dID0gewogICAgICAgICAgICAic291
+cmNlU2hhMjU2IjogZmlyc3RbInNvdXJjZVNoYTI1NiJdLCAidmFyaWFudHMiOiBmaXJzdFsidmFy
+aWFudHMiXSwKICAgICAgICAgICAgImxpbmtzIjogW2xpbmsgZm9yIHJlY29yZCBpbiByZWNvcmRz
+IGZvciBsaW5rIGluIHJlY29yZFsibGlua3MiXQogICAgICAgICAgICAgICAgICAgICAgaWYgbGlu
+a1siaXRlbUlkIl0gPT0gaXRlbV0sICJzb3VyY2UiOiBmaXJzdFsic291cmNlIl0sCiAgICAgICAg
+ICAgICJhc3NldElkcyI6IGZpcnN0WyJhc3NldElkcyJdCiAgICAgICAgfQogICAgaWYgbGVuKHBy
+b3ZlbmFuY2UpID4gMToKICAgICAgICBwcm9ibGVtcy5hcHBlbmQoeyJ0eXBlIjogIm1peGVkX2lu
+cHV0X29yX3Byb3ZlbmFuY2UiLCAic291cmNlcyI6IFsKICAgICAgICAgICAgeyJpbnB1dCI6IGl0
+ZW1bMF0sICJzb3VyY2UiOiBqc29uLmxvYWRzKGl0ZW1bMV0pfSBmb3IgaXRlbSBpbiBzb3J0ZWQo
+cHJvdmVuYW5jZSkKICAgICAgICBdfSkKICAgIGNvbXBsZXRlID0gbGVuKGNvbXBsZXRlZCkgPT0g
+MTYgYW5kIGxlbihwcm92ZW5hbmNlKSA9PSAxCiAgICBzYXZlX2pzb24ob3V0cHV0IC8gIm1hbmlm
+ZXN0Lmpzb24iLCB7CiAgICAgICAgInNjaGVtYSI6IFNDSEVNQSwgImNvbXBsZXRlIjogY29tcGxl
+dGUsICJzaGFyZHMiOiBhdmFpbGFibGUsCiAgICAgICAgInB1YmxpY2F0aW9uQXBwcm92ZWQiOiBG
+YWxzZSwgIml0ZW1zIjogbWFwcGVkLCAiaW1hZ2VzIjogaW1hZ2VzLAogICAgICAgICJhbWJpZ3Vv
+dXNJdGVtSWRzIjogY29uZmxpY3RzCiAgICB9KQogICAgc2F2ZV9qc29uKG91dHB1dCAvICJyZXBv
+cnQuanNvbiIsIHsKICAgICAgICAic2NoZW1hIjogU0NIRU1BLCAiY29tcGxldGUiOiBjb21wbGV0
+ZSwgInNoYXJkc1ByZXNlbnQiOiBhdmFpbGFibGUsCiAgICAgICAgInNoYXJkc0NvbXBsZXRlIjog
+Y29tcGxldGVkLCAiaW1hZ2VzIjogbGVuKGltYWdlcyksCiAgICAgICAgIm1hcHBlZEl0ZW1JZHMi
+OiBsZW4obWFwcGVkKSwgImFtYmlndW91c0l0ZW1JZHMiOiBjb25mbGljdHMsCiAgICAgICAgImNh
+dGFsb2dJdGVtSWRzIjogbGVuKGNhdGFsb2cpIGlmIGNhdGFsb2cgaXMgbm90IE5vbmUgZWxzZSBO
+b25lLAogICAgICAgICJtaXNzaW5nSXRlbUlkcyI6IG1pc3NpbmcsICJwcm9ibGVtcyI6IHByb2Js
+ZW1zLAogICAgICAgICJwdWJsaWNhdGlvbkFwcHJvdmVkIjogRmFsc2UKICAgIH0pCiAgICBwcmlu
+dChmIm1lcmdlOiB7bGVuKGltYWdlcyl9IGltYWdlcywge2xlbihtYXBwZWQpfSB1bmFtYmlndW91
+cyBpdGVtIElEcywgIgogICAgICAgICAgZiJ7bGVuKGNvbmZsaWN0cyl9IGNvbmZsaWN0aW5nIGl0
+ZW0gSURzLCBjb21wbGV0ZT17Y29tcGxldGV9IikKICAgIHJldHVybiAwCgoKZGVmIG1haW4oKToK
+ICAgIHBhcnNlciA9IGFyZ3BhcnNlLkFyZ3VtZW50UGFyc2VyKGRlc2NyaXB0aW9uPSJEcmVhbXdp
+c2ggV2FuZCBsb2NhbC1vbmx5IG1lZGlhIGluc3BlY3Rpb24gYW5kIGNvbnZlcnNpb24iKQogICAg
+c3ViID0gcGFyc2VyLmFkZF9zdWJwYXJzZXJzKGRlc3Q9ImFjdGlvbiIsIHJlcXVpcmVkPVRydWUp
+CiAgICBzY2FuID0gc3ViLmFkZF9wYXJzZXIoInNjYW4iLCBoZWxwPSJJbnNwZWN0IGxvY2FsIGlt
+YWdlcyBhbmQgVW5pdHkgY29udGFpbmVycyIpCiAgICBleHRyYWN0ID0gc3ViLmFkZF9wYXJzZXIo
+ImV4dHJhY3QiLCBoZWxwPSJFeHRyYWN0IGEgYm91bmRlZCBzYW1wbGUgZnJvbSBVbml0eSBhc3Nl
+dHMiKQogICAgYnVpbGQgPSBzdWIuYWRkX3BhcnNlcigiYnVpbGQiLCBoZWxwPSJDcmVhdGUgbG9j
+YWwgV2ViUCB2YXJpYW50cyBmcm9tIHNjYW5uZWQgaW1hZ2VzIikKICAgIG1lcmdlID0gc3ViLmFk
+ZF9wYXJzZXIoIm1lcmdlIiwgaGVscD0iQ29tYmluZSBsb2NhbCBzaGFyZCBvdXRwdXRzIGFuZCBt
+YXBwaW5nIHJlcG9ydHMiKQogICAgZm9yIGNvbW1hbmQgaW4gKHNjYW4sIGV4dHJhY3QsIGJ1aWxk
+KToKICAgICAgICBjb21tYW5kLmFkZF9hcmd1bWVudCgiLS1pbnB1dCIsIHR5cGU9UGF0aCwgcmVx
+dWlyZWQ9VHJ1ZSkKICAgICAgICBjb21tYW5kLmFkZF9hcmd1bWVudCgiLS1vdXRwdXQiLCB0eXBl
+PVBhdGgsIHJlcXVpcmVkPVRydWUpCiAgICAgICAgY29tbWFuZC5hZGRfYXJndW1lbnQoIi0tc2hh
+cmQiLCBjaG9pY2VzPVsiYWxsIiwgKlNIQVJEU10sIGRlZmF1bHQ9ImFsbCIpCiAgICBmb3IgY29t
+bWFuZCBpbiAoc2NhbiwgZXh0cmFjdCk6CiAgICAgICAgY29tbWFuZC5hZGRfYXJndW1lbnQoIi0t
+cGxhdGZvcm0iLCByZXF1aXJlZD1UcnVlKQogICAgICAgIGNvbW1hbmQuYWRkX2FyZ3VtZW50KCIt
+LWdhbWUtdmVyc2lvbiIsIHJlcXVpcmVkPVRydWUpCiAgICAgICAgY29tbWFuZC5hZGRfYXJndW1l
+bnQoIi0tYnVpbGQtaWQiLCBkZWZhdWx0PU5vbmUpCiAgICBzY2FuLmFkZF9hcmd1bWVudCgiLS1s
+aW1pdCIsIHR5cGU9aW50KQogICAgZXh0cmFjdC5hZGRfYXJndW1lbnQoIi0tbGltaXQtZmlsZXMi
+LCB0eXBlPWludCwgZGVmYXVsdD0yKQogICAgZXh0cmFjdC5hZGRfYXJndW1lbnQoIi0tbGltaXQt
+aW1hZ2VzIiwgdHlwZT1pbnQsIGRlZmF1bHQ9MjApCiAgICBleHRyYWN0LmFkZF9hcmd1bWVudCgi
+LS1mb3JjZSIsIGFjdGlvbj0ic3RvcmVfdHJ1ZSIpCiAgICBidWlsZC5hZGRfYXJndW1lbnQoIi0t
+bGltaXQiLCB0eXBlPWludCkKICAgIGJ1aWxkLmFkZF9hcmd1bWVudCgiLS1yMzktaW5kZXgiLCB0
+eXBlPVBhdGgpCiAgICBidWlsZC5hZGRfYXJndW1lbnQoIi0tbWFwcGluZyIsIHR5cGU9UGF0aCkK
+ICAgIGJ1aWxkLmFkZF9hcmd1bWVudCgiLS1pbmNsdWRlLXVubWFwcGVkIiwgYWN0aW9uPSJzdG9y
+ZV90cnVlIikKICAgIGJ1aWxkLmFkZF9hcmd1bWVudCgiLS1rZWVwLW9yaWdpbmFscyIsIGFjdGlv
+bj0ic3RvcmVfdHJ1ZSIpCiAgICBidWlsZC5hZGRfYXJndW1lbnQoIi0tdmVyaWZ5LWV4aXN0aW5n
+IiwgYWN0aW9uPSJzdG9yZV90cnVlIikKICAgIG1lcmdlLmFkZF9hcmd1bWVudCgiLS1vdXRwdXQi
+LCB0eXBlPVBhdGgsIHJlcXVpcmVkPVRydWUpCiAgICBtZXJnZS5hZGRfYXJndW1lbnQoIi0tY2F0
+YWxvZyIsIHR5cGU9UGF0aCkKICAgIGFyZ3MgPSBwYXJzZXIucGFyc2VfYXJncygpCiAgICBpZiBn
+ZXRhdHRyKGFyZ3MsICJsaW1pdCIsIE5vbmUpIGlzIG5vdCBOb25lIGFuZCBhcmdzLmxpbWl0IDwg
+MToKICAgICAgICBwYXJzZXIuZXJyb3IoIi0tbGltaXQgbXVzdCBiZSBhIHBvc2l0aXZlIGludGVn
+ZXIiKQogICAgdHJ5OgogICAgICAgIHJldHVybiB7InNjYW4iOiBjb21tYW5kX3NjYW4sICJleHRy
+YWN0IjogY29tbWFuZF9leHRyYWN0LAogICAgICAgICAgICAgICAgImJ1aWxkIjogY29tbWFuZF9i
+dWlsZCwgIm1lcmdlIjogY29tbWFuZF9tZXJnZX1bYXJncy5hY3Rpb25dKGFyZ3MpCiAgICBleGNl
+cHQgKE9TRXJyb3IsIFZhbHVlRXJyb3IsIFJ1bnRpbWVFcnJvciwgS2V5RXJyb3IsIGpzb24uSlNP
+TkRlY29kZUVycm9yKSBhcyBleGM6CiAgICAgICAgcGFyc2VyLmV4aXQoMiwgZiJlcnJvcjoge2V4
+Y31cbiIpCgoKaWYgX19uYW1lX18gPT0gIl9fbWFpbl9fIjoKICAgIHJhaXNlIFN5c3RlbUV4aXQo
+bWFpbigpKQo=
 '@
-Install-EmbeddedSource -name 'media.py' -content $embedded
+Install-EmbeddedSource -name 'media.py' -encoded $embedded
 Remove-Variable embedded
 
 $embedded = @'
-import argparse
-import hashlib
-import json
-import os
-import re
-import tempfile
-import zipfile
-from collections import Counter, defaultdict
-from datetime import datetime, timezone
-from pathlib import Path
-
-SCHEMA = "wand.src01.steam-native@1"
-GAME_VERSION = "1.26.2"
-FULLVERSION_SHA256 = "e0aad8c7c19ebd3f441161db4d27f7838dd62b261927a974793f54fc0a81fc98"
-CATEGORIES = {
-    "ActivityItem": (30000000, "4f4d3393887aececfcef16569cebc8dd7df08d03ba7b7c89083fe15bb7309dc2"),
-    "Furniture": (40000000, "cde1b6e4dd37085e829c2e4548b89091bbf8d543cee92e6031b2f5bddc794196"),
-    "Clothing": (50000000, "a327869947785d3bbe0455b6132873b63878cb6cbb8dbd4cd00f76b294d1e946"),
-    "Trimming": (160000000, "a330a5b44860faece7eecb9c07acf3064b15010c97837d9d450f54a7b2ff966c"),
-}
-LOCALES = {
-    "en": "en-US", "fr": "fr", "it": "it", "de": "de",
-    "es-ES": "es", "ja": "ja", "zh-CN": "zh-CN", "pt-BR": "pt-BR",
-}
-GUID = re.compile(r"guid:[0-9a-f]{32}\Z")
-VERSION = re.compile(r"(?<![0-9.])(?:v)?(1\.26\.2)(?![0-9.])")
-
-
-def sha(data):
-    return hashlib.sha256(data).hexdigest()
-
-
-def varint(data, pos):
-    begin = pos
-    value = 0
-    for i in range(10):
-        if pos >= len(data):
-            raise ValueError("TRUNCATED_VARINT")
-        byte = data[pos]
-        pos += 1
-        if i == 9 and byte > 1:
-            raise ValueError("OVERFLOW_VARINT")
-        value |= (byte & 127) << (7 * i)
-        if byte < 128:
-            if data[begin:pos] != encode_varint(value):
-                raise ValueError("NON_CANONICAL_VARINT")
-            return value, pos
-    raise ValueError("UNTERMINATED_VARINT")
-
-
-def encode_varint(value):
-    if value < 0:
-        raise ValueError("NEGATIVE_VARINT")
-    result = bytearray()
-    while value >= 128:
-        result.append((value & 127) | 128)
-        value >>= 7
-    result.append(value)
-    return bytes(result)
-
-
-def parse_record(data, category, offset):
-    fields = {}
-    position = 0
-    while position < len(data):
-        tag, position = varint(data, position)
-        field, wire = tag >> 3, tag & 7
-        if field == 0:
-            raise ValueError("INVALID_FIELD_ZERO")
-        if wire == 0:
-            value, position = varint(data, position)
-        elif wire in (1, 5):
-            size = 8 if wire == 1 else 4
-            if position + size > len(data):
-                raise ValueError("TRUNCATED_FIXED_FIELD")
-            value = data[position:position + size]
-            position += size
-        elif wire == 2:
-            size, position = varint(data, position)
-            if size > len(data) - position:
-                raise ValueError("TRUNCATED_LENGTH_FIELD")
-            value = data[position:position + size]
-            position += size
-        else:
-            raise ValueError("UNSUPPORTED_WIRE_TYPE")
-        if field in (1, 2, 4):
-            if field in fields or wire != (0 if field == 1 else 2):
-                raise ValueError("MALFORMED_REQUIRED_FIELD")
-            fields[field] = value
-    if set(fields) != {1, 2, 4}:
-        raise ValueError("MISSING_REQUIRED_FIELDS")
-    item_id = fields[1]
-    if type(item_id) is not int or item_id <= 0 or item_id >= 2**53:
-        raise ValueError("UNSAFE_ITEM_ID")
-    if item_id - CATEGORIES[category][0] != offset:
-        raise ValueError("ITEM_FRAME_KEY_MISMATCH")
-    try:
-        raw_name = fields[2].decode("utf-8")
-        icon_guid = fields[4].decode("ascii")
-    except UnicodeDecodeError as error:
-        raise ValueError("INVALID_TEXT_ENCODING") from error
-    if not raw_name or len(raw_name) > 1024 or not GUID.fullmatch(icon_guid):
-        raise ValueError("INVALID_NATIVE_NAME_OR_GUID")
-    return {
-        "itemId": item_id, "rawNameField": raw_name, "nativeCategory": category,
-        "iconGuid": icon_guid,
-        "names": {name: None for name in LOCALES},
-        "category": None, "subcategory": None, "internalIdentifier": None,
-        "worlds": [], "universes": [], "expansions": [], "attributes": {},
-        "source": {"platform": "Steam", "gameVersion": GAME_VERSION,
-                   "file": f"ddv_Data/StreamingAssets/itemlist/{category}.json",
-                   "wireFields": {"itemId": 1, "rawName": 2, "iconGuid": 4}},
-    }
-
-
-def parse_category(data, category):
-    if category not in CATEGORIES or len(data) > 32 * 1024 * 1024:
-        raise ValueError("INVALID_CATEGORY_OR_SOURCE_SIZE")
-    position = 0
-    rows = []
-    frames = set()
-    while position < len(data):
-        offset, position = varint(data, position)
-        length, position = varint(data, position)
-        if offset in frames or not length or length > 1024 * 1024 or length > len(data) - position:
-            raise ValueError("INVALID_OR_DUPLICATE_FRAME")
-        frames.add(offset)
-        row = parse_record(data[position:position + length], category, offset)
-        position += length
-        rows.append(row)
-        if len(rows) > 20000:
-            raise ValueError("EXCESSIVE_ROW_COUNT")
-    if not rows:
-        raise ValueError("EMPTY_NATIVE_CATEGORY")
-    return rows
-
-
-def atomic_json(path, payload):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp = tempfile.mkstemp(prefix=".src01-", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
-            json.dump(payload, stream, ensure_ascii=False, indent=2, sort_keys=True)
-            stream.write("\n")
-        os.replace(temp, path)
-    finally:
-        if os.path.exists(temp):
-            os.unlink(temp)
-
-
-def atomic_items(path, items):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp = tempfile.mkstemp(prefix=".src01-", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
-            for item in items:
-                stream.write(json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n")
-        os.replace(temp, path)
-    finally:
-        if os.path.exists(temp):
-            os.unlink(temp)
-
-
-def inspect_locales(game):
-    reports = {}
-    for name, suffix in LOCALES.items():
-        file = game / "ddv_Data" / "StreamingAssets" / "Localization" / f"LocDB_{suffix}.zip"
-        if not file.is_file() or file.is_symlink():
-            reports[name] = {"status": "missing"}
-            continue
-        try:
-            with zipfile.ZipFile(file) as archive:
-                files = [entry for entry in archive.infolist() if not entry.is_dir()]
-                reports[name] = {
-                    "status": "archive_inspected_only", "archiveBytes": file.stat().st_size,
-                    "entryCount": len(files), "uncompressedBytes": sum(e.file_size for e in files),
-                    "entriesSample": [{"name": e.filename[:240], "bytes": e.file_size} for e in files[:30]],
-                }
-        except (OSError, ValueError, zipfile.BadZipFile) as error:
-            reports[name] = {"status": "unreadable", "reason": type(error).__name__}
-    return reports
-
-
-def run(game, out):
-    game = game.resolve(strict=True)
-    out = out.resolve()
-    if not game.is_dir() or game == out or game in out.parents or out in game.parents:
-        raise ValueError("INVALID_GAME_OR_OUTPUT_PATH")
-    version_path = game / "FullVersion.txt"
-    if not version_path.is_file() or sha(version_path.read_bytes()) != FULLVERSION_SHA256:
-        raise ValueError("STEAM_1262_VERSION_FILE_SHA_MISMATCH")
-    version = version_path.read_text(encoding="utf-8-sig")
-    if VERSION.search(version) is None:
-        raise ValueError("GAME_VERSION_NOT_1262")
-    items = []
-    sources = []
-    for category, (_, expected_sha) in CATEGORIES.items():
-        file = game / "ddv_Data" / "StreamingAssets" / "itemlist" / (category + ".json")
-        if file.is_symlink() or not file.is_file():
-            raise ValueError(f"MISSING_NATIVE_CATEGORY_{category}")
-        data = file.read_bytes()
-        actual_sha = sha(data)
-        if actual_sha != expected_sha:
-            raise ValueError(f"STEAM_1262_CATEGORY_SHA_MISMATCH_{category}")
-        rows = parse_category(data, category)
-        items.extend(rows)
-        sources.append({"path": file.relative_to(game).as_posix(), "sha256": actual_sha, "bytes": len(data), "count": len(rows)})
-    items.sort(key=lambda row: row["itemId"])
-    ids = [row["itemId"] for row in items]
-    if len(ids) != len(set(ids)):
-        raise ValueError("DUPLICATE_CROSS_CATEGORY_ITEM_ID")
-    locale_reports = inspect_locales(game)
-    collisions = defaultdict(list)
-    for row in items:
-        collisions[row["rawNameField"].casefold()].append(row["itemId"])
-    ambiguous = {key: ids for key, ids in collisions.items() if len(ids) > 1}
-    out.mkdir(parents=True, exist_ok=True)
-    items_path = out / "items.jsonl"
-    atomic_items(items_path, items)
-    items_hash = hashlib.sha256(items_path.read_bytes()).hexdigest()
-    atomic_json(out / "localization-structure.json", {"schema": "wand.src01.localization-survey@1", "archives": locale_reports,
-        "note": "ZIP directory evidence does not establish any localized item-name mapping."})
-    manifest = {"schema": SCHEMA, "status": "partial_native_extraction", "platform": "Steam",
-                "gameVersion": GAME_VERSION, "createdUtc": datetime.now(timezone.utc).isoformat(),
-                "itemCount": len(items), "itemsFile": "items.jsonl", "itemsSha256": items_hash,
-                "sourceFiles": sources, "versionFileSha256": FULLVERSION_SHA256,
-                "validatedNativeCategories": list(CATEGORIES), "sourceRoot": str(game),
-                "locales": list(LOCALES), "languageNamesVerified": False}
-    atomic_json(out / "manifest.json", manifest)
-    atomic_json(out / "report.json", {"schema": "wand.src01.report@1", "status": "partial_native_extraction",
-        "nativeItemCount": len(items), "categoryCounts": dict(Counter(row["nativeCategory"] for row in items)),
-        "sameRawNameDifferentIdCount": len(ambiguous), "sameRawNameDifferentIdSample": list(ambiguous.items())[:30],
-        "localizationArchiveStatus": {key: value["status"] for key, value in locale_reports.items()},
-        "sourceOnly": True, "namesVerified": 0,
-        "explanation": "Four SHA-pinned Steam 1.26.2 protobuf itemlists decoded. Other itemlist types and localization are pending verified mappings."})
-    atomic_json(out / "unresolved.json", {"schema": "wand.src01.unresolved@1", "status": "pending_source_mappings",
-        "missing": ["Localization file format and ItemID-to-localization-key mapping",
-                    "Verified official names for eight locales", "All other itemlist category schemas",
-                    "Validated user-facing category and subcategory semantics", "Expansion, world, universe and attributes mappings",
-                    "Comparison against the older Switch 1.25.0 Collection"],
-        "notClaims": ["not a complete game item catalog", "not verified official display names",
-                      "not an image extraction", "not a game save editor"]})
-    print(json.dumps({"status": "partial_native_extraction", "gameVersion": GAME_VERSION,
-                      "items": len(items), "out": str(out)}, ensure_ascii=False))
-
-
-def main():
-    parser = argparse.ArgumentParser(description="SRC-01 verified Steam 1.26.2 native item extraction")
-    parser.add_argument("--game", type=Path, required=True)
-    parser.add_argument("--out", type=Path, required=True)
-    options = parser.parse_args()
-    try:
-        run(options.game, options.out)
-    except (OSError, ValueError, UnicodeError, zipfile.BadZipFile) as error:
-        parser.exit(1, f"SRC-01 error: {error}\n")
-
-
-if __name__ == "__main__":
-    main()
+aW1wb3J0IGFyZ3BhcnNlCmltcG9ydCBoYXNobGliCmltcG9ydCBqc29uCmltcG9ydCBvcwppbXBv
+cnQgcmUKaW1wb3J0IHRlbXBmaWxlCmltcG9ydCB6aXBmaWxlCmZyb20gY29sbGVjdGlvbnMgaW1w
+b3J0IENvdW50ZXIsIGRlZmF1bHRkaWN0CmZyb20gZGF0ZXRpbWUgaW1wb3J0IGRhdGV0aW1lLCB0
+aW1lem9uZQpmcm9tIHBhdGhsaWIgaW1wb3J0IFBhdGgKClNDSEVNQSA9ICJ3YW5kLnNyYzAxLnN0
+ZWFtLW5hdGl2ZUAxIgpHQU1FX1ZFUlNJT04gPSAiMS4yNi4yIgpGVUxMVkVSU0lPTl9TSEEyNTYg
+PSAiZTBhYWQ4YzdjMTllYmQzZjQ0MTE2MWRiNGQyN2Y3ODM4ZGQ2MmIyNjE5MjdhOTc0NzkzZjU0
+ZmMwYTgxZmM5OCIKQ0FURUdPUklFUyA9IHsKICAgICJBY3Rpdml0eUl0ZW0iOiAoMzAwMDAwMDAs
+ICI0ZjRkMzM5Mzg4N2FlY2VjZmNlZjE2NTY5Y2ViYzhkZDdkZjA4ZDAzYmE3YjdjODkwODNmZTE1
+YmI3MzA5ZGMyIiksCiAgICAiRnVybml0dXJlIjogKDQwMDAwMDAwLCAiY2RlMWI2ZTRkZDM3MDg1
+ZTgyOWMyZTQ1NDhiODkwOTFiYmY4ZDU0M2NlZTkyZTYwMzFiMmY1YmRkYzc5NDE5NiIpLAogICAg
+IkNsb3RoaW5nIjogKDUwMDAwMDAwLCAiYTMyNzg2OTk0Nzc4NWQzYmJlMDQ1NWI2MTMyODczYjYz
+ODc4Y2I2Y2JiOGRiZDRjZDAwZjc2YjI5NGQxZTk0NiIpLAogICAgIlRyaW1taW5nIjogKDE2MDAw
+MDAwMCwgImEzMzBhNWI0NDg2MGZhZWNlN2VlY2I5YzA3YWNmMzA2NGIxNTAxMGM5NzgzN2Q5ZDQ1
+MGY1NGE3YjJmZjk2NmMiKSwKfQpMT0NBTEVTID0gewogICAgImVuIjogImVuLVVTIiwgImZyIjog
+ImZyIiwgIml0IjogIml0IiwgImRlIjogImRlIiwKICAgICJlcy1FUyI6ICJlcyIsICJqYSI6ICJq
+YSIsICJ6aC1DTiI6ICJ6aC1DTiIsICJwdC1CUiI6ICJwdC1CUiIsCn0KR1VJRCA9IHJlLmNvbXBp
+bGUociJndWlkOlswLTlhLWZdezMyfVxaIikKVkVSU0lPTiA9IHJlLmNvbXBpbGUociIoPzwhWzAt
+OS5dKSg/OnYpPygxXC4yNlwuMikoPyFbMC05Ll0pIikKCgpkZWYgc2hhKGRhdGEpOgogICAgcmV0
+dXJuIGhhc2hsaWIuc2hhMjU2KGRhdGEpLmhleGRpZ2VzdCgpCgoKZGVmIHZhcmludChkYXRhLCBw
+b3MpOgogICAgYmVnaW4gPSBwb3MKICAgIHZhbHVlID0gMAogICAgZm9yIGkgaW4gcmFuZ2UoMTAp
+OgogICAgICAgIGlmIHBvcyA+PSBsZW4oZGF0YSk6CiAgICAgICAgICAgIHJhaXNlIFZhbHVlRXJy
+b3IoIlRSVU5DQVRFRF9WQVJJTlQiKQogICAgICAgIGJ5dGUgPSBkYXRhW3Bvc10KICAgICAgICBw
+b3MgKz0gMQogICAgICAgIGlmIGkgPT0gOSBhbmQgYnl0ZSA+IDE6CiAgICAgICAgICAgIHJhaXNl
+IFZhbHVlRXJyb3IoIk9WRVJGTE9XX1ZBUklOVCIpCiAgICAgICAgdmFsdWUgfD0gKGJ5dGUgJiAx
+MjcpIDw8ICg3ICogaSkKICAgICAgICBpZiBieXRlIDwgMTI4OgogICAgICAgICAgICBpZiBkYXRh
+W2JlZ2luOnBvc10gIT0gZW5jb2RlX3ZhcmludCh2YWx1ZSk6CiAgICAgICAgICAgICAgICByYWlz
+ZSBWYWx1ZUVycm9yKCJOT05fQ0FOT05JQ0FMX1ZBUklOVCIpCiAgICAgICAgICAgIHJldHVybiB2
+YWx1ZSwgcG9zCiAgICByYWlzZSBWYWx1ZUVycm9yKCJVTlRFUk1JTkFURURfVkFSSU5UIikKCgpk
+ZWYgZW5jb2RlX3ZhcmludCh2YWx1ZSk6CiAgICBpZiB2YWx1ZSA8IDA6CiAgICAgICAgcmFpc2Ug
+VmFsdWVFcnJvcigiTkVHQVRJVkVfVkFSSU5UIikKICAgIHJlc3VsdCA9IGJ5dGVhcnJheSgpCiAg
+ICB3aGlsZSB2YWx1ZSA+PSAxMjg6CiAgICAgICAgcmVzdWx0LmFwcGVuZCgodmFsdWUgJiAxMjcp
+IHwgMTI4KQogICAgICAgIHZhbHVlID4+PSA3CiAgICByZXN1bHQuYXBwZW5kKHZhbHVlKQogICAg
+cmV0dXJuIGJ5dGVzKHJlc3VsdCkKCgpkZWYgcGFyc2VfcmVjb3JkKGRhdGEsIGNhdGVnb3J5LCBv
+ZmZzZXQpOgogICAgZmllbGRzID0ge30KICAgIHBvc2l0aW9uID0gMAogICAgd2hpbGUgcG9zaXRp
+b24gPCBsZW4oZGF0YSk6CiAgICAgICAgdGFnLCBwb3NpdGlvbiA9IHZhcmludChkYXRhLCBwb3Np
+dGlvbikKICAgICAgICBmaWVsZCwgd2lyZSA9IHRhZyA+PiAzLCB0YWcgJiA3CiAgICAgICAgaWYg
+ZmllbGQgPT0gMDoKICAgICAgICAgICAgcmFpc2UgVmFsdWVFcnJvcigiSU5WQUxJRF9GSUVMRF9a
+RVJPIikKICAgICAgICBpZiB3aXJlID09IDA6CiAgICAgICAgICAgIHZhbHVlLCBwb3NpdGlvbiA9
+IHZhcmludChkYXRhLCBwb3NpdGlvbikKICAgICAgICBlbGlmIHdpcmUgaW4gKDEsIDUpOgogICAg
+ICAgICAgICBzaXplID0gOCBpZiB3aXJlID09IDEgZWxzZSA0CiAgICAgICAgICAgIGlmIHBvc2l0
+aW9uICsgc2l6ZSA+IGxlbihkYXRhKToKICAgICAgICAgICAgICAgIHJhaXNlIFZhbHVlRXJyb3Io
+IlRSVU5DQVRFRF9GSVhFRF9GSUVMRCIpCiAgICAgICAgICAgIHZhbHVlID0gZGF0YVtwb3NpdGlv
+bjpwb3NpdGlvbiArIHNpemVdCiAgICAgICAgICAgIHBvc2l0aW9uICs9IHNpemUKICAgICAgICBl
+bGlmIHdpcmUgPT0gMjoKICAgICAgICAgICAgc2l6ZSwgcG9zaXRpb24gPSB2YXJpbnQoZGF0YSwg
+cG9zaXRpb24pCiAgICAgICAgICAgIGlmIHNpemUgPiBsZW4oZGF0YSkgLSBwb3NpdGlvbjoKICAg
+ICAgICAgICAgICAgIHJhaXNlIFZhbHVlRXJyb3IoIlRSVU5DQVRFRF9MRU5HVEhfRklFTEQiKQog
+ICAgICAgICAgICB2YWx1ZSA9IGRhdGFbcG9zaXRpb246cG9zaXRpb24gKyBzaXplXQogICAgICAg
+ICAgICBwb3NpdGlvbiArPSBzaXplCiAgICAgICAgZWxzZToKICAgICAgICAgICAgcmFpc2UgVmFs
+dWVFcnJvcigiVU5TVVBQT1JURURfV0lSRV9UWVBFIikKICAgICAgICBpZiBmaWVsZCBpbiAoMSwg
+MiwgNCk6CiAgICAgICAgICAgIGlmIGZpZWxkIGluIGZpZWxkcyBvciB3aXJlICE9ICgwIGlmIGZp
+ZWxkID09IDEgZWxzZSAyKToKICAgICAgICAgICAgICAgIHJhaXNlIFZhbHVlRXJyb3IoIk1BTEZP
+Uk1FRF9SRVFVSVJFRF9GSUVMRCIpCiAgICAgICAgICAgIGZpZWxkc1tmaWVsZF0gPSB2YWx1ZQog
+ICAgaWYgc2V0KGZpZWxkcykgIT0gezEsIDIsIDR9OgogICAgICAgIHJhaXNlIFZhbHVlRXJyb3Io
+Ik1JU1NJTkdfUkVRVUlSRURfRklFTERTIikKICAgIGl0ZW1faWQgPSBmaWVsZHNbMV0KICAgIGlm
+IHR5cGUoaXRlbV9pZCkgaXMgbm90IGludCBvciBpdGVtX2lkIDw9IDAgb3IgaXRlbV9pZCA+PSAy
+Kio1MzoKICAgICAgICByYWlzZSBWYWx1ZUVycm9yKCJVTlNBRkVfSVRFTV9JRCIpCiAgICBpZiBp
+dGVtX2lkIC0gQ0FURUdPUklFU1tjYXRlZ29yeV1bMF0gIT0gb2Zmc2V0OgogICAgICAgIHJhaXNl
+IFZhbHVlRXJyb3IoIklURU1fRlJBTUVfS0VZX01JU01BVENIIikKICAgIHRyeToKICAgICAgICBy
+YXdfbmFtZSA9IGZpZWxkc1syXS5kZWNvZGUoInV0Zi04IikKICAgICAgICBpY29uX2d1aWQgPSBm
+aWVsZHNbNF0uZGVjb2RlKCJhc2NpaSIpCiAgICBleGNlcHQgVW5pY29kZURlY29kZUVycm9yIGFz
+IGVycm9yOgogICAgICAgIHJhaXNlIFZhbHVlRXJyb3IoIklOVkFMSURfVEVYVF9FTkNPRElORyIp
+IGZyb20gZXJyb3IKICAgIGlmIG5vdCByYXdfbmFtZSBvciBsZW4ocmF3X25hbWUpID4gMTAyNCBv
+ciBub3QgR1VJRC5mdWxsbWF0Y2goaWNvbl9ndWlkKToKICAgICAgICByYWlzZSBWYWx1ZUVycm9y
+KCJJTlZBTElEX05BVElWRV9OQU1FX09SX0dVSUQiKQogICAgcmV0dXJuIHsKICAgICAgICAiaXRl
+bUlkIjogaXRlbV9pZCwgInJhd05hbWVGaWVsZCI6IHJhd19uYW1lLCAibmF0aXZlQ2F0ZWdvcnki
+OiBjYXRlZ29yeSwKICAgICAgICAiaWNvbkd1aWQiOiBpY29uX2d1aWQsCiAgICAgICAgIm5hbWVz
+Ijoge25hbWU6IE5vbmUgZm9yIG5hbWUgaW4gTE9DQUxFU30sCiAgICAgICAgImNhdGVnb3J5Ijog
+Tm9uZSwgInN1YmNhdGVnb3J5IjogTm9uZSwgImludGVybmFsSWRlbnRpZmllciI6IE5vbmUsCiAg
+ICAgICAgIndvcmxkcyI6IFtdLCAidW5pdmVyc2VzIjogW10sICJleHBhbnNpb25zIjogW10sICJh
+dHRyaWJ1dGVzIjoge30sCiAgICAgICAgInNvdXJjZSI6IHsicGxhdGZvcm0iOiAiU3RlYW0iLCAi
+Z2FtZVZlcnNpb24iOiBHQU1FX1ZFUlNJT04sCiAgICAgICAgICAgICAgICAgICAiZmlsZSI6IGYi
+ZGR2X0RhdGEvU3RyZWFtaW5nQXNzZXRzL2l0ZW1saXN0L3tjYXRlZ29yeX0uanNvbiIsCiAgICAg
+ICAgICAgICAgICAgICAid2lyZUZpZWxkcyI6IHsiaXRlbUlkIjogMSwgInJhd05hbWUiOiAyLCAi
+aWNvbkd1aWQiOiA0fX0sCiAgICB9CgoKZGVmIHBhcnNlX2NhdGVnb3J5KGRhdGEsIGNhdGVnb3J5
+KToKICAgIGlmIGNhdGVnb3J5IG5vdCBpbiBDQVRFR09SSUVTIG9yIGxlbihkYXRhKSA+IDMyICog
+MTAyNCAqIDEwMjQ6CiAgICAgICAgcmFpc2UgVmFsdWVFcnJvcigiSU5WQUxJRF9DQVRFR09SWV9P
+Ul9TT1VSQ0VfU0laRSIpCiAgICBwb3NpdGlvbiA9IDAKICAgIHJvd3MgPSBbXQogICAgZnJhbWVz
+ID0gc2V0KCkKICAgIHdoaWxlIHBvc2l0aW9uIDwgbGVuKGRhdGEpOgogICAgICAgIG9mZnNldCwg
+cG9zaXRpb24gPSB2YXJpbnQoZGF0YSwgcG9zaXRpb24pCiAgICAgICAgbGVuZ3RoLCBwb3NpdGlv
+biA9IHZhcmludChkYXRhLCBwb3NpdGlvbikKICAgICAgICBpZiBvZmZzZXQgaW4gZnJhbWVzIG9y
+IG5vdCBsZW5ndGggb3IgbGVuZ3RoID4gMTAyNCAqIDEwMjQgb3IgbGVuZ3RoID4gbGVuKGRhdGEp
+IC0gcG9zaXRpb246CiAgICAgICAgICAgIHJhaXNlIFZhbHVlRXJyb3IoIklOVkFMSURfT1JfRFVQ
+TElDQVRFX0ZSQU1FIikKICAgICAgICBmcmFtZXMuYWRkKG9mZnNldCkKICAgICAgICByb3cgPSBw
+YXJzZV9yZWNvcmQoZGF0YVtwb3NpdGlvbjpwb3NpdGlvbiArIGxlbmd0aF0sIGNhdGVnb3J5LCBv
+ZmZzZXQpCiAgICAgICAgcG9zaXRpb24gKz0gbGVuZ3RoCiAgICAgICAgcm93cy5hcHBlbmQocm93
+KQogICAgICAgIGlmIGxlbihyb3dzKSA+IDIwMDAwOgogICAgICAgICAgICByYWlzZSBWYWx1ZUVy
+cm9yKCJFWENFU1NJVkVfUk9XX0NPVU5UIikKICAgIGlmIG5vdCByb3dzOgogICAgICAgIHJhaXNl
+IFZhbHVlRXJyb3IoIkVNUFRZX05BVElWRV9DQVRFR09SWSIpCiAgICByZXR1cm4gcm93cwoKCmRl
+ZiBhdG9taWNfanNvbihwYXRoLCBwYXlsb2FkKToKICAgIHBhdGgucGFyZW50Lm1rZGlyKHBhcmVu
+dHM9VHJ1ZSwgZXhpc3Rfb2s9VHJ1ZSkKICAgIGZkLCB0ZW1wID0gdGVtcGZpbGUubWtzdGVtcChw
+cmVmaXg9Ii5zcmMwMS0iLCBkaXI9cGF0aC5wYXJlbnQpCiAgICB0cnk6CiAgICAgICAgd2l0aCBv
+cy5mZG9wZW4oZmQsICJ3IiwgZW5jb2Rpbmc9InV0Zi04IiwgbmV3bGluZT0iXG4iKSBhcyBzdHJl
+YW06CiAgICAgICAgICAgIGpzb24uZHVtcChwYXlsb2FkLCBzdHJlYW0sIGVuc3VyZV9hc2NpaT1G
+YWxzZSwgaW5kZW50PTIsIHNvcnRfa2V5cz1UcnVlKQogICAgICAgICAgICBzdHJlYW0ud3JpdGUo
+IlxuIikKICAgICAgICBvcy5yZXBsYWNlKHRlbXAsIHBhdGgpCiAgICBmaW5hbGx5OgogICAgICAg
+IGlmIG9zLnBhdGguZXhpc3RzKHRlbXApOgogICAgICAgICAgICBvcy51bmxpbmsodGVtcCkKCgpk
+ZWYgYXRvbWljX2l0ZW1zKHBhdGgsIGl0ZW1zKToKICAgIHBhdGgucGFyZW50Lm1rZGlyKHBhcmVu
+dHM9VHJ1ZSwgZXhpc3Rfb2s9VHJ1ZSkKICAgIGZkLCB0ZW1wID0gdGVtcGZpbGUubWtzdGVtcChw
+cmVmaXg9Ii5zcmMwMS0iLCBkaXI9cGF0aC5wYXJlbnQpCiAgICB0cnk6CiAgICAgICAgd2l0aCBv
+cy5mZG9wZW4oZmQsICJ3IiwgZW5jb2Rpbmc9InV0Zi04IiwgbmV3bGluZT0iXG4iKSBhcyBzdHJl
+YW06CiAgICAgICAgICAgIGZvciBpdGVtIGluIGl0ZW1zOgogICAgICAgICAgICAgICAgc3RyZWFt
+LndyaXRlKGpzb24uZHVtcHMoaXRlbSwgZW5zdXJlX2FzY2lpPUZhbHNlLCBzb3J0X2tleXM9VHJ1
+ZSwgc2VwYXJhdG9ycz0oIiwiLCAiOiIpKSArICJcbiIpCiAgICAgICAgb3MucmVwbGFjZSh0ZW1w
+LCBwYXRoKQogICAgZmluYWxseToKICAgICAgICBpZiBvcy5wYXRoLmV4aXN0cyh0ZW1wKToKICAg
+ICAgICAgICAgb3MudW5saW5rKHRlbXApCgoKZGVmIGluc3BlY3RfbG9jYWxlcyhnYW1lKToKICAg
+IHJlcG9ydHMgPSB7fQogICAgZm9yIG5hbWUsIHN1ZmZpeCBpbiBMT0NBTEVTLml0ZW1zKCk6CiAg
+ICAgICAgZmlsZSA9IGdhbWUgLyAiZGR2X0RhdGEiIC8gIlN0cmVhbWluZ0Fzc2V0cyIgLyAiTG9j
+YWxpemF0aW9uIiAvIGYiTG9jREJfe3N1ZmZpeH0uemlwIgogICAgICAgIGlmIG5vdCBmaWxlLmlz
+X2ZpbGUoKSBvciBmaWxlLmlzX3N5bWxpbmsoKToKICAgICAgICAgICAgcmVwb3J0c1tuYW1lXSA9
+IHsic3RhdHVzIjogIm1pc3NpbmcifQogICAgICAgICAgICBjb250aW51ZQogICAgICAgIHRyeToK
+ICAgICAgICAgICAgd2l0aCB6aXBmaWxlLlppcEZpbGUoZmlsZSkgYXMgYXJjaGl2ZToKICAgICAg
+ICAgICAgICAgIGZpbGVzID0gW2VudHJ5IGZvciBlbnRyeSBpbiBhcmNoaXZlLmluZm9saXN0KCkg
+aWYgbm90IGVudHJ5LmlzX2RpcigpXQogICAgICAgICAgICAgICAgcmVwb3J0c1tuYW1lXSA9IHsK
+ICAgICAgICAgICAgICAgICAgICAic3RhdHVzIjogImFyY2hpdmVfaW5zcGVjdGVkX29ubHkiLCAi
+YXJjaGl2ZUJ5dGVzIjogZmlsZS5zdGF0KCkuc3Rfc2l6ZSwKICAgICAgICAgICAgICAgICAgICAi
+ZW50cnlDb3VudCI6IGxlbihmaWxlcyksICJ1bmNvbXByZXNzZWRCeXRlcyI6IHN1bShlLmZpbGVf
+c2l6ZSBmb3IgZSBpbiBmaWxlcyksCiAgICAgICAgICAgICAgICAgICAgImVudHJpZXNTYW1wbGUi
+OiBbeyJuYW1lIjogZS5maWxlbmFtZVs6MjQwXSwgImJ5dGVzIjogZS5maWxlX3NpemV9IGZvciBl
+IGluIGZpbGVzWzozMF1dLAogICAgICAgICAgICAgICAgfQogICAgICAgIGV4Y2VwdCAoT1NFcnJv
+ciwgVmFsdWVFcnJvciwgemlwZmlsZS5CYWRaaXBGaWxlKSBhcyBlcnJvcjoKICAgICAgICAgICAg
+cmVwb3J0c1tuYW1lXSA9IHsic3RhdHVzIjogInVucmVhZGFibGUiLCAicmVhc29uIjogdHlwZShl
+cnJvcikuX19uYW1lX199CiAgICByZXR1cm4gcmVwb3J0cwoKCmRlZiBydW4oZ2FtZSwgb3V0KToK
+ICAgIGdhbWUgPSBnYW1lLnJlc29sdmUoc3RyaWN0PVRydWUpCiAgICBvdXQgPSBvdXQucmVzb2x2
+ZSgpCiAgICBpZiBub3QgZ2FtZS5pc19kaXIoKSBvciBnYW1lID09IG91dCBvciBnYW1lIGluIG91
+dC5wYXJlbnRzIG9yIG91dCBpbiBnYW1lLnBhcmVudHM6CiAgICAgICAgcmFpc2UgVmFsdWVFcnJv
+cigiSU5WQUxJRF9HQU1FX09SX09VVFBVVF9QQVRIIikKICAgIHZlcnNpb25fcGF0aCA9IGdhbWUg
+LyAiRnVsbFZlcnNpb24udHh0IgogICAgaWYgbm90IHZlcnNpb25fcGF0aC5pc19maWxlKCkgb3Ig
+c2hhKHZlcnNpb25fcGF0aC5yZWFkX2J5dGVzKCkpICE9IEZVTExWRVJTSU9OX1NIQTI1NjoKICAg
+ICAgICByYWlzZSBWYWx1ZUVycm9yKCJTVEVBTV8xMjYyX1ZFUlNJT05fRklMRV9TSEFfTUlTTUFU
+Q0giKQogICAgdmVyc2lvbiA9IHZlcnNpb25fcGF0aC5yZWFkX3RleHQoZW5jb2Rpbmc9InV0Zi04
+LXNpZyIpCiAgICBpZiBWRVJTSU9OLnNlYXJjaCh2ZXJzaW9uKSBpcyBOb25lOgogICAgICAgIHJh
+aXNlIFZhbHVlRXJyb3IoIkdBTUVfVkVSU0lPTl9OT1RfMTI2MiIpCiAgICBpdGVtcyA9IFtdCiAg
+ICBzb3VyY2VzID0gW10KICAgIGZvciBjYXRlZ29yeSwgKF8sIGV4cGVjdGVkX3NoYSkgaW4gQ0FU
+RUdPUklFUy5pdGVtcygpOgogICAgICAgIGZpbGUgPSBnYW1lIC8gImRkdl9EYXRhIiAvICJTdHJl
+YW1pbmdBc3NldHMiIC8gIml0ZW1saXN0IiAvIChjYXRlZ29yeSArICIuanNvbiIpCiAgICAgICAg
+aWYgZmlsZS5pc19zeW1saW5rKCkgb3Igbm90IGZpbGUuaXNfZmlsZSgpOgogICAgICAgICAgICBy
+YWlzZSBWYWx1ZUVycm9yKGYiTUlTU0lOR19OQVRJVkVfQ0FURUdPUllfe2NhdGVnb3J5fSIpCiAg
+ICAgICAgZGF0YSA9IGZpbGUucmVhZF9ieXRlcygpCiAgICAgICAgYWN0dWFsX3NoYSA9IHNoYShk
+YXRhKQogICAgICAgIGlmIGFjdHVhbF9zaGEgIT0gZXhwZWN0ZWRfc2hhOgogICAgICAgICAgICBy
+YWlzZSBWYWx1ZUVycm9yKGYiU1RFQU1fMTI2Ml9DQVRFR09SWV9TSEFfTUlTTUFUQ0hfe2NhdGVn
+b3J5fSIpCiAgICAgICAgcm93cyA9IHBhcnNlX2NhdGVnb3J5KGRhdGEsIGNhdGVnb3J5KQogICAg
+ICAgIGl0ZW1zLmV4dGVuZChyb3dzKQogICAgICAgIHNvdXJjZXMuYXBwZW5kKHsicGF0aCI6IGZp
+bGUucmVsYXRpdmVfdG8oZ2FtZSkuYXNfcG9zaXgoKSwgInNoYTI1NiI6IGFjdHVhbF9zaGEsICJi
+eXRlcyI6IGxlbihkYXRhKSwgImNvdW50IjogbGVuKHJvd3MpfSkKICAgIGl0ZW1zLnNvcnQoa2V5
+PWxhbWJkYSByb3c6IHJvd1siaXRlbUlkIl0pCiAgICBpZHMgPSBbcm93WyJpdGVtSWQiXSBmb3Ig
+cm93IGluIGl0ZW1zXQogICAgaWYgbGVuKGlkcykgIT0gbGVuKHNldChpZHMpKToKICAgICAgICBy
+YWlzZSBWYWx1ZUVycm9yKCJEVVBMSUNBVEVfQ1JPU1NfQ0FURUdPUllfSVRFTV9JRCIpCiAgICBs
+b2NhbGVfcmVwb3J0cyA9IGluc3BlY3RfbG9jYWxlcyhnYW1lKQogICAgY29sbGlzaW9ucyA9IGRl
+ZmF1bHRkaWN0KGxpc3QpCiAgICBmb3Igcm93IGluIGl0ZW1zOgogICAgICAgIGNvbGxpc2lvbnNb
+cm93WyJyYXdOYW1lRmllbGQiXS5jYXNlZm9sZCgpXS5hcHBlbmQocm93WyJpdGVtSWQiXSkKICAg
+IGFtYmlndW91cyA9IHtrZXk6IGlkcyBmb3Iga2V5LCBpZHMgaW4gY29sbGlzaW9ucy5pdGVtcygp
+IGlmIGxlbihpZHMpID4gMX0KICAgIG91dC5ta2RpcihwYXJlbnRzPVRydWUsIGV4aXN0X29rPVRy
+dWUpCiAgICBpdGVtc19wYXRoID0gb3V0IC8gIml0ZW1zLmpzb25sIgogICAgYXRvbWljX2l0ZW1z
+KGl0ZW1zX3BhdGgsIGl0ZW1zKQogICAgaXRlbXNfaGFzaCA9IGhhc2hsaWIuc2hhMjU2KGl0ZW1z
+X3BhdGgucmVhZF9ieXRlcygpKS5oZXhkaWdlc3QoKQogICAgYXRvbWljX2pzb24ob3V0IC8gImxv
+Y2FsaXphdGlvbi1zdHJ1Y3R1cmUuanNvbiIsIHsic2NoZW1hIjogIndhbmQuc3JjMDEubG9jYWxp
+emF0aW9uLXN1cnZleUAxIiwgImFyY2hpdmVzIjogbG9jYWxlX3JlcG9ydHMsCiAgICAgICAgIm5v
+dGUiOiAiWklQIGRpcmVjdG9yeSBldmlkZW5jZSBkb2VzIG5vdCBlc3RhYmxpc2ggYW55IGxvY2Fs
+aXplZCBpdGVtLW5hbWUgbWFwcGluZy4ifSkKICAgIG1hbmlmZXN0ID0geyJzY2hlbWEiOiBTQ0hF
+TUEsICJzdGF0dXMiOiAicGFydGlhbF9uYXRpdmVfZXh0cmFjdGlvbiIsICJwbGF0Zm9ybSI6ICJT
+dGVhbSIsCiAgICAgICAgICAgICAgICAiZ2FtZVZlcnNpb24iOiBHQU1FX1ZFUlNJT04sICJjcmVh
+dGVkVXRjIjogZGF0ZXRpbWUubm93KHRpbWV6b25lLnV0YykuaXNvZm9ybWF0KCksCiAgICAgICAg
+ICAgICAgICAiaXRlbUNvdW50IjogbGVuKGl0ZW1zKSwgIml0ZW1zRmlsZSI6ICJpdGVtcy5qc29u
+bCIsICJpdGVtc1NoYTI1NiI6IGl0ZW1zX2hhc2gsCiAgICAgICAgICAgICAgICAic291cmNlRmls
+ZXMiOiBzb3VyY2VzLCAidmVyc2lvbkZpbGVTaGEyNTYiOiBGVUxMVkVSU0lPTl9TSEEyNTYsCiAg
+ICAgICAgICAgICAgICAidmFsaWRhdGVkTmF0aXZlQ2F0ZWdvcmllcyI6IGxpc3QoQ0FURUdPUklF
+UyksICJzb3VyY2VSb290Ijogc3RyKGdhbWUpLAogICAgICAgICAgICAgICAgImxvY2FsZXMiOiBs
+aXN0KExPQ0FMRVMpLCAibGFuZ3VhZ2VOYW1lc1ZlcmlmaWVkIjogRmFsc2V9CiAgICBhdG9taWNf
+anNvbihvdXQgLyAibWFuaWZlc3QuanNvbiIsIG1hbmlmZXN0KQogICAgYXRvbWljX2pzb24ob3V0
+IC8gInJlcG9ydC5qc29uIiwgeyJzY2hlbWEiOiAid2FuZC5zcmMwMS5yZXBvcnRAMSIsICJzdGF0
+dXMiOiAicGFydGlhbF9uYXRpdmVfZXh0cmFjdGlvbiIsCiAgICAgICAgIm5hdGl2ZUl0ZW1Db3Vu
+dCI6IGxlbihpdGVtcyksICJjYXRlZ29yeUNvdW50cyI6IGRpY3QoQ291bnRlcihyb3dbIm5hdGl2
+ZUNhdGVnb3J5Il0gZm9yIHJvdyBpbiBpdGVtcykpLAogICAgICAgICJzYW1lUmF3TmFtZURpZmZl
+cmVudElkQ291bnQiOiBsZW4oYW1iaWd1b3VzKSwgInNhbWVSYXdOYW1lRGlmZmVyZW50SWRTYW1w
+bGUiOiBsaXN0KGFtYmlndW91cy5pdGVtcygpKVs6MzBdLAogICAgICAgICJsb2NhbGl6YXRpb25B
+cmNoaXZlU3RhdHVzIjoge2tleTogdmFsdWVbInN0YXR1cyJdIGZvciBrZXksIHZhbHVlIGluIGxv
+Y2FsZV9yZXBvcnRzLml0ZW1zKCl9LAogICAgICAgICJzb3VyY2VPbmx5IjogVHJ1ZSwgIm5hbWVz
+VmVyaWZpZWQiOiAwLAogICAgICAgICJleHBsYW5hdGlvbiI6ICJGb3VyIFNIQS1waW5uZWQgU3Rl
+YW0gMS4yNi4yIHByb3RvYnVmIGl0ZW1saXN0cyBkZWNvZGVkLiBPdGhlciBpdGVtbGlzdCB0eXBl
+cyBhbmQgbG9jYWxpemF0aW9uIGFyZSBwZW5kaW5nIHZlcmlmaWVkIG1hcHBpbmdzLiJ9KQogICAg
+YXRvbWljX2pzb24ob3V0IC8gInVucmVzb2x2ZWQuanNvbiIsIHsic2NoZW1hIjogIndhbmQuc3Jj
+MDEudW5yZXNvbHZlZEAxIiwgInN0YXR1cyI6ICJwZW5kaW5nX3NvdXJjZV9tYXBwaW5ncyIsCiAg
+ICAgICAgIm1pc3NpbmciOiBbIkxvY2FsaXphdGlvbiBmaWxlIGZvcm1hdCBhbmQgSXRlbUlELXRv
+LWxvY2FsaXphdGlvbi1rZXkgbWFwcGluZyIsCiAgICAgICAgICAgICAgICAgICAgIlZlcmlmaWVk
+IG9mZmljaWFsIG5hbWVzIGZvciBlaWdodCBsb2NhbGVzIiwgIkFsbCBvdGhlciBpdGVtbGlzdCBj
+YXRlZ29yeSBzY2hlbWFzIiwKICAgICAgICAgICAgICAgICAgICAiVmFsaWRhdGVkIHVzZXItZmFj
+aW5nIGNhdGVnb3J5IGFuZCBzdWJjYXRlZ29yeSBzZW1hbnRpY3MiLCAiRXhwYW5zaW9uLCB3b3Js
+ZCwgdW5pdmVyc2UgYW5kIGF0dHJpYnV0ZXMgbWFwcGluZ3MiLAogICAgICAgICAgICAgICAgICAg
+ICJDb21wYXJpc29uIGFnYWluc3QgdGhlIG9sZGVyIFN3aXRjaCAxLjI1LjAgQ29sbGVjdGlvbiJd
+LAogICAgICAgICJub3RDbGFpbXMiOiBbIm5vdCBhIGNvbXBsZXRlIGdhbWUgaXRlbSBjYXRhbG9n
+IiwgIm5vdCB2ZXJpZmllZCBvZmZpY2lhbCBkaXNwbGF5IG5hbWVzIiwKICAgICAgICAgICAgICAg
+ICAgICAgICJub3QgYW4gaW1hZ2UgZXh0cmFjdGlvbiIsICJub3QgYSBnYW1lIHNhdmUgZWRpdG9y
+Il19KQogICAgcHJpbnQoanNvbi5kdW1wcyh7InN0YXR1cyI6ICJwYXJ0aWFsX25hdGl2ZV9leHRy
+YWN0aW9uIiwgImdhbWVWZXJzaW9uIjogR0FNRV9WRVJTSU9OLAogICAgICAgICAgICAgICAgICAg
+ICAgIml0ZW1zIjogbGVuKGl0ZW1zKSwgIm91dCI6IHN0cihvdXQpfSwgZW5zdXJlX2FzY2lpPUZh
+bHNlKSkKCgpkZWYgbWFpbigpOgogICAgcGFyc2VyID0gYXJncGFyc2UuQXJndW1lbnRQYXJzZXIo
+ZGVzY3JpcHRpb249IlNSQy0wMSB2ZXJpZmllZCBTdGVhbSAxLjI2LjIgbmF0aXZlIGl0ZW0gZXh0
+cmFjdGlvbiIpCiAgICBwYXJzZXIuYWRkX2FyZ3VtZW50KCItLWdhbWUiLCB0eXBlPVBhdGgsIHJl
+cXVpcmVkPVRydWUpCiAgICBwYXJzZXIuYWRkX2FyZ3VtZW50KCItLW91dCIsIHR5cGU9UGF0aCwg
+cmVxdWlyZWQ9VHJ1ZSkKICAgIG9wdGlvbnMgPSBwYXJzZXIucGFyc2VfYXJncygpCiAgICB0cnk6
+CiAgICAgICAgcnVuKG9wdGlvbnMuZ2FtZSwgb3B0aW9ucy5vdXQpCiAgICBleGNlcHQgKE9TRXJy
+b3IsIFZhbHVlRXJyb3IsIFVuaWNvZGVFcnJvciwgemlwZmlsZS5CYWRaaXBGaWxlKSBhcyBlcnJv
+cjoKICAgICAgICBwYXJzZXIuZXhpdCgxLCBmIlNSQy0wMSBlcnJvcjoge2Vycm9yfVxuIikKCgpp
+ZiBfX25hbWVfXyA9PSAiX19tYWluX18iOgogICAgbWFpbigpCg==
 '@
-Install-EmbeddedSource -name 'steam1262.py' -content $embedded
+Install-EmbeddedSource -name 'steam1262.py' -encoded $embedded
 Remove-Variable embedded
 
 $embedded = @'
-bundle,sha256,bytes
-accessory_93d391f5.bundle,88279ff22cfa04d4f03e166bdb5c5e21c29599c9287f5ce1ec881d7643a36034,2908135
-buffelixir_01c14456.bundle,6cc0b1e14dd31f5b2240f5402c98850958afe52da67f7f32df0d88810ad1cc4b,415302
-clothing_27c843ba.bundle,b3aee003732de2f51176327a64c5db6164ea95ea82a55828ad9b6693b589cb2a,180318196
-companionsiconszoomed_866439f0.bundle,36b9d382d8a3872d426380def20935ec20c02b17f9d57d9ec12e8fb3ebac6387,25008264
-consummable_4e5fc59f.bundle,58a24908b8fb4a134dffec0bf4e5b48696b7dcb23424d685876b5e4d1ec3f701,975645
-craftingmaterial_a01be543.bundle,ad87f28063cab781c75bfd693360c464dce20106c94d4ef29e7f719d8dbe45de,5224388
-crop_7563a03a.bundle,8668ccc332b1b64fc9e384d7355967d4f4247d874cd06e243f73a3cb4e04b46d,5504997
-default_6f9a5e20.bundle,0c11ef920dba52064ff39ba2e21a5e308c6903a0ed7b3896a1d505445caeee7b,2527637
-door_4ddfda60.bundle,c00a6b3a8e4b8f766636d181736df5d695ac1bedd644e6950c09dfc327a4d85d,129281
-ephemeral_a081feaa.bundle,5ea1d2d06121229847b00a1da35f50a2c5f4af0f4504ce5f0506c4db294055b4,301274
-figurine_82c36648.bundle,8014339e9549685b8c86cf0af0cb0b20ac72d00044e376a2c2cabb4a3cf051a9,4882640
-fish_3f084647.bundle,b4cbdda9001cff933c7e866dc12d9130821bdc817a9799f4618ebe54c3123bb7,4294583
-fishing_06c7629f.bundle,01ea27361328766958605be5b42301b5863add4343051203c9f0392ba44c6d65,495815
-flooring_c1cd0f20.bundle,9c00cef9479c391284f8488a917694960dd1e666c7d58d578ee8dc9a1beb598a,91538
-flower_584a9f69.bundle,56f00224254589aa05a1daacdcfd94122a69322fa0326d0594d511a520acc21e,3993430
-furniture_a1c425a5.bundle,f65dc5cb939b2610c18f56e36ea3421c77a66c1ab25e5172bf3b431576e39beb,256404264
-garden_ef2b594e.bundle,db05763b18a77505f64e3193ca8989ea6cdd20a6b86065dfd847abc8cf4a5a1f,150492
-gardening_1acbbfe2.bundle,c37c6bc81562be6211b1f3a405bd0e86d5aefaddedfe8fc927908d9edd657109,410959
-house_1de2b62e.bundle,44170a6447d37327b1909798d74aca71cb5c3c655c354f057333e475f037617c,3029201
-ingredient_1c1bf99b.bundle,886ced019468b07e5da741e5b30f9f7ee8ee7830811358ff581b7f65bcd25101,1926798
-lootpresent_3acec346.bundle,079bd799d3f7a90317aa91283f372f2a11c2d43209e8fe280d6fdca8ed238d16,1907508
-makeup_a897632c.bundle,144073475b331d2427dde2eba50304cd04696f2485be01efc243da7bde847cc2,14926592
-manual_4976fcd4.bundle,ba67d8fce950361f17ec21f4d80890bd1bfba4dd499b64230634c7868187dc43,743828
-meal_7a31d699.bundle,0c2f4db708ad6ae2b442a5dea2381957eff23e835f048afe47303ba7ef268ee4,25523698
-mineral_6fc39434.bundle,4e3d4d7af58737078bfbd037b0b3c2eda6d15aec19071e22fef7cfd96a646293,7365400
-mining_a215ab98.bundle,b6d526891b4f3e37c328ac3ad3e58c4d37d7bf1d20d94303535aab4039f120d6,566351
-misc_2a73e043.bundle,53e3a32c39e171e485cc4dad19d989338397b81d6314b194535851322f1ff926,584716
-mountgear_a5c17caf.bundle,1f5c69db63d108814364d13bfeb329afb97722cf52c5340d114ad2db778d7e93,1018374
-mulan_d1fa1c4b.bundle,e7f1d7a69d0e747ecc5f63f4997fa8a394da6e7a8a3f3eb2275bd01730fa822c,136252
-other_650458c6.bundle,5deda8914f846005ffaf472390ac2de1873e90112fd8960ee95ae050f3f45d32,1635961
-pet_0b37582d.bundle,067150141241bfaf0929798a35213b519cec6c0c8ef9a64ba566c69212d5e0a7,10283702
-playerhouse_496f74b9.bundle,6d8866214dd8cd0430308e6ae2a3396ae847575ab9c0d0bf687932817dffa350,14366738
-requestitem_50cb67ab.bundle,c2d493f4413f08dec56f88feba19973a28832823d2d5ad7e109b243157990533,33708372
-seed_8c733f88.bundle,c5ff6e53a9a847178e2cce5b2ddb9d1cc8a7e420cc9c17c8b78a9a8db50e2d9a,6618740
-skin_47c97353.bundle,aedfa3a1e1af8e122c69a8be4f26d58ec0cbf5410a2e706eb287c111a76ee051,3223529
-sprintvfx_05b864d0.bundle,62682e03f03bbeec5ec53534d6018139fc1b48ba69453ff4a4ff81ec5f04523b,1101696
-stall_7e96492d.bundle,a8244192b7c754119cb67a14e8273e3d02be5d38c5ff48c470aab3f73a3d52d1,704703
-timebending_02f26f45.bundle,9af24a8ad204b353453bbda8938450cac5a3cf4a00fc671b98be5f873fec1981,738931
-wallpaper_753ee7b6.bundle,820048cc5d23d6b58cd1d4a54827cfd74bf60cb9b20fb066c0b5ab3ca1165dc8,128625
-watering_e5ad3236.bundle,3d0f30e43c4e8f694c8f85b8528dfc4bed872143c59387a7f04e7211dcb2de23,884767
+YnVuZGxlLHNoYTI1NixieXRlcwphY2Nlc3NvcnlfOTNkMzkxZjUuYnVuZGxlLDg4Mjc5ZmYyMmNm
+YTA0ZDRmMDNlMTY2YmRiNWM1ZTIxYzI5NTk5YzkyODdmNWNlMWVjODgxZDc2NDNhMzYwMzQsMjkw
+ODEzNQpidWZmZWxpeGlyXzAxYzE0NDU2LmJ1bmRsZSw2Y2MwYjFlMTRkZDMxZjViMjI0MGY1NDAy
+Yzk4ODUwOTU4YWZlNTJkYTY3ZjdmMzJkZjBkODg4MTBhZDFjYzRiLDQxNTMwMgpjbG90aGluZ18y
+N2M4NDNiYS5idW5kbGUsYjNhZWUwMDM3MzJkZTJmNTExNzYzMjdhNjRjNWRiNjE2NGVhOTVlYTgy
+YTU1ODI4YWQ5YjY2OTNiNTg5Y2IyYSwxODAzMTgxOTYKY29tcGFuaW9uc2ljb25zem9vbWVkXzg2
+NjQzOWYwLmJ1bmRsZSwzNmI5ZDM4MmQ4YTM4NzJkNDI2MzgwZGVmMjA5MzVlYzIwYzAyYjE3Zjlk
+NTdkOWVjMTJlOGZiM2ViYWM2Mzg3LDI1MDA4MjY0CmNvbnN1bW1hYmxlXzRlNWZjNTlmLmJ1bmRs
+ZSw1OGEyNDkwOGI4ZmI0YTEzNGRmZmVjMGJmNGU1YjQ4Njk2YjdkY2IyMzQyNGQ2ODU4NzZiNWU0
+ZDFlYzNmNzAxLDk3NTY0NQpjcmFmdGluZ21hdGVyaWFsX2EwMWJlNTQzLmJ1bmRsZSxhZDg3ZjI4
+MDYzY2FiNzgxYzc1YmZkNjkzMzYwYzQ2NGRjZTIwMTA2Yzk0ZDRlZjI5ZTdmNzE5ZDhkYmU0NWRl
+LDUyMjQzODgKY3JvcF83NTYzYTAzYS5idW5kbGUsODY2OGNjYzMzMmIxYjY0ZmM5ZTM4NGQ3MzU1
+OTY3ZDRmNDI0N2Q4NzRjZDA2ZTI0M2Y3M2EzY2I0ZTA0YjQ2ZCw1NTA0OTk3CmRlZmF1bHRfNmY5
+YTVlMjAuYnVuZGxlLDBjMTFlZjkyMGRiYTUyMDY0ZmYzOWJhMmUyMWE1ZTMwOGM2OTAzYTBlZDdi
+Mzg5NmExZDUwNTQ0NWNhZWVlN2IsMjUyNzYzNwpkb29yXzRkZGZkYTYwLmJ1bmRsZSxjMDBhNmIz
+YThlNGI4Zjc2NjYzNmQxODE3MzZkZjVkNjk1YWMxYmVkZDY0NGU2OTUwYzA5ZGZjMzI3YTRkODVk
+LDEyOTI4MQplcGhlbWVyYWxfYTA4MWZlYWEuYnVuZGxlLDVlYTFkMmQwNjEyMTIyOTg0N2IwMGEx
+ZGEzNWY1MGEyYzVmNGFmMGY0NTA0Y2U1ZjA1MDZjNGRiMjk0MDU1YjQsMzAxMjc0CmZpZ3VyaW5l
+XzgyYzM2NjQ4LmJ1bmRsZSw4MDE0MzM5ZTk1NDk2ODViOGM4NmNmMGFmMGNiMGIyMGFjNzJkMDAw
+NDRlMzc2YTJjMmNhYmI0YTNjZjA1MWE5LDQ4ODI2NDAKZmlzaF8zZjA4NDY0Ny5idW5kbGUsYjRj
+YmRkYTkwMDFjZmY5MzNjN2U4NjZkYzEyZDkxMzA4MjFiZGM4MTdhOTc5OWY0NjE4ZWJlNTRjMzEy
+M2JiNyw0Mjk0NTgzCmZpc2hpbmdfMDZjNzYyOWYuYnVuZGxlLDAxZWEyNzM2MTMyODc2Njk1ODYw
+NWJlNWI0MjMwMWI1ODYzYWRkNDM0MzA1MTIwM2M5ZjAzOTJiYTQ0YzZkNjUsNDk1ODE1CmZsb29y
+aW5nX2MxY2QwZjIwLmJ1bmRsZSw5YzAwY2VmOTQ3OWMzOTEyODRmODQ4OGE5MTc2OTQ5NjBkZDFl
+NjY2YzdkNThkNTc4ZWU4ZGM5YTFiZWI1OThhLDkxNTM4CmZsb3dlcl81ODRhOWY2OS5idW5kbGUs
+NTZmMDAyMjQyNTQ1ODlhYTA1YTFkYWFjZGNmZDk0MTIyYTY5MzIyZmEwMzI2ZDA1OTRkNTExYTUy
+MGFjYzIxZSwzOTkzNDMwCmZ1cm5pdHVyZV9hMWM0MjVhNS5idW5kbGUsZjY1ZGM1Y2I5MzliMjYx
+MGMxOGY1NmUzNmVhMzQyMWM3N2E2NmMxYWIyNWU1MTcyYmYzYjQzMTU3NmUzOWJlYiwyNTY0MDQy
+NjQKZ2FyZGVuX2VmMmI1OTRlLmJ1bmRsZSxkYjA1NzYzYjE4YTc3NTA1ZjY0ZTMxOTNjYTg5ODll
+YTZjZGQyMGE2Yjg2MDY1ZGZkODQ3YWJjOGNmNGE1YTFmLDE1MDQ5MgpnYXJkZW5pbmdfMWFjYmJm
+ZTIuYnVuZGxlLGMzN2M2YmM4MTU2MmJlNjIxMWIxZjNhNDA1YmQwZTg2ZDVhZWZhZGRlZGZlOGZj
+OTI3OTA4ZDllZGQ2NTcxMDksNDEwOTU5CmhvdXNlXzFkZTJiNjJlLmJ1bmRsZSw0NDE3MGE2NDQ3
+ZDM3MzI3YjE5MDk3OThkNzRhY2E3MWNiNWMzYzY1NWMzNTRmMDU3MzMzZTQ3NWYwMzc2MTdjLDMw
+MjkyMDEKaW5ncmVkaWVudF8xYzFiZjk5Yi5idW5kbGUsODg2Y2VkMDE5NDY4YjA3ZTVkYTc0MWU1
+YjMwZjlmN2VlOGVlNzgzMDgxMTM1OGZmNTgxYjdmNjViY2QyNTEwMSwxOTI2Nzk4Cmxvb3RwcmVz
+ZW50XzNhY2VjMzQ2LmJ1bmRsZSwwNzliZDc5OWQzZjdhOTAzMTdhYTkxMjgzZjM3MmYyYTExYzJk
+NDMyMDllOGZlMjgwZDZmZGNhOGVkMjM4ZDE2LDE5MDc1MDgKbWFrZXVwX2E4OTc2MzJjLmJ1bmRs
+ZSwxNDQwNzM0NzViMzMxZDI0MjdkZGUyZWJhNTAzMDRjZDA0Njk2ZjI0ODViZTAxZWZjMjQzZGE3
+YmRlODQ3Y2MyLDE0OTI2NTkyCm1hbnVhbF80OTc2ZmNkNC5idW5kbGUsYmE2N2Q4ZmNlOTUwMzYx
+ZjE3ZWMyMWY0ZDgwODkwYmQxYmZiYTRkZDQ5OWI2NDIzMDYzNGM3ODY4MTg3ZGM0Myw3NDM4MjgK
+bWVhbF83YTMxZDY5OS5idW5kbGUsMGMyZjRkYjcwOGFkNmFlMmI0NDJhNWRlYTIzODE5NTdlZmYy
+M2U4MzVmMDQ4YWZlNDczMDNiYTdlZjI2OGVlNCwyNTUyMzY5OAptaW5lcmFsXzZmYzM5NDM0LmJ1
+bmRsZSw0ZTNkNGQ3YWY1ODczNzA3OGJmYmQwMzdiMGIzYzJlZGE2ZDE1YWVjMTkwNzFlMjJmZWY3
+Y2ZkOTZhNjQ2MjkzLDczNjU0MDAKbWluaW5nX2EyMTVhYjk4LmJ1bmRsZSxiNmQ1MjY4OTFiNGYz
+ZTM3YzMyOGFjM2FkM2U1OGM0ZDM3ZDdiZjFkMjBkOTQzMDM1MzVhYWI0MDM5ZjEyMGQ2LDU2NjM1
+MQptaXNjXzJhNzNlMDQzLmJ1bmRsZSw1M2UzYTMyYzM5ZTE3MWU0ODVjYzRkYWQxOWQ5ODkzMzgz
+OTdiODFkNjMxNGIxOTQ1MzU4NTEzMjJmMWZmOTI2LDU4NDcxNgptb3VudGdlYXJfYTVjMTdjYWYu
+YnVuZGxlLDFmNWM2OWRiNjNkMTA4ODE0MzY0ZDEzYmZlYjMyOWFmYjk3NzIyY2Y1MmM1MzQwZDEx
+NGFkMmRiNzc4ZDdlOTMsMTAxODM3NAptdWxhbl9kMWZhMWM0Yi5idW5kbGUsZTdmMWQ3YTY5ZDBl
+NzQ3ZWNjNWY2M2Y0OTk3ZmE4YTM5NGRhNmU3YThhM2YzZWIyMjc1YmQwMTczMGZhODIyYywxMzYy
+NTIKb3RoZXJfNjUwNDU4YzYuYnVuZGxlLDVkZWRhODkxNGY4NDYwMDVmZmFmNDcyMzkwYWMyZGUx
+ODczZTkwMTEyZmQ4OTYwZWU5NWFlMDUwZjNmNDVkMzIsMTYzNTk2MQpwZXRfMGIzNzU4MmQuYnVu
+ZGxlLDA2NzE1MDE0MTI0MWJmYWYwOTI5Nzk4YTM1MjEzYjUxOWNlYzZjMGM4ZWY5YTY0YmE1NjZj
+NjkyMTJkNWUwYTcsMTAyODM3MDIKcGxheWVyaG91c2VfNDk2Zjc0YjkuYnVuZGxlLDZkODg2NjIx
+NGRkOGNkMDQzMDMwOGU2YWUyYTMzOTZhZTg0NzU3NWFiOWMwZDBiZjY4NzkzMjgxN2RmZmEzNTAs
+MTQzNjY3MzgKcmVxdWVzdGl0ZW1fNTBjYjY3YWIuYnVuZGxlLGMyZDQ5M2Y0NDEzZjA4ZGVjNTZm
+ODhmZWJhMTk5NzNhMjg4MzI4MjNkMmQ1YWQ3ZTEwOWIyNDMxNTc5OTA1MzMsMzM3MDgzNzIKc2Vl
+ZF84YzczM2Y4OC5idW5kbGUsYzVmZjZlNTNhOWE4NDcxNzhlMmNjZTViMmRkYjlkMWNjOGE3ZTQy
+MGNjOWMxN2M4Yjc4YTlhOGRiNTBlMmQ5YSw2NjE4NzQwCnNraW5fNDdjOTczNTMuYnVuZGxlLGFl
+ZGZhM2ExZTFhZjhlMTIyYzY5YThiZTRmMjZkNThlYzBjYmY1NDEwYTJlNzA2ZWIyODdjMTExYTc2
+ZWUwNTEsMzIyMzUyOQpzcHJpbnR2ZnhfMDViODY0ZDAuYnVuZGxlLDYyNjgyZTAzZjAzYmJlZWM1
+ZWM1MzUzNGQ2MDE4MTM5ZmMxYjQ4YmE2OTQ1M2ZmNGE0ZmY4MWVjNWYwNDUyM2IsMTEwMTY5Ngpz
+dGFsbF83ZTk2NDkyZC5idW5kbGUsYTgyNDQxOTJiN2M3NTQxMTljYjY3YTE0ZTgyNzNlM2QwMmJl
+NWQzOGM1ZmY0OGM0NzBhYWIzZjczYTNkNTJkMSw3MDQ3MDMKdGltZWJlbmRpbmdfMDJmMjZmNDUu
+YnVuZGxlLDlhZjI0YThhZDIwNGIzNTM0NTNiYmRhODkzODQ1MGNhYzVhM2NmNGEwMGZjNjcxYjk4
+YmU1Zjg3M2ZlYzE5ODEsNzM4OTMxCndhbGxwYXBlcl83NTNlZTdiNi5idW5kbGUsODIwMDQ4Y2M1
+ZDIzZDZiNThjZDFkNGE1NDgyN2NmZDc0YmY2MGNiOWIyMGZiMDY2YzBiNWFiM2NhMTE2NWRjOCwx
+Mjg2MjUKd2F0ZXJpbmdfZTVhZDMyMzYuYnVuZGxlLDNkMGYzMGU0M2M0ZThmNjk0YzhmODViODUy
+OGRmYzRiZWQ4NzIxNDNjNTkzODdhN2YwNGU3MjExZGNiMmRlMjMsODg0NzY3Cg==
 '@
-Install-EmbeddedSource -name 'source-index-1262.csv' -content $embedded
+Install-EmbeddedSource -name 'source-index-1262.csv' -encoded $embedded
 Remove-Variable embedded
 
 $embedded = @'
-Pillow>=10.0
-UnityPy>=1.20
+UGlsbG93Pj0xMC4wClVuaXR5UHk+PTEuMjAK
 '@
-Install-EmbeddedSource -name 'requirements-unity.txt' -content $embedded
+Install-EmbeddedSource -name 'requirements-unity.txt' -encoded $embedded
 Remove-Variable embedded
 
 $main = Join-Path $install 'native1262.py'
@@ -1390,7 +1201,7 @@ if (-not $SampleOnly) {
 # synchronizes the exact folder. Never sync game images or source binaries.
 $roots = @(
     'G:\My Drive',
-    'G:\マイドライブ',
+    ('G:\' + (-join @([char]0x30DE, [char]0x30A4, [char]0x30C9, [char]0x30E9, [char]0x30A4, [char]0x30D6))),
     (Join-Path $env:USERPROFILE 'My Drive'),
     (Join-Path $env:USERPROFILE 'Google Drive\My Drive')
 )
