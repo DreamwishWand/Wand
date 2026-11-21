@@ -3,7 +3,10 @@ import { ITEM_LOCALES, indexItemRecords, getLocalizedName, getVerifiedIconGuid }
 
 export const DB01_CANONICAL_SCHEMA = 'wand.db01.items@1';
 export const DB01_PARTIAL_SCHEMA = 'wand.db01.partial-manifest@2';
+export const DB01_RECOVERED_SCHEMA = 'wand.db01.partial-manifest@3';
 const SHA = /^[0-9a-f]{64}$/;
+const RECOVERED_TARGET_PROBE_SHA = '07fd8ebb1c528f852a0e00ce54cf4964f93931b9155bc9e2aab1bd857986d00a';
+const RECOVERED_OLDER_VERSION_SHA = 'a59c942d093c60740a447efb3bede638d3a3ee60c00ca01f898500413d670401';
 const FILE = /^ddv_Data\/StreamingAssets\/itemlist\/([A-Za-z][A-Za-z0-9]*)\.json$/;
 const FOUR_ITEM_CLASSES = new Set(['ActivityItem', 'Furniture', 'Clothing', 'Trimming']);
 const NONDISPLAY = /^\s*\{(?:Placeholder|LegacyPlaceholder|DoNotTranslate)\}/i;
@@ -25,14 +28,15 @@ function freezeDeep(value) {
 }
 function check(ok, label) { if (!ok) throw new TypeError(`DB01_${label}`); }
 
-/** Only two explicit, private-only, full-file-evidenced manifests are accepted.
+/** Only explicitly supported private-only, full-file-evidenced manifests are accepted.
  *  Diagnostic prefix-evidence inputs are categorically incompatible.
  */
 export function validateDb01Manifest(manifest) {
   check(isObject(manifest), 'MANIFEST_REQUIRED');
   const canonical = manifest.schema === DB01_CANONICAL_SCHEMA;
   const partial = manifest.schema === DB01_PARTIAL_SCHEMA;
-  check(canonical || partial, 'UNSUPPORTED_OR_SAMPLE_ONLY_SCHEMA');
+  const recovered = manifest.schema === DB01_RECOVERED_SCHEMA;
+  check(canonical || partial || recovered, 'UNSUPPORTED_OR_SAMPLE_ONLY_SCHEMA');
   check(manifest.platform === 'Steam' && typeof manifest.gameVersion === 'string' &&
     /^\d+\.\d+\.\d+$/.test(manifest.gameVersion), 'INVALID_GAME_TARGET');
   check(manifest.publicationStatus === (canonical
@@ -43,6 +47,41 @@ export function validateDb01Manifest(manifest) {
       manifest.fullCorpusParsed === false && Array.isArray(manifest.sources) &&
       manifest.sources[0]?.schema === 'wand.src01.steam-native@1' &&
       SHA.test(manifest.sources[0].manifestSha256 ?? ''), 'UNVERIFIED_PARTIAL_SOURCE');
+  } else if (recovered) {
+    const source = manifest.sources?.[1];
+    const native = manifest.sources?.[0];
+    const proof = source?.reuseEvidence;
+    check(manifest.status === 'private_38_of_39_full_native_source_evidence' &&
+      manifest.fullCorpusParsed === false &&
+      manifest.historicalReferenceJoined === false &&
+      manifest.sourceFilesFullyShaVerified === 38 &&
+      manifest.sourceFilesTotal === 39 &&
+      manifest.unresolvedCategories?.length === 1 &&
+      manifest.unresolvedCategories[0] === 'Condition' &&
+      Array.isArray(manifest.sources) && manifest.sources.length === 2 &&
+      native?.schema === 'wand.src01.steam-native@1' &&
+      SHA.test(native.manifestSha256 ?? '') &&
+      source?.schema === 'wand.src01.extended@1' &&
+      SHA.test(source.manifestSha256 ?? '') &&
+      SHA.test(source.itemsSha256 ?? '') &&
+      source.probeSha256 === RECOVERED_TARGET_PROBE_SHA &&
+      proof?.schema === 'wand.src01.identical-binary-reuse@1' &&
+      proof.olderBaselineVersion === '1.26.1' &&
+      proof.currentTargetVersion === manifest.gameVersion &&
+      proof.olderFullVersionSha256 === RECOVERED_OLDER_VERSION_SHA &&
+      proof.categoryFilesNotReusable?.length === 1 &&
+      proof.categoryFilesNotReusable[0] === 'Condition.json' &&
+      Array.isArray(proof.sameFullBytesSha256Files) &&
+      proof.sameFullBytesSha256Files.length === 38 &&
+      new Set(proof.sameFullBytesSha256Files).size === 38 &&
+      manifest.gameVersion === '1.26.2' &&
+      Array.isArray(native.verifiedCategories) &&
+      native.verifiedCategories.length === FOUR_ITEM_CLASSES.size &&
+      native.verifiedCategories.every(category => FOUR_ITEM_CLASSES.has(category)) &&
+      manifest.verifiedCurrentLocalization?.fullCurrentLocaleMemberCount === 53 &&
+      manifest.verifiedCurrentLocalization?.currentEightLocaleNamedDefinitions === 241 &&
+      manifest.verifiedCurrentLocalization?.currentAnyLocaleNamedDefinitions === 506,
+      'INVALID_REUSED_SOURCE_PROVENANCE');
   } else {
     check(SHA.test(manifest.inputs?.nativeManifest ?? '') &&
       SHA.test(manifest.inputs?.referenceIndex ?? ''), 'MISSING_CANONICAL_PROVENANCE');
@@ -118,6 +157,40 @@ function makePrivateCatalog(manifest, records, dataSha256Verified) {
   }
   check(counts.size === Object.keys(manifest.byNativeCategory).length,
     'UNKNOWN_SOURCE_CATEGORY');
+  if (manifest.schema === DB01_RECOVERED_SCHEMA) {
+    const claims = manifest.sources[1].fullSourceBytesShaVerifiedCategories;
+    const expectedFullFileNames = new Set([...FOUR_ITEM_CLASSES].map(cat => cat+'.json'));
+    const originalFileNames = manifest.sources[1].reuseEvidence.sameFullBytesSha256Files;
+    for (const name of claims ?? []) expectedFullFileNames.add(name);
+    check(Array.isArray(claims) && claims.length === 34 &&
+      claims.every(name => /^[A-Za-z][A-Za-z0-9]*\.json$/.test(name)) &&
+      new Set(claims).size === claims.length &&
+      claims.includes('ItemCondition.json') && !claims.includes('Condition.json') &&
+      Array.isArray(originalFileNames) && originalFileNames.length === 38 &&
+      originalFileNames.every(name => expectedFullFileNames.has(name)) &&
+      expectedFullFileNames.size === 38 &&
+      Object.keys(manifest.byNativeCategory).length === 37 &&
+      !Object.hasOwn(manifest.byNativeCategory, 'Condition') &&
+      Object.keys(manifest.byNativeCategory).every(cat => expectedFullFileNames.has(cat+'.json')),
+      'INCOMPLETE_EXACT_SOURCE_COVERAGE');
+    const current = manifest.verifiedCurrentLocalization.currentExactNamesByLocale;
+    const actual = Object.fromEntries(ITEM_LOCALES.map(locale => [locale,0]));
+    let namesInAll = 0, namesInAny = 0;
+    for (const row of byId.values()) {
+      let present = 0;
+      for (const locale of ITEM_LOCALES) {
+        if (typeof row.names[locale] === 'string') { actual[locale]++; present++; }
+      }
+      if (present === ITEM_LOCALES.length) namesInAll++;
+      if (present) namesInAny++;
+    }
+    check(isObject(current) && Object.keys(current).length === ITEM_LOCALES.length &&
+      ITEM_LOCALES.every(locale => Number.isSafeInteger(current[locale]) &&
+        actual[locale] === current[locale]) &&
+      namesInAll === manifest.verifiedCurrentLocalization.currentEightLocaleNamedDefinitions &&
+      namesInAny === manifest.verifiedCurrentLocalization.currentAnyLocaleNamedDefinitions,
+      'CURRENT_LOCALE_COUNTS_MISMATCH');
+  }
   if (manifest.schema === DB01_CANONICAL_SCHEMA) {
     check(manifest.counts.verifiedFourNativeItems === itemCount &&
       manifest.counts.additionalDefinitionRecords === definitionCount,

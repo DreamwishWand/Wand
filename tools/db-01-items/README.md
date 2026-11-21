@@ -235,3 +235,24 @@ Use the resulting private `wand.src01.extended@1` folder as the **replacement**
 `--extended` source to `tools/db-01-items/build.py`; never merge it with the old
 132-definition ext folder, since IDs overlap. It is not a complete catalog:
 `Condition.json` for v1.26.2 remains unavailable.
+
+
+## Complete-source reuse: normalized private 33,627 definition baseline
+
+The recovered-source compiler `build_recovered_partial.py` accepts the
+source-verified 13,202 native records and the separate SHA-identical archival
+20,425 extended definitions, rejects changed `Condition.json`, and produces
+private `wand.db01.partial-manifest@3` data for all **33,627** source-backed
+definition IDs. Source IDs are not ownership or collectibility assertions.
+
+`src/lib/items/catalog.mjs` supports this exact versioned private schema,
+validates the 38/39 binary-source equality proof, checks the pinned old and
+current source fingerprints and **all eight current official name counts**
+(241 full eight-locale; 506 any). Its DB-00 adapter excludes unclassified
+definitions and does not authorize publication or save writing.
+
+See [`RECOVERED-PARTIAL.md`](RECOVERED-PARTIAL.md) for build usage, known
+missing `Condition.json`, absent full current LocDB ZIP files, and a
+same-game-version coverage-safe diff with the previous 13,334-row partial
+baseline (13,334 shared IDs, 20,293 newly-covered IDs, no game-added claims).
+

@@ -50,6 +50,58 @@ def fixture(folder, rows, version='1.26.2'):
     return folder
 
 
+def fixture_recovered_v3(folder):
+    """Entirely synthetic 38/39 evidence shape for expanded coverage tests."""
+    categories = ['ActivityItem', 'Clothing', 'Furniture', 'Trimming',
+        'ActivityData', 'AvatarFeature', 'BoardGame', 'Building', 'Character',
+        'CollectionSet', 'Companion', 'ConditionalEvent', 'Currency', 'Dialogue',
+        'Display', 'DutyAch', 'Environment', 'Formula', 'Ftue', 'LootTable',
+        'Makeup', 'MemoryShard', 'Mission', 'MountGear', 'PhotoMode',
+        'PointOfInterest', 'Preference', 'Profession', 'RecurringEvent', 'Scene',
+        'Set', 'Skin', 'Story', 'Tag', 'Tool', 'TouchOfMagic', 'Upgrade']
+    rows = [fake_row(31, 'ActivityItem'), fake_row(91,'BoardGame')]
+    for i in range(504):
+        category = categories[i % len(categories)]
+        rows.append(fake_row(110000000+i, category))
+    for i,row in enumerate(rows):
+        if i < 241:
+            for loc in compare.LOCALES:
+                row['names'][loc] = f'Synthetic {i} {loc}'
+                row['verification']['names'][loc] = 'exact_locdb_join'
+        elif i < 506:
+            row['names']['en'] = f'Synthetic {i} en'
+            row['verification']['names']['en'] = 'exact_locdb_join'
+    fixture(folder, rows)
+    man = json.loads((folder/'manifest.json').read_text())
+    allfiles = [cat+'.json' for cat in categories]
+    man.update({'schema':compare.RECOVERED,
+        'publicationStatus':'PRIVATE_ONLY_NO_PUBLIC_ITEMS',
+        'status':'private_38_of_39_full_native_source_evidence',
+        'fullCorpusParsed':False, 'count':len(rows),
+        'historicalReferenceJoined':False, 'sourceFilesFullyShaVerified':38,
+        'sourceFilesTotal':39, 'unresolvedCategories':['Condition'],
+        'catalogDomains':{'collectionItem':sum(r['catalogDomain']=='item' for r in rows),
+            'unclassifiedDefinition':sum(r['catalogDomain']!='item' for r in rows)},
+        'verifiedCurrentLocalization':{'fullCurrentLocaleMemberCount':53,
+            'currentEightLocaleNamedDefinitions':241,
+            'currentAnyLocaleNamedDefinitions':506,
+            'currentExactNamesByLocale':{loc:sum(bool(r['names'][loc]) for r in rows)
+                for loc in compare.LOCALES}},
+        'sources':[
+            {'schema':'wand.src01.steam-native@1','manifestSha256':'a'*64,
+             'verifiedCategories':categories[:4]},
+            {'schema':'wand.src01.extended@1','manifestSha256':'b'*64,
+             'probeSha256':compare.RECOVERED_TARGET_PROBE_SHA,
+             'fullSourceBytesShaVerifiedCategories':sorted(allfiles[4:]+['ItemCondition.json']),
+             'reuseEvidence':{'schema':'wand.src01.identical-binary-reuse@1',
+                 'olderBaselineVersion':'1.26.1','currentTargetVersion':'1.26.2',
+                 'olderFullVersionSha256':compare.RECOVERED_OLDER_VERSION_SHA,
+                 'categoryFilesNotReusable':['Condition.json'],
+                 'sameFullBytesSha256Files':sorted(allfiles+['ItemCondition.json'])}}]})
+    (folder/'manifest.json').write_text(json.dumps(man),encoding='utf-8')
+    return folder
+
+
 class VersionDifferenceTests(unittest.TestCase):
     def test_empty_changes_are_not_game_wide_assertions(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -170,6 +222,40 @@ class VersionDifferenceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'OUTPUT_OVERLAPS_SOURCE'):
                 compare.build(old,new,old/'out')
 
+    def test_recovered_v3_version_expansion_is_coverage_not_game_added(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            old=fixture(root/'old',[fake_row(31),fake_row(91,'BoardGame')])
+            new=fixture_recovered_v3(root/'new')
+            result=compare.compare(old,new)
+            self.assertEqual(result['counts']['sharedItemIds'],2)
+            self.assertEqual(result['counts']['newlyCoveredCategoryIds'],
+                sum(row['nativeCategory'] not in ('ActivityItem','BoardGame')
+                    for row in compare.load_private_version(new)['items'].values()))
+            self.assertEqual(result['coverage']['previousOnlyCategories'],[])
+            self.assertFalse(result['coverage']['gameWideComplete'])
+            self.assertIsNone(result['gameWideAddedIds'])
+            self.assertIsNone(result['gameWideRemovedIds'])
+            self.assertEqual(result['newlyVerifiedNamesByLocale']['ja'],2)
+
+    def test_recovered_v3_source_proof_tampering_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);folder=fixture_recovered_v3(root/'v3')
+            m=json.loads((folder/'manifest.json').read_text())
+            m['sources'][1]['reuseEvidence']['categoryFilesNotReusable']=[]
+            (folder/'manifest.json').write_text(json.dumps(m))
+            with self.assertRaisesRegex(ValueError,'RECOVERED_VERSION_PROVENANCE_REQUIRED'):
+                compare.load_private_version(folder)
+
+    def test_recovered_v3_false_locale_count_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);folder=fixture_recovered_v3(root/'v3')
+            m=json.loads((folder/'manifest.json').read_text())
+            m['verifiedCurrentLocalization']['currentExactNamesByLocale']['ja']=242
+            (folder/'manifest.json').write_text(json.dumps(m))
+            with self.assertRaisesRegex(ValueError,'RECOVERED_LOCALE_COUNT_MISMATCH'):
+                compare.load_private_version(folder)
+
     def test_partial_v2_source_coverage_contract(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)
@@ -183,6 +269,7 @@ class VersionDifferenceTests(unittest.TestCase):
                 'sources':[{'schema':'wand.src01.steam-native@1','manifestSha256':'a'*64,
                             'verifiedCategories':list(compare.CATEGORIES)},
                            {'schema':'wand.src01.extended@1','manifestSha256':'b'*64,
+             'probeSha256':compare.RECOVERED_TARGET_PROBE_SHA,
                             'fullSourceBytesShaVerifiedCategories':[]}]})
             # Manifest with explicit zero-record categories is allowed and must match the input rows.
             (folder/'manifest.json').write_text(json.dumps(manifest))
