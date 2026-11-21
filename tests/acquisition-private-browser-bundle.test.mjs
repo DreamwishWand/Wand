@@ -41,7 +41,7 @@ function fixture({tamper=false,invalidLink=false,extra=false,staleCondition=fals
   linkedItemIds:0,ingredientSelectorMembers:0,ingredientSelectorSourceDefinitions:4050,
   ingredientSelectorIdsReferenced:0,ingredientSelectorUses:0,
   ingredientSelectorIdsWithObservedMembers:0,ingredientSelectorIdsWithoutObservedMembers:0,
-  conditionGates:0,conditionDefinitions:0,conditionGateUsages:0,conditionSourceDefinitions:5439,
+  conditionGates:0,conditionDefinitions:0,conditionGateUsages:0,conditionSourceDefinitions:5440,
   unsupportedActivityDefinitions:0,unresolvedLinkedItemIds:0,sourceItems:0};
  if(invalidLink){
    datasets['related-items.jsonl']=PACK({itemId:123,inSrc01:true,recipesProducedBy:[321],
@@ -89,7 +89,7 @@ test('synthetic archive loads exact 12 source members and strictly private query
  assert.ok(Object.isFrozen(a));assert.ok(Object.isFrozen(a.counts));
  assert.throws(()=>{a.counts.recipes=12},TypeError);
 });
-test('no current source manifest is ever accepted without an independent caller pin',async()=>{
+test('even valid current r5 source is never accepted without an independent caller pin',async()=>{
  const x=fixture();
  await assert.rejects(loadPrivateSrc02BrowserBundle(x.source),/INDEPENDENT_CURRENT_SOURCE_PIN_REQUIRED/);
 });

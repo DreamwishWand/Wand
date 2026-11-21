@@ -97,7 +97,7 @@ been rewritten. For the DB-00 integration, use the Node-only pinned entrypoint:
 import { loadPinnedAcquisitionCatalogJoin } from
   './tools/src-02-acquisition/verify_bundle.mjs';
 const join = await loadPinnedAcquisitionCatalogJoin(db00Snapshot, {
-  directory: '/private/SRC-02/r4',
+  directory: '/private/SRC-02/r5',
   expectedManifestSha256: trustedLatest.currentSnapshotManifestSha256,
   src01ManifestPath: '/private/SRC-01/manifest.json',
 });
@@ -117,7 +117,7 @@ this Node-only module or private game rows from public browser bundles.
 
 ## Native condition data is structural evidence, not a player-state evaluator
 
-Steam v1.26.2 `Condition.json` has 5,439 records. Only the 13 `ConditionItemData` records reached through explicit `ConditionCommon` pointers from 220 content-addressed, acquisition-relevant `ConditionsList` payloads are materialized. These 220 gates occur at 404 concrete source positions, including recipes and loot subgroup restrictions. The boolean tree shape and oneof predicate type are **native evidence**; individual predicate parameters remain SHA-only unless a field mapping is verified. A gate's `availabilityEvaluated=false` is mandatory, and never means the gate is false. In particular, do not show locked/unlocked, scheduled sale, event reward or required DLC ownership without live state evidence.
+Steam v1.26.2 `Condition.json` has 5,440 records. Only the 13 `ConditionItemData` records reached through explicit `ConditionCommon` pointers from 220 content-addressed, acquisition-relevant `ConditionsList` payloads are materialized. These 220 gates occur at 404 concrete source positions, including recipes and loot subgroup restrictions. The boolean tree shape and oneof predicate type are **native evidence**; individual predicate parameters remain SHA-only unless a field mapping is verified. A gate's `availabilityEvaluated=false` is mandatory, and never means the gate is false. In particular, do not show locked/unlocked, scheduled sale, event reward or required DLC ownership without live state evidence.
 
 The verified private bundle loader (`verify_bundle.mjs`) checks both condition indexes and all condition-digest references from recipes, fishing paths and loot groups. It fails closed for a missing `ConditionCommon` definition, cyclic references, malformed trees, mismatched counts, and unknown digests. The DB-00 join forwards those condition query APIs without converting them into entitlement or stock evidence. Check `manifest.json`'s `conditionSha256` and count ledger before consuming a new snapshot.
 
@@ -213,7 +213,7 @@ regressions. The full 1,943-recipe Steam v1.26.2 corpus is exercised separately
 from the owner's private Drive snapshot; it is not committed as a test fixture.
 
 
-## Native cooking ingredient selectors (Steam v1.26.2 r4)
+## Native cooking ingredient selectors (Steam v1.26.2 r5)
 
 The original game uses **two distinct numerical selector families** in
 `RecipeItemData.Types.Ingredient`: `Any` (field 2) stores a
@@ -262,7 +262,7 @@ The output manifest includes `ingredient-selector-membership.jsonl`'s SHA-256,
 the native ActivityItem source digest, 469 typed rows, 13 selector IDs,
 238 uses and the verified 4,050 source-definition count. The private bundle
 loader cross-checks those counts and native row contracts; tampering or a
-missing required r4 dataset fails closed. The new version diff only asserts
+missing required r5 dataset fails closed. The new version diff only asserts
 *observed source-row changes*, not actual release availability.
 
 ## Multi-goal material basket (DB-02; no new game data)
@@ -477,3 +477,39 @@ availability claims. Private release manifest SHA-256:
 Use `loadVerifiedNativeTagLocales()` with verified native Tag evidence and an
 independently pinned locale release SHA. See `TAG-LOCALES.md`. No raw ZIP,
 localized strings or game binaries are included in public source or Pages.
+
+### Exact-localized private recipe selector presentation (r5)
+
+`createPrivateRecipeSelectorView(acquisition, tagLocales, locale)` in
+`src/lib/acquisition/private-recipe-selectors.mjs` joins the separately
+SHA-verified **r5 private browser bundle** and **eight-language Tag release**
+without copying source originals into the app. It requires the exact r5
+manifest (`ec1efd589...`), parent Tag evidence (`26eb6d5e...`) and
+Tag localization (`f6f990d7...`) release pins. All other versions,
+unverified loaders, or public/mutable objects are rejected.
+
+```js
+import {createPrivateRecipeSelectorView} from
+  '$lib/acquisition/private-recipe-selectors.mjs';
+
+// acquisition: result of loadPrivateSrc02BrowserBundle() for owner-private r5
+// tagLocales: result of loadVerifiedNativeTagLocales() with independent SHA pin
+const view = createPrivateRecipeSelectorView(acquisition, tagLocales, 'ja');
+const choiceRows = view.getRecipeIngredientChoices(recipeId);
+// choiceRows can be null: partial-index miss, NEVER proof of game absence.
+```
+
+Recipe ingredient positions and quantities are retained. Selectors keep distinct
+`native_tag` (20012...) and `cooking_ingredient_type` (20014...) kinds.
+**Both families have exact source-localized Tag names** when marked as recipe
+selectors in the Tag evidence: real owner-private smoke checked all **13/13**
+unique recipe selectors (2 item tags, 11 cooking types) in all eight languages,
+**104/104** selector/locale mappings. The 238 recipe selector references are
+never treated as already chosen ingredients. Candidate Item IDs come only from
+the source-backed three-class cooking index or explicit recipe Item IDs, not
+from translation names. Unknown names remain null, never AI-translated.
+
+This view is **read-only, private-only, unpublishable**. It never asserts
+live shop stock, rights, unlock status, recipe eligibility, quantity in a
+player's save or authorized Writer operations. The synthetic regression suite
+is `tests/acquisition-private-recipe-selectors.test.mjs`.

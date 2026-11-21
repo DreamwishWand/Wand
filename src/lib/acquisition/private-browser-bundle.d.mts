@@ -36,7 +36,7 @@ export interface PrivateSrc02BrowserBundle {
 export declare function openPrivateSrc02Archive(bytes: Uint8Array): PrivateSrc02BrowserArchive;
 /**
  * Caller must supply owner-selected bytes and an independently authenticated
- * manifest pin (no current-version accepted release exists until condition source is rebuilt).
+ * manifest pin (the current exact-source r5 release is owner-private and independently SHA-pinned).
  * No network/file writes. Never publish returned game-derived records.
  */
 export declare function loadPrivateSrc02BrowserBundle(
