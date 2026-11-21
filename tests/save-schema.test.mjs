@@ -71,3 +71,13 @@ test('deterministic schema difference reports adds, removals, type changes, neve
   assert.equal(diff.authoritative, false);
   assert.throws(() => diffSaveWitnesses([{path:'/A',type:'object'},{path:'/A',type:'object'}], []));
 });
+
+test('bridges existing Collection runtime records by exact Item ID without save writes', async () => {
+  const { decodeCollectionRecord } = await import('../src/lib/collection/catalog.mjs');
+  const collectionIndex = { f: ['Furniture'], c: ['unspecified'], m: ['unknown'], w: [], u: [], e: [] };
+  const row = [40000000, 0, 0, 0, [], [], [], Array(8).fill('Fixture chair')];
+  const record = decodeCollectionRecord(collectionIndex, row, 'ja');
+  const index = makeGameIdIndex([record]);
+  assert.equal(matchGameId(index, 40000000)?.family, 'Furniture');
+  assert.equal(matchGameId(index, 40000001), null);
+});
