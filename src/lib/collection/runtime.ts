@@ -9,8 +9,18 @@ const DB_NAME = 'dreamwishwand-collection';
 const STORE_NAME = 'state';
 const STATE_KEY = 'current';
 const MAX_FILE_BYTES = 10_000_000;
-const OWNER_LOCAL_DB01_BYTES = 6_744_949;
-const OWNER_LOCAL_DB01_SHA256 = '6e4aa04fa043633a4d7badb7e5b25e9b70fa56f5b0bea002d0d4846ca11d8ef8';
+// Only these audited, explicitly owner-selected files can enter the private
+// loader. Keep the verified-only v1 bundle compatible with the complete v2.
+const OWNER_LOCAL_DB01_FILES = [
+  { schema:'wand.collection.owner-local-db01@2',
+    id:'db01-steam-1-26-2-owner-local-complete', count:13_202,
+    bytes:7_245_529,
+    sha256:'b03d6cfd8a81443428a03aee65cf34c03591b5f1bce351b5c6461a7bdfe3affe' },
+  { schema:'wand.collection.owner-local-db01@1',
+    id:'db01-steam-1-26-2-owner-local-verified', count:11_492,
+    bytes:6_744_949,
+    sha256:'6e4aa04fa043633a4d7badb7e5b25e9b70fa56f5b0bea002d0d4846ca11d8ef8' }
+] as const;
 
 export interface CollectionEntry {
   status?: 'owned' | 'missing';
@@ -31,6 +41,7 @@ export interface CollectionState {
 export interface CollectionItem {
   itemId: number;
   label: string;
+  nameVerified: boolean;
   family: string;
   stateSemantic: string;
   worlds: string[];
@@ -67,6 +78,7 @@ export interface CollectionFilter {
   universe: string;
   expansion: string;
   status: string;
+  nameStatus?: 'all'|'verified'|'unverified';
   offset: number;
   limit: number;
 }
@@ -100,7 +112,7 @@ interface PublicDb00Index {
   shards: { file: string; offset: number; count: number; bytes: number; sha256: string }[];
 }
 interface OwnerLocalDb01Bundle {
-  schema: 'wand.collection.owner-local-db01@1';
+  schema: 'wand.collection.owner-local-db01@1' | 'wand.collection.owner-local-db01@2';
   index: PublicDb00Index & { sources: { id:string;visibility:string }[] };
   shards: string[];
   coverage: { itemDefinitions:number; nameVerified:number; nameUnverified:number };
@@ -277,19 +289,20 @@ export class CollectionRuntime {
    * This is never fetched or persisted; IndexedDB stores Collection entries only.
    * A public DB-00 active pointer can never reach this private Rust loader. */
   static async openOwnerLocalDb01(file: File): Promise<CollectionRuntime> {
-    if (file.size !== OWNER_LOCAL_DB01_BYTES) throw new Error('COLLECTION_LOCAL_DB01_UNRECOGNIZED_FILE');
+    const expected = OWNER_LOCAL_DB01_FILES.find(candidate=>candidate.bytes===file.size);
+    if (!expected) throw new Error('COLLECTION_LOCAL_DB01_UNRECOGNIZED_FILE');
     const bytes = await file.arrayBuffer();
-    if (await digestSha256(bytes) !== OWNER_LOCAL_DB01_SHA256)
+    if (await digestSha256(bytes) !== expected.sha256)
       throw new Error('COLLECTION_LOCAL_DB01_HASH_MISMATCH');
     let bundle: OwnerLocalDb01Bundle;
     try {
       bundle = JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)) as OwnerLocalDb01Bundle;
     } catch { throw new Error('COLLECTION_LOCAL_DB01_JSON_INVALID'); }
     const idx=bundle.index;
-    if (bundle.schema !== 'wand.collection.owner-local-db01@1'
+    if (bundle.schema !== expected.schema
       || !idx || idx.schema !== 'wand.game-db.release@1'
-      || idx.id !== 'db01-steam-1-26-2-owner-local-verified'
-      || idx.count !== 11_492 || idx.target.platform !== 'Steam'
+      || idx.id !== expected.id
+      || idx.count !== expected.count || idx.target.platform !== 'Steam'
       || idx.target.gameVersion !== '1.26.2' || idx.target.buildId !== null
       || idx.sources?.length !== 1 || idx.sources[0].id !== 'private-db01-v1262'
       || idx.sources[0].visibility !== 'private'

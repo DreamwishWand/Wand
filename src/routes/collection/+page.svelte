@@ -40,6 +40,7 @@
   let selected='';
   let search='';
   let status:'all'|'owned'|'missing'|'unknown'='all';
+  let nameStatus:'all'|'verified'|'unverified'='all';
   let expansion='';
   let filtersOpen=false;
   let visible=72;
@@ -64,7 +65,7 @@
     .filter(group=>group.items.length);
   $: selectedItem=selectedItemId!==null && runtime?runtime.item(selectedItemId,locale):null;
   $: selectedEntry=selectedItem?entries[String(selectedItem.itemId)]??{}:{};
-  $: isBrowsing=Boolean(selected||search.trim()||status!=='all'||expansion||worldFilter||universeFilter);
+  $: isBrowsing=Boolean(selected||search.trim()||status!=='all'||nameStatus!=='all'||expansion||worldFilter||universeFilter);
 
   function categoryLabel(lang:string,id:string):string {
     const special:Record<string,Record<string,string>>={
@@ -101,7 +102,7 @@
         const page=runtime.query({
           locale,search,category:selected,
           world:worldFilter,universe:universeFilter,
-          expansion,status,offset:next,limit:Math.min(200,visible-next)
+          expansion,status,nameStatus,offset:next,limit:Math.min(200,visible-next)
         });
         total=page.total;
         collected.push(...page.items);
@@ -183,7 +184,7 @@
     });
   }
   function chooseFacet(id:string):void{selected=id;resetView();}
-  function clearScope():void{selected='';search='';status='all';expansion='';worldFilter='';universeFilter='';resetView();}
+  function clearScope():void{selected='';search='';status='all';nameStatus='all';expansion='';worldFilter='';universeFilter='';resetView();}
   function changeWorkspace(id:string):void{
     if(!runtime)return;
     void commit(async()=>{await runtime!.workspace('select',id);selectedItemId=null;selectedIds=[];});
@@ -217,7 +218,7 @@
       loadError='';
       storeError='';
       clearScope();
-      infoMessage='Steam v1.26.2の検証済み11,492件へローカルで切り替えました。元のゲームデータは送信・保存していません。';
+      infoMessage='Steam v1.26.2の'+runtime.progress.total.toLocaleString('ja')+'件へローカルで切り替えました。ゲームデータは送信・保存していません。';
     } catch(error) {
       loaded?.close();
       infoMessage='ローカルカタログを読み込めませんでした：'+(error instanceof Error?error.message:String(error));
@@ -341,9 +342,15 @@
 
   {#if runtime?.isOwnerLocal}
     <div class="info-banner" role="status">
-      Steam v1.26.2の正式名称が8言語で検証済みの11,492 / 13,202件をローカルで表示中。
-      名称未確認の1,710件は含みません。詳細なカテゴリ・ワールド・ユニバースは未検証のため原本分類のみ表示します。
-      このカタログはサーバーへ送信・保存されません。
+      Steam v1.26.2：{overall.total.toLocaleString(locale)} / {runtime.ownerLocalCoverage?.itemDefinitions.toLocaleString(locale)}件をローカルで表示中。
+      8言語の正式名称を確認済み：{runtime.ownerLocalCoverage?.nameVerified.toLocaleString(locale)}件。
+      {#if overall.total===runtime.ownerLocalCoverage?.itemDefinitions}
+        名称未確認：{runtime.ownerLocalCoverage?.nameUnverified.toLocaleString(locale)}件。名称は推測せず「名称未確認」として表示します。
+      {:else}
+        名称未確認の{runtime.ownerLocalCoverage?.nameUnverified.toLocaleString(locale)}件は、この旧版ファイルには含まれません。
+      {/if}
+      詳細なカテゴリ・ワールド・ユニバースは未検証のため原本分類のみ表示します。
+      ゲームデータはサーバーへ送信・保存されません。
     </div>
   {/if}
   {#if storeError}
@@ -413,6 +420,14 @@
               {#each runtime?.metadata.universes??[] as id}<option value={id}>{labelUniverse(id)}</option>{/each}
             </select>
           </label>
+          {#if runtime?.isOwnerLocal && overall.total===runtime.ownerLocalCoverage?.itemDefinitions}
+            <fieldset><legend>正式名称の確認状況</legend>
+              {#each [{id:'all',name:'すべて'},{id:'verified',name:'名称確認済み'},{id:'unverified',name:'名称未確認'}] as option}
+                <button type="button" class:chosen={nameStatus===option.id} aria-pressed={nameStatus===option.id}
+                  on:click={()=>{nameStatus=option.id as typeof nameStatus;resetView();}}>{option.name}</button>
+              {/each}
+            </fieldset>
+          {/if}
           <fieldset><legend>収集状況（手動記録）</legend>
             {#each [{id:'all',name:'すべて'},{id:'owned',name:'所持 / 解放'},{id:'missing',name:'未所持'}] as option}
               <button type="button" class:chosen={status===option.id} aria-pressed={status===option.id} on:click={()=>{status=option.id as typeof status;resetView();}}>{option.name}</button>
@@ -466,7 +481,7 @@
                         aria-pressed={selectionMode?selectedIds.includes(item.itemId):selectedItemId===item.itemId}
                         aria-label={selectionMode?`${item.label} を選択`:`${item.label} の詳細`}>
                         <span class="item-icon" aria-hidden="true">{#if selectionMode}{selectedIds.includes(item.itemId)?'☑':'☐'}{:else}<ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null} />{/if}</span>
-                        <span class="item-card-copy"><strong>{item.label}</strong><span>{categoryLabel(locale,item.family)}</span></span>
+                        <span class="item-card-copy"><strong>{item.label}</strong><span>{categoryLabel(locale,item.family)}{#if !item.nameVerified} · 名称未確認{/if}</span></span>
                       </button>
                       <button type="button" class="item-state-toggle" disabled={Boolean(storeError)||selectionMode}
                         class:owned={entries[String(item.itemId)]?.status==='owned'}
@@ -509,6 +524,7 @@
             <div class="inspector-heading"><span>ITEM DETAILS</span><button type="button" bind:this={inspectorClose} on:click={closeItem} aria-label="詳細を閉じる">×</button></div>
             <div class="inspector-art"><ItemArtwork itemId={selectedItem.itemId} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large /></div>
             <h2>{selectedItem.label}</h2>
+            {#if !selectedItem.nameVerified}<p class="inspector-hint">このItem IDの正式名称はSteam v1.26.2原本の8言語データでは確認できませんでした。名称や分類を推測せず、Item IDに紐づくローカル記録だけを表示しています。</p>{/if}
             <p class="inspector-meta">{categoryLabel(locale,selectedItem.family)}</p>
             <div class="inspector-section"><h3>分類</h3>
               <dl>
