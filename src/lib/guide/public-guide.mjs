@@ -2,6 +2,19 @@
 export const PUBLIC_GUIDE_INDEX_SCHEMA = 'wand.db03.public-guide-quests@1';
 export const PUBLIC_GUIDE_DETAIL_SCHEMA = 'wand.db03.public-guide-details@1';
 export const PUBLIC_GUIDE_LOCALES = Object.freeze(['ja','en','fr','it','de','es-ES','zh-CN','pt-BR']);
+/** Display only: flatten known in-game formatting tags without executing HTML
+ * or inventing unresolved {ItemName}/{TargetAmount} values.
+ */
+export function formatPublicGuideText(value) {
+  if (typeof value !== 'string') return '';
+  return value
+    .replace(/<nbsp>/gi, ' ')
+    .replace(/<br\s*\/?\s*>/gi, ' ')
+    .replace(/<\/?(?:ActivityItem|nobr|smallcaps)>/gi, '')
+    .replace(/[\u200b\u00ad]/g, '')
+    .trim();
+}
+
 const ID = /^[1-9]\d{0,15}$/;
 const HASH = /^[a-f0-9]{64}$/;
 function assert(ok, msg) { if(!ok) throw new TypeError('Public Guide: '+msg); }
