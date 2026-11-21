@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { createHash } from 'node:crypto';
 import { GUIDE_SEARCH_SCHEMA, GUIDE_DETAIL_SCHEMA, validateGuideSearch, searchGuide,
-  canonicalQuestRecord, importGuideSearch, importGuideDetail, detailStepRows, guideItemTargets, guideSourceText } from '../src/lib/guide/client.mjs';
+  canonicalQuestRecord, importGuideSearch, importGuideDetail, detailStepRows, guideItemTargets, guideSourceText, guideCharacterLabels } from '../src/lib/guide/client.mjs';
 
 const SHA='a'.repeat(64), WIRE='b'.repeat(64);
 const target={gameVersion:'1.26.1', platform:'Steam'};
@@ -210,4 +210,45 @@ test('locale unknown fails closed; missing descriptions are not fabricated',()=>
   assert.throws(()=>detailStepRows(record('1','x'),'ko'),/unsupported detail locale/);
   assert.throws(()=>guideSourceText(null,'ko'),/unsupported detail locale/);
   assert.equal(detailStepRows(record('1','x'),'ja')[0].objectives[0].text,'');
+});
+
+
+test('optional native character names require same game-version and verified source fields',()=>{
+  const {index}=fixture();
+  const char={schema:'wand.db03.native-guide@1',family:'characters',target,
+    records:[{id:'10000035',names:{ja:'マーリン（合成）',en:'Merlin synthetic'},
+      nativeWireSha256:WIRE,source:{file:'ddv_Data/StreamingAssets/itemlist/Character.json',sha256:SHA}}]};
+  assert.deepEqual(guideCharacterLabels(char,index),{'10000035':char.records[0].names});
+  const different=structuredClone(char);different.target.gameVersion='1.26.2';
+  assert.throws(()=>guideCharacterLabels(different,index),/same-version/);
+  const malformed=structuredClone(char);malformed.records[0].source.file='Mission.json';
+  assert.throws(()=>guideCharacterLabels(malformed,index),/invalid or duplicate/);
+  const dup=structuredClone(char);dup.records.push(dup.records[0]);
+  assert.throws(()=>guideCharacterLabels(dup,index),/invalid or duplicate/);
+});
+
+test('one-folder Guide loads native character names only when an optional exact file exists',async()=>{
+  const {files,shardReads,unrelatedReads}=folderFixture();
+  const doc={schema:'wand.db03.native-guide@1',family:'characters',target,
+    records:[{id:'10000035',names:{ja:'合成キャラクター',en:'Synthetic character'},
+      nativeWireSha256:WIRE,source:{file:'ddv_Data/StreamingAssets/itemlist/Character.json',sha256:SHA}}]};
+  const counter={reads:0};files.push(localFile('snapshot/guide/characters.json',JSON.stringify(doc),counter));
+  const selected=await importGuideFolder(files);
+  assert.equal(selected.characterNames['10000035'].ja,'合成キャラクター');
+  assert.equal(counter.reads,1);assert.equal(shardReads.reads,0);assert.equal(unrelatedReads.reads,0);
+  const original=await importGuideFolder(files.filter(f=>f.name!=='characters.json'));
+  assert.deepEqual(original.characterNames,{});
+});
+
+test('character data in another root cannot contaminate same-folder source',async()=>{
+  const {files}=folderFixture();
+  const bad={schema:'wand.db03.native-guide@1',family:'characters',target,
+    records:[{id:'10000035',names:{ja:'異なるフォルダ'},nativeWireSha256:WIRE,
+      source:{file:'ddv_Data/StreamingAssets/itemlist/Character.json',sha256:SHA}}]};
+  files.push(localFile('another/guide/characters.json',JSON.stringify(bad)));
+  const selected=await importGuideFolder(files);
+  assert.deepEqual(selected.characterNames,{});
+  files.push(localFile('snapshot/guide/characters.json',JSON.stringify(bad)));
+  files.push(localFile('snapshot/guide/characters.json',JSON.stringify(bad)));
+  await assert.rejects(importGuideFolder(files),/duplicate native character/);
 });
