@@ -60,6 +60,9 @@ test('different ingredient combinations with the same Meal Item ID remain distin
   const same=compareMealIngredientStates(pack(a),pack(b));
   assert.equal(same.sameSerializedIngredientMultiset,true);
   assert.equal(same.pricesCompared,false);
+  assert.equal(same.pricesMayDiffer,true);
+  assert.equal(same.priceEqualityVerified,false);
+  assert.equal(same.ingredientDifferenceCouldAffectPrice,false);
   const different=compareMealIngredientStates(pack(a),pack(c));
   assert.equal(different.differentIngredientComposition,true);
   assert.equal(different.pricesMayDiffer,true);
