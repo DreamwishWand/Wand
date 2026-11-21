@@ -7,6 +7,7 @@ from mission_schema import (OBJECTIVE_KINDS, CONDITION_KINDS, BOOL_OPERATORS,
                             MISSION_STATUS_OPERATORS, UI_CATEGORIES, MISSION_TYPES)
 from mission_items import project_objective_items
 from condition_semantics import enrich_condition
+from activation_policies import parse_mission_policies
 
 
 def fields_of(wire_fields, fields, number, wire):
@@ -121,6 +122,8 @@ def extract_quest_details(fields, quest_id, helpers, locale, missing):
                 meta['missionType'] = MISSION_TYPES.get(val, f'Unknown({val})')
             if code == 15:
                 meta['uiCategory'] = UI_CATEGORIES.get(val, f'Unknown({val})')
+    result['activationPolicies'] = parse_mission_policies(fields, quest_id, helpers,
+        locale, missing, result['typedRelations'], condition_tree, localized_key)
     update = text_field(fields, 12)
     if update: meta['updateVersion'] = update
     for num,label in ((20,'availableConditions'),(21,'unlockConditions')):
