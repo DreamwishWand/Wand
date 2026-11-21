@@ -31,7 +31,7 @@ def inspect_report(report):
         kind = row.get('type', row.get('types', row.get('kinds')))
         if isinstance(kind, list):
             kind = ','.join(sorted(set(x for x in kind if isinstance(x, str) and x in SAFE_KINDS)))
-        if kind not in SAFE_KINDS and (not isinstance(kind, str) or not kind or any(x not in SAFE_KINDS for x in kind.split(','))):
+        if not isinstance(kind, str) or not kind or any(x not in SAFE_KINDS for x in kind.split(',')):
             kind = 'unverified'
         if path in PUBLIC_PATHS:
             if path in witnesses and witnesses[path] != kind:
