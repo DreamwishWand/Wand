@@ -7,6 +7,11 @@
  * Wire layout: Steam IL2CPP ItemState.MealData=field 1 (message);
  * MealData.IngredientsUsed=field 1 (repeated int32; packed OR unpacked).
  */
+import {loadPrivateSrc02BrowserBundle,CURRENT_STEAM_1262_CONDITION_SHA256}
+  from './private-browser-bundle.mjs';
+import {loadPrivateShopPriceView} from './private-shop-prices.mjs';
+
+export const DB02_MEAL_PRICE_VIEW_CONTRACT='wand.db02.private-meal-pricing-view@1';
 export const DB02_MEAL_PRICE_EVIDENCE_CONTRACT='wand.db02.meal-price-evidence@1';
 const SRC02_R5_SHA='ec1efd589dd5390f11f5a99411bcf3f1c6bc34309ddfa68e51589c078601f31c';
 const STATIC_PRICE_SHA='641f1b5c5268f136de7bf345f372f06bde923ce0f1f24871225a97913091e975';
@@ -122,23 +127,9 @@ export function decodeMealItemStateEvidence(bytes){
  * A static Cooking_Meal_PriceDatabase "Prices" row is PURCHASE evidence.
  * Never derive a state-dependent SELL price from that row.
  */
-export function inspectPrivateMealSellPrice({
-  acquisitionBundle,shopPriceView,mealItemId,itemStateBytes
-}={}){
+function inspectAuthenticatedMeal({acquisitionBundle,shopPriceView,mealItemId,itemStateBytes}){
   check(validId(mealItemId)&&Math.floor(mealItemId/100000)===303,
     'MEAL_ITEM_ID_REQUIRED');
-  check(acquisitionBundle?.contract==='wand.src02.private-browser-bundle@1'&&
-    acquisitionBundle.verified===true&&
-    acquisitionBundle.privateSource===true&&acquisitionBundle.publishable===false&&
-    acquisitionBundle.manifestSha256===SRC02_R5_SHA&&
-    acquisitionBundle.source?.platform==='Steam'&&
-    acquisitionBundle.source?.gameVersion==='1.26.2'&&
-    shopPriceView?.contract==='wand.db02.private-shop-prices@1'&&
-    shopPriceView.verified===true&&shopPriceView.privateSource===true&&
-    shopPriceView.publishable===false&&
-    shopPriceView.sourceManifestSha256===STATIC_PRICE_SHA&&
-    shopPriceView.src02R5ManifestSha256===SRC02_R5_SHA,
-    'AUTHENTICATED_SOURCE_VIEWS_REQUIRED');
   const state=decodeMealItemStateEvidence(itemStateBytes);
   const linked=acquisitionBundle.getItem(mealItemId);
   const cookingRecipes=(linked?.madeBy??[]).filter(
@@ -173,6 +164,45 @@ export function inspectPrivateMealSellPrice({
     publishable:false,writable:false
   });
 }
+/**
+ * Authenticates original PRIVATE ZIP bytes independently before exposing
+ * an offline-only per-instance meal-price evidence facade. No spoofable
+ * caller-provided \u0027verified\u0027 view objects are trusted.
+ */
+export async function loadPrivateMealPricingView({
+  acquisitionArchiveBytes,priceManifestBytes,priceFiles
+}={}){
+  const acquisitionBundle=await loadPrivateSrc02BrowserBundle(
+    acquisitionArchiveBytes,{
+      platform:'Steam',gameVersion:'1.26.2',
+      manifestSha256:SRC02_R5_SHA,
+      src01ManifestSha256:'1ebf71a19792bb2293a710cec533b1471e4e4f2c0e695a9d413bbcfc305022f6',
+      currentConditionSha256:CURRENT_STEAM_1262_CONDITION_SHA256
+    });
+  const shopPriceView=await loadPrivateShopPriceView({
+    manifestBytes:priceManifestBytes,files:priceFiles
+  });
+  check(acquisitionBundle?.verified===true&&
+    acquisitionBundle.manifestSha256===SRC02_R5_SHA&&
+    acquisitionBundle.source?.platform==='Steam'&&
+    acquisitionBundle.source?.gameVersion==='1.26.2'&&
+    acquisitionBundle.counts?.cooking===625&&
+    shopPriceView?.verified===true&&
+    shopPriceView.sourceManifestSha256===STATIC_PRICE_SHA&&
+    shopPriceView.src02R5ManifestSha256===SRC02_R5_SHA,
+    'ORIGINAL_SOURCE_CONTEXT_REQUIRED');
+  return frozen({
+    contract:DB02_MEAL_PRICE_VIEW_CONTRACT,
+    platform:'Steam',gameVersion:'1.26.2',
+    verifiedPrivateSources:true,
+    currentOffersVerified:false,realizedSellPricesVerified:false,
+    nativePriceFormulaEvaluated:false,publishable:false,writable:false,
+    inspect:(mealItemId,itemStateBytes)=>inspectAuthenticatedMeal({
+      acquisitionBundle,shopPriceView,mealItemId,itemStateBytes
+    })
+  });
+}
+
 /** Compare two serialized meal instances without inventing either sale price. */
 export function compareMealIngredientStates(left,right){
   check(left?.contract===DB02_MEAL_PRICE_EVIDENCE_CONTRACT&&
