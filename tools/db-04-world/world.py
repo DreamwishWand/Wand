@@ -15,6 +15,8 @@ import tempfile
 from collections import Counter
 from pathlib import Path
 
+from verify_bundle import validate_snapshot
+
 SCHEMA = "wand.db04.world@1"
 STREAM = Path("ddv_Data/StreamingAssets")
 BASE_IDS = {"Furniture": 40000000, "Building": 20000000, "Scene": 1540000000}
@@ -783,9 +785,11 @@ def semantic(record):
             if key not in ("source", "additionalSource")}
 
 
-def diff_records(old, new, key):
+def diff_records(old, new, key, authoritative_membership=False):
     before = {str(item[key]): semantic(item) for item in old}
     after = {str(item[key]): semantic(item) for item in new}
+    if len(before) != len(old) or len(after) != len(new):
+        raise ValueError("duplicate entity ID in DB-04 snapshot diff")
     old_keys, new_keys = set(before), set(after)
     changed = []
     for ident in sorted(old_keys & new_keys):
@@ -793,15 +797,28 @@ def diff_records(old, new, key):
             changed.append({"id": ident,
                             "fields": sorted(k for k in set(before[ident]) | set(after[ident])
                                              if before[ident].get(k) != after[ident].get(k))})
-    return {"added": sorted(new_keys - old_keys), "removed": sorted(old_keys - new_keys),
-            "changed": changed}
+    added, removed = sorted(new_keys - old_keys), sorted(old_keys - new_keys)
+    if authoritative_membership:
+        return {"added": added, "removed": removed, "changed": changed,
+                "membershipConfidence": "verified"}
+    # Source subsets differ across original-game snapshots. Reporting an ID
+    # as truly added/removed would otherwise confuse missing source coverage
+    # with a game update.
+    return {"added": [], "removed": [], "candidateAdded": added,
+            "candidateRemoved": removed, "changed": changed,
+            "membershipConfidence": "unverified_source_coverage"}
 
 
 def make_diff(previous, outputs):
     if previous is None:
         return {"schema": SCHEMA, "status": "no_previous_snapshot",
                 "note": "An initial snapshot cannot establish update deltas."}
-    result = {"schema": SCHEMA, "status": "compared", "entities": {}}
+    previous_evidence = validate_snapshot(previous)
+    result = {"schema": SCHEMA, "status": "compared",
+              "sourceMembershipVerified": False,
+              "previousSourceScopeVerified": previous_evidence["sourceScopeVerified"],
+              "note": "Added/removed entities are candidate-only until both complete source scopes are independently verified.",
+              "entities": {}}
     for name, key in (("scenes", "sceneId"), ("objects", "itemId"),
                       ("grids", "gridId"), ("layouts", "layoutId"),
                       ("worlds", "worldId"), ("areas", "areaId"),
