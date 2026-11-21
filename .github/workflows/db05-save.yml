@@ -22,7 +22,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Reject committed private save and scanner report files
         run: |
-          if git ls-files data/ddv/save tools/db-05-save | grep -Ei '(\\.profile$|/profile\\.json$|/decoded-save\\.json$|/save-structure\\.json$|/db05-private-summary\\.json$)'; then
+          if git ls-files data/ddv/save tools/db-05-save | grep -Ei '([.]profile$|/profile[.]json$|/decoded-save[.]json$|/save-structure[.]json$|/db05-private-summary[.]json$)'; then
             echo 'Private save or report must never be committed'
             exit 1
           fi
