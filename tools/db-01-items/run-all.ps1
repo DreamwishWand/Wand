@@ -1,11 +1,16 @@
-# One-shot private Steam v1.26.2 extraction -> eight locales -> DB-01 catalog.
+# Private DB-01 runner. Default Catalog mode is version-independent.
+# LegacySteam1262 mode preserves the pinned historical raw Steam 1.26.2 extractor.
 # No upload, repository mutation, or game-file writes. Requires Python 3.10+.
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName='Catalog')]
 param(
+    [Parameter(ParameterSetName='LegacySteam1262')]
     [string]$Game = 'C:\Program Files (x86)\Steam\steamapps\common\Disney Dreamlight Valley',
-    [Parameter(Mandatory = $true)][string]$Probe,
-    [string]$Out = (Join-Path $env:LOCALAPPDATA 'DreamwishWand\DB-01\steam-1.26.2'),
-    [switch]$ForceCatalog
+    [Parameter(ParameterSetName='LegacySteam1262', Mandatory=$true)][string]$Probe,
+    [Parameter(ParameterSetName='LegacySteam1262')][switch]$ForceCatalog,
+    [Parameter(ParameterSetName='Catalog', Mandatory=$true)][string]$Catalog,
+    [Parameter(ParameterSetName='Catalog')][string]$History,
+    [Parameter(ParameterSetName='Catalog')][string]$ExpectedVersion,
+    [string]$Out = (Join-Path $env:LOCALAPPDATA 'DreamwishWand\DB-01')
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -30,10 +35,42 @@ function Invoke-PythonChecked([string]$Script, [string[]]$Arguments) {
 }
 
 $repo = Existing-Path (Join-Path $PSScriptRoot '..\..')
+$outRoot = [System.IO.Path]::GetFullPath($Out)
+$script:PythonLauncher = Get-Command py -ErrorAction Stop
+$releaseScript = Join-Path $repo 'tools\db-01-items\release_pipeline.py'
+if ((Inside-Or-Same $outRoot $repo) -or (Inside-Or-Same $repo $outRoot)) {
+    throw 'PRIVATE_OUTPUT_OVERLAPS_REPOSITORY'
+}
+
+if ($PSCmdlet.ParameterSetName -eq 'Catalog') {
+    $catalogRoot = Existing-Path $Catalog
+    if (-not (Test-Path -LiteralPath $catalogRoot -PathType Container)) {
+        throw 'CATALOG_NOT_DIRECTORY'
+    }
+    if ((Inside-Or-Same $outRoot $catalogRoot) -or
+        (Inside-Or-Same $catalogRoot $outRoot)) {
+        throw 'PRIVATE_OUTPUT_OVERLAPS_CATALOG'
+    }
+    $arguments = @('--catalog', $catalogRoot, '--out', $outRoot)
+    if ($History) {
+        $historyRoot = Existing-Path $History
+        if ((Inside-Or-Same $outRoot $historyRoot) -or
+            (Inside-Or-Same $historyRoot $outRoot)) {
+            throw 'PRIVATE_OUTPUT_OVERLAPS_HISTORY'
+        }
+        $arguments += @('--history', $historyRoot)
+    }
+    if ($ExpectedVersion) { $arguments += @('--expected-version', $ExpectedVersion) }
+    Invoke-PythonChecked $releaseScript $arguments
+    return
+}
+
+# Historical source-specific decoding: never silently retarget these SHA-pinned
+# 1.26.2 scripts to an unverified game version. The generic release below is
+# shared with Catalog mode, and future extractors supply verified catalogs.
 $gameRoot = Existing-Path $Game
 $probePath = Existing-Path $Probe
 $referenceRoot = Existing-Path (Join-Path $repo 'static\ddv\collection\v1.25')
-$outRoot = [System.IO.Path]::GetFullPath($Out)
 
 if (-not (Test-Path -LiteralPath $gameRoot -PathType Container)) { throw 'GAME_ROOT_NOT_DIRECTORY' }
 if (-not (Test-Path -LiteralPath $probePath -PathType Leaf)) { throw 'PROBE_NOT_FILE' }
@@ -43,8 +80,6 @@ if ((Inside-Or-Same $outRoot $repo) -or (Inside-Or-Same $repo $outRoot) -or
     (Inside-Or-Same $outRoot (Split-Path -Parent $probePath))) {
     throw 'PRIVATE_OUTPUT_OVERLAPS_REPOSITORY_GAME_OR_PROBE'
 }
-$script:PythonLauncher = Get-Command py -ErrorAction Stop
-
 $native = Join-Path $outRoot 'native'
 $extended = Join-Path $outRoot 'extended'
 $catalog = Join-Path $outRoot 'catalog'
@@ -74,27 +109,8 @@ Write-Host ('DB-01 complete: ' + $manifest.counts.currentDefinitions + ' verifie
 Write-Host ('Private output: ' + $catalog)
 Write-Host 'Publication: NOT AUTHORIZED. No files were uploaded or committed.'
 
-# Final runtime artifacts: SQLite is the operational owner-private query store.
-# Both filenames incorporate source JSONL SHA to support versioned immutable outputs.
-$fingerprint = $manifest.outputSha256.'items.jsonl'.Substring(0, 12)
-$sqliteTarget = Join-Path $outRoot ("db01-$fingerprint.sqlite")
-$shardsTarget = Join-Path $outRoot ("db01-$fingerprint-shards")
-$sqliteScript = Join-Path $repo 'tools\db-01-items\sqlite_store.py'
-$shardsScript = Join-Path $repo 'tools\db-01-items\export_shards.py'
-if (-not (Test-Path -LiteralPath $sqliteTarget)) {
-    Invoke-PythonChecked $sqliteScript @('--catalog', $catalog, '--out', $sqliteTarget)
-}
-if (-not (Test-Path -LiteralPath $shardsTarget)) {
-    Invoke-PythonChecked $shardsScript @('--sqlite', $sqliteTarget, '--out', $shardsTarget)
-}
-Write-Host ('Private SQLite: ' + $sqliteTarget)
-Write-Host ('Private TypeScript read shards: ' + $shardsTarget)
-# Verify every emitted ID/category/locale/history shard against the private SQLite
-# before considering this local release ready. This is an independent full-corpus
-# audit, not just a check of hashes stored in the shard manifest itself.
-$auditScript = Join-Path $repo 'tools\db-01-items\audit_shards.py'
-$auditTarget = Join-Path $outRoot ("db01-$fingerprint-audit.json")
-Invoke-PythonChecked $auditScript @('--sqlite', $sqliteTarget, '--shards', $shardsTarget, '--expected-source-items-sha256', $manifest.outputSha256.'items.jsonl', '--report', $auditTarget)
-Write-Host ('Private audit report: ' + $auditTarget)
-
-Write-Host 'Only trusted local clients may access these files. They are not public site assets.'
+# Release stage is shared with arbitrary future versioned verified catalogs.
+# Neither this mode nor the generic mode treats missing Drive uploads as missing
+# from the installed game. The current historical extractor remains 1.26.2-pinned.
+Invoke-PythonChecked $releaseScript @('--catalog', $catalog, '--out', $outRoot, '--expected-version', '1.26.2')
+Write-Host 'Only trusted local clients may access private generated files.'
