@@ -65,6 +65,47 @@ snapshots (see `terrain_evidence.py`):
 The two matching source files are independent corroboration of those *data
 records*, not proof of the entire version's native terrain behavior.
 
+## Independent original-reference audit (2026-11-22)
+
+The new `native_version_reference_audit.py` compares **pinned private
+originals** against exact native metadata token identities. It validates full
+PE unwind instruction byte coverage, fails on changed non-relative bytes,
+classifies direct call/jump destinations and checks whether the complete
+destination PE unwind function bytes are identical across game builds.
+
+Audited source pair is the same four SHA-256-pinned originals listed above.
+A local execution over these originals produced:
+
+| Original GridData method | Relocation-only changed instructions | Distinct external direct target pairs | Byte-identical complete callees | Uncorroborated target pairs |
+| --- | ---: | ---: | ---: | ---: |
+| `get_Item` | 25 | 9 | 4 | 5 |
+| `set_Item` | 34 | 8 | 4 | 4 |
+| `IProtobufOnBinarize.OnBinarize` | 108 | 27 | 8 | 19 |
+| `GetNumberOfBitsPerPosition` | 5 | 2 | 2 | 0 |
+
+This checks direct targets only. Unknown/unmapped thunks and byte-different
+callees are **not** declared equivalent. RIP-relative source data targets are
+also counted but their semantic equivalence is not established. Therefore
+`get_Item`'s successful palette path and bit-width helper are more strongly
+corroborated than the entire transitive call graph, while the complete native
+decoder compatibility gate **remains closed for Steam 1.26.2**.
+
+Run privately (GNU binutils objdump required; original binaries never leave
+the operator machine):
+
+```shell
+python tools/db-04-world/native_version_reference_audit.py \
+  --old-dll "<steam-1.26.1>/GameAssembly.dll" \
+  --old-metadata "<steam-1.26.1>/global-metadata.dat" \
+  --new-dll "<steam-1.26.2>/GameAssembly.dll" \
+  --new-metadata "<steam-1.26.2>/global-metadata.dat"
+```
+
+The script emits only aggregate counts and pinned hashes, sets
+`nativeTerrainDecoder1262Approved:false`, and does not emit any original
+machine-code bytes or private source filenames. CI runs synthetic unit tests
+without needing either proprietary original.
+
 ## Capability boundary — unchanged
 
 - `terrain_codec.py` and browser `getNativeTerrainWindow` **must** continue
