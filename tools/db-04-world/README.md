@@ -25,8 +25,10 @@ distribution APIs explicitly return
 such bytes or trusting a copied decoded flag from an older snapshot. New
 original-version evidence is required before enabling those previews.
 
-The Python entrypoints `parse_grid_structure`, `grid_assets`, and
-`checked_grid` now require an **explicit** `source_game_version` argument.
+The Python entrypoints `parse_grid_structure`, `grid_assets`,
+`checked_grid`, and all four low-level terrain helpers
+(`describe_native_packing`, `count_packed_palette_indices`, `floor_at`,
+`decode_window`) require an **explicit** `source_game_version` argument.
 The normal extractor obtains it from the installed game's `FullVersion.txt`;
 the private snapshot verifier obtains it from the verified manifest. Both
 private terrain audits independently use the verified snapshot version instead
