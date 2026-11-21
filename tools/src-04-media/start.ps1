@@ -1207,7 +1207,12 @@ $roots = @(
 )
 $syncFolder = $null
 foreach ($root in $roots) {
-    $candidate = Join-Path $root 'Dreamwish Wand\Development\Sources\SRC-04 MEDIA'
+    # A missing Google Drive Desktop volume is normal; Join-Path throws
+    # DriveNotFoundException on Windows PowerShell when G: is absent.
+    if (-not (Test-Path -LiteralPath $root -PathType Container)) {
+        continue
+    }
+    $candidate = Join-Path -Path $root -ChildPath 'Dreamwish Wand\Development\Sources\SRC-04 MEDIA'
     if (Test-Path -LiteralPath $candidate -PathType Container) {
         $syncFolder = $candidate
         break
