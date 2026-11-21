@@ -233,13 +233,13 @@
     {
       "domain": "chests",
       "path": "/Player/ContainerInventories/{containerId}/ParentItemID",
-      "type": "integer",
+      "type": "integer|null",
       "builds": [
         "steam-1.25.3-626",
         "switch-1.25.3-626"
       ],
       "source": "DreamwishWand/web/crates/ddv-save-core/src/semantic_writer.rs + product_switch626_chest.rs",
-      "constraint": "Positive u32; DB-01 relation unresolved",
+      "constraint": "Historical parent Item ID is nullable: positive u32 value or null; null is not an Item ID or ownership evidence. DB-01 relation unresolved.",
       "observedStatus": "legacy_source_code_only",
       "writable": false,
       "idReference": {
@@ -249,8 +249,9 @@
         "join": "exact_numeric_only",
         "currentCatalogCoverageVerified": false,
         "status": "legacy_source_only",
-        "note": "Legacy Steam626 container parent item; current SRC01 coverage not guaranteed"
-      }
+        "note": "Only non-null legacy parent Item IDs are candidates for exact join; null never implies ownership. Current catalog coverage unverified"
+      },
+      "readonlyObservation": "Steam 643 and separate Switch 643/626 samples contain both integer and null values; no raw save bytes or identifiers published"
     },
     {
       "domain": "chests",
