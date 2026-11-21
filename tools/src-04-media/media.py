@@ -159,15 +159,15 @@ def command_extract(args):
         relative = rel(root, path) if root.is_dir() else path.name
         if not selected(args, relative):
             continue
-        if args.limit_files is not None and bundles >= args.limit_files:
-            break
-        bundles += 1
         container_sha = digest(path)
         output_index = output / "evidence" / ("unity-" + container_sha + ".json")
         existing_index = load_json(output_index) if output_index.exists() and not args.force else {}
         if existing_index.get("complete"):
             print(f"extract skip indexed: {relative}")
             continue
+        if args.limit_files is not None and bundles >= args.limit_files:
+            break
+        bundles += 1
         old_images = {item["assetId"]: item for item in existing_index.get("images", [])}
         records = []
         complete = True
