@@ -39,6 +39,33 @@ object-local `(0,0)` cell: an oblique object may have no mapped layer there,
 and the original nullable `GetStrideFor` calculation is independent of that
 raw-layer preview.
 
+## Source-only default object anchor windows
+
+`getNativeDefaultLayoutAnchorWindow(catalog, layoutId, nativeGridId, rect)`
+and `getNativeVillageAreaAnchorWindow(catalog, villageLayoutId,
+nativeAreaTypeCode, nativeGridId, rect)` supply bounded, read-only
+**original default GridObject X/Y anchor records** for World Editor and
+Decorate. Both use exact original GridCollection / DefaultVillage layout
+links and raw GridData SizeX/SizeY, without reading the compacted terrain
+payload or asserting its X-major decoder. For an archive identified as Steam
+v1.26.2, this permits *source-record anchor inspection* even while the
+original v1.26.2 terrain native-code behavior is not verified.
+
+The new result status is
+`source_native_default_layout_anchors_only` and includes
+`terrainDecoded:false`, `worldCoordinatesVerified:false`,
+`gridObjectAnchorConventionVerified:false`,
+`fullFootprintOccupancyVerified:false`,
+`currentSaveObjectVerified:false`, and
+`placementLegalityVerified:false`. Objects whose **recorded anchor** is
+outside a rectangle are omitted, but their footprints might overlap it.
+Windows are bounded to 256×256 source grid-local coordinates, require the
+source GridData dimensions and exactly linked Grid.ID, and reject partial
+layout-object cardinality mismatches rather than suggesting a complete map.
+The original `getNativeDefaultLayoutViewport` /
+`getNativeVillageAreaViewport` APIs still require corroborated terrain
+decoding and retain their existing contract.
+
 ## Verified input formats
 
 - Steam game source `ddv_Data/StreamingAssets/itemlist/Furniture.json` and `Building.json`: indexed protobuf records with exact integer item IDs, native names and `GridAreaData` (wire field 6).
