@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from verify_native_dump import SCHEMA, inspect_native_fields, read_native_types
+from verify_native_dump import SCHEMA, NESTED_SCHEMA, inspect_native_fields, inspect_nested_native_fields, read_native_types
 
 
 SOURCE = """// Namespace: Meta
@@ -104,6 +104,67 @@ class NativeSourceTests(unittest.TestCase):
             bad['fields'].append(dict(bad['fields'][0]))
             with self.assertRaisesRegex(ValueError,'DUPLICATE_NATIVE_FIELD'):
                 inspect_native_fields(path,bad)
+
+
+    def test_nested_direct_protobuf_tag_and_type_against_pinned_source(self):
+        extra = """
+public sealed class Pet : IMessage<Pet>
+{
+    // Fields
+    public const int LastSelfieDateFieldNumber = 4;
+    public const int PetItemIDFieldNumber = 1;
+    // Properties
+    public Timestamp LastSelfieDate { get; set; }
+    public int PetItemID { get; set; }
+    // Methods
+}
+public sealed class FloatingIsland : IMessage<FloatingIsland>
+{
+    // Fields
+    public const int UnlockedFieldNumber = 3;
+    // Properties
+    public bool Unlocked { get; set; }
+    // Methods
+}
+"""
+        with tempfile.TemporaryDirectory() as d:
+            source = SOURCE + extra
+            path = Path(d) / 'nested.cs'
+            path.write_text(source,encoding='utf-8')
+            fixture = {
+                'schema': NESTED_SCHEMA,
+                'source': {'sha256': hashlib.sha256(source.encode()).hexdigest()},
+                'fields': [
+                    {'path':'/Player/Pets[]/LastSelfieDate','nativeMessage':'Pet',
+                     'protobufFieldNumber':4,'nativePropertyType':'Timestamp','writable':False},
+                    {'path':'/Player/Pets[]/PetItemID','nativeMessage':'Pet',
+                     'protobufFieldNumber':1,'nativePropertyType':'int','writable':False},
+                    {'path':'/World/FloatingIslands/{id}/Unlocked','nativeMessage':'FloatingIsland',
+                     'protobufFieldNumber':3,'nativePropertyType':'bool','writable':False}
+                ]
+            }
+            valid=inspect_nested_native_fields(path,fixture)
+            self.assertEqual(valid['registeredFieldCount'],3)
+            self.assertEqual(valid['matchedFieldCount'],3)
+            self.assertTrue(valid['sourceMatchesPinnedDigest'])
+            self.assertFalse(valid['writerAuthorized'])
+            self.assertFalse(valid['currentGameNativeAttested'])
+            invalid=fixture.copy()
+            invalid['fields']=[dict(x) for x in fixture['fields']]
+            invalid['fields'][0]['protobufFieldNumber']=55
+            result=inspect_nested_native_fields(path,invalid)
+            self.assertEqual(result['matchedFieldCount'],2)
+            self.assertEqual(result['differentPublicPaths'], ['/Player/Pets[]/LastSelfieDate'])
+            malformed=fixture.copy()
+            malformed['fields']=[dict(x) for x in fixture['fields']]
+            malformed['fields'][2]['path']='/World/FloatingIslands/99123/Unlocked'
+            with self.assertRaisesRegex(ValueError,'NESTED_NATIVE_PATH_INVALID'):
+                inspect_nested_native_fields(path,malformed)
+            fake=fixture.copy()
+            fake['fields']=[dict(x) for x in fixture['fields']]
+            fake['fields'][0]['writable']=True
+            with self.assertRaisesRegex(ValueError,'NESTED_NATIVE_FIELD_INVALID'):
+                inspect_nested_native_fields(path,fake)
 
 
 if __name__ == '__main__':
