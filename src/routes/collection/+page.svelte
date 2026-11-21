@@ -2,7 +2,8 @@
   import { onMount, tick } from 'svelte';
   import { base } from '$app/paths';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
-  import { loadCollectionRuntime, decodeCollectionRecord, collectionFacetLabel } from '$lib/collection/catalog.mjs';
+  import { decodeCollectionRecord, collectionFacetLabel } from '$lib/collection/catalog.mjs';
+  import { loadActiveCollectionRuntime } from '$lib/game-db/client.mjs';
   import {
     createCollectionState, readCollectionState, persistCollectionState, activeWorkspace,
     addWorkspace, setActiveWorkspace, renameWorkspace, removeWorkspace, setCollectionEntry, setCollectionStatuses,
@@ -82,7 +83,7 @@
       storeError = '保存されたCollection記録を読み取れません。上書きを防ぐため編集を停止しました。';
     }
     try {
-      const runtime = await loadCollectionRuntime(base);
+      const runtime = await loadActiveCollectionRuntime(base);
       index = runtime.index;
       rawRows = runtime.rows;
       try {

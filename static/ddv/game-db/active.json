@@ -1,0 +1,13 @@
+{
+  "schema": "wand.game-db.active@1",
+  "snapshot": "legacy-switch-1.25.0",
+  "kind": "legacy_collection",
+  "path": "ddv/collection/v1.25",
+  "target": {
+    "platform": "Nintendo Switch",
+    "gameVersion": "1.25.0",
+    "buildId": "52BD625D9B4E0053"
+  },
+  "publication": "existing_verified_public_reference",
+  "history": []
+}
