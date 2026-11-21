@@ -14,6 +14,8 @@ from pathlib import Path
 import tempfile
 import zipfile
 
+from mission_semantics import extract_quest_details
+
 SCHEMA = "wand.db03.native-guide@1"
 LOCALES = {"en": "en-US", "fr": "fr", "it": "it", "de": "de", "es-ES": "es",
            "ja": "ja", "zh-CN": "zh-CN", "pt-BR": "pt-BR"}
@@ -449,6 +451,24 @@ def extract(game, out, version, platform, item_index=None, previous=None):
         for fam, records in rows.items():
             if len(indexes[fam]) != len(records):
                 raise ValueError("DUPLICATE_NATIVE_ID_IN_FAMILY: " + fam)
+        # Both MissionItemData and MissionQuestItemData live in Mission.json.
+        # Only source-discriminating fields justify classification. Others are
+        # explicitly unclassified, not silently added as playable quests.
+        group_targets = {str(int_field(f, 13)) for _, _, _, f in
+                         frames_by_family.get("quests", []) if int_field(f, 13) is not None}
+        kinds = []
+        for _i, _offset, native_id, fields in frames_by_family.get("quests", []):
+            present = {num for num, wire, value in fields}
+            if present.intersection((7, 40, 13)):
+                kind, basis = "mission", "MissionItemData.owner/steps/questId"
+            elif 6 in present or str(native_id) in group_targets:
+                kind, basis = "questGroup", "MissionQuestItemData.villageScene or referenced questId"
+            else:
+                kind, basis = "unclassified", "no discriminating field"
+            kinds.append({"id": str(native_id), "recordKind": kind, "evidence": basis})
+        kind_by_id = {r["id"]: r["recordKind"] for r in kinds}
+        for rec in rows["quests"]:
+            rec["recordKind"] = kind_by_id[rec["id"]]
         relations, candidates, unresolved = [], [], list(missing)
         translation_missing = []
         known = {int(k): target for target, index in indexes.items() for k in index
@@ -499,6 +519,20 @@ def extract(game, out, version, platform, item_index=None, previous=None):
                     rec["groupId"] = str(category_id) if category_id is not None else None
                     rec["characterId"] = str(char_id) if char_id is not None else None
                     rec["typeCode"] = int_field(fields, 8)
+                    # Typed, audited IL2CPP contracts: condition AST and nested
+                    # step/sub-step/objective definitions. Unknown payloads stay
+                    # opaque with SHA-256 fingerprints, never guessed.
+                    typed = extract_quest_details(fields, rec["id"],
+                        (wire_fields, text_field, int_field, sha, plain_display),
+                        locale, translation_missing)
+                    typed_links = typed.pop("typedRelations")
+                    rec["structured"] = typed
+                    for edge in typed_links:
+                        add_verified(relations, fam, rec, edge["toFamily"],
+                                     edge["toId"], edge["sourceField"], indexes)
+                        relations[-1]["predicate"] = edge["predicate"]
+                        relations[-1]["relationKind"] = edge.get(
+                            "relationKind", "static_condition_reference")
                 elif fam == "characters":
                     rec["storyCodeUnverified"] = str(int_field(fields, 13)) if int_field(fields, 13) is not None else None
                     rec["sceneId"] = str(int_field(fields, 14)) if int_field(fields, 14) is not None else None
@@ -530,6 +564,9 @@ def extract(game, out, version, platform, item_index=None, previous=None):
         save(out / "guide" / "rewards.json", {"schema": SCHEMA, "family": "rewards",
                  "target": target, "records": reward_rows,
                  "scope": "default_friendship_levels_only"})
+        save(out / "database" / "mission-record-kinds.json", {
+                  "schema": SCHEMA, "target": target, "records": kinds,
+                  "note": "Groups and ambiguous definitions must not appear as playable quests."})
         save(out / "database" / "relations.json", {"schema": SCHEMA, "relations": relations,
                                                       "target": target})
         save(out / "database" / "candidate-refs.json", {"schema": SCHEMA,
@@ -550,6 +587,13 @@ def extract(game, out, version, platform, item_index=None, previous=None):
                     "itemIndexSha256": sha(item_index.read_bytes()) if item_index else None,
                     "counts": {**{fam: len(rows[fam]) for fam in SOURCES}, "rewards": len(reward_rows)},
                     "missingSources": missing_families,
+                    "missionRecordKinds": dict(collections.Counter(r["recordKind"] for r in kinds)),
+                    "decodedObjectiveCount": sum(len(sub["objectives"])
+                        for r in rows["quests"] for step in r.get("structured", {}).get("stepsDetailed", [])
+                        for sub in step["subSteps"]),
+                    "decodedObjectiveTypeCount": len({obj["type"]
+                        for r in rows["quests"] for step in r.get("structured", {}).get("stepsDetailed", [])
+                        for sub in step["subSteps"] for obj in sub["objectives"]}),
                     "sourceFieldRelations": len(relations),
                     "unresolvedRelations": sum(r["status"] == "unresolved" for r in relations),
                     "candidateWireMatches": len(candidates),
@@ -558,6 +602,7 @@ def extract(game, out, version, platform, item_index=None, previous=None):
                               "ID and name-key mapping validated by native frames and exact locbin lookup.",
                               "Candidate wire matches are not verified reward or prerequisite edges.",
                               "Native wire SHA-256 fingerprints detect changes in opaque fields without inventing their semantics.",
+                               "Nested objective types and conditions are mapped from Steam 1.26.1 IL2CPP definitions; conditions are not evaluated.",
                               "Star Path definitions require additional source validation."]}
         save(out / "manifest.json", manifest)
         save(out / "report.json", {"schema": SCHEMA, "status": status,

@@ -83,6 +83,9 @@ class NativeGuideTests(unittest.TestCase):
         self.assertEqual(sum(r['status'] == 'unresolved' for r in rows), 0)
         manifest = json.loads((self.out / 'manifest.json').read_text())
         self.assertEqual(manifest['counts']['quests'], 2)
+        self.assertEqual(manifest['missionRecordKinds'], {'mission':1,'questGroup':1})
+        kinds=json.loads((self.out / 'database/mission-record-kinds.json').read_text())['records']
+        self.assertEqual({x['id']:x['recordKind'] for x in kinds}[str(self.quest_group)],'questGroup')
         self.assertEqual(manifest['status'], 'PARTIAL')
         self.assertIn('ja', manifest['localizationSources'])
 
@@ -139,6 +142,54 @@ class NativeGuideTests(unittest.TestCase):
         db.extract(self.game, out2, '1.26.2', 'Steam', previous=self.out)
         result = json.loads((out2 / 'diff.json').read_text())
         self.assertIn({'family': 'duties', 'id': '2110000001'}, result['changed'])
+
+    def test_typed_nested_objective_conditions_and_reward_ranges(self):
+        # Field numbers are from Steam 1.26.1 IL2CPP proto definitions.
+        # ConditionOneOf.MissionCompleted=255, SubConditions=10,
+        # MissionStepStatus=285; MissionObjectiveData.TalkToCharacter=270.
+        leaf = sf(255, vf(1, self.quest_group))
+        status = sf(285, vf(1, self.quest_group) + vf(2, 17) + vf(3, 5))
+        nested = sf(10, vf(1, 1) + sf(2, status))
+        conditions = sf(20, sf(2, leaf) + sf(2, nested))
+        objective = vf(8, 8) + sf(9, 'TalkToMerlin') + sf(270, b'')
+        sub = (vf(1, 17) + sf(2, 'Step17') + sf(50, objective) +
+               sf(50, vf(8, 9) + sf(9, 'UnlockMerlin') +
+                  sf(280, vf(1, self.char))))
+        step = vf(15, 3) + sf(16, 'Group03') + sf(20, sub)
+        reward = sf(62, sf(1, vf(1, 15) + vf(2, 30)) +
+                        sf(3, vf(1, 80000000) + sf(2, vf(1, 50) + vf(2, 80))))
+        fields = (vf(1, self.quest) + sf(2, 'Story!MyQuest') +
+                  sf(3, 'Story/MyQuest.Story!MyQuest_DisplayName') + conditions +
+                  vf(9, 4) + vf(15, 2) + sf(40, step) + reward)
+        group = vf(1, self.quest_group) + sf(2, 'Story!Group')
+        (self.src / 'itemlist' / 'Mission.json').write_bytes(
+            frame(1, fields) + frame(200001, group))
+        db.extract(self.game, self.out, '1.26.1', 'Steam')
+        row = next(r for r in json.loads((self.out / 'guide/quests.json').read_text())['records'] if r['id'] == str(self.quest))
+        structured = row['structured']
+        self.assertEqual(structured['questMeta']['missionType'], 'Realm')
+        self.assertEqual(structured['questMeta']['uiCategory'], 'Story')
+        ast = structured['conditions']['availableConditions']
+        self.assertEqual(ast['operator'], 'AND')
+        self.assertEqual(ast['conditions'][0]['type'], 'MissionCompleted')
+        self.assertEqual(ast['conditions'][1]['nested']['operator'], 'OR')
+        self.assertEqual(ast['conditions'][1]['nested']['conditions'][0]['status'], 'NotCompleted')
+        step = structured['stepsDetailed'][0]
+        self.assertEqual(step['stepId'], 3)
+        obj = step['subSteps'][0]['objectives'][0]
+        self.assertEqual(obj['type'], 'TalkToCharacter')
+        self.assertEqual(obj['objectiveId'], 8)
+        self.assertEqual(structured['rewardsDecoded']['friendshipOverride'], {'min':15,'max':30})
+        self.assertEqual(structured['rewardsDecoded']['currency'][0],
+                         {'currencyId':'80000000','amountMin':50,'amountMax':80})
+        relations=json.loads((self.out / 'database/relations.json').read_text())['relations']
+        edges=[r for r in relations if r.get('relationKind')=='static_condition_reference']
+        self.assertEqual(len(edges),2)
+        obj_edges=[r for r in relations if r.get('relationKind')=='static_objective_reference']
+        self.assertEqual(len(obj_edges), 1)
+        self.assertEqual(obj_edges[0]['toId'], str(self.char))
+        self.assertEqual(obj_edges[0]['predicate'], 'UnlockCharacter.character')
+        self.assertTrue(all(r['status']=='resolved' for r in edges+obj_edges))
 
     def test_reject_bad_frames_and_inputs(self):
         with self.assertRaises(ValueError):
