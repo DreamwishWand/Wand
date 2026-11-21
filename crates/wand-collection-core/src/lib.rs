@@ -1115,7 +1115,7 @@ mod tests {
         assert_eq!(engine.bulk_matching_impl(matching,"owned").unwrap(),0);
         assert!(engine.bulk_matching_impl(matching,"invalid").is_err());
         assert!(engine.bulk_matching_impl(r#"{"status":"invalid"}"#,"missing").is_err());
-        assert_eq!(engine.state,before);
+        assert!(engine.state==before);
     }
     #[test]
     fn canonical_categories_preserve_all_29_entries() {
