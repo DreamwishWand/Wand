@@ -1,0 +1,28 @@
+{
+  "schema": "wand.db05.db03-duty-achievement-links@1",
+  "source": "verified_public_save_field_templates_and_owner_private_db03_duties",
+  "families": [
+    {
+      "id": "achievement_duty_id",
+      "catalog": "db03_native_duty_achievement",
+      "path": "/Player/AchievementsData[]/AchievementID",
+      "nativeMessage": "AchievementData",
+      "nativeFieldNumber": 1,
+      "nativePropertyType": "int",
+      "extraction": "positive_integer_value",
+      "targetSource": "ddv_Data/StreamingAssets/itemlist/DutyAch.json",
+      "note": "An observed native ID is only a candidate match; achievement state, progress, entitlement, and rewards are not verified"
+    }
+  ],
+  "policy": {
+    "readOnly": true,
+    "sourceOriginalBytesVerifiedByBridge": false,
+    "saveAndSourceJointlyVerified": false,
+    "platformAndVersionAsSaveCompatibilityGates": false,
+    "fullAchievementCoverageVerified": false,
+    "progressVerified": false,
+    "ownershipVerified": false,
+    "writerAuthorized": false,
+    "exportAuthorized": false
+  }
+}
