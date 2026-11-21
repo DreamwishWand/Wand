@@ -9,7 +9,9 @@ import unittest
 from pathlib import Path
 
 import audit_shards
+import build as db01_compiler
 import release_pipeline
+from test_build import make_fixture
 from test_sqlite_store import fixture, sample, dumps, sha
 
 
@@ -20,6 +22,21 @@ class ReleasePipelineE2ETests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.src, self.history = fixture(self.root, history=True)
         self.out = self.root / 'private-releases'
+
+    def test_src01_to_normalized_to_sqlite_shards_and_audit_without_old_collection(self):
+        # Complete offline chain from independently extracted native SRC-01
+        # catalog to normalized current source, without a v1.25 reference.
+        next_dir=self.root/'src01'
+        next_dir.mkdir()
+        native,_,normalized=make_fixture(next_dir)
+        compiled=db01_compiler.build(native,None,normalized)
+        self.assertEqual(compiled['currentDefinitions'],2)
+        self.assertEqual(compiled['oldCollection'],0)
+        released=release_pipeline.run(normalized,self.out,expected_version='1.26.2')
+        self.assertEqual(released['definitions'],2)
+        self.assertEqual(released['exactNames'],0)
+        self.assertEqual(json.loads(Path(released['audit']).read_bytes())['status'],'PASS')
+        self.assertEqual(release_pipeline.run(normalized,self.out)['status'],'reused')
 
     def test_full_build_and_sha_verified_idempotent_noop(self):
         first = release_pipeline.run(self.src, self.out, history=self.history,
