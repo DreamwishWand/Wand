@@ -70,6 +70,9 @@ function verifyRedactedReply(answer) {
   assert.equal(answer.writerAuthorized,false);
   assert.equal(answer.exportAuthorized,false);
   assert.equal(answer.summary.knownPublicTemplates,440);
+  assert.equal(answer.summary.achievementObservation.fields.length,7);
+  assert.equal(answer.summary.achievementObservation.writerAuthorized,false);
+  assert.equal(answer.summary.achievementObservation.absenceIsNotEvidenceOfCorruption,true);
   const view=sanitizeSaveDiagnosticView(structuredClone(answer.summary));
   assert.equal(view.referenceRules.length,14);
   assert.equal(view.writerAuthorized,false);
@@ -169,4 +172,38 @@ test('worker summary fields are fixed; nonstandard user data never becomes label
   assert.equal(text.includes('SECRET_WORKER_CONTENT_123'),false);
   assert.equal(text.includes('PRIVATE_KEY'),false);
   assert.equal(text.includes('X-PRIVATE'),false);
+});
+
+
+test('encrypted P1G and JSON Worker both publish only redacted achievement field observations',async()=>{
+  for(const version of [626,643]){
+    const save=syntheticSave(version);
+    delete save.World.GridCollection; // simulated intentional removal
+    save.Player.AchievementsData=[
+      {AchievementID:2110000001,CurAmount:987654321,MaxAmount:876543210,
+       State:'PRIVATE_ACHIEVEMENT_STATE_NAME',ClaimedRewardMilestone:17,
+       TypesCollected:[123456789],ItemsUsed:[456789012]},
+      {AchievementID:2110000002,State:'PRIVATE_ANOTHER_STATE'}
+    ];
+    save.Player.PrivateNotes='UNRELATED_OWNER_PRIVATE_NOTES';
+    const result=await inspectLocalSaveDiagnosticsBytes('p1g',encodedP1g(save));
+    const json=await inspectLocalSaveDiagnosticsBytes('json',utf8(JSON.stringify(save)));
+    assert.deepEqual(result.summary,json.summary);
+    const view=sanitizeSaveDiagnosticView(structuredClone(result.summary));
+    assert.equal(view.achievementObservation.status,'observed_field_kinds');
+    assert.equal(view.achievementObservation.inspectedRows,2);
+    assert.equal(view.achievementObservation.fields.find(f=>f.id==='state').observed,2);
+    assert.equal(view.achievementObservation.fields.find(f=>f.id==='items_used').observed,1);
+    assert.equal(view.achievementObservation.fields.find(f=>f.id==='items_used').checkedElements,1);
+    assert.equal(view.achievementObservation.completionVerified,false);
+    assert.equal(view.achievementObservation.saveIntegrityVerified,false);
+    assert.equal(view.achievementObservation.modifiedSaveMayOmitMissionObjects,true);
+    assert.equal(view.writerAuthorized,false);
+    const redacted=JSON.stringify(result);
+    for(const secret of ['PRIVATE_ACHIEVEMENT_STATE_NAME','PRIVATE_ANOTHER_STATE',
+      'UNRELATED_OWNER_PRIVATE_NOTES','2110000001','2110000002','987654321',
+      '876543210','123456789','456789012']) {
+      assert.equal(redacted.includes(secret),false,secret);
+    }
+  }
 });
