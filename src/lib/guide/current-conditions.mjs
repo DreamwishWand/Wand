@@ -208,3 +208,40 @@ export function currentConditionMentionsForQuest(conditions, questId, limit = 40
   const rows = conditions.byMission.get(questId) || [];
   return {total: rows.length, rows: rows.slice(0, limit)};
 }
+
+/** Enrich Condition mentions only from an already SHA-verified original quest
+ * detail record. Never treat an array index or fabricated fallback as a native
+ * step ID. Duplicate native step IDs are ambiguous and not linked.
+ */
+export function withVerifiedConditionStepDetails(detail, stepRows, mentions, questId) {
+  requireValid(Array.isArray(mentions) && mentions.length <= 100 &&
+    typeof questId === 'string' && ID.test(questId), 'invalid Condition step lookup');
+  if (!isObject(detail) || detail.id !== questId || detail.recordKind !== 'mission' ||
+      detail.source?.file !== 'ddv_Data/StreamingAssets/itemlist/Mission.json' ||
+      detail.source?.sha256 !== MISSION_SOURCE_SHA ||
+      !Array.isArray(detail.structured?.stepsDetailed) ||
+      !Array.isArray(stepRows) || stepRows.length !== detail.structured.stepsDetailed.length) {
+    return mentions;
+  }
+  const stepIndex = new Map();
+  const ambiguous = new Set();
+  for (const [i, original] of detail.structured.stepsDetailed.entries()) {
+    const id = original?.stepId;
+    if (!Number.isSafeInteger(id) || id < 0 || stepRows[i]?.id !== String(id)) continue;
+    if (stepIndex.has(id)) {
+      ambiguous.add(id);
+      continue;
+    }
+    stepIndex.set(id, {
+      sourceStepIndex: i,
+      sourceStepName: typeof original.stepName === 'string' ? original.stepName.slice(0,256) : null,
+      localizedStepDescription: typeof stepRows[i].text === 'string' ? stepRows[i].text : '',
+      localizedStepDescriptionLanguage: stepRows[i].textSource ?? null
+    });
+  }
+  return mentions.map(mention => {
+    if (!Number.isSafeInteger(mention?.stepId) || ambiguous.has(mention.stepId)) return mention;
+    const resolved = stepIndex.get(mention.stepId);
+    return resolved ? {...mention,...resolved} : mention;
+  });
+}
