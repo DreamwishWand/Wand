@@ -1,7 +1,7 @@
 <script lang="ts">
   import {onMount} from 'svelte';
   import {base} from '$app/paths';
-  import {PUBLIC_GUIDE_LOCALES,verifyPublicQuestIndex,filterPublicQuests,loadPublicQuestPart} from '$lib/guide/public-guide.mjs';
+  import {PUBLIC_GUIDE_LOCALES,verifyPublicQuestIndex,filterPublicQuests,loadPublicQuestPart,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
 
   const LANG:Record<string,string>={ja:'日本語',en:'English',fr:'Français',it:'Italiano',de:'Deutsch','es-ES':'Español','zh-CN':'简体中文','pt-BR':'Português'};
   let catalog:any=null;
@@ -24,7 +24,7 @@
   $: characters=catalog?[...new Set(catalog.quests.map((x:any)=>x.characterId).filter(Boolean))].sort() as string[]:[];
   $: objectives=catalog?[...new Set(catalog.quests.flatMap((x:any)=>x.objectiveKinds))].sort() as string[]:[];
 
-  function label(names:Record<string,string>|null|undefined,fallback='') {return names?.[locale]||names?.en||Object.values(names||{})[0]||fallback;}
+  function label(names:Record<string,string>|null|undefined,fallback='') {return formatPublicGuideText(names?.[locale]||names?.en||Object.values(names||{})[0]||fallback);}
   function questName(row:any) {return label(row.names,row.internalName||row.id);}
   function characterName(id:string|undefined) {return label(catalog?.characters?.[id||''],id||'');}
   function setSearch() {limit=40;}
