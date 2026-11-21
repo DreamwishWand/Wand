@@ -104,3 +104,24 @@ An identical target version does not independently establish that the original
 character and Mission archives came from the exact same game build: this is
 local optional label enrichment, not a claim of independently signed source
 matching or of game progress/availability.
+
+
+## Optional source quest-group lookup and same-group navigation (2026-11-21)
+
+When a private directory includes **`guide/quest-catalogue.json`**, the browser reads this existing
+~1.6MB optional source index, checks that it has exactly the same Steam/source `Mission.json` SHA-256,
+version, source census, original native mission wire hashes and recorded group memberships as
+`guide/quest-search.json`. Invalid/mixed-source catalogue information fails closed. It never
+requires the catalogue to browse existing quests and never reads the ~98MB original or any detail
+shard until a quest is selected.
+
+The group filter displays the **source `rawName`** (delimiters made readable), which is an
+*internal source identifier*, not an official localized game name. The selected quest may show
+other quests whose original `QuestGroup.missionIds` list includes it, in that source array order.
+**This is only a static group membership and listing order, not verified unlock prerequisites,
+chronology, save progress, or a recommended play order.** Search can optionally match exact
+same-source character labels and group internal identifiers as well as mission names; the match
+source is explicitly labeled in the search result and original quest ID is unchanged.
+
+No game source texts are introduced into the public repository, static deployment, or requests.
+All existing security checks for local folder boundaries and per-record SHA-256 still apply.
