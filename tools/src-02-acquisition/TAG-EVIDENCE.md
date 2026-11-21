@@ -42,9 +42,11 @@ exact parent r5 provenance and reference counts are validated. Results are
 immutable and read-only. All Source rows, native names, localization keys,
 translated assets and game binaries remain **off public GitHub/Pages**.
 
-Future localized display labels require SHA-verified Steam **v1.26.2**
-`LocDB_*` original extraction and exact localization-key joins. Neither
-`Name` nor `DisplayName` from TagItemData is a verified translated string.
+Source-exact translated Tag labels are now provided by the separate private
+8-locale supplement (`TAG-LOCALES.md`), backed by full SHA-verified original
+Steam **v1.26.2** `LocDB_*` ZIP files and exact `Tag.locbin` key joins.
+Native `Name` and `DisplayName` fields remain identity/key evidence only; the
+separate locale overlay returns the independently verified translated text.
 No live recipe eligibility, current inventory, DLC rights, or Collection
 ownership can be inferred from this evidence.
 
