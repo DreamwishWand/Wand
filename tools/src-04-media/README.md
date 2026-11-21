@@ -56,6 +56,22 @@ Run only the v2 CMD; do not rerun the full media extraction. For verification, u
 
 ---
 
+## Verified Item-ID join outcome (2026-11-21)
+
+The full 9,182-GUID identity map was supplied and successfully joined with the original, SHA-verified 13,202-item SRC-01 JSONL dataset. Source file SHA-256: `3ff0043692c88699d1cb44f4a953095c5f5fcd1afd700761396f13cca96851bf`. Input identity map SHA-256: `401d3b0fd1c24ddad255b0948889ffceeb344e14fb16ca13c3952ee6a69a1172`.
+
+- Exact GUID resolution: **9,182 / 9,542 = 96.23%**.
+- Exact Item-ID icon coverage: **10,786 / 13,202 = 81.70%**. Unresolved: **2,416 Item IDs across 360 GUIDs**.
+- Verified Item IDs: ActivityItem 3,680, Clothing 2,037, Furniture 5,052, Trimming 17.
+- Unresolved Item IDs: ActivityItem 370, Clothing 4, Furniture 1,694, Trimming 348.
+- One **shared unresolved GUID** (`04495f960b1edba4181ec51efa5e07d9`) is referenced by **2,028** Item IDs, so the number of missing Item IDs is not the number of distinct absent icons.
+- 563 sampled GUID/image identities embedded in the 24-bundle diagnostic report match the full private mapping exactly.
+
+The local item map was generated in both JSONL and a human-readable CSV, with a separate unresolved-GUID JSON and checksum-bearing join report. These outputs are **not checked into the public repository**. WebP paths refer to existing operator-local image files; their bytes have not been re-read or uploaded for this join. Keep `publicationApproved=false`. No fresh extraction is required.
+
+The next discovery problem is the remaining 360 unique GUIDs, especially 348 unresolved Trimming Item IDs. Resolve by exact source relationships outside the existing 24 generated-icon bundles; do not infer mappings by image names, platform, or game-version labels.
+
+---
 ## Confirmed GUID image identity coverage (2026-11-21)
 
 The user's complete `catalog-identity-report.json` from revision 2 confirms:
