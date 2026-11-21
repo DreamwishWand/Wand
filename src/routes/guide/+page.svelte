@@ -1,4 +1,5 @@
 <script lang="ts">
+  import {base} from '$app/paths';
   import {
     GUIDE_LOCALES, importGuideSearch, importGuideFolder, importGuideDetail, searchGuide,
     detailStepRows, guideStaticFacts, guideMissionReferences, guideVerifiedSourceBridge, MAX_SHARD_BYTES
@@ -240,6 +241,11 @@
 </svelte:head>
 
 <section class="guide-page">
+  <div class="guide-public-entry">
+    <strong>クエスト情報は公開されています。</strong>
+    <p>733件のクエストとその目標を、ファイル選択なしで検索できます。</p>
+    <a href="{base}/guide/quests/">公開クエストガイドを開く</a>
+  </div>
   <header class="guide-hero">
     <div>
       <p class="guide-eyebrow">DREAMWISH WAND · GUIDE</p>
@@ -653,4 +659,7 @@
   .guide-placeholder p,.guide-waiting p { font-size:12px; line-height:1.8; max-width:420px; }
   @media (max-width:850px) { .guide-workspace { grid-template-columns:1fr; } .guide-detail { border-left:0; border-top:1px solid #ffffff1b; } .guide-hero { align-items:start; flex-direction:column; } }
   @media (max-width:570px) { .guide-stats { grid-template-columns:repeat(2,1fr); } .guide-file-inputs,.guide-facets { grid-template-columns:1fr; } .guide-page { padding-top:26px; } }
+  .guide-public-entry{padding:16px 20px;border:1px solid #80649b;border-radius:12px;background:#281e38;color:#f8efff;margin-bottom:18px}
+  .guide-public-entry p{color:#cfbddf;margin:8px 0}
+  .guide-public-entry a{color:#ead3ff;font-weight:700;text-decoration:underline}
 </style>
