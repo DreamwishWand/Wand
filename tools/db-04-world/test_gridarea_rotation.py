@@ -7,7 +7,8 @@ from pathlib import Path
 
 from gridarea_rotation import (
     COS, SIN, COS_FIELD_HASH, SIN_FIELD_HASH,
-    rotate_gridarea_vector, verify_original_rotation_metadata,
+    rotate_gridarea_vector, gridarea_orientation_base_size,
+    verify_original_rotation_metadata,
 )
 
 
@@ -78,6 +79,36 @@ class NativeGridAreaVectorTests(unittest.TestCase):
                 rotate_gridarea_vector(**kwargs)
         with self.assertRaisesRegex(ValueError, "invalid GridArea"):
             rotate_gridarea_vector(0, 0, 0, inverse=1)
+
+    def test_all_sixteen_original_gridarea_unscaled_bounding_dimensions(self):
+        # Original GetSizeForOrientation branches and MoreRotationSize
+        # source code compute these for a native 3x2 GridArea, 1:1 scaling.
+        expected = [
+            (3, 2), (3, 2), (3, 3), (2, 3),
+            (2, 3), (2, 3), (3, 3), (3, 2),
+            (3, 2), (3, 2), (3, 3), (2, 3),
+            (2, 3), (2, 3), (3, 3), (3, 2),
+        ]
+        for orientation, dims in enumerate(expected):
+            with self.subTest(orientation=orientation):
+                data = gridarea_orientation_base_size(3, 2, orientation)
+                self.assertEqual((data["sizeX"], data["sizeY"]), dims)
+                self.assertTrue(data["nativeOrientationBaseSizeVerified"])
+                self.assertEqual(data["gridToAreaTessellationRatioAssumed"], "1:1")
+                self.assertFalse(data["fullNativeTessellationScalingApplied"])
+                self.assertFalse(data["rotatedGridAreaCellMappingVerified"])
+                self.assertFalse(data["placementLegalityVerified"])
+        # For oblique dimensions, original native performs truncation AFTER
+        # summing the two positive cosine/sine products.
+        oblique = gridarea_orientation_base_size(3, 2, 2)
+        self.assertEqual((oblique["sizeX"], oblique["sizeY"]), (3, 3))
+        self.assertEqual((gridarea_orientation_base_size(
+            1, 1, 1)["sizeX"], gridarea_orientation_base_size(
+            1, 1, 1)["sizeY"]), (1, 1))
+        for args in ((0, 2, 2), (3, 2, 16), (3, 2, -1),
+                     (False, 2, 0), (257, 1, 0), (2, 2, 1.5)):
+            with self.assertRaisesRegex(ValueError, "base dimensions"):
+                gridarea_orientation_base_size(*args)
 
     def test_original_field_default_hashes_require_exact_source_values(self):
         # Source-shape synthetic v31 metadata; no proprietary game bytes.
