@@ -48,13 +48,10 @@ function observeKnownField(document, field) {
   let nodes = [document], sampled = false;
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i], next = [], final = i === tokens.length - 1;
-    let blocked = false;
     for (const node of nodes) {
-      if (!plain(node)) {
-        // A value on an observed parent branch has the wrong container type.
-        blocked = true;
-        continue;
-      }
+      // The parent field's own known-path probe records its type conflict.
+      // Descendants are simply unobserved, avoiding repeated false conflicts.
+      if (!plain(node)) continue;
       if (/^\{[A-Za-z][A-Za-z0-9]*\}$/.test(token)) {
         const keys = Object.keys(node);
         if (keys.length > SHAPE_WILDCARD_LIMIT) sampled = true;
@@ -77,8 +74,7 @@ function observeKnownField(document, field) {
       }
     }
     nodes = next;
-    if (!nodes.length) return { status: blocked ? 'type_conflict' : 'not_observed', sampled, kinds: Object.freeze([]) };
-    if (blocked) return { status: 'type_conflict', sampled, kinds: Object.freeze([]) };
+    if (!nodes.length) return { status: 'not_observed', sampled, kinds: Object.freeze([]) };
   }
   const kinds = Object.freeze([...new Set(nodes.map(shapeType))].sort());
   return {
