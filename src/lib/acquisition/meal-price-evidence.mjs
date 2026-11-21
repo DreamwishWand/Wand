@@ -11,6 +11,7 @@ import {loadPrivateSrc02BrowserBundle,CURRENT_STEAM_1262_CONDITION_SHA256}
   from './private-browser-bundle.mjs';
 import {loadPrivateShopPriceView} from './private-shop-prices.mjs';
 import {loadPrivateCookingStarSettings} from './private-cooking-star-settings.mjs';
+import {collectConfiguredIngredientSellEvidence} from './meal-ingredient-sell-evidence.mjs';
 
 export const DB02_MEAL_PRICE_VIEW_CONTRACT='wand.db02.private-meal-pricing-view@1';
 export const DB02_MEAL_PRICE_EVIDENCE_CONTRACT='wand.db02.meal-price-evidence@1';
@@ -142,6 +143,8 @@ function inspectAuthenticatedMeal({acquisitionBundle,shopPriceView,mealItemId,it
     row.sellValueDefinitions.length===0),
     'UNEXPECTED_MEAL_PRICE_DEFINITIONS');
   const ingredientAmounts=state.ingredientAmounts;
+  const sourceIngredientStaticSellEvidence=collectConfiguredIngredientSellEvidence(
+    ingredientAmounts,id=>shopPriceView.getSourceItemPriceDefinitions(id));
   return frozen({
     contract:DB02_MEAL_PRICE_EVIDENCE_CONTRACT,
     mealItemId,platform:'Steam',gameVersion:'1.26.2',
@@ -149,6 +152,9 @@ function inspectAuthenticatedMeal({acquisitionBundle,shopPriceView,mealItemId,it
     staticCookingRecipeIds:frozen(cookingRecipes.map(r=>r.recipeId).sort((a,b)=>a-b)),
     cookingRecipeCoverage:'partial_native_extraction',
     recordedIngredients:ingredientAmounts,
+    sourceIngredientStaticSellEvidence,
+    ingredientStaticPriceDatabaseOriginalVerified:true,
+    staticIngredientAmountsNotEffectiveSellValues:true,
     cookingRecipeIngredientMatchVerified:false,
     stateDependentSellPriceMethod:'MealItemData.GetSellPrice(ItemState,Item)',
     ingredientSellPriceMethod:'MealItemData.TotalIngredientsSellPrice(RecipeItemData,IEnumerable)',
