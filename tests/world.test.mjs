@@ -10,6 +10,8 @@ import {
   getNativeFootprintCandidateCells,
   getNativeFootprintLayerAt, getNativeFootprintLayerWindow,
   getNativeFootprintOrientedLayerAt, getNativeFootprintOrientedWindow,
+  getNativeFootprintTessellatedOrientedLayerAt,
+  getNativeFootprintTessellatedOrientedWindow,
   getNativeFootprintObliqueOrientedLayerAt,
   getNativeFootprintObliqueOrientedWindow,
   getNativeFootprintCardinalOrientedLayerAt,
@@ -430,6 +432,103 @@ test('original oblique position fails closed on unsupported versions and bounds'
     /outside bounds/);
   assert.equal(getNativeFootprintObliqueOrientedLayerAt(
     catalog, 1, 0, 0, 2), null);
+});
+
+test('source GridAreaData factory 1:1 paths preserve original all-16 source masks', () => {
+  const source = fixture();
+  source.manifest.gameVersion = '1.26.1';
+  source.objects[0].footprint = {
+    ...source.objects[0].footprint, sizeX: 3, sizeY: 2,
+    layerValues: [11, 12, 21, 22, 31, 32],
+  };
+  const catalog = createWorldCatalog(source);
+  for (let code = 0; code < 16; code++) {
+    const size = getNativeFootprintOrientationBaseDimensions(catalog, 40000001, code);
+    const rect = {x: 0, y: 0, width: size.sizeX, height: size.sizeY};
+    const original = getNativeFootprintOrientedWindow(catalog, 40000001, code, rect);
+    const newWindow = getNativeFootprintTessellatedOrientedWindow(
+      catalog, 40000001, code, 1, rect);
+    assert.deepEqual(newWindow.rows, original.rows);
+    assert.equal(newWindow.itemAreaTessellationFactorSourceValue, 1);
+    assert.equal(newWindow.nativeTessellationCoordinateConversionVerified, true);
+    assert.equal(newWindow.callerGridFactorExplicitlyProvided, true);
+    assert.equal(newWindow.callerGridFactorProvenanceVerified, false);
+    assert.equal(newWindow.gridObjectAnchorVerified, false);
+    assert.equal(newWindow.occupancyPredicateVerified, false);
+    assert.equal(newWindow.placementLegalityVerified, false);
+  }
+});
+
+test('native caller Grid factor 2 replicates cardinal and oblique raw item layers', () => {
+  const source = fixture();
+  source.manifest.gameVersion = '1.26.1';
+  source.objects[0].footprint = {
+    ...source.objects[0].footprint,
+    sizeX: 3, sizeY: 2, layerValues: [11, 12, 21, 22, 31, 32],
+  };
+  const catalog = createWorldCatalog(source);
+  for (const code of [0, 4, 8, 12, 2, 6, 10, 14]) {
+    const size = getNativeFootprintOrientationBaseDimensions(catalog, 40000001, code);
+    const rect = {x: 0, y: 0, width: size.sizeX, height: size.sizeY};
+    const original = getNativeFootprintOrientedWindow(catalog, 40000001, code, rect);
+    const scaled = getNativeFootprintTessellatedOrientedWindow(
+      catalog, 40000001, code, 2,
+      {x: 0, y: 0, width: size.sizeX * 2, height: size.sizeY * 2});
+    const expected = original.rows.flatMap(row => [
+      row.flatMap(value => [value, value]),
+      row.flatMap(value => [value, value]),
+    ]);
+    assert.deepEqual(scaled.rows, expected);
+    assert.equal(scaled.orientedSizeX, size.sizeX * 2);
+    assert.equal(scaled.orientedSizeY, size.sizeY * 2);
+    assert.equal(scaled.unmappedOutputCellCount,
+      expected.flat().filter(v => v === null).length);
+    assert.equal(scaled.nullMeansUnmappedNotUnoccupied, true);
+    assert.equal(scaled.callerGridFactorProvenanceVerified, false);
+    assert.equal(scaled.occupancyPredicateVerified, false);
+    assert.equal(scaled.placementLegalityVerified, false);
+    scaled.rows[0][0] = 999;
+    assert.deepEqual(getNativeFootprintTessellatedOrientedWindow(
+      catalog, 40000001, code, 2,
+      {x: 0, y: 0, width: size.sizeX * 2, height: size.sizeY * 2}).rows,
+      expected);
+  }
+  const mapped = getNativeFootprintTessellatedOrientedLayerAt(
+    catalog, 40000001, 3, 5, 8, 3);
+  assert.deepEqual([mapped.normalizedInputX, mapped.normalizedInputY], [1, 1]);
+  assert.equal(mapped.originalFlatIndex, 3);
+  assert.equal(mapped.nativeValue, 22);
+  assert.equal(mapped.itemGetGridAreaFactorySourceVerified, true);
+  assert.equal(mapped.callerGridFactorProvenanceVerified, false);
+});
+
+test('tessellation API refuses unsupported revisions, invalid factors and unproven occupancy', () => {
+  const newer = createWorldCatalog(fixture());
+  const unverifiable = getNativeFootprintTessellatedOrientedLayerAt(
+    newer, 40000001, 0, 0, 8, 2);
+  assert.equal(unverifiable.status, 'native_tessellation_not_verified_for_game_version');
+  assert.equal(unverifiable.nativeValue, undefined);
+  assert.equal(unverifiable.nativeTessellationCoordinateConversionVerified, false);
+  assert.equal(unverifiable.placementLegalityVerified, false);
+  assert.equal(getNativeFootprintTessellatedOrientedWindow(
+    newer, 40000001, 8, 2, {x: 0, y: 0, width: 1, height: 1}).rows, undefined);
+  const data = fixture();
+  data.manifest.gameVersion = '1.26.1';
+  const catalog = createWorldCatalog(data);
+  for (const factor of [0, -1, 257, false, 1.5]) {
+    assert.throws(() => getNativeFootprintTessellatedOrientedLayerAt(
+      catalog, 40000001, 0, 0, 8, factor), /grid factor/);
+  }
+  const outside = getNativeFootprintTessellatedOrientedLayerAt(
+    catalog, 40000001, 4, 0, 8, 2);
+  assert.equal(outside.inside, false);
+  assert.equal(outside.nativeValue, undefined);
+  assert.equal(outside.placementLegalityVerified, false);
+  assert.throws(() => getNativeFootprintTessellatedOrientedWindow(
+    catalog, 40000001, 8, 2, {x: 0, y: 0, width: 5, height: 1}),
+    /outside bounds/);
+  assert.equal(getNativeFootprintTessellatedOrientedLayerAt(
+    catalog, 999, 0, 0, 8, 2), null);
 });
 
 test('explicit restrictions deny but missing flags never authorize placement', () => {

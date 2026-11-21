@@ -636,6 +636,78 @@ anchor offsets, layers interpreted as actual occupancy, collisions,
 special object rules and legal placement are still **unverified**.
 All edit/placement permissions remain unchanged and unresolved.
 
+## Original item GridArea tessellation path and explicit caller-grid factor
+
+New Steam v1.26.1 original-source evidence resolves the difference between
+the **item GridArea tessellation factor** and the separate **caller Grid
+tessellation factor**. The original native method
+GridAreaData.GetGridArea (metadata token 0x0600309F, original RVA
+0x38FA210–0x38FA37A) on its lazy-create path invokes
+GridArea.Create(sizeX,sizeY,layers,floorType,strideOverride,
+tessellationFactor=1). This is established by the compiled call setup,
+not by guessing from protobuf data. The 362-byte native method spans
+three contiguous PE64 unwind records and hashes to
+97e6863ce412541cebadbf72f384097962d7da7367fb3b2c8e42201a389c08b3.
+Other GridArea construction routes and any pre-existing cached instances
+may have different provenance; **one is not a universally fixed value for
+every GridArea in the game**.
+
+In original GridArea.TryGetGridLocalPosition (RVA
+0x3923BB0–0x3923D79), a *different* caller grid factor causes
+**nonnegative** input x and y coordinates to be independently divided by
+callerGridTessellationFactor, truncated toward zero, and then multiplied
+by the item's area factor. Only after this conversion does the original
+function apply its 16-way cardinal/oblique position transform. The
+result is bounded against the source GridArea SizeX and SizeY. Native
+GridArea.GetSizeForOrientation similarly returns
+trunc(originalUnscaledWidth * callerFactor / areaFactor), independently
+for height. The source leaves GridArea.Transform are at 0x3923550 and
+0x3923560 (no PE unwind entry is required for these tiny leaf functions).
+
+The **item GridAreaData.GetGridArea factory path**, with its confirmed
+area factor of 1, now supports a safe, explicit caller factor in Python
+and browser; it does not assume a factor for another user's world:
+
+~~~python
+gridarea_scaled_source_cell(size_x, size_y, x, y, orientation, grid_factor)
+gridarea_scaled_layer_window(size_x, size_y, layer_values,
+                             orientation, grid_factor, x, y, width, height)
+~~~
+
+~~~js
+const cell = getNativeFootprintTessellatedOrientedLayerAt(
+  catalog, itemId, x, y, orientationCode, callerGridFactor);
+const preview = getNativeFootprintTessellatedOrientedWindow(
+  catalog, itemId, orientationCode, callerGridFactor,
+  { x: 0, y: 0, width: 6, height: 4 });
+~~~
+
+For a native area of 3 × 2 with caller factor 2, orientation 8 has
+a 6 × 4 grid input rectangle; each original cell is referenced by a
+2 × 2 block. An oblique orientation can duplicate or omit source cells
+in the underlying oriented matrix; any **null** output means no source
+GridArea mapping, not open space for placement.
+
+The source verifier is private-source-only:
+
+~~~bash
+python tools/db-04-world/gridarea_tessellation.py \
+  --dll "/private/Steam/GameAssembly.dll"
+~~~
+
+It checks the original DLL SHA, the full native method hashes, and
+all six relevant .pdata segments across the two large methods.
+
+**Provenance boundary:** The caller grid factor is explicitly supplied.
+This does **not** prove that it matches a particular default layout,
+live save, or selected GridObject. Returned
+callerGridFactorProvenanceVerified remains false. Likewise, the
+fact that the original item GridArea factory passes 1 does not certify
+other GridArea factories or unrelated caller paths. Browser decoding is
+Steam v1.26.1 gated. Neither a raw mask nor repeated source cell
+establishes the object anchor, physical occupancy, movement restrictions,
+collisions, or legal editor placement. All these flags remain false.
+
 ## Unverified cardinal footprint models — evidence-only diagnostic
 
 The original game's `Definitions.Grid.GridAreaData` exposes `SizeX`,
