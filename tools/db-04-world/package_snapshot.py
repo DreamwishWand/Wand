@@ -17,6 +17,7 @@ from pathlib import Path
 from audit_layout_terrain import audit_snapshot
 from audit_footprint_candidates import audit_footprint_candidates
 from native_pe_evidence import validate_private_report
+from disassemble_native_pe import validate_disassembly_report, MAX_REPORT_BYTES
 from verify_bundle import read_json, validate_snapshot
 
 MAX_MEMBERS = 100
@@ -76,6 +77,17 @@ def package_snapshot(snapshot: Path, output_zip: Path) -> dict:
             raise ValueError("invalid native PE report file")
         pe_report = validate_private_report(
             read_json(native_pe_file), game_version=verification["gameVersion"])
+    asm_file = root / "native-disassembly.json"
+    asm_report = None
+    if asm_file.is_symlink():
+        raise ValueError("unsafe native disassembly symlink")
+    if asm_file.exists():
+        if pe_report is None:
+            raise ValueError("native disassembly has no corresponding source PE evidence")
+        if not asm_file.is_file() or asm_file.stat().st_size > MAX_REPORT_BYTES:
+            raise ValueError("invalid native disassembly report file")
+        asm_report = validate_disassembly_report(
+            read_json(asm_file), pe_report)
     names = ["manifest.json", *sorted(output_hashes)]
     if len(names) > MAX_MEMBERS or len(set(names)) != len(names):
         raise ValueError("invalid count of private manifest files")
@@ -116,12 +128,19 @@ def package_snapshot(snapshot: Path, output_zip: Path) -> dict:
                     _zip_entry("diagnostics/native-pe-evidence.json"),
                     _content(pe_report), compress_type=zipfile.ZIP_DEFLATED,
                     compresslevel=8)
+            if asm_report is not None:
+                archive.writestr(
+                    _zip_entry("diagnostics/native-disassembly.json"),
+                    _content(asm_report), compress_type=zipfile.ZIP_DEFLATED,
+                    compresslevel=8)
         with zipfile.ZipFile(tmp, "r") as archive:
             expected = set(names + ["diagnostics/verification.json",
                                      "diagnostics/layout-terrain-audit.json",
                                      "diagnostics/footprint-hypotheses.json"])
             if pe_report is not None:
                 expected.add("diagnostics/native-pe-evidence.json")
+            if asm_report is not None:
+                expected.add("diagnostics/native-disassembly.json")
             if set(archive.namelist()) != expected:
                 raise ValueError("private snapshot ZIP member verification failed")
             for name, expected_hash in output_hashes.items():
@@ -155,6 +174,10 @@ def package_snapshot(snapshot: Path, output_zip: Path) -> dict:
         "nativePEEvidenceIncluded": pe_report is not None,
         "nativePEMethodWindowCount": (
             len(pe_report["methodWindows"]) if pe_report is not None else 0),
+        "nativeDisassemblyIncluded": asm_report is not None,
+        "nativeDisassemblyInstructionCount": (
+            asm_report["totalInstructions"] if asm_report is not None else 0),
+        "nativeFunctionBoundaryVerified": False,
         "nativeCodeBodyVerified": False,
         "placementLegalityVerified": False,
         "includesOriginalGameBinaries": False,
