@@ -137,3 +137,48 @@ DB-02 Steam v1.26.2. The optional `--guide-manifest` field records
 `blocked_cross_version`. Even a matching version alone would not establish a
 quest reward: mission selector candidates are objective inputs, not rewards,
 and `rewardRelationVerified` is always false pending source-semantic evidence.
+
+## Crafting / cooking material planning (browser-safe, private data only)
+
+Import `planRecipeRequirements` from `src/lib/acquisition/planner.mjs` and pass
+an already verified `createAcquisitionDatabase(...)` instance. This implements
+source-backed batch multiplication, multi-step **crafting** dependencies,
+integer-safe rounding of yields, reuse of intermediate surplus, and optional
+caller-supplied (hypothetical) inventory deduction. It does not read or alter a
+save. Results are derived from the game-version-pinned private SRC-02 recipe
+records; public code contains no proprietary game definitions.
+
+```js
+import { createAcquisitionDatabase } from './src/lib/acquisition/index.mjs';
+import { planRecipeRequirements } from './src/lib/acquisition/planner.mjs';
+const db = createAcquisitionDatabase(verifiedPrivateBundle);
+const plan = planRecipeRequirements(db, yourSourceRecipeId, {
+  batches: 2,
+  inventory: { [yourItemId]: 3 },
+  recipeChoices: { [ambiguousResultItemId]: verifiedRecipeId }
+});
+// plan.requiredMaterials / plan.steps / plan.unresolvedSelectors / plan.blockers
+```
+
+If several recipes produce the same Item ID, automatic selection is prohibited:
+`blockers` contains `recipe_choice_required` and the exact candidate recipe IDs.
+Only one valid crafting recipe is expanded automatically; callers can opt out
+with `expandSingleRecipe: false`. A recipe cycle, unknown yield, excessive
+recursion depth, or unknown ingredient tag remains unresolved instead of
+inventing a material. `anyTag` and `tagAlternatives` are never converted to
+specific items without a separately verified tag-membership source. Cooking
+recipes with `resultQuantity: null` are reported with `outputQuantity: null`,
+not a guessed yield. The planner does not count a cooking recipe as an automatic
+crafting path for another recipe.
+
+`materialsFullySpecified: true` means the currently selected **static Item ID
+quantities** are known, not that the ingredients can be obtained. All plans
+explicitly set `recipeEligibilityEvaluated: false` and
+`acquisitionAvailabilityVerified: false`. `possibleStalls` are static loot
+candidate lists, not verified stock, prices or availability. Recipes with
+condition digests remain unevaluated. Plans represent estimates, not proof of
+inventory, DLC entitlement, quest progression, or current live shop offers.
+
+Run `node --test tests/acquisition*.test.mjs` for the planner and source contract
+regressions. The full 1,943-recipe Steam v1.26.2 corpus is exercised separately
+from the owner's private Drive snapshot; it is not committed as a test fixture.
