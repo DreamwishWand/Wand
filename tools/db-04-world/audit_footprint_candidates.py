@@ -119,16 +119,20 @@ def audit_footprint_candidates(snapshot, *, max_objects=20000,
         if orientation not in (0, 4, 8, 12):
             missing["nonCardinalOrientationNotModeled"] += 1
             continue
-        nonzero_count = sum(layer != 0 for layer in shape["layerValues"])
-        if not nonzero_count:
-            missing["noNonzeroNativeFootprintLayerCells"] += 1
-            continue
-        candidate_cost = nonzero_count * len(hypotheses)
+        # A full GridAreaData array is traversed for every hypothetical
+        # orientation, including its zero-valued fixed32 layer slots. Budget
+        # those total scan slots, not just nonzero cells, so sparse 256x256
+        # footprints cannot evade the workload cap.
+        candidate_cost = shape["sizeX"] * shape["sizeY"] * len(hypotheses)
         if candidate_cells_evaluated + candidate_cost > max_cells:
             missing["candidateCellBudgetReached"] += 1
             stopped_at_cell_budget = True
             break
         candidate_cells_evaluated += candidate_cost
+        nonzero_count = sum(layer != 0 for layer in shape["layerValues"])
+        if not nonzero_count:
+            missing["noNonzeroNativeFootprintLayerCells"] += 1
+            continue
         geometry = set()
         terrain_outcomes = set()
         discrimination["objectsWithComparableHypotheses"] += 1
@@ -191,8 +195,8 @@ def audit_footprint_candidates(snapshot, *, max_objects=20000,
         "sourceScopeVerified": verified["sourceScopeVerified"],
         "nativeLayoutObjectCount": len(native),
         "layoutObjectsConsidered": considered,
-        "candidateCellsEvaluated": candidate_cells_evaluated,
-        "candidateCellBudget": max_cells,
+        "candidateLayerSlotsBudgeted": candidate_cells_evaluated,
+        "candidateLayerSlotBudget": max_cells,
         "truncatedByCellBudget": stopped_at_cell_budget,
         "truncatedByMaxObjects": (not stopped_at_cell_budget and
                                   len(native) > considered),
