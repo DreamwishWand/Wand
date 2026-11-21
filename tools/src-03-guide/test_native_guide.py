@@ -75,6 +75,8 @@ class NativeGuideTests(unittest.TestCase):
         self.assertEqual(q['names'], {'en': 'Guide Quest', 'ja': '案内クエスト'})
         self.assertEqual(q['characterId'], str(self.char))
         self.assertEqual(q['nativeStepCount'], 1)
+        self.assertEqual(len(q['nativeWireSha256']), 64)
+        self.assertEqual(len(q['steps'][0]['nativeWireSha256']), 64)
         self.assertEqual(q['steps'][0]['localizedText']['Story/MyQuest.Story!Step01_StepDescription']['ja'], '友達に会う')
         rows = json.loads((self.out / 'database/relations.json').read_text())['relations']
         self.assertEqual(sum(r['status'] == 'resolved' for r in rows), 3)
@@ -127,6 +129,16 @@ class NativeGuideTests(unittest.TestCase):
         self.assertIn({'family': 'rewards', 'id': 'default:1:CompletedReward:0'},
                       change['changed'])
         self.assertEqual(change['status'], 'COMPARED')
+
+    def test_opaque_wire_change_appears_in_version_diff(self):
+        db.extract(self.game, self.out, '1.26.1', 'Steam')
+        path = self.src / 'itemlist' / 'DutyAch.json'
+        path.write_bytes(frame(1, vf(1, 2110000001) + sf(2, 'CraftThings') +
+                               sf(7, 'DutyAch.CraftThings_Description') + vf(29, 42)))
+        out2 = self.root / 'out2'
+        db.extract(self.game, out2, '1.26.2', 'Steam', previous=self.out)
+        result = json.loads((out2 / 'diff.json').read_text())
+        self.assertIn({'family': 'duties', 'id': '2110000001'}, result['changed'])
 
     def test_reject_bad_frames_and_inputs(self):
         with self.assertRaises(ValueError):
