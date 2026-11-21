@@ -892,3 +892,37 @@ field as required game behavior.
 Regression: `node --test tests/save-achievement-progress.test.mjs`
 (synthetic modified 626/643 saves, deleted mission branches, unknown enum
 strings, unexpected kinds, bounded observations and privacy checks).
+
+
+## Browser Worker: redacted achievement field observations
+
+`/save/diagnostics/` now shows the anonymous seven-field achievement
+observation from `inspectSaveAchievementProgress` after the existing
+strict local-only P1G or JSON decode in the disposable Worker. The
+`makeSaveDiagnosticView` adapter constructs a fixed-label summary, and
+`sanitizeSaveDiagnosticView` validates and reconstructs this untrusted
+Worker reply before Svelte receives it. The browser summary contract
+has been bumped from `wand.db05.browser-readonly-diagnostics@1` to
+`@2`, with a required `achievementObservation` field. The surrounding
+one-shot Worker message contract remains unchanged; no new browser
+decoder, fetch, storage, Writer, or export path was introduced.
+
+The seven entries display only locally predetermined Japanese field
+labels, observed/absent counts, type differences and bounded repeated
+array element counts (256 saved achievement records, 128 repeated
+integers per field). Stored achievement IDs, state names, numerical
+progress, reward milestones, game source record bodies and personal
+data are never transferred to page components. The page explicitly
+states that absent mission objects/quests/achievements in an owner-edited
+save do not establish corruption or incomplete achievements.
+
+Browser reply validation rejects missing/duplicate/unrecognized field
+IDs, forged status strings, out-of-bound or negative counters and
+changed safety flags. Private labels or unknown reply properties are
+dropped and replaced with fixed source labels. Both synthetic encrypted
+P1G and plain JSON files are tested; test fixtures are never owner
+originals. This does not verify achievement completion, a full
+unmodified save, Codec round-trip, account ownership, or editing rights.
+
+CI: `node --test tests/save-diagnostic-view.test.mjs
+tests/save-p1g-worker-diagnostics.test.mjs`.
