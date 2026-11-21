@@ -44,7 +44,9 @@ export function createPrivateRecipeSelectorView(acquisition, tagLocales, locale)
   const choiceFor = (id) => {
     if (!validId(id)) fail('INVALID_SELECTOR_ID');
     const kind = isTag(id) ? 'native_tag' : isCookingType(id) ? 'cooking_ingredient_type' : 'unknown_selector';
-    const name = kind === 'native_tag' ? tagLocales.getRecipeSelectorName(id, locale) : null;
+    // TagItemData spans both 20012.. item tags and 20014.. cooking types;
+    // all 13 recipe selector IDs have source-exact Tag.locbin names.
+    const name = tagLocales.getRecipeSelectorName(id, locale);
     if (name !== null && (name?.tagId !== id || name.locale !== locale ||
         typeof name.value !== 'string' || !name.value.trim() ||
         name.evidence !== 'steam1262_exact_tag_locbin')) fail('INCONSISTENT_TAG_NAME');
