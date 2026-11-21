@@ -5,7 +5,6 @@ Never claims live offers, player eligibility, sale prices or stock. No originals
 licensed source-derived catalogs may be committed to the public repository.
 """
 import argparse
-from collections import Counter
 import hashlib
 import json
 from pathlib import Path
@@ -264,6 +263,9 @@ def extract(proto, verified_zip):
 
 def write_release(out, extracted, counts):
     out = Path(out)
+    checkout = Path(__file__).resolve().parents[2]
+    if (checkout/'package.json').is_file():
+        require(not out.resolve().is_relative_to(checkout), 'PUBLIC_CHECKOUT_OUTPUT_FORBIDDEN')
     require(not out.is_symlink(), 'OUTPUT_SYMLINK')
     out.mkdir(parents=True,exist_ok=True)
     filenames = {'shops':'shop-definitions.jsonl','prices':'static-item-prices.jsonl',
