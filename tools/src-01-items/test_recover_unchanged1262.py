@@ -1,5 +1,7 @@
 """Synthetic tests only: never require or commit the private Steam game bytes."""
 import hashlib
+import base64
+import zlib
 import json
 import tempfile
 import unittest
@@ -56,6 +58,27 @@ def fixtures(root):
     return complete,probe,originals
 
 
+def synthetic_member_probe(names_by_locale):
+    """Synthetic full ZIP-member bytes in exactly the current probe format."""
+    encode = recover.extend1262.steam1262.encode_varint
+    def field(number, value):
+        data = value.encode('utf-8')
+        return encode((number << 3) | 2)+encode(len(data))+data
+    archives, prior = {}, {}
+    for i,(locale,suffix) in enumerate(recover.localize1262.LOCALES.items()):
+        name = names_by_locale.get(locale, 'Example name')
+        entry = field(1,'Example0_DisplayName')+field(2,name)
+        raw = b'\x0a'+encode(len(entry))+entry
+        crc = f'{zlib.crc32(raw) & 0xffffffff:08x}'
+        archives[locale] = {'source': f'ddv_Data/StreamingAssets/Localization/LocDB_{suffix}.zip',
+            'sha256':f'{i+1:064x}',
+            'members':{'BoardGame':{'bytes':len(raw),'crc32':crc,
+                                    'headBase64':base64.b64encode(raw).decode()}}}
+        prior[locale] = {'sha256':archives[locale]['sha256'],
+                         'archive':f'LocDB_{suffix}.zip','members':{}}
+    return {'sampleBytesPerEntry':8192,'localization':archives},prior
+
+
 class TestReuseExactBytes(unittest.TestCase):
     def test_full_sha_match_only(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -73,6 +96,58 @@ class TestReuseExactBytes(unittest.TestCase):
             path=Path(tmp)/'ActivityData.json'; path.write_bytes(b'content')
             with self.assertRaisesRegex(ValueError,'BAD_EXPECTED_SOURCE_DIGEST'):
                 recover.verified_same_file(path,'x'*64)
+
+    def test_full_current_locale_members_promote_exact_names(self):
+        probe, old = synthetic_member_probe({'ja':'日本語名'})
+        item = {'itemId':180000000,'nativeCategory':'BoardGame',
+                'localizationKey':'BoardGame.Example0_DisplayName',
+                'names':dict.fromkeys(recover.localize1262.LOCALES)}
+        evidence,counts = recover.join_complete_current_locbin_members(probe,{180000000:item},old)
+        self.assertEqual(item['names']['en'],'Example name')
+        self.assertEqual(item['names']['ja'],'日本語名')
+        self.assertEqual(counts['currentEightLocaleNamedDefinitions'],1)
+        self.assertEqual(counts['fullCurrentLocaleMemberCount'],8)
+        self.assertEqual(len(evidence['ja']['members']),1)
+
+    def test_truncated_member_never_promoted_to_official_name(self):
+        probe, old = synthetic_member_probe({})
+        member = probe['localization']['ja']['members']['BoardGame']
+        member['bytes'] = 9000
+        member['headBase64'] = base64.b64encode(b'x'*8192).decode()
+        item = {'itemId':180000000,'nativeCategory':'BoardGame',
+                'localizationKey':'BoardGame.Example0_DisplayName',
+                'names':dict.fromkeys(recover.localize1262.LOCALES)}
+        evidence,counts = recover.join_complete_current_locbin_members(probe,{180000000:item},old)
+        self.assertIsNone(item['names']['ja'])
+        self.assertEqual(counts['currentEightLocaleNamedDefinitions'],0)
+        self.assertNotIn('BoardGame',evidence['ja']['members'])
+
+    def test_current_member_crc_mismatch_refused(self):
+        probe, old=synthetic_member_probe({})
+        probe['localization']['ja']['members']['BoardGame']['crc32']='badc0ded'
+        item = {'itemId':180000000,'nativeCategory':'BoardGame',
+                'localizationKey':'BoardGame.Example0_DisplayName',
+                'names':dict.fromkeys(recover.localize1262.LOCALES)}
+        with self.assertRaisesRegex(ValueError,'CURRENT_LOCBIN_FULL_MEMBER_CRC_MISMATCH'):
+            recover.join_complete_current_locbin_members(probe,{180000000:item},old)
+
+    def test_current_member_conflicting_original_name_refused(self):
+        probe, old=synthetic_member_probe({})
+        names=dict.fromkeys(recover.localize1262.LOCALES)
+        names['ja']='Different prior verified name'
+        item = {'itemId':180000000,'nativeCategory':'BoardGame',
+                'localizationKey':'BoardGame.Example0_DisplayName','names':names}
+        with self.assertRaisesRegex(ValueError,'CURRENT_PROBE_EXACT_NAME_CONFLICT'):
+            recover.join_complete_current_locbin_members(probe,{180000000:item},old)
+
+    def test_control_marker_is_not_user_display_name(self):
+        probe, old=synthetic_member_probe({'ja':'{Placeholder}DoNotShow'})
+        item = {'itemId':180000000,'nativeCategory':'BoardGame',
+                'localizationKey':'BoardGame.Example0_DisplayName',
+                'names':dict.fromkeys(recover.localize1262.LOCALES)}
+        _,counts=recover.join_complete_current_locbin_members(probe,{180000000:item},old)
+        self.assertIsNone(item['names']['ja'])
+        self.assertEqual(counts['currentEightLocaleNamedDefinitions'],0)
 
     def test_symlink_rejected_even_if_hash_matches(self):
         with tempfile.TemporaryDirectory() as tmp:

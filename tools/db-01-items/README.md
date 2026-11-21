@@ -223,9 +223,12 @@ with 13,202 four-class native items, the verified current-source union is
 **33,627 definition IDs**. The 132 previous complete-probe definitions are
 already included in the 20,425, not appended again.
 
-The tool merges the 66 fully SHA/CRC-verified names from the *current* v1.26.2
-complete ZIP-member probes, **not** v1.26.1 ZIPs. All eight whole localization
-archives differ between the versions, so most current names remain unresolved.
+The tool verifies **53 fully embedded, CRC-checked current v1.26.2 LocDB members**
+from the existing format probe, including 1.26.2 BoardGame/PhotoMode members.
+This provides **241 definitions with all eight official names**, and **506 with
+at least one official name**. No v1.26.1 ZIP locale texts are reused. All
+8 entire v1.26.2 localization ZIP archives differ from their older versions,
+so most current names remain unresolved.
 Full procedure, verification boundary and private CLI:
 [`tools/src-01-items/RECOVER-UNCHANGED-1262.md`](../src-01-items/RECOVER-UNCHANGED-1262.md).
 Use the resulting private `wand.src01.extended@1` folder as the **replacement**

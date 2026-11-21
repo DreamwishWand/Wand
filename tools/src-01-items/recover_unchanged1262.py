@@ -9,6 +9,10 @@ Outputs private native extended definitions and preserves only current verified
 names recovered from the complete 1.26.2 probe ZIP members.
 """
 import argparse
+import base64
+import binascii
+import copy
+import zlib
 import hashlib
 import json
 import re
@@ -108,6 +112,85 @@ def load_current_complete_probe(complete, target_probe, rows_by_id, expected_cat
     return localization
 
 
+def join_complete_current_locbin_members(probe, rows_by_id, prior_evidence):
+    """Promote ONLY full original current-game member bytes, never partial ZIP prefixes.
+
+    This improves upon the six tiny source categories already recovered by
+    probe_complete.py: some larger current itemlists now have small complete
+    locale members even though their source files were previously unavailable.
+    """
+    sample_size = probe.get('sampleBytesPerEntry')
+    require(type(sample_size) is int and 256 <= sample_size <= 65536,
+            'INVALID_CURRENT_LOCALE_PROBE_SAMPLE_SIZE')
+    evidence = copy.deepcopy(prior_evidence)
+    by_category = {}
+    for row in rows_by_id.values():
+        by_category.setdefault(row['nativeCategory'], []).append(row)
+    complete_members = 0
+    for locale, suffix in localize1262.LOCALES.items():
+        archive = probe.get('localization', {}).get(locale, {})
+        archive_file = f'LocDB_{suffix}.zip'
+        expected_source = f'ddv_Data/StreamingAssets/Localization/{archive_file}'
+        require(archive.get('source') == expected_source and
+                archive.get('sha256') == evidence[locale]['sha256'],
+                'CURRENT_ARCHIVE_SOURCE_CONFLICT')
+        members = archive.get('members', {})
+        require(isinstance(members, dict), 'INVALID_CURRENT_ARCHIVE_MEMBERS')
+        for category, definitions in by_category.items():
+            member = members.get(category)
+            if not isinstance(member, dict):
+                continue
+            size = member.get('bytes')
+            require(type(size) is int and 0 < size <= localize1262.MAX_LOC_FILE_BYTES,
+                    'INVALID_CURRENT_LOCBIN_MEMBER_LENGTH')
+            try:
+                member_data = base64.b64decode(member.get('headBase64', ''), validate=True)
+            except (ValueError, binascii.Error) as exc:
+                raise ValueError('DB01_RECOVER_INVALID_CURRENT_LOCBIN_BASE64') from exc
+            require(len(member_data) == min(size, sample_size),
+                    'INCONSISTENT_CURRENT_MEMBER_SAMPLE_LENGTH')
+            if len(member_data) != size:
+                continue  # Partial prefix: no official names or member SHA claim.
+            crc = f'{zlib.crc32(member_data) & 0xffffffff:08x}'
+            require(crc == member.get('crc32'), 'CURRENT_LOCBIN_FULL_MEMBER_CRC_MISMATCH')
+            member_sha = hashlib.sha256(member_data).hexdigest()
+            names_by_key = localize1262.decode_locbin(member_data)
+            previous_meta = evidence[locale].get('members', {}).get(category)
+            if previous_meta:
+                require(previous_meta.get('entrySha256') == member_sha and
+                        previous_meta.get('entry') == f'{category}.locbin',
+                        'PREVIOUS_CURRENT_MEMBER_EVIDENCE_CONFLICT')
+            evidence[locale]['members'][category] = {
+                'entry': f'{category}.locbin', 'entrySha256': member_sha,
+                'bytes': size, 'crc32': crc, 'entries': len(names_by_key),
+                'verification': 'full_current_member_bytes_and_zip_crc32_verified',
+            }
+            complete_members += 1
+            for row in definitions:
+                key = extend1262.category_localization_key(row, category)
+                if key not in names_by_key:
+                    continue
+                raw_name = localize1262.clean_display_name(names_by_key[key])
+                # The actual LocDB holds control sentinels. A source value
+                # is not necessarily an end-user-facing display name.
+                if not raw_name or NONDISPLAY.match(raw_name):
+                    continue
+                earlier = row['names'][locale]
+                require(earlier is None or earlier == raw_name,
+                        'CURRENT_PROBE_EXACT_NAME_CONFLICT')
+                row['names'][locale] = raw_name
+    counts = {locale: sum(bool(row['names'][locale]) for row in rows_by_id.values())
+              for locale in localize1262.LOCALES}
+    all_eight = sum(all(row['names'][locale] for locale in localize1262.LOCALES)
+                    for row in rows_by_id.values())
+    any_locale = sum(any(row['names'][locale] for locale in localize1262.LOCALES)
+                     for row in rows_by_id.values())
+    return evidence, {'fullCurrentLocaleMemberCount': complete_members,
+                      'currentExactNamesByLocale': counts,
+                      'currentEightLocaleNamedDefinitions': all_eight,
+                      'currentAnyLocaleNamedDefinitions': any_locale}
+
+
 def recover(baseline, target_probe, current_native, current_probe, output):
     baseline, target_probe, current_native, current_probe, output = [
         Path(x).resolve() for x in (baseline, target_probe, current_native, current_probe, output)]
@@ -190,6 +273,8 @@ def recover(baseline, target_probe, current_native, current_probe, output):
     require(len(complete_categories) == 7, 'CURRENT_PROBE_SOURCE_COVERAGE_CONFLICT')
     localization = load_current_complete_probe(current_probe, target_probe, rows_by_id,
                                                complete_categories)
+    localization, localized_summary = join_complete_current_locbin_members(
+        probe, rows_by_id, localization)
     definitions.sort(key=lambda row: row['itemId'])
     output.mkdir(parents=True, exist_ok=True)
     data_path = output / 'definitions.jsonl'
@@ -209,9 +294,10 @@ def recover(baseline, target_probe, current_native, current_probe, output):
             'sameFullBytesSha256Files': sorted(exact),
             'categoryFilesNotReusable': [CHANGED_SOURCE],
             'proof': 'full prior file SHA256 equals independent current-version game source probe SHA256',
-            'localizationReuse': 'NONE; only 1.26.2 complete current ZIP-member probes reused',
+            'localizationReuse': 'ONLY complete 1.26.2 original ZIP member bytes and CRC verified; no older ZIP translation reuse',
         },
-        'verificationScope': 'whole native 1.26.2 file SHA-256 for 38/39 itemlists; 8-locale complete current member evidence for six source categories',
+        'verificationScope': 'whole native 1.26.2 file SHA-256 for 38/39 itemlists; fully embedded and CRC-verified current LocDB members only',
+        'verifiedCurrentLocalization': localized_summary,
         'notClaims': ['all 39 itemlist source files recovered',
                       'Condition definitions from the newer game are verified',
                       'old-version ZIP archive equality', 'all definitions are collectible',
@@ -228,11 +314,12 @@ def recover(baseline, target_probe, current_native, current_probe, output):
         'currentObservedTotalDefinitionCount': len(definitions)+len(native_ids),
         'missingFullSourceCategories': [CHANGED_SOURCE.removesuffix('.json')],
         'byCategory': dict(sorted(Counter(row['nativeCategory'] for row in definitions).items())),
-        'verifiedLocaleNamesByLocale': {locale: sum(bool(r['names'][locale]) for r in definitions)
-                                       for locale in localize1262.LOCALES},
+        **localized_summary,
     })
     return {'extendedDefinitions': len(definitions), 'currentObservedTotal': len(definitions)+len(native_ids),
-            'matchedFullSourceFiles': len(exact), 'unresolved': changed}
+            'matchedFullSourceFiles': len(exact), 'unresolved': changed,
+            'fullyLocalizedEight': localized_summary['currentEightLocaleNamedDefinitions'],
+            'anyLocaleNamed': localized_summary['currentAnyLocaleNamedDefinitions']}
 
 
 def main():
