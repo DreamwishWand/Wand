@@ -24,6 +24,7 @@ CATEGORY_HASHES = {
 }
 NOBR = re.compile(r"</?nobr>", re.I)
 ZERO_WIDTH = re.compile("[\u00ad\u200b\u200c\u200d\ufeff]")
+NONDISPLAY_MARKER = re.compile(r"^\s*\{(?:Placeholder|LegacyPlaceholder|DoNotTranslate)\}", re.I)
 MAX_LOC_FILE_BYTES = 16 * 1024 * 1024
 MAX_ENTRIES = 200000
 
@@ -112,6 +113,11 @@ def decode_locbin(data):
 
 def clean_display_name(value):
     return ZERO_WIDTH.sub("", NOBR.sub("", value)).strip()
+
+def verified_display_name(value):
+    """A LocDB value may be a non-display sentinel, not an official name."""
+    display = clean_display_name(value)
+    return display if display and not NONDISPLAY_MARKER.match(display) else None
 
 
 def read_json(path):
@@ -237,7 +243,7 @@ def build_localized(game, source, out):
                 if raw is None:
                     missing_ids.append(item["itemId"])
                     continue
-                value = clean_display_name(raw)
+                value = verified_display_name(raw)
                 if not value:
                     missing_ids.append(item["itemId"])
                     continue

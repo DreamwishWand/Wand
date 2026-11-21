@@ -206,7 +206,7 @@ def build(game, probe_path, out, include_localization=True):
                 archive_evidence[locale]["members"][category] = evidence
                 for record in records:
                     key = category_localization_key(record, category)
-                    display = localize1262.clean_display_name(table[key]) if key in table else ""
+                    display = localize1262.verified_display_name(table[key]) if key in table else None
                     if display:
                         record["names"][locale] = display
                         names[locale]["matched"] += 1

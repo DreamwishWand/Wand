@@ -188,3 +188,13 @@ is unverified.
 
 Tests: `node --test src/lib/items/*.test.mjs` (including end-to-end DB-00 patch
 application and corrupted-JSONL SHA refusal).
+## Full LocDB sentinel protection
+
+The full original-ZIP decoders (`localize1262.py` and
+`extend1262.py`) now use `verified_display_name()`. Values beginning with
+`{Placeholder}`, `{LegacyPlaceholder}` or `{DoNotTranslate}`
+(case-insensitive, including after `<nobr>` cleanup) are **not** counted
+or emitted as official display names. The DB-01 compiler independently rejects
+these values even if supplied by a localized input claiming source provenance.
+The field stays unresolved; no historical/machine-translated substitute is
+silently inserted.

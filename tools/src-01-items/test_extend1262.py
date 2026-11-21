@@ -39,6 +39,11 @@ class TestExtendedDefinitions(unittest.TestCase):
         self.assertIsNone(rows[0]["category"])
         self.assertIsNone(rows[0]["names"]["ja"])
 
+    def test_extended_localized_names_skip_sentinel_values(self):
+        self.assertIsNone(extend1262.localize1262.verified_display_name('{DoNotTranslate}'))
+        self.assertIsNone(extend1262.localize1262.verified_display_name('{LegacyPlaceholder}'))
+        self.assertEqual(extend1262.localize1262.verified_display_name('Board Name'), 'Board Name')
+
     def test_category_key_is_stripped_only_for_exact_namespace(self):
         self.assertEqual(extend1262.category_localization_key(
             {"localizationKey": "BoardGame.Mickey!Mickey_DisplayName"}, "BoardGame"),

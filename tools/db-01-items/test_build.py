@@ -149,6 +149,25 @@ class TestDb01(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "UNTRUSTED_EXTENDED_ROW"):
                 module.build(native, old, out, ext)
 
+    def test_non_display_locale_marker_refused_even_with_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            native, old, out = make_fixture(Path(tmp))
+            rows = list(module.json_lines(native / 'items.jsonl'))
+            for row in rows:
+                row['localizationKey'] = row['rawNameField'] + '_DisplayName'
+            rows[0]['names']['ja'] = '{DoNotTranslate}not a display name'
+            module.save_jsonl(native / 'items-localized.jsonl', rows)
+            manifest = {'schema': 'wand.src01.localized-names@1', 'gameVersion': '1.26.2',
+                'platform': 'Steam', 'sourceItemSha256': module.digest(native / 'items.jsonl'),
+                'itemsSha256': module.digest(native / 'items-localized.jsonl'),
+                'localizedAtLeastOneCount': 1, 'localizedAllEightCount': 0,
+                'localizationEvidence': {'ja': {'archive': 'LocDB_ja.zip',
+                    'sha256': 'a'*64, 'categories': {'ActivityItem': {
+                        'entry': 'ActivityItem.locbin', 'entrySha256': 'b'*64}}}}}
+            write_json(native / 'localization-manifest.json', manifest)
+            with self.assertRaisesRegex(ValueError, 'LOCALIZATION_ROW_MISMATCH'):
+                module.build(native, old, out)
+
     def test_tampered_shard_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
             native, old, out = make_fixture(Path(tmp))
