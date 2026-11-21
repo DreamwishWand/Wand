@@ -47,6 +47,7 @@
   let selectedIds:number[]=[];
   let selectedItemId:number|null=null;
   let importInput:HTMLInputElement;
+  let localCatalogInput:HTMLInputElement;
   let gameImageMap:Record<string,string>={};
   let mobileInspector=false;
   let inspectorClose:HTMLButtonElement;
@@ -67,14 +68,14 @@
 
   function categoryLabel(lang:string,id:string):string {
     const special:Record<string,Record<string,string>>={
-      ja:{Memories:'思い出','Quest Puzzles':'クエストのパズル',Exhibition:'展示'},
-      en:{Memories:'Memories','Quest Puzzles':'Quest Puzzles',Exhibition:'Exhibition'},
-      fr:{Memories:'Souvenirs','Quest Puzzles':'Énigmes de quête',Exhibition:'Exposition'},
-      it:{Memories:'Ricordi','Quest Puzzles':'Enigmi delle missioni',Exhibition:'Esposizione'},
-      de:{Memories:'Erinnerungen','Quest Puzzles':'Quest-Rätsel',Exhibition:'Ausstellung'},
-      'es-ES':{Memories:'Recuerdos','Quest Puzzles':'Puzles de misiones',Exhibition:'Exposición'},
-      'zh-CN':{Memories:'回忆','Quest Puzzles':'任务谜题',Exhibition:'展览'},
-      'pt-BR':{Memories:'Memórias','Quest Puzzles':'Quebra-cabeças de missões',Exhibition:'Exposição'}
+      ja:{Memories:'思い出','Quest Puzzles':'クエストのパズル',Exhibition:'展示','Source Activity Items':'その他のアイテム（詳細分類未確認）'},
+      en:{Memories:'Memories','Quest Puzzles':'Quest Puzzles',Exhibition:'Exhibition','Source Activity Items':'Other items (unclassified)'},
+      fr:{Memories:'Souvenirs','Quest Puzzles':'Énigmes de quête',Exhibition:'Exposition','Source Activity Items':'Autres objets (non classés)'},
+      it:{Memories:'Ricordi','Quest Puzzles':'Enigmi delle missioni',Exhibition:'Esposizione','Source Activity Items':'Altri oggetti (non classificati)'},
+      de:{Memories:'Erinnerungen','Quest Puzzles':'Quest-Rätsel',Exhibition:'Ausstellung','Source Activity Items':'Andere Gegenstände (unklassifiziert)'},
+      'es-ES':{Memories:'Recuerdos','Quest Puzzles':'Puzles de misiones',Exhibition:'Exposición','Source Activity Items':'Otros objetos (sin clasificar)'},
+      'zh-CN':{Memories:'回忆','Quest Puzzles':'任务谜题',Exhibition:'展览','Source Activity Items':'其他物品（未分类）'},
+      'pt-BR':{Memories:'Memórias','Quest Puzzles':'Quebra-cabeças de missões',Exhibition:'Exposição','Source Activity Items':'Outros itens (sem classificação)'}
     };
     return special[lang]?.[id]??collectionFamilyLabel(lang,id)??id;
   }
@@ -202,6 +203,47 @@
     if(!window.confirm('現在の記録を削除します。先にバックアップを保存しましたか？'))return;
     void commit(()=>runtime!.workspace('delete',state.active));
   }
+  async function useOwnerLocalCatalog(event:Event):Promise<void> {
+    const input=event.currentTarget as HTMLInputElement;
+    const file=input.files?.[0];
+    if(!file||busy)return;
+    busy=true;
+    let loaded:CollectionRuntime|null=null;
+    try {
+      loaded=await CollectionRuntime.openOwnerLocalDb01(file);
+      runtime?.close();
+      runtime=loaded;
+      loaded=null;
+      loadError='';
+      storeError='';
+      clearScope();
+      infoMessage='Steam v1.26.2の検証済み11,492件へローカルで切り替えました。元のゲームデータは送信・保存していません。';
+    } catch(error) {
+      loaded?.close();
+      infoMessage='ローカルカタログを読み込めませんでした：'+(error instanceof Error?error.message:String(error));
+    } finally {
+      busy=false;
+      input.value='';
+    }
+  }
+  async function usePublicCatalog():Promise<void>{
+    if(busy)return;
+    busy=true;
+    let loaded:CollectionRuntime|null=null;
+    try {
+      loaded=await CollectionRuntime.open(base);
+      runtime?.close();
+      runtime=loaded;
+      loaded=null;
+      loadError='';
+      storeError='';
+      clearScope();
+      infoMessage='公開されている検証済みCollection参照データに戻しました。';
+    }catch(error){
+      loaded?.close();
+      infoMessage='公開カタログの読込に失敗しました：'+(error instanceof Error?error.message:String(error));
+    }finally{busy=false;}
+  }
   function downloadBackup():void{
     if(!runtime)return;
     const data=runtime.exportBackup();
@@ -279,9 +321,17 @@
           {#each languages as language}<option value={language.id}>{language.label}</option>{/each}
         </select>
       </label>
+      <button type="button" class="subtle-button" disabled={busy||loading}
+        on:click={()=>runtime?.isOwnerLocal?void usePublicCatalog():localCatalogInput.click()}>
+        {runtime?.isOwnerLocal?'公開データに戻す':'v1.26.2 データをローカルで開く'}
+      </button>
+      <input bind:this={localCatalogInput} class="visually-hidden" type="file"
+        accept=".json,application/json" aria-label="Steam v1.26.2のオーナーローカルカタログ"
+        on:change={useOwnerLocalCatalog}/>
       <span class="source-pill">
         {#if runtime}
           {runtime.metadata.platform}{#if runtime.metadata.version} · v{runtime.metadata.version}{/if}
+          {#if runtime.isOwnerLocal} · ローカル{/if}
         {:else}
           データを確認中
         {/if}
@@ -289,6 +339,13 @@
     </div>
   </header>
 
+  {#if runtime?.isOwnerLocal}
+    <div class="info-banner" role="status">
+      Steam v1.26.2の正式名称が8言語で検証済みの11,492 / 13,202件をローカルで表示中。
+      名称未確認の1,710件は含みません。詳細なカテゴリ・ワールド・ユニバースは未検証のため原本分類のみ表示します。
+      このカタログはサーバーへ送信・保存されません。
+    </div>
+  {/if}
   {#if storeError}
     <div class="error-banner" role="alert">
       {#if storeError==='COLLECTION_STORAGE_CONFLICT'}
