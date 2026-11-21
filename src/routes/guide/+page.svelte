@@ -45,7 +45,8 @@
     ? new Set(searchIndex.records.map((r: any) => r.detail.file)).size : 0;
 
   function resetPage() { page = 0; }
-  function characterLabel(id: string) {
+  function characterLabel(value: unknown): string {
+    const id = String(value ?? '');
     const names = characterNames[id];
     const sourceName = names?.[locale] || names?.en;
     return sourceName ? `${sourceName} · ${id}` : id;
@@ -409,8 +410,6 @@
   .guide-steps { margin:0; padding-left:21px; color:#d6c5e4; }
   .guide-steps li { padding:8px 0 18px; line-height:1.75; font-size:12px; }
   .guide-steps p { color:#bcaecc; white-space:pre-wrap; }
-  .guide-objectives { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
-  .guide-objectives span { color:#dfcff1; border:1px solid #b08bdb47; border-radius:8px; background:#382948; padding:4px 8px; font-size:11px; }
   .guide-step-description { white-space:pre-wrap; color:#eadbf4!important; }
   .guide-story { margin:12px 0; background:#241b31; padding:9px 11px; border-radius:9px; }
   .guide-story summary, .guide-candidates summary { cursor:pointer; color:#cba5e8; font-size:11px; }
