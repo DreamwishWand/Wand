@@ -64,6 +64,48 @@ The package is explicitly partial unless verified complete source coverage
 has been established. A successful command is not proof of gameplay collision
 or placeability and does not certify the machine-code decoder.
 
+## Original IL2CPP v31 native method pointer resolution (no dump.cs needed)
+
+The **preferred** native evidence path now derives methods from the installed
+Steam game's own `ddv_Data/il2cpp_data/Metadata/global-metadata.dat` and
+`GameAssembly.dll`, rather than trusting RVA comments from an independently
+generated `dump.cs`.
+
+The optional standalone audit is:
+
+```bash
+python tools/db-04-world/native_method_pointers.py \
+  --dll "/private/Steam/GameAssembly.dll" \
+  --metadata "/private/Steam/ddv_Data/il2cpp_data/Metadata/global-metadata.dat"
+```
+
+For IL2CPP metadata v31, the resolver identifies the exact
+`Definitions.Grid.GridData` type and `Meta.Definitions.dll` source image,
+then retrieves the method token/RID and reads its actual native pointer from
+the corresponding PE `Il2CppCodeGenModule.methodPointers[RID-1]`. Each result
+must point into executable original binary bytes and equal a function start
+in the original PE64 `.pdata` table. The pointer table and both original
+sources are SHA-256 identified.
+
+**Steam v1.26.1 finding:** the version-labeled `dump.cs` RVAs for four key
+GridData methods lag the native method-pointer table by 768 bytes
+(`0x300`). This is a **source discrepancy**, not a general offset rule.
+No `+0x300` compensation exists in the code. The resolver always reads the
+actual pointer indexed by the original metadata method token.
+
+The default `run.ps1` automatically uses this original metadata path,
+captures bounded PE byte windows and (when optional Capstone 5.0.9 is
+installed) disassembles them, **without requiring `dump.cs`**. If original
+metadata is unavailable, the existing legacy matching-dump path retains its
+strict RVA/unwind preflight. Unsupported future metadata formats fail closed
+for native-code analysis; world-data source files are not reinterpreted
+using guessed token layouts.
+
+These checks establish a source-correlated **method pointer and entry RVA**.
+They do not on their own prove the grid indexing, transform, occupancy or
+placement permission algorithms, which require examining the corresponding
+native function bodies independently.
+
 ## Mandatory native RVA corroboration against PE64 unwind starts
 
 **A matching Steam version string does not prove that `dump.cs` RVAs
