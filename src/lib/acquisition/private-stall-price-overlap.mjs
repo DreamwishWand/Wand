@@ -8,6 +8,7 @@
 import {loadPrivateSrc02BrowserBundle,CURRENT_STEAM_1262_CONDITION_SHA256}
   from './private-browser-bundle.mjs';
 import {loadPrivateShopPriceView} from './private-shop-prices.mjs';
+import {compareConfiguredPurchaseCurrencies} from './source-price-currency.mjs';
 
 export const DB02_STALL_PRICE_OVERLAP_CONTRACT='wand.db02.private-stall-price-overlap@1';
 const ACQ_SHA='ec1efd589dd5390f11f5a99411bcf3f1c6bc34309ddfa68e51589c078601f31c';
@@ -44,6 +45,8 @@ export async function loadPrivateStallPriceOverlap({
   const stallsById=new Map(),candidateIds=new Set();
   let pricedStalls=0,unpricedStalls=0,partiallyPricedStalls=0;
   let candidateCount=0,pricedCandidateCount=0,unpricedCandidateCount=0;
+  let oneDatabaseStalls=0,twoDatabaseStalls=0,threeDatabaseStalls=0;
+  let configuredMatchingPurchaseCostOccurrences=0,otherCurrencyPurchaseCostOccurrences=0;
   const relations=pricing.listSourceStallShopRelations();
   expect(relations.length===65,'STALL_LINK_CENSUS');
 
@@ -61,6 +64,7 @@ export async function loadPrivateStallPriceOverlap({
       relation.offerItemMappingVerified===false&&!stallsById.has(stall.stallId),
       'STALL_SHOP_CONFIG_MISMATCH');
 
+    const shopCurrencies=freeze(originalShop.shop.slots.map(row=>row.currencyId));
     const candidateMap=new Map();
     const slots=freeze(stall.slots.map((slot,index)=>{
       expect(slot.slotIndex===index&&Array.isArray(slot.candidates),
@@ -73,7 +77,14 @@ export async function loadPrivateStallPriceOverlap({
           const definitions=pricing.getSourceItemPriceDefinitions(itemId);
           // This release contains one database row per Item ID at most.
           expect(definitions.length<=1,'MULTIPLE_PRICE_DATABASE_CONTEXTS');
+          const currencies=compareConfiguredPurchaseCurrencies(definitions,shopCurrencies);
+          expect(definitions.length===0||currencies.matchCount===1,
+            'SOURCE_CURRENCY_MATCH_NOT_UNIQUE');
           candidateMap.set(itemId,freeze({itemId,
+            shopConfiguredCurrencyIds:currencies.shopConfiguredCurrencyIds,
+            sourceConfiguredMatchingPurchaseCosts:currencies.sourceConfiguredMatchingPurchaseCosts,
+            sourceConfiguredOtherCurrencyPurchaseCosts:currencies.sourceConfiguredOtherCurrencyPurchaseCosts,
+            sourcePriceNeverEffectiveShopPrice:true,
             priceDatabaseKeys:freeze(definitions.map(row=>row.databaseKey)),
             sourcePriceDefinitionPresent:definitions.length>0,
             status:definitions.length>0?'source_configured_price_candidate':
@@ -94,6 +105,15 @@ export async function loadPrivateStallPriceOverlap({
     const missing=candidates.length-priced;
     expect(candidates.length===stall.candidateItemIds.length,
       'STALL_CANDIDATE_SET_MISMATCH');
+    const databases=freeze([...new Set(candidates.flatMap(c=>c.priceDatabaseKeys))].sort());
+    if(databases.length===1)oneDatabaseStalls++;
+    else if(databases.length===2)twoDatabaseStalls++;
+    else if(databases.length===3)threeDatabaseStalls++;
+    else expect(databases.length===0,'UNEXPECTED_DATABASE_COUNT');
+    configuredMatchingPurchaseCostOccurrences+=candidates.reduce((n,c)=>
+      n+c.sourceConfiguredMatchingPurchaseCosts.length,0);
+    otherCurrencyPurchaseCostOccurrences+=candidates.reduce((n,c)=>
+      n+c.sourceConfiguredOtherCurrencyPurchaseCosts.length,0);
     const classification=priced===0?'no_enumerated_price_overlap':
       missing===0?'all_enumerated_candidates_have_price_definitions':
         'partial_enumerated_price_overlap';
@@ -105,7 +125,8 @@ export async function loadPrivateStallPriceOverlap({
     unpricedCandidateCount+=missing;
     stallsById.set(relation.stallId,freeze({
       stallId:relation.stallId,shopKey:relation.shopKey,
-      slotCount:stall.slots.length,
+      slotCount:stall.slots.length,shopConfiguredCurrencyIds:freeze([...new Set(shopCurrencies)].sort((a,b)=>a-b)),
+      candidatePriceDatabaseKeys:databases,
       candidates,slots,
       enumeratedCandidateCount:candidates.length,
       candidatesWithStaticPrices:priced,
@@ -124,11 +145,15 @@ export async function loadPrivateStallPriceOverlap({
     enumeratedCandidateOccurrences:candidateCount,
     candidateOccurrencesWithStaticPrices:pricedCandidateCount,
     candidateOccurrencesWithoutStaticPrices:unpricedCandidateCount,
-    distinctEnumeratedCandidateItems:candidateIds.size
+    distinctEnumeratedCandidateItems:candidateIds.size,
+    oneDatabaseStalls,twoDatabaseStalls,threeDatabaseStalls,
+    configuredMatchingPurchaseCostOccurrences,otherCurrencyPurchaseCostOccurrences
   });
   expect(pricedStalls===50&&unpricedStalls===15&&partiallyPricedStalls===0&&
     candidateCount===745&&pricedCandidateCount===683&&
-    unpricedCandidateCount===62&&candidateIds.size===606,
+    unpricedCandidateCount===62&&candidateIds.size===606&&
+    oneDatabaseStalls===29&&twoDatabaseStalls===18&&threeDatabaseStalls===3&&
+    configuredMatchingPurchaseCostOccurrences===683&&otherCurrencyPurchaseCostOccurrences===162,
     'SOURCE_OVERLAP_CENSUS');
 
   const validItem=id=>{expect(positive(id),'INVALID_ITEM_ID');return id;};
