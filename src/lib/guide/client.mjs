@@ -9,6 +9,22 @@ const NATIVE_ID = /^[1-9][0-9]{0,15}$/;
 const SHARD = /^quest-shards\/part-(\d{2})\.json$/;
 const SOURCE_FILE = 'ddv_Data/StreamingAssets/itemlist/Mission.json';
 
+/** Private original search-index bytes are hashed at import and tracked out-of-band.
+ * Callers cannot provide this provenance through a JSON field or UI property.
+ */
+const GUIDE_SEARCH_FINGERPRINTS = new WeakMap();
+const VERIFIED_1262_BRIDGE = Object.freeze({
+  baselineVersion:'1.26.1',
+  targetVersion:'1.26.2',
+  platform:'Steam',
+  originalSearchSha256:'26c29bc0df15161602d75578c9842c5b7cca56caee0d6dd1031180949cceb30d',
+  missionSourceSha256:'f13958b52234f4cda92f0dd0bfff50be8a7f6625c8478785e2a077a5c7933d24',
+  searchableMissions:733, questGroups:289, unclassifiedRecords:8,
+  localePayloadsEqual:8,
+  changedConditionRecords:1, addedConditionRecords:1,
+  conditionDefinitionsEquivalent:false
+});
+
 function assert(ok, message) { if (!ok) throw new TypeError('Guide: ' + message); }
 function clean(value) { return String(value ?? '').normalize('NFKC').toLowerCase().trim(); }
 function isObj(value) { return value !== null && typeof value === 'object' && !Array.isArray(value); }
@@ -111,23 +127,59 @@ export function canonicalQuestRecord(value) {
   throw new TypeError('Guide: unsupported source record value');
 }
 
-async function digestText(value) {
+async function digestBytes(bytes) {
   assert(!!globalThis.crypto?.subtle, 'SHA-256 unavailable in this browser');
-  const bytes = new TextEncoder().encode(value);
   const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
   return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function jsonFile(file, maxSize) {
+async function digestText(value) {
+  return digestBytes(new TextEncoder().encode(value));
+}
+
+/** Return a partial, exact-source compatibility claim *only* for the authentic
+ * original private 1.26.1 search-index bytes. Do not relabel the dataset to 1.26.2.
+ * The verified target Condition definitions differ and remain unevaluated.
+ */
+export function guideVerifiedSourceBridge(index) {
+  validateGuideSearch(index);
+  const pin = VERIFIED_1262_BRIDGE;
+  if (GUIDE_SEARCH_FINGERPRINTS.get(index) !== pin.originalSearchSha256 ||
+      index.target.platform !== pin.platform ||
+      index.target.gameVersion !== pin.baselineVersion ||
+      index.source.sha256 !== pin.missionSourceSha256 ||
+      index.counts.missions !== pin.searchableMissions ||
+      index.counts.excludedQuestGroups !== pin.questGroups ||
+      index.counts.excludedUnclassified !== pin.unclassifiedRecords ||
+      index.counts.sourceNativeRecords !== 1030) return null;
+  return {
+    baselineVersion:pin.baselineVersion,
+    targetVersion:pin.targetVersion,
+    compatibleFamilies:['Mission.json','LocDB (8 payloads)'],
+    localePayloadsEqual:pin.localePayloadsEqual,
+    changedConditionRecords:pin.changedConditionRecords,
+    addedConditionRecords:pin.addedConditionRecords,
+    conditionDefinitionsEquivalent:false,
+    originalSearchIndexSha256:pin.originalSearchSha256
+  };
+}
+
+
+
+async function jsonFile(file, maxSize, withSourceDigest = false) {
   assert(file && typeof file.arrayBuffer === 'function' && Number.isSafeInteger(file.size) &&
     file.size > 0 && file.size <= maxSize, 'file missing or too large');
   const bytes = await file.arrayBuffer();
   assert(bytes.byteLength <= maxSize && bytes.byteLength === file.size, 'file byte count mismatch');
-  return JSON.parse(new TextDecoder('utf-8', {fatal:true}).decode(bytes));
+  const parsed = JSON.parse(new TextDecoder('utf-8', {fatal:true}).decode(bytes));
+  if (withSourceDigest && isObj(parsed)) {
+    GUIDE_SEARCH_FINGERPRINTS.set(parsed, await digestBytes(bytes));
+  }
+  return parsed;
 }
 
 export async function importGuideSearch(file) {
-  return validateGuideSearch(await jsonFile(file, MAX_SEARCH_BYTES));
+  return validateGuideSearch(await jsonFile(file, MAX_SEARCH_BYTES, true));
 }
 
 /** Optional same-target character labels from native extracted character definitions.
