@@ -984,6 +984,54 @@ mod tests {
         assert!(rejected.rows.is_empty());
     }
     #[test]
+    fn complete_owner_local_release_keeps_unnamed_ids_without_inventing_names() {
+        let verified=json!({
+            "id":"100001","nameStatus":"verified",
+            "names":{"en":"Sample","fr":"Exemple","it":"Esempio","de":"Beispiel",
+                "es-ES":"Ejemplo","ja":"サンプル","zh-CN":"样本","pt-BR":"Exemplo BR"},
+            "category":"Furniture","sourceRefs":["private-db01-v1262"]
+        });
+        let unnamed=json!({
+            "id":"100002","nameStatus":"unverified","names":{},
+            "category":"Furniture","sourceRefs":["private-db01-v1262"]
+        });
+        let payload=json!({"schema":DB00_SNAPSHOT_SCHEMA,"offset":0,"count":2,
+            "items":[verified,unnamed]}).to_string();
+        let mut index=json!({
+            "schema":DB00_RELEASE_SCHEMA,"id":"db01-steam-1-26-2-owner-local-complete",
+            "count":2,"target":{"platform":"Steam","gameVersion":"1.26.2","buildId":null},
+            "sources":[{"id":"private-db01-v1262","visibility":"private"}],
+            "releases":[],"shards":[{"file":"items-000.json","offset":0,
+                "count":2,"bytes":payload.len(),"sha256":"a".repeat(64)}]
+        });
+        let mut public=CollectionEngine::default();
+        assert!(public.load_db00_index_impl(&index.to_string()).is_err());
+        let mut engine=CollectionEngine::default();
+        engine.load_owner_local_db00_index_impl(&index.to_string()).unwrap();
+        engine.append_db00_shard_impl(&payload).unwrap();
+        engine.finish_db00_impl().unwrap();
+        let all:Value=serde_json::from_str(&engine.query_impl(
+            r#"{"locale":"ja","limit":10}"#).unwrap()).unwrap();
+        assert_eq!(all["total"],2);
+        assert_eq!(all["items"][0]["label"],"サンプル");
+        assert_eq!(all["items"][0]["nameVerified"],true);
+        assert_eq!(all["items"][1]["label"],"名称未確認");
+        assert_eq!(all["items"][1]["nameVerified"],false);
+        let unnamed_filter:Value=serde_json::from_str(&engine.query_impl(
+            r#"{"locale":"ja","nameStatus":"unverified","limit":10}"#).unwrap()).unwrap();
+        assert_eq!(unnamed_filter["total"],1);
+        assert_eq!(unnamed_filter["items"][0]["itemId"],100002);
+        let source_id:Value=serde_json::from_str(&engine.query_impl(
+            r#"{"locale":"en","search":"100002","limit":10}"#).unwrap()).unwrap();
+        assert_eq!(source_id["total"],1);
+        // The old 11,492-row local bundle remains strict: no unnamed records.
+        index["id"]=json!("db01-steam-1-26-2-owner-local-verified");
+        let mut previous=CollectionEngine::default();
+        previous.load_owner_local_db00_index_impl(&index.to_string()).unwrap();
+        assert_eq!(previous.append_db00_shard_impl(&payload),
+            Err("COLLECTION_LOCAL_DB01_NAMES_REQUIRED".into()));
+    }
+    #[test]
     fn canonical_categories_preserve_all_29_entries() {
         assert_eq!(CATEGORY_ORDER.len(),29);
         assert_eq!(CATEGORY_ORDER.iter().collect::<HashSet<_>>().len(),29);
