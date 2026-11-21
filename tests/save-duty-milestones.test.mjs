@@ -183,3 +183,17 @@ test('tampered, incomplete or invented original source projections fail closed',
      /DB05_DUTY_MILESTONE_PROJECTION_INVALID|DB05_DB03_NATIVE_DUTIES_REQUIRED/);
  }
 });
+
+
+test('after validation caller mutation of private projection cannot change audit thresholds',()=>{
+  const {duties,projection}=input();
+  const bridge=createSaveDutyMilestoneBridge(duties,projection);
+  const a=bridge.auditSave(save());
+  projection.records[0].milestones[0].milestone=10000;
+  projection.records[0].milestones[1].milestone=10001;
+  projection.records[0].milestones[0].rewardItem=900000001;
+  projection.records[0].evidenceState='opaque_or_mixed_field13';
+  duties.records[0].id='private-invalid-id';
+  const b=bridge.auditSave(save());
+  assert.deepEqual(b,a);
+});
