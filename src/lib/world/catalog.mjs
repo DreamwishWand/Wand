@@ -117,6 +117,96 @@ export function getNativeFootprint(catalog, itemId) {
   };
 }
 
+// SOURCE: Steam v1.26.1 original GameAssembly + global-metadata.dat v31,
+// Definitions.Grid.GridArea.get_Item(int,int), token 0x0600343F,
+// RVA 0x3923370. The compiled function indexes area[x * SizeY + y].
+// This is a base/unrotated GridArea layer lookup; it is NOT an occupancy,
+// grid-object anchor, rotation transform, world positioning or edit validator.
+export function getNativeFootprintLayerAt(catalog, itemId, x, y) {
+  const footprint = catalog.objects.get(idText(itemId))?.footprint;
+  if (!footprint) return null;
+  if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y) ||
+      x < 0 || y < 0 || x >= footprint.sizeX || y >= footprint.sizeY) {
+    throw new TypeError('Invalid original GridArea base layer position');
+  }
+  const originalFlatIndex = x * footprint.sizeY + y;
+  const nativeValue = footprint.layerValues[originalFlatIndex];
+  return {
+    itemId, x, y, originalFlatIndex, nativeValue,
+    ...describeNativeLayerMask(nativeValue),
+    positionBasis: 'original_unrotated_gridarea_local',
+    sourceGetterIndexFormula: 'x*sizeY+y',
+    nativeGetterIndexVerified: true,
+    rotatedCellMappingVerified: false,
+    anchorModelVerified: false,
+    occupancyPredicateVerified: false,
+    placementLegalityVerified: false,
+  };
+}
+
+/** A bounded Y-major display window of source-indexed UNROTATED layer masks. */
+export function getNativeFootprintLayerWindow(catalog, itemId, rect) {
+  const footprint = catalog.objects.get(idText(itemId))?.footprint;
+  if (!footprint) return null;
+  if (!isRecord(rect)) throw new TypeError('Missing original GridArea viewport');
+  const { x, y, width, height } = rect;
+  if (![x, y, width, height].every(Number.isSafeInteger) ||
+      x < 0 || y < 0 || width < 1 || height < 1 ||
+      width > 256 || height > 256 ||
+      x + width > footprint.sizeX || y + height > footprint.sizeY) {
+    throw new TypeError('Invalid original GridArea layer window');
+  }
+  const rows = [];
+  for (let yy = y; yy < y + height; yy++) {
+    const values = [];
+    for (let xx = x; xx < x + width; xx++) {
+      values.push(footprint.layerValues[xx * footprint.sizeY + yy]);
+    }
+    rows.push(values);
+  }
+  return {
+    itemId, status: 'source_correlated_unrotated_gridarea_layer_window',
+    x, y, width, height, rows,
+    sourceGetterIndexFormula: 'x*sizeY+y',
+    nativeGetterIndexVerified: true,
+    rotatedCellMappingVerified: false,
+    anchorModelVerified: false,
+    occupancyPredicateVerified: false,
+    placementLegalityVerified: false,
+  };
+}
+
+/**
+ * Original GridArea.GetHorizontalSizeForOrientation / GetVerticalSizeForOrientation
+ * cardinal branches. These report *unscaled base dimensions*, NOT transformed
+ * layer coordinates or an object's tessellated world footprint.
+ */
+export function getNativeFootprintCardinalDimensions(catalog, itemId, orientationCode) {
+  const footprint = catalog.objects.get(idText(itemId))?.footprint;
+  if (!footprint) return null;
+  if (!Number.isSafeInteger(orientationCode) || orientationCode < 0 || orientationCode > 15) {
+    throw new TypeError('Invalid native GridOrientation value');
+  }
+  if (![0, 4, 8, 12].includes(orientationCode)) {
+    return {
+      status: 'noncardinal_gridarea_dimensions_not_derived', itemId,
+      orientationCode, nativeCardinalSizeVerified: false,
+      rotatedCellMappingVerified: false, placementLegalityVerified: false,
+    };
+  }
+  const swap = orientationCode === 4 || orientationCode === 12;
+  return {
+    status: 'source_correlated_cardinal_gridarea_dimensions',
+    itemId, orientationCode,
+    sizeX: swap ? footprint.sizeY : footprint.sizeX,
+    sizeY: swap ? footprint.sizeX : footprint.sizeY,
+    nativeCardinalSizeVerified: true,
+    tessellationScalingApplied: false,
+    rotatedCellMappingVerified: false, anchorModelVerified: false,
+    occupancyPredicateVerified: false, placementLegalityVerified: false,
+  };
+}
+
 // Explicit "false" is a valid native restriction; missing flags are NOT permission.
 export function checkNativeEditRestriction(catalog, itemId, action) {
   const allowed = new Set(['canMove', 'canRotate', 'canBeRemoved', 'canBeSelected', 'canSwitchGrid']);

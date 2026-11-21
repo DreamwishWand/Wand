@@ -9,7 +9,9 @@ from pathlib import Path
 
 from audit_footprint_candidates import audit_footprint_candidates
 from footprint_hypotheses import (
-    candidate_layer_cells, projection_hypotheses, validate_footprint)
+    candidate_layer_cells, projection_hypotheses, validate_footprint,
+    native_gridarea_layer_at, native_gridarea_layer_window,
+    native_gridarea_cardinal_dimensions)
 from audit_layout_terrain import audit_snapshot
 from native_pe_evidence import (
     capture_native_pe, file_offset_for_rva, pe64_sections,
@@ -257,6 +259,48 @@ class NativeWireTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "index missing"):
             count_packed_palette_indices(
                 2, 2, [0, 1024, 2048], bytes((0xff,)))
+
+    def test_original_gridarea_layer_index_is_x_major_and_not_occupancy(self):
+        source = [1, 2, 4, 8, 16, 32]
+        self.assertEqual(
+            native_gridarea_layer_at(3, 2, source, 0, 1), 2)
+        self.assertEqual(
+            native_gridarea_layer_at(3, 2, source, 1, 0), 4)
+        self.assertEqual(
+            native_gridarea_layer_at(3, 2, source, 2, 1), 32)
+        self.assertEqual(native_gridarea_layer_window(
+            3, 2, source, 0, 0, 3, 2),
+            [[1, 4, 16], [2, 8, 32]])
+        self.assertEqual(native_gridarea_layer_window(
+            3, 2, source, 1, 1, 2, 1), [[8, 32]])
+        with self.assertRaisesRegex(ValueError, "out of bounds"):
+            native_gridarea_layer_at(3, 2, source, 3, 0)
+        with self.assertRaisesRegex(ValueError, "out of bounds"):
+            native_gridarea_layer_at(3, 2, source, False, 0)
+        with self.assertRaisesRegex(ValueError, "viewport"):
+            native_gridarea_layer_window(3, 2, source, 2, 0, 2, 1)
+
+    def test_source_cardinal_gridarea_dimensions_are_not_transforms(self):
+        source = [1, 2, 4, 8, 16, 32]
+        for orientation, dims in (
+                (0, (3, 2)), (4, (2, 3)),
+                (8, (3, 2)), (12, (2, 3))):
+            actual = native_gridarea_cardinal_dimensions(
+                3, 2, source, orientation)
+            self.assertEqual((actual["sizeX"], actual["sizeY"]), dims)
+            self.assertTrue(actual["nativeCardinalSizeVerified"])
+            self.assertFalse(actual["rotatedCellMappingVerified"])
+            self.assertFalse(actual["anchorModelVerified"])
+            self.assertFalse(actual["occupancyPredicateVerified"])
+            self.assertFalse(actual["placementLegalityVerified"])
+        for orientation in (1, 2, 3, 5, 7, 9, 10, 11, 13, 14, 15):
+            actual = native_gridarea_cardinal_dimensions(
+                3, 2, source, orientation)
+            self.assertEqual(actual["status"],
+                             "noncardinal_gridarea_dimensions_not_derived")
+            self.assertNotIn("sizeX", actual)
+        with self.assertRaisesRegex(ValueError, "GridOrientation"):
+            native_gridarea_cardinal_dimensions(3, 2, source, 16)
 
     def test_cardinal_projection_geometry_is_explicitly_a_hypothesis(self):
         values = [1, 0, 4, 0, 8, 16]
