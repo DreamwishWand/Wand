@@ -210,3 +210,48 @@ test('one invalid requested bucket rejects entire batch, without partial result'
   const db=createDb01CatalogClient(f.manifest,f.load);
   await assert.rejects(db.getItems([262,5]),/WRONG_ID_BUCKET/);
 });
+
+
+test('private shard client freezes an independent caller-owned manifest snapshot',async()=>{
+  const f=fixture(false);
+  const db=createDb01CatalogClient(f.manifest,f.load);
+  // Simulate UI code overwriting the original object after validation,
+  // before the first asynchronous private file read.
+  f.manifest.files['id/05.json'].sha256=sha('incorrect digest');
+  f.manifest.files['id/05.json'].bytes=3;
+  f.manifest.files['category/ActivityItem.json']={sha256:sha('wrong'),bytes:3,count:1};
+  f.manifest.categories[0]='Tampered';
+  f.manifest.locales[0]='xx';
+  f.manifest.definitions=999;
+  f.manifest.gameVersion='9.9.9';
+  assert.equal(db.source.definitions,2);
+  assert.equal(db.source.gameVersion,'1.26.2');
+  assert.equal((await db.getItem(5))?.itemId,5);
+  assert.equal((await db.getCategory('ActivityItem'))[0].itemId,5);
+  assert.equal((await db.getName(5,'en'))?.value,'Royal Cup');
+});
+test('manifest catches inconsistent ID, category and native item totals before private reads',()=>{
+  const broken=(fn,code)=>{
+    const f=fixture();
+    fn(f.manifest);
+    assert.throws(()=>createDb01CatalogClient(f.manifest,f.load),new RegExp(code));
+    assert.deepEqual(f.calls,[]);
+  };
+  broken(m=>{m.files['id/05.json'].count=0;},'SHARD_LEDGER_TOTAL_MISMATCH');
+  broken(m=>{m.files['category/Character.json'].count=0;},'SHARD_LEDGER_TOTAL_MISMATCH');
+  broken(m=>{m.currentNativeItemDefinitions=2;},'SHARD_LEDGER_TOTAL_MISMATCH');
+  broken(m=>{m.files['locale/en.json'].count=3;},'LOCALE_LEDGER_OVERFLOW');
+  broken(m=>{m.files['historical/06.json'].count=17;},'HISTORY_LEDGER_OVERFLOW');
+  broken(m=>{m.fullCorpusParsed=true;},'INCOMPLETE_CORPUS_LEDGER');
+  broken(m=>{m.files['id/05.json'].count=Number.MAX_SAFE_INTEGER+1;},'INVALID_ASSET_METADATA');
+});
+test('manifest resists an in-flight loader rewriting source verification metadata',async()=>{
+  const f=fixture(false);
+  const db=createDb01CatalogClient(f.manifest,async path=>{
+    f.manifest.files[path].sha256=sha('changed during file access');
+    f.manifest.files[path].bytes=1;
+    return f.load(path);
+  });
+  assert.equal((await db.getItem(5))?.itemId,5);
+  assert.equal(f.calls.length,1);
+});
