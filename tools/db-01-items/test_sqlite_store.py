@@ -25,7 +25,7 @@ def sample():
         status={loc:'unresolved' for loc in store.LOCALES}
         if i == 1: names['en']='Synthetic Apple';status['en']='exact_locdb_join'
         out.append({'itemId':i,'nativeCategory':cat,'catalogDomain':domain,
-                    'localizationKey':cat+'.Test', 'source':{'file':f'ddv_Data/StreamingAssets/itemlist/{cat}.json',
+                    'localizationKey':cat+'.Test', 'nativeNameField':cat+'!Synthetic'+str(i), 'source':{'file':f'ddv_Data/StreamingAssets/itemlist/{cat}.json',
                     'platform':'Steam','gameVersion':'1.26.2','sha256':sha(cat.encode())},
                     'names':names,'verification':{'currentVersionObserved':True,
                     'itemId':'native_frame_verified','nativeCategory':'native_file_verified',
@@ -84,6 +84,9 @@ class SqliteStoreTest(unittest.TestCase):
         with sqlite3.connect(target) as c:
             self.assertEqual(c.execute('PRAGMA integrity_check').fetchone()[0],'ok')
             self.assertEqual(c.execute('SELECT count(*) FROM exact_name').fetchone()[0],1)
+            self.assertEqual(c.execute('SELECT native_key FROM definition WHERE item_id=1').fetchone()[0],'ActivityItem!Synthetic1')
+            self.assertEqual(c.execute('SELECT item_id FROM definition WHERE native_category=? AND native_key=?',('Character','Character!Synthetic2')).fetchone()[0],2)
+            self.assertEqual(c.execute('PRAGMA user_version').fetchone()[0],2)
             self.assertEqual(c.execute('SELECT count(*) FROM historical_name_candidate').fetchone()[0],8)
             self.assertEqual(c.execute('SELECT publication_authorized FROM catalog').fetchone()[0],0)
             self.assertIsNone(c.execute("SELECT value FROM exact_name WHERE item_id=2 AND locale='en'").fetchone())
@@ -166,6 +169,22 @@ class SqliteStoreTest(unittest.TestCase):
         with sqlite3.connect(self.root/'future.sqlite') as c:
             self.assertEqual(c.execute('SELECT native_source_manifest_sha256 FROM catalog').fetchone()[0],m['inputs']['nativeManifest'])
             self.assertEqual(c.execute('SELECT full_corpus_parsed FROM catalog').fetchone()[0],0)
+
+    def test_missing_and_duplicate_original_native_keys_are_rejected(self):
+        rowset=sample()
+        rowset[0].pop('nativeNameField')
+        root=self.root/'missing';root.mkdir()
+        source,_=fixture(root,rows=rowset)
+        with self.assertRaisesRegex(ValueError,'INVALID_NATIVE_KEY'):
+            store.build(source,root/'private.sqlite')
+        root=self.root/'duplicate';root.mkdir()
+        rowset=sample()
+        duplicate=json.loads(json.dumps(rowset[0]))
+        duplicate['itemId']=3
+        rowset.append(duplicate)
+        source,_=fixture(root,rows=rowset)
+        with self.assertRaisesRegex(ValueError,'DUPLICATE_NATIVE_KEY'):
+            store.build(source,root/'private.sqlite')
 
     def test_reject_game_classification_and_source_hash_forgery(self):
         rows=sample();rows[0]['catalogDomain']='definition_unclassified'

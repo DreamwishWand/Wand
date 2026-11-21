@@ -16,8 +16,8 @@ import tempfile
 from collections import defaultdict
 from pathlib import Path
 
-SCHEMA = 'wand.db01.private-shards@1'
-STORE_SCHEMA = 'wand.db01.sqlite@1'
+SCHEMA = 'wand.db01.private-shards@2'
+STORE_SCHEMA = 'wand.db01.sqlite@2'
 LOCALES = ('en', 'fr', 'it', 'de', 'es-ES', 'ja', 'zh-CN', 'pt-BR')
 NATIVE = {'ActivityItem', 'Furniture', 'Clothing', 'Trimming'}
 HISTORICAL = 'historical_prefix_crc_correlated_unverified_current'
@@ -139,15 +139,21 @@ def audit(sqlite_path: Path, shards_path: Path, *,
         by_id: dict[int, dict] = {}
         original_names: dict[int, dict] = {}
         category_sources: dict[str, str] = {}
-        for item_id, category, domain, key, sha, record_json in con.execute('''
-            SELECT item_id,native_category,catalog_domain,localization_key,
+        native_keys: set[tuple[str, str]] = set()
+        for item_id, category, domain, key, native_key, sha, record_json in con.execute('''
+            SELECT item_id,native_category,catalog_domain,localization_key,native_key,
                    source_sha256,record_json FROM definition ORDER BY item_id'''):
             require(type(item_id) is int and item_id > 0 and item_id not in by_id and
                     isinstance(category, str) and CATEGORY.fullmatch(category) and
                     isinstance(sha, str) and HEX_SHA.fullmatch(sha), 'DEFINITION_ID_CATEGORY_SOURCE')
             require(domain == ('item' if category in NATIVE else 'definition_unclassified'),
                     'UNVERIFIED_DOMAIN')
+            require(type(native_key) is str and 0 < len(native_key) <= 256 and
+                    native_key.strip() == native_key and all(ord(ch) >= 32 for ch in native_key) and
+                    (category, native_key) not in native_keys, 'NATIVE_KEY_UNVERIFIED_OR_DUPLICATE')
+            native_keys.add((category, native_key))
             raw = json.loads(record_json)
+            require(raw.get('nativeNameField') == native_key, 'NATIVE_KEY_SOURCE_MISMATCH')
             icon = raw['image']['iconGuid']
             source_ref = raw.get('source', {})
             require(raw.get('itemId') == item_id and raw.get('nativeCategory') == category and
@@ -168,7 +174,7 @@ def audit(sqlite_path: Path, shards_path: Path, *,
                     if domain == 'item' else icon is None, 'ICON_EVIDENCE')
             record = {'itemId':item_id, 'nativeCategory':category,
                       'catalogDomain':domain, 'verifiedIconGuid':icon,
-                      'localizationKey':key, 'sourceSha256':sha,
+                      'localizationKey':key, 'nativeKey':native_key, 'sourceSha256':sha,
                       'names':{loc:None for loc in LOCALES}}
             by_id[item_id] = record
             cats[category].append(record)
@@ -236,7 +242,7 @@ def audit(sqlite_path: Path, shards_path: Path, *,
                 'publicationAuthorized':False,'platform':row[2], 'gameVersion':row[3],
                 'sourceManifestSha256':row[4], 'sourceItemsSha256':row[6],
                 'sqliteSha256':sqlite_sha,'shardsManifestSha256':manifest_sha,
-                'definitions':len(by_id),'currentNativeItemDefinitions':manifest['currentNativeItemDefinitions'],
+                'definitions':len(by_id),'nativeKeys':len(native_keys),'currentNativeItemDefinitions':manifest['currentNativeItemDefinitions'],
                 'exactNames':sum(map(len,locale_rows.values())),
                 'historicalEntries':sum(map(len,history)),
                 'allShardFilesVerified':len(expected), 'historicalIncluded':manifest['historicalCandidatesIncluded'],

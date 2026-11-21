@@ -100,3 +100,21 @@ private file, and never publishes game-derived assets.
 and fails the one-shot pipeline if a previous report is stale. The auditor
 also supports a separately trusted SQLite SHA-256 pin. See
 [`AUDIT-RELEASE.md`](AUDIT-RELEASE.md) for CLI, requirements and boundaries.
+
+
+## Source-native identity for cross-service joins (SQLite/TypeScript v2)
+
+Every original source definition has a verified `nativeNameField` (wire field 2).
+The SQLite store records it as a unique composite identity
+`(native_category, native_key)`; the same TypeScript client exposes
+`getByNativeKey(category, nativeKey)`. This exact source identity is useful for
+DB-02 Acquisition, DB-03 Guide, DB-04 World and DB-05 Save, but is **not**
+evidence of a relationship, collectibility, ownership, DLC entitlement, or a
+current localized name.
+
+The final SQLite and private read-shards schemas are now
+`wand.db01.sqlite@2` and `wand.db01.private-shards@2`. Rebuild older v1
+private assets from the trusted source catalog before use; v1 assets are not
+silently accepted as v2 and no parallel runtime API is maintained. The
+release audit enforces source-record identity, original category, and
+unique native key across the entire version.
