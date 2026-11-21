@@ -129,9 +129,9 @@ test('edited owner save includes achievement field counts without exposing ID, p
     const save=fixture(version);
     delete save.World.GridCollection; // deliberately deleted world/mission objects
     save.Player.AchievementsData=[
-      {AchievementID:2110000001,CurAmount:37,MaxAmount:50,
-       State:'OWNER_PRIVATE_STATE_VALUE',ClaimedRewardMilestone:9,
-       TypesCollected:[123],ItemsUsed:[456]},
+      {AchievementID:2110000001,CurAmount:987654321,MaxAmount:876543210,
+       State:'OWNER_PRIVATE_STATE_VALUE',ClaimedRewardMilestone:98765,
+       TypesCollected:[123456789],ItemsUsed:[456789012]},
       {AchievementID:2110000002,CurAmount:0,State:'UNKNOWN_ENUM_NAME'}
     ];
     save.Player.PrivateNotes='OWNER_PRIVATE_SAVE_ABC';
@@ -155,7 +155,7 @@ test('edited owner save includes achievement field counts without exposing ID, p
     assert.equal(JSON.stringify(save),before);
     const text=JSON.stringify(result);
     for(const secret of ['2110000001','2110000002','OWNER_PRIVATE','UNKNOWN_ENUM_NAME',
-      '37','50','456','123','/World/GridCollection']) {
+      '987654321','876543210','123456789','456789012','/World/GridCollection']) {
       assert.equal(text.includes(secret),false,secret);
     }
   }
