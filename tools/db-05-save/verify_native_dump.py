@@ -28,6 +28,45 @@ DEEP_CLASSES = frozenset({
     'CharacterRestaurantOrder'
 })
 
+
+# The verifier may emit these class/property paths in a public report.
+# A real map key (numeric or textual) is NEVER a legitimate template.
+NESTED_PARENT_TEMPLATES = {
+    'Pet': '/Player/Pets[]',
+    'Cookbook': '/Player/Cookbook',
+    'ToolInfo': '/Player/Tools[]',
+    'RoyalDutyProgress': '/Player/RoyalDutyProgress',
+    'MultiItemInstance': '/Player/BackpackOverflow',
+    'FastTravel': '/Player/FastTravelFavorites[]',
+    'Village': '/World/Villages[]',
+    'House': '/World/PlayerHouses[]',
+    'DecorationPresetData': '/World/DecorationPresets[]',
+    'FloatingIsland': '/World/FloatingIslands/{id}',
+    'BuildingInfo': '/World/BuildingInfos/{id}',
+    'Critter': '/World/Critters[]',
+    'GridCollection': '/World/GridCollection',
+    'PremadeDecorationPresets': '/Player/PremadeDecorationPresets'
+}
+DEEP_PARENT_TEMPLATES = {
+    'ItemInstance': '/Player/ContainerInventories/{id}/Inventory[]',
+    'ListInventory': '/Player/ListInventories/{id}',
+    'ListInventory.Types.Data': '/Player/ListInventories/{id}/Inventory/{id}',
+    'Grid': '/World/GridCollection/Grids/{id}',
+    'DiffGrid': '/World/GridCollection/DiffGrids/{id}',
+    'GridObject': '/World/GridCollection/Grids/{id}/Objects/{id}',
+    'House.Types.Floor': '/World/PlayerHouses[]/Floors[]',
+    'House.Types.Room': '/World/BuildingInfos/{id}/Room',
+    'Village.Types.VillageArea': '/World/Villages[]/Areas/{id}',
+    'CookingHistory': '/Player/CookingHistory[]',
+    'Character': '/World/Characters[]',
+    'Story': '/Player/Stories[]',
+    'ObjectLimitData': '/World/Villages[]/BoughtObjectLimit',
+    'ToolUpgrades': '/Player/ToolUpgrades/{id}',
+    'FishingPerVillageArea': '/World/FishedVillageAreas[]',
+    'StoreInfo': '/World/Stores[]',
+    'CharacterRestaurantOrder': '/World/CharacterRestaurantOrders[]'
+}
+
 FIELD_NUMBER = re.compile(r'^\s*public const int ([A-Za-z0-9_]+)FieldNumber = ([0-9]+);')
 PROPERTY = re.compile(r'^\s*public (.+?) ([A-Za-z0-9_]+) \{ get;')
 NATIVE_PREFIX = {'Profile': '', 'ProfilePlayer': '/Player', 'ProfileWorld': '/World'}
@@ -144,6 +183,7 @@ def inspect_nested_native_fields(dump_path, manifest, allow_new_source=False):
     if not isinstance(manifest, dict) or manifest.get('schema') not in (NESTED_SCHEMA, DEEP_SCHEMA):
         raise ValueError('DB05_NESTED_NATIVE_MANIFEST_REQUIRED')
     allowed_classes = NESTED_CLASSES if manifest['schema'] == NESTED_SCHEMA else DEEP_CLASSES
+    parents = NESTED_PARENT_TEMPLATES if manifest['schema'] == NESTED_SCHEMA else DEEP_PARENT_TEMPLATES
     source = manifest.get('source')
     fields = manifest.get('fields')
     if not isinstance(source, dict) or not isinstance(fields, list) or not fields:
@@ -172,6 +212,8 @@ def inspect_nested_native_fields(dump_path, manifest, allow_new_source=False):
             r'/(?:Player|World)/(?:[A-Za-z][A-Za-z0-9]*(?:\[\])?|\{id\})(?:/(?:[A-Za-z][A-Za-z0-9]*(?:\[\])?|\{id\}))+',
             path
         ):
+            raise ValueError('DB05_NESTED_NATIVE_PATH_INVALID')
+        if path.rsplit('/', 1)[0] != parents[message]:
             raise ValueError('DB05_NESTED_NATIVE_PATH_INVALID')
         property_name = path.rsplit('/', 1)[-1]
         if not re.fullmatch(r'[A-Za-z][A-Za-z0-9]*', property_name):
