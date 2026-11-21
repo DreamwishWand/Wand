@@ -373,7 +373,10 @@ def dump_json(path, value):
 
 def dump_rows(path, rows):
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(''.join(json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(',', ':'))+'\n' for row in rows), encoding='utf-8')
+    # A single newline represents an empty JSONL dataset and stays uploadable
+    # through Google Drive without inventing an offer or an empty JSON row.
+    payload = ''.join(json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(',', ':'))+'\n' for row in rows)
+    path.write_text(payload or '\n', encoding='utf-8')
 
 
 def load_rows(path, key):
