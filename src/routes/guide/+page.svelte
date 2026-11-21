@@ -123,7 +123,7 @@
       characterNames = result.characterNames;
       groupInfo = result.groupInfo;
       conditionRegistry = current;
-      info = `${searchIndex.target.platform} ${searchIndex.target.gameVersion}：検索索引と詳細ファイル ${result.matchedShards}/${result.requiredShards} 個とキャラクター名 ${Object.keys(result.characterNames).length} 件、原本クエストグループ ${Object.keys(result.groupInfo).length} 件を接続しました。${current ? ' Steam '+current.targetVersion+'のCondition '+current.count.toLocaleString()+'件（ミッション参照 '+current.missionReferenceCount.toLocaleString()+'件）も原本SHA-256検証後に自動接続しました。' : ''}データは送信せず、詳細は選択時だけ読み込みます。`;
+      info = `${searchIndex.target.platform} ${searchIndex.target.gameVersion}：検索索引と詳細ファイル ${result.matchedShards}/${result.requiredShards} 個とキャラクター名 ${Object.keys(result.characterNames).length} 件、原本クエストグループ ${Object.keys(result.groupInfo).length} 件を接続しました。${current ? ' Steam '+current.targetVersion+'のCondition '+current.count.toLocaleString()+'件（ミッション参照 '+(typeof current.missionReferenceCount === 'number' ? current.missionReferenceCount.toLocaleString() : '未提供')+'件）も原本SHA-256検証後に自動接続しました。' : ''}データは送信せず、詳細は選択時だけ読み込みます。`;
     } catch (error) {
       if (request === loadEpoch) importError = error instanceof Error ? error.message : String(error);
     } finally {
@@ -570,7 +570,7 @@
   .guide-import { padding:22px 24px; border:1px solid #a179b447; border-radius:16px; background:linear-gradient(135deg,#2d223d,#211a2c); }
   .guide-import-intro strong { font-size:15px; }
   .guide-import-intro p { color:#b9a9c8; font-size:12px; line-height:1.8; margin:8px 0 16px; }
-  .guide-import code,.guide-condition-import code { background:#1d1529; padding:3px 6px; border-radius:5px; }
+  .guide-condition-import code { background:#1d1529; padding:3px 6px; border-radius:5px; }
   .guide-condition-import { padding:16px 20px; margin:14px 0 0; border:1px solid #ffffff28; border-radius:12px; background:#1c1727; display:grid; gap:9px; }
   .guide-condition-import strong { color:#e8d7f3; font-size:13px; }
   .guide-condition-import p { color:#bdb0ca; font-size:12px; line-height:1.7; margin:0; }
