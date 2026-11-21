@@ -113,7 +113,9 @@ export function validateDb01Shards(manifest: unknown): asserts manifest is Db01S
   // These are metadata-only checks, so corrupted release ledgers are rejected
   // before downloading any private source files. The offline release auditor
   // performs the separate, full source-to-shard relational verification.
-  const count = (path:string) => manifest.files[path].count;
+  const ledger = manifest.files as Record<string, Db01ShardMeta>;
+  const definitions = Number(manifest.definitions);
+  const count = (path:string) => ledger[path].count;
   const idTotal = Array.from({length:256},(_,i)=>count(`id/${i.toString(16).padStart(2,'0')}.json`))
     .reduce((a,b)=>a+b,0);
   // Deliberately avoid inferring domain from non-item native categories.
@@ -124,12 +126,12 @@ export function validateDb01Shards(manifest: unknown): asserts manifest is Db01S
     .reduce((total,category)=>total+count(`category/${category}.json`),0);
   check(idTotal === manifest.definitions && categoriesTotal === manifest.definitions &&
     nativeTotal === manifest.currentNativeItemDefinitions, 'SHARD_LEDGER_TOTAL_MISMATCH');
-  check(DB01_LOCALES.every(locale=>count(`locale/${locale}.json`) <= manifest.definitions),
+  check(DB01_LOCALES.every(locale=>count(`locale/${locale}.json`) <= definitions),
     'LOCALE_LEDGER_OVERFLOW');
   if (manifest.historicalCandidatesIncluded) {
     const historyTotal = Array.from({length:256},(_,i)=>
       count(`historical/${i.toString(16).padStart(2,'0')}.json`)).reduce((a,b)=>a+b,0);
-    check(historyTotal <= manifest.definitions * DB01_LOCALES.length, 'HISTORY_LEDGER_OVERFLOW');
+    check(historyTotal <= definitions * DB01_LOCALES.length, 'HISTORY_LEDGER_OVERFLOW');
   }
   check(!manifest.fullCorpusParsed ||
     manifest.sourceFilesVerified === manifest.sourceFilesTotal, 'INCOMPLETE_CORPUS_LEDGER');
