@@ -4,6 +4,7 @@
     detailStepRows, guideStaticFacts, guideMissionReferences, guideVerifiedSourceBridge, MAX_SHARD_BYTES
   } from '$lib/guide/client.mjs';
   import {importCurrentGuideConditions, currentConditionMentionsForQuest, withVerifiedConditionStepDetails} from '$lib/guide/current-conditions.mjs';
+  import {guideVerifiedStaticComposite} from '$lib/guide/source-composite.mjs';
 
   const languageLabels: Record<string, string> = {
     ja: '日本語', en: 'English', fr: 'Français', it: 'Italiano', de: 'Deutsch',
@@ -46,6 +47,8 @@
   $: scopeTokens = searchIndex ? [...new Set(searchIndex.records.flatMap((r: any) => r.sourceScopeTokens))].sort() : [];
   $: selectedRow = selectedId && searchIndex ? searchIndex.records.find((r: any) => r.id === selectedId) : null;
   $: sourceBridge = searchIndex ? guideVerifiedSourceBridge(searchIndex) : null;
+  $: staticComposite = searchIndex && conditionRegistry
+    ? guideVerifiedStaticComposite(searchIndex, conditionRegistry) : null;
   $: currentConditionMentions = conditionRegistry && selectedId
     ? currentConditionMentionsForQuest(conditionRegistry, selectedId) : {total: 0, rows: []};
   $: detailSteps = selectedDetail ? detailStepRows(selectedDetail, locale) : [];
@@ -295,6 +298,13 @@
           <p class="guide-condition-loaded" role="status">Steam {conditionRegistry.targetVersion}（Condition v{conditionRegistry.formatVersion}）：{conditionRegistry.count.toLocaleString()}件の定義と{conditionRegistry.missionReferenceCount.toLocaleString()}件のミッション参照を検証しました。クエスト一覧は{searchIndex.target.gameVersion}のままです。</p>
         {/if}
       </section>
+      {#if staticComposite}
+        <section class="guide-source-compatibility" aria-label="Verified Steam 1.26.2 static Guide source composite">
+          <strong>Steam {staticComposite.targetGameVersion}：静的Guide原本9系列の統合照合が完了</strong>
+          <p>8系列の原本ファイル全体が一致し、変更されたCondition 5,440件はv1.26.2から再抽出したものです。8言語の展開済み内容、アーカイブProtoDBも原本照合済みです。ミッション参照は{staticComposite.currentConditionMissionMentions.toLocaleString()}件です。</p>
+          <p>検索索引と32分割の詳細データは元のSteam {staticComposite.questSearchOriginalVersion}版を維持しています。詳細ファイルは開いた時に個別検証します。未検証の別系列、現在のスターパス・イベント、セーブ進捗、解放の必須条件を示すものではありません。</p>
+        </section>
+      {/if}
     {/if}
 
     <div class="guide-workspace">
