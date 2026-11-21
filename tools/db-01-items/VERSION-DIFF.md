@@ -40,3 +40,38 @@ A native category is *comparable* only when both snapshots have a full-file-evid
 The 2026-11-21 private Steam 1.26.2 partial snapshot contains 13,334 definitions across ten fully recovered categories and only 66 verified eight-language names. Self-comparison checks of this actual private bundle find 13,334 shared IDs, no spurious differences, and all ten categories classified as category-comparable. That test does **not** prove all game categories were extracted.
 
 No private output is committed to the public `DreamwishWand/Wand` repository or auto-deployed to GitHub Pages.
+
+## Final SQLite v2-to-v2 version comparison (preferred production path)
+
+The **same** `compare_versions.py` comparator also accepts the final private
+SQLite v2 stores. It **does not** create a second diff algorithm, repack them
+as JSONL, or change the production TypeScript runtime. Use owner-trusted SHA-256
+pins independently recorded during the two SQLite release audits:
+
+```powershell
+py -3 tools/db-01-items/compare_versions.py \`
+  --sqlite-input \`
+  --old "D:\\WandData\\DB-01\\steam-1.26.2.sqlite" \`
+  --new "D:\\WandData\\DB-01\\steam-1.26.3.sqlite" \`
+  --old-sqlite-sha256 "<independently trusted old SQLite SHA-256>" \`
+  --new-sqlite-sha256 "<independently trusted new SQLite SHA-256>" \`
+  --out "D:\\WandData\\DB-01\\diff-1262-to-1263"
+```
+
+`sqlite_version_reader.py` is the final read-only SQLite input adapter. It checks
+SQLite v2 schema and integrity, all 33,627 source identities where applicable,
+source file hash/category/version, exact-name correspondence between the canonical
+`record_json` and `exact_name` SQL table, and never promotes historical names.
+A SQLite v1 file or source from the wrong game version is rejected. The *existing*
+category-scoped comparator still distinguishes changed source category hashes,
+newly observed IDs, missing IDs, verified name changes, native key changes and
+icon GUID changes. Historical names do not appear as exact current locale names.
+
+For local investigation you may omit both trusted SQLite SHA flags; the resulting
+report explicitly says `sqliteInputsIndependentlyPinned=false` and proves only
+internal consistency, **not** independent authenticity. A separately pinned
+SQLite source hash and audited original source ledger are required to use the
+result as release evidence. The comparison output is private and carries its
+input SQLite SHA values to prevent accidental snapshot substitution. No claims
+of whole-game item deletion, DLC ownership, release entitlement, event/shop
+availability or save-write eligibility are made, even for equal-category inputs.

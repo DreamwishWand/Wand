@@ -228,9 +228,25 @@ def load_private_version(folder):
     }
 
 
-def compare(old, new):
-    a = load_private_version(old)
-    b = load_private_version(new)
+def compare(old, new, *, sqlite_input=False,
+            old_sqlite_sha256=None, new_sqlite_sha256=None):
+    """One semantic comparator for both canonical private JSONL and final SQLite.
+
+    A trusted SHA from an independent source ledger is needed to authenticate a
+    purported private SQLite snapshot beyond its internal consistency. No
+    SQLite input is ever allowed to authorize game-wide removal or publishing.
+    """
+    if sqlite_input:
+        check(bool(old_sqlite_sha256) == bool(new_sqlite_sha256),
+              'SQLITE_PINS_BOTH_OR_NONE')
+        from sqlite_version_reader import load_sqlite_version
+        a = load_sqlite_version(old, old_sqlite_sha256)
+        b = load_sqlite_version(new, new_sqlite_sha256)
+    else:
+        check(old_sqlite_sha256 is None and new_sqlite_sha256 is None,
+              'SQLITE_PINS_REQUIRE_SQLITE_INPUT')
+        a = load_private_version(old)
+        b = load_private_version(new)
     check(a['manifest']['platform'] == b['manifest']['platform'],
           'CROSS_PLATFORM_NOT_COMPARABLE')
     old_cats, new_cats = set(a['categories']), set(b['categories'])
@@ -275,10 +291,14 @@ def compare(old, new):
     return {
         'schema': SCHEMA,
         'from': {'gameVersion': a['manifest']['gameVersion'], 'platform': a['manifest']['platform'],
-                 'manifestSha256': a['manifestSha256'], 'dataSha256': a['dataSha256']},
+                 'manifestSha256': a['manifestSha256'], 'dataSha256': a['dataSha256'],
+                 **({'sqliteSha256': a['sqliteSha256']} if sqlite_input else {})},
         'to': {'gameVersion': b['manifest']['gameVersion'], 'platform': b['manifest']['platform'],
-               'manifestSha256': b['manifestSha256'], 'dataSha256': b['dataSha256']},
+               'manifestSha256': b['manifestSha256'], 'dataSha256': b['dataSha256'],
+               **({'sqliteSha256': b['sqliteSha256']} if sqlite_input else {})},
         'coverage': {'scope': 'native_definition_category_full_source_only',
+                     'sourceKind': 'final_private_sqlite_v2' if sqlite_input else 'verified_jsonl_source',
+                     'sqliteInputsIndependentlyPinned': bool(old_sqlite_sha256 and new_sqlite_sha256) if sqlite_input else None,
                      'gameWideComplete': False, 'verifiedSameCategoryComparison': bool(shared),
                      'comparableCategories': sorted(shared),
                      'previousOnlyCategories': sorted(old_cats - new_cats),
@@ -309,13 +329,19 @@ def compare(old, new):
     }
 
 
-def build(old, new, output):
-    old, new, output = (Path(v).resolve() for v in (old, new, output))
+def build(old, new, output, *, sqlite_input=False,
+          old_sqlite_sha256=None, new_sqlite_sha256=None):
+    old, new, output = (Path(v) for v in (old, new, output))
+    if sqlite_input:
+        check(not old.is_symlink() and not new.is_symlink(), 'SYMLINK_SQLITE_INPUT')
+    old, new, output = (v.resolve() for v in (old, new, output))
     check(old != new, 'OLD_AND_NEW_DIRECTORY_IDENTICAL')
     for source in (old, new):
         check(output != source and output not in source.parents and source not in output.parents,
               'OUTPUT_OVERLAPS_SOURCE')
-    result = compare(old, new)
+    result = compare(old, new, sqlite_input=sqlite_input,
+                     old_sqlite_sha256=old_sqlite_sha256,
+                     new_sqlite_sha256=new_sqlite_sha256)
     output.mkdir(parents=True, exist_ok=True)
     report_path = output / 'version-diff.json'
     write_json(report_path, result)
@@ -325,6 +351,11 @@ def build(old, new, output):
                                  'new': result['to']['manifestSha256']},
         'inputDataSha256': {'old': result['from']['dataSha256'],
                             'new': result['to']['dataSha256']},
+        'inputKind': result['coverage']['sourceKind'],
+        'inputSqliteSha256': ({'old': result['from']['sqliteSha256'],
+                              'new': result['to']['sqliteSha256']}
+                             if sqlite_input else None),
+        'sqliteInputsIndependentlyPinned': result['coverage']['sqliteInputsIndependentlyPinned'],
         'reportFile': report_path.name, 'reportSha256': sha(report_path),
         'publicationStatus': 'private_not_approved_for_public_catalog',
         'gameWideRemovalInferred': False,
@@ -337,9 +368,18 @@ def main():
     ap.add_argument('--old', required=True, type=Path)
     ap.add_argument('--new', required=True, type=Path)
     ap.add_argument('--out', required=True, type=Path)
+    ap.add_argument('--sqlite-input', action='store_true',
+                    help='Read v2 SQLite snapshots instead of source JSONL folders')
+    ap.add_argument('--old-sqlite-sha256', default=None,
+                    help='Independently trusted SHA-256 of old SQLite snapshot')
+    ap.add_argument('--new-sqlite-sha256', default=None,
+                    help='Independently trusted SHA-256 of new SQLite snapshot')
     opts = ap.parse_args()
     try:
-        print(json.dumps(build(opts.old, opts.new, opts.out), sort_keys=True))
+        print(json.dumps(build(opts.old, opts.new, opts.out,
+                               sqlite_input=opts.sqlite_input,
+                               old_sqlite_sha256=opts.old_sqlite_sha256,
+                               new_sqlite_sha256=opts.new_sqlite_sha256), sort_keys=True))
     except (OSError, ValueError, TypeError, UnicodeError, KeyError, json.JSONDecodeError) as err:
         ap.exit(1, f'DB-01 version comparison failed: {err}\n')
 
