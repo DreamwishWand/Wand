@@ -134,6 +134,8 @@ function checkItem(row: unknown, manifest: Db01ShardManifest): asserts row is Db
 export interface Db01CatalogClient {
   readonly source: Readonly<Pick<Db01ShardManifest,'platform'|'gameVersion'|'definitions'|'currentNativeItemDefinitions'|'nativeSourceManifestSha256'|'fullCorpusParsed'|'privateOnly'|'sourceItemsSha256'>>;
   getItem(id: number): Promise<Readonly<Db01Item> | null>;
+  /** Bounded multi-ID lookup for Save/Guide/Collection; one hash check per unique bucket. */
+  getItems(ids: readonly number[]): Promise<readonly (Readonly<Db01Item> | null)[]>;
   getCategory(category: string): Promise<readonly Readonly<Db01Item>[]>;
   getByNativeKey(category: string, nativeKey: string): Promise<Readonly<Db01Item> | null>;
   searchExactNames(query: string, locale: Db01Locale, limit?: number): Promise<readonly Db01NameResult[]>;
@@ -198,6 +200,25 @@ export function createDb01CatalogClient(rawManifest: unknown, loadBytes: Db01Loa
     const path=`id/${bucket(id)}.json`;
     const rows=parseRows(await loadJson(path),path);
     return rows.find(row=>row.itemId===id) ?? null;
+  }
+  /** Preserve caller order and missing IDs, while deduplicating I/O and capping concurrency. */
+  async function getItems(ids: readonly number[]): Promise<readonly (Readonly<Db01Item> | null)[]> {
+    check(Array.isArray(ids) && ids.length <= 4096 && ids.every(isItemId), 'INVALID_BATCH_IDS');
+    if (ids.length === 0) return Object.freeze([]);
+    const requested=new Set(ids);
+    const paths=[...new Set(ids.map(id=>`id/${bucket(id)}.json`))];
+    const found=new Map<number, Readonly<Db01Item>>();
+    let next=0;
+    // Eight workers avoid 256 simultaneous file/ZIP reads for large save indexes.
+    async function worker(): Promise<void> {
+      while (next < paths.length) {
+        const path=paths[next++];
+        const rows=parseRows(await loadJson(path),path);
+        for (const row of rows) if (requested.has(row.itemId)) found.set(row.itemId,row);
+      }
+    }
+    await Promise.all(Array.from({length:Math.min(8,paths.length)},()=>worker()));
+    return Object.freeze(ids.map(id=>found.get(id)??null));
   }
   async function getCategory(category:string):Promise<readonly Readonly<Db01Item>[]> {
     check(CATEGORY.test(category) && manifest.categories.includes(category), 'INVALID_CATEGORY');
@@ -264,6 +285,6 @@ export function createDb01CatalogClient(rawManifest: unknown, loadBytes: Db01Loa
       definitions:manifest.definitions,currentNativeItemDefinitions:manifest.currentNativeItemDefinitions,
       nativeSourceManifestSha256:manifest.nativeSourceManifestSha256,fullCorpusParsed:manifest.fullCorpusParsed,
       privateOnly:manifest.privateOnly,sourceItemsSha256:manifest.sourceItemsSha256}),
-    getItem,getCategory,getByNativeKey,searchExactNames,getName,
+    getItem,getItems,getCategory,getByNativeKey,searchExactNames,getName,
   });
 }
