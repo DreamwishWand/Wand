@@ -346,3 +346,76 @@ For a *different* native source version, add
 exact SHA-256 match on its own does not demonstrate a Writer/Codec
 round-trip, new game build identity, unknown field preservation or safe
 ownership editing. All write and export authorization remains **false**.
+
+## Steam v1.26.2 archived IL2CPP source identity (2026-11-21)
+
+The owner-held **Steam v1.26.2** Game Source Archive contains
+`Il2CppDump/dump.cs` (89,453,137 bytes). Its complete file SHA-256 is
+`0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08`.
+The separately archived **Steam v1.26.1** IL2CPP dump has exactly the
+same full-file digest, not merely the same byte count. This observation
+is recorded in `data/ddv/save/native1262-dump-equivalence.v1.json`.
+It means **the two archived dump.cs files are byte-identical**. It
+does **not** establish that executable binaries, GameAssembly.dll,
+global-metadata.dat, every game asset, or encrypted save Codec/Writer
+behavior are unchanged.
+
+This content identity connects the 85 direct + 58 nested + 83 deep
+= **226** source-pinned public Protobuf field templates to the archived
+v1.26.2 `dump.cs`, while leaving the historical/common **82** templates
+in their distinct evidence classes. There is no claim of whole-game
+binary equality, exhaustive native schema coverage, save ownership,
+Codec round-trip, or Writer safety.
+
+Repeat the digest and all 226 field-number/native-C#-type checks on a
+local, private copy of the game source:
+
+```bash
+python tools/db-05-save/verify_source_equivalence.py --candidate /private/v1.26.2/Il2CppDump/dump.cs --baseline /private/v1.26.1/Il2CppDump/dump.cs
+```
+
+Without `--baseline`, only the candidate's pinned SHA-256 and public
+field contracts can be verified; the receipt explicitly marks the
+baseline copy **not checked**. If a future source changes, normal
+verification stops. Use `--source-changed-review` to compare public
+field tags/types as a **review-only** diagnostic; even when 226/226
+known types match, changed source content is still classified
+`review_required`. No actual save is read by this command.
+
+## Private automatic nested schema discovery for future updates
+
+`tools/db-05-save/discover_native_shapes.py` is a **local, read-only**
+Protobuf shape discovery tool. Its inputs are a native IL2CPP
+`dump.cs` and two or more **already decoded, owner-private** JSON
+profiles supplied through the private decoder workflow. It traverses
+the source-defined Protobuf message graph (repeated fields and maps),
+checks observed JSON types across all supplied samples, and excludes
+known 308 templates. Actual map keys are replaced with public
+`{id}` placeholders **in memory**. Potentially sensitive
+purchase/account/entitlement path families are excluded. No raw
+values, user IDs, filenames, private map keys, or decoded save
+documents are serialized into the output.
+
+Example (private files and output must remain outside the Git checkout):
+
+```bash
+python tools/db-05-save/discover_native_shapes.py --dump /private/source/dump.cs --decoded-json /private/save-a.json --decoded-json /private/save-b.json --decoded-json /private/save-c.json --out /private/new-discovery.json
+```
+
+The report is deliberately marked `safeForPublicRepository=false`
+and `ownerReviewRequiredBeforeRegistryPromotion=true`. It lists
+only source-named candidate paths, source class/Protobuf tag/property
+type, the **observed JSON kind names**, and sampling flags. By default
+it traverses at most seven message levels and samples up to 32
+entries per repeated field/map, so its discoveries are **not**
+exhaustive. Sampling and lack of observed subobjects must not be
+interpreted as verified absence, compatibility, or permission to edit.
+
+The private proof-of-concept run over the three available 626/643
+originals found **1,202 source-defined, observed field paths** at
+depth seven before deduplication and review; 385 of those paths were
+sampled at least once under the proof-of-concept's 64-entry limit.
+These counts are exploratory, not 1,202 approved registry entries.
+Do **not** commit that private output. Synthetic Python CI tests
+cover determinism of output contents, redaction, map placeholders,
+known-path deduplication, sampling, and refusal to write inside Git.
