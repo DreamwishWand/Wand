@@ -603,3 +603,52 @@ equivalence, Writer safety, or export authorization. All such
 permissions remain **false**, and all catalogs remain partial.
 The GitHub CI uses only synthetic saves and synthetic DB-01/DB-04
 catalog providers; no owner-private source is committed.
+
+## Browser developer diagnostics (unlinked; decoded JSON only)
+
+`/save/diagnostics/` provides an **unlinked developer-only page**
+for a **locally selected, already-decoded** DDV save JSON.
+`src/lib/save/SaveDiagnosticsPanel.svelte` is the reusable UI
+component; it accepts a decoded document plus an **optional**
+existing private `SaveSourceCatalogBridge`. The page is not
+listed in the normal navigation, has a `noindex,nofollow` meta
+tag, and is **not presented as the final Save Editor**.
+
+- The file picker accepts `.json` up to 128 MiB, verifies
+  `GameInfo/Player/World` structure in memory, and never
+  writes the selected contents to a server, URL, IndexedDB,
+  `localStorage`, telemetry, download, or Git. Clicking
+  "読み込み内容を破棄" clears the current object reference.
+- `makeSaveDiagnosticView()` shows the **440** public known
+  structure templates, structural domain coverage and the
+  **14** internal save reference rules. It exposes only
+  public rule labels, counts and inconclusive flags, never
+  raw IDs, map keys, source paths or private values.
+- `makeSaveCatalogAuditView()` can present the existing
+  **eight** DB-01/DB-04 reference families if a caller has
+  *separately* obtained a verified private DB-01 catalog client
+  and a partial DB-04 world catalog. Without that dependency,
+  the button is disabled. The page never silently loads,
+  publishes or embeds private DB-01/DB-04 data.
+- All parsing and client loading error messages are fixed,
+  non-sensitive strings and do not interpolate arbitrary
+  private file names, raw parser snippets, object keys, or
+  thrown source exceptions. Browser UI code is tested with
+  synthetic 626/643 documents.
+
+An **encrypted** `.profile` save is **not** supported by this
+page. The separate production Codec/WASM decoder and
+unknown-field-preserving Writer remain necessary for the full
+Save Editor; this route is a diagnostics integration seam,
+not a replacement or a read-only public release. It also
+does **not** infer account, DLC, ownership, completeness,
+placement or export permission.
+
+**DB-04 source update status (2026-11-21)**: The accessible
+`SRC-05 WORLD DATA` Drive folder contains two Steam
+v1.26.1 partial/native preview ZIPs, and the Steam
+v1.26.2 `Updates` folder inspected in Game Source Archive
+had no files. A verified v1.26.2 DB-04 world bundle was
+not available in the checked folders. Identical IL2CPP
+`dump.cs` across 1.26.1/1.26.2 does not substitute for
+1.26.2 world assets or a trusted source ledger.
