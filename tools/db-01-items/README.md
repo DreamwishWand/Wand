@@ -85,3 +85,18 @@ Original-source instructions and evidence limits remain documented in:
 **Remaining original-data gaps:** changed v1.26.2 `Condition.json` and eight
 complete current LocDB ZIPs. DLC, ownership, collectibility, world relationships
 and current classification are unresolved until evidence is acquired.
+
+## Production release-integrity gate
+
+`tools/db-01-items/audit_shards.py` is the independent **private pre-release
+verification gate** for the final SQLite + TypeScript implementation. It
+reconstructs every ID, category, locale and optional historical shard from
+SQLite and checks byte-for-byte content, separate file SHA-256, counts,
+source-version and original JSONL provenance. It rejects stale, missing,
+extra, or conflicting assets, reports SHA-bound PASS evidence in a local
+private file, and never publishes game-derived assets.
+
+`run-all.ps1` now invokes this gate automatically after SQLite/shard creation
+and fails the one-shot pipeline if a previous report is stale. The auditor
+also supports a separately trusted SQLite SHA-256 pin. See
+[`AUDIT-RELEASE.md`](AUDIT-RELEASE.md) for CLI, requirements and boundaries.
