@@ -1,0 +1,1707 @@
+{
+  "schema": "wand.db05.native1261-deep-field-witnesses@1",
+  "source": {
+    "kind": "native_protobuf_field_number_and_property_type",
+    "gameBuild": "steam-1.26.1",
+    "archive": "Game Source Archive/Steam/Baselines/v1.26.1__2026-11-18/06_Steam_Build_Assets/Il2CppDump/dump.cs",
+    "sha256": "0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08",
+    "currentGameBuildMatched": false
+  },
+  "evidence": {
+    "saveSamples": [
+      "private_steam_schema643",
+      "private_switch_schema643",
+      "private_switch_schema626"
+    ],
+    "allThreeKindsObserved": true,
+    "fullSaveSchemaKnown": false,
+    "sourceIsNative1261NotCurrent1262": true,
+    "publicPathsAndTypeNamesOnly": true
+  },
+  "policy": {
+    "compatibilityBasis": "structure_not_version_or_platform",
+    "sampledRuntimeProbesNotExhaustive": true,
+    "rootRawValuesSaved": false,
+    "strictCodecRoundTripVerified": false,
+    "writerAuthorized": false,
+    "exportAuthorized": false
+  },
+  "fields": [
+    {
+      "domain": "player",
+      "path": "/Player/ContainerInventories/{id}/Inventory[]/State",
+      "nativeMessage": "ItemInstance",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "ItemState",
+      "observedJsonKinds": [
+        "null",
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "null",
+        "object"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/ListInventories/{id}/CompatibleFurnitureTypes",
+      "nativeMessage": "ListInventory",
+      "protobufFieldNumber": 4,
+      "nativePropertyType": "ListInventory.Types.FurnitureRestrictionList",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/ListInventories/{id}/CompatibleBuildingTypes",
+      "nativeMessage": "ListInventory",
+      "protobufFieldNumber": 6,
+      "nativePropertyType": "ListInventory.Types.BuildingRestrictionList",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/ListInventories/{id}/Inventory/{id}/Marker",
+      "nativeMessage": "ListInventory.Types.Data",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "ListInventory.Types.ItemMarker",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/GridCollection/Grids/{id}/ID",
+      "nativeMessage": "Grid",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "uint",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/GridCollection/Grids/{id}/GridDataPath",
+      "nativeMessage": "Grid",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "string",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/GridCollection/Grids/{id}/GridDefaultLayoutPath",
+      "nativeMessage": "Grid",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "string",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/GridCollection/Grids/{id}/TessellationFactor",
+      "nativeMessage": "Grid",
+      "protobufFieldNumber": 4,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/GridCollection/Grids/{id}/Objects",
+      "nativeMessage": "Grid",
+      "protobufFieldNumber": 5,
+      "nativePropertyType": "MapField<uint, GridObject>",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/GridCollection/Grids/{id}/NextGridObjectID",
+      "nativeMessage": "Grid",
+      "protobufFieldNumber": 6,
+      "nativePropertyType": "uint",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/GridCollection/DiffGrids/{id}/NextGridObjectID",
+      "nativeMessage": "DiffGrid",
+      "protobufFieldNumber": 9,
+      "nativePropertyType": "uint",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/ID",
+      "nativeMessage": "GridObject",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "uint",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/ItemID",
+      "nativeMessage": "GridObject",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/X",
+      "nativeMessage": "GridObject",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/Y",
+      "nativeMessage": "GridObject",
+      "protobufFieldNumber": 4,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/Orientation",
+      "nativeMessage": "GridObject",
+      "protobufFieldNumber": 5,
+      "nativePropertyType": "GridOrientation",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/GridCollection/Grids/{id}/Objects/{id}/State",
+      "nativeMessage": "GridObject",
+      "protobufFieldNumber": 6,
+      "nativePropertyType": "GridState",
+      "observedJsonKinds": [
+        "null",
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "null",
+        "object"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/PlayerHouses[]/Floors[]/Rooms",
+      "nativeMessage": "House.Types.Floor",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "MapField<int, House.Types.Room>",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/PlayerHouses[]/Floors[]/BoughtRooms",
+      "nativeMessage": "House.Types.Floor",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "MapField<int, House.Types.Floor.Types.AdditionalRoomsList>",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/BuildingInfos/{id}/Room/Name",
+      "nativeMessage": "House.Types.Room",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "string",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/BuildingInfos/{id}/Room/FloorGridID",
+      "nativeMessage": "House.Types.Room",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "uint",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/BuildingInfos/{id}/Room/WallGridIDs",
+      "nativeMessage": "House.Types.Room",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "MapField<int, uint>",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/BuildingInfos/{id}/Room/RoomPrefabAddress",
+      "nativeMessage": "House.Types.Room",
+      "protobufFieldNumber": 4,
+      "nativePropertyType": "string",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/BuildingInfos/{id}/Room/Flooring",
+      "nativeMessage": "House.Types.Room",
+      "protobufFieldNumber": 5,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/BuildingInfos/{id}/Room/Wallpapers",
+      "nativeMessage": "House.Types.Room",
+      "protobufFieldNumber": 6,
+      "nativePropertyType": "MapField<int, int>",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/BuildingInfos/{id}/Room/WallpaperOffsetById",
+      "nativeMessage": "House.Types.Room",
+      "protobufFieldNumber": 7,
+      "nativePropertyType": "MapField<int, float>",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/BuildingInfos/{id}/Room/Ceiling",
+      "nativeMessage": "House.Types.Room",
+      "protobufFieldNumber": 8,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Villages[]/Areas/{id}/GridIDs",
+      "nativeMessage": "Village.Types.VillageArea",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "RepeatedField<uint>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Villages[]/Areas/{id}/Unlocked",
+      "nativeMessage": "Village.Types.VillageArea",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "bool",
+      "observedJsonKinds": [
+        "boolean"
+      ],
+      "allowedJsonKinds": [
+        "boolean"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Villages[]/Areas/{id}/BodiesOfWater",
+      "nativeMessage": "Village.Types.VillageArea",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "RepeatedField<BodyOfWater>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Villages[]/Areas/{id}/MiningRocks",
+      "nativeMessage": "Village.Types.VillageArea",
+      "protobufFieldNumber": 4,
+      "nativePropertyType": "RepeatedField<MiningRock>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Villages[]/Areas/{id}/EnvironmentEffectItemID",
+      "nativeMessage": "Village.Types.VillageArea",
+      "protobufFieldNumber": 5,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Villages[]/Areas/{id}/EnvironmentEffectOrientation",
+      "nativeMessage": "Village.Types.VillageArea",
+      "protobufFieldNumber": 6,
+      "nativePropertyType": "GridOrientation",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/CookingHistory[]/Ingredients",
+      "nativeMessage": "CookingHistory",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "RepeatedField<int>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/CookingHistory[]/MealItemID",
+      "nativeMessage": "CookingHistory",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/Base",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "BaseItem",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/FriendshipLevel",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/Friendship",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 4,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/Happiness",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 5,
+      "nativePropertyType": "uint",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/Status",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 6,
+      "nativePropertyType": "Character.Types.CharacterStatus",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/DiscussedWithTheAvatarToday",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 7,
+      "nativePropertyType": "bool",
+      "observedJsonKinds": [
+        "boolean"
+      ],
+      "allowedJsonKinds": [
+        "boolean"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/LastGiftDate",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 8,
+      "nativePropertyType": "Timestamp",
+      "observedJsonKinds": [
+        "null",
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "null",
+        "string"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/GiftedItemsCount",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 9,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/PreferredItemStatus",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 10,
+      "nativePropertyType": "MapField<int, PreferredItemStatus>",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/FreeTimeSchedule",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 15,
+      "nativePropertyType": "ScheduleType",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/FreeTimeScheduleTimestamp",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 16,
+      "nativePropertyType": "Timestamp",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/SecretCharacterData",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 17,
+      "nativePropertyType": "SecretCharacterRecurringConditionData",
+      "observedJsonKinds": [
+        "null",
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "null",
+        "object"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/ProfessionID",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 18,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/LastSelfieDate",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 19,
+      "nativePropertyType": "Timestamp",
+      "observedJsonKinds": [
+        "null",
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "null",
+        "string"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/PreferredItemSlots",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 20,
+      "nativePropertyType": "RepeatedField<PreferredItemSlot>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/SeenPreferredItems",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 21,
+      "nativePropertyType": "bool",
+      "observedJsonKinds": [
+        "boolean"
+      ],
+      "allowedJsonKinds": [
+        "boolean"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/PendingHangoutGatherRewards",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 22,
+      "nativePropertyType": "RepeatedField<ItemReward>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/LastBoardGameTimestamp",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 24,
+      "nativePropertyType": "Timestamp",
+      "observedJsonKinds": [
+        "null",
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "null",
+        "string"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/NumberOfBoardGamesToday",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 25,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/CurrentEagerToPlayBoardGameTimestamp",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 26,
+      "nativePropertyType": "Timestamp",
+      "observedJsonKinds": [
+        "null",
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "null",
+        "string"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/CurrentPet",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 27,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/SeenPets",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 28,
+      "nativePropertyType": "RepeatedField<int>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/BestFriendXPProgress",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 29,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/BestFriendsActionsUsed",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 30,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/BestFriendsItemIDRequested",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 31,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/BestFriendsItemIDRequestedReady",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 32,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/BestFriendsItemIDRequestedReadyAmount",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 33,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Characters[]/LastBridgeGameTimestamp",
+      "nativeMessage": "Character",
+      "protobufFieldNumber": 34,
+      "nativePropertyType": "Timestamp",
+      "observedJsonKinds": [
+        "null",
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "null",
+        "string"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/Stories[]/StoryItemID",
+      "nativeMessage": "Story",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/Stories[]/Completed",
+      "nativeMessage": "Story",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "bool",
+      "observedJsonKinds": [
+        "boolean"
+      ],
+      "allowedJsonKinds": [
+        "boolean"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Villages[]/BoughtObjectLimit/UniqueLimit",
+      "nativeMessage": "ObjectLimitData",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Villages[]/BoughtObjectLimit/InstanceLimit",
+      "nativeMessage": "ObjectLimitData",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Villages[]/BoughtObjectLimit/Exclusions",
+      "nativeMessage": "ObjectLimitData",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "RepeatedField<ItemTypeSelector>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Villages[]/BoughtObjectLimit/SpecificItemLimits",
+      "nativeMessage": "ObjectLimitData",
+      "protobufFieldNumber": 4,
+      "nativePropertyType": "RepeatedField<ObjectLimitData.Types.SpecificItemLimit>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/ToolUpgrades/{id}/UpgradeItemIDs",
+      "nativeMessage": "ToolUpgrades",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "RepeatedField<int>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "player",
+      "path": "/Player/ToolUpgrades/{id}/Hourglass",
+      "nativeMessage": "ToolUpgrades",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "HourglassUpgrades",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/FishedVillageAreas[]/Location",
+      "nativeMessage": "FishingPerVillageArea",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "VillageAreaType",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/FishedVillageAreas[]/Rarity",
+      "nativeMessage": "FishingPerVillageArea",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "FishRippleRarity",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Stores[]/BuildingItemID",
+      "nativeMessage": "StoreInfo",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Stores[]/Displays",
+      "nativeMessage": "StoreInfo",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "RepeatedField<StoreInfo.Types.StoreDisplay>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Stores[]/LastRefresh",
+      "nativeMessage": "StoreInfo",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "Timestamp",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Stores[]/WeightedItems",
+      "nativeMessage": "StoreInfo",
+      "protobufFieldNumber": 4,
+      "nativePropertyType": "MapField<int, int>",
+      "observedJsonKinds": [
+        "object"
+      ],
+      "allowedJsonKinds": [
+        "object"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/Stores[]/CurrentSequenceIndexPerUpgrade",
+      "nativeMessage": "StoreInfo",
+      "protobufFieldNumber": 5,
+      "nativePropertyType": "RepeatedField<int>",
+      "observedJsonKinds": [
+        "array"
+      ],
+      "allowedJsonKinds": [
+        "array"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/CharacterRestaurantOrders[]/CharacterItemID",
+      "nativeMessage": "CharacterRestaurantOrder",
+      "protobufFieldNumber": 1,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/CharacterRestaurantOrders[]/SceneItemID",
+      "nativeMessage": "CharacterRestaurantOrder",
+      "protobufFieldNumber": 2,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/CharacterRestaurantOrders[]/MealItemID",
+      "nativeMessage": "CharacterRestaurantOrder",
+      "protobufFieldNumber": 3,
+      "nativePropertyType": "int",
+      "observedJsonKinds": [
+        "integer"
+      ],
+      "allowedJsonKinds": [
+        "integer"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/CharacterRestaurantOrders[]/ExpirationTime",
+      "nativeMessage": "CharacterRestaurantOrder",
+      "protobufFieldNumber": 4,
+      "nativePropertyType": "Timestamp",
+      "observedJsonKinds": [
+        "string"
+      ],
+      "allowedJsonKinds": [
+        "string"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    },
+    {
+      "domain": "world",
+      "path": "/World/CharacterRestaurantOrders[]/Fulfilled",
+      "nativeMessage": "CharacterRestaurantOrder",
+      "protobufFieldNumber": 5,
+      "nativePropertyType": "bool",
+      "observedJsonKinds": [
+        "boolean"
+      ],
+      "allowedJsonKinds": [
+        "boolean"
+      ],
+      "observedIn": [
+        "steam-643",
+        "switch-643",
+        "switch-626"
+      ],
+      "sourceNativeBuild": "steam-1.26.1",
+      "writable": false
+    }
+  ]
+}

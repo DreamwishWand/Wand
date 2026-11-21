@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from verify_native_dump import SCHEMA, NESTED_SCHEMA, inspect_native_fields, inspect_nested_native_fields, read_native_types
+from verify_native_dump import SCHEMA, NESTED_SCHEMA, DEEP_SCHEMA, inspect_native_fields, inspect_nested_native_fields, read_native_types
 
 
 SOURCE = """// Namespace: Meta
@@ -165,6 +165,80 @@ public sealed class FloatingIsland : IMessage<FloatingIsland>
             fake['fields'][0]['writable']=True
             with self.assertRaisesRegex(ValueError,'NESTED_NATIVE_FIELD_INVALID'):
                 inspect_nested_native_fields(path,fake)
+
+
+    def test_deep_native_qualified_class_name_and_game_source_mismatch(self):
+        extra = """
+public sealed class House.Types.Room : IMessage<House.Types.Room>
+{
+    // Fields
+    public const int WallGridIDsFieldNumber = 3;
+    // Properties
+    public MapField<int, uint> WallGridIDs { get; }
+    // Methods
+}
+public sealed class GridObject : IMessage<GridObject>
+{
+    // Fields
+    public const int ItemIDFieldNumber = 2;
+    // Properties
+    public int ItemID { get; set; }
+    // Methods
+}
+public sealed class Character : IMessage<Character>
+{
+    // Fields
+    public const int LastGiftDateFieldNumber = 8;
+    // Properties
+    public Timestamp LastGiftDate { get; set; }
+    // Methods
+}
+"""
+        source = SOURCE + extra
+        fixture = {
+            'schema': DEEP_SCHEMA,
+            'source': {'sha256':hashlib.sha256(source.encode()).hexdigest()},
+            'fields': [
+                {'path':'/World/BuildingInfos/{id}/Room/WallGridIDs',
+                 'nativeMessage':'House.Types.Room','protobufFieldNumber':3,
+                 'nativePropertyType':'MapField<int, uint>','writable':False},
+                {'path':'/World/GridCollection/Grids/{id}/Objects/{id}/ItemID',
+                 'nativeMessage':'GridObject','protobufFieldNumber':2,
+                 'nativePropertyType':'int','writable':False},
+                {'path':'/World/Characters[]/LastGiftDate',
+                 'nativeMessage':'Character','protobufFieldNumber':8,
+                 'nativePropertyType':'Timestamp','writable':False}
+            ]
+        }
+        with tempfile.TemporaryDirectory() as d:
+            path=Path(d)/'source.cs'
+            path.write_text(source,encoding='utf-8')
+            result=inspect_nested_native_fields(path,fixture)
+            self.assertEqual(result['matchedFieldCount'],3)
+            self.assertTrue(result['sourceMatchesPinnedDigest'])
+            self.assertFalse(result['writerAuthorized'])
+            self.assertFalse(result['currentGameNativeAttested'])
+            index=read_native_types(path, ['House.Types.Room'])
+            self.assertEqual(index['House.Types.Room']['numbers']['WallGridIDs'],3)
+            self.assertEqual(index['House.Types.Room']['types']['WallGridIDs'],'MapField<int, uint>')
+            mismatched=dict(fixture)
+            mismatched['fields']=[dict(row) for row in fixture['fields']]
+            mismatched['fields'][1]['protobufFieldNumber']=22
+            changed=inspect_nested_native_fields(path,mismatched)
+            self.assertEqual(changed['matchedFieldCount'],2)
+            self.assertIn('/World/GridCollection/Grids/{id}/Objects/{id}/ItemID',
+                          changed['differentPublicPaths'])
+            bad=dict(fixture)
+            bad['fields']=[dict(row) for row in fixture['fields']]
+            bad['fields'][0]['path']='/World/BuildingInfos/secret/Room/WallGridIDs'
+            with self.assertRaisesRegex(ValueError,'NESTED_NATIVE_PATH_INVALID'):
+                inspect_nested_native_fields(path,bad)
+            path.write_text(source+'// new source version\n',encoding='utf-8')
+            with self.assertRaisesRegex(ValueError,'SOURCE_HASH_MISMATCH'):
+                inspect_nested_native_fields(path,fixture)
+            accepted=inspect_nested_native_fields(path,fixture,allow_new_source=True)
+            self.assertFalse(accepted['sourceMatchesPinnedDigest'])
+            self.assertEqual(accepted['matchedFieldCount'],3)
 
 
 if __name__ == '__main__':

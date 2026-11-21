@@ -3,6 +3,7 @@ import legacyFields from '../../../data/ddv/save/legacy626-fields.v1.json' with 
 import commonFields from '../../../data/ddv/save/common626643-fields.v1.json' with { type: 'json' };
 import nativeFields from '../../../data/ddv/save/native1261-observed-fields.v1.json' with { type: 'json' };
 import nestedFields from '../../../data/ddv/save/native1261-nested-fields.v1.json' with { type: 'json' };
+import deepFields from '../../../data/ddv/save/native1261-deep-fields.v1.json' with { type: 'json' };
 
 function deepFreeze(value) {
   if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -16,6 +17,7 @@ deepFreeze(legacyFields);
 deepFreeze(commonFields);
 deepFreeze(nativeFields);
 deepFreeze(nestedFields);
+deepFreeze(deepFields);
 
 export const SAVE_REGISTRY_SCHEMA = 'wand.db05.save-registry@1';
 export const SAVE_INSPECTION_CONTRACT = 'wand.db05.save-readonly-inspection@1';
@@ -418,6 +420,135 @@ export function compareNestedSaveStructures(previous, current) {
     platformAndVersionUsedAsGates: false, sourceGameBuild: 'steam-1.26.1',
     currentGameNativeTypeAttestation: false,
     exhaustive: false, strictDecoderVerified: false,
+    writerAuthorized: false, exportAuthorized: false
+  });
+}
+
+
+/**
+ * Aggregate structural evidence without replacing the separate 66/16/85/58
+ * provenance-tagged registries. The new 83 native nested paths are independent.
+ * No private save values, IDs, platform names or metadata are emitted.
+ */
+export const SAVE_UNIFIED_SHAPE_PROBE_CONTRACT = 'wand.db05.unified-shape-probe@1';
+export const SAVE_UNIFIED_SHAPE_COMPARISON_CONTRACT = 'wand.db05.unified-shape-comparison@1';
+const ALL_PUBLIC_SHAPE_FIELDS = Object.freeze([
+  ...legacyFields.fields.map(f => ({ domain: f.domain, path: f.path, type: f.type })),
+  ...commonFields.fields.map(f => ({ domain: f.domain, path: f.path, type: f.type })),
+  ...nativeFields.fields.map(f => ({ domain: f.domain, path: f.path, type: f.jsonType })),
+  ...nestedFields.fields.map(f => ({ domain: f.domain, path: f.path, type: f.allowedJsonKinds.join('|') })),
+  ...deepFields.fields.map(f => ({ domain: f.domain, path: f.path, type: f.allowedJsonKinds.join('|') }))
+]);
+const ALL_PUBLIC_SHAPE_DOMAINS = Object.freeze(
+  [...new Set(ALL_PUBLIC_SHAPE_FIELDS.map(f => f.domain))].sort()
+);
+const ALL_PUBLIC_SHAPE_COUNTS = Object.freeze({
+  legacy: legacyFields.fields.length,
+  common: commonFields.fields.length,
+  native: nativeFields.fields.length,
+  nativeNested: nestedFields.fields.length,
+  nativeDeep: deepFields.fields.length
+});
+
+/** Public field metadata only; never returns save values or real map keys. */
+export function getDeepSaveFields() { return deepFields; }
+export function getUnifiedSaveShapeCatalog() {
+  return Object.freeze({
+    contract: 'wand.db05.unified-shape-catalog@1',
+    publicTemplateCount: ALL_PUBLIC_SHAPE_FIELDS.length,
+    sourceCounts: ALL_PUBLIC_SHAPE_COUNTS,
+    domains: ALL_PUBLIC_SHAPE_DOMAINS,
+    compatibilityGate: 'decoded_shape_not_build_or_platform',
+    currentNativeBuildAttested: false,
+    writerAuthorized: false
+  });
+}
+
+/**
+ * Every candidate is strictly read-only; a missing or sampled path cannot
+ * establish structural compatibility or complete save coverage.
+ */
+export function probeUnifiedSaveStructure(decoded) {
+  const domains = ALL_PUBLIC_SHAPE_DOMAINS.map(domain => {
+    const fields = ALL_PUBLIC_SHAPE_FIELDS.filter(f => f.domain === domain);
+    const rows = fields.map(f => Object.freeze({
+      path: f.path, ...observeKnownField(decoded, f)
+    }));
+    const observed = rows.filter(f => f.status === 'observed');
+    const conflicts = rows.filter(f => f.status === 'type_conflict');
+    const sampled = rows.some(f => f.sampled);
+    return Object.freeze({
+      domain, registeredFieldCount: fields.length,
+      observedFieldCount: observed.length,
+      status: conflicts.length ? 'shape_conflict'
+        : !observed.length ? 'not_observed'
+        : sampled ? 'sampled_candidate' : 'shape_candidate',
+      observedFields: Object.freeze(observed.map(f =>
+        Object.freeze({ path: f.path, kinds: f.kinds })
+      )),
+      conflictingPaths: Object.freeze(conflicts.map(f => f.path).sort()),
+      sampled, writerAuthorized: false
+    });
+  });
+  return Object.freeze({
+    contract: SAVE_UNIFIED_SHAPE_PROBE_CONTRACT,
+    publicTemplateCount: ALL_PUBLIC_SHAPE_FIELDS.length,
+    platformAndVersionUsedAsGates: false,
+    nativeBuildAttested: false,
+    domains: Object.freeze(domains),
+    exhaustive: false, strictDecoderVerified: false,
+    writerAuthorized: false
+  });
+}
+
+/**
+ * Compare only named public templates and kinds. Even a 'same' report means
+ * same observed *subset*, never full compatibility, ownership or safety.
+ */
+export function compareUnifiedSaveStructures(previous, current) {
+  const left = probeUnifiedSaveStructure(previous);
+  const right = probeUnifiedSaveStructure(current);
+  const domains = left.domains.map((a, i) => {
+    const b = right.domains[i];
+    const oldKinds = new Map(a.observedFields.map(f => [f.path, f.kinds.join('|')]));
+    const newKinds = new Map(b.observedFields.map(f => [f.path, f.kinds.join('|')]));
+    const addedKnownPaths = [...newKinds.keys()].filter(p => !oldKinds.has(p)).sort();
+    const missingKnownPaths = [...oldKinds.keys()].filter(p => !newKinds.has(p)).sort();
+    const changedKindPaths = [...oldKinds.keys()].filter(p =>
+      newKinds.has(p) && oldKinds.get(p) !== newKinds.get(p)).sort();
+    const conflictingKnownPaths = [...new Set([
+      ...a.conflictingPaths, ...b.conflictingPaths
+    ])].sort();
+    const status = conflictingKnownPaths.length ? 'observed_type_conflict'
+      : !oldKinds.size || !newKinds.size ? 'insufficient_evidence'
+      : a.sampled || b.sampled ? 'sampled_inconclusive'
+      : addedKnownPaths.length || missingKnownPaths.length || changedKindPaths.length
+        ? 'observed_witness_difference' : 'same_observed_witnesses';
+    return Object.freeze({
+      domain: a.domain,
+      status,
+      addedKnownPaths: Object.freeze(addedKnownPaths),
+      missingKnownPaths: Object.freeze(missingKnownPaths),
+      changedKindPaths: Object.freeze(changedKindPaths),
+      conflictingKnownPaths: Object.freeze(conflictingKnownPaths),
+      writerAuthorized: false
+    });
+  });
+  const invalidRoot = !inspectDecodedSave(previous, null).rootShapeValid ||
+    !inspectDecodedSave(current, null).rootShapeValid;
+  const status = invalidRoot ? 'invalid_root'
+    : domains.some(d => d.status === 'observed_type_conflict') ? 'observed_type_conflict'
+    : domains.some(d => d.status === 'insufficient_evidence' || d.status === 'sampled_inconclusive')
+      ? 'inconclusive'
+    : domains.some(d => d.status === 'observed_witness_difference') ? 'observed_witness_difference'
+    : 'same_observed_witnesses';
+  return Object.freeze({
+    contract: SAVE_UNIFIED_SHAPE_COMPARISON_CONTRACT,
+    status, publicTemplateCount: ALL_PUBLIC_SHAPE_FIELDS.length,
+    domains: Object.freeze(domains),
+    platformAndVersionUsedAsGates: false,
+    nativeBuildAttested: false, exhaustive: false,
+    strictDecoderVerified: false,
     writerAuthorized: false, exportAuthorized: false
   });
 }

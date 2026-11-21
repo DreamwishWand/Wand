@@ -117,7 +117,7 @@ test('reject private keys and even numeric IDs before constructing output', () =
 test('duplicate fields, excessive witnesses and unknown kinds fail closed', () => {
   const repeated=summary(643,[...paths,paths[0]]);
   assert.throws(()=>compareRedactedSaveWitnesses(summary(626),repeated),/DUPLICATE_PUBLIC_WITNESS_PATH/);
-  const huge=summary(643,Array.from({length:300},()=>paths[0]));
+  const huge=summary(643,Array.from({length:500},()=>paths[0]));
   assert.throws(()=>compareRedactedSaveWitnesses(summary(626),huge),/PUBLIC_WITNESS_LIMIT/);
   const invalid=summary(643,paths.map(v=>v.path.endsWith('/Amount')?{...v,type:'secret_type'}:v));
   assert.throws(()=>compareRedactedSaveWitnesses(summary(626),invalid),/INVALID_PUBLIC_WITNESS_KIND/);

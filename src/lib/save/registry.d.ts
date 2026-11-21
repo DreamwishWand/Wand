@@ -223,6 +223,77 @@ export function getNestedSaveFields(): Readonly<{
 }>;
 export function probeNestedSaveStructure(decoded: unknown): NestedSaveShapeProbe;
 export function compareNestedSaveStructures(previous: unknown,current: unknown): NestedSaveComparison;
+export type DeepSaveField = Readonly<{
+  domain: 'player' | 'world';
+  path: string;
+  nativeMessage: string;
+  protobufFieldNumber: number;
+  nativePropertyType: string;
+  observedJsonKinds: readonly string[];
+  allowedJsonKinds: readonly string[];
+  observedIn: readonly string[];
+  sourceNativeBuild: 'steam-1.26.1';
+  writable: false;
+}>;
+export type UnifiedShapeDomain = Readonly<{
+  domain: string;
+  registeredFieldCount: number;
+  observedFieldCount: number;
+  status: 'shape_conflict' | 'not_observed' | 'sampled_candidate' | 'shape_candidate';
+  observedFields: readonly Readonly<{path:string;kinds:readonly string[]}>[];
+  conflictingPaths: readonly string[];
+  sampled: boolean;
+  writerAuthorized: false;
+}>;
+export type UnifiedShapeProbe = Readonly<{
+  contract: 'wand.db05.unified-shape-probe@1';
+  publicTemplateCount: number;
+  platformAndVersionUsedAsGates: false;
+  nativeBuildAttested: false;
+  domains: readonly UnifiedShapeDomain[];
+  exhaustive: false;
+  strictDecoderVerified: false;
+  writerAuthorized: false;
+}>;
+export type UnifiedShapeComparison = Readonly<{
+  contract: 'wand.db05.unified-shape-comparison@1';
+  status: 'invalid_root' | 'observed_type_conflict' | 'inconclusive' |
+    'observed_witness_difference' | 'same_observed_witnesses';
+  publicTemplateCount: number;
+  domains: readonly Readonly<{
+    domain: string;
+    status: 'observed_type_conflict'|'insufficient_evidence'|
+      'sampled_inconclusive'|'observed_witness_difference'|'same_observed_witnesses';
+    addedKnownPaths: readonly string[];
+    missingKnownPaths: readonly string[];
+    changedKindPaths: readonly string[];
+    conflictingKnownPaths: readonly string[];
+    writerAuthorized: false;
+  }>[];
+  platformAndVersionUsedAsGates: false;
+  nativeBuildAttested: false;
+  exhaustive: false;
+  strictDecoderVerified: false;
+  writerAuthorized: false;
+  exportAuthorized: false;
+}>;
+export const SAVE_UNIFIED_SHAPE_PROBE_CONTRACT: 'wand.db05.unified-shape-probe@1';
+export const SAVE_UNIFIED_SHAPE_COMPARISON_CONTRACT: 'wand.db05.unified-shape-comparison@1';
+export function getDeepSaveFields(): Readonly<{
+  schema: 'wand.db05.native1261-deep-field-witnesses@1';
+  fields: readonly DeepSaveField[];
+}>;
+export function getUnifiedSaveShapeCatalog(): Readonly<{
+  contract: 'wand.db05.unified-shape-catalog@1';
+  publicTemplateCount: number;
+  sourceCounts: Readonly<{legacy:number;common:number;native:number;nativeNested:number;nativeDeep:number}>;
+  domains: readonly string[];
+  compatibilityGate: 'decoded_shape_not_build_or_platform';
+  currentNativeBuildAttested: false;
+  writerAuthorized: false;
+}>;
+export function probeUnifiedSaveStructure(decoded: unknown): UnifiedShapeProbe;
+export function compareUnifiedSaveStructures(previous: unknown, current: unknown): UnifiedShapeComparison;
 export type FieldWitness = Readonly<{ path: string; type: string }>;
 export function getSaveRegistry(): Readonly<Record<string, unknown>>;
 export type LegacyIdReference = Readonly<{namespace:string;catalog:string|null;extraction:'map_key'|'value';join:'exact_numeric_only';currentCatalogCoverageVerified:false;status:'legacy_source_only';note:string}>;

@@ -155,4 +155,28 @@ class IngestTests(unittest.TestCase):
         self.assertFalse(inspected['writerAuthorized'])
 
 
+    def test_deep_grid_chest_and_character_fields_keep_only_public_types(self):
+        private = self.report(643, 'string')
+        private['fieldWitnesses'].extend([
+            {'path':'/World/GridCollection/Grids/12345/Objects/67890/ItemID','type':'integer'},
+            {'path':'/World/GridCollection/Grids/12345/Objects/67890/State','type':'null,object'},
+            {'path':'/Player/ContainerInventories/5/Inventory[]/State','type':'null,object'},
+            {'path':'/World/Characters[]/FriendshipLevel','type':'integer'},
+            {'path':'/World/BuildingInfos/31/Room/WallGridIDs','type':'object'},
+            {'path':'/Player/PrivateUserAccessCode/4444','type':'string'}
+        ])
+        output=inspect_report(private)
+        paths={row['path'] for row in output['publicWitnesses']}
+        self.assertIn('/World/GridCollection/Grids/{id}/Objects/{id}/ItemID',paths)
+        self.assertIn('/World/GridCollection/Grids/{id}/Objects/{id}/State',paths)
+        self.assertIn('/Player/ContainerInventories/{id}/Inventory[]/State',paths)
+        self.assertIn('/World/Characters[]/FriendshipLevel',paths)
+        self.assertIn('/World/BuildingInfos/{id}/Room/WallGridIDs',paths)
+        text=json.dumps(output)
+        for forbidden in ('12345','67890','4444','PrivateUserAccessCode'):
+            self.assertNotIn(forbidden,text)
+        self.assertFalse(output['writerAuthorized'])
+        self.assertGreaterEqual(output['otherWitnessCount'],2)
+
+
 if __name__ == '__main__': unittest.main()

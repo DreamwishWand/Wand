@@ -286,3 +286,63 @@ For a different native game-source version, add
 `--allow-new-source` for **comparison only**. The verifier uses
 streaming input, emits public field names and counts only, requires the
 exact pinned digest by default, and does not read a save file.
+
+## Deeper native field witnesses and one-pass cross-domain shape comparison
+
+`data/ddv/save/native1261-deep-fields.v1.json` contains 83 **new,
+non-duplicated** public nested JSON path/type witnesses. They were selected
+from 98 candidates obtained from the SHA-256-pinned Steam **v1.26.1**
+IL2CPP `dump.cs` and independently observed in all three private
+Steam/console original saves (one schema 626, two schema 643).
+**15 candidates overlapped existing templates after normalizing public
+map placeholders**, so they were not added twice.
+
+The 83 new templates cover chest item `State`, inventory furniture
+restrictions and markers, world grids and per-grid object `ItemID`,
+position, orientation and nullable state, room and wallpaper metadata,
+village areas, character friendship data, favorite gifts, restaurant
+orders, store displays, cooking history and tool upgrades.
+The full DB-05 read-only coverage now comprises:
+66 historical + 16 common + 85 direct native + 58 nested native +
+83 deeper native = **308 distinct known public path templates**.
+They do **not** imply 308 complete native fields or full save-schema
+closure; they are independently observed *candidate* field paths.
+
+For each new path, `nativeMessage`, `protobufFieldNumber`,
+`nativePropertyType`, and allowed/observed *JSON type names* are
+recorded. The source build remains **v1.26.1** (not a newly verified
+v1.26.2 native dump), and the originals remain entirely private.
+No private user IDs, map keys, raw decoded JSON, file hashes or personal
+save values are committed.
+
+`getUnifiedSaveShapeCatalog()`, `probeUnifiedSaveStructure(decoded)`,
+and `compareUnifiedSaveStructures(before, after)` provide a public
+**cross-domain** shape-only diagnostic over all 308 templates. Domains
+include inventory, chests, collection, grids, appearance, world, player,
+progression, cosmetics and profile. Reports distinguish:
+`same_observed_witnesses` (same known *observed* subset, **not**
+full compatibility), `observed_witness_difference`,
+`observed_type_conflict`, `inconclusive` (sampled or absent domains),
+and `invalid_root`. A change between two separately permitted JSON
+types (e.g., `null` ↔ `string` for `LastGiftDate`) appears in
+`changedKindPaths`, not in `conflictingKnownPaths`. Unknown fields
+are not dropped from the **input save** (the diagnostic does not mutate
+or re-encode anything), but their names/values never enter the report.
+
+The existing private `ingest.py` and JS redacted witness comparator
+now recognize these **83 additional public templates**. Numeric user
+map keys are normalized privately to `{id}` only when the resulting
+template is allowlisted, otherwise dropped. The private raw report,
+personal saves and decoded data never belong in Git.
+
+To verify native source fields without loading any save, run locally:
+
+```bash
+python tools/db-05-save/verify_native_dump.py --dump /private/v1.26.1/Il2CppDump/dump.cs --deep
+```
+
+For a *different* native source version, add
+`--allow-new-source` for a **review-required comparison only**. An
+exact SHA-256 match on its own does not demonstrate a Writer/Codec
+round-trip, new game build identity, unknown field preservation or safe
+ownership editing. All write and export authorization remains **false**.
