@@ -98,6 +98,35 @@ try{
   await page.locator('.more-button').scrollIntoViewIfNeeded();
   await page.waitForFunction(()=>document.querySelectorAll('.item-card').length>72,{timeout:20000});
   assert.equal(browserErrors.length,0,browserErrors.join('\n'));
+  await page.getByRole('button',{name:'複数選択'}).click();
+  await page.locator('.item-card-body').first().click();
+  await page.getByRole('group',{name:'Collectionの一括記録'}).getByRole('button',{name:'所持 / 解放'}).click();
+  await page.waitForFunction(()=>document.querySelector('.summary-strip')?.textContent?.includes('1 / 12,552'));
+  const restoreChooser=page.waitForEvent('filechooser');
+  await page.getByRole('button',{name:'復元'}).click();
+  const chooser=await restoreChooser;
+  page.once('dialog',dialog=>void dialog.accept());
+  await chooser.setFiles({
+    name:'legacy-collection-backup.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(seed))
+  });
+  await page.waitForFunction(()=>document.querySelector('.summary-strip')?.textContent?.includes('1 / 12,552'));
+  const recoveredPromise=page.waitForEvent('download');
+  await page.getByRole('button',{name:'バックアップ出力'}).click();
+  const recovered=JSON.parse(await readFile(await (await recoveredPromise).path(),'utf8'));
+  assert.deepEqual(recovered,seed);
+  page.once('dialog',dialog=>void dialog.accept('Second'));
+  await page.getByRole('button',{name:'＋ 新規'}).click();
+  await page.waitForFunction(()=>document.querySelectorAll('select[aria-label="ローカル記録を選択"] option').length===2);
+  assert.equal((await page.locator('.summary-strip').innerText()).includes('0 / 12,552'),true);
+  await page.getByRole('combobox',{name:'ローカル記録を選択'}).selectOption('local-1');
+  await page.waitForFunction(()=>document.querySelector('.summary-strip')?.textContent?.includes('1 / 12,552'));
+  await page.setViewportSize({width:390,height:844});
+  const byName=page.getByRole('searchbox',{name:/8言語/});
+  await byName.fill('Glass Shoe');
+  await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
+  await page.locator('.item-card-body').first().click();
+  await page.locator('.item-inspector').getByRole('button',{name:'詳細を閉じる'}).click();
+  await page.setViewportSize({width:1280,height:720});
   const releaseRoot='ddv/game-db/releases/approved-fixture';
   const publishedItem={
     id:'40005160',names:{en:'Verified Glass Shoe',ja:'検証済みの靴'},
