@@ -40,6 +40,20 @@ The generated icon bundles contain 21,209 candidate images: furniture contains 4
 
 Next targeted local diagnostic is serialized AssetBundle.m_Container / UnityPy Environment.container metadata for four small bundles, using an exact GUID key and exact (assets_file, path_id) pointer to establish any image identity. Standalone SRC04-IDENTITY.cmd was supplied for the Windows operator; empirical result is still pending. Never upload or publish the derived game images. Keep publicationApproved=false.
 
+## SRC-04 identity resolution revision 2 (2026-11-21)
+
+The user-supplied catalog-identity-report.json validated four generated-icon bundles:
+
+- AssetBundle container keys: 331 entries, 113 unique catalog-scoped item GUIDs, 1 GUID-to-image link retained by the old algorithm.
+- 56 Sprite and 56 Texture2D objects in accessory; 11+11 in buffelixir; 82 Sprite and 83 Texture2D in fish; 16+16 in wallpaper.
+- Each normal GUID has *two different exact Unity path IDs* (Sprite and Texture2D). The original probe falsely treated these class-distinct pointers as conflicting identities.
+
+**Fix:** `catalog_identity_probe.py` revision 2 resolves distinct object classes under the same exact GUID. It chooses the Sprite image for display when one exists, otherwise the single Texture2D, and records both object identities when paired. Multiple distinct Sprites or multiple distinct Texture2D objects still fail closed. The tool never substitutes bundle order, names, image appearance, or platform/version labels for an exact serialized object ID.
+
+The Windows standalone runner [SRC04-IDENTITY-V2.cmd](SRC04-IDENTITY-V2.cmd) invokes the read-only metadata probe on all **24 catalog-linked extracted icon bundles**, ordered by checkpoint image count. It does **not** re-decode pixels or modify game files. The runner emits `catalog-identity-report.json` (diagnostic, shareable) and `catalog-identity-links-private.json` (unpublished local GUID-to-image mapping), plus `catalog-identity-v2-console.log`. Results are flushed after each inspected bundle. It preserves all source image data from the previously finished 40-bundle extraction.
+
+Run only the v2 CMD; do not rerun the full media extraction. For verification, upload `catalog-identity-report.json`. The expected final mapping count has **not** been confirmed on Windows; the synthetic tests (7) pass. Never publish unverified identities or derived images. All outputs retain `publicationApproved=false`.
+
 ---
 
 ## Advanced manual workflow and historical R39 compatibility
