@@ -50,6 +50,16 @@ try{
   }
   assert.match(await page.locator('.summary-strip').innerText(),/12,552/);
   assert.match(await page.locator('.summary-strip').innerText(),/1 \/ 12,552/);
+  // A fabricated local catalog is rejected without replacing the public
+  // source, leaking file contents, or changing the IndexedDB user record.
+  const badLocalChooser=page.waitForEvent('filechooser');
+  await page.getByRole('button',{name:'v1.26.2 データをローカルで開く'}).click();
+  const badLocalFile=await badLocalChooser;
+  await badLocalFile.setFiles({name:'invalid-steam-db01.json',mimeType:'application/json',
+    buffer:Buffer.from('{"schema":"wand.collection.owner-local-db01@1"}')});
+  await page.getByRole('status').filter({hasText:'COLLECTION_LOCAL_DB01_UNRECOGNIZED_FILE'}).waitFor();
+  assert.match(await page.locator('.source-pill').innerText(),/Nintendo Switch/);
+  assert.match(await page.locator('.summary-strip').innerText(),/12,552/);
   const stored=await page.evaluate(async()=>{
     const req=indexedDB.open('dreamwishwand-collection',1);
     const db=await new Promise((resolve,reject)=>{

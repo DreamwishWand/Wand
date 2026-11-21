@@ -344,12 +344,27 @@ impl CollectionEngine {
         Ok(())
     }
     fn load_db00_index_impl(&mut self, source: &str) -> Result<(),String> {
+        self.load_db00_index_visibility_impl(source,"public_reference")
+    }
+    // A user-selected, SHA-pinned private catalog is never fetched from the
+    // public active pointer and is never written into IndexedDB.
+    fn load_owner_local_db00_index_impl(&mut self, source: &str) -> Result<(),String> {
+        self.load_db00_index_visibility_impl(source,"private")
+    }
+    fn load_db00_index_visibility_impl(&mut self, source: &str, visibility: &str) -> Result<(),String> {
         let published: Db00Index = serde_json::from_str(source).map_err(|_|"COLLECTION_DB00_INDEX_JSON")?;
         if published.schema != DB00_RELEASE_SCHEMA || published.id.is_empty()
             || published.count == 0 || published.count > MAX_ROWS
             || published.target.platform.is_empty() || published.sources.is_empty()
-            || published.sources.iter().any(|entry|entry.visibility!="public_reference" || entry.id.is_empty())
+            || published.sources.iter().any(|entry|entry.visibility!=visibility || entry.id.is_empty())
         { return Err("COLLECTION_DB00_PUBLISHABLE_INDEX_REQUIRED".into()); }
+        if visibility=="private"
+            && (published.id!="db01-steam-1-26-2-owner-local-verified"
+                || published.target.platform!="Steam"
+                || published.target.game_version.as_deref()!=Some("1.26.2")
+                || published.count>13_202 || published.sources.len()!=1
+                || published.sources[0].id!="private-db01-v1262")
+        { return Err("COLLECTION_LOCAL_DB01_TARGET_REQUIRED".into()); }
         let sources:HashSet<String> = published.sources.iter().map(|entry|entry.id.clone()).collect();
         let releases:HashSet<String> = published.releases.iter().map(|entry|entry.id.clone()).collect();
         if sources.len()!=published.sources.len() || releases.len()!=published.releases.len()
@@ -406,6 +421,13 @@ impl CollectionEngine {
         let mut ids=HashSet::new();
         for row in shard.items {
             if !valid_item_id(&row.id) {return Err("COLLECTION_DB00_ITEM_ID".into());}
+            if index.target.platform=="Steam" && index.target.game_version=="1.26.2"
+                && self.db00_sources.contains("private-db01-v1262")
+                && (row.names.len()!=LOCALES.len()
+                    || LOCALES.iter().any(|locale|
+                        row.names.get(*locale).is_none_or(|name|
+                            name.trim().is_empty() || name.len()>512)))
+            { return Err("COLLECTION_LOCAL_DB01_NAMES_REQUIRED".into()); }
             let id=row.id.parse::<u64>().map_err(|_|"COLLECTION_DB00_ITEM_ID")?;
             if !ids.insert(id) || self.lookup.contains_key(&id)
                 || row.name_status!="verified" || row.names.keys().any(|l|!LOCALES.contains(&l.as_str()))
@@ -705,6 +727,9 @@ impl CollectionEngine {
     pub fn load_db00_index(&mut self, source: &str) -> Result<(), JsValue> {
         self.load_db00_index_impl(source).map_err(|e|JsValue::from_str(&e))
     }
+    pub fn load_owner_local_db00_index(&mut self, source: &str) -> Result<(), JsValue> {
+        self.load_owner_local_db00_index_impl(source).map_err(|e|JsValue::from_str(&e))
+    }
     pub fn append_db00_shard(&mut self, source: &str) -> Result<(), JsValue> {
         self.append_db00_shard_impl(source).map_err(|e|JsValue::from_str(&e))
     }
@@ -877,6 +902,56 @@ mod tests {
             r#"{"locale":"en","category":"NewFamily","limit":10}"#
         ).unwrap()).unwrap();
         assert_eq!(result["total"],2);
+    }
+    #[test]
+    fn owner_local_db01_names_are_isolated_from_public_release_ingest() {
+        let names=json!({
+            "en":"Current Shoe","fr":"Chaussure actuelle","it":"Scarpa attuale",
+            "de":"Aktueller Schuh","es-ES":"Zapato actual","ja":"現在の靴",
+            "zh-CN":"目前的鞋","pt-BR":"Sapato atual"
+        });
+        let source=json!({
+            "id":"40005160","names":names,"nameStatus":"verified",
+            "category":"Furniture","stateClass":"READ_ONLY",
+            "stateSemantic":"UNLOCK_OR_AVAILABILITY",
+            "worlds":[],"universes":[],"contentIds":[],"releaseIds":[],
+            "relations":[],"sourceRefs":["private-db01-v1262"]
+        });
+        let shard=json!({"schema":DB00_SNAPSHOT_SCHEMA,"offset":0,"count":1,
+            "items":[source]}).to_string();
+        let index=json!({
+            "schema":DB00_RELEASE_SCHEMA,
+            "id":"db01-steam-1-26-2-owner-local-verified","count":1,
+            "target":{"platform":"Steam","gameVersion":"1.26.2","buildId":null},
+            "sources":[{"id":"private-db01-v1262","visibility":"private"}],
+            "releases":[],
+            "shards":[{"file":"items-000.json","offset":0,"count":1,
+                "bytes":shard.len(),"sha256":"a".repeat(64)}]
+        }).to_string();
+        let mut public=CollectionEngine::default();
+        assert!(public.load_db00_index_impl(&index).is_err());
+        let mut local=CollectionEngine::default();
+        local.load_owner_local_db00_index_impl(&index).unwrap();
+        local.append_db00_shard_impl(&shard).unwrap();
+        local.finish_db00_impl().unwrap();
+        let meta:Value=serde_json::from_str(&local.metadata_impl().unwrap()).unwrap();
+        assert_eq!(meta["version"],"1.26.2");
+        assert_eq!(meta["platform"],"Steam");
+        let result:Value=serde_json::from_str(&local.query_impl(
+            r#"{"locale":"ja","category":"Furniture","search":"現在の靴","limit":12}"#
+        ).unwrap()).unwrap();
+        assert_eq!(result["total"],1);
+        assert_eq!(result["items"][0]["label"],"現在の靴");
+        let mut bad_item:Value=serde_json::from_str(&shard).unwrap();
+        bad_item["items"][0]["names"].as_object_mut().unwrap().remove("ja");
+        let bad_shard=bad_item.to_string();
+        let mut bad_index:Value=serde_json::from_str(&index).unwrap();
+        bad_index["shards"][0]["bytes"]=json!(bad_shard.len());
+        let mut rejected=CollectionEngine::default();
+        rejected.load_owner_local_db00_index_impl(&bad_index.to_string()).unwrap();
+        assert_eq!(rejected.append_db00_shard_impl(&bad_shard),
+            Err("COLLECTION_LOCAL_DB01_NAMES_REQUIRED".into()));
+        assert!(rejected.rows.is_empty());
     }
     #[test]
     fn canonical_categories_preserve_all_29_entries() {
