@@ -35,19 +35,39 @@ function readLocalZip(path,expected){
   return new Uint8Array(contents);
 }
 /** @returns {Promise<object>} Aggregate evidence ONLY. */
-export async function runPrivateMealPriceSmoke(r5Path,staticPricePath){
+export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPath){
   const r5=readLocalZip(r5Path,R5_SHA);
   const priceZip=readFileSync(staticPricePath);
   const prices=readOriginalPriceReleaseZip(priceZip);
   const view=await loadPrivateMealPricingView({
     acquisitionArchiveBytes:r5,
     priceManifestBytes:prices.manifestBytes,
-    priceFiles:prices.files
+    priceFiles:prices.files,
+    ...(protoDbPath===undefined?{}:{protoDbBytes:new Uint8Array(readFileSync(protoDbPath))})
   });
   requireValue(view.verifiedPrivateSources===true&&
     view.realizedSellPricesVerified===false&&
     view.nativePriceFormulaEvaluated===false&&
     view.publishable===false,'INVALID_EVIDENCE_BOUNDARY');
+
+  let authenticatedNativeStarResults=0;
+  if(protoDbPath!==undefined){
+    requireValue(view.nativeStarSettingsVerified===true&&
+      view.nativeCookingStarSettings?.verifiedPrivateOriginal===true&&
+      view.nativeCookingStarSettings.formulaBodyVerified===false,
+      'NATIVE_STAR_SOURCE_AUTHENTICATION');
+    for(let star=1;star<=5;star++){
+      const row=view.getSourceStarResult(star);
+      requireValue(row?.starRating===star&&
+        row.sellPriceIngredientPercentage>0&&
+        row.actualSellPriceFormulaVerified===false&&
+        row.roundingRuleVerified===false,
+        'NATIVE_STAR_ROWS');
+      authenticatedNativeStarResults++;
+    }
+  }else requireValue(view.nativeStarSettingsVerified===false&&
+    view.nativeCookingStarSettings===null&&view.getSourceStarResult(1)===null,
+    'STAR_SETTINGS_ABSENCE_MISREPORTED');
 
   const originalArchive=openPrivateSrc02Archive(r5);
   const rawRecipes=await originalArchive.readFile('recipes.jsonl');
@@ -109,6 +129,7 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath){
     staticPurchaseRows:withStaticPurchaseRow,
     mealsWithoutStaticPurchaseRows:withoutStaticPurchaseRow,
     originalStaticMealSellPriceRows:0,
+    authenticatedNativeStarResults,
     salePriceComputed:false,
     serializedIngredientsRetained:true,
     actualUserSaveRead:false,
@@ -117,9 +138,10 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath){
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
   const args=process.argv.slice(2);
-  if(args.length!==4||args[0]!=='--r5-zip'||args[2]!=='--price-zip')
+  if((args.length!==4&&args.length!==6)||args[0]!=='--r5-zip'||
+     args[2]!=='--price-zip'||(args.length===6&&args[4]!=='--protodb'))
     fail('USAGE');
-  runPrivateMealPriceSmoke(args[1],args[3])
+  runPrivateMealPriceSmoke(args[1],args[3],args.length===6?args[5]:undefined)
     .then(row=>console.log(JSON.stringify(row,null,2)))
     .catch(err=>{console.error(String(err));process.exitCode=1;});
 }
