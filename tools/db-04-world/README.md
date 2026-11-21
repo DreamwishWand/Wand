@@ -152,6 +152,23 @@ no second PC extraction is required. The comparison is capped at 5,000 native
 default objects and records whether the sample was truncated. The generated
 scorecard remains explicitly unverified and is not published to Git.
 
+The scorecard also distinguishes **informativeness** from a high percentage of
+terrain matches: `crossHypothesisDiscrimination` counts original layout
+objects for which the four candidate geometries actually differ, or whose
+candidate out-of-grid / native-floor-mask outcomes differ. A symmetric or
+single-cell footprint may fit all four models identically; those records
+provide *no discriminating evidence* and must not be used to promote an
+orientation or anchor convention.
+
+The evaluator now enforces a deterministic total candidate-cell budget
+(default 2,000,000 projected source cells across all four models, configurable
+with `--max-cells`). Results disclose `candidateCellsEvaluated`,
+`candidateCellBudget`, `truncatedByCellBudget`, `truncatedByMaxObjects`,
+`unprocessedLayoutObjects`, and count objects excluded by an exhausted budget.
+The private one-shot ZIP uses both the existing 5,000-object cap and the
+cell budget to prevent unexpectedly expensive processing of large native
+footprints. Its statistics are diagnostic, not a placement legality score.
+
 ## Native terrain cell counts and default-object origin audit
 
 DB-04 now extracts `nativePaletteIndexCellCounts` for source-corroborated 1/2-bit
