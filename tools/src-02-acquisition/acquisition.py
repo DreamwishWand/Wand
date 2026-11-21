@@ -223,8 +223,8 @@ def parse_loot(data):
                            'candidates': candidates,
                            'eligibilityDigest': conditions(single(sf, 101, 2)),
                            'hasDynamicTypeFilters': bool(values(sf, 12, 2) or values(sf, 100, 2))})
-            for c in candidates:
-                acquisitions.append({'pathId': f'loot:{table_id}:{index}:{len(acquisitions)}',
+            for ordinal, c in enumerate(candidates):
+                acquisitions.append({'pathId': f'loot:{table_id}:{index}:{ordinal}',
                     'type': 'loot_table_candidate', 'itemId': c['itemId'],
                     'definitionId': table_id, 'nameKey': name, 'groupIndex': index,
                     'conditionDigest': c['conditionDigest'], 'contextVerified': False,
