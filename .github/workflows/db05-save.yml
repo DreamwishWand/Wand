@@ -127,6 +127,8 @@ jobs:
           rustup target add wasm32-unknown-unknown
           wasm-pack build crates/ddv-save-schema --release --target web --out-dir ../../src/lib/save/wasm/pkg --features wasm
           wasm-pack build crates/ddv-p1g-codec --release --target web --out-dir ../../src/lib/save/wasm/p1g-pkg --features wasm
+      - name: Rust DB-03 MissionSlot source-ID audit (synthetic)
+        run: cargo test --manifest-path crates/ddv-p1g-codec/Cargo.toml --features wasm
       - name: Rust native P1G wasm32 build check (no Writer)
         run: |
           cargo check --manifest-path crates/ddv-p1g-codec/Cargo.toml --target wasm32-unknown-unknown --features wasm
