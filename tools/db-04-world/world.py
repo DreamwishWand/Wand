@@ -832,6 +832,15 @@ def offgrid_grid_collection_layout(data, relative):
     if relative.name == "CustomLocations.json" or "PuzzleAnswer" in relative.name:
         return None
     root = wire_fields(data)
+    # Original OffGrid scene sources have two distinct wire envelopes.
+    # Some event visual layouts (Steam 1.26.2 Halloween 2025/2026) are
+    # direct Meta.GridCollection values with repeated root field 1 map
+    # entries, not context(1) + embedded collection(2). Dispatch those
+    # through scene_layouts()' normal direct collection reader, otherwise
+    # one(root, 1, 2) would reject the repeated map as a duplicate field.
+    # A malformed *known* direct GridCollection still fails closed here.
+    if grid_collection_layout(data, relative) is not None:
+        return None
     context_raw = one(root, 1, 2)
     if context_raw is None:
         return None
