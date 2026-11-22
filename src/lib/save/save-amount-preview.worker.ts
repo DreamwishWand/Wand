@@ -348,6 +348,39 @@ function validateGridInstancePreview(source:unknown):GridInstancePreview{
   return {...source,rows} as unknown as GridInstancePreview;
 }
 
+interface GridCoordinateEdit {
+  localOrdinal:number;
+  itemId:string;
+  recordKind:'full'|'diff_modified';
+  expectedX:number;
+  expectedY:number;
+  replacementX:number;
+  replacementY:number;
+}
+function validateGridCoordinateEdit(input:unknown):GridCoordinateEdit{
+  if(!object(input)||!exact(input,[
+    'localOrdinal','itemId','recordKind','expectedX','expectedY',
+    'replacementX','replacementY'
+  ])||!nonnegative(input.localOrdinal,20000)||
+    input.localOrdinal===0||!validId(input.itemId)||
+    BigInt(input.itemId)>9007199254740991n||
+    !['full','diff_modified'].includes(String(input.recordKind))||
+    !signed32(input.expectedX)||!signed32(input.expectedY)||
+    !signed32(input.replacementX)||!signed32(input.replacementY)||
+    (input.expectedX===input.replacementX&&
+      input.expectedY===input.replacementY))
+    throw new TypeError('DB05_GRID_COORDINATE_EDIT_INVALID');
+  return input as unknown as GridCoordinateEdit;
+}
+interface GridCoordinatePreviewReceipt{
+  contract:'wand.db05.grid-coordinate-preview@1';
+  changed:true;
+  lexicalBytesPreserved:true;
+  reopenVerified:true;
+  writerAuthorized:false;
+  exportAuthorized:false;
+}
+
 interface PreviewReceipt {
   contract: 'wand.db05.amount-preview@1';
   changed: boolean;
@@ -374,7 +407,8 @@ interface CopyReceipt {
 }
 type Reply =
   | { kind: 'error' }
-  | { kind: 'result'; receipt: PreviewReceipt | BatchPreviewReceipt }
+  | { kind: 'result'; receipt: PreviewReceipt | BatchPreviewReceipt |
+      GridCoordinatePreviewReceipt }
   | { kind: 'copy'; bytes: Uint8Array; receipt: CopyReceipt }
   | { kind: 'slots'; rows: SaveEditableSlot[];
       grid:SaveGridReferenceReport;
@@ -492,15 +526,22 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
     const compareDb04=input?.command === 'inspect-db04-grid-paths';
     const compareDb03=input?.command === 'inspect-db03-mission-slots';
     const listing=input?.command === 'inspect-existing-slots';
+    const gridPreview=input?.command==='preview-grid-coordinates';
+    const gridCopy=input?.command==='export-grid-coordinate-copy';
+    const gridEdit=gridPreview||gridCopy;
     const instances=input?.command === 'inspect-grid-instances';
     const exporting = input?.command === 'export-existing-amount-copy' ||
-      input?.command === 'export-batch-amount-copy';
+      input?.command === 'export-batch-amount-copy'||gridCopy;
     const batch = input?.command === 'preview-batch-amounts' ||
       input?.command === 'export-batch-amount-copy';
     const expectedKeys = compareDb04
       ? ['command','format','bytes','graph']
       : compareDb03 ? ['command','format','bytes','base']
-      : listing||instances ? ['command','format','bytes'] : batch
+      : listing||instances ? ['command','format','bytes']
+      : gridEdit ? (gridCopy
+        ? ['command','format','bytes','edit','allowExperimentalCopy']
+        : ['command','format','bytes','edit'])
+      : batch
       ? (exporting
         ? ['command', 'format', 'bytes', 'edits', 'allowExperimentalCopy']
         : ['command', 'format', 'bytes', 'edits'])
@@ -512,7 +553,8 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
         !['preview-existing-amount', 'export-existing-amount-copy',
           'preview-batch-amounts', 'export-batch-amount-copy',
           'inspect-existing-slots','inspect-db04-grid-paths',
-          'inspect-db03-mission-slots','inspect-grid-instances'].includes(
+          'inspect-db03-mission-slots','inspect-grid-instances',
+          'preview-grid-coordinates','export-grid-coordinate-copy'].includes(
           String(input.command)) ||
         (exporting && input.allowExperimentalCopy !== true) ||
         !['auto', 'json', 'p1g'].includes(String(input.format)) ||
@@ -523,12 +565,14 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
           !(input.base===''||
             /^\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/.test(input.base)))) ||
         (!batch && !listing && !instances && !compareDb04 && !compareDb03 &&
-          (!uint32(input.expected) || !uint32(input.replacement))))
+          !gridEdit&&(!uint32(input.expected)||!uint32(input.replacement))))
       throw new TypeError('DB05_WORKER_COMMAND_INVALID');
 
+    const gridPlan=gridEdit
+      ? JSON.stringify(validateGridCoordinateEdit(input.edit)):null;
     const edits = batch ? validateBatchEdits(input.edits) : null;
     const plan = edits === null ? null : JSON.stringify({edits});
-    const target = (batch||listing||instances||compareDb04||compareDb03)
+    const target = (batch||listing||instances||compareDb04||compareDb03||gridEdit)
       ? null : validateTarget(input.target);
     const requestedFormat = input.format as InputFormat;
     const format: Exclude<InputFormat, 'auto'> =
@@ -546,7 +590,19 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
       rust.append_chunk(bytes.subarray(i, i + CHUNK));
     rust.finish_open();
 
-    if(instances){
+    if(gridPreview){
+      const raw:unknown=JSON.parse(
+        rust.preview_grid_coordinates(gridPlan!));
+      if(!object(raw)||!exact(raw,[
+        'contract','changed','lexicalBytesPreserved','reopenVerified',
+        'writerAuthorized','exportAuthorized'
+      ])||raw.contract!=='wand.db05.grid-coordinate-preview@1'||
+        raw.changed!==true||raw.lexicalBytesPreserved!==true||
+        raw.reopenVerified!==true||raw.writerAuthorized!==false||
+        raw.exportAuthorized!==false)
+        throw new TypeError('DB05_GRID_COORDINATE_PREVIEW_INVALID');
+      response={kind:'result',receipt:raw as unknown as GridCoordinatePreviewReceipt};
+    }else if(instances){
       response={kind:'grid-instances',receipt:validateGridInstancePreview(
         JSON.parse(rust.list_saved_grid_instances()))};
     }else if(compareDb03){
@@ -593,7 +649,9 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
         complete:true,writerAuthorized:false
       };
     }else if (exporting) {
-      const length = plan !== null
+      const length = gridCopy
+        ? rust.prepare_grid_coordinate_copy(gridPlan!)
+        : plan !== null
         ? rust.prepare_batch_copy(plan)
         : target?.kind === 'inventory'
           ? rust.prepare_inventory_copy(

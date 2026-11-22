@@ -344,12 +344,43 @@ try{
   assert.match(await objects.innerText(),/X 45 \/ Y 9 · East/);
   assert.match(await objects.innerText(),/X -12 \/ Y 8 · West/);
   assert.match(await objects.innerText(),/座標未確認/);
-  assert.match(await objects.innerText(),/配置編集はまだできません/);
+  assert.match(await objects.innerText(),/座標編集はテスト用です/);
   assert.equal(await objects.getByText('do-not-export').count(),0);
   await objects.getByLabel('配置アイテム検索').fill('30000031');
   assert.match(await objects.innerText(),/ピュアナイトシャード/);
   assert.doesNotMatch(await objects.innerText(),/X -12/);
   await objects.getByLabel('配置アイテム検索').fill('');
+  // The signed X/Y coordinates are edited only after Rust re-resolves a
+  // private grid/object identity from this file's local ordinal. The P1G
+  // is rebuilt and independently reopened; no private identity is published.
+  await objects.getByRole('button',{name:'配置 #1 の座標を編集'}).click();
+  const coordinates=objects.getByLabel('座標編集');
+  await coordinates.getByLabel('新しいX').fill('57');
+  await coordinates.getByLabel('新しいY').fill('-4');
+  await coordinates.getByRole('button',{name:'座標変更を検証'}).click();
+  await coordinates.getByRole('status').filter({
+    hasText:'座標変更をRust/WASMで検証しました'
+  }).waitFor({timeout:30000});
+  assert.equal(await coordinates.getByRole('alert').count(),0);
+  page.once('dialog',dialog=>dialog.accept());
+  await coordinates.getByRole('button',{name:'座標変更コピーを生成'}).click();
+  const coordinateLink=coordinates.getByRole('link',{name:'座標コピーをダウンロード'});
+  await coordinateLink.waitFor({timeout:30000});
+  const coordinateEvent=page.waitForEvent('download');
+  await coordinateLink.click();
+  const coordinateCopy=readSyntheticEncryptedP1g(
+    await readFile(await (await coordinateEvent).path())
+  );
+  const editedObject=coordinateCopy.World.GridCollection.Grids['101'].Objects['1'];
+  assert.equal(editedObject.X,57);
+  assert.equal(editedObject.Y,-4);
+  assert.equal(editedObject.Orientation,'East');
+  assert.equal(editedObject.PrivateState,'do-not-export');
+  assert.equal(coordinateCopy.World.GridCollection.Grids['101'].Objects['2'].ItemID,30000031);
+  assert.equal(coordinateCopy.World.GridCollection.DiffGrids['102'].ModifiedObjects['6'].X,-12);
+  assert.equal(quantityProfile.World.GridCollection.Grids['101'].Objects['1'].X,45);
+  assert.equal(quantityProfile.World.GridCollection.Grids['101'].Objects['1'].Y,9);
+  assert.equal(coordinateCopy.Player.ListInventories['100'].Inventory['777'].Amount,1);
   // Two saved references for sample furniture: one full and one non-removed
   // DiffGrid object, not three (the removed DiffGrid identity is suppressed).
   // Private DB-04 reference index supplied as a local, synthetic file.

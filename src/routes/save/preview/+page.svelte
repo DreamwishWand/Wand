@@ -66,6 +66,20 @@
   let instanceStatus:GridInstancesReceipt['status']='not_observed';
   let instanceSampled=false;
   let instanceQuery='';
+  type GridCoordinatePlan={
+    localOrdinal:number;itemId:string;
+    recordKind:'full'|'diff_modified';
+    expectedX:number;expectedY:number;
+    replacementX:number;replacementY:number;
+  };
+  let coordinateSelection:LocalGridInstance|null=null;
+  let coordinateX='';let coordinateY='';
+  let coordinateState:'idle'|'checking'|'validated'|'exporting'|'error'='idle';
+  let coordinateSnapshot:{
+    file:File;format:'json'|'auto';plan:GridCoordinatePlan;signature:string
+  }|null=null;
+  let coordinateCopyUrl:string|null=null;
+  let coordinateCopyName='';
   let db04Input:HTMLInputElement|null=null;
   type Db04GridMatch={
     contract:'wand.db05.db04-grid-path-match@2';
@@ -138,6 +152,35 @@
     downloadName='';
     exportReady=false;
   }
+  function discardCoordinateCopy(){
+    if(coordinateCopyUrl)URL.revokeObjectURL(coordinateCopyUrl);
+    coordinateCopyUrl=null;coordinateCopyName='';
+  }
+  function invalidateCoordinateEdit(){
+    coordinateSnapshot=null;coordinateState='idle';
+    discardCoordinateCopy();
+  }
+  function coordinateNumber(value:string):number|null{
+    if(!/^(?:0|-?[1-9][0-9]*)$/.test(value))return null;
+    const v=Number(value);
+    return Number.isInteger(v)&&v>=-2147483648&&v<=2147483647?v:null;
+  }
+  function selectedCoordinatePlan():GridCoordinatePlan|null{
+    const row=coordinateSelection;
+    const x=coordinateNumber(coordinateX),y=coordinateNumber(coordinateY);
+    if(!row||!row.coordinatesObserved||
+       row.x===null||row.y===null||
+       x===null||y===null||(x===row.x&&y===row.y))return null;
+    return {localOrdinal:row.localOrdinal,itemId:row.itemId,
+      recordKind:row.recordKind,expectedX:row.x,expectedY:row.y,
+      replacementX:x,replacementY:y};
+  }
+  function selectGridInstance(row:LocalGridInstance){
+    if(!row.coordinatesObserved||row.x===null||row.y===null)return;
+    cancel();result=null;
+    coordinateSelection={...row};coordinateX=String(row.x);
+    coordinateY=String(row.y);
+  }
   function parameters(){
     const old=uint32(expected),next=uint32(replacement);
     const target:EditTarget=kind==='inventory'
@@ -162,6 +205,7 @@
     processing=false;
     snapshot=null;
     discardDownload();
+    invalidateCoordinateEdit();
   }
   onDestroy(()=>{
     cancel();
@@ -179,6 +223,7 @@
     removedGridMarkers=0;
     gridInstances=[];instanceState='idle';
     instanceStatus='not_observed';instanceSampled=false;instanceQuery='';
+    coordinateSelection=null;coordinateX='';coordinateY='';
     db04Match=null;db04State='idle';
     db03Summary=null;db03State='idle';
     dbMap=new Map();dbStatus='idle';
@@ -351,7 +396,7 @@
   }
 
   async function loadGridInstances(){
-    cancel();result=null;
+    cancel();result=null;coordinateSelection=null;
     gridInstances=[];instanceStatus='not_observed';instanceSampled=false;
     instanceState='idle';
     const save=savedSlotsFile;
@@ -410,6 +455,135 @@
     }
   }
 
+  async function validateCoordinateEdit(){
+    cancel();result=null;
+    const file=savedSlotsFile,plan=selectedCoordinatePlan();
+    if(!file||fileInput?.files?.[0]!==file||!plan||
+       file.size<1||file.size>MAX_BYTES){
+      coordinateState='error';return;
+    }
+    const format:'json'|'auto'=file.name.toLowerCase().endsWith('.json')
+      ?'json':'auto';
+    const signature=JSON.stringify(plan),request=revision;
+    coordinateState='checking';processing=true;
+    let bytes:Uint8Array|null=null;
+    let worker:Worker|null=null;
+    try{
+      bytes=new Uint8Array(await file.arrayBuffer());
+      if(request!==revision)return;
+      worker=new Worker(
+        new URL('../../../lib/save/save-amount-preview.worker.ts',import.meta.url),
+        {type:'module'}
+      );
+      active=worker;const own=worker;
+      const finish=(message:unknown)=>{
+        if(request!==revision||active!==own)return;
+        own.terminate();active=null;processing=false;
+        const r=message as {kind?:string;receipt?:Record<string,unknown>};
+        if(r?.kind!=='result'||
+           r.receipt?.contract!=='wand.db05.grid-coordinate-preview@1'||
+           r.receipt.changed!==true||
+           r.receipt.lexicalBytesPreserved!==true||
+           r.receipt.reopenVerified!==true||
+           r.receipt.writerAuthorized!==false||
+           r.receipt.exportAuthorized!==false){
+          coordinateState='error';return;
+        }
+        coordinateSnapshot={file,format,plan,signature};
+        coordinateState='validated';
+      };
+      worker.onmessage=event=>finish(event.data);
+      worker.onerror=event=>{event.preventDefault();finish({kind:'error'});};
+      worker.onmessageerror=()=>finish({kind:'error'});
+      worker.postMessage({command:'preview-grid-coordinates',
+        format,bytes,edit:plan},[bytes.buffer]);
+      bytes=null;
+    }catch{
+      if(request===revision){
+        worker?.terminate();active=null;processing=false;
+        coordinateState='error';
+      }
+    }finally{
+      if(bytes?.byteLength)bytes.fill(0);
+    }
+  }
+
+  async function exportCoordinateCopy(){
+    if(processing||coordinateState!=='validated'||
+       !coordinateSnapshot)return;
+    const saved=coordinateSnapshot,plan=selectedCoordinatePlan();
+    if(!plan||JSON.stringify(plan)!==saved.signature||
+       fileInput?.files?.[0]!==saved.file||
+       savedSlotsFile!==saved.file){
+      invalidateCoordinateEdit();coordinateState='error';return;
+    }
+    if(!window.confirm(
+      '座標を変更したセーブのコピーを作成します。ゲームでの配置動作は未検証です。元のセーブをバックアップしてテストしてください。'
+    ))return;
+    discardCoordinateCopy();discardDownload();
+    revision++;const request=revision;
+    coordinateState='exporting';processing=true;
+    let bytes:Uint8Array|null=null;
+    let worker:Worker|null=null;
+    try{
+      bytes=new Uint8Array(await saved.file.arrayBuffer());
+      if(request!==revision)return;
+      worker=new Worker(
+        new URL('../../../lib/save/save-amount-preview.worker.ts',import.meta.url),
+        {type:'module'}
+      );
+      active=worker;const own=worker;
+      const finish=(message:unknown)=>{
+        if(request!==revision||active!==own)return;
+        own.terminate();active=null;processing=false;
+        const r=message as {
+          kind?:string;bytes?:Uint8Array;receipt?:Record<string,unknown>
+        };
+        const good=r?.kind==='copy'&&r.bytes instanceof Uint8Array&&
+          r.bytes.byteLength>0&&r.bytes.byteLength<=32*1024*1024&&
+          r.receipt?.contract==='wand.db05.experimental-copy@1'&&
+          r.receipt.copyBytes===r.bytes.byteLength&&
+          r.receipt.originalUnchanged===true&&
+          r.receipt.productionWriterAuthorized===false&&
+          r.receipt.independentReopenVerified===true&&
+          r.receipt.experimentalCopyOnly===true;
+        if(!good){
+          if(r?.bytes instanceof Uint8Array&&r.bytes.byteLength)
+            r.bytes.fill(0);
+          coordinateState='error';coordinateSnapshot=null;return;
+        }
+        const payload=r.bytes as Uint8Array;
+        try{
+          coordinateCopyUrl=URL.createObjectURL(new Blob(
+            [payload.buffer as ArrayBuffer],{type:'application/octet-stream'}));
+          payload.fill(0);
+          coordinateCopyName=copiedName(saved.file.name);
+          coordinateState='validated';
+        }catch{
+          payload.fill(0);discardCoordinateCopy();
+          coordinateState='error';coordinateSnapshot=null;
+        }
+      };
+      worker.onmessage=event=>finish(event.data);
+      worker.onerror=event=>{event.preventDefault();finish({kind:'error'});};
+      worker.onmessageerror=()=>finish({kind:'error'});
+      worker.postMessage({
+        command:'export-grid-coordinate-copy',
+        format:saved.format,allowExperimentalCopy:true,
+        bytes,edit:saved.plan
+      },[bytes.buffer]);
+      bytes=null;
+    }catch{
+      if(request===revision){
+        worker?.terminate();active=null;processing=false;
+        coordinateState='error';coordinateSnapshot=null;
+        discardCoordinateCopy();
+      }
+    }finally{
+      if(bytes?.byteLength)bytes.fill(0);
+    }
+  }
+
   async function loadSavedSlots(){
     cancel();result=null;
     const file=fileInput?.files?.[0];
@@ -423,6 +597,7 @@
     slotState='loading';
     savedSlots=[];savedSlotsFile=null;
     gridInstances=[];instanceState='idle';instanceQuery='';
+    coordinateSelection=null;
     let bytes:Uint8Array|null=null;
     let worker:Worker|null=null;
     const request=revision;
@@ -889,9 +1064,47 @@
                       座標未確認
                     {/if}
                   </span>
+                  <button type="button" class="secondary"
+                    disabled={processing||!object.coordinatesObserved}
+                    aria-label={`配置 #${object.localOrdinal} の座標を編集`}
+                    on:click={()=>selectGridInstance(object)}>座標を編集</button>
                 </li>
               {/each}
             </ul>
+            {#if coordinateSelection}
+              <div class="coordinate-editor" aria-label="座標編集">
+                <strong>{dbMap.get(coordinateSelection.itemId)?.name??
+                  coordinateSelection.itemId} · #{coordinateSelection.localOrdinal}</strong>
+                <p class="slot-note">変更前：X {coordinateSelection.x} / Y {
+                  coordinateSelection.y}</p>
+                <label>新しいX
+                  <input bind:value={coordinateX} aria-label="新しいX"
+                    disabled={processing} on:input={invalidateCoordinateEdit} />
+                </label>
+                <label>新しいY
+                  <input bind:value={coordinateY} aria-label="新しいY"
+                    disabled={processing} on:input={invalidateCoordinateEdit} />
+                </label>
+                <button type="button" disabled={processing}
+                  on:click={validateCoordinateEdit}>
+                  {coordinateState==='checking'?'座標を検証中…':'座標変更を検証'}
+                </button>
+                {#if coordinateState==='validated'}
+                  <p role="status">座標変更をRust/WASMで検証しました。</p>
+                  <button type="button" disabled={processing||!!coordinateCopyUrl}
+                    on:click={exportCoordinateCopy}>
+                    {coordinateCopyUrl?'座標コピーを準備しました':'座標変更コピーを生成'}
+                  </button>
+                  {#if coordinateCopyUrl}
+                    <a href={coordinateCopyUrl} download={coordinateCopyName}
+                      class="download-link">座標コピーをダウンロード</a>
+                  {/if}
+                {:else if coordinateState==='error'}
+                  <p role="alert">座標を変更できませんでした。
+                    選択した配置、元の座標、入力範囲を確認してください。</p>
+                {/if}
+              </div>
+            {/if}
             {#if gridInstances.length>120&&visibleGridInstances.length===120}
               <p class="slot-note">アイテム名・Item IDで絞り込めます。</p>
             {/if}
@@ -907,7 +1120,7 @@
           {/if}
           <p class="slot-note">セーブ内の個別参照と座標です。
             現在の配置数・場所の正当性・オブジェクトの一意性は未検証です。
-            配置編集はまだできません。</p>
+            座標編集はテスト用です。ゲーム内での移動先の妥当性は未検証です。</p>
         {:else if instanceState==='error'}
           <p role="alert">配置オブジェクトを読み込めませんでした。</p>
         {/if}
