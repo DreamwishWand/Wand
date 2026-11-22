@@ -386,7 +386,7 @@ try{
   await map.getByRole('button',{name:'配置 #3 をマップから選択'}).click();
   assert.equal(await mapCoordinateEditor.getByLabel('新しいX').inputValue(),'-12');
   assert.equal(await mapCoordinateEditor.getByLabel('新しいY').inputValue(),'8');
-  assert.match(await map.innerText(),/Y 8 ～ 8/);
+  assert.match(await map.innerText(),/Y 0 ～ 16/);
   assert.match(await map.innerText(),/配置範囲、衝突判定やワールド座標ではありません/);
   await pickGrid.selectOption('1');
   await map.getByRole('button',{name:'配置 #1 をマップから選択'}).click();
