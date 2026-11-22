@@ -1,8 +1,8 @@
 <script lang="ts">
   import {onDestroy} from 'svelte';
 
-  // Development-only verification surface. The Rust Worker does not expose
-  // patched JSON, an encrypted P1G, a save download or a production Writer.
+  // Development-only local editor: preview is metadata-only, and explicit
+  // edited-copy export never overwrites the source. No production Writer.
   let fileInput:HTMLInputElement|null=null;
   let kind:'inventory'|'chest'='inventory';
   let inventoryId='100';
@@ -16,13 +16,48 @@
   let active:Worker|null=null;
   let processing=false;
   let revision=0;
+  type EditTarget =
+    | {kind:'inventory';inventoryId:string;itemId:string}
+    | {kind:'chest';containerId:string;slotIndex:number;itemId:number};
+  type PreviewSnapshot = {
+    file:File;format:'json'|'auto';target:EditTarget;
+    expected:number;replacement:number;signature:string
+  };
+  let snapshot:PreviewSnapshot|null=null;
+  let downloadUrl:string|null=null;
+  let downloadName='';
+  let exportReady=false;
   const MAX_BYTES=128*1024*1024;
+  function discardDownload(){
+    if(downloadUrl)URL.revokeObjectURL(downloadUrl);
+    downloadUrl=null;
+    downloadName='';
+    exportReady=false;
+  }
+  function parameters(){
+    const old=uint32(expected),next=uint32(replacement);
+    const target:EditTarget=kind==='inventory'
+      ? {kind,inventoryId,itemId}
+      : {kind,containerId,slotIndex:Number(slotIndex),itemId:Number(chestItemId)};
+    const format=fileInput?.files?.[0]?.name.toLowerCase().endsWith('.json')?'json':'auto';
+    return {expected:old,replacement:next,target,format,
+      signature:JSON.stringify({expected:old,replacement:next,target,format})};
+  }
+  function copiedName(name:string):string{
+    const safe=name.replace(/[\\/\u0000-\u001f]/g,'_');
+    const dot=safe.lastIndexOf('.');
+    return dot>0
+      ? safe.slice(0,dot)+'.wand-edited'+safe.slice(dot)
+      : safe+'.wand-edited.profile';
+  }
 
   function cancel(){
     revision++;
     active?.terminate();
     active=null;
     processing=false;
+    snapshot=null;
+    discardDownload();
   }
   onDestroy(cancel);
   function uint32(x:string):number|null{
@@ -51,6 +86,7 @@
     const format=lower.endsWith('.json')?'json':
       /\.(profile|dat|bin)$/.test(lower)?'auto':null;
     if(!format){result='error';return;}
+    const params=parameters();
     const request=revision;
     processing=true;
     let bytes:Uint8Array|null=null;
@@ -77,6 +113,12 @@
           result='error';return;
         }
         result=r.receipt.changed?'changed':'unchanged';
+        if(r.receipt.changed){
+          snapshot={
+            file,format:params.format,target:params.target,
+            expected:old,replacement:next,signature:params.signature
+          };
+        }
       };
       worker.onmessage=event=>finish(event.data);
       worker.onerror=event=>{event.preventDefault();finish({kind:'error'});};
@@ -84,9 +126,7 @@
       worker.postMessage({
         command:'preview-existing-amount',
         format,bytes,
-        target:kind==='inventory'
-          ? {kind,inventoryId,itemId}
-          : {kind,containerId,slotIndex:Number(slotIndex),itemId:Number(chestItemId)},
+        target:params.target,
         expected:old,replacement:next
       },[bytes.buffer]);
       bytes=null;
@@ -100,18 +140,107 @@
     }finally{
       if(bytes&&bytes.byteLength)bytes.fill(0);
     }
+
+  /** One-time explicit user request. Re-read the immutable original File and
+   * revalidate old quantity and item identity; never reuse an unverified
+   * preview result or expose a raw save before the user requests a copy.
+   */
+  async function makeExperimentalCopy(){
+    if(processing||!snapshot||result!=='changed'){
+      result='error';return;
+    }
+    const current=parameters();
+    if(fileInput?.files?.[0]!==snapshot.file||
+       current.signature!==snapshot.signature){
+      snapshot=null;discardDownload();result='error';return;
+    }
+    if(!window.confirm(
+      '編集済みコピーを生成します。ゲームでの読み込みは未検証です。元のセーブをバックアップし、テスト用としてのみ使用してください。'
+    ))return;
+    // Keep the trusted snapshot, but invalidate any existing download.
+    const selected=snapshot;
+    discardDownload();
+    revision++;
+    const request=revision;
+    processing=true;
+    let bytes:Uint8Array|null=null;
+    let worker:Worker|null=null;
+    try{
+      bytes=new Uint8Array(await selected.file.arrayBuffer());
+      if(request!==revision)return;
+      worker=new Worker(
+        new URL('../../../lib/save/save-amount-preview.worker.mjs',import.meta.url),
+        {type:'module'}
+      );
+      active=worker;
+      const ownedWorker=worker;
+      const finish=(message:unknown)=>{
+        if(request!==revision||active!==ownedWorker)return;
+        ownedWorker.terminate();
+        active=null;
+        processing=false;
+        const r=message as {
+          kind?:string;
+          bytes?:Uint8Array;
+          receipt?:Record<string,unknown>;
+        };
+        const good=r?.kind==='copy'&&r.bytes instanceof Uint8Array&&
+          r.bytes.byteLength>0&&r.bytes.byteLength<=32*1024*1024&&
+          r.receipt?.contract==='wand.db05.experimental-copy@1'&&
+          r.receipt.copyBytes===r.bytes.byteLength&&
+          r.receipt.originalUnchanged===true&&
+          r.receipt.productionWriterAuthorized===false&&
+          r.receipt.independentReopenVerified===true&&
+          r.receipt.experimentalCopyOnly===true;
+        if(!good){
+          if(r?.bytes instanceof Uint8Array&&r.bytes.byteLength)r.bytes.fill(0);
+          result='error';snapshot=null;return;
+        }
+        try{
+          downloadUrl=URL.createObjectURL(
+            new Blob([r.bytes],{type:'application/octet-stream'})
+          );
+          r.bytes.fill(0);
+          downloadName=copiedName(selected.file.name);
+          exportReady=true;
+        }catch{
+          r.bytes.fill(0);
+          discardDownload();result='error';snapshot=null;
+        }
+      };
+      worker.onmessage=event=>finish(event.data);
+      worker.onerror=event=>{event.preventDefault();finish({kind:'error'});};
+      worker.onmessageerror=()=>finish({kind:'error'});
+      worker.postMessage({
+        command:'export-existing-amount-copy',
+        allowExperimentalCopy:true,
+        format:selected.format,
+        bytes,target:selected.target,
+        expected:selected.expected,replacement:selected.replacement
+      },[bytes.buffer]);
+      bytes=null;
+    }catch{
+      if(request===revision){
+        worker?.terminate();
+        active=null;processing=false;
+        result='error';snapshot=null;
+        discardDownload();
+      }
+    }finally{
+      if(bytes?.byteLength)bytes.fill(0);
+    }
   }
 </script>
 
 <svelte:head>
-  <title>DB-05 数量変更プレビュー（開発用） | Dreamwish Wand</title>
+  <title>DB-05 セーブ数量編集（テスト用） | Dreamwish Wand</title>
   <meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
 <main class="dev-preview">
   <p class="eyebrow">DEVELOPMENT · DB-05 SAVE</p>
-  <h1>数量変更プレビュー</h1>
-  <p>JSONまたは暗号化P1Gの既存Inventory・Chest数量変更をRust/WASMで検証します。実ファイルを変更・保存・ダウンロードする機能はありません。</p>
+  <h1>セーブ数量編集（テスト用）</h1>
+  <p>JSONまたは暗号化P1Gの既存Inventory・Chest数量をRust/WASMで検証できます。明示的に選んだ場合だけ、原本を上書きしない編集済みコピーを生成します。</p>
   <section aria-label="数量変更の検証">
     <label>セーブファイル
       <input bind:this={fileInput} type="file" accept=".profile,.dat,.bin,.json"
@@ -141,13 +270,22 @@
     </button>
   </section>
   {#if result==='changed'}
-    <p role="status">Rust/WASMで数量変更の検証に成功しました。変更後の構造を内部で再検証しました。ファイルは出力していません。</p>
+    <p role="status">Rust/WASMで数量変更の検証に成功しました。変更後の構造を内部で再検証しました。</p>
+    <div class="export-controls">
+      <button type="button" disabled={processing || exportReady || snapshot===null}
+        on:click={makeExperimentalCopy}>
+        {processing?'編集中…':exportReady?'編集済みコピーを準備しました':'編集済みコピーを生成'}
+      </button>
+      {#if exportReady && downloadUrl}
+        <a href={downloadUrl} download={downloadName} class="download-link">コピーをダウンロード</a>
+      {/if}
+    </div>
   {:else if result==='unchanged'}
     <p role="status">変更前後の数量が同じです。元データは変更されていません。</p>
   {:else if result==='error'}
     <p role="alert">検証できませんでした。対象・数量・形式を確認してください。元ファイルは変更していません。</p>
   {/if}
-  <p class="warning">開発用の検証画面です。実ゲームでの再読み込み成功や安全な書き出しを保証しません。編集可能なセーブファイルは生成されません。</p>
+  <p class="warning">テスト用機能です。実ゲームでの再読み込み成功は未確認です。元ファイルを保管したまま、生成したコピーのみを検証してください。ゲームに正常に読み込めることを保証しません。</p>
 </main>
 
 <style>
@@ -164,5 +302,7 @@
   button.secondary{background:#493858;color:#faf0ff;}
   button:disabled{opacity:.5;cursor:not-allowed;}
   .warning{font-size:12px;}
+  .export-controls{display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:12px 0;}
+  .download-link{display:inline-block;padding:12px 17px;border-radius:8px;background:#f5ecfa;color:#24182f;font-size:14px;text-decoration:none;font-weight:600;}
   [role=alert]{color:#ffb5bf;}
 </style>
