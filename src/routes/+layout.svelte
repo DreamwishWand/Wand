@@ -204,13 +204,9 @@
           <button class="header-icon-button header-context-optional" type="button" on:click={()=>window.dispatchEvent(new Event('wand:save-clear'))} aria-label={copy.saveClear} title={copy.saveClear}><WandIcon name="close" size={20}/></button>
         </div>
       {/if}
-      {#if service==='collection'||service==='save'}
+      {#if service==='collection'}
         <div class="header-file-tools" role="group" aria-label={copy.fileTools}>
           <div class="shell-file-desktop">
-            <button class="header-icon-button" type="button" on:click={openSaveFile} disabled={service==='collection'&&collectionBusy}
-              aria-label={copy.readSave} title={copy.readSave}>
-              <WandIcon name="upload" size={20}/>
-            </button>
             {#if service==='collection'}
               <button class="header-icon-button" type="button" on:click={backupCollection}
                 aria-label={copy.collectionBackup} title={copy.collectionBackup}><WandIcon name="download" size={20}/></button>
@@ -226,8 +222,6 @@
             </button>
             {#if filesOpen}
               <div class="shell-menu shell-file-menu" role="group" aria-label={copy.fileTools}>
-                <button type="button" disabled={service==='collection'&&collectionBusy}
-                  on:click={()=>{filesOpen=false;openSaveFile();}}><WandIcon name="upload" size={18}/>{copy.readSave}</button>
                 {#if service==='collection'}
                   <button type="button" on:click={()=>{filesOpen=false;backupCollection();}}><WandIcon name="download" size={18}/>{copy.backup}</button>
                   <button type="button" disabled={collectionBusy} on:click={()=>{filesOpen=false;restoreCollection();}}><WandIcon name="restore" size={18}/>{copy.restore}</button>
@@ -237,11 +231,65 @@
           </div>
         </div>
       {/if}
+      <div class="header-save-root" bind:this={saveRoot}>
+        <button class="header-icon-button shell-save-button" bind:this={saveButton} type="button"
+          aria-label={selectedSave?copy.saveManager:copy.readSave}
+          title={selectedSave?copy.saveManager:copy.readSave}
+          aria-expanded={selectedSave?saveMenuOpen:undefined}
+          on:click={()=>{if(selectedSave){saveMenuOpen=!saveMenuOpen;moreOpen=false;filesOpen=false;languageOpen=false;}else openGlobalSavePicker();}}>
+          <WandIcon name={selectedSave?'save':'upload'} size={21}/>
+        </button>
+        {#if selectedSave&&saveMenuOpen}
+          <div class="shell-menu shell-save-menu" role="group" aria-label={copy.saveManager}>
+            <div class="shell-save-filename" title={selectedSave.name}><WandIcon name="save" size={18}/><span>{selectedSave.name}</span></div>
+            <div class="shell-save-status">{copy.saveNotParsed}</div>
+            <div class="shell-menu-divider"></div>
+            <button type="button" on:click={rawSaveBackup}><WandIcon name="download" size={18}/>{copy.saveBackupOriginal}</button>
+            <button type="button" disabled title={copy.saveEditUnavailable}><WandIcon name="download" size={18}/>{copy.saveExportEdited}</button>
+            <button type="button" disabled title={copy.saveEditUnavailable}><WandIcon name="edit" size={18}/>{copy.saveOpenEditor}</button>
+            <button type="button" on:click={openGlobalSavePicker}><WandIcon name="folder" size={18}/>{copy.saveReplace}</button>
+            <div class="shell-menu-divider"></div>
+            <button type="button" on:click={closeSelectedSave}><WandIcon name="close" size={18}/>{copy.saveClose}</button>
+          </div>
+        {/if}
+      </div>
+      <div class="header-account-tools">
+        <button class="header-icon-button shell-account-header" bind:this={accountButton} type="button"
+          on:click={openAccount} aria-label={copy.accountOpen} title={copy.accountPreparing}><WandIcon name="character" size={20}/></button>
+      </div>
+      <div class="header-support-tools" role="group" aria-label={copy.support}>
+        <button class="header-icon-button help-action" bind:this={helpButton} type="button"
+          on:click={()=>{closeMenus();tutorialOpen=true;}} aria-label={copy.tutorialHelp} title={copy.help}><WandIcon name="help" size={20}/></button>
+      </div>
+      <div class="shell-more-root" bind:this={moreRoot}>
+        <button class="header-icon-button" bind:this={moreButton} type="button"
+          aria-label={copy.moreActions} title={copy.moreActions} aria-expanded={moreOpen}
+          on:click={()=>{moreOpen=!moreOpen;saveMenuOpen=false;filesOpen=false;languageOpen=false;}}>
+          <WandIcon name="ellipsis" size={21}/>
+        </button>
+        {#if moreOpen}
+          <div class="shell-menu shell-more-menu" role="group" aria-label={copy.moreActions}>
+            <button type="button" on:click={()=>{moreOpen=false;tutorialOpen=true;}}><WandIcon name="help" size={18}/>{copy.help}</button>
+            <button type="button" on:click={openAccount}><WandIcon name="character" size={18}/>{copy.account}</button>
+          </div>
+        {/if}
+      </div>
       <div class="header-preference-tools" role="group" aria-label={copy.preferences}>
+        <div class="shell-theme-options" role="group" aria-label={copy.themeSelect}>
+          {#each UI_THEMES as item (item.code)}
+            <button class="header-icon-button shell-theme-option" type="button"
+              class:active={uiTheme===item.code}
+              aria-label={copy.themes[item.code]} title={copy.themes[item.code]}
+              aria-pressed={uiTheme===item.code}
+              on:click={()=>switchTheme(item.code)}>
+              <WandIcon name={item.icon} size={22}/>
+            </button>
+          {/each}
+        </div>
         <div class="header-language-menu" bind:this={languageRoot}>
           <button bind:this={languageButton} class="header-icon-button header-language-button" type="button"
             aria-label={copy.languageSwitch} title={copy.languageSwitch} aria-expanded={languageOpen}
-            on:click={()=>{languageOpen=!languageOpen;moreOpen=false;filesOpen=false;}}>
+            on:click={()=>{languageOpen=!languageOpen;moreOpen=false;filesOpen=false;saveMenuOpen=false;}}>
             <WandIcon name="globe" size={19}/><span class="header-locale-code">{LANGUAGE_SHORT[uiLocale]}</span>
           </button>
           {#if languageOpen}
@@ -255,26 +303,14 @@
             </div>
           {/if}
         </div>
-        <div class="shell-theme-options" role="group" aria-label={copy.themeSelect}>
-          {#each UI_THEMES as item (item.code)}
-            <button class="header-icon-button shell-theme-option" type="button"
-              class:active={uiTheme===item.code}
-              aria-label={copy.themes[item.code]} title={copy.themes[item.code]}
-              aria-pressed={uiTheme===item.code}
-              on:click={()=>switchTheme(item.code)}>
-              <WandIcon name={item.icon} size={22}/>
-            </button>
-          {/each}
-        </div>
-      </div>
-      <div class="header-support-tools" role="group" aria-label={copy.support}>
-        <button class="header-icon-button help-action" bind:this={helpButton} type="button"
-          on:click={()=>{closeMenus();tutorialOpen=true;}} aria-label={copy.tutorialHelp} title={copy.help}><WandIcon name="help" size={20}/></button>
-        <button class="header-icon-button shell-account-header" bind:this={accountButton} type="button"
-          on:click={openAccount} aria-label={copy.accountOpen} title={copy.accountPreparing}><WandIcon name="character" size={20}/></button>
       </div>
     </div>
   </header>
+  <input class="visually-hidden" bind:this={globalSaveInput} type="file"
+    accept=".profile,.dat,.bin,.json,application/json,application/octet-stream"
+    aria-label={copy.readSave} on:change={globalSavePicked}/>
+  {#if saveError}<div class="shell-save-error" role="alert">{saveError}<button type="button" on:click={()=>saveError=''} aria-label={copy.close}>×</button></div>{/if}
+  {#if draggingFile}<div class="shell-save-drop" role="status"><WandIcon name="upload" size={44}/><span>{copy.saveDrop}</span></div>{/if}
   <main class="site-main"><slot/></main>
 </div>
 {#if tutorialOpen}
