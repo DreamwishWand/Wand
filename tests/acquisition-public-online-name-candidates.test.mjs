@@ -5,7 +5,8 @@ import {createHash} from 'node:crypto';
 import {OFFICIAL_CAMPAIGNS} from '../src/lib/acquisition/official-campaigns.ts';
 import {historicalPremiumShop} from '../src/lib/acquisition/premium-shop-history.ts';
 import {
-  DB02_PUBLIC_NAME_CANDIDATE_SCHEMA,indexPublicOnlineNameCandidates
+  DB02_PUBLIC_NAME_CANDIDATE_SCHEMA,indexPublicOnlineNameCandidates,
+  loadPublishedOnlineNameCandidates
 } from '../src/lib/acquisition/public-online-name-candidates.ts';
 
 const ROOT=new URL('../static/ddv/game-db/releases/steam-1.26.2-native-itemlist-v1/',import.meta.url);
@@ -146,4 +147,21 @@ test('Ambiguous exact names are not promoted; mismatched or duplicate public rel
   assert.throws(()=>indexPublicOnlineNameCandidates(snapshot,OFFICIAL_CAMPAIGNS,
     [{...historicalPremiumShop.offers[0],nativeOfferId:'fabricated'}]
   ),/INVALID_SHOP_APPEARANCE/);
+});
+
+test('Public-only browser entrypoint independently hashes the active DB-00 release, without requiring SRC-02',async()=>{
+  let requests=0;
+  const base=new URL('../static/',import.meta.url);
+  const localFetch=async url=>{
+    assert(url.startsWith('/Wand/ddv/game-db/'),url);
+    requests++;
+    const raw=readFileSync(new URL(url.slice('/Wand/'.length),base));
+    return new Response(raw,{status:200});
+  };
+  const index=await loadPublishedOnlineNameCandidates('/Wand',localFetch);
+  assert.equal(requests,16); // active pointer + release index + 14 SHA-checked item shards
+  assert.equal(index.getCampaignCandidates('code:DDVPRIDE2026').length,2);
+  assert.equal(index.getCampaignCandidates('twitch:2023-launch').length,4);
+  assert.equal(index.getShopProductCandidates('Enchanted Ice Fountain').length,2);
+  assert.equal(index.coverage.verifiedOnlineAcquisitionLinks,0);
 });
