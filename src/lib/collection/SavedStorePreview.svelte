@@ -58,7 +58,7 @@
   let nameSequence = 0;
 
   // No DB-02 private source corpus is published to the static site.
-  // The Worker receives only ciphertext; the UI receives only ID counts.
+  // The Worker receives local bytes; Rust/WASM validates profiles; UI receives only IDs.
   let activeWorker: Worker|null = null;
   let requestSequence = 0;
 
@@ -165,12 +165,12 @@
     busy = true;
     dispatch('saveReadStarted');
     const request = requestSequence;
-    let encrypted:Uint8Array|null = null;
+    let saveBytes:Uint8Array|null = null;
     let worker:Worker|null = null;
     try {
-      if (file.size < 16 || file.size > 32*1024*1024)
+      if (file.size < 1 || file.size > 128*1024*1024)
         throw new TypeError('PROFILE_SIZE_LIMIT');
-      encrypted = new Uint8Array(await file.arrayBuffer());
+      saveBytes = new Uint8Array(await file.arrayBuffer());
       if (request !== requestSequence) return; // dismissed during file read
       worker = new Worker(new URL('./saved-store.worker.ts', import.meta.url),{type:'module'});
       activeWorker = worker;
@@ -207,10 +207,10 @@
       w.onmessage = event => finish(event.data);
       w.onerror = event => { event.preventDefault(); finish({kind:'error'}); };
       w.onmessageerror = () => finish({kind:'error'});
-      // Transfer rather than clone: source ciphertext leaves the main thread.
-      // The dedicated Worker wipes it and terminates after this one task.
-      w.postMessage({command:'inspect-local-p1g',ciphertext:encrypted},[encrypted.buffer]);
-      encrypted = null;
+      // The source leaves the main thread by transfer. Rust/WASM in the
+      // Worker determines whether it is Steam-style JSON or encrypted P1G.
+      w.postMessage({command:'inspect-local-save',bytes:saveBytes},[saveBytes.buffer]);
+      saveBytes = null;
     } catch {
       if (request === requestSequence) {
         worker?.terminate();
@@ -220,7 +220,7 @@
         dispatch('saveReadFinished');
       }
     } finally {
-      if (encrypted && encrypted.byteLength) encrypted.fill(0);
+      if (saveBytes && saveBytes.byteLength) saveBytes.fill(0);
       input.value = '';
     }
   }
