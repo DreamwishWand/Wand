@@ -388,6 +388,34 @@ try {
     'TrickOrTreat_2026');
   await limited.close();
 
+  // Steam 1.26.2 original Scene references locate only source-linked
+  // Floating Festivals, without treating a Scene ID as a live venue or access.
+  const scenePage=await browser.newPage({viewport:{width:390,height:844}});
+  const sceneErrors=[];
+  scenePage.on('pageerror',e=>sceneErrors.push(String(e)));
+  await scenePage.goto('http://127.0.0.1:4177/Wand/guide/events/?scene=1540000195',
+    {waitUntil:'domcontentloaded'});
+  await scenePage.waitForFunction(()=>
+    document.querySelector('input[type="search"]')?.value==='1540000195',
+    {timeout:25000});
+  assert.equal(await scenePage.locator('.event-list .event-option').count(),2);
+  const floatingNames=await scenePage.locator('.event-list .event-title').allInnerTexts();
+  assert.equal(floatingNames.length,2);
+  assert(floatingNames.every(name=>name.includes('ハロウィン')||name.length>0));
+  await scenePage.getByRole('searchbox',{name:'イベントや報酬を検索'})
+    .fill('1540000252');
+  await scenePage.locator('.event-list .event-option').first().waitFor({timeout:20000});
+  assert.equal(await scenePage.locator('.event-list .event-option').count(),1,
+    'a 2026-only subscene belongs to the native 2026 Festival definition');
+  assert.equal(await scenePage.locator('.reward-detail .native-id').innerText(),
+    'HauntedFloatingFestival2026');
+  assert.equal(new URL(scenePage.url()).searchParams.has('scene'),false,
+    'editing search clears stale Scene deep-link query');
+  assert.equal(await scenePage.evaluate(()=>
+    document.documentElement.scrollWidth<=innerWidth+2),true);
+  assert.deepEqual(sceneErrors,[],sceneErrors.join('\\n'));
+  await scenePage.close();
+
   // Exact original ProtoDb Mini Event -> Quest IDs, both directions.
   // Exclude internal TestEv and do not infer active events or unlock order.
   const eventQuest=await browser.newPage({viewport:{width:390,height:844}});
