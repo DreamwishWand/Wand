@@ -31,6 +31,7 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: python3 scripts/build-collection-images.py
       - run: npm test
+      - run: npm run check:rust-save-reader
       - run: npm run check
       - run: npm run build
         env:
