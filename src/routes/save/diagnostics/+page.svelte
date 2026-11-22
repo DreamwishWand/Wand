@@ -63,7 +63,7 @@
       bytes = new Uint8Array(await file.arrayBuffer());
       if (request !== requestSerial) return;
       worker = new Worker(
-        new URL('../../../lib/save/save-diagnostics.worker.mjs', import.meta.url),
+        new URL('../../../lib/save/save-diagnostics.worker.ts', import.meta.url),
         { type: 'module' }
       );
       activeWorker = worker;
