@@ -372,6 +372,20 @@ try {
   assert.match(await limited.locator('.friendship .reward-row').first().innerText(),
     /Item ID 80000000/,
     'a reward outside the published DB-00 release must not acquire a fabricated name');
+  // Native Duty IDs are searchable without an unattributed duty-name UI:
+  // one 2026-only original duty must select the exact source Mini Event.
+  await limited.goto('http://127.0.0.1:4177/Wand/guide/events/',
+    {waitUntil:'domcontentloaded'});
+  await limited.getByRole('searchbox',{name:'イベントや報酬を検索'}).fill('2110100374');
+  await limited.locator('.event-list .event-option').first().waitFor({timeout:25000});
+  assert.equal(await limited.locator('.event-list .event-option').count(),1);
+  assert.equal(await limited.locator('.reward-detail .native-id').innerText(),
+    'DreamlightParkFest_UI_2026');
+  await limited.getByRole('searchbox',{name:'イベントや報酬を検索'}).fill('2110100411');
+  await limited.locator('.event-list .event-option').first().waitFor({timeout:25000});
+  assert.equal(await limited.locator('.event-list .event-option').count(),1);
+  assert.equal(await limited.locator('.reward-detail .native-id').innerText(),
+    'TrickOrTreat_2026');
   await limited.close();
 
   // Exact original ProtoDb Mini Event -> Quest IDs, both directions.
