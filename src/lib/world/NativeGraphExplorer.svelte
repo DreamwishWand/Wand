@@ -246,7 +246,7 @@
       activeOption?.gridDataPath&&onOpenSourceGrid}
       <button type="button" class="graph-open-terrain"
         on:click={navigateGrid}>
-        <WandIcon name="map" size={17}/>地形ビューに表示
+        <WandIcon name="world" size={17}/>地形ビューに表示
       </button>
     {/if}
     {#if activeOption}
