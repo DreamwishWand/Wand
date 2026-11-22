@@ -37,6 +37,15 @@ class NativeProtoDbLoadExportTests(unittest.TestCase):
             verify_rel32(lambda _a, _n: good,
                          site, target, 0xE9)
 
+    def test_conditional_export_interface_call_is_not_onbinarize_proof(self):
+        # SaveBinary performs a runtime type check and interface dispatch.
+        # Its concrete interface type is not established by the rel32 edge.
+        for site, target in [(0x380A767, 0x6084C0),
+                             (0x380A77D, 0x2240)]:
+            blob = rel(site, target, 0xE8)
+            self.assertTrue(verify_rel32(lambda _a, _n: blob,
+                                         site, target, 0xE8))
+
     def test_bad_scan_inputs_rejected(self):
         for raw, base, targets in [
             (b'', -1, [0x20]), ('bytes', 0, [0x20]),
