@@ -330,8 +330,10 @@
   .workspace{display:grid;grid-template-columns:minmax(270px,.85fr) minmax(0,1.5fr);gap:15px;align-items:start}
   .results,.detail{background:#1d1628;border:1px solid #4c3d5e;border-radius:15px;padding:15px;min-width:0}
   .count{font-size:12px;color:#bea9ce;margin:1px 4px 12px}
-  .quest-row{display:flex;flex-direction:column;align-items:start;text-align:left;width:100%;gap:5px;padding:13px 14px;border:1px solid transparent;border-radius:9px;background:none;color:inherit;cursor:pointer}
-  .quest-row:hover,.quest-row.active{background:#302440;border-color:#654b85}.quest-row strong{font-size:14px}.quest-row small{color:#aa9cb7;font-size:11px}
+  .quest-row{display:flex;flex-direction:column;align-items:start;text-align:left;width:100%;max-width:100%;min-width:0;box-sizing:border-box;gap:5px;padding:13px 14px;border:1px solid transparent;border-radius:9px;background:none;color:inherit;cursor:pointer}
+  .quest-row:hover,.quest-row.active{background:#302440;border-color:#654b85}
+  .quest-row strong,.quest-row small{display:block;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;white-space:normal}
+  .quest-row strong{font-size:14px}.quest-row small{color:#aa9cb7;font-size:11px}
   button{cursor:pointer}.auto-sentinel{height:18px;margin-top:8px}
   .detail{position:sticky;top:16px;max-height:calc(100vh - 28px);overflow:auto;scrollbar-width:thin}.placeholder,.empty{color:#ac9dbb;padding:20px 4px}
   .detail-header{border-bottom:1px solid #514260;padding:0 0 12px;margin-bottom:12px}.detail-header h2{font-size:21px;margin:4px 0}.detail-header p{font-size:13px;color:#c9b8db;margin:0}
