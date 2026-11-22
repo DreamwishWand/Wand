@@ -350,8 +350,9 @@ export class WorldReferenceIndex {
     return Object.freeze([...(this.gridListByArea.get(areaRefId)??[])]);
   }
   initialSourcePlacement(itemId:string|number):RelationResult<NativeSourceItemReference>{
-    const id=typeof itemId==='number'&&Number.isSafeInteger(itemId)&&itemId>=0
-      ?String(itemId):itemId;
+    const id=typeof itemId==='number'
+      ?(Number.isSafeInteger(itemId)&&itemId>=0?String(itemId):'')
+      :itemId;
     check(decimal(id),'INVALID_ITEM_ID');
     const rows=this.itemRefs.get(id)??[];
     return Object.freeze({
