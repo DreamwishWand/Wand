@@ -354,7 +354,7 @@ try{
   // private grid/object identity from this file's local ordinal. The P1G
   // is rebuilt and independently reopened; no private identity is published.
   await objects.getByRole('button',{name:'配置 #1 の座標を編集'}).click();
-  const coordinates=objects.getByLabel('座標編集');
+  const coordinates=objects.getByLabel('座標編集',{exact:true});
   await coordinates.getByLabel('新しいX').fill('57');
   await coordinates.getByLabel('新しいY').fill('-4');
   await coordinates.getByRole('button',{name:'座標変更を検証'}).click();
