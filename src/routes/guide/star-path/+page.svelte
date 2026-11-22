@@ -8,6 +8,7 @@
   import {loadStarpathMedia,starpathMediaThumbnail} from '$lib/guide/starpath-public-media.mjs';
   import {guideCalendarEvents,activeScheduleStarpaths} from '$lib/guide/event-calendar.mjs';
   import {actionableStarpathTask} from '$lib/guide/starpath-task-guidance.mjs';
+  import {observeGuideListEnd} from '$lib/guide/auto-load.mjs';
 
   let catalog:any=null, weeklyLocales:any=null, dailyLocales:any=null, rewardExtras:any=null, publicMedia:any=null, error='', loading=true;
   let locale='ja';
@@ -19,6 +20,7 @@
   let rewardQuery='';
   let rewardTier:'all'|'free'|'premium'='all';
   let limit=60;
+  let pagingRevision=0;
   $: activeIds=catalog?new Set(activeScheduleStarpaths(guideCalendarEvents(catalog),now).map((e:any)=>e.sourceSeasonId)):new Set<string>();
   $: availableSeasons=catalog?.seasons?.filter((s:any)=>activeIds.has(s.id))||[];
   $: season=availableSeasons.find((s:any)=>s.id===selectedId)||availableSeasons[0];
@@ -30,7 +32,13 @@
   function date(value:string){
     return new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(value));
   }
-  function changeSeason(id:string){selectedId=id;limit=60;query='';rewardQuery='';rewardTier='all';}
+  function resetTaskPaging(){limit=60;pagingRevision++;}
+  function changeSeason(id:string){selectedId=id;query='';rewardQuery='';rewardTier='all';resetTaskPaging();}
+  function observeMoreTasks(node:HTMLElement){
+    return observeGuideListEnd(node,(showAll:boolean)=>{
+      if(filtered.length>limit)limit=showAll?filtered.length:Math.min(limit+60,filtered.length);
+    });
+  }
   function visibleRewards(rewards:any[],search:string,tier:string,language:string,extras:any){
     const needle=search.trim().toLocaleLowerCase();
     return rewards.filter(r=>{
@@ -108,7 +116,7 @@
       </nav>
       {#if tab==='tasks'}
         <div class="search">
-          <label>タスクを検索<input bind:value={query} on:input={()=>limit=60} placeholder="説明・種別・ID" aria-label="通常タスクを検索"/></label>
+          <label>タスクを検索<input bind:value={query} on:input={resetTaskPaging} placeholder="説明・種別・ID" aria-label="通常タスクを検索"/></label>
           <span>{filtered.length}件</span>
         </div>
         <ul class="entries">
@@ -116,7 +124,11 @@
             <li><strong>{actionableStarpathTask(season.id,t,locale==='ja'?'ja':'en')?.action||'達成方法は検証中'}</strong><small>{actionableStarpathTask(season.id,t,locale==='ja'?'ja':'en')?'確認済みの具体的な操作 · ':'解答未確認 · '}ゲーム内表記：{starpathDailyDescription(dailyLocales,season.id,t.id,locale)||'説明未確認'}</small><small>{t.objectiveKind} · {t.id} · {t.tokenReward} {season.currencyName}{t.availableOnDay!==undefined?' · 解放設定日 '+t.availableOnDay:''}</small></li>
           {/each}
         </ul>
-        {#if filtered.length>limit}<button class="more" on:click={()=>limit+=60}>さらに表示</button>{/if}
+        {#if filtered.length>limit}
+          {#key `${pagingRevision}:${limit}`}
+            <div class="autoload-sentinel" use:observeMoreTasks aria-hidden="true"></div>
+          {/key}
+        {/if}
       {:else if tab==='weekly'}
         <p class="hint">週間タスクも具体的な操作・謎解きの答えを優先して表示します。未検証のものは解答を創作せず、ゲーム内文言を参考情報として併記します。</p>
         {#each season.weeklyTasks as week,i}
@@ -174,7 +186,8 @@
   .disclaimer,.hint{font-size:12px!important;color:#c0afce!important}
   .seasons,.tabs{display:flex;gap:9px;flex-wrap:wrap;margin:23px 0}
   .language{display:inline-flex;align-items:center;gap:10px;font-size:12px;color:#dfcfed}.language select{padding:9px;background:#251e31;color:#fff;border:1px solid #66537e;border-radius:9px}
-  .seasons button,.tabs button,.more{border:1px solid #65527d;border-radius:10px;background:#261c32;color:#ecdcfa;padding:11px 17px}
+  .seasons button,.tabs button{border:1px solid #65527d;border-radius:10px;background:#261c32;color:#ecdcfa;padding:11px 17px}
+  .autoload-sentinel{height:1px;width:100%;pointer-events:none}
   .seasons button.selected,.tabs button.active{background:#503667;border-color:#bb91ed;color:#fff}
   .summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:22px 0}
   .summary>div{display:grid;gap:8px;background:#20192c;border:1px solid #4c3e60;padding:14px;border-radius:11px}
