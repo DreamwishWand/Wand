@@ -230,6 +230,34 @@ write safety. Accordingly `nativeCodeBodyVerified`,
 `placementLegalityVerified` and `worldCoordinatesVerified` remain
 `false` in the read-only adapter.
 
+## Original Steam 1.26.2 direct JSON GridData sources
+
+The source archive also contains four Village04 `GridData/**/*.json`
+files whose bytes are **literal JSON**, not protobuf. Each has exactly
+`SizeX`, `SizeY`, `FloorTypes` and an integer floor-mask array with
+`SizeX*SizeY` elements. Source `GridCollection` links identify the
+Forest, Savannah, Cliff and Wetland `BlockSpawn` variant. Native
+`GridData.get_Item` directly indexes this array in X-major order when
+compacted-byte storage is absent. These literal values include
+`BlockAutomaticSpawning = 262144` as a mask bit.
+
+The extracted 1.26.2 Village04 *subset* contains 12 GridData records,
+nine layouts, eight AreaType references and 4,494 default source anchor
+records. Four grids use direct JSON values; eight others use source-packed
+1/2/4-bit values. This does not attest to game-wide completeness.
+
+Original source-only comparison of those direct arrays against the
+corresponding separate base terrain records shows that removing just the
+262144 source flag yields per-cell equality on three pairs. Wetland
+retains 1,947 additional differences: they are **not** normalized or
+explained as placement permission. The extraction preserves the original
+literal masks without filtering or rewriting any flags.
+
+Private source file SHA-256 records, the ZIP's full derived JSON register,
+and the original incomplete coverage status belong in SRC-05. Browser
+display remains read-only: placement permission, live world coordinates,
+object collision and world save editing are not inferred from these masks.
+
 ## Capability boundary — read-only terrain only
 
 - `terrain_codec.py` and browser `getNativeTerrainWindow` now accept
