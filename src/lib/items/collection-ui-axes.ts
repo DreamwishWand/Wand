@@ -194,7 +194,7 @@ export function createDb01CollectionNativeUiAxesClient(
         check(Array.isArray(raw)&&raw.length===305,'INCOMPLETE_SOURCE_SETS');
         const seen=new Set<number>(),counts=new Map<number,number>();
         const enumByCode=new Map<number,string>(
-          DB01_ORIGINAL_COLLECTION_SUBMENUS.map(x=>[x.code,x.enumName]));
+          DB01_ORIGINAL_COLLECTION_SUBMENUS.map(x=>[x.code,x.enumName] as const));
         for(const menu of raw){
           check(safeId(menu.setId)&&!seen.has(menu.setId)&&
             enumByCode.get(menu.submenuCode)===menu.submenu&&
