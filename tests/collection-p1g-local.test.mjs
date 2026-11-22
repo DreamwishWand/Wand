@@ -5,6 +5,10 @@ import {deflateRawSync} from 'node:zlib';
 import {decodeP1gPackagedProfile,p1gPackagedProfileCodec} from '../src/lib/collection/private-p1g-codec.js';
 import {createSavedStorePreview, attachHistoricalStoreLabels} from '../src/lib/collection/saved-store-preview.mjs';
 import {inspectEncryptedSavedStore} from '../src/lib/collection/saved-store-worker-core.mjs';
+import {inspectLocalDb04SaveJoin} from '../src/lib/collection/saved-world-db04-join-worker-core.mjs';
+import {
+  makeCollectionDb04ZipFixture,TEST_DB04_LAYOUT,TEST_DB04_GRID
+} from './helpers/collection-db04-zip-fixture.mjs';
 import {inspectDecodedWorldStores} from '../src/lib/acquisition/world-store-save.mjs';
 
 // A wholly synthetic Node AES/ZIP source profile; never read owner originals.
@@ -184,6 +188,61 @@ test('encrypted synthetic P1G observes surviving world furniture, not ownership'
  const encoded=JSON.stringify(result);
  for(const value of ['private-no-leak','never-leak','removed-reference',
    '"X"','"State"','"From"','"RemovedObjects"'])assert.ok(!encoded.includes(value),value);
+});
+
+test('dual-file local DB04 ZIP + encrypted P1G rejoins only exact source paths',async()=>{
+ const root={
+  GameInfo:{Version:643},Player:{Secret:'sensitive-test-profile'},
+  World:{GridCollection:{
+    Grids:{'13':{ID:13,Objects:{'1':{ID:1,ItemID:40005160}}}},
+    DiffGrids:{'950':{
+      ID:950,GridDefaultLayoutPath:TEST_DB04_LAYOUT,GridDataPath:TEST_DB04_GRID,
+      RemovedObjects:[7],
+      ModifiedObjects:{
+        '7':{ID:7,ItemID:40005160,Private:'removed-payload'},
+        '8':{ID:8,ItemID:40005160,X:432},
+        '10':{ID:10,ItemID:40009111,Y:321}
+      }
+    }}
+  }}
+ };
+ const source=makeFixture(root);
+ const archive=new Uint8Array(makeCollectionDb04ZipFixture());
+ const outcome=await inspectLocalDb04SaveJoin(source,archive);
+ assert.equal(outcome.status,'partial_exact_matches');
+ assert.equal(outcome.observedGrids,2);
+ assert.equal(outcome.matchedGrids,1);
+ assert.equal(outcome.unresolvedGrids,1);
+ assert.equal(outcome.sourceDefaultObjects,3);
+ assert.equal(outcome.effectiveObjects,3); // 8, 9 (default), 10
+ assert.equal(outcome.removedDefaultObjects,1);
+ assert.equal(outcome.savedOnlyObjects,1);
+ assert.deepEqual(outcome.entries,[
+  {itemId:40005160,sourceDefault:1,effectiveSaved:1,
+    savedOnlyIdentity:0,removedDefaultIdentity:1,changedDefaultIdentity:1},
+  {itemId:40006110,sourceDefault:1,effectiveSaved:0,
+    savedOnlyIdentity:0,removedDefaultIdentity:0,changedDefaultIdentity:0},
+  {itemId:40009111,sourceDefault:0,effectiveSaved:1,
+    savedOnlyIdentity:1,removedDefaultIdentity:0,changedDefaultIdentity:0}
+ ]);
+ assert.equal(outcome.playerOwnershipVerified,false);
+ const str=JSON.stringify(outcome);
+ for(const secret of ['sensitive-test-profile','removed-payload',TEST_DB04_LAYOUT,
+    TEST_DB04_GRID,'"X"','"Y"','"GridDefaultLayoutPath"'])
+  assert.ok(!str.includes(secret),secret);
+ const {sanitizeSavedWorldDb04Join}=await import('../src/lib/collection/saved-world-db04-join.mjs');
+ assert.deepEqual(sanitizeSavedWorldDb04Join(structuredClone(outcome)),outcome);
+});
+
+test('DB04 dual-file Worker rejects tampered source hash and unsupported Steam target',async()=>{
+ const p1g=makeFixture({
+  GameInfo:{Version:643},Player:{},World:{GridCollection:{DiffGrids:{}}}
+ });
+ const zip=makeCollectionDb04ZipFixture({gameVersion:'1.26.1'});
+ const output=await inspectLocalDb04SaveJoin(p1g,new Uint8Array(zip));
+ assert.equal(output.status,'unsupported_source_or_schema');
+ await assert.rejects(()=>inspectLocalDb04SaveJoin(p1g,new Uint8Array(19)),
+   /COLLECTION_DB04_INVALID_LOCAL_INPUT/);
 });
 
 test('worker core rejects oversize or misaligned ciphertext before decoding',async()=>{
