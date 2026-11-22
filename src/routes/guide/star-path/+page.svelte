@@ -20,8 +20,8 @@
     return new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(value));
   }
   function changeSeason(id:string){selectedId=id;limit=60;query='';}
-  function item(r:any){
-    const name=starpathRewardName(r.itemId,locale);
+  function item(r:any,language:string){
+    const name=starpathRewardName(r.itemId,language);
     return (name||'名称未確認')+' · ID '+r.itemId+' · '+r.amount+'個'+(r.price!==undefined?' · 価格 '+r.price:'')+(r.premium?' · プレミアム':'')+(r.recurrent?' · 繰り返し':'');
   }
   async function load(){
@@ -100,18 +100,18 @@
         {#each season.rewardPages as p}
           <section class="week"><h2>報酬ページ {p.page}</h2>
             {#if p.minPurchasedFromPreviousPage!==undefined}<p class="hint">前ページの購入設定：{p.minPurchasedFromPreviousPage}件</p>{/if}
-            <ul class="entries">{#each p.rewards as r,i (i)}<li>{item(r)}</li>{/each}</ul>
+            <ul class="entries">{#each p.rewards as r,i (i)}<li>{item(r,locale)}</li>{/each}</ul>
           </section>
         {/each}
         {#each season.bonusPages as p}
           <section class="week"><h2>ボーナスページ {p.page}{p.currencyConversionPage?'（通貨交換）':''}</h2>
             {#if p.minPurchasedFromPreviousPage!==undefined}<p class="hint">前ページの購入設定：{p.minPurchasedFromPreviousPage}件</p>{/if}
-            <ul class="entries">{#each p.rewards as r,i (i)}<li>{item(r)}</li>{/each}</ul>
+            <ul class="entries">{#each p.rewards as r,i (i)}<li>{item(r,locale)}</li>{/each}</ul>
           </section>
         {/each}
         <section class="week"><h2>Vault報酬</h2>
           <ul class="entries">{#each season.vaultRewards as r,i (i)}
-            <li>{item(r)}{r.alternateItemId?' · 代替候補: '+(starpathRewardName(r.alternateItemId,locale)||'名称未確認')+' (ID '+r.alternateItemId+')':''}</li>
+            <li>{item(r,locale)}{r.alternateItemId?' · 代替候補: '+(starpathRewardName(r.alternateItemId,locale)||'名称未確認')+' (ID '+r.alternateItemId+')':''}</li>
           {/each}</ul>
         </section>
       {/if}
