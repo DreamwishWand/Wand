@@ -134,7 +134,7 @@ export async function loadCurrentGameDatabase(base:string = '', fetchImpl:FetchI
 }
 function collectionCompatibility(snapshot:PublicSnapshot) {
   const values = (key:'worlds'|'universes'|'contentIds') => [...new Set(snapshot.items.flatMap((item) => item[key] ?? []))].sort();
-  const f = [...new Set(snapshot.items.map((item) => item.category).filter(Boolean))].sort();
+  const f = [...new Set(snapshot.items.map((item) => item.category).filter((value):value is string => Boolean(value)))].sort();
   const c = [...new Set(snapshot.items.map((item) => item.stateClass ?? 'READ_ONLY'))].sort();
   const m = [...new Set(snapshot.items.map((item) => item.stateSemantic ?? 'UNLOCK_OR_AVAILABILITY'))].sort();
   const w = values('worlds'), u = values('universes'), e = values('contentIds');
@@ -144,7 +144,7 @@ function collectionCompatibility(snapshot:PublicSnapshot) {
     ul: u.map((value) => LOCALES.map(() => value))
   };
   const rows = snapshot.items.map((item) => [
-    Number(item.id), f.indexOf(item.category), c.indexOf(item.stateClass ?? 'READ_ONLY'),
+    Number(item.id), f.indexOf(item.category ?? ''), c.indexOf(item.stateClass ?? 'READ_ONLY'),
     m.indexOf(item.stateSemantic ?? 'UNLOCK_OR_AVAILABILITY'),
     item.worlds.map((value) => w.indexOf(value)),
     item.universes.map((value) => u.indexOf(value)),

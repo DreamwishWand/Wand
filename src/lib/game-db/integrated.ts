@@ -153,6 +153,8 @@ interface PublicRow {
   nameStatus:'verified'|'unverified';
   category:string|null;
   subcategory?:string|null;
+  stateClass?:string|null;
+  stateSemantic?:string|null;
   nativeCategory?:string|null;
   worlds:readonly string[];
   universes:readonly string[];
