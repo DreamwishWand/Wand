@@ -47,7 +47,9 @@ interface CopyReceipt {
 type Reply =
   | { kind: 'error' }
   | { kind: 'result'; receipt: PreviewReceipt | BatchPreviewReceipt }
-  | { kind: 'copy'; bytes: Uint8Array; receipt: CopyReceipt };
+  | { kind: 'copy'; bytes: Uint8Array; receipt: CopyReceipt }
+  | { kind: 'slots'; rows: SaveEditableSlot[];
+      contract:'wand.db05.editable-slots@1'; complete:true; writerAuthorized:false };
 
 interface IsolatedScope {
   onmessage: ((event: MessageEvent<unknown>) => Promise<void>) | null;
@@ -87,6 +89,45 @@ function validateTarget(raw: unknown): Target {
 }
 
 
+export type SaveEditableSlot =
+  | { kind:'inventory'; inventoryId:string; itemId:string; amount:number }
+  | { kind:'chest'; containerId:string; slotIndex:number; itemId:number; amount:number };
+
+function validateSlotRows(source:unknown):SaveEditableSlot[]{
+  if (!object(source) || !exact(source, [
+    'contract','rows','completeForExistingPositiveU32Amounts','writerAuthorized'
+  ]) || source.contract!=='wand.db05.editable-slots@1' ||
+      source.completeForExistingPositiveU32Amounts!==true ||
+      source.writerAuthorized!==false ||
+      !Array.isArray(source.rows)||source.rows.length>20000)
+    throw new TypeError('DB05_SLOT_INDEX_RESPONSE_INVALID');
+  const seen=new Set<string>();
+  return source.rows.map((row:unknown)=>{
+    if (!object(row)||!uint32(row.amount))
+      throw new TypeError('DB05_SLOT_INDEX_ROW_INVALID');
+    let value:SaveEditableSlot;
+    if (row.kind==='inventory' &&
+        exact(row,['kind','inventoryId','itemId','amount']) &&
+        validId(row.inventoryId)&&validId(row.itemId))
+      value={kind:'inventory',inventoryId:row.inventoryId,
+        itemId:row.itemId,amount:row.amount};
+    else if(row.kind==='chest' &&
+      exact(row,['kind','containerId','slotIndex','itemId','amount']) &&
+      validId(row.containerId)&&uint32(row.itemId) &&
+      typeof row.slotIndex==='number'&&Number.isInteger(row.slotIndex) &&
+      row.slotIndex>=0&&row.slotIndex<=1_000_000)
+      value={kind:'chest',containerId:row.containerId,
+        slotIndex:row.slotIndex,itemId:row.itemId,amount:row.amount};
+    else throw new TypeError('DB05_SLOT_INDEX_ROW_INVALID');
+    const key=value.kind==='inventory'
+      ? 'i/'+value.inventoryId+'/'+value.itemId
+      : 'c/'+value.containerId+'/'+value.slotIndex;
+    if(seen.has(key))throw new TypeError('DB05_SLOT_INDEX_DUPLICATE');
+    seen.add(key);
+    return value;
+  });
+}
+
 interface BatchEdit { target: Target; expected: number; replacement: number }
 function validateBatchEdits(raw: unknown): BatchEdit[] {
   if (!Array.isArray(raw) || raw.length < 1 || raw.length > 16)
@@ -115,11 +156,12 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
   let rust: WasmAmountPreview | null = null;
   let exported: Uint8Array | null = null;
   try {
+    const listing=input?.command === 'inspect-existing-slots';
     const exporting = input?.command === 'export-existing-amount-copy' ||
       input?.command === 'export-batch-amount-copy';
     const batch = input?.command === 'preview-batch-amounts' ||
       input?.command === 'export-batch-amount-copy';
-    const expectedKeys = batch
+    const expectedKeys = listing ? ['command','format','bytes'] : batch
       ? (exporting
         ? ['command', 'format', 'bytes', 'edits', 'allowExperimentalCopy']
         : ['command', 'format', 'bytes', 'edits'])
@@ -129,17 +171,19 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
         : ['command', 'format', 'bytes', 'target', 'expected', 'replacement']);
     if (!input || !exact(input, expectedKeys) ||
         !['preview-existing-amount', 'export-existing-amount-copy',
-          'preview-batch-amounts', 'export-batch-amount-copy'].includes(
+          'preview-batch-amounts', 'export-batch-amount-copy',
+          'inspect-existing-slots'].includes(
           String(input.command)) ||
         (exporting && input.allowExperimentalCopy !== true) ||
         !['auto', 'json', 'p1g'].includes(String(input.format)) ||
         !(bytes instanceof Uint8Array) ||
-        (!batch && (!uint32(input.expected) || !uint32(input.replacement))))
+        (!batch && !listing &&
+          (!uint32(input.expected) || !uint32(input.replacement))))
       throw new TypeError('DB05_WORKER_COMMAND_INVALID');
 
     const edits = batch ? validateBatchEdits(input.edits) : null;
     const plan = edits === null ? null : JSON.stringify({edits});
-    const target = batch ? null : validateTarget(input.target);
+    const target = (batch||listing) ? null : validateTarget(input.target);
     const requestedFormat = input.format as InputFormat;
     const format: Exclude<InputFormat, 'auto'> =
       requestedFormat === 'auto' ? detectLocalSaveFormat(bytes) : requestedFormat;
@@ -156,7 +200,13 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
       rust.append_chunk(bytes.subarray(i, i + CHUNK));
     rust.finish_open();
 
-    if (exporting) {
+    if(listing){
+      const extracted:unknown=JSON.parse(rust.list_existing_slots());
+      response={
+        kind:'slots', contract:'wand.db05.editable-slots@1',
+        rows:validateSlotRows(extracted),complete:true,writerAuthorized:false
+      };
+    }else if (exporting) {
       const length = plan !== null
         ? rust.prepare_batch_copy(plan)
         : target?.kind === 'inventory'
