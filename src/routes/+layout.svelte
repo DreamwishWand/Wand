@@ -303,7 +303,7 @@
   </header>
   <input class="visually-hidden" bind:this={globalSaveInput} type="file"
     accept=".profile,.dat,.bin,.json,application/json,application/octet-stream"
-    aria-label={copy.readSave} on:change={globalSavePicked}/>
+    aria-label={copy.readSave} aria-hidden="true" tabindex="-1" on:change={globalSavePicked}/>
   {#if saveError}<div class="shell-save-error" role="alert">{saveError}<button type="button" on:click={()=>saveError=''} aria-label={copy.close}>×</button></div>{/if}
   {#if draggingFile}<div class="shell-save-drop" role="status"><WandIcon name="upload" size={44}/><span>{copy.saveDrop}</span></div>{/if}
   <main class="site-main"><slot/></main>
