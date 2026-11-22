@@ -407,6 +407,38 @@ try{
   const joinSavedState=JSON.parse(await readFile(await (await postJoinBackup).path(),'utf8'));
   assert.deepEqual(joinSavedState.workspaces.find(x=>x.id==='local-1').entries,stateAfter);
 
+  // Hold the next local file read before its Worker starts. During this
+  // asynchronous gap the user must not switch, delete, restore or replace
+  // the target workspace/catalog that will receive verified save evidence.
+  await page.evaluate(()=>{
+    const original=File.prototype.arrayBuffer;
+    File.prototype.arrayBuffer=function(...args){
+      if(this.name==='delayed-collection.profile'){
+        return new Promise((resolve,reject)=>{
+          window.__releaseCollectionSaveRead=()=>original.apply(this,args).then(resolve,reject);
+        });
+      }
+      return original.apply(this,args);
+    };
+  });
+  await page.locator('input[aria-label="DDVのセーブファイルを選択"]')
+    .setInputFiles({name:'delayed-collection.profile',
+      mimeType:'application/octet-stream',buffer:fixture});
+  await page.waitForFunction(()=>typeof window.__releaseCollectionSaveRead==='function');
+  const localWorkspaceSelect=page.getByRole('combobox',{name:'ローカル記録を選択'});
+  assert.equal(await localWorkspaceSelect.isDisabled(),true);
+  assert.equal(await page.getByRole('button',{name:'復元'}).isDisabled(),true);
+  assert.equal(await page.getByRole('button',{name:'名前変更'}).isDisabled(),true);
+  await page.evaluate(()=>window.__releaseCollectionSaveRead());
+  await page.waitForFunction(()=>
+    !document.querySelector('select[aria-label="ローカル記録を選択"]').disabled,
+    null,{timeout:30000});
+  const lockedReadBackup=page.waitForEvent('download');
+  await page.getByRole('button',{name:'バックアップ出力'}).click();
+  const lockedReadState=JSON.parse(await readFile(await (await lockedReadBackup).path(),'utf8'));
+  assert.equal(lockedReadState.active,'local-1');
+  assert.deepEqual(lockedReadState.workspaces.find(x=>x.id==='local-1').entries,stateAfter);
+
   await context.close();
   console.log('Collection browser WASM/IndexedDB/migration/search/paging smoke passed');
 } finally {
