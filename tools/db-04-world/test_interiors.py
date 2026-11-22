@@ -129,5 +129,55 @@ class InteriorSourceTests(unittest.TestCase):
             b"", STREAM / "SceneLayouts/Rooms/ScroogeShop/CustomLocations.json"))
 
 
+    def test_all_eight_diorama_wrappers_preserve_literal_grid_references(self):
+        # Original source family, but all test records and IDs are synthetic.
+        interior_ref = ("GridData/Rooms/GrandExhibition/DioramaInterior/"
+                        "DioramaInterior_Top-GridData.json")
+        context = field(2, field(1, 1432)) + field(4, 17)
+        for area in ("Beach", "Cliff", "DarkMountains", "Forest", "Meadow",
+                     "Savannah", "Urban", "Wetland"):
+            with self.subTest(area=area):
+                source = (STREAM / "SceneLayouts/Rooms/GrandExhibition" /
+                          ("Diorama" + area) /
+                          ("Diorama" + area + "-DefaultLayout.json"))
+                layout, objects = interior_grid_collection_layout(
+                    house_wrap(context=context,
+                               embedded=grid_collection(path=interior_ref)),
+                    source)
+                self.assertEqual(layout["gridReferences"], [{
+                    "path": interior_ref, "wireField": "2.1.2.2"}])
+                self.assertEqual(layout["unparsedInteriorContextSha256"],
+                                 hashlib.sha256(context).hexdigest())
+                self.assertEqual(len(objects), 1)
+                self.assertFalse(layout["worldCoordinatesVerified"])
+
+    def test_restaurant_uses_direct_native_grid_collection(self):
+        source = STREAM / "SceneLayouts/Rooms/Restaurant_DefaultLayout.json"
+        direct = grid_collection(
+            path="GridData/Rooms/Restaurant-GridData.json")
+        self.assertIsNone(interior_grid_collection_layout(direct, source))
+        layout, objects = grid_collection_layout(direct, source)
+        self.assertEqual(layout["gridReferences"], [{
+            "path": "GridData/Rooms/Restaurant-GridData.json",
+            "wireField": "1.2.2"}])
+        self.assertEqual(len(objects), 1)
+        self.assertFalse(objects[0]["worldCoordinatesVerified"])
+
+    def test_wall_source_path_remains_literal_not_inferred(self):
+        # Previous archive inventory erroneously classified this original
+        # Steam v1.26.2 GridData path as absent. Reader must not rename it.
+        literal = "GridData/Rooms/Wall24x9-GridData.json"
+        source = STREAM / "SceneLayouts/Houses/AliceHouse/AliceHouse.json"
+        layout, objects = interior_grid_collection_layout(
+            house_wrap(embedded=grid_collection(path=literal)), source)
+        self.assertEqual(layout["nativeGridEntries"][0]["gridDataPath"],
+                         literal)
+        self.assertEqual(layout["gridReferences"][0]["wireField"],
+                         "2.1.2.2")
+        self.assertEqual(objects[0]["positionBasis"], "nativeGridLocal")
+        self.assertNotIn("placementLegalityVerified", layout)
+
+
+
 if __name__ == "__main__":
     unittest.main()
