@@ -9,6 +9,10 @@
 import { canonicalId } from './model.ts';
 import type {SharedGameDatabase,SharedDbItem} from './integrated.ts';
 import type {OriginDatabase,ItemOrigin} from '../acquisition/origins.ts';
+import {
+  hasPinnedStaticContainerEvidence,
+  type PinnedStaticContainerContents
+} from '../acquisition/public-static-container.ts';
 import type {GuideRewardIndex,GuideItemRelation} from '../guide/reward-relations.ts';
 import type {
   Db04NativeItemScopeClient,Db04NativeItemScopeRow,
@@ -25,6 +29,8 @@ type WorldTagSource='source_native_tag_only'|'not_loaded'|'outside_scope';
 export interface Db00SourceJoinOptions{
   /** Already-validated DB-02 reader. Its source-specific statuses are retained. */
   readonly origins?:OriginDatabase;
+  /** SHA-validated original static container templates, NEVER live chest contents. */
+  readonly staticContainers?:PinnedStaticContainerContents;
   /** Already SHA-validated DB-03 reward index. Does not prove redemption. */
   readonly rewards?:GuideRewardIndex;
   /** DB-04's locally SHA-validated PRIVATE source reader. */
@@ -49,6 +55,9 @@ export interface Db00SourceJoinedItem{
   /** null means this stream was not supplied; [] means no currently indexed route. */
   readonly origins:readonly ItemOrigin[]|null;
   readonly originCoverageComplete:false;
+  /** null = source omitted; [] = no configured slot. Never merge with confirmed origins. */
+  readonly staticContainerCandidates:readonly ItemOrigin[]|null;
+  readonly staticContainerLiveContentsVerified:false;
   /** null means no verified reward source supplied, not "no rewards". */
   readonly starpathRelations:readonly GuideItemRelation[]|null;
   readonly starpathRewardsOnlyConfigured:true;
@@ -95,9 +104,20 @@ export function joinCurrentGameSources(
     db.target.platform==='Steam'&&db.target.gameVersion==='1.26.2'&&
     db.target.buildId===null&&db.target.sourceSha256===CURRENT_SOURCE_SHA,
     'CURRENT_STEAM_ITEMLIST_REQUIRED');
-  const {origins,rewards,nativeScope,nativeScopePins}=options;
+  const {origins,staticContainers,rewards,nativeScope,nativeScopePins}=options;
   if(origins)check(origins.schema==='wand.db02.item-origins@1' &&
     origins.originCoverageComplete===false,'DB02_READER_INVALID');
+  if(staticContainers)check(
+    hasPinnedStaticContainerEvidence(staticContainers) &&
+    staticContainers.sourceIntegrity==='original_protoDb_sha256_and_public_projection_sha256' &&
+    staticContainers.coverage.definitionRecords===88 &&
+    staticContainers.coverage.populatedSourceSlots===146 &&
+    staticContainers.coverage.distinctItemIds===115 &&
+    staticContainers.coverage.liveContentsVerified===false &&
+    staticContainers.coverage.containerSpawnVerified===false &&
+    staticContainers.coverage.guaranteedLootVerified===false &&
+    staticContainers.coverage.personalSaveContentsIncluded===false,
+    'DB02_PINNED_STATIC_CONTAINER_SOURCE_REQUIRED');
   if(rewards)check(rewards.contract==='wand.db03.reward-relations@1' &&
     rewards.evidence.platform==='Steam'&&rewards.evidence.gameVersion==='1.26.2'&&
     rewards.evidence.integrity==='pinned_public_sha256'&&
@@ -149,6 +169,14 @@ export function joinCurrentGameSources(
         (origin.routeStatus==='confirmed_source_link' ||
           origin.routeStatus==='static_candidate_only')),
       'DB02_ITEM_ID_OR_STATUS_MISMATCH');
+    const configuredSlots=staticContainers?.getItemCandidates(itemId);
+    check(!configuredSlots || Array.isArray(configuredSlots) &&
+      configuredSlots.every(row=>row.itemId===itemId &&
+        row.kind==='loot' && row.routeStatus==='static_candidate_only' &&
+        row.availability==='not_live_verified' &&
+        row.source.sourceId==='db02:native:steam-1262:container-template' &&
+        row.source.gameVersion==='1.26.2'),
+      'DB02_STATIC_CONTAINER_ITEM_OR_STATUS_MISMATCH');
     const relations=rewards?.getItemRelations(itemId);
     check(!relations||Array.isArray(relations) && relations.every(relation=>
       relation.itemId===itemId && relation.configuredRewardOnly===true &&
@@ -160,6 +188,9 @@ export function joinCurrentGameSources(
         'outside_published_item_scope' as const,
       origins:found?Object.freeze([...found.origins]):null,
       originCoverageComplete:false as const,
+      staticContainerCandidates:configuredSlots?
+        Object.freeze([...configuredSlots]):null,
+      staticContainerLiveContentsVerified:false as const,
       starpathRelations:relations?Object.freeze([...relations]):null,
       starpathRewardsOnlyConfigured:true as const,
       nativeTags,

@@ -88,12 +88,17 @@ export async function openPublicSharedGameSources(
     loadGuideRewardIndex(basePath+'/guide/public/starpath-cache-2026-11-22.json',once)
   ]);
   const joined=joinCurrentGameSources(database,{
-    origins:acquisition.origins,rewards:guide
+    origins:acquisition.origins,rewards:guide,
+    staticContainers:acquisition.staticContainerSource
   });
-  const search=createDb00PublicItemSearch(database,joined,acquisition.origins,guide);
+  const search=createDb00PublicItemSearch(
+    database,joined,acquisition.origins,guide,acquisition.staticContainerSource
+  );
   assert(acquisition.gameVersion==='1.26.2' &&
     acquisition.coverage.publishedItemDefinitions===database.itemCount &&
     acquisition.coverage.combinedSourceRoutes===1255 &&
+    acquisition.coverage.staticContainerCandidateRoutes===146 &&
+    acquisition.coverage.staticContainerCandidateItemIds===115 &&
     acquisition.coverage.requiresPrivateGameArchive===false &&
     acquisition.coverage.sourceCoverageComplete===false &&
     acquisition.coverage.liveOfferAvailabilityVerified===false &&
