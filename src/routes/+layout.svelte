@@ -4,7 +4,8 @@
   import '$lib/ui/themes.css';
   import {base} from '$app/paths';
   import {page} from '$app/stores';
-  import {onMount,tick} from 'svelte';
+  import {onMount} from 'svelte';
+  import {dialogFocus} from '$lib/ui/dialog-focus';
   import {editHistory,historyView,type HistoryArea} from '$lib/ui/edit-history';
   import {localSaveSession,selectLocalSaveFile,closeLocalSaveFile} from '$lib/ui/local-save-session';
   import WandIcon from '$lib/ui/WandIcon.svelte';
@@ -20,7 +21,6 @@
   let historyOpen=false;
   let historyArea:HistoryArea='collection';
   let historyButton:HTMLButtonElement|null=null;
-  let historyCloseButton:HTMLButtonElement|null=null;
   let collectionBusy=false;
   let languageOpen=false;
   let saveMenuOpen=false;
@@ -111,14 +111,11 @@
     event.preventDefault();dragDepth=0;draggingFile=false;
     setSelectedSave(event.dataTransfer.files[0]);
   }
-  async function openHistory():Promise<void>{
-    closeMenus();historyOpen=true;historyArea='collection';
-    await tick();historyCloseButton?.focus();
-  }
-  function closeHistory():void{historyOpen=false;historyButton?.focus();}
+  function openHistory():void{closeMenus();historyOpen=true;historyArea='collection';}
+  function closeHistory():void{historyOpen=false;}
   function openAccount(){closeMenus();accountOpen=true;}
-  function closeAccount(){accountOpen=false;accountButton?.focus();}
-  function closeTutorial(){tutorialOpen=false;helpButton?.focus();}
+  function closeAccount(){accountOpen=false;}
+  function closeTutorial(){tutorialOpen=false;}
   afterNavigate(()=>closeMenus());
   onMount(()=>{
     window.addEventListener('pointerdown',outsideMenus);
@@ -336,10 +333,11 @@
 {#if historyOpen}
   <div class="shell-history-overlay">
     <button class="shell-history-shade" type="button" on:click={closeHistory} aria-label={copy.close}></button>
-    <div class="shell-history-panel" role="dialog" aria-modal="true" aria-label={copy.history}>
+    <div class="shell-history-panel" role="dialog" aria-modal="true" aria-label={copy.history}
+      use:dialogFocus={{fallback:()=>historyButton?.getClientRects().length?historyButton:moreButton}}>
       <header class="shell-history-head">
         <div><WandIcon name="history" size={21}/><strong>{copy.history}</strong></div>
-        <button class="header-icon-button" type="button" bind:this={historyCloseButton}
+        <button class="header-icon-button" type="button"
           on:click={closeHistory} aria-label={copy.close}><WandIcon name="close" size={21}/></button>
       </header>
       <div class="shell-history-tabs" role="group" aria-label={copy.history}>
@@ -400,7 +398,8 @@
 
 {#if tutorialOpen}
   <div class="tutorial-backdrop">
-    <div class="tutorial-dialog" role="dialog" aria-modal="true" aria-label={tutorial.title}>
+    <div class="tutorial-dialog" role="dialog" aria-modal="true" aria-label={tutorial.title}
+      use:dialogFocus={{fallback:()=>helpButton?.getClientRects().length?helpButton:moreButton}}>
       <header class="tutorial-top">
         <div><WandIcon name="help" size={24}/><h2>{tutorial.title}</h2></div>
         <button type="button" class="header-icon-button" on:click={closeTutorial}
@@ -411,20 +410,21 @@
           <li><span>{i+1}</span><p>{step}</p></li>
         {/each}
       </ol>
-      <button type="button" class="tutorial-done" on:click={()=>tutorialOpen=false}>{copy.close}</button>
+      <button type="button" class="tutorial-done" on:click={closeTutorial}>{copy.close}</button>
     </div>
   </div>
 {/if}
 
 {#if accountOpen}
   <div class="tutorial-backdrop">
-    <div class="tutorial-dialog" role="dialog" aria-modal="true" aria-label={copy.account}>
+    <div class="tutorial-dialog" role="dialog" aria-modal="true" aria-label={copy.account}
+      use:dialogFocus={{fallback:()=>accountButton?.getClientRects().length?accountButton:moreButton}}>
       <header class="tutorial-top">
         <div><WandIcon name="character" size={24}/><h2>{copy.account}</h2></div>
         <button type="button" class="header-icon-button" on:click={closeAccount} aria-label={copy.close}><WandIcon name="close" size={22}/></button>
       </header>
       <p class="header-account-info">{copy.accountInfo}</p>
-      <button type="button" class="tutorial-done" on:click={()=>accountOpen=false}>{copy.close}</button>
+      <button type="button" class="tutorial-done" on:click={closeAccount}>{copy.close}</button>
     </div>
   </div>
 {/if}
