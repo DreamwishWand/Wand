@@ -196,7 +196,10 @@ test('dual-file local DB04 ZIP + encrypted P1G rejoins only exact source paths',
   World:{GridCollection:{
     Grids:{'13':{ID:13,Objects:{'1':{ID:1,ItemID:40005160}}}},
     DiffGrids:{'950':{
-      ID:950,GridDefaultLayoutPath:TEST_DB04_LAYOUT,GridDataPath:TEST_DB04_GRID,
+      ID:950,GridDefaultLayoutPath:TEST_DB04_LAYOUT,
+       GridDefaultLayoutType:'Meta.GridCollection, Meta',
+       DefaultLayoutGridID:0,DefaultGridHashCode:-816650372,
+       DefaultGridDataHashCode:-410688507,
       RemovedObjects:[7],
       ModifiedObjects:{
         '7':{ID:7,ItemID:40005160,Private:'removed-payload'},
