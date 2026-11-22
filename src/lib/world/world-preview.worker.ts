@@ -14,6 +14,16 @@ import {
 
 type Rect = Readonly<{x:number; y:number; width:number; height:number}>;
 type View = Readonly<{viewKey:string}>;
+/** A small, explicit typed adapter around the old untyped read-only JS view. */
+interface NativeSourcePage {
+  status:string;
+  gridDataPath?:string;
+  defaultObjectAnchors?:unknown[];
+}
+const readNativeSourceWindow = getWorldPreviewAnchorWindow as unknown as (
+  catalog:unknown, view:View, gridId:number, rect:Rect,
+  options?:{offset:number;limit:number}|null
+)=>NativeSourcePage;
 type Request =
   | { command:'clear'; requestId:number }
   | { command:'load'; requestId:number; file:Blob }
@@ -98,7 +108,7 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
     const sourceView=views.find(view=>view.viewKey===message.viewKey);
     if (!sourceView)
       throw new TypeError('Unknown local World view');
-    const page=getWorldPreviewAnchorWindow(catalog,sourceView,
+    const page=readNativeSourceWindow(catalog,sourceView,
       message.gridIdNative,message.rect,{offset:message.offset,limit:64});
     if (page.status!=='source_native_default_layout_anchors_only') {
       worker.postMessage({kind:'view',requestId,page,markers:[],
@@ -107,12 +117,13 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
     }
 
     // Point counts are SOURCE ANCHORS, never footprint or collision masks.
-    const full=getWorldPreviewAnchorWindow(catalog,sourceView,
+    const full=readNativeSourceWindow(catalog,sourceView,
       message.gridIdNative,message.rect);
-    if (!Array.isArray(full?.defaultObjectAnchors))
+    const originalAnchors:unknown=full.defaultObjectAnchors;
+    if (!Array.isArray(originalAnchors))
       throw new TypeError('Invalid source-default anchor window');
     const counts=new Map<string,number>();
-    for (const point of full.defaultObjectAnchors as unknown[]) {
+    for (const point of originalAnchors as unknown[]) {
       if (!object(point) ||
           !Number.isSafeInteger(point.x) ||
           !Number.isSafeInteger(point.y))
@@ -124,6 +135,9 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
       const [x,y]=key.split(':').map(Number);
       return {x,y,count};
     });
+    if (typeof page.gridDataPath!=='string' ||
+        !page.gridDataPath.startsWith('GridData/'))
+      throw new TypeError('Invalid literal original GridData path');
     const terrain=getNativeTerrainWindow(catalog,page.gridDataPath,message.rect);
     worker.postMessage({
       kind:'view',requestId,page,markers,
