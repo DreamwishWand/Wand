@@ -93,7 +93,7 @@ test('Public-only startup rejects corrupt source-pinned DB-00 and Guide bytes; u
   ),/PUBLISHED_SHA_MISMATCH/);
   await assert.rejects(loadPublicSourceCatalog(
     '/Wand',publicFetcher({corrupt:'starpath-cache-2026-11-22.json'}).fetcher
-  ),/hash|SHA|digest|pinned|source|integrity/i);
+  ),/fingerprint mismatch/);
   const noFetch=async()=>{throw new Error('SHOULD_NOT_FETCH');};
   await assert.rejects(loadPublicSourceCatalog('/Wand/../exfil',noFetch),
     /INVALID_BASE_PATH/);
