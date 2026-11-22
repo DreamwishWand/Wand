@@ -508,10 +508,11 @@ mod browser_amount_preview {
     }
 
     const MAX_DB04_WITNESS_BYTES:usize=16*1024*1024;
-    /// Local-only match of saved full Grid *path pairs* against the
-    /// already validated DB-04 native reference index. No numeric Save Grid
-    /// identity is used as a native ID. DiffGrids require native hash
-    /// evidence absent from the current source index, and are not matched.
+    /// Full Grids: exact source path pairs. DiffGrids: only potential
+    /// references through a native layout path + DefaultLayoutGridID pair.
+    /// A native candidate is NOT identity proof: original default-grid and
+    /// data hashes are unavailable in the current DB-04 reference graph.
+    /// Saved Grid dictionary IDs are NEVER treated as native grid IDs.
     pub(super) fn match_db04_grid_paths_json(
         profile:&[u8],witness:&str
     )->Result<String,CodecError>{
@@ -524,7 +525,7 @@ mod browser_amount_preview {
         let source=source.as_object().ok_or(CodecError::Json)?;
         if source.len()!=2 ||
            source.get("contract").and_then(serde_json::Value::as_str)
-             !=Some("wand.db05.db04-grid-path-witness@1"){
+             !=Some("wand.db05.db04-grid-path-witness@2"){
             return Err(CodecError::Json);
         }
         let refs=source.get("gridRefs").and_then(serde_json::Value::as_array)
@@ -537,18 +538,25 @@ mod browser_amount_preview {
             !value.chars().any(char::is_control)
         };
         let mut native=HashMap::<(String,String),u32>::new();
+        let mut diff_native=HashMap::<(String,u32),u32>::new();
         for row in refs{
             let row=row.as_object().ok_or(CodecError::Json)?;
-            if row.len()!=2{return Err(CodecError::Json);}
+            if row.len()!=3{return Err(CodecError::Json);}
             let layout=row.get("layoutId").and_then(serde_json::Value::as_str)
                 .ok_or(CodecError::Json)?;
             let data=row.get("gridDataPath").and_then(serde_json::Value::as_str)
                 .ok_or(CodecError::Json)?;
+            let native_id=row.get("nativeGridId")
+                .and_then(serde_json::Value::as_u64)
+                .filter(|id|*id<=u32::MAX as u64)
+                .ok_or(CodecError::Json)? as u32;
             if !valid_path(layout,"SceneLayouts/") ||
                !valid_path(data,"GridData/"){
                 return Err(CodecError::Json);
             }
             *native.entry((layout.to_owned(),data.to_owned()))
+                .or_default()+=1;
+            *diff_native.entry((layout.to_owned(),native_id))
                 .or_default()+=1;
         }
         let root:serde_json::Value=serde_json::from_slice(profile)
@@ -564,6 +572,9 @@ mod browser_amount_preview {
         let mut observed_diff=0usize;
         let mut unverified_diff_hash=0usize;
         let mut malformed_diff=0usize;
+        let mut diff_candidates=0usize;
+        let mut diff_not_in_source=0usize;
+        let mut diff_ambiguous=0usize;
         let mut sampled=false;
         let source_status=if coll.is_none(){
             "not_observed"
@@ -650,21 +661,30 @@ mod browser_amount_preview {
                         !hash_ok(hash)||!hash_ok(data_hash){
                         malformed_diff+=1;continue;
                     }
-                    // DB-04 source grid references have no independently
-                    // checked pair of native default-grid hash witnesses.
+                    // The source's derived gridRefId (layout + nativeGridId)
+                    // only narrows the candidate set. A saved Grid ID is
+                    // never compared. Two native hash witnesses remain absent.
                     unverified_diff_hash+=1;
+                    match diff_native.get(&(layout.unwrap().to_owned(),
+                        native_grid.unwrap() as u32)).copied().unwrap_or(0){
+                        0=>diff_not_in_source+=1,
+                        1=>diff_candidates+=1,
+                        _=>diff_ambiguous+=1
+                    }
                 }
             }
             if sampled||malformed_full>0||malformed_diff>0{
                 "partial_inconclusive"
             }else if exact_full>0{
                 "source_path_matches"
+            }else if diff_candidates>0{
+                "diff_structural_candidates_only"
             }else{
                 "no_exact_full_path_match"
             }
         };
         serde_json::to_string(&serde_json::json!({
-            "contract":"wand.db05.db04-grid-path-match@1",
+            "contract":"wand.db05.db04-grid-path-match@2",
             "status":source_status,
             "observedFullGrids":observed_full,
             "matchedFullGrids":exact_full,
@@ -673,6 +693,9 @@ mod browser_amount_preview {
             "malformedFullGrids":malformed_full,
             "observedDiffGrids":observed_diff,
             "hashUnverifiedDiffGrids":unverified_diff_hash,
+            "structuralCandidateDiffGrids":diff_candidates,
+            "notInPartialSourceDiffGrids":diff_not_in_source,
+            "ambiguousSourceDiffGrids":diff_ambiguous,
             "malformedDiffGrids":malformed_diff,
             "sampled":sampled,
             "sourceCoverageComplete":false,
