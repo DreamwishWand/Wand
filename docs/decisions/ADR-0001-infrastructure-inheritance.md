@@ -69,3 +69,18 @@ Local execution report `wand.src04.r2-stage@1` (reviewed from owner-supplied out
 - **No R2 transfer**, DNS/CDN changes, or public release: `publicationApproved=false`, `uploadedToPublic=false`
 
 Treat image extraction, v2 indexing, and local byte verification as **finished for Steam v1.26.2**. Do not rerun these expensive tasks unless the inputs change or new evidence indicates a defect. Remaining step: provision/confirm an actual **private** R2 bucket and perform an explicit remote plan, then separately authorize an upload.
+
+## R2 private staging readiness (2026-11-22)
+
+Owner screenshots verified a newly created `dreamwishwand-media-private` Cloudflare R2 bucket with **Public Access disabled**, Standard storage class, and zero bytes initially stored. An R2 Account API token scoped to that bucket with **Object Read & Write** appeared **Active** in Cloudflare dashboard. Never store any associated Access Key ID or Secret Access Key in the repo or conversation.
+
+Owner-provided local report `wand.src04.r2-stage@1` confirmed read-only R2 connection + immutable source audit:
+
+- `status=remote_plan_complete`, `complete=true`
+- `remote.bucket=dreamwishwand-media-private`, `remote.mode=remote-plan`
+- `remote.prefix=private/staging/src04/steam-v1.26.2/fd2d07d541293a19`
+- `remote.existingVerified=0`, `remote.wouldUpload=19054`
+- `localAudit.filesVerified=19054`, `localAudit.totalBytes=854529084`
+- `publicationApproved=false`, `uploadedToPublic=false`
+
+**Next step**: the owner must explicitly execute the private upload tool with locally entered credentials; review its `private_staging_uploaded` report and verify `remote.totalVerified=19054`. The report does **not** imply uploads are already complete. Public/CDN configuration remains untouched and requires separate authorization.
