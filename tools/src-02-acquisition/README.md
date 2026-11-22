@@ -1,5 +1,23 @@
 # DB-02 ACQUISITION — source-pinned extraction
 
+## Fixed cooking ingredient source price gaps (Steam 1.26.2)
+
+Independent SHA-authenticated SRC-02 r5 cooking recipes (625 entries) and
+original protoDb.bin price providers (11 entries) now establish that of
+**371** distinct fixed cooking ingredients, **211** have an explicit
+serialized soft-currency sell amount and the remaining **160 have NO
+ItemPrices row** in any original provider (Crop **13**, Fish **8**,
+Ingredient **139**). These are **not** the 474 cached records where the
+Amount field is omitted. Missing an original source row does not establish
+runtime lookup failure, unsellability or fallback-to-one pricing.
+
+The authenticated local-only meal price inspector now exposes
+getSourceIngredientPriceRowCoverage(itemId) and per-recorded-ingredient
+sourceIngredientSerializedPriceRowCoverage; a global source-absence verdict
+remains null unless the original dynamic cache was also supplied. See
+[FIXED-INGREDIENT-PRICE-SOURCE-GAPS.md](FIXED-INGREDIENT-PRICE-SOURCE-GAPS.md)
+and the read-only [source audit](audit_fixed_ingredient_price_source_gap_1262.py).
+
 ## Original 11-provider price source census (Steam v1.26.2)
 
 The SHA-pinned original `protoDb.bin` contains **10 static + 1 dynamic**
