@@ -1,6 +1,7 @@
 <script lang="ts">
   import {onDestroy} from 'svelte';
   import WandIcon from '$lib/ui/WandIcon.svelte';
+  import SaveGridPathAudit from './SaveGridPathAudit.svelte';
   import type {
     Db04GraphBrowserCatalog, Db04GraphBrowserPage,
     Db04GraphScope, Db04GraphOption
@@ -13,6 +14,7 @@
   let searching=false;
   let errorMessage='';
   let catalog:Db04GraphBrowserCatalog|null=null;
+  let verifiedGraphFile:File|null=null;
   let page:Db04GraphBrowserPage|null=null;
   let scope:Db04GraphScope='world';
   let scopeId='';
@@ -48,6 +50,7 @@
   function clear(){
     stop();
     catalog=null;page=null;
+    verifiedGraphFile=null;
     scope='world';scopeId='';
     gridSearch='';exactItemId='';pageOffset=0;
     errorMessage='';
@@ -128,6 +131,7 @@
       if(data.kind==='loaded'){
         loading=false;
         catalog=data.catalog as Db04GraphBrowserCatalog;
+        verifiedGraphFile=file;
         scope='world';
         scopeId=catalog.sourceWorlds[0]?.id??'';
         page=null;pageOffset=0;
@@ -270,6 +274,9 @@
           次へ
         </button>
       </div>
+    {/if}
+    {#if verifiedGraphFile}
+      <SaveGridPathAudit originalGraphFile={verifiedGraphFile}/>
     {/if}
     <p class="graph-note">Steam {catalog.sourceGameVersion} · 部分的な原本参照です。
       JSONの自己整合性は検査しますが、配布者の真正性は証明しません。
