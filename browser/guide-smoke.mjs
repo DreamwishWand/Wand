@@ -204,11 +204,13 @@ try {
   await star.getByRole('button',{name:'Seafaring Star Path'}).waitFor({timeout:20000});
   assert.match(await star.locator('.summary').innerText(),/121 \/ 21/);
   assert.match(await star.locator('.entries li').first().innerText(),/闇のトゲを引っこ抜く/);
+  assert.match(await star.locator('.entries li').first().innerText(),/目標 3個/,'source goal visible for initial duty');
   await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('en');
   assert.match(await star.locator('.entries li').first().innerText(),/Uproot Night Thorns/);
   await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('ja');
   await star.getByRole('textbox',{name:'通常タスクを検索'}).fill('Task17');
   assert.match(await star.locator('.entries li').first().innerText(),/ドナルドダックを同行者/);
+  assert.match(await star.locator('.entries li').first().innerText(),/目標 10分/,'source hangout duration');
   await star.getByRole('textbox',{name:'通常タスクを検索'}).fill('闇のトゲ');
   assert.match(await star.locator('.entries li').first().innerText(),/闇のトゲ/);
   await star.getByRole('textbox',{name:'通常タスクを検索'}).fill('');
@@ -216,6 +218,7 @@ try {
   await star.getByRole('button',{name:'Seafaring Star Path'}).click();
   assert.match(await star.locator('.summary').innerText(),/25 \/ 18/);
   assert.match(await star.locator('.entries li').first().innerText(),/魚を釣る/);
+  assert.match(await star.locator('.entries li').first().innerText(),/目標 10匹/,'source Seafaring fish target');
   await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('fr');
   assert.match(await star.locator('.entries li').first().innerText(),/Attrape des poissons/);
   await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('ja');
@@ -225,6 +228,7 @@ try {
   await star.getByRole('button',{name:'週間タスク'}).click();
   assert.equal(await star.locator('.week').count(),6);
   assert.match(await star.locator('.week').first().innerText(),/魚を20匹釣る/);
+  assert.match(await star.locator('.week').first().innerText(),/目標 20匹/,'weekly source goal quantity');
   await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('en');
   assert.match(await star.locator('.week').first().innerText(),/Catch 20 fish/);
   await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('de');

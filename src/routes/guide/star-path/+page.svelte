@@ -1,6 +1,7 @@
 <script lang="ts">
   import {onMount} from 'svelte';
   import {base} from '$app/paths';
+  import WandIcon from '$lib/ui/WandIcon.svelte';
   import {autoAppend} from '$lib/ui/auto-append';
   import {loadPublicStarpath} from '$lib/guide/public-starpath.mjs';
   import {loadStarpathWeeklyLocales,starpathWeeklyDescription} from '$lib/guide/public-starpath-locales.mjs';
@@ -9,8 +10,9 @@
   import {loadStarpathMedia,starpathMediaThumbnail} from '$lib/guide/starpath-public-media.mjs';
   import {guideCalendarEvents,activeScheduleStarpaths} from '$lib/guide/event-calendar.mjs';
   import {starpathTaskDisplay} from '$lib/guide/starpath-task-guidance.mjs';
+  import {loadPublicStarpathGoals,starpathGoalLabel} from '$lib/guide/public-starpath-goals.mjs';
 
-  let catalog:any=null, weeklyLocales:any=null, dailyLocales:any=null, rewardExtras:any=null, publicMedia:any=null, error='', loading=true;
+  let catalog:any=null, weeklyLocales:any=null, dailyLocales:any=null, rewardExtras:any=null, publicMedia:any=null, goalAmounts:any=null, goalWarning='', error='', loading=true;
   let locale='ja';
   const languages=[['ja','日本語'],['en','English'],['fr','Français'],['it','Italiano'],['de','Deutsch'],['es-ES','Español'],['pt-BR','Português'],['zh-CN','简体中文']];
   let selectedId='HauntingElegance2026';
@@ -47,7 +49,7 @@
     return (name||'名称未確認')+' · ID '+r.itemId+' · '+r.amount+'個'+(r.price!==undefined?' · 価格 '+r.price:'')+(r.premium?' · プレミアム':'')+(r.recurrent?' · 繰り返し':'');
   }
   async function load(){
-    loading=true;error='';
+    loading=true;error='';goalWarning='';goalAmounts=null;
     try{
       catalog=await loadPublicStarpath(`${base}/guide/public/starpath-cache-2026-11-22.json`);
       [weeklyLocales,dailyLocales,rewardExtras]=await Promise.all([
@@ -56,6 +58,9 @@
         loadStarpathRewardExtras(`${base}/guide/public/starpath-reward-extras-2026-11-22.json`,catalog)
       ]);
       publicMedia=await loadStarpathMedia(`${base}/`,catalog);
+      try{
+        goalAmounts=await loadPublicStarpathGoals(`${base}/guide/public/starpath-goals-2026-11-22.json`,catalog);
+      }catch(e){goalWarning=e instanceof Error?e.message:String(e);goalAmounts=null;}
     }
     catch(e){error=e instanceof Error?e.message:String(e)}
     finally{loading=false;}
@@ -94,6 +99,7 @@
     <label class="language">表示言語 <select bind:value={locale} aria-label="スターパスの表示言語">{#each languages as [code,name]}<option value={code}>{name}</option>{/each}</select></label>
     {#if !availableSeasons.length}<p role="status">現在の日程上、タスク期間内と確認できるスターパスはありません。過去の保存キャッシュだけを根拠に開催中とは表示しません。</p>{/if}
     {#if season}
+      {#if goalWarning}<p class="hint" role="status">目標数量を検証できなかったため、ゲーム内の説明のみを表示しています。</p>{/if}
       <section class="summary" aria-label="シーズン情報">
         <div><span>開始日時</span><strong>{date(season.startUtc)}</strong></div>
         <div><span>タスク期限（未満）</span><strong>{date(season.finishUtcExclusive)}</strong></div>
@@ -115,7 +121,8 @@
         <ul class="entries">
           {#each filtered.slice(0,limit) as t (t.id)}
             {@const display=starpathTaskDisplay(season.id,t,locale,starpathDailyDescription(dailyLocales,season.id,t.id,locale))}
-            <li><strong>{display.headline}</strong><small>{display.note}</small><small>{t.objectiveKind} · {t.id} · {t.tokenReward} {season.currencyName}{t.availableOnDay!==undefined?' · 解放設定日 '+t.availableOnDay:''}</small></li>
+            {@const goal=starpathGoalLabel(goalAmounts,season.id,t)}
+            <li><strong>{display.headline}</strong><small>{display.note}</small><small class="task-data">{#if goal}<span class="goal-badge">目標 {goal}</span>{/if}<span class="token-badge"><WandIcon name="star" size={13}/> {t.tokenReward} {season.currencyName}</span><span>{t.id}{t.availableOnDay!==undefined?' · 解放設定日 '+t.availableOnDay:''}</span></small></li>
           {/each}
         </ul>
         {#if filtered.length>limit}<div class="auto-sentinel" use:autoAppend={{hasMore:()=>filtered.length>limit,load:()=>limit+=60}} role="status" aria-label="スクロールでタスクを追加表示"></div>{/if}
@@ -126,7 +133,8 @@
             <ul class="entries">
               {#each week as t (t.id)}
                 {@const display=starpathTaskDisplay(season.id,t,locale,starpathWeeklyDescription(weeklyLocales,t.descriptionKey,locale))}
-                <li><strong>{display.headline}</strong><small>{display.note}</small><small>{t.objectiveKind} · {t.id} · {t.tokenReward} {season.currencyName}</small></li>
+                {@const goal=starpathGoalLabel(goalAmounts,season.id,t)}
+                <li><strong>{display.headline}</strong><small>{display.note}</small><small class="task-data">{#if goal}<span class="goal-badge">目標 {goal}</span>{/if}<span class="token-badge"><WandIcon name="star" size={13}/> {t.tokenReward} {season.currencyName}</span><span>{t.id}</span></small></li>
               {/each}
             </ul>
           </section>
@@ -189,6 +197,10 @@
   .entries{list-style:none;padding:0;display:grid;gap:8px}
   .entries li{display:grid;gap:6px;border:1px solid #493956;background:#21192b;border-radius:10px;padding:12px 16px;font-size:13px;overflow-wrap:anywhere}
   .entries li strong{font-size:14px}.entries li small{color:#ab9ab9;font-size:11px}
+  .task-data{display:flex!important;gap:8px;align-items:center;flex-wrap:wrap}
+  .goal-badge,.token-badge{display:inline-flex;align-items:center;gap:4px;border-radius:7px;padding:4px 7px;background:#352342;color:#f0dcff}
+  .goal-badge{border:1px solid #8063a0;color:#f8eaff}
+  .token-badge{color:#e7ca93}
   .entries li.reward-entry{display:flex;align-items:center;gap:12px;min-width:0}.reward-entry span{min-width:0;overflow-wrap:anywhere}
   .reward-thumb{display:block;width:56px;height:56px;object-fit:contain;flex:0 0 56px;border-radius:9px;background:#33273f}
   .week{margin:28px 0}.week h2{font-size:17px}
