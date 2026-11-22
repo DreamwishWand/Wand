@@ -504,6 +504,185 @@ mod browser_amount_preview {
         Ok(out)
     }
 
+    const MAX_DB04_WITNESS_BYTES:usize=16*1024*1024;
+    /// Local-only match of saved full Grid *path pairs* against the
+    /// already validated DB-04 native reference index. No numeric Save Grid
+    /// identity is used as a native ID. DiffGrids require native hash
+    /// evidence absent from the current source index, and are not matched.
+    pub(super) fn match_db04_grid_paths_json(
+        profile:&[u8],witness:&str
+    )->Result<String,CodecError>{
+        use std::collections::HashMap;
+        if witness.len()>MAX_DB04_WITNESS_BYTES || witness.is_empty(){
+            return Err(CodecError::Bounds);
+        }
+        let source:serde_json::Value=serde_json::from_str(witness)
+            .map_err(|_|CodecError::Json)?;
+        let source=source.as_object().ok_or(CodecError::Json)?;
+        if source.len()!=2 ||
+           source.get("contract").and_then(serde_json::Value::as_str)
+             !=Some("wand.db05.db04-grid-path-witness@1"){
+            return Err(CodecError::Json);
+        }
+        let refs=source.get("gridRefs").and_then(serde_json::Value::as_array)
+            .ok_or(CodecError::Json)?;
+        if refs.len()>20000{return Err(CodecError::Bounds);}
+        let valid_path=|value:&str,prefix:&str|{
+            value.len()<=512 && value.len()>prefix.len()+5 &&
+            value.starts_with(prefix) && value.ends_with(".json") &&
+            !value.contains("..")&&!value.contains('\\') &&
+            !value.chars().any(char::is_control)
+        };
+        let mut native=HashMap::<(String,String),u32>::new();
+        for row in refs{
+            let row=row.as_object().ok_or(CodecError::Json)?;
+            if row.len()!=2{return Err(CodecError::Json);}
+            let layout=row.get("layoutId").and_then(serde_json::Value::as_str)
+                .ok_or(CodecError::Json)?;
+            let data=row.get("gridDataPath").and_then(serde_json::Value::as_str)
+                .ok_or(CodecError::Json)?;
+            if !valid_path(layout,"SceneLayouts/") ||
+               !valid_path(data,"GridData/"){
+                return Err(CodecError::Json);
+            }
+            *native.entry((layout.to_owned(),data.to_owned()))
+                .or_default()+=1;
+        }
+        let root:serde_json::Value=serde_json::from_slice(profile)
+            .map_err(|_|CodecError::Json)?;
+        let world=root.get("World").and_then(serde_json::Value::as_object)
+            .ok_or(CodecError::RequiredRoot)?;
+        let coll=world.get("GridCollection");
+        let mut observed_full=0usize;
+        let mut exact_full=0usize;
+        let mut not_in_source=0usize;
+        let mut ambiguous_full=0usize;
+        let mut malformed_full=0usize;
+        let mut observed_diff=0usize;
+        let mut unverified_diff_hash=0usize;
+        let mut malformed_diff=0usize;
+        let mut sampled=false;
+        let source_status=if coll.is_none(){
+            "not_observed"
+        }else if !coll.is_some_and(serde_json::Value::is_object){
+            "incompatible_structure"
+        }else{
+            let coll=coll.and_then(serde_json::Value::as_object)
+                .ok_or(CodecError::Json)?;
+            let full=coll.get("Grids").and_then(serde_json::Value::as_object);
+            let diff=coll.get("DiffGrids").and_then(serde_json::Value::as_object);
+            if coll.get("Grids").is_some() && full.is_none(){
+                malformed_full+=1;
+            }
+            if coll.get("DiffGrids").is_some() && diff.is_none(){
+                malformed_diff+=1;
+            }
+            let mut visited=0usize;
+            if let Some(full)=full{
+                for (key,record) in full{
+                    if visited>=MAX_GRID_SCAN{sampled=true;break;}
+                    visited+=1;
+                    observed_full+=1;
+                    let id=key.parse::<u64>().ok()
+                        .filter(|id|id.to_string()==*key);
+                    let Some(obj)=record.as_object() else {
+                        malformed_full+=1;continue;
+                    };
+                    if id.is_none()||obj.get("ID").is_some_and(|v|
+                        v.as_u64()!=id) {
+                        malformed_full+=1;continue;
+                    }
+                    let layout=obj.get("GridDefaultLayoutPath")
+                        .and_then(serde_json::Value::as_str);
+                    let data=obj.get("GridDataPath")
+                        .and_then(serde_json::Value::as_str);
+                    let (Some(layout),Some(data))=(layout,data) else {
+                        malformed_full+=1;continue;
+                    };
+                    if !valid_path(layout,"SceneLayouts/")||
+                        !valid_path(data,"GridData/"){
+                        malformed_full+=1;continue;
+                    }
+                    match native.get(&(layout.to_owned(),data.to_owned()))
+                        .copied().unwrap_or(0){
+                        0=>not_in_source+=1,
+                        1=>exact_full+=1,
+                        _=>ambiguous_full+=1
+                    }
+                }
+            }
+            if let Some(diff)=diff{
+                for (key,record) in diff{
+                    if visited>=MAX_GRID_SCAN{sampled=true;break;}
+                    visited+=1;
+                    observed_diff+=1;
+                    let id=key.parse::<u64>().ok()
+                        .filter(|id|id.to_string()==*key);
+                    let Some(obj)=record.as_object() else {
+                        malformed_diff+=1;continue;
+                    };
+                    if id.is_none()||obj.get("ID").is_some_and(|v|
+                        v.as_u64()!=id) ||
+                        full.is_some_and(|grids|grids.contains_key(key)){
+                        malformed_diff+=1;continue;
+                    }
+                    let layout=obj.get("GridDefaultLayoutPath")
+                        .and_then(serde_json::Value::as_str);
+                    let native_grid=obj.get("DefaultLayoutGridID")
+                        .and_then(serde_json::Value::as_u64);
+                    let kind=obj.get("GridDefaultLayoutType")
+                        .and_then(serde_json::Value::as_str);
+                    let hash=obj.get("DefaultGridHashCode")
+                        .and_then(serde_json::Value::as_i64);
+                    let data_hash=obj.get("DefaultGridDataHashCode")
+                        .and_then(serde_json::Value::as_i64);
+                    let hash_ok=|v:Option<i64>|v.is_some_and(|v|
+                        v>=i32::MIN as i64&&v<=i32::MAX as i64);
+                    if !layout.is_some_and(|v|valid_path(v,"SceneLayouts/"))||
+                        !native_grid.is_some_and(|v|v<=u32::MAX as u64) ||
+                        !kind.is_some_and(|v|matches!(v,
+                            "Meta.GridCollection, Meta"|
+                            "Meta.DefaultRealmData, Meta"|
+                            "Meta.DefaultOffGridBuildingData, Meta")) ||
+                        !hash_ok(hash)||!hash_ok(data_hash){
+                        malformed_diff+=1;continue;
+                    }
+                    // DB-04 source grid references have no independently
+                    // checked pair of native default-grid hash witnesses.
+                    unverified_diff_hash+=1;
+                }
+            }
+            if sampled||malformed_full>0||malformed_diff>0{
+                "partial_inconclusive"
+            }else if exact_full>0{
+                "source_path_matches"
+            }else{
+                "no_exact_full_path_match"
+            }
+        };
+        serde_json::to_string(&serde_json::json!({
+            "contract":"wand.db05.db04-grid-path-match@1",
+            "status":source_status,
+            "observedFullGrids":observed_full,
+            "matchedFullGrids":exact_full,
+            "notInPartialSourceFullGrids":not_in_source,
+            "ambiguousSourceFullGrids":ambiguous_full,
+            "malformedFullGrids":malformed_full,
+            "observedDiffGrids":observed_diff,
+            "hashUnverifiedDiffGrids":unverified_diff_hash,
+            "malformedDiffGrids":malformed_diff,
+            "sampled":sampled,
+            "sourceCoverageComplete":false,
+            "sourceOriginalArchiveRechecked":false,
+            "saveGridNumericIdUsedAsNativeKey":false,
+            "diffIdentityVerified":false,
+            "worldCoordinatesVerified":false,
+            "playerPlacementVerified":false,
+            "nativeDefaultObjectEquivalenceVerified":false,
+            "saveWritingAuthorized":false
+        })).map_err(|_|CodecError::Json)
+    }
+
     const MAX_GRID_SCAN:usize=2048;
     const MAX_GRID_OBJECT_SCAN:usize=100_000;
     const MAX_GRID_ITEM_IDS:usize=20_000;
@@ -764,6 +943,21 @@ mod browser_amount_preview {
         /// This is not a catalog lookup, ownership proof or editing permission.
         /// Read-only save GridObject references for optional DB-04 annotation;
         /// no grid IDs, coordinates or private object fields leave the Worker.
+        /// Source path pairing only. Source graph must first be verified
+        /// by the existing DB-04 WorldReferenceIndex in this Worker.
+        pub fn match_db04_grid_paths(&self,witness:&str)->Result<String,JsValue>{
+            if !self.ready || self.closed {
+                return Err(fail("DB05_GRID_SOURCE_SESSION_NOT_OPEN"));
+            }
+            let profile=match self.kind {
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref()
+                    .ok_or(fail("DB05_GRID_SOURCE_SESSION_NOT_OPEN"))?
+                    .profile.as_slice()
+            };
+            match_db04_grid_paths_json(profile,witness)
+                .map_err(|_|fail("DB05_GRID_SOURCE_MATCH_INVALID"))
+        }
         pub fn list_saved_grid_item_references(&self)->Result<String,JsValue>{
             if !self.ready || self.closed {
                 return Err(fail("DB05_GRID_INDEX_NOT_OPEN"));
@@ -1113,6 +1307,57 @@ mod tests{
         local
     }
     fn encrypted(method:u16)->Vec<u8>{ecb_encrypt(&zip(profile().as_bytes(),method)).unwrap()}
+    #[cfg(feature="wasm")]
+    #[test]
+    fn saved_full_grid_paths_require_unique_native_db04_pairs_not_grid_ids(){
+        let sample=br#"{"GameInfo":{"Version":643},"Player":{},
+          "World":{"GridCollection":{"Grids":{
+            "900":{"ID":900,"GridDefaultLayoutPath":
+              "SceneLayouts/Village04/Beach.json",
+              "GridDataPath":"GridData/Village04/Beach.json",
+              "Objects":{"1":{"ItemID":40000100,"X":77}}},
+            "901":{"ID":901,"GridDefaultLayoutPath":
+              "SceneLayouts/Unavailable/Room.json",
+              "GridDataPath":"GridData/Unavailable/Room.json","Objects":{}},
+            "902":{"ID":902,"GridDefaultLayoutPath":
+              "SceneLayouts/Other/Room.json",
+              "GridDataPath":"GridData/Other/Room.json","Objects":{}}
+          },"DiffGrids":{"1001":{"ID":1001,"GridDefaultLayoutPath":
+            "SceneLayouts/Village04/Beach.json",
+            "GridDefaultLayoutType":"Meta.GridCollection, Meta",
+            "DefaultLayoutGridID":7,"DefaultGridHashCode":31,
+            "DefaultGridDataHashCode":-12,"ModifiedObjects":{}}}
+          }}}"#;
+        let witness=r#"{"contract":"wand.db05.db04-grid-path-witness@1",
+          "gridRefs":[
+            {"layoutId":"SceneLayouts/Village04/Beach.json",
+             "gridDataPath":"GridData/Village04/Beach.json"},
+            {"layoutId":"SceneLayouts/Other/Room.json",
+             "gridDataPath":"GridData/Other/Room.json"},
+            {"layoutId":"SceneLayouts/Other/Room.json",
+             "gridDataPath":"GridData/Other/Room.json"}
+          ]}"#;
+        let report=browser_amount_preview::match_db04_grid_paths_json(
+            sample,witness).unwrap();
+        let r:serde_json::Value=serde_json::from_str(&report).unwrap();
+        assert_eq!(r["status"],"source_path_matches");
+        assert_eq!(r["observedFullGrids"],3);
+        assert_eq!(r["matchedFullGrids"],1);
+        assert_eq!(r["notInPartialSourceFullGrids"],1);
+        assert_eq!(r["ambiguousSourceFullGrids"],1);
+        assert_eq!(r["observedDiffGrids"],1);
+        assert_eq!(r["hashUnverifiedDiffGrids"],1);
+        assert_eq!(r["diffIdentityVerified"],false);
+        assert_eq!(r["saveGridNumericIdUsedAsNativeKey"],false);
+        assert!(!report.contains("Beach.json") &&
+            !report.contains("900") && !report.contains("X"));
+        assert!(browser_amount_preview::match_db04_grid_paths_json(
+            sample,r#"{"contract":"wand.db05.db04-grid-path-witness@1",
+              "gridRefs":[{"layoutId":"../secret",
+                "gridDataPath":"GridData/Village04/Beach.json"}]}"#
+        ).is_err());
+    }
+
     #[cfg(feature="wasm")]
     #[test]
     fn read_only_grid_reference_projection_hides_ids_and_diff_removals(){
