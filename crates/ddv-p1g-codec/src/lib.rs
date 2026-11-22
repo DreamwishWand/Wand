@@ -357,6 +357,70 @@ mod browser_profile_reader {
     impl Drop for WasmP1gReader {
         fn drop(&mut self) { self.close(); }
     }
+    /// The real Steam .profile may be plaintext UTF-8 JSON. Validate in
+    /// Rust without any AES/ZIP guess based on the filename. Bytes remain
+    /// inside the dedicated Worker and are emitted only in bounded chunks.
+    #[wasm_bindgen]
+    pub struct WasmPlainProfileReader {
+        pending: Vec<u8>,
+        cursor: usize,
+        ready: bool,
+        closed: bool,
+    }
+    #[wasm_bindgen]
+    impl WasmPlainProfileReader {
+        #[wasm_bindgen(constructor)]
+        pub fn new() -> Self {
+            Self { pending:Vec::new(),cursor:0,ready:false,closed:false }
+        }
+        pub fn append_chunk(&mut self,part:&[u8])->Result<(),JsValue>{
+            if self.closed || self.ready || part.is_empty() || part.len()>MAX_CHUNK ||
+                self.pending.len().checked_add(part.len())
+                    .is_none_or(|n| n>MAX_PROFILE){
+                self.close();
+                return Err(error("DB05_RUST_PLAIN_SIZE_DENIED"));
+            }
+            self.pending.extend_from_slice(part);
+            Ok(())
+        }
+        pub fn finish_open(&mut self)->Result<u32,JsValue>{
+            if self.closed || self.ready || self.pending.is_empty() ||
+               self.pending.len()>MAX_PROFILE {
+                self.close();
+                return Err(error("DB05_RUST_PLAIN_INVALID"));
+            }
+            if validate_profile(&self.pending).is_err(){
+                self.close();
+                return Err(error("DB05_RUST_PLAIN_INVALID"));
+            }
+            self.ready=true;
+            Ok(self.pending.len() as u32)
+        }
+        pub fn take_profile_chunk(&mut self,maximum:u32)->Result<Vec<u8>,JsValue>{
+            if self.closed || !self.ready || maximum==0 ||
+                maximum as usize>MAX_CHUNK ||
+                self.cursor>=self.pending.len(){
+                self.close();
+                return Err(error("DB05_RUST_PLAIN_CHUNK_DENIED"));
+            }
+            let end=self.cursor.saturating_add(maximum as usize)
+                .min(self.pending.len());
+            let part=self.pending[self.cursor..end].to_vec();
+            self.cursor=end;
+            if end==self.pending.len(){self.close();}
+            Ok(part)
+        }
+        pub fn close(&mut self){
+            self.pending.zeroize();
+            self.pending.clear();
+            self.cursor=0;
+            self.ready=false;
+            self.closed=true;
+        }
+    }
+    impl Drop for WasmPlainProfileReader{
+        fn drop(&mut self){self.close();}
+    }
 }
 
 /// Worker-internal existing-Amount P1G/JSON preview. The Rust memory keeps

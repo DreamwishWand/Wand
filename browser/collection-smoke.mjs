@@ -417,7 +417,7 @@ try{
   await page.getByRole('button',{name:/を未所持にする/}).first().click();
   await page.getByRole('button',{name:/を所持済みにする/}).first().waitFor();
   await ownershipSearch.fill('');
-  const fixture=makeSyntheticP1g({
+  const saveRoot={
     GameInfo:{Version:643},
     Player:{
       PrivateName:'must-not-leak',
@@ -452,7 +452,8 @@ try{
         '7':{ID:7,ItemID:40006110}
       }}}
     }}
-  });
+  };
+  const fixture=makeSyntheticP1g(saveRoot);
   await page.locator('input[aria-label="DDVのセーブファイルを選択"]')
     .setInputFiles({name:'synthetic.profile',
       mimeType:'application/octet-stream',buffer:fixture});
@@ -492,6 +493,21 @@ try{
   await page.getByRole('button',{name:'Collectionバックアップ出力'}).click();
   const afterBrowse=JSON.parse(await readFile(await (await postSaveBackup).path(),'utf8'));
   assert.deepEqual(afterBrowse.workspaces.find(x=>x.id==='local-1').entries,stateAfter);
+  // Steam v643 can store the same source as raw UTF-8 JSON in a .profile.
+  // Rust/WASM must accept both formats without treating the filename as P1G.
+  await page.locator('input[aria-label="DDVのセーブファイルを選択"]')
+    .setInputFiles({name:'steam-plaintext.profile',
+      mimeType:'application/octet-stream',
+      buffer:Buffer.from(JSON.stringify(saveRoot),'utf8')});
+  await page.waitForFunction(()=>
+    !document.querySelector('button[aria-label="セーブファイルを読み込む"]')?.disabled,
+    null,{timeout:30000});
+  const plainBackupDownload=page.waitForEvent('download');
+  await page.getByRole('button',{name:'Collectionバックアップ出力'}).click();
+  const plainBackup=JSON.parse(await readFile(await (await plainBackupDownload).path(),'utf8'));
+  assert.deepEqual(plainBackup.workspaces.find(x=>x.id==='local-1').entries,stateAfter,
+    'Collection plaintext Steam profile must import exactly as encrypted P1G');
+  assert.equal(await page.getByRole('alert').filter({hasText:'読み込めません'}).count(),0);
 
   // Hold the next local file read before its Worker starts. During this
   // asynchronous gap the user must not switch, delete, restore or replace
