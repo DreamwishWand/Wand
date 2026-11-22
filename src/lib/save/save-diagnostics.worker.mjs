@@ -1,6 +1,6 @@
 /** One-shot isolated diagnostics. Never post decrypted Profile or save values. */
 import { inspectLocalSaveDiagnosticsBytes } from './save-diagnostics-worker-core.mjs';
-import {readRustP1gProfileInWorker} from '../collection/rust-p1g-profile-reader.mjs';
+import {readRustP1gProfileInWorker} from '../collection/rust-p1g-profile-reader.ts';
 import {probeWasmReferenceParity,wasmReferenceUnavailable} from './save-wasm-reference.mjs';
 import {probeNativeP1gAudit,nativeP1gAuditUnavailable} from './save-native-p1g-audit.mjs';
 
