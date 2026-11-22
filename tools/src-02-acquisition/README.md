@@ -1,5 +1,21 @@
 # DB-02 ACQUISITION — source-pinned extraction
 
+## Signed native ingredient total-value accumulator (arithmetic only)
+
+`native-meal-total-value-stage.mjs` reproduces the next independently
+confirmed Steam/Switch v1.26.2 native **arithmetic stage**: an optional
+caller-supplied base value (normally zero), per-ingredient signed-32-bit
+percentage/truncation or unadjusted contribution, signed-32-bit wrapping
+addition and **one final signed minimum with a caller-supplied cap**
+(default `2147483647`). The cross-platform original-binary auditor
+now pins **16 exact machine-code windows** (9 Steam, 7 Switch), including
+base/percentage initialization, conditional base, wrapping sum, final
+clamp. Its caller values, native eligibility rules, price-source
+routing and final cooked-meal selling price are **not verified**; the
+module explicitly returns `nativeInstanceMealPrice:null`. The fixture
+test verifies per-ingredient rounding differs from rounding only the sum.
+See [MEAL-STATE-SELL-PRICE.md](MEAL-STATE-SELL-PRICE.md).
+
 ## Steam/Switch v1.26.2 native meal-price math — original binaries verified
 
 `audit_native_meal_price_1262.py` uses **owner-uploaded originals** from
