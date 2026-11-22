@@ -214,9 +214,10 @@ function validateDb03MissionReceipt(input:unknown):Db03MissionSlotReceipt {
     ].every(n=>nonnegative(n,256)) ||
     !nonnegative(input.typeIssues,262656)||
     !nonnegative(input.missingOptionalMissionIds,262656)||
-    input.observedMissionSlots!==input.matchedPlayableQuestReferences+
-      input.unresolvedPlayableQuestReferences+input.zeroSentinels+
-      input.malformedMissionIds||
+    Number(input.observedMissionSlots)!==
+      Number(input.matchedPlayableQuestReferences)+
+      Number(input.unresolvedPlayableQuestReferences)+
+      Number(input.zeroSentinels)+Number(input.malformedMissionIds)||
     Number(input.distinctPositiveMissionIds)>
       Number(input.matchedPlayableQuestReferences)+
       Number(input.unresolvedPlayableQuestReferences)||
