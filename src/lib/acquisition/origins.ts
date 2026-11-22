@@ -1,7 +1,9 @@
 /** DB-02 shared acquisition origin ledger. No new production JavaScript or save writes. */
 import {
-  loadPublicStarpath, verifyPublicStarpath, STARPATH_PUBLIC_SHA
-} from '../guide/public-starpath.mjs';
+  createGuideRewardIndex, loadGuideRewardIndex, DB03_REWARD_RELATION_CONTRACT,
+  type GuideRewardIndex, type GuideRewardOccurrence
+} from '../guide/reward-relations.ts';
+import {STARPATH_PUBLIC_SHA} from '../guide/public-starpath.mjs';
 import {OFFICIAL_CAMPAIGNS} from './official-campaigns.ts';
 import {projectVerifiedSrc02Origins, type VerifiedSrc02OriginReader} from './native-origins.ts';
 
@@ -15,7 +17,7 @@ export type OriginKind =
   | 'official_campaign' | 'purchase_bonus' | 'gift' | 'other';
 
 export type SourceKind = 'verified_liveops_cache' | 'verified_game_native'
-  | 'official_publication' | 'verified_sale_snapshot';
+  | 'official_publication' | 'verified_sale_snapshot' | 'unhashed_structural_candidate';
 export type RouteStatus = 'confirmed_source_link' | 'static_candidate_only';
 export type AccessTier = 'free' | 'premium' | 'not_applicable';
 
@@ -136,7 +138,7 @@ function period(value: OriginWindow): void {
 }
 function provenance(source: OriginProvenance): void {
   assert(source && SAFE_KEY.test(source.sourceId) &&
-    ['verified_liveops_cache','verified_game_native','official_publication','verified_sale_snapshot']
+    ['verified_liveops_cache','verified_game_native','official_publication','verified_sale_snapshot','unhashed_structural_candidate']
       .includes(source.kind) &&
     typeof source.sourceUrl === 'string' && source.sourceUrl.length > 0 &&
     (source.sourceUrl.startsWith('https://') || source.sourceUrl.startsWith('/')) &&
@@ -145,6 +147,8 @@ function provenance(source: OriginProvenance): void {
     (source.sha256 === null || SHA.test(source.sha256)), 'PROVENANCE');
   if (source.kind === 'official_publication')
     assert(source.sourceUrl.startsWith('https://'), 'OFFICIAL_URL');
+  else if(source.kind === 'unhashed_structural_candidate')
+    assert(source.sha256 === null, 'UNHASHED_SOURCE_CANNOT_ASSERT_HASH');
   else assert(source.sha256 !== null, 'SOURCE_HASH');
 }
 function validateCampaign(c: OfficialCampaign): void {
@@ -187,7 +191,9 @@ function validateOrigin(o: ItemOrigin): void {
   provenance(o.source);
   // The official web articles cited in this release list names, not native Item IDs.
   if (o.routeStatus === 'confirmed_source_link')
-    assert(o.source.kind !== 'official_publication', 'OFFICIAL_NAME_NOT_ITEM_ID_EVIDENCE');
+    assert(o.source.kind !== 'official_publication' &&
+      o.source.kind !== 'unhashed_structural_candidate',
+      'UNVERIFIED_ORIGIN_SOURCE');
 }
 
 function frozen<T>(v: T): Readonly<T> { return Object.freeze(v); }
@@ -209,7 +215,8 @@ export function createAcquisitionOriginDatabase(
   const unique = new Set<string>();
   const sources: Record<SourceKind, number> = {
     verified_liveops_cache: 0, verified_game_native: 0,
-    official_publication: 0, verified_sale_snapshot: 0
+    official_publication: 0, verified_sale_snapshot: 0,
+    unhashed_structural_candidate: 0
   };
   for (const o of origins) {
     validateOrigin(o);
@@ -258,83 +265,86 @@ export function createAcquisitionOriginDatabase(
   });
 }
 
-interface StarReward {
-  itemId: string;
-  amount: number;
-  premium: boolean;
-  bonus: boolean;
-  recurrent: boolean;
-  price?: number;
-  alternateItemId?: string;
-}
-interface StarPage { page: number; rewards: StarReward[]; }
-interface StarSeason {
-  id: string; title: string; currencyName: string;
-  startUtc: string; finishUtcExclusive: string; endUtcExclusive: string;
-  rewardPages: StarPage[]; bonusPages: StarPage[]; vaultRewards: StarReward[];
-}
-interface StarSnapshot {
-  source: { ownerDeclaredGameVersion: string };
-  seasons: StarSeason[];
-}
-
 const STARPATH_SOURCE: OriginProvenance = Object.freeze({
-  sourceId: 'db03:starpath:2026-11-22',
-  kind: 'verified_liveops_cache',
-  sourceUrl: '/guide/public/starpath-cache-2026-11-22.json',
-  checkedOn: '2026-11-22',
-  gameVersion: '1.26.2',
-  sha256: STARPATH_PUBLIC_SHA
+  sourceId: 'db03:starpath:2026-11-22', kind:'verified_liveops_cache',
+  sourceUrl:'/guide/public/starpath-cache-2026-11-22.json',
+  checkedOn:'2026-11-22',gameVersion:'1.26.2',sha256:STARPATH_PUBLIC_SHA
+});
+const STRUCTURAL_SOURCE:OriginProvenance=Object.freeze({
+  ...STARPATH_SOURCE,kind:'unhashed_structural_candidate',sha256:null
 });
 
 /**
- * Consumes DB-03's verified cached snapshot. Do not copy or fork its parser.
- * Call loadStarpathAcquisitionDatabase for the source-hash-verified production path.
+ * Project the *DB-03-owned* relation graph. DB-03 preserves the exact original
+ * reward page / slot / currency / recurrence / alternatives; DB-02 does not
+ * parse the reward tables or invent historical Star Path item links.
  */
-export function starpathOriginRecords(verifiedDb03Snapshot: unknown): {
-  origins: ItemOrigin[];
-  campaigns: OfficialCampaign[];
+export function projectGuideRewardOrigins(index:GuideRewardIndex):{
+  origins:ItemOrigin[];campaigns:OfficialCampaign[];
 } {
-  const snapshot = verifyPublicStarpath(verifiedDb03Snapshot) as StarSnapshot;
-  const origins: ItemOrigin[] = [];
-  const campaigns: OfficialCampaign[] = [];
-  for (const season of snapshot.seasons) {
-    const campaignId = 'starpath:' + season.id;
-    const window = frozen({start: season.startUtc, endExclusive: season.endUtcExclusive});
-    campaigns.push({
-      campaignId, kind: 'event_reward', name: season.title, code: null,
-      productId: null, window, conditions: frozen(['Star Path progress and reward claim']),
-      rewards: frozen([]), source: STARPATH_SOURCE,
-      availability: 'not_live_verified'
-    });
-    const add = (r: StarReward, group: string, page: number, position: number) => {
-      const kind: OriginKind = group === 'vault' ? 'star_path_vault' :
-        r.premium ? 'star_path_premium' : 'star_path_free';
-      const conditions = [
-        r.premium ? 'Premium Star Path entitlement required' : 'Free reward tier',
-        group === 'vault' ? 'Vault reward' :
-          group === 'bonus' ? 'Bonus page unlock conditions' : 'Reward page unlock conditions'
-      ];
-      if (r.alternateItemId) conditions.push('Alternate Item ID: ' + id(r.alternateItemId));
-      if (r.recurrent) conditions.push('Repeatable reward in native snapshot');
-      origins.push({
-        originId: `starpath:${season.id}:${group}:${page}:${position}`,
-        itemId: id(r.itemId), kind, routeStatus: 'confirmed_source_link',
-        campaignId, name: season.title, productId: null,
-        quantity: r.amount,
-        price: r.price === undefined ? null : {
-          quantity: r.price, currency: season.currencyName, currencyItemId: null
-        },
-        accessTier: r.premium ? 'premium' : 'free', window,
-        salePeriods: frozen([]), conditions: frozen(conditions),
-        source: STARPATH_SOURCE, availability: 'not_live_verified'
-      });
+  assert(index?.contract===DB03_REWARD_RELATION_CONTRACT &&
+    index.coverage.recordedRewardSlots===67 &&
+    index.coverage.historicalSeasonCatalogComplete===false &&
+    index.evidence.gameVersion==='1.26.2' &&
+    index.evidence.publicProjectionSha256===STARPATH_PUBLIC_SHA, 'DB03_INDEX');
+  const bytesVerified=index.evidence.integrity==='pinned_public_sha256';
+  const source=bytesVerified?STARPATH_SOURCE:STRUCTURAL_SOURCE;
+  const origins:ItemOrigin[]=[];
+  const campaigns:OfficialCampaign[]=[];
+  for(const season of index.seasons){
+    const campaignId='starpath:'+season.id;
+    const window=frozen({start:season.startUtc,endExclusive:season.endUtcExclusive});
+    const campaign:OfficialCampaign={
+      campaignId,kind:'event_reward',name:season.title,code:null,productId:null,
+      window,conditions:frozen([
+        'Star Path rewards require progression and manual claim',
+        'Premium access cost (not per-item): '+season.premiumAccessCost+
+          ' Moonstones; currency Item ID '+season.premiumAccessCurrencyItemId
+      ]),rewards:frozen([]),source,availability:'not_live_verified'
     };
-    for (const p of season.rewardPages) p.rewards.forEach((r, i) => add(r, 'page', p.page, i));
-    for (const p of season.bonusPages) p.rewards.forEach((r, i) => add(r, 'bonus', p.page, i));
-    season.vaultRewards.forEach((r, i) => add(r, 'vault', 0, i));
+    campaigns.push(campaign);
+    for(const occurrence of index.getSeasonRewards(season.id)){
+      assert(occurrence.seasonId===season.id &&
+        index.getItemAcquisitionCandidates(occurrence.itemId).some(
+          rel=>rel.occurrenceId===occurrence.occurrenceId
+        ),'DB03_REWARD_RELATION');
+      const kind:OriginKind=occurrence.section==='vault'?'star_path_vault':
+        occurrence.premium?'star_path_premium':'star_path_free';
+      const conditions=[
+        occurrence.premium?'Premium Star Path entitlement required':'Free reward tier',
+        occurrence.section==='vault'?'Vault reward':
+          occurrence.section==='bonus'?'Bonus reward page':'Normal reward page'
+      ];
+      if(occurrence.minPurchasedFromPreviousPage!==undefined)
+        conditions.push('Previous-page purchases required: '+occurrence.minPurchasedFromPreviousPage);
+      if(occurrence.currencyConversionPage)
+        conditions.push('Currency conversion page');
+      if(occurrence.recurrent)conditions.push('Recurrent reward');
+      if(occurrence.alternateItemId)
+        conditions.push('Vault alternative candidate (not a guaranteed reward): '+occurrence.alternateItemId);
+      const o:ItemOrigin={
+        originId:'starpath:'+occurrence.occurrenceId,
+        itemId:id(occurrence.itemId),kind,
+        routeStatus:bytesVerified?'confirmed_source_link':'static_candidate_only',
+        campaignId,name:season.title,productId:null,quantity:occurrence.amount,
+        price:occurrence.price===undefined?null:{
+          quantity:occurrence.price,currency:occurrence.currencyName,currencyItemId:null
+        },
+        accessTier:occurrence.premium?'premium':'free',window,salePeriods:frozen([]),
+        conditions:frozen(conditions),source,availability:'not_live_verified'
+      };
+      origins.push(o);
+    }
   }
-  return {origins, campaigns};
+  assert(origins.length===67,'DB03_REWARD_COUNT');
+  return {origins,campaigns};
+}
+
+/** Structure-only test/inspection entrypoint; NEVER claims byte-level provenance. */
+export function starpathOriginRecords(snapshot:unknown):{
+  origins:ItemOrigin[];campaigns:OfficialCampaign[];
+} {
+  return projectGuideRewardOrigins(createGuideRewardIndex(snapshot));
 }
 
 /** Normal consumer: DB-03 verifies the 34,617 source bytes and pinned SHA-256 first. */
@@ -344,10 +354,10 @@ export async function loadStarpathAcquisitionDatabase(
   basePath = ''
 ): Promise<OriginDatabase> {
   assert(basePath === '' || (basePath.startsWith('/') && !basePath.includes('..') && !basePath.endsWith('/')), 'BASE_PATH');
-  const snapshot: unknown = await loadPublicStarpath(
+  const guide = await loadGuideRewardIndex(
     basePath + '/guide/public/starpath-cache-2026-11-22.json', fetcher
   );
-  const {origins, campaigns} = starpathOriginRecords(snapshot);
+  const {origins, campaigns} = projectGuideRewardOrigins(guide);
   return createAcquisitionOriginDatabase(origins, campaigns, native);
 }
 
@@ -359,10 +369,10 @@ export async function loadUnifiedAcquisitionOriginDatabase(
   nativeItemIds: readonly (string | number)[] = []
 ): Promise<OriginDatabase> {
   assert(basePath === '' || (basePath.startsWith('/') && !basePath.includes('..') && !basePath.endsWith('/')), 'BASE_PATH');
-  const snapshot: unknown = await loadPublicStarpath(
+  const guide = await loadGuideRewardIndex(
     basePath + '/guide/public/starpath-cache-2026-11-22.json', fetcher
   );
-  const starpath = starpathOriginRecords(snapshot);
+  const starpath = projectGuideRewardOrigins(guide);
   // Import only requested Item IDs from the exact verified private r5 bundle.
   // Other callers retain the static native view without making source claims.
   const nativeRoutes = nativeItemIds.length ? projectVerifiedSrc02Origins(
