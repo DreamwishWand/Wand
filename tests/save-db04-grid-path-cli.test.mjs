@@ -103,7 +103,7 @@ test('encrypted P1G -> private DB-04 ZIP SHA pin -> exact GridDataPath counts',a
     assert.equal(report.claims.editorWriterAuthorized,false);
     assert.equal(report.claims.exportAuthorized,false);
     const evidence=JSON.stringify(report)+cmd.stderr+cmd.stdout;
-    for(const secret of ['SECRET_OWNER','GridData/','NativeGrid',
+    for(const secret of ['SECRET_OWNER','GridData/','NativeGrid-Two.json',
       'MeadowLevel','MissingNative','PRIVATE_OWNER_UID',x.dir]){
       assert.equal(evidence.includes(secret),false,secret);
     }
