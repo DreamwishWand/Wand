@@ -7,6 +7,7 @@
   import {onMount} from 'svelte';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {launcherServices} from '$lib/ui/services';
+  import {shellCopy,type TutorialKey} from '$lib/ui/shell-copy';
   import {afterNavigate} from '$app/navigation';
   import {
     UI_LANGUAGES,UI_THEMES,readWandLanguage,setWandLanguage,readWandTheme,setWandTheme,
@@ -17,12 +18,10 @@
   let accountOpen=false;
   let collectionBusy=false;
   let languageOpen=false;
-  let themeOpen=false;
   let navOpen=false;
   let filesOpen=false;
   let navRoot:HTMLElement|null=null;
   let languageRoot:HTMLElement|null=null;
-  let themeRoot:HTMLElement|null=null;
   let filesRoot:HTMLElement|null=null;
   let navButton:HTMLButtonElement|null=null;
   let filesButton:HTMLButtonElement|null=null;
@@ -31,9 +30,8 @@
   let uiLocale:WandLanguage='ja';
   let uiTheme:WandTheme='night';
   let languageButton:HTMLButtonElement|null=null;
-  let themeButton:HTMLButtonElement|null=null;
   const LANGUAGE_SHORT=Object.fromEntries(UI_LANGUAGES.map(x=>[x.code,x.short]));
-  function closeMenus(){navOpen=false;filesOpen=false;languageOpen=false;themeOpen=false;}
+  function closeMenus(){navOpen=false;filesOpen=false;languageOpen=false;}
   function switchLanguage(code:WandLanguage){
     setWandLanguage(code);
     closeMenus();
@@ -42,15 +40,12 @@
   function switchTheme(next:WandTheme){
     uiTheme=next;
     setWandTheme(next);
-    themeOpen=false;
-    themeButton?.focus();
   }
   function outsideMenus(event:PointerEvent){
     if(!(event.target instanceof Node))return;
     if(navOpen&&!navRoot?.contains(event.target))navOpen=false;
     if(filesOpen&&!filesRoot?.contains(event.target))filesOpen=false;
     if(languageOpen&&!languageRoot?.contains(event.target))languageOpen=false;
-    if(themeOpen&&!themeRoot?.contains(event.target))themeOpen=false;
   }
   function openAccount(){closeMenus();accountOpen=true;}
   function closeAccount(){accountOpen=false;accountButton?.focus();}
@@ -78,15 +73,8 @@
     route.includes('/guide')?'guide':
     route.includes('/world')?'world':
     route.includes('/save')?'save':'home';
-  $: tutorial=({
-    home:{title:'Wandの使い方',steps:['利用するサービスのタイルを選びます。','準備中のタイルは選択できません。','左上のサービスメニューから利用可能な画面に移動できます。','Collectionはセーブなしでも利用できます。']},
-    collection:{title:'Collection',steps:['アイテムを検索するかカテゴリを選択します。下へスクロールすると続きを自動表示します。','アイテムを選んで所持状況・お気に入り・所持数を記録できます。','ヘッダーの読み込みからセーブを選択すると、確認できた発見・所持状態が手動記録に優先されます。','ヘッダーからCollection記録をバックアップ・復元できます。元のゲームセーブは変更しません。']},
-    guide:{title:'Guide',steps:['クエスト・キャラクターを検索します。長い一覧はスクロールで自動表示します。','項目を選ぶと詳細を確認できます。公開データはセーブなしで閲覧できます。']},
-    characters:{title:'Characters',steps:['キャラクターを検索・絞り込みます。','キャラクターを選択して関連クエストを確認します。']},
-    starpath:{title:'Star Path',steps:['シーズンとタスク・報酬のタブを選択します。','検索で対象を絞り、下へスクロールすると追加のタスクを表示します。']},
-    world:{title:'World（原本プレビュー）',steps:['ゲーム原本から抽出したZIPを端末内で読み込みます。','地域・レイアウトを選ぶと初期配置の参照を確認できます。原本の記録はプレイヤーの所有証明ではありません。']},
-    save:{title:'Save（開発用）',steps:['ヘッダーの読み込みでセーブを選択します。','診断と変更プレビューは開発用です。完成したセーブ書き換え機能ではありません。','元ファイルを変更せず端末内で処理します。']}
-  } as Record<string,{title:string;steps:string[]}>)[service];
+  $: copy=shellCopy(uiLocale);
+  $: tutorial=copy.tutorials[(service as TutorialKey)]??copy.tutorials.home;
   function openSaveFile(){
     const label=service==='collection'?'DDVのセーブファイルを選択':
       route.includes('/diagnostics')?'DDVセーブまたは復号済みJSONを選択':'検証用セーブファイル';
@@ -114,14 +102,13 @@
 </script>
 <svelte:window on:keydown={(event:KeyboardEvent)=>{
   if(event.key==='Escape'){
-    const hadNav=navOpen,hadFiles=filesOpen,hadLanguage=languageOpen,hadTheme=themeOpen;
+    const hadNav=navOpen,hadFiles=filesOpen,hadLanguage=languageOpen;
     closeMenus();
     if(tutorialOpen)closeTutorial();
     else if(accountOpen)closeAccount();
     else if(hadNav)navButton?.focus();
     else if(hadFiles)filesButton?.focus();
     else if(hadLanguage)languageButton?.focus();
-    else if(hadTheme)themeButton?.focus();
   }
   if(event.key==='/'&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&!event.repeat
     &&!(event.target instanceof HTMLInputElement)
@@ -134,16 +121,16 @@
 <div class="site-shell">
   <header class="site-header">
     <span class="shell-brand-mark" aria-hidden="true"><img src="{base}/DreamwishWand.svg" alt="" width="34" height="34" /></span>
-    <a class="header-home-button" href="{base}/" aria-label="ホームへ戻る" title="ホームへ戻る"><WandIcon name="home" size={21}/></a>
+    <a class="header-home-button" href="{base}/" aria-label={copy.home} title={copy.home}><WandIcon name="home" size={21}/></a>
     {#if service==='home'}<span class="shell-home-brand">Dreamwish Wand</span>{/if}
-    <nav class="shell-nav-root" aria-label="サービスナビゲーション" bind:this={navRoot}>
+    <nav class="shell-nav-root" aria-label={copy.serviceNav} bind:this={navRoot}>
       <button class="header-icon-button shell-nav-trigger" type="button" bind:this={navButton}
-        aria-label="サービスを切り替える" title="サービスを切り替える" aria-expanded={navOpen}
-        on:click={()=>{navOpen=!navOpen;filesOpen=false;languageOpen=false;themeOpen=false;}}>
-        <WandIcon name="grid" size={19}/><span>サービス</span><WandIcon name="chevron" size={14}/>
+        aria-label={copy.switchService} title={copy.switchService} aria-expanded={navOpen}
+        on:click={()=>{navOpen=!navOpen;filesOpen=false;languageOpen=false;}}>
+        <WandIcon name="grid" size={19}/><span>{copy.services}</span><WandIcon name="chevron" size={14}/>
       </button>
       {#if navOpen}
-        <div class="shell-menu" role="group" aria-label="サービス一覧">
+        <div class="shell-menu" role="group" aria-label={copy.serviceList}>
           <a href="{base}/" aria-current={service==='home'?'page':undefined} on:click={closeMenus}>
             <WandIcon name="home" size={18}/><span class="shell-menu-title">Home</span>
           </a>
@@ -156,18 +143,21 @@
             {:else}
               <span class="shell-unavailable" aria-disabled="true">
                 <WandIcon name={destination.icon} size={18}/><span class="shell-menu-title">{destination.name}</span>
-                <span class="shell-menu-state">準備中</span>
+                <span class="shell-menu-state">{copy.planned}</span>
               </span>
             {/if}
           {/each}
           <div class="shell-menu-divider"></div>
+          <button class="shell-menu-help" type="button" on:click={()=>{closeMenus();tutorialOpen=true;}}>
+            <WandIcon name="help" size={18}/><span class="shell-menu-title">{copy.help}</span>
+          </button>
           <button class="shell-menu-account" type="button" on:click={openAccount}>
-            <WandIcon name="character" size={18}/><span class="shell-menu-title">アカウント</span>
+            <WandIcon name="character" size={18}/><span class="shell-menu-title">{copy.account}</span>
           </button>
         </div>
       {/if}
     </nav>
-    <div class="shell-shortcuts" aria-label="よく使うサービス">
+    <div class="shell-shortcuts" aria-label={copy.quickServices}>
       <a class="shell-shortcut" href="{base}/collection/" aria-current={service==='collection'?'page':undefined} title="Collection">
         <WandIcon name="collection" size={17}/><span>Collection</span>
       </a>
@@ -177,67 +167,67 @@
     </div>
     {#if service!=='home'}<span class="shell-current">{service==='collection'?'Collection':service==='starpath'?'Star Path':service==='characters'?'Characters':service==='guide'?'Guide':service==='world'?'World':'Save'}</span>{/if}
     <div class="header-spacer"></div>
-    <div class="site-actions" aria-label="ページ操作">
+    <div class="site-actions" aria-label={copy.pageActions}>
       {#if service==='collection'}
-        <div class="header-context-tools" role="group" aria-label="Collectionツールバー">
-          <button class="header-icon-button header-context-optional" type="button" on:click={focusContextSearch} aria-label="Collectionを検索" title="検索"><WandIcon name="search" size={20}/></button>
-          <button class="header-icon-button header-context-optional" type="button" on:click={()=>window.dispatchEvent(new Event('wand:collection-filters'))} aria-label="絞り込みを切り替える" title="絞り込み"><WandIcon name="filter" size={20}/></button>
+        <div class="header-context-tools" role="group" aria-label={copy.collectionTools}>
+          <button class="header-icon-button header-context-optional" type="button" on:click={focusContextSearch} aria-label={copy.collectionSearch} title={copy.search}><WandIcon name="search" size={20}/></button>
+          <button class="header-icon-button header-context-optional" type="button" on:click={()=>window.dispatchEvent(new Event('wand:collection-filters'))} aria-label={copy.filter} title={copy.filter}><WandIcon name="filter" size={20}/></button>
         </div>
       {:else if service==='starpath'||service==='characters'||route.includes('/guide/quests')}
-        <div class="header-context-tools" role="group" aria-label="Guideツールバー">
-          <button class="header-icon-button" type="button" on:click={focusContextSearch} aria-label="ガイドを検索" title="このページを検索"><WandIcon name="search" size={20}/></button>
+        <div class="header-context-tools" role="group" aria-label={copy.guideTools}>
+          <button class="header-icon-button" type="button" on:click={focusContextSearch} aria-label={copy.guideSearch} title={copy.search}><WandIcon name="search" size={20}/></button>
         </div>
       {:else if service==='world'}
-        <div class="header-context-tools" role="group" aria-label="Worldツールバー">
-          <button class="header-icon-button" type="button" on:click={openWorldSource} aria-label="World原本ZIPを開く" title="World原本ZIPを開く"><WandIcon name="folder" size={20}/></button>
+        <div class="header-context-tools" role="group" aria-label={copy.worldTools}>
+          <button class="header-icon-button" type="button" on:click={openWorldSource} aria-label={copy.worldSource} title={copy.worldSource}><WandIcon name="folder" size={20}/></button>
         </div>
       {:else if service==='save'&&route.includes('/diagnostics')}
-        <div class="header-context-tools" role="group" aria-label="Saveツールバー">
-          <button class="header-icon-button header-context-optional" type="button" on:click={()=>window.dispatchEvent(new Event('wand:save-clear'))} aria-label="Save診断結果を破棄" title="診断結果を破棄"><WandIcon name="close" size={20}/></button>
+        <div class="header-context-tools" role="group" aria-label={copy.saveTools}>
+          <button class="header-icon-button header-context-optional" type="button" on:click={()=>window.dispatchEvent(new Event('wand:save-clear'))} aria-label={copy.saveClear} title={copy.saveClear}><WandIcon name="close" size={20}/></button>
         </div>
       {/if}
       {#if service==='collection'||service==='save'}
-        <div class="header-file-tools" role="group" aria-label="ファイル操作">
+        <div class="header-file-tools" role="group" aria-label={copy.fileTools}>
           <div class="shell-file-desktop">
             <button class="header-icon-button" type="button" on:click={openSaveFile} disabled={service==='collection'&&collectionBusy}
-              aria-label="セーブファイルを読み込む" title="セーブファイルを読み込む">
+              aria-label={copy.readSave} title={copy.readSave}>
               <WandIcon name="upload" size={20}/>
             </button>
             {#if service==='collection'}
               <button class="header-icon-button" type="button" on:click={backupCollection}
-                aria-label="Collectionバックアップ出力" title="Collectionバックアップ出力"><WandIcon name="download" size={20}/></button>
+                aria-label={copy.collectionBackup} title={copy.collectionBackup}><WandIcon name="download" size={20}/></button>
               <button class="header-icon-button" type="button" on:click={restoreCollection} disabled={collectionBusy}
-                aria-label="Collectionバックアップ復元" title="Collectionバックアップ復元"><WandIcon name="restore" size={20}/></button>
+                aria-label={copy.collectionRestore} title={copy.collectionRestore}><WandIcon name="restore" size={20}/></button>
             {/if}
           </div>
           <div class="shell-file-mobile shell-file-root" bind:this={filesRoot}>
             <button class="header-icon-button" type="button" bind:this={filesButton}
-              aria-label="ファイル操作を開く" aria-expanded={filesOpen}
-              on:click={()=>{filesOpen=!filesOpen;navOpen=false;languageOpen=false;themeOpen=false;}} title="ファイル操作">
+              aria-label={copy.fileTools} aria-expanded={filesOpen}
+              on:click={()=>{filesOpen=!filesOpen;navOpen=false;languageOpen=false;}} title={copy.fileTools}>
               <WandIcon name="folder" size={19}/>
             </button>
             {#if filesOpen}
               <div class="shell-menu shell-file-menu" role="group" aria-label="ファイル操作">
                 <button type="button" disabled={service==='collection'&&collectionBusy}
-                  on:click={()=>{filesOpen=false;openSaveFile();}}><WandIcon name="upload" size={18}/>セーブファイルを読み込む</button>
+                  on:click={()=>{filesOpen=false;openSaveFile();}}><WandIcon name="upload" size={18}/>{copy.readSave}</button>
                 {#if service==='collection'}
-                  <button type="button" on:click={()=>{filesOpen=false;backupCollection();}}><WandIcon name="download" size={18}/>バックアップ</button>
-                  <button type="button" disabled={collectionBusy} on:click={()=>{filesOpen=false;restoreCollection();}}><WandIcon name="restore" size={18}/>復元</button>
+                  <button type="button" on:click={()=>{filesOpen=false;backupCollection();}}><WandIcon name="download" size={18}/>{copy.backup}</button>
+                  <button type="button" disabled={collectionBusy} on:click={()=>{filesOpen=false;restoreCollection();}}><WandIcon name="restore" size={18}/>{copy.restore}</button>
                 {/if}
               </div>
             {/if}
           </div>
         </div>
       {/if}
-      <div class="header-preference-tools" role="group" aria-label="表示設定">
+      <div class="header-preference-tools" role="group" aria-label={copy.preferences}>
         <div class="header-language-menu" bind:this={languageRoot}>
           <button bind:this={languageButton} class="header-icon-button header-language-button" type="button"
-            aria-label="表示言語を切り替える" title="表示言語を切り替える" aria-expanded={languageOpen}
-            on:click={()=>{languageOpen=!languageOpen;navOpen=false;filesOpen=false;themeOpen=false;}}>
+            aria-label={copy.languageSwitch} title={copy.languageSwitch} aria-expanded={languageOpen}
+            on:click={()=>{languageOpen=!languageOpen;navOpen=false;filesOpen=false;}}>
             <WandIcon name="languages" size={19}/><span class="header-locale-code">{LANGUAGE_SHORT[uiLocale]}</span>
           </button>
           {#if languageOpen}
-            <div class="language-popover" role="group" aria-label="表示言語">
+            <div class="language-popover" role="group" aria-label={copy.languageList}>
               {#each UI_LANGUAGES as item (item.code)}
                 <button type="button" class:chosen={uiLocale===item.code}
                   aria-pressed={uiLocale===item.code} on:click={()=>switchLanguage(item.code)}>
@@ -247,32 +237,23 @@
             </div>
           {/if}
         </div>
-        <div class="shell-theme-root" bind:this={themeRoot}>
-          <button class="header-icon-button" bind:this={themeButton} type="button"
-            aria-label="テーマを切り替える" title={UI_THEMES.find(item=>item.code===uiTheme)?.label}
-            aria-expanded={themeOpen} aria-haspopup="true"
-            on:click={()=>{themeOpen=!themeOpen;navOpen=false;filesOpen=false;languageOpen=false;}}>
-            <WandIcon name={UI_THEMES.find(item=>item.code===uiTheme)?.icon??'moon-star'} size={22}/>
-          </button>
-          {#if themeOpen}
-            <div class="shell-menu shell-theme-menu" role="group" aria-label="テーマ">
-              {#each UI_THEMES as item (item.code)}
-                <button type="button" class:chosen={uiTheme===item.code}
-                  aria-pressed={uiTheme===item.code} on:click={()=>switchTheme(item.code)}>
-                  <WandIcon name={item.icon} size={23}/>
-                  <span class="shell-menu-title">{item.label}</span>
-                  {#if uiTheme===item.code}<WandIcon name="check" size={19}/>{/if}
-                </button>
-              {/each}
-            </div>
-          {/if}
+        <div class="shell-theme-options" role="group" aria-label={copy.preferences}>
+          {#each UI_THEMES as item (item.code)}
+            <button class="header-icon-button shell-theme-option" type="button"
+              class:active={uiTheme===item.code}
+              aria-label={copy.themes[item.code]} title={copy.themes[item.code]}
+              aria-pressed={uiTheme===item.code}
+              on:click={()=>switchTheme(item.code)}>
+              <WandIcon name={item.icon} size={22}/>
+            </button>
+          {/each}
         </div>
       </div>
-      <div class="header-support-tools" role="group" aria-label="ヘルプとアカウント">
+      <div class="header-support-tools" role="group" aria-label={copy.support}>
         <button class="header-icon-button help-action" bind:this={helpButton} type="button"
-          on:click={()=>{closeMenus();tutorialOpen=true;}} aria-label="このページのチュートリアル" title="ヘルプ"><WandIcon name="help" size={20}/></button>
+          on:click={()=>{closeMenus();tutorialOpen=true;}} aria-label={copy.tutorialHelp} title={copy.help}><WandIcon name="help" size={20}/></button>
         <button class="header-icon-button shell-account-header" bind:this={accountButton} type="button"
-          on:click={openAccount} aria-label="ログイン・アカウント" title="ログイン・アカウント（準備中）"><WandIcon name="character" size={20}/></button>
+          on:click={openAccount} aria-label={copy.accountOpen} title={copy.accountPreparing}><WandIcon name="character" size={20}/></button>
       </div>
     </div>
   </header>
@@ -284,14 +265,14 @@
       <header class="tutorial-top">
         <div><WandIcon name="help" size={24}/><h2>{tutorial.title}</h2></div>
         <button type="button" class="header-icon-button" on:click={closeTutorial}
-          aria-label="チュートリアルを閉じる"><WandIcon name="close" size={22}/></button>
+          aria-label={copy.tutorialClose}><WandIcon name="close" size={22}/></button>
       </header>
       <ol class="tutorial-steps">
         {#each tutorial.steps as step,i (i)}
           <li><span>{i+1}</span><p>{step}</p></li>
         {/each}
       </ol>
-      <button type="button" class="tutorial-done" on:click={()=>tutorialOpen=false}>閉じる</button>
+      <button type="button" class="tutorial-done" on:click={()=>tutorialOpen=false}>{copy.close}</button>
     </div>
   </div>
 {/if}
@@ -300,11 +281,11 @@
   <div class="tutorial-backdrop">
     <div class="tutorial-dialog" role="dialog" aria-modal="true" aria-label="アカウント">
       <header class="tutorial-top">
-        <div><WandIcon name="character" size={24}/><h2>アカウント</h2></div>
-        <button type="button" class="header-icon-button" on:click={closeAccount} aria-label="アカウント画面を閉じる"><WandIcon name="close" size={22}/></button>
+        <div><WandIcon name="character" size={24}/><h2>{copy.account}</h2></div>
+        <button type="button" class="header-icon-button" on:click={closeAccount} aria-label={copy.close}><WandIcon name="close" size={22}/></button>
       </header>
-      <p class="header-account-info">ログイン機能は準備中です。Collectionの記録は現在の端末に保存されます。セーブファイルをサーバーへ送信することなく利用できます。</p>
-      <button type="button" class="tutorial-done" on:click={()=>accountOpen=false}>閉じる</button>
+      <p class="header-account-info">{copy.accountInfo}</p>
+      <button type="button" class="tutorial-done" on:click={()=>accountOpen=false}>{copy.close}</button>
     </div>
   </div>
 {/if}
