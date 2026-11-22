@@ -417,6 +417,48 @@ try {
     'expired archived rewards remain available for reference without player-state claims');
   await expired.close();
 
+  // Deep links address exact verified source duties regardless of old event dates,
+  // and can reach beyond the 60-row progressive render window.
+  const normalLink=await browser.newPage();
+  await normalLink.addInitScript(()=>{Date.now=()=>Date.parse('2026-12-10T00:00:00Z');});
+  await normalLink.goto('http://127.0.0.1:4177/Wand/guide/star-path/?season=HauntingElegance2026&task=Task120',
+    {waitUntil:'domcontentloaded'});
+  await normalLink.locator('#starpath-HauntingElegance2026-Task120.permalink-focused').waitFor({timeout:20000});
+  assert(await normalLink.locator('.entries li').count()>100,
+    'deep link must expose the requested duty beyond the first 60 rows');
+  assert.equal(await normalLink.locator('.tabs button.active').innerText(),'通常タスク');
+  assert.match(await normalLink.locator('#starpath-HauntingElegance2026-Task120').innerText(),/前菜/);
+  assert.equal(await normalLink.getByRole('link',{name:'タスク Task120 の共有リンク'}).getAttribute('href'),
+    '/Wand/guide/star-path/?season=HauntingElegance2026&task=Task120');
+  assert.match(await normalLink.locator('.archive-notice').innerText(),/終了済み/);
+  await normalLink.getByRole('button',{name:'週間タスク'}).click();
+  assert.equal(new URL(normalLink.url()).search,'','manual tab changes clear stale permalink parameters');
+  assert.equal(await normalLink.locator('.permalink-focused').count(),0);
+  await normalLink.close();
+
+  const weeklyLink=await browser.newPage();
+  await weeklyLink.goto('http://127.0.0.1:4177/Wand/guide/star-path/?season=HauntingElegance2026&task=Week02Task03',
+    {waitUntil:'domcontentloaded'});
+  await weeklyLink.locator('#starpath-HauntingElegance2026-Week02Task03.permalink-focused').waitFor({timeout:20000});
+  assert.equal(await weeklyLink.locator('.tabs button.active').innerText(),'週間タスク');
+  assert.match(await weeklyLink.locator('.permalink-focused').innerText(),/Candy Cane Door/,
+    'specific original photo target is included at its shareable weekly link');
+  await weeklyLink.getByRole('link',{name:'タスク Week01Task01 の共有リンク'}).click();
+  await weeklyLink.waitForFunction(()=>location.search.includes('task=Week01Task01'));
+  await weeklyLink.locator('#starpath-HauntingElegance2026-Week01Task01.permalink-focused').waitFor();
+  await weeklyLink.goBack();
+  await weeklyLink.waitForFunction(()=>location.search.includes('task=Week02Task03'));
+  await weeklyLink.locator('#starpath-HauntingElegance2026-Week02Task03.permalink-focused').waitFor();
+  await weeklyLink.close();
+
+  const unknownDuty=await browser.newPage();
+  await unknownDuty.goto('http://127.0.0.1:4177/Wand/guide/star-path/?season=Seafaring2026&task=Task999',
+    {waitUntil:'domcontentloaded'});
+  await unknownDuty.locator('.entries li').first().waitFor({timeout:20000});
+  assert.equal(await unknownDuty.locator('.permalink-focused').count(),0,
+    'foreign task IDs must not highlight a different duty');
+  await unknownDuty.close();
+
   const exchangeOnly=await browser.newPage();
   await exchangeOnly.addInitScript(()=>{Date.now=()=>Date.parse('2026-12-01T14:30:00Z');});
   await exchangeOnly.goto('http://127.0.0.1:4177/Wand/guide/star-path/',{waitUntil:'domcontentloaded'});
