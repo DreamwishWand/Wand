@@ -34,7 +34,13 @@ function syntheticTerrainZip(){
   ];
   const sources={
     objects:[{itemId:100,nativeType:'Furniture',
-      nativeName:'SyntheticSourceObject',footprint:null}],
+      nativeName:'SyntheticSourceObject',
+      footprint:{sizeX:2,sizeY:2,layerValues:[0,68,68,76],
+        acceptedFloorTypesFlag:4,
+        cellIndexToXYVerified:false,layerMaskSemanticsVerified:false,
+        nativeWireFields:{sizeX:'6.1',sizeY:'6.2',layerValues:'6.3',
+          acceptedFloorTypesFlag:'6.4'}
+      }},{itemId:200,nativeType:'Building',footprint:null}],
     scenes:[],worlds:[],areas:[],
     grids:gridPaths.map(gridId=>({
       gridId,sizeX:16,sizeY:16,
@@ -425,6 +431,14 @@ try{
   await page.getByRole('button',{name:'原本全Gridを検索'}).click();
   await page.getByRole('status')
     .filter({hasText:'原本初期配置 1 / 2件'}).waitFor();
+  const gridareaPanel=page.getByLabel('原本Item GridArea情報');
+  await gridareaPanel.waitFor();
+  assert.match(await gridareaPanel.innerText(),/Item 100 · 原本GridArea/);
+  assert.match(await gridareaPanel.innerText(),/原本GridAreaのサイズ：\s*2 × 2/);
+  assert.match(await gridareaPanel.innerText(),/非ゼロ 3値/);
+  assert.match(await gridareaPanel.innerText(),/68 × 2 · 0 × 1 · 76 × 1/);
+  assert.match(await gridareaPanel.innerText(),/占有セル数ではありません/);
+  assert.doesNotMatch(await gridareaPanel.innerText(),/編集可能/);
   assert.match(await terrainSelectors.nth(1).locator('option:checked').innerText(),
     /Village04\/Beach.json/);
   assert.equal(await terrainSelectors.nth(2).inputValue(),'1');
@@ -452,6 +466,16 @@ try{
   assert.match(await page.getByRole('status')
     .filter({hasText:'この部分的な原本ZIPに指定Item IDの初期配置はありません'})
     .innerText(),/セーブの位置や配置可否は判定しません/);
+  assert.match(await gridareaPanel.innerText(),/この部分的な原本ZIPにItem定義がありません/);
+  await globalItemQuery.fill('200');
+  await globalItemQuery.press('Enter');
+  await page.getByRole('status')
+    .filter({hasText:'この部分的な原本ZIPに指定Item IDの初期配置はありません'}).waitFor();
+  await page.waitForFunction(()=>document.querySelector(
+    '[aria-label="原本Item GridArea情報"]')?.textContent
+      ?.includes('このItem定義に原本GridAreaは記録されていません'));
+  assert.match(await gridareaPanel.innerText(),
+    /このItem定義に原本GridAreaは記録されていません。配置不可とは判定しません/);
 
   // The DB-04 UI reuses DB-05's existing Rust/WASM grid-path matcher.
   // Synthetic Save map IDs 19/20/21 are intentionally NOT native Grid.IDs.

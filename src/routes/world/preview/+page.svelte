@@ -4,6 +4,8 @@
   import NativeGraphExplorer from '$lib/world/NativeGraphExplorer.svelte';
   import type {OriginalItemAnchorFindResult, GlobalOriginalItemAnchorResult}
     from '$lib/world/native-item-anchor-finder.ts';
+  import type {OriginalGridAreaEvidence}
+    from '$lib/world/native-gridarea-evidence.ts';
   import {matchSourceGridToLocalTerrain,
     type SourceGridNavigationRequest}
     from '$lib/world/native-grid-navigation.ts';
@@ -87,6 +89,7 @@
   let anchorFindResult:OriginalItemAnchorFindResult|null=null;
   let anchorFindMessage='';
   let findingAnchor=false;
+  let itemGridArea:OriginalGridAreaEvidence|null=null;
   let globalItemSearch='';
   let globalFindResult:GlobalOriginalItemAnchorResult|null=null;
   let globalFindMessage='';
@@ -139,14 +142,17 @@
     viewing = false;
     findingAnchor=false;
     findingGlobal=false;
+    itemGridArea=null;
   }
   function resetGlobalFind(clearInput=true){
     globalFindResult=null;
     globalFindMessage='';
     findingGlobal=false;
+    itemGridArea=null;
     if(clearInput)globalItemSearch='';
   }
   function findGlobalOriginalItem(matchIndex=0){
+    itemGridArea=null;
     const input=globalItemSearch.trim();
     if(!/^[1-9][0-9]{0,15}$/.test(input)||
        !Number.isSafeInteger(Number(input))){
@@ -179,6 +185,7 @@
     if(clearInput)anchorItemSearch='';
   }
   function findNativeItemAnchor(matchIndex=0){
+    itemGridArea=null;
     const selected=layouts.find(row=>row.viewKey===selectedViewKey);
     const grid=selected?.grids.find(row=>
       String(row.gridIdNative)===selectedGridId);
@@ -315,6 +322,7 @@
   function changeGrid() {
     resetAnchorFind();
     resetGlobalFind();
+    itemGridArea=null;
     x = 0; y = 0; width = 16; height = 16;
     viewport = null;
     requestWindow();
@@ -391,6 +399,9 @@
           return;
         }
         globalFindResult=match;
+        const evidence=result.itemEvidence as OriginalGridAreaEvidence|undefined;
+        itemGridArea=evidence?.contract==='wand.db04.original-gridarea-raw-evidence@1'&&
+          evidence.itemId===match.itemId?evidence:null;
         if(match.status==='found'&&match.sourceLayoutId&&
            match.nativeGridId!==null&&match.gridDataPath&&
            match.sourceAnchorX!==null&&match.sourceAnchorY!==null){
@@ -453,6 +464,9 @@
           return;
         }
         anchorFindResult=found;
+        const evidence=result.itemEvidence as OriginalGridAreaEvidence|undefined;
+        itemGridArea=evidence?.contract==='wand.db04.original-gridarea-raw-evidence@1'&&
+          evidence.itemId===found.itemId?evidence:null;
         if(found.status==='found'&&
           typeof found.sourceAnchorX==='number'&&
           typeof found.sourceAnchorY==='number'){
@@ -653,7 +667,7 @@
           <label>原本Item ID
             <input type="search" inputmode="numeric"
               bind:value={anchorItemSearch}
-              on:input={()=>resetAnchorFind(false)}
+              on:input={()=>{resetAnchorFind(false);itemGridArea=null;}}
               placeholder="原本初期配置のItem ID"/>
           </label>
           <button type="button" on:click={()=>findNativeItemAnchor()}
@@ -679,6 +693,41 @@
         </div>
       {/if}
     </div>
+
+    {#if itemGridArea}
+      <div class="world-panel" aria-label="原本Item GridArea情報">
+        <div class="view-head">
+          <h2>Item {itemGridArea.itemId} · 原本GridArea</h2>
+          <span>{itemGridArea.nativeType??'定義未確認'}</span>
+        </div>
+        {#if itemGridArea.status==='source_raw_gridarea_available'}
+          <p class="note">原本GridAreaのサイズ：
+            {itemGridArea.rawSizeX} × {itemGridArea.rawSizeY}。
+            原本レイヤー配列：{itemGridArea.rawLayerSlotCount}値
+            （非ゼロ {itemGridArea.nonzeroRawLayerSlotCount}値、
+            異なる値 {itemGridArea.distinctRawLayerValueCount}種類）。
+            床タイプフラグ原値：{itemGridArea.acceptedFloorTypesFlag}。
+            {#if itemGridArea.strideOverrideWireFieldPresent}
+              StrideOverride原値：{itemGridArea.strideOverride}。
+            {/if}
+          </p>
+          <p class="note">レイヤー原値と出現数（最大8種類）：
+            {itemGridArea.mostFrequentRawValues.map(row=>
+              `${row.value} × ${row.count}`).join(' · ')}
+          </p>
+          <p class="note">配列の非ゼロ値は占有セル数ではありません。
+            Steam v1.26.2での2Dセル対応、回転、衝突判定、配置可否は未検証です。</p>
+        {:else}
+          <p class="note">
+            {itemGridArea.status==='item_has_no_source_gridarea'
+              ? 'このItem定義に原本GridAreaは記録されていません。配置不可とは判定しません。'
+              :itemGridArea.status==='item_not_in_partial_original_source'
+              ? 'この部分的な原本ZIPにItem定義がありません。'
+              :'この原本バージョンのGridArea情報は未検証です。'}
+          </p>
+        {/if}
+      </div>
+    {/if}
 
     {#if viewing}<p class="note" role="status">グリッドの原本座標を集計しています…</p>{/if}
     {#if viewport?.page.status === 'source_native_default_layout_anchors_only'}
