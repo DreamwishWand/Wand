@@ -35,6 +35,8 @@ import {loadPinnedIapPackReferences,type PinnedIapPackReferenceIndex}
   from './public-iap-pack-references.ts';
 import {indexItemSourceBrowser,type ItemSourceBrowser}
   from './item-source-browser.ts';
+import {loadPinnedStaticContainerContents,type PinnedStaticContainerContents}
+  from './public-static-container.ts';
 import {indexPublicOnlineNameCandidates,
   type PublicOnlineNameCandidateIndex,
   type PublicOnlineNameCandidate} from './public-online-name-candidates.ts';
@@ -68,7 +70,12 @@ export interface PublicSourceCatalogCoverage {
   readonly nativeIapNestedPackReferences:3;
   readonly nativeIapAdditionalPackReferences:3;
   readonly nativeIapAppleAppStoreOnlyPackReferences:3;
+  /** Existing 1255 fully joined origins. Static container candidates are separate. */
   readonly combinedSourceRoutes:1255;
+  readonly staticContainerDefinitions:88;
+  readonly staticContainerCandidateRoutes:146;
+  readonly staticContainerCandidateItemIds:115;
+  readonly totalPublishedOriginAndContainerCandidateRoutes:1401;
   readonly publicNameOnlyCandidateRelations:number;
   readonly distinctNameOnlyCandidateItemIds:number;
   readonly verifiedOnlineNameAcquisitionLinks:0;
@@ -78,6 +85,8 @@ export interface PublicSourceCatalogCoverage {
 }
 export type PublicSourceItemLookup=ReturnType<Db00OriginJoin['lookup']>&{
   readonly onlineNameCandidates:readonly PublicOnlineNameCandidate[];
+  /** Independent static template evidence, not confirmed loot or player contents. */
+  readonly staticContainerCandidates:readonly ItemOrigin[];
   readonly originCoverageComplete:false;
 };
 export interface PublicSourceCatalog{
@@ -98,6 +107,8 @@ export interface PublicSourceCatalog{
   readonly nativeIapSource:PublicIapSourceIndex;
   /** Exact inter-pack graph, NOT an expanded purchased entitlement or Item origin. */
   readonly nativeIapPackReferences:PinnedIapPackReferenceIndex;
+  /** Source-native configured container template slots, never live contents. */
+  readonly staticContainerSource:PinnedStaticContainerContents;
   readonly coverage:PublicSourceCatalogCoverage;
   lookup(itemId:string|number):PublicSourceItemLookup;
   getSourceOrigin(originId:string):readonly ItemOrigin[];
@@ -119,14 +130,15 @@ export async function loadPublicSourceCatalog(
     'INVALID_BASE_PATH');
   const [
     rawDb00,questSource,eventFriendshipSource,nativeShopSource,nativeIapSource,
-    historicalNativeShopSource
+    historicalNativeShopSource,staticContainerSource
   ]=await Promise.all([
     loadCurrentGameDatabase(basePath,fetcher),
     loadPinnedPublicQuestAcquisition(basePath,fetcher),
     loadPinnedPublicEventFriendshipAcquisition(basePath,fetcher),
     loadPinnedPublicNativeShopSnapshot(basePath,fetcher),
     loadPinnedPublicIapSource(basePath,fetcher),
-    loadPinnedHistoricalNativeShopSnapshot(basePath,fetcher)
+    loadPinnedHistoricalNativeShopSnapshot(basePath,fetcher),
+    loadPinnedStaticContainerContents(basePath,fetcher)
   ]);
   ensure(rawDb00.kind==='db_snapshot'&&rawDb00.items.length===13202,
     'CURRENT_DB00_REQUIRED');
@@ -172,6 +184,13 @@ export async function loadPublicSourceCatalog(
     shopHistory.coverage.repeatedNativeOfferIds===8&&
     shopHistory.coverage.distinctItemIds===186&&
     shopHistory.coverage.liveAvailabilityVerified===false&&
+    staticContainerSource.coverage.definitionRecords===88&&
+    staticContainerSource.coverage.populatedDefinitions===84&&
+    staticContainerSource.coverage.populatedSourceSlots===146&&
+    staticContainerSource.coverage.distinctItemIds===115&&
+    staticContainerSource.coverage.liveContentsVerified===false&&
+    staticContainerSource.coverage.guaranteedLootVerified===false&&
+    staticContainerSource.coverage.personalSaveContentsIncluded===false&&
     nativeIapSource.coverage.nativePackages===53&&
     nativeIapSource.coverage.directRewardReferences===150&&
     nativeIapSource.coverage.extendedRewardReferences===141&&
@@ -223,6 +242,10 @@ export async function loadPublicSourceCatalog(
     nativeIapAdditionalPackReferences:3 as const,
     nativeIapAppleAppStoreOnlyPackReferences:3 as const,
     combinedSourceRoutes:1255 as const,
+    staticContainerDefinitions:88 as const,
+    staticContainerCandidateRoutes:146 as const,
+    staticContainerCandidateItemIds:115 as const,
+    totalPublishedOriginAndContainerCandidateRoutes:1401 as const,
     publicNameOnlyCandidateRelations:nameCandidates.coverage.totalCandidateRelations,
     distinctNameOnlyCandidateItemIds:nameCandidates.coverage.distinctCandidateItemIds,
     verifiedOnlineNameAcquisitionLinks:0 as const,
@@ -236,17 +259,21 @@ export async function loadPublicSourceCatalog(
     source:'sha_pinned_public_db00_starpath_quest_event_friendship_native_shop_history_iap_and_official_records' as const,
     origins,db00,nameCandidates,questSource,eventFriendshipSource,
     nativeShopSource,nativeIapSource,historicalNativeShopSource,
-    nativeIapPackReferences,shopHistory,itemSources,coverage,
+    nativeIapPackReferences,staticContainerSource,shopHistory,itemSources,coverage,
     lookup(itemId:string|number){
       // db00.lookup validates IDs and keeps extra-ItemList Quest/Currency IDs.
       const row=db00.lookup(itemId);
       return Object.freeze({
         ...row,
         onlineNameCandidates:nameCandidates.getItemCandidates(row.itemId),
+        staticContainerCandidates:staticContainerSource.getItemCandidates(row.itemId),
         originCoverageComplete:false as const
       });
     },
-    getSourceOrigin(originId:string){return origins.getOrigin(originId);},
+    getSourceOrigin(originId:string){
+      const native=origins.getOrigin(originId);
+      return native.length?native:staticContainerSource.getOrigin(originId);
+    },
     getCampaign(campaignId:string){return origins.getCampaign(campaignId);}
   });
 }
