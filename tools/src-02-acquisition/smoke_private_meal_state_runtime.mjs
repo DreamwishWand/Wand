@@ -50,6 +50,35 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
     view.nativePriceFormulaEvaluated===false&&
     view.publishable===false,'INVALID_EVIDENCE_BOUNDARY');
 
+  const cacheLifecycle=view.sourceNativeDynamicCacheLifecyclePlan;
+  requireValue(cacheLifecycle?.contract===
+      'wand.db02.native-dynamic-cache-lifecycle@1'&&
+    cacheLifecycle.sourceSnapshotLoaded===(protoDbPath!==undefined)&&
+    cacheLifecycle.nativeOnBinarizeDirectlyDelegatesToCacheData===true&&
+    cacheLifecycle.nativeCacheDataReplacesCachedDataField===true&&
+    cacheLifecycle.nativeRuntimeCacheDataInvoked===null&&
+    cacheLifecycle.nativeRuntimeCacheMatchesOriginalSnapshot===null&&
+    cacheLifecycle.actualIngredientOrMealSellPrice===null&&
+    cacheLifecycle.authorizedForDisplayAsSellPrice===false,
+    'NATIVE_DYNAMIC_CACHE_LIFECYCLE_BOUNDARY');
+  if(protoDbPath!==undefined){
+    const hypotheticalEmpty=view.getHypotheticalNativeDynamicCacheRebuildPlan(0);
+    const hypotheticalPositive=view.getHypotheticalNativeDynamicCacheRebuildPlan(100);
+    requireValue(
+      cacheLifecycle.originalSourceSerializedCacheRows===8549&&
+      cacheLifecycle.originalSourceDataCachedByNativeRule===true&&
+      hypotheticalEmpty.hypotheticalUncachedSellFormulaPathEligibleAfterRebuild===true&&
+      hypotheticalPositive.hypotheticalUncachedSellFormulaPathEligibleAfterRebuild===false&&
+      hypotheticalEmpty.nativeRuntimeCacheRowCount===null&&
+      hypotheticalPositive.actualIngredientOrMealSellPrice===null,
+      'NATIVE_DYNAMIC_CACHE_HYPOTHETICAL_BRANCHES');
+  }else requireValue(
+    cacheLifecycle.originalSourceSerializedCacheRows===null&&
+    cacheLifecycle.originalSourceDataCachedByNativeRule===null&&
+    view.getHypotheticalNativeDynamicCacheRebuildPlan(null).
+      hypotheticalNativeDataCachedAfterRebuild===null,
+    'NATIVE_DYNAMIC_CACHE_UNLOADED_STATE');
+
   let authenticatedNativeStarResults=0;
   if(protoDbPath!==undefined){
     requireValue(view.nativeStarSettingsVerified===true&&
@@ -139,6 +168,7 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
       a.state.ingredientsRecorded===true&&
       a.recordedIngredients.length===2&&
       a.nativeIngredientRoutingImplementationVerified===true&&
+      a.sourceNativeDynamicCacheLifecyclePlan===cacheLifecycle&&
       a.nativePriceProviderTopologyVerified===true&&
       a.sourceSellFormulaCandidatePlan===
         (protoDbPath===undefined?null:a.sourceSellFormulaCandidatePlan)&&
@@ -316,6 +346,8 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
     mealNativeItemCalculatorInterfaceSupported:true,
     threeStageNativeTryGetSellPriceTopologyVerified:true,
     nativeActualProviderSelected:false,
+    nativeDynamicCacheRebuildCodeVerified:true,
+    nativeDynamicCacheRebuildObservedInGame:false,
     cachedDynamicPurchaseOverlapWithFixedIngredients:
       protoDbPath===undefined?null:cachedDynamicBuyIngredientRows,
     cachedDynamicSellOverlapWithFixedIngredients:
