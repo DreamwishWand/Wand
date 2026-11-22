@@ -107,9 +107,9 @@ function checkArray<T extends string>(
   const seen=new Set<T>();
   for(const v of values){
     assert(typeof v==='string'&&(known!==null?
-      known.includes(v):
+      known.includes(v as T):
       SAFE_KEY.test(v)),'INVALID_'+code);
-    seen.add(v);
+    seen.add(v as T);
   }
   return seen;
 }
