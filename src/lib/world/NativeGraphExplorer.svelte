@@ -50,7 +50,9 @@
   onDestroy(stop);
 
   function query(offset=0){
-    if(!worker||!canQuery)return;
+    // A 'loaded' Worker reply can run before Svelte's next reactive flush.
+    // Evaluate the up-to-date state directly, so the first result appears.
+    if(!worker||!catalog||(scope!=='unlinked_world'&&!scopeId))return;
     const chosen=exactItemId.trim();
     if(chosen!==''&&!/^[1-9][0-9]{0,19}$/.test(chosen)){
       errorMessage='Item IDは正の整数で指定してください。';
@@ -73,10 +75,17 @@
   }
   function chooseGridSearch(){
     if(scope!=='grid')return;
-    if(!filteredGrids.some(g=>g.id===scopeId))
-      scopeId=filteredGrids[0]?.id??'';
-    page=null;pageOffset=0;
-    if(scopeId)query();
+    // Input events precede the reactive filteredGrids recomputation.
+    // Calculate from the current text rather than a stale derived option list.
+    const needle=gridSearch.toLocaleLowerCase();
+    const matches=(catalog?.sourceGrids??[])
+      .filter(g=>g.label.toLocaleLowerCase().includes(needle)||
+        g.id.toLocaleLowerCase().includes(needle))
+      .slice(0,200);
+    if(!matches.some(g=>g.id===scopeId)){
+      scopeId=matches[0]?.id??'';
+      page=null;pageOffset=0;
+    }
   }
   async function loadFile(event:Event){
     const input=event.currentTarget as HTMLInputElement;
@@ -162,7 +171,7 @@
       {#if scope==='grid'}
         <label>Gridを絞り込む
           <input type="search" bind:value={gridSearch}
-            on:change={chooseGridSearch} placeholder="Layoutパス・Grid ID"/>
+            on:input={chooseGridSearch} placeholder="Layoutパス・Grid ID"/>
         </label>
       {/if}
       {#if scope!=='unlinked_world'}
