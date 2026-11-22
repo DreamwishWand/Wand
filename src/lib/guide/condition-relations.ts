@@ -91,7 +91,7 @@ export interface RawCurrentConditionMention{
 export interface VerifiedCurrentConditionRegistry{
   readonly byMission:Map<string,readonly RawCurrentConditionMention[]>;
   readonly count:number;
-  readonly missionReferenceCount:number;
+  readonly missionReferenceCount?:number;
   readonly formatVersion:number;
   readonly targetVersion:string;
   readonly sourceSha256:string;
