@@ -128,6 +128,7 @@ export function joinLocalGameSources(
   const joined=joinCurrentGameSources(publicData.database,{
     origins:publicData.acquisition.origins,rewards:publicData.guide,
     staticContainers:publicData.acquisition.staticContainerSource,
+    questTargets:publicData.guideQuestTargets,
     nativeScope,nativeScopePins
   });
   const build=(itemId:string,shared:Db00SourceJoinedItem,
