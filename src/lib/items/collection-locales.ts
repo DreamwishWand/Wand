@@ -144,7 +144,8 @@ export function createDb01OriginalCollectionLocaleClient(args:{
       SHA.test(raw.sourceMenuRowsSha256 as string)&&
       isObj(raw.localeZipSha256)&&
       Object.keys(raw.localeZipSha256).length===DB01_LOCALES.length&&
-      DB01_LOCALES.every(k=>SHA.test(raw.localeZipSha256[k] as string))&&
+      DB01_LOCALES.every(k=>SHA.test(
+        (raw.localeZipSha256 as Record<string,unknown>)[k] as string))&&
       isObj(raw.localeMembersSha256)&&
       Object.keys(raw.localeMembersSha256).length===DB01_LOCALES.length&&
       DB01_LOCALES.every(k=>{
