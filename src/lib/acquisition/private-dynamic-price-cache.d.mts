@@ -45,6 +45,12 @@ export interface VerifiedPrivateDynamicPriceCache {
   readonly originalSourceVerified:true;
   readonly sourcePurchaseFormulaReferenceCount:4;
   readonly sourceSellFormulaReferenceCount:1;
+  readonly sourcePurchaseFormulaItemIds:readonly number[];
+  readonly sourceSellFormulaItemIds:readonly number[];
+  readonly formulaReferencesAuthenticated:true;
+  readonly formulaDefinitionsResolved:false;
+  readonly formulaCurrencyAndItemTypeEligibilityVerified:false;
+  readonly formulaEquationEvaluated:false;
   readonly cacheRowCount:8549;
   readonly purchaseOnlyRowCount:8068;
   readonly sellOnlyRowCount:481;
