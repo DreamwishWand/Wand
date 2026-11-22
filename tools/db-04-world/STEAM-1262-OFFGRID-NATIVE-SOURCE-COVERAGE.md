@@ -43,13 +43,36 @@ MonstersIncKidRoom01/02/03 and more. The reference set includes nested
 `GridData/OffGridBuildings`, separate `GridData/Furniture`, and
 `GridData/Rooms` entries.
 
+## Extended private source snapshot
+
+The private read-only snapshot extends the preceding 63-area/14-Realm build
+with all 28 off-grid original layouts, **86** new unique original GridData,
+**1,327** native default placement anchors and **404,271** read-only decoded
+grid-local source cells. Its combined contents are:
+
+| Source-only family | Combined count |
+| --- | ---: |
+| Village AreaType references | 63 |
+| All source layouts | 118 |
+| All native GridData | 364 |
+| Initial native GridObject anchors | 13,207 |
+| Read-only decoded grid-local terrain cells | 3,483,972 |
+| Original SHA-256 source register entries | 488 |
+
+All source files remain private. The combined snapshot's manifest SHA-256
+entries, per-grid local dimensions and original map identities were checked.
+The original source files are not included in the GitHub repository. The
+snapshot is self-consistent but is **not** original-source authenticated
+within the user's browser.
+
 **Coverage limits:** Additional source folders under
 `SceneLayouts/OffGridBuildings/Expansion01..04`, `WinnieDLC`,
 `EventFloatingIslands` and other nested scenes exist and are **not
 included in the 28-layout count**. The number of scene-layout files found in
-this subset is not a statement of entire-game completeness. The original
-OffGridBuildings GridData references should be resolved before claiming
-per-cell preview coverage of those scenes.
+this subset is not a statement of entire-game completeness. All 86 explicitly referenced native GridData sources have now been located,
+read, hashed, parsed and read-only decoded (including Furniture and Rooms
+sub-grids). Only the referenced 28-layout subset is covered; this is **not**
+a claim that all game source scenes have been enumerated.
 
 ## Unsupported semantics
 
