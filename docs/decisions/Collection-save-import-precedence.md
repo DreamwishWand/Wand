@@ -102,3 +102,37 @@ plus observed save structures 624/643. Steam v1.26.2 native executable
 semantic equivalence and full item definition variation/canonicalization
 are NOT independently established; mappings with ambiguous routes are not
 converted into negative statuses. No DDV save writer is enabled.
+
+## Read-only world furniture references (2026-11-22)
+
+The saved GridObject observation path reads:
+- `World.GridCollection.Grids/{id}/Objects/{id}/ItemID` for full grid records;
+- `World.GridCollection.DiffGrids/{id}/ModifiedObjects/{id}/ItemID`
+  **only when the same object ID is NOT in `RemovedObjects`**.
+
+It projects per-furniture Item ID bounded counts for these two distinct
+source families. A DiffGrid is an *overlay* over native default grid source
+data: unmodified default objects are not in the saved `ModifiedObjects`.
+Therefore these counts are strictly **saved object references**, not full
+effective placed counts. A modified record can also be a moved/modified
+default-world object; it need not be a player-placed purchase. Full-grid
+object references can equally represent world/quest/system objects. The
+native game source (DB-04 default GridData) plus source/placement transaction
+semantics are required before reporting total placements or owner inventory
+reconciliation.
+
+**Crucial safety invariant:** saved GridObject references NEVER set
+`status:'owned'`, NEVER set `discovered`, and NEVER increment manual
+`quantity`. They cannot make a zero `ListInventory.Amount` into negative
+ownership evidence, and cannot confer DLC/unlock rights.
+
+This projected snapshot remains ephemeral in the Svelte page and inspector:
+not persisted in IndexedDB, not included in backups, no mutation of the
+source P1G save. The local Worker exposes only `itemId`, bounded counts
+and fixed diagnostics; no grid/object IDs, placement coordinates,
+orientation, source flags, object states, or personal profile fields.
+
+The evidence derives from native Switch v1.24.13 grid and inventory
+transaction analysis and the structurally observed Steam v1.26.2 schema
+643 paths. Exact current Steam-native executable parity and complete
+DB-04 default-grid source joins remain unverified.
