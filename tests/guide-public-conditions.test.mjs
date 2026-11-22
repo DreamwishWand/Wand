@@ -59,7 +59,9 @@ test('production gzip/base64 loader verifies uncompressed bytes and SHA-256 befo
   const data=await loadPublicQuestConditions(index,'/guide/public/'+PUBLIC_QUEST_CONDITIONS_FILE,
     async()=>new Response(encoded,{status:200}));
   assert.equal(data.getQuest('2070000620')?.id,'2070000620');
-  const wrong=encoded.replace(/.$/,'A');
+  const offset=Math.floor(encoded.length/2);
+  const wrong=encoded.slice(0,offset)+(encoded[offset]==='A'?'B':'A')+
+    encoded.slice(offset+1);
   await assert.rejects(loadPublicQuestConditions(index,'/test',
     async()=>new Response(wrong,{status:200})));
   await assert.rejects(loadPublicQuestConditions(index,'/test',
