@@ -122,6 +122,7 @@ test('no common Condition pointers does not mean no quest conditions or no prere
       {type:'MissionCompleted',missionId:OTHER}
     ]}
   };
+  full.structured.activationPolicies={};
   const output=createQuestConditionCrossrefs(full,index,conditions);
   assert.deepEqual(output.pointers,[]);
   assert.equal(output.coverage.directMissionPredicateMentions,1);
