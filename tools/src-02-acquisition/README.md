@@ -1,5 +1,38 @@
 # DB-02 ACQUISITION — source-pinned extraction
 
+## Authenticated native sell formula references and selection gates (Steam/Switch v1.26.2)
+
+The original Steam/Switch executable methods
+`SellPriceFormulaItemData.GetSellPriceFormulaItemData`,
+`IsFormulaValidForItem`, and `CalculateItemPrice` verify that native
+sell-formula selection requires both the requested **currency** and
+the item's resolved **runtime Type identity** to match. The first
+eligible formula is considered. Formula equation output is converted
+from a float to signed int32 with truncation toward zero on both
+platforms, but the native equation inputs, actual selected formula
+and resulting sale value remain **unknown**.
+
+The independently SHA-authenticated original v1.26.2
+`FormulaDynamicPriceDatabase` has **four source purchase-formula
+Item references and one source sell-formula Item reference**.
+`loadPrivateDynamicPriceCache` now retains these immutable
+original reference IDs, rather than only their counts; the actual
+formula definitions and applicability to any fixed cooking ingredient
+are not in this source's dynamic cache entry.
+`classifyConditionalNativeSellFormulaCandidates` is an independent
+hypothetical currency/type gate with strict unknown-candidate
+precedence, **not** a real price evaluator.
+`loadPrivateMealPricingView` now exposes private source
+formula references and unresolved sell formula candidate plans.
+
+The offline audit checks **14 owner-qualified method RVAs per
+platform** and **32 Steam + 29 Switch original instruction windows**.
+No proprietary source data, formula IDs or price records are bundled
+in the public repository. Original-private smoke covers 625 recipes,
+618 meals and 371 fixed ingredients, without claiming that source
+formula references establish the missing 160 effective sell prices.
+See [MEAL-STATE-SELL-PRICE.md](MEAL-STATE-SELL-PRICE.md).
+
 ## Original static/dynamic sell provider failure distinctions (v1.26.2)
 
 `native-serialized-sell-provider.mjs` now models the exact
