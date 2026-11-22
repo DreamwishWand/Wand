@@ -44,14 +44,19 @@ TARGET_NAMES = (
     ("MealItemData", "TotalIngredientsValue"),
     ("MealItemData", "TotalIngredientsSellPrice"),
     ("MealItemData", "GetSellPrice"),
+    ("ItemPriceDatabase", "TryGetSellPrice"),
+    ("DynamicItemPriceDatase", "TryGetSellPrice"),
+    ("DynamicItemPriceDatase", "get_DataCached"),
 )
 STEAM_RVAS = (
     0x383B420, 0x383B530, 0x383B5D0, 0x383BA40,
     0x3E1DA20, 0x3E1E0F0, 0x3E1E710, 0x3E1ECC0,
+    0x3836F50, 0x3839820, 0x3839670,
 )
 SWITCH_RVAS = (
     0x417EF70, 0x417F0C0, 0x417F160, 0x417FA60,
     0x4A3E3E0, 0x4A3EC50, 0x4A3F640, 0x4A3F880,
+    0x41784C0, 0x417B5A0, 0x417B3D0,
 )
 # The source-control-safe hashes cover complete native instruction windows,
 # NOT proprietary instructions, full methods or original asset content.
@@ -96,6 +101,20 @@ STEAM_WINDOWS = (
      "a6a7a4b84d1f0c28a6f8ef932b9db6bcf6771b31e65241355127cac94f6600da"),
     ("final_lookup_failure_zero", 0x383BA10, 13,
      "dbe21dfc865f9b22fc4dcc3481a0b558f9e9e89bfe49336ab383f0b64a0ae8e2"),
+    ("static_item_price_lookup", 0x3836F65, 18,
+     "e59e28d76d41bffdc049003b8d407501d1d9736761569bf66d95e5fd4d35f33b"),
+    ("static_sell_currency_match", 0x3836FAF, 20,
+     "0c0d55b03e8b26478a3dac076ce826ff11a3476d8415eee23fd772c6e3fc8d9a"),
+    ("static_sell_missing_out_one", 0x3836FC1, 28,
+     "1a65346b508149265995ee23822dd5ad8a418b5c7f34711a94fd7b6bff96b35f"),
+    ("dynamic_initial_out_zero", 0x3839830, 21,
+     "5796c99c03c9d70f3f81304a3773cf498dffe56613d9cfbe95ea7fa52b6d70c3"),
+    ("dynamic_cached_row_query", 0x3839854, 23,
+     "d5ff84a8d8743031a14a1218a0e3eb472d442fe32be4c338442134f659292b88"),
+    ("dynamic_missing_out_one", 0x38398B6, 39,
+     "7a5d4e7c589f1d055bfda1fe58fb2c6d4c7ce805852e6a1a4107272e454f5cda"),
+    ("dynamic_data_cached_positive_count", 0x383969A, 45,
+     "2c39913bcad0e0130749168656aba038506528a41113c9174b9f73b0101f15d9"),
 )
 SWITCH_WINDOWS = (
     ("integer_percent_truncation", 0x4A3F1AC, 32,
@@ -132,6 +151,20 @@ SWITCH_WINDOWS = (
      "7646ae4c46d47e4fe66a6e17393b313d3b595ba855f2514c138acf247465161f"),
     ("final_lookup_failure_zero", 0x417F994, 40,
      "b16f55ec558d4794d4d58705304cf9c9d183e6f2c420f55800e7a01c31f328de"),
+    ("static_item_price_lookup", 0x41784D4, 20,
+     "1b0b6895992ab5cac6e092b7998cf93f9cb484941583cfb5f2bf6ba5daaf7d2b"),
+    ("static_sell_currency_match", 0x4178510, 28,
+     "ceadea8ec68fe1d47b03db31408a1d58388ecace57e105f0547aaa965c56db1b"),
+    ("static_sell_missing_out_one", 0x4178584, 24,
+     "c2a2914c9750f2b4f39936944013f191ba3d741a274cf7906821a413e7a889f6"),
+    ("dynamic_initial_out_zero", 0x417B5A0, 24,
+     "a9df3e05ae6e59026cad1fe8b4745a454af89b9bd34e6f7c7531bd60587db20f"),
+    ("dynamic_cached_row_query", 0x417B5C0, 24,
+     "47f0befb4e9294a0f7ad4f6142fdc3a3342d83dbb867ef88e5c0bd5399e67577"),
+    ("dynamic_missing_out_one", 0x417B65C, 24,
+     "c2a2914c9750f2b4f39936944013f191ba3d741a274cf7906821a413e7a889f6"),
+    ("dynamic_data_cached_positive_count", 0x417B40C, 40,
+     "2089aa16808cadd1d5928ca9fbb42675c89eb5278a72ce8317770dc45fcf7c8b"),
 )
 MAX_DUMP = 160 * 1024 * 1024
 
@@ -151,7 +184,7 @@ def verify_file(path: Path, length: int, expected_sha: str):
 
 
 def direct_rvas(dump_path: Path):
-    """Read exactly 7 owner-qualified target signatures, not guessed RVAs."""
+    """Read owner-qualified target signatures, not guessed RVAs."""
     expected = {
         owner + "." + method: (" " + method + "(")
         for owner, method in TARGET_NAMES
@@ -289,7 +322,7 @@ def verify_switch(dump_path, nso_path):
 def run_audit(steam_version, steam_dump, steam_dll, switch_dump, switch_main):
     steam = verify_steam(steam_version, steam_dump, steam_dll)
     switch = verify_switch(switch_dump, switch_main)
-    require(steam["methodRvasChecked"] == switch["methodRvasChecked"] == 8,
+    require(steam["methodRvasChecked"] == switch["methodRvasChecked"] == 11,
             "CROSS_PLATFORM_METHOD_SET")
     return {
         "contract": CONTRACT,
@@ -309,6 +342,10 @@ def run_audit(steam_version, steam_dump, steam_dll, switch_dump, switch_main):
         "uncachedSellFormulaPathVerified": True,
         "registeredPriceDatabaseIterationVerified": True,
         "lookupFailureZeroOutAndFalseVerified": True,
+        "staticSerializedProviderMissingOutOneVerified": True,
+        "dynamicSerializedProviderNullCacheOutZeroVerified": True,
+        "dynamicSerializedProviderMissingOutOneVerified": True,
+        "dynamicDataCachedRequiresPositiveRowCountVerified": True,
         "actualRegisteredDatabaseIterationOrderVerified": False,
         "reportedNativeInstructionWindowsOnly": True,
         "exactIngredientPriceResolutionVerified": False,
