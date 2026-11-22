@@ -10,7 +10,8 @@ import type {Db01CatalogClient,Db01Item} from './index.ts';
 import type {Db01Classification,Db01ClassificationClient} from './classification.ts';
 import type {Db01ItemType,Db01ItemTypeClient} from './item-types.ts';
 import type {
-  Db01OriginalCollectionListing,Db01OriginalCollectionMenuClient,
+  Db01OriginalCollectionListing,Db01OriginalCollectionMenu,
+  Db01OriginalCollectionMenuClient,
 } from './collection-menu.ts';
 import type {
   Db01UniversePredicateClient,Db01UniversePredicateMatch,
@@ -38,18 +39,22 @@ export interface ReadOnlyUniverse{
   readonly origin:'set-universe';
   readonly collectionSetId:number;
   readonly groupIndex:number;
+  /** Original CollectionSubMenu/category; null when the source-menu overlay is absent. */
+  readonly sourceMenu:Readonly<Db01OriginalCollectionMenu>|null;
   readonly evidence:Readonly<Db01UniversePredicateMatch>;
 }
 export interface ReadOnlySpecial{
   readonly origin:'special';
   readonly collectionSetId:number;
   readonly groupIndex:number;
+  readonly sourceMenu:Readonly<Db01OriginalCollectionMenu>|null;
   readonly evidence:Readonly<Db01SpecialMembership>;
 }
 export interface ReadOnlyActivityCrafting{
   readonly origin:'activity-crafting';
   readonly collectionSetId:number;
   readonly groupIndex:number;
+  readonly sourceMenu:Readonly<Db01OriginalCollectionMenu>|null;
   readonly evidence:Readonly<Db01RemainingPositive>;
 }
 export interface Db01SourceSuppression{
@@ -100,6 +105,7 @@ export interface Db01UnifiedCoverage{
   readonly subtypeNameVerified:number|null;
   readonly tagAssociatedDefinitions:number|null;
   readonly directListedIds:number|null;
+  readonly sourceCollectionSetDefinitions:number|null;
   readonly universePredicateCandidateIds:number|null;
   readonly specialPredicateCandidateIds:number|null;
   readonly activityCraftingPositiveIds:number|null;
@@ -116,6 +122,8 @@ export interface Db01SharedItemClient{
     'platform'|'gameVersion'|'sourceItemsSha256'|'definitions'>>;
   getItem(id:number):Promise<Readonly<Db01SharedItem>|null>;
   getItems(ids:readonly number[]):Promise<readonly (Readonly<Db01SharedItem>|null)[]>;
+  /** Original source menus, not proven runtime screen sections. Null if unavailable. */
+  getSourceMenus():Promise<readonly Readonly<Db01OriginalCollectionMenu>[]|null>;
   getCoverage():Readonly<Db01UnifiedCoverage>;
 }
 
@@ -207,6 +215,7 @@ export function createDb01SharedItemClient(inputs:Db01EvidenceSources):Db01Share
     subtypeNameVerified:itemTypes?.source.sourceSubtypeNameVerified??null,
     tagAssociatedDefinitions:tags?.source.taggedDefinitions??null,
     directListedIds:directMenus?.source.directListedItemIds??null,
+    sourceCollectionSetDefinitions:directMenus?.source.collectionSetDefinitions??null,
     universePredicateCandidateIds:universePredicates?.source.candidateItemIds??null,
     specialPredicateCandidateIds:specialPredicates?.source.candidateItemIds??null,
     activityCraftingPositiveIds:activityCrafting?.source.sourceMatchedPositiveItemIds??null,
@@ -234,14 +243,30 @@ export function createDb01SharedItemClient(inputs:Db01EvidenceSources):Db01Share
     // Independent SHA-pinned private buckets can load concurrently. Existing
     // underlying clients deduplicate repeated ID-bucket reads.
     const [originalTypes,tagRecords,directRecords,
-      universeRecords,specialRecords,remainingRecords]=await Promise.all([
+      universeRecords,specialRecords,remainingRecords,sourceMenus]=await Promise.all([
       itemTypes?itemTypes.getItems(ids):Promise.resolve(null),
       tags?tags.getItems(ids):Promise.resolve(null),
       directMenus?directMenus.getDirectListingsBatch(ids):Promise.resolve(null),
       universePredicates?universePredicates.getItems(ids):Promise.resolve(null),
       specialPredicates?specialPredicates.getItems(ids):Promise.resolve(null),
       activityCrafting?activityCrafting.getItems(ids):Promise.resolve(null),
+      directMenus?directMenus.getMenus():Promise.resolve(null),
     ]);
+    const menus=new Map<number,Readonly<Db01OriginalCollectionMenu>>();
+    if(sourceMenus){
+      assert(sourceMenus.length===directMenus!.source.collectionSetDefinitions,
+        'SOURCE_MENU_COUNT');
+      for(const menu of sourceMenus){
+        assert(!menus.has(menu.setId),'DUPLICATE_COLLECTION_SET_ID');
+        menus.set(menu.setId,menu);
+      }
+    }
+    function sourceMenu(setId:number):Readonly<Db01OriginalCollectionMenu>|null{
+      if(!sourceMenus)return null;
+      const menu=menus.get(setId);
+      assert(menu,'COLLECTION_SET_NOT_IN_CURRENT_ORIGINAL');
+      return menu;
+    }
     for(const [name,result] of [
       ['ITEMTYPE',originalTypes],['TAGS',tagRecords],['DIRECT',directRecords],
       ['UNIVERSE',universeRecords],['SPECIAL',specialRecords],
@@ -274,16 +299,19 @@ export function createDb01SharedItemClient(inputs:Db01EvidenceSources):Db01Share
       const raw:Db01StaticPredicate[]=[
         ...(universe??[]).map((record):ReadOnlyUniverse=>Object.freeze({
           origin:'set-universe',collectionSetId:record.setId,
-          groupIndex:record.groupIndex,evidence:record,
+          groupIndex:record.groupIndex,sourceMenu:sourceMenu(record.setId),
+          evidence:record,
         })),
         ...(special??[]).map((record):ReadOnlySpecial=>Object.freeze({
           origin:'special',collectionSetId:record.setId,
-          groupIndex:record.groupIndex,evidence:record,
+          groupIndex:record.groupIndex,sourceMenu:sourceMenu(record.setId),
+          evidence:record,
         })),
         ...(crafting?.positive??[]).map((record):ReadOnlyActivityCrafting=>
           Object.freeze({origin:'activity-crafting',
             collectionSetId:record.collectionSetId,
-            groupIndex:record.groupIndex,evidence:record})),
+            groupIndex:record.groupIndex,
+            sourceMenu:sourceMenu(record.collectionSetId),evidence:record})),
       ];
       const exclusionGroups=new Map<string,Db01RemainingNegative[]>();
       for(const negative of crafting?.negative??[]){
@@ -323,5 +351,8 @@ export function createDb01SharedItemClient(inputs:Db01EvidenceSources):Db01Share
     assert(validId(id),'INVALID_ID');
     return (await getItems([id]))[0];
   }
-  return Object.freeze({source,getItem,getItems,getCoverage:()=>coverage});
+  async function getSourceMenus(){
+    return directMenus?await directMenus.getMenus():null;
+  }
+  return Object.freeze({source,getItem,getItems,getSourceMenus,getCoverage:()=>coverage});
 }
