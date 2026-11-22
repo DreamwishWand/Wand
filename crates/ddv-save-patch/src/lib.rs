@@ -30,6 +30,7 @@ pub enum PatchError {
     AmountMismatch,
     NonIntegerTarget,
     AmbiguousTarget,
+    CoordinateMismatch,
 }
 
 impl PatchError {
@@ -45,6 +46,7 @@ impl PatchError {
             Self::AmountMismatch => "DB05_PATCH_AMOUNT_MISMATCH",
             Self::NonIntegerTarget => "DB05_PATCH_NONINTEGER_TARGET",
             Self::AmbiguousTarget => "DB05_PATCH_AMBIGUOUS_TARGET",
+            Self::CoordinateMismatch => "DB05_PATCH_COORDINATE_MISMATCH",
         }
     }
 }
@@ -85,6 +87,8 @@ struct JsonLocator<'a> {
     item_path: Option<Vec<Segment>>,
     amount: Option<(Range<usize>, u64)>,
     item: Option<u64>,
+    signed_path: Option<Vec<Segment>>,
+    signed: Option<(Range<usize>, i32)>,
 }
 
 impl<'a> JsonLocator<'a> {
@@ -111,7 +115,8 @@ impl<'a> JsonLocator<'a> {
             }
         };
         Ok(Self { source, bytes: source.as_bytes(), pos: 0, depth: 0,
-            amount_path, item_path, amount: None, item: None })
+            amount_path, item_path, amount: None, item: None,
+            signed_path:None,signed:None })
     }
 
     fn space(&mut self) {
@@ -255,6 +260,18 @@ impl<'a> JsonLocator<'a> {
             b'-' | b'0'..=b'9' => { self.number()?; },
             _ => return Err(PatchError::InvalidDocument)
         }
+        let is_signed=self.signed_path.as_ref()
+            .is_some_and(|p|p.as_slice()==path.as_slice());
+        if is_signed{
+            if !matches!(first,b'-'|b'0'..=b'9'){
+                return Err(PatchError::NonIntegerTarget);
+            }
+            let signed=self.source[start..self.pos].parse::<i32>()
+                .map_err(|_|PatchError::NonIntegerTarget)?;
+            if self.signed.replace((start..self.pos,signed)).is_some(){
+                return Err(PatchError::AmbiguousTarget);
+            }
+        }
         let is_amount = path.as_slice() == self.amount_path.as_slice();
         let is_item = self.item_path.as_ref().is_some_and(|p| p.as_slice() == path.as_slice());
         if is_amount || is_item {
@@ -290,6 +307,14 @@ impl<'a> JsonLocator<'a> {
         }
         Ok((range, original, self.item))
     }
+    fn locate_signed(mut self)->Result<(Range<usize>,i32,Option<u64>),PatchError>{
+        self.walk_complete()?;
+        let (range,original)=self.signed.ok_or(PatchError::MissingTarget)?;
+        if self.item_path.is_some()&&self.item.is_none(){
+            return Err(PatchError::MissingTarget);
+        }
+        Ok((range,original,self.item))
+    }
 }
 
 /// Strict whole-document syntax/duplicate-key check for the *private* P1G
@@ -305,6 +330,7 @@ pub fn validate_json_without_edit(source: &str) -> Result<(), PatchError> {
         // match any real path and never reads or changes a saved Amount.
         amount_path: vec![Segment::Index(usize::MAX)],
         item_path: None, amount: None, item: None,
+        signed_path:None,signed:None,
     };
     parser.walk_complete()
 }
@@ -344,6 +370,100 @@ pub fn preview_existing_quantity(
         patched_json, changed, original_amount: original, replacement_amount,
         untouched_bytes_preserved: true,
         writer_authorized: false, export_authorized: false,
+    })
+}
+
+/// A native Save GridObject reference *resolved internally* from an ephemeral
+/// per-open-file ordinal. Never supply numeric Save Grid/Object IDs from the UI.
+#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+pub enum GridObjectKind { Full, DiffModified }
+
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct GridCoordinateTarget{
+    pub kind:GridObjectKind,
+    pub grid_id:String,
+    pub object_id:String,
+    pub item_id:u64,
+}
+pub struct GridCoordinateDraft{
+    pub patched_json:String,
+    pub changed:bool,
+    pub untouched_bytes_preserved:bool,
+    pub writer_authorized:bool,
+    pub export_authorized:bool,
+}
+impl<'a> JsonLocator<'a>{
+    fn grid_axis(source:&'a str,target:&GridCoordinateTarget,axis:&str)
+        ->Result<Self,PatchError>{
+        if !matches!(axis,"X"|"Y")||
+           !valid_id(&target.grid_id)||!valid_id(&target.object_id)||
+           target.grid_id.starts_with('0')||target.object_id.starts_with('0')||
+           target.item_id==0||target.item_id>MAX_SAFE_JSON_INTEGER{
+            return Err(PatchError::InvalidTarget);
+        }
+        let (grids,objects)=match target.kind{
+            GridObjectKind::Full=>("Grids","Objects"),
+            GridObjectKind::DiffModified=>("DiffGrids","ModifiedObjects")
+        };
+        let mut prefix=vec![
+            k("World"),k("GridCollection"),k(grids),k(&target.grid_id),
+            k(objects),k(&target.object_id)
+        ];
+        let mut item_path=prefix.clone();item_path.push(k("ItemID"));
+        prefix.push(k(axis));
+        Ok(Self{
+            source,bytes:source.as_bytes(),pos:0,depth:0,
+            amount_path:vec![Segment::Index(usize::MAX)],
+            item_path:Some(item_path),amount:None,item:None,
+            signed_path:Some(prefix),signed:None
+        })
+    }
+}
+
+/// Lexically replace X/Y integer tokens of one *existing* native GridObject.
+/// Never change IDs, orientation, private state, map keys or unrelated values.
+/// The caller must first resolve the ephemeral ordinal internally and verify
+/// all original object IDs, ItemID and coordinate values without trusting the UI.
+pub fn preview_existing_grid_coordinates(
+    source:&str,target:GridCoordinateTarget,
+    expected:(i32,i32),replacement:(i32,i32)
+)->Result<GridCoordinateDraft,PatchError>{
+    if source.is_empty()||source.len()>MAX_PROFILE_BYTES{
+        return Err(PatchError::InvalidDocument);
+    }
+    let (x_range,x,item_x)=JsonLocator::grid_axis(source,&target,"X")?
+        .locate_signed()?;
+    let (y_range,y,item_y)=JsonLocator::grid_axis(source,&target,"Y")?
+        .locate_signed()?;
+    if item_x!=Some(target.item_id)||item_y!=Some(target.item_id){
+        return Err(PatchError::ItemMismatch);
+    }
+    if (x,y)!=expected{
+        return Err(PatchError::CoordinateMismatch);
+    }
+    let changed=expected!=replacement;
+    let patched_json=if changed{
+        let mut edits=vec![
+            (x_range,replacement.0.to_string()),
+            (y_range,replacement.1.to_string()),
+        ];
+        edits.sort_by_key(|(range,_)|range.start);
+        if edits[0].0.end>edits[1].0.start{
+            return Err(PatchError::AmbiguousTarget);
+        }
+        let mut out=String::with_capacity(source.len()+32);
+        let mut last=0;
+        for (range,value) in edits{
+            out.push_str(&source[last..range.start]);
+            out.push_str(&value);last=range.end;
+        }
+        out.push_str(&source[last..]);out
+    }else{
+        source.to_owned()
+    };
+    Ok(GridCoordinateDraft{
+        patched_json,changed,untouched_bytes_preserved:true,
+        writer_authorized:false,export_authorized:false
     })
 }
 
