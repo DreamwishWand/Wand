@@ -6,7 +6,6 @@
   import {page} from '$app/stores';
   import {onMount} from 'svelte';
   import WandIcon from '$lib/ui/WandIcon.svelte';
-  import {launcherServices} from '$lib/ui/services';
   import {shellCopy,type TutorialKey} from '$lib/ui/shell-copy';
   import {afterNavigate} from '$app/navigation';
   import {
@@ -18,12 +17,20 @@
   let accountOpen=false;
   let collectionBusy=false;
   let languageOpen=false;
-  let navOpen=false;
+  let saveMenuOpen=false;
+  let moreOpen=false;
+  let draggingFile=false;
+  let dragDepth=0;
+  let selectedSave:File|null=null;
+  let saveError='';
+  let globalSaveInput:HTMLInputElement;
+  let saveRoot:HTMLElement|null=null;
+  let saveButton:HTMLButtonElement|null=null;
+  let moreRoot:HTMLElement|null=null;
+  let moreButton:HTMLButtonElement|null=null;
   let filesOpen=false;
-  let navRoot:HTMLElement|null=null;
   let languageRoot:HTMLElement|null=null;
   let filesRoot:HTMLElement|null=null;
-  let navButton:HTMLButtonElement|null=null;
   let filesButton:HTMLButtonElement|null=null;
   let helpButton:HTMLButtonElement|null=null;
   let accountButton:HTMLButtonElement|null=null;
@@ -31,7 +38,7 @@
   let uiTheme:WandTheme='night';
   let languageButton:HTMLButtonElement|null=null;
   const LANGUAGE_SHORT=Object.fromEntries(UI_LANGUAGES.map(x=>[x.code,x.short]));
-  function closeMenus(){navOpen=false;filesOpen=false;languageOpen=false;}
+  function closeMenus(){saveMenuOpen=false;moreOpen=false;filesOpen=false;languageOpen=false;}
   function switchLanguage(code:WandLanguage){
     setWandLanguage(code);
     closeMenus();
@@ -43,9 +50,59 @@
   }
   function outsideMenus(event:PointerEvent){
     if(!(event.target instanceof Node))return;
-    if(navOpen&&!navRoot?.contains(event.target))navOpen=false;
+    if(saveMenuOpen&&!saveRoot?.contains(event.target))saveMenuOpen=false;
+    if(moreOpen&&!moreRoot?.contains(event.target))moreOpen=false;
     if(filesOpen&&!filesRoot?.contains(event.target))filesOpen=false;
     if(languageOpen&&!languageRoot?.contains(event.target))languageOpen=false;
+  }
+
+  function openGlobalSavePicker():void{
+    saveMenuOpen=false;
+    globalSaveInput?.click();
+  }
+  function setSelectedSave(file:File|undefined):void{
+    if(!file)return;
+    const filename=file.name.toLowerCase();
+    if(!/\\.(profile|dat|bin|json)$/.test(filename)||file.size<1){
+      saveError=copy.saveInvalid;
+      return;
+    }
+    selectedSave=file;saveError='';saveMenuOpen=false;
+  }
+  function globalSavePicked(event:Event):void{
+    const input=event.currentTarget as HTMLInputElement;
+    setSelectedSave(input.files?.[0]);
+    input.value='';
+  }
+  function rawSaveBackup():void{
+    if(!selectedSave)return;
+    const source=URL.createObjectURL(selectedSave);
+    const link=document.createElement('a');
+    link.href=source;link.download='backup_'+selectedSave.name;
+    document.body.append(link);link.click();link.remove();
+    window.setTimeout(()=>URL.revokeObjectURL(source),1000);
+    saveMenuOpen=false;
+  }
+  function closeSelectedSave():void{
+    // Only the untouched File object is held in browser memory.
+    selectedSave=null;saveError='';saveMenuOpen=false;
+  }
+  function onGlobalDragEnter(event:DragEvent):void{
+    if(!event.dataTransfer?.types.includes('Files'))return;
+    event.preventDefault();dragDepth++;draggingFile=true;
+  }
+  function onGlobalDragLeave(event:DragEvent):void{
+    if(!draggingFile)return;
+    event.preventDefault();dragDepth=Math.max(0,dragDepth-1);
+    if(dragDepth===0)draggingFile=false;
+  }
+  function onGlobalDragOver(event:DragEvent):void{
+    if(event.dataTransfer?.types.includes('Files'))event.preventDefault();
+  }
+  function onGlobalDrop(event:DragEvent):void{
+    if(!event.dataTransfer?.files?.length)return;
+    event.preventDefault();dragDepth=0;draggingFile=false;
+    setSelectedSave(event.dataTransfer.files[0]);
   }
   function openAccount(){closeMenus();accountOpen=true;}
   function closeAccount(){accountOpen=false;accountButton?.focus();}
@@ -53,6 +110,10 @@
   afterNavigate(()=>closeMenus());
   onMount(()=>{
     window.addEventListener('pointerdown',outsideMenus);
+    window.addEventListener('dragenter',onGlobalDragEnter);
+    window.addEventListener('dragleave',onGlobalDragLeave);
+    window.addEventListener('dragover',onGlobalDragOver);
+    window.addEventListener('drop',onGlobalDrop);
     const update=(event:Event)=>collectionBusy=Boolean((event as CustomEvent<boolean>).detail);
     window.addEventListener('wand:collection-busy',update);
     const unwatch=watchWandLanguage(value=>uiLocale=value);
@@ -63,6 +124,10 @@
     return()=>{
       window.removeEventListener('wand:collection-busy',update);
       window.removeEventListener('pointerdown',outsideMenus);
+      window.removeEventListener('dragenter',onGlobalDragEnter);
+      window.removeEventListener('dragleave',onGlobalDragLeave);
+      window.removeEventListener('dragover',onGlobalDragOver);
+      window.removeEventListener('drop',onGlobalDrop);
       unwatch();
     };
   });
@@ -75,12 +140,6 @@
     route.includes('/save')?'save':'home';
   $: copy=shellCopy(uiLocale);
   $: tutorial=copy.tutorials[(service as TutorialKey)]??copy.tutorials.home;
-  function openSaveFile(){
-    const label=service==='collection'?'DDVのセーブファイルを選択':
-      route.includes('/diagnostics')?'DDVセーブまたは復号済みJSONを選択':'検証用セーブファイル';
-    const inputs=Array.from(document.querySelectorAll<HTMLInputElement>('input[type="file"]'));
-    inputs.find(input=>input.getAttribute('aria-label')===label && !input.disabled)?.click();
-  }
   function focusContextSearch():boolean{
     const label=service==='collection'?'8言語のアイテム名で検索':
       service==='starpath'?'通常タスクを検索':
@@ -102,11 +161,12 @@
 </script>
 <svelte:window on:keydown={(event:KeyboardEvent)=>{
   if(event.key==='Escape'){
-    const hadNav=navOpen,hadFiles=filesOpen,hadLanguage=languageOpen;
+    const hadSave=saveMenuOpen,hadMore=moreOpen,hadFiles=filesOpen,hadLanguage=languageOpen;
     closeMenus();
     if(tutorialOpen)closeTutorial();
     else if(accountOpen)closeAccount();
-    else if(hadNav)navButton?.focus();
+    else if(hadSave)saveButton?.focus();
+    else if(hadMore)moreButton?.focus();
     else if(hadFiles)filesButton?.focus();
     else if(hadLanguage)languageButton?.focus();
   }
@@ -123,48 +183,6 @@
     <span class="shell-brand-mark" aria-hidden="true"><img src="{base}/DreamwishWand.svg" alt="" width="34" height="34" /></span>
     <a class="header-home-button" href="{base}/" aria-label={copy.home} title={copy.home}><WandIcon name="home" size={21}/></a>
     {#if service==='home'}<span class="shell-home-brand">Dreamwish Wand</span>{/if}
-    <nav class="shell-nav-root" aria-label={copy.serviceNav} bind:this={navRoot}>
-      <button class="header-icon-button shell-nav-trigger" type="button" bind:this={navButton}
-        aria-label={copy.switchService} title={copy.switchService} aria-expanded={navOpen}
-        on:click={()=>{navOpen=!navOpen;filesOpen=false;languageOpen=false;}}>
-        <WandIcon name="grid" size={19}/><span>{copy.services}</span><WandIcon name="chevron" size={14}/>
-      </button>
-      {#if navOpen}
-        <div class="shell-menu" role="group" aria-label={copy.serviceList}>
-          <a href="{base}/" aria-current={service==='home'?'page':undefined} on:click={closeMenus}>
-            <WandIcon name="home" size={18}/><span class="shell-menu-title">Home</span>
-          </a>
-          <div class="shell-menu-divider"></div>
-          {#each launcherServices as destination (destination.key)}
-            {#if destination.href}
-              <a href="{base}{destination.href}" aria-current={service===destination.key||route.startsWith(destination.href)?'page':undefined} on:click={closeMenus}>
-                <WandIcon name={destination.icon} size={18}/><span class="shell-menu-title">{destination.name}</span>
-              </a>
-            {:else}
-              <span class="shell-unavailable" aria-disabled="true">
-                <WandIcon name={destination.icon} size={18}/><span class="shell-menu-title">{destination.name}</span>
-                <span class="shell-menu-state">{copy.planned}</span>
-              </span>
-            {/if}
-          {/each}
-          <div class="shell-menu-divider"></div>
-          <button class="shell-menu-help" type="button" on:click={()=>{closeMenus();tutorialOpen=true;}}>
-            <WandIcon name="help" size={18}/><span class="shell-menu-title">{copy.help}</span>
-          </button>
-          <button class="shell-menu-account" type="button" on:click={openAccount}>
-            <WandIcon name="character" size={18}/><span class="shell-menu-title">{copy.account}</span>
-          </button>
-        </div>
-      {/if}
-    </nav>
-    <div class="shell-shortcuts" aria-label={copy.quickServices}>
-      <a class="shell-shortcut" href="{base}/collection/" aria-current={service==='collection'?'page':undefined} title="Collection">
-        <WandIcon name="collection" size={17}/><span>Collection</span>
-      </a>
-      <a class="shell-shortcut" href="{base}/guide/" aria-current={service==='guide'||service==='starpath'||service==='characters'?'page':undefined} title="Guide">
-        <WandIcon name="guide" size={17}/><span>Guide</span>
-      </a>
-    </div>
     {#if service!=='home'}<span class="shell-current">{service==='collection'?'Collection':service==='starpath'?'Star Path':service==='characters'?'Characters':service==='guide'?'Guide':service==='world'?'World':'Save'}</span>{/if}
     <div class="header-spacer"></div>
     <div class="site-actions" aria-label={copy.pageActions}>
@@ -203,7 +221,7 @@
           <div class="shell-file-mobile shell-file-root" bind:this={filesRoot}>
             <button class="header-icon-button" type="button" bind:this={filesButton}
               aria-label={copy.fileTools} aria-expanded={filesOpen}
-              on:click={()=>{filesOpen=!filesOpen;navOpen=false;languageOpen=false;}} title={copy.fileTools}>
+              on:click={()=>{filesOpen=!filesOpen;moreOpen=false;languageOpen=false;}} title={copy.fileTools}>
               <WandIcon name="folder" size={19}/>
             </button>
             {#if filesOpen}
@@ -223,7 +241,7 @@
         <div class="header-language-menu" bind:this={languageRoot}>
           <button bind:this={languageButton} class="header-icon-button header-language-button" type="button"
             aria-label={copy.languageSwitch} title={copy.languageSwitch} aria-expanded={languageOpen}
-            on:click={()=>{languageOpen=!languageOpen;navOpen=false;filesOpen=false;}}>
+            on:click={()=>{languageOpen=!languageOpen;moreOpen=false;filesOpen=false;}}>
             <WandIcon name="globe" size={19}/><span class="header-locale-code">{LANGUAGE_SHORT[uiLocale]}</span>
           </button>
           {#if languageOpen}
