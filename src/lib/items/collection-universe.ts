@@ -63,7 +63,7 @@ export interface Db01UniverseManifest{
 }
 export interface Db01UniversePredicateClient{
   readonly source:Readonly<Pick<Db01UniverseManifest,
-    'gameVersion'|'sourceItemsSha256'|'sourceIl2cppDumpSha256'|
+    'gameVersion'|'sourceItemsSha256'|'sourceSqliteSha256'|'sourceIl2cppDumpSha256'|
     'sourceDefinitionCount'|'collectionSetCount'|'dynamicSelectorCount'|
     'resolvedSourcePredicateSelectors'|'unresolvedDynamicSelectors'|
     'candidateItemIds'|'candidateMemberships'>>;
@@ -259,6 +259,7 @@ export function createDb01UniversePredicateClient(
     source:Object.freeze({
       gameVersion:manifest.gameVersion,
       sourceItemsSha256:manifest.sourceItemsSha256,
+      sourceSqliteSha256:manifest.sourceSqliteSha256,
       sourceIl2cppDumpSha256:manifest.sourceIl2cppDumpSha256,
       sourceDefinitionCount:manifest.sourceDefinitionCount,
       collectionSetCount:manifest.collectionSetCount,
