@@ -84,3 +84,18 @@ Owner-provided local report `wand.src04.r2-stage@1` confirmed read-only R2 conne
 - `publicationApproved=false`, `uploadedToPublic=false`
 
 **Next step**: the owner must explicitly execute the private upload tool with locally entered credentials; review its `private_staging_uploaded` report and verify `remote.totalVerified=19054`. The report does **not** imply uploads are already complete. Public/CDN configuration remains untouched and requires separate authorization.
+
+## R2 private staging complete (2026-11-22)
+
+Owner-uploaded Windows report `src04-r2-stage-report(2).json` was reviewed. This supersedes the earlier pending/remote-plan status. The report states:
+
+- `complete=true`, `status=private_staging_uploaded`
+- `remote.mode=private-staging-upload`, `remote.bucket=dreamwishwand-media-private`
+- `remote.prefix=private/staging/src04/steam-v1.26.2/fd2d07d541293a19`
+- `remote.uploaded=19054`, `remote.totalVerified=19054`, `remote.existingVerified=0`
+- `localAudit.filesVerified=19054` (9,527 thumbnail and 9,527 original); total `854529084` bytes
+- Source Item IDs `13202`; distinct image GUIDs `9542`; SHA-verified private shards `256`
+- Exact manifest SHA-256 `fd2d07d541293a19ac7b845e996ccf4e3af41270c79daaa56b2ff74316a45e9f`
+- `publicationApproved=false`, `uploadedToPublic=false`, `sourceFilesModified=false`
+
+**Result:** All 19,054 objects are reported uploaded to the *private* R2 staging prefix and their HEAD size + SHA-256 user-metadata checked by the uploader. This is not an independent remote GET/download checksum audit or public distribution. Do not perform extraction, re-encoding or re-upload again for this version without a specific defect or changed source. Next work is a separately reviewed, stripped distribution manifest and publication/CDN path.
