@@ -338,7 +338,7 @@ export async function loadStarpathAcquisitionDatabase(
   native: NativeAcquisitionReader | null = null,
   basePath = ''
 ): Promise<OriginDatabase> {
-  assert(basePath === '' || /^\\/[a-zA-Z0-9/_-]+$/.test(basePath), 'BASE_PATH');
+  assert(basePath === '' || (basePath.startsWith('/') && !basePath.includes('..') && !basePath.endsWith('/')), 'BASE_PATH');
   const snapshot: unknown = await loadPublicStarpath(
     basePath + '/guide/public/starpath-cache-2026-11-22.json', fetcher
   );
@@ -349,9 +349,10 @@ export async function loadStarpathAcquisitionDatabase(
 /** Source-authenticated DB-03 paths plus independent official campaign history. */
 export async function loadUnifiedAcquisitionOriginDatabase(
   fetcher: typeof fetch = fetch,
-  native: NativeAcquisitionReader | null = null
+  native: NativeAcquisitionReader | null = null,
+  basePath = ''
 ): Promise<OriginDatabase> {
-  assert(basePath === '' || /^\\/[a-zA-Z0-9/_-]+$/.test(basePath), 'BASE_PATH');
+  assert(basePath === '' || (basePath.startsWith('/') && !basePath.includes('..') && !basePath.endsWith('/')), 'BASE_PATH');
   const snapshot: unknown = await loadPublicStarpath(
     basePath + '/guide/public/starpath-cache-2026-11-22.json', fetcher
   );
