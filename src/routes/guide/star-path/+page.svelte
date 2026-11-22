@@ -17,6 +17,7 @@
   let rewardTier:'all'|'free'|'premium'='all';
   let limit=60;
   $: season=catalog?.seasons?.find((s:any)=>s.id===selectedId);
+  $: rewardRows=season?[...season.rewardPages.flatMap((p:any)=>p.rewards),...season.bonusPages.flatMap((p:any)=>p.rewards),...season.vaultRewards]:[];
   $: filtered=season?.tasks?.filter((t:any)=>(starpathDailyDescription(dailyLocales,season.id,t.id,locale)||t.description||'').toLowerCase().includes(query.toLowerCase().trim())
       ||(t.description||'').toLowerCase().includes(query.toLowerCase().trim())
       ||t.id.toLowerCase().includes(query.toLowerCase().trim())
@@ -133,7 +134,7 @@
           {#if visibleRewards(p.rewards,rewardQuery,rewardTier,locale,rewardExtras).length}
           <section class="week"><h2>ボーナスページ {p.page}{p.currencyConversionPage?'（通貨交換）':''}</h2>
             {#if p.minPurchasedFromPreviousPage!==undefined}<p class="hint">前ページの購入設定：{p.minPurchasedFromPreviousPage}件</p>{/if}
-            <ul class="entries">{#each p.rewards as r,i (i)}<li class="reward-entry">{#if starpathMediaThumbnail(publicMedia,r.itemId)}<img class="reward-thumb" src={starpathMediaThumbnail(publicMedia,r.itemId)??''} alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" />{/if}<span>{item(r,locale)}</span></li>{/each}</ul>
+            <ul class="entries">{#each visibleRewards(p.rewards,rewardQuery,rewardTier,locale,rewardExtras) as r,i (i)}<li class="reward-entry">{#if starpathMediaThumbnail(publicMedia,r.itemId)}<img class="reward-thumb" src={starpathMediaThumbnail(publicMedia,r.itemId)??''} alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" />{/if}<span>{item(r,locale)}</span></li>{/each}</ul>
           </section>
           {/if}
         {/each}
@@ -144,7 +145,7 @@
           {/each}</ul>
         </section>
         {/if}
-        {#if [...season.rewardPages.flatMap((p:any)=>p.rewards),...season.bonusPages.flatMap((p:any)=>p.rewards),...season.vaultRewards].filter((r:any)=>visibleRewards([r],rewardQuery,rewardTier,locale,rewardExtras).length).length===0}
+        {#if visibleRewards(rewardRows,rewardQuery,rewardTier,locale,rewardExtras).length===0}
           <p role="status">一致する報酬はありません。</p>
         {/if}
       {/if}
