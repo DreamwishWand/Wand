@@ -78,8 +78,9 @@ export function decodePublicQuestConditions(doc:unknown,publicQuestIndex:unknown
     doc.provenance.currentConditionSha256===CONDITION_SHA&&
     doc.provenance.sourceIsStaticNotPlayerProgress===true&&
     doc.provenance.conditionTreesNotRuntimePrerequisites===true,'WRONG_PROVENANCE');
-  assert(Array.isArray(doc.operators)&&
-    doc.operators.length===3&&OPERATORS.every((x,i)=>doc.operators[i]===x),
+  const sourceOperators=doc.operators;
+  assert(Array.isArray(sourceOperators)&&
+    sourceOperators.length===3&&OPERATORS.every((x,i)=>sourceOperators[i]===x),
     'UNSUPPORTED_BOOLEAN_LOGIC');
   assert(Array.isArray(doc.kinds)&&doc.kinds.length===31&&
     doc.kinds.every((x:unknown)=>typeof x==='string'&&x.length>0&&x.length<100)&&
