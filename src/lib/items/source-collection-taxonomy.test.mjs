@@ -235,3 +235,75 @@ test('Crafting source candidates require a positive or negative per-Item record'
     f.catalog,f.shared).getItem(200,'ja'),
   /INCOMPLETE_OR_MISMATCHED_ITEM_COLLECTION_SOURCE/);
 });
+
+function originalCollectionLocaleStub({
+  changedKey=false,changedVersion=false,
+}={}){
+  return {
+    contract:'wand.db01.collection-original-locales.private@1',
+    source:{
+      platform:'Steam',gameVersion:changedVersion?'1.27.0':'1.26.2',
+      sourceItemsSha256:SHA,sourceCollectionSetSha256:FILE_SHA,
+      privateOnly:true,collectionSubmenuToUiTabMappingVerified:false,
+    },
+    getSetLabels:async locale=>MENUS.map((m,i)=>({
+      setId:m.setId,setKey:changedKey&&i===0?'wrong':m.setKey,
+      collectionLabelKey:m.collectionLabelKey,locale,
+      currentExactName:m.setId===13?null:locale+' original label '+m.setId,
+      originalLocDbLabelVerified:m.setId!==13,
+      gameUiMembershipVerified:false,
+    })),
+    getUiTabTitles:async locale=>[{
+      originalLocDbKey:'tab_title_furniture',locale,
+      displayName:locale+' furniture',
+      sourceExactCurrentLocDbName:true,
+      collectionSubmenuMappingVerified:false,
+    }],
+    getUiAreaTitles:async locale=>[{
+      originalLocDbKey:'area_title_dreamlight_valley',locale,
+      displayName:locale+' original valley',
+      sourceExactCurrentLocDbName:true,
+      collectionSubmenuMappingVerified:false,
+    }],
+  };
+}
+test('verified CollectionSet LocDB labels take precedence over unrelated native catalog names',async()=>{
+  const f=fixture();
+  const api=createDb01SourceCollectionTaxonomyClient(
+    f.catalog,f.shared,originalCollectionLocaleStub());
+  const tree=await api.getSourceHierarchy('ja');
+  assert.deepEqual(tree[0].sourceSets.map(x=>[
+    x.collectionSetId,x.currentExactSetName,x.currentExactNameVerified,
+    x.gameUiSetDisplayNameVerified,
+  ]),[
+    [13,null,false,false],
+    [11,'ja original label 11',true,false],
+  ]);
+  const item=await api.getItem(100,'ja');
+  assert.equal(item.sourceLinks[0].sourceSet.currentExactSetName,
+    'ja original label 11');
+});
+test('original game Collection tab and area names are exposed without claiming native enum mapping',async()=>{
+  const f=fixture();
+  const api=createDb01SourceCollectionTaxonomyClient(
+    f.catalog,f.shared,originalCollectionLocaleStub());
+  const [tabs,areas]=await Promise.all([
+    api.getOriginalUiTabTitles('ja'),api.getOriginalUiAreaTitles('ja'),
+  ]);
+  assert.deepEqual(tabs.map(t=>t.displayName),['ja furniture']);
+  assert.deepEqual(areas.map(t=>t.displayName),['ja original valley']);
+  assert.equal(tabs[0].collectionSubmenuMappingVerified,false);
+  const without=createDb01SourceCollectionTaxonomyClient(f.catalog,f.shared);
+  assert.equal(await without.getOriginalUiTabTitles('ja'),null);
+  assert.equal(await without.getOriginalUiAreaTitles('ja'),null);
+});
+test('different original collection locale release or incorrect Set identity fails closed',async()=>{
+  const f=fixture();
+  assert.throws(()=>createDb01SourceCollectionTaxonomyClient(
+    f.catalog,f.shared,originalCollectionLocaleStub({changedVersion:true})),
+  /UNVERIFIED_OR_MISMATCHED_ORIGINAL_LOCALE_SOURCE/);
+  const api=createDb01SourceCollectionTaxonomyClient(
+    f.catalog,f.shared,originalCollectionLocaleStub({changedKey:true}));
+  await assert.rejects(api.getSourceHierarchy('ja'),
+    /CURRENT_COLLECTION_LOCALE_SET_IDENTITY/);
+});
