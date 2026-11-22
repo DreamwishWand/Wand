@@ -83,7 +83,7 @@ function asCatalog(value:unknown):Catalog {
      !(value.grids instanceof Map)||
      !(value.layoutObjectsByGrid instanceof Map))
     throw new TypeError('DB04_SOURCE_CATALOG_NOT_INDEXED');
-  return value as Catalog;
+  return value as unknown as Catalog;
 }
 
 /**
