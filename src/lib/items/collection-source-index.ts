@@ -423,7 +423,7 @@ export function createDb01OriginalSourceMenuQuery(
       'QUERY_LOCALE');
     const rawText=query.searchText??'';
     check(typeof rawText==='string'&&rawText.trim().length<=150&&
-      !/[\\u0000-\\u001f\\u007f]/.test(rawText),
+      ![...rawText].some(ch=>ch.charCodeAt(0)<32||ch.charCodeAt(0)===127),
       'QUERY_SEARCH_TEXT');
     const needle=rawText.trim().toLocaleLowerCase(locale);
     const sets=query.collectionSetIds??[];
