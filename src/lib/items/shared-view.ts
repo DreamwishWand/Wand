@@ -6,7 +6,7 @@
  * Private SHA-checked data is supplied by callers; this module never fetches
  * from URLs, writes saves, or publishes game-derived assets.
  */
-import type {Db01CatalogClient,Db01Item,Db01Locale} from './index.ts';
+import type {Db01CatalogClient,Db01Item} from './index.ts';
 import type {Db01Classification,Db01ClassificationClient} from './classification.ts';
 import type {Db01ItemType,Db01ItemTypeClient} from './item-types.ts';
 import type {
@@ -231,12 +231,17 @@ export function createDb01SharedItemClient(inputs:Db01EvidenceSources):Db01Share
     if(!ids.length)return Object.freeze([]);
     const items=await catalog.getItems(ids);
     assert(items.length===ids.length,'CATALOG_BATCH_SIZE');
-    const originalTypes=itemTypes?await itemTypes.getItems(ids):null;
-    const tagRecords=tags?await tags.getItems(ids):null;
-    const directRecords=directMenus?await directMenus.getDirectListingsBatch(ids):null;
-    const universeRecords=universePredicates?await universePredicates.getItems(ids):null;
-    const specialRecords=specialPredicates?await specialPredicates.getItems(ids):null;
-    const remainingRecords=activityCrafting?await activityCrafting.getItems(ids):null;
+    // Independent SHA-pinned private buckets can load concurrently. Existing
+    // underlying clients deduplicate repeated ID-bucket reads.
+    const [originalTypes,tagRecords,directRecords,
+      universeRecords,specialRecords,remainingRecords]=await Promise.all([
+      itemTypes?itemTypes.getItems(ids):Promise.resolve(null),
+      tags?tags.getItems(ids):Promise.resolve(null),
+      directMenus?directMenus.getDirectListingsBatch(ids):Promise.resolve(null),
+      universePredicates?universePredicates.getItems(ids):Promise.resolve(null),
+      specialPredicates?specialPredicates.getItems(ids):Promise.resolve(null),
+      activityCrafting?activityCrafting.getItems(ids):Promise.resolve(null),
+    ]);
     for(const [name,result] of [
       ['ITEMTYPE',originalTypes],['TAGS',tagRecords],['DIRECT',directRecords],
       ['UNIVERSE',universeRecords],['SPECIAL',specialRecords],
