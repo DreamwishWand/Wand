@@ -688,6 +688,12 @@ try{
     name:'group-translate.profile',mimeType:'application/octet-stream',
     buffer:syntheticEncryptedP1g(groupOriginal)
   });
+  // Local picker resets the read-only lists. Load inventory evidence first,
+  // as required by the existing Save preview's gated World UI.
+  await page.getByRole('button',{name:'所持アイテムを表示'}).click();
+  await page.getByRole('region',{name:'セーブ内アイテム'})
+    .getByRole('status').filter({hasText:'件'})
+    .waitFor({timeout:30000});
   await objects.getByRole('button',{name:'配置オブジェクトを表示'}).click();
   await objects.getByRole('status').filter({hasText:'3件'})
     .waitFor({timeout:30000});
