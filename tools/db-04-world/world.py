@@ -763,6 +763,59 @@ def grid_collection_layout(data, relative):
     }, objects)
 
 
+
+def realm_grid_collection_layout(data, relative):
+    """Read only explicit SceneLayouts/Realms native embedded GridCollections.
+
+    Unlike Village.DefaultVillageData (AreaType -> layout reference), realm
+    original source stores the GridCollection directly in its protobuf root
+    field 2, while root field 1 contains realm context/custom-location path.
+    This is source-local evidence, NOT a verified gameplay world transform.
+    """
+    inside = relative.relative_to(STREAM).parts
+    if len(inside) < 4 or inside[:2] != ("SceneLayouts", "Realms"):
+        return None
+    if relative.name == "CustomLocations.json" or "PuzzleAnswer" in relative.name:
+        return None
+    root = wire_fields(data)
+    context_raw = one(root, 1, 2)
+    if context_raw is None:
+        return None
+    try:
+        context = wire_fields(context_raw)
+        custom_path = text_field(context, 3)
+    except (ValueError, UnicodeError):
+        return None
+    if custom_path is None:
+        return None
+    if not (custom_path.startswith("SceneLayouts/Realms/") and
+            custom_path.endswith(".json") and safe_reference(custom_path)):
+        raise ValueError("invalid native realm custom location reference")
+    embedded = one(root, 2, 2, True)
+    parsed = grid_collection_layout(embedded, relative)
+    if parsed is None:
+        raise ValueError("native realm wrapper has no recognized embedded GridCollection")
+    layout, objects = parsed
+    # Keep the existing pure GridCollection API so its grid-local anchors,
+    # windows, and fail-closed terrain reader remain valid. Preserve exact
+    # provenance of the outer realm wrapper (rather than claiming that the
+    # entire original source is a top-level Meta.GridCollection).
+    layout["embeddedGridCollectionWireField"] = 2
+    layout["realmCustomLocationPath"] = custom_path
+    layout["source"] = {
+        "path": relative.as_posix(),
+        "nativeType": "realm_source_with_embedded_Meta.GridCollection",
+        "embeddedGridCollectionWireField": 2,
+    }
+    for entry in layout["nativeGridEntries"]:
+        entry["gridDataPathWireField"] = "2.1.2.2"
+    layout["gridReferences"] = [
+        {"path": entry["gridDataPath"], "wireField": "2.1.2.2"}
+        for entry in layout["nativeGridEntries"]
+    ]
+    return layout, objects
+
+
 def default_village_layout(data, relative):
     """Meta.DefaultVillageData with explicit area->GridLayoutPath map."""
     root = wire_fields(data)
@@ -822,6 +875,12 @@ def scene_layouts(root, sources):
     layouts, layout_objects = [], []
     for relative in optional_files(root, STREAM / "SceneLayouts", sources):
         data = source_bytes(root, relative, sources)
+        realm = realm_grid_collection_layout(data, relative)
+        if realm is not None:
+            layout, objects = realm
+            layouts.append(layout)
+            layout_objects.extend(objects)
+            continue
         parsed = grid_collection_layout(data, relative)
         if parsed is not None:
             layout, objects = parsed
