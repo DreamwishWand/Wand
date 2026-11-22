@@ -92,6 +92,35 @@ export interface NativeGridReference {
   readonly nativeWorldCoordinatesVerified: false;
   readonly placementLegalityVerified: false;
 }
+/**
+ * Exact original native GridDataPath candidate evidence.
+ *
+ * Saved GridCollection.Grids[id].GridDataPath can use the same source path,
+ * but the numeric Save Grid ID is NOT the native layout's Grid.ID. Multiple
+ * original layouts may share a GridData source (e.g. room wall templates).
+ * Even a single candidate cannot certify Save grid identity or placement.
+ */
+export interface NativeGridDataPathEvidence {
+  readonly contract:'wand.db04.native-grid-data-path-candidates@1';
+  readonly sourceGameVersion:string;
+  readonly sourceWorldManifestSha256:string;
+  readonly gridDataPath:string;
+  readonly sourcePresence:
+    'referenced_source_file'|'source_file_without_layout_reference'|
+    'layout_reference_without_source_file'|'not_in_partial_source';
+  readonly originalGridDataFile:Readonly<NativeGridDataReference>|null;
+  readonly sourceGridReferences:readonly Readonly<NativeGridReference>[];
+  readonly sourceGridReferenceCount:number;
+  readonly distinctSourceLayoutCount:number;
+  readonly sourceFilePathExactMatched:boolean;
+  readonly sourceLayoutCandidatesComplete:false;
+  readonly numericSaveGridIdUsedAsSourceKey:false;
+  readonly savedGridIdentityVerified:false;
+  readonly savedObjectPlacementVerified:false;
+  readonly contentPackRelationVerified:false;
+  readonly placementLegalityVerified:false;
+  readonly sourceCoverageComplete:false;
+}
 export interface NativeSourceItemReference {
   readonly itemId: string;
   readonly relation: 'nativeSourceDefaultGridObject';
@@ -247,6 +276,8 @@ export class WorldReferenceIndex {
   private readonly areas:Map<string,NativeAreaReference>;
   private readonly layouts:Map<string,NativeLayoutReference>;
   private readonly grids:Map<string,NativeGridReference>;
+  private readonly gridDataFilesByPath:Map<string,NativeGridDataReference>;
+  private readonly gridRefsByDataPath:Map<string,readonly NativeGridReference[]>;
   private readonly itemRefs:Map<string,readonly NativeSourceItemReference[]>;
   private readonly childWorldsByParent:Map<string,readonly WorldIdentity[]>;
   private readonly worldsByNativeUniverseTag:Map<number,readonly WorldIdentity[]>;
@@ -289,6 +320,8 @@ export class WorldReferenceIndex {
     this.layouts=indexed(input.layouts,l=>l.layoutId,'LAYOUT_ID');
     this.grids=indexed(input.gridRefs,g=>g.gridRefId,'GRID_REF_ID');
     const gridFiles=indexed(input.gridData,g=>g.gridDataPath,'GRID_DATA_PATH');
+    this.gridDataFilesByPath=gridFiles;
+    const refsByDataPath=new Map<string,NativeGridReference[]>();
     const byItem=new Map<string,NativeSourceItemReference[]>();
     const byItemWorld=new Map<string,NativeSourceItemReference[]>();
     const byItemArea=new Map<string,NativeSourceItemReference[]>();
@@ -418,6 +451,8 @@ export class WorldReferenceIndex {
       if(grid.areaRefId!==null)
         byArea.set(grid.areaRefId,[...(byArea.get(grid.areaRefId)??[]),grid]);
       byLayout.set(grid.layoutId,[...(byLayout.get(grid.layoutId)??[]),grid]);
+      refsByDataPath.set(grid.gridDataPath,
+        [...(refsByDataPath.get(grid.gridDataPath)??[]),grid]);
     }
     for(const row of input.initialItemRefs){
       const grid=this.grids.get(row.gridRefId);
@@ -495,6 +530,8 @@ export class WorldReferenceIndex {
     this.gridListByArea=byArea;
     this.gridListByLayout=new Map(
       [...byLayout].map(([key,rows])=>[key,Object.freeze(rows)]));
+    this.gridRefsByDataPath=new Map(
+      [...refsByDataPath].map(([key,rows])=>[key,Object.freeze(rows)]));
   }
 
   getWorld(id:string):WorldIdentity|null{
@@ -582,6 +619,47 @@ export class WorldReferenceIndex {
     check(typeof layoutId==='string'&&layoutId.length>0&&layoutId.length<=1024,
       'INVALID_LAYOUT_ID');
     return Object.freeze([...(this.gridListByLayout.get(layoutId)??[])]);
+  }
+  /**
+   * Find original candidate layouts by EXACT native GridDataPath.
+   * Does not match bare file names, case-folded paths, substring matches,
+   * Save's numeric Grid.ID, or infer a player's saved World/coordinates.
+   * Source file with zero layout refs is different from an absent source file.
+   */
+  originalGridDataPathCandidates(gridDataPath:string):NativeGridDataPathEvidence{
+    check(typeof gridDataPath==='string'&&gridDataPath.length<=512&&
+      /^GridData\/(?:[A-Za-z0-9_!.\-]+\/)*[A-Za-z0-9_!.\-]+\.json$/.test(gridDataPath)&&
+      !gridDataPath.split('/').some(segment=>segment==='.'||segment==='..'),
+      'INVALID_NATIVE_GRID_DATA_PATH');
+    const file=this.gridDataFilesByPath.get(gridDataPath)??null;
+    const refs=this.gridRefsByDataPath.get(gridDataPath)??Object.freeze([]);
+    check(refs.every(row=>row.gridDataPath===gridDataPath&&
+      this.layouts.has(row.layoutId) &&
+      row.gridDataPresent===(file!==null)),
+      'NATIVE_GRID_DATA_PATH_CONTRADICTION');
+    return Object.freeze({
+      contract:'wand.db04.native-grid-data-path-candidates@1' as const,
+      sourceGameVersion:this.target.gameVersion,
+      sourceWorldManifestSha256:this.target.nativeWorldManifestSha256,
+      gridDataPath,
+      sourcePresence:file===null?
+        (refs.length?'layout_reference_without_source_file' as const:
+          'not_in_partial_source' as const):
+        refs.length?'referenced_source_file' as const:
+        'source_file_without_layout_reference' as const,
+      originalGridDataFile:file,
+      sourceGridReferences:Object.freeze([...refs]),
+      sourceGridReferenceCount:refs.length,
+      distinctSourceLayoutCount:new Set(refs.map(row=>row.layoutId)).size,
+      sourceFilePathExactMatched:file!==null,
+      sourceLayoutCandidatesComplete:false as const,
+      numericSaveGridIdUsedAsSourceKey:false as const,
+      savedGridIdentityVerified:false as const,
+      savedObjectPlacementVerified:false as const,
+      contentPackRelationVerified:false as const,
+      placementLegalityVerified:false as const,
+      sourceCoverageComplete:false as const
+    });
   }
   /** Lookup by original layout + native Grid.ID composite, including unlinked Worlds. */
   getSourceGrid(gridRefId:string):NativeGridReference|null{

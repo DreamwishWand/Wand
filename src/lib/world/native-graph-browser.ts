@@ -20,6 +20,8 @@ export interface Db04GraphOption {
   readonly worldId:string|null;
   readonly areaRefId:string|null;
   readonly layoutId:string;
+  /** Original GridDataPath, NOT a saved numeric Grid.ID. */
+  readonly gridDataPath:string|null;
   readonly sourceDefaultInstances:number|null;
   readonly nativeParentWorldId:string|null;
   readonly nativeUniverseTagItemId:number|null;
@@ -120,6 +122,7 @@ export function createDb04GraphBrowser(
     worldId:w.worldId,
     areaRefId:null,
     layoutId:w.defaultLayoutId,
+    gridDataPath:null,
     sourceDefaultInstances:null,
     nativeParentWorldId:w.nativeParentWorldId??null,
     nativeUniverseTagItemId:w.nativeUniverseTagItemId
@@ -131,6 +134,7 @@ export function createDb04GraphBrowser(
     worldId:a.worldId,
     areaRefId:a.areaRefId,
     layoutId:a.gridLayoutId,
+    gridDataPath:null,
     sourceDefaultInstances:null,
     nativeParentWorldId:null,
     nativeUniverseTagItemId:null
@@ -141,6 +145,7 @@ export function createDb04GraphBrowser(
     worldId:g.worldId,
     areaRefId:g.areaRefId,
     layoutId:g.layoutId,
+    gridDataPath:g.gridDataPath,
     sourceDefaultInstances:g.originalDefaultObjectCount,
     nativeParentWorldId:null,
     nativeUniverseTagItemId:null
