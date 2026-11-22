@@ -213,8 +213,10 @@ function checkTarget(raw:unknown):asserts raw is DbTarget {
     'INVALID_TARGET');
 }
 function copyValue<T extends string|readonly string[]|DbMedia>(value:T):T {
-  if(Array.isArray(value))return Object.freeze([...value]) as T;
-  if(object(value))return Object.freeze({...value}) as T;
+  if(typeof value==='object' && value!==null) {
+    if(Array.isArray(value))return Object.freeze([...value]) as unknown as T;
+    return Object.freeze({...value}) as unknown as T;
+  }
   return value;
 }
 function checkValue(field:FactKey,v:unknown,emptyVerified:boolean):void {
@@ -307,10 +309,10 @@ export class SharedGameDatabase {
       seen.add(old.id);
       if(!this.records.has(old.id))continue;
       candidates.set(old.id,Object.freeze({
-        category:old.category ? legacyCandidate(old.category) : null,
-        worlds:old.worlds.length ? legacyCandidate(old.worlds) : null,
-        universes:old.universes.length ? legacyCandidate(old.universes) : null,
-        dlc:old.contentIds.length ? legacyCandidate(old.contentIds) : null
+        category:old.category ? legacyCandidate<'category'>(old.category) : null,
+        worlds:old.worlds.length ? legacyCandidate<'worlds'>(old.worlds) : null,
+        universes:old.universes.length ? legacyCandidate<'universes'>(old.universes) : null,
+        dlc:old.contentIds.length ? legacyCandidate<'dlc'>(old.contentIds) : null
       }));
     }
     this.historical.clear();
@@ -378,7 +380,7 @@ export class SharedGameDatabase {
     const item=this.records.get(id);
     if(!item)return null;
     const supplied=this.current.get(id);
-    const fields={} as {[K in FactKey]:FieldFact<K>};
+    const fields={} as Record<FactKey,FieldFact<FactKey>>;
     for(const field of FIELDS) {
       const source=supplied?.get(field) as FieldFact<typeof field>|undefined;
       if(source){fields[field]=source;continue;}
