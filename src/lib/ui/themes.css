@@ -171,3 +171,47 @@ body{background:var(--wand-halo),var(--wand-bg);color:var(--wand-text)}
 :root[data-wand-theme='night'] .site-shell .portal-card-community{
   border-color:#D8B96B45
 }
+
+/* Match Collection's existing light surfaces to the selected daylight palette.
+   This is only shared theme styling: no Collection behavior or data logic changes. */
+:root[data-wand-theme='dawn'] .collection-page,
+:root[data-wand-theme='dawn'] .collection-workspace,
+:root[data-wand-theme='dawn'] .workspace-body{
+  background:#EDE8F8;color:#372E50
+}
+:root[data-wand-theme='dawn'] .workspace-top{
+  background:#E2DAF2f5;border-bottom-color:#B5A5DC
+}
+:root[data-wand-theme='dawn'] .facet-card{
+  background:#F9F7FE;color:#372E50;border-color:#D6D0EC
+}
+:root[data-wand-theme='dawn'] .item-inspector{
+  background:#E2DAF2;color:#372E50;border-left-color:#B5A5DC
+}
+:root[data-wand-theme='coral'] .collection-page,
+:root[data-wand-theme='coral'] .collection-workspace,
+:root[data-wand-theme='coral'] .workspace-body{
+  background:#E5F8FD;color:#133B52
+}
+:root[data-wand-theme='coral'] .workspace-top{
+  background:#D8F3F7f5;border-bottom-color:#9ACFD8
+}
+:root[data-wand-theme='coral'] .facet-card{
+  background:#FFFFFF;color:#133B52;border-color:#9ACFD8
+}
+:root[data-wand-theme='coral'] .item-inspector{
+  background:#DFEFF9;color:#133B52;border-left-color:#9ACFD8
+}
+:root:is([data-wand-theme='dawn'],[data-wand-theme='coral']) .language-popover{
+  background:var(--wand-menu);color:var(--wand-text);border-color:var(--wand-line)
+}
+:root:is([data-wand-theme='dawn'],[data-wand-theme='coral']) .language-popover button{
+  color:var(--wand-text)
+}
+:root:is([data-wand-theme='dawn'],[data-wand-theme='coral']) .language-popover button:hover,
+:root:is([data-wand-theme='dawn'],[data-wand-theme='coral']) .language-popover button.chosen{
+  background:var(--wand-header-hover)
+}
+:root:is([data-wand-theme='dawn'],[data-wand-theme='coral']) .tutorial-done{
+  background:var(--wand-accent-strong);color:var(--wand-accent-contrast)
+}
