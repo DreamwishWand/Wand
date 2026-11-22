@@ -55,6 +55,8 @@ class UpdateR2Tests(unittest.TestCase):
         manifest["source"]["variantPolicy"]="thumbnail_128_lossless_webp_plus_original_native_lossless_webp"
         manifest["coverage"]["verifiedGuids"]=1
         manifest["coverage"]["unresolvedGuids"]=0
+        for shard_meta in manifest["files"].values():
+            shard_meta["verified"]=shard_meta["count"]
         write_json_local=(json.dumps(manifest,sort_keys=True)+"\n").encode()
         manifest_path.write_bytes(write_json_local)
         self.old_overlay_sha=updater.file_digest(manifest_path)
