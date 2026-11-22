@@ -46,7 +46,9 @@ export interface QuestAcquisitionCandidate {
 export interface QuestAcquisitionCoverage {
   readonly sourceGameVersion:'1.26.1';
   readonly targetGameVersion:'1.26.2';
-  readonly indexedQuests:247;
+  readonly rewardEvidenceQuestRows:247;
+  readonly indexedQuestsWithItemIds:number;
+  readonly opaqueOverrideQuestRows:4;
   readonly definedQuests:733;
   readonly currencySourceReferences:65;
   readonly additionalLootSourceReferences:330;
@@ -154,7 +156,9 @@ function createIndex(reader:PublicQuestRewardsReader, publicQuestIndex:unknown):
   const coverage:QuestAcquisitionCoverage=Object.freeze({
     sourceGameVersion:'1.26.1' as const,
     targetGameVersion:'1.26.2' as const,
-    indexedQuests:247 as const,definedQuests:733 as const,
+    rewardEvidenceQuestRows:247 as const,
+    indexedQuestsWithItemIds:byQuest.size,
+    opaqueOverrideQuestRows:4 as const,definedQuests:733 as const,
     currencySourceReferences:65 as const,
     additionalLootSourceReferences:330 as const,
     allSourceItemReferences:395 as const,
