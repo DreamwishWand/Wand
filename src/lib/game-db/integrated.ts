@@ -484,12 +484,14 @@ export class SharedGameDatabase {
     const statusMode='state' in filter;
     check(!historical||!statusMode,'HISTORICAL_STATE_FILTER_FORBIDDEN');
     let vals:readonly string[]=[];
+    let match:'any'|'all'='any';
     if(statusMode) {
       check(typeof filter.state==='string'&&
         ['verified','not_applicable','unverified','not_covered'].includes(filter.state),
         'UNKNOWN_FILTER_STATE');
     } else {
       vals=filter.values;
+      match=filter.match??'any';
       check(Array.isArray(vals)&&vals.length>0&&vals.length<=32&&
         vals.every(stringToken)&&new Set(vals).size===vals.length&&
         (filter.match===undefined||filter.match==='any'||filter.match==='all'),
@@ -518,7 +520,7 @@ export class SharedGameDatabase {
         values=Array.isArray(fact.value)?fact.value:
           typeof fact.value==='string'?[fact.value]:[];
       }
-      if((filter.match??'any')==='all'
+      if(match==='all'
         ? vals.every(value=>values.includes(value))
         : vals.some(value=>values.includes(value)))selected.add(id);
     }
