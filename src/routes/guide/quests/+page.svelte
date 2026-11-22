@@ -11,6 +11,7 @@
     type PublicQuestConditionReader} from '$lib/guide/public-quest-conditions.ts';
   import {loadPublicQuestRewards,DB03_QUEST_REWARDS_FILE,
     type PublicQuestRewardsReader} from '$lib/guide/public-quest-rewards.ts';
+  import {resolveQuestRewardItemDestination} from '$lib/guide/quest-reward-navigation.ts';
 
   let catalog:any=null;
   let loadError='';
@@ -35,6 +36,7 @@
   const cachedTargets=new Map<number,any>();
   let conditionIndex:PublicQuestConditionReader|null=null;
   let rewardIndex:PublicQuestRewardsReader|null=null;
+  let rewardItemFocus:string|null=null;
   let rewardError='';
   let conditionError='';
   let targetIndex:any=null;
@@ -43,7 +45,12 @@
   let targetError='';
   const prefix=`${base}/guide/public/`;
 
-  $: filtered=catalog?collectWindow((offset:number,batch:number)=>filterPublicQuests(catalog,{query:query.slice(0,120),locale,character,objective,section,offset,limit:batch}),limit,'rows'):{total:0,rows:[]};
+  $: rewardFocus=rewardItemFocus&&rewardIndex
+    ?resolveQuestRewardItemDestination(rewardIndex,rewardItemFocus):null;
+  $: filtered=catalog?(rewardFocus
+    ?{total:rewardFocus.questIds.length,
+      rows:catalog.quests.filter((row:any)=>rewardFocus.questIds.includes(row.id))}
+    :collectWindow((offset:number,batch:number)=>filterPublicQuests(catalog,{query:query.slice(0,120),locale,character,objective,section,offset,limit:batch}),limit,'rows')):{total:0,rows:[]};
   $: characters=catalog?[...new Set(catalog.quests.map((x:any)=>x.characterId).filter(Boolean))].sort() as string[]:[];
   // Native Mission group association, not an unlock prerequisite or chronological link.
   $: questConditions=selectedRow&&conditionIndex?conditionIndex.getQuest(selectedRow.id):null;
@@ -56,7 +63,14 @@
   function label(names:Record<string,string>|null|undefined,fallback='',language='ja') {return formatPublicGuideText(names?.[language]||names?.en||Object.values(names||{})[0]||fallback);}
   function questName(row:any,language:string) {return label(row.names,row.internalName||row.id,language);}
   function characterName(id:string|undefined,language:string) {return label(catalog?.characters?.[id||''],id||'',language);}
-  function setSearch() {limit=40;}
+  function clearRewardItemFocus(){
+    if(!rewardItemFocus)return;
+    rewardItemFocus=null;
+    const url=new URL(window.location.href);
+    url.searchParams.delete('item');
+    window.history.replaceState(window.history.state,'',url);
+  }
+  function setSearch(){limit=40;clearRewardItemFocus();}
   function selectStep(index:number){
     if(!selectedRow||!selected||!Number.isInteger(index)||
       index<0||index>=selected.steps.length)return;
@@ -107,7 +121,16 @@
   // fetching unrelated or duplicate detail partitions.
   function restoreAddressSelection() {
     if(!catalog)return;
-    const row=findPublicQuestByLink(catalog,window.location.search);
+    const params=new URLSearchParams(window.location.search);
+    const requested=params.getAll('item');
+    const focus=requested.length===1&&rewardIndex
+      ?resolveQuestRewardItemDestination(rewardIndex,requested[0]):null;
+    rewardItemFocus=focus?.itemId??null;
+    const addressed=findPublicQuestByLink(catalog,window.location.search);
+    const row=focus
+      ?(addressed&&focus.questIds.includes(addressed.id)?addressed:
+        catalog.quests.find((candidate:any)=>focus.questIds.includes(candidate.id))??null)
+      :addressed;
     if(row){
       if(selectedRow?.id!==row.id)void openQuest(row,false);
       else if(selected) {
@@ -132,7 +155,7 @@
   async function loadRewards(index:any){
     try{
       const data=await loadPublicQuestRewards(index,`${prefix}${DB03_QUEST_REWARDS_FILE}`);
-      if(catalog===index)rewardIndex=data;
+      if(catalog===index){rewardIndex=data;restoreAddressSelection();}
     }catch(e){
       if(catalog===index)rewardError=e instanceof Error?e.message:String(e);
     }
@@ -153,13 +176,14 @@
     finally {loading=false}
   }
   onMount(()=>{
-    const unwatch=watchWandLanguage(next=>{locale=next;setSearch();});
+    const unwatch=watchWandLanguage(next=>{locale=next;limit=40;});
     window.addEventListener('popstate',restoreAddressSelection);
     void loadCatalog();
     return ()=>{unwatch();window.removeEventListener('popstate',restoreAddressSelection);};
   });
 
   async function openQuest(row:any,updateAddress=true) {
+    if(rewardFocus&&!rewardFocus.questIds.includes(row.id))clearRewardItemFocus();
     const ticket=++selectionTicket;
     selectedRow=row;selected=null;detailError='';detailLoading=true;
     activeStep=0;showAllSteps=false;
@@ -218,6 +242,12 @@
       <label>キャラクター<select aria-label="キャラクターで絞り込み" bind:value={character} on:change={setSearch}><option value="">すべて</option>{#each characters as id}<option value={id}>{characterName(id,locale)}</option>{/each}</select></label>
       <label>目標の種類<select aria-label="目標で絞り込み" bind:value={objective} on:change={setSearch}><option value="">すべて</option>{#each objectives as kind}<option value={kind}>{kind}</option>{/each}</select></label>
     </div>
+    {#if rewardFocus}
+      <div class="reward-focus" role="status">
+        <span>報酬候補に関連するクエスト：{rewardFocus.questIds.length}件（Item ID {rewardFocus.itemId}）</span>
+        <button type="button" on:click={clearRewardItemFocus}>すべて表示</button>
+      </div>
+    {/if}
     <div class="workspace">
       <section class="results" aria-label="クエスト一覧">
         <p class="count">{filtered.total.toLocaleString()}件のクエスト</p>
@@ -244,14 +274,14 @@
           {#if detailError}<p class="error" role="alert">{detailError}</p>{/if}
           {#if selected}
             {#if questRewardInfo}
-              <details class="quest-rewards" aria-label="クエストの静的報酬候補">
+              <details class="quest-rewards" aria-label="クエストの静的報酬候補" open={!!rewardFocus&&rewardFocus.questIds.includes(selectedRow.id)}>
                 <summary>報酬候補（{questRewardInfo.currencies.length+questRewardInfo.lootCandidates.length}件）</summary>
                 {#if questRewardInfo.currencies.length}
                   <div class="quest-reward-block">
                     <strong>通貨報酬の設定</strong>
                     <ul>
                       {#each questRewardInfo.currencies as reward}
-                        <li>{itemTargetName(targetIndex,reward.itemId,locale)||'通貨'} · {reward.amountMin===reward.amountMax?reward.amountMin:`${reward.amountMin}～${reward.amountMax}`}（ID {reward.itemId}）</li>
+                        <li class:reward-item-match={rewardItemFocus===reward.itemId}>{itemTargetName(targetIndex,reward.itemId,locale)||'通貨'} · {reward.amountMin===reward.amountMax?reward.amountMin:`${reward.amountMin}～${reward.amountMax}`}（ID {reward.itemId}）</li>
                       {/each}
                     </ul>
                   </div>
@@ -261,7 +291,7 @@
                     <strong>追加報酬のアイテム候補</strong>
                     <div class="quest-reward-chips">
                       {#each questRewardInfo.lootCandidates as reward}
-                        <span title={`Item ID ${reward.itemId} · Loot Table ${reward.tableIndex+1}`}>
+                        <span class:reward-item-match={rewardItemFocus===reward.itemId} title={`Item ID ${reward.itemId} · Loot Table ${reward.tableIndex+1}`}>
                           {itemTargetName(targetIndex,reward.itemId,locale)||'アイテム'}（ID {reward.itemId}）
                         </span>
                       {/each}
@@ -410,6 +440,8 @@
   .searchbar{display:grid;grid-template-columns:minmax(0,2fr) repeat(2,minmax(120px,1fr));gap:10px;margin-bottom:12px}
   .searchbar label{display:grid;gap:5px;font-size:12px;color:#d6c5e8}
   .searchbar input,.searchbar select{box-sizing:border-box;min-width:0;width:100%;background:#231b30;border:1px solid #65577c;color:#fff;border-radius:9px;padding:11px;font:inherit}
+  .reward-focus{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 10px;font-size:12px;color:#d6c5e8}
+  .reward-focus button{background:#392849;color:#f2e9fc;border:1px solid #755c8f;border-radius:7px;padding:6px 10px}
   .workspace{display:grid;grid-template-columns:minmax(270px,.85fr) minmax(0,1.5fr);gap:15px;align-items:start}
   .results,.detail{background:#1d1628;border:1px solid #4c3d5e;border-radius:15px;padding:15px;min-width:0}
   .count{font-size:12px;color:#bea9ce;margin:1px 4px 12px}
@@ -440,6 +472,7 @@
   .quest-reward-block ul{margin:0;padding-left:17px}
   .quest-reward-chips{display:flex;flex-wrap:wrap;gap:6px}
   .quest-reward-chips span{border:1px solid #5b496b;border-radius:7px;padding:5px 8px;color:#e8d9f2;background:#281e34;overflow-wrap:anywhere}
+  .quest-rewards .reward-item-match{background:#493264;border-radius:6px;outline:1px solid #bb91ed;padding:4px 6px}
   .quest-activation{margin:10px 0;border:1px solid #514260;border-radius:9px;padding:10px 12px;font-size:12px;color:#d6c1e5}
   .quest-activation summary{cursor:pointer;font-weight:650;color:#e9d5f9}
   .quest-activation-block{margin:9px 0}
