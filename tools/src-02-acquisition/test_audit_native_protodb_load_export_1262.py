@@ -15,7 +15,7 @@ def rel(site, target, opcode):
 class NativeProtoDbLoadExportTests(unittest.TestCase):
     def test_byte_scan_accounts_for_both_direct_calls_and_jumps(self):
         base = 0x1000
-        raw = bytearray(b'\\x90' * 80)
+        raw = bytearray([0x90] * 80)
         raw[10:15] = rel(base + 10, 0x2000, 0xE8)
         raw[30:35] = rel(base + 30, 0x2100, 0xE9)
         actual = scan_direct_rel32_targets(bytes(raw), base,
