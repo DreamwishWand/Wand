@@ -9,7 +9,7 @@ import {
 } from '../src/lib/guide/event-calendar.mjs';
 import {
   actionableStarpathTask,STARPATH_REVIEWED_DAILY_COUNT,STARPATH_REVIEWED_WEEKLY_COUNT
-} from '../src/lib/guide/starpath-task-guidance.mjs';
+} from '../src/lib/guide/starpath-task-guidance.ts';
 const sourceDir=new URL('../static/guide/public/',import.meta.url);
 const snapshot=async()=>verifyPublicStarpath(JSON.parse(await readFile(new URL('starpath-cache-2026-11-22.json',sourceDir))));
 const quests=async()=>verifyPublicQuestIndex(JSON.parse(await readFile(new URL('quest-index.json',sourceDir))));
@@ -130,6 +130,17 @@ test('reviewed actionable riddle solutions bind to native season+Task IDs, rejec
     'Seafaring2026/Task39':'アリエル',
     'Seafaring2026/Task44':'エリック王子',
     'Seafaring2026/Task55':'エリック王子',
+    'HauntingElegance2026/Task35':'Whimsical Pie',
+    'HauntingElegance2026/Task42':'ミッキー＆フレンズ',
+    'HauntingElegance2026/Task45':'Miracle Pickaxe Polish',
+    'HauntingElegance2026/Task47':'5人',
+    'HauntingElegance2026/Task68':'レベル2',
+    'HauntingElegance2026/Task82':'ジンジャーブレッドハウス',
+    'HauntingElegance2026/Task92':'ヴィタリスクリスタル',
+    'HauntingElegance2026/Task98':'グーフィー',
+    'Seafaring2026/Task24':'ドリームライト',
+    'Seafaring2026/Task29':'スターコイン',
+    'Seafaring2026/Task50':'ヤシの実',
     'HauntingElegance2026/Week02Task03':'Candy Cane Door',
     'HauntingElegance2026/Week07Task02':'サリー',
     'Seafaring2026/Week04Task01':'モアナ'
@@ -150,7 +161,7 @@ test('reviewed actionable riddle solutions bind to native season+Task IDs, rejec
   }
   assert.equal(verifiedDaily,STARPATH_REVIEWED_DAILY_COUNT);
   assert.equal(verifiedWeekly,STARPATH_REVIEWED_WEEKLY_COUNT);
-  assert.equal(verifiedDaily,63);
+  assert.equal(verifiedDaily,81);
   assert.equal(verifiedWeekly,8);
   const real=snap.seasons[1].tasks.find(t=>t.id==='Task19');
   assert.equal(actionableStarpathTask('HauntingElegance2026',real),null);
