@@ -106,7 +106,8 @@ export interface NativeGridDataPathEvidence {
   readonly sourceWorldManifestSha256:string;
   readonly gridDataPath:string;
   readonly sourcePresence:
-    'referenced_source_file'|'source_file_without_layout_reference'|'not_in_partial_source';
+    'referenced_source_file'|'source_file_without_layout_reference'|
+    'layout_reference_without_source_file'|'not_in_partial_source';
   readonly originalGridDataFile:Readonly<NativeGridDataReference>|null;
   readonly sourceGridReferences:readonly Readonly<NativeGridReference>[];
   readonly sourceGridReferenceCount:number;
@@ -627,7 +628,8 @@ export class WorldReferenceIndex {
    */
   originalGridDataPathCandidates(gridDataPath:string):NativeGridDataPathEvidence{
     check(typeof gridDataPath==='string'&&gridDataPath.length<=512&&
-      /^GridData\/(?:[A-Za-z0-9_!.\-]+\/)*[A-Za-z0-9_!.\-]+\.json$/.test(gridDataPath),
+      /^GridData\/(?:[A-Za-z0-9_!.\-]+\/)*[A-Za-z0-9_!.\-]+\.json$/.test(gridDataPath)&&
+      !gridDataPath.split('/').some(segment=>segment==='.'||segment==='..'),
       'INVALID_NATIVE_GRID_DATA_PATH');
     const file=this.gridDataFilesByPath.get(gridDataPath)??null;
     const refs=this.gridRefsByDataPath.get(gridDataPath)??Object.freeze([]);
@@ -640,7 +642,9 @@ export class WorldReferenceIndex {
       sourceGameVersion:this.target.gameVersion,
       sourceWorldManifestSha256:this.target.nativeWorldManifestSha256,
       gridDataPath,
-      sourcePresence:file===null?'not_in_partial_source' as const:
+      sourcePresence:file===null?
+        (refs.length?'layout_reference_without_source_file' as const:
+          'not_in_partial_source' as const):
         refs.length?'referenced_source_file' as const:
         'source_file_without_layout_reference' as const,
       originalGridDataFile:file,
