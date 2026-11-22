@@ -142,6 +142,10 @@ class PE64Image:
             raise ValueError("original binary is not PE32+")
         self.image_base = struct.unpack_from("<Q", binary, opt + 24)[0]
         self.sections = []
+        # VirtualSize can exceed SizeOfRawData (.data BSS). Keep this
+        # additional map for source-reference classification without changing
+        # the strict file-backed RVA mapping used for executable methods.
+        self.virtual_sections = []
         table = opt + opt_size
         if table + sections * 40 > len(binary):
             raise ValueError("truncated original PE64 section table")
@@ -153,6 +157,8 @@ class PE64Image:
             if raw_size > len(binary) - offset:
                 raise ValueError("original PE section out of source bounds")
             self.sections.append((offset, min(virtual_size, raw_size), va, flags))
+            self.virtual_sections.append((va, virtual_size, raw_size,
+                                          offset, flags))
 
     def file_to_va(self, offset, size=1):
         for raw, length, rva, _ in self.sections:
