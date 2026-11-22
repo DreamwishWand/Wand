@@ -575,6 +575,80 @@ pub fn preview_existing_grid_transform(
     Ok(rotation_draft)
 }
 
+/// One experimental mutation of an *existing* saved native GridObject.
+/// `position` and `orientation` are independently optional, but at
+/// least one must change. Every expected field is checked against the
+/// immutable source, prior to any generated candidate.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct GridMixedEdit {
+    pub target:GridCoordinateTarget,
+    pub expected:(i32,i32),
+    pub position:Option<(i32,i32)>,
+    pub orientation:Option<(String,String)>,
+}
+
+/// Apply 1..=16 distinct coordinate-only, rotation-only, or combined
+/// Grid edits as a single all-or-nothing in-memory JSON draft.
+/// Every edit resolves an existing native object and verifies original
+/// ItemID + X/Y (+ Orientation for rotation) before any bytes are written.
+/// The only rewritten tokens are exact X/Y/Orientation of chosen objects.
+pub fn preview_existing_grid_mixed_batch(
+    source:&str,edits:&[GridMixedEdit]
+)->Result<GridCoordinateDraft,PatchError>{
+    if source.is_empty()||source.len()>MAX_PROFILE_BYTES||
+       edits.is_empty()||edits.len()>16{
+        return Err(PatchError::InvalidTarget);
+    }
+    let mut seen=HashSet::new();
+    for edit in edits{
+        if !seen.insert((edit.target.kind,edit.target.grid_id.as_str(),
+             edit.target.object_id.as_str()))||
+           (edit.position.is_none()&&edit.orientation.is_none()){
+            return Err(PatchError::AmbiguousTarget);
+        }
+        // Even for a rotation-only change require the original coordinate
+        // fields (and ItemID) to be exactly as observed in the opened Save.
+        let checked=preview_existing_grid_coordinates(
+            source,edit.target.clone(),edit.expected,
+            edit.position.unwrap_or(edit.expected)
+        )?;
+        if checked.changed!=edit.position.is_some()||
+           !checked.untouched_bytes_preserved||
+           checked.writer_authorized||checked.export_authorized{
+            return Err(PatchError::InvalidTarget);
+        }
+        if let Some((before,after))=&edit.orientation{
+            let checked=preview_existing_grid_orientation(
+                source,edit.target.clone(),before,after
+            )?;
+            if !checked.changed||!checked.untouched_bytes_preserved||
+               checked.writer_authorized||checked.export_authorized{
+                return Err(PatchError::InvalidTarget);
+            }
+        }
+    }
+    // All preconditions passed against immutable original; these scoped
+    // per-object edits cannot overlap because private native IDs are unique.
+    let mut candidate=source.to_owned();
+    for edit in edits{
+        if let Some(next)=edit.position{
+            candidate=preview_existing_grid_coordinates(
+                &candidate,edit.target.clone(),edit.expected,next
+            )?.patched_json;
+        }
+        if let Some((before,after))=&edit.orientation{
+            candidate=preview_existing_grid_orientation(
+                &candidate,edit.target.clone(),before,after
+            )?.patched_json;
+        }
+    }
+    Ok(GridCoordinateDraft{
+        patched_json:candidate,changed:true,
+        untouched_bytes_preserved:true,
+        writer_authorized:false,export_authorized:false
+    })
+}
+
 /// One optimistic-concurrency checked change to an existing GridObject.
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub struct GridCoordinateEdit {
@@ -905,6 +979,80 @@ mod tests {
         assert!(!no_op.changed);
         assert_eq!(no_op.patched_json,original);
     }
+    #[test]
+    fn mixed_grid_batch_supports_coordinate_rotation_and_combined_actions(){
+        let original=r#"{"World":{"GridCollection":{
+          "Grids":{"101":{"Objects":{
+            "1":{"ItemID":77,"X":-5,"Y":6,"Orientation":"GridOrientation_Up",
+              "Private":{"X":5,"Y":6},"Opaque":2.00e+1},
+            "2":{"ItemID":77,"X":11,"Y":12,"Orientation":"GridOrientation_Right"}
+          }}},
+          "DiffGrids":{"102":{"ModifiedObjects":{
+            "6":{"ItemID":88,"X":0,"Y":-9,"Orientation":"GridOrientation_Left",
+                 "State":{"Rotation":"original"}}
+          },"RemovedObjects":[5]}}
+        }},"Future":"\u3053"}"#;
+        let full=|id:&str|GridCoordinateTarget{kind:GridObjectKind::Full,
+            grid_id:"101".into(),object_id:id.into(),item_id:77};
+        let diff=GridCoordinateTarget{kind:GridObjectKind::DiffModified,
+            grid_id:"102".into(),object_id:"6".into(),item_id:88};
+        let edits=vec![
+            GridMixedEdit{target:full("1"),expected:(-5,6),
+                position:Some((20,-30)),orientation:None},
+            GridMixedEdit{target:full("2"),expected:(11,12),
+                position:None,
+                orientation:Some(("GridOrientation_Right".into(),
+                    "GridOrientation_Down".into()))},
+            GridMixedEdit{target:diff,expected:(0,-9),
+                position:Some((-80,3)),
+                orientation:Some(("GridOrientation_Left".into(),
+                    "GridOrientation_Up".into()))}
+        ];
+        let result=preview_existing_grid_mixed_batch(original,&edits).unwrap();
+        let expected=original
+            .replacen(r#""X":-5,"Y":6"#,r#""X":20,"Y":-30"#,1)
+            .replacen(r#""Orientation":"GridOrientation_Right""#,
+                     r#""Orientation":"GridOrientation_Down""#,1)
+            .replacen(r#""X":0,"Y":-9"#,r#""X":-80,"Y":3"#,1)
+            .replacen(r#""Orientation":"GridOrientation_Left""#,
+                     r#""Orientation":"GridOrientation_Up""#,1);
+        assert_eq!(result.patched_json,expected);
+        assert!(!result.writer_authorized&&!result.export_authorized);
+        assert!(result.untouched_bytes_preserved);
+        assert!(result.patched_json.contains(r#""Opaque":2.00e+1"#));
+        assert!(result.patched_json.contains(r#""Future":"\u3053""#));
+        let mut stale=edits.clone();
+        stale[2].orientation=Some((
+            "GridOrientation_Down".into(),"GridOrientation_Up".into()));
+        assert_eq!(preview_existing_grid_mixed_batch(original,&stale).err(),
+            Some(PatchError::OrientationMismatch));
+        let mut stale_coord=edits.clone();stale_coord[1].expected.1=99;
+        assert_eq!(preview_existing_grid_mixed_batch(original,&stale_coord).err(),
+            Some(PatchError::CoordinateMismatch));
+        let mut stale_item=edits.clone();stale_item[0].target.item_id=123;
+        assert_eq!(preview_existing_grid_mixed_batch(original,&stale_item).err(),
+            Some(PatchError::ItemMismatch));
+        let mut repeated=edits.clone();repeated.push(edits[0].clone());
+        assert_eq!(preview_existing_grid_mixed_batch(original,&repeated).err(),
+            Some(PatchError::AmbiguousTarget));
+        let mut no_change=edits.clone();no_change[1].orientation=None;
+        assert_eq!(preview_existing_grid_mixed_batch(original,&no_change).err(),
+            Some(PatchError::AmbiguousTarget));
+        let mut no_movement=edits.clone();no_movement[0].position=Some((-5,6));
+        assert_eq!(preview_existing_grid_mixed_batch(original,&no_movement).err(),
+            Some(PatchError::InvalidTarget));
+        let mut bad_orientation=edits.clone();
+        bad_orientation[2].orientation=Some((
+            "GridOrientation_Left".into(),"GridOrientation_Unknown".into()));
+        assert_eq!(preview_existing_grid_mixed_batch(original,&bad_orientation).err(),
+            Some(PatchError::InvalidTarget));
+        let duplicate=original.replacen(r#""X":-5"#,r#""X":-5,"\u0058":-5"#,1);
+        assert_eq!(preview_existing_grid_mixed_batch(&duplicate,&edits).err(),
+            Some(PatchError::DuplicateKey));
+        assert_eq!(preview_existing_grid_mixed_batch(original,&[]).err(),
+            Some(PatchError::InvalidTarget));
+    }
+
     #[test]
     fn existing_grid_transform_atomically_changes_exactly_three_tokens(){
         let source=r#" {"World":{"GridCollection":{"Grids":{"101":{
