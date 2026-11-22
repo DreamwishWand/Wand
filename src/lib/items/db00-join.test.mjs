@@ -136,3 +136,54 @@ test('DB-00 retains direct source CollectionSubMenu labels without asserting act
     {...menus,getDirectListingsBatch:async()=>[]}),
     /COLLECTION_BATCH_MISMATCH/);
 });
+
+test('DB-00 exposes source predicate matches while keeping game UI category/world/DLC unknown',async()=>{
+  const existing={...record,itemId:40000047,nativeCategory:'Furniture'};
+  const current={...client,source:{...source,sourceItemsSha256:sha},
+    getCategory:async category=>category==='Furniture'?[existing]:[]};
+  const candidate={
+    setId:2120000024,groupIndex:0,nativeCategory:'Furniture',
+    sourceSetItemId:2040000009,
+    universeTagId:2000500001,universeTagKey:'Mickey',
+    rule:'source_item_set_disney_universe_tag_equals_collection_filter',
+    sourcePredicateMatched:true,gameUiMembershipVerified:false,
+    gameUiVisibilityVerified:false,
+  };
+  const universe={
+    source:{gameVersion:'1.26.2',sourceItemsSha256:sha,sourceDefinitionCount:3,
+      sourceSqliteSha256:'e'.repeat(64),
+      sourceIl2cppDumpSha256:'f'.repeat(64)},
+    getItems:async ids=>ids.map(()=>[candidate]),
+  };
+  const result=await createDb01Db00Patch(
+    current,target,undefined,undefined,undefined,universe);
+  const row=result.patch.items[0];
+  assert.equal(row.category,null);
+  assert.equal(row.subcategory,null);
+  assert.deepEqual(row.worlds,[]);
+  assert.deepEqual(row.contentIds,[]);
+  assert.deepEqual(row.universes,[]);
+  assert.equal(result.publishable,false);
+  assert.equal(result.sourceCollectionUniversePredicateCandidatesAdded,1);
+  assert.deepEqual(row.attributes.gameOriginalCollectionUniversePredicateMatches[0],{
+    collectionSetId:2120000024,groupIndex:0,sourceSetItemId:2040000009,
+    universeTagId:2000500001,universeTagKey:'Mickey',
+    rule:'source_item_set_disney_universe_tag_equals_collection_filter',
+    sourcePredicateMatched:true,gameUiMembershipVerified:false,
+    gameUiVisibilityVerified:false,
+  });
+  assert.equal(result.patch.sources[1].sha256,'e'.repeat(64));
+  assert.equal(result.patch.sources[2].sha256,'f'.repeat(64));
+  await assert.rejects(createDb01Db00Patch(current,target,
+    undefined,undefined,undefined,
+    {...universe,source:{...universe.source,gameVersion:'1.25.0'}}),
+    /UNIVERSE_PREDICATE_SOURCE_MISMATCH/);
+  await assert.rejects(createDb01Db00Patch(current,target,
+    undefined,undefined,undefined,
+    {...universe,getItems:async()=>[]}),
+    /UNIVERSE_PREDICATE_BATCH_MISMATCH/);
+  await assert.rejects(createDb01Db00Patch(current,target,
+    undefined,undefined,undefined,
+    {...universe,getItems:async()=>[[{...candidate,nativeCategory:'Clothing'}]]}),
+    /UNIVERSE_PREDICATE_ITEM_MISMATCH/);
+});
