@@ -1,3 +1,5 @@
+export {createCleanSaveRegression,SAVE_CLEAN_REGRESSION_CONTRACT} from './clean-regression.mjs';
+export type {CleanSaveRegression,CleanRegressionReference,CleanRegressionResult,CleanRegressionStatus} from './clean-regression.mjs';
 export {getEditorReadset,inspectEditorReadset,SAVE_EDITOR_READSET_CONTRACT} from './editor-readset.mjs';
 export type {EditorReadsetDomain,EditorReadsetManifest,EditorReadsetRule,EditorReadsetFieldObservation,EditorReadsetDomainObservation,EditorReadsetObservation} from './editor-readset.mjs';
 export {createCleanSaveBaseline,getCleanSaveBaselineRules,SAVE_CLEAN_BASELINE_CONTRACT} from './clean-baseline.mjs';
