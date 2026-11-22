@@ -217,11 +217,12 @@ function buildRewardIndex(snapshot:unknown,integrity:'source_structure_only'|'pi
   for(const season of raw.seasons){
     const event=starpathCalendar.find(e=>e.sourceSeasonId===season.id);
     check(event&&typeof event.id==='string'&&!events.has(event.id),'INVALID_EVENT_ID');
+    const eventId=eventId;
     check(typeof season.currencyName==='string'&&season.currencyName.length>0,'INVALID_TOKEN_CURRENCY');
     const premiumCurrency=canonicalItemId(season.premiumPrice.itemId);
     check(Number.isSafeInteger(season.premiumPrice.amount)&&season.premiumPrice.amount>0,'INVALID_PREMIUM_PRICE');
     const summary=freeze({
-      id:season.id,eventId:event.id,title:season.title,
+      id:season.id,eventId:eventId,title:season.title,
       definitionVersion:season.definitionVersion,currencyName:season.currencyName,
       startUtc:season.startUtc,taskEndUtcExclusive:season.finishUtcExclusive,
       endUtcExclusive:season.endUtcExclusive,
@@ -245,7 +246,7 @@ function buildRewardIndex(snapshot:unknown,integrity:'source_structure_only'|'pi
         check(!occurrenceIds.has(occurrenceId),'DUPLICATE_REWARD_SLOT');
         occurrenceIds.add(occurrenceId);
         const occurrence:GuideRewardOccurrence=freeze({
-          occurrenceId,seasonId:season.id,eventId:event.id,section,page,slot:i+1,
+          occurrenceId,seasonId:season.id,eventId:eventId,section,page,slot:i+1,
           itemId:r.itemId,amount:r.amount,premium:r.premium,bonus:r.bonus,
           recurrent:r.recurrent,
           ...(r.price===undefined?{}:{price:r.price}),
@@ -257,8 +258,8 @@ function buildRewardIndex(snapshot:unknown,integrity:'source_structure_only'|'pi
           currencyConversionPage:meta?.currencyConversionPage===true
         });
         occurrences.push(occurrence);
-        relation(r.itemId,season.id,event.id,'configured_reward',occurrence);
-        if(r.alternateItemId)relation(r.alternateItemId,season.id,event.id,
+        relation(r.itemId,season.id,eventId,'configured_reward',occurrence);
+        if(r.alternateItemId)relation(r.alternateItemId,season.id,eventId,
           'vault_alternative_candidate',occurrence);
         return occurrence;
       });
@@ -273,7 +274,7 @@ function buildRewardIndex(snapshot:unknown,integrity:'source_structure_only'|'pi
     season.rewardPages.forEach(page=>addGroup('normal',page.page,page.rewards,page));
     season.bonusPages.forEach(page=>addGroup('bonus',page.page,page.rewards,page));
     addGroup('vault',null,season.vaultRewards);
-    relation(premiumCurrency,season.id,event.id,'premium_access_currency',null);
+    relation(premiumCurrency,season.id,eventId,'premium_access_currency',null);
     seasonGroups.set(season.id,freeze(groups));
     seasonRewards.set(season.id,freeze(groups.flatMap(group=>group.rewards)));
   }
