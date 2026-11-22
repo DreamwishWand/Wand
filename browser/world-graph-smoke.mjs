@@ -38,7 +38,8 @@ function syntheticTerrainZip(){
     })),
     layouts:layouts.map(([layoutId,gridIdNative,gridDataPath])=>({
       layoutId,layoutKind:'nativeGridCollection',defaultObjectCount:1,
-      nativeGridEntries:[{gridIdNative,gridDataPath,defaultObjectCount:1}]
+      nativeGridEntries:[{gridIdNative,gridDataPath,tessellationFactor:1,
+        defaultObjectCount:1}]
     })),
     layoutObjects:layouts.map(([layoutId,gridIdNative],i)=>({
       layoutObjectId:layoutId+'#grid='+gridIdNative+'#object=1',
