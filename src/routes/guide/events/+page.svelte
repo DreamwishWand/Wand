@@ -22,6 +22,8 @@
     type EventQuestNameSearch} from '$lib/guide/event-quest-name-search.ts';
   import {loadPublicEventDutyLinks,DB03_EVENT_DUTY_FILE,
     type PublicEventDutyIndex} from '$lib/guide/public-event-duty-links.ts';
+  import {loadPublicEventSceneLinks,DB03_EVENT_SCENE_FILE,
+    type PublicEventSceneIndex} from '$lib/guide/public-event-scene-links.ts';
 
   type Filter='all'|'mini_event'|'floating_festival'|'default_friendship';
   let source:PublicEventFriendshipRewards|null=null;
@@ -31,6 +33,7 @@
   let eventQuestLinks:PublicEventQuestIndex|null=null;
   let questNameSearch:EventQuestNameSearch|null=null;
   let eventDutyLinks:PublicEventDutyIndex|null=null;
+  let eventSceneLinks:PublicEventSceneIndex|null=null;
   let loading=true;
   let error='';
   let labelError=false;
@@ -75,7 +78,8 @@
     language:GuideRewardLocale,availableNames:EventRewardItemLabelIndex|null,
     publishedRefresh:PublicEventRewardNameRefresh|null,
     dutyIndex:PublicEventDutyIndex|null,
-    questSearch:EventQuestNameSearch|null
+    questSearch:EventQuestNameSearch|null,
+    sceneIndex:PublicEventSceneIndex|null
   ):NativeEventDefinition[]{
     const words=search.normalize('NFKC').trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
     return events.filter(event=>{
@@ -89,12 +93,14 @@
       ]),...(event.kind==='mini_event'?
         (dutyIndex?.getEventDuties(event.id).map(link=>link.dutyId)??[]):[]),
         ...(event.kind==='mini_event'?
-          (questSearch?.getEventSearchTerms(event.id,language)??[]):[])
+          (questSearch?.getEventSearchTerms(event.id,language)??[]):[]),
+        ...(event.kind==='floating_festival'?
+          (sceneIndex?.getFestivalScenes(event.id).map(link=>link.sceneId)??[]):[])
       ].join(' ').normalize('NFKC').toLocaleLowerCase();
       return words.every(word=>terms.includes(word));
     });
   }
-  $: visible=filterEvents(source?.events??[],category,query,locale,labels,refreshedNames,eventDutyLinks,questNameSearch);
+  $: visible=filterEvents(source?.events??[],category,query,locale,labels,refreshedNames,eventDutyLinks,questNameSearch,eventSceneLinks);
   $: selected=visible.find(event=>event.id===selectedKey)??visible[0]??null;
   $: eventQuests=selected&&eventQuestLinks?eventQuestLinks.getEventQuests(selected.id):[];
   $: selectedRewards=selected?.rewards.filter(row=>
@@ -102,8 +108,9 @@
   function clearItemFocus(){
     highlightItem='';
     const url=new URL(window.location.href);
-    if(url.searchParams.has('item')){
+    if(url.searchParams.has('item')||url.searchParams.has('scene')){
       url.searchParams.delete('item');
+      url.searchParams.delete('scene');
       window.history.replaceState(window.history.state,'',url);
     }
   }
@@ -136,15 +143,38 @@
       // Event and reward browsing is independent of optional duty-ID search.
     }
   }
+  async function loadEventScenes(eventSource:PublicEventFriendshipRewards){
+    try{
+      const links=await loadPublicEventSceneLinks(eventSource,
+        `${root}${DB03_EVENT_SCENE_FILE}`);
+      if(source!==eventSource)return;
+      eventSceneLinks=links;
+      const params=new URLSearchParams(window.location.search);
+      const incoming=params.getAll('scene');
+      // Only source-known Scene IDs may drive a deep link. Never override
+      // a user's search entered while the optional source was loading.
+      if(incoming.length===1&&!params.has('item')&&!params.has('event')&&!query){
+        const matches=links.getSceneFestivals(incoming[0]);
+        if(matches.length){
+          category='floating_festival';
+          query=incoming[0];
+          selectedKey=matches[0].festivalId;
+        }
+      }
+    }catch{
+      // Optional scene cross-navigation; source events/rewards still work.
+    }
+  }
   async function load(){
     loading=true;error='';labelError=false;labels=null;
     refreshedNames=null;questCatalogue=null;eventQuestLinks=null;questNameSearch=null;
-    eventDutyLinks=null;
+    eventDutyLinks=null;eventSceneLinks=null;
     try{
       const read=await loadPublicEventFriendshipRewards(`${root}${DB03_EVENT_FRIENDSHIP_REWARD_FILE}`);
       source=read;
       void loadEventQuestSources(read);
       void loadEventDuties(read);
+      void loadEventScenes(read);
       const params=new URLSearchParams(window.location.search);
       const focused=resolveEventRewardItemDestination(read,params.get('item'));
       if(focused){
