@@ -5,7 +5,7 @@
  */
 import { loadCurrentGameDatabase } from './client.ts';
 import { loadCollectionRuntime } from '../collection/catalog.mjs';
-import { canonicalId, validateSnapshot, legacyItem, SNAPSHOT_SCHEMA } from './model.mjs';
+import { canonicalId, validateSnapshot, legacyItem, SNAPSHOT_SCHEMA } from './model.ts';
 
 export const SHARED_DB_CONTRACT = 'wand.game-db.shared@1' as const;
 export const FACT_OVERLAY_SCHEMA = 'wand.game-db.fact-overlay@1' as const;
