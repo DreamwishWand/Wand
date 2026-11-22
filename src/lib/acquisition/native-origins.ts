@@ -8,6 +8,11 @@
 import type {
   ItemOrigin, OriginKind, OriginProvenance, NativeOriginDetails
 } from './origins.ts';
+import {
+  loadPrivateSrc02BrowserBundle,
+  CURRENT_STEAM_1262_CONDITION_SHA256,
+  type Src02IndependentPin
+} from './private-browser-bundle.mjs';
 
 const SRC02_MANIFEST_SHA='ec1efd589dd5390f11f5a99411bcf3f1c6bc34309ddfa68e51589c078601f31c';
 const SRC02_CONTRACT='wand.src02.private-browser-bundle@1';
@@ -20,6 +25,29 @@ const SOURCE:OriginProvenance=Object.freeze({
   sourceUrl:'/private/src-02-acquisition/r5',
   checkedOn:'2026-11-21',gameVersion:'1.26.2',sha256:SRC02_MANIFEST_SHA
 });
+const STRUCTURAL_SOURCE:OriginProvenance=Object.freeze({
+  ...SOURCE,sourceId:'src02:structure-only:r5',
+  kind:'unhashed_structural_candidate',sha256:null
+});
+/** Only admission through the owner-local SHA-pinned loader grants this brand. */
+const VERIFIED_BUNDLES=new WeakSet<object>();
+/** Never fetch or publish original game files: caller supplies local archive bytes. */
+export async function loadVerifiedSrc02OriginReader(
+  archive:Uint8Array,trusted:Src02IndependentPin
+):Promise<VerifiedSrc02OriginReader>{
+  assert(trusted?.manifestSha256===SRC02_MANIFEST_SHA &&
+    trusted.currentConditionSha256===CURRENT_STEAM_1262_CONDITION_SHA256,
+    'EXACT_R5_TRUST_REQUIRED');
+  const reader=await loadPrivateSrc02BrowserBundle(archive,trusted);
+  assert(reader.manifestSha256===SRC02_MANIFEST_SHA &&
+    reader.counts?.acquisitions===4567 &&
+    reader.counts?.recipes===1943 &&
+    reader.counts?.shopOffersVerified===0 &&
+    reader.counts?.linkedItemIds===3342,
+    'SOURCE_R5_CENSUS');
+  VERIFIED_BUNDLES.add(reader);
+  return reader;
+}
 
 export interface VerifiedSrc02OriginReader {
   readonly contract:string;
@@ -195,9 +223,10 @@ function stallDetails(stall:Data,slot:Data|null):NativeOriginDetails{
  * preserving fishing/mining area codes and seed/crop/timebending facts.
  * Static stall candidate slots never masquerade as current offers.
  */
-export function projectVerifiedSrc02Origins(
+function projectSrc02(
   bundle:VerifiedSrc02OriginReader,
-  itemIds:readonly (number|string)[]
+  itemIds:readonly (number|string)[],
+  attested:boolean
 ):readonly ItemOrigin[]{
   if(!bundle||bundle.contract!==SRC02_CONTRACT||
     bundle.manifestSha256!==SRC02_MANIFEST_SHA||
@@ -208,8 +237,10 @@ export function projectVerifiedSrc02Origins(
     bundle.source?.platform!=='Steam'||bundle.source?.gameVersion!=='1.26.2'||
     typeof bundle.getItem!=='function')
     throw new TypeError('DB02_NATIVE_ORIGINS_VERIFIED_PRIVATE_R5_REQUIRED');
+  if(attested)assert(VERIFIED_BUNDLES.has(bundle),'PINNED_SOURCE_REQUIRED');
   assert(Array.isArray(itemIds)&&itemIds.length<=MAX_ITEMS,'ID_BATCH_LIMIT');
   const keys=[...new Set(itemIds.map(id))];
+  const provenance=attested?SOURCE:STRUCTURAL_SOURCE;
   const output:ItemOrigin[]=[];
   const unique=new Set<string>();
   function append(originId:string,itemId:string,kind:OriginKind,
@@ -220,11 +251,12 @@ export function projectVerifiedSrc02Origins(
     if(unique.has(key))return;
     unique.add(key);
     output.push(Object.freeze({
-      originId,itemId,kind,routeStatus:status,campaignId:null,
+      originId,itemId,kind,
+      routeStatus:attested?status:'static_candidate_only',campaignId:null,
       name,productId:null,quantity:amount,price:null,accessTier:'not_applicable',
       window:Object.freeze({start:null,endExclusive:null}),
       salePeriods:EMPTY_NUMBER as readonly never[],
-      conditions:Object.freeze([...conditionList]),source:SOURCE,
+      conditions:Object.freeze([...conditionList]),source:provenance,
       ...(nativeDetails===undefined?{}:{nativeDetails}),
       availability:'not_live_verified'
     }));
@@ -300,4 +332,23 @@ export function projectVerifiedSrc02Origins(
     }
   }
   return Object.freeze(output);
+}
+
+/**
+ * Authenticated production entrypoint: only objects returned by the owner-local
+ * r5 SHA loader may expose source-verified native paths. Metadata flags and a
+ * copied SHA string do NOT prove actual source bytes.
+ */
+export function projectVerifiedSrc02Origins(
+  bundle:VerifiedSrc02OriginReader,
+  itemIds:readonly (number|string)[]
+):readonly ItemOrigin[]{
+  return projectSrc02(bundle,itemIds,true);
+}
+/** Structural/fixture projection only; all results remain unverified candidates. */
+export function projectStructuralSrc02Origins(
+  bundle:VerifiedSrc02OriginReader,
+  itemIds:readonly (number|string)[]
+):readonly ItemOrigin[]{
+  return projectSrc02(bundle,itemIds,false);
 }
