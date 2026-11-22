@@ -81,6 +81,8 @@ async function waitForLocalState(page,expected){
     if(expected.item&&(work.entries[expected.item]?.status??null)!==(expected.status??null))return false;
     if(expected.missing!==undefined&&
       Object.values(work.entries).filter(x=>x.status==='missing').length!==expected.missing)return false;
+    if(expected.owned!==undefined&&
+      Object.values(work.entries).filter(x=>x.status==='owned').length!==expected.owned)return false;
     return true;
   },expected,{timeout:25000});
 }
@@ -303,33 +305,31 @@ try{
   page.once('dialog',dialog=>void dialog.accept());
   await page.getByRole('group',{name:'Collectionの一括記録'})
     .getByRole('button',{name:'全件を未所持'}).click();
-  await page.waitForFunction(count=>{
-    const text=document.querySelector('.summary-strip')?.querySelectorAll('strong')[2]?.textContent?.replaceAll(',','').trim();
-    return text===String(count);
-  },matchingCount,{timeout:20000});
+  await waitForLocalState(page,{missing:matchingCount});
   assert.equal(await page.getByRole('button',{name:'複数選択'}).count(),1);
   await page.getByRole('button',{name:'複数選択'}).click();
   await page.locator('.item-card-body').first().click();
   await page.getByRole('group',{name:'Collectionの一括記録'}).getByRole('button',{name:'所持 / 解放',exact:true}).click();
-  await page.waitForFunction(()=>document.querySelector('.summary-strip')?.textContent?.includes('1 / 13,202'));
+  await waitForLocalState(page,{owned:1});
   const restoreChooser=page.waitForEvent('filechooser');
-  await page.getByRole('button',{name:'復元'}).click();
+  await page.getByRole('button',{name:'Collectionバックアップ復元'}).click();
   const chooser=await restoreChooser;
   page.once('dialog',dialog=>void dialog.accept());
   await chooser.setFiles({
     name:'legacy-collection-backup.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(seed))
   });
-  await page.waitForFunction(()=>document.querySelector('.summary-strip')?.textContent?.includes('1 / 13,202'));
+  await waitForLocalState(page,{item:'40005160',status:'owned'});
   const recoveredPromise=page.waitForEvent('download');
   await page.getByRole('button',{name:'バックアップ出力'}).click();
   const recovered=JSON.parse(await readFile(await (await recoveredPromise).path(),'utf8'));
   assert.deepEqual(recovered,seed);
   page.once('dialog',dialog=>void dialog.accept('Second'));
-  await page.getByRole('button',{name:'＋ 新規'}).click();
+  await page.locator('.collection-record-menu summary').click();
+  await page.getByRole('group',{name:'ローカル記録の管理'}).getByRole('button',{name:'新規'}).click();
   await page.waitForFunction(()=>document.querySelectorAll('select[aria-label="ローカル記録を選択"] option').length===2);
-  assert.equal((await page.locator('.summary-strip').innerText()).includes('0 / 13,202'),true);
+  await waitForLocalState(page,{item:'40005160',status:null});
   await page.getByRole('combobox',{name:'ローカル記録を選択'}).selectOption('local-1');
-  await page.waitForFunction(()=>document.querySelector('.summary-strip')?.textContent?.includes('1 / 13,202'));
+  await waitForLocalState(page,{active:'local-1',item:'40005160',status:'owned'});
   await page.setViewportSize({width:390,height:844});
   const byName=page.getByRole('searchbox',{name:/8言語/});
   await byName.fill('Glass Shoe');
