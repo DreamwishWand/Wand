@@ -73,7 +73,7 @@
   $: selectedPointCount = selectedCell
     ? markersByCell.get(`${selectedCell.x}:${selectedCell.y}`) ?? 0 : 0;
   $: selectedFloorValue = selectedCell
-    ? cells.find(c => c.x === selectedCell.x && c.y === selectedCell.y)?.nativeFloorValue
+    ? cells.find(c => c.x === selectedCell?.x && c.y === selectedCell?.y)?.nativeFloorValue
     : undefined;
 
   // Deterministic source-value palette for inspection, NOT gameplay terrain
