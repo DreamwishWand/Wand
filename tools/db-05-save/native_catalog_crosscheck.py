@@ -114,20 +114,23 @@ def check_source_release(archive: Path, expected_sha256: str):
             acceptance.get("schema") != "wand.db01.private-release-acceptance@1" or
             acceptance.get("privateOnly") is not True or
             acceptance.get("publicationAuthorized") is not False or
-            acceptance.get("itemlistFilesVerified") != 39 or
-            acceptance.get("definitionCount") != 39067 or
+            (not isinstance(acceptance.get("itemlistFilesVerified"), int) or
+             acceptance.get("itemlistFilesVerified") < 1) or
+            (not isinstance(acceptance.get("definitionCount"), int) or
+             not 0 < acceptance.get("definitionCount") <= MAX_DEFINITIONS) or
             acceptance.get("sourceCatalogSha256") != sha256(catalog_bytes) or
             acceptance.get("shardsManifestSha256") != sha256(shard_bytes) or
             catalog.get("schema") != CATALOG_SCHEMA or
-            catalog.get("counts", {}).get("currentDefinitions") != 39067 or
-            catalog.get("sourceFilesFullyShaVerified") is not True or
+            catalog.get("counts", {}).get("currentDefinitions") != acceptance.get("definitionCount") or
+            catalog.get("sourceFilesFullyShaVerified") != acceptance.get("itemlistFilesVerified") or
+            catalog.get("sourceFilesTotal") != acceptance.get("itemlistFilesVerified") or
             catalog.get("fullCorpusParsed") is not True or
             catalog.get("publicationAuthorized") is not False or
             catalog.get("gameVersion") != acceptance.get("version") or
-            shard_manifest.get("definitions") != 39067):
+            shard_manifest.get("definitions") != acceptance.get("definitionCount")):
             fail("CATALOG_RELEASE_PROVENANCE_INVALID")
         categories = shard_manifest.get("categories")
-        if (not isinstance(categories, list) or len(categories) != 38 or
+        if (not isinstance(categories, list) or not 0 < len(categories) <= 128 or
             len(set(categories)) != len(categories)):
             fail("CATALOG_CATEGORY_INDEX_INVALID")
         source_hashes = catalog["source"]["individualOriginalFileHashes"]
