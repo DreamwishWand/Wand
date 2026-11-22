@@ -6,6 +6,7 @@
     derivePublicGuideCharacters,sourceCharacterName,filterPublicGuideCharacters,
     findPublicCharacterByLink
   } from '$lib/guide/public-characters.mjs';
+  import {observeGuideListEnd} from '$lib/guide/auto-load.mjs';
 
   const LANG:Record<string,string>={ja:'日本語',en:'English',fr:'Français',it:'Italiano',
     de:'Deutsch','es-ES':'Español','zh-CN':'简体中文','pt-BR':'Português'};
@@ -17,6 +18,7 @@
   let query='';
   let mode:'all'|'withQuests'|'withoutQuests'='all';
   let limit=48;
+  let pagingRevision=0;
   $: filtered=directory?filterPublicGuideCharacters(directory,{
     query:query.slice(0,120),locale,mode,limit
   }):{total:0,rows:[]};
@@ -24,6 +26,12 @@
     (a.names?.[locale]||a.names?.en||a.id).localeCompare(
       b.names?.[locale]||b.names?.en||b.id,locale==='ja'?'ja':'en')):[];
 
+  function resetPaging(){limit=48;pagingRevision++;}
+  function observeMoreCharacters(node:HTMLElement){
+    return observeGuideListEnd(node,(showAll:boolean)=>{
+      if(filtered.total>limit)limit=showAll?filtered.total:Math.min(limit+48,filtered.total);
+    });
+  }
   function questName(quest:any){
     return formatPublicGuideText(quest.names?.[locale]||quest.names?.en||quest.id);
   }
@@ -85,17 +93,17 @@
     </div>
     <div class="controls">
       <label>名前・IDで検索
-        <input type="search" aria-label="キャラクター名称を検索" bind:value={query} maxlength="120" on:input={()=>limit=48} placeholder="日本語・English・ID" />
+        <input type="search" aria-label="キャラクター名称を検索" bind:value={query} maxlength="120" on:input={resetPaging} placeholder="日本語・English・ID" />
       </label>
       <label>表示言語
-        <select aria-label="キャラクター名称の表示言語" bind:value={locale} on:change={()=>limit=48}>
+        <select aria-label="キャラクター名称の表示言語" bind:value={locale} on:change={resetPaging}>
           {#each PUBLIC_GUIDE_LOCALES as language}
             <option value={language}>{LANG[language]}</option>
           {/each}
         </select>
       </label>
       <label>クエスト関連付け
-        <select aria-label="関連クエストで絞り込み" bind:value={mode} on:change={()=>limit=48}>
+        <select aria-label="関連クエストで絞り込み" bind:value={mode} on:change={resetPaging}>
           <option value="all">すべて</option>
           <option value="withQuests">あり</option>
           <option value="withoutQuests">なし（この索引内）</option>
@@ -114,7 +122,9 @@
         {/each}
         {#if filtered.total===0}<p class="empty">一致する名称はありません。</p>{/if}
         {#if filtered.total>limit}
-          <button class="more" on:click={()=>limit+=48}>さらに表示（残り {filtered.total-limit} 件）</button>
+          {#key `${pagingRevision}:${limit}`}
+            <div class="autoload-sentinel" use:observeMoreCharacters aria-hidden="true"></div>
+          {/key}
         {/if}
       </section>
       <section class="details" aria-label="関連クエスト">
@@ -170,7 +180,8 @@
   .person{display:flex;width:100%;flex-direction:column;align-items:start;gap:5px;padding:13px;border:1px solid transparent;border-radius:9px;color:#fff;background:transparent;text-align:left;overflow-wrap:anywhere}
   .person:hover,.person.active{background:#31243f;border-color:#735b8b}
   .person strong{font-size:14px}.person small{font-size:11px;color:#af9ebd}
-  .more,.retry{width:100%;padding:12px;background:#302440;border:1px solid #755b92;border-radius:9px;color:#fff}
+  .retry{width:100%;padding:12px;background:#302440;border:1px solid #755b92;border-radius:9px;color:#fff}
+  .autoload-sentinel{height:1px;width:100%;pointer-events:none}
   .details{position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto}
   .detail-head{border-bottom:1px solid #493955;padding-bottom:15px}
   .detail-head h2{font-size:22px;margin:9px 0;overflow-wrap:anywhere}
