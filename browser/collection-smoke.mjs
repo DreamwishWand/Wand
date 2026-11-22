@@ -121,7 +121,7 @@ try{
   const browserErrors=[];
   const nativeWasmLoads=[];
   page.on('response',response=>{
-    if(response.url().includes('ddv_p1g_codec_bg.wasm'))
+    if(response.url().includes('ddv_p1g_codec_bg'))
       nativeWasmLoads.push({url:response.url(),status:response.status()});
   });
   page.on('pageerror',error=>browserErrors.push(String(error)));
