@@ -417,11 +417,11 @@ export function createDb01OriginalSourceMenuQuery(
   }
   function verifiedQuery(query:Db01OriginalSourceMenuQuery){
     check(query!==null&&typeof query==='object'&&!Array.isArray(query),'QUERY');
-    const locale=query.locale??'en';
+    const locale=query.locale===undefined?'en':query.locale;
     check(typeof locale==='string'&&
       (DB01_LOCALES as readonly string[]).includes(locale),
       'QUERY_LOCALE');
-    const rawText=query.searchText??'';
+    const rawText=query.searchText===undefined?'':query.searchText;
     check(typeof rawText==='string'&&rawText.trim().length<=150&&
       ![...rawText].some(ch=>ch.charCodeAt(0)<32||ch.charCodeAt(0)===127),
       'QUERY_SEARCH_TEXT');
