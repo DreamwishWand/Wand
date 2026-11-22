@@ -85,7 +85,7 @@ test('invalid formula IDs, duplicates, caller claims and unknown shapes fail clo
     undefined,null,{},input([0]),input([1,1]),input([2147483648]),
     input([1],[def(2)]),input([1],[def(1),def(1)]),
     input([1],[def(1,0,true)]),input([1],[def(1,80000000,'true')]),
-    input([1],[def(1,80000000,undefined)]),
+    input([1],[{formulaItemId:1,forCurrencyId:80000000,nativeItemTypeMatches:undefined}]),
     {...input([1]),forCurrencyId:0}
   ])assert.throws(()=>classify(bad),/DB02_NATIVE_SELL_FORMULA_/);
 });
