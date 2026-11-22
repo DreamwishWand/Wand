@@ -3,7 +3,7 @@
  * Forbid adding new handwritten product JS/MJS; generated WASM glue and Node
  * development tools are not product business modules.
  */
-import {readdir} from 'node:fs/promises';
+import {readdir,readFile} from 'node:fs/promises';
 import {resolve,relative,join} from 'node:path';
 const root=resolve(new URL('../..',import.meta.url).pathname);
 const knownLegacy=new Set([
@@ -123,3 +123,40 @@ if(additions.length) {
   console.log('Existing migration debt: '+handwritten.length+'/'+knownLegacy.size+
     ' JS/MJS modules; no new handwritten production JS added.');
 }
+
+
+// The new DB-05 encrypted-file reader must run Rust in a TypeScript Worker.
+// This does not claim that the rest of the existing JS migration debt is gone.
+const readSource=async path=>readFile(join(root,path),'utf8');
+const [diagWorker,diagCore,diagRoute,p1gRust]=await Promise.all([
+  readSource('src/lib/save/save-diagnostics.worker.ts'),
+  readSource('src/lib/save/save-diagnostics-worker-core.mjs'),
+  readSource('src/routes/save/diagnostics/+page.svelte'),
+  readSource('src/lib/save/p1g-read.ts')
+]);
+const rustOnlyChecks=[
+  [diagWorker.includes("from './p1g-read.ts'")&&
+    diagWorker.includes('decodeP1gRustOnly'),
+   'Save Diagnostics Worker must import Rust-only P1G decoder'],
+  [diagWorker.includes('inspectLocalSaveDiagnosticsBytes(')&&
+    diagWorker.includes('decodeP1gRustOnly)'),
+   'Save Diagnostics must inject strict Rust decoder'],
+  [!diagWorker.includes('private-p1g-codec')&&
+   !diagWorker.includes('decodeP1gPackagedProfile'),
+   'Save Diagnostics Worker must not use legacy JS codec'],
+  [diagRoute.includes('save-diagnostics.worker.ts'),
+   'Save Diagnostics UI must launch typed Worker'],
+  [diagCore.includes('decodeEncryptedProfile(bytes)'),
+   'Diagnostic core must use injected Worker decoder'],
+  [p1gRust.includes('export async function decodeP1gRustOnly')&&
+   p1gRust.includes('return decodeP1gRustFirst(source, false)')&&
+   p1gRust.includes('if (!allowLegacyUnsupportedEnvelope)')&&
+   p1gRust.indexOf('if (!allowLegacyUnsupportedEnvelope)')<
+    p1gRust.indexOf("await import('../collection/private-p1g-codec.js')"),
+   'Strict Rust-only policy must reject unsupported ZIP before JS import']
+];
+for(const [ok,reason] of rustOnlyChecks){
+  if(!ok){console.error('ARCHITECTURE_VIOLATION: '+reason);process.exitCode=1;}
+}
+if(!rustOnlyChecks.some(([ok])=>!ok))
+  console.log('Save Diagnostics: typed Worker + Rust-only P1G, no JS fallback.');
