@@ -7,6 +7,8 @@ import {STARPATH_PUBLIC_SHA} from '../guide/public-starpath.mjs';
 import {createGuideStarpathHistory} from '../guide/starpath-history.ts';
 import {hasPinnedPublicQuestAcquisitionEvidence,
   type PublicQuestAcquisitionIndex} from '../guide/public-quest-acquisition.ts';
+import {hasPinnedPublicEventFriendshipEvidence,
+  type PublicEventFriendshipAcquisitionIndex} from '../guide/public-event-friendship-acquisition.ts';
 import {OFFICIAL_CAMPAIGNS} from './official-campaigns.ts';
 import {
   hasPinnedDb03RewardEvidence,
@@ -512,7 +514,8 @@ export async function loadUnifiedAcquisitionOriginDatabase(
   basePath = '',
   nativeItemIds: readonly (string | number)[] = [],
   db03NativeRewards: Db03NativeRewardCandidateIndex | null = null,
-  db03PublicQuestRewards: PublicQuestAcquisitionIndex | null = null
+  db03PublicQuestRewards: PublicQuestAcquisitionIndex | null = null,
+  db03PublicEventFriendship: PublicEventFriendshipAcquisitionIndex | null = null
 ): Promise<OriginDatabase> {
   assert(basePath === '' || (basePath.startsWith('/') && !basePath.includes('..') && !basePath.endsWith('/')), 'BASE_PATH');
   const guide = await loadGuideRewardIndex(
@@ -549,9 +552,32 @@ export async function loadUnifiedAcquisitionOriginDatabase(
       db03PublicQuestRewards.origins.length===395,
       'DB03_PINNED_PUBLIC_QUEST_REWARDS_REQUIRED');
   }
+  if(db03PublicEventFriendship!==null){
+    assert(hasPinnedPublicEventFriendshipEvidence(db03PublicEventFriendship) &&
+      db03PublicEventFriendship.schema==='wand.db03.public-event-friendship-acquisition@1' &&
+      db03PublicEventFriendship.sourceIntegrity==='pinned_original_and_public_sha256' &&
+      db03PublicEventFriendship.coverage.totalCandidates===218 &&
+      db03PublicEventFriendship.coverage.guaranteedGrantsVerified===false &&
+      db03PublicEventFriendship.coverage.liveEventAvailabilityVerified===false &&
+      db03PublicEventFriendship.coverage.characterSpecificFriendshipRewardsVerified===false &&
+      db03PublicEventFriendship.origins.length===218,
+      'DB03_PINNED_PUBLIC_EVENT_FRIENDSHIP_REQUIRED');
+  }
+  // The new public evidence and the already-authenticated owner-local DB-03
+  // reader share original event/<link index> and friendship/<record index>
+  // identities. Keep only one origin per identical native source relation;
+  // if the same identity points at a different Item ID, fail closed.
+  const publicEventRows=db03PublicEventFriendship?.origins??[];
+  const publicSourceByIdentity=new Map(publicEventRows.map(r=>[r.originId,r.itemId]));
+  const privateNonDuplicated=(db03NativeRewards?.origins??[]).filter(r=>{
+    const present=publicSourceByIdentity.get(r.originId);
+    if(present===undefined)return true;
+    assert(present===r.itemId,'PUBLIC_PRIVATE_SOURCE_IDENTITY_CONFLICT');
+    return false;
+  });
   return createAcquisitionOriginDatabase(
-    [...starpath.origins, ...nativeRoutes, ...(db03NativeRewards?.origins??[]),
-      ...(db03PublicQuestRewards?.origins??[])],
+    [...starpath.origins, ...nativeRoutes, ...privateNonDuplicated,
+      ...(db03PublicQuestRewards?.origins??[]), ...publicEventRows],
     [...starpath.campaigns, ...projectHistoricalGuideCampaigns(guide),
       ...OFFICIAL_CAMPAIGNS], native
   );
