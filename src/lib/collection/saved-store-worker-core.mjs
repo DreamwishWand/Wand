@@ -10,8 +10,10 @@ import { projectSavedGridFurnitureReferences } from './saved-grid-furniture-refe
 const staticStallUnavailable = Object.freeze({ getStallStaticCatalog: () => null });
 const MAX_ENCRYPTED_BYTES = 32 * 1024 * 1024;
 
-/** Production Worker injects the Rust/WASM reader. Default remains only
- * for existing Node synthetic codec-parity tests during migration. */
+/**
+ * @param {Uint8Array} ciphertext
+ * @param {(bytes:Uint8Array)=>Promise<{jsonText:string}>} decodeProfile
+ */
 export async function inspectEncryptedSavedStore(
   ciphertext, decodeProfile=decodeP1gPackagedProfile
 ) {
