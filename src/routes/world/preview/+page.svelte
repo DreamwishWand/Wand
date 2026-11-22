@@ -20,7 +20,7 @@
   };
   type RegionCoverage = {
     regionKey: string;
-    villageLayoutCount: number; areaReferenceCount: number;
+    villageLayoutCount: number; realmLayoutCount: number; areaReferenceCount: number;
     resolvedAreaReferenceCount: number; missingAreaLayoutReferenceCount: number;
     nativeGridReferenceCount: number; presentNativeGridReferenceCount: number;
     missingNativeGridReferenceCount: number; sourceDefaultAnchorCount: number;
@@ -291,7 +291,7 @@
     <div class="world-stats">
       <div><small>原本内の宣言バージョン</small><strong>{platform} {version}</strong></div>
       <div><small>SHA-256一致</small><strong>{manifestFilesVerified}ファイル</strong></div>
-      <div><small>原本地域とAreaType参照</small><strong>{regionKeys.length}地域 · {regions.reduce((sum, entry) => sum + entry.areaReferenceCount, 0)}件</strong></div>
+      <div><small>原本地域・RealmとAreaType参照</small><strong>{regionKeys.length}地域 · {regions.reduce((sum, entry) => sum + entry.areaReferenceCount, 0)}件</strong></div>
       <div><small>参照可能な原本ビュー</small><strong>{layouts.length}件</strong></div>
       <div><small>配置可否の検証</small><strong>未対応</strong></div>
     </div>
@@ -308,7 +308,7 @@
             {/each}
           </select>
         </label>
-        <label>原本GridCollection / Village Area
+        <label>原本GridCollection / Realm / Village Area
           <select bind:value={selectedViewKey} on:change={changeLayout}>
             {#each filteredLayouts as layout}
               <option value={layout.viewKey}>{layout.label}</option>
@@ -326,8 +326,13 @@
         </label>
       </div>
       {#if selectedRegionCoverage}
-        <p class="note">このZIPに含まれる原本参照：AreaType {selectedRegionCoverage.areaReferenceCount}件
-          （対応レイアウト {selectedRegionCoverage.resolvedAreaReferenceCount}件・未収録 {selectedRegionCoverage.missingAreaLayoutReferenceCount}件）、
+        <p class="note">このZIPに含まれる原本参照：
+          {#if selectedRegionCoverage.realmLayoutCount > 0}
+            Realmレイアウト {selectedRegionCoverage.realmLayoutCount}件、
+          {:else}
+            AreaType {selectedRegionCoverage.areaReferenceCount}件
+            （対応レイアウト {selectedRegionCoverage.resolvedAreaReferenceCount}件・未収録 {selectedRegionCoverage.missingAreaLayoutReferenceCount}件）、
+          {/if}
           グリッド {selectedRegionCoverage.presentNativeGridReferenceCount}/{selectedRegionCoverage.nativeGridReferenceCount}件、
           初期配置アンカー {selectedRegionCoverage.sourceDefaultAnchorCount}件。
           {#if selectedRegionCoverage.separateAreaReferenceCount > 0}
