@@ -181,7 +181,7 @@ try{
 
   await panel.locator('input[placeholder="すべて"]').fill('');
   await sourceScope.selectOption('grid');
-  const gridSearch=panel.locator('input[placeholder="Layoutパス・Grid ID"]');
+  const gridSearch=panel.locator('input[placeholder="GridDataPath・Layoutパス・Grid ID"]');
   await gridSearch.fill('OffGridBuildings');
   await page.waitForFunction(()=>document.querySelectorAll(
     '.graph-panel .graph-select option').length===1);
@@ -191,6 +191,23 @@ try{
   await page.waitForFunction(()=>document.querySelector('.graph-panel .graph-result-head strong')
     ?.textContent?.includes('2個'));
   assert.equal(await panel.locator('tbody tr').count(),1);
+
+  // Exact saved GridDataPath is a candidate lookup, never numeric Save Grid ID.
+  // The source file is synthetic and stays in this local Chromium test.
+  await gridSearch.fill('GridData/OffGridBuildings/Detached.json');
+  await page.waitForFunction(()=>
+    document.querySelector('.graph-panel [role="status"]')
+      ?.textContent?.includes('GridDataPath完全一致'));
+  assert.match(await panel.getByText(/GridDataPath完全一致/).innerText(),
+    /1件の原本Grid参照候補/);
+  assert.equal(await panel.locator('.graph-select option').count(),1);
+  await gridSearch.fill('GridData/OffGridBuildings/NoMatchingSource.json');
+  await page.waitForFunction(()=>
+    document.querySelector('.graph-panel').textContent
+      ?.includes('完全一致するGridDataPathはありません'));
+  assert.match(await panel.getByText(/完全一致するGridDataPathはありません/).innerText(),
+    /セーブファイルが不正という意味ではありません/);
+  await gridSearch.fill('GridData/OffGridBuildings/Detached.json');
 
   await page.setViewportSize({width:390,height:844});
   const mobileLayout=await page.evaluate(()=>{
