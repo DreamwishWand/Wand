@@ -8,15 +8,11 @@
  */
 import { canonicalId } from './model.ts';
 import type {SharedGameDatabase,SharedDbItem} from './integrated.ts';
-import {ORIGIN_SCHEMA,type OriginDatabase,type ItemOrigin} from '../acquisition/origins.ts';
-import {
-  DB03_REWARD_RELATION_CONTRACT,
-  type GuideRewardIndex,type GuideItemRelation
-} from '../guide/reward-relations.ts';
-import {
-  DB04_NATIVE_SCOPE_CLIENT,
-  type Db04NativeItemScopeClient,type Db04NativeItemScopeRow,
-  type Db04WorldTag,type Db04NativeScopePage
+import type {OriginDatabase,ItemOrigin} from '../acquisition/origins.ts';
+import type {GuideRewardIndex,GuideItemRelation} from '../guide/reward-relations.ts';
+import type {
+  Db04NativeItemScopeClient,Db04NativeItemScopeRow,
+  Db04WorldTag,Db04NativeScopePage
 } from '../world/native-item-scope.ts';
 
 export const DB00_SOURCE_JOIN_CONTRACT='wand.game-db.source-join@1' as const;
@@ -100,15 +96,15 @@ export function joinCurrentGameSources(
     db.target.buildId===null&&db.target.sourceSha256===CURRENT_SOURCE_SHA,
     'CURRENT_STEAM_ITEMLIST_REQUIRED');
   const {origins,rewards,nativeScope,nativeScopePins}=options;
-  if(origins)check(origins.schema===ORIGIN_SCHEMA &&
+  if(origins)check(origins.schema==='wand.db02.item-origins@1' &&
     origins.originCoverageComplete===false,'DB02_READER_INVALID');
-  if(rewards)check(rewards.contract===DB03_REWARD_RELATION_CONTRACT &&
+  if(rewards)check(rewards.contract==='wand.db03.reward-relations@1' &&
     rewards.evidence.platform==='Steam'&&rewards.evidence.gameVersion==='1.26.2'&&
     rewards.evidence.integrity==='pinned_public_sha256'&&
     rewards.coverage.currentAvailabilityVerified===false &&
     rewards.coverage.playerProgressIncluded===false,'DB03_SOURCE_NOT_PINNED');
   if(nativeScope){
-    check(nativeScope.contract===DB04_NATIVE_SCOPE_CLIENT &&
+    check(nativeScope.contract==='wand.db04.native-item-scope@1' &&
       nativeScope.source.platform==='Steam' &&
       nativeScope.source.gameVersion==='1.26.2' &&
       nativeScope.source.privateOnly===true &&
