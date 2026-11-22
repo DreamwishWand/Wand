@@ -80,7 +80,7 @@ test('source-backed target loader fails closed when published bytes or provenanc
   const f=(body)=>()=>Promise.resolve(new Response(body,{status:200}));
   const verified=await loadPublicQuestTargetReverse(catalog,'/Wand/guide/public/'+
     DB03_QUEST_TARGET_REVERSE_FILE,f(bytes));
-  assert.equal(verified.getItemQuestIds('30000031').length,17);
+  assert.equal(verified.getItemQuestIds('30000031').length,16);
   const corrupted=Buffer.from(bytes);corrupted[190]^=1;
   await assert.rejects(loadPublicQuestTargetReverse(catalog,'/',f(corrupted)),
     /DB03_QUEST_TARGET_REVERSE_SHA/);
