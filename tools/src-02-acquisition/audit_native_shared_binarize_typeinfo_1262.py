@@ -154,7 +154,7 @@ def verify_original_metadata(dump_raw):
            'DUMP_SHA')
     text=dump_raw.decode('utf-8')
     for owner,name,rva in (*OWNERS,*CLONE_CTORS):
-        pat=r'^public (?:sealed |abstract |static )?class '+re.escape(owner)+r'(?= [:{])'
+        pat=r'^public (?:sealed |abstract |static )?class '+re.escape(owner)+r'(?= [:{/])'
         decl=re.search(pat,text,re.M)
         demand(decl is not None,'OWNER_'+owner)
         end=text.find('\n}\n',decl.end())
