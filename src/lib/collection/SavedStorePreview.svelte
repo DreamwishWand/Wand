@@ -50,9 +50,7 @@
   $: labeledPreview = preview && exactNameOverlay
     ? attachDb01PrivateNames(preview,exactNameOverlay,locale,{allowHistorical:allowPrivateHistorical}) : preview;
   $: collectionRows = collectionPreview ? collectionPreview.items
-    .map((item:any)=>({ ...item, catalog:resolveHistorical(item.itemId) }))
-    .filter((item:any)=>!collectionQuery.trim() || String(item.itemId).includes(collectionQuery.trim()) ||
-      (item.catalog?.label??'').toLocaleLowerCase().includes(collectionQuery.trim().toLocaleLowerCase())) : [];
+    .filter((item:any)=>!collectionQuery.trim() || String(item.itemId).includes(collectionQuery.trim())) : [];
   $: shown = labeledPreview ? labeledPreview.items.filter((item:any)=>
     !query.trim() || String(item.itemId).includes(query.trim()) ||
     (item.currentExactName??'').toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()) ||
@@ -291,17 +289,18 @@
         </div>
         {#if collectionPreview.items.length}
           <div class="store-controls">
-            <input type="search" aria-label="セーブ内のCollection IDまたは参照名で検索"
-              placeholder="Item ID / カタログ名" bind:value={collectionQuery} on:input={()=>collectionLimit=48}/>
+            <input type="search" aria-label="セーブ内のCollection IDを検索"
+              placeholder="Item ID" bind:value={collectionQuery} on:input={()=>collectionLimit=48}/>
           </div>
           <div class="store-items">
             {#each collectionRows.slice(0,collectionLimit) as item (item.itemId)}
+              {@const catalog=resolveHistorical(item.itemId)}
               <div class="store-item">
                 <div class="store-detail">
-                  <strong>{item.catalog?.label??`Item ID ${item.itemId}`}</strong>
+                  <strong>{catalog?.label??`Item ID ${item.itemId}`}</strong>
                   <small>Item ID {item.itemId} · 参照 {item.referenceCount}件</small>
-                  <small>{item.catalog?'公開カタログの同一ID（セーブ版一致は未検証）':'公開カタログに未収録のID'}</small>
-                  {#if item.catalog}
+                  <small>{catalog?'公開カタログの同一ID（セーブ版一致は未検証）':'公開カタログに未収録のID'}</small>
+                  {#if catalog}
                     <button type="button" class="store-clear" on:click={()=>dispatch('lookupItem',item.itemId)}>Collectionで探す</button>
                   {/if}
                 </div>
