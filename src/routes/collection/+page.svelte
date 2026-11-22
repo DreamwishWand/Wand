@@ -59,6 +59,7 @@
   let selectedIds:number[]=[];
   let selectedItemId:number|null=null;
   let importInput:HTMLInputElement;
+  let workspaceOptions:HTMLDetailsElement;
   let localCatalogInput:HTMLInputElement;
   let gameImageMap:Record<string,string>={};
   // Ephemeral projection of saved GridObject references. Never put these
@@ -422,53 +423,14 @@
 </svelte:head>
 
 <section class="collection-page">
-  <header class="collection-head">
-    <div>
-      <div class="eyebrow">DREAMWISH WAND / DATABASE</div>
-      <h1>Collection<span class="title-star">✦</span></h1>
-      <p class="subtitle">アイテム · 収集記録</p>
-    </div>
-    <div class="collection-head-actions">
+  <!-- Global toolbar owns save loading, backup and restore. Inputs stay mounted. -->
+  <input bind:this={localCatalogInput} class="visually-hidden" type="file"
+    accept=".json,application/json" aria-label="Steam v1.26.2のオーナーローカルカタログ"
+    on:change={useOwnerLocalCatalog}/>
+  <input bind:this={importInput} class="visually-hidden" type="file"
+    accept=".json,application/json" aria-label="Collectionバックアップを選択"
+    on:change={restoreBackup}/>
 
-      {#if runtime?.isOwnerLocal || (runtime && runtime.metadata.snapshot!=='steam-1.26.2-native-itemlist-v1')}
-        <button type="button" class="subtle-button" disabled={busy||loading||saveReadInProgress}
-          on:click={()=>runtime?.isOwnerLocal?void usePublicCatalog():localCatalogInput.click()}>
-          {runtime?.isOwnerLocal?'公開データに戻す':'v1.26.2 データをローカルで開く'}
-        </button>
-      {/if}
-      <input bind:this={localCatalogInput} class="visually-hidden" type="file"
-        accept=".json,application/json" aria-label="Steam v1.26.2のオーナーローカルカタログ"
-        on:change={useOwnerLocalCatalog}/>
-      <span class="source-pill">
-        {#if runtime}
-          {runtime.metadata.platform}{#if runtime.metadata.version} · v{runtime.metadata.version}{/if}
-          {#if runtime.isOwnerLocal} · ローカル{/if}
-        {:else}
-          データを確認中
-        {/if}
-      </span>
-    </div>
-  </header>
-
-  {#if runtime?.isOwnerLocal || runtime?.metadata.nameCoverage}
-    <details class="collection-source-details">
-      <summary>Steam v1.26.2 · データ出典</summary>
-      <div class="collection-source-copy">Steam v1.26.2：{overall.total.toLocaleString(locale)} /
-      {(runtime.ownerLocalCoverage??runtime.metadata.nameCoverage)?.itemDefinitions.toLocaleString(locale)}件のItemListデータを表示中。
-      8言語の正式名称を確認済み：
-      {(runtime.ownerLocalCoverage??runtime.metadata.nameCoverage)?.nameVerified.toLocaleString(locale)}件。
-      {#if overall.total===(runtime.ownerLocalCoverage??runtime.metadata.nameCoverage)?.itemDefinitions}
-        名称未確認：
-        {(runtime.ownerLocalCoverage??runtime.metadata.nameCoverage)?.nameUnverified.toLocaleString(locale)}件。
-        名称は推測せず「名称未確認」と表示します。
-      {:else}
-        名称未確認の
-        {(runtime.ownerLocalCoverage??runtime.metadata.nameCoverage)?.nameUnverified.toLocaleString(locale)}件は、この旧版ファイルには含まれません。
-      {/if}
-      大分類のみ原本由来です。詳細カテゴリ・ワールド・ユニバース・セーブ上の所有状態は未検証です。
-      {#if runtime.isOwnerLocal}選択したゲームデータはサーバーへ送信・保存されません。{/if}</div>
-    </details>
-  {/if}
   {#if storeError}
     <div class="error-banner" role="alert">
       {#if storeError==='COLLECTION_STORAGE_CONFLICT'}
@@ -482,43 +444,51 @@
   {/if}
   {#if infoMessage}<div class="info-banner" role="status">{infoMessage}<button type="button" on:click={()=>infoMessage=''} aria-label="通知を閉じる">×</button></div>{/if}
 
-  <section class="personal-bar" aria-label="Personal Collection">
-    <div class="personal-left">
-      <span class="personal-symbol" aria-hidden="true"><WandIcon name="collection" size={25}/></span>
-      <div><strong>My Collection</strong></div>
-      <select aria-label="ローカル記録を選択" value={state.active} on:change={(event)=>changeWorkspace((event.currentTarget as HTMLSelectElement).value)} disabled={Boolean(storeError)||busy||saveReadInProgress}>
-        {#each state.workspaces as work}<option value={work.id}>{work.name}</option>{/each}
-      </select>
-    </div>
-    <div class="personal-actions">
-      <button type="button" title="記録を追加" disabled={Boolean(storeError)||busy||saveReadInProgress||state.workspaces.length>=5} on:click={newWorkspace}>＋ 新規</button>
-      <button type="button" title="名前変更" disabled={Boolean(storeError)||busy||saveReadInProgress} on:click={editWorkspaceName}>名前変更</button>
-      <button type="button" title="記録削除" disabled={Boolean(storeError)||busy||saveReadInProgress||state.workspaces.length<2} on:click={deleteWorkspace}>削除</button>
-      <input bind:this={importInput} class="visually-hidden" type="file" accept=".json,application/json" aria-label="Collectionバックアップを選択" on:change={restoreBackup}/>
-    </div>
-  </section>
-
   {#if loading}
     <div class="loading-panel" role="status">検証済みCollectionデータを読み込み中…</div>
   {:else if loadError}
     <div class="error-banner" role="alert">データの検証または読み込みに失敗しました。{loadError}</div>
   {:else}
-    <SavedStorePreview resolveHistorical={historicalLookup} {locale} {gameImageMap} collectionCommitBusy={busy}
+    <SavedStorePreview headless resolveHistorical={historicalLookup} {locale} {gameImageMap} collectionCommitBusy={busy}
       on:lookupItem={(event:CustomEvent<number>)=>lookupSavedCollectionId(event.detail)}
       on:saveProfile={importSaveProfile}
       on:saveReadStarted={beginSaveRead}
       on:saveReadFinished={finishSaveRead}
+      on:saveReadError={(event:CustomEvent<string>)=>infoMessage=event.detail}
       on:gridReferences={receiveSavedGridReferences}
       on:db04Join={receiveDb04Join} />
-    <div class="summary-strip">
-      <div><strong>{overall.total.toLocaleString(locale)}</strong><span>参照データ</span></div>
-      <div><strong>{overall.owned.toLocaleString(locale)} / {overall.total.toLocaleString(locale)}</strong><span>所持済み記録（手動・セーブ） / 参照件数</span></div>
-      <div><strong>{overall.missing.toLocaleString(locale)}</strong><span>未所持の手動記録</span></div>
-      <div><strong>{overall.unknown.toLocaleString(locale)}</strong><span>未記録</span></div>
-      <div><strong>{overall.discovered.toLocaleString(locale)}</strong><span>発見済み（手動・セーブ）</span></div>
-    </div>
     <div class="collection-workspace">
       <div class="workspace-top">
+        <div class="collection-record-switcher" role="group" aria-label="ローカル記録">
+          <select aria-label="ローカル記録を選択" value={state.active}
+            disabled={Boolean(storeError)||busy||saveReadInProgress}
+            on:change={(event)=>changeWorkspace((event.currentTarget as HTMLSelectElement).value)}>
+            {#each state.workspaces as work}<option value={work.id}>{work.name}</option>{/each}
+          </select>
+          <details class="collection-record-menu" bind:this={workspaceOptions}>
+            <summary aria-label="記録の管理" title="記録の管理"><WandIcon name="ellipsis" size={21}/></summary>
+            <div class="collection-record-actions" role="group" aria-label="ローカル記録の管理">
+              <button type="button" disabled={Boolean(storeError)||busy||saveReadInProgress||state.workspaces.length>=5}
+                on:click={()=>{workspaceOptions.open=false;newWorkspace();}}>
+                <WandIcon name="plus" size={16}/>新規
+              </button>
+              <button type="button" disabled={Boolean(storeError)||busy||saveReadInProgress}
+                on:click={()=>{workspaceOptions.open=false;editWorkspaceName();}}>
+                <WandIcon name="edit" size={16}/>名前変更
+              </button>
+              <button type="button" disabled={Boolean(storeError)||busy||saveReadInProgress||state.workspaces.length<2}
+                on:click={()=>{workspaceOptions.open=false;deleteWorkspace();}}>
+                <WandIcon name="trash" size={16}/>削除
+              </button>
+              {#if runtime?.isOwnerLocal || (runtime && runtime.metadata.snapshot!=='steam-1.26.2-native-itemlist-v1')}
+                <button type="button" disabled={busy||loading||saveReadInProgress}
+                  on:click={()=>{workspaceOptions.open=false;runtime?.isOwnerLocal?void usePublicCatalog():localCatalogInput.click();}}>
+                  <WandIcon name="folder" size={16}/>{runtime?.isOwnerLocal?'公開データに戻す':'カタログファイルを開く'}
+                </button>
+              {/if}
+            </div>
+          </details>
+        </div>
         <div class="toolbar">
           <label class="search-box">
             <span aria-hidden="true"><WandIcon name="search" size={19}/></span>
@@ -541,14 +511,6 @@
               {#each runtime?.metadata.universes??[] as id}<option value={id}>{labelUniverse(id)}</option>{/each}
             </select>
           </label>
-          {#if (runtime?.isOwnerLocal || runtime?.metadata.nameCoverage) && overall.total===(runtime.ownerLocalCoverage??runtime.metadata.nameCoverage)?.itemDefinitions}
-            <fieldset><legend>正式名称の確認状況</legend>
-              {#each [{id:'all',name:'すべて'},{id:'verified',name:'名称確認済み'},{id:'unverified',name:'名称未確認'}] as option}
-                <button type="button" class:chosen={nameStatus===option.id} aria-pressed={nameStatus===option.id}
-                  on:click={()=>{nameStatus=option.id as typeof nameStatus;resetView();}}>{option.name}</button>
-              {/each}
-            </fieldset>
-          {/if}
           <fieldset><legend>収集状況（手動記録）</legend>
             {#each [{id:'all',name:'すべて'},{id:'owned',name:'所持 / 解放'},{id:'missing',name:'未所持'}] as option}
               <button type="button" class:chosen={status===option.id} aria-pressed={status===option.id} on:click={()=>{status=option.id as typeof status;resetView();}}>{option.name}</button>
@@ -563,7 +525,7 @@
           <button type="button" class="subtle-button" on:click={clearScope}>条件を解除</button>
         </div>
       {/if}
-      <div class="workspace-body">
+      <div class="workspace-body" class:has-inspector={Boolean(selectedItem)}>
         <div class="collection-results">
           {#if isBrowsing}
             <div class="results-heading">
@@ -607,7 +569,7 @@
                         aria-pressed={selectionMode?selectedIds.includes(item.itemId):selectedItemId===item.itemId}
                         aria-label={selectionMode?`${item.label} を選択`:`${item.label} の詳細`}>
                         <span class="item-icon" aria-hidden="true">{#if selectionMode}{selectedIds.includes(item.itemId)?'☑':'☐'}{:else}<ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null} />{/if}</span>
-                        <span class="item-card-copy"><strong>{item.label}</strong><span>{categoryLabel(locale,item.family)}{#if !item.nameVerified} · 名称未確認{/if}</span></span>
+                        <span class="item-card-copy"><strong>{item.label}</strong><span>{categoryLabel(locale,item.family)}</span></span>
                       </button>
                       <button type="button" class="item-state-toggle" disabled={Boolean(storeError)||selectionMode}
                         class:owned={entries[String(item.itemId)]?.status==='owned'}
@@ -626,8 +588,7 @@
             {/if}
           {:else}
             <div class="section-lead">
-              <h2>カテゴリから探す</h2>
-              <p>カテゴリを選ぶと、登録されているアイテムを確認できます。</p>
+              <h2>カテゴリ</h2>
             </div>
             <div class="facet-grid">
               {#each facets as facet (facet.id)}
@@ -635,10 +596,9 @@
                   <span class="facet-flourish" aria-hidden="true"><WandIcon name={categoryPictogram[facet.id]??'collection'} size={22}/></span>
                   <strong>{categoryLabel(locale,facet.id)}</strong>
                   {#if facet.total>0}
-                    <span>{facet.total.toLocaleString(locale)} items</span>
-                    <small aria-label="手動所持記録数／対象総数">{facet.owned.toLocaleString(locale)} / {facet.total.toLocaleString(locale)} 所持記録</small>
+                    <span>{facet.owned.toLocaleString(locale)} / {facet.total.toLocaleString(locale)}</span>
                   {:else}
-                    <span>参照データ未対応</span>
+                    <span>0</span>
                   {/if}
                 </button>
               {/each}
@@ -650,25 +610,17 @@
             <div class="inspector-heading"><span>ITEM DETAILS</span><button type="button" bind:this={inspectorClose} on:click={closeItem} aria-label="詳細を閉じる">×</button></div>
             <div class="inspector-art"><ItemArtwork itemId={selectedItem.itemId} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large /></div>
             <h2>{selectedItem.label}</h2>
-            {#if !selectedItem.nameVerified}<p class="inspector-hint">このItem IDの正式名称はSteam v1.26.2原本の8言語データでは確認できませんでした。名称や分類を推測せず、Item IDに紐づくローカル記録だけを表示しています。</p>{/if}
             <p class="inspector-meta">{categoryLabel(locale,selectedItem.family)}</p>
-            <div class="inspector-section"><h3>分類</h3>
+            <details class="inspector-details">
+              <summary>詳細情報</summary>
               <dl>
-                <dt>個人状態の種類</dt><dd>{terminology[selectedItem.stateSemantic]??selectedItem.stateSemantic}</dd>
                 <dt>ワールド</dt><dd>{selectedItem.worlds.map(labelWorld).join('、')||'—'}</dd>
                 <dt>ユニバース</dt><dd>{selectedItem.universes.map(labelUniverse).join('、')||'—'}</dd>
                 <dt>追加コンテンツ</dt><dd>{selectedItem.expansions.join(', ')||'—'}</dd>
               </dl>
-            </div>
+            </details>
             <div class="inspector-section">
               <h3>Collection記録</h3>
-              {#if selectedGridRefs}
-                <p class="inspector-hint">セーブ内の家具配置参照：全体グリッド {selectedGridRefs.fullGridReferences}件、差分参照 {selectedGridRefs.diffModifiedReferences}件。これは総配置数・解放・所有の証明ではなく、手動記録や未配置ストックには加算しません。</p>
-              {/if}
-              {#if selectedDb04Refs}
-                <p class="inspector-hint">DB-04の完全一致パスで照合したグリッドの参照：原本初期 {selectedDb04Refs.sourceDefault}件、差分適用後 {selectedDb04Refs.effectiveSaved}件、原本にない保存ID {selectedDb04Refs.savedOnlyIdentity}件、削除された初期ID {selectedDb04Refs.removedDefaultIdentity}件。プレイヤーの購入・所有を証明しません。</p>
-              {/if}
-              <p class="inspector-hint">セーブなしでも手動編集できます。セーブを読み込むと発見履歴と明示的な正の数量による所持状態が優先されます。お気に入りは維持し、元のDDVセーブには書き込みません。</p>
               <div class="ownership-actions">
                 <button type="button" disabled={Boolean(storeError)} class:active={selectedEntry.status==='owned'} on:click={()=>changeEntry({status:'owned'})}>所持 / 解放</button>
                 <button type="button" disabled={Boolean(storeError)} class:active={selectedEntry.status==='missing'} on:click={()=>changeEntry({status:'missing'})}>未所持</button>
@@ -692,8 +644,6 @@
                 disabled={Boolean(storeError)} on:change={(event)=>changeEntry({favorite:(event.currentTarget as HTMLInputElement).checked})}/> お気に入り</label>
             </div>
           </aside>
-        {:else}
-          <aside class="item-inspector empty-inspector"><div class="inspector-empty-symbol">✦</div><h2>Item Details</h2><p>アイテムを選択すると、データとローカル収集状況を確認できます。</p><p class="inspector-hint">参照データ：{runtime?.metadata.platform??'公開ゲームDB'}{#if runtime?.metadata.version}{' · DDV v'}{runtime.metadata.version}{/if}。一部の画像には別バージョンのゲーム由来素材を使用しており、データとの同一性は保証されません。セーブ内の発見履歴とListInventoryの正の数量に基づく所持状態をローカル記録に反映します。数量0の未所持判定やセーブへの書き戻しには未対応です。</p></aside>
         {/if}
       </div>
     </div>
