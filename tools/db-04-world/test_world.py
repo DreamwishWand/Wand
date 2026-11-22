@@ -351,8 +351,8 @@ class NativeWireTests(unittest.TestCase):
             wrapper, STREAM / "SceneLayouts/Village04/Area.json"))
         bad_ref = wrapper.replace(
             b"SceneLayouts/Realms/Example/CustomLocations.json",
-            b"SceneLayouts/Realms/../../CustomLocations.json")
-        # A malformed protobuf field length is not treated as a valid realm.
+            b"SceneLayouts/Realms/../badx/CustomLocations.json")
+        # A source path with traversal components is rejected without guessing.
         with self.assertRaises(ValueError):
             realm_grid_collection_layout(bad_ref, path)
         no_grids = field(1, field(3,
