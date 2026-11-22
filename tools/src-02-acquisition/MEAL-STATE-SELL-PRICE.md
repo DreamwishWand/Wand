@@ -64,6 +64,56 @@ fixed ingredient intersections** for *both* cached purchase/sell rows, and
 protobuf rows, wrong currency, omitted-vs-zero amount, fake originals and
 unverified-source behavior.
 
+## Native TotalIngredientsValue accumulator and cap (Steam/Switch 1.26.2)
+
+After the previous per-ingredient percentage analysis, the verified original
+**Steam AMD64 PE** and independently decompressed **Switch AArch64 NSO0**
+code also confirms the **surrounding arithmetic stage**:
+
+1. Initialize a signed 32-bit running total to **0**. When the optional
+   base-value callback exists, its return value replaces that initial 0.
+   The runtime conditions and resulting actual value are not yet resolved.
+2. Use a default percentage of **100** unless the corresponding native
+   percentage-selection callback supplies an alternate value. For each
+   enumerated ingredient, the original code either retains the signed
+   component value or applies a signed 32-bit multiply by that percentage
+   followed by integer division by 100 with **truncation toward zero**.
+   The match/eligibility query is an **in-memory recipe-associated lookup**
+   whose exact source criteria still need confirmation.
+3. Add **each ingredient contribution** to the running total with native
+   signed **32-bit wrapping addition**. The original machine instructions
+   are Steam `add r12d, edi` and Switch `add w24, w19, w24`.
+4. **After** iteration and enumerator cleanup, return the signed lesser
+   of running total and a selected upper bound. The bound defaults to
+   **2,147,483,647** if no upper-bound callback is present. Steam uses
+   `cmp` + `cmovg`; Switch uses `cmp` + `csel ... lt`.
+   This is **not** a per-ingredient clamp.
+
+The source-controlled `audit_native_meal_price_1262.py` pins four
+additional byte-exact method regions on **each** platform:
+`base_and_default_setup`, `conditional_base_callback`,
+`signed32_component_accumulation`, and `signed32_final_upper_bound`.
+The private-original audit now checks **9 Steam and 7 Switch machine-code
+windows** (16 total), on top of the 7 owner-class-qualified method RVAs
+for each platform and the complete NSO decompressed-code hash.
+
+The new pure `nativeIngredientTotalValueStage` at
+`src/lib/acquisition/native-meal-total-value-stage.mjs` accepts a
+**caller-supplied** `baseValue`, `upperBound`, and a list of
+`{value, percentage, eligibleForAdjustment}` entries; it combines the
+separately verified percentage component using per-component truncation,
+wraps the accumulator to a signed 32-bit integer and clamps once at the
+end. This is a **synthetic arithmetic harness only**, with no source
+claim for its caller-supplied numbers, eligibility flags, cap, or base.
+It returns `nativeInstanceMealPrice:null` and
+`completeMealSellPriceFormulaVerified:false` by contract.
+
+The unresolved parts remain **how runtime ingredient sale prices are
+selected**, what qualifies each recipe ingredient for percentage
+adjustment, when the optional base/limit delegates are supplied, and
+which recorded-versus-fallback composition is actually used.
+No cooked meal sale price is claimed from this stage.
+
 ## Original Steam AND Switch v1.26.2 native executable evidence (new)
 
 The user-uploaded Dreamwish Wand Drive folder

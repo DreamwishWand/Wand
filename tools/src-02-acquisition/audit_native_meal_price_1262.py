@@ -65,6 +65,14 @@ STEAM_WINDOWS = (
      "e1fcb2715dd8ae865bea71c1f08597c4efd283a5ab86fcc3c1985af6b60c7a7f"),
     ("upper_bound_clamp", 0x3E1E6B4, 13,
      "46de03360e17364d7e19093321c7aba8ec5adf780804736b6420970b9b436cee"),
+    ("base_and_default_setup", 0x3E1E25C, 19,
+     "8577d990ed31b44e6edeb23ddaacdd3aa3ae668869096097a5283f6b4dce643f"),
+    ("conditional_base_callback", 0x3E1E2F9, 26,
+     "23d9db79d5516a0cd67bf68005adaf28e27c8cc912194a58dbf6c18f61e0fd5d"),
+    ("signed32_component_accumulation", 0x3E1E625, 8,
+     "e1fcb2715dd8ae865bea71c1f08597c4efd283a5ab86fcc3c1985af6b60c7a7f"),
+    ("signed32_final_upper_bound", 0x3E1E6B4, 13,
+     "46de03360e17364d7e19093321c7aba8ec5adf780804736b6420970b9b436cee"),
 )
 SWITCH_WINDOWS = (
     ("integer_percent_truncation", 0x4A3F1AC, 32,
@@ -73,6 +81,14 @@ SWITCH_WINDOWS = (
      "13aa1a44860ab209949197fd8995e1d329ab940008673acf86102ad744a8dece"),
     ("sell_wrapper_to_total_value", 0x4A3F784, 44,
      "7c0282d67b899db821296f2118c903fdfe9e56ebdc936b7620b9d98ffc5240bc"),
+    ("base_and_default_setup", 0x4A3EED4, 16,
+     "eb887644bf0775087e7045b717777b3885bb949c6f9688d5a1a59eec000e04eb"),
+    ("conditional_base_callback", 0x4A3EEAC, 30,
+     "4403907897b380b125f1b0e4b5fa9c3134c7c0204ce2eda3124c2752733d0dc4"),
+    ("signed32_component_accumulation", 0x4A3F044, 4,
+     "e680058368a8a314222a4ba6c08eb0e7f6cd87d9f8d35bbe80e62028d6d17dc8"),
+    ("signed32_final_upper_bound", 0x4A3F264, 12,
+     "5aa10c2a9d9579d559da70acc4a80cad7b7ce4a4b7b3d5c7c7cf1dd2e547ec9f"),
 )
 MAX_DUMP = 160 * 1024 * 1024
 
@@ -241,6 +257,7 @@ def run_audit(steam_version, steam_dump, steam_dll, switch_dump, switch_main):
         "nativePercentDivisor100TruncatesTowardZero": True,
         "softCurrencySellGetterUsesDefaultWhenNoPriceFound": True,
         "totalSellMethodDelegatesToTotalIngredientsValue": True,
+        "conditionalNativeBaseAndFinalSignedCapStageVerified": True,
         "reportedNativeInstructionWindowsOnly": True,
         "exactIngredientPriceResolutionVerified": False,
         "completeNativeSellFormulaVerified": False,
