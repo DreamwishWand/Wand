@@ -27,6 +27,7 @@
   let moreOpen=false;
   let draggingFile=false;
   let dragDepth=0;
+  let selectedSave:File|null=null;
   $: selectedSave=$localSaveSession.file;
   let saveError='';
   let globalSaveInput:HTMLInputElement;
