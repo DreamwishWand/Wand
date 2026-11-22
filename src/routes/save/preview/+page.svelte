@@ -77,6 +77,15 @@
   let coordinateOrientationValue='';
   let coordinateState:'idle'|'checking'|'validated'|'exporting'|'error'='idle';
   let coordinateQueue:GridCoordinatePlan[]=[];
+  type GridMixedPlan={
+    localOrdinal:number;itemId:string;
+    recordKind:'full'|'diff_modified';
+    expectedX:number;expectedY:number;
+    replacementX:number|null;replacementY:number|null;
+    expectedOrientation:CardinalOrientation|null;
+    replacementOrientation:CardinalOrientation|null;
+  };
+  let mixedQueue:GridMixedPlan[]=[];
   let coordinateSnapshot:
     |{mode:'single';file:File;format:'json'|'auto';
       plan:GridCoordinatePlan;signature:string}
@@ -84,6 +93,8 @@
       edits:GridCoordinatePlan[];signature:string}
     |{mode:'transform';file:File;format:'json'|'auto';
       plan:GridTransformPlan;signature:string}
+    |{mode:'mixed';file:File;format:'json'|'auto';
+      edits:GridMixedPlan[];signature:string}
     |null=null;
   let coordinateCopyUrl:string|null=null;
   let coordinateCopyName='';
@@ -263,6 +274,47 @@
     cancel();result=null;
     coordinateQueue=coordinateQueue.filter(p=>p.localOrdinal!==ordinal);
   }
+  function enqueueMixedEdit(edit:GridMixedPlan|null){
+    if(!edit||mixedQueue.length>=16||
+       mixedQueue.some(p=>p.localOrdinal===edit.localOrdinal)){
+      invalidateCoordinateEdit();coordinateState='error';return;
+    }
+    cancel();result=null;
+    mixedQueue=[...mixedQueue,edit];
+  }
+  function queueMixedFromCoordinates(){
+    const row=coordinateSelection;
+    if(!row||!row.coordinatesObserved||row.x===null||row.y===null){
+      enqueueMixedEdit(null);return;
+    }
+    const coord=selectedCoordinatePlan();
+    const old=isCardinal(row.orientation)?row.orientation:null;
+    const rotated=old!==null&&isCardinal(coordinateOrientationValue)&&
+      old!==coordinateOrientationValue;
+    enqueueMixedEdit(coord||rotated?{
+      localOrdinal:row.localOrdinal,itemId:row.itemId,
+      recordKind:row.recordKind,expectedX:row.x,expectedY:row.y,
+      replacementX:coord?.replacementX??null,
+      replacementY:coord?.replacementY??null,
+      expectedOrientation:rotated?old:null,
+      replacementOrientation:rotated
+        ?coordinateOrientationValue as CardinalOrientation:null
+    }:null);
+  }
+  function queueMixedFromOrientation(){
+    const p=selectedOrientationPlan();
+    enqueueMixedEdit(p?{
+      localOrdinal:p.localOrdinal,itemId:p.itemId,recordKind:p.recordKind,
+      expectedX:p.expectedX,expectedY:p.expectedY,
+      replacementX:null,replacementY:null,
+      expectedOrientation:p.expectedOrientation,
+      replacementOrientation:p.replacementOrientation
+    }:null);
+  }
+  function removeMixedEdit(ordinal:number){
+    cancel();result=null;
+    mixedQueue=mixedQueue.filter(p=>p.localOrdinal!==ordinal);
+  }
   function selectGridInstance(row:LocalGridInstance){
     if(!row.coordinatesObserved||row.x===null||row.y===null)return;
     cancel();result=null;
@@ -316,7 +368,7 @@
     instanceStatus='not_observed';instanceSampled=false;instanceQuery='';
     coordinateSelection=null;coordinateX='';coordinateY='';
     coordinateOrientationValue='';
-    coordinateQueue=[];
+    coordinateQueue=[];mixedQueue=[];
     orientationSelection=null;orientationValue='GridOrientation_Up';
     db04Match=null;db04State='idle';
     db03Summary=null;db03State='idle';
@@ -490,7 +542,8 @@
   }
 
   async function loadGridInstances(){
-    cancel();result=null;coordinateSelection=null;coordinateQueue=[];
+    cancel();result=null;coordinateSelection=null;
+    coordinateQueue=[];mixedQueue=[];
     orientationSelection=null;
     gridInstances=[];instanceStatus='not_observed';instanceSampled=false;
     instanceState='idle';
@@ -551,21 +604,26 @@
   }
 
   async function validateCoordinateEdit(
-    batchMode:boolean=false,transformMode:boolean=false
+    batchMode:boolean=false,transformMode:boolean=false,
+    mixedMode:boolean=false
   ){
     cancel();result=null;
     const file=savedSlotsFile;
     const plan=transformMode
-      ? selectedTransformPlan():selectedCoordinatePlan();
-    const edits=batchMode?coordinateQueue.map(p=>({...p})):null;
+      ?selectedTransformPlan():selectedCoordinatePlan();
+    const edits=batchMode
+      ?coordinateQueue.map(p=>({...p}))
+      :mixedMode?mixedQueue.map(p=>({...p})):null;
     if(!file||fileInput?.files?.[0]!==file||
-       (batchMode?(!edits||!edits.length||edits.length>16):!plan)||
+       (batchMode||mixedMode
+          ?(!edits||!edits.length||edits.length>16):!plan)||
        file.size<1||file.size>MAX_BYTES){
       coordinateState='error';return;
     }
     const format:'json'|'auto'=file.name.toLowerCase().endsWith('.json')
       ?'json':'auto';
-    const signature=JSON.stringify(batchMode?edits:plan),request=revision;
+    const signature=JSON.stringify(batchMode||mixedMode?edits:plan),
+      request=revision;
     coordinateState='checking';processing=true;
     let bytes:Uint8Array|null=null;
     let worker:Worker|null=null;
@@ -585,6 +643,10 @@
            (batchMode
              ? r.receipt?.contract!=='wand.db05.grid-coordinate-batch-preview@1'||
                r.receipt.changedCount!==edits?.length
+             : mixedMode
+             ? r.receipt?.contract!=='wand.db05.grid-mixed-batch-preview@1'||
+               r.receipt.changedCount!==edits?.length||
+               r.receipt.placementLegalityVerified!==false
              : transformMode
              ? r.receipt?.contract!=='wand.db05.grid-transform-preview@1'||
                r.receipt.changed!==true||
@@ -598,7 +660,11 @@
           coordinateState='error';return;
         }
         coordinateSnapshot=batchMode
-          ? {mode:'batch',file,format,edits:edits!,signature}
+          ? {mode:'batch',file,format,
+             edits:edits as GridCoordinatePlan[],signature}
+          : mixedMode
+          ? {mode:'mixed',file,format,
+             edits:edits as GridMixedPlan[],signature}
           : transformMode
           ? {mode:'transform',file,format,
              plan:plan as GridTransformPlan,signature}
@@ -611,6 +677,8 @@
       worker.onmessageerror=()=>finish({kind:'error'});
       worker.postMessage(batchMode
         ?{command:'preview-grid-coordinate-batch',format,bytes,edits}
+        :mixedMode
+        ?{command:'preview-grid-mixed-batch',format,bytes,edits}
         :transformMode
         ?{command:'preview-grid-transform',format,bytes,edit:plan}
         :{command:'preview-grid-coordinates',format,bytes,edit:plan},
@@ -634,6 +702,8 @@
       ?selectedTransformPlan():selectedCoordinatePlan();
     if((saved.mode==='batch'
         ?JSON.stringify(coordinateQueue)!==saved.signature
+        :saved.mode==='mixed'
+        ?JSON.stringify(mixedQueue)!==saved.signature
         :!plan||JSON.stringify(plan)!==saved.signature)||
        fileInput?.files?.[0]!==saved.file||
        savedSlotsFile!==saved.file){
@@ -691,6 +761,10 @@
       worker.onmessageerror=()=>finish({kind:'error'});
       worker.postMessage(saved.mode==='batch'
         ?{command:'export-grid-coordinate-batch-copy',
+          format:saved.format,allowExperimentalCopy:true,
+          bytes,edits:saved.edits}
+        :saved.mode==='mixed'
+        ?{command:'export-grid-mixed-batch-copy',
           format:saved.format,allowExperimentalCopy:true,
           bytes,edits:saved.edits}
         :saved.mode==='transform'
@@ -1369,6 +1443,13 @@
                   </button>
                 {/if}
                 <button type="button" class="secondary"
+                  disabled={processing||mixedQueue.length>=16||
+                    mixedQueue.some(p=>
+                      p.localOrdinal===coordinateSelection?.localOrdinal)}
+                  on:click={queueMixedFromCoordinates}>
+                  一括配置変更に追加
+                </button>
+                <button type="button" class="secondary"
                   disabled={processing||coordinateQueue.length>=16||
                     coordinateQueue.some(p=>
                       p.localOrdinal===coordinateSelection?.localOrdinal)}
@@ -1380,6 +1461,8 @@
                 {#if coordinateState==='validated'}
                   <p role="status">{coordinateSnapshot?.mode==='batch'
                     ? `${coordinateQueue.length}件の座標変更をRust/WASMで検証しました。`
+                    : coordinateSnapshot?.mode==='mixed'
+                    ? `${mixedQueue.length}件の配置変更をRust/WASMで検証しました。`
                     : coordinateSnapshot?.mode==='transform'
                     ? '位置と向きの同時変更をRust/WASMで検証しました。'
                     : '座標変更をRust/WASMで検証しました。'}</p>
@@ -1412,6 +1495,13 @@
                     {/each}
                   </select>
                 </label>
+                <button type="button" class="secondary"
+                  disabled={processing||mixedQueue.length>=16||
+                    mixedQueue.some(p=>
+                      p.localOrdinal===orientationSelection?.localOrdinal)}
+                  on:click={queueMixedFromOrientation}>
+                  向きを一括配置変更に追加
+                </button>
                 <button type="button"
                   disabled={processing||!isCardinal(orientationSelection.orientation)||
                     !isCardinal(orientationValue)||
@@ -1453,6 +1543,38 @@
                       <button type="button" class="secondary" disabled={processing}
                         on:click={()=>removeCoordinateEdit(edit.localOrdinal)}
                         aria-label={`座標編集 #${edit.localOrdinal} を削除`}>削除</button>
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+            {/if}
+            {#if mixedQueue.length}
+              <div class="coordinate-batch" aria-label="一括配置変更">
+                <div class="slot-actions">
+                  <strong>一括配置変更 · {mixedQueue.length} / 16件</strong>
+                  <button type="button" disabled={processing}
+                    on:click={()=>validateCoordinateEdit(false,false,true)}>
+                    一括配置変更を検証
+                  </button>
+                </div>
+                <ul class="slot-list">
+                  {#each mixedQueue as edit}
+                    <li class="world-reference-row">
+                      <span>#{edit.localOrdinal} · {
+                        dbMap.get(edit.itemId)?.name??edit.itemId}</span>
+                      <span class="slot-amount">
+                        {#if edit.replacementX!==null&&edit.replacementY!==null}
+                          X {edit.expectedX}→{edit.replacementX} /
+                          Y {edit.expectedY}→{edit.replacementY}
+                        {/if}
+                        {#if edit.replacementOrientation}
+                          向き {edit.expectedOrientation?.replace('GridOrientation_','')}
+                          →{edit.replacementOrientation.replace('GridOrientation_','')}
+                        {/if}
+                      </span>
+                      <button type="button" class="secondary" disabled={processing}
+                        aria-label={`配置編集 #${edit.localOrdinal} を削除`}
+                        on:click={()=>removeMixedEdit(edit.localOrdinal)}>削除</button>
                     </li>
                   {/each}
                 </ul>
