@@ -716,8 +716,9 @@ try{
   await page.getByRole('button',{name:'セーブファイル管理'}).waitFor();
   await page.locator('.portal-card').filter({hasText:'Collection'}).first().click();
   await waitForLocalState(page,{item:'40005160',status:'owned'});
+  await page.getByRole('status').filter({hasText:'セーブの発見履歴'}).first().waitFor({timeout:30000});
   await page.getByRole('button',{name:'セーブファイル管理'}).click();
-  assert.match(await page.locator('.shell-save-status').innerText(),/解析済み/);
+  await page.locator('.shell-save-status').getByText(/解析済み/).waitFor({timeout:15000});
   await page.getByRole('button',{name:'ファイルを閉じる'}).click();
   assert.equal(await page.getByRole('button',{name:'セーブファイルを読み込む'}).count(),1);
   await context.close();
