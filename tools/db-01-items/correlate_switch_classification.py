@@ -36,7 +36,10 @@ def compare(sqlite_path: Path, overlay: Path, switch_folder: Path,
     output=output.expanduser().resolve()
     require(sqlite_path.is_file() and overlay.is_dir() and
             switch_folder.is_dir() and not output.exists(), 'PATH')
-    for root in (sqlite_path.parent,overlay,switch_folder):
+    require(output!=sqlite_path.parent and
+            output not in sqlite_path.parents and
+            sqlite_path not in output.parents, 'SQLITE_OVERLAP')
+    for root in (overlay,switch_folder):
         require(output!=root and output not in root.parents and
                 root not in output.parents, 'OVERLAP')
     for parent in (output,*output.parents):
