@@ -23,8 +23,14 @@
   $: filteredGrids=(catalog?.sourceGrids??[])
     .filter(g=>gridSearch===''||
       g.label.toLocaleLowerCase().includes(gridSearch.toLocaleLowerCase())||
-      g.id.toLocaleLowerCase().includes(gridSearch.toLocaleLowerCase()))
-    .slice(0,200);
+      g.id.toLocaleLowerCase().includes(gridSearch.toLocaleLowerCase())||
+      g.gridDataPath?.toLocaleLowerCase().includes(
+        gridSearch.toLocaleLowerCase()))
+    .slice(0,300);
+  $: exactGridPathCandidates=scope==='grid'&&
+    gridSearch.trim().startsWith('GridData/')?
+    (catalog?.sourceGrids??[]).filter(g=>
+      g.gridDataPath===gridSearch.trim()):[];
   let options:readonly Db04GraphOption[]=[];
   $: options=scope==='world'?
     catalog?.sourceWorlds??[]:scope==='area'?
@@ -82,8 +88,9 @@
       .value.toLocaleLowerCase();
     const matches=(catalog?.sourceGrids??[])
       .filter(g=>g.label.toLocaleLowerCase().includes(needle)||
-        g.id.toLocaleLowerCase().includes(needle))
-      .slice(0,200);
+        g.id.toLocaleLowerCase().includes(needle)||
+        g.gridDataPath?.toLocaleLowerCase().includes(needle))
+      .slice(0,300);
     if(!matches.some(g=>g.id===scopeId)){
       scopeId=matches[0]?.id??'';
       page=null;pageOffset=0;
@@ -178,7 +185,8 @@
       {#if scope==='grid'}
         <label>Gridを絞り込む
           <input type="search" bind:value={gridSearch}
-            on:input={chooseGridSearch} placeholder="Layoutパス・Grid ID"/>
+            on:input={chooseGridSearch}
+            placeholder="GridDataPath・Layoutパス・Grid ID"/>
         </label>
       {/if}
       {#if scope!=='unlinked_world'}
@@ -201,12 +209,24 @@
         <WandIcon name="search" size={17}/>検索
       </button>
     </div>
-    {#if scope==='grid'&&catalog.sourceGrids.length>200}
-      <p class="graph-note">Gridは最大200候補を表示。検索欄からパスで絞り込めます。</p>
+    {#if scope==='grid'&&catalog.sourceGrids.length>300}
+      <p class="graph-note">Gridは最大300候補を表示。パスで絞り込めます。</p>
+    {/if}
+    {#if scope==='grid'&&gridSearch.trim().startsWith('GridData/')}
+      <p class="graph-note" role="status">
+        {#if exactGridPathCandidates.length}
+          GridDataPath完全一致：{exactGridPathCandidates.length}件の原本Grid参照候補。
+          セーブの数値Grid IDや配置先との同一性は未確認です。
+        {:else}
+          この部分的原本レイアウト参照に、完全一致するGridDataPathはありません。
+          セーブファイルが不正という意味ではありません。
+        {/if}
+      </p>
     {/if}
     {#if activeOption}
       <p class="graph-note source-link">
-        {#if activeOption.worldId}World: {activeOption.worldId}{/if}
+        {#if activeOption.gridDataPath}GridDataPath: {activeOption.gridDataPath}{/if}
+        {#if activeOption.worldId} · World: {activeOption.worldId}{/if}
         {#if activeOption.areaRefId} · Area: {activeOption.areaRefId}{/if}
         {#if activeOption.nativeParentWorldId} · 親Realm: {activeOption.nativeParentWorldId}{/if}
         {#if activeOption.nativeUniverseTagItemId} · Universe Tag ID: {activeOption.nativeUniverseTagItemId}{/if}
