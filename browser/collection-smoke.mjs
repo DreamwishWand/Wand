@@ -707,8 +707,21 @@ try{
   assert.match(await page.locator('.shell-history-panel').innerText(),/編集機能の実装後/);
   await page.getByRole('button',{name:'Collection',exact:true}).click();
   await page.locator('.shell-history-head button').click();
+  // A save selected on Home must reach the established Collection Rust/WASM
+  // Worker, not merely change the toolbar icon.
+  assert.equal(changedStatus,'missing','fixture must start without owned state');
+  await page.locator('input[aria-hidden="true"][accept*=".profile"]').setInputFiles({
+    name:'from-home.profile',mimeType:'application/octet-stream',buffer:fixture
+  });
+  await page.getByRole('button',{name:'セーブファイル管理'}).waitFor();
+  await page.locator('.portal-card').filter({hasText:'Collection'}).first().click();
+  await waitForLocalState(page,{item:'40005160',status:'owned'});
+  await page.getByRole('button',{name:'セーブファイル管理'}).click();
+  assert.match(await page.locator('.shell-save-status').innerText(),/解析済み/);
+  await page.getByRole('button',{name:'ファイルを閉じる'}).click();
+  assert.equal(await page.getByRole('button',{name:'セーブファイルを読み込む'}).count(),1);
   await context.close();
-  console.log('Collection browser WASM/IndexedDB/migration/search/paging/history smoke passed');
+  console.log('Collection browser WASM/IndexedDB/migration/search/paging/history/shared-save smoke passed');
 } finally {
   await browser?.close();
   server.kill('SIGTERM');
