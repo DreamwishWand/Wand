@@ -19,6 +19,8 @@ import {classifyNativeSerializedDynamicCache,simulateNativeSerializedSellProvide
   from './native-serialized-sell-provider.mjs';
 import {classifyConditionalNativeSellFormulaCandidates}
   from './native-sell-formula-candidates.mjs';
+import {classifyIngredientSerializedPriceRowCoverage}
+  from './ingredient-source-row-coverage.mjs';
 
 export const DB02_MEAL_PRICE_VIEW_CONTRACT='wand.db02.private-meal-pricing-view@1';
 export const DB02_MEAL_PRICE_EVIDENCE_CONTRACT='wand.db02.meal-price-evidence@1';
@@ -160,6 +162,12 @@ function inspectAuthenticatedMeal({acquisitionBundle,shopPriceView,nativeCache,m
     frozen(shopPriceView.getSourceItemPriceDefinitions(x.itemId).map(row=>
       simulateNativeSerializedSellProvider({providerKind:'static',
         itemId:x.itemId,currencyId:80000000,sourcePriceRow:row})))));
+  const sourceIngredientSerializedPriceRowCoverage=frozen(ingredientAmounts.map(x=>
+    classifyIngredientSerializedPriceRowCoverage({
+      itemId:x.itemId,
+      staticRows:shopPriceView.getSourceItemPriceDefinitions(x.itemId),
+      dynamicCacheLookup:nativeCache?.lookup(x.itemId)??null
+    })));
   const sourceSellFormulaCandidatePlan=nativeCache===null?null:
     classifyConditionalNativeSellFormulaCandidates({
       formulaItemIds:nativeCache.sourceSellFormulaItemIds,
@@ -183,6 +191,8 @@ function inspectAuthenticatedMeal({acquisitionBundle,shopPriceView,nativeCache,m
     recordedIngredients:ingredientAmounts,
     sourceIngredientStaticSellEvidence,
     sourceIngredientStaticProviderSimulations,
+    sourceIngredientSerializedPriceRowCoverage,
+    originalSourceRowAbsenceIsNotRuntimePriceFailure:true,
     nativeStaticProviderResultsAreSourceConditionalOnly:true,
     sourceIngredientDynamicCacheEvidence,
     sourceSellFormulaCandidatePlan,
@@ -270,6 +280,14 @@ export async function loadPrivateMealPricingView({
           itemId,currencyId:80000000,sourcePriceRow:row})));
     },
     getNativeSellPriceProviderPlan:itemId=>nativeSellPriceProviderPlan(itemId),
+    getSourceIngredientPriceRowCoverage:itemId=>{
+      check(validId(itemId),'INVALID_SOURCE_ROW_ITEM_ID');
+      return classifyIngredientSerializedPriceRowCoverage({
+        itemId,
+        staticRows:shopPriceView.getSourceItemPriceDefinitions(itemId),
+        dynamicCacheLookup:nativeCache?.lookup(itemId)??null
+      });
+    },
     getSourceCachedDynamicPriceRow:itemId=>{
       check(validId(itemId),'INVALID_DYNAMIC_ITEM_ID');
       return nativeCache?.lookup(itemId)??null;
