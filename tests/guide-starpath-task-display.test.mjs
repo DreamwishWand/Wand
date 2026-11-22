@@ -60,6 +60,7 @@ test('weekly duties respect source text and do not invent missing translations',
 test('public Star Path page does not bury 164 unresolved duties behind repeated placeholder titles',async()=>{
   const page=await readFile(new URL('../src/routes/guide/star-path/+page.svelte',import.meta.url),'utf8');
   assert.match(page,/starpathTaskDisplay\(season\.id,t,locale,starpathDailyDescription/);
-  assert.match(page,/starpathTaskDisplay\(season\.id,t,locale,starpathWeeklyDescription/);
+  assert.match(page,/sourceText=starpathWeeklyDescription\(weeklyLocales,t\.descriptionKey,locale\)/);
+  assert.match(page,/starpathTaskDisplay\(season\.id,t,locale,sourceText\)/);
   assert.doesNotMatch(page,/達成方法は検証中/);
 });

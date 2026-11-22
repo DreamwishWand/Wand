@@ -12,7 +12,7 @@
   import {guideCalendarEvents,activeScheduleStarpaths} from '$lib/guide/event-calendar.mjs';
   import {starpathTaskDisplay} from '$lib/guide/starpath-task-guidance.mjs';
   import {filterStarpathTasks} from '$lib/guide/starpath-search.mjs';
-  import {loadPublicStarpathGoals,starpathGoalLabel} from '$lib/guide/public-starpath-goals.mjs';
+  import {loadPublicStarpathGoals,starpathGoalLabel,starpathGoalHeading,starpathGoalSourceNote} from '$lib/guide/public-starpath-goals.mjs';
 
   let catalog:any=null, weeklyLocales:any=null, dailyLocales:any=null, rewardExtras:any=null, publicMedia:any=null, goalAmounts:any=null, goalWarning='', error='', loading=true;
   let locale='ja';
@@ -31,14 +31,14 @@
   $: filtered=season?filterStarpathTasks(season.id,season.tasks,{
     query,locale,
     descriptionOf:(t:any)=>starpathDailyDescription(dailyLocales,season.id,t.id,locale),
-    goalTextOf:(t:any)=>starpathGoalLabel(goalAmounts,season.id,t)
+    goalTextOf:(t:any)=>starpathGoalLabel(goalAmounts,season.id,t,locale)
   }):[];
   $: filteredWeeks=season?season.weeklyTasks.map((tasks:any[],i:number)=>({
     number:i+1,
     tasks:filterStarpathTasks(season.id,tasks,{
       query:weeklyQuery,locale,
       descriptionOf:(t:any)=>starpathWeeklyDescription(weeklyLocales,t.descriptionKey,locale),
-      goalTextOf:(t:any)=>starpathGoalLabel(goalAmounts,season.id,t)
+      goalTextOf:(t:any)=>starpathGoalLabel(goalAmounts,season.id,t,locale)
     })
   })):[];
   $: weeklyMatches=filteredWeeks.reduce((count:number,week:any)=>count+week.tasks.length,0);
@@ -138,8 +138,8 @@
         <ul class="entries">
           {#each filtered.slice(0,limit) as t (t.id)}
             {@const display=starpathTaskDisplay(season.id,t,locale,starpathDailyDescription(dailyLocales,season.id,t.id,locale))}
-            {@const goal=starpathGoalLabel(goalAmounts,season.id,t)}
-            <li><strong>{display.headline}</strong>{#if display.note}<small>{display.note}</small>{/if}<small class="task-data">{#if goal}<span class="goal-badge">目標 {goal}</span>{/if}<span class="token-badge"><WandIcon name="star" size={13}/> {t.tokenReward} {season.currencyName}</span><span>{t.id}{t.availableOnDay!==undefined?' · 解放設定日 '+t.availableOnDay:''}</span></small></li>
+            {@const goal=starpathGoalLabel(goalAmounts,season.id,t,locale)}
+            <li><strong>{display.headline}</strong>{#if display.note}<small>{display.note}</small>{/if}<small class="task-data">{#if goal}<span class="goal-badge">{starpathGoalHeading(locale)} {goal}</span>{/if}<span class="token-badge"><WandIcon name="star" size={13}/> {t.tokenReward} {season.currencyName}</span><span>{t.id}{t.availableOnDay!==undefined?' · 解放設定日 '+t.availableOnDay:''}</span></small></li>
           {/each}
         </ul>
         {#if filtered.length===0}<p role="status" class="empty-match">一致する通常タスクはありません。</p>{/if}
@@ -154,9 +154,11 @@
           <section class="week"><h2>第{week.number}週</h2>
             <ul class="entries">
               {#each week.tasks as t (t.id)}
-                {@const display=starpathTaskDisplay(season.id,t,locale,starpathWeeklyDescription(weeklyLocales,t.descriptionKey,locale))}
-                {@const goal=starpathGoalLabel(goalAmounts,season.id,t)}
-                <li><strong>{display.headline}</strong>{#if display.note}<small>{display.note}</small>{/if}<small class="task-data">{#if goal}<span class="goal-badge">目標 {goal}</span>{/if}<span class="token-badge"><WandIcon name="star" size={13}/> {t.tokenReward} {season.currencyName}</span><span>{t.id}</span></small></li>
+                {@const sourceText=starpathWeeklyDescription(weeklyLocales,t.descriptionKey,locale)}
+                {@const display=starpathTaskDisplay(season.id,t,locale,sourceText)}
+                {@const goal=starpathGoalLabel(goalAmounts,season.id,t,locale)}
+                {@const discrepancy=starpathGoalSourceNote(goalAmounts,season.id,t,locale,sourceText)}
+                <li><strong>{display.headline}</strong>{#if display.note}<small>{display.note}</small>{/if}{#if discrepancy}<small class="source-discrepancy">{discrepancy}</small>{/if}<small class="task-data">{#if goal}<span class="goal-badge">{starpathGoalHeading(locale)} {goal}</span>{/if}<span class="token-badge"><WandIcon name="star" size={13}/> {t.tokenReward} {season.currencyName}</span><span>{t.id}</span></small></li>
               {/each}
             </ul>
           </section>
@@ -232,6 +234,7 @@
   .entries li strong{font-size:14px}.entries li small{color:#ab9ab9;font-size:11px}
   .task-data{display:flex!important;gap:8px;align-items:center;flex-wrap:wrap}
   .goal-badge,.token-badge{display:inline-flex;align-items:center;gap:4px;border-radius:7px;padding:4px 7px;background:#352342;color:#f0dcff}
+  .source-discrepancy{display:block;color:#e6c38c;font-size:11px;line-height:1.45;margin-top:4px}
   .goal-badge{border:1px solid #8063a0;color:#f8eaff}
   .token-badge{color:#e7ca93}
   .entries li.reward-entry{display:flex;align-items:center;gap:12px;min-width:0}.reward-entry span{min-width:0;overflow-wrap:anywhere}
