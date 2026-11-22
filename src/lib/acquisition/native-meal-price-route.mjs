@@ -10,7 +10,7 @@
  * 1 is returned ONLY when the live native lookup fails.
  * Neither static-price absence nor missing cache entry establishes failure.
  */
-import {DB02_MEAL_PRICE_EVIDENCE_CONTRACT} from './meal-state-contract.mjs';
+const DB02_MEAL_PRICE_EVIDENCE_CONTRACT='wand.db02.meal-price-evidence@1';
 
 export const DB02_NATIVE_MEAL_PRICE_ROUTE_CONTRACT=
   'wand.db02.native-meal-price-route@1';
