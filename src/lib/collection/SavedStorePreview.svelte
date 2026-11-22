@@ -9,6 +9,11 @@
   export let locale = 'ja';
   export let gameImageMap: Record<string,string> = {};
   const dispatch=createEventDispatcher<{ lookupItem:number }>();
+  const jsonKindLabels:Record<string,string>={
+    null:'null',boolean:'真偽値',integer:'整数',number:'数値',
+    string:'文字列',array:'配列',object:'オブジェクト'
+  };
+  const jsonKinds=Object.keys(jsonKindLabels);
 
   let preview: any = null;
   let collectionPreview:any=null;
@@ -287,6 +292,27 @@
           <span>保存ID参照 <strong>{collectionPreview.referenceCount.toLocaleString(locale)}</strong></span>
           <span>異なるID <strong>{collectionPreview.distinctItemCount.toLocaleString(locale)}</strong></span>
         </div>
+        <div class="save-shape-diagnostics">
+          <h4>保存値の型（読み取り専用）</h4>
+          <p>CollectionのItem IDに対応する保存値の型別件数です。値そのものやグループのState文字列は表示・保存しません。真偽値も所有・解放の意味としては扱いません。</p>
+          <div class="store-metrics" aria-label="Collectionアイテム保存値の型別件数">
+            {#each jsonKinds as kind}
+              {#if collectionPreview.itemValueKinds[kind]>0}
+                <span>{jsonKindLabels[kind]} <strong>{collectionPreview.itemValueKinds[kind].toLocaleString(locale)}</strong></span>
+              {/if}
+            {/each}
+            {#if collectionPreview.referenceCount===0}<span>保存値は未観測</span>{/if}
+          </div>
+          <h4>グループStateの型</h4>
+          <div class="store-metrics" aria-label="CollectionグループStateの型別件数">
+            {#each jsonKinds as kind}
+              {#if collectionPreview.groupStateKinds[kind]>0}
+                <span>{jsonKindLabels[kind]} <strong>{collectionPreview.groupStateKinds[kind].toLocaleString(locale)}</strong></span>
+              {/if}
+            {/each}
+            {#if collectionPreview.observedGroups===0}<span>グループは未観測</span>{/if}
+          </div>
+        </div>
         {#if collectionPreview.items.length}
           <div class="store-controls">
             <input type="search" aria-label="セーブ内のCollection IDを検索"
@@ -348,6 +374,10 @@
   .store-more { margin-top:14px; }
   .saved-collection-section { margin-top:20px; padding-top:18px; border-top:1px solid rgba(150,126,190,.3); }
   .saved-collection-section h3 {font-size:1rem; margin:0 0 8px;}
+  .save-shape-diagnostics {padding:10px 12px;border:1px solid rgba(150,126,190,.23);border-radius:10px;margin:12px 0;}
+  .save-shape-diagnostics h4 {font-size:.83rem;margin:0 0 6px;}
+  .save-shape-diagnostics p {font-size:.75rem;opacity:.8;margin:0 0 8px;line-height:1.6;}
+  .save-shape-diagnostics .store-metrics {margin:0 0 10px;}
   .saved-collection-section .store-detail .store-clear {font-size:.7rem;align-self:flex-start;padding:5px 9px;margin-top:4px;}
   @media(max-width:600px){ .saved-store-preview{padding:14px;} .store-import{align-items:flex-start;} }
 </style>
