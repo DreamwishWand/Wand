@@ -359,14 +359,32 @@ try {
   assert.deepEqual(inactiveMediaRequests,[],'inactive media release must not make requests');
   assert.deepEqual(starErrors,[],starErrors.join('\n'));
   await star.close();
-  // The archived season cannot remain actionable after its task deadline.
+  // A season is archived after its original schedule, but its source-verified
+  // tasks and rewards must remain useful without pretending it is live.
   const expired=await browser.newPage();
   await expired.addInitScript(()=>{Date.now=()=>Date.parse('2026-12-10T00:00:00Z');});
   await expired.goto('http://127.0.0.1:4177/Wand/guide/star-path/',{waitUntil:'domcontentloaded'});
-  await expired.getByRole('status').filter({hasText:'タスク期間内と確認できるスターパスはありません'}).waitFor({timeout:20000});
-  assert.equal(await expired.getByRole('button',{name:'Seafaring Star Path'}).count(),0);
-  assert.equal(await expired.locator('.entries li').count(),0,'ended source cache is not an active task guide');
+  await expired.getByRole('button',{name:/Seafaring Star Path.*終了/}).waitFor({timeout:20000});
+  assert.equal(await expired.getByRole('button',{name:/Haunting Elegance.*終了/}).count(),1);
+  assert.match(await expired.locator('.archive-notice').innerText(),/終了済みのスターパス/);
+  assert.match(await expired.locator('.entries li').first().innerText(),/闇のトゲ/,
+    'verified archived duties remain browsable even after the final exchange deadline');
+  await expired.getByRole('button',{name:/Seafaring Star Path.*終了/}).click();
+  assert.match(await expired.locator('.entries li').first().innerText(),/魚を釣る/);
+  await expired.getByRole('button',{name:'報酬'}).click();
+  assert.equal(await expired.locator('.reward-entry').count(),17,
+    'expired archived rewards remain available for reference without player-state claims');
   await expired.close();
+
+  const exchangeOnly=await browser.newPage();
+  await exchangeOnly.addInitScript(()=>{Date.now=()=>Date.parse('2026-12-01T14:30:00Z');});
+  await exchangeOnly.goto('http://127.0.0.1:4177/Wand/guide/star-path/',{waitUntil:'domcontentloaded'});
+  await exchangeOnly.getByRole('button',{name:/Seafaring Star Path.*交換期間/}).waitFor({timeout:20000});
+  await exchangeOnly.getByRole('button',{name:/Seafaring Star Path.*交換期間/}).click();
+  assert.match(await exchangeOnly.locator('.archive-notice').innerText(),/タスク期間は終了しています/);
+  assert.match(await exchangeOnly.locator('.archive-notice').innerText(),/サーバーの開催状態は未確認/);
+  assert.match(await exchangeOnly.locator('.entries li').first().innerText(),/魚を釣る/);
+  await exchangeOnly.close();
   const tampered=await browser.newPage();
   await tampered.route('**/guide/public/starpath-cache-2026-11-22.json',async route=>{
     const original=await route.fetch(),bytes=Buffer.from(await original.body());
