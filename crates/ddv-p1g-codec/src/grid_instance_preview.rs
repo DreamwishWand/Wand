@@ -121,8 +121,9 @@ pub(super) fn saved_grid_instances_json(source:&[u8])->Result<String,CodecError>
                     let Some(grid)=valid_grid(key,value) else {
                         scan.invalid+=1;continue;
                     };
+                    let empty=Map::new();
                     let Some(objects)=grid.get("Objects")
-                        .map_or(Some(&Map::new()),Value::as_object) else {
+                        .map_or(Some(&empty),Value::as_object) else {
                         scan.invalid+=1;continue;
                     };
                     scan.full+=1;
@@ -141,8 +142,9 @@ pub(super) fn saved_grid_instances_json(source:&[u8])->Result<String,CodecError>
                     let Some(grid)=valid_grid(key,value) else {
                         scan.invalid+=1;continue;
                     };
+                    let empty=Map::new();
                     let Some(objects)=grid.get("ModifiedObjects")
-                        .map_or(Some(&Map::new()),Value::as_object) else {
+                        .map_or(Some(&empty),Value::as_object) else {
                         scan.invalid+=1;continue;
                     };
                     let mut removed=HashSet::new();
