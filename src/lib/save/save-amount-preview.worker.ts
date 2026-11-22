@@ -360,7 +360,7 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
       // existing DB-04 index to check all structural references before Rust
       // performs the game-specific path comparison. No native/private source
       // or Save grid paths leave this isolated Worker.
-      const graphJson=new TextDecoder('utf-8',{fatal:true}).decode(graph);
+      const graphJson=new TextDecoder('utf-8',{fatal:true}).decode(graph as Uint8Array);
       const source=new WorldReferenceIndex(JSON.parse(graphJson));
       const verified=source.toDb00WorldRelationsSidecar();
       const witness=JSON.stringify({
