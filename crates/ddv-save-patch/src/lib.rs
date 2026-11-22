@@ -712,4 +712,67 @@ mod tests {
             inventory_id:"../../".into(),item_id:"550".into()},7,8).unwrap_err(),
             PatchError::InvalidTarget);
     }
+    #[test]
+    fn grid_coordinate_patch_changes_exact_two_tokens_only(){
+        let original=r#" {"GameInfo":{"Version":643},"Player":{},"World":{
+          "GridCollection":{"Grids":{"101":{"ID":101,"Objects":{
+            "5":{"ID":5,"ItemID":40000001,"X":-12,"Y":45,
+              "Orientation":"West","PrivateUnknown":1.00e+2},
+            "6":{"ID":6,"ItemID":40000001,"X":-12,"Y":45}
+          }}}}},"Other":{"X":7,"Y":9,"Extra":"\u3053"}} "#;
+        let target=GridCoordinateTarget{
+            kind:GridObjectKind::Full,grid_id:"101".into(),
+            object_id:"5".into(),item_id:40000001
+        };
+        let patched=preview_existing_grid_coordinates(
+            original,target.clone(),(-12,45),(99,-23)
+        ).unwrap();
+        let expected=original.replacen(r#""X":-12,"Y":45"#,
+            r#""X":99,"Y":-23"#,1);
+        assert_eq!(patched.patched_json,expected);
+        assert!(patched.changed&&patched.untouched_bytes_preserved);
+        assert!(!patched.writer_authorized&&!patched.export_authorized);
+        assert!(patched.patched_json.contains(r#""PrivateUnknown":1.00e+2"#));
+        assert!(patched.patched_json.contains(r#""Extra":"\u3053""#));
+        assert!(patched.patched_json.contains(r#""6":{"ID":6,"ItemID":40000001,"X":-12"#));
+        assert_eq!(preview_existing_grid_coordinates(original,target.clone(),
+            (0,45),(99,-23)).err(),Some(PatchError::CoordinateMismatch));
+        let wrong=GridCoordinateTarget{item_id:40000002,..target.clone()};
+        assert_eq!(preview_existing_grid_coordinates(original,wrong,
+            (-12,45),(99,-23)).err(),Some(PatchError::ItemMismatch));
+        let no_op=preview_existing_grid_coordinates(
+            original,target,(-12,45),(-12,45)).unwrap();
+        assert!(!no_op.changed);
+        assert_eq!(no_op.patched_json,original);
+    }
+    #[test]
+    fn grid_coordinate_patch_handles_modified_grid_and_rejects_invalid_values(){
+        let original=r#"{"World":{"GridCollection":{"DiffGrids":{"404":{
+          "ModifiedObjects":{"2":{"ItemID":77,"X":0,"Y":-2147483648,
+            "State":{"X":12,"Y":13},"Custom":"do-not-touch"}}}
+        }}}}}"#;
+        let target=GridCoordinateTarget{
+            kind:GridObjectKind::DiffModified,grid_id:"404".into(),
+            object_id:"2".into(),item_id:77
+        };
+        let patched=preview_existing_grid_coordinates(
+            original,target.clone(),(0,i32::MIN),(i32::MAX,42)
+        ).unwrap();
+        assert!(patched.patched_json.contains(r#""X":2147483647,"Y":42"#));
+        assert!(patched.patched_json.contains(r#""State":{"X":12,"Y":13}"#));
+        assert!(patched.patched_json.contains("do-not-touch"));
+        let malformed=original.replace(r#""X":0"#,r#""X":0.0"#);
+        assert_eq!(preview_existing_grid_coordinates(&malformed,target.clone(),
+            (0,i32::MIN),(100,9)).err(),Some(PatchError::NonIntegerTarget));
+        let missing=original.replace(r#""Y":-2147483648"#,r#""SomeNewField":3"#);
+        assert_eq!(preview_existing_grid_coordinates(&missing,target.clone(),
+            (0,i32::MIN),(100,9)).err(),Some(PatchError::MissingTarget));
+        let dup=original.replace(r#""X":0"#,r#""X":0,"\u0058":0"#);
+        assert_eq!(preview_existing_grid_coordinates(&dup,target.clone(),
+            (0,i32::MIN),(100,9)).err(),Some(PatchError::DuplicateKey));
+        let illegal=GridCoordinateTarget{grid_id:"../secret".into(),..target};
+        assert_eq!(preview_existing_grid_coordinates(original,illegal,
+            (0,i32::MIN),(100,9)).err(),Some(PatchError::InvalidTarget));
+    }
+
 }
