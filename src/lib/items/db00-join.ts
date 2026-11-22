@@ -1,6 +1,8 @@
 /** TypeScript DB-01 → DB-00 bridge. Explicitly private, never auto-publishes or writes saves. */
 import { PATCH_SCHEMA, validateItem, validateTarget } from '../game-db/model.mjs';
 import { DB01_LOCALES, type Db01CatalogClient } from './index.ts';
+import type { Db01Classification, Db01ClassificationClient } from './classification.ts';
+import type { Db01ItemType, Db01ItemTypeClient } from './item-types.ts';
 
 export const DB01_DB00_JOIN_CONTRACT = 'wand.db01.db00-private-source-join@1' as const;
 export interface Db00SourceTarget {
@@ -9,7 +11,11 @@ export interface Db00SourceTarget {
   buildId: null;
   sourceSha256: string;
 }
-export async function createDb01Db00Patch(catalog: Db01CatalogClient, target: Db00SourceTarget) {
+export async function createDb01Db00Patch(
+  catalog: Db01CatalogClient, target: Db00SourceTarget,
+  classification?: Db01ClassificationClient,
+  itemTypes?: Db01ItemTypeClient
+) {
   if (!catalog?.source?.privateOnly || typeof catalog.getCategory !== 'function')
     throw new TypeError('DB01_PRIVATE_CATALOG_REQUIRED');
   validateTarget(target);
@@ -17,19 +23,99 @@ export async function createDb01Db00Patch(catalog: Db01CatalogClient, target: Db
       target.gameVersion !== catalog.source.gameVersion ||
       target.sourceSha256 !== catalog.source.nativeSourceManifestSha256 ||
       target.buildId !== null) throw new TypeError('DB01_DB00_EXACT_SOURCE_TARGET_REQUIRED');
+  if (classification && (
+      !classification.source?.privateOnly ||
+      classification.source.gameVersion !== catalog.source.gameVersion ||
+      classification.source.sourceItemsSha256 !== catalog.source.sourceItemsSha256 ||
+      classification.source.definitionCount !== catalog.source.definitions
+  )) throw new TypeError('DB01_DB00_TAG_SOURCE_MISMATCH');
+  if (itemTypes && (
+      itemTypes.source.gameVersion !== catalog.source.gameVersion ||
+      itemTypes.source.sourceItemsSha256 !== catalog.source.sourceItemsSha256 ||
+      itemTypes.source.definitionCount !== catalog.source.definitions ||
+      itemTypes.source.sourceItemTypeVerified !== catalog.source.definitions
+  )) throw new TypeError('DB01_DB00_IL2CPP_SOURCE_MISMATCH');
   const nativeCategories = ['ActivityItem', 'Furniture', 'Clothing', 'Trimming'] as const;
   const batches = await Promise.all(nativeCategories.map(category => catalog.getCategory(category)));
-  const records = batches.flat().map(row => {
+  const nativeRows = batches.flat();
+  const tagged = new Map<number, Readonly<Db01Classification>>();
+  if (classification) {
+    // The overlay's 39k definitions are private, but only the 13k verified
+    // native item classes belong in DB-00 Item records. Keep I/O bounded.
+    for (let index = 0; index < nativeRows.length; index += 4096) {
+      const subset = nativeRows.slice(index, index + 4096);
+      const found = await classification.getItems(subset.map(row => row.itemId));
+      if (found.length !== subset.length)
+        throw new TypeError('DB01_DB00_TAG_BATCH_MISMATCH');
+      found.forEach((metadata, i) => {
+        const base = subset[i];
+        if (!metadata || metadata.itemId !== base.itemId ||
+            metadata.nativeKey !== base.nativeKey ||
+            metadata.nativeCategory !== base.nativeCategory ||
+            metadata.sourceSha256 !== base.sourceSha256)
+          throw new TypeError('DB01_DB00_TAG_NATIVE_IDENTITY_MISMATCH');
+        tagged.set(metadata.itemId, metadata);
+      });
+    }
+  }
+  const typed = new Map<number, Readonly<Db01ItemType>>();
+  if (itemTypes) {
+    for (let index = 0; index < nativeRows.length; index += 4096) {
+      const subset = nativeRows.slice(index, index + 4096);
+      const found = await itemTypes.getItems(subset.map(row => row.itemId));
+      if (found.length !== subset.length)
+        throw new TypeError('DB01_DB00_IL2CPP_BATCH_MISMATCH');
+      found.forEach((metadata, i) => {
+        const base = subset[i];
+        if (!metadata || metadata.itemId !== base.itemId ||
+            metadata.nativeCategory !== base.nativeCategory ||
+            metadata.sourceSha256 !== base.sourceSha256 ||
+            metadata.itemTypeName !== base.nativeCategory)
+          throw new TypeError('DB01_DB00_IL2CPP_ITEM_MISMATCH');
+        typed.set(metadata.itemId, metadata);
+      });
+    }
+  }
+  const records = nativeRows.map(row => {
     if (row.catalogDomain !== 'item') throw new TypeError('DB01_UNCLASSIFIED_PATCH_BLOCKED');
     const names: Record<string,string> = {};
     for (const locale of DB01_LOCALES) {
       if (row.names[locale] !== null) names[locale] = row.names[locale];
     }
+    const metadata = tagged.get(row.itemId);
+    const itemType = typed.get(row.itemId);
+    // Source Tag.json links are not synonymous with DLC entitlement or world
+    // availability. Do NOT assert these DB-00 fields from Tag references.
+    const attributes = metadata || itemType ? {
+      ...(metadata ? {
+        gameOriginalTagReferences:metadata.tagReferences.map(tag => ({
+          id:tag.tagId,key:tag.tagKey,originalWireField:tag.wireField,facet:tag.facet,
+        })),
+        gameOriginalTagFacets:metadata.facets,
+        uninterpretedSubtypeCode:metadata.wireSubtypeCode,
+      } : {}),
+      ...(itemType ? {
+        sourceItemType:{code:itemType.itemTypeCode,name:itemType.itemTypeName,
+          evidence:'current_original_il2cpp_enum'},
+        sourceSubtype:{code:itemType.subtypeCode,
+          name:itemType.subtypeName,
+          enum:itemType.subtypeEnumName,
+          verified:itemType.subtypeNameVerified},
+      } : {}),
+      gameUiCategoryVerified:false,worldAvailabilityVerified:false,
+      dlcOwnershipVerified:false,
+    } : undefined;
     return validateItem({
       id:String(row.itemId), names, nameStatus:Object.keys(names).length ? 'verified' : 'unverified',
       category:null, subcategory:null, nativeCategory:row.nativeCategory,
-      worlds:[],universes:[],contentIds:[],releaseIds:[],relations:[],
-      sourceRefs:['db01-src01-steam-native'],
+      worlds:[],universes:metadata?.facets.disneyUniverse ?? [],
+      contentIds:[],releaseIds:[],relations:[],
+      sourceRefs:[
+        'db01-src01-steam-native',
+        ...(metadata ? ['db01-original-tag-relations'] : []),
+        ...(itemType ? ['db01-original-il2cpp-types'] : []),
+      ],
+      ...(attributes ? {attributes} : {}),
     });
   });
   if (records.length !== catalog.source.currentNativeItemDefinitions)
@@ -38,7 +124,13 @@ export async function createDb01Db00Patch(catalog: Db01CatalogClient, target: Db
     schema:PATCH_SCHEMA,
     target:{...target},
     items:records, releases:[],
-    sources:[{id:'db01-src01-steam-native',sha256:catalog.source.nativeSourceManifestSha256,visibility:'private'}],
+    sources:[
+      {id:'db01-src01-steam-native',sha256:catalog.source.nativeSourceManifestSha256,visibility:'private'},
+      ...(classification ? [{id:'db01-original-tag-relations',
+        sha256:classification.source.tagOriginalSha256,visibility:'private'}] : []),
+      ...(itemTypes ? [{id:'db01-original-il2cpp-types',
+        sha256:itemTypes.source.sourceIl2cppDumpSha256,visibility:'private'}] : []),
+    ],
   };
   return Object.freeze({
     contract:DB01_DB00_JOIN_CONTRACT,patch,
@@ -46,6 +138,10 @@ export async function createDb01Db00Patch(catalog: Db01CatalogClient, target: Db
     excludedUnclassifiedDefinitions:catalog.source.definitions-records.length,
     sourceCompatible:true,catalogCoverageComplete:false,
     historicalMetadataCopied:false,saveWritingAuthorized:false,
-    currentNameCoverageOnly:true,publishable:false,
+    currentNameCoverageOnly:!classification,
+    sourceTagMetadataAdded:classification ? tagged.size : 0,
+    sourceItemTypeMetadataAdded:itemTypes ? typed.size : 0,
+    worldAvailabilityDerivedFromTags:false,dlcOwnershipDerivedFromTags:false,
+    publishable:false,
   });
 }

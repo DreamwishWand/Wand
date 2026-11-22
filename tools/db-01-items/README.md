@@ -140,6 +140,159 @@ A separately trusted manifest provenance/SHA and the complete independent
 `audit_shards.py` release audit are still required: consistent but forged
 source metadata cannot be authenticated by runtime self-consistency alone.
 
+## Steam v1.26.2 source-exact item classification (original Tag ID metadata)
+
+`extract_classification.py` is the source-verified offline **Python** producer
+for a separate **private** lazy-read overlay. It uses the existing audited
+39,067-definition SQLite v2 as the identity authority, verifies its pinned
+SHA-256, and rejects every original itemlist that differs from that SQLite's
+exact source hash. It decodes original `Tag.json` identifiers (409 source
+definitions), the exact original Tag IDs referenced in supported wire fields,
+the unmodified native key and any uninterpreted numeric subtype codes.
+
+The type-safe **TypeScript** consumer is
+`src/lib/items/classification.ts`; it loads only an item-ID bucket, pins each
+file to the manifest's SHA-256, and compares native category, Item ID, native
+key and source SHA against the existing `Db01CatalogClient`. Its
+`getItem(id)` / `getItems(ids)` calls preserve all source-exact Tag references
+and multiple Disney-universe/source-world-context tags.
+
+The initial current-source verified private output identifies **14,861**
+definitions containing **67,089** original Tag-ID references. Source
+association coverage by group: clothing slot 2,062; furniture kind 6,190;
+Disney-universe 1,966; world-context 11,163; colors 7,663; furniture style
+4,778; clothing style 1,872; ingredient kind 469; meal kind 618. These counts
+overlap. All 39,067 source definitions, including those without a proven Tag
+association, are queryable. An unknown field remains unknown.
+
+To reproduce **from owner-private originals**, supply the audited complete
+SQLite and the game `itemlist` directory. Never put any of these output
+files in the public repo:
+
+```sh
+python tools/db-01-items/extract_classification.py \
+  --sqlite /owner/private/complete-1262.sqlite \
+  --original-dir /owner/private/steam-1262/itemlist \
+  --expected-sqlite-sha256 <independently pinned actual SQLite SHA256> \
+  --out /owner/private/db01-1262-source-tags
+```
+
+Source Tag hashes must match the exact current SQLite ledger. If a reduced
+synthetic SQLite lacks a `Tag` category, additionally supply an independently
+trusted `--expected-tag-sha256`; this is not needed for the complete original
+Steam 1.26.2 release. The output is 256 private SHA-checked on-demand JSON
+shards and a versioned manifest; the old catalog, icon GUIDs and eight exact
+current-version names are unchanged. The private original Tag overlay is
+stored alongside the audited DB-01 release in the owner's SRC-01 Drive folder.
+
+### Steam v1.26.2 IL2CPP ItemType and source-exact subtypes
+
+The SHA-verified original `Il2CppDump/dump.cs` defines the authoritative
+`Definitions.Items.ItemType` and native per-class subtype enums.
+`extract_item_types.py` independently pins BOTH the private SQLite
+SHA-256 and the current game's full IL2CPP dump SHA-256, parses the
+`Definitions.Items` enum namespace, and fails closed if ANY of the
+39,067 original source definitions disagrees with the official ItemType
+code inferred from its original numeric ID.
+
+**Observed Steam 1.26.2 coverage (all source-verified records):**
+
+- **39,067 / 39,067** Item IDs agree with the source `ItemType` enum.
+- **28,520** have an exact source subtype name from the matching native enum;
+  **10,547** have a source ItemType but no evidenced subtype label.
+- For source-proved ID associations only, the native top-level ItemType code
+  is the 10,000,000-place prefix; the 100,000-place remainder holds a
+  subtype code when a corresponding original enum is present. Unknown
+  future IDs, Collection-menu category and DLC are NOT inferred.
+- `ActivityItemType` includes `Crop`, `Meal`, `Fish`, `Seed` and
+  `Ingredient`; `FurnitureItemType` includes `Landscaping`,
+  `Fence`, `Door`, etc.; `ClothingItemType` includes `CloTopOuter`,
+  `CloBottomInner` and many more. Original enum names are preserved
+  verbatim instead of guessing user-visible game labels.
+- The existing raw wire field-7/8 subtype **candidate** in the separate
+  Tag overlay remains uninterpreted; it is NOT treated as the original
+  Item ID's encoded subtype.
+
+Use the offline producer with an **independently trusted** Steam 1.26.2
+IL2CPP dump; the original bytes and generated metadata stay owner-private:
+
+```sh
+python tools/db-01-items/extract_item_types.py \
+  --sqlite /owner/private/complete-1262.sqlite \
+  --il2cpp-dump /owner/private/steam-1262/Il2CppDump/dump.cs \
+  --expected-sqlite-sha256 <trusted SQLite SHA256> \
+  --expected-dump-sha256 <trusted IL2CPP dump SHA256> \
+  --out /owner/private/db01-steam-1262-item-types
+```
+
+The TypeScript `src/lib/items/item-types.ts` reads only the requested
+SHA-checked Item-ID buckets, verifies the same-version canonical
+`Db01CatalogClient` source identity, and exposes `getItem(id)`,
+`getItems(ids)`, and exact or explicitly unknown subtype names. In the
+optional private DB-00 join, these are returned through
+`attributes.sourceItemType` and `attributes.sourceSubtype`; they are
+not promoted to unverified `category` or `subcategory` user-menu
+fields. The owner-private original-type overlay has 256 audited shards
+alongside the original DB-01 release in SRC-01 Drive.
+
+### Item ID numeric-range audit (original-class identity only)
+
+The offline `audit_id_ranges.py` examines **every source-verified Item ID** in
+one SHA-pinned private SQLite release. For Steam v1.26.2, the 10,000,000-ID
+prefix grouping is a perfect partition of the 39,067 observed definitions
+across 38 nonempty **source-native classes**, with **zero collisions**.
+This *does not* identify game-screen categories, subtypes, universes or DLC;
+and **unknown future Item IDs cannot be classified** using the historical
+partition without a fresh, complete original-source check.
+
+```sh
+python tools/db-01-items/audit_id_ranges.py \
+  --sqlite /owner/private/complete-1262.sqlite \
+  --expected-sqlite-sha256 <independently pinned SQLite SHA256> \
+  --divisor 10000000 \
+  --out /owner/private/db01-id-range-audit.json
+```
+
+The report records per-prefix native classes and observed ID ranges;
+ambiguous prefixes are reported as collisions, not assigned a guessed class.
+
+### Legacy Switch v1.25.0 taxonomy comparison (candidate-only)
+
+The optional `correlate_switch_classification.py` joins the already
+SHA-verified Switch v1.25.0 Collection index/shards to the current Steam
+v1.26.2 SQLite and the complete current original-Tag overlay. It validates
+each input hash, only correlates existing Item IDs, and separately reports
+exact current name matches, source Tag universe overlap and source world-
+context tag overlap. All old categories, universe/world candidates and
+expansions retain explicit **historical-only** labels; zero inferred
+promotions into current UI taxonomy, actual obtainability or DLC entitlement.
+
+```sh
+python tools/db-01-items/correlate_switch_classification.py \
+  --sqlite /owner/private/complete-1262.sqlite \
+  --overlay /owner/private/db01-1262-source-tags \
+  --switch-reference static/ddv/collection/v1.25 \
+  --expected-sqlite-sha256 <independently pinned actual SQLite SHA256> \
+  --out /owner/private/db01-switch125-classification-candidates
+```
+
+The report separates confirmed cross-source agreements from unverified old
+metadata. Different versions and game platforms cannot be equated merely
+because an Item ID collides. The resulting private candidate file is *never*
+automatically applied to DB-00 or a current version of Collection.
+
+**Evidence boundaries:** `nativeCategory` is a source definition class, not
+necessarily the Collection screen menu; a Tag group is a source-record
+association, not a proved parent/child menu or universally applicable
+ItemType enum. `wireSubtypeCode` is numeric and explicitly uninterpreted.
+An original `IsEternityIsle` tag indicates a *world-context tag*, not a proof
+that an item is obtainable there; a Disney universe tag does **not** assert a
+DLC entitlement or shop availability. No source Tag inference populates
+DB-00's `worlds`/`contentIds`, and unknown UI category/subcategory remain
+`null`. In the opt-in DB-00 join, original tags/facets and subtype codes are
+passed in `attributes`, with multiple verified Disney universe links retained.
+DB-02 owns acquisitions, DB-03 season data and DB-04 world hierarchy.
+
 ## Multi-version update pipeline and SHA-exact original-file reuse
 
 **New version-independent operational entrypoint:** `release_pipeline.py` accepts
