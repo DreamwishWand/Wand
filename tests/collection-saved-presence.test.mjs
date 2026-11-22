@@ -94,3 +94,45 @@ test('sanitizer reconstructs only known fields and rejects forged ownership or c
   assert.throws(()=>sanitizeSavedCollectionPresence({...raw,items:[raw.items[0],raw.items[0]]}),/INVALID_WORKER_REPLY/);
   assert.throws(()=>sanitizeSavedCollectionPresence({...raw,status:'owned'}),/INVALID_WORKER_REPLY/);
 });
+
+test('saved Collection map values are counted only by JSON kind, never interpreted or copied',()=>{
+  const root=payload([
+    {'1':true,'2':false,'3':null,'4':1,'5':1.25,'6':'private-secret','7':[1,2],'8':{owner:'private-secret'}},
+    {'1':{complete:false}}
+  ]);
+  root.Player.CollectionSets[0].GroupData[0].State='private-progress-label';
+  root.Player.CollectionSets[0].GroupData[1].State=0;
+  const result=createSavedCollectionPresence(root);
+  assert.deepEqual(result.itemValueKinds,{
+    null:1,boolean:2,integer:1,number:1,string:1,array:1,object:2
+  });
+  assert.deepEqual(result.groupStateKinds,{
+    null:0,boolean:0,integer:1,number:0,string:1,array:0,object:0
+  });
+  assert.equal(result.referenceCount,9);
+  const serialized=JSON.stringify(result);
+  assert.ok(!serialized.includes('private-secret'));
+  assert.ok(!serialized.includes('private-progress-label'));
+  assert.ok(!serialized.includes('complete'));
+  assert.deepEqual(sanitizeSavedCollectionPresence(structuredClone(result)),result);
+});
+
+test('untrusted Worker shape counts fail closed when forged, incomplete or inconsistent',()=>{
+  const raw=structuredClone(createSavedCollectionPresence(payload([
+    {'1':true,'2':{private:'ignored'}}
+  ])));
+  const forged=structuredClone(raw);
+  forged.itemValueKinds.boolean=7;
+  assert.throws(()=>sanitizeSavedCollectionPresence(forged),/INVALID_WORKER_REPLY/);
+  const missing=structuredClone(raw);
+  delete missing.itemValueKinds.object;
+  assert.throws(()=>sanitizeSavedCollectionPresence(missing),/INVALID_WORKER_REPLY/);
+  const extra=structuredClone(raw);
+  extra.itemValueKinds.privateName='sensitive';
+  assert.throws(()=>sanitizeSavedCollectionPresence(extra),/INVALID_WORKER_REPLY/);
+  const badStates=structuredClone(raw);
+  badStates.groupStateKinds.string=2;
+  assert.throws(()=>sanitizeSavedCollectionPresence(badStates),/INVALID_WORKER_REPLY/);
+  assert.equal(raw.ownershipVerified,false);
+  assert.equal(raw.writerAuthorized,false);
+});
