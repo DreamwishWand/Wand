@@ -133,7 +133,7 @@ try{
   await portal.locator('.portal-card').filter({hasText:'Collection'}).first().waitFor();
   assert.equal(await portal.locator('.portal-grid .portal-card').count(),7);
   assert.deepEqual(await portal.locator('.portal-grid .portal-card-label strong').allTextContents(),
-    ['Decorate','Presets','Collection','Guide','Gallery','DreamSnaps','Community Help Center']);
+    ['Decorate','Presets','Gallery','DreamSnaps','Collection','Guide','Community Help Center']);
   assert.equal(await portal.locator('a.portal-card').count(),2);
   assert.equal(await portal.locator('.portal-card.planned').count(),5);
   assert.equal(await portal.locator('.portal-card-community').count(),1);
@@ -160,7 +160,17 @@ try{
       communityHeight:support?.height,
       gap:cards[1]?cards[1].left-cards[0].right:null,
       radius:getComputedStyle(document.querySelector('.portal-card')).borderTopLeftRadius,
-      headerOrder
+      headerOrder,
+      titleSize:parseFloat(getComputedStyle(document.querySelector('.portal-card-label strong')).fontSize),
+      statusSize:parseFloat(getComputedStyle(document.querySelector('.portal-planned-status')).fontSize),
+      headerButtonSize:document.querySelector('.header-home-button')?.getBoundingClientRect().width,
+      iconToLabelGap:(()=>{
+        const icon=document.querySelector('.portal-card-decorate .portal-card-visual')?.getBoundingClientRect();
+        const label=document.querySelector('.portal-card-decorate .portal-card-label')?.getBoundingClientRect();
+        return icon&&label?label.top-icon.bottom:null;
+      })(),
+      positions:Object.fromEntries(['decorate','presets','gallery','dreamsnaps','collection','guide','community']
+        .map(key=>[key,(()=>{const r=document.querySelector('.portal-card-'+key)?.getBoundingClientRect();return r?{x:r.left,y:r.top,w:r.width,h:r.height}:null;})()]))
     };
   });
   assert.equal(layout.fits,true,'all seven launcher tiles must fit the first desktop viewport');
@@ -169,6 +179,16 @@ try{
   assert.ok(layout.gap>=0&&layout.gap<=3,'service tiles should have only a thin divider');
   assert.equal(layout.radius,'0px','rectangular tiles, not isolated cards');
   assert.deepEqual(layout.headerOrder,['表示設定','ヘルプとアカウント']);
+  assert.ok(layout.headerButtonSize>=44,'desktop header controls need 44px targets');
+  assert.ok(layout.titleSize>=26,'launcher title typography must be easy to read');
+  assert.ok(layout.statusSize>=14,'planned badges must not use tiny text');
+  assert.ok(layout.iconToLabelGap>=0&&layout.iconToLabelGap<=38,'icon and label must read as one group');
+  const p=layout.positions;
+  assert.ok(p.decorate.x<p.presets.x&&p.presets.x<p.collection.x&&p.collection.x<p.guide.x);
+  assert.ok(p.gallery.y>p.decorate.y&&p.gallery.x===p.decorate.x);
+  assert.ok(p.dreamsnaps.y>p.presets.y&&p.dreamsnaps.x===p.presets.x);
+  assert.ok(p.community.x===p.collection.x&&p.community.w>p.collection.w);
+  assert.equal(await portal.locator('.portal-planned-status svg').count(),5,'planned badges show a lock next to legible text');
   await portal.getByRole('button',{name:'サービスを切り替える'}).click();
   const serviceMenu=portal.getByRole('group',{name:'サービス一覧'});
   assert.equal(await serviceMenu.getByRole('link',{name:'Collection'}).count(),1);
@@ -177,9 +197,27 @@ try{
   await portal.setViewportSize({width:390,height:844});
   const mobileLayout=await portal.evaluate(()=>{
     const help=document.querySelector('.portal-card-community')?.getBoundingClientRect();
-    return Boolean(help&&help.height>=120&&help.bottom<=innerHeight+1&&document.documentElement.scrollWidth<=innerWidth+1);
+    const gallery=document.querySelector('.portal-card-gallery')?.getBoundingClientRect();
+    const collection=document.querySelector('.portal-card-collection')?.getBoundingClientRect();
+    const header=document.querySelector('.header-home-button')?.getBoundingClientRect();
+    return Boolean(help&&gallery&&collection&&header&&help.height>=120&&
+      gallery.top<collection.top&&header.width>=40&&
+      document.documentElement.scrollWidth<=innerWidth+1);
   });
-  assert.equal(mobileLayout,true,'mobile launcher must keep all services and Help Center usable');
+  assert.equal(mobileLayout,true,'mobile launcher needs readable services, creative-first order and no horizontal overflow');
+  // Text-only zoom may need vertical scrolling, but must never clip labels horizontally.
+  await portal.evaluate(()=>document.documentElement.style.fontSize='200%');
+  const textZoomLayout=await portal.evaluate(()=>({
+    horizontalOverflow:document.documentElement.scrollWidth-innerWidth,
+    smallestStatus:Math.min(...Array.from(document.querySelectorAll('.portal-planned-status'))
+      .map(el=>parseFloat(getComputedStyle(el).fontSize))),
+    missingLabels:Array.from(document.querySelectorAll('.portal-card-label strong'))
+      .filter(el=>!el.getBoundingClientRect().width).length
+  }));
+  assert.ok(textZoomLayout.horizontalOverflow<=1,'200% text zoom must not create horizontal overflow');
+  assert.ok(textZoomLayout.smallestStatus>=28,'200% text zoom should scale planned status text');
+  assert.equal(textZoomLayout.missingLabels,0);
+  await portal.evaluate(()=>document.documentElement.style.fontSize='');
   const localeButton=portal.getByRole('button',{name:'表示言語を切り替える'});
   await localeButton.click();
   await portal.getByRole('group',{name:'表示言語'}).getByRole('button',{name:'English'}).click();
