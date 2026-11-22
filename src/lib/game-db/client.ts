@@ -31,7 +31,7 @@ export interface PublishedPageReader {
 }
 import { loadCollectionRuntime, COLLECTION_RUNTIME_PATH } from '../collection/catalog.mjs';
 import { ACTIVE_SCHEMA, RELEASE_SCHEMA, SNAPSHOT_SCHEMA, LOCALES,
-  validateSnapshot, validateItem, canonicalId, legacyItem } from './model.mjs';
+  validateSnapshot, validateItem, canonicalId, legacyItem } from './model.ts';
 
 const ACTIVE_PATH = 'ddv/game-db/active.json';
 function safePath(value:unknown):string {
