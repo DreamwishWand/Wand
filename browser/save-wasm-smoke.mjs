@@ -709,6 +709,29 @@ try{
   await groupMap.getByLabel('グループ移動X').fill('2147483647');
   assert.equal(await stageGroup.isDisabled(),true,
     'signed integer overflow must be rejected before staging');
+  // Click-to-draft group translation uses the first selected saved
+  // object as the anchor. This is only an integer-coordinate proposal:
+  // even a visible ghost must not mutate original Save or export.
+  await groupMap.getByRole('button',{
+    name:'グループの移動先をマップで指定'
+  }).click();
+  const groupClickTarget=groupMap.getByRole('button',{
+    name:'グループの移動先をマップで指定'
+  });
+  const groupTargetBounds=await groupClickTarget.boundingBox();
+  assert.ok(groupTargetBounds&&groupTargetBounds.width>100);
+  await groupClickTarget.click({position:{
+    x:Math.floor(groupTargetBounds.width*.75),
+    y:Math.floor(groupTargetBounds.height*.25)
+  }});
+  const mapDx=Number(await groupMap.getByLabel('グループ移動X').inputValue());
+  const mapDy=Number(await groupMap.getByLabel('グループ移動Y').inputValue());
+  assert.ok(Number.isSafeInteger(mapDx)&&Number.isSafeInteger(mapDy));
+  assert.ok(mapDx!==0||mapDy!==0);
+  assert.equal(await stageGroup.isEnabled(),true);
+  assert.equal(await groupMap.locator('.group-ghost').count(),2);
+  assert.equal(groupOriginal.World.GridCollection.Grids['101'].Objects['1'].X,45);
+  await groupMap.getByRole('button',{name:'マップ指定を終了'}).click();
   await groupMap.getByLabel('グループ移動X').fill('7');
   await groupMap.getByLabel('グループ移動Y').fill('-3');
   assert.equal(await stageGroup.isEnabled(),true);
