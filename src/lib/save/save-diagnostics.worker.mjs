@@ -21,7 +21,7 @@ self.onmessage = async ({ data }) => {
   let response = { kind: 'error' };
   try {
     if (data?.command !== 'inspect-local-save-diagnostics' ||
-        (data.format !== 'json' && data.format !== 'p1g') ||
+        (data.format !== 'json' && data.format !== 'p1g' && data.format !== 'auto') ||
         !(bytes instanceof Uint8Array) ||
         Object.keys(data).sort().join(',') !== 'bytes,command,format') {
       throw new TypeError('DB05_LOCAL_WORKER_COMMAND_INVALID');
