@@ -91,7 +91,7 @@
 </div>
 {#if tutorialOpen}
   <div class="tutorial-backdrop">
-    <section class="tutorial-dialog" role="dialog" aria-modal="true" aria-label={tutorial.title}>
+    <div class="tutorial-dialog" role="dialog" aria-modal="true" aria-label={tutorial.title}>
       <header class="tutorial-top">
         <div><WandIcon name="help" size={24}/><h2>{tutorial.title}</h2></div>
         <button type="button" class="header-icon-button" on:click={()=>tutorialOpen=false}
@@ -103,6 +103,6 @@
         {/each}
       </ol>
       <button type="button" class="tutorial-done" on:click={()=>tutorialOpen=false}>閉じる</button>
-    </section>
+    </div>
   </div>
 {/if}
