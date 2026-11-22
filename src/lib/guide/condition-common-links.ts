@@ -105,7 +105,7 @@ function walkIndex(
   check(Array.isArray(records)&&records.length>0&&records.length<=10000,'INVALID_RECORDS');
   const native=new Set<string>();
   for(const record of records){
-    check(obj(record)&&id(record.id)&&SHA.test(record.nativeWireSha256)&&
+    check(record!==null&&typeof record==='object'&&id(record.id)&&SHA.test(record.nativeWireSha256)&&
       !native.has(record.id),'INVALID_NATIVE_RECORD');
     native.add(record.id);
   }
@@ -115,14 +115,14 @@ function walkIndex(
   const toIds=new Set<string>();
   for(const record of records){
     const visit=(tree:RawNativeConditionTree,path:string,operators:readonly NativeConditionBooleanOperator[],depth:number):void=>{
-      check(depth<=24&&obj(tree)&&
+      check(depth<=24&&tree!==null&&typeof tree==='object'&&
         ['AND','OR','NOT'].includes(tree.operator)&&
         SHA.test(tree.sourceTreeWireSha256)&&
         Array.isArray(tree.children)&&tree.children.length<=256,'INVALID_AST');
       const nested=Object.freeze([...operators,tree.operator as NativeConditionBooleanOperator]);
       for(const [i,leaf] of tree.children.entries()){
         leaves++;check(leaves<=20000,'TOO_MANY_LEAVES');
-        check(obj(leaf)&&leaf.ordinal===i&&Number.isSafeInteger(leaf.sourceTag)&&
+        check(leaf!==null&&typeof leaf==='object'&&leaf.ordinal===i&&Number.isSafeInteger(leaf.sourceTag)&&
           leaf.sourceTag>0&&SHA.test(leaf.payloadSha256)&&
           typeof leaf.kind==='string'&&leaf.kind.length>0,'INVALID_LEAF');
         const nodePath=path+'.children['+i+']';
