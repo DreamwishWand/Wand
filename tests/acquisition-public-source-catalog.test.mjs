@@ -42,6 +42,11 @@ test('Complete public Steam 1.26.2 DB-02 catalog joins 1255 source-pinned Star P
   assert.equal(catalog.coverage.nativeIapDirectRewardRoutes,150);
   assert.equal(catalog.coverage.nativeIapExtendedRewardRoutes,141);
   assert.equal(catalog.coverage.nativeIapSourceRoutes,291);
+  assert.equal(catalog.coverage.nativeIapNestedPackReferences,3);
+  assert.equal(catalog.coverage.nativeIapAdditionalPackReferences,3);
+  assert.equal(catalog.coverage.nativeIapAppleAppStoreOnlyPackReferences,3);
+  assert.equal(catalog.nativeIapPackReferences.coverage.totalPackReferences,6);
+  assert.equal(catalog.nativeIapPackReferences.coverage.onlineRewardGrantsVerified,0);
   assert.equal(catalog.coverage.historicalNativeShopOffers,27);
   assert.equal(catalog.coverage.historicalNativeShopSourceRoutes,128);
   assert.equal(catalog.coverage.historicalNativeShopDistinctItemIds,120);
@@ -65,8 +70,9 @@ test('Complete public Steam 1.26.2 DB-02 catalog joins 1255 source-pinned Star P
     catalog.coverage.linkedOutsidePublishedItemIds,
     catalog.coverage.allSourceLinkedItemIds);
   const urlList=new Set(seen);
-  assert.equal(seen.length,23); // pointer + index + 14 shards + 4 Guide + Nov Shop + July Shop + IAP
-  assert.equal(urlList.size,23);
+  assert.equal(seen.length,24); // 23 original public assets + IAP native pack-reference projection
+  assert.equal(urlList.size,24);
+  assert(seen.some(s=>s.endsWith('/iap-pack-links-1.26.2.json')));
   assert(seen.some(s=>s.endsWith('/shop-cache-2026-07-15.json')));
   assert(seen.some(s=>s.endsWith('/iap-rewards-1.26.2.json')));
   assert(seen.some(s=>s.endsWith('/shop-cache-2026-11-22.json')));
@@ -156,6 +162,18 @@ test('Unified lookup separates exact Quest, Event and Friendship Item ID routes 
   const iap=catalog.nativeIapSource.getPackage('Expansion4PackDeluxeEdition');
   assert(iap);
   assert.equal(iap.rewards.length,5);
+  const reference=catalog.nativeIapPackReferences
+    .getFromPackage('Expansion4PackDeluxeEdition');
+  assert.equal(reference.length,1);
+  assert.equal(reference[0].kind,'additional_pack');
+  assert.equal(reference[0].toPackageId,'Expansion4PackExpansionPass');
+  assert.deepEqual(reference[0].supportedMarketplaces,[9]);
+  assert.equal(catalog.nativeIapPackReferences
+    .getAdditionalForMarketplace('Expansion4PackDeluxeEdition',5).length,0);
+  assert.deepEqual(catalog.nativeIapPackReferences
+    .getNestedRewardPath('FoundersPackUltimate'),[
+    'FoundersPackUltimate','FoundersPackDeluxe','FoundersPackBaseGame'
+  ]);
   const iapOrigin=catalog.lookup('10000049').origins.find(o=>
     o.campaignId==='native-iap:Expansion4PackDeluxeEdition');
   assert(iapOrigin);
@@ -205,6 +223,9 @@ test('Public-only startup rejects corrupt source-pinned DB-00 and Guide bytes; u
   ),/PROJECTION_SHA/);
   await assert.rejects(loadPublicSourceCatalog(
     '/Wand',publicFetcher({corrupt:'iap-rewards-1.26.2.json'}).fetcher
+  ),/PUBLIC_SHA/);
+  await assert.rejects(loadPublicSourceCatalog(
+    '/Wand',publicFetcher({corrupt:'iap-pack-links-1.26.2.json'}).fetcher
   ),/PUBLIC_SHA/);
   await assert.rejects(loadPublicSourceCatalog(
     '/Wand',publicFetcher({corrupt:'shop-cache-2026-07-15.json'}).fetcher
