@@ -496,7 +496,7 @@ export class SharedGameDatabase {
         vals.every(stringToken)&&new Set(vals).size===vals.length&&
         (filter.match===undefined||filter.match==='any'||filter.match==='all'),
         'INVALID_FACET_VALUES');
-      check(filter.field!=='media','MEDIA_NOT_TEXT_SEARCHABLE');
+      check(String(filter.field)!=='media','MEDIA_NOT_TEXT_SEARCHABLE');
     }
     const cacheKey=JSON.stringify(filter);
     const present=this.queryCache.get(cacheKey);
