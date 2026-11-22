@@ -16,7 +16,7 @@ const app=()=>cached??=openPublicSharedGameSources('/Wand',fetcher);
 
 test('public item search combines localized exact names and ID-prefix queries with stable paging',async()=>{
   const source=await app();
-  const id='170600007';
+  const id=source.queryItems([],{limit:1}).items[0].id;
   const direct=source.getItem(id);
   const idResult=source.searchItems({text:id,limit:20});
   assert.equal(idResult.scope,'current_published_itemlist');
@@ -64,24 +64,34 @@ test('published acquisition search finds original Premium Shop and IAP source li
   const source=await app();
   const shop=source.searchItems({originKinds:['premium_shop'],limit:500});
   assert(shop.total>0);
-  assert(shop.items.some(item=>item.itemId==='170600007'));
+  const shopExample=shop.items.find(item=>item.origins?.some(origin=>
+    origin.kind==='premium_shop'&&origin.routeStatus==='confirmed_source_link'));
+  assert(shopExample,'published source offer must retain source-exact Item ID');
+  const shopId=shopExample.itemId;
   assert(shop.items.every(item=>item.origins?.some(origin=>
     origin.kind==='premium_shop'&&origin.availability==='not_live_verified')));
   const confirmed=source.searchItems({
     originKinds:['premium_shop'],routeStatus:'confirmed_source_link',
-    text:'170600007',limit:10
+    text:shopId,limit:10
   });
   assert.equal(confirmed.items.length,1);
-  assert.equal(confirmed.items[0].itemId,'170600007');
+  assert.equal(confirmed.items[0].itemId,shopId);
   assert.equal(confirmed.liveAvailabilityVerified,false);
   assert.equal(source.searchItems({
     originKinds:['premium_shop'],routeStatus:'static_candidate_only',
-    text:'170600007'
+    text:shopId
   }).total,0,'source configured shop offers are not speculative item-name matches');
 
-  const iap=source.searchItems({originKinds:['purchase_bonus'],text:'10000049'});
-  assert.equal(iap.items.length,1);
-  assert(iap.items[0].origins.some(row=>row.kind==='purchase_bonus'));
+  const iap=source.searchItems({originKinds:['purchase_bonus'],limit:500});
+  assert(iap.total>0);
+  const iapExample=iap.items.find(item=>item.origins?.some(row=>
+    row.kind==='purchase_bonus'));
+  assert(iapExample);
+  assert.equal(source.searchItems({
+    originKinds:['purchase_bonus'],text:iapExample.itemId
+  }).items[0].itemId,iapExample.itemId);
+  assert.equal(source.getItem('170600007').catalog,null,
+    'source-linked IDs outside the published ItemList remain available only by direct lookup');
   const onlyCandidate=source.searchItems({
     originKinds:['twitch_drop'],text:'50400102'
   });
