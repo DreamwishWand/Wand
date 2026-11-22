@@ -153,7 +153,7 @@ test('global query keeps unverified matching original Grid cases explicitly unkn
     layoutId:unknownLayout,gridIdNative:1,gridObjectIdNative:0,
     layoutObjectId:unknownLayout+'#grid=1#object=0',
     itemId:100,x:1,y:1
-  }]]));
+  }]]]));
   const partial=findOriginalItemAnchorAcrossGrids(mixed,100,0);
   assert.equal(partial.status,'found');
   assert.equal(partial.matchingOriginalDefaultObjectCount,2);
