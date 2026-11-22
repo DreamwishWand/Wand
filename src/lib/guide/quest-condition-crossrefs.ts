@@ -11,7 +11,7 @@ import {guideMissionReferences,guideVerifiedSourceBridge} from './client.mjs';
 import {
   DB03_CONDITION_RELATION_SCHEMA,type GuideConditionRelationIndex,
   type GuideConditionMention,type NativeConditionBooleanOperator
-} from './condition-relations';
+} from './condition-relations.ts';
 
 export const DB03_QUEST_CONDITION_CROSSREF_SCHEMA='wand.db03.quest-common-condition-refs@1' as const;
 export type QuestConditionRole='availability'|'unlock'|'auto_accept'|'ui_visibility'|'owner_override';
@@ -50,7 +50,6 @@ export interface QuestConditionCrossrefIndex {
     conditionDefinitionMembershipComplete:false;
   }>;
 }
-interface Tree{operator?:unknown;conditions?:unknown}
 interface SourceRecord{readonly id?:unknown;readonly structured?:unknown}
 type Obj=Record<string,unknown>;
 const ID=/^[1-9][0-9]{0,15}$/;
@@ -75,7 +74,8 @@ export function createQuestConditionCrossrefs(
   // Existing, source-validated direct Mission predicate extractor rejects
   // alien quest records, wrong wire hashes, unsupported native record kinds.
   const direct=guideMissionReferences(record,questSearch,'en');
-  check(nativeId(record?.id),'INVALID_QUEST_ID');
+  const questId=record?.id;
+  check(nativeId(questId),'INVALID_QUEST_ID');
   check(conditions?.schema===DB03_CONDITION_RELATION_SCHEMA&&
     conditions.coverage?.gameVersion==='1.26.2'&&
     conditions.coverage.referenceDirection==='STATIC_SOURCE_MENTION_NOT_PREREQUISITE'&&
@@ -154,7 +154,7 @@ export function createQuestConditionCrossrefs(
   });
   return Object.freeze({
     schema:DB03_QUEST_CONDITION_CROSSREF_SCHEMA,
-    questId:record.id,sourceQuestVersion:'1.26.1' as const,
+    questId,sourceQuestVersion:'1.26.1' as const,
     currentConditionVersion:'1.26.2' as const,
     originalMissionEquivalentToCurrent:guideVerifiedSourceBridge(questSearch)!==null,
     currentConditionEvidence:conditions.coverage.provenance,
