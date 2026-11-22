@@ -53,12 +53,14 @@ function sanitizeNativeP1gAudit(raw) {
     obj.originalSaveBytesReencoded===false;
   const executed=valid && obj.wasmExecuted===true &&
     (obj.status==='matched'||obj.status==='diverged');
+  const resolved=valid?(executed?(obj.status==='matched' && obj.originalProfileBytesEqual!==true
+    ? 'diverged':obj.status):
+    ['matched','diverged'].includes(obj.status)?'unavailable':obj.status):'unavailable';
   return Object.freeze({
     contract:'wand.db05.native-p1g-audit@1',
-    status:valid?(executed?obj.status:
-      ['matched','diverged'].includes(obj.status)?'unavailable':obj.status):'unavailable',
+    status:resolved,
     wasmExecuted:executed,
-    originalProfileBytesEqual:executed && obj.status==='matched' &&
+    originalProfileBytesEqual:executed && resolved==='matched' &&
       obj.originalProfileBytesEqual===true,
     profileDigestExposed:false,
     originalSaveBytesReencoded:false,
