@@ -8,11 +8,13 @@ import {
 
 const LAYOUT='SceneLayouts/Village04/Main.json';
 const GRIDPATH='GridData/Village04/Meadow.json';
+const HASH_A=-816650372,HASH_B=-410688507;
 const make=(rows=[
   {gridObjectIdNative:7,itemId:40005160},
   {gridObjectIdNative:8,itemId:40006110},
   {gridObjectIdNative:9,itemId:50000001}
-],manifestVersion='1.26.2',defaultObjectCount=rows.length)=>{
+],manifestVersion='1.26.2',defaultObjectCount=rows.length,
+  nativeHashes=true)=>{
   const sourceRows=rows.map(o=>({
     layoutId:LAYOUT,gridIdNative:0,...o,
     layoutObjectId:LAYOUT+`#grid=0#object=${o.gridObjectIdNative}`,
@@ -23,8 +25,12 @@ const make=(rows=[
       gameVersion:manifestVersion,platform:'Steam',sourceScopeVerified:false},
     objects:[],scenes:[],grids:[],worlds:[],areas:[],
     layouts:[{layoutId:LAYOUT,layoutKind:'nativeGridCollection',
+      source:{nativeType:'Meta.GridCollection'},
       nativeGridEntries:[{gridIdNative:0,gridDataPath:GRIDPATH,
-        defaultObjectCount}]}],
+        defaultObjectCount,...(nativeHashes?{
+          defaultHashEvidence:'source_native_method_correlated',
+          defaultGridHashCode:HASH_A,defaultGridDataHashCode:HASH_B
+        }:{})}]}],
     layoutObjects:sourceRows
   });
   return {catalog,gameVersion:manifestVersion,platform:'Steam'};
@@ -32,7 +38,10 @@ const make=(rows=[
 const object=(ID,ItemID)=>({ID,ItemID,X:55,Y:66,
   State:{PrivateQuestData:'do-not-expose'},From:'unknown-player-origin'});
 const diff=(ModifiedObjects,RemovedObjects=[],overrides={})=>({
-  ID:850,GridDefaultLayoutPath:LAYOUT,GridDataPath:GRIDPATH,
+  ID:850,GridDefaultLayoutPath:LAYOUT,
+  GridDefaultLayoutType:'Meta.GridCollection, Meta',
+  DefaultLayoutGridID:0,DefaultGridHashCode:HASH_A,
+  DefaultGridDataHashCode:HASH_B,
   ModifiedObjects,RemovedObjects,...overrides
 });
 const save=(grid,Version=643)=>({GameInfo:{Version},Player:{Secret:'private-profile'},
@@ -101,7 +110,7 @@ test('full materialized Grid objects are compared by source-ID, not Grid key',()
 
 test('unknown exact paths, version mismatch and partial native defaults fail closed',()=>{
  const unmatched=save({DiffGrids:{'850':diff({'10':object(10,40005160)},[],{
-   GridDataPath:'GridData/Other.json'
+   GridDefaultLayoutPath:'SceneLayouts/Village04/Other.json'
  })}});
  const miss=reconcileSavedWorldWithDb04(unmatched,make());
  assert.equal(miss.status,'no_exact_source_match');
@@ -122,6 +131,43 @@ test('unknown exact paths, version mismatch and partial native defaults fail clo
  assert.equal(brokenDefault.status,'no_exact_source_match');
  assert.equal(brokenDefault.partialSourceGrids,1);
  safe(brokenDefault);
+});
+
+test('native DiffGrid requires all five identity fields, including source-proven hash pair',()=>{
+ const root=save({DiffGrids:{'850':diff({
+   '10':object(10,40005160)
+ })}});
+ // Real Steam 1.26.2 DB-04 snapshot currently has source anchors and path
+ // but not native default-hash witnesses. No complete effective count!
+ const actual=reconcileSavedWorldWithDb04(root,make(undefined,'1.26.2',3,false));
+ assert.equal(actual.status,'no_exact_source_match');
+ assert.equal(actual.matchedGrids,0);
+ assert.equal(actual.hashUnverifiedGrids,1);
+ assert.deepEqual(actual.entries,[]);
+ assert.equal(actual.unverifiedDiffNeverMerged,true);
+ safe(actual);
+ const wrongHash=structuredClone(root);
+ wrongHash.World.GridCollection.DiffGrids['850'].DefaultGridHashCode++;
+ const mismatched=reconcileSavedWorldWithDb04(wrongHash,make());
+ assert.equal(mismatched.hashMismatchGrids,1);
+ assert.equal(mismatched.matchedGrids,0);
+ safe(mismatched);
+ for(const drop of ['GridDefaultLayoutType','DefaultLayoutGridID',
+   'DefaultGridHashCode','DefaultGridDataHashCode']){
+   const fixture=structuredClone(root);
+   delete fixture.World.GridCollection.DiffGrids['850'][drop];
+   const result=reconcileSavedWorldWithDb04(fixture,make());
+   assert.equal(result.invalidGrids,1);
+   assert.equal(result.matchedGrids,0);
+   safe(result);
+ }
+ const wrongType=structuredClone(root);
+ wrongType.World.GridCollection.DiffGrids['850'].GridDefaultLayoutType=
+   'Meta.DefaultRealmData, Meta';
+ const disallowed=reconcileSavedWorldWithDb04(wrongType,make());
+ assert.equal(disallowed.unresolvedGrids,1);
+ assert.equal(disallowed.matchedGrids,0);
+ safe(disallowed);
 });
 
 test('malformed removed identities and a source/path ambiguity cannot invent effective stock',()=>{
@@ -153,6 +199,9 @@ test('sanitizer forbids source paths, raw object identities and ownership claims
   x=>{x.globalWorldCoverageVerified=true;},
   x=>{x.playerOwnershipVerified=true;},
   x=>{x.sourceAuthenticityVerified=true;},
+  x=>{x.unverifiedDiffNeverMerged=false;},
+  x=>{x.nativeDiffFiveFieldIdentityRequired=false;},
+  x=>{x.hashUnverifiedGrids=1;},
   x=>{x.matchedGrids=500;},
   x=>{x.entries.push({...x.entries[0]});}
  ]){
