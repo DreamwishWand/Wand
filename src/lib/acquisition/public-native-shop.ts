@@ -17,7 +17,51 @@ export const DB02_NATIVE_SHOP_SHA=
   '310e1f0cfc907efda4107b6d8602fbf6c5af92739edff6592d0ce10449a5ad07' as const;
 export const DB02_NATIVE_SHOP_BYTES=6470 as const;
 const SOURCE_SHA='233c03e73d22503dba2f6b0961ecaa8f36ac7ef16848bb88c35e2d86f696b1ff';
-const SOURCE_ID='db02:steam-1262:shop-20261118';
+/** July is an archived backup with a known minimum version, not a proven 1.26.2 live offer. */
+export const DB02_ARCHIVED_SHOP_FILE='shop-cache-2026-07-15.json' as const;
+export const DB02_ARCHIVED_SHOP_SHA=
+  'fe10a2d69728b6f3cef8445922f4773f64d5946c6a7dbc01518d84f7fe960b1b' as const;
+export const DB02_ARCHIVED_SHOP_BYTES=5838 as const;
+const ARCHIVED_SOURCE_SHA='01a561793ecaa253457e89797da03e929ca8bb8e3dac7d257d786215584468a5';
+const ARCHIVED_CORROBORATING_SHA='9553c37b141123b70550b64ef4bd683c7c08b84f52fc4a63e737b0e8e0a95138';
+interface NativeShopSnapshotPolicy {
+  readonly snapshotKey:'Shop20261118'|'Shop20260715';
+  readonly file:string;
+  readonly publicSha:string;
+  readonly publicBytes:number;
+  readonly sourceSha:string;
+  readonly originalBytes:number;
+  readonly sourcePath:string;
+  readonly nativeVersion:number;
+  readonly minVersion:string;
+  readonly fullVersion:string|null;
+  readonly captureDate:string;
+  readonly first:string;
+  readonly last:string;
+  readonly offers:number;
+  readonly itemRefs:number;
+  readonly distinctIds:number;
+  readonly discounts:number;
+  readonly archived:boolean;
+}
+const CURRENT:NativeShopSnapshotPolicy=Object.freeze({
+  snapshotKey:'Shop20261118',file:DB02_NATIVE_SHOP_FILE,
+  publicSha:DB02_NATIVE_SHOP_SHA,publicBytes:DB02_NATIVE_SHOP_BYTES,
+  sourceSha:SOURCE_SHA,originalBytes:72740,
+  sourcePath:'Cache/liveops/stores.dat',nativeVersion:12604,
+  minVersion:'1.26',fullVersion:'1.26.2',captureDate:'2026-11-22',
+  first:'2026-11-18T14:00:00.098979Z',last:'2026-11-25T14:00:00Z',
+  offers:29,itemRefs:156,distinctIds:136,discounts:2,archived:false
+});
+const ARCHIVED:NativeShopSnapshotPolicy=Object.freeze({
+  snapshotKey:'Shop20260715',file:DB02_ARCHIVED_SHOP_FILE,
+  publicSha:DB02_ARCHIVED_SHOP_SHA,publicBytes:DB02_ARCHIVED_SHOP_BYTES,
+  sourceSha:ARCHIVED_SOURCE_SHA,originalBytes:70749,
+  sourcePath:'Cache/liveops/stores.dat.backup-20260716',nativeVersion:12401,
+  minVersion:'1.24',fullVersion:null,captureDate:'2026-07-16',
+  first:'2026-07-15T13:00:00.632653200Z',last:'2026-07-22T13:00:00Z',
+  offers:27,itemRefs:128,distinctIds:120,discounts:2,archived:true
+});
 const ID=/^[1-9][0-9]{0,15}$/;
 const NATIVE_ID=/^[A-Za-z][A-Za-z0-9_]{1,99}$/;
 const BASE=/^\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/;
@@ -43,15 +87,19 @@ export interface NativeShopOffer {
 }
 export interface PinnedPublicNativeShopIndex {
   readonly schema:typeof DB02_NATIVE_SHOP_SCHEMA;
+  /** Native identity distinguishes reissues of the same offer ID across weeks. */
+  readonly snapshotKey:'Shop20261118'|'Shop20260715';
   readonly sourceIntegrity:'original_sha256_and_pinned_public_projection';
   readonly offers:readonly NativeShopOffer[];
   readonly origins:readonly ItemOrigin[];
   readonly campaigns:readonly OfficialCampaign[];
   readonly coverage:Readonly<{
-    readonly sourceOffers:29;
-    readonly sourceItemOccurrences:156;
-    readonly distinctSourceItemIds:136;
-    readonly sourceDiscountedOffers:2;
+    readonly sourceOffers:number;
+    readonly sourceItemOccurrences:number;
+    readonly distinctSourceItemIds:number;
+    readonly sourceDiscountedOffers:number;
+    /** July is a local archive; full game-build identity is not established. */
+    readonly fullGameVersionVerified:boolean;
     readonly currentAvailabilityVerified:false;
     readonly accountOwnershipVerified:false;
     readonly discountCheckoutPriceVerified:false;
@@ -77,41 +125,51 @@ function id(raw:string|number):string|null{
 function positive(x:unknown):x is number{
   return typeof x==='number'&&Number.isSafeInteger(x)&&x>0;
 }
-function readProjection(raw:unknown,url:string):PinnedPublicNativeShopIndex{
+function readProjection(
+  raw:unknown,url:string,policy:NativeShopSnapshotPolicy
+):PinnedPublicNativeShopIndex{
   assert(obj(raw)&&raw.schema===DB02_NATIVE_SHOP_SCHEMA&&
     obj(raw.target)&&raw.target.platform==='Steam'&&
-    raw.target.gameVersion==='1.26.2'&&obj(raw.source),
+    raw.target.gameVersion===policy.fullVersion&&obj(raw.source),
     'SCHEMA_OR_VERSION');
   const sourceMeta=raw.source;
-  assert(sourceMeta.originalSha256===SOURCE_SHA&&
-    sourceMeta.originalBytes===72740&&
-    sourceMeta.cachePath==='Cache/liveops/stores.dat'&&
-    sourceMeta.snapshotKey==='Shop20261118'&&
-    sourceMeta.nativeVersion===12604&&
-    sourceMeta.nativeMinGameVersion==='1.26'&&
-    sourceMeta.captureDate==='2026-11-22'&&
+  assert(sourceMeta.originalSha256===policy.sourceSha&&
+    sourceMeta.originalBytes===policy.originalBytes&&
+    sourceMeta.cachePath===policy.sourcePath&&
+    sourceMeta.snapshotKey===policy.snapshotKey&&
+    sourceMeta.nativeVersion===policy.nativeVersion&&
+    sourceMeta.nativeMinGameVersion===policy.minVersion&&
+    sourceMeta.captureDate===policy.captureDate&&
+    (policy.archived?
+      sourceMeta.fullGameVersionVerified===false&&
+      sourceMeta.sourceIsArchivedBackup===true&&
+      sourceMeta.corroboratingBackupSha256===ARCHIVED_CORROBORATING_SHA&&
+      sourceMeta.backupDifferencesLimitedToUpdateTimestamps===true:
+      sourceMeta.fullGameVersionVerified===undefined&&
+      sourceMeta.sourceIsArchivedBackup===undefined)&&
     sourceMeta.currencyItemId==='80100000'&&
     sourceMeta.configuredOnly===true&&
     sourceMeta.currentAvailabilityVerified===false&&
     sourceMeta.accountOwnershipVerified===false&&
     sourceMeta.historicalCoverageComplete===false,
     'ORIGINAL_SOURCE_PROVENANCE');
-  assert(obj(raw.window)&&raw.window.startUtc==='2026-11-18T14:00:00.098979Z'&&
-    raw.window.endUtcExclusive==='2026-11-25T14:00:00Z'&&
-    obj(raw.counts)&&raw.counts.offers===29&&
-    raw.counts.itemOccurrences===156&&
-    raw.counts.distinctItemIds===136&&
-    raw.counts.discountedOffers===2&&
-    Array.isArray(raw.offers)&&raw.offers.length===29,
+  assert(obj(raw.window)&&raw.window.startUtc===policy.first&&
+    raw.window.endUtcExclusive===policy.last&&
+    obj(raw.counts)&&raw.counts.offers===policy.offers&&
+    raw.counts.itemOccurrences===policy.itemRefs&&
+    raw.counts.distinctItemIds===policy.distinctIds&&
+    raw.counts.discountedOffers===policy.discounts&&
+    Array.isArray(raw.offers)&&raw.offers.length===policy.offers,
     'SOURCE_CENSUS');
   const window:OriginWindow=Object.freeze({
     start:raw.window.startUtc as string,
     endExclusive:raw.window.endUtcExclusive as string
   });
   const source:OriginProvenance=Object.freeze({
-    sourceId:SOURCE_ID,kind:'verified_liveops_cache' as const,
-    sourceUrl:url,checkedOn:'2026-11-22',
-    gameVersion:'1.26.2',sha256:DB02_NATIVE_SHOP_SHA
+    sourceId:'db02:shop-cache:'+policy.snapshotKey,
+    kind:'verified_liveops_cache' as const,
+    sourceUrl:url,checkedOn:'2026-11-23',
+    gameVersion:policy.fullVersion,sha256:policy.publicSha
   });
   const campaigns:OfficialCampaign[]=[];
   const offers:NativeShopOffer[]=[];
@@ -148,16 +206,19 @@ function readProjection(raw:unknown,url:string):PinnedPublicNativeShopIndex{
         itemId,quantity,componentMoonstoneAllocation:allocation
       }));
       const label=title??offerId;
-      const campaignId='native-shop:Shop20261118:'+offerId;
-      const originId='db02:shop:Shop20261118:'+offerId+':'+slot;
+      const campaignId='native-shop:'+policy.snapshotKey+':'+offerId;
+      const originId='db02:shop:'+policy.snapshotKey+':'+offerId+':'+slot;
       const conditions=[
-        'Exact native Shop20261118 offer ItemId link; not a current sale, owned entitlement or granted item',
+        'Exact '+policy.snapshotKey+' cached offer ItemId link; not proof of a live sale, owned entitlement or granted item',
         'Native offer ID: '+offerId,
         'Source category: '+category,
-        'Source stores.dat SHA-256: '+SOURCE_SHA,
+        'Source archived cache SHA-256: '+policy.sourceSha,
         'Configured per-content Moonstone allocation: '+allocation+
           ' (not a separately purchasable price)'
       ];
+      if(policy.archived)
+        conditions.push('Archived cache only: source MinGameVersion '+policy.minVersion+
+          ', original game build and 1.26.2 storefront compatibility NOT verified');
       if(storeId!==null)conditions.push('Source store ID: '+storeId);
       if(discount!==null)
         conditions.push('Original sale discount: '+discount+
@@ -165,7 +226,8 @@ function readProjection(raw:unknown,url:string):PinnedPublicNativeShopIndex{
       routes.push(Object.freeze({
         originId,itemId,kind:'premium_shop' as const,
         routeStatus:'confirmed_source_link' as const,campaignId,
-        name:'Premium Shop: '+label,productId:offerId,quantity,
+        name:(policy.archived?'Historical Premium Shop: ':'Premium Shop: ')+label,
+        productId:offerId,quantity,
         price:null, // Only populate the offer-level subtotal after all components are read.
         accessTier:'premium' as const,window,
         salePeriods:Object.freeze([window]),conditions:Object.freeze(conditions),
@@ -196,16 +258,18 @@ function readProjection(raw:unknown,url:string):PinnedPublicNativeShopIndex{
     Object.freeze(priced);
     offers.push(offer);offerMap.set(offerId,offer);
     campaigns.push(Object.freeze({
-      campaignId:'native-shop:Shop20261118:'+offerId,
+      campaignId:'native-shop:'+policy.snapshotKey+':'+offerId,
       kind:'premium_shop' as const,name:title??offerId,
       code:null,productId:offerId,window,
       conditions:Object.freeze([
-        'Steam 1.26.2 stores.dat snapshot; source-proven offer contents, not live stock or personal purchase',
+        (policy.archived?
+          'Archived Steam stores.dat backup, minimum game version 1.24; original build not proven, not verified available in v1.26.2':
+          'Steam 1.26.2 stores.dat snapshot; source-proven offer contents, not live stock or personal purchase'),
         'Configured allocation sum: '+allocatedTotal+' Moonstones'+
           (discount===null?' (no source sale discount)':
             '; discount '+discount+'%, checkout price not verified'),
         'Source category: '+category,
-        'Original stores.dat SHA-256: '+SOURCE_SHA
+        'Original cached stores.dat SHA-256: '+policy.sourceSha
       ]),
       rewards:Object.freeze(components.map(x=>Object.freeze({
         name:'Item '+x.itemId,itemId:x.itemId,quantity:x.quantity,
@@ -213,17 +277,21 @@ function readProjection(raw:unknown,url:string):PinnedPublicNativeShopIndex{
       }))),source,availability:'not_live_verified' as const
     }));
   }
-  assert(offers.length===29&&origins.length===156&&distinct.size===136&&
-    discounted===2,'SOURCE_RELATION_CENSUS');
+  assert(offers.length===policy.offers&&origins.length===policy.itemRefs&&
+    distinct.size===policy.distinctIds&&discounted===policy.discounts,
+    'SOURCE_RELATION_CENSUS');
   for(const list of byItem.values())Object.freeze(list);
   const index:PinnedPublicNativeShopIndex=Object.freeze({
     schema:DB02_NATIVE_SHOP_SCHEMA,
+    snapshotKey:policy.snapshotKey,
     sourceIntegrity:'original_sha256_and_pinned_public_projection' as const,
     offers:Object.freeze(offers),origins:Object.freeze(origins),
     campaigns:Object.freeze(campaigns),
     coverage:Object.freeze({
-      sourceOffers:29 as const,sourceItemOccurrences:156 as const,
-      distinctSourceItemIds:136 as const,sourceDiscountedOffers:2 as const,
+      sourceOffers:policy.offers,sourceItemOccurrences:policy.itemRefs,
+      distinctSourceItemIds:policy.distinctIds,
+      sourceDiscountedOffers:policy.discounts,
+      fullGameVersionVerified:!policy.archived,
       currentAvailabilityVerified:false as const,
       accountOwnershipVerified:false as const,
       discountCheckoutPriceVerified:false as const,
@@ -240,18 +308,30 @@ export function hasPinnedPublicNativeShopEvidence(x:unknown):x is PinnedPublicNa
   return x!==null&&typeof x==='object'&&PINNED.has(x);
 }
 /** Public browser loader; never fetches private stores.dat or a user session. */
-export async function loadPinnedPublicNativeShopSnapshot(
-  basePath='',fetcher:typeof fetch=fetch
+async function loadShopSnapshot(
+  policy:NativeShopSnapshotPolicy,basePath:string,fetcher:typeof fetch
 ):Promise<PinnedPublicNativeShopIndex>{
   assert(typeof basePath==='string'&&(basePath===''||BASE.test(basePath)),
     'INVALID_BASE_PATH');
-  const url=basePath+'/acquisition/public/'+DB02_NATIVE_SHOP_FILE;
+  const url=basePath+'/acquisition/public/'+policy.file;
   const response=await fetcher(url);
   assert(response.ok,'DOWNLOAD_FAILED');
   const bytes=await response.arrayBuffer();
-  assert(bytes.byteLength===DB02_NATIVE_SHOP_BYTES,'PROJECTION_SIZE');
+  assert(bytes.byteLength===policy.publicBytes,'PROJECTION_SIZE');
   const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)))
     .map(x=>x.toString(16).padStart(2,'0')).join('');
-  assert(hash===DB02_NATIVE_SHOP_SHA,'PROJECTION_SHA');
-  return readProjection(JSON.parse(new TextDecoder().decode(bytes)),url);
+  assert(hash===policy.publicSha,'PROJECTION_SHA');
+  return readProjection(JSON.parse(new TextDecoder().decode(bytes)),url,policy);
+}
+/** Steam 1.26.2 source cache, without current live-availability claims. */
+export function loadPinnedPublicNativeShopSnapshot(
+  basePath='',fetcher:typeof fetch=fetch
+):Promise<PinnedPublicNativeShopIndex>{
+  return loadShopSnapshot(CURRENT,basePath,fetcher);
+}
+/** July 15–22 archived cache; original game build is NOT independently verified. */
+export function loadPinnedHistoricalNativeShopSnapshot(
+  basePath='',fetcher:typeof fetch=fetch
+):Promise<PinnedPublicNativeShopIndex>{
+  return loadShopSnapshot(ARCHIVED,basePath,fetcher);
 }
