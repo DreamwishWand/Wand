@@ -5,6 +5,8 @@ import type {VerifiedPrivateDynamicPriceCache,NativeDynamicCacheItemLookup} from
 import type {VerifiedPrivateCookingStarSettings,NativeCookingStarResult} from './private-cooking-star-settings.mjs';
 import type {NativeMealSellPriceRoute} from './native-meal-price-route.mjs';
 import type {NativeSellPriceProviderPlan} from './native-sell-provider-plan.mjs';
+import type {NativeSerializedProviderSimulation,NativeSerializedDynamicCacheGate}
+  from './native-serialized-sell-provider.mjs';
 export declare const DB02_MEAL_PRICE_EVIDENCE_CONTRACT:
   'wand.db02.meal-price-evidence@1';
 export interface MealIngredientAmount {
@@ -46,6 +48,9 @@ export interface PrivateMealPriceEvidence {
   readonly cookingRecipeCoverage:'partial_native_extraction';
   readonly recordedIngredients:readonly MealIngredientAmount[];
   readonly sourceIngredientStaticSellEvidence:ConfiguredIngredientSellEvidence;
+  readonly sourceIngredientStaticProviderSimulations:
+    readonly (readonly NativeSerializedProviderSimulation[])[];
+  readonly nativeStaticProviderResultsAreSourceConditionalOnly:true;
   readonly sourceIngredientDynamicCacheEvidence:readonly NativeDynamicCacheItemLookup[]|null;
   readonly nativeDynamicCacheSourceVerified:boolean;
   readonly dynamicCachedSellRowCannotProveEffectivePrice:true;
@@ -85,6 +90,10 @@ export interface PrivateMealPricingView {
   readonly nativeCookingStarSettings:VerifiedPrivateCookingStarSettings|null;
   readonly nativeDynamicCacheVerified:boolean;
   readonly nativeDynamicPriceCache:VerifiedPrivateDynamicPriceCache|null;
+  readonly sourceNativeDynamicCacheGate:NativeSerializedDynamicCacheGate|null;
+  readonly nativeRuntimeDataCachedVerified:false;
+  getSourceStaticSellProviderSimulations(itemId:number):
+    readonly NativeSerializedProviderSimulation[];
   getNativeSellPriceProviderPlan(itemId:number):NativeSellPriceProviderPlan;
   getSourceCachedDynamicPriceRow(itemId:number):NativeDynamicCacheItemLookup|null;
   getSourceStarResult(star:number):NativeCookingStarResult|null;
