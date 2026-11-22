@@ -65,6 +65,9 @@ export interface Db01OriginalCollectionMenuClient {
     'directListedItemIds'|'directListedAssociations'|'dynamicSelectorsUnresolved'>>;
   getMenus():Promise<readonly Readonly<Db01OriginalCollectionMenu>[]>;
   getDirectListings(itemId:number):Promise<readonly Readonly<Db01OriginalCollectionListing>[]>;
+  getDirectListingsBatch(ids:readonly number[]):Promise<
+    readonly (readonly Readonly<Db01OriginalCollectionListing>[])[]
+  >;
 }
 
 const SHA=/^[0-9a-f]{64}$/;
@@ -279,6 +282,17 @@ export function createDb01OriginalCollectionMenuClient(
     if(!found)return Object.freeze([]);
     return (await load()).items.get(itemId)??Object.freeze([]);
   }
+  async function getDirectListingsBatch(ids:readonly number[]):Promise<
+    readonly (readonly Readonly<Db01OriginalCollectionListing>[])[]
+  >{
+    check(Array.isArray(ids)&&ids.length<=4096&&ids.every(safeId),'INVALID_BATCH');
+    if(!ids.length)return Object.freeze([]);
+    const matches=await catalog.getItems(ids);
+    check(matches.length===ids.length,'CATALOG_BATCH_LENGTH');
+    const index=await load();
+    return Object.freeze(ids.map((id,i)=>
+      matches[i]?.itemId===id ? index.items.get(id)??Object.freeze([]) : Object.freeze([])));
+  }
   return Object.freeze({
     source:Object.freeze({
       gameVersion:manifest.gameVersion,sourceItemsSha256:manifest.sourceItemsSha256,
@@ -290,6 +304,6 @@ export function createDb01OriginalCollectionMenuClient(
       directListedAssociations:manifest.directListedAssociations,
       dynamicSelectorsUnresolved:manifest.dynamicSelectorsUnresolved,
     }),
-    getMenus,getDirectListings,
+    getMenus,getDirectListings,getDirectListingsBatch,
   });
 }
