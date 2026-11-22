@@ -359,6 +359,29 @@ try{
   const mapCoordinateEditor=objects.getByLabel('座標編集',{exact:true});
   assert.equal(await mapCoordinateEditor.getByLabel('新しいX').inputValue(),'45');
   assert.equal(await mapCoordinateEditor.getByLabel('新しいY').inputValue(),'9');
+
+  // User-driven map click creates ONLY an X/Y input draft. It must not
+  // write a Save, silently accept unverified native floor dimensions, or
+  // bypass the existing Rust/WASM optimistic checks and separate-copy step.
+  await map.getByRole('button',{name:'移動先をマップで指定'}).click();
+  const mapTarget=map.getByRole('button',{name:'マップ上で移動先を指定'});
+  const targetBounds=await mapTarget.boundingBox();
+  assert.ok(targetBounds&&targetBounds.width>100&&targetBounds.height>100);
+  await mapTarget.click({position:{
+    x:Math.floor(targetBounds.width*0.75),
+    y:Math.floor(targetBounds.height*0.25)
+  }});
+  const draftedX=Number(await mapCoordinateEditor.getByLabel('新しいX').inputValue());
+  const draftedY=Number(await mapCoordinateEditor.getByLabel('新しいY').inputValue());
+  assert.ok(Number.isInteger(draftedX)&&Number.isInteger(draftedY));
+  assert.notEqual(draftedX,45);
+  assert.notEqual(draftedY,9);
+  await map.getByRole('status').filter({
+    hasText:'セーブはまだ変更されていません'
+  }).waitFor();
+  assert.equal(await map.locator('.draft-marker').count(),1);
+  assert.equal(quantityProfile.World.GridCollection.Grids['101'].Objects['1'].X,45);
+  assert.equal(quantityProfile.World.GridCollection.Grids['101'].Objects['1'].Y,9);
   await pickGrid.selectOption('2');
   await map.getByRole('button',{name:'配置 #3 をマップから選択'}).click();
   assert.equal(await mapCoordinateEditor.getByLabel('新しいX').inputValue(),'-12');
