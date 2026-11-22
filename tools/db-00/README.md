@@ -210,3 +210,31 @@ explicitly outside the published catalog while optional Guide/DB-02 evidence
 may still resolve. \`byNativeWorldTag\` joins native tag reverse-index IDs
 without classifying them as Collection UI worlds. No new source extraction,
 private file publication, DLC/entitlement or player-state assumptions.
+
+
+### Public-only, one-call cross-service Item ID API (Steam 1.26.2)
+
+Use \`openPublicSharedGameSources('/Wand')\` from
+\`src/lib/game-db/public-sources.ts\` on GitHub Pages, or pass a compatible
+fetcher for local tests. It calls the existing source-pinned DB-00 ItemList,
+DB-02 public origin catalog (Star Path, Quest, Event, Friendship, two native
+Shop captures and IAP), and DB-03 Star Path reward index. No owner-private
+game files or Save imports are required.
+
+The returned object exposes \`getItem(id)\`, \`getItems(ids)\`,
+\`queryItems(filters, page)\`, \`summarizeFacet(request, filters)\` and the
+underlying \`database\`, \`joined\`, \`acquisition\` and \`guide\` readers.
+Items outside the 13,202 published ItemList scope may still carry a
+DB-02/03 reward route, but have \`catalog: null\`. Source tag evidence is
+\`not_loaded\` (no owner-private DB-04 file) and current world/universe
+membership remains \`unverified\`, never guessed from the old Switch version.
+Online name-only matches stay in the DB-02 candidate API, not confirmed
+ItemOrigin links. Static reward/offer configuration does not prove live
+availability, redemption, entitlement or personal ownership.
+
+The first-party readers continue to validate their own pinned bytes.
+One response-cloning, per-invocation fetch cache deduplicates identical
+concurrent GETs, including the 14 ItemList shards and Star Path cache. The
+cache is discarded after each call so a later active pointer is freshly read.
+Synthetic/local-asset tests assert **23 unique public fetches**, the published
+Steam ItemList and 1,255 source routes, and corrupt-public-data rejection.
