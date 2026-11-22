@@ -154,7 +154,7 @@ export function joinDb01OriginalCollectionWithPublishedDb00(
           original.currentExactNameVerified===(original.currentExactName!==null)&&
           Array.isArray(original.matchedSourceLinks)&&
           original.matchedSourceLinks.length>0&&
-          original.matchedSourceLinks.every(link=>
+          original.matchedSourceLinks.every((link:Db01OriginalSourceMenuSearchItem['matchedSourceLinks'][number])=>
             link.gameRuntimeMembershipVerified===false&&
             link.worldAvailabilityVerified===false)&&
           row?.itemId===String(original.itemId)&&
