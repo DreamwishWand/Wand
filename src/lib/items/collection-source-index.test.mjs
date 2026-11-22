@@ -40,13 +40,25 @@ const direct={
 };
 function fixture(){
   const calls={categories:0,views:0,menu:0};
+  const names={
+    100:{en:'Royal Chair',ja:'豪華な椅子'},
+    200:{en:'Magical Sofa',ja:null},
+    300:{en:'Black Dress',ja:'黒いドレス'},
+    400:{en:'Companion Fox',ja:'仲間のキツネ'},
+    500:{en:'Unlinked Tag',ja:'未関連タグ'},
+  };
+  const locales=['en','fr','it','de','es-ES','ja','zh-CN','pt-BR'];
   const base=[
     {itemId:100,nativeCategory:'Furniture'},
     {itemId:200,nativeCategory:'Furniture'},
     {itemId:300,nativeCategory:'Clothing'},
     {itemId:400,nativeCategory:'Companion'},
     {itemId:500,nativeCategory:'Tag'},
-  ];
+  ].map(record=>({...record,
+    names:Object.fromEntries(locales.map(locale=>[
+      locale,names[record.itemId][locale]??(locale==='ja'?null:
+        names[record.itemId].en)])),
+  }));
   const byId=new Map(base.map(r=>[r.itemId,{
     itemId:r.itemId,nativeCategory:r.nativeCategory,
     collection:{direct:[],candidates:[],suppressed:[]},
@@ -312,4 +324,96 @@ test('direct in one group must not classify a separate group as direct',async()=
 test('unrecognized original source evidence modes fail closed',async()=>{
   const f=fixture(),api=createDb01OriginalSourceMenuQuery(f.catalog,f.shared);
   await assert.rejects(api.search({listingEvidence:'runtime-ui'}),/QUERY_EVIDENCE/);
+});
+
+test('current exact Item names and native Item IDs are returned alongside matched source evidence',async()=>{
+  const f=fixture();
+  const api=createDb01OriginalSourceMenuQuery(f.catalog,f.shared);
+  const result=await api.search({collectionSetIds:[11],locale:'en'});
+  assert.equal(result.total,2);
+  assert.equal(result.locale,'en');
+  assert.deepEqual(result.itemIds,[100,200]);
+  assert.deepEqual(result.items.map(x=>[
+    x.itemId,x.currentExactName,x.currentExactNameVerified,x.nativeCategory,
+  ]),[
+    [100,'Royal Chair',true,'Furniture'],
+    [200,'Magical Sofa',true,'Furniture'],
+  ]);
+  assert.deepEqual(result.items[0].matchedSourceLinks.map(x=>[
+    x.collectionSetId,x.directOriginalListing,x.sourcePredicateMatches,
+  ]),[[11,true,0]]);
+  assert.deepEqual(result.items[1].matchedSourceLinks.map(x=>[
+    x.collectionSetId,x.directOriginalListing,x.sourcePredicateMatches,
+  ]),[[11,false,1]]);
+  assert.equal(result.items[0].gameRuntimeMembershipVerified,false);
+  assert.equal(result.items[0].worldAvailabilityVerified,false);
+  assert.equal(Object.isFrozen(result.items),true);
+  assert.equal(Object.isFrozen(result.items[0]),true);
+});
+test('Japanese original exact-name search, no historical fallback, Item ID match for null name',async()=>{
+  const f=fixture(),api=createDb01OriginalSourceMenuQuery(f.catalog,f.shared);
+  assert.deepEqual((await api.search({locale:'ja',
+    submenuCodes:[3],searchText:'豪華'})).itemIds,[100]);
+  assert.deepEqual((await api.search({locale:'ja',
+    submenuCodes:[3],searchText:'MAGICAL'})).itemIds,[]);
+  const missing=await api.search({locale:'ja',
+    submenuCodes:[3],searchText:'200'});
+  assert.deepEqual(missing.itemIds,[200]);
+  assert.equal(missing.items[0].currentExactName,null);
+  assert.equal(missing.items[0].currentExactNameVerified,false);
+  assert.equal((await api.search({searchText:'100'})).items[0].itemId,100);
+  assert.equal(f.calls.categories,4);
+  assert.equal(f.calls.views,1);
+});
+test('text filtering composes with AND source categories, specific groups and evidence',async()=>{
+  const f=fixture(),api=createDb01OriginalSourceMenuQuery(
+    f.catalog,f.shared,f.native);
+  const search=await api.search({searchText:'sofa',locale:'en',
+    submenuCodes:[3],collectionSetIds:[11],listingEvidence:'predicate',
+    native:{nativeCategories:['Furniture'],facets:{color:[2000700002]}}});
+  assert.deepEqual(search.itemIds,[200]);
+  assert.deepEqual(search.items[0].matchedSourceLinks.map(x=>x.collectionSetId),[11]);
+  assert.equal(search.total,1);
+  assert.deepEqual((await api.search({searchText:'sofa',
+    collectionSetIds:[11],listingEvidence:'direct'})).itemIds,[]);
+  assert.deepEqual((await api.search({searchText:'dress',
+    sourceGroups:[{collectionSetId:13,groupIndex:1}]})).itemIds,[300]);
+  assert.deepEqual((await api.search({searchText:'dress',
+    sourceGroups:[{collectionSetId:13,groupIndex:0}]})).itemIds,[]);
+  assert.deepEqual((await api.search({searchText:'unlinked'})).itemIds,[]);
+});
+test('text filter paginates matching items, not the prefiltered original ID index',async()=>{
+  const api=createDb01OriginalSourceMenuQuery(fixture().catalog,fixture().shared);
+  const page=await api.search({searchText:'a',locale:'en',offset:1,limit:2});
+  // Royal Chair, Magical Sofa, Black Dress, Companion Fox: all contain 'a'
+  assert.equal(page.total,4);
+  assert.deepEqual(page.itemIds,[200,300]);
+  assert.equal(page.items.length,2);
+  assert.equal(page.hasMore,true);
+  const last=await api.search({searchText:'a',locale:'en',offset:3,limit:2});
+  assert.deepEqual(last.itemIds,[400]);
+  assert.equal(last.hasMore,false);
+});
+test('locale and search text validated before original private source reads',async()=>{
+  const f=fixture(),api=createDb01OriginalSourceMenuQuery(f.catalog,f.shared);
+  await assert.rejects(api.search({locale:'en-US'}),/QUERY_LOCALE/);
+  await assert.rejects(api.search({locale:null}),/QUERY_LOCALE/);
+  await assert.rejects(api.search({searchText:'a'.repeat(151)}),
+    /QUERY_SEARCH_TEXT/);
+  await assert.rejects(api.search({searchText:'abc\nmore'}),
+    /QUERY_SEARCH_TEXT/);
+  await assert.rejects(api.search({searchText:55}),/QUERY_SEARCH_TEXT/);
+  assert.equal(f.calls.categories,0);
+  assert.equal(f.calls.views,0);
+});
+test('name search never turns original candidates into actual game-screen membership',async()=>{
+  const api=createDb01OriginalSourceMenuQuery(fixture().catalog,fixture().shared);
+  const result=await api.search({searchText:'',locale:'ja',limit:5});
+  assert.equal(result.total,4);
+  assert.equal(result.items.length,4);
+  assert.equal(result.gameRuntimeMembershipVerified,false);
+  assert.equal(result.dlcOwnershipVerified,false);
+  assert.ok(result.items.every(x=>x.gameRuntimeMembershipVerified===false));
+  assert.ok(result.items.every(x=>x.matchedSourceLinks.every(l=>
+    l.gameRuntimeMembershipVerified===false)));
 });

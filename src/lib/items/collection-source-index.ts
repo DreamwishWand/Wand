@@ -5,7 +5,7 @@
  * Native game screen membership/visibility/unlocks remain UNVERIFIED.
  * The original v1.26.2 CollectionSubMenu enum is not a DLC/world filter.
  */
-import type {Db01CatalogClient} from './index.ts';
+import {DB01_LOCALES,type Db01CatalogClient,type Db01Item,type Db01Locale} from './index.ts';
 import type {
   Db01SharedItemClient,Db01SharedItem,
   Db01StaticPredicate,
@@ -73,12 +73,37 @@ export interface Db01OriginalSourceMenuQuery{
   readonly nativeCategories?:readonly string[];
   /** Reuses the existing source-exact native ItemType and Tag filter engine. */
   readonly native?:Omit<Db01NativeFilterQuery,'offset'|'limit'>;
+  /** Optional substring in an original current-version Item name OR Item ID.
+   * No historical/unverified translations and no fallback to another locale.
+   */
+  readonly searchText?:string;
+  /** Exact current LocDB language for both filtering and returned labels.
+   * English is used if not specified, never as a fallback for a null name.
+   */
+  readonly locale?:Db01Locale;
   readonly offset?:number;
   readonly limit?:number;
+}
+export interface Db01OriginalSourceMenuSearchItem {
+  readonly itemId:number;
+  readonly nativeCategory:string;
+  readonly locale:Db01Locale;
+  /** Null means no verified exact name for this Item ID in this locale. */
+  readonly currentExactName:string|null;
+  readonly currentExactNameVerified:boolean;
+  /** Original source links that satisfy ALL selected source filters only.
+   * Preserves direct vs positive static predicate evidence.
+   */
+  readonly matchedSourceLinks:readonly Readonly<Db01SourceMenuLink>[];
+  readonly gameRuntimeMembershipVerified:false;
+  readonly worldAvailabilityVerified:false;
 }
 export interface Db01OriginalSourceMenuQueryResult{
   readonly total:number;
   readonly itemIds:readonly number[];
+  /** Exact current names and matching original source evidence for this page. */
+  readonly items:readonly Readonly<Db01OriginalSourceMenuSearchItem>[];
+  readonly locale:Db01Locale;
   readonly hasMore:boolean;
   readonly sourceOnly:true;
   readonly gameRuntimeMembershipVerified:false;
@@ -131,6 +156,8 @@ type MutableLink={
 };
 type IndexedItem={
   nativeCategory:string;
+  /** Source-validated current names, retained only for matched source rows. */
+  names:Readonly<Db01Item['names']>|null;
   links:readonly Readonly<Db01SourceMenuLink>[];
 };
 type Index={
@@ -212,7 +239,8 @@ export function createDb01OriginalSourceMenuQuery(
     }
     // Enumerate catalog-owned categories rather than guessing Item ID ranges.
     // Only four category shards run in parallel; source clients own SHA checks.
-    const rows: {itemId:number;nativeCategory:string}[]=[];
+    const rows: {itemId:number;nativeCategory:string;
+      names:Readonly<Db01Item['names']>}[]=[];
     let next=0;
     await Promise.all(Array.from({length:Math.min(4,categories.length)},async()=>{
       while(next<categories.length){
@@ -221,7 +249,14 @@ export function createDb01OriginalSourceMenuQuery(
         for(const record of chunk){
           check(record.nativeCategory===category&&id(record.itemId),
             'CATALOG_NATIVE_IDENTITY');
-          rows.push({itemId:record.itemId,nativeCategory:category});
+          check(record.names&&DB01_LOCALES.every(locale=>
+            Object.hasOwn(record.names,locale)&&
+            (record.names[locale]===null||
+              (typeof record.names[locale]==='string'&&
+               record.names[locale].trim().length>0))),
+            'CATALOG_CURRENT_EXACT_NAMES');
+          rows.push({itemId:record.itemId,nativeCategory:category,
+            names:record.names});
         }
       }
     }));
@@ -308,6 +343,9 @@ export function createDb01OriginalSourceMenuQuery(
         if(links.some(v=>v.directOriginalListing))directUnique++;
         if(links.some(v=>v.sourcePredicateMatches>0))dynamicUnique++;
         byId.set(item.itemId,{nativeCategory:item.nativeCategory,
+          // The current catalog already verified the original locale shard.
+          // Snapshot matched names so callers cannot mutate the search index.
+          names:links.length?Object.freeze({...sourceRow.names}):null,
           links:Object.freeze(links)});
       }
     }
@@ -379,6 +417,15 @@ export function createDb01OriginalSourceMenuQuery(
   }
   function verifiedQuery(query:Db01OriginalSourceMenuQuery){
     check(query!==null&&typeof query==='object'&&!Array.isArray(query),'QUERY');
+    const locale=query.locale===undefined?'en':query.locale;
+    check(typeof locale==='string'&&
+      (DB01_LOCALES as readonly string[]).includes(locale),
+      'QUERY_LOCALE');
+    const rawText=query.searchText===undefined?'':query.searchText;
+    check(typeof rawText==='string'&&rawText.trim().length<=150&&
+      ![...rawText].some(ch=>ch.charCodeAt(0)<32||ch.charCodeAt(0)===127),
+      'QUERY_SEARCH_TEXT');
+    const needle=rawText.trim().toLocaleLowerCase(locale);
     const sets=query.collectionSetIds??[];
     const subs=query.submenuCodes??[];
     const nativeCategories=query.nativeCategories??[];
@@ -401,7 +448,8 @@ export function createDb01OriginalSourceMenuQuery(
       'NATIVE_TAG_FACETS_NOT_CONNECTED');
     return {sets:new Set(sets),submenus:new Set(subs),
       groups:new Set(sourceGroups.map(g=>g.collectionSetId+':'+g.groupIndex)),
-      listingEvidence,cats:new Set(nativeCategories),offset,limit};
+      listingEvidence,cats:new Set(nativeCategories),offset,limit,
+      locale:locale as Db01Locale,needle};
   }
   async function search(
     raw:Db01OriginalSourceMenuQuery={},
@@ -433,11 +481,12 @@ export function createDb01OriginalSourceMenuQuery(
     }
     let total=0;
     const selected:number[]=[];
+    const selectedRows:Db01OriginalSourceMenuSearchItem[]=[];
     for(const id of i.sortedMatchedIds){
       const item=i.byId.get(id)!;
       if(q.cats.size&&!q.cats.has(item.nativeCategory))continue;
       if(nativeIds&&!nativeIds.has(id))continue;
-      const linked=item.links.some(l=>{
+      const linked=item.links.filter(l=>{
         const groups=q.listingEvidence==='direct'?l.directGroupIndexes:
           q.listingEvidence==='predicate'?l.predicateGroupIndexes:l.groupIndexes;
         return groups.length>0&&
@@ -446,12 +495,29 @@ export function createDb01OriginalSourceMenuQuery(
           (!q.groups.size||groups.some(g=>
             q.groups.has(l.collectionSetId+':'+g)));
       });
-      if(!linked)continue;
-      if(total>=q.offset&&selected.length<q.limit)selected.push(id);
+      if(!linked.length)continue;
+      check(item.names!==null,'MATCHED_SOURCE_ITEM_NAMES_MISSING');
+      const currentExactName=item.names[q.locale];
+      if(q.needle&&!String(id).includes(q.needle)&&
+        !(currentExactName!==null&&
+          currentExactName.toLocaleLowerCase(q.locale).includes(q.needle)))
+        continue;
+      if(total>=q.offset&&selected.length<q.limit){
+        selected.push(id);
+        selectedRows.push(Object.freeze({
+          itemId:id,nativeCategory:item.nativeCategory,
+          locale:q.locale,currentExactName,
+          currentExactNameVerified:currentExactName!==null,
+          matchedSourceLinks:Object.freeze(linked),
+          gameRuntimeMembershipVerified:false as const,
+          worldAvailabilityVerified:false as const,
+        }));
+      }
       total++;
     }
     return Object.freeze({
-      total,itemIds:Object.freeze(selected),
+      total,itemIds:Object.freeze(selected),items:Object.freeze(selectedRows),
+      locale:q.locale,
       hasMore:total>q.offset+selected.length,
       sourceOnly:true as const,
       gameRuntimeMembershipVerified:false as const,
