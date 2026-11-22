@@ -32,7 +32,7 @@ export interface Db03NativeRewardCandidateIndex{
   readonly schema:typeof DB02_DB03_NATIVE_REWARD_SCHEMA;
   readonly sourceGameVersion:'1.26.1';
   readonly targetGameVersion:'1.26.2';
-  readonly sourceIntegrity:'pinned_original_sha256_and_original_file_equivalence';
+  readonly sourceIntegrity:'structure_only'|'pinned_original_sha256_and_original_file_equivalence';
   readonly origins:readonly ItemOrigin[];
   readonly coverage:Readonly<{
     sourceCandidates:618;
@@ -53,6 +53,11 @@ export interface Db03NativeRewardCandidateIndex{
 const ID=/^[1-9][0-9]{0,15}$/;
 const SHA=/^[a-f0-9]{64}$/;
 const MAX_IDS=20000;
+/** A structural input cannot forge an authenticated private-file import. */
+const AUTHENTICATED=new WeakSet<object>();
+export function hasPinnedDb03RewardEvidence(input:unknown):input is Db03NativeRewardCandidateIndex{
+  return input!==null&&typeof input==='object'&&AUTHENTICATED.has(input);
+}
 const PROTO_SHA='dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623';
 const MISSION_SHA='f13958b52234f4cda92f0dd0bfff50be8a7f6625c8478785e2a077a5c7933d24';
 const FAMILY:Readonly<Record<string,{kind:OriginKind;label:string;file:string;fullSha:string}>>=Object.freeze({
@@ -101,7 +106,7 @@ function verified(reader:CurrentCompatibleRewardReader):void{
     typeof reader.getItemCandidates==='function',
     'VERIFIED_DB03_READER_REQUIRED');
 }
-function reward(row:CurrentCompatibleGuideReward,requestedId:string):ItemOrigin{
+function reward(row:CurrentCompatibleGuideReward,requestedId:string,attested:boolean):ItemOrigin{
   ensure(row!==null&&typeof row==='object'&&
     row.itemId===requestedId&&row.original?.itemId===requestedId&&
     row.originalExtractionVersion==='1.26.1'&&row.original.sourceGameVersion==='1.26.1'&&
@@ -136,16 +141,18 @@ function reward(row:CurrentCompatibleGuideReward,requestedId:string):ItemOrigin{
   ),'FRIENDSHIP_LEVEL');
   const originId='db03:source:'+row.original.relationId.replace('/' ,':');
   const source:OriginProvenance=Object.freeze({
-    sourceId:'db03:native:'+row.original.originFamily,
-    kind:'verified_game_native',
+    sourceId:(attested?'db03:native:':'db03:structure:')+row.original.originFamily,
+    kind:attested?'verified_game_native':'unhashed_structural_candidate',
     // Logical owner-local source locator, not a public download endpoint.
     sourceUrl:'/owner-local/'+row.nativeSourceFile,
     checkedOn:'2026-11-22',gameVersion:'1.26.1',
-    sha256:row.nativeSourceSha256
+    sha256:attested?row.nativeSourceSha256:null
   });
   const conditions=[
     'Source-configured reward candidate only; grant and unlock are NOT verified',
-    'Original native source bytes independently identical across Steam 1.26.1 and 1.26.2',
+    attested?
+      'Original native source bytes independently identical across Steam 1.26.1 and 1.26.2':
+      'Source-equivalence claim has not been independently byte-verified by this projection',
     'Changed Conditions.json not assumed compatible with previous extraction',
     'Original native origin: '+row.original.originId,
     'Original source field: '+row.original.sourceField,
@@ -174,9 +181,10 @@ function reward(row:CurrentCompatibleGuideReward,requestedId:string):ItemOrigin{
  * no negative acquisition claim for IDs missing from the partial archive.
  * This assumes a reader created by DB-03's pinned local-file loader.
  */
-export function projectVerifiedDb03RewardCandidates(
+function projectCandidates(
   reader:CurrentCompatibleRewardReader,
-  itemIds:readonly (string|number)[]
+  itemIds:readonly (string|number)[],
+  attested:boolean
 ):Db03NativeRewardCandidateIndex{
   verified(reader);
   ensure(Array.isArray(itemIds)&&itemIds.length<=MAX_IDS,'BATCH_LIMIT');
@@ -188,7 +196,7 @@ export function projectVerifiedDb03RewardCandidates(
     const source=reader.getItemCandidates(key);
     ensure(Array.isArray(source),'INVALID_READER_RESULT');
     for(const candidate of source){
-      const row=reward(candidate,key);
+      const row=reward(candidate,key,attested);
       ensure(!seen.has(row.originId),'DUPLICATE_SOURCE_CANDIDATE');
       seen.add(row.originId);rows.push(row);
       if(row.kind==='event_reward')events++;
@@ -214,11 +222,23 @@ export function projectVerifiedDb03RewardCandidates(
   return Object.freeze({
     schema:DB02_DB03_NATIVE_REWARD_SCHEMA,sourceGameVersion:'1.26.1',
     targetGameVersion:'1.26.2',
-    sourceIntegrity:'pinned_original_sha256_and_original_file_equivalence',
+    sourceIntegrity:attested?
+      'pinned_original_sha256_and_original_file_equivalence':'structure_only',
     origins:Object.freeze(rows),coverage,
     getItemCandidates(raw:number|string){return map.get(id(raw))??empty;}
   });
 }
+/**
+ * Offline, structure-only projection for source-shape inspection and tests.
+ * The reader's claims and SHA strings are NOT treated as authenticated.
+ */
+export function projectDb03RewardCandidates(
+  reader:CurrentCompatibleRewardReader,
+  itemIds:readonly (string|number)[]
+):Db03NativeRewardCandidateIndex{
+  return projectCandidates(reader,itemIds,false);
+}
+
 /**
  * Source-authenticated entry point. The private source bytes come from owner
  * selected local Files, are passed directly to DB-03 for hash verification,
@@ -235,9 +255,10 @@ export async function loadVerifiedDb03RewardCandidates(
   ]);
   const source=joinEquivalentCurrentRewardCandidates(archived,equivalence);
   const ids=itemIds.length?itemIds:archived.candidates.map(x=>x.itemId);
-  const index=projectVerifiedDb03RewardCandidates(source,ids);
+  const index=projectCandidates(source,ids,true);
   if(!itemIds.length)ensure(index.coverage.projectedCandidates===618&&
     index.coverage.eventCandidates===202&&index.coverage.questCandidates===400&&
     index.coverage.defaultFriendshipCandidates===16,'ALL_SOURCE_CENSUS');
+  AUTHENTICATED.add(index);
   return index;
 }
