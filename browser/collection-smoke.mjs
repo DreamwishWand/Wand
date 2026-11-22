@@ -193,30 +193,17 @@ try{
   await page.getByRole('button',{name:'チュートリアルを閉じる'}).click();
   assert.equal(await page.getByRole('button',{name:'セーブファイルを読み込む'}).count(),1);
 
-  try {
-    await page.locator('.summary-strip').waitFor({timeout:18000});
-  } catch(error) {
-    console.error('BROWSER_PAGE_CONTENT',await page.locator('body').innerText());
-    console.error('BROWSER_PAGE_ERRORS',browserErrors);
-    console.error('BROWSER_PAGE_URL',page.url());
-    throw error;
-  }
-  assert.match(await page.locator('.summary-strip').innerText(),/13,202/);
-  assert.match(await page.locator('.summary-strip').innerText(),/1 \/ 13,202/);
-  assert.match(await page.locator('.source-pill').innerText(),/Steam\s*·\s*v1\.26\.2/);
-  assert.equal(await page.getByRole('button',{name:'v1.26.2 データをローカルで開く'}).count(),0);
-  assert.match(await page.locator('.collection-source-details').textContent(),/11,492/);
-  // All 13,202 native IDs are available. The 1,710 that lack exact
-  // source names must remain explicitly unnamed, not invented.
+  try {await page.locator('.facet-card').first().waitFor({timeout:18000});}
+  catch(error){console.error('COLLECTION_FIRST_VIEW',await page.locator('body').innerText());throw error;}
+  assert.equal(await page.locator('.summary-strip,.source-pill,.collection-head,.personal-bar,.collection-source-details,.saved-store-preview,.empty-inspector').count(),0);
+  assert.equal(await page.getByRole('button',{name:'Collectionバックアップ出力'}).count(),1);
+  assert.equal(await page.getByRole('button',{name:'Collectionバックアップ復元'}).count(),1);
+  const firstCategory=await page.locator('.facet-card').first().boundingBox();
+  assert.ok(firstCategory&&firstCategory.y<240,'categories must begin in the first viewport');
+  assert.ok(await page.locator('.facet-card').count()>10);
   await page.getByRole('button',{name:/フィルター/}).click();
-  await page.getByRole('group',{name:'正式名称の確認状況'})
-    .getByRole('button',{name:'名称未確認'}).click();
-  await page.waitForFunction(()=>document.querySelector('.result-count')?.textContent?.includes('1,710'));
-  assert.match(await page.locator('.item-card-copy').first().innerText(),/名称未確認/);
-  await page.getByRole('group',{name:'正式名称の確認状況'})
-    .getByRole('button',{name:'すべて'}).click();
+  assert.equal(await page.getByRole('group',{name:'正式名称の確認状況'}).count(),0);
   await page.getByRole('button',{name:/フィルター/}).click();
-  assert.match(await page.locator('.summary-strip').innerText(),/13,202/);
   const stored=await page.evaluate(async()=>{
     const req=indexedDB.open('dreamwishwand-collection',1);
     const db=await new Promise((resolve,reject)=>{
@@ -249,7 +236,7 @@ try{
   // Both tabs opened the same IndexedDB version. A stale writer must fail closed.
   const staleTab=await context.newPage();
   await staleTab.goto(url);
-  await staleTab.locator('.summary-strip').waitFor();
+  await staleTab.locator('.facet-card').first().waitFor();
   await staleTab.getByRole('searchbox',{name:/8言語/}).fill('40005160');
   await staleTab.locator('.item-state-toggle').first().waitFor();
   await page.locator('.item-state-toggle').first().click();
@@ -273,10 +260,9 @@ try{
   await page.waitForFunction(()=>document.querySelector('.item-state-toggle')?.getAttribute('aria-label')?.includes('を所持済みにする'));
   await staleTab.close();
   await page.reload();
-  await page.locator('.summary-strip').waitFor({timeout:60000});
-  const now=await page.locator('.summary-strip').innerText();
-  assert.match(now,/1/);
-  assert.match(now,/13,202/);
+  await page.locator('.facet-card').first().waitFor({timeout:60000});
+  const persisted=await readLocalState(page);
+  assert.equal(persisted.workspaces[0].entries['40005160'].status,'missing');
   const downloadPromise=page.waitForEvent('download');
   await page.getByRole('button',{name:'バックアップ出力'}).click();
   const download=await downloadPromise;
@@ -414,7 +400,6 @@ try{
   await page.unrouteAll();
   await page.reload();
   await page.locator('.summary-strip').waitFor({timeout:20000});
-  assert.match(await page.locator('.summary-strip').innerText(),/13,202/);
 
   // First manually mark a known Furniture item missing. Its positive
   // ListInventory amount in the synthetic save must override that manual
