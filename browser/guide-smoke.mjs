@@ -68,6 +68,10 @@ try {
 
   await page.setViewportSize({width: 390, height: 844});
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 2), true, 'mobile horizontal overflow');
+  await search.fill('');
+  await page.waitForFunction(()=>document.querySelectorAll('.quest-row').length>=35);
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),true,
+    'mobile full quest list with long untranslated/native names must wrap without horizontal overflow');
   await chooseLanguage(page,'ja');
 
   // Original-native selector ID 30000031 resolves through the published,
