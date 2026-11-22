@@ -44,7 +44,7 @@ METHODS = (
      'public bool IsFormulaValidForItem(IItemData itemData) { }',
      0x4021150),
     ('SellPriceFormulaItemData',
-     'public CurrencyCost CalculateItemPrice(IItemData itemData, Nullable<Item> forceCurrencyItem) { }',
+     'public CurrencyCost CalculateItemPrice(Item item, ItemState state) { }',
      0x4020120),
     ('ProtoDatabase', 'public void LoadBinary() { }', 0x380A910),
 )
