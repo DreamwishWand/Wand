@@ -24,6 +24,8 @@
     resolvedAreaReferenceCount: number; missingAreaLayoutReferenceCount: number;
     nativeGridReferenceCount: number; presentNativeGridReferenceCount: number;
     missingNativeGridReferenceCount: number; sourceDefaultAnchorCount: number;
+    separateAreaReferenceCount: number; resolvedSeparateAreaReferenceCount: number;
+    missingSeparateAreaReferenceCount: number;
     worldCoordinatesVerified: false; placementLegalityVerified: false;
   };
   type Anchor = {
@@ -328,6 +330,10 @@
           （対応レイアウト {selectedRegionCoverage.resolvedAreaReferenceCount}件・未収録 {selectedRegionCoverage.missingAreaLayoutReferenceCount}件）、
           グリッド {selectedRegionCoverage.presentNativeGridReferenceCount}/{selectedRegionCoverage.nativeGridReferenceCount}件、
           初期配置アンカー {selectedRegionCoverage.sourceDefaultAnchorCount}件。
+          {#if selectedRegionCoverage.separateAreaReferenceCount > 0}
+            別地域への原本参照 {selectedRegionCoverage.separateAreaReferenceCount}件
+            （収録 {selectedRegionCoverage.resolvedSeparateAreaReferenceCount}件・未収録 {selectedRegionCoverage.missingSeparateAreaReferenceCount}件）。
+          {/if}
           収録件数はゲーム全体の網羅性・配置可否を示しません。</p>
       {/if}
       {#if selectedLayout?.kind === 'villageArea'}
