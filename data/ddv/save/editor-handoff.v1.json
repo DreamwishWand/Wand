@@ -1,0 +1,134 @@
+{
+  "schema": "wand.db05.editor-readonly-handoff@1",
+  "sourceContracts": {
+    "cleanBaseline": "wand.db05.clean-save-structural-baseline@1",
+    "cleanRegression": "wand.db05.clean-save-regression@1",
+    "editorReadset": "wand.db05.editor-readset@1",
+    "referenceGraph": "wand.db05.save-reference-relations@1",
+    "catalogLinks": "wand.db05.db01-db04-join-rules@1",
+    "questLinks": "wand.db05.db03-quest-links@1",
+    "achievementLinks": "wand.db05.db03-duty-achievement-links@1"
+  },
+  "handoffScope": {
+    "sixObservedDomains": [
+      "inventory",
+      "chests",
+      "collection",
+      "achievements",
+      "missions",
+      "world"
+    ],
+    "expectedReadsetTemplates": 60,
+    "expectedReferenceRules": 14,
+    "expectedExistingCandidateLinks": 8,
+    "expectedUnverifiedReadsetOnlyCandidates": 1,
+    "deferredCatalogFamilies": [
+      "mount_item",
+      "village_scene"
+    ],
+    "nativeSourceIdentifiersUsedAsWriteGrants": false
+  },
+  "links": [
+    {
+      "id": "inventory_item_key",
+      "fieldId": "list_inventory_entry",
+      "catalog": "DB-01",
+      "sourceFamily": "inventory_item_key",
+      "evidence": "existing_db05_catalog_link_rule",
+      "joinStrength": "candidate_only",
+      "writable": false
+    },
+    {
+      "id": "chest_item",
+      "fieldId": "container_slot_item",
+      "catalog": "DB-01",
+      "sourceFamily": "chest_item",
+      "evidence": "existing_db05_catalog_link_rule",
+      "joinStrength": "candidate_only",
+      "writable": false
+    },
+    {
+      "id": "collection_item_key",
+      "fieldId": "collection_group_items",
+      "catalog": "DB-01",
+      "sourceFamily": "collection_item_key",
+      "evidence": "existing_db05_catalog_link_rule",
+      "joinStrength": "candidate_only",
+      "writable": false
+    },
+    {
+      "id": "placed_grid_object_item",
+      "fieldId": "grid_object_item",
+      "catalog": "DB-01",
+      "sourceFamily": "placed_grid_object_item",
+      "evidence": "existing_db05_catalog_link_rule",
+      "joinStrength": "candidate_only",
+      "writable": false
+    },
+    {
+      "id": "modified_grid_object_item",
+      "fieldId": "diff_modified_item",
+      "catalog": "DB-01",
+      "sourceFamily": "modified_grid_object_item",
+      "evidence": "existing_db05_catalog_link_rule",
+      "joinStrength": "candidate_only",
+      "writable": false
+    },
+    {
+      "id": "native_grid_source_path",
+      "fieldId": "grid_source_path",
+      "catalog": "DB-04",
+      "sourceFamily": "native_grid_source_path",
+      "evidence": "existing_db05_catalog_link_rule",
+      "joinStrength": "candidate_only",
+      "writable": false
+    },
+    {
+      "id": "active_mission_slot",
+      "fieldId": "mission_id",
+      "catalog": "DB-03",
+      "sourceFamily": "active_mission_slot",
+      "evidence": "existing_db05_quest_link_rule",
+      "joinStrength": "candidate_only",
+      "writable": false
+    },
+    {
+      "id": "achievement_duty_id",
+      "fieldId": "achievement_id",
+      "catalog": "DB-03",
+      "sourceFamily": "achievement_duty_id",
+      "evidence": "existing_db05_achievement_link_rule",
+      "joinStrength": "candidate_only",
+      "writable": false
+    },
+    {
+      "id": "container_parent_item",
+      "fieldId": "container_parent_item",
+      "catalog": "DB-01",
+      "sourceFamily": null,
+      "evidence": "readset_candidate_only_no_proven_catalog_join",
+      "joinStrength": "candidate_only",
+      "writable": false
+    }
+  ],
+  "safety": {
+    "inputMustComeFromStrictReadOnlyCodec": true,
+    "thisContractDoesNotVerifyCodecOrP1g": true,
+    "sourceOriginalsMustBeIndependentlyVerified": true,
+    "db01Db03Db04MatchingCanUsePrivateIndexesOnly": true,
+    "unknownFieldsMustRemainUntouched": true,
+    "missingOptionalMissionAndWorldObjectsAreNotCorruption": true,
+    "initialDiffGridsAreNotEvidenceOfPlayerEdits": true,
+    "nullableChestParentAllowed": true,
+    "differentGameVersionIsNotStructureFailure": true,
+    "sameCountIsNotFullIdentityProof": true,
+    "shapeObservationIsNotSourceIdValidityProof": true,
+    "sourceCatalogCoverageComplete": false,
+    "actualOwnershipVerified": false,
+    "rewardEligibilityVerified": false,
+    "completeReferenceClosureVerified": false,
+    "byteExactP1gRoundtripVerified": false,
+    "editorWriterAuthorized": false,
+    "exportAuthorized": false
+  }
+}
