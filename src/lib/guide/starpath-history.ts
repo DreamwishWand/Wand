@@ -38,7 +38,7 @@ const ROWS:readonly Row[]=[
   ['majesty-and-magnolias',2024,'Majesty and Magnolias','https://disneydreamlightvalley.com/news/update-june-26-2024'],
   ['dapper-delights',2024,'Dapper Delights','https://disneydreamlightvalley.com/news/update-aug-21-2024'],
   ['the-night-show',2024,'The Night Show','https://disneydreamlightvalley.com/fr/news/update-oct-9-2024'],
-  ['the-frost-and-fairies',2024,'The Frost & Fairies','https://disneydreamlightvalley.com/news/update-dec-4-2024'],
+  ['frost-and-fairies',2024,'Frost & Fairies','https://disneydreamlightvalley.com/news/update-dec-4-2024'],
   ['garden-of-whimsy',2025,'Garden of Whimsy','https://disneydreamlightvalley.com/news/update-apr-23-2025'],
   ['adventures-in-never-land',2025,'Adventures in Never Land','https://disneydreamlightvalley.com/news/update-jun-18-2025'],
   ['retro-roadtrip',2025,'Retro Roadtrip','https://disneydreamlightvalley.com/news/EmotionalRescueUpdate'],
