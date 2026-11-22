@@ -57,6 +57,21 @@ test('Complete public Steam 1.26.2 DB-02 catalog joins 1255 source-pinned Star P
   assert.equal(catalog.shopHistory.coverage.liveAvailabilityVerified,false);
   assert.equal(catalog.shopHistory.repeatedOffers.length,8);
   assert.equal(catalog.coverage.combinedSourceRoutes,1255);
+  assert.equal(catalog.coverage.staticContainerDefinitions,88);
+  assert.equal(catalog.coverage.staticContainerCandidateRoutes,146);
+  assert.equal(catalog.coverage.staticContainerCandidateItemIds,115);
+  assert.equal(catalog.coverage.totalPublishedOriginAndContainerCandidateRoutes,1401);
+  assert.equal(catalog.staticContainerSource.coverage.liveContentsVerified,false);
+  assert.equal(catalog.staticContainerSource.coverage.guaranteedLootVerified,false);
+  assert.equal(catalog.staticContainerSource.origins.length,146);
+  const containerItem=catalog.lookup('31500006');
+  assert(containerItem.staticContainerCandidates.length>=3);
+  assert(containerItem.staticContainerCandidates.every(o=>
+    o.kind==='loot'&&o.routeStatus==='static_candidate_only'&&
+    o.availability==='not_live_verified'));
+  const containerOrigin=containerItem.staticContainerCandidates[0];
+  assert.equal(catalog.getSourceOrigin(containerOrigin.originId)[0],containerOrigin);
+  assert.equal(catalog.itemSources.query().totalOriginRelations,1255);
   assert.equal(catalog.itemSources.query().totalOriginRelations,1255);
   assert.equal(catalog.itemSources.knownLinkedItemIds.length,
     catalog.coverage.allSourceLinkedItemIds);
@@ -77,8 +92,9 @@ test('Complete public Steam 1.26.2 DB-02 catalog joins 1255 source-pinned Star P
     catalog.coverage.linkedOutsidePublishedItemIds,
     catalog.coverage.allSourceLinkedItemIds);
   const urlList=new Set(seen);
-  assert.equal(seen.length,24); // 23 original public assets + IAP native pack-reference projection
-  assert.equal(urlList.size,24);
+  assert.equal(seen.length,25); // 24 existing public assets + static container template source
+  assert.equal(urlList.size,25);
+  assert(seen.some(s=>s.endsWith('/container-inventory-1.26.2.json')));
   assert(seen.some(s=>s.endsWith('/iap-pack-links-1.26.2.json')));
   assert(seen.some(s=>s.endsWith('/shop-cache-2026-07-15.json')));
   assert(seen.some(s=>s.endsWith('/iap-rewards-1.26.2.json')));
@@ -237,6 +253,9 @@ test('Public-only startup rejects corrupt source-pinned DB-00 and Guide bytes; u
   ),/PUBLIC_SHA/);
   await assert.rejects(loadPublicSourceCatalog(
     '/Wand',publicFetcher({corrupt:'iap-pack-links-1.26.2.json'}).fetcher
+  ),/PUBLIC_SHA/);
+  await assert.rejects(loadPublicSourceCatalog(
+    '/Wand',publicFetcher({corrupt:'container-inventory-1.26.2.json'}).fetcher
   ),/PUBLIC_SHA/);
   await assert.rejects(loadPublicSourceCatalog(
     '/Wand',publicFetcher({corrupt:'shop-cache-2026-07-15.json'}).fetcher
