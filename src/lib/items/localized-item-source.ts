@@ -110,6 +110,13 @@ export function createDb01LocalizedItemSourceClient(
     typeof taxonomy.listWorldTags==='function'&&
     typeof taxonomy.listUniverseTags==='function',
     'MISMATCHED_OR_INCOMPLETE_PRIVATE_SOURCE');
+  // The retired first v1.26.2 Tag overlay omitted original Furniture
+  // packed field-7 associations (including World/Universe references).
+  // Reject it rather than silently interpreting absent tags as absent
+  // original evidence. Later versions use their own pinned release counts.
+  if(base.gameVersion==='1.26.2'&&base.definitions===39067)
+    check(coverage.tagAssociatedDefinitions===14973,
+      'RETIRED_INCOMPLETE_TAG_OVERLAY');
   const source=Object.freeze({
     platform:'Steam' as const,gameVersion:base.gameVersion,
     sourceItemsSha256:base.sourceItemsSha256,
