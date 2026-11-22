@@ -29,9 +29,10 @@ const statuses=freeze({
  * A missing definition or an unresolved native type check remains UNKNOWN;
  * unknown earlier formulas prevent selecting a known later formula.
  */
-export function classifyConditionalNativeSellFormulaCandidates({
-  formulaItemIds,forCurrencyId,candidateDefinitions=[]
-}={}){
+export function classifyConditionalNativeSellFormulaCandidates(input={}){
+  ok(input!==null&&typeof input==='object'&&!Array.isArray(input),
+    'INVALID_INPUT');
+  const {formulaItemIds,forCurrencyId,candidateDefinitions=[]}=input;
   ok(Array.isArray(formulaItemIds)&&formulaItemIds.length<=32&&
     formulaItemIds.every(positive)&&
     new Set(formulaItemIds).size===formulaItemIds.length,
