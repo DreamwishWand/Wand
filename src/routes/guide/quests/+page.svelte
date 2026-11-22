@@ -162,11 +162,9 @@
 
 <main class="quests-public">
   <header class="hero">
-    <div class="eyebrow">DREAMWISH WAND · GUIDE</div>
-    <h1>クエストガイド</h1>
-    <p>ゲームのクエストを検索し、目標と手順を確認できます。データファイルの準備は不要です。</p>
-    <div class="meta">Steam v1.26.2に対応 · 8言語 · 静的クエスト情報</div>
-    <a class="characters-nav" href="{base}/guide/characters/">キャラクター名称索引を開く</a>
+    <h1>クエスト</h1>
+    <p>クエストを検索して、目標と手順を確認できます。</p>
+    <a class="characters-nav" href="{base}/guide/characters/">キャラクターから探す</a>
   </header>
 
   {#if loading}
@@ -175,13 +173,11 @@
     <p class="error" role="alert">公開クエストデータを読み込めませんでした：{loadError}</p>
     <button on:click={loadCatalog}>再読み込み</button>
   {:else if catalog}
-    <div class="numbers"><span><strong>{catalog.counts.quests.toLocaleString()}</strong> クエスト</span><span><strong>{catalog.counts.steps.toLocaleString()}</strong> ステップ</span><span><strong>{catalog.counts.objectives.toLocaleString()}</strong> 目標</span></div>
     <nav class="quest-sections" aria-label="クエストの大分類">
-      {#each [['all','すべて'],['story','ストーリー・レルム'],['friendship','村人関連（フレンドシップ系）'],['other','その他・期間限定など']] as [key,name]}
+      {#each [['all','すべて'],['story','ストーリー'],['friendship','村人関連'],['other','その他']] as [key,name]}
         <button class:chosen={section===key} on:click={()=>{section=key as typeof section;setSearch()}} aria-pressed={section===key}>{name}</button>
       {/each}
     </nav>
-    <p class="section-note">原本のMission内部区分に基づく分類です。Villageは村人関連（フレンドシップ系）として表示しますが、全件の解放条件を確認済みという意味ではありません。</p>
     <div class="searchbar">
       <label>クエストを検索<input aria-label="クエスト名・IDを検索" placeholder="クエスト名・キャラクター名・ID" bind:value={query} on:input={setSearch}/></label>
       <label>キャラクター<select aria-label="キャラクターで絞り込み" bind:value={character} on:change={setSearch}><option value="">すべて</option>{#each characters as id}<option value={id}>{characterName(id,locale)}</option>{/each}</select></label>
@@ -191,9 +187,9 @@
       <section class="results" aria-label="クエスト一覧">
         <p class="count">{filtered.total.toLocaleString()}件のクエスト</p>
         {#each filtered.rows as row (row.id)}
-          <button class:active={selectedRow?.id===row.id} class="quest-row" on:click={()=>openQuest(row)}>
+          <button class:active={selectedRow?.id===row.id} class="quest-row" title={'クエストID '+row.id} on:click={()=>openQuest(row)}>
             <strong>{questName(row,locale)}</strong>
-            <small>{characterName(row.characterId,locale)} · {row.id}</small>
+            <small>{characterName(row.characterId,locale)}</small>
           </button>
         {/each}
         {#if filtered.total>limit}<div class="auto-sentinel" use:autoAppend={{hasMore:()=>filtered.total>limit,load:()=>limit+=40}} role="status" aria-label="スクロールでクエストを追加表示"></div>{/if}
@@ -203,7 +199,12 @@
         {#if !selectedRow}
           <p class="placeholder">左の一覧からクエストを選択してください。</p>
         {:else}
-          <div class="detail-header"><span>クエストID {selectedRow.id}</span><h2>{questName(selectedRow,locale)}</h2><p><a class="character-link" href={`${base}/guide/characters/?character=${selectedRow.characterId}`}>{characterName(selectedRow.characterId,locale)}</a></p><a class="quest-permalink" href={`${base}/guide/quests/?quest=${selectedRow.id}`}>このクエストへの直接リンク</a></div>
+          <div class="detail-header">
+            <h2>{questName(selectedRow,locale)}</h2>
+            <p><a class="character-link" href={`${base}/guide/characters/?character=${selectedRow.characterId}`}>{characterName(selectedRow.characterId,locale)}</a></p>
+            <a class="quest-permalink" href={`${base}/guide/quests/?quest=${selectedRow.id}`}>このクエストへのリンク</a>
+            <details class="source-id"><summary>クエストID</summary><code>{selectedRow.id}</code></details>
+          </div>
           {#if detailLoading}<p class="status">目標データを検証しています…</p>{/if}
           {#if detailError}<p class="error" role="alert">{detailError}</p>{/if}
           {#if selected}
@@ -242,20 +243,19 @@
                     {#each sub.objectives as goal, i (i)}
                       <li>
                          <span>{objectiveText(goal,targetLookup[`${step.index}:${sub.index}:${i}`]?.[0],locale)}</span>
-                         <small>{goal.type}{goal.objectiveId?' · ID '+goal.objectiveId:''}</small>
+                         <details class="source-id"><summary>条件の識別情報</summary><small>{goal.type}{goal.objectiveId?' · ID '+goal.objectiveId:''}</small></details>
                          {#each targetLookup[`${step.index}:${sub.index}:${i}`]||[] as target}
                            {#if target.amount?.kind==='value'}
-                             <small class="source-amount">原本の設定数量：{target.amount.value}</small>
+                             <small class="source-amount">必要数 {target.amount.value}</small>
                            {:else if target.amount?.kind==='range'}
-                             <small class="source-amount">原本の設定数量：{target.amount.min??'不明'}～{target.amount.max??'不明'}</small>
+                             <small class="source-amount">必要数 {target.amount.min??'不明'}～{target.amount.max??'不明'}</small>
                            {/if}
                            {#each target.selectors as selector}
                              {#if selector.candidates.length}
                                <div class="target-candidates" aria-label="原本で設定された候補アイテム">
                                  {#each selector.candidates as candidate}
-                                   <span class="target-chip">
+                                   <span class="target-chip" title={'アイテムID '+candidate.id+(candidate.role==='alternative'?' · 代替候補':'')}>
                                      {itemTargetName(targetIndex,candidate.id,locale)||'名称未確認'}
-                                     <small>ID {candidate.id}{candidate.role==='alternative'?' · 代替候補':''}</small>
                                    </span>
                                  {/each}
                                </div>
@@ -274,6 +274,11 @@
         {/if}
       </section>
     </div>
+    <details class="catalog-meta">
+      <summary>データの詳細と分類について</summary>
+      <div class="numbers"><span><strong>{catalog.counts.quests.toLocaleString()}</strong> クエスト</span><span><strong>{catalog.counts.steps.toLocaleString()}</strong> ステップ</span><span><strong>{catalog.counts.objectives.toLocaleString()}</strong> 目標</span></div>
+      <p class="section-note">Steam v1.26.2の静的クエスト定義を8言語で表示します。原本のMission内部区分に基づく分類であり、解放条件の完全な判定を意味しません。</p>
+    </details>
   {/if}
   <footer>
     <p>クエスト定義を元にした静的ガイドです。現在の進捗・解放判定・開催中イベント・DLC所有状況を示すものではありません。詳細にはネタバレが含まれます。</p>
@@ -283,16 +288,16 @@
 </main>
 
 <style>
-  .quests-public{max-width:1300px;margin:0 auto;padding:26px 26px 90px;color:#f2eafa}
-  .hero{padding:18px 6px 26px}.eyebrow{letter-spacing:.21em;font-size:11px;color:#c4a4ed;font-weight:700}
-  h1{font-size:clamp(28px,4vw,43px);margin:10px 0 8px} .hero p{color:#b9afc5;font-size:15px;margin:0 0 9px}
-  .meta{font-size:12px;color:#b9afc5}.numbers{display:flex;gap:18px;flex-wrap:wrap;margin:12px 0 20px;color:#c7b7d5;font-size:13px}
+  .quests-public{max-width:1300px;margin:0 auto;padding:14px 22px 65px;color:#f2eafa}
+  .hero{padding:4px 6px 10px}
+  h1{font-size:clamp(26px,3vw,33px);margin:2px 0 4px}.hero p{color:#b9afc5;font-size:13px;margin:0}
+  .numbers{display:flex;gap:18px;flex-wrap:wrap;margin:8px 0;color:#c7b7d5;font-size:12px}
   .numbers strong{color:#f4e7ff;font-size:20px}
-  .quest-sections{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 9px}
+  .quest-sections{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 9px}
   .quest-sections button{padding:10px 14px;border:1px solid #665077;border-radius:9px;background:#261c33;color:#e3d0f0;font-size:12px}
   .quest-sections button.chosen{border-color:#ba91ee;background:#543672;color:white}
-  .section-note{font-size:11px;color:#b49fbf;line-height:1.65;margin:4px 0 19px}
-  .searchbar{display:grid;grid-template-columns:2fr repeat(3,minmax(120px,1fr));gap:10px;margin-bottom:18px}
+  .section-note{font-size:11px;color:#b49fbf;line-height:1.65;margin:7px 0}
+  .searchbar{display:grid;grid-template-columns:minmax(0,2fr) repeat(2,minmax(120px,1fr));gap:10px;margin-bottom:12px}
   .searchbar label{display:grid;gap:5px;font-size:12px;color:#d6c5e8}
   .searchbar input,.searchbar select{box-sizing:border-box;min-width:0;width:100%;background:#231b30;border:1px solid #65577c;color:#fff;border-radius:9px;padding:11px;font:inherit}
   .workspace{display:grid;grid-template-columns:minmax(270px,.85fr) minmax(0,1.5fr);gap:15px;align-items:start}
@@ -302,9 +307,9 @@
   .quest-row:hover,.quest-row.active{background:#302440;border-color:#654b85}.quest-row strong{font-size:14px}.quest-row small{color:#aa9cb7;font-size:11px}
   button{cursor:pointer}.auto-sentinel{height:18px;margin-top:8px}
   .detail{position:sticky;top:16px;max-height:calc(100vh - 28px);overflow:auto;scrollbar-width:thin}.placeholder,.empty{color:#ac9dbb;padding:20px 4px}
-  .detail-header{border-bottom:1px solid #514260;padding:0 0 16px;margin-bottom:16px}.detail-header span{font-size:11px;color:#b79aca}.detail-header h2{font-size:22px;margin:7px 0}.detail-header p{font-size:13px;color:#c9b8db;margin:0}
+  .detail-header{border-bottom:1px solid #514260;padding:0 0 12px;margin-bottom:12px}.detail-header h2{font-size:21px;margin:4px 0}.detail-header p{font-size:13px;color:#c9b8db;margin:0}
   .quest-permalink{display:inline-block;margin-top:10px;font-size:12px;color:#d5b4ff;text-underline-offset:3px}
-  .characters-nav{display:inline-block;margin:11px 0 0;font-size:13px;color:#dbbaff;text-underline-offset:3px}
+  .characters-nav{display:inline-block;margin:6px 0 0;font-size:12px;color:#dbbaff;text-underline-offset:3px}
   .character-link{color:#dbbaff;text-underline-offset:3px}
   .detail-stats{display:flex;flex-wrap:wrap;gap:8px;font-size:12px;color:#d6c1e5;margin-bottom:11px}.detail-stats span{padding:5px 9px;border-radius:8px;background:#30243f}
   .step-navigation{display:flex;align-items:center;flex-wrap:wrap;gap:7px;border:1px solid #534268;background:#251c33;border-radius:10px;padding:10px;margin:8px 0}
@@ -316,7 +321,12 @@
   .step-permalink{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:space-between;color:#b9a5ca;font-size:12px;margin:4px 0 12px}
   .step-permalink a{color:#d9baff;text-underline-offset:3px}
   .step{border-top:1px solid #40344b;padding:13px 0}.step h3{font-size:15px;margin:0 0 8px}.step p{font-size:13px;color:#c2b4cb}.step ol{margin:0;padding-left:25px}.step li{padding:6px 0 8px;font-size:14px}.step li small{display:block;color:#9588a5;font-size:11px;margin-top:3px}
-  .source-amount{color:#c2addc!important}.target-status{color:#c9b0e6;font-size:12px}
+  .source-amount{color:#c2addc!important}
+  .source-id{font-size:11px;color:#ab9abd;margin:5px 0}
+  .source-id summary{cursor:pointer;width:max-content;max-width:100%;color:#bda6d1}
+  .source-id code{display:inline-block;padding:5px 0;font-size:11px}
+  .catalog-meta{margin:12px 4px 0;border-top:1px solid #47384f;padding:10px 2px;color:#b8a8cb;font-size:12px}
+  .catalog-meta summary{cursor:pointer;display:list-item;width:max-content;max-width:100%}.target-status{color:#c9b0e6;font-size:12px}
   .target-warning{color:#e6bf8d;font-size:12px}.target-candidates{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0}
   .target-chip{display:inline-flex;align-items:baseline;gap:6px;flex-wrap:wrap;border:1px solid #55416a;background:#322340;border-radius:7px;padding:5px 8px;font-size:12px}
   .target-chip small{font-size:10px!important;color:#bdabd0!important;margin:0!important}

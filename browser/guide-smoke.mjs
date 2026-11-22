@@ -35,8 +35,12 @@ try {
     if (response.url().includes('/guide/public/')) downloaded.push(response.url());
   });
   await page.goto(url, {waitUntil: 'domcontentloaded'});
-  await page.locator('.numbers').waitFor({timeout: 30000});
-  assert.match(await page.locator('.numbers').innerText(), /733[\s\S]*7,878[\s\S]*11,782/);
+  await page.locator('.quest-sections').waitFor({timeout: 30000});
+  assert.equal(await page.locator('.catalog-meta').evaluate(el=>el.open),false,
+    'static source counters and source details should not bury the quest list');
+  assert.match(await page.locator('.numbers').textContent(), /733[\s\S]*7,878[\s\S]*11,782/);
+  assert.equal(await page.locator('.hero .eyebrow').count(),0);
+  assert.match(await page.locator('.hero h1').innerText(),/^クエスト$/);
   assert.equal(await page.locator('input[type=file]').count(), 0);
   assert.equal(downloaded.filter(value => value.endsWith('/quest-index.json')).length, 1);
   assert.equal(downloaded.filter(value => value.includes('quest-details-')).length, 0, 'lazy details must not prefetch');
@@ -69,10 +73,14 @@ try {
   // Original-native selector ID 30000031 resolves through the published,
   // exact current Steam 1.26.2 names, without requiring an owner source archive.
   await search.fill('2070000688');
-  await page.locator('.quest-row').filter({hasText:'2070000688'}).click();
+  await page.locator('.quest-row').first().click();
   await page.locator('.target-chip').filter({hasText:'ピュアナイトシャード'}).first().waitFor({timeout:20000});
-  assert.match(await page.locator('.detail').innerText(), /原本の設定数量：5/);
-  assert.match(await page.locator('.target-chip').first().innerText(), /ID 30000031/);
+  assert.match(await page.locator('.detail').innerText(), /必要数 5/);
+  assert.match(await page.locator('.target-chip').first().getAttribute('title'), /30000031/);
+  assert.doesNotMatch(await page.locator('.target-chip').first().innerText(), /30000031/,
+    'technical item IDs stay accessible on hover, not in the main task content');
+  assert.equal(await page.locator('.detail .source-id').first().evaluate(el=>el.open),false,
+    'source identifiers default to collapsed');
   await chooseLanguage(page,'en');
   await page.locator('.target-chip').filter({hasText:'Purified Night Shard'}).first().waitFor({timeout:20000});
   await chooseLanguage(page,'ja');
