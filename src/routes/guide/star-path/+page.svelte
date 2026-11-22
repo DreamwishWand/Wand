@@ -9,7 +9,7 @@
   import {loadStarpathDailyLocales,starpathDailyDescription} from '$lib/guide/public-starpath-daily.mjs';
   import {starpathRewardDisplayName,loadStarpathRewardExtras} from '$lib/guide/starpath-reward-extras.mjs';
   import {loadStarpathMedia,starpathMediaThumbnail} from '$lib/guide/starpath-public-media.mjs';
-  import {guideCalendarEvents,activeScheduleStarpaths} from '$lib/guide/event-calendar.mjs';
+  import {guideCalendarEvents,eventScheduleState} from '$lib/guide/event-calendar.mjs';
   import {starpathTaskDisplay} from '$lib/guide/starpath-task-guidance.mjs';
   import {filterStarpathTasks} from '$lib/guide/starpath-search.mjs';
   import {loadPublicStarpathGoals,starpathGoalLabel,starpathGoalHeading,starpathGoalSourceNote} from '$lib/guide/public-starpath-goals.mjs';
@@ -24,9 +24,13 @@
   let rewardQuery='';
   let rewardTier:'all'|'free'|'premium'='all';
   let limit=60;
-  $: activeIds=catalog?new Set(activeScheduleStarpaths(guideCalendarEvents(catalog),now).map((e:any)=>e.sourceSeasonId)):new Set<string>();
-  $: availableSeasons=catalog?.seasons?.filter((s:any)=>activeIds.has(s.id))||[];
-  $: season=availableSeasons.find((s:any)=>s.id===selectedId)||availableSeasons[0];
+  // Source-snapshot browsing is permanent; scheduled status must not gate access
+  // to the original static tasks and rewards or imply live server availability.
+  $: seasonEvents=catalog?guideCalendarEvents(catalog).filter((e:any)=>e.kind==='starpath'):[];
+  $: selectableSeasons=catalog?.seasons||[];
+  $: season=selectableSeasons.find((s:any)=>s.id===selectedId)||selectableSeasons[0];
+  $: selectedEvent=season?seasonEvents.find((e:any)=>e.sourceSeasonId===season.id):null;
+  $: scheduleState=selectedEvent?eventScheduleState(selectedEvent,now):null;
   $: rewardRows=season?[...season.rewardPages.flatMap((p:any)=>p.rewards),...season.bonusPages.flatMap((p:any)=>p.rewards),...season.vaultRewards]:[];
   $: rewardGroups=season?[
     ...season.rewardPages.map((page:any)=>({
@@ -111,12 +115,22 @@
     <button on:click={load}>再読み込み</button>
   {:else if catalog}
     <div class="seasons" role="group" aria-label="シーズンを選択">
-      {#each availableSeasons as s}
-        <button class:selected={s.id===season?.id} on:click={()=>changeSeason(s.id)} aria-pressed={s.id===selectedId}>{s.title}</button>
+      {#each selectableSeasons as s}
+        {@const event=seasonEvents.find((e:any)=>e.sourceSeasonId===s.id)}
+        {@const status=event?eventScheduleState(event,now):null}
+        <button class:selected={s.id===season?.id} on:click={()=>changeSeason(s.id)} aria-pressed={s.id===selectedId}>
+          {s.title}{#if status==='ended'} <small>（終了）</small>{:else if status==='exchange-only'} <small>（交換期間）</small>{:else if status==='upcoming'} <small>（開始前）</small>{/if}
+        </button>
       {/each}
     </div>
-    {#if !availableSeasons.length}<p role="status">現在の日程上、タスク期間内と確認できるスターパスはありません。過去の保存キャッシュだけを根拠に開催中とは表示しません。</p>{/if}
     {#if season}
+      {#if scheduleState==='ended'}
+        <p class="archive-notice" role="status">終了済みのスターパスです。保存された攻略・報酬情報を閲覧できます。</p>
+      {:else if scheduleState==='exchange-only'}
+        <p class="archive-notice" role="status">タスク期間は終了しています。報酬交換期限前の保存データです。サーバーの開催状態は未確認です。</p>
+      {:else if scheduleState==='upcoming'}
+        <p class="archive-notice" role="status">開始前の日程です。保存済みのゲームデータを参考として表示しています。</p>
+      {/if}
       {#if goalWarning}<p class="hint" role="status">目標数量を検証できなかったため、ゲーム内の説明のみを表示しています。</p>{/if}
       <div class="deadline-strip" aria-label="シーズンの期限">
         <span>タスク期限 <strong>{date(season.finishUtcExclusive)}</strong></span>
@@ -254,6 +268,8 @@
   .seasons,.tabs{display:flex;gap:9px;flex-wrap:wrap;margin:12px 0}
   .seasons button,.tabs button{border:1px solid #65527d;border-radius:10px;background:#261c32;color:#ecdcfa;padding:11px 17px}
   .seasons button.selected,.tabs button.active{background:#503667;border-color:#bb91ed;color:#fff}
+  .seasons button small{font-size:11px;color:#d9bded;font-weight:450}
+  .archive-notice{font-size:12px;color:#ddc6ee;margin:9px 0;padding:9px 12px;border-left:2px solid #9d77bd;background:#251b31;line-height:1.5}
   .deadline-strip{display:flex;align-items:center;gap:18px;flex-wrap:wrap;background:#241a32;border:1px solid #4b3d5e;border-radius:10px;padding:9px 13px;margin:12px 0 6px;font-size:12px;color:#bdaacc}
   .deadline-strip strong{color:#f4eafa;font-size:12px;margin-left:6px}
   .season-more{margin:6px 0 0;font-size:12px;color:#cfbde1}
