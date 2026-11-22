@@ -114,6 +114,23 @@
       gridDataPath:activeOption.gridDataPath
     });
   }
+  // Drill down only through an exact GridRef ID already present in the
+  // constructor-verified original graph. This is not a Save Grid identity,
+  // World-coordinate transform, or placement authorization.
+  function inspectSourceGridRef(gridRefId:string){
+    const originalGrid=catalog?.sourceGrids.find(grid=>grid.id===gridRefId);
+    if(!originalGrid||originalGrid.nativeGridId===null||
+      originalGrid.gridDataPath===null){
+      errorMessage='このGrid参照は読み込んだ部分的な原本グラフで確認できません。';
+      return;
+    }
+    scope='grid';
+    // The full native composite ID is unique even when GridDataPath is shared.
+    gridSearch=originalGrid.id;
+    scopeId=originalGrid.id;
+    page=null;pageOffset=0;
+    query();
+  }
   function chooseSourceOption(event:Event){
     scopeId=(event.currentTarget as HTMLSelectElement).value;
     page=null;pageOffset=0;
@@ -274,7 +291,13 @@
                 <tr>
                   <td>{row.itemId}</td>
                   <td>{row.sourceDefaultInstances}</td>
-                  <td class="graph-path">{row.gridRefId}</td>
+                  <td class="graph-path">
+                    <button type="button" class="graph-grid-link"
+                      aria-label={`原本Grid ${row.gridRefId}を表示`}
+                      on:click={()=>inspectSourceGridRef(row.gridRefId)}>
+                      <WandIcon name="world" size={14}/>{row.gridRefId}
+                    </button>
+                  </td>
                   <td class="graph-path">{row.sourceWorldId??'未特定'}
                     {#if row.sourceAreaRefId}<small>{row.sourceAreaRefId}</small>{/if}
                   </td>
@@ -334,6 +357,10 @@
   th{position:sticky;top:0;background:#292039;color:#ded0e9}
   td:first-child{white-space:nowrap;font-weight:600}
   .graph-path{max-width:340px;overflow-wrap:anywhere;color:#c4b3d2}
+  .graph-grid-link{padding:0;background:transparent;border:0;max-width:100%;
+    display:inline-flex;gap:5px;align-items:center;text-align:left;
+    white-space:normal;overflow-wrap:anywhere;color:#d2c3ea;font-size:12px}
+  .graph-grid-link:hover{text-decoration:underline}
   small{display:block;color:#a995c0;font-size:11px}
   .graph-paging{justify-content:flex-end;margin-top:10px;font-size:12px}
   .graph-paging span{margin-right:auto;color:#b7a9c5}
