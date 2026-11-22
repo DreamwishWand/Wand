@@ -102,15 +102,14 @@ incorrectly fail as duplicate context. Its nine native grids and 1,434
 source-default anchors are retained as direct GridCollection provenance;
 they are **not** automatically considered player placements.
 
-**Partial grid-source coverage:** The 47-layout extension references 491
+**Historical partial grid-source coverage (before subsequent imports):** The 47-layout extension references 491
 native Grid entries (351 distinct source GridData paths). Against the earlier
 private 364-GridData set, **347 distinct referenced GridData source paths
-remain unprovided**. The updated private derived-only ZIP retains the original
-364 GridData records and reports these 347 as missing; it does not invent
+were not yet provided**. That historical private derived-only ZIP retained the original
+364 GridData records and reported these 347 as missing; it did not invent
 terrain, silently reuse another GridData, or claim that the new scenes have
-renderable read-only terrain or anchor windows. Unresolved source references
-must be filled by exact original Steam files and individually checked before
-being promoted to source-backed previews.
+renderable read-only terrain or anchor windows. Subsequent private Steam-source imports resolved this historical missing set;
+see the latest closure snapshot below.
 
 The new private ZIP is in the owner-controlled SRC-05 workflow. This public
 document contains derived aggregate counts and parser evidence only; the
@@ -137,6 +136,47 @@ read-only partial World source snapshot. They do not verify collisions,
 traversal, editor placement legality, full source closure, runtime
 transformations or player save positions. ZIP members and raw game files
 are not published to GitHub; only derived aggregate evidence is recorded.
+
+## Latest owner-private read-only source snapshot — complete included-layout GridData references
+
+A later **source-verified partial snapshot for Steam v1.26.2** imports
+the remaining exact original GridData files from Expansion01/02/03/04,
+WinnieDLC, EventFloatingIslands, Furniture and Setless/Props. It retains the
+same **165 original layout files**, including **75 OffGridBuildings layouts**.
+Import stages verified the original byte size, SHA-256, native dimensions,
+packed palette-index bounds and/or direct FloorTypes cardinality. The final
+ZIP was reopened and every derived-file hash, every imported source hash,
+every unique grid ID and every explicit layout reference was checked.
+
+| Derived source-only measure | Latest partial snapshot |
+| --- | ---: |
+| Included original SceneLayouts | 165 |
+| OffGridBuildings original SceneLayouts | 75 |
+| Distinct GridData records in snapshot | **711** |
+| Unique explicit GridData references from included SceneLayouts | **710** |
+| Unresolved explicit GridData references | **0** |
+| Additional standalone validation GridData (not layout-referenced) | 1 |
+| Native initial GridObject anchors | 27,113 |
+| Grid-local read-only source-correlated terrain cells | 4,703,882 |
+| Original SHA-256 source register entries | 882 |
+| Original direct-floor GridData representations | 210 |
+| Original packed-floor GridData representations | 501 |
+
+The additional standalone source is the small `Rooms/Room12x16` validation
+grid. **711 total GridData does not mean 711 different layout references**.
+The coverage claim is exactly **710/710 explicit references inside the 165
+included layouts**; it is **not a claim that every scene in the game has
+been enumerated**. No missing reference was silently filled by a name
+match or by borrowing another scene's grid. Two source files with the same
+basename in different MythTrial folders were distinguished by their exact
+original directory paths and independently hashed.
+
+This is still a **partial source-only, read-only world snapshot**. Player save
+coordinates, world transforms, collision/occupancy state, placement legality,
+scene accessibility, DLC entitlements, and whole-game scene coverage remain
+unverified. The public repository retains only code and aggregate evidence;
+the derived grids, placement records and original files remain in
+owner-controlled SRC-05 World Data.
 
 ## Unsupported semantics
 
