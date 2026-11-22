@@ -62,7 +62,7 @@ const FAMILY:Readonly<Record<string,{kind:OriginKind;label:string;file:string;fu
   },
   floating_festival:{
     kind:'event_reward',label:'Floating-festival reward definition',
-    file:'ddv_Data/StreamingAssets/protoDb.bin'
+    file:'ddv_Data/StreamingAssets/protoDb.bin',fullSha:PROTO_SHA
   },
   quest_intro:{
     kind:'quest_reward',label:'Quest introduction grant definition',
@@ -70,7 +70,7 @@ const FAMILY:Readonly<Record<string,{kind:OriginKind;label:string;file:string;fu
   },
   quest_loot:{
     kind:'quest_reward',label:'Quest additional reward loot candidate',
-    file:'ddv_Data/StreamingAssets/itemlist/Mission.json'
+    file:'ddv_Data/StreamingAssets/itemlist/Mission.json',fullSha:MISSION_SHA
   },
   friendship_default:{
     kind:'friendship_reward',label:'Default friendship level reward definition',
