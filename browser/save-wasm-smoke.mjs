@@ -173,8 +173,9 @@ try{
   await page.getByRole('button',{name:'編集プレビューを開く（開発用）'}).click();
   await page.waitForURL('**/save/preview/');
   await page.locator('.active-save-file').getByText('shared-preview.profile').waitFor();
-  await page.locator('.slot-actions [role="status"]').waitFor({timeout:30000});
-  assert.match(await page.locator('.slot-actions [role="status"]').innerText(),/件/);
+  const sharedSlotCount=page.locator('.slot-actions [role="status"]').filter({hasText:'件'}).first();
+  await sharedSlotCount.waitFor({timeout:30000});
+  assert.match(await sharedSlotCount.innerText(),/件/);
   assert.equal(await page.getByRole('alert').count(),0);
 
   await page.goto('http://127.0.0.1:4185/Wand/save/preview/',{
