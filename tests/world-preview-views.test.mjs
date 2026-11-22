@@ -374,3 +374,28 @@ test('off-grid native scenes stay separate from Realm and Village AreaType refer
   assert.equal(viewport.worldCoordinatesVerified,false);
   assert.equal(catalog.areas.size,0);
 });
+
+test('root OffGridTemplate keeps an independent source region and zero anchors', () => {
+  const id='SceneLayouts/OffGridBuildings/OffGridTemplate-DefaultLayout.json';
+  const path='GridData/OffGridBuildings/OffGridTemplate-GridData.json';
+  const catalog=createWorldCatalog({
+    manifest:{schema:WORLD_SCHEMA,status:'partial_game_native_evidence',
+      platform:'Steam',gameVersion:'1.26.2',sourceScopeVerified:false},
+    objects:[],scenes:[],areas:[],worlds:[],
+    layouts:[{layoutId:id,layoutKind:'nativeGridCollection',
+      embeddedGridCollectionWireField:2,
+      offGridCustomLocationPath:'SceneLayouts/OffGridBuildings/CustomLocations.json',
+      nativeGridEntries:[{gridIdNative:0,gridDataPath:path,defaultObjectCount:0}]}],
+    layoutObjects:[],
+    grids:[{gridId:path,sizeX:6,sizeY:6,
+      terrainDecoding:{decoded:false,status:'not_compacted'}}],
+  });
+  const [group]=summarizeWorldPreviewSourceCoverage(catalog);
+  assert.equal(group.regionKey,'OffGridBuildings');
+  assert.equal(group.offGridLayoutCount,1);
+  assert.equal(group.nativeGridReferenceCount,1);
+  assert.equal(group.presentNativeGridReferenceCount,1);
+  assert.equal(group.sourceDefaultAnchorCount,0);
+  assert.equal(group.areaReferenceCount,0);
+  assert.equal(listWorldPreviewViews(catalog).length,1);
+});
