@@ -15,6 +15,7 @@ public enum ItemType // TypeDefIndex: 10
 
 public enum ActivityItemType // TypeDefIndex: 11
 {
+    public const ActivityItemType Meal = 3;
     public const ActivityItemType Crop = 2;
     public const ActivityItemType Fish = 10;
     public const ActivityItemType Ingredient = 11;
@@ -22,6 +23,7 @@ public enum ActivityItemType // TypeDefIndex: 11
 }
 
 public sealed class ConsummableItemData : IItemData {}
+public sealed class MealItemData : IItemData {}
 public sealed class CropItemData : IItemData {}
 public sealed class FishItemData : IItemData {}
 public sealed class IngredientItemData : IItemData {}
@@ -37,6 +39,7 @@ class SourceTypeTaxonomyTests(unittest.TestCase):
             SYNTHETIC_METADATA, 'ActivityItem/Consummable')
         self.assertTrue(evidence['nativeSourceObjectTypeClassAndEnumCrossReferenced'])
         self.assertTrue(evidence['fixedRecipeIngredientSourceSubtypesAreDifferent'])
+        self.assertTrue(evidence['cookingMealResultSourceSubtypeIsDifferent'])
         self.assertEqual(evidence['sourceObjectTypeActivitySubtypeEnumId'], 15)
         self.assertFalse(evidence['nativeRuntimeTypeIdentityResolved'])
         self.assertIsNone(evidence['sourceSellFormulaEffectivePrice'])
