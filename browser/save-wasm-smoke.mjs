@@ -146,7 +146,7 @@ try{
     name:'plaintext.profile',mimeType:'application/octet-stream',
     buffer:Buffer.from(JSON.stringify(quantityProfile))
   });
-  await page.getByRole('button',{name:'変更を検証'}).click();
+  await page.getByRole('button',{name:'変更を検証',exact:true}).click();
   await page.getByRole('status').filter({hasText:'数量変更'}).waitFor({timeout:30000});
   assert.equal(await page.getByRole('alert').count(),0);
   page.once('dialog',dialog=>dialog.accept());
@@ -174,7 +174,7 @@ try{
     name:'single-owned-decor.profile',mimeType:'application/octet-stream',
     buffer:Buffer.from(JSON.stringify(quantityProfile))
   });
-  await page.getByRole('button',{name:'変更を検証'}).click();
+  await page.getByRole('button',{name:'変更を検証',exact:true}).click();
   await page.getByRole('status').filter({hasText:'数量変更'}).waitFor({timeout:30000});
   page.once('dialog',dialog=>dialog.accept());
   await page.getByRole('button',{name:'編集済みコピーを生成'}).click();
@@ -198,7 +198,7 @@ try{
     name:'encrypted.profile',mimeType:'application/octet-stream',
     buffer:syntheticEncryptedP1g(quantityProfile)
   });
-  await page.getByRole('button',{name:'変更を検証'}).click();
+  await page.getByRole('button',{name:'変更を検証',exact:true}).click();
   await page.getByRole('status').filter({hasText:'数量変更'}).waitFor({timeout:30000});
   assert.equal(await page.getByRole('alert').count(),0);
 
@@ -210,7 +210,7 @@ try{
     name:'encrypted.profile',mimeType:'application/octet-stream',
     buffer:syntheticEncryptedP1g(quantityProfile)
   });
-  await page.getByRole('button',{name:'変更を検証'}).click();
+  await page.getByRole('button',{name:'変更を検証',exact:true}).click();
   await page.getByRole('status').filter({hasText:'数量変更'}).waitFor({timeout:30000});
   assert.equal(await page.getByRole('alert').count(),0);
   page.once('dialog',dialog=>dialog.accept());
@@ -272,7 +272,7 @@ try{
     name:'encrypted.profile',mimeType:'application/octet-stream',
     buffer:syntheticEncryptedP1g(quantityProfile)
   });
-  await page.getByRole('button',{name:'変更を検証'}).click();
+  await page.getByRole('button',{name:'変更を検証',exact:true}).click();
   await page.getByRole('alert').filter({hasText:'検証できませんでした'}).waitFor({timeout:30000});
   assert.equal(await page.getByRole('status').count(),0);
   assert.equal(await page.getByRole('link',{name:'コピーをダウンロード'}).count(),0);
