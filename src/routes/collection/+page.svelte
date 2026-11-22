@@ -33,6 +33,8 @@
   let loadError='';
   let loading=true;
   let storeError='';
+  let saveReadInProgress=false;
+  let saveReadTarget:{runtime:CollectionRuntime;workspaceId:string}|null=null;
   let infoMessage='';
   let busy=false;
   let locale='ja';
@@ -209,28 +211,28 @@
   function chooseFacet(id:string):void{selected=id;resetView();}
   function clearScope():void{selected='';search='';status='all';nameStatus='all';expansion='';worldFilter='';universeFilter='';resetView();}
   function changeWorkspace(id:string):void{
-    if(!runtime)return;
+    if(!runtime||busy||saveReadInProgress)return;
     void commit(async()=>{await runtime!.workspace('select',id);selectedItemId=null;selectedIds=[];});
   }
   function newWorkspace():void{
-    if(!runtime)return;
+    if(!runtime||busy||saveReadInProgress)return;
     const name=window.prompt('新しいローカル記録の名前（最大80文字）');
     if(name?.trim())void commit(()=>runtime!.workspace('add','local-'+crypto.randomUUID(),name));
   }
   function editWorkspaceName():void{
-    if(!runtime||!workspace)return;
+    if(!runtime||!workspace||busy||saveReadInProgress)return;
     const name=window.prompt('記録の名前',workspace.name);
     if(name?.trim())void commit(()=>runtime!.workspace('rename',workspace.id,name));
   }
   function deleteWorkspace():void{
-    if(!runtime||state.workspaces.length<2)return;
+    if(!runtime||busy||saveReadInProgress||state.workspaces.length<2)return;
     if(!window.confirm('現在の記録を削除します。先にバックアップを保存しましたか？'))return;
     void commit(()=>runtime!.workspace('delete',state.active));
   }
   async function useOwnerLocalCatalog(event:Event):Promise<void> {
     const input=event.currentTarget as HTMLInputElement;
     const file=input.files?.[0];
-    if(!file||busy)return;
+    if(!file||busy||saveReadInProgress)return;
     busy=true;
     let loaded:CollectionRuntime|null=null;
     try {
@@ -251,7 +253,7 @@
     }
   }
   async function usePublicCatalog():Promise<void>{
-    if(busy)return;
+    if(busy||saveReadInProgress)return;
     busy=true;
     let loaded:CollectionRuntime|null=null;
     try {
@@ -280,7 +282,7 @@
   async function restoreBackup(event:Event):Promise<void>{
     const input=event.currentTarget as HTMLInputElement;
     const file=input.files?.[0];
-    if(!file||!runtime)return;
+    if(!file||!runtime||busy||saveReadInProgress)return;
     try{
       if(file.size>10_000_000)throw new Error('COLLECTION_BACKUP_TOO_LARGE');
       const data=await file.text();
@@ -315,12 +317,27 @@
     })();
     return()=>{alive=false;media.removeEventListener('change',changed);runtime?.close();};
   });
+  function beginSaveRead():void {
+    // Preserve the active workspace and runtime at file selection, not at
+    // Worker completion. Do not let an asynchronous save update another record.
+    saveReadTarget=runtime&&!busy&&!storeError?{runtime,workspaceId:state.active}:null;
+    saveReadInProgress=true;
+  }
+  function finishSaveRead():void {
+    saveReadInProgress=false;
+    saveReadTarget=null;
+  }
   /** Native save history and positive-stock ownership are applied together
    * in one IndexedDB transaction, overriding matching manual entries only. */
   async function importSaveProfile(event:CustomEvent<{
     discovered:{itemId:number;discovered:boolean}[];
     positiveOwned:{itemId:number;role:string}[];
   }>):Promise<void> {
+    if(!saveReadTarget||saveReadTarget.runtime!==runtime||
+       saveReadTarget.workspaceId!==state.active){
+      infoMessage='セーブの読み取り中に対象のローカル記録が変更されたため、自動反映を中止しました。セーブを再選択してください。';
+      return;
+    }
     if(!runtime||busy||storeError){
       infoMessage='Collectionの保存処理が実行できないため、セーブの状態は反映していません。競合がある場合は最新の記録を読み込んでからセーブを再選択してください。';
       return;
@@ -402,7 +419,7 @@
         </select>
       </label>
       {#if runtime?.isOwnerLocal || (runtime && runtime.metadata.snapshot!=='steam-1.26.2-native-itemlist-v1')}
-        <button type="button" class="subtle-button" disabled={busy||loading}
+        <button type="button" class="subtle-button" disabled={busy||loading||saveReadInProgress}
           on:click={()=>runtime?.isOwnerLocal?void usePublicCatalog():localCatalogInput.click()}>
           {runtime?.isOwnerLocal?'公開データに戻す':'v1.26.2 データをローカルで開く'}
         </button>
@@ -456,16 +473,16 @@
     <div class="personal-left">
       <span class="personal-symbol">✧</span>
       <div><strong>My Collection</strong><span>手動編集に対応 · セーブ読込で確認済み状態を優先</span></div>
-      <select aria-label="ローカル記録を選択" value={state.active} on:change={(event)=>changeWorkspace((event.currentTarget as HTMLSelectElement).value)} disabled={Boolean(storeError)}>
+      <select aria-label="ローカル記録を選択" value={state.active} on:change={(event)=>changeWorkspace((event.currentTarget as HTMLSelectElement).value)} disabled={Boolean(storeError)||busy||saveReadInProgress}>
         {#each state.workspaces as work}<option value={work.id}>{work.name}</option>{/each}
       </select>
     </div>
     <div class="personal-actions">
-      <button type="button" title="記録を追加" disabled={Boolean(storeError)||state.workspaces.length>=5} on:click={newWorkspace}>＋ 新規</button>
-      <button type="button" title="名前変更" disabled={Boolean(storeError)} on:click={editWorkspaceName}>名前変更</button>
-      <button type="button" title="記録削除" disabled={Boolean(storeError)||state.workspaces.length<2} on:click={deleteWorkspace}>削除</button>
+      <button type="button" title="記録を追加" disabled={Boolean(storeError)||busy||saveReadInProgress||state.workspaces.length>=5} on:click={newWorkspace}>＋ 新規</button>
+      <button type="button" title="名前変更" disabled={Boolean(storeError)||busy||saveReadInProgress} on:click={editWorkspaceName}>名前変更</button>
+      <button type="button" title="記録削除" disabled={Boolean(storeError)||busy||saveReadInProgress||state.workspaces.length<2} on:click={deleteWorkspace}>削除</button>
       <button type="button" disabled={Boolean(storeError)} on:click={downloadBackup}>バックアップ出力</button>
-      <button type="button" on:click={()=>importInput.click()}>復元</button>
+      <button type="button" disabled={busy||saveReadInProgress} on:click={()=>importInput.click()}>復元</button>
       <input bind:this={importInput} class="visually-hidden" type="file" accept=".json,application/json" aria-label="Collectionバックアップを選択" on:change={restoreBackup}/>
     </div>
   </section>
@@ -478,6 +495,8 @@
     <SavedStorePreview resolveHistorical={historicalLookup} {locale} {gameImageMap} collectionCommitBusy={busy}
       on:lookupItem={(event:CustomEvent<number>)=>lookupSavedCollectionId(event.detail)}
       on:saveProfile={importSaveProfile}
+      on:saveReadStarted={beginSaveRead}
+      on:saveReadFinished={finishSaveRead}
       on:gridReferences={receiveSavedGridReferences}
       on:db04Join={receiveDb04Join} />
     <div class="summary-strip">
