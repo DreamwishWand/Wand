@@ -73,6 +73,16 @@ STEAM_WINDOWS = (
      "e1fcb2715dd8ae865bea71c1f08597c4efd283a5ab86fcc3c1985af6b60c7a7f"),
     ("signed32_final_upper_bound", 0x3E1E6B4, 13,
      "46de03360e17364d7e19093321c7aba8ec5adf780804736b6420970b9b436cee"),
+    ("get_sell_recorded_or_fallback", 0x3E1EDBE, 80,
+     "db700a604534e64239e07fbaaa7340a7413fc70afffb91690bde4505693db8e2"),
+    ("lowest_price_ingredient_default_one", 0x3E1FFC3, 20,
+     "886fdde5ce5527f10febbc62ad55ada48226cded01101ba84015077048bb8f3a"),
+    ("recorded_price_tuple_default_one", 0x3E1FE25, 30,
+     "db1adf2e3d3408aed96be9e1c6f6d6be2ea53313fad4c5065b856109c10921ee"),
+    ("sell_wrapper_null_base_and_cap", 0x3E1E856, 35,
+     "ffd35c2299bb25ea6b706bc6d5b073ff9fe49a5495a20167a20588aee571a59a"),
+    ("sell_star_percentage_selector", 0x3B3E0C0, 20,
+     "debe8635b1247cb18ba0348f70fddae8b074e32947b9091a314654e8fc4cc874"),
 )
 SWITCH_WINDOWS = (
     ("integer_percent_truncation", 0x4A3F1AC, 32,
@@ -89,6 +99,14 @@ SWITCH_WINDOWS = (
      "e680058368a8a314222a4ba6c08eb0e7f6cd87d9f8d35bbe80e62028d6d17dc8"),
     ("signed32_final_upper_bound", 0x4A3F264, 12,
      "5aa10c2a9d9579d559da70acc4a80cad7b7ce4a4b7b3d5c7c7cf1dd2e547ec9f"),
+    ("get_sell_recorded_or_fallback", 0x4A3F92C, 68,
+     "afaaf958d693decb3dcc223a7df3197c5565b3e40504efeaa225cfab1a60d8e4"),
+    ("lowest_price_ingredient_default_one", 0x4A410D0, 32,
+     "8ba99352f418d341fcb3af86c82c7f1a434a292672179060fe2cf75b70d95d09"),
+    ("recorded_price_tuple_default_one", 0x4A40E44, 28,
+     "73f17977175ac8c8f96fba3e7e4102e6e99b5469ff9105496a44756f2a584031"),
+    ("sell_star_percentage_selector", 0x4A41130, 12,
+     "c14ab65759500e9dca7fa4b73ce34bed4c86a45faf609e82e66ee9af2901c5c3"),
 )
 MAX_DUMP = 160 * 1024 * 1024
 
@@ -258,6 +276,10 @@ def run_audit(steam_version, steam_dump, steam_dll, switch_dump, switch_main):
         "softCurrencySellGetterUsesDefaultWhenNoPriceFound": True,
         "totalSellMethodDelegatesToTotalIngredientsValue": True,
         "conditionalNativeBaseAndFinalSignedCapStageVerified": True,
+        "recordedVersusFallbackIngredientBranchVerified": True,
+        "ingredientSoftCurrencyLookupDefaultOneVerified": True,
+        "sellWrapperZeroBaseAndInt32MaxDefaultVerified": True,
+        "sellRecipeStarPercentageSelectorVerified": True,
         "reportedNativeInstructionWindowsOnly": True,
         "exactIngredientPriceResolutionVerified": False,
         "completeNativeSellFormulaVerified": False,
