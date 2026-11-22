@@ -4,8 +4,7 @@
   import { sanitizeSaveDiagnosticView } from '$lib/save/diagnostic-view.mjs';
   import type { SaveDiagnosticView } from '$lib/save/diagnostic-view.mjs';
 
-  // Development-only read-only route. JS P1G Codec plus independent Rust/WASM
-  // P1G parity; NOT a Writer. No encrypted data is sent to page components.
+  // Development-only read-only route. Rust/WASM P1G Worker; NOT a Writer. No encrypted data is sent to page components.
   const MAX_JSON_BYTES = 128 * 1024 * 1024;
   let report: SaveDiagnosticView | null = null;
   let isReading = false;
@@ -63,7 +62,7 @@
       bytes = new Uint8Array(await file.arrayBuffer());
       if (request !== requestSerial) return;
       worker = new Worker(
-        new URL('../../../lib/save/save-diagnostics.worker.mjs', import.meta.url),
+        new URL('../../../lib/save/save-diagnostics.worker.ts', import.meta.url),
         { type: 'module' }
       );
       activeWorker = worker;
@@ -104,11 +103,11 @@
           const nativeText = body.format !== 'p1g' ? '' :
             nativeStatus === 'matched' && native?.wasmExecuted === true &&
               native.originalProfileBytesEqual === true
-              ? ' Rust/WASMでP1Gを独立復号し、元のJSONバイト列との一致を確認しました。'
+              ? ' Rust/WASMでP1Gを再復号し、Worker内のJSONバイト列との一致を確認しました。'
               : nativeStatus === 'diverged'
-                ? ' Rust/WASMと既存Codecの復号結果に差異があるため、書き出しは禁止です。'
+                ? ' Rust/WASMの再復号結果とWorker内のJSONが一致しません。書き出しは禁止です。'
                 : nativeStatus === 'rejected_by_rust'
-                  ? ' このP1GのZIP形式は現在のRust実装では検証できません（既存Codecの読み取り専用診断のみ）。'
+                  ? ' このP1GのZIP形式はRust/WASMによる厳密な読み込みに対応していません。'
                   : nativeStatus === 'skipped_large_save'
                     ? ' サイズ制限のためRust/WASMでのP1G二重検査は省略しました。'
                     : ' Rust/WASMのP1G二重検査は利用できません。';
@@ -159,7 +158,7 @@
     <div>
       <h2>ローカルのセーブを診断する</h2>
       <p>ローカルの専用Workerで構造を検査します。セーブ本体は画面に渡さず、元のファイルも変更されません。</p>
-      <p>既存P1G Codecの読み取りに加え、対応する単一profile形式ではRust/WASMで独立復号・照合します。書き出し機能はありません。</p>
+      <p>暗号化P1Gは専用Worker内のRust/WASMで復号・検証します。未対応のZIP形式は安全に拒否します。書き出し機能はありません。</p>
     </div>
     <label class="file-input-label">
       DDVセーブを選択
