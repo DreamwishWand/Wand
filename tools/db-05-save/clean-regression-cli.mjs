@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /** Private-only, multi-profile DB-05 clean regression; never a save Writer. */
-import { readFile, mkdir, stat, lstat, realpath, writeFile, link, unlink } from 'node:fs/promises';
+import { readFile, mkdir, lstat, realpath, writeFile, link, unlink } from 'node:fs/promises';
 import { dirname, resolve, join } from 'node:path';
+import {pathToFileURL} from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { decodeP1gPackagedProfile } from '../../src/lib/collection/private-p1g-codec.js';
 import { parseSafeJson } from '../../src/lib/collection/safe-profile-json.mjs';
@@ -121,7 +122,7 @@ async function run(argv=process.argv.slice(2)){
     cases:cases.length,writerAuthorized:false
   })+'\n');
 }
-if(import.meta.url===new URL('file://'+process.argv[1]).href){
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
   run().catch(()=>{
     // Exceptions may embed input path/key; never print arbitrary error text.
     process.stderr.write('DB05_PRIVATE_CLEAN_REGRESSION_FAILED\n');
