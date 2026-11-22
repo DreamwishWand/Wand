@@ -9,6 +9,8 @@
   import {importCurrentGuideConditions, currentConditionMentionsForQuest, withVerifiedConditionStepDetails} from '$lib/guide/current-conditions.mjs';
   import {createStructuralGuideConditionRelations,type GuideConditionRelationIndex} from '$lib/guide/condition-relations.ts';
   import {guideVerifiedStaticComposite} from '$lib/guide/source-composite.mjs';
+  import {loadVerifiedLocalGuideRewards} from '$lib/guide/local-reward-files';
+  import type {CurrentCompatibleRewardReader} from '$lib/guide/reward-source-equivalence';
 
   const languageLabels: Record<string, string> = {
     ja: '日本語', en: 'English', fr: 'Français', it: 'Italiano', de: 'Deutsch',
@@ -40,6 +42,10 @@
   let conditionRelations: GuideConditionRelationIndex|null = null;
   let conditionError = '';
   let loadingConditions = false;
+  let rewardEpoch = 0;
+  let loadingRewards = false;
+  let rewardError = '';
+  let localRewards: CurrentCompatibleRewardReader|null = null;
 
   $: filtered = searchIndex ? collectWindow((offset:number,batch:number)=>searchGuide(searchIndex, {
     query: query.slice(0, 128), locale, character, group, update, objective, scopeToken,
@@ -59,6 +65,8 @@
       ? conditionRelations.getMissionReferences(selectedId)
       : currentConditionMentionsForQuest(conditionRegistry,selectedId))
     : {total:0,rows:[]};
+  $: questRewardCandidates = localRewards && selectedId
+    ? localRewards.getQuestCandidates(selectedId) : [];
   $: detailSteps = selectedDetail ? detailStepRows(selectedDetail, locale) : [];
   $: conditionDisplayRows = selectedDetail && selectedId && conditionRegistry
     ? withVerifiedConditionStepDetails(selectedDetail, detailSteps, currentConditionMentions.rows, selectedId)
@@ -97,6 +105,10 @@
     conditionRelations = null;
     conditionError = '';
     loadingConditions = false;
+    rewardEpoch++;
+    localRewards = null;
+    rewardError = '';
+    loadingRewards = false;
     searchIndex = null;
     shardFiles = {};
     characterNames = {};
@@ -196,6 +208,24 @@
       if (request === conditionEpoch) conditionError = error instanceof Error ? error.message : String(error);
     } finally {
       if (request === conditionEpoch) loadingConditions = false;
+    }
+  }
+
+  async function chooseRewardFiles(event: Event) {
+    const chosen = Array.from((event.currentTarget as HTMLInputElement).files || []);
+    if(!chosen.length)return;
+    const request=++rewardEpoch;
+    const activeIndex=searchIndex;
+    localRewards=null;
+    rewardError='';
+    loadingRewards=true;
+    try{
+      const next=await loadVerifiedLocalGuideRewards(chosen);
+      if(request===rewardEpoch&&activeIndex===searchIndex)localRewards=next;
+    }catch(error){
+      if(request===rewardEpoch)rewardError=error instanceof Error?error.message:String(error);
+    }finally{
+      if(request===rewardEpoch)loadingRewards=false;
     }
   }
 
@@ -325,6 +355,19 @@
           <p class="guide-condition-loaded" role="status">Steam {conditionRegistry.targetVersion}（Condition v{conditionRegistry.formatVersion}）：{conditionRegistry.count.toLocaleString()}件の定義と{conditionRegistry.missionReferenceCount.toLocaleString()}件のミッション参照を検証しました。クエスト一覧は{searchIndex.target.gameVersion}のままです。</p>
         {/if}
       </section>
+      <section class="guide-condition-import" aria-label="Owner-local reward candidate sources">
+        <strong>報酬Item IDの原本候補（任意）</strong>
+        <p>非公開の5ファイル（guide-event-links.json、quest-item-flows.json、rewards.json、guide-source-composite-1.26.2-v2.json、protodb-source-bridge.private.json）を選択すると、原本SHA-256を照合し、クエストごとのアイテム報酬候補を表示します。データはこの端末内だけで処理します。</p>
+        <label>報酬索引と原本一致証明の5ファイル
+          <input type="file" accept=".json,application/json" multiple on:change={chooseRewardFiles}
+            disabled={loadingIndex || loadingRewards} aria-label="Select 5 private reward proof files" />
+        </label>
+        {#if loadingRewards}<p role="status">報酬索引と原本の一致を検証しています…</p>{/if}
+        {#if rewardError}<p class="guide-error" role="alert">{rewardError}</p>{/if}
+        {#if localRewards}
+          <p class="guide-condition-loaded" role="status">618件の報酬設定候補（イベント202件・クエスト400件・共通友好レベル16件）を照合しました。実際の獲得、解放条件や現在の開催状況は未検証です。</p>
+        {/if}
+      </section>
       {#if staticComposite}
         <section class="guide-source-compatibility" aria-label="Verified Steam 1.26.2 static Guide source composite">
           <strong>Steam {staticComposite.targetGameVersion}：静的Guide原本9系列の統合照合が完了</strong>
@@ -413,6 +456,30 @@
           <p class="guide-detail-meta">原本の静的クエスト情報 · {selectedRow.objectiveKinds.join(' / ')}</p>
           {#if loadingDetail}<p role="status">詳細ファイルを検証しています…</p>{/if}
           {#if detailError}<p class="guide-detail-note" role="status">{detailError}</p>{/if}
+          {#if localRewards}
+            <details class="guide-source-facts guide-reward-candidates" aria-label="Verified local quest reward candidates">
+              <summary>クエスト報酬の設定候補（{questRewardCandidates.length}件）</summary>
+              <p>ゲーム原本が参照する静的な候補です。実際の付与、ドロップ確率、入手条件や所持を保証しません。</p>
+              {#if questRewardCandidates.length}
+                <ul class="guide-mission-references">
+                  {#each questRewardCandidates as candidate (candidate.original.relationId)}
+                    <li>
+                      <span class="guide-mission-reference-kind">{candidate.original.originFamily === 'quest_intro' ? '開始時の付与設定' : '追加報酬Lootの候補'}</span>
+                      <span>Item ID {candidate.itemId}{#if candidate.original.amount !== null} · 設定数量 {candidate.original.amount}{/if}</span>
+                      <details class="guide-source-tree">
+                        <summary>原本参照</summary>
+                        <small>Mission ID {candidate.nativeOriginId} · {candidate.original.relationId}</small>
+                        <small>原本フィールド：{candidate.original.sourceField}</small>
+                        <small>抽出元 Steam {candidate.originalExtractionVersion}／同一原本 Steam {candidate.sourceCompatibleWith}</small>
+                      </details>
+                    </li>
+                  {/each}
+                </ul>
+              {:else}
+                <p>選択した部分的な報酬索引には、このクエストの候補がありません。報酬が存在しないことを証明するものではありません。</p>
+              {/if}
+            </details>
+          {/if}
           {#if conditionRegistry}
             <section class="guide-source-facts" aria-label="Current Condition source mission references">
               <h3>Steam {conditionRegistry.targetVersion}のConditionが参照するクエスト（{currentConditionMentions.total}件）</h3>
@@ -649,6 +716,10 @@
   .guide-candidates ul { margin:8px 0; padding-left:18px; color:#d0c0df; }
   .guide-candidates small, .guide-candidates p { color:#a895b8; font-size:10px; }
   .guide-source-facts p { font-size:11px; color:#ad9bbc; line-height:1.7; overflow-wrap:anywhere; }
+  .guide-reward-candidates { margin:18px 0; }
+  .guide-reward-candidates>summary { color:#ddc3f0; cursor:pointer; font-size:13px; font-weight:650; }
+  .guide-reward-candidates .guide-source-tree { display:grid; gap:7px; }
+  .guide-reward-candidates .guide-source-tree small { display:block; color:#b8a6c6; font-size:10px; overflow-wrap:anywhere; }
   .guide-source-tree { background:#281f33; border:1px solid #ffffff1f; border-radius:9px; padding:11px 13px; margin-top:9px; }
   .guide-source-tree summary { cursor:pointer; color:#d9bfec; font-size:12px; }
   .guide-source-tree pre { margin:12px 0 2px; padding:11px; background:#17111e; border-radius:7px; color:#cab8dc; font-size:10px; white-space:pre-wrap; overflow-wrap:anywhere; max-height:340px; overflow:auto; }
