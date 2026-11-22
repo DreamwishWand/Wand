@@ -1,6 +1,8 @@
 <script lang="ts">
   import {onMount} from 'svelte';
   import {base} from '$app/paths';
+  import {autoAppend} from '$lib/ui/auto-append';
+  import {collectWindow} from '$lib/ui/collect-window.mjs';
   import {PUBLIC_GUIDE_LOCALES,verifyPublicQuestIndex,filterPublicQuests,findPublicQuestByLink,loadPublicQuestPart,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
   import {loadPublicQuestTargetsIndex,loadPublicQuestTargetsPart,itemTargetName,originalTargetLookup} from '$lib/guide/public-targets.mjs';
 
@@ -26,7 +28,7 @@
   let targetError='';
   const prefix=`${base}/guide/public/`;
 
-  $: filtered=catalog?filterPublicQuests(catalog,{query:query.slice(0,120),locale,character,objective,limit}):{total:0,rows:[]};
+  $: filtered=catalog?collectWindow((offset:number,batch:number)=>filterPublicQuests(catalog,{query:query.slice(0,120),locale,character,objective,offset,limit:batch}),limit,'rows'):{total:0,rows:[]};
   $: characters=catalog?[...new Set(catalog.quests.map((x:any)=>x.characterId).filter(Boolean))].sort() as string[]:[];
   $: objectives=catalog?[...new Set(catalog.quests.flatMap((x:any)=>x.objectiveKinds))].sort() as string[]:[];
 
@@ -160,7 +162,7 @@
             <small>{characterName(row.characterId,locale)} · {row.id}</small>
           </button>
         {/each}
-        {#if filtered.total>limit}<button class="load-more" on:click={()=>limit+=40}>さらに表示（残り{(filtered.total-limit).toLocaleString()}件）</button>{/if}
+        {#if filtered.total>limit}<div class="auto-sentinel" use:autoAppend={{hasMore:()=>filtered.total>limit,load:()=>limit+=40}} role="status" aria-label="スクロールでクエストを追加表示"></div>{/if}
         {#if filtered.total===0}<p class="empty">該当するクエストはありません。</p>{/if}
       </section>
       <section class="detail" aria-label="クエスト詳細">
@@ -238,7 +240,7 @@
   .count{font-size:12px;color:#bea9ce;margin:1px 4px 12px}
   .quest-row{display:flex;flex-direction:column;align-items:start;text-align:left;width:100%;gap:5px;padding:13px 14px;border:1px solid transparent;border-radius:9px;background:none;color:inherit;cursor:pointer}
   .quest-row:hover,.quest-row.active{background:#302440;border-color:#654b85}.quest-row strong{font-size:14px}.quest-row small{color:#aa9cb7;font-size:11px}
-  button{cursor:pointer}.load-more{width:100%;padding:11px;border:1px solid #665180;border-radius:9px;background:#342646;color:#f3e6ff;margin-top:10px}
+  button{cursor:pointer}.auto-sentinel{height:18px;margin-top:8px}
   .detail{position:sticky;top:16px;max-height:calc(100vh - 28px);overflow:auto;scrollbar-width:thin}.placeholder,.empty{color:#ac9dbb;padding:20px 4px}
   .detail-header{border-bottom:1px solid #514260;padding:0 0 16px;margin-bottom:16px}.detail-header span{font-size:11px;color:#b79aca}.detail-header h2{font-size:22px;margin:7px 0}.detail-header p{font-size:13px;color:#c9b8db;margin:0}
   .quest-permalink{display:inline-block;margin-top:10px;font-size:12px;color:#d5b4ff;text-underline-offset:3px}
