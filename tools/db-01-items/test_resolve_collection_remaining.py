@@ -22,7 +22,7 @@ def integer(value):
 def field(number,value):
     if isinstance(value,int):
         return integer(number<<3)+integer(value)
-    return integer(number<<3|2)+integer(len(value))+value)
+    return integer(number<<3|2)+integer(len(value))+value
 
 def framed(offset,*parts):
     encoded=b''.join(parts)
