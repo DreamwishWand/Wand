@@ -141,13 +141,19 @@ function validatedDb04GridReceipt(source:unknown):Db04GridPathReceipt{
       source.malformedFullGrids,source.observedDiffGrids,
       source.hashUnverifiedDiffGrids,source.malformedDiffGrids
     ].every(v=>nonnegative(v,2049)) ||
-    source.observedFullGrids+source.observedDiffGrids>2048 ||
-    source.matchedFullGrids+source.notInPartialSourceFullGrids+
-      source.ambiguousSourceFullGrids+source.malformedFullGrids !==
-        source.observedFullGrids +
-          (source.status==='partial_inconclusive'?0:0) ||
-    source.hashUnverifiedDiffGrids+source.malformedDiffGrids>
-      source.observedDiffGrids+1 ||
+    Number(source.observedFullGrids)+Number(source.observedDiffGrids)>2048 ||
+    Number(source.matchedFullGrids)+
+      Number(source.notInPartialSourceFullGrids)+
+      Number(source.ambiguousSourceFullGrids)+
+      Number(source.malformedFullGrids)<Number(source.observedFullGrids) ||
+    Number(source.matchedFullGrids)+
+      Number(source.notInPartialSourceFullGrids)+
+      Number(source.ambiguousSourceFullGrids)+
+      Number(source.malformedFullGrids)>Number(source.observedFullGrids)+1 ||
+    Number(source.hashUnverifiedDiffGrids)+
+      Number(source.malformedDiffGrids)<Number(source.observedDiffGrids) ||
+    Number(source.hashUnverifiedDiffGrids)+
+      Number(source.malformedDiffGrids)>Number(source.observedDiffGrids)+1 ||
     typeof source.sampled!=='boolean' ||
     source.sourceCoverageComplete!==false ||
     source.sourceOriginalArchiveRechecked!==false ||
