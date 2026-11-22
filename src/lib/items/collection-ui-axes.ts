@@ -271,6 +271,9 @@ export function createDb01CollectionNativeUiAxesClient(
         })));
     },
     async getCategoryOptions(locale:Db01Locale){
+      // Reject unsupported locale BEFORE touching private CollectionSet bytes.
+      // Otherwise the concurrent counts() request runs even if names() rejects.
+      validLocale(locale);
       const [index,countsByCode]=await Promise.all([names(locale),counts()]);
       return Object.freeze(DB01_ORIGINAL_COLLECTION_SUBMENUS.map(entry=>
         Object.freeze({
