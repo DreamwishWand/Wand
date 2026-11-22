@@ -7,7 +7,7 @@ self.onmessage = async ({ data }: MessageEvent<{command:string;ciphertext:Uint8A
   if (started) return;
   started = true;
   const ciphertext = data?.ciphertext;
-  let response = { kind: 'error' };
+  let response: {kind:'error'} | {kind:'result'; result: Awaited<ReturnType<typeof inspectEncryptedSavedStore>>} = {kind:'error'};
   try {
     if (data?.command !== 'inspect-local-p1g' ||
         !(ciphertext instanceof Uint8Array) ||
