@@ -675,6 +675,76 @@ try{
   await page.getByRole('status').filter({hasText:'数量変更'}).waitFor({timeout:30000});
   assert.equal(await page.getByRole('alert').count(),0);
 
+  // Group translation uses the existing Rust optimistic 2–16 target
+  // coordinate batch, not a new JS Save writer. Two original Full Grid
+  // objects move by one shared signed delta; all unknown fields and the
+  // other DiffGrid remain byte-identical inside the rebuilt encrypted P1G.
+  const groupOriginal=structuredClone(quantityProfile);
+  groupOriginal.World.GridCollection.Grids['101'].Objects['2']={
+    ...groupOriginal.World.GridCollection.Grids['101'].Objects['2'],
+    X:50,Y:10,PrivateGroup:'keep-both'
+  };
+  await page.getByLabel('検証用セーブファイル').setInputFiles({
+    name:'group-translate.profile',mimeType:'application/octet-stream',
+    buffer:syntheticEncryptedP1g(groupOriginal)
+  });
+  await objects.getByRole('button',{name:'配置オブジェクトを表示'}).click();
+  await objects.getByRole('status').filter({hasText:'3件'})
+    .waitFor({timeout:30000});
+  const groupMap=objects.getByRole('region',{name:'セーブ内Grid配置マップ'});
+  await groupMap.getByRole('button',{name:'複数配置を一括移動'}).click();
+  await groupMap.getByRole('button',{name:'配置 1 をグループへ追加'}).click();
+  await groupMap.getByRole('button',{name:'配置 2 をグループへ追加'}).click();
+  const stageGroup=groupMap.getByRole('button',{
+    name:'選択した2件を座標編集に追加'
+  });
+  assert.equal(await stageGroup.isDisabled(),true,
+    'zero translation must never stage a no-op');
+  await groupMap.getByLabel('グループ移動X').fill('2147483647');
+  assert.equal(await stageGroup.isDisabled(),true,
+    'signed integer overflow must be rejected before staging');
+  await groupMap.getByLabel('グループ移動X').fill('7');
+  await groupMap.getByLabel('グループ移動Y').fill('-3');
+  assert.equal(await stageGroup.isEnabled(),true);
+  assert.equal(await groupMap.locator('.group-ghost').count(),2);
+  await stageGroup.click();
+  const stagedGroup=objects.getByLabel('一括座標編集');
+  await stagedGroup.getByText('2 / 16件').waitFor();
+  const groupEditor=objects.getByLabel('座標編集',{exact:true});
+  assert.equal(await groupEditor.getByLabel('新しいX').inputValue(),'52');
+  assert.equal(await groupEditor.getByLabel('新しいY').inputValue(),'6');
+  await stagedGroup.getByRole('button',{name:'一括座標変更を検証'}).click();
+  await groupEditor.getByRole('status').filter({
+    hasText:'2件の座標変更をRust/WASMで検証しました'
+  }).waitFor({timeout:30000});
+  assert.equal(await groupEditor.getByRole('alert').count(),0);
+  page.once('dialog',dialog=>dialog.accept());
+  await groupEditor.getByRole('button',{name:'座標変更コピーを生成'}).click();
+  const groupLink=groupEditor.getByRole('link',{
+    name:'座標コピーをダウンロード'
+  });
+  await groupLink.waitFor({timeout:30000});
+  const groupEvent=page.waitForEvent('download');
+  await groupLink.click();
+  const groupCopy=readSyntheticEncryptedP1g(
+    await readFile(await (await groupEvent).path())
+  );
+  const groupObjects=groupCopy.World.GridCollection.Grids['101'].Objects;
+  assert.equal(groupObjects['1'].X,52);
+  assert.equal(groupObjects['1'].Y,6);
+  assert.equal(groupObjects['2'].X,57);
+  assert.equal(groupObjects['2'].Y,7);
+  assert.equal(groupObjects['1'].Orientation,'GridOrientation_Up');
+  assert.equal(groupObjects['1'].PrivateState,'do-not-export');
+  assert.equal(groupObjects['2'].PrivateGroup,'keep-both');
+  assert.equal(groupCopy.World.GridCollection.DiffGrids['102']
+    .ModifiedObjects['6'].X,-12);
+  assert.equal(groupCopy.Player.ListInventories['100'].Inventory['550'].Amount,7);
+  assert.equal(groupOriginal.World.GridCollection.Grids['101'].Objects['1'].X,45);
+  assert.equal(groupOriginal.World.GridCollection.Grids['101'].Objects['2'].X,50);
+  assert.equal(groupObjects['2'].X-groupObjects['1'].X,
+    groupOriginal.World.GridCollection.Grids['101'].Objects['2'].X-
+    groupOriginal.World.GridCollection.Grids['101'].Objects['1'].X);
   assert.deepEqual(errors,[],errors.join('\n'));
   await page.close();
   console.log('DB-05 browser: explicit JSON/P1G edited-copy downloads, native reopen, stale rejection, original preservation PASS');
