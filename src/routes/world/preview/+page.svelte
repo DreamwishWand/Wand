@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import {autoAppend} from '$lib/ui/auto-append';
+  import NativeGraphExplorer from '$lib/world/NativeGraphExplorer.svelte';
 
   type GridOption = {
     gridIdNative: number;
@@ -292,6 +293,8 @@
     <h1>World Source Preview</h1>
     <p>元のゲームの初期配置レコードを、グリッド内のX/Y座標として確認する読み取り専用ページです。ワールド全体の配置座標、占有セル、移動可否は判定しません。</p>
   </header>
+
+  <NativeGraphExplorer />
 
   <div class="world-panel">
     <div class="world-toolbar">
