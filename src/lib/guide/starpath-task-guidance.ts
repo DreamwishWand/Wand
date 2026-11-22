@@ -264,7 +264,7 @@ const docs:Record<string,DailyReview>={
   'Seafaring2026/Task47':{
     kind:'CraftItem',hint:'Helm Bookshelf',
     ja:'クラフトステーションで「Helm Bookshelf」を製作する。',
-    en:'Craft the Helm Bookshelf at a crafting station.'}
+    en:'Craft the Helm Bookshelf at a crafting station.'},
   'HauntingElegance2026/Task35':{
     kind:'CookMeal',hint:'Whimsical Pies',
     ja:'「Whimsical Pie」を調理する。',
