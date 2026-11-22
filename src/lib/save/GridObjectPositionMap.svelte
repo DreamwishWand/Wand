@@ -9,7 +9,7 @@
   export let onPick:(localOrdinal:number)=>void;
 
   type Point=LocalGridInstance&{x:number;y:number};
-  type Marker={x:number;y:number;ordinals:number[];itemIds:string[]};
+  type Marker={x:number;y:number;ordinals:number[]};
   let selectedGrid=0;
 
   function hasCoordinates(row:LocalGridInstance):row is Point{
@@ -21,13 +21,29 @@
       const key=row.x+':'+row.y;
       let marker=positions.get(key);
       if(!marker){
-        marker={x:row.x,y:row.y,ordinals:[],itemIds:[]};
+        marker={x:row.x,y:row.y,ordinals:[]};
         positions.set(key,marker);
       }
       marker.ordinals.push(row.localOrdinal);
-      marker.itemIds.push(row.itemId);
     }
     return [...positions.values()];
+  }
+  function summarize(input:readonly LocalGridInstance[]){
+    const map=new Map<number,{
+      id:number;kind:LocalGridInstance['recordKind'];
+      total:number;positioned:number
+    }>();
+    for(const row of input){
+      let group=map.get(row.localGridOrdinal);
+      if(!group){
+        group={id:row.localGridOrdinal,kind:row.recordKind,
+          total:0,positioned:0};
+        map.set(row.localGridOrdinal,group);
+      }
+      group.total++;
+      if(hasCoordinates(row))group.positioned++;
+    }
+    return [...map.values()];
   }
   function choose(marker:Marker){
     // Identical saved numeric coordinates are real overlapping markers:
@@ -40,13 +56,7 @@
     return max===min?50:5+90*(value-min)/(max-min);
   }
 
-  $: grids=[...new Set(rows.map(row=>row.localGridOrdinal))].map(id=>{
-    const inGrid=rows.filter(row=>row.localGridOrdinal===id);
-    return {
-      id,kind:inGrid[0].recordKind,
-      total:inGrid.length,positioned:inGrid.filter(hasCoordinates).length
-    };
-  });
+  $: grids=summarize(rows);
   $: if(!grids.some(g=>g.id===selectedGrid))
     selectedGrid=grids[0]?.id??0;
   $: currentRows=rows.filter(row=>row.localGridOrdinal===selectedGrid);
