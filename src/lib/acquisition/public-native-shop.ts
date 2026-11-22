@@ -166,9 +166,10 @@ function readProjection(
     endExclusive:raw.window.endUtcExclusive as string
   });
   const source:OriginProvenance=Object.freeze({
-    sourceId:'db02:shop-cache:'+policy.snapshotKey,
+    sourceId:policy.archived?'db02:shop-cache:Shop20260715':
+      'db02:steam-1262:shop-20261118',
     kind:'verified_liveops_cache' as const,
-    sourceUrl:url,checkedOn:'2026-11-23',
+    sourceUrl:url,checkedOn:policy.archived?'2026-11-23':'2026-11-22',
     gameVersion:policy.fullVersion,sha256:policy.publicSha
   });
   const campaigns:OfficialCampaign[]=[];
