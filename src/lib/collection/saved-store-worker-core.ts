@@ -7,6 +7,7 @@
  * Discovery is NOT item ownership, entitlement, shop stock or codec roundtrip.
  */
 import { decodeP1gPackagedProfile } from './private-p1g-codec.js';
+import {parseSafeJson} from './safe-profile-json.mjs';
 import { inspectDecodedWorldStores } from '../acquisition/world-store-save.mjs';
 import { createSavedStorePreview } from './saved-store-preview.mjs';
 import { createSavedCollectionPresence } from './saved-collection-presence.mjs';
@@ -29,7 +30,11 @@ export async function inspectEncryptedSavedStore(
   // The second parse is of the already-validated JSON text. Everything remains
   // in the dedicated Worker, which is terminated after its single response.
   const decoded = await decoder(ciphertext);
-  const root = JSON.parse(decoded.jsonText);
+  const root = parseSafeJson(decoded.jsonText);
+  return projectSavedRoot(root);
+}
+
+function projectSavedRoot(root:any) {
   const evidence = inspectDecodedWorldStores(staticStallUnavailable, root);
   return Object.freeze({
     kind: 'saved-store-summary',
@@ -41,4 +46,30 @@ export async function inspectEncryptedSavedStore(
     positiveOwnership: projectPositiveListInventoryOwnership(root),
     gridFurniture: projectSavedGridFurnitureReferences(root)
   });
+}
+
+/**
+ * Browser Worker entry: detect actual local bytes (not .profile filename).
+ * Rust owns both the plaintext structural validation and P1G envelope;
+ * only the minimal JS Collection projections remain pending migration.
+ */
+export async function inspectLocalSavedStore(
+  source:Uint8Array,
+  decodeEncrypted:(source:Uint8Array)=>Promise<{jsonText:string}>,
+  decodePlain:(source:Uint8Array)=>Promise<{jsonText:string}>
+){
+  if(!(source instanceof Uint8Array)||source.byteLength===0||
+      source.byteLength>128*1024*1024)
+    throw new TypeError('COLLECTION_LOCAL_SOURCE_INVALID');
+  let start=0;
+  while(start<source.length && [32,9,10,13].includes(source[start]))
+    start++;
+  const isPlain=source[start]===123;
+  if(isPlain){
+    // The Rust validator rejects malformed/plaintext duplicate-key JSON.
+    const decoded=await decodePlain(source);
+    return projectSavedRoot(parseSafeJson(decoded.jsonText));
+  }
+  // P1G size and padding gates remain in the existing encrypted wrapper.
+  return inspectEncryptedSavedStore(source,decodeEncrypted);
 }
