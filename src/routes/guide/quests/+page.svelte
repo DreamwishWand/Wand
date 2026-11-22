@@ -2,6 +2,7 @@
   import {onMount} from 'svelte';
   import {base} from '$app/paths';
   import {PUBLIC_GUIDE_LOCALES,verifyPublicQuestIndex,filterPublicQuests,loadPublicQuestPart,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
+  import {loadPublicQuestTargetsIndex,loadPublicQuestTargetsPart,itemTargetName,originalTargetLookup} from '$lib/guide/public-targets.mjs';
 
   const LANG:Record<string,string>={ja:'日本語',en:'English',fr:'Français',it:'Italiano',de:'Deutsch','es-ES':'Español','zh-CN':'简体中文','pt-BR':'Português'};
   let catalog:any=null;
@@ -18,6 +19,11 @@
   let limit=40;
   let selectionTicket=0;
   const cached=new Map<number,any>();
+  const cachedTargets=new Map<number,any>();
+  let targetIndex:any=null;
+  let targetLookup:Record<string,any[]>={};
+  let targetLoading=false;
+  let targetError='';
   const prefix=`${base}/guide/public/`;
 
   $: filtered=catalog?filterPublicQuests(catalog,{query:query.slice(0,120),locale,character,objective,limit}):{total:0,rows:[]};
@@ -28,6 +34,39 @@
   function questName(row:any,language:string) {return label(row.names,row.internalName||row.id,language);}
   function characterName(id:string|undefined,language:string) {return label(catalog?.characters?.[id||''],id||'',language);}
   function setSearch() {limit=40;}
+  function objectiveText(goal:any,target:any,language:string){
+    let value=label(goal.text,goal.type,language);
+    if(!target)return value;
+    if(target.amount?.kind==='value' && Number.isSafeInteger(target.amount.value)){
+      value=value.replace(/\{TargetAmount\}/g,String(target.amount.value));
+    }
+    // Only a single explicit direct item may resolve a name placeholder.
+    // Weighted lists, filters, dynamic generators and missing official names
+    // never become fabricated mandatory ingredients.
+    if(target.selectors?.length===1){
+      const selector=target.selectors[0];
+      if(selector.mode==='item' && selector.candidates?.length===1 && selector.candidates[0].role==='direct'){
+        const name=itemTargetName(targetIndex,selector.candidates[0].id,language);
+        if(name)value=value.replace(/\{(?:ItemName|itemName)\}/g,name);
+      }
+    }
+    return value;
+  }
+  async function loadQuestTargets(row:any,details:any,ticket:number){
+    targetLoading=true;targetError='';
+    try{
+      if(!targetIndex)targetIndex=await loadPublicQuestTargetsIndex(`${prefix}quest-targets-index.json`);
+      let part=cachedTargets.get(row.detailPart);
+      if(!part){
+        part=await loadPublicQuestTargetsPart(targetIndex,row.detailPart,
+          `${prefix}quest-targets-${String(row.detailPart).padStart(2,'0')}.json`,details);
+        cachedTargets.set(row.detailPart,part);
+      }
+      if(ticket===selectionTicket)targetLookup=originalTargetLookup(part,row.id);
+    }catch(e){
+      if(ticket===selectionTicket)targetError=e instanceof Error?e.message:String(e);
+    }finally{if(ticket===selectionTicket)targetLoading=false;}
+  }
 
   async function loadCatalog() {
     loading=true;loadError='';
@@ -44,6 +83,7 @@
   async function openQuest(row:any) {
     const ticket=++selectionTicket;
     selectedRow=row;selected=null;detailError='';detailLoading=true;
+    targetLookup={};targetLoading=false;targetError='';
     try {
       let part=cached.get(row.detailPart);
       if(!part){
@@ -52,7 +92,7 @@
       }
       const match=part.quests.find((x:any)=>x.id===row.id);
       if(!match)throw new Error('クエスト詳細が見つかりません');
-      if(ticket===selectionTicket)selected=match;
+      if(ticket===selectionTicket){selected=match;void loadQuestTargets(row,part,ticket);}
     }catch(e){if(ticket===selectionTicket)detailError=e instanceof Error?e.message:String(e)}
     finally {if(ticket===selectionTicket)detailLoading=false}
   }
@@ -104,6 +144,8 @@
           {#if detailLoading}<p class="status">目標データを検証しています…</p>{/if}
           {#if detailError}<p class="error" role="alert">{detailError}</p>{/if}
           {#if selected}
+            {#if targetLoading}<p class="target-status" role="status">原本に記録されたアイテム候補を照合しています…</p>{/if}
+            {#if targetError}<p class="target-warning" role="alert">アイテム参照を検証できませんでした：{targetError}</p>{/if}
             <div class="detail-stats"><span>{selected.steps.length} ステップ</span><span>{selected.objectiveCount} 目標</span>
               {#if selected.configuredFriendshipRange}<span>設定上の友情ポイント：{selected.configuredFriendshipRange.min}–{selected.configuredFriendshipRange.max}</span>{/if}
             </div>
@@ -113,7 +155,31 @@
                 {#each step.subSteps as sub (sub.index)}
                   {#if sub.objectives.length}<ol>
                     {#each sub.objectives as goal, i (i)}
-                      <li><span>{label(goal.text,goal.type,locale)}</span><small>{goal.type}{goal.objectiveId?' · ID '+goal.objectiveId:''}</small></li>
+                      <li>
+                         <span>{objectiveText(goal,targetLookup[`${step.index}:${sub.index}:${i}`]?.[0],locale)}</span>
+                         <small>{goal.type}{goal.objectiveId?' · ID '+goal.objectiveId:''}</small>
+                         {#each targetLookup[`${step.index}:${sub.index}:${i}`]||[] as target}
+                           {#if target.amount?.kind==='value'}
+                             <small class="source-amount">原本の設定数量：{target.amount.value}</small>
+                           {:else if target.amount?.kind==='range'}
+                             <small class="source-amount">原本の設定数量：{target.amount.min??'不明'}～{target.amount.max??'不明'}</small>
+                           {/if}
+                           {#each target.selectors as selector}
+                             {#if selector.candidates.length}
+                               <div class="target-candidates" aria-label="原本で設定された候補アイテム">
+                                 {#each selector.candidates as candidate}
+                                   <span class="target-chip">
+                                     {itemTargetName(targetIndex,candidate.id,locale)||'名称未確認'}
+                                     <small>ID {candidate.id}{candidate.role==='alternative'?' · 代替候補':''}</small>
+                                   </span>
+                                 {/each}
+                               </div>
+                             {:else if selector.mode==='filterGenerator'||selector.mode==='unresolved'}
+                               <small class="source-amount">動的条件（アイテム未確定）</small>
+                             {/if}
+                           {/each}
+                         {/each}
+                       </li>
                     {/each}
                   </ol>{/if}
                 {/each}
@@ -150,6 +216,10 @@
   .detail-header{border-bottom:1px solid #514260;padding:0 0 16px;margin-bottom:16px}.detail-header span{font-size:11px;color:#b79aca}.detail-header h2{font-size:22px;margin:7px 0}.detail-header p{font-size:13px;color:#c9b8db;margin:0}
   .detail-stats{display:flex;flex-wrap:wrap;gap:8px;font-size:12px;color:#d6c1e5;margin-bottom:17px}.detail-stats span{padding:5px 9px;border-radius:8px;background:#30243f}
   .step{border-top:1px solid #40344b;padding:13px 0}.step h3{font-size:15px;margin:0 0 8px}.step p{font-size:13px;color:#c2b4cb}.step ol{margin:0;padding-left:25px}.step li{padding:6px 0 8px;font-size:14px}.step li small{display:block;color:#9588a5;font-size:11px;margin-top:3px}
+  .source-amount{color:#c2addc!important}.target-status{color:#c9b0e6;font-size:12px}
+  .target-warning{color:#e6bf8d;font-size:12px}.target-candidates{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0}
+  .target-chip{display:inline-flex;align-items:baseline;gap:6px;flex-wrap:wrap;border:1px solid #55416a;background:#322340;border-radius:7px;padding:5px 8px;font-size:12px}
+  .target-chip small{font-size:10px!important;color:#bdabd0!important;margin:0!important}
   .error{color:#ffb5bc}.status{color:#d0b4e7}footer{margin-top:28px;color:#a99db6;font-size:12px}footer a{color:#c8a4f6}
   @media(max-width:850px){.searchbar{grid-template-columns:1fr 1fr}.workspace{grid-template-columns:1fr}.detail{position:static;max-height:none}}
   @media(max-width:510px){.quests-public{padding:18px 12px 70px}.searchbar{grid-template-columns:1fr}}

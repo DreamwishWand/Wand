@@ -59,6 +59,17 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 2), true, 'mobile horizontal overflow');
   await page.getByRole('combobox', {name: '表示言語'}).selectOption('ja');
 
+  // Original-native selector ID 30000031 resolves through the published,
+  // exact current Steam 1.26.2 names, without requiring an owner source archive.
+  await search.fill('2070000688');
+  await page.locator('.quest-row').filter({hasText:'2070000688'}).click();
+  await page.locator('.target-chip').filter({hasText:'ピュアナイトシャード'}).first().waitFor({timeout:20000});
+  assert.match(await page.locator('.detail').innerText(), /原本の設定数量：5/);
+  assert.match(await page.locator('.target-chip').first().innerText(), /ID 30000031/);
+  await page.getByRole('combobox',{name:'表示言語'}).selectOption('en');
+  await page.locator('.target-chip').filter({hasText:'Purified Night Shard'}).first().waitFor({timeout:20000});
+  await page.getByRole('combobox',{name:'表示言語'}).selectOption('ja');
+
   // Corrupt a *different*, uncached part; browser must fail closed on SHA.
   await page.route('**/guide/public/quest-details-00.json', async route => {
     const original = await route.fetch();
