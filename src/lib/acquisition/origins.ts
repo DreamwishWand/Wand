@@ -16,7 +16,7 @@ import {projectVerifiedSrc02Origins, type VerifiedSrc02OriginReader} from './nat
 export const ORIGIN_SCHEMA = 'wand.db02.item-origins@1' as const;
 
 export type OriginKind =
-  | 'crafting' | 'cooking' | 'fishing' | 'mining' | 'foraging'
+  | 'crafting' | 'cooking' | 'fishing' | 'mining' | 'timebending' | 'foraging'
   | 'farming' | 'loot' | 'game_shop' | 'quest_reward' | 'event_reward'
   | 'friendship_reward'
   | 'star_path_free' | 'star_path_premium' | 'star_path_vault'
@@ -46,6 +46,43 @@ export interface OriginPrice {
   readonly currency: string;
   readonly currencyItemId: string | null;
 }
+/**
+ * Source-native acquisition coordinates are numeric game IDs, not decoded
+ * world names. DB-04 owns world/scene interpretation.
+ *
+ * The r5 SRC-02 archive contains exactly five observed path families:
+ * fishing, mining, growing, timebending and loot_table_candidate.
+ * Static stall source candidates come from an independent stall/loot join.
+ */
+export type NativeOriginFamily =
+  | 'fishing' | 'mining' | 'growing' | 'timebending'
+  | 'loot_table_candidate' | 'static_stall_candidate';
+export interface NativeOriginDetails {
+  readonly family: NativeOriginFamily;
+  readonly pathId: string;
+  readonly definitionId: string | null;
+  readonly sourceFile: string;
+  readonly areaIds: readonly number[];
+  readonly sceneIds: readonly number[];
+  readonly rarity: number | null;
+  readonly weathers: readonly string[];
+  readonly timeOfDays: readonly string[];
+  /** Only for growing results, never seed ownership or seed stock. */
+  readonly seedItemId: string | null;
+  readonly growthSeconds: number | null;
+  readonly yieldedQuantity: number | null;
+  readonly minHourglassLevel: number | null;
+  readonly amountRange: Readonly<{min:number;max:number}> | null;
+  readonly lootTableId: string | null;
+  readonly lootGroupIndex: number | null;
+  /** All SRC-02 LootTable acquisition contexts are explicitly false. */
+  readonly lootContextVerified: false | null;
+  readonly stallId: string | null;
+  readonly stallSlotIndex: number | null;
+  readonly candidateGroupIndexes: readonly number[];
+  readonly conditionalFilter: boolean | null;
+}
+
 export interface ItemOrigin {
   readonly originId: string;
   readonly itemId: string;
@@ -62,6 +99,7 @@ export interface ItemOrigin {
   readonly salePeriods: readonly OriginWindow[];
   readonly conditions: readonly string[];
   readonly source: OriginProvenance;
+  readonly nativeDetails?: NativeOriginDetails;
   /** Never inferred from static windows or an old announcement. */
   readonly availability: 'not_live_verified';
 }
@@ -128,7 +166,7 @@ const SAFE_KEY = /^[a-zA-Z0-9][a-zA-Z0-9:._\/-]{0,127}$/;
 const SHA = /^[a-f0-9]{64}$/;
 const DATE = /^\d{4}-\d\d-\d\d$/;
 const VALID_KINDS: ReadonlySet<string> = new Set<OriginKind>([
-  'crafting','cooking','fishing','mining','foraging','farming','loot',
+  'crafting','cooking','fishing','mining','timebending','foraging','farming','loot',
   'game_shop','quest_reward','event_reward','friendship_reward','star_path_free',
   'star_path_premium','star_path_vault','twitch_drop','redeem_code',
   'premium_shop','official_campaign','purchase_bonus','gift','other'
@@ -218,6 +256,53 @@ function validateOrigin(o: ItemOrigin): void {
   period(o.window);
   for (const p of o.salePeriods) period(p);
   provenance(o.source);
+  if (o.nativeDetails !== undefined) {
+    const n = o.nativeDetails;
+    const families = ['fishing','mining','growing','timebending',
+      'loot_table_candidate','static_stall_candidate'];
+    const isId = (v: unknown) => v === null ||
+      (typeof v === 'string' && ID.test(v) && Number.isSafeInteger(Number(v)));
+    const integers = (v: unknown) => Array.isArray(v) &&
+      v.every(x => Number.isSafeInteger(x) && x >= 0);
+    assert(n && typeof n === 'object' && families.includes(n.family) &&
+      typeof n.pathId === 'string' && SAFE_KEY.test(n.pathId) &&
+      typeof n.sourceFile === 'string' && n.sourceFile.startsWith('itemlist/') &&
+      isId(n.definitionId) && isId(n.seedItemId) && isId(n.lootTableId) &&
+      isId(n.stallId) && integers(n.areaIds) && integers(n.sceneIds) &&
+      integers(n.candidateGroupIndexes) &&
+      (n.rarity === null || (Number.isSafeInteger(n.rarity) && n.rarity >= 0)) &&
+      (n.growthSeconds === null || (Number.isFinite(n.growthSeconds) &&
+        n.growthSeconds >= 0)) &&
+      (n.yieldedQuantity === null || (Number.isSafeInteger(n.yieldedQuantity) &&
+        n.yieldedQuantity > 0)) &&
+      (n.minHourglassLevel === null || (Number.isSafeInteger(n.minHourglassLevel) &&
+        n.minHourglassLevel >= 0)) &&
+      (n.lootGroupIndex === null || (Number.isSafeInteger(n.lootGroupIndex) &&
+        n.lootGroupIndex >= 0)) &&
+      (n.stallSlotIndex === null || (Number.isSafeInteger(n.stallSlotIndex) &&
+        n.stallSlotIndex >= 0)) &&
+      (n.conditionalFilter === null || typeof n.conditionalFilter === 'boolean') &&
+      (n.lootContextVerified === null || n.lootContextVerified === false) &&
+      Array.isArray(n.weathers) && n.weathers.every(x => typeof x === 'string') &&
+      Array.isArray(n.timeOfDays) && n.timeOfDays.every(x => typeof x === 'string') &&
+      (n.amountRange === null || (Number.isSafeInteger(n.amountRange.min) &&
+        Number.isSafeInteger(n.amountRange.max) && n.amountRange.min >= 0 &&
+        n.amountRange.min <= n.amountRange.max)), 'NATIVE_DETAILS');
+    if (n.family === 'loot_table_candidate') {
+      assert(o.kind === 'loot' && o.routeStatus === 'static_candidate_only' &&
+        n.lootTableId !== null && n.lootGroupIndex !== null &&
+        n.lootContextVerified === false, 'LOOT_CONTEXT_NOT_VERIFIED');
+    }
+    if (n.family === 'static_stall_candidate')
+      assert(o.kind === 'game_shop' && o.routeStatus === 'static_candidate_only' &&
+        n.stallId !== null, 'STALL_STOCK_NOT_VERIFIED');
+    if (n.family === 'growing')
+      assert(o.kind === 'farming' && n.seedItemId !== null, 'GROWING_SEED');
+    if (n.family === 'timebending')
+      assert(o.kind === 'timebending', 'TIMEBENDING_KIND');
+    if (n.family === 'fishing' || n.family === 'mining')
+      assert(o.kind === n.family, 'ACTIVITY_KIND');
+  }
   // The official web articles cited in this release list names, not native Item IDs.
   if (o.routeStatus === 'confirmed_source_link')
     assert(o.source.kind !== 'official_publication' &&
