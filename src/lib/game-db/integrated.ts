@@ -3,7 +3,7 @@
  * integration and provenance, never DB-01..05 native extraction algorithms.
  * Published current facts and different-version history remain separate.
  */
-import { loadCurrentGameDatabase } from './client.mjs';
+import { loadCurrentGameDatabase } from './client.ts';
 import { loadCollectionRuntime } from '../collection/catalog.mjs';
 import { canonicalId, validateSnapshot, legacyItem, SNAPSHOT_SCHEMA } from './model.mjs';
 
@@ -153,6 +153,10 @@ interface PublicRow {
   nameStatus:'verified'|'unverified';
   category:string|null;
   subcategory?:string|null;
+  stateClass?:string|null;
+  stateSemantic?:string|null;
+  releaseIds:readonly string[];
+  relations:readonly string[];
   nativeCategory?:string|null;
   worlds:readonly string[];
   universes:readonly string[];
