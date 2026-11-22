@@ -28,7 +28,7 @@ fn key_id(key:&str)->Option<u64>{
     let id=key.parse::<u64>().ok()?;
     (id.to_string()==key).then_some(id)
 }
-fn valid_grid(key:&str,value:&Value)->Option<&Map<String,Value>>{
+fn valid_grid<'a>(key:&str,value:&'a Value)->Option<&'a Map<String,Value>>{
     let id=key_id(key)?;
     let grid=value.as_object()?;
     if grid.get("ID").is_some_and(|v|v.as_u64()!=Some(id)){
@@ -77,8 +77,9 @@ fn project_objects(
         if xy.is_none(){scan.missing_coords+=1;}
         // Index is per-open-document only, not a stable instance identifier,
         // writer handle, real grid key or gameplay object ID.
+        let ordinal=scan.rows.len()+1;
         scan.rows.push(serde_json::json!({
-            "localOrdinal":scan.rows.len()+1,
+            "localOrdinal":ordinal,
             "itemId":item_id.to_string(),
             "recordKind":if modified{"diff_modified"}else{"full"},
             "x":xy.map(|(x,_)|x),
