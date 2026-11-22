@@ -4,8 +4,8 @@
   import { sanitizeSaveDiagnosticView } from '$lib/save/diagnostic-view.mjs';
   import type { SaveDiagnosticView } from '$lib/save/diagnostic-view.mjs';
 
-  // Development-only route. The existing read-only P1G codec is JavaScript,
-  // NOT a new Rust/WASM Writer. No encrypted data is sent to page components.
+  // Development-only read-only route. JS P1G Codec plus independent Rust/WASM
+  // P1G parity; NOT a Writer. No encrypted data is sent to page components.
   const MAX_JSON_BYTES = 128 * 1024 * 1024;
   const MAX_ENCRYPTED_BYTES = 32 * 1024 * 1024;
   let report: SaveDiagnosticView | null = null;
@@ -93,9 +93,24 @@
               : status === 'skipped_large_save'
                 ? ' サイズ制限によりRust/WASM参照検査は省略されました。'
                 : ' Rust/WASM参照検査は利用できず、JSの読み取り専用診断のみ実行しました。';
+          const native = body.nativeP1gAudit as Record<string, unknown> | null | undefined;
+          const nativeStatus = native?.contract === 'wand.db05.native-p1g-audit@1' &&
+            native.writerAuthorized === false && native.exportAuthorized === false &&
+            native.profileDigestExposed === false ? native.status : 'unavailable';
+          const nativeText = format !== 'p1g' ? '' :
+            nativeStatus === 'matched' && native?.wasmExecuted === true &&
+              native.originalProfileBytesEqual === true
+              ? ' Rust/WASMでP1Gを独立復号し、元のJSONバイト列との一致を確認しました。'
+              : nativeStatus === 'diverged'
+                ? ' Rust/WASMと既存Codecの復号結果に差異があるため、書き出しは禁止です。'
+                : nativeStatus === 'rejected_by_rust'
+                  ? ' このP1GのZIP形式は現在のRust実装では検証できません（既存Codecの読み取り専用診断のみ）。'
+                  : nativeStatus === 'skipped_large_save'
+                    ? ' サイズ制限のためRust/WASMでのP1G二重検査は省略しました。'
+                    : ' Rust/WASMのP1G二重検査は利用できません。';
           infoMessage = (format === 'p1g'
             ? 'P1Gセーブを専用Worker内で復号・検査しました。画面には匿名化した結果だけを返しています。'
-            : 'JSONを専用Worker内で検査しました。画面には匿名化した結果だけを返しています。') + wasmText;
+            : 'JSONを専用Worker内で検査しました。画面には匿名化した結果だけを返しています。') + wasmText + nativeText;
         } catch {
           report = null;
           errorMessage = 'このセーブを診断できませんでした。元ファイルは変更していません。';
@@ -140,7 +155,7 @@
     <div>
       <h2>ローカルのセーブを診断する</h2>
       <p>ローカルの専用Workerで構造を検査します。セーブ本体は画面に渡さず、元のファイルも変更されません。</p>
-      <p>読み取り専用P1G Codecを再利用します。未対応形式やCodec検証失敗時は診断を停止します。Writerはありません。</p>
+      <p>既存P1G Codecの読み取りに加え、対応する単一profile形式ではRust/WASMで独立復号・照合します。書き出し機能はありません。</p>
     </div>
     <label class="file-input-label">
       DDVセーブを選択
