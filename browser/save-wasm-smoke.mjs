@@ -227,6 +227,26 @@ try{
   assert.equal(quantityProfile.Player.ContainerInventories['202'].Inventory[1].Amount,2);
   assert.equal(reopened.Player.ListInventories['100'].Inventory['550'].Amount,7);
 
+  // Batch combines two Inventory edits and one Chest edit in a single copy.
+  await page.getByRole('button',{name:'破棄'}).click();
+  await page.getByLabel('対象の種類').selectOption('inventory');
+  await page.getByLabel('Item ID').fill('777');
+  await page.getByLabel('現在の数量').fill('1');
+  await page.getByLabel('変更後の数量').fill('250');
+  await page.getByRole('button',{name:'複数編集に追加'}).click();
+  await page.getByLabel('Item ID').fill('550');
+  await page.getByLabel('現在の数量').fill('7');
+  await page.getByLabel('変更後の数量').fill('31968');
+  await page.getByRole('button',{name:'複数編集に追加'}).click();
+  await page.getByLabel('対象の種類').selectOption('chest');
+  await page.getByLabel('現在の数量').fill('2');
+  await page.getByLabel('変更後の数量').fill('888');
+  await page.getByRole('button',{name:'複数編集に追加'}).click();
+  await page.getByLabel('検証用セーブファイル').setInputFiles({
+    name:'batch.profile',mimeType:'application/octet-stream',
+    buffer:syntheticEncryptedP1g(quantityProfile)
+  });
+
   await page.getByRole('button',{name:'破棄'}).click();
   await page.getByLabel('現在の数量').fill('99');
   await page.getByLabel('検証用セーブファイル').setInputFiles({
