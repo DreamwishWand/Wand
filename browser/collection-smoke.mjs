@@ -120,7 +120,7 @@ try{
   const page=await context.newPage();
   const browserErrors=[];
   const nativeWasmLoads=[];
-  page.on('response',response=>{
+  context.on('response',response=>{
     if(response.url().includes('ddv_p1g_codec_bg'))
       nativeWasmLoads.push({url:response.url(),status:response.status()});
   });
