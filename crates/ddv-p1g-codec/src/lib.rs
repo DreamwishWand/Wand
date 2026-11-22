@@ -270,6 +270,9 @@ mod browser_amount_preview {
         p1g:Option<OpenedP1g>,
         ready:bool,
         closed:bool,
+        copy_buffer:Vec<u8>,
+        copy_position:usize,
+        copy_prepared:bool,
     }
 
     #[wasm_bindgen]
@@ -281,7 +284,8 @@ mod browser_amount_preview {
                 "p1g"=>InputKind::EncryptedP1g,
                 _=>return Err(fail("DB05_PREVIEW_FORMAT_INVALID"))
             };
-            Ok(Self{kind,pending:Vec::new(),p1g:None,ready:false,closed:false})
+            Ok(Self{kind,pending:Vec::new(),p1g:None,ready:false,closed:false,
+                copy_buffer:Vec::new(),copy_position:0,copy_prepared:false})
         }
         pub fn append_chunk(&mut self,chunk:&[u8])->Result<(),JsValue>{
             let limit=match self.kind{
@@ -334,15 +338,119 @@ mod browser_amount_preview {
                 item_id:item_id as u64
             },expected,replacement)
         }
+        /// Explicit experimental COPY preparation. This does not overwrite
+        /// original bytes or authorize any production Save Writer.
+        pub fn prepare_inventory_copy(
+            &mut self,inventory_id:&str,item_id:&str,expected:u32,replacement:u32
+        )->Result<u32,JsValue>{
+            self.prepare_copy(QuantityTarget::Inventory{
+                inventory_id:inventory_id.to_owned(),item_id:item_id.to_owned()
+            },expected,replacement)
+        }
+        pub fn prepare_chest_copy(
+            &mut self,container_id:&str,slot_index:u32,item_id:u32,
+            expected:u32,replacement:u32
+        )->Result<u32,JsValue>{
+            self.prepare_copy(QuantityTarget::ChestSlot{
+                container_id:container_id.to_owned(),slot_index:slot_index as usize,
+                item_id:item_id as u64
+            },expected,replacement)
+        }
+        /// At most 1 MiB is copied out of WASM per call. The Worker is
+        /// required to transfer the assembled result only on explicit export.
+        pub fn take_copy_chunk(&mut self,maximum:u32)->Result<Vec<u8>,JsValue>{
+            if !self.ready || self.closed || !self.copy_prepared ||
+               maximum==0 || maximum as usize>CHUNK ||
+               self.copy_position>=self.copy_buffer.len(){
+                return Err(fail("DB05_COPY_NOT_PREPARED"));
+            }
+            let end=self.copy_position
+                .saturating_add(maximum as usize).min(self.copy_buffer.len());
+            let next=self.copy_buffer[self.copy_position..end].to_vec();
+            self.copy_position=end;
+            if self.copy_position==self.copy_buffer.len(){
+                self.copy_buffer.zeroize();
+                self.copy_buffer.clear();
+                self.copy_prepared=false;
+            }
+            Ok(next)
+        }
         pub fn close(&mut self){
             self.closed=true;
             self.ready=false;
             self.pending.zeroize();
             self.pending.clear();
             self.p1g=None;
+            self.copy_buffer.zeroize();
+            self.copy_buffer.clear();
+            self.copy_position=0;
+            self.copy_prepared=false;
         }
     }
     impl WasmAmountPreview{
+        fn prepare_copy(
+            &mut self,target:QuantityTarget,expected:u32,replacement:u32
+        )->Result<u32,JsValue>{
+            const MAX_EXPERIMENTAL_COPY:usize=32*1024*1024;
+            if !self.ready||self.closed||self.copy_prepared||self.copy_position!=0 {
+                return Err(fail("DB05_COPY_SESSION_INVALID"));
+            }
+            let source=match self.kind{
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref()
+                    .ok_or(fail("DB05_COPY_SESSION_INVALID"))?.profile.as_slice()
+            };
+            let json=std::str::from_utf8(source)
+                .map_err(|_|fail("DB05_COPY_INVALID_SOURCE"))?;
+            let mut draft=preview_existing_quantity(json,target,
+                expected as u64,replacement as u64)
+                .map_err(|_|fail("DB05_COPY_STALE_OR_INVALID_AMOUNT"))?;
+            // Only an actual semantic edit can create a downloadable copy.
+            let outcome=(||->Result<Vec<u8>,JsValue>{
+                if !draft.changed{return Err(fail("DB05_COPY_NO_CHANGE"));}
+                validate_profile(draft.patched_json.as_bytes())
+                    .map_err(|_|fail("DB05_COPY_INVALID_RESULT"))?;
+                let copy=match self.kind{
+                    InputKind::PlainJson=>draft.patched_json.as_bytes().to_vec(),
+                    InputKind::EncryptedP1g=>{
+                        let opened=self.p1g.as_ref()
+                            .ok_or(fail("DB05_COPY_SESSION_INVALID"))?;
+                        let mut archive=rezip_profile(&opened.original_zip,&opened.layout,
+                            draft.patched_json.as_bytes())
+                            .map_err(|_|fail("DB05_COPY_ZIP_FAILED"))?;
+                        let encrypted=ecb_encrypt(&archive);
+                        archive.zeroize();
+                        let mut encrypted=encrypted
+                            .map_err(|_|fail("DB05_COPY_ENCRYPT_FAILED"))?;
+                        // Independent strict reopen must match the exact patched
+                        // original profile bytes (unknown fields included).
+                        let verified=OpenedP1g::open(&encrypted)
+                            .is_ok_and(|reopened|reopened.profile==
+                                draft.patched_json.as_bytes());
+                        if !verified {
+                            encrypted.zeroize();
+                            return Err(fail("DB05_COPY_INDEPENDENT_REOPEN_FAILED"));
+                        }
+                        encrypted
+                    }
+                };
+                // Prevent unbounded Worker -> UI transfers in the early beta.
+                if copy.is_empty()||copy.len()>MAX_EXPERIMENTAL_COPY{
+                    let mut copy=copy;
+                    copy.zeroize();
+                    return Err(fail("DB05_COPY_SIZE_DENIED"));
+                }
+                Ok(copy)
+            })();
+            draft.patched_json.zeroize();
+            let copy=outcome?;
+            let len=copy.len() as u32; // bounded above by 32 MiB
+            self.copy_buffer=copy;
+            self.copy_position=0;
+            self.copy_prepared=true;
+            Ok(len)
+        }
+
         fn preview(&mut self,target:QuantityTarget,old:u32,new:u32)
             ->Result<String,JsValue>{
             if self.closed||!self.ready{return Err(fail("DB05_PREVIEW_SESSION_CLOSED"));}
