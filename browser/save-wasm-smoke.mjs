@@ -138,7 +138,16 @@ try{
         {ItemID:0,Amount:0},{ItemID:440,Amount:2,Extra:null}
       ]}}
     },
-    World:{}
+    World:{GridCollection:{
+      Grids:{'101':{ID:101,Objects:{
+        '1':{ID:1,ItemID:40000001,X:45,PrivateState:'do-not-export'},
+        '2':{ID:2,ItemID:30000031}
+      }}},
+      DiffGrids:{'102':{ID:102,RemovedObjects:[5],ModifiedObjects:{
+        '5':{ID:5,ItemID:40000001},
+        '6':{ID:6,ItemID:40000001}
+      }}}
+    }}
   };
   await page.goto('http://127.0.0.1:4185/Wand/save/preview/',{
     waitUntil:'domcontentloaded'
@@ -287,7 +296,17 @@ try{
   });
   await page.getByRole('button',{name:'所持アイテムを表示'}).click();
   await page.getByRole('status').filter({hasText:'4件'}).waitFor({timeout:30000});
-  await page.getByText('ピュアナイトシャード').waitFor({timeout:45000});
+  await page.getByRole('region',{name:'セーブ内アイテム'})
+    .getByText('ピュアナイトシャード').waitFor({timeout:45000});
+  const worldPanel=page.getByRole('region',{name:'ワールド参照'});
+  await worldPanel.getByRole('status').filter({hasText:'2種類'}).waitFor({timeout:30000});
+  await worldPanel.getByText('ピュアナイトシャード').waitFor({timeout:30000});
+  assert.match(await worldPanel.innerText(),/所有数・全配置数・配置可否を示すものではありません/);
+  // Two saved references for sample furniture: one full and one non-removed
+  // DiffGrid object, not three (the removed DiffGrid identity is suppressed).
+  await worldPanel.getByLabel('ワールド参照検索').fill('40000001');
+  assert.match(await worldPanel.innerText(),/2件/);
+  await worldPanel.getByLabel('ワールド参照検索').fill('');
   await page.getByLabel('所持アイテム検索').fill('ピュアナイトシャード');
   await page.getByRole('button',{
     name:'所持アイテム 30000031 を選択'
