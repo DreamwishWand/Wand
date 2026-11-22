@@ -20,7 +20,7 @@
     route.includes('/world')?'world':
     route.includes('/save')?'save':'home';
   $: tutorial=({
-    home:{title:'Wandの使い方',steps:['カードを選ぶと各サービスへ移動します。','利用可能なサービスは明るく、開発中のサービスは選択できません。','Collectionはセーブなしでも利用できます。']},
+    home:{title:'Wandの使い方',steps:['6つの主要サービスから目的のカードを選択します。','開発中のサービスは選択できません。','Community Help Centerはサービスとは別のサポート導線です。','Collectionはセーブなしでも利用できます。']},
     collection:{title:'Collection',steps:['アイテムを検索するかカテゴリを選択します。下へスクロールすると続きを自動表示します。','アイテムを選んで所持状況・お気に入り・所持数を記録できます。','ヘッダーの読み込みからセーブを選択すると、確認できた発見・所持状態が手動記録に優先されます。','ヘッダーからCollection記録をバックアップ・復元できます。元のゲームセーブは変更しません。']},
     guide:{title:'Guide',steps:['クエスト・キャラクターを検索します。長い一覧はスクロールで自動表示します。','項目を選ぶと詳細を確認できます。公開データはセーブなしで閲覧できます。']},
     characters:{title:'Characters',steps:['キャラクターを検索・絞り込みます。','キャラクターを選択して関連クエストを確認します。']},
@@ -29,10 +29,12 @@
     save:{title:'Save（開発用）',steps:['ヘッダーの読み込みでセーブを選択します。','診断と変更プレビューは開発用です。完成したセーブ書き換え機能ではありません。','元ファイルを変更せず端末内で処理します。']}
   } as Record<string,{title:string;steps:string[]}>)[service];
   const links=[
+    {href:'',name:'Decorate',icon:'palette'},
     {href:'/collection/',name:'Collection',icon:'collection'},
     {href:'/guide/',name:'Guide',icon:'guide'},
-    {href:'/guide/star-path/',name:'Star Path',icon:'star'},
-    {href:'/world/preview/',name:'World',icon:'world'}
+    {href:'',name:'Presets',icon:'sparkles'},
+    {href:'',name:'Gallery',icon:'gallery'},
+    {href:'',name:'DreamSnaps',icon:'camera'}
   ];
   function openSaveFile(){
     const label=service==='collection'?'DDVのセーブファイルを選択':
@@ -53,12 +55,20 @@
       <span class="brand-text">Dreamwish <strong>Wand</strong></span>
     </a>
     <nav aria-label="サービス" class="site-nav">
-      {#each links as link (link.href)}
-        <a class="nav-link" href="{base}{link.href}" class:active={route===link.href.replace(/\/+$/,'')}
-          aria-current={route===link.href.replace(/\/+$/,'')?'page':undefined}
-          title={link.name}>
-          <WandIcon name={link.icon} size={19}/><span>{link.name}</span>
-        </a>
+      {#each links as link (link.name)}
+        {#if link.href}
+          <a class="nav-link"
+            href="{base}{link.href}"
+            class:active={link.name==='Guide'?route.startsWith('/guide'):route===link.href.replace(/\/+$/,'')}
+            aria-current={(link.name==='Guide'?route.startsWith('/guide'):route===link.href.replace(/\/+$/,''))?'page':undefined}
+            title={link.name}>
+            <WandIcon name={link.icon} size={19}/><span>{link.name}</span>
+          </a>
+        {:else}
+          <span class="nav-link unavailable" aria-label={link.name+'（開発中）'} aria-disabled="true" title={link.name+'（開発中）'}>
+            <WandIcon name={link.icon} size={19}/><span>{link.name}</span>
+          </span>
+        {/if}
       {/each}
     </nav>
     <div class="site-actions" aria-label="ページ操作">
