@@ -14,6 +14,7 @@ import argparse
 from collections import Counter
 import hashlib
 import json
+import math
 from pathlib import Path
 import re
 import sys
@@ -75,10 +76,16 @@ def strict_json(blob: bytes):
     def bad_constant(_):
         fail("NONFINITE_JSON_NUMBER")
 
+    def parse_float(text):
+        value = float(text)
+        if not math.isfinite(value):
+            fail("NONFINITE_JSON_NUMBER")
+        return value
+
     return json.loads(
         blob.decode("utf-8", errors="strict"),
         object_pairs_hook=object_pairs, parse_int=parse_int,
-        parse_constant=bad_constant,
+        parse_float=parse_float, parse_constant=bad_constant,
     )
 
 
@@ -104,6 +111,8 @@ def check_source_release(archive: Path, expected_sha256: str):
         ):
             if mandatory not in names:
                 fail("CATALOG_MANIFEST_MISSING")
+            if z.getinfo(mandatory).file_size > 2 * 1024 * 1024:
+                fail("CATALOG_MANIFEST_OVERSIZED")
         acceptance = strict_json(z.read("release-acceptance.json"))
         catalog_bytes = z.read("catalog/manifest.json")
         shard_bytes = z.read("shards/manifest.json")
