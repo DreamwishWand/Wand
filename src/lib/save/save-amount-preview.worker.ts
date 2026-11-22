@@ -7,6 +7,7 @@
  */
 import init, { WasmAmountPreview } from './wasm/p1g-pkg/ddv_p1g_codec.js';
 import wasmUrl from './wasm/p1g-pkg/ddv_p1g_codec_bg.wasm?url';
+import {WorldReferenceIndex} from '../world/reference-graph.ts';
 import {
   detectLocalSaveFormat,
   MAX_LOCAL_P1G_BYTES,
@@ -99,6 +100,67 @@ function validateGridReport(source:unknown):SaveGridReferenceReport {
   };
 }
 
+interface Db04GridPathReceipt {
+  contract:'wand.db05.db04-grid-path-match@1';
+  status:'not_observed'|'incompatible_structure'|
+    'partial_inconclusive'|'source_path_matches'|'no_exact_full_path_match';
+  observedFullGrids:number;
+  matchedFullGrids:number;
+  notInPartialSourceFullGrids:number;
+  ambiguousSourceFullGrids:number;
+  malformedFullGrids:number;
+  observedDiffGrids:number;
+  hashUnverifiedDiffGrids:number;
+  malformedDiffGrids:number;
+  sampled:boolean;
+  sourceCoverageComplete:false;
+  sourceOriginalArchiveRechecked:false;
+  saveGridNumericIdUsedAsNativeKey:false;
+  diffIdentityVerified:false;
+  worldCoordinatesVerified:false;
+  playerPlacementVerified:false;
+  nativeDefaultObjectEquivalenceVerified:false;
+  saveWritingAuthorized:false;
+}
+function validatedDb04GridReceipt(source:unknown):Db04GridPathReceipt{
+  if(!object(source)||!exact(source,[
+    'contract','status','observedFullGrids','matchedFullGrids',
+    'notInPartialSourceFullGrids','ambiguousSourceFullGrids',
+    'malformedFullGrids','observedDiffGrids','hashUnverifiedDiffGrids',
+    'malformedDiffGrids','sampled','sourceCoverageComplete',
+    'sourceOriginalArchiveRechecked','saveGridNumericIdUsedAsNativeKey',
+    'diffIdentityVerified','worldCoordinatesVerified','playerPlacementVerified',
+    'nativeDefaultObjectEquivalenceVerified','saveWritingAuthorized'
+  ]) || source.contract!=='wand.db05.db04-grid-path-match@1' ||
+    !['not_observed','incompatible_structure','partial_inconclusive',
+      'source_path_matches','no_exact_full_path_match'].includes(
+        String(source.status))||
+    ![
+      source.observedFullGrids,source.matchedFullGrids,
+      source.notInPartialSourceFullGrids,source.ambiguousSourceFullGrids,
+      source.malformedFullGrids,source.observedDiffGrids,
+      source.hashUnverifiedDiffGrids,source.malformedDiffGrids
+    ].every(v=>nonnegative(v,2049)) ||
+    source.observedFullGrids+source.observedDiffGrids>2048 ||
+    source.matchedFullGrids+source.notInPartialSourceFullGrids+
+      source.ambiguousSourceFullGrids+source.malformedFullGrids !==
+        source.observedFullGrids +
+          (source.status==='partial_inconclusive'?0:0) ||
+    source.hashUnverifiedDiffGrids+source.malformedDiffGrids>
+      source.observedDiffGrids+1 ||
+    typeof source.sampled!=='boolean' ||
+    source.sourceCoverageComplete!==false ||
+    source.sourceOriginalArchiveRechecked!==false ||
+    source.saveGridNumericIdUsedAsNativeKey!==false ||
+    source.diffIdentityVerified!==false ||
+    source.worldCoordinatesVerified!==false ||
+    source.playerPlacementVerified!==false ||
+    source.nativeDefaultObjectEquivalenceVerified!==false ||
+    source.saveWritingAuthorized!==false)
+      throw new TypeError('DB05_DB04_GRID_RECEIPT_INVALID');
+  return source as unknown as Db04GridPathReceipt;
+}
+
 interface PreviewReceipt {
   contract: 'wand.db05.amount-preview@1';
   changed: boolean;
@@ -129,7 +191,8 @@ type Reply =
   | { kind: 'copy'; bytes: Uint8Array; receipt: CopyReceipt }
   | { kind: 'slots'; rows: SaveEditableSlot[];
       grid:SaveGridReferenceReport;
-      contract:'wand.db05.editable-slots@1'; complete:true; writerAuthorized:false };
+      contract:'wand.db05.editable-slots@1'; complete:true; writerAuthorized:false }
+  | {kind:'db04';receipt:Db04GridPathReceipt};
 
 interface IsolatedScope {
   onmessage: ((event: MessageEvent<unknown>) => Promise<void>) | null;
@@ -232,16 +295,20 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
   started = true;
   const input = object(data) ? data : null;
   const bytes = input?.bytes;
+  const graph = input?.graph;
   let response: Reply = { kind: 'error' };
   let rust: WasmAmountPreview | null = null;
   let exported: Uint8Array | null = null;
   try {
+    const compareDb04=input?.command === 'inspect-db04-grid-paths';
     const listing=input?.command === 'inspect-existing-slots';
     const exporting = input?.command === 'export-existing-amount-copy' ||
       input?.command === 'export-batch-amount-copy';
     const batch = input?.command === 'preview-batch-amounts' ||
       input?.command === 'export-batch-amount-copy';
-    const expectedKeys = listing ? ['command','format','bytes'] : batch
+    const expectedKeys = compareDb04
+      ? ['command','format','bytes','graph']
+      : listing ? ['command','format','bytes'] : batch
       ? (exporting
         ? ['command', 'format', 'bytes', 'edits', 'allowExperimentalCopy']
         : ['command', 'format', 'bytes', 'edits'])
@@ -252,18 +319,20 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
     if (!input || !exact(input, expectedKeys) ||
         !['preview-existing-amount', 'export-existing-amount-copy',
           'preview-batch-amounts', 'export-batch-amount-copy',
-          'inspect-existing-slots'].includes(
+          'inspect-existing-slots','inspect-db04-grid-paths'].includes(
           String(input.command)) ||
         (exporting && input.allowExperimentalCopy !== true) ||
         !['auto', 'json', 'p1g'].includes(String(input.format)) ||
         !(bytes instanceof Uint8Array) ||
-        (!batch && !listing &&
+        (compareDb04 && (!(graph instanceof Uint8Array) ||
+          graph.byteLength<1||graph.byteLength>64*1024*1024)) ||
+        (!batch && !listing && !compareDb04 &&
           (!uint32(input.expected) || !uint32(input.replacement))))
       throw new TypeError('DB05_WORKER_COMMAND_INVALID');
 
     const edits = batch ? validateBatchEdits(input.edits) : null;
     const plan = edits === null ? null : JSON.stringify({edits});
-    const target = (batch||listing) ? null : validateTarget(input.target);
+    const target = (batch||listing||compareDb04) ? null : validateTarget(input.target);
     const requestedFormat = input.format as InputFormat;
     const format: Exclude<InputFormat, 'auto'> =
       requestedFormat === 'auto' ? detectLocalSaveFormat(bytes) : requestedFormat;
@@ -280,7 +349,24 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
       rust.append_chunk(bytes.subarray(i, i + CHUNK));
     rust.finish_open();
 
-    if(listing){
+    if(compareDb04){
+      // This is a caller-supplied *local* DB-04 native source graph. Use the
+      // existing DB-04 index to check all structural references before Rust
+      // performs the game-specific path comparison. No native/private source
+      // or Save grid paths leave this isolated Worker.
+      const graphJson=new TextDecoder('utf-8',{fatal:true}).decode(graph);
+      const source=new WorldReferenceIndex(JSON.parse(graphJson));
+      const verified=source.toDb00WorldRelationsSidecar();
+      const witness=JSON.stringify({
+        contract:'wand.db05.db04-grid-path-witness@1',
+        gridRefs:verified.gridRefs.map(ref=>({
+          layoutId:ref.layoutId,gridDataPath:ref.gridDataPath
+        }))
+      });
+      const receipt=validatedDb04GridReceipt(
+        JSON.parse(rust.match_db04_grid_paths(witness)));
+      response={kind:'db04',receipt};
+    }else if(listing){
       const extracted:unknown=JSON.parse(rust.list_existing_slots());
       const grid=validateGridReport(
         JSON.parse(rust.list_saved_grid_item_references()));
@@ -384,6 +470,7 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
     rust?.close();
     rust?.free();
     if (bytes instanceof Uint8Array && bytes.byteLength) bytes.fill(0);
+    if (graph instanceof Uint8Array && graph.byteLength) graph.fill(0);
   }
 
   if (response.kind === 'copy') {
