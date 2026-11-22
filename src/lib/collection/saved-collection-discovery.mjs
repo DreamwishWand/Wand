@@ -115,6 +115,7 @@ export function sanitizeSavedCollectionDiscovery(input) {
   if(entries.length>observedReferences||ambiguousItemIds>observedReferences||
     ((input.status==='unsupported_schema')&&
       (SUPPORTED_SAVE_SCHEMAS.has(saveSchema)||observedReferences||entries.length))||
+    ((input.status!=='unsupported_schema')&&!SUPPORTED_SAVE_SCHEMAS.has(saveSchema))||
     (input.status==='observed_boolean_discovery'&&
       (!entries.length||invalidReferences||ambiguousItemIds||input.sampled))||
     (input.status==='observed_empty'&&(entries.length||invalidReferences||input.sampled))||
