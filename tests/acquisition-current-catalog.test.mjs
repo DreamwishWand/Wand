@@ -60,7 +60,7 @@ test('A user-supplied unverified private archive cannot drive the 13,202-item jo
   const trusted={
     platform:'Steam',gameVersion:'1.26.2',
     manifestSha256:'ec1efd589dd5390f11f5a99411bcf3f1c6bc34309ddfa68e51589c078601f31c',
-    src01ManifestSha256:'1ebf71a19792bb2293a710cec533b1471e4f2c0e695a9d413bbcfc305022f6',
+    src01ManifestSha256:'1ebf71a19792bb2293a710cec533b1471e4e4f2c0e695a9d413bbcfc305022f6',
     currentConditionSha256:'9eb5e7800a2485b1dfb3e148a7bcff5d6c6b6ed72797ed2331a902ab44188f4c'
   };
   await assert.rejects(loadCurrentDb02OriginCatalog(
