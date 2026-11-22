@@ -262,3 +262,25 @@ types and CollectionSet candidates are **not** runtime screen
 categories/subcategories or DLC ownership. The returned private read
 model is not publishable, and the public DB-00 verified-fact index is
 never silently modified. No local private bytes are uploaded.
+
+
+### Public Item ID/name and acquisition-origin search
+
+\`openPublicSharedGameSources('/Wand').searchItems({locale, text, originKinds,
+routeStatus, starPathSeasonId, offset, limit})\` searches the current published
+13,202 Steam ItemList definitions without any owner-private source files.
+The locale-specific text query matches original published names (Unicode
+NFKC/case-normalized) or an Item ID prefix. \`originKinds\` limits results to
+**exact source ItemOrigin links**, with separate
+\`confirmed_source_link\` / \`static_candidate_only\` filtering. It does not
+treat name-only Twitch/Code/Premium Shop campaign candidates as proven Item
+links. \`starPathSeasonId\` uses only the pinned DB-03 source-configured primary
+rewards, never premium-access currency or unawarded Vault alternatives.
+
+Results paginate *after* applying all requested constraints, sorted by
+numeric Item ID, and contain the original linked source evidence with explicit
+\`sourceCoverageComplete:false\`, \`liveAvailabilityVerified:false\` and
+\`playerOwnershipVerified:false\`. Premium Shop matching means an Item ID was
+present in an observed source offer, **not** today's sale, personal ownership
+or price. World/Universe/DLC UI membership is not inferred. Published scope
+does not claim to enumerate every native game definition.
