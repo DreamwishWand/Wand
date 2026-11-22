@@ -1567,6 +1567,21 @@
               draftY={coordinateSelection?coordinateNumber(coordinateY):null}
               disabled={processing}
               queuedOrdinals={coordinateQueue.map(edit=>edit.localOrdinal)}
+              stagedMoves={[
+                ...coordinateQueue.map(edit=>({
+                  localOrdinal:edit.localOrdinal,
+                  expectedX:edit.expectedX,expectedY:edit.expectedY,
+                  replacementX:edit.replacementX,replacementY:edit.replacementY
+                })),
+                ...mixedQueue.flatMap(edit=>
+                  edit.replacementX!==null&&edit.replacementY!==null
+                    ?[{
+                      localOrdinal:edit.localOrdinal,
+                      expectedX:edit.expectedX,expectedY:edit.expectedY,
+                      replacementX:edit.replacementX,
+                      replacementY:edit.replacementY
+                    }]:[])
+              ]}
               onStageGroupMove={queueGroupTranslation}
               onPick={(ordinal:number)=>{
                 const row=gridInstances[ordinal-1];
