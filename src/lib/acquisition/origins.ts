@@ -155,6 +155,8 @@ export interface OriginDatabase {
     readonly nativeAcquisition: unknown;
     readonly originCoverageComplete: false;
   };
+  /** Exact linked Item IDs only; omitted IDs have UNKNOWN acquisition coverage. */
+  listLinkedItemIds(): readonly string[];
   getCampaign(campaignId: string): OfficialCampaign | null;
   listCampaigns(): readonly OfficialCampaign[];
   getHistoricalPremiumShopWeek(weekStart: string): readonly ShopAppearance[];
@@ -361,6 +363,9 @@ export function createAcquisitionOriginDatabase(
   }
   for (const links of [...byItem.values(), ...byRoute.values()]) Object.freeze(links);
   const campaignList = Object.freeze([...campaigns]);
+  const linkedItemIds = Object.freeze([...byItem.keys()].sort(
+    (a,b)=>Number(a)-Number(b)
+  ));
   const coverage = frozen({
     linkedItemIds: byItem.size,
     linkedRoutes: origins.length,
@@ -382,6 +387,7 @@ export function createAcquisitionOriginDatabase(
         originCoverageComplete: false as const
       });
     },
+    listLinkedItemIds() { return linkedItemIds; },
     getOrigin(originId: string) { return byRoute.get(originId) ?? []; },
     getCampaign(campaignId: string) { return byCampaign.get(campaignId) ?? null; },
     listCampaigns() { return campaignList; },

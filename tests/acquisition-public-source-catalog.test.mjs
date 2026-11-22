@@ -57,6 +57,13 @@ test('Complete public Steam 1.26.2 DB-02 catalog joins 1255 source-pinned Star P
   assert.equal(catalog.shopHistory.coverage.liveAvailabilityVerified,false);
   assert.equal(catalog.shopHistory.repeatedOffers.length,8);
   assert.equal(catalog.coverage.combinedSourceRoutes,1255);
+  assert.equal(catalog.itemSources.query().totalOriginRelations,1255);
+  assert.equal(catalog.itemSources.knownLinkedItemIds.length,
+    catalog.coverage.allSourceLinkedItemIds);
+  assert.equal(catalog.itemSources.getKindItemIds('premium_shop').length,186);
+  assert.equal(catalog.itemSources.getKindItemIds('purchase_bonus').length,158);
+  assert.equal(catalog.itemSources.getKindItemIds('twitch_drop').length,0);
+  assert.equal(catalog.itemSources.getKindItemIds('redeem_code').length,0);
   assert.equal(catalog.origins.getCoverage().linkedRoutes,1255);
   assert.equal(catalog.origins.getCoverage().routesBySourceKind.verified_game_native,904);
   assert.equal(catalog.origins.getCoverage().routesBySourceKind.verified_liveops_cache,351);
@@ -125,6 +132,8 @@ test('Unified lookup separates exact Quest, Event and Friendship Item ID routes 
   assert.equal(shopOrigin.productId,'Bundle_MickeyAndFriendsCelebrationHouses');
   assert.equal(shopOrigin.price?.quantity,4000);
   assert.equal(shopOrigin.availability,'not_live_verified');
+  assert(catalog.itemSources.getItem('170600007').origins.includes(shopOrigin));
+  assert(catalog.itemSources.getKindItemIds('premium_shop').includes('170600007'));
   assert.equal(catalog.getSourceOrigin(shopOrigin.originId)[0],shopOrigin);
   assert(catalog.getCampaign(shopOrigin.campaignId)?.rewards.some(r=>
     r.itemId==='170600007'&&r.quantity===1));
@@ -180,6 +189,8 @@ test('Unified lookup separates exact Quest, Event and Friendship Item ID routes 
   assert.equal(iapOrigin.kind,'purchase_bonus');
   assert.equal(iapOrigin.routeStatus,'confirmed_source_link');
   assert.equal(iapOrigin.availability,'not_live_verified');
+  assert(catalog.itemSources.getItem('10000049').origins.includes(iapOrigin));
+  assert(catalog.itemSources.getKindItemIds('purchase_bonus').includes('10000049'));
   assert.equal(catalog.getSourceOrigin(iapOrigin.originId)[0],iapOrigin);
   assert(catalog.getCampaign(iapOrigin.campaignId)?.rewards.some(r=>
     r.itemId==='10000049'&&r.quantity===1));
