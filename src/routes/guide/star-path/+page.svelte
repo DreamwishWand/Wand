@@ -8,7 +8,7 @@
   import {starpathRewardDisplayName,loadStarpathRewardExtras} from '$lib/guide/starpath-reward-extras.mjs';
   import {loadStarpathMedia,starpathMediaThumbnail} from '$lib/guide/starpath-public-media.mjs';
   import {guideCalendarEvents,activeScheduleStarpaths} from '$lib/guide/event-calendar.mjs';
-  import {actionableStarpathTask} from '$lib/guide/starpath-task-guidance.mjs';
+  import {starpathTaskDisplay} from '$lib/guide/starpath-task-guidance.mjs';
 
   let catalog:any=null, weeklyLocales:any=null, dailyLocales:any=null, rewardExtras:any=null, publicMedia:any=null, error='', loading=true;
   let locale='ja';
@@ -114,17 +114,19 @@
         </div>
         <ul class="entries">
           {#each filtered.slice(0,limit) as t (t.id)}
-            <li><strong>{actionableStarpathTask(season.id,t,locale==='ja'?'ja':'en')?.action||'達成方法は検証中'}</strong><small>{actionableStarpathTask(season.id,t,locale==='ja'?'ja':'en')?'確認済みの具体的な操作 · ':'解答未確認 · '}ゲーム内表記：{starpathDailyDescription(dailyLocales,season.id,t.id,locale)||'説明未確認'}</small><small>{t.objectiveKind} · {t.id} · {t.tokenReward} {season.currencyName}{t.availableOnDay!==undefined?' · 解放設定日 '+t.availableOnDay:''}</small></li>
+            {@const display=starpathTaskDisplay(season.id,t,locale,starpathDailyDescription(dailyLocales,season.id,t.id,locale))}
+            <li><strong>{display.headline}</strong><small>{display.note}</small><small>{t.objectiveKind} · {t.id} · {t.tokenReward} {season.currencyName}{t.availableOnDay!==undefined?' · 解放設定日 '+t.availableOnDay:''}</small></li>
           {/each}
         </ul>
         {#if filtered.length>limit}<div class="auto-sentinel" use:autoAppend={{hasMore:()=>filtered.length>limit,load:()=>limit+=60}} role="status" aria-label="スクロールでタスクを追加表示"></div>{/if}
       {:else if tab==='weekly'}
-        <p class="hint">週間タスクも具体的な操作・謎解きの答えを優先して表示します。未検証のものは解答を創作せず、ゲーム内文言を参考情報として併記します。</p>
+        <p class="hint">確認済みの操作は攻略手順を表示し、未検証のタスクはゲーム原本の説明を表示します。</p>
         {#each season.weeklyTasks as week,i}
           <section class="week"><h2>第{i+1}週</h2>
             <ul class="entries">
               {#each week as t (t.id)}
-                <li><strong>{actionableStarpathTask(season.id,t,locale==='ja'?'ja':'en')?.action||'達成方法は検証中'}</strong><small>{actionableStarpathTask(season.id,t,locale==='ja'?'ja':'en')?'確認済みの具体的な操作 · ':'解答未確認 · '}ゲーム内表記：{starpathWeeklyDescription(weeklyLocales,t.descriptionKey,locale)||'説明未確認'}</small><small>{t.objectiveKind} · {t.id} · {t.tokenReward} {season.currencyName}</small></li>
+                {@const display=starpathTaskDisplay(season.id,t,locale,starpathWeeklyDescription(weeklyLocales,t.descriptionKey,locale))}
+                <li><strong>{display.headline}</strong><small>{display.note}</small><small>{t.objectiveKind} · {t.id} · {t.tokenReward} {season.currencyName}</small></li>
               {/each}
             </ul>
           </section>
