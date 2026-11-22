@@ -30,8 +30,8 @@ This codec deliberately refuses archives other than a minimal supported
 single-profile ZIP; this is not a claim that all Steam/Switch save envelopes
 are identical. Input size cap: 128 MiB. Before product release, run the
 private real profile specimens through decrypt/no-op/edited roundtrip and
-independently verify exact ZIP metadata, game reloading, item quantity caps
-and access restrictions. Never commit original saves, decrypted JSON,
+independently verify exact ZIP metadata, game reloading, numeric field
+representability (not the game's stack caps) and access restrictions. Never commit original saves, decrypted JSON,
 identifiers, private report values, or generated patched P1G copies.
 
 Pending:
@@ -105,7 +105,8 @@ The observation alone does not establish independent provenance of the
 Steam build or game-accepted edits.
 
 Remaining work: genuine real-game reimport/acceptance, multi-entry ZIP
-handling, item quantity cap rules, production ownership/session/revision
+handling, storage-integer safety (normal game caps are intentionally bypassed),
+production ownership/session/revision
 policy, intentional explicit export, and safe close/zeroization lifecycle
 for actual large edit sessions.
 
@@ -146,5 +147,23 @@ encrypted P1G, independently reopens both outputs and confirms original
 bytes/other fields were not modified.
 
 Still to verify before general release: real Steam/Switch roundtrip,
-save import into the game, per-item maximum stack sizes, unknown format
+save import into the game, actual over-cap decoration placement/reload,
+unknown format
 families, backup/restore UX and long-running multi-edit SaveSession.
+
+## Deliberate quantity override requirement
+
+Owner-confirmed policy: Wand must permit inventory and chest counts above
+normal in-game limits, including changing a one-owned decoration to multiple
+owned copies for more flexible decorating. Do **not** add item catalog maxima,
+a global 99 limit, or clamping to game limits. Accept only structurally
+representable, valid numeric values; the current Worker accepts positive u32
+amounts. User-selected over-cap changes are intentional, not automatically
+invalid or evidence of save corruption.
+
+This does not prove that setting an Amount above 1 actually permits duplicate
+placement: the game can maintain unique-ownership flags or placement state
+elsewhere. Future editing must investigate and handle those mechanisms rather
+than enforce the original game cap. Test game reload, placement of multiple
+copies, save-and-reload persistence, and whether the inventory count is
+normalized. See ddv-save-patch README for the normative policy.
