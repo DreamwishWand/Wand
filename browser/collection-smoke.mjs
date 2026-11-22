@@ -118,7 +118,7 @@ try{
   assert.match(await page.locator('.summary-strip').innerText(),/1 \/ 13,202/);
   assert.match(await page.locator('.source-pill').innerText(),/Steam\s*·\s*v1\.26\.2/);
   assert.equal(await page.getByRole('button',{name:'v1.26.2 データをローカルで開く'}).count(),0);
-  assert.match(await page.getByRole('status').first().innerText(),/11,492/);
+  assert.match(await page.locator('.collection-source-details').textContent(),/11,492/);
   // All 13,202 native IDs are available. The 1,710 that lack exact
   // source names must remain explicitly unnamed, not invented.
   await page.getByRole('button',{name:/フィルター/}).click();
@@ -163,24 +163,24 @@ try{
   await staleTab.getByRole('searchbox',{name:/8言語/}).fill('40005160');
   await staleTab.locator('.item-state-toggle').first().waitFor();
   await page.locator('.item-state-toggle').first().click();
-  await page.waitForFunction(()=>document.querySelector('.item-state-toggle')?.textContent?.trim()==='＋');
+  await page.waitForFunction(()=>document.querySelector('.item-state-toggle')?.getAttribute('aria-label')?.includes('を所持済みにする'));
   await staleTab.locator('.item-state-toggle').first().click();
   await staleTab.getByRole('alert').filter({hasText:'COLLECTION_STORAGE_CONFLICT'}).waitFor();
   // User-initiated reload must rebase the stale tab on the winning IndexedDB
   // version, then permit a fresh CAS write without a full page reload.
   await staleTab.getByRole('button',{name:'最新の記録を読み直す'}).click();
   await staleTab.getByRole('alert').filter({hasText:'COLLECTION_STORAGE_CONFLICT'}).waitFor({state:'detached'});
-  await staleTab.waitForFunction(()=>document.querySelector('.item-state-toggle')?.textContent?.trim()==='＋');
+  await staleTab.waitForFunction(()=>document.querySelector('.item-state-toggle')?.getAttribute('aria-label')?.includes('を所持済みにする'));
   await staleTab.locator('.item-state-toggle').first().click();
-  await staleTab.waitForFunction(()=>document.querySelector('.item-state-toggle')?.textContent?.trim()==='✓');
+  await staleTab.waitForFunction(()=>document.querySelector('.item-state-toggle')?.getAttribute('aria-label')?.includes('を未所持にする'));
   // The formerly winning tab is now stale: it must fail closed and recover too.
   await page.locator('.item-state-toggle').first().click();
   await page.getByRole('alert').filter({hasText:'COLLECTION_STORAGE_CONFLICT'}).waitFor();
   await page.getByRole('button',{name:'最新の記録を読み直す'}).click();
   await page.getByRole('alert').filter({hasText:'COLLECTION_STORAGE_CONFLICT'}).waitFor({state:'detached'});
-  await page.waitForFunction(()=>document.querySelector('.item-state-toggle')?.textContent?.trim()==='✓');
+  await page.waitForFunction(()=>document.querySelector('.item-state-toggle')?.getAttribute('aria-label')?.includes('を未所持にする'));
   await page.locator('.item-state-toggle').first().click();
-  await page.waitForFunction(()=>document.querySelector('.item-state-toggle')?.textContent?.trim()==='＋');
+  await page.waitForFunction(()=>document.querySelector('.item-state-toggle')?.getAttribute('aria-label')?.includes('を所持済みにする'));
   await staleTab.close();
   await page.reload();
   await page.locator('.summary-strip').waitFor({timeout:60000});
