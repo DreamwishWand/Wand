@@ -4,9 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { createHash, createCipheriv } from 'node:crypto';
 import { deflateRawSync } from 'node:zlib';
 import { chromium } from 'playwright';
-import {
-  makeCollectionDb04ZipFixture,TEST_DB04_LAYOUT,TEST_DB04_GRID
-} from '../tests/helpers/collection-db04-zip-fixture.mjs';
+import {TEST_DB04_LAYOUT} from '../tests/helpers/collection-db04-zip-fixture.mjs';
 
 // One synthetic P1G, never a real user's save. Browser e2e verifies that
 // decoded native discovery booleans flow through Worker -> Rust/WASM -> IDB.
@@ -53,6 +51,41 @@ function makeSyntheticP1g(root) {
 }
 
 const url = 'http://127.0.0.1:4173/Wand/collection/';
+async function readLocalState(page){
+  return page.evaluate(async()=>{
+    const req=indexedDB.open('dreamwishwand-collection',1);
+    const db=await new Promise((resolve,reject)=>{req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});
+    const value=await new Promise((resolve,reject)=>{
+      const get=db.transaction('state','readonly').objectStore('state').get('current');
+      get.onsuccess=()=>resolve(get.result);get.onerror=()=>reject(get.error);
+    });
+    db.close();
+    return value?JSON.parse(value):null;
+  });
+}
+async function waitForLocalState(page,expected){
+  await page.waitForFunction(async expected=>{
+    const request=indexedDB.open('dreamwishwand-collection',1);
+    const db=await new Promise((resolve,reject)=>{
+      request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
+    });
+    const value=await new Promise((resolve,reject)=>{
+      const get=db.transaction('state','readonly').objectStore('state').get('current');
+      get.onsuccess=()=>resolve(get.result);get.onerror=()=>reject(get.error);
+    });
+    db.close();
+    if(!value)return false;
+    const snapshot=JSON.parse(value);
+    const work=snapshot.workspaces.find(x=>x.id===(expected.workspace??snapshot.active));
+    if(!work||expected.active&&snapshot.active!==expected.active)return false;
+    if(expected.item&&(work.entries[expected.item]?.status??null)!==(expected.status??null))return false;
+    if(expected.missing!==undefined&&
+      Object.values(work.entries).filter(x=>x.status==='missing').length!==expected.missing)return false;
+    if(expected.owned!==undefined&&
+      Object.values(work.entries).filter(x=>x.status==='owned').length!==expected.owned)return false;
+    return true;
+  },expected,{timeout:25000});
+}
 const server = spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--host','127.0.0.1','--port','4173'],{
   env:{...process.env,BASE_PATH:'/Wand'},stdio:'pipe'
 });
@@ -162,30 +195,17 @@ try{
   await page.getByRole('button',{name:'チュートリアルを閉じる'}).click();
   assert.equal(await page.getByRole('button',{name:'セーブファイルを読み込む'}).count(),1);
 
-  try {
-    await page.locator('.summary-strip').waitFor({timeout:18000});
-  } catch(error) {
-    console.error('BROWSER_PAGE_CONTENT',await page.locator('body').innerText());
-    console.error('BROWSER_PAGE_ERRORS',browserErrors);
-    console.error('BROWSER_PAGE_URL',page.url());
-    throw error;
-  }
-  assert.match(await page.locator('.summary-strip').innerText(),/13,202/);
-  assert.match(await page.locator('.summary-strip').innerText(),/1 \/ 13,202/);
-  assert.match(await page.locator('.source-pill').innerText(),/Steam\s*·\s*v1\.26\.2/);
-  assert.equal(await page.getByRole('button',{name:'v1.26.2 データをローカルで開く'}).count(),0);
-  assert.match(await page.locator('.collection-source-details').textContent(),/11,492/);
-  // All 13,202 native IDs are available. The 1,710 that lack exact
-  // source names must remain explicitly unnamed, not invented.
+  try {await page.locator('.facet-card').first().waitFor({timeout:18000});}
+  catch(error){console.error('COLLECTION_FIRST_VIEW',await page.locator('body').innerText());throw error;}
+  assert.equal(await page.locator('.summary-strip,.source-pill,.collection-head,.personal-bar,.collection-source-details,.saved-store-preview,.empty-inspector').count(),0);
+  assert.equal(await page.getByRole('button',{name:'Collectionバックアップ出力'}).count(),1);
+  assert.equal(await page.getByRole('button',{name:'Collectionバックアップ復元'}).count(),1);
+  const firstCategory=await page.locator('.facet-card').first().boundingBox();
+  assert.ok(firstCategory&&firstCategory.y<240,'categories must begin in the first viewport');
+  assert.ok(await page.locator('.facet-card').count()>10);
   await page.getByRole('button',{name:/フィルター/}).click();
-  await page.getByRole('group',{name:'正式名称の確認状況'})
-    .getByRole('button',{name:'名称未確認'}).click();
-  await page.waitForFunction(()=>document.querySelector('.result-count')?.textContent?.includes('1,710'));
-  assert.match(await page.locator('.item-card-copy').first().innerText(),/名称未確認/);
-  await page.getByRole('group',{name:'正式名称の確認状況'})
-    .getByRole('button',{name:'すべて'}).click();
+  assert.equal(await page.getByRole('group',{name:'正式名称の確認状況'}).count(),0);
   await page.getByRole('button',{name:/フィルター/}).click();
-  assert.match(await page.locator('.summary-strip').innerText(),/13,202/);
   const stored=await page.evaluate(async()=>{
     const req=indexedDB.open('dreamwishwand-collection',1);
     const db=await new Promise((resolve,reject)=>{
@@ -218,7 +238,7 @@ try{
   // Both tabs opened the same IndexedDB version. A stale writer must fail closed.
   const staleTab=await context.newPage();
   await staleTab.goto(url);
-  await staleTab.locator('.summary-strip').waitFor();
+  await staleTab.locator('.facet-card').first().waitFor();
   await staleTab.getByRole('searchbox',{name:/8言語/}).fill('40005160');
   await staleTab.locator('.item-state-toggle').first().waitFor();
   await page.locator('.item-state-toggle').first().click();
@@ -242,10 +262,9 @@ try{
   await page.waitForFunction(()=>document.querySelector('.item-state-toggle')?.getAttribute('aria-label')?.includes('を所持済みにする'));
   await staleTab.close();
   await page.reload();
-  await page.locator('.summary-strip').waitFor({timeout:60000});
-  const now=await page.locator('.summary-strip').innerText();
-  assert.match(now,/1/);
-  assert.match(now,/13,202/);
+  await page.locator('.facet-card').first().waitFor({timeout:60000});
+  const persisted=await readLocalState(page);
+  assert.equal(persisted.workspaces[0].entries['40005160'].status,'missing');
   const downloadPromise=page.waitForEvent('download');
   await page.getByRole('button',{name:'バックアップ出力'}).click();
   const download=await downloadPromise;
@@ -286,33 +305,31 @@ try{
   page.once('dialog',dialog=>void dialog.accept());
   await page.getByRole('group',{name:'Collectionの一括記録'})
     .getByRole('button',{name:'全件を未所持'}).click();
-  await page.waitForFunction(count=>{
-    const text=document.querySelector('.summary-strip')?.querySelectorAll('strong')[2]?.textContent?.replaceAll(',','').trim();
-    return text===String(count);
-  },matchingCount,{timeout:20000});
+  await waitForLocalState(page,{missing:matchingCount});
   assert.equal(await page.getByRole('button',{name:'複数選択'}).count(),1);
   await page.getByRole('button',{name:'複数選択'}).click();
   await page.locator('.item-card-body').first().click();
   await page.getByRole('group',{name:'Collectionの一括記録'}).getByRole('button',{name:'所持 / 解放',exact:true}).click();
-  await page.waitForFunction(()=>document.querySelector('.summary-strip')?.textContent?.includes('1 / 13,202'));
+  await waitForLocalState(page,{owned:1});
   const restoreChooser=page.waitForEvent('filechooser');
-  await page.getByRole('button',{name:'復元'}).click();
+  await page.getByRole('button',{name:'Collectionバックアップ復元'}).click();
   const chooser=await restoreChooser;
   page.once('dialog',dialog=>void dialog.accept());
   await chooser.setFiles({
     name:'legacy-collection-backup.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(seed))
   });
-  await page.waitForFunction(()=>document.querySelector('.summary-strip')?.textContent?.includes('1 / 13,202'));
+  await waitForLocalState(page,{item:'40005160',status:'owned'});
   const recoveredPromise=page.waitForEvent('download');
   await page.getByRole('button',{name:'バックアップ出力'}).click();
   const recovered=JSON.parse(await readFile(await (await recoveredPromise).path(),'utf8'));
   assert.deepEqual(recovered,seed);
   page.once('dialog',dialog=>void dialog.accept('Second'));
-  await page.getByRole('button',{name:'＋ 新規'}).click();
+  await page.locator('.collection-record-menu summary').click();
+  await page.getByRole('group',{name:'ローカル記録の管理'}).getByRole('button',{name:'新規'}).click();
   await page.waitForFunction(()=>document.querySelectorAll('select[aria-label="ローカル記録を選択"] option').length===2);
-  assert.equal((await page.locator('.summary-strip').innerText()).includes('0 / 13,202'),true);
+  await waitForLocalState(page,{item:'40005160',status:null});
   await page.getByRole('combobox',{name:'ローカル記録を選択'}).selectOption('local-1');
-  await page.waitForFunction(()=>document.querySelector('.summary-strip')?.textContent?.includes('1 / 13,202'));
+  await waitForLocalState(page,{active:'local-1',item:'40005160',status:'owned'});
   await page.setViewportSize({width:390,height:844});
   const byName=page.getByRole('searchbox',{name:/8言語/});
   await byName.fill('Glass Shoe');
@@ -357,11 +374,8 @@ try{
     status:200,contentType:'application/json',body:shardText
   }));
   await page.reload();
-  await page.locator('.summary-strip').waitFor({timeout:20000});
-  assert.match(await page.locator('.summary-strip').innerText(),/1/);
-  assert.match(await page.locator('.source-pill').innerText(),/Steam\s*·\s*v1\.26\.2/);
-  assert.match(await page.locator('.empty-inspector .inspector-hint').innerText(),/Steam\s*·\s*DDV v1\.26\.2/);
-  assert.doesNotMatch(await page.locator('.empty-inspector .inspector-hint').innerText(),/Nintendo Switch DDV v1\.25\.0/);
+  await page.locator('.facet-card').first().waitFor({timeout:20000});
+  assert.equal(await page.locator('.empty-inspector,.summary-strip,.source-pill').count(),0);
   const releaseSearch=page.getByRole('searchbox',{name:/8言語/});
   await releaseSearch.fill('検証済みの靴');
   await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
@@ -379,11 +393,10 @@ try{
   }));
   await page.reload();
   await page.getByRole('alert').filter({hasText:'データの検証または読み込みに失敗'}).waitFor({timeout:20000});
-  assert.equal(await page.locator('.summary-strip').count(),0);
+  assert.equal(await page.locator('.facet-card').count(),0);
   await page.unrouteAll();
   await page.reload();
-  await page.locator('.summary-strip').waitFor({timeout:20000});
-  assert.match(await page.locator('.summary-strip').innerText(),/13,202/);
+  await page.locator('.facet-card').first().waitFor({timeout:20000});
 
   // First manually mark a known Furniture item missing. Its positive
   // ListInventory amount in the synthetic save must override that manual
@@ -451,38 +464,22 @@ try{
   assert.equal(stateAfter['99999999'].discovered,true);
   assert.equal(await page.getByRole('alert').filter({hasText:'do-not-leak'}).count(),0);
   assert.match(await page.getByRole('status').filter({hasText:'セーブの発見履歴'}).first().innerText(),/所持 2件/);
-  const placedPreview=page.getByRole('region',{name:'セーブ内の家具配置参照'});
-  assert.match(await placedPreview.innerText(),/家具の保存参照\s*3/);
-  assert.match(await placedPreview.innerText(),/全体グリッド 2件/);
-  assert.doesNotMatch(await placedPreview.innerText(),/40003256/);
+  // Headless reader imports native state without visible diagnostics.
+  assert.equal(await page.locator('.saved-store-preview,.empty-inspector').count(),0);
   await ownershipSearch.fill('40005160');
   await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
   await page.locator('.item-card-body').first().click();
-  assert.match(await page.locator('.item-inspector').innerText(),/セーブ内の家具配置参照：全体グリッド 2件、差分参照 0件/);
+  assert.doesNotMatch(await page.locator('.item-inspector').innerText(),/全体グリッド|DB-04原本/);
   // A world grid reference never increments the manual quantity, or replaces
   // an unobserved owned/missing status in the local Collection backup.
   assert.equal(stateAfter['40005160'].quantity,7);
   assert.equal(stateAfter['40006110'].status,undefined);
-  // Exact-path join uses an independently selected local native DB-04 ZIP.
-  // It re-opens the selected synthetic P1G in a second isolated Worker:
-  // neither source nor save is uploaded or written to Collection state.
-  const worldZip=makeCollectionDb04ZipFixture();
-  await page.locator('input[aria-label="DB-04 原本ZIPで初期配置との差分を照合"]')
-    .setInputFiles({name:'synthetic-db04.zip',mimeType:'application/zip',buffer:worldZip});
-  const joinStatus=page.getByRole('status').filter({hasText:'原本パスによる照合'});
-  await joinStatus.first().waitFor({timeout:25000});
-  const joinText=await joinStatus.first().innerText();
-  assert.match(joinText,/1\s*\/\s*2保存グリッド/);
-  assert.match(joinText,/原本オブジェクト参照 3件/);
-  assert.match(joinText,/差分適用後の参照 3件/);
-  assert.match(await page.getByRole('region',{name:'セーブ内の家具配置参照'}).innerText(),
-    /原本の初期参照 1件/);
-  assert.match(await page.locator('.item-inspector').innerText(),
-    /DB-04の完全一致パスで照合したグリッドの参照/);
-  const postJoinBackup=page.waitForEvent('download');
-  await page.getByRole('button',{name:'バックアップ出力'}).click();
-  const joinSavedState=JSON.parse(await readFile(await (await postJoinBackup).path(),'utf8'));
-  assert.deepEqual(joinSavedState.workspaces.find(x=>x.id==='local-1').entries,stateAfter);
+  // DB-04 diagnostics remain unit-tested, but are absent from the Collection UI.
+  assert.equal(await page.locator('input[aria-label="DB-04 原本ZIPで初期配置との差分を照合"]').count(),0);
+  const postSaveBackup=page.waitForEvent('download');
+  await page.getByRole('button',{name:'Collectionバックアップ出力'}).click();
+  const afterBrowse=JSON.parse(await readFile(await (await postSaveBackup).path(),'utf8'));
+  assert.deepEqual(afterBrowse.workspaces.find(x=>x.id==='local-1').entries,stateAfter);
 
   // Hold the next local file read before its Worker starts. During this
   // asynchronous gap the user must not switch, delete, restore or replace
@@ -504,8 +501,10 @@ try{
   await page.waitForFunction(()=>typeof window.__releaseCollectionSaveRead==='function');
   const localWorkspaceSelect=page.getByRole('combobox',{name:'ローカル記録を選択'});
   assert.equal(await localWorkspaceSelect.isDisabled(),true);
-  assert.equal(await page.getByRole('button',{name:'復元'}).isDisabled(),true);
-  assert.equal(await page.getByRole('button',{name:'名前変更'}).isDisabled(),true);
+  assert.equal(await page.getByRole('button',{name:'Collectionバックアップ復元'}).isDisabled(),true);
+  await page.locator('.collection-record-menu summary').click();
+  assert.equal(await page.getByRole('group',{name:'ローカル記録の管理'}).getByRole('button',{name:'名前変更'}).isDisabled(),true);
+  await page.locator('.collection-record-menu summary').click();
   await page.evaluate(()=>window.__releaseCollectionSaveRead());
   await page.waitForFunction(()=>
     !document.querySelector('select[aria-label="ローカル記録を選択"]').disabled,

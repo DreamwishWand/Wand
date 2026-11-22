@@ -14,9 +14,11 @@
   export let locale = 'ja';
   export let gameImageMap: Record<string,string> = {};
   export let collectionCommitBusy = false;
+  // Collection imports verified state without displaying developer diagnostics.
+  export let headless = false;
   const dispatch=createEventDispatcher<{
     lookupItem:number;saveProfile:any;gridReferences:any|null;db04Join:any|null;
-    saveReadStarted:undefined;saveReadFinished:undefined
+    saveReadStarted:undefined;saveReadFinished:undefined;saveReadError:string
   }>();
   const jsonKindLabels:Record<string,string>={
     null:'null',boolean:'真偽値',integer:'整数',number:'数値',
@@ -138,7 +140,8 @@
   }
 
   function failedRead() {
-    errorMessage = 'このセーブは読み取れませんでした。対応するP1G形式・データ構造を確認してください。元のファイルは変更されていません。';
+    errorMessage = 'セーブファイルを読み込めませんでした。ファイル形式を確認してください。元のファイルは変更されていません。';
+    dispatch('saveReadError',errorMessage);
     preview = null;
     collectionPreview = null;
     discoveryProjection = null;
@@ -328,6 +331,13 @@
   }
 </script>
 
+{#if headless}
+  <!-- The shared header launches this input; Worker and save dispatch stay active. -->
+  <input bind:this={fileInput} type="file" class="visually-hidden"
+    accept=".json,.profile,.dat,application/octet-stream"
+    on:change={openLocalFile} disabled={busy||collectionCommitBusy}
+    aria-label="DDVのセーブファイルを選択"/>
+{:else}
 <section class="saved-store-preview" aria-label="セーブ内の店舗商品・コレクションIDの読み取り専用プレビュー">
   <div class="store-head">
     <div>
@@ -602,6 +612,7 @@
     {/if}
   {/if}
 </section>
+{/if}
 
 <style>
   .saved-store-preview { margin:20px 0; padding:22px; border:1px solid rgba(150,126,190,.32); border-radius:18px; background:rgba(133,106,161,.065); }
