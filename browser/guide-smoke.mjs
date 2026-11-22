@@ -209,6 +209,10 @@ try {
   star.on('request',r=>{if(/starpath-media-[a-f0-9]+|\/media\/steam-v1\.26\.2\//.test(r.url()))inactiveMediaRequests.push(r.url());});
   await star.goto('http://127.0.0.1:4177/Wand/guide/star-path/',{waitUntil:'domcontentloaded'});
   await star.getByRole('button',{name:'Seafaring Star Path'}).waitFor({timeout:20000});
+  assert.match(await star.locator('.deadline-strip').innerText(),/タスク期限/);
+  assert.equal(await star.locator('.season-more').evaluate(el=>el.open),false,
+    'verbose source metadata must not displace the duty list by default');
+  await star.locator('.season-more summary').click();
   assert.match(await star.locator('.summary').innerText(),/121 \/ 21/);
   assert.match(await star.locator('.entries li').first().innerText(),/闇のトゲを引っこ抜く/);
   assert.match(await star.locator('.entries li').first().innerText(),/目標 3個/,'source goal visible for initial duty');
@@ -217,6 +221,12 @@ try {
   await chooseLanguage(star,'ja');
   await star.getByRole('textbox',{name:'通常タスクを検索'}).fill('Task17');
   assert.match(await star.locator('.entries li').first().innerText(),/ドナルドダックを同行者/);
+  assert.match(await star.locator('.entries li').first().innerText(),/目標 10分/,'hangout source minutes');
+  await star.getByRole('textbox',{name:'通常タスクを検索'}).fill('ジャック');
+  assert.match(await star.locator('.entries').first().innerText(),/ジャック・スケリントン/,
+    'indexed riddle identifies named source-guarded character');
+  await star.getByRole('textbox',{name:'通常タスクを検索'}).fill('存在しないタスク');
+  assert.match(await star.getByRole('status').filter({hasText:'一致する通常タスクはありません'}).innerText(),/一致する通常タスク/);
   await star.getByRole('textbox',{name:'通常タスクを検索'}).fill('闇のトゲ');
   assert.match(await star.locator('.entries li').first().innerText(),/闇のトゲ/);
   await star.getByRole('textbox',{name:'通常タスクを検索'}).fill('');
@@ -232,6 +242,13 @@ try {
   await star.getByRole('textbox',{name:'通常タスクを検索'}).fill('');
   await star.getByRole('button',{name:'週間タスク'}).click();
   assert.equal(await star.locator('.week').count(),6);
+  await star.getByRole('textbox',{name:'週間タスクを検索'}).fill('アリエル');
+  assert.match(await star.locator('.week').first().innerText(),/アリエル/,
+    'weekly indexed editorial interpretation is discoverable');
+  await star.getByRole('textbox',{name:'週間タスクを検索'}).fill('存在しない週間タスク');
+  assert.match(await star.getByRole('status').filter({hasText:'一致する週間タスクはありません'}).innerText(),/一致する週間タスク/);
+  await star.getByRole('textbox',{name:'週間タスクを検索'}).fill('');
+  assert.equal(await star.locator('.week').count(),6,'all original weekly groups restored');
   assert.match(await star.locator('.week').first().innerText(),/魚を20匹釣る/);
   assert.match(await star.locator('.week').first().innerText(),/目標 20匹/,'weekly source goal quantity');
   await chooseLanguage(star,'en');
