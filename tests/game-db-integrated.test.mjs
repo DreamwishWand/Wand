@@ -199,3 +199,68 @@ test('current Steam 13202-item facet query never presents absent world as none',
   assert.equal(db.queryItems([{scope:'current',field:'worlds',state:'not_applicable'}]).total,0);
   assert.equal(db.queryItems([{scope:'current',field:'worlds',values:['IsDreamlightValley']}]).total,0);
 });
+
+test('facet summaries preserve current verification, history and multi-valued counts',async()=>{
+  const db=new SharedGameDatabase(current(),old(),originalShaPins);
+  const initial=db.summarizeFacet({scope:'current',field:'worlds'});
+  assert.equal(initial.matchedItems,2);
+  assert.deepEqual(initial.values,[]);
+  assert.deepEqual(initial.states,{
+    verified:0,not_applicable:0,unverified:2,not_covered:0
+  });
+  const history=db.summarizeFacet({scope:'historical_candidate',field:'worlds'});
+  assert.deepEqual(history.values,[
+    {value:'Eternity',itemCount:1},{value:'Valley',itemCount:1}
+  ]);
+  assert.equal(history.candidateItems,1);
+  assert.equal(history.missingCandidates,1);
+  assert.equal(db.summarizeFacet({scope:'current',field:'worlds'},
+    [{scope:'historical_candidate',field:'worlds',values:['Valley']}])
+    .states.unverified,1,'historical values must not verify current memberships');
+
+  await attach(db,pack('classify','DB-01',[{itemId:'40005160',facts:[
+    {field:'worlds',state:'verified',value:['Valley','Eternity']},
+    {field:'universes',state:'verified',value:['Frozen','Alice']}
+  ]}]));
+  await attach(db,pack('events','DB-03',[{itemId:'40005160',facts:[
+    {field:'events',state:'verified',value:['SeasonA','SeasonB']}
+  ]}]));
+  const worlds=db.summarizeFacet({scope:'current',field:'worlds'});
+  assert.deepEqual(worlds.values,[
+    {value:'Eternity',itemCount:1},{value:'Valley',itemCount:1}
+  ]);
+  assert.deepEqual(worlds.states,{
+    verified:1,not_applicable:0,unverified:1,not_covered:0
+  });
+  assert.deepEqual(db.summarizeFacet({scope:'current',field:'events'},
+    [{scope:'current',field:'universes',values:['Frozen']}]).values,[
+      {value:'SeasonA',itemCount:1},{value:'SeasonB',itemCount:1}
+    ]);
+  assert.equal(db.summarizeFacet({scope:'current',field:'events'},
+    [{scope:'current',field:'worlds',values:['NotPresent']}]).matchedItems,0);
+  assert.equal(db.summarizeFacet({scope:'historical_candidate',field:'worlds'},
+    [{scope:'current',field:'worlds',values:['Valley']}]).candidateItems,1);
+  assert.ok(Object.isFrozen(worlds));
+  assert.ok(Object.isFrozen(worlds.values));
+  assert.ok(Object.isFrozen(worlds.states));
+  assert.throws(()=>db.summarizeFacet({scope:'current',field:'media'}),
+    /INVALID_FACET_REQUEST/);
+  assert.throws(()=>db.summarizeFacet({scope:'historical_candidate',field:'events'}),
+    /INVALID_FACET_REQUEST/);
+  assert.throws(()=>db.summarizeFacet({scope:'current',field:'worlds'},
+    Array.from({length:17},()=>({scope:'current',field:'worlds',state:'verified'}))),
+    /INVALID_QUERY_FILTERS/);
+});
+
+test('public Steam facets refuse to convert unknown World into a filter option',async()=>{
+  const root=resolve(new URL('..',import.meta.url).pathname);
+  const local=async(url)=>{
+    try{return new Response(await readFile(join(root,'static',url.replace(/^\\/Wand\\/,''))),{status:200});}
+    catch(e){if(e?.code==='ENOENT')return new Response('',{status:404});throw e;}
+  };
+  const db=await openSharedGameDatabase('/Wand',local);
+  const summary=db.summarizeFacet({scope:'current',field:'worlds'});
+  assert.equal(summary.matchedItems,13202);
+  assert.equal(summary.states.unverified,13202);
+  assert.deepEqual(summary.values,[]);
+});
