@@ -301,6 +301,8 @@
     finally{input.value='';}
   }
   onMount(()=>{
+    const toggleHeaderFilters=()=>{filtersOpen=!filtersOpen;};
+    window.addEventListener('wand:collection-filters',toggleHeaderFilters);
     const handleHeaderBackup=()=>downloadBackup();
     window.addEventListener('wand:collection-backup',handleHeaderBackup);
     const unwatchLanguage=watchWandLanguage(next=>{
@@ -328,7 +330,7 @@
       }catch(error){if(alive)loadError=error instanceof Error?error.message:String(error);}
       finally{if(alive)loading=false;}
     })();
-    return()=>{alive=false;unwatchLanguage();window.removeEventListener('wand:collection-backup',handleHeaderBackup);media.removeEventListener('change',changed);runtime?.close();};
+    return()=>{alive=false;unwatchLanguage();window.removeEventListener('wand:collection-backup',handleHeaderBackup);window.removeEventListener('wand:collection-filters',toggleHeaderFilters);media.removeEventListener('change',changed);runtime?.close();};
   });
   function beginSaveRead():void {
     // Preserve the active workspace and runtime at file selection, not at
