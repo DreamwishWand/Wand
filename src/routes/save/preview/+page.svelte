@@ -1,5 +1,6 @@
 <script lang="ts">
-  import {onDestroy} from 'svelte';
+  import {onDestroy,onMount} from 'svelte';
+  import {localSaveSession,selectLocalSaveFile,closeLocalSaveFile} from '$lib/ui/local-save-session';
   import {base} from '$app/paths';
   import type {Db00ItemContext} from '../../../lib/save/common-db-context';
   import type {SavedGridItemReference} from '../../../lib/save/save-world-db04-context';
@@ -8,6 +9,8 @@
   // Development-only local editor: preview is metadata-only, and explicit
   // edited-copy export never overwrites the source. No production Writer.
   let fileInput:HTMLInputElement|null=null;
+  let activeFile:File|null=null;
+  let knownSaveRevision=-1;
   let kind:'inventory'|'chest'='inventory';
   let inventoryId='100';
   let itemId='550';
@@ -349,7 +352,7 @@
     const target:EditTarget=kind==='inventory'
       ? {kind,inventoryId,itemId}
       : {kind,containerId,slotIndex:Number(slotIndex),itemId:Number(chestItemId)};
-    const format:'json'|'auto'=fileInput?.files?.[0]?.name.toLowerCase().endsWith('.json')?'json':'auto';
+    const format:'json'|'auto'=activeFile?.name.toLowerCase().endsWith('.json')?'json':'auto';
     return {expected:old,replacement:next,target,format,
       signature:JSON.stringify({expected:old,replacement:next,target,format})};
   }
@@ -376,9 +379,13 @@
     dbWorker?.terminate();
     catalogRevision++;
   });
-  function onFileChange(){
+  function adoptSharedSave(file:File|null):void{
     if(fileSelected)queuedEdits=[];
-    fileSelected=Boolean(fileInput?.files?.[0]);
+    fileSelected=file!==null;
+    activeFile=file;
+    // Do not leave an obsolete native filename visible when the shared
+    // selection changed via Home, the header, or full-screen drag/drop.
+    if(fileInput && fileInput.files?.[0]!==file)fileInput.value='';
     cancel();
     result=null;
     dbWorker?.terminate();dbWorker=null;catalogRevision++;
@@ -395,6 +402,23 @@
     db03Summary=null;db03State='idle';
     dbMap=new Map();dbStatus='idle';
   }
+  function onFileChange():void{
+    const file=fileInput?.files?.[0]??null;
+    if(file)selectLocalSaveFile(file);
+    else closeLocalSaveFile();
+  }
+  onMount(()=>{
+    return localSaveSession.subscribe(session=>{
+      if(session.revision===knownSaveRevision)return;
+      knownSaveRevision=session.revision;
+      if(session.file===activeFile)return;
+      const fromLocalPicker=fileInput?.files?.[0]===session.file;
+      adoptSharedSave(session.file);
+      // If chosen in another service, make the preview useful immediately
+      // using the existing Rust/WASM Worker, with no extra picker or parser.
+      if(session.file&&!fromLocalPicker)void loadSavedSlots();
+    });
+  });
   function selectSavedSlot(slot:EditableSlot){
     cancel();
     result=null;
@@ -448,7 +472,7 @@
     cancel();result=null;
     db03Summary=null;db03State='idle';
     const save=savedSlotsFile;
-    if(!save||fileInput?.files?.[0]!==save||
+    if(!save||activeFile!==save||
        save.size<1||save.size>MAX_BYTES){
       db03State='error';return;
     }
@@ -505,7 +529,7 @@
     db04State='idle';db04Match=null;db04ObjectSources=[];
     const save=savedSlotsFile;
     const source=db04Input?.files?.[0];
-    if(!save||fileInput?.files?.[0]!==save ||
+    if(!save||activeFile!==save ||
        !source||source.size<1||source.size>64*1024*1024||
        save.size<1||save.size>MAX_BYTES){
       db04State='error';return;
@@ -582,7 +606,7 @@
     gridInstances=[];instanceStatus='not_observed';instanceSampled=false;
     instanceState='idle';
     const save=savedSlotsFile;
-    if(!save||fileInput?.files?.[0]!==save||
+    if(!save||activeFile!==save||
        save.size<1||save.size>MAX_BYTES){
       instanceState='error';return;
     }
@@ -648,7 +672,7 @@
     const edits=batchMode
       ?coordinateQueue.map(p=>({...p}))
       :mixedMode?mixedQueue.map(p=>({...p})):null;
-    if(!file||fileInput?.files?.[0]!==file||
+    if(!file||activeFile!==file||
        (batchMode||mixedMode
           ?(!edits||!edits.length||edits.length>16):!plan)||
        file.size<1||file.size>MAX_BYTES){
@@ -739,7 +763,7 @@
         :saved.mode==='mixed'
         ?JSON.stringify(mixedQueue)!==saved.signature
         :!plan||JSON.stringify(plan)!==saved.signature)||
-       fileInput?.files?.[0]!==saved.file||
+       activeFile!==saved.file||
        savedSlotsFile!==saved.file){
       invalidateCoordinateEdit();coordinateState='error';return;
     }
@@ -824,7 +848,7 @@
     const plan=selectedOrientationPlan();
     cancel();result=null;
     const file=savedSlotsFile;
-    if(!file||fileInput?.files?.[0]!==file||!plan||
+    if(!file||activeFile!==file||!plan||
        file.size<1||file.size>MAX_BYTES){
       orientationState='error';return;
     }
@@ -880,7 +904,7 @@
     if(processing||orientationState!=='validated'||!orientationSnapshot)return;
     const saved=orientationSnapshot,plan=selectedOrientationPlan();
     if(!plan||JSON.stringify(plan)!==saved.signature||
-       fileInput?.files?.[0]!==saved.file||
+       activeFile!==saved.file||
        savedSlotsFile!==saved.file){
       invalidateOrientationEdit();orientationState='error';return;
     }
@@ -955,7 +979,7 @@
 
   async function loadSavedSlots(){
     cancel();result=null;
-    const file=fileInput?.files?.[0];
+    const file=activeFile;
     if(!file||file.size<1||file.size>MAX_BYTES){
       slotState='error';return;
     }
@@ -1064,7 +1088,7 @@
   async function preview(batchMode:boolean=false){
     cancel();
     result=null;
-    const file=fileInput?.files?.[0];
+    const file=activeFile;
     const old=uint32(expected),next=uint32(replacement);
     if(!file||!file.size||file.size>MAX_BYTES||
       (batchMode
@@ -1154,7 +1178,7 @@
       result='error';return;
     }
     const current=parameters();
-    if(fileInput?.files?.[0]!==snapshot.file||
+    if(activeFile!==snapshot.file||
        (snapshot.mode==='single'
          ? current.signature!==snapshot.signature
          : batchSignature()!==snapshot.signature)){
@@ -1254,6 +1278,9 @@
         aria-label="検証用セーブファイル" disabled={processing}
         on:change={onFileChange} />
     </label>
+    {#if activeFile}
+      <p class="active-save-file" title={activeFile.name}>{activeFile.name}</p>
+    {/if}
     <label>対象
       <select bind:value={kind} aria-label="対象の種類" disabled={processing}>
         <option value="inventory">Inventory</option>
@@ -1276,8 +1303,7 @@
     <button type="button" class="secondary" on:click={queueCurrentEdit}
       disabled={processing||queuedEdits.length>=16}>複数編集に追加</button>
     <button type="button" class="secondary" on:click={()=>{
-      onFileChange();queuedEdits=[];if(fileInput)fileInput.value='';
-      fileSelected=false;
+      closeLocalSaveFile();if(fileInput)fileInput.value='';
     }}>
       破棄
     </button>
@@ -1764,6 +1790,7 @@
 
 <style>
   .dev-preview{max-width:1100px;margin:0 auto;padding:clamp(24px,5vw,60px);color:#f5ebfb;}
+  .active-save-file{flex:1 1 100%;margin:0;padding:6px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:#e5d5f1;}
   .eyebrow{font-size:11px;letter-spacing:.17em;color:#d4b0ee;}
   h1{font-size:clamp(26px,4vw,42px);margin:12px 0;}
   p{line-height:1.7;color:#c6b5d4;font-size:14px;}
