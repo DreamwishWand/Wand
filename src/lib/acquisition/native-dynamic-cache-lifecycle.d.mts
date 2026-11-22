@@ -22,6 +22,9 @@ export interface NativeDynamicCacheLifecycle {
   readonly originalNativeProtoDatabaseRefreshCallsLoadBinary:true;
   readonly originalNativeLoadBinaryResolvesSerializedType:true;
   readonly originalNativeExportForBuildCallsSaveBinary:true;
+  readonly originalNativeSaveBinaryChecksProtoDescMessageRuntimeType:true;
+  readonly originalNativeSaveBinaryHasConditionalInterfaceSlotDispatch:true;
+  readonly originalSaveBinaryDispatchedInterfaceIdentityVerified:false;
   readonly originalNativeTrySellPriceUsesProtoDatabaseEnumerator:true;
   readonly originalNativeDirectTransfersToOnBinarize:0;
   readonly originalNativeDirectTransfersToCacheData:1;
