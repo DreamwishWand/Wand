@@ -32,12 +32,25 @@ export interface Db01TagManifest {
   readonly worldAvailabilityVerified:false; readonly dlcOwnershipVerified:false;
   readonly files:Readonly<Record<string,Readonly<{sha256:string;bytes:number;count:number}>>>;
 }
+export interface Db01FieldCoverage {
+  readonly verified:number; readonly unverified:number;
+}
+export interface Db01ClassificationCoverage {
+  readonly totalDefinitions:number;
+  readonly anyOriginalTag:Readonly<Db01FieldCoverage>;
+  readonly facets:Readonly<Record<Db01TagFacet,Readonly<Db01FieldCoverage>>>;
+  readonly gameUiCategory:Readonly<Db01FieldCoverage>;
+  readonly dlcOwnership:Readonly<Db01FieldCoverage>;
+  readonly worldAvailability:Readonly<Db01FieldCoverage>;
+  readonly interpretedSubtype:Readonly<Db01FieldCoverage>;
+}
 export interface Db01ClassificationClient {
   readonly source:Readonly<Pick<Db01TagManifest,
     'gameVersion'|'sourceItemsSha256'|'sourceSqliteSha256'|'tagOriginalSha256'|
     'definitionCount'|'taggedDefinitions'|'facetCoverage'|'privateOnly'>>;
   getItem(id:number):Promise<Readonly<Db01Classification>|null>;
   getItems(ids:readonly number[]):Promise<readonly (Readonly<Db01Classification>|null)[]>;
+  getCoverage():Readonly<Db01ClassificationCoverage>;
 }
 const SHA=/^[a-f0-9]{64}$/;
 const VERSION=/^\d+\.\d+\.\d+$/;
@@ -189,11 +202,23 @@ export function createDb01ClassificationClient(raw:unknown,loadBytes:Db01LoadByt
     for(let i=0;i<ids.length;i++)matched(base[i],result[i]);
     return result;
   }
+  const coverageFor=(verified:number):Readonly<Db01FieldCoverage>=>Object.freeze({
+    verified,unverified:m.definitionCount-verified,
+  });
+  const facetCoverage=Object.freeze(Object.fromEntries(DB01_TAG_FACETS.map(name=>
+    [name,coverageFor(m.facetCoverage[name]??0)]))) as
+    Readonly<Record<Db01TagFacet,Readonly<Db01FieldCoverage>>>;
+  const unverified=coverageFor(0);
+  const coverage:Readonly<Db01ClassificationCoverage>=Object.freeze({
+    totalDefinitions:m.definitionCount,anyOriginalTag:coverageFor(m.taggedDefinitions),
+    facets:facetCoverage,gameUiCategory:unverified,dlcOwnership:unverified,
+    worldAvailability:unverified,interpretedSubtype:unverified,
+  });
   return Object.freeze({
     source:Object.freeze({gameVersion:m.gameVersion,sourceItemsSha256:m.sourceItemsSha256,
       sourceSqliteSha256:m.sourceSqliteSha256,tagOriginalSha256:m.tagOriginalSha256,
       definitionCount:m.definitionCount,taggedDefinitions:m.taggedDefinitions,
       facetCoverage:m.facetCoverage,privateOnly:m.privateOnly}),
-    getItem,getItems,
+    getItem,getItems,getCoverage:()=>coverage,
   });
 }
