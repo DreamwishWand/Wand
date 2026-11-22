@@ -100,10 +100,9 @@ export function verifyPublicQuestTargetReverse(raw:unknown,catalog:unknown):Publ
       const role=roleFlag===0?'direct' as const:'alternative' as const;
       if(roleFlag===0)direct++;else alternative++;
       questSet.add(questId);
-      const row:Object=Object.freeze({itemId,questId,step,subStep,objectiveIndex,
+      const ref:QuestTargetItemReference=Object.freeze({itemId,questId,step,subStep,objectiveIndex,
         selectorIndex,candidateIndex,role,sourceCandidateOnly:true as const,
         mandatoryRequirementVerified:false as const,playerProgressVerified:false as const});
-      const ref=row as QuestTargetItemReference;
       rows.push(ref);
       const all=byQuest.get(questId)??[];all.push(ref);byQuest.set(questId,all);
       total++;
