@@ -3,9 +3,10 @@
   import {base} from '$app/paths';
   import {loadPublicStarpath} from '$lib/guide/public-starpath.mjs';
   import {loadStarpathWeeklyLocales,starpathWeeklyDescription} from '$lib/guide/public-starpath-locales.mjs';
+  import {loadStarpathDailyLocales,starpathDailyDescription} from '$lib/guide/public-starpath-daily.mjs';
   import {starpathRewardName} from '$lib/guide/starpath-reward-names.mjs';
 
-  let catalog:any=null, weeklyLocales:any=null, error='', loading=true;
+  let catalog:any=null, weeklyLocales:any=null, dailyLocales:any=null, error='', loading=true;
   let locale='ja';
   const languages=[['ja','日本語'],['en','English'],['fr','Français'],['it','Italiano'],['de','Deutsch'],['es-ES','Español'],['pt-BR','Português'],['zh-CN','简体中文']];
   let selectedId='HauntingElegance2026';
@@ -13,7 +14,8 @@
   let query='';
   let limit=60;
   $: season=catalog?.seasons?.find((s:any)=>s.id===selectedId);
-  $: filtered=season?.tasks?.filter((t:any)=>(t.description||t.descriptionKey||'').toLowerCase().includes(query.toLowerCase().trim())
+  $: filtered=season?.tasks?.filter((t:any)=>(starpathDailyDescription(dailyLocales,season.id,t.id,locale)||t.description||'').toLowerCase().includes(query.toLowerCase().trim())
+      ||(t.description||'').toLowerCase().includes(query.toLowerCase().trim())
       ||t.id.toLowerCase().includes(query.toLowerCase().trim())
       ||t.objectiveKind.toLowerCase().includes(query.toLowerCase().trim()))||[];
   function date(value:string){
@@ -28,7 +30,10 @@
     loading=true;error='';
     try{
       catalog=await loadPublicStarpath(`${base}/guide/public/starpath-cache-2026-11-22.json`);
-      weeklyLocales=await loadStarpathWeeklyLocales(`${base}/guide/public/starpath-weekly-locales-2026-11-22.json`,catalog);
+      [weeklyLocales,dailyLocales]=await Promise.all([
+        loadStarpathWeeklyLocales(`${base}/guide/public/starpath-weekly-locales-2026-11-22.json`,catalog),
+        loadStarpathDailyLocales(`${base}/guide/public/`,catalog.seasons)
+      ]);
     }
     catch(e){error=e instanceof Error?e.message:String(e)}
     finally{loading=false;}
@@ -45,7 +50,7 @@
     <div class="eyebrow">DREAMWISH WAND · GUIDE</div>
     <h1>スターパスガイド</h1>
     <p>Steam v1.26.2環境で保存された、2026年11月22日時点のキャッシュに基づく静的定義です。</p>
-    <p class="disclaimer">キャッシュは開催中であること、タスクが解放済みであること、アイテムを所持していることの証明ではありません。通常タスクの説明はキャッシュ原文（英語）、週間タスクと確認済み報酬名はゲーム原本の8言語に対応しています。</p>
+    <p class="disclaimer">キャッシュは開催中であること、タスクが解放済みであること、アイテムを所持していることの証明ではありません。通常タスク146件・週間タスク39件の説明と確認済み報酬名はゲーム原本の8言語に対応しています。</p>
   </header>
   {#if loading}
     <p role="status">キャッシュ定義を検証しています…</p>
@@ -80,7 +85,7 @@
         </div>
         <ul class="entries">
           {#each filtered.slice(0,limit) as t (t.id)}
-            <li><strong lang="en">{t.description||'説明未確認'}</strong><small>{t.objectiveKind} · {t.id} · {t.tokenReward} {season.currencyName}{t.availableOnDay!==undefined?' · 解放設定日 '+t.availableOnDay:''}</small></li>
+            <li><strong>{starpathDailyDescription(dailyLocales,season.id,t.id,locale)||'説明未確認'}</strong><small>{t.objectiveKind} · {t.id} · {t.tokenReward} {season.currencyName}{t.availableOnDay!==undefined?' · 解放設定日 '+t.availableOnDay:''}</small></li>
           {/each}
         </ul>
         {#if filtered.length>limit}<button class="more" on:click={()=>limit+=60}>さらに表示</button>{/if}
