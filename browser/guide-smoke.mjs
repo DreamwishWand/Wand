@@ -125,6 +125,8 @@ try {
   await star.getByRole('button',{name:'報酬'}).click();
   assert.equal(await star.locator('.week').count(),4);
   assert.match(await star.locator('.week').first().innerText(),/アクアマーメイドバックパック/);
+  await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('en');
+  assert.match(await star.locator('.week').first().innerText(),/Aqua Mermaid Backpack/);
   assert.equal(await star.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+2),true,'Star Path mobile overflow');
   assert.deepEqual(starErrors,[],starErrors.join('\n'));
   await star.close();
