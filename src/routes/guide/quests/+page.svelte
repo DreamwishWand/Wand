@@ -1,7 +1,7 @@
 <script lang="ts">
   import {onMount} from 'svelte';
   import {base} from '$app/paths';
-  import {PUBLIC_GUIDE_LOCALES,verifyPublicQuestIndex,filterPublicQuests,loadPublicQuestPart,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
+  import {PUBLIC_GUIDE_LOCALES,verifyPublicQuestIndex,filterPublicQuests,findPublicQuestByLink,loadPublicQuestPart,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
   import {loadPublicQuestTargetsIndex,loadPublicQuestTargetsPart,itemTargetName,originalTargetLookup} from '$lib/guide/public-targets.mjs';
 
   const LANG:Record<string,string>={ja:'日本語',en:'English',fr:'Français',it:'Italiano',de:'Deutsch','es-ES':'Español','zh-CN':'简体中文','pt-BR':'Português'};
@@ -68,6 +68,20 @@
     }finally{if(ticket===selectionTicket)targetLoading=false;}
   }
 
+  // Deep links resolve against authenticated quest IDs, never an unverified URL
+  // value. Back/forward navigation restores the matching quest without
+  // fetching unrelated or duplicate detail partitions.
+  function restoreAddressSelection() {
+    if(!catalog)return;
+    const row=findPublicQuestByLink(catalog,window.location.search);
+    if(row){
+      if(selectedRow?.id!==row.id)void openQuest(row,false);
+    }else if(selectedRow){
+      selectionTicket++;
+      selectedRow=null;selected=null;detailError='';detailLoading=false;
+      targetLookup={};targetError='';targetLoading=false;
+    }
+  }
   async function loadCatalog() {
     loading=true;loadError='';
     try {
@@ -75,14 +89,26 @@
       if(!res.ok) throw new Error(`HTTP ${res.status}`);
       const data=await res.json();
       catalog=verifyPublicQuestIndex(data);
+      restoreAddressSelection();
     }catch(e){loadError=e instanceof Error?e.message:String(e)}
     finally {loading=false}
   }
-  onMount(()=>{void loadCatalog()});
+  onMount(()=>{
+    window.addEventListener('popstate',restoreAddressSelection);
+    void loadCatalog();
+    return ()=>window.removeEventListener('popstate',restoreAddressSelection);
+  });
 
-  async function openQuest(row:any) {
+  async function openQuest(row:any,updateAddress=true) {
     const ticket=++selectionTicket;
     selectedRow=row;selected=null;detailError='';detailLoading=true;
+    if(updateAddress){
+      const url=new URL(window.location.href);
+      if(url.searchParams.getAll('quest').length!==1||url.searchParams.get('quest')!==row.id){
+        url.searchParams.set('quest',row.id);
+        window.history.pushState(window.history.state,'',url);
+      }
+    }
     targetLookup={};targetLoading=false;targetError='';
     try {
       let part=cached.get(row.detailPart);
@@ -140,7 +166,7 @@
         {#if !selectedRow}
           <p class="placeholder">左の一覧からクエストを選択してください。</p>
         {:else}
-          <div class="detail-header"><span>クエストID {selectedRow.id}</span><h2>{questName(selectedRow,locale)}</h2><p>{characterName(selectedRow.characterId,locale)}</p></div>
+          <div class="detail-header"><span>クエストID {selectedRow.id}</span><h2>{questName(selectedRow,locale)}</h2><p>{characterName(selectedRow.characterId,locale)}</p><a class="quest-permalink" href={`${base}/guide/quests/?quest=${selectedRow.id}`}>このクエストへの直接リンク</a></div>
           {#if detailLoading}<p class="status">目標データを検証しています…</p>{/if}
           {#if detailError}<p class="error" role="alert">{detailError}</p>{/if}
           {#if selected}
@@ -214,6 +240,7 @@
   button{cursor:pointer}.load-more{width:100%;padding:11px;border:1px solid #665180;border-radius:9px;background:#342646;color:#f3e6ff;margin-top:10px}
   .detail{position:sticky;top:16px;max-height:calc(100vh - 28px);overflow:auto;scrollbar-width:thin}.placeholder,.empty{color:#ac9dbb;padding:20px 4px}
   .detail-header{border-bottom:1px solid #514260;padding:0 0 16px;margin-bottom:16px}.detail-header span{font-size:11px;color:#b79aca}.detail-header h2{font-size:22px;margin:7px 0}.detail-header p{font-size:13px;color:#c9b8db;margin:0}
+  .quest-permalink{display:inline-block;margin-top:10px;font-size:12px;color:#d5b4ff;text-underline-offset:3px}
   .detail-stats{display:flex;flex-wrap:wrap;gap:8px;font-size:12px;color:#d6c1e5;margin-bottom:17px}.detail-stats span{padding:5px 9px;border-radius:8px;background:#30243f}
   .step{border-top:1px solid #40344b;padding:13px 0}.step h3{font-size:15px;margin:0 0 8px}.step p{font-size:13px;color:#c2b4cb}.step ol{margin:0;padding-left:25px}.step li{padding:6px 0 8px;font-size:14px}.step li small{display:block;color:#9588a5;font-size:11px;margin-top:3px}
   .source-amount{color:#c2addc!important}.target-status{color:#c9b0e6;font-size:12px}

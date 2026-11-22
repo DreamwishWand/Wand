@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {verifyPublicQuestIndex,filterPublicQuests,verifyPublicQuestPart,loadPublicQuestPart,formatPublicGuideText} from '../src/lib/guide/public-guide.mjs';
+import {verifyPublicQuestIndex,filterPublicQuests,findPublicQuestByLink,verifyPublicQuestPart,loadPublicQuestPart,formatPublicGuideText} from '../src/lib/guide/public-guide.mjs';
 import {readFile} from 'node:fs/promises';
 const fixture=new URL('../static/guide/public/', import.meta.url);
 const local=name=>new URL(name,fixture);
@@ -13,6 +13,16 @@ test('actual original-derived public catalog has 733 named missions, 8 locale co
   assert.equal(filterPublicQuests(index,{query:'ドリームライトバレーへようこそ'}).total,1);
   assert(filterPublicQuests(index,{query:'Welcome to Dreamlight Valley',locale:'ja'}).total>=1);
   assert.equal(filterPublicQuests(index,{objective:'__NEVER__'}).total,0);
+});
+test('public quest deep links resolve only exactly one authenticated native quest ID',async()=>{
+  index ||= verifyPublicQuestIndex(JSON.parse(await readFile(local('quest-index.json'),'utf8')));
+  const match=findPublicQuestByLink(index,'?utm_source=collection&quest=2070000620');
+  assert.equal(match?.id,'2070000620');
+  assert.equal(findPublicQuestByLink(index,'?quest=2070000620&quest=2070000688'),null);
+  assert.equal(findPublicQuestByLink(index,'?quest=9999999999999999'),null);
+  assert.equal(findPublicQuestByLink(index,'?quest=2070000620%20'),null);
+  assert.equal(findPublicQuestByLink(index,'?quest=<script>'),null);
+  assert.equal(findPublicQuestByLink(index,'?unrelated=1'),null);
 });
 test('all eight original-derived public detail parts have exact native census and record membership',async()=>{
   index ||= verifyPublicQuestIndex(JSON.parse(await readFile(local('quest-index.json'),'utf8')));

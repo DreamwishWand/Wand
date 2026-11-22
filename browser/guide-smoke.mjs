@@ -85,7 +85,25 @@ try {
   assert.equal(await page.locator('.detail .step').count(), 0, 'corrupted content must never render');
   assert.deepEqual(errors, [], errors.join('\n'));
   await page.close();
-  console.log('Public Guide browser: static index, lazy details, 8-language UI, mobile width, SHA tamper rejection passed');
+
+  // Direct links from Collection/DB-02 resolve only from the verified index.
+  // Clicking another quest updates the URL, and back restores the original.
+  const direct = await browser.newPage();
+  const deepErrors = [];
+  direct.on('pageerror',error=>deepErrors.push(String(error)));
+  await direct.goto(url+'?quest=2070000620',{waitUntil:'domcontentloaded'});
+  await direct.locator('.detail .step').first().waitFor({timeout:20000});
+  assert.match(await direct.locator('.detail-header').innerText(),/ドリームライトバレーへようこそ/);
+  assert.equal(await direct.locator('.quest-permalink').getAttribute('href'),'/Wand/guide/quests/?quest=2070000620');
+  await direct.getByRole('textbox',{name:'クエスト名・IDを検索'}).fill('2070000688');
+  await direct.locator('.quest-row').first().click();
+  await direct.waitForFunction(()=>location.search.includes('quest=2070000688'));
+  await direct.goBack();
+  await direct.waitForFunction(()=>location.search.includes('quest=2070000620'));
+  await direct.locator('.detail-header h2').filter({hasText:'ドリームライトバレーへようこそ'}).waitFor({timeout:20000});
+  assert.deepEqual(deepErrors,[],deepErrors.join('\n'));
+  await direct.close();
+  console.log('Public Guide browser: verified static index, lazy details, multi-language labels, target IDs, mobile layout, tamper rejection, quest deep links and history passed');
 } finally {
   await browser?.close();
   server.kill('SIGTERM');
