@@ -437,7 +437,8 @@ mod browser_amount_preview {
     use ddv_save_patch::{
         preview_existing_quantity,preview_existing_quantity_batch,
         preview_existing_grid_coordinates,preview_existing_grid_coordinate_batch,
-        preview_existing_grid_orientation,GridCoordinateEdit,QuantityEdit,QuantityTarget
+        preview_existing_grid_orientation,preview_existing_grid_transform,
+        GridCoordinateEdit,QuantityEdit,QuantityTarget
     };
     use wasm_bindgen::prelude::*;
 
@@ -648,6 +649,49 @@ mod browser_amount_preview {
             expected_orientation:original.to_owned(),
             replacement_orientation:replacement.to_owned()
         })
+    }
+
+    /// Only combines the already proven seven-field position and seven-field
+    /// cardinal orientation plans. No raw Save grid or object keys are accepted.
+    fn parse_grid_transform_plan(
+        plan:&str
+    )->Result<(GridCoordinatePlan,GridOrientationPlan),JsValue>{
+        if plan.len()>768||plan.is_empty()||
+           ddv_save_patch::validate_json_without_edit(plan).is_err(){
+            return Err(fail("DB05_GRID_TRANSFORM_PLAN_INVALID"));
+        }
+        let raw:serde_json::Value=serde_json::from_str(plan)
+            .map_err(|_|fail("DB05_GRID_TRANSFORM_PLAN_INVALID"))?;
+        let map=raw.as_object().ok_or(fail("DB05_GRID_TRANSFORM_PLAN_INVALID"))?;
+        if map.len()!=9||![
+            "localOrdinal","itemId","recordKind","expectedX","expectedY",
+            "replacementX","replacementY","expectedOrientation",
+            "replacementOrientation"
+        ].iter().all(|k|map.contains_key(*k)){
+            return Err(fail("DB05_GRID_TRANSFORM_PLAN_INVALID"));
+        }
+        let coord=serde_json::json!({
+            "localOrdinal":map["localOrdinal"],"itemId":map["itemId"],
+            "recordKind":map["recordKind"],"expectedX":map["expectedX"],
+            "expectedY":map["expectedY"],"replacementX":map["replacementX"],
+            "replacementY":map["replacementY"]
+        });
+        let orient=serde_json::json!({
+            "localOrdinal":map["localOrdinal"],"itemId":map["itemId"],
+            "recordKind":map["recordKind"],"expectedX":map["expectedX"],
+            "expectedY":map["expectedY"],
+            "expectedOrientation":map["expectedOrientation"],
+            "replacementOrientation":map["replacementOrientation"]
+        });
+        let c=parse_grid_coordinate_plan(
+            &serde_json::to_string(&coord)
+                .map_err(|_|fail("DB05_GRID_TRANSFORM_PLAN_INVALID"))?
+        )?;
+        let o=parse_grid_orientation_plan(
+            &serde_json::to_string(&orient)
+                .map_err(|_|fail("DB05_GRID_TRANSFORM_PLAN_INVALID"))?
+        )?;
+        Ok((c,o))
     }
 
     const MAX_DB04_WITNESS_BYTES:usize=16*1024*1024;
@@ -1315,6 +1359,48 @@ mod browser_amount_preview {
             if !draft.changed||!draft.untouched_bytes_preserved||
                draft.writer_authorized||draft.export_authorized{
                 return Err(fail("DB05_ORIENTATION_UNAUTHORIZED"));
+            }
+            self.prepare_copy_from_patched(draft.patched_json,true)
+        }
+
+        /// Simultaneous X/Y + cardinal orientation edit on exactly one
+        /// existing object. Neither input nor receipt carries private Grid IDs.
+        pub fn preview_grid_transform(&mut self,plan:&str)->Result<String,JsValue>{
+            self.prepare_grid_transform_copy(plan)?;
+            Ok(r#"{"contract":"wand.db05.grid-transform-preview@1",
+              "changed":true,"lexicalBytesPreserved":true,
+              "reopenVerified":true,"writerAuthorized":false,
+              "exportAuthorized":false,"placementLegalityVerified":false}"#
+                .to_owned())
+        }
+
+        /// Only an explicit experimental COPY can transfer rebuilt P1G bytes.
+        /// The original profile is never changed; any stale original field
+        /// rejects all three token edits before repacking.
+        pub fn prepare_grid_transform_copy(&mut self,plan:&str)->Result<u32,JsValue>{
+            if !self.ready||self.closed||self.copy_prepared{
+                return Err(fail("DB05_GRID_TRANSFORM_SESSION_INVALID"));
+            }
+            let (p,o)=parse_grid_transform_plan(plan)?;
+            let original=match self.kind{
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref()
+                    .ok_or(fail("DB05_GRID_TRANSFORM_SESSION_INVALID"))?
+                    .profile.as_slice()
+            };
+            let target=grid_instance_preview::resolve_grid_orientation_target(
+                original,p.ordinal,p.item_id,p.expected,&p.kind,
+                &o.expected_orientation
+            ).map_err(|_|fail("DB05_GRID_TRANSFORM_STALE_OR_AMBIGUOUS"))?;
+            let json=std::str::from_utf8(original)
+                .map_err(|_|fail("DB05_GRID_TRANSFORM_UTF8_INVALID"))?;
+            let draft=preview_existing_grid_transform(
+                json,target,p.expected,p.replacement,
+                &o.expected_orientation,&o.replacement_orientation
+            ).map_err(|_|fail("DB05_GRID_TRANSFORM_STALE_OR_INVALID"))?;
+            if !draft.changed||!draft.untouched_bytes_preserved||
+               draft.writer_authorized||draft.export_authorized{
+                return Err(fail("DB05_GRID_TRANSFORM_UNAUTHORIZED"));
             }
             self.prepare_copy_from_patched(draft.patched_json,true)
         }
