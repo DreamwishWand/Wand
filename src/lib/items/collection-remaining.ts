@@ -131,21 +131,23 @@ export function validateDb01RemainingManifest(value:unknown):
   check(Object.keys(orig).length===CATEGORIES.length&&
     CATEGORIES.every(cat=>typeof orig[cat]==='string'&&SHA.test(orig[cat] as string)),
     'ORIGINAL_SOURCE_LEDGER');
-  check([value.definitionCount,value.sourceSelectorCount,
+  const numbers=[
+    value.definitionCount,value.sourceSelectorCount,
     value.resolvedActivitySelectors,value.resolvedCraftingSelectors,
     value.sourceMatchedPositiveItemIds,value.sourceMatchedNegativeItemIds,
     value.sourceMatchedCombinedItemIds,value.positiveAssociations,
-    value.negativeAssociations,value.sameGroupActivityPositiveSuppressed]
-    .every(nonneg)&&value.definitionCount>0&&
-    value.sourceSelectorCount===
-      value.resolvedActivitySelectors+value.resolvedCraftingSelectors&&
-    value.sourceMatchedCombinedItemIds>=
-      Math.max(value.sourceMatchedPositiveItemIds,value.sourceMatchedNegativeItemIds)&&
-    value.sourceMatchedCombinedItemIds<=
-      value.sourceMatchedPositiveItemIds+value.sourceMatchedNegativeItemIds&&
-    value.sourceMatchedCombinedItemIds<=value.definitionCount&&
-    value.sourceMatchedPositiveItemIds<=value.positiveAssociations&&
-    value.sourceMatchedNegativeItemIds<=value.negativeAssociations,
+    value.negativeAssociations,value.sameGroupActivityPositiveSuppressed,
+  ];
+  check(numbers.every(nonneg),'INVALID_COUNTS');
+  const [definitionCount,sourceSelectorCount,activitySelectors,
+    craftingSelectors,positiveIds,negativeIds,combinedIds,
+    positiveAssociations,negativeAssociations] =
+    numbers.map(x=>Number(x));
+  check(definitionCount>0&&
+    sourceSelectorCount===activitySelectors+craftingSelectors&&
+    combinedIds>=Math.max(positiveIds,negativeIds)&&
+    combinedIds<=positiveIds+negativeIds&&combinedIds<=definitionCount&&
+    positiveIds<=positiveAssociations&&negativeIds<=negativeAssociations,
     'COUNT_LEDGER');
   check(obj(value.files)&&Object.keys(value.files).length===paths.length&&
     paths.every(path=>Object.prototype.hasOwnProperty.call(value.files,path)),
