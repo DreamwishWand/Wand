@@ -3,6 +3,7 @@
   import {base} from '$app/paths';
   import {PUBLIC_GUIDE_LOCALES,verifyPublicQuestIndex,filterPublicQuests,publicQuestSection,findPublicQuestByLink,loadPublicQuestPart,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
   import {loadPublicQuestTargetsIndex,loadPublicQuestTargetsPart,itemTargetName,originalTargetLookup} from '$lib/guide/public-targets.mjs';
+  import {observeGuideListEnd} from '$lib/guide/auto-load.mjs';
 
   const LANG:Record<string,string>={ja:'日本語',en:'English',fr:'Français',it:'Italiano',de:'Deutsch','es-ES':'Español','zh-CN':'简体中文','pt-BR':'Português'};
   let catalog:any=null;
@@ -18,6 +19,7 @@
   let section:'all'|'story'|'friendship'|'other'='all';
   let objective='';
   let limit=40;
+  let pagingRevision=0;
   let selectionTicket=0;
   const cached=new Map<number,any>();
   const cachedTargets=new Map<number,any>();
@@ -34,7 +36,12 @@
   function label(names:Record<string,string>|null|undefined,fallback='',language='ja') {return formatPublicGuideText(names?.[language]||names?.en||Object.values(names||{})[0]||fallback);}
   function questName(row:any,language:string) {return label(row.names,row.internalName||row.id,language);}
   function characterName(id:string|undefined,language:string) {return label(catalog?.characters?.[id||''],id||'',language);}
-  function setSearch() {limit=40;}
+  function setSearch() {limit=40;pagingRevision++;}
+  function observeMoreQuests(node:HTMLElement){
+    return observeGuideListEnd(node,(showAll:boolean)=>{
+      if(filtered.total>limit)limit=showAll?filtered.total:Math.min(limit+40,filtered.total);
+    });
+  }
   function objectiveText(goal:any,target:any,language:string){
     let value=label(goal.text,goal.type,language);
     if(!target)return value;
@@ -167,7 +174,11 @@
             <small>{characterName(row.characterId,locale)} · {row.id}</small>
           </button>
         {/each}
-        {#if filtered.total>limit}<button class="load-more" on:click={()=>limit+=40}>さらに表示（残り{(filtered.total-limit).toLocaleString()}件）</button>{/if}
+        {#if filtered.total>limit}
+          {#key `${pagingRevision}:${limit}`}
+            <div class="autoload-sentinel" use:observeMoreQuests aria-hidden="true"></div>
+          {/key}
+        {/if}
         {#if filtered.total===0}<p class="empty">該当するクエストはありません。</p>{/if}
       </section>
       <section class="detail" aria-label="クエスト詳細">
@@ -249,7 +260,7 @@
   .count{font-size:12px;color:#bea9ce;margin:1px 4px 12px}
   .quest-row{display:flex;flex-direction:column;align-items:start;text-align:left;width:100%;gap:5px;padding:13px 14px;border:1px solid transparent;border-radius:9px;background:none;color:inherit;cursor:pointer}
   .quest-row:hover,.quest-row.active{background:#302440;border-color:#654b85}.quest-row strong{font-size:14px}.quest-row small{color:#aa9cb7;font-size:11px}
-  button{cursor:pointer}.load-more{width:100%;padding:11px;border:1px solid #665180;border-radius:9px;background:#342646;color:#f3e6ff;margin-top:10px}
+  button{cursor:pointer}.autoload-sentinel{height:1px;width:100%;pointer-events:none}
   .detail{position:sticky;top:16px;max-height:calc(100vh - 28px);overflow:auto;scrollbar-width:thin}.placeholder,.empty{color:#ac9dbb;padding:20px 4px}
   .detail-header{border-bottom:1px solid #514260;padding:0 0 16px;margin-bottom:16px}.detail-header span{font-size:11px;color:#b79aca}.detail-header h2{font-size:22px;margin:7px 0}.detail-header p{font-size:13px;color:#c9b8db;margin:0}
   .quest-permalink{display:inline-block;margin-top:10px;font-size:12px;color:#d5b4ff;text-underline-offset:3px}
