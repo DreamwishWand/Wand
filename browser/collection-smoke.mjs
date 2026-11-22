@@ -131,6 +131,19 @@ try{
   portal.on('pageerror',error=>browserErrors.push(String(error)));
   await portal.goto('http://127.0.0.1:4173/Wand/');
   await portal.locator('.portal-card').filter({hasText:'Collection'}).first().waitFor();
+  const faviconHref=await portal.locator('link[rel="icon"]').getAttribute('href');
+  assert.match(faviconHref,/DreamwishWand_Large\.svg$/);
+  const brand=portal.locator('.shell-brand-mark');
+  assert.equal(await brand.count(),1);
+  assert.equal(await brand.getAttribute('aria-hidden'),'true');
+  assert.match(await brand.locator('img').getAttribute('src'),/DreamwishWand\.svg$/);
+  assert.equal(await brand.locator('a,button').count(),0,'the logo is decoration, not navigation');
+  assert.equal(await portal.getByRole('link',{name:'ホームへ戻る'}).count(),1);
+  for(const src of [faviconHref,await brand.locator('img').getAttribute('src')]){
+    const fetched=await portal.request.get(new URL(src,portal.url()).href);
+    assert.equal(fetched.status(),200,'the actual supplied brand SVG must be available');
+  }
+
   assert.equal(await portal.locator('.portal-grid .portal-card').count(),7);
   assert.deepEqual(await portal.locator('.portal-grid .portal-card-label strong').allTextContents(),
     ['Decorate','Presets','Gallery','DreamSnaps','Collection','Guide','Community Help Center']);

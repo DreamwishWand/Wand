@@ -133,6 +133,7 @@
 }}/>
 <div class="site-shell">
   <header class="site-header">
+    <span class="shell-brand-mark" aria-hidden="true"><img src="{base}/DreamwishWand.svg" alt="" width="34" height="34" /></span>
     <a class="header-home-button" href="{base}/" aria-label="ホームへ戻る" title="ホームへ戻る"><WandIcon name="home" size={21}/></a>
     {#if service==='home'}<span class="shell-home-brand">Dreamwish Wand</span>{/if}
     <nav class="shell-nav-root" aria-label="サービスナビゲーション" bind:this={navRoot}>
