@@ -147,7 +147,8 @@ try{
       Grids:{'101':{ID:101,
         GridDefaultLayoutPath:'SceneLayouts/Synthetic/Grid.json',
         GridDataPath:'GridData/Synthetic/Grid.json',Objects:{
-        '1':{ID:1,ItemID:40000001,X:45,PrivateState:'do-not-export'},
+        '1':{ID:1,ItemID:40000001,X:45,Y:9,
+          Orientation:'East',PrivateState:'do-not-export'},
         '2':{ID:2,ItemID:30000031}
       }}},
       DiffGrids:{'102':{ID:102,
@@ -157,7 +158,7 @@ try{
         DefaultGridDataHashCode:-12,
         RemovedObjects:[5],ModifiedObjects:{
         '5':{ID:5,ItemID:40000001},
-        '6':{ID:6,ItemID:40000001}
+        '6':{ID:6,ItemID:40000001,X:-12,Y:8,Orientation:'West'}
       }}}
     }}
   };
@@ -337,6 +338,18 @@ try{
   await worldPanel.getByText('ピュアナイトシャード').waitFor({timeout:30000});
   assert.match(await worldPanel.innerText(),/差分Gridの削除マーカー：1件/);
   assert.match(await worldPanel.innerText(),/所有数・全配置数・配置可否を示すものではありません/);
+  const objects=worldPanel.getByRole('region',{name:'配置オブジェクト'});
+  await objects.getByRole('button',{name:'配置オブジェクトを表示'}).click();
+  await objects.getByRole('status').filter({hasText:'3件'}).waitFor({timeout:30000});
+  assert.match(await objects.innerText(),/X 45 \/ Y 9 · East/);
+  assert.match(await objects.innerText(),/X -12 \/ Y 8 · West/);
+  assert.match(await objects.innerText(),/座標未確認/);
+  assert.match(await objects.innerText(),/配置編集はまだできません/);
+  assert.equal(await objects.getByText('do-not-export').count(),0);
+  await objects.getByLabel('配置アイテム検索').fill('30000031');
+  assert.match(await objects.innerText(),/ピュアナイトシャード/);
+  assert.doesNotMatch(await objects.innerText(),/X -12/);
+  await objects.getByLabel('配置アイテム検索').fill('');
   // Two saved references for sample furniture: one full and one non-removed
   // DiffGrid object, not three (the removed DiffGrid identity is suppressed).
   // Private DB-04 reference index supplied as a local, synthetic file.

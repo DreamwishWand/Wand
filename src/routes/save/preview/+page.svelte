@@ -42,6 +42,30 @@
     'observed_no_item_refs'|'saved_item_refs'='not_observed';
   let worldQuery='';
   let removedGridMarkers=0;
+  type LocalGridInstance={
+    localOrdinal:number;itemId:string;
+    recordKind:'full'|'diff_modified';
+    x:number|null;y:number|null;orientation:string|null;
+    coordinatesObserved:boolean;
+  };
+  type GridInstancesReceipt={
+    contract:'wand.db05.grid-instance-preview@1';
+    status:'not_observed'|'incompatible_structure'|
+      'partial_inconclusive'|'observed_no_item_refs'|'saved_object_instances';
+    observedFullGrids:number;observedDiffGrids:number;
+    scannedObjectRecords:number;notItemReferences:number;
+    invalidRecords:number;removedObjectMarkers:number;
+    rowsMissingCoordinates:number;sampled:boolean;
+    rows:LocalGridInstance[];
+    sourceGridIdentityVerified:false;effectivePlacementVerified:false;
+    legalPlacementVerified:false;stableInstanceIdentityVerified:false;
+    saveWritingAuthorized:false;
+  };
+  let gridInstances:LocalGridInstance[]=[];
+  let instanceState:'idle'|'reading'|'ready'|'error'='idle';
+  let instanceStatus:GridInstancesReceipt['status']='not_observed';
+  let instanceSampled=false;
+  let instanceQuery='';
   let db04Input:HTMLInputElement|null=null;
   type Db04GridMatch={
     contract:'wand.db05.db04-grid-path-match@2';
@@ -89,6 +113,12 @@
     return !query || id.includes(query) ||
       (meta?.name??'').toLocaleLowerCase().includes(query) ||
       (meta?.category??'').toLocaleLowerCase().includes(query);
+  }).slice(0,120);
+  $: visibleGridInstances=gridInstances.filter(row=>{
+    const q=instanceQuery.trim().toLocaleLowerCase();
+    const name=dbMap.get(row.itemId)?.name??'';
+    return !q||row.itemId.includes(q)||
+      name.toLocaleLowerCase().includes(q);
   }).slice(0,120);
   $: visibleWorldRefs=worldRefs.filter(row=>{
     const meta=dbMap.get(row.itemId);
@@ -147,6 +177,8 @@
     savedSlots=[];savedSlotsFile=null;slotState='idle';
     worldRefs=[];worldStatus='not_observed';worldQuery='';
     removedGridMarkers=0;
+    gridInstances=[];instanceState='idle';
+    instanceStatus='not_observed';instanceSampled=false;instanceQuery='';
     db04Match=null;db04State='idle';
     db03Summary=null;db03State='idle';
     dbMap=new Map();dbStatus='idle';
@@ -318,6 +350,66 @@
     }
   }
 
+  async function loadGridInstances(){
+    cancel();result=null;
+    gridInstances=[];instanceStatus='not_observed';instanceSampled=false;
+    instanceState='idle';
+    const save=savedSlotsFile;
+    if(!save||fileInput?.files?.[0]!==save||
+       save.size<1||save.size>MAX_BYTES){
+      instanceState='error';return;
+    }
+    const format:'auto'|'json'=save.name.toLowerCase().endsWith('.json')
+      ?'json':'auto';
+    const request=revision;
+    instanceState='reading';processing=true;
+    let bytes:Uint8Array|null=null;
+    let worker:Worker|null=null;
+    try{
+      bytes=new Uint8Array(await save.arrayBuffer());
+      if(request!==revision)return;
+      worker=new Worker(
+        new URL('../../../lib/save/save-amount-preview.worker.ts',import.meta.url),
+        {type:'module'}
+      );
+      active=worker;
+      const own=worker;
+      const finish=(message:unknown)=>{
+        if(request!==revision||active!==own)return;
+        own.terminate();active=null;processing=false;
+        const r=message as {kind?:string;receipt?:GridInstancesReceipt};
+        const receipt=r?.receipt;
+        if(r?.kind!=='grid-instances'||
+           receipt?.contract!=='wand.db05.grid-instance-preview@1'||
+           receipt.sourceGridIdentityVerified!==false||
+           receipt.effectivePlacementVerified!==false||
+           receipt.legalPlacementVerified!==false||
+           receipt.stableInstanceIdentityVerified!==false||
+           receipt.saveWritingAuthorized!==false||
+           !Array.isArray(receipt.rows)){
+          instanceState='error';return;
+        }
+        gridInstances=receipt.rows;
+        instanceStatus=receipt.status;
+        instanceSampled=receipt.sampled;
+        instanceState='ready';
+      };
+      worker.onmessage=event=>finish(event.data);
+      worker.onerror=event=>{event.preventDefault();finish({kind:'error'});};
+      worker.onmessageerror=()=>finish({kind:'error'});
+      worker.postMessage({command:'inspect-grid-instances',format,bytes},
+        [bytes.buffer]);
+      bytes=null;
+    }catch{
+      if(request===revision){
+        worker?.terminate();active=null;processing=false;
+        instanceState='error';
+      }
+    }finally{
+      if(bytes?.byteLength)bytes.fill(0);
+    }
+  }
+
   async function loadSavedSlots(){
     cancel();result=null;
     const file=fileInput?.files?.[0];
@@ -330,6 +422,7 @@
     if(!format){slotState='error';return;}
     slotState='loading';
     savedSlots=[];savedSlotsFile=null;
+    gridInstances=[];instanceState='idle';instanceQuery='';
     let bytes:Uint8Array|null=null;
     let worker:Worker|null=null;
     const request=revision;
@@ -767,6 +860,58 @@
           removedGridMarkers}件（削除されたItem IDや現在の配置数は特定できません）</p>
       {/if}
       <p class="slot-note">保存されたGrid内の参照です。所有数・全配置数・配置可否を示すものではありません。</p>
+      <section class="grid-instance-preview" aria-label="配置オブジェクト">
+        <div class="slot-actions">
+          <button type="button" on:click={loadGridInstances} disabled={processing}>
+            {instanceState==='reading'?'配置を読み込み中…':'配置オブジェクトを表示'}
+          </button>
+          {#if instanceState==='ready'}
+            <span role="status">{gridInstances.length}件</span>
+          {/if}
+        </div>
+        {#if instanceState==='ready'}
+          {#if gridInstances.length}
+            <input bind:value={instanceQuery} aria-label="配置アイテム検索"
+              placeholder="アイテム名・Item IDを検索" />
+            <ul class="slot-list">
+              {#each visibleGridInstances as object}
+                <li class="world-reference-row">
+                  <span>
+                    <strong>{dbMap.get(object.itemId)?.name??object.itemId}</strong>
+                    <small>#{object.localOrdinal} · {
+                      object.recordKind==='full'?'通常Grid':'差分Grid'}</small>
+                  </span>
+                  <span class="slot-amount">
+                    {#if object.coordinatesObserved}
+                      X {object.x} / Y {object.y}
+                      {#if object.orientation} · {object.orientation}{/if}
+                    {:else}
+                      座標未確認
+                    {/if}
+                  </span>
+                </li>
+              {/each}
+            </ul>
+            {#if gridInstances.length>120&&visibleGridInstances.length===120}
+              <p class="slot-note">アイテム名・Item IDで絞り込めます。</p>
+            {/if}
+          {:else if instanceStatus==='not_observed'}
+            <p class="slot-note">Grid情報はこのセーブにありません。</p>
+          {:else if instanceStatus==='incompatible_structure'}
+            <p class="slot-note">Grid構造を読み取れません。</p>
+          {:else}
+            <p class="slot-note">個別のItem ID参照はありません。</p>
+          {/if}
+          {#if instanceStatus==='partial_inconclusive'||instanceSampled}
+            <p class="slot-note">一部のレコードを確認できませんでした。</p>
+          {/if}
+          <p class="slot-note">セーブ内の個別参照と座標です。
+            現在の配置数・場所の正当性・オブジェクトの一意性は未検証です。
+            配置編集はまだできません。</p>
+        {:else if instanceState==='error'}
+          <p role="alert">配置オブジェクトを読み込めませんでした。</p>
+        {/if}
+      </section>
       <div class="db04-path-check">
         <label>DB-04参照データ（ローカル・任意）
           <input bind:this={db04Input} type="file" accept=".json"
