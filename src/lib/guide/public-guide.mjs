@@ -38,6 +38,17 @@ export function verifyPublicQuestIndex(index) {
   }
   return index;
 }
+/** Resolve a shareable quest URL only after the complete public index is verified.
+ * Unknown, malformed or duplicate quest IDs never select unrelated content.
+ * The link identifies a static source quest, not player unlock/progress state.
+ */
+export function findPublicQuestByLink(index,search='') {
+  verifyPublicQuestIndex(index);
+  if(typeof search!=='string'||search.length>2048)return null;
+  const ids=new URLSearchParams(search).getAll('quest');
+  if(ids.length!==1||!ID.test(ids[0]))return null;
+  return index.quests.find(row=>row.id===ids[0])||null;
+}
 export function filterPublicQuests(index,{query='',locale='ja',character='',objective='',offset=0,limit=40}={}) {
   verifyPublicQuestIndex(index);
   assert(PUBLIC_GUIDE_LOCALES.includes(locale) && typeof query==='string' && query.length<=120 && typeof character==='string' && typeof objective==='string' && Number.isInteger(offset) && offset>=0 && Number.isInteger(limit) && limit>0 && limit<=100,'invalid search');

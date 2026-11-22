@@ -40,3 +40,7 @@ python tools/src-03-guide/guide_public_quests.py \
 ```
 
 Publication requires normal source-integrity review and successful GitHub CI. New game versions must be compared to their actual original source, not blindly relabelled.
+
+## Quest links and browser history (2026-11-22)
+
+The public Guide accepts `/guide/quests/?quest=<original-native-quest-id>` (with the deployment base path, such as `/Wand`). Only a single syntactically valid ID that exists in the **already validated 733-quest index** opens a detail partition. Unknown, malformed or repeated `quest` parameters are ignored; no unverified source is fetched for them. Clicking a quest updates the address, and browser Back/Forward restores the selected quest. The detail header offers a reusable direct link, enabling future Collection and Acquisition cross-links without exposing owner-private source bundles. These links refer to static quest definitions only, never to live availability, unlock truth, progress, ownership or account data. Source-free unit and Playwright browser regressions cover the link contract.
