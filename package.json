@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview --host",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check:rust-save-reader": "node scripts/check-rust-save-reader.mjs",
     "test": "node --experimental-strip-types --test tests/*.test.mjs"
   },
   "devDependencies": {
