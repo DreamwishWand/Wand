@@ -64,7 +64,7 @@ test('exact native type and named subtype with still unknown UI category',async(
   assert.strictEqual(batch[1],crop);
   assert.equal(batch[2],null);
   assert.strictEqual(batch[3],crop);
-  assert.equal(new Set(f.requests).size,2);
+  assert.equal(new Set(f.requests).size,3); // missing ID has its own verified bucket
   assert.equal(c.source.sourceSubtypeNameVerified,1);
 });
 test('reject untrusted manifest or cross-version mismatches before loading files',()=>{
