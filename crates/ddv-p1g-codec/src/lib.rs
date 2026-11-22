@@ -508,10 +508,11 @@ mod browser_amount_preview {
     }
 
     const MAX_DB04_WITNESS_BYTES:usize=16*1024*1024;
-    /// Local-only match of saved full Grid *path pairs* against the
-    /// already validated DB-04 native reference index. No numeric Save Grid
-    /// identity is used as a native ID. DiffGrids require native hash
-    /// evidence absent from the current source index, and are not matched.
+    /// Full Grids: exact source path pairs. DiffGrids: only potential
+    /// references through a native layout path + DefaultLayoutGridID pair.
+    /// A native candidate is NOT identity proof: original default-grid and
+    /// data hashes are unavailable in the current DB-04 reference graph.
+    /// Saved Grid dictionary IDs are NEVER treated as native grid IDs.
     pub(super) fn match_db04_grid_paths_json(
         profile:&[u8],witness:&str
     )->Result<String,CodecError>{
@@ -524,7 +525,7 @@ mod browser_amount_preview {
         let source=source.as_object().ok_or(CodecError::Json)?;
         if source.len()!=2 ||
            source.get("contract").and_then(serde_json::Value::as_str)
-             !=Some("wand.db05.db04-grid-path-witness@1"){
+             !=Some("wand.db05.db04-grid-path-witness@2"){
             return Err(CodecError::Json);
         }
         let refs=source.get("gridRefs").and_then(serde_json::Value::as_array)
@@ -537,18 +538,25 @@ mod browser_amount_preview {
             !value.chars().any(char::is_control)
         };
         let mut native=HashMap::<(String,String),u32>::new();
+        let mut diff_native=HashMap::<(String,u32),u32>::new();
         for row in refs{
             let row=row.as_object().ok_or(CodecError::Json)?;
-            if row.len()!=2{return Err(CodecError::Json);}
+            if row.len()!=3{return Err(CodecError::Json);}
             let layout=row.get("layoutId").and_then(serde_json::Value::as_str)
                 .ok_or(CodecError::Json)?;
             let data=row.get("gridDataPath").and_then(serde_json::Value::as_str)
                 .ok_or(CodecError::Json)?;
+            let native_id=row.get("nativeGridId")
+                .and_then(serde_json::Value::as_u64)
+                .filter(|id|*id<=u32::MAX as u64)
+                .ok_or(CodecError::Json)? as u32;
             if !valid_path(layout,"SceneLayouts/") ||
                !valid_path(data,"GridData/"){
                 return Err(CodecError::Json);
             }
             *native.entry((layout.to_owned(),data.to_owned()))
+                .or_default()+=1;
+            *diff_native.entry((layout.to_owned(),native_id))
                 .or_default()+=1;
         }
         let root:serde_json::Value=serde_json::from_slice(profile)
@@ -564,6 +572,9 @@ mod browser_amount_preview {
         let mut observed_diff=0usize;
         let mut unverified_diff_hash=0usize;
         let mut malformed_diff=0usize;
+        let mut diff_candidates=0usize;
+        let mut diff_not_in_source=0usize;
+        let mut diff_ambiguous=0usize;
         let mut sampled=false;
         let source_status=if coll.is_none(){
             "not_observed"
@@ -650,21 +661,30 @@ mod browser_amount_preview {
                         !hash_ok(hash)||!hash_ok(data_hash){
                         malformed_diff+=1;continue;
                     }
-                    // DB-04 source grid references have no independently
-                    // checked pair of native default-grid hash witnesses.
+                    // The source's derived gridRefId (layout + nativeGridId)
+                    // only narrows the candidate set. A saved Grid ID is
+                    // never compared. Two native hash witnesses remain absent.
                     unverified_diff_hash+=1;
+                    match diff_native.get(&(layout.unwrap().to_owned(),
+                        native_grid.unwrap() as u32)).copied().unwrap_or(0){
+                        0=>diff_not_in_source+=1,
+                        1=>diff_candidates+=1,
+                        _=>diff_ambiguous+=1
+                    }
                 }
             }
             if sampled||malformed_full>0||malformed_diff>0{
                 "partial_inconclusive"
             }else if exact_full>0{
                 "source_path_matches"
+            }else if diff_candidates>0{
+                "diff_structural_candidates_only"
             }else{
                 "no_exact_full_path_match"
             }
         };
         serde_json::to_string(&serde_json::json!({
-            "contract":"wand.db05.db04-grid-path-match@1",
+            "contract":"wand.db05.db04-grid-path-match@2",
             "status":source_status,
             "observedFullGrids":observed_full,
             "matchedFullGrids":exact_full,
@@ -673,6 +693,9 @@ mod browser_amount_preview {
             "malformedFullGrids":malformed_full,
             "observedDiffGrids":observed_diff,
             "hashUnverifiedDiffGrids":unverified_diff_hash,
+            "structuralCandidateDiffGrids":diff_candidates,
+            "notInPartialSourceDiffGrids":diff_not_in_source,
+            "ambiguousSourceDiffGrids":diff_ambiguous,
             "malformedDiffGrids":malformed_diff,
             "sampled":sampled,
             "sourceCoverageComplete":false,
@@ -702,6 +725,7 @@ mod browser_amount_preview {
         let mut observed_full=0usize;
         let mut observed_diff=0usize;
         let mut invalid=0usize;
+        let mut removed_markers=0usize;
         let mut sampled=false;
         let mut inspected=0usize;
         let mut by_item=BTreeMap::<u64,(u32,u32)>::new();
@@ -775,8 +799,10 @@ mod browser_amount_preview {
                         grid.get("ID").is_some_and(|v|v.as_u64()!=Some(grid_id)){
                         invalid+=1;continue;
                     }
+                    // A valid DiffGrid can contain only removals, with no
+                    // ModifiedObjects. Missing is not a broken Save.
                     let Some(objects)=grid.get("ModifiedObjects")
-                        .and_then(serde_json::Value::as_object) else {
+                        .map_or(Some(&empty),serde_json::Value::as_object) else {
                         invalid+=1;continue;
                     };
                     let mut removed=HashSet::new();
@@ -788,6 +814,10 @@ mod browser_amount_preview {
                         removed.extend(list.iter().filter_map(|v|v.as_u64())
                             .map(|v|v.to_string()));
                     }
+                    if removed_markers+removed.len()>MAX_GRID_OBJECT_SCAN{
+                        sampled=true;break;
+                    }
+                    removed_markers+=removed.len();
                     observed_diff+=1;
                     scan_objects(objects,true,&removed,
                         &mut by_item,&mut inspected,&mut sampled,&mut invalid);
@@ -804,11 +834,12 @@ mod browser_amount_preview {
                 "diffModifiedReferences":diff
             })).collect::<Vec<_>>();
         serde_json::to_string(&serde_json::json!({
-            "contract":"wand.db05.saved-grid-item-refs@1",
+            "contract":"wand.db05.saved-grid-item-refs@2",
             "status":status,
             "observedFullGrids":observed_full,
             "observedDiffGrids":observed_diff,
             "invalidRecords":invalid,
+            "removedObjectMarkers":removed_markers,
             "sampled":sampled,
             "entries":rows,
             "effectivePlacedCountVerified":false,
@@ -1347,14 +1378,14 @@ mod tests{
             "DefaultLayoutGridID":7,"DefaultGridHashCode":31,
             "DefaultGridDataHashCode":-12,"ModifiedObjects":{}}}
           }}}"#;
-        let witness=r#"{"contract":"wand.db05.db04-grid-path-witness@1",
+        let witness=r#"{"contract":"wand.db05.db04-grid-path-witness@2",
           "gridRefs":[
             {"layoutId":"SceneLayouts/Village04/Beach.json",
-             "gridDataPath":"GridData/Village04/Beach.json"},
+             "gridDataPath":"GridData/Village04/Beach.json","nativeGridId":7},
             {"layoutId":"SceneLayouts/Other/Room.json",
-             "gridDataPath":"GridData/Other/Room.json"},
+             "gridDataPath":"GridData/Other/Room.json","nativeGridId":3},
             {"layoutId":"SceneLayouts/Other/Room.json",
-             "gridDataPath":"GridData/Other/Room.json"}
+             "gridDataPath":"GridData/Other/Room.json","nativeGridId":4}
           ]}"#;
         let report=browser_amount_preview::match_db04_grid_paths_json(
             sample,witness).unwrap();
@@ -1365,15 +1396,50 @@ mod tests{
         assert_eq!(r["notInPartialSourceFullGrids"],1);
         assert_eq!(r["ambiguousSourceFullGrids"],1);
         assert_eq!(r["observedDiffGrids"],1);
+        assert_eq!(r["contract"],"wand.db05.db04-grid-path-match@2");
         assert_eq!(r["hashUnverifiedDiffGrids"],1);
+        assert_eq!(r["structuralCandidateDiffGrids"],1);
+        assert_eq!(r["notInPartialSourceDiffGrids"],0);
+        assert_eq!(r["ambiguousSourceDiffGrids"],0);
         assert_eq!(r["diffIdentityVerified"],false);
         assert_eq!(r["saveGridNumericIdUsedAsNativeKey"],false);
         assert!(!report.contains("Beach.json") &&
             !report.contains("900") && !report.contains("X"));
+        // Extra source-only evidence can narrow the DiffGrid *candidate*
+        // without proving either native default hash or effective placement.
+        let diff_only=br#"{"GameInfo":{"Version":643},"Player":{},
+          "World":{"GridCollection":{"DiffGrids":{
+            "1001":{"ID":1001,"GridDefaultLayoutPath":
+             "SceneLayouts/Village04/Beach.json",
+             "GridDefaultLayoutType":"Meta.GridCollection, Meta",
+             "DefaultLayoutGridID":7,"DefaultGridHashCode":999,
+             "DefaultGridDataHashCode":-999},
+            "1002":{"ID":1002,"GridDefaultLayoutPath":
+             "SceneLayouts/Unavailable/Room.json",
+             "GridDefaultLayoutType":"Meta.GridCollection, Meta",
+             "DefaultLayoutGridID":7,"DefaultGridHashCode":1,
+             "DefaultGridDataHashCode":2},
+            "1003":{"ID":1003,"GridDefaultLayoutPath":
+             "SceneLayouts/Other/Room.json",
+             "GridDefaultLayoutType":"Meta.GridCollection, Meta",
+             "DefaultLayoutGridID":3,"DefaultGridHashCode":1,
+             "DefaultGridDataHashCode":2}
+          }}}}"#;
+        let narrowed=browser_amount_preview::match_db04_grid_paths_json(
+            diff_only,witness).unwrap();
+        let v:serde_json::Value=serde_json::from_str(&narrowed).unwrap();
+        assert_eq!(v["status"],"diff_structural_candidates_only");
+        assert_eq!(v["observedDiffGrids"],3);
+        assert_eq!(v["structuralCandidateDiffGrids"],2);
+        assert_eq!(v["notInPartialSourceDiffGrids"],1);
+        assert_eq!(v["hashUnverifiedDiffGrids"],3);
+        assert_eq!(v["diffIdentityVerified"],false);
+        assert!(!narrowed.contains("999")&&!narrowed.contains("1001"));
         assert!(browser_amount_preview::match_db04_grid_paths_json(
-            sample,r#"{"contract":"wand.db05.db04-grid-path-witness@1",
+            sample,r#"{"contract":"wand.db05.db04-grid-path-witness@2",
               "gridRefs":[{"layoutId":"../secret",
-                "gridDataPath":"GridData/Village04/Beach.json"}]}"#
+                "gridDataPath":"GridData/Village04/Beach.json",
+                "nativeGridId":7}]}"#
         ).is_err());
     }
 
@@ -1396,6 +1462,8 @@ mod tests{
         assert_eq!(json["entries"][1]["itemId"],"40000001");
         assert_eq!(json["entries"][1]["fullGridReferences"],1);
         assert_eq!(json["entries"][1]["diffModifiedReferences"],1);
+        assert_eq!(json["contract"],"wand.db05.saved-grid-item-refs@2");
+        assert_eq!(json["removedObjectMarkers"],1);
         assert!(!report.contains("secret") && !report.contains("private"));
         assert!(!report.contains("\"X\"") && !report.contains("13"));
         let missing=br#"{"GameInfo":{"Version":643},"Player":{},"World":{}}"#;
@@ -1404,6 +1472,21 @@ mod tests{
             &browser_amount_preview::saved_grid_references_json(missing).unwrap()
           ).unwrap()["status"],"not_observed"
         );
+        // A player-modified Save can have a deletion-only DiffGrid. It is
+        // not a reason to mark the field shape broken or assert an Item ID.
+        let removal_only=br#"{"GameInfo":{"Version":643},"Player":{},
+          "World":{"GridCollection":{"DiffGrids":{"17":{
+            "RemovedObjects":[1,1,2],
+            "OtherSaveField":"preserve-in-original"
+          }}}}}"#;
+        let report=browser_amount_preview::saved_grid_references_json(
+            removal_only).unwrap();
+        let v:serde_json::Value=serde_json::from_str(&report).unwrap();
+        assert_eq!(v["status"],"observed_no_item_refs");
+        assert_eq!(v["observedDiffGrids"],1);
+        assert_eq!(v["removedObjectMarkers"],2);
+        assert_eq!(v["entries"].as_array().unwrap().len(),0);
+        assert!(!report.contains("preserve-in-original"));
         let malformed=br#"{"GameInfo":{"Version":643},"Player":{},
           "World":{"GridCollection":{"Grids":{"3":{"Objects":{
             "2":{"ItemID":40000001}}}},"DiffGrids":{"5":{

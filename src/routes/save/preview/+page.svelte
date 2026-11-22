@@ -41,13 +41,16 @@
   let worldStatus:'not_observed'|'incompatible_structure'|'partial_inconclusive'|
     'observed_no_item_refs'|'saved_item_refs'='not_observed';
   let worldQuery='';
+  let removedGridMarkers=0;
   let db04Input:HTMLInputElement|null=null;
   type Db04GridMatch={
-    contract:'wand.db05.db04-grid-path-match@1';
+    contract:'wand.db05.db04-grid-path-match@2';
     status:string;observedFullGrids:number;matchedFullGrids:number;
     notInPartialSourceFullGrids:number;ambiguousSourceFullGrids:number;
     malformedFullGrids:number;observedDiffGrids:number;
-    hashUnverifiedDiffGrids:number;malformedDiffGrids:number;
+    hashUnverifiedDiffGrids:number;
+    structuralCandidateDiffGrids:number;notInPartialSourceDiffGrids:number;
+    ambiguousSourceDiffGrids:number;malformedDiffGrids:number;
     sourceCoverageComplete:false;sourceOriginalArchiveRechecked:false;
     saveGridNumericIdUsedAsNativeKey:false;diffIdentityVerified:false;
     worldCoordinatesVerified:false;playerPlacementVerified:false;
@@ -143,6 +146,7 @@
     dbWorker?.terminate();dbWorker=null;catalogRevision++;
     savedSlots=[];savedSlotsFile=null;slotState='idle';
     worldRefs=[];worldStatus='not_observed';worldQuery='';
+    removedGridMarkers=0;
     db04Match=null;db04State='idle';
     db03Summary=null;db03State='idle';
     dbMap=new Map();dbStatus='idle';
@@ -286,7 +290,7 @@
         own.terminate();active=null;processing=false;
         const r=response as {kind?:string;receipt?:Db04GridMatch};
         if(r?.kind!=='db04'||r.receipt?.contract!==
-           'wand.db05.db04-grid-path-match@1'||
+           'wand.db05.db04-grid-path-match@2'||
            r.receipt.sourceCoverageComplete!==false||
            r.receipt.sourceOriginalArchiveRechecked!==false||
            r.receipt.saveGridNumericIdUsedAsNativeKey!==false||
@@ -347,6 +351,7 @@
           writerAuthorized?:boolean;rows?:EditableSlot[];
           grid?:{contract?:string;status?:typeof worldStatus;
             entries?:SavedGridItemReference[];
+            removedObjectMarkers?:number;
             playerPlacementVerified?:boolean;
             effectivePlacedCountVerified?:boolean;
             worldSourceMatched?:boolean;
@@ -355,7 +360,7 @@
         if(r?.kind!=='slots'||r.contract!=='wand.db05.editable-slots@1'||
            r.complete!==true||r.writerAuthorized!==false||
            !Array.isArray(r.rows)||
-           r.grid?.contract!=='wand.db05.saved-grid-item-refs@1'||
+           r.grid?.contract!=='wand.db05.saved-grid-item-refs@2'||
            r.grid.playerPlacementVerified!==false||
            r.grid.effectivePlacedCountVerified!==false||
            r.grid.worldSourceMatched!==false||
@@ -363,11 +368,14 @@
            !['not_observed','incompatible_structure','partial_inconclusive',
              'observed_no_item_refs','saved_item_refs'].includes(
                String(r.grid.status))||
-           !Array.isArray(r.grid.entries)){
+           !Array.isArray(r.grid.entries)||
+           !Number.isSafeInteger(r.grid.removedObjectMarkers)||
+           r.grid.removedObjectMarkers! < 0){
           slotState='error';return;
         }
         savedSlots=r.rows;savedSlotsFile=file;slotState='ready';
         worldRefs=r.grid.entries;worldStatus=r.grid.status!;
+        removedGridMarkers=r.grid.removedObjectMarkers!;
         beginCatalogLookup(r.rows,file,worldRefs);
       };
       worker.onmessage=event=>finish(event.data);
@@ -754,6 +762,10 @@
       {#if worldStatus==='partial_inconclusive'}
         <p class="slot-note">未確認の参照があるため一部のみ表示しています。</p>
       {/if}
+      {#if removedGridMarkers>0}
+        <p class="slot-note">差分Gridの削除マーカー：{
+          removedGridMarkers}件（削除されたItem IDや現在の配置数は特定できません）</p>
+      {/if}
       <p class="slot-note">保存されたGrid内の参照です。所有数・全配置数・配置可否を示すものではありません。</p>
       <div class="db04-path-check">
         <label>DB-04参照データ（ローカル・任意）
@@ -781,8 +793,20 @@
               db04Match.malformedFullGrids}</p>
           {/if}
           {#if db04Match.observedDiffGrids>0}
-            <p>差分Grid：{db04Match.hashUnverifiedDiffGrids}件は
-              原本ハッシュの証拠がなく照合未完了</p>
+            <p>差分Gridの構造上の候補：{
+              db04Match.structuralCandidateDiffGrids} / {
+              db04Match.observedDiffGrids}件</p>
+            {#if db04Match.notInPartialSourceDiffGrids>0}
+              <p>DB-04部分データに未収録の差分Grid：{
+                db04Match.notInPartialSourceDiffGrids}件</p>
+            {/if}
+            {#if db04Match.ambiguousSourceDiffGrids>0}
+              <p>複数候補のある差分Grid：{
+                db04Match.ambiguousSourceDiffGrids}件</p>
+            {/if}
+            <p>差分Gridの原本ハッシュ未検証：{
+              db04Match.hashUnverifiedDiffGrids}件。
+              候補は配置・原本Gridの同一性を証明しません。</p>
           {/if}
           <p class="slot-note">DB-04索引との参照パス比較です。
             原本再検証・全配置数・所有権・編集可否の証明ではありません。</p>

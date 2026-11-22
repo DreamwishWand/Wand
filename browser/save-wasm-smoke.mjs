@@ -335,12 +335,13 @@ try{
   const worldPanel=page.getByRole('region',{name:'ワールド参照'});
   await worldPanel.getByRole('status').filter({hasText:'2種類'}).waitFor({timeout:30000});
   await worldPanel.getByText('ピュアナイトシャード').waitFor({timeout:30000});
+  assert.match(await worldPanel.innerText(),/差分Gridの削除マーカー：1件/);
   assert.match(await worldPanel.innerText(),/所有数・全配置数・配置可否を示すものではありません/);
   // Two saved references for sample furniture: one full and one non-removed
   // DiffGrid object, not three (the removed DiffGrid identity is suppressed).
   // Private DB-04 reference index supplied as a local, synthetic file.
   // DB-05 verifies it using the existing DB-04 WorldReferenceIndex and Rust
-  // then matches ONLY native full Grid source path pairs.
+  // then matches native full Grid paths and unverified DiffGrid layout/ID candidates.
   const layout='SceneLayouts/Synthetic/Grid.json';
   const data='GridData/Synthetic/Grid.json';
   const db04={
@@ -389,7 +390,9 @@ try{
   await worldPanel.getByRole('button',{name:'DB-04 Gridパスを照合'}).click();
   await worldPanel.getByText(/通常Gridの参照パス一致/).waitFor({timeout:30000});
   assert.match(await worldPanel.innerText(),/通常Gridの参照パス一致：1 \/ 1/);
-  assert.match(await worldPanel.innerText(),/差分Grid：1件は/);
+  assert.match(await worldPanel.innerText(),/差分Gridの構造上の候補：1 \/ 1件/);
+  assert.match(await worldPanel.innerText(),/差分Gridの原本ハッシュ未検証：1件/);
+  assert.match(await worldPanel.innerText(),/候補は配置・原本Gridの同一性を証明しません/);
   assert.match(await worldPanel.innerText(),/原本再検証・全配置数・所有権/);
   assert.equal(await worldPanel.getByRole('alert').count(),0);
   await worldPanel.getByLabel('ワールド参照検索').fill('40000001');

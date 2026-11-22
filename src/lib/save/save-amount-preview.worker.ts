@@ -27,12 +27,13 @@ export interface SaveGridItemReference {
   readonly diffModifiedReferences:number;
 }
 export interface SaveGridReferenceReport {
-  readonly contract:'wand.db05.saved-grid-item-refs@1';
+  readonly contract:'wand.db05.saved-grid-item-refs@2';
   readonly status:'not_observed'|'incompatible_structure'|
     'partial_inconclusive'|'observed_no_item_refs'|'saved_item_refs';
   readonly observedFullGrids:number;
   readonly observedDiffGrids:number;
   readonly invalidRecords:number;
+  readonly removedObjectMarkers:number;
   readonly sampled:boolean;
   readonly entries:readonly SaveGridItemReference[];
   readonly effectivePlacedCountVerified:false;
@@ -45,15 +46,17 @@ const nonnegative=(v:unknown,max:number):v is number=>
 function validateGridReport(source:unknown):SaveGridReferenceReport {
   if(!object(source)||!exact(source,[
     'contract','status','observedFullGrids','observedDiffGrids',
-    'invalidRecords','sampled','entries','effectivePlacedCountVerified',
+    'invalidRecords','removedObjectMarkers','sampled','entries',
+    'effectivePlacedCountVerified',
     'playerPlacementVerified','worldSourceMatched','saveWritingAuthorized'
-  ])||source.contract!=='wand.db05.saved-grid-item-refs@1'||
+  ])||source.contract!=='wand.db05.saved-grid-item-refs@2'||
     !['not_observed','incompatible_structure','partial_inconclusive',
       'observed_no_item_refs','saved_item_refs'].includes(String(source.status))||
     !nonnegative(source.observedFullGrids,2048)||
     !nonnegative(source.observedDiffGrids,2048)||
     source.observedFullGrids+source.observedDiffGrids>2048||
     !nonnegative(source.invalidRecords,102048)||
+    !nonnegative(source.removedObjectMarkers,100000)||
     typeof source.sampled!=='boolean'||!Array.isArray(source.entries)||
     source.entries.length>20000||
     source.effectivePlacedCountVerified!==false||
@@ -89,11 +92,12 @@ function validateGridReport(source:unknown):SaveGridReferenceReport {
         source.observedDiffGrids!==0)))
       throw new TypeError('DB05_GRID_STATUS_INVALID');
   return {
-    contract:'wand.db05.saved-grid-item-refs@1',
+    contract:'wand.db05.saved-grid-item-refs@2',
     status:source.status as SaveGridReferenceReport['status'],
     observedFullGrids:source.observedFullGrids,
     observedDiffGrids:source.observedDiffGrids,
     invalidRecords:source.invalidRecords,
+    removedObjectMarkers:source.removedObjectMarkers,
     sampled:source.sampled,entries,
     effectivePlacedCountVerified:false,playerPlacementVerified:false,
     worldSourceMatched:false,saveWritingAuthorized:false
@@ -101,7 +105,7 @@ function validateGridReport(source:unknown):SaveGridReferenceReport {
 }
 
 interface Db04GridPathReceipt {
-  contract:'wand.db05.db04-grid-path-match@1';
+  contract:'wand.db05.db04-grid-path-match@2';
   status:'not_observed'|'incompatible_structure'|
     'partial_inconclusive'|'source_path_matches'|'no_exact_full_path_match';
   observedFullGrids:number;
@@ -111,6 +115,9 @@ interface Db04GridPathReceipt {
   malformedFullGrids:number;
   observedDiffGrids:number;
   hashUnverifiedDiffGrids:number;
+  structuralCandidateDiffGrids:number;
+  notInPartialSourceDiffGrids:number;
+  ambiguousSourceDiffGrids:number;
   malformedDiffGrids:number;
   sampled:boolean;
   sourceCoverageComplete:false;
@@ -127,19 +134,24 @@ function validatedDb04GridReceipt(source:unknown):Db04GridPathReceipt{
     'contract','status','observedFullGrids','matchedFullGrids',
     'notInPartialSourceFullGrids','ambiguousSourceFullGrids',
     'malformedFullGrids','observedDiffGrids','hashUnverifiedDiffGrids',
-    'malformedDiffGrids','sampled','sourceCoverageComplete',
+    'structuralCandidateDiffGrids','notInPartialSourceDiffGrids',
+    'ambiguousSourceDiffGrids','malformedDiffGrids',
+    'sampled','sourceCoverageComplete',
     'sourceOriginalArchiveRechecked','saveGridNumericIdUsedAsNativeKey',
     'diffIdentityVerified','worldCoordinatesVerified','playerPlacementVerified',
     'nativeDefaultObjectEquivalenceVerified','saveWritingAuthorized'
-  ]) || source.contract!=='wand.db05.db04-grid-path-match@1' ||
+  ]) || source.contract!=='wand.db05.db04-grid-path-match@2' ||
     !['not_observed','incompatible_structure','partial_inconclusive',
-      'source_path_matches','no_exact_full_path_match'].includes(
+      'source_path_matches','diff_structural_candidates_only',
+      'no_exact_full_path_match'].includes(
         String(source.status))||
     ![
       source.observedFullGrids,source.matchedFullGrids,
       source.notInPartialSourceFullGrids,source.ambiguousSourceFullGrids,
       source.malformedFullGrids,source.observedDiffGrids,
-      source.hashUnverifiedDiffGrids,source.malformedDiffGrids
+      source.hashUnverifiedDiffGrids,source.structuralCandidateDiffGrids,
+      source.notInPartialSourceDiffGrids,source.ambiguousSourceDiffGrids,
+      source.malformedDiffGrids
     ].every(v=>nonnegative(v,2049)) ||
     Number(source.observedFullGrids)+Number(source.observedDiffGrids)>2048 ||
     Number(source.matchedFullGrids)+
@@ -150,6 +162,10 @@ function validatedDb04GridReceipt(source:unknown):Db04GridPathReceipt{
       Number(source.notInPartialSourceFullGrids)+
       Number(source.ambiguousSourceFullGrids)+
       Number(source.malformedFullGrids)>Number(source.observedFullGrids)+1 ||
+    Number(source.structuralCandidateDiffGrids)+
+      Number(source.notInPartialSourceDiffGrids)+
+      Number(source.ambiguousSourceDiffGrids)!==
+      Number(source.hashUnverifiedDiffGrids) ||
     Number(source.hashUnverifiedDiffGrids)+
       Number(source.malformedDiffGrids)<Number(source.observedDiffGrids) ||
     Number(source.hashUnverifiedDiffGrids)+
@@ -458,9 +474,10 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
       const source=new WorldReferenceIndex(JSON.parse(graphJson));
       const verified=source.toDb00WorldRelationsSidecar();
       const witness=JSON.stringify({
-        contract:'wand.db05.db04-grid-path-witness@1',
+        contract:'wand.db05.db04-grid-path-witness@2',
         gridRefs:verified.gridRefs.map(ref=>({
-          layoutId:ref.layoutId,gridDataPath:ref.gridDataPath
+          layoutId:ref.layoutId,gridDataPath:ref.gridDataPath,
+          nativeGridId:ref.nativeGridId
         }))
       });
       const receipt=validatedDb04GridReceipt(
