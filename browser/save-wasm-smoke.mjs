@@ -2,6 +2,42 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {chromium} from 'playwright';
+import {createCipheriv} from 'node:crypto';
+import {deflateRawSync} from 'node:zlib';
+
+function syntheticEncryptedP1g(profile) {
+  const json=Buffer.from(JSON.stringify(profile),'utf8');
+  const compressed=deflateRawSync(json);
+  const name=Buffer.from('profile');
+  let crc=0xffffffff;
+  for(const byte of json){
+    crc^=byte;
+    for(let i=0;i<8;i++)crc=(crc&1)?(0xedb88320^(crc>>>1)):(crc>>>1);
+  }
+  crc=(crc^0xffffffff)>>>0;
+  const local=Buffer.alloc(30+name.length+compressed.length);
+  local.writeUInt32LE(0x04034b50,0);
+  local.writeUInt16LE(20,4);local.writeUInt16LE(8,8);
+  local.writeUInt32LE(crc,14);local.writeUInt32LE(compressed.length,18);
+  local.writeUInt32LE(json.length,22);local.writeUInt16LE(name.length,26);
+  name.copy(local,30);compressed.copy(local,30+name.length);
+  const central=Buffer.alloc(46+name.length);
+  central.writeUInt32LE(0x02014b50,0);
+  central.writeUInt16LE(20,4);central.writeUInt16LE(20,6);
+  central.writeUInt16LE(8,10);central.writeUInt32LE(crc,16);
+  central.writeUInt32LE(compressed.length,20);
+  central.writeUInt32LE(json.length,24);central.writeUInt16LE(name.length,28);
+  name.copy(central,46);
+  const eocd=Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50,0);
+  eocd.writeUInt16LE(1,8);eocd.writeUInt16LE(1,10);
+  eocd.writeUInt32LE(central.length,12);
+  eocd.writeUInt32LE(local.length,16);
+  const cipher=createCipheriv('aes-256-ecb',
+    Buffer.from('62357168683873614A38556C444A557A545A5864325467366D626F3857386e35','hex'),null);
+  return Buffer.concat([cipher.update(Buffer.concat([local,central,eocd])),cipher.final()]);
+}
+
 
 const url='http://127.0.0.1:4185/Wand/save/diagnostics/';
 const server=spawn(process.execPath,[
@@ -50,6 +86,15 @@ try{
   assert.equal(await page.getByRole('alert').count(),0);
   assert.deepEqual(errors,[],errors.join('\n'));
   await page.getByRole('button',{name:'読み込み内容を破棄'}).click();
+  await page.locator('input[type=file]').setInputFiles({
+    name:'synthetic.profile',mimeType:'application/octet-stream',
+    buffer:syntheticEncryptedP1g(freshSynthetic)
+  });
+  await page.getByText(/Rust\/WASMでP1Gを独立復号し、元のJSONバイト列との一致を確認しました/).waitFor({timeout:30000});
+  assert.ok(loadedWasm.some(v=>v.status===200&&v.url.includes('ddv_p1g_codec_bg')),
+    'Actual Rust P1G WASM must load inside the Save Worker');
+  assert.equal(await page.getByRole('alert').count(),0);
+  await page.getByRole('button',{name:'読み込み内容を破棄'}).click();
   const duplicate='{"GameInfo":{"Version":643},"Player":{"x":1,"x":2},"World":{}}';
   await page.locator('input[type=file]').setInputFiles({
     name:'duplicate.json',mimeType:'application/json',
@@ -59,7 +104,7 @@ try{
   assert.equal(await page.getByText(/Rust\/WASMによる内部参照14規則/).count(),0,
     'Strict input errors must stop before the Rust/WASM result is shown');
   await page.close();
-  console.log('DB-05 actual browser Worker Rust/WASM parity, strict JSON guard and fail-closed smoke PASS');
+  console.log('DB-05 real Worker Rust/WASM P1G decrypt parity, reference parity, strict JSON guard PASS');
 }finally{
   await browser?.close();
   server.kill('SIGTERM');
