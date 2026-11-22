@@ -48,7 +48,7 @@ test('Historical shop exact-name matching yields candidate Item IDs, never verif
   const known=new Map([
     ['Winter Holiday Dream Castle',50400300],
     ['Enchanted Ice Fountain',40007891],
-    ['Belle\'s Royal Tools',40009654]
+    ['Roses and Gold Shovel',40009654]
   ]);
   let calls=0;
   const db01={
