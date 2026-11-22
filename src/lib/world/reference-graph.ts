@@ -161,6 +161,32 @@ export interface ItemWorldRelations {
   readonly playerPlacedWorld: RelationResult<string>;
   readonly placeableWorld: RelationResult<string>;
 }
+/**
+ * Exact reverse lookup over ORIGINAL GridObject records in this partial
+ * private source snapshot. These rows are NOT acquisition, player-save
+ * placement, item origin, or legal decoration-area memberships.
+ */
+export interface OriginalSourcePlacementPage {
+  readonly relation: 'nativeSourceDefaultGridObject';
+  readonly scope: 'world' | 'area' | 'unlinked_world';
+  readonly scopeId: string | null;
+  readonly scopeIdentityInPartialSource: boolean;
+  readonly status: 'source_native_verified' | 'unverified';
+  readonly rows: readonly NativeSourceItemReference[];
+  readonly matchingReferenceRowsInSubset: number;
+  readonly matchingOriginalInstancesInSubset: number;
+  readonly distinctItemIdsInSubset: number;
+  readonly offset: number;
+  readonly limit: number;
+  readonly hasNextPage: boolean;
+  readonly nextOffset: number | null;
+  readonly sourceCoverageComplete: false;
+  readonly itemOriginVerified: false;
+  readonly acquisitionLocationVerified: false;
+  readonly savedPlayerPlacementVerified: false;
+  readonly placementLegalityVerified: false;
+}
+
 export interface NativeProtoDbAreaEvidence {
   readonly areaRefId: string;
   readonly nativeAreaId: string;
@@ -223,6 +249,9 @@ export class WorldReferenceIndex {
   private readonly grids:Map<string,NativeGridReference>;
   private readonly itemRefs:Map<string,readonly NativeSourceItemReference[]>;
   private readonly childWorldsByParent:Map<string,readonly WorldIdentity[]>;
+  private readonly initialRefsByWorld:Map<string,readonly NativeSourceItemReference[]>;
+  private readonly initialRefsByArea:Map<string,readonly NativeSourceItemReference[]>;
+  private readonly initialRefsWithoutWorld:readonly NativeSourceItemReference[];
   private readonly areaListByWorld:Map<string,readonly NativeAreaReference[]>;
   private readonly gridListByArea:Map<string,readonly NativeGridReference[]>;
 
@@ -258,6 +287,9 @@ export class WorldReferenceIndex {
     this.grids=indexed(input.gridRefs,g=>g.gridRefId,'GRID_REF_ID');
     const gridFiles=indexed(input.gridData,g=>g.gridDataPath,'GRID_DATA_PATH');
     const byItem=new Map<string,NativeSourceItemReference[]>();
+    const byItemWorld=new Map<string,NativeSourceItemReference[]>();
+    const byItemArea=new Map<string,NativeSourceItemReference[]>();
+    const withoutWorld:NativeSourceItemReference[]=[];
     const byParent=new Map<string,WorldIdentity[]>();
     const byWorld=new Map<string,NativeAreaReference[]>();
     const byArea=new Map<string,NativeGridReference[]>();
@@ -380,7 +412,24 @@ export class WorldReferenceIndex {
         row.otherFourRelationsVerified===false &&
         row.nativeCoordinatesStoredInOriginalLayoutObjects===true,
         'INVALID_INITIAL_SOURCE_ITEM_REFERENCE');
-      byItem.set(row.itemId,[...(byItem.get(row.itemId)??[]),Object.freeze({...row})]);
+      const immutableRow=Object.freeze({...row});
+      byItem.set(row.itemId,[...(byItem.get(row.itemId)??[]),immutableRow]);
+      if(row.worldId!==null){
+        let rows=byItemWorld.get(row.worldId);
+        if(rows===undefined){
+          rows=[];
+          byItemWorld.set(row.worldId,rows);
+        }
+        rows.push(immutableRow);
+      } else withoutWorld.push(immutableRow);
+      if(row.areaRefId!==null){
+        let rows=byItemArea.get(row.areaRefId);
+        if(rows===undefined){
+          rows=[];
+          byItemArea.set(row.areaRefId,rows);
+        }
+        rows.push(immutableRow);
+      }
       total+=row.instanceCount;
       if(row.worldId===null)unlinked+=row.instanceCount;
     }
@@ -395,6 +444,11 @@ export class WorldReferenceIndex {
         [...this.areas.values()].filter(a=>a.nativeProtoDbAreaRecordVerified===true).length,
         'NATIVE_AREA_COVERAGE_MISMATCH');
     this.itemRefs=byItem;
+    this.initialRefsByWorld=new Map(
+      [...byItemWorld].map(([key,rows])=>[key,Object.freeze(rows)]));
+    this.initialRefsByArea=new Map(
+      [...byItemArea].map(([key,rows])=>[key,Object.freeze(rows)]));
+    this.initialRefsWithoutWorld=Object.freeze(withoutWorld);
     this.areaListByWorld=byWorld;
     this.gridListByArea=byArea;
   }
@@ -474,6 +528,69 @@ export class WorldReferenceIndex {
       values:Object.freeze([...rows])
     });
   }
+  private originalPlacementPage(
+    scope:OriginalSourcePlacementPage['scope'],
+    scopeId:string|null,
+    scopeIdentityInPartialSource:boolean,
+    rows:readonly NativeSourceItemReference[],
+    page:Readonly<{offset:number;limit:number}>={offset:0,limit:128}
+  ):OriginalSourcePlacementPage{
+    check(isRecord(page) && nonnegative(page.offset) &&
+      nonnegative(page.limit) && page.limit>=1 && page.limit<=512,
+      'INVALID_INITIAL_PLACEMENT_PAGE');
+    const offset=page.offset,limit=page.limit;
+    const end=Math.min(rows.length,offset+limit);
+    const selection=Object.freeze(rows.slice(offset,end));
+    let instances=0;
+    const itemIds=new Set<string>();
+    for(const row of rows){
+      instances+=row.instanceCount;
+      itemIds.add(row.itemId);
+    }
+    check(Number.isSafeInteger(instances),'INVALID_INITIAL_PLACEMENT_TOTAL');
+    const hasNextPage=end<rows.length;
+    return Object.freeze({
+      relation:'nativeSourceDefaultGridObject' as const,
+      scope,scopeId,scopeIdentityInPartialSource,
+      status:rows.length?'source_native_verified' as const:'unverified' as const,
+      rows:selection,
+      matchingReferenceRowsInSubset:rows.length,
+      matchingOriginalInstancesInSubset:instances,
+      distinctItemIdsInSubset:itemIds.size,
+      offset,limit,hasNextPage,
+      nextOffset:hasNextPage?end:null,
+      sourceCoverageComplete:false as const,
+      itemOriginVerified:false as const,
+      acquisitionLocationVerified:false as const,
+      savedPlayerPlacementVerified:false as const,
+      placementLegalityVerified:false as const
+    });
+  }
+
+  /** Exact World ID only: does not include inferred child-world membership. */
+  originalPlacementsInWorld(
+    worldId:string,page?:Readonly<{offset:number;limit:number}>
+  ):OriginalSourcePlacementPage{
+    return this.originalPlacementPage('world',worldId,this.worlds.has(worldId),
+      this.initialRefsByWorld.get(worldId)??[],page);
+  }
+
+  /** Exact native AreaType layout ref only: never a gameplay biome filter. */
+  originalPlacementsInArea(
+    areaRefId:string,page?:Readonly<{offset:number;limit:number}>
+  ):OriginalSourcePlacementPage{
+    return this.originalPlacementPage('area',areaRefId,this.areas.has(areaRefId),
+      this.initialRefsByArea.get(areaRefId)??[],page);
+  }
+
+  /** Preserve evidence which has no verified World link; do not reassign it. */
+  originalPlacementsWithoutWorld(
+    page?:Readonly<{offset:number;limit:number}>
+  ):OriginalSourcePlacementPage{
+    return this.originalPlacementPage('unlinked_world',null,true,
+      this.initialRefsWithoutWorld,page);
+  }
+
   /** Unknown origin/acquisition/player/placeable is NOT an empty verified set. */
   itemWorldRelations(itemId:string|number):ItemWorldRelations{
     const initial=this.initialSourcePlacement(itemId);
