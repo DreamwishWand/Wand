@@ -185,6 +185,58 @@ shards and a versioned manifest; the old catalog, icon GUIDs and eight exact
 current-version names are unchanged. The private original Tag overlay is
 stored alongside the audited DB-01 release in the owner's SRC-01 Drive folder.
 
+### Current Steam 1.26.2 Furniture/Clothing dynamic universe predicates
+
+`resolve_collection_universes.py` now reads the independently SHA-pinned
+39,067-definition SQLite, same-version `Il2CppDump/dump.cs` and **original
+full byte-identical files** `CollectionSet.json`, `Tag.json`,
+`Set.json`, `Furniture.json` and `Clothing.json`. The source IL2CPP
+field declarations are checked before applying this precise join:
+
+`CollectionItemType.Furniture/Clothing.Universe` → original Tag ID →
+original Set.Tags → Furniture/Clothing.SetItemID → original Item ID.
+
+On the complete current Steam v1.26.2 source:
+
+- 262 dynamic CollectionItemType selectors exist.
+- **124 selectors (63 furniture and 61 clothing) have directly traceable
+  original Disney-universe Set/Tag conditions.**
+- The full original Set link and tag comparison matches 4,224 furniture
+  and 2,040 clothing definitions before explicit per-group exclusions.
+- 177 original ignore-list matches are excluded, leaving **4,083 furniture
+  + 2,004 clothing = 6,087 source-predicate candidates**.
+- **138 other selectors remain unresolved** by this producer.
+- 39,067 source definitions are still preserved unchanged, and the prior
+  168 direct-listed Item IDs are kept separate rather than overwritten.
+
+Each candidate is tied to the current CollectionSet ID/group, source Set
+ID, original Disney-universe Tag ID and exact native category, plus source
+SHA-256 hashes. Its evidence marker is
+`source_item_set_disney_universe_tag_equals_collection_filter`.
+This is **proof of a static source predicate match, not proof that the
+game runtime considers the item collected, unlocked, visible, owned, or
+available in a particular world**. The runtime's extra checks and remaining
+selector families still need their own verification.
+
+```sh
+python tools/db-01-items/resolve_collection_universes.py \
+  --sqlite /owner/private/complete-1262.sqlite \
+  --original-dir /owner/private/steam-1262/itemlist \
+  --il2cpp-dump /owner/private/steam-1262/Il2CppDump/dump.cs \
+  --expected-sqlite-sha256 <trusted actual SHA-256> \
+  --expected-il2cpp-sha256 <trusted actual SHA-256> \
+  --out /owner/private/db01-1262-collection-universe
+```
+
+This generates 256 private SHA-checked ID buckets and a selectors index.
+The TypeScript `src/lib/items/collection-universe.ts` supports
+`getItem(id)`, `getItems(ids)` and `getSelectors()` without loading
+all current game data. The optional DB-00 bridge stores provenance under
+`attributes.gameOriginalCollectionUniversePredicateMatches` without
+filling unknown UI `category/subcategory`, `worlds` or `contentIds`.
+The original-source release is kept private in the owner's SRC-01 ITEMS
+Drive workspace, not inside public GitHub or Pages.
+
 ### Current Steam CollectionSet menu associations (source-exact direct lists)
 
 `extract_collection_menu.py` now reads original Steam v1.26.2
