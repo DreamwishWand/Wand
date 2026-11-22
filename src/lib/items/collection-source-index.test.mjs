@@ -254,3 +254,62 @@ test('source group queries reject unknown or malformed original groups',async()=
   await assert.rejects(api.search({sourceGroups:'not an array'}),
     /QUERY_DIMENSIONS/);
 });
+
+test('source group provenance is separate for original direct and static matches',async()=>{
+  const f=fixture(),api=createDb01OriginalSourceMenuQuery(f.catalog,f.shared);
+  const groups=await api.getSourceGroups(11);
+  assert.deepEqual(groups.map(g=>[
+    g.distinctCandidateItemIds,g.directListedItemIds,g.staticPredicateItemIds,
+  ]),[[2,1,1]]);
+  assert.deepEqual((await api.search({listingEvidence:'direct'})).itemIds,[100]);
+  assert.deepEqual((await api.search({listingEvidence:'predicate'})).itemIds,
+    [200,300,400]);
+  assert.deepEqual((await api.search({listingEvidence:'direct',
+    sourceGroups:[{collectionSetId:11,groupIndex:0}]})).itemIds,[100]);
+  assert.deepEqual((await api.search({listingEvidence:'predicate',
+    sourceGroups:[{collectionSetId:11,groupIndex:0}]})).itemIds,[200]);
+  const link=(await api.getItemLinks(100))[0];
+  assert.deepEqual(link.directGroupIndexes,[0]);
+  assert.deepEqual(link.predicateGroupIndexes,[]);
+  const suppressed=(await api.getItemLinks(200));
+  assert.deepEqual(suppressed.map(v=>v.collectionSetId),[11]);
+});
+
+test('direct in one group must not classify a separate group as direct',async()=>{
+  const f=fixture(),menus=MENU.map(m=>m.setId===13?
+    {...m,directListedItemCount:1}:m);
+  const directOther={...direct,setId:13,setKey:'Furniture!Two',
+    collectionLabelKey:'CollectionSet.FurnitureTwo',groupIndex:0};
+  const additional={...f.byId.get(300),collection:{
+    ...f.byId.get(300).collection,direct:[directOther],
+  }};
+  const shared={
+    ...f.shared,
+    getCoverage:()=>({...f.coverage,directListedIds:2}),
+    getSourceMenus:async()=>menus,
+    getItems:async ids=>ids.map(id=>id===300?additional:f.byId.get(id)??null),
+  };
+  const api=createDb01OriginalSourceMenuQuery(f.catalog,shared);
+  const links=(await api.getItemLinks(300)).filter(x=>x.collectionSetId===13);
+  assert.equal(links.length,1);
+  assert.deepEqual(links[0].groupIndexes,[0,1]);
+  assert.deepEqual(links[0].directGroupIndexes,[0]);
+  assert.deepEqual(links[0].predicateGroupIndexes,[1]);
+  assert.deepEqual((await api.search({collectionSetIds:[13],
+    listingEvidence:'direct',sourceGroups:[{collectionSetId:13,groupIndex:1}]})).itemIds,[]);
+  assert.deepEqual((await api.search({collectionSetIds:[13],
+    listingEvidence:'predicate',sourceGroups:[{collectionSetId:13,groupIndex:0}]})).itemIds,[]);
+  assert.deepEqual((await api.search({collectionSetIds:[13],
+    listingEvidence:'predicate',sourceGroups:[{collectionSetId:13,groupIndex:1}]})).itemIds,[300]);
+  assert.deepEqual((await api.search({collectionSetIds:[13],
+    listingEvidence:'direct',sourceGroups:[{collectionSetId:13,groupIndex:0}]})).itemIds,[300]);
+  assert.deepEqual((await api.getSourceGroups(13)).map(x=>[
+    x.groupIndex,x.distinctCandidateItemIds,x.directListedItemIds,
+    x.staticPredicateItemIds,
+  ]),[[0,1,1,0],[1,1,0,1]]);
+});
+
+test('unrecognized original source evidence modes fail closed',async()=>{
+  const f=fixture(),api=createDb01OriginalSourceMenuQuery(f.catalog,f.shared);
+  await assert.rejects(api.search({listingEvidence:'runtime-ui'}),/QUERY_EVIDENCE/);
+});
