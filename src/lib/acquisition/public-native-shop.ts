@@ -213,13 +213,14 @@ function readProjection(
         'Exact '+policy.snapshotKey+' cached offer ItemId link; not proof of a live sale, owned entitlement or granted item',
         'Native offer ID: '+offerId,
         'Source category: '+category,
-        'Source archived cache SHA-256: '+policy.sourceSha,
+        (policy.archived?'Source archived cache SHA-256: ':
+          'Source stores.dat SHA-256: ')+policy.sourceSha,
         'Configured per-content Moonstone allocation: '+allocation+
           ' (not a separately purchasable price)'
       ];
       if(policy.archived)
         conditions.push('Archived cache only: source MinGameVersion '+policy.minVersion+
-          ', original game build and 1.26.2 storefront compatibility NOT verified');
+          ', full original game build and 1.26.2 storefront compatibility NOT verified');
       if(storeId!==null)conditions.push('Source store ID: '+storeId);
       if(discount!==null)
         conditions.push('Original sale discount: '+discount+
