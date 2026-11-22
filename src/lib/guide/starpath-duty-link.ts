@@ -35,7 +35,7 @@ export function resolveStarpathDutyLink(search: string, catalog: unknown): Starp
   if(!Array.isArray(seasons)||seasons.length!==2)return null;
   const params=new URLSearchParams(search);
   const seasonParams=params.getAll('season'), taskParams=params.getAll('task');
-  if(seasonParams.length!==1||taskParams.length!==1)return null;
+  if(seasonParams.length!==1||taskParams.length!==1||params.has('reward'))return null;
   const seasonId=seasonParams[0],taskId=taskParams[0];
   if(!SEASONS.has(seasonId)||!(NORMAL.test(taskId)||WEEKLY.test(taskId)))return null;
   const source=seasons.find(s=>s?.id===seasonId);
