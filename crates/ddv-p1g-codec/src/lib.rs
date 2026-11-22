@@ -442,9 +442,12 @@ mod browser_amount_preview {
            ddv_save_patch::validate_json_without_edit(plan).is_err() {
             return Err(fail("DB05_BATCH_PLAN_INVALID"));
         }
-        let rows:serde_json::Value=serde_json::from_str(plan)
+        let plan:serde_json::Value=serde_json::from_str(plan)
             .map_err(|_|fail("DB05_BATCH_PLAN_INVALID"))?;
-        let rows=rows.as_array().ok_or(fail("DB05_BATCH_PLAN_INVALID"))?;
+        let root=plan.as_object().ok_or(fail("DB05_BATCH_PLAN_INVALID"))?;
+        if root.len()!=1{return Err(fail("DB05_BATCH_PLAN_INVALID"));}
+        let rows=root.get("edits").and_then(serde_json::Value::as_array)
+            .ok_or(fail("DB05_BATCH_PLAN_INVALID"))?;
         if rows.is_empty() || rows.len()>16 {
             return Err(fail("DB05_BATCH_COUNT_INVALID"));
         }
