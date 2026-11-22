@@ -792,6 +792,72 @@ try{
   await stagedGroup.getByRole('button',{name:'座標編集 #1 を削除'}).click();
   assert.equal(await groupMap.locator('.queued-ghost').count(),1,
     'removing a staged edit immediately removes its destination ghost');
+
+  // A bounded, experimental 90-degree saved-numeric group turn stages mixed
+  // coordinate + cardinal orientation edits. Native Rust reopens the rebuilt
+  // encrypted P1G and preserves untouched DiffGrid and unknown fields.
+  const rotatedOriginal=structuredClone(groupOriginal);
+  rotatedOriginal.World.GridCollection.Grids['101'].Objects['2'].Orientation=
+    'GridOrientation_Left';
+  await page.getByLabel('検証用セーブファイル').setInputFiles({
+    name:'group-rotate.profile',mimeType:'application/octet-stream',
+    buffer:syntheticEncryptedP1g(rotatedOriginal)
+  });
+  await page.getByRole('button',{name:'所持アイテムを表示'}).click();
+  await page.getByRole('region',{name:'セーブ内アイテム'})
+    .getByRole('status').filter({hasText:'件'})
+    .waitFor({timeout:30000});
+  await objects.getByRole('button',{name:'配置オブジェクトを表示'}).click();
+  await objects.getByRole('status').filter({hasText:'3件'})
+    .waitFor({timeout:30000});
+  const rotateMap=objects.getByRole('region',{name:'セーブ内Grid配置マップ'});
+  await rotateMap.getByRole('button',{name:'複数配置を一括移動'}).click();
+  await rotateMap.getByRole('button',{name:'配置 1 をグループへ追加'}).click();
+  await rotateMap.getByRole('button',{name:'配置 2 をグループへ追加'}).click();
+  await rotateMap.getByRole('button',{name:'右へ90°（数値座標）'}).click();
+  assert.equal(await rotateMap.locator('.group-ghost').count(),1);
+  await rotateMap.getByRole('button',{
+    name:'2件の回転を配置編集に追加'
+  }).click();
+  const rotateBatch=objects.getByLabel('一括配置変更',{exact:true});
+  await rotateBatch.getByText('2 / 16件').waitFor();
+  assert.equal(await rotateMap.locator('.queued-ghost').count(),1);
+  assert.equal(await rotateMap.locator(
+    '.queued-ghost[title*="#2 X 44 Y 14"]'
+  ).count(),1);
+  const rotateEditor=objects.getByLabel('座標編集',{exact:true});
+  await rotateBatch.getByRole('button',{name:'一括配置変更を検証'}).click();
+  await rotateEditor.getByRole('status').filter({
+    hasText:'2件の配置変更をRust/WASMで検証しました'
+  }).waitFor({timeout:30000});
+  page.once('dialog',dialog=>dialog.accept());
+  await rotateEditor.getByRole('button',{name:'座標変更コピーを生成'}).click();
+  const rotateLink=rotateEditor.getByRole('link',{
+    name:'座標コピーをダウンロード'
+  });
+  await rotateLink.waitFor({timeout:30000});
+  const rotateEvent=page.waitForEvent('download');
+  await rotateLink.click();
+  const rotatedCopy=readSyntheticEncryptedP1g(
+    await readFile(await (await rotateEvent).path())
+  );
+  const rotatedObjects=rotatedCopy.World.GridCollection.Grids['101'].Objects;
+  assert.deepEqual([
+    rotatedObjects['1'].X,rotatedObjects['1'].Y,
+    rotatedObjects['1'].Orientation
+  ],[45,9,'GridOrientation_Right']);
+  assert.deepEqual([
+    rotatedObjects['2'].X,rotatedObjects['2'].Y,
+    rotatedObjects['2'].Orientation
+  ],[44,14,'GridOrientation_Up']);
+  assert.equal(rotatedObjects['1'].PrivateState,'do-not-export');
+  assert.equal(rotatedObjects['2'].PrivateGroup,'keep-both');
+  assert.equal(rotatedCopy.World.GridCollection.DiffGrids['102']
+    .ModifiedObjects['6'].X,-12);
+  assert.equal(rotatedCopy.Player.ListInventories['100'].Inventory['550'].Amount,7);
+  assert.equal(rotatedOriginal.World.GridCollection.Grids['101'].Objects['1']
+    .Orientation,'GridOrientation_Up');
+  assert.equal(rotatedOriginal.World.GridCollection.Grids['101'].Objects['2'].X,50);
   assert.deepEqual(errors,[],errors.join('\n'));
   await page.close();
   console.log('DB-05 browser: explicit JSON/P1G edited-copy downloads, native reopen, stale rejection, original preservation PASS');
