@@ -106,6 +106,25 @@ test('reviewed actionable riddle solutions bind to native season+Task IDs, rejec
     'HauntingElegance2026/Task106':'ニンニク',
     'HauntingElegance2026/Task108':'ジャック・スケリントン',
     'HauntingElegance2026/Task112':'マーリン',
+    'HauntingElegance2026/Task02':'村人',
+    'HauntingElegance2026/Task14':'スクルージ',
+    'HauntingElegance2026/Task24':'グーフィー',
+    'HauntingElegance2026/Task31':'Fabric',
+    'HauntingElegance2026/Task34':'ミッキーマウス',
+    'HauntingElegance2026/Task41':'ドリームスナップ',
+    'HauntingElegance2026/Task44':'投票',
+    'HauntingElegance2026/Task50':'カボチャ',
+    'HauntingElegance2026/Task58':'勇気の森',
+    'HauntingElegance2026/Task71':'デイジー',
+    'HauntingElegance2026/Task75':'ティアナ',
+    'HauntingElegance2026/Task84':'釣り',
+    'HauntingElegance2026/Task94':'金色のさざ波',
+    'HauntingElegance2026/Task100':'Playful Pumpkin Scarecrow',
+    'HauntingElegance2026/Task121':'フローティング',
+    'Seafaring2026/Task10':'海藻',
+    'Seafaring2026/Task16':'輝きの浜辺',
+    'Seafaring2026/Task37':'Natural Rock Paths',
+    'Seafaring2026/Task40':'ホタテ',
     'Seafaring2026/Task19':'ピーター・パン',
     'Seafaring2026/Task23':'アリエル',
     'Seafaring2026/Task39':'アリエル',
@@ -131,7 +150,7 @@ test('reviewed actionable riddle solutions bind to native season+Task IDs, rejec
   }
   assert.equal(verifiedDaily,STARPATH_REVIEWED_DAILY_COUNT);
   assert.equal(verifiedWeekly,STARPATH_REVIEWED_WEEKLY_COUNT);
-  assert.equal(verifiedDaily,27);
+  assert.equal(verifiedDaily,63);
   assert.equal(verifiedWeekly,8);
   const real=snap.seasons[1].tasks.find(t=>t.id==='Task19');
   assert.equal(actionableStarpathTask('HauntingElegance2026',real),null);
@@ -139,6 +158,16 @@ test('reviewed actionable riddle solutions bind to native season+Task IDs, rejec
   assert.equal(actionableStarpathTask('Seafaring2026',{...real,description:'unverified riddle'}),null);
   assert.equal(actionableStarpathTask('Seafaring2026',{...real,id:'Task999'}),null);
   assert.equal(actionableStarpathTask('Seafaring2026',real,'de'),null);
+  const newReviewed=snap.seasons[0].tasks.find(t=>t.id==='Task100');
+  assert(newReviewed);
+  assert.equal(actionableStarpathTask('HauntingElegance2026',{...newReviewed,objectiveKind:'MineMineral'}),null,
+    'new editorial recipe option must reject changed task kind');
+  assert.equal(actionableStarpathTask('HauntingElegance2026',{...newReviewed,description:'Craft a different item.'}),null,
+    'new editorial recipe option must reject a changed native hint');
+  const untouched=snap.seasons[0].tasks.find(t=>t.id==='Task83');
+  assert(untouched);
+  assert.equal(actionableStarpathTask('HauntingElegance2026',untouched),null,
+    'unreviewed tasks still fall back to the immutable in-game text');
   const newWeekly=snap.seasons[0].weeklyTasks.flat().find(t=>t.id==='Week02Task03');
   assert(newWeekly);
   assert.equal(actionableStarpathTask('HauntingElegance2026',{
