@@ -69,14 +69,31 @@ function sanitizeNativeP1gAudit(raw) {
   });
 }
 
+/**
+ * A .profile/.dat/.bin file may contain raw UTF-8 JSON or AES/ZIP P1G.
+ * Classify by the actual bytes exclusively inside the Worker, never by a
+ * user-controlled filename or the page runtime. Malformed JSON stays JSON
+ * (fail closed); it must not silently fall back to P1G.
+ */
+export function detectLocalSaveFormat(bytes) {
+  if(!(bytes instanceof Uint8Array) || bytes.byteLength===0)
+    throw new TypeError('DB05_LOCAL_SOURCE_INVALID');
+  let index=0;
+  while(index<bytes.length &&
+    (bytes[index]===0x20||bytes[index]===0x09||
+      bytes[index]===0x0a||bytes[index]===0x0d))index++;
+  return bytes[index]===0x7b?'json':'p1g';
+}
+
 export async function inspectLocalSaveDiagnosticsBytes(format, bytes, verifyNative=null, verifyP1g=null) {
   if (verifyNative!==null && typeof verifyNative!=='function')
     throw new TypeError('DB05_LOCAL_WASM_CALLBACK_INVALID');
   if (verifyP1g!==null && typeof verifyP1g!=='function')
     throw new TypeError('DB05_LOCAL_P1G_CALLBACK_INVALID');
-  if (!(bytes instanceof Uint8Array) || (format !== 'p1g' && format !== 'json')) {
+  if (!(bytes instanceof Uint8Array) || !['auto','p1g','json'].includes(format)) {
     throw new TypeError('DB05_LOCAL_SOURCE_INVALID');
   }
+  if (format === 'auto') format=detectLocalSaveFormat(bytes);
   if (format === 'p1g' ? (
     bytes.byteLength < 16 || bytes.byteLength > MAX_LOCAL_P1G_BYTES ||
     bytes.byteLength % 16 !== 0
