@@ -62,7 +62,7 @@ export function projectSavedGridFurnitureReferences(root){
     if((own(gridCollection,'Grids')&&!record(full))||
        (own(gridCollection,'DiffGrids')&&!record(diff)))invalidRecords++;
     if(fullKeys.length+diffKeys.length>MAX_GRIDS)sampled=true;
-    for(const [gridKey,grid] of Object.entries(full??{})){
+    for(const [gridKey,grid] of Object.entries(record(full)?full:{})){
       if(gridsVisited++>=MAX_GRIDS){sampled=true;break;}
       if(!key(gridKey)||!record(grid)||!record(grid.Objects)||
         (own(grid,'ID')&&grid.ID!==Number(gridKey))){
@@ -73,11 +73,11 @@ export function projectSavedGridFurnitureReferences(root){
     }
     // AllGrids enumerates full and diff grids; a duplicate identity indicates
     // ambiguous malformed data for this simple save-only projection.
-    for(const [gridKey,grid] of Object.entries(diff??{})){
+    for(const [gridKey,grid] of Object.entries(record(diff)?diff:{})){
       if(gridsVisited++>=MAX_GRIDS){sampled=true;break;}
       if(!key(gridKey)||!record(grid)||!record(grid.ModifiedObjects)||
         (own(grid,'ID')&&grid.ID!==Number(gridKey))||
-        own(full??{},gridKey)){
+        own(record(full)?full:{},gridKey)){
         invalidRecords++;continue;
       }
       const removed=grid.RemovedObjects??[];
