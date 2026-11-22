@@ -1,5 +1,34 @@
 # DB-02 ACQUISITION — source-pinned extraction
 
+## Original native sell-price provider lookup (Steam/Switch 1.26.2)
+
+`native-sell-provider-plan.mjs` exposes the executable-confirmed
+**first-success** order in `ItemPriceDatabases.TryGetSellPrice`:
+(1) an item-specific `IItemSellPriceCalculator` gated on
+`CanCalculateForCurrency`; (2) the noncached native
+`SellPriceFormulaItemData.GetItemSellPrice` path; then (3)
+registered `IItemPriceDatabase` providers. The static and dynamic
+price database types **implement** that native interface; the actual
+runtime registry/iteration order is not proven. Native
+`TryGetSellPrice` failure writes **out=0** and returns false; the
+cooking caller's `GetSellPrice` uses its declared **default=1**
+only then. Neither number is an independently observed Item sell price.
+
+Source-authenticated meal inspection now includes a provider plan for
+the meal item and each serialized ingredient. Steam v1.26.2 native
+source census: **371** distinct fixed cooking ingredients (**140**
+Crop + **72** Fish + **159** Ingredient); these three classes do not
+implement `IItemSellPriceCalculator`, while `MealItemData`
+does. **211** fixed ingredient IDs have one configured static soft
+sell amount; **160** have none in the observed source snapshot,
+which does **not** establish a runtime price or failure.
+The source-authenticated smoke covers all **618** unique meal Item IDs.
+
+The offline original-binary auditor pins **8 methods each platform**
+and **37 machine-code windows** (20 Steam, 17 Switch) including this
+three-stage provider routing. All original game binaries remain
+private. See [MEAL-STATE-SELL-PRICE.md](MEAL-STATE-SELL-PRICE.md).
+
 ## Native recipe ingredient source routing (Steam/Switch v1.26.2)
 
 `native-meal-price-route.mjs` and the existing private
