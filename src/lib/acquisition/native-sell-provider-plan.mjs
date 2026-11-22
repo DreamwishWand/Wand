@@ -61,14 +61,14 @@ export function nativeSellPriceProviderPlan(itemId){
     itemSpecificCalculatorMayBeCalled:member?.calculator??null,
     currencyAcceptanceAtRuntime:null,
     priceProviderStages:stages,
-    registeredPriceDatabaseImplementations:freeze([
+    knownIItemPriceDatabaseNativeTypes:freeze([
       'ItemPriceDatabase','DynamicItemPriceDatase'
     ]),
     registeredDatabaseIterationOrderVerified:false,
     runtimeDynamicCacheState:null,
     nativeTrySellPriceFailureOutput:0,
     nativeTrySellPriceFailureReturnsFalse:true,
-    outerGetSellPriceDefaultOnFailure:1,
+    outerGetSellPriceDeclaredDefaultArgument:1,
     zeroOutParameterIsNotEffectiveSellPrice:true,
     defaultOneAppliesOnlyAfterRuntimeLookupFailure:true,
     missingConfiguredStaticRowIsNotRuntimeFailure:true,
