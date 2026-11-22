@@ -789,8 +789,20 @@ try{
   assert.ok(firstSpot&&searchSpot);
   assert.ok(Math.abs(firstSpot.y-searchSpot.y)<18,'first Collection step highlights its search control');
   await page.locator('.wand-tour-primary').click();
-  const secondSpot=await page.locator('.wand-tour-spotlight').boundingBox();
-  assert.ok(secondSpot&&Math.abs(secondSpot.y-firstSpot.y)>10,'spotlight moves to item controls');
+  // The spotlight animates for 180ms; check final alignment with the actual
+  // selected item, not an intermediate frame immediately after click.
+  await page.waitForFunction(()=>{
+    const marker=document.querySelector('.wand-tour-count')?.textContent??'';
+    const spotlight=document.querySelector('.wand-tour-spotlight');
+    const item=document.querySelector('.collection-results .item-card-body') ??
+      document.querySelector('.facet-grid .facet-card') ??
+      document.querySelector('.collection-results');
+    if(!marker.includes('2 / 4')||!spotlight||!item)return false;
+    const rect=spotlight.getBoundingClientRect(),target=item.getBoundingClientRect();
+    return Math.abs(rect.top-Math.max(5,target.top-5))<12 &&
+      Math.abs(rect.left-Math.max(5,target.left-5))<12 &&
+      Math.abs(rect.width-(target.width+10))<18;
+  },null,{timeout:10000});
   await page.locator('.wand-tour-close').click();
   await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-label')==='このページのチュートリアル');
   assert.equal(await page.locator('.wand-tour-layer').count(),0);
