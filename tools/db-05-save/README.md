@@ -1302,3 +1302,66 @@ permissions remain explicitly false.
 
 CI: `node --test tests/save-clean-regression.test.mjs
 tests/save-clean-regression-cli.test.mjs` (synthetic fixtures only).
+
+
+## Formal DB-05 -> Save Editor handoff — source-aligned, read-only
+
+`data/ddv/save/editor-handoff.v1.json` and
+`src/lib/save/editor-handoff.mjs` define the exact interface to
+consume DB-05 safely in a future Save Editor. The contract is
+validated **against the existing independent source manifests**
+at load: 60 editor readset field templates, 14 internal-reference
+graph rules, 8 known DB-01/DB-03/DB-04 reference candidate
+families and 1 readset-only candidate not yet proven by the
+catalog link rule. The source field paths are normalized only
+for public wildcard spelling; **saved numeric grid IDs are never
+converted into DB-04 source grid paths**.
+
+Exact readset-to-source candidates:
+
+| Domain | DB | Source family | Handoff field |
+| --- | --- | --- | --- |
+| Inventory | DB-01 | inventory_item_key | list_inventory_entry |
+| Chest slots | DB-01 | chest_item | container_slot_item |
+| Collection | DB-01 | collection_item_key | collection_group_items |
+| Placed objects | DB-01 | placed_grid_object_item | grid_object_item |
+| Diff-grid objects | DB-01 | modified_grid_object_item | diff_modified_item |
+| Native grid definition | DB-04 | native_grid_source_path | grid_source_path |
+| Mission slots | DB-03 | active_mission_slot | mission_id |
+| Achievements | DB-03 | achievement_duty_id | achievement_id |
+| Nullable chest parent | DB-01 | **readset-only, unverified join** | container_parent_item |
+
+`mount_item` and `village_scene` are separate existing DB-05
+catalog families but **not yet included** in the editor 60-field
+candidate readset; neither may be silently treated as covered.
+
+APIs:
+
+- `getSaveEditorHandoff()` returns a deeply immutable,
+  public, source-consistency-checked contract with explicit
+  limits and unresolved gates.
+- `inspectSaveEditorHandoff(strictlyDecodedProfile)` returns
+  only anonymous presence/type/sampling evidence for the nine
+  candidate paths and six readset domains, plus 14 native
+  internal-reference diagnostics. It neither loads nor copies
+  a private DB-01/03/04 index.
+
+Each link reports `sourceIdMatchVerified:false` until the
+appropriate **private source-validated catalog and source hash**
+are independently supplied to its existing bridge API.
+All returned identifiers are **fixed public rule IDs**, never
+user map keys, source item IDs, actual ItemID, MissionId,
+AchievementID, GridDataPath values, localized names or save fields.
+
+An observed field is neither proof of native content validity
+nor of permission to mutate it. Missing mission/world records
+(including intentionally deleted records), changed counts,
+unknown fields and native initial diff-grids do not imply
+corruption. Changes to GameInfo.Version are not a reader gate.
+Strict P1G decode is an external prerequisite; Rust/WASM
+read-only reference parity does not certify save encoding.
+Lossless unknown-field byte preservation, actual codec
+round-trip, source/build joint verification, item ownership,
+reward claims, Writer and export remain unverified/disabled.
+
+CI: `node --test tests/save-editor-handoff.test.mjs`
