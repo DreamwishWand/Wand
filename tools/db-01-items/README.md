@@ -190,6 +190,66 @@ shards and a versioned manifest; the old catalog, icon GUIDs and eight exact
 current-version names are unchanged. The private original Tag overlay is
 stored alongside the audited DB-01 release in the owner's SRC-01 Drive folder.
 
+### Original-native furniture/style/color Tag filters (TypeScript)
+
+`src/lib/items/native-facet-filters.ts` exports
+`createDb01NativeFacetFilterClient(catalog,tags,itemTypes)`.
+It accepts only the **matching, full current-version** private DB-01 catalog,
+original Tag and source IL2CPP enum clients. Source Items SHA, original
+SQLite SHA, game version and complete four-class native item count must
+agree; missing or conflicting original source definitions fail closed.
+The first query scans just the current `ActivityItem`, `Furniture`,
+`Clothing`, and `Trimming` definitions with bounded source reads and
+caches an on-demand original-source index. No game images or raw assets
+are added to public Git.
+
+```ts
+const filter=createDb01NativeFacetFilterClient(catalog,tagClient,typeClient);
+const groups=await filter.getSubtypeOptions('Furniture');
+const colours=await filter.getFacetOptions('color','Furniture');
+const styles=await filter.getFacetOptions('furnitureStyle','Furniture');
+const matched=await filter.search({
+  nativeCategories:['Furniture'],
+  subtypes:[{nativeCategory:'Furniture',subtypeCode:0}],
+  facets:{
+    furnitureStyle:[2000200000,2000200001],
+    color:[2000700000,2000700002],
+  },
+  offset:0,limit:100,
+});
+```
+
+**Original native taxonomy:** all 13,202 current Steam 1.26.2 inventory
+definitions are source-identical and have an IL2CPP ItemType/subtype
+code/name. An original Tag reference may declare *multiple* furniture
+kinds, styles, colors or universes for the same Item ID. Filters OR
+within one facet (Red or Blue), AND across different facets (furniture
+style and color); they never discard original Tag IDs or collapse
+multiple source links. `getFacetOptions` returns the original Tag ID,
+native Tag key and matching Item-ID count; native Tag keys are **not**
+localized game-screen labels. 256 original Item-ID source bucket reads
+are reused by existing underlying clients rather than creating another
+data store.
+
+The original-source audit against current **SHA-identical game files**
+finds 5,883 of 6,746 Furniture with a source
+`furnitureKind` Tag, 4,424 with `furnitureStyle`, and 4,864 with a
+`color` Tag; Clothing has 1,872 `clothingStyle` and 1,863
+`color` links (out of 2,041). These are counts of original Tag
+associations, not claims that *missing* source tags imply an in-game
+'Other' classification. The source ID exact IL2CPP subtype is a
+different relation from the native Tag facets.
+
+**Do not conflate source Tag facets with game UI taxonomy.** The
+`worldContextTag` original facet does *not* assert an obtainable
+world or DLC entitlement. Premium Shop, free/premium Star Path rewards,
+Vault and code/Twitch releases are *independent, potentially overlapping
+Item-ID acquisition edges* owned by DB-02/DB-03. Their origins,
+time windows and reward occurrences must all be preserved on the same
+Item ID; the native-filter API deliberately does not overwrite or
+aggregate them into one 'primary source'. DB-03 currently validates two
+original source Star Paths, not all historical seasons.
+
 ### Shared Item-ID classification read API (TS, private source overlays)
 
 `src/lib/items/shared-view.ts` provides
