@@ -119,6 +119,11 @@ try{
   },seed);
   const page=await context.newPage();
   const browserErrors=[];
+  const saveWasmAssets=[];
+  page.on('response',response=>{
+    if(response.url().includes('ddv_p1g_codec_bg')&&response.url().endsWith('.wasm'))
+      saveWasmAssets.push({url:response.url(),status:response.status()});
+  });
   page.on('pageerror',error=>browserErrors.push(String(error)));
   // The landing screen is a visual portal, with unavailable services clearly
   // noninteractive and every page exposing a contextual tutorial.
@@ -452,6 +457,8 @@ try{
     .setInputFiles({name:'synthetic.profile',
       mimeType:'application/octet-stream',buffer:fixture});
   await page.getByRole('status').filter({hasText:'セーブの発見履歴'}).first().waitFor({timeout:25000});
+  assert.ok(saveWasmAssets.some(asset=>asset.status===200),
+    'Collection real P1G Worker must load native Rust ddv_p1g_codec WASM');
   const afterSaveDownload=page.waitForEvent('download');
   await page.getByRole('button',{name:'バックアップ出力'}).click();
   const afterSave=JSON.parse(await readFile(await (await afterSaveDownload).path(),'utf8'));
