@@ -331,12 +331,261 @@ pub(super) fn saved_grid_instances_json(source:&[u8])->Result<String,CodecError>
     })).map_err(|_|CodecError::Json)
 }
 
+/// DB-05 × DB-04 read-only, *per-ephemeral-ordinal* source reference
+/// annotation. This is never a saved Grid identity join, placement bound,
+/// occupancy permission or source hash equivalence. Save dictionary IDs and
+/// source paths must not cross this Rust/WASM output boundary.
+pub(super) fn saved_db04_object_source_context_json(
+    profile:&[u8],witness:&str
+)->Result<String,CodecError>{
+    if witness.is_empty()||witness.len()>16*1024*1024{
+        return Err(CodecError::Bounds);
+    }
+    let verified:Value=serde_json::from_str(witness).map_err(|_|CodecError::Json)?;
+    let contract=verified.as_object().ok_or(CodecError::Json)?;
+    if contract.len()!=2||
+       contract.get("contract").and_then(Value::as_str)
+           !=Some("wand.db05.db04-object-source-witness@1"){
+        return Err(CodecError::Json);
+    }
+    let refs=contract.get("gridRefs").and_then(Value::as_array)
+        .ok_or(CodecError::Json)?;
+    if refs.len()>20000{return Err(CodecError::Bounds);}
+    #[derive(Clone)]
+    struct SourceRef{
+        layout:String,
+        data:String,
+        native_id:u32,
+        size:Option<(u32,u32)>,
+        tessellation:Option<u32>
+    }
+    let valid_path=|p:&str,prefix:&str|{
+        p.len()>prefix.len()+5&&p.len()<=512&&
+        p.starts_with(prefix)&&p.ends_with(".json")&&
+        !p.contains("..")&&!p.contains('\\')&&
+        !p.chars().any(char::is_control)
+    };
+    let mut sources=Vec::<SourceRef>::with_capacity(refs.len());
+    let mut ids=HashSet::new();
+    for value in refs{
+        let row=value.as_object().ok_or(CodecError::Json)?;
+        if row.len()!=6||![
+            "layoutId","gridDataPath","nativeGridId",
+            "nativeSizeX","nativeSizeY","tessellationFactor"
+        ].iter().all(|key|row.contains_key(*key)){
+            return Err(CodecError::Json);
+        }
+        let layout=row.get("layoutId").and_then(Value::as_str)
+            .ok_or(CodecError::Json)?;
+        let data=row.get("gridDataPath").and_then(Value::as_str)
+            .ok_or(CodecError::Json)?;
+        let native_id=row.get("nativeGridId").and_then(Value::as_u64)
+            .and_then(|n|u32::try_from(n).ok()).ok_or(CodecError::Json)?;
+        if !valid_path(layout,"SceneLayouts/")||
+           !valid_path(data,"GridData/")||
+           !ids.insert((layout.to_owned(),native_id)){
+            return Err(CodecError::Json);
+        }
+        let bounds=|key:&str,max:u32|->Result<Option<u32>,CodecError>{
+            match row.get(key){
+                Some(Value::Null)=>Ok(None),
+                Some(v)=>v.as_u64()
+                    .and_then(|n|u32::try_from(n).ok())
+                    .filter(|n|*n>0&&*n<=max)
+                    .map(Some).ok_or(CodecError::Json),
+                None=>Err(CodecError::Json)
+            }
+        };
+        let x=bounds("nativeSizeX",65536)?;
+        let y=bounds("nativeSizeY",65536)?;
+        if x.is_some()!=y.is_some()||
+           x.zip(y).is_some_and(|(sx,sy)|u64::from(sx)*u64::from(sy)>16_777_216){
+            return Err(CodecError::Json);
+        }
+        let tessellation=match row.get("tessellationFactor"){
+            Some(Value::Null)=>None,
+            Some(v)=>Some(v.as_u64()
+                .and_then(|n|u32::try_from(n).ok())
+                .filter(|n|*n>=1&&*n<=256).ok_or(CodecError::Json)?),
+            None=>return Err(CodecError::Json)
+        };
+        sources.push(SourceRef{
+            layout:layout.to_owned(),data:data.to_owned(),native_id,
+            size:x.zip(y),tessellation
+        });
+    }
+    let (scan,_)=scan_grid_instances(profile)?;
+    if scan.sampled||scan.invalid>0{return Err(CodecError::Json);}
+    let root:Value=serde_json::from_slice(profile).map_err(|_|CodecError::Json)?;
+    let collection=root.get("World").and_then(|v|v.get("GridCollection"))
+        .and_then(Value::as_object);
+    let mut out=Vec::with_capacity(scan.private_targets.len());
+    for (i,(target,_)) in scan.private_targets.iter().enumerate(){
+        let scope=match target.kind{
+            GridObjectKind::Full=>"Grids",
+            GridObjectKind::DiffModified=>"DiffGrids"
+        };
+        let grid=collection.and_then(|c|c.get(scope))
+            .and_then(|v|v.get(&target.grid_id))
+            .and_then(Value::as_object);
+        let layout=grid.and_then(|g|g.get("GridDefaultLayoutPath"))
+            .and_then(Value::as_str);
+        let data=grid.and_then(|g|g.get("GridDataPath"))
+            .and_then(Value::as_str);
+        let diff_id=grid.and_then(|g|g.get("DefaultLayoutGridID"))
+            .and_then(Value::as_u64)
+            .and_then(|n|u32::try_from(n).ok());
+        let diff_type=grid.and_then(|g|g.get("GridDefaultLayoutType"))
+            .and_then(Value::as_str);
+        let hash=|name:&str|->bool{
+            grid.and_then(|g|g.get(name)).and_then(Value::as_i64)
+                .is_some_and(|v|v>=i32::MIN as i64&&v<=i32::MAX as i64)
+        };
+        let metadata_valid=match target.kind{
+            GridObjectKind::Full=>
+                layout.is_some_and(|v|valid_path(v,"SceneLayouts/"))&&
+                data.is_some_and(|v|valid_path(v,"GridData/")),
+            GridObjectKind::DiffModified=>
+                layout.is_some_and(|v|valid_path(v,"SceneLayouts/"))&&
+                diff_id.is_some()&&
+                diff_type.is_some_and(|v|matches!(v,
+                    "Meta.GridCollection, Meta"|
+                    "Meta.DefaultRealmData, Meta"|
+                    "Meta.DefaultOffGridBuildingData, Meta"))&&
+                hash("DefaultGridHashCode")&&hash("DefaultGridDataHashCode")
+        };
+        let matches=sources.iter().filter(|ref_row|metadata_valid&&
+            layout==Some(ref_row.layout.as_str())&&match target.kind{
+                GridObjectKind::Full=>data==Some(ref_row.data.as_str()),
+                GridObjectKind::DiffModified=>diff_id==Some(ref_row.native_id)
+            }).collect::<Vec<_>>();
+        let status=if !metadata_valid{
+            "saved_grid_source_unavailable"
+        }else if matches.is_empty(){
+            "not_in_partial_source"
+        }else if matches.len()>1{
+            "ambiguous_source_candidates"
+        }else if matches!(target.kind,GridObjectKind::DiffModified){
+            "diff_structural_candidate_hash_unverified"
+        }else{
+            "full_exact_source_path_candidate"
+        };
+        let unique=if matches.len()==1{Some(matches[0])}else{None};
+        let dimensions=unique.and_then(|r|r.size);
+        out.push(serde_json::json!({
+            "localOrdinal":i+1,
+            "sourceStatus":status,
+            "candidateCount":matches.len(),
+            "nativeSizeX":dimensions.map(|p|p.0),
+            "nativeSizeY":dimensions.map(|p|p.1),
+            "tessellationFactor":unique.and_then(|r|r.tessellation)
+        }));
+    }
+    serde_json::to_string(&serde_json::json!({
+        "contract":"wand.db05.db04-grid-object-source-context@1",
+        "rows":out,
+        "sourceCoverageComplete":false,
+        "sourceArchiveRechecked":false,
+        "savedGridIdentityVerified":false,
+        "worldCoordinateTransformVerified":false,
+        "placementLegalityVerified":false,
+        "editPermissionAuthorized":false
+    })).map_err(|_|CodecError::Json)
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
 
     fn project(input:&[u8])->Value{
         serde_json::from_str(&saved_grid_instances_json(input).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn per_object_source_candidates_do_not_claim_native_save_identity(){
+        let save=br#"{"World":{"GridCollection":{
+          "Grids":{
+            "101":{"ID":101,
+              "GridDefaultLayoutPath":"SceneLayouts/Test/Grid.json",
+              "GridDataPath":"GridData/Test/Grid.json",
+              "Objects":{"1":{"ID":1,"ItemID":77,"X":31,"Y":2}}},
+            "102":{"ID":102,
+              "GridDefaultLayoutPath":"SceneLayouts/Test/Other.json",
+              "GridDataPath":"GridData/Test/Other.json",
+              "Objects":{"3":{"ID":3,"ItemID":33,"X":12,"Y":1}}},
+            "103":{"ID":103,
+              "GridDefaultLayoutPath":"SceneLayouts/Test/Grid.json",
+              "GridDataPath":"GridData/Test/Missing.json",
+              "Objects":{"4":{"ID":4,"ItemID":44,"X":4,"Y":5}}}
+          },
+          "DiffGrids":{"202":{"ID":202,
+            "GridDefaultLayoutPath":"SceneLayouts/Test/Grid.json",
+            "GridDefaultLayoutType":"Meta.GridCollection, Meta",
+            "DefaultLayoutGridID":7,"DefaultGridHashCode":19,
+            "DefaultGridDataHashCode":-9,
+            "ModifiedObjects":{"6":{"ID":6,"ItemID":88,"X":3,"Y":3}}}}
+        }}}}"#;
+        let witness=serde_json::json!({
+            "contract":"wand.db05.db04-object-source-witness@1",
+            "gridRefs":[
+                {"layoutId":"SceneLayouts/Test/Grid.json",
+                 "gridDataPath":"GridData/Test/Grid.json",
+                 "nativeGridId":7,"nativeSizeX":10,"nativeSizeY":20,
+                 "tessellationFactor":2},
+                {"layoutId":"SceneLayouts/Test/Other.json",
+                 "gridDataPath":"GridData/Test/Other.json",
+                 "nativeGridId":8,"nativeSizeX":null,"nativeSizeY":null,
+                 "tessellationFactor":null},
+                {"layoutId":"SceneLayouts/Test/Grid.json",
+                 "gridDataPath":"GridData/Test/Missing.json",
+                 "nativeGridId":9,"nativeSizeX":null,"nativeSizeY":null,
+                 "tessellationFactor":1}
+            ]
+        }).to_string();
+        let r=saved_db04_object_source_context_json(save,&witness).unwrap();
+        let result:Value=serde_json::from_str(&r).unwrap();
+        let rows=result["rows"].as_array().unwrap();
+        assert_eq!(rows.len(),4);
+        assert_eq!(rows[0]["sourceStatus"],"full_exact_source_path_candidate");
+        assert_eq!(rows[0]["nativeSizeX"],10);
+        assert_eq!(rows[0]["nativeSizeY"],20);
+        assert_eq!(rows[0]["tessellationFactor"],2);
+        assert_eq!(rows[1]["sourceStatus"],"full_exact_source_path_candidate");
+        assert_eq!(rows[1]["nativeSizeX"],Value::Null);
+        assert_eq!(rows[2]["sourceStatus"],"full_exact_source_path_candidate");
+        assert_eq!(rows[2]["nativeSizeX"],Value::Null);
+        assert_eq!(rows[3]["sourceStatus"],
+            "diff_structural_candidate_hash_unverified");
+        assert_eq!(rows[3]["nativeSizeX"],10);
+        for text in ["SceneLayouts/","GridData/","\"101\"","\"202\"",
+                     "\"GridDefaultLayoutPath\"","\"ItemID\""]{
+            assert!(!r.contains(text),"unexpected private/source field: {text}");
+        }
+        assert_eq!(result["savedGridIdentityVerified"],false);
+        assert_eq!(result["placementLegalityVerified"],false);
+        let duplicate=serde_json::json!({
+            "contract":"wand.db05.db04-object-source-witness@1",
+            "gridRefs":[
+                {"layoutId":"SceneLayouts/Test/Grid.json",
+                 "gridDataPath":"GridData/Test/Grid.json",
+                 "nativeGridId":7,"nativeSizeX":10,"nativeSizeY":20,
+                 "tessellationFactor":2},
+                {"layoutId":"SceneLayouts/Test/Grid.json",
+                 "gridDataPath":"GridData/Test/Grid.json",
+                 "nativeGridId":11,"nativeSizeX":10,"nativeSizeY":20,
+                 "tessellationFactor":2}
+            ]
+        }).to_string();
+        let result:Value=serde_json::from_str(
+            &saved_db04_object_source_context_json(save,&duplicate).unwrap()
+        ).unwrap();
+        assert_eq!(result["rows"][0]["sourceStatus"],"ambiguous_source_candidates");
+        assert_eq!(result["rows"][0]["candidateCount"],2);
+        assert_eq!(result["rows"][0]["nativeSizeX"],Value::Null);
+        assert_eq!(result["rows"][3]["sourceStatus"],
+            "diff_structural_candidate_hash_unverified");
+        assert_eq!(saved_db04_object_source_context_json(save,r#"{"x":1}"#).err(),
+            Some(CodecError::Json));
     }
 
     #[test]
