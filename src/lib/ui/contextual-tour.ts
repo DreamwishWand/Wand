@@ -1,5 +1,5 @@
 import type {WandLanguage} from './preferences';
-import type {ShellCopy,TutorialKey} from './shell-copy';
+import type {ShellCopy} from './shell-copy';
 
 export interface TourStep {
   description:string;
@@ -81,7 +81,7 @@ function entry(description:string,...selectors:string[]):TourStep{
 }
 
 export function contextualTour(route:string,copy:ShellCopy,locale:WandLanguage):TourDeck{
-  const path=route.replace(/\\/+$/,'')||'/';
+  const path=route.replace(/\/+$/,'')||'/';
   const navigation=copy.tutorials;
   if(path==='/')return {
     title:navigation.home.title,
