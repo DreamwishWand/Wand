@@ -488,6 +488,47 @@ try{
   assert.equal(quantityProfile.World.GridCollection.Grids['101'].Objects['1'].Orientation,
     'GridOrientation_Up');
 
+  // Mixed atomic batch: rotation-only on one saved GridObject, and
+  // X/Y plus rotation on another DiffGrid object. Verify one P1G
+  // output contains both changes without modifying either original.
+  await direction.getByLabel('新しい向き').selectOption('GridOrientation_Right');
+  await direction.getByRole('button',{name:'向きを一括配置変更に追加'}).click();
+  await objects.getByRole('button',{name:'配置 #3 の座標を編集'}).click();
+  await coordinates.getByLabel('新しいX').fill('34');
+  await coordinates.getByLabel('新しいY').fill('-6');
+  await coordinates.getByLabel('座標と同時変更する向き')
+    .selectOption('GridOrientation_Down');
+  await coordinates.getByRole('button',{name:'一括配置変更に追加'}).click();
+  const mixedPanel=objects.getByLabel('一括配置変更',{exact:true});
+  await mixedPanel.getByText('2 / 16件').waitFor();
+  await mixedPanel.getByRole('button',{name:'一括配置変更を検証'}).click();
+  await coordinates.getByRole('status').filter({
+    hasText:'2件の配置変更をRust/WASMで検証しました'
+  }).waitFor({timeout:30000});
+  assert.equal(await coordinates.getByRole('alert').count(),0);
+  page.once('dialog',dialog=>dialog.accept());
+  await coordinates.getByRole('button',{name:'座標変更コピーを生成'}).click();
+  const mixedLink=coordinates.getByRole('link',{name:'座標コピーをダウンロード'});
+  await mixedLink.waitFor({timeout:30000});
+  const mixedEvent=page.waitForEvent('download');
+  await mixedLink.click();
+  const mixedSave=readSyntheticEncryptedP1g(
+    await readFile(await (await mixedEvent).path())
+  );
+  const mixedFull=mixedSave.World.GridCollection.Grids['101'].Objects['1'];
+  const mixedDiff=mixedSave.World.GridCollection.DiffGrids['102'].ModifiedObjects['6'];
+  assert.equal(mixedFull.X,45);
+  assert.equal(mixedFull.Y,9);
+  assert.equal(mixedFull.Orientation,'GridOrientation_Right');
+  assert.equal(mixedDiff.X,34);
+  assert.equal(mixedDiff.Y,-6);
+  assert.equal(mixedDiff.Orientation,'GridOrientation_Down');
+  assert.equal(mixedFull.PrivateState,'do-not-export');
+  assert.equal(mixedSave.World.GridCollection.DiffGrids['102'].RemovedObjects[0],5);
+  assert.equal(mixedSave.Player.ListInventories['100'].Inventory['550'].Amount,7);
+  assert.equal(quantityProfile.World.GridCollection.Grids['101'].Objects['1'].Orientation,
+    'GridOrientation_Up');
+  assert.equal(quantityProfile.World.GridCollection.DiffGrids['102'].ModifiedObjects['6'].X,-12);
   // Two saved references for sample furniture: one full and one non-removed
   // DiffGrid object, not three (the removed DiffGrid identity is suppressed).
   // Private DB-04 reference index supplied as a local, synthetic file.
