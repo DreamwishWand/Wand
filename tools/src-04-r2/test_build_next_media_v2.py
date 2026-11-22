@@ -76,7 +76,9 @@ class NextVersionBuildTests(unittest.TestCase):
                     asset_id or f"unity:{bundle_sha}:CAB-123:42:Sprite")
     def build(self):
         return builder.build(self.old,self.old_scan,self.next_scan,
-                             self.next_items,self.proofs,self.next_game,self.out)
+                             self.next_items,self.proofs,self.next_game,self.out,
+                             base_items_sha=updater.file_digest(self.old/"source-items"/"items.jsonl"),
+                             base_overlay_sha=updater.file_digest(self.old_index/"manifest.json"))
     def test_full_reuse_without_unity_decoding(self):
         self.write_next_proof(updater.digest(b"bundle0"))
         report=self.build()
