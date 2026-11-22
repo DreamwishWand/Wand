@@ -1,5 +1,27 @@
 # DB-02 ACQUISITION — source-pinned extraction
 
+## Shared native TypeInfo across both exports and grid-validation hooks
+
+Original Steam v1.26.2 `GameAssembly.dll` contains the same SHA-pinned
+IL2CPP TypeInfo metadata-usage slot in **four distinct native methods**:
+`ProtoDatabase.SaveBinary`, `ItemDatabase.ExportForBuild`,
+`GridData.DataValidation` and `AudioGridData.DataValidation`.
+An executable-section-wide scan found **10 exact direct RIP-relative
+references** (4 initializers, 6 reads). The original encoded token
+decodes to a **TypeInfo usage** with index **70,685**, which is **not**
+itself a managed interface name.
+
+Both export methods type-check and conditionally dispatch an interface
+method; the two grid validators also invoke that shared helper.
+`IProtobufOnBinarize` is a strong candidate because original metadata
+has three relevant implementers, but the **precise TypeInfo-to-class
+mapping is still NOT verified** without the matching original global
+metadata registration table. Actual runtime invocation and
+effective item prices remain UNKNOWN.
+
+See [SHARED-BINARIZE-TYPEINFO-POINTER.md](SHARED-BINARIZE-TYPEINFO-POINTER.md)
+and [the exact SHA-verified pointer cross-reference audit](audit_native_shared_binarize_typeinfo_1262.py).
+
 ## Native provider type cache and protobuf binarize-hook boundary
 
 Steam 1.26.2 native `ProtoDatabase.Refresh` distinguishes the

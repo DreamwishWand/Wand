@@ -91,6 +91,22 @@ export function classifyNativeDynamicCacheLifecycle(input={}){
     ]),
     originalSaveBinaryInterfaceInvocationUsesSlotZero:true,
     originalSaveBinaryInterfacePointerIsProtobufOnBinarizeVerified:false,
+    // Exact Steam IL2CPP metadata-usage slot 0x9B2F018 is used by
+    // four distinct native methods, across 10 instruction references.
+    // Its encoded TypeInfo index is NOT a managed Type name.
+    originalNativeSharedInterfaceTypeInfoUsageKind:1,
+    originalNativeSharedInterfaceTypeInfoUsageIndex:70685,
+    originalNativeSharedTypeInfoReferencesInIl2cppSection:10,
+    originalNativeSharedTypeInfoConsumerMethods:4,
+    originalNativeSharedTypeInfoUsedByProtoDatabaseExport:true,
+    originalNativeSharedTypeInfoUsedByItemDatabaseExport:true,
+    originalNativeSharedTypeInfoUsedByGridDataValidation:true,
+    originalNativeSharedTypeInfoUsedByAudioGridDataValidation:true,
+    originalNativeSharedTypeInfoInitializedByRuntimeMetadataDecoder:true,
+    originalNativeSharedTypeInfoDispatchedBySlotZeroHelper:true,
+    originalNativeSharedTypeInfoRuntimeManagedClassNameVerified:false,
+    originalSharedTypeInfoIsIProtobufOnBinarizeVerified:false,
+    originalSharedTypeInfoFullMetadataDefinitionMappingLoaded:false,
     originalNativeSaveBinaryChecksProtoDescMessageRuntimeType:true,
     originalNativeSaveBinaryHasConditionalInterfaceSlotDispatch:true,
     originalSaveBinaryDispatchedInterfaceIdentityVerified:false,
