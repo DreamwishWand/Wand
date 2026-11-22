@@ -198,6 +198,22 @@ struct MappedSaveStatusImport {
     entries: Vec<MappedSaveStatusRow>,
 }
 
+/// Separate from owned/missing: native CollectionSet boolean values encode
+/// discovery history, not actual inventory ownership.
+const SAVE_DISCOVERY_IMPORT_SCHEMA: &str = "wand.collection.mapped-save-discovery@1";
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct MappedSaveDiscoveryRow {
+    item_id: u64,
+    discovered: bool,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MappedSaveDiscoveryImport {
+    schema: String,
+    entries: Vec<MappedSaveDiscoveryRow>,
+}
+
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 struct Workspace {
@@ -812,6 +828,46 @@ impl CollectionEngine {
         })?;
         Ok(changed)
     }
+    /// Apply save-backed discovery only for exact catalog item IDs.
+    /// Does not infer ownership, treat omitted IDs as missing, or change
+    /// quantities/favorites. Unknown catalog IDs are harmlessly skipped to
+    /// support the current partial native item database. The complete
+    /// changeset is validated before one atomic workspace mutation.
+    fn apply_mapped_save_discovery_impl(&mut self, source: &str) -> Result<usize, String> {
+        let _ = self.ready()?;
+        if source.len() > 1_500_000 {
+            return Err("COLLECTION_DISCOVERY_IMPORT_TOO_LARGE".into());
+        }
+        let patch: MappedSaveDiscoveryImport = serde_json::from_str(source)
+            .map_err(|_| "COLLECTION_DISCOVERY_IMPORT_INVALID")?;
+        if patch.schema != SAVE_DISCOVERY_IMPORT_SCHEMA || patch.entries.len() > MAX_SAVE_STATUS_ITEMS {
+            return Err("COLLECTION_DISCOVERY_IMPORT_CONTRACT".into());
+        }
+        let mut seen = HashSet::new();
+        for row in &patch.entries {
+            if row.item_id == 0 || row.item_id > 9_007_199_254_740_991
+                || !seen.insert(row.item_id)
+            {
+                return Err("COLLECTION_DISCOVERY_IMPORT_ENTRY_INVALID".into());
+            }
+        }
+        let applicable: Vec<MappedSaveDiscoveryRow> = patch.entries.into_iter()
+            .filter(|row| self.lookup.contains_key(&row.item_id)).collect();
+        let count=applicable.len();
+        if count == 0 {return Ok(0);}
+        self.with_state(|state| {
+            let w = state.workspaces.iter_mut().find(|w|w.id == state.active)
+                .ok_or("COLLECTION_WORKSPACE_NOT_FOUND")?;
+            for row in applicable {
+                let key = row.item_id.to_string();
+                let mut entry = w.entries.get(&key).cloned().unwrap_or_default();
+                entry.discovered = Some(row.discovered);
+                w.entries.insert(key, entry);
+            }
+            Ok(())
+        })?;
+        Ok(count)
+    }
     fn workspace_impl(&mut self, action: &str, id: &str, name: &str) -> Result<(), String> {
         self.with_state(|state| {
             match action {
@@ -901,6 +957,9 @@ impl CollectionEngine {
     }
     pub fn apply_mapped_save_statuses(&mut self, source: &str) -> Result<usize, JsValue> {
         self.apply_mapped_save_statuses_impl(source).map_err(|e|JsValue::from_str(&e))
+    }
+    pub fn apply_mapped_save_discovery(&mut self, source: &str) -> Result<usize, JsValue> {
+        self.apply_mapped_save_discovery_impl(source).map_err(|e|JsValue::from_str(&e))
     }
     pub fn workspace_action(&mut self, action: &str, id: &str, name: &str) -> Result<(), JsValue> {
         self.workspace_impl(action,id,name).map_err(|e|JsValue::from_str(&e))
@@ -1245,6 +1304,58 @@ mod tests {
         ] {
             assert!(engine.apply_mapped_save_statuses_impl(&value.to_string()).is_err());
             assert!(engine.state==before);
+        }
+    }
+    #[test]
+    fn save_discovery_overwrites_manual_discovery_without_changing_ownership() {
+        let root=std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../static/ddv/collection/v1.25");
+        let manifest=std::fs::read_to_string(root.join("index.json")).unwrap();
+        let mut core=CollectionEngine::default();
+        core.load_index_impl(&manifest).unwrap();
+        let files:Vec<String>=core.index.as_ref().unwrap().shards.iter()
+            .map(|s|s.file.clone()).collect();
+        for file in files {
+            let bytes=std::fs::read_to_string(root.join(file)).unwrap();
+            core.append_shard_impl(&bytes).unwrap();
+        }
+        let first=core.rows[0].id;
+        let second=core.rows[1].id;
+        core.set_entry_impl(first,r#"{"status":"owned","quantity":4,"favorite":true,"discovered":false}"#).unwrap();
+        core.set_entry_impl(second,r#"{"status":"missing","discovered":true}"#).unwrap();
+        core.workspace_impl("add","local-2","Second").unwrap();
+        core.set_entry_impl(first,r#"{"discovered":false}"#).unwrap();
+        core.workspace_impl("select","local-1","").unwrap();
+        let input=json!({"schema":SAVE_DISCOVERY_IMPORT_SCHEMA,"entries":[
+            {"itemId":first,"discovered":true},
+            {"itemId":second,"discovered":false},
+            {"itemId":900000000000001u64,"discovered":true}
+        ]}).to_string();
+        assert_eq!(core.apply_mapped_save_discovery_impl(&input),Ok(2));
+        let entry=&core.state.workspaces[0].entries[&first.to_string()];
+        assert_eq!(entry.discovered,Some(true));
+        assert_eq!(entry.status.as_deref(),Some("owned"));
+        assert_eq!(entry.quantity,Some(4));
+        assert_eq!(entry.favorite,Some(true));
+        assert_eq!(core.state.workspaces[0].entries[&second.to_string()].discovered,Some(false));
+        assert_eq!(core.state.workspaces[0].entries[&second.to_string()].status.as_deref(),Some("missing"));
+        assert_eq!(core.state.workspaces[1].entries[&first.to_string()].discovered,Some(false));
+        // Users can edit without save and after save import; loading a later
+        // save supersedes that manual discovery change again.
+        core.set_entry_impl(first,r#"{"discovered":false}"#).unwrap();
+        assert_eq!(core.state.workspaces[0].entries[&first.to_string()].discovered,Some(false));
+        core.apply_mapped_save_discovery_impl(&input).unwrap();
+        assert_eq!(core.state.workspaces[0].entries[&first.to_string()].discovered,Some(true));
+        let before=core.state.clone();
+        for raw in [
+            json!({"schema":SAVE_DISCOVERY_IMPORT_SCHEMA,"entries":[{"itemId":first,"discovered":true},{"itemId":first,"discovered":false}]}),
+            json!({"schema":SAVE_DISCOVERY_IMPORT_SCHEMA,"entries":[{"itemId":first,"discovered":"yes"}]}),
+            json!({"schema":"unsupported","entries":[{"itemId":first,"discovered":false}]}),
+            json!({"schema":SAVE_DISCOVERY_IMPORT_SCHEMA,"entries":[{"itemId":0,"discovered":false}]}),
+            json!({"schema":SAVE_DISCOVERY_IMPORT_SCHEMA,"entries":[{"itemId":first,"discovered":false,"private":"secret"}]})
+        ] {
+            assert!(core.apply_mapped_save_discovery_impl(&raw.to_string()).is_err());
+            assert!(core.state == before);
         }
     }
     #[test]

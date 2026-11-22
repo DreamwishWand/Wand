@@ -81,6 +81,41 @@ test('one-shot worker core decodes encrypted P1G and returns ID-only data', asyn
  assert.equal(ui.liveInventoryVerified,false);
 });
 
+test('synthetic encrypted P1G keeps native discovery booleans and excludes category conflicts',async()=>{
+ const source=makeFixture({
+  GameInfo:{Version:643},
+  Player:{
+   Secret:'do-not-leak',
+   CollectionSets:[{
+    CollectionDefinitionID:2120000032,
+    GroupData:[
+     {GroupIndex:0,State:'private-player-group',
+       GroupsCollectionItems:{'40005160':true,'40006110':false,'40003256':true}},
+     {GroupIndex:1,State:'private-player-group',
+       GroupsCollectionItems:{'40003256':false,'40006110':false}}
+    ]
+   }]
+  },
+  World:{Stores:[]}
+ });
+ const result=await inspectEncryptedSavedStore(source);
+ assert.equal(result.saveSchema,643);
+ assert.equal(result.discovery.status,'partial_inconclusive');
+ assert.equal(result.discovery.ambiguousItemIds,1);
+ assert.deepEqual(result.discovery.entries,[
+  {itemId:40005160,discovered:true},
+  {itemId:40006110,discovered:false}
+ ]);
+ const json=JSON.stringify(result);
+ assert.ok(!json.includes('do-not-leak'));
+ assert.ok(!json.includes('private-player-group'));
+ assert.ok(!json.includes('CollectionDefinitionID'));
+ assert.ok(!json.includes('GroupIndex'));
+ assert.equal(result.discovery.ownershipVerified,false);
+ const {sanitizeSavedCollectionDiscovery}=await import('../src/lib/collection/saved-collection-discovery.mjs');
+ assert.deepEqual(sanitizeSavedCollectionDiscovery(structuredClone(result.discovery)),result.discovery);
+});
+
 test('worker core rejects oversize or misaligned ciphertext before decoding',async()=>{
  await assert.rejects(()=>inspectEncryptedSavedStore(new Uint8Array(15)),/LOCAL_P1G_INVALID_CIPHERTEXT/);
  await assert.rejects(()=>inspectEncryptedSavedStore(new Uint8Array(33)),/LOCAL_P1G_INVALID_CIPHERTEXT/);

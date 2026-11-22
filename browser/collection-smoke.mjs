@@ -1,8 +1,53 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
+import { createHash, createCipheriv } from 'node:crypto';
+import { deflateRawSync } from 'node:zlib';
 import { chromium } from 'playwright';
+
+// One synthetic P1G, never a real user's save. Browser e2e verifies that
+// decoded native discovery booleans flow through Worker -> Rust/WASM -> IDB.
+function makeSyntheticP1g(root) {
+  const key=Buffer.from('62357168683873614A38556C444A557A545A5864325467366D626F3857386e35','hex');
+  const name=Buffer.from('profile');
+  const body=Buffer.from(JSON.stringify(root));
+  const compressed=deflateRawSync(body);
+  let crc=0xffffffff;
+  for(const b of body) {
+    crc^=b;
+    for(let i=0;i<8;i++)crc=(crc&1)?(0xedb88320^(crc>>>1)):(crc>>>1);
+  }
+  crc=(crc^0xffffffff)>>>0;
+  const local=Buffer.alloc(30+name.length+compressed.length);
+  local.writeUInt32LE(0x04034b50,0);
+  local.writeUInt16LE(20,4);
+  local.writeUInt16LE(8,8);
+  local.writeUInt32LE(crc,14);
+  local.writeUInt32LE(compressed.length,18);
+  local.writeUInt32LE(body.length,22);
+  local.writeUInt16LE(name.length,26);
+  name.copy(local,30);
+  compressed.copy(local,30+name.length);
+  const central=Buffer.alloc(46+name.length);
+  central.writeUInt32LE(0x02014b50,0);
+  central.writeUInt16LE(20,4);
+  central.writeUInt16LE(20,6);
+  central.writeUInt16LE(8,10);
+  central.writeUInt32LE(crc,16);
+  central.writeUInt32LE(compressed.length,20);
+  central.writeUInt32LE(body.length,24);
+  central.writeUInt16LE(name.length,28);
+  name.copy(central,46);
+  const end=Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50,0);
+  end.writeUInt16LE(1,8);
+  end.writeUInt16LE(1,10);
+  end.writeUInt32LE(central.length,12);
+  end.writeUInt32LE(local.length,16);
+  const cipher=createCipheriv('aes-256-ecb',key,null);
+  cipher.setAutoPadding(true);
+  return Buffer.concat([cipher.update(Buffer.concat([local,central,end])),cipher.final()]);
+}
 
 const url = 'http://127.0.0.1:4173/Wand/collection/';
 const server = spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--host','127.0.0.1','--port','4173'],{
@@ -259,6 +304,39 @@ try{
   await page.reload();
   await page.locator('.summary-strip').waitFor({timeout:20000});
   assert.match(await page.locator('.summary-strip').innerText(),/13,202/);
+
+  // The save's discovered-history booleans override the manual discovered
+  // values, but never rewrite manually owned item status or favorite/quantity.
+  const fixture=makeSyntheticP1g({
+    GameInfo:{Version:643},
+    Player:{
+      PrivateName:'must-not-leak',
+      CollectionSets:[{GroupData:[
+        {State:'secret',GroupsCollectionItems:{
+          '40005160':true,'40006110':false,'40003256':true
+        }},
+        {State:'secret',GroupsCollectionItems:{'40003256':false}}
+      ]}]
+    },
+    World:{Stores:[]}
+  });
+  await page.locator('input[aria-label="DDVのセーブファイルを選択"]')
+    .setInputFiles({name:'synthetic.profile',
+      mimeType:'application/octet-stream',buffer:fixture});
+  await page.getByRole('status').filter({hasText:'セーブから発見履歴'}).first().waitFor({timeout:25000});
+  const afterSaveDownload=page.waitForEvent('download');
+  await page.getByRole('button',{name:'バックアップ出力'}).click();
+  const afterSave=JSON.parse(await readFile(await (await afterSaveDownload).path(),'utf8'));
+  const stateAfter=afterSave.workspaces.find(x=>x.id==='local-1').entries;
+  assert.equal(stateAfter['40005160'].discovered,true);
+  assert.equal(stateAfter['40005160'].status,'owned');
+  assert.equal(stateAfter['40005160'].quantity,7);
+  assert.equal(stateAfter['40005160'].favorite,true);
+  assert.equal(stateAfter['40006110'].discovered,false);
+  assert.equal(stateAfter['40003256'],undefined);
+  assert.equal(stateAfter['99999999'].discovered,true);
+  assert.equal(await page.getByRole('alert').filter({hasText:'do-not-leak'}).count(),0);
+
   await context.close();
   console.log('Collection browser WASM/IndexedDB/migration/search/paging smoke passed');
 } finally {

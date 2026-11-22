@@ -39,6 +39,12 @@ export interface MappedSaveStatusImport {
     status: 'owned' | 'missing' | 'unknown';
   }[];
 }
+
+/** Native CollectionSet boolean is discovered history, NOT owned status. */
+export interface MappedSaveDiscoveryImport {
+  schema: 'wand.collection.mapped-save-discovery@1';
+  entries: readonly { itemId: number; discovered: boolean }[];
+}
 export interface CollectionWorkspace {
   id: string;
   name: string;
@@ -467,6 +473,18 @@ export class CollectionRuntime {
    */
   applyMappedSaveStatuses(patch:MappedSaveStatusImport):Promise<void> {
     return this.mutate(() => { this.engine.apply_mapped_save_statuses(JSON.stringify(patch)); });
+  }
+  /** A strictly decoded native CollectionSet discovery projection overwrites
+   * manual discovered values for matching catalog IDs only. The user's manual
+   * status, quantity, favorite, other workspace data and game save stay intact.
+   * Unknown native IDs are skipped by Rust without fabricating Collection rows.
+   */
+  async applyMappedSaveDiscovery(patch: MappedSaveDiscoveryImport):Promise<number> {
+    let count=0;
+    await this.mutate(() => {
+      count=this.engine.apply_mapped_save_discovery(JSON.stringify(patch));
+    });
+    return count;
   }
   workspace(action:'select'|'add'|'rename'|'delete',id:string,name=''):Promise<void> {
     return this.mutate(() => this.engine.workspace_action(action,id,name));

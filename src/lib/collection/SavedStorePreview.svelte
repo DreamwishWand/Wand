@@ -4,11 +4,13 @@
   import { attachHistoricalStoreLabels } from './saved-store-preview.mjs';
   import { attachDb01PrivateNames } from './private-db01-names-view.mjs';
   import { sanitizeSavedCollectionPresence } from './saved-collection-presence.mjs';
+  import { sanitizeSavedCollectionDiscovery } from './saved-collection-discovery.mjs';
 
   export let resolveHistorical:(id:number)=>({itemId:number;label:string;family:string}|null) = ()=>null;
   export let locale = 'ja';
   export let gameImageMap: Record<string,string> = {};
-  const dispatch=createEventDispatcher<{ lookupItem:number }>();
+  export let collectionCommitBusy = false;
+  const dispatch=createEventDispatcher<{ lookupItem:number; saveDiscovery:any }>();
   const jsonKindLabels:Record<string,string>={
     null:'null',boolean:'真偽値',integer:'整数',number:'数値',
     string:'文字列',array:'配列',object:'オブジェクト'
@@ -17,6 +19,7 @@
 
   let preview: any = null;
   let collectionPreview:any=null;
+  let discoveryProjection:any=null;
   let collectionQuery='';
   let collectionLimit=48;
   let errorMessage = '';
@@ -72,6 +75,7 @@
     busy = false;
     preview = null;
     collectionPreview = null;
+    discoveryProjection = null;
     saveSchema = null;
     errorMessage = '';
     query = '';
@@ -87,13 +91,14 @@
     errorMessage = 'このセーブは読み取れませんでした。対応するP1G形式・データ構造を確認してください。元のファイルは変更されていません。';
     preview = null;
     collectionPreview = null;
+    discoveryProjection = null;
     saveSchema = null;
   }
 
   async function openLocalFile(event:Event) {
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
-    if (!file || busy) return;
+    if (!file || busy || collectionCommitBusy) return;
     clear();
     busy = true;
     const request = requestSequence;
@@ -120,9 +125,13 @@
           const historical=(result.result.summary?.items??[]).map((item:{itemId:number})=>resolveHistorical(item.itemId))
             .filter((item:unknown):item is {itemId:number;label:string;family:string}=>item!==null);
           const collection=sanitizeSavedCollectionPresence(result.result.collection);
+          const discovery=sanitizeSavedCollectionDiscovery(result.result.discovery);
           preview = attachHistoricalStoreLabels(result.result.summary,historical);
           collectionPreview=collection;
+          discoveryProjection=discovery;
           saveSchema = result.result.saveSchema;
+          if (discovery.entries.length)
+            dispatch('saveDiscovery',discovery);
         } catch { failedRead(); }
       };
       w.onmessage = event => finish(event.data);
@@ -209,9 +218,9 @@
   <div class="store-import">
     <label class="store-file">
       セーブを選択
-      <input bind:this={fileInput} type="file" accept=".json,.profile,.dat,application/octet-stream" on:change={openLocalFile} disabled={busy} aria-label="DDVのセーブファイルを選択"/>
+      <input bind:this={fileInput} type="file" accept=".json,.profile,.dat,application/octet-stream" on:change={openLocalFile} disabled={busy||collectionCommitBusy} aria-label="DDVのセーブファイルを選択"/>
     </label>
-    <p>暗号化されたセーブをローカルで解析します。ブラウザーの記録・Collectionの所持状況は変更しません。</p>
+    <p>暗号化されたセーブをローカルで解析します。CollectionSetsの発見履歴を確認できた場合は、ブラウザ内の手動発見記録よりセーブを優先します。所有・所持数は変更せず、元のセーブも書き換えません。</p>
   </div>
   {#if busy}
     <p class="store-status" role="status">この端末内で読み取り中…</p>
@@ -278,7 +287,7 @@
     {#if collectionPreview}
       <section class="saved-collection-section" aria-label="セーブ内のCollection ID参照">
         <h3>CollectionSets の保存ID参照</h3>
-        <p class="store-warning">セーブ内の <code>Player.CollectionSets[].GroupData[].GroupsCollectionItems</code> にあるIDキーの存在だけを表示します。保存された値は判定せず、所持・収集完了・解放・DLC権利を証明しません。Collectionの手動記録も変更しません。</p>
+        <p class="store-warning">セーブ内の <code>Player.CollectionSets[].GroupData[].GroupsCollectionItems</code> にあるIDと型を表示します。ネイティブ解析で確認した真偽値は発見履歴としてのみ扱い、同一Item IDのグループ間で値が異なる場合は反映しません。所有・所持数・DLC権利は推定しません。</p>
         {#if collectionPreview.status==='not_observed'}
           <p class="store-caveat">CollectionSets フィールドは確認できませんでした。セーブを改変している場合も含め、収集状態やデータ破損を意味しません。</p>
         {:else if collectionPreview.status==='partial_inconclusive'}
@@ -292,6 +301,24 @@
           <span>保存ID参照 <strong>{collectionPreview.referenceCount.toLocaleString(locale)}</strong></span>
           <span>異なるID <strong>{collectionPreview.distinctItemCount.toLocaleString(locale)}</strong></span>
         </div>
+        {#if discoveryProjection}
+          <div class="store-caveat" role="status">
+            {#if discoveryProjection.status==='unsupported_schema'}
+              保存構造の識別子が対象外のため、発見履歴の自動反映は行いません。
+            {:else if discoveryProjection.status==='not_observed'||discoveryProjection.status==='incompatible_structure'}
+              発見履歴を読み取れる構造が確認できません。既存の手動記録は維持します。
+            {:else}
+              発見履歴の候補 <strong>{discoveryProjection.entries.length.toLocaleString(locale)}</strong>件。
+              {#if discoveryProjection.ambiguousItemIds>0}
+                グループ間で値が食い違うID {discoveryProjection.ambiguousItemIds}件は上書きしません。
+              {/if}
+              {#if discoveryProjection.invalidReferences>0}
+                型・IDが不正な参照 {discoveryProjection.invalidReferences}件は除外しています。
+              {/if}
+              <small>検証根拠：Switch v1.25.0のCollectionSetネイティブ解析。Steam v1.26.2との実行コード同一性は未検証です。反映対象は発見履歴のみです。</small>
+            {/if}
+          </div>
+        {/if}
         <div class="save-shape-diagnostics">
           <h4>保存値の型（読み取り専用）</h4>
           <p>CollectionのItem IDに対応する保存値の型別件数です。値そのものやグループのState文字列は表示・保存しません。真偽値も所有・解放の意味としては扱いません。</p>
@@ -374,6 +401,7 @@
   .store-more { margin-top:14px; }
   .saved-collection-section { margin-top:20px; padding-top:18px; border-top:1px solid rgba(150,126,190,.3); }
   .saved-collection-section h3 {font-size:1rem; margin:0 0 8px;}
+  .saved-collection-section .store-caveat small {display:block;margin-top:6px;opacity:.75;font-size:.72rem;}
   .save-shape-diagnostics {padding:10px 12px;border:1px solid rgba(150,126,190,.23);border-radius:10px;margin:12px 0;}
   .save-shape-diagnostics h4 {font-size:.83rem;margin:0 0 6px;}
   .save-shape-diagnostics p {font-size:.75rem;opacity:.8;margin:0 0 8px;line-height:1.6;}

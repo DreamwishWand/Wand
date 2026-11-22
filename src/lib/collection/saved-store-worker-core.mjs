@@ -1,13 +1,15 @@
 /**
  * Read-only, browser-Worker-owned encrypted P1G inspection.
- * The caller receives only an ID/reference-count summary, never decoded JSON,
- * personal save fields, saved quantities, or the original ciphertext.
- * This does not prove live shop offers, prices, owned items or codec round-trip.
+ * The caller receives bounded ID/reference counts and a whitelisted
+ * native CollectionSet discovery-boolean projection, never decoded JSON,
+ * arbitrary save values, personal fields, amounts, or source ciphertext.
+ * Discovery is NOT item ownership, entitlement, shop stock or codec roundtrip.
  */
 import { decodeP1gPackagedProfile } from './private-p1g-codec.js';
 import { inspectDecodedWorldStores } from '../acquisition/world-store-save.mjs';
 import { createSavedStorePreview } from './saved-store-preview.mjs';
 import { createSavedCollectionPresence } from './saved-collection-presence.mjs';
+import { projectSavedCollectionDiscovery } from './saved-collection-discovery.mjs';
 
 const staticStallUnavailable = Object.freeze({ getStallStaticCatalog: () => null });
 const MAX_ENCRYPTED_BYTES = 32 * 1024 * 1024;
@@ -28,6 +30,7 @@ export async function inspectEncryptedSavedStore(ciphertext) {
     saveSchema: Number.isSafeInteger(root.GameInfo?.Version)
       ? root.GameInfo.Version : null,
     summary: createSavedStorePreview(evidence, []),
-    collection: createSavedCollectionPresence(root)
+    collection: createSavedCollectionPresence(root),
+    discovery: projectSavedCollectionDiscovery(root)
   });
 }
