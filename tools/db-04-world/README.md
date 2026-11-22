@@ -33,6 +33,30 @@ platform, the browser returns
 `native_terrain_packing_not_verified_for_game_version` rather than using
 unproven native packing claims.
 
+**Original direct-value JSON GridData (v1.26.2 Village04):** Unlike
+the binary/protobuf `.json` files above, four original village ground
+sources have a literal JSON object with exactly `SizeX`, `SizeY`, and
+`FloorTypes`. They are the source-referenced `BlockSpawn` grids for
+Forest, Savannah, Cliff, and Wetland. Their `FloorTypes` arrays are
+original **uint32 mask values**, not indices into a palette, and their
+positions use the same native grid-local `x*SizeY+y` convention. The
+private extractor now records `nativeSourceFormat:
+original_json_direct_floor_values` and keeps all original mask bits
+including `BlockAutomaticSpawning` (262144). It does **not** rewrite masks,
+infer which native mask permits placing an item, or compute pathfinding.
+The verifier independently rechecks the array length, value bounds, source
+version and read-only provenance. The browser shows direct-value tiles,
+windows and mask-count summaries separately from packed palette-index
+histograms, never fabricated palette membership.
+
+The owner-private [SRC-05 World Data](https://drive.google.com/drive/folders/1P5VW5Yr9YqYNoZfv7yHRCwqZcZapi0-Q)
+holds a Steam v1.26.2 **partial** Village04 ZIP with eight original
+AreaType→GridCollection links, twelve source GridData records (four native
+JSON direct, eight packed), 4,494 source default GridObject anchors
+and 415,522 recorded grid-local terrain cells. This is a **subset** of
+the original game, not a full world model. Raw game sources, editable player
+save positions and decoded original native code are not published to GitHub.
+
 The Python entrypoints `parse_grid_structure`, `grid_assets`,
 `checked_grid`, and all four low-level terrain helpers
 (`describe_native_packing`, `count_packed_palette_indices`, `floor_at`,

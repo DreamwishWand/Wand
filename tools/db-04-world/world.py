@@ -16,7 +16,9 @@ from collections import Counter
 from pathlib import Path
 
 from verify_bundle import validate_snapshot
-from terrain_codec import describe_native_packing, count_packed_palette_indices
+from terrain_codec import (describe_native_packing, count_packed_palette_indices,
+                           describe_native_direct_floor_types,
+                           DIRECT_JSON_SOURCE_FORMAT)
 
 SCHEMA = "wand.db04.world@1"
 STREAM = Path("ddv_Data/StreamingAssets")
@@ -489,11 +491,58 @@ def repeated_uint32(fields, number):
     return values
 
 
+def parse_original_json_direct_grid(raw, *, source_game_version):
+    """Strictly preserve literal Steam GridData JSON (direct FloorTypes).
+
+    Four original Village04 BlockSpawn grids are text JSON, despite the
+    binary .json convention used by other native GridData files.
+    This parser does not turn spawn flags into collision/placement rules.
+    """
+    def distinct_fields(pairs):
+        row = {}
+        for key, value in pairs:
+            if key in row:
+                raise ValueError("duplicate original GridData JSON field")
+            row[key] = value
+        return row
+
+    def reject_constant(value):
+        raise ValueError("nonfinite GridData JSON number")
+
+    document = json.loads(raw.decode("utf-8-sig"),
+                          object_pairs_hook=distinct_fields,
+                          parse_constant=reject_constant)
+    if (not isinstance(document, dict) or
+            set(document) != {"SizeX", "SizeY", "FloorTypes"}):
+        raise ValueError("unsupported original JSON GridData schema")
+    x, y, values = (document["SizeX"], document["SizeY"],
+                    document["FloorTypes"])
+    evidence = describe_native_direct_floor_types(
+        x, y, values, source_game_version=source_game_version)
+    return {
+        "sizeX": x, "sizeY": y, "nativeFloorTypes": values,
+        "nativeFloorTypePalette": [],
+        "compactedFloorTypesBase64": None,
+        "nativeCompactedByteCount": None, "nativeCompactedSha256": None,
+        "terrainDecoding": evidence, "nativePaletteIndexCellCounts": None,
+        "nativeSourceFormat": DIRECT_JSON_SOURCE_FORMAT,
+        "nativeFloorIndexToLocalXYCorroborated": evidence["decoded"],
+        "floorTypeEnumSymbols": {
+            str(value): name for value, name in GRID_FLOOR_TYPES.items()},
+        "cellIndexToXYVerified": False, "compactedBitOrderVerified": False,
+        "terrainFlagValuesVerified": True,
+        "status": "native_uncompacted_floor_values",
+    }
+
+
 def parse_grid_structure(raw, *, source_game_version):
     # Callers must provide the exact source version; the standalone parser
     # must not silently treat an unknown archive as the proven 1.26.1 build.
     if not isinstance(source_game_version, str) or not source_game_version:
         raise ValueError("missing original GridData source game version")
+    if raw.lstrip().startswith(b"{") or raw.lstrip().startswith(b"\xef\xbb\xbf{"):
+        return parse_original_json_direct_grid(
+            raw, source_game_version=source_game_version)
     fields = wire_fields(raw)
     x, y = one(fields, 1, 0, True), one(fields, 2, 0, True)
     if x <= 0 or y <= 0 or x * y > 16_777_216:

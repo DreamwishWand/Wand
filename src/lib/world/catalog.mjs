@@ -665,8 +665,42 @@ function packedGridForPreview(catalog, gridId) {
   // Older unresolved 1.26.2 snapshots stay unsupported; never trust flags
   // on an unknown future build, even when a ZIP claims decoded:true.
   if (!hasNativeTerrainReadEvidence(catalog) ||
-      evidence?.status === 'native_packing_not_verified_for_game_version') {
+      evidence?.status === 'native_packing_not_verified_for_game_version' ||
+      evidence?.status === 'native_json_floor_index_not_verified_for_game_version') {
     return { status: 'native_terrain_packing_not_verified_for_game_version' };
+  }
+  // Original JSON GridData has an explicit full FloorTypes array. It is
+  // NOT a compacted protobuf palette and may include BlockAutomaticSpawning.
+  // No bit-packing, palette guessing or placement permission is applied.
+  if (grid.nativeSourceFormat === 'original_json_direct_floor_values') {
+    if (evidence?.decoded !== true ||
+        evidence.status !== 'source_correlated_original_json_direct_floor_values' ||
+        evidence.packing !== 'x_major_direct_floor_values' ||
+        evidence.cellIndexFormula !== 'x*sizeY+y' ||
+        evidence.sourceGameVersion !== catalog.manifest.gameVersion ||
+        evidence.nativeCodeBodyVerified !== false ||
+        evidence.placementLegalityVerified !== false) {
+      return { status: 'unresolved_native_packing' };
+    }
+    const sx = grid.sizeX, sy = grid.sizeY;
+    const values = grid.nativeFloorTypes;
+    if (!Number.isSafeInteger(sx) || !Number.isSafeInteger(sy) ||
+        sx < 1 || sy < 1 || sx * sy > 1_000_000 ||
+        !Array.isArray(values) || values.length !== sx * sy ||
+        !values.every(v => Number.isSafeInteger(v) && v >= 0 && v <= 0xffffffff) ||
+        !Array.isArray(grid.nativeFloorTypePalette) ||
+        grid.nativeFloorTypePalette.length !== 0 ||
+        grid.compactedFloorTypesBase64 != null) {
+      throw new TypeError('Invalid original native JSON FloorTypes');
+    }
+    let cache = decodedGridCache.get(catalog);
+    if (!cache) { cache = new Map(); decodedGridCache.set(catalog, cache); }
+    const key = String(gridId);
+    if (cache.has(key)) return cache.get(key);
+    const prepared = { kind: 'direct', sizeX: sx, sizeY: sy, values,
+      evidence: evidence.sampleBasedEncodingEvidence ?? null };
+    cache.set(key, prepared);
+    return prepared;
   }
   if (evidence?.decoded !== true || evidence?.packing !== 'x_major_msb_first' ||
       ![1, 2, 4].includes(evidence.cellBits)) {
@@ -721,6 +755,7 @@ function packedGridForPreview(catalog, gridId) {
 }
 
 function previewFloorValue(grid, x, y) {
+  if (grid.kind === 'direct') return grid.values[x * grid.sizeY + y];
   const bitOffset = (x * grid.sizeY + y) * grid.bits;
   const shift = 8 - grid.bits - (bitOffset % 8);
   const index = (grid.packed[bitOffset >> 3] >> shift) & ((1 << grid.bits) - 1);
@@ -783,8 +818,34 @@ export function getNativeTerrainDistribution(catalog, gridId) {
   // Match tile/window provenance gate. Unsupported future builds and
   // legacy unverified 1.26.2 extraction never produce fake histograms.
   if (!hasNativeTerrainReadEvidence(catalog) ||
-      grid.terrainDecoding?.status === 'native_packing_not_verified_for_game_version') {
+      grid.terrainDecoding?.status === 'native_packing_not_verified_for_game_version' ||
+      grid.terrainDecoding?.status === 'native_json_floor_index_not_verified_for_game_version') {
     return { status: 'native_terrain_packing_not_verified_for_game_version' };
+  }
+  if (grid.nativeSourceFormat === 'original_json_direct_floor_values') {
+    const source = packedGridForPreview(catalog, gridId);
+    if (source.status) return { status: source.status };
+    if (source.kind !== 'direct') {
+      throw new TypeError('Invalid original native direct terrain source');
+    }
+    // Original JSON provides native raw values, not a native palette.
+    // Report distinct masks, not fabricated palette indices or permissions.
+    const counts = new Map();
+    for (const value of source.values) {
+      counts.set(value, (counts.get(value) ?? 0) + 1);
+    }
+    return {
+      status: 'source_corroborated_grid_local_summary',
+      distributionBasis: 'original_json_direct_floor_values',
+      sizeX: source.sizeX, sizeY: source.sizeY,
+      totalCells: source.sizeX * source.sizeY,
+      worldCoordinatesVerified: false, placementLegalityVerified: false,
+      nativeCodeBodyVerified: false,
+      values: [...counts].sort(([a], [b]) => a - b)
+        .map(([nativeValue, cellCount]) => ({
+          nativeValue, cellCount, ...describeNativeFloorMask(nativeValue),
+        })),
+    };
   }
   if (grid.terrainDecoding?.decoded !== true ||
       grid.terrainDecoding?.packing !== 'x_major_msb_first') {

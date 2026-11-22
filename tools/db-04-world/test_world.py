@@ -120,6 +120,56 @@ class NativeWireTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "stride override evidence"):
             checked_footprint({"itemId": 40000012, "footprint": forged})
 
+    def test_source_literal_json_griddata_is_read_only_not_protobuf(self):
+        # Matches the *structure* of Steam 1.26.2 original Village04
+        # BlockSpawn sources. These are explicit arrays, not bit-packed bytes.
+        document = {
+            "SizeX": 2, "SizeY": 3,
+            "FloorTypes": [0, 262144, 4, 262148, 512, 262656],
+        }
+        raw = json.dumps(document).encode("utf-8")
+        grid = parse_grid_structure(raw, source_game_version="1.26.2")
+        self.assertEqual(grid["sizeX"], 2)
+        self.assertEqual(grid["sizeY"], 3)
+        self.assertEqual(grid["nativeFloorTypes"], document["FloorTypes"])
+        self.assertEqual(grid["nativeSourceFormat"],
+                         "original_json_direct_floor_values")
+        self.assertEqual(grid["nativeFloorTypePalette"], [])
+        self.assertIsNone(grid["compactedFloorTypesBase64"])
+        self.assertIsNone(grid["nativePaletteIndexCellCounts"])
+        self.assertTrue(grid["terrainDecoding"]["decoded"])
+        self.assertEqual(grid["terrainDecoding"]["packing"],
+                         "x_major_direct_floor_values")
+        self.assertFalse(grid["terrainDecoding"]["placementLegalityVerified"])
+        checked_grid(grid, source_game_version="1.26.2")
+
+        forged = dict(grid, nativeFloorTypes=[0] * 6)
+        with self.assertRaisesRegex(ValueError, "index evidence"):
+            checked_grid(dict(forged,
+                terrainDecoding={"status":"forged","decoded":True}),
+                source_game_version="1.26.2")
+        with self.assertRaisesRegex(ValueError, "original JSON GridData evidence"):
+            checked_grid(dict(grid, compactedFloorTypesBase64="AAA="),
+                         source_game_version="1.26.2")
+        # Do not reinterpret future game builds using old getter/axis proof.
+        future = parse_grid_structure(raw, source_game_version="1.27.0")
+        self.assertFalse(future["terrainDecoding"]["decoded"])
+        checked_grid(future, source_game_version="1.27.0")
+        with self.assertRaisesRegex(ValueError, "index evidence"):
+            checked_grid(grid, source_game_version="1.27.0")
+
+    def test_literal_json_griddata_rejects_malformed_native_source(self):
+        for raw in (
+            b'{"SizeX":2,"SizeX":2,"SizeY":1,"FloorTypes":[0,0]}',
+            b'{"SizeX":2,"SizeY":2,"FloorTypes":[0]}',
+            b'{"SizeX":1,"SizeY":1,"FloorTypes":[-1]}',
+            b'{"SizeX":1,"SizeY":1,"FloorTypes":[4294967296]}',
+            b'{"SizeX":1,"SizeY":1,"FloorTypes":[1],"Unknown":5}',
+            b'{"SizeX":1,"SizeY":1,"FloorTypes":[NaN]}',
+        ):
+            with self.assertRaises(ValueError):
+                parse_grid_structure(raw, source_game_version="1.26.2")
+
     def test_new_game_version_keeps_raw_packed_grid_without_native_index_claim(self):
         # Reuse synthetic bytes: only the Steam 1.26.1/1.26.2 native read paths have
         # been inspected; later-version GridData stays uninterpreted.

@@ -97,6 +97,55 @@ test('Steam 1.26.2 pinned native read-path supports only bounded grid-local prev
     'native_terrain_packing_not_verified_for_game_version');
 });
 
+test('literal Steam 1.26.2 JSON FloorTypes render source-local masks without placement claims', () => {
+  const source = catalog('1.26.2',decoded);
+  source.grids.set('GridData/Villages/Spawn.json', {
+    gridId:'GridData/Villages/Spawn.json',
+    sizeX:2,sizeY:3,
+    nativeSourceFormat:'original_json_direct_floor_values',
+    nativeFloorTypes:[0,262144,4,262148,512,262656],
+    nativeFloorTypePalette:[],compactedFloorTypesBase64:null,
+    terrainDecoding:{
+      status:'source_correlated_original_json_direct_floor_values',
+      decoded:true,sourceGameVersion:'1.26.2',
+      packing:'x_major_direct_floor_values',
+      cellIndexFormula:'x*sizeY+y',
+      nativeCodeBodyVerified:false,placementLegalityVerified:false,
+    },
+  });
+  const grid='GridData/Villages/Spawn.json';
+  const tile=getNativeTerrainTile(source,grid,1,2);
+  assert.equal(tile.nativeValue,262656);
+  assert.equal(tile.placementLegalityVerified,false);
+  assert.equal(tile.status,'source_corroborated_grid_local_preview');
+  assert.ok(tile.symbols.includes('BlockAutomaticSpawning'));
+  const window=getNativeTerrainWindow(source,grid,{x:0,y:0,width:2,height:3});
+  assert.deepEqual(window.rows,[[0,262148],[262144,512],[4,262656]]);
+  assert.equal(window.worldCoordinatesVerified,false);
+  const summary=getNativeTerrainDistribution(source,grid);
+  assert.equal(summary.status,'source_corroborated_grid_local_summary');
+  assert.equal(summary.distributionBasis,'original_json_direct_floor_values');
+  assert.equal(summary.totalCells,6);
+  assert.deepEqual(summary.values.map(value=>value.nativeValue),
+    [0,4,512,262144,262148,262656]);
+  assert.equal(summary.values.every(value=>value.cellCount===1),true);
+  assert.equal(getNativeTerrainWindow(source,grid,
+    {x:0,y:0,width:2,height:4}).status,'outside_native_grid_or_preview_limit');
+  const altered={...source.grids.get(grid),nativeFloorTypes:[0,1]};
+  assert.throws(()=>getNativeTerrainTile({
+    ...source,grids:new Map([[grid,altered]])},grid,0,0),
+    /Invalid original native JSON FloorTypes/);
+  const future=catalog('1.27.0',decoded);
+  future.grids.set(grid,source.grids.get(grid));
+  assert.equal(getNativeTerrainTile(future,grid,0,0).status,
+    'native_terrain_packing_not_verified_for_game_version');
+  const switchGame=catalog('1.26.2',decoded);
+  switchGame.manifest.platform='Switch';
+  switchGame.grids.set(grid,source.grids.get(grid));
+  assert.equal(getNativeTerrainDistribution(switchGame,grid).status,
+    'native_terrain_packing_not_verified_for_game_version');
+});
+
 test('unknown grid still reports unknown grid before inspecting native versions', () => {
   const source = catalog('1.26.2',unresolved);
   for (const result of [

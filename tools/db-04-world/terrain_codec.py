@@ -54,6 +54,53 @@ def _validate_dimensions(size_x: int, size_y: int) -> None:
         raise ValueError("invalid native compacted GridData dimensions")
 
 
+
+DIRECT_JSON_SOURCE_FORMAT = "original_json_direct_floor_values"
+DIRECT_JSON_STATUS = "source_correlated_original_json_direct_floor_values"
+DIRECT_JSON_EVIDENCE = "steam_1.26.2_original_griddata_explicit_json_floor_types"
+
+
+def describe_native_direct_floor_types(size_x: int, size_y: int,
+                                       floor_types: Sequence[int],
+                                       *, source_game_version: str) -> dict:
+    """Provenance for an original JSON GridData FloorTypes *direct array*.
+
+    The native code's x*SizeY+y getter indices a direct FloorTypes array.
+    Do not misidentify a JSON source as a packed protobuf, and do not infer
+    navigation, occupancy, spawn permission or placement from floor masks.
+    """
+    _validate_dimensions(size_x, size_y)
+    if (not isinstance(floor_types, list) or
+            size_x * size_y > 1_000_000 or
+            len(floor_types) != size_x * size_y or
+            any(type(value) is not int or not 0 <= value <= 0xffffffff
+                for value in floor_types)):
+        raise ValueError("invalid original native JSON FloorTypes array")
+    if not isinstance(source_game_version, str) or not source_game_version:
+        raise ValueError("missing source game version for native JSON terrain")
+    if source_game_version not in VERIFIED_NATIVE_TERRAIN_GAME_VERSIONS:
+        return {
+            "status": "native_json_floor_index_not_verified_for_game_version",
+            "decoded": False,
+            "sourceGameVersion": source_game_version,
+            "verifiedNativeGameVersion": "1.26.2",
+            "nativeCodeBodyVerified": False,
+            "placementLegalityVerified": False,
+        }
+    return {
+        "status": DIRECT_JSON_STATUS,
+        "decoded": True,
+        "sourceGameVersion": source_game_version,
+        "packing": "x_major_direct_floor_values",
+        "cellIndexFormula": "x*sizeY+y",
+        "gridLocalCoordinatesOnly": True,
+        "sampleBasedEncodingEvidence": DIRECT_JSON_EVIDENCE,
+        "nativeCodeBodyVerified": False,
+        "placementLegalityVerified": False,
+    }
+
+
+
 def describe_native_packing(size_x: int, size_y: int,
                             palette: Sequence[int], packed: bytes,
                             *, source_game_version: str) -> dict:
