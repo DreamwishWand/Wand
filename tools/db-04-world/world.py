@@ -826,6 +826,56 @@ def floating_island_grid_collection_layout(data, relative):
     return layout, objects
 
 
+def interior_grid_collection_layout(data, relative):
+    """Read native House/Room wrapped GridCollections without guessing context.
+
+    Source-original Homes and certain Rooms (e.g. Boutique) store an opaque
+    context message at root field 1 and a Meta.GridCollection at root field 2.
+    Other Rooms store a *direct* native GridCollection; those are deliberately
+    handled by grid_collection_layout(), not this wrapper-specific reader.
+    The context SHA is provenance only: it is neither a world transform nor
+    evidence of room-edit or placement permission.
+    """
+    parts = relative.relative_to(STREAM).parts
+    if len(parts) < 3 or parts[:2] not in (
+        ("SceneLayouts", "Houses"), ("SceneLayouts", "Rooms")
+    ) or relative.name == "CustomLocations.json":
+        return None
+    # Native direct GridCollections are handled by the ordinary reader.
+    if grid_collection_layout(data, relative) is not None:
+        return None
+    root = wire_fields(data)
+    context_raw = one(root, 1, 2)
+    if context_raw is None:
+        return None
+    # We have a matching source family and context. An unexpected envelope
+    # must fail closed instead of dropping source-native fields silently.
+    if any((number, wire) not in ((1, 2), (2, 2))
+           for number, wire, _ in root):
+        raise ValueError("unexpected native interior wrapper wire fields")
+    embedded = one(root, 2, 2, True)
+    parsed = grid_collection_layout(embedded, relative)
+    if parsed is None:
+        raise ValueError("native interior wrapper missing a GridCollection")
+    layout, objects = parsed
+    layout["embeddedGridCollectionWireField"] = 2
+    layout["unparsedInteriorContextSha256"] = digest(context_raw)
+    layout["source"] = {
+        "path": relative.as_posix(),
+        "nativeType": "interior_source_with_embedded_Meta.GridCollection",
+        "embeddedGridCollectionWireField": 2,
+    }
+    for entry in layout["nativeGridEntries"]:
+        entry["gridDataPathWireField"] = "2.1.2.2"
+    layout["gridReferences"] = [
+        {"path": entry["gridDataPath"], "wireField": "2.1.2.2"}
+        for entry in layout["nativeGridEntries"]
+    ]
+    # The original source's local Grid.ID, x/y and initial objects are NOT
+    # verified world coordinates, collision constraints or furniture rules.
+    return layout, objects
+
+
 def realm_grid_collection_layout(data, relative):
     """Read only explicit SceneLayouts/Realms native embedded GridCollections.
 
@@ -1008,6 +1058,12 @@ def scene_layouts(root, sources):
         floating = floating_island_grid_collection_layout(data, relative)
         if floating is not None:
             layout, objects = floating
+            layouts.append(layout)
+            layout_objects.extend(objects)
+            continue
+        interior = interior_grid_collection_layout(data, relative)
+        if interior is not None:
+            layout, objects = interior
             layouts.append(layout)
             layout_objects.extend(objects)
             continue
