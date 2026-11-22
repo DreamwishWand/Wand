@@ -249,6 +249,116 @@ mod browser_audit{
     }
 }
 
+/// Product Collection read path: decrypt and verify using Rust, then hand the
+/// validated original UTF-8 profile to the *same isolated* one-shot Worker.
+/// Plaintext must never be sent to a Svelte page or persisted. No Writer API.
+#[cfg(feature="wasm")]
+mod browser_profile_reader {
+    use super::*;
+    use wasm_bindgen::prelude::*;
+
+    const MAX_CIPHERTEXT: usize = 32 * 1024 * 1024;
+    const MAX_CHUNK: usize = 1024 * 1024;
+    const MAX_PROFILE: usize = 128 * 1024 * 1024;
+    fn error(code: &'static str) -> JsValue { JsValue::from_str(code) }
+
+    #[wasm_bindgen]
+    pub struct WasmP1gReader {
+        pending: Vec<u8>,
+        opened: Option<OpenedP1g>,
+        cursor: usize,
+        closed: bool,
+    }
+
+    #[wasm_bindgen]
+    impl WasmP1gReader {
+        #[wasm_bindgen(constructor)]
+        pub fn new() -> Self {
+            Self { pending: Vec::new(), opened: None, cursor: 0, closed: false }
+        }
+
+        pub fn append_chunk(&mut self, chunk: &[u8]) -> Result<(), JsValue> {
+            if self.closed || self.opened.is_some() || chunk.is_empty() ||
+                chunk.len() > MAX_CHUNK ||
+                self.pending.len().checked_add(chunk.len()).is_none_or(|n| n > MAX_CIPHERTEXT) {
+                self.close();
+                return Err(error("DB05_RUST_READ_INPUT_DENIED"));
+            }
+            self.pending.extend_from_slice(chunk);
+            Ok(())
+        }
+
+        /// The exact original JSON is strictly validated in Rust, including
+        /// duplicate keys, unsafe integers, CRC, ZIP envelope and root fields.
+        /// Only a structurally unsupported ZIP format can use a bounded legacy
+        /// read-only path; corrupted or invalid originals must fail closed.
+        pub fn finish_open(&mut self) -> Result<u32, JsValue> {
+            if self.closed || self.opened.is_some() ||
+                self.pending.len() < 16 || self.pending.len() % 16 != 0 {
+                self.close();
+                return Err(error("DB05_RUST_READ_INPUT_DENIED"));
+            }
+            let outcome = OpenedP1g::open(&self.pending);
+            self.pending.zeroize();
+            self.pending.clear();
+            match outcome {
+                Ok(opened) if opened.profile.len() <= MAX_PROFILE => {
+                    let len = opened.profile.len() as u32;
+                    self.opened = Some(opened);
+                    Ok(len)
+                }
+                Ok(_) => {
+                    self.close();
+                    Err(error("DB05_RUST_READ_PROFILE_TOO_LARGE"))
+                }
+                Err(CodecError::ZipUnsupported) => {
+                    self.close();
+                    Err(error("DB05_RUST_READ_UNSUPPORTED_ENVELOPE"))
+                }
+                Err(_) => {
+                    self.close();
+                    Err(error("DB05_RUST_READ_INVALID_PROFILE"))
+                }
+            }
+        }
+
+        /// Worker-only one-MiB transfer. No full plaintext string is created
+        /// in the WASM/JS binding and no unbounded copy is exposed.
+        pub fn take_profile_chunk(&mut self, maximum: u32) -> Result<Vec<u8>, JsValue> {
+            if self.closed || maximum == 0 || maximum as usize > MAX_CHUNK {
+                self.close();
+                return Err(error("DB05_RUST_READ_CHUNK_DENIED"));
+            }
+            let opened = self.opened.as_ref()
+                .ok_or_else(|| error("DB05_RUST_READ_NOT_OPEN"))?;
+            if self.cursor >= opened.profile.len() {
+                self.close();
+                return Err(error("DB05_RUST_READ_EXHAUSTED"));
+            }
+            let end = self.cursor.saturating_add(maximum as usize).min(opened.profile.len());
+            let part = opened.profile[self.cursor..end].to_vec();
+            self.cursor = end;
+            if end == opened.profile.len() {
+                self.opened = None; // zeroizes original ciphertext, ZIP and profile
+                self.closed = true;
+            }
+            Ok(part)
+        }
+
+        pub fn close(&mut self) {
+            self.closed = true;
+            self.pending.zeroize();
+            self.pending.clear();
+            self.opened = None;
+            self.cursor = 0;
+        }
+    }
+
+    impl Drop for WasmP1gReader {
+        fn drop(&mut self) { self.close(); }
+    }
+}
+
 /// Worker-internal existing-Amount P1G/JSON preview. The Rust memory keeps
 /// original source data; neither the plaintext nor candidate archive leaves
 /// this WASM module. This cannot download, export or overwrite a save.

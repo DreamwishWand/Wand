@@ -1,5 +1,6 @@
 /** One-shot, isolated local file reader. Never issues network requests. */
 import { inspectEncryptedSavedStore } from './saved-store-worker-core.mjs';
+import { decodeP1gRustFirst } from '../save/p1g-read.ts';
 
 let started = false;
 self.onmessage = async ({ data }) => {
@@ -12,7 +13,7 @@ self.onmessage = async ({ data }) => {
         !(ciphertext instanceof Uint8Array) ||
         Object.keys(data).sort().join(',') !== 'ciphertext,command')
       throw new TypeError('LOCAL_P1G_INVALID_WORKER_COMMAND');
-    const result = await inspectEncryptedSavedStore(ciphertext);
+    const result = await inspectEncryptedSavedStore(ciphertext, decodeP1gRustFirst);
     response = { kind: 'result', result };
   } catch {
     // Do not reveal source fields, file names or private decoder diagnostics.
