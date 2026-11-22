@@ -212,6 +212,40 @@ pub(super) fn resolve_grid_coordinate_target(
     Ok(target.clone())
 }
 
+/// Resolve up to sixteen UI-local ordinals in ONE scan. Real grid/object
+/// IDs remain private inside WASM, even for a batch. Duplicate or stale
+/// ordinals reject the entire edit; partial scans cannot authorize editing.
+pub(super) fn resolve_grid_coordinate_targets(
+    profile:&[u8],selections:&[(usize,u64,(i32,i32),String)]
+)->Result<Vec<GridCoordinateTarget>,CodecError>{
+    if selections.is_empty()||selections.len()>16{
+        return Err(CodecError::Bounds);
+    }
+    let (scan,_status)=scan_grid_instances(profile)?;
+    if scan.sampled||scan.invalid>0{
+        return Err(CodecError::Json);
+    }
+    let mut chosen=HashSet::new();
+    let mut targets=Vec::with_capacity(selections.len());
+    for (ordinal,item,expected,kind) in selections{
+        if *ordinal==0||*ordinal>MAX_ROWS||*item==0||
+           !chosen.insert(*ordinal){
+            return Err(CodecError::Json);
+        }
+        let (target,xy)=scan.private_targets.get(ordinal-1)
+            .ok_or(CodecError::Json)?;
+        let saved_kind=match target.kind{
+            GridObjectKind::Full=>"full",
+            GridObjectKind::DiffModified=>"diff_modified"
+        };
+        if target.item_id!=*item||xy!=&Some(*expected)||kind!=saved_kind{
+            return Err(CodecError::Json);
+        }
+        targets.push(target.clone());
+    }
+    Ok(targets)
+}
+
 pub(super) fn saved_grid_instances_json(source:&[u8])->Result<String,CodecError>{
     let (scan,status)=scan_grid_instances(source)?;
     serde_json::to_string(&serde_json::json!({

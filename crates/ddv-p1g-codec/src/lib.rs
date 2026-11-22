@@ -436,7 +436,8 @@ mod browser_amount_preview {
     use super::*;
     use ddv_save_patch::{
         preview_existing_quantity,preview_existing_quantity_batch,
-        preview_existing_grid_coordinates,QuantityEdit,QuantityTarget
+        preview_existing_grid_coordinates,preview_existing_grid_coordinate_batch,
+        GridCoordinateEdit,QuantityEdit,QuantityTarget
     };
     use wasm_bindgen::prelude::*;
 
@@ -559,6 +560,38 @@ mod browser_amount_preview {
         }
         Ok(GridCoordinatePlan{ordinal:ord,item_id:item,kind,
             expected,replacement})
+    }
+
+    fn parse_grid_coordinate_batch_plan(
+        plan:&str
+    )->Result<Vec<GridCoordinatePlan>,JsValue>{
+        if plan.len()>8192||plan.is_empty()||
+           ddv_save_patch::validate_json_without_edit(plan).is_err(){
+            return Err(fail("DB05_GRID_BATCH_PLAN_INVALID"));
+        }
+        let source:serde_json::Value=serde_json::from_str(plan)
+            .map_err(|_|fail("DB05_GRID_BATCH_PLAN_INVALID"))?;
+        let obj=source.as_object().ok_or(fail("DB05_GRID_BATCH_PLAN_INVALID"))?;
+        if obj.len()!=1{
+            return Err(fail("DB05_GRID_BATCH_PLAN_INVALID"));
+        }
+        let rows=obj.get("edits").and_then(serde_json::Value::as_array)
+            .ok_or(fail("DB05_GRID_BATCH_PLAN_INVALID"))?;
+        if rows.is_empty()||rows.len()>16{
+            return Err(fail("DB05_GRID_BATCH_COUNT_INVALID"));
+        }
+        let mut out=Vec::with_capacity(rows.len());
+        let mut ordinals=std::collections::HashSet::new();
+        for row in rows{
+            let serialized=serde_json::to_string(row)
+                .map_err(|_|fail("DB05_GRID_BATCH_PLAN_INVALID"))?;
+            let edit=parse_grid_coordinate_plan(&serialized)?;
+            if !ordinals.insert(edit.ordinal){
+                return Err(fail("DB05_GRID_BATCH_DUPLICATE_ORDINAL"));
+            }
+            out.push(edit);
+        }
+        Ok(out)
     }
 
     const MAX_DB04_WITNESS_BYTES:usize=16*1024*1024;
@@ -1135,6 +1168,57 @@ mod browser_amount_preview {
             if !draft.changed||!draft.untouched_bytes_preserved||
                draft.writer_authorized||draft.export_authorized{
                 return Err(fail("DB05_GRID_EDIT_NOOP_OR_UNAUTHORIZED"));
+            }
+            self.prepare_copy_from_patched(draft.patched_json,true)
+        }
+
+        /// All-or-nothing 1..=16 Grid object moves, with native IDs resolved
+        /// only inside Rust; no Save identity is sent to the UI.
+        pub fn preview_grid_coordinate_batch(
+            &mut self,plan:&str
+        )->Result<String,JsValue>{
+            let changed=parse_grid_coordinate_batch_plan(plan)?.len();
+            self.prepare_grid_coordinate_batch_copy(plan)?;
+            Ok(format!(concat!(
+                r#"{{"contract":"wand.db05.grid-coordinate-batch-preview@1","#,
+                r#""changedCount":{},"lexicalBytesPreserved":true,"#,
+                r#""reopenVerified":true,"writerAuthorized":false,"#,
+                r#""exportAuthorized":false}}"#
+            ),changed))
+        }
+
+        /// Experimental copy only. Any stale or duplicate item/coordinate
+        /// aborts the whole batch before building the P1G or JSON copy.
+        pub fn prepare_grid_coordinate_batch_copy(
+            &mut self,plan:&str
+        )->Result<u32,JsValue>{
+            if !self.ready||self.closed||self.copy_prepared{
+                return Err(fail("DB05_GRID_BATCH_SESSION_INVALID"));
+            }
+            let choices=parse_grid_coordinate_batch_plan(plan)?;
+            let original=match self.kind{
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref()
+                    .ok_or(fail("DB05_GRID_BATCH_SESSION_INVALID"))?
+                    .profile.as_slice()
+            };
+            let selections=choices.iter().map(|p|
+                (p.ordinal,p.item_id,p.expected,p.kind.clone())
+            ).collect::<Vec<_>>();
+            let targets=grid_instance_preview::resolve_grid_coordinate_targets(
+                original,&selections
+            ).map_err(|_|fail("DB05_GRID_BATCH_STALE_OR_AMBIGUOUS"))?;
+            let json=std::str::from_utf8(original)
+                .map_err(|_|fail("DB05_GRID_BATCH_UTF8_INVALID"))?;
+            let edits=choices.iter().zip(targets).map(|(p,target)|
+                GridCoordinateEdit{target,expected:p.expected,
+                    replacement:p.replacement}
+            ).collect::<Vec<_>>();
+            let draft=preview_existing_grid_coordinate_batch(json,&edits)
+                .map_err(|_|fail("DB05_GRID_BATCH_STALE_OR_INVALID"))?;
+            if !draft.changed||!draft.untouched_bytes_preserved||
+               draft.writer_authorized||draft.export_authorized{
+                return Err(fail("DB05_GRID_BATCH_UNAUTHORIZED"));
             }
             self.prepare_copy_from_patched(draft.patched_json,true)
         }

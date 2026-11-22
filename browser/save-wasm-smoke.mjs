@@ -354,7 +354,7 @@ try{
   // private grid/object identity from this file's local ordinal. The P1G
   // is rebuilt and independently reopened; no private identity is published.
   await objects.getByRole('button',{name:'配置 #1 の座標を編集'}).click();
-  const coordinates=objects.getByLabel('座標編集');
+  const coordinates=objects.getByLabel('座標編集',{exact:true});
   await coordinates.getByLabel('新しいX').fill('57');
   await coordinates.getByLabel('新しいY').fill('-4');
   await coordinates.getByRole('button',{name:'座標変更を検証'}).click();
@@ -381,6 +381,46 @@ try{
   assert.equal(quantityProfile.World.GridCollection.Grids['101'].Objects['1'].X,45);
   assert.equal(quantityProfile.World.GridCollection.Grids['101'].Objects['1'].Y,9);
   assert.equal(coordinateCopy.Player.ListInventories['100'].Inventory['777'].Amount,1);
+  // Two independent objects, one full and one DiffGrid, are committed
+  // atomically in a *single* rebuilt P1G. No source mutation is permitted.
+  await objects.getByRole('button',{name:'配置 #3 の座標を編集'}).click();
+  await coordinates.getByLabel('新しいX').fill('130');
+  await coordinates.getByLabel('新しいY').fill('14');
+  await coordinates.getByRole('button',{name:'座標編集に追加'}).click();
+  await objects.getByRole('button',{name:'配置 #1 の座標を編集'}).click();
+  await coordinates.getByLabel('新しいX').fill('-80');
+  await coordinates.getByLabel('新しいY').fill('25');
+  await coordinates.getByRole('button',{name:'座標編集に追加'}).click();
+  const batchCoords=objects.getByLabel('一括座標編集');
+  await batchCoords.getByText('2 / 16件').waitFor();
+  await batchCoords.getByRole('button',{name:'一括座標変更を検証'}).click();
+  await coordinates.getByRole('status').filter({
+    hasText:'2件の座標変更をRust/WASMで検証しました'
+  }).waitFor({timeout:30000});
+  page.once('dialog',dialog=>dialog.accept());
+  await coordinates.getByRole('button',{name:'座標変更コピーを生成'}).click();
+  const batchCoordinateLink=coordinates.getByRole('link',{
+    name:'座標コピーをダウンロード'
+  });
+  await batchCoordinateLink.waitFor({timeout:30000});
+  const gridBatchEvent=page.waitForEvent('download');
+  await batchCoordinateLink.click();
+  const gridBatch=readSyntheticEncryptedP1g(
+    await readFile(await (await gridBatchEvent).path())
+  );
+  const fullObject=gridBatch.World.GridCollection.Grids['101'].Objects['1'];
+  const diffObject=gridBatch.World.GridCollection.DiffGrids['102'].ModifiedObjects['6'];
+  assert.equal(fullObject.X,-80);
+  assert.equal(fullObject.Y,25);
+  assert.equal(diffObject.X,130);
+  assert.equal(diffObject.Y,14);
+  assert.equal(fullObject.Orientation,'East');
+  assert.equal(diffObject.Orientation,'West');
+  assert.equal(fullObject.PrivateState,'do-not-export');
+  assert.equal(gridBatch.Player.ListInventories['100'].Inventory['550'].Amount,7);
+  assert.equal(gridBatch.World.GridCollection.DiffGrids['102'].RemovedObjects[0],5);
+  assert.equal(quantityProfile.World.GridCollection.Grids['101'].Objects['1'].X,45);
+  assert.equal(quantityProfile.World.GridCollection.DiffGrids['102'].ModifiedObjects['6'].X,-12);
   // Two saved references for sample furniture: one full and one non-removed
   // DiffGrid object, not three (the removed DiffGrid identity is suppressed).
   // Private DB-04 reference index supplied as a local, synthetic file.

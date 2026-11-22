@@ -375,7 +375,7 @@ pub fn preview_existing_quantity(
 
 /// A native Save GridObject reference *resolved internally* from an ephemeral
 /// per-open-file ordinal. Never supply numeric Save Grid/Object IDs from the UI.
-#[derive(Debug,Clone,Copy,PartialEq,Eq)]
+#[derive(Debug,Clone,Copy,PartialEq,Eq,Hash)]
 pub enum GridObjectKind { Full, DiffModified }
 
 #[derive(Debug,Clone,PartialEq,Eq)]
@@ -463,6 +463,58 @@ pub fn preview_existing_grid_coordinates(
     };
     Ok(GridCoordinateDraft{
         patched_json,changed,untouched_bytes_preserved:true,
+        writer_authorized:false,export_authorized:false
+    })
+}
+
+/// One optimistic-concurrency checked change to an existing GridObject.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct GridCoordinateEdit {
+    pub target:GridCoordinateTarget,
+    pub expected:(i32,i32),
+    pub replacement:(i32,i32),
+}
+
+/// All-or-nothing edit of 1..=16 *different* saved GridObjects.
+/// Every object's ItemID and original X/Y must still match. The edit is
+/// applied only to existing numeric coordinate tokens, preserving every
+/// unknown field, other object and original JSON lexical byte. This makes
+/// no game placement/collision or full World identity claim.
+pub fn preview_existing_grid_coordinate_batch(
+    source:&str,edits:&[GridCoordinateEdit]
+)->Result<GridCoordinateDraft,PatchError>{
+    if edits.is_empty()||edits.len()>16||
+       source.is_empty()||source.len()>MAX_PROFILE_BYTES{
+        return Err(PatchError::InvalidTarget);
+    }
+    let mut seen=HashSet::new();
+    for edit in edits {
+        if edit.expected==edit.replacement||
+           !seen.insert((edit.target.kind,
+             edit.target.grid_id.as_str(),edit.target.object_id.as_str())){
+            return Err(PatchError::AmbiguousTarget);
+        }
+    }
+    // Complete the optimistic checks against the *immutable original*
+    // before constructing a candidate. Any one failed edit denies all.
+    for edit in edits {
+        let check=preview_existing_grid_coordinates(
+            source,edit.target.clone(),edit.expected,edit.replacement
+        )?;
+        if !check.changed||!check.untouched_bytes_preserved{
+            return Err(PatchError::AmbiguousTarget);
+        }
+    }
+    let mut candidate=source.to_owned();
+    for edit in edits {
+        let step=preview_existing_grid_coordinates(
+            &candidate,edit.target.clone(),edit.expected,edit.replacement
+        )?;
+        candidate=step.patched_json;
+    }
+    Ok(GridCoordinateDraft{
+        patched_json:candidate,changed:true,
+        untouched_bytes_preserved:true,
         writer_authorized:false,export_authorized:false
     })
 }
@@ -745,6 +797,53 @@ mod tests {
         assert!(!no_op.changed);
         assert_eq!(no_op.patched_json,original);
     }
+    #[test]
+    fn grid_coordinate_batch_edits_two_grids_atomically_and_preserves_unknowns(){
+        let source=r#"{"GameInfo":{"Version":643},"Player":{"Unknown":"\u3053"},
+          "World":{"GridCollection":{
+            "Grids":{"101":{"Objects":{"1":{
+              "ItemID":40000001,"X":1,"Y":-4,
+              "State":{"X":900,"Y":800},"Future":"\u0012"}}}},
+            "DiffGrids":{"102":{"ModifiedObjects":{"2":{
+              "ItemID":40000002,"X":11,"Y":2,
+              "Orientation":"South","Custom":1.00e+2}}}}
+          }},"Other":{"X":45}}"#;
+        let edits=vec![
+            GridCoordinateEdit{
+                target:GridCoordinateTarget{kind:GridObjectKind::Full,
+                    grid_id:"101".into(),object_id:"1".into(),item_id:40000001},
+                expected:(1,-4),replacement:(-50,99)
+            },
+            GridCoordinateEdit{
+                target:GridCoordinateTarget{kind:GridObjectKind::DiffModified,
+                    grid_id:"102".into(),object_id:"2".into(),item_id:40000002},
+                expected:(11,2),replacement:(12,-13)
+            }
+        ];
+        let result=preview_existing_grid_coordinate_batch(source,&edits).unwrap();
+        let expected=source.replacen(r#""X":1,"Y":-4"#,
+            r#""X":-50,"Y":99"#,1).replacen(r#""X":11,"Y":2"#,
+            r#""X":12,"Y":-13"#,1);
+        assert_eq!(result.patched_json,expected);
+        assert!(result.changed&&result.untouched_bytes_preserved);
+        assert!(!result.writer_authorized&&!result.export_authorized);
+        assert!(result.patched_json.contains(r#""Custom":1.00e+2"#));
+        assert!(result.patched_json.contains(r#""Future":"\u0012""#));
+        let mut bad=edits.clone();
+        bad[1].expected.1=999;
+        assert_eq!(preview_existing_grid_coordinate_batch(source,&bad).err(),
+            Some(PatchError::CoordinateMismatch));
+        let mut bad_item=edits.clone();
+        bad_item[0].target.item_id=40000003;
+        assert_eq!(preview_existing_grid_coordinate_batch(source,&bad_item).err(),
+            Some(PatchError::ItemMismatch));
+        let mut repeated=edits.clone();repeated.push(edits[0].clone());
+        assert_eq!(preview_existing_grid_coordinate_batch(source,&repeated).err(),
+            Some(PatchError::AmbiguousTarget));
+        assert_eq!(preview_existing_grid_coordinate_batch(source,&[]).err(),
+            Some(PatchError::InvalidTarget));
+    }
+
     #[test]
     fn grid_coordinate_patch_handles_modified_grid_and_rejects_invalid_values(){
         let original=r#"{"World":{"GridCollection":{"DiffGrids":{"404":{

@@ -75,9 +75,13 @@
   let coordinateSelection:LocalGridInstance|null=null;
   let coordinateX='';let coordinateY='';
   let coordinateState:'idle'|'checking'|'validated'|'exporting'|'error'='idle';
-  let coordinateSnapshot:{
-    file:File;format:'json'|'auto';plan:GridCoordinatePlan;signature:string
-  }|null=null;
+  let coordinateQueue:GridCoordinatePlan[]=[];
+  let coordinateSnapshot:
+    |{mode:'single';file:File;format:'json'|'auto';
+      plan:GridCoordinatePlan;signature:string}
+    |{mode:'batch';file:File;format:'json'|'auto';
+      edits:GridCoordinatePlan[];signature:string}
+    |null=null;
   let coordinateCopyUrl:string|null=null;
   let coordinateCopyName='';
   let db04Input:HTMLInputElement|null=null;
@@ -175,6 +179,19 @@
       recordKind:row.recordKind,expectedX:row.x,expectedY:row.y,
       replacementX:x,replacementY:y};
   }
+  function queueCoordinateEdit(){
+    const plan=selectedCoordinatePlan();
+    if(!plan||coordinateQueue.length>=16||
+       coordinateQueue.some(p=>p.localOrdinal===plan.localOrdinal)){
+      invalidateCoordinateEdit();coordinateState='error';return;
+    }
+    cancel();result=null;
+    coordinateQueue=[...coordinateQueue,plan];
+  }
+  function removeCoordinateEdit(ordinal:number){
+    cancel();result=null;
+    coordinateQueue=coordinateQueue.filter(p=>p.localOrdinal!==ordinal);
+  }
   function selectGridInstance(row:LocalGridInstance){
     if(!row.coordinatesObserved||row.x===null||row.y===null)return;
     cancel();result=null;
@@ -224,6 +241,7 @@
     gridInstances=[];instanceState='idle';
     instanceStatus='not_observed';instanceSampled=false;instanceQuery='';
     coordinateSelection=null;coordinateX='';coordinateY='';
+    coordinateQueue=[];
     db04Match=null;db04State='idle';
     db03Summary=null;db03State='idle';
     dbMap=new Map();dbStatus='idle';
@@ -396,7 +414,7 @@
   }
 
   async function loadGridInstances(){
-    cancel();result=null;coordinateSelection=null;
+    cancel();result=null;coordinateSelection=null;coordinateQueue=[];
     gridInstances=[];instanceStatus='not_observed';instanceSampled=false;
     instanceState='idle';
     const save=savedSlotsFile;
@@ -455,16 +473,18 @@
     }
   }
 
-  async function validateCoordinateEdit(){
+  async function validateCoordinateEdit(batchMode:boolean=false){
     cancel();result=null;
     const file=savedSlotsFile,plan=selectedCoordinatePlan();
-    if(!file||fileInput?.files?.[0]!==file||!plan||
+    const edits=batchMode?coordinateQueue.map(p=>({...p})):null;
+    if(!file||fileInput?.files?.[0]!==file||
+       (batchMode?(!edits||!edits.length||edits.length>16):!plan)||
        file.size<1||file.size>MAX_BYTES){
       coordinateState='error';return;
     }
     const format:'json'|'auto'=file.name.toLowerCase().endsWith('.json')
       ?'json':'auto';
-    const signature=JSON.stringify(plan),request=revision;
+    const signature=JSON.stringify(batchMode?edits:plan),request=revision;
     coordinateState='checking';processing=true;
     let bytes:Uint8Array|null=null;
     let worker:Worker|null=null;
@@ -481,22 +501,29 @@
         own.terminate();active=null;processing=false;
         const r=message as {kind?:string;receipt?:Record<string,unknown>};
         if(r?.kind!=='result'||
-           r.receipt?.contract!=='wand.db05.grid-coordinate-preview@1'||
-           r.receipt.changed!==true||
-           r.receipt.lexicalBytesPreserved!==true||
-           r.receipt.reopenVerified!==true||
-           r.receipt.writerAuthorized!==false||
-           r.receipt.exportAuthorized!==false){
+           (batchMode
+             ? r.receipt?.contract!=='wand.db05.grid-coordinate-batch-preview@1'||
+               r.receipt.changedCount!==edits?.length
+             : r.receipt?.contract!=='wand.db05.grid-coordinate-preview@1'||
+               r.receipt.changed!==true)||
+           r.receipt?.lexicalBytesPreserved!==true||
+           r.receipt?.reopenVerified!==true||
+           r.receipt?.writerAuthorized!==false||
+           r.receipt?.exportAuthorized!==false){
           coordinateState='error';return;
         }
-        coordinateSnapshot={file,format,plan,signature};
+        coordinateSnapshot=batchMode
+          ? {mode:'batch',file,format,edits:edits!,signature}
+          : {mode:'single',file,format,plan:plan!,signature};
         coordinateState='validated';
       };
       worker.onmessage=event=>finish(event.data);
       worker.onerror=event=>{event.preventDefault();finish({kind:'error'});};
       worker.onmessageerror=()=>finish({kind:'error'});
-      worker.postMessage({command:'preview-grid-coordinates',
-        format,bytes,edit:plan},[bytes.buffer]);
+      worker.postMessage(batchMode
+        ?{command:'preview-grid-coordinate-batch',format,bytes,edits}
+        :{command:'preview-grid-coordinates',format,bytes,edit:plan},
+        [bytes.buffer]);
       bytes=null;
     }catch{
       if(request===revision){
@@ -512,7 +539,9 @@
     if(processing||coordinateState!=='validated'||
        !coordinateSnapshot)return;
     const saved=coordinateSnapshot,plan=selectedCoordinatePlan();
-    if(!plan||JSON.stringify(plan)!==saved.signature||
+    if((saved.mode==='batch'
+        ?JSON.stringify(coordinateQueue)!==saved.signature
+        :!plan||JSON.stringify(plan)!==saved.signature)||
        fileInput?.files?.[0]!==saved.file||
        savedSlotsFile!==saved.file){
       invalidateCoordinateEdit();coordinateState='error';return;
@@ -567,11 +596,13 @@
       worker.onmessage=event=>finish(event.data);
       worker.onerror=event=>{event.preventDefault();finish({kind:'error'});};
       worker.onmessageerror=()=>finish({kind:'error'});
-      worker.postMessage({
-        command:'export-grid-coordinate-copy',
-        format:saved.format,allowExperimentalCopy:true,
-        bytes,edit:saved.plan
-      },[bytes.buffer]);
+      worker.postMessage(saved.mode==='batch'
+        ?{command:'export-grid-coordinate-batch-copy',
+          format:saved.format,allowExperimentalCopy:true,
+          bytes,edits:saved.edits}
+        :{command:'export-grid-coordinate-copy',
+          format:saved.format,allowExperimentalCopy:true,
+          bytes,edit:saved.plan},[bytes.buffer]);
       bytes=null;
     }catch{
       if(request===revision){
@@ -597,7 +628,7 @@
     slotState='loading';
     savedSlots=[];savedSlotsFile=null;
     gridInstances=[];instanceState='idle';instanceQuery='';
-    coordinateSelection=null;
+    coordinateSelection=null;coordinateQueue=[];
     let bytes:Uint8Array|null=null;
     let worker:Worker|null=null;
     const request=revision;
@@ -1085,12 +1116,19 @@
                   <input bind:value={coordinateY} aria-label="新しいY"
                     disabled={processing} on:input={invalidateCoordinateEdit} />
                 </label>
+                <button type="button" class="secondary"
+                  disabled={processing||coordinateQueue.length>=16||
+                    coordinateQueue.some(p=>
+                      p.localOrdinal===coordinateSelection?.localOrdinal)}
+                  on:click={queueCoordinateEdit}>座標編集に追加</button>
                 <button type="button" disabled={processing}
-                  on:click={validateCoordinateEdit}>
+                  on:click={()=>validateCoordinateEdit(false)}>
                   {coordinateState==='checking'?'座標を検証中…':'座標変更を検証'}
                 </button>
                 {#if coordinateState==='validated'}
-                  <p role="status">座標変更をRust/WASMで検証しました。</p>
+                  <p role="status">{coordinateSnapshot?.mode==='batch'
+                    ? `${coordinateQueue.length}件の座標変更をRust/WASMで検証しました。`
+                    : '座標変更をRust/WASMで検証しました。'}</p>
                   <button type="button" disabled={processing||!!coordinateCopyUrl}
                     on:click={exportCoordinateCopy}>
                     {coordinateCopyUrl?'座標コピーを準備しました':'座標変更コピーを生成'}
@@ -1103,6 +1141,30 @@
                   <p role="alert">座標を変更できませんでした。
                     選択した配置、元の座標、入力範囲を確認してください。</p>
                 {/if}
+              </div>
+            {/if}
+            {#if coordinateQueue.length}
+              <div class="coordinate-batch" aria-label="一括座標編集">
+                <div class="slot-actions">
+                  <strong>一括座標編集 · {coordinateQueue.length} / 16件</strong>
+                  <button type="button" disabled={processing}
+                    on:click={()=>validateCoordinateEdit(true)}>
+                    {coordinateState==='checking'?'一括検証中…':'一括座標変更を検証'}
+                  </button>
+                </div>
+                <ul class="slot-list">
+                  {#each coordinateQueue as edit}
+                    <li class="world-reference-row">
+                      <span>#{edit.localOrdinal} · {
+                        dbMap.get(edit.itemId)?.name??edit.itemId}</span>
+                      <span class="slot-amount">X {edit.expectedX}→{edit.replacementX}
+                        / Y {edit.expectedY}→{edit.replacementY}</span>
+                      <button type="button" class="secondary" disabled={processing}
+                        on:click={()=>removeCoordinateEdit(edit.localOrdinal)}
+                        aria-label={`座標編集 #${edit.localOrdinal} を削除`}>削除</button>
+                    </li>
+                  {/each}
+                </ul>
               </div>
             {/if}
             {#if gridInstances.length>120&&visibleGridInstances.length===120}
