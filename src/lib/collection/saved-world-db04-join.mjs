@@ -28,6 +28,7 @@ export function reconcileSavedWorldWithDb04(root,source){
     partialSourceGrids=0,sourceDefaultObjects=0,effectiveObjects=0,
     removedDefaultObjects=0,savedOnlyObjects=0,changedDefaultIdentities=0;
   const stats=new Map();
+  let sampled=false;
   function bucket(id){
     let row=stats.get(id);
     if(!row){row={itemId:id,sourceDefault:0,effectiveSaved:0,
@@ -47,7 +48,9 @@ export function reconcileSavedWorldWithDb04(root,source){
       ...diffKeys.map(id=>[id,diff[id],true])];
     if(own(all,'Grids')&&!record(all.Grids))invalidGrids++;
     if(own(all,'DiffGrids')&&!record(all.DiffGrids))invalidGrids++;
-    if(observations.length>limit)unresolvedGrids+=observations.length-limit;
+    if(observations.length>limit){
+      sampled=true;unresolvedGrids+=Math.min(observations.length-limit,MAX_GRIDS);
+    }
     let scanned=0;
     for(const [key,grid,isDiff] of observations.slice(0,limit)){
       observedGrids++;
@@ -142,7 +145,7 @@ export function reconcileSavedWorldWithDb04(root,source){
     .filter(row=>furniture(row.itemId))
     .sort((a,b)=>a.itemId-b.itemId).slice(0,MAX_ITEMS)
     .map(row=>Object.freeze({...row})));
-  const total=observedGrids+unresolvedGrids+invalidGrids+partialSourceGrids;
+  if(stats.size>MAX_ITEMS)sampled=true;
   const status=!versionOk?'unsupported_source_or_schema':
     !record(all)?'not_observed':
     !matchedGrids?'no_exact_source_match':
@@ -155,7 +158,7 @@ export function reconcileSavedWorldWithDb04(root,source){
     observedGrids,matchedGrids,unresolvedGrids,invalidGrids,
     partialSourceGrids,sourceDefaultObjects,effectiveObjects,
     removedDefaultObjects,savedOnlyObjects,changedDefaultIdentities,
-    sampled:observedGrids+unresolvedGrids>=MAX_GRIDS||stats.size>MAX_ITEMS,
+    sampled,
     entries:rows,
     semantic:'exact_source_path_default_object_overlay_only',
     exactPathOnly:true,
@@ -193,10 +196,6 @@ export function sanitizeSavedWorldDb04Join(input){
   const removedDefaultObjects=count(input.removedDefaultObjects,MAX_OBJECTS);
   const savedOnlyObjects=count(input.savedOnlyObjects,MAX_OBJECTS);
   const changedDefaultIdentities=count(input.changedDefaultIdentities,MAX_OBJECTS);
-  if(matchedGrids>observedGrids||removedDefaultObjects>sourceDefaultObjects||
-    savedOnlyObjects>effectiveObjects||changedDefaultIdentities>sourceDefaultObjects||
-    (input.status==='unsupported_source_or_schema'&&
-      (entries.length||matchedGrids||observedGrids))){}
   let prev=0,sourceFurniture=0,effectiveFurniture=0,savedOnlyFurniture=0;
   const entries=Object.freeze(input.entries.map(row=>{
     if(!record(row)||Object.keys(row).length!==6||
@@ -229,7 +228,8 @@ export function sanitizeSavedWorldDb04Join(input){
         partialSourceGrids||input.sampled||!matchedGrids))||
     (input.status==='partial_exact_matches'&&
       (!matchedGrids||matchedGrids===observedGrids&&
-       !unresolvedGrids&&!invalidGrids&&!partialSourceGrids&&!input.sampled)))invalid();
+       !unresolvedGrids&&!invalidGrids&&!partialSourceGrids&&!input.sampled))||
+    (input.sampled&&input.status==='all_observed_grids_matched'))invalid();
   return Object.freeze({
     contract:COLLECTION_DB04_JOIN_CONTRACT,status:input.status,saveSchema,
     observedGrids,matchedGrids,unresolvedGrids,invalidGrids,
