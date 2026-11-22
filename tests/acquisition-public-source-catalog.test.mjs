@@ -25,7 +25,7 @@ function publicFetcher(options={}){
   };
   return {seen,fetcher};
 }
-test('Complete public Steam 1.26.2 DB-02 catalog joins all 462 source-pinned Star Path and Quest slots without a private ZIP',async()=>{
+test('Complete public Steam 1.26.2 DB-02 catalog joins all 680 source-pinned Star Path, Quest, Event and Friendship slots without a private ZIP',async()=>{
   const {seen,fetcher}=publicFetcher();
   const catalog=await loadPublicSourceCatalog('/Wand',fetcher);
   assert.equal(catalog.schema,DB02_PUBLIC_SOURCE_CATALOG_SCHEMA);
@@ -33,8 +33,13 @@ test('Complete public Steam 1.26.2 DB-02 catalog joins all 462 source-pinned Sta
   assert.equal(catalog.coverage.publishedItemDefinitions,13202);
   assert.equal(catalog.coverage.starPathSourceRoutes,67);
   assert.equal(catalog.coverage.questSourceRoutes,395);
-  assert.equal(catalog.coverage.combinedSourceRoutes,462);
-  assert.equal(catalog.origins.getCoverage().linkedRoutes,462);
+  assert.equal(catalog.coverage.nativeEventSourceRoutes,202);
+  assert.equal(catalog.coverage.defaultFriendshipSourceRoutes,16);
+  assert.equal(catalog.coverage.combinedSourceRoutes,680);
+  assert.equal(catalog.origins.getCoverage().linkedRoutes,680);
+  assert.equal(catalog.origins.getCoverage().routesBySourceKind.verified_game_native,613);
+  assert.equal(catalog.origins.getCoverage().routesBySourceKind.verified_liveops_cache,67);
+  assert.equal(catalog.eventFriendshipSource.origins.length,218);
   assert.equal(catalog.coverage.liveOfferAvailabilityVerified,false);
   assert.equal(catalog.coverage.sourceCoverageComplete,false);
   assert.equal(catalog.coverage.requiresPrivateGameArchive,false);
@@ -44,15 +49,16 @@ test('Complete public Steam 1.26.2 DB-02 catalog joins all 462 source-pinned Sta
     catalog.coverage.linkedOutsidePublishedItemIds,
     catalog.coverage.allSourceLinkedItemIds);
   const urlList=new Set(seen);
-  assert.equal(seen.length,19); // pointer + index + 14 source SHA shards + 3 DB-03 assets
-  assert.equal(urlList.size,19);
+  assert.equal(seen.length,20); // pointer + index + 14 SHA shards + 4 DB-03 public assets
+  assert.equal(urlList.size,20);
+  assert(seen.some(s=>s.endsWith('/event-friendship-rewards-1.26.2.json')));
   assert(seen.some(s=>s.endsWith('/quest-rewards-1.26.2.json')));
   assert(seen.some(s=>s.endsWith('/starpath-cache-2026-11-22.json')));
   assert(seen.some(s=>s.endsWith('/items-013.json')));
   assert(Object.isFrozen(catalog));
   assert(Object.isFrozen(catalog.coverage));
 });
-test('Unified lookup separates exact Quest reward Item ID routes and online name-only candidates',async()=>{
+test('Unified lookup separates exact Quest, Event and Friendship Item ID routes from online name-only candidates',async()=>{
   const {fetcher}=publicFetcher();
   const catalog=await loadPublicSourceCatalog('/Wand',fetcher);
   const currency=catalog.lookup('80000000');
@@ -66,6 +72,22 @@ test('Unified lookup separates exact Quest reward Item ID routes and online name
   assert(questCurrency.conditions.some(c=>
     c.includes('Configured currency amount range: 500–500')));
   assert.equal(catalog.getSourceOrigin(questCurrency.originId)[0],questCurrency);
+  const defaultFriendship=catalog.lookup('80100000').origins.filter(r=>
+    r.kind==='friendship_reward');
+  assert(defaultFriendship.length>0);
+  assert(defaultFriendship.every(r=>
+    r.routeStatus==='static_candidate_only'&&r.availability==='not_live_verified'&&
+    r.conditions.some(x=>x.includes('no character-specific link'))));
+  const haunting=catalog.eventFriendshipSource.getEventCandidates(
+    'floating_festival','HauntedFloatingFestival2026');
+  assert.equal(haunting.length,9);
+  for(const reward of haunting){
+    assert(catalog.lookup(reward.itemId).origins.includes(reward));
+    assert.equal(catalog.getSourceOrigin(reward.originId)[0],reward);
+    assert.equal(reward.kind,'event_reward');
+    assert.equal(reward.routeStatus,'static_candidate_only');
+    assert.equal(reward.availability,'not_live_verified');
+  }
   const twitch=catalog.lookup('50400102');
   assert(twitch.catalogItem);
   assert(twitch.onlineNameCandidates.some(c=>
@@ -94,6 +116,9 @@ test('Public-only startup rejects corrupt source-pinned DB-00 and Guide bytes; u
   await assert.rejects(loadPublicSourceCatalog(
     '/Wand',publicFetcher({corrupt:'starpath-cache-2026-11-22.json'}).fetcher
   ),/fingerprint mismatch/);
+  await assert.rejects(loadPublicSourceCatalog(
+    '/Wand',publicFetcher({corrupt:'event-friendship-rewards-1.26.2.json'}).fetcher
+  ),/PUBLIC_SHA/);
   const noFetch=async()=>{throw new Error('SHOULD_NOT_FETCH');};
   await assert.rejects(loadPublicSourceCatalog('/Wand/../exfil',noFetch),
     /INVALID_BASE_PATH/);
