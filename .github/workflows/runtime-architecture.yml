@@ -1,0 +1,30 @@
+name: Final runtime architecture guard
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'scripts/check-runtime-architecture.mjs'
+      - '.github/workflows/runtime-architecture.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/lib/save/**'
+      - 'src/routes/save/preview/**'
+      - 'scripts/check-runtime-architecture.mjs'
+      - '.github/workflows/runtime-architecture.yml'
+permissions:
+  contents: read
+jobs:
+  source-architecture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Reject newly introduced product JavaScript and verify typed Rust/WASM Worker
+        env:
+          ARCH_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/check-runtime-architecture.mjs
