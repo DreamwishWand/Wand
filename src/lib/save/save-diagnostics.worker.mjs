@@ -1,10 +1,16 @@
 /** One-shot isolated diagnostics. Never post decrypted Profile or save values. */
 import { inspectLocalSaveDiagnosticsBytes } from './save-diagnostics-worker-core.mjs';
 import {probeWasmReferenceParity,wasmReferenceUnavailable} from './save-wasm-reference.mjs';
+import {probeNativeP1gAudit,nativeP1gAuditUnavailable} from './save-native-p1g-audit.mjs';
 
 async function safeWasmProbe(strictJsonText,root){
   try { return await probeWasmReferenceParity(strictJsonText,root); }
   catch { return wasmReferenceUnavailable(); }
+}
+
+async function safeNativeP1gAudit(bytes,strictJsonText){
+  try { return await probeNativeP1gAudit(bytes,strictJsonText); }
+  catch { return nativeP1gAuditUnavailable(); }
 }
 
 let started = false;
@@ -21,7 +27,7 @@ self.onmessage = async ({ data }) => {
       throw new TypeError('DB05_LOCAL_WORKER_COMMAND_INVALID');
     }
     response = { kind: 'result', result:
-      await inspectLocalSaveDiagnosticsBytes(data.format, bytes, safeWasmProbe) };
+      await inspectLocalSaveDiagnosticsBytes(data.format, bytes, safeWasmProbe, safeNativeP1gAudit) };
   } catch {
     // Never relay parser or P1G Codec exceptions (may include source details).
   } finally {
