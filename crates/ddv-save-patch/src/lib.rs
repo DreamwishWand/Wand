@@ -347,6 +347,64 @@ pub fn preview_existing_quantity(
     })
 }
 
+/// One ordered, optimistic-concurrency checked edit to an existing slot.
+/// This intentionally does NOT impose normal gameplay inventory quantity caps.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuantityEdit {
+    pub target: QuantityTarget,
+    pub expected: u64,
+    pub replacement: u64,
+}
+
+/// Experimental in-memory multi-edit draft, never production Writer authority.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuantityBatchDraft {
+    pub patched_json: String,
+    pub changed_count: usize,
+    pub untouched_bytes_preserved: bool,
+    pub writer_authorized: bool,
+    pub export_authorized: bool,
+}
+
+/// Atomically apply 1..=16 *distinct* existing Inventory/Chest Amount edits.
+///
+/// Every proposed edit must match the original Amount and item identity.
+/// On any invalid/stale/missing/duplicate entry this function returns Err
+/// and NEVER exposes a partially patched candidate. Unrelated lexical JSON,
+/// unknown fields and original ordering are preserved byte-for-byte.
+pub fn preview_existing_quantity_batch(
+    source: &str,
+    edits: &[QuantityEdit],
+) -> Result<QuantityBatchDraft, PatchError> {
+    if edits.is_empty() || edits.len() > 16 {
+        return Err(PatchError::InvalidTarget);
+    }
+    if source.is_empty() || source.len() > MAX_PROFILE_BYTES {
+        return Err(PatchError::InvalidDocument);
+    }
+    let mut targets: Vec<&QuantityTarget> = Vec::with_capacity(edits.len());
+    for edit in edits {
+        if targets.contains(&&edit.target) {
+            return Err(PatchError::AmbiguousTarget);
+        }
+        targets.push(&edit.target);
+    }
+    let mut current = source.to_owned();
+    let mut changed_count = 0;
+    for edit in edits {
+        let step = preview_existing_quantity(
+            &current, edit.target.clone(), edit.expected, edit.replacement
+        )?;
+        if step.changed { changed_count += 1; }
+        current = step.patched_json;
+    }
+    Ok(QuantityBatchDraft {
+        patched_json: current, changed_count,
+        untouched_bytes_preserved: true, writer_authorized: false,
+        export_authorized: false,
+    })
+}
+
 #[cfg(feature = "wasm")]
 mod wasm {
     use super::*;
@@ -438,6 +496,53 @@ mod tests {
         assert_eq!(preview_existing_quantity(raw, QuantityTarget::Inventory{
             inventory_id:"101".into(),item_id:"9999".into()
         },1,250).unwrap_err(),PatchError::MissingTarget);
+    }
+
+    #[test]
+    fn atomic_multi_edit_inventory_and_chest_preserves_unknown_bytes() {
+        let original = r#"{"GameInfo":{"Version":643},"Player":{
+          "ListInventories":{"101":{"Inventory":{
+            "550":{"Amount":1,"Unknown":1.00e+2},
+            "777":{"Amount":7,"Cosmetic":"\u3053\u3093\u306b\u3061\u306f"}
+          }}},
+          "ContainerInventories":{"202":{"Inventory":[
+            {"ItemID":0,"Amount":0},{"ItemID":440,"Amount":2,"Exclusive":true}
+          ]}}
+        },"World":{},"Unrelated":{"Value":2.50}}"#;
+        let edits=vec![
+            QuantityEdit {target:inventory(),expected:1,replacement:250},
+            QuantityEdit {target:QuantityTarget::Inventory{
+                inventory_id:"101".into(),item_id:"777".into()
+            },expected:7,replacement:32_000},
+            QuantityEdit {target:chest(),expected:2,replacement:999},
+        ];
+        let preview=preview_existing_quantity_batch(original,&edits).unwrap();
+        assert_eq!(preview.changed_count,3);
+        assert!(!preview.writer_authorized && !preview.export_authorized);
+        assert!(preview.untouched_bytes_preserved);
+        assert_eq!(preview.patched_json,original
+            .replacen(r#""Amount":1"#,r#""Amount":250"#,1)
+            .replacen(r#""Amount":7"#,r#""Amount":32000"#,1)
+            .replacen(r#""Amount":2"#,r#""Amount":999"#,1));
+        assert!(preview.patched_json.contains(r#""Value":2.50"#));
+        assert!(preview.patched_json.contains(r#""Unknown":1.00e+2"#));
+        // Stale second edit must reject the entire batch (no partial output).
+        let mut stale=edits.clone();
+        stale[1].expected=42;
+        assert_eq!(preview_existing_quantity_batch(original,&stale).unwrap_err(),
+            PatchError::AmountMismatch);
+        let mut duplicated=edits.clone();
+        duplicated.push(edits[0].clone());
+        assert_eq!(preview_existing_quantity_batch(original,&duplicated).unwrap_err(),
+            PatchError::AmbiguousTarget);
+        let mut wrong_chest=edits.clone();
+        wrong_chest[2].target=QuantityTarget::ChestSlot{
+            container_id:"202".into(),slot_index:1,item_id:441
+        };
+        assert_eq!(preview_existing_quantity_batch(original,&wrong_chest).unwrap_err(),
+            PatchError::ItemMismatch);
+        assert_eq!(preview_existing_quantity_batch(original,&[]).unwrap_err(),
+            PatchError::InvalidTarget);
     }
 
     #[test]
