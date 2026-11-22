@@ -7,6 +7,46 @@ import type {OfficialCampaign} from './origins.ts';
 
 export const OFFICIAL_CAMPAIGNS: readonly OfficialCampaign[] = Object.freeze([
   {
+    campaignId:'twitch:2026-october-showcase',
+    kind:'twitch_drop',
+    name:'2026 Showcase Twitch Drops',
+    code:null,productId:null,
+    window:{start:'2026-10-21',endExclusive:'2026-10-29'},
+    conditions:['Link Twitch and game account','Watch partnered creators',
+      'Specific viewing requirement not stated in this announcement'],
+    rewards:[
+      {name:'Pirate Crocodile Companion skin',itemId:null,quantity:1,cumulativeWatchMinutes:null}
+    ],
+    source:{
+      sourceId:'official:twitch:2026-showcase',
+      kind:'official_publication',
+      sourceUrl:'https://disneydreamlightvalley.com/news/2026ShowcaseHighlights',
+      checkedOn:'2026-11-22',gameVersion:null,sha256:null
+    },
+    availability:'not_live_verified'
+  },
+  {
+    campaignId:'premium:hercules-bundle:2026',
+    kind:'premium_shop',
+    name:'Hercules Bundle (2026 update announcement)',
+    code:null,productId:null,
+    window:{start:null,endExclusive:null},
+    conditions:['Official announcement confirms bundle content',
+      'Offer ID, price, sale dates and rotation history not established'],
+    rewards:[
+      {name:'Gilded Agora Building Kit',itemId:null,quantity:1,cumulativeWatchMinutes:null},
+      {name:'Grecian Villa House Style',itemId:null,quantity:1,cumulativeWatchMinutes:null},
+      {name:'Puppy companion (official description)',itemId:null,quantity:1,cumulativeWatchMinutes:null}
+    ],
+    source:{
+      sourceId:'official:premium:hercules-2026',
+      kind:'official_publication',
+      sourceUrl:'https://disneydreamlightvalley.com/news/update-jun-03-2026',
+      checkedOn:'2026-11-22',gameVersion:null,sha256:null
+    },
+    availability:'not_live_verified'
+  },
+  {
     campaignId: 'twitch:2026-keepsake-sea',
     kind: 'twitch_drop',
     name: 'The Keepsake Sea Twitch Drops',
@@ -14,7 +54,8 @@ export const OFFICIAL_CAMPAIGNS: readonly OfficialCampaign[] = Object.freeze([
     productId: null,
     window: {start:'2026-11-18T14:00:00Z',endExclusive:'2026-12-03T05:00:00Z'},
     conditions: ['Link Twitch and game account', 'Watch eligible creators',
-      'Claim on Twitch and redeem from in-game mailbox'],
+      'Claim on Twitch and redeem from in-game mailbox',
+      'November 18 news gives November 25 end; current official Drops page gives December 2 — date discrepancy retained'],
     rewards: [
       {name:'Keepsake Sea Photo Frame',itemId:null,quantity:1,cumulativeWatchMinutes:60},
       {name:'Pirate Crocodile Companion',itemId:null,quantity:1,cumulativeWatchMinutes:90},
@@ -101,12 +142,12 @@ export const OFFICIAL_CAMPAIGNS: readonly OfficialCampaign[] = Object.freeze([
     conditions:['Purchase The Keepsake Sea expansion', 'Play between November 18 and December 2, 2026',
       'Official announcement did not specify an Item ID'],
     rewards:[
-      {name:'Exclusive Merfolk form outfit',itemId:null,quantity:1,cumulativeWatchMinutes:null}
+      {name:'Villanous Fin (official article wording)',itemId:null,quantity:1,cumulativeWatchMinutes:null}
     ],
     source:{
       sourceId:'official:keepsake-sea:launch',
       kind:'official_publication',
-      sourceUrl:'https://disneydreamlightvalley.com/fr/news/update-nov-18-2026',
+      sourceUrl:'https://disneydreamlightvalley.com/news/TheKeepsakeSea2026',
       checkedOn:'2026-11-22',gameVersion:null,sha256:null
     },
     availability:'not_live_verified'
