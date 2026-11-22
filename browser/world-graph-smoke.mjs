@@ -17,6 +17,7 @@ const LAYOUT='SceneLayouts/Village04/Beach.json';
 const LOOSE='SceneLayouts/OffGridBuildings/Detached.json';
 const GRID=LAYOUT+'#grid=1';
 const EMPTY=LAYOUT+'#grid=2';
+const EMPTY_PATH='GridData/Village04/EmptyOriginalGrid.json';
 const UNLINKED=LOOSE+'#grid=0';
 const GRAPH_URL='http://127.0.0.1:4178/Wand/world/preview/';
 
@@ -155,7 +156,7 @@ function syntheticSource(version='1.26.2'){
       makeLayout(LAYOUT,105,WORLD,AREA),
       makeLayout(LOOSE,2,null,null)
     ],
-    gridData:[linkedGridPath,unlinkedGridPath].map(gridDataPath=>({
+    gridData:[linkedGridPath,unlinkedGridPath,EMPTY_PATH].map(gridDataPath=>({
       gridDataPath,nativeSizeX:12,nativeSizeY:10,
       nativeSourceFormat:'original_json_direct_floor_values',
       gridLocalToWorldTransformVerified:false,placementLegalityVerified:false
@@ -163,7 +164,8 @@ function syntheticSource(version='1.26.2'){
     gridRefs:[
       makeGrid(LAYOUT,1,linkedGridPath,WORLD,AREA,105),
       // Exact source Grid with no original default GridObject row.
-      makeGrid(LAYOUT,2,linkedGridPath,WORLD,AREA,0),
+      // Distinct exact source path: no synthetic Save-path ambiguity.
+      makeGrid(LAYOUT,2,EMPTY_PATH,WORLD,AREA,0),
       makeGrid(LOOSE,0,unlinkedGridPath,null,null,2)
     ],
     initialItemRefs:refs,
