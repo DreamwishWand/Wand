@@ -750,7 +750,7 @@ mod tests {
         let original=r#"{"World":{"GridCollection":{"DiffGrids":{"404":{
           "ModifiedObjects":{"2":{"ItemID":77,"X":0,"Y":-2147483648,
             "State":{"X":12,"Y":13},"Custom":"do-not-touch"}}}
-        }}}}}"#;
+        }}}}"#;
         let target=GridCoordinateTarget{
             kind:GridObjectKind::DiffModified,grid_id:"404".into(),
             object_id:"2".into(),item_id:77
