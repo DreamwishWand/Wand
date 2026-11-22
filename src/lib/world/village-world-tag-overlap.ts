@@ -207,7 +207,7 @@ export function createDb04VillageWorldTagOverlapClient(
       'SOURCE_PLACEMENT_TOTAL_CONFLICT');
     const counts=Object.freeze(DB04_WORLD_TAGS.map(key=>
       Object.freeze({key,...finish(tags.get(key)!)})));
-    const village:Object = Object.freeze({
+    const village:Db04VillageWorldTagOverlap=Object.freeze({
       contract:DB04_VILLAGE_WORLD_TAG_OVERLAP,
       evidence:DB04_VILLAGE_TAG_OVERLAP_EVIDENCE,
       worldId:root.worldId,originalVillageRoot:root,
@@ -227,7 +227,7 @@ export function createDb04VillageWorldTagOverlapClient(
       itemAcquisitionWorldVerified:false as const,
       currentPlayerSavePlacementVerified:false as const
     });
-    found.set(root.worldId,village as Db04VillageWorldTagOverlap);
+    found.set(root.worldId,village);
   }
   const villages=Object.freeze([...found.values()]);
   const source=Object.freeze({
