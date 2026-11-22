@@ -334,7 +334,16 @@ try{
         {State:'secret',GroupsCollectionItems:{'40003256':false}}
       ]}]
     },
-    World:{Stores:[]}
+    World:{Stores:[],GridCollection:{
+      Grids:{'1':{ID:1,Objects:{
+        '2':{ID:2,ItemID:40005160,X:1},
+        '3':{ID:3,ItemID:40005160,X:2}
+      }}},
+      DiffGrids:{'6':{ID:6,RemovedObjects:[5],ModifiedObjects:{
+        '5':{ID:5,ItemID:40003256},
+        '7':{ID:7,ItemID:40006110}
+      }}}
+    }}
   });
   await page.locator('input[aria-label="DDVのセーブファイルを選択"]')
     .setInputFiles({name:'synthetic.profile',
@@ -357,6 +366,18 @@ try{
   assert.equal(stateAfter['99999999'].discovered,true);
   assert.equal(await page.getByRole('alert').filter({hasText:'do-not-leak'}).count(),0);
   assert.match(await page.getByRole('status').filter({hasText:'セーブの発見履歴'}).first().innerText(),/所持 2件/);
+  const placedPreview=page.getByRole('region',{name:'セーブ内の家具配置参照'});
+  assert.match(await placedPreview.innerText(),/家具の保存参照\\s*3/);
+  assert.match(await placedPreview.innerText(),/全体グリッド 2件/);
+  assert.doesNotMatch(await placedPreview.innerText(),/40003256/);
+  await ownershipSearch.fill('40005160');
+  await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
+  await page.locator('.item-card-body').first().click();
+  assert.match(await page.locator('.item-inspector').innerText(),/セーブ内の家具配置参照：全体グリッド 2件、差分参照 0件/);
+  // A world grid reference never increments the manual quantity, or replaces
+  // an unobserved owned/missing status in the local Collection backup.
+  assert.equal(stateAfter['40005160'].quantity,7);
+  assert.equal(stateAfter['40006110'].status,undefined);
 
   await context.close();
   console.log('Collection browser WASM/IndexedDB/migration/search/paging smoke passed');
