@@ -1482,3 +1482,77 @@ unindexed in this archive. Full source identity, world placement
 permissions, DLC entitlement, cross-platform save Writer safety,
 roundtrip preservation and actual game reload remain unverified.
 CI uses only synthetic saves, synthetic ZIPs and strict P1G fixtures.
+
+
+## QwX-observed 201/201 native GridDataPath completion (still not full-game DB-04)
+
+The remaining **126 exact QwX source paths** missing from the previous
+77-definition DB-04 partial release have now been located and downloaded
+from the owner-provided Steam v1.26.2 GridData source tree:
+
+- 92 VillageExpansion01/02/03 original files
+- 14 Furniture original files
+- 18 OffGridBuildings originals (Expansion02 / Expansion04 underwater)
+- 2 Rooms originals
+
+All 126 files had unique matching native path names. Strict file-format
+probing found **125 compacted protobuf GridData** sources and
+**1 direct JSON FloorTypes** source. All 126 source structures passed
+dimensions/palette/compacted byte-length checks; their SHA-256 and
+original raw byte lengths were recorded **privately**. These additional
+raw sources contain **1,489,565 grid-local cells** and **452,764
+bytes** in total. These are direct source-file observations, not
+proof of placement permissions, collision or game writer compatibility.
+
+`db04_observed_grid_completion.py` and
+`db04-observed-grid-completion-cli.mjs` join all 230 saved GridDataPath
+references against the authenticated DB-04 partial ZIP and the
+provided original GridData source directory. They reuse DB-04's
+existing source-version-aware native `world.parse_grid_structure()`
+parser instead of inventing a separate codec for the compressed
+protobuf files. For every previously unindexed path they verify
+original raw bytes, calculate a new source SHA-256 and preserve
+DB-04's native grid fields, dimensions and terrain provenance.
+Any missing/invalid original fails closed; neither the save nor
+the source file is rewritten.
+
+The private supplemental output includes a source-correlated
+combined grid index (**77 base + 126 new = 203** DB-04 grid
+definitions) covering **201/201 distinct QwX-observed paths**
+and all **230/230 saved references**, plus a separate anonymous
+report. The two extra DB-04 source definitions are not referenced
+by QwX. This is **complete only for the QwX-observed GridDataPath
+set**. It remains **not a complete index of all Steam/Disney
+Dreamlight Valley game grids**.
+
+Example private CLI invocation:
+
+    node tools/db-05-save/db04-observed-grid-completion-cli.mjs \
+      --save /PRIVATE/qwx-profile.json \
+      --db04-archive /PRIVATE/db04-v1262-partial.zip \
+      --expected-db04-sha256 PINNED_ORIGINAL_ZIP_SHA256 \
+      --native-grid-root /PRIVATE/Steam/ddv_Data/StreamingAssets \
+      --out-report /PRIVATE/db05-201-grid-coverage.json \
+      --out-zip /PRIVATE/db04-observed-extended-grid-index.zip
+
+Input is strictly decoded by existing local P1G/JSON checks and sent
+to the Python parser through local stdin, without creating an
+unencrypted temporary save. Output paths must be outside public Git
+and are never overwritten. The private ZIP includes parsed,
+source-referenced grid definitions and original SHA/size witnesses,
+but **no raw game file or player save bytes**. Anonymous output
+contains only fixed counters and no native paths, save numeric IDs,
+item identifiers, account fields, user names or positions.
+
+Native original source hashes are *recorded* from the exact downloaded
+Steam files; they are **not independently pinned to a separate
+executable build fingerprint**. The original partial DB-04 ZIP is
+externally SHA-pinned. No proof of actual Steam/Switch binary
+build identity, completed original-game-wide GridData coverage,
+world coordinate transforms, object immovability, placement
+constraints, Rust/WASM Writer safety or actual game reload is claimed.
+
+CI: Python native Protobuf/direct JSON source tests, tampered
+GridData/ZIP and private-output guards, plus a synthetic end-to-end
+Node private CLI test. Original QwX and native source files remain
+outside GitHub.
