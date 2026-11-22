@@ -185,6 +185,50 @@ shards and a versioned manifest; the old catalog, icon GUIDs and eight exact
 current-version names are unchanged. The private original Tag overlay is
 stored alongside the audited DB-01 release in the owner's SRC-01 Drive folder.
 
+### Current Steam CollectionSet menu associations (source-exact direct lists)
+
+`extract_collection_menu.py` now reads original Steam v1.26.2
+`CollectionSet.json` alongside the independently SHA-pinned current
+`Il2CppDump/dump.cs` `Definitions.Items.CollectionSubMenu` enum, joining
+against the 39,067 verified IDs of the existing owner-private DB-01 SQLite.
+No old Switch category is copied into current data.
+
+The complete current source has **305 original CollectionSet definitions**.
+**168 distinct current Item IDs** are explicitly listed in *non-ignored*
+`CollectionGroup.CollectionsByItem` lists, with matching original canonical
+Item IDs. Some native classes beyond the four player-inventory categories
+are listed; all are queryable through the new client. The remaining dynamic
+`CollectionsByType` selectors are **not** evaluated by this first direct-list
+layer. Original `Ignore` item lists are excluded from the direct assignments
+and counted independently.
+
+The resulting private manifest includes verified source digests, current
+version, per-submenu counts, explicit-link coverage, and the exact number of
+unevaluated dynamic predicates. Source-linked metadata includes original
+`CollectionSubMenu` code/name, collection set Item ID/native key,
+localization key and group index. It does **not** claim that an item is
+currently visible or unlocked in a player's Collection screen.
+
+```sh
+python tools/db-01-items/extract_collection_menu.py \
+  --sqlite /owner/private/complete-1262.sqlite \
+  --collectionset /owner/private/steam-1262/itemlist/CollectionSet.json \
+  --il2cpp-dump /owner/private/steam-1262/Il2CppDump/dump.cs \
+  --expected-sqlite-sha256 <independently pinned SQLite SHA256> \
+  --expected-il2cpp-sha256 <independently pinned current IL2CPP SHA256> \
+  --out /owner/private/db01-1262-collection-menus
+```
+
+The TypeScript `src/lib/items/collection-menu.ts` provides
+`getMenus()`, `getDirectListings(itemId)`, and bounded
+`getDirectListingsBatch(ids)`. The optional private DB-00 bridge preserves
+these source associations under
+`attributes.gameOriginalCollectionDirectListings` and their
+separate source SHA references. It **does not** fill `category`,
+`subcategory`, content entitlements or world availability from dynamic
+filter guesses. Full game-screen taxonomy remains to be reconstructed by
+evaluating the source's `CollectionsByType` conditions.
+
 ### Steam v1.26.2 IL2CPP ItemType and source-exact subtypes
 
 The SHA-verified original `Il2CppDump/dump.cs` defines the authoritative
