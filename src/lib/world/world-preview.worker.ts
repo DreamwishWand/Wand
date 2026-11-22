@@ -6,6 +6,7 @@
  */
 import { openLocalWorldZip } from './local-snapshot.mjs';
 import { getNativeTerrainWindow } from './catalog.mjs';
+import { getSourceAnchorDomain, getTessellatedSourceAnchorWindow } from './native-anchor-domain';
 import {
   listWorldPreviewViews,
   summarizeWorldPreviewSourceCoverage,
@@ -13,7 +14,11 @@ import {
 } from './preview-views.mjs';
 
 type Rect = Readonly<{x:number; y:number; width:number; height:number}>;
-type View = Readonly<{viewKey:string}>;
+type View = Readonly<{
+  viewKey:string;
+  layoutId:string;
+  grids:ReadonlyArray<{gridIdNative:number;gridDataPath:string}>;
+}>;
 /** A small, explicit typed adapter around the old untyped read-only JS view. */
 interface NativeSourcePage {
   status:string;
@@ -90,7 +95,19 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
       const source = await openLocalWorldZip(message.file);
       catalog=source.catalog;
       loaded=source;
-      views=listWorldPreviewViews(catalog);
+      views=(listWorldPreviewViews(catalog) as View[]).map(view=>({
+        ...view,
+        grids:view.grids.map(grid=>{
+          const domain=getSourceAnchorDomain(catalog,view.layoutId,grid.gridIdNative);
+          return {
+            ...grid,
+            anchorSizeX:domain?.anchorSizeX??null,
+            anchorSizeY:domain?.anchorSizeY??null,
+            tessellationFactor:domain?.tessellationFactor??null,
+            anchorDomainStatus:domain?.status??'native_grid_source_not_available'
+          };
+        })
+      }));
       worker.postMessage({
         kind:'loaded',requestId,
         gameVersion:source.gameVersion,platform:source.platform,
@@ -108,6 +125,28 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
     const sourceView=views.find(view=>view.viewKey===message.viewKey);
     if (!sourceView)
       throw new TypeError('Unknown local World view');
+    const domain=getSourceAnchorDomain(catalog,sourceView.layoutId,message.gridIdNative);
+    if(domain?.status==='steam1262_original_factor_two_anchor_envelope'){
+      // Raw GridData cells and factor-two source-object X/Y have not been
+      // proven to be the same coordinate space. Never draw a fake overlay.
+      const result=getTessellatedSourceAnchorWindow(
+        catalog,sourceView.layoutId,message.gridIdNative,
+        message.rect,message.offset,64);
+      worker.postMessage({
+        kind:'view',requestId,page:result.page,markers:result.markers,
+        terrainStatus:'native_terrain_not_projected_to_source_anchor_coordinates',
+        terrainRows:null
+      });
+      return;
+    }
+    if(domain?.status==='tessellation_coordinate_relation_unverified'){
+      worker.postMessage({
+        kind:'view',requestId,
+        page:{status:'native_anchor_tessellation_not_corroborated'},
+        markers:[],terrainStatus:null,terrainRows:null
+      });
+      return;
+    }
     const page=readNativeSourceWindow(catalog,sourceView,
       message.gridIdNative,message.rect,{offset:message.offset,limit:64});
     if (page.status!=='source_native_default_layout_anchors_only') {
