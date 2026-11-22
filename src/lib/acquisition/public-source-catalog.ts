@@ -29,6 +29,8 @@ import {
 } from './public-native-shop.ts';
 import {loadPinnedPublicIapSource,type PublicIapSourceIndex}
   from './public-static-iap.ts';
+import {indexNativeShopHistory,type NativeShopHistoryIndex}
+  from './shop-history-index.ts';
 import {indexPublicOnlineNameCandidates,
   type PublicOnlineNameCandidateIndex,
   type PublicOnlineNameCandidate} from './public-online-name-candidates.ts';
@@ -51,6 +53,10 @@ export interface PublicSourceCatalogCoverage {
   readonly historicalNativeShopOffers:27;
   readonly historicalNativeShopSourceRoutes:128;
   readonly historicalNativeShopDistinctItemIds:120;
+  readonly observedShopSnapshotOfferIds:56;
+  readonly observedDistinctShopOfferIds:48;
+  readonly observedRepeatedShopOfferIds:8;
+  readonly combinedNativeShopItemIds:186;
   readonly nativeIapPackages:53;
   readonly nativeIapDirectRewardRoutes:150;
   readonly nativeIapExtendedRewardRoutes:141;
@@ -78,6 +84,8 @@ export interface PublicSourceCatalog{
   readonly eventFriendshipSource:PublicEventFriendshipAcquisitionIndex;
   readonly nativeShopSource:PinnedPublicNativeShopIndex;
   readonly historicalNativeShopSource:PinnedPublicNativeShopIndex;
+  /** Source-authenticated per-Item and per-offer appearance chronology. */
+  readonly shopHistory:NativeShopHistoryIndex;
   readonly nativeIapSource:PublicIapSourceIndex;
   readonly coverage:PublicSourceCatalogCoverage;
   lookup(itemId:string|number):PublicSourceItemLookup;
@@ -118,6 +126,9 @@ export async function loadPublicSourceCatalog(
     fetcher,null,basePath,[],null,questSource,eventFriendshipSource,
     nativeShopSource,nativeIapSource,historicalNativeShopSource
   );
+  const shopHistory=indexNativeShopHistory(
+    nativeShopSource,historicalNativeShopSource
+  );
   const db00=joinDb02OriginsWithDb00(db00Snapshot,origins);
   const nameCandidates=indexPublicOnlineNameCandidates(
     db00Snapshot,origins.listCampaigns(),historicalPremiumShop.offers
@@ -141,6 +152,11 @@ export async function loadPublicSourceCatalog(
     historicalNativeShopSource.coverage.distinctSourceItemIds===120&&
     historicalNativeShopSource.coverage.fullGameVersionVerified===false&&
     historicalNativeShopSource.coverage.currentAvailabilityVerified===false&&
+    shopHistory.coverage.observedOffers===56&&
+    shopHistory.coverage.distinctNativeOfferIds===48&&
+    shopHistory.coverage.repeatedNativeOfferIds===8&&
+    shopHistory.coverage.distinctItemIds===186&&
+    shopHistory.coverage.liveAvailabilityVerified===false&&
     nativeIapSource.coverage.nativePackages===53&&
     nativeIapSource.coverage.directRewardReferences===150&&
     nativeIapSource.coverage.extendedRewardReferences===141&&
@@ -168,6 +184,10 @@ export async function loadPublicSourceCatalog(
     historicalNativeShopOffers:27 as const,
     historicalNativeShopSourceRoutes:128 as const,
     historicalNativeShopDistinctItemIds:120 as const,
+    observedShopSnapshotOfferIds:56 as const,
+    observedDistinctShopOfferIds:48 as const,
+    observedRepeatedShopOfferIds:8 as const,
+    combinedNativeShopItemIds:186 as const,
     nativeIapPackages:53 as const,
     nativeIapDirectRewardRoutes:150 as const,
     nativeIapExtendedRewardRoutes:141 as const,
@@ -185,7 +205,8 @@ export async function loadPublicSourceCatalog(
     gameVersion:'1.26.2' as const,
     source:'sha_pinned_public_db00_starpath_quest_event_friendship_native_shop_history_iap_and_official_records' as const,
     origins,db00,nameCandidates,questSource,eventFriendshipSource,
-    nativeShopSource,nativeIapSource,historicalNativeShopSource,coverage,
+    nativeShopSource,nativeIapSource,historicalNativeShopSource,
+    shopHistory,coverage,
     lookup(itemId:string|number){
       // db00.lookup validates IDs and keeps extra-ItemList Quest/Currency IDs.
       const row=db00.lookup(itemId);
