@@ -59,6 +59,42 @@ test('DB00 keeps verified original Tag facets and multiple universes without inf
     {...metadata,getItems:async()=>[{...tagged,nativeKey:'wrong'}]}),
     /TAG_NATIVE_IDENTITY_MISMATCH/);
 });
+test('DB-00 original ItemType and verified subtype are separate from UI category',async()=>{
+  const original={...record,itemId:30_200_001,nativeKey:'Original!Crop'};
+  const fullCatalog={...client,source:{...source,sourceItemsSha256:sha},
+    getCategory:async category=>category==='ActivityItem'?[original]:[]};
+  const typeRow={
+    itemId:30_200_001,nativeCategory:'ActivityItem',sourceSha256:sha,
+    itemTypeCode:3,itemTypeName:'ActivityItem',subtypeCode:2,
+    subtypeEnumName:'ActivityItemType',subtypeName:'Crop',
+    subtypeNameVerified:true,
+  };
+  const typed={
+    source:{gameVersion:'1.26.2',sourceItemsSha256:sha,definitionCount:3,
+      sourceItemTypeVerified:3,sourceIl2cppDumpSha256:'b'.repeat(64)},
+    getItems:async ids=>ids.map(()=>typeRow),
+  };
+  const result=await createDb01Db00Patch(fullCatalog,target,undefined,typed);
+  assert.equal(result.patch.items.length,1);
+  assert.equal(result.patch.items[0].category,null);
+  assert.equal(result.patch.items[0].subcategory,null);
+  assert.deepEqual(result.patch.items[0].attributes.sourceItemType,{
+    code:3,name:'ActivityItem',evidence:'current_original_il2cpp_enum'});
+  assert.deepEqual(result.patch.items[0].attributes.sourceSubtype,{
+    code:2,name:'Crop',enum:'ActivityItemType',verified:true});
+  assert.deepEqual(result.patch.items[0].worlds,[]);
+  assert.deepEqual(result.patch.items[0].contentIds,[]);
+  assert.equal(result.patch.sources[1].id,'db01-original-il2cpp-types');
+  assert.equal(result.patch.sources[1].visibility,'private');
+  assert.equal(result.sourceItemTypeMetadataAdded,1);
+  assert.equal(result.publishable,false);
+  await assert.rejects(createDb01Db00Patch(fullCatalog,target,undefined,
+    {...typed,source:{...typed.source,sourceItemsSha256:'f'.repeat(64)}}),
+    /IL2CPP_SOURCE_MISMATCH/);
+  await assert.rejects(createDb01Db00Patch(fullCatalog,target,undefined,
+    {...typed,getItems:async()=>[{...typeRow,itemTypeName:'Furniture'}]}),
+    /IL2CPP_ITEM_MISMATCH/);
+});
 test('TypeScript DB00 bridge rejects misclassified records and wrong item counts',async()=>{
   await assert.rejects(createDb01Db00Patch({...client,getCategory:async cat=>cat==='ActivityItem'?[{...record,catalogDomain:'definition_unclassified'}]:[]},target),/UNCLASSIFIED_PATCH_BLOCKED/);
   await assert.rejects(createDb01Db00Patch({...client,source:{...source,currentNativeItemDefinitions:2}},target),/NATIVE_ITEM_COUNT_MISMATCH/);
