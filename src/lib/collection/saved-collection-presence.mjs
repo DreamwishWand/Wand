@@ -13,10 +13,38 @@ const record = v=>v!==null && typeof v==='object' && !Array.isArray(v);
 const own = (v,k)=>Object.prototype.hasOwnProperty.call(v,k);
 const keyId = key=>/^[1-9][0-9]*$/.test(key) &&
   Number.isSafeInteger(Number(key)) && String(Number(key))===key;
+
 const broken = ()=>{throw new TypeError('SAVED_COLLECTION_PRESENCE_INVALID_WORKER_REPLY');};
+// Fixed type vocabulary only. No saved flag, string, object field or nested
+// value is copied across the Worker boundary: these are shape observations.
+export const COLLECTION_JSON_KINDS = Object.freeze([
+  'null','boolean','integer','number','string','array','object'
+]);
+const emptyKinds = ()=>Object.fromEntries(COLLECTION_JSON_KINDS.map(x=>[x,0]));
+const jsonKind = v => v===null?'null':Array.isArray(v)?'array':
+  typeof v==='number'?(Number.isSafeInteger(v)?'integer':'number'):
+  record(v)?'object':typeof v==='boolean'?'boolean':
+  typeof v==='string'?'string':'object';
+
+function safeKinds(raw, expectedMax) {
+  if(!record(raw) || Object.keys(raw).length!==COLLECTION_JSON_KINDS.length ||
+      Object.keys(raw).some(x=>!COLLECTION_JSON_KINDS.includes(x)))broken();
+  const out=emptyKinds();
+  let total=0;
+  for(const kind of COLLECTION_JSON_KINDS) {
+    const n=raw[kind];
+    if(!Number.isSafeInteger(n)||n<0||n>expectedMax)broken();
+    out[kind]=n;
+    total+=n;
+  }
+  if(total>expectedMax)broken();
+  return Object.freeze({counts:Object.freeze(out),total});
+}
+
 
 export function createSavedCollectionPresence(root) {
   const rows=new Map();
+  const itemValueKinds=emptyKinds(), groupStateKinds=emptyKinds();
   let fieldObserved=false, observedSets=0, observedGroups=0,
     observedMaps=0, invalidEntries=0, referenceCount=0, partial=false;
   if(record(root?.Player) && own(root.Player,'CollectionSets')) {
@@ -33,6 +61,8 @@ export function createSavedCollectionPresence(root) {
         for(const group of set.GroupData) {
           if(observedGroups>=LIMITS.groups){partial=true;break outer;}
           observedGroups++;
+          if(record(group) && own(group,'State'))
+            groupStateKinds[jsonKind(group.State)]++;
           if(!record(group) || !record(group.GroupsCollectionItems)) {
             invalidEntries++;continue;
           }
@@ -44,6 +74,7 @@ export function createSavedCollectionPresence(root) {
             if(!keyId(key)){invalidEntries++;continue;}
             const id=Number(key);
             rows.set(id,(rows.get(id)??0)+1);
+            itemValueKinds[jsonKind(group.GroupsCollectionItems[key])]++;
             referenceCount++;
           }
         }
@@ -59,6 +90,8 @@ export function createSavedCollectionPresence(root) {
     contract:SAVED_COLLECTION_PRESENCE_CONTRACT,status,fieldObserved,
     observedSets,observedGroups,observedMaps,
     invalidEntries,referenceCount,distinctItemCount:items.length,
+    itemValueKinds:Object.freeze(itemValueKinds),
+    groupStateKinds:Object.freeze(groupStateKinds),
     sampled:partial,privateOnly:true,ownershipVerified:false,
     completionVerified:false,sourceVersionEquivalenceVerified:false,
     writerAuthorized:false,publishable:false,items
@@ -81,7 +114,11 @@ export function sanitizeSavedCollectionPresence(input) {
   const invalidEntries=number(input.invalidEntries,LIMITS.keys+LIMITS.groups+LIMITS.sets);
   const referenceCount=number(input.referenceCount,LIMITS.keys);
   const distinctItemCount=number(input.distinctItemCount,LIMITS.keys);
-  if(observedMaps>observedGroups || observedGroups===0&&observedMaps!==0 ||
+  const itemKinds=safeKinds(input.itemValueKinds,referenceCount);
+  const stateKinds=safeKinds(input.groupStateKinds,observedGroups);
+  if(itemKinds.total!==referenceCount ||
+    stateKinds.total>observedGroups ||
+    observedMaps>observedGroups || observedGroups===0&&observedMaps!==0 ||
     distinctItemCount!==input.items.length || distinctItemCount>referenceCount ||
     (input.status==='not_observed' && (input.fieldObserved||referenceCount||input.sampled||invalidEntries)) ||
     (input.status==='observed_ids' && (!input.fieldObserved||!referenceCount||input.sampled||invalidEntries)) ||
@@ -101,6 +138,7 @@ export function sanitizeSavedCollectionPresence(input) {
     contract:SAVED_COLLECTION_PRESENCE_CONTRACT,status:input.status,
     fieldObserved:input.fieldObserved,observedSets,observedGroups,
     observedMaps,invalidEntries,referenceCount,distinctItemCount,
+    itemValueKinds:itemKinds.counts,groupStateKinds:stateKinds.counts,
     sampled:input.sampled,privateOnly:true,ownershipVerified:false,
     completionVerified:false,sourceVersionEquivalenceVerified:false,
     writerAuthorized:false,publishable:false,items:Object.freeze(items)
