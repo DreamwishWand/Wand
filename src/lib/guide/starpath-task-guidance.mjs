@@ -102,3 +102,21 @@ export function actionableStarpathTask(seasonId,task,language='ja'){
 }
 export const STARPATH_REVIEWED_DAILY_COUNT=Object.keys(docs).length;
 export const STARPATH_REVIEWED_WEEKLY_COUNT=Object.keys(weekly).length;
+
+/**
+ * Present verified game text first when no specific editorial instruction is
+ * available. Editorial steps are authored in Japanese and English only;
+ * they must never masquerade as official text in another UI language.
+ */
+export function starpathTaskDisplay(seasonId,task,locale,sourceText){
+  const verifiedLanguage=locale==='ja'||locale==='en'?locale:null;
+  const reviewed=verifiedLanguage?actionableStarpathTask(seasonId,task,verifiedLanguage):null;
+  const original=typeof sourceText==='string'&&sourceText.trim()?sourceText:
+    (typeof task?.description==='string'&&task.description.trim()?task.description:'');
+  return {
+    headline:reviewed?.action||original||'説明未確認',
+    note:reviewed?'確認済みの操作 · ゲーム内表記：'+(original||'説明未確認'):
+      'ゲーム内表記 · 詳細な操作手順は未検証',
+    reviewed:!!reviewed
+  };
+}
