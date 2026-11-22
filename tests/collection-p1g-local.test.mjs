@@ -116,6 +116,40 @@ test('synthetic encrypted P1G keeps native discovery booleans and excludes categ
  assert.deepEqual(sanitizeSavedCollectionDiscovery(structuredClone(result.discovery)),result.discovery);
 });
 
+test('encrypted synthetic P1G exposes positive-stock ownership only without raw amounts',async()=>{
+ const root={GameInfo:{Version:643},Player:{
+  PrivateName:'no-leak-identity',
+  ListInventories:{
+   '0':{ID:0,CompatibleItemType:'Furniture',Inventory:{
+    '40005160':{Amount:3,Marker:'Favorite'},
+    '40006110':{Amount:0,Marker:'Hidden'}
+   }},
+   '1':{ID:1,CompatibleItemType:'Clothing',Inventory:{
+    '50000001':{Amount:1}
+   }}
+  },
+  CollectionSets:[{GroupData:[{GroupsCollectionItems:{
+   '40005160':true,'40006110':false
+  }}]}]
+ },World:{Stores:[]}};
+ const actual=await inspectEncryptedSavedStore(makeFixture(root));
+ assert.deepEqual(actual.positiveOwnership.entries,[
+  {itemId:40005160,role:'Furniture'},
+  {itemId:50000001,role:'Clothing'}
+ ]);
+ assert.equal(actual.positiveOwnership.zeroReferences,1);
+ assert.equal(actual.positiveOwnership.missingStatusInferred,false);
+ const {sanitizePositiveListInventoryOwnership}=await import('../src/lib/collection/saved-list-positive-ownership.mjs');
+ assert.deepEqual(sanitizePositiveListInventoryOwnership(
+  structuredClone(actual.positiveOwnership)),actual.positiveOwnership);
+ const json=JSON.stringify(actual);
+ assert.ok(!json.includes('no-leak-identity'));
+ assert.ok(!json.includes('"Amount":3'));
+ assert.ok(!json.includes('Hidden'));
+ assert.ok(!json.includes('Favorite'));
+ assert.ok(!json.includes('ListInventories'));
+});
+
 test('worker core rejects oversize or misaligned ciphertext before decoding',async()=>{
  await assert.rejects(()=>inspectEncryptedSavedStore(new Uint8Array(15)),/LOCAL_P1G_INVALID_CIPHERTEXT/);
  await assert.rejects(()=>inspectEncryptedSavedStore(new Uint8Array(33)),/LOCAL_P1G_INVALID_CIPHERTEXT/);
