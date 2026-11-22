@@ -209,3 +209,92 @@ test('world tag and DB-01 definition must share exact current source ID and cate
   assert.throws(()=>createDb04ItemGeographyBridge(world(),db01(),null,wrongVersion),
     /NATIVE_SCOPE_PRIVATE_EXACT_VERSION_REQUIRED/);
 });
+
+const universePredicateClient=()=>({
+  source:{gameVersion:'1.26.2',sourceItemsSha256:'9'.repeat(64),
+    sourceSqliteSha256:'8'.repeat(64),sourceIl2cppDumpSha256:'7'.repeat(64),
+    sourceDefinitionCount:39067},
+  async getItem(id){
+    return id===12345678?[
+      {setId:4000,groupIndex:0,nativeCategory:'Furniture',
+        sourceSetItemId:5000,universeTagId:6000,universeTagKey:'Mickey',
+        selectorField:3,
+        rule:'source_item_set_disney_universe_tag_equals_collection_filter',
+        sourcePredicateMatched:true,gameUiMembershipVerified:false,
+        gameUiVisibilityVerified:false,worldAvailabilityVerified:false,
+        dlcOwnershipVerified:false},
+      {setId:4001,groupIndex:0,nativeCategory:'Furniture',
+        sourceSetItemId:5001,universeTagId:6001,universeTagKey:'NonIP',
+        selectorField:3,
+        rule:'source_item_set_disney_universe_tag_equals_collection_filter',
+        sourcePredicateMatched:true,gameUiMembershipVerified:false,
+        gameUiVisibilityVerified:false,worldAvailabilityVerified:false,
+        dlcOwnershipVerified:false}
+    ]:[];
+  }
+});
+test('source CollectionSet predicates cross-check, but do not promote, Universe Set names',async()=>{
+  const catalog=db01();
+  catalog.source.sourceItemsSha256='9'.repeat(64);
+  catalog.source.definitions=39067;
+  const native=nativeScope();
+  native.getItem=id=>id===12345678?{
+    ...nativeScope().getItem(id),
+    universeSetCandidates:['Mickey','Ratatouille']
+  }:null;
+  const bridge=createDb04ItemGeographyBridge(world(),catalog,null,native,
+    universePredicateClient());
+  assert.equal(bridge.source.collectionUniversePredicatesAttached,true);
+  const result=await bridge.getItem(12345678);
+  assert.equal(result.sourceCollectionUniversePredicateMatches.length,2);
+  assert.equal(result.sourceCollectionUniversePredicateMatches[0].rule,
+    'source_item_set_disney_universe_tag_equals_collection_filter');
+  assert.deepEqual(result.sourceUniverseReconciliation.directNativeUniverseTagKeys,['Mickey']);
+  assert.deepEqual(result.sourceUniverseReconciliation.staticSourcePredicateKeys,
+    ['Mickey','NonIP']);
+  assert.deepEqual(result.sourceUniverseReconciliation
+    .sourcePredicateAlsoInDirectOrSetNameKeys,['Mickey']);
+  assert.deepEqual(result.sourceUniverseReconciliation.sourcePredicateOnlyKeys,['NonIP']);
+  assert.deepEqual(result.sourceUniverseReconciliation
+    .setNameCandidateWithoutPredicateKeys,['Ratatouille']);
+  assert.equal(result.sourceUniverseReconciliation.gameRuntimeMembershipVerified,false);
+  assert.equal(result.sourceUniverseReconciliation.dlcOwnershipVerified,false);
+  assert.equal(result.itemAcquisitionWorldVerified,false);
+  assert.equal(result.itemPlacementLegalityVerified,false);
+  assert.throws(()=>{result.sourceCollectionUniversePredicateMatches[0].universeTagKey='Altered';},
+    TypeError);
+  const absent=await bridge.getItem(99999999);
+  assert.deepEqual(absent.sourceCollectionUniversePredicateMatches,[]);
+  assert.deepEqual(absent.sourceUniverseReconciliation.staticSourcePredicateKeys,[]);
+});
+test('collection predicate source attaches independently from native Tag scope',async()=>{
+  const catalog=db01();
+  catalog.source.sourceItemsSha256='9'.repeat(64);
+  catalog.source.definitions=39067;
+  const result=await createDb04ItemGeographyBridge(world(),catalog,null,null,
+    universePredicateClient()).getItem(12345678);
+  assert.equal(result.originalItemScopeTags,null);
+  assert.equal(result.sourceCollectionUniversePredicateMatches.length,2);
+  assert.equal(result.sourceUniverseReconciliation,null);
+  const missing=await createDb04ItemGeographyBridge(world(),catalog)
+    .getItem(12345678);
+  assert.equal(missing.sourceCollectionUniversePredicateMatches,null);
+});
+test('mismatched or inconsistent source universe replies fail closed',async()=>{
+  const catalog=db01();
+  catalog.source.sourceItemsSha256='9'.repeat(64);
+  catalog.source.definitions=39067;
+  const wrong=universePredicateClient();
+  wrong.source.gameVersion='1.26.3';
+  assert.throws(()=>createDb04ItemGeographyBridge(world(),catalog,null,null,wrong),
+    /DB01_UNIVERSE_PREDICATE_SOURCE_MISMATCH/);
+  const wrongDigest=universePredicateClient();
+  wrongDigest.source.sourceItemsSha256='0'.repeat(64);
+  assert.throws(()=>createDb04ItemGeographyBridge(world(),catalog,null,null,wrongDigest),
+    /DB01_UNIVERSE_PREDICATE_SOURCE_MISMATCH/);
+  const spoofed=universePredicateClient();
+  spoofed.getItem=async()=>[{...((await universePredicateClient().getItem(12345678))[0]),
+    gameUiMembershipVerified:true}];
+  await assert.rejects(()=>createDb04ItemGeographyBridge(world(),catalog,null,null,
+    spoofed).getItem(12345678),/SOURCE_UNIVERSE_PREDICATE_REPLY_MISMATCH/);
+});
