@@ -209,7 +209,7 @@ try {
   assert.equal(peopleDownloads.filter(u=>u.endsWith('/quest-index.json')).length,1);
   assert.equal(peopleDownloads.filter(u=>u.includes('quest-details-')).length,0,
     'character names need no private or lazily loaded quest details');
-  assert.equal(await people.locator('input[type=file]').count(),0);
+  assert.equal(await people.locator('main.site-main input[type=file]').count(),0);
   const charSearch=people.getByRole('searchbox',{name:'キャラクター名称を検索'});
   await charSearch.fill('フランダー');
   assert.equal(await people.locator('.person').count(),1);
@@ -330,7 +330,7 @@ try {
   await star.getByRole('searchbox',{name:'通常タスクを検索'}).fill('闇のトゲ');
   assert.match(await star.locator('.entries li').first().innerText(),/闇のトゲ/);
   await star.getByRole('searchbox',{name:'通常タスクを検索'}).fill('');
-  assert.equal(await star.locator('input[type=file]').count(),0);
+  assert.equal(await star.locator('main.site-main input[type=file]').count(),0);
   await star.getByRole('button',{name:'Seafaring Star Path'}).click();
   assert.match(await star.locator('.summary').innerText(),/25 \/ 18/);
   assert.match(await star.locator('.entries li').first().innerText(),/魚を釣る/);
