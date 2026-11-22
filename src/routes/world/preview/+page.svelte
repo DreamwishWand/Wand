@@ -72,6 +72,25 @@
       }) : [];
   $: selectedPointCount = selectedCell
     ? markersByCell.get(`${selectedCell.x}:${selectedCell.y}`) ?? 0 : 0;
+  $: selectedFloorValue = selectedCell
+    ? cells.find(c => c.x === selectedCell?.x && c.y === selectedCell?.y)?.nativeFloorValue
+    : undefined;
+
+  // Deterministic source-value palette for inspection, NOT gameplay terrain
+  // colors, collision status, occupancy or object placement permission.
+  function floorTint(nativeValue: number | undefined): string | undefined {
+    if (!Number.isSafeInteger(nativeValue) || nativeValue === undefined) return undefined;
+    if (nativeValue === 0) return '#34313f';
+    // Native GridFloorType flag names only. These are illustrative UI
+    // colors and never implement traversal, water access or item permission.
+    if ((nativeValue & 512) !== 0) return '#346d96'; // Water
+    if ((nativeValue & 256) !== 0) return '#397d79'; // Shore
+    if ((nativeValue & 4) !== 0) return '#53865a'; // Meadow
+    if ((nativeValue & 2048) !== 0) return '#7f697f'; // Wall
+    if ((nativeValue & 1024) !== 0) return '#706b7a'; // Floor
+    const hue = (Math.imul(nativeValue, 2654435761) >>> 0) % 360;
+    return `hsl(${hue} 29% 39%)`;
+  }
 
   function stop() {
     requestId++;
@@ -299,13 +318,15 @@
         <p class="note">
           点と数字は原本に記録された初期配置のX/Yアンカー件数です。オブジェクトが占有する範囲ではありません。
           地形：{viewport.terrainStatus === 'source_corroborated_grid_local_preview'
-            ? 'Steam 1.26.1形式の原本グリッドローカル値' : '未検証・表示不可'}。
+            ? `Steam v${version} 原本グリッドローカル値（配置可否は未検証）` : '未検証・表示不可'}。
+          セルの色は原本のマスク値を識別するための便宜的な色です。
         </p>
         <div class="map-scroll">
           <div class="grid-view" style={'grid-template-columns: repeat(' + width + ', 24px)'}>
             {#each cells as cell (`${cell.x}:${cell.y}`)}
               <button type="button" class:has-anchor={cell.count > 0}
                 class:current={selectedCell?.x === cell.x && selectedCell?.y === cell.y}
+                style:background-color={floorTint(cell.nativeFloorValue)}
                 on:click={() => selectedCell = {x:cell.x,y:cell.y}}
                 title={`Grid local (${cell.x},${cell.y}); source anchors: ${cell.count}; native floor mask: ${cell.nativeFloorValue ?? 'unverified'}`}
                 aria-label={`座標${cell.x},${cell.y}：アンカー${cell.count}件`}>
@@ -316,6 +337,7 @@
         </div>
         {#if selectedCell}
           <p class="note">座標（{selectedCell.x}, {selectedCell.y}）の初期配置アンカー：{selectedPointCount}件。
+            地形マスク：{selectedFloorValue ?? '未検証'}。
             ページ一覧に全件が含まれるとは限りません。</p>
         {/if}
       </div>
@@ -378,7 +400,7 @@
   .map-scroll {overflow:auto;max-width:100%;margin-top:20px;padding-bottom:10px;}
   .grid-view {display:grid;gap:2px;width:max-content;border:1px solid #ffffff24;padding:4px;background:#16121f;}
   .grid-view button {height:24px;width:24px;padding:0;border:1px solid #ffffff10;border-radius:2px;background:#2d2837;color:#e8dafa;font-size:9px;line-height:1;}
-  .grid-view button.has-anchor {background:#76559d;color:white;border-color:#d1aaff;}
+  .grid-view button.has-anchor {color:white;border:2px solid #ecd1ff;box-shadow:inset 0 0 0 1px #2a2134;font-weight:700;}
   .grid-view button.current {outline:2px solid #fff;outline-offset:1px;}
   .record-list {display:grid;gap:6px;margin-top:14px;}
   .record {display:grid;grid-template-columns:minmax(115px,1fr) repeat(3,minmax(95px,1fr));gap:12px;padding:12px 10px;background:#ffffff08;border-radius:7px;font-size:12px;overflow-wrap:anywhere;}

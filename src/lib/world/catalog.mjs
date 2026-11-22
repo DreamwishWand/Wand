@@ -4,6 +4,16 @@ import { GRIDAREA_ROT_COS, GRIDAREA_ROT_SIN, nativeObliqueSourceLocalPosition } 
 // This API never invents 2D coordinates, path/fence connectivity or permissions.
 export const WORLD_SCHEMA = 'wand.db04.world@1';
 
+// Source-pinned Steam GridData.get_Item and bit-width native read paths.
+// This is NEVER a placement, world-coordinate or edit compatibility grant.
+const READONLY_NATIVE_TERRAIN_GAME_VERSIONS = new Set(['1.26.1', '1.26.2']);
+const hasNativeTerrainReadEvidence = catalog =>
+  READONLY_NATIVE_TERRAIN_GAME_VERSIONS.has(catalog.manifest.gameVersion) &&
+  // The paired PE64 native-code proof comes from the Windows Steam build;
+  // a console save's matching version number is not PE64 proof.
+  (catalog.manifest.gameVersion !== '1.26.2' ||
+   catalog.manifest.platform === 'Steam');
+
 
 /** Native IL2CPP enum GridLayers (not a collision/placement algorithm). */
 export const GRID_LAYER_FLAGS = Object.freeze({
@@ -651,9 +661,10 @@ function packedGridForPreview(catalog, gridId) {
   const grid = catalog.grids.get(String(gridId));
   if (!grid) return { status: 'unknown_grid' };
   const evidence = grid.terrainDecoding;
-  // This read-only decoder has original native-code proof ONLY for 1.26.1.
-  // Reject every other version before consulting even forged decoded flags.
-  if (catalog.manifest.gameVersion !== '1.26.1' ||
+  // Only these two pinned Steam native read paths have source evidence.
+  // Older unresolved 1.26.2 snapshots stay unsupported; never trust flags
+  // on an unknown future build, even when a ZIP claims decoded:true.
+  if (!hasNativeTerrainReadEvidence(catalog) ||
       evidence?.status === 'native_packing_not_verified_for_game_version') {
     return { status: 'native_terrain_packing_not_verified_for_game_version' };
   }
@@ -769,9 +780,9 @@ export function getNativeTerrainWindow(catalog, gridId, rect) {
 export function getNativeTerrainDistribution(catalog, gridId) {
   const grid = catalog.grids.get(String(gridId));
   if (!grid) return { status: 'unknown_grid' };
-  // Match tile/window status: unknown-version source bytes never become a
-  // histogram, even when their private JSON misstates a decoded flag.
-  if (catalog.manifest.gameVersion !== '1.26.1' ||
+  // Match tile/window provenance gate. Unsupported future builds and
+  // legacy unverified 1.26.2 extraction never produce fake histograms.
+  if (!hasNativeTerrainReadEvidence(catalog) ||
       grid.terrainDecoding?.status === 'native_packing_not_verified_for_game_version') {
     return { status: 'native_terrain_packing_not_verified_for_game_version' };
   }

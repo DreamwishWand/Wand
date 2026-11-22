@@ -27,7 +27,7 @@ const unresolved = {decoded:false,
   status:'native_packing_not_verified_for_game_version'};
 
 test('new versions return identical explicit unknown-version status across terrain APIs', () => {
-  for (const version of ['1.26.2','1.27.0','2.0.0']) {
+  for (const version of ['1.27.0','2.0.0']) {
     for (const evidence of [unresolved, decoded, null]) {
       const source = catalog(version,evidence);
       const tile = getNativeTerrainTile(source,gridId,0,0);
@@ -56,6 +56,45 @@ test('the verified 1.26.1 path still decodes bounded raw native terrain cells', 
   assert.deepEqual(window.rows,[[0,0],[4,4]]);
   assert.equal(getNativeTerrainDistribution(source,gridId).status,
     'histogram_not_extracted');
+});
+
+test('Steam 1.26.2 pinned native read-path supports only bounded grid-local preview', () => {
+  const source = catalog('1.26.2', decoded);
+  const grid = source.grids.get(gridId);
+  grid.nativePaletteIndexCellCounts = [2,2];
+  assert.deepEqual(getNativeTerrainTile(source,gridId,0,1), {
+    status:'source_corroborated_grid_local_preview',
+    x:0,y:1,nativeValue:4,symbols:['Meadow'],unrecognizedBits:0,
+    worldCoordinatesVerified:false,placementLegalityVerified:false,
+    nativeCodeBodyVerified:false,sampleBasedEncodingEvidence:null,
+  });
+  assert.deepEqual(getNativeTerrainWindow(source,gridId,
+    {x:0,y:0,width:2,height:2}).rows,[[0,0],[4,4]]);
+  const histogram = getNativeTerrainDistribution(source,gridId);
+  assert.equal(histogram.status,'source_corroborated_grid_local_summary');
+  assert.deepEqual(histogram.values.map(v => v.cellCount),[2,2]);
+  assert.equal(histogram.placementLegalityVerified,false);
+  assert.equal(getNativeTerrainWindow(source,gridId,
+    {x:0,y:0,width:3,height:1}).status,'outside_native_grid_or_preview_limit');
+
+  // A console snapshot must not inherit Steam's native PE64 proof.
+  const consoleCatalog = catalog('1.26.2',decoded);
+  consoleCatalog.manifest.platform = 'Switch';
+  assert.equal(getNativeTerrainTile(consoleCatalog,gridId,0,0).status,
+    'native_terrain_packing_not_verified_for_game_version');
+  assert.equal(getNativeTerrainDistribution(consoleCatalog,gridId).status,
+    'native_terrain_packing_not_verified_for_game_version');
+
+  // Older 1.26.2 snapshots retain their explicit unverified origin; the
+  // catalog must not silently reinterpret an older private ZIP's data.
+  const legacy = catalog('1.26.2',unresolved);
+  for (const result of [
+    getNativeTerrainTile(legacy,gridId,0,0),
+    getNativeTerrainWindow(legacy,gridId,
+      {x:0,y:0,width:1,height:1}),
+    getNativeTerrainDistribution(legacy,gridId),
+  ]) assert.equal(result.status,
+    'native_terrain_packing_not_verified_for_game_version');
 });
 
 test('unknown grid still reports unknown grid before inspecting native versions', () => {
