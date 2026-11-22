@@ -294,6 +294,22 @@ try {
   assert.match(await limited.locator('.official').innerText(),/Oogie Boogie/);
   assert.equal(await limited.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),true,
     'event rewards must not overflow desktop');
+  // DB-02 and Collection can deep-link from original Item ID to the exact
+  // native event reward, without requiring any player save or live server.
+  await limited.goto('http://127.0.0.1:4177/Wand/guide/events/?item=40006319',
+    {waitUntil:'domcontentloaded'});
+  await limited.getByText('人食い宝箱',{exact:true}).first().waitFor({timeout:20000});
+  assert.match(await limited.locator('.reward-detail').innerText(),/HauntedFloatingFestival2026/);
+  assert.equal(await limited.locator('.reward-detail .reward-row').count(),1,
+    'direct item link narrows the source event to the exact matching reward slot');
+  await limited.getByRole('button',{name:'すべて表示'}).click();
+  assert.equal(await limited.locator('.reward-detail .reward-row').count(),9,
+    'clearing a direct Item-ID focus restores all original event reward slots');
+  await limited.goto('http://127.0.0.1:4177/Wand/guide/events/?item=80000000',
+    {waitUntil:'domcontentloaded'});
+  await limited.locator('.friendship .reward-row').first().waitFor({timeout:20000});
+  assert.equal(await limited.locator('.friendship .reward-row').count(),12,
+    'friendship currency Item-ID direct link selects the default friendship section');
   await limited.close();
 
   // Public Star Path is source-pinned static cache data, not a personal import.
