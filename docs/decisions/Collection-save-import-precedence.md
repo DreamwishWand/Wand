@@ -40,8 +40,33 @@ A second **positive-only** import path reads exact Item ID map keys under
 `Player.ListInventories/{role}/Inventory/{itemId}` **only when** the saved
 `Amount` is a positive integer, and the saved role ID, compatible item type
 descriptor and Item ID type prefix match the known native model. Initially
-supports Catalog/Furniture (0/type 4), Wardrobe/Clothing (1/type 5),
-Pantry/ActivityItem (2/type 3), Trimming (4/type 16).
+supports 12 of the 13 verified historical native roles:
+
+| Saved inventory key | Role | Item type |
+|---|---|---|
+| 0 | Furniture (Catalog) | 4 |
+| 1 | Clothing (Wardrobe) | 5 |
+| 2 | ActivityItem (Pantry) | 3 |
+| 3 | Makeup | 14 |
+| 4 | Trimming | 16 |
+| 5 | Building | 2 |
+| 7 | Skin | 17 |
+| 8 | BoardGame (Figurines) | 18 |
+| 9 | AvatarFeature | 7 |
+| 10 | PhotoMode | 19 |
+| 11 | MountGear | 21 |
+| 12 | Environment (EnvironmentFx) | 6 |
+
+**Intentionally excluded**: role 6 TouchOfMagic (type 10). Native
+TouchOfMagic definitions include both collectible DecalItemData and
+non-collectible TextureItemData. A type prefix and inventory role alone do
+not prove that a specific ID is a normal Collection unlock; a concrete
+source-definition predicate is required first.
+
+The key-to-role map is a conservative *read-only projection guard* for the
+historically cross-platform verified 0..12 role identities, not a general
+inventory writer algorithm. Future schema versions and nonmatching roles
+remain fail-closed rather than being silently reassigned.
 Any other inventory, unknown role, invalid amount or incompatible type is
 unverified and skipped; this does not touch physical backpack/chest slots.
 
