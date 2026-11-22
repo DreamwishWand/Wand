@@ -949,7 +949,7 @@ def extract(game, out, previous=None):
         "schema": SCHEMA,
         "unknownSemantics": [
             "Scene parent-world/biome hierarchy is not established by native Scene ID alone",
-            "GridData packed 1/2/4-bit source-local decoding has original Steam 1.26.1 evidence only; other game versions retain raw bytes without verified coordinate interpretation",
+            "GridData packed 1/2/4-bit source-local read-only decoding is corroborated for original Steam 1.26.1 and 1.26.2 native read paths; later builds retain raw bytes without verified coordinate interpretation",
             "Footprint layer values are native uint32 values; their bit meanings and XY indexing are unverified",
             "AcceptedFloorTypesFlag is a raw mask, not a validated placement permission",
             "Rotation order, wall/floor placement, road/fence adjacency and terrain transitions are unverified",
