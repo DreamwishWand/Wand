@@ -185,6 +185,27 @@ shards and a versioned manifest; the old catalog, icon GUIDs and eight exact
 current-version names are unchanged. The private original Tag overlay is
 stored alongside the audited DB-01 release in the owner's SRC-01 Drive folder.
 
+### Item ID numeric-range audit (original-class identity only)
+
+The offline `audit_id_ranges.py` examines **every source-verified Item ID** in
+one SHA-pinned private SQLite release. For Steam v1.26.2, the 10,000,000-ID
+prefix grouping is a perfect partition of the 39,067 observed definitions
+across 38 nonempty **source-native classes**, with **zero collisions**.
+This *does not* identify game-screen categories, subtypes, universes or DLC;
+and **unknown future Item IDs cannot be classified** using the historical
+partition without a fresh, complete original-source check.
+
+```sh
+python tools/db-01-items/audit_id_ranges.py \
+  --sqlite /owner/private/complete-1262.sqlite \
+  --expected-sqlite-sha256 <independently pinned SQLite SHA256> \
+  --divisor 10000000 \
+  --out /owner/private/db01-id-range-audit.json
+```
+
+The report records per-prefix native classes and observed ID ranges;
+ambiguous prefixes are reported as collisions, not assigned a guessed class.
+
 ### Legacy Switch v1.25.0 taxonomy comparison (candidate-only)
 
 The optional `correlate_switch_classification.py` joins the already
