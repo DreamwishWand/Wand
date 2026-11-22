@@ -31,6 +31,8 @@ import {loadPinnedPublicIapSource,type PublicIapSourceIndex}
   from './public-static-iap.ts';
 import {indexNativeShopHistory,type NativeShopHistoryIndex}
   from './shop-history-index.ts';
+import {loadPinnedIapPackReferences,type PinnedIapPackReferenceIndex}
+  from './public-iap-pack-references.ts';
 import {indexPublicOnlineNameCandidates,
   type PublicOnlineNameCandidateIndex,
   type PublicOnlineNameCandidate} from './public-online-name-candidates.ts';
@@ -61,6 +63,9 @@ export interface PublicSourceCatalogCoverage {
   readonly nativeIapDirectRewardRoutes:150;
   readonly nativeIapExtendedRewardRoutes:141;
   readonly nativeIapSourceRoutes:291;
+  readonly nativeIapNestedPackReferences:3;
+  readonly nativeIapAdditionalPackReferences:3;
+  readonly nativeIapAppleAppStoreOnlyPackReferences:3;
   readonly combinedSourceRoutes:1255;
   readonly publicNameOnlyCandidateRelations:number;
   readonly distinctNameOnlyCandidateItemIds:number;
@@ -87,6 +92,8 @@ export interface PublicSourceCatalog{
   /** Source-authenticated per-Item and per-offer appearance chronology. */
   readonly shopHistory:NativeShopHistoryIndex;
   readonly nativeIapSource:PublicIapSourceIndex;
+  /** Exact inter-pack graph, NOT an expanded purchased entitlement or Item origin. */
+  readonly nativeIapPackReferences:PinnedIapPackReferenceIndex;
   readonly coverage:PublicSourceCatalogCoverage;
   lookup(itemId:string|number):PublicSourceItemLookup;
   getSourceOrigin(originId:string):readonly ItemOrigin[];
@@ -122,10 +129,13 @@ export async function loadPublicSourceCatalog(
   // DB-00 has verified every shard SHA before returning; the existing
   // DB-02 join additionally validates exact release/version/source identity.
   const db00Snapshot=rawDb00 as Db00PublishedSnapshot;
-  const origins=await loadUnifiedAcquisitionOriginDatabase(
-    fetcher,null,basePath,[],null,questSource,eventFriendshipSource,
-    nativeShopSource,nativeIapSource,historicalNativeShopSource
-  );
+  const [origins,nativeIapPackReferences]=await Promise.all([
+    loadUnifiedAcquisitionOriginDatabase(
+      fetcher,null,basePath,[],null,questSource,eventFriendshipSource,
+      nativeShopSource,nativeIapSource,historicalNativeShopSource
+    ),
+    loadPinnedIapPackReferences(nativeIapSource,basePath,fetcher)
+  ]);
   const shopHistory=indexNativeShopHistory(
     nativeShopSource,historicalNativeShopSource
   );
@@ -162,6 +172,12 @@ export async function loadPublicSourceCatalog(
     nativeIapSource.coverage.extendedRewardReferences===141&&
     nativeIapSource.coverage.combinedRewardReferences===291&&
     nativeIapSource.coverage.accountEntitlementVerified===false&&
+    nativeIapPackReferences.coverage.nativeIapPackages===53&&
+    nativeIapPackReferences.coverage.nativeNestedReferences===3&&
+    nativeIapPackReferences.coverage.nativeAdditionalReferences===3&&
+    nativeIapPackReferences.coverage.appleAppStoreOnlyAdditionalReferences===3&&
+    nativeIapPackReferences.coverage.onlineRewardGrantsVerified===0&&
+    nativeIapPackReferences.coverage.nestedRewardExpansionVerified===false&&
     originCoverage.linkedRoutes===1255&&
     originCoverage.routesBySourceKind.verified_game_native===904&&
     originCoverage.routesBySourceKind.verified_liveops_cache===351&&
@@ -192,6 +208,9 @@ export async function loadPublicSourceCatalog(
     nativeIapDirectRewardRoutes:150 as const,
     nativeIapExtendedRewardRoutes:141 as const,
     nativeIapSourceRoutes:291 as const,
+    nativeIapNestedPackReferences:3 as const,
+    nativeIapAdditionalPackReferences:3 as const,
+    nativeIapAppleAppStoreOnlyPackReferences:3 as const,
     combinedSourceRoutes:1255 as const,
     publicNameOnlyCandidateRelations:nameCandidates.coverage.totalCandidateRelations,
     distinctNameOnlyCandidateItemIds:nameCandidates.coverage.distinctCandidateItemIds,
@@ -206,7 +225,7 @@ export async function loadPublicSourceCatalog(
     source:'sha_pinned_public_db00_starpath_quest_event_friendship_native_shop_history_iap_and_official_records' as const,
     origins,db00,nameCandidates,questSource,eventFriendshipSource,
     nativeShopSource,nativeIapSource,historicalNativeShopSource,
-    shopHistory,coverage,
+    nativeIapPackReferences,shopHistory,coverage,
     lookup(itemId:string|number){
       // db00.lookup validates IDs and keeps extra-ItemList Quest/Currency IDs.
       const row=db00.lookup(itemId);
