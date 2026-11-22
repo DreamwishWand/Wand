@@ -104,11 +104,11 @@
           const nativeText = body.format !== 'p1g' ? '' :
             nativeStatus === 'matched' && native?.wasmExecuted === true &&
               native.originalProfileBytesEqual === true
-              ? ' Rust/WASMでP1Gを独立復号し、元のJSONバイト列との一致を確認しました。'
+              ? ' Rust/WASMでP1Gを再復号し、Worker内のJSONバイト列との一致を確認しました。'
               : nativeStatus === 'diverged'
-                ? ' Rust/WASMと既存Codecの復号結果に差異があるため、書き出しは禁止です。'
+                ? ' Rust/WASMの再復号結果とWorker内のJSONが一致しません。書き出しは禁止です。'
                 : nativeStatus === 'rejected_by_rust'
-                  ? ' このP1GのZIP形式は現在のRust実装では検証できません（既存Codecの読み取り専用診断のみ）。'
+                  ? ' このP1GのZIP形式はRust/WASMによる厳密な再検査に対応していません。'
                   : nativeStatus === 'skipped_large_save'
                     ? ' サイズ制限のためRust/WASMでのP1G二重検査は省略しました。'
                     : ' Rust/WASMのP1G二重検査は利用できません。';
