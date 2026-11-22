@@ -172,7 +172,8 @@ def case_activity(payload, activity, tags):
 
 def produce(sqlite_path:Path, original_dir:Path, dump_path:Path,
             output:Path, *, expected_sqlite_sha256:str,
-            expected_il2cpp_sha256:str):
+            expected_il2cpp_sha256:str,
+            expected_selector_counts:tuple[int,int]=(12,28)):
     sqlite_path,original_dir,dump_path,output = (
         Path(p).expanduser().resolve() for p in
         (sqlite_path,original_dir,dump_path,output))
@@ -327,9 +328,11 @@ def produce(sqlite_path:Path, original_dir:Path, dump_path:Path,
                         'selectedItemIdCount':counted,'explicitlyExcludedCount':blocked_count,
                         'sourceRule':rule,'gameUiMembershipVerified':False,
                     })
-        require(coverage['activity']==12 and coverage['crafting']==28,
+        require(coverage['activity']==expected_selector_counts[0] and
+                coverage['crafting']==expected_selector_counts[1],
                 'CURRENT_SELECTOR_FAMILY_COUNTS')
-        require(len(selectors)==40,'FORTY_SELECTOR_COVERAGE')
+        require(len(selectors)==sum(expected_selector_counts),
+                'SELECTOR_COVERAGE')
         # A negative Crafting selector acts on other POSITIVE selectors
         # of its same CollectionSet/group, including any external Furniture
         # Universe predicate. It never authorizes a positive Collection row.
@@ -380,7 +383,7 @@ def produce(sqlite_path:Path, original_dir:Path, dump_path:Path,
             'sourceIl2cppDumpSha256':expected_il2cpp_sha256,
             'originalCategorySha256':dict(sorted(hashes.items())),
             'definitionCount':len(canonical),
-            'sourceSelectorCount':40,
+            'sourceSelectorCount':len(selectors),
             'resolvedActivitySelectors':coverage['activity'],
             'resolvedCraftingSelectors':coverage['crafting'],
             'unresolvedActivityCraftingSelectors':0,
