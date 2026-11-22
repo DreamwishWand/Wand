@@ -16,6 +16,8 @@ const AREA=ROOT+'#areaType=0';
 const LAYOUT='SceneLayouts/Village04/Beach.json';
 const LOOSE='SceneLayouts/OffGridBuildings/Detached.json';
 const GRID=LAYOUT+'#grid=1';
+const EMPTY=LAYOUT+'#grid=2';
+const EMPTY_PATH='GridData/Village04/EmptyOriginalGrid.json';
 const UNLINKED=LOOSE+'#grid=0';
 const GRAPH_URL='http://127.0.0.1:4178/Wand/world/preview/';
 
@@ -154,18 +156,21 @@ function syntheticSource(version='1.26.2'){
       makeLayout(LAYOUT,105,WORLD,AREA),
       makeLayout(LOOSE,2,null,null)
     ],
-    gridData:[linkedGridPath,unlinkedGridPath].map(gridDataPath=>({
+    gridData:[linkedGridPath,unlinkedGridPath,EMPTY_PATH].map(gridDataPath=>({
       gridDataPath,nativeSizeX:12,nativeSizeY:10,
       nativeSourceFormat:'original_json_direct_floor_values',
       gridLocalToWorldTransformVerified:false,placementLegalityVerified:false
     })),
     gridRefs:[
       makeGrid(LAYOUT,1,linkedGridPath,WORLD,AREA,105),
+      // Exact source Grid with no original default GridObject row.
+      // Distinct exact source path: no synthetic Save-path ambiguity.
+      makeGrid(LAYOUT,2,EMPTY_PATH,WORLD,AREA,0),
       makeGrid(LOOSE,0,unlinkedGridPath,null,null,2)
     ],
     initialItemRefs:refs,
     worldCoverage:[{
-      worldId:WORLD,sourceAreaRefCount:1,sourceGridRefCount:1,
+      worldId:WORLD,sourceAreaRefCount:1,sourceGridRefCount:2,
       initialSourceGridObjectCount:105,
       allGameAreasCovered:false,allSourceLayoutsCovered:false
     }],
@@ -173,7 +178,7 @@ function syntheticSource(version='1.26.2'){
       sourceInitialGridObjects:107,
       sourceInitialGridObjectsWithoutVerifiedWorldLink:2,
       worldDefinitionsInSubset:1,nativeAreaLayoutReferences:1,
-      gridReferencesInSubset:2,
+      gridReferencesInSubset:3,
       completeGameHierarchyVerified:false,
       allDlcAndAdventurePackIdsVerified:false,
       worldPlacementPermissionVerified:false,sourceCoverageComplete:false
@@ -224,6 +229,24 @@ try{
   await page.waitForFunction(()=>document.querySelectorAll(
     '.graph-panel tbody tr').length===100);
   assert.equal(await panel.locator('tbody tr').count(),100);
+  // Source-exact World → Grid navigation includes EMPTY original Grids
+  // that cannot appear in any default-object results table.
+  const sourceRelatedGrid=panel.getByRole('combobox',{name:'原本関連Grid'});
+  assert.equal(await sourceRelatedGrid.locator('option').count(),2);
+  await sourceRelatedGrid.selectOption(EMPTY);
+  await panel.getByRole('button',{name:'Gridを開く'}).click();
+  await page.waitForFunction((ref)=>{
+    const controls=document.querySelectorAll('.graph-panel .graph-controls select');
+    return controls[0]?.value==='grid'&&controls[1]?.value===ref;
+  },EMPTY);
+  await page.waitForFunction(()=>
+    document.querySelector('.graph-panel .graph-result-head strong')
+      ?.textContent?.includes('0件'));
+  assert.match(await panel.getByText(/この条件の初期配置レコードはありません/).innerText(),
+    /初期配置レコードはありません/);
+  await panel.getByRole('combobox',{name:'参照対象'}).selectOption('world');
+  await page.waitForFunction(()=>document.querySelectorAll(
+    '.graph-panel tbody tr').length===100);
   assert.match(await panel.locator('tbody tr').first().innerText(),/^100\s/);
   await panel.getByRole('button',{name:'次へ'}).click();
   await page.waitForFunction(()=>document.querySelectorAll(
@@ -251,6 +274,9 @@ try{
   await page.waitForFunction(()=>document.querySelector('.graph-panel .graph-result-head strong')
     ?.textContent?.includes('105件'));
   assert.match(await panel.locator('.source-link').innerText(),/Area:/);
+  // Area → Grid uses the original AreaRef, not a folder/biome guess.
+  assert.equal(await panel.getByRole('combobox',{name:'原本関連Grid'})
+    .locator('option').count(),2);
 
   await panel.locator('input[placeholder="すべて"]').fill('100');
   await panel.getByRole('button',{name:'検索'}).click();
