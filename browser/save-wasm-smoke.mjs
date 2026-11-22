@@ -111,7 +111,7 @@ try{
     name:'synthetic.profile',mimeType:'application/octet-stream',
     buffer:syntheticEncryptedP1g(freshSynthetic)
   });
-  await page.getByText(/Rust\/WASMでP1Gを独立復号し、元のJSONバイト列との一致を確認しました/).waitFor({timeout:30000});
+  await page.getByText(/Rust\/WASMでP1Gを再復号し、Worker内のJSONバイト列との一致を確認しました/).waitFor({timeout:30000});
   assert.ok(loadedWasm.some(v=>v.status===200&&v.url.includes('ddv_p1g_codec_bg')),
     'Actual Rust P1G WASM must load inside the Save Worker');
   assert.equal(await page.getByRole('alert').count(),0);
