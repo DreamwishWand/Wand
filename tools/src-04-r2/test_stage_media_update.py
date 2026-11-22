@@ -49,7 +49,15 @@ class UpdateR2Tests(unittest.TestCase):
         self.old=fixture.old
         self.next=fixture.out
         self.bucket=stage.PRIVATE_BUCKET
-        self.old_overlay_sha=updater.file_digest(fixture.old_index/"manifest.json")
+        # The generic R2 reader expects the full v2 provenance and coverage contract.
+        manifest_path=fixture.old_index/"manifest.json"
+        manifest=json.loads(manifest_path.read_text())
+        manifest["source"]["variantPolicy"]="thumbnail_128_lossless_webp_plus_original_native_lossless_webp"
+        manifest["coverage"]["verifiedGuids"]=1
+        manifest["coverage"]["unresolvedGuids"]=0
+        write_json_local=(json.dumps(manifest,sort_keys=True)+"\n").encode()
+        manifest_path.write_bytes(write_json_local)
+        self.old_overlay_sha=updater.file_digest(manifest_path)
         prefix="private/staging/src04/steam-v1.26.2/"+self.old_overlay_sha[:16]
         self.patch_sha=patch.object(stage,"V1262_OVERLAY_SHA",self.old_overlay_sha)
         self.patch_prefix=patch.object(stage,"V1262_STAGE_PREFIX",prefix)
