@@ -3,6 +3,7 @@
   import {base} from '$app/paths';
   import type {Db00ItemContext} from '../../../lib/save/common-db-context';
   import type {SavedGridItemReference} from '../../../lib/save/save-world-db04-context';
+  import GridObjectPositionMap from '../../../lib/save/GridObjectPositionMap.svelte';
 
   // Development-only local editor: preview is metadata-only, and explicit
   // edited-copy export never overwrites the source. No production Writer.
@@ -43,13 +44,13 @@
   let worldQuery='';
   let removedGridMarkers=0;
   type LocalGridInstance={
-    localOrdinal:number;itemId:string;
+    localOrdinal:number;localGridOrdinal:number;itemId:string;
     recordKind:'full'|'diff_modified';
     x:number|null;y:number|null;orientation:string|null;
     coordinatesObserved:boolean;
   };
   type GridInstancesReceipt={
-    contract:'wand.db05.grid-instance-preview@1';
+    contract:'wand.db05.grid-instance-preview@2';
     status:'not_observed'|'incompatible_structure'|
       'partial_inconclusive'|'observed_no_item_refs'|'saved_object_instances';
     observedFullGrids:number;observedDiffGrids:number;
@@ -606,7 +607,7 @@
         const r=message as {kind?:string;receipt?:GridInstancesReceipt};
         const receipt=r?.receipt;
         if(r?.kind!=='grid-instances'||
-           receipt?.contract!=='wand.db05.grid-instance-preview@1'||
+           receipt?.contract!=='wand.db05.grid-instance-preview@2'||
            receipt.sourceGridIdentityVerified!==false||
            receipt.effectivePlacementVerified!==false||
            receipt.legalPlacementVerified!==false||
@@ -1422,7 +1423,8 @@
                   <span>
                     <strong>{dbMap.get(object.itemId)?.name??object.itemId}</strong>
                     <small>#{object.localOrdinal} · {
-                      object.recordKind==='full'?'通常Grid':'差分Grid'}</small>
+                      object.recordKind==='full'?'通常Grid':'差分Grid'}
+                      · ローカルGrid #{object.localGridOrdinal}</small>
                     {#if db04State==='verified'&&
                       db04ObjectSources[object.localOrdinal-1]}
                       {@const ctx=db04ObjectSources[object.localOrdinal-1]}
@@ -1468,6 +1470,14 @@
                 </li>
               {/each}
             </ul>
+            <GridObjectPositionMap
+              rows={gridInstances}
+              selectedOrdinal={coordinateSelection?.localOrdinal??null}
+              disabled={processing}
+              onPick={(ordinal:number)=>{
+                const row=gridInstances[ordinal-1];
+                if(row?.localOrdinal===ordinal)selectGridInstance(row);
+              }} />
             {#if coordinateSelection}
               <div class="coordinate-editor" aria-label="座標編集">
                 <strong>{dbMap.get(coordinateSelection.itemId)?.name??
