@@ -200,3 +200,20 @@ export async function loadPublicEventSceneLinks(
   return verifyPublicEventSceneLinks(
     JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)),events);
 }
+
+/** Public-only deep link to festivals referencing this exact native Scene ID.
+ * Returns null for unknown/unsupported scene IDs; never claims active access.
+ */
+export function guideFestivalSceneHref(
+  index:PublicEventSceneIndex,raw:unknown,base=''
+):string|null{
+  check(index?.schema===DB03_EVENT_SCENE_SCHEMA&&
+    typeof index.getSceneFestivals==='function','INDEX_REQUIRED');
+  const id=sceneId(raw);
+  if(!id||index.getSceneFestivals(id).length===0)return null;
+  check(typeof base==='string'&&
+    /^\/?(?:[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*)?$/.test(base),
+    'BASE');
+  const root=base===''?'':('/'+base.replace(/^\/+|\/+$/g,''));
+  return root+'/guide/events/?scene='+id;
+}
