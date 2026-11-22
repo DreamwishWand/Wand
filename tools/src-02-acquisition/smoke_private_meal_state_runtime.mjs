@@ -114,6 +114,14 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
       a.state.ingredientsRecorded===true&&
       a.recordedIngredients.length===2&&
       a.nativeIngredientRoutingImplementationVerified===true&&
+      a.nativePriceProviderTopologyVerified===true&&
+      a.nativeMealPriceProviderPlan.nativeClassEvidence==='MealItemData'&&
+      a.nativeMealPriceProviderPlan.itemSpecificCalculatorMayBeCalled===true&&
+      a.nativeMealPriceProviderPlan.actualUnitSellPrice===null&&
+      a.sourceIngredientProviderPlans.length===2&&
+      a.sourceIngredientProviderPlans.every(p=>
+        p.itemSellPriceCalculatorInterfaceInNativeMetadata===false&&
+        p.actualUnitSellPrice===null)&&
       a.nativeIngredientRuntimePricesVerified===false&&
       a.nativeLookupDefaultCannotReplaceUnknownSourcePrices===true&&
       a.nativeIngredientPriceRoute.ingredientSource==='recorded_ingredients_used'&&
@@ -148,9 +156,24 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
   requireValue(fixedIngredients.size===371,'STATIC_FIXED_INGREDIENT_CENSUS');
   let withConfiguredSoftSell=0,withoutConfiguredSoftSell=0;
   let cachedDynamicBuyIngredientRows=0,cachedDynamicSellIngredientRows=0;
+  let fixedIngredientsWithNativeItemCalculator=0;
   for(const [ingredientId,mealId] of fixedIngredients){
     const evidence=view.inspect(mealId,fakeMealData([ingredientId]));
     const source=evidence.sourceIngredientStaticSellEvidence;
+    const priceProvider=view.getNativeSellPriceProviderPlan(ingredientId);
+    const originalClass=({302:'CropItemData',310:'FishItemData',
+      311:'IngredientItemData'})[Math.floor(ingredientId/100000)];
+    requireValue(originalClass!==undefined&&
+      priceProvider.nativeClassEvidence===originalClass&&
+      priceProvider.itemSellPriceCalculatorInterfaceInNativeMetadata===false&&
+      priceProvider.runtimePriceProviderSelected===null&&
+      priceProvider.actualUnitSellPrice===null&&
+      priceProvider.defaultOneAppliesOnlyAfterRuntimeLookupFailure===true&&
+      evidence.sourceIngredientProviderPlans.length===1&&
+      evidence.sourceIngredientProviderPlans[0].nativeClassEvidence===originalClass,
+      'NATIVE_ORIGINAL_FIXED_INGREDIENT_CLASS');
+    if(priceProvider.itemSpecificCalculatorMayBeCalled)
+      fixedIngredientsWithNativeItemCalculator++;
     requireValue(
       evidence.ingredientStaticPriceDatabaseOriginalVerified===true&&
       evidence.staticIngredientAmountsNotEffectiveSellValues===true&&
@@ -189,7 +212,9 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
     }
   }
   requireValue(withConfiguredSoftSell===211&&
-    withoutConfiguredSoftSell===160,'FIXED_INGREDIENT_SELL_CENSUS');
+    withoutConfiguredSoftSell===160&&
+    fixedIngredientsWithNativeItemCalculator===0,
+    'FIXED_INGREDIENT_SELL_AND_TYPE_CENSUS');
   if(protoDbPath!==undefined)requireValue(
     cachedDynamicBuyIngredientRows===0&&cachedDynamicSellIngredientRows===0,
     'DYNAMIC_CACHE_FIXED_INGREDIENT_OVERLAP');
@@ -227,6 +252,10 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
     uniqueFixedRecipeIngredients:fixedIngredients.size,
     fixedIngredientItemsWithConfiguredSoftSell:withConfiguredSoftSell,
     fixedIngredientItemsWithoutStaticSoftSell:withoutConfiguredSoftSell,
+    fixedIngredientItemsWithNativeOwnCalculator:fixedIngredientsWithNativeItemCalculator,
+    mealNativeItemCalculatorInterfaceSupported:true,
+    threeStageNativeTryGetSellPriceTopologyVerified:true,
+    nativeActualProviderSelected:false,
     cachedDynamicPurchaseOverlapWithFixedIngredients:
       protoDbPath===undefined?null:cachedDynamicBuyIngredientRows,
     cachedDynamicSellOverlapWithFixedIngredients:
