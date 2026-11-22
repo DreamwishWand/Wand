@@ -293,9 +293,16 @@ try{
     name:'synthetic-native-terrain.zip',mimeType:'application/zip',
     buffer:syntheticTerrainZip()
   });
-  await page.getByText(/ローカルZIP内のマニフェスト整合性を確認しました/).waitFor({
-    timeout:20000
-  });
+  await page.waitForFunction(()=>{
+    const text=document.querySelector('.world-toolbar')?.parentElement
+      ?.textContent??'';
+    return text.includes('ローカルZIP内のマニフェスト整合性を確認しました')||
+      Boolean(document.querySelector('.world-toolbar ~ [role="alert"]'));
+  },null,{timeout:20000});
+  const localZipPanel=await page.locator('.world-toolbar').locator('..').innerText();
+  if(!localZipPanel.includes('ローカルZIP内のマニフェスト整合性を確認しました'))
+    console.error('DB04_SYNTHETIC_ZIP_LOAD_DIAGNOSTICS '+localZipPanel.slice(0,1200));
+  assert.match(localZipPanel,/ローカルZIP内のマニフェスト整合性を確認しました/);
   await openTerrain.click();
   const terrainSelectors=page.locator('.world-panel .selector-row select');
   await page.waitForFunction(({layout,grid})=>{
