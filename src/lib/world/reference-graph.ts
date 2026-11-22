@@ -249,6 +249,7 @@ export class WorldReferenceIndex {
   private readonly grids:Map<string,NativeGridReference>;
   private readonly itemRefs:Map<string,readonly NativeSourceItemReference[]>;
   private readonly childWorldsByParent:Map<string,readonly WorldIdentity[]>;
+  private readonly worldsByNativeUniverseTag:Map<number,readonly WorldIdentity[]>;
   private readonly initialRefsByWorld:Map<string,readonly NativeSourceItemReference[]>;
   private readonly initialRefsByArea:Map<string,readonly NativeSourceItemReference[]>;
   private readonly initialRefsWithoutWorld:readonly NativeSourceItemReference[];
@@ -291,6 +292,7 @@ export class WorldReferenceIndex {
     const byItemArea=new Map<string,NativeSourceItemReference[]>();
     const withoutWorld:NativeSourceItemReference[]=[];
     const byParent=new Map<string,WorldIdentity[]>();
+    const byUniverseTag=new Map<number,WorldIdentity[]>();
     const byWorld=new Map<string,NativeAreaReference[]>();
     const byArea=new Map<string,NativeGridReference[]>();
     let total=0,unlinked=0;
@@ -304,6 +306,19 @@ export class WorldReferenceIndex {
         'INVALID_WORLD_IDENTITY');
       if(world.nativeSceneId!==null)
         check(this.scenes.has(world.nativeSceneId),'WORLD_SCENE_ABSENT');
+      const universeTag=world.nativeUniverseTagItemId;
+      check(universeTag===null||(
+        positive(universeTag)&&
+        world.worldIdKind==='nativeWorldName'&&world.worldType==='realm'),
+        'INVALID_NATIVE_WORLD_UNIVERSE_TAG');
+      if(universeTag!==null){
+        let linked=byUniverseTag.get(universeTag);
+        if(linked===undefined){
+          linked=[];
+          byUniverseTag.set(universeTag,linked);
+        }
+        linked.push(world);
+      }
       const parent=world.nativeParentWorldId??null;
       check((parent===null ||
         (typeof parent==='string' && parent!==world.worldId &&
@@ -331,6 +346,8 @@ export class WorldReferenceIndex {
         [...byParent.values()].reduce((n,rows)=>n+rows.length,0),
         'NATIVE_WORLD_PARENT_COVERAGE_MISMATCH');
     this.childWorldsByParent=byParent;
+    this.worldsByNativeUniverseTag=new Map(
+      [...byUniverseTag].map(([tag,rows])=>[tag,Object.freeze(rows)]));
     for(const scene of this.scenes.values()){
       check(nonnegative(scene.nativeSceneId) &&
         (scene.worldId===null||this.worlds.has(scene.worldId)) &&
@@ -455,6 +472,22 @@ export class WorldReferenceIndex {
 
   getWorld(id:string):WorldIdentity|null{
     return this.worlds.get(id)??null;
+  }
+  /** Source-subset World definitions, NOT all game worlds or DLC ownership. */
+  listSourceWorlds():readonly WorldIdentity[]{
+    return Object.freeze([...this.worlds.values()]);
+  }
+  /**
+   * Exact original WorldData UniverseTagItemId reverse relation.
+   * Does not imply item provenance, acquisition, valid placement or UI grouping.
+   */
+  sourceRealmWorldsForUniverseTag(tagItemId:number):RelationResult<WorldIdentity>{
+    check(positive(tagItemId),'INVALID_NATIVE_UNIVERSE_TAG_ID');
+    const rows=this.worldsByNativeUniverseTag.get(tagItemId)??[];
+    return Object.freeze({
+      status:rows.length?'source_native_verified' as const:'unverified' as const,
+      values:Object.freeze([...rows])
+    });
   }
   /** Direct original WorldData field-2 parent links; never substring hierarchy. */
   childWorlds(parentWorldId:string):RelationResult<WorldIdentity>{
