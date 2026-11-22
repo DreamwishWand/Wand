@@ -99,7 +99,7 @@ class ActivityAndCraftingTest(unittest.TestCase):
             content=b''.join(v[2] for v in values)
             (self.original/(cat+'.json')).write_bytes(content)
             for item_id,name,_ in values:
-                example=json.loads(json.dumps(sample()[1]))
+                example=json.loads(json.dumps(sample()[0 if cat=='ActivityItem' else 1]))
                 example['itemId']=item_id
                 example['nativeCategory']=cat
                 example['nativeNameField']=name
