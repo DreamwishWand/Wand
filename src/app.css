@@ -295,3 +295,36 @@ a.portal-card:hover{transform:translateY(-3px);border-color:#cfafe7;box-shadow:0
 .facet-flourish{right:14px;top:13px;display:flex;color:#d0ace9}
 .facet-card:hover .facet-flourish{color:#f1d9ff}
 .item-card-body:focus-visible,.item-state-toggle:focus-visible{outline:2px solid #d9b8ff;outline-offset:3px}
+
+/* Canonical IA: six product services, with Community Help Center outside
+   the service portal. Planned entries are explicitly non-interactive. */
+.portal-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.portal-card:first-child{grid-column:span 1;background:#221c2c}
+.portal-card:first-child .portal-card-visual{width:86px;height:86px}
+.portal-card:first-child .portal-game-art{width:84px;height:84px}
+.portal-community{
+  display:flex;align-items:center;gap:15px;min-height:77px;margin-top:24px;
+  padding:14px 20px;border-top:1px solid #ffffff25;border-bottom:1px solid #ffffff1b;
+  color:#d4c4e4
+}
+.community-icon{display:grid;place-items:center;flex:none;width:45px;height:45px;
+  border-radius:14px;border:1px solid #ffffff20;color:#c9adf0;background:#372a49}
+.community-title{font-weight:650;font-size:15px;letter-spacing:-.02em}
+.community-state{margin-left:auto;white-space:nowrap;font-size:11px;color:#a79ab6}
+.site-nav .nav-link.unavailable{cursor:default;opacity:.43}
+.site-nav .nav-link.unavailable:hover{background:transparent;border-color:transparent;color:#c2b2d5}
+@media(max-width:1150px){
+  .site-nav .nav-link>span{display:none}
+}
+@media(max-width:850px){
+  .portal-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:650px){
+  .site-nav .nav-link.unavailable{display:none}
+  .portal-card:first-child{grid-column:span 1}
+  .portal-card:first-child .portal-card-visual{width:64px;height:64px}
+  .portal-card:first-child .portal-game-art{width:64px;height:64px}
+  .portal-community{gap:10px;padding:12px 8px}
+  .community-title{font-size:13px}
+  .community-state{font-size:10px}
+}
