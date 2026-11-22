@@ -7,7 +7,9 @@
  * inferred. No original game assets are embedded or fetched here.
  */
 import {DB01_LOCALES,type Db01Locale} from './index.ts';
-import type {Db01OriginalCollectionMenuClient} from './collection-menu.ts';
+import type {
+  Db01OriginalCollectionMenuClient,Db01OriginalCollectionMenu,
+} from './collection-menu.ts';
 import type {
   Db01OriginalCollectionLocaleClient,Db01OriginalCollectionUiLabel,
 } from './collection-locales.ts';
@@ -91,6 +93,30 @@ export interface Db01CollectionNativeCategoryOption {
   readonly runtimeCategoryVisibleVerified:false;
   readonly itemGameUiMembershipVerified:false;
 }
+/** One exact original CollectionSet under a source CollectionSubMenu.
+ * Native CollectionSet Groups have no CollectionArea field. Area is a
+ * separate runtime aggregation, so Item/Set area membership remains null.
+ */
+export interface Db01CollectionNativeSourceSet {
+  readonly setId:number;
+  readonly nativeSetKey:string;
+  readonly submenuCode:number;
+  readonly originalSetSortPriority:number;
+  readonly sourceGroupCount:number;
+  readonly sourceDirectItemCount:number;
+  readonly originalStaticSelectorCount:number;
+  readonly collectionLabelKey:string;
+  readonly locale:Db01Locale;
+  /** Current exact CollectionSet.locbin label, or its non-display sentinel. */
+  readonly currentExactSetName:string|null;
+  readonly currentOriginalLocDbLabelVerified:boolean;
+  readonly nativeCollectionSubMenuAssociationVerified:true;
+  readonly nativeCollectionAreaCode:null;
+  readonly sourceCategoryIsGameScreenMembershipVerified:false;
+  readonly playerOwnedVerified:false;
+  readonly worldAvailabilityVerified:false;
+  readonly dlcEntitlementVerified:false;
+}
 export interface Db01CollectionUnmatchedUiLabel {
   readonly originalLocDbKey:string;
   readonly displayName:string;
@@ -120,6 +146,12 @@ export interface Db01CollectionNativeUiAxesClient {
   /** Twenty source enum category options, including two with zero original Sets. */
   getCategoryOptions(locale:Db01Locale):
     Promise<readonly Db01CollectionNativeCategoryOption[]>;
+  /** Ordered current original CollectionSet definitions for a native
+   * category; does not imply game-screen visibility or CollectionArea.
+   * A valid category with no source definitions returns an empty array.
+   */
+  getCategorySourceSets(locale:Db01Locale,submenuCode:number):
+    Promise<readonly Db01CollectionNativeSourceSet[]>;
   /** Source LocDB labels without an original CollectionSubMenu enum member. */
   getUnmatchedTabLabels(locale:Db01Locale):
     Promise<readonly Db01CollectionUnmatchedUiLabel[]>;
@@ -170,7 +202,8 @@ export function createDb01CollectionNativeUiAxesClient(
     SHA.test(local.privateOverlaySha256)&&
     typeof menus.getMenus==='function'&&
     typeof labels.getUiTabTitles==='function'&&
-    typeof labels.getUiAreaTitles==='function',
+    typeof labels.getUiAreaTitles==='function'&&
+    typeof labels.getSetLabels==='function',
     'PINNED_ORIGINAL_SOURCE_REQUIRED');
   const source=Object.freeze({
     gameVersion:'1.26.2' as const,
@@ -186,31 +219,97 @@ export function createDb01CollectionNativeUiAxesClient(
     actualGameUiMembershipVerified:false as const,
     worldAvailabilityVerified:false as const,
   });
-  let setCounts:Promise<ReadonlyMap<number,number>>|null=null;
-  function counts():Promise<ReadonlyMap<number,number>>{
-    if(!setCounts){
-      setCounts=(async()=>{
+  // Cache source definitions once, grouped by original enum code.
+  // The 305 current CollectionSet definitions each carry exactly one
+  // source CollectionGroup. Runtime CollectionArea grouping is separate.
+  let sourceGroups:Promise<ReadonlyMap<number,
+    readonly Readonly<Db01OriginalCollectionMenu>[]>>|null=null;
+  function groups():Promise<ReadonlyMap<number,
+    readonly Readonly<Db01OriginalCollectionMenu>[]>>{
+    if(!sourceGroups){
+      sourceGroups=(async()=>{
         const raw=await menus.getMenus();
         check(Array.isArray(raw)&&raw.length===305,'INCOMPLETE_SOURCE_SETS');
-        const seen=new Set<number>(),counts=new Map<number,number>();
+        const seen=new Set<number>();
+        const byCode=new Map<number,Db01OriginalCollectionMenu[]>();
         const enumByCode=new Map<number,string>(
           DB01_ORIGINAL_COLLECTION_SUBMENUS.map(x=>[x.code,x.enumName] as const));
         for(const menu of raw){
           check(safeId(menu.setId)&&!seen.has(menu.setId)&&
             enumByCode.get(menu.submenuCode)===menu.submenu&&
+            typeof menu.setKey==='string'&&menu.setKey.length>0&&
+            typeof menu.collectionLabelKey==='string'&&
+            menu.collectionLabelKey.startsWith('CollectionSet.')&&
+            menu.groupCount===1&&
+            Number.isSafeInteger(menu.sortPriority)&&
+            Number.isSafeInteger(menu.directListedItemCount)&&
+            menu.directListedItemCount>=0&&
+            Number.isSafeInteger(menu.dynamicSelectorsUnresolved)&&
+            menu.dynamicSelectorsUnresolved>=0&&
             menu.gameUiVisibilityVerified===false,
             'UNKNOWN_OR_MISMATCHED_ORIGINAL_SUBMENU');
           seen.add(menu.setId);
-          counts.set(menu.submenuCode,(counts.get(menu.submenuCode)??0)+1);
+          const records=byCode.get(menu.submenuCode)??[];
+          records.push(menu);
+          byCode.set(menu.submenuCode,records);
         }
-        check(counts.size===18&&
-          counts.get(17)===undefined&&counts.get(19)===undefined&&
-          [...counts.values()].reduce((a,b)=>a+b,0)===305,
+        check(byCode.size===18&&
+          byCode.get(17)===undefined&&byCode.get(19)===undefined&&
+          [...byCode.values()].reduce((n,entries)=>n+entries.length,0)===305,
           'ORIGINAL_SOURCE_MENU_CENSUS');
-        return counts;
-      })().catch(e=>{setCounts=null;throw e;});
+        for(const [code,records] of byCode){
+          records.sort((a,b)=>a.sortPriority-b.sortPriority||a.setId-b.setId);
+          byCode.set(code,Object.freeze(records) as Db01OriginalCollectionMenu[]);
+        }
+        return byCode as ReadonlyMap<number,
+          readonly Readonly<Db01OriginalCollectionMenu>[]>;
+      })().catch(e=>{sourceGroups=null;throw e;});
     }
-    return setCounts;
+    return sourceGroups;
+  }
+  const localizedSetNames=new Map<Db01Locale,
+    Promise<ReadonlyMap<number,{setKey:string;labelKey:string;
+      exactName:string|null;labelVerified:boolean}>>>();
+  async function setNames(locale:Db01Locale){
+    validLocale(locale);
+    const cached=localizedSetNames.get(locale);
+    if(cached)return cached;
+    const task=(async()=>{
+      const rows=await labels.getSetLabels(locale);
+      check(Array.isArray(rows)&&rows.length===305,
+        'INCOMPLETE_SOURCE_SET_LOCALE');
+      const names=new Map<number,{setKey:string;labelKey:string;
+        exactName:string|null;labelVerified:boolean}>();
+      for(const row of rows){
+        check(safeId(row.setId)&&!names.has(row.setId)&&
+          row.locale===locale&&
+          typeof row.setKey==='string'&&row.setKey.length>0&&
+          typeof row.collectionLabelKey==='string'&&
+          row.collectionLabelKey.startsWith('CollectionSet.')&&
+          (row.currentExactName===null||
+            (typeof row.currentExactName==='string'&&
+             row.currentExactName.trim().length>0))&&
+          row.originalLocDbLabelVerified===(row.currentExactName!==null)&&
+          row.gameUiMembershipVerified===false,
+          'INVALID_OR_DUPLICATE_ORIGINAL_SET_LOCALE');
+        names.set(row.setId,{
+          setKey:row.setKey,labelKey:row.collectionLabelKey,
+          exactName:row.currentExactName,
+          labelVerified:row.originalLocDbLabelVerified,
+        });
+      }
+      check([...names.values()].filter(x=>x.labelVerified).length===304,
+        'ORIGINAL_SET_LABEL_COVERAGE');
+      return names as ReadonlyMap<number,{
+        setKey:string;labelKey:string;exactName:string|null;labelVerified:boolean
+      }>;
+    })();
+    localizedSetNames.set(locale,task);
+    try{return await task;}
+    catch(e){
+      if(localizedSetNames.get(locale)===task)localizedSetNames.delete(locale);
+      throw e;
+    }
   }
   const localized=new Map<Db01Locale,Promise<Names>>();
   async function names(locale:Db01Locale):Promise<Names>{
@@ -274,13 +373,13 @@ export function createDb01CollectionNativeUiAxesClient(
       // Reject unsupported locale BEFORE touching private CollectionSet bytes.
       // Otherwise the concurrent counts() request runs even if names() rejects.
       validLocale(locale);
-      const [index,countsByCode]=await Promise.all([names(locale),counts()]);
+      const [index,groupsByCode]=await Promise.all([names(locale),groups()]);
       return Object.freeze(DB01_ORIGINAL_COLLECTION_SUBMENUS.map(entry=>
         Object.freeze({
           submenuCode:entry.code,originalEnumName:entry.enumName,
           originalLocDbKey:entry.locDbKey,
           displayName:index.tab.get(entry.locDbKey)!.displayName,locale,
-          originalCollectionSetCount:countsByCode.get(entry.code)??0,
+          originalCollectionSetCount:groupsByCode.get(entry.code)?.length??0,
           originalCollectionSubMenuEnumVerified:true as const,
           collectionCategoryFilterFieldVerified:true as const,
           currentOriginalLocDbNameVerified:true as const,
@@ -288,6 +387,37 @@ export function createDb01CollectionNativeUiAxesClient(
           runtimeCategoryVisibleVerified:false as const,
           itemGameUiMembershipVerified:false as const,
         })));
+    },
+    async getCategorySourceSets(locale:Db01Locale,submenuCode:number){
+      validLocale(locale);
+      // Do not read any private original bytes for an invalid native code.
+      check(Number.isSafeInteger(submenuCode)&&
+        DB01_ORIGINAL_COLLECTION_SUBMENUS.some(x=>x.code===submenuCode),
+        'UNKNOWN_ORIGINAL_COLLECTION_SUBMENU_CODE');
+      const [byCode,names]=await Promise.all([groups(),setNames(locale)]);
+      return Object.freeze((byCode.get(submenuCode)??[]).map(menu=>{
+        const localized=names.get(menu.setId);
+        check(localized&&localized.setKey===menu.setKey&&
+          localized.labelKey===menu.collectionLabelKey,
+          'SOURCE_SET_LOCALE_IDENTITY_MISMATCH');
+        return Object.freeze({
+          setId:menu.setId,nativeSetKey:menu.setKey,
+          submenuCode:menu.submenuCode,
+          originalSetSortPriority:menu.sortPriority,
+          sourceGroupCount:menu.groupCount,
+          sourceDirectItemCount:menu.directListedItemCount,
+          originalStaticSelectorCount:menu.dynamicSelectorsUnresolved,
+          collectionLabelKey:menu.collectionLabelKey,
+          locale,currentExactSetName:localized.exactName,
+          currentOriginalLocDbLabelVerified:localized.labelVerified,
+          nativeCollectionSubMenuAssociationVerified:true as const,
+          nativeCollectionAreaCode:null as null,
+          sourceCategoryIsGameScreenMembershipVerified:false as const,
+          playerOwnedVerified:false as const,
+          worldAvailabilityVerified:false as const,
+          dlcEntitlementVerified:false as const,
+        });
+      }));
     },
     async getUnmatchedTabLabels(locale:Db01Locale){
       const index=(await names(locale)).tab;
