@@ -47,6 +47,57 @@ The probe returns a *partial exact-link ledger* with complete=false if some GUID
 
 This metadata-only proof cannot resolve every possible indirect Unity asset reference; unresolved new-version GUIDs still require the specialized game-source dependency parser. Every next-version change must be tested with actual game files when available.
 
+
+## Build a complete next-version private v2 overlay
+
+After plan_media_update.py has no unresolved jobs and metadata-only proofs
+have been obtained, build_next_media_v2.py reuses old lossless WebP files and
+decodes only the exact new/changed Unity objects. It writes an atomic new
+private directory with source-items/items.jsonl, source-manifest.json,
+images-v2/{thumbnail,original}/, 256 private overlay shards, and a build report.
+
+    python tools/src-04-r2/build_next_media_v2.py --base-root OLD_MEDIA_ROOT --base-scan OLD_SCAN --target-scan NEW_SCAN --target-items NEW_ITEMS --target-proofs NEW_PROOFS --target-game NEW_STEAM_GAME --out NEW_PRIVATE_MEDIA_ROOT
+
+The destination must not exist before execution. Exact old v1.26.2
+source-items and v2 manifest SHA pins are enforced; a later independently
+validated baseline can be supplied via --base-items-sha and --base-overlay-sha.
+Any unresolved GUID, tampered game source, ambiguous Unity object or invalid
+WebP aborts before a complete new snapshot can appear. Local copies of the
+unchanged images are SHA-verified; shared media files are deduplicated within
+the target directory. The result has no public URLs or R2 upload side effects.
+
+## Private R2 delta staging (changed encoded bytes only)
+
+stage_media_update.py uses the prior successful private upload report (or
+the prior update's verified private source map) plus the new v2 index. It
+references previously staged WebP bytes by their exact encoded SHA-256 and
+creates new-version objects ONLY for byte-new WebP files. Earlier version
+objects remain present and untouched.
+
+    python tools/src-04-r2/stage_media_update.py --prior OLD_MEDIA_ROOT --next NEW_PRIVATE_MEDIA_ROOT
+
+This default mode audits local source bytes and builds a private plan but
+makes **no network request**. To review R2 inventory without writes:
+
+    python tools/src-04-r2/stage_media_update.py --prior OLD_MEDIA_ROOT --next NEW_PRIVATE_MEDIA_ROOT --remote-plan --account-id CLOUDFLARE_ACCOUNT_ID
+
+After separately confirming the bucket is actually private and explicitly
+authorizing the transfer:
+
+    python tools/src-04-r2/stage_media_update.py --prior OLD_MEDIA_ROOT --next NEW_PRIVATE_MEDIA_ROOT --apply --account-id CLOUDFLARE_ACCOUNT_ID --confirm-private-bucket I_CONFIRM_THIS_BUCKET_IS_PRIVATE
+
+R2 credentials must come from local AWS_ACCESS_KEY_ID and
+AWS_SECRET_ACCESS_KEY environment variables. They are never written to source,
+reports or GitHub. The destination is the already existing private R2 bucket.
+The applied upload checks existing objects with HEAD, never overwrites or
+deletes, and writes the PRIVATE source path→R2 object-key map for the next
+version. That map is **not** a public distribution manifest.
+
+These tools do not run automatically or on a schedule. When the next genuine
+Steam update arrives, all version-specific source evidence still needs to be
+supplied by SRC-00/SRC-01. The future-game end-to-end acceptance gate remains
+unrun until that source exists.
+
 ## Result classification
 
 | Status | Meaning | Next step |
