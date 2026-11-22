@@ -741,6 +741,20 @@ try{
   assert.equal(await groupMap.locator('.group-ghost').count(),2);
   assert.equal(groupOriginal.World.GridCollection.Grids['101'].Objects['1'].X,45);
   await groupMap.getByRole('button',{name:'マップ指定を終了'}).click();
+  // A valid candidate can lie far outside the observed Save positions.
+  // All target ghosts must remain visible rather than silently vanish.
+  await groupMap.getByLabel('グループ移動X').fill('150');
+  await groupMap.getByLabel('グループ移動Y').fill('100');
+  assert.equal(await groupMap.locator('.group-ghost').count(),2);
+  assert.equal(await groupMap.locator(
+    '.group-ghost[title*="#1 X 195 Y 109"]'
+  ).count(),1);
+  assert.equal(await groupMap.locator(
+    '.group-ghost[title*="#2 X 200 Y 110"]'
+  ).count(),1);
+  const groupXMaximum=Number((await groupMap.locator('.x-axis')
+    .innerText()).split('～')[1].trim());
+  assert.ok(groupXMaximum>=200,'viewport includes both group destinations');
   await groupMap.getByLabel('グループ移動X').fill('7');
   await groupMap.getByLabel('グループ移動Y').fill('-3');
   assert.equal(await stageGroup.isEnabled(),true);
@@ -799,6 +813,9 @@ try{
   const rotatedOriginal=structuredClone(groupOriginal);
   rotatedOriginal.World.GridCollection.Grids['101'].Objects['2'].Orientation=
     'GridOrientation_Left';
+  // Rotation from this native-numeric source places object 2 outside the
+  // observed Y bounds, requiring the viewport to expand around its draft.
+  rotatedOriginal.World.GridCollection.Grids['101'].Objects['2'].X=150;
   await page.getByLabel('検証用セーブファイル').setInputFiles({
     name:'group-rotate.profile',mimeType:'application/octet-stream',
     buffer:syntheticEncryptedP1g(rotatedOriginal)
@@ -816,6 +833,12 @@ try{
   await rotateMap.getByRole('button',{name:'配置 2 をグループへ追加'}).click();
   await rotateMap.getByRole('button',{name:'右へ90°（数値座標）'}).click();
   assert.equal(await rotateMap.locator('.group-ghost').count(),1);
+  assert.equal(await rotateMap.locator(
+    '.group-ghost[title*="#2 X 44 Y 114"]'
+  ).count(),1);
+  const rotateYMaximum=Number((await rotateMap.locator('.y-axis')
+    .innerText()).split('～')[1].trim());
+  assert.ok(rotateYMaximum>=114,'viewport includes offscreen rotation target');
   await rotateMap.getByRole('button',{
     name:'2件の回転を配置編集に追加'
   }).click();
@@ -823,7 +846,7 @@ try{
   await rotateBatch.getByText('2 / 16件').waitFor();
   assert.equal(await rotateMap.locator('.queued-ghost').count(),1);
   assert.equal(await rotateMap.locator(
-    '.queued-ghost[title*="#2 X 44 Y 14"]'
+    '.queued-ghost[title*="#2 X 44 Y 114"]'
   ).count(),1);
   const rotateEditor=objects.getByLabel('座標編集',{exact:true});
   await rotateBatch.getByRole('button',{name:'一括配置変更を検証'}).click();
@@ -849,7 +872,7 @@ try{
   assert.deepEqual([
     rotatedObjects['2'].X,rotatedObjects['2'].Y,
     rotatedObjects['2'].Orientation
-  ],[44,14,'GridOrientation_Up']);
+  ],[44,114,'GridOrientation_Up']);
   assert.equal(rotatedObjects['1'].PrivateState,'do-not-export');
   assert.equal(rotatedObjects['2'].PrivateGroup,'keep-both');
   assert.equal(rotatedCopy.World.GridCollection.DiffGrids['102']
@@ -857,7 +880,7 @@ try{
   assert.equal(rotatedCopy.Player.ListInventories['100'].Inventory['550'].Amount,7);
   assert.equal(rotatedOriginal.World.GridCollection.Grids['101'].Objects['1']
     .Orientation,'GridOrientation_Up');
-  assert.equal(rotatedOriginal.World.GridCollection.Grids['101'].Objects['2'].X,50);
+  assert.equal(rotatedOriginal.World.GridCollection.Grids['101'].Objects['2'].X,150);
   assert.deepEqual(errors,[],errors.join('\n'));
   await page.close();
   console.log('DB-05 browser: explicit JSON/P1G edited-copy downloads, native reopen, stale rejection, original preservation PASS');

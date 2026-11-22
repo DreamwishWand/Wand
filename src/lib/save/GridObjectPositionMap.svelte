@@ -212,6 +212,8 @@
     selectedGrid=grids[0]?.id??0;
   $: currentRows=rows.filter(row=>row.localGridOrdinal===selectedGrid);
   $: points=currentRows.filter(hasCoordinates);
+  $: allMarkers=aggregate(points);
+  $: markers=allMarkers.slice(0,256);
   // Discard stale ordinals, changed source coordinates and invalid staged
   // numbers. Staged positions are visual hints, never export authorization.
   $: stagedTargets=stagedMoves.filter(move=>{
@@ -224,22 +226,11 @@
       move.replacementY>=I32_MIN&&move.replacementY<=I32_MAX&&
       (move.replacementX!==original.x||move.replacementY!==original.y);
   });
-  $: mapBoundsPoints=[
-    ...points.map(row=>({x:row.x,y:row.y})),
-    ...stagedTargets.map(move=>({x:move.replacementX,y:move.replacementY}))
-  ];
-  $: xBounds=paddedBounds(mapBoundsPoints,'x');
-  $: yBounds=paddedBounds(mapBoundsPoints,'y');
-  $: allMarkers=aggregate(points);
-  $: markers=allMarkers.slice(0,256);
   $: selectedInGrid=currentRows.some(row=>
     row.localOrdinal===selectedOrdinal&&hasCoordinates(row));
   $: draftIsChanged=selectedInGrid&&draftX!==null&&draftY!==null&&
     currentRows.some(row=>row.localOrdinal===selectedOrdinal&&
       (row.x!==draftX||row.y!==draftY));
-  $: draftVisible=draftIsChanged&&draftX!==null&&draftY!==null&&
-    draftX>=xBounds.min&&draftX<=xBounds.max&&
-    draftY>=yBounds.min&&draftY<=yBounds.max;
   // A new file replaces every ephemeral ordinal and all prior selections.
   $: if(rows!==lastRows){
     lastRows=rows;
@@ -256,14 +247,37 @@
   $: groupReady=groupTargets!==null&&
     queuedOrdinals.length+groupOrdinals.length<=16&&
     !groupOrdinals.some(id=>queuedOrdinals.includes(id));
-  $: visibleTargets=groupTargets?.filter(
-    target=>target.x>=xBounds.min&&target.x<=xBounds.max&&
-      target.y>=yBounds.min&&target.y<=yBounds.max)??[];
   $: rotationTargets=groupMode?rotationCandidates(rotationDirection):null;
   $: rotationReady=rotationTargets!==null&&
     mixedQueuedOrdinals.length+groupOrdinals.length<=16&&
     !groupOrdinals.some(id=>
       queuedOrdinals.includes(id)||mixedQueuedOrdinals.includes(id));
+  // Fit to all observed positions AND valid proposed destinations, including
+  // temporary translation/rotation previews and single-object input drafts.
+  // This is still a saved-integer-coordinate sketch, not DB-04 terrain.
+  $: rotationCoordinates=rotationTargets?.flatMap(target=>
+    target.replacementX!==null&&target.replacementY!==null
+      ?[{x:target.replacementX,y:target.replacementY}]:[])??[];
+  $: validDraft=draftIsChanged&&Number.isSafeInteger(draftX)&&
+    Number.isSafeInteger(draftY)&&
+    draftX!==null&&draftY!==null&&
+    draftX>=I32_MIN&&draftX<=I32_MAX&&
+    draftY>=I32_MIN&&draftY<=I32_MAX;
+  $: mapBoundsPoints=[
+    ...points.map(row=>({x:row.x,y:row.y})),
+    ...stagedTargets.map(move=>({x:move.replacementX,y:move.replacementY})),
+    ...(groupTargets?.map(target=>({x:target.x,y:target.y}))??[]),
+    ...rotationCoordinates,
+    ...(validDraft&&draftX!==null&&draftY!==null?[{x:draftX,y:draftY}]:[])
+  ];
+  $: xBounds=paddedBounds(mapBoundsPoints,'x');
+  $: yBounds=paddedBounds(mapBoundsPoints,'y');
+  $: draftVisible=validDraft&&draftX!==null&&draftY!==null&&
+    draftX>=xBounds.min&&draftX<=xBounds.max&&
+    draftY>=yBounds.min&&draftY<=yBounds.max;
+  $: visibleTargets=groupTargets?.filter(
+    target=>target.x>=xBounds.min&&target.x<=xBounds.max&&
+      target.y>=yBounds.min&&target.y<=yBounds.max)??[];
   $: visibleRotationTargets=rotationTargets?.filter(target=>
     target.replacementX!==null&&target.replacementY!==null&&
     target.replacementX>=xBounds.min&&target.replacementX<=xBounds.max&&
@@ -322,13 +336,14 @@
       {#each visibleTargets as target (`group-${target.ordinal}`)}
         <div class="draft-marker group-ghost"
           aria-hidden="true"
+          title={`移動先候補 #${target.ordinal} X ${target.x} Y ${target.y}`}
           style={`left:${percentage(target.x,xBounds.min,xBounds.max)}%;top:${percentage(target.y,yBounds.min,yBounds.max)}%`}>
           <span>+</span>
         </div>
       {/each}
       {#each visibleRotationTargets as target (`rotated-${target.localOrdinal}`)}
         <div class="draft-marker group-ghost" aria-hidden="true"
-          title={`90度回転候補 #${target.localOrdinal}`}
+          title={`90度回転候補 #${target.localOrdinal} X ${target.replacementX} Y ${target.replacementY}`}
           style={`left:${percentage(target.replacementX!,xBounds.min,xBounds.max)}%;top:${percentage(target.replacementY!,yBounds.min,yBounds.max)}%`}>
           <span>+</span>
         </div>
@@ -431,7 +446,7 @@
     {#if draftIsChanged&&draftX!==null&&draftY!==null}
       <small class="map-hint" role="status">
         移動先候補 X {draftX} / Y {draftY}。セーブはまだ変更されていません。
-        {#if !draftVisible}表示範囲外です。{/if}
+
       </small>
     {/if}
     {#if stagedTargets.length>0}
