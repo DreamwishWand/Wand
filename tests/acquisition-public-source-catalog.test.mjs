@@ -25,7 +25,7 @@ function publicFetcher(options={}){
   };
   return {seen,fetcher};
 }
-test('Complete public Steam 1.26.2 DB-02 catalog joins all 680 source-pinned Star Path, Quest, Event and Friendship slots without a private ZIP',async()=>{
+test('Complete public Steam 1.26.2 DB-02 catalog joins 836 source-pinned Star Path, Quest, Event, Friendship and native Shop slots without a private ZIP',async()=>{
   const {seen,fetcher}=publicFetcher();
   const catalog=await loadPublicSourceCatalog('/Wand',fetcher);
   assert.equal(catalog.schema,DB02_PUBLIC_SOURCE_CATALOG_SCHEMA);
@@ -35,10 +35,13 @@ test('Complete public Steam 1.26.2 DB-02 catalog joins all 680 source-pinned Sta
   assert.equal(catalog.coverage.questSourceRoutes,395);
   assert.equal(catalog.coverage.nativeEventSourceRoutes,202);
   assert.equal(catalog.coverage.defaultFriendshipSourceRoutes,16);
-  assert.equal(catalog.coverage.combinedSourceRoutes,680);
-  assert.equal(catalog.origins.getCoverage().linkedRoutes,680);
+  assert.equal(catalog.coverage.nativeShopOffers,29);
+  assert.equal(catalog.coverage.nativeShopSourceRoutes,156);
+  assert.equal(catalog.coverage.nativeShopDistinctItemIds,136);
+  assert.equal(catalog.coverage.combinedSourceRoutes,836);
+  assert.equal(catalog.origins.getCoverage().linkedRoutes,836);
   assert.equal(catalog.origins.getCoverage().routesBySourceKind.verified_game_native,613);
-  assert.equal(catalog.origins.getCoverage().routesBySourceKind.verified_liveops_cache,67);
+  assert.equal(catalog.origins.getCoverage().routesBySourceKind.verified_liveops_cache,223);
   assert.equal(catalog.eventFriendshipSource.origins.length,218);
   assert.equal(catalog.coverage.liveOfferAvailabilityVerified,false);
   assert.equal(catalog.coverage.sourceCoverageComplete,false);
@@ -49,8 +52,9 @@ test('Complete public Steam 1.26.2 DB-02 catalog joins all 680 source-pinned Sta
     catalog.coverage.linkedOutsidePublishedItemIds,
     catalog.coverage.allSourceLinkedItemIds);
   const urlList=new Set(seen);
-  assert.equal(seen.length,20); // pointer + index + 14 SHA shards + 4 DB-03 public assets
-  assert.equal(urlList.size,20);
+  assert.equal(seen.length,21); // pointer + index + 14 shards + 4 Guide + 1 native shop asset
+  assert.equal(urlList.size,21);
+  assert(seen.some(s=>s.endsWith('/shop-cache-2026-11-22.json')));
   assert(seen.some(s=>s.endsWith('/event-friendship-rewards-1.26.2.json')));
   assert(seen.some(s=>s.endsWith('/quest-rewards-1.26.2.json')));
   assert(seen.some(s=>s.endsWith('/starpath-cache-2026-11-22.json')));
@@ -88,6 +92,25 @@ test('Unified lookup separates exact Quest, Event and Friendship Item ID routes 
     assert.equal(reward.routeStatus,'static_candidate_only');
     assert.equal(reward.availability,'not_live_verified');
   }
+  const nativeShop=catalog.nativeShopSource.getOffer('Bundle_MickeyAndFriendsCelebrationHouses');
+  assert(nativeShop);
+  assert.equal(nativeShop.components.length,5);
+  assert.equal(nativeShop.configuredAllocationTotal,4000);
+  const shopOrigin=catalog.lookup('170600007').origins.find(r=>
+    r.campaignId==='native-shop:Shop20261118:Bundle_MickeyAndFriendsCelebrationHouses');
+  assert(shopOrigin);
+  assert.equal(shopOrigin.kind,'premium_shop');
+  assert.equal(shopOrigin.routeStatus,'confirmed_source_link');
+  assert.equal(shopOrigin.productId,'Bundle_MickeyAndFriendsCelebrationHouses');
+  assert.equal(shopOrigin.price?.quantity,4000);
+  assert.equal(shopOrigin.availability,'not_live_verified');
+  assert.equal(catalog.getSourceOrigin(shopOrigin.originId)[0],shopOrigin);
+  assert(catalog.getCampaign(shopOrigin.campaignId)?.rewards.some(r=>
+    r.itemId==='170600007'&&r.quantity===1));
+  const discounted=catalog.nativeShopSource.getOfferOrigins('Bundle_DonutDuo');
+  assert.equal(discounted.length,2);
+  assert(discounted.every(r=>r.price===null&&r.conditions.some(x=>
+    x.includes('discount: 10%'))));
   const twitch=catalog.lookup('50400102');
   assert(twitch.catalogItem);
   assert(twitch.onlineNameCandidates.some(c=>
@@ -119,6 +142,9 @@ test('Public-only startup rejects corrupt source-pinned DB-00 and Guide bytes; u
   await assert.rejects(loadPublicSourceCatalog(
     '/Wand',publicFetcher({corrupt:'event-friendship-rewards-1.26.2.json'}).fetcher
   ),/PUBLIC_SHA/);
+  await assert.rejects(loadPublicSourceCatalog(
+    '/Wand',publicFetcher({corrupt:'shop-cache-2026-11-22.json'}).fetcher
+  ),/PROJECTION_SHA/);
   const noFetch=async()=>{throw new Error('SHOULD_NOT_FETCH');};
   await assert.rejects(loadPublicSourceCatalog('/Wand/../exfil',noFetch),
     /INVALID_BASE_PATH/);
