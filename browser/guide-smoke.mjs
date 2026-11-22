@@ -175,8 +175,16 @@ try {
   await related.waitForFunction(()=>location.search.includes('quest=2070000620'));
   await related.locator('.detail-header h2').filter({hasText:'ドリームライトバレーへようこそ'}).waitFor({timeout:20000});
   await related.locator('.related-quests summary').click();
-  assert.equal(await related.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),true,
-    'expanded related quest links must not overflow on phones');
+  const relatedWidth=await related.evaluate(()=>({
+    viewport:innerWidth,
+    scroll:document.documentElement.scrollWidth,
+    offenders:[...document.querySelectorAll('main *')].filter(el=>{
+      const r=el.getBoundingClientRect();return r.right>innerWidth+2||r.left< -2;
+    }).slice(0,12).map(el=>({tag:el.tagName,class:el.className?.toString().slice(0,80),
+      width:Math.round(el.getBoundingClientRect().width),right:Math.round(el.getBoundingClientRect().right)}))
+  }));
+  assert(relatedWidth.scroll<=relatedWidth.viewport+2,
+    'expanded related quest links must not overflow on phones: '+JSON.stringify(relatedWidth));
   await related.goto(url+'?quest=2070000651',{waitUntil:'domcontentloaded'});
   await related.locator('.detail .step').first().waitFor({timeout:20000});
   assert.equal(await related.locator('.related-quests').count(),0,
