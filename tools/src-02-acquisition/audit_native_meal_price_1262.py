@@ -47,16 +47,21 @@ TARGET_NAMES = (
     ("ItemPriceDatabase", "TryGetSellPrice"),
     ("DynamicItemPriceDatase", "TryGetSellPrice"),
     ("DynamicItemPriceDatase", "get_DataCached"),
+    ("SellPriceFormulaItemData", "GetSellPriceFormulaItemData"),
+    ("SellPriceFormulaItemData", "IsFormulaValidForItem"),
+    ("SellPriceFormulaItemData", "CalculateItemPrice"),
 )
 STEAM_RVAS = (
     0x383B420, 0x383B530, 0x383B5D0, 0x383BA40,
     0x3E1DA20, 0x3E1E0F0, 0x3E1E710, 0x3E1ECC0,
     0x3836F50, 0x3839820, 0x3839670,
+    0x4020E60, 0x4021150, 0x4020120,
 )
 SWITCH_RVAS = (
     0x417EF70, 0x417F0C0, 0x417F160, 0x417FA60,
     0x4A3E3E0, 0x4A3EC50, 0x4A3F640, 0x4A3F880,
     0x41784C0, 0x417B5A0, 0x417B3D0,
+    0x4D50C40, 0x4D51140, 0x4D4F930,
 )
 # The source-control-safe hashes cover complete native instruction windows,
 # NOT proprietary instructions, full methods or original asset content.
@@ -115,6 +120,16 @@ STEAM_WINDOWS = (
      "7a5d4e7c589f1d055bfda1fe58fb2c6d4c7ce805852e6a1a4107272e454f5cda"),
     ("dynamic_data_cached_positive_count", 0x383969A, 45,
      "2c39913bcad0e0130749168656aba038506528a41113c9174b9f73b0101f15d9"),
+    ("formula_currency_match", 0x4021070, 22,
+     "fc10717f20831184455622aae2753affd815deb82da79e917bbaac0416313f17"),
+    ("formula_item_type_eligibility_call", 0x4021079, 18,
+     "4c79629d5209a3224a2f158a7221b6afe159bf56582b7497bceefe246dc2fb17"),
+    ("formula_first_eligible_return", 0x40210A6, 12,
+     "6a7d4c70976fd4a852fa16d0271cd1a2ff031a8297bf5fdedba7eada075ebd9b"),
+    ("formula_resolved_type_identity", 0x40211B2, 15,
+     "4a206e75cd13314ce295861dbd2aa3eb19cbc6277224f391b81e5b366469a7fa"),
+    ("formula_float_truncate_to_int32", 0x4020303, 20,
+     "672e5c6c047ffc2a4a9a71e7eec986512982c15a8df04ba7a13314bc5aa344c4"),
 )
 SWITCH_WINDOWS = (
     ("integer_percent_truncation", 0x4A3F1AC, 32,
@@ -165,6 +180,16 @@ SWITCH_WINDOWS = (
      "c2a2914c9750f2b4f39936944013f191ba3d741a274cf7906821a413e7a889f6"),
     ("dynamic_data_cached_positive_count", 0x417B40C, 40,
      "2089aa16808cadd1d5928ca9fbb42675c89eb5278a72ce8317770dc45fcf7c8b"),
+    ("formula_currency_match", 0x4D50F64, 38,
+     "b12827c9244626eaae5f6d4f002d4987c5024248a5487fe0f70ee75366618d65"),
+    ("formula_item_type_eligibility_call", 0x4D50F90, 64,
+     "a0cbae7e6566d198e1caaea2c192b8239b7dbcb5301e0086ec8b1683a7d3b14a"),
+    ("formula_first_eligible_return", 0x4D51040, 30,
+     "69d47fa3de06f0e1eee4d7f6906e6aea4140ab4a9feb4eb409013b5d518cde44"),
+    ("formula_resolved_type_identity", 0x4D511E8, 8,
+     "4e277315f24e49143e6afcb9a39cbc4b331a23d036dadaaff0bb45a1594ed856"),
+    ("formula_float_truncate_to_int32", 0x4D4FAF0, 24,
+     "974a44f85469bd634789e4c7064ae1513ff9f4a237ad3fbea819c536bdaba9a1"),
 )
 MAX_DUMP = 160 * 1024 * 1024
 
@@ -322,7 +347,7 @@ def verify_switch(dump_path, nso_path):
 def run_audit(steam_version, steam_dump, steam_dll, switch_dump, switch_main):
     steam = verify_steam(steam_version, steam_dump, steam_dll)
     switch = verify_switch(switch_dump, switch_main)
-    require(steam["methodRvasChecked"] == switch["methodRvasChecked"] == 11,
+    require(steam["methodRvasChecked"] == switch["methodRvasChecked"] == 14,
             "CROSS_PLATFORM_METHOD_SET")
     return {
         "contract": CONTRACT,
@@ -346,6 +371,11 @@ def run_audit(steam_version, steam_dump, steam_dll, switch_dump, switch_main):
         "dynamicSerializedProviderNullCacheOutZeroVerified": True,
         "dynamicSerializedProviderMissingOutOneVerified": True,
         "dynamicDataCachedRequiresPositiveRowCountVerified": True,
+        "sellFormulaCurrencyGateVerified": True,
+        "sellFormulaResolvedTypeIdentityGateVerified": True,
+        "sellFormulaConditionalFirstEligibleCandidateVerified": True,
+        "sellFormulaFloatingResultTruncatesTowardZeroVerified": True,
+        "actualSellFormulaReferenceRuntimeResolutionVerified": False,
         "actualRegisteredDatabaseIterationOrderVerified": False,
         "reportedNativeInstructionWindowsOnly": True,
         "exactIngredientPriceResolutionVerified": False,
