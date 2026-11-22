@@ -224,7 +224,7 @@
           <button bind:this={languageButton} class="header-icon-button header-language-button" type="button"
             aria-label={copy.languageSwitch} title={copy.languageSwitch} aria-expanded={languageOpen}
             on:click={()=>{languageOpen=!languageOpen;navOpen=false;filesOpen=false;}}>
-            <WandIcon name="languages" size={19}/><span class="header-locale-code">{LANGUAGE_SHORT[uiLocale]}</span>
+            <WandIcon name="globe" size={19}/><span class="header-locale-code">{LANGUAGE_SHORT[uiLocale]}</span>
           </button>
           {#if languageOpen}
             <div class="language-popover" role="group" aria-label={copy.languageList}>
