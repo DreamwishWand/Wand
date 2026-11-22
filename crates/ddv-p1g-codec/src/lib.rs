@@ -505,6 +505,100 @@ mod browser_amount_preview {
     }
 }
 
+/// Rust-first local Save reader. All private profile text stays in the
+/// invoking Worker; never return it to the page, telemetry or network.
+#[cfg(feature="wasm")]
+mod browser_profile_reader {
+    use super::*;
+    use wasm_bindgen::prelude::*;
+
+    const CHUNK:usize=1024*1024;
+    const MAX_ENCRYPTED:usize=32*1024*1024;
+    #[derive(Clone,Copy)]
+    enum Mode { Auto, Json, P1g }
+    fn error(code:&'static str)->JsValue { JsValue::from_str(code) }
+
+    #[wasm_bindgen]
+    pub struct WasmLocalProfileReader {
+        mode:Mode,
+        buffer:Vec<u8>,
+        finished:bool,
+    }
+    #[wasm_bindgen]
+    impl WasmLocalProfileReader {
+        #[wasm_bindgen(constructor)]
+        pub fn new(kind:&str)->Result<WasmLocalProfileReader,JsValue>{
+            let mode=match kind {
+                "auto"=>Mode::Auto,
+                "json"=>Mode::Json,
+                "p1g"=>Mode::P1g,
+                _=>return Err(error("DB05_NATIVE_PROFILE_FORMAT_INVALID"))
+            };
+            Ok(Self{mode,buffer:Vec::new(),finished:false})
+        }
+        pub fn append_chunk(&mut self,part:&[u8])->Result<(),JsValue>{
+            if self.finished || part.is_empty() || part.len()>CHUNK ||
+                self.buffer.len().checked_add(part.len()).is_none_or(|n|n>LIMIT){
+                self.close();
+                return Err(error("DB05_NATIVE_PROFILE_SIZE_INVALID"));
+            }
+            self.buffer.extend_from_slice(part);
+            Ok(())
+        }
+        pub fn finish_json_text(&mut self)->Result<String,JsValue>{
+            if self.finished || self.buffer.is_empty(){
+                self.close();
+                return Err(error("DB05_NATIVE_PROFILE_SOURCE_INVALID"));
+            }
+            let mode=match self.mode {
+                Mode::Auto=>{
+                    let first=self.buffer.iter()
+                        .copied().find(|b| !matches!(b,b' '|b'\n'|b'\r'|b'\t'));
+                    if first==Some(b'{'){Mode::Json}else{Mode::P1g}
+                },
+                other=>other
+            };
+            let result=match mode {
+                Mode::Json=>{
+                    validate_profile(&self.buffer)
+                        .map_err(|_|error("DB05_NATIVE_PROFILE_INVALID"))?;
+                    std::str::from_utf8(&self.buffer)
+                        .map(str::to_owned)
+                        .map_err(|_|error("DB05_NATIVE_PROFILE_INVALID"))
+                },
+                Mode::P1g=>{
+                    if self.buffer.len()>MAX_ENCRYPTED {
+                        Err(error("DB05_NATIVE_PROFILE_SIZE_INVALID"))
+                    } else {
+                        match OpenedP1g::open(&self.buffer){
+                            Ok(opened)=>String::from_utf8(opened.profile.clone())
+                                .map_err(|_|error("DB05_NATIVE_PROFILE_INVALID")),
+                            // Temporary compatibility exception ONLY for ZIP
+                            // layouts outside this Rust codec's single-entry
+                            // feature set. Never fall back after a bad CRC,
+                            // wrong key or invalid JSON on supported layouts.
+                            Err(CodecError::ZipUnsupported)=>
+                                Err(error("DB05_NATIVE_ENVELOPE_UNSUPPORTED")),
+                            Err(_)=>Err(error("DB05_NATIVE_PROFILE_INVALID"))
+                        }
+                    }
+                },
+                Mode::Auto=>unreachable!()
+            };
+            self.close();
+            result
+        }
+        pub fn close(&mut self){
+            self.finished=true;
+            self.buffer.zeroize();
+            self.buffer.clear();
+        }
+    }
+    impl Drop for WasmLocalProfileReader {
+        fn drop(&mut self){self.close();}
+    }
+}
+
 fn rezip_profile(old:&[u8],layout:&Layout,new_profile:&[u8])->Result<Vec<u8>,CodecError>{
     let compressed=if layout.method==0{new_profile.to_vec()}else{
         let mut z=DeflateEncoder::new(Vec::new(),Compression::default());
