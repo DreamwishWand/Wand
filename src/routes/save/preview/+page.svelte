@@ -5,6 +5,10 @@
   import type {Db00ItemContext} from '../../../lib/save/common-db-context';
   import type {SavedGridItemReference} from '../../../lib/save/save-world-db04-context';
   import GridObjectPositionMap from '../../../lib/save/GridObjectPositionMap.svelte';
+  import {draftGridGroupQuarterTurn}
+    from '../../../lib/save/grid-group-quarter-turn';
+  import type {GridQuarterTurnDirection}
+    from '../../../lib/save/grid-group-quarter-turn';
 
   // Development-only local editor: preview is metadata-only, and explicit
   // edited-copy export never overwrites the source. No production Writer.
@@ -305,6 +309,35 @@
   function removeCoordinateEdit(ordinal:number){
     cancel();result=null;
     coordinateQueue=coordinateQueue.filter(p=>p.localOrdinal!==ordinal);
+  }
+  function queueGroupRotation(
+    ordinals:readonly number[],direction:GridQuarterTurnDirection
+  ):boolean{
+    // Stage only; local UI ordinals are resolved again by the Rust
+    // mixed-batch writer against the immutable original Save.
+    if(processing||!activeFile||activeFile!==savedSlotsFile||
+       ordinals.length<2||ordinals.length>16||
+       mixedQueue.length+ordinals.length>16||
+       new Set(ordinals).size!==ordinals.length||
+       ordinals.some(id=>coordinateQueue.some(edit=>
+         edit.localOrdinal===id)||mixedQueue.some(edit=>
+         edit.localOrdinal===id)))return false;
+    const sources=ordinals.map(id=>gridInstances[id-1]);
+    if(sources.some((row,i)=>!row||row.localOrdinal!==ordinals[i]))
+      return false;
+    const draft=draftGridGroupQuarterTurn(
+      sources.filter((row):row is LocalGridInstance=>row!==undefined),
+      direction
+    );
+    if(!draft||draft.length!==ordinals.length)return false;
+    cancel();result=null;
+    const first=sources[0]!;
+    coordinateSelection={...first};
+    coordinateX=String(first.x);coordinateY=String(first.y);
+    coordinateOrientationValue=isCardinal(first.orientation)
+      ?first.orientation:'';
+    mixedQueue=[...mixedQueue,...draft];
+    return true;
   }
   function queueGroupTranslation(
     ordinals:readonly number[],dx:number,dy:number
@@ -1567,6 +1600,7 @@
               draftY={coordinateSelection?coordinateNumber(coordinateY):null}
               disabled={processing}
               queuedOrdinals={coordinateQueue.map(edit=>edit.localOrdinal)}
+              mixedQueuedOrdinals={mixedQueue.map(edit=>edit.localOrdinal)}
               stagedMoves={[
                 ...coordinateQueue.map(edit=>({
                   localOrdinal:edit.localOrdinal,
@@ -1583,6 +1617,7 @@
                     }]:[])
               ]}
               onStageGroupMove={queueGroupTranslation}
+              onStageGroupRotation={queueGroupRotation}
               onPick={(ordinal:number)=>{
                 const row=gridInstances[ordinal-1];
                 if(row?.localOrdinal===ordinal)selectGridInstance(row);
