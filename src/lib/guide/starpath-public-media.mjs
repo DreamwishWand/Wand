@@ -49,6 +49,8 @@ export function validateStarpathMediaActivation(config=STARPATH_MEDIA_ACTIVATION
     /^guide\/public\/starpath-media-[a-f0-9]{12}\.json$/.test(config.manifestPath)&&
     SHA.test(config.manifestSha256)&&
     safeInt(config.manifestBytes)&&config.manifestBytes<=50000,'unapproved manifest pin');
+  assert(config.manifestPath==='guide/public/starpath-media-'+config.manifestSha256.slice(0,12)+'.json',
+    'manifest path must contain pinned fingerprint');
   return {
     ...config,publicOrigin:requireOriginalPublicOrigin(config.publicOrigin)
   };
@@ -56,12 +58,17 @@ export function validateStarpathMediaActivation(config=STARPATH_MEDIA_ACTIVATION
 
 /** Validate *the entire* fixed 1.26.2 release; do not trust one matching ID. */
 export function verifyStarpathMediaManifest(manifest,starpath){
-  assert(record(manifest)&&manifest.schema===RELEASE_SCHEMA,'schema');
-  assert(record(manifest.target)&&manifest.target.platform==='Steam'&&
+  assert(record(manifest)&&manifest.schema===RELEASE_SCHEMA&&
+    Object.keys(manifest).sort().join(',')==='items,release,schema,target','schema or private fields');
+  assert(record(manifest.target)&&
+    Object.keys(manifest.target).sort().join(',')==='db01Release,gameVersion,platform,src04Release'&&
+    manifest.target.platform==='Steam'&&
     manifest.target.gameVersion==='1.26.2'&&
     manifest.target.db01Release===DB01_RELEASE&&
     manifest.target.src04Release===MEDIA_VERSION,'incorrect source version');
-  assert(record(manifest.release)&&manifest.release.state==='published'&&
+  assert(record(manifest.release)&&
+    Object.keys(manifest.release).sort().join(',')==='publicObjectByteAudit,publicReadbackVerified,publicationAuthorized,releaseId,sourceCandidateSha256,state'&&
+    manifest.release.state==='published'&&
     manifest.release.publicationAuthorized===true&&
     manifest.release.publicObjectByteAudit===true&&
     manifest.release.publicReadbackVerified===true&&
