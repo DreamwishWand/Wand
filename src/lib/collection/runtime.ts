@@ -28,6 +28,17 @@ export interface CollectionEntry {
   discovered?: boolean;
   favorite?: boolean;
 }
+
+/** Internal projection produced only after a decoder has verified the save
+ * field's game semantics. Raw P1G CollectionSets map-key presence or boolean
+ * shapes must NEVER be mapped into this contract. */
+export interface MappedSaveStatusImport {
+  schema: 'wand.collection.mapped-save-status@1';
+  entries: readonly {
+    itemId: number;
+    status: 'owned' | 'missing' | 'unknown';
+  }[];
+}
 export interface CollectionWorkspace {
   id: string;
   name: string;
@@ -444,6 +455,18 @@ export class CollectionRuntime {
    * one IndexedDB compare-and-swap commit; failed persistence rolls back. */
   setBulkMatching(filter:CollectionFilter,status:'owned'|'missing'|'unknown'):Promise<void> {
     return this.mutate(() => { this.engine.bulk_matching(JSON.stringify(filter),status); });
+  }
+  /** Save values supersede manual statuses for precisely verified item IDs.
+   * Other manual items, favorites, quantities and discoveries remain intact;
+   * editing is still possible after import. One Rust transaction and one
+   * IndexedDB compare-and-swap commit ensure no partial application.
+   *
+   * IMPORTANT: This is deliberately NOT called by the current P1G preview.
+   * DB-05 must first establish each map value's actual ownership/unlock
+   * semantics; a map-key match alone is insufficient evidence.
+   */
+  applyMappedSaveStatuses(patch:MappedSaveStatusImport):Promise<void> {
+    return this.mutate(() => { this.engine.apply_mapped_save_statuses(JSON.stringify(patch)); });
   }
   workspace(action:'select'|'add'|'rename'|'delete',id:string,name=''):Promise<void> {
     return this.mutate(() => this.engine.workspace_action(action,id,name));
