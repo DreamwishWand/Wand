@@ -12,7 +12,9 @@ import re
 import sys
 from pathlib import Path
 
-from terrain_codec import describe_native_packing, count_packed_palette_indices
+from terrain_codec import (describe_native_packing, count_packed_palette_indices,
+                           describe_native_direct_floor_types,
+                           DIRECT_JSON_SOURCE_FORMAT)
 
 SCHEMA = "wand.db04.world@1"
 FAMILIES = {
@@ -98,6 +100,23 @@ def checked_grid(grid, *, source_game_version):
         any(type(v) is not int or not 0 <= v <= 0xffffffff for v in values)):
         raise ValueError("malformed native grid direct floor array")
     packed = grid.get("compactedFloorTypesBase64")
+    if grid.get("nativeSourceFormat") is not None:
+        if (grid["nativeSourceFormat"] != DIRECT_JSON_SOURCE_FORMAT or
+                packed is not None or values is None or
+                grid.get("nativeFloorTypePalette") != [] or
+                grid.get("nativeCompactedByteCount") is not None or
+                grid.get("nativeCompactedSha256") is not None or
+                grid.get("nativePaletteIndexCellCounts") is not None):
+            raise ValueError("invalid original JSON GridData evidence")
+        expected = describe_native_direct_floor_types(
+            x, y, values, source_game_version=source_game_version)
+        if (grid.get("terrainDecoding") != expected or
+                grid.get("nativeFloorIndexToLocalXYCorroborated")
+                is not expected["decoded"]):
+            raise ValueError("original JSON GridData index evidence mismatches source")
+    elif packed is None and (
+            grid.get("terrainDecoding") or {}).get("decoded") is True:
+        raise ValueError("native direct terrain cannot be asserted without source format")
     if packed is None and grid.get("nativePaletteIndexCellCounts") is not None:
         raise ValueError("unbacked native terrain palette histogram")
     if packed is not None:
