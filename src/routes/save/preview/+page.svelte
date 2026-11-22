@@ -243,6 +243,13 @@
     return {...coord,expectedOrientation:original,
       replacementOrientation:coordinateOrientationValue};
   }
+  // Explicit dependencies keep Svelte 5 legacy-reactive button state in
+  // sync when bound X/Y or orientation changes; method calls alone do not
+  // expose their hidden reads to reactive dependency analysis.
+  $: transformReady=Boolean(
+    coordinateSelection&&coordinateX&&coordinateY&&coordinateOrientationValue
+      ?selectedTransformPlan():null
+  );
   function queueCoordinateEdit(){
     const plan=selectedCoordinatePlan();
     if(!plan||coordinateQueue.length>=16||
@@ -1356,7 +1363,7 @@
                     </select>
                   </label>
                   <button type="button" class="secondary"
-                    disabled={processing||!selectedTransformPlan()}
+                    disabled={processing||!transformReady}
                     on:click={()=>validateCoordinateEdit(false,true)}>
                     位置と向きを同時検証
                   </button>
