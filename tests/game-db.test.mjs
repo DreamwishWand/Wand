@@ -85,6 +85,11 @@ test('DB-00 patch rejects conflicts and preserves validated IDs', () => {
   assert.deepEqual(buildSearchIndex(merged, 'en').terms.item, ['123', '456']);
   assert.throws(() => applyPatch(base, { ...patch, items: [item(123, { category: 'Clothing' })] }), /conflicting/);
   assert.throws(() => applyPatch(base, { ...patch, target: { ...base.target, gameVersion: '1.25.0' } }), /target mismatch/);
+  // Same gameVersion and build ID do not make a different original-manifest
+  // fingerprint a compatible source; do not silently join stale stream data.
+  assert.throws(() => applyPatch(base, {
+    ...patch, target: { ...base.target, sourceSha256: 'b'.repeat(64) }
+  }), /target mismatch/);
 });
 test('existing public Collection is compatible with normalized DB-00 IDs and locales', async () => {
   const path = join(root, 'static/ddv/collection/v1.25');

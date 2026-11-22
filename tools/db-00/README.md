@@ -122,3 +122,7 @@ async function loadVisibleSlice() {
 ```
 
 Do not add a "Load more" button. Let the Collection UI schedule the next request from scroll intersection; this API intentionally does not dictate UI rendering or restore unsaved player data.
+
+## Cross-stream target source fingerprint
+
+`applyPatch` requires exact `platform`, `gameVersion`, `buildId` **and** `sourceSha256` equality between a patch and its base snapshot. A matching game version alone does not prove the source file set is the same, especially across Steam hotfixes and archived v1.26.1/v1.26.2 inputs. The shared target fingerprint is the release anchor; each DB-01/02/03/04/05 stream's own file/probe hashes belong in additional `patch.sources` records. Never replace the target fingerprint with a stream-specific file digest to bypass this gate.

@@ -242,9 +242,12 @@ export function applyPatch(snapshot, patch) {
   validateSnapshot(snapshot);
   assert(patch?.schema === PATCH_SCHEMA, 'invalid patch schema');
   validateTarget(patch.target);
+  // All streams must agree on the same trusted game-source release anchor.
+  // Per-stream file hashes belong in patch.sources, not in a substituted target.
   assert(patch.target.platform === snapshot.target.platform &&
     patch.target.gameVersion === snapshot.target.gameVersion &&
-    patch.target.buildId === snapshot.target.buildId, 'patch target mismatch');
+    patch.target.buildId === snapshot.target.buildId &&
+    patch.target.sourceSha256 === snapshot.target.sourceSha256, 'patch target mismatch');
   const known = new Map(snapshot.items.map((item) => [item.id, item]));
   const patched = new Set();
   for (const raw of patch.items ?? []) {
