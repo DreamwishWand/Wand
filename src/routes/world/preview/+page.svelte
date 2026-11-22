@@ -425,7 +425,7 @@
           {/if}
         </div>
         {#if viewport.page.hasNextPage}
-          <div class="paging auto-sentinel" use:autoAppend={{hasMore:()=>Boolean(viewport?.page.hasNextPage)&&!viewing,load:appendNextPage}}
+          <div class="paging auto-sentinel" use:autoAppend={{hasMore:()=>Boolean(viewport?.page.hasNextPage)&&!viewing&&!errorMessage&&typeof viewport?.page.nextOffset==='number'&&viewport.page.nextOffset>offset,load:appendNextPage}}
             role="status" aria-label="スクロールで初期配置レコードを追加表示"></div>
         {/if}
       </div>
