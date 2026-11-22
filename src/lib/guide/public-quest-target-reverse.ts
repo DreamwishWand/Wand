@@ -7,8 +7,8 @@ import {verifyPublicQuestIndex} from './public-guide.mjs';
 
 export const DB03_QUEST_TARGET_REVERSE_SCHEMA='wand.db03.public-quest-target-reverse@1' as const;
 export const DB03_QUEST_TARGET_REVERSE_FILE='quest-target-reverse-1.26.2.json' as const;
-export const DB03_QUEST_TARGET_REVERSE_BYTES=168460 as const;
-export const DB03_QUEST_TARGET_REVERSE_SHA='a118e4ba7ed3f946eaf489f4999cf52df7667e0114bcb3bf3c803b3ee55b628e' as const;
+export const DB03_QUEST_TARGET_REVERSE_BYTES=168501 as const;
+export const DB03_QUEST_TARGET_REVERSE_SHA='967f1bc885a13ba5bdc99c4e965e1288b9227170f888e0ac85d944799cff6d20' as const;
 const SOURCE_INDEX_SHA='5aac453729d05c6de8cbf301b3c9d678c235c96683a739ab87dbc5d5f70e0f69';
 const SOURCE_MISSION_SHA='f13958b52234f4cda92f0dd0bfff50be8a7f6625c8478785e2a077a5c7933d24';
 const SOURCE_PARTS=Object.freeze([
@@ -51,7 +51,8 @@ export interface PublicQuestTargetReverseReader {
   readonly schema:typeof DB03_QUEST_TARGET_REVERSE_SCHEMA;
   readonly coverage:Readonly<{
     knownQuests:733; sourceTargetObjectives:4869; sourceCandidateOccurrences:4897;
-    distinctItemIds:2551; distinctQuestsWithExplicitCandidates:639;
+    distinctItemIds:2551; distinctQuestsWithTargetObjectives:639;
+    distinctQuestsWithExplicitCandidates:627;
     directOccurrences:4641; alternativeOccurrences:256;
     mandatoryRequirementVerified:false;playerProgressVerified:false;
   }>;
@@ -81,7 +82,8 @@ export function verifyPublicQuestTargetReverse(raw:unknown,catalog:unknown):Publ
   const c=raw.counts;
   check(object(c)&&c.knownQuests===733&&c.sourceTargetObjectives===4869&&
     c.sourceCandidateOccurrences===4897&&c.distinctItemIds===2551&&
-    c.distinctQuestsWithExplicitCandidates===639&&c.directOccurrences===4641&&
+    c.distinctQuestsWithTargetObjectives===639&&
+    c.distinctQuestsWithExplicitCandidates===627&&c.directOccurrences===4641&&
     c.alternativeOccurrences===256&&object(raw.items)&&
     Object.keys(raw.items).length===2551,'CENSUS');
   const byItem=new Map<string,readonly QuestTargetItemReference[]>();
@@ -110,11 +112,12 @@ export function verifyPublicQuestTargetReverse(raw:unknown,catalog:unknown):Publ
     byItem.set(itemId,Object.freeze(rows));
   }
   check(total===4897&&direct===4641&&alternative===256&&
-    questSet.size===639&&unique.size===4897,'RECOMPUTED_CENSUS');
+    questSet.size===627&&unique.size===4897,'RECOMPUTED_CENSUS');
   for(const [id,rows] of byQuest)byQuest.set(id,Object.freeze(rows) as QuestTargetItemReference[]);
   const coverage=Object.freeze({knownQuests:733 as const,sourceTargetObjectives:4869 as const,
     sourceCandidateOccurrences:4897 as const,distinctItemIds:2551 as const,
-    distinctQuestsWithExplicitCandidates:639 as const,directOccurrences:4641 as const,
+    distinctQuestsWithTargetObjectives:639 as const,
+    distinctQuestsWithExplicitCandidates:627 as const,directOccurrences:4641 as const,
     alternativeOccurrences:256 as const,mandatoryRequirementVerified:false as const,
     playerProgressVerified:false as const});
   return Object.freeze({schema:DB03_QUEST_TARGET_REVERSE_SCHEMA,coverage,
