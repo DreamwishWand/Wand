@@ -79,12 +79,14 @@ test('dialog with no actionable children keeps focus in its panel',()=>withDom(a
   await Promise.resolve();
 }));
 
-test('history, tutorial and account dialogs share the focus action and close helpers',()=>{
+test('history and account dialogs retain focus; guided tour uses the same action in its own component',()=>{
   const layout=readFileSync(new URL('../src/routes/+layout.svelte',import.meta.url),'utf8');
-  assert.equal((layout.match(/use:dialogFocus=/g)??[]).length,3);
+  const tour=readFileSync(new URL('../src/lib/ui/GuidedTour.svelte',import.meta.url),'utf8');
+  assert.equal((layout.match(/use:dialogFocus=/g)??[]).length,2);
   assert.match(layout,/class="shell-history-panel"[^>]+use:dialogFocus=/);
-  assert.match(layout,/aria-label=\{tutorial.title\}[^>]+use:dialogFocus=/);
   assert.match(layout,/aria-label=\{copy.account\}[^>]+use:dialogFocus=/);
-  assert.match(layout,/class="tutorial-done" on:click=\{closeTutorial\}/);
+  assert.match(layout,/<GuidedTour title=\{tutorial.title\}/);
+  assert.match(layout,/onClose=\{closeTutorial\}/);
+  assert.match(tour,/use:dialogFocus=\{\{fallback:focusReturn\}\}/);
   assert.match(layout,/class="tutorial-done" on:click=\{closeAccount\}/);
 });
