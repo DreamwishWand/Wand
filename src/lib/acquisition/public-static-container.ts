@@ -59,6 +59,7 @@ export interface PinnedStaticContainerContents{
   }>;
   getTemplate(name:string):StaticContainerTemplate|null;
   getTemplateOrigins(name:string):readonly ItemOrigin[];
+  getOrigin(originId:string):readonly ItemOrigin[];
   getItemCandidates(itemId:string|number):readonly ItemOrigin[];
   getItemTemplateNames(itemId:string|number):readonly string[];
 }
@@ -113,6 +114,7 @@ function projection(raw:unknown,url:string):PinnedStaticContainerContents{
   const origins:ItemOrigin[]=[];
   const byName=new Map<string,StaticContainerTemplate>();
   const byTemplate=new Map<string,readonly ItemOrigin[]>();
+  const byOrigin=new Map<string,readonly ItemOrigin[]>();
   const byItem=new Map<string,ItemOrigin[]>();
   const itemNames=new Map<string,Set<string>>();
   let templateCount=0,slotCount=0,blankCount=0;
@@ -158,6 +160,8 @@ function projection(raw:unknown,url:string):PinnedStaticContainerContents{
         source:provenance,availability:'not_live_verified' as const
       });
       templateOrigins.push(origin);
+      ensure(!byOrigin.has(origin.originId),'DUPLICATE_ORIGIN');
+      byOrigin.set(origin.originId,Object.freeze([origin]));
       origins.push(origin);
       const prior=byItem.get(itemId)??[];
       prior.push(origin);byItem.set(itemId,prior);
@@ -199,6 +203,7 @@ function projection(raw:unknown,url:string):PinnedStaticContainerContents{
     }),
     getTemplate(name:string){return byName.get(name)??null;},
     getTemplateOrigins(name:string){return byTemplate.get(name)??NO_ORIGINS;},
+    getOrigin(originId:string){return byOrigin.get(originId)??NO_ORIGINS;},
     getItemCandidates(itemId:string|number){
       return byItem.get(parseId(itemId))??NO_ORIGINS;
     },
