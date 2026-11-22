@@ -1,7 +1,8 @@
 import { openLocalWorldZip } from './local-snapshot.mjs';
 import { getNativeTerrainWindow } from './catalog.mjs';
 import {
-  listWorldPreviewViews, getWorldPreviewAnchorWindow,
+  listWorldPreviewViews, summarizeWorldPreviewSourceCoverage,
+  getWorldPreviewAnchorWindow,
 } from './preview-views.mjs';
 
 // Worker owns the source records; the Svelte page sees only selected read-only
@@ -35,6 +36,7 @@ self.onmessage = async event => {
         originalSourceAuthenticated:false, privateDataUploaded:false,
         manifestFilesVerified:source.manifestFilesVerified,
         sourceScopeVerified:source.sourceScopeVerified,
+        regionCoverage:summarizeWorldPreviewSourceCoverage(catalog),
         layouts: views,
       });
       return;
