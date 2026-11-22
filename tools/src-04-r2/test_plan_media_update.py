@@ -182,6 +182,20 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(p["itemCounts"]["missingFromNewExtractionNotConfirmedRemoved"],1)
         self.assertEqual(p["itemCounts"]["changedOrAdded"],1)
 
+    def test_partial_proof_requires_relink_for_missing_guid(self):
+        make_scan(self.new,"1.26.3",b"updated-catalog",b"bundle0")
+        self.reload()
+        p=self.proof()
+        evidence=json.loads(p.read_text())
+        evidence["complete"]=False
+        evidence["links"]=[]
+        write_json(p,evidence)
+        proofs=updater.read_proofs(p,self.new_scan,self.new_items)
+        report=self.plan(target_game=self.new_game,proofs=proofs)
+        self.assertEqual(report["classification"],{"needs_exact_guid_relink":1})
+        # An empty partial ledger must not accidentally mark unchanged bundles safe.
+        self.assertTrue(report["targetGameRelevantFilesRehashed"])
+
 
 if __name__=="__main__":
     unittest.main()
