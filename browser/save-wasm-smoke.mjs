@@ -585,6 +585,19 @@ try{
   assert.match(await worldPanel.innerText(),/差分Gridの構造上の候補：1 \/ 1件/);
   assert.match(await worldPanel.innerText(),/差分Gridの原本ハッシュ未検証：1件/);
   assert.match(await worldPanel.innerText(),/候補は配置・原本Gridの同一性を証明しません/);
+  // The verified local DB-04 graph annotates saved local ordinals with
+  // source GridData dimensions but never authorizes placements or exposes
+  // original/saved Grid IDs. Full Grid uses exact source path pairs;
+  // DiffGrid is hash-unverified even when only one source candidate exists.
+  const localObjects=await objects.innerText();
+  assert.match(localObjects,/原本Grid参照パス候補/);
+  assert.match(localObjects,/差分Gridの構造候補（ハッシュ未検証）/);
+  assert.match(localObjects,/原本GridData 10 × 10/);
+  assert.match(localObjects,/Tessellation 1/);
+  assert.doesNotMatch(localObjects,/GridData\/Synthetic\/Grid.json/);
+  assert.doesNotMatch(localObjects,/SceneLayouts\/Synthetic\/Grid.json/);
+  assert.match(await worldPanel.innerText(),/配置範囲・衝突判定/);
+
   assert.match(await worldPanel.innerText(),/原本再検証・全配置数・所有権/);
   assert.equal(await worldPanel.getByRole('alert').count(),0);
   await worldPanel.getByLabel('ワールド参照検索').fill('40000001');
