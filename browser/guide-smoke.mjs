@@ -103,6 +103,34 @@ try {
   await direct.locator('.detail-header h2').filter({hasText:'ドリームライトバレーへようこそ'}).waitFor({timeout:20000});
   assert.deepEqual(deepErrors,[],deepErrors.join('\n'));
   await direct.close();
+  // Public Star Path is source-pinned static cache data, not a personal import.
+  const star = await browser.newPage({viewport:{width:390,height:844}});
+  const starErrors = [];
+  star.on('pageerror',e=>starErrors.push(String(e)));
+  await star.goto('http://127.0.0.1:4177/Wand/guide/star-path/',{waitUntil:'domcontentloaded'});
+  await star.getByRole('button',{name:'Seafaring Star Path'}).waitFor({timeout:20000});
+  assert.match(await star.locator('.summary').innerText(),/121 \/ 21/);
+  assert.equal(await star.locator('input[type=file]').count(),0);
+  await star.getByRole('button',{name:'Seafaring Star Path'}).click();
+  assert.match(await star.locator('.summary').innerText(),/25 \/ 18/);
+  await star.getByRole('button',{name:'週間タスク'}).click();
+  assert.equal(await star.locator('.week').count(),6);
+  await star.getByRole('button',{name:'報酬'}).click();
+  assert.equal(await star.locator('.week').count(),4);
+  assert.equal(await star.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+2),true,'Star Path mobile overflow');
+  assert.deepEqual(starErrors,[],starErrors.join('\n'));
+  await star.close();
+  const tampered=await browser.newPage();
+  await tampered.route('**/guide/public/starpath-cache-2026-11-22.json',async route=>{
+    const original=await route.fetch(),bytes=Buffer.from(await original.body());
+    bytes[100]^=1;
+    await route.fulfill({response:original,body:bytes});
+  });
+  await tampered.goto('http://127.0.0.1:4177/Wand/guide/star-path/',{waitUntil:'domcontentloaded'});
+  await tampered.getByRole('alert').waitFor({timeout:20000});
+  assert.match(await tampered.getByRole('alert').innerText(),/fingerprint/);
+  await tampered.close();
+  console.log('Public Star Path: 2 source-pinned seasons, 185 tasks, reward pages, mobile and SHA tamper rejection passed');
   console.log('Public Guide browser: verified static index, lazy details, multi-language labels, target IDs, mobile layout, tamper rejection, quest deep links and history passed');
 } finally {
   await browser?.close();
