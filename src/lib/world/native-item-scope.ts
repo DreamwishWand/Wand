@@ -104,13 +104,16 @@ function checkAudit(v:unknown):asserts v is OriginalScopeAudit{
     v.privateOnly===true&&v.publicationAuthorized===false&&
     goodHash(v.rowsSha256)&&obj(v.sourceSha256)&&obj(v.counts)&&
     obj(v.byWorldTag),'PRIVATE_CURRENT_SOURCE_REQUIRED');
-  check(Object.keys(v.sourceSha256).length===ORIGINAL_FILES.length&&
-    ORIGINAL_FILES.every(p=>goodHash(v.sourceSha256[p])),
+  // Capture checked records in locals so callback closures retain TS narrowing.
+  const sourceSha256=v.sourceSha256;
+  const counts=v.counts;
+  check(obj(sourceSha256)&&Object.keys(sourceSha256).length===ORIGINAL_FILES.length&&
+    ORIGINAL_FILES.every(p=>goodHash(sourceSha256[p])),
     'SOURCE_ORIGINAL_SHA_SET');
   const counters=['items','world_direct','universe_direct',
     'universe_set_candidate','universe_any_evidence'] as const;
-  check(Object.keys(v.counts).length===counters.length&&
-    counters.every(c=>nonnegative(v.counts[c]))&&v.counts.items===13202,
+  check(obj(counts)&&Object.keys(counts).length===counters.length&&
+    counters.every(c=>nonnegative(counts[c]))&&counts.items===13202,
     'AUDIT_COUNTS');
   check(Object.entries(v.byWorldTag).every(([k,count])=>
     WORLD_SET.has(k)&&nonnegative(count)&&count>0),'AUDIT_WORLD_TAGS');
@@ -127,10 +130,11 @@ function checkRow(v:unknown):asserts v is Db04NativeItemScopeRow{
       typeof k==='string'&&NATIVE_NAME.test(k))&&
     sortedUnique(v.setDefinitionIds,goodId),
     'ROW_SOURCE_SHAPE');
-  check((v.universeSetCandidates.length===0)===(v.setDefinitionIds.length===0)&&
-    (v.universeTagsDirect.length===0||
-     v.universeSetCandidates.length===0||
-     v.universeTagsDirect.every(k=>v.universeSetCandidates.includes(k))),
+  const candidates=v.universeSetCandidates;
+  const direct=v.universeTagsDirect;
+  check((candidates.length===0)===(v.setDefinitionIds.length===0)&&
+    (direct.length===0||candidates.length===0||
+     direct.every(k=>candidates.includes(k))),
     'ROW_SET_CANDIDATE_CONFLICT');
 }
 function stableBytes(input:Uint8Array,max:number,label:string):Uint8Array{
