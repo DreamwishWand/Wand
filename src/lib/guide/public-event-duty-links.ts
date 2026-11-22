@@ -17,9 +17,9 @@ const ID=/^[1-9][0-9]{0,15}$/;
 const EVENT=/^[A-Za-z0-9_!-]{1,128}$/;
 const object=(value:unknown):value is Record<string,unknown> =>
   value!==null&&typeof value==='object'&&!Array.isArray(value);
-const check=(condition:unknown,reason:string):asserts condition=>{
+function check(condition:unknown,reason:string):asserts condition{
   if(!condition)throw new TypeError('DB03_EVENT_DUTY_'+reason);
-};
+}
 export interface EventDutySourceLink {
   readonly eventId:string;
   readonly dutyId:string;
