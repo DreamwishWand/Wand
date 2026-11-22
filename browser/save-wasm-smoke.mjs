@@ -557,13 +557,15 @@ try{
   await coordinates.getByRole('button',{name:'一括配置変更に追加'}).click();
   const mixedPanel=objects.getByLabel('一括配置変更',{exact:true});
   await mixedPanel.getByText('2 / 16件').waitFor();
-  // Mixed queue exposes only the coordinate-changing DiffGrid entry;
-  // a rotation-only entry has no invented movement marker.
+  // Preserve the earlier coordinate batch while showing the independent
+  // mixed batch. Rotation-only edits do not create additional ghost markers.
   await pickGrid.selectOption('2');
-  assert.equal(await map.locator('.queued-ghost').count(),1);
+  assert.equal(await map.locator('.queued-ghost').count(),2);
+  assert.equal(await map.locator('.queued-ghost[title*="#3 X 130 Y 14"]').count(),1);
   assert.equal(await map.locator('.queued-ghost[title*="#3 X 34 Y -6"]').count(),1);
   await pickGrid.selectOption('1');
-  assert.equal(await map.locator('.queued-ghost').count(),0);
+  assert.equal(await map.locator('.queued-ghost').count(),1);
+  assert.equal(await map.locator('.queued-ghost[title*="#1 X -80 Y 25"]').count(),1);
   await mixedPanel.getByRole('button',{name:'一括配置変更を検証'}).click();
   await coordinates.getByRole('status').filter({
     hasText:'2件の配置変更をRust/WASMで検証しました'
