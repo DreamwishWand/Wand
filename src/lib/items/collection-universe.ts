@@ -101,13 +101,15 @@ export function validateDb01UniverseManifest(value:unknown):
     value.gameUiVisibilityComplete===false&&
     value.worldAvailabilityVerified===false&&value.dlcOwnershipVerified===false,
     'PRIVATE_SOURCE');
+  const sourceHashes=asObj(value.originalCategorySha256)?
+    value.originalCategorySha256:{} as Record<string,unknown>;
   check(typeof value.sourceSqliteSha256==='string'&&SHA.test(value.sourceSqliteSha256)&&
     typeof value.sourceItemsSha256==='string'&&SHA.test(value.sourceItemsSha256)&&
     typeof value.sourceIl2cppDumpSha256==='string'&&SHA.test(value.sourceIl2cppDumpSha256)&&
     asObj(value.originalCategorySha256)&&
-    Object.keys(value.originalCategorySha256).length===keys.length&&
-    keys.every(k=>typeof value.originalCategorySha256[k]==='string'&&
-      SHA.test(value.originalCategorySha256[k] as string)),
+    Object.keys(sourceHashes).length===keys.length&&
+    keys.every(k=>typeof sourceHashes[k]==='string'&&
+      SHA.test(sourceHashes[k] as string)),
     'SOURCE_SHA');
   check([
     value.sourceDefinitionCount,value.collectionSetCount,
@@ -139,7 +141,8 @@ export function validateDb01UniverseManifest(value:unknown):
       integer(file.count),'FILE_META');
     if(path!=='selectors.json')count+=Number(file.count);
   }
-  check(value.files['selectors.json'].count===value.resolvedSourcePredicateSelectors&&
+  const checkedFiles=value.files as Record<string,{count:number}>;
+  check(checkedFiles['selectors.json'].count===value.resolvedSourcePredicateSelectors&&
     count===value.candidateItemIds,'FILE_LEDGER');
 }
 function checkMatch(value:unknown,manifest:Db01UniverseManifest){
