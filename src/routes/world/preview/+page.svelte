@@ -299,7 +299,7 @@
         <p class="note">
           点と数字は原本に記録された初期配置のX/Yアンカー件数です。オブジェクトが占有する範囲ではありません。
           地形：{viewport.terrainStatus === 'source_corroborated_grid_local_preview'
-            ? 'Steam 1.26.1形式の原本グリッドローカル値' : '未検証・表示不可'}。
+            ? `Steam v${version} 原本グリッドローカル値（配置可否は未検証）` : '未検証・表示不可'}。
         </p>
         <div class="map-scroll">
           <div class="grid-view" style={'grid-template-columns: repeat(' + width + ', 24px)'}>
