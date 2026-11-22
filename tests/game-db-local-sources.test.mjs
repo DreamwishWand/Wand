@@ -162,7 +162,7 @@ test('DB-01-only uses current-native source categories and original Collection c
   assert.throws(()=>joinLocalGameSources(db,{
     nativeScope:fakeDb04(db),nativeScopePins:{...PINS,rowsSha256:'f'.repeat(64)}
   }),/DB04_INDEPENDENT_PRIVATE_SOURCE_PINS_REQUIRED/);
-  assert.throws(()=>local.getItems(Array(4097).fill(ITEM)),/INVALID_BATCH/);
+  await assert.rejects(local.getItems(Array(4097).fill(ITEM)),/INVALID_BATCH/);
 });
 
 test('identity and original World Tag disagreements fail closed without rewriting DB-00 current facts',async()=>{
