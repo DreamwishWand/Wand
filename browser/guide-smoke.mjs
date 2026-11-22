@@ -463,6 +463,35 @@ try {
   await weeklyLink.locator('#starpath-HauntingElegance2026-Week02Task03.permalink-focused').waitFor();
   await weeklyLink.close();
 
+  // DB-03 reward slot links are stable across page reload and browser history.
+  // The selection is a static source slot, not a player's owned reward.
+  const rewardLink=await browser.newPage();
+  await rewardLink.goto('http://127.0.0.1:4177/Wand/guide/star-path/',{waitUntil:'domcontentloaded'});
+  await rewardLink.getByRole('button',{name:'報酬'}).click();
+  const firstRewardLink=rewardLink.locator('.reward-entry .duty-permalink').first();
+  await firstRewardLink.waitFor({timeout:20000});
+  const exactRewardHref=await firstRewardLink.getAttribute('href');
+  assert.match(exactRewardHref,/^\/Wand\/guide\/star-path\/\?season=[^&]+&reward=[^&]+%2F[^&]+%2F\d+$/);
+  await firstRewardLink.click();
+  await rewardLink.waitForFunction(()=>location.search.includes('reward='));
+  await rewardLink.locator('.reward-entry.permalink-focused').waitFor({timeout:20000});
+  assert.equal(await rewardLink.locator('.reward-entry.permalink-focused').count(),1,
+    'a specific reward slot, not every item with the same Item ID, is highlighted');
+  assert.equal(await rewardLink.locator('.tabs button.active').innerText(),'報酬');
+  assert.equal(await rewardLink.locator('.reward-entry.permalink-focused .duty-permalink').getAttribute('href'),
+    exactRewardHref);
+  await rewardLink.goBack();
+  await rewardLink.waitForFunction(()=>!location.search.includes('reward='));
+  assert.equal(await rewardLink.locator('.reward-entry.permalink-focused').count(),0);
+  await rewardLink.goForward();
+  await rewardLink.locator('.reward-entry.permalink-focused').waitFor({timeout:20000});
+  await rewardLink.goto('http://127.0.0.1:4177'+exactRewardHref,{waitUntil:'domcontentloaded'});
+  await rewardLink.locator('.reward-entry.permalink-focused').waitFor({timeout:20000});
+  await rewardLink.getByRole('button',{name:'通常タスク'}).click();
+  assert.equal(new URL(rewardLink.url()).search,'','tab change clears reward deep link');
+  assert.equal(await rewardLink.locator('.permalink-focused').count(),0);
+  await rewardLink.close();
+
   const unknownDuty=await browser.newPage();
   await unknownDuty.goto('http://127.0.0.1:4177/Wand/guide/star-path/?season=Seafaring2026&task=Task999',
     {waitUntil:'domcontentloaded'});
