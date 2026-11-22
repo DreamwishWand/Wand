@@ -137,6 +137,26 @@
     worldCoordinatesVerified:false;playerPlacementVerified:false;
     nativeDefaultObjectEquivalenceVerified:false;saveWritingAuthorized:false;
   };
+  type Db04ObjectSourceRow={
+    localOrdinal:number;
+    sourceStatus:
+      |'saved_grid_source_unavailable'
+      |'not_in_partial_source'
+      |'ambiguous_source_candidates'
+      |'diff_structural_candidate_hash_unverified'
+      |'full_exact_source_path_candidate';
+    candidateCount:number;
+    nativeSizeX:number|null;nativeSizeY:number|null;
+    tessellationFactor:number|null;
+  };
+  type Db04ObjectSourceReceipt={
+    contract:'wand.db05.db04-grid-object-source-context@1';
+    rows:Db04ObjectSourceRow[];
+    sourceCoverageComplete:false;sourceArchiveRechecked:false;
+    savedGridIdentityVerified:false;worldCoordinateTransformVerified:false;
+    placementLegalityVerified:false;editPermissionAuthorized:false;
+  };
+  let db04ObjectSources:Db04ObjectSourceRow[]=[];
   let db04Match:Db04GridMatch|null=null;
   let db04State:'idle'|'reading'|'verified'|'error'='idle';
   type Db03MissionSummary={
@@ -370,7 +390,7 @@
     coordinateOrientationValue='';
     coordinateQueue=[];mixedQueue=[];
     orientationSelection=null;orientationValue='GridOrientation_Up';
-    db04Match=null;db04State='idle';
+    db04Match=null;db04ObjectSources=[];db04State='idle';
     db03Summary=null;db03State='idle';
     dbMap=new Map();dbStatus='idle';
   }
@@ -481,7 +501,7 @@
 
   async function matchLocalDb04(){
     cancel();result=null;
-    db04State='idle';db04Match=null;
+    db04State='idle';db04Match=null;db04ObjectSources=[];
     const save=savedSlotsFile;
     const source=db04Input?.files?.[0];
     if(!save||fileInput?.files?.[0]!==save ||
@@ -511,17 +531,30 @@
       const finish=(response:unknown)=>{
         if(request!==revision||active!==own)return;
         own.terminate();active=null;processing=false;
-        const r=response as {kind?:string;receipt?:Db04GridMatch};
+        const r=response as {
+          kind?:string;receipt?:Db04GridMatch;
+          sources?:Db04ObjectSourceReceipt
+        };
         if(r?.kind!=='db04'||r.receipt?.contract!==
            'wand.db05.db04-grid-path-match@2'||
            r.receipt.sourceCoverageComplete!==false||
            r.receipt.sourceOriginalArchiveRechecked!==false||
            r.receipt.saveGridNumericIdUsedAsNativeKey!==false||
            r.receipt.diffIdentityVerified!==false||
-           r.receipt.saveWritingAuthorized!==false){
+           r.receipt.saveWritingAuthorized!==false||
+           r.sources?.contract!==
+             'wand.db05.db04-grid-object-source-context@1'||
+           r.sources.savedGridIdentityVerified!==false||
+           r.sources.worldCoordinateTransformVerified!==false||
+           r.sources.placementLegalityVerified!==false||
+           r.sources.editPermissionAuthorized!==false||
+           !Array.isArray(r.sources.rows)){
+
           db04State='error';return;
         }
-        db04Match=r.receipt;db04State='verified';
+        db04Match=r.receipt;
+        db04ObjectSources=r.sources.rows;
+        db04State='verified';
       };
       worker.onmessage=event=>finish(event.data);
       worker.onerror=event=>{event.preventDefault();finish({kind:'error'});};
@@ -1390,6 +1423,30 @@
                     <strong>{dbMap.get(object.itemId)?.name??object.itemId}</strong>
                     <small>#{object.localOrdinal} · {
                       object.recordKind==='full'?'通常Grid':'差分Grid'}</small>
+                    {#if db04State==='verified'&&
+                      db04ObjectSources[object.localOrdinal-1]}
+                      {@const ctx=db04ObjectSources[object.localOrdinal-1]}
+                      <small class="slot-note">
+                        {#if ctx.sourceStatus==='full_exact_source_path_candidate'}
+                          原本Grid参照パス候補
+                        {:else if ctx.sourceStatus===
+                          'diff_structural_candidate_hash_unverified'}
+                          差分Gridの構造候補（ハッシュ未検証）
+                        {:else if ctx.sourceStatus==='ambiguous_source_candidates'}
+                          原本Grid候補が複数：{ctx.candidateCount}件
+                        {:else if ctx.sourceStatus==='not_in_partial_source'}
+                          現在の原本DBに該当候補なし
+                        {:else}
+                          原本Grid参照を確認できません
+                        {/if}
+                        {#if ctx.nativeSizeX!==null&&ctx.nativeSizeY!==null}
+                          · 原本GridData {ctx.nativeSizeX} × {ctx.nativeSizeY}
+                          {#if ctx.tessellationFactor!==null}
+                            · Tessellation {ctx.tessellationFactor}
+                          {/if}
+                        {/if}
+                      </small>
+                    {/if}
                   </span>
                   <span class="slot-amount">
                     {#if object.coordinatesObserved}
@@ -1604,7 +1661,9 @@
         <label>DB-04参照データ（ローカル・任意）
           <input bind:this={db04Input} type="file" accept=".json"
             aria-label="DB-04参照データを選択" disabled={processing}
-            on:change={()=>{cancel();db04State='idle';db04Match=null;}} />
+            on:change={()=>{
+              cancel();db04State='idle';db04Match=null;db04ObjectSources=[];
+            }} />
         </label>
         <button type="button" on:click={matchLocalDb04}
           disabled={processing||!savedSlotsFile}>
@@ -1641,6 +1700,9 @@
               db04Match.hashUnverifiedDiffGrids}件。
               候補は配置・原本Gridの同一性を証明しません。</p>
           {/if}
+          <p class="slot-note">配置オブジェクトの原本GridData寸法は、
+            原本の参照候補に付属する情報です。セーブ上の配置範囲・衝突判定・
+            編集可否は検証していません。</p>
           <p class="slot-note">DB-04索引との参照パス比較です。
             原本再検証・全配置数・所有権・編集可否の証明ではありません。</p>
         </div>
