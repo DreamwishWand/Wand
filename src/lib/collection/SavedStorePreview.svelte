@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, createEventDispatcher } from 'svelte';
   import ItemArtwork from './ItemArtwork.svelte';
+  import {autoAppend} from '$lib/ui/auto-append';
   import { attachHistoricalStoreLabels } from './saved-store-preview.mjs';
   import { attachDb01PrivateNames } from './private-db01-names-view.mjs';
   import { sanitizeSavedCollectionPresence } from './saved-collection-presence.mjs';
@@ -402,7 +403,7 @@
         {/each}
       </div>
       {#if shown.length > limit}
-        <button type="button" class="store-more" on:click={()=>limit+=48}>さらに表示（残り {shown.length-limit}件）</button>
+        <div class="auto-sentinel" use:autoAppend={{hasMore:()=>shown.length>limit,load:()=>limit+=48}} role="status" aria-label="スクロールで店舗商品を追加表示"></div>
       {:else if !shown.length}
         <p>検索条件に一致する商品参照はありません。</p>
       {/if}
@@ -500,9 +501,7 @@
             {/each}
           </div>
           {#if collectionRows.length>collectionLimit}
-            <button type="button" class="store-more" on:click={()=>collectionLimit+=48}>
-              さらに表示（残り {collectionRows.length-collectionLimit}件）
-            </button>
+            <div class="auto-sentinel" use:autoAppend={{hasMore:()=>collectionRows.length>collectionLimit,load:()=>collectionLimit+=48}} role="status" aria-label="スクロールで保存ID参照を追加表示"></div>
           {:else if !collectionRows.length}
             <p>該当するID参照はありません。</p>
           {/if}
@@ -556,9 +555,7 @@
               {/each}
             </div>
             {#if db04Rows.length>gridLimit}
-              <button type="button" class="store-more" on:click={()=>gridLimit+=48}>
-                照合結果をさらに表示（残り {db04Rows.length-gridLimit}件）
-              </button>
+              <div class="auto-sentinel" use:autoAppend={{hasMore:()=>db04Rows.length>gridLimit,load:()=>gridLimit+=48}} role="status" aria-label="スクロールでDB-04照合結果を追加表示"></div>
             {/if}
           {/if}
         {/if}
@@ -595,9 +592,7 @@
               {/each}
             </div>
             {#if gridRows.length>gridLimit}
-              <button type="button" class="store-more" on:click={()=>gridLimit+=48}>
-                さらに表示（残り {gridRows.length-gridLimit}件）
-              </button>
+              <div class="auto-sentinel" use:autoAppend={{hasMore:()=>gridRows.length>gridLimit,load:()=>gridLimit+=48}} role="status" aria-label="スクロールで家具参照を追加表示"></div>
             {:else if !gridRows.length}
               <p>一致する家具の保存参照はありません。</p>
             {/if}
@@ -615,7 +610,8 @@
   .store-head p,.store-import p,.store-warning { font-size:.83rem; line-height:1.65; opacity:.85; max-width:78ch; margin:.35rem 0 .65rem; }
   .store-eyebrow { font-size:.68rem; letter-spacing:.12em; opacity:.7; }
   .store-clear,.store-more { border:1px solid #947aa7; border-radius:9px; padding:.55rem .85rem; background:transparent; color:inherit; cursor:pointer; }
-  .store-import { display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-top:12px; }
+  .store-import { display:none; } /* Save chooser is in the global toolbar. */
+  .auto-sentinel {min-height:22px;margin:14px 0;}
   .store-file { display:inline-flex; flex-direction:column; gap:6px; font-size:.8rem; font-weight:600; }
   .store-file input { font-size:.8rem; max-width:240px; }
   .store-error { color:#b9515a; }
