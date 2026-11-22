@@ -725,6 +725,7 @@ mod browser_amount_preview {
         let mut observed_full=0usize;
         let mut observed_diff=0usize;
         let mut invalid=0usize;
+        let mut removed_markers=0usize;
         let mut sampled=false;
         let mut inspected=0usize;
         let mut by_item=BTreeMap::<u64,(u32,u32)>::new();
@@ -798,8 +799,10 @@ mod browser_amount_preview {
                         grid.get("ID").is_some_and(|v|v.as_u64()!=Some(grid_id)){
                         invalid+=1;continue;
                     }
+                    // A valid DiffGrid can contain only removals, with no
+                    // ModifiedObjects. Missing is not a broken Save.
                     let Some(objects)=grid.get("ModifiedObjects")
-                        .and_then(serde_json::Value::as_object) else {
+                        .map_or(Some(&empty),serde_json::Value::as_object) else {
                         invalid+=1;continue;
                     };
                     let mut removed=HashSet::new();
@@ -811,6 +814,10 @@ mod browser_amount_preview {
                         removed.extend(list.iter().filter_map(|v|v.as_u64())
                             .map(|v|v.to_string()));
                     }
+                    if removed_markers+removed.len()>MAX_GRID_OBJECT_SCAN{
+                        sampled=true;break;
+                    }
+                    removed_markers+=removed.len();
                     observed_diff+=1;
                     scan_objects(objects,true,&removed,
                         &mut by_item,&mut inspected,&mut sampled,&mut invalid);
@@ -827,11 +834,12 @@ mod browser_amount_preview {
                 "diffModifiedReferences":diff
             })).collect::<Vec<_>>();
         serde_json::to_string(&serde_json::json!({
-            "contract":"wand.db05.saved-grid-item-refs@1",
+            "contract":"wand.db05.saved-grid-item-refs@2",
             "status":status,
             "observedFullGrids":observed_full,
             "observedDiffGrids":observed_diff,
             "invalidRecords":invalid,
+            "removedObjectMarkers":removed_markers,
             "sampled":sampled,
             "entries":rows,
             "effectivePlacedCountVerified":false,
@@ -1454,6 +1462,8 @@ mod tests{
         assert_eq!(json["entries"][1]["itemId"],"40000001");
         assert_eq!(json["entries"][1]["fullGridReferences"],1);
         assert_eq!(json["entries"][1]["diffModifiedReferences"],1);
+        assert_eq!(json["contract"],"wand.db05.saved-grid-item-refs@2");
+        assert_eq!(json["removedObjectMarkers"],1);
         assert!(!report.contains("secret") && !report.contains("private"));
         assert!(!report.contains("\"X\"") && !report.contains("13"));
         let missing=br#"{"GameInfo":{"Version":643},"Player":{},"World":{}}"#;
@@ -1462,6 +1472,21 @@ mod tests{
             &browser_amount_preview::saved_grid_references_json(missing).unwrap()
           ).unwrap()["status"],"not_observed"
         );
+        // A player-modified Save can have a deletion-only DiffGrid. It is
+        // not a reason to mark the field shape broken or assert an Item ID.
+        let removal_only=br#"{"GameInfo":{"Version":643},"Player":{},
+          "World":{"GridCollection":{"DiffGrids":{"17":{
+            "RemovedObjects":[1,1,2],
+            "OtherSaveField":"preserve-in-original"
+          }}}}}"#;
+        let report=browser_amount_preview::saved_grid_references_json(
+            removal_only).unwrap();
+        let v:serde_json::Value=serde_json::from_str(&report).unwrap();
+        assert_eq!(v["status"],"observed_no_item_refs");
+        assert_eq!(v["observedDiffGrids"],1);
+        assert_eq!(v["removedObjectMarkers"],2);
+        assert_eq!(v["entries"].as_array().unwrap().len(),0);
+        assert!(!report.contains("preserve-in-original"));
         let malformed=br#"{"GameInfo":{"Version":643},"Player":{},
           "World":{"GridCollection":{"Grids":{"3":{"Objects":{
             "2":{"ItemID":40000001}}}},"DiffGrids":{"5":{
