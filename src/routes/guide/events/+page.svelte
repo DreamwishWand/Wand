@@ -108,9 +108,9 @@
   function clearItemFocus(){
     highlightItem='';
     const url=new URL(window.location.href);
-    if(url.searchParams.has('item')||url.searchParams.has('scene')){
-      url.searchParams.delete('item');
-      url.searchParams.delete('scene');
+    if(['item','scene','quest','duty'].some(key=>url.searchParams.has(key))){
+      for(const key of ['item','scene','quest','duty'])
+        url.searchParams.delete(key);
       window.history.replaceState(window.history.state,'',url);
     }
   }
@@ -129,7 +129,22 @@
       const links=await loadPublicEventQuestLinks(eventSource,catalog,
         `${root}${DB03_EVENT_QUEST_FILE}`);
       const names=createEventQuestNameSearch(eventSource,catalog,links);
-      if(source===eventSource){questCatalogue=catalog;eventQuestLinks=links;questNameSearch=names;}
+      if(source===eventSource){
+        questCatalogue=catalog;eventQuestLinks=links;questNameSearch=names;
+        const params=new URLSearchParams(window.location.search);
+        const requested=params.getAll('quest');
+        // Never treat a URL-provided Quest ID as a relation without the
+        // independently pinned Quest catalogue and original Event graph.
+        if(requested.length===1&&!params.has('item')&&!params.has('event')&&
+          !params.has('duty')&&!params.has('scene')&&!query&&category==='all'){
+          const matches=links.getQuestEvents(requested[0]);
+          if(matches.length){
+            category='mini_event';
+            query=requested[0];
+            selectedKey=matches[0].eventId;
+          }
+        }
+      }
     }catch{
       // Optional cross-navigation: keep source-authenticated rewards available.
     }
@@ -138,7 +153,21 @@
     try{
       const links=await loadPublicEventDutyLinks(eventSource,
         `${root}${DB03_EVENT_DUTY_FILE}`);
-      if(source===eventSource)eventDutyLinks=links;
+      if(source===eventSource){
+        eventDutyLinks=links;
+        const params=new URLSearchParams(window.location.search);
+        const requested=params.getAll('duty');
+        // Native Duty IDs are search keys, not unlocked/completed claims.
+        if(requested.length===1&&!params.has('item')&&!params.has('event')&&
+          !params.has('quest')&&!params.has('scene')&&!query&&category==='all'){
+          const matches=links.getDutyEvents(requested[0]);
+          if(matches.length){
+            category='mini_event';
+            query=requested[0];
+            selectedKey=matches[0].eventId;
+          }
+        }
+      }
     }catch{
       // Event and reward browsing is independent of optional duty-ID search.
     }
@@ -153,7 +182,8 @@
       const incoming=params.getAll('scene');
       // Only source-known Scene IDs may drive a deep link. Never override
       // a user's search entered while the optional source was loading.
-      if(incoming.length===1&&!params.has('item')&&!params.has('event')&&!query){
+      if(incoming.length===1&&!params.has('item')&&!params.has('event')&&
+        !params.has('quest')&&!params.has('duty')&&!query&&category==='all'){
         const matches=links.getSceneFestivals(incoming[0]);
         if(matches.length){
           category='floating_festival';
