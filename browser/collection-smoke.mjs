@@ -344,7 +344,9 @@ try{
       }}},
       DiffGrids:{'6':{ID:6,
         GridDefaultLayoutPath:TEST_DB04_LAYOUT,
-        GridDataPath:TEST_DB04_GRID,
+        GridDefaultLayoutType:'Meta.GridCollection, Meta',
+        DefaultLayoutGridID:0,DefaultGridHashCode:-816650372,
+        DefaultGridDataHashCode:-410688507,
         RemovedObjects:[5],ModifiedObjects:{
         '5':{ID:5,ItemID:40003256},
         '7':{ID:7,ItemID:40006110}
