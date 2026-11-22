@@ -13,7 +13,7 @@ test('original task description is the main title for an unresolved Star Path du
   assert.equal(duty.description,'Catch any fish.');
   const en=starpathTaskDisplay('Seafaring2026',duty,'en','Catch any fish.');
   assert.deepEqual(en,{headline:'Catch any fish.',
-    note:'ゲーム内表記 · 詳細な操作手順は未検証',reviewed:false});
+    note:null,reviewed:false});
   const fr=starpathTaskDisplay('Seafaring2026',duty,'fr','Attrapez des poissons.');
   assert.equal(fr.headline,'Attrapez des poissons.');
   assert.equal(fr.reviewed,false);
