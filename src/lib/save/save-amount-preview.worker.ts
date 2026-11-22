@@ -27,12 +27,13 @@ export interface SaveGridItemReference {
   readonly diffModifiedReferences:number;
 }
 export interface SaveGridReferenceReport {
-  readonly contract:'wand.db05.saved-grid-item-refs@1';
+  readonly contract:'wand.db05.saved-grid-item-refs@2';
   readonly status:'not_observed'|'incompatible_structure'|
     'partial_inconclusive'|'observed_no_item_refs'|'saved_item_refs';
   readonly observedFullGrids:number;
   readonly observedDiffGrids:number;
   readonly invalidRecords:number;
+  readonly removedObjectMarkers:number;
   readonly sampled:boolean;
   readonly entries:readonly SaveGridItemReference[];
   readonly effectivePlacedCountVerified:false;
@@ -45,15 +46,17 @@ const nonnegative=(v:unknown,max:number):v is number=>
 function validateGridReport(source:unknown):SaveGridReferenceReport {
   if(!object(source)||!exact(source,[
     'contract','status','observedFullGrids','observedDiffGrids',
-    'invalidRecords','sampled','entries','effectivePlacedCountVerified',
+    'invalidRecords','removedObjectMarkers','sampled','entries',
+    'effectivePlacedCountVerified',
     'playerPlacementVerified','worldSourceMatched','saveWritingAuthorized'
-  ])||source.contract!=='wand.db05.saved-grid-item-refs@1'||
+  ])||source.contract!=='wand.db05.saved-grid-item-refs@2'||
     !['not_observed','incompatible_structure','partial_inconclusive',
       'observed_no_item_refs','saved_item_refs'].includes(String(source.status))||
     !nonnegative(source.observedFullGrids,2048)||
     !nonnegative(source.observedDiffGrids,2048)||
     source.observedFullGrids+source.observedDiffGrids>2048||
     !nonnegative(source.invalidRecords,102048)||
+    !nonnegative(source.removedObjectMarkers,100000)||
     typeof source.sampled!=='boolean'||!Array.isArray(source.entries)||
     source.entries.length>20000||
     source.effectivePlacedCountVerified!==false||
@@ -89,11 +92,12 @@ function validateGridReport(source:unknown):SaveGridReferenceReport {
         source.observedDiffGrids!==0)))
       throw new TypeError('DB05_GRID_STATUS_INVALID');
   return {
-    contract:'wand.db05.saved-grid-item-refs@1',
+    contract:'wand.db05.saved-grid-item-refs@2',
     status:source.status as SaveGridReferenceReport['status'],
     observedFullGrids:source.observedFullGrids,
     observedDiffGrids:source.observedDiffGrids,
     invalidRecords:source.invalidRecords,
+    removedObjectMarkers:source.removedObjectMarkers,
     sampled:source.sampled,entries,
     effectivePlacedCountVerified:false,playerPlacementVerified:false,
     worldSourceMatched:false,saveWritingAuthorized:false
