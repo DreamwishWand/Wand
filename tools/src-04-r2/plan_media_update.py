@@ -173,13 +173,14 @@ def read_proofs(path, target_scan, target_items):
     require(doc.get("schema") == PROOF_SCHEMA and
             doc.get("privateOnly") is True and
             doc.get("publicationAuthorized") is False and
-            doc.get("complete") is True and
+            type(doc.get("complete")) is bool and
             doc.get("gameVersion") == target_scan["version"] and
             doc.get("sourceScanSha256") == target_scan["sha256"] and
             doc.get("sourceItemsSha256") == target_items["sha256"],
             "PROOF_SOURCE_MISMATCH")
     records = doc.get("links")
-    require(isinstance(records,list) and len(records) == len(target_items["guids"]),
+    require(isinstance(records,list) and len(records) <= len(target_items["guids"]) and
+            (not doc["complete"] or len(records) == len(target_items["guids"])),
             "PROOF_COVERAGE")
     links = {}
     for row in records:
@@ -200,7 +201,9 @@ def read_proofs(path, target_scan, target_items):
                 rel.endswith(".bundle"), "PROOF_INVALID")
         links[guid] = {"bundlePath":rel,"sourceBundleSha256":sha,
                         "unityAssetId":identity}
-    require(set(links) == set(target_items["guids"]), "PROOF_GUID_MISMATCH")
+    require(set(links).issubset(target_items["guids"]) and
+            (not doc["complete"] or set(links) == set(target_items["guids"])),
+            "PROOF_GUID_MISMATCH")
     return {"sha256":digest(raw), "links":links}
 
 
@@ -254,9 +257,10 @@ def plan(base_scan, base_items, base_overlay, target_scan, target_items,
     verified = set(next_cat)
     if proofs is not None:
         verified.update(x["bundlePath"] for x in proofs["links"].values())
-    else:
-        verified.update(e["bundlePath"] for guid,e in base_by_guid.items()
-                        if guid in next_paths and e["bundlePath"] in target_scan["files"])
+    # Also verify every unchanged baseline bundle. A partial proof ledger must not
+    # accidentally allow unverified unproved GUIDs to be reused.
+    verified.update(e["bundlePath"] for guid,e in base_by_guid.items()
+                    if guid in next_paths and e["bundlePath"] in target_scan["files"])
     target_hashes_verified=verify_target_files(target_scan,target_game,verified)
     delta = []
     counts = Counter()
