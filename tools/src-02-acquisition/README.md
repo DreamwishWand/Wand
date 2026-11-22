@@ -63,6 +63,24 @@ py -3 -m unittest discover -s tools/src-02-acquisition -p "test_*.py" -v
 node --test tests/acquisition*.test.mjs
 ```
 
+## Original FormulaDynamicPriceDatabase cached price source (private only)
+
+`private-dynamic-price-cache.mjs` authenticates the exact Steam v1.26.2
+`protoDb.bin` at full-file, dynamic-definition, and nested-cache SHA-256
+levels and exposes **source-only** per-Item-ID cached-price row presence.
+The verified cache has **8,549** rows: 8,068 purchase-only and 481
+sell-only (7 with serialized amounts; 474 without). **None** of the 371
+distinct fixed cooking ingredients has a matching cached purchase/sell
+row; in particular, these cached rows do not resolve the 160 ingredients
+without observed static soft-currency sell-price definitions.
+The `loadPrivateMealPricingView` interface uses this evidence only when
+the exact owner-private original `protoDbBytes` are supplied, and remains
+explicitly unverified when absent. A cached row is NOT a proven runtime
+offer, calculated sell value, or available price; missing cache rows are
+NOT zero/unsellable. See
+[MEAL-STATE-SELL-PRICE.md](MEAL-STATE-SELL-PRICE.md). The same private
+three-source cooking smoke validates all source counts and overlap.
+
 ## Per-instance ingredient static sell-source coverage
 
 The owner-private SHA-verified r5 cooking recipes have **371 distinct fixed
