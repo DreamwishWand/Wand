@@ -1,8 +1,4 @@
-/**
- * Browser-Worker-only read-only DDV save diagnostics. Only anonymous
- * DB-05 counts and fixed public labels cross the Worker boundary.
- * Reuse the existing Collection P1G read Codec; no Writer or re-encoding.
- */
+/** Worker-local anonymous save diagnostics. No decrypted profile leaves. */
 import { decodeP1gPackagedProfile } from '../collection/private-p1g-codec.js';
 import { parseSafeJson } from '../collection/safe-profile-json.mjs';
 import { makeSaveDiagnosticView } from './diagnostic-view.mjs';
