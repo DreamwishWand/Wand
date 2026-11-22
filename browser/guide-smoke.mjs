@@ -207,6 +207,8 @@ try {
   await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('en');
   assert.match(await star.locator('.entries li').first().innerText(),/Uproot Night Thorns/);
   await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('ja');
+  await star.getByRole('textbox',{name:'通常タスクを検索'}).fill('Task17');
+  assert.match(await star.locator('.entries li').first().innerText(),/ドナルドダックを同行者/);
   await star.getByRole('textbox',{name:'通常タスクを検索'}).fill('闇のトゲ');
   assert.match(await star.locator('.entries li').first().innerText(),/闇のトゲ/);
   await star.getByRole('textbox',{name:'通常タスクを検索'}).fill('');
@@ -217,6 +219,9 @@ try {
   await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('fr');
   assert.match(await star.locator('.entries li').first().innerText(),/Attrape des poissons/);
   await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('ja');
+  await star.getByRole('textbox',{name:'通常タスクを検索'}).fill('Task19');
+  assert.match(await star.locator('.entries li').first().innerText(),/ピーター・パン/);
+  await star.getByRole('textbox',{name:'通常タスクを検索'}).fill('');
   await star.getByRole('button',{name:'週間タスク'}).click();
   assert.equal(await star.locator('.week').count(),6);
   assert.match(await star.locator('.week').first().innerText(),/魚を20匹釣る/);
@@ -260,6 +265,14 @@ try {
   assert.deepEqual(inactiveMediaRequests,[],'inactive media release must not make requests');
   assert.deepEqual(starErrors,[],starErrors.join('\n'));
   await star.close();
+  // The archived season cannot remain actionable after its task deadline.
+  const expired=await browser.newPage();
+  await expired.addInitScript(()=>{Date.now=()=>Date.parse('2026-12-10T00:00:00Z');});
+  await expired.goto('http://127.0.0.1:4177/Wand/guide/star-path/',{waitUntil:'domcontentloaded'});
+  await expired.getByRole('status').filter({hasText:'タスク期間内と確認できるスターパスはありません'}).waitFor({timeout:20000});
+  assert.equal(await expired.getByRole('button',{name:'Seafaring Star Path'}).count(),0);
+  assert.equal(await expired.locator('.entries li').count(),0,'ended source cache is not an active task guide');
+  await expired.close();
   const tampered=await browser.newPage();
   await tampered.route('**/guide/public/starpath-cache-2026-11-22.json',async route=>{
     const original=await route.fetch(),bytes=Buffer.from(await original.body());
