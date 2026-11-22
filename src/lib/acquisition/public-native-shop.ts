@@ -194,7 +194,8 @@ function readProjection(raw:unknown,url:string):PinnedPublicNativeShopIndex{
       const links=byItem.get(origin.itemId)??[];
       links.push(origin);byItem.set(origin.itemId,links);
     }
-    byOffer.set(offerId,Object.freeze(priced));
+    byOffer.set(offerId,priced);
+    Object.freeze(priced);
     offers.push(offer);offerMap.set(offerId,offer);
     campaigns.push(Object.freeze({
       campaignId:'native-shop:Shop20261118:'+offerId,
