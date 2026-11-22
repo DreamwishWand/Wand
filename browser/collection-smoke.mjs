@@ -778,6 +778,43 @@ try{
   await page.evaluate(async()=>{await window.__releaseStaleSave();await Promise.resolve();});
   await waitForLocalState(page,{item:'40005160',status:'missing'});
   assert.equal(await page.getByRole('button',{name:'セーブファイルを読み込む'}).count(),1);
+  // Help is opt-in and follows actual service controls instead of opening
+  // the former all-at-once modal. Movement and focus stay in this browser.
+  assert.equal(await page.locator('.wand-tour-layer').count(),0);
+  await page.getByRole('button',{name:'このページのチュートリアル'}).click();
+  await page.locator('.wand-tour-spotlight').waitFor();
+  assert.equal(await page.locator('.tutorial-steps').count(),0);
+  const firstSpot=await page.locator('.wand-tour-spotlight').boundingBox();
+  const searchSpot=await page.locator('.collection-workspace .search-box').boundingBox();
+  assert.ok(firstSpot&&searchSpot);
+  assert.ok(Math.abs(firstSpot.y-searchSpot.y)<18,'first Collection step highlights its search control');
+  await page.locator('.wand-tour-primary').click();
+  const secondSpot=await page.locator('.wand-tour-spotlight').boundingBox();
+  assert.ok(secondSpot&&Math.abs(secondSpot.y-firstSpot.y)>10,'spotlight moves to item controls');
+  await page.locator('.wand-tour-close').click();
+  await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-label')==='このページのチュートリアル');
+  assert.equal(await page.locator('.wand-tour-layer').count(),0);
+
+  // Compact More is the keyboard focus return target on phones.
+  await page.setViewportSize({width:360,height:740});
+  await page.locator('.shell-more-root>.header-icon-button').click();
+  await page.locator('.shell-more-menu').getByRole('button',{name:'ヘルプ'}).click();
+  await page.locator('.wand-tour-spotlight').waitFor();
+  await page.locator('.wand-tour-close').click();
+  await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-label')==='その他の操作');
+  await page.setViewportSize({width:1280,height:800});
+
+  await page.goto('http://127.0.0.1:4173/Wand/guide/');
+  await page.locator('.guide-hub .guide-sections').waitFor();
+  assert.equal(await page.locator('.wand-tour-layer').count(),0,'tour must not auto-start on navigation');
+  await page.getByRole('button',{name:'このページのチュートリアル'}).click();
+  await page.locator('.wand-tour-spotlight').waitFor();
+  assert.match(await page.locator('.wand-tour-description').innerText(),/クエスト|スターパス/);
+  await page.locator('.wand-tour-primary').click();
+  assert.match(await page.locator('.wand-tour-description').innerText(),/カレンダー/);
+  await page.keyboard.press('Escape');
+  await page.locator('.wand-tour-layer').waitFor({state:'detached'});
+
   await context.close();
   console.log('Collection browser WASM/IndexedDB/migration/search/paging/history/shared-save smoke passed');
 } finally {
