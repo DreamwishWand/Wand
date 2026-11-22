@@ -22,6 +22,10 @@ import {
   type Db00PublishedSnapshot,type Db00OriginJoin
 } from './db00-origins.ts';
 import type {Db03NativeRewardCandidateIndex} from './db03-native-rewards.ts';
+import {
+  indexNativeLootSourceFamilies,
+  type NativeLootSourceIndex
+} from './native-loot-source-families.ts';
 
 export const DB02_CURRENT_CATALOG_SCHEMA='wand.db02.current-db00-origins@1' as const;
 const RELEASE='steam-1.26.2-native-itemlist-v1';
@@ -40,6 +44,8 @@ export interface CurrentDb02CatalogCoverage{
   readonly src02ConfirmedDefinitionLinks:number;
   readonly src02StaticCandidates:number;
   readonly src02LootContextCandidates:number;
+  readonly nativeLootSourceFamilies:number;
+  readonly distinctNativeLootTables:number;
   readonly src02StallSlotCandidates:number;
   readonly publicStarpathSourceLinks:number;
   readonly originCoverageComplete:false;
@@ -53,6 +59,8 @@ export interface CurrentDb02OriginCatalog{
   readonly source:'verified_public_db00_and_local_private_src02_r5';
   readonly origins:OriginDatabase;
   readonly db00:Db00OriginJoin;
+  /** Raw original LootTable.nameKey grouping (not a confirmed acquisition place). */
+  readonly lootSources:NativeLootSourceIndex;
   readonly coverage:CurrentDb02CatalogCoverage;
   lookup(itemId:string|number):ReturnType<Db00OriginJoin['lookup']>;
 }
@@ -83,7 +91,8 @@ export function currentDb00ItemIds(snapshot:Db00PublishedSnapshot):readonly stri
 function coverageSummary(
   ids:readonly string[],
   origins:OriginDatabase,
-  db00:Db00OriginJoin
+  db00:Db00OriginJoin,
+  lootSources:NativeLootSourceIndex
 ):CurrentDb02CatalogCoverage{
   const joined=db00.getCoverage();
   let native=0,confirmed=0,candidates=0,loot=0,stalls=0,starpaths=0;
@@ -114,6 +123,8 @@ function coverageSummary(
     src02ConfirmedDefinitionLinks:confirmed,
     src02StaticCandidates:candidates,
     src02LootContextCandidates:loot,
+    nativeLootSourceFamilies:lootSources.coverage.sourceFamilies,
+    distinctNativeLootTables:lootSources.coverage.nativeLootTableIds,
     src02StallSlotCandidates:stalls,
     publicStarpathSourceLinks:starpaths,
     originCoverageComplete:false as const,
@@ -140,12 +151,15 @@ export async function joinCurrentDb02Catalog(
     fetcher,src02,basePath,ids,db03NativeRewards
   );
   const joined=joinDb02OriginsWithDb00(db00,origins);
-  const coverage=coverageSummary(ids,origins,joined);
+  const lootSources=indexNativeLootSourceFamilies(origins,ids);
+  const coverage=coverageSummary(ids,origins,joined,lootSources);
+  if(coverage.src02LootContextCandidates!==lootSources.coverage.candidateRoutes)
+    throw new TypeError('DB02_CURRENT_CATALOG_LOOT_SOURCE_INDEX_MISMATCH');
   return Object.freeze({
     schema:DB02_CURRENT_CATALOG_SCHEMA,
     gameVersion:'1.26.2' as const,
     source:'verified_public_db00_and_local_private_src02_r5' as const,
-    origins,db00:joined,coverage,
+    origins,db00:joined,lootSources,coverage,
     lookup(itemId:string|number){return joined.lookup(itemId);}
   });
 }
