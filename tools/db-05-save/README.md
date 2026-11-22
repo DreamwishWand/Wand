@@ -632,7 +632,7 @@ tag, and is **not presented as the final Save Editor**.
   thrown source exceptions. Browser UI code is tested with
   synthetic 626/643 documents.
 
-The developer page now **does accept** encrypted P1G using the **existing JavaScript Collection read-only decoder** (`src/lib/collection/private-p1g-codec.js`) reused from the already shipped saved-store Worker. This is **not** the proposed Rust/WASM save Codec/Writer, and save encoding or export remains unavailable. The separate production Codec/WASM decoder and
+The developer page now accepts encrypted P1G using the existing Rust/WASM `ddv-p1g-codec` via `src/lib/save/p1g-read.ts` and `src/lib/save/save-diagnostics.worker.ts`. The diagnostic production Worker selects `decodeP1gRustOnly`, which rejects unsupported ZIP envelopes rather than invoking the historical JavaScript decoder. Direct synthetic Node tests still retain the legacy decoder for regression comparisons. No production Save Writer is authorized. The separate production Codec/WASM decoder and
 unknown-field-preserving Writer remain necessary for the full
 Save Editor; this route is a diagnostics integration seam,
 not a replacement or a read-only public release. It also
@@ -654,7 +654,7 @@ not available in the checked folders. Identical IL2CPP
 `src/lib/save/save-diagnostics-worker-core.mjs` reuses the
 **existing local read-only** Collection P1G codec and the
 strict, duplicate-key/unsafe-integer-rejecting JSON parser.
-`src/lib/save/save-diagnostics.worker.mjs` accepts only the
+`src/lib/save/save-diagnostics.worker.ts` accepts only the
 one-shot command `inspect-local-save-diagnostics` with a
 transferred `Uint8Array` and a fixed `json` or `p1g` format.
 The Worker returns a `save-diagnostics-summary` object with
