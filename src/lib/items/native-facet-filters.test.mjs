@@ -259,3 +259,24 @@ test('invalid facet and pagination cannot make claims',async()=>{
   await assert.rejects(c.getFacetOptions('madeUp'),/FACET_OPTION_SELECTION/);
   await assert.rejects(c.getSubtypeOptions('not-a-class'),/SUBTYPE_OPTION_CATEGORY/);
 });
+
+
+test('current Steam v1.26.2 native filters reject the retired partial Tag overlay even with identical catalog SHA',()=>{
+  const f=fixture();
+  const fullCatalog={...f.catalog,source:{...f.catalog.source,
+    definitions:39067,currentNativeItemDefinitions:13202}};
+  const fullTypes={...f.types,source:{...f.types.source,
+    definitionCount:39067,sourceItemTypeVerified:39067}};
+  const outdated={...f.tags,source:{...f.tags.source,
+    definitionCount:39067,taggedDefinitions:14861,
+    facetCoverage:{worldContextTag:11163,disneyUniverse:1966}}};
+  assert.throws(()=>createDb01NativeFacetFilterClient(
+    fullCatalog,outdated,fullTypes),/RETIRED_INCOMPLETE_TAG_OVERLAY/);
+  const corrected={...f.tags,source:{...f.tags.source,
+    definitionCount:39067,taggedDefinitions:14973,
+    facetCoverage:{worldContextTag:11275,disneyUniverse:1997}}};
+  const client=createDb01NativeFacetFilterClient(fullCatalog,corrected,fullTypes);
+  assert.equal(client.source.gameVersion,'1.26.2');
+  assert.equal(f.calls.category,0);
+  assert.equal(f.calls.tags,0);
+});
