@@ -143,7 +143,7 @@ class NativeMealPriceProbeTests(unittest.TestCase):
             result = probe.probe_dll(
                 plan, game, "1.26.2",
                 hashlib.sha256(binary).hexdigest(), base,
-                extract_only=True)
+                extract_only=True, excerpt_bytes=512)
             self.assertEqual(len(result["methodPrefixes"]), 13)
             self.assertTrue(result["binaryPrefixesExtracted"])
             self.assertFalse(result["disassemblyPerformed"])
@@ -151,8 +151,14 @@ class NativeMealPriceProbeTests(unittest.TestCase):
             self.assertFalse(result["binaryVersionIndependentlyVerified"])
             excerpts = list(base.glob("*.prefix.bin"))
             self.assertEqual(len(excerpts), 13)
-            self.assertTrue(all(x.stat().st_size == 256 for x in excerpts))
+            self.assertTrue(all(x.stat().st_size == 512 for x in excerpts))
             self.assertTrue((base / "native-meal-price-probe.json").exists())
+            self.assertTrue(all(x["excerptBytes"] == 512
+                                for x in result["methodPrefixes"]))
+            with self.assertRaisesRegex(ValueError, "EXCERPT_SIZE_LIMIT"):
+                probe.probe_dll(plan, game, "1.26.2",
+                               hashlib.sha256(binary).hexdigest(), base,
+                               extract_only=True, excerpt_bytes=10000)
 
     def test_public_checkout_output_is_rejected(self):
         with tempfile.TemporaryDirectory() as td:
