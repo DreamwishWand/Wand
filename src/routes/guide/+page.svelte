@@ -4,7 +4,7 @@
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {loadPublicStarpath} from '$lib/guide/public-starpath.mjs';
   import {
-    guideCalendarEvents,guideCalendarMonth,eventScheduleState,
+    guideCalendarEvents,guideCalendarMonth,guideCalendarEventsInMonth,eventScheduleState,
     localGuideDateTime,GUIDE_EVENT_CALENDAR_AS_OF
   } from '$lib/guide/event-calendar.mjs';
 
@@ -14,10 +14,7 @@
   let now=Date.now();
   let month='';
   $: monthGrid=month?guideCalendarMonth(events,month):[];
-  $: thisMonthEvents=events.filter((e:any)=>{
-    if(e.precision==='date-only')return e.startDay.slice(0,7)<=month&&e.endDayInclusive.slice(0,7)>=month;
-    return e.startUtc.slice(0,7)<=month&&e.endUtcExclusive.slice(0,7)>=month;
-  });
+  $: thisMonthEvents=month?guideCalendarEventsInMonth(events,month):[];
   $: scheduledStarpaths=events.filter((e:any)=>e.kind==='starpath'&&eventScheduleState(e,now)==='task-window');
 
   function shiftMonth(delta:number){
