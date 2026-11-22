@@ -44,7 +44,7 @@ TAG_FIELDS = {
     "ActivityItem": {8, 9, 11, 12, 13, 14, 15, 16, 30, 31},
 }
 SET_FIELDS = {"Furniture": 8, "Clothing": 8, "Trimming": 9}
-SET_NAME = re.compile(r"^\\d+_([^!]+)![fc]_([A-Za-z0-9]+)_")
+SET_NAME = re.compile(r"^\d+_([^!]+)![fc]_([A-Za-z0-9]+)_")
 PRIVATE_SCHEMA = "wand.collection.scope-evidence.private@1"
 
 
@@ -225,7 +225,7 @@ def atomic_text(path: Path, text: str):
     path.parent.mkdir(parents=True, exist_ok=True)
     handle, temp = tempfile.mkstemp(prefix=".scope-private-", dir=path.parent)
     try:
-        with os.fdopen(handle, "w", encoding="utf-8", newline="\\n") as file:
+        with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as file:
             file.write(text)
             file.flush()
             os.fsync(file.fileno())
@@ -250,12 +250,12 @@ def main():
     if any((ancestor / ".git").exists() for ancestor in (target, *target.parents)):
         parser.error("OUTPUT_MUST_BE_OUTSIDE_GIT_REPOSITORY")
     records, audit = extract(source)
-    rows = "".join(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\\n"
+    rows = "".join(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
                    for record in records)
     atomic_text(target / "scope-candidates-private.jsonl", rows)
     audit["rowsSha256"] = sha(rows.encode("utf-8"))
     atomic_text(target / "scope-audit-private.json",
-                json.dumps(audit, ensure_ascii=False, sort_keys=True, indent=2) + "\\n")
+                json.dumps(audit, ensure_ascii=False, sort_keys=True, indent=2) + "\n")
     print(json.dumps({"privateOut": str(target), "counts": audit["counts"],
                       "byWorldTag": audit["byWorldTag"]}, ensure_ascii=False))
 
