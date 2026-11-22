@@ -3,6 +3,7 @@ import type {StaticItemPriceDefinition} from './private-shop-prices.mjs';
 import type {ConfiguredIngredientSellEvidence} from './meal-ingredient-sell-evidence.mjs';
 import type {VerifiedPrivateDynamicPriceCache,NativeDynamicCacheItemLookup} from './private-dynamic-price-cache.mjs';
 import type {VerifiedPrivateCookingStarSettings,NativeCookingStarResult} from './private-cooking-star-settings.mjs';
+import type {NativeMealSellPriceRoute} from './native-meal-price-route.mjs';
 export declare const DB02_MEAL_PRICE_EVIDENCE_CONTRACT:
   'wand.db02.meal-price-evidence@1';
 export interface MealIngredientAmount {
@@ -33,6 +34,10 @@ export interface PrivateMealPriceEvidence {
   readonly platform:'Steam';
   readonly gameVersion:'1.26.2';
   readonly state:SerializedMealStateEvidence;
+  readonly nativeIngredientPriceRoute:NativeMealSellPriceRoute;
+  readonly nativeIngredientRoutingImplementationVerified:true;
+  readonly nativeIngredientRuntimePricesVerified:false;
+  readonly nativeLookupDefaultCannotReplaceUnknownSourcePrices:true;
   readonly staticCookingRecipeIds:readonly number[];
   readonly cookingRecipeCoverage:'partial_native_extraction';
   readonly recordedIngredients:readonly MealIngredientAmount[];

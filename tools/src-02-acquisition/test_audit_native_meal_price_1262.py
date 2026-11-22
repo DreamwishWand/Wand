@@ -62,14 +62,18 @@ class NativeCrossPlatformMathTests(unittest.TestCase):
         self.assertEqual(len(audit.STEAM_RVAS), 7)
         self.assertEqual(len(audit.SWITCH_RVAS), 7)
         self.assertNotEqual(audit.STEAM_RVAS, audit.SWITCH_RVAS)
-        self.assertEqual(len(audit.STEAM_WINDOWS), 9)
-        self.assertEqual(len(audit.SWITCH_WINDOWS), 7)
+        self.assertEqual(len(audit.STEAM_WINDOWS), 14)
+        self.assertEqual(len(audit.SWITCH_WINDOWS), 11)
         for windows in (audit.STEAM_WINDOWS, audit.SWITCH_WINDOWS):
             names = {window[0] for window in windows}
             self.assertTrue({
                 "base_and_default_setup", "conditional_base_callback",
                 "signed32_component_accumulation",
-                "signed32_final_upper_bound"
+                "signed32_final_upper_bound",
+                "get_sell_recorded_or_fallback",
+                "lowest_price_ingredient_default_one",
+                "recorded_price_tuple_default_one",
+                "sell_star_percentage_selector"
             }.issubset(names))
         self.assertTrue(all(len(s)==64
                             for s in (audit.STEAM_DLL_SHA,

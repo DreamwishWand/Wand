@@ -1,5 +1,30 @@
 # DB-02 ACQUISITION — source-pinned extraction
 
+## Native recipe ingredient source routing (Steam/Switch v1.26.2)
+
+`native-meal-price-route.mjs` and the existing private
+`loadPrivateMealPricingView(...).inspect()` now distinguish two
+**actual native cooking sell-price source paths**: nonempty serialized
+`ItemState.MealData.IngredientsUsed` retains the precise ordered
+Item IDs (including repeats), while missing or empty recorded
+ingredients invoke `GetLowestPriceIngredients`. Both native paths
+read ingredient soft-currency prices through
+`GetSoftCurrencySellPrice(item, state:null, defaultPrice:1)`.
+The default **1 applies ONLY when live lookup fails**, **not** merely
+when a source ZIP has no SellPrices row. The cooking sell wrapper
+uses a null base selector (**0**), null maximum selector
+(**INT32_MAX**) and the native star-result sell percentage delegate.
+
+Both original executable platforms are verified by the offline
+SHA-256 / native code-window audit; the auditor now pins 14 Steam and
+11 Switch windows (some existing aliases overlap). The original
+618-meal private smoke explicitly tests ordered recorded ingredients
+and an empty synthetic MealData fallback. This is source/route
+evidence **only**: actual runtime price provider choice, fallback
+recipe ingredients, percentage eligibility and final meal sell
+price are still unknown. See
+[MEAL-STATE-SELL-PRICE.md](MEAL-STATE-SELL-PRICE.md).
+
 ## Signed native ingredient total-value accumulator (arithmetic only)
 
 `native-meal-total-value-stage.mjs` reproduces the next independently

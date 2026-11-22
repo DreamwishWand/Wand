@@ -113,6 +113,16 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
     requireValue(a.staticCookingRecipeIds.length>0&&
       a.state.ingredientsRecorded===true&&
       a.recordedIngredients.length===2&&
+      a.nativeIngredientRoutingImplementationVerified===true&&
+      a.nativeIngredientRuntimePricesVerified===false&&
+      a.nativeLookupDefaultCannotReplaceUnknownSourcePrices===true&&
+      a.nativeIngredientPriceRoute.ingredientSource==='recorded_ingredients_used'&&
+      a.nativeIngredientPriceRoute.recordedIngredientIds.length===3&&
+      a.nativeIngredientPriceRoute.recordedIngredientIds[0]===31100001&&
+      a.nativeIngredientPriceRoute.recordedIngredientIds[1]===30200001&&
+      a.nativeIngredientPriceRoute.recordedIngredientIds[2]===31100001&&
+      a.nativeIngredientPriceRoute.nativeDefaultSoftSellIfLookupFails===1&&
+      a.nativeIngredientPriceRoute.originalNativeIngredientLookupSucceeded===null&&
       a.sellPrice===null&&a.sellPriceComputed===false&&
       a.purchasePriceIsNotSellPrice===true&&
       a.cookingRecipeIngredientMatchVerified===false&&
@@ -185,6 +195,15 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
     'DYNAMIC_CACHE_FIXED_INGREDIENT_OVERLAP');
 
   const firstId=mealIds.values().next().value;
+  const fallback=view.inspect(firstId,fakeMealData([]));
+  requireValue(fallback.state.mealDataPresent===true&&
+    fallback.state.ingredientsRecorded===false&&
+    fallback.nativeIngredientPriceRoute.ingredientSource===
+      'recipe_lowest_price_ingredients'&&
+    fallback.nativeIngredientPriceRoute.fallbackSelectionRequiresNativeItemPrices===true&&
+    fallback.nativeIngredientPriceRoute.recordedIngredientIds===null&&
+    fallback.nativeIngredientPriceRoute.actualMealSellPrice===null&&
+    fallback.sellPrice===null,'NATIVE_LOWEST_RECIPE_FALLBACK_UNVERIFIED');
   const left=view.inspect(firstId,syntheticA);
   const right=view.inspect(firstId,syntheticB);
   const comparison=compareMealIngredientStates(left,right);
@@ -219,6 +238,9 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
     authenticatedNativeStarResults,
     salePriceComputed:false,
     serializedIngredientsRetained:true,
+    nativeIngredientSelectionBranchVerified:true,
+    nativeDefaultSoftSellPriceOnLookupFailure:1,
+    nativeFallbackReturnsUnverifiedItemComposition:true,
     actualUserSaveRead:false,
     writable:false,publishable:false
   });
