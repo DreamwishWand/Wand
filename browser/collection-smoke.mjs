@@ -133,7 +133,7 @@ try{
   await portal.locator('.portal-card').filter({hasText:'Collection'}).first().waitFor();
   assert.equal(await portal.locator('.portal-grid .portal-card').count(),7);
   assert.deepEqual(await portal.locator('.portal-grid .portal-card-label strong').allTextContents(),
-    ['Decorate','Collection','Guide','Presets','Gallery','DreamSnaps','Community Help Center']);
+    ['Decorate','Presets','Collection','Guide','Gallery','DreamSnaps','Community Help Center']);
   assert.equal(await portal.locator('a.portal-card').count(),2);
   assert.equal(await portal.locator('.portal-card.planned').count(),5);
   assert.equal(await portal.locator('.portal-card-community').count(),1);
