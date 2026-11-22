@@ -225,7 +225,12 @@ try{
         '21':{ID:21,GridDefaultLayoutPath:'SceneLayouts/Missing/Grid.json',
           GridDataPath:'GridData/NotInPartialSource/Grid.json',Objects:{}}
       },
-      DiffGrids:{}
+      DiffGrids:{
+        '31':{ID:31,GridDefaultLayoutPath:LAYOUT,
+          GridDefaultLayoutType:'Meta.GridCollection, Meta',
+          DefaultLayoutGridID:1,DefaultGridHashCode:17,
+          DefaultGridDataHashCode:-9,ModifiedObjects:{}}
+      }
     }}
   };
   const saveInput=panel.getByLabel('照合用セーブファイル');
@@ -240,8 +245,8 @@ try{
   assert.equal(await cells.nth(1).locator('strong').innerText(),'2');
   assert.equal(await cells.nth(2).locator('strong').innerText(),'0');
   assert.equal(await cells.nth(3).locator('strong').innerText(),'1');
-  assert.equal(await cells.nth(4).locator('strong').innerText(),'0');
-  assert.equal(await cells.nth(5).locator('strong').innerText(),'0');
+  assert.equal(await cells.nth(4).locator('strong').innerText(),'1');
+  assert.equal(await cells.nth(5).locator('strong').innerText(),'1');
   assert.doesNotMatch(await page.locator('body').innerText(),
     /NEVER_RENDER_THIS_SAVE_FIELD/);
   assert.doesNotMatch(await auditResult.innerText(),/GridData\/|SceneLayouts\//);
