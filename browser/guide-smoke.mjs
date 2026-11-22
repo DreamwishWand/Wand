@@ -6,8 +6,9 @@ import { chromium } from 'playwright';
 const url = 'http://127.0.0.1:4177/Wand/guide/quests/';
 const languageLabels={ja:'日本語',en:'English',fr:'Français',it:'Italiano',de:'Deutsch','es-ES':'Español','zh-CN':'简体中文','pt-BR':'Português'};
 async function chooseLanguage(page,code){
-  await page.getByRole('button',{name:'表示言語を切り替える'}).click();
-  await page.getByRole('group',{name:'表示言語'})
+  // The accessible label follows the current locale; use a stable control selector.
+  await page.locator('.header-language-button').click();
+  await page.locator('.language-popover')
     .getByRole('button',{name:languageLabels[code],exact:true}).click();
 }
 const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1', '--port', '4177'], {

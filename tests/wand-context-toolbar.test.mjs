@@ -1,10 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
+import {SHELL_COPY} from '../src/lib/ui/shell-copy.ts';
 const route=path=>new URL('../src/routes/'+path,import.meta.url);
 test('shared Wand header renders truthful account/save/help and contextual action surfaces',async()=>{
   const html=await readFile(route('+layout.svelte'),'utf8');
-  for(const label of ['ログイン・アカウント','ログイン機能は準備中','セーブファイルを読み込む','このページのチュートリアル','Collectionツールバー','Guideツールバー','Worldツールバー','Saveツールバー'])assert.ok(html.includes(label),label);
+  const required=[
+    ['accountOpen','ログイン・アカウント'],
+    ['accountInfo','ログイン機能は準備中'],
+    ['readSave','セーブファイルを読み込む'],
+    ['tutorialHelp','このページのチュートリアル'],
+    ['collectionTools','Collectionツールバー'],
+    ['guideTools','Guideツールバー'],
+    ['worldTools','Worldツールバー'],
+    ['saveTools','Saveツールバー']
+  ];
+  for(const [key,label] of required){
+    assert.ok(SHELL_COPY.ja[key].includes(label),label);
+    assert.ok(html.includes('copy.'+key),'Layout must render '+key+' from locale dictionary');
+  }
   assert.ok(html.includes('switchLanguage'));
   assert.ok(html.includes('switchTheme'));
 });

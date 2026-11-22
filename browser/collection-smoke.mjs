@@ -231,31 +231,60 @@ try{
   assert.ok(textZoomLayout.smallestStatus>=28,'200% text zoom should scale planned status text');
   assert.equal(textZoomLayout.missingLabels,0);
   await portal.evaluate(()=>document.documentElement.style.fontSize='');
-  const localeButton=portal.getByRole('button',{name:'表示言語を切り替える'});
-  await localeButton.click();
-  await portal.getByRole('group',{name:'表示言語'}).getByRole('button',{name:'English'}).click();
-  assert.match(await portal.locator('.portal-card.planned').first().innerText(),/Coming soon/);
+  // All three themes must be visible and independently actionable, without a popover.
+  const themeChoices=portal.locator('.shell-theme-option');
+  assert.equal(await themeChoices.count(),3);
+  await portal.setViewportSize({width:320,height:720});
+  assert.equal(await portal.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true,
+    'all three theme icons must fit the narrowest supported viewport');
+  assert.equal(await themeChoices.filter({visible:true}).count(),3);
+  await portal.getByRole('button',{name:'サービスを切り替える'}).click();
+  assert.equal(await portal.locator('.shell-menu-help').isVisible(),true,
+    'help remains reachable through the service menu on very narrow phones');
+  await portal.getByRole('button',{name:'サービスを切り替える'}).click();
+  await portal.setViewportSize({width:1696,height:900});
+
+  // Every officially supported DDV interface language must update shell copy and the DOM language.
+  const supportedLocales=[
+    {code:'ja',label:'日本語',planned:'準備中',switchService:'サービスを切り替える'},
+    {code:'en',label:'English',planned:'Coming soon',switchService:'Switch service'},
+    {code:'fr',label:'Français',planned:'Bientôt',switchService:'Changer de service'},
+    {code:'it',label:'Italiano',planned:'In arrivo',switchService:'Cambia servizio'},
+    {code:'de',label:'Deutsch',planned:'In Vorbereitung',switchService:'Dienst wechseln'},
+    {code:'es-ES',label:'Español',planned:'Próximamente',switchService:'Cambiar servicio'},
+    {code:'zh-CN',label:'简体中文',planned:'开发中',switchService:'切换服务'},
+    {code:'pt-BR',label:'Português',planned:'Em breve',switchService:'Trocar serviço'}
+  ];
+  for(const entry of supportedLocales){
+    await portal.locator('.header-language-button').click();
+    await portal.locator('.language-popover').getByRole('button',{name:entry.label}).click();
+    assert.equal(await portal.evaluate(()=>document.documentElement.lang),entry.code);
+    assert.match(await portal.locator('.portal-card.planned').first().innerText(),
+      new RegExp(entry.planned));
+    assert.equal(await portal.locator('.shell-nav-trigger').getAttribute('aria-label'),entry.switchService);
+    assert.equal(await portal.locator('.shell-theme-option').count(),3);
+  }
   await portal.reload();
-  assert.match(await portal.locator('.portal-card.planned').first().innerText(),/Coming soon/);
-  await portal.getByRole('button',{name:'表示言語を切り替える'}).click();
-  await portal.getByRole('group',{name:'表示言語'}).getByRole('button',{name:'日本語'}).click();
-  const themeToggle=portal.getByRole('button',{name:'テーマを切り替える'});
-  await themeToggle.click();
-  const themeMenu=portal.getByRole('group',{name:'テーマ'});
-  assert.equal(await themeMenu.getByRole('button').count(),3);
-  await themeMenu.getByRole('button',{name:'黄昏の日の出'}).click();
+  assert.equal(await portal.evaluate(()=>document.documentElement.lang),'pt-BR',
+    'last selected language must persist across reloads');
+  await portal.locator('.header-language-button').click();
+  await portal.locator('.language-popover').getByRole('button',{name:'日本語'}).click();
+
+  await portal.getByRole('button',{name:'黄昏の日の出'}).click();
   assert.equal(await portal.evaluate(()=>document.documentElement.dataset.wandTheme),'dawn');
   assert.equal(await portal.evaluate(()=>getComputedStyle(document.documentElement).colorScheme),'light');
   assert.equal(await portal.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--wand-bg').trim()),'#EDE8F8');
-  await themeToggle.click();
-  await themeMenu.getByRole('button',{name:'太陽に照らされた透き通るサンゴ礁'}).click();
+  assert.deepEqual(await themeChoices.evaluateAll(nodes=>nodes.map(node=>node.getAttribute('aria-pressed'))),
+    ['true','false','false']);
+  await portal.getByRole('button',{name:'太陽に照らされた透き通るサンゴ礁'}).click();
   assert.equal(await portal.evaluate(()=>document.documentElement.dataset.wandTheme),'coral');
   assert.equal(await portal.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--wand-bg').trim()),'#E5F8FD');
-  await themeToggle.click();
-  await themeMenu.getByRole('button',{name:'魔法の夜空'}).click();
+  await portal.getByRole('button',{name:'魔法の夜空'}).click();
   assert.equal(await portal.evaluate(()=>document.documentElement.dataset.wandTheme),'night');
   assert.equal(await portal.evaluate(()=>getComputedStyle(document.documentElement).colorScheme),'dark');
   assert.equal(await portal.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--wand-bg').trim()),'#04143B');
+  assert.deepEqual(await themeChoices.evaluateAll(nodes=>nodes.map(node=>node.getAttribute('aria-pressed'))),
+    ['false','false','true']);
   await portal.reload();
   await portal.waitForFunction(()=>document.documentElement.dataset.wandTheme==='night');
   await portal.evaluate(()=>localStorage.setItem('dreamwishwand.ui.theme.v1','light'));
@@ -304,8 +333,9 @@ try{
   // Locale changes must re-query Rust, not leave cached cards in the prior locale.
   // Item 40005160 has source-verified Japanese/English names; it is a unique search match.
   const setItemLanguage=async (label)=>{
-    await page.getByRole('button',{name:'表示言語を切り替える'}).click();
-    await page.getByRole('group',{name:'表示言語'}).getByRole('button',{name:label,exact:true}).click();
+    // Accessible control names change with locale; stable selectors must work in every language.
+    await page.locator('.header-language-button').click();
+    await page.locator('.language-popover').getByRole('button',{name:label,exact:true}).click();
   };
   await search.fill('40005160');
   await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);

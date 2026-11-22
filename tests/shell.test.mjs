@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {launcherServices} from '../src/lib/ui/services.ts';
+import {UI_LANGUAGES,UI_THEMES} from '../src/lib/ui/preferences.ts';
+import {SHELL_COPY} from '../src/lib/ui/shell-copy.ts';
 
 test('shell launcher exposes seven unique, non-placeholder destinations',()=>{
   assert.equal(launcherServices.length,7);
@@ -23,7 +25,7 @@ test('the supplied Large SVG is the favicon and the normal SVG is decorative, no
   const normal=readFileSync(new URL('../static/DreamwishWand.svg',import.meta.url),'utf8');
   assert.match(template,/<link rel="icon" href="%sveltekit.assets%\/DreamwishWand_Large\.svg"/);
   assert.match(layout,/<span class="shell-brand-mark" aria-hidden="true"><img src="\{base\}\/DreamwishWand\.svg" alt=""/);
-  assert.match(layout,/<a class="header-home-button" href="\{base\}\/" aria-label="ホームへ戻る"/);
+  assert.match(layout,/<a class="header-home-button" href="\{base\}\/" aria-label=\{copy\.home\}/);
   assert.ok(layout.indexOf('class="shell-brand-mark"')<layout.indexOf('class="header-home-button"'));
   for(const svg of [large,normal]){
     assert.match(svg,/fill="#011A60"/);
@@ -32,4 +34,30 @@ test('the supplied Large SVG is the favicon and the normal SVG is decorative, no
   }
   assert.match(large,/scale\(0\.423025036\)/);
   assert.match(normal,/scale\(0\.389390322\)/);
+});
+
+test('all eight verified DDV interface locales have complete shell controls and tutorials',()=>{
+  assert.deepEqual(UI_LANGUAGES.map(x=>x.code),
+    ['ja','en','fr','it','de','es-ES','zh-CN','pt-BR']);
+  assert.equal(new Set(UI_LANGUAGES.map(x=>x.code)).size,8);
+  assert.equal(Object.keys(SHELL_COPY).length,8);
+  for(const {code} of UI_LANGUAGES){
+    const translation=SHELL_COPY[code];
+    for(const [key,value] of Object.entries(translation)){
+      if(key==='themes'||key==='tutorials')continue;
+      assert.equal(typeof value,'string',code+' '+key);
+      assert.ok(value.trim(),code+' '+key);
+    }
+    for(const {code:theme} of UI_THEMES){
+      assert.ok(translation.themes[theme]?.trim(),code+' '+theme);
+    }
+    for(const key of ['home','collection','guide','characters','starpath','world','save']){
+      assert.ok(translation.tutorials[key]?.title,code+' '+key);
+      assert.ok(translation.tutorials[key]?.steps.length>=2,code+' '+key);
+    }
+  }
+  const layout=readFileSync(new URL('../src/routes/+layout.svelte',import.meta.url),'utf8');
+  assert.match(layout,/class="shell-theme-options"/);
+  assert.match(layout,/aria-pressed=\{uiTheme===item.code\}/);
+  assert.doesNotMatch(layout,/themeOpen|shell-theme-menu/);
 });
