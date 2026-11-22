@@ -25,6 +25,7 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npm test
       - run: node --experimental-strip-types --test tests/collection-db01-core.check.mjs
+      - run: npm run check:rust-save-reader
       - run: npm run check
       - run: npm run build
         env:
