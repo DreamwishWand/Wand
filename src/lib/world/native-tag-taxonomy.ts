@@ -39,7 +39,7 @@ export interface Db04NativeTagTaxonomyClient {
     gameVersion:'1.26.2';
     db01NativeManifestSha256:string;
     db01SourceItemsSha256:string;
-    originalTagSha256:string;
+    originalTagSha256:string|null;
     nativeScopeCrosschecked:boolean;
     privateOnly:true;
     publicationAuthorized:false;
@@ -191,7 +191,7 @@ export function createDb04NativeTagTaxonomyClient(
     platform:'Steam' as const,gameVersion:'1.26.2' as const,
     db01NativeManifestSha256:db01.source.nativeSourceManifestSha256,
     db01SourceItemsSha256:db01.source.sourceItemsSha256,
-    originalTagSha256:nativeScope?.source.originalTagSha256??'',
+    originalTagSha256:nativeScope?.source.originalTagSha256??null,
     nativeScopeCrosschecked:nativeScope!==null,
     privateOnly:true as const,publicationAuthorized:false as const,
     gameUiCollectionMembershipVerified:false as const,
