@@ -237,7 +237,7 @@
             </div>
           {/if}
         </div>
-        <div class="shell-theme-options" role="group" aria-label={copy.preferences}>
+        <div class="shell-theme-options" role="group" aria-label={copy.themeSelect}>
           {#each UI_THEMES as item (item.code)}
             <button class="header-icon-button shell-theme-option" type="button"
               class:active={uiTheme===item.code}
