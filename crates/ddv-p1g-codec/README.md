@@ -108,3 +108,43 @@ Remaining work: genuine real-game reimport/acceptance, multi-entry ZIP
 handling, item quantity cap rules, production ownership/session/revision
 policy, intentional explicit export, and safe close/zeroization lifecycle
 for actual large edit sessions.
+
+
+## Explicit experimental edited-copy export (DB-05 follow-up)
+
+The unlinked developer route \`/save/preview/\` now provides an **explicit,
+two-step opt-in download** after a successful Rust/WASM inventory/chest amount
+preview. The site never overwrites the selected original file; downloads use
+a different \`.wand-edited.profile\` (or corresponding original extension)
+name. This is a local-only experimental test copy, **not** a production
+Writer or a claim of game acceptance.
+
+Under the separate one-shot Worker \`export-existing-amount-copy\` command:
+1. Reload the same selected original \`File\`, verifying the previewed
+   target and values have not changed.
+2. Independently parse the original in Rust; require the exact existing
+   inventory entry or chest slot item and expected positive old Amount.
+3. Byte-patch only the Amount token; preserve unknown properties,
+   whitespace and original order. Revalidate the entire document.
+4. For encrypted P1G, reconstruct ZIP and AES, then independently
+   decrypt and reopen the generated candidate; compare patched profile
+   bytes verbatim. Unrecognized ZIP layouts still fail closed.
+5. With a separate confirmation, stream at most 1 MiB chunks from
+   Rust/WASM to the Worker, which transfers one bounded \`Uint8Array\`
+   to the page. The page creates a local Blob URL; only the user clicks
+   its download link. Closing/resetting revokes the URL.
+
+For now the exported test copy is capped at 32 MiB. An unchanged or
+ambiguous quantity, missing item or invalid expected value cannot be
+downloaded through this path. A one-shot Rust instance prevents
+repeated output. Raw profiles/digests remain private except for the
+**edited copy explicitly requested by the user**. There is no network
+upload, automatic replacement or cloud persistence.
+
+CI includes Chromium synthetic actual downloads for plaintext JSON and
+encrypted P1G, independently reopens both outputs and confirms original
+bytes/other fields were not modified.
+
+Still to verify before general release: real Steam/Switch roundtrip,
+save import into the game, per-item maximum stack sizes, unknown format
+families, backup/restore UX and long-running multi-edit SaveSession.
