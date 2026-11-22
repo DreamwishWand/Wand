@@ -136,3 +136,49 @@ The evidence derives from native Switch v1.24.13 grid and inventory
 transaction analysis and the structurally observed Steam v1.26.2 schema
 643 paths. Exact current Steam-native executable parity and complete
 DB-04 default-grid source joins remain unverified.
+
+## Optional DB-04 exact-grid source join (2026-11-22)
+
+Collection's read-only P1G preview now accepts an **optional separate local
+Steam v1.26.2 DB-04 `package_snapshot.py` ZIP**. The existing DB-04 ZIP
+reader verifies manifest-referenced SHA-256 for every included JSON member
+and structural source evidence in an isolated, one-shot Worker. A second
+strict P1G read occurs in that Worker: no decoded private profile, source ZIP
+records, grid/object IDs or coordinates are returned to the page.
+
+**Fail-closed join**: source `nativeGridCollection` layout ID must equal
+the save grid's exact `GridDefaultLayoutPath`; a unique
+`nativeGridEntries[].gridDataPath` must equal its `GridDataPath`; the
+source's declared `defaultObjectCount` must exactly equal its extracted
+`layoutObjectsByGrid` record count. A save-local Grid ID is never compared
+or normalized to a native layout Grid ID. No filename suffix/ordinal/area
+heuristics, automatic aliases or guessed source identity are used. Only
+Steam v1.26.2 source metadata and observed schema 643 are admitted for this
+specific optional analysis; an equal version number is **not source
+authenticity proof**.
+
+For each uniquely matched Grid, a full saved `Objects` map is the
+materialized snapshot; a `DiffGrids[].ModifiedObjects` map instead
+overlays the DB-04 default object map. In the latter case, exclude
+`RemovedObjects` identities, then apply valid modifications/additions,
+so an unmodified default reference remains visible and a stale removed
+modified record is not counted. All object identities, map key agreements,
+Item ID fields and source completeness are validated; ambiguous, partial
+or structurally malformed grids are **excluded**, not treated as empty.
+
+The join reports, by furniture Item ID, counts of native default source
+records, matched-grid effective saved references, saved-only object
+identities, removed native identities and changed native identities. It
+also reports matched/unmatched grid counts. **This is not an ownership,
+purchase, unlock or player-placement classifier.** An unmatched local
+ZIP might lack whole regions; a validated ZIP is self-consistent but
+cannot be authenticated as the original current game installation.
+Even an apparently matching GridObject ID can have been repurposed.
+The result therefore does not claim a global placed count, update
+`status`, `quantity` or `discovered`, or change the P1G. It is held
+ephemerally in the Collection UI, never in IndexedDB or backups.
+
+Current DDV v1.26.2 real-save and exact current DB-04 original-source
+pairing remains outside the public CI synthetic fixtures. Native default
+coverage and per-grid route alignment must be verified on that original
+input before making user ownership statements.
