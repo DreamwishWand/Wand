@@ -76,7 +76,8 @@ export function summarizeWorldPreviewSourceCoverage(catalog) {
       gridSets.set(regionKey, grids);
     }
     if (layout.layoutKind === 'nativeGridCollection' &&
-        regionKey.startsWith('OffGridBuildings/')) {
+        (regionKey === 'OffGridBuildings' ||
+         regionKey.startsWith('OffGridBuildings/'))) {
       const group = groupFor(regionKey);
       group.offGridLayoutCount++;
       group.sourceDefaultAnchorCount +=
