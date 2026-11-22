@@ -1473,10 +1473,20 @@
             <GridObjectPositionMap
               rows={gridInstances}
               selectedOrdinal={coordinateSelection?.localOrdinal??null}
+              draftX={coordinateSelection?coordinateNumber(coordinateX):null}
+              draftY={coordinateSelection?coordinateNumber(coordinateY):null}
               disabled={processing}
               onPick={(ordinal:number)=>{
                 const row=gridInstances[ordinal-1];
                 if(row?.localOrdinal===ordinal)selectGridInstance(row);
+              }}
+              onDraftMove={(x:number,y:number)=>{
+                if(processing||!coordinateSelection)return;
+                // This only changes local candidate inputs. Any previously
+                // validated copy is invalidated; Rust re-verifies the
+                // immutable original before a separate copy can be exported.
+                cancel();result=null;
+                coordinateX=String(x);coordinateY=String(y);
               }} />
             {#if coordinateSelection}
               <div class="coordinate-editor" aria-label="座標編集">
