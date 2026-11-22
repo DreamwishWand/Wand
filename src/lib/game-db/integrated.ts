@@ -450,6 +450,13 @@ export class SharedGameDatabase {
  * The output is private to its caller until a separately authorized publisher
  * verifies release compatibility and visibility for each fact.
  */
+function deepFreezeVerifiedPayload(raw:unknown,depth=0):void {
+  check(depth<=32,'OVERLAY_STRUCTURE_TOO_DEEP');
+  if(!object(raw) && !Array.isArray(raw))return;
+  for(const value of Object.values(raw))deepFreezeVerifiedPayload(value,depth+1);
+  Object.freeze(raw);
+}
+
 export async function verifyFactOverlay(
   raw:Uint8Array|ArrayBuffer,expectedSha256:string
 ):Promise<VerifiedFactOverlay> {
@@ -466,7 +473,8 @@ export async function verifyFactOverlay(
     typeof parsed.id==='string' && stringToken(parsed.id) &&
     Array.isArray(parsed.rows),'INVALID_OVERLAY_FORMAT');
   checkTarget(parsed.target);
-  const verified = Object.freeze(parsed) as unknown as VerifiedFactOverlay;
+  deepFreezeVerifiedPayload(parsed);
+  const verified = parsed as unknown as VerifiedFactOverlay;
   VERIFIED_OVERLAYS.add(verified);
   return verified;
 }
