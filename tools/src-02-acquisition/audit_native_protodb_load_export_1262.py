@@ -133,7 +133,7 @@ def verify_method_metadata(dump_raw):
         source.count('private IMessage <Message>k__BackingField; // 0x40') == 1,
         'PROTO_DESC_MESSAGE_OFFSET')
     require(
-        len(re.findall(r'^public interface IProtobufOnBinarize\\b',
+        len(re.findall(r'^public interface IProtobufOnBinarize\b',
                        source, re.M)) == 1,
         'PROTO_ON_BINARIZE_INTERFACE')
     return len(METHODS)
