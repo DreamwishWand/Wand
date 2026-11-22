@@ -438,7 +438,8 @@ mod browser_amount_preview {
         preview_existing_quantity,preview_existing_quantity_batch,
         preview_existing_grid_coordinates,preview_existing_grid_coordinate_batch,
         preview_existing_grid_orientation,preview_existing_grid_transform,
-        GridCoordinateEdit,QuantityEdit,QuantityTarget
+        preview_existing_grid_mixed_batch,
+        GridCoordinateEdit,GridMixedEdit,QuantityEdit,QuantityTarget
     };
     use wasm_bindgen::prelude::*;
 
@@ -692,6 +693,96 @@ mod browser_amount_preview {
                 .map_err(|_|fail("DB05_GRID_TRANSFORM_PLAN_INVALID"))?
         )?;
         Ok((c,o))
+    }
+
+    struct GridMixedPlan{
+        ordinal:usize,item_id:u64,kind:String,expected:(i32,i32),
+        position:Option<(i32,i32)>,
+        orientation:Option<(String,String)>
+    }
+    fn parse_grid_mixed_batch_plan(
+        plan:&str
+    )->Result<Vec<GridMixedPlan>,JsValue>{
+        if plan.len()>12288||plan.is_empty()||
+           ddv_save_patch::validate_json_without_edit(plan).is_err(){
+            return Err(fail("DB05_GRID_MIXED_BATCH_INVALID"));
+        }
+        let root:serde_json::Value=serde_json::from_str(plan)
+            .map_err(|_|fail("DB05_GRID_MIXED_BATCH_INVALID"))?;
+        let map=root.as_object().ok_or(fail("DB05_GRID_MIXED_BATCH_INVALID"))?;
+        if map.len()!=1{
+            return Err(fail("DB05_GRID_MIXED_BATCH_INVALID"));
+        }
+        let rows=map.get("edits").and_then(serde_json::Value::as_array)
+            .ok_or(fail("DB05_GRID_MIXED_BATCH_INVALID"))?;
+        if rows.is_empty()||rows.len()>16{
+            return Err(fail("DB05_GRID_MIXED_BATCH_COUNT_INVALID"));
+        }
+        let mut out=Vec::with_capacity(rows.len());
+        let mut ordinals=std::collections::HashSet::new();
+        for row in rows{
+            let r=row.as_object().ok_or(fail("DB05_GRID_MIXED_ROW_INVALID"))?;
+            if r.len()!=9||![
+                "localOrdinal","itemId","recordKind","expectedX","expectedY",
+                "replacementX","replacementY","expectedOrientation",
+                "replacementOrientation"
+            ].iter().all(|key|r.contains_key(*key)){
+                return Err(fail("DB05_GRID_MIXED_ROW_INVALID"));
+            }
+            let x=r["replacementX"].as_i64();
+            let y=r["replacementY"].as_i64();
+            let before=r["expectedOrientation"].as_str();
+            let after=r["replacementOrientation"].as_str();
+            if x.is_some()!=y.is_some()||before.is_some()!=after.is_some()||
+               (x.is_none()&&(!r["replacementX"].is_null()||
+                              !r["replacementY"].is_null()))||
+               (before.is_none()&&(!r["expectedOrientation"].is_null()||
+                                    !r["replacementOrientation"].is_null()))||
+               (x.is_none()&&before.is_none()){
+                return Err(fail("DB05_GRID_MIXED_ROW_INVALID"));
+            }
+            let shared=serde_json::json!({
+                "localOrdinal":r["localOrdinal"],
+                "itemId":r["itemId"],"recordKind":r["recordKind"],
+                "expectedX":r["expectedX"],"expectedY":r["expectedY"]
+            });
+            let (ordinal,item_id,kind,expected,position,orientation)=
+                if x.is_some()&&before.is_some(){
+                    let parsed=parse_grid_transform_plan(
+                        &serde_json::to_string(row)
+                            .map_err(|_|fail("DB05_GRID_MIXED_ROW_INVALID"))?
+                    )?;
+                    (parsed.0.ordinal,parsed.0.item_id,parsed.0.kind,
+                     parsed.0.expected,Some(parsed.0.replacement),
+                     Some((parsed.1.expected_orientation,
+                           parsed.1.replacement_orientation)))
+                }else if x.is_some(){
+                    let mut part=shared;
+                    part["replacementX"]=r["replacementX"].clone();
+                    part["replacementY"]=r["replacementY"].clone();
+                    let p=parse_grid_coordinate_plan(
+                        &serde_json::to_string(&part)
+                            .map_err(|_|fail("DB05_GRID_MIXED_ROW_INVALID"))?
+                    )?;
+                    (p.ordinal,p.item_id,p.kind,p.expected,Some(p.replacement),None)
+                }else{
+                    let mut part=shared;
+                    part["expectedOrientation"]=r["expectedOrientation"].clone();
+                    part["replacementOrientation"]=r["replacementOrientation"].clone();
+                    let p=parse_grid_orientation_plan(
+                        &serde_json::to_string(&part)
+                            .map_err(|_|fail("DB05_GRID_MIXED_ROW_INVALID"))?
+                    )?;
+                    (p.ordinal,p.item_id,p.kind,p.expected,None,
+                     Some((p.expected_orientation,p.replacement_orientation)))
+                };
+            if !ordinals.insert(ordinal){
+                return Err(fail("DB05_GRID_MIXED_DUPLICATE_ORDINAL"));
+            }
+            out.push(GridMixedPlan{ordinal,item_id,kind,expected,position,
+                orientation});
+        }
+        Ok(out)
     }
 
     const MAX_DB04_WITNESS_BYTES:usize=16*1024*1024;
@@ -1401,6 +1492,55 @@ mod browser_amount_preview {
             if !draft.changed||!draft.untouched_bytes_preserved||
                draft.writer_authorized||draft.export_authorized{
                 return Err(fail("DB05_GRID_TRANSFORM_UNAUTHORIZED"));
+            }
+            self.prepare_copy_from_patched(draft.patched_json,true)
+        }
+
+        /// Experimental 1..=16 mixed Grid edits. The same independent
+        /// P1G reopen is required for validation and explicit copy export.
+        pub fn preview_grid_mixed_batch(&mut self,plan:&str)
+            ->Result<String,JsValue>{
+            let count=parse_grid_mixed_batch_plan(plan)?.len();
+            self.prepare_grid_mixed_batch_copy(plan)?;
+            Ok(format!(concat!(
+                r#"{{"contract":"wand.db05.grid-mixed-batch-preview@1","#,
+                r#""changedCount":{},"lexicalBytesPreserved":true,"#,
+                r#""reopenVerified":true,"writerAuthorized":false,"#,
+                r#""exportAuthorized":false,"placementLegalityVerified":false}}"#
+            ),count))
+        }
+        pub fn prepare_grid_mixed_batch_copy(&mut self,plan:&str)
+            ->Result<u32,JsValue>{
+            if !self.ready||self.closed||self.copy_prepared{
+                return Err(fail("DB05_GRID_MIXED_SESSION_INVALID"));
+            }
+            let plans=parse_grid_mixed_batch_plan(plan)?;
+            let original=match self.kind{
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref()
+                    .ok_or(fail("DB05_GRID_MIXED_SESSION_INVALID"))?
+                    .profile.as_slice()
+            };
+            let selectors=plans.iter().map(|p|(
+                p.ordinal,p.item_id,p.expected,p.kind.clone(),
+                p.orientation.as_ref().map(|v|v.0.clone())
+            )).collect::<Vec<_>>();
+            let targets=grid_instance_preview::resolve_grid_mixed_targets(
+                original,&selectors
+            ).map_err(|_|fail("DB05_GRID_MIXED_STALE_OR_AMBIGUOUS"))?;
+            let json=std::str::from_utf8(original)
+                .map_err(|_|fail("DB05_GRID_MIXED_INVALID_UTF8"))?;
+            let edits=plans.iter().zip(targets).map(|(p,target)|
+                GridMixedEdit{
+                    target,expected:p.expected,position:p.position,
+                    orientation:p.orientation.clone()
+                }
+            ).collect::<Vec<_>>();
+            let draft=preview_existing_grid_mixed_batch(json,&edits)
+                .map_err(|_|fail("DB05_GRID_MIXED_STALE_OR_INVALID"))?;
+            if !draft.changed||!draft.untouched_bytes_preserved||
+               draft.writer_authorized||draft.export_authorized{
+                return Err(fail("DB05_GRID_MIXED_UNAUTHORIZED"));
             }
             self.prepare_copy_from_patched(draft.patched_json,true)
         }
