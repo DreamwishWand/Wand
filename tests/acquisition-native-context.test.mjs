@@ -65,7 +65,11 @@ test('Fishing and mining native location codes and rarity survive acquisition pr
 });
 
 test('Crop seed ID, grow time and yield are preserved without inventing seed acquisition',()=>{
-  const row=projectStructuralSrc02Origins(bundle(),[30200000])[0];
+  // All 100 source r5 ActivityItem growing rows omit top-level definitionId.
+  const growing={...DATA.get(30200000)[0]};
+  delete growing.definitionId;
+  const row=projectStructuralSrc02Origins(bundle({30200000:[growing]}),[30200000])[0];
+  assert.equal(row.nativeDetails.definitionId,'30400010');
   assert.equal(row.kind,'farming');
   assert.equal(row.quantity,1);
   assert.equal(row.nativeDetails.seedItemId,'30400010');
