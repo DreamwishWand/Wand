@@ -103,7 +103,7 @@ try{
   assert.equal(await portal.locator('header.site-header .site-nav').count(),0);
   assert.equal(await portal.locator('header.site-header .brand').count(),0);
   assert.equal(await portal.locator('.portal-intro').count(),0);
-  assert.equal(await portal.locator('.portal-page h1:visible').count(),0);
+  assert.equal(await portal.locator('.portal-page h1:not(.visually-hidden)').count(),0);
   // A desktop opening viewport contains every service and Help Center.
   await portal.setViewportSize({width:1400,height:850});
   const fits=await portal.evaluate(()=>{
