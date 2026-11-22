@@ -19,9 +19,9 @@ test('Source-exact native DB-01 names may propose candidates but cannot verify c
     }
   };
   const result=await matchOfficialCampaignRewardNames(OFFICIAL_CAMPAIGNS,db01);
-  assert.equal(result.getSummary().examinedRewardNames,19);
+  assert.equal(result.getSummary().examinedRewardNames,24);
   assert.equal(result.getSummary().exactlyMatchedNames,3);
-  assert.equal(result.getSummary().unmatchedNames,16);
+  assert.equal(result.getSummary().unmatchedNames,21);
   assert.deepEqual(result.getCandidatesForItem('40005840').map(row=>row.rewardName),
     ['Round Rainbow Garden']);
   assert.equal(result.getCandidatesForItem(40001607).length,1);
