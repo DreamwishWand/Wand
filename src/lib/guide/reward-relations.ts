@@ -217,7 +217,7 @@ function buildRewardIndex(snapshot:unknown,integrity:'source_structure_only'|'pi
   for(const season of raw.seasons){
     const event=starpathCalendar.find(e=>e.sourceSeasonId===season.id);
     check(event&&typeof event.id==='string'&&!events.has(event.id),'INVALID_EVENT_ID');
-    const eventId=eventId;
+    const eventId=event.id;
     check(typeof season.currencyName==='string'&&season.currencyName.length>0,'INVALID_TOKEN_CURRENCY');
     const premiumCurrency=canonicalItemId(season.premiumPrice.itemId);
     check(Number.isSafeInteger(season.premiumPrice.amount)&&season.premiumPrice.amount>0,'INVALID_PREMIUM_PRICE');
