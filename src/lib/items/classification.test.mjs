@@ -71,6 +71,12 @@ test('lazy source-exact Tag facets, world-context not world availability, and ma
   assert.deepEqual(f.requested,['id/01.json','id/02.json']);
   assert.equal(c.source.taggedDefinitions,1);
   assert.equal(c.source.sourceItemsSha256,abc);
+  assert.deepEqual(c.getCoverage().anyOriginalTag,{verified:1,unverified:1});
+  assert.deepEqual(c.getCoverage().facets.ingredientKind,{verified:1,unverified:1});
+  assert.deepEqual(c.getCoverage().facets.disneyUniverse,{verified:0,unverified:2});
+  assert.deepEqual(c.getCoverage().gameUiCategory,{verified:0,unverified:2});
+  assert.deepEqual(c.getCoverage().worldAvailability,{verified:0,unverified:2});
+  assert.strictEqual(c.getCoverage(),c.getCoverage());
 });
 test('reject cross-version and other canonical source identity mismatches',()=>{
   const f=fixture();
