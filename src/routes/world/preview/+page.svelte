@@ -185,7 +185,7 @@
   }
   function appendNextPage() {
     const next=viewport?.page.nextOffset;
-    if(viewing||!viewport?.page.hasNextPage||!Number.isSafeInteger(next)||next===null||next<=offset)return;
+    if(viewing||!viewport?.page.hasNextPage||typeof next!=='number'||!Number.isSafeInteger(next)||next<=offset)return;
     offset=next;
     requestWindow(false);
   }
@@ -468,7 +468,6 @@
   .record {display:grid;grid-template-columns:minmax(115px,1fr) repeat(3,minmax(95px,1fr));gap:12px;padding:12px 10px;background:#ffffff08;border-radius:7px;font-size:12px;overflow-wrap:anywhere;}
   .record span {color:#bbaacb;}
   .paging {justify-content:space-between;margin-top:18px;}
-  .paging span {font-size:12px;color:#b8acc7;}
   @media(max-width:700px){
     .world-stats {grid-template-columns:repeat(2,minmax(0,1fr));}
     .record {grid-template-columns:repeat(2,minmax(0,1fr));}
