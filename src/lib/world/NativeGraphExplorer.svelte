@@ -24,6 +24,8 @@
   let gridSearch='';
   let exactItemId='';
   let pageOffset=0;
+  let relatedGridRef='';
+  let relatedSourceGrids:readonly Db04GraphOption[]=[];
 
   $: filteredGrids=(catalog?.sourceGrids??[])
     .filter(g=>gridSearch===''||
@@ -41,6 +43,16 @@
     catalog?.sourceWorlds??[]:scope==='area'?
     catalog?.sourceAreas??[]:scope==='grid'?filteredGrids:[];
   $: activeOption=options.find(option=>option.id===scopeId);
+  // Only source-exact World/Area → Grid references. An empty Grid is still
+  // browseable, even when no original default GridObject row exists.
+  // Do not infer membership through path names or Realm descendants.
+  $: relatedSourceGrids=activeOption&&(scope==='world'||scope==='area')
+    ? (catalog?.sourceGrids??[]).filter(grid=>
+        scope==='world'?grid.worldId===activeOption.id:
+          grid.areaRefId===activeOption.id)
+    : [];
+  $: if(!relatedSourceGrids.some(grid=>grid.id===relatedGridRef))
+    relatedGridRef=relatedSourceGrids[0]?.id??'';
   $: canQuery=catalog!==null&&(scope==='unlinked_world'||Boolean(scopeId));
 
   function stop(){
@@ -130,6 +142,9 @@
     scopeId=originalGrid.id;
     page=null;pageOffset=0;
     query();
+  }
+  function chooseRelatedGrid(event:Event){
+    relatedGridRef=(event.currentTarget as HTMLSelectElement).value;
   }
   function chooseSourceOption(event:Event){
     scopeId=(event.currentTarget as HTMLSelectElement).value;
@@ -275,6 +290,24 @@
         {#if activeOption.nativeUniverseTagItemId} · Universe Tag ID: {activeOption.nativeUniverseTagItemId}{/if}
       </p>
     {/if}
+    {#if (scope==='world'||scope==='area')&&relatedSourceGrids.length>0}
+      <div class="graph-related-grids">
+        <label>原本に直接紐付くGrid（{relatedSourceGrids.length}）
+          <select aria-label="原本関連Grid" bind:value={relatedGridRef}
+            on:change={chooseRelatedGrid}>
+            {#each relatedSourceGrids as grid (grid.id)}
+              <option value={grid.id}>
+                Grid {grid.nativeGridId} · {grid.layoutId} · 初期配置 {grid.sourceDefaultInstances??'不明'}件
+              </option>
+            {/each}
+          </select>
+        </label>
+        <button type="button" disabled={!relatedGridRef}
+          on:click={()=>inspectSourceGridRef(relatedGridRef)}>
+          <WandIcon name="world" size={17}/>Gridを開く
+        </button>
+      </div>
+    {/if}
     {#if searching}<p role="status" class="graph-note">検索中…</p>{/if}
     {#if page}
       <div class="graph-result-head">
@@ -349,6 +382,10 @@
   .source-link{overflow-wrap:anywhere}
   .graph-search{min-height:36px}
   .graph-open-terrain{margin-top:10px}
+  .graph-related-grids{display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-top:10px}
+  .graph-related-grids label{display:grid;gap:5px;min-width:0;
+    flex:1 1 260px;color:#e0d5e8;font-size:12px}
+  .graph-related-grids select{width:100%;min-width:0}
   .graph-result-head{margin-top:16px;font-size:12px;color:#d9cce6}
   .graph-result-head span{color:#b9aac9}
   .graph-table-wrap{overflow:auto;margin-top:9px;max-height:440px}
