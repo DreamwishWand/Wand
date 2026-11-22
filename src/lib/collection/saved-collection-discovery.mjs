@@ -27,8 +27,8 @@ export function projectSavedCollectionDiscovery(root) {
   const supportedSchema=SUPPORTED_SAVE_SCHEMAS.has(saveSchema);
   const sets=root?.Player?.CollectionSets;
   const hasCollection=record(root?.Player)&&has(root.Player,'CollectionSets');
-  let partial=false,observed=0,groups=0,invalid=0,conflicts=0;
-  const values=new Map();
+  let partial=false,observed=0,groups=0,invalid=0;
+  const values=new Map(),conflictedIds=new Set();
   if(supportedSchema&&Array.isArray(sets)) {
     if(sets.length>MAX_SETS)partial=true;
     outer: for(const set of sets.slice(0,MAX_SETS)) {
@@ -51,21 +51,24 @@ export function projectSavedCollectionDiscovery(root) {
             continue;
           }
           if(previous===undefined)values.set(id,value);
-          else if(previous!==value)values.set(id,null);
+          else if(previous!==null && previous!==value){
+            values.set(id,null);
+            conflictedIds.add(id);
+          }
         }
       }
     }
   }
   const entries=[];
   for(const [id,val] of values) {
-    if(val===null){conflicts++;continue;}
+    if(val===null)continue;
     entries.push(Object.freeze({itemId:id,discovered:val}));
   }
   entries.sort((a,b)=>a.itemId-b.itemId);
   const status=!supportedSchema?'unsupported_schema':
     !hasCollection?'not_observed':
     !Array.isArray(sets)?'incompatible_structure':
-    partial||invalid||conflicts?'partial_inconclusive':
+    partial||invalid||conflictedIds.size?'partial_inconclusive':
     !entries.length?'observed_empty':'observed_boolean_discovery';
   return Object.freeze({
     contract:SAVE_COLLECTION_DISCOVERY_CONTRACT,
@@ -73,7 +76,7 @@ export function projectSavedCollectionDiscovery(root) {
     saveSchema:Number.isSafeInteger(saveSchema)?saveSchema:null,
     status,entries:Object.freeze(entries),observedReferences:observed,
     observedGroups:groups,invalidReferences:invalid,
-    ambiguousItemIds:conflicts,sampled:partial,
+    ambiguousItemIds:conflictedIds.size,sampled:partial,
     semantic:'collection_discovery_history_not_ownership',
     nativeEvidenceVersion:'switch-1.25.0',
     currentSteamNativeEquivalentProven:false,
