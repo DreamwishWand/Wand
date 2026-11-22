@@ -140,17 +140,6 @@
     route.includes('/save')?'save':'home';
   $: copy=shellCopy(uiLocale);
   $: tutorial=copy.tutorials[(service as TutorialKey)]??copy.tutorials.home;
-  function focusContextSearch():boolean{
-    const label=service==='collection'?'8言語のアイテム名で検索':
-      service==='starpath'?'通常タスクを検索':
-      service==='characters'?'キャラクター名称を検索':'クエスト名・IDを検索';
-    const field=Array.from(document.querySelectorAll<HTMLInputElement>('input')).find(
-      input=>input.getAttribute('aria-label')===label && !input.disabled);
-    if(!field)return false;
-    field.focus();
-    field.scrollIntoView({block:'nearest'});
-    return true;
-  }
   function openWorldSource(){
     document.querySelector<HTMLInputElement>('.world-preview input[type="file"][accept*=".zip"]:not(:disabled)')?.click();
   }
@@ -186,16 +175,7 @@
     {#if service!=='home'}<span class="shell-current">{service==='collection'?'Collection':service==='starpath'?'Star Path':service==='characters'?'Characters':service==='guide'?'Guide':service==='world'?'World':'Save'}</span>{/if}
     <div class="header-spacer"></div>
     <div class="site-actions" aria-label={copy.pageActions}>
-      {#if service==='collection'}
-        <div class="header-context-tools" role="group" aria-label={copy.collectionTools}>
-          <button class="header-icon-button header-context-optional" type="button" on:click={focusContextSearch} aria-label={copy.collectionSearch} title={copy.search}><WandIcon name="search" size={20}/></button>
-          <button class="header-icon-button header-context-optional" type="button" on:click={()=>window.dispatchEvent(new Event('wand:collection-filters'))} aria-label={copy.filter} title={copy.filter}><WandIcon name="filter" size={20}/></button>
-        </div>
-      {:else if service==='starpath'||service==='characters'||route.includes('/guide/quests')}
-        <div class="header-context-tools" role="group" aria-label={copy.guideTools}>
-          <button class="header-icon-button" type="button" on:click={focusContextSearch} aria-label={copy.guideSearch} title={copy.search}><WandIcon name="search" size={20}/></button>
-        </div>
-      {:else if service==='world'}
+      {#if service==='world'}
         <div class="header-context-tools" role="group" aria-label={copy.worldTools}>
           <button class="header-icon-button" type="button" on:click={openWorldSource} aria-label={copy.worldSource} title={copy.worldSource}><WandIcon name="folder" size={20}/></button>
         </div>
@@ -271,6 +251,11 @@
           <div class="shell-menu shell-more-menu" role="group" aria-label={copy.moreActions}>
             <button type="button" on:click={()=>{moreOpen=false;tutorialOpen=true;}}><WandIcon name="help" size={18}/>{copy.help}</button>
             <button type="button" on:click={openAccount}><WandIcon name="character" size={18}/>{copy.account}</button>
+            {#if service==='collection'}
+              <div class="shell-menu-divider"></div>
+              <button type="button" on:click={()=>{moreOpen=false;backupCollection();}}><WandIcon name="download" size={18}/>{copy.collectionBackup}</button>
+              <button type="button" disabled={collectionBusy} on:click={()=>{moreOpen=false;restoreCollection();}}><WandIcon name="restore" size={18}/>{copy.collectionRestore}</button>
+            {/if}
           </div>
         {/if}
       </div>
