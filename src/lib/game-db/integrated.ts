@@ -79,6 +79,22 @@ export interface ItemHistorical {
   readonly universes:HistoricalCandidate<'universes'>|null;
   readonly dlc:HistoricalCandidate<'dlc'>|null;
 }
+/** Verified-current and historical-candidate queries never share a result scope. */
+export type SharedDbTextFacet=Exclude<FactKey,'media'>;
+export type SharedDbHistoricalFacet='category'|'worlds'|'universes'|'dlc';
+export type SharedDbFilter =
+  | Readonly<{scope:'current';field:FactKey;state:FactState}>
+  | Readonly<{scope:'current';field:SharedDbTextFacet;values:readonly string[];
+    match?:'any'|'all'}>
+  | Readonly<{scope:'historical_candidate';field:SharedDbHistoricalFacet;
+    values:readonly string[];match?:'any'|'all'}>;
+export interface SharedDbQueryResult {
+  readonly total:number;
+  readonly offset:number;
+  readonly nextOffset:number|null;
+  readonly items:readonly SharedDbItem[];
+}
+
 export interface SharedDbItem {
   readonly id:string;
   readonly names:Readonly<Partial<Record<DbLocale,string>>>;
@@ -247,10 +263,10 @@ function sourceRecord(stream:DbStream|'DB-00',target:DbTarget,
   });
 }
 function missing<K extends FactKey>(state:'unverified'|'not_covered'):FieldFact<K> {
-  return {state,value:null,provenance:null};
+  return Object.freeze({state,value:null,provenance:null});
 }
 function observed<K extends FactKey>(value:FactValueMap[K],source:FactProvenance):FieldFact<K> {
-  return {state:'verified',value:copyValue(value),provenance:source};
+  return Object.freeze({state:'verified',value:copyValue(value),provenance:source});
 }
 function legacyCandidate<K extends 'worlds'|'universes'|'dlc'|'category'>(
   value:FactValueMap[K]):HistoricalCandidate<K> {
@@ -275,6 +291,8 @@ export class SharedGameDatabase {
   private readonly semanticCategoryVerified:boolean;
   private readonly usedOverlays:Set<string>;
   private readonly trustedSources:Map<DbStream,ReadonlySet<string>>;
+  private readonly orderedIds:readonly string[];
+  private readonly queryCache:Map<string,ReadonlySet<string>>;
 
   constructor(snapshot:PublicSnapshot,historical?:HistoricalSource,
     /** Independently verified ORIGINAL game-source digests, not copied from overlay. */
@@ -286,7 +304,22 @@ export class SharedGameDatabase {
       'PUBLISHED_SNAPSHOT_REQUIRED');
     this.snapshotId=snapshot.id;
     this.target=Object.freeze({...snapshot.target});
-    this.records=new Map(snapshot.items.map(item=>[canonicalId(item.id),item]));
+    // Snapshot bytes are checked by DB-00 client. Capture an immutable read
+    // model so later mutations by a consumer cannot silently forge facts.
+    this.records=new Map(snapshot.items.map(item=>[canonicalId(item.id),
+      Object.freeze({
+        ...item,
+        names:Object.freeze({...item.names}),
+        worlds:Object.freeze([...item.worlds]),
+        universes:Object.freeze([...item.universes]),
+        contentIds:Object.freeze([...item.contentIds]),
+        releaseIds:Object.freeze([...item.releaseIds]),
+        relations:Object.freeze([...item.relations]),
+        sourceRefs:Object.freeze([...item.sourceRefs]),
+        ...(item.media?{media:Object.freeze({...item.media})}:{})
+      }) as PublicRow]));
+    this.orderedIds=Object.freeze([...this.records.keys()].sort((a,b)=>Number(a)-Number(b)));
+    this.queryCache=new Map();
     this.itemCount=this.records.size;
     this.semanticCategoryVerified=snapshot.coverage.semanticCategoriesVerified===true;
     const first=snapshot.sources[0];
@@ -333,6 +366,7 @@ export class SharedGameDatabase {
     }
     this.historical.clear();
     for(const [id,fact] of candidates)this.historical.set(id,fact);
+    this.queryCache.clear();
   }
 
   /** Attach a previously hashed and independently pinned current-source pack. */
@@ -387,6 +421,7 @@ export class SharedGameDatabase {
       this.current.set(id,next);
     }
     this.usedOverlays.add(overlay.id);
+    this.queryCache.clear();
   }
 
   async attachVerifiedOverlay(bytes:Uint8Array|ArrayBuffer,pinnedSha256:string):Promise<void> {
@@ -428,6 +463,91 @@ export class SharedGameDatabase {
       nativeCategory:item.nativeCategory??null,
       facts:Object.freeze(fields) as ItemFactFields,
       historical:this.historical.get(id)??fallback
+    });
+  }
+
+  /** Batch read retains input order and does not turn missing IDs into invented items. */
+  getItems(ids:readonly (string|number)[]):readonly (SharedDbItem|null)[] {
+    check(Array.isArray(ids)&&ids.length<=10000,'INVALID_BATCH');
+    return Object.freeze(ids.map(id=>this.getItem(id)));
+  }
+
+  /** Read-only reverse facet index. Absent, unknown and historical evidence are distinct. */
+  private queryIds(filter:SharedDbFilter):ReadonlySet<string> {
+    check(object(filter)&&
+      (filter.scope==='current'||filter.scope==='historical_candidate')&&
+      typeof filter.field==='string'&&FIELDS.includes(filter.field as FactKey),
+      'INVALID_FILTER');
+    const historical=filter.scope==='historical_candidate';
+    check(!historical||['category','worlds','universes','dlc'].includes(filter.field),
+      'INVALID_HISTORICAL_FACET');
+    const statusMode='state' in filter;
+    check(!historical||!statusMode,'HISTORICAL_STATE_FILTER_FORBIDDEN');
+    let vals:readonly string[]=[];
+    let match:'any'|'all'='any';
+    if(statusMode) {
+      check(typeof filter.state==='string'&&
+        ['verified','not_applicable','unverified','not_covered'].includes(filter.state),
+        'UNKNOWN_FILTER_STATE');
+    } else {
+      vals=filter.values;
+      match=filter.match??'any';
+      check(Array.isArray(vals)&&vals.length>0&&vals.length<=32&&
+        vals.every(stringToken)&&new Set(vals).size===vals.length&&
+        (filter.match===undefined||filter.match==='any'||filter.match==='all'),
+        'INVALID_FACET_VALUES');
+      check(String(filter.field)!=='media','MEDIA_NOT_TEXT_SEARCHABLE');
+    }
+    const cacheKey=JSON.stringify(filter);
+    const present=this.queryCache.get(cacheKey);
+    if(present)return present;
+    const selected=new Set<string>();
+    for(const id of this.orderedIds) {
+      const item=this.getItem(id);
+      if(!item)continue;
+      let values:readonly string[]=[];
+      if(historical) {
+        const source=item.historical[filter.field as SharedDbHistoricalFacet];
+        if(!source)continue;
+        values=typeof source.value==='string'?[source.value]:source.value;
+      } else {
+        const fact=item.facts[filter.field as FactKey];
+        if(statusMode) {
+          if(fact.state===filter.state)selected.add(id);
+          continue;
+        }
+        if(fact.state!=='verified')continue;
+        values=Array.isArray(fact.value)?fact.value:
+          typeof fact.value==='string'?[fact.value]:[];
+      }
+      if(match==='all'
+        ? vals.every(value=>values.includes(value))
+        : vals.some(value=>values.includes(value)))selected.add(id);
+    }
+    this.queryCache.set(cacheKey,selected);
+    return selected;
+  }
+
+  /** One pagination contract for Collection, Guide, World, Gallery and editors.
+   * Multiple filters combine with AND; within a multi-value filter choose
+   * explicit any/all. Historical candidates are opt-in, never current facts.
+   */
+  queryItems(filters:readonly SharedDbFilter[]=[],
+    page:Readonly<{offset?:number;limit?:number}>={}):SharedDbQueryResult {
+    check(Array.isArray(filters)&&filters.length<=16,'INVALID_QUERY_FILTERS');
+    const offset=page.offset??0,limit=page.limit??100;
+    check(Number.isSafeInteger(offset)&&offset>=0&&
+      Number.isSafeInteger(limit)&&limit>=1&&limit<=500,
+      'INVALID_QUERY_PAGE');
+    const selections=filters.map(filter=>this.queryIds(filter));
+    const matches=this.orderedIds.filter(id=>selections.every(index=>index.has(id)));
+    const pageIds=matches.slice(offset,offset+limit);
+    const items=pageIds.map(id=>this.getItem(id)).filter((row):row is SharedDbItem=>row!==null);
+    const nextOffset=offset+items.length;
+    return Object.freeze({
+      total:matches.length,offset,
+      nextOffset:nextOffset<matches.length?nextOffset:null,
+      items:Object.freeze(items)
     });
   }
 

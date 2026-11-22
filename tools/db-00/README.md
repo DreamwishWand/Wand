@@ -142,3 +142,29 @@ The legacy `model.mjs` and `client.mjs` backend remain in service during their s
 
 
 **Independent original-source pins:** The trusted application must pass `verifiedOriginalSourcePins` to `openSharedGameDatabase`, keyed by stream (DB-01..05/SRC-04) and containing source SHA-256 values verified against an independent release/source ledger. Overlay bytes must *also* pass `verifyFactOverlay(bytes, independentlyTrustedOverlaySha256)`. Either hash check failing blocks insertion. The overlay's own `sourceSha256` is not accepted as a self-authenticating proof. Without independently pinned originals the API remains read-only over the SHA-verified public DB and optional historical candidates.
+
+
+### Shared facet searches (not Collection-only)
+Use the same already-verified `SharedGameDatabase` instance across Guide,
+Gallery, World Editor, Collection and Save consumers. `db.getItems(ids)` preserves
+requested Item ID order with explicit `null` for unrepresented IDs;
+`db.queryItems(filters,{offset,limit})` supplies bounded (1–500) pages and
+full matching counts. All filters combine with AND, each multi-value filter
+can choose `match: 'any' | 'all'`; arrays support multiple worlds, universes,
+DLCs and events without collapsing links to one value. The reverse index is
+cached and invalidated after verified current or historical updates.
+
+A current verified world filter is
+`{scope:'current',field:'worlds',values:['IsDreamlightValley']}`. Missing
+classification cannot match this filter: use
+`{scope:'current',field:'worlds',state:'unverified'}` to find items requiring
+current-source verification. To **explicitly inspect** older Switch candidates
+instead, use
+`{scope:'historical_candidate',field:'worlds',values:['IsDreamlightValley']}`.
+These sources never merge implicitly and no missing or empty array is treated
+as a verified negative answer. Results contain the same per-field source/version
+and original verification status as `getItem`.
+
+The loader copies validated source rows into immutable records, so UI mutation
+cannot silently alter source-backed facts or search indexes. No private source
+data, save file or live entitlement information is exposed by these queries.

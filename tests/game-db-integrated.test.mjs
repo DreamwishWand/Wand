@@ -138,3 +138,64 @@ test('shared API reads the published Steam 1.26.2 13,202 item database',async()=
   }
   assert.equal(coverage.fields.events.notCovered,13202);
 });
+
+test('reverse indexes distinguish current facts, unknown state and historical candidates',async()=>{
+  const db=new SharedGameDatabase(current(),old(),originalShaPins);
+  const h={scope:'historical_candidate',field:'worlds',values:['Valley']};
+  const w={scope:'current',field:'worlds',values:['Valley']};
+  assert.deepEqual(db.queryItems([h]).items.map(x=>x.id),['40005160']);
+  assert.equal(db.queryItems([w]).total,0,'old Switch must not become Steam fact');
+  assert.equal(db.queryItems([{scope:'current',field:'worlds',state:'unverified'}]).total,2);
+  assert.equal(db.queryItems([{scope:'current',field:'acquisition',state:'not_covered'}]).total,2);
+  assert.deepEqual(db.queryItems([],{limit:1}).items.map(x=>x.id),['40005160']);
+  assert.equal(db.queryItems([],{limit:1}).nextOffset,1);
+  assert.deepEqual(db.queryItems([],{offset:1}).items.map(x=>x.id),['40006110']);
+  await attach(db,pack('current-world','DB-01',[{itemId:'40005160',facts:[
+    {field:'worlds',state:'verified',value:['Valley','Eternity']},
+    {field:'universes',state:'verified',value:['Alice','Frozen']}
+  ]}]));
+  assert.deepEqual(db.queryItems([w]).items.map(x=>x.id),['40005160'],
+    'reverse index must invalidate after verified overlay');
+  assert.deepEqual(db.queryItems([{scope:'current',field:'worlds',
+    values:['Valley','Eternity'],match:'all'}]).items.map(x=>x.id),['40005160']);
+  assert.equal(db.queryItems([{scope:'current',field:'worlds',
+    values:['Valley','Elsewhere'],match:'all'}]).total,0);
+  assert.equal(db.queryItems([w,{scope:'current',field:'universes',
+    values:['Frozen']}]).total,1);
+  assert.equal(db.queryItems([{scope:'current',field:'worlds',state:'unverified'}]).total,1);
+  assert.equal(db.queryItems([h]).total,1,'historical and current evidence remain separate');
+  assert.deepEqual(db.getItems([40005160,'99999999',40006110]).map(x=>x?.id??null),
+    ['40005160',null,'40006110']);
+  assert.throws(()=>db.queryItems([{scope:'current',field:'media',values:['fake']}]),
+    /MEDIA_NOT_TEXT_SEARCHABLE/);
+  assert.throws(()=>db.queryItems([{scope:'historical_candidate',field:'events',
+    values:['fake']}]),/INVALID_HISTORICAL_FACET/);
+  assert.throws(()=>db.queryItems([],{limit:1000}),/INVALID_QUERY_PAGE/);
+});
+
+test('shared database owns immutable release facts after caller mutates source object',()=>{
+  const raw=current();
+  raw.items[0].worlds.push('IsDreamlightValley');
+  raw.items[0].names.en='Original';
+  const db=new SharedGameDatabase(raw);
+  const first=db.getItem('40005160');
+  assert.deepEqual(first.facts.worlds.value,['IsDreamlightValley']);
+  raw.items[0].worlds.push('ForgedWorld');
+  raw.items[0].names.en='Forged';
+  assert.deepEqual(db.getItem('40005160').facts.worlds.value,['IsDreamlightValley']);
+  assert.equal(db.getItem('40005160').names.en,'Original');
+  assert.ok(Object.isFrozen(db.getItem('40006110').facts.worlds));
+  assert.throws(()=>{db.getItem('40006110').facts.worlds.state='verified'},TypeError);
+});
+
+test('current Steam 13202-item facet query never presents absent world as none',async()=>{
+  const root=resolve(new URL('..',import.meta.url).pathname);
+  const local=async(url)=>{
+    try{return new Response(await readFile(join(root,'static',url.replace(/^\/Wand\//,''))),{status:200});}
+    catch(e){if(e?.code==='ENOENT')return new Response('',{status:404});throw e;}
+  };
+  const db=await openSharedGameDatabase('/Wand',local);
+  assert.equal(db.queryItems([{scope:'current',field:'worlds',state:'unverified'}],{limit:10}).total,13202);
+  assert.equal(db.queryItems([{scope:'current',field:'worlds',state:'not_applicable'}]).total,0);
+  assert.equal(db.queryItems([{scope:'current',field:'worlds',values:['IsDreamlightValley']}]).total,0);
+});
