@@ -436,7 +436,7 @@ try{
   assert.match(await gridareaPanel.innerText(),/Item 100 · 原本GridArea/);
   assert.match(await gridareaPanel.innerText(),/原本GridAreaのサイズ：\s*2 × 2/);
   assert.match(await gridareaPanel.innerText(),/非ゼロ 3値/);
-  assert.match(await gridareaPanel.innerText(),/0 × 1 · 68 × 2 · 76 × 1/);
+  assert.match(await gridareaPanel.innerText(),/68 × 2 · 0 × 1 · 76 × 1/);
   assert.match(await gridareaPanel.innerText(),/占有セル数ではありません/);
   assert.doesNotMatch(await gridareaPanel.innerText(),/編集可能/);
   assert.match(await terrainSelectors.nth(1).locator('option:checked').innerText(),
@@ -471,6 +471,9 @@ try{
   await globalItemQuery.press('Enter');
   await page.getByRole('status')
     .filter({hasText:'この部分的な原本ZIPに指定Item IDの初期配置はありません'}).waitFor();
+  await page.waitForFunction(()=>document.querySelector(
+    '[aria-label="原本Item GridArea情報"]')?.textContent
+      ?.includes('このItem定義に原本GridAreaは記録されていません'));
   assert.match(await gridareaPanel.innerText(),
     /このItem定義に原本GridAreaは記録されていません。配置不可とは判定しません/);
 
