@@ -40,7 +40,11 @@
     puzzle:'M4 4h6c-1 3 1 4 3 3V4h7v6c-3-1-4 1-3 3h3v7h-6c1-3-1-4-3-3v3H4v-7h3c1-2-1-4-3-3z',
     sun:'M12 3v3 M12 18v3 M3 12h3 M18 12h3 M5.5 5.5l2 2 M16.5 16.5l2 2 M18.5 5.5l-2 2 M7.5 16.5l-2 2 M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8',
     book:'M5 3h15v18H5a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3z M5 18h15',
-    plus:'M12 4v16 M4 12h16'
+    plus:'M12 4v16 M4 12h16',
+    account:'M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10 M3 22v-2a9 9 0 0 1 18 0v2',
+    moon:'M20.4 15.8A9 9 0 0 1 8.2 3.6 9 9 0 1 0 20.4 15.8z',
+    language:'M3 5h12 M9 3v2 M5 9c2 5 6 8 10 10 M14 9c-2 5-6 8-10 10 M14 21l4-10 4 10 M16 17h4',
+    trash:'M4 7h16 M9 7V4h6v3 M7 7l1 14h8l1-14 M10 11v6 M14 11v6'
   };
 </script>
 <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
