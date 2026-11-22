@@ -161,10 +161,10 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
         ? rust.prepare_batch_copy(plan)
         : target?.kind === 'inventory'
           ? rust.prepare_inventory_copy(
-            target.inventoryId, target.itemId, input.expected, input.replacement)
+            target.inventoryId, target.itemId, input.expected as number, input.replacement as number)
           : rust.prepare_chest_copy(
             target!.containerId, target!.slotIndex, target!.itemId,
-            input.expected, input.replacement);
+            input.expected as number, input.replacement as number);
       if (!Number.isSafeInteger(length) ||
           length < 1 || length > MAX_COPY_BYTES)
         throw new TypeError('DB05_COPY_SIZE_INVALID');
@@ -193,10 +193,10 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
         ? rust.preview_batch(plan)
         : target?.kind === 'inventory'
           ? rust.preview_inventory(
-            target.inventoryId, target.itemId, input.expected, input.replacement)
+            target.inventoryId, target.itemId, input.expected as number, input.replacement as number)
           : rust.preview_chest(
             target!.containerId, target!.slotIndex, target!.itemId,
-            input.expected, input.replacement);
+            input.expected as number, input.replacement as number);
       const candidate: unknown = JSON.parse(raw);
       if (batch) {
         if (!object(candidate) || !exact(candidate, [
