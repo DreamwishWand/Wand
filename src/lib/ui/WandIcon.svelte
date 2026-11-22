@@ -3,12 +3,14 @@
   export let name:string='sparkles';
   export let size=20;
   export let strokeWidth=1.9;
+  const globePath='M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20 M2 12h20 M12 2c-6 5-6 15 0 20 M12 2c6 5 6 15 0 20';
   const paths:Record<string,string>={
     home:'m3 10 9-7 9 7 M5 9v11h14V9 M9 20v-7h6v7',
     collection:'M3 6.5 12 3l9 3.5v11L12 21l-9-3.5z M3 6.5l9 4 9-4 M12 10.5V21',
     guide:'M12 5C9 3.6 6 3 3 4v15c3-1 6-.4 9 1 3-1.4 6-2 9-1V4c-3-1-6-.4-9 1z M12 5v15',
     star:'m12 2 2.8 6.1 6.7.8-5 4.7 1.3 6.5-5.8-3.2-5.8 3.2 1.3-6.5-5-4.7 6.7-.8z',
-    world:'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20 M2 12h20 M12 2c-6 5-6 15 0 20 M12 2c6 5 6 15 0 20',
+    world:globePath,
+    globe:globePath,
     save:'M4 3h13l3 3v15H4z M7 3v7h10V3 M8 21v-8h8v8',
     upload:'M12 16V3 m-5 5 5-5 5 5 M4 16v4h16v-4',
     download:'M12 3v13 m-5-5 5 5 5-5 M4 17v4h16v-4',
