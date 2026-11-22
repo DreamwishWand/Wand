@@ -72,8 +72,6 @@ const knownLegacy=new Set([
   "src/lib/guide/starpath-public-media.mjs",
   "src/lib/guide/starpath-reward-extras.mjs",
   "src/lib/guide/starpath-reward-names.mjs",
-  "src/lib/guide/starpath-search.mjs",
-  "src/lib/guide/starpath-task-guidance.mjs",
   "src/lib/save/achievement-links.mjs",
   "src/lib/save/achievement-progress.mjs",
   "src/lib/save/catalog-links.mjs",

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.mjs';
-import {starpathTaskDisplay} from '../src/lib/guide/starpath-task-guidance.mjs';
+import {starpathTaskDisplay} from '../src/lib/guide/starpath-task-guidance.ts';
 
 const load=async()=>verifyPublicStarpath(JSON.parse(await readFile(
   new URL('../static/guide/public/starpath-cache-2026-11-22.json',import.meta.url))));

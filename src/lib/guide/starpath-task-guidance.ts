@@ -3,8 +3,16 @@
  * Only source-identified season + Task IDs are allowed. Missing review -> null.
  * Curated explanations must not be shown as computed quest progress or rewards.
  */
+export interface SourceStarpathTask {
+  id: string;
+  objectiveKind?: string|null;
+  description?: string|null;
+  descriptionKey?: string|null;
+}
+type DailyReview={kind:string;hint:string;ja:string;en:string};
+type WeeklyReview={kind:string;ja:string;en:string};
 export const STARPATH_GUIDANCE_CONTRACT='wand.db03.starpath-editorial-action@1';
-const docs={
+const docs:Record<string,DailyReview>={
   'HauntingElegance2026/Task17':{
     kind:'HangoutWithCharacter',hint:'hot-tempered duck',
     ja:'ドナルドダックを同行者にして、一緒に行動する。',
@@ -256,9 +264,81 @@ const docs={
   'Seafaring2026/Task47':{
     kind:'CraftItem',hint:'Helm Bookshelf',
     ja:'クラフトステーションで「Helm Bookshelf」を製作する。',
-    en:'Craft the Helm Bookshelf at a crafting station.'}
+    en:'Craft the Helm Bookshelf at a crafting station.'},
+  'HauntingElegance2026/Task35':{
+    kind:'CookMeal',hint:'Whimsical Pies',
+    ja:'「Whimsical Pie」を調理する。',
+    en:'Cook Whimsical Pies at a cooking station.'},
+  'HauntingElegance2026/Task42':{
+    kind:'GiftToCharacter',hint:'Mickey & Friends',
+    ja:'「ミッキー＆フレンズ」の村人に、当日の好物を贈る。',
+    en:'Give favorite gifts to Mickey & Friends villagers.'},
+  'HauntingElegance2026/Task45':{
+    kind:'CraftItem',hint:'Miracle Pickaxe Polish',
+    ja:'「Miracle Pickaxe Polish」をクラフトする。',
+    en:'Craft Miracle Pickaxe Polish.'},
+  'HauntingElegance2026/Task47':{
+    kind:'Friend',hint:'Friendship Level 5 with some fellow Villagers',
+    ja:'5人の村人との友情レベルを5以上にする。',
+    en:'Reach Friendship Level 5 with five villagers.'},
+  'HauntingElegance2026/Task48':{
+    kind:'GardeningHarvest',hint:'apple picking',
+    ja:'リンゴの木からリンゴを収穫する。',
+    en:'Harvest apples from apple trees.'},
+  'HauntingElegance2026/Task55':{
+    kind:'CraftItem',hint:'Miracle Growth Elixir',
+    ja:'「Miracle Growth Elixir」をクラフトする。',
+    en:'Craft Miracle Growth Elixir.'},
+  'HauntingElegance2026/Task56':{
+    kind:'RoyalDuties',hint:'mining-related royal tasks',
+    ja:'採掘に関連するドリームライトの任務を達成する。',
+    en:'Complete mining-related Dreamlight Duties.'},
+  'HauntingElegance2026/Task68':{
+    kind:'EquipPet',hint:'Level 2',
+    ja:'レベル2に到達したオトモを装備する。',
+    en:'Equip a companion that has reached Level 2.'},
+  'HauntingElegance2026/Task74':{
+    kind:'CookMeal',hint:'Halloween Gingerbread Cookies',
+    ja:'ハロウィンのジンジャーブレッドクッキーを調理する。',
+    en:'Cook Halloween Gingerbread Cookies.'},
+  'HauntingElegance2026/Task82':{
+    kind:'EatMeal',hint:'Gingerbread Houses',
+    ja:'ジンジャーブレッドハウスを食べる。',
+    en:'Eat Gingerbread Houses.'},
+  'HauntingElegance2026/Task85':{
+    kind:'CookMeal',hint:'5-star dessert',
+    ja:'星5のデザートを調理する。',
+    en:'Cook a five-star dessert.'},
+  'HauntingElegance2026/Task92':{
+    kind:'MineMineral',hint:'Vitalys Crystals',
+    ja:'ヴィタリスクリスタルを採掘する。',
+    en:'Mine Vitalys Crystals.'},
+  'HauntingElegance2026/Task98':{
+    kind:'PurchaseItem',hint:'Goofy\'s Stall',
+    ja:'グーフィーの売店で種を購入する。',
+    en:'Buy seeds from Goofy\'s Stall.'},
+  'HauntingElegance2026/Task116':{
+    kind:'TakePicture',hint:'photos around the Valley',
+    ja:'バレー内で写真を撮影する。',
+    en:'Take photographs around the Valley.'},
+  'HauntingElegance2026/Task117':{
+    kind:'CraftItem',hint:'Miracle Fishing Bait',
+    ja:'ミラクル釣りエサをクラフトする。',
+    en:'Craft Miracle Fishing Bait.'},
+  'Seafaring2026/Task24':{
+    kind:'CollectCurrency',hint:'1,000 Dreamlight',
+    ja:'ドリームライトを1,000獲得する。',
+    en:'Earn 1,000 Dreamlight.'},
+  'Seafaring2026/Task29':{
+    kind:'CollectCurrency',hint:'15,000',
+    ja:'スターコインを15,000獲得する。',
+    en:'Earn 15,000 Star Coins.'},
+  'Seafaring2026/Task50':{
+    kind:'GardeningHarvest',hint:'coconuts',
+    ja:'ヤシの実を収穫する。',
+    en:'Harvest coconuts.'},
 };
-const weekly={
+const weekly:Record<string,WeeklyReview>={
   'HauntingElegance2026/Week01Task03':{
     kind:'HangoutWithCharacter',
     ja:'ジャック・スケリントンとハングアウトする。',
@@ -294,8 +374,8 @@ const weekly={
     ja:'アリエルに、その日の好物のギフトを渡す。',
     en:'Give Ariel one of her favorite gifts.'}
 };
-export function actionableStarpathTask(seasonId,task,language='ja'){
-  if(!task||typeof task.id!=='string'||!['ja','en'].includes(language))return null;
+export function actionableStarpathTask(seasonId:string,task:SourceStarpathTask|null|undefined,language:string='ja'){
+  if(!task||typeof task.id!=='string'||(language!=='ja'&&language!=='en'))return null;
   const record=docs[seasonId+'/'+task.id];
   if(record){
     if(task.objectiveKind!==record.kind||
@@ -317,7 +397,7 @@ export const STARPATH_REVIEWED_WEEKLY_COUNT=Object.keys(weekly).length;
  * available. Editorial steps are authored in Japanese and English only;
  * they must never masquerade as official text in another UI language.
  */
-export function starpathTaskDisplay(seasonId,task,locale,sourceText){
+export function starpathTaskDisplay(seasonId:string,task:SourceStarpathTask|null|undefined,locale:string,sourceText:string|null|undefined){
   const verifiedLanguage=locale==='ja'||locale==='en'?locale:null;
   const reviewed=verifiedLanguage?actionableStarpathTask(seasonId,task,verifiedLanguage):null;
   const original=typeof sourceText==='string'&&sourceText.trim()?sourceText:

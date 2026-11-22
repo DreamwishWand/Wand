@@ -5,7 +5,7 @@ import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.mjs';
 import {verifyStarpathDailyPart,starpathDailyDescription} from '../src/lib/guide/public-starpath-daily.mjs';
 import {verifyStarpathWeeklyLocales,starpathWeeklyDescription} from '../src/lib/guide/public-starpath-locales.mjs';
 import {verifyPublicStarpathGoals,starpathGoalLabel} from '../src/lib/guide/public-starpath-goals.mjs';
-import {filterStarpathTasks} from '../src/lib/guide/starpath-search.mjs';
+import {filterStarpathTasks} from '../src/lib/guide/starpath-search.ts';
 
 const dir=new URL('../static/guide/public/',import.meta.url);
 const read=async name=>JSON.parse(await readFile(new URL(name,dir),'utf8'));
