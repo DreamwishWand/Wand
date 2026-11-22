@@ -4,9 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { createHash, createCipheriv } from 'node:crypto';
 import { deflateRawSync } from 'node:zlib';
 import { chromium } from 'playwright';
-import {
-  makeCollectionDb04ZipFixture,TEST_DB04_LAYOUT,TEST_DB04_GRID
-} from '../tests/helpers/collection-db04-zip-fixture.mjs';
+import {TEST_DB04_LAYOUT} from '../tests/helpers/collection-db04-zip-fixture.mjs';
 
 // One synthetic P1G, never a real user's save. Browser e2e verifies that
 // decoded native discovery booleans flow through Worker -> Rust/WASM -> IDB.
@@ -53,6 +51,39 @@ function makeSyntheticP1g(root) {
 }
 
 const url = 'http://127.0.0.1:4173/Wand/collection/';
+async function readLocalState(page){
+  return page.evaluate(async()=>{
+    const req=indexedDB.open('dreamwishwand-collection',1);
+    const db=await new Promise((resolve,reject)=>{req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});
+    const value=await new Promise((resolve,reject)=>{
+      const get=db.transaction('state','readonly').objectStore('state').get('current');
+      get.onsuccess=()=>resolve(get.result?.value);get.onerror=()=>reject(get.error);
+    });
+    db.close();
+    return value?JSON.parse(value):null;
+  });
+}
+async function waitForLocalState(page,expected){
+  await page.waitForFunction(async expected=>{
+    const request=indexedDB.open('dreamwishwand-collection',1);
+    const db=await new Promise((resolve,reject)=>{
+      request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);
+    });
+    const value=await new Promise((resolve,reject)=>{
+      const get=db.transaction('state','readonly').objectStore('state').get('current');
+      get.onsuccess=()=>resolve(get.result?.value);get.onerror=()=>reject(get.error);
+    });
+    db.close();
+    if(!value)return false;
+    const snapshot=JSON.parse(value);
+    const work=snapshot.workspaces.find(x=>x.id===(expected.workspace??snapshot.active));
+    if(!work||expected.active&&snapshot.active!==expected.active)return false;
+    if(expected.item&&(work.entries[expected.item]?.status??null)!==(expected.status??null))return false;
+    if(expected.missing!==undefined&&
+      Object.values(work.entries).filter(x=>x.status==='missing').length!==expected.missing)return false;
+    return true;
+  },expected,{timeout:25000});
+}
 const server = spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--host','127.0.0.1','--port','4173'],{
   env:{...process.env,BASE_PATH:'/Wand'},stdio:'pipe'
 });
