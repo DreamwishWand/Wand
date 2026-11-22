@@ -4,6 +4,12 @@ import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 
 const url = 'http://127.0.0.1:4177/Wand/guide/quests/';
+const languageLabels={ja:'日本語',en:'English',fr:'Français',it:'Italiano',de:'Deutsch','es-ES':'Español','zh-CN':'简体中文','pt-BR':'Português'};
+async function chooseLanguage(page,code){
+  await page.getByRole('button',{name:'表示言語を切り替える'}).click();
+  await page.getByRole('group',{name:'表示言語'})
+    .getByRole('button',{name:languageLabels[code],exact:true}).click();
+}
 const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1', '--port', '4177'], {
   env: {...process.env, BASE_PATH: '/Wand'}, stdio: 'pipe'
 });
@@ -34,7 +40,8 @@ try {
   assert.equal(await page.locator('input[type=file]').count(), 0);
   assert.equal(downloaded.filter(value => value.endsWith('/quest-index.json')).length, 1);
   assert.equal(downloaded.filter(value => value.includes('quest-details-')).length, 0, 'lazy details must not prefetch');
-  assert.equal(await page.locator('header.site-header a[href$="/guide/"]').count(), 1, 'main nav must link to unified Guide hub');
+  assert.equal(await page.locator('header.site-header .site-nav').count(),0);
+  assert.equal(await page.getByRole('link',{name:'ホームへ戻る'}).count(),1);
 
   const search = page.getByRole('textbox', {name: 'クエスト名・IDを検索'});
   await search.fill('ドリームライトバレーへようこそ');
@@ -46,7 +53,7 @@ try {
   assert.equal(downloaded.filter(value => value.includes('quest-details-')).length, 1, 'one lazy detail part');
   assert.equal(await page.locator('.detail').innerText().then(value => value.includes('<ActivityItem>')), false, 'do not display raw game text tags');
 
-  await page.getByRole('combobox', {name: '表示言語'}).selectOption('en');
+  await chooseLanguage(page,'en');
   await page.waitForFunction(() => document.querySelector('.detail-header h2')?.textContent?.includes('Welcome to Dreamlight Valley'));
   assert.match(await page.locator('.detail-header').innerText(), /Welcome to Dreamlight Valley/);
   assert.match(await page.locator('.detail').innerText(), /Try to enter the House/);
@@ -57,7 +64,7 @@ try {
 
   await page.setViewportSize({width: 390, height: 844});
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 2), true, 'mobile horizontal overflow');
-  await page.getByRole('combobox', {name: '表示言語'}).selectOption('ja');
+  await chooseLanguage(page,'ja');
 
   // Original-native selector ID 30000031 resolves through the published,
   // exact current Steam 1.26.2 names, without requiring an owner source archive.
@@ -66,9 +73,9 @@ try {
   await page.locator('.target-chip').filter({hasText:'ピュアナイトシャード'}).first().waitFor({timeout:20000});
   assert.match(await page.locator('.detail').innerText(), /原本の設定数量：5/);
   assert.match(await page.locator('.target-chip').first().innerText(), /ID 30000031/);
-  await page.getByRole('combobox',{name:'表示言語'}).selectOption('en');
+  await chooseLanguage(page,'en');
   await page.locator('.target-chip').filter({hasText:'Purified Night Shard'}).first().waitFor({timeout:20000});
-  await page.getByRole('combobox',{name:'表示言語'}).selectOption('ja');
+  await chooseLanguage(page,'ja');
 
   // Corrupt a *different*, uncached part; browser must fail closed on SHA.
   await page.route('**/guide/public/quest-details-00.json', async route => {
@@ -124,7 +131,7 @@ try {
   await people.waitForFunction(()=>location.search.includes('character=10000049'));
   assert.equal(await people.locator('.linked li').count(),0,'Flounder has no direct index link');
   assert.match(await people.locator('.details').innerText(),/ゲーム内にクエストが存在しないことを意味しません/);
-  await people.getByRole('combobox',{name:'キャラクター名称の表示言語'}).selectOption('en');
+  await chooseLanguage(people,'en');
   assert.match(await people.locator('.detail-head h2').innerText(),/Flounder/);
   await charSearch.fill('Captain Jack Sparrow');
   await people.locator('.person').first().click();
@@ -204,9 +211,9 @@ try {
   await star.getByRole('button',{name:'Seafaring Star Path'}).waitFor({timeout:20000});
   assert.match(await star.locator('.summary').innerText(),/121 \/ 21/);
   assert.match(await star.locator('.entries li').first().innerText(),/闇のトゲを引っこ抜く/);
-  await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('en');
+  await chooseLanguage(star,'en');
   assert.match(await star.locator('.entries li').first().innerText(),/Uproot Night Thorns/);
-  await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('ja');
+  await chooseLanguage(star,'ja');
   await star.getByRole('textbox',{name:'通常タスクを検索'}).fill('Task17');
   assert.match(await star.locator('.entries li').first().innerText(),/ドナルドダックを同行者/);
   await star.getByRole('textbox',{name:'通常タスクを検索'}).fill('闇のトゲ');
@@ -216,20 +223,20 @@ try {
   await star.getByRole('button',{name:'Seafaring Star Path'}).click();
   assert.match(await star.locator('.summary').innerText(),/25 \/ 18/);
   assert.match(await star.locator('.entries li').first().innerText(),/魚を釣る/);
-  await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('fr');
+  await chooseLanguage(star,'fr');
   assert.match(await star.locator('.entries li').first().innerText(),/Attrape des poissons/);
-  await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('ja');
+  await chooseLanguage(star,'ja');
   await star.getByRole('textbox',{name:'通常タスクを検索'}).fill('Task19');
   assert.match(await star.locator('.entries li').first().innerText(),/ピーター・パン/);
   await star.getByRole('textbox',{name:'通常タスクを検索'}).fill('');
   await star.getByRole('button',{name:'週間タスク'}).click();
   assert.equal(await star.locator('.week').count(),6);
   assert.match(await star.locator('.week').first().innerText(),/魚を20匹釣る/);
-  await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('en');
+  await chooseLanguage(star,'en');
   assert.match(await star.locator('.week').first().innerText(),/Catch 20 fish/);
-  await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('de');
+  await chooseLanguage(star,'de');
   assert.match(await star.locator('.week').nth(2).innerText(),/Fange 20 Fische am schillernden Strand/);
-  await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('ja');
+  await chooseLanguage(star,'ja');
   assert.match(await star.locator('.week').nth(2).innerText(),/輝きの浜辺で魚を25匹釣る/);
   await star.getByRole('button',{name:'報酬'}).click();
   assert.equal(await star.locator('.week').count(),4);
@@ -240,7 +247,7 @@ try {
   assert.match(await star.locator('.week').first().innerText(),/ムーンストーン/);
   assert.match(await star.locator('.week').first().innerText(),/モチーフ（正式名称なし）/);
   assert.match(await star.locator('.summary').innerText(),/700 ムーンストーン/);
-  await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('en');
+  await chooseLanguage(star,'en');
   assert.match(await star.locator('.week').first().innerText(),/Aqua Mermaid Backpack/);
   assert.match(await star.locator('.summary').innerText(),/700 Moonstone/);
   assert.match(await star.locator('.week').first().innerText(),/Lieutenant Monkey/);
