@@ -8,6 +8,7 @@ use crc32fast::hash as crc32;
 use ddv_save_patch::validate_json_without_edit;
 use flate2::{read::DeflateDecoder,write::DeflateEncoder,Compression};
 use std::io::{Read,Write};
+use zeroize::Zeroize;
 
 const KEY: &[u8;32]=b"b5qhh8saJ8UlDJUzTZXd2Tg6mbo8W8n5";
 const LIMIT:usize=128*1024*1024;
@@ -169,6 +170,85 @@ impl OpenedP1g{
     pub fn exact_noop_bytes(&self)->&[u8]{&self.original_ciphertext}
     pub fn profile_byte_len(&self)->usize{self.profile.len()}
 }
+// Clear plaintext and original ciphertext on release. This is a best-effort
+// zeroization of owned Vec storage; the caller must also discard JS copies.
+impl Drop for OpenedP1g{
+    fn drop(&mut self){
+        self.profile.zeroize();
+        self.original_zip.zeroize();
+        self.original_ciphertext.zeroize();
+    }
+}
+
+/// Browser Worker-only read proof. Never returns raw decrypted profile,
+/// user IDs, game metadata, a Writer capability, or packaged bytes.
+#[cfg(feature="wasm")]
+mod browser_audit{
+    use super::*;
+    use sha2::{Digest,Sha256};
+    use wasm_bindgen::prelude::*;
+
+    const MAX_BROWSER_CIPHERTEXT:usize=32*1024*1024;
+    const MAX_CHUNK:usize=1024*1024;
+    fn js_error(code:&'static str)->JsValue{JsValue::from_str(code)}
+
+    #[wasm_bindgen]
+    pub struct WasmP1gAudit{
+        ciphertext:Vec<u8>,
+        finalized:bool,
+    }
+    #[wasm_bindgen]
+    impl WasmP1gAudit{
+        #[wasm_bindgen(constructor)]
+        pub fn new()->WasmP1gAudit{
+            Self{ciphertext:Vec::new(),finalized:false}
+        }
+        // Call only inside the dedicated Worker. A P1G is streamed from the
+        // transferred file buffer in bounded chunks; never accept a JSON DOM.
+        pub fn append_chunk(&mut self,chunk:&[u8])->Result<(),JsValue>{
+            if self.finalized || chunk.is_empty() || chunk.len()>MAX_CHUNK ||
+               self.ciphertext.len().checked_add(chunk.len())
+                   .is_none_or(|n| n>MAX_BROWSER_CIPHERTEXT){
+                self.close();
+                return Err(js_error("DB05_NATIVE_P1G_CHUNK_DENIED"));
+            }
+            self.ciphertext.extend_from_slice(chunk);
+            Ok(())
+        }
+        // SHA-256 of validated UTF-8 original profile bytes ONLY.
+        // Returned hex must be compared and discarded inside the Worker.
+        pub fn finish_sha256_hex(&mut self)->Result<String,JsValue>{
+            if self.finalized || self.ciphertext.len()<16 ||
+               self.ciphertext.len()%16!=0{
+                self.close();
+                return Err(js_error("DB05_NATIVE_P1G_SOURCE_INVALID"));
+            }
+            let result=OpenedP1g::open(&self.ciphertext)
+                .map(|opened|{
+                    let digest=Sha256::digest(&opened.profile);
+                    let mut hex=String::with_capacity(64);
+                    const CHARS:&[u8;16]=b"0123456789abcdef";
+                    for b in digest{
+                        hex.push(CHARS[(b>>4) as usize] as char);
+                        hex.push(CHARS[(b&15) as usize] as char);
+                    }
+                    hex
+                })
+                .map_err(|_|js_error("DB05_NATIVE_P1G_STRICT_REJECTED"));
+            self.close();
+            result
+        }
+        pub fn close(&mut self){
+            self.ciphertext.zeroize();
+            self.ciphertext.clear();
+            self.finalized=true;
+        }
+    }
+    impl Drop for WasmP1gAudit{
+        fn drop(&mut self){self.close();}
+    }
+}
+
 fn rezip_profile(old:&[u8],layout:&Layout,new_profile:&[u8])->Result<Vec<u8>,CodecError>{
     let compressed=if layout.method==0{new_profile.to_vec()}else{
         let mut z=DeflateEncoder::new(Vec::new(),Compression::default());

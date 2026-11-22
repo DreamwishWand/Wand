@@ -270,3 +270,62 @@ test('WASM parity cannot run before unsafe duplicate/precision guard and forged 
     /DB05_LOCAL_WASM_CALLBACK_INVALID/
   );
 });
+
+
+test('independent Rust P1G callback runs after strict decoding, returns only a fixed anonymous parity report',async()=>{
+  const privateText='SENSITIVE_PROFILE_CUSTOMER_ACCOUNT';
+  const save=syntheticSave(643);
+  const encrypted=encodedP1g(save);
+  let called=0;
+  const result=await inspectLocalSaveDiagnosticsBytes('p1g',encrypted,null,
+    async (bytes,strictJsonText)=>{
+      called++;
+      assert.ok(bytes instanceof Uint8Array);
+      assert.deepEqual(bytes,encrypted);
+      assert.ok(strictJsonText.includes(privateText));
+      return {
+        contract:'wand.db05.native-p1g-audit@1',
+        status:'matched',wasmExecuted:true,originalProfileBytesEqual:true,
+        profileDigestExposed:false,originalSaveBytesReencoded:false,
+        writerAuthorized:false,exportAuthorized:false,
+        dangerousPrivateFingerprint:'DO_NOT_EXPOSE_SHA256_OF_PROFILE'
+      };
+    });
+  assert.equal(called,1);
+  verifyRedactedReply(result);
+  assert.deepEqual(result.nativeP1gAudit,{
+    contract:'wand.db05.native-p1g-audit@1',
+    status:'matched',wasmExecuted:true,originalProfileBytesEqual:true,
+    profileDigestExposed:false,originalSaveBytesReencoded:false,
+    writerAuthorized:false,exportAuthorized:false
+  });
+  assert.ok(!JSON.stringify(result).includes('DO_NOT_EXPOSE_SHA256'));
+  assert.ok(!JSON.stringify(result).includes(privateText));
+
+  const json=await inspectLocalSaveDiagnosticsBytes('json',
+    utf8(JSON.stringify(save)),null,async()=>{throw Error('must never call for JSON');});
+  assert.equal('nativeP1gAudit' in json,false);
+});
+
+test('forged Rust audit result is downgraded, and duplicate-key P1G is rejected before audit',async()=>{
+  const encrypted=encodedP1g(syntheticSave(643));
+  const result=await inspectLocalSaveDiagnosticsBytes('p1g',encrypted,null,async()=>({
+    contract:'wand.db05.native-p1g-audit@1',
+    status:'matched',wasmExecuted:true,originalProfileBytesEqual:true,
+    profileDigestExposed:true,originalSaveBytesReencoded:false,
+    writerAuthorized:false,exportAuthorized:false,
+    injected:'PRIVATE'
+  }));
+  assert.equal(result.nativeP1gAudit.status,'unavailable');
+  assert.equal(result.nativeP1gAudit.wasmExecuted,false);
+  assert.equal(JSON.stringify(result).includes('PRIVATE'),false);
+
+  let invoked=false;
+  await assert.rejects(inspectLocalSaveDiagnosticsBytes('p1g',
+    encodedP1g('{"GameInfo":{"Version":643},"Player":{"x":1,"x":2},"World":{}}'),
+    null,async()=>{invoked=true;return {};}),
+    /PROFILE_JSON_INVALID/);
+  assert.equal(invoked,false);
+  await assert.rejects(inspectLocalSaveDiagnosticsBytes('p1g',encrypted,
+    null,{}),/DB05_LOCAL_P1G_CALLBACK_INVALID/);
+});

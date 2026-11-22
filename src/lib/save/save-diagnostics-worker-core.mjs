@@ -40,9 +40,40 @@ function sanitizeWasmEvidence(raw) {
   });
 }
 
-export async function inspectLocalSaveDiagnosticsBytes(format, bytes, verifyNative=null) {
+
+const nativeP1gStatuses=new Set([
+  'matched','diverged','rejected_by_rust','skipped_large_save','unavailable'
+]);
+function sanitizeNativeP1gAudit(raw) {
+  const obj=raw&&typeof raw==='object'&&!Array.isArray(raw)?raw:{};
+  const valid=obj.contract==='wand.db05.native-p1g-audit@1' &&
+    nativeP1gStatuses.has(obj.status) &&
+    obj.writerAuthorized===false && obj.exportAuthorized===false &&
+    obj.profileDigestExposed===false &&
+    obj.originalSaveBytesReencoded===false;
+  const executed=valid && obj.wasmExecuted===true &&
+    (obj.status==='matched'||obj.status==='diverged');
+  const resolved=valid?(executed?(obj.status==='matched' && obj.originalProfileBytesEqual!==true
+    ? 'diverged':obj.status):
+    ['matched','diverged'].includes(obj.status)?'unavailable':obj.status):'unavailable';
+  return Object.freeze({
+    contract:'wand.db05.native-p1g-audit@1',
+    status:resolved,
+    wasmExecuted:executed,
+    originalProfileBytesEqual:executed && resolved==='matched' &&
+      obj.originalProfileBytesEqual===true,
+    profileDigestExposed:false,
+    originalSaveBytesReencoded:false,
+    writerAuthorized:false,
+    exportAuthorized:false
+  });
+}
+
+export async function inspectLocalSaveDiagnosticsBytes(format, bytes, verifyNative=null, verifyP1g=null) {
   if (verifyNative!==null && typeof verifyNative!=='function')
     throw new TypeError('DB05_LOCAL_WASM_CALLBACK_INVALID');
+  if (verifyP1g!==null && typeof verifyP1g!=='function')
+    throw new TypeError('DB05_LOCAL_P1G_CALLBACK_INVALID');
   if (!(bytes instanceof Uint8Array) || (format !== 'p1g' && format !== 'json')) {
     throw new TypeError('DB05_LOCAL_SOURCE_INVALID');
   }
@@ -63,6 +94,8 @@ export async function inspectLocalSaveDiagnosticsBytes(format, bytes, verifyNati
     strictJsonText=decoder.decode(bytes);
     root = parseSafeJson(strictJsonText);
   }
+  const nativeP1gAudit=format==='p1g' && verifyP1g!==null ?
+    sanitizeNativeP1gAudit(await verifyP1g(bytes,strictJsonText)):null;
   const summary = makeSaveDiagnosticView(root);
   const wasmReferenceParity=verifyNative===null?null:
     sanitizeWasmEvidence(await verifyNative(strictJsonText,root));
@@ -72,6 +105,7 @@ export async function inspectLocalSaveDiagnosticsBytes(format, bytes, verifyNati
     format,
     summary,
     ...(wasmReferenceParity===null?{}:{wasmReferenceParity}),
+    ...(nativeP1gAudit===null?{}:{nativeP1gAudit}),
     strictDecoderRoundTripVerified: false,
     writerAuthorized: false,
     exportAuthorized: false,

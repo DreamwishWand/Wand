@@ -21,6 +21,7 @@ jobs:
       - run: cargo check --manifest-path crates/wand-collection-core/Cargo.toml --target wasm32-unknown-unknown
       - run: wasm-pack build crates/wand-collection-core --release --target web --out-dir ../../src/lib/collection/wasm/pkg
       - run: wasm-pack build crates/ddv-save-schema --release --target web --out-dir ../../src/lib/save/wasm/pkg --features wasm
+      - run: wasm-pack build crates/ddv-p1g-codec --release --target web --out-dir ../../src/lib/save/wasm/p1g-pkg --features wasm
       - run: npm install --no-audit --no-fund
       - run: npm test
       - run: node --experimental-strip-types --test tests/collection-db01-core.check.mjs
