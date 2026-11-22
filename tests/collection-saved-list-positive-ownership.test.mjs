@@ -31,10 +31,10 @@ test('only explicitly positive ListInventory Amount imports as owned candidate, 
   assert.equal(got.contract,SAVED_LIST_OWNERSHIP_CONTRACT);
   assert.equal(got.status,'positive_stock_observed');
   assert.equal(got.saveSchema,643);
-  assert.equal(got.positiveReferences,5);
+  assert.equal(got.positiveReferences,6);
   assert.equal(got.zeroReferences,1);
-  assert.equal(got.inspectedRoles,4);
-  assert.equal(got.matchedRoles,4);
+  assert.equal(got.inspectedRoles,5);
+  assert.equal(got.matchedRoles,5);
   assert.equal(got.missingStatusInferred,false);
   assert.equal(got.zeroAmountMeansMissing,false);
   assert.deepEqual(got.entries,[
@@ -42,7 +42,8 @@ test('only explicitly positive ListInventory Amount imports as owned candidate, 
     {itemId:40005160,role:'Furniture'},
     {itemId:40005161,role:'Furniture'},
     {itemId:50000001,role:'Clothing'},
-    {itemId:160000001,role:'Trimming'}
+    {itemId:160000001,role:'Trimming'},
+    {itemId:170000001,role:'Skin'}
   ]);
   const json=JSON.stringify(got);
   assert.ok(!json.includes('private-player'));
@@ -51,6 +52,56 @@ test('only explicitly positive ListInventory Amount imports as owned candidate, 
   assert.ok(!json.includes('Favorite'));
   assert.ok(!json.includes('"Amount":'));
   assert.deepEqual(sanitizePositiveListInventoryOwnership(structuredClone(got)),got);
+});
+
+test('12 native ListInventory roles are recognized with compatible type and canonical ID',()=>{
+  const cases=[
+    [0,'Furniture',4,40005160],
+    [1,'Clothing',5,50000001],
+    [2,'ActivityItem',3,30200221],
+    [3,'Makeup',14,140000001],
+    [4,'Trimming',16,160000001],
+    [5,'Building',2,20000001],
+    [7,'Skin',17,170000001],
+    [8,'BoardGame',18,180000001],
+    [9,'AvatarFeature',7,70100024],
+    [10,'PhotoMode',19,190000023],
+    [11,'MountGear',21,210600006],
+    [12,'Environment',6,60000001]
+  ];
+  const map={};
+  for(const [key,type,itemType,id] of cases) {
+    map[String(key)]=role(key,key%2===0?type:itemType,{
+      [id]:{Amount:2,Marker:'private marker'}
+    });
+  }
+  // Role 6 has both collectible Decal and non-collectible Texture
+  // definitions under the same ItemType 10; without concrete type evidence
+  // it is explicitly excluded from automatic ownership inference.
+  map['6']=role(6,'TouchOfMagic',{'100000731':{Amount:8}});
+  const got=projectPositiveListInventoryOwnership(save(map));
+  assert.equal(got.status,'positive_stock_observed');
+  assert.equal(got.inspectedRoles,12);
+  assert.equal(got.matchedRoles,12);
+  assert.equal(got.positiveReferences,12);
+  assert.equal(got.entries.length,12);
+  assert.deepEqual(got.entries,
+    cases.map(([,type,,id])=>({itemId:id,role:type})).sort((a,b)=>a.itemId-b.itemId));
+  assert.ok(!got.entries.some(row=>row.role==='TouchOfMagic'));
+  assert.deepEqual(sanitizePositiveListInventoryOwnership(got),got);
+});
+
+test('role-mismatched native amount, even positive, must not become owned',()=>{
+  const actual=projectPositiveListInventoryOwnership(save({
+    '3':role(3,'Makeup',{'140000001':{Amount:0},'140000002':{Amount:4}}),
+    '9':role(9,'AvatarFeature',{'70000001':{Amount:-1}}),
+    '11':role(11,'MountGear',{'190000023':{Amount:1}})
+  }));
+  assert.equal(actual.status,'partial_inconclusive');
+  assert.deepEqual(actual.entries,[{itemId:140000002,role:'Makeup'}]);
+  assert.equal(actual.zeroReferences,1);
+  assert.equal(actual.invalidReferences,2);
+  assert.deepEqual(sanitizePositiveListInventoryOwnership(actual),actual);
 });
 
 test('zero, missing and untrusted amounts leave manual status untouched',()=>{
