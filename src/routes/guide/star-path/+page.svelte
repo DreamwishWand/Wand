@@ -9,6 +9,7 @@
   import {loadStarpathDailyLocales,starpathDailyDescription} from '$lib/guide/public-starpath-daily.mjs';
   import {starpathRewardDisplayName,loadStarpathRewardExtras} from '$lib/guide/starpath-reward-extras.mjs';
   import {createGuideRewardIndex,type GuideRewardIndex} from '$lib/guide/reward-relations.ts';
+  import {createGuideStarpathHistory,type GuideStarpathHistory} from '$lib/guide/starpath-history.ts';
   import {loadStarpathMedia,starpathMediaThumbnail} from '$lib/guide/starpath-public-media.mjs';
   import {guideCalendarEvents,eventScheduleState} from '$lib/guide/event-calendar.mjs';
   import {starpathTaskDisplay} from '$lib/guide/starpath-task-guidance.ts';
@@ -18,6 +19,7 @@
 
   let catalog:any=null, weeklyLocales:any=null, dailyLocales:any=null, rewardExtras:any=null, publicMedia:any=null, goalAmounts:any=null, goalWarning='', error='', loading=true;
   let sharedRewardIndex:GuideRewardIndex|null=null;
+  let officialHistory:GuideStarpathHistory|null=null;
   let locale='ja';
   let selectedId='HauntingElegance2026';
   let now=Date.now();
@@ -100,10 +102,11 @@
     });
   }
   async function load(){
-    loading=true;error='';goalWarning='';goalAmounts=null;sharedRewardIndex=null;
+    loading=true;error='';goalWarning='';goalAmounts=null;sharedRewardIndex=null;officialHistory=null;
     try{
       catalog=await loadPublicStarpath(`${base}/guide/public/starpath-cache-2026-11-22.json`);
       sharedRewardIndex=createGuideRewardIndex(catalog);
+      officialHistory=createGuideStarpathHistory(sharedRewardIndex);
       [weeklyLocales,dailyLocales,rewardExtras]=await Promise.all([
         loadStarpathWeeklyLocales(`${base}/guide/public/starpath-weekly-locales-2026-11-22.json`,catalog),
         loadStarpathDailyLocales(`${base}/guide/public/`,catalog.seasons),
@@ -162,6 +165,17 @@
         </button>
       {/each}
     </div>
+    {#if officialHistory}
+      <details class="historic-starpaths">
+        <summary>過去のスターパス（公式発表 {officialHistory.coverage.officialOnlyAnnouncementCount}件）</summary>
+        <ul>
+          {#each officialHistory.officialAnnouncementsOnly as entry (entry.historyKey)}
+            <li><a href={entry.officialEvidenceUrl} target="_blank" rel="noopener noreferrer">{entry.titleEn}</a><span>{entry.year}</span></li>
+          {/each}
+        </ul>
+        <p>公式記事で存在が確認できた過去のシーズンです。ゲーム内部のシーズンIDと報酬アイテムIDは未確認のため、入手元データには使用していません。</p>
+      </details>
+    {/if}
     {#if season}
       {#if scheduleState==='ended'}
         <p class="archive-notice" role="status">終了済みのスターパスです。保存された攻略・報酬情報を閲覧できます。</p>
@@ -310,6 +324,13 @@
   .seasons button,.tabs button{border:1px solid #65527d;border-radius:10px;background:#261c32;color:#ecdcfa;padding:11px 17px}
   .seasons button.selected,.tabs button.active{background:#503667;border-color:#bb91ed;color:#fff}
   .seasons button small{font-size:11px;color:#d9bded;font-weight:450}
+  .historic-starpaths{margin:7px 0 12px;font-size:12px;color:#cab6db}
+  .historic-starpaths summary{cursor:pointer;width:max-content;max-width:100%;padding:6px;color:#ddc7ef}
+  .historic-starpaths ul{list-style:none;padding:0;margin:6px 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:7px}
+  .historic-starpaths li{display:flex;justify-content:space-between;gap:10px;align-items:center;min-width:0;padding:7px 9px;border:1px solid #59466a;border-radius:7px}
+  .historic-starpaths a{color:#e4d1f0;overflow-wrap:anywhere}
+  .historic-starpaths span{font-size:11px;color:#b49fc7}
+  .historic-starpaths p{font-size:11px;color:#a996bf;line-height:1.5}
   .archive-notice{font-size:12px;color:#ddc6ee;margin:9px 0;padding:9px 12px;border-left:2px solid #9d77bd;background:#251b31;line-height:1.5}
   .deadline-strip{display:flex;align-items:center;gap:18px;flex-wrap:wrap;background:#241a32;border:1px solid #4b3d5e;border-radius:10px;padding:9px 13px;margin:12px 0 6px;font-size:12px;color:#bdaacc}
   .deadline-strip strong{color:#f4eafa;font-size:12px;margin-left:6px}
