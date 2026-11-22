@@ -54,6 +54,8 @@
   // Ephemeral projection of saved GridObject references. Never put these
   // observations in the manual Collection state or IndexedDB backup.
   let savedGridByItem:Record<string,{fullGridReferences:number;diffModifiedReferences:number}>={};
+  let savedDb04ByItem:Record<string,{sourceDefault:number;effectiveSaved:number;
+    savedOnlyIdentity:number;removedDefaultIdentity:number}>={};
   let mobileInspector=false;
   let inspectorClose:HTMLButtonElement;
   let inspectorTrigger:HTMLElement|null=null;
@@ -70,6 +72,7 @@
   $: selectedItem=selectedItemId!==null && runtime?runtime.item(selectedItemId,locale):null;
   $: selectedEntry=selectedItem?entries[String(selectedItem.itemId)]??{}:{};
   $: selectedGridRefs=selectedItem?savedGridByItem[String(selectedItem.itemId)]??null:null;
+  $: selectedDb04Refs=selectedItem?savedDb04ByItem[String(selectedItem.itemId)]??null:null;
   $: isBrowsing=Boolean(selected||search.trim()||status!=='all'||nameStatus!=='all'||expansion||worldFilter||universeFilter);
 
   function categoryLabel(lang:string,id:string):string {
@@ -337,6 +340,18 @@
       infoMessage='セーブの状態は反映されませんでした。既存の手動記録は維持しています。';
     }finally{busy=false;}
   }
+  function receiveDb04Join(event:CustomEvent<{entries:{
+    itemId:number;sourceDefault:number;effectiveSaved:number;
+    savedOnlyIdentity:number;removedDefaultIdentity:number;
+  }[]}|null>):void{
+    const refs:Record<string,{sourceDefault:number;effectiveSaved:number;
+      savedOnlyIdentity:number;removedDefaultIdentity:number}>={};
+    for(const row of event.detail?.entries??[])refs[String(row.itemId)]={
+      sourceDefault:row.sourceDefault,effectiveSaved:row.effectiveSaved,
+      savedOnlyIdentity:row.savedOnlyIdentity,removedDefaultIdentity:row.removedDefaultIdentity
+    };
+    savedDb04ByItem=refs;
+  }
   function receiveSavedGridReferences(event:CustomEvent<{
     entries:{itemId:number;fullGridReferences:number;diffModifiedReferences:number}[];
   }|null>):void {
@@ -463,7 +478,8 @@
     <SavedStorePreview resolveHistorical={historicalLookup} {locale} {gameImageMap} collectionCommitBusy={busy}
       on:lookupItem={(event:CustomEvent<number>)=>lookupSavedCollectionId(event.detail)}
       on:saveProfile={importSaveProfile}
-      on:gridReferences={receiveSavedGridReferences} />
+      on:gridReferences={receiveSavedGridReferences}
+      on:db04Join={receiveDb04Join} />
     <div class="summary-strip">
       <div><strong>{overall.total.toLocaleString(locale)}</strong><span>参照データ</span></div>
       <div><strong>{overall.owned.toLocaleString(locale)} / {overall.total.toLocaleString(locale)}</strong><span>所持済み記録（手動・セーブ） / 参照件数</span></div>
@@ -618,6 +634,9 @@
               <h3>Collection記録</h3>
               {#if selectedGridRefs}
                 <p class="inspector-hint">セーブ内の家具配置参照：全体グリッド {selectedGridRefs.fullGridReferences}件、差分参照 {selectedGridRefs.diffModifiedReferences}件。これは総配置数・解放・所有の証明ではなく、手動記録や未配置ストックには加算しません。</p>
+              {/if}
+              {#if selectedDb04Refs}
+                <p class="inspector-hint">DB-04の完全一致パスで照合したグリッドの参照：原本初期 {selectedDb04Refs.sourceDefault}件、差分適用後 {selectedDb04Refs.effectiveSaved}件、原本にない保存ID {selectedDb04Refs.savedOnlyIdentity}件、削除された初期ID {selectedDb04Refs.removedDefaultIdentity}件。プレイヤーの購入・所有を証明しません。</p>
               {/if}
               <p class="inspector-hint">セーブなしでも手動編集できます。セーブを読み込むと発見履歴と明示的な正の数量による所持状態が優先されます。お気に入りは維持し、元のDDVセーブには書き込みません。</p>
               <div class="ownership-actions">
