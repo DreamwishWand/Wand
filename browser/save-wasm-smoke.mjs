@@ -139,11 +139,18 @@ try{
       ]}}
     },
     World:{GridCollection:{
-      Grids:{'101':{ID:101,Objects:{
+      Grids:{'101':{ID:101,
+        GridDefaultLayoutPath:'SceneLayouts/Synthetic/Grid.json',
+        GridDataPath:'GridData/Synthetic/Grid.json',Objects:{
         '1':{ID:1,ItemID:40000001,X:45,PrivateState:'do-not-export'},
         '2':{ID:2,ItemID:30000031}
       }}},
-      DiffGrids:{'102':{ID:102,RemovedObjects:[5],ModifiedObjects:{
+      DiffGrids:{'102':{ID:102,
+        GridDefaultLayoutPath:'SceneLayouts/Synthetic/Grid.json',
+        GridDefaultLayoutType:'Meta.GridCollection, Meta',
+        DefaultLayoutGridID:7,DefaultGridHashCode:31,
+        DefaultGridDataHashCode:-12,
+        RemovedObjects:[5],ModifiedObjects:{
         '5':{ID:5,ItemID:40000001},
         '6':{ID:6,ItemID:40000001}
       }}}
@@ -304,6 +311,60 @@ try{
   assert.match(await worldPanel.innerText(),/所有数・全配置数・配置可否を示すものではありません/);
   // Two saved references for sample furniture: one full and one non-removed
   // DiffGrid object, not three (the removed DiffGrid identity is suppressed).
+  // Private DB-04 reference index supplied as a local, synthetic file.
+  // DB-05 verifies it using the existing DB-04 WorldReferenceIndex and Rust
+  // then matches ONLY native full Grid source path pairs.
+  const layout='SceneLayouts/Synthetic/Grid.json';
+  const data='GridData/Synthetic/Grid.json';
+  const db04={
+    schema:'wand.db04.native-reference-graph@1',
+    target:{platform:'Steam',gameVersion:'1.26.2',
+      nativeWorldManifestSha256:'a'.repeat(64)},
+    status:'private_partial_exact_source_relations',
+    sourceManifestStatus:'synthetic_browser_fixture',
+    privateOnly:true,publicationAuthorized:false,
+    provenance:{syntheticOnly:true},
+    worlds:[],scenes:[],areas:[],
+    layouts:[{
+      layoutId:layout,layoutKind:'nativeGridCollection',
+      nativeDefaultObjectCount:0,parentWorldId:null,parentAreaRefId:null,
+      nativeSourceScopeLabel:'Synthetic',
+      sourceWorldMembershipVerified:false,
+      worldCoordinatesVerified:false,placementLegalityVerified:false
+    }],
+    gridData:[{
+      gridDataPath:data,nativeSizeX:10,nativeSizeY:10,
+      nativeSourceFormat:'synthetic',
+      gridLocalToWorldTransformVerified:false,placementLegalityVerified:false
+    }],
+    gridRefs:[{
+      gridRefId:layout+'#grid=7',
+      gridRefIdKind:'derivedLayoutGridIdComposite',
+      layoutId:layout,nativeGridId:7,gridDataPath:data,
+      gridDataPresent:true,areaRefId:null,worldId:null,
+      tessellationFactor:1,originalDefaultObjectCount:0,
+      nativeWorldCoordinatesVerified:false,placementLegalityVerified:false
+    }],
+    initialItemRefs:[],worldCoverage:[],
+    coverage:{
+      sourceInitialGridObjects:0,sourceInitialGridObjectsWithoutVerifiedWorldLink:0,
+      worldDefinitionsInSubset:0,nativeAreaLayoutReferences:0,
+      gridReferencesInSubset:1,
+      completeGameHierarchyVerified:false,
+      allDlcAndAdventurePackIdsVerified:false,
+      worldPlacementPermissionVerified:false,sourceCoverageComplete:false
+    }
+  };
+  await worldPanel.getByLabel('DB-04参照データを選択').setInputFiles({
+    name:'local-private-db04.json',mimeType:'application/json',
+    buffer:Buffer.from(JSON.stringify(db04))
+  });
+  await worldPanel.getByRole('button',{name:'DB-04 Gridパスを照合'}).click();
+  await worldPanel.getByText(/通常Gridの参照パス一致/).waitFor({timeout:30000});
+  assert.match(await worldPanel.innerText(),/通常Gridの参照パス一致：1 \/ 1/);
+  assert.match(await worldPanel.innerText(),/差分Grid：1件は/);
+  assert.match(await worldPanel.innerText(),/原本再検証・全配置数・所有権/);
+  assert.equal(await worldPanel.getByRole('alert').count(),0);
   await worldPanel.getByLabel('ワールド参照検索').fill('40000001');
   assert.match(await worldPanel.innerText(),/2件/);
   await worldPanel.getByLabel('ワールド参照検索').fill('');
