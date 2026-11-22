@@ -18,6 +18,8 @@
   import {verifyPublicQuestIndex,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
   import {loadPublicEventQuestLinks,DB03_EVENT_QUEST_FILE,
     type PublicEventQuestIndex} from '$lib/guide/public-event-quest-links.ts';
+  import {createEventQuestNameSearch,
+    type EventQuestNameSearch} from '$lib/guide/event-quest-name-search.ts';
   import {loadPublicEventDutyLinks,DB03_EVENT_DUTY_FILE,
     type PublicEventDutyIndex} from '$lib/guide/public-event-duty-links.ts';
 
@@ -27,6 +29,7 @@
   let refreshedNames:PublicEventRewardNameRefresh|null=null;
   let questCatalogue:any=null;
   let eventQuestLinks:PublicEventQuestIndex|null=null;
+  let questNameSearch:EventQuestNameSearch|null=null;
   let eventDutyLinks:PublicEventDutyIndex|null=null;
   let loading=true;
   let error='';
@@ -71,7 +74,8 @@
     events:readonly NativeEventDefinition[],type:Filter,search:string,
     language:GuideRewardLocale,availableNames:EventRewardItemLabelIndex|null,
     publishedRefresh:PublicEventRewardNameRefresh|null,
-    dutyIndex:PublicEventDutyIndex|null
+    dutyIndex:PublicEventDutyIndex|null,
+    questSearch:EventQuestNameSearch|null
   ):NativeEventDefinition[]{
     const words=search.normalize('NFKC').trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
     return events.filter(event=>{
@@ -83,12 +87,14 @@
         publishedRefresh?.getDisplayName(reward.itemId,language)??
           availableNames?.getDisplayName(reward.itemId,language)??reward.itemId,
       ]),...(event.kind==='mini_event'?
-        (dutyIndex?.getEventDuties(event.id).map(link=>link.dutyId)??[]):[])
+        (dutyIndex?.getEventDuties(event.id).map(link=>link.dutyId)??[]):[]),
+        ...(event.kind==='mini_event'?
+          (questSearch?.getEventSearchTerms(event.id,language)??[]):[])
       ].join(' ').normalize('NFKC').toLocaleLowerCase();
       return words.every(word=>terms.includes(word));
     });
   }
-  $: visible=filterEvents(source?.events??[],category,query,locale,labels,refreshedNames,eventDutyLinks);
+  $: visible=filterEvents(source?.events??[],category,query,locale,labels,refreshedNames,eventDutyLinks,questNameSearch);
   $: selected=visible.find(event=>event.id===selectedKey)??visible[0]??null;
   $: eventQuests=selected&&eventQuestLinks?eventQuestLinks.getEventQuests(selected.id):[];
   $: selectedRewards=selected?.rewards.filter(row=>
@@ -115,7 +121,8 @@
       const catalog=verifyPublicQuestIndex(await response.json());
       const links=await loadPublicEventQuestLinks(eventSource,catalog,
         `${root}${DB03_EVENT_QUEST_FILE}`);
-      if(source===eventSource){questCatalogue=catalog;eventQuestLinks=links;}
+      const names=createEventQuestNameSearch(eventSource,catalog,links);
+      if(source===eventSource){questCatalogue=catalog;eventQuestLinks=links;questNameSearch=names;}
     }catch{
       // Optional cross-navigation: keep source-authenticated rewards available.
     }
@@ -131,7 +138,7 @@
   }
   async function load(){
     loading=true;error='';labelError=false;labels=null;
-    refreshedNames=null;questCatalogue=null;eventQuestLinks=null;
+    refreshedNames=null;questCatalogue=null;eventQuestLinks=null;questNameSearch=null;
     eventDutyLinks=null;
     try{
       const read=await loadPublicEventFriendshipRewards(`${root}${DB03_EVENT_FRIENDSHIP_REWARD_FILE}`);
@@ -180,7 +187,7 @@
 
 <svelte:head>
   <title>期間限定イベント・友情報酬 | Dreamwish Wand Guide</title>
-  <meta name="description" content="ゲーム原本で確認したイベントと友情報酬をアイテム名・Item IDから調べる。" />
+  <meta name="description" content="ゲーム原本で確認したイベントを関連クエスト・報酬の名称やIDから調べる。" />
 </svelte:head>
 
 <main class="event-guide">
@@ -191,7 +198,7 @@
     </div>
     <label class="search">
       <svg viewBox="0 0 24 24" width="17" height="17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
-      <input type="search" bind:value={query} on:input={clearItemFocus} placeholder="イベント名・アイテム名・IDを検索" aria-label="イベントや報酬を検索" />
+      <input type="search" bind:value={query} on:input={clearItemFocus} placeholder="イベント・クエスト・アイテムを検索" aria-label="イベントや報酬を検索" />
     </label>
   </header>
 

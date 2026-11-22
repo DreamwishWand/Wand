@@ -414,6 +414,22 @@ try {
   assert.equal(await eventQuest.evaluate(()=>
     document.documentElement.scrollWidth<=innerWidth+2),true,
     'native Event-to-Quest cross links stay within mobile viewport');
+  // Search by a localized title from the independently verified Quest
+  // catalogue, not an event title, reward label or a private DutyAch key.
+  await eventQuest.goto('http://127.0.0.1:4177/Wand/guide/events/',
+    {waitUntil:'domcontentloaded'});
+  await eventQuest.getByRole('searchbox',{name:'イベントや報酬を検索'})
+    .fill('動物のオヤツ');
+  await eventQuest.waitForFunction(()=>
+    document.querySelectorAll('.event-list .event-option').length===2,
+    {timeout:25000});
+  assert.equal(await eventQuest.locator('.event-list .event-option').count(),2);
+  assert.deepEqual(await eventQuest.locator('.event-list .event-option .event-title').allInnerTexts(),
+    ['ドリームライトパークフェス','ドリームライトパークフェス']);
+  await eventQuest.getByRole('searchbox',{name:'イベントや報酬を検索'})
+    .fill('実在しないクエスト');
+  await eventQuest.locator('.event-list .empty').waitFor({timeout:15000});
+  assert.equal(await eventQuest.locator('.event-list .event-option').count(),0);
   assert.deepEqual(eventQuestErrors,[],eventQuestErrors.join('\\n'));
   await eventQuest.close();
 
