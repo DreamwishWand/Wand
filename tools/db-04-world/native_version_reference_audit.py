@@ -8,6 +8,7 @@ Requires GNU objdump for private original-byte disassembly.
 from __future__ import annotations
 import argparse
 from bisect import bisect_left
+from collections import Counter
 import hashlib
 import json
 import mmap
@@ -17,6 +18,7 @@ import subprocess
 import tempfile
 
 from native_method_pointers import PE64Image, resolve_native_grid_methods
+from native_reference_followups import (follow_rel32_thunk, classify_rip_source_pair)
 from pe_unwind import read_pe_runtime_functions
 
 PINS = {
@@ -80,7 +82,7 @@ def parse_instructions(output, rva, length):
             hit = BRANCH_TARGET.match(operand)
             if hit:
                 kind, target = "branch", int(hit.group(1), 16)
-        rows.append((cursor, raw, opcode, kind, target))
+        rows.append((cursor, raw, opcode, kind, target, operand))
         cursor += len(raw)
     if not rows or cursor != length:
         raise ValueError("disassembly failed to cover original function window")
@@ -233,6 +235,8 @@ def run_audit(old_dll, old_metadata, new_dll, new_metadata, *, objdump="objdump"
                 summary = compare_methods(decoded_a, decoded_b, start_a, start_b)
                 destinations = set(summary.pop("externalDirectTargets"))
                 matching, relocated, divergent, unmapped = 0, 0, 0, 0
+                thunk_identical, thunk_relocated = 0, 0
+                thunk_divergent = 0
                 for dst_a, dst_b in destinations:
                     digest_a = mapped_callee_sha(pe_a, a, dst_a)
                     digest_b = mapped_callee_sha(pe_b, b, dst_b)
@@ -241,25 +245,79 @@ def run_audit(old_dll, old_metadata, new_dll, new_metadata, *, objdump="objdump"
                         continue
                     code_a = mapped_callee_bytes(pe_a, a, dst_a)
                     code_b = mapped_callee_bytes(pe_b, b, dst_b)
+                    via_thunk = False
+                    if code_a is None or code_b is None:
+                        resolved_a = follow_rel32_thunk(pe_a, a, dst_a)
+                        resolved_b = follow_rel32_thunk(pe_b, b, dst_b)
+                        if (resolved_a is None or resolved_b is None or
+                                resolved_a[1] != resolved_b[1] or
+                                resolved_a[1] == 0):
+                            unmapped += 1
+                            continue
+                        dst_a, dst_b = resolved_a[0], resolved_b[0]
+                        via_thunk = True
+                        code_a = mapped_callee_bytes(pe_a, a, dst_a)
+                        code_b = mapped_callee_bytes(pe_b, b, dst_b)
                     if code_a is None or code_b is None:
                         unmapped += 1
                         continue
+                    if code_a == code_b:
+                        if via_thunk:
+                            thunk_identical += 1
+                        else:
+                            matching += 1
+                        continue
                     try:
-                        decoded_a = decode_window(code_a, dst_a, executable=objdump)
-                        decoded_b = decode_window(code_b, dst_b, executable=objdump)
-                        compare_methods(decoded_a, decoded_b, dst_a, dst_b)
-                        relocated += 1
+                        nested_a = decode_window(code_a, dst_a, executable=objdump)
+                        nested_b = decode_window(code_b, dst_b, executable=objdump)
+                        compare_methods(nested_a, nested_b, dst_a, dst_b)
+                        if via_thunk:
+                            thunk_relocated += 1
+                        else:
+                            relocated += 1
                     except ValueError:
-                        divergent += 1
+                        if via_thunk:
+                            thunk_divergent += 1
+                        else:
+                            divergent += 1
+
+                # Initial file bytes and writable / zero-filled virtual .data
+                # never establish equivalence of actual runtime GridData.
+                rip_references = {
+                    (left[4], right[4], left[5], right[5],
+                     left[2], right[2])
+                    for left, right in zip(decoded_a, decoded_b)
+                    if left[3] == "ripdata" and
+                    left[4] is not None and right[4] is not None
+                }
+                # The parent instruction rows must not be shadowed by nested
+                # callee disassembly performed above.
+                rip_reference_statuses = Counter(
+                    classify_rip_source_pair(
+                        pe_a, a, source_a, operand_a,
+                        pe_b, b, source_b, operand_b,
+                        opcode_a, opcode_b)
+                    for source_a, source_b, operand_a, operand_b,
+                        opcode_a, opcode_b in rip_references)
                 reports.append({
                     "symbol": before["symbol"], "tokenRid": key[0],
                     "functionByteCount": length_a, **summary,
                     "distinctExternalTargets": len(destinations),
                     "byteIdenticalDirectCallees": matching,
                     "relocationOnlyDirectCallees": relocated,
+                    "thunkResolvedByteIdenticalDirectCallees": thunk_identical,
+                    "thunkResolvedRelocationOnlyDirectCallees": thunk_relocated,
+                    "thunkResolvedDivergentDirectCallees": thunk_divergent,
                     "divergentDirectCallees": divergent,
                     "unmappedDirectTargets": unmapped,
-                    "uncorroboratedDirectTargets": relocated + divergent + unmapped,
+                    "uncorroboratedDirectTargets": (
+                        relocated + thunk_relocated + divergent +
+                        thunk_divergent + unmapped),
+                    "ripReferenceSourceClasses": dict(
+                        sorted(rip_reference_statuses.items())),
+                    "ripReferenceClassesComplete": (
+                        sum(rip_reference_statuses.values()) ==
+                        len(rip_references)),
                 })
     return {
         "schema": "wand.db04.native-version-reference-audit@1",

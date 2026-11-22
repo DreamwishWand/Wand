@@ -115,6 +115,68 @@ The script emits only aggregate counts and pinned hashes, sets
 machine-code bytes or private source filenames. CI runs synthetic unit tests
 without needing either proprietary original.
 
+## Third-stage thunk and RIP-source audit (2026-11-22)
+
+For this stage, all **four** pinned original Steam 1.26.1/1.26.2
+`GameAssembly.dll` and `global-metadata.dat` files were retrieved and
+SHA-256 independently checked against the table above. The original PE64
+exception directories contained 446,405 (1.26.1) and 446,401 (1.26.2)
+runtime function entries. Direct disassembly of the four original GridData
+RVA/unwind intervals reproduced **676 aligned instructions and 172 changed
+PC-relative instructions**.
+
+The six previously unresolved direct-target *occurrences* actually
+resolve to **two distinct original entry points reused by three methods**.
+Both entry points are executable but have no `.pdata` record, and both
+start with a bounded 5-byte `JMP rel32` to an **exact `.pdata` function
+start** in each version. The two terminal functions are byte-identical
+and relocation-only, respectively. The new audit follows **only**
+explicit bounded direct JMP thunks and classifies their bounded terminal
+code; it does not infer arbitrary unwindless function extents.
+
+| Method | Direct-target pairs | Terminal byte-identical (including thunk) | Terminal relocation-only (including thunk) | Unresolved / structurally divergent |
+| --- | ---: | ---: | ---: | ---: |
+| `get_Item` | 9 | 5 | 4 | 0 |
+| `set_Item` | 8 | 5 | 3 | 0 |
+| `IProtobufOnBinarize.OnBinarize` | 27 | 9 | 18 | 0 |
+| `GetNumberOfBitsPerPosition` | 2 | 2 | 0 | 0 |
+| **Total direct target observations** | **46** | **21** | **25** | **0** |
+
+This does **not** mean all transitive calls or runtime behavior are
+equivalent. A bounded call-target instruction match does not establish
+the semantics of further calls or mutable global data.
+
+The separate RIP-relative source classification found **75 distinct
+instruction-level RIP reference pairs** in these four methods:
+
+| Reference kind / original target backing | Observations |
+| --- | ---: |
+| Address-only `LEA` into writable, file-backed `.data` | 43 |
+| Address-only `LEA` into writable, zero-filled virtual `.data` | 1 |
+| Explicit-width access into writable, file-backed `.data` | 16 |
+| Explicit-width access into writable, zero-filled virtual `.data` | 15 |
+| Read-only source-data accesses | 0 |
+| **Total** | **75** |
+
+The previously marked **unmapped** RIP targets were *not* out-of-image:
+the `.data` section has a VirtualSize larger than its SizeOfRawData, so
+the image loader allocates its uninitialized, zero-filled tail at runtime.
+The source audit now distinguishes file-backed from virtual zero-fill
+references rather than rejecting the latter as missing from the PE file.
+
+All 75 observed references target **writable virtual `.data`**, either
+by address or by memory access. Equality of initial file bytes or
+zero-filled allocation does **not** prove equality of dynamically
+initialized runtime values, scene-specific state, or subsequent writes.
+This is the remaining principal blocker to a source-certified v1.26.2
+terrain decoder; the decoder **remains disabled**.
+
+The audit command above now emits thunk classification and
+`ripReferenceSourceClasses` as aggregate JSON categories. CI uses only
+synthetic tests for thunk safety, PE virtual backing, source-width
+provenance and mutation invariants; original proprietary binaries stay
+private.
+
 ## Capability boundary — unchanged
 
 - `terrain_codec.py` and browser `getNativeTerrainWindow` **must** continue
