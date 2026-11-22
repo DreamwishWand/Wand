@@ -7,7 +7,6 @@
   // Development-only read-only route. JS P1G Codec plus independent Rust/WASM
   // P1G parity; NOT a Writer. No encrypted data is sent to page components.
   const MAX_JSON_BYTES = 128 * 1024 * 1024;
-  const MAX_ENCRYPTED_BYTES = 32 * 1024 * 1024;
   let report: SaveDiagnosticView | null = null;
   let isReading = false;
   let errorMessage = '';
@@ -45,7 +44,7 @@
     const format = lower.endsWith('.json') ? 'json' :
       /\.(profile|dat|bin)$/.test(lower) ? 'auto' : null;
     if (!format || file.size < 1 ||
-        file.size > (format === 'auto' ? MAX_JSON_BYTES : MAX_JSON_BYTES)) {
+        file.size > MAX_JSON_BYTES) {
       errorMessage = 'JSON（最大128 MiB）またはJSON/P1G形式のセーブファイルを選択してください。';
       input.value = '';
       return;
