@@ -22,7 +22,7 @@ const publicData=()=>sharedTask??=openPublicSharedGameSources('/Wand',fetcher);
 
 function fakeDefinition(db,id,worlds=null){
   const catalog=db.database.getItem(id);
-  const category=catalog?.nativeCategory??'Currency';
+  const category=catalog?catalog.nativeCategory??'ActivityItem':'Currency';
   const originalTags=worlds===null?null:{
     itemId:Number(id),nativeCategory:category,facets:{worldContextTag:worlds},
     gameUiCategoryVerified:false,worldAvailabilityVerified:false,dlcOwnershipVerified:false
@@ -102,7 +102,8 @@ test('public DB-00 sources plus owner-local DB-01/04 native evidence keep origin
   const first=await joined.getItem(ITEM);
   assert.equal(first.itemId,ITEM);
   assert.equal(first.originalDefinitionStatus,'source_native_definition');
-  assert.equal(first.originalDefinition.nativeCategory,db.getItem(ITEM).catalog.nativeCategory);
+  assert.equal(first.originalDefinition.nativeCategory,
+    db.getItem(ITEM).catalog.nativeCategory??'ActivityItem');
   assert.equal(first.nativeWorldTagsCrossChecked,true);
   assert.deepEqual(first.shared.nativeTags.worldsDirect,[WORLD]);
   assert.deepEqual(first.originalDefinition.originalTags.facets.worldContextTag,[WORLD]);
