@@ -268,35 +268,31 @@ def probe_dll(plan: dict, dll_path: Path, dll_version: str,
             offset, section = map_executable_rva(rva, sections, size)
             raw = _read_at(binary, offset, EXCERPT_SIZE)
             # Small method-prefix excerpts are NOT complete functions.
-            with tempfile.NamedTemporaryFile(
-                dir=output_dir, prefix=".db02-",
-                suffix=".bin", delete=False
-            ) as temp:
-                temp.write(raw)
-                temp_path = Path(temp.name)
-            try:
-                if extract_only:
-                    name = method["name"].replace("<", "_").replace(">", "_")
-                    name = re.sub(r"[^a-zA-Z0-9._-]", "_", name)
-                    (output_dir / (name + ".prefix.bin")).write_bytes(raw)
-                    continue_disassembly = False
-                else:
-                    continue_disassembly = True
-                if continue_disassembly:
+            name = method["name"].replace("<", "_").replace(">", "_")
+            name = re.sub(r"[^a-zA-Z0-9._-]", "_", name)
+            if extract_only:
+                # Can run on stock Windows Python without GNU objdump.
+                (output_dir / (name + ".prefix.bin")).write_bytes(raw)
+            else:
+                with tempfile.NamedTemporaryFile(
+                    dir=output_dir, prefix=".db02-",
+                    suffix=".bin", delete=False
+                ) as temp:
+                    temp.write(raw)
+                    temp_path = Path(temp.name)
+                try:
                     run = subprocess.run(
-                    [disasm, "-D", "-b", "binary", "-m", "i386:x86-64",
-                     "--adjust-vma=" + hex(base + rva), str(temp_path)],
+                        [disasm, "-D", "-b", "binary", "-m", "i386:x86-64",
+                         "--adjust-vma=" + hex(base + rva), str(temp_path)],
                         capture_output=True, text=True, check=False, timeout=20)
                     require(run.returncode == 0, "OBJDUMP_FAILED")
                     require(len(run.stdout) < 256 * 1024, "DISASM_OUTPUT_LIMIT")
-                    name = method["name"].replace("<", "_").replace(">", "_")
-                    name = re.sub(r"[^a-zA-Z0-9._-]", "_", name)
                     (output_dir / (name + ".asm.txt")).write_text(
                         "# LOCAL ONLY. A 256-byte method prefix, not a whole function.\n"
                         "# Source version is owner-asserted, not independently proved.\n"
                         + run.stdout, encoding="utf-8")
-            finally:
-                temp_path.unlink(missing_ok=True)
+                finally:
+                    temp_path.unlink(missing_ok=True)
             rows.append({
                 "name": method["name"], "rva": hex(rva),
                 "mappedFileOffset": hex(offset), "section": section,
