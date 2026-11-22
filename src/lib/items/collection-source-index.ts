@@ -229,6 +229,7 @@ export function createDb01OriginalSourceMenuQuery(
           item.nativeCategory===sourceRow.nativeCategory,
           'SOURCE_ITEM_IDENTITY');
         defined++;
+        const verifiedItemId=item.itemId;
         const matches=new Map<number,MutableLink>();
         function entry(setId:number,group:number):MutableLink{
           const menu=menus.get(setId);
@@ -240,7 +241,7 @@ export function createDb01OriginalSourceMenuQuery(
             matches.set(setId,record);
           }
           record.groups.add(group);
-          perGroup.get(setId+':'+group)!.add(item.itemId);
+          perGroup.get(setId+':'+group)!.add(verifiedItemId);
           return record;
         }
         const direct=item.collection.direct;
