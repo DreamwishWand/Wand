@@ -504,6 +504,67 @@ mod browser_amount_preview {
         Ok(out)
     }
 
+    const MAX_EDITABLE_ROWS:usize=20000;
+    /// Extraction is strictly read-only. Missing/custom player fields are
+    /// valid: user-modified saves need not contain every game's section.
+    pub(super) fn slot_index_json(source:&[u8])->Result<String,CodecError>{
+        let root:serde_json::Value=serde_json::from_slice(source)
+            .map_err(|_|CodecError::Json)?;
+        let player=root.get("Player").and_then(serde_json::Value::as_object)
+            .ok_or(CodecError::RequiredRoot)?;
+        let mut slots=Vec::<serde_json::Value>::new();
+        let valid_id=|s:&str|s.len()<=20 && !s.is_empty() &&
+            s.bytes().all(|c|c.is_ascii_digit()) &&
+            s.parse::<u64>().ok().is_some_and(|v|v>0);
+        if let Some(groups)=player.get("ListInventories")
+            .and_then(serde_json::Value::as_object){
+            for (inventory_id,container) in groups {
+                if !valid_id(inventory_id){continue;}
+                let Some(items)=container.get("Inventory")
+                    .and_then(serde_json::Value::as_object) else {continue;};
+                for (item_id,slot) in items {
+                    if !valid_id(item_id){continue;}
+                    let Some(amount)=slot.get("Amount")
+                        .and_then(serde_json::Value::as_u64) else {continue;};
+                    if amount==0||amount>u32::MAX as u64 {continue;}
+                    if slots.len()>=MAX_EDITABLE_ROWS{return Err(CodecError::Bounds);}
+                    slots.push(serde_json::json!({
+                        "kind":"inventory","inventoryId":inventory_id,
+                        "itemId":item_id,"amount":amount
+                    }));
+                }
+            }
+        }
+        if let Some(groups)=player.get("ContainerInventories")
+            .and_then(serde_json::Value::as_object){
+            for (container_id,container) in groups {
+                if !valid_id(container_id){continue;}
+                let Some(items)=container.get("Inventory")
+                    .and_then(serde_json::Value::as_array) else {continue;};
+                for (slot_index,slot) in items.iter().enumerate() {
+                    if slot_index>1_000_000{break;}
+                    let Some(item_id)=slot.get("ItemID")
+                        .and_then(serde_json::Value::as_u64) else {continue;};
+                    let Some(amount)=slot.get("Amount")
+                        .and_then(serde_json::Value::as_u64) else {continue;};
+                    if item_id==0||item_id>u32::MAX as u64||
+                       amount==0||amount>u32::MAX as u64{continue;}
+                    if slots.len()>=MAX_EDITABLE_ROWS{return Err(CodecError::Bounds);}
+                    slots.push(serde_json::json!({
+                        "kind":"chest","containerId":container_id,
+                        "slotIndex":slot_index,"itemId":item_id,"amount":amount
+                    }));
+                }
+            }
+        }
+        serde_json::to_string(&serde_json::json!({
+            "contract":"wand.db05.editable-slots@1",
+            "rows":slots,
+            "completeForExistingPositiveU32Amounts":true,
+            "writerAuthorized":false
+        })).map_err(|_|CodecError::Json)
+    }
+
     #[derive(Clone,Copy)]
     enum InputKind{PlainJson,EncryptedP1g}
     #[wasm_bindgen]
@@ -564,6 +625,21 @@ mod browser_amount_preview {
             }
             self.ready=true;
             Ok(())
+        }
+        /// Read-only, bounded projection of existing positive editable
+        /// Inventory/Chest Amount rows. Raw JSON, quest progress, world
+        /// coordinates and player identifiers never leave this Rust Worker.
+        /// This is not a catalog lookup, ownership proof or editing permission.
+        pub fn list_existing_slots(&self)->Result<String,JsValue>{
+            if !self.ready || self.closed {
+                return Err(fail("DB05_SLOT_INDEX_NOT_OPEN"));
+            }
+            let source=match self.kind {
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref()
+                    .ok_or(fail("DB05_SLOT_INDEX_NOT_OPEN"))?.profile.as_slice()
+            };
+            slot_index_json(source).map_err(|_|fail("DB05_SLOT_INDEX_INVALID"))
         }
         pub fn preview_inventory(
             &mut self,inventory_id:&str,item_id:&str,expected:u32,replacement:u32
@@ -891,6 +967,37 @@ mod tests{
         local
     }
     fn encrypted(method:u16)->Vec<u8>{ecb_encrypt(&zip(profile().as_bytes(),method)).unwrap()}
+    #[cfg(feature="wasm")]
+    #[test]
+    fn editable_slot_index_selects_only_positive_known_shape_and_ignores_unknown_fields(){
+        // Missing quests and arbitrary unmodeled fields are harmless.
+        let raw=br#"{"GameInfo":{"Version":643},"Player":{
+          "ListInventories":{"100":{"Inventory":{
+            "40000001":{"Amount":1,"Color":"secret"},
+            "40000002":{"Amount":250,"Unknown":1.50},
+            "40000003":{"Amount":0},
+            "40000004":{"Amount":4294967296}
+          }}},
+          "ContainerInventories":{"202":{"Inventory":[
+            {"ItemID":0,"Amount":0},
+            {"ItemID":440,"Amount":99,"Unrelated":"private"},
+            {"ItemID":441,"Amount":0}
+          ]}},
+          "PrivateName":"never project"
+        },"World":{},"OtherFutureField":{"DontChange":true}}"#;
+        let projection=browser_amount_preview::slot_index_json(raw).unwrap();
+        let report:serde_json::Value=serde_json::from_str(&projection).unwrap();
+        let rows=report["rows"].as_array().unwrap();
+        assert_eq!(rows.len(),3);
+        assert_eq!(rows[0]["amount"],1);
+        assert_eq!(rows[1]["amount"],250);
+        assert_eq!(rows[2]["itemId"],440);
+        assert_eq!(rows[2]["slotIndex"],1);
+        assert!(!projection.contains("never project"));
+        assert!(!projection.contains("secret"));
+        assert!(!projection.contains("DontChange"));
+        assert_eq!(report["writerAuthorized"],false);
+    }
     #[test]
     fn opens_raw_deflate_and_store_with_original_exact_ciphertext(){
         for method in [0,8]{

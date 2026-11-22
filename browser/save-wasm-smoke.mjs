@@ -131,7 +131,8 @@ try{
     Player:{
       ListInventories:{'100':{Inventory:{
         '550':{Amount:7,UnknownRatio:1.00},
-        '777':{Amount:1,ExclusiveDecor:true,Unrelated:3.50}
+        '777':{Amount:1,ExclusiveDecor:true,Unrelated:3.50},
+        '30000031':{Amount:1,Db01Sample:true}
       }}},
       ContainerInventories:{'202':{Inventory:[
         {ItemID:0,Amount:0},{ItemID:440,Amount:2,Extra:null}
@@ -276,6 +277,27 @@ try{
   await page.getByRole('alert').filter({hasText:'検証できませんでした'}).waitFor({timeout:30000});
   assert.equal(await page.getByRole('status').count(),0);
   assert.equal(await page.getByRole('link',{name:'コピーをダウンロード'}).count(),0);
+
+  // Rust-only owned-slot discovery + source-verified published DB-00 labels.
+  // No private Save bytes or counts are sent to the catalog Worker.
+  await page.getByRole('button',{name:'破棄'}).click();
+  await page.getByLabel('検証用セーブファイル').setInputFiles({
+    name:'owned-items.profile',mimeType:'application/octet-stream',
+    buffer:syntheticEncryptedP1g(quantityProfile)
+  });
+  await page.getByRole('button',{name:'所持アイテムを表示'}).click();
+  await page.getByRole('status').filter({hasText:'4件'}).waitFor({timeout:30000});
+  await page.getByText('ピュアナイトシャード').waitFor({timeout:45000});
+  await page.getByLabel('所持アイテム検索').fill('ピュアナイトシャード');
+  await page.getByRole('button',{
+    name:'所持アイテム 30000031 を選択'
+  }).click();
+  assert.equal(await page.getByLabel('Item ID').inputValue(),'30000031');
+  assert.equal(await page.getByLabel('現在の数量').inputValue(),'1');
+  await page.getByLabel('変更後の数量').fill('250');
+  await page.getByRole('button',{name:'変更を検証',exact:true}).click();
+  await page.getByRole('status').filter({hasText:'数量変更'}).waitFor({timeout:30000});
+  assert.equal(await page.getByRole('alert').count(),0);
 
   assert.deepEqual(errors,[],errors.join('\n'));
   await page.close();

@@ -1,5 +1,7 @@
 <script lang="ts">
   import {onDestroy} from 'svelte';
+  import {base} from '$app/paths';
+  import type {Db00ItemContext} from '../../../lib/save/common-db-context';
 
   // Development-only local editor: preview is metadata-only, and explicit
   // edited-copy export never overwrites the source. No production Writer.
@@ -26,6 +28,27 @@
     | {mode:'batch';file:File;format:'json'|'auto';edits:BatchEdit[];
        signature:string};
   let queuedEdits:BatchEdit[]=[];
+  type EditableSlot =
+    | {kind:'inventory';inventoryId:string;itemId:string;amount:number}
+    | {kind:'chest';containerId:string;slotIndex:number;itemId:number;amount:number};
+  let savedSlots:EditableSlot[]=[];
+  let savedSlotsFile:File|null=null;
+  let slotState:'idle'|'loading'|'ready'|'error'='idle';
+  let slotQuery='';
+  let slotFilter:'all'|'inventory'|'chest'='all';
+  let dbMap=new Map<string,Db00ItemContext>();
+  let dbStatus:'idle'|'loading'|'ready'|'unavailable'='idle';
+  let dbWorker:Worker|null=null;
+  let catalogRevision=0;
+  $: visibleSlots=savedSlots.filter(slot=>{
+    if(slotFilter!=='all' && slot.kind!==slotFilter)return false;
+    const id=String(slot.itemId);
+    const meta=dbMap.get(id);
+    const query=slotQuery.trim().toLocaleLowerCase();
+    return !query || id.includes(query) ||
+      (meta?.name??'').toLocaleLowerCase().includes(query) ||
+      (meta?.category??'').toLocaleLowerCase().includes(query);
+  }).slice(0,120);
   let snapshot:PreviewSnapshot|null=null;
   let downloadUrl:string|null=null;
   let downloadName='';
@@ -62,7 +85,119 @@
     snapshot=null;
     discardDownload();
   }
-  onDestroy(cancel);
+  onDestroy(()=>{
+    cancel();
+    dbWorker?.terminate();
+    catalogRevision++;
+  });
+  function onFileChange(){
+    cancel();
+    result=null;
+    dbWorker?.terminate();dbWorker=null;catalogRevision++;
+    savedSlots=[];savedSlotsFile=null;slotState='idle';
+    dbMap=new Map();dbStatus='idle';
+  }
+  function selectSavedSlot(slot:EditableSlot){
+    cancel();
+    result=null;
+    kind=slot.kind;
+    if(slot.kind==='inventory'){
+      inventoryId=slot.inventoryId;itemId=slot.itemId;
+    }else{
+      containerId=slot.containerId;
+      slotIndex=String(slot.slotIndex);
+      chestItemId=String(slot.itemId);
+    }
+    expected=String(slot.amount);
+    replacement=String(Math.min(0xffffffff,slot.amount+1));
+  }
+  function beginCatalogLookup(rows:readonly EditableSlot[],file:File){
+    dbWorker?.terminate();
+    const request=++catalogRevision;
+    dbStatus='loading';
+    const ids=[...new Set(rows.map(row=>String(row.itemId)))];
+    const worker=new Worker(
+      new URL('../../../lib/save/save-catalog.worker.ts',import.meta.url),
+      {type:'module'}
+    );
+    dbWorker=worker;
+    const done=(reply:unknown)=>{
+      if(request!==catalogRevision||dbWorker!==worker||
+         savedSlotsFile!==file)return;
+      worker.terminate();dbWorker=null;
+      const r=reply as {
+        kind?:string;contract?:string;editPermissionFromDb?:boolean;
+        lookup?:{rows?:Db00ItemContext[]};
+      };
+      if(r?.kind!=='resolved'||
+         r.contract!=='wand.db05.db00-visible-item-mapping@1'||
+         r.editPermissionFromDb!==false||!Array.isArray(r.lookup?.rows)){
+        dbStatus='unavailable';return;
+      }
+      dbMap=new Map(r.lookup.rows.map(row=>[row.itemId,row]));
+      dbStatus='ready';
+    };
+    worker.onmessage=event=>done(event.data);
+    worker.onerror=event=>{event.preventDefault();done({kind:'error'});};
+    worker.onmessageerror=()=>done({kind:'error'});
+    worker.postMessage({command:'resolve-db00-item-ids',base,ids});
+  }
+  async function loadSavedSlots(){
+    cancel();result=null;
+    const file=fileInput?.files?.[0];
+    if(!file||file.size<1||file.size>MAX_BYTES){
+      slotState='error';return;
+    }
+    const name=file.name.toLocaleLowerCase();
+    const format=name.endsWith('.json')?'json':
+      /\.(profile|dat|bin)$/.test(name)?'auto':null;
+    if(!format){slotState='error';return;}
+    slotState='loading';
+    savedSlots=[];savedSlotsFile=null;
+    let bytes:Uint8Array|null=null;
+    let worker:Worker|null=null;
+    const request=revision;
+    processing=true;
+    try{
+      bytes=new Uint8Array(await file.arrayBuffer());
+      if(request!==revision)return;
+      worker=new Worker(
+        new URL('../../../lib/save/save-amount-preview.worker.ts',import.meta.url),
+        {type:'module'}
+      );
+      active=worker;
+      const ownedWorker=worker;
+      const finish=(reply:unknown)=>{
+        if(request!==revision||active!==ownedWorker)return;
+        ownedWorker.terminate();active=null;processing=false;
+        const r=reply as {
+          kind?:string;contract?:string;complete?:boolean;
+          writerAuthorized?:boolean;rows?:EditableSlot[]
+        };
+        if(r?.kind!=='slots'||r.contract!=='wand.db05.editable-slots@1'||
+           r.complete!==true||r.writerAuthorized!==false||
+           !Array.isArray(r.rows)){
+          slotState='error';return;
+        }
+        savedSlots=r.rows;savedSlotsFile=file;slotState='ready';
+        beginCatalogLookup(r.rows,file);
+      };
+      worker.onmessage=event=>finish(event.data);
+      worker.onerror=event=>{event.preventDefault();finish({kind:'error'});};
+      worker.onmessageerror=()=>finish({kind:'error'});
+      worker.postMessage(
+        {command:'inspect-existing-slots',format,bytes},[bytes.buffer]
+      );
+      bytes=null;
+    }catch{
+      if(request===revision){
+        worker?.terminate();active=null;processing=false;
+        slotState='error';
+      }
+    }finally{
+      if(bytes?.byteLength)bytes.fill(0);
+    }
+  }
   function uint32(x:string):number|null{
     if(!/^(?:0|[1-9][0-9]*)$/.test(x))return null;
     const n=Number(x);
@@ -283,7 +418,8 @@
   <section aria-label="数量変更の検証">
     <label>セーブファイル
       <input bind:this={fileInput} type="file" accept=".profile,.dat,.bin,.json"
-        aria-label="検証用セーブファイル" disabled={processing} />
+        aria-label="検証用セーブファイル" disabled={processing}
+        on:change={onFileChange} />
     </label>
     <label>対象
       <select bind:value={kind} aria-label="対象の種類" disabled={processing}>
@@ -306,9 +442,60 @@
     </button>
     <button type="button" class="secondary" on:click={queueCurrentEdit}
       disabled={processing||queuedEdits.length>=16}>複数編集に追加</button>
-    <button type="button" class="secondary" on:click={()=>{cancel();result=null;if(fileInput)fileInput.value='';}}>
+    <button type="button" class="secondary" on:click={()=>{
+      onFileChange();queuedEdits=[];if(fileInput)fileInput.value='';
+    }}>
       破棄
     </button>
+  </section>
+  <section class="saved-slots" aria-label="セーブ内アイテム">
+    <div class="slot-actions">
+      <button type="button" on:click={loadSavedSlots} disabled={processing}>
+        {slotState==='loading'?'読み込み中…':'所持アイテムを表示'}
+      </button>
+      {#if slotState==='ready'}
+        <span role="status">{savedSlots.length}件</span>
+      {:else if slotState==='error'}
+        <span role="alert">所持アイテムを読み込めませんでした。</span>
+      {/if}
+    </div>
+    {#if slotState==='ready'}
+      <div class="slot-search">
+        <input bind:value={slotQuery} aria-label="所持アイテム検索"
+          placeholder="アイテム名・Item IDを検索" />
+        <select bind:value={slotFilter} aria-label="所持アイテム分類">
+          <option value="all">すべて</option>
+          <option value="inventory">Inventory</option>
+          <option value="chest">Chest</option>
+        </select>
+      </div>
+      <ul class="slot-list">
+        {#each visibleSlots as slot,i}
+          <li>
+            <button type="button" class="slot-select" disabled={processing}
+              aria-label={`所持アイテム ${String(slot.itemId)} を選択`}
+              on:click={()=>selectSavedSlot(slot)}>
+              <span>
+                <strong>{dbMap.get(String(slot.itemId))?.name??String(slot.itemId)}</strong>
+                <small>{dbMap.get(String(slot.itemId))?.category??
+                  dbMap.get(String(slot.itemId))?.nativeCategory??
+                  (slot.kind==='inventory'?'Inventory':'Chest')}
+                </small>
+              </span>
+              <span class="slot-amount">×{slot.amount}</span>
+            </button>
+          </li>
+        {/each}
+      </ul>
+      {#if dbStatus==='loading'}
+        <p class="slot-note">共通DBを読み込み中…</p>
+      {:else if dbStatus==='unavailable'}
+        <p class="slot-note">共通DBを参照できません。Item IDで編集できます。</p>
+      {/if}
+      {#if savedSlots.length>120 && visibleSlots.length===120}
+        <p class="slot-note">検索すると絞り込めます。</p>
+      {/if}
+    {/if}
   </section>
   {#if queuedEdits.length}
     <section class="batch-edits" aria-label="一括数量変更">
@@ -350,7 +537,7 @@
 </main>
 
 <style>
-  .dev-preview{max-width:740px;margin:0 auto;padding:clamp(24px,5vw,60px);color:#f5ebfb;}
+  .dev-preview{max-width:1100px;margin:0 auto;padding:clamp(24px,5vw,60px);color:#f5ebfb;}
   .eyebrow{font-size:11px;letter-spacing:.17em;color:#d4b0ee;}
   h1{font-size:clamp(26px,4vw,42px);margin:12px 0;}
   p{line-height:1.7;color:#c6b5d4;font-size:14px;}
@@ -366,6 +553,20 @@
   .batch-edits ol{margin:8px 0 16px;padding-left:24px}
   .batch-edits li{margin:7px 0;font-size:13px}
   .batch-edits li button{margin-left:12px;padding:5px 10px}
+  .saved-slots{display:block;}
+  .slot-actions{display:flex;align-items:center;gap:15px;}
+  .slot-search{display:flex;gap:10px;margin:14px 0;}
+  .slot-search input{flex:1;min-width:0;}
+  .slot-search select{max-width:180px;}
+  .slot-list{list-style:none;margin:8px 0;padding:0;max-height:380px;overflow:auto;}
+  .slot-list li{margin:0;border-bottom:1px solid #ffffff22;}
+  .slot-select{width:100%;background:transparent;color:#f5ebfb;text-align:left;
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    min-height:54px;padding:10px 12px;}
+  .slot-select:hover{background:#443452;}
+  .slot-select strong{font-size:15px;display:block;}
+  .slot-select small,.slot-note{font-size:12px;color:#d4c2df;display:block;}
+  .slot-amount{font-size:17px;white-space:nowrap;}
   .warning{font-size:12px;}
   .export-controls{display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:12px 0;}
   .download-link{display:inline-block;padding:12px 17px;border-radius:8px;background:#f5ecfa;color:#24182f;font-size:14px;text-decoration:none;font-weight:600;}
