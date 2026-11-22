@@ -29,6 +29,8 @@ import {loadPinnedPublicNativeShopSnapshot,loadPinnedHistoricalNativeShopSnapsho
   type PinnedPublicNativeShopIndex} from './public-native-shop.ts';
 import {loadPinnedPublicIapSource,
   type PublicIapSourceIndex} from './public-static-iap.ts';
+import {loadPinnedIapPackReferences,type PinnedIapPackReferenceIndex}
+  from './public-iap-pack-references.ts';
 import {indexNativeShopHistory,type NativeShopHistoryIndex}
   from './shop-history-index.ts';
 import {
@@ -109,6 +111,8 @@ export interface CurrentDb02OriginCatalog{
   readonly shopHistory:NativeShopHistoryIndex;
   /** Source-native exact IAP package IDs and direct/extended Item rewards. */
   readonly nativeIapSource:PublicIapSourceIndex;
+  /** Source-native IAP pack edges; never interpreted as granted items. */
+  readonly nativeIapPackReferences:PinnedIapPackReferenceIndex;
   /** Lazy SHA-pinned 395 explicit Quest reward references, including 65 currency configurations. */
   loadQuestAcquisitionIndex(
     fetcher?:typeof fetch,basePath?:string
@@ -222,11 +226,14 @@ export async function joinCurrentDb02Catalog(
     loadPinnedPublicIapSource(basePath,fetcher),
     loadPinnedHistoricalNativeShopSnapshot(basePath,fetcher)
   ]);
-  const origins=await loadUnifiedAcquisitionOriginDatabase(
-    fetcher,src02,basePath,ids,db03NativeRewards,
-    publicQuestRewards,publicEventFriendship,nativeShopSource,nativeIapSource,
-    historicalNativeShopSource
-  );
+  const [origins,nativeIapPackReferences]=await Promise.all([
+    loadUnifiedAcquisitionOriginDatabase(
+      fetcher,src02,basePath,ids,db03NativeRewards,
+      publicQuestRewards,publicEventFriendship,nativeShopSource,nativeIapSource,
+      historicalNativeShopSource
+    ),
+    loadPinnedIapPackReferences(nativeIapSource,basePath,fetcher)
+  ]);
   const shopHistory=indexNativeShopHistory(nativeShopSource,historicalNativeShopSource);
   const joined=joinDb02OriginsWithDb00(db00,origins);
   const lootSources=indexNativeLootSourceFamilies(origins,ids);
@@ -243,7 +250,7 @@ export async function joinCurrentDb02Catalog(
     origins,db00:joined,lootSources,coverage,
     lootObjectSources:nativeLootObjectReferenceIndex,
     publicOnlineNameCandidates,nativeShopSource,nativeIapSource,
-    historicalNativeShopSource,shopHistory,
+    nativeIapPackReferences,historicalNativeShopSource,shopHistory,
     loadQuestAcquisitionIndex(
       questFetcher:typeof fetch=fetch,questBasePath=basePath
     ){return loadPublicQuestAcquisitionIndex(questBasePath,questFetcher);},
