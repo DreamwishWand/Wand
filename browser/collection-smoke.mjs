@@ -316,11 +316,11 @@ try{
   assert.match(await portal.locator('.shell-save-menu').innerText(),/profile\.json/);
   assert.match(await portal.locator('.shell-save-menu').innerText(),/未解析/);
   assert.equal(await portal.getByRole('button',{name:'編集済みセーブを出力'}).isDisabled(),true);
-  const [backup]=await Promise.all([
+  const [rawDownload]=await Promise.all([
     portal.waitForEvent('download'),
     portal.getByRole('button',{name:'原本をバックアップ'}).click()
   ]);
-  assert.equal(backup.suggestedFilename(),'backup_profile.json');
+  assert.equal(rawDownload.suggestedFilename(),'backup_profile.json');
   await saveButton.click();
   await portal.getByRole('button',{name:'ファイルを閉じる'}).click();
   assert.equal(await portal.getByRole('button',{name:'セーブファイルを読み込む'}).count(),1);
