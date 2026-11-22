@@ -160,3 +160,21 @@ test('archived source-attested private ZIP audit preserves native tag counts',as
     expectedRowsSha256:original.expectedRowsSha256
   }),/ARCHIVED_CATEGORY_COUNT/);
 });
+
+test('missing native World Tag is an unverified, paged source subset not a default world',async()=>{
+  const db=await createDb04NativeItemScopeClient(build());
+  const first=db.withoutWorldTag({offset:0,limit:2});
+  assert.equal(first.evidenceKind,'no_world_tag_in_original_item_record');
+  assert.equal(first.tag,'');
+  assert.equal(first.status,'unverified');
+  assert.equal(first.matchingItemIdsInSourceSubset,13200);
+  assert.deepEqual(first.itemIds,[3,4]);
+  assert.equal(first.hasNextPage,true);
+  assert.equal(first.nextOffset,2);
+  assert.equal(first.sourceCoverageComplete,false);
+  assert.equal(first.acquisitionWorldVerified,false);
+  const last=db.withoutWorldTag({offset:13199,limit:2});
+  assert.equal(last.itemIds.length,1);
+  assert.equal(last.hasNextPage,false);
+  assert.throws(()=>db.withoutWorldTag({offset:-1,limit:2}),/INVALID_PAGE/);
+});
