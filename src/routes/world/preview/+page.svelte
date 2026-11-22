@@ -12,10 +12,19 @@
   type LayoutOption = {
     viewKey: string; label: string; layoutId: string;
     kind: 'gridCollection' | 'villageArea';
+    regionKey: string;
     villageLayoutId?: string; nativeAreaTypeCode?: number;
     nativeAreaTypeName?: string | null;
     missingReferencedLayout?: boolean;
     grids: GridOption[];
+  };
+  type RegionCoverage = {
+    regionKey: string;
+    villageLayoutCount: number; areaReferenceCount: number;
+    resolvedAreaReferenceCount: number; missingAreaLayoutReferenceCount: number;
+    nativeGridReferenceCount: number; presentNativeGridReferenceCount: number;
+    missingNativeGridReferenceCount: number; sourceDefaultAnchorCount: number;
+    worldCoordinatesVerified: false; placementLegalityVerified: false;
   };
   type Anchor = {
     layoutObjectId: string;
@@ -48,6 +57,8 @@
   let integrity = '';
   let manifestFilesVerified = 0;
   let layouts: LayoutOption[] = [];
+  let regions: RegionCoverage[] = [];
+  let selectedRegion = '';
   let selectedViewKey = '';
   let selectedGridId = '';
   let x = 0; let y = 0; let width = 16; let height = 16;
@@ -57,6 +68,10 @@
   let selectedCell: {x:number;y:number} | null = null;
   let fileInput: HTMLInputElement | null = null;
 
+  $: regionKeys = [...new Set(layouts.map(a => a.regionKey))].sort();
+  $: filteredLayouts = selectedRegion
+    ? layouts.filter(a => a.regionKey === selectedRegion) : layouts;
+  $: selectedRegionCoverage = regions.find(a => a.regionKey === selectedRegion);
   $: selectedLayout = layouts.find(a => a.viewKey === selectedViewKey);
   $: gridOptions = selectedLayout?.grids ?? [];
   $: selectedGrid = gridOptions.find(a => String(a.gridIdNative) === selectedGridId);
@@ -104,6 +119,8 @@
     version = '';
     platform = '';
     layouts = [];
+    regions = [];
+    selectedRegion = '';
     selectedViewKey = '';
     selectedGridId = '';
     viewport = null;
@@ -144,6 +161,11 @@
       rect:{x,y,width,height}, offset,
     });
   }
+  function changeRegion() {
+    const first = layouts.find(a => !selectedRegion || a.regionKey === selectedRegion);
+    selectedViewKey = first?.viewKey ?? '';
+    changeLayout();
+  }
   function changeLayout() {
     const grids = layouts.find(a => a.viewKey === selectedViewKey)?.grids ?? [];
     selectedGridId = grids.length ? String(grids[0].gridIdNative) : '';
@@ -165,6 +187,8 @@
     const file = input.files?.[0];
     stop();
     layouts = [];
+    regions = [];
+    selectedRegion = '';
     viewport = null;
     version = '';
     errorMessage = '';
@@ -198,6 +222,9 @@
         integrity = String(result.integrity);
         manifestFilesVerified = Number(result.manifestFilesVerified);
         layouts = result.layouts as LayoutOption[];
+        regions = Array.isArray(result.regionCoverage)
+          ? result.regionCoverage as RegionCoverage[] : [];
+        selectedRegion = '';
         selectedViewKey = layouts[0]?.viewKey ?? '';
         selectedGridId = layouts[0]?.grids[0] ?
           String(layouts[0].grids[0].gridIdNative) : '';
@@ -262,6 +289,7 @@
     <div class="world-stats">
       <div><small>原本内の宣言バージョン</small><strong>{platform} {version}</strong></div>
       <div><small>SHA-256一致</small><strong>{manifestFilesVerified}ファイル</strong></div>
+      <div><small>原本地域とAreaType参照</small><strong>{regionKeys.length}地域 · {regions.reduce((sum, entry) => sum + entry.areaReferenceCount, 0)}件</strong></div>
       <div><small>参照可能な原本ビュー</small><strong>{layouts.length}件</strong></div>
       <div><small>配置可否の検証</small><strong>未対応</strong></div>
     </div>
@@ -270,9 +298,17 @@
     {/if}
     <div class="world-panel">
       <div class="selector-row">
+        <label>原本地域
+          <select bind:value={selectedRegion} on:change={changeRegion}>
+            <option value="">すべての地域</option>
+            {#each regionKeys as region}
+              <option value={region}>{region}</option>
+            {/each}
+          </select>
+        </label>
         <label>原本GridCollection / Village Area
           <select bind:value={selectedViewKey} on:change={changeLayout}>
-            {#each layouts as layout}
+            {#each filteredLayouts as layout}
               <option value={layout.viewKey}>{layout.label}</option>
             {/each}
           </select>
@@ -287,6 +323,13 @@
           </select>
         </label>
       </div>
+      {#if selectedRegionCoverage}
+        <p class="note">このZIPに含まれる原本参照：AreaType {selectedRegionCoverage.areaReferenceCount}件
+          （対応レイアウト {selectedRegionCoverage.resolvedAreaReferenceCount}件・未収録 {selectedRegionCoverage.missingAreaLayoutReferenceCount}件）、
+          グリッド {selectedRegionCoverage.presentNativeGridReferenceCount}/{selectedRegionCoverage.nativeGridReferenceCount}件、
+          初期配置アンカー {selectedRegionCoverage.sourceDefaultAnchorCount}件。
+          収録件数はゲーム全体の網羅性・配置可否を示しません。</p>
+      {/if}
       {#if selectedLayout?.kind === 'villageArea'}
         <p class="note">VillageのAreaType {selectedLayout.nativeAreaTypeCode}
           （{selectedLayout.nativeAreaTypeName ?? '名前未収録'}）から
