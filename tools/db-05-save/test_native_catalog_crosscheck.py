@@ -218,7 +218,8 @@ class NativeCatalogTest(unittest.TestCase):
                 rule["matchedSourceDefinitions"]+
                 rule["unindexedInSuppliedDb01Catalog"],500
             )
-            self.assertEqual(rule["unindexedInSuppliedDb01Catalog"],499)
+            self.assertEqual(rule["unindexedInSuppliedDb01Catalog"],498)
+            self.assertEqual(rule["matchedSourceDefinitions"],2)
             self.assertFalse(result["claims"]["allGameContentCovered"])
 
     def test_duplicate_key_unsafe_json_and_nonfinite_rejected(self):
