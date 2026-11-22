@@ -4,6 +4,7 @@ import { DB01_LOCALES, type Db01CatalogClient } from './index.ts';
 import type { Db01Classification, Db01ClassificationClient } from './classification.ts';
 import type { Db01ItemType, Db01ItemTypeClient } from './item-types.ts';
 import type { Db01OriginalCollectionMenuClient, Db01OriginalCollectionListing } from './collection-menu.ts';
+import type { Db01UniversePredicateClient, Db01UniversePredicateMatch } from './collection-universe.ts';
 
 export const DB01_DB00_JOIN_CONTRACT = 'wand.db01.db00-private-source-join@1' as const;
 export interface Db00SourceTarget {
@@ -16,7 +17,8 @@ export async function createDb01Db00Patch(
   catalog: Db01CatalogClient, target: Db00SourceTarget,
   classification?: Db01ClassificationClient,
   itemTypes?: Db01ItemTypeClient,
-  collectionMenus?: Db01OriginalCollectionMenuClient
+  collectionMenus?: Db01OriginalCollectionMenuClient,
+  collectionUniverse?: Db01UniversePredicateClient
 ) {
   if (!catalog?.source?.privateOnly || typeof catalog.getCategory !== 'function')
     throw new TypeError('DB01_PRIVATE_CATALOG_REQUIRED');
@@ -42,6 +44,11 @@ export async function createDb01Db00Patch(
       collectionMenus.source.sourceItemsSha256 !== catalog.source.sourceItemsSha256 ||
       collectionMenus.source.catalogDefinitions !== catalog.source.definitions
   )) throw new TypeError('DB01_DB00_COLLECTION_SOURCE_MISMATCH');
+  if (collectionUniverse && (
+      collectionUniverse.source.gameVersion !== catalog.source.gameVersion ||
+      collectionUniverse.source.sourceItemsSha256 !== catalog.source.sourceItemsSha256 ||
+      collectionUniverse.source.sourceDefinitionCount !== catalog.source.definitions
+  )) throw new TypeError('DB01_DB00_UNIVERSE_PREDICATE_SOURCE_MISMATCH');
   const nativeCategories = ['ActivityItem', 'Furniture', 'Clothing', 'Trimming'] as const;
   const batches = await Promise.all(nativeCategories.map(category => catalog.getCategory(category)));
   const nativeRows = batches.flat();
@@ -98,6 +105,24 @@ export async function createDb01Db00Patch(
       }
     }
   }
+  const universeCandidates=new Map<number,readonly Readonly<Db01UniversePredicateMatch>[]>();
+  if (collectionUniverse) {
+    for (let index=0;index<nativeRows.length;index+=4096) {
+      const subset=nativeRows.slice(index,index+4096);
+      const matches=await collectionUniverse.getItems(subset.map(row=>row.itemId));
+      if (matches.length!==subset.length)
+        throw new TypeError('DB01_DB00_UNIVERSE_PREDICATE_BATCH_MISMATCH');
+      for(let i=0;i<matches.length;i++) {
+        const found=matches[i];
+        if(!Array.isArray(found)||found.some(link=>
+            link.nativeCategory!==subset[i].nativeCategory||
+            link.sourcePredicateMatched!==true||
+            link.gameUiMembershipVerified!==false))
+          throw new TypeError('DB01_DB00_UNIVERSE_PREDICATE_ITEM_MISMATCH');
+        if(found.length) universeCandidates.set(subset[i].itemId,found);
+      }
+    }
+  }
   const records = nativeRows.map(row => {
     if (row.catalogDomain !== 'item') throw new TypeError('DB01_UNCLASSIFIED_PATCH_BLOCKED');
     const names: Record<string,string> = {};
@@ -107,9 +132,10 @@ export async function createDb01Db00Patch(
     const metadata = tagged.get(row.itemId);
     const itemType = typed.get(row.itemId);
     const directMenus = menuListed.get(row.itemId);
+    const universeMatches=universeCandidates.get(row.itemId);
     // Source Tag.json links are not synonymous with DLC entitlement or world
     // availability. Do NOT assert these DB-00 fields from Tag references.
-    const attributes = metadata || itemType || directMenus ? {
+    const attributes = metadata || itemType || directMenus || universeMatches ? {
       ...(metadata ? {
         gameOriginalTagReferences:metadata.tagReferences.map(tag => ({
           id:tag.tagId,key:tag.tagKey,originalWireField:tag.wireField,facet:tag.facet,
@@ -134,6 +160,17 @@ export async function createDb01Db00Patch(
           gameUiVisibilityVerified:false,
         })),
       } : {}),
+      ...(universeMatches ? {
+        gameOriginalCollectionUniversePredicateMatches:universeMatches.map(match=>({
+          collectionSetId:match.setId,groupIndex:match.groupIndex,
+          sourceSetItemId:match.sourceSetItemId,
+          universeTagId:match.universeTagId,
+          universeTagKey:match.universeTagKey,
+          rule:match.rule,sourcePredicateMatched:true,
+          gameUiMembershipVerified:false,
+          gameUiVisibilityVerified:false,
+        })),
+      } : {}),
       gameUiCategoryVerified:false,worldAvailabilityVerified:false,
       dlcOwnershipVerified:false,
     } : undefined;
@@ -148,6 +185,8 @@ export async function createDb01Db00Patch(
         ...(itemType ? ['db01-original-il2cpp-types'] : []),
         ...(directMenus ? ['db01-original-collection-menus',
           'db01-original-collection-submenus'] : []),
+        ...(universeMatches ? ['db01-original-collection-universe-predicates',
+          'db01-original-collection-universe-il2cpp'] : []),
       ],
       ...(attributes ? {attributes} : {}),
     });
@@ -170,6 +209,12 @@ export async function createDb01Db00Patch(
         {id:'db01-original-collection-submenus',
           sha256:collectionMenus.source.sourceIl2cppDumpSha256,visibility:'private'},
       ] : []),
+      ...(collectionUniverse ? [
+        {id:'db01-original-collection-universe-predicates',
+          sha256:collectionUniverse.source.sourceSqliteSha256,visibility:'private'},
+        {id:'db01-original-collection-universe-il2cpp',
+          sha256:collectionUniverse.source.sourceIl2cppDumpSha256,visibility:'private'},
+      ] : []),
     ],
   };
   return Object.freeze({
@@ -182,6 +227,8 @@ export async function createDb01Db00Patch(
     sourceTagMetadataAdded:classification ? tagged.size : 0,
     sourceItemTypeMetadataAdded:itemTypes ? typed.size : 0,
     sourceCollectionDirectListingsAdded:collectionMenus ? menuListed.size : 0,
+    sourceCollectionUniversePredicateCandidatesAdded:
+      collectionUniverse ? universeCandidates.size : 0,
     worldAvailabilityDerivedFromTags:false,dlcOwnershipDerivedFromTags:false,
     publishable:false,
   });
