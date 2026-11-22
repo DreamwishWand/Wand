@@ -2,9 +2,16 @@
   import '../app.css';
   import {base} from '$app/paths';
   import {page} from '$app/stores';
+  import {onMount} from 'svelte';
   import WandIcon from '$lib/ui/WandIcon.svelte';
 
   let tutorialOpen=false;
+  let collectionBusy=false;
+  onMount(()=>{
+    const update=(event:Event)=>collectionBusy=Boolean((event as CustomEvent<boolean>).detail);
+    window.addEventListener('wand:collection-busy',update);
+    return()=>window.removeEventListener('wand:collection-busy',update);
+  });
   $: route=$page.url.pathname.replace(/\/+$/,'')||'/';
   $: service=route.includes('/collection')?'collection':
     route.includes('/guide/star-path')?'starpath':
@@ -56,7 +63,7 @@
     </nav>
     <div class="site-actions" aria-label="ページ操作">
       {#if service==='collection'||service==='save'}
-        <button class="header-icon-button" type="button" on:click={openSaveFile}
+        <button class="header-icon-button" type="button" on:click={openSaveFile} disabled={service==='collection'&&collectionBusy}
           aria-label="セーブファイルを読み込む" title="セーブファイルを読み込む">
           <WandIcon name="upload" size={21}/>
         </button>
@@ -66,7 +73,7 @@
           aria-label="Collectionバックアップ出力" title="Collectionバックアップ出力">
           <WandIcon name="download" size={21}/>
         </button>
-        <button class="header-icon-button" type="button" on:click={restoreCollection}
+        <button class="header-icon-button" type="button" on:click={restoreCollection} disabled={collectionBusy}
           aria-label="Collectionバックアップ復元" title="Collectionバックアップ復元">
           <WandIcon name="restore" size={21}/>
         </button>
