@@ -144,5 +144,6 @@ export function guideQuestTargetItemHref(rawId:unknown,base=''):string|null{
   const itemId=normalized(rawId);
   if(!itemId)return null;
   check(typeof base==='string'&&/^\/?(?:[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*)?$/.test(base),'BASE');
-  return (base?'/'+base.replace(/^\/+|\/+$/g,''):'')+'/guide/quests/?target='+itemId;
+  const root=base.replace(/^\/+|\/+$/g,'');
+  return (root?'/'+root:'')+'/guide/quests/?target='+itemId;
 }
