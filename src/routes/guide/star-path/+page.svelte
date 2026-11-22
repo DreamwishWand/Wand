@@ -1,6 +1,7 @@
 <script lang="ts">
   import {onMount} from 'svelte';
   import {base} from '$app/paths';
+  import {watchWandLanguage} from '$lib/ui/preferences';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {autoAppend} from '$lib/ui/auto-append';
   import {loadPublicStarpath} from '$lib/guide/public-starpath.mjs';
@@ -14,7 +15,6 @@
 
   let catalog:any=null, weeklyLocales:any=null, dailyLocales:any=null, rewardExtras:any=null, publicMedia:any=null, goalAmounts:any=null, goalWarning='', error='', loading=true;
   let locale='ja';
-  const languages=[['ja','日本語'],['en','English'],['fr','Français'],['it','Italiano'],['de','Deutsch'],['es-ES','Español'],['pt-BR','Português'],['zh-CN','简体中文']];
   let selectedId='HauntingElegance2026';
   let now=Date.now();
   let tab:'tasks'|'weekly'|'rewards'='tasks';
@@ -66,10 +66,11 @@
     finally{loading=false;}
   }
   onMount(()=>{
+    const unwatch=watchWandLanguage(next=>locale=next);
     now=Date.now();
     const clock=setInterval(()=>{now=Date.now()},60000);
     void load();
-    return ()=>clearInterval(clock);
+    return ()=>{unwatch();clearInterval(clock);};
   });
 </script>
 
@@ -96,7 +97,6 @@
         <button class:selected={s.id===season?.id} on:click={()=>changeSeason(s.id)} aria-pressed={s.id===selectedId}>{s.title}</button>
       {/each}
     </div>
-    <label class="language">表示言語 <select bind:value={locale} aria-label="スターパスの表示言語">{#each languages as [code,name]}<option value={code}>{name}</option>{/each}</select></label>
     {#if !availableSeasons.length}<p role="status">現在の日程上、タスク期間内と確認できるスターパスはありません。過去の保存キャッシュだけを根拠に開催中とは表示しません。</p>{/if}
     {#if season}
       {#if goalWarning}<p class="hint" role="status">目標数量を検証できなかったため、ゲーム内の説明のみを表示しています。</p>{/if}

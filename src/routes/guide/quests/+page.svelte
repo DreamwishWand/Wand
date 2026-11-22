@@ -1,12 +1,12 @@
 <script lang="ts">
   import {onMount} from 'svelte';
   import {base} from '$app/paths';
+  import {watchWandLanguage} from '$lib/ui/preferences';
   import {autoAppend} from '$lib/ui/auto-append';
   import {collectWindow} from '$lib/ui/collect-window.mjs';
-  import {PUBLIC_GUIDE_LOCALES,verifyPublicQuestIndex,filterPublicQuests,publicQuestSection,findPublicQuestByLink,loadPublicQuestPart,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
+  import {verifyPublicQuestIndex,filterPublicQuests,publicQuestSection,findPublicQuestByLink,loadPublicQuestPart,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
   import {loadPublicQuestTargetsIndex,loadPublicQuestTargetsPart,itemTargetName,originalTargetLookup} from '$lib/guide/public-targets.mjs';
 
-  const LANG:Record<string,string>={ja:'日本語',en:'English',fr:'Français',it:'Italiano',de:'Deutsch','es-ES':'Español','zh-CN':'简体中文','pt-BR':'Português'};
   let catalog:any=null;
   let loadError='';
   let loading=true;
@@ -97,9 +97,10 @@
     finally {loading=false}
   }
   onMount(()=>{
+    const unwatch=watchWandLanguage(next=>{locale=next;setSearch();});
     window.addEventListener('popstate',restoreAddressSelection);
     void loadCatalog();
-    return ()=>window.removeEventListener('popstate',restoreAddressSelection);
+    return ()=>{unwatch();window.removeEventListener('popstate',restoreAddressSelection);};
   });
 
   async function openQuest(row:any,updateAddress=true) {
@@ -156,7 +157,6 @@
     <p class="section-note">原本のMission内部区分に基づく分類です。Villageは村人関連（フレンドシップ系）として表示しますが、全件の解放条件を確認済みという意味ではありません。</p>
     <div class="searchbar">
       <label>クエストを検索<input aria-label="クエスト名・IDを検索" placeholder="クエスト名・キャラクター名・ID" bind:value={query} on:input={setSearch}/></label>
-      <label>表示言語<select aria-label="表示言語" bind:value={locale} on:change={setSearch}>{#each PUBLIC_GUIDE_LOCALES as language}<option value={language}>{LANG[language]}</option>{/each}</select></label>
       <label>キャラクター<select aria-label="キャラクターで絞り込み" bind:value={character} on:change={setSearch}><option value="">すべて</option>{#each characters as id}<option value={id}>{characterName(id,locale)}</option>{/each}</select></label>
       <label>目標の種類<select aria-label="目標で絞り込み" bind:value={objective} on:change={setSearch}><option value="">すべて</option>{#each objectives as kind}<option value={kind}>{kind}</option>{/each}</select></label>
     </div>

@@ -4,13 +4,39 @@
   import {page} from '$app/stores';
   import {onMount} from 'svelte';
   import WandIcon from '$lib/ui/WandIcon.svelte';
+  import {
+    UI_LANGUAGES,readWandLanguage,setWandLanguage,readWandTheme,setWandTheme,
+    watchWandLanguage,type WandLanguage,type WandTheme
+  } from '$lib/ui/preferences';
 
   let tutorialOpen=false;
   let collectionBusy=false;
+  let languageOpen=false;
+  let uiLocale:WandLanguage='ja';
+  let uiTheme:WandTheme='dark';
+  let languageButton:HTMLButtonElement|null=null;
+  const LANGUAGE_SHORT=Object.fromEntries(UI_LANGUAGES.map(x=>[x.code,x.short]));
+  function switchLanguage(code:WandLanguage){
+    setWandLanguage(code);
+    languageOpen=false;
+    languageButton?.focus();
+  }
+  function switchTheme(){
+    uiTheme=uiTheme==='dark'?'light':'dark';
+    setWandTheme(uiTheme);
+  }
   onMount(()=>{
     const update=(event:Event)=>collectionBusy=Boolean((event as CustomEvent<boolean>).detail);
     window.addEventListener('wand:collection-busy',update);
-    return()=>window.removeEventListener('wand:collection-busy',update);
+    const unwatch=watchWandLanguage(value=>uiLocale=value);
+    // Apply the stored preferences to the DOM before any user action.
+    setWandLanguage(readWandLanguage());
+    uiTheme=readWandTheme();
+    setWandTheme(uiTheme);
+    return()=>{
+      window.removeEventListener('wand:collection-busy',update);
+      unwatch();
+    };
   });
   $: route=$page.url.pathname.replace(/\/+$/,'')||'/';
   $: service=route.includes('/collection')?'collection':
@@ -28,14 +54,6 @@
     world:{title:'World（原本プレビュー）',steps:['ゲーム原本から抽出したZIPを端末内で読み込みます。','地域・レイアウトを選ぶと初期配置の参照を確認できます。原本の記録はプレイヤーの所有証明ではありません。']},
     save:{title:'Save（開発用）',steps:['ヘッダーの読み込みでセーブを選択します。','診断と変更プレビューは開発用です。完成したセーブ書き換え機能ではありません。','元ファイルを変更せず端末内で処理します。']}
   } as Record<string,{title:string;steps:string[]}>)[service];
-  const links=[
-    {href:'',name:'Decorate',icon:'palette'},
-    {href:'/collection/',name:'Collection',icon:'collection'},
-    {href:'/guide/',name:'Guide',icon:'guide'},
-    {href:'',name:'Presets',icon:'sparkles'},
-    {href:'',name:'Gallery',icon:'gallery'},
-    {href:'',name:'DreamSnaps',icon:'camera'}
-  ];
   function openSaveFile(){
     const label=service==='collection'?'DDVのセーブファイルを選択':
       route.includes('/diagnostics')?'DDVセーブまたは復号済みJSONを選択':'検証用セーブファイル';
@@ -47,31 +65,40 @@
     document.querySelector<HTMLInputElement>('input[aria-label="Collectionバックアップを選択"]')?.click();
   }
 </script>
-<svelte:window on:keydown={(event:KeyboardEvent)=>{if(event.key==='Escape')tutorialOpen=false;}}/>
+<svelte:window on:keydown={(event:KeyboardEvent)=>{
+  if(event.key==='Escape'){tutorialOpen=false;languageOpen=false;}
+}}/>
 <div class="site-shell">
   <header class="site-header">
-    <a class="brand" href="{base}/" aria-label="Dreamwish Wand ホーム">
-      <span class="brand-mark"><WandIcon name="sparkles" size={21}/></span>
-      <span class="brand-text">Dreamwish <strong>Wand</strong></span>
-    </a>
-    <nav aria-label="サービス" class="site-nav">
-      {#each links as link (link.name)}
-        {#if link.href}
-          <a class="nav-link"
-            href="{base}{link.href}"
-            class:active={link.name==='Guide'?route.startsWith('/guide'):route===link.href.replace(/\/+$/,'')}
-            aria-current={(link.name==='Guide'?route.startsWith('/guide'):route===link.href.replace(/\/+$/,''))?'page':undefined}
-            title={link.name}>
-            <WandIcon name={link.icon} size={19}/><span>{link.name}</span>
-          </a>
-        {:else}
-          <span class="nav-link unavailable" aria-label={link.name+'（開発中）'} aria-disabled="true" title={link.name+'（開発中）'}>
-            <WandIcon name={link.icon} size={19}/><span>{link.name}</span>
-          </span>
-        {/if}
-      {/each}
-    </nav>
+    {#if service!=='home'}
+      <a class="header-home-button" href="{base}/" aria-label="ホームへ戻る" title="ホームへ戻る">
+        <WandIcon name="home" size={23}/>
+      </a>
+    {/if}
+    <div class="header-spacer"></div>
     <div class="site-actions" aria-label="ページ操作">
+      <div class="header-language-menu">
+        <button bind:this={languageButton} class="header-icon-button header-language-button" type="button"
+          aria-label="表示言語を切り替える" title="表示言語を切り替える" aria-expanded={languageOpen}
+          on:click={()=>languageOpen=!languageOpen}>
+          <WandIcon name="languages" size={21}/>
+          <span class="header-locale-code">{LANGUAGE_SHORT[uiLocale]}</span>
+        </button>
+        {#if languageOpen}
+          <div class="language-popover" role="group" aria-label="表示言語">
+            {#each UI_LANGUAGES as item (item.code)}
+              <button type="button" class:chosen={uiLocale===item.code}
+                aria-pressed={uiLocale===item.code} on:click={()=>switchLanguage(item.code)}>
+                <span>{item.label}</span>{#if uiLocale===item.code}<WandIcon name="check" size={17}/>{/if}
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
+      <button class="header-icon-button" type="button" on:click={switchTheme}
+        aria-label="テーマを切り替える" title={uiTheme==='dark'?'ライトテーマへ':'ダークテーマへ'}>
+        <WandIcon name={uiTheme==='dark'?'sun':'moon'} size={21}/>
+      </button>
       {#if service==='collection'||service==='save'}
         <button class="header-icon-button" type="button" on:click={openSaveFile} disabled={service==='collection'&&collectionBusy}
           aria-label="セーブファイルを読み込む" title="セーブファイルを読み込む">
@@ -95,9 +122,7 @@
     </div>
   </header>
   <main class="site-main"><slot/></main>
-  {#if service==='home'}
-    <footer class="site-footer">Unofficial fan project · Not affiliated with Disney or Gameloft.</footer>
-  {/if}
+
 </div>
 {#if tutorialOpen}
   <div class="tutorial-backdrop">

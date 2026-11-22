@@ -100,8 +100,34 @@ try{
   assert.equal(await portal.locator('.portal-card.planned').count(),4);
   assert.equal(await portal.locator('.portal-community').count(),1);
   assert.match(await portal.locator('.portal-community').innerText(),/Community Help Center/);
-  assert.equal(await portal.locator('header.site-header .nav-link.unavailable').count(),4);
-  assert.equal(await portal.locator('header.site-header a[href$="/guide/"]').count(),1);
+  assert.equal(await portal.locator('header.site-header .site-nav').count(),0);
+  assert.equal(await portal.locator('header.site-header .brand').count(),0);
+  assert.equal(await portal.locator('.portal-intro').count(),0);
+  assert.equal(await portal.locator('.portal-page h1:not(.visually-hidden)').count(),0);
+  // A desktop opening viewport contains every service and Help Center.
+  await portal.setViewportSize({width:1400,height:850});
+  const fits=await portal.evaluate(()=>{
+    const support=document.querySelector('.portal-community')?.getBoundingClientRect();
+    const cards=Array.from(document.querySelectorAll('.portal-card')).map(x=>x.getBoundingClientRect());
+    return support&&cards.length===6&&support.bottom<=window.innerHeight+1&&
+      cards.every(r=>r.top>=0&&r.bottom<=window.innerHeight+1)&&
+      document.documentElement.scrollHeight<=window.innerHeight+1;
+  });
+  assert.equal(fits,true,'six large cards and Community Help Center must fit in the desktop viewport');
+  const localeButton=portal.getByRole('button',{name:'表示言語を切り替える'});
+  await localeButton.click();
+  await portal.getByRole('group',{name:'表示言語'}).getByRole('button',{name:'English'}).click();
+  assert.match(await portal.locator('.portal-card.planned').first().innerText(),/Coming soon/);
+  await portal.reload();
+  assert.match(await portal.locator('.portal-card.planned').first().innerText(),/Coming soon/);
+  await portal.getByRole('button',{name:'表示言語を切り替える'}).click();
+  await portal.getByRole('group',{name:'表示言語'}).getByRole('button',{name:'日本語'}).click();
+  await portal.getByRole('button',{name:'テーマを切り替える'}).click();
+  assert.equal(await portal.evaluate(()=>document.documentElement.dataset.wandTheme),'light');
+  await portal.reload();
+  await portal.waitForFunction(()=>document.documentElement.dataset.wandTheme==='light');
+  await portal.getByRole('button',{name:'テーマを切り替える'}).click();
+  assert.equal(await portal.evaluate(()=>document.documentElement.dataset.wandTheme),'dark');
   await portal.getByRole('button',{name:'このページのチュートリアル'}).click();
   assert.match(await portal.getByRole('dialog').innerText(),/6つの主要サービス|カードを選択/);
   await portal.getByRole('button',{name:'チュートリアルを閉じる'}).click();
@@ -154,13 +180,16 @@ try{
   const search=page.getByRole('searchbox',{name:/8言語/});
   // Locale changes must re-query Rust, not leave cached cards in the prior locale.
   // Item 40005160 has source-verified Japanese/English names; it is a unique search match.
-  const language=page.getByRole('combobox',{name:'アイテム表示言語'});
+  const setItemLanguage=async (label)=>{
+    await page.getByRole('button',{name:'表示言語を切り替える'}).click();
+    await page.getByRole('group',{name:'表示言語'}).getByRole('button',{name:label,exact:true}).click();
+  };
   await search.fill('40005160');
   await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
   await page.waitForFunction(()=>document.querySelector('.item-card-copy strong')?.textContent?.trim()==='ガラスの靴');
-  await language.selectOption('en');
+  await setItemLanguage('English');
   await page.waitForFunction(()=>document.querySelector('.item-card-copy strong')?.textContent?.trim()==='Glass Shoe');
-  await language.selectOption('ja');
+  await setItemLanguage('日本語');
   await page.waitForFunction(()=>document.querySelector('.item-card-copy strong')?.textContent?.trim()==='ガラスの靴');
   assert.match(await page.locator('.item-card').first().innerText(),/家具|Furniture/);
   // Both tabs opened the same IndexedDB version. A stale writer must fail closed.
