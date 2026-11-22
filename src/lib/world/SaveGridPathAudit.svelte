@@ -143,11 +143,13 @@
       ownedWorker.postMessage({
         command:'inspect-db04-grid-paths',
         format:'auto',bytes:saveBytes,graph:graphBytes
-      },[saveBytes.buffer,graphBytes.buffer]);
+      },[saveBytes.buffer as ArrayBuffer,graphBytes.buffer as ArrayBuffer]);
       saveBytes=null;
       graphBytes=null;
     }catch{
       if(ownSerial===serial){
+        auditWorker?.terminate();
+        auditWorker=null;
         busy=false;
         error='セーブと原本のGridDataPathを照合できませんでした。';
       }
