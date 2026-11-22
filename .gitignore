@@ -27,3 +27,6 @@ static/ddv/collection/item-images-r39.json
 
 # Generated Rust/WASM browser glue: produced in CI, never checked in.
 src/lib/save/wasm/pkg/
+
+# Rust browser P1G audit glue: CI-only generated file
+src/lib/save/wasm/p1g-pkg/
