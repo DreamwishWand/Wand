@@ -63,7 +63,7 @@
   function setSelectedSave(file:File|undefined):void{
     if(!file)return;
     const filename=file.name.toLowerCase();
-    if(!/\\.(profile|dat|bin|json)$/.test(filename)||file.size<1){
+    if(!/\.(profile|dat|bin|json)$/.test(filename)||file.size<1){
       saveError=copy.saveInvalid;
       return;
     }
