@@ -28,7 +28,7 @@ Optional metadata proof input (schema wand.src04.exact-guid-links@1):
 - gameVersion matches verified target scan
 - sourceScanSha256 matches exact target source-manifest.json bytes
 - sourceItemsSha256 matches exact target items.jsonl bytes
-- links contains exactly one row for every unique new-version icon GUID
+- links contains at most one row for each new-version icon GUID; complete=true requires full GUID coverage, while complete=false allows a verified partial subset and leaves missing GUIDs for later relinking
 - each row includes iconGuid, bundlePath, sourceBundleSha256, unityAssetId and identityEvidence=exact_catalog_key_and_serialized_bundle_path_id
 - bundlePath and sourceBundleSha256 must match the target scan and actual target bytes
 
