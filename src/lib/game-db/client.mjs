@@ -1,6 +1,6 @@
 import { loadCollectionRuntime, COLLECTION_RUNTIME_PATH } from '../collection/catalog.mjs';
 import { ACTIVE_SCHEMA, RELEASE_SCHEMA, SNAPSHOT_SCHEMA, LOCALES,
-  validateSnapshot, legacyItem } from './model.mjs';
+  validateSnapshot, validateItem, canonicalId, legacyItem } from './model.mjs';
 
 const ACTIVE_PATH = 'ddv/game-db/active.json';
 function safePath(value) {
@@ -145,4 +145,146 @@ export async function loadCurrentSearchIndex(base = '', locale = 'en', fetchImpl
     throw new TypeError('Invalid locale search index');
   }
   return search;
+}
+
+
+/**
+ * Open the active release without eagerly fetching its 13k+ Item definitions.
+ *
+ * index.json is pinned by active.json; each requested data shard is independently
+ * SHA-256 checked. Range reads validate their local records and provenance, not
+ * the unseen shards. Use loadCurrentGameDatabase() for full-graph validation.
+ *
+ * This is a data transport for intersection-observer / scroll-driven UIs, not
+ * an inference that all game item families or locales are covered.
+ */
+export async function openCurrentGameDatabasePages(base = '', fetchImpl = globalThis.fetch) {
+  const pointer = await loadActivePointer(base, fetchImpl);
+  if (!pointer || pointer.kind === 'legacy_collection') {
+    // Old releases have no verified seekable manifest; retain rollback behavior
+    // without pretending the legacy transfer is network-lazy.
+    const legacy = await loadCollectionRuntime(base, fetchImpl);
+    return Object.freeze({
+      kind: 'legacy_collection',
+      snapshotId: pointer?.snapshot ?? 'legacy-switch-1.25.0',
+      transport: 'eager_legacy',
+      itemCount: legacy.rows.length,
+      target: Object.freeze({ ...legacy.index.t }),
+      async loadPage({ offset = 0, limit = 100 } = {}) {
+        validatePageRange(offset, limit, legacy.rows.length);
+        const items = legacy.rows.slice(offset, offset + limit)
+          .map((row) => legacyItem(legacy.index, row));
+        const nextOffset = offset + items.length;
+        return { items, offset, itemCount: legacy.rows.length,
+          nextOffset: nextOffset < legacy.rows.length ? nextOffset : null,
+          done: nextOffset >= legacy.rows.length };
+      }
+    });
+  }
+
+  const root = pointer.path;
+  const index = await checkedJSON(asset(base, root + '/index.json'), pointer.indexSha256, null, fetchImpl);
+  if (index?.schema !== RELEASE_SCHEMA || index.id !== pointer.snapshot ||
+      !Number.isSafeInteger(index.count) || index.count < 0 || index.count > 10_000_000 ||
+      !Array.isArray(index.shards) ||
+      index.target?.platform !== pointer.target.platform ||
+      index.target?.gameVersion !== pointer.target.gameVersion ||
+      index.target?.buildId !== pointer.target.buildId) {
+    throw new TypeError('Invalid paged Game DB release index');
+  }
+  validateSnapshot({
+    schema: SNAPSHOT_SCHEMA, id: index.id, target: index.target,
+    coverage: index.coverage, sources: index.sources, releases: index.releases,
+    publishable: false, items: []
+  });
+  if (!index.sources.every((source) => source.visibility === 'public_reference') ||
+      (index.coverage.itemDefinitions !== undefined &&
+        index.coverage.itemDefinitions !== index.count)) {
+    throw new TypeError('Invalid paged Game DB release provenance');
+  }
+
+  let next = 0;
+  const declared = new Set();
+  for (const shard of index.shards) {
+    if (!shard || typeof shard.file !== 'string' ||
+        !/^items-[0-9]{3,}\.json$/.test(shard.file) || declared.has(shard.file) ||
+        shard.offset !== next || !Number.isSafeInteger(shard.count) || shard.count < 1 ||
+        !Number.isSafeInteger(shard.bytes) || shard.bytes < 1 || shard.bytes > 32_000_000 ||
+        !/^[0-9a-f]{64}$/.test(shard.sha256 ?? '')) {
+      throw new TypeError('Invalid paged Game DB shard declaration');
+    }
+    declared.add(shard.file);
+    next += shard.count;
+    if (!Number.isSafeInteger(next) || next > index.count)
+      throw new TypeError('Paged Game DB shard count overflow');
+  }
+  if (next !== index.count) throw new TypeError('Paged Game DB shard coverage mismatch');
+
+  const sourceIds = new Set(index.sources.map((source) => source.id));
+  const releaseIds = new Set(index.releases.map((release) => release.id));
+  const shardCache = new Map();
+  async function readShard(shard) {
+    const cached = shardCache.get(shard.file);
+    if (cached) return cached;
+    const pending = (async () => {
+      const payload = await checkedJSON(asset(base, root + '/' + shard.file),
+        shard.sha256, shard.bytes, fetchImpl);
+      if (payload?.schema !== SNAPSHOT_SCHEMA ||
+          payload.offset !== shard.offset || payload.count !== shard.count ||
+          !Array.isArray(payload.items) || payload.items.length !== shard.count)
+        throw new TypeError('Paged Game DB shard contract mismatch');
+      const seen = new Set();
+      const rows = payload.items.map((item) => {
+        validateItem(item);
+        canonicalId(item.id);
+        if (seen.has(item.id) ||
+            !item.sourceRefs.every((ref) => sourceIds.has(ref)) ||
+            !item.releaseIds.every((ref) => releaseIds.has(ref)))
+          throw new TypeError('Paged Game DB duplicate Item ID or invalid source/release ref');
+        for (const ref of item.relations) canonicalId(ref);
+        seen.add(item.id);
+        return item;
+      });
+      return rows;
+    })();
+    shardCache.set(shard.file, pending);
+    try { return await pending; }
+    catch (error) {
+      if (shardCache.get(shard.file) === pending) shardCache.delete(shard.file);
+      throw error;
+    }
+  }
+
+  return Object.freeze({
+    kind: 'db_snapshot',
+    snapshotId: index.id,
+    transport: 'sha256_paged',
+    itemCount: index.count,
+    target: Object.freeze({ ...index.target }),
+    coverage: Object.freeze({ ...index.coverage, categories: Object.freeze([...index.coverage.categories]) }),
+    async loadPage({ offset = 0, limit = 100 } = {}) {
+      validatePageRange(offset, limit, index.count);
+      const end = Math.min(index.count, offset + limit);
+      const required = index.shards.filter((shard) =>
+        shard.offset < end && shard.offset + shard.count > offset);
+      const fragments = await Promise.all(required.map(async (shard) => {
+        const rows = await readShard(shard);
+        const start = Math.max(0, offset - shard.offset);
+        const stop = Math.min(rows.length, end - shard.offset);
+        return rows.slice(start, stop);
+      }));
+      // Never return the in-memory integrity-checked cached objects by reference:
+      // callers may edit display objects without changing subsequent page reads.
+      const items = fragments.flat().map((item) => structuredClone(item));
+      if (items.length !== end - offset) throw new TypeError('Paged Game DB incomplete range');
+      return { items, offset, itemCount: index.count,
+        nextOffset: end < index.count ? end : null, done: end >= index.count };
+    }
+  });
+}
+
+function validatePageRange(offset, limit, count) {
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > count ||
+      !Number.isSafeInteger(limit) || limit < 1 || limit > 500)
+    throw new TypeError('Invalid paged Game DB offset or limit');
 }
