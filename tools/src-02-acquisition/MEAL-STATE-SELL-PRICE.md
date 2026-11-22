@@ -6,39 +6,39 @@ static stall/shop purchase-price evidence from `SHOP-PRICE-OVERLAP.md`.
 ## Native method-body analysis: reproducible, fail-closed tooling
 
 The original-byte material currently available for this work consists of
-Steam v1.26.2 native configuration (\`protoDb.bin\`) and owner-private data
-extracts plus a **Steam v1.26.1** IL2CPP \`dump.cs\` (89,453,137 bytes; SHA-256
-\`0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08\`).
+Steam v1.26.2 native configuration (`protoDb.bin`) and owner-private data
+extracts plus a **Steam v1.26.1** IL2CPP `dump.cs` (89,453,137 bytes; SHA-256
+`0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08`).
 The dump is **method/field metadata, not a C++ implementation or executable
 assembly**. It must **not** be used as an RVA map for the Steam v1.26.2
-\`GameAssembly.dll\`. No version-matched DLL was available to this run.
+`GameAssembly.dll`. No version-matched DLL was available to this run.
 
-The source-controlled \`native_meal_price_probe.py\` now extracts and checks
+The source-controlled `native_meal_price_probe.py` now extracts and checks
 **13 fully qualified price-path targets** from the pinned v1.26.1 metadata:
 
-- \`ItemPriceDatabases\`: \`GetSoftCurrencySellPrice\`,
-  \`GetSellPrice\`, \`TryGetSellPrice\`, \`GetDefaultSellPrice\`.
-- \`MealItemData\`: \`GetLowestPriceIngredients\`,
-  \`TotalIngredientsValue\`, \`TotalIngredientsSellPrice\`, \`GetSellPrice\`,
-  the \`TotalIngredientsValue\` lambda and \`GetSellPrice\` tuple helper.
-- \`MealItemData.<>c\`: lambdas for minimum-price ingredients,
-  total ingredient selling, and \`GetSellPrice\`.
+- `ItemPriceDatabases`: `GetSoftCurrencySellPrice`,
+  `GetSellPrice`, `TryGetSellPrice`, `GetDefaultSellPrice`.
+- `MealItemData`: `GetLowestPriceIngredients`,
+  `TotalIngredientsValue`, `TotalIngredientsSellPrice`, `GetSellPrice`,
+  the `TotalIngredientsValue` lambda and `GetSellPrice` tuple helper.
+- `MealItemData.<>c`: lambdas for minimum-price ingredients,
+  total ingredient selling, and `GetSellPrice`.
 
 For the **known 1.26.1** dump, all original class-qualified RVAs are
 independently pinned in the public **code**, but the underlying source and
 all executable original bytes stay owner-private. Running the plan requires
-no \`GameAssembly.dll\`:
+no `GameAssembly.dll`:
 
-\`\`\`sh
+```sh
 python tools/src-02-acquisition/native_meal_price_probe.py \
   --dump "/owner-private/Steam-v1.26.1/dump.cs" --dump-version 1.26.1
-\`\`\`
+```
 
-For **1.26.2**, the separate native \`dump.cs\` and \`GameAssembly.dll\`
+For **1.26.2**, the separate native `dump.cs` and `GameAssembly.dll`
 **must both come from the same 1.26.2 build** and have separately recorded
 original SHA-256 fingerprints. The owner supplies them as local files, e.g.:
 
-\`\`\`sh
+```sh
 python tools/src-02-acquisition/native_meal_price_probe.py \
   --dump "/private/Steam-v1.26.2/dump.cs" \
   --dump-version 1.26.2 \
@@ -48,15 +48,15 @@ python tools/src-02-acquisition/native_meal_price_probe.py \
   --expected-gameassembly-sha256 <verified-64-hex-dll-sha> \
   --output-dir "/private/native-price-probe" \
   --extract-only
-\`\`\`
+```
 
-\`--extract-only\` uses Python standard library only, including on Windows;
+`--extract-only` uses Python standard library only, including on Windows;
 it emits 13 **256-byte** native method-prefix excerpts and a JSON report
 **only into the existing owner-private output directory**. Without
-\`--extract-only\`, GNU \`objdump\` must be on PATH (or passed with
-\`--objdump-path\`), and it emits assembly-text prefixes instead. The source
+`--extract-only`, GNU `objdump` must be on PATH (or passed with
+`--objdump-path`), and it emits assembly-text prefixes instead. The source
 reader maps method RVAs via executable **PE32+ section headers**, rather
-than assuming IL2CPP \`Offset\` equals a valid raw file offset.
+than assuming IL2CPP `Offset` equals a valid raw file offset.
 
 Both modes refuse mismatched declared build versions, invalid SHA-256
 fingerprints, non-executable/out-of-range/ambiguous PE mappings, and
@@ -69,7 +69,7 @@ version labels remain **externally asserted** until independently validated.
 Synthetic-only CI checks the metadata parser, exact-version rejection,
 PE header/section RVA mapping and the end-to-end Python-only private
 excerpt extraction path. In a separate owner-private run, the exact
-SHA-pinned v1.26.1 \`dump.cs\` successfully yielded **13/13 original
+SHA-pinned v1.26.1 `dump.cs` successfully yielded **13/13 original
 method RVA/offset/signature records**. That is an executable-analysis
 **plan**, not evidence that the formula has been implemented.
 
