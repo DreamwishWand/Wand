@@ -56,6 +56,19 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
     cacheLifecycle.sourceSnapshotLoaded===(protoDbPath!==undefined)&&
     cacheLifecycle.nativeOnBinarizeDirectlyDelegatesToCacheData===true&&
     cacheLifecycle.nativeCacheDataReplacesCachedDataField===true&&
+    cacheLifecycle.originalNativeInitCallsProtoDatabaseConstructor===true&&
+    cacheLifecycle.originalNativeReInitCallsProtoDatabaseConstructor===true&&
+    cacheLifecycle.originalNativeProtoDatabaseRefreshCallsLoadBinary===true&&
+    cacheLifecycle.originalNativeExportForBuildCallsSaveBinary===true&&
+    cacheLifecycle.originalNativeSaveBinaryChecksProtoDescMessageRuntimeType===true&&
+    cacheLifecycle.originalNativeSaveBinaryHasConditionalInterfaceSlotDispatch===true&&
+    cacheLifecycle.originalSaveBinaryDispatchedInterfaceIdentityVerified===false&&
+    cacheLifecycle.originalNativeTrySellPriceUsesProtoDatabaseEnumerator===true&&
+    cacheLifecycle.originalNativeDirectTransfersToOnBinarize===0&&
+    cacheLifecycle.originalNativeDirectTransfersToCacheData===1&&
+    cacheLifecycle.originalDirectTransferCensusExcludesInterfaceDispatch===true&&
+    cacheLifecycle.nativeOnBinarizeInvokedByLoadBinaryVerified===false&&
+    cacheLifecycle.nativeRuntimeProtoDatabaseReloadOccurred===null&&
     cacheLifecycle.nativeRuntimeCacheDataInvoked===null&&
     cacheLifecycle.nativeRuntimeCacheMatchesOriginalSnapshot===null&&
     cacheLifecycle.actualIngredientOrMealSellPrice===null&&

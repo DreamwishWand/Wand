@@ -1,5 +1,26 @@
 # DB-02 ACQUISITION — source-pinned extraction
 
+## ProtoDatabase load/export native call graph (Steam 1.26.2)
+
+Original Steam binary verification now distinguishes the native
+`ProtoDatabase.Init/ReInit -> constructor -> Refresh -> LoadBinary`
+source-loading route from
+`ExportForBuild -> SaveBinary` and its type-checked, conditional
+interface dispatch. The exact interface identity at that dispatch remains
+**unverified**. Across the original executable IL2CPP section, there are
+**zero direct rel32 references to DynamicItemPriceDatase.OnBinarize**
+and only its own **one tail jump to CacheData**. This does **not** rule
+out indirect/interface invocation, and is NOT proof that gameplay
+loads, export operations or cache rebuilds trigger OnBinarize.
+
+The item sell lookup calls the ProtoDatabase enumerator, but
+the runtime registry's population and ordering remain unknown.
+The **160 fixed cooking ingredients without original price rows**
+remain unpriced. Source-authenticated verification and typed
+client-side provenance are documented in
+[PROTODB-LOAD-EXPORT-CALLGRAPH.md](PROTODB-LOAD-EXPORT-CALLGRAPH.md)
+and [the new read-only native audit](audit_native_protodb_load_export_1262.py).
+
 ## Original dynamic price cache lifecycle (Steam 1.26.2)
 
 Native `DynamicItemPriceDatase.OnBinarize()` unconditionally delegates
