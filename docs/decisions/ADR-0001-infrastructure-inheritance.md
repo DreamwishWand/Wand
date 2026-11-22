@@ -107,3 +107,18 @@ The original user-uploaded private v2 index was transformed locally into an **un
 Public object-key deduplication yields **19,053** unique byte-addressed images from the **19,054** private source paths. This is an expected identical-encoded-byte collision; do not re-decode. Private source→target promotion metadata is held separately and must not be published.
 
 The matching repeatable generator, in `tools/src-04-r2/build_public_candidate.py`, was merged through PR #200. It requires the prior successful private-R2 transfer report before preparing a sanitized candidate. The separate `src04-private-promotion-plan.json` is **not public**. Neither generating a candidate nor merging code authorizes live CDN publication. No public bucket, domain, DNS, CDN or release flag was changed.
+
+
+## SRC-04 future-version update pipeline implemented (2026-11-22)
+
+PR #203 (merged) contains the repeatable SRC-04 incremental media implementation. This concludes the **implementation of the private media lifecycle**, while actual next-version acceptance waits for next-version game input:
+
+- tools/src-04-r2/plan_media_update.py: versioned SRC-00/SRC-01 diff, SHA-verified asset and catalog comparison, safe reuse vs exact GUID relink vs changed pixel decode
+- tools/src-04-r2/probe_guid_links.py: partial, ambiguity-safe, metadata-only exact GUID to serialized Unity source object link detection
+- tools/src-04-r2/build_next_media_v2.py: atomic full next-version private overlay; reuse unchanged verified lossless WebP and encode only changed decoded pixels
+- tools/src-04-r2/stage_media_update.py: private R2 delta staging; old byte-identical objects stay referenced, and only encoded-byte-new media are uploaded; no public activation
+- tools/src-04-r2/IMAGE_UPDATE_PIPELINE.md: runbook, data contracts and team boundaries
+
+SRC-04 Python synthetic tests passed in PR #203 CI. **No next-version actual Steam files have been supplied yet**. Do not describe the future-version integration as live-tested on a real updated game. No public R2 bucket, media hostname, or production release was activated by this PR.
+
+**Stream ownership now:** SRC-04 maintains this pipeline and acts again when a verified new game version is available. SRC-00/SRC-01 provide current-version source manifests and native Item/GUID exports; DB-00/DB-01 integrate item version data; WEB/INFRA own public R2/CDN and actual site integration. Do not repeat existing v1.26.2 image extraction, full SHA verification, or private R2 transfer.
