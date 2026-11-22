@@ -19,6 +19,7 @@ import {
   type CurrentCompatibleGuideReward
 } from '../guide/reward-source-equivalence.ts';
 import type {ItemOrigin,OriginKind,OriginProvenance} from './origins.ts';
+import {GUIDE_FRIENDSHIP_ORIGINAL_SHA} from '../guide/source-composite.mjs';
 
 export const DB02_DB03_NATIVE_REWARD_SCHEMA='wand.db02.db03-source-reward-candidates@1' as const;
 export interface LocalVerifiedRewardFiles{
@@ -53,10 +54,12 @@ export interface Db03NativeRewardCandidateIndex{
 const ID=/^[1-9][0-9]{0,15}$/;
 const SHA=/^[a-f0-9]{64}$/;
 const MAX_IDS=20000;
-const FAMILY:Readonly<Record<string,{kind:OriginKind;label:string;file:string}>>=Object.freeze({
+const PROTO_SHA='dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623';
+const MISSION_SHA='f13958b52234f4cda92f0dd0bfff50be8a7f6625c8478785e2a077a5c7933d24';
+const FAMILY:Readonly<Record<string,{kind:OriginKind;label:string;file:string;fullSha:string}>>=Object.freeze({
   mini_event:{
     kind:'event_reward',label:'Mini-event reward definition',
-    file:'ddv_Data/StreamingAssets/protoDb.bin'
+    file:'ddv_Data/StreamingAssets/protoDb.bin',fullSha:PROTO_SHA
   },
   floating_festival:{
     kind:'event_reward',label:'Floating-festival reward definition',
@@ -64,7 +67,7 @@ const FAMILY:Readonly<Record<string,{kind:OriginKind;label:string;file:string}>>
   },
   quest_intro:{
     kind:'quest_reward',label:'Quest introduction grant definition',
-    file:'ddv_Data/StreamingAssets/itemlist/Mission.json'
+    file:'ddv_Data/StreamingAssets/itemlist/Mission.json',fullSha:MISSION_SHA
   },
   quest_loot:{
     kind:'quest_reward',label:'Quest additional reward loot candidate',
@@ -72,7 +75,8 @@ const FAMILY:Readonly<Record<string,{kind:OriginKind;label:string;file:string}>>
   },
   friendship_default:{
     kind:'friendship_reward',label:'Default friendship level reward definition',
-    file:'ddv_Data/StreamingAssets/friendship_levels_default.json'
+    file:'ddv_Data/StreamingAssets/friendship_levels_default.json',
+    fullSha:GUIDE_FRIENDSHIP_ORIGINAL_SHA
   }
 });
 function ensure(ok:unknown,reason:string):asserts ok{
@@ -114,6 +118,7 @@ function reward(row:CurrentCompatibleGuideReward,requestedId:string):ItemOrigin{
   const family=FAMILY[row.original.originFamily];
   ensure(family!==undefined&&row.nativeSourceFile===family.file&&
     row.original.sourceFile===family.file&&
+    row.nativeSourceSha256===family.fullSha&&
     SHA.test(row.nativeSourceSha256)&&
     SHA.test(row.original.sourceDefinitionSha256)&&
     typeof row.original.sourceField==='string'&&row.original.sourceField.length>0&&
