@@ -1,8 +1,8 @@
 /**
  * Read-only, browser-Worker-owned encrypted P1G inspection.
  * The caller receives bounded ID/reference counts and a whitelisted
- * native CollectionSet discovery and ListInventory positive-stock projections,
- * never decoded JSON,
+ * native CollectionSet discovery, ListInventory positive-stock and read-only
+ * world-grid furniture-reference projections, never decoded JSON,
  * arbitrary save values, personal fields, amounts, or source ciphertext.
  * Discovery is NOT item ownership, entitlement, shop stock or codec roundtrip.
  */
@@ -12,6 +12,7 @@ import { createSavedStorePreview } from './saved-store-preview.mjs';
 import { createSavedCollectionPresence } from './saved-collection-presence.mjs';
 import { projectSavedCollectionDiscovery } from './saved-collection-discovery.mjs';
 import { projectPositiveListInventoryOwnership } from './saved-list-positive-ownership.mjs';
+import { projectSavedGridFurnitureReferences } from './saved-grid-furniture-references.mjs';
 
 const staticStallUnavailable = Object.freeze({ getStallStaticCatalog: () => null });
 const MAX_ENCRYPTED_BYTES = 32 * 1024 * 1024;
@@ -34,6 +35,7 @@ export async function inspectEncryptedSavedStore(ciphertext) {
     summary: createSavedStorePreview(evidence, []),
     collection: createSavedCollectionPresence(root),
     discovery: projectSavedCollectionDiscovery(root),
-    positiveOwnership: projectPositiveListInventoryOwnership(root)
+    positiveOwnership: projectPositiveListInventoryOwnership(root),
+    gridFurniture: projectSavedGridFurnitureReferences(root)
   });
 }
