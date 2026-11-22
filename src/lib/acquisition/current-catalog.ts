@@ -51,6 +51,8 @@ import {
   createLootSourceDisplayClient,
   type LootSourceDisplayClient
 } from './loot-source-display.ts';
+import {indexItemSourceBrowser,type ItemSourceBrowser}
+  from './item-source-browser.ts';
 import {
   indexPublicOnlineNameCandidates,
   type PublicOnlineNameCandidateIndex
@@ -96,6 +98,8 @@ export interface CurrentDb02OriginCatalog{
   readonly gameVersion:'1.26.2';
   readonly source:'verified_public_db00_and_local_private_src02_r5';
   readonly origins:OriginDatabase;
+  /** Browse Item IDs by acquired source type/status, including local native r5. */
+  readonly itemSources:ItemSourceBrowser;
   readonly db00:Db00OriginJoin;
   /** Raw original LootTable.nameKey grouping (not a confirmed acquisition place). */
   readonly lootSources:NativeLootSourceIndex;
@@ -235,6 +239,7 @@ export async function joinCurrentDb02Catalog(
     loadPinnedIapPackReferences(nativeIapSource,basePath,fetcher)
   ]);
   const shopHistory=indexNativeShopHistory(nativeShopSource,historicalNativeShopSource);
+  const itemSources=indexItemSourceBrowser(origins);
   const joined=joinDb02OriginsWithDb00(db00,origins);
   const lootSources=indexNativeLootSourceFamilies(origins,ids);
   const coverage=coverageSummary(ids,origins,joined,lootSources);
@@ -247,7 +252,7 @@ export async function joinCurrentDb02Catalog(
     schema:DB02_CURRENT_CATALOG_SCHEMA,
     gameVersion:'1.26.2' as const,
     source:'verified_public_db00_and_local_private_src02_r5' as const,
-    origins,db00:joined,lootSources,coverage,
+    origins,itemSources,db00:joined,lootSources,coverage,
     lootObjectSources:nativeLootObjectReferenceIndex,
     publicOnlineNameCandidates,nativeShopSource,nativeIapSource,
     nativeIapPackReferences,historicalNativeShopSource,shopHistory,
