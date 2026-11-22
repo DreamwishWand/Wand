@@ -13,6 +13,9 @@ function regionKeyFromLayoutId(layoutId) {
   if (parts[0] !== 'SceneLayouts' || parts.length < 3 || !parts[1]) {
     return 'Other';
   }
+  if (parts[1] === 'Realms' && parts.length >= 4 && parts[2]) {
+    return 'Realms/' + parts[2];
+  }
   if (parts[1] === 'VillageExpansion04UnderwaterAreas' &&
       parts.length >= 4 && parts[2]) {
     return parts[1] + '/' + parts[2];
@@ -31,7 +34,7 @@ export function summarizeWorldPreviewSourceCoverage(catalog) {
     let group = groups.get(regionKey);
     if (!group) {
       group = {
-        regionKey, villageLayoutCount: 0,
+        regionKey, villageLayoutCount: 0, realmLayoutCount: 0,
         areaReferenceCount: 0, resolvedAreaReferenceCount: 0,
         missingAreaLayoutReferenceCount: 0,
         sourceDefaultAnchorCount: 0,
@@ -49,6 +52,20 @@ export function summarizeWorldPreviewSourceCoverage(catalog) {
   for (const layout of catalog.layouts.values()) {
     const regionKey = regionKeyFromLayoutId(layout.layoutId);
     groupFor(regionKey);
+    // A Realm embeds its native GridCollection in the original realm
+    // source root; it is not a Village AreaType or global coordinate.
+    if (layout.layoutKind === 'nativeGridCollection' &&
+        regionKey.startsWith('Realms/')) {
+      const group = groupFor(regionKey);
+      group.realmLayoutCount++;
+      group.sourceDefaultAnchorCount +=
+        catalog.layoutObjectsByLayout.get(layout.layoutId)?.length ?? 0;
+      const grids = gridSets.get(regionKey) ?? new Set();
+      for (const entry of layout.nativeGridEntries ?? []) {
+        grids.add(entry.gridDataPath);
+      }
+      gridSets.set(regionKey, grids);
+    }
     if (layout.layoutKind !== 'nativeDefaultVillageData') continue;
     const group = groupFor(regionKey);
     group.villageLayoutCount++;
