@@ -253,6 +253,101 @@ function validateDb03MissionReceipt(input:unknown):Db03MissionSlotReceipt {
   return input as unknown as Db03MissionSlotReceipt;
 }
 
+export interface LocalGridInstance{
+  readonly localOrdinal:number;
+  readonly itemId:string;
+  readonly recordKind:'full'|'diff_modified';
+  readonly x:number|null;
+  readonly y:number|null;
+  readonly orientation:string|null;
+  readonly coordinatesObserved:boolean;
+}
+export interface GridInstancePreview{
+  readonly contract:'wand.db05.grid-instance-preview@1';
+  readonly status:'not_observed'|'incompatible_structure'|
+    'partial_inconclusive'|'observed_no_item_refs'|'saved_object_instances';
+  readonly observedFullGrids:number;
+  readonly observedDiffGrids:number;
+  readonly scannedObjectRecords:number;
+  readonly notItemReferences:number;
+  readonly invalidRecords:number;
+  readonly removedObjectMarkers:number;
+  readonly rowsMissingCoordinates:number;
+  readonly sampled:boolean;
+  readonly rows:readonly LocalGridInstance[];
+  readonly sourceGridIdentityVerified:false;
+  readonly effectivePlacementVerified:false;
+  readonly legalPlacementVerified:false;
+  readonly stableInstanceIdentityVerified:false;
+  readonly saveWritingAuthorized:false;
+}
+const signed32=(v:unknown):v is number=>
+  typeof v==='number'&&Number.isInteger(v)&&
+  v>=-2147483648&&v<=2147483647;
+function validateGridInstancePreview(source:unknown):GridInstancePreview{
+  if(!object(source)||!exact(source,[
+    'contract','status','observedFullGrids','observedDiffGrids',
+    'scannedObjectRecords','notItemReferences','invalidRecords',
+    'removedObjectMarkers','rowsMissingCoordinates','sampled','rows',
+    'sourceGridIdentityVerified','effectivePlacementVerified',
+    'legalPlacementVerified','stableInstanceIdentityVerified',
+    'saveWritingAuthorized'
+  ])||source.contract!=='wand.db05.grid-instance-preview@1'||
+    !['not_observed','incompatible_structure','partial_inconclusive',
+      'observed_no_item_refs','saved_object_instances'].includes(
+      String(source.status))||
+    !nonnegative(source.observedFullGrids,2048)||
+    !nonnegative(source.observedDiffGrids,2048)||
+    Number(source.observedFullGrids)+Number(source.observedDiffGrids)>2048||
+    !nonnegative(source.scannedObjectRecords,100000)||
+    !nonnegative(source.notItemReferences,100000)||
+    !nonnegative(source.invalidRecords,102050)||
+    !nonnegative(source.removedObjectMarkers,100000)||
+    !nonnegative(source.rowsMissingCoordinates,20000)||
+    typeof source.sampled!=='boolean'||!Array.isArray(source.rows)||
+    source.rows.length>20000||
+    Number(source.rowsMissingCoordinates)>source.rows.length||
+    Number(source.notItemReferences)+source.rows.length>
+      Number(source.scannedObjectRecords)||
+    source.sourceGridIdentityVerified!==false||
+    source.effectivePlacementVerified!==false||
+    source.legalPlacementVerified!==false||
+    source.stableInstanceIdentityVerified!==false||
+    source.saveWritingAuthorized!==false)
+    throw new TypeError('DB05_GRID_INSTANCE_RECEIPT_INVALID');
+  let missing=0;
+  const rows:LocalGridInstance[]=source.rows.map((value,i)=>{
+    if(!object(value)||!exact(value,[
+      'localOrdinal','itemId','recordKind','x','y',
+      'orientation','coordinatesObserved'
+    ])||value.localOrdinal!==i+1||
+      !validId(value.itemId)||
+      !['full','diff_modified'].includes(String(value.recordKind))||
+      (value.coordinatesObserved
+        ? (!signed32(value.x)||!signed32(value.y))
+        : (value.x!==null||value.y!==null))||
+      typeof value.coordinatesObserved!=='boolean'||
+      (value.orientation!==null &&
+        (typeof value.orientation!=='string'||
+          !/^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(value.orientation))))
+      throw new TypeError('DB05_GRID_INSTANCE_ROW_INVALID');
+    if(value.coordinatesObserved===false)missing++;
+    return value as unknown as LocalGridInstance;
+  });
+  if(missing!==source.rowsMissingCoordinates||
+    (source.status==='saved_object_instances'&&
+      (rows.length===0||source.sampled||source.invalidRecords!==0))||
+    (source.status==='observed_no_item_refs'&&
+      (rows.length!==0||source.sampled||source.invalidRecords!==0))||
+    (source.status==='partial_inconclusive'&&
+      !source.sampled&&source.invalidRecords===0)||
+    (['not_observed','incompatible_structure'].includes(String(source.status))&&
+      (rows.length!==0||source.observedFullGrids!==0||
+        source.observedDiffGrids!==0)))
+    throw new TypeError('DB05_GRID_INSTANCE_STATUS_INVALID');
+  return {...source,rows} as GridInstancePreview;
+}
+
 interface PreviewReceipt {
   contract: 'wand.db05.amount-preview@1';
   changed: boolean;
@@ -285,7 +380,8 @@ type Reply =
       grid:SaveGridReferenceReport;
       contract:'wand.db05.editable-slots@1'; complete:true; writerAuthorized:false }
   | {kind:'db04';receipt:Db04GridPathReceipt}
-  | {kind:'db03';receipt:Db03MissionSlotReceipt};
+  | {kind:'db03';receipt:Db03MissionSlotReceipt}
+  | {kind:'grid-instances';receipt:GridInstancePreview};
 
 interface IsolatedScope {
   onmessage: ((event: MessageEvent<unknown>) => Promise<void>) | null;
@@ -396,6 +492,7 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
     const compareDb04=input?.command === 'inspect-db04-grid-paths';
     const compareDb03=input?.command === 'inspect-db03-mission-slots';
     const listing=input?.command === 'inspect-existing-slots';
+    const instances=input?.command === 'inspect-grid-instances';
     const exporting = input?.command === 'export-existing-amount-copy' ||
       input?.command === 'export-batch-amount-copy';
     const batch = input?.command === 'preview-batch-amounts' ||
@@ -403,7 +500,7 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
     const expectedKeys = compareDb04
       ? ['command','format','bytes','graph']
       : compareDb03 ? ['command','format','bytes','base']
-      : listing ? ['command','format','bytes'] : batch
+      : listing||instances ? ['command','format','bytes'] : batch
       ? (exporting
         ? ['command', 'format', 'bytes', 'edits', 'allowExperimentalCopy']
         : ['command', 'format', 'bytes', 'edits'])
@@ -415,7 +512,7 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
         !['preview-existing-amount', 'export-existing-amount-copy',
           'preview-batch-amounts', 'export-batch-amount-copy',
           'inspect-existing-slots','inspect-db04-grid-paths',
-          'inspect-db03-mission-slots'].includes(
+          'inspect-db03-mission-slots','inspect-grid-instances'].includes(
           String(input.command)) ||
         (exporting && input.allowExperimentalCopy !== true) ||
         !['auto', 'json', 'p1g'].includes(String(input.format)) ||
@@ -425,13 +522,13 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
         (compareDb03 && (typeof input.base!=='string' ||
           !(input.base===''||
             /^\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/.test(input.base)))) ||
-        (!batch && !listing && !compareDb04 && !compareDb03 &&
+        (!batch && !listing && !instances && !compareDb04 && !compareDb03 &&
           (!uint32(input.expected) || !uint32(input.replacement))))
       throw new TypeError('DB05_WORKER_COMMAND_INVALID');
 
     const edits = batch ? validateBatchEdits(input.edits) : null;
     const plan = edits === null ? null : JSON.stringify({edits});
-    const target = (batch||listing||compareDb04||compareDb03)
+    const target = (batch||listing||instances||compareDb04||compareDb03)
       ? null : validateTarget(input.target);
     const requestedFormat = input.format as InputFormat;
     const format: Exclude<InputFormat, 'auto'> =
@@ -449,7 +546,10 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
       rust.append_chunk(bytes.subarray(i, i + CHUNK));
     rust.finish_open();
 
-    if(compareDb03){
+    if(instances){
+      response={kind:'grid-instances',receipt:validateGridInstancePreview(
+        JSON.parse(rust.list_saved_grid_instances()))};
+    }else if(compareDb03){
       // Request ONLY the same-origin static, public Guide catalogue. The Save,
       // private Mission IDs and quantities never enter a URL or fetch body.
       const url=`${input.base}/guide/public/quest-index.json`;
