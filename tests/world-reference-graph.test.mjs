@@ -453,3 +453,18 @@ test('original source GridDataPath matches exact spelling only, never Save map I
     'GridData/Village04/Beach.JSON'),
     /INVALID_NATIVE_GRID_DATA_PATH/);
 });
+
+test('original layout-only GridDataPath is not misreported as an indexed source file',()=>{
+  const f=fixture();
+  f.gridData=[];
+  f.gridRefs[0].gridDataPresent=false;
+  const evidence=new WorldReferenceIndex(f)
+    .originalGridDataPathCandidates(path);
+  assert.equal(evidence.sourcePresence,'layout_reference_without_source_file');
+  assert.equal(evidence.originalGridDataFile,null);
+  assert.equal(evidence.sourceFilePathExactMatched,false);
+  assert.equal(evidence.sourceGridReferenceCount,1);
+  assert.equal(evidence.sourceGridReferences[0].gridRefId,grid);
+  assert.equal(evidence.savedGridIdentityVerified,false);
+  assert.equal(evidence.sourceCoverageComplete,false);
+});
