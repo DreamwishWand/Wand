@@ -129,7 +129,10 @@ try{
   const quantityProfile={
     GameInfo:{Version:643},
     Player:{
-      ListInventories:{'100':{Inventory:{'550':{Amount:7,UnknownRatio:1.00}}}},
+      ListInventories:{'100':{Inventory:{
+        '550':{Amount:7,UnknownRatio:1.00},
+        '777':{Amount:1,ExclusiveDecor:true,Unrelated:3.50}
+      }}},
       ContainerInventories:{'202':{Inventory:[
         {ItemID:0,Amount:0},{ItemID:440,Amount:2,Extra:null}
       ]}}
@@ -160,7 +163,37 @@ try{
     'The original input is never overwritten');
   assert.equal(savedPlain.Player.ListInventories['100'].Inventory['550'].UnknownRatio,1);
 
+  // Product requirement: even a one-owned decorative item can be increased
+  // above normal gameplay ownership/stack limits. This tests saved Amount
+  // only, NOT the game's actual placement engine.
   await page.getByRole('button',{name:'破棄'}).click();
+  await page.getByLabel('Item ID').fill('777');
+  await page.getByLabel('現在の数量').fill('1');
+  await page.getByLabel('変更後の数量').fill('250');
+  await page.getByLabel('検証用セーブファイル').setInputFiles({
+    name:'single-owned-decor.profile',mimeType:'application/octet-stream',
+    buffer:Buffer.from(JSON.stringify(quantityProfile))
+  });
+  await page.getByRole('button',{name:'変更を検証'}).click();
+  await page.getByRole('status').filter({hasText:'数量変更'}).waitFor({timeout:30000});
+  page.once('dialog',dialog=>dialog.accept());
+  await page.getByRole('button',{name:'編集済みコピーを生成'}).click();
+  const overcapLink=page.getByRole('link',{name:'コピーをダウンロード'});
+  await overcapLink.waitFor({timeout:30000});
+  const overcapDownloadEvent=page.waitForEvent('download');
+  await overcapLink.click();
+  const overcapCopy=JSON.parse(
+    (await readFile(await (await overcapDownloadEvent).path())).toString('utf8')
+  );
+  assert.equal(overcapCopy.Player.ListInventories['100'].Inventory['777'].Amount,250);
+  assert.equal(overcapCopy.Player.ListInventories['100'].Inventory['777'].ExclusiveDecor,true);
+  assert.equal(quantityProfile.Player.ListInventories['100'].Inventory['777'].Amount,1);
+  assert.equal(overcapCopy.Player.ListInventories['100'].Inventory['550'].Amount,7);
+
+  await page.getByRole('button',{name:'破棄'}).click();
+  await page.getByLabel('Item ID').fill('550');
+  await page.getByLabel('現在の数量').fill('7');
+  await page.getByLabel('変更後の数量').fill('12');
   await page.getByLabel('検証用セーブファイル').setInputFiles({
     name:'encrypted.profile',mimeType:'application/octet-stream',
     buffer:syntheticEncryptedP1g(quantityProfile)
