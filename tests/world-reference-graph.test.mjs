@@ -191,3 +191,79 @@ test('tampered Grid.ID, world evidence or count must fail closed',()=>{
   src3.coverage.sourceInitialGridObjects=8;
   assert.throws(()=>new WorldReferenceIndex(src3),/INCONSISTENT_SOURCE_COVERAGE/);
 });
+
+
+test('exact World/Area original-placement reverse pages preserve unlinked evidence',()=>{
+  const f=fixture();
+  // Two source records in the same original grid and a separate record
+  // with no verified World or Area link. Neither implies item origin.
+  f.initialItemRefs.push({
+    ...f.initialItemRefs[0],itemId:'40000001',instanceCount:3
+  });
+  f.gridRefs[0].originalDefaultObjectCount=5;
+  f.gridRefs.push({
+    ...f.gridRefs[0],gridRefId:layout+'#grid=9',nativeGridId:9,
+    worldId:null,areaRefId:null,originalDefaultObjectCount:1
+  });
+  f.initialItemRefs.push({
+    ...f.initialItemRefs[0],gridRefId:layout+'#grid=9',
+    worldId:null,areaRefId:null,instanceCount:1
+  });
+  f.coverage.gridReferencesInSubset=2;
+  f.coverage.sourceInitialGridObjects=6;
+  f.coverage.sourceInitialGridObjectsWithoutVerifiedWorldLink=1;
+  const index=new WorldReferenceIndex(f);
+  const first=index.originalPlacementsInWorld(world,{offset:0,limit:1});
+  assert.equal(first.scope,'world');
+  assert.equal(first.scopeIdentityInPartialSource,true);
+  assert.equal(first.status,'source_native_verified');
+  assert.equal(first.rows.length,1);
+  assert.equal(first.matchingReferenceRowsInSubset,2);
+  assert.equal(first.matchingOriginalInstancesInSubset,5);
+  assert.equal(first.distinctItemIdsInSubset,2);
+  assert.equal(first.nextOffset,1);
+  assert.equal(first.hasNextPage,true);
+  assert.equal(first.sourceCoverageComplete,false);
+  assert.equal(first.itemOriginVerified,false);
+  assert.equal(first.acquisitionLocationVerified,false);
+  assert.equal(first.savedPlayerPlacementVerified,false);
+  assert.equal(first.placementLegalityVerified,false);
+  const second=index.originalPlacementsInWorld(world,{offset:1,limit:1});
+  assert.equal(second.rows[0].itemId,'40000001');
+  assert.equal(second.hasNextPage,false);
+  assert.equal(second.nextOffset,null);
+  assert.equal(index.originalPlacementsInArea(area).matchingOriginalInstancesInSubset,5);
+  assert.deepEqual(index.originalPlacementsInArea(area).rows.map(r=>r.itemId),
+    ['40000000','40000001']);
+  const unlinked=index.originalPlacementsWithoutWorld();
+  assert.equal(unlinked.scope,'unlinked_world');
+  assert.equal(unlinked.rows.length,1);
+  assert.equal(unlinked.rows[0].itemId,'40000000');
+  assert.equal(unlinked.rows[0].worldId,null);
+  assert.equal(unlinked.rows[0].areaRefId,null);
+  assert.equal(unlinked.matchingOriginalInstancesInSubset,1);
+  // The item-forward lookup still includes both the linked and unlinked rows.
+  assert.equal(index.initialSourcePlacement('40000000').values.length,2);
+});
+
+test('missing reverse scope stays unknown; malformed pagination is rejected',()=>{
+  const index=new WorldReferenceIndex(fixture());
+  const unknownWorld=index.originalPlacementsInWorld('not-in-source');
+  assert.equal(unknownWorld.status,'unverified');
+  assert.equal(unknownWorld.scopeIdentityInPartialSource,false);
+  assert.equal(unknownWorld.rows.length,0);
+  assert.equal(unknownWorld.sourceCoverageComplete,false);
+  const unknownArea=index.originalPlacementsInArea('not-in-source');
+  assert.equal(unknownArea.status,'unverified');
+  assert.equal(unknownArea.scopeIdentityInPartialSource,false);
+  assert.equal(index.originalPlacementsWithoutWorld().status,'unverified');
+  assert.equal(index.originalPlacementsWithoutWorld().scopeIdentityInPartialSource,true);
+  for(const page of [
+    {offset:-1,limit:1},{offset:0,limit:0},
+    {offset:0,limit:513},{offset:0.5,limit:1},
+    {offset:0,limit:Infinity}
+  ]){
+    assert.throws(()=>index.originalPlacementsInWorld(world,page),
+      /INVALID_INITIAL_PLACEMENT_PAGE/);
+  }
+});
