@@ -68,6 +68,12 @@ export interface CampaignReward {
   readonly quantity: number | null;
   readonly cumulativeWatchMinutes: number | null;
 }
+export interface CampaignWindowEvidence {
+  readonly window: OriginWindow;
+  readonly officialUrl: string;
+  readonly checkedOn: string;
+  readonly status: 'published_schedule' | 'conflicting_official_announcement';
+}
 export interface OfficialCampaign {
   readonly campaignId: string;
   readonly kind: 'twitch_drop' | 'redeem_code' | 'premium_shop' |
@@ -76,6 +82,8 @@ export interface OfficialCampaign {
   readonly code: string | null;
   readonly productId: string | null;
   readonly window: OriginWindow;
+  /** Preserve contradictory official windows without silently overwriting. */
+  readonly windowEvidence?: readonly CampaignWindowEvidence[];
   readonly conditions: readonly string[];
   readonly rewards: readonly CampaignReward[];
   readonly source: OriginProvenance;
@@ -165,6 +173,17 @@ function validateCampaign(c: OfficialCampaign): void {
     (c.code === null || /^[A-Za-z0-9_-]{3,80}$/.test(c.code)) &&
     (c.productId === null || SAFE_KEY.test(c.productId)), 'CAMPAIGN');
   period(c.window);
+  if(c.windowEvidence!==undefined){
+    assert(Array.isArray(c.windowEvidence)&&c.windowEvidence.length>0,'CAMPAIGN_WINDOW_EVIDENCE');
+    for(const claim of c.windowEvidence){
+      period(claim.window);
+      assert(typeof claim.officialUrl==='string' &&
+        claim.officialUrl.startsWith('https://disneydreamlightvalley.com/') &&
+        DATE.test(claim.checkedOn) &&
+        ['published_schedule','conflicting_official_announcement'].includes(claim.status),
+        'CAMPAIGN_WINDOW_SOURCE');
+    }
+  }
   provenance(c.source);
   for (const reward of c.rewards) {
     assert(reward && typeof reward.name === 'string' && !!reward.name &&
