@@ -98,3 +98,38 @@ node --test tests/guide-starpath-daily-locales.test.mjs
 ```
 
 **Media publication boundary:** SRC-04 has privately staged about 19,054 source-verified image files and 13,202 Item ID associations in R2, but its public distribution candidate is still `candidate_unpublished` with publication authorization disabled. No public URL or manifest can be inferred from the private storage prefix. Do not show fabricated image paths or expose private bucket resources; use only an explicitly published, immutable and verified public media release when available.
+
+
+## Previously unresolved reward IDs — source closure (2026-11-22)
+
+The 17 Star Path reward or alternative reward IDs not covered by the public `steam-1.26.2-native-itemlist-v1` release **do exist** in the exact source-backed owner-private DB-01 SQLite v2. That public release included only four major game categories, so it did **not** establish that these IDs were missing from the game. Reinspection of the source-pinned original **33,627-definition** private SQLite v2 package (ZIP SHA-256 `0a1286655a0c4d2ceb91aa61a06c257d2cf485076c8a11dbf3484ad3b7bb5f25`) verifies all 17 source IDs, their native categories and original source files. That catalogue recorded **38/39** verified source files, not a full-game claim; the nine relevant category source records pass direct category/path/row validation.
+
+Source categories: 8 `TouchOfMagic` (motif records with no localization key), 2 `Companion`, 2 `PhotoMode`, 1 each `Building`, `Currency`, `Tool`, `Makeup`, and `Skin`. The nine entries with original localization keys resolve in **all eight verified Steam v1.26.2 `LocDB_*.zip`** files via native `<Category>.locbin` entries, giving **72 exact current-version names** (not historic candidates). Examples:
+
+| Source ID | Verified native class | Exact original Japanese label |
+| --- | --- | --- |
+| 20500163 | Building | トリック&トリート・ハウス |
+| 80100000 | Currency | ムーンストーン |
+| 110800069 | Tool | エレガントなナイトメアアンブレラ |
+| 120000253 | Companion | サル（大尉） |
+| 120000263 | Companion | ウサギ（ゴス） |
+| 140500052 | Makeup | クモの巣フェイスペイント |
+| 170000115 | Skin | スケルトン・スクルージ |
+| 190000033 | PhotoMode | フォトフレーム（カボチャ） |
+| 190000034 | PhotoMode | フォトフレーム（黒バラ） |
+
+The eight `TouchOfMagic` original records have **no game-native display-name localization key**. They are displayed as an *unnamed motif category*, never as a fabricated named motif, nor by misrepresenting their original code symbol as the game's formal display name.
+
+The curated `static/guide/public/starpath-reward-extras-2026-11-22.json` contains only 17 native categories, nine `names` records in eight languages, and explicit nulls for the eight unnamed motifs. Its public immutable SHA-256 is `e8e720ce43610e4e049baa31270ae586d1d03313c85a0c7833083eff5acd8ab2` (4,075 bytes). The other 43 reward IDs already have verified original names in the published four-category DB-01. The complete static Star Path reference now resolves **52 named rewards + 8 unnamed motifs**, all 60 IDs with verified native provenance. This is a reference classification, not user entitlement, reward claim, ownership or public media availability.
+
+The `starpath-reward-extras.py` offline reproducer requires the exact 10,226,751-byte owner-private ZIP and eight original localization ZIPs, verifies all source hashes, native schema, source path, 17 ID keys, names and zero unmatched categories, then fails closed if its public output SHA differs:
+
+```sh
+python tools/src-03-guide/starpath-reward-extras.py \
+  --db01-private-zip /PRIVATE/db01-steam-v1262-sqlite-typescript-native-key-v2-private.zip \
+  --locales-dir /PRIVATE/StreamingAssets/Localization \
+  --out static/guide/public/starpath-reward-extras-2026-11-22.json
+node --test tests/guide-starpath-reward-extras.test.mjs
+```
+
+The public browser checks the added file's byte length and SHA-256 **before parsing**, validates exact crosswalk closure against the original source-pinned 60-item reward set, and switches exact source names with the user's current display language. Premium currency ID `80100000` may now be correctly labeled ムーンストーン / Moonstone from its `Currency.Gem_DisplayName` original localization key. No raw SQLite, personal save, private item shards, private R2 object URL, or unauthorized image bytes are published.

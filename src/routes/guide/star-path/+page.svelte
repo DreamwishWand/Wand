@@ -4,9 +4,9 @@
   import {loadPublicStarpath} from '$lib/guide/public-starpath.mjs';
   import {loadStarpathWeeklyLocales,starpathWeeklyDescription} from '$lib/guide/public-starpath-locales.mjs';
   import {loadStarpathDailyLocales,starpathDailyDescription} from '$lib/guide/public-starpath-daily.mjs';
-  import {starpathRewardName} from '$lib/guide/starpath-reward-names.mjs';
+  import {starpathRewardDisplayName,loadStarpathRewardExtras} from '$lib/guide/starpath-reward-extras.mjs';
 
-  let catalog:any=null, weeklyLocales:any=null, dailyLocales:any=null, error='', loading=true;
+  let catalog:any=null, weeklyLocales:any=null, dailyLocales:any=null, rewardExtras:any=null, error='', loading=true;
   let locale='ja';
   const languages=[['ja','日本語'],['en','English'],['fr','Français'],['it','Italiano'],['de','Deutsch'],['es-ES','Español'],['pt-BR','Português'],['zh-CN','简体中文']];
   let selectedId='HauntingElegance2026';
@@ -23,16 +23,17 @@
   }
   function changeSeason(id:string){selectedId=id;limit=60;query='';}
   function item(r:any,language:string){
-    const name=starpathRewardName(r.itemId,language);
+    const name=starpathRewardDisplayName(r.itemId,language,rewardExtras);
     return (name||'名称未確認')+' · ID '+r.itemId+' · '+r.amount+'個'+(r.price!==undefined?' · 価格 '+r.price:'')+(r.premium?' · プレミアム':'')+(r.recurrent?' · 繰り返し':'');
   }
   async function load(){
     loading=true;error='';
     try{
       catalog=await loadPublicStarpath(`${base}/guide/public/starpath-cache-2026-11-22.json`);
-      [weeklyLocales,dailyLocales]=await Promise.all([
+      [weeklyLocales,dailyLocales,rewardExtras]=await Promise.all([
         loadStarpathWeeklyLocales(`${base}/guide/public/starpath-weekly-locales-2026-11-22.json`,catalog),
-        loadStarpathDailyLocales(`${base}/guide/public/`,catalog.seasons)
+        loadStarpathDailyLocales(`${base}/guide/public/`,catalog.seasons),
+        loadStarpathRewardExtras(`${base}/guide/public/starpath-reward-extras-2026-11-22.json`,catalog)
       ]);
     }
     catch(e){error=e instanceof Error?e.message:String(e)}
@@ -71,7 +72,7 @@
         <div><span>交換期限（未満）</span><strong>{date(season.endUtcExclusive)}</strong></div>
         <div><span>通常 / 週間</span><strong>{season.counts.dailyTasks} / {season.counts.weeklyTasks}</strong></div>
         <div><span>通常 / ボーナス / Vault報酬</span><strong>{season.counts.normalRewards} / {season.counts.bonusRewards} / {season.counts.vaultRewards}</strong></div>
-        <div><span>プレミアム設定価格</span><strong>{season.premiumPrice.amount}（ID {season.premiumPrice.itemId}）</strong></div>
+        <div><span>プレミアム設定価格</span><strong>{season.premiumPrice.amount} {starpathRewardDisplayName(season.premiumPrice.itemId,locale,rewardExtras)}（ID {season.premiumPrice.itemId}）</strong></div>
       </section>
       <nav class="tabs" aria-label="表示内容">
         <button class:active={tab==='tasks'} on:click={()=>tab='tasks'}>通常タスク</button>
@@ -101,7 +102,7 @@
           </section>
         {/each}
       {:else}
-        <p class="hint">確認済み43種類の名前はDB-01 Steam v1.26.2原本と照合しています。その他17種類は名称未確認のためIDを表示します。Vaultの代替報酬は付与を意味しません。</p>
+        <p class="hint">52種類の正式名称はSteam v1.26.2のゲーム原本と照合しています。残り8種類は、原本に個別表示名がない「タッチ・オブ・マジック」のモチーフとして表示します。Vaultの代替報酬は付与を意味しません。</p>
         {#each season.rewardPages as p}
           <section class="week"><h2>報酬ページ {p.page}</h2>
             {#if p.minPurchasedFromPreviousPage!==undefined}<p class="hint">前ページの購入設定：{p.minPurchasedFromPreviousPage}件</p>{/if}
@@ -116,7 +117,7 @@
         {/each}
         <section class="week"><h2>Vault報酬</h2>
           <ul class="entries">{#each season.vaultRewards as r,i (i)}
-            <li>{item(r,locale)}{r.alternateItemId?' · 代替候補: '+(starpathRewardName(r.alternateItemId,locale)||'名称未確認')+' (ID '+r.alternateItemId+')':''}</li>
+            <li>{item(r,locale)}{r.alternateItemId?' · 代替候補: '+(starpathRewardDisplayName(r.alternateItemId,locale,rewardExtras)||'名称未確認')+' (ID '+r.alternateItemId+')':''}</li>
           {/each}</ul>
         </section>
       {/if}
