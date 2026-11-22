@@ -18,7 +18,8 @@ from pathlib import Path
 
 from plan_media_update import (read_scan, read_items, read_overlay, read_proofs,
                                plan, require, file_digest, path_safe,
-                               MANIFEST_SCHEMA, SHARD_SCHEMA, EVIDENCE, SHA_RE)
+                               MANIFEST_SCHEMA, SHARD_SCHEMA, EVIDENCE, SHA_RE,
+                               BASELINE_VERSION, BASELINE_ITEMS_SHA, BASELINE_OVERLAY_SHA)
 from stage_media_v2 import webp_lossless_dimensions
 
 POLICY = "thumbnail_128_lossless_webp_plus_original_native_lossless_webp"
@@ -225,7 +226,8 @@ def create_images(base_root, target_root, plan_doc, target_scan, game_root):
 
 
 def build(base_root, old_scan_path, next_scan_path, next_items_path,
-          next_proofs_path, next_game, out):
+          next_proofs_path, next_game, out, *, base_items_sha=None,
+          base_overlay_sha=None):
     base_root=base_root.resolve()
     next_game=next_game.resolve()
     out=out.resolve()
@@ -233,9 +235,21 @@ def build(base_root, old_scan_path, next_scan_path, next_items_path,
     require(not out.exists() and out.parent.is_dir(),"OUTPUT_MUST_NOT_EXIST")
     old_scan=read_scan(old_scan_path)
     target_scan=read_scan(next_scan_path)
-    old_items=read_items(base_root/"source-items"/"items.jsonl")
+    if old_scan["version"]==BASELINE_VERSION:
+        expected_items_sha=base_items_sha or BASELINE_ITEMS_SHA
+        expected_overlay_sha=base_overlay_sha or BASELINE_OVERLAY_SHA
+    else:
+        require(base_items_sha is not None and base_overlay_sha is not None,
+                "CUSTOM_BASELINE_REQUIRES_SHA_PINS")
+        expected_items_sha=base_items_sha
+        expected_overlay_sha=base_overlay_sha
+    require(SHA_RE.fullmatch(expected_items_sha) and
+            SHA_RE.fullmatch(expected_overlay_sha), "BAD_BASELINE_SHA_PINS")
+    old_items=read_items(base_root/"source-items"/"items.jsonl",
+                         expected_sha=expected_items_sha)
     new_items=read_items(next_items_path)
-    overlay=read_overlay(base_root/"private-media-overlay-v2-latest")
+    overlay=read_overlay(base_root/"private-media-overlay-v2-latest",
+                         expected_sha=expected_overlay_sha)
     proofs=read_proofs(next_proofs_path,target_scan,new_items)
     require(proofs is not None,"NEW_EXACT_PROOFS_REQUIRED")
     delta=plan(old_scan,old_items,overlay,target_scan,new_items,
@@ -308,10 +322,14 @@ def main(argv=None):
     for name in ("base-root","base-scan","target-scan","target-items",
                  "target-proofs","target-game","out"):
         p.add_argument("--"+name,type=Path,required=True)
+    p.add_argument("--base-items-sha",help="Prior SRC-01 items.jsonl SHA-256 pin")
+    p.add_argument("--base-overlay-sha",help="Prior SRC-04 private v2 manifest SHA-256 pin")
     args=p.parse_args(argv)
     try:
         report=build(args.base_root,args.base_scan,args.target_scan,
-                     args.target_items,args.target_proofs,args.target_game,args.out)
+                     args.target_items,args.target_proofs,args.target_game,args.out,
+                     base_items_sha=args.base_items_sha,
+                     base_overlay_sha=args.base_overlay_sha)
     except (OSError,ValueError,KeyError,TypeError) as error:
         p.exit(2,str(error)+"\n")
     print(json.dumps(report,ensure_ascii=False,indent=2))
