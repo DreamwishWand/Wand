@@ -109,10 +109,22 @@ function fixture(){
       source:{gameVersion:'1.26.2',sourceItemsSha256:sha,
         sourceCollectionSetSha256:'f'.repeat(64),
         sourceIl2cppDumpSha256:dump,catalogDefinitions:2,
-        collectionSetDefinitions:1,directListedItemIds:1,
+        collectionSetDefinitions:2,directListedItemIds:1,
         directListedAssociations:1,dynamicSelectorsUnresolved:1},
       getDirectListingsBatch:async ids=>{io.direct++;
         return ids.map(id=>id===furniture.itemId?[direct]:[]);},
+      getMenus:async()=>[
+        {setId:2120000024,setKey:'CollectionSet!Synthetic',
+          submenuCode:3,submenu:'FurnitureSets',
+          collectionLabelKey:'CollectionSet.FurnitureTest',
+          sortPriority:1,groupCount:3,directListedItemCount:1,
+          dynamicSelectorsUnresolved:2,gameUiVisibilityVerified:false},
+        {setId:2120000040,setKey:'CollectionSet!Crafting',
+          submenuCode:10,submenu:'Crafting',
+          collectionLabelKey:'CollectionSet.Crafting',
+          sortPriority:2,groupCount:2,directListedItemCount:0,
+          dynamicSelectorsUnresolved:1,gameUiVisibilityVerified:false},
+      ],
     },
     universePredicates:{
       source:{gameVersion:'1.26.2',sourceItemsSha256:sha,sourceSqliteSha256:sqlite,
@@ -168,10 +180,14 @@ test('multiple same-item relations remain; only same-set/group negative predicat
   assert.equal(row.collection.direct.length,1);
   assert.equal(row.collection.setUniverse.length,2);
   assert.equal(row.collection.candidates.length,2);
+  assert.equal(row.collection.candidates[0].sourceMenu.submenu,'Crafting');
+  assert.equal(row.collection.candidates[1].sourceMenu.submenu,'Crafting');
   assert.deepEqual(row.collection.candidates.map(v=>v.origin),
     ['set-universe','activity-crafting']);
   assert.equal(row.collection.suppressed.length,1);
   assert.equal(row.collection.suppressed[0].candidate.origin,'set-universe');
+  assert.equal(row.collection.suppressed[0].candidate.sourceMenu.submenu,
+    'FurnitureSets');
   assert.equal(row.collection.suppressed[0].exclusions[0].sourceRecipeItemId,
     2050300548);
   assert.equal(row.collection.craftingExclusions,'available');
@@ -181,6 +197,8 @@ test('multiple same-item relations remain; only same-set/group negative predicat
   assert.equal(coverage.sourceDynamicSelectorsResolved,262);
   assert.equal(coverage.sourceDynamicSelectorsTotal,262);
   assert.equal(coverage.itemTypeVerified,2);
+  assert.equal(coverage.sourceCollectionSetDefinitions,2);
+  assert.equal((await client.getSourceMenus()).length,2);
   assert.equal(coverage.tagAssociatedDefinitions,1);
   assert.equal(coverage.worldAvailabilityVerified,false);
 });
@@ -211,6 +229,8 @@ test('absent optional source overlays are unknown, not no category/no DLC or no 
   assert.equal(row.collection.activityCrafting,null);
   assert.equal(row.collection.candidates.length,2);
   assert.equal(row.collection.craftingExclusions,'unavailable');
+  assert.equal(row.collection.candidates[0].sourceMenu,null);
+  assert.equal(await client.getSourceMenus(),null);
   assert.equal(client.getCoverage().itemTypeVerified,null);
   assert.equal(client.getCoverage().sourceDynamicSelectorsResolved,124);
   assert.equal(client.getCoverage().sourceDynamicSelectorsTotal,262);
@@ -249,4 +269,24 @@ test('bounded batches and canonical invalid Item IDs rejected',async()=>{
   await assert.rejects(c.getItem(0),/INVALID_ID/);
   assert.deepEqual(await c.getItems([]),[]);
   assert.strictEqual(c.getCoverage(),c.getCoverage());
+});
+
+test('connected original CollectionSet index fails closed when a source predicate targets a missing set',async()=>{
+  const f=fixture();
+  const menus={...f.directMenus,getMenus:async()=>[{
+    setId:2120000024,setKey:'CollectionSet!Synthetic',
+    submenuCode:3,submenu:'FurnitureSets',
+    collectionLabelKey:'CollectionSet.FurnitureTest',
+    sortPriority:1,groupCount:3,directListedItemCount:1,
+    dynamicSelectorsUnresolved:2,gameUiVisibilityVerified:false,
+  },{
+    setId:2120000999,setKey:'CollectionSet!Unrelated',
+    submenuCode:3,submenu:'FurnitureSets',
+    collectionLabelKey:'CollectionSet.Other',
+    sortPriority:2,groupCount:1,directListedItemCount:0,
+    dynamicSelectorsUnresolved:0,gameUiVisibilityVerified:false,
+  }]};
+  const c=createDb01SharedItemClient({...f,directMenus:menus});
+  await assert.rejects(c.getItem(furniture.itemId),
+    /COLLECTION_SET_NOT_IN_CURRENT_ORIGINAL/);
 });
