@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFile,readFileSync} from 'node:fs';
+import {readFileSync} from 'node:fs';
+import {readFile} from 'node:fs/promises';
 import {verifyPublicEventFriendshipRewards}
   from '../src/lib/guide/public-event-friendship-rewards.ts';
 import {verifyEventRewardItemLabels}
