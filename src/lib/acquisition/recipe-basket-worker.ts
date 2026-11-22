@@ -6,7 +6,7 @@
  */
 import type {Src02IndependentPin} from './private-browser-bundle.mjs';
 import type {RecipeBasketGoal,RecipeBasketOptions} from './recipe-basket-request';
-import type {MaterialBasket} from './planner.mjs';
+import type {MaterialBasket} from './planner';
 
 const MAX_ARCHIVE=24*1024*1024;
 
