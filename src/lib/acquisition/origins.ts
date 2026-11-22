@@ -11,6 +11,9 @@ import {hasPinnedPublicEventFriendshipEvidence,
   type PublicEventFriendshipAcquisitionIndex} from '../guide/public-event-friendship-acquisition.ts';
 import {OFFICIAL_CAMPAIGNS} from './official-campaigns.ts';
 import {
+  hasPinnedPublicNativeShopEvidence,type PinnedPublicNativeShopIndex
+} from './public-native-shop.ts';
+import {
   hasPinnedDb03RewardEvidence,
   type Db03NativeRewardCandidateIndex
 } from './db03-native-rewards.ts';
@@ -515,7 +518,8 @@ export async function loadUnifiedAcquisitionOriginDatabase(
   nativeItemIds: readonly (string | number)[] = [],
   db03NativeRewards: Db03NativeRewardCandidateIndex | null = null,
   db03PublicQuestRewards: PublicQuestAcquisitionIndex | null = null,
-  db03PublicEventFriendship: PublicEventFriendshipAcquisitionIndex | null = null
+  db03PublicEventFriendship: PublicEventFriendshipAcquisitionIndex | null = null,
+  db02PublicNativeShop: PinnedPublicNativeShopIndex | null = null
 ): Promise<OriginDatabase> {
   assert(basePath === '' || (basePath.startsWith('/') && !basePath.includes('..') && !basePath.endsWith('/')), 'BASE_PATH');
   const guide = await loadGuideRewardIndex(
@@ -563,6 +567,20 @@ export async function loadUnifiedAcquisitionOriginDatabase(
       db03PublicEventFriendship.origins.length===218,
       'DB03_PINNED_PUBLIC_EVENT_FRIENDSHIP_REQUIRED');
   }
+  if(db02PublicNativeShop!==null){
+    assert(hasPinnedPublicNativeShopEvidence(db02PublicNativeShop) &&
+      db02PublicNativeShop.schema==='wand.db02.public-native-shop-snapshot@1' &&
+      db02PublicNativeShop.sourceIntegrity===
+        'original_sha256_and_pinned_public_projection' &&
+      db02PublicNativeShop.coverage.sourceOffers===29 &&
+      db02PublicNativeShop.coverage.sourceItemOccurrences===156 &&
+      db02PublicNativeShop.coverage.distinctSourceItemIds===136 &&
+      db02PublicNativeShop.coverage.currentAvailabilityVerified===false &&
+      db02PublicNativeShop.coverage.accountOwnershipVerified===false &&
+      db02PublicNativeShop.origins.length===156 &&
+      db02PublicNativeShop.campaigns.length===29,
+      'DB02_PINNED_PUBLIC_NATIVE_SHOP_REQUIRED');
+  }
   // The new public evidence and the already-authenticated owner-local DB-03
   // reader share original event/<link index> and friendship/<record index>
   // identities. Keep only one origin per identical native source relation;
@@ -577,8 +595,9 @@ export async function loadUnifiedAcquisitionOriginDatabase(
   });
   return createAcquisitionOriginDatabase(
     [...starpath.origins, ...nativeRoutes, ...privateNonDuplicated,
-      ...(db03PublicQuestRewards?.origins??[]), ...publicEventRows],
+      ...(db03PublicQuestRewards?.origins??[]), ...publicEventRows,
+      ...(db02PublicNativeShop?.origins??[])],
     [...starpath.campaigns, ...projectHistoricalGuideCampaigns(guide),
-      ...OFFICIAL_CAMPAIGNS], native
+      ...OFFICIAL_CAMPAIGNS, ...(db02PublicNativeShop?.campaigns??[])], native
   );
 }
