@@ -917,7 +917,7 @@ mod tests {
         let source=r#"{"World":{"GridCollection":{"Grids":{"101":{
           "Objects":{"5":{"ItemID":40000001,"X":31,"Y":40,
             "Orientation":"GridOrientation_Up","State":{"Unknown":1.00e+2}},
-            "6":{"ItemID":40000002,"Orientation":"GridOrientation_Up"}}}}},
+            "6":{"ItemID":40000002,"Orientation":"GridOrientation_Up"}}}},
           "DiffGrids":{"102":{"ModifiedObjects":{"7":{
             "ItemID":40000003,"X":8,"Y":9,
             "Orientation":"GridOrientation_Left",
