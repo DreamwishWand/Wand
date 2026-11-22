@@ -141,7 +141,7 @@
     </button>
   </section>
   {#if result==='changed'}
-    <p role="status">Rust/WASMで変更対象の検証に成功しました。変更後の構造を内部で再検証しました。ファイルは出力していません。</p>
+    <p role="status">Rust/WASMで数量変更の検証に成功しました。変更後の構造を内部で再検証しました。ファイルは出力していません。</p>
   {:else if result==='unchanged'}
     <p role="status">変更前後の数量が同じです。元データは変更されていません。</p>
   {:else if result==='error'}
