@@ -1,6 +1,7 @@
 <script lang="ts">
   import {onMount} from 'svelte';
   import {base} from '$app/paths';
+  import {autoAppend} from '$lib/ui/auto-append';
   import {loadPublicStarpath} from '$lib/guide/public-starpath.mjs';
   import {loadStarpathWeeklyLocales,starpathWeeklyDescription} from '$lib/guide/public-starpath-locales.mjs';
   import {loadStarpathDailyLocales,starpathDailyDescription} from '$lib/guide/public-starpath-daily.mjs';
@@ -116,7 +117,7 @@
             <li><strong>{actionableStarpathTask(season.id,t,locale==='ja'?'ja':'en')?.action||'達成方法は検証中'}</strong><small>{actionableStarpathTask(season.id,t,locale==='ja'?'ja':'en')?'確認済みの具体的な操作 · ':'解答未確認 · '}ゲーム内表記：{starpathDailyDescription(dailyLocales,season.id,t.id,locale)||'説明未確認'}</small><small>{t.objectiveKind} · {t.id} · {t.tokenReward} {season.currencyName}{t.availableOnDay!==undefined?' · 解放設定日 '+t.availableOnDay:''}</small></li>
           {/each}
         </ul>
-        {#if filtered.length>limit}<button class="more" on:click={()=>limit+=60}>さらに表示</button>{/if}
+        {#if filtered.length>limit}<div class="auto-sentinel" use:autoAppend={{hasMore:()=>filtered.length>limit,load:()=>limit+=60}} role="status" aria-label="スクロールでタスクを追加表示"></div>{/if}
       {:else if tab==='weekly'}
         <p class="hint">週間タスクも具体的な操作・謎解きの答えを優先して表示します。未検証のものは解答を創作せず、ゲーム内文言を参考情報として併記します。</p>
         {#each season.weeklyTasks as week,i}

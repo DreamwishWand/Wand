@@ -1,6 +1,7 @@
 <script lang="ts">
   import {onMount} from 'svelte';
   import {base} from '$app/paths';
+  import WandIcon from '$lib/ui/WandIcon.svelte';
   import {loadPublicStarpath} from '$lib/guide/public-starpath.mjs';
   import {
     guideCalendarEvents,guideCalendarMonth,eventScheduleState,
@@ -73,17 +74,17 @@
   </header>
   <nav class="guide-sections" aria-label="Guideの主要機能">
     <a class="section-link" href={`${base}/guide/quests/`}>
-      <span class="section-symbol" aria-hidden="true">✦</span>
+      <span class="section-symbol" aria-hidden="true"><WandIcon name="guide" size={28}/></span>
       <strong>クエスト</strong>
       <span>ストーリーとフレンドシップの攻略</span>
     </a>
     <a class="section-link" href={`${base}/guide/star-path/`}>
-      <span class="section-symbol" aria-hidden="true">★</span>
+      <span class="section-symbol" aria-hidden="true"><WandIcon name="star" size={28}/></span>
       <strong>スターパス</strong>
       <span>開催日程内のタスクの達成方法</span>
     </a>
     <a class="section-link" href={`${base}/guide/events/`}>
-      <span class="section-symbol" aria-hidden="true">◈</span>
+      <span class="section-symbol" aria-hidden="true"><WandIcon name="world" size={28}/></span>
       <strong>期間限定イベント</strong>
       <span>フローティングアイランド・バレー内イベント</span>
     </a>
