@@ -619,7 +619,10 @@
   header h1 {font-size:clamp(30px,5vw,50px);letter-spacing:-.05em;margin:10px 0;}
   header p:not(.eyebrow) {max-width:820px;color:#aea0c0;line-height:1.8;font-size:14px;}
   .world-panel {margin:20px 0;padding:22px;background:#1c1728;border:1px solid #ffffff22;border-radius:15px;}
-  .world-toolbar,.selector-row,.coord-row,.view-head,.paging {display:flex;align-items:end;gap:14px;flex-wrap:wrap;}
+  .world-toolbar,.selector-row,.coord-row,.anchor-find-row,.view-head,.paging {display:flex;align-items:end;gap:14px;flex-wrap:wrap;}
+  .anchor-find-row {margin-top:14px;}
+  .anchor-find-row label {flex:1 1 220px;min-width:0;}
+  .anchor-find-row input[type=search] {background:#292039;color:#eee7f6;border:1px solid #ffffff31;border-radius:8px;padding:9px 10px;max-width:100%;width:100%;font:inherit;}
   .world-toolbar {justify-content:space-between;}
   .world-toolbar label {flex:1 1 240px;min-width:0;max-width:100%;}
   .world-toolbar input[type=file] {display:block;width:100%;min-width:0;max-width:100%;}
