@@ -68,6 +68,12 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
     cacheLifecycle.originalNativeProtobufBinarizeHookImplementerCount===3&&
     cacheLifecycle.originalSaveBinaryInterfaceInvocationUsesSlotZero===true&&
     cacheLifecycle.originalSaveBinaryInterfacePointerIsProtobufOnBinarizeVerified===false&&
+    cacheLifecycle.originalNativeSharedInterfaceTypeInfoUsageKind===1&&
+    cacheLifecycle.originalNativeSharedInterfaceTypeInfoUsageIndex===70685&&
+    cacheLifecycle.originalNativeSharedTypeInfoReferencesInIl2cppSection===10&&
+    cacheLifecycle.originalNativeSharedTypeInfoConsumerMethods===4&&
+    cacheLifecycle.originalNativeSharedTypeInfoRuntimeManagedClassNameVerified===false&&
+    cacheLifecycle.originalSharedTypeInfoIsIProtobufOnBinarizeVerified===false&&
     cacheLifecycle.nativeRuntimeIsEditorFlag===null&&
     cacheLifecycle.nativeRuntimeTypeSearchCacheEntries===null&&
     cacheLifecycle.originalNativeExportForBuildCallsSaveBinary===true&&
