@@ -438,6 +438,22 @@ try{
   assert.match(await gridareaPanel.innerText(),/非ゼロ 3値/);
   assert.match(await gridareaPanel.innerText(),/68 × 2 · 0 × 1 · 76 × 1/);
   assert.match(await gridareaPanel.innerText(),/占有セル数ではありません/);
+  assert.match(await gridareaPanel.innerText(),/原本内の2D値参照と90度単位のローカル向き変換は検証済み/);
+  const rawAreaButton=gridareaPanel.getByRole('button',{name:'原本レイヤー値を表示'});
+  await rawAreaButton.click();
+  const rawGridArea=gridareaPanel.getByLabel('原本GridAreaセル一覧');
+  await rawGridArea.waitFor();
+  assert.deepEqual(await rawGridArea.locator('.gridarea-raw-cell').allTextContents(),
+    ['0','68','68','76']);
+  assert.match(await gridareaPanel.innerText(),/GridObjectの設置位置や占有セルではありません/);
+  await gridareaPanel.getByRole('combobox',{name:'原本GridAreaの向き'})
+    .selectOption('4');
+  await rawAreaButton.click();
+  await page.waitForFunction(()=>Array.from(document.querySelectorAll(
+    '[aria-label="原本GridAreaセル一覧"] .gridarea-raw-cell')).map(
+      el=>el.textContent?.trim()).join(',')==='68,0,76,68');
+  assert.deepEqual(await rawGridArea.locator('.gridarea-raw-cell').allTextContents(),
+    ['68','0','76','68']);
   assert.doesNotMatch(await gridareaPanel.innerText(),/編集可能/);
   assert.match(await terrainSelectors.nth(1).locator('option:checked').innerText(),
     /Village04\/Beach.json/);
