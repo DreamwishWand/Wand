@@ -195,3 +195,18 @@ World membership, so a current-world summary intentionally returns an empty
 `values` array and `unverified` counts until the owning DB-01 stream
 supplies independently verified current-source overlays. Prior Switch
 Collection classifications must not be silently promoted into them.
+
+### Cross-service source join (source-specific evidence, no UI membership inference)
+
+\`joinCurrentGameSources(db, {origins, rewards, nativeScope, nativeScopePins})\`
+in \`src/lib/game-db/source-join.ts\` reuses existing DB-02 \`OriginDatabase\`,
+DB-03 SHA-pinned \`GuideRewardIndex\`, and DB-04 private
+\`Db04NativeItemScopeClient\`. The DB-00 input must be the exact published
+Steam 1.26.2 13,202-item release. DB-04 requires separately trusted audit
+and row hashes even after the owning stream has validated its bytes.
+All source inputs are optional; absent input returns \`null\` or
+\`not_loaded\`, **not a verified negative**. Out-of-scope Item IDs stay
+explicitly outside the published catalog while optional Guide/DB-02 evidence
+may still resolve. \`byNativeWorldTag\` joins native tag reverse-index IDs
+without classifying them as Collection UI worlds. No new source extraction,
+private file publication, DLC/entitlement or player-state assumptions.
