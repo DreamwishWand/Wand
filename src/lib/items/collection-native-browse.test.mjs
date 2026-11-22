@@ -204,12 +204,14 @@ test('All uses the COMPLETE published 13,202 Items, not only original Collection
 test('All source uses exact current public names and ID search, without original source fallback',async()=>{
   const f=fixture(),browse=createDb01CollectionNativeBrowseClient(
     f.axes,f.source,f.results,f.publicData);
-  const searched=await browse.search({locale:'en',searchText:'105'},{limit:20});
+  // The DB-00 search is prefix-based for numeric Item IDs. Query the
+  // current highest synthetic Item ID so the expected match is unique.
+  const searched=await browse.search({locale:'en',searchText:'13301'},{limit:20});
   assert.equal(searched.collectionScope,'all_published_items');
   assert.equal(searched.total,1);
-  assert.deepEqual(searched.items.map(x=>x.itemId),['105']);
+  assert.deepEqual(searched.items.map(x=>x.itemId),['13301']);
   assert.deepEqual(f.calls.publicQueries[0],{
-    locale:'en',text:'105',offset:0,limit:20
+    locale:'en',text:'13301',offset:0,limit:20
   });
   assert.equal(f.calls.originalIndex,0);
   assert.equal(f.calls.query.length,0);
