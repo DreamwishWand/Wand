@@ -290,7 +290,7 @@
       {/each}
     </nav>
     <div class="searchbar">
-      <label>クエストを検索<input aria-label="クエスト名・アイテムIDを検索" placeholder="クエスト名・キャラクター名・目標アイテムID" bind:value={query} on:input={setSearch}/></label>
+      <label>クエストを検索<input aria-label="クエスト名・IDを検索" placeholder="クエスト名・キャラクター名・目標アイテムID" bind:value={query} on:input={setSearch}/></label>
       <label>キャラクター<select aria-label="キャラクターで絞り込み" bind:value={character} on:change={setSearch}><option value="">すべて</option>{#each characters as id}<option value={id}>{characterName(id,locale)}</option>{/each}</select></label>
       <label>目標の種類<select aria-label="目標で絞り込み" bind:value={objective} on:change={setSearch}><option value="">すべて</option>{#each objectives as kind}<option value={kind}>{kind}</option>{/each}</select></label>
     </div>
