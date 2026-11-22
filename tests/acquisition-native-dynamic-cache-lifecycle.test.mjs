@@ -20,6 +20,17 @@ test('original cached source is positive but runtime rebuild is unobserved',()=>
   assert.equal(plan.nativeCacheDataAllocatesFreshItemPriceDatabase,true);
   assert.equal(plan.nativeCacheDataReplacesCachedDataField,true);
   assert.equal(plan.nativeCacheDataCallsSellFormulaCalculator,true);
+  assert.equal(plan.originalNativeProtoDatabaseConstructorTailCallsRefresh,true);
+  assert.equal(plan.originalNativeProtoDatabaseRefreshCallsLoadBinary,true);
+  assert.equal(plan.originalNativeLoadBinaryResolvesSerializedType,true);
+  assert.equal(plan.originalNativeExportForBuildCallsSaveBinary,true);
+  assert.equal(plan.originalNativeTrySellPriceUsesProtoDatabaseEnumerator,true);
+  assert.equal(plan.originalNativeDirectTransfersToOnBinarize,0);
+  assert.equal(plan.originalNativeDirectTransfersToCacheData,1);
+  assert.equal(plan.originalDirectTransferCensusExcludesInterfaceDispatch,true);
+  assert.equal(plan.nativeOnBinarizeInvokedByLoadBinaryVerified,false);
+  assert.equal(plan.nativeOnBinarizeInvokedByExportForBuildVerified,false);
+  assert.equal(plan.nativeRuntimeProtoDatabaseReloadOccurred,null);
   assert.equal(plan.hypotheticalRebuiltItemPriceRows,null);
   assert.equal(plan.nativeRuntimeCacheDataInvoked,null);
   assert.equal(plan.nativeRuntimeCacheMatchesOriginalSnapshot,null);
