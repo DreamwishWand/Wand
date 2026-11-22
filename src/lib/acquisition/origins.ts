@@ -523,7 +523,8 @@ export async function loadUnifiedAcquisitionOriginDatabase(
   db03PublicQuestRewards: PublicQuestAcquisitionIndex | null = null,
   db03PublicEventFriendship: PublicEventFriendshipAcquisitionIndex | null = null,
   db02PublicNativeShop: PinnedPublicNativeShopIndex | null = null,
-  db02PublicIap: PublicIapSourceIndex | null = null
+  db02PublicIap: PublicIapSourceIndex | null = null,
+  db02HistoricalNativeShop: PinnedPublicNativeShopIndex | null = null
 ): Promise<OriginDatabase> {
   assert(basePath === '' || (basePath.startsWith('/') && !basePath.includes('..') && !basePath.endsWith('/')), 'BASE_PATH');
   const guide = await loadGuideRewardIndex(
@@ -576,6 +577,7 @@ export async function loadUnifiedAcquisitionOriginDatabase(
       db02PublicNativeShop.schema==='wand.db02.public-native-shop-snapshot@1' &&
       db02PublicNativeShop.sourceIntegrity===
         'original_sha256_and_pinned_public_projection' &&
+      db02PublicNativeShop.snapshotKey==='Shop20261118' &&
       db02PublicNativeShop.coverage.sourceOffers===29 &&
       db02PublicNativeShop.coverage.sourceItemOccurrences===156 &&
       db02PublicNativeShop.coverage.distinctSourceItemIds===136 &&
@@ -584,6 +586,22 @@ export async function loadUnifiedAcquisitionOriginDatabase(
       db02PublicNativeShop.origins.length===156 &&
       db02PublicNativeShop.campaigns.length===29,
       'DB02_PINNED_PUBLIC_NATIVE_SHOP_REQUIRED');
+  }
+  if(db02HistoricalNativeShop!==null){
+    assert(hasPinnedPublicNativeShopEvidence(db02HistoricalNativeShop) &&
+      db02HistoricalNativeShop.schema==='wand.db02.public-native-shop-snapshot@1' &&
+      db02HistoricalNativeShop.snapshotKey==='Shop20260715' &&
+      db02HistoricalNativeShop.sourceIntegrity===
+        'original_sha256_and_pinned_public_projection' &&
+      db02HistoricalNativeShop.coverage.sourceOffers===27 &&
+      db02HistoricalNativeShop.coverage.sourceItemOccurrences===128 &&
+      db02HistoricalNativeShop.coverage.distinctSourceItemIds===120 &&
+      db02HistoricalNativeShop.coverage.fullGameVersionVerified===false &&
+      db02HistoricalNativeShop.coverage.currentAvailabilityVerified===false &&
+      db02HistoricalNativeShop.coverage.accountOwnershipVerified===false &&
+      db02HistoricalNativeShop.origins.length===128 &&
+      db02HistoricalNativeShop.campaigns.length===27,
+      'DB02_PINNED_HISTORICAL_NATIVE_SHOP_REQUIRED');
   }
   if(db02PublicIap!==null){
     assert(hasPinnedPublicIapEvidence(db02PublicIap) &&
@@ -618,9 +636,11 @@ export async function loadUnifiedAcquisitionOriginDatabase(
     [...starpath.origins, ...nativeRoutes, ...privateNonDuplicated,
       ...(db03PublicQuestRewards?.origins??[]), ...publicEventRows,
       ...(db02PublicNativeShop?.origins??[]),
-      ...(db02PublicIap?.origins??[])],
+      ...(db02PublicIap?.origins??[]),
+      ...(db02HistoricalNativeShop?.origins??[])],
     [...starpath.campaigns, ...projectHistoricalGuideCampaigns(guide),
       ...OFFICIAL_CAMPAIGNS, ...(db02PublicNativeShop?.campaigns??[]),
-      ...(db02PublicIap?.campaigns??[])], native
+      ...(db02PublicIap?.campaigns??[]),
+      ...(db02HistoricalNativeShop?.campaigns??[])], native
   );
 }
