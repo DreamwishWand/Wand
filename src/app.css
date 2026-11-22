@@ -289,3 +289,9 @@ a.portal-card:hover{transform:translateY(-3px);border-color:#cfafe7;box-shadow:0
  .summary-strip strong{font-size:18px}
  .collection-results{padding:12px}
 }
+
+/* Consistent icon affordances for collected items and category tiles. */
+.item-state-toggle{display:grid;place-items:center;padding:0}
+.facet-flourish{right:14px;top:13px;display:flex;color:#d0ace9}
+.facet-card:hover .facet-flourish{color:#f1d9ff}
+.item-card-body:focus-visible,.item-state-toggle:focus-visible{outline:2px solid #d9b8ff;outline-offset:3px}
