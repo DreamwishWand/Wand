@@ -514,7 +514,7 @@
               aria-label="DB-04 原本ZIPで初期配置との差分を照合"
               on:change={importDb04Join} disabled={db04JoinBusy||busy}/>
           </label>
-          <p>原本ZIPと選択済みP1Gをこの端末内の別Workerで再読込し、同一の原本パスが確認できたグリッドに限って初期配置・変更・保存側の追加参照を比較します。所有・解放・手動数量は更新しません。</p>
+          <p>原本ZIPと選択済みP1Gをブラウザー内で照合します。通常Gridは原本パスの一致を、差分Gridは原本レイアウト・種類・Grid ID・2つのハッシュの一致を確認します。現在のDB-04原本ZIPには差分Grid用のハッシュ検証資料がないため、該当グリッドの完全な初期配置は計算対象から除外します。所有・解放・手動数量は変更しません。</p>
         </div>
         {#if db04JoinBusy}
           <p class="store-caveat" role="status">DB-04原本とセーブをローカルで照合中…</p>
@@ -527,13 +527,13 @@
             {:else if db04Join.status==='not_observed'}
               セーブ内のGridCollectionを確認できません。
             {:else if db04Join.status==='no_exact_source_match'}
-              両方の原本パスが完全一致するグリッドを確認できませんでした。ID・名前の類似から推測しません。
+              原本と十分に照合できたグリッドはありません。差分Gridの原本ハッシュ未検証 {db04Join.hashUnverifiedGrids}件、ハッシュ不一致 {db04Join.hashMismatchGrids}件。完全な差分計算は行いません。
             {:else}
               原本パスによる照合：<strong>{db04Join.matchedGrids}</strong> / {db04Join.observedGrids}保存グリッド。
               原本オブジェクト参照 {db04Join.sourceDefaultObjects}件、
               差分適用後の参照 {db04Join.effectiveObjects}件。
               {#if db04Join.status==='partial_exact_matches'}
-                未照合のグリッドがあります（パス未一致 {db04Join.unresolvedGrids}件、原本不足 {db04Join.partialSourceGrids}件、構造不正 {db04Join.invalidGrids}件）。
+                未照合のグリッドがあります（原本候補未一致 {db04Join.unresolvedGrids}件、原本不足 {db04Join.partialSourceGrids}件、ハッシュ未検証 {db04Join.hashUnverifiedGrids}件、ハッシュ不一致 {db04Join.hashMismatchGrids}件、構造不正 {db04Join.invalidGrids}件）。
               {/if}
             {/if}
             <small>照合対象グリッド内の候補集計です。原本ZIPの真正性、ワールド全体の網羅性、ユーザーによる配置・所有は未検証です。</small>
