@@ -238,3 +238,27 @@ concurrent GETs, including the 14 ItemList shards and Star Path cache. The
 cache is discarded after each call so a later active pointer is freshly read.
 Synthetic/local-asset tests assert **23 unique public fetches**, the published
 Steam ItemList and 1,255 source routes, and corrupt-public-data rejection.
+
+
+### Optional owner-local DB-01/DB-04 joins (never auto-fetch private data)
+
+\`joinLocalGameSources(publicSources, {db01, expectedDb01SourceItemsSha256,
+nativeScope, nativeScopePins})\` in \`src/lib/game-db/local-sources.ts\`
+accepts existing SHA-checked local readers, not raw or publicly hosted
+game files. DB-01's complete Steam 1.26.2 native 39,067-definition
+\`Db01SharedItemClient\` can provide original types, raw Tags and
+CollectionSet predicate candidates. DB-04's 13,202-item native source
+reader may also be attached with **independently trusted** audit/rows
+SHA-256 values. Both sources are optional individually, but at least one
+must be supplied. A DB-01 source-items SHA-256 must always be provided
+independently (not copied from its client).
+
+\`getItem\`, \`getItems\`, \`queryPublishedItems\` and \`byNativeWorldTag\`
+return local-only original evidence beside the existing DB-00/02/03
+public data. Published ItemList IDs must match the DB-01 native identity
+exactly, and when both DB-01 original Tag evidence and DB-04 source
+Tags are available, direct World Tag disagreements fail closed. Native
+types and CollectionSet candidates are **not** runtime screen
+categories/subcategories or DLC ownership. The returned private read
+model is not publishable, and the public DB-00 verified-fact index is
+never silently modified. No local private bytes are uploaded.
