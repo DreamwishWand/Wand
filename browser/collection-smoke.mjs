@@ -393,7 +393,7 @@ try{
   const joinStatus=page.getByRole('status').filter({hasText:'原本パスによる照合'});
   await joinStatus.first().waitFor({timeout:25000});
   const joinText=await joinStatus.first().innerText();
-  assert.match(joinText,/1\\s*\\/\\s*2保存グリッド/);
+  assert.match(joinText,/1\s*\/\s*2保存グリッド/);
   assert.match(joinText,/原本オブジェクト参照 3件/);
   assert.match(joinText,/差分適用後の参照 3件/);
   assert.match(await page.getByRole('region',{name:'セーブ内の家具配置参照'}).innerText(),
