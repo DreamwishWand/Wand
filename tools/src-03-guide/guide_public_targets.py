@@ -12,6 +12,7 @@ from pathlib import Path
 
 PRIVATE_BUNDLE_SHA = '9dcf0efbeb4b70fcf4222a295a43690ae6a04fb1ee12a169dc8031f062600d6f'
 PUBLIC_MISSION_SHA = 'f13958b52234f4cda92f0dd0bfff50be8a7f6625c8478785e2a077a5c7933d24'
+PUBLIC_ITEM_INDEX_SHA = '06912b156823d920d1b3a2b937ebff3d06e1ca670043db616c907c683b46599f'
 SCHEMA = 'wand.db03.public-quest-targets@1'
 PART_SCHEMA = 'wand.db03.public-quest-targets-part@1'
 PREFIX = 'Wand-Guide-Steam-v1.26.2/'
@@ -110,9 +111,44 @@ def build(bundle,public_index):
             'partFiles':{},'itemNames':{},'itemNamesSource':None}
     return result,rows,refs
 
-def run(bundle,index_path,out):
+def verified_public_names(needed, item_index_file, item_shards):
+    raw=item_index_file.read_bytes()
+    must(digest(raw)==PUBLIC_ITEM_INDEX_SHA,'PUBLISHED_ITEM_INDEX_SHA')
+    index=json.loads(raw)
+    must(index.get('schema')=='wand.game-db.release@1' and index.get('id')=='steam-1.26.2-native-itemlist-v1'
+         and index.get('count')==13202 and len(index.get('shards',[]))==14
+         and index.get('target',{}).get('gameVersion')=='1.26.2','PUBLISHED_ITEM_SOURCE')
+    result={};total=0
+    for shard in index['shards']:
+        name=shard['file']
+        must(name.startswith('items-') and name.endswith('.json') and '/' not in name,'PUBLISHED_FILE_PATH')
+        source=item_shards/name
+        must(source.is_file() and not source.is_symlink() and source.stat().st_size==shard['bytes'],'PUBLISHED_SHARD_SIZE')
+        raw=source.read_bytes()
+        must(digest(raw)==shard['sha256'],'PUBLISHED_SHARD_SHA')
+        part=json.loads(raw)
+        must(part['schema']=='wand.game-db.snapshot@1' and part['offset']==shard['offset']
+             and part['count']==shard['count'] and len(part['items'])==shard['count'],'PUBLISHED_SHARD_SCHEMA')
+        total+=len(part['items'])
+        for item in part['items']:
+            iid=item['id']
+            if iid not in needed or item.get('nameStatus')!='verified':continue
+            names=item.get('names')
+            if not isinstance(names,dict) or not names.get('ja') or not names.get('en'):continue
+            must(iid not in result and all(k in LANGS and isinstance(v,str) and 0<len(v)<=240
+                                          for k,v in names.items()),'PUBLISHED_NAME_DUPLICATE_OR_BAD')
+            result[iid]=names
+    must(total==13202 and len(result)==2059 and len(needed)-len(result)==492,'PUBLISHED_JOIN_CENSUS')
+    return result,index['id']
+
+
+def run(bundle,index_path,out,item_index_file,item_shards):
     index=json.loads(index_path.read_text('utf-8'))
     document,parts,refs=build(bundle,index)
+    document['itemNames'],release=verified_public_names(refs,item_index_file,item_shards)
+    document['itemNamesSource']={'release':release,'releaseIndexSha256':PUBLIC_ITEM_INDEX_SHA,'verifiedNamesOnly':True}
+    document['counts']['verifiedPublicItemNames']=len(document['itemNames'])
+    document['counts']['unresolvedPublicItemNames']=len(refs)-len(document['itemNames'])
     out.mkdir(parents=True,exist_ok=True)
     for i,rows in enumerate(parts):
         name=f'quest-targets-{i:02d}.json'
@@ -127,6 +163,8 @@ def main():
     p=argparse.ArgumentParser()
     p.add_argument('--bundle',type=Path,required=True)
     p.add_argument('--public-index',type=Path,required=True)
+    p.add_argument('--published-item-index',type=Path,required=True)
+    p.add_argument('--published-item-shards',type=Path,required=True)
     p.add_argument('--out',type=Path,required=True)
-    args=p.parse_args();run(args.bundle,args.public_index,args.out)
+    args=p.parse_args();run(args.bundle,args.public_index,args.out,args.published_item_index,args.published_item_shards)
 if __name__=='__main__':main()
