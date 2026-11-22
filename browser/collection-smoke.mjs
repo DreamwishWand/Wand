@@ -57,7 +57,7 @@ async function readLocalState(page){
     const db=await new Promise((resolve,reject)=>{req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});
     const value=await new Promise((resolve,reject)=>{
       const get=db.transaction('state','readonly').objectStore('state').get('current');
-      get.onsuccess=()=>resolve(get.result?.value);get.onerror=()=>reject(get.error);
+      get.onsuccess=()=>resolve(get.result);get.onerror=()=>reject(get.error);
     });
     db.close();
     return value?JSON.parse(value):null;
@@ -71,7 +71,7 @@ async function waitForLocalState(page,expected){
     });
     const value=await new Promise((resolve,reject)=>{
       const get=db.transaction('state','readonly').objectStore('state').get('current');
-      get.onsuccess=()=>resolve(get.result?.value);get.onerror=()=>reject(get.error);
+      get.onsuccess=()=>resolve(get.result);get.onerror=()=>reject(get.error);
     });
     db.close();
     if(!value)return false;
