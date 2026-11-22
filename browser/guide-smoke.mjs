@@ -369,6 +369,9 @@ try {
   await limited.locator('.friendship .reward-row').first().waitFor({timeout:20000});
   assert.equal(await limited.locator('.friendship .reward-row').count(),12,
     'friendship currency Item-ID direct link selects the default friendship section');
+  assert.match(await limited.locator('.friendship .reward-row').first().innerText(),
+    /Item ID 80000000/,
+    'a reward outside the published DB-00 release must not acquire a fabricated name');
   await limited.close();
 
   // Exact original ProtoDb Mini Event -> Quest IDs, both directions.
