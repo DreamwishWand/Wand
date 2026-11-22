@@ -218,12 +218,12 @@ try{
     Player:{PrivateSyntheticName:'NEVER_RENDER_THIS_SAVE_FIELD'},
     World:{GridCollection:{
       Grids:{
-        '19':{ID:19,GridDataPath:'GridData/Village04/Beach.json',
-          Objects:{}},
-        '20':{ID:20,GridDataPath:'GridData/OffGridBuildings/Detached.json',
-          Objects:{}},
-        '21':{ID:21,GridDataPath:'GridData/NotInPartialSource/Grid.json',
-          Objects:{}}
+        '19':{ID:19,GridDefaultLayoutPath:LAYOUT,
+          GridDataPath:'GridData/Village04/Beach.json',Objects:{}},
+        '20':{ID:20,GridDefaultLayoutPath:LOOSE,
+          GridDataPath:'GridData/OffGridBuildings/Detached.json',Objects:{}},
+        '21':{ID:21,GridDefaultLayoutPath:'SceneLayouts/Missing/Grid.json',
+          GridDataPath:'GridData/NotInPartialSource/Grid.json',Objects:{}}
       },
       DiffGrids:{}
     }}
