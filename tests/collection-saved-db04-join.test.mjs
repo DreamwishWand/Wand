@@ -112,8 +112,10 @@ test('unknown exact paths, version mismatch and partial native defaults fail clo
  const unavailable=reconcileSavedWorldWithDb04(unmatched,make([], '1.25.0'));
  assert.equal(unavailable.status,'unsupported_source_or_schema');
  safe(unavailable);
- const oldSchema=reconcileSavedWorldWithDb04(unmatched,make(),624);
- assert.notEqual(oldSchema.status,'all_observed_grids_matched');
+ const oldSchema=reconcileSavedWorldWithDb04(
+   save({DiffGrids:{'850':diff({'10':object(10,40005160)})}},624),make());
+ assert.equal(oldSchema.status,'unsupported_source_or_schema');
+ safe(oldSchema);
  const brokenDefault=reconcileSavedWorldWithDb04(
   save({DiffGrids:{'850':diff({'10':object(10,40005160)})}}),
   make(undefined,'1.26.2',5));
