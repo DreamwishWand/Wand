@@ -8,7 +8,7 @@ self.onmessage = async ({ data }: MessageEvent<{command:string;bytes:Uint8Array}
   if (started) return;
   started = true;
   const bytes = data?.bytes;
-  let response: {kind:'error'} | {kind:'result'; result: Awaited<ReturnType<typeof inspectEncryptedSavedStore>>} = {kind:'error'};
+  let response: {kind:'error'} | {kind:'result'; result: Awaited<ReturnType<typeof inspectLocalSavedStore>>} = {kind:'error'};
   try {
     if (data?.command !== 'inspect-local-save' ||
         !(bytes instanceof Uint8Array) ||
