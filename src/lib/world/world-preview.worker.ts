@@ -6,6 +6,7 @@
  */
 import { openLocalWorldZip } from './local-snapshot.mjs';
 import { getNativeTerrainWindow } from './catalog.mjs';
+import { findOriginalItemAnchor } from './native-item-anchor-finder.ts';
 import { getSourceAnchorDomain, getTessellatedSourceAnchorWindow } from './native-anchor-domain';
 import {
   listWorldPreviewViews,
@@ -33,7 +34,9 @@ type Request =
   | { command:'clear'; requestId:number }
   | { command:'load'; requestId:number; file:Blob }
   | { command:'view'; requestId:number; viewKey:string;
-      gridIdNative:number; rect:Rect; offset:number };
+      gridIdNative:number; rect:Rect; offset:number }
+  | { command:'find-anchor'; requestId:number; viewKey:string;
+      gridIdNative:number; itemId:number; matchIndex:number };
 
 interface WorkerScope {
   onmessage: ((event: MessageEvent<unknown>) => Promise<void>) | null;
@@ -61,6 +64,15 @@ function parseRequest(data:unknown): Request {
       throw new TypeError('DB04_WORKER_SOURCE_FILE_REQUIRED');
     return {command:'load',requestId,file:data.file};
   }
+  if (data.command==='find-anchor' &&
+      typeof data.viewKey==='string' && data.viewKey.length<=2048 &&
+      data.viewKey.length>0 &&
+      nonnegative(data.gridIdNative) && data.gridIdNative<=0xffffffff &&
+      positive(data.itemId) && nonnegative(data.matchIndex) &&
+      data.matchIndex<=1_000_000)
+    return {command:'find-anchor',requestId,
+      viewKey:data.viewKey,gridIdNative:data.gridIdNative,
+      itemId:data.itemId,matchIndex:data.matchIndex};
   if (data.command==='view' &&
       typeof data.viewKey==='string' && data.viewKey.length>0 &&
       nonnegative(data.gridIdNative) && validRect(data.rect) &&
@@ -125,6 +137,14 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
     const sourceView=views.find(view=>view.viewKey===message.viewKey);
     if (!sourceView)
       throw new TypeError('Unknown local World view');
+    if(message.command==='find-anchor'){
+      if(!sourceView.grids.some(grid=>grid.gridIdNative===message.gridIdNative))
+        throw new TypeError('Unknown original source Grid ID');
+      const found=findOriginalItemAnchor(catalog,sourceView.layoutId,
+        message.gridIdNative,message.itemId,message.matchIndex);
+      worker.postMessage({kind:'anchor-found',requestId,result:found});
+      return;
+    }
     const domain=getSourceAnchorDomain(catalog,sourceView.layoutId,message.gridIdNative);
     if(domain?.status==='steam1262_original_factor_two_anchor_envelope'){
       // Raw GridData cells and factor-two source-object X/Y have not been

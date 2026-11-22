@@ -2,6 +2,8 @@
   import { onDestroy,tick } from 'svelte';
   import {autoAppend} from '$lib/ui/auto-append';
   import NativeGraphExplorer from '$lib/world/NativeGraphExplorer.svelte';
+  import type {OriginalItemAnchorFindResult}
+    from '$lib/world/native-item-anchor-finder.ts';
   import {matchSourceGridToLocalTerrain,
     type SourceGridNavigationRequest}
     from '$lib/world/native-grid-navigation.ts';
@@ -81,6 +83,10 @@
   let fileInput: HTMLInputElement | null = null;
   let terrainPanel:HTMLDivElement|null=null;
   let terrainLinkNotice='';
+  let anchorItemSearch='';
+  let anchorFindResult:OriginalItemAnchorFindResult|null=null;
+  let anchorFindMessage='';
+  let findingAnchor=false;
 
   $: regionKeys = [...new Set(layouts.map(a => a.regionKey))].sort();
   $: filteredLayouts = selectedRegion
@@ -127,6 +133,45 @@
     worker = null;
     loading = false;
     viewing = false;
+    findingAnchor=false;
+  }
+  function resetAnchorFind(clearInput=true) {
+    anchorFindResult=null;
+    anchorFindMessage='';
+    findingAnchor=false;
+    if(clearInput)anchorItemSearch='';
+  }
+  function findNativeItemAnchor(matchIndex=0){
+    const selected=layouts.find(row=>row.viewKey===selectedViewKey);
+    const grid=selected?.grids.find(row=>
+      String(row.gridIdNative)===selectedGridId);
+    const query=anchorItemSearch.trim();
+    if(!/^[1-9][0-9]{0,15}$/.test(query)||
+       !Number.isSafeInteger(Number(query))){
+      anchorFindMessage='原本Item IDは正の整数で入力してください。';
+      anchorFindResult=null;
+      return;
+    }
+    if(!worker||!selected||!grid||!grid.knownGridData){
+      anchorFindMessage='このGridの原本データが読み込まれていません。';
+      anchorFindResult=null;
+      return;
+    }
+    findingAnchor=true;
+    anchorFindMessage='';
+    const id=++requestId;
+    worker.postMessage({
+      command:'find-anchor',requestId:id,
+      viewKey:selected.viewKey,gridIdNative:grid.gridIdNative,
+      itemId:Number(query),matchIndex
+    });
+  }
+  function findNextNativeItemAnchor(){
+    const match=anchorFindResult;
+    if(match?.status!=='found'||match.matchingOriginalDefaultObjectCount<=1||
+      match.matchedIndex===null)return;
+    findNativeItemAnchor((match.matchedIndex+1)%
+      match.matchingOriginalDefaultObjectCount);
   }
   function clearAll() {
     stop();
@@ -145,6 +190,7 @@
     errorMessage = '';
     infoMessage = 'ブラウザ内のWorldデータを破棄しました。';
     terrainLinkNotice='';
+    resetAnchorFind();
     if (fileInput) fileInput.value = '';
   }
   onDestroy(stop);
@@ -207,6 +253,7 @@
     selectedRegion=view.regionKey;
     selectedViewKey=view.viewKey;
     selectedGridId=String(resolved.nativeGridId);
+    resetAnchorFind();
     x=0;y=0;width=16;height=16;
     viewport=null;
     requestWindow();
@@ -219,6 +266,7 @@
     changeLayout();
   }
   function changeLayout() {
+    resetAnchorFind();
     const grids = layouts.find(a => a.viewKey === selectedViewKey)?.grids ?? [];
     selectedGridId = grids.length ? String(grids[0].gridIdNative) : '';
     x = 0; y = 0; width = 16; height = 16;
@@ -226,6 +274,7 @@
     requestWindow();
   }
   function changeGrid() {
+    resetAnchorFind();
     x = 0; y = 0; width = 16; height = 16;
     viewport = null;
     requestWindow();
@@ -249,6 +298,7 @@
     errorMessage = '';
     infoMessage = '';
     terrainLinkNotice='';
+    resetAnchorFind();
     if (!file) return;
     if (!file.name.toLowerCase().endsWith('.zip') ||
         file.size < 22 || file.size > 96 * 1024 * 1024) {
@@ -269,6 +319,7 @@
         errorMessage = String(result.message || 'Worldデータの読込に失敗しました。');
         loading = false;
         viewing = false;
+        findingAnchor=false;
         return;
       }
       if (result.kind === 'loaded') {
@@ -286,6 +337,48 @@
           String(layouts[0].grids[0].gridIdNative) : '';
         infoMessage = 'ローカルZIP内のマニフェスト整合性を確認しました。原本の真正性までは証明していません。';
         if (selectedGridId) requestWindow();
+        return;
+      }
+      if (result.kind==='anchor-found') {
+        findingAnchor=false;
+        const found=result.result as OriginalItemAnchorFindResult;
+        if(found.contract!=='wand.db04.native-item-anchor-finder@1'||
+          found.sourceLayoutId!==layouts.find(row=>
+            row.viewKey===selectedViewKey)?.layoutId||
+          String(found.nativeGridId)!==selectedGridId||
+          found.itemId!==Number(anchorItemSearch.trim())){
+          anchorFindResult=null;
+          anchorFindMessage='原本検索結果が現在の選択と一致しません。';
+          return;
+        }
+        anchorFindResult=found;
+        if(found.status==='found'&&
+          typeof found.sourceAnchorX==='number'&&
+          typeof found.sourceAnchorY==='number'){
+          const chosen=layouts.find(row=>row.viewKey===selectedViewKey)
+            ?.grids.find(row=>String(row.gridIdNative)===selectedGridId);
+          if(!chosen||!chosen.anchorSizeX||!chosen.anchorSizeY)return;
+          const cx=found.sourceAnchorX,cy=found.sourceAnchorY;
+          x=Math.max(0,Math.min(chosen.anchorSizeX-1,
+            cx-Math.floor(width/2)));
+          y=Math.max(0,Math.min(chosen.anchorSizeY-1,
+            cy-Math.floor(height/2)));
+          anchorFindMessage='原本初期配置 '+String(found.matchedIndex!+1)+
+            ' / '+String(found.matchingOriginalDefaultObjectCount)+
+            '件。Gridローカル座標（'+cx+', '+cy+'）を表示します。';
+          requestWindow();
+          selectedCell={x:cx,y:cy};
+        }else{
+          anchorFindMessage=found.status==='not_in_source_grid'
+            ? 'この部分的な原本Gridには、指定Item IDの初期配置はありません。'
+            : found.status==='source_game_version_unverified'
+            ? 'このゲームバージョンの原本アンカー検索は未検証です。'
+            : found.status==='original_anchor_domain_unverified'
+            ? 'このGridの原本アンカー座標範囲は未検証です。'
+            : found.status==='original_grid_not_in_source'
+            ? 'このGridはローカル原本ZIPに収録されていません。'
+            : '指定番号の原本初期配置候補はありません。';
+        }
         return;
       }
       if (result.kind === 'view') {
@@ -424,6 +517,27 @@
             地形とアンカーの座標変換は未検証です。
           {/if}
         </p>
+        <div class="anchor-find-row">
+          <label>原本Item ID
+            <input type="search" inputmode="numeric"
+              bind:value={anchorItemSearch}
+              on:input={()=>resetAnchorFind(false)}
+              placeholder="原本初期配置のItem ID"/>
+          </label>
+          <button type="button" on:click={()=>findNativeItemAnchor()}
+            disabled={!worker||findingAnchor||viewing||!selectedGrid.knownGridData}>
+            原本初期配置を探す
+          </button>
+          {#if anchorFindResult?.status==='found'&&
+            anchorFindResult.matchingOriginalDefaultObjectCount>1}
+            <button type="button" on:click={findNextNativeItemAnchor}
+              disabled={findingAnchor||viewing}>次の一致</button>
+          {/if}
+        </div>
+        {#if anchorFindMessage}
+          <p class="note" role="status">{anchorFindMessage}
+            検索位置はセーブの座標・配置可否を意味しません。</p>
+        {/if}
         <div class="coord-row">
           <label>X <input type="number" min="0" bind:value={x} /></label>
           <label>Y <input type="number" min="0" bind:value={y} /></label>
@@ -505,7 +619,10 @@
   header h1 {font-size:clamp(30px,5vw,50px);letter-spacing:-.05em;margin:10px 0;}
   header p:not(.eyebrow) {max-width:820px;color:#aea0c0;line-height:1.8;font-size:14px;}
   .world-panel {margin:20px 0;padding:22px;background:#1c1728;border:1px solid #ffffff22;border-radius:15px;}
-  .world-toolbar,.selector-row,.coord-row,.view-head,.paging {display:flex;align-items:end;gap:14px;flex-wrap:wrap;}
+  .world-toolbar,.selector-row,.coord-row,.anchor-find-row,.view-head,.paging {display:flex;align-items:end;gap:14px;flex-wrap:wrap;}
+  .anchor-find-row {margin-top:14px;}
+  .anchor-find-row label {flex:1 1 220px;min-width:0;}
+  .anchor-find-row input[type=search] {background:#292039;color:#eee7f6;border:1px solid #ffffff31;border-radius:8px;padding:9px 10px;max-width:100%;width:100%;font:inherit;}
   .world-toolbar {justify-content:space-between;}
   .world-toolbar label {flex:1 1 240px;min-width:0;max-width:100%;}
   .world-toolbar input[type=file] {display:block;width:100%;min-width:0;max-width:100%;}
