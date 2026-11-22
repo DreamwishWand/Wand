@@ -66,18 +66,20 @@
       query:{scope,scopeId:scope==='unlinked_world'?null:scopeId,
         exactItemId:chosen,offset,limit:100}});
   }
-  function chooseScope(){
+  function chooseScope(event:Event){
+    // Svelte DOM change handlers can run before bind:value flushes.
+    scope=(event.currentTarget as HTMLSelectElement).value as Db04GraphScope;
     scopeId=scope==='world'?catalog?.sourceWorlds[0]?.id??'':
       scope==='area'?catalog?.sourceAreas[0]?.id??'':
       scope==='grid'?filteredGrids[0]?.id??'':'';
     page=null;pageOffset=0;
     query();
   }
-  function chooseGridSearch(){
+  function chooseGridSearch(event:Event){
     if(scope!=='grid')return;
-    // Input events precede the reactive filteredGrids recomputation.
-    // Calculate from the current text rather than a stale derived option list.
-    const needle=gridSearch.toLocaleLowerCase();
+    // The DOM input value precedes bind:value and reactive recomputation.
+    const needle=(event.currentTarget as HTMLInputElement)
+      .value.toLocaleLowerCase();
     const matches=(catalog?.sourceGrids??[])
       .filter(g=>g.label.toLocaleLowerCase().includes(needle)||
         g.id.toLocaleLowerCase().includes(needle))
@@ -86,6 +88,11 @@
       scopeId=matches[0]?.id??'';
       page=null;pageOffset=0;
     }
+  }
+  function chooseSourceOption(event:Event){
+    scopeId=(event.currentTarget as HTMLSelectElement).value;
+    page=null;pageOffset=0;
+    query();
   }
   async function loadFile(event:Event){
     const input=event.currentTarget as HTMLInputElement;
@@ -176,7 +183,7 @@
       {/if}
       {#if scope!=='unlinked_world'}
         <label class="graph-select">原本ID
-          <select bind:value={scopeId} on:change={()=>{page=null;query();}}
+          <select bind:value={scopeId} on:change={chooseSourceOption}
             disabled={options.length===0}>
             {#each options as option (option.id)}
               <option value={option.id}>{option.label}</option>
