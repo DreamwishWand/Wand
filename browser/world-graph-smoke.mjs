@@ -209,6 +209,59 @@ try{
     /セーブファイルが不正という意味ではありません/);
   await gridSearch.fill('GridData/OffGridBuildings/Detached.json');
 
+  // The DB-04 UI reuses DB-05's existing Rust/WASM grid-path matcher.
+  // Synthetic Save map IDs 19/20/21 are intentionally NOT native Grid.IDs.
+  // All private fields remain in the isolated Worker; only count receipts
+  // may cross into the World Svelte view.
+  const save={
+    GameInfo:{Version:643},
+    Player:{PrivateSyntheticName:'NEVER_RENDER_THIS_SAVE_FIELD'},
+    World:{GridCollection:{
+      Grids:{
+        '19':{ID:19,GridDefaultLayoutPath:LAYOUT,
+          GridDataPath:'GridData/Village04/Beach.json',Objects:{}},
+        '20':{ID:20,GridDefaultLayoutPath:LOOSE,
+          GridDataPath:'GridData/OffGridBuildings/Detached.json',Objects:{}},
+        '21':{ID:21,GridDefaultLayoutPath:'SceneLayouts/Missing/Grid.json',
+          GridDataPath:'GridData/NotInPartialSource/Grid.json',Objects:{}}
+      },
+      DiffGrids:{
+        '31':{ID:31,GridDefaultLayoutPath:LAYOUT,
+          GridDefaultLayoutType:'Meta.GridCollection, Meta',
+          DefaultLayoutGridID:1,DefaultGridHashCode:17,
+          DefaultGridDataHashCode:-9,ModifiedObjects:{}}
+      }
+    }}
+  };
+  const saveInput=panel.getByLabel('照合用セーブファイル');
+  await saveInput.setInputFiles({
+    name:'synthetic-save-grid-paths.json',mimeType:'application/json',
+    buffer:Buffer.from(JSON.stringify(save))
+  });
+  const auditResult=panel.locator('[aria-label="セーブGridDataPath照合結果"]');
+  await auditResult.waitFor({timeout:40000});
+  const cells=auditResult.locator(':scope > div');
+  assert.equal(await cells.nth(0).locator('strong').innerText(),'3');
+  assert.equal(await cells.nth(1).locator('strong').innerText(),'2');
+  assert.equal(await cells.nth(2).locator('strong').innerText(),'0');
+  assert.equal(await cells.nth(3).locator('strong').innerText(),'1');
+  assert.equal(await cells.nth(4).locator('strong').innerText(),'1');
+  assert.equal(await cells.nth(5).locator('strong').innerText(),'1');
+  assert.doesNotMatch(await page.locator('body').innerText(),
+    /NEVER_RENDER_THIS_SAVE_FIELD/);
+  assert.doesNotMatch(await auditResult.innerText(),/GridData\/|SceneLayouts\//);
+  await panel.getByRole('button',{name:'セーブ照合結果を破棄'}).click();
+  assert.equal(await auditResult.count(),0);
+  await saveInput.setInputFiles({
+    name:'invalid-save.json',mimeType:'application/json',
+    buffer:Buffer.from('{"World":INVALID_PRIVATE_CONTENT', 'utf8')
+  });
+  await panel.locator('.save-grid-audit [role="alert"]')
+    .waitFor({timeout:40000});
+  assert.equal(await auditResult.count(),0);
+  assert.doesNotMatch(await page.locator('body').innerText(),
+    /INVALID_PRIVATE_CONTENT/);
+
   await page.setViewportSize({width:390,height:844});
   const mobileLayout=await page.evaluate(()=>{
     const screenWidth=window.innerWidth;
