@@ -12,6 +12,7 @@ import {loadPrivateSrc02BrowserBundle,CURRENT_STEAM_1262_CONDITION_SHA256}
 import {loadPrivateShopPriceView} from './private-shop-prices.mjs';
 import {loadPrivateCookingStarSettings} from './private-cooking-star-settings.mjs';
 import {collectConfiguredIngredientSellEvidence} from './meal-ingredient-sell-evidence.mjs';
+import {loadPrivateDynamicPriceCache} from './private-dynamic-price-cache.mjs';
 
 export const DB02_MEAL_PRICE_VIEW_CONTRACT='wand.db02.private-meal-pricing-view@1';
 export const DB02_MEAL_PRICE_EVIDENCE_CONTRACT='wand.db02.meal-price-evidence@1';
@@ -129,7 +130,7 @@ export function decodeMealItemStateEvidence(bytes){
  * A static Cooking_Meal_PriceDatabase "Prices" row is PURCHASE evidence.
  * Never derive a state-dependent SELL price from that row.
  */
-function inspectAuthenticatedMeal({acquisitionBundle,shopPriceView,mealItemId,itemStateBytes}){
+function inspectAuthenticatedMeal({acquisitionBundle,shopPriceView,nativeCache,mealItemId,itemStateBytes}){
   check(validId(mealItemId)&&Math.floor(mealItemId/100000)===303,
     'MEAL_ITEM_ID_REQUIRED');
   const state=decodeMealItemStateEvidence(itemStateBytes);
@@ -145,6 +146,8 @@ function inspectAuthenticatedMeal({acquisitionBundle,shopPriceView,mealItemId,it
   const ingredientAmounts=state.ingredientAmounts;
   const sourceIngredientStaticSellEvidence=collectConfiguredIngredientSellEvidence(
     ingredientAmounts,id=>shopPriceView.getSourceItemPriceDefinitions(id));
+  const sourceIngredientDynamicCacheEvidence=nativeCache===null?null:
+    frozen(ingredientAmounts.map(x=>nativeCache.lookup(x.itemId)));
   return frozen({
     contract:DB02_MEAL_PRICE_EVIDENCE_CONTRACT,
     mealItemId,platform:'Steam',gameVersion:'1.26.2',
@@ -153,6 +156,9 @@ function inspectAuthenticatedMeal({acquisitionBundle,shopPriceView,mealItemId,it
     cookingRecipeCoverage:'partial_native_extraction',
     recordedIngredients:ingredientAmounts,
     sourceIngredientStaticSellEvidence,
+    sourceIngredientDynamicCacheEvidence,
+    nativeDynamicCacheSourceVerified:nativeCache!==null,
+    dynamicCachedSellRowCannotProveEffectivePrice:true,
     ingredientStaticPriceDatabaseOriginalVerified:true,
     staticIngredientAmountsNotEffectiveSellValues:true,
     cookingRecipeIngredientMatchVerified:false,
@@ -189,8 +195,11 @@ export async function loadPrivateMealPricingView({
   const shopPriceView=await loadPrivateShopPriceView({
     manifestBytes:priceManifestBytes,files:priceFiles
   });
-  const nativeStars=protoDbBytes===undefined?null:
-    await loadPrivateCookingStarSettings(protoDbBytes);
+  const [nativeStars,nativeCache]=protoDbBytes===undefined?[null,null]:
+    await Promise.all([
+      loadPrivateCookingStarSettings(protoDbBytes),
+      loadPrivateDynamicPriceCache(protoDbBytes)
+    ]);
   check(acquisitionBundle?.verified===true&&
     acquisitionBundle.manifestSha256===SRC02_R5_SHA&&
     acquisitionBundle.source?.platform==='Steam'&&
@@ -208,12 +217,18 @@ export async function loadPrivateMealPricingView({
     nativePriceFormulaEvaluated:false,publishable:false,writable:false,
     nativeStarSettingsVerified:nativeStars!==null,
     nativeCookingStarSettings:nativeStars,
+    nativeDynamicCacheVerified:nativeCache!==null,
+    nativeDynamicPriceCache:nativeCache,
+    getSourceCachedDynamicPriceRow:itemId=>{
+      check(validId(itemId),'INVALID_DYNAMIC_ITEM_ID');
+      return nativeCache?.lookup(itemId)??null;
+    },
     getSourceStarResult:star=>{
       check(Number.isSafeInteger(star)&&star>=1&&star<=5,'INVALID_STAR_RATING');
       return nativeStars?.getStarResult(star)??null;
     },
     inspect:(mealItemId,itemStateBytes)=>inspectAuthenticatedMeal({
-      acquisitionBundle,shopPriceView,mealItemId,itemStateBytes
+      acquisitionBundle,shopPriceView,nativeCache,mealItemId,itemStateBytes
     })
   });
 }

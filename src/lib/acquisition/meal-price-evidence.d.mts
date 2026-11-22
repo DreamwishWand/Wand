@@ -1,6 +1,7 @@
 /** Per-instance meal ingredients and state-dependent sell-price evidence. */
 import type {StaticItemPriceDefinition} from './private-shop-prices.mjs';
 import type {ConfiguredIngredientSellEvidence} from './meal-ingredient-sell-evidence.mjs';
+import type {VerifiedPrivateDynamicPriceCache,NativeDynamicCacheItemLookup} from './private-dynamic-price-cache.mjs';
 import type {VerifiedPrivateCookingStarSettings,NativeCookingStarResult} from './private-cooking-star-settings.mjs';
 export declare const DB02_MEAL_PRICE_EVIDENCE_CONTRACT:
   'wand.db02.meal-price-evidence@1';
@@ -36,6 +37,9 @@ export interface PrivateMealPriceEvidence {
   readonly cookingRecipeCoverage:'partial_native_extraction';
   readonly recordedIngredients:readonly MealIngredientAmount[];
   readonly sourceIngredientStaticSellEvidence:ConfiguredIngredientSellEvidence;
+  readonly sourceIngredientDynamicCacheEvidence:readonly NativeDynamicCacheItemLookup[]|null;
+  readonly nativeDynamicCacheSourceVerified:boolean;
+  readonly dynamicCachedSellRowCannotProveEffectivePrice:true;
   readonly ingredientStaticPriceDatabaseOriginalVerified:true;
   readonly staticIngredientAmountsNotEffectiveSellValues:true;
   readonly cookingRecipeIngredientMatchVerified:false;
@@ -70,6 +74,9 @@ export interface PrivateMealPricingView {
   readonly nativePriceFormulaEvaluated:false;
   readonly nativeStarSettingsVerified:boolean;
   readonly nativeCookingStarSettings:VerifiedPrivateCookingStarSettings|null;
+  readonly nativeDynamicCacheVerified:boolean;
+  readonly nativeDynamicPriceCache:VerifiedPrivateDynamicPriceCache|null;
+  getSourceCachedDynamicPriceRow(itemId:number):NativeDynamicCacheItemLookup|null;
   getSourceStarResult(star:number):NativeCookingStarResult|null;
   readonly publishable:false;
   readonly writable:false;

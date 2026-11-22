@@ -65,9 +65,26 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
         'NATIVE_STAR_ROWS');
       authenticatedNativeStarResults++;
     }
+    const cache=view.nativeDynamicPriceCache;
+    requireValue(view.nativeDynamicCacheVerified===true&&
+      cache?.originalSourceVerified===true&&
+      cache.cacheRowCount===8549&&
+      cache.purchaseOnlyRowCount===8068&&
+      cache.sellOnlyRowCount===481&&
+      cache.bothPurchaseAndSellRowCount===0&&
+      cache.sellCurrencyAmountFieldsPresent===7&&
+      cache.sellCurrencyAmountFieldsAbsent===474&&
+      cache.sourcePurchaseFormulaReferenceCount===4&&
+      cache.sourceSellFormulaReferenceCount===1&&
+      cache.runtimeFormulaEvaluated===false&&
+      cache.actualSellPricesVerified===false,
+      'DYNAMIC_PRICE_SOURCE_CENSUS');
   }else requireValue(view.nativeStarSettingsVerified===false&&
-    view.nativeCookingStarSettings===null&&view.getSourceStarResult(1)===null,
-    'STAR_SETTINGS_ABSENCE_MISREPORTED');
+    view.nativeCookingStarSettings===null&&view.getSourceStarResult(1)===null&&
+    view.nativeDynamicCacheVerified===false&&
+    view.nativeDynamicPriceCache===null&&
+    view.getSourceCachedDynamicPriceRow(31100053)===null,
+    'STAR_AND_CACHE_SOURCE_ABSENCE_MISREPORTED');
 
   const originalArchive=openPrivateSrc02Archive(r5);
   const rawRecipes=await originalArchive.readFile('recipes.jsonl');
@@ -120,6 +137,7 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
   }
   requireValue(fixedIngredients.size===371,'STATIC_FIXED_INGREDIENT_CENSUS');
   let withConfiguredSoftSell=0,withoutConfiguredSoftSell=0;
+  let cachedDynamicBuyIngredientRows=0,cachedDynamicSellIngredientRows=0;
   for(const [ingredientId,mealId] of fixedIngredients){
     const evidence=view.inspect(mealId,fakeMealData([ingredientId]));
     const source=evidence.sourceIngredientStaticSellEvidence;
@@ -133,6 +151,21 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
       source.mealSellPriceComputed===false&&
       source.realizedMealSellPrice===null,
       'INGREDIENT_SELL_SOURCE_BOUNDARY');
+    if(protoDbPath!==undefined){
+      const dynamic=evidence.sourceIngredientDynamicCacheEvidence;
+      requireValue(evidence.nativeDynamicCacheSourceVerified===true&&
+        evidence.dynamicCachedSellRowCannotProveEffectivePrice===true&&
+        dynamic?.length===1&&dynamic[0].itemId===ingredientId&&
+        dynamic[0].originalSourceAuthenticated===true&&
+        dynamic[0].runtimeFormulaEvaluated===false&&
+        dynamic[0].effectiveSellPriceVerified===false&&
+        dynamic[0].sellPrice===null,
+        'DYNAMIC_CACHE_EVIDENCE_NOT_AUTHENTICATED');
+      if(dynamic[0].cachedPurchaseRowPresent)cachedDynamicBuyIngredientRows++;
+      if(dynamic[0].cachedSellRowPresent)cachedDynamicSellIngredientRows++;
+    }else requireValue(evidence.sourceIngredientDynamicCacheEvidence===null&&
+      evidence.nativeDynamicCacheSourceVerified===false,
+      'UNVERIFIED_CACHE_MISLABELED');
     if(source.ingredientsWithSingleConfiguredStaticAmount===1){
       requireValue(source.ingredientRows[0].sourceStaticSellOptions.length===1&&
         source.ingredientRows[0].sourceStaticSellOptions[0].currencyId===80000000,
@@ -147,6 +180,9 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
   }
   requireValue(withConfiguredSoftSell===211&&
     withoutConfiguredSoftSell===160,'FIXED_INGREDIENT_SELL_CENSUS');
+  if(protoDbPath!==undefined)requireValue(
+    cachedDynamicBuyIngredientRows===0&&cachedDynamicSellIngredientRows===0,
+    'DYNAMIC_CACHE_FIXED_INGREDIENT_OVERLAP');
 
   const firstId=mealIds.values().next().value;
   const left=view.inspect(firstId,syntheticA);
@@ -172,6 +208,14 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
     uniqueFixedRecipeIngredients:fixedIngredients.size,
     fixedIngredientItemsWithConfiguredSoftSell:withConfiguredSoftSell,
     fixedIngredientItemsWithoutStaticSoftSell:withoutConfiguredSoftSell,
+    cachedDynamicPurchaseOverlapWithFixedIngredients:
+      protoDbPath===undefined?null:cachedDynamicBuyIngredientRows,
+    cachedDynamicSellOverlapWithFixedIngredients:
+      protoDbPath===undefined?null:cachedDynamicSellIngredientRows,
+    nativeDynamicCacheRowsAuthenticated:
+      protoDbPath===undefined?0:view.nativeDynamicPriceCache.cacheRowCount,
+    nativeDynamicCachedSellRows:
+      protoDbPath===undefined?0:view.nativeDynamicPriceCache.sellOnlyRowCount,
     authenticatedNativeStarResults,
     salePriceComputed:false,
     serializedIngredientsRetained:true,
