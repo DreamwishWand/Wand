@@ -16,6 +16,9 @@ export interface WorldIdentity {
   readonly worldId: string;
   readonly worldIdKind: 'nativeWorldName' | 'derivedLayoutKey';
   readonly worldType: 'realm' | 'village_layout';
+  /** Original protoDb Worlds.WorldData field 2; optional for existing @1 ZIPs. */
+  readonly nativeParentWorldId?: string | null;
+  readonly nativeParentWorldRelationVerified?: boolean;
   readonly nativeSceneId: number | null;
   readonly defaultLayoutId: string;
   readonly sourceRootPresent: boolean;
@@ -36,6 +39,13 @@ export interface NativeAreaReference {
   readonly areaRefId: string;
   readonly areaRefIdKind: 'derivedRootLayoutAreaTypeComposite';
   readonly nativeAreaId: string | null;
+  /** Only original protoDb Village04Layout1 carries these eight records. */
+  readonly nativeProtoDbAreaRecordVerified?: boolean;
+  readonly nativeGroundNavMeshAreaId?: number | null;
+  readonly nativeWaterNavMeshAreaId?: number | null;
+  readonly nativeUnlockPlayerLevel?: number | null;
+  readonly nativeAreaTypeFieldPresent?: boolean | null;
+  readonly nativeNavMeshPlacementLegalityVerified?: false;
   readonly nativeAreaTypeCode: number;
   readonly nativeAreaTypeName: string | null;
   readonly parentVillageLayoutId: string;
@@ -151,6 +161,16 @@ export interface ItemWorldRelations {
   readonly playerPlacedWorld: RelationResult<string>;
   readonly placeableWorld: RelationResult<string>;
 }
+export interface NativeProtoDbAreaEvidence {
+  readonly areaRefId: string;
+  readonly nativeAreaId: string;
+  readonly nativeGroundNavMeshAreaId: number | null;
+  readonly nativeWaterNavMeshAreaId: number | null;
+  readonly nativeUnlockPlayerLevel: number | null;
+  readonly nativeAreaTypeFieldPresent: boolean;
+  readonly provenance: 'protoDb.bin:Village04Layout1';
+  readonly navMeshPlacementLegalityVerified: false;
+}
 export interface Db00WorldRelationsSidecar {
   readonly schema: typeof DB04_DB00_RELATION_SCHEMA;
   readonly privateOnly: true;
@@ -202,6 +222,7 @@ export class WorldReferenceIndex {
   private readonly layouts:Map<string,NativeLayoutReference>;
   private readonly grids:Map<string,NativeGridReference>;
   private readonly itemRefs:Map<string,readonly NativeSourceItemReference[]>;
+  private readonly childWorldsByParent:Map<string,readonly WorldIdentity[]>;
   private readonly areaListByWorld:Map<string,readonly NativeAreaReference[]>;
   private readonly gridListByArea:Map<string,readonly NativeGridReference[]>;
 
@@ -237,6 +258,7 @@ export class WorldReferenceIndex {
     this.grids=indexed(input.gridRefs,g=>g.gridRefId,'GRID_REF_ID');
     const gridFiles=indexed(input.gridData,g=>g.gridDataPath,'GRID_DATA_PATH');
     const byItem=new Map<string,NativeSourceItemReference[]>();
+    const byParent=new Map<string,WorldIdentity[]>();
     const byWorld=new Map<string,NativeAreaReference[]>();
     const byArea=new Map<string,NativeGridReference[]>();
     let total=0,unlinked=0;
@@ -250,7 +272,33 @@ export class WorldReferenceIndex {
         'INVALID_WORLD_IDENTITY');
       if(world.nativeSceneId!==null)
         check(this.scenes.has(world.nativeSceneId),'WORLD_SCENE_ABSENT');
+      const parent=world.nativeParentWorldId??null;
+      check((parent===null ||
+        (typeof parent==='string' && parent!==world.worldId &&
+         world.worldIdKind==='nativeWorldName' &&
+         world.nativeParentWorldRelationVerified===true &&
+         this.worlds.get(parent)?.worldIdKind==='nativeWorldName')) &&
+        (parent===null || world.nativeParentWorldRelationVerified===true) &&
+        !(parent===null && world.nativeParentWorldRelationVerified===true),
+        'INVALID_NATIVE_PARENT_WORLD');
+      if(parent!==null)
+        byParent.set(parent,[...(byParent.get(parent)??[]),world]);
     }
+    // Reject cycles in original WorldData parent links, not inferred aliases.
+    for(const world of this.worlds.values()){
+      const seen=new Set<string>();
+      let node:WorldIdentity|undefined=world;
+      while(node?.nativeParentWorldId){
+        check(!seen.has(node.worldId),'NATIVE_WORLD_PARENT_CYCLE');
+        seen.add(node.worldId);
+        node=this.worlds.get(node.nativeParentWorldId);
+      }
+    }
+    if(this.coverage.nativeParentWorldLinksInSubset!==undefined)
+      check(this.coverage.nativeParentWorldLinksInSubset===
+        [...byParent.values()].reduce((n,rows)=>n+rows.length,0),
+        'NATIVE_WORLD_PARENT_COVERAGE_MISMATCH');
+    this.childWorldsByParent=byParent;
     for(const scene of this.scenes.values()){
       check(nonnegative(scene.nativeSceneId) &&
         (scene.worldId===null||this.worlds.has(scene.worldId)) &&
@@ -271,6 +319,26 @@ export class WorldReferenceIndex {
         area.gameplayBiomeMembershipVerified===false &&
         area.placementLegalityVerified===false,
         'INVALID_AREA_IDENTITY');
+      if(area.nativeProtoDbAreaRecordVerified===true){
+        check(area.nativeAreaId===String(area.nativeSceneId)+':'+area.nativeAreaTypeCode &&
+          (area.nativeGroundNavMeshAreaId===null ||
+           nonnegative(area.nativeGroundNavMeshAreaId)) &&
+          (area.nativeWaterNavMeshAreaId===null ||
+           nonnegative(area.nativeWaterNavMeshAreaId)) &&
+          (area.nativeUnlockPlayerLevel===null ||
+           nonnegative(area.nativeUnlockPlayerLevel)) &&
+          typeof area.nativeAreaTypeFieldPresent==='boolean' &&
+          area.nativeNavMeshPlacementLegalityVerified===false,
+          'INVALID_NATIVE_PROTODB_AREA_EVIDENCE');
+      } else if(area.nativeProtoDbAreaRecordVerified===false){
+        check(area.nativeAreaId===null &&
+          area.nativeGroundNavMeshAreaId===null &&
+          area.nativeWaterNavMeshAreaId===null &&
+          area.nativeUnlockPlayerLevel===null &&
+          area.nativeAreaTypeFieldPresent===null &&
+          area.nativeNavMeshPlacementLegalityVerified===false,
+          'INVALID_UNVERIFIED_AREA_EVIDENCE');
+      }
       if(area.worldId!==null)
         byWorld.set(area.worldId,[...(byWorld.get(area.worldId)??[]),area]);
     }
@@ -322,6 +390,10 @@ export class WorldReferenceIndex {
       this.areas.size===this.coverage.nativeAreaLayoutReferences &&
       this.grids.size===this.coverage.gridReferencesInSubset,
       'INCONSISTENT_SOURCE_COVERAGE');
+    if(this.coverage.nativeProtoDbAreaRecordsLinked!==undefined)
+      check(this.coverage.nativeProtoDbAreaRecordsLinked===
+        [...this.areas.values()].filter(a=>a.nativeProtoDbAreaRecordVerified===true).length,
+        'NATIVE_AREA_COVERAGE_MISMATCH');
     this.itemRefs=byItem;
     this.areaListByWorld=byWorld;
     this.gridListByArea=byArea;
@@ -329,6 +401,48 @@ export class WorldReferenceIndex {
 
   getWorld(id:string):WorldIdentity|null{
     return this.worlds.get(id)??null;
+  }
+  /** Direct original WorldData field-2 parent links; never substring hierarchy. */
+  childWorlds(parentWorldId:string):RelationResult<WorldIdentity>{
+    const found=this.childWorldsByParent.get(parentWorldId)??[];
+    return Object.freeze({
+      status:found.length?'source_native_verified':'unverified',
+      values:Object.freeze([...found])
+    });
+  }
+  /** Confirmed ancestors only; absence of a native parent is NOT proof of root. */
+  worldAncestors(worldId:string):RelationResult<WorldIdentity>{
+    const lineage:WorldIdentity[]=[];
+    let current=this.worlds.get(worldId);
+    while(current?.nativeParentWorldId){
+      const parent=this.worlds.get(current.nativeParentWorldId);
+      if(!parent)throw new TypeError('DB04_WORLD_PARENT_LOOKUP_INVALID');
+      lineage.push(parent);
+      current=parent;
+    }
+    return Object.freeze({
+      status:lineage.length?'source_native_verified':'unverified',
+      values:Object.freeze(lineage)
+    });
+  }
+  /** Eight native protoDb records may carry NavMesh AREA IDs, not placement rules. */
+  nativeProtoDbArea(areaRefId:string):RelationResult<NativeProtoDbAreaEvidence>{
+    const area=this.areas.get(areaRefId);
+    if(!area || area.nativeProtoDbAreaRecordVerified!==true ||
+       area.nativeAreaId===null ||
+       typeof area.nativeAreaTypeFieldPresent!=='boolean')
+      return Object.freeze({status:'unverified',values:Object.freeze([])});
+    const evidence:NativeProtoDbAreaEvidence={
+      areaRefId:area.areaRefId,nativeAreaId:area.nativeAreaId,
+      nativeGroundNavMeshAreaId:area.nativeGroundNavMeshAreaId??null,
+      nativeWaterNavMeshAreaId:area.nativeWaterNavMeshAreaId??null,
+      nativeUnlockPlayerLevel:area.nativeUnlockPlayerLevel??null,
+      nativeAreaTypeFieldPresent:area.nativeAreaTypeFieldPresent,
+      provenance:'protoDb.bin:Village04Layout1',
+      navMeshPlacementLegalityVerified:false
+    };
+    return Object.freeze({status:'source_native_verified',
+      values:Object.freeze([Object.freeze(evidence)])});
   }
   getScene(nativeSceneId:number):SceneIdentity|null{
     return this.scenes.get(nativeSceneId)??null;

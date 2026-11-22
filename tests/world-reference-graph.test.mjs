@@ -121,6 +121,65 @@ test('DB-00 sidecar does not overwrite item.worlds and remains private',()=>{
   assert.equal(sidecar.publicationAuthorized,false);
   assert.equal(sidecar.worlds[0].worldIdKind,'derivedLayoutKey');
 });
+test('real native Realm ancestry is separate from derived village containment',()=>{
+  const f=fixture();
+  const parent='Worlds!SourceParent', child='Worlds!SourceParent!Subscene';
+  f.worlds.push({
+    ...f.worlds[0],worldId:parent,worldIdKind:'nativeWorldName',
+    worldType:'realm',nativeSceneId:100,
+    defaultLayoutId:'SceneLayouts/Realms/Example/Root.json',
+    nativeParentWorldId:null,nativeParentWorldRelationVerified:false
+  });
+  f.worlds.push({
+    ...f.worlds[0],worldId:child,worldIdKind:'nativeWorldName',
+    worldType:'realm',nativeSceneId:101,
+    defaultLayoutId:'SceneLayouts/Realms/Example/Child.json',
+    nativeParentWorldId:parent,nativeParentWorldRelationVerified:true
+  });
+  f.coverage.worldDefinitionsInSubset=3;
+  f.coverage.nativeParentWorldLinksInSubset=1;
+  const index=new WorldReferenceIndex(f);
+  assert.deepEqual(index.childWorlds(parent).values.map(w=>w.worldId),[child]);
+  assert.deepEqual(index.worldAncestors(child).values.map(w=>w.worldId),[parent]);
+  assert.equal(index.childWorlds(world).status,'unverified');
+  assert.equal(index.worldAncestors(parent).status,'unverified');
+  const invalid=fixture();
+  invalid.worlds[0].nativeParentWorldId='Worlds!NotInSource';
+  invalid.worlds[0].nativeParentWorldRelationVerified=true;
+  assert.throws(()=>new WorldReferenceIndex(invalid),/INVALID_NATIVE_PARENT_WORLD/);
+  const cycle=fixture();
+  cycle.worlds.push({...cycle.worlds[0],worldId:parent,
+    worldIdKind:'nativeWorldName',nativeParentWorldId:child,
+    nativeParentWorldRelationVerified:true});
+  cycle.worlds.push({...cycle.worlds[0],worldId:child,
+    worldIdKind:'nativeWorldName',nativeParentWorldId:parent,
+    nativeParentWorldRelationVerified:true});
+  cycle.coverage.worldDefinitionsInSubset=3;
+  assert.throws(()=>new WorldReferenceIndex(cycle),/NATIVE_WORLD_PARENT_CYCLE/);
+});
+
+test('native protoDb area NavMesh IDs are lookup evidence not placement legality',()=>{
+  const f=fixture();
+  f.areas[0].nativeProtoDbAreaRecordVerified=true;
+  f.areas[0].nativeGroundNavMeshAreaId=7;
+  f.areas[0].nativeWaterNavMeshAreaId=8;
+  f.areas[0].nativeUnlockPlayerLevel=null;
+  f.areas[0].nativeAreaTypeFieldPresent=false;
+  f.areas[0].nativeNavMeshPlacementLegalityVerified=false;
+  f.coverage.nativeProtoDbAreaRecordsLinked=1;
+  const evidence=new WorldReferenceIndex(f).nativeProtoDbArea(area);
+  assert.equal(evidence.status,'source_native_verified');
+  assert.equal(evidence.values[0].nativeGroundNavMeshAreaId,7);
+  assert.equal(evidence.values[0].nativeWaterNavMeshAreaId,8);
+  assert.equal(evidence.values[0].nativeAreaTypeFieldPresent,false);
+  assert.equal(evidence.values[0].navMeshPlacementLegalityVerified,false);
+  const older=fixture();
+  assert.equal(new WorldReferenceIndex(older).nativeProtoDbArea(area).status,
+    'unverified');
+  f.areas[0].nativeGroundNavMeshAreaId=-1;
+  assert.throws(()=>new WorldReferenceIndex(f),/INVALID_NATIVE_PROTODB_AREA_EVIDENCE/);
+});
+
 test('tampered Grid.ID, world evidence or count must fail closed',()=>{
   const src=fixture();
   src.gridRefs[0].gridRefId=layout+'#grid=0';

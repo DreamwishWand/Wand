@@ -146,9 +146,15 @@ def build_reference_graph(snapshot, manifest_digest):
         if root in world_by_root:
             raise ValueError("DB04_REFERENCE_GRAPH:DUPLICATE_WORLD_ROOT")
         world_by_root[root] = world_id
+        native_parent = row.get("parentWorldId")
+        require(native_parent is None or (kind == "nativeWorldName" and
+                isinstance(native_parent, str) and native_parent and
+                native_parent != world_id), "INVALID_NATIVE_PARENT_WORLD")
         world_rows.append({
             "worldId": world_id, "worldIdKind": kind,
             "worldType": row["worldType"],
+            "nativeParentWorldId": native_parent,
+            "nativeParentWorldRelationVerified": native_parent is not None,
             "nativeSceneId": scene,
             "defaultLayoutId": root,
             "sourceRootPresent": linked is not None,
@@ -158,6 +164,23 @@ def build_reference_graph(snapshot, manifest_digest):
             "contentPackRelationVerified": False,
             "worldCoverageComplete": False,
         })
+
+    # WorldData.Field2 is the *literal* parent World name in protoDb. A
+    # null/missing value is not evidence that the World is a gameplay root.
+    world_id_set = set(worlds)
+    parent_of = {row["worldId"]: row["nativeParentWorldId"]
+                 for row in world_rows if row["nativeParentWorldId"] is not None}
+    for child, parent in parent_of.items():
+        require(parent in world_id_set and
+                worlds[parent].get("worldIdKind") == "nativeWorldName",
+                "PARENT_WORLD_NOT_IN_EXACT_SOURCE")
+    for child in parent_of:
+        seen = set()
+        at = child
+        while at in parent_of:
+            require(at not in seen, "NATIVE_WORLD_HIERARCHY_CYCLE")
+            seen.add(at)
+            at = parent_of[at]
 
     # The original Expansion04 village root explicitly contains three
     # 'separatedAreasRaw' root paths; this is a proven reference, not a claim
@@ -211,6 +234,16 @@ def build_reference_graph(snapshot, manifest_digest):
                 "areaRefId": ref_id,
                 "areaRefIdKind": "derivedRootLayoutAreaTypeComposite",
                 "nativeAreaId": native_id if native_area else None,
+                "nativeProtoDbAreaRecordVerified": native_area is not None,
+                "nativeGroundNavMeshAreaId": native_area.get("groundNavMeshAreaId")
+                    if native_area else None,
+                "nativeWaterNavMeshAreaId": native_area.get("waterNavMeshAreaId")
+                    if native_area else None,
+                "nativeUnlockPlayerLevel": native_area.get("unlockPlayerLevel")
+                    if native_area else None,
+                "nativeAreaTypeFieldPresent": native_area.get("nativeAreaTypeFieldPresent")
+                    if native_area else None,
+                "nativeNavMeshPlacementLegalityVerified": False,
                 "nativeAreaTypeCode": code,
                 "nativeAreaTypeName": area.get("nativeAreaTypeName"),
                 "parentVillageLayoutId": root_id,
@@ -389,6 +422,9 @@ def build_reference_graph(snapshot, manifest_digest):
         "worldCoverage": world_coverage,
         "coverage": {
             "worldDefinitionsInSubset": len(world_rows),
+            "nativeParentWorldLinksInSubset": len(parent_of),
+            "nativeProtoDbAreaRecordsLinked": sum(
+                area["nativeProtoDbAreaRecordVerified"] for area in area_rows),
             "nativeNamedWorlds": sum(w["worldIdKind"] == "nativeWorldName" for w in world_rows),
             "derivedVillageWorldRoots": sum(w["worldIdKind"] == "derivedLayoutKey" for w in world_rows),
             "nativeScenesInSubset": len(scenes),
