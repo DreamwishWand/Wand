@@ -57,7 +57,8 @@ test('exact current independent overlay proves multiple values, not ownership',a
   const bytes=encode(o);
   await assert.rejects(verifyFactOverlay(bytes,'f'.repeat(64)),/SHA_MISMATCH/);
   const expected=createHash('sha256').update(bytes).digest('hex');
-  db.attachOverlay(await verifyFactOverlay(bytes,expected));
+  const verified=await verifyFactOverlay(bytes,expected);
+  db.attachOverlay(verified);
   assert.equal(db.getItem(40005160).facts.worlds.provenance.stream,'DB-01');
   assert.deepEqual(db.getItem(40005160).facts.dlc.value,['BaseGame','Expansion01']);
   assert.equal(db.coverage().fields.worlds.verified,1);
