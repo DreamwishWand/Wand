@@ -179,7 +179,7 @@ test('malformed removed identities and a source/path ambiguity cannot invent eff
  safe(out);
  const duplicate=make();
  duplicate.catalog.layouts.get(LAYOUT).nativeGridEntries.push({
-   gridIdNative:1,gridDataPath:GRIDPATH,defaultObjectCount:0
+   gridIdNative:0,gridDataPath:GRIDPATH,defaultObjectCount:0
  });
  const ambiguous=reconcileSavedWorldWithDb04(
   save({DiffGrids:{'850':diff({'10':object(10,40005160)})}}),duplicate);
