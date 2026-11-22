@@ -327,6 +327,8 @@ function validateDb03MissionReceipt(input:unknown):Db03MissionSlotReceipt {
 
 export interface LocalGridInstance{
   readonly localOrdinal:number;
+  /** 1-based ephemeral grouping only, not the saved/native Grid ID. */
+  readonly localGridOrdinal:number;
   readonly itemId:string;
   readonly recordKind:'full'|'diff_modified';
   readonly x:number|null;
@@ -335,7 +337,7 @@ export interface LocalGridInstance{
   readonly coordinatesObserved:boolean;
 }
 export interface GridInstancePreview{
-  readonly contract:'wand.db05.grid-instance-preview@1';
+  readonly contract:'wand.db05.grid-instance-preview@2';
   readonly status:'not_observed'|'incompatible_structure'|
     'partial_inconclusive'|'observed_no_item_refs'|'saved_object_instances';
   readonly observedFullGrids:number;
@@ -364,7 +366,7 @@ function validateGridInstancePreview(source:unknown):GridInstancePreview{
     'sourceGridIdentityVerified','effectivePlacementVerified',
     'legalPlacementVerified','stableInstanceIdentityVerified',
     'saveWritingAuthorized'
-  ])||source.contract!=='wand.db05.grid-instance-preview@1'||
+  ])||source.contract!=='wand.db05.grid-instance-preview@2'||
     !['not_observed','incompatible_structure','partial_inconclusive',
       'observed_no_item_refs','saved_object_instances'].includes(
       String(source.status))||
@@ -388,11 +390,20 @@ function validateGridInstancePreview(source:unknown):GridInstancePreview{
     source.saveWritingAuthorized!==false)
     throw new TypeError('DB05_GRID_INSTANCE_RECEIPT_INVALID');
   let missing=0;
+  let lastGrid=0;
+  let lastKind:string|null=null;
   const rows:LocalGridInstance[]=source.rows.map((value,i)=>{
     if(!object(value)||!exact(value,[
-      'localOrdinal','itemId','recordKind','x','y',
+      'localOrdinal','localGridOrdinal','itemId','recordKind','x','y',
       'orientation','coordinatesObserved'
     ])||value.localOrdinal!==i+1||
+      !nonnegative(value.localGridOrdinal,2048)||
+      value.localGridOrdinal===0||
+      Number(value.localGridOrdinal)<lastGrid||
+      Number(value.localGridOrdinal)>
+        Number(source.observedFullGrids)+Number(source.observedDiffGrids)||
+      (value.localGridOrdinal===lastGrid&&lastKind!==null&&
+       lastKind!==value.recordKind)||
       !validId(value.itemId)||
       !['full','diff_modified'].includes(String(value.recordKind))||
       (value.coordinatesObserved
@@ -404,6 +415,8 @@ function validateGridInstancePreview(source:unknown):GridInstancePreview{
           !/^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(value.orientation))))
       throw new TypeError('DB05_GRID_INSTANCE_ROW_INVALID');
     if(value.coordinatesObserved===false)missing++;
+    lastGrid=value.localGridOrdinal as number;
+    lastKind=value.recordKind as string;
     return value as unknown as LocalGridInstance;
   });
   if(missing!==source.rowsMissingCoordinates||
