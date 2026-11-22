@@ -22,6 +22,7 @@
   let objective='';
   let limit=40;
   let selectionTicket=0;
+  let detailPanel:HTMLElement|null=null;
   let activeStep=0;
   let showAllSteps=false;
   $: visibleSteps=selected?.steps?
@@ -38,7 +39,7 @@
   $: characters=catalog?[...new Set(catalog.quests.map((x:any)=>x.characterId).filter(Boolean))].sort() as string[]:[];
   // Native Mission group association, not an unlock prerequisite or chronological link.
   $: relatedQuests=catalog&&selectedRow&&typeof selectedRow.groupId==='string'&&
-    catalog.groups?.[selectedRow.groupId]
+    catalog.groups&&Object.hasOwn(catalog.groups,selectedRow.groupId)
     ?catalog.quests.filter((row:any)=>row.groupId===selectedRow.groupId&&row.id!==selectedRow.id):[];
   $: objectives=catalog?[...new Set(catalog.quests.flatMap((x:any)=>x.objectiveKinds))].sort() as string[]:[];
 
@@ -199,7 +200,7 @@
         {#if filtered.total>limit}<div class="auto-sentinel" use:autoAppend={{hasMore:()=>filtered.total>limit,load:()=>limit+=40}} role="status" aria-label="スクロールでクエストを追加表示"></div>{/if}
         {#if filtered.total===0}<p class="empty">該当するクエストはありません。</p>{/if}
       </section>
-      <section class="detail" aria-label="クエスト詳細">
+      <section class="detail" aria-label="クエスト詳細" bind:this={detailPanel}>
         {#if !selectedRow}
           <p class="placeholder">左の一覧からクエストを選択してください。</p>
         {:else}
@@ -285,6 +286,10 @@
                           if(event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
                           event.preventDefault();
                           void openQuest(linked);
+                          if(detailPanel){
+                            detailPanel.scrollTop=0;
+                            detailPanel.scrollIntoView({block:'start'});
+                          }
                         }}>{questName(linked,locale)}</a>
                     </li>
                   {/each}
