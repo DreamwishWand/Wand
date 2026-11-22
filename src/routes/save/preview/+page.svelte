@@ -19,10 +19,13 @@
   type EditTarget =
     | {kind:'inventory';inventoryId:string;itemId:string}
     | {kind:'chest';containerId:string;slotIndex:number;itemId:number};
-  type PreviewSnapshot = {
-    file:File;format:'json'|'auto';target:EditTarget;
-    expected:number;replacement:number;signature:string
-  };
+  type BatchEdit={target:EditTarget;expected:number;replacement:number};
+  type PreviewSnapshot =
+    | {mode:'single';file:File;format:'json'|'auto';target:EditTarget;
+       expected:number;replacement:number;signature:string}
+    | {mode:'batch';file:File;format:'json'|'auto';edits:BatchEdit[];
+       signature:string};
+  let queuedEdits:BatchEdit[]=[];
   let snapshot:PreviewSnapshot|null=null;
   let downloadUrl:string|null=null;
   let downloadName='';
@@ -68,17 +71,42 @@
   function identity(x:string):boolean{
     return /^[0-9]{1,20}$/.test(x)&&BigInt(x)>0n&&BigInt(x)<=BigInt('18446744073709551615');
   }
-  async function preview(){
+  function queueCurrentEdit(){
+    cancel();result=null;
+    const old=uint32(expected),next=uint32(replacement);
+    const candidate=parameters().target;
+    const valid=candidate.kind==='inventory'
+      ? identity(candidate.inventoryId)&&identity(candidate.itemId)
+      : identity(candidate.containerId)&&uint32(String(candidate.itemId))!==null&&
+        Number.isInteger(candidate.slotIndex)&&candidate.slotIndex>=0&&
+        candidate.slotIndex<=1000000;
+    if(old===null||next===null||old===next||!valid||
+       queuedEdits.length>=16||
+       queuedEdits.some(e=>JSON.stringify(e.target)===JSON.stringify(candidate))){
+      result='error';return;
+    }
+    queuedEdits=[...queuedEdits,{target:candidate,expected:old,replacement:next}];
+  }
+  function removeQueued(index:number){
+    cancel();result=null;
+    queuedEdits=queuedEdits.filter((_,i)=>i!==index);
+  }
+  function batchSignature():string{return JSON.stringify(queuedEdits);}
+
+  async function preview(batchMode:boolean=false){
     cancel();
     result=null;
     const file=fileInput?.files?.[0];
     const old=uint32(expected),next=uint32(replacement);
-    if(!file||!file.size||file.size>MAX_BYTES||old===null||next===null||
-      (kind==='inventory'
-        ? !identity(inventoryId)||!identity(itemId)
-        : !identity(containerId)||!uint32(chestItemId)||
-          !/^(?:0|[1-9][0-9]*)$/.test(slotIndex)||
-          Number(slotIndex)>1000000)){
+    if(!file||!file.size||file.size>MAX_BYTES||
+      (batchMode
+        ? queuedEdits.length===0||queuedEdits.length>16
+        : old===null||next===null||
+          (kind==='inventory'
+            ? !identity(inventoryId)||!identity(itemId)
+            : !identity(containerId)||!uint32(chestItemId)||
+              !/^(?:0|[1-9][0-9]*)$/.test(slotIndex)||
+              Number(slotIndex)>1000000))){
       result='error';
       return;
     }
@@ -106,29 +134,36 @@
         active=null;
         processing=false;
         const r=response as {kind?:string;receipt?:Record<string,unknown>};
-        if(r?.kind!=='result'||r.receipt?.contract!=='wand.db05.amount-preview@1'||
-          r.receipt?.writerAuthorized!==false||r.receipt?.exportAuthorized!==false||
-          r.receipt?.lexicalBytesPreserved!==true||
-          typeof r.receipt?.changed!=='boolean'){
-          result='error';return;
-        }
-        result=r.receipt.changed?'changed':'unchanged';
-        if(r.receipt.changed){
-          snapshot={
-            file,format:params.format,target:params.target,
-            expected:old,replacement:next,signature:params.signature
-          };
+        const good=r?.kind==='result'&&
+          r.receipt?.writerAuthorized===false&&
+          r.receipt?.exportAuthorized===false&&
+          r.receipt?.lexicalBytesPreserved===true&&
+          (batchMode
+            ? r.receipt?.contract==='wand.db05.batch-preview@1'&&
+              r.receipt.reopenVerified===true&&
+              r.receipt.changedCount===queuedEdits.length
+            : r.receipt?.contract==='wand.db05.amount-preview@1'&&
+              typeof r.receipt.changed==='boolean');
+        if(!good){result='error';return;}
+        result=batchMode||r.receipt?.changed?'changed':'unchanged';
+        if(result==='changed'){
+          snapshot=batchMode
+            ? {mode:'batch',file,format:params.format,
+               edits:queuedEdits.map(x=>({...x,target:{...x.target}})),
+               signature:batchSignature()}
+            : {mode:'single',file,format:params.format,target:params.target,
+               expected:old!,replacement:next!,signature:params.signature};
         }
       };
       worker.onmessage=event=>finish(event.data);
       worker.onerror=event=>{event.preventDefault();finish({kind:'error'});};
       worker.onmessageerror=()=>finish({kind:'error'});
-      worker.postMessage({
-        command:'preview-existing-amount',
-        format,bytes,
-        target:params.target,
-        expected:old,replacement:next
-      },[bytes.buffer]);
+      worker.postMessage(batchMode
+        ? {command:'preview-batch-amounts',format,bytes,
+           edits:queuedEdits.map(x=>({...x,target:{...x.target}}))}
+        : {command:'preview-existing-amount',format,bytes,
+           target:params.target,expected:old,replacement:next},
+        [bytes.buffer]);
       bytes=null;
     }catch{
       if(request===revision){
@@ -152,7 +187,9 @@
     }
     const current=parameters();
     if(fileInput?.files?.[0]!==snapshot.file||
-       current.signature!==snapshot.signature){
+       (snapshot.mode==='single'
+         ? current.signature!==snapshot.signature
+         : batchSignature()!==snapshot.signature)){
       snapshot=null;discardDownload();result='error';return;
     }
     if(!window.confirm(
@@ -213,13 +250,13 @@
       worker.onmessage=event=>finish(event.data);
       worker.onerror=event=>{event.preventDefault();finish({kind:'error'});};
       worker.onmessageerror=()=>finish({kind:'error'});
-      worker.postMessage({
-        command:'export-existing-amount-copy',
-        allowExperimentalCopy:true,
-        format:selected.format,
-        bytes,target:selected.target,
-        expected:selected.expected,replacement:selected.replacement
-      },[bytes.buffer]);
+      worker.postMessage(selected.mode==='batch'
+        ? {command:'export-batch-amount-copy',allowExperimentalCopy:true,
+           format:selected.format,bytes,edits:selected.edits}
+        : {command:'export-existing-amount-copy',allowExperimentalCopy:true,
+           format:selected.format,bytes,target:selected.target,
+           expected:selected.expected,replacement:selected.replacement},
+        [bytes.buffer]);
       bytes=null;
     }catch{
       if(request===revision){
@@ -264,15 +301,37 @@
     {/if}
     <label>現在の数量 <input bind:value={expected} aria-label="現在の数量" disabled={processing}/></label>
     <label>変更後の数量 <input bind:value={replacement} aria-label="変更後の数量" disabled={processing}/></label>
-    <button type="button" on:click={preview} disabled={processing}>
+    <button type="button" on:click={()=>preview(false)} disabled={processing}>
       {processing?'Rust/WASMで確認中…':'変更を検証'}
     </button>
+    <button type="button" class="secondary" on:click={queueCurrentEdit}
+      disabled={processing||queuedEdits.length>=16}>複数編集に追加</button>
     <button type="button" class="secondary" on:click={()=>{cancel();result=null;if(fileInput)fileInput.value='';}}>
       破棄
     </button>
   </section>
+  {#if queuedEdits.length}
+    <section class="batch-edits" aria-label="一括数量変更">
+      <p>一括変更 · {queuedEdits.length}件（最大16件）</p>
+      <ol>
+        {#each queuedEdits as edit,i}
+          <li>
+            {edit.target.kind==='inventory'
+              ? `Inventory ${edit.target.inventoryId} / ${edit.target.itemId}`
+              : `Chest ${edit.target.containerId} / ${edit.target.slotIndex} / ${edit.target.itemId}`}
+            ：{edit.expected} → {edit.replacement}
+            <button type="button" class="secondary" disabled={processing}
+              aria-label={`変更${i+1}を削除`} on:click={()=>removeQueued(i)}>削除</button>
+          </li>
+        {/each}
+      </ol>
+      <button type="button" on:click={()=>preview(true)} disabled={processing}>
+        {processing?'Rust/WASMで確認中…':'一括変更を検証'}
+      </button>
+    </section>
+  {/if}
   {#if result==='changed'}
-    <p role="status">Rust/WASMで数量変更の検証に成功しました。変更後の構造を内部で再検証しました。</p>
+    <p role="status">Rust/WASMで{snapshot?.mode==='batch'?snapshot.edits.length+'件の一括変更':'数量変更'}の検証に成功しました。変更後の構造を内部で再検証しました。</p>
     <div class="export-controls">
       <button type="button" disabled={processing || exportReady || snapshot===null}
         on:click={makeExperimentalCopy}>
@@ -303,6 +362,10 @@
   button{padding:12px 17px;background:#d8b9f0;color:#24182f;border:0;border-radius:8px;cursor:pointer;}
   button.secondary{background:#493858;color:#faf0ff;}
   button:disabled{opacity:.5;cursor:not-allowed;}
+  .batch-edits{display:block}
+  .batch-edits ol{margin:8px 0 16px;padding-left:24px}
+  .batch-edits li{margin:7px 0;font-size:13px}
+  .batch-edits li button{margin-left:12px;padding:5px 10px}
   .warning{font-size:12px;}
   .export-controls{display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:12px 0;}
   .download-link{display:inline-block;padding:12px 17px;border-radius:8px;background:#f5ecfa;color:#24182f;font-size:14px;text-decoration:none;font-weight:600;}
