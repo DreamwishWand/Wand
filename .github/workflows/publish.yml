@@ -36,6 +36,13 @@ jobs:
         env:
           BASE_PATH: /Wand
       - run: test -n "$(find build -type f -name '*.wasm' -print -quit)"
+      - name: Verify unified Guide and event calendar routes in Pages artifact
+        run: |
+          for page in guide guide/quests guide/characters guide/star-path guide/events guide/source; do
+            test -s "build/$page/index.html"
+          done
+          grep -q 'イベントカレンダー' build/guide/index.html
+          grep -q '期間限定イベント' build/guide/events/index.html
       - name: Verify public Quest Guide is included in Pages artifact
         run: |
           test -s build/guide/quests/index.html

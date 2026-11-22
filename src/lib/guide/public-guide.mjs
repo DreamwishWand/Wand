@@ -49,11 +49,19 @@ export function findPublicQuestByLink(index,search='') {
   if(ids.length!==1||!ID.test(ids[0]))return null;
   return index.quests.find(row=>row.id===ids[0])||null;
 }
-export function filterPublicQuests(index,{query='',locale='ja',character='',objective='',offset=0,limit=40}={}) {
+/** Native Mission prefix classification, not a runtime friendship prerequisite. */
+export function publicQuestSection(row) {
+  const prefix=typeof row?.internalName==='string'?row.internalName.split('!')[0]:'';
+  if(prefix==='Story'||prefix==='Realm')return 'story';
+  if(prefix==='Village')return 'friendship';
+  return 'other';
+}
+export function filterPublicQuests(index,{query='',locale='ja',character='',objective='',section='all',offset=0,limit=40}={}) {
   verifyPublicQuestIndex(index);
-  assert(PUBLIC_GUIDE_LOCALES.includes(locale) && typeof query==='string' && query.length<=120 && typeof character==='string' && typeof objective==='string' && Number.isInteger(offset) && offset>=0 && Number.isInteger(limit) && limit>0 && limit<=100,'invalid search');
+  assert(PUBLIC_GUIDE_LOCALES.includes(locale) && typeof query==='string' && query.length<=120 && typeof character==='string' && typeof objective==='string' && ['all','story','friendship','other'].includes(section) && Number.isInteger(offset) && offset>=0 && Number.isInteger(limit) && limit>0 && limit<=100,'invalid search');
   const words=query.normalize('NFKC').toLowerCase().trim().split(/\s+/).filter(Boolean);
   const matched=index.quests.filter(r=>{
+    if(section!=='all'&&publicQuestSection(r)!==section)return false;
     if(character && r.characterId!==character)return false;
     if(objective && !r.objectiveKinds.includes(objective))return false;
     if(!words.length)return true;

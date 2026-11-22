@@ -34,7 +34,7 @@ try {
   assert.equal(await page.locator('input[type=file]').count(), 0);
   assert.equal(downloaded.filter(value => value.endsWith('/quest-index.json')).length, 1);
   assert.equal(downloaded.filter(value => value.includes('quest-details-')).length, 0, 'lazy details must not prefetch');
-  assert.equal(await page.locator('header.site-header a[href$="/guide/quests/"]').count(), 1, 'main nav must link to public Guide');
+  assert.equal(await page.locator('header.site-header a[href$="/guide/"]').count(), 1, 'main nav must link to unified Guide hub');
 
   const search = page.getByRole('textbox', {name: 'クエスト名・IDを検索'});
   await search.fill('ドリームライトバレーへようこそ');
@@ -158,8 +158,44 @@ try {
     'duplicate deep link must not select any character');
   await invalidCharacter.close();
 
+  // Guide is the top-level user destination; calendar is client-date-driven
+  // but explicitly NOT a live API / proof of server availability.
+  const hub=await browser.newPage({viewport:{width:390,height:844}});
+  const hubErrors=[];
+  hub.on('pageerror',e=>hubErrors.push(String(e)));
+  await hub.addInitScript(()=>{Date.now=()=>Date.parse('2026-11-22T12:00:00Z');});
+  await hub.goto('http://127.0.0.1:4177/Wand/guide/',{waitUntil:'domcontentloaded'});
+  await hub.locator('.events-list .schedule-card').first().waitFor({timeout:20000});
+  assert.equal(await hub.locator('.guide-sections a').count(),3);
+  assert.match(await hub.locator('.calendar-nav').innerText(),/2026年11月/);
+  assert.equal(await hub.locator('.events-list .schedule-card').count(),3);
+  assert.match(await hub.locator('.events-list').innerText(),/Haunting Elegance/);
+  assert.match(await hub.locator('.events-list').innerText(),/Seafaring Star Path/);
+  assert.match(await hub.locator('.events-list').innerText(),/The Haunted Floating Festival/);
+  assert.match(await hub.locator('.events-list').innerText(),/終了した日程/);
+  assert.match(await hub.locator('.events-list').innerText(),/日程上のタスク期間内/);
+  assert.match(await hub.locator('.source-note').first().innerText(),/ゲームサーバーの開催状態をリアルタイム取得したものではありません/);
+  await hub.getByRole('button',{name:'前の月'}).click();
+  assert.match(await hub.locator('.calendar-nav').innerText(),/2026年10月/);
+  assert.equal(await hub.locator('.day[aria-label="2026-10-07"] .limited').count(),1);
+  assert.equal(await hub.locator('.day[aria-label="2026-10-31"] .limited').count(),1);
+  assert.equal(await hub.locator('.day[aria-label="2026-11-01"] .limited').count(),0);
+  assert.equal(await hub.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),true,
+    'mobile event calendar overflow');
+  assert.deepEqual(hubErrors,[],hubErrors.join('\\n'));
+  await hub.close();
+
+  const limited=await browser.newPage();
+  await limited.goto('http://127.0.0.1:4177/Wand/guide/events/',{waitUntil:'domcontentloaded'});
+  await limited.getByRole('heading',{name:'The Haunted Floating Festival'}).waitFor({timeout:20000});
+  assert.equal(await limited.locator('.entries article').count(),2);
+  assert.match(await limited.locator('.entries').innerText(),/Oogie Boogie/);
+  assert.match(await limited.locator('.entries').innerText(),/時刻は未確認/);
+  await limited.close();
+
   // Public Star Path is source-pinned static cache data, not a personal import.
   const star = await browser.newPage({viewport:{width:390,height:844}});
+  await star.addInitScript(()=>{Date.now=()=>Date.parse('2026-11-22T12:00:00Z');});
   const starErrors = [];
   const inactiveMediaRequests = [];
   star.on('pageerror',e=>starErrors.push(String(e)));
@@ -171,6 +207,8 @@ try {
   await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('en');
   assert.match(await star.locator('.entries li').first().innerText(),/Uproot Night Thorns/);
   await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('ja');
+  await star.getByRole('textbox',{name:'通常タスクを検索'}).fill('Task17');
+  assert.match(await star.locator('.entries li').first().innerText(),/ドナルドダックを同行者/);
   await star.getByRole('textbox',{name:'通常タスクを検索'}).fill('闇のトゲ');
   assert.match(await star.locator('.entries li').first().innerText(),/闇のトゲ/);
   await star.getByRole('textbox',{name:'通常タスクを検索'}).fill('');
@@ -181,6 +219,9 @@ try {
   await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('fr');
   assert.match(await star.locator('.entries li').first().innerText(),/Attrape des poissons/);
   await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('ja');
+  await star.getByRole('textbox',{name:'通常タスクを検索'}).fill('Task19');
+  assert.match(await star.locator('.entries li').first().innerText(),/ピーター・パン/);
+  await star.getByRole('textbox',{name:'通常タスクを検索'}).fill('');
   await star.getByRole('button',{name:'週間タスク'}).click();
   assert.equal(await star.locator('.week').count(),6);
   assert.match(await star.locator('.week').first().innerText(),/魚を20匹釣る/);
@@ -224,6 +265,14 @@ try {
   assert.deepEqual(inactiveMediaRequests,[],'inactive media release must not make requests');
   assert.deepEqual(starErrors,[],starErrors.join('\n'));
   await star.close();
+  // The archived season cannot remain actionable after its task deadline.
+  const expired=await browser.newPage();
+  await expired.addInitScript(()=>{Date.now=()=>Date.parse('2026-12-10T00:00:00Z');});
+  await expired.goto('http://127.0.0.1:4177/Wand/guide/star-path/',{waitUntil:'domcontentloaded'});
+  await expired.getByRole('status').filter({hasText:'タスク期間内と確認できるスターパスはありません'}).waitFor({timeout:20000});
+  assert.equal(await expired.getByRole('button',{name:'Seafaring Star Path'}).count(),0);
+  assert.equal(await expired.locator('.entries li').count(),0,'ended source cache is not an active task guide');
+  await expired.close();
   const tampered=await browser.newPage();
   await tampered.route('**/guide/public/starpath-cache-2026-11-22.json',async route=>{
     const original=await route.fetch(),bytes=Buffer.from(await original.body());
