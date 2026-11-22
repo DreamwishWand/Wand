@@ -64,6 +64,7 @@
 .site-shell .shell-menu a:hover,.site-shell .shell-menu button:hover{background:#6f528647}
 .site-shell .shell-menu a[aria-current=page]{background:#77589455}
 .site-shell .shell-menu .shell-unavailable{opacity:.48;cursor:default}
+.site-shell .shell-menu button:disabled{opacity:.45;cursor:not-allowed}
 .site-shell .shell-menu span.shell-menu-title{min-width:0;flex:1}
 .site-shell .shell-menu .shell-menu-state{font-size:10px;white-space:nowrap}
 .site-shell .shell-menu-divider{height:1px;background:#ffffff24;margin:5px 6px}
@@ -160,7 +161,8 @@
   .site-shell .shell-file-desktop{display:none}
   .site-shell .shell-file-mobile{display:block}
   .site-shell .header-language-button{min-width:48px}
-  .site-shell .header-context-tools{display:none}
+  /* Preserve active Guide search and World ZIP controls on small screens. */
+  .site-shell .header-context-tools .header-context-optional{display:none}
   .site-shell .site-actions .header-icon-button{width:32px;min-width:32px;height:34px}
   .site-shell .site-actions .header-language-button{min-width:48px}
   .site-shell .portal-card,.site-shell .portal-card:first-child{padding:13px}
