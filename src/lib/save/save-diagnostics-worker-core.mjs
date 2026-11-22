@@ -65,12 +65,7 @@ function sanitizeNativeP1gAudit(raw) {
   });
 }
 
-/**
- * A .profile/.dat/.bin file may contain raw UTF-8 JSON or AES/ZIP P1G.
- * Classify by the actual bytes exclusively inside the Worker, never by a
- * user-controlled filename or the page runtime. Malformed JSON stays JSON
- * (fail closed); it must not silently fall back to P1G.
- */
+/** Sniff file bytes in Worker; never fall back from malformed JSON. */
 export function detectLocalSaveFormat(bytes) {
   if(!(bytes instanceof Uint8Array) || bytes.byteLength===0)
     throw new TypeError('DB05_LOCAL_SOURCE_INVALID');
@@ -81,6 +76,13 @@ export function detectLocalSaveFormat(bytes) {
   return bytes[index]===0x7b?'json':'p1g';
 }
 
+/**
+ * @param {unknown} format
+ * @param {Uint8Array} bytes
+ * @param {((json:string,root:any)=>Promise<any>)|null} verifyNative
+ * @param {((ciphertext:Uint8Array,json:string)=>Promise<any>)|null} verifyP1g
+ * @param {(bytes:Uint8Array)=>Promise<{jsonText:string}>} decodeEncryptedProfile
+ */
 export async function inspectLocalSaveDiagnosticsBytes(format, bytes, verifyNative=null, verifyP1g=null,decodeEncryptedProfile=decodeP1gPackagedProfile) {
   if(typeof decodeEncryptedProfile!=='function')
     throw new TypeError('DB05_LOCAL_NATIVE_PROFILE_READER_REQUIRED');
