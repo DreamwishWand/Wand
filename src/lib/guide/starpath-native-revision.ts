@@ -12,8 +12,8 @@ import {verifyPublicStarpath} from './public-starpath.mjs';
 
 export const STARPATH_NATIVE_REVISION_CONTRACT='wand.db03.starpath-native-revision-evidence@1' as const;
 export const STARPATH_NATIVE_REVISION_FILE='starpath-native-revision-evidence-1.25.0-1.26.2.json' as const;
-export const STARPATH_NATIVE_REVISION_PUBLIC_SHA='c8b7c420ffb78ca8a321851def63ca8a700a1390bcfcca5fae631fa3d4a7d752' as const;
-export const STARPATH_NATIVE_REVISION_PUBLIC_BYTES=1530 as const;
+export const STARPATH_NATIVE_REVISION_PUBLIC_SHA='ef6ed2192cbdbdf5a79887183878f6cece363e0ad0416f4863763afe31692eb2' as const;
+export const STARPATH_NATIVE_REVISION_PUBLIC_BYTES=1529 as const;
 const ORIGINALS=[
   {gameVersion:'1.25.0',sourceBytes:140265,
     sourceSha256:'820d9838722e1f28b2211ebd7a24a97393c273ac09b22dfde0a9610ea5184b53',
