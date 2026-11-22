@@ -367,7 +367,7 @@ try{
   assert.equal(await page.getByRole('alert').filter({hasText:'do-not-leak'}).count(),0);
   assert.match(await page.getByRole('status').filter({hasText:'セーブの発見履歴'}).first().innerText(),/所持 2件/);
   const placedPreview=page.getByRole('region',{name:'セーブ内の家具配置参照'});
-  assert.match(await placedPreview.innerText(),/家具の保存参照\\s*3/);
+  assert.match(await placedPreview.innerText(),/家具の保存参照\s*3/);
   assert.match(await placedPreview.innerText(),/全体グリッド 2件/);
   assert.doesNotMatch(await placedPreview.innerText(),/40003256/);
   await ownershipSearch.fill('40005160');
