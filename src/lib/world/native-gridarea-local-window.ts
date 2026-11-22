@@ -103,7 +103,6 @@ export function getOriginalGridAreaLocalWindow(
      entry.footprint.layerValues.length!==sx*sy)
     throw new TypeError('DB04_GRIDAREA_LOCAL_SOURCE_INCONSISTENT');
   const layers=entry.footprint.layerValues as readonly number[];
-  const rows:readonly (readonly number[])[]=[];
   const generated:number[][]=[];
   for(let iy=y;iy<y+height;iy++){
     const row:number[]=[];
