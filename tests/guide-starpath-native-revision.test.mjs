@@ -103,7 +103,7 @@ test('public Guide displays the source-supported version comparison without orig
   const route=await readFile(new URL('../src/routes/guide/star-path/+page.svelte',import.meta.url),'utf8');
   const module=await readFile(new URL('../src/lib/guide/starpath-native-revision.ts',import.meta.url),'utf8');
   assert.match(route,/loadStarpathNativeRevisionEvidence/);
-  assert.match(route,/versionEvidence\?\.getVerifiedSeasonRevision\(season\.id\)/);
+  assert.match(route,/nativeRevisionEvidence\?\.getVerifiedSeasonRevision\(season\.id\)/);
   assert.match(route,/報酬.*枠.*同一/);
   assert.doesNotMatch(module,/localStorage|sessionStorage|Cache\/liveops\/battlepasses.dat|FileReader/);
 });
