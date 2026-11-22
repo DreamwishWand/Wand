@@ -434,7 +434,10 @@ mod browser_profile_reader {
 #[cfg(feature="wasm")]
 mod browser_amount_preview {
     use super::*;
-    use ddv_save_patch::{preview_existing_quantity,preview_existing_quantity_batch,QuantityEdit,QuantityTarget};
+    use ddv_save_patch::{
+        preview_existing_quantity,preview_existing_quantity_batch,
+        preview_existing_grid_coordinates,QuantityEdit,QuantityTarget
+    };
     use wasm_bindgen::prelude::*;
 
     const MAX_WORKER_CIPHERTEXT:usize=32*1024*1024;
@@ -507,6 +510,55 @@ mod browser_amount_preview {
             out.push(QuantityEdit{target,expected:old,replacement:next});
         }
         Ok(out)
+    }
+
+    struct GridCoordinatePlan {
+        ordinal:usize,
+        item_id:u64,
+        kind:String,
+        expected:(i32,i32),
+        replacement:(i32,i32)
+    }
+    fn parse_grid_coordinate_plan(plan:&str)->Result<GridCoordinatePlan,JsValue>{
+        if plan.len()>512 || plan.is_empty(){
+            return Err(fail("DB05_GRID_EDIT_PLAN_INVALID"));
+        }
+        let raw:serde_json::Value=serde_json::from_str(plan)
+            .map_err(|_|fail("DB05_GRID_EDIT_PLAN_INVALID"))?;
+        let obj=raw.as_object().ok_or(fail("DB05_GRID_EDIT_PLAN_INVALID"))?;
+        if obj.len()!=7 || ![
+            "localOrdinal","itemId","recordKind","expectedX","expectedY",
+            "replacementX","replacementY"
+        ].iter().all(|k|obj.contains_key(*k)){
+            return Err(fail("DB05_GRID_EDIT_PLAN_INVALID"));
+        }
+        let ord=obj["localOrdinal"].as_u64()
+            .filter(|v|*v>0&&*v<=20000)
+            .ok_or(fail("DB05_GRID_EDIT_PLAN_INVALID"))? as usize;
+        let str_id=obj["itemId"].as_str()
+            .ok_or(fail("DB05_GRID_EDIT_PLAN_INVALID"))?;
+        if str_id.is_empty()||str_id.len()>16||str_id.starts_with('0')||
+           !str_id.bytes().all(|b|b.is_ascii_digit()){
+            return Err(fail("DB05_GRID_EDIT_PLAN_INVALID"));
+        }
+        let item=str_id.parse::<u64>()
+            .ok().filter(|v|*v>0&&*v<=9_007_199_254_740_991)
+            .ok_or(fail("DB05_GRID_EDIT_PLAN_INVALID"))?;
+        let kind=obj["recordKind"].as_str()
+            .filter(|k|matches!(*k,"full"|"diff_modified"))
+            .ok_or(fail("DB05_GRID_EDIT_PLAN_INVALID"))?.to_owned();
+        let int=|key:&str|->Result<i32,JsValue>{
+            i32::try_from(obj[key].as_i64().ok_or(
+                fail("DB05_GRID_EDIT_PLAN_INVALID")
+            )?).map_err(|_|fail("DB05_GRID_EDIT_PLAN_INVALID"))
+        };
+        let expected=(int("expectedX")?,int("expectedY")?);
+        let replacement=(int("replacementX")?,int("replacementY")?);
+        if expected==replacement{
+            return Err(fail("DB05_GRID_EDIT_NO_CHANGE"));
+        }
+        Ok(GridCoordinatePlan{ordinal:ord,item_id:item,kind,
+            expected,replacement})
     }
 
     const MAX_DB04_WITNESS_BYTES:usize=16*1024*1024;
@@ -1050,6 +1102,43 @@ mod browser_amount_preview {
             };
             slot_index_json(source).map_err(|_|fail("DB05_SLOT_INDEX_INVALID"))
         }
+        /// Preview only: the same strict JSON patch/repack/reopen as the
+        /// explicit copy path. WASM remains the owner of the candidate bytes.
+        pub fn preview_grid_coordinates(&mut self,plan:&str)->Result<String,JsValue>{
+            self.prepare_grid_coordinate_copy(plan)?;
+            Ok(r#"{"contract":"wand.db05.grid-coordinate-preview@1","changed":true,
+              "lexicalBytesPreserved":true,"reopenVerified":true,
+              "writerAuthorized":false,"exportAuthorized":false}"#.to_owned())
+        }
+        /// Explicit local COPY preparation. The UI supplies only an ephemeral
+        /// ordinal and original Item ID/X/Y; real grid/object IDs never leave
+        /// Rust, and stale/ambiguous selections are rejected.
+        pub fn prepare_grid_coordinate_copy(&mut self,plan:&str)->Result<u32,JsValue>{
+            if !self.ready||self.closed||self.copy_prepared{
+                return Err(fail("DB05_GRID_EDIT_SESSION_INVALID"));
+            }
+            let p=parse_grid_coordinate_plan(plan)?;
+            let original=match self.kind{
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref()
+                    .ok_or(fail("DB05_GRID_EDIT_SESSION_INVALID"))?
+                    .profile.as_slice()
+            };
+            let target=grid_instance_preview::resolve_grid_coordinate_target(
+                original,p.ordinal,p.item_id,p.expected,&p.kind
+            ).map_err(|_|fail("DB05_GRID_EDIT_STALE_OR_AMBIGUOUS"))?;
+            let json=std::str::from_utf8(original)
+                .map_err(|_|fail("DB05_GRID_EDIT_INVALID_UTF8"))?;
+            let draft=preview_existing_grid_coordinates(
+                json,target,p.expected,p.replacement
+            ).map_err(|_|fail("DB05_GRID_EDIT_STALE_OR_INVALID"))?;
+            if !draft.changed||!draft.untouched_bytes_preserved||
+               draft.writer_authorized||draft.export_authorized{
+                return Err(fail("DB05_GRID_EDIT_NOOP_OR_UNAUTHORIZED"));
+            }
+            self.prepare_copy_from_patched(draft.patched_json,true)
+        }
+
         pub fn preview_inventory(
             &mut self,inventory_id:&str,item_id:&str,expected:u32,replacement:u32
         )->Result<String,JsValue>{
