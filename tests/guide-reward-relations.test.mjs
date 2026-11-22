@@ -195,7 +195,8 @@ test('mutated source rows are rejected, and public loader requires exact pinned 
   assert.throws(()=>createGuideRewardIndex(edit),/INVALID_PRICE/);
   edit.seasons[1].rewardPages[0].rewards[0].price=100;
   edit.seasons[1].rewardPages[0].rewards[0].itemId='__proto__';
-  assert.throws(()=>createGuideRewardIndex(edit),/INVALID_ITEM_ID/);
+  assert.throws(()=>createGuideRewardIndex(edit),/(?:Public Star Path: reward|INVALID_ITEM_ID)/,
+    'the pinned original Star Path validator may reject an invalid ID first');
   const reduced=await read();
   reduced.seasons[0].rewardPages[0].rewards.pop();
   assert.throws(()=>createGuideRewardIndex(reduced),/SOURCE_REWARD_CENSUS/);
