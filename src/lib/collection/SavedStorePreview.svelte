@@ -2,7 +2,7 @@
   import { onDestroy, createEventDispatcher } from 'svelte';
   import ItemArtwork from './ItemArtwork.svelte';
   import {autoAppend} from '$lib/ui/auto-append';
-  import {localSaveSession,selectLocalSaveFile,needsCollectionRead,updateCollectionRead} from '$lib/ui/local-save-session';
+  import {localSaveSession,selectLocalSaveFile,needsCollectionRead,updateCollectionRead,isCurrentLocalSaveSelection} from '$lib/ui/local-save-session';
   import { attachHistoricalStoreLabels } from './saved-store-preview.mjs';
   import { attachDb01PrivateNames } from './private-db01-names-view.mjs';
   import { sanitizeSavedCollectionPresence } from './saved-collection-presence.mjs';
@@ -63,6 +63,15 @@
   let activeWorker: Worker|null = null;
   let requestSequence = 0;
   let seenGlobalSaveRevision=0;
+  let readStarted=false;
+  function endActiveRead():void{
+    if(!readStarted)return;
+    readStarted=false;
+    dispatch('saveReadFinished');
+  }
+  function selectedReadIsCurrent(revision:number,file:File):boolean{
+    return revision===0||isCurrentLocalSaveSelection(revision,file);
+  }
 
   function stopWorker() {
     requestSequence++;
@@ -138,7 +147,7 @@
     limit = 48;
     if (fileInput) fileInput.value = '';
     if (exactNameInput) exactNameInput.value = '';
-    dispatch('saveReadFinished');
+    endActiveRead();
   }
 
   function failedRead() {
@@ -171,11 +180,12 @@
   }
 
   async function readLocalSave(file:File,sessionRevision:number):Promise<void>{
-    if(collectionCommitBusy)return;
+    if(collectionCommitBusy||!selectedReadIsCurrent(sessionRevision,file))return;
     // Cancels any earlier Worker and invalidates its asynchronous replies.
     clear();
     busy = true;
     if(sessionRevision>0)updateCollectionRead(sessionRevision,'reading');
+    readStarted=true;
     dispatch('saveReadStarted');
     const request = requestSequence;
     let saveBytes:Uint8Array|null = null;
@@ -184,12 +194,12 @@
       if (file.size < 1 || file.size > 128*1024*1024)
         throw new TypeError('PROFILE_SIZE_LIMIT');
       saveBytes = new Uint8Array(await file.arrayBuffer());
-      if (request !== requestSequence) return; // dismissed during file read
+      if (request !== requestSequence||!selectedReadIsCurrent(sessionRevision,file)) return; // dismissed or replaced during file read
       worker = new Worker(new URL('./saved-store.worker.ts', import.meta.url),{type:'module'});
       activeWorker = worker;
       const w = worker;
       const finish = (result:any) => {
-        if (activeWorker !== w || request !== requestSequence) return;
+        if (activeWorker !== w || request !== requestSequence||!selectedReadIsCurrent(sessionRevision,file)) return;
         w.terminate();
         activeWorker = null;
         busy = false;
@@ -219,7 +229,7 @@
         } catch { failedRead(); }
         finally {
           if(sessionRevision>0)updateCollectionRead(sessionRevision,valid?'parsed':'invalid');
-          dispatch('saveReadFinished');
+          endActiveRead();
         }
       };
       w.onmessage = event => finish(event.data);
@@ -236,7 +246,7 @@
         busy = false;
         failedRead();
         if(sessionRevision>0)updateCollectionRead(sessionRevision,'invalid');
-        dispatch('saveReadFinished');
+        endActiveRead();
       }
     } finally {
       if (saveBytes && saveBytes.byteLength) saveBytes.fill(0);
