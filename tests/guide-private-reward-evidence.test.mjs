@@ -107,7 +107,8 @@ test('typed private source graph indexes 202 event + 400 quest + 16 default-frie
   assert(view.candidates.every(x=>x.guaranteedGrant===false&&
     x.currentAvailabilityVerified===false&&x.playerOwnershipVerified===false&&
     x.characterSpecificVerified===false));
-  assert.equal(view.candidates[0].relationId,'event/0');
+  assert.equal(view.candidates[0].relationId,'event/12',
+    'six expansion tag and six expansion scene references are not item rewards');
   assert(Object.isFrozen(view.candidates));
   assert(Object.isFrozen(view.getItemCandidates('80100000')));
   assert.equal(view.getItemCandidates(80100000).length,618);
