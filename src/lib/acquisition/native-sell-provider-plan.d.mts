@@ -9,6 +9,25 @@ export interface NativeSellPriceProviderStage {
   readonly condition:string;
   readonly returnRule:'first_success';
 }
+/** Original serialized Steam 1.26.2 protoDb.bin only; never a live sell quote. */
+export interface NativeSerializedProviderSourceEvidence {
+  readonly originalProtoDbSha256:string;
+  readonly originalSourceGameVersion:'Steam 1.26.2';
+  readonly staticProviderDefinitions:10;
+  readonly dynamicProviderDefinitions:1;
+  readonly serializedItemPriceRowCount:9537;
+  readonly distinctSourceItemIds:9537;
+  readonly sourceCrossProviderItemIdCollisions:0;
+  readonly sourceSellItemCurrencyRecords:1192;
+  readonly sourceCrossProviderSellCurrencyKeyCollisions:0;
+  readonly sourceSellAmountsWithField:718;
+  readonly sourceSellAmountsWithoutField:474;
+  readonly sourceProviderPrecedenceCanChangeOriginalSerializedRowOwner:false;
+  readonly nativeRuntimeProviderRegistrationOrderVerified:false;
+  readonly nativeRuntimeRegisteredProviderSetVerified:false;
+  readonly nativeRuntimeCacheUnchangedVerified:false;
+  readonly observedEffectiveSellPrices:false;
+}
 export interface NativeSellPriceProviderPlan {
   readonly contract:typeof DB02_NATIVE_SELL_PROVIDER_PLAN_CONTRACT;
   readonly itemId:number;
@@ -20,6 +39,7 @@ export interface NativeSellPriceProviderPlan {
   readonly priceProviderStages:readonly NativeSellPriceProviderStage[];
   readonly knownIItemPriceDatabaseNativeTypes:readonly ['ItemPriceDatabase','DynamicItemPriceDatase'];
   readonly registeredDatabaseIterationOrderVerified:false;
+  readonly serializedSteam1262ProviderSourceEvidence:NativeSerializedProviderSourceEvidence;
   readonly runtimeDynamicCacheState:null;
   readonly nativeTrySellPriceFailureOutput:0;
   readonly nativeTrySellPriceFailureReturnsFalse:true;
