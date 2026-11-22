@@ -143,6 +143,6 @@ test('Guide uses the source-pinned local Condition->Condition graph; never downl
   assert.match(route,/loadPinnedCommonConditionGraph\(selection\.get\(indexName\)!\)/);
   assert.match(route,/conditionCommonGraph!\.getIndirectMissionMentions\(id,conditionRelations!\)/);
   assert.match(route,/conditionCommonGraph!\.getReachable\(id\)/);
-  assert.match(route,/sourceLeafInversionDecoded/);
+  assert.match(route,/CommonConditionsの反転値はこの原本索引では未抽出/);
   assert.doesNotMatch(moduleText,/\bfetch\s*\(|XMLHttpRequest|localStorage|sessionStorage|FormData|postMessage/);
 });
