@@ -134,9 +134,10 @@ test('private event/quest and 2026 public Star Path retain separate source versi
 
 test('source type drift, forged event references and non-character defaults fail structural checks',()=>{
   const f=fixtures();
-  f.eventLinks.links[0].source.sha256='0'.repeat(64);
+  const candidate=f.eventLinks.links.find(x=>x.relationKind==='static_festival_reward_candidate');
+  candidate.source.sha256='0'.repeat(64);
   assert.throws(()=>createStructuralPrivateRewardIndex(f),/EVENT_REWARD_PROVENANCE/);
-  f.eventLinks.links[0].source.sha256=PROTO;
+  candidate.source.sha256=PROTO;
   f.questFlows.links.pop();
   assert.throws(()=>createStructuralPrivateRewardIndex(f),/QUEST_SOURCE_CONTRACT/);
   const g=fixtures();
