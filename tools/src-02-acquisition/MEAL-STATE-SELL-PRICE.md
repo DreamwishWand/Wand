@@ -3,6 +3,75 @@
 **Scope:** Cooking and meal instance state only. This is **not** the separate
 static stall/shop purchase-price evidence from `SHOP-PRICE-OVERLAP.md`.
 
+## Original static vs dynamic serialized sell-provider behavior (Steam/Switch 1.26.2)
+
+**Original native method bodies independently inspected on both platforms:**
+
+| Native provider / condition | Boolean returned | Out-price int32 | Meaning |
+|---|---|---|---|
+| `ItemPriceDatabase.TryGetSellPrice`, matching Item ID and matching `SellPrices` currency | `true` | `CurrencyCost.Amount` | **Successful result from this provider**, not proof this provider is registered or used for the cooking item |
+| Static provider, no ItemPrices row or matching SellPrices currency | `false` | `1` | Provider **failure**, not an actual sell price |
+| `DynamicItemPriceDatase.TryGetSellPrice`, `CachedData=null` | `false` | `0` | No cache object; provider **failure** |
+| Dynamic provider with non-null cached database, no matching row or currency | `false` | `1` | Provider **failure**, not an actual sell price |
+| Dynamic provider with non-null cached database and matching SellPrices currency | `true` | `CurrencyCost.Amount` | Conditional source/provider success, runtime selection still unknown |
+
+These are not the top-level `ItemPriceDatabases.TryGetSellPrice` results.
+That top-level method **checks a provider's returned boolean** and does
+not equate a failure's `out=1` or `out=0` with a successful sell quote.
+The serialized `ItemPrices.Prices` purchase field does not satisfy the
+`SellPrices` currency lookup. In the protobuf `CurrencyCost`,
+`Amount` is an int32 with implicit default **0** when its wire field
+is absent; this is distinguishable from a failed provider returning
+`out=0`.
+
+**The native `DynamicItemPriceDatase.DataCached` property** uses
+`CachedData != null && CachedData.ItemPrices.Count > 0` on both
+platforms. The SHA-authenticated original Steam v1.26.2 `protoDb.bin`
+snapshot has **8,549** serialized cached item-price rows; therefore
+that **original serialized snapshot** satisfies `DataCached=true`.
+It is **not** proof the live game uses that instance unchanged,
+that it contains sell prices for a particular ingredient, or that the
+uncached formula route was bypassed at execution time. The previously
+verified **371** unique fixed recipe ingredients have **zero** matches
+in the original serialized dynamic cached purchase or sell rows.
+
+**Implementation added:** pure
+`native-serialized-sell-provider.mjs` and `.d.mts` with
+`simulateNativeSerializedSellProvider` and
+`classifyNativeSerializedDynamicCache`. The simulation only takes a
+**caller-supplied** ItemPrices row and can conditionally derive which
+boolean and out parameter that provider would return. It never
+pretends the static/dynamic provider is registered or selected by the
+runtime; `actualSellPrice:null` and `publishable:false`
+are permanent boundaries. Native cache source metadata is similarly
+clearly separated from live mutable cache state.
+
+The authenticated local-only
+`loadPrivateMealPricingView(...).inspect()` now additionally exposes
+`sourceIngredientStaticProviderSimulations`. The view itself exposes
+`getSourceStaticSellProviderSimulations(itemId)` and
+`sourceNativeDynamicCacheGate`. For the original Steam
+source-corrected 625 cooking recipes / 618 meal result Items /
+371 distinct fixed ingredient Items, **211** ingredients have a
+matching *configured* static soft-currency sell-cost and hence a
+conditional static-provider success; the other **160** cannot
+be assigned a live price from these definitions. **These 211
+conditional results are NOT 211 observed runtime selling prices.**
+
+The strict full-original audit now validates 11 qualified native
+method RVAs per platform plus **27 Steam and 24 Switch exact executable
+code windows (51 total)**. Newly added SHA-256 pinned regions cover
+both serialized providers' ItemPrices/currency lookup, missing/default
+out values, and the DynamicItemPriceDatase DataCached positive-count
+gate. Synthetic unit tests and the all-recipe original-private
+smoke guard against treating a failure out argument or a
+source-configured amount as an effective sale value.
+
+**Remaining:** actual runtime registration order and selection of
+the static/dynamic/other price providers; their live cache/uncached
+formula branch; and the specific recipe-based star eligibility.
+Without that, no full native cooked-meal selling price is established.
+
 ## Native TryGetSellPrice provider precedence — Steam + Switch 1.26.2
 
 The **complete original Steam and Switch executable bodies** of
