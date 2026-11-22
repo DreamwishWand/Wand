@@ -322,6 +322,9 @@ try{
         '0':{ID:0,CompatibleItemType:'Furniture',Inventory:{
           '40005160':{Amount:2,Marker:'Favorite'},
           '40006110':{Amount:0,Marker:'Hidden'}
+        }},
+        '4':{ID:4,CompatibleItemType:'Trimming',Inventory:{
+          '160000165':{Amount:1,Marker:'Favorite'}
         }}
       },
       CollectionSets:[{GroupData:[
@@ -347,10 +350,13 @@ try{
   assert.equal(stateAfter['40005160'].favorite,true);
   assert.equal(stateAfter['40006110'].discovered,false);
   assert.equal(stateAfter['40006110'].status,undefined); // zero is not proof of missing
+  // Steam 1.26.2 DB-00 calls native Trimming "Wallpaper & Flooring".
+  // Verify actual catalog ItemID 160000165 is imported despite that alias.
+  assert.equal(stateAfter['160000165'].status,'owned');
   assert.equal(stateAfter['40003256'],undefined);
   assert.equal(stateAfter['99999999'].discovered,true);
   assert.equal(await page.getByRole('alert').filter({hasText:'do-not-leak'}).count(),0);
-  assert.match(await page.getByRole('status').filter({hasText:'セーブの発見履歴'}).first().innerText(),/所持 1件/);
+  assert.match(await page.getByRole('status').filter({hasText:'セーブの発見履歴'}).first().innerText(),/所持 2件/);
 
   await context.close();
   console.log('Collection browser WASM/IndexedDB/migration/search/paging smoke passed');
