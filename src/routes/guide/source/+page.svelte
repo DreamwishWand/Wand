@@ -9,6 +9,8 @@
   import {importCurrentGuideConditions, currentConditionMentionsForQuest, withVerifiedConditionStepDetails} from '$lib/guide/current-conditions.mjs';
   import {createStructuralGuideConditionRelations,type GuideConditionRelationIndex} from '$lib/guide/condition-relations.ts';
   import {createQuestConditionCrossrefs} from '$lib/guide/quest-condition-crossrefs.ts';
+  import {loadPinnedCommonConditionGraph,type NativeCommonConditionGraph}
+    from '$lib/guide/condition-common-links.ts';
   import {guideVerifiedStaticComposite} from '$lib/guide/source-composite.mjs';
   import {loadVerifiedLocalGuideRewards} from '$lib/guide/local-reward-files';
   import type {CurrentCompatibleRewardReader} from '$lib/guide/reward-source-equivalence';
@@ -41,6 +43,7 @@
   let conditionEpoch = 0;
   let conditionRegistry: any = null;
   let conditionRelations: GuideConditionRelationIndex|null = null;
+  let conditionCommonGraph: NativeCommonConditionGraph|null = null;
   let conditionError = '';
   let loadingConditions = false;
   let rewardEpoch = 0;
@@ -70,6 +73,14 @@
     ? localRewards.getQuestCandidates(selectedId) : [];
   $: questConditionCrossrefs = selectedDetail && searchIndex && conditionRelations
     ? createQuestConditionCrossrefs(selectedDetail,searchIndex,conditionRelations) : null;
+  $: indirectConditionMentions = questConditionCrossrefs && conditionCommonGraph && conditionRelations
+    ? new Map([...new Set(questConditionCrossrefs.pointers.map(pointer=>pointer.conditionId))]
+      .map(id=>[id,conditionCommonGraph!.getIndirectMissionMentions(id,conditionRelations!)]))
+    : new Map();
+  $: nestedConditionPaths = questConditionCrossrefs && conditionCommonGraph
+    ? new Map([...new Set(questConditionCrossrefs.pointers.map(pointer=>pointer.conditionId))]
+      .map(id=>[id,conditionCommonGraph!.getReachable(id)]))
+    : new Map();
   $: detailSteps = selectedDetail ? detailStepRows(selectedDetail, locale) : [];
   $: conditionDisplayRows = selectedDetail && selectedId && conditionRegistry
     ? withVerifiedConditionStepDetails(selectedDetail, detailSteps, currentConditionMentions.rows, selectedId)
@@ -113,6 +124,7 @@
     conditionEpoch++;
     conditionRegistry = null;
     conditionRelations = null;
+    conditionCommonGraph = null;
     conditionError = '';
     loadingConditions = false;
     rewardEpoch++;
@@ -148,12 +160,15 @@
             result.currentConditionFiles.manifestFile,
             bridge)
         : null;
+      const commonGraph = current?.formatVersion===2&&result.currentConditionFiles
+        ? await loadPinnedCommonConditionGraph(result.currentConditionFiles.indexFile) : null;
       if (request !== loadEpoch) return;
       searchIndex = result.index;
       shardFiles = result.shardFiles;
       characterNames = result.characterNames;
       groupInfo = result.groupInfo;
       conditionRelations = current?.formatVersion===2 ? createStructuralGuideConditionRelations(current) : null;
+      conditionCommonGraph = commonGraph;
       conditionRegistry = current;
       info = `${searchIndex.target.platform} ${searchIndex.target.gameVersion}：検索索引と詳細ファイル ${result.matchedShards}/${result.requiredShards} 個とキャラクター名 ${Object.keys(result.characterNames).length} 件、原本クエストグループ ${Object.keys(result.groupInfo).length} 件を接続しました。${current ? ' Steam '+current.targetVersion+'のCondition '+current.count.toLocaleString()+'件（ミッション参照 '+(typeof current.missionReferenceCount === 'number' ? current.missionReferenceCount.toLocaleString() : '未提供')+'件）も原本SHA-256検証後に自動接続しました。' : ''}データは送信せず、詳細は選択時だけ読み込みます。`;
     } catch (error) {
@@ -187,6 +202,7 @@
     const activeIndex = searchIndex;
     conditionRegistry = null;
     conditionRelations = null;
+    conditionCommonGraph = null;
     conditionError = '';
     if (!sourceBridge) {
       conditionError = '原本SHA-256を確認したSteam 1.26.1のGuide検索索引が必要です。';
@@ -210,7 +226,10 @@
         selection.get(manifestName)!,
         sourceBridge
       );
+      const commonGraph=result.formatVersion===2
+        ? await loadPinnedCommonConditionGraph(selection.get(indexName)!) : null;
       if (request === conditionEpoch && activeIndex === searchIndex) {
+        conditionCommonGraph=commonGraph;
         conditionRelations = result.formatVersion===2 ? createStructuralGuideConditionRelations(result) : null;
         conditionRegistry = result;
       }
@@ -362,7 +381,7 @@
         {#if loadingConditions}<p role="status">Condition全件と原本のハッシュを検証しています…</p>{/if}
         {#if conditionError}<p class="guide-error" role="alert">{conditionError}</p>{/if}
         {#if conditionRegistry}
-          <p class="guide-condition-loaded" role="status">Steam {conditionRegistry.targetVersion}（Condition v{conditionRegistry.formatVersion}）：{conditionRegistry.count.toLocaleString()}件の定義と{conditionRegistry.missionReferenceCount.toLocaleString()}件のミッション参照を検証しました。クエスト一覧は{searchIndex.target.gameVersion}のままです。</p>
+          <p class="guide-condition-loaded" role="status">Steam {conditionRegistry.targetVersion}（Condition v{conditionRegistry.formatVersion}）：{conditionRegistry.count.toLocaleString()}件の定義と{conditionRegistry.missionReferenceCount.toLocaleString()}件のミッション参照を検証しました。{#if conditionCommonGraph}Condition間の参照{conditionCommonGraph.coverage.commonConditionPointers}件も原本SHA-256で検証しました。{/if}クエスト一覧は{searchIndex.target.gameVersion}のままです。</p>
         {/if}
       </section>
       <section class="guide-condition-import" aria-label="Owner-local reward candidate sources">
@@ -594,7 +613,31 @@
                           {/if}
                         </details>
                       {:else}
-                        <small>このCondition IDに対応するMission参照は検出されていません。Condition定義自体が存在しないことを意味しません。</small>
+                        <small>このCondition IDに対応する直接Mission参照は検出されていません。Condition定義自体が存在しないことを意味しません。</small>
+                      {/if}
+                      {#if (nestedConditionPaths.get(pointer.conditionId)?.length ?? 0)>0}
+                        <details class="guide-source-tree">
+                          <summary>さらに参照するCondition（{nestedConditionPaths.get(pointer.conditionId)?.length ?? 0}経路）・間接Mission参照（{indirectConditionMentions.get(pointer.conditionId)?.length ?? 0}件）</summary>
+                          <p>複数のConditionを経由した静的参照です。原本のAND/OR/NOTを保持します。参照先の条件成立や必須の前提クエストではありません。CommonConditionsの反転値はこの原本索引では未抽出です。</p>
+                          <ul class="guide-condition-mention-list">
+                            {#each (nestedConditionPaths.get(pointer.conditionId)??[]).slice(0,16) as chain (chain.via.map(edge=>edge.sourcePath).join('/'))}
+                              <li>Condition {chain.conditionId} · {chain.via.map(edge=>edge.booleanPath.join('→')).join(' / ')}</li>
+                            {/each}
+                          </ul>
+                          {#if (nestedConditionPaths.get(pointer.conditionId)?.length??0)>16}
+                            <small>その他{(nestedConditionPaths.get(pointer.conditionId)?.length??0)-16}経路は省略しています。</small>
+                          {/if}
+                          {#if (indirectConditionMentions.get(pointer.conditionId)?.length??0)>0}
+                            <ul class="guide-condition-mention-list">
+                              {#each (indirectConditionMentions.get(pointer.conditionId)??[]).slice(0,12) as row (row.sourceConditionId+'|'+row.mention.missionId+'|'+row.mention.sourcePath+'|'+row.via.map(edge=>edge.sourcePath).join('/'))}
+                                <li>Mission {row.mention.missionId} · {row.mention.kind}（Condition {row.sourceConditionId}経由）</li>
+                              {/each}
+                            </ul>
+                            {#if (indirectConditionMentions.get(pointer.conditionId)?.length??0)>12}
+                              <small>その他{(indirectConditionMentions.get(pointer.conditionId)?.length??0)-12}件のMission参照は省略しています。</small>
+                            {/if}
+                          {/if}
+                        </details>
                       {/if}
                     </li>
                   {/each}
