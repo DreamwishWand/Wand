@@ -3,8 +3,8 @@
  *
  * Unlike the full SRC-02 archive view, this consumer works on GitHub Pages
  * without selecting any owner-private file. It composes existing DB-00,
- * DB-03 Star Path, DB-03 Quest rewards and DB-02 published online-name
- * readers. Parsing, source hash validation and origin semantics remain owned
+ * DB-03 Star Path, DB-03 Quest rewards, DB-03 Event/default Friendship
+ * rewards and DB-02 published online-name readers. Parsing, source hash validation and origin semantics remain owned
  * by their existing modules.
  *
  * Online name equality and community-reported Premium Shop appearances are
@@ -13,6 +13,9 @@
 import {loadCurrentGameDatabase} from '../game-db/client.ts';
 import {loadPinnedPublicQuestAcquisition,
   type PublicQuestAcquisitionIndex} from '../guide/public-quest-acquisition.ts';
+import {loadPinnedPublicEventFriendshipAcquisition,
+  type PublicEventFriendshipAcquisitionIndex
+} from '../guide/public-event-friendship-acquisition.ts';
 import {loadUnifiedAcquisitionOriginDatabase,
   type OriginDatabase,type ItemOrigin,type OfficialCampaign} from './origins.ts';
 import {joinDb02OriginsWithDb00,
@@ -32,7 +35,9 @@ export interface PublicSourceCatalogCoverage {
   readonly allSourceLinkedItemIds:number;
   readonly starPathSourceRoutes:67;
   readonly questSourceRoutes:395;
-  readonly combinedSourceRoutes:462;
+  readonly nativeEventSourceRoutes:202;
+  readonly defaultFriendshipSourceRoutes:16;
+  readonly combinedSourceRoutes:680;
   readonly publicNameOnlyCandidateRelations:number;
   readonly distinctNameOnlyCandidateItemIds:number;
   readonly verifiedOnlineNameAcquisitionLinks:0;
@@ -47,11 +52,12 @@ export type PublicSourceItemLookup=ReturnType<Db00OriginJoin['lookup']>&{
 export interface PublicSourceCatalog{
   readonly schema:typeof DB02_PUBLIC_SOURCE_CATALOG_SCHEMA;
   readonly gameVersion:'1.26.2';
-  readonly source:'sha_pinned_public_db00_starpath_quest_and_official_records';
+  readonly source:'sha_pinned_public_db00_starpath_quest_event_friendship_and_official_records';
   readonly origins:OriginDatabase;
   readonly db00:Db00OriginJoin;
   readonly nameCandidates:PublicOnlineNameCandidateIndex;
   readonly questSource:PublicQuestAcquisitionIndex;
+  readonly eventFriendshipSource:PublicEventFriendshipAcquisitionIndex;
   readonly coverage:PublicSourceCatalogCoverage;
   lookup(itemId:string|number):PublicSourceItemLookup;
   getSourceOrigin(originId:string):readonly ItemOrigin[];
@@ -71,9 +77,10 @@ export async function loadPublicSourceCatalog(
 ):Promise<PublicSourceCatalog>{
   ensure(typeof basePath==='string'&&(basePath===''||BASE.test(basePath)),
     'INVALID_BASE_PATH');
-  const [rawDb00,questSource]=await Promise.all([
+  const [rawDb00,questSource,eventFriendshipSource]=await Promise.all([
     loadCurrentGameDatabase(basePath,fetcher),
-    loadPinnedPublicQuestAcquisition(basePath,fetcher)
+    loadPinnedPublicQuestAcquisition(basePath,fetcher),
+    loadPinnedPublicEventFriendshipAcquisition(basePath,fetcher)
   ]);
   ensure(rawDb00.kind==='db_snapshot'&&rawDb00.items.length===13202,
     'CURRENT_DB00_REQUIRED');
@@ -81,7 +88,7 @@ export async function loadPublicSourceCatalog(
   // DB-02 join additionally validates exact release/version/source identity.
   const db00Snapshot=rawDb00 as Db00PublishedSnapshot;
   const origins=await loadUnifiedAcquisitionOriginDatabase(
-    fetcher,null,basePath,[],null,questSource
+    fetcher,null,basePath,[],null,questSource,eventFriendshipSource
   );
   const db00=joinDb02OriginsWithDb00(db00Snapshot,origins);
   const nameCandidates=indexPublicOnlineNameCandidates(
@@ -90,8 +97,14 @@ export async function loadPublicSourceCatalog(
   const originCoverage=origins.getCoverage();
   const joined=db00.getCoverage();
   ensure(questSource.coverage.totalItemOriginCandidates===395&&
-    originCoverage.linkedRoutes===462&&
-    originCoverage.linkedRoutes-questSource.origins.length===67&&
+    eventFriendshipSource.coverage.eventRewardCandidates===202&&
+    eventFriendshipSource.coverage.friendshipDefaultCandidates===16&&
+    eventFriendshipSource.coverage.totalCandidates===218&&
+    eventFriendshipSource.coverage.liveEventAvailabilityVerified===false&&
+    eventFriendshipSource.coverage.guaranteedGrantsVerified===false&&
+    originCoverage.linkedRoutes===680&&
+    originCoverage.routesBySourceKind.verified_game_native===613&&
+    originCoverage.routesBySourceKind.verified_liveops_cache===67&&
     joined.db00Items===13202&&
     joined.sourceLinkedItemIds===originCoverage.linkedItemIds&&
     nameCandidates.coverage.verifiedOnlineAcquisitionLinks===0,
@@ -103,7 +116,9 @@ export async function loadPublicSourceCatalog(
     allSourceLinkedItemIds:originCoverage.linkedItemIds,
     starPathSourceRoutes:67 as const,
     questSourceRoutes:395 as const,
-    combinedSourceRoutes:462 as const,
+    nativeEventSourceRoutes:202 as const,
+    defaultFriendshipSourceRoutes:16 as const,
+    combinedSourceRoutes:680 as const,
     publicNameOnlyCandidateRelations:nameCandidates.coverage.totalCandidateRelations,
     distinctNameOnlyCandidateItemIds:nameCandidates.coverage.distinctCandidateItemIds,
     verifiedOnlineNameAcquisitionLinks:0 as const,
@@ -114,8 +129,8 @@ export async function loadPublicSourceCatalog(
   return Object.freeze({
     schema:DB02_PUBLIC_SOURCE_CATALOG_SCHEMA,
     gameVersion:'1.26.2' as const,
-    source:'sha_pinned_public_db00_starpath_quest_and_official_records' as const,
-    origins,db00,nameCandidates,questSource,coverage,
+    source:'sha_pinned_public_db00_starpath_quest_event_friendship_and_official_records' as const,
+    origins,db00,nameCandidates,questSource,eventFriendshipSource,coverage,
     lookup(itemId:string|number){
       // db00.lookup validates IDs and keeps extra-ItemList Quest/Currency IDs.
       const row=db00.lookup(itemId);
