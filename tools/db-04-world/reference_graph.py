@@ -238,6 +238,7 @@ def build_reference_graph(snapshot, manifest_digest):
         if area["gridLayoutPresent"] and area["worldId"] is not None:
             layout_to_world[area["gridLayoutId"]] = area["worldId"]
     grid_ref_rows, grid_ref_by_scoped_id = [], {}
+    grid_ref_by_id = {}
     grid_count_by_world = Counter()
     for layout_id, layout in sorted(layouts.items()):
         if layout.get("layoutKind") != "nativeGridCollection":
@@ -265,6 +266,7 @@ def build_reference_graph(snapshot, manifest_digest):
                 "placementLegalityVerified": False,
             }
             grid_ref_rows.append(grid_ref)
+            grid_ref_by_id[grid_ref_id] = grid_ref
             grid_ref_by_scoped_id[(layout_id, native_id)] = grid_ref
             if world_id is not None:
                 grid_count_by_world[world_id] += 1
@@ -295,7 +297,7 @@ def build_reference_graph(snapshot, manifest_digest):
                 "NATIVE_GRID_OBJECT_CARDINALITY_MISMATCH")
     item_rows = []
     for (item, grid_id), count in sorted(placements.items()):
-        ref = next(r for r in grid_ref_rows if r["gridRefId"] == grid_id)
+        ref = grid_ref_by_id[grid_id]
         item_rows.append({
             "itemId": str(item), "relation": "nativeSourceDefaultGridObject",
             "gridRefId": grid_id, "layoutId": ref["layoutId"],
@@ -309,6 +311,51 @@ def build_reference_graph(snapshot, manifest_digest):
             "otherFourRelationsVerified": False,
             "nativeCoordinatesStoredInOriginalLayoutObjects": True,
         })
+    # Separate primary native entities from links; every non-explicit
+    # parentWorldId remains null. This includes House/Room/OffGrid scenes.
+    scene_to_world = {}
+    for world in world_rows:
+        scene = world["nativeSceneId"]
+        if scene is not None:
+            existing = scene_to_world.get(scene)
+            require(existing is None or existing == world["worldId"],
+                    "AMBIGUOUS_SCENE_WORLD")
+            scene_to_world[scene] = world["worldId"]
+    for root_id, world_id in root_to_world.items():
+        root = layouts.get(root_id)
+        if root and root.get("layoutKind") == "nativeDefaultVillageData":
+            scene = root.get("defaultVillageSceneId")
+            if scene is not None:
+                existing = scene_to_world.get(scene)
+                require(existing is None or existing == world_id,
+                        "AMBIGUOUS_SEPARATE_AREA_SCENE_WORLD")
+                scene_to_world[scene] = world_id
+    scene_rows = [{
+        "nativeSceneId": sid,
+        "nativeSceneName": scene.get("nativeName"),
+        "nativeSceneKindCode": scene.get("nativeSceneKindCode"),
+        "worldId": scene_to_world.get(sid),
+        "worldMembershipVerifiedByExactSourceLink": sid in scene_to_world,
+    } for sid, scene in sorted(scenes.items())]
+    layout_rows = [{
+        "layoutId": lid,
+        "layoutKind": layout.get("layoutKind"),
+        "nativeDefaultObjectCount": layout.get("defaultObjectCount"),
+        "parentWorldId": layout_to_world.get(lid),
+        "parentAreaRefId": area_by_grid_layout.get(lid),
+        "nativeSourceScopeLabel": lid.split("/")[1],
+        "sourceWorldMembershipVerified": lid in layout_to_world,
+        "worldCoordinatesVerified": False,
+        "placementLegalityVerified": False,
+    } for lid, layout in sorted(layouts.items())]
+    grid_data_rows = [{
+        "gridDataPath": gid,
+        "nativeSizeX": grid.get("sizeX"),
+        "nativeSizeY": grid.get("sizeY"),
+        "nativeSourceFormat": grid.get("nativeSourceFormat"),
+        "gridLocalToWorldTransformVerified": False,
+        "placementLegalityVerified": False,
+    } for gid, grid in sorted(grids.items())]
     world_coverage = [
         {"worldId": w["worldId"], "sourceAreaRefCount": area_counts_by_world[w["worldId"]],
          "sourceGridRefCount": grid_count_by_world[w["worldId"]],
@@ -333,7 +380,10 @@ def build_reference_graph(snapshot, manifest_digest):
             "noInferenceFromPathPrefixes": True,
         },
         "worlds": world_rows,
+        "scenes": scene_rows,
         "areas": area_rows,
+        "layouts": layout_rows,
+        "gridData": grid_data_rows,
         "gridRefs": grid_ref_rows,
         "initialItemRefs": item_rows,
         "worldCoverage": world_coverage,
@@ -349,6 +399,8 @@ def build_reference_graph(snapshot, manifest_digest):
             "unresolvedAreaLayoutPaths": sorted(unresolved_area_paths),
             "gridReferencesInSubset": len(grid_ref_rows),
             "nativeGridFilesInSubset": len(grids),
+            "nativeLayoutsInSubset": len(layouts),
+            "worldLinkedNativeLayouts": len(layout_to_world),
             "sourceInitialGridObjects": len(snapshot["layoutObjects"]),
             "sourceInitialGridObjectsWithoutVerifiedWorldLink": unlinked_objects,
             "completeGameHierarchyVerified": False,
