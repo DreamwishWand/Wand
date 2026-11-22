@@ -25,6 +25,9 @@ export interface Db01SourceMenuLink{
   readonly originalSetKey:string;
   readonly collectionLabelKey:string|null;
   readonly groupIndexes:readonly number[];
+  /** Original explicit references and static predicate groups remain independently queryable. */
+  readonly directGroupIndexes:readonly number[];
+  readonly predicateGroupIndexes:readonly number[];
   readonly directOriginalListing:boolean;
   readonly sourcePredicateMatches:number;
   readonly evidence:readonly Db01SourceMenuEvidence[];
@@ -54,14 +57,19 @@ export interface Db01OriginalSourceGroupOption extends Db01OriginalSourceGroupSe
   readonly originalSetKey:string;
   readonly submenu:string;
   readonly distinctCandidateItemIds:number;
+  readonly directListedItemIds:number;
+  readonly staticPredicateItemIds:number;
   readonly gameRuntimeMembershipVerified:false;
 }
+export type Db01SourceListingEvidence='any'|'direct'|'predicate';
 export interface Db01OriginalSourceMenuQuery{
   /** OR within a dimension; AND between set, submenu, native category, facet filters. */
   readonly collectionSetIds?:readonly number[];
   readonly submenuCodes?:readonly number[];
   /** OR across exact (CollectionSet ID, source group index) pairs. */
   readonly sourceGroups?:readonly Db01OriginalSourceGroupSelection[];
+  /** Direct original listings and positive static source selectors are never conflated. */
+  readonly listingEvidence?:Db01SourceListingEvidence;
   readonly nativeCategories?:readonly string[];
   /** Reuses the existing source-exact native ItemType and Tag filter engine. */
   readonly native?:Omit<Db01NativeFilterQuery,'offset'|'limit'>;
@@ -118,7 +126,8 @@ function check(value:unknown,code:string):asserts value{
   if(!value)throw new TypeError('DB01_SOURCE_MENU_'+code);
 }
 type MutableLink={
-  setId:number;groups:Set<number>;direct:boolean;predicates:number;
+  setId:number;groups:Set<number>;directGroups:Set<number>;
+  predicateGroups:Set<number>;predicates:number;
 };
 type IndexedItem={
   nativeCategory:string;
@@ -186,14 +195,16 @@ export function createDb01OriginalSourceMenuQuery(
     const byId=new Map<number,IndexedItem>();
     const perSet=new Map<number,{all:Set<number>;direct:Set<number>;dynamic:Set<number>}>();
     const perSubmenu=new Map<number,Set<number>>();
-    const perGroup=new Map<string,Set<number>>();
+    const perGroup=new Map<string,{all:Set<number>;direct:Set<number>;predicate:Set<number>}>();
     const submenuNames=new Map<number,string>();
     let suppressed=0,defined=0,directUnique=0,dynamicUnique=0;
     for(const menu of sourceMenus){
       perSet.set(menu.setId,{all:new Set(),direct:new Set(),dynamic:new Set()});
       check(nonneg(menu.groupCount)&&menu.groupCount<=4096,'INVALID_SOURCE_GROUP_COUNT');
       for(let n=0;n<menu.groupCount;n++)
-        perGroup.set(menu.setId+':'+n,new Set());
+        perGroup.set(menu.setId+':'+n,{
+          all:new Set(),direct:new Set(),predicate:new Set(),
+        });
       perSubmenu.set(menu.submenuCode,perSubmenu.get(menu.submenuCode)??new Set());
       const older=submenuNames.get(menu.submenuCode);
       check(older===undefined||older===menu.submenu,'CONFLICTING_NATIVE_SUBMENU');
@@ -237,11 +248,12 @@ export function createDb01OriginalSourceMenuQuery(
             'UNKNOWN_OR_INVALID_COLLECTION_GROUP');
           let record=matches.get(setId);
           if(!record){
-            record={setId,groups:new Set(),direct:false,predicates:0};
+            record={setId,groups:new Set(),directGroups:new Set(),
+              predicateGroups:new Set(),predicates:0};
             matches.set(setId,record);
           }
           record.groups.add(group);
-          perGroup.get(setId+':'+group)!.add(item.itemId);
+          perGroup.get(setId+':'+group)!.all.add(item.itemId);
           return record;
         }
         const direct=item.collection.direct;
@@ -251,7 +263,8 @@ export function createDb01OriginalSourceMenuQuery(
           check(set&&ref.submenu===set.submenu&&
             ref.submenuCode===set.submenuCode&&ref.setKey===set.setKey,
             'DIRECT_COLLECTION_SOURCE_MISMATCH');
-          entry(ref.setId,ref.groupIndex).direct=true;
+          entry(ref.setId,ref.groupIndex).directGroups.add(ref.groupIndex);
+          perGroup.get(ref.setId+':'+ref.groupIndex)!.direct.add(item.itemId);
         }
         for(const candidate of item.collection.candidates){
           const set=menus.get(candidate.collectionSetId);
@@ -259,7 +272,11 @@ export function createDb01OriginalSourceMenuQuery(
             candidate.sourceMenu.submenuCode===set.submenuCode&&
             candidate.sourceMenu.setKey===set.setKey,
             'DYNAMIC_COLLECTION_SOURCE_MISMATCH');
-          entry(candidate.collectionSetId,candidate.groupIndex).predicates++;
+          const group=entry(candidate.collectionSetId,candidate.groupIndex);
+          group.predicates++;
+          group.predicateGroups.add(candidate.groupIndex);
+          perGroup.get(candidate.collectionSetId+':'+candidate.groupIndex)!
+            .predicate.add(item.itemId);
         }
         // Suppressed original candidates NEVER authorize a source menu link,
         // although the shared view preserves the excluded source evidence.
@@ -269,17 +286,19 @@ export function createDb01OriginalSourceMenuQuery(
           const seen=perSet.get(v.setId)!;
           seen.all.add(item.itemId);
           perSubmenu.get(menu.submenuCode)!.add(item.itemId);
-          if(v.direct)seen.direct.add(item.itemId);
+          if(v.directGroups.size)seen.direct.add(item.itemId);
           if(v.predicates)seen.dynamic.add(item.itemId);
           return Object.freeze({
             collectionSetId:v.setId,submenuCode:menu.submenuCode,
             submenu:menu.submenu,originalSetKey:menu.setKey,
             collectionLabelKey:menu.collectionLabelKey,
             groupIndexes:Object.freeze([...v.groups].sort((a,b)=>a-b)),
-            directOriginalListing:v.direct,
+            directGroupIndexes:Object.freeze([...v.directGroups].sort((a,b)=>a-b)),
+            predicateGroupIndexes:Object.freeze([...v.predicateGroups].sort((a,b)=>a-b)),
+            directOriginalListing:v.directGroups.size>0,
             sourcePredicateMatches:v.predicates,
             evidence:Object.freeze([
-              ...(v.direct?['original_explicit_item_list' as const]:[]),
+              ...(v.directGroups.size?['original_explicit_item_list' as const]:[]),
               ...(v.predicates?['original_static_collection_predicate' as const]:[]),
             ]),
             gameRuntimeMembershipVerified:false as const,
@@ -317,7 +336,9 @@ export function createDb01OriginalSourceMenuQuery(
         {length:menu.groupCount},(_,groupIndex)=>Object.freeze({
           collectionSetId:menu.setId,groupIndex,
           originalSetKey:menu.setKey,submenu:menu.submenu,
-          distinctCandidateItemIds:perGroup.get(menu.setId+':'+groupIndex)!.size,
+          distinctCandidateItemIds:perGroup.get(menu.setId+':'+groupIndex)!.all.size,
+          directListedItemIds:perGroup.get(menu.setId+':'+groupIndex)!.direct.size,
+          staticPredicateItemIds:perGroup.get(menu.setId+':'+groupIndex)!.predicate.size,
           gameRuntimeMembershipVerified:false as const,
         })
       )));
@@ -362,6 +383,9 @@ export function createDb01OriginalSourceMenuQuery(
     const subs=query.submenuCodes??[];
     const nativeCategories=query.nativeCategories??[];
     const sourceGroups=query.sourceGroups??[];
+    const listingEvidence=query.listingEvidence??'any';
+    check(listingEvidence==='any'||listingEvidence==='direct'||
+      listingEvidence==='predicate','QUERY_EVIDENCE');
     check(Array.isArray(sets)&&sets.length<=305&&sets.every(id)&&
       Array.isArray(subs)&&subs.length<=64&&subs.every(nonneg)&&
       Array.isArray(nativeCategories)&&nativeCategories.length<=categories.length&&
@@ -377,7 +401,7 @@ export function createDb01OriginalSourceMenuQuery(
       'NATIVE_TAG_FACETS_NOT_CONNECTED');
     return {sets:new Set(sets),submenus:new Set(subs),
       groups:new Set(sourceGroups.map(g=>g.collectionSetId+':'+g.groupIndex)),
-      cats:new Set(nativeCategories),offset,limit};
+      listingEvidence,cats:new Set(nativeCategories),offset,limit};
   }
   async function search(
     raw:Db01OriginalSourceMenuQuery={},
@@ -413,11 +437,15 @@ export function createDb01OriginalSourceMenuQuery(
       const item=i.byId.get(id)!;
       if(q.cats.size&&!q.cats.has(item.nativeCategory))continue;
       if(nativeIds&&!nativeIds.has(id))continue;
-      const linked=item.links.some(l=>
-        (!q.sets.size||q.sets.has(l.collectionSetId))&&
-        (!q.submenus.size||q.submenus.has(l.submenuCode))&&
-        (!q.groups.size||l.groupIndexes.some(g=>
-          q.groups.has(l.collectionSetId+':'+g))));
+      const linked=item.links.some(l=>{
+        const groups=q.listingEvidence==='direct'?l.directGroupIndexes:
+          q.listingEvidence==='predicate'?l.predicateGroupIndexes:l.groupIndexes;
+        return groups.length>0&&
+          (!q.sets.size||q.sets.has(l.collectionSetId))&&
+          (!q.submenus.size||q.submenus.has(l.submenuCode))&&
+          (!q.groups.size||groups.some(g=>
+            q.groups.has(l.collectionSetId+':'+g)));
+      });
       if(!linked)continue;
       if(total>=q.offset&&selected.length<q.limit)selected.push(id);
       total++;
