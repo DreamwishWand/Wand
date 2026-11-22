@@ -7,6 +7,7 @@
 import { openLocalWorldZip } from './local-snapshot.mjs';
 import { getNativeTerrainWindow } from './catalog.mjs';
 import { findOriginalItemAnchor, findOriginalItemAnchorAcrossGrids } from './native-item-anchor-finder.ts';
+import { getOriginalGridAreaEvidence } from './native-gridarea-evidence.ts';
 import { getSourceAnchorDomain, getTessellatedSourceAnchorWindow } from './native-anchor-domain';
 import {
   listWorldPreviewViews,
@@ -143,7 +144,8 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
     if(message.command==='find-global-anchor'){
       const found=findOriginalItemAnchorAcrossGrids(
         catalog,message.itemId,message.matchIndex);
-      worker.postMessage({kind:'global-anchor-found',requestId,result:found});
+      worker.postMessage({kind:'global-anchor-found',requestId,result:found,
+        itemEvidence:getOriginalGridAreaEvidence(catalog,message.itemId)});
       return;
     }
     const sourceView=views.find(view=>view.viewKey===message.viewKey);
@@ -154,7 +156,8 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
         throw new TypeError('Unknown original source Grid ID');
       const found=findOriginalItemAnchor(catalog,sourceView.layoutId,
         message.gridIdNative,message.itemId,message.matchIndex);
-      worker.postMessage({kind:'anchor-found',requestId,result:found});
+      worker.postMessage({kind:'anchor-found',requestId,result:found,
+        itemEvidence:getOriginalGridAreaEvidence(catalog,message.itemId)});
       return;
     }
     const domain=getSourceAnchorDomain(catalog,sourceView.layoutId,message.gridIdNative);
