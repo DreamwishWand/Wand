@@ -6,14 +6,14 @@
  * source files, unpublished names, and unverified labels are never consulted.
  */
 import {loadActivePointer,loadCurrentGameDatabase} from '../game-db/client.ts';
-import type {DbSnapshot} from '../game-db/model.ts';
+import type {PublicSnapshot} from '../game-db/integrated.ts';
 import type {PublicEventFriendshipRewards} from './public-event-friendship-rewards.ts';
 import type {EventRewardItemLabelIndex,GuideRewardLocale} from './event-reward-item-labels.ts';
 
 export const DB03_EVENT_PUBLIC_NAME_REFRESH_SCHEMA='wand.db03.public-reward-name-refresh@1' as const;
 export const DB03_EVENT_LABEL_BASELINE_SNAPSHOT='steam-1.26.2-native-itemlist-v1' as const;
 const LOCALES=['ja','en','fr','it','de','es-ES','zh-CN','pt-BR'] as const;
-type PublicItemSource=Pick<DbSnapshot,'id'|'target'|'sources'|'items'>;
+type PublicItemSource=Pick<PublicSnapshot,'id'|'target'|'sources'|'items'>;
 export interface PublicEventRewardNameRefresh {
   readonly schema:typeof DB03_EVENT_PUBLIC_NAME_REFRESH_SCHEMA;
   readonly snapshotId:string;
