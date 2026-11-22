@@ -1370,14 +1370,14 @@ mod tests{
             "DefaultLayoutGridID":7,"DefaultGridHashCode":31,
             "DefaultGridDataHashCode":-12,"ModifiedObjects":{}}}
           }}}"#;
-        let witness=r#"{"contract":"wand.db05.db04-grid-path-witness@1",
+        let witness=r#"{"contract":"wand.db05.db04-grid-path-witness@2",
           "gridRefs":[
             {"layoutId":"SceneLayouts/Village04/Beach.json",
-             "gridDataPath":"GridData/Village04/Beach.json"},
+             "gridDataPath":"GridData/Village04/Beach.json","nativeGridId":7},
             {"layoutId":"SceneLayouts/Other/Room.json",
-             "gridDataPath":"GridData/Other/Room.json"},
+             "gridDataPath":"GridData/Other/Room.json","nativeGridId":3},
             {"layoutId":"SceneLayouts/Other/Room.json",
-             "gridDataPath":"GridData/Other/Room.json"}
+             "gridDataPath":"GridData/Other/Room.json","nativeGridId":4}
           ]}"#;
         let report=browser_amount_preview::match_db04_grid_paths_json(
             sample,witness).unwrap();
@@ -1388,15 +1388,50 @@ mod tests{
         assert_eq!(r["notInPartialSourceFullGrids"],1);
         assert_eq!(r["ambiguousSourceFullGrids"],1);
         assert_eq!(r["observedDiffGrids"],1);
+        assert_eq!(r["contract"],"wand.db05.db04-grid-path-match@2");
         assert_eq!(r["hashUnverifiedDiffGrids"],1);
+        assert_eq!(r["structuralCandidateDiffGrids"],1);
+        assert_eq!(r["notInPartialSourceDiffGrids"],0);
+        assert_eq!(r["ambiguousSourceDiffGrids"],0);
         assert_eq!(r["diffIdentityVerified"],false);
         assert_eq!(r["saveGridNumericIdUsedAsNativeKey"],false);
         assert!(!report.contains("Beach.json") &&
             !report.contains("900") && !report.contains("X"));
+        // Extra source-only evidence can narrow the DiffGrid *candidate*
+        // without proving either native default hash or effective placement.
+        let diff_only=br#"{"GameInfo":{"Version":643},"Player":{},
+          "World":{"GridCollection":{"DiffGrids":{
+            "1001":{"ID":1001,"GridDefaultLayoutPath":
+             "SceneLayouts/Village04/Beach.json",
+             "GridDefaultLayoutType":"Meta.GridCollection, Meta",
+             "DefaultLayoutGridID":7,"DefaultGridHashCode":999,
+             "DefaultGridDataHashCode":-999},
+            "1002":{"ID":1002,"GridDefaultLayoutPath":
+             "SceneLayouts/Unavailable/Room.json",
+             "GridDefaultLayoutType":"Meta.GridCollection, Meta",
+             "DefaultLayoutGridID":7,"DefaultGridHashCode":1,
+             "DefaultGridDataHashCode":2},
+            "1003":{"ID":1003,"GridDefaultLayoutPath":
+             "SceneLayouts/Other/Room.json",
+             "GridDefaultLayoutType":"Meta.GridCollection, Meta",
+             "DefaultLayoutGridID":3,"DefaultGridHashCode":1,
+             "DefaultGridDataHashCode":2}
+          }}}}"#;
+        let narrowed=browser_amount_preview::match_db04_grid_paths_json(
+            diff_only,witness).unwrap();
+        let v:serde_json::Value=serde_json::from_str(&narrowed).unwrap();
+        assert_eq!(v["status"],"diff_structural_candidates_only");
+        assert_eq!(v["observedDiffGrids"],3);
+        assert_eq!(v["structuralCandidateDiffGrids"],2);
+        assert_eq!(v["notInPartialSourceDiffGrids"],1);
+        assert_eq!(v["hashUnverifiedDiffGrids"],3);
+        assert_eq!(v["diffIdentityVerified"],false);
+        assert!(!narrowed.contains("999")&&!narrowed.contains("1001"));
         assert!(browser_amount_preview::match_db04_grid_paths_json(
-            sample,r#"{"contract":"wand.db05.db04-grid-path-witness@1",
+            sample,r#"{"contract":"wand.db05.db04-grid-path-witness@2",
               "gridRefs":[{"layoutId":"../secret",
-                "gridDataPath":"GridData/Village04/Beach.json"}]}"#
+                "gridDataPath":"GridData/Village04/Beach.json",
+                "nativeGridId":7}]}"#
         ).is_err());
     }
 
