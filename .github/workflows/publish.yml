@@ -44,6 +44,11 @@ jobs:
             part=$(printf '%02d' "$i")
             cmp "static/guide/public/quest-details-$part.json" "build/guide/public/quest-details-$part.json"
           done
+          cmp static/guide/public/quest-targets-index.json build/guide/public/quest-targets-index.json
+          for i in $(seq 0 7); do
+            part=$(printf '%02d' "$i")
+            cmp "static/guide/public/quest-targets-$part.json" "build/guide/public/quest-targets-$part.json"
+          done
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -126,6 +131,12 @@ jobs:
             part=$(printf '%02d' "$i")
             curl --fail --silent --show-error --location --retry 3 --retry-all-errors               "$base/guide/public/quest-details-$part.json" -o "/tmp/wand-guide-part-$part.json"
           done
+          curl --fail --silent --show-error --location "$base/guide/public/quest-targets-index.json" -o /tmp/wand-guide-targets-index.json
+          cmp static/guide/public/quest-targets-index.json /tmp/wand-guide-targets-index.json
+          for i in $(seq 0 7); do
+            part=$(printf '%02d' "$i")
+            curl --fail --silent --show-error --location --retry 3 --retry-all-errors               "$base/guide/public/quest-targets-$part.json" -o "/tmp/wand-guide-target-$part.json"
+          done
           node --input-type=module <<'NODE'
           import {readFileSync} from 'node:fs';
           import {createHash} from 'node:crypto';
@@ -150,5 +161,27 @@ jobs:
             }
           }
           assert.deepEqual([seen,steps,objectives],[733,7878,11782]);
-          console.log('Deployed public Quest Guide: HTML, exact index and all 8 source-hashed detail parts verified.');
+          const targets=JSON.parse(readFileSync('/tmp/wand-guide-targets-index.json','utf8'));
+          assert.equal(targets.schema,'wand.db03.public-quest-targets@1');
+          assert.equal(targets.counts.targetObjectives,4869);
+          assert.equal(targets.counts.candidateOccurrences,4897);
+          assert.equal(targets.counts.verifiedPublicItemNames,2059);
+          assert.equal(targets.counts.unresolvedPublicItemNames,492);
+          let targetObjectives=0,candidates=0;
+          for(let i=0;i<8;i++){
+            const number=String(i).padStart(2,'0');
+            const file='quest-targets-'+number+'.json';
+            const bytes=readFileSync('/tmp/wand-guide-target-'+number+'.json');
+            assert.equal(bytes.byteLength,targets.partFiles[file].bytes);
+            assert.equal(createHash('sha256').update(bytes).digest('hex'),targets.partFiles[file].sha256);
+            const part=JSON.parse(bytes.toString('utf8'));
+            assert.equal(part.schema,'wand.db03.public-quest-targets-part@1');
+            assert.equal(part.part,i);
+            for(const records of Object.values(part.quests)){
+              targetObjectives+=records.length;
+              for(const target of records)for(const selector of target.selectors)candidates+=selector.candidates.length;
+            }
+          }
+          assert.deepEqual([targetObjectives,candidates],[4869,4897]);
+          console.log('Deployed public Quest Guide: HTML, original 8 detail parts and 8 item-target parts verified.');
           NODE
