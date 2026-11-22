@@ -235,6 +235,17 @@ try{
     '.graph-panel tbody tr').length===100);
 
   const sourceScope=panel.getByRole('combobox',{name:'参照対象'});
+  // Source-only initial placement row -> exact original GridRef drilldown.
+  // This must not use a numeric Save ID or assume a gameplay World transform.
+  await panel.locator('tbody tr').first()
+    .getByRole('button',{name:`原本Grid ${GRID}を表示`}).click();
+  await page.waitForFunction((ref)=>{
+    const controls=document.querySelectorAll('.graph-panel .graph-controls select');
+    return controls[0]?.value==='grid'&&controls[1]?.value===ref;
+  },GRID);
+  assert.equal(await panel.locator('input[placeholder="GridDataPath・Layoutパス・Grid ID"]')
+    .inputValue(),GRID);
+  await panel.getByRole('button',{name:'地形ビューに表示'}).waitFor();
   await sourceScope.selectOption('area');
   await result.waitFor();
   await page.waitForFunction(()=>document.querySelector('.graph-panel .graph-result-head strong')
@@ -253,6 +264,16 @@ try{
     ?.textContent?.includes('2個'));
   assert.equal(await panel.locator('tbody tr').count(),1);
   assert.match(await panel.locator('tbody tr').first().innerText(),/未特定/);
+  await panel.locator('tbody tr').first()
+    .getByRole('button',{name:`原本Grid ${UNLINKED}を表示`}).click();
+  await page.waitForFunction((ref)=>{
+    const controls=document.querySelectorAll('.graph-panel .graph-controls select');
+    return controls[0]?.value==='grid'&&controls[1]?.value===ref;
+  },UNLINKED);
+  assert.equal(await panel.locator('input[placeholder="GridDataPath・Layoutパス・Grid ID"]')
+    .inputValue(),UNLINKED);
+  assert.match(await panel.locator('.source-link').innerText(),
+    /OffGridBuildings\/Detached.json/);
 
   await panel.locator('input[placeholder="すべて"]').fill('');
   await sourceScope.selectOption('grid');
