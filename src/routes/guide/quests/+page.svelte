@@ -7,6 +7,8 @@
   import {verifyPublicQuestIndex,filterPublicQuests,publicQuestSection,findPublicQuestByLink,loadPublicQuestPart,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
   import {loadPublicQuestTargetsIndex,loadPublicQuestTargetsPart,itemTargetName,originalTargetLookup} from '$lib/guide/public-targets.mjs';
   import {publicQuestStepIndex,publicQuestStepQuery} from '$lib/guide/public-quest-steps.mjs';
+  import {loadPublicQuestConditions,publicConditionText,PUBLIC_QUEST_CONDITIONS_FILE,
+    type PublicQuestConditionReader} from '$lib/guide/public-quest-conditions.ts';
 
   let catalog:any=null;
   let loadError='';
@@ -29,6 +31,8 @@
     (showAllSteps?selected.steps:selected.steps.slice(activeStep,activeStep+1)):[];
   const cached=new Map<number,any>();
   const cachedTargets=new Map<number,any>();
+  let conditionIndex:PublicQuestConditionReader|null=null;
+  let conditionError='';
   let targetIndex:any=null;
   let targetLookup:Record<string,any[]>={};
   let targetLoading=false;
@@ -38,6 +42,7 @@
   $: filtered=catalog?collectWindow((offset:number,batch:number)=>filterPublicQuests(catalog,{query:query.slice(0,120),locale,character,objective,section,offset,limit:batch}),limit,'rows'):{total:0,rows:[]};
   $: characters=catalog?[...new Set(catalog.quests.map((x:any)=>x.characterId).filter(Boolean))].sort() as string[]:[];
   // Native Mission group association, not an unlock prerequisite or chronological link.
+  $: questConditions=selectedRow&&conditionIndex?conditionIndex.getQuest(selectedRow.id):null;
   $: relatedQuests=catalog&&selectedRow&&typeof selectedRow.groupId==='string'&&
     catalog.groups&&Object.hasOwn(catalog.groups,selectedRow.groupId)
     ?catalog.quests.filter((row:any)=>row.groupId===selectedRow.groupId&&row.id!==selectedRow.id):[];
@@ -111,6 +116,14 @@
       targetLookup={};targetError='';targetLoading=false;
     }
   }
+  async function loadConditions(index:any){
+    try{
+      const loaded=await loadPublicQuestConditions(index,`${prefix}${PUBLIC_QUEST_CONDITIONS_FILE}`);
+      if(catalog===index)conditionIndex=loaded;
+    }catch(error){
+      if(catalog===index)conditionError=error instanceof Error?error.message:String(error);
+    }
+  }
   async function loadCatalog() {
     loading=true;loadError='';
     try {
@@ -118,6 +131,8 @@
       if(!res.ok) throw new Error(`HTTP ${res.status}`);
       const data=await res.json();
       catalog=verifyPublicQuestIndex(data);
+      conditionIndex=null;conditionError='';
+      void loadConditions(catalog);
       restoreAddressSelection();
     }catch(e){loadError=e instanceof Error?e.message:String(e)}
     finally {loading=false}
@@ -213,6 +228,25 @@
           {#if detailLoading}<p class="status">目標データを検証しています…</p>{/if}
           {#if detailError}<p class="error" role="alert">{detailError}</p>{/if}
           {#if selected}
+            {#if questConditions}
+              <details class="quest-activation" aria-label="クエスト出現・解放条件の原本設定">
+                <summary>出現・解放条件</summary>
+                <div class="quest-activation-block">
+                  <strong>利用条件</strong>
+                  <p>{publicConditionText(questConditions.availability,catalog,locale)}</p>
+                </div>
+                {#if questConditions.unlock?.clauses.length}
+                  <div class="quest-activation-block">
+                    <strong>解放条件</strong>
+                    <p>{publicConditionText(questConditions.unlock,catalog,locale)}</p>
+                  </div>
+                {/if}
+                <small>Steam v1.26.2のゲーム原本に定義された静的条件です。現在の進捗・条件成立・実際の解放可否は判定していません。未抽出の値は推測で補完しません。</small>
+              </details>
+            {/if}
+            {#if conditionError}
+              <small class="condition-warning">出現・解放条件は表示できません（{conditionError}）。手順は引き続き閲覧できます。</small>
+            {/if}
             {#if targetLoading}<p class="target-status" role="status">原本に記録されたアイテム候補を照合しています…</p>{/if}
             {#if targetError}<p class="target-warning" role="alert">アイテム参照を検証できませんでした：{targetError}</p>{/if}
             <div class="detail-stats"><span>{selected.steps.length} ステップ</span><span>{selected.objectiveCount} 目標</span>
@@ -350,7 +384,14 @@
   .step-permalink{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:space-between;color:#b9a5ca;font-size:12px;margin:4px 0 12px}
   .step-permalink a{color:#d9baff;text-underline-offset:3px}
   .step{border-top:1px solid #40344b;padding:13px 0}.step h3{font-size:15px;margin:0 0 8px}.step p{font-size:13px;color:#c2b4cb}.step ol{margin:0;padding-left:25px}.step li{padding:6px 0 8px;font-size:14px}.step li small{display:block;color:#9588a5;font-size:11px;margin-top:3px}
-  .related-quests{border-top:1px solid #4b3b5e;margin-top:15px;padding:13px 0 4px;font-size:12px;color:#c6b1d8;min-width:0;max-width:100%;box-sizing:border-box;overflow-wrap:anywhere}
+  .quest-activation{margin:10px 0;border:1px solid #514260;border-radius:9px;padding:10px 12px;font-size:12px;color:#d6c1e5}
+  .quest-activation summary{cursor:pointer;font-weight:650;color:#e9d5f9}
+  .quest-activation-block{margin:9px 0}
+  .quest-activation-block strong{font-size:12px}
+  .quest-activation-block p{line-height:1.65;margin:4px 0 6px;overflow-wrap:anywhere}
+  .quest-activation small{display:block;color:#a99ab8;line-height:1.5}
+  .condition-warning{display:block;color:#ba9cae;font-size:11px;margin:9px 0}
+  .related-quests{border-top:1px solid #4b3b5e;margin-top:15px;padding:13px 0 4px;font-size:12px;color:#c6b1e5;min-width:0;max-width:100%;box-sizing:border-box;overflow-wrap:anywhere}
   .related-quests summary{cursor:pointer;font-size:13px;font-weight:650;color:#ddc5f7}
   .related-quests ul{list-style:none;margin:12px 0 6px;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;min-width:0;max-width:100%;box-sizing:border-box}
   .related-quests li{min-width:0;overflow:hidden}
