@@ -10,6 +10,8 @@
     loadEventRewardItemLabels,DB03_EVENT_ITEM_LABELS_FILE,
     type EventRewardItemLabelIndex,type GuideRewardLocale,
   } from '$lib/guide/event-reward-item-labels.ts';
+  import {resolveEventRewardItemDestination}
+    from '$lib/guide/event-reward-navigation.ts';
 
   type Filter='all'|'mini_event'|'floating_festival'|'default_friendship';
   let source:PublicEventFriendshipRewards|null=null;
@@ -21,6 +23,7 @@
   let category:Filter='all';
   let locale:GuideRewardLocale='ja';
   let selectedKey='';
+  let highlightItem='';
   const root=`${base}/guide/public/`;
   const filterOptions:readonly {id:Filter;text:string}[]=[
     {id:'all',text:'すべて'},
@@ -62,7 +65,18 @@
   }
   $: visible=filterEvents(source?.events??[],category,query,locale,labels);
   $: selected=visible.find(event=>event.id===selectedKey)??visible[0]??null;
+  $: selectedRewards=selected?.rewards.filter(row=>
+    !highlightItem||row.itemId===highlightItem)??[];
+  function clearItemFocus(){
+    highlightItem='';
+    const url=new URL(window.location.href);
+    if(url.searchParams.has('item')){
+      url.searchParams.delete('item');
+      window.history.replaceState(window.history.state,'',url);
+    }
+  }
   function choose(event:NativeEventDefinition){
+    clearItemFocus();
     selectedKey=event.id;
     const url=new URL(window.location.href);
     url.searchParams.set('event',event.id);
@@ -73,8 +87,19 @@
     try{
       const read=await loadPublicEventFriendshipRewards(`${root}${DB03_EVENT_FRIENDSHIP_REWARD_FILE}`);
       source=read;
-      if(!selectedKey){
-        const fromUrl=new URLSearchParams(window.location.search).get('event');
+      const params=new URLSearchParams(window.location.search);
+      const focused=resolveEventRewardItemDestination(read,params.get('item'));
+      if(focused){
+        highlightItem=focused.itemId;
+        if(focused.section==='default_friendship'){
+          category='default_friendship';
+        }else{
+          category='all';
+          query=focused.itemId;
+          selectedKey=focused.eventId??'';
+        }
+      }else if(!selectedKey){
+        const fromUrl=params.get('event');
         if(fromUrl&&read.events.some(event=>event.id===fromUrl&&event.id!=='TestEv'))
           selectedKey=fromUrl;
       }
@@ -94,7 +119,7 @@
 </script>
 
 <svelte:head>
-  <title>イベント・友情報酬 | Dreamwish Wand Guide</title>
+  <title>期間限定イベント・友情報酬 | Dreamwish Wand Guide</title>
   <meta name="description" content="ゲーム原本で確認したイベントと友情報酬をアイテム名・Item IDから調べる。" />
 </svelte:head>
 
@@ -106,7 +131,7 @@
     </div>
     <label class="search">
       <svg viewBox="0 0 24 24" width="17" height="17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
-      <input type="search" bind:value={query} placeholder="イベント名・アイテム名・IDを検索" aria-label="イベントや報酬を検索" />
+      <input type="search" bind:value={query} on:input={clearItemFocus} placeholder="イベント名・アイテム名・IDを検索" aria-label="イベントや報酬を検索" />
     </label>
   </header>
 
@@ -118,7 +143,7 @@
   {:else}
     <nav class="filters" aria-label="報酬区分">
       {#each filterOptions as option (option.id)}
-        <button type="button" class:chosen={category===option.id} aria-pressed={category===option.id} on:click={()=>{category=option.id;query='';}}>{option.text}</button>
+        <button type="button" class:chosen={category===option.id} aria-pressed={category===option.id} on:click={()=>{clearItemFocus();category=option.id;query='';}}>{option.text}</button>
       {/each}
     </nav>
     {#key locale}
@@ -142,10 +167,12 @@
                 <h2>{eventName(selected)}</h2>
                 <span class="native-id" title="ゲーム原本に記録された識別子">{selected.id}</span>
               </div>
-              <span class="label">報酬候補 {selected.rewards.length}件</span>
+              <span class="label">報酬候補 {selectedRewards.length} / {selected.rewards.length}件
+                {#if highlightItem}<button type="button" class="all-rewards" on:click={clearItemFocus}>すべて表示</button>{/if}
+              </span>
             </div>
             <div class="reward-grid">
-              {#each selected.rewards as reward (reward.relationId)}
+              {#each selectedRewards as reward (reward.relationId)}
                 <div class="reward-row">
                   <svg class="gift" viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="9" width="18" height="12" rx="1"/><path d="M2 9h20M12 9v12M12 9c-8-1-8-7-4-7 3 0 4 4 4 7Zm0 0c8-1 8-7 4-7-3 0-4 4-4 7Z"/></svg>
                   <div class="reward-text">
@@ -168,7 +195,8 @@
             <section class="friendship-level">
               <h3>レベル {level}</h3>
               <div class="reward-grid">
-                {#each source.getDefaultFriendshipRewards(level) as reward (reward.relationId)}
+                {#each source.getDefaultFriendshipRewards(level).filter(reward=>
+                  !highlightItem||reward.itemId===highlightItem) as reward (reward.relationId)}
                   <div class="reward-row">
                     <svg class="gift" viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg>
                     <div class="reward-text">
@@ -230,6 +258,7 @@
   .reward-text strong{font-size:12px;font-weight:650;overflow-wrap:anywhere}
   .reward-text .meta{font-size:10px;color:#b3a1c0;overflow-wrap:anywhere}
   .amount{font-size:13px;color:#e3cfef;white-space:nowrap}
+  .all-rewards{color:#e5d0fa;background:transparent;border:0;text-decoration:underline;cursor:pointer;padding:2px 4px;font-size:11px}
   .friendship{grid-column:1/-1}
   .friendship-level{margin-top:20px}
   .friendship-level h3{font-size:14px;margin:0 0 9px}
