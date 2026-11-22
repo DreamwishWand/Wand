@@ -45,7 +45,8 @@ production algorithms execute in JS**, not file extensions alone.
    before projecting limited data to the UI.
 3. Support genuine Steam-style plaintext .profile alongside P1G, removing
    extension-based rejection and preserving existing save-to-manual precedence.
-4. Save Diagnostics also uses this native-first reader for encrypted P1G.
+4. Save Diagnostics still uses the JS Codec as primary and Rust/WASM as a
+   secondary audit. Migrating that primary path is **not complete**.
 5. A bounded **temporary** legacy JS fallback is permitted **only when the
    Rust parser returns ZIP_UNSUPPORTED**. Integrity/JSON/key failures are never
    silently retried through JS. The fallback must be removed when Rust handles
