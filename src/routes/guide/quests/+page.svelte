@@ -1,7 +1,7 @@
 <script lang="ts">
   import {onMount} from 'svelte';
   import {base} from '$app/paths';
-  import {PUBLIC_GUIDE_LOCALES,verifyPublicQuestIndex,filterPublicQuests,findPublicQuestByLink,loadPublicQuestPart,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
+  import {PUBLIC_GUIDE_LOCALES,verifyPublicQuestIndex,filterPublicQuests,publicQuestSection,findPublicQuestByLink,loadPublicQuestPart,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
   import {loadPublicQuestTargetsIndex,loadPublicQuestTargetsPart,itemTargetName,originalTargetLookup} from '$lib/guide/public-targets.mjs';
 
   const LANG:Record<string,string>={ja:'日本語',en:'English',fr:'Français',it:'Italiano',de:'Deutsch','es-ES':'Español','zh-CN':'简体中文','pt-BR':'Português'};
@@ -15,6 +15,7 @@
   let query='';
   let locale='ja';
   let character='';
+  let section:'all'|'story'|'friendship'|'other'='all';
   let objective='';
   let limit=40;
   let selectionTicket=0;
@@ -26,7 +27,7 @@
   let targetError='';
   const prefix=`${base}/guide/public/`;
 
-  $: filtered=catalog?filterPublicQuests(catalog,{query:query.slice(0,120),locale,character,objective,limit}):{total:0,rows:[]};
+  $: filtered=catalog?filterPublicQuests(catalog,{query:query.slice(0,120),locale,character,objective,section,limit}):{total:0,rows:[]};
   $: characters=catalog?[...new Set(catalog.quests.map((x:any)=>x.characterId).filter(Boolean))].sort() as string[]:[];
   $: objectives=catalog?[...new Set(catalog.quests.flatMap((x:any)=>x.objectiveKinds))].sort() as string[]:[];
 
@@ -145,6 +146,12 @@
     <button on:click={loadCatalog}>再読み込み</button>
   {:else if catalog}
     <div class="numbers"><span><strong>{catalog.counts.quests.toLocaleString()}</strong> クエスト</span><span><strong>{catalog.counts.steps.toLocaleString()}</strong> ステップ</span><span><strong>{catalog.counts.objectives.toLocaleString()}</strong> 目標</span></div>
+    <nav class="quest-sections" aria-label="クエストの大分類">
+      {#each [['all','すべて'],['story','ストーリー・レルム'],['friendship','村人関連（フレンドシップ系）'],['other','その他・期間限定など']] as [key,name]}
+        <button class:chosen={section===key} on:click={()=>{section=key as typeof section;setSearch()}} aria-pressed={section===key}>{name}</button>
+      {/each}
+    </nav>
+    <p class="section-note">原本のMission内部区分に基づく分類です。Villageは村人関連（フレンドシップ系）として表示しますが、全件の解放条件を確認済みという意味ではありません。</p>
     <div class="searchbar">
       <label>クエストを検索<input aria-label="クエスト名・IDを検索" placeholder="クエスト名・キャラクター名・ID" bind:value={query} on:input={setSearch}/></label>
       <label>表示言語<select aria-label="表示言語" bind:value={locale} on:change={setSearch}>{#each PUBLIC_GUIDE_LOCALES as language}<option value={language}>{LANG[language]}</option>{/each}</select></label>
@@ -220,7 +227,7 @@
   <footer>
     <p>クエスト定義を元にした静的ガイドです。現在の進捗・解放判定・開催中イベント・DLC所有状況を示すものではありません。詳細にはネタバレが含まれます。</p>
     <p>ゲームおよびゲーム内コンテンツの権利は各権利者に帰属します。非公式ファンガイドです。</p>
-    <a href="{base}/guide/">原本データをローカルで検証する開発用画面</a>
+    <a href="{base}/guide/">Guide・イベントカレンダーへ</a> · <a href="{base}/guide/source/">原本データをローカルで検証する開発用画面</a>
   </footer>
 </main>
 
@@ -230,6 +237,10 @@
   h1{font-size:clamp(28px,4vw,43px);margin:10px 0 8px} .hero p{color:#b9afc5;font-size:15px;margin:0 0 9px}
   .meta{font-size:12px;color:#b9afc5}.numbers{display:flex;gap:18px;flex-wrap:wrap;margin:12px 0 20px;color:#c7b7d5;font-size:13px}
   .numbers strong{color:#f4e7ff;font-size:20px}
+  .quest-sections{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 9px}
+  .quest-sections button{padding:10px 14px;border:1px solid #665077;border-radius:9px;background:#261c33;color:#e3d0f0;font-size:12px}
+  .quest-sections button.chosen{border-color:#ba91ee;background:#543672;color:white}
+  .section-note{font-size:11px;color:#b49fbf;line-height:1.65;margin:4px 0 19px}
   .searchbar{display:grid;grid-template-columns:2fr repeat(3,minmax(120px,1fr));gap:10px;margin-bottom:18px}
   .searchbar label{display:grid;gap:5px;font-size:12px;color:#d6c5e8}
   .searchbar input,.searchbar select{box-sizing:border-box;min-width:0;width:100%;background:#231b30;border:1px solid #65577c;color:#fff;border-radius:9px;padding:11px;font:inherit}
