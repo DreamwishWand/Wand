@@ -295,13 +295,20 @@ export function createDb01SourceCollectionTaxonomyClient(
     for(let i=0;i<rows.length;i++){
       const row=rows[i];
       if(row===null)continue;
+      // Activity/Crafting source buckets intentionally omit definitions with
+      // zero positive AND negative matches. Null is then a verified empty
+      // per-Item source overlay, not an unavailable global source release.
+      const hasCraftingRecord=row.collection.activityCrafting!==null;
+      const validCrafting=hasCraftingRecord?
+        row.collection.craftingExclusions==='available':
+        row.collection.craftingExclusions==='unavailable'&&
+        !row.collection.candidates.some(p=>p.origin==='activity-crafting')&&
+        row.collection.suppressed.length===0;
       check(row.itemId===itemIds[i]&&row.item.itemId===row.itemId&&
         row.gameVersion===source.gameVersion&&
         row.collection.direct!==null&&
         row.collection.setUniverse!==null&&
-        row.collection.special!==null&&
-        row.collection.activityCrafting!==null&&
-        row.collection.craftingExclusions==='available',
+        row.collection.special!==null&&validCrafting,
         'INCOMPLETE_OR_MISMATCHED_ITEM_COLLECTION_SOURCE');
       const sets=new Map<number,Map<number,MutableGroup>>();
       function group(setId:number,index:number){
