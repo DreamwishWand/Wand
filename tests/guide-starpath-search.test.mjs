@@ -23,12 +23,12 @@ async function data(){
   const dailySearch=(s,query,locale='ja')=>filterStarpathTasks(s.id,s.tasks,{
     query,locale,
     descriptionOf:t=>starpathDailyDescription(daily,s.id,t.id,locale),
-    goalTextOf:t=>starpathGoalLabel(goals,s.id,t)
+    goalTextOf:t=>starpathGoalLabel(goals,s.id,t,locale)
   });
   const weeklySearch=(s,query,locale='ja')=>s.weeklyTasks.flatMap(w=>filterStarpathTasks(s.id,w,{
     query,locale,
     descriptionOf:t=>starpathWeeklyDescription(weekly,t.descriptionKey,locale),
-    goalTextOf:t=>starpathGoalLabel(goals,s.id,t)
+    goalTextOf:t=>starpathGoalLabel(goals,s.id,t,locale)
   }));
   return {seasons:catalog.seasons,dailySearch,weeklySearch};
 }
@@ -82,6 +82,12 @@ test('numeric goal search finds source-pinned 10-minute hangouts and source-exac
   const {seasons,dailySearch,weeklySearch}=await data();
   assert(ids(dailySearch(seasons[0],'10分')).includes('Task17'));
   assert(ids(weeklySearch(seasons[1],'20匹')).includes('Week01Task01'));
+  assert(ids(dailySearch(seasons[0],'10 min','en')).includes('Task17'),
+    'English duration is searchable in the current language');
+  assert(ids(dailySearch(seasons[1],'10 poissons','fr')).includes('Task02'),
+    'French plural fish target is searchable');
+  assert(ids(weeklySearch(seasons[1],'25 Fische','de')).includes('Week03Task01'),
+    'source target 25 remains searchable even when old German native text says 20');
 });
 
 test('untrusted query and input validation fail closed',()=>{
