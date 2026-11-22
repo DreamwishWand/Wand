@@ -345,7 +345,7 @@ function validateGridInstancePreview(source:unknown):GridInstancePreview{
       (rows.length!==0||source.observedFullGrids!==0||
         source.observedDiffGrids!==0)))
     throw new TypeError('DB05_GRID_INSTANCE_STATUS_INVALID');
-  return {...source,rows} as GridInstancePreview;
+  return {...source,rows} as unknown as GridInstancePreview;
 }
 
 interface PreviewReceipt {
