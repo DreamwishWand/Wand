@@ -13,7 +13,8 @@ export interface Db00PublishedItem {
 }
 export interface Db00PublishedSnapshot {
   readonly kind: 'db_snapshot';
-  readonly target: { readonly platform: string; readonly gameVersion: string };
+  readonly id: string;
+  readonly target: { readonly platform: string; readonly gameVersion: string; readonly sourceSha256: string };
   readonly coverage: { readonly scope: string; readonly complete: boolean };
   readonly items: readonly Db00PublishedItem[];
 }
@@ -55,7 +56,10 @@ export function joinDb02OriginsWithDb00(
   db00: Db00PublishedSnapshot,
   origins: OriginDatabase
 ): Db00OriginJoin {
-  if (!db00 || db00.kind !== 'db_snapshot' || db00.target?.platform !== 'Steam' ||
+  if (!db00 || db00.kind !== 'db_snapshot' ||
+    db00.id !== 'steam-1.26.2-native-itemlist-v1' ||
+    db00.target?.sourceSha256 !== '496782625e68fb53e018659bbabf0d8bb8bdc55f12037f4c568a7d32321f515b' ||
+    db00.target?.platform !== 'Steam' ||
     db00.target.gameVersion !== '1.26.2' ||
     db00.coverage?.scope !== 'steam-v1.26.2-native-itemlist' ||
     db00.coverage.complete !== true || !Array.isArray(db00.items) ||
@@ -70,8 +74,8 @@ export function joinDb02OriginsWithDb00(
   }
   const observed=new Set<string>();
   let within=0, outside=0;
-  // No eager DB-02 item scan: use DB-02's linked Item ID list if exposed.
-  // For the existing public ItemList, count known join IDs directly.
+  // The caller can reuse DB-00's already-loaded snapshot rather than
+  // downloading its item corpus again; count only exact joined identities.
   for (const key of byId.keys()){
     if(origins.getItem(key).origins.length){within++;observed.add(key);}
   }
