@@ -21,6 +21,10 @@ import {
 } from '../acquisition/public-source-catalog.ts';
 import {loadGuideRewardIndex,type GuideRewardIndex}
   from '../guide/reward-relations.ts';
+import {
+  createDb00PublicItemSearch,
+  type Db00PublicItemSearchRequest,type Db00PublicItemSearchResult
+} from './public-search.ts';
 
 export const DB00_PUBLIC_SOURCES_SCHEMA='wand.game-db.public-sources@1' as const;
 const BASE=/^\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/;
@@ -37,6 +41,8 @@ export interface PublicSharedGameSources{
   readonly playerOwnershipVerified:false;
   getItem(itemId:string|number):Db00SourceJoinedItem;
   getItems(itemIds:readonly (string|number)[]):readonly Db00SourceJoinedItem[];
+  /** Search exact public names / Item IDs and source-qualified acquisition links. */
+  searchItems(request?:Db00PublicItemSearchRequest):Db00PublicItemSearchResult;
   queryItems(filters?:readonly SharedDbFilter[],
     page?:Readonly<{offset?:number;limit?:number}>):SharedDbQueryResult;
   summarizeFacet(request:SharedDbFacetRequest,
@@ -84,6 +90,7 @@ export async function openPublicSharedGameSources(
   const joined=joinCurrentGameSources(database,{
     origins:acquisition.origins,rewards:guide
   });
+  const search=createDb00PublicItemSearch(database,joined,acquisition.origins,guide);
   assert(acquisition.gameVersion==='1.26.2' &&
     acquisition.coverage.publishedItemDefinitions===database.itemCount &&
     acquisition.coverage.combinedSourceRoutes===1255 &&
@@ -102,6 +109,7 @@ export async function openPublicSharedGameSources(
     playerOwnershipVerified:false as const,
     getItem:(id:string|number)=>joined.getItem(id),
     getItems:(ids:readonly (string|number)[])=>joined.getItems(ids),
+    searchItems:search.searchItems,
     queryItems:(filters:readonly SharedDbFilter[]=[],
       page:Readonly<{offset?:number;limit?:number}>={})=>
       database.queryItems(filters,page),
