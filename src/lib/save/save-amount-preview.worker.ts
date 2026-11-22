@@ -138,7 +138,7 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
       throw new TypeError('DB05_WORKER_COMMAND_INVALID');
 
     const edits = batch ? validateBatchEdits(input.edits) : null;
-    const plan = edits === null ? null : JSON.stringify(edits);
+    const plan = edits === null ? null : JSON.stringify({edits});
     const target = batch ? null : validateTarget(input.target);
     const requestedFormat = input.format as InputFormat;
     const format: Exclude<InputFormat, 'auto'> =
