@@ -166,9 +166,7 @@ function readProjection(raw:unknown,url:string):PinnedPublicNativeShopIndex{
         originId,itemId,kind:'premium_shop' as const,
         routeStatus:'confirmed_source_link' as const,campaignId,
         name:'Premium Shop: '+label,productId:offerId,quantity,
-        price:discount===null?Object.freeze({
-          quantity:0,currency:'Moonstones',currencyItemId:'80100000'
-        }):null,
+        price:null, // Only populate the offer-level subtotal after all components are read.
         accessTier:'premium' as const,window,
         salePeriods:Object.freeze([window]),conditions:Object.freeze(conditions),
         source,availability:'not_live_verified' as const
