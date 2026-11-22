@@ -104,16 +104,39 @@ try{
   assert.equal(await portal.locator('header.site-header .brand').count(),0);
   assert.equal(await portal.locator('.portal-intro').count(),0);
   assert.equal(await portal.locator('.portal-page h1:not(.visually-hidden)').count(),0);
-  // A desktop opening viewport contains every service and Help Center.
-  await portal.setViewportSize({width:1400,height:850});
-  const fits=await portal.evaluate(()=>{
+  // A desktop opening viewport must be a true edge-to-edge application launcher
+  // with a substantial Help Center tile, not a narrow footer-like strip.
+  await portal.setViewportSize({width:1696,height:900});
+  const layout=await portal.evaluate(()=>{
+    const page=document.querySelector('.portal-page')?.getBoundingClientRect();
     const support=document.querySelector('.portal-community')?.getBoundingClientRect();
     const cards=Array.from(document.querySelectorAll('.portal-card')).map(x=>x.getBoundingClientRect());
-    return support&&cards.length===6&&support.bottom<=window.innerHeight+1&&
-      cards.every(r=>r.top>=0&&r.bottom<=window.innerHeight+1)&&
-      document.documentElement.scrollHeight<=window.innerHeight+1;
+    const headerOrder=Array.from(document.querySelectorAll('.site-actions > :is(.header-file-tools,.header-preference-tools,.header-support-tools)'))
+      .map(x=>x.getAttribute('aria-label'));
+    return {
+      fits:Boolean(page&&support&&cards.length===6&&
+        support.bottom<=window.innerHeight+1&&
+        cards.every(r=>r.top>=0&&r.bottom<=window.innerHeight+1)&&
+        document.documentElement.scrollHeight<=window.innerHeight+1),
+      fullBleed:Boolean(page&&Math.abs(page.left)<1&&Math.abs(page.right-window.innerWidth)<1),
+      communityHeight:support?.height,
+      gap:cards[1]?cards[1].left-cards[0].right:null,
+      radius:getComputedStyle(document.querySelector('.portal-card')).borderTopLeftRadius,
+      headerOrder
+    };
   });
-  assert.equal(fits,true,'six large cards and Community Help Center must fit in the desktop viewport');
+  assert.equal(layout.fits,true,'all seven launcher areas must fit the first desktop viewport');
+  assert.equal(layout.fullBleed,true,'home launcher should reach the viewport edges');
+  assert.ok(layout.communityHeight>=160,'Community Help Center must be a prominent destination');
+  assert.ok(layout.gap>=0&&layout.gap<=3,'service tiles should have only a thin divider');
+  assert.equal(layout.radius,'0px','rectangular tiles, not isolated cards');
+  assert.deepEqual(layout.headerOrder,['ファイル操作','表示設定','ヘルプとアカウント']);
+  await portal.setViewportSize({width:390,height:844});
+  const mobileLayout=await portal.evaluate(()=>{
+    const help=document.querySelector('.portal-community')?.getBoundingClientRect();
+    return Boolean(help&&help.height>=120&&help.bottom<=innerHeight+1&&document.documentElement.scrollWidth<=innerWidth+1);
+  });
+  assert.equal(mobileLayout,true,'mobile launcher must keep all services and Help Center usable');
   const localeButton=portal.getByRole('button',{name:'表示言語を切り替える'});
   await localeButton.click();
   await portal.getByRole('group',{name:'表示言語'}).getByRole('button',{name:'English'}).click();
