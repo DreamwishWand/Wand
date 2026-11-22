@@ -14,6 +14,9 @@ import {
   hasPinnedPublicNativeShopEvidence,type PinnedPublicNativeShopIndex
 } from './public-native-shop.ts';
 import {
+  hasPinnedPublicIapEvidence,type PublicIapSourceIndex
+} from './public-static-iap.ts';
+import {
   hasPinnedDb03RewardEvidence,
   type Db03NativeRewardCandidateIndex
 } from './db03-native-rewards.ts';
@@ -519,7 +522,8 @@ export async function loadUnifiedAcquisitionOriginDatabase(
   db03NativeRewards: Db03NativeRewardCandidateIndex | null = null,
   db03PublicQuestRewards: PublicQuestAcquisitionIndex | null = null,
   db03PublicEventFriendship: PublicEventFriendshipAcquisitionIndex | null = null,
-  db02PublicNativeShop: PinnedPublicNativeShopIndex | null = null
+  db02PublicNativeShop: PinnedPublicNativeShopIndex | null = null,
+  db02PublicIap: PublicIapSourceIndex | null = null
 ): Promise<OriginDatabase> {
   assert(basePath === '' || (basePath.startsWith('/') && !basePath.includes('..') && !basePath.endsWith('/')), 'BASE_PATH');
   const guide = await loadGuideRewardIndex(
@@ -581,6 +585,23 @@ export async function loadUnifiedAcquisitionOriginDatabase(
       db02PublicNativeShop.campaigns.length===29,
       'DB02_PINNED_PUBLIC_NATIVE_SHOP_REQUIRED');
   }
+  if(db02PublicIap!==null){
+    assert(hasPinnedPublicIapEvidence(db02PublicIap) &&
+      db02PublicIap.schema==='wand.db02.public-static-iap@1' &&
+      db02PublicIap.sourceIntegrity===
+        'pinned_original_protoDb_and_sha256_public_projection' &&
+      db02PublicIap.coverage.nativePackages===53 &&
+      db02PublicIap.coverage.directRewardReferences===150 &&
+      db02PublicIap.coverage.extendedRewardReferences===141 &&
+      db02PublicIap.coverage.combinedRewardReferences===291 &&
+      db02PublicIap.coverage.accountEntitlementVerified===false &&
+      db02PublicIap.coverage.currentAvailabilityVerified===false &&
+      db02PublicIap.coverage.onlineSyncVerified===false &&
+      db02PublicIap.coverage.nestedRewardsExpanded===false &&
+      db02PublicIap.origins.length===291 &&
+      db02PublicIap.campaigns.length===53,
+      'DB02_PINNED_PUBLIC_IAP_REQUIRED');
+  }
   // The new public evidence and the already-authenticated owner-local DB-03
   // reader share original event/<link index> and friendship/<record index>
   // identities. Keep only one origin per identical native source relation;
@@ -596,8 +617,10 @@ export async function loadUnifiedAcquisitionOriginDatabase(
   return createAcquisitionOriginDatabase(
     [...starpath.origins, ...nativeRoutes, ...privateNonDuplicated,
       ...(db03PublicQuestRewards?.origins??[]), ...publicEventRows,
-      ...(db02PublicNativeShop?.origins??[])],
+      ...(db02PublicNativeShop?.origins??[]),
+      ...(db02PublicIap?.origins??[])],
     [...starpath.campaigns, ...projectHistoricalGuideCampaigns(guide),
-      ...OFFICIAL_CAMPAIGNS, ...(db02PublicNativeShop?.campaigns??[])], native
+      ...OFFICIAL_CAMPAIGNS, ...(db02PublicNativeShop?.campaigns??[]),
+      ...(db02PublicIap?.campaigns??[])], native
   );
 }
