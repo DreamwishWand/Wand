@@ -1,15 +1,32 @@
 # DB-02 ACQUISITION — source-pinned extraction
 
+## Steam/Switch v1.26.2 native meal-price math — original binaries verified
+
+`audit_native_meal_price_1262.py` uses **owner-uploaded originals** from
+`Dreamwish Wand/v1.26.2`. Both Steam `GameAssembly.dll` (AMD64 PE32+)
+and Switch `ExeFS/main` (compressed AArch64 NSO0), plus their respective
+IL2CPP dumps and the Steam `FullVersion.txt`, are SHA-256 pinned.
+Verification of **7 principal methods per platform**, their executable
+RVA mappings and **8 exact native instruction windows** passes.
+Both builds confirm a **signed 32-bit multiply, division by 100, and
+truncation toward zero per adjusted ingredient contribution**, plus
+default-price fallback and a call from `TotalIngredientsSellPrice` to
+`TotalIngredientsValue`. No original executable or price catalog is
+committed. The testable `nativeIngredientPercentComponent32` function
+models **only this stage**, not a final cooked-meal sale value.
+The Switch audit locally requires Python `lz4` to expand the text section.
+See [MEAL-STATE-SELL-PRICE.md](MEAL-STATE-SELL-PRICE.md).
+
 ## Native cooking sell-price method analysis (offline only)
 
-The Steam v1.26.1 `dump.cs` (owner-private, SHA-256 pinned) identifies **13**
-class-qualified methods that may participate in the meal sell-price path.
-`native_meal_price_probe.py` produces their verified metadata/RVA plan,
-then optionally reads a **same-build** local `GameAssembly.dll` using the
-PE32+ executable-section map to emit bounded private code excerpts. A
-**v1.26.1 RVA must never be mapped onto v1.26.2 executable code**. For Steam
-v1.26.2 native analysis, first supply a matching v1.26.2 `dump.cs` and
-`GameAssembly.dll` with independently captured SHA-256 fingerprints.
+The initial SHA-pinned Steam `dump.cs` available in the v1.26.1
+context identifies **13** class-qualified price-path methods. Its byte-identical
+copy, **together with the actual `GameAssembly.dll` and FullVersion file**,
+is now verified in the owner-uploaded Steam **v1.26.2** folder.
+`native_meal_price_probe.py` builds a method/RVA plan and can extract
+private code excerpts from the matching executable PE32+ section.
+**RVA validity is independently verified against the original executable**;
+a version label or metadata match alone does not prove executable identity.
 `--extract-only` works with Python on Windows without additional disassembler
 packages; GNU objdump can optionally render text instead. The CLI refuses
 writing extracted machine code inside a Git checkout. No source original,
