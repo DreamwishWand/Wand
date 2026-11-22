@@ -39,7 +39,7 @@
     const target:EditTarget=kind==='inventory'
       ? {kind,inventoryId,itemId}
       : {kind,containerId,slotIndex:Number(slotIndex),itemId:Number(chestItemId)};
-    const format=fileInput?.files?.[0]?.name.toLowerCase().endsWith('.json')?'json':'auto';
+    const format:'json'|'auto'=fileInput?.files?.[0]?.name.toLowerCase().endsWith('.json')?'json':'auto';
     return {expected:old,replacement:next,target,format,
       signature:JSON.stringify({expected:old,replacement:next,target,format})};
   }
@@ -140,6 +140,7 @@
     }finally{
       if(bytes&&bytes.byteLength)bytes.fill(0);
     }
+  }
 
   /** One-time explicit user request. Re-read the immutable original File and
    * revalidate old quantity and item identity; never reuse an unverified
@@ -196,15 +197,16 @@
           if(r?.bytes instanceof Uint8Array&&r.bytes.byteLength)r.bytes.fill(0);
           result='error';snapshot=null;return;
         }
+        const payload=r.bytes as Uint8Array;
         try{
           downloadUrl=URL.createObjectURL(
-            new Blob([r.bytes],{type:'application/octet-stream'})
+            new Blob([payload.buffer as ArrayBuffer],{type:'application/octet-stream'})
           );
-          r.bytes.fill(0);
+          payload.fill(0);
           downloadName=copiedName(selected.file.name);
           exportReady=true;
         }catch{
-          r.bytes.fill(0);
+          payload.fill(0);
           discardDownload();result='error';snapshot=null;
         }
       };
