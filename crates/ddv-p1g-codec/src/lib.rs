@@ -12,6 +12,8 @@ use zeroize::Zeroize;
 
 #[cfg(feature="wasm")]
 mod mission_slot_audit;
+#[cfg(feature="wasm")]
+mod grid_instance_preview;
 
 const KEY: &[u8;32]=b"b5qhh8saJ8UlDJUzTZXd2Tg6mbo8W8n5";
 const LIMIT:usize=128*1024*1024;
@@ -1007,6 +1009,23 @@ mod browser_amount_preview {
             };
             match_db04_grid_paths_json(profile,witness)
                 .map_err(|_|fail("DB05_GRID_SOURCE_MATCH_INVALID"))
+        }
+        /// User-invoked local preview of individual saved GridObject positions.
+        /// Item IDs and native X/Y/Orientation are returned to this browser's
+        /// Svelte UI only. Real Save IDs, object IDs, source paths, private
+        /// states and any write permission are never returned.
+        pub fn list_saved_grid_instances(&self)->Result<String,JsValue>{
+            if !self.ready || self.closed{
+                return Err(fail("DB05_GRID_INSTANCE_SESSION_NOT_OPEN"));
+            }
+            let profile=match self.kind{
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref()
+                    .ok_or(fail("DB05_GRID_INSTANCE_SESSION_NOT_OPEN"))?
+                    .profile.as_slice()
+            };
+            grid_instance_preview::saved_grid_instances_json(profile)
+                .map_err(|_|fail("DB05_GRID_INSTANCE_READ_INVALID"))
         }
         pub fn list_saved_grid_item_references(&self)->Result<String,JsValue>{
             if !self.ready || self.closed {
