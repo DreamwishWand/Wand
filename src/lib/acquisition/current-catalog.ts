@@ -15,7 +15,7 @@ import {
 import type {Src02IndependentPin} from './private-browser-bundle.mjs';
 import {
   loadUnifiedAcquisitionOriginDatabase,
-  type ItemOrigin,type OriginDatabase
+  type OriginDatabase
 } from './origins.ts';
 import {
   joinDb02OriginsWithDb00,
@@ -168,5 +168,9 @@ export async function loadCurrentDb02OriginCatalog(
   ]);
   if(snapshot.kind!=='db_snapshot')
     throw new TypeError('DB02_CURRENT_CATALOG_LEGACY_COLLECTION_NOT_SUPPORTED');
-  return joinCurrentDb02Catalog(snapshot,reader,fetcher,basePath,db03NativeRewards);
+  // DB-00 target gameVersion is nullable in its cross-release transport type.
+  // Only this exact versioned snapshot is admitted to the r5 native join.
+  const typed=snapshot as Db00PublishedSnapshot;
+  currentDb00ItemIds(typed);
+  return joinCurrentDb02Catalog(typed,reader,fetcher,basePath,db03NativeRewards);
 }
