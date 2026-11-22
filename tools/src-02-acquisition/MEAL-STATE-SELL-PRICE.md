@@ -164,13 +164,14 @@ those are confirmed, `loadPrivateMealPricingView` deliberately keeps
 
 ## Native method-body analysis: reproducible, fail-closed tooling
 
-The original-byte material currently available for this work consists of
-Steam v1.26.2 native configuration (`protoDb.bin`) and owner-private data
-extracts plus a **Steam v1.26.1** IL2CPP `dump.cs` (89,453,137 bytes; SHA-256
-`0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08`).
-The dump is **method/field metadata, not a C++ implementation or executable
-assembly**. It must **not** be used as an RVA map for the Steam v1.26.2
-`GameAssembly.dll`. No version-matched DLL was available to this run.
+The initial 89,453,137-byte IL2CPP `dump.cs` (SHA-256
+`0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08`)
+was first available in a Steam v1.26.1 context. Its **byte-identical**
+copy is now confirmed in the user-uploaded Steam v1.26.2 folder,
+**alongside** the exact executable DLL and v1.26.2 FullVersion file.
+The dump contains *metadata*, not executable bodies; the new cross-platform
+native audit separately authenticates the real v1.26.2 binary and verifies
+that each mapped RVA corresponds to the expected executable code.
 
 The source-controlled `native_meal_price_probe.py` now extracts and checks
 **13 fully qualified price-path targets** from the pinned v1.26.1 metadata:
@@ -193,9 +194,10 @@ python tools/src-02-acquisition/native_meal_price_probe.py \
   --dump "/owner-private/Steam-v1.26.1/dump.cs" --dump-version 1.26.1
 ```
 
-For **1.26.2**, the separate native `dump.cs` and `GameAssembly.dll`
-**must both come from the same 1.26.2 build** and have separately recorded
-original SHA-256 fingerprints. The owner supplies them as local files, e.g.:
+For **1.26.2**, the owner has now supplied both original `dump.cs` and
+`GameAssembly.dll` in the same versioned folder with recorded SHA-256
+fingerprints. This older general-purpose excerpt tool remains usable
+for deeper local disassembly, e.g.:
 
 ```sh
 python tools/src-02-acquisition/native_meal_price_probe.py \
@@ -224,15 +226,18 @@ fingerprints, non-executable/out-of-range/ambiguous PE mappings, and
 output paths within Git working trees. Neither executes the game DLL,
 uploads files, determines method boundaries, reconstructs complete
 functions, claims an authenticated binary build version from SHA alone,
-nor claims a numerical sell-price formula or rounding rule. A caller's
-version labels remain **externally asserted** until independently validated.
+nor claims a complete numerical sell-price formula. The separately verified
+cross-platform instruction audit above establishes the **per-component**
+integer truncation stage, not the entire runtime pricing path. A caller's
+version labels alone remain untrusted without independent code checks.
 
 Synthetic-only CI checks the metadata parser, exact-version rejection,
 PE header/section RVA mapping and the end-to-end Python-only private
-excerpt extraction path. In a separate owner-private run, the exact
-SHA-pinned v1.26.1 `dump.cs` successfully yielded **13/13 original
-method RVA/offset/signature records**. That is an executable-analysis
-**plan**, not evidence that the formula has been implemented.
+excerpt extraction path. The SHA-pinned dump successfully yielded
+**13/13** original method RVA/offset/signature records. The newer
+cross-platform auditor above verifies **7/7** principal methods against
+real Steam and Switch 1.26.2 binary code, including percentage truncation.
+The full pricing algorithm is not yet implemented.
 
 ## Game-native evidence
 
