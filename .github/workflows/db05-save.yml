@@ -6,6 +6,7 @@ on:
       - 'data/ddv/save/**'
       - 'src/lib/save/**'
       - 'crates/ddv-save-schema/**'
+      - 'crates/ddv-save-patch/**'
       - 'tools/db-05-save/**'
       - 'tests/save-schema.test.mjs'
       - 'tests/save-db00-join.test.mjs'
@@ -43,6 +44,7 @@ on:
       - 'data/ddv/save/**'
       - 'src/lib/save/**'
       - 'crates/ddv-save-schema/**'
+      - 'crates/ddv-save-patch/**'
       - 'tools/db-05-save/**'
       - 'tests/save-schema.test.mjs'
       - 'tests/save-db00-join.test.mjs'
@@ -94,13 +96,15 @@ jobs:
             exit 1
           fi
       - name: JavaScript and Collection bridge
-        run: node --test tests/save-common-shape.test.mjs tests/save-native-shape.test.mjs tests/save-nested-shape.test.mjs tests/save-unified-shape.test.mjs tests/save-domain-shape.test.mjs tests/save-references.test.mjs tests/save-catalog-links.test.mjs tests/save-guide-links.test.mjs tests/save-achievement-links.test.mjs tests/save-duty-progress-evidence.test.mjs tests/save-duty-milestones.test.mjs tests/save-clean-baseline.test.mjs tests/save-clean-regression.test.mjs tests/save-clean-regression-cli.test.mjs tests/save-native-catalog-crosscheck-cli.test.mjs tests/save-db04-grid-path-cli.test.mjs tests/save-db04-observed-grid-completion-cli.test.mjs tests/save-editor-readset.test.mjs tests/save-achievement-progress.test.mjs tests/save-diagnostic-view.test.mjs tests/save-p1g-worker-diagnostics.test.mjs tests/save-schema.test.mjs tests/save-db00-join.test.mjs tests/save-redacted-witness.test.mjs tests/save-redacted-cli.test.mjs
+        run: node --test tests/save-common-shape.test.mjs tests/save-native-shape.test.mjs tests/save-nested-shape.test.mjs tests/save-unified-shape.test.mjs tests/save-domain-shape.test.mjs tests/save-references.test.mjs tests/save-catalog-links.test.mjs tests/save-guide-links.test.mjs tests/save-achievement-links.test.mjs tests/save-duty-progress-evidence.test.mjs tests/save-duty-milestones.test.mjs tests/save-clean-baseline.test.mjs tests/save-clean-regression.test.mjs tests/save-clean-regression-cli.test.mjs tests/save-native-catalog-crosscheck-cli.test.mjs tests/save-db04-grid-path-cli.test.mjs tests/save-db04-observed-grid-completion-cli.test.mjs tests/save-editor-readset.test.mjs tests/save-editor-handoff.test.mjs tests/save-achievement-progress.test.mjs tests/save-diagnostic-view.test.mjs tests/save-p1g-worker-diagnostics.test.mjs tests/save-schema.test.mjs tests/save-db00-join.test.mjs tests/save-redacted-witness.test.mjs tests/save-redacted-cli.test.mjs
       - name: DB-01 TypeScript private DutyAch reward source join (synthetic only)
         run: node --experimental-strip-types --test tests/save-duty-reward-db01.test.mjs
       - name: Private report importer (synthetic only)
         run: python3 -m unittest discover -s tools/db-05-save -p 'test_*.py' -v
       - name: Rust borrowed-document schema contract
         run: cargo test --manifest-path crates/ddv-save-schema/Cargo.toml
+      - name: Rust byte-preserving inventory and chest draft (synthetic only)
+        run: cargo test --manifest-path crates/ddv-save-patch/Cargo.toml
       - name: Cross-language Rust/JS save reference parity (synthetic only)
         run: node tools/db-05-save/compare_js_rust.mjs
       - name: Cross-language Rust/JS 440-field shape parity (synthetic only)
@@ -117,3 +121,7 @@ jobs:
           rustup target add wasm32-unknown-unknown
           cargo build --manifest-path crates/ddv-save-schema/Cargo.toml --target wasm32-unknown-unknown --features wasm --release
           test -s crates/ddv-save-schema/target/wasm32-unknown-unknown/release/ddv_save_schema.wasm
+      - name: Rust/WASM quantity draft target
+        run: |
+          cargo build --manifest-path crates/ddv-save-patch/Cargo.toml --target wasm32-unknown-unknown --features wasm --release
+          test -s crates/ddv-save-patch/target/wasm32-unknown-unknown/release/ddv_save_patch.wasm
