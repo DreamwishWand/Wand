@@ -224,10 +224,11 @@ export function createDb01OriginalSourceMenuQuery(
       const result=await shared.getItems(part.map(x=>x.itemId));
       check(result.length===part.length,'BATCH_LENGTH');
       for(let j=0;j<part.length;j++){
-        const sourceRow=part[j],item=result[j] as Readonly<Db01SharedItem>|null;
-        check(item&&item.itemId===sourceRow.itemId&&
-          item.nativeCategory===sourceRow.nativeCategory,
+        const sourceRow=part[j],candidate=result[j] as Readonly<Db01SharedItem>|null;
+        check(candidate&&candidate.itemId===sourceRow.itemId&&
+          candidate.nativeCategory===sourceRow.nativeCategory,
           'SOURCE_ITEM_IDENTITY');
+        const item:Readonly<Db01SharedItem>=candidate;
         defined++;
         const matches=new Map<number,MutableLink>();
         function entry(setId:number,group:number):MutableLink{
