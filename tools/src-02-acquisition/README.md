@@ -1,5 +1,21 @@
 # DB-02 ACQUISITION — source-pinned extraction
 
+## Native cooking sell-price method analysis (offline only)
+
+The Steam v1.26.1 `dump.cs` (owner-private, SHA-256 pinned) identifies **13**
+class-qualified methods that may participate in the meal sell-price path.
+`native_meal_price_probe.py` produces their verified metadata/RVA plan,
+then optionally reads a **same-build** local `GameAssembly.dll` using the
+PE32+ executable-section map to emit bounded private code excerpts. A
+**v1.26.1 RVA must never be mapped onto v1.26.2 executable code**. For Steam
+v1.26.2 native analysis, first supply a matching v1.26.2 `dump.cs` and
+`GameAssembly.dll` with independently captured SHA-256 fingerprints.
+`--extract-only` works with Python on Windows without additional disassembler
+packages; GNU objdump can optionally render text instead. The CLI refuses
+writing extracted machine code inside a Git checkout. No source original,
+method body, or guessed sell-price formula is committed. See
+[MEAL-STATE-SELL-PRICE.md](MEAL-STATE-SELL-PRICE.md).
+
 SRC-02 uses the **existing** SRC-01 `steam1262.varint` and `steam1262.parse_category` decoders and the SRC-01 `itemId` records; it does not re-implement item definition parsing. Python 3.10+ standard library; Node 22+ for consumers. No writes to game files. Run from the Wand repository root:
 
 ```powershell
