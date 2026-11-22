@@ -11,6 +11,11 @@
  */
 import {DB01_LOCALES,type Db01CatalogClient,type Db01Locale} from './index.ts';
 import type {Db01OriginalCollectionMenu} from './collection-menu.ts';
+import {
+  DB01_ORIGINAL_COLLECTION_LOCALES,
+  type Db01OriginalCollectionLocaleClient,
+  type Db01OriginalCollectionUiLabel,
+} from './collection-locales.ts';
 import type {
   Db01SharedItemClient,Db01SharedItem,Db01StaticPredicate,
 } from './shared-view.ts';
@@ -83,6 +88,12 @@ export interface Db01SourceCollectionTaxonomyClient {
   /** Existing original submenu/set hierarchy in native order, not runtime UI. */
   getSourceHierarchy(locale:Db01Locale):
     Promise<readonly Readonly<Db01OriginalCollectionSubmenu>[]>;
+  /** Current source game-tab text, NOT an inferred native SubMenu mapping. */
+  getOriginalUiTabTitles(locale:Db01Locale):
+    Promise<readonly Readonly<Db01OriginalCollectionUiLabel>[]|null>;
+  /** Exact in-game Collection area text, NOT proof of Item world availability. */
+  getOriginalUiAreaTitles(locale:Db01Locale):
+    Promise<readonly Readonly<Db01OriginalCollectionUiLabel>[]|null>;
   getItem(itemId:number,locale:Db01Locale):
     Promise<Readonly<Db01ItemOriginalCollectionSource>|null>;
   /** Bounded selective lookup; preserves duplicates, order, unknown IDs. */
@@ -112,6 +123,7 @@ type Menus=Readonly<{
 export function createDb01SourceCollectionTaxonomyClient(
   catalog:Db01CatalogClient,
   shared:Db01SharedItemClient,
+  localizedLabels:Db01OriginalCollectionLocaleClient|null=null,
 ):Db01SourceCollectionTaxonomyClient{
   const base=catalog?.source,view=shared?.source,
     evidence=shared?.getCoverage?.();
@@ -131,6 +143,17 @@ export function createDb01SourceCollectionTaxonomyClient(
     evidence.sourceDynamicSelectorsTotal===evidence.sourceDynamicSelectorsResolved&&
     evidence.sourceDynamicSelectorsTotal>0,
     'INCOMPLETE_OR_MISMATCHED_CURRENT_COLLECTION_SOURCE');
+  if(localizedLabels!==null)
+    check(localizedLabels.contract===DB01_ORIGINAL_COLLECTION_LOCALES&&
+      localizedLabels.source.privateOnly===true&&
+      localizedLabels.source.platform===base.platform&&
+      localizedLabels.source.gameVersion===base.gameVersion&&
+      localizedLabels.source.sourceItemsSha256===base.sourceItemsSha256&&
+      localizedLabels.source.collectionSubmenuToUiTabMappingVerified===false&&
+      typeof localizedLabels.getSetLabels==='function'&&
+      typeof localizedLabels.getUiTabTitles==='function'&&
+      typeof localizedLabels.getUiAreaTitles==='function',
+      'UNVERIFIED_OR_MISMATCHED_ORIGINAL_LOCALE_SOURCE');
   // Present Steam release has 305 original CollectionSet definitions and
   // 262 exact source selectors. A stale partial overlay must not appear complete.
   if(base.gameVersion==='1.26.2'&&base.definitions===39067)
@@ -201,8 +224,24 @@ export function createDb01SourceCollectionTaxonomyClient(
     const pending=cacheFullHierarchy?exactNameCache.get(key):undefined;
     if(pending)return pending;
     const task=(async()=>{
-      const definitions=await catalog.getItems(sortedIds);
+      const [definitions,localeRows]=await Promise.all([
+        catalog.getItems(sortedIds),
+        localizedLabels?localizedLabels.getSetLabels(locale):Promise.resolve(null),
+      ]);
       check(definitions.length===sortedIds.length,'COLLECTION_SET_BATCH_SHAPE');
+      const localizedById=new Map<number,{
+        setKey:string;collectionLabelKey:string;
+        currentExactName:string|null;originalLocDbLabelVerified:boolean;
+      }>();
+      if(localeRows){
+        check(localeRows.length===source.sourceSetDefinitions,
+          'INCOMPLETE_CURRENT_COLLECTION_LOCALIZATION');
+        for(const row of localeRows){
+          check(id(row.setId)&&row.locale===locale&&
+            !localizedById.has(row.setId),'DUPLICATE_OR_WRONG_LOCALE_LABEL');
+          localizedById.set(row.setId,row);
+        }
+      }
       const nameById=new Map<number,string|null>();
       for(let i=0;i<sortedIds.length;i++){
         const record=definitions[i],original=records.find(m=>m.setId===sortedIds[i]);
@@ -216,7 +255,15 @@ export function createDb01SourceCollectionTaxonomyClient(
         check(name===null||(typeof name==='string'&&
           name.trim()===name&&name.length>0),
           'INVALID_CURRENT_COLLECTION_NAME');
-        nameById.set(original.setId,name);
+        if(localeRows){
+          const localized=localizedById.get(original.setId);
+          check(localized&&localized.setKey===original.setKey&&
+            localized.collectionLabelKey===original.collectionLabelKey&&
+            localized.originalLocDbLabelVerified===
+              (localized.currentExactName!==null),
+            'CURRENT_COLLECTION_LOCALE_SET_IDENTITY');
+          nameById.set(original.setId,localized.currentExactName);
+        }else nameById.set(original.setId,name);
       }
       const resolved=new Map<number,Readonly<Db01LocalizedOriginalCollectionSet>>();
       for(const menu of records){
@@ -375,6 +422,14 @@ export function createDb01SourceCollectionTaxonomyClient(
   return Object.freeze({
     contract:DB01_SOURCE_COLLECTION_TAXONOMY,source,
     getSourceHierarchy,
+    async getOriginalUiTabTitles(locale:Db01Locale){
+      localeOk(locale);
+      return localizedLabels?localizedLabels.getUiTabTitles(locale):null;
+    },
+    async getOriginalUiAreaTitles(locale:Db01Locale){
+      localeOk(locale);
+      return localizedLabels?localizedLabels.getUiAreaTitles(locale):null;
+    },
     getItems,
     async getItem(itemId:number,locale:Db01Locale){
       check(id(itemId),'INVALID_ITEM_ID');
