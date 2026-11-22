@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import {autoAppend} from '$lib/ui/auto-append';
 
   type GridOption = {
     gridIdNative: number;
@@ -65,6 +66,7 @@
   let selectedGridId = '';
   let x = 0; let y = 0; let width = 16; let height = 16;
   let offset = 0;
+  let displayedAnchors: Anchor[] = [];
   let viewing = false;
   let viewport: ViewResult | null = null;
   let selectedCell: {x:number;y:number} | null = null;
@@ -126,6 +128,7 @@
     selectedViewKey = '';
     selectedGridId = '';
     viewport = null;
+    displayedAnchors = [];
     selectedCell = null;
     integrity = '';
     manifestFilesVerified = 0;
@@ -145,6 +148,7 @@
         !Number.isSafeInteger(chosen.sizeY) ||
         chosen.sizeX! < 1 || chosen.sizeY! < 1) {
       viewport = null;
+      displayedAnchors = [];
       return;
     }
     const sx = chosen.sizeX!, sy = chosen.sizeY!;
@@ -152,8 +156,7 @@
     y = Math.min(Math.max(0, Number.isSafeInteger(y) ? y : 0), sy - 1);
     width = Math.min(Math.max(1, Number.isSafeInteger(width) ? width : 16), 32, sx - x);
     height = Math.min(Math.max(1, Number.isSafeInteger(height) ? height : 16), 32, sy - y);
-    if (reset) offset = 0;
-    selectedCell = null;
+    if (reset){offset = 0;displayedAnchors = [];selectedCell = null;}
     viewing = true;
     errorMessage = '';
     const id = ++requestId;
@@ -180,8 +183,10 @@
     viewport = null;
     requestWindow();
   }
-  function setOffset(value:number) {
-    offset = Math.max(0,value);
+  function appendNextPage() {
+    const next=viewport?.page.nextOffset;
+    if(viewing||!viewport?.page.hasNextPage||!Number.isSafeInteger(next)||next===null||next<=offset)return;
+    offset=next;
     requestWindow(false);
   }
   async function readZip(event: Event) {
@@ -192,6 +197,7 @@
     regions = [];
     selectedRegion = '';
     viewport = null;
+    displayedAnchors = [];
     version = '';
     errorMessage = '';
     infoMessage = '';
@@ -236,6 +242,10 @@
       }
       if (result.kind === 'view') {
         viewing = false;
+        if(result.page?.status==='source_native_default_layout_anchors_only'){
+          const nextRecords=Array.isArray(result.page.defaultObjectAnchors)?result.page.defaultObjectAnchors as Anchor[]:[];
+          displayedAnchors=offset===0?nextRecords:[...displayedAnchors,...nextRecords];
+        }
         viewport = {
           page:result.page, markers:result.markers,
           terrainStatus:result.terrainStatus, terrainRows:result.terrainRows,
@@ -399,10 +409,10 @@
       </div>
 
       <div class="world-panel">
-        <div class="view-head"><h2>原本の初期配置レコード</h2><span>最大64件／ページ</span></div>
+        <div class="view-head"><h2>原本の初期配置レコード</h2><span>{displayedAnchors.length.toLocaleString()}件表示</span></div>
         <p class="note">この一覧は現在のセーブや編集対象ではありません。レコードIDと原本X/Y、向きを参照できます。</p>
         <div class="record-list">
-          {#each viewport.page.defaultObjectAnchors ?? [] as record (record.layoutObjectId)}
+          {#each displayedAnchors as record (record.layoutObjectId)}
             <div class="record">
               <strong>Item {record.itemId}</strong>
               <span>GridObject {record.gridObjectIdNative}</span>
@@ -410,18 +420,14 @@
               <span>Orientation {record.orientationCode} {record.orientationName ?? ''}</span>
             </div>
           {/each}
-          {#if viewport.page.viewAnchorCount === 0}
+          {#if displayedAnchors.length === 0}
             <p class="note">この範囲・ページに初期配置アンカーの記録はありません。占有セルが存在しないという意味ではありません。</p>
           {/if}
         </div>
-        <div class="paging">
-          <button type="button" on:click={() => setOffset(Math.max(0,offset-64))}
-            disabled={viewing || offset === 0}>前の64件</button>
-          <span>{(viewport.page.matchingNativeDefaultAnchorCount ?? 0) === 0 ? 0 : offset + 1}～{offset + (viewport.page.viewAnchorCount ?? 0)} ／
-            {viewport.page.matchingNativeDefaultAnchorCount ?? 0}</span>
-          <button type="button" on:click={() => setOffset(viewport?.page.nextOffset ?? offset)}
-            disabled={viewing || !viewport.page.hasNextPage}>次の64件</button>
-        </div>
+        {#if viewport.page.hasNextPage}
+          <div class="paging auto-sentinel" use:autoAppend={{hasMore:()=>Boolean(viewport?.page.hasNextPage)&&!viewing,load:appendNextPage}}
+            role="status" aria-label="スクロールで初期配置レコードを追加表示"></div>
+        {/if}
       </div>
     {:else if viewport}
       <div class="world-panel error">このレイアウトは部分的な原本データです：{viewport.page.status}</div>
