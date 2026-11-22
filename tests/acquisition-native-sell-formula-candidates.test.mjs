@@ -10,10 +10,10 @@ const def=(id,currencyId=80000000,typeMatches=true)=>({
   nativeItemTypeMatches:typeMatches
 });
 test('original reference may exist without runtime formula definition or eligible type',()=>{
-  const r=classify(input([2100200004]));
+  const r=classify(input([1201]));
   assert.equal(r.contract,CONTRACT);
   assert.equal(r.formulaSourceReferenceCount,1);
-  assert.deepEqual(r.sourceFormulaItemIds,[2100200004]);
+  assert.deepEqual(r.sourceFormulaItemIds,[1201]);
   assert.equal(r.candidateDefinitionsSupplied,0);
   assert.equal(r.unresolvedEligibilityCount,1);
   assert.equal(r.conditionalSelectionStatus,'unresolved_candidate_precedence');
@@ -25,10 +25,10 @@ test('original reference may exist without runtime formula definition or eligibl
   assert.ok(Object.isFrozen(r.candidateConditions));
 });
 test('native currency mismatch and native runtime Type mismatch each reject formula',()=>{
-  for(const d of [def(2100200004,80000001,true),
-    def(2100200004,80000000,false),
-    def(2100200004,80000001,null)]){
-    const r=classify(input([2100200004],[d]));
+  for(const d of [def(1201,80000001,true),
+    def(1201,80000000,false),
+    def(1201,80000001,null)]){
+    const r=classify(input([1201],[d]));
     assert.equal(r.conditionalSelectionStatus,'no_match_in_supplied_definitions');
     assert.equal(r.conditionalFirstFormulaItemId,null);
     assert.equal(r.candidateConditions[0].conditionalEligible,false);
@@ -70,7 +70,7 @@ test('empty source list is known no-match in supplied reference list only',()=>{
   assert.equal(r.runtimeFormulaItemId,null);
 });
 test('cross-platform numeric truncation observation does not produce a price',()=>{
-  const r=classify(input([2100200004]));
+  const r=classify(input([1201]));
   assert.equal(r.nativeFormulaResultFloatTruncationTowardZeroVerifiedSteam1262,true);
   assert.equal(r.nativeFormulaResultFloatTruncationTowardZeroVerifiedSwitch1262,true);
   assert.equal(r.nativeMethodCurrencyGateVerifiedSteam1262,true);
