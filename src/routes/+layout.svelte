@@ -207,7 +207,7 @@
               <WandIcon name="folder" size={19}/>
             </button>
             {#if filesOpen}
-              <div class="shell-menu shell-file-menu" role="group" aria-label="ファイル操作">
+              <div class="shell-menu shell-file-menu" role="group" aria-label={copy.fileTools}>
                 <button type="button" disabled={service==='collection'&&collectionBusy}
                   on:click={()=>{filesOpen=false;openSaveFile();}}><WandIcon name="upload" size={18}/>{copy.readSave}</button>
                 {#if service==='collection'}
@@ -279,7 +279,7 @@
 
 {#if accountOpen}
   <div class="tutorial-backdrop">
-    <div class="tutorial-dialog" role="dialog" aria-modal="true" aria-label="アカウント">
+    <div class="tutorial-dialog" role="dialog" aria-modal="true" aria-label={copy.account}>
       <header class="tutorial-top">
         <div><WandIcon name="character" size={24}/><h2>{copy.account}</h2></div>
         <button type="button" class="header-icon-button" on:click={closeAccount} aria-label={copy.close}><WandIcon name="close" size={22}/></button>
