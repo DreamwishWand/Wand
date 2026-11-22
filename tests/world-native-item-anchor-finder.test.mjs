@@ -111,7 +111,7 @@ test('global lookup crosses two original layouts without merging native Grid IDs
     layoutId:secondLayout,gridIdNative:7,gridObjectIdNative:0,
     layoutObjectId:secondLayout+'#grid=7#object=0',
     itemId:100,x:129,y:129
-  }]]));
+  }]]]));
   const a=findOriginalItemAnchorAcrossGrids(f,100,0);
   assert.equal(a.contract,DB04_GLOBAL_ORIGINAL_ITEM_ANCHOR_FINDER);
   assert.equal(a.status,'found');
