@@ -174,12 +174,13 @@ try {
   await related.goBack();
   await related.waitForFunction(()=>location.search.includes('quest=2070000620'));
   await related.locator('.detail-header h2').filter({hasText:'ドリームライトバレーへようこそ'}).waitFor({timeout:20000});
+  await related.locator('.related-quests summary').click();
+  assert.equal(await related.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),true,
+    'expanded related quest links must not overflow on phones');
   await related.goto(url+'?quest=2070000651',{waitUntil:'domcontentloaded'});
   await related.locator('.detail .step').first().waitFor({timeout:20000});
   assert.equal(await related.locator('.related-quests').count(),0,
     'a singleton Realm group must not invent a related quest or prerequisite');
-  assert.equal(await related.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),true,
-    'related quest links must not overflow on phones');
   await related.close();
 
   // Character names are source labels (not proof of unlocked residents).
