@@ -1,23 +1,26 @@
-/** One-shot, isolated local file reader. Never issues network requests. */
-import { inspectEncryptedSavedStore } from './saved-store-worker-core.mjs';
+/** One-shot, isolated, Rust/WASM-first local Save reader. No network. */
+import {inspectLocalSavedStore} from './saved-store-worker-core.mjs';
+import {decodeNativeFirstLocalProfile} from './saved-profile-native-reader.mjs';
 
-let started = false;
-self.onmessage = async ({ data }) => {
-  if (started) return;
-  started = true;
-  const ciphertext = data?.ciphertext;
-  let response = { kind: 'error' };
-  try {
-    if (data?.command !== 'inspect-local-p1g' ||
-        !(ciphertext instanceof Uint8Array) ||
-        Object.keys(data).sort().join(',') !== 'ciphertext,command')
-      throw new TypeError('LOCAL_P1G_INVALID_WORKER_COMMAND');
-    const result = await inspectEncryptedSavedStore(ciphertext);
-    response = { kind: 'result', result };
-  } catch {
-    // Do not reveal source fields, file names or private decoder diagnostics.
-  } finally {
-    if (ciphertext instanceof Uint8Array && ciphertext.byteLength) ciphertext.fill(0);
+let started=false;
+self.onmessage=async ({data})=>{
+  if(started)return;
+  started=true;
+  const bytes=data?.bytes;
+  let response={kind:'error'};
+  try{
+    if(data?.command!=='inspect-local-save' ||
+       !(bytes instanceof Uint8Array) ||
+       Object.keys(data).sort().join(',')!=='bytes,command')
+      throw new TypeError('COLLECTION_LOCAL_SAVE_COMMAND_INVALID');
+    // The Rust/WASM decoder runs in this Worker. The page receives only
+    // bounded IDs/booleans/summary evidence, not private profile text.
+    const result=await inspectLocalSavedStore(bytes,decodeNativeFirstLocalProfile);
+    response={kind:'result',result};
+  }catch{
+    // Do not forward private data or arbitrary parser exceptions.
+  }finally{
+    if(bytes instanceof Uint8Array && bytes.byteLength)bytes.fill(0);
   }
   self.postMessage(response);
   self.close();
