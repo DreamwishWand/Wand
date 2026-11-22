@@ -6,11 +6,11 @@
  */
 import {verifyPublicQuestIndex} from './public-guide.mjs';
 
-export const PUBLIC_QUEST_CONDITIONS_SCHEMA='wand.db03.public-quest-conditions@1' as const;
-export const PUBLIC_QUEST_CONDITIONS_FILE='quest-conditions-1.26.2.json.gz.b64';
-export const PUBLIC_QUEST_CONDITIONS_SHA256='f06a0296cf1350db74d1b5c119f415252d7696cd3105983a89e169ad7339efa1';
-const DATA_BYTES=109167;
-const BASE64_BYTES=14704;
+export const PUBLIC_QUEST_CONDITIONS_SCHEMA='wand.db03.public-quest-conditions@2' as const;
+export const PUBLIC_QUEST_CONDITIONS_FILE='quest-conditions-1.26.2-v2.json.gz.b64';
+export const PUBLIC_QUEST_CONDITIONS_SHA256='adb57346bf52992f08691293043ac584f1e5d5983180c9c0ef9025da7f81e66f';
+const DATA_BYTES=114107;
+const BASE64_BYTES=16700;
 const MISSION_SHA='f13958b52234f4cda92f0dd0bfff50be8a7f6625c8478785e2a077a5c7933d24';
 const CONDITION_SHA='9eb5e7800a2485b1dfb3e148a7bcff5d6c6b6ed72797ed2331a902ab44188f4c';
 const ID=/^[1-9][0-9]{0,15}$/;
@@ -42,7 +42,9 @@ export interface PublicQuestConditionReader{
   readonly sourceProjectionVersion:'1.26.1';
   readonly coverage:Readonly<{
     quests:733;leaves:2515;availableWithLeaves:733;unlockWithLeaves:311;
-    predicatesWithoutSelectedScalars:80;sourceIsStaticNotPlayerProgress:true;
+    predicatesWithoutSelectedScalars:3;originallyUnprojected:80;
+    restoredOriginalScalars:77;nativePayloadHasNoScalar:3;
+    sourceIsStaticNotPlayerProgress:true;
     runtimePrerequisitesVerified:false;
   }>;
   getQuest(id:string):PublicQuestConditionRecord|null;
@@ -77,7 +79,8 @@ export function decodePublicQuestConditions(doc:unknown,publicQuestIndex:unknown
     doc.provenance.originalMissionSha256===MISSION_SHA&&
     doc.provenance.currentConditionSha256===CONDITION_SHA&&
     doc.provenance.sourceIsStaticNotPlayerProgress===true&&
-    doc.provenance.conditionTreesNotRuntimePrerequisites===true,'WRONG_PROVENANCE');
+    doc.provenance.conditionTreesNotRuntimePrerequisites===true&&
+    doc.provenance.opaqueFieldsDecodedFromNativeMissionAndIL2CPP===true,'WRONG_PROVENANCE');
   const sourceOperators=doc.operators;
   assert(Array.isArray(sourceOperators)&&
     sourceOperators.length===3&&OPERATORS.every((x,i)=>sourceOperators[i]===x),
@@ -86,12 +89,15 @@ export function decodePublicQuestConditions(doc:unknown,publicQuestIndex:unknown
     doc.kinds.every((x:unknown)=>typeof x==='string'&&x.length>0&&x.length<100)&&
     new Set(doc.kinds).size===doc.kinds.length&&doc.kinds.includes('SubConditions'),
     'UNSUPPORTED_PREDICATE_CENSUS');
-  assert(Array.isArray(doc.fields)&&doc.fields.length===29&&
+  assert(Array.isArray(doc.fields)&&doc.fields.length===58&&
     doc.fields.every((x:unknown)=>typeof x==='string'&&/^[a-zA-Z]{2,45}$/.test(x))&&
     new Set(doc.fields).size===doc.fields.length,'UNSUPPORTED_FIELD_CENSUS');
   assert(obj(doc.counts)&&doc.counts.quests===733&&doc.counts.leaves===2515&&
     doc.counts.availableWithLeaves===733&&doc.counts.unlockWithLeaves===311&&
-    doc.counts.predicatesWithoutSelectedScalars===80,'INVALID_SOURCE_CENSUS');
+    doc.counts.predicatesWithoutSelectedScalars===3&&
+    doc.counts.originallyUnprojected===80&&
+    doc.counts.restoredOriginalScalars===77&&
+    doc.counts.nativePayloadHasNoScalar===3,'INVALID_SOURCE_CENSUS');
   assert(Array.isArray(doc.records)&&doc.records.length===733,'MISSING_QUESTS');
   const byId=new Map<string,PublicQuestConditionRecord>();
   let leaves=0,missingScalars=0,available=0,unlock=0;
@@ -143,13 +149,15 @@ export function decodePublicQuestConditions(doc:unknown,publicQuestIndex:unknown
     if(u?.clauses.length)unlock++;
     byId.set(entry[0],Object.freeze({id:entry[0],availability:a,unlock:u}));
   }
-  assert(leaves===2515&&missingScalars===80&&available===733&&unlock===311,
+  assert(leaves===2515&&missingScalars===3&&available===733&&unlock===311,
     'WRONG_SOURCE_AGGREGATES');
   assert(questIndex.quests.every((row:{id:string})=>byId.has(row.id)),
     'FOREIGN_OR_MISSING_PUBLIC_QUEST');
   const coverage=Object.freeze({
     quests:733 as const,leaves:2515 as const,availableWithLeaves:733 as const,
-    unlockWithLeaves:311 as const,predicatesWithoutSelectedScalars:80 as const,
+    unlockWithLeaves:311 as const,predicatesWithoutSelectedScalars:3 as const,
+    originallyUnprojected:80 as const,restoredOriginalScalars:77 as const,
+    nativePayloadHasNoScalar:3 as const,
     sourceIsStaticNotPlayerProgress:true as const,runtimePrerequisitesVerified:false as const
   });
   return Object.freeze({
@@ -198,6 +206,15 @@ export function publicConditionDisplay(
     const known=typeof id==='string'?publicIndex.characters[id]:undefined;
     return known?.[locale]||known?.en||String(id??'不明');
   };
+  const compare=(value:unknown)=>{
+    const name=String(value??'');
+    const symbols:Record<string,string>={
+      Equal:'=',NotEqual:'≠',LessThan:'<',LessThanOrEqual:'≤',
+      GreaterThan:'>',GreaterThanOrEqual:'≥'
+    };
+    return symbols[name]??(name?'('+name+')':'（比較未抽出）');
+  };
+  const originId=(value:unknown)=>value===undefined?'未抽出':String(value);
   let result:string;
   switch(node.kind){
     case 'MissionCompleted':
@@ -222,6 +239,45 @@ export function publicConditionDisplay(
       result='レルム '+String(v.universeId??'未抽出')+' 解放';break;
     case 'Inventory':
       result='アイテム '+String(v.itemId??'未抽出')+' '+String(v.amount??'数量未抽出');break;
+    case 'Date':
+      result='日時 '+compare(v.comparisonOperator)+' '+String(v.dateUtc??'値未抽出')+
+        (v.localTime===true?'（原本UTC値・ローカル時刻比較）':'（原本UTC値）');break;
+    case 'Timestamp':
+      result='日時記録'+(v.elapsedSeconds!==undefined
+        ?'からの経過 '+compare(v.comparisonOperator)+' '+v.elapsedSeconds+'秒'
+        :v.numberOfResets!==undefined
+          ?'のリセット回数 '+compare(v.comparisonOperator)+' '+v.numberOfResets
+          :'（判定値未抽出）');break;
+    case 'CharacterSkin':
+      result='キャラクタースキン '+originId(v.skinId)+'：'+
+        String(v.skinCondition??'状態未抽出');break;
+    case 'DialogueFlag':
+      result='会話フラグ '+originId(v.dialogueFlagId);break;
+    case 'FloatingFestivalTime':
+      result='フローティングフェスティバル '+String(v.eventKey??'イベント指定なし')+
+        '：要求状態 '+String(v.requestedEventAvailability??'未抽出');break;
+    case 'EventTimeSegment':
+      result='イベント '+String(v.eventKey??'未抽出')+'：区分 '+
+        String(v.eventSegment??'未抽出');break;
+    case 'MemoryShard':
+      result='記憶の欠片 '+originId(v.shardId)+'：進捗 '+
+        compare(v.comparisonOperator)+' '+originId(v.progress);break;
+    case 'KeyholeStatus':
+      result='鍵穴 '+originId(v.keyholeKey)+'：状態比較 '+
+        String(v.keyholeStatusOperator??'未抽出');break;
+    case 'MountIsUnlocked':
+      result='マウント '+originId(v.mountId)+'：解放状態';break;
+    case 'StoreFront':
+      result='販売プラットフォーム '+compare(v.equalOperator)+' '+
+        String(v.storeFront??'未抽出');break;
+    case 'OfflineAgegate':
+      result='年齢確認ゲート条件';break;
+    case 'Hourglass':
+      result='砂時計レベル '+compare(v.comparisonOperator)+' '+
+        originId(v.hourglassLevel);break;
+    case 'Expansion':
+      result=v.expansionName!==undefined?'拡張パック '+v.expansionName:
+        '拡張パック条件（原本の対象値は空）';break;
     case 'AlwaysTrue':
       result='常に真（原本設定）';break;
     default:
