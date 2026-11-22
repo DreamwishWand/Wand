@@ -298,3 +298,99 @@ test('mismatched or inconsistent source universe replies fail closed',async()=>{
   await assert.rejects(()=>createDb04ItemGeographyBridge(world(),catalog,null,null,
     spoofed).getItem(12345678),/SOURCE_UNIVERSE_PREDICATE_REPLY_MISMATCH/);
 });
+
+const nativeTagClassification=()=>({
+  source:{privateOnly:true,gameVersion:'1.26.2',
+    sourceItemsSha256:'9'.repeat(64),sourceSqliteSha256:'8'.repeat(64),
+    tagOriginalSha256:'7'.repeat(64),definitionCount:39067},
+  async getItem(id){
+    if(id===12345678)return {
+      itemId:id,nativeCategory:'Furniture',nativeKey:'Example',
+      sourceSha256:'c'.repeat(64),facets:{worldContextTag:['IsEternityIsle']},
+      tagReferences:[],wireSubtypeCode:null,wireSubtypeMeaningVerified:false,
+      gameUiCategoryVerified:false,dlcOwnershipVerified:false,
+      worldAvailabilityVerified:false
+    };
+    if(id===22222222)return {
+      itemId:id,nativeCategory:'MemoryShard',nativeKey:'Shard',
+      sourceSha256:'d'.repeat(64),facets:{worldContextTag:['isHoneywood']},
+      tagReferences:[],wireSubtypeCode:null,wireSubtypeMeaningVerified:false,
+      gameUiCategoryVerified:false,dlcOwnershipVerified:false,
+      worldAvailabilityVerified:false
+    };
+    return null;
+  }
+});
+function allCatalog(){
+  const catalog=db01();
+  catalog.source.sourceItemsSha256='9'.repeat(64);
+  catalog.source.definitions=39067;
+  const original=catalog.getItem;
+  catalog.getItem=async id=>id===22222222?{
+    itemId:id,nativeCategory:'MemoryShard',nativeKey:'Shard',
+    catalogDomain:'definition_unclassified',sourceSha256:'d'.repeat(64)
+  }:original(id);
+  return catalog;
+}
+test('39,067-definition DB-01 world tags extend DB-04 past the four Collection item families',async()=>{
+  const bridge=createDb04ItemGeographyBridge(world(),allCatalog(),
+    null,nativeScope(),null,nativeTagClassification());
+  assert.equal(bridge.source.allDefinitionNativeTagsAttached,true);
+  const furniture=await bridge.getItem(12345678);
+  assert.deepEqual(furniture.sourceNativeWorldTagContext.worldTagKeys,['IsEternityIsle']);
+  assert.equal(furniture.sourceNativeWorldTagContext.scopeTagCrosscheck,'matched');
+  assert.equal(furniture.originalDefaultLocations[0].world.worldId,worldId);
+  assert.equal(furniture.itemOriginWorldVerified,false);
+  const memory=await bridge.getItem(22222222);
+  assert.deepEqual(memory.sourceNativeWorldTagContext.worldTagKeys,['isHoneywood']);
+  assert.equal(memory.sourceNativeWorldTagContext.nativeCategory,'MemoryShard');
+  assert.equal(memory.sourceNativeWorldTagContext.scopeTagCrosscheck,'outside_four_item_scope');
+  assert.equal(memory.originalItemScopeTags,null);
+  assert.equal(memory.sourceNativeWorldTagContext.acquisitionLocationVerified,false);
+  assert.equal(memory.sourceNativeWorldTagContext.dlcOwnershipVerified,false);
+  const missing=await bridge.getItem(987654321);
+  assert.equal(missing.definition,null);
+  assert.equal(missing.sourceNativeWorldTagContext,null);
+});
+test('unknown tag and independent original-source contradictions fail closed',async()=>{
+  const wrong=nativeTagClassification();
+  wrong.getItem=async id=>id===12345678?{
+    ...(await nativeTagClassification().getItem(id)),
+    facets:{worldContextTag:['IsDreamlightValley']}
+  }:null;
+  await assert.rejects(()=>createDb04ItemGeographyBridge(
+    world(),allCatalog(),null,nativeScope(),null,wrong).getItem(12345678),
+  /INDEPENDENT_WORLD_TAG_EVIDENCE_CONFLICT/);
+  const bad=nativeTagClassification();
+  bad.getItem=async id=>id===12345678?{
+    ...(await nativeTagClassification().getItem(id)),
+    facets:{worldContextTag:['not-an-exact-native-tag']}
+  }:null;
+  await assert.rejects(()=>createDb04ItemGeographyBridge(
+    world(),allCatalog(),null,null,null,bad).getItem(12345678),
+  /INVALID_ORIGINAL_WORLD_TAGS/);
+  const publicSource=nativeTagClassification();
+  publicSource.source.privateOnly=false;
+  assert.throws(()=>createDb04ItemGeographyBridge(
+    world(),allCatalog(),null,null,null,publicSource),
+  /DB01_NATIVE_TAG_SOURCE_MISMATCH/);
+  const wrongCatalog=nativeTagClassification();
+  wrongCatalog.source.sourceItemsSha256='0'.repeat(64);
+  assert.throws(()=>createDb04ItemGeographyBridge(
+    world(),allCatalog(),null,null,null,wrongCatalog),
+  /DB01_NATIVE_TAG_SOURCE_MISMATCH/);
+});
+test('source World Tag absence remains unknown, never a fallback base-world assignment',async()=>{
+  const overlay=nativeTagClassification();
+  overlay.getItem=async id=>id===12345678?{
+    ...(await nativeTagClassification().getItem(id)),
+    facets:{worldContextTag:[]}
+  }:null;
+  const result=await createDb04ItemGeographyBridge(
+    world(),allCatalog(),null,null,null,overlay).getItem(12345678);
+  assert.deepEqual(result.sourceNativeWorldTagContext.worldTagKeys,[]);
+  assert.equal(result.sourceNativeWorldTagContext.status,
+    'no_direct_world_tag_in_source_definition');
+  assert.equal(result.sourceNativeWorldTagContext.gameUiMembershipVerified,false);
+  assert.equal(result.sourceNativeWorldTagContext.scopeTagCrosscheck,'not_loaded');
+});
