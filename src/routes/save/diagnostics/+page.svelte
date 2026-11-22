@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import SaveDiagnosticsPanel from '$lib/save/SaveDiagnosticsPanel.svelte';
   import { sanitizeSaveDiagnosticView } from '$lib/save/diagnostic-view.mjs';
   import type { SaveDiagnosticView } from '$lib/save/diagnostic-view.mjs';
@@ -21,6 +21,11 @@
     activeWorker = null;
   }
   onDestroy(stopWorker);
+  onMount(()=>{
+    const clear=()=>clearDecoded();
+    window.addEventListener('wand:save-clear',clear);
+    return()=>window.removeEventListener('wand:save-clear',clear);
+  });
 
   function clearDecoded() {
     stopWorker();
