@@ -76,12 +76,28 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
       cache.sellCurrencyAmountFieldsAbsent===474&&
       cache.sourcePurchaseFormulaReferenceCount===4&&
       cache.sourceSellFormulaReferenceCount===1&&
+      cache.sourcePurchaseFormulaItemIds?.length===4&&
+      cache.sourceSellFormulaItemIds?.length===1&&
+      cache.formulaReferencesAuthenticated===true&&
+      cache.formulaDefinitionsResolved===false&&
+      cache.formulaCurrencyAndItemTypeEligibilityVerified===false&&
+      cache.formulaEquationEvaluated===false&&
+      Object.isFrozen(cache.sourceSellFormulaItemIds)&&
+      Object.isFrozen(cache.sourcePurchaseFormulaItemIds)&&
+      new Set(cache.sourceSellFormulaItemIds).size===1&&
+      new Set(cache.sourcePurchaseFormulaItemIds).size===4&&
       cache.runtimeFormulaEvaluated===false&&
       cache.actualSellPricesVerified===false&&
       view.sourceNativeDynamicCacheGate?.cachedDataPresent===true&&
       view.sourceNativeDynamicCacheGate.serializedItemPricesCount===8549&&
       view.sourceNativeDynamicCacheGate.sourceDataCached===true&&
       view.sourceNativeDynamicCacheGate.runtimeDataCached===null&&
+      view.sourceSellFormulaItemIds?.length===1&&
+      view.sourcePurchaseFormulaItemIds?.length===4&&
+      view.getSourceSellFormulaCandidatePlan(80000000)?.
+        conditionalSelectionStatus==='unresolved_candidate_precedence'&&
+      view.getSourceSellFormulaCandidatePlan(80000000)?.
+        unresolvedCandidateDefinitionsCount===1&&
       view.nativeRuntimeDataCachedVerified===false,
       'DYNAMIC_PRICE_SOURCE_CENSUS');
   }else requireValue(view.nativeStarSettingsVerified===false&&
@@ -89,7 +105,10 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
     view.nativeDynamicCacheVerified===false&&
     view.nativeDynamicPriceCache===null&&
     view.getSourceCachedDynamicPriceRow(31100053)===null&&
-    view.sourceNativeDynamicCacheGate===null,
+    view.sourceNativeDynamicCacheGate===null&&
+    view.sourceSellFormulaItemIds===null&&
+    view.sourcePurchaseFormulaItemIds===null&&
+    view.getSourceSellFormulaCandidatePlan(80000000)===null,
     'STAR_AND_CACHE_SOURCE_ABSENCE_MISREPORTED');
 
   const originalArchive=openPrivateSrc02Archive(r5);
@@ -121,6 +140,16 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
       a.recordedIngredients.length===2&&
       a.nativeIngredientRoutingImplementationVerified===true&&
       a.nativePriceProviderTopologyVerified===true&&
+      a.sourceSellFormulaCandidatePlan===
+        (protoDbPath===undefined?null:a.sourceSellFormulaCandidatePlan)&&
+      (protoDbPath===undefined||
+        (a.sourceSellFormulaCandidatePlan?.
+          conditionalFirstFormulaItemId===null&&
+         a.sourceSellFormulaCandidatePlan?.
+          unresolvedCandidateDefinitionsCount===1&&
+         a.sourceSellFormulaCandidatePlan?.
+          effectiveItemSellPrice===null))&&
+      a.nativeSellFormulaRuntimeResolutionVerified===false&&
       a.nativeMealPriceProviderPlan.nativeClassEvidence==='MealItemData'&&
       a.nativeMealPriceProviderPlan.itemSpecificCalculatorMayBeCalled===true&&
       a.nativeMealPriceProviderPlan.actualUnitSellPrice===null&&
@@ -295,6 +324,12 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
       protoDbPath===undefined?0:view.nativeDynamicPriceCache.cacheRowCount,
     nativeDynamicCachedSellRows:
       protoDbPath===undefined?0:view.nativeDynamicPriceCache.sellOnlyRowCount,
+    authenticatedSellFormulaReferences:
+      protoDbPath===undefined?0:view.sourceSellFormulaItemIds.length,
+    authenticatedPurchaseFormulaReferences:
+      protoDbPath===undefined?0:view.sourcePurchaseFormulaItemIds.length,
+    nativeFormulaCurrencyAndTypePathVerified:true,
+    actualFormulaCurrencyAndTypeMatchVerified:false,
     authenticatedNativeStarResults,
     salePriceComputed:false,
     serializedIngredientsRetained:true,
