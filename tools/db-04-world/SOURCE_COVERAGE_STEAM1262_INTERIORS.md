@@ -1,67 +1,76 @@
-# DB-04 WORLD — Steam v1.26.2 interior evidence checkpoint
+# DB-04 WORLD — Steam v1.26.2 Houses and Rooms source coverage
 
-Owner-private source ZIP is stored under **SRC-05 WORLD DATA**, never in this
-public repository. The checked GitHub code and tests contain no game original
-bytes or full game-derived records.
+The original game-derived snapshot and original game assets stay in
+**owner-private storage**, not in the public repository. This document reports
+evidence counts and implementation boundaries only.
 
-## Scope extension (2026-11-22)
+## Verified original-source checkpoint (2026-11-22)
 
-| Evidence | Previous FloatingIslands snapshot | After included interiors |
+| Source evidence | Earlier partial interior snapshot | Current |
 | --- | ---: | ---: |
-| Source layout records | 180 | 203 |
-| Original GridData records | 743 | 788 |
-| Read-only source-correlated terrain cells | 5,196,146 | 5,214,773 |
-| Source-local initial layout objects | 28,709 | 29,167 |
-| SHA-256 source registrations | 929 | 997 |
+| Total native layout records, all DB-04 families | 203 | **260** |
+| Total original GridData records | 788 | **891** |
+| Source-local default GridObject records | 29,167 | **30,334** |
+| Read-only decoded source-local terrain cells | 5,214,773 | **5,244,434** |
+| Original source SHA-256 registrations | 997 | **1,157** |
 
-Of **27 original interior layout files examined**, **23** were included:
-19 native House/PlayerHouse sources plus four native Room sources. These
-include native `Meta.GridCollection` envelopes directly stored by some Rooms
-and a distinct root-field-2 embedded `Meta.GridCollection` envelope found in
-Houses, PlayerHouse variants, and Boutique. New included records introduce
-**200 explicit GridData references**, **45 distinct new GridData**, and
-**458 source-local initial object anchors**.
+**Full interior layout coverage for the checked Steam v1.26.2 source tree:**
 
-The original Steam source contains references to
-`GridData/Rooms/Wall24x9-GridData.json`, but that original file was not
-present in the inspected v1.26.2 `GridData/Rooms` Drive source directory or
-a filename search. The following four source layouts are deliberately not
-imported until their required original GridData is available:
+- **60** named `SceneLayouts/Houses/<folder>/` original layout files,
+  including noncanonical original filenames (e.g. separate folder/file names)
+- **7** original PlayerHouse layouts directly under `SceneLayouts/Houses/`
+- **13** Room layouts: restaurant, ScroogeShop, TianaRestaurant, Boutique,
+  GrandExhibition main layout and all eight GrandExhibition/Diorama variants
+- Total checked **80 original House/Room layouts**, all represented in the
+  private snapshot. The 57 newly added layouts provide 1,167 original native
+  starting GridObject records, and their 343 literal GridData references are
+  checked without substituting inferred file names.
 
-- `SceneLayouts/Houses/AliceHouse/AliceHouse.json`
-- `SceneLayouts/Houses/AuroraHouse/AuroraHouse.json`
-- `SceneLayouts/Houses/OswaldHouse/OswaldHouse.json`
-- `SceneLayouts/Houses/PlayerHouse-Cabin-1_DefaultLayout.json`
+The source-native `Grid.ID`, `GridObject` identity, x/y and orientation
+are *local evidence*, not global coordinates. Room/Houses/PlayerHouse
+envelopes carry opaque source-specific context at root protobuf field 1 and
+a nested `Meta.GridCollection` at field 2. The context is preserved as a
+SHA-256 digest without reverse-engineering location or edit permission.
+Some Room layouts, including the restaurant, store and exhibition main
+layouts, contain a **direct** native `Meta.GridCollection`. The eight
+exhibition dioramas use the **wrapped** form.
 
-No synthetic or borrowed replacement for the missing original asset was used.
-All GridData paths referenced by the **203 included layouts** are present in
-the owner-private snapshot. This is a *subset-level* assertion, not a claim
-that the entire Steam game source archive has been indexed.
+## Important source inventory correction
 
-## Native semantics and safety boundaries
+The earlier DB-04 checkpoint incorrectly asserted that
+`GridData/Rooms/Wall24x9-GridData.json` was missing. **It exists in the
+original Steam v1.26.2 `GridData/Rooms` folder.** We fetched its exact
+**43-byte original** and source-decoded its 24×9 Wall grid. The four
+previously omitted layouts (AliceHouse, AuroraHouse, OswaldHouse, and
+PlayerHouse-Cabin-1) are included in the current 260-layout snapshot. No
+substitute or synthetic game-derived GridData was used.
 
-- House-specific context at root wire field 1 is **retained as SHA-256 of
-  opaque source bytes**; it is not guessed to be rooms, unlocks, transforms,
-  or permissions. The actual native `Meta.GridCollection` is root wire field 2.
-- Some original Room records are **direct** `Meta.GridCollection`, and
-  others are embedded. Dispatch preserves both forms, including accurate
-  `gridDataPathWireField` provenance.
-- Native `Grid.ID`, `GridObject` IDs, `x/y`, orientation, data references,
-  and default objects are **source-local read-only evidence**. They do not
-  establish world-space transforms, collision, navigation, runtime occupancy,
-  or placement legality.
-- Source membership, world hierarchy, and full placement rules remain
-  **unverified**. Original commercial assets must not be committed.
-- The private snapshot records a digest per original source, validates each
-  JSON member against its manifest digest, and refuses unresolved references
-  for every included layout.
+**Reference closure:** All literal GridData paths referenced by the
+**included 260 native source layouts** resolve to an original GridData
+record in the private snapshot. ZIP CRC and all member SHA-256 hashes
+match; all 260 layout IDs, 891 grid paths and 30,334 layout object IDs
+are individually unique. There are no unresolved **included-layout**
+GridData references.
 
-## Synthetic regression
+This is not a proof of completeness of the entire Steam StreamingAssets
+hierarchy, all game world records, furniture footprints, world transforms,
+runtime occupancy, collision geometry or legality of object placement.
+Those require independent original-source verification. The private
+snapshot's `sourceScopeVerified`, `worldHierarchyComplete` and
+`placementRulesComplete` remain `false`.
 
-`test_interiors.py` covers House, PlayerHouse, Boutique-wrapped Room, direct
-Room, malformed envelopes, missing context, native object/source provenance,
-and preventing cross-family interpretation. Existing `test_floating_islands.py`
-and `test_world.py` remain unchanged.
+## Public read-only decoder and synthetic regression
+
+- `world.py` supports direct `Meta.GridCollection` and wrapped
+  House/Room `Meta.GridCollection` with literal original path and wire
+  field provenance; it does not infer world edits.
+- `test_interiors.py` uses only constructed synthetic protobuf-wire
+  fixtures, including all eight diorama path variants, direct Restaurant,
+  House/PlayerHouse contexts, malformed wrappers, literal Wall24 source
+  path, and source-local default objects.
+- This public repository does **not** contain the v1.26.2 original game
+  files, their full extracted source-derived asset database or private
+  save data.
 
 Run:
 
