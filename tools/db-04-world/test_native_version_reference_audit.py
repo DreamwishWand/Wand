@@ -28,8 +28,8 @@ class NativeReferenceAuditTests(unittest.TestCase):
 """
         rows = parse_instructions(synthetic, 0x1000, 12)
         self.assertEqual(len(rows), 3)
-        self.assertEqual(rows[0][3:], ("ripdata", 0x2000))
-        self.assertEqual(rows[1][3:], ("branch", 0x3000))
+        self.assertEqual(rows[0][3:5], ("ripdata", 0x2000))
+        self.assertEqual(rows[1][3:5], ("branch", 0x3000))
         with self.assertRaisesRegex(ValueError, "cover"):
             parse_instructions(synthetic, 0x1000, 13)
 
