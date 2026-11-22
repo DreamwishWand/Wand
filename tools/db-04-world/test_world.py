@@ -121,14 +121,14 @@ class NativeWireTests(unittest.TestCase):
             checked_footprint({"itemId": 40000012, "footprint": forged})
 
     def test_new_game_version_keeps_raw_packed_grid_without_native_index_claim(self):
-        # Reuse synthetic bytes: only the Steam 1.26.1 executable has been
-        # inspected, so a later-version GridData must stay uninterpreted.
+        # Reuse synthetic bytes: only the Steam 1.26.1/1.26.2 native read paths have
+        # been inspected; later-version GridData stays uninterpreted.
         packed = bytes((0x01, 0x23, 0x41, 0x03, 0x20))
         palette = [0, 8, 16, 32, 64]
         raw = (field(1, 3) + field(2, 3) +
                field(4, struct.pack("<" + "I" * len(palette), *palette)) +
                field(5, packed))
-        current = parse_grid_structure(raw, source_game_version="1.26.2")
+        current = parse_grid_structure(raw, source_game_version="1.27.0")
         self.assertEqual(current["sizeX"], 3)
         self.assertEqual(current["sizeY"], 3)
         self.assertEqual(current["nativeFloorTypePalette"], palette)
@@ -140,21 +140,49 @@ class NativeWireTests(unittest.TestCase):
         self.assertEqual(current["terrainDecoding"]["status"],
                          "native_packing_not_verified_for_game_version")
         self.assertFalse(current["terrainDecoding"]["decoded"])
-        checked_grid(current, source_game_version="1.26.2")
+        checked_grid(current, source_game_version="1.27.0")
 
         forged = dict(current, terrainDecoding=describe_native_packing(
             3, 3, palette, packed, source_game_version="1.26.1"))
         with self.assertRaisesRegex(ValueError, "evidence mismatches"):
-            checked_grid(forged, source_game_version="1.26.2")
+            checked_grid(forged, source_game_version="1.27.0")
         forged_flag = dict(current, nativeFloorIndexToLocalXYCorroborated=True)
         with self.assertRaisesRegex(ValueError, "index proof flag"):
-            checked_grid(forged_flag, source_game_version="1.26.2")
-        # If a future game changes its packing, no 1.26.1 bit/padding
+            checked_grid(forged_flag, source_game_version="1.27.0")
+        # If a future game changes its packing, no earlier bit/padding
         # assumption may discard the raw input on import.
         future = parse_grid_structure(
             raw[:-1] + bytes((0xff,)), source_game_version="1.27.0")
         self.assertFalse(future["terrainDecoding"]["decoded"])
         self.assertIsNone(future["nativePaletteIndexCellCounts"])
+
+    def test_steam1262_source_correlated_readonly_native_grid_and_histogram(self):
+        # Steam 1.26.2 original getter + bit-width read paths were compared
+        # against pinned 1.26.1 PE64 originals. Synthetic 4-bit bytes do
+        # not constitute a claim about placement permissions or 3D geometry.
+        packed = bytes((0x01, 0x23, 0x41, 0x03, 0x20))
+        palette = [0, 8, 16, 32, 64]
+        raw = (field(1, 3) + field(2, 3) +
+               field(4, struct.pack("<" + "I" * len(palette), *palette)) +
+               field(5, packed))
+        record = parse_grid_structure(raw, source_game_version="1.26.2")
+        self.assertTrue(record["terrainDecoding"]["decoded"])
+        self.assertEqual(record["terrainDecoding"]["cellBits"], 4)
+        self.assertIn("steam_1.26.2_pinned_native",
+                      record["terrainDecoding"]["sampleBasedEncodingEvidence"])
+        self.assertEqual(record["nativePaletteIndexCellCounts"], [2, 2, 2, 2, 1])
+        self.assertTrue(record["nativeFloorIndexToLocalXYCorroborated"])
+        self.assertFalse(record["terrainDecoding"]["placementLegalityVerified"])
+        self.assertFalse(record["terrainDecoding"]["nativeCodeBodyVerified"])
+        checked_grid(record, source_game_version="1.26.2")
+        self.assertEqual(decode_window(
+            3, 3, palette, packed, 0, 0, 3, 3,
+            source_game_version="1.26.2"), [
+                [0, 32, 0], [8, 64, 32], [16, 8, 16]])
+        with self.assertRaisesRegex(ValueError, "evidence mismatches"):
+            checked_grid(dict(record, terrainDecoding=describe_native_packing(
+                3, 3, palette, packed, source_game_version="1.26.1")),
+                source_game_version="1.26.2")
 
     def test_reject_invalid_grid_and_duplicate_record(self):
         record = indexed(40000000, 2, "Test", grid(2, 2, [1, 2]))
@@ -267,18 +295,18 @@ class NativeWireTests(unittest.TestCase):
             decode_window(2, 2, palette, packed, 0, 0, 2, 2)
 
         unverified = describe_native_packing(
-            2, 2, palette, packed, source_game_version="1.26.2")
+            2, 2, palette, packed, source_game_version="1.27.0")
         self.assertEqual(unverified["status"],
                          "native_packing_not_verified_for_game_version")
         self.assertFalse(unverified["decoded"])
         self.assertIsNone(count_packed_palette_indices(
-            2, 2, palette, packed, source_game_version="1.26.2"))
+            2, 2, palette, packed, source_game_version="1.27.0"))
         with self.assertRaisesRegex(ValueError, "unresolved"):
             floor_at(2, 2, palette, packed, 0, 0,
-                     source_game_version="1.26.2")
+                     source_game_version="1.27.0")
         with self.assertRaisesRegex(ValueError, "unresolved"):
             decode_window(2, 2, palette, packed, 0, 0, 2, 2,
-                          source_game_version="1.26.2")
+                          source_game_version="1.27.0")
         with self.assertRaisesRegex(ValueError, "missing source game version"):
             describe_native_packing(
                 2, 2, palette, packed, source_game_version="")
