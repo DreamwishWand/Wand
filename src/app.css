@@ -509,3 +509,137 @@ a.portal-card:focus-visible{outline:3px solid #f5d6ff;outline-offset:-5px;z-inde
   color:#453054;border:0}
 :root[data-wand-theme='light'] .community-icon{background:#d5bce8;border-color:#b29ac7;color:#734b93}
 :root[data-wand-theme='light'] .community-state{color:#685777}
+
+/* Collection is an immersive application view, not a report page.
+   Search, workspace choice and the actual catalog occupy the first viewport. */
+.site-main:has(.collection-page){flex:1 1 auto;min-width:0;min-height:0}
+.collection-page{
+  width:100%;max-width:none;min-height:calc(100dvh - 62px);
+  padding:0;margin:0;display:flex;flex-direction:column;
+  background:#14101d;
+}
+.collection-workspace{
+  flex:1 1 auto;display:flex;flex-direction:column;min-width:0;
+  margin:0;border:0;border-radius:0;overflow:visible;
+  background:#14101d;
+}
+.workspace-top{
+  display:flex;position:sticky;top:62px;z-index:25;
+  flex:0 0 auto;flex-wrap:nowrap;align-items:center;
+  justify-content:space-between;min-height:62px;gap:16px;
+  padding:9px clamp(14px,2vw,32px);
+  background:#21192cf2;backdrop-filter:blur(14px);
+  border:0;border-bottom:1px solid #ffffff21;
+}
+.collection-record-switcher{display:flex;align-items:center;gap:7px;flex:none;min-width:0}
+.collection-record-switcher select{
+  color:#f4eafd;background:#2c223a;
+  border:1px solid #ffffff2b;border-radius:9px;
+  padding:10px 34px 10px 12px;min-width:135px;
+  max-width:min(280px,23vw);text-overflow:ellipsis;font-size:12px;
+}
+.collection-record-menu{position:relative;flex:none}
+.collection-record-menu summary{
+  display:grid;place-items:center;list-style:none;cursor:pointer;
+  width:39px;height:39px;border:1px solid #ffffff29;border-radius:9px;
+  color:#dfc6f0;background:#ffffff0b;
+}
+.collection-record-menu summary::-webkit-details-marker{display:none}
+.collection-record-menu summary:hover,.collection-record-menu[open] summary{background:#6e4b8f55}
+.collection-record-menu summary:focus-visible{outline:2px solid #d3a7f0;outline-offset:3px}
+.collection-record-actions{
+  display:grid;gap:3px;position:absolute;top:calc(100% + 8px);
+  left:0;z-index:28;min-width:184px;max-width:80vw;
+  padding:7px;border:1px solid #a78ac163;border-radius:11px;
+  background:#291e37;box-shadow:0 15px 40px #090711bb;
+}
+.collection-record-actions button{
+  display:flex;align-items:center;gap:10px;text-align:left;white-space:nowrap;
+  padding:10px 12px;border:0;border-radius:7px;font-size:12px;
+  color:#eee0f9;background:transparent;
+}
+.collection-record-actions button:hover:not(:disabled){background:#76518c63}
+.workspace-top .toolbar{display:flex;justify-content:flex-end;align-items:center;flex:1 1 auto;min-width:0;gap:9px}
+.workspace-top .search-box{width:min(500px,100%);max-width:none;min-height:42px}
+.workspace-top .search-box input{font-size:13px}
+.workspace-top .subtle-button{padding:12px 13px;white-space:nowrap}
+.collection-page .error-banner{margin:8px 16px}
+.collection-page>.info-banner{
+  position:fixed;bottom:16px;right:16px;z-index:36;
+  width:min(560px,calc(100vw - 32px));margin:0;
+  box-shadow:0 14px 50px #0008;
+}
+.workspace-body{flex:1 1 auto;display:grid;min-height:calc(100dvh - 124px);grid-template-columns:minmax(0,1fr)}
+.workspace-body.has-inspector{grid-template-columns:minmax(0,1fr) minmax(280px,350px)}
+.collection-results{padding:clamp(16px,2vw,32px);min-width:0}
+.section-lead{margin:0 0 14px}
+.section-lead h2{font-size:13px;color:#ba9dcf;font-weight:650;letter-spacing:.03em;margin:0}
+.facet-grid{grid-template-columns:repeat(auto-fill,minmax(175px,1fr));gap:10px}
+.facet-card{min-height:112px;border-radius:12px;padding:15px}
+.facet-card strong{font-size:clamp(13px,.95vw,16px);max-width:calc(100% - 28px)}
+.facet-card span:not(.facet-flourish){margin-top:auto}
+.items-grid{grid-template-columns:repeat(auto-fill,minmax(225px,1fr))}
+.item-inspector{
+  position:sticky;top:124px;align-self:start;height:calc(100dvh - 124px);
+  overflow-y:auto;overscroll-behavior:contain;
+  background:#1b1525;border-left:1px solid #ffffff24
+}
+.inspector-details{margin:16px 0;color:#d1bfdc;font-size:12px}
+.inspector-details summary{padding:8px 0;cursor:pointer}
+.inspector-details dl{
+  display:grid;grid-template-columns:92px 1fr;gap:9px;margin:12px 0;font-size:11px
+}
+.inspector-details dt{color:#ad9aba}
+.inspector-details dd{margin:0}
+@media(max-width:820px){
+  .workspace-body.has-inspector{grid-template-columns:minmax(0,1fr)}
+  .workspace-top{top:62px;gap:9px}
+  .collection-results{padding:14px}
+  .item-inspector:not(.empty-inspector){position:fixed;top:auto;height:auto;bottom:0}
+}
+@media(max-width:650px){
+  .collection-page{min-height:calc(100dvh - 56px)}
+  .workspace-top{
+    top:56px;min-height:56px;padding:7px 10px;
+    flex-wrap:nowrap;gap:6px
+  }
+  .collection-record-switcher{gap:4px;min-width:0;max-width:43%}
+  .collection-record-switcher select{
+    min-width:0;width:100%;max-width:100%;padding:9px 18px 9px 7px;font-size:11px
+  }
+  .collection-record-menu summary{width:34px;height:36px}
+  .collection-record-actions{left:auto;right:-20px}
+  .workspace-top .toolbar{gap:5px}
+  .workspace-top .search-box{min-height:36px}
+  .workspace-top .search-box span{padding:0 7px}
+  .workspace-top .search-box input{font-size:11px;padding:9px 2px 9px 0}
+  .workspace-top .subtle-button{padding:9px 6px;font-size:10px}
+  .workspace-body{min-height:calc(100dvh - 112px)}
+  .facet-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .facet-card{min-height:110px}
+  .collection-results{padding:12px}
+  .items-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+  .item-card{padding:7px;gap:6px}
+  .item-icon{width:38px;height:40px}
+  .item-state-toggle{width:30px;height:30px}
+  .item-card-copy strong{font-size:10px}
+}
+@media(max-width:410px){
+  .items-grid{grid-template-columns:minmax(0,1fr)}
+}
+:root[data-wand-theme='light'] .collection-page,
+:root[data-wand-theme='light'] .collection-workspace,
+:root[data-wand-theme='light'] .workspace-body{background:#f3edf7;color:#30213b}
+:root[data-wand-theme='light'] .workspace-top{background:#eee5f5f5;border-bottom-color:#c9b6d4}
+:root[data-wand-theme='light'] .collection-record-switcher select,
+:root[data-wand-theme='light'] .collection-record-menu summary,
+:root[data-wand-theme='light'] .workspace-top .search-box{
+  background:#fff;color:#432d55;border-color:#c1a9cf
+}
+:root[data-wand-theme='light'] .collection-record-actions{background:#fff;border-color:#c1a9cf}
+:root[data-wand-theme='light'] .collection-record-actions button{color:#3c294c}
+:root[data-wand-theme='light'] .collection-record-actions button:hover:not(:disabled){background:#e8d8f2}
+:root[data-wand-theme='light'] .facet-card{background:#fff;color:#35233f;border-color:#d4c2dd}
+:root[data-wand-theme='light'] .facet-card span:not(.facet-flourish){color:#746780}
+:root[data-wand-theme='light'] .section-lead h2{color:#70488d}
+:root[data-wand-theme='light'] .item-inspector{background:#e9dff0;color:#392844;border-left-color:#cbb5d8}
