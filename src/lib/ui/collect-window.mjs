@@ -22,5 +22,5 @@ export function collectWindow(fetchPage,wanted,field='rows',maxPage=100){
     offset+=chunk.length;
     if(offset>=total)break;
   }
-  return {total,[field]:all,nextOffset:offset<total?offset:null};
+  return {total,rows:field==='rows'?all:[],results:field==='results'?all:[],nextOffset:offset<total?offset:null};
 }
