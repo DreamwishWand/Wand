@@ -70,3 +70,31 @@ node --test tests/guide-starpath-locales.test.mjs
 ```
 
 The source ZIP and release-index hashes must be reviewed and changed explicitly for any subsequent original game version. No collection of private translation ZIPs, raw game assets, personal save/profile, server-origin metadata or unverified AI translations is placed in the repository.
+
+
+## Native Steam v1.26.2 daily-task translations (2026-11-22)
+
+**Previously unlocalized 146 normal tasks are now independently verified in all eight original game locales.** The private 186,442-byte `Cache/liveops/battlepasses.dat` source contains literal English daily descriptions instead of localization keys. Each `<SeasonOnlineId>_<TaskInternalName>_Description` key was found in the *same version's* `StreamingAssets/Localization/LocDB_*.zip` → `Liveops.locbin`. All **146/146 English entries match the source cache text**, including non-breaking whitespace normalization. All **1,168/1,168** expected original localized daily descriptions exist with no blank/missing keys.
+
+Source ZIP SHA-256 evidence is pinned in `starpath-weekly-locales.py` and reused in `starpath-daily-locales.py`; cache SHA-256 is pinned in both. The new source-verified CLI also pins the exact expected source season IDs and the daily task census (Haunting Elegance 121, Seafaring 25). It reads only the required liveops localization keys. Original Japanese `<nobr>` markup and U+200B/U+00AD/U+2060 layout control characters are stripped while words, punctuation and source-specific quantities are preserved. French `<nbsp>` becomes a non-breaking space. Neither source ZIP nor full liveops tables are published.
+
+Static source projections, with exact original-source closure and immutable browser SHA-256 validation:
+
+| Source season | Published file | Original tasks | Language values | Bytes | SHA-256 |
+| --- | --- | ---: | ---: | ---: | --- |
+| HauntingElegance2026 | `starpath-daily-haunting-2026-11-22.json` | 121 | 968 | 45,280 | `5cb5a3809eec14be3cc24191b6bd8f39a20624c69eafcc57e61246bd85ffaddc` |
+| Seafaring2026 | `starpath-daily-seafaring-2026-11-22.json` | 25 | 200 | 10,315 | `6d308bd67caceea376054ae18f4b6e8953cecfdd8aff2507bc9dae058dd45beb` |
+
+Together with the existing 39×8 weekly descriptions, the public `/guide/star-path/` now resolves **185 task definitions × 8 languages = 1,480 original translation values**, with no machine translations, fake effective duty quantities, entitlement state, or user progress. The selected language controls task search and description display. The original cache English remains provenance metadata only and is independently compared with every `en-US` daily translation in tests.
+
+Reproduce from the private cache and original ZIPs without uploading them:
+
+```sh
+python tools/src-03-guide/starpath-daily-locales.py \
+  --cache /PRIVATE/Cache/liveops/battlepasses.dat \
+  --locales-dir /PRIVATE/StreamingAssets/Localization \
+  --output-dir static/guide/public
+node --test tests/guide-starpath-daily-locales.test.mjs
+```
+
+**Media publication boundary:** SRC-04 has privately staged about 19,054 source-verified image files and 13,202 Item ID associations in R2, but its public distribution candidate is still `candidate_unpublished` with publication authorization disabled. No public URL or manifest can be inferred from the private storage prefix. Do not show fabricated image paths or expose private bucket resources; use only an explicitly published, immutable and verified public media release when available.

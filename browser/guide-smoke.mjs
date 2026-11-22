@@ -110,9 +110,20 @@ try {
   await star.goto('http://127.0.0.1:4177/Wand/guide/star-path/',{waitUntil:'domcontentloaded'});
   await star.getByRole('button',{name:'Seafaring Star Path'}).waitFor({timeout:20000});
   assert.match(await star.locator('.summary').innerText(),/121 \/ 21/);
+  assert.match(await star.locator('.entries li').first().innerText(),/闇のトゲを引っこ抜く/);
+  await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('en');
+  assert.match(await star.locator('.entries li').first().innerText(),/Uproot Night Thorns/);
+  await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('ja');
+  await star.getByRole('textbox',{name:'通常タスクを検索'}).fill('闇のトゲ');
+  assert.match(await star.locator('.entries li').first().innerText(),/闇のトゲ/);
+  await star.getByRole('textbox',{name:'通常タスクを検索'}).fill('');
   assert.equal(await star.locator('input[type=file]').count(),0);
   await star.getByRole('button',{name:'Seafaring Star Path'}).click();
   assert.match(await star.locator('.summary').innerText(),/25 \/ 18/);
+  assert.match(await star.locator('.entries li').first().innerText(),/魚を釣る/);
+  await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('fr');
+  assert.match(await star.locator('.entries li').first().innerText(),/Attrape des poissons/);
+  await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('ja');
   await star.getByRole('button',{name:'週間タスク'}).click();
   assert.equal(await star.locator('.week').count(),6);
   assert.match(await star.locator('.week').first().innerText(),/魚を20匹釣る/);
@@ -149,6 +160,15 @@ try {
   await tamperedLocales.getByRole('alert').waitFor({timeout:20000});
   assert.match(await tamperedLocales.getByRole('alert').innerText(),/fingerprint/);
   await tamperedLocales.close();
+  const tamperedDaily=await browser.newPage();
+  await tamperedDaily.route('**/guide/public/starpath-daily-haunting-2026-11-22.json',async route=>{
+    const original=await route.fetch(),bytes=Buffer.from(await original.body());bytes[100]^=1;
+    await route.fulfill({response:original,body:bytes});
+  });
+  await tamperedDaily.goto('http://127.0.0.1:4177/Wand/guide/star-path/',{waitUntil:'domcontentloaded'});
+  await tamperedDaily.getByRole('alert').waitFor({timeout:20000});
+  assert.match(await tamperedDaily.getByRole('alert').innerText(),/fingerprint/);
+  await tamperedDaily.close();
   console.log('Public Star Path: 2 source-pinned seasons, 185 tasks, reward pages, mobile and SHA tamper rejection passed');
   console.log('Public Guide browser: verified static index, lazy details, multi-language labels, target IDs, mobile layout, tamper rejection, quest deep links and history passed');
 } finally {
