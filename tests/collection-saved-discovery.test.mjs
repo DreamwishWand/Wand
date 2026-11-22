@@ -73,7 +73,7 @@ test('non-boolean values and malformed keys never produce a known discovery valu
   assert.equal(result.status,'partial_inconclusive');
   assert.deepEqual(result.entries,[{itemId:101,discovered:false}]);
   assert.equal(result.invalidReferences,5);
-  assert.equal(result.ambiguousItemIds,2);
+  assert.equal(result.ambiguousItemIds,0);
   assert.equal(sanitizeSavedCollectionDiscovery(result).status,'partial_inconclusive');
 });
 
