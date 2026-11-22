@@ -240,7 +240,7 @@
   .site-shell .shell-brand-mark img{width:28px;height:28px;border-radius:6px}
 }
 @media(max-width:370px){
-  .site-shell .shell-brand-mark{width:28px;height:28px}
+  .site-shell .shell-brand-mark{display:none}
   .site-shell .shell-brand-mark img{width:24px;height:24px}
 }
 
