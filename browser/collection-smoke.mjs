@@ -313,7 +313,7 @@ try{
   const saveButton=portal.getByRole('button',{name:'セーブファイル管理'});
   assert.equal(await saveButton.count(),1);
   await saveButton.click();
-  assert.match(await portal.locator('.shell-save-menu').innerText(),/profile\\.json/);
+  assert.match(await portal.locator('.shell-save-menu').innerText(),/profile\.json/);
   assert.match(await portal.locator('.shell-save-menu').innerText(),/未解析/);
   assert.equal(await portal.getByRole('button',{name:'編集済みセーブを出力'}).isDisabled(),true);
   const [backup]=await Promise.all([
@@ -332,7 +332,7 @@ try{
     window.dispatchEvent(new DragEvent('drop',{dataTransfer:dt,bubbles:true,cancelable:true}));
   });
   await portal.getByRole('button',{name:'セーブファイル管理'}).click();
-  assert.match(await portal.locator('.shell-save-filename').innerText(),/sample\\.profile/);
+  assert.match(await portal.locator('.shell-save-filename').innerText(),/sample\.profile/);
   await portal.getByRole('button',{name:'ファイルを閉じる'}).click();
   await portal.close();
   await page.goto(url);
