@@ -4,6 +4,7 @@
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {watchWandLanguage} from '$lib/ui/preferences';
+  import {editHistory,type HistoryDescription} from '$lib/ui/edit-history';
   import SavedStorePreview from '$lib/collection/SavedStorePreview.svelte';
   import { CollectionRuntime, type CollectionState, type CollectionItem, type CollectionFacet, type CollectionProgress, type CollectionFilter } from '$lib/collection/runtime';
   import { collectionFamilyLabel } from '$lib/collection/copy';
@@ -33,6 +34,7 @@
     workspaces:[{id:'local-1',name:'My Collection',entries:{}}]
   };
   let runtime:CollectionRuntime|null=null;
+  let detachHistory:()=>void=()=>{};
   let state:CollectionState=defaultState;
   let facets:CollectionFacet[]=[];
   let filtered:CollectionItem[]=[];
@@ -148,22 +150,40 @@
     observer.observe(node);
     return {destroy:()=>observer.disconnect()};
   }
-  async function commit(action:()=>Promise<void>,repair=false):Promise<void>{
-    if(!runtime||busy||(storeError&&!repair))return;
-    busy=true;
+  async function commit(action:()=>Promise<void>,description:HistoryDescription,repair=false):Promise<void>{
+    if(!runtime||busy||editHistory.isTraveling()||(storeError&&!repair))return;
+    const before=runtime.state;
+    busy=true;editHistory.beginCollectionEdit();
     try{
       await action();
+      editHistory.recordCollection(before,runtime.state,description);
       storeError='';
       refresh();
       infoMessage='ブラウザ内のCollection記録を更新しました。DDVセーブファイルは変更していません。';
     }catch(error){storeError=error instanceof Error?error.message:String(error);}
-    finally{busy=false;}
+    finally{busy=false;editHistory.endCollectionEdit();}
+  }
+  function describeEntry(itemId:number,patch:Record<string,unknown>):HistoryDescription{
+    const item=runtime?.item(itemId,locale);
+    const previous=entries[String(itemId)]??{};
+    const key=Object.keys(patch)[0];
+    const oldValue=(previous as Record<string,unknown>)[key];
+    const nextValue=patch[key];
+    const displayed=(value:unknown):string=>{
+      if(key==='status')return value==='owned'?'所持':value==='missing'?'未所持':'未記録';
+      if(key==='discovered'||key==='favorite')return value===true?'あり':'なし';
+      return value===undefined||value===null?'—':String(value);
+    };
+    const label=key==='status'?'所持状態':key==='quantity'?'所持数':
+      key==='discovered'?'発見':key==='favorite'?'お気に入り':'記録';
+    return {title:item?.label??String(itemId),change:`${label}: ${displayed(oldValue)} → ${displayed(nextValue)}`};
   }
   async function reloadLatestRecord():Promise<void> {
     if (!runtime || busy) return;
     busy=true;
     try {
       await runtime.reloadLatest();
+      editHistory.reconcileCollection(runtime.state);
       storeError='';
       selectedItemId=null;
       selectedIds=[];
@@ -177,12 +197,16 @@
     }
   }
   function changeEntry(change:Record<string,unknown>):void{
-    if(selectedItem&&runtime)void commit(()=>runtime!.setEntry(selectedItem!.itemId,change));
+    if(selectedItem&&runtime){
+      const id=selectedItem.itemId;
+      void commit(()=>runtime!.setEntry(id,change),describeEntry(id,change));
+    }
   }
   function toggleItemStatus(id:number):void{
     if(!runtime)return;
     const current=entries[String(id)]?.status;
-    void commit(()=>runtime!.setEntry(id,{status:current==='owned'?'missing':'owned'}));
+    const patch={status:current==='owned'?'missing' as const:'owned' as const};
+    void commit(()=>runtime!.setEntry(id,patch),describeEntry(id,patch));
   }
   async function showItem(id:number,event:MouseEvent):Promise<void>{
     inspectorTrigger=event.currentTarget as HTMLElement;
@@ -203,7 +227,7 @@
     void commit(async()=>{
       await runtime!.setBulk(ids,next??'unknown');
       selectedIds=[];selectionMode=false;
-    });
+    },{title:`一括更新（${ids.length}件）`,change:`所持状態 → ${next==='owned'?'所持':next==='missing'?'未所持':'未記録'}`});
   }
   function applyFilteredBulk(next:'owned'|'missing'|'unknown'):void {
     if(!runtime||busy||storeError||totalMatches===0)return;
@@ -215,28 +239,33 @@
       await runtime!.setBulkMatching(filter,next);
       selectedIds=[];
       selectionMode=false;
-    });
+    },{title:`条件に一致する${count}件`,change:`所持状態 → ${label}`});
   }
   function chooseFacet(id:string):void{selected=id;resetView();}
   function clearScope():void{selected='';search='';status='all';nameStatus='all';expansion='';worldFilter='';universeFilter='';resetView();}
   function changeWorkspace(id:string):void{
     if(!runtime||busy||saveReadInProgress)return;
-    void commit(async()=>{await runtime!.workspace('select',id);selectedItemId=null;selectedIds=[];});
+    const target=state.workspaces.find(x=>x.id===id)?.name??id;
+    void commit(async()=>{await runtime!.workspace('select',id);selectedItemId=null;selectedIds=[];},
+      {title:'記録を切り替え',change:`${workspace.name} → ${target}`});
   }
   function newWorkspace():void{
     if(!runtime||busy||saveReadInProgress)return;
     const name=window.prompt('新しいローカル記録の名前（最大80文字）');
-    if(name?.trim())void commit(()=>runtime!.workspace('add','local-'+crypto.randomUUID(),name));
+    if(name?.trim())void commit(()=>runtime!.workspace('add','local-'+crypto.randomUUID(),name),
+      {title:'記録を作成',change:name.trim()});
   }
   function editWorkspaceName():void{
     if(!runtime||!workspace||busy||saveReadInProgress)return;
     const name=window.prompt('記録の名前',workspace.name);
-    if(name?.trim())void commit(()=>runtime!.workspace('rename',workspace.id,name));
+    if(name?.trim())void commit(()=>runtime!.workspace('rename',workspace.id,name),
+      {title:'記録名を変更',change:`${workspace.name} → ${name.trim()}`});
   }
   function deleteWorkspace():void{
     if(!runtime||busy||saveReadInProgress||state.workspaces.length<2)return;
     if(!window.confirm('現在の記録を削除します。先にバックアップを保存しましたか？'))return;
-    void commit(()=>runtime!.workspace('delete',state.active));
+    void commit(()=>runtime!.workspace('delete',state.active),
+      {title:'記録を削除',change:workspace.name});
   }
   async function useOwnerLocalCatalog(event:Event):Promise<void> {
     const input=event.currentTarget as HTMLInputElement;
@@ -246,8 +275,9 @@
     let loaded:CollectionRuntime|null=null;
     try {
       loaded=await CollectionRuntime.openOwnerLocalDb01(file);
-      runtime?.close();
+      detachHistory();runtime?.close();
       runtime=loaded;
+      detachHistory=editHistory.attachCollection(runtime);
       loaded=null;
       loadError='';
       storeError='';
@@ -267,8 +297,9 @@
     let loaded:CollectionRuntime|null=null;
     try {
       loaded=await CollectionRuntime.open(base);
-      runtime?.close();
+      detachHistory();runtime?.close();
       runtime=loaded;
+      detachHistory=editHistory.attachCollection(runtime);
       loaded=null;
       loadError='';
       storeError='';
@@ -296,7 +327,7 @@
       if(file.size>10_000_000)throw new Error('COLLECTION_BACKUP_TOO_LARGE');
       const data=await file.text();
       if(!window.confirm('現在のローカル記録をすべて置き換えます。先にバックアップを保存しましたか？'))return;
-      await commit(()=>runtime!.restore(data),true);
+      await commit(()=>runtime!.restore(data),{title:'バックアップを復元',change:'Collection記録を置き換え'},true);
       selectedItemId=null;clearScope();
     }catch(error){infoMessage=error instanceof Error?error.message:String(error);}
     finally{input.value='';}
@@ -306,6 +337,8 @@
     window.addEventListener('wand:collection-filters',toggleHeaderFilters);
     const handleHeaderBackup=()=>downloadBackup();
     window.addEventListener('wand:collection-backup',handleHeaderBackup);
+    const onHistoryRestored=()=>{selectedItemId=null;selectedIds=[];selectionMode=false;refresh();};
+    window.addEventListener('wand:collection-history-restored',onHistoryRestored);
     const unwatchLanguage=watchWandLanguage(next=>{
       if(locale!==next){locale=next;refresh();}
     });
@@ -319,6 +352,7 @@
         const loaded=await CollectionRuntime.open(base);
         if(!alive){loaded.close();return;}
         runtime=loaded;
+        detachHistory=editHistory.attachCollection(loaded);
         refresh();
         try{
           const response=await fetch(base+'/ddv/collection/item-images-r39.json');
@@ -331,7 +365,7 @@
       }catch(error){if(alive)loadError=error instanceof Error?error.message:String(error);}
       finally{if(alive)loading=false;}
     })();
-    return()=>{alive=false;unwatchLanguage();window.removeEventListener('wand:collection-backup',handleHeaderBackup);window.removeEventListener('wand:collection-filters',toggleHeaderFilters);media.removeEventListener('change',changed);runtime?.close();};
+    return()=>{alive=false;detachHistory();unwatchLanguage();window.removeEventListener('wand:collection-history-restored',onHistoryRestored);window.removeEventListener('wand:collection-backup',handleHeaderBackup);window.removeEventListener('wand:collection-filters',toggleHeaderFilters);media.removeEventListener('change',changed);runtime?.close();};
   });
   function beginSaveRead():void {
     // Preserve the active workspace and runtime at file selection, not at
@@ -364,16 +398,21 @@
     if(!Array.isArray(projection?.discovered)||
        !Array.isArray(projection?.positiveOwned)||
        (!projection.discovered.length&&!projection.positiveOwned.length))return;
-    busy=true;
+    busy=true;editHistory.beginCollectionEdit();
+    const before=runtime.state;
     try{
       const applied=await runtime.applyMappedSaveProfile(projection);
+      editHistory.recordCollection(before,runtime.state,{
+        title:'セーブの状態を反映',
+        change:`発見 ${applied.discovery}件・所持 ${applied.ownership}件`
+      });
       storeError='';
       refresh();
       infoMessage=`セーブの発見履歴 ${applied.discovery.toLocaleString(locale)}件、正の数量で確認した所持 ${applied.ownership.toLocaleString(locale)}件をローカル記録へ反映しました。数量0・未収録ID・矛盾するIDは手動記録を維持します。元のセーブには書き込みません。`;
     }catch(error){
       storeError=error instanceof Error?error.message:String(error);
       infoMessage='セーブの状態は反映されませんでした。既存の手動記録は維持しています。';
-    }finally{busy=false;}
+    }finally{busy=false;editHistory.endCollectionEdit();}
   }
   function receiveDb04Join(event:CustomEvent<{entries:{
     itemId:number;sourceDefault:number;effectiveSaved:number;

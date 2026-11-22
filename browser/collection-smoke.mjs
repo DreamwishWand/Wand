@@ -680,8 +680,35 @@ try{
   assert.equal(lockedReadState.active,'local-1');
   assert.deepEqual(lockedReadState.workspaces.find(x=>x.id==='local-1').entries,stateAfter);
 
+  // Global history remains actionable after leaving Collection.
+  const searchHistory=page.locator('.search-box input[type="search"]');
+  await searchHistory.fill('40005160');
+  await page.waitForFunction(()=>document.querySelectorAll('.item-state-toggle').length===1);
+  const beforeHistory=await readLocalState(page);
+  const previousStatus=beforeHistory.workspaces.find(x=>x.id==='local-1').entries['40005160']?.status??null;
+  const changedStatus=previousStatus==='owned'?'missing':'owned';
+  await page.locator('.item-state-toggle').first().click();
+  await waitForLocalState(page,{item:'40005160',status:changedStatus});
+  await page.getByRole('button',{name:'編集履歴'}).click();
+  assert.match(await page.locator('.shell-history-panel').innerText(),/所持状態:|所持状態：/);
+  assert.equal(await page.getByRole('button',{name:'やり直す'}).isDisabled(),true);
+  await page.locator('.shell-history-head button').click();
+  await page.getByRole('link',{name:'ホームへ戻る'}).click();
+  await page.locator('.portal-grid').waitFor();
+  await page.getByRole('button',{name:'編集履歴'}).click();
+  await page.getByRole('button',{name:'元に戻す'}).click();
+  await waitForLocalState(page,{item:'40005160',status:previousStatus});
+  // Wait for the CAS write and runtime disposal to finish before Redo.
+  await page.getByRole('button',{name:'やり直す'}).click();
+  await waitForLocalState(page,{item:'40005160',status:changedStatus});
+  // Jump to another point in the Collection timeline without leaving Home.
+  assert.ok(await page.locator('.shell-history-entry').count()>1);
+  await page.getByRole('button',{name:'World Editor',exact:true}).click();
+  assert.match(await page.locator('.shell-history-panel').innerText(),/編集機能の実装後/);
+  await page.getByRole('button',{name:'Collection',exact:true}).click();
+  await page.locator('.shell-history-head button').click();
   await context.close();
-  console.log('Collection browser WASM/IndexedDB/migration/search/paging smoke passed');
+  console.log('Collection browser WASM/IndexedDB/migration/search/paging/history smoke passed');
 } finally {
   await browser?.close();
   server.kill('SIGTERM');
