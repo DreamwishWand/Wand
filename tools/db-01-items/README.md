@@ -190,6 +190,61 @@ shards and a versioned manifest; the old catalog, icon GUIDs and eight exact
 current-version names are unchanged. The private original Tag overlay is
 stored alongside the audited DB-01 release in the owner's SRC-01 Drive folder.
 
+### Original CollectionSubMenu and CollectionSet Item-ID index (all 39,067 current definitions)
+
+`src/lib/items/collection-source-index.ts` composes the already SHA-checked
+full private DB-01 catalog, `shared-view.ts`, and optionally the existing
+`native-facet-filters.ts`. It consumes **all** original category shards,
+not only the four inventory classes. The catalog now provides
+`getCategories()`, an immutable list of original class names backed by the
+validated full private release manifest.
+
+```ts
+const index=createDb01OriginalSourceMenuQuery(catalog,shared,nativeFilter);
+const submenus=await index.getSubmenus();
+const sets=await index.getCollectionSets();
+const furniture=await index.search({submenuCodes:[3],limit:100});
+const combined=await index.search({
+  submenuCodes:[3],
+  native:{nativeCategories:['Furniture'],facets:{color:[verifiedTagId]}},
+  limit:100
+});
+const links=await index.getItemLinks(itemId);
+```
+
+The current Steam v1.26.2 original `CollectionSet.json` and IL2CPP
+`CollectionSubMenu` enum contain **305 source sets in 18 used submenus**.
+The independent SHA-pinned full-catalog audit finds exactly **8,573
+distinct Item IDs** with direct or static source-predicate associations,
+including **168** explicitly listed Item IDs, and **35** same-group Crafting
+negative source matches suppressing raw candidate links. The four native
+inventory classes cover **7,619** of those source-associated IDs. Static
+source-filter rules covered: **262 / 262** original dynamic selector
+definitions. These counts describe original-source evidence and do NOT
+assert actual in-game menu availability, progression, unlocking or ownership.
+
+Every output retains the source `CollectionSet` ID, original
+`CollectionSubMenu` enum name/code, original Collection label key,
+source-group coordinates and direct-vs-dynamic predicate evidence. The
+original negative Crafting matches never appear as positive membership.
+One Item ID may belong to multiple source sets; results de-duplicate by
+Item ID per source set and source submenu while preserving all candidate
+source group IDs. Source original `directListedItemCount` is independently
+rechecked for every one of the 305 sets, not copied into a displayed
+counter without verification.
+
+The index intentionally **fails closed** on partial (fewer than
+262/262) selector overlays, mismatched full catalog Item SHA, missing
+source menus, missing direct mappings or incorrect original
+CollectionSet subgroup counts. Query filters OR within a set/submenu
+dimension and AND across dimensions. Native style/color/universe and
+world-context Tag filtering delegates to the previously tested
+`native-facet-filters.ts` instead of duplicating a facet engine. A
+world-context Tag is NOT a proven acquisition world or expansion/DLC
+entitlement. A 305-set source index is not a verified runtime
+Collection UI specification; translating and arranging visible game-screen
+filters remains a separate game/runtime-verification task.
+
 ### Original-native furniture/style/color Tag filters (TypeScript)
 
 `src/lib/items/native-facet-filters.ts` exports
