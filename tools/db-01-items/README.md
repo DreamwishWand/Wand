@@ -18,8 +18,10 @@ unverified labels, inferred rights, shop/availability claims or writer permissio
 First generate the verified private source JSONL using the source/version-specific
 SRC-01 readers (`steam1262.py`, `localize1262.py`, `recover_unchanged1262.py`
 when source-hash matches) and `build_recovered_partial.py` or the more general
-`build.py`. For v1.26.2 there are **33,627** distinct definitions, but 38/39
-files are SHA-verified, **not** a complete game corpus.
+`build.py`. The previously recovered, **historical partial** v1.26.2 stage had 33,627
+definitions and 38/39 originals. The current owner-private, independently
+audited v1.26.2 release supersedes it with **39,067** definitions and 39/39
+itemlist original files verified; keep old references only for provenance.
 
 From its private output:
 
@@ -85,9 +87,12 @@ Original-source instructions and evidence limits remain documented in:
 - [`../src-01-items/RECOVER-UNCHANGED-1262.md`](../src-01-items/RECOVER-UNCHANGED-1262.md)
   — exact 38/39 SHA-identical originals from the prior Steam archive.
 
-**Remaining unverified-in-Drive inputs (upload still in progress):** changed v1.26.2 `Condition.json` and eight
-complete current LocDB ZIPs. DLC, ownership, collectibility, world relationships
-and current classification are unresolved until evidence is acquired.
+**Current source status:** v1.26.2 `Condition.json` and all eight matching
+LocDB ZIPs have been acquired, SHA-256 checked and incorporated into the audited
+private catalog. Item type, source subtype and partial source Collection
+classification overlays are available (details below). DLC entitlement, actual
+world acquisition and runtime Collection visibility are separate unverified
+concerns, not inferred from those sources.
 
 ## Full-original-source coverage: Steam 1.26.2 acceptance
 
@@ -184,6 +189,55 @@ Steam 1.26.2 release. The output is 256 private SHA-checked on-demand JSON
 shards and a versioned manifest; the old catalog, icon GUIDs and eight exact
 current-version names are unchanged. The private original Tag overlay is
 stored alongside the audited DB-01 release in the owner's SRC-01 Drive folder.
+
+### Current Steam Collection character/memory/figurine/pet/sidekick predicates
+
+`resolve_collection_special.py` independently pins the owner-private current
+v1.26.2 SQLite and matching IL2CPP `dump.cs` SHA-256, checks current
+`CollectionSet`, `Tag`, `Character`, `MemoryShard`, `BoardGame`
+and `Companion` complete original byte identities against every SQLite row,
+and matches these source-exact selector/field paths:
+
+- **35** CharacterUniverse selectors → `CharacterItemData.Tags`;
+- **43** MemoryShard selectors → `UniverseTagItemID` or
+  `MemoryShardTagItemID`, including **one negated selector** applied as a
+  group-level exclusion, never as a positive membership;
+- **16** BoardGameFigurine universe selectors → `FigurineItemData.Tags`;
+- **2** Pet.IsNotable selectors → the source enum `CompanionItemType.Pet=0`
+  and the source `PetItemData.IsNotable` boolean;
+- **2** SidekickUniverse selectors → Character.Tags together with
+  `CharacterItemData.IsSidekick`.
+
+For Steam v1.26.2 this verifies **98** original selector conditions and
+**890 distinct original Item IDs** (**892** positive Item-ID/selector links),
+after **3** current source negative/ignore exclusions. These are **static
+source-predicate candidates**, not proof of runtime Collection membership,
+unlocked items, game UI display, DLC rights or obtainable worlds.
+
+The previous Furniture/Clothing overlay resolves **124** *other* selectors,
+making **222 / 262** source selector conditions interpretable through the two
+disjoint current-original producers. **40** still require work: 12 activity
+selectors and 28 crafting selectors. This is **not** 222/262 actual gameplay
+Collection UI verification; runtime filtering remains separate.
+
+```sh
+python tools/db-01-items/resolve_collection_special.py \
+  --sqlite /owner/private/complete-1262.sqlite \
+  --original-dir /owner/private/steam-1262/itemlist \
+  --il2cpp-dump /owner/private/steam-1262/Il2CppDump/dump.cs \
+  --expected-sqlite-sha256 <independently pinned SHA256> \
+  --expected-il2cpp-sha256 <independently pinned SHA256> \
+  --out /owner/private/db01-special-collection
+```
+
+The read-only `src/lib/items/collection-special.ts` exports a SHA-verified,
+bounded on-demand TypeScript client with `getItem(id)`, `getItems(ids)` and
+`getSelectors()`. This overlay covers non-inventory native classes.
+**Do not force these records into DB-00's four-class inventory Item patch**;
+the original Item ID and class remain accessible to Collection/Guide/Save
+consumers directly. The 257 SHA-pinned private files plus private audit are
+stored in the owner's SRC-01 ITEMS Drive folder. Neither private game-derived
+datasets nor the raw IL2CPP dump are included in public GitHub.
 
 ### Current Steam 1.26.2 Furniture/Clothing dynamic universe predicates
 
