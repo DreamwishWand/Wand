@@ -152,40 +152,6 @@
 }
 .site-shell .portal-card-community .portal-card-visual>svg{width:clamp(66px,6vw,88px);height:clamp(66px,6vw,88px)}
 .site-shell .portal-card-community .portal-card-label{max-width:min(70%,560px)}
-:root[data-wand-theme='light'] .site-shell .site-header{background:#f3ecf8f7;border-color:#c4b4d4;color:#35233f}
-:root[data-wand-theme='light'] .site-shell .header-home-button,
-:root[data-wand-theme='light'] .site-shell .header-icon-button,
-:root[data-wand-theme='light'] .site-shell .shell-nav-trigger{color:#4a345d}
-:root[data-wand-theme='light'] .site-shell .shell-shortcut,
-:root[data-wand-theme='light'] .site-shell .shell-current{color:#564366}
-:root[data-wand-theme='light'] .site-shell .shell-shortcut[aria-current=page]{color:#4b286f;background:#cab4dd70}
-:root[data-wand-theme='light'] .site-shell .shell-menu{background:#fff;color:#362646;border-color:#c1b1d1;box-shadow:0 15px 45px #4030533d}
-:root[data-wand-theme='light'] .site-shell .shell-menu a,
-:root[data-wand-theme='light'] .site-shell .shell-menu button{color:#473459}
-:root[data-wand-theme='light'] .site-shell .shell-menu .shell-unavailable{color:#665575}
-:root[data-wand-theme='light'] .site-shell .shell-menu a:hover,
-:root[data-wand-theme='light'] .site-shell .shell-menu button:hover{background:#e8dcf1}
-:root[data-wand-theme='light'] .site-shell .shell-menu a[aria-current=page]{background:#ddcaed}
-:root[data-wand-theme='light'] .site-shell .portal-card{
-  color:#34233f;background:linear-gradient(145deg,#fefbff,#eee6f7)
-}
-:root[data-wand-theme='light'] .site-shell .portal-card-collection,
-:root[data-wand-theme='light'] .site-shell .portal-card-guide{background:linear-gradient(145deg,#f9f4fc,#e7e0f3)}
-:root[data-wand-theme='light'] .site-shell .portal-card-community{background:linear-gradient(130deg,#e9e3f3,#dedff1)}
-:root[data-wand-theme='light'] .site-shell .portal-card.planned{
-  background:linear-gradient(145deg,#f3edf8,#e8e0f0);color:#3b2b49
-}
-:root[data-wand-theme='light'] .site-shell .portal-card-community.planned{background:linear-gradient(130deg,#ebe4f5,#dfe2f2)}
-:root[data-wand-theme='light'] .site-shell .portal-card.planned .portal-card-label strong{color:#473452}
-:root[data-wand-theme='light'] .site-shell .portal-card-visual,
-:root[data-wand-theme='light'] .site-shell .portal-card.planned .portal-card-visual{
-  background:#ffffff78;color:#675078;border-color:#78608a4a
-}
-:root[data-wand-theme='light'] .site-shell .portal-planned-status,
-:root[data-wand-theme='light'] .site-shell .portal-card.planned .portal-planned-status{
-  background:#ffffff95;color:#594567;border-color:#82718e70
-}
-:root[data-wand-theme='light'] .site-shell .portal-card-action{color:#643f81}
 @media(max-width:1060px){
   .site-shell .shell-current{display:none}
 }
