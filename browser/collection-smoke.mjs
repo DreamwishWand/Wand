@@ -333,8 +333,9 @@ try{
   // Locale changes must re-query Rust, not leave cached cards in the prior locale.
   // Item 40005160 has source-verified Japanese/English names; it is a unique search match.
   const setItemLanguage=async (label)=>{
-    await page.getByRole('button',{name:'表示言語を切り替える'}).click();
-    await page.getByRole('group',{name:'表示言語'}).getByRole('button',{name:label,exact:true}).click();
+    // Accessible control names change with locale; stable selectors must work in every language.
+    await page.locator('.header-language-button').click();
+    await page.locator('.language-popover').getByRole('button',{name:label,exact:true}).click();
   };
   await search.fill('40005160');
   await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
