@@ -1,5 +1,7 @@
 <script lang="ts">
   import {base} from '$app/paths';
+  import {autoAppend} from '$lib/ui/auto-append';
+  import {collectWindow} from '$lib/ui/collect-window.mjs';
   import {
     GUIDE_LOCALES, importGuideSearch, importGuideFolder, importGuideDetail, searchGuide,
     detailStepRows, guideStaticFacts, guideMissionReferences, guideVerifiedSourceBridge, MAX_SHARD_BYTES
@@ -19,7 +21,7 @@
   let update = '';
   let objective = '';
   let scopeToken = '';
-  let page = 0;
+  let visible = 40;
   let selectedId = '';
   let selectedDetail: any = null;
   let detailError = '';
@@ -37,10 +39,10 @@
   let conditionError = '';
   let loadingConditions = false;
 
-  $: filtered = searchIndex ? searchGuide(searchIndex, {
+  $: filtered = searchIndex ? collectWindow((offset:number,batch:number)=>searchGuide(searchIndex, {
     query: query.slice(0, 128), locale, character, group, update, objective, scopeToken,
-    characterNames, groupInfo, offset: page * 40, limit: 40
-  }) : {total: 0, results: [], nextOffset: null};
+    characterNames, groupInfo, offset, limit: batch
+  }),visible,'results') : {total: 0, results: [], nextOffset: null};
   $: characters = searchIndex ? [...new Set(searchIndex.records.map((r: any) => r.characterId).filter(Boolean))].sort() : [];
   $: groups = searchIndex ? [...new Set(searchIndex.records.map((r: any) => r.groupId).filter(Boolean))].sort() : [];
   $: updates = searchIndex ? [...new Set(searchIndex.records.map((r: any) => r.sourceUpdateGroup).filter(Boolean))].sort() : [];
@@ -63,7 +65,7 @@
   $: requiredShards = searchIndex
     ? new Set(searchIndex.records.map((r: any) => r.detail.file)).size : 0;
 
-  function resetPage() { page = 0; }
+  function resetPage() { visible = 40; }
   function characterLabel(value: unknown): string {
     const id = String(value ?? '');
     const names = characterNames[id];
@@ -96,7 +98,7 @@
     selectedId = '';
     selectedDetail = null;
     detailError = '';
-    query = ''; character = ''; group = ''; update = ''; objective = ''; scopeToken = ''; page = 0;
+    query = ''; character = ''; group = ''; update = ''; objective = ''; scopeToken = ''; visible = 40;
     info = '';
     importError = '';
   }
@@ -367,7 +369,7 @@
             {/if}
           </div>
         </div>
-        <div class="guide-result-count">{filtered.total.toLocaleString()}件の検索結果 · {Math.min(page * 40 + 1, filtered.total)}–{Math.min((page + 1) * 40, filtered.total)}件目</div>
+        <div class="guide-result-count">{filtered.total.toLocaleString()}件の検索結果 · {filtered.results.length.toLocaleString()}件表示</div>
         <ul class="guide-results">
           {#each filtered.results as row (row.id)}
             <li>
@@ -387,11 +389,10 @@
           {/each}
         </ul>
         {#if filtered.total === 0}<p class="guide-empty">該当するクエストはありません。検索条件を変更してください。</p>{/if}
-        <div class="guide-pagination">
-          <button type="button" on:click={() => page -= 1} disabled={page === 0}>前へ</button>
-          <span>{page + 1} ページ</span>
-          <button type="button" on:click={() => page += 1} disabled={filtered.nextOffset === null}>次へ</button>
-        </div>
+        {#if filtered.nextOffset!==null}
+          <div class="guide-pagination auto-sentinel" use:autoAppend={{hasMore:()=>filtered.nextOffset!==null,load:()=>visible+=40}}
+            role="status" aria-label="スクロールでクエストを追加表示"></div>
+        {/if}
       </section>
 
       <aside class="guide-detail" aria-label="Quest details">
