@@ -11,6 +11,7 @@
   import {loadStarpathMedia,starpathMediaThumbnail} from '$lib/guide/starpath-public-media.mjs';
   import {guideCalendarEvents,activeScheduleStarpaths} from '$lib/guide/event-calendar.mjs';
   import {starpathTaskDisplay} from '$lib/guide/starpath-task-guidance.mjs';
+  import {filterStarpathTasks} from '$lib/guide/starpath-search.mjs';
   import {loadPublicStarpathGoals,starpathGoalLabel} from '$lib/guide/public-starpath-goals.mjs';
 
   let catalog:any=null, weeklyLocales:any=null, dailyLocales:any=null, rewardExtras:any=null, publicMedia:any=null, goalAmounts:any=null, goalWarning='', error='', loading=true;
@@ -19,6 +20,7 @@
   let now=Date.now();
   let tab:'tasks'|'weekly'|'rewards'='tasks';
   let query='';
+  let weeklyQuery='';
   let rewardQuery='';
   let rewardTier:'all'|'free'|'premium'='all';
   let limit=60;
@@ -26,14 +28,24 @@
   $: availableSeasons=catalog?.seasons?.filter((s:any)=>activeIds.has(s.id))||[];
   $: season=availableSeasons.find((s:any)=>s.id===selectedId)||availableSeasons[0];
   $: rewardRows=season?[...season.rewardPages.flatMap((p:any)=>p.rewards),...season.bonusPages.flatMap((p:any)=>p.rewards),...season.vaultRewards]:[];
-  $: filtered=season?.tasks?.filter((t:any)=>(starpathDailyDescription(dailyLocales,season.id,t.id,locale)||t.description||'').toLowerCase().includes(query.toLowerCase().trim())
-      ||(t.description||'').toLowerCase().includes(query.toLowerCase().trim())
-      ||t.id.toLowerCase().includes(query.toLowerCase().trim())
-      ||t.objectiveKind.toLowerCase().includes(query.toLowerCase().trim()))||[];
+  $: filtered=season?filterStarpathTasks(season.id,season.tasks,{
+    query,locale,
+    descriptionOf:(t:any)=>starpathDailyDescription(dailyLocales,season.id,t.id,locale),
+    goalTextOf:(t:any)=>starpathGoalLabel(goalAmounts,season.id,t)
+  }):[];
+  $: filteredWeeks=season?season.weeklyTasks.map((tasks:any[],i:number)=>({
+    number:i+1,
+    tasks:filterStarpathTasks(season.id,tasks,{
+      query:weeklyQuery,locale,
+      descriptionOf:(t:any)=>starpathWeeklyDescription(weeklyLocales,t.descriptionKey,locale),
+      goalTextOf:(t:any)=>starpathGoalLabel(goalAmounts,season.id,t)
+    })
+  })):[];
+  $: weeklyMatches=filteredWeeks.reduce((count:number,week:any)=>count+week.tasks.length,0);
   function date(value:string){
     return new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(value));
   }
-  function changeSeason(id:string){selectedId=id;limit=60;query='';rewardQuery='';rewardTier='all';}
+  function changeSeason(id:string){selectedId=id;limit=60;query='';weeklyQuery='';rewardQuery='';rewardTier='all';}
   function visibleRewards(rewards:any[],search:string,tier:string,language:string,extras:any){
     const needle=search.trim().toLocaleLowerCase();
     return rewards.filter(r=>{
@@ -80,11 +92,9 @@
 </svelte:head>
 <main class="starpath">
   <header>
-    <div class="eyebrow">DREAMWISH WAND · GUIDE</div>
-    <h1>スターパスガイド</h1>
-    <p>現在の公式発表日程でタスク期間内にあるスターパスのみ、ガイドの対象として表示します。</p>
+    <h1>スターパス</h1>
+    <p>タスクの達成方法・目標数・報酬を確認できます。</p>
     <a class="guide-back" href="{base}/guide/">Guide・イベントカレンダーへ</a>
-    <p class="disclaimer">表示期間は公式発表とSteamの保存済み日程を照合したものです。ゲームサーバーの即時開催状態は未取得です。タスクの解放や達成状況も取得していません。タスクの具体的な操作説明は原本の文言とは別に検証し、未確認の解答は推測で埋めません。</p>
   </header>
   {#if loading}
     <p role="status">キャッシュ定義を検証しています…</p>
@@ -100,6 +110,12 @@
     {#if !availableSeasons.length}<p role="status">現在の日程上、タスク期間内と確認できるスターパスはありません。過去の保存キャッシュだけを根拠に開催中とは表示しません。</p>{/if}
     {#if season}
       {#if goalWarning}<p class="hint" role="status">目標数量を検証できなかったため、ゲーム内の説明のみを表示しています。</p>{/if}
+      <div class="deadline-strip" aria-label="シーズンの期限">
+        <span>タスク期限 <strong>{date(season.finishUtcExclusive)}</strong></span>
+        <span>報酬交換期限 <strong>{date(season.endUtcExclusive)}</strong></span>
+      </div>
+      <details class="season-more">
+        <summary>詳細なシーズン情報</summary>
       <section class="summary" aria-label="シーズン情報">
         <div><span>開始日時</span><strong>{date(season.startUtc)}</strong></div>
         <div><span>タスク期限（未満）</span><strong>{date(season.finishUtcExclusive)}</strong></div>
@@ -108,6 +124,7 @@
         <div><span>通常 / ボーナス / Vault報酬</span><strong>{season.counts.normalRewards} / {season.counts.bonusRewards} / {season.counts.vaultRewards}</strong></div>
         <div><span>プレミアム設定価格</span><strong>{season.premiumPrice.amount} {starpathRewardDisplayName(season.premiumPrice.itemId,locale,rewardExtras)}（ID {season.premiumPrice.itemId}）</strong></div>
       </section>
+      </details>
       <nav class="tabs" aria-label="表示内容">
         <button class:active={tab==='tasks'} on:click={()=>tab='tasks'}>通常タスク</button>
         <button class:active={tab==='weekly'} on:click={()=>tab='weekly'}>週間タスク</button>
@@ -115,30 +132,37 @@
       </nav>
       {#if tab==='tasks'}
         <div class="search">
-          <label>タスクを検索<input bind:value={query} on:input={()=>limit=60} placeholder="説明・種別・ID" aria-label="通常タスクを検索"/></label>
+          <label>タスクを検索<input type="search" bind:value={query} maxlength="120" on:input={()=>limit=60} placeholder="内容・攻略対象・目標数・ID" aria-label="通常タスクを検索"/></label>
           <span>{filtered.length}件</span>
         </div>
         <ul class="entries">
           {#each filtered.slice(0,limit) as t (t.id)}
             {@const display=starpathTaskDisplay(season.id,t,locale,starpathDailyDescription(dailyLocales,season.id,t.id,locale))}
             {@const goal=starpathGoalLabel(goalAmounts,season.id,t)}
-            <li><strong>{display.headline}</strong><small>{display.note}</small><small class="task-data">{#if goal}<span class="goal-badge">目標 {goal}</span>{/if}<span class="token-badge"><WandIcon name="star" size={13}/> {t.tokenReward} {season.currencyName}</span><span>{t.id}{t.availableOnDay!==undefined?' · 解放設定日 '+t.availableOnDay:''}</span></small></li>
+            <li><strong>{display.headline}</strong>{#if display.note}<small>{display.note}</small>{/if}<small class="task-data">{#if goal}<span class="goal-badge">目標 {goal}</span>{/if}<span class="token-badge"><WandIcon name="star" size={13}/> {t.tokenReward} {season.currencyName}</span><span>{t.id}{t.availableOnDay!==undefined?' · 解放設定日 '+t.availableOnDay:''}</span></small></li>
           {/each}
         </ul>
+        {#if filtered.length===0}<p role="status" class="empty-match">一致する通常タスクはありません。</p>{/if}
         {#if filtered.length>limit}<div class="auto-sentinel" use:autoAppend={{hasMore:()=>filtered.length>limit,load:()=>limit+=60}} role="status" aria-label="スクロールでタスクを追加表示"></div>{/if}
       {:else if tab==='weekly'}
-        <p class="hint">確認済みの操作は攻略手順を表示し、未検証のタスクはゲーム原本の説明を表示します。</p>
-        {#each season.weeklyTasks as week,i}
-          <section class="week"><h2>第{i+1}週</h2>
+        <div class="search">
+          <label>週間タスクを検索<input type="search" bind:value={weeklyQuery} maxlength="120" placeholder="内容・攻略対象・目標数・ID" aria-label="週間タスクを検索"/></label>
+          <span>{weeklyMatches}件</span>
+        </div>
+        {#each filteredWeeks as week (week.number)}
+          {#if week.tasks.length}
+          <section class="week"><h2>第{week.number}週</h2>
             <ul class="entries">
-              {#each week as t (t.id)}
+              {#each week.tasks as t (t.id)}
                 {@const display=starpathTaskDisplay(season.id,t,locale,starpathWeeklyDescription(weeklyLocales,t.descriptionKey,locale))}
                 {@const goal=starpathGoalLabel(goalAmounts,season.id,t)}
-                <li><strong>{display.headline}</strong><small>{display.note}</small><small class="task-data">{#if goal}<span class="goal-badge">目標 {goal}</span>{/if}<span class="token-badge"><WandIcon name="star" size={13}/> {t.tokenReward} {season.currencyName}</span><span>{t.id}</span></small></li>
+                <li><strong>{display.headline}</strong>{#if display.note}<small>{display.note}</small>{/if}<small class="task-data">{#if goal}<span class="goal-badge">目標 {goal}</span>{/if}<span class="token-badge"><WandIcon name="star" size={13}/> {t.tokenReward} {season.currencyName}</span><span>{t.id}</span></small></li>
               {/each}
             </ul>
           </section>
+          {/if}
         {/each}
+        {#if weeklyMatches===0}<p role="status" class="empty-match">一致する週間タスクはありません。</p>{/if}
       {:else}
         <div class="reward-search" role="search">
           <label>報酬を検索<input bind:value={rewardQuery} aria-label="報酬を検索" placeholder="報酬名・アイテムID" /></label>
@@ -174,23 +198,32 @@
       {/if}
     {/if}
   {/if}
-  <footer><a href="{base}/guide/quests/">クエストガイドへ</a><p>非公式ファンガイド。原本は非公開のまま維持し、静的候補のみを表示しています。コンテンツの権利は各権利者に帰属します。</p></footer>
+  <footer>
+    <a href="{base}/guide/quests/">クエストガイドへ</a>
+    <details class="source-more">
+      <summary>表示情報の出典と制限</summary>
+      <p>公式発表日程とSteam v1.26.2の保存済みゲームデータを照合しています。ゲームサーバーの即時開催状態、タスクの解放・達成状態は取得していません。攻略手順はゲーム原文とは別に検証し、未確認の解答は推測で埋めません。</p>
+    </details>
+    <p>非公式ファンガイド。コンテンツの権利は各権利者に帰属します。</p>
+  </footer>
 </main>
 <style>
-  .starpath{max-width:1100px;padding:32px 22px 90px;margin:0 auto;color:#f4eafa}
-  header h1{font-size:clamp(28px,4vw,42px);margin:10px 0}
-  header>p{font-size:14px;color:#c7bbd2;line-height:1.8}
-  .eyebrow{font-size:11px;font-weight:700;letter-spacing:.18em;color:#caa6ed}
-  .guide-back{display:inline-block;color:#d2b5f0;font-size:12px;margin-bottom:8px}
-  .disclaimer,.hint{font-size:12px!important;color:#c0afce!important}
-  .seasons,.tabs{display:flex;gap:9px;flex-wrap:wrap;margin:23px 0}
-  .language{display:inline-flex;align-items:center;gap:10px;font-size:12px;color:#dfcfed}.language select{padding:9px;background:#251e31;color:#fff;border:1px solid #66537e;border-radius:9px}
-  .seasons button,.tabs button,.more{border:1px solid #65527d;border-radius:10px;background:#261c32;color:#ecdcfa;padding:11px 17px}
+  .starpath{max-width:1100px;padding:17px 22px 65px;margin:0 auto;color:#f4eafa}
+  header h1{font-size:clamp(26px,3vw,34px);margin:3px 0}
+  header>p{font-size:13px;color:#c7bbd2;line-height:1.6;margin:0 0 5px}
+  .guide-back{display:inline-block;color:#d2b5f0;font-size:12px;margin-bottom:3px}
+  .hint{font-size:12px!important;color:#c0afce!important}
+  .seasons,.tabs{display:flex;gap:9px;flex-wrap:wrap;margin:12px 0}
+  .seasons button,.tabs button{border:1px solid #65527d;border-radius:10px;background:#261c32;color:#ecdcfa;padding:11px 17px}
   .seasons button.selected,.tabs button.active{background:#503667;border-color:#bb91ed;color:#fff}
-  .summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:22px 0}
-  .summary>div{display:grid;gap:8px;background:#20192c;border:1px solid #4c3e60;padding:14px;border-radius:11px}
+  .deadline-strip{display:flex;align-items:center;gap:18px;flex-wrap:wrap;background:#241a32;border:1px solid #4b3d5e;border-radius:10px;padding:9px 13px;margin:12px 0 6px;font-size:12px;color:#bdaacc}
+  .deadline-strip strong{color:#f4eafa;font-size:12px;margin-left:6px}
+  .season-more{margin:6px 0 0;font-size:12px;color:#cfbde1}
+  .season-more summary,.source-more summary{cursor:pointer;padding:5px 0;color:#c7a9e4}
+  .summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:8px 0 14px}
+  .summary>div{display:grid;gap:5px;background:#20192c;border:1px solid #4c3e60;padding:10px;border-radius:9px}
   .summary span{font-size:11px;color:#baa7cf}.summary strong{font-size:14px;overflow-wrap:anywhere}
-  .search{display:flex;gap:18px;align-items:end;justify-content:space-between;margin:20px 0}
+  .search{display:flex;gap:18px;align-items:end;justify-content:space-between;margin:12px 0}
   .search label{font-size:12px;color:#d2c1df;display:grid;gap:8px;flex:1}
   .search input{width:100%;max-width:460px;padding:12px;color:white;background:#261d34;border:1px solid #66537e;border-radius:9px}
   .reward-search{display:flex;flex-wrap:wrap;gap:12px;margin:18px 0}.reward-search label{display:grid;gap:7px;font-size:12px;flex:1;min-width:150px;color:#d2c1df}.reward-search input,.reward-search select{width:100%;padding:11px;background:#261d34;color:white;border:1px solid #66537e;border-radius:9px}.reward-search label:first-child{flex:3}
@@ -205,7 +238,9 @@
   .reward-thumb{display:block;width:56px;height:56px;object-fit:contain;flex:0 0 56px;border-radius:9px;background:#33273f}
   .week{margin:28px 0}.week h2{font-size:17px}
   .hint{line-height:1.7}.error{color:#ffb9c3}
-  footer{margin-top:38px;font-size:12px;color:#a99ab8}footer a{color:#d7baff}
+  .empty-match{font-size:13px;color:#c4b2d2;padding:14px 0}
+  footer{margin-top:24px;font-size:12px;color:#a99ab8}footer a{color:#d7baff}
+  .source-more{margin:8px 0 0;line-height:1.7}
   @media(max-width:720px){.summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
   @media(max-width:420px){.summary{grid-template-columns:1fr}.starpath{padding:20px 12px 65px}}
 </style>
