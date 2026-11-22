@@ -8,8 +8,8 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 
 const read=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8');
-const collection=read('src/lib/collection/saved-store.worker.mjs');
-const diagnostics=read('src/lib/save/save-diagnostics.worker.mjs');
+const collection=read('src/lib/collection/saved-store.worker.ts');
+const diagnostics=read('src/lib/save/save-diagnostics.worker.ts');
 const bridge=read('src/lib/collection/rust-p1g-profile-reader.ts');
 const native=read('crates/ddv-p1g-codec/src/lib.rs');
 const collectionCore=read('src/lib/collection/saved-store-worker-core.mjs');
