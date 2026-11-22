@@ -99,3 +99,11 @@ Owner-uploaded Windows report `src04-r2-stage-report(2).json` was reviewed. This
 - `publicationApproved=false`, `uploadedToPublic=false`, `sourceFilesModified=false`
 
 **Result:** All 19,054 objects are reported uploaded to the *private* R2 staging prefix and their HEAD size + SHA-256 user-metadata checked by the uploader. This is not an independent remote GET/download checksum audit or public distribution. Do not perform extraction, re-encoding or re-upload again for this version without a specific defect or changed source. Next work is a separately reviewed, stripped distribution manifest and publication/CDN path.
+
+## Sanitized distribution candidate prepared (2026-11-22)
+
+The original user-uploaded private v2 index was transformed locally into an **unactivated** public-facing catalog candidate, with 13,202 Item ID records and 256 index shards. It contains only public image object keys (SHA-256 of encoded WebP bytes) and thumbnail/original dimensions. Its public candidate `manifest.json` SHA-256 was `bad3cfb952d86fad64584471a7aaef451bf4522f91c0221cbba891648d33d94b`. **No image bytes are embedded.**
+
+Public object-key deduplication yields **19,053** unique byte-addressed images from the **19,054** private source paths. This is an expected identical-encoded-byte collision; do not re-decode. Private source→target promotion metadata is held separately and must not be published.
+
+The matching repeatable generator, in `tools/src-04-r2/build_public_candidate.py`, was merged through PR #200. It requires the prior successful private-R2 transfer report before preparing a sanitized candidate. The separate `src04-private-promotion-plan.json` is **not public**. Neither generating a candidate nor merging code authorizes live CDN publication. No public bucket, domain, DNS, CDN or release flag was changed.
