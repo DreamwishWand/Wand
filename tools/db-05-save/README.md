@@ -1436,3 +1436,49 @@ nullable parents, optional missing records and non-leakage.
 **Still excluded:** DB-04 exact GridDataPath source join, gameplay
 legality, DLC entitlements, save Writer safety, bytes-preserving P1G
 roundtrip, actual game reload and future-source cross-build guarantees.
+
+
+## DB-05 / DB-04 exact GridDataPath audit — owner-private, partial source
+
+QwX's initial Switch v1.26.2 save has **230** GridDataPath observations,
+of which **201** are distinct exact source paths. The owner-private
+DB-04 Steam v1.26.2 Village04 / Expansion04 / WinnieDLC partial ZIP
+contains **77** native grid records. An exact path comparison yields
+**75 distinct matches** (**79** save observations) and
+**126 distinct paths not indexed by that partial DB-04 release**
+(**151** observations). No QwX GridDataPath was malformed.
+This is a coverage gap in the partial index, NOT evidence that the
+save is corrupted, edited or invalid.
+
+The owner-private scripts at tools/db-05-save/db04_grid_path_audit.py
+and tools/db-05-save/db04-grid-path-cli.mjs verify the caller-pinned
+DB-04 ZIP SHA-256, the SHA-256 digest of every published inner
+output member and the recorded native source path/SHA metadata.
+The Node CLI strictly decrypts P1G or parses plaintext JSON and
+passes the result to the Python scanner over a **local stdin pipe**.
+Neither the save nor decrypted content is written to a new file.
+An anonymous report is written only outside Git and never overwrites
+an existing report.
+
+Usage (paths and SHA are owner-private):
+
+    node tools/db-05-save/db04-grid-path-cli.mjs \
+      --save /PRIVATE/qwx-clean.profile \
+      --db04-archive /PRIVATE/db04-1262-partial.zip \
+      --expected-sha256 EXPECTED_PRIVATE_ZIP_SHA256 \
+      --out /PRIVATE/db05-grid-path-coverage.json
+
+The report contains only fixed public partition labels and aggregate
+counts. No actual source paths, save numeric grid IDs, object states,
+map keys, account data or source IDs are returned. Numeric save grid
+IDs are NEVER reinterpreted as original GridDataPath keys.
+The exact source file SHA-256 evidence is inherited from DB-04's
+prior source audit; this DB-05 adapter independently hashes the
+distributed ZIP and its output members, not the original game files.
+
+The DB-04 archive states sourceSubsetOnly=true and
+sourceScopeVerified=false. 126 distinct QwX paths therefore remain
+unindexed in this archive. Full source identity, world placement
+permissions, DLC entitlement, cross-platform save Writer safety,
+roundtrip preservation and actual game reload remain unverified.
+CI uses only synthetic saves, synthetic ZIPs and strict P1G fixtures.
