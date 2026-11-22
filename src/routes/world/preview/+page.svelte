@@ -467,6 +467,8 @@
   .world-panel {margin:20px 0;padding:22px;background:#1c1728;border:1px solid #ffffff22;border-radius:15px;}
   .world-toolbar,.selector-row,.coord-row,.view-head,.paging {display:flex;align-items:end;gap:14px;flex-wrap:wrap;}
   .world-toolbar {justify-content:space-between;}
+  .world-toolbar label {flex:1 1 240px;min-width:0;max-width:100%;}
+  .world-toolbar input[type=file] {display:block;width:100%;min-width:0;max-width:100%;}
   .selector-row {align-items:stretch;}
   .selector-row label {flex:1;min-width:200px;}
   label {display:grid;gap:9px;color:#d7c7e8;font-size:12px;}
