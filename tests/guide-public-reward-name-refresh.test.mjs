@@ -123,7 +123,7 @@ test('Event Guide uses public release only as an optional missing-name overlay',
   assert.match(route,/loadNewPublishedEventRewardNames/);
   assert.match(route,/if\(source===read&&labels===loaded\)refreshedNames=overlay/);
   assert.match(route,/refreshedNames\?\.getDisplayName\(itemId,locale\)/);
-  assert.match(route,/refreshedNames\?\.getDisplayName\(reward.itemId,language\)/);
+  assert.match(route,/publishedRefresh\?\.getDisplayName\(reward.itemId,language\)/);
   assert.match(route,/Item ID \$\{itemId\}/,
     'IDs stay visible when no publicly verified labels exist');
 });
