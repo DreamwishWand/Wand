@@ -81,6 +81,13 @@
   function floorTint(nativeValue: number | undefined): string | undefined {
     if (!Number.isSafeInteger(nativeValue) || nativeValue === undefined) return undefined;
     if (nativeValue === 0) return '#34313f';
+    // Native GridFloorType flag names only. These are illustrative UI
+    // colors and never implement traversal, water access or item permission.
+    if ((nativeValue & 512) !== 0) return '#346d96'; // Water
+    if ((nativeValue & 256) !== 0) return '#397d79'; // Shore
+    if ((nativeValue & 4) !== 0) return '#53865a'; // Meadow
+    if ((nativeValue & 2048) !== 0) return '#7f697f'; // Wall
+    if ((nativeValue & 1024) !== 0) return '#706b7a'; // Floor
     const hue = (Math.imul(nativeValue, 2654435761) >>> 0) % 360;
     return `hsl(${hue} 29% 39%)`;
   }
