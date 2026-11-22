@@ -17,6 +17,10 @@ import type {
   OriginDatabase,OriginKind,RouteStatus
 } from '../acquisition/origins.ts';
 import type {GuideRewardIndex} from '../guide/reward-relations.ts';
+import {
+  hasPinnedStaticContainerEvidence,
+  type PinnedStaticContainerContents
+} from '../acquisition/public-static-container.ts';
 
 export const DB00_PUBLIC_SEARCH_CONTRACT='wand.game-db.public-item-search@1' as const;
 
@@ -31,6 +35,8 @@ export interface Db00PublicItemSearchRequest {
   readonly routeStatus?:RouteStatus;
   /** Exact pinned DB-03 configured reward links (excludes Vault alternatives and access currency). */
   readonly starPathSeasonId?:string;
+  /** Static original container slot candidate only; NOT live storage/loot/ownership. */
+  readonly staticContainerCandidate?:true;
   readonly offset?:number;
   readonly limit?:number;
 }
@@ -62,6 +68,7 @@ interface SearchEntry {
   readonly originKinds:ReadonlySet<OriginKind>;
   readonly originStatuses:ReadonlyMap<OriginKind,ReadonlySet<RouteStatus>>;
   readonly seasonIds:ReadonlySet<string>;
+  readonly hasStaticContainerCandidate:boolean;
 }
 function assert(ok:unknown,code:string):asserts ok {
   if(!ok)throw new TypeError('DB00_PUBLIC_SEARCH_'+code);
@@ -77,7 +84,8 @@ export function createDb00PublicItemSearch(
   database:SharedGameDatabase,
   joined:Db00SourceJoinedReader,
   origins:OriginDatabase,
-  guide:GuideRewardIndex
+  guide:GuideRewardIndex,
+  staticContainers?:PinnedStaticContainerContents
 ):Db00PublicItemSearch {
   assert(database?.contract==='wand.game-db.shared@1' &&
     database.itemCount===13202 &&
@@ -91,6 +99,14 @@ export function createDb00PublicItemSearch(
     guide.coverage.currentAvailabilityVerified===false &&
     guide.coverage.playerProgressIncluded===false,
     'EXACT_CURRENT_PUBLIC_SOURCES_REQUIRED');
+  if(staticContainers)assert(
+    hasPinnedStaticContainerEvidence(staticContainers) &&
+    staticContainers.coverage.populatedSourceSlots===146 &&
+    staticContainers.coverage.distinctItemIds===115 &&
+    staticContainers.coverage.liveContentsVerified===false &&
+    staticContainers.coverage.guaranteedLootVerified===false &&
+    staticContainers.coverage.personalSaveContentsIncluded===false,
+    'PINNED_STATIC_CONTAINER_REQUIRED');
   let index:readonly SearchEntry[]|null=null;
   const prepare=():readonly SearchEntry[]=>{
     if(index)return index;
@@ -124,12 +140,18 @@ export function createDb00PublicItemSearch(
           relation.playerOwnershipVerified===false),
           'UNVERIFIED_STARPATH_RELATION');
         const seasons=new Set(rewardRelations.map(relation=>relation.seasonId));
+        const templates=staticContainers?.getItemCandidates(item.id)??[];
+        assert(templates.every(row=>row.itemId===item.id &&
+          row.kind==='loot'&&row.routeStatus==='static_candidate_only'&&
+          row.availability==='not_live_verified'),
+          'UNVERIFIED_CONTAINER_TEMPLATE');
         entries.push(Object.freeze({
           itemId:item.id,
           names:Object.freeze({...item.names}),
           originKinds:new Set(statuses.keys()),
           originStatuses:statuses,
-          seasonIds:seasons
+          seasonIds:seasons,
+          hasStaticContainerCandidate:templates.length>0
         }));
       }
     }
@@ -157,6 +179,11 @@ export function createDb00PublicItemSearch(
     assert(season===undefined||
       typeof season==='string'&&season.length>0&&season.length<=128&&
       /^[A-Za-z][A-Za-z0-9_-]*$/.test(season),'INVALID_SEASON_ID');
+    assert(request.staticContainerCandidate===undefined ||
+      request.staticContainerCandidate===true,
+      'INVALID_CONTAINER_TEMPLATE_FILTER');
+    assert(request.staticContainerCandidate!==true || staticContainers!==undefined,
+      'CONTAINER_TEMPLATE_SOURCE_NOT_LOADED');
     const offset=request.offset??0,limit=request.limit??100;
     assert(Number.isSafeInteger(offset)&&offset>=0 &&
       Number.isSafeInteger(limit)&&limit>0&&limit<=500,'INVALID_SEARCH_PAGE');
@@ -170,6 +197,8 @@ export function createDb00PublicItemSearch(
           (item.names[locale]!==undefined &&
             normalize(item.names[locale]!).includes(text))))continue;
         if(season && !item.seasonIds.has(season))continue;
+        if(request.staticContainerCandidate===true &&
+          !item.hasStaticContainerCandidate)continue;
         if(kinds){
           if(!kinds.some(kind=>
             status?item.originStatuses.get(kind)?.has(status):
