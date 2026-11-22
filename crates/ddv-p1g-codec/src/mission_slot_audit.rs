@@ -201,7 +201,8 @@ mod tests{
         assert_eq!(v["unresolvedPlayableQuestReferences"],1);
         assert_eq!(v["zeroSentinels"],1);
         assert_eq!(v["malformedMissionIds"],1);
-        assert_eq!(v["missingOptionalMissionIds"],1);
+        // One missing Slots container + one slot missing MissionId.
+        assert_eq!(v["missingOptionalMissionIds"],2);
         assert_eq!(v["distinctPositiveMissionIds"],2);
         for secret in ["private-map","private-quest-state",
             "do-not-export","2070000001","8765432101"]{
