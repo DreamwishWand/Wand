@@ -14,6 +14,8 @@ import type { Db01Db02Join, Db01Db02JoinResult } from '../items/db02-join.ts';
 import { WorldReferenceIndex, type ItemWorldRelations,
   type NativeAreaReference, type NativeSourceItemReference,
   type WorldIdentity } from './reference-graph.ts';
+import {DB04_NATIVE_SCOPE_CLIENT, type Db04NativeItemScopeClient,
+  type Db04NativeItemScopeRow} from './native-item-scope.ts';
 
 export const DB04_ITEM_GEOGRAPHY_JOIN = 'wand.db04.item-geography-join@1' as const;
 
@@ -42,6 +44,8 @@ export interface WorldItemGeography {
   readonly staticDb02Acquisition: Db01Db02JoinResult | null;
   readonly originalDefaultLocations: readonly SourceDefaultLocation[];
   readonly sourceRelations: ItemWorldRelations;
+  /** Exact original itemlist Tag IDs, independent of default GridObjects. */
+  readonly originalItemScopeTags: Readonly<Db04NativeItemScopeRow> | null;
   readonly sourceVersionMatched: true;
   readonly itemOriginWorldVerified: false;
   readonly itemAcquisitionWorldVerified: false;
@@ -58,6 +62,7 @@ export interface Db04ItemGeographyBridge {
     worldManifestSha256: string;
     db01NativeManifestSha256: string;
     db02Attached: boolean;
+    originalItemScopeAttached: boolean;
   }>;
   getItem(itemId: number): Promise<WorldItemGeography>;
 }
@@ -78,7 +83,8 @@ function check(value:unknown,why:string):asserts value{
 export function createDb04ItemGeographyBridge(
   world:WorldReferenceIndex,
   db01:Db01CatalogClient,
-  db02:Db01Db02Join|null=null
+  db02:Db01Db02Join|null=null,
+  nativeScope:Db04NativeItemScopeClient|null=null
 ):Db04ItemGeographyBridge{
   check(world instanceof WorldReferenceIndex,'VERIFIED_WORLD_INDEX_REQUIRED');
   check(db01?.source?.privateOnly===true &&
@@ -97,12 +103,28 @@ export function createDb04ItemGeographyBridge(
       typeof db02.getItem==='function',
       'DB02_VERIFIED_EXACT_VERSION_REQUIRED');
   }
+  if(nativeScope!==null){
+    check(nativeScope.contract===DB04_NATIVE_SCOPE_CLIENT &&
+      nativeScope.source?.platform==='Steam' &&
+      nativeScope.source.gameVersion===world.target.gameVersion &&
+      nativeScope.source.privateOnly===true &&
+      nativeScope.source.publicationAuthorized===false &&
+      SHA.test(nativeScope.source.auditSha256) &&
+      SHA.test(nativeScope.source.rowsSha256) &&
+      Object.values(nativeScope.source.sourceSha256ByCategory)
+        .length===4 &&
+      Object.values(nativeScope.source.sourceSha256ByCategory)
+        .every(v=>SHA.test(v)) &&
+      typeof nativeScope.getItem==='function',
+      'NATIVE_SCOPE_PRIVATE_EXACT_VERSION_REQUIRED');
+  }
   const source=Object.freeze({
     platform:'Steam' as const,
     gameVersion:world.target.gameVersion,
     worldManifestSha256:world.target.nativeWorldManifestSha256,
     db01NativeManifestSha256:db01.source.nativeSourceManifestSha256,
-    db02Attached:db02!==null
+    db02Attached:db02!==null,
+    originalItemScopeAttached:nativeScope!==null
   });
   return Object.freeze({
     contract:DB04_ITEM_GEOGRAPHY_JOIN,
@@ -116,6 +138,21 @@ export function createDb04ItemGeographyBridge(
       ]);
       check(definition===null||definition.itemId===itemId,
         'DB01_ITEM_ID_MISMATCH');
+      const originalItemScopeTags=nativeScope?.getItem(itemId)??null;
+      const nativeCategory=definition?.nativeCategory;
+      const scopedCategory=nativeCategory==='Furniture'||nativeCategory==='Clothing'||
+        nativeCategory==='Trimming'||nativeCategory==='ActivityItem';
+      if(nativeScope!==null){
+        check(scopedCategory===(originalItemScopeTags!==null) &&
+          (originalItemScopeTags===null||(
+            definition!==null &&
+            originalItemScopeTags.itemId===itemId &&
+            originalItemScopeTags.nativeCategory===definition.nativeCategory &&
+            definition.sourceSha256===
+              nativeScope.source.sourceSha256ByCategory[originalItemScopeTags.nativeCategory]
+          )),
+          'DB01_NATIVE_SCOPE_ORIGINAL_IDENTITY_MISMATCH');
+      }
       check(staticDb02Acquisition===null||(
         staticDb02Acquisition.contract==='wand.db01.db02-private-source-join@1' &&
         staticDb02Acquisition.itemId===itemId &&
@@ -157,7 +194,9 @@ export function createDb04ItemGeographyBridge(
           ?'db01_native_definition_present':'not_in_partial_db01_catalog',
         staticDb02Acquisition,
         originalDefaultLocations:Object.freeze(originalDefaultLocations),
-        sourceRelations:relations,sourceVersionMatched:true,
+        sourceRelations:relations,
+        originalItemScopeTags,
+        sourceVersionMatched:true,
         itemOriginWorldVerified:false,
         itemAcquisitionWorldVerified:false,
         playerSavePlacementVerified:false,
