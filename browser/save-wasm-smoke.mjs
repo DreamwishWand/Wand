@@ -89,7 +89,7 @@ try{
     }}
   };
   const bytes=Buffer.from(JSON.stringify(freshSynthetic),'utf8');
-  await page.locator('input[type=file]').setInputFiles({
+  await page.locator('.save-diagnostics-page input[type=file]').setInputFiles({
     name:'synthetic.json',mimeType:'application/json',buffer:bytes
   });
   const status=page.locator('p[role="status"].notice');
@@ -101,13 +101,13 @@ try{
   assert.deepEqual(errors,[],errors.join('\n'));
   await page.getByRole('button',{name:'読み込み内容を破棄'}).click();
   // Genuine Steam snapshots also use the .profile extension for raw JSON.
-  await page.locator('input[type=file]').setInputFiles({
+  await page.locator('.save-diagnostics-page input[type=file]').setInputFiles({
     name:'plaintext.profile',mimeType:'application/octet-stream',buffer:bytes
   });
   await page.getByText(/JSONを専用Worker内で検査しました/).waitFor({timeout:25000});
   assert.equal(await page.getByRole('alert').count(),0);
   await page.getByRole('button',{name:'読み込み内容を破棄'}).click();
-  await page.locator('input[type=file]').setInputFiles({
+  await page.locator('.save-diagnostics-page input[type=file]').setInputFiles({
     name:'synthetic.profile',mimeType:'application/octet-stream',
     buffer:syntheticEncryptedP1g(freshSynthetic)
   });
@@ -117,7 +117,7 @@ try{
   assert.equal(await page.getByRole('alert').count(),0);
   await page.getByRole('button',{name:'読み込み内容を破棄'}).click();
   const duplicate='{"GameInfo":{"Version":643},"Player":{"x":1,"x":2},"World":{}}';
-  await page.locator('input[type=file]').setInputFiles({
+  await page.locator('.save-diagnostics-page input[type=file]').setInputFiles({
     name:'duplicate.json',mimeType:'application/json',
     buffer:Buffer.from(duplicate,'utf8')
   });
