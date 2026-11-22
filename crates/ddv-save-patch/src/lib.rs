@@ -31,6 +31,7 @@ pub enum PatchError {
     NonIntegerTarget,
     AmbiguousTarget,
     CoordinateMismatch,
+    OrientationMismatch,
 }
 
 impl PatchError {
@@ -47,6 +48,7 @@ impl PatchError {
             Self::NonIntegerTarget => "DB05_PATCH_NONINTEGER_TARGET",
             Self::AmbiguousTarget => "DB05_PATCH_AMBIGUOUS_TARGET",
             Self::CoordinateMismatch => "DB05_PATCH_COORDINATE_MISMATCH",
+            Self::OrientationMismatch => "DB05_PATCH_ORIENTATION_MISMATCH",
         }
     }
 }
@@ -89,6 +91,8 @@ struct JsonLocator<'a> {
     item: Option<u64>,
     signed_path: Option<Vec<Segment>>,
     signed: Option<(Range<usize>, i32)>,
+    string_path:Option<Vec<Segment>>,
+    observed_string:Option<(Range<usize>,String)>,
 }
 
 impl<'a> JsonLocator<'a> {
@@ -116,7 +120,8 @@ impl<'a> JsonLocator<'a> {
         };
         Ok(Self { source, bytes: source.as_bytes(), pos: 0, depth: 0,
             amount_path, item_path, amount: None, item: None,
-            signed_path:None,signed:None })
+            signed_path:None,signed:None,
+            string_path:None,observed_string:None })
     }
 
     fn space(&mut self) {
@@ -253,7 +258,14 @@ impl<'a> JsonLocator<'a> {
                 self.depth -= 1;
                 result?;
             }
-            b'"' => { self.string()?; },
+            b'"' => {
+                let value=self.string()?;
+                if self.string_path.as_ref()
+                    .is_some_and(|p|p.as_slice()==path.as_slice())&&
+                    self.observed_string.replace((start..self.pos,value)).is_some(){
+                    return Err(PatchError::AmbiguousTarget);
+                }
+            },
             b't' => { self.literal(b"true")?; },
             b'f' => { self.literal(b"false")?; },
             b'n' => { self.literal(b"null")?; },
@@ -315,6 +327,14 @@ impl<'a> JsonLocator<'a> {
         }
         Ok((range,original,self.item))
     }
+    fn locate_string(mut self)->Result<(Range<usize>,String,Option<u64>),PatchError>{
+        self.walk_complete()?;
+        let (range,original)=self.observed_string.ok_or(PatchError::MissingTarget)?;
+        if self.item_path.is_some()&&self.item.is_none(){
+            return Err(PatchError::MissingTarget);
+        }
+        Ok((range,original,self.item))
+    }
 }
 
 /// Strict whole-document syntax/duplicate-key check for the *private* P1G
@@ -331,6 +351,7 @@ pub fn validate_json_without_edit(source: &str) -> Result<(), PatchError> {
         amount_path: vec![Segment::Index(usize::MAX)],
         item_path: None, amount: None, item: None,
         signed_path:None,signed:None,
+        string_path:None,observed_string:None,
     };
     parser.walk_complete()
 }
@@ -415,8 +436,18 @@ impl<'a> JsonLocator<'a>{
             source,bytes:source.as_bytes(),pos:0,depth:0,
             amount_path:vec![Segment::Index(usize::MAX)],
             item_path:Some(item_path),amount:None,item:None,
-            signed_path:Some(prefix),signed:None
+            signed_path:Some(prefix),signed:None,
+            string_path:None,observed_string:None
         })
+    }
+    fn grid_orientation(source:&'a str,target:&GridCoordinateTarget)
+        ->Result<Self,PatchError>{
+        // Reuse precisely the same strict private Grid/Object ItemID path.
+        let mut locator=Self::grid_axis(source,target,"X")?;
+        let mut path=locator.signed_path.take().ok_or(PatchError::InvalidTarget)?;
+        *path.last_mut().ok_or(PatchError::InvalidTarget)?=k("Orientation");
+        locator.string_path=Some(path);
+        Ok(locator)
     }
 }
 
@@ -461,6 +492,43 @@ pub fn preview_existing_grid_coordinates(
     }else{
         source.to_owned()
     };
+    Ok(GridCoordinateDraft{
+        patched_json,changed,untouched_bytes_preserved:true,
+        writer_authorized:false,export_authorized:false
+    })
+}
+
+/// Native GridOrientation is 16-way. Only the four names confirmed from
+/// original Save transaction evidence are enabled in this *experimental* path.
+/// This is not a collision/footprint validator and does not imply that all
+/// Save versions or non-cardinal orientations can be rewritten safely.
+pub const OBSERVED_CARDINAL_ORIENTATIONS:[&str;4]=[
+    "GridOrientation_Up","GridOrientation_Right",
+    "GridOrientation_Down","GridOrientation_Left"
+];
+pub fn preview_existing_grid_orientation(
+    source:&str,target:GridCoordinateTarget,
+    expected:&str,replacement:&str
+)->Result<GridCoordinateDraft,PatchError>{
+    if source.is_empty()||source.len()>MAX_PROFILE_BYTES{
+        return Err(PatchError::InvalidDocument);
+    }
+    if !OBSERVED_CARDINAL_ORIENTATIONS.contains(&expected)||
+       !OBSERVED_CARDINAL_ORIENTATIONS.contains(&replacement){
+        return Err(PatchError::InvalidTarget);
+    }
+    let (range,original,observed_item)=JsonLocator::grid_orientation(source,&target)?
+        .locate_string()?;
+    if observed_item!=Some(target.item_id){return Err(PatchError::ItemMismatch);}
+    if original!=expected{return Err(PatchError::OrientationMismatch);}
+    let changed=expected!=replacement;
+    let patched_json=if changed{
+        let mut out=String::with_capacity(source.len()+32);
+        out.push_str(&source[..range.start]);
+        out.push('"');out.push_str(replacement);out.push('"');
+        out.push_str(&source[range.end..]);
+        out
+    }else{source.to_owned()};
     Ok(GridCoordinateDraft{
         patched_json,changed,untouched_bytes_preserved:true,
         writer_authorized:false,export_authorized:false
@@ -842,6 +910,57 @@ mod tests {
             Some(PatchError::AmbiguousTarget));
         assert_eq!(preview_existing_grid_coordinate_batch(source,&[]).err(),
             Some(PatchError::InvalidTarget));
+    }
+
+    #[test]
+    fn native_cardinal_orientation_edits_one_string_token_preserving_unknowns(){
+        let source=r#"{"World":{"GridCollection":{"Grids":{"101":{
+          "Objects":{"5":{"ItemID":40000001,"X":31,"Y":40,
+            "Orientation":"GridOrientation_Up","State":{"Unknown":1.00e+2}},
+            "6":{"ItemID":40000002,"Orientation":"GridOrientation_Up"}}}}},
+          "DiffGrids":{"102":{"ModifiedObjects":{"7":{
+            "ItemID":40000003,"X":8,"Y":9,
+            "Orientation":"GridOrientation_Left",
+            "Private":"\u3053"}}}}}},"Player":{"Future":7}}"#;
+        let full=GridCoordinateTarget{kind:GridObjectKind::Full,
+            grid_id:"101".into(),object_id:"5".into(),item_id:40000001};
+        let diff=GridCoordinateTarget{kind:GridObjectKind::DiffModified,
+            grid_id:"102".into(),object_id:"7".into(),item_id:40000003};
+        let edited=preview_existing_grid_orientation(source,full.clone(),
+            "GridOrientation_Up","GridOrientation_Down").unwrap();
+        let exact=source.replacen(r#""Orientation":"GridOrientation_Up""#,
+            r#""Orientation":"GridOrientation_Down""#,1);
+        assert_eq!(edited.patched_json,exact);
+        assert!(edited.changed&&edited.untouched_bytes_preserved);
+        assert!(!edited.writer_authorized&&!edited.export_authorized);
+        assert!(edited.patched_json.contains(r#""State":{"Unknown":1.00e+2}"#));
+        assert!(edited.patched_json.contains(r#""Private":"\u3053""#));
+        let dif=preview_existing_grid_orientation(source,diff.clone(),
+            "GridOrientation_Left","GridOrientation_Right").unwrap();
+        assert_eq!(dif.patched_json,source.replacen(
+            r#""Orientation":"GridOrientation_Left""#,
+            r#""Orientation":"GridOrientation_Right""#,1));
+        assert_eq!(preview_existing_grid_orientation(source,full.clone(),
+            "GridOrientation_Left","GridOrientation_Right").err(),
+            Some(PatchError::OrientationMismatch));
+        assert_eq!(preview_existing_grid_orientation(source,
+            GridCoordinateTarget{item_id:2,..full.clone()},
+            "GridOrientation_Up","GridOrientation_Right").err(),
+            Some(PatchError::ItemMismatch));
+        for invalid in ["West","GridOrientation_UpUpLeft","GridOrientation_Hacked"]{
+            assert_eq!(preview_existing_grid_orientation(source,full.clone(),
+                "GridOrientation_Up",invalid).err(),Some(PatchError::InvalidTarget));
+        }
+        let dup=source.replace(r#""Orientation":"GridOrientation_Up""#,
+            r#""Orientation":"GridOrientation_Up","\u004f rientation":1"#);
+        // The parser rejects malformed/wrong or duplicated JSON source,
+        // rather than serializing a partially patched object.
+        assert!(preview_existing_grid_orientation(&dup,full.clone(),
+            "GridOrientation_Up","GridOrientation_Right").is_err());
+        let noop=preview_existing_grid_orientation(source,full,
+            "GridOrientation_Up","GridOrientation_Up").unwrap();
+        assert!(!noop.changed);
+        assert_eq!(noop.patched_json,source);
     }
 
     #[test]
