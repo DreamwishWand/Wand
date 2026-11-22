@@ -29,7 +29,8 @@ from terrain_codec import (describe_native_packing, floor_at, decode_window,
 from world import (STREAM, diff_records, encode_varint, explicit_references,
                    extract, footprint, parse_grid_structure, parse_itemlist,
                    parse_world_registry, grid_collection_layout,
-                   default_village_layout, restrictions, wire_fields)
+                   realm_grid_collection_layout, default_village_layout,
+                   restrictions, wire_fields)
 
 
 def field(number, value, wire=None):
@@ -317,6 +318,55 @@ class NativeWireTests(unittest.TestCase):
                                  field(1, 3) + field(2, four_object))
         with self.assertRaisesRegex(ValueError, "disagree"):
             grid_collection_layout(corrupted, path)
+
+    def test_realm_embedded_gridcollection_uses_original_nested_wire_fields(self):
+        path = STREAM / "SceneLayouts/Realms/Example/ExampleRealm.json"
+        native_grid = (field(2, "GridData/Worlds/Example-GridData.json") +
+                       field(4, 1) +
+                       field(5, field(2, field(2, 40000001) +
+                                      field(3, 4) + field(4, 7))) +
+                       field(6, 1))
+        collection = field(1, field(2, native_grid)) + field(3, 1)
+        wrapper = (field(1, field(3,
+                    "SceneLayouts/Realms/Example/CustomLocations.json")) +
+                   field(2, collection))
+        parsed = realm_grid_collection_layout(wrapper, path)
+        self.assertIsNotNone(parsed)
+        layout, objects = parsed
+        self.assertEqual(layout["layoutKind"], "nativeGridCollection")
+        self.assertEqual(layout["defaultObjectCount"], 1)
+        self.assertEqual(layout["embeddedGridCollectionWireField"], 2)
+        self.assertEqual(layout["realmCustomLocationPath"],
+                         "SceneLayouts/Realms/Example/CustomLocations.json")
+        self.assertEqual(layout["gridReferences"][0]["wireField"], "2.1.2.2")
+        self.assertEqual(layout["nativeGridEntries"][0]["gridIdNative"], 0)
+        self.assertEqual(layout["nativeGridEntries"][0]["gridDataPathWireField"],
+                         "2.1.2.2")
+        self.assertEqual((objects[0]["x"], objects[0]["y"]), (4, 7))
+        self.assertFalse(objects[0]["worldCoordinatesVerified"])
+        self.assertFalse(objects[0]["fixedImmovableVerified"])
+        # A realm wrapper is NOT itself a top-level native GridCollection.
+        self.assertIsNone(grid_collection_layout(wrapper, path))
+        self.assertIsNone(realm_grid_collection_layout(
+            wrapper, STREAM / "SceneLayouts/Village04/Area.json"))
+        bad_ref = wrapper.replace(
+            b"SceneLayouts/Realms/Example/CustomLocations.json",
+            b"SceneLayouts/Realms/../../CustomLocations.json")
+        # A malformed protobuf field length is not treated as a valid realm.
+        with self.assertRaises(ValueError):
+            realm_grid_collection_layout(bad_ref, path)
+        no_grids = field(1, field(3,
+            "SceneLayouts/Realms/Example/CustomLocations.json"))
+        with self.assertRaises(ValueError):
+            realm_grid_collection_layout(no_grids, path)
+        corrupt_object = (field(1, field(2,
+            field(2, "GridData/Worlds/Example-GridData.json") +
+            field(5, field(1, 3) + field(2, field(1, 4))))))
+        with self.assertRaisesRegex(ValueError, "disagree"):
+            realm_grid_collection_layout(
+                field(1, field(3,
+                    "SceneLayouts/Realms/Example/CustomLocations.json")) +
+                field(2, corrupt_object), path)
 
     def test_default_village_grid_layout_map_exact_area_paths(self):
         path = STREAM / "SceneLayouts/Village04/DefaultVillageLayout01.json"
