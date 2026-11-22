@@ -10,8 +10,6 @@ test('shared Wand header renders truthful account/save/help and contextual actio
     ['accountInfo','ログイン機能は準備中'],
     ['readSave','セーブファイルを読み込む'],
     ['tutorialHelp','このページのチュートリアル'],
-    ['collectionTools','Collectionツールバー'],
-    ['guideTools','Guideツールバー'],
     ['worldTools','Worldツールバー'],
     ['saveTools','Saveツールバー']
   ];
