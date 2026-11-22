@@ -1075,3 +1075,31 @@ node --test tests/world.test.mjs
 ```
 
 The tests synthesize native wire records. No commercial game data is committed as fixtures.
+
+## Shared native World-reference graph for DB-00 / DB-01 / DB-02 / all services
+
+With a **private** DB-04 source snapshot (ZIP or unpacked folder), create a
+SHA-verified, version-pinned graph *outside* this Git checkout:
+
+```sh
+python tools/db-04-world/reference_graph.py --snapshot /private/db04.zip --out /private/world-refs.json
+```
+
+The typed browser-side consumer is `src/lib/world/reference-graph.ts`:
+`new WorldReferenceIndex(parsedGraph)` supports exact World, Scene, original
+Village AreaType, scoped Grid.ID, layout and original item-default-placement
+queries. `toDb00WorldRelationsSidecar()` provides a private DB-00 merge input
+without rewriting DB-00 item `worlds` or equating default placement with origin,
+acquisition, saved player placement or legal placement. The 18 native
+`Worlds!` keys remain distinct from the six derived DefaultVillage root keys.
+World/DLC/Adventure Pack entitlement mapping remains unknown without original
+supporting fields; a folder named `VillageExpansion` is not such proof.
+
+For incremental game updates, compare two private source-graphs:
+
+```sh
+python tools/db-04-world/reference_graph_diff.py --previous /private/old.json --current /private/new.json --out /private/world-diff.json
+```
+
+With source subsets, `candidateAdded` and `oldOnlyUnverified` are *not*
+release additions or removals. Game-derived graph/diff files remain private.
