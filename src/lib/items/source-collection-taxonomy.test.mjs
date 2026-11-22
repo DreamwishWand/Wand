@@ -176,7 +176,8 @@ test('missing or incomplete source overlays never masquerade as no links',async(
     })}),/INCOMPLETE_OR_MISMATCHED_CURRENT_COLLECTION_SOURCE/);
   const absentItem={...f.items.get(100),collection:{
     ...f.items.get(100).collection,activityCrafting:null,
-    craftingExclusions:'unavailable',
+    // A missing per-Item record cannot simultaneously claim it was loaded.
+    craftingExclusions:'available',
   }};
   const api=createDb01SourceCollectionTaxonomyClient(
     f.catalog,{...f.shared,getItems:async()=>[absentItem]});
@@ -207,4 +208,30 @@ test('malformed CollectionSet group links and null original source links fail cl
   await assert.rejects(createDb01SourceCollectionTaxonomyClient(
     g.catalog,g.shared).getItem(100,'ja'),
     /INCOMPLETE_OR_MISMATCHED_ITEM_COLLECTION_SOURCE/);
+});
+
+test('legitimate sparse source Crafting overlay leaves source groups empty or direct-only',async()=>{
+  const f=fixture();
+  for(const itemId of [100,300,400]){
+    const row=f.items.get(itemId);
+    f.items.set(itemId,{...row,collection:{
+      ...row.collection,activityCrafting:null,
+      craftingExclusions:'unavailable',
+    }});
+  }
+  const api=createDb01SourceCollectionTaxonomyClient(f.catalog,f.shared);
+  const result=await api.getItems([100,300,400],'ja');
+  assert.equal(result[0].sourceLinks[0].groups[0].originalDirectListing,true);
+  assert.deepEqual(result[1].sourceLinks[0].groups.map(g=>
+    g.positiveSourcePredicateOrigins),[[],['set-universe','special']]);
+  assert.deepEqual(result[2].sourceLinks,[]);
+});
+test('Crafting source candidates require a positive or negative per-Item record',async()=>{
+  const f=fixture(),row=f.items.get(200);
+  f.items.set(200,{...row,collection:{
+    ...row.collection,activityCrafting:null,craftingExclusions:'unavailable',
+  }});
+  await assert.rejects(createDb01SourceCollectionTaxonomyClient(
+    f.catalog,f.shared).getItem(200,'ja'),
+  /INCOMPLETE_OR_MISMATCHED_ITEM_COLLECTION_SOURCE/);
 });
