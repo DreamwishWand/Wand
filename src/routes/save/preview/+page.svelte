@@ -74,6 +74,7 @@
   };
   let coordinateSelection:LocalGridInstance|null=null;
   let coordinateX='';let coordinateY='';
+  let coordinateOrientationValue='';
   let coordinateState:'idle'|'checking'|'validated'|'exporting'|'error'='idle';
   let coordinateQueue:GridCoordinatePlan[]=[];
   let coordinateSnapshot:
@@ -81,6 +82,8 @@
       plan:GridCoordinatePlan;signature:string}
     |{mode:'batch';file:File;format:'json'|'auto';
       edits:GridCoordinatePlan[];signature:string}
+    |{mode:'transform';file:File;format:'json'|'auto';
+      plan:GridTransformPlan;signature:string}
     |null=null;
   let coordinateCopyUrl:string|null=null;
   let coordinateCopyName='';
@@ -90,6 +93,10 @@
     'GridOrientation_Up','GridOrientation_Right',
     'GridOrientation_Down','GridOrientation_Left'
   ];
+  type GridTransformPlan=GridCoordinatePlan&{
+    expectedOrientation:CardinalOrientation;
+    replacementOrientation:CardinalOrientation;
+  };
   type GridOrientationPlan={
     localOrdinal:number;itemId:string;
     recordKind:'full'|'diff_modified';
@@ -227,6 +234,22 @@
       recordKind:row.recordKind,expectedX:row.x,expectedY:row.y,
       replacementX:x,replacementY:y};
   }
+  function selectedTransformPlan():GridTransformPlan|null{
+    const coord=selectedCoordinatePlan();
+    const original=coordinateSelection?.orientation??null;
+    if(!coord||!isCardinal(original)||
+       !isCardinal(coordinateOrientationValue)||
+       original===coordinateOrientationValue)return null;
+    return {...coord,expectedOrientation:original,
+      replacementOrientation:coordinateOrientationValue};
+  }
+  // Explicit dependencies keep Svelte 5 legacy-reactive button state in
+  // sync when bound X/Y or orientation changes; method calls alone do not
+  // expose their hidden reads to reactive dependency analysis.
+  $: transformReady=Boolean(
+    coordinateSelection&&coordinateX&&coordinateY&&coordinateOrientationValue
+      ?selectedTransformPlan():null
+  );
   function queueCoordinateEdit(){
     const plan=selectedCoordinatePlan();
     if(!plan||coordinateQueue.length>=16||
@@ -245,6 +268,8 @@
     cancel();result=null;
     coordinateSelection={...row};coordinateX=String(row.x);
     coordinateY=String(row.y);
+    coordinateOrientationValue=isCardinal(row.orientation)
+      ?row.orientation:'';
   }
   function parameters(){
     const old=uint32(expected),next=uint32(replacement);
@@ -290,6 +315,7 @@
     gridInstances=[];instanceState='idle';
     instanceStatus='not_observed';instanceSampled=false;instanceQuery='';
     coordinateSelection=null;coordinateX='';coordinateY='';
+    coordinateOrientationValue='';
     coordinateQueue=[];
     orientationSelection=null;orientationValue='GridOrientation_Up';
     db04Match=null;db04State='idle';
@@ -524,9 +550,13 @@
     }
   }
 
-  async function validateCoordinateEdit(batchMode:boolean=false){
+  async function validateCoordinateEdit(
+    batchMode:boolean=false,transformMode:boolean=false
+  ){
     cancel();result=null;
-    const file=savedSlotsFile,plan=selectedCoordinatePlan();
+    const file=savedSlotsFile;
+    const plan=transformMode
+      ? selectedTransformPlan():selectedCoordinatePlan();
     const edits=batchMode?coordinateQueue.map(p=>({...p})):null;
     if(!file||fileInput?.files?.[0]!==file||
        (batchMode?(!edits||!edits.length||edits.length>16):!plan)||
@@ -555,6 +585,10 @@
            (batchMode
              ? r.receipt?.contract!=='wand.db05.grid-coordinate-batch-preview@1'||
                r.receipt.changedCount!==edits?.length
+             : transformMode
+             ? r.receipt?.contract!=='wand.db05.grid-transform-preview@1'||
+               r.receipt.changed!==true||
+               r.receipt.placementLegalityVerified!==false
              : r.receipt?.contract!=='wand.db05.grid-coordinate-preview@1'||
                r.receipt.changed!==true)||
            r.receipt?.lexicalBytesPreserved!==true||
@@ -565,7 +599,11 @@
         }
         coordinateSnapshot=batchMode
           ? {mode:'batch',file,format,edits:edits!,signature}
-          : {mode:'single',file,format,plan:plan!,signature};
+          : transformMode
+          ? {mode:'transform',file,format,
+             plan:plan as GridTransformPlan,signature}
+          : {mode:'single',file,format,
+             plan:plan as GridCoordinatePlan,signature};
         coordinateState='validated';
       };
       worker.onmessage=event=>finish(event.data);
@@ -573,6 +611,8 @@
       worker.onmessageerror=()=>finish({kind:'error'});
       worker.postMessage(batchMode
         ?{command:'preview-grid-coordinate-batch',format,bytes,edits}
+        :transformMode
+        ?{command:'preview-grid-transform',format,bytes,edit:plan}
         :{command:'preview-grid-coordinates',format,bytes,edit:plan},
         [bytes.buffer]);
       bytes=null;
@@ -589,7 +629,9 @@
   async function exportCoordinateCopy(){
     if(processing||coordinateState!=='validated'||
        !coordinateSnapshot)return;
-    const saved=coordinateSnapshot,plan=selectedCoordinatePlan();
+    const saved=coordinateSnapshot;
+    const plan=saved.mode==='transform'
+      ?selectedTransformPlan():selectedCoordinatePlan();
     if((saved.mode==='batch'
         ?JSON.stringify(coordinateQueue)!==saved.signature
         :!plan||JSON.stringify(plan)!==saved.signature)||
@@ -651,6 +693,10 @@
         ?{command:'export-grid-coordinate-batch-copy',
           format:saved.format,allowExperimentalCopy:true,
           bytes,edits:saved.edits}
+        :saved.mode==='transform'
+        ?{command:'export-grid-transform-copy',
+          format:saved.format,allowExperimentalCopy:true,
+          bytes,edit:saved.plan}
         :{command:'export-grid-coordinate-copy',
           format:saved.format,allowExperimentalCopy:true,
           bytes,edit:saved.plan},[bytes.buffer]);
@@ -1305,6 +1351,23 @@
                   <input bind:value={coordinateY} aria-label="新しいY"
                     disabled={processing} on:input={invalidateCoordinateEdit} />
                 </label>
+                {#if isCardinal(coordinateSelection.orientation)}
+                  <label>変更後の向き（座標と同時編集）
+                    <select bind:value={coordinateOrientationValue}
+                      aria-label="座標と同時変更する向き"
+                      disabled={processing} on:change={invalidateCoordinateEdit}>
+                      {#each cardinalOptions as direction}
+                        <option value={direction}>{
+                          direction.replace('GridOrientation_','')}</option>
+                      {/each}
+                    </select>
+                  </label>
+                  <button type="button" class="secondary"
+                    disabled={processing||!transformReady}
+                    on:click={()=>validateCoordinateEdit(false,true)}>
+                    位置と向きを同時検証
+                  </button>
+                {/if}
                 <button type="button" class="secondary"
                   disabled={processing||coordinateQueue.length>=16||
                     coordinateQueue.some(p=>
@@ -1317,10 +1380,14 @@
                 {#if coordinateState==='validated'}
                   <p role="status">{coordinateSnapshot?.mode==='batch'
                     ? `${coordinateQueue.length}件の座標変更をRust/WASMで検証しました。`
+                    : coordinateSnapshot?.mode==='transform'
+                    ? '位置と向きの同時変更をRust/WASMで検証しました。'
                     : '座標変更をRust/WASMで検証しました。'}</p>
                   <button type="button" disabled={processing||!!coordinateCopyUrl}
                     on:click={exportCoordinateCopy}>
-                    {coordinateCopyUrl?'座標コピーを準備しました':'座標変更コピーを生成'}
+                    {coordinateCopyUrl?'座標コピーを準備しました':
+                      coordinateSnapshot?.mode==='transform'
+                      ?'位置と向きのコピーを生成':'座標変更コピーを生成'}
                   </button>
                   {#if coordinateCopyUrl}
                     <a href={coordinateCopyUrl} download={coordinateCopyName}

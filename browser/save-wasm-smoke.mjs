@@ -451,6 +451,43 @@ try{
   assert.equal(directionCopy.Player.ListInventories['100'].Inventory['550'].Amount,7);
   assert.equal(quantityProfile.World.GridCollection.Grids['101'].Objects['1'].Orientation,
     'GridOrientation_Up');
+  // Verify a single atomic transform of X, Y and cardinal orientation.
+  // The exported encrypted P1G is independently reopened; original remains
+  // untouched and all unrelated fields/objects must match exactly.
+  await objects.getByRole('button',{name:'配置 #1 の座標を編集'}).click();
+  const transform=objects.getByLabel('座標編集',{exact:true});
+  await transform.getByLabel('新しいX').fill('91');
+  await transform.getByLabel('新しいY').fill('-17');
+  await transform.getByLabel('座標と同時変更する向き')
+    .selectOption('GridOrientation_Down');
+  await transform.getByRole('button',{name:'位置と向きを同時検証'}).click();
+  await transform.getByRole('status').filter({
+    hasText:'位置と向きの同時変更をRust/WASMで検証しました'
+  }).waitFor({timeout:30000});
+  assert.equal(await transform.getByRole('alert').count(),0);
+  page.once('dialog',dialog=>dialog.accept());
+  await transform.getByRole('button',{name:'位置と向きのコピーを生成'}).click();
+  const transformLink=transform.getByRole('link',{name:'座標コピーをダウンロード'});
+  await transformLink.waitFor({timeout:30000});
+  const transformEvent=page.waitForEvent('download');
+  await transformLink.click();
+  const editedTransform=readSyntheticEncryptedP1g(
+    await readFile(await (await transformEvent).path())
+  );
+  const moved=editedTransform.World.GridCollection.Grids['101'].Objects['1'];
+  assert.equal(moved.X,91);
+  assert.equal(moved.Y,-17);
+  assert.equal(moved.Orientation,'GridOrientation_Down');
+  assert.equal(moved.PrivateState,'do-not-export');
+  assert.equal(editedTransform.World.GridCollection.Grids['101'].Objects['2'].ItemID,30000031);
+  assert.equal(editedTransform.World.GridCollection.DiffGrids['102'].ModifiedObjects['6'].X,-12);
+  assert.equal(editedTransform.World.GridCollection.DiffGrids['102'].ModifiedObjects['6'].Orientation,
+    'GridOrientation_Left');
+  assert.equal(editedTransform.Player.ListInventories['100'].Inventory['550'].Amount,7);
+  assert.equal(quantityProfile.World.GridCollection.Grids['101'].Objects['1'].X,45);
+  assert.equal(quantityProfile.World.GridCollection.Grids['101'].Objects['1'].Orientation,
+    'GridOrientation_Up');
+
   // Two saved references for sample furniture: one full and one non-removed
   // DiffGrid object, not three (the removed DiffGrid identity is suppressed).
   // Private DB-04 reference index supplied as a local, synthetic file.
