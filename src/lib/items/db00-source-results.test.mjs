@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  joinDb01OriginalCollectionWithPublishedDb00,
+  joinDb01OriginalCollectionWithPublishedDb00 as createPinnedReader,
   DB01_DB00_COLLECTION_RESULTS_CONTRACT,
 } from './db00-source-results.ts';
 import {DB01_SOURCE_MENU_INDEX_SCHEMA} from './collection-source-index.ts';
@@ -9,6 +9,11 @@ import {DB00_SOURCE_JOIN_CONTRACT} from '../game-db/source-join.ts';
 
 const SHA='a'.repeat(64);
 const SNAPSHOT='steam-1.26.2-native-itemlist-v1';
+// Supply this pin independently: source.source.sourceItemsSha256 is untrusted
+// until compared with a trusted, caller-owned original release digest.
+function joinDb01OriginalCollectionWithPublishedDb00(source,publicJoined,pin=SHA){
+  return createPinnedReader(source,publicJoined,pin);
+}
 function fixture(count=6){
   const calls={search:0,joined:0,query:[]};
   const rows=Array.from({length:count},(_,i)=>({
@@ -221,4 +226,92 @@ test('refuse unrelated public Item IDs or different native item category',async(
       i===0?{...x,catalog:{...x.catalog,nativeCategory:'Wrong'}}:x)});
   await assert.rejects(wrongCategory.search({locale:'en'}),
     /PUBLISHED_NATIVE_ITEM_IDENTITY_MISMATCH/);
+});
+
+test('scroll pagination reuses the complete private source intersection and DB00 join once',async()=>{
+  const f=fixture(2003),reader=joinDb01OriginalCollectionWithPublishedDb00(
+    f.source,f.publicReader);
+  const one=await reader.search({locale:'en',submenuCodes:[3]},{offset:0,limit:73});
+  const two=await reader.search({submenuCodes:[3],locale:'en'},{offset:73,limit:73});
+  const three=await reader.search({locale:'en',submenuCodes:[3]},{offset:146,limit:73});
+  assert.equal(f.calls.search,3);
+  assert.equal(f.calls.joined,3);
+  assert.equal(one.totalPublishedMatches,two.totalPublishedMatches);
+  assert.equal(two.totalPublishedMatches,three.totalPublishedMatches);
+  assert.deepEqual([...one.items,...two.items,...three.items].map(x=>x.itemId),
+    f.rows.filter(x=>f.published.has(x.itemId)).slice(0,219).map(x=>x.itemId));
+});
+test('concurrent scroll pages share one in-flight source read',async()=>{
+  const f=fixture(1003),reader=joinDb01OriginalCollectionWithPublishedDb00(
+    f.source,f.publicReader);
+  const [a,b,c]=await Promise.all([
+    reader.search({locale:'ja'},{offset:0,limit:35}),
+    reader.search({locale:'ja'},{offset:35,limit:35}),
+    reader.search({locale:'ja'},{offset:70,limit:35}),
+  ]);
+  assert.equal(f.calls.search,2);
+  assert.equal(f.calls.joined,2);
+  assert.deepEqual([...a.items,...b.items,...c.items].map(x=>x.itemId),
+    f.rows.filter(x=>f.published.has(x.itemId)).slice(0,105).map(x=>x.itemId));
+});
+test('changing source criteria invalidates the cache but stable equivalent keys reuse it',async()=>{
+  const f=fixture(),reader=joinDb01OriginalCollectionWithPublishedDb00(
+    f.source,f.publicReader);
+  await reader.search({locale:'en',searchText:'Exact 3'},{offset:0,limit:1});
+  await reader.search({searchText:'Exact 3',locale:'en'},{offset:1,limit:1});
+  assert.equal(f.calls.search,1);
+  await reader.search({locale:'en',searchText:'Exact 5'});
+  assert.equal(f.calls.search,2);
+  await reader.search({locale:'en',searchText:'Exact 3'});
+  assert.equal(f.calls.search,3);
+});
+test('in-flight caller mutation cannot change the validated source criteria',async()=>{
+  const f=fixture(),reader=joinDb01OriginalCollectionWithPublishedDb00(
+    f.source,f.publicReader);
+  const categories=[3],query={locale:'en',submenuCodes:categories};
+  const promise=reader.search(query);
+  categories[0]=15;query.locale='ja';
+  const result=await promise;
+  assert.equal(result.locale,'en');
+  assert.deepEqual(f.calls.query[0].submenuCodes,[3]);
+  assert.equal(result.totalOriginalSourceCandidates,6);
+});
+test('independent original source SHA is mandatory and must not be copied from an untrusted client',()=>{
+  const f=fixture();
+  assert.throws(()=>createPinnedReader(f.source,f.publicReader),
+    /PINNED_CURRENT_PRIVATE_AND_PUBLISHED_READERS_REQUIRED/);
+  assert.throws(()=>createPinnedReader(f.source,f.publicReader,'b'.repeat(64)),
+    /PINNED_CURRENT_PRIVATE_AND_PUBLISHED_READERS_REQUIRED/);
+  assert.throws(()=>createPinnedReader(f.source,f.publicReader,'wrong'),
+    /PINNED_CURRENT_PRIVATE_AND_PUBLISHED_READERS_REQUIRED/);
+  assert.equal(f.calls.search,0);
+  assert.equal(f.calls.joined,0);
+});
+test('invalid query object cannot share another cached result or reach original source',async()=>{
+  const f=fixture(),reader=joinDb01OriginalCollectionWithPublishedDb00(
+    f.source,f.publicReader);
+  await reader.search({locale:'en'});
+  assert.equal(f.calls.search,1);
+  await assert.rejects(reader.search({searchText:()=> 'forge'}),
+    /NON_JSON_QUERY_FIELD/);
+  await assert.rejects(reader.search({searchText:Number.NaN}),
+    /NON_JSON_QUERY_NUMBER/);
+  const cycle={};cycle.self=cycle;
+  await assert.rejects(reader.search({native:cycle}),/QUERY_DEPTH/);
+  assert.equal(f.calls.search,1);
+});
+test('source scan failure evicts the incomplete census; identical filter retries correctly',async()=>{
+  const f=fixture(),raw=f.source.search;
+  let failOnce=true;
+  const reader=joinDb01OriginalCollectionWithPublishedDb00({
+    ...f.source,search:async q=>{
+      if(failOnce){failOnce=false;throw Error('TRANSIENT_SOURCE_LOAD');}
+      return raw(q);
+    },
+  },f.publicReader);
+  await assert.rejects(reader.search({locale:'en'}),/TRANSIENT_SOURCE_LOAD/);
+  const recovered=await reader.search({locale:'en'});
+  assert.equal(recovered.totalPublishedMatches,4);
+  assert.equal(f.calls.search,1);
+  assert.equal(f.calls.joined,1);
 });

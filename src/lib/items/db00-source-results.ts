@@ -85,10 +85,13 @@ export interface Db01Db00CollectionResultsReader {
 export function joinDb01OriginalCollectionWithPublishedDb00(
   source:Db01OriginalSourceMenuQueryClient,
   publicJoined:Db00SourceJoinedReader,
+  /** Caller-owned independent SHA pin: never copy it from source.source. */
+  expectedOriginalSourceItemsSha256:string,
 ):Db01Db00CollectionResultsReader {
   requireValue(source?.schema===DB01_SOURCE_MENU_INDEX_SCHEMA&&
     source.source.gameVersion===CURRENT_GAME_VERSION&&
-    SHA.test(source.source.sourceItemsSha256)&&
+    SHA.test(expectedOriginalSourceItemsSha256)&&
+    source.source.sourceItemsSha256===expectedOriginalSourceItemsSha256&&
     typeof source.search==='function'&&
     publicJoined?.contract===DB00_SOURCE_JOIN_CONTRACT&&
     publicJoined.snapshotId===CURRENT_PUBLIC_SNAPSHOT&&
@@ -100,29 +103,64 @@ export function joinDb01OriginalCollectionWithPublishedDb00(
     privateSourceSha256:source.source.sourceItemsSha256,
     publicationAuthorized:false as const,
   });
-  async function search(
-    query:Db01Db00OriginalSourceSearchQuery={},
-    page:Readonly<{offset?:number;limit?:number}>={},
-  ):Promise<Db01Db00CollectionResultsPage>{
-    requireValue(query!==null&&typeof query==='object'&&!Array.isArray(query)&&
-      !Object.hasOwn(query,'offset')&&!Object.hasOwn(query,'limit'),
-      'INVALID_SOURCE_QUERY_PAGINATION');
-    requireValue(page!==null&&typeof page==='object'&&!Array.isArray(page),
-      'INVALID_PAGE');
-    const offset=page.offset??0,limit=page.limit??72;
-    requireValue(Number.isSafeInteger(offset)&&offset>=0&&offset<=1_000_000&&
-      Number.isSafeInteger(limit)&&limit>=1&&limit<=500,
-      'INVALID_PAGE_RANGE');
-    const locale=query.locale===undefined?'en':query.locale;
-    requireValue(typeof locale==='string'&&LOCALES.has(locale),
-      'UNSUPPORTED_SOURCE_LOCALE');
-    const candidates:Db01Db00CollectionResultItem[]=[];
-    let totalPublished=0,totalOriginal:number|null=null;
+  type Census=Readonly<{
+    rows:readonly Db01Db00CollectionResultItem[];
+    totalOriginal:number;
+    unpublished:number;
+  }>;
+  // The browser can ask for another page on every scroll. A single complete
+  // source intersection is reused while the exact selection is unchanged.
+  // Keep only the latest selection to bound RAM and never cache a failed scan.
+  let cachedKey:string|null=null;
+  let cachedCensus:Promise<Census>|null=null;
+
+  /** Canonical, bounded data-only query snapshot. Never retain caller-owned
+   * mutable filter arrays while an asynchronous source scan is in flight.
+   * Reject functions, NaN, cyclic structures and prototype-bearing objects
+   * rather than allowing distinct queries to collide under JSON.stringify.
+   */
+  function canonicalize(value:unknown,depth=0):unknown{
+    requireValue(depth<=8,'QUERY_DEPTH');
+    if(value===null||typeof value==='string'||typeof value==='boolean')
+      return value;
+    if(typeof value==='number'){
+      requireValue(Number.isSafeInteger(value),'NON_JSON_QUERY_NUMBER');
+      return value;
+    }
+    if(Array.isArray(value)){
+      requireValue(value.length<=4096,'QUERY_ARRAY_TOO_LARGE');
+      return value.map(entry=>{
+        requireValue(entry!==undefined,'UNDEFINED_ARRAY_FILTER');
+        return canonicalize(entry,depth+1);
+      });
+    }
+    requireValue(typeof value==='object' &&
+      (Object.getPrototypeOf(value)===Object.prototype ||
+        Object.getPrototypeOf(value)===null),
+      'NON_JSON_QUERY_FIELD');
+    const objectValue=value as Record<string,unknown>;
+    const keys=Object.keys(objectValue).sort();
+    requireValue(keys.length<=128,'QUERY_TOO_MANY_FIELDS');
+    const result:Record<string,unknown>={};
+    for(const key of keys){
+      requireValue(key!=='__proto__'&&key!=='constructor'&&key!=='prototype',
+        'UNTRUSTED_QUERY_PROPERTY');
+      if(objectValue[key]!==undefined)
+        result[key]=canonicalize(objectValue[key],depth+1);
+    }
+    return result;
+  }
+
+  async function buildCensus(
+    query:Db01Db00OriginalSourceSearchQuery,
+    locale:Db01Locale,
+  ):Promise<Census>{
+    const collected:Db01Db00CollectionResultItem[]=[];
+    let totalOriginal:number|null=null;
     let traversed=0,unpublished=0,previousId=0;
     // A complete count requires examining every original source candidate,
     // not just the first original-source page: public DB-00 covers a subset.
-    // Each DB-01 query uses its cached 39k source index, and DB-00 joins by
-    // exact Item ID without uploading or copying private source datasets.
+    // DB-01 owns its source index; DB-00 owns its public Item ID index.
     do {
       const sourcePage=await source.search({...query,locale,offset:traversed,limit:1000});
       requireValue(sourcePage.sourceOnly===true&&
@@ -180,32 +218,71 @@ export function joinDb01OriginalCollectionWithPublishedDb00(
           exactName===null?'source_missing':
           publicName===null?'published_missing':
           publicName===exactName?'identical':'different';
-        if(totalPublished>=offset&&candidates.length<limit){
-          candidates.push(Object.freeze({
-            itemId:original.itemId,currentExactName:exactName,
-            currentExactNameVerified:original.currentExactNameVerified,
-            locale,joined:row,originalSource:original,
-            currentNameAgreement:agreement,
-            originalCategoryIsGameUiVerified:false as const,
-            acquisitionWorldVerified:false as const,
-            playerOwnershipVerified:false as const,
-          }));
-        }
-        totalPublished++;
+        collected.push(Object.freeze({
+          itemId:original.itemId,currentExactName:exactName,
+          currentExactNameVerified:original.currentExactNameVerified,
+          locale,joined:row,originalSource:original,
+          currentNameAgreement:agreement,
+          originalCategoryIsGameUiVerified:false as const,
+          acquisitionWorldVerified:false as const,
+          playerOwnershipVerified:false as const,
+        }));
       }
       traversed+=sourcePage.items.length;
     }while(totalOriginal!==null&&traversed<totalOriginal);
     requireValue(totalOriginal!==null&&
-      totalPublished+unpublished===totalOriginal,
+      collected.length+unpublished===totalOriginal,
       'ORIGINAL_PUBLISHED_COVERAGE_MISMATCH');
-    const nextOffset=offset+candidates.length;
     return Object.freeze({
-      items:Object.freeze(candidates),
-      totalPublishedMatches:totalPublished,
-      totalOriginalSourceCandidates:totalOriginal,
-      unpublishedSourceDefinitionCount:unpublished,
-      offset,nextOffset:nextOffset<totalPublished?nextOffset:null,
-      hasMore:nextOffset<totalPublished,snapshotId:CURRENT_PUBLIC_SNAPSHOT,
+      rows:Object.freeze(collected),
+      totalOriginal,
+      unpublished,
+    });
+  }
+  function census(query:Db01Db00OriginalSourceSearchQuery,
+    locale:Db01Locale):Promise<Census>{
+    const snapshot=canonicalize({...query,locale}) as Db01Db00OriginalSourceSearchQuery;
+    const key=JSON.stringify(snapshot);
+    requireValue(key.length<=32768,'QUERY_TOO_LARGE');
+    if(cachedKey===key&&cachedCensus)return cachedCensus;
+    const task=buildCensus(snapshot,locale).catch(error=>{
+      if(cachedKey===key){
+        cachedKey=null;
+        cachedCensus=null;
+      }
+      throw error;
+    });
+    cachedKey=key;
+    cachedCensus=task;
+    return task;
+  }
+
+  async function search(
+    query:Db01Db00OriginalSourceSearchQuery={},
+    page:Readonly<{offset?:number;limit?:number}>={},
+  ):Promise<Db01Db00CollectionResultsPage>{
+    requireValue(query!==null&&typeof query==='object'&&!Array.isArray(query)&&
+      !Object.hasOwn(query,'offset')&&!Object.hasOwn(query,'limit'),
+      'INVALID_SOURCE_QUERY_PAGINATION');
+    requireValue(page!==null&&typeof page==='object'&&!Array.isArray(page),
+      'INVALID_PAGE');
+    const offset=page.offset??0,limit=page.limit??72;
+    requireValue(Number.isSafeInteger(offset)&&offset>=0&&offset<=1_000_000&&
+      Number.isSafeInteger(limit)&&limit>=1&&limit<=500,
+      'INVALID_PAGE_RANGE');
+    const locale=query.locale===undefined?'en':query.locale;
+    requireValue(typeof locale==='string'&&LOCALES.has(locale),
+      'UNSUPPORTED_SOURCE_LOCALE');
+    const result=await census(query,locale as Db01Locale);
+    const items=Object.freeze(result.rows.slice(offset,offset+limit));
+    const nextOffset=offset+items.length;
+    return Object.freeze({
+      items,
+      totalPublishedMatches:result.rows.length,
+      totalOriginalSourceCandidates:result.totalOriginal,
+      unpublishedSourceDefinitionCount:result.unpublished,
+      offset,nextOffset:nextOffset<result.rows.length?nextOffset:null,
+      hasMore:nextOffset<result.rows.length,snapshotId:CURRENT_PUBLIC_SNAPSHOT,
       locale,privateSourceJoin:true as const,
       publicationAuthorized:false as const,
       originalCategoryIsGameUiVerified:false as const,
