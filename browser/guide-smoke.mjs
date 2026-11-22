@@ -294,6 +294,18 @@ try {
   await star.goto('http://127.0.0.1:4177/Wand/guide/star-path/',{waitUntil:'domcontentloaded'});
   await star.getByRole('button',{name:'Seafaring Star Path'}).waitFor({timeout:20000});
   assert.match(await star.locator('.deadline-strip').innerText(),/タスク期限/);
+  assert.equal(await star.locator('.historic-starpaths').evaluate(el=>el.open),false,
+    'official-only history must not obscure the verified current Star Path tasks');
+  await star.locator('.historic-starpaths summary').click();
+  assert.equal(await star.locator('.historic-starpaths li').count(),21,
+    'all 21 source-backed official historical season references are available');
+  assert.equal(await star.locator('.historic-starpaths a').first().getAttribute('href'),
+    'https://disneydreamlightvalley.com/news/early-access-play-now');
+  assert.match(await star.locator('.historic-starpaths').innerText(),/報酬アイテムIDは未確認/,
+    'official announcements are not native reward-item grants');
+  await star.locator('.historic-starpaths summary').click();
+  assert.equal(await star.locator('.entries li').count()>0,true,
+    'archived reference links must not interfere with authenticated Star Path duties');
   assert.equal(await star.locator('.season-more').evaluate(el=>el.open),false,
     'verbose source metadata must not displace the duty list by default');
   await star.locator('.season-more summary').click();
