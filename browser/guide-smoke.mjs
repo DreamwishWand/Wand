@@ -211,6 +211,7 @@ try {
   await star.getByRole('button',{name:'Seafaring Star Path'}).waitFor({timeout:20000});
   assert.match(await star.locator('.summary').innerText(),/121 \/ 21/);
   assert.match(await star.locator('.entries li').first().innerText(),/闇のトゲを引っこ抜く/);
+  assert.match(await star.locator('.entries li').first().innerText(),/目標 3個/,'source goal visible for initial duty');
   await chooseLanguage(star,'en');
   assert.match(await star.locator('.entries li').first().innerText(),/Uproot Night Thorns/);
   await chooseLanguage(star,'ja');
@@ -232,6 +233,7 @@ try {
   await star.getByRole('button',{name:'週間タスク'}).click();
   assert.equal(await star.locator('.week').count(),6);
   assert.match(await star.locator('.week').first().innerText(),/魚を20匹釣る/);
+  assert.match(await star.locator('.week').first().innerText(),/目標 20匹/,'weekly source goal quantity');
   await chooseLanguage(star,'en');
   assert.match(await star.locator('.week').first().innerText(),/Catch 20 fish/);
   await chooseLanguage(star,'de');

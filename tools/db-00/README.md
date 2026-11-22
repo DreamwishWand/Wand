@@ -98,3 +98,31 @@ All three expected SHA arguments are required. Obtain them from the owner's sepa
 The current Steam 1.26.2 audit records 33,627 native definitions, 13,202 four-class Item IDs, 20,425 unclassified definitions and 557 SHA-pinned private shards. The output has 13,202 Item records with only genuinely verified current names (some item records may have no names); it NEVER turns unrelated mission/condition/guide records into collection items or converts 103,064 historical locale candidates into current names. It preserves both original native-manifest and DB-01 compiled-manifest SHA provenance, an unknown build ID (null), and publishable:false. It does not modify static/ddv/game-db/active.json.
 
 Important: the adapter targets the same four-category original game files as DB-01; other DB Streams own acquisition, quest, world and save facts, and DB-00 must not reinterpret their category identities. Normalized private snapshot data is an integration input, not a public Collection release. A new game version needs a separately audited private DB-01 v2 release; never reuse the old manifest/SHA pins across updates.
+
+
+## SHA-256 verified paged reader for UI virtualization
+
+For a scroll-driven SvelteKit Collection, import
+`openCurrentGameDatabasePages` from `src/lib/game-db/client.mjs`.
+The API fetches the small active pointer and its **SHA-pinned immutable release index** first; it does **not** fetch the 13,202 item records at startup. Use `loadPage({offset,limit})` when an IntersectionObserver requests the next slice (limit 1–500), and continue at `nextOffset` until `done` is true. A page crossing a 1000-item file boundary retrieves only the intersecting shards. Concurrent/adjacent requests share in-memory verified shard reads. A failed checksum is not cached.
+
+This is **transport-level paging**, not game availability, player ownership, or completion proof. It validates every retrieved item and its release/source references but cannot establish global relational closure from shards not yet read. Keep using `loadCurrentGameDatabase` for full-snapshot validation and DB-01/DB-02/DB-03/DB-04/DB-05 validation where complete evidence is necessary. The immutable index's `coverage.complete` applies only to its declared categories, not every type of item in the game. For previous 1.25 legacy pointers with no seekable index the same API uses an explicitly `eager_legacy` fallback so rollback remains usable.
+
+Example:
+
+```js
+const catalog = await openCurrentGameDatabasePages(base, fetch);
+let offset = 0;
+async function loadVisibleSlice() {
+  const page = await catalog.loadPage({ offset, limit: 80 });
+  appendItems(page.items); // your existing Svelte scroll state
+  offset = page.nextOffset ?? catalog.itemCount;
+  return !page.done;
+}
+```
+
+Do not add a "Load more" button. Let the Collection UI schedule the next request from scroll intersection; this API intentionally does not dictate UI rendering or restore unsaved player data.
+
+## Cross-stream target source fingerprint
+
+`applyPatch` requires exact `platform`, `gameVersion`, `buildId` **and** `sourceSha256` equality between a patch and its base snapshot. A matching game version alone does not prove the source file set is the same, especially across Steam hotfixes and archived v1.26.1/v1.26.2 inputs. The shared target fingerprint is the release anchor; each DB-01/02/03/04/05 stream's own file/probe hashes belong in additional `patch.sources` records. Never replace the target fingerprint with a stream-specific file digest to bypass this gate.
