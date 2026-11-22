@@ -100,8 +100,7 @@ export async function inspectLocalSaveDiagnosticsBytes(format, bytes, verifyNati
   }
   let root,strictJsonText;
   if (format === 'p1g') {
-    // Reuses Collection's strict CRC, ZIP, UTF-8, duplicate-key and
-    // unsafe-number verification. The decrypted JSON stays in this Worker.
+    // The production decoder is Rust/WASM; plaintext remains inside Worker.
     const decoded = await decodeEncryptedProfile(bytes);
     strictJsonText=decoded.jsonText;
     root = JSON.parse(strictJsonText); // text was already strictly validated
