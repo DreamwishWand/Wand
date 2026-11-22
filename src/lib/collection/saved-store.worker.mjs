@@ -1,6 +1,6 @@
 /** One-shot, isolated local file reader. Never issues network requests. */
 import { inspectEncryptedSavedStore } from './saved-store-worker-core.mjs';
-import {readRustP1gProfileInWorker} from './rust-p1g-profile-reader.mjs';
+import {readRustP1gProfileInWorker} from './rust-p1g-profile-reader.ts';
 
 let started = false;
 self.onmessage = async ({ data }) => {
