@@ -6,7 +6,10 @@ import {
 import {STARPATH_PUBLIC_SHA} from '../guide/public-starpath.mjs';
 import {createGuideStarpathHistory} from '../guide/starpath-history.ts';
 import {OFFICIAL_CAMPAIGNS} from './official-campaigns.ts';
-import type {Db03NativeRewardCandidateIndex} from './db03-native-rewards.ts';
+import {
+  hasPinnedDb03RewardEvidence,
+  type Db03NativeRewardCandidateIndex
+} from './db03-native-rewards.ts';
 import {historicalPremiumShop, type ShopAppearance} from './premium-shop-history.ts';
 import {projectVerifiedSrc02Origins, type VerifiedSrc02OriginReader} from './native-origins.ts';
 
@@ -436,7 +439,8 @@ export async function loadUnifiedAcquisitionOriginDatabase(
   // The optional DB-03 result is assembled from owner-selected private source
   // files by loadVerifiedDb03RewardCandidates; never fetch or publish them here.
   if(db03NativeRewards!==null){
-    assert(db03NativeRewards.schema==='wand.db02.db03-source-reward-candidates@1' &&
+    assert(hasPinnedDb03RewardEvidence(db03NativeRewards) &&
+      db03NativeRewards.schema==='wand.db02.db03-source-reward-candidates@1' &&
       db03NativeRewards.sourceIntegrity===
         'pinned_original_sha256_and_original_file_equivalence' &&
       db03NativeRewards.sourceGameVersion==='1.26.1' &&
