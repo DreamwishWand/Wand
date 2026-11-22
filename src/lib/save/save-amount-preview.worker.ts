@@ -238,7 +238,7 @@ function validatedDb04GridObjectSources(input:unknown):Db04GridObjectSourceRecei
       (v.nativeSizeY!==null &&
         (!nonnegative(v.nativeSizeY,65536)||v.nativeSizeY===0))||
       (v.tessellationFactor!==null&&
-        (!nonnegative(v.tessellationFactor,256)||v.tessellationFactor===0))||
+        !nonnegative(v.tessellationFactor,256))||
       (v.nativeSizeX!==null&&v.nativeSizeY!==null&&
         Number(v.nativeSizeX)*Number(v.nativeSizeY)>16777216)||
       (['full_exact_source_path_candidate',
