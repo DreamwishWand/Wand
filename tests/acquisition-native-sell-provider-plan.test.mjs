@@ -84,3 +84,27 @@ test('only positive int32 native item IDs are accepted',()=>{
       /DB02_NATIVE_SELL_PROVIDER_INVALID_ITEM_ID/);
   }
 });
+
+test('original provider source rows are disjoint; live registration remains unknown',()=>{
+  const a=nativeSellPriceProviderPlan(30300005);
+  const b=nativeSellPriceProviderPlan(31100053);
+  const source=a.serializedSteam1262ProviderSourceEvidence;
+  assert.strictEqual(source,b.serializedSteam1262ProviderSourceEvidence);
+  assert.equal(source.staticProviderDefinitions,10);
+  assert.equal(source.dynamicProviderDefinitions,1);
+  assert.equal(source.serializedItemPriceRowCount,9537);
+  assert.equal(source.distinctSourceItemIds,9537);
+  assert.equal(source.sourceCrossProviderItemIdCollisions,0);
+  assert.equal(source.sourceSellItemCurrencyRecords,1192);
+  assert.equal(source.sourceCrossProviderSellCurrencyKeyCollisions,0);
+  assert.equal(source.sourceSellAmountsWithField,718);
+  assert.equal(source.sourceSellAmountsWithoutField,474);
+  assert.equal(source.sourceProviderPrecedenceCanChangeOriginalSerializedRowOwner,false);
+  assert.equal(source.nativeRuntimeProviderRegistrationOrderVerified,false);
+  assert.equal(source.nativeRuntimeRegisteredProviderSetVerified,false);
+  assert.equal(source.nativeRuntimeCacheUnchangedVerified,false);
+  assert.equal(source.observedEffectiveSellPrices,false);
+  assert.equal(a.actualUnitSellPrice,null);
+  assert.equal(a.registeredDatabaseIterationOrderVerified,false);
+  assert.ok(Object.isFrozen(source));
+});

@@ -775,6 +775,57 @@ def grid_collection_layout(data, relative):
 
 
 
+def floating_island_grid_collection_layout(data, relative):
+    """Decode native Steam FloatingIslands wrapper without world-space claims.
+
+    Original SceneLayouts/FloatingIslands/FloatingIsland_*/<island>Layout.json
+    contains a context message in root.1 with an explicit CustomLocations
+    reference in 1.4; the native Meta.GridCollection is embedded at root.2.
+    Native grid IDs, object coordinates and terrain remain grid-local.
+    """
+    parts = relative.relative_to(STREAM).parts
+    if len(parts) != 4 or parts[:2] != ("SceneLayouts", "FloatingIslands"):
+        return None
+    if relative.name == "CustomLocations.json":
+        return None
+    # Preserve direct collections if a future native source uses that form.
+    if grid_collection_layout(data, relative) is not None:
+        return None
+    root = wire_fields(data)
+    context_raw = one(root, 1, 2)
+    if context_raw is None:
+        return None
+    try:
+        custom = text_field(wire_fields(context_raw), 4)
+    except (ValueError, UnicodeError):
+        return None
+    if custom is None:
+        return None
+    expected = (relative.parent / "CustomLocations.json").relative_to(
+        STREAM).as_posix()
+    if custom != expected or not safe_reference(custom):
+        raise ValueError("native floating island custom location path mismatch")
+    embedded = one(root, 2, 2, True)
+    parsed = grid_collection_layout(embedded, relative)
+    if parsed is None:
+        raise ValueError("floating island wrapper missing native GridCollection")
+    layout, objects = parsed
+    layout["embeddedGridCollectionWireField"] = 2
+    layout["floatingIslandCustomLocationPath"] = custom
+    layout["source"] = {
+        "path": relative.as_posix(),
+        "nativeType": "floating_island_source_with_embedded_Meta.GridCollection",
+        "embeddedGridCollectionWireField": 2,
+    }
+    for entry in layout["nativeGridEntries"]:
+        entry["gridDataPathWireField"] = "2.1.2.2"
+    layout["gridReferences"] = [
+        {"path": entry["gridDataPath"], "wireField": "2.1.2.2"}
+        for entry in layout["nativeGridEntries"]
+    ]
+    return layout, objects
+
+
 def realm_grid_collection_layout(data, relative):
     """Read only explicit SceneLayouts/Realms native embedded GridCollections.
 
@@ -951,6 +1002,12 @@ def scene_layouts(root, sources):
         offgrid = offgrid_grid_collection_layout(data, relative)
         if offgrid is not None:
             layout, objects = offgrid
+            layouts.append(layout)
+            layout_objects.extend(objects)
+            continue
+        floating = floating_island_grid_collection_layout(data, relative)
+        if floating is not None:
+            layout, objects = floating
             layouts.append(layout)
             layout_objects.extend(objects)
             continue

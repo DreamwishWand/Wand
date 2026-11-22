@@ -15,6 +15,30 @@ const knownFamilies=freeze({
   310:freeze({nativeClass:'FishItemData',calculator:false}),
   311:freeze({nativeClass:'IngredientItemData',calculator:false})
 });
+/**
+ * Original complete Steam 1.26.2 protoDb.bin only. These are source-row
+ * ownership facts, NOT a statement about live registered providers, mutable
+ * dynamic cache contents or effective selling prices.
+ */
+const sourcePriceProviderEvidence=freeze({
+  originalProtoDbSha256:'dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623',
+  originalSourceGameVersion:'Steam 1.26.2',
+  staticProviderDefinitions:10,
+  dynamicProviderDefinitions:1,
+  serializedItemPriceRowCount:9537,
+  distinctSourceItemIds:9537,
+  sourceCrossProviderItemIdCollisions:0,
+  sourceSellItemCurrencyRecords:1192,
+  sourceCrossProviderSellCurrencyKeyCollisions:0,
+  sourceSellAmountsWithField:718,
+  sourceSellAmountsWithoutField:474,
+  sourceProviderPrecedenceCanChangeOriginalSerializedRowOwner:false,
+  nativeRuntimeProviderRegistrationOrderVerified:false,
+  nativeRuntimeRegisteredProviderSetVerified:false,
+  nativeRuntimeCacheUnchangedVerified:false,
+  observedEffectiveSellPrices:false
+});
+
 const stages=freeze([
   freeze({
     stage:'item_specific_calculator',
@@ -65,6 +89,7 @@ export function nativeSellPriceProviderPlan(itemId){
       'ItemPriceDatabase','DynamicItemPriceDatase'
     ]),
     registeredDatabaseIterationOrderVerified:false,
+    serializedSteam1262ProviderSourceEvidence:sourcePriceProviderEvidence,
     runtimeDynamicCacheState:null,
     nativeTrySellPriceFailureOutput:0,
     nativeTrySellPriceFailureReturnsFalse:true,

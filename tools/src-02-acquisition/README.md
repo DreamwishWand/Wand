@@ -1,5 +1,20 @@
 # DB-02 ACQUISITION — source-pinned extraction
 
+## Original 11-provider price source census (Steam v1.26.2)
+
+The SHA-pinned original `protoDb.bin` contains **10 static + 1 dynamic**
+`IItemPriceDatabase` source providers, totaling **9,537 distinct Item IDs**.
+All 9,537 serialized ItemPrices records are globally disjoint by Item ID:
+**zero cross-provider item conflicts** and **zero colliding sell
+(Item ID, currency ID) keys** across 1,192 sell-cost records.
+Consequently the unknown native provider registration order cannot change
+ownership of an existing **serialized source row**. Runtime selection,
+mutated dynamic caches, absent Amount fields (474) and effective prices
+remain **unverified**. See
+[PRICE-PROVIDER-SOURCE-UNIQUENESS.md](PRICE-PROVIDER-SOURCE-UNIQUENESS.md)
+and the read-only
+[audit script](audit_native_price_provider_registry_1262.py).
+
 ## Steam v1.26.2 original formula definition source identified
 
 The original 32-record `itemlist/Formula.json` has now been SHA-256 authenticated

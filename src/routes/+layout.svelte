@@ -30,7 +30,7 @@
   } as Record<string,{title:string;steps:string[]}>)[service];
   const links=[
     {href:'/collection/',name:'Collection',icon:'collection'},
-    {href:'/guide/quests/',name:'Guide',icon:'guide'},
+    {href:'/guide/',name:'Guide',icon:'guide'},
     {href:'/guide/star-path/',name:'Star Path',icon:'star'},
     {href:'/world/preview/',name:'World',icon:'world'}
   ];
