@@ -124,6 +124,36 @@ class NativeMealPriceProbeTests(unittest.TestCase):
                 probe.probe_dll(plan, Path(td)/"missing.dll", "1.26.2",
                                 "0"*64, Path(td))
 
+    def test_python_only_prefix_extraction_with_matching_synthetic_build(self):
+        """Run the full extraction path on synthesized PE bytes, not a game."""
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            dump = base / "synthetic.cs"
+            dump.write_text(synthetic_dump(), encoding="utf-8")
+            plan = probe.source_method_plan(
+                dump, "1.26.2", hashlib.sha256(dump.read_bytes()).hexdigest())
+            binary = bytearray(synthetic_pe())
+            binary.extend(b"\x00" * (0x3000 - len(binary)))
+            sec = 0x98 + 0xF0
+            struct.pack_into("<IIII", binary, sec+8,
+                             0x2000, 0x2000, 0x2000, 0x400)
+            struct.pack_into("<I", binary, 0x98 + 56, 0x5000)
+            game = base / "synthetic-not-a-game.dll"
+            game.write_bytes(binary)
+            result = probe.probe_dll(
+                plan, game, "1.26.2",
+                hashlib.sha256(binary).hexdigest(), base,
+                extract_only=True)
+            self.assertEqual(len(result["methodPrefixes"]), 13)
+            self.assertTrue(result["binaryPrefixesExtracted"])
+            self.assertFalse(result["disassemblyPerformed"])
+            self.assertFalse(result["actualPriceFormulaVerified"])
+            self.assertFalse(result["binaryVersionIndependentlyVerified"])
+            excerpts = list(base.glob("*.prefix.bin"))
+            self.assertEqual(len(excerpts), 13)
+            self.assertTrue(all(x.stat().st_size == 256 for x in excerpts))
+            self.assertTrue((base / "native-meal-price-probe.json").exists())
+
     def test_public_checkout_output_is_rejected(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
