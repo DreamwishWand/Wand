@@ -70,6 +70,23 @@ export function classifyNativeDynamicCacheLifecycle(input={}){
     nativeCacheDataTraversesOriginalFormulaReferences:true,
     nativeCacheDataEvaluatesSellFormulaEligibility:true,
     nativeCacheDataCallsSellFormulaCalculator:true,
+    // Direct E8/E9 transfer census of the full original Steam IL2CPP
+    // executable section, independently pinned by the local audit.
+    // Interface calls are indirect and are NOT counted.
+    originalNativeInitCallsProtoDatabaseConstructor:true,
+    originalNativeReInitCallsProtoDatabaseConstructor:true,
+    originalNativeProtoDatabaseConstructorTailCallsRefresh:true,
+    originalNativeProtoDatabaseRefreshCallsLoadBinary:true,
+    originalNativeLoadBinaryResolvesSerializedType:true,
+    originalNativeExportForBuildCallsSaveBinary:true,
+    originalNativeTrySellPriceUsesProtoDatabaseEnumerator:true,
+    originalNativeDirectTransfersToOnBinarize:0,
+    originalNativeDirectTransfersToCacheData:1,
+    originalDirectTransferCensusExcludesInterfaceDispatch:true,
+    nativeOnBinarizeInvokedByLoadBinaryVerified:false,
+    nativeOnBinarizeInvokedByExportForBuildVerified:false,
+    nativeActualProtoDatabasePopulationOrderVerified:false,
+    nativeRuntimeProtoDatabaseReloadOccurred:null,
     conditionalSourceRowContentsAreNotImmutableAfterRebuild:true,
     hypotheticalRebuildSpecified:scenarioProvided,
     hypotheticalRebuiltItemPriceRows:
