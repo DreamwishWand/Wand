@@ -23,6 +23,8 @@ import {
 } from './db00-origins.ts';
 import type {Db03NativeRewardCandidateIndex} from './db03-native-rewards.ts';
 import {loadPinnedPublicQuestAcquisition} from '../guide/public-quest-acquisition.ts';
+import {loadPinnedPublicEventFriendshipAcquisition}
+  from '../guide/public-event-friendship-acquisition.ts';
 import {
   indexNativeLootSourceFamilies,
   type NativeLootSourceIndex
@@ -196,9 +198,12 @@ export async function joinCurrentDb02Catalog(
   db03NativeRewards:Db03NativeRewardCandidateIndex|null=null
 ):Promise<CurrentDb02OriginCatalog>{
   const ids=currentDb00ItemIds(db00);
-  const publicQuestRewards=await loadPinnedPublicQuestAcquisition(basePath,fetcher);
+  const [publicQuestRewards,publicEventFriendship]=await Promise.all([
+    loadPinnedPublicQuestAcquisition(basePath,fetcher),
+    loadPinnedPublicEventFriendshipAcquisition(basePath,fetcher)
+  ]);
   const origins=await loadUnifiedAcquisitionOriginDatabase(
-    fetcher,src02,basePath,ids,db03NativeRewards,publicQuestRewards
+    fetcher,src02,basePath,ids,db03NativeRewards,publicQuestRewards,publicEventFriendship
   );
   const joined=joinDb02OriginsWithDb00(db00,origins);
   const lootSources=indexNativeLootSourceFamilies(origins,ids);
