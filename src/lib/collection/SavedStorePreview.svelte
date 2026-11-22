@@ -6,12 +6,13 @@
   import { sanitizeSavedCollectionPresence } from './saved-collection-presence.mjs';
   import { sanitizeSavedCollectionDiscovery } from './saved-collection-discovery.mjs';
   import { sanitizePositiveListInventoryOwnership } from './saved-list-positive-ownership.mjs';
+  import { sanitizeSavedGridFurnitureReferences } from './saved-grid-furniture-references.mjs';
 
   export let resolveHistorical:(id:number)=>({itemId:number;label:string;family:string}|null) = ()=>null;
   export let locale = 'ja';
   export let gameImageMap: Record<string,string> = {};
   export let collectionCommitBusy = false;
-  const dispatch=createEventDispatcher<{ lookupItem:number; saveProfile:any }>();
+  const dispatch=createEventDispatcher<{ lookupItem:number;saveProfile:any;gridReferences:any|null }>();
   const jsonKindLabels:Record<string,string>={
     null:'null',boolean:'真偽値',integer:'整数',number:'数値',
     string:'文字列',array:'配列',object:'オブジェクト'
@@ -22,6 +23,9 @@
   let collectionPreview:any=null;
   let discoveryProjection:any=null;
   let positiveOwnership:any=null;
+  let gridFurniture:any=null;
+  let gridQuery='';
+  let gridLimit=48;
   let collectionQuery='';
   let collectionLimit=48;
   let errorMessage = '';
@@ -61,6 +65,11 @@
     ? attachDb01PrivateNames(preview,exactNameOverlay,locale,{allowHistorical:allowPrivateHistorical}) : preview;
   $: collectionRows = collectionPreview ? collectionPreview.items
     .filter((item:any)=>!collectionQuery.trim() || String(item.itemId).includes(collectionQuery.trim())) : [];
+  $: gridRows = gridFurniture ? gridFurniture.entries.filter((item:any)=>{
+    const query=gridQuery.trim().toLocaleLowerCase();
+    return !query||String(item.itemId).includes(query)||
+      (resolveHistorical(item.itemId)?.label??'').toLocaleLowerCase().includes(query);
+  }) : [];
   $: shown = labeledPreview ? labeledPreview.items.filter((item:any)=>
     !query.trim() || String(item.itemId).includes(query.trim()) ||
     (item.currentExactName??'').toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()) ||
@@ -79,6 +88,10 @@
     collectionPreview = null;
     discoveryProjection = null;
     positiveOwnership = null;
+    gridFurniture = null;
+    gridQuery = '';
+    gridLimit = 48;
+    dispatch('gridReferences',null);
     saveSchema = null;
     errorMessage = '';
     query = '';
@@ -96,6 +109,10 @@
     collectionPreview = null;
     discoveryProjection = null;
     positiveOwnership = null;
+    gridFurniture = null;
+    gridQuery = '';
+    gridLimit = 48;
+    dispatch('gridReferences',null);
     saveSchema = null;
   }
 
@@ -131,10 +148,13 @@
           const collection=sanitizeSavedCollectionPresence(result.result.collection);
           const discovery=sanitizeSavedCollectionDiscovery(result.result.discovery);
           const ownership=sanitizePositiveListInventoryOwnership(result.result.positiveOwnership);
+          const grid=sanitizeSavedGridFurnitureReferences(result.result.gridFurniture);
           preview = attachHistoricalStoreLabels(result.result.summary,historical);
           collectionPreview=collection;
           discoveryProjection=discovery;
           positiveOwnership=ownership;
+          gridFurniture=grid;
+          dispatch('gridReferences',grid);
           saveSchema = result.result.saveSchema;
           if (discovery.entries.length||ownership.entries.length)
             dispatch('saveProfile',{discovered:discovery.entries,positiveOwned:ownership.entries});
@@ -388,6 +408,53 @@
             </button>
           {:else if !collectionRows.length}
             <p>該当するID参照はありません。</p>
+          {/if}
+        {/if}
+      </section>
+    {/if}
+    {#if gridFurniture}
+      <section class="saved-collection-section" aria-label="セーブ内の家具配置参照">
+        <h3>ワールドの家具参照</h3>
+        <p class="store-warning">セーブ内のGridObjectを読み取った結果です。初期配置・クエスト・自動生成の家具も含む可能性があり、プレイヤーの所持や解放を証明しません。差分グリッドの初期配置データは含まれないため、完全な配置数ではありません。手動Collection記録とセーブファイルは変更しません。</p>
+        {#if gridFurniture.status==='unsupported_schema'}
+          <p class="store-caveat">このセーブ構造は配置参照の観測対象外です。</p>
+        {:else if gridFurniture.status==='not_observed'||gridFurniture.status==='incompatible_structure'}
+          <p class="store-caveat">World.GridCollectionの保存構造を確認できません。配置がないことを意味しません。</p>
+        {:else}
+          <div class="store-metrics">
+            <span>保存済み全体グリッド <strong>{gridFurniture.observedFullGrids.toLocaleString(locale)}</strong></span>
+            <span>保存済み差分グリッド <strong>{gridFurniture.observedDiffGrids.toLocaleString(locale)}</strong></span>
+            <span>家具の保存参照 <strong>{(gridFurniture.fullReferences+gridFurniture.diffModifiedReferences).toLocaleString(locale)}</strong></span>
+            <span>異なるItem ID <strong>{gridFurniture.entries.length.toLocaleString(locale)}</strong></span>
+          </div>
+          {#if gridFurniture.status==='partial_inconclusive'}
+            <p class="store-caveat">無効な参照 {gridFurniture.invalidRecords}件、または解析上限超過のため、表示は部分的です。未表示の家具が存在しないとは限りません。</p>
+          {/if}
+          {#if gridFurniture.entries.length}
+            <div class="store-controls">
+              <input type="search" aria-label="保存された家具のItem ID・名前を検索"
+                placeholder="家具名・Item ID" bind:value={gridQuery} on:input={()=>gridLimit=48}/>
+            </div>
+            <div class="store-items">
+              {#each gridRows.slice(0,gridLimit) as item (item.itemId)}
+                {@const catalog=resolveHistorical(item.itemId)}
+                <div class="store-item"><div class="store-detail">
+                  <strong>{catalog?.label??`Item ID ${item.itemId}`}</strong>
+                  <small>Item ID {item.itemId} · 全体グリッド {item.fullGridReferences}件 · 差分参照 {item.diffModifiedReferences}件</small>
+                  <small>記録上の参照数であり、総配置数・プレイヤー所持数ではありません。</small>
+                  {#if catalog}
+                    <button type="button" class="store-clear" on:click={()=>dispatch('lookupItem',item.itemId)}>Collectionで探す</button>
+                  {/if}
+                </div></div>
+              {/each}
+            </div>
+            {#if gridRows.length>gridLimit}
+              <button type="button" class="store-more" on:click={()=>gridLimit+=48}>
+                さらに表示（残り {gridRows.length-gridLimit}件）
+              </button>
+            {:else if !gridRows.length}
+              <p>一致する家具の保存参照はありません。</p>
+            {/if}
           {/if}
         {/if}
       </section>
