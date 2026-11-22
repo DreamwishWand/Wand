@@ -177,6 +177,31 @@ try {
   assert.deepEqual(targetErrors,[],targetErrors.join('\\n'));
   await targetDeep.close();
 
+  // Source-exact Quest override reward: original Mission reference ->
+  // Steam v1.26.2 LootTable -> static candidate Item ID, never a grant.
+  const override=await browser.newPage({viewport:{width:390,height:844}});
+  const overrideErrors=[];
+  override.on('pageerror',err=>overrideErrors.push(String(err)));
+  await override.goto(url+'?item=40004032',{waitUntil:'domcontentloaded'});
+  await override.locator('.reward-focus').filter({hasText:'40004032'}).waitFor({timeout:25000});
+  await override.locator('.detail .quest-rewards .reward-item-match')
+    .filter({hasText:'40004032'}).first().waitFor({timeout:25000});
+  assert.equal(await override.locator('.quest-row').count(),1);
+  assert.match(await override.locator('.detail .quest-rewards').innerText(),
+    /別定義のLoot Table候補/);
+  assert.doesNotMatch(await override.locator('.detail .quest-rewards').innerText(),
+    /参照先未解決の追加報酬設定/);
+  await override.goto(url+'?item=30200002&quest=2070001383',
+    {waitUntil:'domcontentloaded'});
+  await override.locator('.detail .quest-rewards .reward-item-match')
+    .filter({hasText:'30200002'}).first().waitFor({timeout:25000});
+  assert.match(await override.locator('.detail .quest-rewards').innerText(),
+    /原本の抽選回数欄は最大値の特殊値/);
+  assert.equal(await override.evaluate(()=>
+    document.documentElement.scrollWidth<=innerWidth+2),true);
+  assert.deepEqual(overrideErrors,[],overrideErrors.join('\\n'));
+  await override.close();
+
   const stepLink=await browser.newPage();
   await stepLink.goto(url+'?quest=2070000620&step=4',{waitUntil:'domcontentloaded'});
   await stepLink.locator('.detail .step').first().waitFor({timeout:20000});

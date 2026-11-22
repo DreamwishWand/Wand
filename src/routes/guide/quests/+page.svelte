@@ -12,6 +12,8 @@
   import {loadPublicQuestRewards,DB03_QUEST_REWARDS_FILE,
     type PublicQuestRewardsReader} from '$lib/guide/public-quest-rewards.ts';
   import {resolveQuestRewardItemDestination} from '$lib/guide/quest-reward-navigation.ts';
+  import {loadPublicQuestOverrideLoot,DB03_QUEST_OVERRIDE_LOOT_FILE,
+    type QuestOverrideLootIndex} from '$lib/guide/public-quest-override-loot.ts';
   import {loadPublicQuestTargetReverse,DB03_QUEST_TARGET_REVERSE_FILE,
     type PublicQuestTargetReverseReader} from '$lib/guide/public-quest-target-reverse.ts';
 
@@ -38,6 +40,7 @@
   const cachedTargets=new Map<number,any>();
   let conditionIndex:PublicQuestConditionReader|null=null;
   let rewardIndex:PublicQuestRewardsReader|null=null;
+  let overrideIndex:QuestOverrideLootIndex|null=null;
   let rewardItemFocus:string|null=null;
   let rewardError='';
   let conditionError='';
@@ -51,7 +54,7 @@
   const prefix=`${base}/guide/public/`;
 
   $: rewardFocus=rewardItemFocus&&rewardIndex
-    ?resolveQuestRewardItemDestination(rewardIndex,rewardItemFocus):null;
+    ?resolveQuestRewardItemDestination(rewardIndex,rewardItemFocus,overrideIndex):null;
   $: searchedTargetId=targetReverseIndex&&/^[1-9][0-9]{0,15}$/.test(query)&&
     targetReverseIndex.getItemCandidates(query).length>0?query:null;
   $: targetFocusId=targetItemFocus??searchedTargetId;
@@ -71,6 +74,7 @@
   // Native Mission group association, not an unlock prerequisite or chronological link.
   $: questConditions=selectedRow&&conditionIndex?conditionIndex.getQuest(selectedRow.id):null;
   $: questRewardInfo=selectedRow&&rewardIndex?rewardIndex.getQuest(selectedRow.id):null;
+  $: questOverrideInfo=selectedRow&&overrideIndex?overrideIndex.getQuest(selectedRow.id):null;
   $: relatedQuests=catalog&&selectedRow&&typeof selectedRow.groupId==='string'&&
     catalog.groups&&Object.hasOwn(catalog.groups,selectedRow.groupId)
     ?catalog.quests.filter((row:any)=>row.groupId===selectedRow.groupId&&row.id!==selectedRow.id):[];
@@ -155,7 +159,7 @@
     const params=new URLSearchParams(window.location.search);
     const requested=params.getAll('item');
     const focus=requested.length===1&&rewardIndex
-      ?resolveQuestRewardItemDestination(rewardIndex,requested[0]):null;
+      ?resolveQuestRewardItemDestination(rewardIndex,requested[0],overrideIndex):null;
     rewardItemFocus=focus?.itemId??null;
     const targetRequested=params.getAll('target');
     const sourceTargets=!focus&&targetRequested.length===1&&targetReverseIndex
@@ -204,6 +208,13 @@
     try{
       const data=await loadPublicQuestRewards(index,`${prefix}${DB03_QUEST_REWARDS_FILE}`);
       if(catalog===index){rewardIndex=data;restoreAddressSelection();}
+      try{
+        const verified=await loadPublicQuestOverrideLoot(data,
+          `${prefix}${DB03_QUEST_OVERRIDE_LOOT_FILE}`);
+        if(catalog===index){overrideIndex=verified;restoreAddressSelection();}
+      }catch{
+        // The SHA-pinned base rewards remain independently usable.
+      }
     }catch(e){
       if(catalog===index)rewardError=e instanceof Error?e.message:String(e);
     }
@@ -216,7 +227,7 @@
       const data=await res.json();
       catalog=verifyPublicQuestIndex(data);
       conditionIndex=null;conditionError='';
-      rewardIndex=null;rewardError='';
+      rewardIndex=null;overrideIndex=null;rewardError='';
       targetReverseIndex=null;targetReverseError=false;
       void loadConditions(catalog);
       void loadRewards(catalog);
@@ -334,7 +345,7 @@
           {#if selected}
             {#if questRewardInfo}
               <details class="quest-rewards" aria-label="クエストの静的報酬候補" open={!!rewardFocus&&rewardFocus.questIds.includes(selectedRow.id)}>
-                <summary>報酬候補（{questRewardInfo.currencies.length+questRewardInfo.lootCandidates.length}件）</summary>
+                <summary>報酬候補（{questRewardInfo.currencies.length+questRewardInfo.lootCandidates.length+(questOverrideInfo?1:0)}件）</summary>
                 {#if questRewardInfo.currencies.length}
                   <div class="quest-reward-block">
                     <strong>通貨報酬の設定</strong>
@@ -357,7 +368,20 @@
                     </div>
                   </div>
                 {/if}
-                {#if questRewardInfo.opaqueOverrideUnresolved}
+                {#if questOverrideInfo}
+                  <div class="quest-reward-block">
+                    <strong>別定義のLoot Table候補</strong>
+                    <div class="quest-reward-chips">
+                      <span class:reward-item-match={rewardItemFocus===questOverrideInfo.itemId}
+                        title={`Item ID ${questOverrideInfo.itemId} · Loot Table ${questOverrideInfo.lootTableId}`}>
+                        {itemTargetName(targetIndex,questOverrideInfo.itemId,locale)||'アイテム'}（ID {questOverrideInfo.itemId}）
+                      </span>
+                    </div>
+                    {#if questOverrideInfo.rollCount==='native_unbounded_sentinel'}
+                      <small>原本の抽選回数欄は最大値の特殊値です。数量や配布回数として解釈しません。</small>
+                    {/if}
+                  </div>
+                {:else if questRewardInfo.opaqueOverrideUnresolved}
                   <small>参照先未解決の追加報酬設定があります。</small>
                 {/if}
                 <small>原本の設定上の候補です。Loot Tableからの実際の配布・数量やプレイヤーの取得状況は確認していません。</small>

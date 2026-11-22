@@ -3,6 +3,7 @@
  * eligibility, player ownership, or live rewards.
  */
 import type {PublicQuestRewardsReader} from './public-quest-rewards.ts';
+import type {QuestOverrideLootIndex} from './public-quest-override-loot.ts';
 
 export const DB03_QUEST_REWARD_NAVIGATION_SCHEMA='wand.db03.quest-reward-navigation@1' as const;
 const ITEM_ID=/^[1-9][0-9]{0,15}$/;
@@ -17,22 +18,30 @@ export interface QuestRewardItemDestination {
   readonly relationCount:number;
   readonly currencyConfigurations:number;
   readonly lootCandidates:number;
+  readonly overrideLootCandidates:number;
   readonly staticSourceOnly:true;
   readonly guaranteedGrant:false;
   readonly playerOwnershipVerified:false;
 }
 /** Nonexistent Item IDs return null, not a claim that the game has no reward. */
 export function resolveQuestRewardItemDestination(
-  reader:PublicQuestRewardsReader,rawId:unknown
+  reader:PublicQuestRewardsReader,rawId:unknown,
+  overrideIndex?:QuestOverrideLootIndex|null
 ):QuestRewardItemDestination|null{
   if(reader?.schema!=='wand.db03.public-quest-rewards@1'||
     reader.coverage?.quests!==733||reader.coverage?.additionalItemOccurrences!==330||
     reader.coverage?.currencyOccurrences!==65||typeof reader.getItemCandidates!=='function')
     throw new TypeError('DB03_QUEST_REWARD_NAVIGATION_SOURCE_REQUIRED');
+  if(overrideIndex&&(overrideIndex.schema!=='wand.db03.quest-override-loot-candidates@1'||
+    overrideIndex.gameVersion!=='1.26.2'||overrideIndex.coverage?.candidateOccurrences!==4||
+    overrideIndex.coverage?.runtimeGrantVerified!==false||
+    typeof overrideIndex.getItemCandidates!=='function'))
+    throw new TypeError('DB03_QUEST_REWARD_NAVIGATION_OVERRIDE_SOURCE_REQUIRED');
   const itemId=canonical(rawId);
   if(itemId===null)return null;
   const relations=reader.getItemCandidates(itemId);
-  if(!relations.length)return null;
+  const overrides=overrideIndex?.getItemCandidates(itemId)??[];
+  if(!relations.length&&!overrides.length)return null;
   const ids=new Set<string>();
   let currency=0,loot=0;
   for(const row of relations){
@@ -44,9 +53,17 @@ export function resolveQuestRewardItemDestination(
     else throw new TypeError('DB03_QUEST_REWARD_NAVIGATION_UNKNOWN_RELATION');
     ids.add(row.questId);
   }
+  for(const row of overrides){
+    if(row.itemId!==itemId||row.staticSourceOnly!==true||
+      row.guaranteedGrant!==false||row.ownershipVerified!==false||
+      reader.getQuest(row.questId)?.opaqueOverrideUnresolved!==true)
+      throw new TypeError('DB03_QUEST_REWARD_NAVIGATION_INVALID_OVERRIDE');
+    ids.add(row.questId);
+  }
   return Object.freeze({itemId,questIds:Object.freeze([...ids]),
-    relationCount:relations.length,currencyConfigurations:currency,
-    lootCandidates:loot,staticSourceOnly:true as const,
+    relationCount:relations.length+overrides.length,currencyConfigurations:currency,
+    lootCandidates:loot,overrideLootCandidates:overrides.length,
+    staticSourceOnly:true as const,
     guaranteedGrant:false as const,playerOwnershipVerified:false as const});
 }
 /** Consumers should confirm source membership before presenting this as a reward link. */
