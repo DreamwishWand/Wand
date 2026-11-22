@@ -3,6 +3,67 @@
 **Scope:** Cooking and meal instance state only. This is **not** the separate
 static stall/shop purchase-price evidence from `SHOP-PRICE-OVERLAP.md`.
 
+## Source-authenticated native FormulaDynamicPriceDatabase cache (Steam v1.26.2)
+
+The exact owner-private Steam `protoDb.bin` has one dynamic price source entry
+`FormulaDynamicPriceDatabase` at zero-based source index **274**, native
+class `Definitions.Shops.DynamicItemPriceDatase`. This is the *configuration
+and serialized cached price records*, **not** the implementation of runtime
+`ItemPriceDatabases.GetSoftCurrencySellPrice`.
+
+The local-only `private-dynamic-price-cache.mjs` module independently
+authenticates three SHA-256 fingerprints, before allowing any original row
+presence check: full `protoDb.bin` (1,335,720 bytes;
+`dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623`),
+dynamic native body (`2fb01bfd8bddb0efce6a58bcaba57338566bf63fdadaf52cda0989955af48858`),
+and its cached `ItemPriceDatabase` wire body
+(`6b97ccead7d8a134d7f2e0e58c82c47416126efa3fceefaefcec09d2fa15bd2e`).
+The source contains **four** purchase-formula references and **one**
+sell-formula reference. Their runtime math has **not** been executed.
+
+| Authenticated native cache observation | Rows |
+|---|---:|
+| Total serialized cached ItemPriceDatabase rows | 8,549 |
+| Cached purchase-only definitions | 8,068 |
+| Cached sell-only definitions | 481 |
+| Combined purchase/sell cache rows | 0 |
+| Cached sell-cost rows with serialized amount | 7 |
+| Cached sell-cost rows with omitted amount | 474 |
+
+All **481 cached sell rows** are in the `315` Item ID family and use
+serialized soft currency `80000000`. The **474 omitted amounts** are not
+equivalent to 0. The original cache **has no matching purchase OR sell rows
+for any of the 371 fixed Item IDs appearing in the 625 cooking recipes**.
+In particular, it does not fill the **160 fixed cooking ingredient IDs
+without a static soft-currency sell definition** from the separate 10
+original static-price databases.
+
+`loadPrivateMealPricingView(...)` now reads this authenticated cache
+**only when exact original `protoDbBytes` are supplied**; the same input
+also activates the separately verified five cooking star tiers. The
+`view.nativeDynamicCacheVerified` flag distinguishes not loaded from a
+verified empty result. `view.getSourceCachedDynamicPriceRow(itemId)`
+returns a source-only presence record or `null` when no original cache
+was provided. `view.inspect(...).sourceIngredientDynamicCacheEvidence`
+reports this status for each actual serialized ingredient Item ID, retaining
+`effectiveSellPriceVerified:false`, `runtimeFormulaEvaluated:false`,
+`sellPrice:null`. No original cache catalog or private game source bytes
+are bundled or published.
+
+**Limits:** A cached-source absence does not mean that the engine has no
+runtime dynamic price. The source does not reveal formula application,
+fallback price selection, current market values, or rounding. None of
+these numbers are suitable for computing a cooked-meal sale price.
+
+Exact-private local verification (the original 3 independently SHA-pinned
+source sets) passes `EXACT_PRIVATE_MEAL_STATE_JS_PASS`: **618 meal IDs**,
+**371 fixed ingredient IDs**, **8,549 original dynamic cache rows**, **0
+fixed ingredient intersections** for *both* cached purchase/sell rows, and
+**5 independently SHA-authenticated cooking star tiers**. The synthetic
+`tests/acquisition-private-dynamic-price-cache.test.mjs` checks malformed
+protobuf rows, wrong currency, omitted-vs-zero amount, fake originals and
+unverified-source behavior.
+
 ## Native method-body analysis: reproducible, fail-closed tooling
 
 The original-byte material currently available for this work consists of
