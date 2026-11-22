@@ -19,7 +19,6 @@ type SnapshotKey='Shop20260715'|'Shop20261118';
 type AppearanceKind='archived_minimum_version_only'|'steam_1262_snapshot';
 const ID=/^[1-9][0-9]{0,15}$/;
 const EMPTY_ORIGINS=Object.freeze([]) as readonly ItemOrigin[];
-const EMPTY_OFFERS=Object.freeze([]) as readonly ShopOfferAppearance[];
 
 export interface ShopOfferAppearance {
   readonly snapshotKey:SnapshotKey;
@@ -223,7 +222,7 @@ export function indexNativeShopHistory(
     const origins=Object.freeze(rows);
     const observedNativeOfferIds=freezeUnique(itemOfferIds.get(itemId)??[]);
     const observedSnapshotKeys=Object.freeze(
-      [...itemSnapshotKeys.get(itemId)??[]].sort()) as readonly SnapshotKey[];
+      [...(itemSnapshotKeys.get(itemId)??[])].sort()) as readonly SnapshotKey[];
     itemMap.set(itemId,Object.freeze({
       itemId,origins,observedNativeOfferIds,observedSnapshotKeys,
       distinctOfferIds:observedNativeOfferIds.length,
