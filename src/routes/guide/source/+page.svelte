@@ -9,7 +9,8 @@
   import {importCurrentGuideConditions, currentConditionMentionsForQuest, withVerifiedConditionStepDetails} from '$lib/guide/current-conditions.mjs';
   import {createStructuralGuideConditionRelations,type GuideConditionRelationIndex} from '$lib/guide/condition-relations.ts';
   import {createQuestConditionCrossrefs} from '$lib/guide/quest-condition-crossrefs.ts';
-  import {loadPinnedCommonConditionGraph,type NativeCommonConditionGraph}
+  import {loadPinnedCommonConditionGraph,type NativeCommonConditionGraph,
+    type NativeCommonConditionPath,type NativeIndirectMissionMention}
     from '$lib/guide/condition-common-links.ts';
   import {guideVerifiedStaticComposite} from '$lib/guide/source-composite.mjs';
   import {loadVerifiedLocalGuideRewards} from '$lib/guide/local-reward-files';
@@ -44,6 +45,8 @@
   let conditionRegistry: any = null;
   let conditionRelations: GuideConditionRelationIndex|null = null;
   let conditionCommonGraph: NativeCommonConditionGraph|null = null;
+  let indirectConditionMentions: Map<string,readonly NativeIndirectMissionMention[]> = new Map();
+  let nestedConditionPaths: Map<string,readonly NativeCommonConditionPath[]> = new Map();
   let conditionError = '';
   let loadingConditions = false;
   let rewardEpoch = 0;
@@ -76,11 +79,11 @@
   $: indirectConditionMentions = questConditionCrossrefs && conditionCommonGraph && conditionRelations
     ? new Map([...new Set(questConditionCrossrefs.pointers.map(pointer=>pointer.conditionId))]
       .map(id=>[id,conditionCommonGraph!.getIndirectMissionMentions(id,conditionRelations!)]))
-    : new Map();
+    : new Map<string,readonly NativeIndirectMissionMention[]>();
   $: nestedConditionPaths = questConditionCrossrefs && conditionCommonGraph
     ? new Map([...new Set(questConditionCrossrefs.pointers.map(pointer=>pointer.conditionId))]
       .map(id=>[id,conditionCommonGraph!.getReachable(id)]))
-    : new Map();
+    : new Map<string,readonly NativeCommonConditionPath[]>();
   $: detailSteps = selectedDetail ? detailStepRows(selectedDetail, locale) : [];
   $: conditionDisplayRows = selectedDetail && selectedId && conditionRegistry
     ? withVerifiedConditionStepDetails(selectedDetail, detailSteps, currentConditionMentions.rows, selectedId)
