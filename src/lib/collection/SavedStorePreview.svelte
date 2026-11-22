@@ -14,7 +14,8 @@
   export let gameImageMap: Record<string,string> = {};
   export let collectionCommitBusy = false;
   const dispatch=createEventDispatcher<{
-    lookupItem:number;saveProfile:any;gridReferences:any|null;db04Join:any|null
+    lookupItem:number;saveProfile:any;gridReferences:any|null;db04Join:any|null;
+    saveReadStarted:undefined;saveReadFinished:undefined
   }>();
   const jsonKindLabels:Record<string,string>={
     null:'null',boolean:'真偽値',integer:'整数',number:'数値',
@@ -132,6 +133,7 @@
     limit = 48;
     if (fileInput) fileInput.value = '';
     if (exactNameInput) exactNameInput.value = '';
+    dispatch('saveReadFinished');
   }
 
   function failedRead() {
@@ -157,6 +159,7 @@
     if (!file || busy || collectionCommitBusy) return;
     clear();
     busy = true;
+    dispatch('saveReadStarted');
     const request = requestSequence;
     let encrypted:Uint8Array|null = null;
     let worker:Worker|null = null;
@@ -195,6 +198,7 @@
           if (discovery.entries.length||ownership.entries.length)
             dispatch('saveProfile',{discovered:discovery.entries,positiveOwned:ownership.entries});
         } catch { failedRead(); }
+        finally { dispatch('saveReadFinished'); }
       };
       w.onmessage = event => finish(event.data);
       w.onerror = event => { event.preventDefault(); finish({kind:'error'}); };
@@ -209,6 +213,7 @@
         activeWorker = null;
         busy = false;
         failedRead();
+        dispatch('saveReadFinished');
       }
     } finally {
       if (encrypted && encrypted.byteLength) encrypted.fill(0);
