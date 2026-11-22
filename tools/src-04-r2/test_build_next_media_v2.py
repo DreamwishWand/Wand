@@ -42,6 +42,8 @@ class NextVersionBuildTests(unittest.TestCase):
         self.old_scan,self.old_game=make_scan(self.old,"1.26.2",b"catalog",b"bundle0")
         self.next_scan,self.next_game=make_scan(self.next,"1.26.3",b"catalog",b"bundle0")
         self.old_items=make_items(self.old)
+        (self.old/"source-items").mkdir(exist_ok=True)
+        shutil.copyfile(self.old_items,self.old/"source-items"/"items.jsonl")
         self.next_items=make_items(self.next)
         self.old_index,_=make_overlay(self.old,updater.digest(b"bundle0"),self.old_items)
         self.bundle="ddv_Data/StreamingAssets/aa/win/ui-images-generatedicons_assets_assets/food_1234.bundle"
