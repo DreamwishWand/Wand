@@ -22,6 +22,22 @@ test('original cached source is positive but runtime rebuild is unobserved',()=>
   assert.equal(plan.nativeCacheDataCallsSellFormulaCalculator,true);
   assert.equal(plan.originalNativeProtoDatabaseConstructorTailCallsRefresh,true);
   assert.equal(plan.originalNativeProtoDatabaseRefreshCallsLoadBinary,true);
+  assert.equal(plan.originalNativeProtoDatabaseRefreshBranchesOnIsEditor,true);
+  assert.equal(plan.originalNativeRefreshNonEditorBranchCallsLoadBinary,true);
+  assert.equal(plan.originalNativeRefreshEditorBranchClearsTypeSearchCache,true);
+  assert.equal(plan.originalNativeProviderEnumeratorQueriesTypeSearchCache,true);
+  assert.equal(plan.originalNativeProviderEnumeratorMemoizesTypeSearchResults,true);
+  assert.equal(plan.originalNativeTrySetAccessesTypeSearchCache,true);
+  assert.equal(plan.originalNativeProtobufBinarizeHookImplementerCount,3);
+  assert.deepEqual([...plan.originalNativeProtobufBinarizeHookImplementerClasses],
+    ['DynamicItemPriceDatase','GridData','AudioGridData']);
+  assert.ok(Object.isFrozen(plan.originalNativeProtobufBinarizeHookImplementerClasses));
+  assert.equal(plan.originalSaveBinaryInterfaceInvocationUsesSlotZero,true);
+  assert.equal(plan.originalSaveBinaryInterfacePointerIsProtobufOnBinarizeVerified,false);
+  assert.equal(plan.nativeRuntimeIsEditorFlag,null);
+  assert.equal(plan.nativeRuntimeTypeSearchCacheEntries,null);
+  assert.equal(plan.nativeRuntimeTypeSearchCacheInvalidated,null);
+  assert.equal(plan.nativeRuntimeProviderEnumerationCacheWasReused,null);
   assert.equal(plan.originalNativeLoadBinaryResolvesSerializedType,true);
   assert.equal(plan.originalNativeExportForBuildCallsSaveBinary,true);
   assert.equal(plan.originalNativeSaveBinaryChecksProtoDescMessageRuntimeType,true);

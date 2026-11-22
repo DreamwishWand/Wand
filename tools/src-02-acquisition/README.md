@@ -1,5 +1,24 @@
 # DB-02 ACQUISITION — source-pinned extraction
 
+## Native provider type cache and protobuf binarize-hook boundary
+
+Steam 1.26.2 native `ProtoDatabase.Refresh` distinguishes the
+`isEditor=false -> LoadBinary` path from editor-side
+`cachedSearches` invalidation. `ProtoDatabase.Enumerate<T>` checks
+and memoizes results in a Type-keyed cache, so the actual
+`IItemPriceDatabase` provider search collection can be reused.
+
+The original `IProtobufOnBinarize` interface has exactly three
+concrete implementers (including `DynamicItemPriceDatase`).
+`SaveBinary` has a conditional slot-zero interface dispatch, but
+the exact runtime TypeInfo pointer is not authenticated as this
+interface; no actual `OnBinarize` invocation or cache rebuild is
+claimed. Runtime provider population/order, `isEditor` value,
+memoized entries and prices remain unknown.
+
+See [PROTODB-TYPE-CACHE-AND-BINARIZE-HOOK.md](PROTODB-TYPE-CACHE-AND-BINARIZE-HOOK.md)
+and [the strict original source audit](audit_native_protodb_type_cache_and_hook_1262.py).
+
 ## ProtoDatabase load/export native call graph (Steam 1.26.2)
 
 Original Steam binary verification now distinguishes the native
