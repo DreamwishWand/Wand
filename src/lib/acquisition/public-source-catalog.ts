@@ -33,6 +33,8 @@ import {indexNativeShopHistory,type NativeShopHistoryIndex}
   from './shop-history-index.ts';
 import {loadPinnedIapPackReferences,type PinnedIapPackReferenceIndex}
   from './public-iap-pack-references.ts';
+import {indexItemSourceBrowser,type ItemSourceBrowser}
+  from './item-source-browser.ts';
 import {indexPublicOnlineNameCandidates,
   type PublicOnlineNameCandidateIndex,
   type PublicOnlineNameCandidate} from './public-online-name-candidates.ts';
@@ -83,6 +85,8 @@ export interface PublicSourceCatalog{
   readonly gameVersion:'1.26.2';
   readonly source:'sha_pinned_public_db00_starpath_quest_event_friendship_native_shop_history_iap_and_official_records';
   readonly origins:OriginDatabase;
+  /** Browse actual source relations by type/status with no name-only promotions. */
+  readonly itemSources:ItemSourceBrowser;
   readonly db00:Db00OriginJoin;
   readonly nameCandidates:PublicOnlineNameCandidateIndex;
   readonly questSource:PublicQuestAcquisitionIndex;
@@ -136,6 +140,7 @@ export async function loadPublicSourceCatalog(
     ),
     loadPinnedIapPackReferences(nativeIapSource,basePath,fetcher)
   ]);
+  const itemSources=indexItemSourceBrowser(origins);
   const shopHistory=indexNativeShopHistory(
     nativeShopSource,historicalNativeShopSource
   );
@@ -179,6 +184,12 @@ export async function loadPublicSourceCatalog(
     nativeIapPackReferences.coverage.onlineRewardGrantsVerified===0&&
     nativeIapPackReferences.coverage.nestedRewardExpansionVerified===false&&
     originCoverage.linkedRoutes===1255&&
+    itemSources.knownLinkedItemIds.length===originCoverage.linkedItemIds&&
+    itemSources.query().totalOriginRelations===originCoverage.linkedRoutes&&
+    itemSources.getKindItemIds('premium_shop').length===186&&
+    itemSources.getKindItemIds('purchase_bonus').length===158&&
+    itemSources.getKindItemIds('twitch_drop').length===0&&
+    itemSources.getKindItemIds('redeem_code').length===0&&
     originCoverage.routesBySourceKind.verified_game_native===904&&
     originCoverage.routesBySourceKind.verified_liveops_cache===351&&
     joined.db00Items===13202&&
@@ -225,7 +236,7 @@ export async function loadPublicSourceCatalog(
     source:'sha_pinned_public_db00_starpath_quest_event_friendship_native_shop_history_iap_and_official_records' as const,
     origins,db00,nameCandidates,questSource,eventFriendshipSource,
     nativeShopSource,nativeIapSource,historicalNativeShopSource,
-    nativeIapPackReferences,shopHistory,coverage,
+    nativeIapPackReferences,shopHistory,itemSources,coverage,
     lookup(itemId:string|number){
       // db00.lookup validates IDs and keeps extra-ItemList Quest/Currency IDs.
       const row=db00.lookup(itemId);
