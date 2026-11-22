@@ -6,6 +6,8 @@
     from '$lib/world/native-item-anchor-finder.ts';
   import type {OriginalGridAreaEvidence}
     from '$lib/world/native-gridarea-evidence.ts';
+  import type {SourceLocalGridAreaWindow}
+    from '$lib/world/native-gridarea-local-window.ts';
   import {matchSourceGridToLocalTerrain,
     type SourceGridNavigationRequest}
     from '$lib/world/native-grid-navigation.ts';
@@ -90,6 +92,12 @@
   let anchorFindMessage='';
   let findingAnchor=false;
   let itemGridArea:OriginalGridAreaEvidence|null=null;
+  let areaWindow:SourceLocalGridAreaWindow|null=null;
+  let areaOrientation=8;
+  let areaX=0;
+  let areaY=0;
+  let areaWindowError='';
+  let loadingAreaWindow=false;
   let globalItemSearch='';
   let globalFindResult:GlobalOriginalItemAnchorResult|null=null;
   let globalFindMessage='';
@@ -134,6 +142,34 @@
     return `hsl(${hue} 29% 39%)`;
   }
 
+  function resetAreaWindow(){
+    areaWindow=null;
+    areaWindowError='';
+    loadingAreaWindow=false;
+  }
+  function requestAreaWindow(){
+    const shape=itemGridArea;
+    if(!worker||!shape||shape.status!=='source_raw_gridarea_available'||
+       !shape.rawSizeX||!shape.rawSizeY||viewing||findingGlobal||findingAnchor)
+      return;
+    const sx=(areaOrientation===4||areaOrientation===12)
+      ?shape.rawSizeY:shape.rawSizeX;
+    const sy=(areaOrientation===4||areaOrientation===12)
+      ?shape.rawSizeX:shape.rawSizeY;
+    if(!Number.isSafeInteger(areaX)||!Number.isSafeInteger(areaY)||
+       areaX<0||areaY<0||areaX>=sx||areaY>=sy){
+      areaWindow=null;
+      areaWindowError='原本GridAreaの表示座標は範囲内で指定してください。';
+      return;
+    }
+    areaWindowError='';
+    loadingAreaWindow=true;
+    const id=++requestId;
+    worker.postMessage({command:'gridarea-window',requestId:id,
+      itemId:shape.itemId,orientationCode:areaOrientation,
+      rect:{x:areaX,y:areaY,
+        width:Math.min(16,sx-areaX),height:Math.min(16,sy-areaY)}});
+  }
   function stop() {
     requestId++;
     worker?.terminate();
@@ -143,16 +179,19 @@
     findingAnchor=false;
     findingGlobal=false;
     itemGridArea=null;
+    resetAreaWindow();
   }
   function resetGlobalFind(clearInput=true){
     globalFindResult=null;
     globalFindMessage='';
     findingGlobal=false;
     itemGridArea=null;
+    resetAreaWindow();
     if(clearInput)globalItemSearch='';
   }
   function findGlobalOriginalItem(matchIndex=0){
     itemGridArea=null;
+    resetAreaWindow();
     const input=globalItemSearch.trim();
     if(!/^[1-9][0-9]{0,15}$/.test(input)||
        !Number.isSafeInteger(Number(input))){
@@ -186,6 +225,7 @@
   }
   function findNativeItemAnchor(matchIndex=0){
     itemGridArea=null;
+    resetAreaWindow();
     const selected=layouts.find(row=>row.viewKey===selectedViewKey);
     const grid=selected?.grids.find(row=>
       String(row.gridIdNative)===selectedGridId);
@@ -370,6 +410,7 @@
         viewing = false;
         findingAnchor=false;
         findingGlobal=false;
+        loadingAreaWindow=false;
         return;
       }
       if (result.kind === 'loaded') {
@@ -387,6 +428,21 @@
           String(layouts[0].grids[0].gridIdNative) : '';
         infoMessage = 'ローカルZIP内のマニフェスト整合性を確認しました。原本の真正性までは証明していません。';
         if (selectedGridId) requestWindow();
+        return;
+      }
+      if(result.kind==='gridarea-window'){
+        loadingAreaWindow=false;
+        const raw=result.result as SourceLocalGridAreaWindow;
+        if(raw?.contract!=='wand.db04.original-gridarea-local-window@1'||
+           raw.itemId!==itemGridArea?.itemId||
+           raw.orientationCode!==areaOrientation){
+          areaWindow=null;
+          areaWindowError='原本GridAreaの応答が現在のItemと一致しません。';
+          return;
+        }
+        areaWindow=raw;
+        areaWindowError=raw.status==='source_native_local_layers'?''
+          :'この原本GridAreaの表示範囲は未検証です。';
         return;
       }
       if (result.kind==='global-anchor-found'){
@@ -716,7 +772,52 @@
               `${row.value} × ${row.count}`).join(' · ')}
           </p>
           <p class="note">配列の非ゼロ値は占有セル数ではありません。
-            Steam v1.26.2での2Dセル対応、回転、衝突判定、配置可否は未検証です。</p>
+            原本内の2D値参照と90度単位のローカル向き変換は検証済みです。
+            実際のGridへの座標変換・衝突判定・配置可否は未検証です。</p>
+          <div class="coord-row">
+            <label>原本GridAreaの向き
+              <select bind:value={areaOrientation}
+                on:change={()=>{areaX=0;areaY=0;resetAreaWindow();}}>
+                <option value={8}>8 · 元の向き</option>
+                <option value={0}>0 · 180°</option>
+                <option value={4}>4 · 90°</option>
+                <option value={12}>12 · 270°</option>
+              </select>
+            </label>
+            <label>ローカルX
+              <input type="number" min="0" bind:value={areaX}
+                on:input={resetAreaWindow}/>
+            </label>
+            <label>ローカルY
+              <input type="number" min="0" bind:value={areaY}
+                on:input={resetAreaWindow}/>
+            </label>
+            <button type="button" on:click={requestAreaWindow}
+              disabled={loadingAreaWindow||viewing||findingGlobal||findingAnchor}>
+              原本レイヤー値を表示
+            </button>
+          </div>
+          {#if areaWindowError}
+            <p class="note" role="status">{areaWindowError}</p>
+          {/if}
+          {#if areaWindow?.status==='source_native_local_layers'&&areaWindow.rect&&areaWindow.rows}
+            <p class="note">原本GridArea単体のローカル値（最大16×16）。
+              GridObjectの設置位置や占有セルではありません。</p>
+            <div class="map-scroll" aria-label="原本GridAreaセル一覧">
+              <div class="gridarea-raw-matrix"
+                style={'grid-template-columns:repeat(' + areaWindow.rect.width + ',minmax(42px,auto))'}>
+                {#each areaWindow.rows as row,iy}
+                  {#each row as value,ix}
+                    <span class="gridarea-raw-cell"
+                      title={`ローカル (${areaWindow.rect.x+ix},${areaWindow.rect.y+iy}) · 原本レイヤー値 ${value}`}
+                      aria-label={`原本セル${areaWindow.rect.x+ix},${areaWindow.rect.y+iy}：${value}`}>
+                      {value}
+                    </span>
+                  {/each}
+                {/each}
+              </div>
+            </div>
+          {/if}
         {:else}
           <p class="note">
             {itemGridArea.status==='item_has_no_source_gridarea'
@@ -829,6 +930,8 @@
   .grid-view button {height:24px;width:24px;padding:0;border:1px solid #ffffff10;border-radius:2px;background:#2d2837;color:#e8dafa;font-size:9px;line-height:1;}
   .grid-view button.has-anchor {color:white;border:2px solid #ecd1ff;box-shadow:inset 0 0 0 1px #2a2134;font-weight:700;}
   .grid-view button.current {outline:2px solid #fff;outline-offset:1px;}
+  .gridarea-raw-matrix {display:grid;width:max-content;gap:2px;background:#16121f;padding:4px;}
+  .gridarea-raw-cell {min-width:42px;padding:9px 5px;text-align:center;font-size:11px;background:#34303f;color:#e8dafa;}
   .record-list {display:grid;gap:6px;margin-top:14px;}
   .record {display:grid;grid-template-columns:minmax(115px,1fr) repeat(3,minmax(95px,1fr));gap:12px;padding:12px 10px;background:#ffffff08;border-radius:7px;font-size:12px;overflow-wrap:anywhere;}
   .record span {color:#bbaacb;}
