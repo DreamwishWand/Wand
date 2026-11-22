@@ -1279,7 +1279,7 @@
         on:change={onFileChange} />
     </label>
     {#if activeFile}
-      <p class="active-save-file" role="status" title={activeFile.name}>{activeFile.name}</p>
+      <p class="active-save-file" title={activeFile.name}>{activeFile.name}</p>
     {/if}
     <label>対象
       <select bind:value={kind} aria-label="対象の種類" disabled={processing}>
