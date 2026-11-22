@@ -98,6 +98,14 @@ test('Community Premium Shop name matches retain week, price and uncertainty wit
     }
   }
   assert(result.coverage.uniquelyMatchedCommunityShopComponents>0);
+  const verifiedNameOnly=result.getShopProductCandidates('Enchanted Ice Fountain');
+  assert.deepEqual(verifiedNameOnly.map(c=>[c.itemId,c.weekStart]),[
+    ['40001849','2026-11-11'],['40001849','2026-09-16']
+  ]);
+  assert(result.getItemCandidates('40001849').every(c=>
+    c.acquisitionLinkVerified===false&&c.currentAvailabilityVerified===false));
+  assert(result.getShopAppearanceCandidates('2026-11-11/ballerina-ensemble')
+    .some(c=>c.itemId==='50900411'&&c.componentName==='Ballerina Dress'));
   assert.equal(result.coverage.totalCandidateRelations,
     result.coverage.uniquelyMatchedCommunityShopComponents+
     result.coverage.uniquelyMatchedOfficialRewards);
