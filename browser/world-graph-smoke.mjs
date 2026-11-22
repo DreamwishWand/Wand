@@ -394,6 +394,27 @@ try{
   // No Save coordinates are projected onto this terrain display.
   await page.getByText(/ローカルZIP内のマニフェスト整合性を確認しました/).waitFor();
 
+  // Worker scans only the selected ORIGINAL layout and native Grid ID.
+  // It pans to a real source-local anchor, never a Save-world coordinate.
+  const nativeItemQuery=page.getByRole('searchbox',{name:'原本Item ID'});
+  await nativeItemQuery.fill('100');
+  await page.getByRole('button',{name:'原本初期配置を探す'}).click();
+  await page.getByRole('status')
+    .filter({hasText:'原本初期配置 1 / 1件'}).waitFor();
+  await page.waitForFunction(()=>document.querySelector(
+    '.grid-view button.current')?.getAttribute('aria-label')
+      ==='座標5,5：アンカー1件');
+  assert.equal(await page.locator('.grid-view button.current')
+    .getAttribute('aria-label'),'座標5,5：アンカー1件');
+  assert.match(await page.getByRole('status')
+    .filter({hasText:'原本初期配置 1 / 1件'}).innerText(),
+    /セーブの座標・配置可否を意味しません/);
+  await nativeItemQuery.fill('999');
+  await page.getByRole('button',{name:'原本初期配置を探す'}).click();
+  await page.getByRole('status')
+    .filter({hasText:'指定Item IDの初期配置はありません'}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'次の一致'}).count(),0);
+
   // The DB-04 UI reuses DB-05's existing Rust/WASM grid-path matcher.
   // Synthetic Save map IDs 19/20/21 are intentionally NOT native Grid.IDs.
   // All private fields remain in the isolated Worker; only count receipts
