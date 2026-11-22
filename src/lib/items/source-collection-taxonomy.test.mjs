@@ -134,11 +134,11 @@ test('source-negative Crafting suppression cannot become a positive group match'
   const f=fixture(),api=createDb01SourceCollectionTaxonomyClient(
     f.catalog,f.shared);
   const result=await api.getItem(200,'ja');
-  assert.deepEqual(result.sourceLinks.map(x=>x.sourceSet.collectionSetId),[11,13]);
+  assert.deepEqual(result.sourceLinks.map(x=>x.sourceSet.collectionSetId),[13,11]);
   assert.deepEqual(result.sourceLinks.map(x=>x.groups[0].groupIndex),[1,1]);
   assert.deepEqual(result.sourceLinks.map(x=>
     x.groups[0].positiveSourcePredicateOrigins),[
-    ['set-universe'],['activity-crafting'],
+    ['activity-crafting'],['set-universe'],
   ]);
 });
 test('known no-Collection-link definition versus unknown Item ID and duplicate input',async()=>{
