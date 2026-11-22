@@ -1,0 +1,217 @@
+/* UI-00 shared time-of-day palettes. Service content can consume these
+   semantic tokens without importing a theme-specific stylesheet. */
+:root{
+  color-scheme:dark;
+  --wand-bg:#04143B;--wand-text:#F3F8FF;--wand-muted:#C0D2EF;
+  --wand-header:#071B4A;--wand-header-text:#F3F8FF;--wand-line:#52638A;
+  --wand-accent:#C6D6F2;--wand-accent-strong:#2856A4;
+  --wand-accent-contrast:#04143B;--wand-secondary:#D8B96B;
+  --wand-pink:#9E94E9;--wand-sky:#849FD8;
+  --wand-header-hover:#d9e7ff20;--wand-menu:#0A1C43;
+  --wand-card:linear-gradient(145deg,#10285D,#081C46);
+  --wand-reference:linear-gradient(145deg,#1B3978,#10285D);
+  --wand-community:radial-gradient(ellipse at 85% 15%,#C6D6F22b,transparent 58%),linear-gradient(135deg,#263F70,#10285D);
+  --wand-planned:linear-gradient(145deg,#112C62,#09204B);
+  --wand-visual-bg:#E5EDFF13;--wand-visual-text:#C6D6F2;
+  --wand-planned-text:#E1E9F9;
+  --wand-pill-bg:#e5edff18;--wand-pill-border:#C6D6F270;
+  --wand-halo:radial-gradient(ellipse at 16% 0%,#2856A453,transparent 45rem);
+  --wand-focus:#D8B96B;
+}
+:root[data-wand-theme='dawn']{
+  color-scheme:light;
+  --wand-bg:#EDE8F8;--wand-text:#372E50;--wand-muted:#655B7B;
+  --wand-header:#E2DAF2;--wand-header-text:#372E50;--wand-line:#B5A5DC;
+  --wand-accent:#8067B4;--wand-accent-strong:#675099;
+  --wand-accent-contrast:#FFFFFF;--wand-secondary:#D3AC63;
+  --wand-pink:#D58DAE;--wand-sky:#8CA7D4;
+  --wand-header-hover:#8067B421;--wand-menu:#FCFAFF;
+  --wand-card:radial-gradient(ellipse at 85% 5%,#D58DAE25,transparent 62%),linear-gradient(145deg,#F9F7FE,#ECE5F8);
+  --wand-reference:radial-gradient(ellipse at 80% 12%,#8CA7D430,transparent 55%),linear-gradient(145deg,#F6F1FD,#DDD5F0);
+  --wand-community:radial-gradient(ellipse at 87% 10%,#D3AC6333,transparent 56%),linear-gradient(125deg,#E9D9EE,#DCD9F2);
+  --wand-planned:linear-gradient(145deg,#F0EAF9,#E3D9EF);
+  --wand-visual-bg:#ffffff80;--wand-visual-text:#675099;
+  --wand-planned-text:#4A3B65;
+  --wand-pill-bg:#ffffffc9;--wand-pill-border:#8067B466;
+  --wand-halo:radial-gradient(ellipse at 12% 0%,#D58DAE47,transparent 40rem);
+  --wand-focus:#675099;
+}
+:root[data-wand-theme='coral']{
+  color-scheme:light;
+  --wand-bg:#E5F8FD;--wand-text:#133B52;--wand-muted:#466676;
+  --wand-header:#D8F3F7;--wand-header-text:#133B52;--wand-line:#9ACFD8;
+  --wand-accent:#0886B0;--wand-accent-strong:#086D91;
+  --wand-accent-contrast:#FFFFFF;--wand-secondary:#FFD89B;
+  --wand-pink:#FF9DAB;--wand-sky:#AEBFFF;
+  --wand-header-hover:#0886B01e;--wand-menu:#FFFFFF;
+  --wand-card:radial-gradient(ellipse at 86% 12%,#B8EDFA66,transparent 65%),linear-gradient(145deg,#FFFFFF,#E3F9FB);
+  --wand-reference:radial-gradient(ellipse at 88% 5%,#AEBFFF55,transparent 65%),linear-gradient(145deg,#EDF7FF,#DDEFFA);
+  --wand-community:radial-gradient(ellipse at 88% 10%,#FF9DAB5c,transparent 60%),linear-gradient(125deg,#E0F9F4,#DFE8FC);
+  --wand-planned:linear-gradient(145deg,#F7FCFF,#DFF4F9);
+  --wand-visual-bg:#ffffffbd;--wand-visual-text:#086D91;
+  --wand-planned-text:#264B5B;
+  --wand-pill-bg:#ffffffdc;--wand-pill-border:#0886B065;
+  --wand-halo:radial-gradient(ellipse at 14% 0%,#72DCC455,transparent 43rem);
+  --wand-focus:#086D91;
+}
+:root{color:var(--wand-text);background:var(--wand-bg)}
+body{background:var(--wand-halo),var(--wand-bg);color:var(--wand-text)}
+:root :focus-visible{outline-color:var(--wand-focus)}
+:root .site-shell .site-header{
+  background:var(--wand-header);border-bottom-color:var(--wand-line);color:var(--wand-header-text)
+}
+:root .site-shell .header-home-button,
+:root .site-shell .header-icon-button,
+:root .site-shell .shell-shortcut,
+:root .site-shell .shell-current{color:var(--wand-header-text)}
+:root .site-shell .shell-shortcut[aria-current=page]{
+  color:var(--wand-header-text);background:var(--wand-header-hover)
+}
+:root .site-shell .header-home-button:hover,
+:root .site-shell .header-icon-button:hover:not(:disabled),
+:root .site-shell .shell-shortcut:hover{
+  color:var(--wand-header-text);background:var(--wand-header-hover);border-color:var(--wand-line)
+}
+:root .site-shell .header-home-button:focus-visible,
+:root .site-shell .header-icon-button:focus-visible,
+:root .site-shell .shell-shortcut:focus-visible,
+:root .site-shell .shell-menu a:focus-visible,
+:root .site-shell .shell-menu button:focus-visible{
+  outline:3px solid var(--wand-focus);outline-offset:2px
+}
+:root .site-shell .shell-menu{
+  background:var(--wand-menu);border-color:var(--wand-line);color:var(--wand-text)
+}
+:root .site-shell .shell-menu a,
+:root .site-shell .shell-menu button,
+:root .site-shell .shell-menu .shell-unavailable{color:var(--wand-text)}
+:root .site-shell .shell-menu .shell-unavailable{color:var(--wand-muted)}
+:root .site-shell .shell-menu a:hover,
+:root .site-shell .shell-menu button:hover,
+:root .site-shell .shell-menu button.chosen,
+:root .site-shell .shell-menu a[aria-current=page]{background:var(--wand-header-hover)}
+:root .site-shell .shell-menu-divider{background:var(--wand-line)}
+:root .site-shell .shell-theme-root{position:relative;display:flex;align-items:center}
+:root .site-shell .shell-theme-menu{
+  left:auto;right:0;width:min(350px,calc(100vw - 18px));
+  padding:8px
+}
+:root .site-shell .shell-theme-menu button{
+  white-space:normal;overflow-wrap:anywhere;min-height:54px;line-height:1.4;
+  border:1px solid transparent
+}
+:root .site-shell .shell-theme-menu button.chosen{border-color:var(--wand-line);font-weight:700}
+:root .site-shell .shell-theme-menu button svg{flex:none}
+:root .site-shell .portal-page{background:var(--wand-bg)}
+:root .site-shell .portal-grid{background:var(--wand-line)}
+:root .site-shell .portal-card,
+:root .site-shell .portal-card:first-child{
+  background:var(--wand-card);color:var(--wand-text)
+}
+:root .site-shell .portal-card-collection,
+:root .site-shell .portal-card-guide{background:var(--wand-reference)}
+:root .site-shell .portal-card-community,
+:root .site-shell .portal-card-community:first-child,
+:root .site-shell .portal-card-community.planned{
+  background:var(--wand-community)
+}
+:root .site-shell .portal-card.planned,
+:root .site-shell .portal-card:first-child.planned{
+  background:var(--wand-planned);color:var(--wand-planned-text)
+}
+:root .site-shell .portal-card-community.planned{
+  background:var(--wand-community)
+}
+:root .site-shell .portal-card-visual,
+:root .site-shell .portal-card:first-child .portal-card-visual,
+:root .site-shell .portal-card.planned .portal-card-visual{
+  background:var(--wand-visual-bg);color:var(--wand-visual-text);
+  border-color:var(--wand-pill-border)
+}
+:root .site-shell .portal-card.planned .portal-card-label strong{color:var(--wand-planned-text)}
+:root .site-shell .portal-planned-status,
+:root .site-shell .portal-card.planned .portal-planned-status{
+  color:var(--wand-planned-text);background:var(--wand-pill-bg);border-color:var(--wand-pill-border)
+}
+:root .site-shell .portal-card-action{color:var(--wand-accent)}
+:root .site-shell a.portal-card:hover{
+  box-shadow:inset 0 0 0 3px var(--wand-accent);filter:brightness(1.05)
+}
+:root .site-shell a.portal-card:focus-visible{outline-color:var(--wand-focus)}
+/* Light-water palette alone is intentionally most colorful. */
+:root[data-wand-theme='coral'] .site-shell .portal-card-presets{
+  background:linear-gradient(145deg,#FFFFFF,#DCF8EC)
+}
+:root[data-wand-theme='coral'] .site-shell .portal-card-gallery{
+  background:linear-gradient(145deg,#FFFFFF,#FFE7E8)
+}
+:root[data-wand-theme='coral'] .site-shell .portal-card-dreamsnaps{
+  background:linear-gradient(145deg,#FFFFFF,#E5E6FF)
+}
+:root[data-wand-theme='coral'] .site-shell .portal-card.planned.portal-card-presets{
+  background:linear-gradient(145deg,#F7FFFC,#DCF4E9)
+}
+:root[data-wand-theme='coral'] .site-shell .portal-card.planned.portal-card-gallery{
+  background:linear-gradient(145deg,#FFFAFB,#F8E3E7)
+}
+:root[data-wand-theme='coral'] .site-shell .portal-card.planned.portal-card-dreamsnaps{
+  background:linear-gradient(145deg,#FDFBFF,#E7E8FA)
+}
+/* Dawn: rose-and-gold glimmers are small accents, not an orange base. */
+:root[data-wand-theme='dawn'] .site-shell .portal-card-decorate{
+  background:radial-gradient(ellipse at 88% 10%,#D58DAE35,transparent 60%),var(--wand-card)
+}
+:root[data-wand-theme='dawn'] .site-shell .portal-card-gallery{
+  background:radial-gradient(ellipse at 88% 10%,#D3AC6325,transparent 64%),var(--wand-card)
+}
+/* Night: silver-blue nebula and pinpricks of gold, never a purple-black base. */
+:root[data-wand-theme='night'] .site-shell .portal-card-decorate{
+  background:radial-gradient(ellipse at 88% 7%,#849FD834,transparent 59%),var(--wand-card)
+}
+:root[data-wand-theme='night'] .site-shell .portal-card-community{
+  border-color:#D8B96B45
+}
+
+/* Match Collection's existing light surfaces to the selected daylight palette.
+   This is only shared theme styling: no Collection behavior or data logic changes. */
+:root[data-wand-theme='dawn'] .collection-page,
+:root[data-wand-theme='dawn'] .collection-workspace,
+:root[data-wand-theme='dawn'] .workspace-body{
+  background:#EDE8F8;color:#372E50
+}
+:root[data-wand-theme='dawn'] .workspace-top{
+  background:#E2DAF2f5;border-bottom-color:#B5A5DC
+}
+:root[data-wand-theme='dawn'] .facet-card{
+  background:#F9F7FE;color:#372E50;border-color:#D6D0EC
+}
+:root[data-wand-theme='dawn'] .item-inspector{
+  background:#E2DAF2;color:#372E50;border-left-color:#B5A5DC
+}
+:root[data-wand-theme='coral'] .collection-page,
+:root[data-wand-theme='coral'] .collection-workspace,
+:root[data-wand-theme='coral'] .workspace-body{
+  background:#E5F8FD;color:#133B52
+}
+:root[data-wand-theme='coral'] .workspace-top{
+  background:#D8F3F7f5;border-bottom-color:#9ACFD8
+}
+:root[data-wand-theme='coral'] .facet-card{
+  background:#FFFFFF;color:#133B52;border-color:#9ACFD8
+}
+:root[data-wand-theme='coral'] .item-inspector{
+  background:#DFEFF9;color:#133B52;border-left-color:#9ACFD8
+}
+:root:is([data-wand-theme='dawn'],[data-wand-theme='coral']) .language-popover{
+  background:var(--wand-menu);color:var(--wand-text);border-color:var(--wand-line)
+}
+:root:is([data-wand-theme='dawn'],[data-wand-theme='coral']) .language-popover button{
+  color:var(--wand-text)
+}
+:root:is([data-wand-theme='dawn'],[data-wand-theme='coral']) .language-popover button:hover,
+:root:is([data-wand-theme='dawn'],[data-wand-theme='coral']) .language-popover button.chosen{
+  background:var(--wand-header-hover)
+}
+:root:is([data-wand-theme='dawn'],[data-wand-theme='coral']) .tutorial-done{
+  background:var(--wand-accent-strong);color:var(--wand-accent-contrast)
+}

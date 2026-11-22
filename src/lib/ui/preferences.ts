@@ -10,7 +10,15 @@ export const UI_LANGUAGES=[
   {code:'pt-BR',label:'Português',short:'PT'}
 ] as const;
 export type WandLanguage=typeof UI_LANGUAGES[number]['code'];
-export type WandTheme='dark'|'light';
+export const UI_THEMES=[
+  {code:'dawn',label:'黄昏の日の出',short:'日の出',icon:'sunrise'},
+  {code:'coral',label:'太陽に照らされた透き通るサンゴ礁',short:'サンゴ礁',icon:'sun'},
+  {code:'night',label:'魔法の夜空',short:'夜空',icon:'moon-star'}
+] as const;
+export type WandTheme=typeof UI_THEMES[number]['code'];
+export function isWandTheme(value:unknown):value is WandTheme{
+  return typeof value==='string'&&UI_THEMES.some(theme=>theme.code===value);
+}
 export const LANGUAGE_STORAGE_KEY='dreamwishwand.ui.language.v1';
 export const THEME_STORAGE_KEY='dreamwishwand.ui.theme.v1';
 export const LANGUAGE_EVENT='wand:ui-language';
@@ -37,13 +45,18 @@ export function watchWandLanguage(update:(value:WandLanguage)=>void):()=>void{
   update(readWandLanguage());
   return ()=>window.removeEventListener(LANGUAGE_EVENT,listener);
 }
+/** Preserve existing selections: light → coral; dark → night. */
 export function readWandTheme():WandTheme{
-  try{return window.localStorage.getItem(THEME_STORAGE_KEY)==='light'?'light':'dark';}
-  catch{return 'dark';}
+  try{
+    const saved=window.localStorage.getItem(THEME_STORAGE_KEY);
+    if(isWandTheme(saved))return saved;
+    if(saved==='light')return 'coral';
+    return 'night';
+  }catch{return 'night';}
 }
 export function setWandTheme(value:WandTheme):void{
-  if(value!=='dark'&&value!=='light')return;
+  if(!isWandTheme(value))return;
   try{window.localStorage.setItem(THEME_STORAGE_KEY,value);}catch{/* private mode */}
   document.documentElement.dataset.wandTheme=value;
-  document.documentElement.style.colorScheme=value;
+  document.documentElement.style.colorScheme=value==='night'?'dark':'light';
 }

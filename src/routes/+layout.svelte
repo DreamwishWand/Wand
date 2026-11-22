@@ -1,6 +1,7 @@
 <script lang="ts">
   import '../app.css';
   import '$lib/ui/shell.css';
+  import '$lib/ui/themes.css';
   import {base} from '$app/paths';
   import {page} from '$app/stores';
   import {onMount} from 'svelte';
@@ -8,7 +9,7 @@
   import {launcherServices} from '$lib/ui/services';
   import {afterNavigate} from '$app/navigation';
   import {
-    UI_LANGUAGES,readWandLanguage,setWandLanguage,readWandTheme,setWandTheme,
+    UI_LANGUAGES,UI_THEMES,readWandLanguage,setWandLanguage,readWandTheme,setWandTheme,
     watchWandLanguage,type WandLanguage,type WandTheme
   } from '$lib/ui/preferences';
 
@@ -16,34 +17,40 @@
   let accountOpen=false;
   let collectionBusy=false;
   let languageOpen=false;
+  let themeOpen=false;
   let navOpen=false;
   let filesOpen=false;
   let navRoot:HTMLElement|null=null;
   let languageRoot:HTMLElement|null=null;
+  let themeRoot:HTMLElement|null=null;
   let filesRoot:HTMLElement|null=null;
   let navButton:HTMLButtonElement|null=null;
   let filesButton:HTMLButtonElement|null=null;
   let helpButton:HTMLButtonElement|null=null;
   let accountButton:HTMLButtonElement|null=null;
   let uiLocale:WandLanguage='ja';
-  let uiTheme:WandTheme='dark';
+  let uiTheme:WandTheme='night';
   let languageButton:HTMLButtonElement|null=null;
+  let themeButton:HTMLButtonElement|null=null;
   const LANGUAGE_SHORT=Object.fromEntries(UI_LANGUAGES.map(x=>[x.code,x.short]));
-  function closeMenus(){navOpen=false;filesOpen=false;languageOpen=false;}
+  function closeMenus(){navOpen=false;filesOpen=false;languageOpen=false;themeOpen=false;}
   function switchLanguage(code:WandLanguage){
     setWandLanguage(code);
     closeMenus();
     languageButton?.focus();
   }
-  function switchTheme(){
-    uiTheme=uiTheme==='dark'?'light':'dark';
-    setWandTheme(uiTheme);
+  function switchTheme(next:WandTheme){
+    uiTheme=next;
+    setWandTheme(next);
+    themeOpen=false;
+    themeButton?.focus();
   }
   function outsideMenus(event:PointerEvent){
     if(!(event.target instanceof Node))return;
     if(navOpen&&!navRoot?.contains(event.target))navOpen=false;
     if(filesOpen&&!filesRoot?.contains(event.target))filesOpen=false;
     if(languageOpen&&!languageRoot?.contains(event.target))languageOpen=false;
+    if(themeOpen&&!themeRoot?.contains(event.target))themeOpen=false;
   }
   function openAccount(){closeMenus();accountOpen=true;}
   function closeAccount(){accountOpen=false;accountButton?.focus();}
@@ -107,13 +114,14 @@
 </script>
 <svelte:window on:keydown={(event:KeyboardEvent)=>{
   if(event.key==='Escape'){
-    const hadNav=navOpen,hadFiles=filesOpen,hadLanguage=languageOpen;
+    const hadNav=navOpen,hadFiles=filesOpen,hadLanguage=languageOpen,hadTheme=themeOpen;
     closeMenus();
     if(tutorialOpen)closeTutorial();
     else if(accountOpen)closeAccount();
     else if(hadNav)navButton?.focus();
     else if(hadFiles)filesButton?.focus();
     else if(hadLanguage)languageButton?.focus();
+    else if(hadTheme)themeButton?.focus();
   }
   if(event.key==='/'&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&!event.repeat
     &&!(event.target instanceof HTMLInputElement)
@@ -130,7 +138,7 @@
     <nav class="shell-nav-root" aria-label="サービスナビゲーション" bind:this={navRoot}>
       <button class="header-icon-button shell-nav-trigger" type="button" bind:this={navButton}
         aria-label="サービスを切り替える" title="サービスを切り替える" aria-expanded={navOpen}
-        on:click={()=>{navOpen=!navOpen;filesOpen=false;languageOpen=false;}}>
+        on:click={()=>{navOpen=!navOpen;filesOpen=false;languageOpen=false;themeOpen=false;}}>
         <WandIcon name="grid" size={19}/><span>サービス</span><WandIcon name="chevron" size={14}/>
       </button>
       {#if navOpen}
@@ -204,7 +212,7 @@
           <div class="shell-file-mobile shell-file-root" bind:this={filesRoot}>
             <button class="header-icon-button" type="button" bind:this={filesButton}
               aria-label="ファイル操作を開く" aria-expanded={filesOpen}
-              on:click={()=>{filesOpen=!filesOpen;navOpen=false;languageOpen=false;}} title="ファイル操作">
+              on:click={()=>{filesOpen=!filesOpen;navOpen=false;languageOpen=false;themeOpen=false;}} title="ファイル操作">
               <WandIcon name="folder" size={19}/>
             </button>
             {#if filesOpen}
@@ -224,7 +232,7 @@
         <div class="header-language-menu" bind:this={languageRoot}>
           <button bind:this={languageButton} class="header-icon-button header-language-button" type="button"
             aria-label="表示言語を切り替える" title="表示言語を切り替える" aria-expanded={languageOpen}
-            on:click={()=>{languageOpen=!languageOpen;navOpen=false;filesOpen=false;}}>
+            on:click={()=>{languageOpen=!languageOpen;navOpen=false;filesOpen=false;themeOpen=false;}}>
             <WandIcon name="languages" size={19}/><span class="header-locale-code">{LANGUAGE_SHORT[uiLocale]}</span>
           </button>
           {#if languageOpen}
@@ -238,10 +246,26 @@
             </div>
           {/if}
         </div>
-        <button class="header-icon-button" type="button" on:click={switchTheme}
-          aria-label="テーマを切り替える" title={uiTheme==='dark'?'ライトテーマへ':'ダークテーマへ'}>
-          <WandIcon name={uiTheme==='dark'?'sun':'moon'} size={19}/>
-        </button>
+        <div class="shell-theme-root" bind:this={themeRoot}>
+          <button class="header-icon-button" bind:this={themeButton} type="button"
+            aria-label="テーマを切り替える" title={UI_THEMES.find(item=>item.code===uiTheme)?.label}
+            aria-expanded={themeOpen} aria-haspopup="true"
+            on:click={()=>{themeOpen=!themeOpen;navOpen=false;filesOpen=false;languageOpen=false;}}>
+            <WandIcon name={UI_THEMES.find(item=>item.code===uiTheme)?.icon??'moon-star'} size={22}/>
+          </button>
+          {#if themeOpen}
+            <div class="shell-menu shell-theme-menu" role="group" aria-label="テーマ">
+              {#each UI_THEMES as item (item.code)}
+                <button type="button" class:chosen={uiTheme===item.code}
+                  aria-pressed={uiTheme===item.code} on:click={()=>switchTheme(item.code)}>
+                  <WandIcon name={item.icon} size={23}/>
+                  <span class="shell-menu-title">{item.label}</span>
+                  {#if uiTheme===item.code}<WandIcon name="check" size={19}/>{/if}
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
       </div>
       <div class="header-support-tools" role="group" aria-label="ヘルプとアカウント">
         <button class="header-icon-button help-action" bind:this={helpButton} type="button"
