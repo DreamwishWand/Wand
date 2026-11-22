@@ -95,7 +95,7 @@
       bytes=new Uint8Array(await file.arrayBuffer());
       if(request!==revision)return;
       worker=new Worker(
-        new URL('../../../lib/save/save-amount-preview.worker.mjs',import.meta.url),
+        new URL('../../../lib/save/save-amount-preview.worker.ts',import.meta.url),
         {type:'module'}
       );
       active=worker;
@@ -170,7 +170,7 @@
       bytes=new Uint8Array(await selected.file.arrayBuffer());
       if(request!==revision)return;
       worker=new Worker(
-        new URL('../../../lib/save/save-amount-preview.worker.mjs',import.meta.url),
+        new URL('../../../lib/save/save-amount-preview.worker.ts',import.meta.url),
         {type:'module'}
       );
       active=worker;
