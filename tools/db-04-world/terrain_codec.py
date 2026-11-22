@@ -76,7 +76,7 @@ def describe_native_packing(size_x: int, size_y: int,
             "status": "native_packing_not_verified_for_game_version",
             "decoded": False,
             "sourceGameVersion": source_game_version,
-            "verifiedNativeGameVersion": "1.26.1",
+            "verifiedNativeGameVersion": "1.26.2",
             "nativeCodeBodyVerified": False,
             "placementLegalityVerified": False,
         }
