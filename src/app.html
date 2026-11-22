@@ -4,6 +4,21 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#12101b" />
+    <script>
+      // Restore presentation before hydration to avoid a light/dark flash.
+      // Values are strictly whitelisted; nothing from storage enters markup.
+      try {
+        const savedTheme=localStorage.getItem('dreamwishwand.ui.theme.v1');
+        if(savedTheme==='light'){
+          document.documentElement.dataset.wandTheme='light';
+          document.documentElement.style.colorScheme='light';
+        }
+        const savedLang=localStorage.getItem('dreamwishwand.ui.language.v1');
+        if(['ja','en','fr','it','de','es-ES','zh-CN','pt-BR'].includes(savedLang)){
+          document.documentElement.lang=savedLang;
+        }
+      }catch{}
+    </script>
     <link rel="icon" href="%sveltekit.assets%/favicon.svg" type="image/svg+xml" />
     %sveltekit.head%
   </head>
