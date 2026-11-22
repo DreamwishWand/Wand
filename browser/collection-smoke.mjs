@@ -766,6 +766,9 @@ try{
     'a replacement must close the prior read exactly once and open/finish the next');
   await page.getByRole('button',{name:'ファイルを閉じる'}).click();
 
+  // A second delayed read gets its own release callback; the first callback
+  // must not accidentally satisfy the second wait.
+  await page.evaluate(()=>{window.__releaseStaleSave=undefined;});
   await globalSaveInput.setInputFiles({
     name:'stale-pending-closed.profile',mimeType:'application/octet-stream',buffer:fixture
   });
