@@ -246,6 +246,25 @@ try{
     name:'batch.profile',mimeType:'application/octet-stream',
     buffer:syntheticEncryptedP1g(quantityProfile)
   });
+  await page.getByRole('button',{name:'一括変更を検証'}).click();
+  await page.getByRole('status').filter({hasText:'3件の一括変更'}).waitFor({timeout:30000});
+  assert.equal(await page.getByRole('alert').count(),0);
+  page.once('dialog',dialog=>dialog.accept());
+  await page.getByRole('button',{name:'編集済みコピーを生成'}).click();
+  const batchLink=page.getByRole('link',{name:'コピーをダウンロード'});
+  await batchLink.waitFor({timeout:30000});
+  const batchEvent=page.waitForEvent('download');
+  await batchLink.click();
+  const batchOpened=readSyntheticEncryptedP1g(
+    await readFile(await (await batchEvent).path())
+  );
+  assert.equal(batchOpened.Player.ListInventories['100'].Inventory['777'].Amount,250);
+  assert.equal(batchOpened.Player.ListInventories['100'].Inventory['550'].Amount,31968);
+  assert.equal(batchOpened.Player.ContainerInventories['202'].Inventory[1].Amount,888);
+  assert.equal(batchOpened.Player.ContainerInventories['202'].Inventory[1].ItemID,440);
+  assert.equal(batchOpened.Player.ListInventories['100'].Inventory['777'].ExclusiveDecor,true);
+  assert.equal(batchOpened.Player.ContainerInventories['202'].Inventory[1].Extra,null);
+  assert.equal(quantityProfile.Player.ListInventories['100'].Inventory['777'].Amount,1);
 
   await page.getByRole('button',{name:'破棄'}).click();
   await page.getByLabel('現在の数量').fill('99');
