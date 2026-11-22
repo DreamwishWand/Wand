@@ -248,7 +248,7 @@ def private_output_dir(path: Path):
 
 def probe_dll(plan: dict, dll_path: Path, dll_version: str,
               expected_dll_sha256: str, output_dir: Path,
-              disassembler: str | None = None):
+              disassembler: str | None = None, extract_only: bool = False):
     require(dll_version == plan["dumpVersionClaim"], "CROSS_VERSION_RVA_FORBIDDEN")
     require(isinstance(expected_dll_sha256, str) and
             HEX.fullmatch(expected_dll_sha256) is not None,
@@ -256,8 +256,8 @@ def probe_dll(plan: dict, dll_path: Path, dll_version: str,
     sha = digest_file(dll_path, MAX_DLL_SIZE)
     require(sha == expected_dll_sha256, "DLL_SHA_MISMATCH")
     output_dir = private_output_dir(output_dir)
-    disasm = shutil.which(disassembler or "objdump")
-    require(disasm is not None, "OBJDUMP_NOT_INSTALLED")
+    disasm = None if extract_only else shutil.which(disassembler or "objdump")
+    require(extract_only or disasm is not None, "OBJDUMP_NOT_INSTALLED")
     size = dll_path.stat().st_size
     rows = []
     with dll_path.open("rb") as binary:
@@ -275,18 +275,26 @@ def probe_dll(plan: dict, dll_path: Path, dll_version: str,
                 temp.write(raw)
                 temp_path = Path(temp.name)
             try:
-                run = subprocess.run(
+                if extract_only:
+                    name = method["name"].replace("<", "_").replace(">", "_")
+                    name = re.sub(r"[^a-zA-Z0-9._-]", "_", name)
+                    (output_dir / (name + ".prefix.bin")).write_bytes(raw)
+                    continue_disassembly = False
+                else:
+                    continue_disassembly = True
+                if continue_disassembly:
+                    run = subprocess.run(
                     [disasm, "-D", "-b", "binary", "-m", "i386:x86-64",
                      "--adjust-vma=" + hex(base + rva), str(temp_path)],
-                    capture_output=True, text=True, check=False, timeout=20)
-                require(run.returncode == 0, "OBJDUMP_FAILED")
-                require(len(run.stdout) < 256 * 1024, "DISASM_OUTPUT_LIMIT")
-                name = method["name"].replace("<", "_").replace(">", "_")
-                name = re.sub(r"[^a-zA-Z0-9._-]", "_", name)
-                (output_dir / (name + ".asm.txt")).write_text(
-                    "# LOCAL ONLY. A 256-byte method prefix, not a whole function.\n"
-                    "# Source version is owner-asserted, not independently proved.\n"
-                    + run.stdout, encoding="utf-8")
+                        capture_output=True, text=True, check=False, timeout=20)
+                    require(run.returncode == 0, "OBJDUMP_FAILED")
+                    require(len(run.stdout) < 256 * 1024, "DISASM_OUTPUT_LIMIT")
+                    name = method["name"].replace("<", "_").replace(">", "_")
+                    name = re.sub(r"[^a-zA-Z0-9._-]", "_", name)
+                    (output_dir / (name + ".asm.txt")).write_text(
+                        "# LOCAL ONLY. A 256-byte method prefix, not a whole function.\n"
+                        "# Source version is owner-asserted, not independently proved.\n"
+                        + run.stdout, encoding="utf-8")
             finally:
                 temp_path.unlink(missing_ok=True)
             rows.append({
@@ -308,6 +316,8 @@ def probe_dll(plan: dict, dll_path: Path, dll_version: str,
         "imageBase": hex(base),
         "methodPrefixes": rows,
         "completeMethodsExtracted": False,
+        "disassemblyPerformed": not extract_only,
+        "binaryPrefixesExtracted": extract_only,
         "actualPriceFormulaVerified": False,
         "roundingRuleVerified": False,
         "publicationAuthorized": False,
@@ -328,6 +338,9 @@ def main(argv=None):
     parser.add_argument("--gameassembly-version", choices=("1.26.1", "1.26.2"))
     parser.add_argument("--expected-gameassembly-sha256")
     parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--objdump-path")
+    parser.add_argument("--extract-only", action="store_true",
+                        help="Python-only prefix extraction (private binary outputs)")
     args = parser.parse_args(argv)
     try:
         plan = source_method_plan(
@@ -338,10 +351,12 @@ def main(argv=None):
                     args.output_dir is not None, "DLL_FLAGS_REQUIRED")
             report = probe_dll(
                 plan, args.gameassembly, args.gameassembly_version,
-                args.expected_gameassembly_sha256, args.output_dir)
+                args.expected_gameassembly_sha256, args.output_dir,
+                disassembler=args.objdump_path, extract_only=args.extract_only)
             # Never print native instructions or private filenames in stdout.
             print(json.dumps({
-                "status": "PRIVATE_PREFIX_DISASSEMBLY_ONLY",
+                "status": ("PRIVATE_PREFIX_BINARY_EXTRACT_ONLY" if args.extract_only
+                           else "PRIVATE_PREFIX_DISASSEMBLY_ONLY"),
                 "methodPrefixes": len(report["methodPrefixes"]),
                 "actualPriceFormulaVerified": False,
                 "publicationAuthorized": False,
@@ -349,7 +364,8 @@ def main(argv=None):
         else:
             require(args.gameassembly_version is None and
                     args.expected_gameassembly_sha256 is None and
-                    args.output_dir is None, "UNUSED_DLL_FLAGS")
+                    args.output_dir is None and args.objdump_path is None and
+                    not args.extract_only, "UNUSED_DLL_FLAGS")
             print(json.dumps({
                 "status": "SHA_PINNED_METHOD_ADDRESSES_ONLY",
                 **plan,
