@@ -89,6 +89,14 @@ test('DB-00 rejects oversized/unbounded paging and corrupted shard bytes',async(
   await assert.rejects(tampered.loadPage({offset:0,limit:10}),/byte count mismatch/);
   // Same poisoned shard remains rejectable, never cached as a successful response.
   await assert.rejects(tampered.loadPage({offset:0,limit:10}),/byte count mismatch/);
+  const sameSizeTamper=localFetch([], (url,bytes) => {
+    if (!url.endsWith('items-000.json')) return bytes;
+    const edited=Buffer.from(bytes);
+    edited[edited.length-10] ^= 1;
+    return edited;
+  });
+  const sameSize=await openCurrentGameDatabasePages('/Wand',sameSizeTamper);
+  await assert.rejects(sameSize.loadPage({offset:0,limit:1}),/SHA-256 mismatch/);
 });
 test('DB-00 rollback can still page legacy Collection records (explicit eager transport)',async()=>{
   const log=[];

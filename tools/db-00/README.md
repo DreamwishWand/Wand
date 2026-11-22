@@ -103,14 +103,14 @@ Important: the adapter targets the same four-category original game files as DB-
 ## SHA-256 verified paged reader for UI virtualization
 
 For a scroll-driven SvelteKit Collection, import
-\`openCurrentGameDatabasePages\` from \`src/lib/game-db/client.mjs\`.
-The API fetches the small active pointer and its **SHA-pinned immutable release index** first; it does **not** fetch the 13,202 item records at startup. Use \`loadPage({offset,limit})\` when an IntersectionObserver requests the next slice (limit 1–500), and continue at \`nextOffset\` until \`done\` is true. A page crossing a 1000-item file boundary retrieves only the intersecting shards. Concurrent/adjacent requests share in-memory verified shard reads. A failed checksum is not cached.
+`openCurrentGameDatabasePages` from `src/lib/game-db/client.mjs`.
+The API fetches the small active pointer and its **SHA-pinned immutable release index** first; it does **not** fetch the 13,202 item records at startup. Use `loadPage({offset,limit})` when an IntersectionObserver requests the next slice (limit 1–500), and continue at `nextOffset` until `done` is true. A page crossing a 1000-item file boundary retrieves only the intersecting shards. Concurrent/adjacent requests share in-memory verified shard reads. A failed checksum is not cached.
 
-This is **transport-level paging**, not game availability, player ownership, or completion proof. It validates every retrieved item and its release/source references but cannot establish global relational closure from shards not yet read. Keep using \`loadCurrentGameDatabase\` for full-snapshot validation and DB-01/DB-02/DB-03/DB-04/DB-05 validation where complete evidence is necessary. The immutable index's \`coverage.complete\` applies only to its declared categories, not every type of item in the game. For previous 1.25 legacy pointers with no seekable index the same API uses an explicitly \`eager_legacy\` fallback so rollback remains usable.
+This is **transport-level paging**, not game availability, player ownership, or completion proof. It validates every retrieved item and its release/source references but cannot establish global relational closure from shards not yet read. Keep using `loadCurrentGameDatabase` for full-snapshot validation and DB-01/DB-02/DB-03/DB-04/DB-05 validation where complete evidence is necessary. The immutable index's `coverage.complete` applies only to its declared categories, not every type of item in the game. For previous 1.25 legacy pointers with no seekable index the same API uses an explicitly `eager_legacy` fallback so rollback remains usable.
 
 Example:
 
-\`\`\`js
+```js
 const catalog = await openCurrentGameDatabasePages(base, fetch);
 let offset = 0;
 async function loadVisibleSlice() {
@@ -119,6 +119,6 @@ async function loadVisibleSlice() {
   offset = page.nextOffset ?? catalog.itemCount;
   return !page.done;
 }
-\`\`\`
+```
 
 Do not add a "Load more" button. Let the Collection UI schedule the next request from scroll intersection; this API intentionally does not dictate UI rendering or restore unsaved player data.

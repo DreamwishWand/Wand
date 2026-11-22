@@ -236,6 +236,11 @@ export async function openCurrentGameDatabasePages(base = '', fetchImpl = global
       const seen = new Set();
       const rows = payload.items.map((item) => {
         validateItem(item);
+        if (index.id === 'steam-1.26.2-native-itemlist-v1' &&
+            item.nameStatus === 'verified' &&
+            !LOCALES.every((locale) => typeof item.names[locale] === 'string')) {
+          throw new TypeError('Paged Game DB source-audited locale coverage mismatch');
+        }
         canonicalId(item.id);
         if (seen.has(item.id) ||
             !item.sourceRefs.every((ref) => sourceIds.has(ref)) ||
