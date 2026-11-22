@@ -561,6 +561,12 @@
           <input type="search" inputmode="numeric"
             bind:value={globalItemSearch}
             on:input={()=>resetGlobalFind(false)}
+            on:keydown={event=>{
+              if(event.key==='Enter'&&!findingGlobal&&!viewing){
+                event.preventDefault();
+                findGlobalOriginalItem();
+              }
+            }}
             placeholder="原本全GridのItem ID"/>
         </label>
         <button type="button" disabled={!worker||findingGlobal||viewing}
