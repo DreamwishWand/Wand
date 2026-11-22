@@ -104,6 +104,11 @@ test('DB-03 pinned SHA loader projects verified acquisition origins while retain
   assert(free.some(x=>x.conditions.some(c=>c.includes('Recurrent reward'))));
   assert.deepEqual(db.getCampaign('code:DDVPRIDE2026')?.rewards.map(r=>r.name),
     ['Round Rainbow Garden','Butterfly Tiara']);
+  const twitch=db.getCampaign('twitch:2026-keepsake-sea');
+  assert.equal(twitch?.windowEvidence?.length,2);
+  assert.equal(twitch.windowEvidence[0].window.endExclusive,'2026-12-03T05:00:00Z');
+  assert.equal(twitch.windowEvidence[1].window.endExclusive,'2026-11-26T05:00:00Z');
+  assert.equal(twitch.windowEvidence[1].status,'conflicting_official_announcement');
   assert.equal(db.getHistoricalPremiumShopCoverage().historicalCoverageComplete,false);
   const historic=db.listCampaigns().filter(c=>c.campaignId.startsWith('starpath-history:'));
   assert.equal(historic.length,21);
