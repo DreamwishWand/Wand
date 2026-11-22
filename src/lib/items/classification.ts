@@ -75,10 +75,11 @@ export function validateDb01TagManifest(v:unknown):asserts v is Db01TagManifest{
     Number(v.taggedDefinitions)<=Number(v.definitionCount)&&
     Number.isSafeInteger(v.tagReferenceCount)&&Number(v.tagReferenceCount)>=0,'COUNT');
   check(obj(v.sourceFilesSha256)&&obj(v.byNativeCategory)&&obj(v.facetCoverage)&&obj(v.files),'LEDGER');
+  const sourceHashes=v.sourceFilesSha256 as Record<string,unknown>;
   const categories=Object.entries(v.byNativeCategory);
   check(categories.length>0&&categories.length===Object.keys(v.sourceFilesSha256).length&&
     categories.every(([cat,n])=>CAT.test(cat)&&Number.isSafeInteger(n)&&Number(n)>0&&
-      typeof v.sourceFilesSha256[cat]==='string'&&SHA.test(v.sourceFilesSha256[cat]))&&
+      typeof sourceHashes[cat]==='string'&&SHA.test(sourceHashes[cat] as string))&&
     categories.reduce((sum,[,n])=>sum+Number(n),0)===v.definitionCount&&
     v.sourceFilesSha256.Tag===v.tagOriginalSha256,'CATEGORY_COUNTS');
   check(Object.entries(v.facetCoverage).every(([name,n])=>
