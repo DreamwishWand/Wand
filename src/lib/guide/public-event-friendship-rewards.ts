@@ -6,7 +6,7 @@
  */
 export const DB03_EVENT_FRIENDSHIP_REWARD_SCHEMA='wand.db03.public-event-friendship-rewards@1' as const;
 export const DB03_EVENT_FRIENDSHIP_REWARD_FILE='event-friendship-rewards-1.26.2.json' as const;
-export const DB03_EVENT_FRIENDSHIP_REWARD_SHA='5e77bf56eedc0aca7dbd95f56687998c11acf68503c3dd8812028fec0ca51623' as const;
+export const DB03_EVENT_FRIENDSHIP_REWARD_SHA='9b8857dfaa557a458a8e922ea4145895bc698e50d8d1ce0ad68017492f18b5c9' as const;
 export const DB03_EVENT_FRIENDSHIP_REWARD_BYTES=14513 as const;
 const PROTO='dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623';
 const FRIENDSHIP='90c16a1b54bd6e0aac6176bcd164493295f867cfe536d272638b7841a651db22';
