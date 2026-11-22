@@ -68,9 +68,6 @@ function privateCatalog(row=privateRow(),sha=publicSha){
 test('Full real DB-00 v1.26.2 catalog includes all 375 native source object IDs',()=>{
   const index=nativeLootObjectReferenceIndex;
   assert.equal(index.schema,DB02_LOOT_OBJECT_REFERENCES_SCHEMA);
-  const references=[
-    ...new Set(Array.from({length:0},()=>0))
-  ];
   // Iterate actual original definition links, without embedding a second ID list.
   const unique=new Set();
   const families=new Map();
@@ -119,7 +116,7 @@ test('Public-only consumer returns correct Japanese source label without invente
   assert.equal(card.collectionOwnershipVerified,false);
   assert(Object.isFrozen(links));
   assert(Object.isFrozen(card));
-  assert.equal((await client.readVerifiedThumbnail(31400007,async()=>new Uint8Array())).valueOf(),null);
+  assert.equal(await client.readVerifiedThumbnail(31400007,async()=>new Uint8Array()),null);
 });
 
 test('Unlocalized original object retains source Item ID instead of a fabricated name',async()=>{
