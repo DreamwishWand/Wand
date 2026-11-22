@@ -10,6 +10,7 @@
   import {loadStarpathMedia,starpathMediaThumbnail} from '$lib/guide/starpath-public-media.mjs';
   import {guideCalendarEvents,activeScheduleStarpaths} from '$lib/guide/event-calendar.mjs';
   import {starpathTaskDisplay} from '$lib/guide/starpath-task-guidance.mjs';
+  import {filterStarpathTasks} from '$lib/guide/starpath-search.mjs';
   import {loadPublicStarpathGoals,starpathGoalLabel} from '$lib/guide/public-starpath-goals.mjs';
 
   let catalog:any=null, weeklyLocales:any=null, dailyLocales:any=null, rewardExtras:any=null, publicMedia:any=null, goalAmounts:any=null, goalWarning='', error='', loading=true;
@@ -19,6 +20,7 @@
   let now=Date.now();
   let tab:'tasks'|'weekly'|'rewards'='tasks';
   let query='';
+  let weeklyQuery='';
   let rewardQuery='';
   let rewardTier:'all'|'free'|'premium'='all';
   let limit=60;
@@ -26,14 +28,24 @@
   $: availableSeasons=catalog?.seasons?.filter((s:any)=>activeIds.has(s.id))||[];
   $: season=availableSeasons.find((s:any)=>s.id===selectedId)||availableSeasons[0];
   $: rewardRows=season?[...season.rewardPages.flatMap((p:any)=>p.rewards),...season.bonusPages.flatMap((p:any)=>p.rewards),...season.vaultRewards]:[];
-  $: filtered=season?.tasks?.filter((t:any)=>(starpathDailyDescription(dailyLocales,season.id,t.id,locale)||t.description||'').toLowerCase().includes(query.toLowerCase().trim())
-      ||(t.description||'').toLowerCase().includes(query.toLowerCase().trim())
-      ||t.id.toLowerCase().includes(query.toLowerCase().trim())
-      ||t.objectiveKind.toLowerCase().includes(query.toLowerCase().trim()))||[];
+  $: filtered=season?filterStarpathTasks(season.id,season.tasks,{
+    query,locale,
+    descriptionOf:(t:any)=>starpathDailyDescription(dailyLocales,season.id,t.id,locale),
+    goalTextOf:(t:any)=>starpathGoalLabel(goalAmounts,season.id,t)
+  }):[];
+  $: filteredWeeks=season?season.weeklyTasks.map((tasks:any[],i:number)=>({
+    number:i+1,
+    tasks:filterStarpathTasks(season.id,tasks,{
+      query:weeklyQuery,locale,
+      descriptionOf:(t:any)=>starpathWeeklyDescription(weeklyLocales,t.descriptionKey,locale),
+      goalTextOf:(t:any)=>starpathGoalLabel(goalAmounts,season.id,t)
+    })
+  })):[];
+  $: weeklyMatches=filteredWeeks.reduce((count:number,week:any)=>count+week.tasks.length,0);
   function date(value:string){
     return new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(value));
   }
-  function changeSeason(id:string){selectedId=id;limit=60;query='';rewardQuery='';rewardTier='all';}
+  function changeSeason(id:string){selectedId=id;limit=60;query='';weeklyQuery='';rewardQuery='';rewardTier='all';}
   function visibleRewards(rewards:any[],search:string,tier:string,language:string,extras:any){
     const needle=search.trim().toLocaleLowerCase();
     return rewards.filter(r=>{
@@ -115,7 +127,7 @@
       </nav>
       {#if tab==='tasks'}
         <div class="search">
-          <label>タスクを検索<input bind:value={query} on:input={()=>limit=60} placeholder="説明・種別・ID" aria-label="通常タスクを検索"/></label>
+          <label>タスクを検索<input type="search" bind:value={query} maxlength="120" on:input={()=>limit=60} placeholder="内容・攻略対象・目標数・ID" aria-label="通常タスクを検索"/></label>
           <span>{filtered.length}件</span>
         </div>
         <ul class="entries">
@@ -125,20 +137,27 @@
             <li><strong>{display.headline}</strong><small>{display.note}</small><small class="task-data">{#if goal}<span class="goal-badge">目標 {goal}</span>{/if}<span class="token-badge"><WandIcon name="star" size={13}/> {t.tokenReward} {season.currencyName}</span><span>{t.id}{t.availableOnDay!==undefined?' · 解放設定日 '+t.availableOnDay:''}</span></small></li>
           {/each}
         </ul>
+        {#if filtered.length===0}<p role="status" class="empty-match">一致する通常タスクはありません。</p>{/if}
         {#if filtered.length>limit}<div class="auto-sentinel" use:autoAppend={{hasMore:()=>filtered.length>limit,load:()=>limit+=60}} role="status" aria-label="スクロールでタスクを追加表示"></div>{/if}
       {:else if tab==='weekly'}
-        <p class="hint">確認済みの操作は攻略手順を表示し、未検証のタスクはゲーム原本の説明を表示します。</p>
-        {#each season.weeklyTasks as week,i}
-          <section class="week"><h2>第{i+1}週</h2>
+        <div class="search">
+          <label>週間タスクを検索<input type="search" bind:value={weeklyQuery} maxlength="120" placeholder="内容・攻略対象・目標数・ID" aria-label="週間タスクを検索"/></label>
+          <span>{weeklyMatches}件</span>
+        </div>
+        {#each filteredWeeks as week (week.number)}
+          {#if week.tasks.length}
+          <section class="week"><h2>第{week.number}週</h2>
             <ul class="entries">
-              {#each week as t (t.id)}
+              {#each week.tasks as t (t.id)}
                 {@const display=starpathTaskDisplay(season.id,t,locale,starpathWeeklyDescription(weeklyLocales,t.descriptionKey,locale))}
                 {@const goal=starpathGoalLabel(goalAmounts,season.id,t)}
                 <li><strong>{display.headline}</strong><small>{display.note}</small><small class="task-data">{#if goal}<span class="goal-badge">目標 {goal}</span>{/if}<span class="token-badge"><WandIcon name="star" size={13}/> {t.tokenReward} {season.currencyName}</span><span>{t.id}</span></small></li>
               {/each}
             </ul>
           </section>
+          {/if}
         {/each}
+        {#if weeklyMatches===0}<p role="status" class="empty-match">一致する週間タスクはありません。</p>{/if}
       {:else}
         <div class="reward-search" role="search">
           <label>報酬を検索<input bind:value={rewardQuery} aria-label="報酬を検索" placeholder="報酬名・アイテムID" /></label>
@@ -205,6 +224,7 @@
   .reward-thumb{display:block;width:56px;height:56px;object-fit:contain;flex:0 0 56px;border-radius:9px;background:#33273f}
   .week{margin:28px 0}.week h2{font-size:17px}
   .hint{line-height:1.7}.error{color:#ffb9c3}
+  .empty-match{font-size:13px;color:#c4b2d2;padding:14px 0}
   footer{margin-top:38px;font-size:12px;color:#a99ab8}footer a{color:#d7baff}
   @media(max-width:720px){.summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
   @media(max-width:420px){.summary{grid-template-columns:1fr}.starpath{padding:20px 12px 65px}}
