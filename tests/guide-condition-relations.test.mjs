@@ -64,7 +64,7 @@ test('shared v1.26.2 native Condition index reverses all 4960 references without
   assert.equal(index.getMissionReferences(TWO).total,2000);
   assert.equal(index.getMissionReferences(THREE).total,960);
   assert.equal(index.getMissionReferences('999999').total,0);
-  assert.equal(index.getMissionReferences(ONE,20,1990).rows.length,20);
+  assert.equal(index.getMissionReferences(ONE,20,1990).rows.length,10, 'the final page cannot run beyond the 2,000 source mentions');
   assert.equal(index.getMissionReferences(THREE,20,955).rows.length,5);
   const p=index.getMissionReferences(ONE,20,1990);
   assert.equal(p.rows[0].missionId,ONE);
