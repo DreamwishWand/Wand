@@ -2,8 +2,12 @@
   import {onMount} from 'svelte';
   import {base} from '$app/paths';
   import {loadPublicStarpath} from '$lib/guide/public-starpath.mjs';
+  import {loadStarpathWeeklyLocales,starpathWeeklyDescription} from '$lib/guide/public-starpath-locales.mjs';
+  import {starpathRewardName} from '$lib/guide/starpath-reward-names.mjs';
 
-  let catalog:any=null, error='', loading=true;
+  let catalog:any=null, weeklyLocales:any=null, error='', loading=true;
+  let locale='ja';
+  const languages=[['ja','日本語'],['en','English'],['fr','Français'],['it','Italiano'],['de','Deutsch'],['es-ES','Español'],['pt-BR','Português'],['zh-CN','简体中文']];
   let selectedId='HauntingElegance2026';
   let tab:'tasks'|'weekly'|'rewards'='tasks';
   let query='';
@@ -17,11 +21,15 @@
   }
   function changeSeason(id:string){selectedId=id;limit=60;query='';}
   function item(r:any){
-    return 'アイテムID '+r.itemId+' · '+r.amount+'個'+(r.price!==undefined?' · 価格 '+r.price:'')+(r.premium?' · プレミアム':'')+(r.recurrent?' · 繰り返し':'');
+    const name=starpathRewardName(r.itemId,locale);
+    return (name||'名称未確認')+' · ID '+r.itemId+' · '+r.amount+'個'+(r.price!==undefined?' · 価格 '+r.price:'')+(r.premium?' · プレミアム':'')+(r.recurrent?' · 繰り返し':'');
   }
   async function load(){
     loading=true;error='';
-    try{catalog=await loadPublicStarpath(`${base}/guide/public/starpath-cache-2026-11-22.json`);}
+    try{
+      catalog=await loadPublicStarpath(`${base}/guide/public/starpath-cache-2026-11-22.json`);
+      weeklyLocales=await loadStarpathWeeklyLocales(`${base}/guide/public/starpath-weekly-locales-2026-11-22.json`,catalog);
+    }
     catch(e){error=e instanceof Error?e.message:String(e)}
     finally{loading=false;}
   }
@@ -37,7 +45,7 @@
     <div class="eyebrow">DREAMWISH WAND · GUIDE</div>
     <h1>スターパスガイド</h1>
     <p>Steam v1.26.2環境で保存された、2026年11月22日時点のキャッシュに基づく静的定義です。</p>
-    <p class="disclaimer">キャッシュは開催中であること、タスクが解放済みであること、アイテムを所持していることの証明ではありません。報酬名と週間タスクの翻訳は未照合です。</p>
+    <p class="disclaimer">キャッシュは開催中であること、タスクが解放済みであること、アイテムを所持していることの証明ではありません。通常タスクの説明はキャッシュ原文（英語）、週間タスクと確認済み報酬名はゲーム原本の8言語に対応しています。</p>
   </header>
   {#if loading}
     <p role="status">キャッシュ定義を検証しています…</p>
@@ -50,6 +58,7 @@
         <button class:selected={s.id===selectedId} on:click={()=>changeSeason(s.id)} aria-pressed={s.id===selectedId}>{s.title}</button>
       {/each}
     </div>
+    <label class="language">表示言語 <select bind:value={locale} aria-label="スターパスの表示言語">{#each languages as [code,name]}<option value={code}>{name}</option>{/each}</select></label>
     {#if season}
       <section class="summary" aria-label="シーズン情報">
         <div><span>開始日時</span><strong>{date(season.startUtc)}</strong></div>
@@ -76,18 +85,18 @@
         </ul>
         {#if filtered.length>limit}<button class="more" on:click={()=>limit+=60}>さらに表示</button>{/if}
       {:else if tab==='weekly'}
-        <p class="hint">原本の週間説明はローカライズキーです。翻訳を推測せず、目標種別・タスクID・報酬数のみ表示します。</p>
+        <p class="hint">週間タスクの説明はゲーム原本のLocDBと照合した正式な表記です。地域によって文章や数値が異なる場合も、原文をそのまま表示します。</p>
         {#each season.weeklyTasks as week,i}
           <section class="week"><h2>第{i+1}週</h2>
             <ul class="entries">
               {#each week as t (t.id)}
-                <li><strong>{t.objectiveKind}</strong><small>{t.id} · {t.tokenReward} {season.currencyName} · 説明未照合</small></li>
+                <li><strong>{starpathWeeklyDescription(weeklyLocales,t.descriptionKey,locale)||'説明未確認'}</strong><small>{t.objectiveKind} · {t.id} · {t.tokenReward} {season.currencyName}</small></li>
               {/each}
             </ul>
           </section>
         {/each}
       {:else}
-        <p class="hint">アイテム名はまだDB-01と照合していません。IDはゲーム定義中の値です。Vaultの代替報酬は付与を意味しません。</p>
+        <p class="hint">確認済み43種類の名前はDB-01 Steam v1.26.2原本と照合しています。その他17種類は名称未確認のためIDを表示します。Vaultの代替報酬は付与を意味しません。</p>
         {#each season.rewardPages as p}
           <section class="week"><h2>報酬ページ {p.page}</h2>
             {#if p.minPurchasedFromPreviousPage!==undefined}<p class="hint">前ページの購入設定：{p.minPurchasedFromPreviousPage}件</p>{/if}
@@ -102,7 +111,7 @@
         {/each}
         <section class="week"><h2>Vault報酬</h2>
           <ul class="entries">{#each season.vaultRewards as r,i (i)}
-            <li>{item(r)}{r.alternateItemId?' · 代替候補ID '+r.alternateItemId:''}</li>
+            <li>{item(r)}{r.alternateItemId?' · 代替候補: '+(starpathRewardName(r.alternateItemId,locale)||'名称未確認')+' (ID '+r.alternateItemId+')':''}</li>
           {/each}</ul>
         </section>
       {/if}
@@ -117,6 +126,7 @@
   .eyebrow{font-size:11px;font-weight:700;letter-spacing:.18em;color:#caa6ed}
   .disclaimer,.hint{font-size:12px!important;color:#c0afce!important}
   .seasons,.tabs{display:flex;gap:9px;flex-wrap:wrap;margin:23px 0}
+  .language{display:inline-flex;align-items:center;gap:10px;font-size:12px;color:#dfcfed}.language select{padding:9px;background:#251e31;color:#fff;border:1px solid #66537e;border-radius:9px}
   .seasons button,.tabs button,.more{border:1px solid #65527d;border-radius:10px;background:#261c32;color:#ecdcfa;padding:11px 17px}
   .seasons button.selected,.tabs button.active{background:#503667;border-color:#bb91ed;color:#fff}
   .summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:22px 0}
