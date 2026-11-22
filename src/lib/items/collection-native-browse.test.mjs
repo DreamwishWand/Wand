@@ -394,11 +394,11 @@ test('independently pinned original sources and private releases required',()=>{
     f.results,f.publicData),/CURRENT_VERIFIED_SOURCE_COMPOSITION_REQUIRED/);
   assert.throws(()=>createDb01CollectionNativeBrowseClient(
     f.axes,f.source,{...f.results,target:{...f.results.target,
-      privateSourceSha256:'b'.repeat(64)}}),
+      privateSourceSha256:'b'.repeat(64)}},f.publicData),
     /CURRENT_VERIFIED_SOURCE_COMPOSITION_REQUIRED/);
   assert.throws(()=>createDb01CollectionNativeBrowseClient(
     f.axes,f.source,{...f.results,target:{...f.results.target,
-      publicationAuthorized:true}}),
+      publicationAuthorized:true}},f.publicData),
     /CURRENT_VERIFIED_SOURCE_COMPOSITION_REQUIRED/);
 });
 test('original catalog/locale contradiction fails closed; does not invent a category',async()=>{
