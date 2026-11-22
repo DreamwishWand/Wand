@@ -74,6 +74,50 @@ read, hashed, parsed and read-only decoded (including Furniture and Rooms
 sub-grids). Only the referenced 28-layout subset is covered; this is **not**
 a claim that all game source scenes have been enumerated.
 
+## Further nested-source extension — 2026-11-22 (separate private ZIP)
+
+The preceding **28-layout / 118-layout combined** counts describe the
+first-level subset; they are retained as historical evidence. Independently
+inspected additional original Steam v1.26.2 OffGrid scene layouts comprise
+**47** further source files: Expansion01 (5), Expansion02 (14), Expansion03
+(6), Expansion04 underwater (2), WinnieDLC (4) and
+EventFloatingIslands (16, including Spring2026, Winter2025, Halloween2025 and
+Parks). The independently source-hashed derived-only extension yields:
+
+| Source-only family | New extension | Combined partial snapshot |
+| --- | ---: | ---: |
+| OffGridBuildings original scene layouts | 47 | 75 |
+| All source layouts, including Village and Realm | 47 | 165 |
+| Native OffGrid grid reference entries | 491 | 583 |
+| Native GridObject initial anchors | 13,906 | 27,113 |
+| Original source SHA-256 register entries | 47 | 535 |
+
+One original event layout under
+`EventFloatingIslands/Halloween2025/Island2026` has a **direct**
+`Meta.GridCollection` with nine repeated native root-field-1 map entries,
+not the `1=context, 2=embedded GridCollection` source envelope used by the
+other 46 newly examined scenes. The reader must inspect this direct native
+format *before* attempting `one(root, 1, 2)`; otherwise repeated map fields
+incorrectly fail as duplicate context. Its nine native grids and 1,434
+source-default anchors are retained as direct GridCollection provenance;
+they are **not** automatically considered player placements.
+
+**Partial grid-source coverage:** The 47-layout extension references 491
+native Grid entries (351 distinct source GridData paths). Against the earlier
+private 364-GridData set, **347 distinct referenced GridData source paths
+remain unprovided**. The updated private derived-only ZIP retains the original
+364 GridData records and reports these 347 as missing; it does not invent
+terrain, silently reuse another GridData, or claim that the new scenes have
+renderable read-only terrain or anchor windows. Unresolved source references
+must be filled by exact original Steam files and individually checked before
+being promoted to source-backed previews.
+
+The new private ZIP is in the owner-controlled SRC-05 workflow. This public
+document contains derived aggregate counts and parser evidence only; the
+original bytes, source objects, positions, save data and derived snapshot
+arrays must not be committed to public Git. As before, world-coordinate,
+occupancy, collision, edit legality and full-game coverage stay **unverified**.
+
 ## Unsupported semantics
 
 Player save coordinates, world-level transformations, scene transitions,
