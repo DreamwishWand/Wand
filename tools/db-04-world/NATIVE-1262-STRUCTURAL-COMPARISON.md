@@ -287,3 +287,25 @@ object collision and world save editing are not inferred from these masks.
 
 No source-origin proofs from 1.26.1 should be silently inherited by a
 later game version.
+
+
+## Steam v1.26.2 original GridArea getter and isolated cardinal-local read path (2026-11-23)
+
+Independently fetched the **owner-private Steam original executables and IL2CPP v31 metadata** for both builds. File SHA-256 pins are the four originals documented in the source-identification table above. The original metadata type `Definitions.Grid.GridArea` resolves to `Meta.Definitions.dll`; its original method RID is joined to the module's native method-pointer array, rather than offsetting an unverified `dump.cs` RVA. For all listed methods, the actual native pointer for Steam 1.26.2 resolves to the paired RVA shown below.
+
+| Native method and IL2CPP token | 1.26.1 RVA | 1.26.2 RVA | aligned instructions | source-reference displacement-only changes |
+| --- | --- | --- | ---: | ---: |
+| `GridArea.get_Item(int,int)` `0x0600343F` | `0x3923370` | `0x3923070` | 26 | 7 |
+| `GridArea.TryGetGridLocalPosition` `0x0600344A` | `0x3923BB0` | `0x39238B0` | 132 | 10 |
+| `GridArea.GetSizeForOrientation` `0x06003447` | `0x3923750` | `0x3923450` | 81 | 12 |
+| `GridArea.MoreRotationSize` `0x06003448` | `0x3923880` | `0x3923580` | 78 | 12 |
+| `GridArea.GetRotated` `0x0600345B` | `0x3924D30` | `0x3924A30` | 79 | 6 |
+| `GridArea.GetUnRotated` `0x0600345A` | `0x3924C10` | `0x3924910` | 79 | 6 |
+| `GridArea.GetStrideFor(int)` `0x0600344F` | `0x39241A0` | `0x3923EA0` | 23 | 6 |
+| **Total** | | | **498** | **59** |
+
+The original PE64 `.pdata` boundaries and existing 1.26.1 source-pinned method ranges were checked. Full aligned AMD64 instruction sequences for those bounded ranges contained **zero changed non-relative instruction bytes**; all **59** differing instructions changed an AMD64 relative branch/call or RIP-relative displacement, including the legitimate `cmp [rip+disp32],imm8` and `mov [rip+disp32],imm8` forms (which do not place `disp32` at the end of an instruction).
+
+The normal successful `GridArea.get_Item(x,y)` read path uses original `x*SizeY+y` indexing, not assumed Y-major indexing or an inferred occupancy mask. The 1.26.2 cardinal `TryGetGridLocalPosition` has the matching source-local algorithmic instruction structure at orientations 0, 4, 8 and 12. The **bounded, read-only, intrinsic 1:1 GridArea-local** preview can therefore show original fixed32 `GridLayers` in its own local frame for these cardinal cases. The preview remains separate from original `GridObject` anchors and from save coordinates.
+
+**Limitations:** a structural instruction comparison alone does not prove downstream native calls, dynamically initialized globals, runtime GridArea-to-Grid tessellation ratios, object anchor transformations, noncardinal rotations, physical occupancy, collisions or placement legality. The 1:1 transform is **a local-frame specialization**, not proof that an actual placed object uses 1:1. Only the source-local read preview is enabled; actual World Editor placement validation and writes remain disabled. No original game binary or disassembly bytes are added to the public repository.

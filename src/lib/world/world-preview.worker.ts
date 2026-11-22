@@ -8,6 +8,7 @@ import { openLocalWorldZip } from './local-snapshot.mjs';
 import { getNativeTerrainWindow } from './catalog.mjs';
 import { findOriginalItemAnchor, findOriginalItemAnchorAcrossGrids } from './native-item-anchor-finder.ts';
 import { getOriginalGridAreaEvidence } from './native-gridarea-evidence.ts';
+import { getOriginalGridAreaLocalWindow } from './native-gridarea-local-window.ts';
 import { getSourceAnchorDomain, getTessellatedSourceAnchorWindow } from './native-anchor-domain';
 import {
   listWorldPreviewViews,
@@ -39,7 +40,9 @@ type Request =
   | { command:'find-anchor'; requestId:number; viewKey:string;
       gridIdNative:number; itemId:number; matchIndex:number }
   | { command:'find-global-anchor'; requestId:number;
-      itemId:number; matchIndex:number };
+      itemId:number; matchIndex:number }
+  | { command:'gridarea-window'; requestId:number;
+      itemId:number; orientationCode:number; rect:Rect };
 
 interface WorkerScope {
   onmessage: ((event: MessageEvent<unknown>) => Promise<void>) | null;
@@ -67,6 +70,11 @@ function parseRequest(data:unknown): Request {
       throw new TypeError('DB04_WORKER_SOURCE_FILE_REQUIRED');
     return {command:'load',requestId,file:data.file};
   }
+  if(data.command==='gridarea-window'&&positive(data.itemId)&&
+     nonnegative(data.orientationCode)&&data.orientationCode<=15&&
+     validRect(data.rect)&&data.rect.width<=16&&data.rect.height<=16)
+    return {command:'gridarea-window',requestId,
+      itemId:data.itemId,orientationCode:data.orientationCode,rect:data.rect};
   if(data.command==='find-global-anchor'&&positive(data.itemId)&&
      nonnegative(data.matchIndex)&&data.matchIndex<=1_000_000)
     return {command:'find-global-anchor',requestId,
@@ -146,6 +154,13 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
         catalog,message.itemId,message.matchIndex);
       worker.postMessage({kind:'global-anchor-found',requestId,result:found,
         itemEvidence:getOriginalGridAreaEvidence(catalog,message.itemId)});
+      return;
+    }
+    if(message.command==='gridarea-window'){
+      const {x,y,width,height}=message.rect;
+      const window=getOriginalGridAreaLocalWindow(catalog,
+        message.itemId,message.orientationCode,x,y,width,height);
+      worker.postMessage({kind:'gridarea-window',requestId,result:window});
       return;
     }
     const sourceView=views.find(view=>view.viewKey===message.viewKey);
