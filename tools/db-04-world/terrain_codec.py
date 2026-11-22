@@ -7,11 +7,14 @@ Source-based, empirical validation for Steam 1.26.1:
 The single disagreement is a native 11x11 boundary rock (175, 0), for which
 the *origin* alone cannot establish all occupied-cell placement conditions.
 
-Steam 1.26.1 source-native disassembly additionally confirms the compiled
-get_Item(int,int) uses flat index x*SizeY+y and MSB-first packed bit extraction;
-GetNumberOfBitsPerPosition returns 1 for palette <=2, 2 for 3..4, and 4 for
-larger counts. No evidence supports palette sizes >16. Native placement,
-world transforms, and collision semantics are unrelated and remain unverified.
+Steam 1.26.1 and Steam 1.26.2 original IL2CPP metadata v31 and PE64
+get_Item(int,int) / GetNumberOfBitsPerPosition bodies have been compared:
+normal read-path indexing, palette-width and packed MSB-first extraction
+instructions are equivalent up to relocation. Steam 1.26.2's pinned original
+Meadow GridData is byte-identical to the validated 1.26.1 sample.
+No evidence supports palette sizes >16. This is a read-only local terrain
+preview, not a proof of all native runtime global initialization, placement,
+world transforms, collision, object occupancy or save editing.
 """
 from __future__ import annotations
 from collections import Counter
@@ -19,6 +22,11 @@ from typing import Sequence
 
 EVIDENCE = "steam_1.26.1_room12x16_border_192of192_and_meadow_origin_742of743"
 PACKING = "x_major_msb_first"
+VERIFIED_NATIVE_TERRAIN_GAME_VERSIONS = frozenset(("1.26.1", "1.26.2"))
+EVIDENCE_1262 = (
+    "steam_1.26.2_pinned_native_griddata_get_item_bitwidth_"
+    "relocation_comparison_and_identical_meadow_source"
+)
 MAX_CELLS = 16_777_216
 FOUR_BIT_NATIVE_EVIDENCE = (
     "steam_1.26.1_original_metadata_v31_griddata_get_item_"
@@ -60,10 +68,10 @@ def describe_native_packing(size_x: int, size_y: int,
         raise ValueError("native packed-floor payload must be bytes")
     if not isinstance(source_game_version, str) or not source_game_version:
         raise ValueError("missing source game version for native GridData proof")
-    # Original IL2CPP grid getter/bit-width semantics have been validated
-    # against Steam 1.26.1 only. For newer archives, preserve source bytes
-    # without applying this decoder, sizing rule, padding rule or histogram.
-    if source_game_version != "1.26.1":
+    # Steam 1.26.1 and 1.26.2 original native read-path behavior has been
+    # inspected separately. A later revision cannot inherit this evidence.
+    # Unrecognized versions preserve raw bytes without decoding.
+    if source_game_version not in VERIFIED_NATIVE_TERRAIN_GAME_VERSIONS:
         return {
             "status": "native_packing_not_verified_for_game_version",
             "decoded": False,
@@ -89,10 +97,11 @@ def describe_native_packing(size_x: int, size_y: int,
         for i in range(size_x * size_y):
             if _flat_index(packed, bits, i) >= len(palette):
                 raise ValueError("compacted floor index missing from native palette")
+    evidence = (EVIDENCE_1262 if source_game_version == "1.26.2" else
+                EVIDENCE if bits in (1, 2) else FOUR_BIT_NATIVE_EVIDENCE)
     return {"status": "cross_validated_native_samples", "decoded": True,
             "nativeCodeBodyVerified": False,
-            "sampleBasedEncodingEvidence": (
-                EVIDENCE if bits in (1, 2) else FOUR_BIT_NATIVE_EVIDENCE),
+            "sampleBasedEncodingEvidence": evidence,
             "packing": PACKING, "cellBits": bits,
             "cellIndexFormula": "x*sizeY+y",
             "byteBitOrder": "most_significant_first",
