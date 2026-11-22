@@ -6,6 +6,7 @@ import {
 import {STARPATH_PUBLIC_SHA} from '../guide/public-starpath.mjs';
 import {createGuideStarpathHistory} from '../guide/starpath-history.ts';
 import {OFFICIAL_CAMPAIGNS} from './official-campaigns.ts';
+import type {Db03NativeRewardCandidateIndex} from './db03-native-rewards.ts';
 import {historicalPremiumShop, type ShopAppearance} from './premium-shop-history.ts';
 import {projectVerifiedSrc02Origins, type VerifiedSrc02OriginReader} from './native-origins.ts';
 
@@ -14,6 +15,7 @@ export const ORIGIN_SCHEMA = 'wand.db02.item-origins@1' as const;
 export type OriginKind =
   | 'crafting' | 'cooking' | 'fishing' | 'mining' | 'foraging'
   | 'farming' | 'loot' | 'game_shop' | 'quest_reward' | 'event_reward'
+  | 'friendship_reward'
   | 'star_path_free' | 'star_path_premium' | 'star_path_vault'
   | 'twitch_drop' | 'redeem_code' | 'premium_shop'
   | 'official_campaign' | 'purchase_bonus' | 'gift' | 'other';
@@ -124,7 +126,7 @@ const SHA = /^[a-f0-9]{64}$/;
 const DATE = /^\d{4}-\d\d-\d\d$/;
 const VALID_KINDS: ReadonlySet<string> = new Set<OriginKind>([
   'crafting','cooking','fishing','mining','foraging','farming','loot',
-  'game_shop','quest_reward','event_reward','star_path_free',
+  'game_shop','quest_reward','event_reward','friendship_reward','star_path_free',
   'star_path_premium','star_path_vault','twitch_drop','redeem_code',
   'premium_shop','official_campaign','purchase_bonus','gift','other'
 ]);
@@ -418,7 +420,8 @@ export async function loadUnifiedAcquisitionOriginDatabase(
   fetcher: typeof fetch = fetch,
   native: NativeAcquisitionReader | null = null,
   basePath = '',
-  nativeItemIds: readonly (string | number)[] = []
+  nativeItemIds: readonly (string | number)[] = [],
+  db03NativeRewards: Db03NativeRewardCandidateIndex | null = null
 ): Promise<OriginDatabase> {
   assert(basePath === '' || (basePath.startsWith('/') && !basePath.includes('..') && !basePath.endsWith('/')), 'BASE_PATH');
   const guide = await loadGuideRewardIndex(
@@ -430,8 +433,23 @@ export async function loadUnifiedAcquisitionOriginDatabase(
   const nativeRoutes = nativeItemIds.length ? projectVerifiedSrc02Origins(
     native as VerifiedSrc02OriginReader, nativeItemIds
   ) : [];
+  // The optional DB-03 result is assembled from owner-selected private source
+  // files by loadVerifiedDb03RewardCandidates; never fetch or publish them here.
+  if(db03NativeRewards!==null){
+    assert(db03NativeRewards.schema==='wand.db02.db03-source-reward-candidates@1' &&
+      db03NativeRewards.sourceIntegrity===
+        'pinned_original_sha256_and_original_file_equivalence' &&
+      db03NativeRewards.sourceGameVersion==='1.26.1' &&
+      db03NativeRewards.targetGameVersion==='1.26.2' &&
+      db03NativeRewards.coverage.sourceCandidates===618 &&
+      db03NativeRewards.coverage.guaranteedGrantsVerified===false &&
+      db03NativeRewards.coverage.conditionsSourceReused===false &&
+      db03NativeRewards.coverage.currentAvailabilityVerified===false &&
+      Array.isArray(db03NativeRewards.origins),
+      'DB03_VERIFIED_PRIVATE_REWARDS_REQUIRED');
+  }
   return createAcquisitionOriginDatabase(
-    [...starpath.origins, ...nativeRoutes],
+    [...starpath.origins, ...nativeRoutes, ...(db03NativeRewards?.origins??[])],
     [...starpath.campaigns, ...projectHistoricalGuideCampaigns(guide),
       ...OFFICIAL_CAMPAIGNS], native
   );
