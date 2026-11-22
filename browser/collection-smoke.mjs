@@ -125,7 +125,7 @@ try{
   await portal.getByRole('button',{name:'テーマを切り替える'}).click();
   assert.equal(await portal.evaluate(()=>document.documentElement.dataset.wandTheme),'light');
   await portal.reload();
-  assert.equal(await portal.evaluate(()=>document.documentElement.dataset.wandTheme),'light');
+  await portal.waitForFunction(()=>document.documentElement.dataset.wandTheme==='light');
   await portal.getByRole('button',{name:'テーマを切り替える'}).click();
   assert.equal(await portal.evaluate(()=>document.documentElement.dataset.wandTheme),'dark');
   await portal.getByRole('button',{name:'このページのチュートリアル'}).click();
