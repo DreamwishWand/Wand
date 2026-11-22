@@ -9,7 +9,9 @@
   import {editHistory,historyView,type HistoryArea} from '$lib/ui/edit-history';
   import {localSaveSession,selectLocalSaveFile,closeLocalSaveFile} from '$lib/ui/local-save-session';
   import WandIcon from '$lib/ui/WandIcon.svelte';
-  import {shellCopy,type TutorialKey} from '$lib/ui/shell-copy';
+  import {shellCopy} from '$lib/ui/shell-copy';
+  import {contextualTour} from '$lib/ui/contextual-tour';
+  import GuidedTour from '$lib/ui/GuidedTour.svelte';
   import {afterNavigate,goto} from '$app/navigation';
   import {
     UI_LANGUAGES,UI_THEMES,readWandLanguage,setWandLanguage,readWandTheme,setWandTheme,
@@ -116,7 +118,8 @@
   function openAccount(){closeMenus();accountOpen=true;}
   function closeAccount(){accountOpen=false;}
   function closeTutorial(){tutorialOpen=false;}
-  afterNavigate(()=>closeMenus());
+  function startTutorial(){closeMenus();tutorialOpen=true;}
+  afterNavigate(()=>{closeMenus();closeTutorial();});
   onMount(()=>{
     window.addEventListener('pointerdown',outsideMenus);
     window.addEventListener('dragenter',onGlobalDragEnter);
@@ -148,7 +151,8 @@
     route.includes('/world')?'world':
     route.includes('/save')?'save':'home';
   $: copy=shellCopy(uiLocale);
-  $: tutorial=copy.tutorials[(service as TutorialKey)]??copy.tutorials.home;
+  $: tourRoute=base&&route.startsWith(base)?route.slice(base.length)||'/':route;
+  $: tutorial=contextualTour(tourRoute,copy,uiLocale);
   function focusContextSearch():boolean{
     const label=service==='collection'?'8言語のアイテム名で検索':
       service==='starpath'?'通常タスクを検索':
@@ -179,7 +183,7 @@
     else if(hadFiles)filesButton?.focus();
     else if(hadLanguage)languageButton?.focus();
   }
-  if(event.key==='/'&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&!event.repeat
+  if(event.key==='/'&&!tutorialOpen&&!accountOpen&&!historyOpen&&!event.ctrlKey&&!event.metaKey&&!event.altKey&&!event.repeat
     &&!(event.target instanceof HTMLInputElement)
     &&!(event.target instanceof HTMLTextAreaElement)
     &&!(event.target instanceof HTMLSelectElement)
@@ -268,7 +272,7 @@
       </div>
       <div class="header-support-tools" role="group" aria-label={copy.support}>
         <button class="header-icon-button help-action" bind:this={helpButton} type="button"
-          on:click={()=>{closeMenus();tutorialOpen=true;}} aria-label={copy.tutorialHelp} title={copy.help}><WandIcon name="help" size={20}/></button>
+          on:click={startTutorial} aria-label={copy.tutorialHelp} title={copy.help}><WandIcon name="help" size={20}/></button>
       </div>
       <div class="shell-more-root" bind:this={moreRoot}>
         <button class="header-icon-button" bind:this={moreButton} type="button"
@@ -281,7 +285,7 @@
             <button type="button" class="shell-more-history" on:click={()=>{void openHistory();}}>
               <WandIcon name="history" size={18}/>{copy.history}
             </button>
-            <button type="button" on:click={()=>{moreOpen=false;tutorialOpen=true;}}><WandIcon name="help" size={18}/>{copy.help}</button>
+            <button type="button" on:click={startTutorial}><WandIcon name="help" size={18}/>{copy.help}</button>
             <button type="button" on:click={openAccount}><WandIcon name="character" size={18}/>{copy.account}</button>
             {#if service==='collection'}
               <div class="shell-menu-divider"></div>
@@ -397,22 +401,9 @@
 {/if}
 
 {#if tutorialOpen}
-  <div class="tutorial-backdrop">
-    <div class="tutorial-dialog" role="dialog" aria-modal="true" aria-label={tutorial.title}
-      use:dialogFocus={{fallback:()=>helpButton?.getClientRects().length?helpButton:moreButton}}>
-      <header class="tutorial-top">
-        <div><WandIcon name="help" size={24}/><h2>{tutorial.title}</h2></div>
-        <button type="button" class="header-icon-button" on:click={closeTutorial}
-          aria-label={copy.tutorialClose}><WandIcon name="close" size={22}/></button>
-      </header>
-      <ol class="tutorial-steps">
-        {#each tutorial.steps as step,i (i)}
-          <li><span>{i+1}</span><p>{step}</p></li>
-        {/each}
-      </ol>
-      <button type="button" class="tutorial-done" on:click={closeTutorial}>{copy.close}</button>
-    </div>
-  </div>
+  <GuidedTour title={tutorial.title} steps={tutorial.steps} locale={uiLocale}
+    closeLabel={copy.tutorialClose} onClose={closeTutorial}
+    focusReturn={()=>helpButton?.getClientRects().length?helpButton:moreButton}/>
 {/if}
 
 {#if accountOpen}

@@ -778,6 +778,55 @@ try{
   await page.evaluate(async()=>{await window.__releaseStaleSave();await Promise.resolve();});
   await waitForLocalState(page,{item:'40005160',status:'missing'});
   assert.equal(await page.getByRole('button',{name:'セーブファイルを読み込む'}).count(),1);
+  // Help is opt-in and follows actual service controls instead of opening
+  // the former all-at-once modal. Movement and focus stay in this browser.
+  assert.equal(await page.locator('.wand-tour-layer').count(),0);
+  await page.getByRole('button',{name:'このページのチュートリアル'}).click();
+  await page.locator('.wand-tour-spotlight').waitFor();
+  assert.equal(await page.locator('.tutorial-steps').count(),0);
+  const firstSpot=await page.locator('.wand-tour-spotlight').boundingBox();
+  const searchSpot=await page.locator('.collection-workspace .search-box').boundingBox();
+  assert.ok(firstSpot&&searchSpot);
+  assert.ok(Math.abs(firstSpot.y-searchSpot.y)<18,'first Collection step highlights its search control');
+  await page.locator('.wand-tour-primary').click();
+  // The spotlight animates for 180ms; check final alignment with the actual
+  // selected item, not an intermediate frame immediately after click.
+  await page.waitForFunction(()=>{
+    const marker=document.querySelector('.wand-tour-count')?.textContent??'';
+    const spotlight=document.querySelector('.wand-tour-spotlight');
+    const item=document.querySelector('.collection-results .item-card-body') ??
+      document.querySelector('.facet-grid .facet-card') ??
+      document.querySelector('.collection-results');
+    if(!marker.includes('2 / 4')||!spotlight||!item)return false;
+    const rect=spotlight.getBoundingClientRect(),target=item.getBoundingClientRect();
+    return Math.abs(rect.top-Math.max(5,target.top-5))<12 &&
+      Math.abs(rect.left-Math.max(5,target.left-5))<12 &&
+      Math.abs(rect.width-(target.width+10))<18;
+  },null,{timeout:10000});
+  await page.locator('.wand-tour-close').click();
+  await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-label')==='このページのチュートリアル');
+  assert.equal(await page.locator('.wand-tour-layer').count(),0);
+
+  // Compact More is the keyboard focus return target on phones.
+  await page.setViewportSize({width:360,height:740});
+  await page.locator('.shell-more-root>.header-icon-button').click();
+  await page.locator('.shell-more-menu').getByRole('button',{name:'ヘルプ'}).click();
+  await page.locator('.wand-tour-spotlight').waitFor();
+  await page.locator('.wand-tour-close').click();
+  await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-label')==='その他の操作');
+  await page.setViewportSize({width:1280,height:800});
+
+  await page.goto('http://127.0.0.1:4173/Wand/guide/');
+  await page.locator('.guide-hub .guide-sections').waitFor();
+  assert.equal(await page.locator('.wand-tour-layer').count(),0,'tour must not auto-start on navigation');
+  await page.getByRole('button',{name:'このページのチュートリアル'}).click();
+  await page.locator('.wand-tour-spotlight').waitFor();
+  assert.match(await page.locator('.wand-tour-description').innerText(),/クエスト|スターパス/);
+  await page.locator('.wand-tour-primary').click();
+  assert.match(await page.locator('.wand-tour-description').innerText(),/カレンダー/);
+  await page.keyboard.press('Escape');
+  await page.locator('.wand-tour-layer').waitFor({state:'detached'});
+
   await context.close();
   console.log('Collection browser WASM/IndexedDB/migration/search/paging/history/shared-save smoke passed');
 } finally {
