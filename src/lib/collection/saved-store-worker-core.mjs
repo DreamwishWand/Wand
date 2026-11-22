@@ -7,6 +7,7 @@
 import { decodeP1gPackagedProfile } from './private-p1g-codec.js';
 import { inspectDecodedWorldStores } from '../acquisition/world-store-save.mjs';
 import { createSavedStorePreview } from './saved-store-preview.mjs';
+import { createSavedCollectionPresence } from './saved-collection-presence.mjs';
 
 const staticStallUnavailable = Object.freeze({ getStallStaticCatalog: () => null });
 const MAX_ENCRYPTED_BYTES = 32 * 1024 * 1024;
@@ -26,6 +27,7 @@ export async function inspectEncryptedSavedStore(ciphertext) {
     kind: 'saved-store-summary',
     saveSchema: Number.isSafeInteger(root.GameInfo?.Version)
       ? root.GameInfo.Version : null,
-    summary: createSavedStorePreview(evidence, [])
+    summary: createSavedStorePreview(evidence, []),
+    collection: createSavedCollectionPresence(root)
   });
 }
