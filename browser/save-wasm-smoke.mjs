@@ -148,7 +148,7 @@ try{
         GridDefaultLayoutPath:'SceneLayouts/Synthetic/Grid.json',
         GridDataPath:'GridData/Synthetic/Grid.json',Objects:{
         '1':{ID:1,ItemID:40000001,X:45,Y:9,
-          Orientation:'East',PrivateState:'do-not-export'},
+          Orientation:'GridOrientation_Up',PrivateState:'do-not-export'},
         '2':{ID:2,ItemID:30000031}
       }}},
       DiffGrids:{'102':{ID:102,
@@ -158,7 +158,7 @@ try{
         DefaultGridDataHashCode:-12,
         RemovedObjects:[5],ModifiedObjects:{
         '5':{ID:5,ItemID:40000001},
-        '6':{ID:6,ItemID:40000001,X:-12,Y:8,Orientation:'West'}
+        '6':{ID:6,ItemID:40000001,X:-12,Y:8,Orientation:'GridOrientation_Left'}
       }}}
     }}
   };
@@ -341,8 +341,8 @@ try{
   const objects=worldPanel.getByRole('region',{name:'配置オブジェクト'});
   await objects.getByRole('button',{name:'配置オブジェクトを表示'}).click();
   await objects.getByRole('status').filter({hasText:'3件'}).waitFor({timeout:30000});
-  assert.match(await objects.innerText(),/X 45 \/ Y 9 · East/);
-  assert.match(await objects.innerText(),/X -12 \/ Y 8 · West/);
+  assert.match(await objects.innerText(),/X 45 \/ Y 9 · GridOrientation_Up/);
+  assert.match(await objects.innerText(),/X -12 \/ Y 8 · GridOrientation_Left/);
   assert.match(await objects.innerText(),/座標未確認/);
   assert.match(await objects.innerText(),/座標編集はテスト用です/);
   assert.equal(await objects.getByText('do-not-export').count(),0);
@@ -374,7 +374,7 @@ try{
   const editedObject=coordinateCopy.World.GridCollection.Grids['101'].Objects['1'];
   assert.equal(editedObject.X,57);
   assert.equal(editedObject.Y,-4);
-  assert.equal(editedObject.Orientation,'East');
+  assert.equal(editedObject.Orientation,'GridOrientation_Up');
   assert.equal(editedObject.PrivateState,'do-not-export');
   assert.equal(coordinateCopy.World.GridCollection.Grids['101'].Objects['2'].ItemID,30000031);
   assert.equal(coordinateCopy.World.GridCollection.DiffGrids['102'].ModifiedObjects['6'].X,-12);
@@ -414,13 +414,43 @@ try{
   assert.equal(fullObject.Y,25);
   assert.equal(diffObject.X,130);
   assert.equal(diffObject.Y,14);
-  assert.equal(fullObject.Orientation,'East');
-  assert.equal(diffObject.Orientation,'West');
+  assert.equal(fullObject.Orientation,'GridOrientation_Up');
+  assert.equal(diffObject.Orientation,'GridOrientation_Left');
   assert.equal(fullObject.PrivateState,'do-not-export');
   assert.equal(gridBatch.Player.ListInventories['100'].Inventory['550'].Amount,7);
   assert.equal(gridBatch.World.GridCollection.DiffGrids['102'].RemovedObjects[0],5);
   assert.equal(quantityProfile.World.GridCollection.Grids['101'].Objects['1'].X,45);
   assert.equal(quantityProfile.World.GridCollection.DiffGrids['102'].ModifiedObjects['6'].X,-12);
+  // Cardinal native enum string edit is independent of X/Y, Grid and Item
+  // identity. The original (and all unknown fields) must remain untouched.
+  await objects.getByRole('button',{name:'配置 #1 の向きを編集'}).click();
+  const direction=objects.getByLabel('向き編集',{exact:true});
+  await direction.getByLabel('新しい向き').selectOption('GridOrientation_Right');
+  await direction.getByRole('button',{name:'向き変更を検証'}).click();
+  await direction.getByRole('status').filter({
+    hasText:'向き変更をRust/WASMで検証しました'
+  }).waitFor({timeout:30000});
+  assert.equal(await direction.getByRole('alert').count(),0);
+  page.once('dialog',dialog=>dialog.accept());
+  await direction.getByRole('button',{name:'向き変更コピーを生成'}).click();
+  const directionLink=direction.getByRole('link',{name:'向きコピーをダウンロード'});
+  await directionLink.waitFor({timeout:30000});
+  const directionEvent=page.waitForEvent('download');
+  await directionLink.click();
+  const directionCopy=readSyntheticEncryptedP1g(
+    await readFile(await (await directionEvent).path())
+  );
+  const directionObject=directionCopy.World.GridCollection.Grids['101'].Objects['1'];
+  assert.equal(directionObject.Orientation,'GridOrientation_Right');
+  assert.equal(directionObject.X,45);
+  assert.equal(directionObject.Y,9);
+  assert.equal(directionObject.PrivateState,'do-not-export');
+  assert.equal(directionCopy.World.GridCollection.Grids['101'].Objects['2'].ItemID,30000031);
+  assert.equal(directionCopy.World.GridCollection.DiffGrids['102'].ModifiedObjects['6'].Orientation,
+    'GridOrientation_Left');
+  assert.equal(directionCopy.Player.ListInventories['100'].Inventory['550'].Amount,7);
+  assert.equal(quantityProfile.World.GridCollection.Grids['101'].Objects['1'].Orientation,
+    'GridOrientation_Up');
   // Two saved references for sample furniture: one full and one non-removed
   // DiffGrid object, not three (the removed DiffGrid identity is suppressed).
   // Private DB-04 reference index supplied as a local, synthetic file.
