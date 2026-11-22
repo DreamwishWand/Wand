@@ -11,6 +11,10 @@ import math
 from pathlib import Path
 import struct
 
+from native_formula_type_taxonomy import (
+    STEAM_1262_DUMP_SIZE, verify_original_native_type_taxonomy,
+)
+
 CONTRACT = 'wand.db02.native-formula-source-audit@1'
 FORMULA_SHA = 'e147b306ce4bf5a6a143e4342d4e12e1571d36688842ed732fdfa23e7ba66451'
 PROTO_SHA = 'dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623'
@@ -210,7 +214,7 @@ def parse_sell_definition(ff):
     return currency, object_type, table_values
 
 
-def audit(formula_raw, proto_raw):
+def audit(formula_raw, proto_raw, dump_raw=None):
     require(len(formula_raw) == 8760 and digest(formula_raw) == FORMULA_SHA,
             'FORMULA_ORIGINAL_SHA')
     require(len(proto_raw) == 1335720 and digest(proto_raw) == PROTO_SHA,
@@ -231,6 +235,8 @@ def audit(formula_raw, proto_raw):
     explicit_cache = parse_cache(cache)
     require(currency == SOFT and len(formula_values) == 7 and
             explicit_cache == formula_values, 'FORMULA_CACHE_VALUE_JOIN')
+    taxonomy = (verify_original_native_type_taxonomy(dump_raw, object_type)
+                if dump_raw is not None else None)
     return {
         'contract': CONTRACT, 'gameVersion': '1.26.2', 'platform': 'Steam',
         'originalFormulaSha256Verified': True,
@@ -240,6 +246,13 @@ def audit(formula_raw, proto_raw):
         'originalSellFormulaReferencesMatched': len(source_sell),
         'sellFormulaCurrencyMatchesSoft': True,
         'sellFormulaObjectTypeSourcePresent': bool(object_type),
+        'originalNativeTypeMetadataVerified': taxonomy is not None,
+        'sourceObjectTypeNativeEnumCorrespondenceVerified': (
+            taxonomy['nativeSourceObjectTypeClassAndEnumCrossReferenced']
+            if taxonomy is not None else False),
+        'sourceObjectTypeDistinctFromFixedCookingIngredientSubtypes': (
+            taxonomy['fixedRecipeIngredientSourceSubtypesAreDifferent']
+            if taxonomy is not None else None),
         'sellFormulaEquationSourceVerified': True,
         'sellFormulaExplicitTableRows': len(formula_values),
         'dynamicCacheExplicitSellAmountRows': len(explicit_cache),
@@ -264,10 +277,14 @@ def main():
     parser = argparse.ArgumentParser(description='Private source-only DB-02 sell formula audit')
     parser.add_argument('--formula', required=True)
     parser.add_argument('--protodb', required=True)
+    parser.add_argument('--dump', default=None,
+                        help='Exact original Steam v1.26.2 Il2CppDump/dump.cs')
     args = parser.parse_args()
     try:
         print(json.dumps(audit(read(args.formula, 8760),
-                               read(args.protodb, 1335720)), indent=2))
+                               read(args.protodb, 1335720),
+                               read(args.dump, STEAM_1262_DUMP_SIZE)
+                               if args.dump is not None else None), indent=2))
     except (OSError, ValueError) as exc:
         parser.exit(1, f'DB-02 formula source audit failed: {exc}\n')
 
