@@ -253,6 +253,8 @@ try {
   assert.match(await star.locator('.entries li').first().innerText(),/目標 3個/,'source goal visible for initial duty');
   await chooseLanguage(star,'en');
   assert.match(await star.locator('.entries li').first().innerText(),/Uproot Night Thorns/);
+  assert.match(await star.locator('.entries li').first().innerText(),/Goal 3 items/,
+    'verified goal units follow the global English language selector');
   await chooseLanguage(star,'ja');
   await star.getByRole('searchbox',{name:'通常タスクを検索'}).fill('Task17');
   assert.match(await star.locator('.entries li').first().innerText(),/ドナルドダックを同行者/);
@@ -271,6 +273,8 @@ try {
   assert.match(await star.locator('.entries li').first().innerText(),/魚を釣る/);
   await chooseLanguage(star,'fr');
   assert.match(await star.locator('.entries li').first().innerText(),/Attrape des poissons/);
+  assert.match(await star.locator('.entries li').first().innerText(),/Objectif 10 poissons/,
+    'French goal uses localized display units with the pinned cache amount');
   await chooseLanguage(star,'ja');
   await star.getByRole('searchbox',{name:'通常タスクを検索'}).fill('Task19');
   assert.match(await star.locator('.entries li').first().innerText(),/ピーター・パン/);
@@ -290,6 +294,10 @@ try {
   assert.match(await star.locator('.week').first().innerText(),/Catch 20 fish/);
   await chooseLanguage(star,'de');
   assert.match(await star.locator('.week').nth(2).innerText(),/Fange 20 Fische am schillernden Strand/);
+  assert.match(await star.locator('.week').nth(2).innerText(),/Ziel 25 Fische/,
+    'verified cache goal retains 25 without rewriting official German text');
+  assert.match(await star.locator('.week').nth(2).innerText(),/Abweichung im Spieltext: 20 Fische/,
+    'show a transparent, source-verified localized discrepancy');
   await chooseLanguage(star,'ja');
   assert.match(await star.locator('.week').nth(2).innerText(),/輝きの浜辺で魚を25匹釣る/);
   await star.getByRole('button',{name:'報酬'}).click();
