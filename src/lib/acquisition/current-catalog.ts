@@ -29,6 +29,8 @@ import {loadPinnedPublicNativeShopSnapshot,loadPinnedHistoricalNativeShopSnapsho
   type PinnedPublicNativeShopIndex} from './public-native-shop.ts';
 import {loadPinnedPublicIapSource,
   type PublicIapSourceIndex} from './public-static-iap.ts';
+import {indexNativeShopHistory,type NativeShopHistoryIndex}
+  from './shop-history-index.ts';
 import {
   indexNativeLootSourceFamilies,
   type NativeLootSourceIndex
@@ -103,6 +105,8 @@ export interface CurrentDb02OriginCatalog{
   readonly nativeShopSource:PinnedPublicNativeShopIndex;
   /** Archived July 2026 Shop cache, NOT proof of availability on current build. */
   readonly historicalNativeShopSource:PinnedPublicNativeShopIndex;
+  /** Native Shop appearances by offer ID and Item ID, without availability claims. */
+  readonly shopHistory:NativeShopHistoryIndex;
   /** Source-native exact IAP package IDs and direct/extended Item rewards. */
   readonly nativeIapSource:PublicIapSourceIndex;
   /** Lazy SHA-pinned 395 explicit Quest reward references, including 65 currency configurations. */
@@ -223,6 +227,7 @@ export async function joinCurrentDb02Catalog(
     publicQuestRewards,publicEventFriendship,nativeShopSource,nativeIapSource,
     historicalNativeShopSource
   );
+  const shopHistory=indexNativeShopHistory(nativeShopSource,historicalNativeShopSource);
   const joined=joinDb02OriginsWithDb00(db00,origins);
   const lootSources=indexNativeLootSourceFamilies(origins,ids);
   const coverage=coverageSummary(ids,origins,joined,lootSources);
@@ -238,7 +243,7 @@ export async function joinCurrentDb02Catalog(
     origins,db00:joined,lootSources,coverage,
     lootObjectSources:nativeLootObjectReferenceIndex,
     publicOnlineNameCandidates,nativeShopSource,nativeIapSource,
-    historicalNativeShopSource,
+    historicalNativeShopSource,shopHistory,
     loadQuestAcquisitionIndex(
       questFetcher:typeof fetch=fetch,questBasePath=basePath
     ){return loadPublicQuestAcquisitionIndex(questBasePath,questFetcher);},
