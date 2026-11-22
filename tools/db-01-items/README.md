@@ -190,6 +190,59 @@ shards and a versioned manifest; the old catalog, icon GUIDs and eight exact
 current-version names are unchanged. The private original Tag overlay is
 stored alongside the audited DB-01 release in the owner's SRC-01 Drive folder.
 
+### Shared Item-ID classification read API (TS, private source overlays)
+
+`src/lib/items/shared-view.ts` provides
+`createDb01SharedItemClient({catalog,itemTypes,tags,directMenus,
+universePredicates,specialPredicates,activityCrafting})`, the single DB-01
+query entrypoint for Collection, Guide, Save Editor, Decorate and Presets.
+Existing source clients and their immutable SHA-verified private shards are
+reused; this is a read composition layer, **not another game-data database**.
+`catalog` is required and all other source clients are opt-in.
+
+```ts
+const shared = createDb01SharedItemClient({
+  catalog, itemTypes, tags, directMenus,
+  universePredicates, specialPredicates, activityCrafting,
+});
+const item = await shared.getItem(itemId);
+const many = await shared.getItems(itemIds); // maximum 4096 per call
+const coverage = shared.getCoverage();
+const menus = await shared.getSourceMenus(); // original CollectionSubMenu set definitions
+```
+
+An item result preserves original 8-language names, icon GUID and native
+identity, the current IL2CPP exact item class/subtype when connected,
+original Tag facets, directly listed CollectionSet associations,
+and all source-predicate matches from the 262 current selectors. Each
+source-predicate candidate also references the verified original
+`CollectionSet` definition: `sourceMenu.submenu` and
+`sourceMenu.collectionLabelKey` identify the source Collection sub-menu
+without falsely claiming that the item is unlocked/visible there.
+When the optional CollectionSet source is not connected,
+`sourceMenu` is `null`, not an inferred label. **Static
+candidate matches and explicit negative Crafting source filters remain
+separate**: `item.collection.candidates` contains retained positive source
+matches; `item.collection.suppressed` retains the matched original predicate
+alongside the same-set/group Crafting exclusion. Direct listings remain in
+`item.collection.direct`, rather than being silently converted into
+runtime visibility. Multiple relationships per Item ID are preserved.
+
+Critical contract: every connected overlay must match the catalog's game
+version, source Items SHA and definition count. Available private SQLite and
+current IL2CPP SHA pins must also agree across overlays. Mismatch fails
+before any private shard read. Missing optional overlays yield
+`null`/`craftingExclusions:'unavailable'` rather than falsely claiming
+no tags, no classifications or no exclusions.
+
+No Source-Tag/Collection rule authorizes a value for the **actual game-screen
+category/subcategory, real obtainable world, DLC entitlement, player runtime
+Collection state or private-data publication**: those fields remain `null`.
+The `getCoverage()` counts original-source evidence, not gameplay UI
+verification. UI streams must explicitly load this owner-private release
+and independently confirm game-screen/runtime membership before activating
+visible category filters. No public Pages asset or raw game file is added.
+
 ### Final 40 Steam Collection Activity/Crafting source predicates (current originals)
 
 The verified Steam 1.26.2 `CollectionSet` contains **12** `CollectionActivity`
