@@ -19,11 +19,26 @@ const record=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
 const own=(x,k)=>Object.prototype.hasOwnProperty.call(x,k);
 const keyId=k=>/^[1-9][0-9]*$/.test(k)&&
   Number.isSafeInteger(Number(k))&&String(Number(k))===k;
+// v1.24.13 Switch native named getters and real Steam/Switch profile role
+// descriptors agree on keys 0..12; Switch v1.25.0 native method regression
+// preserved these getters and ListInventory Amount semantics. Map each positive
+// saved amount to the corresponding exact public item family before use.
+// Role 6 TouchOfMagic is deliberately deferred: the same ItemType 10 has
+// DecalItemData (collectible Motif) AND TextureItemData (system material),
+// so item type + saved inventory role do not establish collectible eligibility.
 const ROLE_SIGNATURES=Object.freeze({
   '0':Object.freeze({type:'Furniture',itemType:4}),
   '1':Object.freeze({type:'Clothing',itemType:5}),
   '2':Object.freeze({type:'ActivityItem',itemType:3}),
-  '4':Object.freeze({type:'Trimming',itemType:16})
+  '3':Object.freeze({type:'Makeup',itemType:14}),
+  '4':Object.freeze({type:'Trimming',itemType:16}),
+  '5':Object.freeze({type:'Building',itemType:2}),
+  '7':Object.freeze({type:'Skin',itemType:17}),
+  '8':Object.freeze({type:'BoardGame',itemType:18}),
+  '9':Object.freeze({type:'AvatarFeature',itemType:7}),
+  '10':Object.freeze({type:'PhotoMode',itemType:19}),
+  '11':Object.freeze({type:'MountGear',itemType:21}),
+  '12':Object.freeze({type:'Environment',itemType:6})
 });
 const validType=(actual,signature)=>actual===signature.itemType ||
   (typeof actual==='string' && actual.toLowerCase()===signature.type.toLowerCase());

@@ -503,8 +503,27 @@ export class CollectionRuntime {
       // item type and positive integer Amount. Unknown IDs are not synthesized.
       let item:CollectionItem;
       try {item=this.item(row.itemId,'en');}catch {continue;}
-      if(item.family!==row.role &&
-        !(row.role==='ActivityItem'&&item.family==='Source Activity Items'))continue;
+      // The public DB-00 Collection families are *display groupings*, not
+      // identical to native ListInventory role identifiers. Steam 1.26.2
+      // publishes Trimming IDs (ItemType 16) under Wallpaper & Flooring;
+      // dropping them on string equality silently lost legitimate save import.
+      // The role's exact ItemType, saved descriptor and ItemID are verified
+      // by the local Worker; only known native-to-public family aliases pass.
+      const publicFamilies:Record<string,readonly string[]>={
+        Furniture:['Furniture','Landscaping','Roads & Fences'],
+        Clothing:['Clothing'],
+        ActivityItem:['ActivityItem','Source Activity Items'],
+        Makeup:['Makeup','Appearance'],
+        Trimming:['Trimming','Wallpaper & Flooring'],
+        Building:['Building','Buildings'],
+        Skin:['Skin','Appearance'],
+        BoardGame:['BoardGame','Board Game'],
+        AvatarFeature:['AvatarFeature','Appearance'],
+        PhotoMode:['PhotoMode','Photo Mode'],
+        MountGear:['MountGear','Mounts'],
+        Environment:['Environment','Environment Effects']
+      };
+      if(!publicFamilies[row.role]?.includes(item.family))continue;
       owned.push({itemId:row.itemId,status:'owned'});
     }
     let discovery=0;
