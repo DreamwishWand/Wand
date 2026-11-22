@@ -31,4 +31,8 @@ jobs:
         with:
           node-version: '22'
       - run: python -m unittest discover -s tools/src-02-acquisition -p 'test_*.py' -v
+      - run: cargo test --manifest-path crates/wand-acquisition-core/Cargo.toml
+      - run: wasm-pack build crates/wand-acquisition-core --release --target web --out-dir ../../src/lib/acquisition/wasm/pkg --features wasm
       - run: node --test tests/acquisition*.test.mjs
+      - run: npm install --no-audit --no-fund
+      - run: npm run check
