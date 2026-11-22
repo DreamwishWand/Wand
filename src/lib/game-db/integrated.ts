@@ -3,7 +3,7 @@
  * integration and provenance, never DB-01..05 native extraction algorithms.
  * Published current facts and different-version history remain separate.
  */
-import { loadCurrentGameDatabase } from './client.mjs';
+import { loadCurrentGameDatabase } from './client.ts';
 import { loadCollectionRuntime } from '../collection/catalog.mjs';
 import { canonicalId, validateSnapshot, legacyItem, SNAPSHOT_SCHEMA } from './model.mjs';
 
