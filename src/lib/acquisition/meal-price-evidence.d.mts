@@ -13,6 +13,8 @@ import type {IngredientSourceRowCoverage}
   from './ingredient-source-row-coverage.mjs';
 import type {ConditionalIngredientSoftSellFallback}
   from './conditional-ingredient-sell-fallback.mjs';
+import type {NativeDynamicCacheLifecycle}
+  from './native-dynamic-cache-lifecycle.mjs';
 export declare const DB02_MEAL_PRICE_EVIDENCE_CONTRACT:
   'wand.db02.meal-price-evidence@1';
 export interface MealIngredientAmount {
@@ -65,6 +67,7 @@ export interface PrivateMealPriceEvidence {
   readonly sourceSellFormulaCandidatePlan:ConditionalSellFormulaSourcePlan|null;
   readonly nativeSellFormulaRuntimeResolutionVerified:false;
   readonly nativeDynamicCacheSourceVerified:boolean;
+  readonly sourceNativeDynamicCacheLifecyclePlan:NativeDynamicCacheLifecycle;
   readonly dynamicCachedSellRowCannotProveEffectivePrice:true;
   readonly ingredientStaticPriceDatabaseOriginalVerified:true;
   readonly staticIngredientAmountsNotEffectiveSellValues:true;
@@ -107,6 +110,9 @@ export interface PrivateMealPricingView {
   getSourceSellFormulaCandidatePlan(forCurrencyId:number):
     ConditionalSellFormulaSourcePlan|null;
   readonly sourceNativeDynamicCacheGate:NativeSerializedDynamicCacheGate|null;
+  readonly sourceNativeDynamicCacheLifecyclePlan:NativeDynamicCacheLifecycle;
+  getHypotheticalNativeDynamicCacheRebuildPlan(
+    hypotheticalRebuiltItemPriceRows:number|null):NativeDynamicCacheLifecycle;
   readonly nativeRuntimeDataCachedVerified:false;
   getSourceStaticSellProviderSimulations(itemId:number):
     readonly NativeSerializedProviderSimulation[];
