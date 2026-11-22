@@ -136,8 +136,15 @@ try {
   await star.getByRole('button',{name:'報酬'}).click();
   assert.equal(await star.locator('.week').count(),4);
   assert.match(await star.locator('.week').first().innerText(),/アクアマーメイドバックパック/);
+  assert.match(await star.locator('.week').first().innerText(),/サル（大尉）/);
+  assert.match(await star.locator('.week').first().innerText(),/ムーンストーン/);
+  assert.match(await star.locator('.week').first().innerText(),/モチーフ（正式名称なし）/);
+  assert.match(await star.locator('.summary').innerText(),/700 ムーンストーン/);
   await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('en');
   assert.match(await star.locator('.week').first().innerText(),/Aqua Mermaid Backpack/);
+  assert.match(await star.locator('.summary').innerText(),/700 Moonstone/);
+  assert.match(await star.locator('.week').first().innerText(),/Lieutenant Monkey/);
+  assert.match(await star.locator('.week').first().innerText(),/Motif \(no official display name\)/);
   assert.equal(await star.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+2),true,'Star Path mobile overflow');
   assert.deepEqual(starErrors,[],starErrors.join('\n'));
   await star.close();
@@ -169,6 +176,15 @@ try {
   await tamperedDaily.getByRole('alert').waitFor({timeout:20000});
   assert.match(await tamperedDaily.getByRole('alert').innerText(),/fingerprint/);
   await tamperedDaily.close();
+  const badRewards=await browser.newPage();
+  await badRewards.route('**/guide/public/starpath-reward-extras-2026-11-22.json',async route=>{
+    const original=await route.fetch(),bytes=Buffer.from(await original.body());bytes[100]^=1;
+    await route.fulfill({response:original,body:bytes});
+  });
+  await badRewards.goto('http://127.0.0.1:4177/Wand/guide/star-path/',{waitUntil:'domcontentloaded'});
+  await badRewards.getByRole('alert').waitFor({timeout:20000});
+  assert.match(await badRewards.getByRole('alert').innerText(),/fingerprint/);
+  await badRewards.close();
   console.log('Public Star Path: 2 source-pinned seasons, 185 tasks, reward pages, mobile and SHA tamper rejection passed');
   console.log('Public Guide browser: verified static index, lazy details, multi-language labels, target IDs, mobile layout, tamper rejection, quest deep links and history passed');
 } finally {
