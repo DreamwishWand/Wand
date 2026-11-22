@@ -7,12 +7,15 @@
   import { sanitizeSavedCollectionDiscovery } from './saved-collection-discovery.mjs';
   import { sanitizePositiveListInventoryOwnership } from './saved-list-positive-ownership.mjs';
   import { sanitizeSavedGridFurnitureReferences } from './saved-grid-furniture-references.mjs';
+  import { sanitizeSavedWorldDb04Join } from './saved-world-db04-join.mjs';
 
   export let resolveHistorical:(id:number)=>({itemId:number;label:string;family:string}|null) = ()=>null;
   export let locale = 'ja';
   export let gameImageMap: Record<string,string> = {};
   export let collectionCommitBusy = false;
-  const dispatch=createEventDispatcher<{ lookupItem:number;saveProfile:any;gridReferences:any|null }>();
+  const dispatch=createEventDispatcher<{
+    lookupItem:number;saveProfile:any;gridReferences:any|null;db04Join:any|null
+  }>();
   const jsonKindLabels:Record<string,string>={
     null:'null',boolean:'真偽値',integer:'整数',number:'数値',
     string:'文字列',array:'配列',object:'オブジェクト'
@@ -26,6 +29,13 @@
   let gridFurniture:any=null;
   let gridQuery='';
   let gridLimit=48;
+  let db04Join:any=null;
+  let db04JoinBusy=false;
+  let db04JoinError='';
+  let lastSaveFile:File|null=null;
+  let db04JoinInput:HTMLInputElement;
+  let activeDb04JoinWorker:Worker|null=null;
+  let db04JoinSequence=0;
   let collectionQuery='';
   let collectionLimit=48;
   let errorMessage = '';
@@ -59,13 +69,25 @@
     activeNameWorker=null;
     exactNameBusy=false;
   }
+  function stopDb04JoinWorker(){
+    db04JoinSequence++;
+    activeDb04JoinWorker?.terminate();
+    activeDb04JoinWorker=null;
+    db04JoinBusy=false;
+  }
   onDestroy(stopWorker);
   onDestroy(stopNameWorker);
+  onDestroy(stopDb04JoinWorker);
   $: labeledPreview = preview && exactNameOverlay
     ? attachDb01PrivateNames(preview,exactNameOverlay,locale,{allowHistorical:allowPrivateHistorical}) : preview;
   $: collectionRows = collectionPreview ? collectionPreview.items
     .filter((item:any)=>!collectionQuery.trim() || String(item.itemId).includes(collectionQuery.trim())) : [];
   $: gridRows = gridFurniture ? gridFurniture.entries.filter((item:any)=>{
+    const query=gridQuery.trim().toLocaleLowerCase();
+    return !query||String(item.itemId).includes(query)||
+      (resolveHistorical(item.itemId)?.label??'').toLocaleLowerCase().includes(query);
+  }) : [];
+  $: db04Rows = db04Join ? db04Join.entries.filter((item:any)=>{
     const query=gridQuery.trim().toLocaleLowerCase();
     return !query||String(item.itemId).includes(query)||
       (resolveHistorical(item.itemId)?.label??'').toLocaleLowerCase().includes(query);
@@ -80,6 +102,11 @@
   function clear() {
     stopWorker();
     stopNameWorker();
+    stopDb04JoinWorker();
+    db04Join=null;
+    db04JoinError='';
+    lastSaveFile=null;
+    dispatch('db04Join',null);
     exactNameOverlay = null;
     allowPrivateHistorical = false;
     exactNameError = '';
@@ -92,6 +119,10 @@
     gridQuery = '';
     gridLimit = 48;
     dispatch('gridReferences',null);
+    db04Join=null;
+    db04JoinError='';
+    lastSaveFile=null;
+    dispatch('db04Join',null);
     saveSchema = null;
     errorMessage = '';
     query = '';
@@ -113,6 +144,10 @@
     gridQuery = '';
     gridLimit = 48;
     dispatch('gridReferences',null);
+    db04Join=null;
+    db04JoinError='';
+    lastSaveFile=null;
+    dispatch('db04Join',null);
     saveSchema = null;
   }
 
@@ -155,6 +190,7 @@
           positiveOwnership=ownership;
           gridFurniture=grid;
           dispatch('gridReferences',grid);
+          lastSaveFile=file;
           saveSchema = result.result.saveSchema;
           if (discovery.entries.length||ownership.entries.length)
             dispatch('saveProfile',{discovered:discovery.entries,positiveOwned:ownership.entries});
@@ -224,6 +260,62 @@
         exactNameError='DB-01の検証済みZIPを確認できませんでした。';
       }
     } finally {
+      if(archive&&archive.byteLength)archive.fill(0);
+      input.value='';
+    }
+  }
+
+  async function importDb04Join(event:Event){
+    const input=event.currentTarget as HTMLInputElement;
+    const file=input.files?.[0];
+    if(!file||!lastSaveFile||!preview||busy||db04JoinBusy)return;
+    stopDb04JoinWorker();
+    db04Join=null;
+    db04JoinError='';
+    dispatch('db04Join',null);
+    db04JoinBusy=true;
+    const request=db04JoinSequence;
+    let ciphertext:Uint8Array|null=null,archive:Uint8Array|null=null;
+    let worker:Worker|null=null;
+    try{
+      if(file.size<22||file.size>96*1024*1024||
+         lastSaveFile.size<16||lastSaveFile.size>32*1024*1024)
+        throw new TypeError('DB04_LOCAL_INPUT_SIZE');
+      [ciphertext,archive]=await Promise.all([
+        lastSaveFile.arrayBuffer().then(b=>new Uint8Array(b)),
+        file.arrayBuffer().then(b=>new Uint8Array(b))
+      ]);
+      if(request!==db04JoinSequence)return;
+      worker=new Worker(new URL('./saved-world-db04-join.worker.mjs',import.meta.url),{type:'module'});
+      activeDb04JoinWorker=worker;
+      const current=worker;
+      const finish=(response:any)=>{
+        if(activeDb04JoinWorker!==current||request!==db04JoinSequence)return;
+        current.terminate();activeDb04JoinWorker=null;db04JoinBusy=false;
+        try{
+          if(response?.kind!=='result')throw new TypeError('DB04_JOIN_WORKER_ERROR');
+          const valid=sanitizeSavedWorldDb04Join(response.result);
+          db04Join=valid;
+          dispatch('db04Join',valid);
+        }catch{
+          db04JoinError='DB-04資料とセーブの照合に失敗しました。ZIP構造・ゲーム版を確認してください。';
+        }
+      };
+      current.onmessage=e=>finish(e.data);
+      current.onerror=e=>{e.preventDefault();finish({kind:'error'});};
+      current.onmessageerror=()=>finish({kind:'error'});
+      current.postMessage({command:'join-local-db04',ciphertext,archive},
+        [ciphertext.buffer,archive.buffer]);
+      ciphertext=null;archive=null;
+    }catch{
+      if(request===db04JoinSequence){
+        worker?.terminate();
+        activeDb04JoinWorker=null;
+        db04JoinBusy=false;
+        db04JoinError='DB-04資料とセーブの照合に失敗しました。ZIP構造・ゲーム版を確認してください。';
+      }
+    }finally{
+      if(ciphertext&&ciphertext.byteLength)ciphertext.fill(0);
       if(archive&&archive.byteLength)archive.fill(0);
       input.value='';
     }
@@ -416,6 +508,55 @@
       <section class="saved-collection-section" aria-label="セーブ内の家具配置参照">
         <h3>ワールドの家具参照</h3>
         <p class="store-warning">セーブ内のGridObjectを読み取った結果です。初期配置・クエスト・自動生成の家具も含む可能性があり、プレイヤーの所持や解放を証明しません。差分グリッドの初期配置データは含まれないため、完全な配置数ではありません。手動Collection記録とセーブファイルは変更しません。</p>
+        <div class="private-db01-import">
+          <label class="store-file">DB-04 Steam v1.26.2 原本ZIP（任意）
+            <input bind:this={db04JoinInput} type="file" accept=".zip,application/zip"
+              aria-label="DB-04 原本ZIPで初期配置との差分を照合"
+              on:change={importDb04Join} disabled={db04JoinBusy||busy}/>
+          </label>
+          <p>原本ZIPと選択済みP1Gをこの端末内の別Workerで再読込し、同一の原本パスが確認できたグリッドに限って初期配置・変更・保存側の追加参照を比較します。所有・解放・手動数量は更新しません。</p>
+        </div>
+        {#if db04JoinBusy}
+          <p class="store-caveat" role="status">DB-04原本とセーブをローカルで照合中…</p>
+        {:else if db04JoinError}
+          <p class="store-error" role="alert">{db04JoinError}</p>
+        {:else if db04Join}
+          <div class="store-caveat" role="status">
+            {#if db04Join.status==='unsupported_source_or_schema'}
+              DB-04のSteam v1.26.2資料または対応するセーブ構造ではありません。パスの推測は行いません。
+            {:else if db04Join.status==='not_observed'}
+              セーブ内のGridCollectionを確認できません。
+            {:else if db04Join.status==='no_exact_source_match'}
+              両方の原本パスが完全一致するグリッドを確認できませんでした。ID・名前の類似から推測しません。
+            {:else}
+              原本パスによる照合：<strong>{db04Join.matchedGrids}</strong> / {db04Join.observedGrids}保存グリッド。
+              原本オブジェクト参照 {db04Join.sourceDefaultObjects}件、
+              差分適用後の参照 {db04Join.effectiveObjects}件。
+              {#if db04Join.status==='partial_exact_matches'}
+                未照合のグリッドがあります（パス未一致 {db04Join.unresolvedGrids}件、原本不足 {db04Join.partialSourceGrids}件、構造不正 {db04Join.invalidGrids}件）。
+              {/if}
+            {/if}
+            <small>照合対象グリッド内の候補集計です。原本ZIPの真正性、ワールド全体の網羅性、ユーザーによる配置・所有は未検証です。</small>
+          </div>
+          {#if db04Rows.length}
+            <div class="store-items">
+              {#each db04Rows.slice(0,gridLimit) as item (item.itemId)}
+                {@const catalog=resolveHistorical(item.itemId)}
+                <div class="store-item"><div class="store-detail">
+                  <strong>{catalog?.label??`Item ID ${item.itemId}`}</strong>
+                  <small>原本の初期参照 {item.sourceDefault}件 · 照合グリッド内の差分適用後 {item.effectiveSaved}件</small>
+                  <small>原本にない保存ID {item.savedOnlyIdentity}件 · 削除された初期ID {item.removedDefaultIdentity}件</small>
+                  <small>プレイヤーの所持数や総配置数ではありません。</small>
+                </div></div>
+              {/each}
+            </div>
+            {#if db04Rows.length>gridLimit}
+              <button type="button" class="store-more" on:click={()=>gridLimit+=48}>
+                照合結果をさらに表示（残り {db04Rows.length-gridLimit}件）
+              </button>
+            {/if}
+          {/if}
+        {/if}
         {#if gridFurniture.status==='unsupported_schema'}
           <p class="store-caveat">このセーブ構造は配置参照の観測対象外です。</p>
         {:else if gridFurniture.status==='not_observed'||gridFurniture.status==='incompatible_structure'}
