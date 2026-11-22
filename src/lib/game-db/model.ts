@@ -22,7 +22,7 @@ export interface DbItem {
   attributes?:Record<string,unknown>|null;
 }
 export interface DbCoverage {
-  scope:string;complete:boolean;categories:string[];
+  scope:string;complete:boolean;categories:string[];[name:string]:unknown;
   itemDefinitions?:number;nameVerified?:number;nameUnverified?:number;
   semanticCategoriesVerified?:boolean;
 }
@@ -36,7 +36,8 @@ export interface DbPatch {
   items:DbItem[];releases:DbRelease[];sources:DbSource[];
 }
 export interface LegacyCollectionIndex {
-  f:string[];c:string[];m:string[];w:string[];u:string[];e:string[];
+  f:readonly string[];c:readonly string[];m:readonly string[];
+  w:readonly string[];u:readonly string[];e:readonly string[];
 }
 
 export const SNAPSHOT_SCHEMA = 'wand.game-db.snapshot@1';
@@ -196,9 +197,9 @@ export function legacyItem(index:LegacyCollectionIndex, row:unknown):DbItem {
   const item:DbItem = {
     id, names, nameStatus: 'verified', category: lookup(index.f, row[1]), subcategory: null,
     stateClass: lookup(index.c, row[2]), stateSemantic: lookup(index.m, row[3]),
-    worlds: (row[4] ?? []).map((v) => lookup(index.w, v)),
-    universes: (row[5] ?? []).map((v) => lookup(index.u, v)),
-    contentIds: (row[6] ?? []).map((v) => lookup(index.e, v)),
+    worlds: (row[4] ?? []).map((v:number) => lookup(index.w, v)),
+    universes: (row[5] ?? []).map((v:number) => lookup(index.u, v)),
+    contentIds: (row[6] ?? []).map((v:number) => lookup(index.e, v)),
     releaseIds: [], relations: [], sourceRefs: ['legacy-collection-switch-1250']
   };
   return validateItem(item);
