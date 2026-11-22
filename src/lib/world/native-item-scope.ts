@@ -19,7 +19,9 @@ export const DB04_WORLD_TAGS = Object.freeze([
 ] as const);
 export type Db04WorldTag = typeof DB04_WORLD_TAGS[number];
 export type Db04NativeCategory = 'Furniture'|'Clothing'|'Trimming'|'ActivityItem';
-export type Db04ScopeEvidenceKind = 'world_tag_direct'|'universe_tag_direct'|'universe_set_candidate';
+export type Db04ScopeEvidenceKind =
+  'world_tag_direct'|'universe_tag_direct'|'universe_set_candidate'|
+  'no_world_tag_in_original_item_record';
 
 export interface Db04NativeItemScopeRow {
   readonly itemId:number;
@@ -58,6 +60,8 @@ export interface Db04NativeItemScopeClient {
   }>;
   getItem(itemId:number):Readonly<Db04NativeItemScopeRow>|null;
   byWorldTag(tag:Db04WorldTag,page?:Readonly<{offset:number;limit:number}>):Db04NativeScopePage;
+  /** Missing direct Tag within these 13,202 records; NOT a default/other world. */
+  withoutWorldTag(page?:Readonly<{offset:number;limit:number}>):Db04NativeScopePage;
   byUniverseTag(tag:string,evidence:'direct'|'set_candidate',
     page?:Readonly<{offset:number;limit:number}>):Db04NativeScopePage;
 }
@@ -194,7 +198,8 @@ function pageOf(kind:Db04ScopeEvidenceKind,tag:string,ids:readonly number[],
   const hasNextPage=end<ids.length;
   return Object.freeze({
     evidenceKind:kind,tag,
-    status:ids.length===0?'unverified' as const:
+    status:ids.length===0||kind==='no_world_tag_in_original_item_record'?
+      'unverified' as const:
       kind==='universe_set_candidate'?'source_name_candidate_present' as const:
         'source_native_tag_present' as const,
     itemIds,matchingItemIdsInSourceSubset:ids.length,
@@ -233,6 +238,7 @@ export async function createDb04NativeItemScopeClient(args:{
   check(lines.length===13202,'SOURCE_ITEM_COUNT');
   const byId=new Map<number,Readonly<Db04NativeItemScopeRow>>();
   const worlds=new Map<string,number[]>();
+  const withoutWorld:number[]=[];
   const directUniverses=new Map<string,number[]>();
   const setUniverses=new Map<string,number[]>();
   const counts={items:0,world_direct:0,universe_direct:0,
@@ -260,6 +266,7 @@ export async function createDb04NativeItemScopeClient(args:{
     counts.universe_set_candidate+=Number(row.universeSetCandidates.length>0);
     counts.universe_any_evidence+=Number(
       row.universeTagsDirect.length>0||row.universeSetCandidates.length>0);
+    if(row.worldsDirect.length===0)withoutWorld.push(row.itemId);
     for(const tag of row.worldsDirect){
       const list=worlds.get(tag)??[];list.push(row.itemId);worlds.set(tag,list);
     }
@@ -303,6 +310,11 @@ export async function createDb04NativeItemScopeClient(args:{
       Db04NativeScopePage{
       check(typeof tag==='string'&&WORLD_SET.has(tag),'UNKNOWN_WORLD_TAG');
       return pageOf('world_tag_direct',tag,byWorld.get(tag)??[],config);
+    },
+    withoutWorldTag(config?:Readonly<{offset:number;limit:number}>):
+      Db04NativeScopePage{
+      return pageOf('no_world_tag_in_original_item_record','',
+        withoutWorld,config);
     },
     byUniverseTag(tag:string,evidence:'direct'|'set_candidate',
       config?:Readonly<{offset:number;limit:number}>):Db04NativeScopePage{

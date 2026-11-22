@@ -11,6 +11,8 @@
  */
 import type { Db01CatalogClient, Db01Item } from '../items/index.ts';
 import type { Db01Db02Join, Db01Db02JoinResult } from '../items/db02-join.ts';
+import type { Db01UniversePredicateClient, Db01UniversePredicateMatch } from
+  '../items/collection-universe.ts';
 import { WorldReferenceIndex, type ItemWorldRelations,
   type NativeAreaReference, type NativeSourceItemReference,
   type WorldIdentity } from './reference-graph.ts';
@@ -31,6 +33,23 @@ export interface SourceDefaultLocation {
   readonly acquisitionLocationVerified: false;
   readonly placeableInWorldVerified: false;
 }
+/**
+ * Reconciliation of independent original Item Tag/Set-name evidence and the
+ * DB-01 CollectionSet dynamic-selector static-predicate matches.
+ *
+ * This is evidence about original definitions, NOT proven Collection UI
+ * membership, world of origin, DLC ownership or live store availability.
+ */
+export interface SourceUniverseReconciliation {
+  readonly directNativeUniverseTagKeys: readonly string[];
+  readonly staticSourcePredicateKeys: readonly string[];
+  readonly sourcePredicateAlsoInDirectOrSetNameKeys: readonly string[];
+  readonly sourcePredicateOnlyKeys: readonly string[];
+  readonly setNameCandidateWithoutPredicateKeys: readonly string[];
+  readonly gameRuntimeMembershipVerified: false;
+  readonly gameUiVisibilityVerified: false;
+  readonly dlcOwnershipVerified: false;
+}
 export interface WorldItemGeography {
   readonly contract: typeof DB04_ITEM_GEOGRAPHY_JOIN;
   readonly itemId: number;
@@ -46,6 +65,11 @@ export interface WorldItemGeography {
   readonly sourceRelations: ItemWorldRelations;
   /** Exact original itemlist Tag IDs, independent of default GridObjects. */
   readonly originalItemScopeTags: Readonly<Db04NativeItemScopeRow> | null;
+  /** Null = client not attached; [] = source checked, no predicate match. */
+  readonly sourceCollectionUniversePredicateMatches:
+    readonly Readonly<Db01UniversePredicateMatch>[] | null;
+  /** Only available when BOTH independent source clients were attached. */
+  readonly sourceUniverseReconciliation: SourceUniverseReconciliation | null;
   readonly sourceVersionMatched: true;
   readonly itemOriginWorldVerified: false;
   readonly itemAcquisitionWorldVerified: false;
@@ -63,6 +87,7 @@ export interface Db04ItemGeographyBridge {
     db01NativeManifestSha256: string;
     db02Attached: boolean;
     originalItemScopeAttached: boolean;
+    collectionUniversePredicatesAttached: boolean;
   }>;
   getItem(itemId: number): Promise<WorldItemGeography>;
 }
@@ -84,7 +109,8 @@ export function createDb04ItemGeographyBridge(
   world:WorldReferenceIndex,
   db01:Db01CatalogClient,
   db02:Db01Db02Join|null=null,
-  nativeScope:Db04NativeItemScopeClient|null=null
+  nativeScope:Db04NativeItemScopeClient|null=null,
+  collectionUniverse:Db01UniversePredicateClient|null=null
 ):Db04ItemGeographyBridge{
   check(world instanceof WorldReferenceIndex,'VERIFIED_WORLD_INDEX_REQUIRED');
   check(db01?.source?.privateOnly===true &&
@@ -118,13 +144,23 @@ export function createDb04ItemGeographyBridge(
       typeof nativeScope.getItem==='function',
       'NATIVE_SCOPE_PRIVATE_EXACT_VERSION_REQUIRED');
   }
+  if(collectionUniverse!==null){
+    check(collectionUniverse.source?.gameVersion===world.target.gameVersion &&
+      collectionUniverse.source.sourceItemsSha256===db01.source.sourceItemsSha256 &&
+      collectionUniverse.source.sourceDefinitionCount===db01.source.definitions &&
+      SHA.test(collectionUniverse.source.sourceSqliteSha256) &&
+      SHA.test(collectionUniverse.source.sourceIl2cppDumpSha256) &&
+      typeof collectionUniverse.getItem==='function',
+      'DB01_UNIVERSE_PREDICATE_SOURCE_MISMATCH');
+  }
   const source=Object.freeze({
     platform:'Steam' as const,
     gameVersion:world.target.gameVersion,
     worldManifestSha256:world.target.nativeWorldManifestSha256,
     db01NativeManifestSha256:db01.source.nativeSourceManifestSha256,
     db02Attached:db02!==null,
-    originalItemScopeAttached:nativeScope!==null
+    originalItemScopeAttached:nativeScope!==null,
+    collectionUniversePredicatesAttached:collectionUniverse!==null
   });
   return Object.freeze({
     contract:DB04_ITEM_GEOGRAPHY_JOIN,
@@ -132,9 +168,11 @@ export function createDb04ItemGeographyBridge(
     async getItem(itemId:number):Promise<WorldItemGeography>{
       check(Number.isSafeInteger(itemId)&&itemId>0,
         'INVALID_ITEM_ID');
-      const [definition,staticDb02Acquisition]=await Promise.all([
+      const [definition,staticDb02Acquisition,rawUniverseMatches]=await Promise.all([
         db01.getItem(itemId),
-        db02===null ? Promise.resolve(null) : db02.getItem(itemId)
+        db02===null ? Promise.resolve(null) : db02.getItem(itemId),
+        collectionUniverse===null?Promise.resolve(null):
+          collectionUniverse.getItem(itemId)
       ]);
       check(definition===null||definition.itemId===itemId,
         'DB01_ITEM_ID_MISMATCH');
@@ -153,6 +191,48 @@ export function createDb04ItemGeographyBridge(
           )),
           'DB01_NATIVE_SCOPE_ORIGINAL_IDENTITY_MISMATCH');
       }
+      check(rawUniverseMatches===null||(
+        Array.isArray(rawUniverseMatches)&&
+        rawUniverseMatches.every(match=>(
+          (definition?.nativeCategory==='Furniture'||
+           definition?.nativeCategory==='Clothing') &&
+          match.nativeCategory===definition.nativeCategory &&
+          match.sourcePredicateMatched===true &&
+          match.gameUiMembershipVerified===false &&
+          match.gameUiVisibilityVerified===false &&
+          match.worldAvailabilityVerified===false &&
+          match.dlcOwnershipVerified===false &&
+          typeof match.universeTagKey==='string' &&
+          /^[A-Za-z][A-Za-z0-9_]*$/.test(match.universeTagKey)
+        ))
+      ),'SOURCE_UNIVERSE_PREDICATE_REPLY_MISMATCH');
+      const sourceCollectionUniversePredicateMatches=rawUniverseMatches===null?
+        null:Object.freeze(rawUniverseMatches.map(match=>Object.freeze({...match})));
+      const sourceUniverseReconciliation:SourceUniverseReconciliation|null=
+        nativeScope===null||collectionUniverse===null?null:(()=>{
+          const direct=Object.freeze([...(originalItemScopeTags?.universeTagsDirect??[])]);
+          const knownNames=new Set([
+            ...direct,...(originalItemScopeTags?.universeSetCandidates??[])
+          ]);
+          const predicates=Object.freeze([...new Set(
+            (sourceCollectionUniversePredicateMatches??[]).map(match=>
+              match.universeTagKey))].sort());
+          const predicateNames=new Set(predicates);
+          return Object.freeze({
+            directNativeUniverseTagKeys:direct,
+            staticSourcePredicateKeys:predicates,
+            sourcePredicateAlsoInDirectOrSetNameKeys:Object.freeze(
+              predicates.filter(tag=>knownNames.has(tag))),
+            sourcePredicateOnlyKeys:Object.freeze(
+              predicates.filter(tag=>!knownNames.has(tag))),
+            setNameCandidateWithoutPredicateKeys:Object.freeze(
+              (originalItemScopeTags?.universeSetCandidates??[])
+                .filter(tag=>!predicateNames.has(tag))),
+            gameRuntimeMembershipVerified:false as const,
+            gameUiVisibilityVerified:false as const,
+            dlcOwnershipVerified:false as const,
+          });
+        })();
       check(staticDb02Acquisition===null||(
         staticDb02Acquisition.contract==='wand.db01.db02-private-source-join@1' &&
         staticDb02Acquisition.itemId===itemId &&
@@ -196,6 +276,8 @@ export function createDb04ItemGeographyBridge(
         originalDefaultLocations:Object.freeze(originalDefaultLocations),
         sourceRelations:relations,
         originalItemScopeTags,
+        sourceCollectionUniversePredicateMatches,
+        sourceUniverseReconciliation,
         sourceVersionMatched:true,
         itemOriginWorldVerified:false,
         itemAcquisitionWorldVerified:false,
