@@ -31,6 +31,11 @@ import {
   type MissionLootQuestIndex
 } from './mission-loot-quest-candidates.ts';
 import type {PrivateQuestAcquisitionView} from './quest-item-bridge.mjs';
+import {
+  nativeLootObjectReferenceIndex,
+  type NativeLootObjectReferenceIndex,
+  type ItemLootObjectCandidate
+} from './native-loot-object-references.ts';
 
 export const DB02_CURRENT_CATALOG_SCHEMA='wand.db02.current-db00-origins@1' as const;
 const RELEASE='steam-1.26.2-native-itemlist-v1';
@@ -50,6 +55,8 @@ export interface CurrentDb02CatalogCoverage{
   readonly src02StaticCandidates:number;
   readonly src02LootContextCandidates:number;
   readonly nativeLootSourceFamilies:number;
+  readonly nativeObjectLootTableReferences:375;
+  readonly distinctNativeObjectReferencedLootTables:295;
   readonly distinctNativeLootTables:number;
   readonly src02StallSlotCandidates:number;
   readonly publicStarpathSourceLinks:number;
@@ -66,6 +73,9 @@ export interface CurrentDb02OriginCatalog{
   readonly db00:Db00OriginJoin;
   /** Raw original LootTable.nameKey grouping (not a confirmed acquisition place). */
   readonly lootSources:NativeLootSourceIndex;
+  /** 375 exact ActivityItem/Furniture field references, not verified drops. */
+  readonly lootObjectSources:NativeLootObjectReferenceIndex;
+  getItemPotentialLootObjects(itemId:string|number):readonly ItemLootObjectCandidate[];
   readonly coverage:CurrentDb02CatalogCoverage;
   /** Lazy public Guide join; no extra transfer until Guide/Collection asks. */
   loadMissionLootQuestIndex(
@@ -134,6 +144,8 @@ function coverageSummary(
     src02StaticCandidates:candidates,
     src02LootContextCandidates:loot,
     nativeLootSourceFamilies:lootSources.coverage.sourceFamilies,
+    nativeObjectLootTableReferences:375,
+    distinctNativeObjectReferencedLootTables:295,
     distinctNativeLootTables:lootSources.coverage.nativeLootTableIds,
     src02StallSlotCandidates:stalls,
     publicStarpathSourceLinks:starpaths,
@@ -170,6 +182,11 @@ export async function joinCurrentDb02Catalog(
     gameVersion:'1.26.2' as const,
     source:'verified_public_db00_and_local_private_src02_r5' as const,
     origins,db00:joined,lootSources,coverage,
+    lootObjectSources:nativeLootObjectReferenceIndex,
+    getItemPotentialLootObjects(itemId:string|number){
+      return nativeLootObjectReferenceIndex.getItemPotentialObjectSources(
+        itemId,lootSources);
+    },
     loadMissionLootQuestIndex(
       questFetcher:typeof fetch=fetch,questBasePath=basePath,
       refs:PrivateQuestAcquisitionView|null=null
