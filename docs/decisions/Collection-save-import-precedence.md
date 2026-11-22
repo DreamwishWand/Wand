@@ -17,10 +17,16 @@ Status: **confirmed owner decision** (2026-11-22). Applies to Dreamwish Wand (Di
 
 ## Evidence boundary
 
-The existing P1G preview reports:
-`Player.CollectionSets[].GroupData[].GroupsCollectionItems` **map keys**, and JSON value-type counts, without ownership semantics.
+The P1G preview reports:
+`Player.CollectionSets[].GroupData[].GroupsCollectionItems` map keys and JSON value-type counts.
 
-This is **not yet a verified owned/unowned/unlocked projection** and must **not** invoke the status import method.
+**Native finding:** Switch v1.24.13 and v1.25.0 directly establish that these map **boolean values are Collection discovery history**, with `false` explicitly saved for valid undiscovered candidates. This history is **NOT equivalent to owning a physical inventory item**, having an unlock entitlement or the game's own percentage.
+
+For schema 643 (current Steam v1.26.2) and historical 624, the dedicated local Worker projects only exact boolean values into `{itemId,discovered}`. The current Steam executable was **not independently proven native-instruction-equivalent to Switch v1.25.0**. The support decision is limited to this established field with compatible structural shape; any non-boolean value, invalid key or conflicting true/false values across groups is excluded rather than guessed. Unknown schema versions are not imported automatically.
+
+When a save is chosen the validated discovery projection is applied **automatically** to the active local workspace via Rust/WASM+IndexedDB. Its boolean flags override manual `discovered` values on matched catalog IDs; IDs missing from the save or the partial native catalog remain untouched. A later save overrides earlier manually edited discoveries. Users can still edit or clear their Collection state without a save. This does not overwrite manual `status`, `quantity`, or `favorite`.
+
+**Important:** The discovery projection is not a verified `owned`/`missing`/`unlocked` projection and never invokes the status import method.
 
 Internal adapter `CollectionRuntime.applyMappedSaveStatuses()` accepts
 `{schema:"wand.collection.mapped-save-status@1",entries:[{itemId:number,status:"owned"|"missing"|"unknown"}]}`
