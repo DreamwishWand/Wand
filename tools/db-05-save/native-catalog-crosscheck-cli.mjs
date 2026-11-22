@@ -161,3 +161,6 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
     process.exitCode=1;
   });
 }
+
+// Reuse the strict, local-only read boundary for other private DB-05 audits.
+export {strictDecodedJson,rejectGitOutput};
