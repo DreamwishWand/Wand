@@ -135,9 +135,9 @@ function assert(ok:unknown,code:string):asserts ok{
 function keep<T>(items:readonly T[]):readonly T[]{
   return Object.freeze([...items]);
 }
-function ensureAligned<Row>(
+function ensureAligned(
   base:readonly (Readonly<Db01Item>|null)[],
-  rows:readonly (Row|null)[],
+  rows:Readonly<{length:number}>,
   code:string,
 ):void{
   assert(rows.length===base.length,'BATCH_'+code);
