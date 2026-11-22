@@ -3,15 +3,11 @@
   import { base } from '$app/paths';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
   import WandIcon from '$lib/ui/WandIcon.svelte';
+  import {watchWandLanguage} from '$lib/ui/preferences';
   import SavedStorePreview from '$lib/collection/SavedStorePreview.svelte';
   import { CollectionRuntime, type CollectionState, type CollectionItem, type CollectionFacet, type CollectionProgress, type CollectionFilter } from '$lib/collection/runtime';
   import { collectionFamilyLabel } from '$lib/collection/copy';
 
-  const languages = [
-    { id:'ja',label:'日本語' },{ id:'en',label:'English' },{ id:'fr',label:'Français' },
-    { id:'it',label:'Italiano' },{ id:'de',label:'Deutsch' },{ id:'es-ES',label:'Español' },
-    { id:'zh-CN',label:'简体中文' },{ id:'pt-BR',label:'Português' }
-  ];
   const categoryPictogram:Record<string,string>={
     Furniture:'chair',Landscaping:'plant','Roads & Fences':'mountain',
     'Wallpaper & Flooring':'home',Buildings:'home','Environment Effects':'sun',
@@ -307,6 +303,9 @@
   onMount(()=>{
     const handleHeaderBackup=()=>downloadBackup();
     window.addEventListener('wand:collection-backup',handleHeaderBackup);
+    const unwatchLanguage=watchWandLanguage(next=>{
+      if(locale!==next){locale=next;refresh();}
+    });
     let alive=true;
     const media=window.matchMedia('(max-width: 820px)');
     mobileInspector=media.matches;
@@ -329,7 +328,7 @@
       }catch(error){if(alive)loadError=error instanceof Error?error.message:String(error);}
       finally{if(alive)loading=false;}
     })();
-    return()=>{alive=false;window.removeEventListener('wand:collection-backup',handleHeaderBackup);media.removeEventListener('change',changed);runtime?.close();};
+    return()=>{alive=false;unwatchLanguage();window.removeEventListener('wand:collection-backup',handleHeaderBackup);media.removeEventListener('change',changed);runtime?.close();};
   });
   function beginSaveRead():void {
     // Preserve the active workspace and runtime at file selection, not at
@@ -428,12 +427,7 @@
       <p class="subtitle">アイテム · 収集記録</p>
     </div>
     <div class="collection-head-actions">
-      <label class="language-picker">表示言語
-        <select value={locale} aria-label="アイテム表示言語"
-          on:change={(event)=>{locale=(event.currentTarget as HTMLSelectElement).value;refresh();}}>
-          {#each languages as language}<option value={language.id}>{language.label}</option>{/each}
-        </select>
-      </label>
+
       {#if runtime?.isOwnerLocal || (runtime && runtime.metadata.snapshot!=='steam-1.26.2-native-itemlist-v1')}
         <button type="button" class="subtle-button" disabled={busy||loading||saveReadInProgress}
           on:click={()=>runtime?.isOwnerLocal?void usePublicCatalog():localCatalogInput.click()}>
