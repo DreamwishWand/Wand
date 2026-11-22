@@ -85,7 +85,7 @@ def make_lossless_variant(img, output_root, decoded_sha, kind):
             "width":picture.width,"height":picture.height}
 
 
-def decode_exact(game_root, target_scan, link):
+def decode_exact(game_root, target_scan, link, cache=None):
     """Read one source-exact Unity Sprite/Texture2D image; no search by name."""
     try:
         import UnityPy
@@ -108,7 +108,12 @@ def decode_exact(game_root, target_scan, link):
         path_id=int(parts[3])
     except ValueError as exc:
         raise ValueError("SRC04_UPDATE_DECODE_PATH_ID") from exc
-    env=UnityPy.load(str(source))
+    if cache is not None and cache[0]==rel:
+        env=cache[1]
+    else:
+        env=UnityPy.load(str(source))
+        if cache is not None:
+            cache[0],cache[1]=rel,env
     candidates=env.objects.values() if isinstance(env.objects,dict) else env.objects
     matched=[]
     for obj in candidates:
@@ -161,7 +166,11 @@ def create_images(base_root, target_root, plan_doc, target_scan, game_root):
     """Convert ready jobs into complete private image records, no public releases."""
     images={}
     counts=Counter()
-    for job in plan_doc["imageJobs"]:
+    # Group changed image objects by source bundle to avoid repeated Unity parsing.
+    order=lambda job:(job.get("target",{}).get("bundlePath",""),job["iconGuid"])
+    decoded_env_cache=[None,None]
+    copied=set()
+    for job in sorted(plan_doc["imageJobs"],key=order):
         guid=job["iconGuid"]
         if job["state"]=="reused_verified":
             # Prior image identities must have been proven unchanged by plan().
@@ -170,12 +179,15 @@ def create_images(base_root, target_root, plan_doc, target_scan, game_root):
             old_overlay=plan_doc["_base_by_guid"][guid]
             image=dict(old_overlay)
             for kind in ("thumbnail","original"):
-                checked_copy_variant(base_root,target_root,image[kind])
+                variant=image[kind]
+                if variant["path"] not in copied:
+                    checked_copy_variant(base_root,target_root,variant)
+                    copied.add(variant["path"])
             counts["reusedGuid"]+=1
         elif job["state"]=="needs_decode":
             link=job.get("target")
             require(link is not None,"MISSING_EXACT_LINK")
-            img=decode_exact(game_root,target_scan,link)
+            img=decode_exact(game_root,target_scan,link,decoded_env_cache)
             png=io.BytesIO()
             img.save(png,format="PNG")
             pixel_sha=hashlib.sha256(png.getvalue()).hexdigest()
@@ -183,8 +195,13 @@ def create_images(base_root, target_root, plan_doc, target_scan, game_root):
             same_pixel=old_overlay and old_overlay["decodedSha256"]==pixel_sha and \
                        (old_overlay["sourceWidth"],old_overlay["sourceHeight"])==img.size
             if same_pixel:
-                variants={kind:checked_copy_variant(base_root,target_root,
-                          old_overlay[kind]) for kind in ("thumbnail","original")}
+                variants={}
+                for kind in ("thumbnail","original"):
+                    variant=old_overlay[kind]
+                    if variant["path"] not in copied:
+                        checked_copy_variant(base_root,target_root,variant)
+                        copied.add(variant["path"])
+                    variants[kind]=variant
                 counts["samePixelReused"]+=1
             else:
                 variants={kind:make_lossless_variant(img,target_root,pixel_sha,kind)
@@ -238,16 +255,19 @@ def build(base_root, old_scan_path, next_scan_path, next_items_path,
     try:
         images,counts=create_images(base_root,temp,delta,target_scan,next_game)
         # Independently verify every file output, including deduped references.
+        audited=set()
         for image in images.values():
             for kind in ("thumbnail","original"):
                 entry=image[kind]
+                if entry["path"] in audited:
+                    continue
                 file=temp.joinpath(*entry["path"].split("/"))
                 require(file.is_file() and
                         file.stat().st_size==entry["bytes"] and
                         file_digest(file)==entry["sha256"] and
                         webp_lossless_dimensions(file)==
                         (entry["width"],entry["height"]), "NEW_IMAGE_FAILED_AUDIT")
-        shutil.copyfile(next_items_path,temp/"source-items"/"items.jsonl") if False else None
+                audited.add(entry["path"])
         (temp/"source-items").mkdir(parents=True,exist_ok=True)
         shutil.copyfile(next_items_path,temp/"source-items"/"items.jsonl")
         shutil.copyfile(next_scan_path,temp/"source-manifest.json")
@@ -275,7 +295,6 @@ def build(base_root, old_scan_path, next_scan_path, next_items_path,
           "samePixelReusedCount":counts["samePixelReused"],
           "newPixelEncodedCount":counts["newPixelEncoded"]
         }
-        write_json(temp,"dummy") if False else None
         write_json(temp/"src04-next-release-report.json",report)
         temp.rename(out)
         return report
