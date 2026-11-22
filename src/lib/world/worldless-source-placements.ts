@@ -12,8 +12,7 @@
  * worlds to an item lacking the original native World Tag. No network,
  * private ZIP distribution or save-file write is involved.
  */
-import {WorldReferenceIndex, type NativeSourceItemReference} from
-  './reference-graph.ts';
+import {WorldReferenceIndex} from './reference-graph.ts';
 import {DB04_NATIVE_SCOPE_CLIENT, type Db04NativeItemScopeClient,
   type Db04NativeCategory} from './native-item-scope.ts';
 
