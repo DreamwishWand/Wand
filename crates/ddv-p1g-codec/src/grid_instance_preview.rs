@@ -55,7 +55,7 @@ fn observed_orientation(object:&Map<String,Value>)->Option<&str>{
 }
 fn project_objects(
     source:&Map<String,Value>,grid_id:&str,modified:bool,
-    removed:&HashSet<u64>,scan:&mut Scan
+    local_grid_ordinal:usize,removed:&HashSet<u64>,scan:&mut Scan
 ){
     for (key,value) in source{
         if scan.scanned==MAX_SCANNED_OBJECTS||scan.rows.len()==MAX_ROWS{
@@ -87,6 +87,7 @@ fn project_objects(
         },xy));
         scan.rows.push(serde_json::json!({
             "localOrdinal":ordinal,
+            "localGridOrdinal":local_grid_ordinal,
             "itemId":item_id.to_string(),
             "recordKind":if modified{"diff_modified"}else{"full"},
             "x":xy.map(|(x,_)|x),
@@ -135,7 +136,8 @@ fn scan_grid_instances(source:&[u8])->Result<(Scan,&'static str),CodecError>{
                         scan.invalid+=1;continue;
                     };
                     scan.full+=1;
-                    project_objects(objects,key,false,&HashSet::new(),&mut scan);
+                    project_objects(objects,key,false,scan.full+scan.diff,
+                        &HashSet::new(),&mut scan);
                 }
             }
             if let Some(grids)=diff{
@@ -173,7 +175,8 @@ fn scan_grid_instances(source:&[u8])->Result<(Scan,&'static str),CodecError>{
                     }
                     scan.removal_markers+=removed.len();
                     scan.diff+=1;
-                    project_objects(objects,key,true,&removed,&mut scan);
+                    project_objects(objects,key,true,scan.full+scan.diff,
+                        &removed,&mut scan);
                 }
             }
             if scan.sampled||scan.invalid>0{
@@ -614,6 +617,9 @@ mod tests{
         assert_eq!(v["rows"][0]["y"],45);
         assert_eq!(v["rows"][0]["orientation"],"West");
         assert_eq!(v["rows"][0]["localOrdinal"],1);
+        assert_eq!(v["rows"][0]["localGridOrdinal"],1);
+        assert_eq!(v["rows"][1]["localGridOrdinal"],1);
+        assert_eq!(v["rows"][2]["localGridOrdinal"],2);
         assert_eq!(v["rows"][1]["coordinatesObserved"],false);
         assert_eq!(v["rows"][1]["x"],Value::Null);
         assert_eq!(v["rows"][2]["recordKind"],"diff_modified");
@@ -622,6 +628,7 @@ mod tests{
         assert_eq!(v["rowsMissingCoordinates"],1);
         assert_eq!(v["effectivePlacementVerified"],false);
         assert_eq!(v["saveWritingAuthorized"],false);
+        // UI-only ordinals intentionally do not disclose the private grid ID.
         let report=saved_grid_instances_json(sample).unwrap();
         for secret in [
             "secret","do-not-project","private.json","\"101\"","\"202\"",
