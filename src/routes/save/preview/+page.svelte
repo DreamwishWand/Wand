@@ -38,6 +38,21 @@
   let worldStatus:'not_observed'|'incompatible_structure'|'partial_inconclusive'|
     'observed_no_item_refs'|'saved_item_refs'='not_observed';
   let worldQuery='';
+  let db04Input:HTMLInputElement|null=null;
+  type Db04GridMatch={
+    contract:'wand.db05.db04-grid-path-match@1';
+    status:string;observedFullGrids:number;matchedFullGrids:number;
+    notInPartialSourceFullGrids:number;ambiguousSourceFullGrids:number;
+    malformedFullGrids:number;observedDiffGrids:number;
+    hashUnverifiedDiffGrids:number;malformedDiffGrids:number;
+    sourceCoverageComplete:false;sourceOriginalArchiveRechecked:false;
+    saveGridNumericIdUsedAsNativeKey:false;diffIdentityVerified:false;
+    worldCoordinatesVerified:false;playerPlacementVerified:false;
+    nativeDefaultObjectEquivalenceVerified:false;saveWritingAuthorized:false;
+  };
+  let db04Match:Db04GridMatch|null=null;
+  let db04State:'idle'|'reading'|'verified'|'error'='idle';
+
   let slotState:'idle'|'loading'|'ready'|'error'='idle';
   let slotQuery='';
   let slotFilter:'all'|'inventory'|'chest'='all';
@@ -108,6 +123,7 @@
     dbWorker?.terminate();dbWorker=null;catalogRevision++;
     savedSlots=[];savedSlotsFile=null;slotState='idle';
     worldRefs=[];worldStatus='not_observed';worldQuery='';
+    db04Match=null;db04State='idle';
     dbMap=new Map();dbStatus='idle';
   }
   function selectSavedSlot(slot:EditableSlot){
@@ -159,6 +175,68 @@
     worker.onmessageerror=()=>done({kind:'error'});
     worker.postMessage({command:'resolve-db00-item-ids',base,ids});
   }
+  async function matchLocalDb04(){
+    cancel();result=null;
+    db04State='idle';db04Match=null;
+    const save=savedSlotsFile;
+    const source=db04Input?.files?.[0];
+    if(!save||fileInput?.files?.[0]!==save ||
+       !source||source.size<1||source.size>64*1024*1024||
+       save.size<1||save.size>MAX_BYTES){
+      db04State='error';return;
+    }
+    const format:'auto'|'json'=save.name.toLowerCase().endsWith('.json')
+      ?'json':'auto';
+    db04State='reading';processing=true;
+    let bytes:Uint8Array|null=null;
+    let graph:Uint8Array|null=null;
+    let worker:Worker|null=null;
+    const request=revision;
+    try{
+      [bytes,graph]=await Promise.all([
+        save.arrayBuffer().then(buf=>new Uint8Array(buf)),
+        source.arrayBuffer().then(buf=>new Uint8Array(buf))
+      ]);
+      if(request!==revision)return;
+      worker=new Worker(
+        new URL('../../../lib/save/save-amount-preview.worker.ts',import.meta.url),
+        {type:'module'}
+      );
+      active=worker;
+      const own=worker;
+      const finish=(response:unknown)=>{
+        if(request!==revision||active!==own)return;
+        own.terminate();active=null;processing=false;
+        const r=response as {kind?:string;receipt?:Db04GridMatch};
+        if(r?.kind!=='db04'||r.receipt?.contract!==
+           'wand.db05.db04-grid-path-match@1'||
+           r.receipt.sourceCoverageComplete!==false||
+           r.receipt.sourceOriginalArchiveRechecked!==false||
+           r.receipt.saveGridNumericIdUsedAsNativeKey!==false||
+           r.receipt.diffIdentityVerified!==false||
+           r.receipt.saveWritingAuthorized!==false){
+          db04State='error';return;
+        }
+        db04Match=r.receipt;db04State='verified';
+      };
+      worker.onmessage=event=>finish(event.data);
+      worker.onerror=event=>{event.preventDefault();finish({kind:'error'});};
+      worker.onmessageerror=()=>finish({kind:'error'});
+      worker.postMessage({
+        command:'inspect-db04-grid-paths',format,bytes,graph
+      },[bytes.buffer,graph.buffer]);
+      bytes=null;graph=null;
+    }catch{
+      if(request===revision){
+        worker?.terminate();active=null;processing=false;
+        db04State='error';
+      }
+    }finally{
+      if(bytes?.byteLength)bytes.fill(0);
+      if(graph?.byteLength)graph.fill(0);
+    }
+  }
+
   async function loadSavedSlots(){
     cancel();result=null;
     const file=fileInput?.files?.[0];
@@ -566,6 +644,43 @@
         <p class="slot-note">未確認の参照があるため一部のみ表示しています。</p>
       {/if}
       <p class="slot-note">保存されたGrid内の参照です。所有数・全配置数・配置可否を示すものではありません。</p>
+      <div class="db04-path-check">
+        <label>DB-04参照データ（ローカル・任意）
+          <input bind:this={db04Input} type="file" accept=".json"
+            aria-label="DB-04参照データを選択" disabled={processing}
+            on:change={()=>{cancel();db04State='idle';db04Match=null;}} />
+        </label>
+        <button type="button" on:click={matchLocalDb04}
+          disabled={processing||!savedSlotsFile}>
+          {db04State==='reading'?'照合中…':'DB-04 Gridパスを照合'}
+        </button>
+      </div>
+      {#if db04State==='verified'&&db04Match}
+        <div role="status" class="db04-result">
+          <p>通常Gridの参照パス一致：{db04Match.matchedFullGrids} /
+            {db04Match.observedFullGrids}</p>
+          {#if db04Match.notInPartialSourceFullGrids>0}
+            <p>DB-04部分データに未収録：{
+              db04Match.notInPartialSourceFullGrids}</p>
+          {/if}
+          {#if db04Match.ambiguousSourceFullGrids>0||
+            db04Match.malformedFullGrids>0}
+            <p>一意に照合できないGrid：{
+              db04Match.ambiguousSourceFullGrids+
+              db04Match.malformedFullGrids}</p>
+          {/if}
+          {#if db04Match.observedDiffGrids>0}
+            <p>差分Grid：{db04Match.hashUnverifiedDiffGrids}件は
+              原本ハッシュの証拠がなく照合未完了</p>
+          {/if}
+          <p class="slot-note">DB-04索引との参照パス比較です。
+            原本再検証・全配置数・所有権・編集可否の証明ではありません。</p>
+        </div>
+      {:else if db04State==='error'}
+        <p role="alert">DB-04照合に失敗しました。
+          検証済みのDB-04参照JSONを選択してください。</p>
+      {/if}
+
     </section>
   {/if}
   {#if queuedEdits.length}
@@ -642,6 +757,11 @@
   .slot-select strong{font-size:15px;display:block;}
   .slot-select small,.slot-note{font-size:12px;color:#d4c2df;display:block;}
   .slot-amount{font-size:17px;white-space:nowrap;}
+  .db04-path-check{display:flex;align-items:end;gap:14px;
+    flex-wrap:wrap;margin:14px 0;}
+  .db04-path-check label{min-width:220px;flex:1;}
+  .db04-result{margin-top:10px;}
+  .db04-result p{margin:8px 0;}
   .warning{font-size:12px;}
   .export-controls{display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:12px 0;}
   .download-link{display:inline-block;padding:12px 17px;border-radius:8px;background:#f5ecfa;color:#24182f;font-size:14px;text-decoration:none;font-weight:600;}
