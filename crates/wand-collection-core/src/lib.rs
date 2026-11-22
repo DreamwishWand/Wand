@@ -179,6 +179,25 @@ impl Entry {
     }
 }
 
+/// Trusted save decoder adapter may supply only ID/status pairs whose
+/// Collection semantics it verified. Raw save map keys are not this contract.
+const SAVE_STATUS_IMPORT_SCHEMA: &str = "wand.collection.mapped-save-status@1";
+const MAX_SAVE_STATUS_ITEMS: usize = 20_000;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct MappedSaveStatusRow {
+    item_id: u64,
+    status: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MappedSaveStatusImport {
+    schema: String,
+    entries: Vec<MappedSaveStatusRow>,
+}
+
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 struct Workspace {
@@ -753,6 +772,46 @@ impl CollectionEngine {
         self.bulk_impl(&output(&ids)?, status)?;
         Ok(count)
     }
+    /// Apply precisely mapped status fields from a verified save adapter.
+    /// Unobserved IDs are never interpreted as missing; all omitted IDs and
+    /// manually recorded favorites, quantities, and discoveries stay intact.
+    /// Every row is validated before atomically replacing overlapping statuses
+    /// in the active workspace. No personal save bytes/values are stored.
+    fn apply_mapped_save_statuses_impl(&mut self, source: &str) -> Result<usize, String> {
+        let _ = self.ready()?;
+        if source.len() > 1_500_000 {
+            return Err("COLLECTION_SAVE_IMPORT_TOO_LARGE".into());
+        }
+        let patch: MappedSaveStatusImport = serde_json::from_str(source)
+            .map_err(|_| "COLLECTION_SAVE_IMPORT_INVALID")?;
+        if patch.schema != SAVE_STATUS_IMPORT_SCHEMA || patch.entries.len() > MAX_SAVE_STATUS_ITEMS {
+            return Err("COLLECTION_SAVE_IMPORT_CONTRACT".into());
+        }
+        let mut seen = HashSet::new();
+        for row in &patch.entries {
+            if row.item_id == 0 || row.item_id > 9_007_199_254_740_991
+                || !self.lookup.contains_key(&row.item_id)
+                || !["owned", "missing", "unknown"].contains(&row.status.as_str())
+                || !seen.insert(row.item_id)
+            {
+                return Err("COLLECTION_SAVE_IMPORT_ENTRY_INVALID".into());
+            }
+        }
+        let changed = patch.entries.len();
+        self.with_state(|state| {
+            let w = state.workspaces.iter_mut().find(|w|w.id == state.active)
+                .ok_or("COLLECTION_WORKSPACE_NOT_FOUND")?;
+            for row in patch.entries {
+                let key = row.item_id.to_string();
+                let mut entry = w.entries.get(&key).cloned().unwrap_or_default();
+                entry.status = if row.status == "unknown" { None } else { Some(row.status) };
+                if entry.empty() { w.entries.remove(&key); }
+                else { w.entries.insert(key, entry); }
+            }
+            Ok(())
+        })?;
+        Ok(changed)
+    }
     fn workspace_impl(&mut self, action: &str, id: &str, name: &str) -> Result<(), String> {
         self.with_state(|state| {
             match action {
@@ -839,6 +898,9 @@ impl CollectionEngine {
     }
     pub fn bulk_matching(&mut self, query: &str, status: &str) -> Result<usize, JsValue> {
         self.bulk_matching_impl(query,status).map_err(|e|JsValue::from_str(&e))
+    }
+    pub fn apply_mapped_save_statuses(&mut self, source: &str) -> Result<usize, JsValue> {
+        self.apply_mapped_save_statuses_impl(source).map_err(|e|JsValue::from_str(&e))
     }
     pub fn workspace_action(&mut self, action: &str, id: &str, name: &str) -> Result<(), JsValue> {
         self.workspace_impl(action,id,name).map_err(|e|JsValue::from_str(&e))
@@ -1116,6 +1178,74 @@ mod tests {
         assert!(engine.bulk_matching_impl(matching,"invalid").is_err());
         assert!(engine.bulk_matching_impl(r#"{"status":"invalid"}"#,"missing").is_err());
         assert!(engine.state==before);
+    }
+    #[test]
+    fn verified_save_statuses_override_manual_on_matching_ids_only() {
+        // Synthetic DB-00 fixture: tests replacement rules, not game save
+        // meaning, which must be verified by a separate native decoder.
+        let make = |id: &str| json!({
+            "id":id,"names":{"en":"Synthetic"},"nameStatus":"verified",
+            "category":"Furniture","sourceRefs":["public"],"releaseIds":[],"relations":[]
+        });
+        let shard=json!({"schema":DB00_SNAPSHOT_SCHEMA,"offset":0,"count":3,
+            "items":[make("101"),make("102"),make("103")]}).to_string();
+        let index=json!({
+            "schema":DB00_RELEASE_SCHEMA,"id":"synthetic-save-priority","count":3,
+            "target":{"platform":"Steam","gameVersion":"1.26.2","buildId":null},
+            "sources":[{"id":"public","visibility":"public_reference"}],"releases":[],
+            "shards":[{"file":"items-000.json","offset":0,"count":3,
+                "bytes":shard.len(),"sha256":"a".repeat(64)}]
+        }).to_string();
+        let mut engine=CollectionEngine::default();
+        engine.load_db00_index_impl(&index).unwrap();
+        engine.append_db00_shard_impl(&shard).unwrap();
+        engine.finish_db00_impl().unwrap();
+
+        // Manual mode works without any save.
+        engine.set_entry_impl(101,r#"{"status":"owned","favorite":true,"quantity":7}"#).unwrap();
+        engine.set_entry_impl(102,r#"{"status":"missing","discovered":true}"#).unwrap();
+        engine.set_entry_impl(103,r#"{"status":"owned","favorite":true}"#).unwrap();
+        engine.workspace_impl("add","local-2","Other manual workspace").unwrap();
+        engine.set_entry_impl(101,r#"{"status":"missing","favorite":true}"#).unwrap();
+        engine.workspace_impl("select","local-1","").unwrap();
+
+        // A verified, mapped save row takes precedence. No inference from
+        // omitted 103: its manually marked status remains "owned".
+        let patch=json!({"schema":SAVE_STATUS_IMPORT_SCHEMA,"entries":[
+            {"itemId":101,"status":"missing"},
+            {"itemId":102,"status":"owned"}
+        ]}).to_string();
+        assert_eq!(engine.apply_mapped_save_statuses_impl(&patch),Ok(2));
+        let main=&engine.state.workspaces[0].entries;
+        assert_eq!(main["101"].status.as_deref(),Some("missing"));
+        assert_eq!(main["101"].quantity,Some(7));
+        assert_eq!(main["101"].favorite,Some(true));
+        assert_eq!(main["102"].status.as_deref(),Some("owned"));
+        assert_eq!(main["102"].discovered,Some(true));
+        assert_eq!(main["103"].status.as_deref(),Some("owned"));
+        assert_eq!(engine.state.workspaces[1].entries["101"].status.as_deref(),Some("missing"));
+
+        // Explicitly mapped unknown clears prior manual status; unrelated
+        // favorite remains and the item is still manually editable.
+        let clear=json!({"schema":SAVE_STATUS_IMPORT_SCHEMA,"entries":[
+            {"itemId":101,"status":"unknown"}
+        ]}).to_string();
+        assert_eq!(engine.apply_mapped_save_statuses_impl(&clear),Ok(1));
+        assert_eq!(engine.state.workspaces[0].entries["101"].status,None);
+        engine.set_entry_impl(101,r#"{"status":"owned"}"#).unwrap();
+        assert_eq!(engine.state.workspaces[0].entries["101"].status.as_deref(),Some("owned"));
+
+        let before=engine.state.clone();
+        for value in [
+            json!({"schema":"unverified","entries":[{"itemId":101,"status":"missing"}]}),
+            json!({"schema":SAVE_STATUS_IMPORT_SCHEMA,"entries":[{"itemId":99999,"status":"owned"}]}),
+            json!({"schema":SAVE_STATUS_IMPORT_SCHEMA,"entries":[{"itemId":101,"status":"owned"},{"itemId":101,"status":"missing"}]}),
+            json!({"schema":SAVE_STATUS_IMPORT_SCHEMA,"entries":[{"itemId":102,"status":"unlocked"}]}),
+            json!({"schema":SAVE_STATUS_IMPORT_SCHEMA,"entries":[{"itemId":101,"status":"owned","secret":"extra"}]})
+        ] {
+            assert!(engine.apply_mapped_save_statuses_impl(&value.to_string()).is_err());
+            assert!(engine.state==before);
+        }
     }
     #[test]
     fn canonical_categories_preserve_all_29_entries() {
