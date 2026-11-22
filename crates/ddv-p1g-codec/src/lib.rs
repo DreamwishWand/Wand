@@ -249,6 +249,154 @@ mod browser_audit{
     }
 }
 
+/// Worker-internal existing-Amount P1G/JSON preview. The Rust memory keeps
+/// original source data; neither the plaintext nor candidate archive leaves
+/// this WASM module. This cannot download, export or overwrite a save.
+#[cfg(feature="wasm")]
+mod browser_amount_preview {
+    use super::*;
+    use ddv_save_patch::{preview_existing_quantity,QuantityTarget};
+    use wasm_bindgen::prelude::*;
+
+    const MAX_WORKER_CIPHERTEXT:usize=32*1024*1024;
+    const CHUNK:usize=1024*1024;
+    fn fail(code:&'static str)->JsValue{JsValue::from_str(code)}
+    #[derive(Clone,Copy)]
+    enum InputKind{PlainJson,EncryptedP1g}
+    #[wasm_bindgen]
+    pub struct WasmAmountPreview {
+        kind:InputKind,
+        pending:Vec<u8>,
+        p1g:Option<OpenedP1g>,
+        ready:bool,
+        closed:bool,
+    }
+
+    #[wasm_bindgen]
+    impl WasmAmountPreview {
+        #[wasm_bindgen(constructor)]
+        pub fn new(input_kind:&str)->Result<WasmAmountPreview,JsValue>{
+            let kind=match input_kind{
+                "json"=>InputKind::PlainJson,
+                "p1g"=>InputKind::EncryptedP1g,
+                _=>return Err(fail("DB05_PREVIEW_FORMAT_INVALID"))
+            };
+            Ok(Self{kind,pending:Vec::new(),p1g:None,ready:false,closed:false})
+        }
+        pub fn append_chunk(&mut self,chunk:&[u8])->Result<(),JsValue>{
+            let limit=match self.kind{
+                InputKind::PlainJson=>LIMIT,
+                InputKind::EncryptedP1g=>MAX_WORKER_CIPHERTEXT
+            };
+            if self.ready||self.closed||chunk.is_empty()||chunk.len()>CHUNK||
+               self.pending.len().checked_add(chunk.len()).is_none_or(|n|n>limit){
+                self.close();return Err(fail("DB05_PREVIEW_CHUNK_INVALID"));
+            }
+            self.pending.extend_from_slice(chunk);
+            Ok(())
+        }
+        /// Only successful, structurally valid originals may be previewed.
+        pub fn finish_open(&mut self)->Result<(),JsValue>{
+            if self.closed||self.ready{
+                self.close();return Err(fail("DB05_PREVIEW_ALREADY_FINISHED"));
+            }
+            let ok=match self.kind{
+                InputKind::PlainJson=>validate_profile(&self.pending),
+                InputKind::EncryptedP1g=>{
+                    match OpenedP1g::open(&self.pending){
+                        Ok(opened)=>{self.p1g=Some(opened);Ok(())},
+                        Err(e)=>Err(e)
+                    }
+                }
+            };
+            if ok.is_err(){
+                self.close();return Err(fail("DB05_PREVIEW_OPEN_REJECTED"));
+            }
+            if matches!(self.kind,InputKind::EncryptedP1g){
+                self.pending.zeroize();self.pending.clear();
+            }
+            self.ready=true;
+            Ok(())
+        }
+        pub fn preview_inventory(
+            &mut self,inventory_id:&str,item_id:&str,expected:u32,replacement:u32
+        )->Result<String,JsValue>{
+            self.preview(QuantityTarget::Inventory{
+                inventory_id:inventory_id.to_owned(),item_id:item_id.to_owned()
+            },expected,replacement)
+        }
+        pub fn preview_chest(
+            &mut self,container_id:&str,slot_index:u32,item_id:u32,
+            expected:u32,replacement:u32
+        )->Result<String,JsValue>{
+            self.preview(QuantityTarget::ChestSlot{
+                container_id:container_id.to_owned(),slot_index:slot_index as usize,
+                item_id:item_id as u64
+            },expected,replacement)
+        }
+        pub fn close(&mut self){
+            self.closed=true;
+            self.ready=false;
+            self.pending.zeroize();
+            self.pending.clear();
+            self.p1g=None;
+        }
+    }
+    impl WasmAmountPreview{
+        fn preview(&mut self,target:QuantityTarget,old:u32,new:u32)
+            ->Result<String,JsValue>{
+            if self.closed||!self.ready{return Err(fail("DB05_PREVIEW_SESSION_CLOSED"));}
+            let profile=match self.kind{
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref()
+                    .ok_or(fail("DB05_PREVIEW_SESSION_CLOSED"))?.profile.as_slice()
+            };
+            let json=std::str::from_utf8(profile)
+                .map_err(|_|fail("DB05_PREVIEW_PROFILE_UTF8_INVALID"))?;
+            let mut draft=preview_existing_quantity(json,target,old as u64,new as u64)
+                .map_err(|_|fail("DB05_PREVIEW_QUANTITY_REJECTED"))?;
+            let result=(||->Result<String,JsValue>{
+                let changed=draft.changed;
+                validate_profile(draft.patched_json.as_bytes())
+                    .map_err(|_|fail("DB05_PREVIEW_PATCH_VALIDATION_FAILED"))?;
+                let reopen_verified=if changed &&
+                    matches!(self.kind,InputKind::EncryptedP1g){
+                    let opened=self.p1g.as_ref()
+                        .ok_or(fail("DB05_PREVIEW_SESSION_CLOSED"))?;
+                    let mut zip=rezip_profile(&opened.original_zip,&opened.layout,
+                        draft.patched_json.as_bytes())
+                        .map_err(|_|fail("DB05_PREVIEW_REPACK_FAILED"))?;
+                    let encrypted=ecb_encrypt(&zip);
+                    zip.zeroize();
+                    let mut encrypted=encrypted
+                        .map_err(|_|fail("DB05_PREVIEW_REPACK_FAILED"))?;
+                    let reopened=OpenedP1g::open(&encrypted);
+                    encrypted.zeroize();
+                    let reopened=reopened
+                        .map_err(|_|fail("DB05_PREVIEW_REOPEN_FAILED"))?;
+                    if reopened.profile!=draft.patched_json.as_bytes(){
+                        return Err(fail("DB05_PREVIEW_REOPEN_MISMATCH"));
+                    }
+                    true
+                }else{
+                    matches!(self.kind,InputKind::EncryptedP1g)
+                };
+                // Return booleans only. Private paths, values, source digest and
+                // candidate P1G/JSON are NOT included in this receipt.
+                Ok(format!(concat!(
+                    r#"{{"contract":"wand.db05.amount-preview@1","changed":{},"lexicalBytesPreserved":true,"#,
+                    r#""reopenVerified":{},"writerAuthorized":false,"exportAuthorized":false}}"#
+                ),changed,reopen_verified))
+            })();
+            draft.patched_json.zeroize();
+            result
+        }
+    }
+    impl Drop for WasmAmountPreview{
+        fn drop(&mut self){self.close();}
+    }
+}
+
 fn rezip_profile(old:&[u8],layout:&Layout,new_profile:&[u8])->Result<Vec<u8>,CodecError>{
     let compressed=if layout.method==0{new_profile.to_vec()}else{
         let mut z=DeflateEncoder::new(Vec::new(),Compression::default());

@@ -7,7 +7,6 @@
   // Development-only read-only route. JS P1G Codec plus independent Rust/WASM
   // P1G parity; NOT a Writer. No encrypted data is sent to page components.
   const MAX_JSON_BYTES = 128 * 1024 * 1024;
-  const MAX_ENCRYPTED_BYTES = 32 * 1024 * 1024;
   let report: SaveDiagnosticView | null = null;
   let isReading = false;
   let errorMessage = '';
@@ -43,11 +42,10 @@
     if (!file) return;
     const lower = file.name.toLowerCase();
     const format = lower.endsWith('.json') ? 'json' :
-      /\.(profile|dat|bin)$/.test(lower) ? 'p1g' : null;
-    if (!format ||
-        (format === 'json' ? file.size < 1 || file.size > MAX_JSON_BYTES :
-         file.size < 16 || file.size > MAX_ENCRYPTED_BYTES || file.size % 16 !== 0)) {
-      errorMessage = '復号済みJSON（最大128 MiB）またはP1G暗号化セーブ（最大32 MiB）を選択してください。';
+      /\.(profile|dat|bin)$/.test(lower) ? 'auto' : null;
+    if (!format || file.size < 1 ||
+        file.size > MAX_JSON_BYTES) {
+      errorMessage = 'JSON（最大128 MiB）またはJSON/P1G形式のセーブファイルを選択してください。';
       input.value = '';
       return;
     }
@@ -76,7 +74,8 @@
           if (result?.kind !== 'result' ||
               body?.kind !== 'save-diagnostics-summary' ||
               body.contract !== 'wand.db05.local-save-worker@1' ||
-              body.format !== format ||
+              !((format === 'auto' && (body.format === 'json' || body.format === 'p1g')) ||
+                body.format === format) ||
               body.writerAuthorized !== false || body.exportAuthorized !== false) {
             throw new TypeError('DB05_BAD_WORKER_RESULT');
           }
@@ -97,7 +96,7 @@
           const nativeStatus = native?.contract === 'wand.db05.native-p1g-audit@1' &&
             native.writerAuthorized === false && native.exportAuthorized === false &&
             native.profileDigestExposed === false ? native.status : 'unavailable';
-          const nativeText = format !== 'p1g' ? '' :
+          const nativeText = body.format !== 'p1g' ? '' :
             nativeStatus === 'matched' && native?.wasmExecuted === true &&
               native.originalProfileBytesEqual === true
               ? ' Rust/WASMでP1Gを独立復号し、元のJSONバイト列との一致を確認しました。'
@@ -108,7 +107,7 @@
                   : nativeStatus === 'skipped_large_save'
                     ? ' サイズ制限のためRust/WASMでのP1G二重検査は省略しました。'
                     : ' Rust/WASMのP1G二重検査は利用できません。';
-          infoMessage = (format === 'p1g'
+          infoMessage = (body.format === 'p1g'
             ? 'P1Gセーブを専用Worker内で復号・検査しました。画面には匿名化した結果だけを返しています。'
             : 'JSONを専用Worker内で検査しました。画面には匿名化した結果だけを返しています。') + wasmText + nativeText;
         } catch {
@@ -149,7 +148,7 @@
   <header>
     <div class="eyebrow">DEVELOPMENT · DB-05 SAVE</div>
     <h1>セーブ構造診断</h1>
-    <p>読み取り専用の開発者向け確認ページです。暗号化P1Gセーブまたは復号済みJSONの診断に対応します。実績7フィールドの型・件数も匿名で確認できます。改変セーブで削除されたミッションや未記録の実績は破損と断定しません。復号は専用Workerで行い、元ファイルの編集・保存は実装していません。</p>
+    <p>読み取り専用の開発者向け確認ページです。JSONセーブおよび暗号化P1Gの診断に対応します。形式はファイルの内容から判定します。実績7フィールドの型・件数も匿名で確認できます。改変セーブで削除されたミッションや未記録の実績は破損と断定しません。復号は専用Workerで行い、元ファイルの編集・保存は実装していません。</p>
   </header>
   <div class="local-picker">
     <div>

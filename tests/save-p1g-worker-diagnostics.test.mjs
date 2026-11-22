@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createCipheriv } from 'node:crypto';
 import { deflateRawSync } from 'node:zlib';
 import {
-  inspectLocalSaveDiagnosticsBytes, SAVE_LOCAL_WORKER_CONTRACT,
+  inspectLocalSaveDiagnosticsBytes, detectLocalSaveFormat, SAVE_LOCAL_WORKER_CONTRACT,
   MAX_LOCAL_P1G_BYTES, MAX_LOCAL_JSON_BYTES
 } from '../src/lib/save/save-diagnostics-worker-core.mjs';
 import { sanitizeSaveDiagnosticView, makeSaveDiagnosticView } from '../src/lib/save/diagnostic-view.mjs';
@@ -329,3 +329,23 @@ test('forged Rust audit result is downgraded, and duplicate-key P1G is rejected 
   await assert.rejects(inspectLocalSaveDiagnosticsBytes('p1g',encrypted,
     null,{}),/DB05_LOCAL_P1G_CALLBACK_INVALID/);
 });
+
+test('auto-detection supports real-world plaintext .profile JSON as well as encrypted P1G',async()=>{
+  const root=syntheticSave(643);
+  const plain=utf8(' \r\n'+JSON.stringify(root));
+  const encrypted=encodedP1g(root);
+  assert.equal(detectLocalSaveFormat(plain),'json');
+  assert.equal(detectLocalSaveFormat(encrypted),'p1g');
+  const a=await inspectLocalSaveDiagnosticsBytes('auto',plain);
+  const b=await inspectLocalSaveDiagnosticsBytes('auto',encrypted);
+  assert.equal(a.format,'json');
+  assert.equal(b.format,'p1g');
+  assert.deepEqual(a.summary,b.summary);
+  const invalid=utf8('  {"GameInfo":{"Version":643},"Player":{"x":1,"x":2},"World":{}}');
+  assert.equal(detectLocalSaveFormat(invalid),'json');
+  await assert.rejects(inspectLocalSaveDiagnosticsBytes('auto',invalid),
+    /Duplicate JSON object key/);
+  await assert.rejects(inspectLocalSaveDiagnosticsBytes('auto',new Uint8Array()),
+    /DB05_LOCAL_SOURCE_INVALID/);
+});
+
