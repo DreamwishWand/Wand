@@ -22,20 +22,21 @@ Verified against `DreamwishWand/Wand` source on 2026-11-22.
 | Frontend | `package.json`, `src/routes/*.svelte`, TypeScript | Uses approved SvelteKit/TS |
 | Collection | `crates/wand-collection-core` + `src/lib/collection/runtime.ts` | Rust/WASM present; page-side orchestration and Worker isolation need review |
 | Save quantity draft | `crates/ddv-p1g-codec`, `src/lib/save/save-amount-preview.worker.ts` | Migrated to typed TS Worker using Rust/WASM only; PR #282 |
-| Read-only P1G inspection | `src/lib/collection/private-p1g-codec.js`, `saved-store-worker-core.mjs` | **Legacy handwritten JavaScript P1G reader still executes** |
-| Save diagnostics | `save-diagnostics-worker-core.mjs`, `save-native-p1g-audit.mjs` | JS Codec is primary for some paths; Rust P1G audit provides partial independent validation |
+| Collection P1G read | `src/lib/save/p1g-read.ts`, `src/lib/collection/saved-store.worker.ts`, `crates/ddv-p1g-codec` | **Rust/WASM is primary**, but an explicit unsupported-ZIP read-only JavaScript fallback remains |
+| Save diagnostics | `save-diagnostics-worker-core.mjs`, `save-native-p1g-audit.mjs` | Some diagnostics still use JS Codec while Rust P1G provides independent read validation |
 | World preview Worker | `src/lib/world/world-preview.worker.ts` | Typed TS Worker in PR #285 |
 | World catalog | `src/lib/world/catalog.mjs`, `preview-views.mjs`, `local-snapshot.mjs` | **Legacy JavaScript product adapters still execute** |
 | Offline DB extraction | `tools/db-04-world/world.py` and other source extractors | Not product runtime; offline scripting is permitted |
 
 ## Incomplete migration work (do not mark complete)
 
-1. **P1G read path:** Extend the existing Rust P1G Codec to the supported
-   Steam/Switch envelope varieties with independently demonstrated parity.
-   Replace JS P1G decryption/ZIP/JSON parsing in the Collection and Save
-   diagnostics Workers with the Rust/WASM reader. Fail closed for unsupported
-   envelopes; do not silently accept or substitute guessed source records.
-   User-initiated save editing/export remains Rust-only.
+1. **P1G read path:** The Collection Worker now uses Rust/WASM first and
+   retains an explicit read-only JS fallback only for the native Codec's
+   structurally unsupported ZIP envelope. Finish multi-entry/descriptor
+   compatibility, prove genuine-save parity and remove that fallback; migrate
+   remaining Save diagnostics JS decoding to the same Rust reader. Invalid
+   profiles and unsupported edits must always fail closed. User-initiated
+   save editing/export remains Rust-only.
 2. **SaveSession / Editor:** unify Rust decode, edit, validation,
    re-encode, reopen, export behind a typed Worker request/reply boundary,
    single session, revision checks and copy semantics. No second JS Writer.
