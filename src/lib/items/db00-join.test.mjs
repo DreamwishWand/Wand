@@ -99,3 +99,40 @@ test('TypeScript DB00 bridge rejects misclassified records and wrong item counts
   await assert.rejects(createDb01Db00Patch({...client,getCategory:async cat=>cat==='ActivityItem'?[{...record,catalogDomain:'definition_unclassified'}]:[]},target),/UNCLASSIFIED_PATCH_BLOCKED/);
   await assert.rejects(createDb01Db00Patch({...client,source:{...source,currentNativeItemDefinitions:2}},target),/NATIVE_ITEM_COUNT_MISMATCH/);
 });
+
+test('DB-00 retains direct source CollectionSubMenu labels without asserting actual game UI visibility',async()=>{
+  const original={...record,itemId:30_200_001,nativeKey:'Original!Crop'};
+  const current={...client,source:{...source,sourceItemsSha256:sha},
+    getCategory:async cat=>cat==='ActivityItem'?[original]:[]};
+  const membership={
+    setId:2120000015,setKey:'IngredientsSpice',submenuCode:8,submenu:'Foraging',
+    collectionLabelKey:'CollectionSet.ForagingSpice_CollectionName',groupIndex:0,
+    evidence:'current_original_collectionset_explicit_item_list',
+    gameUiVisibilityVerified:false,worldAvailabilityVerified:false,
+    dlcOwnershipVerified:false,
+  };
+  const menus={
+    source:{gameVersion:'1.26.2',sourceItemsSha256:sha,catalogDefinitions:3,
+      sourceCollectionSetSha256:'b'.repeat(64),
+      sourceIl2cppDumpSha256:'d'.repeat(64)},
+    getDirectListingsBatch:async ids=>ids.map(()=>[membership]),
+  };
+  const result=await createDb01Db00Patch(current,target,undefined,undefined,menus);
+  const item=result.patch.items[0];
+  assert.equal(item.category,null);
+  assert.equal(item.subcategory,null);
+  assert.deepEqual(item.worlds,[]);
+  assert.deepEqual(item.contentIds,[]);
+  assert.equal(item.attributes.gameOriginalCollectionDirectListings[0].submenu,'Foraging');
+  assert.equal(item.attributes.gameOriginalCollectionDirectListings[0].setId,2120000015);
+  assert.equal(item.attributes.gameOriginalCollectionDirectListings[0].gameUiVisibilityVerified,false);
+  assert.equal(result.sourceCollectionDirectListingsAdded,1);
+  assert.equal(result.patch.sources[1].id,'db01-original-collection-menus');
+  assert.equal(result.patch.sources[2].id,'db01-original-collection-submenus');
+  await assert.rejects(createDb01Db00Patch(current,target,undefined,undefined,
+    {...menus,source:{...menus.source,gameVersion:'1.25.0'}}),
+    /COLLECTION_SOURCE_MISMATCH/);
+  await assert.rejects(createDb01Db00Patch(current,target,undefined,undefined,
+    {...menus,getDirectListingsBatch:async()=>[]}),
+    /COLLECTION_BATCH_MISMATCH/);
+});
