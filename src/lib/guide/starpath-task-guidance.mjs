@@ -33,6 +33,58 @@ const docs={
     kind:'PickUp',hint:'yellow flowers',
     ja:'黄色い花を拾う。',
     en:'Pick up yellow flowers.'},
+  'HauntingElegance2026/Task51':{
+    kind:'VisitArea',hint:'House of the Pumpkin King',
+    ja:'ジャック・スケリントンの家を訪れる。',
+    en:'Visit Jack Skellington\'s house.'},
+  'HauntingElegance2026/Task52':{
+    kind:'HangoutWithCharacter',hint:'Pumpkin King',
+    ja:'ジャック・スケリントンを同行者にして一緒に行動する。',
+    en:'Hang out with Jack Skellington.'},
+  'HauntingElegance2026/Task59':{
+    kind:'StartDiscussion',hint:'top shopkeeper',
+    ja:'スクルージ・マクダックに話しかけて、その日の会話をする。',
+    en:'Have a daily conversation with Scrooge McDuck.'},
+  'HauntingElegance2026/Task70':{
+    kind:'GiftToCharacter',hint:'patchwork Villager',
+    ja:'サリーに、その日の好物のギフトを渡す。',
+    en:'Give Sally one of her favorite gifts for the day.'},
+  'HauntingElegance2026/Task76':{
+    kind:'TakePicture',hint:'hot-tempered duck',
+    ja:'ドナルドダックが写るようにセルフィーを撮る。',
+    en:'Take a selfie with Donald Duck.'},
+  'HauntingElegance2026/Task78':{
+    kind:'GiftToCharacter',hint:'Sugar Rush racer',
+    ja:'ヴァネロペに、その日の好物のギフトを渡す。',
+    en:'Give Vanellope one of her favorite gifts for the day.'},
+  'HauntingElegance2026/Task80':{
+    kind:'Friend',hint:'Friendship Level 4 with the Pumpkin King',
+    ja:'ジャック・スケリントンとの友情レベルを4にする。',
+    en:'Reach friendship level 4 with Jack Skellington.'},
+  'HauntingElegance2026/Task95':{
+    kind:'DigTile',hint:'pottery material',
+    ja:'地面を掘って粘土を入手する。',
+    en:'Dig the ground to collect Clay.'},
+  'HauntingElegance2026/Task97':{
+    kind:'GiftToCharacter',hint:'Pumpkin King',
+    ja:'ジャック・スケリントンに、その日の好物のギフトを渡す。',
+    en:'Give Jack Skellington one of his favorite gifts for the day.'},
+  'HauntingElegance2026/Task102':{
+    kind:'HangoutWithCharacter',hint:'patchwork Villager',
+    ja:'サリーを同行者にして一緒に行動する。',
+    en:'Hang out with Sally.'},
+  'HauntingElegance2026/Task106':{
+    kind:'GardeningHarvest',hint:'vampire repellent',
+    ja:'ニンニクを収穫する。',
+    en:'Harvest Garlic.'},
+  'HauntingElegance2026/Task108':{
+    kind:'TakePicture',hint:'Jack Skellington and his bone-chilling House',
+    ja:'ジャック・スケリントンと彼の家の両方が写る写真を撮る。',
+    en:'Take a photo showing both Jack Skellington and his house.'},
+  'HauntingElegance2026/Task112':{
+    kind:'HangoutWithCharacter',hint:'long-bearded wizard',
+    ja:'マーリンを同行者にして一緒に行動する。',
+    en:'Hang out with Merlin.'},
   'Seafaring2026/Task19':{
     kind:'GiftToCharacter',hint:'boy who never grows up',
     ja:'ピーター・パンに、その日の好物のギフトを渡す。',
@@ -66,6 +118,9 @@ const weekly={
   'HauntingElegance2026/Week01Task03':{
     ja:'ジャック・スケリントンとハングアウトする。',
     en:'Hang out with Jack Skellington.'},
+  'HauntingElegance2026/Week02Task03':{
+    ja:'ジャック・スケリントンの家のドアを写真に撮る。',
+    en:"Photograph the door of Jack Skellington's house."},
   'HauntingElegance2026/Week07Task01':{
     ja:'ジャック・スケリントンに、その日の好物のギフトを渡す。',
     en:'Give Jack Skellington a favorite gift.'},
