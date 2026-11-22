@@ -8,6 +8,7 @@
   } from '$lib/guide/client.mjs';
   import {importCurrentGuideConditions, currentConditionMentionsForQuest, withVerifiedConditionStepDetails} from '$lib/guide/current-conditions.mjs';
   import {createStructuralGuideConditionRelations,type GuideConditionRelationIndex} from '$lib/guide/condition-relations.ts';
+  import {createQuestConditionCrossrefs} from '$lib/guide/quest-condition-crossrefs.ts';
   import {guideVerifiedStaticComposite} from '$lib/guide/source-composite.mjs';
   import {loadVerifiedLocalGuideRewards} from '$lib/guide/local-reward-files';
   import type {CurrentCompatibleRewardReader} from '$lib/guide/reward-source-equivalence';
@@ -67,6 +68,8 @@
     : {total:0,rows:[]};
   $: questRewardCandidates = localRewards && selectedId
     ? localRewards.getQuestCandidates(selectedId) : [];
+  $: questConditionCrossrefs = selectedDetail && searchIndex && conditionRelations
+    ? createQuestConditionCrossrefs(selectedDetail,searchIndex,conditionRelations) : null;
   $: detailSteps = selectedDetail ? detailStepRows(selectedDetail, locale) : [];
   $: conditionDisplayRows = selectedDetail && selectedId && conditionRegistry
     ? withVerifiedConditionStepDetails(selectedDetail, detailSteps, currentConditionMentions.rows, selectedId)
@@ -90,6 +93,13 @@
     const group = groupInfo[id];
     const label = group?.names?.[locale] || group?.names?.en || group?.rawName.replaceAll('!', ' / ');
     return label ? `${label} · ${id}` : id;
+  }
+  function conditionRoleLabel(role: string): string {
+    const labels: Record<string,string> = {
+      availability:'利用条件',unlock:'解放条件',auto_accept:'自動受諾設定',
+      ui_visibility:'UI表示条件',owner_override:'担当キャラクター上書き'
+    };
+    return labels[role]??role;
   }
   function displayName(row: any) {
     return row.names[locale] || row.names.en || row.internalName || row.id;
@@ -561,6 +571,36 @@
                 </ul>
               </section>
             {/if}
+            {#if questConditionCrossrefs && questConditionCrossrefs.pointers.length}
+              <details class="guide-source-facts guide-condition-crossrefs"
+                aria-label="Current Condition matches from original quest branches">
+                <summary>原本のCondition ID参照（{questConditionCrossrefs.coverage.commonConditionOccurrences}箇所）</summary>
+                <p>このクエスト自身の利用・解放・自動受諾・UI表示・担当設定から参照されたCondition IDと、Steam v1.26.2原本内のMission参照を対応付けています。AND/OR/NOTや反転設定を保持しますが、必須の前提クエストや条件成立の証明ではありません。</p>
+                <ul class="guide-mission-references">
+                  {#each questConditionCrossrefs.pointers as pointer (pointer.sourcePath)}
+                    <li>
+                      <span class="guide-mission-reference-kind">{conditionRoleLabel(pointer.role)}{pointer.branchIndex===null?'':' '+(pointer.branchIndex+1)} · Condition ID {pointer.conditionId}</span>
+                      <small>原本の論理分岐：{pointer.booleanPath.join(' → ')}{pointer.inversed===true?' · 反転指定':''}</small>
+                      {#if pointer.currentMissionMentions.length}
+                        <details class="guide-source-tree">
+                          <summary>このCondition内で原本確認されたMission参照（{pointer.currentMissionMentions.length}件）</summary>
+                          <ul class="guide-condition-mention-list">
+                            {#each pointer.currentMissionMentions.slice(0,12) as mention (mention.missionId + mention.sourcePath)}
+                              <li>Mission {mention.missionId} · {mention.kind}{mention.stepId===undefined?'':' · Step ID '+mention.stepId}</li>
+                            {/each}
+                          </ul>
+                          {#if pointer.currentMissionMentions.length>12}
+                            <small>その他{pointer.currentMissionMentions.length-12}件の参照は省略しています。</small>
+                          {/if}
+                        </details>
+                      {:else}
+                        <small>このCondition IDに対応するMission参照は検出されていません。Condition定義自体が存在しないことを意味しません。</small>
+                      {/if}
+                    </li>
+                  {/each}
+                </ul>
+              </details>
+            {/if}
             {#if staticFacts.rewards.length}
               <section class="guide-source-facts" aria-label="Source-configured rewards">
                 <h3>原本に設定された報酬値</h3>
@@ -728,6 +768,11 @@
   .guide-mission-reference-kind,.guide-mission-references small { color:#b29bc3; font-size:10px; }
   .guide-mission-references button { border:1px solid #a47dc055; background:#322541; color:#eddbfa; font:inherit; text-align:left; border-radius:7px; padding:8px 10px; overflow-wrap:anywhere; }
   .guide-mission-references button:hover,.guide-mission-references button:focus-visible { border-color:#c79af4; }
+  .guide-condition-crossrefs {margin:20px 0;}
+  .guide-condition-crossrefs>summary {cursor:pointer;font-size:13px;font-weight:650;color:#e0c4f1;}
+  .guide-condition-crossrefs .guide-source-tree {margin-top:4px;}
+  .guide-condition-mention-list {padding-left:17px;margin:8px 0;color:#d6c5e4;}
+  .guide-condition-mention-list li {background:transparent;border:0;padding:2px 0;font-size:11px;}
   .guide-source-rewards { color:#ddcbe9; font-size:12px; line-height:1.8; padding-left:18px; }
   .guide-verified { color:#bad7b6; font-size:11px; }
   .guide-related p { font-size:11px; color:#ac9bbf; line-height:1.7; }
