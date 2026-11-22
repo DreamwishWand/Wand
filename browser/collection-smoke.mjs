@@ -162,8 +162,8 @@ try{
     const page=document.querySelector('.portal-page')?.getBoundingClientRect();
     const support=document.querySelector('.portal-card-community')?.getBoundingClientRect();
     const cards=Array.from(document.querySelectorAll('.portal-card')).map(x=>x.getBoundingClientRect());
-    const headerOrder=Array.from(document.querySelectorAll('.site-actions > :is(.header-file-tools,.header-preference-tools,.header-support-tools)'))
-      .map(x=>x.getAttribute('aria-label'));
+    const headerOrder=Array.from(document.querySelectorAll('.site-actions > :is(.header-save-root,.header-account-tools,.header-support-tools,.header-preference-tools)'))
+      .map(x=>x.className);
     return {
       fits:Boolean(page&&support&&cards.length===7&&
         support.bottom<=window.innerHeight+1&&
@@ -191,7 +191,7 @@ try{
   assert.ok(layout.communityHeight>=160,'Community Help Center must be a prominent destination');
   assert.ok(layout.gap>=0&&layout.gap<=3,'service tiles should have only a thin divider');
   assert.equal(layout.radius,'0px','rectangular tiles, not isolated cards');
-  assert.deepEqual(layout.headerOrder,['表示設定','ヘルプとアカウント']);
+  assert.deepEqual(layout.headerOrder,['header-save-root','header-account-tools','header-support-tools','header-preference-tools']);
   assert.ok(layout.headerButtonSize>=44,'desktop header controls need 44px targets');
   assert.ok(layout.titleSize>=26,'launcher title typography must be easy to read');
   assert.ok(layout.statusSize>=14,'planned badges must not use tiny text');
@@ -202,11 +202,8 @@ try{
   assert.ok(p.dreamsnaps.y>p.presets.y&&p.dreamsnaps.x===p.presets.x);
   assert.ok(p.community.x===p.collection.x&&p.community.w>p.collection.w);
   assert.equal(await portal.locator('.portal-planned-status svg').count(),5,'planned badges show a lock next to legible text');
-  await portal.getByRole('button',{name:'サービスを切り替える'}).click();
-  const serviceMenu=portal.getByRole('group',{name:'サービス一覧'});
-  assert.equal(await serviceMenu.getByRole('link',{name:'Collection'}).count(),1);
-  assert.equal(await serviceMenu.locator('.shell-unavailable').count(),5);
-  await portal.getByRole('button',{name:'サービスを切り替える'}).click();
+  assert.equal(await portal.locator('.shell-nav-trigger,.shell-shortcuts').count(),0,
+    'Home provides the service list; redundant global service switching is absent');
   await portal.setViewportSize({width:390,height:844});
   const mobileLayout=await portal.evaluate(()=>{
     const help=document.querySelector('.portal-card-community')?.getBoundingClientRect();
@@ -234,26 +231,40 @@ try{
   // All three themes must be visible and independently actionable, without a popover.
   const themeChoices=portal.locator('.shell-theme-option');
   assert.equal(await themeChoices.count(),3);
+  const languageMenu=portal.locator('.language-popover');
+  await portal.locator('.header-language-button').click();
+  const compactLanguage=await languageMenu.evaluate(el=>{
+    const style=getComputedStyle(el);
+    const buttons=Array.from(el.querySelectorAll('button'));
+    const longest=buttons.reduce((a,b)=>Math.max(a,b.getBoundingClientRect().width),0);
+    return {width:el.getBoundingClientRect().width,cols:style.gridTemplateColumns.split(' ').length,
+      longest};
+  });
+  assert.equal(compactLanguage.cols,2,'language picker is two content-sized columns');
+  assert.ok(compactLanguage.width<300,'language picker must have no huge blank right edge');
+  await portal.locator('.header-language-button').click();
+
   await portal.setViewportSize({width:320,height:720});
   assert.equal(await portal.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true,
     'all three theme icons must fit the narrowest supported viewport');
   assert.equal(await themeChoices.filter({visible:true}).count(),3);
-  await portal.getByRole('button',{name:'サービスを切り替える'}).click();
-  assert.equal(await portal.locator('.shell-menu-help').isVisible(),true,
-    'help remains reachable through the service menu on very narrow phones');
-  await portal.getByRole('button',{name:'サービスを切り替える'}).click();
+  await portal.locator('.shell-more-root > button').click();
+  assert.equal(await portal.locator('.shell-more-menu').getByRole('button',{name:'ヘルプ'}).isVisible(),true,
+    'Help stays accessible through compact actions at 320px');
+  assert.equal(await portal.locator('.shell-more-menu').getByRole('button',{name:'アカウント'}).isVisible(),true);
+  await portal.locator('.shell-more-root > button').click();
   await portal.setViewportSize({width:1696,height:900});
 
   // Every officially supported DDV interface language must update shell copy and the DOM language.
   const supportedLocales=[
-    {code:'ja',label:'日本語',planned:'準備中',switchService:'サービスを切り替える'},
-    {code:'en',label:'English',planned:'Coming soon',switchService:'Switch service'},
-    {code:'fr',label:'Français',planned:'Bientôt',switchService:'Changer de service'},
-    {code:'it',label:'Italiano',planned:'In arrivo',switchService:'Cambia servizio'},
-    {code:'de',label:'Deutsch',planned:'In Vorbereitung',switchService:'Dienst wechseln'},
-    {code:'es-ES',label:'Español',planned:'Próximamente',switchService:'Cambiar servicio'},
-    {code:'zh-CN',label:'简体中文',planned:'开发中',switchService:'切换服务'},
-    {code:'pt-BR',label:'Português',planned:'Em breve',switchService:'Trocar serviço'}
+    {code:'ja',label:'日本語',planned:'準備中'},
+    {code:'en',label:'English',planned:'Coming soon'},
+    {code:'fr',label:'Français',planned:'Bientôt'},
+    {code:'it',label:'Italiano',planned:'In arrivo'},
+    {code:'de',label:'Deutsch',planned:'In Vorbereitung'},
+    {code:'es-ES',label:'Español',planned:'Próximamente'},
+    {code:'zh-CN',label:'简体中文',planned:'开发中'},
+    {code:'pt-BR',label:'Português',planned:'Em breve'}
   ];
   for(const entry of supportedLocales){
     await portal.locator('.header-language-button').click();
@@ -261,7 +272,6 @@ try{
     assert.equal(await portal.evaluate(()=>document.documentElement.lang),entry.code);
     assert.match(await portal.locator('.portal-card.planned').first().innerText(),
       new RegExp(entry.planned));
-    assert.equal(await portal.locator('.shell-nav-trigger').getAttribute('aria-label'),entry.switchService);
     assert.equal(await portal.locator('.shell-theme-option').count(),3);
   }
   await portal.reload();
@@ -297,6 +307,33 @@ try{
   assert.match(await portal.getByRole('dialog').innerText(),/利用するサービスのタイル/);
   await portal.getByRole('button',{name:'チュートリアルを閉じる'}).click();
   assert.equal(await portal.getByRole('dialog').count(),0);
+  // Shared file selection works from Home without pretending the file was parsed.
+  const saveInput=portal.locator('input[aria-label="セーブファイルを読み込む"]');
+  await saveInput.setInputFiles({name:'profile.json',mimeType:'application/json',buffer:Buffer.from('{"test":true}')});
+  const saveButton=portal.getByRole('button',{name:'セーブファイル管理'});
+  assert.equal(await saveButton.count(),1);
+  await saveButton.click();
+  assert.match(await portal.locator('.shell-save-menu').innerText(),/profile\\.json/);
+  assert.match(await portal.locator('.shell-save-menu').innerText(),/未解析/);
+  assert.equal(await portal.getByRole('button',{name:'編集済みセーブを出力'}).isDisabled(),true);
+  const [backup]=await Promise.all([
+    portal.waitForEvent('download'),
+    portal.getByRole('button',{name:'原本をバックアップ'}).click()
+  ]);
+  assert.equal(backup.suggestedFilename(),'backup_profile.json');
+  await saveButton.click();
+  await portal.getByRole('button',{name:'ファイルを閉じる'}).click();
+  assert.equal(await portal.getByRole('button',{name:'セーブファイルを読み込む'}).count(),1);
+  // Entire-viewport drop loads only a local File reference.
+  await portal.evaluate(()=>{
+    const dt=new DataTransfer();
+    dt.items.add(new File(['sample'],'sample.profile',{type:'application/octet-stream'}));
+    window.dispatchEvent(new DragEvent('dragenter',{dataTransfer:dt,bubbles:true,cancelable:true}));
+    window.dispatchEvent(new DragEvent('drop',{dataTransfer:dt,bubbles:true,cancelable:true}));
+  });
+  await portal.getByRole('button',{name:'セーブファイル管理'}).click();
+  assert.match(await portal.locator('.shell-save-filename').innerText(),/sample\\.profile/);
+  await portal.getByRole('button',{name:'ファイルを閉じる'}).click();
   await portal.close();
   await page.goto(url);
   await page.getByRole('button',{name:'このページのチュートリアル'}).click();
