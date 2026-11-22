@@ -1369,7 +1369,7 @@ CI: `node --test tests/save-editor-handoff.test.mjs`
 
 ## Exact owner-private Steam 1.26.2 DB-01 catalog coverage of Switch QwX clean profile
 
-\`tools/db-05-save/native_catalog_crosscheck.py\` implements an offline,
+`tools/db-05-save/native_catalog_crosscheck.py` implements an offline,
 read-only foreign-key coverage audit of the **entire** owner-private DB-01
 Steam native itemlist catalog (not the historical 128/256-reference sample).
 It accepts strictly decoded profile JSON **only on stdin** and a
@@ -1381,7 +1381,7 @@ SHA metadata. The original game asset bytes are not in that distributed ZIP:
 the prior DB-01 original-asset audit is retained as inherited provenance,
 not claimed as independently rerun here.
 
-Use \`tools/db-05-save/native-catalog-crosscheck-cli.mjs\` to accept encrypted
+Use `tools/db-05-save/native-catalog-crosscheck-cli.mjs` to accept encrypted
 P1G saves or plaintext JSON safely. It strictly decrypts/parses the save
 using the **existing read-only local P1G Codec** and passes the verified JSON
 over a **local subprocess stdin pipe**, without generating a decrypted
@@ -1389,14 +1389,14 @@ temporary save or uploading any content. Python needs only the standard
 library. Run it from a checkout, with both the private ZIP and save file
 stored outside public Git:
 
-\`\`\`bash
+```bash
 node tools/db-05-save/native-catalog-crosscheck-cli.mjs \
   --save /PRIVATE/qwx-original-profile.json \
   --catalog /PRIVATE/db01-steam-v1262-audited.zip \
   --expected-catalog-sha256 YOUR_VERIFIED_PRIVATE_ZIP_SHA256 \
   --out /PRIVATE/qwx-native-coverage-report.json \
   --owner-declared-clean
-\`\`\`
+```
 
 The report contains **anonymous counts only** for source IDs found,
 unindexed positive IDs, native-domain item versus non-item definitions,
@@ -1419,7 +1419,7 @@ closed if the limit is exceeded.
 
 An exact ID in the DB-01 source-derived catalog means only that the native
 metadata defines it. A source classification of
-\`definition_unclassified\` must not be silently promoted into a
+`definition_unclassified` must not be silently promoted into a
 placeable, claimable, owned or consumable inventory item. Missing missions
 and diff-grid records are neutral; diff-grid defaults may be present in
 a fresh unmodified profile. A matching Steam v1.26.2 catalog version label
@@ -1429,7 +1429,7 @@ independently establish the executable/source builds are identical.
 The release remains private. Real indexed counts are in the owner's
 local private report, not shipped to GitHub/Pages or inserted into
 synthetic CI tests. The synthetic test
-\`python3 -m unittest discover -s tools/db-05-save -p 'test_*.py'\`
+`python3 -m unittest discover -s tools/db-05-save -p 'test_*.py'`
 verifies SHA pinning, tampered shards, category names, branch limits,
 nullable parents, optional missing records and non-leakage.
 
