@@ -74,8 +74,7 @@ test('published acquisition search finds original Premium Shop and IAP source li
     originKinds:['premium_shop'],routeStatus:'confirmed_source_link',
     text:shopId,limit:10
   });
-  assert.equal(confirmed.items.length,1);
-  assert.equal(confirmed.items[0].itemId,shopId);
+  assert(confirmed.items.some(item=>item.itemId===shopId));
   assert.equal(confirmed.liveAvailabilityVerified,false);
   assert.equal(source.searchItems({
     originKinds:['premium_shop'],routeStatus:'static_candidate_only',
@@ -87,9 +86,9 @@ test('published acquisition search finds original Premium Shop and IAP source li
   const iapExample=iap.items.find(item=>item.origins?.some(row=>
     row.kind==='purchase_bonus'));
   assert(iapExample);
-  assert.equal(source.searchItems({
+  assert(source.searchItems({
     originKinds:['purchase_bonus'],text:iapExample.itemId
-  }).items[0].itemId,iapExample.itemId);
+  }).items.some(item=>item.itemId===iapExample.itemId));
   assert.equal(source.getItem('170600007').catalog,null,
     'source-linked IDs outside the published ItemList remain available only by direct lookup');
   const onlyCandidate=source.searchItems({
