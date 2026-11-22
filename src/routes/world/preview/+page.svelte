@@ -8,6 +8,10 @@
     knownGridData: boolean;
     sizeX: number | null;
     sizeY: number | null;
+    anchorSizeX: number | null;
+    anchorSizeY: number | null;
+    tessellationFactor: number | null;
+    anchorDomainStatus: string;
     defaultObjectCount: number;
   };
   type LayoutOption = {
@@ -144,14 +148,20 @@
     const chosen = layouts.find(a => a.viewKey === selectedViewKey)?.grids
       .find(g => String(g.gridIdNative) === selectedGridId);
     if (!worker || !chosen || !chosen.knownGridData ||
-        !Number.isSafeInteger(chosen.sizeX) ||
-        !Number.isSafeInteger(chosen.sizeY) ||
-        chosen.sizeX! < 1 || chosen.sizeY! < 1) {
+        !Number.isSafeInteger(chosen.anchorSizeX) ||
+        !Number.isSafeInteger(chosen.anchorSizeY) ||
+        chosen.anchorSizeX! < 1 || chosen.anchorSizeY! < 1) {
       viewport = null;
       displayedAnchors = [];
       return;
     }
-    const sx = chosen.sizeX!, sy = chosen.sizeY!;
+    if (chosen.anchorDomainStatus === 'tessellation_coordinate_relation_unverified') {
+      viewport = null;
+      displayedAnchors = [];
+      errorMessage = 'この原本バージョン・係数の初期配置座標範囲は未検証です。';
+      return;
+    }
+    const sx = chosen.anchorSizeX!, sy = chosen.anchorSizeY!;
     x = Math.min(Math.max(0, Number.isSafeInteger(x) ? x : 0), sx - 1);
     y = Math.min(Math.max(0, Number.isSafeInteger(y) ? y : 0), sy - 1);
     width = Math.min(Math.max(1, Number.isSafeInteger(width) ? width : 16), 32, sx - x);
@@ -363,7 +373,14 @@
       {#if selectedGrid}
         <p class="note">選択Grid内の初期配置記録：{selectedGrid.defaultObjectCount ?? '不明'}件。
           地形データ：{selectedGrid.knownGridData ? '原本レコードあり' : '参照先未収録'}。
-          グリッド寸法：{selectedGrid.sizeX ?? '?'} × {selectedGrid.sizeY ?? '?'}。</p>
+          地形GridDataの寸法：{selectedGrid.sizeX ?? '?'} × {selectedGrid.sizeY ?? '?'}。
+          {#if selectedGrid.anchorDomainStatus === 'steam1262_original_factor_two_anchor_envelope'}
+            原本GridのTessellationFactor：{selectedGrid.tessellationFactor}。
+            原本アンカーX/Yの観測上の範囲：
+            {selectedGrid.anchorSizeX} × {selectedGrid.anchorSizeY}。
+            地形とアンカーの座標変換は未検証です。
+          {/if}
+        </p>
         <div class="coord-row">
           <label>X <input type="number" min="0" bind:value={x} /></label>
           <label>Y <input type="number" min="0" bind:value={y} /></label>
@@ -384,8 +401,13 @@
         <p class="note">
           点と数字は原本に記録された初期配置のX/Yアンカー件数です。オブジェクトが占有する範囲ではありません。
           地形：{viewport.terrainStatus === 'source_corroborated_grid_local_preview'
-            ? `Steam v${version} 原本グリッドローカル値（配置可否は未検証）` : '未検証・表示不可'}。
-          セルの色は原本のマスク値を識別するための便宜的な色です。
+            ? `Steam v${version} 原本グリッドローカル値（配置可否は未検証）`
+            : viewport.terrainStatus === 'native_terrain_not_projected_to_source_anchor_coordinates'
+              ? '初期配置アンカーと地形セルの座標対応が未検証のため、地形は重ねていません'
+              : '未検証・表示不可'}。
+          {#if viewport.terrainStatus === 'source_corroborated_grid_local_preview'}
+            セルの色は原本のマスク値を識別するための便宜的な色です。
+          {/if}
         </p>
         <div class="map-scroll">
           <div class="grid-view" style={'grid-template-columns: repeat(' + width + ', 24px)'}>
