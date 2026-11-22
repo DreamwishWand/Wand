@@ -3,6 +3,7 @@
   import { base } from '$app/paths';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
   import WandIcon from '$lib/ui/WandIcon.svelte';
+  import {readWandLocale, onWandLocaleChange} from '$lib/ui/wand-locale';
   import SavedStorePreview from '$lib/collection/SavedStorePreview.svelte';
   import { CollectionRuntime, type CollectionState, type CollectionItem, type CollectionFacet, type CollectionProgress, type CollectionFilter } from '$lib/collection/runtime';
   import { collectionFamilyLabel } from '$lib/collection/copy';
@@ -283,7 +284,8 @@
     }finally{busy=false;}
   }
   function downloadBackup():void{
-    if(!runtime||busy||storeError||saveReadInProgress)return;
+    // A conflict must not block exporting a safety copy of the current local record.
+    if(!runtime||busy||saveReadInProgress)return;
     const data=runtime.exportBackup();
     const url=URL.createObjectURL(new Blob([data],{type:'application/json'}));
     const a=document.createElement('a');
@@ -305,6 +307,10 @@
     finally{input.value='';}
   }
   onMount(()=>{
+    locale=readWandLocale();
+    const stopLocale=onWandLocaleChange(next=>{locale=next;resetView();});
+    const handleHeaderFilters=()=>{filtersOpen=!filtersOpen;};
+    window.addEventListener('wand:collection-filters',handleHeaderFilters);
     const handleHeaderBackup=()=>downloadBackup();
     window.addEventListener('wand:collection-backup',handleHeaderBackup);
     let alive=true;
@@ -329,7 +335,7 @@
       }catch(error){if(alive)loadError=error instanceof Error?error.message:String(error);}
       finally{if(alive)loading=false;}
     })();
-    return()=>{alive=false;window.removeEventListener('wand:collection-backup',handleHeaderBackup);media.removeEventListener('change',changed);runtime?.close();};
+    return()=>{alive=false;stopLocale();window.removeEventListener('wand:collection-filters',handleHeaderFilters);window.removeEventListener('wand:collection-backup',handleHeaderBackup);media.removeEventListener('change',changed);runtime?.close();};
   });
   function beginSaveRead():void {
     // Preserve the active workspace and runtime at file selection, not at
@@ -428,12 +434,6 @@
       <p class="subtitle">アイテム · 収集記録</p>
     </div>
     <div class="collection-head-actions">
-      <label class="language-picker">表示言語
-        <select value={locale} aria-label="アイテム表示言語"
-          on:change={(event)=>{locale=(event.currentTarget as HTMLSelectElement).value;refresh();}}>
-          {#each languages as language}<option value={language.id}>{language.label}</option>{/each}
-        </select>
-      </label>
       {#if runtime?.isOwnerLocal || (runtime && runtime.metadata.snapshot!=='steam-1.26.2-native-itemlist-v1')}
         <button type="button" class="subtle-button" disabled={busy||loading||saveReadInProgress}
           on:click={()=>runtime?.isOwnerLocal?void usePublicCatalog():localCatalogInput.click()}>
