@@ -182,7 +182,12 @@ def tag_refs(native_category: str,
             candidate = [value]
         elif wire == 2:
             require(type(value) is bytes, 'INVALID_TAG_FIELD')
-            candidate = packed_ids(value)
+            try:
+                candidate = packed_ids(value)
+            except ValueError:
+                # The same wire position can hold an unrelated structured
+                # field or GUID. Only a complete Tag-ID list is evidence.
+                continue
         else:
             continue
         # A wire field is accepted as a Tag-ID reference only when its
