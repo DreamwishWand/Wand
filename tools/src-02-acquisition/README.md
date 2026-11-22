@@ -1,5 +1,15 @@
 # DB-02 ACQUISITION — source-pinned extraction
 
+## Steam v1.26.2 original formula definition source identified
+
+The original 32-record `itemlist/Formula.json` has now been SHA-256 authenticated
+and joined to all 4 purchase / 1 sell formula references in the exact original
+`protoDb.bin`. The sell-formula table's 7 explicit keyed amounts match all
+7 amount-present dynamic sell-cache rows by Item ID and value. This is
+**serialized source evidence only**, not a runtime sale quote or proof of
+cooking-ingredient applicability. See [NATIVE-SELL-FORMULA-SOURCE.md](NATIVE-SELL-FORMULA-SOURCE.md)
+and the read-only [audit script](audit_native_sell_formula_source.py).
+
 ## Authenticated native sell formula references and selection gates (Steam/Switch v1.26.2)
 
 The original Steam/Switch executable methods
