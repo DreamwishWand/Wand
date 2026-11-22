@@ -21,6 +21,7 @@ on:
       - 'tests/world-native-area-tag-overlap.test.mjs'
       - 'tests/world-native-realm-subtree.test.mjs'
       - 'tests/world-native-graph-browser.test.mjs'
+      - 'tests/world-native-grid-navigation.test.mjs'
       - '.github/workflows/db04-world.yml'
   push:
     branches: [main]
@@ -43,6 +44,7 @@ on:
       - 'tests/world-native-area-tag-overlap.test.mjs'
       - 'tests/world-native-realm-subtree.test.mjs'
       - 'tests/world-native-graph-browser.test.mjs'
+      - 'tests/world-native-grid-navigation.test.mjs'
       - '.github/workflows/db04-world.yml'
   workflow_dispatch:
 
@@ -114,4 +116,4 @@ jobs:
       - name: Test browser-facing world catalog
         run: node --test tests/world.test.mjs tests/world-local-snapshot.test.mjs tests/world-preview-views.test.mjs tests/world-native-version-gate.test.mjs
       - name: Test native source-local anchor envelope under TypeScript
-        run: node --experimental-strip-types --test tests/world-native-anchor-domain.test.mjs tests/world-reference-graph.test.mjs tests/world-item-geography.test.mjs tests/world-native-item-scope.test.mjs tests/world-native-realm-universe.test.mjs tests/world-native-tag-taxonomy.test.mjs tests/world-worldless-source-placements.test.mjs tests/world-village-world-tag-overlap.test.mjs tests/world-native-area-tag-overlap.test.mjs tests/world-native-realm-subtree.test.mjs tests/world-native-graph-browser.test.mjs
+        run: node --experimental-strip-types --test tests/world-native-anchor-domain.test.mjs tests/world-reference-graph.test.mjs tests/world-item-geography.test.mjs tests/world-native-item-scope.test.mjs tests/world-native-realm-universe.test.mjs tests/world-native-tag-taxonomy.test.mjs tests/world-worldless-source-placements.test.mjs tests/world-village-world-tag-overlap.test.mjs tests/world-native-area-tag-overlap.test.mjs tests/world-native-realm-subtree.test.mjs tests/world-native-graph-browser.test.mjs tests/world-native-grid-navigation.test.mjs

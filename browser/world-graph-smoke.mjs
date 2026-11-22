@@ -6,6 +6,7 @@
  * Playwright Chromium and the existing Vite preview in Collection CI.
  */
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {spawn} from 'node:child_process';
 import {chromium} from 'playwright';
 
@@ -17,6 +18,80 @@ const LOOSE='SceneLayouts/OffGridBuildings/Detached.json';
 const GRID=LAYOUT+'#grid=1';
 const UNLINKED=LOOSE+'#grid=0';
 const GRAPH_URL='http://127.0.0.1:4178/Wand/world/preview/';
+
+/** Entirely synthetic original-world ZIP, created in this test only. */
+function syntheticTerrainZip(){
+  const gridPaths=['GridData/Village04/Beach.json',
+    'GridData/OffGridBuildings/Detached.json'];
+  const layouts=[
+    [LAYOUT,1,gridPaths[0]],
+    [LOOSE,0,gridPaths[1]]
+  ];
+  const sources={
+    objects:[{itemId:100,nativeType:'Furniture',
+      nativeName:'SyntheticSourceObject',footprint:null}],
+    scenes:[],worlds:[],areas:[],
+    grids:gridPaths.map(gridId=>({
+      gridId,sizeX:16,sizeY:16,
+      terrainDecoding:{decoded:false,
+        status:'native_packing_not_verified_for_game_version'}
+    })),
+    layouts:layouts.map(([layoutId,gridIdNative,gridDataPath])=>({
+      layoutId,layoutKind:'nativeGridCollection',defaultObjectCount:1,
+      nativeGridEntries:[{gridIdNative,gridDataPath,tessellationFactor:1,
+        defaultObjectCount:1}]
+    })),
+    layoutObjects:layouts.map(([layoutId,gridIdNative],i)=>({
+      layoutObjectId:layoutId+'#grid='+gridIdNative+'#object=1',
+      layoutId,gridIdNative,gridObjectIdNative:1,
+      itemId:100,x:4+i,y:5,
+      orientationCode:0,worldCoordinatesVerified:false,
+      fixedImmovableVerified:false
+    }))
+  };
+  const entries=new Map(Object.entries(sources).map(([key,value])=>
+    [key+'.json',Buffer.from(JSON.stringify(value))]));
+  entries.set('report.json',Buffer.from(
+    '{"status":"native_partial_world_extraction"}'));
+  const hashes=Object.fromEntries([...entries].map(([name,buf])=>[
+    name,createHash('sha256').update(buf).digest('hex')]));
+  entries.set('manifest.json',Buffer.from(JSON.stringify({
+    schema:'wand.db04.world@1',status:'partial_game_native_evidence',
+    platform:'Steam',gameVersion:'1.26.2',
+    sourceScopeVerified:false,outputSha256:hashes
+  })));
+  const locals=[],centrals=[];
+  let current=0;
+  for(const [name,content] of entries){
+    const nameBytes=Buffer.from(name);
+    const head=Buffer.alloc(30);
+    head.writeUInt32LE(0x04034b50,0);
+    head.writeUInt16LE(20,4);
+    head.writeUInt32LE(content.length,18);
+    head.writeUInt32LE(content.length,22);
+    head.writeUInt16LE(nameBytes.length,26);
+    locals.push(head,nameBytes,content);
+    const central=Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50,0);
+    central.writeUInt16LE(20,4);
+    central.writeUInt16LE(20,6);
+    central.writeUInt32LE(content.length,20);
+    central.writeUInt32LE(content.length,24);
+    central.writeUInt16LE(nameBytes.length,28);
+    central.writeUInt32LE(current,42);
+    centrals.push(central,nameBytes);
+    current+=head.length+nameBytes.length+content.length;
+  }
+  const centralSize=centrals.reduce((sum,part)=>sum+part.length,0);
+  const end=Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50,0);
+  end.writeUInt16LE(entries.size,8);
+  end.writeUInt16LE(entries.size,10);
+  end.writeUInt32LE(centralSize,12);
+  end.writeUInt32LE(current,16);
+  return Buffer.concat([...locals,...centrals,end]);
+}
+
 function syntheticSource(version='1.26.2'){
   const makeLayout=(layoutId,nativeDefaultObjectCount,parentWorldId,parentAreaRefId)=>({
     layoutId,layoutKind:parentAreaRefId?'nativeGridCollection':
@@ -208,6 +283,40 @@ try{
   assert.match(await panel.getByText(/完全一致するGridDataPathはありません/).innerText(),
     /セーブファイルが不正という意味ではありません/);
   await gridSearch.fill('GridData/OffGridBuildings/Detached.json');
+
+  // Source GridRef navigation must NOT invent a saved-grid identity.
+  // Without the independently opened original terrain ZIP, show guidance.
+  const openTerrain=panel.getByRole('button',{name:'地形ビューに表示'});
+  await openTerrain.click();
+  assert.match(await page.getByRole('status')
+    .filter({hasText:'先に下の'}).innerText(),/非公開DB-04 ZIP/);
+  await page.locator('.world-toolbar input[type=file]').setInputFiles({
+    name:'synthetic-native-terrain.zip',mimeType:'application/zip',
+    buffer:syntheticTerrainZip()
+  });
+  await page.waitForFunction(()=>{
+    const text=document.querySelector('.world-toolbar')?.parentElement
+      ?.textContent??'';
+    return text.includes('ローカルZIP内のマニフェスト整合性を確認しました')||
+      Boolean(document.querySelector('.world-toolbar ~ [role="alert"]'));
+  },null,{timeout:20000});
+  const localZipPanel=await page.locator('.world-toolbar').locator('..').innerText();
+  if(!localZipPanel.includes('ローカルZIP内のマニフェスト整合性を確認しました'))
+    console.error('DB04_SYNTHETIC_ZIP_LOAD_DIAGNOSTICS '+localZipPanel.slice(0,1200));
+  assert.match(localZipPanel,/ローカルZIP内のマニフェスト整合性を確認しました/);
+  await openTerrain.click();
+  const terrainSelectors=page.locator('.world-panel .selector-row select');
+  await page.waitForFunction(({layout,grid})=>{
+    const selects=[...document.querySelectorAll('.world-panel .selector-row select')];
+    return selects.length===3&&selects[1].selectedOptions[0]?.textContent
+      ?.includes(layout)&&selects[2].value===grid;
+  },{layout:'OffGridBuildings/Detached.json',grid:'0'});
+  assert.equal(await terrainSelectors.nth(2).inputValue(),'0');
+  assert.match(await terrainSelectors.nth(1).locator('option:checked').innerText(),
+    /OffGridBuildings\/Detached.json/);
+  // Exact native layout, native Grid.ID and source GridDataPath are needed.
+  // No Save coordinates are projected onto this terrain display.
+  await page.getByText(/ローカルZIP内のマニフェスト整合性を確認しました/).waitFor();
 
   // The DB-04 UI reuses DB-05's existing Rust/WASM grid-path matcher.
   // Synthetic Save map IDs 19/20/21 are intentionally NOT native Grid.IDs.

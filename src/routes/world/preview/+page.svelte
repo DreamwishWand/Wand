@@ -1,7 +1,10 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy,tick } from 'svelte';
   import {autoAppend} from '$lib/ui/auto-append';
   import NativeGraphExplorer from '$lib/world/NativeGraphExplorer.svelte';
+  import {matchSourceGridToLocalTerrain,
+    type SourceGridNavigationRequest}
+    from '$lib/world/native-grid-navigation.ts';
 
   type GridOption = {
     gridIdNative: number;
@@ -76,6 +79,8 @@
   let viewport: ViewResult | null = null;
   let selectedCell: {x:number;y:number} | null = null;
   let fileInput: HTMLInputElement | null = null;
+  let terrainPanel:HTMLDivElement|null=null;
+  let terrainLinkNotice='';
 
   $: regionKeys = [...new Set(layouts.map(a => a.regionKey))].sort();
   $: filteredLayouts = selectedRegion
@@ -139,6 +144,7 @@
     manifestFilesVerified = 0;
     errorMessage = '';
     infoMessage = 'ブラウザ内のWorldデータを破棄しました。';
+    terrainLinkNotice='';
     if (fileInput) fileInput.value = '';
   }
   onDestroy(stop);
@@ -177,6 +183,36 @@
       rect:{x,y,width,height}, offset,
     });
   }
+  async function navigateToOriginalTerrain(selection:SourceGridNavigationRequest){
+    // These source ZIPs are independently loaded and self-consistent only.
+    // Match the exact original layout + Grid.ID + GridDataPath; no saved
+    // Grid ID, player position or placement legality is inferred.
+    const resolved=matchSourceGridToLocalTerrain(selection,{
+      gameVersion:version||null,platform:platform||null,layouts
+    });
+    if(resolved.status!=='ready'||!resolved.viewKey||
+      resolved.nativeGridId===null){
+      terrainLinkNotice=resolved.status==='zip_not_loaded'
+        ? '先に下の「非公開DB-04 ZIP」を開いてください。'
+        : resolved.status==='source_version_mismatch'
+        ? '原本参照グラフと地形ZIPのバージョンが一致しません。'
+        : resolved.status==='ambiguous_terrain_view'
+        ? '一致する原本地形ビューが複数あるため、自動選択できません。'
+        : 'この部分的な地形ZIPには該当するGridが収録されていません。';
+      return;
+    }
+    terrainLinkNotice='';
+    const view=layouts.find(row=>row.viewKey===resolved.viewKey);
+    if(!view)return;
+    selectedRegion=view.regionKey;
+    selectedViewKey=view.viewKey;
+    selectedGridId=String(resolved.nativeGridId);
+    x=0;y=0;width=16;height=16;
+    viewport=null;
+    requestWindow();
+    await tick();
+    terrainPanel?.scrollIntoView({behavior:'smooth',block:'start'});
+  }
   function changeRegion() {
     const first = layouts.find(a => !selectedRegion || a.regionKey === selectedRegion);
     selectedViewKey = first?.viewKey ?? '';
@@ -212,6 +248,7 @@
     version = '';
     errorMessage = '';
     infoMessage = '';
+    terrainLinkNotice='';
     if (!file) return;
     if (!file.name.toLowerCase().endsWith('.zip') ||
         file.size < 22 || file.size > 96 * 1024 * 1024) {
@@ -294,7 +331,10 @@
     <p>元のゲームの初期配置レコードを、グリッド内のX/Y座標として確認する読み取り専用ページです。ワールド全体の配置座標、占有セル、移動可否は判定しません。</p>
   </header>
 
-  <NativeGraphExplorer />
+  <NativeGraphExplorer onOpenSourceGrid={navigateToOriginalTerrain} />
+  {#if terrainLinkNotice}
+    <p class="note" role="status">{terrainLinkNotice}</p>
+  {/if}
 
   <div class="world-panel">
     <div class="world-toolbar">
@@ -321,7 +361,7 @@
     {#if integrity !== 'manifest_sha256_self_consistent_not_original_source_authenticated'}
       <p class="error">未対応の検証状態です。</p>
     {/if}
-    <div class="world-panel">
+    <div class="world-panel" bind:this={terrainPanel}>
       <div class="selector-row">
         <label>原本地域
           <select bind:value={selectedRegion} on:change={changeRegion}>
