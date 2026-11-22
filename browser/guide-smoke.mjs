@@ -42,7 +42,8 @@ try {
   assert.match(await page.locator('.numbers').textContent(), /733[\s\S]*7,878[\s\S]*11,782/);
   assert.equal(await page.locator('.hero .eyebrow').count(),0);
   assert.match(await page.locator('.hero h1').innerText(),/^クエスト$/);
-  assert.equal(await page.locator('input[type=file]').count(), 0);
+  assert.equal(await page.locator('main.site-main input[type=file]').count(), 0,
+    'Guide itself has no file picker; the shared shell owns global Save selection');
   assert.equal(downloaded.filter(value => value.endsWith('/quest-index.json')).length, 1);
   assert.equal(downloaded.filter(value => value.includes('quest-details-')).length, 0, 'lazy details must not prefetch');
   assert.equal(await page.locator('header.site-header .site-nav').count(),0);
