@@ -1,11 +1,4 @@
-/**
- * Read-only, browser-Worker-owned encrypted P1G inspection.
- * The caller receives bounded ID/reference counts and a whitelisted
- * native CollectionSet discovery, ListInventory positive-stock and read-only
- * world-grid furniture-reference projections, never decoded JSON,
- * arbitrary save values, personal fields, amounts, or source ciphertext.
- * Discovery is NOT item ownership, entitlement, shop stock or codec roundtrip.
- */
+/** Worker-local, ID-only read projection; never returns save plaintext. */
 import { decodeP1gPackagedProfile } from './private-p1g-codec.js';
 import { inspectDecodedWorldStores } from '../acquisition/world-store-save.mjs';
 import { createSavedStorePreview } from './saved-store-preview.mjs';
