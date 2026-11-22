@@ -104,7 +104,7 @@ export function contextualTour(route:string,copy:ShellCopy,locale:WandLanguage):
     title:navigation.starpath.title,
     steps:[
       entry(navigation.starpath.steps[0],'.starpath .seasons','.starpath .historic-starpaths'),
-      entry(navigation.starpath.steps[1],'.starpath .tabs','.starpath .search')
+      entry(navigation.starpath.steps[1],'.starpath .search','.starpath .reward-search','.starpath .tabs')
     ]
   };
   if(path.startsWith('/guide/characters'))return{
