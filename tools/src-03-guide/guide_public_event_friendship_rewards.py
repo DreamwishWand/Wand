@@ -152,6 +152,8 @@ def make(links, mini, festivals, friendship, composite):
             {(x[1], x[2]) for x in rows} == {(level, stage) for level in range(1, 5)
                                                 for stage in range(4)},
             'FRIENDSHIP_CENSUS')
+    for event in events.values():
+        event['rewards'].sort(key=lambda r: r[1])
     clean = [{k: v for k, v in row.items() if k not in ('slots', 'nativeSha')}
              for row in events.values()]
     clean.sort(key=lambda x: (x['kind'], x['id']))
