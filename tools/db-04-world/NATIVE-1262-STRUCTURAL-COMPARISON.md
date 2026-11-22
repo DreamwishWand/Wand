@@ -1,8 +1,8 @@
 # DB-04 — Steam 1.26.2 original GridData native-code comparison (2026-11-22)
 
-**Status: partial, source-identified native instruction parity; terrain decoding remains disabled for 1.26.2.**
+**Status: source-corroborated read-only GridData terrain preview enabled for original Steam 1.26.2; placement/edit semantics remain unverified.**
 
-This is an evidence-only report, **not a decoder compatibility authorization**.
+This is a narrowly scoped **read-only GridData decoder** evidence report, not authorization for placement, save writes, grid-object transforms, or general native-code compatibility.
 No original binaries, disassembled game-code bytes, source-world payloads,
 player saves, or private ZIP snapshots are committed.
 
@@ -168,8 +168,11 @@ All 75 observed references target **writable virtual `.data`**, either
 by address or by memory access. Equality of initial file bytes or
 zero-filled allocation does **not** prove equality of dynamically
 initialized runtime values, scene-specific state, or subsequent writes.
-This is the remaining principal blocker to a source-certified v1.26.2
-terrain decoder; the decoder **remains disabled**.
+These mutable references remain a blocker to *general* native-state compatibility,
+but the two **read-only GridData getter/bit-width success paths** were
+independently inspected for their dependence on those globals.
+The bounded source-local terrain decoder may therefore use those two getter
+semantics only, without promoting complete native execution/placement proof.
 
 The audit command above now emits thunk classification and
 `ripReferenceSourceClasses` as aggregate JSON categories. CI uses only
@@ -177,19 +180,68 @@ synthetic tests for thunk safety, PE virtual backing, source-width
 provenance and mutation invariants; original proprietary binaries stay
 private.
 
-## Capability boundary — unchanged
+## Limited Steam 1.26.2 read-only GridData compatibility proof
 
-- `terrain_codec.py` and browser `getNativeTerrainWindow` **must** continue
-  returning 1.26.2 unsupported/unverified status. Do not promote the
-  `1.26.1` decoder merely from same-length instructions or unchanged data.
-- Next native verification: correlate changed external call destinations
-  and referenced data, determine whether relevant downstream implementations
-  and observed 1/2/4-bit decoding semantics are equivalent. Only then
-  introduce a pinned Steam 1.26.2 decoder proof and targeted regression.
-- Until then, original GridCollection and Village-area **raw anchor record**
-  previews (PR #177) are valid under their existing source-local-only,
-  read-only contract. No global coordinates, occupancy, collisions or
-  edit permissions are inferred.
+The original 1.26.2 and 1.26.1 disassemblies were checked specifically for
+the **successful (non-exception) read path**. This is narrower than treating
+all 75 writable RIP references or the whole transitive call graph as equal:
+
+- `GridData.get_Item(int x,int y)` bounds-checks X and Y, obtains the native
+  palette, computes `x * SizeY + y`, calls
+  `GetNumberOfBitsPerPosition`, shifts the packed byte in MSB-first order,
+  masks the code and performs indexed palette access. The corresponding
+  1.26.1/1.26.2 instructions and immediate constants agree after
+  relocation normalization.
+- `GetNumberOfBitsPerPosition` reads the palette count and returns 1 for
+  sizes 1–2, 2 for 3–4 and 4 for greater sizes. The DB-04 decoder restricts
+  that last branch to 5–16 entries, so its 4-bit result can represent every
+  returned palette index.
+- The native `get_Item` helper used to return the indexed array value has
+  the same normal-return instruction shape in both builds; its observed
+  relocation difference lies in an exception call. The extractor rejects
+  invalid native palette indices, sizes and unused padding bits before
+  presenting the grid-local view.
+- In these two getter methods, RIP-relative writable-data reads/writes are
+  the one-time IL2CPP metadata initialization guard. Other RIP-relative
+  references are `LEA` metadata/exception addresses. Normal grid-cell
+  arithmetic uses object-local sizes, palette and packed-byte array
+  contents, not unproven global gameplay state.
+- The original Steam 1.26.2 Meadow GridData protobuf source SHA-256
+  `bfd75928343dacc6f2768f80585a0c2b1d5afe1c12ee2f97777bc94c20a96424`
+  matches the pinned 1.26.1 source bytes. The original Meadow native
+  GridCollection source likewise matches
+  `5c6cd62b2ffbeff4b19f1864d1a0a2a4db4528e1685ff79f77cf5a58334f4113`.
+  This corroborates actual *2-bit* terrain input compatibility; 1-bit and
+  4-bit decoding is grounded by the same getter and bit-width native
+  instruction paths, with synthetic bounded regression cases.
+
+This supports **source-local, read-only** 1/2/4-bit terrain tile/window and
+palette-count presentation for source-verified **Steam 1.26.2** archives.
+The native record's platform must be Steam. Previous extracted snapshots
+marked `native_packing_not_verified_for_game_version` remain un-decoded
+until re-extracted/reverified against their original bytes. Versions after
+1.26.2 and other platforms are not promoted.
+
+The proof does **not** assert all initialization routines or other
+transitive callees are equivalent. It does not establish global world
+coordinates, position transforms, terrain transitions, object occupancy,
+collision, placement permission, runtime mutable state, or Save Editor
+write safety. Accordingly `nativeCodeBodyVerified`,
+`placementLegalityVerified` and `worldCoordinatesVerified` remain
+`false` in the read-only adapter.
+
+## Capability boundary — read-only terrain only
+
+- `terrain_codec.py` and browser `getNativeTerrainWindow` now accept
+  the narrow Steam 1.26.2 **read-only** packed-floor indexing path, not
+  placement or edit legality. A structurally changed later game version
+  remains unverified and its raw bytes are retained.
+- Source-local grid-index/window and native default-layout anchor previews
+  remain separate from global coordinates, collision/occupancy, navigation,
+  rotations, object placement and save writes; those capabilities are
+  **not** unlocked for 1.26.2.
+- Continue separate native runtime initialization and placement-method
+  verification before exposing any world-editing operation.
 
 ## Reproduction outline
 
