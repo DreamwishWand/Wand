@@ -306,6 +306,49 @@
     cancel();result=null;
     coordinateQueue=coordinateQueue.filter(p=>p.localOrdinal!==ordinal);
   }
+  function queueGroupTranslation(
+    ordinals:readonly number[],dx:number,dy:number
+  ):boolean{
+    // UI staging only. The immutable original profile is re-resolved and
+    // every target optimistic-checked atomically by existing Rust/WASM.
+    if(processing||ordinals.length<2||ordinals.length>16||
+       coordinateQueue.length+ordinals.length>16||
+       !Number.isInteger(dx)||!Number.isInteger(dy)||
+       dx < -2147483648||dx > 2147483647||
+       dy < -2147483648||dy > 2147483647||
+       (dx===0&&dy===0))return false;
+    const unique=new Set(ordinals);
+    if(unique.size!==ordinals.length||
+       ordinals.some(ordinal=>coordinateQueue.some(
+         edit=>edit.localOrdinal===ordinal)))return false;
+    const rows=ordinals.map(ordinal=>gridInstances[ordinal-1]);
+    if(rows.some((row,i)=>!row||row.localOrdinal!==ordinals[i]||
+         !row.coordinatesObserved||row.x===null||row.y===null))return false;
+    const first=rows[0];
+    if(rows.some(row=>row.localGridOrdinal!==first.localGridOrdinal))
+      return false;
+    const staged:GridCoordinatePlan[]=[];
+    for(const row of rows){
+      if(row.x===null||row.y===null)return false;
+      const x=row.x+dx,y=row.y+dy;
+      if(!Number.isInteger(x)||!Number.isInteger(y)||
+         x < -2147483648||x > 2147483647||
+         y < -2147483648||y > 2147483647)return false;
+      staged.push({
+        localOrdinal:row.localOrdinal,itemId:row.itemId,
+        recordKind:row.recordKind,expectedX:row.x,expectedY:row.y,
+        replacementX:x,replacementY:y
+      });
+    }
+    cancel();result=null;
+    coordinateSelection={...first};
+    coordinateX=String(staged[0].replacementX);
+    coordinateY=String(staged[0].replacementY);
+    coordinateOrientationValue=isCardinal(first.orientation)
+      ?first.orientation:'';
+    coordinateQueue=[...coordinateQueue,...staged];
+    return true;
+  }
   function enqueueMixedEdit(edit:GridMixedPlan|null){
     if(!edit||mixedQueue.length>=16||
        mixedQueue.some(p=>p.localOrdinal===edit.localOrdinal)){
@@ -1523,6 +1566,8 @@
               draftX={coordinateSelection?coordinateNumber(coordinateX):null}
               draftY={coordinateSelection?coordinateNumber(coordinateY):null}
               disabled={processing}
+              queuedOrdinals={coordinateQueue.map(edit=>edit.localOrdinal)}
+              onStageGroupMove={queueGroupTranslation}
               onPick={(ordinal:number)=>{
                 const row=gridInstances[ordinal-1];
                 if(row?.localOrdinal===ordinal)selectGridInstance(row);
