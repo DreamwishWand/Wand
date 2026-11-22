@@ -23,7 +23,7 @@ on:
       - 'tests/save-clean-baseline.test.mjs'
       - 'tests/save-clean-regression.test.mjs'
       - 'tests/save-clean-regression-cli.test.mjs'
-      - 'tests/save-editor-readset.test.mjs tests/save-editor-handoff.test.mjs'
+      - 'tests/save-editor-readset.test.mjs'
       - 'tests/save-editor-handoff.test.mjs'
       - 'tests/save-duty-reward-db01.test.mjs'
       - 'src/lib/save/duty-rewards.ts'
