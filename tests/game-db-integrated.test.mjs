@@ -24,6 +24,10 @@ const old=()=>({index:{t:{platform:'Nintendo Switch',gameVersion:'1.25.0',
 const pack=(id,stream,rows)=>({schema:FACT_OVERLAY_SCHEMA,id,stream,target,
   sourceId:'source-'+stream,sourceSha256:'b'.repeat(64),
   scope:'source field checked for exact Item ID',rows});
+const originalShaPins={
+  'DB-01':['b'.repeat(64)],'DB-02':['b'.repeat(64)],
+  'DB-03':['b'.repeat(64)],'DB-04':['b'.repeat(64)]
+};
 const encode=x=>new TextEncoder().encode(JSON.stringify(x));
 async function attach(db,overlay) {
   const bytes=encode(overlay);
@@ -31,7 +35,7 @@ async function attach(db,overlay) {
   await db.attachVerifiedOverlay(bytes,pin);
 }
 test('source-empty is unknown, historical worlds/universes/DLC never current verified',()=>{
-  const db=new SharedGameDatabase(current(),old());
+  const db=new SharedGameDatabase(current(),old(),originalShaPins);
   const x=db.getItem(40005160);
   assert.equal(x.currentCategoryLabel,'Source Activity Items');
   assert.equal(x.facts.category.state,'unverified');
@@ -47,7 +51,7 @@ test('source-empty is unknown, historical worlds/universes/DLC never current ver
   assert.equal(db.coverage().fields.worlds.historicalCandidates,1);
 });
 test('exact current independent overlay proves multiple values, not ownership',async()=>{
-  const db=new SharedGameDatabase(current(),old());
+  const db=new SharedGameDatabase(current(),old(),originalShaPins);
   const o=pack('db01','DB-01',[{itemId:'40005160',facts:[
     {field:'category',state:'verified',value:'Furniture'},
     {field:'worlds',state:'verified',value:['Valley','Eternity']},
@@ -69,6 +73,9 @@ test('exact current independent overlay proves multiple values, not ownership',a
   assert.equal(db.getItem(40005160).historical.worlds.currentVersionVerified,false);
   assert.throws(()=>db.attachOverlay(verified),/INVALID_OR_REUSED_OVERLAY/);
   assert.throws(()=>db.attachOverlay(o),/UNVERIFIED_OVERLAY_BYTES/);
+  const unpinned=new SharedGameDatabase(current());
+  assert.throws(()=>unpinned.attachOverlay(verified),
+    /INDEPENDENT_ORIGINAL_SOURCE_SHA_PIN_REQUIRED/);
   await assert.rejects(attach(db,{...pack('stale','DB-01',[]),
     target:{...target,sourceSha256:'f'.repeat(64)}}),/CURRENT_SOURCE_TARGET_MISMATCH/);
   await assert.rejects(attach(db,pack('wrong-owner','DB-02',[
@@ -76,7 +83,7 @@ test('exact current independent overlay proves multiple values, not ownership',a
   ])),/FIELD_OWNER_OR_DUPLICATE/);
 });
 test('explicit no-results is different from not-applicable and not-covered',async()=>{
-  const db=new SharedGameDatabase(current());
+  const db=new SharedGameDatabase(current(),undefined,originalShaPins);
   await assert.rejects(attach(db,pack('no-proof','DB-03',[
     {itemId:'40005160',facts:[{field:'starpaths',state:'verified',value:[]}]}
   ])),/VERIFIED_ARRAY_REQUIRES_SOURCE_EVIDENCE/);
@@ -99,7 +106,7 @@ test('explicit no-results is different from not-applicable and not-covered',asyn
     {verified:1,notApplicable:1,unverified:0,notCovered:0,historicalCandidates:0,total:2});
 });
 test('conflicts and unrecognized item keys fail atomically',async()=>{
-  const db=new SharedGameDatabase(current());
+  const db=new SharedGameDatabase(current(),undefined,originalShaPins);
   await attach(db,pack('first','DB-01',[{itemId:'40005160',facts:[
     {field:'worlds',state:'verified',value:['Valley']}
   ]}]));

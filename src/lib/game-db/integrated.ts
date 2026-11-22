@@ -270,8 +270,12 @@ export class SharedGameDatabase {
   private readonly source:FactProvenance;
   private readonly semanticCategoryVerified:boolean;
   private readonly usedOverlays:Set<string>;
+  private readonly trustedSources:Map<DbStream,ReadonlySet<string>>;
 
-  constructor(snapshot:PublicSnapshot,historical?:HistoricalSource) {
+  constructor(snapshot:PublicSnapshot,historical?:HistoricalSource,
+    /** Independently verified ORIGINAL game-source digests, not copied from overlay. */
+    sourcePins:Readonly<Partial<Record<DbStream,readonly string[]>>>={}
+  ) {
     // Existing DB-00 validator is authoritative for the full release graph.
     validateSnapshot(snapshot);
     check(snapshot.schema===SNAPSHOT_SCHEMA && snapshot.publishable===true,
@@ -288,6 +292,14 @@ export class SharedGameDatabase {
     this.historical=new Map();
     this.current=new Map();
     this.usedOverlays=new Set();
+    this.trustedSources=new Map();
+    for(const [stream,hashes] of Object.entries(sourcePins)) {
+      check(Object.values(OWNER).includes(stream as DbStream) &&
+        Array.isArray(hashes) && hashes.length>0 &&
+        hashes.every(hash=>typeof hash==='string' && SHA.test(hash)),
+        'INDEPENDENT_ORIGINAL_SOURCE_PIN_INVALID');
+      this.trustedSources.set(stream as DbStream,new Set(hashes));
+    }
     if(historical)this.attachHistorical(historical);
   }
 
@@ -326,6 +338,8 @@ export class SharedGameDatabase {
       !this.usedOverlays.has(overlay.id),'INVALID_OR_REUSED_OVERLAY');
     checkTarget(overlay.target);
     check(sameTarget(overlay.target,this.target),'CURRENT_SOURCE_TARGET_MISMATCH');
+    check(this.trustedSources.get(overlay.stream)?.has(overlay.sourceSha256),
+      'INDEPENDENT_ORIGINAL_SOURCE_SHA_PIN_REQUIRED');
     check(Object.values(OWNER).includes(overlay.stream) &&
       stringToken(overlay.sourceId) && SHA.test(overlay.sourceSha256) &&
       typeof overlay.scope==='string' && overlay.scope.trim().length>0 &&
@@ -486,11 +500,13 @@ export async function verifyFactOverlay(
  */
 export async function openSharedGameDatabase(
   base='',fetchImpl:typeof globalThis.fetch=globalThis.fetch,
-  options:Readonly<{includeHistoricalCandidates?:boolean}>={}
+  options:Readonly<{includeHistoricalCandidates?:boolean;
+    verifiedOriginalSourcePins?:Readonly<Partial<Record<DbStream,readonly string[]>>>}>={}
 ):Promise<SharedGameDatabase> {
   const active=await loadCurrentGameDatabase(base,fetchImpl);
   check(active?.kind==='db_snapshot','CURRENT_PUBLISHED_SNAPSHOT_REQUIRED');
   const historical=options.includeHistoricalCandidates
     ? await loadCollectionRuntime(base,fetchImpl) : undefined;
-  return new SharedGameDatabase(active as PublicSnapshot,historical as HistoricalSource|undefined);
+  return new SharedGameDatabase(active as PublicSnapshot,historical as HistoricalSource|undefined,
+    options.verifiedOriginalSourcePins);
 }
