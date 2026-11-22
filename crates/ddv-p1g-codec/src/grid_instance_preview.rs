@@ -406,7 +406,7 @@ pub(super) fn saved_db04_object_source_context_json(
             Some(Value::Null)=>None,
             Some(v)=>Some(v.as_u64()
                 .and_then(|n|u32::try_from(n).ok())
-                .filter(|n|*n>=1&&*n<=256).ok_or(CodecError::Json)?),
+                .filter(|n|*n<=256).ok_or(CodecError::Json)?),
             None=>return Err(CodecError::Json)
         };
         sources.push(SourceRef{
