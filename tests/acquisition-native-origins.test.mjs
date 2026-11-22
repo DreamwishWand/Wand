@@ -9,10 +9,15 @@ function nativeBundle() {
     madeBy:id===31700009?[{recipeId:2050300004,resultItemId:id,type:'crafting',
       resultQuantity:2,nameKey:'CraftTest',conditionDigest:'a'.repeat(64)}]:[],
     acquisitionPaths:id===31700017?[
-      {pathId:'mining:2050200001',itemId:id,type:'mining',nameKey:'MiningTest'}
+      {pathId:'mining:2050200001',itemId:id,type:'mining',nameKey:'MiningTest',
+        definitionId:2050200001,areaId:2,sceneId:null,rarity:3,
+        source:{kind:'game_native',file:'itemlist/ActivityData.json',
+          definitionId:2050200001}}
     ]:[],
     shopOffers:[],
-    possibleStalls:id===31700017?[{stallId:20100000,nameKey:'Gardening_Stall2_Meadow'}]:[]
+    possibleStalls:id===31700017?[{stallId:20100000,nameKey:'Gardening_Stall2_Meadow',
+      status:'static_candidate_not_verified_for_sale',hasConditionalFilter:false,
+      slots:[{slotIndex:0,lootTableId:2090000003,candidateGroupIndexes:[1,2]}]}]:[]
   });
   return {
     contract:'wand.src02.private-browser-bundle@1',
@@ -30,6 +35,10 @@ test('Verified native recipes, gathering paths and static stall candidates coexi
   assert.equal(routes.find(r=>r.kind==='crafting')?.quantity,2);
   assert.equal(routes.find(r=>r.kind==='crafting')?.conditions.length,1);
   assert.equal(routes.find(r=>r.kind==='mining')?.routeStatus,'confirmed_source_link');
+  assert.deepEqual(routes.find(r=>r.kind==='mining')?.nativeDetails?.areaIds,[2]);
+  assert.equal(routes.find(r=>r.kind==='mining')?.nativeDetails?.rarity,3);
+  assert.equal(routes.find(r=>r.kind==='game_shop')?.nativeDetails?.lootTableId,'2090000003');
+  assert.deepEqual(routes.find(r=>r.kind==='game_shop')?.nativeDetails?.candidateGroupIndexes,[1,2]);
   assert.equal(routes.find(r=>r.kind==='game_shop')?.routeStatus,'static_candidate_only');
   assert(routes.every(r=>r.availability==='not_live_verified'));
   assert(routes.every(r=>r.source.sha256==='ec1efd589dd5390f11f5a99411bcf3f1c6bc34309ddfa68e51589c078601f31c'));
