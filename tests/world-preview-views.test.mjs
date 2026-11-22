@@ -240,3 +240,68 @@ test('separate layout reference counts deduplicate exact original paths', () => 
   assert.equal(group.resolvedSeparateAreaReferenceCount,1);
   assert.equal(group.missingSeparateAreaReferenceCount,1);
 });
+
+test('embedded native Realm GridCollections are region-scoped and never AreaTypes', () => {
+  const layouts=[
+    {layoutId:'SceneLayouts/Realms/InsideOut/InsideOut/InsideOut-DefaultLayout.json',
+     layoutKind:'nativeGridCollection',defaultObjectCount:1,
+     embeddedGridCollectionWireField:2,
+     nativeGridEntries:[
+       {gridIdNative:0,gridDataPath:'GridData/Worlds/InsideOut-A.json',
+        defaultObjectCount:1},
+       {gridIdNative:1,gridDataPath:'GridData/Rooms/Wall20x9-GridData.json',
+        defaultObjectCount:0}]},
+    {layoutId:'SceneLayouts/Realms/InsideOut/LongTermMemory/InsideOut_LongTermMemory-DefaultLayout.json',
+     layoutKind:'nativeGridCollection',defaultObjectCount:1,
+     embeddedGridCollectionWireField:2,
+     nativeGridEntries:[
+       {gridIdNative:2,gridDataPath:'GridData/Rooms/Wall20x9-GridData.json',
+        defaultObjectCount:1}]},
+    {layoutId:'SceneLayouts/Realms/WallE/WallERealm.json',
+     layoutKind:'nativeGridCollection',defaultObjectCount:0,
+     embeddedGridCollectionWireField:2,
+     nativeGridEntries:[
+       {gridIdNative:0,gridDataPath:'GridData/Worlds/WallE.json',
+        defaultObjectCount:0}]},
+  ];
+  const anchors=[
+    {layoutObjectId:layouts[0].layoutId+'#grid=0#object=1',
+     layoutId:layouts[0].layoutId,gridIdNative:0,gridObjectIdNative:1,
+     itemId:40000001,x:1,y:0,orientationCode:0,
+     worldCoordinatesVerified:false,fixedImmovableVerified:false},
+    {layoutObjectId:layouts[1].layoutId+'#grid=2#object=0',
+     layoutId:layouts[1].layoutId,gridIdNative:2,gridObjectIdNative:0,
+     itemId:40000001,x:0,y:1,orientationCode:0,
+     worldCoordinatesVerified:false,fixedImmovableVerified:false},
+  ];
+  const catalog=createWorldCatalog({
+    manifest:{schema:WORLD_SCHEMA,status:'partial_game_native_evidence',
+      platform:'Steam',gameVersion:'1.26.2',sourceScopeVerified:false},
+    objects:[],scenes:[],areas:[],worlds:[],layouts,layoutObjects:anchors,
+    grids:[
+      {gridId:'GridData/Worlds/InsideOut-A.json',sizeX:3,sizeY:3,
+       terrainDecoding:{decoded:false,status:'not_compacted'}},
+      {gridId:'GridData/Rooms/Wall20x9-GridData.json',sizeX:3,sizeY:3,
+       terrainDecoding:{decoded:false,status:'not_compacted'}},
+    ],
+  });
+  const coverage=summarizeWorldPreviewSourceCoverage(catalog);
+  assert.deepEqual(coverage.map(r=>r.regionKey),['Realms/InsideOut','Realms/WallE']);
+  const inside=coverage.find(r=>r.regionKey==='Realms/InsideOut');
+  assert.equal(inside?.realmLayoutCount,2);
+  assert.equal(inside?.villageLayoutCount,0);
+  assert.equal(inside?.areaReferenceCount,0);
+  assert.equal(inside?.nativeGridReferenceCount,2);
+  assert.equal(inside?.presentNativeGridReferenceCount,2);
+  assert.equal(inside?.sourceDefaultAnchorCount,2);
+  const wall=coverage.find(r=>r.regionKey==='Realms/WallE');
+  assert.equal(wall?.realmLayoutCount,1);
+  assert.equal(wall?.missingNativeGridReferenceCount,1);
+  assert.equal(wall?.worldCoordinatesVerified,false);
+  assert.equal(wall?.placementLegalityVerified,false);
+  const views=listWorldPreviewViews(catalog);
+  assert.equal(views.length,3);
+  assert.equal(views.filter(v=>v.regionKey==='Realms/InsideOut').length,2);
+  assert.equal(views.filter(v=>v.regionKey==='Realms/WallE').length,1);
+  assert.equal(catalog.areas.size,0);
+});
