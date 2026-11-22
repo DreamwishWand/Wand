@@ -65,7 +65,8 @@ export function createDb01LocalizedSourceScopeClient(
   taxonomy:Db04NativeTagTaxonomyClient,
 ):Db01LocalizedSourceScopeClient{
   const ns=native?.source,ts=taxonomy?.source;
-  check(native?.contract===DB01_NATIVE_FILTER_CONTRACT&&
+  check(ns!==undefined&&ts!==undefined&&
+    native?.contract===DB01_NATIVE_FILTER_CONTRACT&&
     taxonomy?.contract===DB04_NATIVE_TAG_TAXONOMY&&
     typeof native.getCoverage==='function'&&
     typeof native.getFacetOptions==='function'&&
