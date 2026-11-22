@@ -115,8 +115,18 @@ try {
   assert.match(await star.locator('.summary').innerText(),/25 \/ 18/);
   await star.getByRole('button',{name:'週間タスク'}).click();
   assert.equal(await star.locator('.week').count(),6);
+  assert.match(await star.locator('.week').first().innerText(),/魚を20匹釣る/);
+  await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('en');
+  assert.match(await star.locator('.week').first().innerText(),/Catch 20 fish/);
+  await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('de');
+  assert.match(await star.locator('.week').nth(2).innerText(),/Fange 20 Fische am schillernden Strand/);
+  await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('ja');
+  assert.match(await star.locator('.week').nth(2).innerText(),/輝きの浜辺で魚を25匹釣る/);
   await star.getByRole('button',{name:'報酬'}).click();
   assert.equal(await star.locator('.week').count(),4);
+  assert.match(await star.locator('.week').first().innerText(),/アクアマーメイドバックパック/);
+  await star.getByRole('combobox',{name:'スターパスの表示言語'}).selectOption('en');
+  assert.match(await star.locator('.week').first().innerText(),/Aqua Mermaid Backpack/);
   assert.equal(await star.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+2),true,'Star Path mobile overflow');
   assert.deepEqual(starErrors,[],starErrors.join('\n'));
   await star.close();
@@ -130,6 +140,15 @@ try {
   await tampered.getByRole('alert').waitFor({timeout:20000});
   assert.match(await tampered.getByRole('alert').innerText(),/fingerprint/);
   await tampered.close();
+  const tamperedLocales=await browser.newPage();
+  await tamperedLocales.route('**/guide/public/starpath-weekly-locales-2026-11-22.json',async route=>{
+    const original=await route.fetch(),bytes=Buffer.from(await original.body());bytes[100]^=1;
+    await route.fulfill({response:original,body:bytes});
+  });
+  await tamperedLocales.goto('http://127.0.0.1:4177/Wand/guide/star-path/',{waitUntil:'domcontentloaded'});
+  await tamperedLocales.getByRole('alert').waitFor({timeout:20000});
+  assert.match(await tamperedLocales.getByRole('alert').innerText(),/fingerprint/);
+  await tamperedLocales.close();
   console.log('Public Star Path: 2 source-pinned seasons, 185 tasks, reward pages, mobile and SHA tamper rejection passed');
   console.log('Public Guide browser: verified static index, lazy details, multi-language labels, target IDs, mobile layout, tamper rejection, quest deep links and history passed');
 } finally {
