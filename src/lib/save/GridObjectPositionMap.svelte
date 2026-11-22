@@ -13,6 +13,11 @@
   export let onDraftMove:(x:number,y:number)=>void=()=>{};
   /** Stage 2–16 existing objects through the parent's Rust/WASM batch path. */
   export let queuedOrdinals:readonly number[]=[];
+  /** Existing UI-only staging receipts, not Rust-validated placement. */
+  export let stagedMoves:readonly {
+    localOrdinal:number;expectedX:number;expectedY:number;
+    replacementX:number;replacementY:number;
+  }[]=[];
   export let onStageGroupMove:
     (ordinals:readonly number[],dx:number,dy:number)=>boolean=()=>false;
   let placing=false;
@@ -125,7 +130,7 @@
       groupIssue='選択済みの編集と重複している可能性があります。';
     }
   }
-  function paddedBounds(input:readonly Point[],field:'x'|'y'):{
+  function paddedBounds(input:readonly {x:number;y:number}[],field:'x'|'y'):{
     min:number;max:number
   }{
     if(!input.length)return {min:-8,max:8};
@@ -180,8 +185,24 @@
     selectedGrid=grids[0]?.id??0;
   $: currentRows=rows.filter(row=>row.localGridOrdinal===selectedGrid);
   $: points=currentRows.filter(hasCoordinates);
-  $: xBounds=paddedBounds(points,'x');
-  $: yBounds=paddedBounds(points,'y');
+  // Discard stale ordinals, changed source coordinates and invalid staged
+  // numbers. Staged positions are visual hints, never export authorization.
+  $: stagedTargets=stagedMoves.filter(move=>{
+    const original=points.find(row=>row.localOrdinal===move.localOrdinal);
+    return original!==undefined&&original.x===move.expectedX&&
+      original.y===move.expectedY&&
+      Number.isSafeInteger(move.replacementX)&&
+      Number.isSafeInteger(move.replacementY)&&
+      move.replacementX>=I32_MIN&&move.replacementX<=I32_MAX&&
+      move.replacementY>=I32_MIN&&move.replacementY<=I32_MAX&&
+      (move.replacementX!==original.x||move.replacementY!==original.y);
+  });
+  $: mapBoundsPoints=[
+    ...points.map(row=>({x:row.x,y:row.y})),
+    ...stagedTargets.map(move=>({x:move.replacementX,y:move.replacementY}))
+  ];
+  $: xBounds=paddedBounds(mapBoundsPoints,'x');
+  $: yBounds=paddedBounds(mapBoundsPoints,'y');
   $: allMarkers=aggregate(points);
   $: markers=allMarkers.slice(0,256);
   $: selectedInGrid=currentRows.some(row=>
@@ -228,7 +249,10 @@
         </option>
       {/each}
     </select>
-    <span class="count" role="status">{points.length}件の座標を表示</span>
+    <span class="count" role="status">
+      {points.length}件の座標を表示
+      {#if stagedTargets.length>0} · 編集候補 {stagedTargets.length}件{/if}
+    </span>
     <button type="button" class="placement-mode"
       aria-pressed={placing}
       disabled={disabled||!selectedInGrid}
@@ -261,6 +285,13 @@
         <div class="draft-marker group-ghost"
           aria-hidden="true"
           style={`left:${percentage(target.x,xBounds.min,xBounds.max)}%;top:${percentage(target.y,yBounds.min,yBounds.max)}%`}>
+          <span>+</span>
+        </div>
+      {/each}
+      {#each stagedTargets as staged}
+        <div class="draft-marker queued-ghost" aria-hidden="true"
+          title={`編集候補 #${staged.localOrdinal} X ${staged.replacementX} Y ${staged.replacementY}`}
+          style={`left:${percentage(staged.replacementX,xBounds.min,xBounds.max)}%;top:${percentage(staged.replacementY,yBounds.min,yBounds.max)}%`}>
           <span>+</span>
         </div>
       {/each}
@@ -340,6 +371,9 @@
         {#if !draftVisible}表示範囲外です。{/if}
       </small>
     {/if}
+    {#if stagedTargets.length>0}
+      <small class="map-hint">緑色の＋は編集キュー内の移動先候補です。保存・ゲーム内反映はまだ行われていません。</small>
+    {/if}
     {#if allMarkers.length>256}
       <small class="map-hint">表示点は先頭256座標です。下の一覧では全件を検索できます。</small>
     {/if}
@@ -383,6 +417,7 @@
     pointer-events:none;}
   .draft-marker span{font-weight:800;font-size:18px;line-height:1;}
   .group-ghost{background:#89b7f633;border-color:#99c6fe;color:#c6e4ff;}
+  .queued-ghost{background:#1b9e5d44;border-color:#9bffc5;color:#dbffea;}
   .x-axis,.y-axis{position:absolute;z-index:1;font-size:11px;
     background:#201728dd;color:#d4c2df;padding:4px 6px;
     pointer-events:none;}
