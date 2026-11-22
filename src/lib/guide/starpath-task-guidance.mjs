@@ -116,27 +116,35 @@ const docs={
 };
 const weekly={
   'HauntingElegance2026/Week01Task03':{
+    kind:'HangoutWithCharacter',
     ja:'ジャック・スケリントンとハングアウトする。',
     en:'Hang out with Jack Skellington.'},
   'HauntingElegance2026/Week02Task03':{
+    kind:'TakePicture',
     ja:'ジャック・スケリントンの家のドアを写真に撮る。',
     en:"Photograph the door of Jack Skellington's house."},
   'HauntingElegance2026/Week07Task01':{
+    kind:'GiftToCharacter',
     ja:'ジャック・スケリントンに、その日の好物のギフトを渡す。',
     en:'Give Jack Skellington a favorite gift.'},
   'HauntingElegance2026/Week07Task02':{
+    kind:'Friend',
     ja:'サリーとの友情レベルを5にする。',
     en:'Reach friendship level 5 with Sally.'},
   'Seafaring2026/Week02Task01':{
+    kind:'HangoutWithCharacter',
     ja:'アリエルを同行者にして、一緒に行動する。',
     en:'Hang out with Ariel.'},
   'Seafaring2026/Week04Task01':{
+    kind:'Friend',
     ja:'モアナとの友情レベルを5にする。',
     en:'Reach friendship level 5 with Moana.'},
   'Seafaring2026/Week05Task03':{
+    kind:'TakePicture',
     ja:'アリエルと一緒にセルフィーを撮る。',
     en:'Take a selfie with Ariel.'},
   'Seafaring2026/Week06Task01':{
+    kind:'GiftToCharacter',
     ja:'アリエルに、その日の好物のギフトを渡す。',
     en:'Give Ariel one of her favorite gifts.'}
 };
@@ -150,7 +158,7 @@ export function actionableStarpathTask(seasonId,task,language='ja'){
     return {action:record[language],reviewed:true,source:'editorial-interpretation'};
   }
   const w=weekly[seasonId+'/'+task.id];
-  if(w && task.descriptionKey==='Liveops.'+seasonId+'_'+task.id+'_Description'){
+  if(w && task.objectiveKind===w.kind && task.descriptionKey==='Liveops.'+seasonId+'_'+task.id+'_Description'){
     return {action:w[language],reviewed:true,source:'editorial-interpretation'};
   }
   return null;
