@@ -5,6 +5,8 @@ import {
 } from '../guide/reward-relations.ts';
 import {STARPATH_PUBLIC_SHA} from '../guide/public-starpath.mjs';
 import {createGuideStarpathHistory} from '../guide/starpath-history.ts';
+import {hasPinnedPublicQuestAcquisitionEvidence,
+  type PublicQuestAcquisitionIndex} from '../guide/public-quest-acquisition.ts';
 import {OFFICIAL_CAMPAIGNS} from './official-campaigns.ts';
 import {
   hasPinnedDb03RewardEvidence,
@@ -509,7 +511,8 @@ export async function loadUnifiedAcquisitionOriginDatabase(
   native: NativeAcquisitionReader | null = null,
   basePath = '',
   nativeItemIds: readonly (string | number)[] = [],
-  db03NativeRewards: Db03NativeRewardCandidateIndex | null = null
+  db03NativeRewards: Db03NativeRewardCandidateIndex | null = null,
+  db03PublicQuestRewards: PublicQuestAcquisitionIndex | null = null
 ): Promise<OriginDatabase> {
   assert(basePath === '' || (basePath.startsWith('/') && !basePath.includes('..') && !basePath.endsWith('/')), 'BASE_PATH');
   const guide = await loadGuideRewardIndex(
@@ -537,8 +540,18 @@ export async function loadUnifiedAcquisitionOriginDatabase(
       Array.isArray(db03NativeRewards.origins),
       'DB03_VERIFIED_PRIVATE_REWARDS_REQUIRED');
   }
+  if(db03PublicQuestRewards!==null){
+    assert(hasPinnedPublicQuestAcquisitionEvidence(db03PublicQuestRewards) &&
+      db03PublicQuestRewards.schema==='wand.db03.public-quest-acquisition-origins@1' &&
+      db03PublicQuestRewards.sourceIntegrity==='pinned_public_quest_reward_sha256' &&
+      db03PublicQuestRewards.coverage.totalItemOriginCandidates===395 &&
+      db03PublicQuestRewards.coverage.guaranteedGrantVerified===false &&
+      db03PublicQuestRewards.origins.length===395,
+      'DB03_PINNED_PUBLIC_QUEST_REWARDS_REQUIRED');
+  }
   return createAcquisitionOriginDatabase(
-    [...starpath.origins, ...nativeRoutes, ...(db03NativeRewards?.origins??[])],
+    [...starpath.origins, ...nativeRoutes, ...(db03NativeRewards?.origins??[]),
+      ...(db03PublicQuestRewards?.origins??[])],
     [...starpath.campaigns, ...projectHistoricalGuideCampaigns(guide),
       ...OFFICIAL_CAMPAIGNS], native
   );
