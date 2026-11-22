@@ -280,10 +280,20 @@ try {
 
   const limited=await browser.newPage();
   await limited.goto('http://127.0.0.1:4177/Wand/guide/events/',{waitUntil:'domcontentloaded'});
-  await limited.getByRole('heading',{name:'The Haunted Floating Festival'}).waitFor({timeout:20000});
-  assert.equal(await limited.locator('.entries article').count(),2);
-  assert.match(await limited.locator('.entries').innerText(),/Oogie Boogie/);
-  assert.match(await limited.locator('.entries').innerText(),/時刻は未確認/);
+  await limited.getByRole('heading',{name:'イベント・友情報酬'}).waitFor({timeout:20000});
+  await limited.locator('.event-option').first().waitFor({timeout:20000});
+  assert.equal(await limited.locator('.event-option').count(),23,
+    '23 user-facing native source event definitions; placeholder excluded');
+  await limited.getByRole('searchbox',{name:'イベントや報酬を検索'}).fill('人食い宝箱');
+  await limited.getByText('人食い宝箱',{exact:true}).first().waitFor({timeout:20000});
+  assert.match(await limited.locator('.reward-detail').innerText(),/ID 40006319/);
+  await limited.getByRole('button',{name:'友情報酬'}).click();
+  assert.equal(await limited.locator('.friendship-level').count(),4);
+  assert.equal(await limited.locator('.friendship .reward-row').count(),16);
+  await limited.locator('.official summary').click();
+  assert.match(await limited.locator('.official').innerText(),/Oogie Boogie/);
+  assert.equal(await limited.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),true,
+    'event rewards must not overflow desktop');
   await limited.close();
 
   // Public Star Path is source-pinned static cache data, not a personal import.
