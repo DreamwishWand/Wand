@@ -143,6 +143,40 @@ try {
   assert.deepEqual(deepErrors,[],deepErrors.join('\n'));
   await direct.close();
 
+  // DB-03 source-pinned objective Item-ID reverse lookup: direct link to
+  // exact Quest and first relevant step, then native in-page Item-ID search.
+  const targetDeep=await browser.newPage({viewport:{width:390,height:844}});
+  const targetErrors=[];
+  targetDeep.on('pageerror',error=>targetErrors.push(String(error)));
+  await targetDeep.goto(url+'?target=30000031&quest=2070000688',
+    {waitUntil:'domcontentloaded'});
+  await targetDeep.locator('.reward-focus').waitFor({timeout:25000});
+  assert.match(await targetDeep.locator('.reward-focus').innerText(),
+    /目標アイテムの候補に関連するクエスト.*Item ID 30000031/);
+  await targetDeep.locator('.detail .step li.target-item-match').first()
+    .waitFor({timeout:25000});
+  await targetDeep.locator('.target-chip').filter({hasText:'ピュアナイトシャード'})
+    .first().waitFor({timeout:25000});
+  assert.equal(await targetDeep.locator('.detail .step').count(),1,
+    'only the relevant source Quest step should initially render');
+  assert.match(await targetDeep.locator('.detail .step h3').innerText(),/ステップ 1/);
+  const targetSearch=targetDeep.getByRole('textbox',{name:'クエスト名・IDを検索'});
+  await targetSearch.fill('30000031');
+  await targetDeep.waitForFunction(()=>
+    document.querySelector('.reward-focus')?.textContent?.includes('Item ID 30000031'));
+  assert.equal(await targetDeep.locator('.quest-row').count(),16,
+    'source Item-ID reverse search groups duplicate objective references per Quest');
+  await targetSearch.fill('');
+  await targetDeep.waitForFunction(()=>
+    document.querySelector('.count')?.textContent?.includes('733件'));
+  assert.equal(await targetDeep.locator('.reward-focus').count(),0,
+    'normal Quest search restores all results without stale Item-ID deep-link focus');
+  assert.equal(await targetDeep.evaluate(()=>
+    document.documentElement.scrollWidth<=innerWidth+2),true,
+    'focused Quest target result list does not overflow mobile viewport');
+  assert.deepEqual(targetErrors,[],targetErrors.join('\\n'));
+  await targetDeep.close();
+
   const stepLink=await browser.newPage();
   await stepLink.goto(url+'?quest=2070000620&step=4',{waitUntil:'domcontentloaded'});
   await stepLink.locator('.detail .step').first().waitFor({timeout:20000});

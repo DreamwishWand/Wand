@@ -12,6 +12,8 @@
   import {loadPublicQuestRewards,DB03_QUEST_REWARDS_FILE,
     type PublicQuestRewardsReader} from '$lib/guide/public-quest-rewards.ts';
   import {resolveQuestRewardItemDestination} from '$lib/guide/quest-reward-navigation.ts';
+  import {loadPublicQuestTargetReverse,DB03_QUEST_TARGET_REVERSE_FILE,
+    type PublicQuestTargetReverseReader} from '$lib/guide/public-quest-target-reverse.ts';
 
   let catalog:any=null;
   let loadError='';
@@ -40,6 +42,9 @@
   let rewardError='';
   let conditionError='';
   let targetIndex:any=null;
+  let targetReverseIndex:PublicQuestTargetReverseReader|null=null;
+  let targetItemFocus:string|null=null;
+  let targetReverseError=false;
   let targetLookup:Record<string,any[]>={};
   let targetLoading=false;
   let targetError='';
@@ -47,10 +52,21 @@
 
   $: rewardFocus=rewardItemFocus&&rewardIndex
     ?resolveQuestRewardItemDestination(rewardIndex,rewardItemFocus):null;
+  $: searchedTargetId=targetReverseIndex&&/^[1-9][0-9]{0,15}$/.test(query)&&
+    targetReverseIndex.getItemCandidates(query).length>0?query:null;
+  $: targetFocusId=targetItemFocus??searchedTargetId;
+  $: targetMatches=targetReverseIndex&&targetFocusId
+    ?targetReverseIndex.getItemCandidates(targetFocusId):[];
+  $: targetQuestIds=[...new Set(targetMatches.map(row=>row.questId))];
+  $: selectedTargetRefs=selectedRow
+    ?targetMatches.filter(row=>row.questId===selectedRow.id):[];
   $: filtered=catalog?(rewardFocus
     ?{total:rewardFocus.questIds.length,
       rows:catalog.quests.filter((row:any)=>rewardFocus.questIds.includes(row.id))}
-    :collectWindow((offset:number,batch:number)=>filterPublicQuests(catalog,{query:query.slice(0,120),locale,character,objective,section,offset,limit:batch}),limit,'rows')):{total:0,rows:[]};
+    :targetMatches.length
+      ?{total:targetQuestIds.length,
+        rows:catalog.quests.filter((row:any)=>targetQuestIds.includes(row.id))}
+      :collectWindow((offset:number,batch:number)=>filterPublicQuests(catalog,{query:query.slice(0,120),locale,character,objective,section,offset,limit:batch}),limit,'rows')):{total:0,rows:[]};
   $: characters=catalog?[...new Set(catalog.quests.map((x:any)=>x.characterId).filter(Boolean))].sort() as string[]:[];
   // Native Mission group association, not an unlock prerequisite or chronological link.
   $: questConditions=selectedRow&&conditionIndex?conditionIndex.getQuest(selectedRow.id):null;
@@ -70,7 +86,22 @@
     url.searchParams.delete('item');
     window.history.replaceState(window.history.state,'',url);
   }
-  function setSearch(){limit=40;clearRewardItemFocus();}
+  function clearTargetItemFocus(){
+    if(!targetItemFocus)return;
+    targetItemFocus=null;
+    const url=new URL(window.location.href);
+    url.searchParams.delete('target');
+    window.history.replaceState(window.history.state,'',url);
+  }
+  function setSearch(){limit=40;clearRewardItemFocus();clearTargetItemFocus();}
+  function targetStep(questId:string,numberOfSteps:number):number{
+    const step=publicQuestStepIndex(window.location.search,questId,numberOfSteps);
+    if(new URLSearchParams(window.location.search).has('step'))return step;
+    const id=targetItemFocus??searchedTargetId;
+    const first=id?targetReverseIndex?.getItemCandidates(id)
+      .find(ref=>ref.questId===questId&&ref.step<numberOfSteps):null;
+    return first?.step??step;
+  }
   function selectStep(index:number){
     if(!selectedRow||!selected||!Number.isInteger(index)||
       index<0||index>=selected.steps.length)return;
@@ -126,15 +157,23 @@
     const focus=requested.length===1&&rewardIndex
       ?resolveQuestRewardItemDestination(rewardIndex,requested[0]):null;
     rewardItemFocus=focus?.itemId??null;
+    const targetRequested=params.getAll('target');
+    const sourceTargets=!focus&&targetRequested.length===1&&targetReverseIndex
+      ?targetReverseIndex.getItemCandidates(targetRequested[0]):[];
+    targetItemFocus=sourceTargets.length?targetRequested[0]:null;
+    const targetIds=new Set(sourceTargets.map(ref=>ref.questId));
     const addressed=findPublicQuestByLink(catalog,window.location.search);
     const row=focus
       ?(addressed&&focus.questIds.includes(addressed.id)?addressed:
         catalog.quests.find((candidate:any)=>focus.questIds.includes(candidate.id))??null)
-      :addressed;
+      :sourceTargets.length
+        ?(addressed&&targetIds.has(addressed.id)?addressed:
+          catalog.quests.find((candidate:any)=>targetIds.has(candidate.id))??null)
+        :addressed;
     if(row){
       if(selectedRow?.id!==row.id)void openQuest(row,false);
       else if(selected) {
-        activeStep=publicQuestStepIndex(window.location.search,row.id,selected.steps.length);
+        activeStep=targetStep(row.id,selected.steps.length);
         showAllSteps=false;
       }
     }else if(selectedRow){
@@ -142,6 +181,15 @@
       selectedRow=null;selected=null;detailError='';detailLoading=false;
       activeStep=0;showAllSteps=false;
       targetLookup={};targetError='';targetLoading=false;
+    }
+  }
+  async function loadTargetReverse(index:any){
+    try{
+      const data=await loadPublicQuestTargetReverse(index,
+        `${prefix}${DB03_QUEST_TARGET_REVERSE_FILE}`);
+      if(catalog===index){targetReverseIndex=data;restoreAddressSelection();}
+    }catch{
+      if(catalog===index)targetReverseError=true;
     }
   }
   async function loadConditions(index:any){
@@ -169,8 +217,10 @@
       catalog=verifyPublicQuestIndex(data);
       conditionIndex=null;conditionError='';
       rewardIndex=null;rewardError='';
+      targetReverseIndex=null;targetReverseError=false;
       void loadConditions(catalog);
       void loadRewards(catalog);
+      void loadTargetReverse(catalog);
       restoreAddressSelection();
     }catch(e){loadError=e instanceof Error?e.message:String(e)}
     finally {loading=false}
@@ -184,6 +234,8 @@
 
   async function openQuest(row:any,updateAddress=true) {
     if(rewardFocus&&!rewardFocus.questIds.includes(row.id))clearRewardItemFocus();
+    if(targetItemFocus&&targetReverseIndex&&
+      !targetReverseIndex.getItemQuestIds(targetItemFocus).includes(row.id))clearTargetItemFocus();
     const ticket=++selectionTicket;
     selectedRow=row;selected=null;detailError='';detailLoading=true;
     activeStep=0;showAllSteps=false;
@@ -206,7 +258,7 @@
       if(!match)throw new Error('クエスト詳細が見つかりません');
       if(ticket===selectionTicket){
         selected=match;
-        activeStep=publicQuestStepIndex(window.location.search,row.id,match.steps.length);
+        activeStep=targetStep(row.id,match.steps.length);
         void loadQuestTargets(row,part,ticket);
       }
     }catch(e){if(ticket===selectionTicket)detailError=e instanceof Error?e.message:String(e)}
@@ -238,7 +290,7 @@
       {/each}
     </nav>
     <div class="searchbar">
-      <label>クエストを検索<input aria-label="クエスト名・IDを検索" placeholder="クエスト名・キャラクター名・ID" bind:value={query} on:input={setSearch}/></label>
+      <label>クエストを検索<input aria-label="クエスト名・IDを検索" placeholder="クエスト名・キャラクター名・目標アイテムID" bind:value={query} on:input={setSearch}/></label>
       <label>キャラクター<select aria-label="キャラクターで絞り込み" bind:value={character} on:change={setSearch}><option value="">すべて</option>{#each characters as id}<option value={id}>{characterName(id,locale)}</option>{/each}</select></label>
       <label>目標の種類<select aria-label="目標で絞り込み" bind:value={objective} on:change={setSearch}><option value="">すべて</option>{#each objectives as kind}<option value={kind}>{kind}</option>{/each}</select></label>
     </div>
@@ -247,6 +299,13 @@
         <span>報酬候補に関連するクエスト：{rewardFocus.questIds.length}件（Item ID {rewardFocus.itemId}）</span>
         <button type="button" on:click={clearRewardItemFocus}>すべて表示</button>
       </div>
+    {:else if targetMatches.length}
+      <div class="reward-focus" role="status">
+        <span>目標アイテムの候補に関連するクエスト：{targetQuestIds.length}件（Item ID {targetFocusId}）</span>
+        {#if targetItemFocus}<button type="button" on:click={clearTargetItemFocus}>すべて表示</button>{/if}
+      </div>
+    {:else if targetReverseError}
+      <small class="condition-warning">目標アイテムの逆引きデータは読み込めませんでした。</small>
     {/if}
     <div class="workspace">
       <section class="results" aria-label="クエスト一覧">
@@ -359,7 +418,8 @@
                 {#each step.subSteps as sub (sub.index)}
                   {#if sub.objectives.length}<ol>
                     {#each sub.objectives as goal, i (i)}
-                      <li>
+                      <li class:target-item-match={selectedTargetRefs.some(ref=>
+                            ref.step===step.index&&ref.subStep===sub.index&&ref.objectiveIndex===i)}>
                          <span>{objectiveText(goal,targetLookup[`${step.index}:${sub.index}:${i}`]?.[0],locale)}</span>
                          <details class="source-id"><summary>条件の識別情報</summary><small>{goal.type}{goal.objectiveId?' · ID '+goal.objectiveId:''}</small></details>
                          {#each targetLookup[`${step.index}:${sub.index}:${i}`]||[] as target}
@@ -464,7 +524,7 @@
   .step-navigation .show-all{margin-left:auto;background:transparent}
   .step-permalink{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:space-between;color:#b9a5ca;font-size:12px;margin:4px 0 12px}
   .step-permalink a{color:#d9baff;text-underline-offset:3px}
-  .step{border-top:1px solid #40344b;padding:13px 0}.step h3{font-size:15px;margin:0 0 8px}.step p{font-size:13px;color:#c2b4cb}.step ol{margin:0;padding-left:25px}.step li{padding:6px 0 8px;font-size:14px}.step li small{display:block;color:#9588a5;font-size:11px;margin-top:3px}
+  .step{border-top:1px solid #40344b;padding:13px 0}.step h3{font-size:15px;margin:0 0 8px}.step p{font-size:13px;color:#c2b4cb}.step ol{margin:0;padding-left:25px}.step li{padding:6px 0 8px;font-size:14px}.step li.target-item-match{background:#493264;outline:1px solid #bb91ed;border-radius:7px;padding:7px 9px}.step li small{display:block;color:#9588a5;font-size:11px;margin-top:3px}
   .quest-rewards{margin:10px 0;border:1px solid #514260;border-radius:9px;padding:10px 12px;font-size:12px;color:#d6c1e5}
   .quest-rewards summary{cursor:pointer;font-weight:650;color:#e9d5f9}
   .quest-rewards small{display:block;color:#a99ab8;margin-top:8px;line-height:1.5}
