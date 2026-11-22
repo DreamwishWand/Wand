@@ -190,8 +190,14 @@ export function createDb01StarpathOriginClient(
     // still carries every separate source slot in starpathSourceRelations.
     // Catalog validation also preserves missing source-reward IDs rather than
     // silently dropping them from the season.
-    const definitions=await catalog.getItems(ids);
-    require(definitions.length===ids.length,'CURRENT_DEFINITION_BATCH');
+    const definitions:(Readonly<Db01Item>|null)[]=[];
+    for(let start=0;start<ids.length;start+=4096){
+      const batch=ids.slice(start,start+4096);
+      const records=await catalog.getItems(batch);
+      require(records.length===batch.length,'CURRENT_DEFINITION_BATCH');
+      definitions.push(...records);
+    }
+    require(definitions.length===ids.length,'CURRENT_DEFINITION_COVERAGE');
     const allowed=new Set(categories);
     const filtered=ids.map((id,i)=>({
       id,definition:definitions[i],
