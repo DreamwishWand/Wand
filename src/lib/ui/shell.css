@@ -192,8 +192,6 @@
   .site-shell{--shell-height:56px}
   .site-shell .site-header{gap:3px;padding:0 7px}
   .site-shell .shell-home-brand,.site-shell .shell-shortcuts{display:none}
-  .site-shell .shell-nav-trigger{width:42px;min-width:42px;padding:0}
-  .site-shell .shell-nav-trigger span,.site-shell .shell-nav-trigger .shell-chevron{display:none}
   .site-shell .header-context-tools .header-context-optional{display:none}
   .site-shell .header-file-tools,.site-shell .header-preference-tools,.site-shell .header-support-tools{
     padding-left:4px;margin-left:2px
@@ -216,14 +214,11 @@
   .site-shell .portal-card-community .portal-card-visual>svg{width:55px;height:55px}
 }
 @media(max-width:460px){
-  .site-shell .shell-account-header{display:none}
-  .site-shell .shell-menu .shell-menu-account{display:flex}
   .site-shell .site-actions{gap:1px}
   .site-shell .header-file-tools,.site-shell .header-preference-tools,.site-shell .header-support-tools{
     padding-left:2px;margin-left:1px
   }
-  .site-shell .header-home-button,.site-shell .header-icon-button,
-  .site-shell .shell-nav-trigger{width:40px;min-width:40px;height:40px;min-height:40px}
+  .site-shell .header-home-button,.site-shell .header-icon-button{width:40px;min-width:40px;height:40px;min-height:40px}
   .site-shell .header-language-button{width:auto;min-width:54px}
   .site-shell .portal-card-community{gap:18px}
 }
@@ -247,4 +242,30 @@
 @media(max-width:370px){
   .site-shell .shell-brand-mark{width:28px;height:28px}
   .site-shell .shell-brand-mark img{width:24px;height:24px}
+}
+
+/* Right-side groups: record tools | save and profile | help | theme | language. */
+.site-shell .header-account-tools{display:flex;align-items:center;flex:none}
+.site-shell .header-preference-tools{gap:5px}
+.site-shell .header-save-root{margin-left:5px}
+.site-shell .header-account-tools,.site-shell .header-support-tools{margin-left:1px}
+.site-shell .header-language-menu{z-index:1}
+/* Compact screens keep access to help/account and Collection backups via More. */
+@media(max-width:490px){
+  .site-shell .header-account-tools,.site-shell .header-support-tools{display:none}
+  .site-shell .header-file-tools{display:none}
+  .site-shell .shell-more-root{display:flex}
+  .site-shell .header-preference-tools{margin-left:0;padding-left:3px}
+  .site-shell .header-save-root{margin-left:0}
+  .site-shell .site-header{gap:2px}
+}
+@media(max-width:370px){
+  .site-shell .site-header{padding:0 5px;gap:2px}
+  .site-shell .header-home-button,
+  .site-shell .header-save-root .header-icon-button,
+  .site-shell .shell-more-root .header-icon-button{
+    width:34px;min-width:34px;height:38px;min-height:38px
+  }
+  .site-shell .header-preference-tools{gap:2px;padding-left:1px;border-left:0}
+  .site-shell .site-actions{gap:1px}
 }
