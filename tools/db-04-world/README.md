@@ -13,17 +13,25 @@ without claiming that a later version's machine-code indexing is identical.
 Even byte-identical v1.26.2 Furniture/Building source files do not prove
 the native GridArea implementation is byte-identical across releases.
 
-**Packed GridData has the same native-code boundary.** The X-major/MSB-first
-1/2/4-bit decoder was established against Steam **v1.26.1** original native
-methods. Private extraction from v1.26.2 or any other uncorroborated game
-version now preserves raw Base64 bytes, SHA-256, byte count, palette and
-dimensions but marks `terrainDecoding.decoded=false` and does not synthesize a
-palette-index cell histogram. `verify_bundle.py` checks the evidence against
-the snapshot's manifest game version. The browser terrain tile, window and
-distribution APIs explicitly return
-`native_terrain_packing_not_verified_for_game_version` rather than interpreting
-such bytes or trusting a copied decoded flag from an older snapshot. New
-original-version evidence is required before enabling those previews.
+**Packed GridData uses a narrower read-only native-code boundary.**
+The Steam **v1.26.1 and v1.26.2** original `GridData.get_Item` /
+`GetNumberOfBitsPerPosition` normal read paths have been checked against
+their pinned original IL2CPP metadata and native PE64 machine-code bodies.
+The source-local X-major/MSB-first 1/2/4-bit decoder is supported for those
+two Steam builds. The original v1.26.2 Meadow GridData bytes match the
+corroborated v1.26.1 sample. This is a read-only grid-local terrain
+**preview**, not a global world map or edit/placement validity proof.
+
+Private Steam 1.26.2 extraction now records version-specific evidence,
+raw Base64 payload, byte count, palette, dimensions and validated palette
+index cell histogram. `verify_bundle.py` recomputes all this against the
+snapshot's declared game version. A previously generated v1.26.2 ZIP that
+explicitly retained `terrainDecoding.decoded=false` must be re-extracted
+from original source to gain read-only terrain; it is never silently promoted
+by the browser. For versions after 1.26.2, or an unverified non-Steam
+platform, the browser returns
+`native_terrain_packing_not_verified_for_game_version` rather than using
+unproven native packing claims.
 
 The Python entrypoints `parse_grid_structure`, `grid_assets`,
 `checked_grid`, and all four low-level terrain helpers
@@ -49,9 +57,8 @@ nativeAreaTypeCode, nativeGridId, rect)` supply bounded, read-only
 **original default GridObject X/Y anchor records** for World Editor and
 Decorate. Both use exact original GridCollection / DefaultVillage layout
 links and raw GridData SizeX/SizeY, without reading the compacted terrain
-payload or asserting its X-major decoder. For an archive identified as Steam
-v1.26.2, this permits *source-record anchor inspection* even while the
-original v1.26.2 terrain native-code behavior is not verified.
+payload or asserting its X-major decoder. These raw source-record anchors remain useful independently of the terrain
+decoder (including in older, explicitly unverified Steam 1.26.2 snapshots).
 
 The new result status is
 `source_native_default_layout_anchors_only` and includes
@@ -111,8 +118,8 @@ marked unavailable rather than replaced with an invented layout.
 `src/lib/world/preview-views.mjs` shares the exact selection and routing
 logic with the Worker. Native village reads call the existing
 `getNativeVillageAreaAnchorWindow` API, retaining their village layout ID,
-AreaType code and native GridCollection path. The same strict version gate
-continues to reject Steam v1.26.2 packed-terrain decoding. No save file or
+AreaType code and native GridCollection path. The strict, read-only version gate now admits the original Steam v1.26.2
+GridData decoder for verified new snapshots; GridArea/placement remains gated. No save file or
 game binary is sent to a server or written by this preview.
 
 ## Original GridObject identity integrity
@@ -151,8 +158,9 @@ provenance remains the private Python verifier's responsibility.
 Choose an original GridCollection and native Grid.ID, then inspect an
 X/Y-local rectangle (up to 32×32). Its points count raw initial GridObject
 anchor records, not occupied cells. The 64-item source list can be paged.
-Only the Steam 1.26.1 native terrain decoder can return floor mask rows;
-uncorroborated versions, including current Steam 1.26.2, show anchor points
+Only the Steam 1.26.1/1.26.2 native read-only terrain decoder can return
+floor mask rows; uncorroborated future versions or older unresolved ZIPs
+show anchor points
 without terrain. This preview does not parse player saves or authorize
 placements, rotations, collision decisions, exports or writer actions.
 
