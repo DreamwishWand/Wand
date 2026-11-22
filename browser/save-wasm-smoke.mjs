@@ -557,6 +557,15 @@ try{
   await coordinates.getByRole('button',{name:'一括配置変更に追加'}).click();
   const mixedPanel=objects.getByLabel('一括配置変更',{exact:true});
   await mixedPanel.getByText('2 / 16件').waitFor();
+  // Preserve the earlier coordinate batch while showing the independent
+  // mixed batch. Rotation-only edits do not create additional ghost markers.
+  await pickGrid.selectOption('2');
+  assert.equal(await map.locator('.queued-ghost').count(),2);
+  assert.equal(await map.locator('.queued-ghost[title*="#3 X 130 Y 14"]').count(),1);
+  assert.equal(await map.locator('.queued-ghost[title*="#3 X 34 Y -6"]').count(),1);
+  await pickGrid.selectOption('1');
+  assert.equal(await map.locator('.queued-ghost').count(),1);
+  assert.equal(await map.locator('.queued-ghost[title*="#1 X -80 Y 25"]').count(),1);
   await mixedPanel.getByRole('button',{name:'一括配置変更を検証'}).click();
   await coordinates.getByRole('status').filter({
     hasText:'2件の配置変更をRust/WASMで検証しました'
@@ -739,6 +748,12 @@ try{
   await stageGroup.click();
   const stagedGroup=objects.getByLabel('一括座標編集');
   await stagedGroup.getByText('2 / 16件').waitFor();
+  // Registering the batch keeps both destinations visible on the map,
+  // including their actual target numeric coordinates.
+  assert.equal(await groupMap.locator('.queued-ghost').count(),2);
+  assert.equal(await groupMap.locator('.queued-ghost[title*="#1 X 52 Y 6"]').count(),1);
+  assert.equal(await groupMap.locator('.queued-ghost[title*="#2 X 57 Y 7"]').count(),1);
+  assert.match(await groupMap.innerText(),/編集候補 2件/);
   const groupEditor=objects.getByLabel('座標編集',{exact:true});
   assert.equal(await groupEditor.getByLabel('新しいX').inputValue(),'52');
   assert.equal(await groupEditor.getByLabel('新しいY').inputValue(),'6');
@@ -774,6 +789,9 @@ try{
   assert.equal(groupObjects['2'].X-groupObjects['1'].X,
     groupOriginal.World.GridCollection.Grids['101'].Objects['2'].X-
     groupOriginal.World.GridCollection.Grids['101'].Objects['1'].X);
+  await stagedGroup.getByRole('button',{name:'座標編集 #1 を削除'}).click();
+  assert.equal(await groupMap.locator('.queued-ghost').count(),1,
+    'removing a staged edit immediately removes its destination ghost');
   assert.deepEqual(errors,[],errors.join('\n'));
   await page.close();
   console.log('DB-05 browser: explicit JSON/P1G edited-copy downloads, native reopen, stale rejection, original preservation PASS');
