@@ -115,8 +115,9 @@ export function validateDb01CollectionMenuManifest(v:unknown):
       nonnegative(file.bytes)&&Number(file.bytes)>=3&&Number(file.bytes)<8_000_000&&
       nonnegative(file.count),'FILE_META');
   }
-  check(v.files['menus.json'].count===v.collectionSetDefinitions&&
-    v.files['direct-items.json'].count===v.directListedItemIds,'FILE_COUNTS');
+  const validatedFiles=v.files as Record<string,{count:number}>;
+  check(validatedFiles['menus.json'].count===v.collectionSetDefinitions&&
+    validatedFiles['direct-items.json'].count===v.directListedItemIds,'FILE_COUNTS');
   check(obj(v.menusBySubmenu)&&obj(v.directAssociationsBySubmenu),'SUBMENU_COUNTS');
   const menusBySubmenu=v.menusBySubmenu;
   const directBySubmenu=v.directAssociationsBySubmenu;
