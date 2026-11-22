@@ -12,6 +12,9 @@
   } from '$lib/guide/event-reward-item-labels.ts';
   import {resolveEventRewardItemDestination}
     from '$lib/guide/event-reward-navigation.ts';
+  import {loadNewPublishedEventRewardNames,
+    type PublicEventRewardNameRefresh}
+    from '$lib/guide/public-event-reward-db00-refresh.ts';
   import {verifyPublicQuestIndex,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
   import {loadPublicEventQuestLinks,DB03_EVENT_QUEST_FILE,
     type PublicEventQuestIndex} from '$lib/guide/public-event-quest-links.ts';
@@ -19,6 +22,7 @@
   type Filter='all'|'mini_event'|'floating_festival'|'default_friendship';
   let source:PublicEventFriendshipRewards|null=null;
   let labels:EventRewardItemLabelIndex|null=null;
+  let refreshedNames:PublicEventRewardNameRefresh|null=null;
   let questCatalogue:any=null;
   let eventQuestLinks:PublicEventQuestIndex|null=null;
   let loading=true;
@@ -47,11 +51,14 @@
     return event.names[locale]||event.names.en||event.id;
   }
   function itemName(itemId:string):string{
+    const newlyPublished=refreshedNames?.getDisplayName(itemId,locale);
+    if(newlyPublished)return newlyPublished;
     const resolved=labels?.getDisplayName(itemId,locale);
     return resolved&&resolved!==itemId?resolved:`Item ID ${itemId}`;
   }
   function itemCategory(itemId:string):string|null{
-    return labels?.getItem(itemId)?.sourceCategory??null;
+    return refreshedNames?.getSourceCategory(itemId)??
+      labels?.getItem(itemId)?.sourceCategory??null;
   }
   function questTitle(questId:string):string{
     const quest=questCatalogue?.quests.find((row:any)=>row.id===questId);
@@ -59,7 +66,8 @@
   }
   function filterEvents(
     events:readonly NativeEventDefinition[],type:Filter,search:string,
-    language:GuideRewardLocale,availableNames:EventRewardItemLabelIndex|null
+    language:GuideRewardLocale,availableNames:EventRewardItemLabelIndex|null,
+    publishedRefresh:PublicEventRewardNameRefresh|null
   ):NativeEventDefinition[]{
     const words=search.normalize('NFKC').trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
     return events.filter(event=>{
@@ -67,12 +75,14 @@
       if(event.id==='TestEv')return false; // Source-internal placeholder, not playable.
       if(!words.length)return true;
       const terms=[event.id,event.names[language],event.names.en,...event.rewards.flatMap(reward=>[
-        reward.itemId,availableNames?.getDisplayName(reward.itemId,language)??reward.itemId,
+        reward.itemId,
+        publishedRefresh?.getDisplayName(reward.itemId,language)??
+          availableNames?.getDisplayName(reward.itemId,language)??reward.itemId,
       ])].join(' ').normalize('NFKC').toLocaleLowerCase();
       return words.every(word=>terms.includes(word));
     });
   }
-  $: visible=filterEvents(source?.events??[],category,query,locale,labels);
+  $: visible=filterEvents(source?.events??[],category,query,locale,labels,refreshedNames);
   $: selected=visible.find(event=>event.id===selectedKey)??visible[0]??null;
   $: eventQuests=selected&&eventQuestLinks?eventQuestLinks.getEventQuests(selected.id):[];
   $: selectedRewards=selected?.rewards.filter(row=>
@@ -106,7 +116,7 @@
   }
   async function load(){
     loading=true;error='';labelError=false;labels=null;
-    questCatalogue=null;eventQuestLinks=null;
+    refreshedNames=null;questCatalogue=null;eventQuestLinks=null;
     try{
       const read=await loadPublicEventFriendshipRewards(`${root}${DB03_EVENT_FRIENDSHIP_REWARD_FILE}`);
       source=read;
@@ -128,7 +138,16 @@
           selectedKey=fromUrl;
       }
       try{
-        labels=await loadEventRewardItemLabels(read,`${root}${DB03_EVENT_ITEM_LABELS_FILE}`);
+        const loaded=await loadEventRewardItemLabels(read,`${root}${DB03_EVENT_ITEM_LABELS_FILE}`);
+        labels=loaded;
+        // A new public-only DB-00 release can fill 32 unresolved reward names;
+        // the unchanged release incurs only a tiny active-pointer lookup.
+        void loadNewPublishedEventRewardNames(read,loaded,base)
+          .then(overlay=>{
+            if(source===read&&labels===loaded)refreshedNames=overlay;
+          }).catch(()=>{
+            // Keep existing source-pinned 109 labels and Item ID fallbacks.
+          });
       }catch{labelError=true;}
     }catch(e){
       source=null;
