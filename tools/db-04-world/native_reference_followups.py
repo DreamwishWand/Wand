@@ -79,7 +79,8 @@ def _source_section(pe, rva, width):
 
 
 def classify_rip_source_pair(pe_a, raw_a, rva_a, operand_a,
-                             pe_b, raw_b, rva_b, operand_b):
+                             pe_b, raw_b, rva_b, operand_b,
+                             opcode_a=None, opcode_b=None):
     """Classify RVA references without asserting semantic equivalence.
 
     Returns only a provenance category, never offsets, bytes or original
@@ -88,15 +89,11 @@ def classify_rip_source_pair(pe_a, raw_a, rva_a, operand_a,
     if not isinstance(operand_a, str) or not isinstance(operand_b, str):
         return "unknown_rip_access"
     m_a, m_b = RIP_MEMORY.search(operand_a), RIP_MEMORY.search(operand_b)
-    lea_a = operand_a.lstrip().lower().startswith(("rax,", "rcx,", "rdx,",
-                                                   "r8,", "r9,", "r10,",
-                                                   "r11,", "r12,", "r13,",
-                                                   "r14,", "r15,", "rsi,",
-                                                   "rdi,", "rbx,", "rbp,",
-                                                   "rsp,"))
     # Address-only references such as LEA [rip+disp32] have no memory
-    # access width; classify their targets without inspecting arbitrary bytes.
+    # access width. Other missing widths are unresolved, not guessed.
     if m_a is None and m_b is None:
+        if opcode_a != "lea" or opcode_b != "lea":
+            return "unknown_rip_access"
         a, _ = _source_section(pe_a, rva_a, 0)
         b, _ = _source_section(pe_b, rva_b, 0)
         return ("address_only_" + a if a == b else "address_only_mismatch")
