@@ -280,7 +280,7 @@ test('original catalog/locale contradiction fails closed; does not invent a cate
   const index={
     ...f.source,
     async getCollectionSets(){return (await f.source.getCollectionSets())
-      .map((x,i)=>i===0?{...x,sourceMenu:{...x.sourceMenu,setId:999}}:x);},
+      .map((x,i)=>i===0?{...x,sourceMenu:{...x.sourceMenu,setId:2120000002}}:x);},
   };
   const browse=createDb01CollectionNativeBrowseClient(
     f.axes,index,f.results);
