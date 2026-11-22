@@ -34,6 +34,19 @@ Optional metadata proof input (schema wand.src04.exact-guid-links@1):
 
 **Proofs must be produced by independently checking the new game's Addressables GUID→serialized object mapping. They cannot be invented from names, image similarity or old object offsets.** The schema is ready; future game-version extraction/actual proofs have not yet been performed.
 
+
+## Automatic metadata-only GUID probe
+
+The new proof producer tools/src-04-r2/probe_guid_links.py scans selected SOURCE SHA-verified Unity AssetBundles *without decoding their image pixels*. It checks exact 32-hex GUID tokens in Unity container keys and their serialized Sprite/Texture2D object file and path ID. It rejects ambiguous matches.
+
+    python tools/src-04-r2/probe_guid_links.py --base-scan OLD_SCAN --base-overlay OLD_V2_OVERLAY --target-scan NEXT_SCAN --target-items NEXT_ITEMS --target-game NEXT_GAME_DIRECTORY --out LOCAL_PRIVATE_EXACT_LINKS.json
+
+The default scan scope includes prior icon source bundles, all generated-icons bundles, and every bundle newly added or changed in the target SRC-00 scan. Optional --all-bundles scans all bundles (more expensive); --max-bundles can increase the bound from 3000 if explicitly required.
+
+The probe returns a *partial exact-link ledger* with complete=false if some GUIDs cannot be unambiguously resolved or a bundle fails to parse. In that case plan_media_update.py --target-proofs uses any verified subset and leaves the rest as needs_exact_guid_relink. No fuzzy matching, image-byte decoding, automatic substitution, or public release occurs.
+
+This metadata-only proof cannot resolve every possible indirect Unity asset reference; unresolved new-version GUIDs still require the specialized game-source dependency parser. Every next-version change must be tested with actual game files when available.
+
 ## Result classification
 
 | Status | Meaning | Next step |
