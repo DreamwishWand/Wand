@@ -315,7 +315,7 @@ pub(super) fn resolve_grid_orientation_target(
 pub(super) fn saved_grid_instances_json(source:&[u8])->Result<String,CodecError>{
     let (scan,status)=scan_grid_instances(source)?;
     serde_json::to_string(&serde_json::json!({
-        "contract":"wand.db05.grid-instance-preview@1",
+        "contract":"wand.db05.grid-instance-preview@2",
         "status":status,
         "observedFullGrids":scan.full,
         "observedDiffGrids":scan.diff,
