@@ -1,5 +1,27 @@
 # DB-02 ACQUISITION — source-pinned extraction
 
+## Conditional ingredient default after native lookup failure (Steam 1.26.2)
+
+Original native machine-code verification now connects both cooking ingredient
+price helpers (recorded ingredients and recipe fallback) to
+`ItemPriceDatabases.GetSoftCurrencySellPrice`, each with **default=1**.
+The wrapper returns this default ONLY when the complete runtime
+`TryGetSellPrice` fails, and the 8,549-row original dynamic source snapshot
+would skip uncached formula evaluation *if unchanged at runtime*.
+
+The **160/371 fixed cooking ingredients with no original source price row**
+would conditionally receive that fallback only if the runtime class,
+provider set, original row contents and dynamic cache all matched the source
+snapshot. **None of these live conditions are proven.** Both the numeric
+fallback and the 211 existing serialized amounts remain **NOT authorized
+as effective runtime sell prices**. The typed source-only classifier and
+authenticated private meal inspector explicitly return
+`actualUnitSellPrice:null` and
+`authorizedForDisplayAsSalePrice:false` for this hypothesis.
+See [CONDITIONAL-INGREDIENT-NATIVE-FALLBACK.md](CONDITIONAL-INGREDIENT-NATIVE-FALLBACK.md)
+and the read-only
+[native chain audit](audit_native_ingredient_conditional_fallback_1262.py).
+
 ## Fixed cooking ingredient source price gaps (Steam 1.26.2)
 
 Independent SHA-authenticated SRC-02 r5 cooking recipes (625 entries) and

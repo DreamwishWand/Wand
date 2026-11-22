@@ -11,6 +11,8 @@ import type {ConditionalSellFormulaSourcePlan}
   from './native-sell-formula-candidates.mjs';
 import type {IngredientSourceRowCoverage}
   from './ingredient-source-row-coverage.mjs';
+import type {ConditionalIngredientSoftSellFallback}
+  from './conditional-ingredient-sell-fallback.mjs';
 export declare const DB02_MEAL_PRICE_EVIDENCE_CONTRACT:
   'wand.db02.meal-price-evidence@1';
 export interface MealIngredientAmount {
@@ -55,6 +57,8 @@ export interface PrivateMealPriceEvidence {
   readonly sourceIngredientStaticProviderSimulations:
     readonly (readonly NativeSerializedProviderSimulation[])[];
   readonly sourceIngredientSerializedPriceRowCoverage:readonly IngredientSourceRowCoverage[];
+  readonly sourceIngredientConditionalNativeFallbackEvidence:readonly ConditionalIngredientSoftSellFallback[];
+  readonly conditionalFallbackIsNotEffectiveSalePrice:true;
   readonly originalSourceRowAbsenceIsNotRuntimePriceFailure:true;
   readonly nativeStaticProviderResultsAreSourceConditionalOnly:true;
   readonly sourceIngredientDynamicCacheEvidence:readonly NativeDynamicCacheItemLookup[]|null;
@@ -108,6 +112,7 @@ export interface PrivateMealPricingView {
     readonly NativeSerializedProviderSimulation[];
   getNativeSellPriceProviderPlan(itemId:number):NativeSellPriceProviderPlan;
   getSourceIngredientPriceRowCoverage(itemId:number):IngredientSourceRowCoverage;
+  getSourceIngredientConditionalNativeFallback(itemId:number):ConditionalIngredientSoftSellFallback;
   getSourceCachedDynamicPriceRow(itemId:number):NativeDynamicCacheItemLookup|null;
   getSourceStarResult(star:number):NativeCookingStarResult|null;
   readonly publishable:false;

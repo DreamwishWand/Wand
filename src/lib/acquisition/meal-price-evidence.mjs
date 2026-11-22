@@ -21,6 +21,8 @@ import {classifyConditionalNativeSellFormulaCandidates}
   from './native-sell-formula-candidates.mjs';
 import {classifyIngredientSerializedPriceRowCoverage}
   from './ingredient-source-row-coverage.mjs';
+import {classifyConditionalIngredientSoftSellFallback}
+  from './conditional-ingredient-sell-fallback.mjs';
 
 export const DB02_MEAL_PRICE_VIEW_CONTRACT='wand.db02.private-meal-pricing-view@1';
 export const DB02_MEAL_PRICE_EVIDENCE_CONTRACT='wand.db02.meal-price-evidence@1';
@@ -138,7 +140,8 @@ export function decodeMealItemStateEvidence(bytes){
  * A static Cooking_Meal_PriceDatabase "Prices" row is PURCHASE evidence.
  * Never derive a state-dependent SELL price from that row.
  */
-function inspectAuthenticatedMeal({acquisitionBundle,shopPriceView,nativeCache,mealItemId,itemStateBytes}){
+function inspectAuthenticatedMeal({acquisitionBundle,shopPriceView,nativeCache,
+  sourceNativeDynamicCacheGate,mealItemId,itemStateBytes}){
   check(validId(mealItemId)&&Math.floor(mealItemId/100000)===303,
     'MEAL_ITEM_ID_REQUIRED');
   const state=decodeMealItemStateEvidence(itemStateBytes);
@@ -168,6 +171,13 @@ function inspectAuthenticatedMeal({acquisitionBundle,shopPriceView,nativeCache,m
       staticRows:shopPriceView.getSourceItemPriceDefinitions(x.itemId),
       dynamicCacheLookup:nativeCache?.lookup(x.itemId)??null
     })));
+  const sourceIngredientConditionalNativeFallbackEvidence=frozen(
+    ingredientAmounts.map((x,i)=>classifyConditionalIngredientSoftSellFallback({
+      itemId:x.itemId,
+      sourceRowCoverage:sourceIngredientSerializedPriceRowCoverage[i],
+      nativeSellProviderPlan:sourceIngredientProviderPlans[i],
+      sourceDynamicCacheGate:sourceNativeDynamicCacheGate
+    })));
   const sourceSellFormulaCandidatePlan=nativeCache===null?null:
     classifyConditionalNativeSellFormulaCandidates({
       formulaItemIds:nativeCache.sourceSellFormulaItemIds,
@@ -192,6 +202,8 @@ function inspectAuthenticatedMeal({acquisitionBundle,shopPriceView,nativeCache,m
     sourceIngredientStaticSellEvidence,
     sourceIngredientStaticProviderSimulations,
     sourceIngredientSerializedPriceRowCoverage,
+    sourceIngredientConditionalNativeFallbackEvidence,
+    conditionalFallbackIsNotEffectiveSalePrice:true,
     originalSourceRowAbsenceIsNotRuntimePriceFailure:true,
     nativeStaticProviderResultsAreSourceConditionalOnly:true,
     sourceIngredientDynamicCacheEvidence,
@@ -288,6 +300,18 @@ export async function loadPrivateMealPricingView({
         dynamicCacheLookup:nativeCache?.lookup(itemId)??null
       });
     },
+    getSourceIngredientConditionalNativeFallback:itemId=>{
+      check(validId(itemId),'INVALID_CONDITIONAL_FALLBACK_ITEM_ID');
+      return classifyConditionalIngredientSoftSellFallback({
+        itemId,
+        sourceRowCoverage:classifyIngredientSerializedPriceRowCoverage({
+          itemId,staticRows:shopPriceView.getSourceItemPriceDefinitions(itemId),
+          dynamicCacheLookup:nativeCache?.lookup(itemId)??null
+        }),
+        nativeSellProviderPlan:nativeSellPriceProviderPlan(itemId),
+        sourceDynamicCacheGate:sourceNativeDynamicCacheGate
+      });
+    },
     getSourceCachedDynamicPriceRow:itemId=>{
       check(validId(itemId),'INVALID_DYNAMIC_ITEM_ID');
       return nativeCache?.lookup(itemId)??null;
@@ -297,7 +321,8 @@ export async function loadPrivateMealPricingView({
       return nativeStars?.getStarResult(star)??null;
     },
     inspect:(mealItemId,itemStateBytes)=>inspectAuthenticatedMeal({
-      acquisitionBundle,shopPriceView,nativeCache,mealItemId,itemStateBytes
+      acquisitionBundle,shopPriceView,nativeCache,sourceNativeDynamicCacheGate,
+      mealItemId,itemStateBytes
     })
   });
 }
