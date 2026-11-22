@@ -61,6 +61,8 @@ EDGES = (
     ('refresh_calls_load_binary', 0x380B475, 0x380A910, 0xE8),
     ('load_binary_resolves_type', 0x380AC92, 0x380A260, 0xE8),
     ('export_for_build_calls_save_binary', 0x380D515, 0x380A400, 0xE8),
+    ('save_binary_type_check_for_message', 0x380A767, 0x6084C0, 0xE8),
+    ('save_binary_conditional_interface_dispatch', 0x380A77D, 0x2240, 0xE8),
     ('on_binarize_tail_to_cache_data', 0x383A392, 0x38398F0, 0xE9),
     ('try_sell_price_enumerates_proto_database', 0x383B912,
      0x17F8160, 0xE8),
@@ -76,6 +78,10 @@ WINDOWS = (
      '06cf7fc9eaf442fb361aae22db347414a565a129d488cf4ab6fa3a98e07d3c7d'),
     ('build_export_to_save', 0x380D50A, 20,
      '52c2ecf317ec8d7c9909c90edb4fc77f22e32c01a8b32abaee70ab61f12a9fbf'),
+    ('save_binary_message_type_gate', 0x380A75C, 38,
+     'bd2635761f0a7762c45553e23720ad283b6b214965aad03d2099afe9bb202530'),
+    ('save_binary_interface_call_guard', 0x380A76C, 31,
+     'edb9c4b7f897aabddb354357449e6792e23d66f632a2db9ab83a6d8ca678cb20'),
     ('on_binarize_to_cache_data', 0x383A390, 7,
      'bf3ba0c790f54f744476f7d1cbac0bc777df47c7430a3a9b8b2b487f4f3356a6'),
     ('provider_enum_from_sell_lookup', 0x383B908, 22,
@@ -123,6 +129,13 @@ def verify_method_metadata(dump_raw):
         pos = body.find(f'// RVA: 0x{rva:X}')
         require(pos >= 0 and signature in body[pos:pos+350],
                 'MISMATCHED_METHOD_IDENTITY')
+    require(
+        source.count('private IMessage <Message>k__BackingField; // 0x40') == 1,
+        'PROTO_DESC_MESSAGE_OFFSET')
+    require(
+        len(re.findall(r'^public interface IProtobufOnBinarize\\b',
+                       source, re.M)) == 1,
+        'PROTO_ON_BINARIZE_INTERFACE')
     return len(METHODS)
 
 
@@ -229,6 +242,10 @@ def audit(proto_raw, dump_raw, assembly):
         'nativeRefreshHasCallToLoadBinary': True,
         'nativeLoadBinaryResolvesSerializedTypes': True,
         'nativeExportForBuildHasCallToSaveBinary': True,
+        'nativeSaveBinaryChecksProtoDescMessageRuntimeType': True,
+        'nativeSaveBinaryHasConditionalInterfaceSlotDispatch': True,
+        'saveBinaryConditionalInterfaceTypeIdentityVerified': False,
+        'onBinarizeMethodIsThatExactDispatchedInterfaceTargetVerified': False,
         'nativeSellProviderQueryUsesProtoDatabaseEnumerator': True,
         'nativeOnBinarizeTailDelegatesToCacheData': True,
         'directCallGraphDoesNotProveRuntimeOrder': True,
