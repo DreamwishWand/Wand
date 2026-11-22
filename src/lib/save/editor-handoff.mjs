@@ -54,7 +54,7 @@ function validate(){
     ...achievements.families.map(x=>({...x,origin:'achievement'}))
   ];
   const sources=new Map(families.map(x=>[x.id,x]));
-  const seen=new Set(),catalogCounts={DB01:0,DB03:0,DB04:0};
+  const seen=new Set(),catalogCounts={'DB-01':0,'DB-03':0,'DB-04':0};
   let verifiedCandidateRules=0,readsetOnly=0;
   for(const link of handoff.links){
     if(!plain(link)||seen.has(link.id)||link.id.length>96||
