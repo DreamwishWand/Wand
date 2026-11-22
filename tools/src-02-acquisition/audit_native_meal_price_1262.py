@@ -38,6 +38,7 @@ SWITCH_TEXT_SIZE = 162397712
 TARGET_NAMES = (
     ("ItemPriceDatabases", "GetSoftCurrencySellPrice"),
     ("ItemPriceDatabases", "GetSellPrice"),
+    ("ItemPriceDatabases", "TryGetSellPrice"),
     ("ItemPriceDatabases", "GetDefaultSellPrice"),
     ("MealItemData", "GetLowestPriceIngredients"),
     ("MealItemData", "TotalIngredientsValue"),
@@ -45,11 +46,11 @@ TARGET_NAMES = (
     ("MealItemData", "GetSellPrice"),
 )
 STEAM_RVAS = (
-    0x383B420, 0x383B530, 0x383BA40,
+    0x383B420, 0x383B530, 0x383B5D0, 0x383BA40,
     0x3E1DA20, 0x3E1E0F0, 0x3E1E710, 0x3E1ECC0,
 )
 SWITCH_RVAS = (
-    0x417EF70, 0x417F0C0, 0x417FA60,
+    0x417EF70, 0x417F0C0, 0x417F160, 0x417FA60,
     0x4A3E3E0, 0x4A3EC50, 0x4A3F640, 0x4A3F880,
 )
 # The source-control-safe hashes cover complete native instruction windows,
@@ -83,6 +84,18 @@ STEAM_WINDOWS = (
      "ffd35c2299bb25ea6b706bc6d5b073ff9fe49a5495a20167a20588aee571a59a"),
     ("sell_star_percentage_selector", 0x3B3E0C0, 20,
      "debe8635b1247cb18ba0348f70fddae8b074e32947b9091a314654e8fc4cc874"),
+    ("direct_calculator_currency_gate", 0x383B76D, 32,
+     "275584ffa715845bb8b643750e3132e1e1801def5fd2439e6a7500dad7b5c59a"),
+    ("direct_calculator_sale_return", 0x383B7DC, 31,
+     "9eb770d283c6a5efec01c39bc84e259af452452d75152fb19f01a0bb21c17fec"),
+    ("uncached_formula_gate", 0x383B8A8, 23,
+     "b362ae188ed35d65ece6d8893a1bc0bffa008e74b8d69d2f24eb223a4fec2db0"),
+    ("uncached_formula_price_call", 0x383B8CB, 29,
+     "b125834005897826ab0bd2ed8017715e5ced4d64b90f9f4003fd888b7b9b0392"),
+    ("registered_price_database_dispatch", 0x383B995, 29,
+     "a6a7a4b84d1f0c28a6f8ef932b9db6bcf6771b31e65241355127cac94f6600da"),
+    ("final_lookup_failure_zero", 0x383BA10, 13,
+     "dbe21dfc865f9b22fc4dcc3481a0b558f9e9e89bfe49336ab383f0b64a0ae8e2"),
 )
 SWITCH_WINDOWS = (
     ("integer_percent_truncation", 0x4A3F1AC, 32,
@@ -107,6 +120,18 @@ SWITCH_WINDOWS = (
      "73f17977175ac8c8f96fba3e7e4102e6e99b5469ff9105496a44756f2a584031"),
     ("sell_star_percentage_selector", 0x4A41130, 12,
      "c14ab65759500e9dca7fa4b73ce34bed4c86a45faf609e82e66ee9af2901c5c3"),
+    ("direct_calculator_currency_gate", 0x417F43C, 32,
+     "371d2ea00700d741bc99e56829bc3733d2367a129b7cdce77fc94a88d1d97a6f"),
+    ("direct_calculator_sale_return", 0x417F48C, 40,
+     "ad85b698ff6a3b295c9a180a81b97066a6e1abb43b06585c962fa78cc8dcb3e3"),
+    ("uncached_formula_gate", 0x417F600, 44,
+     "6d33a79b7589c7989cbf0aca836f31e014dfc3fa94b48db28e0db541ec2fc585"),
+    ("uncached_formula_price_call", 0x417F634, 28,
+     "ed073ee895de03553276c9791686b7cfb6c83df0047e814f56a64fb8b2397cb8"),
+    ("registered_price_database_dispatch", 0x417F8EC, 36,
+     "7646ae4c46d47e4fe66a6e17393b313d3b595ba855f2514c138acf247465161f"),
+    ("final_lookup_failure_zero", 0x417F994, 40,
+     "b16f55ec558d4794d4d58705304cf9c9d183e6f2c420f55800e7a01c31f328de"),
 )
 MAX_DUMP = 160 * 1024 * 1024
 
@@ -264,7 +289,7 @@ def verify_switch(dump_path, nso_path):
 def run_audit(steam_version, steam_dump, steam_dll, switch_dump, switch_main):
     steam = verify_steam(steam_version, steam_dump, steam_dll)
     switch = verify_switch(switch_dump, switch_main)
-    require(steam["methodRvasChecked"] == switch["methodRvasChecked"] == 7,
+    require(steam["methodRvasChecked"] == switch["methodRvasChecked"] == 8,
             "CROSS_PLATFORM_METHOD_SET")
     return {
         "contract": CONTRACT,
@@ -280,6 +305,11 @@ def run_audit(steam_version, steam_dump, steam_dll, switch_dump, switch_main):
         "ingredientSoftCurrencyLookupDefaultOneVerified": True,
         "sellWrapperZeroBaseAndInt32MaxDefaultVerified": True,
         "sellRecipeStarPercentageSelectorVerified": True,
+        "itemCalculatorCurrencyGateFirst": True,
+        "uncachedSellFormulaPathVerified": True,
+        "registeredPriceDatabaseIterationVerified": True,
+        "lookupFailureZeroOutAndFalseVerified": True,
+        "actualRegisteredDatabaseIterationOrderVerified": False,
         "reportedNativeInstructionWindowsOnly": True,
         "exactIngredientPriceResolutionVerified": False,
         "completeNativeSellFormulaVerified": False,
