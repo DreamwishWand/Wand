@@ -9,6 +9,8 @@
   import {publicQuestStepIndex,publicQuestStepQuery} from '$lib/guide/public-quest-steps.mjs';
   import {loadPublicQuestConditions,publicConditionText,PUBLIC_QUEST_CONDITIONS_FILE,
     type PublicQuestConditionReader} from '$lib/guide/public-quest-conditions.ts';
+  import {loadPublicQuestRewards,DB03_QUEST_REWARDS_FILE,
+    type PublicQuestRewardsReader} from '$lib/guide/public-quest-rewards.ts';
 
   let catalog:any=null;
   let loadError='';
@@ -32,6 +34,8 @@
   const cached=new Map<number,any>();
   const cachedTargets=new Map<number,any>();
   let conditionIndex:PublicQuestConditionReader|null=null;
+  let rewardIndex:PublicQuestRewardsReader|null=null;
+  let rewardError='';
   let conditionError='';
   let targetIndex:any=null;
   let targetLookup:Record<string,any[]>={};
@@ -43,6 +47,7 @@
   $: characters=catalog?[...new Set(catalog.quests.map((x:any)=>x.characterId).filter(Boolean))].sort() as string[]:[];
   // Native Mission group association, not an unlock prerequisite or chronological link.
   $: questConditions=selectedRow&&conditionIndex?conditionIndex.getQuest(selectedRow.id):null;
+  $: questRewardInfo=selectedRow&&rewardIndex?rewardIndex.getQuest(selectedRow.id):null;
   $: relatedQuests=catalog&&selectedRow&&typeof selectedRow.groupId==='string'&&
     catalog.groups&&Object.hasOwn(catalog.groups,selectedRow.groupId)
     ?catalog.quests.filter((row:any)=>row.groupId===selectedRow.groupId&&row.id!==selectedRow.id):[];
@@ -124,6 +129,14 @@
       if(catalog===index)conditionError=error instanceof Error?error.message:String(error);
     }
   }
+  async function loadRewards(index:any){
+    try{
+      const data=await loadPublicQuestRewards(index,`${prefix}${DB03_QUEST_REWARDS_FILE}`);
+      if(catalog===index)rewardIndex=data;
+    }catch(e){
+      if(catalog===index)rewardError=e instanceof Error?e.message:String(e);
+    }
+  }
   async function loadCatalog() {
     loading=true;loadError='';
     try {
@@ -132,7 +145,9 @@
       const data=await res.json();
       catalog=verifyPublicQuestIndex(data);
       conditionIndex=null;conditionError='';
+      rewardIndex=null;rewardError='';
       void loadConditions(catalog);
+      void loadRewards(catalog);
       restoreAddressSelection();
     }catch(e){loadError=e instanceof Error?e.message:String(e)}
     finally {loading=false}
@@ -228,6 +243,40 @@
           {#if detailLoading}<p class="status">目標データを検証しています…</p>{/if}
           {#if detailError}<p class="error" role="alert">{detailError}</p>{/if}
           {#if selected}
+            {#if questRewardInfo}
+              <details class="quest-rewards" aria-label="クエストの静的報酬候補">
+                <summary>報酬候補（{questRewardInfo.currencies.length+questRewardInfo.lootCandidates.length}件）</summary>
+                {#if questRewardInfo.currencies.length}
+                  <div class="quest-reward-block">
+                    <strong>通貨報酬の設定</strong>
+                    <ul>
+                      {#each questRewardInfo.currencies as reward}
+                        <li>{itemTargetName(targetIndex,reward.itemId,locale)||'通貨'} · {reward.amountMin===reward.amountMax?reward.amountMin:`${reward.amountMin}～${reward.amountMax}`}（ID {reward.itemId}）</li>
+                      {/each}
+                    </ul>
+                  </div>
+                {/if}
+                {#if questRewardInfo.lootCandidates.length}
+                  <div class="quest-reward-block">
+                    <strong>追加報酬のアイテム候補</strong>
+                    <div class="quest-reward-chips">
+                      {#each questRewardInfo.lootCandidates as reward}
+                        <span title={`Item ID ${reward.itemId} · Loot Table ${reward.tableIndex+1}`}>
+                          {itemTargetName(targetIndex,reward.itemId,locale)||'アイテム'}（ID {reward.itemId}）
+                        </span>
+                      {/each}
+                    </div>
+                  </div>
+                {/if}
+                {#if questRewardInfo.opaqueOverrideUnresolved}
+                  <small>参照先未解決の追加報酬設定があります。</small>
+                {/if}
+                <small>原本の設定上の候補です。Loot Tableからの実際の配布・数量やプレイヤーの取得状況は確認していません。</small>
+              </details>
+            {/if}
+            {#if rewardError}
+              <small class="condition-warning">報酬情報を読み込めませんでした。</small>
+            {/if}
             {#if questConditions}
               <details class="quest-activation" aria-label="クエスト出現・解放条件の原本設定">
                 <summary>出現・解放条件</summary>
@@ -384,6 +433,13 @@
   .step-permalink{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:space-between;color:#b9a5ca;font-size:12px;margin:4px 0 12px}
   .step-permalink a{color:#d9baff;text-underline-offset:3px}
   .step{border-top:1px solid #40344b;padding:13px 0}.step h3{font-size:15px;margin:0 0 8px}.step p{font-size:13px;color:#c2b4cb}.step ol{margin:0;padding-left:25px}.step li{padding:6px 0 8px;font-size:14px}.step li small{display:block;color:#9588a5;font-size:11px;margin-top:3px}
+  .quest-rewards{margin:10px 0;border:1px solid #514260;border-radius:9px;padding:10px 12px;font-size:12px;color:#d6c1e5}
+  .quest-rewards summary{cursor:pointer;font-weight:650;color:#e9d5f9}
+  .quest-rewards small{display:block;color:#a99ab8;margin-top:8px;line-height:1.5}
+  .quest-reward-block{display:grid;gap:6px;margin:9px 0}
+  .quest-reward-block ul{margin:0;padding-left:17px}
+  .quest-reward-chips{display:flex;flex-wrap:wrap;gap:6px}
+  .quest-reward-chips span{border:1px solid #5b496b;border-radius:7px;padding:5px 8px;color:#e8d9f2;background:#281e34;overflow-wrap:anywhere}
   .quest-activation{margin:10px 0;border:1px solid #514260;border-radius:9px;padding:10px 12px;font-size:12px;color:#d6c1e5}
   .quest-activation summary{cursor:pointer;font-weight:650;color:#e9d5f9}
   .quest-activation-block{margin:9px 0}
