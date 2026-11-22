@@ -44,6 +44,15 @@ def validated_prior_map(root, prior_files, prior_sha, prior_version):
                 obj.get("gameVersion") == prior_version and
                 obj.get("bucket") == PRIVATE_BUCKET and
                 isinstance(obj.get("objects"),list), "BAD_PRIOR_SOURCE_MAP")
+        stage_report_path=root/REPORT_NAME
+        require(stage_report_path.is_file(), "PRIOR_DELTA_REPORT_MISSING")
+        staged=json.loads(stage_report_path.read_bytes())
+        require(staged.get("complete") is True and
+                staged.get("status")=="private_delta_uploaded" and
+                staged.get("newManifestSha256")==prior_sha and
+                staged.get("remote",{}).get("bucket")==PRIVATE_BUCKET and
+                staged.get("remote",{}).get("totalNewVerified")==
+                staged.get("newUniqueUploads"), "PRIOR_DELTA_NOT_CONFIRMED")
         mapping={}
         for item in obj["objects"]:
             rel=item["path"]
@@ -228,11 +237,10 @@ def run(args):
             **planned["summary"]}
     # The next-version builder already checked every produced or reused
     # image, but repeat the full byte audit before any network operation.
+    build_report=json.loads((root/"src04-next-release-report.json").read_bytes())
     _,new_files,_=collect(root,
-         expected_items=report["itemCount"] if "itemCount" in report else
-                        planned["candidate"]["objects"].__len__() if False else
-                        json.loads((root/"src04-next-release-report.json").read_bytes())["itemCount"],
-         expected_guids=json.loads((root/"src04-next-release-report.json").read_bytes())["guidCount"],
+         expected_items=build_report["itemCount"],
+         expected_guids=build_report["guidCount"],
          source_sha=planned["candidate"]["sourceItemsSha256"])
     report["localAudit"]=audit(root,new_files)
     if args.remote_plan or args.apply:
