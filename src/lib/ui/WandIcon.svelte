@@ -45,7 +45,9 @@
     edit:'M4 20h5l12-12-5-5L4 15z M14 5l5 5',
     trash:'M3 6h18 M8 6V4h8v2 M6 6l1 15h10l1-15 M10 10v7 M14 10v7',
     languages:'M5 6h12 M11 3v3 M8 6c0 5 5 9 10 11 M15 6c0 5-5 9-10 11 M14 22l4-9 4 9 M15.5 19h5',
-    moon:'M20 16.6A9 9 0 0 1 7.4 4 9 9 0 1 0 20 16.6z'
+    moon:'M20 16.6A9 9 0 0 1 7.4 4 9 9 0 1 0 20 16.6z',
+    grid:'M3 3h8v8H3z M13 3h8v8h-8z M3 13h8v8H3z M13 13h8v8h-8z',
+    chevron:'m6 9 6 6 6-6'
   };
 </script>
 <svg width={size} height={size} viewBox="0 0 24 24" fill="none"

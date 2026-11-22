@@ -126,13 +126,13 @@ try{
   portal.on('pageerror',error=>browserErrors.push(String(error)));
   await portal.goto('http://127.0.0.1:4173/Wand/');
   await portal.locator('.portal-card').filter({hasText:'Collection'}).first().waitFor();
-  assert.equal(await portal.locator('.portal-grid .portal-card').count(),6);
+  assert.equal(await portal.locator('.portal-grid .portal-card').count(),7);
   assert.deepEqual(await portal.locator('.portal-grid .portal-card-label strong').allTextContents(),
-    ['Decorate','Collection','Guide','Presets','Gallery','DreamSnaps']);
+    ['Decorate','Collection','Guide','Presets','Gallery','DreamSnaps','Community Help Center']);
   assert.equal(await portal.locator('a.portal-card').count(),2);
-  assert.equal(await portal.locator('.portal-card.planned').count(),4);
-  assert.equal(await portal.locator('.portal-community').count(),1);
-  assert.match(await portal.locator('.portal-community').innerText(),/Community Help Center/);
+  assert.equal(await portal.locator('.portal-card.planned').count(),5);
+  assert.equal(await portal.locator('.portal-card-community').count(),1);
+  assert.match(await portal.locator('.portal-card-community').innerText(),/Community Help Center/);
   assert.equal(await portal.locator('header.site-header .site-nav').count(),0);
   assert.equal(await portal.locator('header.site-header .brand').count(),0);
   assert.equal(await portal.locator('.portal-intro').count(),0);
@@ -142,12 +142,12 @@ try{
   await portal.setViewportSize({width:1696,height:900});
   const layout=await portal.evaluate(()=>{
     const page=document.querySelector('.portal-page')?.getBoundingClientRect();
-    const support=document.querySelector('.portal-community')?.getBoundingClientRect();
+    const support=document.querySelector('.portal-card-community')?.getBoundingClientRect();
     const cards=Array.from(document.querySelectorAll('.portal-card')).map(x=>x.getBoundingClientRect());
     const headerOrder=Array.from(document.querySelectorAll('.site-actions > :is(.header-file-tools,.header-preference-tools,.header-support-tools)'))
       .map(x=>x.getAttribute('aria-label'));
     return {
-      fits:Boolean(page&&support&&cards.length===6&&
+      fits:Boolean(page&&support&&cards.length===7&&
         support.bottom<=window.innerHeight+1&&
         cards.every(r=>r.top>=0&&r.bottom<=window.innerHeight+1)&&
         document.documentElement.scrollHeight<=window.innerHeight+1),
@@ -158,15 +158,20 @@ try{
       headerOrder
     };
   });
-  assert.equal(layout.fits,true,'all seven launcher areas must fit the first desktop viewport');
+  assert.equal(layout.fits,true,'all seven launcher tiles must fit the first desktop viewport');
   assert.equal(layout.fullBleed,true,'home launcher should reach the viewport edges');
   assert.ok(layout.communityHeight>=160,'Community Help Center must be a prominent destination');
   assert.ok(layout.gap>=0&&layout.gap<=3,'service tiles should have only a thin divider');
   assert.equal(layout.radius,'0px','rectangular tiles, not isolated cards');
-  assert.deepEqual(layout.headerOrder,['ファイル操作','表示設定','ヘルプとアカウント']);
+  assert.deepEqual(layout.headerOrder,['表示設定','ヘルプとアカウント']);
+  await portal.getByRole('button',{name:'サービスを切り替える'}).click();
+  const serviceMenu=portal.getByRole('group',{name:'サービス一覧'});
+  assert.equal(await serviceMenu.getByRole('link',{name:'Collection'}).count(),1);
+  assert.equal(await serviceMenu.locator('.shell-unavailable').count(),5);
+  await portal.getByRole('button',{name:'サービスを切り替える'}).click();
   await portal.setViewportSize({width:390,height:844});
   const mobileLayout=await portal.evaluate(()=>{
-    const help=document.querySelector('.portal-community')?.getBoundingClientRect();
+    const help=document.querySelector('.portal-card-community')?.getBoundingClientRect();
     return Boolean(help&&help.height>=120&&help.bottom<=innerHeight+1&&document.documentElement.scrollWidth<=innerWidth+1);
   });
   assert.equal(mobileLayout,true,'mobile launcher must keep all services and Help Center usable');
@@ -185,7 +190,7 @@ try{
   await portal.getByRole('button',{name:'テーマを切り替える'}).click();
   assert.equal(await portal.evaluate(()=>document.documentElement.dataset.wandTheme),'dark');
   await portal.getByRole('button',{name:'このページのチュートリアル'}).click();
-  assert.match(await portal.getByRole('dialog').innerText(),/6つの主要サービス|カードを選択/);
+  assert.match(await portal.getByRole('dialog').innerText(),/利用するサービスのタイル/);
   await portal.getByRole('button',{name:'チュートリアルを閉じる'}).click();
   assert.equal(await portal.getByRole('dialog').count(),0);
   await portal.close();
