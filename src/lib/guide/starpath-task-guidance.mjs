@@ -180,8 +180,8 @@ export function starpathTaskDisplay(seasonId,task,locale,sourceText){
     (typeof task?.description==='string'&&task.description.trim()?task.description:'');
   return {
     headline:reviewed?.action||original||'説明未確認',
-    note:reviewed?'確認済みの操作 · ゲーム内表記：'+(original||'説明未確認'):
-      'ゲーム内表記 · 詳細な操作手順は未検証',
+    // Source authenticity is explained once per page, not on every unreviewed item.
+    note:reviewed?'ゲーム内表記：'+(original||'説明未確認'):null,
     reviewed:!!reviewed
   };
 }
