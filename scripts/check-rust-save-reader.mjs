@@ -24,7 +24,7 @@ for(const [worker,code] of [['Collection',collection],['SaveDiagnostics',diagnos
   assert.doesNotMatch(code,/decodeP1gPackagedProfile/,
     worker+' must not call the legacy JS P1G decoder');
 }
-assert.match(collection,/inspectEncryptedSavedStore\(ciphertext,\s*readRustP1gProfileInWorker\)/);
+assert.match(collection,/inspectEncryptedSavedStore\(\s*ciphertext,\s*readRustP1gProfileInWorker\)/);
 assert.match(diagnostics,/safeNativeP1gAudit,\s*readRustP1gProfileInWorker\)/);
 assert.match(collectionCore,/decodeProfile\(ciphertext\)/);
 assert.match(diagnosticsCore,/decodeEncryptedProfile\(bytes\)/);
