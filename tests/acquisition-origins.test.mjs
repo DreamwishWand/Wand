@@ -17,7 +17,8 @@ test('DB-03 original Star Path reward pages, bonuses and vaults project without 
   assert.equal(origins.filter(r => r.kind === 'star_path_premium').length > 0, true);
   assert.equal(origins.filter(r => r.kind === 'star_path_vault').length, 13);
   assert.equal(origins.filter(r => r.kind === 'star_path_free').length > 0, true);
-  assert(origins.every(r => r.source.kind === 'verified_liveops_cache'));
+  assert(origins.every(r => r.source.kind === 'unhashed_structural_candidate'));
+  assert(origins.every(r => r.routeStatus === 'static_candidate_only'));
   assert(origins.every(r => r.availability === 'not_live_verified'));
   assert(origins.every(r => r.campaignId !== null));
   assert(origins.some(r => r.price !== null));
@@ -41,7 +42,7 @@ test('Official announcements preserve code, named rewards and absent Item IDs', 
   assert.deepEqual(sea.rewards.map(r => r.cumulativeWatchMinutes), [60,90,120]);
   assert(sea.rewards.every(r => r.itemId === null));
   const db = createAcquisitionOriginDatabase([], OFFICIAL_CAMPAIGNS);
-  assert.equal(db.getCoverage().rewardNamesAwaitingItemId, 19);
+  assert.equal(db.getCoverage().rewardNamesAwaitingItemId, 24);
   assert.equal(db.getCoverage().linkedItemIds, 0);
   assert.equal(db.getCampaign('code:DDVPRIDE2026')?.code, 'DDVPRIDE2026');
   assert.equal(db.getItem(40000000).origins.length, 0);
@@ -83,8 +84,8 @@ test('Fail closed: unknown campaigns, item-identity duplicates and invalid sourc
     {...first,itemId:'0001'}
   ], campaigns), /DB02_ORIGINS_ITEM_ID/);
   assert.throws(() => createAcquisitionOriginDatabase([
-    {...first,source:{...first.source,sha256:null}}
-  ], campaigns), /DB02_ORIGINS_SOURCE_HASH/);
+    {...first,source:{...first.source,sha256:'a'.repeat(64)}}
+  ], campaigns), /DB02_ORIGINS_UNHASHED_SOURCE_CANNOT_ASSERT_HASH/);
   assert.throws(() => createAcquisitionOriginDatabase([
     {...first,kind:'premium_shop'}
   ], campaigns), /DB02_ORIGINS_CAMPAIGN_KIND/);

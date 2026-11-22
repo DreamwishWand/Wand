@@ -38,16 +38,34 @@ function id(value: number | string): string {
   return v;
 }
 
+export type VerifiedDb01EnglishNames=Pick<Db01CatalogClient,'source'|'searchExactNames'>;
+
+/**
+ * Returns all exact original English-name candidates; absence is not a negative
+ * item-existence claim and a matched label is not proof of a vendor or grant.
+ */
+export async function exactCurrentDb01NameIds(
+  db01:VerifiedDb01EnglishNames,name:string
+):Promise<readonly string[]>{
+  if(db01?.source?.platform!=='Steam'||db01.source.gameVersion!=='1.26.2'||
+    db01.source.privateOnly!==true||typeof db01.searchExactNames!=='function')
+    throw new TypeError('DB02_NAME_CANDIDATE_VERIFIED_DB01_REQUIRED');
+  if(typeof name!=='string'||!name||name.length>250)
+    throw new TypeError('DB02_NAME_CANDIDATE_INVALID_NAME');
+  const rows=await db01.searchExactNames(name,'en',500);
+  if(!Array.isArray(rows))throw new TypeError('DB02_NAME_CANDIDATE_ROWS');
+  return Object.freeze([...new Set(rows.filter(row=>
+    row.evidence==='current_exact_locdb_join' &&
+    row.value.localeCompare(name,'en',{sensitivity:'accent'})===0
+  ).map(row=>id(row.itemId)))]);
+}
+
 /** Pass the existing, source-authenticated DB-01 client and public campaign ledger. */
 export async function matchOfficialCampaignRewardNames(
   campaigns: readonly OfficialCampaign[],
   db01: Pick<Db01CatalogClient, 'source' | 'searchExactNames'>
 ): Promise<OfficialNameCandidateIndex> {
-  if (db01?.source?.platform !== 'Steam' ||
-      db01.source.gameVersion !== '1.26.2' ||
-      db01.source.privateOnly !== true ||
-      typeof db01.searchExactNames !== 'function')
-    throw new TypeError('DB02_NAME_CANDIDATE_VERIFIED_DB01_REQUIRED');
+
   const byItem = new Map<string, OfficialNameCandidate[]>();
   const byCampaign = new Map<string, OfficialNameCandidate[]>();
   let examined = 0, matched = 0, ambiguous = 0, unmatched = 0;
@@ -56,12 +74,7 @@ export async function matchOfficialCampaignRewardNames(
     for (const reward of campaign.rewards) {
       if (reward.itemId !== null) continue; // already explicitly linked elsewhere
       examined++;
-      const rows = await db01.searchExactNames(reward.name, 'en', 500);
-      // DB-01 uses substring search; exact comparison prevents accidental
-      // matches such as 'Gamer Chair' vs. 'Winner\'s Gamer Chair'.
-      const exact = rows.filter(row => row.evidence === 'current_exact_locdb_join' &&
-        row.value.localeCompare(reward.name, 'en', {sensitivity:'accent'}) === 0);
-      const unique = new Set(exact.map(row => id(row.itemId)));
+      const unique = new Set(await exactCurrentDb01NameIds(db01,reward.name));
       if (unique.size === 0) {unmatched++;continue;}
       if (unique.size !== 1) {ambiguous++;continue;}
       matched++;

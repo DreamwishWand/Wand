@@ -11,11 +11,17 @@ export const OFFICIAL_CAMPAIGNS: readonly OfficialCampaign[] = Object.freeze([
     kind:'twitch_drop',
     name:'2026 Showcase Twitch Drops',
     code:null,productId:null,
-    window:{start:'2026-10-21',endExclusive:'2026-10-29'},
+    window:{start:'2026-10-21T16:00:00Z',endExclusive:'2026-10-28T16:00:00Z'},
+    windowEvidence:[{
+      window:{start:'2026-10-21T16:00:00Z',endExclusive:'2026-10-28T16:00:00Z'},
+      officialUrl:'https://disneydreamlightvalley.com/twitch-drops',
+      checkedOn:'2026-11-22',status:'published_schedule'
+    }],
     conditions:['Link Twitch and game account','Watch partnered creators',
-      'Specific viewing requirement not stated in this announcement'],
+      '60 / 90 cumulative viewing minutes according to the 2026-10-21 original Drops campaign page'],
     rewards:[
-      {name:'Pirate Crocodile Companion skin',itemId:null,quantity:1,cumulativeWatchMinutes:null}
+      {name:'Keepsake Sea Photo Frame',itemId:null,quantity:1,cumulativeWatchMinutes:60},
+      {name:'Pirate Crocodile Companion',itemId:null,quantity:1,cumulativeWatchMinutes:90}
     ],
     source:{
       sourceId:'official:twitch:2026-showcase',
@@ -53,9 +59,18 @@ export const OFFICIAL_CAMPAIGNS: readonly OfficialCampaign[] = Object.freeze([
     code: null,
     productId: null,
     window: {start:'2026-11-18T14:00:00Z',endExclusive:'2026-12-03T05:00:00Z'},
+    windowEvidence:[
+      {window:{start:'2026-11-18T14:00:00Z',endExclusive:'2026-12-03T05:00:00Z'},
+        officialUrl:'https://disneydreamlightvalley.com/twitch-drops',
+        checkedOn:'2026-11-22',status:'published_schedule'},
+      {window:{start:'2026-11-18T14:00:00Z',endExclusive:'2026-11-26T05:00:00Z'},
+        officialUrl:'https://disneydreamlightvalley.com/news/TheKeepsakeSea2026',
+        checkedOn:'2026-11-22',status:'conflicting_official_announcement'}
+    ],
     conditions: ['Link Twitch and game account', 'Watch eligible creators',
       'Claim on Twitch and redeem from in-game mailbox',
-      'November 18 news gives November 25 end; current official Drops page gives December 2 — date discrepancy retained'],
+      'Official Twitch campaign page specifies December 2 end',
+      'November 18 official news gave November 25 end; conflicting publication preserved'],
     rewards: [
       {name:'Keepsake Sea Photo Frame',itemId:null,quantity:1,cumulativeWatchMinutes:60},
       {name:'Pirate Crocodile Companion',itemId:null,quantity:1,cumulativeWatchMinutes:90},
@@ -109,6 +124,59 @@ export const OFFICIAL_CAMPAIGNS: readonly OfficialCampaign[] = Object.freeze([
       checkedOn:'2026-11-22',gameVersion:null,sha256:null
     },
     availability:'not_live_verified'
+  },
+  {
+    campaignId:'purchase:grizzly-bear-charity-2026',
+    kind:'purchase_bonus',
+    name:'Grizzly Bear Cub Charity Bundle',
+    code:null,productId:null,
+    window:{start:'2026-07-29T13:00:00Z',endExclusive:'2026-09-23T13:00:00Z'},
+    conditions:[
+      'Purchase the charity bundle through the relevant platform',
+      'Special platform sale with real-money price not specified in official announcement',
+      'The official announcement states July 29 09:00 EDT to September 23 08:59 EDT'
+    ],
+    rewards:[
+      {name:'Grizzly Bear Cub Companion',itemId:null,quantity:1,cumulativeWatchMinutes:null},
+      {name:'Moonstones',itemId:null,quantity:800,cumulativeWatchMinutes:null}
+    ],
+    source:{
+      sourceId:'official:charity:ncc-2026',kind:'official_publication',
+      sourceUrl:'https://disneydreamlightvalley.com/news/NCCCharity2026',
+      checkedOn:'2026-11-22',gameVersion:null,sha256:null
+    },availability:'not_live_verified'
+  },
+  {
+    campaignId:'premium:sinister-bridge-kit-2026',
+    kind:'premium_shop',
+    name:'Sinister Bridge Kit',
+    code:null,productId:null,
+    window:{start:null,endExclusive:null},
+    conditions:['Announced with Season of Scares; original sale dates and price not confirmed'],
+    rewards:[
+      {name:'Sinister Bridge Kit',itemId:null,quantity:1,cumulativeWatchMinutes:null}
+    ],
+    source:{
+      sourceId:'official:premium:season-scares-2026',kind:'official_publication',
+      sourceUrl:'https://disneydreamlightvalley.com/news/update-sep-23-2026',
+      checkedOn:'2026-11-22',gameVersion:null,sha256:null
+    },availability:'not_live_verified'
+  },
+  {
+    campaignId:'premium:lucifer-companion-bundle-2026',
+    kind:'premium_shop',
+    name:'Lucifer Companion Bundle',
+    code:null,productId:null,
+    window:{start:null,endExclusive:null},
+    conditions:['Announced with Season of Scares; original sale dates and price not confirmed'],
+    rewards:[
+      {name:'Lucifer Companion',itemId:null,quantity:1,cumulativeWatchMinutes:null}
+    ],
+    source:{
+      sourceId:'official:premium:lucifer-2026',kind:'official_publication',
+      sourceUrl:'https://disneydreamlightvalley.com/news/update-sep-23-2026',
+      checkedOn:'2026-11-22',gameVersion:null,sha256:null
+    },availability:'not_live_verified'
   },
   {
     campaignId:'purchase:keepsake-sea-deluxe-2026',
