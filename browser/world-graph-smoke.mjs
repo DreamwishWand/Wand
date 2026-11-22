@@ -445,7 +445,7 @@ try{
     .filter({hasText:'原本初期配置 1 / 2件'}).waitFor();
   assert.equal(await terrainSelectors.nth(2).inputValue(),'1');
   await globalItemQuery.fill('999');
-  await page.getByRole('button',{name:'原本全Gridを検索'}).click();
+  await globalItemQuery.press('Enter');
   await page.getByRole('status')
     .filter({hasText:'この部分的な原本ZIPに指定Item IDの初期配置はありません'}).waitFor();
   assert.equal(await page.getByRole('button',{name:'次の候補'}).count(),0);
