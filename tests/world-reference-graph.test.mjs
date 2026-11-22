@@ -375,3 +375,81 @@ test('original GridObject per-Grid cardinality must match original GridCollectio
   assert.throws(()=>new WorldReferenceIndex(overflow),
     /NATIVE_GRID_DEFAULT_INSTANCE_MISMATCH/);
 });
+
+test('original GridDataPath yields candidate layouts, never a saved Grid identity',()=>{
+  const f=fixture();
+  const anotherLayout='SceneLayouts/Village04/SyntheticReusedGrid.json';
+  const anotherGrid=anotherLayout+'#grid=9';
+  const unreferenced='GridData/Village04/SourceFileOnly.json';
+  f.layouts.push({
+    ...f.layouts[1],layoutId:anotherLayout,
+    nativeDefaultObjectCount:0,parentAreaRefId:area
+  });
+  f.gridRefs.push({
+    ...f.gridRefs[0],gridRefId:anotherGrid,
+    layoutId:anotherLayout,nativeGridId:9,
+    originalDefaultObjectCount:0
+  });
+  f.gridData.push({
+    ...f.gridData[0],gridDataPath:unreferenced
+  });
+  f.coverage.gridReferencesInSubset=2;
+  const index=new WorldReferenceIndex(f);
+  const matched=index.originalGridDataPathCandidates(path);
+  assert.equal(matched.contract,'wand.db04.native-grid-data-path-candidates@1');
+  assert.equal(matched.sourceGameVersion,'1.26.2');
+  assert.equal(matched.sourceWorldManifestSha256,'f'.repeat(64));
+  assert.equal(matched.gridDataPath,path);
+  assert.equal(matched.sourcePresence,'referenced_source_file');
+  assert.equal(matched.originalGridDataFile?.nativeSizeX,10);
+  assert.equal(matched.sourceFilePathExactMatched,true);
+  assert.equal(matched.sourceGridReferenceCount,2);
+  assert.equal(matched.distinctSourceLayoutCount,2);
+  assert.deepEqual(matched.sourceGridReferences.map(g=>g.gridRefId),
+    [grid,anotherGrid]);
+  assert.equal(matched.sourceLayoutCandidatesComplete,false);
+  assert.equal(matched.numericSaveGridIdUsedAsSourceKey,false);
+  assert.equal(matched.savedGridIdentityVerified,false);
+  assert.equal(matched.savedObjectPlacementVerified,false);
+  assert.equal(matched.contentPackRelationVerified,false);
+  assert.equal(matched.placementLegalityVerified,false);
+  assert.equal(matched.sourceCoverageComplete,false);
+  assert.throws(()=>matched.sourceGridReferences.push({}),TypeError);
+  assert.throws(()=>{matched.sourceGridReferences[0].worldId='forged';},TypeError);
+
+  const sourceOnly=index.originalGridDataPathCandidates(unreferenced);
+  assert.equal(sourceOnly.sourcePresence,
+    'source_file_without_layout_reference');
+  assert.equal(sourceOnly.sourceFilePathExactMatched,true);
+  assert.equal(sourceOnly.sourceGridReferenceCount,0);
+  assert.deepEqual(sourceOnly.sourceGridReferences,[]);
+
+  const missing=index.originalGridDataPathCandidates(
+    'GridData/Village04/NotInPartialSource.json');
+  assert.equal(missing.sourcePresence,'not_in_partial_source');
+  assert.equal(missing.originalGridDataFile,null);
+  assert.equal(missing.sourceFilePathExactMatched,false);
+  assert.equal(missing.sourceGridReferenceCount,0);
+  assert.equal(missing.sourceCoverageComplete,false);
+  assert.equal(missing.savedGridIdentityVerified,false);
+  assert.notEqual(missing.sourcePresence,sourceOnly.sourcePresence);
+});
+
+test('original source GridDataPath matches exact spelling only, never Save map IDs',()=>{
+  const index=new WorldReferenceIndex(fixture());
+  assert.equal(index.originalGridDataPathCandidates(path)
+    .sourceGridReferenceCount,1);
+  assert.equal(index.originalGridDataPathCandidates(
+    'GridData/Village04/beach.json').sourceGridReferenceCount,0);
+  assert.throws(()=>index.originalGridDataPathCandidates('7'),
+    /INVALID_NATIVE_GRID_DATA_PATH/);
+  assert.throws(()=>index.originalGridDataPathCandidates(
+    'GridData/Village04/../Beach.json'),
+    /INVALID_NATIVE_GRID_DATA_PATH/);
+  assert.throws(()=>index.originalGridDataPathCandidates(
+    'griddata/Village04/Beach.json'),
+    /INVALID_NATIVE_GRID_DATA_PATH/);
+  assert.throws(()=>index.originalGridDataPathCandidates(
+    'GridData/Village04/Beach.JSON'),
+    /INVALID_NATIVE_GRID_DATA_PATH/);
+});
