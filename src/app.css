@@ -328,3 +328,112 @@ a.portal-card:hover{transform:translateY(-3px);border-color:#cfafe7;box-shadow:0
   .community-title{font-size:13px}
   .community-state{font-size:10px}
 }
+
+/* Full-screen Wand home: no hero, no repeated brand, no extra navigation.
+   The six services and support strip occupy the available viewport. */
+.site-header{height:62px;min-height:62px;justify-content:flex-end;gap:9px;padding:0 clamp(14px,2.6vw,35px)}
+.header-spacer{flex:1 1 auto;min-width:0}
+.header-home-button{display:grid;place-items:center;width:39px;height:39px;flex:none;
+  border:1px solid #ffffff32;background:#ffffff0a;border-radius:11px;color:#ecd9f8;text-decoration:none}
+.header-home-button:hover{background:#6d50894a}
+.header-language-menu{position:relative;flex:none}
+.header-language-button{width:auto;min-width:74px;display:flex;justify-content:center;gap:7px;padding:0 9px}
+.header-locale-code{font-size:11px;font-weight:750;letter-spacing:.05em}
+.language-popover{position:absolute;z-index:100;top:calc(100% + 10px);right:0;width:200px;max-height:min(75dvh,360px);
+  overflow:auto;border-radius:14px;padding:7px;border:1px solid #9e7fba6e;
+  background:#261b33;box-shadow:0 19px 60px #0009}
+.language-popover button{display:flex;width:100%;min-height:37px;justify-content:space-between;
+  align-items:center;gap:10px;text-align:left;color:#f1e9fa;background:transparent;border:0;
+  border-radius:8px;padding:9px 11px;font-size:12px}
+.language-popover button:hover,.language-popover button.chosen{background:#6f51884f}
+.portal-page{max-width:none;width:100%;height:calc(100dvh - 62px);min-height:510px;
+  padding:clamp(10px,1.9vh,23px) clamp(12px,2.25vw,36px);
+  margin:0;display:flex;flex-direction:column;gap:clamp(9px,1.6vh,18px);overflow:hidden}
+.site-main:has(.portal-page){flex:1 1 auto;min-height:0}
+.portal-grid{flex:1 1 auto;min-height:0;grid-template-columns:repeat(3,minmax(0,1fr));
+  grid-template-rows:repeat(2,minmax(0,1fr));gap:clamp(10px,1.8vh,18px)}
+.portal-card,.portal-card:first-child{grid-column:span 1;min-height:0;
+  padding:clamp(18px,2.4vw,38px);border-radius:22px}
+.portal-card-visual,.portal-card:first-child .portal-card-visual{
+  width:clamp(88px,9.3vw,150px);height:clamp(88px,9.3vw,150px);
+  top:clamp(20px,2.4vw,36px);right:clamp(20px,2.4vw,36px);border-radius:28px}
+.portal-card-visual>svg{width:clamp(40px,4.7vw,66px);height:clamp(40px,4.7vw,66px)}
+.portal-game-art,.portal-card:first-child .portal-game-art{
+  width:clamp(88px,9.3vw,150px);height:clamp(88px,9.3vw,150px)}
+.portal-card-label{gap:8px;max-width:85%}
+.portal-card-label strong{font-size:clamp(21px,2.05vw,34px);letter-spacing:-.04em}
+.portal-card-label small{font-size:clamp(12px,.94vw,15px)}
+.portal-card-action{right:clamp(18px,2.4vw,36px);bottom:clamp(20px,2.4vw,34px)}
+.portal-card.planned{opacity:.68}
+.portal-community{flex:0 0 69px;margin:0;min-height:0;padding:10px clamp(14px,1.5vw,24px)}
+.community-icon{width:43px;height:43px}
+.community-title{font-size:16px}
+@media(max-width:850px){
+  .portal-grid{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(3,minmax(0,1fr))}
+  .portal-card,.portal-card:first-child{padding:17px;border-radius:17px}
+  .portal-card-visual,.portal-card:first-child .portal-card-visual{
+    width:clamp(56px,9vw,92px);height:clamp(56px,9vw,92px);top:15px;right:15px;border-radius:19px}
+  .portal-game-art,.portal-card:first-child .portal-game-art{
+    width:clamp(56px,9vw,92px);height:clamp(56px,9vw,92px)}
+  .portal-card-label strong{font-size:clamp(15px,3vw,23px)}
+}
+@media(max-width:650px){
+  .site-header{height:56px;min-height:56px;flex-wrap:nowrap;padding:0 12px;gap:5px}
+  .site-actions{margin-left:0}
+  .header-icon-button,.header-home-button{width:37px;height:37px}
+  .header-language-button{min-width:66px}
+  .portal-page{height:calc(100dvh - 56px);min-height:490px;padding:10px;gap:9px}
+  .portal-grid{gap:9px}
+  .portal-card,.portal-card:first-child{min-height:0;padding:12px}
+  .portal-card-visual,.portal-card:first-child .portal-card-visual{width:55px;height:55px;top:12px;right:12px}
+  .portal-game-art,.portal-card:first-child .portal-game-art{width:55px;height:55px}
+  .portal-card-label strong{font-size:clamp(14px,3.7vw,19px)}
+  .portal-card-label small{font-size:10px}
+  .portal-card-action{right:10px;bottom:12px}
+  .portal-community{flex-basis:56px;padding:7px}
+  .community-title{font-size:12px}
+  .community-icon{width:39px;height:39px}
+}
+@media(max-height:580px){
+  .portal-page{height:auto;min-height:calc(100dvh - 62px);overflow:visible}
+  .portal-grid{grid-auto-rows:minmax(158px,1fr);grid-template-rows:none}
+}
+/* Alternate light theme. Keep game artwork intact; use explicit surface colors,
+   never global CSS filters that would recolor the game's original thumbnails. */
+:root[data-wand-theme='light']{
+  color:#31233f;background:#f5f1fa;color-scheme:light}
+:root[data-wand-theme='light'] body{
+  background:radial-gradient(ellipse at 15% -10%,#e0d2ee,transparent 40rem),#f5f1fa}
+:root[data-wand-theme='light'] .site-header{
+  background:#eee6f7ed;border-bottom-color:#c9bad7;box-shadow:0 5px 20px #30204816}
+:root[data-wand-theme='light'] .header-home-button,
+:root[data-wand-theme='light'] .header-icon-button{
+  background:#ffffffaa;color:#5e4874;border-color:#bdabcd}
+:root[data-wand-theme='light'] .header-icon-button:hover,
+:root[data-wand-theme='light'] .header-home-button:hover{background:#dccbea}
+:root[data-wand-theme='light'] .help-action{color:#67449b;border-color:#bca5d0}
+:root[data-wand-theme='light'] .language-popover{
+  background:#fff;color:#332446;border-color:#c6b8d2;box-shadow:0 20px 50px #33224429}
+:root[data-wand-theme='light'] .language-popover button{color:#362446}
+:root[data-wand-theme='light'] .language-popover button:hover,
+:root[data-wand-theme='light'] .language-popover button.chosen{background:#e9dff2}
+:root[data-wand-theme='light'] .portal-card{
+  color:#362343;border-color:#c9b7d8;
+  background:radial-gradient(circle at 90% 12%,#d1b7e883,transparent 60%),linear-gradient(150deg,#fff,#efe7f5)}
+:root[data-wand-theme='light'] a.portal-card:hover{border-color:#8e64ae;box-shadow:0 15px 40px #765b9133}
+:root[data-wand-theme='light'] .portal-card-label small{color:#685776}
+:root[data-wand-theme='light'] .portal-card-visual{background:#d8c5ea7a;color:#775096;border-color:#b79acb}
+:root[data-wand-theme='light'] .portal-card-action{color:#76548a}
+:root[data-wand-theme='light'] .portal-card.planned{background:#ece6f3;color:#736780;border-style:dashed}
+:root[data-wand-theme='light'] .portal-community{
+  color:#4a375b;border-top-color:#c9b9d5;border-bottom-color:#c9b9d5}
+:root[data-wand-theme='light'] .community-icon{color:#755598;background:#e9dff3;border-color:#c9b8d8}
+:root[data-wand-theme='light'] .community-state{color:#71627c}
+:root[data-wand-theme='light'] .tutorial-backdrop{background:#1d142ea8}
+:root[data-wand-theme='light'] .tutorial-dialog{background:#fff;border-color:#cbb9d6}
+:root[data-wand-theme='light'] .tutorial-top h2{color:#30213e}
+:root[data-wand-theme='light'] .tutorial-top>div{color:#5a347a}
+:root[data-wand-theme='light'] .tutorial-steps p{color:#4b3e54}
+:root[data-wand-theme='light'] .tutorial-done{background:#6e4b8b;color:#fff}
+:root[data-wand-theme='light'] .site-main:not(:has(.portal-page)){
+  background:#110e1a;color:#f5f0fb}
