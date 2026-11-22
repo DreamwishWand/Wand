@@ -87,7 +87,8 @@ function publicFetch({bad=false,type='image/webp'}={}){
     const key=url.replace('https://media.dreamwishwand.com/','');
     const bytes=expected.get(key);
     assert.ok(bytes);
-    const raw=bad?Buffer.from(bytes).fill(0,25,26):bytes;
+    const raw=bad?Buffer.from(bytes):bytes;
+    if(bad)raw[20]^=1; // Alter VP8L signature byte, not its already-zero padding.
     return {ok:true,status:200,headers:{get:()=>type},
       arrayBuffer:async()=>asBuffer(raw)};
   };
