@@ -13,6 +13,7 @@ import {loadPrivateShopPriceView} from './private-shop-prices.mjs';
 import {loadPrivateCookingStarSettings} from './private-cooking-star-settings.mjs';
 import {collectConfiguredIngredientSellEvidence} from './meal-ingredient-sell-evidence.mjs';
 import {loadPrivateDynamicPriceCache} from './private-dynamic-price-cache.mjs';
+import {classifyNativeMealSellPriceRoute} from './native-meal-price-route.mjs';
 
 export const DB02_MEAL_PRICE_VIEW_CONTRACT='wand.db02.private-meal-pricing-view@1';
 export const DB02_MEAL_PRICE_EVIDENCE_CONTRACT='wand.db02.meal-price-evidence@1';
@@ -134,6 +135,7 @@ function inspectAuthenticatedMeal({acquisitionBundle,shopPriceView,nativeCache,m
   check(validId(mealItemId)&&Math.floor(mealItemId/100000)===303,
     'MEAL_ITEM_ID_REQUIRED');
   const state=decodeMealItemStateEvidence(itemStateBytes);
+  const nativeIngredientPriceRoute=classifyNativeMealSellPriceRoute(state);
   const linked=acquisitionBundle.getItem(mealItemId);
   const cookingRecipes=(linked?.madeBy??[]).filter(
     row=>row.type==='cooking'&&row.resultItemId===mealItemId);
@@ -152,6 +154,10 @@ function inspectAuthenticatedMeal({acquisitionBundle,shopPriceView,nativeCache,m
     contract:DB02_MEAL_PRICE_EVIDENCE_CONTRACT,
     mealItemId,platform:'Steam',gameVersion:'1.26.2',
     state,
+    nativeIngredientPriceRoute,
+    nativeIngredientRoutingImplementationVerified:true,
+    nativeIngredientRuntimePricesVerified:false,
+    nativeLookupDefaultCannotReplaceUnknownSourcePrices:true,
     staticCookingRecipeIds:frozen(cookingRecipes.map(r=>r.recipeId).sort((a,b)=>a-b)),
     cookingRecipeCoverage:'partial_native_extraction',
     recordedIngredients:ingredientAmounts,
