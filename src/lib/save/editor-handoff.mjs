@@ -109,13 +109,20 @@ function validate(){
     throw new TypeError('DB05_EDITOR_HANDOFF_DEFERRED_SOURCE_RULE_MISMATCH');
 }
 freeze(handoff);
-validate();
+// Validate on first handoff use. Other DB-05 readers must not fail merely
+// because the optional editor handoff's source catalogs drifted in parallel.
+let validated=false;
+function checkedHandoff(){
+  if(!validated){validate();validated=true;}
+  return handoff;
+}
 
 /** Source-backed, recursively immutable public contract; never a Writer API. */
-export function getSaveEditorHandoff(){return handoff;}
+export function getSaveEditorHandoff(){return checkedHandoff();}
 
 /** Consume strictly decoded profile in memory; return anonymous evidence only. */
 export function inspectSaveEditorHandoff(decoded){
+  checkedHandoff();
   if(!inspectDecodedSave(decoded,null).rootShapeValid)
     throw new TypeError('DB05_EDITOR_HANDOFF_STRICT_ROOT_REQUIRED');
   const readset=inspectEditorReadset(decoded);
