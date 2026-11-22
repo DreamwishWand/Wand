@@ -111,6 +111,8 @@ class NextVersionBuildTests(unittest.TestCase):
             self.out/image["original"]["path"]),(150,95))
         self.assertFalse(report["publicationApproved"])
     def test_unresolved_guid_cannot_create_partial_overlay(self):
+        # New catalog invalidates old GUID linkage, so an empty proof cannot pass.
+        self.next_scan,self.next_game=make_scan(self.next,"1.26.3",b"updated-catalog",b"bundle0")
         self.write_next_proof(updater.digest(b"bundle0"))
         evidence=json.loads(self.proofs.read_text())
         evidence["complete"]=False
