@@ -437,3 +437,26 @@ a.portal-card:hover{transform:translateY(-3px);border-color:#cfafe7;box-shadow:0
 :root[data-wand-theme='light'] .tutorial-done{background:#6e4b8b;color:#fff}
 :root[data-wand-theme='light'] .site-main:not(:has(.portal-page)){
   background:#110e1a;color:#f5f0fb}
+
+/* Adaptive service toolbar uses the existing single-row Wand shell. */
+.header-context-tools{display:flex;align-items:center;flex:none;gap:5px;padding-right:8px;margin-right:3px;border-right:1px solid #ffffff29}
+.site-actions a.header-icon-button{text-decoration:none}
+.header-account-info{font-size:13px;line-height:1.9;color:#e0cfea;margin:20px 0}
+:root[data-wand-theme='light'] .header-context-tools{border-right-color:#b5a3c3}
+:root[data-wand-theme='light'] .header-account-info{color:#564266}
+@media(max-width:850px){
+  .header-context-tools{gap:3px;padding-right:4px;margin-right:1px}
+}
+@media(max-width:650px){
+  .site-header{padding:0 7px;gap:3px}
+  .site-actions{gap:2px}
+  .site-header .header-icon-button,.site-header .header-home-button{width:32px;height:34px;flex:none}
+  .site-header .header-language-button{min-width:54px;padding:0 4px;gap:3px}
+  .site-header .header-language-button>svg{width:17px;height:17px}
+  .site-header .header-locale-code{font-size:10px}
+  .header-context-tools .header-context-optional{display:none}
+}
+@media(max-width:365px){
+  .site-header .header-icon-button,.site-header .header-home-button{width:30px;height:32px}
+  .site-header .header-language-button{min-width:49px}
+}
