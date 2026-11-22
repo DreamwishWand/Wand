@@ -25,7 +25,7 @@ function publicFetcher(options={}){
   };
   return {seen,fetcher};
 }
-test('Complete public Steam 1.26.2 DB-02 catalog joins 836 source-pinned Star Path, Quest, Event, Friendship and native Shop slots without a private ZIP',async()=>{
+test('Complete public Steam 1.26.2 DB-02 catalog joins 1127 source-pinned Star Path, Quest, Event, Friendship, Shop and IAP rewards without a private ZIP',async()=>{
   const {seen,fetcher}=publicFetcher();
   const catalog=await loadPublicSourceCatalog('/Wand',fetcher);
   assert.equal(catalog.schema,DB02_PUBLIC_SOURCE_CATALOG_SCHEMA);
@@ -38,9 +38,13 @@ test('Complete public Steam 1.26.2 DB-02 catalog joins 836 source-pinned Star Pa
   assert.equal(catalog.coverage.nativeShopOffers,29);
   assert.equal(catalog.coverage.nativeShopSourceRoutes,156);
   assert.equal(catalog.coverage.nativeShopDistinctItemIds,136);
-  assert.equal(catalog.coverage.combinedSourceRoutes,836);
-  assert.equal(catalog.origins.getCoverage().linkedRoutes,836);
-  assert.equal(catalog.origins.getCoverage().routesBySourceKind.verified_game_native,613);
+  assert.equal(catalog.coverage.nativeIapPackages,53);
+  assert.equal(catalog.coverage.nativeIapDirectRewardRoutes,150);
+  assert.equal(catalog.coverage.nativeIapExtendedRewardRoutes,141);
+  assert.equal(catalog.coverage.nativeIapSourceRoutes,291);
+  assert.equal(catalog.coverage.combinedSourceRoutes,1127);
+  assert.equal(catalog.origins.getCoverage().linkedRoutes,1127);
+  assert.equal(catalog.origins.getCoverage().routesBySourceKind.verified_game_native,904);
   assert.equal(catalog.origins.getCoverage().routesBySourceKind.verified_liveops_cache,223);
   assert.equal(catalog.eventFriendshipSource.origins.length,218);
   assert.equal(catalog.coverage.liveOfferAvailabilityVerified,false);
@@ -52,8 +56,9 @@ test('Complete public Steam 1.26.2 DB-02 catalog joins 836 source-pinned Star Pa
     catalog.coverage.linkedOutsidePublishedItemIds,
     catalog.coverage.allSourceLinkedItemIds);
   const urlList=new Set(seen);
-  assert.equal(seen.length,21); // pointer + index + 14 shards + 4 Guide + 1 native shop asset
-  assert.equal(urlList.size,21);
+  assert.equal(seen.length,22); // pointer + index + 14 shards + 4 Guide + Shop + IAP
+  assert.equal(urlList.size,22);
+  assert(seen.some(s=>s.endsWith('/iap-rewards-1.26.2.json')));
   assert(seen.some(s=>s.endsWith('/shop-cache-2026-11-22.json')));
   assert(seen.some(s=>s.endsWith('/event-friendship-rewards-1.26.2.json')));
   assert(seen.some(s=>s.endsWith('/quest-rewards-1.26.2.json')));
@@ -111,6 +116,22 @@ test('Unified lookup separates exact Quest, Event and Friendship Item ID routes 
   assert.equal(discounted.length,2);
   assert(discounted.every(r=>r.price===null&&r.conditions.some(x=>
     x.includes('discount: 10%'))));
+  const iap=catalog.nativeIapSource.getPackage('Expansion4PackDeluxeEdition');
+  assert(iap);
+  assert.equal(iap.rewards.length,5);
+  const iapOrigin=catalog.lookup('10000049').origins.find(o=>
+    o.campaignId==='native-iap:Expansion4PackDeluxeEdition');
+  assert(iapOrigin);
+  assert.equal(iapOrigin.kind,'purchase_bonus');
+  assert.equal(iapOrigin.routeStatus,'confirmed_source_link');
+  assert.equal(iapOrigin.availability,'not_live_verified');
+  assert.equal(catalog.getSourceOrigin(iapOrigin.originId)[0],iapOrigin);
+  assert(catalog.getCampaign(iapOrigin.campaignId)?.rewards.some(r=>
+    r.itemId==='10000049'&&r.quantity===1));
+  const extended=catalog.nativeIapSource.getPackageOrigins('SeasonalPackUpd25MegaPack');
+  assert.equal(extended.length,5);
+  assert(extended.every(r=>r.conditions.some(c=>
+    c.includes('IAPData.Extended[10].Rewards[3]'))));
   const twitch=catalog.lookup('50400102');
   assert(twitch.catalogItem);
   assert(twitch.onlineNameCandidates.some(c=>
@@ -145,6 +166,9 @@ test('Public-only startup rejects corrupt source-pinned DB-00 and Guide bytes; u
   await assert.rejects(loadPublicSourceCatalog(
     '/Wand',publicFetcher({corrupt:'shop-cache-2026-11-22.json'}).fetcher
   ),/PROJECTION_SHA/);
+  await assert.rejects(loadPublicSourceCatalog(
+    '/Wand',publicFetcher({corrupt:'iap-rewards-1.26.2.json'}).fetcher
+  ),/PUBLIC_SHA/);
   const noFetch=async()=>{throw new Error('SHOULD_NOT_FETCH');};
   await assert.rejects(loadPublicSourceCatalog('/Wand/../exfil',noFetch),
     /INVALID_BASE_PATH/);
