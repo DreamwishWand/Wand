@@ -18,12 +18,12 @@ export interface NativeSellPriceProviderPlan {
   readonly itemSpecificCalculatorMayBeCalled:boolean|null;
   readonly currencyAcceptanceAtRuntime:null;
   readonly priceProviderStages:readonly NativeSellPriceProviderStage[];
-  readonly registeredPriceDatabaseImplementations:readonly ['ItemPriceDatabase','DynamicItemPriceDatase'];
+  readonly knownIItemPriceDatabaseNativeTypes:readonly ['ItemPriceDatabase','DynamicItemPriceDatase'];
   readonly registeredDatabaseIterationOrderVerified:false;
   readonly runtimeDynamicCacheState:null;
   readonly nativeTrySellPriceFailureOutput:0;
   readonly nativeTrySellPriceFailureReturnsFalse:true;
-  readonly outerGetSellPriceDefaultOnFailure:1;
+  readonly outerGetSellPriceDeclaredDefaultArgument:1;
   readonly zeroOutParameterIsNotEffectiveSellPrice:true;
   readonly defaultOneAppliesOnlyAfterRuntimeLookupFailure:true;
   readonly missingConfiguredStaticRowIsNotRuntimeFailure:true;
