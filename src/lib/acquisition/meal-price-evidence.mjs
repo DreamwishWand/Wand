@@ -23,6 +23,8 @@ import {classifyIngredientSerializedPriceRowCoverage}
   from './ingredient-source-row-coverage.mjs';
 import {classifyConditionalIngredientSoftSellFallback}
   from './conditional-ingredient-sell-fallback.mjs';
+import {classifyNativeDynamicCacheLifecycle}
+  from './native-dynamic-cache-lifecycle.mjs';
 
 export const DB02_MEAL_PRICE_VIEW_CONTRACT='wand.db02.private-meal-pricing-view@1';
 export const DB02_MEAL_PRICE_EVIDENCE_CONTRACT='wand.db02.meal-price-evidence@1';
@@ -141,7 +143,8 @@ export function decodeMealItemStateEvidence(bytes){
  * Never derive a state-dependent SELL price from that row.
  */
 function inspectAuthenticatedMeal({acquisitionBundle,shopPriceView,nativeCache,
-  sourceNativeDynamicCacheGate,mealItemId,itemStateBytes}){
+  sourceNativeDynamicCacheGate,sourceNativeDynamicCacheLifecyclePlan,
+  mealItemId,itemStateBytes}){
   check(validId(mealItemId)&&Math.floor(mealItemId/100000)===303,
     'MEAL_ITEM_ID_REQUIRED');
   const state=decodeMealItemStateEvidence(itemStateBytes);
@@ -210,6 +213,7 @@ function inspectAuthenticatedMeal({acquisitionBundle,shopPriceView,nativeCache,
     sourceSellFormulaCandidatePlan,
     nativeSellFormulaRuntimeResolutionVerified:false,
     nativeDynamicCacheSourceVerified:nativeCache!==null,
+    sourceNativeDynamicCacheLifecyclePlan,
     dynamicCachedSellRowCannotProveEffectivePrice:true,
     ingredientStaticPriceDatabaseOriginalVerified:true,
     staticIngredientAmountsNotEffectiveSellValues:true,
@@ -264,6 +268,10 @@ export async function loadPrivateMealPricingView({
   const sourceNativeDynamicCacheGate=nativeCache===null?null:
     classifyNativeSerializedDynamicCache({cachedDataPresent:true,
       serializedItemPricesCount:nativeCache.cacheRowCount});
+  const sourceNativeDynamicCacheLifecyclePlan=
+    classifyNativeDynamicCacheLifecycle({
+      sourceCacheGate:sourceNativeDynamicCacheGate
+    });
   return frozen({
     contract:DB02_MEAL_PRICE_VIEW_CONTRACT,
     platform:'Steam',gameVersion:'1.26.2',
@@ -284,6 +292,12 @@ export async function loadPrivateMealPricingView({
         });
     },
     sourceNativeDynamicCacheGate,
+    sourceNativeDynamicCacheLifecyclePlan,
+    getHypotheticalNativeDynamicCacheRebuildPlan:hypotheticalRebuiltItemPriceRows=>
+      classifyNativeDynamicCacheLifecycle({
+        sourceCacheGate:sourceNativeDynamicCacheGate,
+        hypotheticalRebuiltItemPriceRows
+      }),
     nativeRuntimeDataCachedVerified:false,
     getSourceStaticSellProviderSimulations:itemId=>{
       check(validId(itemId),'INVALID_STATIC_PROVIDER_ITEM_ID');
@@ -322,7 +336,7 @@ export async function loadPrivateMealPricingView({
     },
     inspect:(mealItemId,itemStateBytes)=>inspectAuthenticatedMeal({
       acquisitionBundle,shopPriceView,nativeCache,sourceNativeDynamicCacheGate,
-      mealItemId,itemStateBytes
+      sourceNativeDynamicCacheLifecyclePlan,mealItemId,itemStateBytes
     })
   });
 }

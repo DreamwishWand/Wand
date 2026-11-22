@@ -1,5 +1,23 @@
 # DB-02 ACQUISITION — source-pinned extraction
 
+## Original dynamic price cache lifecycle (Steam 1.26.2)
+
+Native `DynamicItemPriceDatase.OnBinarize()` unconditionally delegates
+to `CacheData()`, which creates a **fresh** `ItemPriceDatabase` and
+replaces the `CachedData` field. Its native code also checks sell-formula
+type eligibility and calls the formula calculator. The **8,549-row
+original protoDb.bin cache is a source snapshot**, not guaranteed to
+remain identical after a possible rebuild. Actual invocation of
+`OnBinarize` during gameplay, resulting cache content and runtime provider
+registration all remain **UNVERIFIED**; the conditional price fallback
+`1` for 160 source-missing ingredients is **not** a confirmed live price.
+
+`native-dynamic-cache-lifecycle.mjs` exposes the source-vs-hypothetical
+rebuild state without pricing any item. The authenticated private meal
+view includes the lifecycle and an explicit what-if rebuild API.
+See [NATIVE-DYNAMIC-CACHE-LIFECYCLE.md](NATIVE-DYNAMIC-CACHE-LIFECYCLE.md)
+and the [original-binary cache audit](audit_native_dynamic_cache_rebuild_1262.py).
+
 ## Conditional ingredient default after native lookup failure (Steam 1.26.2)
 
 Original native machine-code verification now connects both cooking ingredient
