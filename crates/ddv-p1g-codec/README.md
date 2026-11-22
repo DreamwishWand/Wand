@@ -41,3 +41,35 @@ Pending:
 3. preserve multi-entry ZIP or fail closed in all unsupported cases
 4. validate real game engine acceptance and semantic inventory/chest invariants
 5. expose a user-initiated export ONLY after completing the above gates
+
+## Browser Worker integration (read-only; independent native audit)
+
+With `--features wasm`, `WasmP1gAudit` accepts an encrypted P1G in
+at most 1 MiB chunks, with a total limit of 32 MiB. It independently
+decrypts, parses the supported single-profile ZIP and verifies its CRC,
+strict JSON keys and required roots. It emits only the SHA-256 of the
+original validated UTF-8 profile **to its calling Worker**, never to a
+page component.
+
+`src/lib/save/save-native-p1g-audit.mjs` compares this private digest
+with the output of the existing independently validated JS P1G read Codec,
+then destroys the digest and emits only a fixed anonymous status:
+`matched`, `diverged`, `rejected_by_rust`, `skipped_large_save`, or
+`unavailable`. The existing diagnostics workflow is not blocked if
+the new Rust reader rejects an uncommon ZIP envelope already accepted by
+the legacy JS Codec; the result remains read-only. Rust/WASM is **not**
+yet a replacement for the complete multi-entry-capable JS reader.
+
+No private fingerprint, decrypted bytes, item IDs, personal values,
+or arbitrary native exception text cross the Worker/page boundary.
+The Rust code zeroizes owned encrypted/decrypted buffers when released,
+although this does not guarantee erasure of copies managed by the browser.
+
+Build:
+```sh
+wasm-pack build crates/ddv-p1g-codec --release --target web --out-dir ../../src/lib/save/wasm/p1g-pkg --features wasm
+```
+CI separately executes a synthetic encrypted P1G upload in a real
+Chromium Worker and verifies that the compiled WASM module loaded and
+returned an independently matching decode. This is not a genuine
+Steam/Switch game-save round-trip and cannot authorize exporting edits.
