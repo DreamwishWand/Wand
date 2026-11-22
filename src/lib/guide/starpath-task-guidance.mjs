@@ -85,6 +85,150 @@ const docs={
     kind:'HangoutWithCharacter',hint:'long-bearded wizard',
     ja:'マーリンを同行者にして一緒に行動する。',
     en:'Hang out with Merlin.'},
+  'HauntingElegance2026/Task02':{
+    kind:'StartDiscussion',hint:'Daily Discussions with Villagers',
+    ja:'村人に話しかけて、1日1回の会話を行う。',
+    en:'Start daily conversations with villagers.'},
+  'HauntingElegance2026/Task04':{
+    kind:'PetCompanion',hint:'Companion',
+    ja:'同行しているオトモをなでる。',
+    en:'Pet your equipped companion.'},
+  'HauntingElegance2026/Task14':{
+    kind:'PurchaseItem',hint:'Scrooge McDuck\'s Store',
+    ja:'スクルージのお店で商品を購入する。',
+    en:'Purchase items at Scrooge McDuck\'s Store.'},
+  'HauntingElegance2026/Task18':{
+    kind:'CookMeal',hint:'2-star meal',
+    ja:'料理ステーションで星2の料理を作る。',
+    en:'Cook meals with a two-star recipe.'},
+  'HauntingElegance2026/Task19':{
+    kind:'SellItem',hint:'Sell any fish',
+    ja:'釣った魚を売却する。',
+    en:'Sell fish you have caught.'},
+  'HauntingElegance2026/Task22':{
+    kind:'RoyalDuties',hint:'Dreamlight Duties',
+    ja:'ドリームライトの任務を達成する。',
+    en:'Complete Dreamlight Duties.'},
+  'HauntingElegance2026/Task24':{
+    kind:'TakePicture',hint:'selfie with Goofy',
+    ja:'カメラでグーフィーが写るセルフィーを撮る。',
+    en:'Take a selfie with Goofy in the frame.'},
+  'HauntingElegance2026/Task31':{
+    kind:'CraftItem',hint:'fabric',
+    ja:'クラフトステーションで布（Fabric）を製作する。',
+    en:'Craft Fabric at a crafting station.'},
+  'HauntingElegance2026/Task34':{
+    kind:'HangoutWithCharacter',hint:'pal Mickey',
+    ja:'ミッキーマウスにハングアウトを依頼して、一緒に行動する。',
+    en:'Ask Mickey Mouse to hang out, then spend time together.'},
+  'HauntingElegance2026/Task41':{
+    kind:'DesignChallenge',hint:'Submit an entry to DreamSnaps',
+    ja:'ドリームスナップの開催中のお題に沿った写真を投稿する。',
+    en:'Submit a qualifying photo to the current DreamSnaps challenge.'},
+  'HauntingElegance2026/Task44':{
+    kind:'DesignChallenge',hint:'Vote in a DreamSnaps',
+    ja:'ドリームスナップの投票画面から作品に投票する。',
+    en:'Vote for entries in a DreamSnaps contest.'},
+  'HauntingElegance2026/Task50':{
+    kind:'CookMeal',hint:'pumpkin-based meals',
+    ja:'カボチャを材料に使う料理を作る。',
+    en:'Cook meals using Pumpkin as an ingredient.'},
+  'HauntingElegance2026/Task58':{
+    kind:'CatchFish',hint:'Forest of Valor',
+    ja:'勇気の森で魚を釣る。',
+    en:'Catch fish in the Forest of Valor.'},
+  'HauntingElegance2026/Task64':{
+    kind:'FeedCritter',hint:'black Ravens',
+    ja:'黒いカラスに近づき、その動物の好物を与える。',
+    en:'Approach a black raven and feed it its favorite food.'},
+  'HauntingElegance2026/Task71':{
+    kind:'BoutiqueChallenge',hint:'Boutique Challenge with Daisy',
+    ja:'デイジーのブティックでチャレンジを受けて達成する。',
+    en:'Complete a Boutique Challenge at Daisy\'s Boutique.'},
+  'HauntingElegance2026/Task75':{
+    kind:'PurchaseItem',hint:'Gumbo from Tiana\'s Stall',
+    ja:'ティアナの屋台でガンボを購入する。',
+    en:'Buy Gumbo from Tiana\'s Stall.'},
+  'HauntingElegance2026/Task81':{
+    kind:'CraftItem',hint:'Miracle Fishing Bait',
+    ja:'クラフトステーションでミラクル釣りエサを製作する。',
+    en:'Craft Miracle Fishing Bait at a crafting station.'},
+  'HauntingElegance2026/Task84':{
+    kind:'RoyalDuties',hint:'fishing-related royal tasks',
+    ja:'釣りに関するドリームライトの任務を達成する。',
+    en:'Complete fishing-related Dreamlight Duties.'},
+  'HauntingElegance2026/Task88':{
+    kind:'FeedCritter',hint:'Black Sea Turtles',
+    ja:'黒いウミガメに好物を与える。',
+    en:'Feed black sea turtles their favorite food.'},
+  'HauntingElegance2026/Task94':{
+    kind:'CatchFish',hint:'gold ripples',
+    ja:'金色のさざ波が出ている釣り場で魚を釣る。',
+    en:'Catch fish from golden fishing ripples.'},
+  'HauntingElegance2026/Task100':{
+    kind:'CraftItem',hint:'Autumn Harvest Pennants or a Playful Pumpkin Scarecrow',
+    ja:'「Autumn Harvest Pennants」か「Playful Pumpkin Scarecrow」を製作する。',
+    en:'Craft Autumn Harvest Pennants or a Playful Pumpkin Scarecrow.'},
+  'HauntingElegance2026/Task103':{
+    kind:'CraftItem',hint:'Hay Bales',
+    ja:'クラフトステーションで干し草の俵を製作する。',
+    en:'Craft Hay Bales at a crafting station.'},
+  'HauntingElegance2026/Task107':{
+    kind:'FeedCritter',hint:'Raccoons',
+    ja:'アライグマに近づいて、好物を与える。',
+    en:'Approach raccoons and feed them their favorite food.'},
+  'HauntingElegance2026/Task110':{
+    kind:'CookMeal',hint:'Tekka Maki',
+    ja:'料理ステーションで鉄火巻きを作る。',
+    en:'Cook Tekka Maki at a cooking station.'},
+  'HauntingElegance2026/Task118':{
+    kind:'ServeRestaurantOrder',hint:'Remy\'s Restaurant',
+    ja:'レミーのレストランで注文された料理を作り、客に提供する。',
+    en:'Prepare and serve customer orders inside Remy\'s Restaurant.'},
+  'HauntingElegance2026/Task121':{
+    kind:'VisitArea',hint:'Haunted Floating Festival',
+    ja:'開催期間内にホーンテッド・フローティング・フェスティバルのエリアを訪れる。',
+    en:'Visit the Haunted Floating Festival area during its event window.'},
+  'Seafaring2026/Task05':{
+    kind:'PetCompanion',hint:'Pet your',
+    ja:'オトモをなでる。',
+    en:'Pet your companion.'},
+  'Seafaring2026/Task10':{
+    kind:'CatchFish',hint:'seaweed',
+    ja:'海に釣り糸を垂らして海藻を釣る。',
+    en:'Fish for seaweed in the ocean.'},
+  'Seafaring2026/Task13':{
+    kind:'FeedCritter',hint:'Sea Turtles',
+    ja:'ウミガメに好物を与える。',
+    en:'Feed sea turtles their favorite food.'},
+  'Seafaring2026/Task15':{
+    kind:'PurchaseItem',hint:'Scrooge McDuck\'s Store',
+    ja:'スクルージのお店で商品を購入する。',
+    en:'Buy items from Scrooge McDuck\'s Store.'},
+  'Seafaring2026/Task16':{
+    kind:'CatchFish',hint:'Dazzle Beach',
+    ja:'輝きの浜辺で魚を釣る。',
+    en:'Catch fish at Dazzle Beach.'},
+  'Seafaring2026/Task21':{
+    kind:'CatchFish',hint:'gold ripples',
+    ja:'金色のさざ波が出ている場所で魚を釣る。',
+    en:'Catch fish from golden fishing ripples.'},
+  'Seafaring2026/Task37':{
+    kind:'CraftItem',hint:'Natural Rock Paths',
+    ja:'クラフトステーションで「Natural Rock Paths」を製作する。',
+    en:'Craft Natural Rock Paths at a crafting station.'},
+  'Seafaring2026/Task40':{
+    kind:'PickUp',hint:'companion help you pick up scallops',
+    ja:'オトモの収集補助を利用してホタテを拾う。',
+    en:'Collect scallops with help from your companion.'},
+  'Seafaring2026/Task41':{
+    kind:'CatchFish',hint:'Dazzle Beach',
+    ja:'輝きの浜辺で魚を釣る。',
+    en:'Catch fish at Dazzle Beach.'},
+  'Seafaring2026/Task48':{
+    kind:'DesignChallenge',hint:'DreamSnaps contest',
+    ja:'ドリームスナップのコンテストに写真を投稿する。',
+    en:'Submit a photo to a DreamSnaps contest.'},
   'Seafaring2026/Task19':{
     kind:'GiftToCharacter',hint:'boy who never grows up',
     ja:'ピーター・パンに、その日の好物のギフトを渡す。',
