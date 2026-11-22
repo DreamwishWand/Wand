@@ -22,6 +22,17 @@ export interface NativeDynamicCacheLifecycle {
   readonly originalNativeProtoDatabaseRefreshCallsLoadBinary:true;
   readonly originalNativeLoadBinaryResolvesSerializedType:true;
   readonly originalNativeExportForBuildCallsSaveBinary:true;
+  readonly originalNativeProtoDatabaseRefreshBranchesOnIsEditor:true;
+  readonly originalNativeRefreshNonEditorBranchCallsLoadBinary:true;
+  readonly originalNativeRefreshEditorBranchClearsTypeSearchCache:true;
+  readonly originalNativeProviderEnumeratorQueriesTypeSearchCache:true;
+  readonly originalNativeProviderEnumeratorMemoizesTypeSearchResults:true;
+  readonly originalNativeTrySetAccessesTypeSearchCache:true;
+  readonly originalNativeProtobufBinarizeHookImplementerCount:3;
+  readonly originalNativeProtobufBinarizeHookImplementerClasses:
+    readonly ['DynamicItemPriceDatase','GridData','AudioGridData'];
+  readonly originalSaveBinaryInterfaceInvocationUsesSlotZero:true;
+  readonly originalSaveBinaryInterfacePointerIsProtobufOnBinarizeVerified:false;
   readonly originalNativeSaveBinaryChecksProtoDescMessageRuntimeType:true;
   readonly originalNativeSaveBinaryHasConditionalInterfaceSlotDispatch:true;
   readonly originalSaveBinaryDispatchedInterfaceIdentityVerified:false;
@@ -33,6 +44,10 @@ export interface NativeDynamicCacheLifecycle {
   readonly nativeOnBinarizeInvokedByExportForBuildVerified:false;
   readonly nativeActualProtoDatabasePopulationOrderVerified:false;
   readonly nativeRuntimeProtoDatabaseReloadOccurred:null;
+  readonly nativeRuntimeIsEditorFlag:null;
+  readonly nativeRuntimeTypeSearchCacheEntries:null;
+  readonly nativeRuntimeTypeSearchCacheInvalidated:null;
+  readonly nativeRuntimeProviderEnumerationCacheWasReused:null;
   readonly conditionalSourceRowContentsAreNotImmutableAfterRebuild:true;
   readonly hypotheticalRebuildSpecified:boolean;
   readonly hypotheticalRebuiltItemPriceRows:number|null;
