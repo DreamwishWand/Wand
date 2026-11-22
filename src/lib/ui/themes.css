@@ -91,35 +91,89 @@ body{background:var(--wand-halo),var(--wand-bg);color:var(--wand-text)}
 :root .site-shell .shell-menu button.chosen,
 :root .site-shell .shell-menu a[aria-current=page]{background:var(--wand-header-hover)}
 :root .site-shell .shell-menu-divider{background:var(--wand-line)}
+/* Theme selection is one segmented three-way control, not three unrelated buttons. */
 :root .site-shell .shell-theme-options{
-  display:flex;align-items:center;gap:2px;flex:none
+  display:inline-flex;align-items:center;gap:1px;flex:none;
+  padding:2px;border:1px solid var(--wand-line);border-radius:12px;
+  background:var(--wand-header-hover)
 }
 :root .site-shell .shell-theme-option{
-  width:44px;min-width:44px;height:44px;min-height:44px;
-  position:relative;border-radius:10px
+  width:40px;min-width:40px;height:40px;min-height:40px;
+  position:relative;border-radius:8px;transition:background .12s,box-shadow .12s
 }
 :root .site-shell .shell-theme-option.active{
-  background:var(--wand-header-hover);
-  border-color:var(--wand-accent-strong);
-  color:var(--wand-header-text)
+  background:var(--wand-menu);border-color:var(--wand-accent);
+  color:var(--wand-header-text);
+  box-shadow:0 1px 5px #0002,inset 0 0 0 1px var(--wand-accent-strong)
 }
 :root .site-shell .shell-theme-option.active::after{
-  content:'';position:absolute;bottom:2px;left:33%;right:33%;
-  height:3px;background:var(--wand-accent-strong);border-radius:3px
+  content:'';position:absolute;bottom:2px;left:35%;right:35%;
+  height:2px;background:var(--wand-accent-strong);border-radius:2px
 }
-:root .site-shell .shell-menu .shell-menu-help{display:none}
+/* A content-sized two-column menu, with no blank space to the right of the names. */
+:root .site-shell .language-popover{
+  display:grid;grid-template-columns:repeat(2,max-content);
+  gap:2px 3px;width:max-content;max-width:calc(100vw - 12px);
+  padding:5px;max-height:min(75dvh,300px);overflow:auto
+}
+:root .site-shell .language-popover button{
+  width:auto;min-width:0;min-height:44px;padding:6px 8px;
+  justify-content:flex-start;gap:6px;white-space:nowrap;font-size:13px
+}
+:root .site-shell .language-popover button svg{flex:none;width:15px;height:15px}
+/* The save menu presents actual local-file actions only. Writer actions stay disabled. */
+:root .site-shell .header-save-root,
+:root .site-shell .shell-more-root{position:relative;display:flex;align-items:center}
+:root .site-shell .shell-more-root{display:none}
+:root .site-shell .shell-save-menu,
+:root .site-shell .shell-more-menu{left:auto;right:0;width:min(290px,calc(100vw - 14px))}
+:root .site-shell .shell-save-menu button:disabled{
+  cursor:not-allowed;opacity:.45
+}
+:root .site-shell .shell-save-filename{
+  padding:10px 11px 2px;display:flex;gap:8px;align-items:center;
+  color:var(--wand-text);font-size:13px;font-weight:650;min-width:0
+}
+:root .site-shell .shell-save-filename span{
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0
+}
+:root .site-shell .shell-save-status{
+  color:var(--wand-muted);font-size:11px;padding:2px 11px 9px;line-height:1.4
+}
+:root .site-shell .shell-save-button[aria-expanded='true']{
+  background:var(--wand-header-hover);border-color:var(--wand-accent)
+}
+:root .site-shell .shell-save-drop{
+  position:fixed;inset:0;z-index:100;pointer-events:none;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
+  border:4px dashed var(--wand-accent);background:var(--wand-menu);
+  opacity:.95;color:var(--wand-text);font-size:18px;font-weight:700
+}
+:root .site-shell .shell-save-error{
+  position:fixed;right:12px;top:calc(var(--shell-height) + 8px);z-index:101;
+  padding:10px 12px;background:var(--wand-menu);color:var(--wand-text);
+  border:1px solid var(--wand-line);border-radius:9px;font-size:13px;
+  display:flex;align-items:center;gap:12px;box-shadow:0 8px 24px #0003
+}
+:root .site-shell .shell-save-error button{
+  border:0;background:none;color:inherit;cursor:pointer;font-size:20px
+}
 @media(max-width:700px){
-  :root .site-shell .shell-theme-option{width:40px;min-width:40px;height:42px;min-height:42px}
+  :root .site-shell .shell-theme-option{width:38px;min-width:38px;height:38px;min-height:38px}
 }
-@media(max-width:430px){
-  :root .site-shell .header-support-tools{display:none}
-  :root .site-shell .shell-menu .shell-menu-help{display:flex}
+@media(max-width:420px){
+  :root .site-shell .header-support-tools,
+  :root .site-shell .header-account-tools{display:none}
+  :root .site-shell .shell-more-root{display:flex}
 }
 @media(max-width:370px){
-  :root .site-shell .shell-theme-option{width:36px;min-width:36px;height:40px;min-height:40px}
-  :root .site-shell .header-language-button{width:44px;min-width:44px;padding:0 3px}
-  :root .site-shell .header-language-button>svg{display:none}
-  :root .site-shell .header-locale-code{font-size:12px}
+  :root .site-shell .shell-theme-option{width:32px;min-width:32px;height:36px;min-height:36px}
+  :root .site-shell .header-language-button{width:46px;min-width:46px;padding:0 3px;gap:3px}
+  :root .site-shell .header-language-button>svg{display:block;width:16px;height:16px}
+  :root .site-shell .header-locale-code{font-size:11px}
+}
+@media(max-width:260px){
+  :root .site-shell .language-popover{grid-template-columns:max-content}
 }
 :root .site-shell .portal-page{background:var(--wand-bg)}
 :root .site-shell .portal-grid{background:var(--wand-line)}
