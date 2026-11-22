@@ -6,7 +6,7 @@ import {verifyPublicEventFriendshipRewards}
   from '../src/lib/guide/public-event-friendship-rewards.ts';
 import {
   DB03_EVENT_DUTY_SCHEMA,DB03_EVENT_DUTY_FILE,DB03_EVENT_DUTY_BYTES,
-  DB03_EVENT_DUTY_SHA,verifyPublicEventDutyLinks,loadPublicEventDutyLinks
+  DB03_EVENT_DUTY_SHA,verifyPublicEventDutyLinks,loadPublicEventDutyLinks,guideEventDutyHref
 } from '../src/lib/guide/public-event-duty-links.ts';
 
 const root=new URL('../static/guide/public/',import.meta.url);
@@ -119,4 +119,22 @@ test('forged source statuses, internal TestEv and invalid or duplicated Duty IDs
   assert.throws(()=>verifyPublicEventDutyLinks(edited,events),/EVENT/);
   edited=structuredClone(raw);edited.events.DreamlightParkFest[0]='11111111111111111';
   assert.throws(()=>verifyPublicEventDutyLinks(edited,events),/DUTY_ID/);
+});
+
+test('native Duty reverse permalinks require an existing source ID and preserve shared Event membership',async()=>{
+  const {events,raw}=await originals();
+  const graph=verifyPublicEventDutyLinks(raw,events);
+  assert.equal(guideEventDutyHref(graph,'2110100289','/Wand'),
+    '/Wand/guide/events/?duty=2110100289');
+  assert.deepEqual(graph.getDutyEvents('2110100289').map(x=>x.eventId),
+    ['LuckyYou_UI_2026','StPatrick']);
+  assert.equal(guideEventDutyHref(graph,2110100135),
+    '/guide/events/?duty=2110100135');
+  for(const id of ['0','0002110100289','2110100289x','99999999',Number.MAX_SAFE_INTEGER+1,null]){
+    assert.equal(guideEventDutyHref(graph,id,'/Wand'),null);
+  }
+  assert.throws(()=>guideEventDutyHref(graph,'2110100289','/../private'),
+    /DB03_EVENT_DUTY_BASE/);
+  assert.throws(()=>guideEventDutyHref(null,'2110100289'),
+    /DB03_EVENT_DUTY_INDEX_REQUIRED/);
 });
