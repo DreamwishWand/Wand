@@ -5,6 +5,7 @@ import {
 } from '../guide/reward-relations.ts';
 import {STARPATH_PUBLIC_SHA} from '../guide/public-starpath.mjs';
 import {OFFICIAL_CAMPAIGNS} from './official-campaigns.ts';
+import {historicalPremiumShop, type ShopAppearance} from './premium-shop-history.ts';
 import {projectVerifiedSrc02Origins, type VerifiedSrc02OriginReader} from './native-origins.ts';
 
 export const ORIGIN_SCHEMA = 'wand.db02.item-origins@1' as const;
@@ -94,6 +95,9 @@ export interface OriginDatabase {
   };
   getCampaign(campaignId: string): OfficialCampaign | null;
   listCampaigns(): readonly OfficialCampaign[];
+  getHistoricalPremiumShopWeek(weekStart: string): readonly ShopAppearance[];
+  getHistoricalPremiumShopProduct(name: string): readonly ShopAppearance[];
+  getHistoricalPremiumShopCoverage(): typeof historicalPremiumShop.coverage;
   getOrigin(originId: string): readonly ItemOrigin[];
   getCoverage(): {
     readonly linkedItemIds: number;
@@ -261,6 +265,9 @@ export function createAcquisitionOriginDatabase(
     getOrigin(originId: string) { return byRoute.get(originId) ?? []; },
     getCampaign(campaignId: string) { return byCampaign.get(campaignId) ?? null; },
     listCampaigns() { return campaignList; },
+    getHistoricalPremiumShopWeek(weekStart:string) { return historicalPremiumShop.getWeek(weekStart); },
+    getHistoricalPremiumShopProduct(name:string) { return historicalPremiumShop.getProduct(name); },
+    getHistoricalPremiumShopCoverage() { return historicalPremiumShop.coverage; },
     getCoverage() { return coverage; }
   });
 }
