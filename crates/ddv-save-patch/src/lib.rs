@@ -535,6 +535,46 @@ pub fn preview_existing_grid_orientation(
     })
 }
 
+/// Atomically move AND rotate one *existing* saved GridObject.
+///
+/// Both independent optimistic checks run against the exact ORIGINAL
+/// profile before producing any candidate. Only X, Y, and Orientation
+/// scalar tokens are modified; all other bytes, including unknown fields,
+/// lexical JSON formatting, IDs and unrelated objects, are preserved.
+/// This deliberately permits only already-evidenced four cardinal enum
+/// spellings and never treats a matching source path as placement legality.
+pub fn preview_existing_grid_transform(
+    source:&str,target:GridCoordinateTarget,
+    expected:(i32,i32),replacement:(i32,i32),
+    expected_orientation:&str,replacement_orientation:&str
+)->Result<GridCoordinateDraft,PatchError>{
+    if expected==replacement||expected_orientation==replacement_orientation{
+        return Err(PatchError::InvalidTarget);
+    }
+    let coordinate_draft=preview_existing_grid_coordinates(
+        source,target.clone(),expected,replacement
+    )?;
+    let orientation_check=preview_existing_grid_orientation(
+        source,target.clone(),expected_orientation,replacement_orientation
+    )?;
+    if !coordinate_draft.changed||!orientation_check.changed||
+       !coordinate_draft.untouched_bytes_preserved||
+       !orientation_check.untouched_bytes_preserved||
+       coordinate_draft.writer_authorized||coordinate_draft.export_authorized||
+       orientation_check.writer_authorized||orientation_check.export_authorized{
+        return Err(PatchError::InvalidTarget);
+    }
+    let rotation_draft=preview_existing_grid_orientation(
+        &coordinate_draft.patched_json,target,
+        expected_orientation,replacement_orientation
+    )?;
+    if !rotation_draft.changed||!rotation_draft.untouched_bytes_preserved||
+       rotation_draft.writer_authorized||rotation_draft.export_authorized{
+        return Err(PatchError::InvalidTarget);
+    }
+    Ok(rotation_draft)
+}
+
 /// One optimistic-concurrency checked change to an existing GridObject.
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub struct GridCoordinateEdit {
@@ -865,6 +905,82 @@ mod tests {
         assert!(!no_op.changed);
         assert_eq!(no_op.patched_json,original);
     }
+    #[test]
+    fn existing_grid_transform_atomically_changes_exactly_three_tokens(){
+        let source=r#" {"World":{"GridCollection":{"Grids":{"101":{
+          "Objects":{"7":{"ItemID":40000001,"X":-12,"Y":45,
+            "Orientation":"GridOrientation_Up",
+            "Future":{"nested":{"X":999,"Y":5,"Orientation":"as-is"}},
+            "OpaqueNumber":1.00e+2},
+            "8":{"ItemID":40000001,"X":-12,"Y":45,
+              "Orientation":"GridOrientation_Left"}}
+          }}}},"Profile":{"unknown":"\u3053"}} "#;
+        let target=GridCoordinateTarget{kind:GridObjectKind::Full,
+            grid_id:"101".into(),object_id:"7".into(),item_id:40000001};
+        let draft=preview_existing_grid_transform(
+            source,target.clone(),(-12,45),(9,-8),
+            "GridOrientation_Up","GridOrientation_Down"
+        ).unwrap();
+        let expected=source
+            .replacen(r#""X":-12,"Y":45"#,r#""X":9,"Y":-8"#,1)
+            .replacen(r#""Orientation":"GridOrientation_Up""#,
+                r#""Orientation":"GridOrientation_Down""#,1);
+        assert_eq!(draft.patched_json,expected);
+        assert!(draft.changed&&draft.untouched_bytes_preserved);
+        assert!(!draft.writer_authorized&&!draft.export_authorized);
+        assert!(draft.patched_json.contains(r#""OpaqueNumber":1.00e+2"#));
+        assert!(draft.patched_json.contains(r#""unknown":"\u3053""#));
+        assert!(draft.patched_json.contains(r#""Orientation":"GridOrientation_Left""#));
+        assert_eq!(
+            preview_existing_grid_transform(source,target.clone(),
+                (0,45),(9,-8),"GridOrientation_Up","GridOrientation_Down").err(),
+            Some(PatchError::CoordinateMismatch));
+        assert_eq!(
+            preview_existing_grid_transform(source,target.clone(),
+                (-12,45),(9,-8),"GridOrientation_Right","GridOrientation_Down").err(),
+            Some(PatchError::OrientationMismatch));
+        assert_eq!(
+            preview_existing_grid_transform(source,target.clone(),
+                (-12,45),(9,-8),"GridOrientation_Up","invented").err(),
+            Some(PatchError::InvalidTarget));
+        assert_eq!(
+            preview_existing_grid_transform(source,target.clone(),
+                (-12,45),(-12,45),"GridOrientation_Up","GridOrientation_Down").err(),
+            Some(PatchError::InvalidTarget));
+        assert_eq!(
+            preview_existing_grid_transform(source,target.clone(),
+                (-12,45),(9,-8),"GridOrientation_Up","GridOrientation_Up").err(),
+            Some(PatchError::InvalidTarget));
+        let wrong=GridCoordinateTarget{item_id:40000002,..target.clone()};
+        assert_eq!(
+            preview_existing_grid_transform(source,wrong,
+                (-12,45),(9,-8),"GridOrientation_Up","GridOrientation_Down").err(),
+            Some(PatchError::ItemMismatch));
+        let duplicate=source.replacen(r#""X":-12"#,r#""X":-12,"\u0058":-12"#,1);
+        assert_eq!(
+            preview_existing_grid_transform(&duplicate,target,
+                (-12,45),(9,-8),"GridOrientation_Up","GridOrientation_Down").err(),
+            Some(PatchError::DuplicateKey));
+    }
+
+    #[test]
+    fn existing_grid_transform_supports_modified_diff_object(){
+        let source=r#"{"World":{"GridCollection":{"DiffGrids":{"33":{
+          "ModifiedObjects":{"7":{
+            "ItemID":77,"X":12,"Y":2,
+            "Orientation":"GridOrientation_Right","Extra":{"new":true}
+          }},"RemovedObjects":[5]
+        }}}}}"#;
+        let target=GridCoordinateTarget{kind:GridObjectKind::DiffModified,
+            grid_id:"33".into(),object_id:"7".into(),item_id:77};
+        let result=preview_existing_grid_transform(source,target,(12,2),(0,-3),
+            "GridOrientation_Right","GridOrientation_Left").unwrap();
+        assert!(result.patched_json.contains(r#""X":0,"Y":-3"#));
+        assert!(result.patched_json.contains(r#""Orientation":"GridOrientation_Left""#));
+        assert!(result.patched_json.contains(r#""RemovedObjects":[5]"#));
+        assert!(result.patched_json.contains(r#""Extra":{"new":true}"#));
+    }
+
     #[test]
     fn grid_coordinate_batch_edits_two_grids_atomically_and_preserves_unknowns(){
         let source=r#"{"GameInfo":{"Version":643},"Player":{"Unknown":"\u3053"},
