@@ -15,7 +15,6 @@ import {loadPinnedPublicQuestAcquisition,
   type PublicQuestAcquisitionIndex} from '../guide/public-quest-acquisition.ts';
 import {loadUnifiedAcquisitionOriginDatabase,
   type OriginDatabase,type ItemOrigin,type OfficialCampaign} from './origins.ts';
-import {currentDb00ItemIds} from './current-catalog.ts';
 import {joinDb02OriginsWithDb00,
   type Db00PublishedSnapshot,type Db00OriginJoin} from './db00-origins.ts';
 import {historicalPremiumShop} from './premium-shop-history.ts';
@@ -76,10 +75,11 @@ export async function loadPublicSourceCatalog(
     loadCurrentGameDatabase(basePath,fetcher),
     loadPinnedPublicQuestAcquisition(basePath,fetcher)
   ]);
-  ensure(rawDb00.kind==='db_snapshot','CURRENT_DB00_REQUIRED');
+  ensure(rawDb00.kind==='db_snapshot'&&rawDb00.items.length===13202,
+    'CURRENT_DB00_REQUIRED');
+  // DB-00 has verified every shard SHA before returning; the existing
+  // DB-02 join additionally validates exact release/version/source identity.
   const db00Snapshot=rawDb00 as Db00PublishedSnapshot;
-  const ids=currentDb00ItemIds(db00Snapshot);
-  ensure(ids.length===13202,'DB00_ITEM_CENSUS');
   const origins=await loadUnifiedAcquisitionOriginDatabase(
     fetcher,null,basePath,[],null,questSource
   );
