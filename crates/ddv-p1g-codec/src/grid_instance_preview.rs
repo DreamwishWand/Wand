@@ -3,6 +3,7 @@
 //! Do not include Save grid IDs, object IDs, source paths or custom states
 //! in the receipt. This is not an editor target/placement authority.
 use super::CodecError;
+use ddv_save_patch::{GridCoordinateTarget,GridObjectKind};
 use serde_json::{Value,Map};
 use std::collections::HashSet;
 
@@ -22,6 +23,7 @@ struct Scan {
     removal_markers:usize,
     sampled:bool,
     rows:Vec<Value>,
+    private_targets:Vec<(GridCoordinateTarget,Option<(i32,i32)>)>,
 }
 
 fn key_id(key:&str)->Option<u64>{
@@ -52,7 +54,8 @@ fn observed_orientation(object:&Map<String,Value>)->Option<&str>{
     }else{None}
 }
 fn project_objects(
-    source:&Map<String,Value>,modified:bool,removed:&HashSet<u64>,scan:&mut Scan
+    source:&Map<String,Value>,grid_id:&str,modified:bool,
+    removed:&HashSet<u64>,scan:&mut Scan
 ){
     for (key,value) in source{
         if scan.scanned==MAX_SCANNED_OBJECTS||scan.rows.len()==MAX_ROWS{
@@ -78,6 +81,10 @@ fn project_objects(
         // Index is per-open-document only, not a stable instance identifier,
         // writer handle, real grid key or gameplay object ID.
         let ordinal=scan.rows.len()+1;
+        scan.private_targets.push((GridCoordinateTarget{
+            kind:if modified{GridObjectKind::DiffModified}else{GridObjectKind::Full},
+            grid_id:grid_id.to_owned(),object_id:key.to_owned(),item_id
+        },xy));
         scan.rows.push(serde_json::json!({
             "localOrdinal":ordinal,
             "itemId":item_id.to_string(),
@@ -93,7 +100,7 @@ fn project_objects(
 /// Scan the *current local* Save profile only. Its original bytes and
 /// all IDs/unknown object state stay in Rust Worker; only an explicit
 /// user-requested browser UI preview receives projected coordinates.
-pub(super) fn saved_grid_instances_json(source:&[u8])->Result<String,CodecError>{
+fn scan_grid_instances(source:&[u8])->Result<(Scan,&'static str),CodecError>{
     let root:Value=serde_json::from_slice(source).map_err(|_|CodecError::Json)?;
     let world=root.get("World").and_then(Value::as_object)
         .ok_or(CodecError::RequiredRoot)?;
@@ -128,7 +135,7 @@ pub(super) fn saved_grid_instances_json(source:&[u8])->Result<String,CodecError>
                         scan.invalid+=1;continue;
                     };
                     scan.full+=1;
-                    project_objects(objects,false,&HashSet::new(),&mut scan);
+                    project_objects(objects,key,false,&HashSet::new(),&mut scan);
                 }
             }
             if let Some(grids)=diff{
@@ -166,7 +173,7 @@ pub(super) fn saved_grid_instances_json(source:&[u8])->Result<String,CodecError>
                     }
                     scan.removal_markers+=removed.len();
                     scan.diff+=1;
-                    project_objects(objects,true,&removed,&mut scan);
+                    project_objects(objects,key,true,&removed,&mut scan);
                 }
             }
             if scan.sampled||scan.invalid>0{
@@ -178,6 +185,35 @@ pub(super) fn saved_grid_instances_json(source:&[u8])->Result<String,CodecError>
             }
         }
     };
+    Ok((scan,status))
+}
+
+pub(super) fn resolve_grid_coordinate_target(
+    profile:&[u8],ordinal:usize,expected_item:u64,
+    expected:(i32,i32),record_kind:&str
+)->Result<GridCoordinateTarget,CodecError>{
+    if ordinal==0||ordinal>MAX_ROWS||expected_item==0{
+        return Err(CodecError::Bounds);
+    }
+    let (scan,_status)=scan_grid_instances(profile)?;
+    if scan.sampled||scan.invalid>0{
+        return Err(CodecError::Json);
+    }
+    let (target,observed)=scan.private_targets.get(ordinal-1)
+        .ok_or(CodecError::Json)?;
+    let kind=match target.kind{
+        GridObjectKind::Full=>"full",
+        GridObjectKind::DiffModified=>"diff_modified"
+    };
+    if target.item_id!=expected_item||
+       observed!=&Some(expected)||kind!=record_kind{
+        return Err(CodecError::Json);
+    }
+    Ok(target.clone())
+}
+
+pub(super) fn saved_grid_instances_json(source:&[u8])->Result<String,CodecError>{
+    let (scan,status)=scan_grid_instances(source)?;
     serde_json::to_string(&serde_json::json!({
         "contract":"wand.db05.grid-instance-preview@1",
         "status":status,
