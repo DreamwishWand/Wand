@@ -430,6 +430,47 @@ class NativeWireTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "disagree"):
             offgrid_grid_collection_layout(bad_id, path)
 
+    def test_offgrid_event_visual_direct_gridcollection_does_not_fail_wrapper_probe(self):
+        # Steam 1.26.2 Halloween 2025/2026 visual layout has a direct
+        # Meta.GridCollection with repeated field-1 map entries. It is not
+        # a root (1=context, 2=embedded) OffGrid wrapper.
+        path = (STREAM / "SceneLayouts/OffGridBuildings/EventFloatingIslands/"
+                "Halloween2025/Island2026/EFI_Halloween-Visual-DefaultLayout.json")
+        def grid_entry(grid_id, object_id):
+            grid = (field(1, grid_id) +
+                    field(2, f"GridData/OffGridBuildings/EventFloatingIslands/"
+                             f"EFI_Halloween2025/Visual{grid_id}-GridData.json") +
+                    field(5, field(1, object_id) +
+                          field(2, field(1, object_id) +
+                                field(2, 40000001) + field(3, grid_id))))
+            return field(1, field(1, grid_id) + field(2, grid))
+        direct = grid_entry(0, 4) + grid_entry(1, 5)
+        self.assertIsNone(offgrid_grid_collection_layout(direct, path))
+        parsed = grid_collection_layout(direct, path)
+        self.assertIsNotNone(parsed)
+        layout, objects = parsed
+        self.assertEqual(layout["source"]["nativeType"], "Meta.GridCollection")
+        self.assertNotIn("embeddedGridCollectionWireField", layout)
+        self.assertEqual([g["gridIdNative"] for g in layout["nativeGridEntries"]], [0, 1])
+        self.assertEqual(layout["defaultObjectCount"], 2)
+        self.assertEqual(layout["gridReferences"][0]["wireField"], "1.2.2")
+        self.assertTrue(all(o["worldCoordinatesVerified"] is False for o in objects))
+        # Direct map-key/ID contradictions must not be downgraded into
+        # unverified or silently skipped layouts.
+        invalid = direct.replace(
+            field(1, 1) + field(2, field(1, 1) +
+                field(2, "GridData/OffGridBuildings/EventFloatingIslands/"
+                         "EFI_Halloween2025/Visual1-GridData.json") +
+                field(5, field(1, 5) + field(2, field(1, 5) +
+                                           field(2, 40000001) + field(3, 1)))),
+            field(1, 2) + field(2, field(1, 1) +
+                field(2, "GridData/OffGridBuildings/EventFloatingIslands/"
+                         "EFI_Halloween2025/Visual1-GridData.json") +
+                field(5, field(1, 5) + field(2, field(1, 5) +
+                                           field(2, 40000001) + field(3, 1)))))
+        with self.assertRaisesRegex(ValueError, "disagree"):
+            offgrid_grid_collection_layout(invalid, path)
+
     def test_default_village_grid_layout_map_exact_area_paths(self):
         path = STREAM / "SceneLayouts/Village04/DefaultVillageLayout01.json"
         data = (field(1, field(2, 1540000000) +
