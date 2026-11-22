@@ -446,6 +446,63 @@ interface GridTransformPreviewReceipt{
   placementLegalityVerified:false;
 }
 
+interface GridMixedPlan {
+  localOrdinal:number;itemId:string;
+  recordKind:'full'|'diff_modified';
+  expectedX:number;expectedY:number;
+  replacementX:number|null;replacementY:number|null;
+  expectedOrientation:CardinalOrientation|null;
+  replacementOrientation:CardinalOrientation|null;
+}
+function validateGridMixedEdits(raw:unknown):GridMixedPlan[]{
+  if(!Array.isArray(raw)||raw.length<1||raw.length>16)
+    throw new TypeError('DB05_GRID_MIXED_COUNT_INVALID');
+  const seen=new Set<number>();
+  return raw.map((value:unknown)=>{
+    if(!object(value)||!exact(value,[
+      'localOrdinal','itemId','recordKind','expectedX','expectedY',
+      'replacementX','replacementY','expectedOrientation','replacementOrientation'
+    ])||!nonnegative(value.localOrdinal,20000)||
+      value.localOrdinal===0||!validId(value.itemId)||
+      BigInt(value.itemId)>9007199254740991n||
+      !['full','diff_modified'].includes(String(value.recordKind))||
+      !signed32(value.expectedX)||!signed32(value.expectedY))
+      throw new TypeError('DB05_GRID_MIXED_ROW_INVALID');
+    const hasPosition=value.replacementX!==null&&value.replacementY!==null;
+    const hasOrientation=value.expectedOrientation!==null&&
+      value.replacementOrientation!==null;
+    if((value.replacementX===null)!==(value.replacementY===null)||
+       (value.expectedOrientation===null)!==(value.replacementOrientation===null)||
+       !hasPosition&&!hasOrientation)
+      throw new TypeError('DB05_GRID_MIXED_CHANGE_REQUIRED');
+    if(hasPosition){
+      if(!signed32(value.replacementX)||!signed32(value.replacementY)||
+         (value.expectedX===value.replacementX&&
+          value.expectedY===value.replacementY))
+        throw new TypeError('DB05_GRID_MIXED_POSITION_INVALID');
+    }
+    if(hasOrientation){
+      if(!cardinalNames.includes(String(value.expectedOrientation))||
+         !cardinalNames.includes(String(value.replacementOrientation))||
+         value.expectedOrientation===value.replacementOrientation)
+        throw new TypeError('DB05_GRID_MIXED_ORIENTATION_INVALID');
+    }
+    if(seen.has(value.localOrdinal as number))
+      throw new TypeError('DB05_GRID_MIXED_DUPLICATE_ORDINAL');
+    seen.add(value.localOrdinal as number);
+    return value as unknown as GridMixedPlan;
+  });
+}
+interface GridMixedPreviewReceipt{
+  contract:'wand.db05.grid-mixed-batch-preview@1';
+  changedCount:number;
+  lexicalBytesPreserved:true;
+  reopenVerified:true;
+  writerAuthorized:false;
+  exportAuthorized:false;
+  placementLegalityVerified:false;
+}
+
 interface GridCoordinateBatchReceipt{
   contract:'wand.db05.grid-coordinate-batch-preview@1';
   changedCount:number;
@@ -503,7 +560,8 @@ type Reply =
   | { kind: 'error' }
   | { kind: 'result'; receipt: PreviewReceipt | BatchPreviewReceipt |
       GridCoordinatePreviewReceipt | GridCoordinateBatchReceipt |
-      GridOrientationPreviewReceipt | GridTransformPreviewReceipt }
+      GridOrientationPreviewReceipt | GridTransformPreviewReceipt |
+      GridMixedPreviewReceipt }
   | { kind: 'copy'; bytes: Uint8Array; receipt: CopyReceipt }
   | { kind: 'slots'; rows: SaveEditableSlot[];
       grid:SaveGridReferenceReport;
@@ -630,13 +688,16 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
     const transformPreview=input?.command==='preview-grid-transform';
     const transformCopy=input?.command==='export-grid-transform-copy';
     const transformEdit=transformPreview||transformCopy;
+    const gridMixedPreview=input?.command==='preview-grid-mixed-batch';
+    const gridMixedCopy=input?.command==='export-grid-mixed-batch-copy';
+    const gridMixed=gridMixedPreview||gridMixedCopy;
     const gridBatchPreview=input?.command==='preview-grid-coordinate-batch';
     const gridBatchCopy=input?.command==='export-grid-coordinate-batch-copy';
     const gridBatch=gridBatchPreview||gridBatchCopy;
     const instances=input?.command === 'inspect-grid-instances';
     const exporting = input?.command === 'export-existing-amount-copy' ||
       input?.command === 'export-batch-amount-copy'||gridCopy||
-      gridBatchCopy||orientationCopy||transformCopy;
+      gridBatchCopy||orientationCopy||transformCopy||gridMixedCopy;
     const batch = input?.command === 'preview-batch-amounts' ||
       input?.command === 'export-batch-amount-copy';
     const expectedKeys = compareDb04
@@ -655,6 +716,9 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
       : gridBatch ? (gridBatchCopy
         ? ['command','format','bytes','edits','allowExperimentalCopy']
         : ['command','format','bytes','edits'])
+      : gridMixed ? (gridMixedCopy
+        ? ['command','format','bytes','edits','allowExperimentalCopy']
+        : ['command','format','bytes','edits'])
       : batch
       ? (exporting
         ? ['command', 'format', 'bytes', 'edits', 'allowExperimentalCopy']
@@ -671,7 +735,8 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
           'preview-grid-coordinates','export-grid-coordinate-copy',
           'preview-grid-coordinate-batch','export-grid-coordinate-batch-copy',
           'preview-grid-orientation','export-grid-orientation-copy',
-          'preview-grid-transform','export-grid-transform-copy'].includes(
+          'preview-grid-transform','export-grid-transform-copy',
+          'preview-grid-mixed-batch','export-grid-mixed-batch-copy'].includes(
           String(input.command)) ||
         (exporting && input.allowExperimentalCopy !== true) ||
         !['auto', 'json', 'p1g'].includes(String(input.format)) ||
@@ -681,7 +746,7 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
         (compareDb03 && (typeof input.base!=='string' ||
           !(input.base===''||
             /^\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/.test(input.base)))) ||
-        (!batch && !gridBatch && !listing && !instances && !compareDb04 &&
+        (!batch && !gridBatch && !gridMixed && !listing && !instances && !compareDb04 &&
           !compareDb03 && !gridEdit && !orientationEdit && !transformEdit &&
           (!uint32(input.expected)||!uint32(input.replacement))))
       throw new TypeError('DB05_WORKER_COMMAND_INVALID');
@@ -695,10 +760,13 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
     const gridBatchPlan=gridBatch
       ? JSON.stringify({edits:validateGridCoordinateBatchEdits(input.edits)})
       : null;
+    const gridMixedPlan=gridMixed
+      ? JSON.stringify({edits:validateGridMixedEdits(input.edits)})
+      : null;
     const edits = batch ? validateBatchEdits(input.edits) : null;
     const plan = edits === null ? null : JSON.stringify({edits});
     const target = (batch||listing||instances||compareDb04||compareDb03||
-      gridEdit||gridBatch||orientationEdit||transformEdit)
+      gridEdit||gridBatch||gridMixed||orientationEdit||transformEdit)
       ? null : validateTarget(input.target);
     const requestedFormat = input.format as InputFormat;
     const format: Exclude<InputFormat, 'auto'> =
@@ -716,7 +784,22 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
       rust.append_chunk(bytes.subarray(i, i + CHUNK));
     rust.finish_open();
 
-    if(transformPreview){
+    if(gridMixedPreview){
+      const selected=validateGridMixedEdits(input.edits);
+      const receipt:unknown=JSON.parse(
+        rust.preview_grid_mixed_batch(gridMixedPlan!));
+      if(!object(receipt)||!exact(receipt,[
+        'contract','changedCount','lexicalBytesPreserved','reopenVerified',
+        'writerAuthorized','exportAuthorized','placementLegalityVerified'
+      ])||receipt.contract!=='wand.db05.grid-mixed-batch-preview@1'||
+        receipt.changedCount!==selected.length||
+        receipt.lexicalBytesPreserved!==true||
+        receipt.reopenVerified!==true||receipt.writerAuthorized!==false||
+        receipt.exportAuthorized!==false||
+        receipt.placementLegalityVerified!==false)
+        throw new TypeError('DB05_GRID_MIXED_RECEIPT_INVALID');
+      response={kind:'result',receipt:receipt as unknown as GridMixedPreviewReceipt};
+    }else if(transformPreview){
       const receipt:unknown=JSON.parse(rust.preview_grid_transform(
         transformPlan!));
       if(!object(receipt)||!exact(receipt,[
@@ -814,7 +897,9 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
         complete:true,writerAuthorized:false
       };
     }else if (exporting) {
-      const length = transformCopy
+      const length = gridMixedCopy
+        ? rust.prepare_grid_mixed_batch_copy(gridMixedPlan!)
+        : transformCopy
         ? rust.prepare_grid_transform_copy(transformPlan!)
         : orientationCopy
         ? rust.prepare_grid_orientation_copy(orientationPlan!)
