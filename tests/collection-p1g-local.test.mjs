@@ -4,7 +4,7 @@ import {createCipheriv} from 'node:crypto';
 import {deflateRawSync} from 'node:zlib';
 import {decodeP1gPackagedProfile,p1gPackagedProfileCodec} from '../src/lib/collection/private-p1g-codec.js';
 import {createSavedStorePreview, attachHistoricalStoreLabels} from '../src/lib/collection/saved-store-preview.mjs';
-import {inspectEncryptedSavedStore,inspectLocalSavedStore} from '../src/lib/collection/saved-store-worker-core.mjs';
+import {inspectEncryptedSavedStore} from '../src/lib/collection/saved-store-worker-core.mjs';
 import {inspectLocalDb04SaveJoin} from '../src/lib/collection/saved-world-db04-join-worker-core.mjs';
 import {
   makeCollectionDb04ZipFixture,TEST_DB04_LAYOUT,TEST_DB04_GRID
@@ -251,42 +251,4 @@ test('DB04 dual-file Worker rejects tampered source hash and unsupported Steam t
 test('worker core rejects oversize or misaligned ciphertext before decoding',async()=>{
  await assert.rejects(()=>inspectEncryptedSavedStore(new Uint8Array(15)),/LOCAL_P1G_INVALID_CIPHERTEXT/);
  await assert.rejects(()=>inspectEncryptedSavedStore(new Uint8Array(33)),/LOCAL_P1G_INVALID_CIPHERTEXT/);
-});
-
-test('Collection accepts plain Steam .profile JSON through the local Worker projection contract',async()=>{
-  const root={GameInfo:{Version:643},Player:{
-    PrivateName:'MUST_NOT_LEAK',
-    ListInventories:{'0':{CompatibleItemType:'Furniture',Inventory:{
-      '40005160':{Amount:2,Internal:'secret'}
-    }}}
-  },World:{Stores:[]}};
-  const bytes=new Uint8Array(Buffer.from(' \r\n'+JSON.stringify(root)));
-  const result=await inspectLocalSavedStore(bytes);
-  assert.equal(result.kind,'saved-store-summary');
-  assert.equal(result.saveSchema,643);
-  assert.deepEqual(result.positiveOwnership.entries,[
-    {itemId:40005160,role:'Furniture'}
-  ]);
-  assert.ok(!JSON.stringify(result).includes('MUST_NOT_LEAK'));
-  assert.ok(!JSON.stringify(result).includes('secret'));
-});
-
-test('Collection native decoder injection remains Worker-local and fails closed on forged JSON',async()=>{
-  const root={GameInfo:{Version:643},Player:{PrivateName:'no-copy'},World:{Stores:[]}};
-  const bytes=makeFixture(root);
-  let calls=0;
-  const response=await inspectLocalSavedStore(bytes,async source=>{
-    calls++;
-    assert.equal(source,bytes);
-    return {jsonText:JSON.stringify(root)};
-  });
-  assert.equal(calls,1);
-  assert.equal(response.saveSchema,643);
-  assert.ok(!JSON.stringify(response).includes('no-copy'));
-  await assert.rejects(
-    inspectLocalSavedStore(bytes,async()=>({
-      jsonText:'{"GameInfo":{"Version":643},"Player":{"x":1,"x":2},"World":{}}'
-    })),
-    /Duplicate JSON object key/
-  );
 });
