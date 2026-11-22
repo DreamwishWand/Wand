@@ -31,6 +31,8 @@ import {
   type Db01Db00CollectionResultsReader,
   type Db01Db00CollectionResultsPage,
 } from './db00-source-results.ts';
+import type {PublicSharedGameSources} from '../game-db/public-sources.ts';
+import type {Db00PublicItemSearchResult} from '../game-db/public-search.ts';
 
 export const DB01_COLLECTION_NATIVE_BROWSE_CONTRACT=
   'wand.db01.collection-native-browse@1' as const;
@@ -61,7 +63,9 @@ export interface Db01CollectionBrowseNavigation{
 }
 export interface Db01CollectionBrowseSelection{
   readonly locale:Db01Locale;
-  /** Omitted = all original source Sets. */
+  /** Omitted = all 13,202 published DB-00 native Item IDs. Selecting an
+   * original category/Set switches to source-only candidates instead.
+   */
   readonly submenuCode?:number;
   /** Only valid with a submenuCode, verified against original source Set IDs. */
   readonly setId?:number;
@@ -70,6 +74,19 @@ export interface Db01CollectionBrowseSelection{
   readonly nativeCategories?:Db01OriginalSourceMenuQuery['nativeCategories'];
   readonly native?:Db01OriginalSourceMenuQuery['native'];
 }
+/** Distinct search scopes prevent mistaking original source-Set absence for
+ * an absent published Item. Only the All scope has full public catalog reach.
+ */
+export type Db01CollectionBrowseSearchPage =
+  | Readonly<Db00PublicItemSearchResult & {
+      collectionScope:'all_published_items';
+      originalSourceSetMembershipVerified:false;
+      publicationAuthorized:false;
+    }>
+  | Readonly<Db01Db00CollectionResultsPage & {
+      collectionScope:'original_source_set_candidates';
+    }>;
+
 export interface Db01CollectionNativeBrowseClient{
   readonly contract:typeof DB01_COLLECTION_NATIVE_BROWSE_CONTRACT;
   readonly publicationAuthorized:false;
@@ -80,10 +97,13 @@ export interface Db01CollectionNativeBrowseClient{
   /** Original source Set order, exact 8-locale names and candidate counts. */
   getSets(locale:Db01Locale,submenuCode:number):
     Promise<readonly Db01CollectionBrowseSet[]>;
-  /** Current published Item IDs only, plus original source and DB-02/03 links. */
+  /** All = complete published DB-00 current items. Selected original
+   * Set/category = only verified source-predicate candidates intersected with
+   * published Items. Never infer game Collection UI membership from either.
+   */
   search(selection:Db01CollectionBrowseSelection,
     page?:Readonly<{offset?:number;limit?:number}>):
-    Promise<Db01Db00CollectionResultsPage>;
+    Promise<Db01CollectionBrowseSearchPage>;
 }
 
 const LANGUAGES=new Set<string>(DB01_LOCALES);
@@ -108,6 +128,7 @@ export function createDb01CollectionNativeBrowseClient(
   axes:Db01CollectionNativeUiAxesClient,
   index:Db01OriginalSourceMenuQueryClient,
   results:Db01Db00CollectionResultsReader,
+  publicData:PublicSharedGameSources,
 ):Db01CollectionNativeBrowseClient{
   const meta=axes?.source,origin=index?.source,joined=results?.target;
   check(axes?.contract===DB01_COLLECTION_UI_AXES&&
@@ -128,6 +149,15 @@ export function createDb01CollectionNativeBrowseClient(
     joined.privateSourceSha256===meta.sourceItemsSha256&&
     joined.snapshotId==='steam-1.26.2-native-itemlist-v1'&&
     joined.publicationAuthorized===false&&
+    publicData?.schema==='wand.game-db.public-sources@1'&&
+    publicData.snapshotId===joined.snapshotId&&
+    publicData.database?.target.platform==='Steam'&&
+    publicData.database.target.gameVersion==='1.26.2'&&
+    publicData.database.target.buildId===null&&
+    publicData.database.itemCount===13202&&
+    publicData.hasPrivateGameSource===false&&
+    publicData.playerOwnershipVerified===false&&
+    typeof publicData.searchItems==='function'&&
     typeof axes.getAreaOptions==='function'&&
     typeof axes.getCategoryOptions==='function'&&
     typeof axes.getCategorySourceSets==='function'&&
@@ -306,7 +336,7 @@ export function createDb01CollectionNativeBrowseClient(
 
   async function search(selection:Db01CollectionBrowseSelection,
     page:Readonly<{offset?:number;limit?:number}>={}):
-    Promise<Db01Db00CollectionResultsPage>{
+    Promise<Db01CollectionBrowseSearchPage>{
     check(selection!==null&&typeof selection==='object'&&!Array.isArray(selection),
       'INVALID_SELECTION');
     validLocale(selection.locale);
@@ -328,6 +358,39 @@ export function createDb01CollectionNativeBrowseClient(
       'nativeCategories','native',
     ].includes(k));
     check(unknown.length===0,'UNSUPPORTED_FILTER_DIMENSION');
+    if(code===undefined&&setId===undefined&&
+      selection.listingEvidence===undefined&&
+      selection.nativeCategories===undefined&&
+      selection.native===undefined){
+      // Every published native Item belongs in "All" even if original
+      // CollectionSet lists/predicates never mention it.
+      const published=publicData.searchItems({
+        locale:selection.locale,
+        ...(selection.searchText===undefined?{}:{text:selection.searchText}),
+        offset:page.offset??0,limit:page.limit??72,
+      });
+      check(published.scope==='current_published_itemlist'&&
+        published.snapshotId===publicData.snapshotId&&
+        published.offset===(page.offset??0)&&
+        published.total>=0&&published.total<=13202&&
+        Array.isArray(published.items)&&
+        published.items.length<= (page.limit??72)&&
+        published.sourceCoverageComplete===false&&
+        published.liveAvailabilityVerified===false&&
+        published.playerOwnershipVerified===false&&
+        published.items.every(item=>
+          item?.catalogStatus==='current_published_item'&&
+          item.catalog?.id===item.itemId&&
+          item.currentlyAvailableVerified===false&&
+          item.playerOwnershipVerified===false),
+        'PUBLISHED_ALL_SCOPE_CONFLICT');
+      return Object.freeze({
+        ...published,
+        collectionScope:'all_published_items' as const,
+        originalSourceSetMembershipVerified:false as const,
+        publicationAuthorized:false as const,
+      });
+    }
     if(code!==undefined){
       const sets=await getSets(selection.locale,code);
       if(setId!==undefined){
@@ -348,6 +411,7 @@ export function createDb01CollectionNativeBrowseClient(
           'INVALID_LISTING_EVIDENCE');
         const offset=page.offset??0;
         return Object.freeze({
+          collectionScope:'original_source_set_candidates' as const,
           items:Object.freeze([]),totalPublishedMatches:0,
           totalOriginalSourceCandidates:0,unpublishedSourceDefinitionCount:0,
           offset,nextOffset:null,hasMore:false,
@@ -360,7 +424,7 @@ export function createDb01CollectionNativeBrowseClient(
         });
       }
     }
-    return results.search({
+    const sourceResults=await results.search({
       locale:selection.locale,
       ...(code===undefined?{}:{submenuCodes:[code]}),
       ...(setId===undefined?{}:{collectionSetIds:[setId]}),
@@ -373,6 +437,10 @@ export function createDb01CollectionNativeBrowseClient(
       }),
       ...(selection.native===undefined?{}:{native:selection.native}),
     },page);
+    return Object.freeze({
+      ...sourceResults,
+      collectionScope:'original_source_set_candidates' as const,
+    });
   }
   return Object.freeze({
     contract:DB01_COLLECTION_NATIVE_BROWSE_CONTRACT,
