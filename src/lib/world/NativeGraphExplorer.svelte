@@ -50,7 +50,9 @@
   onDestroy(stop);
 
   function query(offset=0){
-    if(!worker||!canQuery)return;
+    // A 'loaded' Worker reply can run before Svelte's next reactive flush.
+    // Evaluate the up-to-date state directly, so the first result appears.
+    if(!worker||!catalog||(scope!=='unlinked_world'&&!scopeId))return;
     const chosen=exactItemId.trim();
     if(chosen!==''&&!/^[1-9][0-9]{0,19}$/.test(chosen)){
       errorMessage='Item IDは正の整数で指定してください。';
@@ -64,19 +66,33 @@
       query:{scope,scopeId:scope==='unlinked_world'?null:scopeId,
         exactItemId:chosen,offset,limit:100}});
   }
-  function chooseScope(){
+  function chooseScope(event:Event){
+    // Svelte DOM change handlers can run before bind:value flushes.
+    scope=(event.currentTarget as HTMLSelectElement).value as Db04GraphScope;
     scopeId=scope==='world'?catalog?.sourceWorlds[0]?.id??'':
       scope==='area'?catalog?.sourceAreas[0]?.id??'':
       scope==='grid'?filteredGrids[0]?.id??'':'';
     page=null;pageOffset=0;
     query();
   }
-  function chooseGridSearch(){
+  function chooseGridSearch(event:Event){
     if(scope!=='grid')return;
-    if(!filteredGrids.some(g=>g.id===scopeId))
-      scopeId=filteredGrids[0]?.id??'';
+    // The DOM input value precedes bind:value and reactive recomputation.
+    const needle=(event.currentTarget as HTMLInputElement)
+      .value.toLocaleLowerCase();
+    const matches=(catalog?.sourceGrids??[])
+      .filter(g=>g.label.toLocaleLowerCase().includes(needle)||
+        g.id.toLocaleLowerCase().includes(needle))
+      .slice(0,200);
+    if(!matches.some(g=>g.id===scopeId)){
+      scopeId=matches[0]?.id??'';
+      page=null;pageOffset=0;
+    }
+  }
+  function chooseSourceOption(event:Event){
+    scopeId=(event.currentTarget as HTMLSelectElement).value;
     page=null;pageOffset=0;
-    if(scopeId)query();
+    query();
   }
   async function loadFile(event:Event){
     const input=event.currentTarget as HTMLInputElement;
@@ -162,12 +178,12 @@
       {#if scope==='grid'}
         <label>Gridを絞り込む
           <input type="search" bind:value={gridSearch}
-            on:change={chooseGridSearch} placeholder="Layoutパス・Grid ID"/>
+            on:input={chooseGridSearch} placeholder="Layoutパス・Grid ID"/>
         </label>
       {/if}
       {#if scope!=='unlinked_world'}
         <label class="graph-select">原本ID
-          <select bind:value={scopeId} on:change={()=>{page=null;query();}}
+          <select bind:value={scopeId} on:change={chooseSourceOption}
             disabled={options.length===0}>
             {#each options as option (option.id)}
               <option value={option.id}>{option.label}</option>

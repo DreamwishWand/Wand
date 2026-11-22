@@ -240,7 +240,7 @@
   .site-shell .shell-brand-mark img{width:28px;height:28px;border-radius:6px}
 }
 @media(max-width:370px){
-  .site-shell .shell-brand-mark{width:28px;height:28px}
+  .site-shell .shell-brand-mark{display:none}
   .site-shell .shell-brand-mark img{width:24px;height:24px}
 }
 
@@ -255,7 +255,9 @@
   .site-shell .header-account-tools,.site-shell .header-support-tools{display:none}
   .site-shell .header-file-tools{display:none}
   .site-shell .shell-more-root{display:flex}
-  .site-shell .header-preference-tools{margin-left:0;padding-left:3px}
+  /* Keep every 40px+ tap target while reclaiming a few pixels at 390px. */
+  .site-shell .header-preference-tools{margin-left:0;padding-left:0}
+  .site-shell .site-actions{gap:0}
   .site-shell .header-save-root{margin-left:0}
   .site-shell .site-header{gap:2px}
 }
