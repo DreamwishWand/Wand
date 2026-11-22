@@ -200,10 +200,10 @@ export function createLootSourceDisplayClient(
       let evidence:LootSourceObjectDisplay['nameEvidence']='missing';
       if(validName(locName)){
         name=locName;chosenLocale=locale;evidence='db01_current_exact_locdb';
-      }else if(locale!=='en'&&validName(englishNative)){
-        name=englishNative;chosenLocale='en';evidence='db01_current_exact_locdb';
       }else if(validName(pub[locale])){
         name=pub[locale];chosenLocale=locale;evidence='db00_current_verified';
+      }else if(locale!=='en'&&validName(englishNative)){
+        name=englishNative;chosenLocale='en';evidence='db01_current_exact_locdb';
       }else if(locale!=='en'&&validName(pub.en)){
         name=pub.en;chosenLocale='en';evidence='db00_current_verified';
       }
@@ -265,7 +265,8 @@ export function createLootSourceDisplayClient(
     async readVerifiedThumbnail(raw:string|number,loadImageBytes:PrivateMediaV2BytesProvider){
       const objectId=Number(id(raw));
       check(typeof loadImageBytes==='function','IMAGE_PROVIDER_REQUIRED');
-      check(catalog.db00.lookup(objectId).catalogItem!==null,
+      check(catalog.lootObjectSources.getObjectLootTableReferences(objectId).length>0&&
+        catalog.db00.lookup(objectId).catalogItem!==null,
         'PUBLISHED_DB00_SOURCE_OBJECT_REQUIRED');
       if(!media)return null;
       const icon=await media.getItemIcon(objectId);
