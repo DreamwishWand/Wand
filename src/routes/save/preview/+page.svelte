@@ -311,7 +311,8 @@
     coordinateQueue=coordinateQueue.filter(p=>p.localOrdinal!==ordinal);
   }
   function queueGroupRotation(
-    ordinals:readonly number[],direction:GridQuarterTurnDirection
+    ordinals:readonly number[],direction:GridQuarterTurnDirection,
+    pivotOrdinal:number
   ):boolean{
     // Stage only; local UI ordinals are resolved again by the Rust
     // mixed-batch writer against the immutable original Save.
@@ -327,15 +328,16 @@
       return false;
     const draft=draftGridGroupQuarterTurn(
       sources.filter((row):row is LocalGridInstance=>row!==undefined),
-      direction
+      direction,pivotOrdinal
     );
     if(!draft||draft.length!==ordinals.length)return false;
     cancel();result=null;
-    const first=sources[0]!;
-    coordinateSelection={...first};
-    coordinateX=String(first.x);coordinateY=String(first.y);
-    coordinateOrientationValue=isCardinal(first.orientation)
-      ?first.orientation:'';
+    const pivot=sources.find(row=>row.localOrdinal===pivotOrdinal);
+    if(!pivot)return false;
+    coordinateSelection={...pivot};
+    coordinateX=String(pivot.x);coordinateY=String(pivot.y);
+    coordinateOrientationValue=isCardinal(pivot.orientation)
+      ?pivot.orientation:'';
     mixedQueue=[...mixedQueue,...draft];
     return true;
   }
