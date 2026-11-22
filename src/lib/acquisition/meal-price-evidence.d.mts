@@ -4,6 +4,7 @@ import type {ConfiguredIngredientSellEvidence} from './meal-ingredient-sell-evid
 import type {VerifiedPrivateDynamicPriceCache,NativeDynamicCacheItemLookup} from './private-dynamic-price-cache.mjs';
 import type {VerifiedPrivateCookingStarSettings,NativeCookingStarResult} from './private-cooking-star-settings.mjs';
 import type {NativeMealSellPriceRoute} from './native-meal-price-route.mjs';
+import type {NativeSellPriceProviderPlan} from './native-sell-provider-plan.mjs';
 export declare const DB02_MEAL_PRICE_EVIDENCE_CONTRACT:
   'wand.db02.meal-price-evidence@1';
 export interface MealIngredientAmount {
@@ -35,6 +36,9 @@ export interface PrivateMealPriceEvidence {
   readonly gameVersion:'1.26.2';
   readonly state:SerializedMealStateEvidence;
   readonly nativeIngredientPriceRoute:NativeMealSellPriceRoute;
+  readonly nativeMealPriceProviderPlan:NativeSellPriceProviderPlan;
+  readonly sourceIngredientProviderPlans:readonly NativeSellPriceProviderPlan[];
+  readonly nativePriceProviderTopologyVerified:true;
   readonly nativeIngredientRoutingImplementationVerified:true;
   readonly nativeIngredientRuntimePricesVerified:false;
   readonly nativeLookupDefaultCannotReplaceUnknownSourcePrices:true;
@@ -81,6 +85,7 @@ export interface PrivateMealPricingView {
   readonly nativeCookingStarSettings:VerifiedPrivateCookingStarSettings|null;
   readonly nativeDynamicCacheVerified:boolean;
   readonly nativeDynamicPriceCache:VerifiedPrivateDynamicPriceCache|null;
+  getNativeSellPriceProviderPlan(itemId:number):NativeSellPriceProviderPlan;
   getSourceCachedDynamicPriceRow(itemId:number):NativeDynamicCacheItemLookup|null;
   getSourceStarResult(star:number):NativeCookingStarResult|null;
   readonly publishable:false;
