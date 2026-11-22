@@ -96,7 +96,7 @@ test('DB-03 pinned SHA loader projects verified acquisition origins while retain
   };
   const db=await loadUnifiedAcquisitionOriginDatabase(fetcher,null,'/Wand');
   assert.equal(db.getCoverage().linkedRoutes,67);
-  assert.equal(db.getCoverage().campaigns,OFFICIAL_CAMPAIGNS.length+2);
+  assert.equal(db.getCoverage().campaigns,OFFICIAL_CAMPAIGNS.length+2+21);
   assert(db.getItem(170000115).origins.some(x=>x.routeStatus==='confirmed_source_link'&&
     x.source.kind==='verified_liveops_cache'));
   const free=db.getItem(80100000).origins;
@@ -105,4 +105,9 @@ test('DB-03 pinned SHA loader projects verified acquisition origins while retain
   assert.deepEqual(db.getCampaign('code:DDVPRIDE2026')?.rewards.map(r=>r.name),
     ['Round Rainbow Garden','Butterfly Tiara']);
   assert.equal(db.getHistoricalPremiumShopCoverage().historicalCoverageComplete,false);
+  const historic=db.listCampaigns().filter(c=>c.campaignId.startsWith('starpath-history:'));
+  assert.equal(historic.length,21);
+  assert(historic.every(c=>c.rewards.length===0&&c.window.start===null&&
+    c.window.endExclusive===null&&c.availability==='not_live_verified'));
+  assert.equal(db.getCoverage().originCoverageComplete,false);
 });
