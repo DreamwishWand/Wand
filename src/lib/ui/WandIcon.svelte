@@ -42,7 +42,9 @@
     book:'M5 3h15v18H5a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3z M5 18h15',
     plus:'M12 4v16 M4 12h16',
     languages:'M5 6h12 M11 3v3 M8 6c0 5 5 9 10 11 M15 6c0 5-5 9-10 11 M14 22l4-9 4 9 M15.5 19h5',
-    moon:'M20 16.6A9 9 0 0 1 7.4 4 9 9 0 1 0 20 16.6z'
+    moon:'M20 16.6A9 9 0 0 1 7.4 4 9 9 0 1 0 20 16.6z',
+    grid:'M3 3h8v8H3z M13 3h8v8h-8z M3 13h8v8H3z M13 13h8v8h-8z',
+    chevron:'m6 9 6 6 6-6'
   };
 </script>
 <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
