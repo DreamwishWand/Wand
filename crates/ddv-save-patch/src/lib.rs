@@ -274,18 +274,39 @@ impl<'a> JsonLocator<'a> {
         }
         Ok(())
     }
-    fn locate(mut self) -> Result<(Range<usize>, u64, Option<u64>), PatchError> {
+    fn walk_complete(&mut self) -> Result<(), PatchError> {
         self.space();
         if self.bytes.get(self.pos) != Some(&b'{') { return Err(PatchError::InvalidDocument); }
         self.value(&mut Vec::new())?;
         self.space();
         if self.pos != self.bytes.len() { return Err(PatchError::InvalidDocument); }
+        Ok(())
+    }
+    fn locate(mut self) -> Result<(Range<usize>, u64, Option<u64>), PatchError> {
+        self.walk_complete()?;
         let (range, original) = self.amount.ok_or(PatchError::MissingTarget)?;
         if self.item_path.is_some() && self.item.is_none() {
             return Err(PatchError::MissingTarget);
         }
         Ok((range, original, self.item))
     }
+}
+
+/// Strict whole-document syntax/duplicate-key check for the *private* P1G
+/// codec laboratory. Does not create a DOM or change/serialize JSON.
+/// Schema, entitlement and Writer permission are separate checks.
+pub fn validate_json_without_edit(source: &str) -> Result<(), PatchError> {
+    if source.is_empty() || source.len() > MAX_PROFILE_BYTES {
+        return Err(PatchError::InvalidDocument);
+    }
+    let mut parser = JsonLocator {
+        source, bytes: source.as_bytes(), pos: 0, depth: 0,
+        // Root must be an object, therefore this artificial root Index cannot
+        // match any real path and never reads or changes a saved Amount.
+        amount_path: vec![Segment::Index(usize::MAX)],
+        item_path: None, amount: None, item: None,
+    };
+    parser.walk_complete()
 }
 
 /// Creates an in-memory draft only; never writes a file or P1G. Unknown fields
@@ -362,6 +383,16 @@ mod tests {
     }
     fn chest() -> QuantityTarget {
         QuantityTarget::ChestSlot { container_id:"202".into(), slot_index:1, item_id:440 }
+    }
+
+    #[test]
+    fn validates_unedited_json_without_exposing_or_reconstructing_values() {
+        let json = r#"{"GameInfo":{"Version":643},"Player":{"Unknown":{"\u0041":1}},"World":{}}"#;
+        assert_eq!(validate_json_without_edit(json), Ok(()));
+        assert_eq!(validate_json_without_edit(r#"{"A":1,"\u0041":2}"#),
+            Err(PatchError::DuplicateKey));
+        assert_eq!(validate_json_without_edit(r#"{"A":[1,2,]}"#),
+            Err(PatchError::InvalidDocument));
     }
 
     #[test]
