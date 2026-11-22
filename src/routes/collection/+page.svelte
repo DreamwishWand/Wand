@@ -2,6 +2,7 @@
   import { onMount, tick } from 'svelte';
   import { base } from '$app/paths';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
+  import WandIcon from '$lib/ui/WandIcon.svelte';
   import SavedStorePreview from '$lib/collection/SavedStorePreview.svelte';
   import { CollectionRuntime, type CollectionState, type CollectionItem, type CollectionFacet, type CollectionProgress, type CollectionFilter } from '$lib/collection/runtime';
   import { collectionFamilyLabel } from '$lib/collection/copy';
@@ -271,7 +272,7 @@
     }finally{busy=false;}
   }
   function downloadBackup():void{
-    if(!runtime)return;
+    if(!runtime||busy||storeError||saveReadInProgress)return;
     const data=runtime.exportBackup();
     const url=URL.createObjectURL(new Blob([data],{type:'application/json'}));
     const a=document.createElement('a');
@@ -293,6 +294,8 @@
     finally{input.value='';}
   }
   onMount(()=>{
+    const handleHeaderBackup=()=>downloadBackup();
+    window.addEventListener('wand:collection-backup',handleHeaderBackup);
     let alive=true;
     const media=window.matchMedia('(max-width: 820px)');
     mobileInspector=media.matches;
@@ -315,17 +318,19 @@
       }catch(error){if(alive)loadError=error instanceof Error?error.message:String(error);}
       finally{if(alive)loading=false;}
     })();
-    return()=>{alive=false;media.removeEventListener('change',changed);runtime?.close();};
+    return()=>{alive=false;window.removeEventListener('wand:collection-backup',handleHeaderBackup);media.removeEventListener('change',changed);runtime?.close();};
   });
   function beginSaveRead():void {
     // Preserve the active workspace and runtime at file selection, not at
     // Worker completion. Do not let an asynchronous save update another record.
     saveReadTarget=runtime&&!busy&&!storeError?{runtime,workspaceId:state.active}:null;
     saveReadInProgress=true;
+    window.dispatchEvent(new CustomEvent('wand:collection-busy',{detail:true}));
   }
   function finishSaveRead():void {
     saveReadInProgress=false;
     saveReadTarget=null;
+    window.dispatchEvent(new CustomEvent('wand:collection-busy',{detail:false}));
   }
   /** Native save history and positive-stock ownership are applied together
    * in one IndexedDB transaction, overriding matching manual entries only. */
@@ -409,7 +414,7 @@
     <div>
       <div class="eyebrow">DREAMWISH WAND / DATABASE</div>
       <h1>Collection<span class="title-star">✦</span></h1>
-      <p class="subtitle">ゲーム内のアイテムを見つけ、集めたものを記録する。</p>
+      <p class="subtitle">アイテム · 収集記録</p>
     </div>
     <div class="collection-head-actions">
       <label class="language-picker">表示言語
@@ -439,8 +444,9 @@
   </header>
 
   {#if runtime?.isOwnerLocal || runtime?.metadata.nameCoverage}
-    <div class="info-banner" role="status">
-      Steam v1.26.2：{overall.total.toLocaleString(locale)} /
+    <details class="collection-source-details">
+      <summary>Steam v1.26.2 · データ出典</summary>
+      <div class="collection-source-copy">Steam v1.26.2：{overall.total.toLocaleString(locale)} /
       {(runtime.ownerLocalCoverage??runtime.metadata.nameCoverage)?.itemDefinitions.toLocaleString(locale)}件のItemListデータを表示中。
       8言語の正式名称を確認済み：
       {(runtime.ownerLocalCoverage??runtime.metadata.nameCoverage)?.nameVerified.toLocaleString(locale)}件。
@@ -453,8 +459,8 @@
         {(runtime.ownerLocalCoverage??runtime.metadata.nameCoverage)?.nameUnverified.toLocaleString(locale)}件は、この旧版ファイルには含まれません。
       {/if}
       大分類のみ原本由来です。詳細カテゴリ・ワールド・ユニバース・セーブ上の所有状態は未検証です。
-      {#if runtime.isOwnerLocal}選択したゲームデータはサーバーへ送信・保存されません。{/if}
-    </div>
+      {#if runtime.isOwnerLocal}選択したゲームデータはサーバーへ送信・保存されません。{/if}</div>
+    </details>
   {/if}
   {#if storeError}
     <div class="error-banner" role="alert">
@@ -471,8 +477,8 @@
 
   <section class="personal-bar" aria-label="Personal Collection">
     <div class="personal-left">
-      <span class="personal-symbol">✧</span>
-      <div><strong>My Collection</strong><span>手動編集に対応 · セーブ読込で確認済み状態を優先</span></div>
+      <span class="personal-symbol" aria-hidden="true"><WandIcon name="collection" size={25}/></span>
+      <div><strong>My Collection</strong></div>
       <select aria-label="ローカル記録を選択" value={state.active} on:change={(event)=>changeWorkspace((event.currentTarget as HTMLSelectElement).value)} disabled={Boolean(storeError)||busy||saveReadInProgress}>
         {#each state.workspaces as work}<option value={work.id}>{work.name}</option>{/each}
       </select>
@@ -481,8 +487,6 @@
       <button type="button" title="記録を追加" disabled={Boolean(storeError)||busy||saveReadInProgress||state.workspaces.length>=5} on:click={newWorkspace}>＋ 新規</button>
       <button type="button" title="名前変更" disabled={Boolean(storeError)||busy||saveReadInProgress} on:click={editWorkspaceName}>名前変更</button>
       <button type="button" title="記録削除" disabled={Boolean(storeError)||busy||saveReadInProgress||state.workspaces.length<2} on:click={deleteWorkspace}>削除</button>
-      <button type="button" disabled={Boolean(storeError)} on:click={downloadBackup}>バックアップ出力</button>
-      <button type="button" disabled={busy||saveReadInProgress} on:click={()=>importInput.click()}>復元</button>
       <input bind:this={importInput} class="visually-hidden" type="file" accept=".json,application/json" aria-label="Collectionバックアップを選択" on:change={restoreBackup}/>
     </div>
   </section>
@@ -510,7 +514,7 @@
       <div class="workspace-top">
         <div class="toolbar">
           <label class="search-box">
-            <span aria-hidden="true">⌕</span>
+            <span aria-hidden="true"><WandIcon name="search" size={19}/></span>
             <input type="search" aria-label="8言語のアイテム名で検索" bind:value={search} on:input={resetView} placeholder="アイテム名を検索"/>
           </label>
           <button type="button" class="subtle-button" aria-expanded={filtersOpen} on:click={()=>filtersOpen=!filtersOpen}>フィルター {filtersOpen?'▴':'▾'}</button>
@@ -610,7 +614,7 @@
                 </div>
               {/each}
               {#if visible<totalMatches}
-                <div class="more-button" use:observeMore aria-label="スクロールで続きを自動読み込み">読み込み中…</div>
+                <div class="more-button" use:observeMore aria-label="スクロールで続きを自動読み込み" role="status"><WandIcon name="sparkles" size={18}/></div>
               {/if}
             {/if}
           {:else}
@@ -621,7 +625,7 @@
             <div class="facet-grid">
               {#each facets as facet (facet.id)}
                 <button type="button" class="facet-card" disabled={facet.total===0} on:click={()=>chooseFacet(facet.id)}>
-                  <span class="facet-flourish" aria-hidden="true">✧</span>
+                  <span class="facet-flourish" aria-hidden="true"><WandIcon name="collection" size={20}/></span>
                   <strong>{categoryLabel(locale,facet.id)}</strong>
                   {#if facet.total>0}
                     <span>{facet.total.toLocaleString(locale)} items</span>
