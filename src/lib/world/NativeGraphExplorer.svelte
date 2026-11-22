@@ -26,6 +26,9 @@
   let pageOffset=0;
   let relatedGridRef='';
   let relatedSourceGrids:readonly Db04GraphOption[]=[];
+  let unlinkedGridSearch='';
+  let unlinkedSourceGrids:readonly Db04GraphOption[]=[];
+  let unlinkedGridMatches:readonly Db04GraphOption[]=[];
 
   $: filteredGrids=(catalog?.sourceGrids??[])
     .filter(g=>gridSearch===''||
@@ -46,11 +49,24 @@
   // Only source-exact World/Area → Grid references. An empty Grid is still
   // browseable, even when no original default GridObject row exists.
   // Do not infer membership through path names or Realm descendants.
-  $: relatedSourceGrids=activeOption&&(scope==='world'||scope==='area')
-    ? (catalog?.sourceGrids??[]).filter(grid=>
-        scope==='world'?grid.worldId===activeOption.id:
-          grid.areaRefId===activeOption.id)
+  $: unlinkedSourceGrids=(catalog?.sourceGrids??[])
+    .filter(grid=>grid.worldId===null);
+  $: unlinkedGridMatches=scope==='unlinked_world'
+    ? unlinkedSourceGrids.filter(grid=>{
+        const needle=unlinkedGridSearch.trim().toLocaleLowerCase();
+        return needle===''||
+          grid.id.toLocaleLowerCase().includes(needle)||
+          grid.layoutId.toLocaleLowerCase().includes(needle)||
+          grid.gridDataPath?.toLocaleLowerCase().includes(needle);
+      })
     : [];
+  $: relatedSourceGrids=scope==='unlinked_world'
+    ? unlinkedGridMatches.slice(0,300)
+    : activeOption&&(scope==='world'||scope==='area')
+      ? (catalog?.sourceGrids??[]).filter(grid=>
+          scope==='world'?grid.worldId===activeOption.id:
+            grid.areaRefId===activeOption.id)
+      : [];
   $: if(!relatedSourceGrids.some(grid=>grid.id===relatedGridRef))
     relatedGridRef=relatedSourceGrids[0]?.id??'';
   $: canQuery=catalog!==null&&(scope==='unlinked_world'||Boolean(scopeId));
@@ -67,7 +83,7 @@
     catalog=null;page=null;
     verifiedGraphFile=null;
     scope='world';scopeId='';
-    gridSearch='';exactItemId='';pageOffset=0;
+    gridSearch='';unlinkedGridSearch='';exactItemId='';pageOffset=0;
     errorMessage='';
     if(fileInput)fileInput.value='';
   }
@@ -142,6 +158,9 @@
     scopeId=originalGrid.id;
     page=null;pageOffset=0;
     query();
+  }
+  function chooseUnlinkedGridSearch(event:Event){
+    unlinkedGridSearch=(event.currentTarget as HTMLInputElement).value;
   }
   function chooseRelatedGrid(event:Event){
     relatedGridRef=(event.currentTarget as HTMLSelectElement).value;
@@ -240,6 +259,13 @@
             placeholder="GridDataPath・Layoutパス・Grid ID"/>
         </label>
       {/if}
+      {#if scope==='unlinked_world'}
+        <label>Worldリンク未確認Gridを検索
+          <input type="search" bind:value={unlinkedGridSearch}
+            on:input={chooseUnlinkedGridSearch}
+            placeholder="原本Layout・GridDataPath・Grid ID"/>
+        </label>
+      {/if}
       {#if scope!=='unlinked_world'}
         <label class="graph-select">原本ID
           <select bind:value={scopeId} on:change={chooseSourceOption}
@@ -290,9 +316,17 @@
         {#if activeOption.nativeUniverseTagItemId} · Universe Tag ID: {activeOption.nativeUniverseTagItemId}{/if}
       </p>
     {/if}
-    {#if (scope==='world'||scope==='area')&&relatedSourceGrids.length>0}
+    {#if scope==='unlinked_world'&&unlinkedGridMatches.length>300}
+      <p class="graph-note">Worldリンク未確認Grid {unlinkedGridMatches.length}件中、最初の300件を表示しています。検索で絞り込めます。</p>
+    {/if}
+    {#if scope==='unlinked_world'&&unlinkedGridMatches.length===0}
+      <p class="graph-note">この部分的な原本参照に、一致するWorldリンク未確認Gridはありません。</p>
+    {/if}
+    {#if relatedSourceGrids.length>0}
       <div class="graph-related-grids">
-        <label>原本に直接紐付くGrid（{relatedSourceGrids.length}）
+        <label>{scope==='unlinked_world'
+          ? `Worldリンク未確認の原本Grid（${unlinkedGridMatches.length}）`
+          : `原本に直接紐付くGrid（${relatedSourceGrids.length}）`}
           <select aria-label="原本関連Grid" bind:value={relatedGridRef}
             on:change={chooseRelatedGrid}>
             {#each relatedSourceGrids as grid (grid.id)}
