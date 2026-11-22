@@ -102,6 +102,24 @@ try {
   await direct.locator('.detail .step').first().waitFor({timeout:20000});
   assert.match(await direct.locator('.detail-header').innerText(),/ドリームライトバレーへようこそ/);
   assert.equal(await direct.locator('.quest-permalink').getAttribute('href'),'/Wand/guide/quests/?quest=2070000620');
+  assert.equal(await direct.locator('.detail .step').count(),1,'one step initially visible to avoid wall of text');
+  assert.match(await direct.locator('.detail .step h3').innerText(),/ステップ 1/);
+  assert.equal(await direct.getByRole('button',{name:'前のステップ'}).isDisabled(),true);
+  await direct.getByRole('button',{name:'次のステップ'}).click();
+  await direct.waitForFunction(()=>location.search.includes('step=2'));
+  assert.match(await direct.locator('.detail .step h3').innerText(),/ステップ 2/);
+  assert.equal(await direct.getByRole('link',{name:'選択中のステップへの直接リンク'}).getAttribute('href'),
+    '/Wand/guide/quests/?quest=2070000620&step=2');
+  await direct.getByRole('button',{name:'全ステップ表示'}).click();
+  assert.equal(await direct.locator('.detail .step').count(),5,'optional full view preserves all 5 original source steps');
+  await direct.getByRole('button',{name:'1ステップ表示'}).click();
+  assert.equal(await direct.locator('.detail .step').count(),1);
+  await direct.goBack();
+  await direct.waitForFunction(()=>location.search==='?quest=2070000620');
+  assert.match(await direct.locator('.detail .step h3').innerText(),/ステップ 1/);
+  await direct.goForward();
+  await direct.waitForFunction(()=>location.search.includes('step=2'));
+  assert.match(await direct.locator('.detail .step h3').innerText(),/ステップ 2/);
   await direct.getByRole('textbox',{name:'クエスト名・IDを検索'}).fill('2070000688');
   await direct.locator('.quest-row').first().click();
   await direct.waitForFunction(()=>location.search.includes('quest=2070000688'));
@@ -110,6 +128,23 @@ try {
   await direct.locator('.detail-header h2').filter({hasText:'ドリームライトバレーへようこそ'}).waitFor({timeout:20000});
   assert.deepEqual(deepErrors,[],deepErrors.join('\n'));
   await direct.close();
+
+  const stepLink=await browser.newPage();
+  await stepLink.goto(url+'?quest=2070000620&step=4',{waitUntil:'domcontentloaded'});
+  await stepLink.locator('.detail .step').first().waitFor({timeout:20000});
+  assert.match(await stepLink.locator('.detail .step h3').innerText(),/ステップ 4/,
+    'shared step deep link restores the exact source step after lazy verified detail');
+  await stepLink.getByRole('combobox',{name:'クエストのステップを選択'}).selectOption('1');
+  assert.match(await stepLink.locator('.detail .step h3').innerText(),/ステップ 2/);
+  assert.match(new URL(stepLink.url()).search,/step=2/);
+  await stepLink.close();
+
+  const invalidStep=await browser.newPage();
+  await invalidStep.goto(url+'?quest=2070000620&step=3&step=4',{waitUntil:'domcontentloaded'});
+  await invalidStep.locator('.detail .step').first().waitFor({timeout:20000});
+  assert.match(await invalidStep.locator('.detail .step h3').innerText(),/ステップ 1/,
+    'ambiguous duplicate query never resolves a random step');
+  await invalidStep.close();
 
   // Character names are source labels (not proof of unlocked residents).
   // Reuse only the existing verified public quest index; no private sources.

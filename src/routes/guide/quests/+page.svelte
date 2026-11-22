@@ -6,6 +6,7 @@
   import {collectWindow} from '$lib/ui/collect-window.mjs';
   import {verifyPublicQuestIndex,filterPublicQuests,publicQuestSection,findPublicQuestByLink,loadPublicQuestPart,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
   import {loadPublicQuestTargetsIndex,loadPublicQuestTargetsPart,itemTargetName,originalTargetLookup} from '$lib/guide/public-targets.mjs';
+  import {publicQuestStepIndex,publicQuestStepQuery} from '$lib/guide/public-quest-steps.mjs';
 
   let catalog:any=null;
   let loadError='';
@@ -21,6 +22,10 @@
   let objective='';
   let limit=40;
   let selectionTicket=0;
+  let activeStep=0;
+  let showAllSteps=false;
+  $: visibleSteps=selected?.steps?
+    (showAllSteps?selected.steps:selected.steps.slice(activeStep,activeStep+1)):[];
   const cached=new Map<number,any>();
   const cachedTargets=new Map<number,any>();
   let targetIndex:any=null;
@@ -37,6 +42,17 @@
   function questName(row:any,language:string) {return label(row.names,row.internalName||row.id,language);}
   function characterName(id:string|undefined,language:string) {return label(catalog?.characters?.[id||''],id||'',language);}
   function setSearch() {limit=40;}
+  function selectStep(index:number){
+    if(!selectedRow||!selected||!Number.isInteger(index)||
+      index<0||index>=selected.steps.length)return;
+    activeStep=index;showAllSteps=false;
+    const url=new URL(window.location.href);
+    const next=publicQuestStepQuery(selectedRow.id,index,selected.steps.length);
+    const chosen=new URLSearchParams(next);
+    url.searchParams.set('quest',selectedRow.id);
+    url.searchParams.set('step',chosen.get('step')||'1');
+    window.history.pushState(window.history.state,'',url);
+  }
   function objectiveText(goal:any,target:any,language:string){
     let value=label(goal.text,goal.type,language);
     if(!target)return value;
@@ -79,9 +95,14 @@
     const row=findPublicQuestByLink(catalog,window.location.search);
     if(row){
       if(selectedRow?.id!==row.id)void openQuest(row,false);
+      else if(selected) {
+        activeStep=publicQuestStepIndex(window.location.search,row.id,selected.steps.length);
+        showAllSteps=false;
+      }
     }else if(selectedRow){
       selectionTicket++;
       selectedRow=null;selected=null;detailError='';detailLoading=false;
+      activeStep=0;showAllSteps=false;
       targetLookup={};targetError='';targetLoading=false;
     }
   }
@@ -106,10 +127,12 @@
   async function openQuest(row:any,updateAddress=true) {
     const ticket=++selectionTicket;
     selectedRow=row;selected=null;detailError='';detailLoading=true;
+    activeStep=0;showAllSteps=false;
     if(updateAddress){
       const url=new URL(window.location.href);
       if(url.searchParams.getAll('quest').length!==1||url.searchParams.get('quest')!==row.id){
         url.searchParams.set('quest',row.id);
+        url.searchParams.delete('step');
         window.history.pushState(window.history.state,'',url);
       }
     }
@@ -122,7 +145,11 @@
       }
       const match=part.quests.find((x:any)=>x.id===row.id);
       if(!match)throw new Error('クエスト詳細が見つかりません');
-      if(ticket===selectionTicket){selected=match;void loadQuestTargets(row,part,ticket);}
+      if(ticket===selectionTicket){
+        selected=match;
+        activeStep=publicQuestStepIndex(window.location.search,row.id,match.steps.length);
+        void loadQuestTargets(row,part,ticket);
+      }
     }catch(e){if(ticket===selectionTicket)detailError=e instanceof Error?e.message:String(e)}
     finally {if(ticket===selectionTicket)detailLoading=false}
   }
@@ -185,7 +212,29 @@
             <div class="detail-stats"><span>{selected.steps.length} ステップ</span><span>{selected.objectiveCount} 目標</span>
               {#if selected.configuredFriendshipRange}<span>設定上の友情ポイント：{selected.configuredFriendshipRange.min}–{selected.configuredFriendshipRange.max}</span>{/if}
             </div>
-            {#each selected.steps as step (step.index)}
+            {#if selected.steps.length>0}
+              <nav class="step-navigation" aria-label="クエストの手順ナビゲーション">
+                <button type="button" aria-label="前のステップ" disabled={activeStep===0}
+                  on:click={()=>selectStep(activeStep-1)}>前へ</button>
+                <label>手順
+                  <select aria-label="クエストのステップを選択" bind:value={activeStep}
+                    on:change={()=>selectStep(activeStep)}>
+                    {#each selected.steps as step,i (i)}
+                      <option value={i}>ステップ {step.index+1}</option>
+                    {/each}
+                  </select>
+                </label>
+                <button type="button" aria-label="次のステップ" disabled={activeStep>=selected.steps.length-1}
+                  on:click={()=>selectStep(activeStep+1)}>次へ</button>
+                <button type="button" class="show-all" aria-pressed={showAllSteps}
+                  on:click={()=>showAllSteps=!showAllSteps}>{showAllSteps?'1ステップ表示':'全ステップ表示'}</button>
+              </nav>
+              <div class="step-permalink">
+                <span>ステップ {activeStep+1} / {selected.steps.length}</span>
+                <a aria-label="選択中のステップへの直接リンク" href={`${base}/guide/quests/${publicQuestStepQuery(selectedRow.id,activeStep,selected.steps.length)}`}>このステップへのリンク</a>
+              </div>
+            {/if}
+            {#each visibleSteps as step (step.index)}
               <section class="step"><h3>ステップ {step.index+1}</h3>
                 {#if label(step.text,'',locale)}<p>{label(step.text,'',locale)}</p>{/if}
                 {#each step.subSteps as sub (sub.index)}
@@ -257,7 +306,15 @@
   .quest-permalink{display:inline-block;margin-top:10px;font-size:12px;color:#d5b4ff;text-underline-offset:3px}
   .characters-nav{display:inline-block;margin:11px 0 0;font-size:13px;color:#dbbaff;text-underline-offset:3px}
   .character-link{color:#dbbaff;text-underline-offset:3px}
-  .detail-stats{display:flex;flex-wrap:wrap;gap:8px;font-size:12px;color:#d6c1e5;margin-bottom:17px}.detail-stats span{padding:5px 9px;border-radius:8px;background:#30243f}
+  .detail-stats{display:flex;flex-wrap:wrap;gap:8px;font-size:12px;color:#d6c1e5;margin-bottom:11px}.detail-stats span{padding:5px 9px;border-radius:8px;background:#30243f}
+  .step-navigation{display:flex;align-items:center;flex-wrap:wrap;gap:7px;border:1px solid #534268;background:#251c33;border-radius:10px;padding:10px;margin:8px 0}
+  .step-navigation label{display:flex;align-items:center;gap:6px;font-size:12px;color:#d4c4e4}
+  .step-navigation button,.step-navigation select{background:#392849;color:#f2e9fc;border:1px solid #755c8f;border-radius:7px;padding:7px 10px;font:inherit;font-size:12px}
+  .step-navigation select{max-width:160px}
+  .step-navigation button:disabled{opacity:.35;cursor:not-allowed}
+  .step-navigation .show-all{margin-left:auto;background:transparent}
+  .step-permalink{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:space-between;color:#b9a5ca;font-size:12px;margin:4px 0 12px}
+  .step-permalink a{color:#d9baff;text-underline-offset:3px}
   .step{border-top:1px solid #40344b;padding:13px 0}.step h3{font-size:15px;margin:0 0 8px}.step p{font-size:13px;color:#c2b4cb}.step ol{margin:0;padding-left:25px}.step li{padding:6px 0 8px;font-size:14px}.step li small{display:block;color:#9588a5;font-size:11px;margin-top:3px}
   .source-amount{color:#c2addc!important}.target-status{color:#c9b0e6;font-size:12px}
   .target-warning{color:#e6bf8d;font-size:12px}.target-candidates{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0}
