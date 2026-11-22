@@ -45,6 +45,10 @@ import {
   type PublicOnlineNameCandidateIndex
 } from './public-online-name-candidates.ts';
 import {historicalPremiumShop} from './premium-shop-history.ts';
+import {
+  loadPublicQuestAcquisitionIndex,
+  type QuestAcquisitionIndex
+} from './public-quest-acquisitions.ts';
 import type {Db01CatalogClient} from '../items/index.ts';
 import type {createPrivateDb01MediaOverlayV2} from '../items/media-overlay-v2.ts';
 
@@ -88,6 +92,10 @@ export interface CurrentDb02OriginCatalog{
   readonly lootObjectSources:NativeLootObjectReferenceIndex;
   /** Public DB-00 English-name online reward/shop hints; never verified grants. */
   readonly publicOnlineNameCandidates:PublicOnlineNameCandidateIndex;
+  /** Lazy SHA-pinned 395 explicit Quest reward references, including 65 currency configurations. */
+  loadQuestAcquisitionIndex(
+    fetcher?:typeof fetch,basePath?:string
+  ):Promise<QuestAcquisitionIndex>;
   getItemPotentialLootObjects(itemId:string|number):readonly ItemLootObjectCandidate[];
   /** Local-only DB-00/DB-01/SRC-04 presentation with exact source provenance. */
   createLootSourceDisplay(
@@ -205,6 +213,9 @@ export async function joinCurrentDb02Catalog(
     origins,db00:joined,lootSources,coverage,
     lootObjectSources:nativeLootObjectReferenceIndex,
     publicOnlineNameCandidates,
+    loadQuestAcquisitionIndex(
+      questFetcher:typeof fetch=fetch,questBasePath=basePath
+    ){return loadPublicQuestAcquisitionIndex(questBasePath,questFetcher);},
     getItemPotentialLootObjects(itemId:string|number){
       return nativeLootObjectReferenceIndex.getItemPotentialObjectSources(
         itemId,lootSources);
