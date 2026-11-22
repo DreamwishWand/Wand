@@ -61,3 +61,11 @@ test('all eight verified DDV interface locales have complete shell controls and 
   assert.match(layout,/aria-pressed=\{uiTheme===item.code\}/);
   assert.doesNotMatch(layout,/themeOpen|shell-theme-menu/);
 });
+
+test('language selector uses the shared globe artwork and retains the current locale code',()=>{
+  const layout=readFileSync(new URL('../src/routes/+layout.svelte',import.meta.url),'utf8');
+  const icons=readFileSync(new URL('../src/lib/ui/WandIcon.svelte',import.meta.url),'utf8');
+  assert.match(layout,/<WandIcon name="globe" size=\{19\}\/><span class="header-locale-code">\{LANGUAGE_SHORT\[uiLocale\]\}<\/span>/);
+  assert.match(icons,/globe:globePath/);
+  assert.match(icons,/world:globePath/);
+});
