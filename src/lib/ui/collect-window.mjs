@@ -13,8 +13,9 @@ export function collectWindow(fetchPage,wanted,field='rows',maxPage=100){
     const page=fetchPage(offset,Math.min(maxPage,wanted-offset));
     const chunk=page?.[field];
     if(!Number.isSafeInteger(page?.total)||page.total<0||
-      !Array.isArray(chunk)||chunk.length>maxPage||
-      (offset>0&&page.total!==total))throw new TypeError('WAND_WINDOW_PAGE_INVALID');
+      !Array.isArray(chunk)||chunk.length>Math.min(maxPage,wanted-offset)||
+      (offset>0&&page.total!==total)||
+      (!chunk.length&&offset<page.total))throw new TypeError('WAND_WINDOW_PAGE_INVALID');
     total=page.total;
     if(!chunk.length)break;
     all.push(...chunk);
