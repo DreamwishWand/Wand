@@ -7,6 +7,18 @@
   padding:0 clamp(10px,1.3vw,22px);background:#1c1525f4;
   border-bottom:1px solid #a68bbd43;box-shadow:none
 }
+/* Decorative brand mark stays distinct from the actionable Home button.
+   The supplied SVG is never recolored; its border follows the active palette. */
+.site-shell .shell-brand-mark{
+  flex:none;display:grid;place-items:center;pointer-events:none;
+  width:40px;height:40px;border-radius:11px;
+  border:1px solid var(--wand-accent,#C6D6F2);
+  background:var(--wand-header-hover,#ffffff12);
+  box-shadow:0 0 0 1px var(--wand-line,#52638A),0 0 13px var(--wand-header-hover,#ffffff12)
+}
+.site-shell .shell-brand-mark img{
+  display:block;width:34px;height:34px;border-radius:8px
+}
 .site-shell .header-home-button,
 .site-shell .header-icon-button{
   width:44px;height:44px;min-width:44px;min-height:44px;border-radius:10px;
@@ -225,4 +237,14 @@
 }
 @media(prefers-reduced-motion:reduce){
   .site-shell .portal-card{transition:none}
+}
+
+/* Preserve small-screen file, theme, and help controls beside the logo. */
+@media(max-width:700px){
+  .site-shell .shell-brand-mark{width:32px;height:32px;border-radius:9px}
+  .site-shell .shell-brand-mark img{width:28px;height:28px;border-radius:6px}
+}
+@media(max-width:370px){
+  .site-shell .shell-brand-mark{width:28px;height:28px}
+  .site-shell .shell-brand-mark img{width:24px;height:24px}
 }
