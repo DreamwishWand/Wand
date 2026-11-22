@@ -10,6 +10,9 @@ use flate2::{read::DeflateDecoder,write::DeflateEncoder,Compression};
 use std::io::{Read,Write};
 use zeroize::Zeroize;
 
+#[cfg(feature="wasm")]
+mod mission_slot_audit;
+
 const KEY: &[u8;32]=b"b5qhh8saJ8UlDJUzTZXd2Tg6mbo8W8n5";
 const LIMIT:usize=128*1024*1024;
 const PROFILE:&[u8]=b"profile";
@@ -943,6 +946,22 @@ mod browser_amount_preview {
         /// This is not a catalog lookup, ownership proof or editing permission.
         /// Read-only save GridObject references for optional DB-04 annotation;
         /// no grid IDs, coordinates or private object fields leave the Worker.
+        /// DB-03 comparison uses the public Guide's independently published
+        /// static quest index; outputs are aggregate-only and never authorize
+        /// quest progress changes or a Save Writer.
+        pub fn match_db03_mission_slots(&self,index:&str)->Result<String,JsValue>{
+            if !self.ready || self.closed{
+                return Err(fail("DB05_MISSION_SLOT_SESSION_NOT_OPEN"));
+            }
+            let profile=match self.kind{
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref()
+                    .ok_or(fail("DB05_MISSION_SLOT_SESSION_NOT_OPEN"))?
+                    .profile.as_slice()
+            };
+            mission_slot_audit::match_mission_slots_json(profile,index)
+                .map_err(|_|fail("DB05_MISSION_SLOT_AUDIT_INVALID"))
+        }
         /// Source path pairing only. Source graph must first be verified
         /// by the existing DB-04 WorldReferenceIndex in this Worker.
         pub fn match_db04_grid_paths(&self,witness:&str)->Result<String,JsValue>{

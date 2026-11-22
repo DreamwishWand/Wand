@@ -138,7 +138,12 @@ try{
         {ItemID:0,Amount:0},{ItemID:440,Amount:2,Extra:null}
       ]}}
     },
-    World:{GridCollection:{
+    World:{
+      MissionSlots:{'synthetic-private-group':{Slots:[
+        {MissionId:2070000620,PrivateProgress:'do-not-export'},
+        {MissionId:8765432101},{MissionId:0},{FutureField:true}
+      ]}},
+      GridCollection:{
       Grids:{'101':{ID:101,
         GridDefaultLayoutPath:'SceneLayouts/Synthetic/Grid.json',
         GridDataPath:'GridData/Synthetic/Grid.json',Objects:{
@@ -317,6 +322,16 @@ try{
   await page.getByRole('status').filter({hasText:'4件'}).waitFor({timeout:30000});
   await page.getByRole('region',{name:'セーブ内アイテム'})
     .getByText('ピュアナイトシャード').waitFor({timeout:45000});
+  const questPanel=page.getByRole('region',{name:'クエスト参照'});
+  await questPanel.getByRole('button',{name:'DB-03クエストIDと照合'}).click();
+  await questPanel.getByRole('status').filter({
+    hasText:'DB-03のクエスト定義と一致'
+  }).waitFor({timeout:30000});
+  assert.match(await questPanel.innerText(),/保存中のMission ID：3件/);
+  assert.match(await questPanel.innerText(),/一致：1件/);
+  assert.match(await questPanel.innerText(),/未収録：1件/);
+  assert.match(await questPanel.innerText(),/進行状況は判定しません/);
+  assert.equal(await questPanel.getByRole('alert').count(),0);
   const worldPanel=page.getByRole('region',{name:'ワールド参照'});
   await worldPanel.getByRole('status').filter({hasText:'2種類'}).waitFor({timeout:30000});
   await worldPanel.getByText('ピュアナイトシャード').waitFor({timeout:30000});

@@ -167,6 +167,76 @@ function validatedDb04GridReceipt(source:unknown):Db04GridPathReceipt{
   return source as unknown as Db04GridPathReceipt;
 }
 
+interface Db03MissionSlotReceipt {
+  contract:'wand.db05.db03-mission-slot-summary@1';
+  status:'not_observed'|'incompatible_structure'|'partial_inconclusive'|
+    'zero_sentinels_only'|'unresolved_in_guide_subset'|'source_mission_candidates';
+  observedMissionSlots:number;
+  matchedPlayableQuestReferences:number;
+  unresolvedPlayableQuestReferences:number;
+  zeroSentinels:number;
+  malformedMissionIds:number;
+  typeIssues:number;
+  missingOptionalMissionIds:number;
+  distinctPositiveMissionIds:number;
+  sampled:boolean;
+  publishedQuestDefinitions:733;
+  sourceGameVersion:'1.26.2';
+  indexMetadataValidated:true;
+  originalGameSourceBytesRehashed:false;
+  conditionCompatibilityVerified:false;
+  completeQuestHistoryVerified:false;
+  questProgressVerified:false;
+  questCompletionVerified:false;
+  entitlementVerified:false;
+  saveWritingAuthorized:false;
+  exportAuthorized:false;
+}
+function validateDb03MissionReceipt(input:unknown):Db03MissionSlotReceipt {
+  if(!object(input)||!exact(input,[
+    'contract','status','observedMissionSlots',
+    'matchedPlayableQuestReferences','unresolvedPlayableQuestReferences',
+    'zeroSentinels','malformedMissionIds','typeIssues',
+    'missingOptionalMissionIds','distinctPositiveMissionIds',
+    'sampled','publishedQuestDefinitions','sourceGameVersion',
+    'indexMetadataValidated','originalGameSourceBytesRehashed',
+    'conditionCompatibilityVerified','completeQuestHistoryVerified',
+    'questProgressVerified','questCompletionVerified','entitlementVerified',
+    'saveWritingAuthorized','exportAuthorized'
+  ]) || input.contract!=='wand.db05.db03-mission-slot-summary@1' ||
+    !['not_observed','incompatible_structure','partial_inconclusive',
+      'zero_sentinels_only','unresolved_in_guide_subset',
+      'source_mission_candidates'].includes(String(input.status)) ||
+    ![
+      input.observedMissionSlots,input.matchedPlayableQuestReferences,
+      input.unresolvedPlayableQuestReferences,input.zeroSentinels,
+      input.malformedMissionIds,input.distinctPositiveMissionIds
+    ].every(n=>nonnegative(n,256)) ||
+    !nonnegative(input.typeIssues,262656)||
+    !nonnegative(input.missingOptionalMissionIds,262656)||
+    Number(input.observedMissionSlots)!==
+      Number(input.matchedPlayableQuestReferences)+
+      Number(input.unresolvedPlayableQuestReferences)+
+      Number(input.zeroSentinels)+Number(input.malformedMissionIds)||
+    Number(input.distinctPositiveMissionIds)>
+      Number(input.matchedPlayableQuestReferences)+
+      Number(input.unresolvedPlayableQuestReferences)||
+    typeof input.sampled!=='boolean'||
+    input.publishedQuestDefinitions!==733||
+    input.sourceGameVersion!=='1.26.2'||
+    input.indexMetadataValidated!==true||
+    input.originalGameSourceBytesRehashed!==false||
+    input.conditionCompatibilityVerified!==false||
+    input.completeQuestHistoryVerified!==false||
+    input.questProgressVerified!==false||
+    input.questCompletionVerified!==false||
+    input.entitlementVerified!==false||
+    input.saveWritingAuthorized!==false||
+    input.exportAuthorized!==false)
+    throw new TypeError('DB05_DB03_MISSION_RECEIPT_INVALID');
+  return input as unknown as Db03MissionSlotReceipt;
+}
+
 interface PreviewReceipt {
   contract: 'wand.db05.amount-preview@1';
   changed: boolean;
@@ -198,7 +268,8 @@ type Reply =
   | { kind: 'slots'; rows: SaveEditableSlot[];
       grid:SaveGridReferenceReport;
       contract:'wand.db05.editable-slots@1'; complete:true; writerAuthorized:false }
-  | {kind:'db04';receipt:Db04GridPathReceipt};
+  | {kind:'db04';receipt:Db04GridPathReceipt}
+  | {kind:'db03';receipt:Db03MissionSlotReceipt};
 
 interface IsolatedScope {
   onmessage: ((event: MessageEvent<unknown>) => Promise<void>) | null;
@@ -307,6 +378,7 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
   let exported: Uint8Array | null = null;
   try {
     const compareDb04=input?.command === 'inspect-db04-grid-paths';
+    const compareDb03=input?.command === 'inspect-db03-mission-slots';
     const listing=input?.command === 'inspect-existing-slots';
     const exporting = input?.command === 'export-existing-amount-copy' ||
       input?.command === 'export-batch-amount-copy';
@@ -314,6 +386,7 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
       input?.command === 'export-batch-amount-copy';
     const expectedKeys = compareDb04
       ? ['command','format','bytes','graph']
+      : compareDb03 ? ['command','format','bytes','base']
       : listing ? ['command','format','bytes'] : batch
       ? (exporting
         ? ['command', 'format', 'bytes', 'edits', 'allowExperimentalCopy']
@@ -325,20 +398,25 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
     if (!input || !exact(input, expectedKeys) ||
         !['preview-existing-amount', 'export-existing-amount-copy',
           'preview-batch-amounts', 'export-batch-amount-copy',
-          'inspect-existing-slots','inspect-db04-grid-paths'].includes(
+          'inspect-existing-slots','inspect-db04-grid-paths',
+          'inspect-db03-mission-slots'].includes(
           String(input.command)) ||
         (exporting && input.allowExperimentalCopy !== true) ||
         !['auto', 'json', 'p1g'].includes(String(input.format)) ||
         !(bytes instanceof Uint8Array) ||
         (compareDb04 && (!(graph instanceof Uint8Array) ||
           graph.byteLength<1||graph.byteLength>64*1024*1024)) ||
-        (!batch && !listing && !compareDb04 &&
+        (compareDb03 && (typeof input.base!=='string' ||
+          !(input.base===''||
+            /^\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/.test(input.base)))) ||
+        (!batch && !listing && !compareDb04 && !compareDb03 &&
           (!uint32(input.expected) || !uint32(input.replacement))))
       throw new TypeError('DB05_WORKER_COMMAND_INVALID');
 
     const edits = batch ? validateBatchEdits(input.edits) : null;
     const plan = edits === null ? null : JSON.stringify({edits});
-    const target = (batch||listing||compareDb04) ? null : validateTarget(input.target);
+    const target = (batch||listing||compareDb04||compareDb03)
+      ? null : validateTarget(input.target);
     const requestedFormat = input.format as InputFormat;
     const format: Exclude<InputFormat, 'auto'> =
       requestedFormat === 'auto' ? detectLocalSaveFormat(bytes) : requestedFormat;
@@ -355,7 +433,23 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
       rust.append_chunk(bytes.subarray(i, i + CHUNK));
     rust.finish_open();
 
-    if(compareDb04){
+    if(compareDb03){
+      // Request ONLY the same-origin static, public Guide catalogue. The Save,
+      // private Mission IDs and quantities never enter a URL or fetch body.
+      const url=`${input.base}/guide/public/quest-index.json`;
+      const catalogue=await fetch(url,{cache:'no-store',credentials:'same-origin'});
+      if(!catalogue.ok||new URL(catalogue.url).origin!==self.location.origin)
+        throw new TypeError('DB05_DB03_PUBLIC_GUIDE_UNAVAILABLE');
+      const contentLength=Number(catalogue.headers.get('content-length')??0);
+      if(!Number.isSafeInteger(contentLength)||contentLength>2*1024*1024)
+        throw new TypeError('DB05_DB03_INDEX_TOO_LARGE');
+      const indexBytes=new Uint8Array(await catalogue.arrayBuffer());
+      if(indexBytes.byteLength<1||indexBytes.byteLength>2*1024*1024)
+        throw new TypeError('DB05_DB03_INDEX_TOO_LARGE');
+      const indexJson=new TextDecoder('utf-8',{fatal:true}).decode(indexBytes);
+      response={kind:'db03',receipt:validateDb03MissionReceipt(
+        JSON.parse(rust.match_db03_mission_slots(indexJson)))};
+    }else if(compareDb04){
       // This is a caller-supplied *local* DB-04 native source graph. Use the
       // existing DB-04 index to check all structural references before Rust
       // performs the game-specific path comparison. No native/private source
