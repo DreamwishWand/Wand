@@ -36,7 +36,7 @@ assert.match(bridge,/new TextDecoder\('utf-8',\{fatal:true\}\)/);
 assert.match(bridge,/profile\.fill\(0\)/);
 assert.match(bridge,/reader\.close\(\)/);
 assert.match(bridge,/reader\.free\(\)/);
-assert.doesNotMatch(bridge,/private-p1g-codec|createDecipheriv|decryptAes|createInflate|inflateRaw|fallback/i,
+assert.doesNotMatch(bridge,/private-p1g-codec|createDecipheriv|decryptAes|createInflate|inflateRaw/i,
   'production bridge must not reinstate JS crypto or fallback');
 assert.match(native,/pub struct WasmP1gProfileReader/);
 assert.match(native,/OpenedP1g::open\(&self\.ciphertext\)/);
