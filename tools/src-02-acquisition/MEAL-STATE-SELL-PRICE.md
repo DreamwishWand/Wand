@@ -3,6 +3,80 @@
 **Scope:** Cooking and meal instance state only. This is **not** the separate
 static stall/shop purchase-price evidence from `SHOP-PRICE-OVERLAP.md`.
 
+## Native TryGetSellPrice provider precedence — Steam + Switch 1.26.2
+
+The **complete original Steam and Switch executable bodies** of
+`ItemPriceDatabases.TryGetSellPrice` (Steam RVA `0x383B5D0`,
+Switch RVA `0x417F160`) and their independently corresponding
+IL2CPP method/type metadata establish a conditional **first-success**
+lookup route:
+
+1. Obtain `IItemData` for the Item ID via
+   `ItemDatabase.GetItemData`. Where the data implements
+   `IItemSellPriceCalculator`, first check
+   `CanCalculateForCurrency(currency)`; if accepted, call the native
+   `GetSellPrice(ItemState,Item)` and return its `CurrencyCost`.
+   **The caller's specific ItemState is preserved on this path.**
+2. Otherwise (including a calculator declining that currency), test
+   the state of the dynamic price database's cache. When its native
+   `DataCached` check is **false**, attempt the formula path via
+   `SellPriceFormulaItemData.GetItemSellPrice(IItemData,ItemState,Item)`.
+   If an actual currency-price object is returned, use it.
+   A populated native cache changes the route: it **does not** mean
+   that a source-cached row independently proves a sell-price amount.
+3. When no earlier provider returns a price, enumerate the registered
+   native `IItemPriceDatabase` providers, invoking each provider's
+   `TryGetSellPrice(Item,Item,out int)` until one succeeds.
+   Both `ItemPriceDatabase` and the original, intentionally misspelled
+   `DynamicItemPriceDatase` **implement this interface in metadata**.
+   Their exact *runtime registration and iteration order* are still
+   unknown and are **not** inferred from the metadata.
+4. With **no successful provider**, native `TryGetSellPrice` returns
+   **false** and writes **0** to the out parameter. The outer
+   `GetSellPrice`/cooking soft-currency helper then uses its own
+   **caller-supplied** fallback, whose declared/default cooking value
+   is **1**. Neither the zero failure out-parameter nor the fallback 1
+   is an observed effective sell value for a particular Item ID.
+
+**Known original metadata distinctions.** `MealItemData` (**Item ID
+family 303**) implements `IItemSellPriceCalculator`. The three
+classes containing every fixed cooking ingredient in the source-corrected
+Steam 1.26.2 recipe archive — `CropItemData` (family 302),
+`FishItemData` (family 310), `IngredientItemData` (family 311) —
+do **not** implement that interface. Exact original source census:
+**371** unique fixed ingredients = **140** crops + **72** fish +
+**159** ingredient items; **0** fixed ingredients are instances of
+the directly calculating interface under these three classes.
+Other Item ID families remain **unknown**, not falsely classified as
+unusable or zero priced. **211/371** have exactly one observed,
+source-configured static soft-sell amount; **160/371** do not have one.
+Both groups still require the native provider's **runtime** selection
+before producing a final numerical price.
+
+**Implementation.** `native-sell-provider-plan.mjs` contains a
+typed, immutable, source-agnostic three-stage *route plan*, not a live
+numeric solver. `loadPrivateMealPricingView(...).inspect()` includes
+the item's native calculator metadata and one source provider plan for
+each recorded ingredient, and the verified private view supplies
+`getNativeSellPriceProviderPlan(itemId)`. Out-parameter 0, default
+argument 1, cached-formula branching, unknown runtime registry and
+unresolved prices are kept separate; `actualUnitSellPrice:null`.
+
+The original-binary auditor now SHA-256 verifies **8 qualified
+methods per platform**, including `TryGetSellPrice`, plus **20
+Steam / 17 Switch byte-exact machine-code windows** (37 definitions
+total). The 12 new windows independently pin the calculator currency
+gate, successful direct return, dynamic-cache gate, formula provider
+call, registered database dispatch, and the final failure path.
+The 625-recipe/618-meal/371-fixed-ingredient owner-private smoke
+and synthetic tests pass. **No original game data, disassembly or
+private player saves are in the repository.**
+
+**Still unknown:** exactly which runtime database instance answers
+each Item ID; dynamic formula evaluation; the native recipe-match
+eligibility set; live data-dependent fallback ingredient selection;
+and the complete real cooked-meal sale-price output.
+
 ## Native ingredient source selection and actual lookup failure default (v1.26.2)
 
 **Steam x86-64 and Switch AArch64 executable bodies**, not only IL2CPP

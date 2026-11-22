@@ -1,8 +1,9 @@
 /**
  * DB-02 owner-private Steam v1.26.2 native CookingData source evidence.
  * NEVER a per-meal final sell-price calculator: the executable method
- * MealItemData.TotalIngredientsValue / TotalIngredientsSellPrice and
- * rounding/bonus paths have not been reverse-engineered.
+ * Partial native accumulator math/rounding was independently verified
+ * by the cross-platform auditor, but the full input-value and eligibility
+ * resolution remains unverified by this source-settings parser.
  *
  * No game source bytes or config rows are bundled with public source.
  */
@@ -176,7 +177,8 @@ export async function loadPrivateCookingStarSettings(protoDbBytes){
       must(Number.isSafeInteger(star)&&star>=1&&star<=5,'INVALID_STAR');
       return parsed.starResults[star-1];
     },
-    // Native C++ method bodies and the exact sell-price formula remain unknown.
+    // Separate executable audits verify SOME native math and routing only.
+    // This loader never proves a complete item sale-price calculation.
     formulaBodyVerified:false,roundingRuleVerified:false,
     actualSellPricesVerified:false,saveWriterAuthorized:false,
     publishable:false
