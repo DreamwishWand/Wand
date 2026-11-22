@@ -423,7 +423,7 @@ pub(super) fn saved_db04_object_source_context_json(
     let collection=root.get("World").and_then(|v|v.get("GridCollection"))
         .and_then(Value::as_object);
     let mut out=Vec::with_capacity(scan.private_targets.len());
-    for (i,(target,_)) in scan.private_targets.iter().enumerate(){
+    for (i,(target,xy)) in scan.private_targets.iter().enumerate(){
         let scope=match target.kind{
             GridObjectKind::Full=>"Grids",
             GridObjectKind::DiffModified=>"DiffGrids"
@@ -475,18 +475,43 @@ pub(super) fn saved_db04_object_source_context_json(
         };
         let unique=if matches.len()==1{Some(matches[0])}else{None};
         let dimensions=unique.and_then(|r|r.size);
+        // This does NOT assert that Save coordinates equal native source
+        // anchor coordinates. A point can numerically fall within/outside
+        // a source envelope even when the coordinate spaces are unrelated.
+        // Steam 1.26.2 source anchor-domain evidence has established only
+        // factor=2 and only the original initial-anchor integer envelope.
+        // DiffGrid hashes/identity remain unverified even if unique.
+        let source_anchor_envelope=if
+            status=="full_exact_source_path_candidate"&&
+            unique.is_some_and(|r|r.tessellation==Some(2))&&
+            xy.is_some(){
+                dimensions.map(|(sx,sy)|(
+                    u64::from(sx)*2,u64::from(sy)*2
+                ))
+            }else{None};
+        let numeric_relation=match (source_anchor_envelope,xy){
+            (Some((sx,sy)),Some((x,y))) if *x>=0&&*y>=0&&
+                (*x as u64)<sx&&(*y as u64)<sy=>
+                "within_source_anchor_numeric_envelope",
+            (Some(_),Some(_))=>"outside_source_anchor_numeric_envelope",
+            _=>"not_comparable"
+        };
         out.push(serde_json::json!({
             "localOrdinal":i+1,
             "sourceStatus":status,
             "candidateCount":matches.len(),
             "nativeSizeX":dimensions.map(|p|p.0),
             "nativeSizeY":dimensions.map(|p|p.1),
-            "tessellationFactor":unique.and_then(|r|r.tessellation)
+            "tessellationFactor":unique.and_then(|r|r.tessellation),
+            "sourceAnchorEnvelopeWidth":source_anchor_envelope.map(|p|p.0),
+            "sourceAnchorEnvelopeHeight":source_anchor_envelope.map(|p|p.1),
+            "savedPositionNumericRelation":numeric_relation
         }));
     }
     serde_json::to_string(&serde_json::json!({
-        "contract":"wand.db05.db04-grid-object-source-context@1",
+        "contract":"wand.db05.db04-grid-object-source-context@2",
         "rows":out,
+        "savedSourceCoordinateEquivalenceVerified":false,
         "sourceCoverageComplete":false,
         "sourceArchiveRechecked":false,
         "savedGridIdentityVerified":false,
@@ -553,6 +578,10 @@ mod tests{
         assert_eq!(rows[0]["nativeSizeX"],10);
         assert_eq!(rows[0]["nativeSizeY"],20);
         assert_eq!(rows[0]["tessellationFactor"],2);
+        assert_eq!(rows[0]["sourceAnchorEnvelopeWidth"],20);
+        assert_eq!(rows[0]["sourceAnchorEnvelopeHeight"],40);
+        assert_eq!(rows[0]["savedPositionNumericRelation"],
+            "outside_source_anchor_numeric_envelope");
         assert_eq!(rows[1]["sourceStatus"],"full_exact_source_path_candidate");
         assert_eq!(rows[1]["nativeSizeX"],Value::Null);
         assert_eq!(rows[2]["sourceStatus"],"full_exact_source_path_candidate");
@@ -560,6 +589,29 @@ mod tests{
         assert_eq!(rows[3]["sourceStatus"],
             "diff_structural_candidate_hash_unverified");
         assert_eq!(rows[3]["nativeSizeX"],10);
+        assert_eq!(rows[1]["savedPositionNumericRelation"],"not_comparable");
+        assert_eq!(rows[2]["savedPositionNumericRelation"],"not_comparable");
+        assert_eq!(rows[3]["savedPositionNumericRelation"],"not_comparable");
+        assert_eq!(rows[3]["sourceAnchorEnvelopeWidth"],Value::Null);
+        assert_eq!(result["savedSourceCoordinateEquivalenceVerified"],false);
+        // Source factor-two bounds are [0,2*SizeX) x [0,2*SizeY)
+        // only as a numeric observation, not a legal placement condition.
+        let inside=String::from_utf8(save.to_vec()).unwrap()
+            .replacen(r#""X":31,"Y":2"#,r#""X":19,"Y":39"#,1);
+        let inside_result:Value=serde_json::from_str(
+            &saved_db04_object_source_context_json(inside.as_bytes(),&witness)
+                .unwrap()
+        ).unwrap();
+        assert_eq!(inside_result["rows"][0]["savedPositionNumericRelation"],
+            "within_source_anchor_numeric_envelope");
+        let boundary=String::from_utf8(save.to_vec()).unwrap()
+            .replacen(r#""X":31,"Y":2"#,r#""X":20,"Y":0"#,1);
+        let boundary_result:Value=serde_json::from_str(
+            &saved_db04_object_source_context_json(boundary.as_bytes(),&witness)
+                .unwrap()
+        ).unwrap();
+        assert_eq!(boundary_result["rows"][0]["savedPositionNumericRelation"],
+            "outside_source_anchor_numeric_envelope");
         for text in ["SceneLayouts/","GridData/","\"101\"","\"202\"",
                      "\"GridDefaultLayoutPath\"","\"ItemID\""]{
             assert!(!r.contains(text),"unexpected private/source field: {text}");

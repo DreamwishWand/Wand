@@ -618,7 +618,7 @@ try{
       gridRefIdKind:'derivedLayoutGridIdComposite',
       layoutId:layout,nativeGridId:7,gridDataPath:data,
       gridDataPresent:true,areaRefId:null,worldId:null,
-      tessellationFactor:1,originalDefaultObjectCount:0,
+      tessellationFactor:2,originalDefaultObjectCount:0,
       nativeWorldCoordinatesVerified:false,placementLegalityVerified:false
     }],
     initialItemRefs:[],worldCoverage:[],
@@ -649,7 +649,12 @@ try{
   assert.match(localObjects,/原本Grid参照パス候補/);
   assert.match(localObjects,/差分Gridの構造候補（ハッシュ未検証）/);
   assert.match(localObjects,/原本GridData 10 × 10/);
-  assert.match(localObjects,/Tessellation 1/);
+  assert.match(localObjects,/Tessellation 2/);
+  assert.match(localObjects,/原本初期アンカー整数範囲/);
+  assert.match(localObjects,/0～19 ×\s*0～19/);
+  assert.match(localObjects,/数値的に範囲外/);
+  assert.match(localObjects,/セーブとの座標系同一性は未確認/);
+  assert.doesNotMatch(localObjects,/配置を拒否/);
   assert.doesNotMatch(localObjects,/GridData\/Synthetic\/Grid.json/);
   assert.doesNotMatch(localObjects,/SceneLayouts\/Synthetic\/Grid.json/);
   assert.match(await worldPanel.innerText(),/配置範囲・衝突判定/);

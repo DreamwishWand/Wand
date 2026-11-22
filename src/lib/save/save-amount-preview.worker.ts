@@ -195,13 +195,20 @@ export interface Db04GridObjectSourceRow{
   readonly nativeSizeX:number|null;
   readonly nativeSizeY:number|null;
   readonly tessellationFactor:number|null;
+  readonly sourceAnchorEnvelopeWidth:number|null;
+  readonly sourceAnchorEnvelopeHeight:number|null;
+  readonly savedPositionNumericRelation:
+    |'within_source_anchor_numeric_envelope'
+    |'outside_source_anchor_numeric_envelope'
+    |'not_comparable';
 }
 export interface Db04GridObjectSourceReceipt{
-  readonly contract:'wand.db05.db04-grid-object-source-context@1';
+  readonly contract:'wand.db05.db04-grid-object-source-context@2';
   readonly rows:readonly Db04GridObjectSourceRow[];
   readonly sourceCoverageComplete:false;
   readonly sourceArchiveRechecked:false;
   readonly savedGridIdentityVerified:false;
+  readonly savedSourceCoordinateEquivalenceVerified:false;
   readonly worldCoordinateTransformVerified:false;
   readonly placementLegalityVerified:false;
   readonly editPermissionAuthorized:false;
@@ -209,13 +216,15 @@ export interface Db04GridObjectSourceReceipt{
 function validatedDb04GridObjectSources(input:unknown):Db04GridObjectSourceReceipt{
   if(!object(input)||!exact(input,[
     'contract','rows','sourceCoverageComplete','sourceArchiveRechecked',
-    'savedGridIdentityVerified','worldCoordinateTransformVerified',
-    'placementLegalityVerified','editPermissionAuthorized'
-  ])||input.contract!=='wand.db05.db04-grid-object-source-context@1'||
+    'savedGridIdentityVerified','savedSourceCoordinateEquivalenceVerified',
+    'worldCoordinateTransformVerified','placementLegalityVerified',
+    'editPermissionAuthorized'
+  ])||input.contract!=='wand.db05.db04-grid-object-source-context@2'||
      !Array.isArray(input.rows)||input.rows.length>20000||
      input.sourceCoverageComplete!==false||
      input.sourceArchiveRechecked!==false||
      input.savedGridIdentityVerified!==false||
+     input.savedSourceCoordinateEquivalenceVerified!==false||
      input.worldCoordinateTransformVerified!==false||
      input.placementLegalityVerified!==false||
      input.editPermissionAuthorized!==false)
@@ -228,7 +237,8 @@ function validatedDb04GridObjectSources(input:unknown):Db04GridObjectSourceRecei
   const rows=(input.rows as unknown[]).map((v,i)=>{
     if(!object(v)||!exact(v,[
       'localOrdinal','sourceStatus','candidateCount','nativeSizeX',
-      'nativeSizeY','tessellationFactor'
+      'nativeSizeY','tessellationFactor','sourceAnchorEnvelopeWidth',
+      'sourceAnchorEnvelopeHeight','savedPositionNumericRelation'
     ])||v.localOrdinal!==i+1||
       !validStatuses.includes(String(v.sourceStatus))||
       !nonnegative(v.candidateCount,20000)||
@@ -248,7 +258,22 @@ function validatedDb04GridObjectSources(input:unknown):Db04GridObjectSourceRecei
         ?Number(v.candidateCount)<2
         :v.candidateCount!==0)||
       (Number(v.candidateCount)!==1&&
-        (v.nativeSizeX!==null||v.tessellationFactor!==null)))
+        (v.nativeSizeX!==null||v.tessellationFactor!==null))||
+      (v.sourceAnchorEnvelopeWidth===null)!==
+        (v.sourceAnchorEnvelopeHeight===null)||
+      !['within_source_anchor_numeric_envelope',
+        'outside_source_anchor_numeric_envelope',
+        'not_comparable'].includes(String(v.savedPositionNumericRelation))||
+      (v.sourceAnchorEnvelopeWidth===null
+        ?v.savedPositionNumericRelation!=='not_comparable'
+        :v.sourceStatus!=='full_exact_source_path_candidate'||
+         v.tessellationFactor!==2||v.nativeSizeX===null||
+         v.nativeSizeY===null||
+         v.sourceAnchorEnvelopeWidth!==Number(v.nativeSizeX)*2||
+         v.sourceAnchorEnvelopeHeight!==Number(v.nativeSizeY)*2||
+         !['within_source_anchor_numeric_envelope',
+           'outside_source_anchor_numeric_envelope'].includes(
+             String(v.savedPositionNumericRelation))))
       throw new TypeError('DB05_DB04_OBJECT_SOURCE_ROW_INVALID');
     return v as unknown as Db04GridObjectSourceRow;
   });
