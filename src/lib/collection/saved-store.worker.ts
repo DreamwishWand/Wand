@@ -1,9 +1,9 @@
 /** One-shot, isolated local file reader. Never issues network requests. */
-import { inspectEncryptedSavedStore } from './saved-store-worker-core.mjs';
+import { inspectEncryptedSavedStore } from './saved-store-worker-core.ts';
 import { decodeP1gRustFirst } from '../save/p1g-read.ts';
 
 let started = false;
-self.onmessage = async ({ data }) => {
+self.onmessage = async ({ data }: MessageEvent<{command:string;ciphertext:Uint8Array}>) => {
   if (started) return;
   started = true;
   const ciphertext = data?.ciphertext;

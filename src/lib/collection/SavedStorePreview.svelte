@@ -172,7 +172,7 @@
         throw new TypeError('PROFILE_SIZE_LIMIT');
       encrypted = new Uint8Array(await file.arrayBuffer());
       if (request !== requestSequence) return; // dismissed during file read
-      worker = new Worker(new URL('./saved-store.worker.mjs', import.meta.url),{type:'module'});
+      worker = new Worker(new URL('./saved-store.worker.ts', import.meta.url),{type:'module'});
       activeWorker = worker;
       const w = worker;
       const finish = (result:any) => {
