@@ -34,7 +34,7 @@ try {
   assert.equal(await page.locator('input[type=file]').count(), 0);
   assert.equal(downloaded.filter(value => value.endsWith('/quest-index.json')).length, 1);
   assert.equal(downloaded.filter(value => value.includes('quest-details-')).length, 0, 'lazy details must not prefetch');
-  assert.equal(await page.locator('header.site-header a[href$="/guide/"']').count(), 1, 'main nav must link to unified Guide hub');
+  assert.equal(await page.locator('header.site-header a[href$="/guide/"]').count(), 1, 'main nav must link to unified Guide hub');
 
   const search = page.getByRole('textbox', {name: 'クエスト名・IDを検索'});
   await search.fill('ドリームライトバレーへようこそ');
