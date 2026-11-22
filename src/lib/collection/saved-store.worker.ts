@@ -1,6 +1,5 @@
 /** One-shot, isolated, Rust/WASM-first local Save reader. No network. */
-import {inspectLocalSavedStore} from './saved-store-worker-core.mjs';
-import {decodeNativeFirstLocalProfile} from './saved-profile-native-reader';
+import {inspectLocalSavedStore} from './saved-store-worker-core';
 
 let started=false;
 type Request = { command?:string; bytes?:Uint8Array; [key:string]:unknown };
@@ -16,7 +15,7 @@ self.onmessage=async ({data}:MessageEvent<Request>)=>{
       throw new TypeError('COLLECTION_LOCAL_SAVE_COMMAND_INVALID');
     // The Rust/WASM decoder runs in this Worker. The page receives only
     // bounded IDs/booleans/summary evidence, not private profile text.
-    const result=await inspectLocalSavedStore(bytes,decodeNativeFirstLocalProfile);
+    const result=await inspectLocalSavedStore(bytes);
     response={kind:'result',result};
   }catch{
     // Do not forward private data or arbitrary parser exceptions.
