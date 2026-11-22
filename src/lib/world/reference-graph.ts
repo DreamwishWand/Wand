@@ -168,7 +168,7 @@ export interface ItemWorldRelations {
  */
 export interface OriginalSourcePlacementPage {
   readonly relation: 'nativeSourceDefaultGridObject';
-  readonly scope: 'world' | 'area' | 'unlinked_world';
+  readonly scope: 'world' | 'area' | 'grid' | 'unlinked_world';
   readonly scopeId: string | null;
   readonly scopeIdentityInPartialSource: boolean;
   readonly status: 'source_native_verified' | 'unverified';
@@ -252,9 +252,11 @@ export class WorldReferenceIndex {
   private readonly worldsByNativeUniverseTag:Map<number,readonly WorldIdentity[]>;
   private readonly initialRefsByWorld:Map<string,readonly NativeSourceItemReference[]>;
   private readonly initialRefsByArea:Map<string,readonly NativeSourceItemReference[]>;
+  private readonly initialRefsByGrid:Map<string,readonly NativeSourceItemReference[]>;
   private readonly initialRefsWithoutWorld:readonly NativeSourceItemReference[];
   private readonly areaListByWorld:Map<string,readonly NativeAreaReference[]>;
   private readonly gridListByArea:Map<string,readonly NativeGridReference[]>;
+  private readonly gridListByLayout:Map<string,readonly NativeGridReference[]>;
 
   constructor(source:unknown){
     check(isRecord(source) && source.schema===DB04_REFERENCE_SCHEMA &&
@@ -290,11 +292,13 @@ export class WorldReferenceIndex {
     const byItem=new Map<string,NativeSourceItemReference[]>();
     const byItemWorld=new Map<string,NativeSourceItemReference[]>();
     const byItemArea=new Map<string,NativeSourceItemReference[]>();
+    const byItemGrid=new Map<string,NativeSourceItemReference[]>();
     const withoutWorld:NativeSourceItemReference[]=[];
     const byParent=new Map<string,WorldIdentity[]>();
     const byUniverseTag=new Map<number,WorldIdentity[]>();
     const byWorld=new Map<string,NativeAreaReference[]>();
     const byArea=new Map<string,NativeGridReference[]>();
+    const byLayout=new Map<string,NativeGridReference[]>();
     let total=0,unlinked=0;
     for(const world of this.worlds.values()){
       check(typeof world.worldId==='string' &&
@@ -413,6 +417,7 @@ export class WorldReferenceIndex {
         'INVALID_SCOPED_GRID_REFERENCE');
       if(grid.areaRefId!==null)
         byArea.set(grid.areaRefId,[...(byArea.get(grid.areaRefId)??[]),grid]);
+      byLayout.set(grid.layoutId,[...(byLayout.get(grid.layoutId)??[]),grid]);
     }
     for(const row of input.initialItemRefs){
       const grid=this.grids.get(row.gridRefId);
@@ -431,6 +436,10 @@ export class WorldReferenceIndex {
         'INVALID_INITIAL_SOURCE_ITEM_REFERENCE');
       const immutableRow=Object.freeze({...row});
       byItem.set(row.itemId,[...(byItem.get(row.itemId)??[]),immutableRow]);
+      // Every original GridObject has an exact native layout + Grid.ID.
+      // This index intentionally includes rows WITHOUT a verified World.
+      byItemGrid.set(row.gridRefId,[...(byItemGrid.get(row.gridRefId)??[]),
+        immutableRow]);
       if(row.worldId!==null){
         let rows=byItemWorld.get(row.worldId);
         if(rows===undefined){
@@ -450,6 +459,20 @@ export class WorldReferenceIndex {
       total+=row.instanceCount;
       if(row.worldId===null)unlinked+=row.instanceCount;
     }
+    // Cross-check every source GridCollection's original object count.
+    // Matching an exact Grid.ID is independent of World/Area attribution.
+    let allGridInstances=0;
+    for(const grid of this.grids.values()){
+      let gridInstances=0;
+      for(const row of byItemGrid.get(grid.gridRefId)??[])
+        gridInstances+=row.instanceCount;
+      check(Number.isSafeInteger(gridInstances) &&
+        gridInstances===grid.originalDefaultObjectCount,
+        'NATIVE_GRID_DEFAULT_INSTANCE_MISMATCH');
+      allGridInstances+=gridInstances;
+    }
+    check(Number.isSafeInteger(allGridInstances) && allGridInstances===total,
+      'NATIVE_GRID_COVERAGE_MISMATCH');
     check(total===this.coverage.sourceInitialGridObjects &&
       unlinked===this.coverage.sourceInitialGridObjectsWithoutVerifiedWorldLink &&
       this.worlds.size===this.coverage.worldDefinitionsInSubset &&
@@ -465,9 +488,13 @@ export class WorldReferenceIndex {
       [...byItemWorld].map(([key,rows])=>[key,Object.freeze(rows)]));
     this.initialRefsByArea=new Map(
       [...byItemArea].map(([key,rows])=>[key,Object.freeze(rows)]));
+    this.initialRefsByGrid=new Map(
+      [...byItemGrid].map(([key,rows])=>[key,Object.freeze(rows)]));
     this.initialRefsWithoutWorld=Object.freeze(withoutWorld);
     this.areaListByWorld=byWorld;
     this.gridListByArea=byArea;
+    this.gridListByLayout=new Map(
+      [...byLayout].map(([key,rows])=>[key,Object.freeze(rows)]));
   }
 
   getWorld(id:string):WorldIdentity|null{
@@ -550,6 +577,18 @@ export class WorldReferenceIndex {
   gridsInArea(areaRefId:string):readonly NativeGridReference[]{
     return Object.freeze([...(this.gridListByArea.get(areaRefId)??[])]);
   }
+  /** Exact original GridCollection layout path, not inferred game World. */
+  gridsInLayout(layoutId:string):readonly NativeGridReference[]{
+    check(typeof layoutId==='string'&&layoutId.length>0&&layoutId.length<=1024,
+      'INVALID_LAYOUT_ID');
+    return Object.freeze([...(this.gridListByLayout.get(layoutId)??[])]);
+  }
+  /** Lookup by original layout + native Grid.ID composite, including unlinked Worlds. */
+  getSourceGrid(gridRefId:string):NativeGridReference|null{
+    check(typeof gridRefId==='string'&&gridRefId.length>0&&
+      gridRefId.length<=1100,'INVALID_GRID_REF_ID');
+    return this.grids.get(gridRefId)??null;
+  }
   initialSourcePlacement(itemId:string|number):RelationResult<NativeSourceItemReference>{
     const id=typeof itemId==='number'
       ?(Number.isSafeInteger(itemId)&&itemId>=0?String(itemId):'')
@@ -614,6 +653,25 @@ export class WorldReferenceIndex {
   ):OriginalSourcePlacementPage{
     return this.originalPlacementPage('area',areaRefId,this.areas.has(areaRefId),
       this.initialRefsByArea.get(areaRefId)??[],page);
+  }
+
+  /**
+   * Original default GridObjects from one exact source Grid.ID.
+   *
+   * Unlike by-World/by-Area lookup, this includes unlinked objects in
+   * Floating Islands, interiors, EventFloatingIslands and other layouts.
+   * Zero original records in a verified Grid is distinguishable from a
+   * missing GridRef through scopeIdentityInPartialSource; neither proves
+   * complete game coverage, placement legality or saved player state.
+   */
+  originalPlacementsInGrid(
+    gridRefId:string,page?:Readonly<{offset:number;limit:number}>
+  ):OriginalSourcePlacementPage{
+    check(typeof gridRefId==='string'&&gridRefId.length>0&&
+      gridRefId.length<=1100,'INVALID_GRID_REF_ID');
+    return this.originalPlacementPage('grid',gridRefId,
+      this.grids.has(gridRefId),
+      this.initialRefsByGrid.get(gridRefId)??[],page);
   }
 
   /** Preserve evidence which has no verified World link; do not reassign it. */
