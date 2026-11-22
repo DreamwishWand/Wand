@@ -111,7 +111,7 @@ test('reviewed actionable riddle solutions bind to native season+Task IDs, rejec
     'Seafaring2026/Task39':'アリエル',
     'Seafaring2026/Task44':'エリック王子',
     'Seafaring2026/Task55':'エリック王子',
-    'HauntingElegance2026/Week02Task03':'ジャック・スケリントン',
+    'HauntingElegance2026/Week02Task03':'Candy Cane Door',
     'HauntingElegance2026/Week07Task02':'サリー',
     'Seafaring2026/Week04Task01':'モアナ'
   };
