@@ -512,9 +512,20 @@ def parse_original_json_direct_grid(raw, *, source_game_version):
     document = json.loads(raw.decode("utf-8-sig"),
                           object_pairs_hook=distinct_fields,
                           parse_constant=reject_constant)
-    if (not isinstance(document, dict) or
-            set(document) != {"SizeX", "SizeY", "FloorTypes"}):
+    # Original Steam 1.26.2 Expansion02/MythDungeon GridData has a second
+    # direct-value JSON envelope: the same populated FloorTypes array plus
+    # *empty* compacted representation fields. Empty [] / "" are source
+    # evidence of no active packed payload, NOT a palette or byte stream.
+    # Reject nonempty or partially present compacted fields rather than
+    # silently choosing a representation when both may be active.
+    required = {"SizeX", "SizeY", "FloorTypes"}
+    extended = required | {"CompactedFloorTypeIndex", "CompactedFloorTypes"}
+    if not isinstance(document, dict) or set(document) not in (required, extended):
         raise ValueError("unsupported original JSON GridData schema")
+    if set(document) == extended and (
+            document["CompactedFloorTypeIndex"] != [] or
+            document["CompactedFloorTypes"] != ""):
+        raise ValueError("active or malformed compacted original JSON GridData")
     x, y, values = (document["SizeX"], document["SizeY"],
                     document["FloorTypes"])
     evidence = describe_native_direct_floor_types(

@@ -160,6 +160,42 @@ class NativeWireTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "index evidence"):
             checked_grid(grid, source_game_version="1.27.0")
 
+    def test_original_steam1262_direct_json_can_have_empty_compacted_fields(self):
+        # Original Expansion02/MythDungeon GridData can preserve BOTH optional
+        # compressed fields, explicitly empty, alongside direct uint32 floors.
+        # The empties do not activate a competing terrain representation.
+        base = {"SizeX": 2, "SizeY": 3,
+                "FloorTypes": [0, 1024, 1024, 0, 0, 1024]}
+        extended = dict(base, CompactedFloorTypeIndex=[],
+                        CompactedFloorTypes="")
+        original = parse_grid_structure(
+            json.dumps(base).encode("utf-8"), source_game_version="1.26.2")
+        with_empties = parse_grid_structure(
+            json.dumps(extended).encode("utf-8"), source_game_version="1.26.2")
+        self.assertEqual(with_empties, original)
+        self.assertTrue(with_empties["terrainDecoding"]["decoded"])
+        checked_grid(with_empties, source_game_version="1.26.2")
+        future = parse_grid_structure(
+            json.dumps(extended).encode("utf-8"), source_game_version="1.27.0")
+        self.assertFalse(future["terrainDecoding"]["decoded"])
+        checked_grid(future, source_game_version="1.27.0")
+
+        invalid = (
+            dict(base, CompactedFloorTypeIndex=[]),
+            dict(base, CompactedFloorTypes=""),
+            dict(base, CompactedFloorTypeIndex=[0], CompactedFloorTypes=""),
+            dict(base, CompactedFloorTypeIndex=[], CompactedFloorTypes="AA=="),
+            dict(base, CompactedFloorTypeIndex=None, CompactedFloorTypes=""),
+            dict(base, CompactedFloorTypeIndex=[], CompactedFloorTypes=None),
+            dict(base, CompactedFloorTypeIndex=[], CompactedFloorTypes="", Extra=1),
+        )
+        for item in invalid:
+            with self.subTest(keys=item.keys(), extra=item.get("CompactedFloorTypes")):
+                with self.assertRaises(ValueError):
+                    parse_grid_structure(
+                        json.dumps(item).encode("utf-8"),
+                        source_game_version="1.26.2")
+
     def test_literal_json_griddata_rejects_malformed_native_source(self):
         for raw in (
             b'{"SizeX":2,"SizeX":2,"SizeY":1,"FloorTypes":[0,0]}',
