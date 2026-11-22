@@ -421,7 +421,7 @@ def main(argv=None):
     repository = Path(__file__).resolve().parents[2]
     require(not output.exists() and not output.is_relative_to(repository) and
             output != source and not source.is_relative_to(output) and
-            not output.is_relative_to(source if source.is_dir() else source.parent),
+            not (source.is_dir() and output.is_relative_to(source)),
             "OUTPUT_OVERLAPS_GIT_OR_PRIVATE_SOURCE")
     snapshot, digest = load_snapshot(source)
     graph = build_reference_graph(snapshot, digest)
