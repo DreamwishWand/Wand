@@ -4,7 +4,7 @@
  * Unlike the full SRC-02 archive view, this consumer works on GitHub Pages
  * without selecting any owner-private file. It composes existing DB-00,
  * DB-03 Star Path, DB-03 Quest rewards, DB-03 Event/default Friendship
- * rewards and DB-02 published online-name readers. Parsing, source hash validation and origin semantics remain owned
+ * rewards, exact native Premium Shop offers and DB-02 online-name readers. Parsing, source hash validation and origin semantics remain owned
  * by their existing modules.
  *
  * Online name equality and community-reported Premium Shop appearances are
@@ -21,6 +21,9 @@ import {loadUnifiedAcquisitionOriginDatabase,
 import {joinDb02OriginsWithDb00,
   type Db00PublishedSnapshot,type Db00OriginJoin} from './db00-origins.ts';
 import {historicalPremiumShop} from './premium-shop-history.ts';
+import {
+  loadPinnedPublicNativeShopSnapshot,type PinnedPublicNativeShopIndex
+} from './public-native-shop.ts';
 import {indexPublicOnlineNameCandidates,
   type PublicOnlineNameCandidateIndex,
   type PublicOnlineNameCandidate} from './public-online-name-candidates.ts';
@@ -37,7 +40,10 @@ export interface PublicSourceCatalogCoverage {
   readonly questSourceRoutes:395;
   readonly nativeEventSourceRoutes:202;
   readonly defaultFriendshipSourceRoutes:16;
-  readonly combinedSourceRoutes:680;
+  readonly nativeShopSourceRoutes:156;
+  readonly nativeShopOffers:29;
+  readonly nativeShopDistinctItemIds:136;
+  readonly combinedSourceRoutes:836;
   readonly publicNameOnlyCandidateRelations:number;
   readonly distinctNameOnlyCandidateItemIds:number;
   readonly verifiedOnlineNameAcquisitionLinks:0;
@@ -52,12 +58,13 @@ export type PublicSourceItemLookup=ReturnType<Db00OriginJoin['lookup']>&{
 export interface PublicSourceCatalog{
   readonly schema:typeof DB02_PUBLIC_SOURCE_CATALOG_SCHEMA;
   readonly gameVersion:'1.26.2';
-  readonly source:'sha_pinned_public_db00_starpath_quest_event_friendship_and_official_records';
+  readonly source:'sha_pinned_public_db00_starpath_quest_event_friendship_native_shop_and_official_records';
   readonly origins:OriginDatabase;
   readonly db00:Db00OriginJoin;
   readonly nameCandidates:PublicOnlineNameCandidateIndex;
   readonly questSource:PublicQuestAcquisitionIndex;
   readonly eventFriendshipSource:PublicEventFriendshipAcquisitionIndex;
+  readonly nativeShopSource:PinnedPublicNativeShopIndex;
   readonly coverage:PublicSourceCatalogCoverage;
   lookup(itemId:string|number):PublicSourceItemLookup;
   getSourceOrigin(originId:string):readonly ItemOrigin[];
@@ -77,10 +84,11 @@ export async function loadPublicSourceCatalog(
 ):Promise<PublicSourceCatalog>{
   ensure(typeof basePath==='string'&&(basePath===''||BASE.test(basePath)),
     'INVALID_BASE_PATH');
-  const [rawDb00,questSource,eventFriendshipSource]=await Promise.all([
+  const [rawDb00,questSource,eventFriendshipSource,nativeShopSource]=await Promise.all([
     loadCurrentGameDatabase(basePath,fetcher),
     loadPinnedPublicQuestAcquisition(basePath,fetcher),
-    loadPinnedPublicEventFriendshipAcquisition(basePath,fetcher)
+    loadPinnedPublicEventFriendshipAcquisition(basePath,fetcher),
+    loadPinnedPublicNativeShopSnapshot(basePath,fetcher)
   ]);
   ensure(rawDb00.kind==='db_snapshot'&&rawDb00.items.length===13202,
     'CURRENT_DB00_REQUIRED');
@@ -88,7 +96,7 @@ export async function loadPublicSourceCatalog(
   // DB-02 join additionally validates exact release/version/source identity.
   const db00Snapshot=rawDb00 as Db00PublishedSnapshot;
   const origins=await loadUnifiedAcquisitionOriginDatabase(
-    fetcher,null,basePath,[],null,questSource,eventFriendshipSource
+    fetcher,null,basePath,[],null,questSource,eventFriendshipSource,nativeShopSource
   );
   const db00=joinDb02OriginsWithDb00(db00Snapshot,origins);
   const nameCandidates=indexPublicOnlineNameCandidates(
@@ -102,9 +110,13 @@ export async function loadPublicSourceCatalog(
     eventFriendshipSource.coverage.totalCandidates===218&&
     eventFriendshipSource.coverage.liveEventAvailabilityVerified===false&&
     eventFriendshipSource.coverage.guaranteedGrantsVerified===false&&
-    originCoverage.linkedRoutes===680&&
+    nativeShopSource.coverage.sourceOffers===29&&
+    nativeShopSource.coverage.sourceItemOccurrences===156&&
+    nativeShopSource.coverage.distinctSourceItemIds===136&&
+    nativeShopSource.coverage.currentAvailabilityVerified===false&&
+    originCoverage.linkedRoutes===836&&
     originCoverage.routesBySourceKind.verified_game_native===613&&
-    originCoverage.routesBySourceKind.verified_liveops_cache===67&&
+    originCoverage.routesBySourceKind.verified_liveops_cache===223&&
     joined.db00Items===13202&&
     joined.sourceLinkedItemIds===originCoverage.linkedItemIds&&
     nameCandidates.coverage.verifiedOnlineAcquisitionLinks===0,
@@ -118,7 +130,10 @@ export async function loadPublicSourceCatalog(
     questSourceRoutes:395 as const,
     nativeEventSourceRoutes:202 as const,
     defaultFriendshipSourceRoutes:16 as const,
-    combinedSourceRoutes:680 as const,
+    nativeShopSourceRoutes:156 as const,
+    nativeShopOffers:29 as const,
+    nativeShopDistinctItemIds:136 as const,
+    combinedSourceRoutes:836 as const,
     publicNameOnlyCandidateRelations:nameCandidates.coverage.totalCandidateRelations,
     distinctNameOnlyCandidateItemIds:nameCandidates.coverage.distinctCandidateItemIds,
     verifiedOnlineNameAcquisitionLinks:0 as const,
@@ -129,8 +144,8 @@ export async function loadPublicSourceCatalog(
   return Object.freeze({
     schema:DB02_PUBLIC_SOURCE_CATALOG_SCHEMA,
     gameVersion:'1.26.2' as const,
-    source:'sha_pinned_public_db00_starpath_quest_event_friendship_and_official_records' as const,
-    origins,db00,nameCandidates,questSource,eventFriendshipSource,coverage,
+    source:'sha_pinned_public_db00_starpath_quest_event_friendship_native_shop_and_official_records' as const,
+    origins,db00,nameCandidates,questSource,eventFriendshipSource,nativeShopSource,coverage,
     lookup(itemId:string|number){
       // db00.lookup validates IDs and keeps extra-ItemList Quest/Currency IDs.
       const row=db00.lookup(itemId);

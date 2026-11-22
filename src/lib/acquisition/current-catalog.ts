@@ -25,6 +25,8 @@ import type {Db03NativeRewardCandidateIndex} from './db03-native-rewards.ts';
 import {loadPinnedPublicQuestAcquisition} from '../guide/public-quest-acquisition.ts';
 import {loadPinnedPublicEventFriendshipAcquisition}
   from '../guide/public-event-friendship-acquisition.ts';
+import {loadPinnedPublicNativeShopSnapshot,
+  type PinnedPublicNativeShopIndex} from './public-native-shop.ts';
 import {
   indexNativeLootSourceFamilies,
   type NativeLootSourceIndex
@@ -95,6 +97,8 @@ export interface CurrentDb02OriginCatalog{
   readonly lootObjectSources:NativeLootObjectReferenceIndex;
   /** Public DB-00 English-name online reward/shop hints; never verified grants. */
   readonly publicOnlineNameCandidates:PublicOnlineNameCandidateIndex;
+  /** Original 1.26.2 stores.dat shop IDs, not name-only or live availability. */
+  readonly nativeShopSource:PinnedPublicNativeShopIndex;
   /** Lazy SHA-pinned 395 explicit Quest reward references, including 65 currency configurations. */
   loadQuestAcquisitionIndex(
     fetcher?:typeof fetch,basePath?:string
@@ -198,12 +202,14 @@ export async function joinCurrentDb02Catalog(
   db03NativeRewards:Db03NativeRewardCandidateIndex|null=null
 ):Promise<CurrentDb02OriginCatalog>{
   const ids=currentDb00ItemIds(db00);
-  const [publicQuestRewards,publicEventFriendship]=await Promise.all([
+  const [publicQuestRewards,publicEventFriendship,nativeShopSource]=await Promise.all([
     loadPinnedPublicQuestAcquisition(basePath,fetcher),
-    loadPinnedPublicEventFriendshipAcquisition(basePath,fetcher)
+    loadPinnedPublicEventFriendshipAcquisition(basePath,fetcher),
+    loadPinnedPublicNativeShopSnapshot(basePath,fetcher)
   ]);
   const origins=await loadUnifiedAcquisitionOriginDatabase(
-    fetcher,src02,basePath,ids,db03NativeRewards,publicQuestRewards,publicEventFriendship
+    fetcher,src02,basePath,ids,db03NativeRewards,
+    publicQuestRewards,publicEventFriendship,nativeShopSource
   );
   const joined=joinDb02OriginsWithDb00(db00,origins);
   const lootSources=indexNativeLootSourceFamilies(origins,ids);
@@ -219,7 +225,7 @@ export async function joinCurrentDb02Catalog(
     source:'verified_public_db00_and_local_private_src02_r5' as const,
     origins,db00:joined,lootSources,coverage,
     lootObjectSources:nativeLootObjectReferenceIndex,
-    publicOnlineNameCandidates,
+    publicOnlineNameCandidates,nativeShopSource,
     loadQuestAcquisitionIndex(
       questFetcher:typeof fetch=fetch,questBasePath=basePath
     ){return loadPublicQuestAcquisitionIndex(questBasePath,questFetcher);},
