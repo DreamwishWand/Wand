@@ -2,8 +2,9 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {chromium} from 'playwright';
-import {createCipheriv} from 'node:crypto';
-import {deflateRawSync} from 'node:zlib';
+import {createCipheriv,createDecipheriv} from 'node:crypto';
+import {deflateRawSync,inflateRawSync} from 'node:zlib';
+import {readFile} from 'node:fs/promises';
 
 function syntheticEncryptedP1g(profile) {
   const json=Buffer.from(JSON.stringify(profile),'utf8');
@@ -39,6 +40,19 @@ function syntheticEncryptedP1g(profile) {
 }
 
 
+function readSyntheticEncryptedP1g(ciphertext) {
+  const key=Buffer.from('62357168683873614A38556C444A557A545A5864325467366D626F3857386e35','hex');
+  const decoder=createDecipheriv('aes-256-ecb',key,null);
+  const zip=Buffer.concat([decoder.update(ciphertext),decoder.final()]);
+  assert.equal(zip.readUInt32LE(0),0x04034b50);
+  const compressed=zip.readUInt32LE(18);
+  const start=30+zip.readUInt16LE(26)+zip.readUInt16LE(28);
+  const data=zip.subarray(start,start+compressed);
+  const decoded=zip.readUInt16LE(8)===8?inflateRawSync(data):data;
+  assert.equal(decoded.length,zip.readUInt32LE(22));
+  return JSON.parse(decoded.toString('utf8'));
+}
+
 const url='http://127.0.0.1:4185/Wand/save/diagnostics/';
 const server=spawn(process.execPath,[
   'node_modules/vite/bin/vite.js','preview','--host','127.0.0.1','--port','4185'
@@ -57,7 +71,7 @@ let browser;
 try{
   await ready();
   browser=await chromium.launch({headless:true});
-  const page=await browser.newPage({viewport:{width:1100,height:850}});
+  const page=await browser.newPage({viewport:{width:1100,height:850},acceptDownloads:true});
   const errors=[],loadedWasm=[];
   page.on('pageerror',error=>errors.push(String(error)));
   page.on('response',response=>{
@@ -132,6 +146,19 @@ try{
   await page.getByRole('button',{name:'変更を検証'}).click();
   await page.getByRole('status').filter({hasText:'数量変更'}).waitFor({timeout:30000});
   assert.equal(await page.getByRole('alert').count(),0);
+  page.once('dialog',dialog=>dialog.accept());
+  await page.getByRole('button',{name:'編集済みコピーを生成'}).click();
+  const plainLink=page.getByRole('link',{name:'コピーをダウンロード'});
+  await plainLink.waitFor({timeout:30000});
+  const plainDownloadPromise=page.waitForEvent('download');
+  await plainLink.click();
+  const plainDownload=await plainDownloadPromise;
+  assert.match(plainDownload.suggestedFilename(),/\.wand-edited\.profile$/);
+  const savedPlain=JSON.parse((await readFile(await plainDownload.path())).toString('utf8'));
+  assert.equal(savedPlain.Player.ListInventories['100'].Inventory['550'].Amount,12);
+  assert.equal(quantityProfile.Player.ListInventories['100'].Inventory['550'].Amount,7,
+    'The original input is never overwritten');
+  assert.equal(savedPlain.Player.ListInventories['100'].Inventory['550'].UnknownRatio,1);
 
   await page.getByRole('button',{name:'破棄'}).click();
   await page.getByLabel('検証用セーブファイル').setInputFiles({
@@ -153,6 +180,19 @@ try{
   await page.getByRole('button',{name:'変更を検証'}).click();
   await page.getByRole('status').filter({hasText:'数量変更'}).waitFor({timeout:30000});
   assert.equal(await page.getByRole('alert').count(),0);
+  page.once('dialog',dialog=>dialog.accept());
+  await page.getByRole('button',{name:'編集済みコピーを生成'}).click();
+  const encryptedLink=page.getByRole('link',{name:'コピーをダウンロード'});
+  await encryptedLink.waitFor({timeout:30000});
+  const encryptedDownloadPromise=page.waitForEvent('download');
+  await encryptedLink.click();
+  const encryptedDownload=await encryptedDownloadPromise;
+  const savedEncrypted=await readFile(await encryptedDownload.path());
+  const reopened=readSyntheticEncryptedP1g(savedEncrypted);
+  assert.equal(reopened.Player.ContainerInventories['202'].Inventory[1].Amount,3);
+  assert.equal(reopened.Player.ContainerInventories['202'].Inventory[1].ItemID,440);
+  assert.equal(quantityProfile.Player.ContainerInventories['202'].Inventory[1].Amount,2);
+  assert.equal(reopened.Player.ListInventories['100'].Inventory['550'].Amount,7);
 
   await page.getByRole('button',{name:'破棄'}).click();
   await page.getByLabel('現在の数量').fill('99');
@@ -163,10 +203,11 @@ try{
   await page.getByRole('button',{name:'変更を検証'}).click();
   await page.getByRole('alert').filter({hasText:'検証できませんでした'}).waitFor({timeout:30000});
   assert.equal(await page.getByRole('status').count(),0);
+  assert.equal(await page.getByRole('link',{name:'コピーをダウンロード'}).count(),0);
 
   assert.deepEqual(errors,[],errors.join('\n'));
   await page.close();
-  console.log('DB-05 browser: auto plaintext/P1G, Rust/WASM quantity preview/repack and reject stale expected amount PASS');
+  console.log('DB-05 browser: explicit JSON/P1G edited-copy downloads, native reopen, stale rejection, original preservation PASS');
 }finally{
   await browser?.close();
   server.kill('SIGTERM');
