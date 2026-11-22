@@ -160,3 +160,52 @@ test('invalid DB-01 or DB-02 reply identities fail closed',async()=>{
   await assert.rejects(()=>createDb04ItemGeographyBridge(world(),db01(),badDb02)
     .getItem(12345678),/DB02_ITEM_ID_OR_PROVENANCE_MISMATCH/);
 });
+
+
+const nativeScope=()=>({
+  contract:'wand.db04.native-item-scope@1',
+  source:{platform:'Steam',gameVersion:'1.26.2',privateOnly:true,
+    publicationAuthorized:false,auditSha256:'f'.repeat(64),
+    rowsSha256:'a'.repeat(64),
+    sourceSha256ByCategory:{
+      Furniture:'c'.repeat(64),Clothing:'d'.repeat(64),
+      Trimming:'e'.repeat(64),ActivityItem:'f'.repeat(64)
+    }},
+  getItem(id){
+    return id===12345678?{
+      itemId:id,nativeCategory:'Furniture',
+      worldsDirect:['IsEternityIsle'],universeTagsDirect:['Mickey'],
+      universeSetCandidates:['Mickey'],setDefinitionIds:[1000001]
+    }:null;
+  }
+});
+test('independent original native Item Tags remain separate from default World locations',async()=>{
+  const bridge=createDb04ItemGeographyBridge(world(),db01(),null,nativeScope());
+  assert.equal(bridge.source.originalItemScopeAttached,true);
+  const value=await bridge.getItem(12345678);
+  assert.deepEqual(value.originalItemScopeTags.worldsDirect,['IsEternityIsle']);
+  assert.deepEqual(value.originalItemScopeTags.universeTagsDirect,['Mickey']);
+  assert.equal(value.originalDefaultLocations[0].world?.worldId,worldId);
+  assert.equal(value.itemOriginWorldVerified,false);
+  assert.equal(value.itemAcquisitionWorldVerified,false);
+  assert.equal(value.itemPlacementLegalityVerified,false);
+  assert.equal(value.dlcEntitlementVerified,false);
+  assert.equal(value.publicationAuthorized,false);
+  const other=await bridge.getItem(99999999);
+  assert.equal(other.originalItemScopeTags,null);
+  assert.equal(other.definition,null);
+});
+test('world tag and DB-01 definition must share exact current source ID and category SHA',async()=>{
+  const wrongCategory=nativeScope();
+  wrongCategory.getItem=(id)=>({...nativeScope().getItem(id),nativeCategory:'Clothing'});
+  await assert.rejects(()=>createDb04ItemGeographyBridge(world(),db01(),null,wrongCategory)
+    .getItem(12345678),/DB01_NATIVE_SCOPE_ORIGINAL_IDENTITY_MISMATCH/);
+  const wrongSource=nativeScope();
+  wrongSource.source.sourceSha256ByCategory.Furniture='0'.repeat(64);
+  await assert.rejects(()=>createDb04ItemGeographyBridge(world(),db01(),null,wrongSource)
+    .getItem(12345678),/DB01_NATIVE_SCOPE_ORIGINAL_IDENTITY_MISMATCH/);
+  const wrongVersion=nativeScope();
+  wrongVersion.source.gameVersion='1.26.1';
+  assert.throws(()=>createDb04ItemGeographyBridge(world(),db01(),null,wrongVersion),
+    /NATIVE_SCOPE_PRIVATE_EXACT_VERSION_REQUIRED/);
+});
