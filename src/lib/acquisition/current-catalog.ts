@@ -26,6 +26,11 @@ import {
   indexNativeLootSourceFamilies,
   type NativeLootSourceIndex
 } from './native-loot-source-families.ts';
+import {
+  loadMissionLootQuestCandidates,
+  type MissionLootQuestIndex
+} from './mission-loot-quest-candidates.ts';
+import type {PrivateQuestAcquisitionView} from './quest-item-bridge.mjs';
 
 export const DB02_CURRENT_CATALOG_SCHEMA='wand.db02.current-db00-origins@1' as const;
 const RELEASE='steam-1.26.2-native-itemlist-v1';
@@ -62,6 +67,11 @@ export interface CurrentDb02OriginCatalog{
   /** Raw original LootTable.nameKey grouping (not a confirmed acquisition place). */
   readonly lootSources:NativeLootSourceIndex;
   readonly coverage:CurrentDb02CatalogCoverage;
+  /** Lazy public Guide join; no extra transfer until Guide/Collection asks. */
+  loadMissionLootQuestIndex(
+    fetcher?:typeof fetch,basePath?:string,
+    questRefs?:PrivateQuestAcquisitionView|null
+  ):Promise<MissionLootQuestIndex>;
   lookup(itemId:string|number):ReturnType<Db00OriginJoin['lookup']>;
 }
 
@@ -160,6 +170,10 @@ export async function joinCurrentDb02Catalog(
     gameVersion:'1.26.2' as const,
     source:'verified_public_db00_and_local_private_src02_r5' as const,
     origins,db00:joined,lootSources,coverage,
+    loadMissionLootQuestIndex(
+      questFetcher:typeof fetch=fetch,questBasePath=basePath,
+      refs:PrivateQuestAcquisitionView|null=null
+    ){return loadMissionLootQuestCandidates(lootSources,questBasePath,questFetcher,refs);},
     lookup(itemId:string|number){return joined.lookup(itemId);}
   });
 }

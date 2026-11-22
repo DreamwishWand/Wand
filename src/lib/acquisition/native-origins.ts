@@ -31,6 +31,11 @@ const STRUCTURAL_SOURCE:OriginProvenance=Object.freeze({
 });
 /** Only admission through the owner-local SHA-pinned loader grants this brand. */
 const VERIFIED_BUNDLES=new WeakSet<object>();
+/** Runtime source identity: flags and copied digests alone are insufficient. */
+export function hasPinnedSrc02OriginReader(input:unknown):input is VerifiedSrc02OriginReader{
+  return input!==null&&typeof input==='object'&&VERIFIED_BUNDLES.has(input);
+}
+
 /** Never fetch or publish original game files: caller supplies local archive bytes. */
 export async function loadVerifiedSrc02OriginReader(
   archive:Uint8Array,trusted:Src02IndependentPin
