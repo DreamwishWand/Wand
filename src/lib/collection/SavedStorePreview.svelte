@@ -5,12 +5,13 @@
   import { attachDb01PrivateNames } from './private-db01-names-view.mjs';
   import { sanitizeSavedCollectionPresence } from './saved-collection-presence.mjs';
   import { sanitizeSavedCollectionDiscovery } from './saved-collection-discovery.mjs';
+  import { sanitizePositiveListInventoryOwnership } from './saved-list-positive-ownership.mjs';
 
   export let resolveHistorical:(id:number)=>({itemId:number;label:string;family:string}|null) = ()=>null;
   export let locale = 'ja';
   export let gameImageMap: Record<string,string> = {};
   export let collectionCommitBusy = false;
-  const dispatch=createEventDispatcher<{ lookupItem:number; saveDiscovery:any }>();
+  const dispatch=createEventDispatcher<{ lookupItem:number; saveProfile:any }>();
   const jsonKindLabels:Record<string,string>={
     null:'null',boolean:'真偽値',integer:'整数',number:'数値',
     string:'文字列',array:'配列',object:'オブジェクト'
@@ -20,6 +21,7 @@
   let preview: any = null;
   let collectionPreview:any=null;
   let discoveryProjection:any=null;
+  let positiveOwnership:any=null;
   let collectionQuery='';
   let collectionLimit=48;
   let errorMessage = '';
@@ -76,6 +78,7 @@
     preview = null;
     collectionPreview = null;
     discoveryProjection = null;
+    positiveOwnership = null;
     saveSchema = null;
     errorMessage = '';
     query = '';
@@ -92,6 +95,7 @@
     preview = null;
     collectionPreview = null;
     discoveryProjection = null;
+    positiveOwnership = null;
     saveSchema = null;
   }
 
@@ -126,12 +130,14 @@
             .filter((item:unknown):item is {itemId:number;label:string;family:string}=>item!==null);
           const collection=sanitizeSavedCollectionPresence(result.result.collection);
           const discovery=sanitizeSavedCollectionDiscovery(result.result.discovery);
+          const ownership=sanitizePositiveListInventoryOwnership(result.result.positiveOwnership);
           preview = attachHistoricalStoreLabels(result.result.summary,historical);
           collectionPreview=collection;
           discoveryProjection=discovery;
+          positiveOwnership=ownership;
           saveSchema = result.result.saveSchema;
-          if (discovery.entries.length)
-            dispatch('saveDiscovery',discovery);
+          if (discovery.entries.length||ownership.entries.length)
+            dispatch('saveProfile',{discovered:discovery.entries,positiveOwned:ownership.entries});
         } catch { failedRead(); }
       };
       w.onmessage = event => finish(event.data);
@@ -209,7 +215,7 @@
     <div>
       <span class="store-eyebrow">LOCAL / READ-ONLY</span>
       <h2>セーブ内の参照データ</h2>
-      <p>DDVのP1G形式セーブを専用のブラウザー内Workerで開き、店舗商品とCollectionSetsのアイテムID参照を表示します。ファイルの送信・編集・保存は行いません。</p>
+      <p>DDVのP1G形式セーブをブラウザー内で開き、Collectionの発見履歴と明確な所持記録をローカル記録に反映します。元のセーブファイルは変更も送信もしません。</p>
     </div>
     {#if preview || busy}
       <button type="button" class="store-clear" on:click={clear}>{busy?'読み込みを中止':'読み込み結果を消去'}</button>
@@ -220,7 +226,7 @@
       セーブを選択
       <input bind:this={fileInput} type="file" accept=".json,.profile,.dat,application/octet-stream" on:change={openLocalFile} disabled={busy||collectionCommitBusy} aria-label="DDVのセーブファイルを選択"/>
     </label>
-    <p>暗号化されたセーブをローカルで解析します。CollectionSetsの発見履歴を確認できた場合は、ブラウザ内の手動発見記録よりセーブを優先します。所有・所持数は変更せず、元のセーブも書き換えません。</p>
+    <p>セーブを読み込むと、CollectionSetsの発見履歴とListInventoryで数量が正と確認できた所持状態が手動記録より優先されます。数量0・未記録・矛盾するデータは手動記録を維持します。元のセーブには書き込みません。</p>
   </div>
   {#if busy}
     <p class="store-status" role="status">この端末内で読み取り中…</p>
@@ -287,7 +293,7 @@
     {#if collectionPreview}
       <section class="saved-collection-section" aria-label="セーブ内のCollection ID参照">
         <h3>CollectionSets の保存ID参照</h3>
-        <p class="store-warning">セーブ内の <code>Player.CollectionSets[].GroupData[].GroupsCollectionItems</code> にあるIDと型を表示します。ネイティブ解析で確認した真偽値は発見履歴としてのみ扱い、同一Item IDのグループ間で値が異なる場合は反映しません。所有・所持数・DLC権利は推定しません。</p>
+        <p class="store-warning">CollectionSetsの真偽値は発見履歴であり、所持状態ではありません。所持状態はListInventoryの正の数量を別途確認できた場合のみ反映します。DLC権利は推定しません。</p>
         {#if collectionPreview.status==='not_observed'}
           <p class="store-caveat">CollectionSets フィールドは確認できませんでした。セーブを改変している場合も含め、収集状態やデータ破損を意味しません。</p>
         {:else if collectionPreview.status==='partial_inconclusive'}
@@ -301,6 +307,22 @@
           <span>保存ID参照 <strong>{collectionPreview.referenceCount.toLocaleString(locale)}</strong></span>
           <span>異なるID <strong>{collectionPreview.distinctItemCount.toLocaleString(locale)}</strong></span>
         </div>
+        {#if positiveOwnership}
+          <div class="store-caveat" role="status">
+            {#if positiveOwnership.status==='unsupported_schema'}
+              ListInventoryの保存構造が未対応のため、所持状態の自動反映は行いません。
+            {:else if positiveOwnership.status==='not_observed'||positiveOwnership.status==='incompatible_structure'}
+              ListInventoryを安全に確認できません。手動の所持状態は維持します。
+            {:else}
+              明示的な正の数量の記録：<strong>{positiveOwnership.entries.length.toLocaleString(locale)}</strong>件。
+              数量0の記録 {positiveOwnership.zeroReferences.toLocaleString(locale)}件は未所持とみなさず、手動状態を維持します。
+              {#if positiveOwnership.unverifiedRoles||positiveOwnership.invalidReferences||positiveOwnership.ambiguousItemIds}
+                未検証のロール・不正な参照・重複IDは自動反映から除外します。
+              {/if}
+              <small>Game原本によるListInventoryのAmount判定はSwitch v1.25.0で確認済みです。Steam v1.26.2での実行コードの一致は別途検証が必要です。</small>
+            {/if}
+          </div>
+        {/if}
         {#if discoveryProjection}
           <div class="store-caveat" role="status">
             {#if discoveryProjection.status==='unsupported_schema'}

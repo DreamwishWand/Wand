@@ -486,6 +486,38 @@ export class CollectionRuntime {
     });
     return count;
   }
+  /** One atomic save projection: previously entered manual statuses are
+   * superseded only by explicitly positive, verified ListInventory amounts.
+   * Discovery is independently imported from native CollectionSet booleans.
+   * No negative state is inferred from an absent or zero-amount entry.
+   * Both projections share ONE Rust/IndexedDB CAS transaction.
+   */
+  async applyMappedSaveProfile(input:{
+    discovered:readonly {itemId:number;discovered:boolean}[];
+    positiveOwned:readonly {itemId:number;role:string}[];
+  }):Promise<{discovery:number;ownership:number}> {
+    const owned:MappedSaveStatusImport['entries'][number][]=[];
+    for(const row of input.positiveOwned){
+      // Confirm exact known public DB-00 item and expected semantic family.
+      // The Worker has already required a matching save-resident role, native
+      // item type and positive integer Amount. Unknown IDs are not synthesized.
+      let item:CollectionItem;
+      try {item=this.item(row.itemId,'en');}catch {continue;}
+      if(item.family!==row.role &&
+        !(row.role==='ActivityItem'&&item.family==='Source Activity Items'))continue;
+      owned.push({itemId:row.itemId,status:'owned'});
+    }
+    let discovery=0;
+    await this.mutate(()=>{
+      this.engine.apply_mapped_save_statuses(JSON.stringify({
+        schema:'wand.collection.mapped-save-status@1',entries:owned
+      }));
+      discovery=this.engine.apply_mapped_save_discovery(JSON.stringify({
+        schema:'wand.collection.mapped-save-discovery@1',entries:input.discovered
+      }));
+    });
+    return {discovery,ownership:owned.length};
+  }
   workspace(action:'select'|'add'|'rename'|'delete',id:string,name=''):Promise<void> {
     return this.mutate(() => this.engine.workspace_action(action,id,name));
   }

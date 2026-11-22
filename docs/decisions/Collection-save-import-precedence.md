@@ -33,3 +33,36 @@ Internal adapter `CollectionRuntime.applyMappedSaveStatuses()` accepts
 **only after** DB-05/native game-save inspection has established each mapped value's semantics. The Rust engine revalidates the payload, catalog ID, uniqueness and bounds before changing any record.
 
 The adapter is already implemented and tested; automatic P1G-to-status application remains disabled until authoritative native semantics have been established. No change of save format or game version alone is treated as evidence of ownership or corruption.
+
+## Positive ListInventory ownership projection (2026-11-22)
+
+A second **positive-only** import path reads exact Item ID map keys under
+`Player.ListInventories/{role}/Inventory/{itemId}` **only when** the saved
+`Amount` is a positive integer, and the saved role ID, compatible item type
+descriptor and Item ID type prefix match the known native model. Initially
+supports Catalog/Furniture (0/type 4), Wardrobe/Clothing (1/type 5),
+Pantry/ActivityItem (2/type 3), Trimming (4/type 16).
+Any other inventory, unknown role, invalid amount or incompatible type is
+unverified and skipped; this does not touch physical backpack/chest slots.
+
+**No negative ownership inference:** A map key with `Amount == 0` is valid
+persistent native state, and a furniture item with zero available unplaced
+stock may still have been unlocked or placed. Missing keys, missing roles and
+items absent from a partial catalog cannot prove `missing` or `locked`.
+Only exact positive rows that map to current public catalog entries are
+promoted to `status:owned`; existing manual `missing` for those exact IDs is
+overridden when a save is read. User-entered quantities and favorites are not
+overwritten, because an available/unplaced-stock amount need not represent
+the same abstract personal Collection quantity.
+
+The local P1G Worker emits only `itemId` and verified role identity, never
+raw Amount/Marker/other save payload fields. Import combines positive
+ownership and separate discovery-history projection in **one atomic
+Rust/WASM and IndexedDB transaction**, preserving all unrelated manual state.
+
+Evidence comes from native Switch DDV v1.24.13/v1.25.0
+`ListInventory.GetItemAmount`, `HasItem` and role-accessor comparisons,
+plus observed save structures 624/643. Steam v1.26.2 native executable
+semantic equivalence and full item definition variation/canonicalization
+are NOT independently established; mappings with ambiguous routes are not
+converted into negative statuses. No DDV save writer is enabled.

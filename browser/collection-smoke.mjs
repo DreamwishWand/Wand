@@ -305,12 +305,25 @@ try{
   await page.locator('.summary-strip').waitFor({timeout:20000});
   assert.match(await page.locator('.summary-strip').innerText(),/13,202/);
 
-  // The save's discovered-history booleans override the manual discovered
-  // values, but never rewrite manually owned item status or favorite/quantity.
+  // First manually mark a known Furniture item missing. Its positive
+  // ListInventory amount in the synthetic save must override that manual
+  // status, while leaving quantity/favorite and discovery independent.
+  const ownershipSearch=page.getByRole('searchbox',{name:/8言語/});
+  await ownershipSearch.fill('40005160');
+  await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
+  await page.getByRole('button',{name:/を未所持にする/}).first().click();
+  await page.getByRole('button',{name:/を所持済みにする/}).first().waitFor();
+  await ownershipSearch.fill('');
   const fixture=makeSyntheticP1g({
     GameInfo:{Version:643},
     Player:{
       PrivateName:'must-not-leak',
+      ListInventories:{
+        '0':{ID:0,CompatibleItemType:'Furniture',Inventory:{
+          '40005160':{Amount:2,Marker:'Favorite'},
+          '40006110':{Amount:0,Marker:'Hidden'}
+        }}
+      },
       CollectionSets:[{GroupData:[
         {State:'secret',GroupsCollectionItems:{
           '40005160':true,'40006110':false,'40003256':true
@@ -323,19 +336,21 @@ try{
   await page.locator('input[aria-label="DDVのセーブファイルを選択"]')
     .setInputFiles({name:'synthetic.profile',
       mimeType:'application/octet-stream',buffer:fixture});
-  await page.getByRole('status').filter({hasText:'セーブから発見履歴'}).first().waitFor({timeout:25000});
+  await page.getByRole('status').filter({hasText:'セーブの発見履歴'}).first().waitFor({timeout:25000});
   const afterSaveDownload=page.waitForEvent('download');
   await page.getByRole('button',{name:'バックアップ出力'}).click();
   const afterSave=JSON.parse(await readFile(await (await afterSaveDownload).path(),'utf8'));
   const stateAfter=afterSave.workspaces.find(x=>x.id==='local-1').entries;
   assert.equal(stateAfter['40005160'].discovered,true);
-  assert.equal(stateAfter['40005160'].status,'owned');
+  assert.equal(stateAfter['40005160'].status,'owned'); // save positive stock wins over manually marked missing
   assert.equal(stateAfter['40005160'].quantity,7);
   assert.equal(stateAfter['40005160'].favorite,true);
   assert.equal(stateAfter['40006110'].discovered,false);
+  assert.equal(stateAfter['40006110'].status,undefined); // zero is not proof of missing
   assert.equal(stateAfter['40003256'],undefined);
   assert.equal(stateAfter['99999999'].discovered,true);
   assert.equal(await page.getByRole('alert').filter({hasText:'do-not-leak'}).count(),0);
+  assert.match(await page.getByRole('status').filter({hasText:'セーブの発見履歴'}).first().innerText(),/所持 1件/);
 
   await context.close();
   console.log('Collection browser WASM/IndexedDB/migration/search/paging smoke passed');
