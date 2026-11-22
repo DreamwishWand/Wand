@@ -267,3 +267,111 @@ test('missing reverse scope stays unknown; malformed pagination is rejected',()=
       /INVALID_INITIAL_PLACEMENT_PAGE/);
   }
 });
+
+
+test('GridRef original default source is indexed by exact Grid.ID, not inferred World',()=>{
+  const idx=new WorldReferenceIndex(fixture());
+  assert.equal(idx.getSourceGrid(grid)?.gridRefId,grid);
+  assert.equal(idx.getSourceGrid(grid)?.gridDataPath,path);
+  assert.equal(idx.getSourceGrid(layout+'#grid=42'),null);
+  assert.deepEqual(idx.gridsInLayout(layout).map(x=>x.gridRefId),[grid]);
+  assert.deepEqual(idx.gridsInLayout('not-in-source'),[]);
+  const page=idx.originalPlacementsInGrid(grid,{offset:0,limit:1});
+  assert.equal(page.scope,'grid');
+  assert.equal(page.scopeId,grid);
+  assert.equal(page.scopeIdentityInPartialSource,true);
+  assert.equal(page.status,'source_native_verified');
+  assert.equal(page.matchingReferenceRowsInSubset,1);
+  assert.equal(page.matchingOriginalInstancesInSubset,2);
+  assert.equal(page.distinctItemIdsInSubset,1);
+  assert.deepEqual(page.rows.map(r=>r.itemId),['40000000']);
+  assert.equal(page.hasNextPage,false);
+  assert.equal(page.nextOffset,null);
+  assert.equal(page.sourceCoverageComplete,false);
+  assert.equal(page.itemOriginVerified,false);
+  assert.equal(page.acquisitionLocationVerified,false);
+  assert.equal(page.savedPlayerPlacementVerified,false);
+  assert.equal(page.placementLegalityVerified,false);
+  assert.throws(()=>page.rows.push({}),TypeError);
+  assert.throws(()=>idx.originalPlacementsInGrid('',{offset:0,limit:1}),
+    /INVALID_GRID_REF_ID/);
+  assert.throws(()=>idx.originalPlacementsInGrid(grid,{offset:0,limit:513}),
+    /INVALID_INITIAL_PLACEMENT_PAGE/);
+  assert.throws(()=>idx.gridsInLayout(''),/INVALID_LAYOUT_ID/);
+  assert.throws(()=>idx.getSourceGrid(''),/INVALID_GRID_REF_ID/);
+});
+
+test('exact GridRef reverse lookup preserves unrelated World-unlinked source GridObjects',()=>{
+  const src=fixture();
+  const unknownLayout='SceneLayouts/OffGridBuildings/UnlinkedOriginal.json';
+  const unknownGrid=unknownLayout+'#grid=0';
+  const emptyGrid=unknownLayout+'#grid=1';
+  src.layouts.push({
+    ...src.layouts[1],layoutId:unknownLayout,
+    nativeDefaultObjectCount:3,parentWorldId:null,
+    parentAreaRefId:null,sourceWorldMembershipVerified:false
+  });
+  src.gridRefs.push({
+    ...src.gridRefs[0],gridRefId:unknownGrid,layoutId:unknownLayout,
+    nativeGridId:0,worldId:null,areaRefId:null,
+    originalDefaultObjectCount:3
+  });
+  src.gridRefs.push({
+    ...src.gridRefs[0],gridRefId:emptyGrid,layoutId:unknownLayout,
+    nativeGridId:1,worldId:null,areaRefId:null,
+    originalDefaultObjectCount:0
+  });
+  src.initialItemRefs.push({
+    ...src.initialItemRefs[0],
+    gridRefId:unknownGrid,layoutId:unknownLayout,
+    worldId:null,areaRefId:null,
+    itemId:'90000',instanceCount:1
+  });
+  src.initialItemRefs.push({
+    ...src.initialItemRefs[0],
+    gridRefId:unknownGrid,layoutId:unknownLayout,
+    worldId:null,areaRefId:null,
+    itemId:'90001',instanceCount:2
+  });
+  src.coverage.gridReferencesInSubset=3;
+  src.coverage.sourceInitialGridObjects=5;
+  src.coverage.sourceInitialGridObjectsWithoutVerifiedWorldLink=3;
+  const index=new WorldReferenceIndex(src);
+  assert.deepEqual(index.gridsInLayout(unknownLayout)
+    .map(x=>x.gridRefId),[unknownGrid,emptyGrid]);
+  assert.equal(index.getSourceGrid(unknownGrid)?.worldId,null);
+  assert.equal(index.getSourceGrid(unknownGrid)?.areaRefId,null);
+  assert.equal(index.originalPlacementsInGrid(unknownGrid).matchingOriginalInstancesInSubset,3);
+  const first=index.originalPlacementsInGrid(unknownGrid,{offset:0,limit:1});
+  assert.equal(first.scopeIdentityInPartialSource,true);
+  assert.deepEqual(first.rows.map(r=>r.itemId),['90000']);
+  assert.equal(first.matchingReferenceRowsInSubset,2);
+  assert.equal(first.distinctItemIdsInSubset,2);
+  assert.equal(first.hasNextPage,true);
+  assert.equal(first.nextOffset,1);
+  const next=index.originalPlacementsInGrid(unknownGrid,{offset:1,limit:1});
+  assert.deepEqual(next.rows.map(r=>r.itemId),['90001']);
+  assert.equal(next.hasNextPage,false);
+  assert.equal(next.nextOffset,null);
+  assert.equal(index.originalPlacementsInWorld(world).matchingOriginalInstancesInSubset,2);
+  assert.equal(index.originalPlacementsWithoutWorld().matchingOriginalInstancesInSubset,3);
+  const empty=index.originalPlacementsInGrid(emptyGrid);
+  assert.equal(empty.scopeIdentityInPartialSource,true);
+  assert.equal(empty.status,'unverified');
+  assert.equal(empty.matchingReferenceRowsInSubset,0);
+  assert.deepEqual(empty.rows,[]);
+  const absent=index.originalPlacementsInGrid(unknownLayout+'#grid=99');
+  assert.equal(absent.scopeIdentityInPartialSource,false);
+  assert.equal(absent.status,'unverified');
+});
+
+test('original GridObject per-Grid cardinality must match original GridCollection count',()=>{
+  const mismatch=fixture();
+  mismatch.gridRefs[0].originalDefaultObjectCount=1;
+  assert.throws(()=>new WorldReferenceIndex(mismatch),
+    /NATIVE_GRID_DEFAULT_INSTANCE_MISMATCH/);
+  const overflow=fixture();
+  overflow.gridRefs[0].originalDefaultObjectCount=9007199254740991;
+  assert.throws(()=>new WorldReferenceIndex(overflow),
+    /NATIVE_GRID_DEFAULT_INSTANCE_MISMATCH/);
+});
