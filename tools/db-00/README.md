@@ -284,3 +284,28 @@ numeric Item ID, and contain the original linked source evidence with explicit
 present in an observed source offer, **not** today's sale, personal ownership
 or price. World/Universe/DLC UI membership is not inferred. Published scope
 does not claim to enumerate every native game definition.
+
+
+### Source-native static container templates (DB-02, Steam 1.26.2)
+
+The public and optional owner-local Item ID readers now attach the SHA-pinned
+DB-02 \`staticContainerSource\` to DB-00's \`getItem(id)\` and \`getItems(ids)\`
+via \`staticContainerCandidates\`. These are **146 configured source slots in
+88 original container definitions (115 distinct Item IDs)**. Their original
+\`loot\` origin kind and \`static_candidate_only\` status are retained in a
+**separate array**: they are not added to the existing 1,255 general
+\`origins\`, nor inferred to be actual chest contents, guaranteed drops,
+live player storage, instantiation, current availability or ownership.
+
+\`staticContainerCandidates === null\` means the source was not supplied;
+\`[]\` means no slot in the loaded source. The shared public API always supplies
+the verified DB-02 static source, and
+\`searchItems({staticContainerCandidate:true})\` restricts to those source
+candidates **within the current published 13,202 Item IDs**. Out-of-ItemList
+IDs remain reachable through direct \`getItem(id)\`. This is independent of
+\`originKinds:['loot']\`, which continues to mean only the conventional DB-02
+origin ledger.
+
+The new evidence is not attached to the verified DB-00 \`worlds\`,
+\`universes\`, \`dlc\` or \`acquisition\` fact state. Source-side SHA-256 checking
+must succeed, and fabricated copies of the source reader are rejected.
