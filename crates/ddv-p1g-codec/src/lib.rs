@@ -504,6 +504,138 @@ mod browser_amount_preview {
         Ok(out)
     }
 
+    const MAX_GRID_SCAN:usize=2048;
+    const MAX_GRID_OBJECT_SCAN:usize=100_000;
+    const MAX_GRID_ITEM_IDS:usize=20_000;
+    /// Save-only GridObject ItemID references. These are NOT full placed
+    /// counts: DiffGrids overlay defaults, and source objects may be absent.
+    /// Keep player-specific grid IDs, coordinates and state inside WASM.
+    pub(super) fn saved_grid_references_json(source:&[u8])->Result<String,CodecError>{
+        use std::collections::{BTreeMap,HashSet};
+        let root:serde_json::Value=serde_json::from_slice(source)
+            .map_err(|_|CodecError::Json)?;
+        let world=root.get("World").and_then(serde_json::Value::as_object)
+            .ok_or(CodecError::RequiredRoot)?;
+        let collection=world.get("GridCollection");
+        let mut observed_full=0usize;
+        let mut observed_diff=0usize;
+        let mut invalid=0usize;
+        let mut sampled=false;
+        let mut inspected=0usize;
+        let mut by_item=BTreeMap::<u64,(u32,u32)>::new();
+        fn scan_objects(
+            objects:&serde_json::Map<String,serde_json::Value>,
+            is_diff:bool,removed:&HashSet<String>,
+            by_item:&mut BTreeMap<u64,(u32,u32)>,
+            inspected:&mut usize,sampled:&mut bool,invalid:&mut usize
+        ){
+            for (key,object) in objects {
+                if *inspected>=MAX_GRID_OBJECT_SCAN{*sampled=true;break;}
+                *inspected+=1;
+                let parsed=key.parse::<u64>().ok()
+                    .filter(|id|id.to_string()==*key);
+                let Some(fields)=object.as_object() else {*invalid+=1;continue;};
+                let Some(id)=parsed else {*invalid+=1;continue;};
+                if fields.get("ID").is_some_and(|v|v.as_u64()!=Some(id)){
+                    *invalid+=1;continue;
+                }
+                if removed.contains(key){continue;}
+                let Some(item_id)=fields.get("ItemID")
+                    .and_then(serde_json::Value::as_u64)
+                    .filter(|v|*v>0) else {*invalid+=1;continue;};
+                if !by_item.contains_key(&item_id) &&
+                    by_item.len()>=MAX_GRID_ITEM_IDS{
+                    *sampled=true;break;
+                }
+                let counter=by_item.entry(item_id).or_insert((0,0));
+                if is_diff{counter.1+=1;}else{counter.0+=1;}
+            }
+        }
+        let status=match collection {
+            None=>"not_observed",
+            Some(value) if !value.is_object()=>"incompatible_structure",
+            Some(value)=>{
+                let grids=value.as_object().expect("checked object");
+                let full=grids.get("Grids").and_then(serde_json::Value::as_object);
+                let diff=grids.get("DiffGrids").and_then(serde_json::Value::as_object);
+                if grids.get("Grids").is_some()&&full.is_none(){invalid+=1;}
+                if grids.get("DiffGrids").is_some()&&diff.is_none(){invalid+=1;}
+                let empty=serde_json::Map::new();
+                let full=full.unwrap_or(&empty);
+                let diff=diff.unwrap_or(&empty);
+                let mut seen=0usize;
+                for (key,value) in full{
+                    if seen>=MAX_GRID_SCAN{sampled=true;break;}
+                    seen+=1;
+                    let parsed=key.parse::<u64>().ok()
+                        .filter(|id|id.to_string()==*key);
+                    let Some(grid)=value.as_object() else {invalid+=1;continue;};
+                    let Some(grid_id)=parsed else {invalid+=1;continue;};
+                    if grid.get("ID").is_some_and(|v|v.as_u64()!=Some(grid_id)){
+                        invalid+=1;continue;
+                    }
+                    let Some(objects)=grid.get("Objects")
+                        .and_then(serde_json::Value::as_object) else {
+                        invalid+=1;continue;
+                    };
+                    observed_full+=1;
+                    scan_objects(objects,false,&HashSet::new(),
+                        &mut by_item,&mut inspected,&mut sampled,&mut invalid);
+                }
+                for (key,value) in diff{
+                    if seen>=MAX_GRID_SCAN{sampled=true;break;}
+                    seen+=1;
+                    let parsed=key.parse::<u64>().ok()
+                        .filter(|id|id.to_string()==*key);
+                    let Some(grid)=value.as_object() else {invalid+=1;continue;};
+                    let Some(grid_id)=parsed else {invalid+=1;continue;};
+                    if full.contains_key(key) ||
+                        grid.get("ID").is_some_and(|v|v.as_u64()!=Some(grid_id)){
+                        invalid+=1;continue;
+                    }
+                    let Some(objects)=grid.get("ModifiedObjects")
+                        .and_then(serde_json::Value::as_object) else {
+                        invalid+=1;continue;
+                    };
+                    let mut removed=HashSet::new();
+                    if let Some(list)=grid.get("RemovedObjects"){
+                        let Some(list)=list.as_array() else {invalid+=1;continue;};
+                        if list.iter().any(|v|v.as_u64().is_none()){
+                            invalid+=1;continue;
+                        }
+                        removed.extend(list.iter().filter_map(|v|v.as_u64())
+                            .map(|v|v.to_string()));
+                    }
+                    observed_diff+=1;
+                    scan_objects(objects,true,&removed,
+                        &mut by_item,&mut inspected,&mut sampled,&mut invalid);
+                }
+                if sampled||invalid>0{"partial_inconclusive"}
+                else if by_item.is_empty(){"observed_no_item_refs"}
+                else {"saved_item_refs"}
+            }
+        };
+        let rows=by_item.into_iter().map(|(item_id,(full,diff))|
+            serde_json::json!({
+                "itemId":item_id.to_string(),
+                "fullGridReferences":full,
+                "diffModifiedReferences":diff
+            })).collect::<Vec<_>>();
+        serde_json::to_string(&serde_json::json!({
+            "contract":"wand.db05.saved-grid-item-refs@1",
+            "status":status,
+            "observedFullGrids":observed_full,
+            "observedDiffGrids":observed_diff,
+            "invalidRecords":invalid,
+            "sampled":sampled,
+            "entries":rows,
+            "effectivePlacedCountVerified":false,
+            "playerPlacementVerified":false,
+            "worldSourceMatched":false,
+            "saveWritingAuthorized":false
+        })).map_err(|_|CodecError::Json)
+    }
+
     const MAX_EDITABLE_ROWS:usize=20000;
     /// Extraction is strictly read-only. Missing/custom player fields are
     /// valid: user-modified saves need not contain every game's section.
@@ -630,6 +762,20 @@ mod browser_amount_preview {
         /// Inventory/Chest Amount rows. Raw JSON, quest progress, world
         /// coordinates and player identifiers never leave this Rust Worker.
         /// This is not a catalog lookup, ownership proof or editing permission.
+        /// Read-only save GridObject references for optional DB-04 annotation;
+        /// no grid IDs, coordinates or private object fields leave the Worker.
+        pub fn list_saved_grid_item_references(&self)->Result<String,JsValue>{
+            if !self.ready || self.closed {
+                return Err(fail("DB05_GRID_INDEX_NOT_OPEN"));
+            }
+            let source=match self.kind {
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref()
+                    .ok_or(fail("DB05_GRID_INDEX_NOT_OPEN"))?.profile.as_slice()
+            };
+            saved_grid_references_json(source)
+                .map_err(|_|fail("DB05_GRID_INDEX_INVALID"))
+        }
         pub fn list_existing_slots(&self)->Result<String,JsValue>{
             if !self.ready || self.closed {
                 return Err(fail("DB05_SLOT_INDEX_NOT_OPEN"));
@@ -967,6 +1113,44 @@ mod tests{
         local
     }
     fn encrypted(method:u16)->Vec<u8>{ecb_encrypt(&zip(profile().as_bytes(),method)).unwrap()}
+    #[cfg(feature="wasm")]
+    #[test]
+    fn read_only_grid_reference_projection_hides_ids_and_diff_removals(){
+        let root=br#"{"GameInfo":{"Version":643},"Player":{},
+            "World":{"GridCollection":{"Grids":{"13":{"ID":13,"Objects":{
+              "5":{"ID":5,"ItemID":40000001,"X":64,"State":{"Name":"secret"}},
+              "6":{"ID":6,"ItemID":10000001}
+            }}},"DiffGrids":{"14":{"ID":14,"RemovedObjects":[7],
+              "ModifiedObjects":{
+                "7":{"ID":7,"ItemID":40000001,"X":50},
+                "8":{"ID":8,"ItemID":40000001,"Storage":{"Owner":"private"}}
+              }}}}}}"#;
+        let report=browser_amount_preview::saved_grid_references_json(root).unwrap();
+        let json:serde_json::Value=serde_json::from_str(&report).unwrap();
+        assert_eq!(json["status"],"saved_item_refs");
+        assert_eq!(json["entries"].as_array().unwrap().len(),2);
+        assert_eq!(json["entries"][1]["itemId"],"40000001");
+        assert_eq!(json["entries"][1]["fullGridReferences"],1);
+        assert_eq!(json["entries"][1]["diffModifiedReferences"],1);
+        assert!(!report.contains("secret") && !report.contains("private"));
+        assert!(!report.contains("\"X\"") && !report.contains("13"));
+        let missing=br#"{"GameInfo":{"Version":643},"Player":{},"World":{}}"#;
+        assert_eq!(
+          serde_json::from_str::<serde_json::Value>(
+            &browser_amount_preview::saved_grid_references_json(missing).unwrap()
+          ).unwrap()["status"],"not_observed"
+        );
+        let malformed=br#"{"GameInfo":{"Version":643},"Player":{},
+          "World":{"GridCollection":{"Grids":{"3":{"Objects":{
+            "2":{"ItemID":40000001}}}},"DiffGrids":{"5":{
+            "ModifiedObjects":{"8":{"ItemID":40000001}},
+            "RemovedObjects":{"8":true}}}}}}"#;
+        let result=browser_amount_preview::saved_grid_references_json(malformed).unwrap();
+        let value:serde_json::Value=serde_json::from_str(&result).unwrap();
+        assert_eq!(value["status"],"partial_inconclusive");
+        assert_eq!(value["entries"].as_array().unwrap().len(),1);
+    }
+
     #[cfg(feature="wasm")]
     #[test]
     fn editable_slot_index_selects_only_positive_known_shape_and_ignores_unknown_fields(){

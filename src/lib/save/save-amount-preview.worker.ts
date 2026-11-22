@@ -20,6 +20,85 @@ type Target =
   | { kind: 'inventory'; inventoryId: string; itemId: string }
   | { kind: 'chest'; containerId: string; slotIndex: number; itemId: number };
 
+export interface SaveGridItemReference {
+  readonly itemId:string;
+  readonly fullGridReferences:number;
+  readonly diffModifiedReferences:number;
+}
+export interface SaveGridReferenceReport {
+  readonly contract:'wand.db05.saved-grid-item-refs@1';
+  readonly status:'not_observed'|'incompatible_structure'|
+    'partial_inconclusive'|'observed_no_item_refs'|'saved_item_refs';
+  readonly observedFullGrids:number;
+  readonly observedDiffGrids:number;
+  readonly invalidRecords:number;
+  readonly sampled:boolean;
+  readonly entries:readonly SaveGridItemReference[];
+  readonly effectivePlacedCountVerified:false;
+  readonly playerPlacementVerified:false;
+  readonly worldSourceMatched:false;
+  readonly saveWritingAuthorized:false;
+}
+const nonnegative=(v:unknown,max:number):v is number=>
+  typeof v==='number'&&Number.isSafeInteger(v)&&v>=0&&v<=max;
+function validateGridReport(source:unknown):SaveGridReferenceReport {
+  if(!object(source)||!exact(source,[
+    'contract','status','observedFullGrids','observedDiffGrids',
+    'invalidRecords','sampled','entries','effectivePlacedCountVerified',
+    'playerPlacementVerified','worldSourceMatched','saveWritingAuthorized'
+  ])||source.contract!=='wand.db05.saved-grid-item-refs@1'||
+    !['not_observed','incompatible_structure','partial_inconclusive',
+      'observed_no_item_refs','saved_item_refs'].includes(String(source.status))||
+    !nonnegative(source.observedFullGrids,2048)||
+    !nonnegative(source.observedDiffGrids,2048)||
+    source.observedFullGrids+source.observedDiffGrids>2048||
+    !nonnegative(source.invalidRecords,102048)||
+    typeof source.sampled!=='boolean'||!Array.isArray(source.entries)||
+    source.entries.length>20000||
+    source.effectivePlacedCountVerified!==false||
+    source.playerPlacementVerified!==false||
+    source.worldSourceMatched!==false||source.saveWritingAuthorized!==false)
+    throw new TypeError('DB05_GRID_REPORT_INVALID');
+  let prior=0n,full=0,diff=0;
+  const entries:SaveGridItemReference[]=source.entries.map(row=>{
+    if(!object(row)||!exact(row,[
+      'itemId','fullGridReferences','diffModifiedReferences'
+    ])||!validId(row.itemId)||
+      !nonnegative(row.fullGridReferences,100000)||
+      !nonnegative(row.diffModifiedReferences,100000)||
+      (row.fullGridReferences===0&&row.diffModifiedReferences===0)||
+      BigInt(row.itemId)<=prior)
+      throw new TypeError('DB05_GRID_ROW_INVALID');
+    prior=BigInt(row.itemId);
+    full+=row.fullGridReferences;
+    diff+=row.diffModifiedReferences;
+    return {itemId:row.itemId,
+      fullGridReferences:row.fullGridReferences,
+      diffModifiedReferences:row.diffModifiedReferences};
+  });
+  if(full+diff>100000||
+     (source.status==='saved_item_refs'&&(entries.length===0||
+       source.sampled||source.invalidRecords!==0))||
+     (source.status==='observed_no_item_refs'&&(entries.length!==0||
+       source.sampled||source.invalidRecords!==0))||
+     (source.status==='partial_inconclusive'&&
+       !source.sampled&&source.invalidRecords===0)||
+     (['not_observed','incompatible_structure'].includes(String(source.status))&&
+       (entries.length!==0||source.observedFullGrids!==0||
+        source.observedDiffGrids!==0)))
+      throw new TypeError('DB05_GRID_STATUS_INVALID');
+  return {
+    contract:'wand.db05.saved-grid-item-refs@1',
+    status:source.status as SaveGridReferenceReport['status'],
+    observedFullGrids:source.observedFullGrids,
+    observedDiffGrids:source.observedDiffGrids,
+    invalidRecords:source.invalidRecords,
+    sampled:source.sampled,entries,
+    effectivePlacedCountVerified:false,playerPlacementVerified:false,
+    worldSourceMatched:false,saveWritingAuthorized:false
+  };
+}
+
 interface PreviewReceipt {
   contract: 'wand.db05.amount-preview@1';
   changed: boolean;
@@ -49,6 +128,7 @@ type Reply =
   | { kind: 'result'; receipt: PreviewReceipt | BatchPreviewReceipt }
   | { kind: 'copy'; bytes: Uint8Array; receipt: CopyReceipt }
   | { kind: 'slots'; rows: SaveEditableSlot[];
+      grid:SaveGridReferenceReport;
       contract:'wand.db05.editable-slots@1'; complete:true; writerAuthorized:false };
 
 interface IsolatedScope {
@@ -202,9 +282,12 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
 
     if(listing){
       const extracted:unknown=JSON.parse(rust.list_existing_slots());
+      const grid=validateGridReport(
+        JSON.parse(rust.list_saved_grid_item_references()));
       response={
         kind:'slots', contract:'wand.db05.editable-slots@1',
-        rows:validateSlotRows(extracted),complete:true,writerAuthorized:false
+        rows:validateSlotRows(extracted),grid,
+        complete:true,writerAuthorized:false
       };
     }else if (exporting) {
       const length = plan !== null

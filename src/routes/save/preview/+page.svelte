@@ -2,6 +2,7 @@
   import {onDestroy} from 'svelte';
   import {base} from '$app/paths';
   import type {Db00ItemContext} from '../../../lib/save/common-db-context';
+  import type {SavedGridItemReference} from '../../../lib/save/save-world-db04-context';
 
   // Development-only local editor: preview is metadata-only, and explicit
   // edited-copy export never overwrites the source. No production Writer.
@@ -33,6 +34,10 @@
     | {kind:'chest';containerId:string;slotIndex:number;itemId:number;amount:number};
   let savedSlots:EditableSlot[]=[];
   let savedSlotsFile:File|null=null;
+  let worldRefs:SavedGridItemReference[]=[];
+  let worldStatus:'not_observed'|'incompatible_structure'|'partial_inconclusive'|
+    'observed_no_item_refs'|'saved_item_refs'='not_observed';
+  let worldQuery='';
   let slotState:'idle'|'loading'|'ready'|'error'='idle';
   let slotQuery='';
   let slotFilter:'all'|'inventory'|'chest'='all';
@@ -49,6 +54,13 @@
       (meta?.name??'').toLocaleLowerCase().includes(query) ||
       (meta?.category??'').toLocaleLowerCase().includes(query);
   }).slice(0,120);
+  $: visibleWorldRefs=worldRefs.filter(row=>{
+    const meta=dbMap.get(row.itemId);
+    const q=worldQuery.trim().toLocaleLowerCase();
+    return !q||row.itemId.includes(q)||
+      (meta?.name??'').toLocaleLowerCase().includes(q)||
+      (meta?.category??'').toLocaleLowerCase().includes(q);
+  }).slice(0,100);
   let snapshot:PreviewSnapshot|null=null;
   let downloadUrl:string|null=null;
   let downloadName='';
@@ -95,6 +107,7 @@
     result=null;
     dbWorker?.terminate();dbWorker=null;catalogRevision++;
     savedSlots=[];savedSlotsFile=null;slotState='idle';
+    worldRefs=[];worldStatus='not_observed';worldQuery='';
     dbMap=new Map();dbStatus='idle';
   }
   function selectSavedSlot(slot:EditableSlot){
@@ -111,11 +124,15 @@
     expected=String(slot.amount);
     replacement=String(Math.min(0xffffffff,slot.amount+1));
   }
-  function beginCatalogLookup(rows:readonly EditableSlot[],file:File){
+  function beginCatalogLookup(rows:readonly EditableSlot[],file:File,
+    gridRows:readonly SavedGridItemReference[]){
     dbWorker?.terminate();
     const request=++catalogRevision;
     dbStatus='loading';
-    const ids=[...new Set(rows.map(row=>String(row.itemId)))];
+    const ids=[...new Set([
+      ...rows.map(row=>String(row.itemId)),
+      ...gridRows.map(row=>row.itemId)
+    ])];
     const worker=new Worker(
       new URL('../../../lib/save/save-catalog.worker.ts',import.meta.url),
       {type:'module'}
@@ -172,15 +189,31 @@
         ownedWorker.terminate();active=null;processing=false;
         const r=reply as {
           kind?:string;contract?:string;complete?:boolean;
-          writerAuthorized?:boolean;rows?:EditableSlot[]
+          writerAuthorized?:boolean;rows?:EditableSlot[];
+          grid?:{contract?:string;status?:typeof worldStatus;
+            entries?:SavedGridItemReference[];
+            playerPlacementVerified?:boolean;
+            effectivePlacedCountVerified?:boolean;
+            worldSourceMatched?:boolean;
+            saveWritingAuthorized?:boolean};
         };
         if(r?.kind!=='slots'||r.contract!=='wand.db05.editable-slots@1'||
            r.complete!==true||r.writerAuthorized!==false||
-           !Array.isArray(r.rows)){
+           !Array.isArray(r.rows)||
+           r.grid?.contract!=='wand.db05.saved-grid-item-refs@1'||
+           r.grid.playerPlacementVerified!==false||
+           r.grid.effectivePlacedCountVerified!==false||
+           r.grid.worldSourceMatched!==false||
+           r.grid.saveWritingAuthorized!==false||
+           !['not_observed','incompatible_structure','partial_inconclusive',
+             'observed_no_item_refs','saved_item_refs'].includes(
+               String(r.grid.status))||
+           !Array.isArray(r.grid.entries)){
           slotState='error';return;
         }
         savedSlots=r.rows;savedSlotsFile=file;slotState='ready';
-        beginCatalogLookup(r.rows,file);
+        worldRefs=r.grid.entries;worldStatus=r.grid.status!;
+        beginCatalogLookup(r.rows,file,worldRefs);
       };
       worker.onmessage=event=>finish(event.data);
       worker.onerror=event=>{event.preventDefault();finish({kind:'error'});};
@@ -497,6 +530,44 @@
       {/if}
     {/if}
   </section>
+  {#if slotState==='ready'}
+    <section class="saved-slots" aria-label="ワールド参照">
+      <div class="slot-actions">
+        <strong>ワールドのアイテム参照</strong>
+        {#if worldStatus==='saved_item_refs'||worldStatus==='partial_inconclusive'}
+          <span role="status">{worldRefs.length}種類</span>
+        {/if}
+      </div>
+      {#if worldStatus==='saved_item_refs'||worldStatus==='partial_inconclusive'}
+        <input bind:value={worldQuery} aria-label="ワールド参照検索"
+          placeholder="アイテム名・Item IDを検索" />
+        <ul class="slot-list">
+          {#each visibleWorldRefs as row}
+            <li class="world-reference-row">
+              <span>
+                <strong>{dbMap.get(row.itemId)?.name??row.itemId}</strong>
+                <small>{dbMap.get(row.itemId)?.category??
+                  dbMap.get(row.itemId)?.nativeCategory??'分類未確認'}</small>
+              </span>
+              <span class="slot-amount">{
+                row.fullGridReferences+row.diffModifiedReferences
+              }件</span>
+            </li>
+          {/each}
+        </ul>
+      {:else if worldStatus==='not_observed'}
+        <p class="slot-note">Grid情報はこのセーブにありません。</p>
+      {:else if worldStatus==='observed_no_item_refs'}
+        <p class="slot-note">保存済みのItem ID参照はありません。</p>
+      {:else if worldStatus==='incompatible_structure'}
+        <p class="slot-note">Grid構造を読み取れません。</p>
+      {/if}
+      {#if worldStatus==='partial_inconclusive'}
+        <p class="slot-note">未確認の参照があるため一部のみ表示しています。</p>
+      {/if}
+      <p class="slot-note">保存されたGrid内の参照です。所有数・全配置数・配置可否を示すものではありません。</p>
+    </section>
+  {/if}
   {#if queuedEdits.length}
     <section class="batch-edits" aria-label="一括数量変更">
       <p>一括変更 · {queuedEdits.length}件（最大16件）</p>
@@ -560,6 +631,10 @@
   .slot-search select{max-width:180px;}
   .slot-list{list-style:none;margin:8px 0;padding:0;max-height:380px;overflow:auto;}
   .slot-list li{margin:0;border-bottom:1px solid #ffffff22;}
+  .world-reference-row{display:flex;align-items:center;justify-content:space-between;
+    gap:12px;padding:10px 12px;min-height:48px;}
+  .world-reference-row strong{font-size:15px;display:block;}
+  .world-reference-row small{font-size:12px;color:#d4c2df;display:block;}
   .slot-select{width:100%;background:transparent;color:#f5ebfb;text-align:left;
     display:flex;align-items:center;justify-content:space-between;gap:12px;
     min-height:54px;padding:10px 12px;}
