@@ -12,10 +12,15 @@
   } from '$lib/guide/event-reward-item-labels.ts';
   import {resolveEventRewardItemDestination}
     from '$lib/guide/event-reward-navigation.ts';
+  import {verifyPublicQuestIndex,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
+  import {loadPublicEventQuestLinks,DB03_EVENT_QUEST_FILE,
+    type PublicEventQuestIndex} from '$lib/guide/public-event-quest-links.ts';
 
   type Filter='all'|'mini_event'|'floating_festival'|'default_friendship';
   let source:PublicEventFriendshipRewards|null=null;
   let labels:EventRewardItemLabelIndex|null=null;
+  let questCatalogue:any=null;
+  let eventQuestLinks:PublicEventQuestIndex|null=null;
   let loading=true;
   let error='';
   let labelError=false;
@@ -48,6 +53,10 @@
   function itemCategory(itemId:string):string|null{
     return labels?.getItem(itemId)?.sourceCategory??null;
   }
+  function questTitle(questId:string):string{
+    const quest=questCatalogue?.quests.find((row:any)=>row.id===questId);
+    return formatPublicGuideText(quest?.names?.[locale]||quest?.names?.en||quest?.internalName||questId);
+  }
   function filterEvents(
     events:readonly NativeEventDefinition[],type:Filter,search:string,
     language:GuideRewardLocale,availableNames:EventRewardItemLabelIndex|null
@@ -65,6 +74,7 @@
   }
   $: visible=filterEvents(source?.events??[],category,query,locale,labels);
   $: selected=visible.find(event=>event.id===selectedKey)??visible[0]??null;
+  $: eventQuests=selected&&eventQuestLinks?eventQuestLinks.getEventQuests(selected.id):[];
   $: selectedRewards=selected?.rewards.filter(row=>
     !highlightItem||row.itemId===highlightItem)??[];
   function clearItemFocus(){
@@ -82,11 +92,25 @@
     url.searchParams.set('event',event.id);
     window.history.replaceState(window.history.state,'',url);
   }
+  async function loadEventQuestSources(eventSource:PublicEventFriendshipRewards){
+    try{
+      const response=await fetch(`${root}quest-index.json`);
+      if(!response.ok)return;
+      const catalog=verifyPublicQuestIndex(await response.json());
+      const links=await loadPublicEventQuestLinks(eventSource,catalog,
+        `${root}${DB03_EVENT_QUEST_FILE}`);
+      if(source===eventSource){questCatalogue=catalog;eventQuestLinks=links;}
+    }catch{
+      // Optional cross-navigation: keep source-authenticated rewards available.
+    }
+  }
   async function load(){
     loading=true;error='';labelError=false;labels=null;
+    questCatalogue=null;eventQuestLinks=null;
     try{
       const read=await loadPublicEventFriendshipRewards(`${root}${DB03_EVENT_FRIENDSHIP_REWARD_FILE}`);
       source=read;
+      void loadEventQuestSources(read);
       const params=new URLSearchParams(window.location.search);
       const focused=resolveEventRewardItemDestination(read,params.get('item'));
       if(focused){
@@ -171,6 +195,17 @@
                 {#if highlightItem}<button type="button" class="all-rewards" on:click={clearItemFocus}>すべて表示</button>{/if}
               </span>
             </div>
+            {#if eventQuests.length}
+              <details class="event-quests" aria-label="原本に関連付けられたクエスト">
+                <summary>関連クエスト（{eventQuests.length}）</summary>
+                <div class="event-quest-grid">
+                  {#each eventQuests as link (link.questId)}
+                    <a href={`${base}/guide/quests/?quest=${link.questId}`} title={`Quest ID ${link.questId}`}>{questTitle(link.questId)}</a>
+                  {/each}
+                </div>
+                <small>原本に記録された関連付けです。開始条件や進行順序ではありません。</small>
+              </details>
+            {/if}
             <div class="reward-grid">
               {#each selectedRewards as reward (reward.relationId)}
                 <div class="reward-row">
@@ -251,6 +286,12 @@
   h2{font-size:clamp(18px,2vw,23px);margin:0 0 5px}
   .native-id{font-size:11px;color:#aa99ba;overflow-wrap:anywhere}
   .label{font-size:12px;color:#d3b8ed;white-space:nowrap}
+  .event-quests{margin:0 0 13px;border:1px solid #514160;border-radius:9px;padding:9px 11px;font-size:12px}
+  .event-quests summary{cursor:pointer;font-weight:650;color:#e5ccf5}
+  .event-quest-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:10px 0}
+  .event-quest-grid a{display:block;border:1px solid #55456b;background:#30243f;border-radius:7px;padding:8px;color:#e4cefb;text-decoration:none;overflow-wrap:anywhere}
+  .event-quest-grid a:hover,.event-quest-grid a:focus-visible{background:#463358}
+  .event-quests small{color:#b5a4c3;font-size:11px}
   .reward-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:7px}
   .reward-row{display:flex;align-items:center;gap:10px;min-width:0;min-height:60px;border:1px solid #483b54;border-radius:9px;padding:9px;background:#2e233a}
   .gift{color:#bca5d1;flex:0 0 22px}
@@ -270,5 +311,5 @@
   .official a{color:#d5aff3;margin-left:6px}
   .status,.empty{color:#bcb0c8;font-size:13px}
   @media(max-width:800px){.workspace{grid-template-columns:minmax(190px,34%) minmax(0,1fr)}.event-list{max-height:calc(100dvh - 190px)}}
-  @media(max-width:600px){.topbar{flex-wrap:wrap}.search{flex-basis:100%;max-width:none}.workspace{grid-template-columns:minmax(0,1fr)}.event-list{max-height:none;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}.reward-detail{grid-column:1}.event-option{padding:10px}.headline h1{white-space:normal}.event-guide{min-height:100dvh}.filters{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px}.filters button{white-space:nowrap}}
+  @media(max-width:600px){.event-quest-grid{grid-template-columns:minmax(0,1fr)}.topbar{flex-wrap:wrap}.search{flex-basis:100%;max-width:none}.workspace{grid-template-columns:minmax(0,1fr)}.event-list{max-height:none;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}.reward-detail{grid-column:1}.event-option{padding:10px}.headline h1{white-space:normal}.event-guide{min-height:100dvh}.filters{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px}.filters button{white-space:nowrap}}
 </style>

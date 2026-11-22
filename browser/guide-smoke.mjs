@@ -371,6 +371,35 @@ try {
     'friendship currency Item-ID direct link selects the default friendship section');
   await limited.close();
 
+  // Exact original ProtoDb Mini Event -> Quest IDs, both directions.
+  // Exclude internal TestEv and do not infer active events or unlock order.
+  const eventQuest=await browser.newPage({viewport:{width:390,height:844}});
+  const eventQuestErrors=[];
+  eventQuest.on('pageerror',e=>eventQuestErrors.push(String(e)));
+  await eventQuest.goto('http://127.0.0.1:4177/Wand/guide/events/?event=DreamlightParkFest_UI_2026',
+    {waitUntil:'domcontentloaded'});
+  const relatedEventQuests=eventQuest.locator('.event-quests');
+  await relatedEventQuests.locator('summary').waitFor({timeout:25000});
+  assert.equal(await relatedEventQuests.evaluate(el=>el.open),false);
+  await relatedEventQuests.locator('summary').click();
+  assert.equal(await relatedEventQuests.locator('a').count(),19);
+  const eventQuestHref=await relatedEventQuests.locator('a[href*="quest=2070001248"]')
+    .first().getAttribute('href');
+  assert.equal(eventQuestHref,'/Wand/guide/quests/?quest=2070001248');
+  await eventQuest.goto(url+'?quest=2070001248',{waitUntil:'domcontentloaded'});
+  const relatedQuestEvents=eventQuest.locator('.quest-events');
+  await relatedQuestEvents.locator('summary').waitFor({timeout:25000});
+  assert.equal(await relatedQuestEvents.evaluate(el=>el.open),false);
+  await relatedQuestEvents.locator('summary').click();
+  assert.equal(await relatedQuestEvents.locator('a').count(),2);
+  assert.equal(await relatedQuestEvents.locator('a[href*="event=DreamlightParkFest_UI_2026"]')
+    .count(),1);
+  assert.equal(await eventQuest.evaluate(()=>
+    document.documentElement.scrollWidth<=innerWidth+2),true,
+    'native Event-to-Quest cross links stay within mobile viewport');
+  assert.deepEqual(eventQuestErrors,[],eventQuestErrors.join('\\n'));
+  await eventQuest.close();
+
   // Public Star Path is source-pinned static cache data, not a personal import.
   const star = await browser.newPage({viewport:{width:390,height:844}});
   await star.addInitScript(()=>{Date.now=()=>Date.parse('2026-11-22T12:00:00Z');});

@@ -16,6 +16,10 @@
     type QuestOverrideLootIndex} from '$lib/guide/public-quest-override-loot.ts';
   import {loadPublicQuestTargetReverse,DB03_QUEST_TARGET_REVERSE_FILE,
     type PublicQuestTargetReverseReader} from '$lib/guide/public-quest-target-reverse.ts';
+  import {loadPublicEventFriendshipRewards,DB03_EVENT_FRIENDSHIP_REWARD_FILE,
+    type PublicEventFriendshipRewards} from '$lib/guide/public-event-friendship-rewards.ts';
+  import {loadPublicEventQuestLinks,DB03_EVENT_QUEST_FILE,
+    type PublicEventQuestIndex} from '$lib/guide/public-event-quest-links.ts';
 
   let catalog:any=null;
   let loadError='';
@@ -41,6 +45,8 @@
   let conditionIndex:PublicQuestConditionReader|null=null;
   let rewardIndex:PublicQuestRewardsReader|null=null;
   let overrideIndex:QuestOverrideLootIndex|null=null;
+  let relatedEventSource:PublicEventFriendshipRewards|null=null;
+  let relatedEventIndex:PublicEventQuestIndex|null=null;
   let rewardItemFocus:string|null=null;
   let rewardError='';
   let conditionError='';
@@ -73,6 +79,8 @@
   $: characters=catalog?[...new Set(catalog.quests.map((x:any)=>x.characterId).filter(Boolean))].sort() as string[]:[];
   // Native Mission group association, not an unlock prerequisite or chronological link.
   $: questConditions=selectedRow&&conditionIndex?conditionIndex.getQuest(selectedRow.id):null;
+  $: linkedEventRefs=selectedRow&&relatedEventIndex
+    ?relatedEventIndex.getQuestEvents(selectedRow.id):[];
   $: questRewardInfo=selectedRow&&rewardIndex?rewardIndex.getQuest(selectedRow.id):null;
   $: questOverrideInfo=selectedRow&&overrideIndex?overrideIndex.getQuest(selectedRow.id):null;
   $: relatedQuests=catalog&&selectedRow&&typeof selectedRow.groupId==='string'&&
@@ -83,6 +91,10 @@
   function label(names:Record<string,string>|null|undefined,fallback='',language='ja') {return formatPublicGuideText(names?.[language]||names?.en||Object.values(names||{})[0]||fallback);}
   function questName(row:any,language:string) {return label(row.names,row.internalName||row.id,language);}
   function characterName(id:string|undefined,language:string) {return label(catalog?.characters?.[id||''],id||'',language);}
+  function relatedEventName(eventId:string):string{
+    const event=relatedEventSource?.getEvent('mini_event',eventId);
+    return event?.names?.[locale]||event?.names?.en||eventId;
+  }
   function clearRewardItemFocus(){
     if(!rewardItemFocus)return;
     rewardItemFocus=null;
@@ -187,6 +199,17 @@
       targetLookup={};targetError='';targetLoading=false;
     }
   }
+  async function loadRelatedEventLinks(index:any){
+    try{
+      const events=await loadPublicEventFriendshipRewards(
+        `${prefix}${DB03_EVENT_FRIENDSHIP_REWARD_FILE}`);
+      const links=await loadPublicEventQuestLinks(events,index,
+        `${prefix}${DB03_EVENT_QUEST_FILE}`);
+      if(catalog===index){relatedEventSource=events;relatedEventIndex=links;}
+    }catch{
+      // The Quest Guide stays available if optional event navigation is absent.
+    }
+  }
   async function loadTargetReverse(index:any){
     try{
       const data=await loadPublicQuestTargetReverse(index,
@@ -228,10 +251,12 @@
       catalog=verifyPublicQuestIndex(data);
       conditionIndex=null;conditionError='';
       rewardIndex=null;overrideIndex=null;rewardError='';
+      relatedEventSource=null;relatedEventIndex=null;
       targetReverseIndex=null;targetReverseError=false;
       void loadConditions(catalog);
       void loadRewards(catalog);
       void loadTargetReverse(catalog);
+      void loadRelatedEventLinks(catalog);
       restoreAddressSelection();
     }catch(e){loadError=e instanceof Error?e.message:String(e)}
     finally {loading=false}
@@ -343,6 +368,17 @@
           {#if detailLoading}<p class="status">目標データを検証しています…</p>{/if}
           {#if detailError}<p class="error" role="alert">{detailError}</p>{/if}
           {#if selected}
+            {#if linkedEventRefs.length}
+              <details class="related-quests quest-events" aria-label="原本に関連付けられたイベント">
+                <summary>関連イベント（{linkedEventRefs.length}）</summary>
+                <ul>
+                  {#each linkedEventRefs as link (link.eventId)}
+                    <li><a href={`${base}/guide/events/?event=${link.eventId}`}>{relatedEventName(link.eventId)}</a></li>
+                  {/each}
+                </ul>
+                <p>イベント設定の静的な参照です。開催や解放条件は保証しません。</p>
+              </details>
+            {/if}
             {#if questRewardInfo}
               <details class="quest-rewards" aria-label="クエストの静的報酬候補" open={!!rewardFocus&&rewardFocus.questIds.includes(selectedRow.id)}>
                 <summary>報酬候補（{questRewardInfo.currencies.length+questRewardInfo.lootCandidates.length+(questOverrideInfo?1:0)}件）</summary>
