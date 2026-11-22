@@ -146,7 +146,8 @@ test('future schema number is not a compatibility gate; mismatched SHA and unsaf
     const duplicate=runner(['--save',save,'--catalog',f.catalog,
       '--expected-catalog-sha256',f.expected,'--out',join(f.dir,'invalid.json')]);
     assert.notEqual(duplicate.status,0);
-    assert.equal(duplicate.stderr.includes('PRIVATE'),false);
+    assert.equal(duplicate.stderr.includes('PRIVATE_OWNER_NEVER_LEAK'),false);
+    assert.equal(duplicate.stderr.includes('PRIVATE_DEVICE_ACCOUNT_NEVER_LEAK'),false);
     await assert.rejects(stat(join(f.dir,'invalid.json')),{code:'ENOENT'});
     const git=runner(['--save',join(f.dir,'future.profile'),
       '--catalog',f.catalog,'--expected-catalog-sha256',f.expected,
