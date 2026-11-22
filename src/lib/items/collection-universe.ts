@@ -191,7 +191,6 @@ export function createDb01UniversePredicateClient(
       const records:unknown=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
       check(Array.isArray(records)&&records.length===file.count,'FILE_COUNT');
       const ids=new Set<number>();
-      let index=0;
       for(const record of records){
         if(path==='selectors.json'){
           check(asObj(record)&&safeId(record.setId)&&integer(record.groupIndex)&&
@@ -209,17 +208,11 @@ export function createDb01UniversePredicateClient(
             record.memberships.length>0&&!ids.has(record.itemId),'ITEM_ROW');
           ids.add(record.itemId);
           for(const match of record.memberships)checkMatch(match,manifest);
-          record.memberships.forEach((m:unknown)=>{
-            check(asObj(m)&&
-              m.nativeCategory===(
-                Number(record.itemId)>=40_000_000&&Number(record.itemId)<50_000_000 ?
-                  'Furniture' :
-                Number(record.itemId)>=50_000_000&&Number(record.itemId)<60_000_000 ?
-                  'Clothing':null), 'ITEM_NATIVE_TYPE');
-          });
+          check(new Set(record.memberships.map((m:Db01UniversePredicateMatch)=>
+            m.nativeCategory)).size===1,'MIXED_NATIVE_CLASSES');
           Object.freeze(record.memberships);
         }
-        Object.freeze(record);index++;
+        Object.freeze(record);
       }
       return Object.freeze(records) as readonly BucketRow[];
     })();
