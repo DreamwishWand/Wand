@@ -183,6 +183,18 @@ export function createDb01NativeFacetFilterClient(
     tagSource.sourceSqliteSha256===typeSource.sourceSqliteSha256,
     'SOURCE_VERSION_OR_SQLITE_IDENTITY');
 
+  // Original Furniture field-7 packed Tag IDs were added by the
+  // corrected full v1.26.2 Tag release. The first original-source Tag
+  // archive lacks 112 world-context and 31 universe associations despite
+  // sharing the same catalog Items SHA: a base-source hash alone cannot
+  // distinguish the two derived Tag releases. Fail closed on that known
+  // retired release rather than silently mis-filtering furniture.
+  if(base.gameVersion==='1.26.2'&&base.definitions===39067){
+    require(tagSource.taggedDefinitions===14973&&
+      tagSource.facetCoverage?.worldContextTag===11275&&
+      tagSource.facetCoverage?.disneyUniverse===1997,
+      'RETIRED_INCOMPLETE_TAG_OVERLAY');
+  }
   const source=Object.freeze({
     gameVersion:base.gameVersion,sourceItemsSha256:base.sourceItemsSha256,
     sourceSqliteSha256:tagSource.sourceSqliteSha256,
