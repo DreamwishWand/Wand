@@ -77,13 +77,19 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
       cache.sourcePurchaseFormulaReferenceCount===4&&
       cache.sourceSellFormulaReferenceCount===1&&
       cache.runtimeFormulaEvaluated===false&&
-      cache.actualSellPricesVerified===false,
+      cache.actualSellPricesVerified===false&&
+      view.sourceNativeDynamicCacheGate?.cachedDataPresent===true&&
+      view.sourceNativeDynamicCacheGate.serializedItemPricesCount===8549&&
+      view.sourceNativeDynamicCacheGate.sourceDataCached===true&&
+      view.sourceNativeDynamicCacheGate.runtimeDataCached===null&&
+      view.nativeRuntimeDataCachedVerified===false,
       'DYNAMIC_PRICE_SOURCE_CENSUS');
   }else requireValue(view.nativeStarSettingsVerified===false&&
     view.nativeCookingStarSettings===null&&view.getSourceStarResult(1)===null&&
     view.nativeDynamicCacheVerified===false&&
     view.nativeDynamicPriceCache===null&&
-    view.getSourceCachedDynamicPriceRow(31100053)===null,
+    view.getSourceCachedDynamicPriceRow(31100053)===null&&
+    view.sourceNativeDynamicCacheGate===null,
     'STAR_AND_CACHE_SOURCE_ABSENCE_MISREPORTED');
 
   const originalArchive=openPrivateSrc02Archive(r5);
@@ -119,6 +125,11 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
       a.nativeMealPriceProviderPlan.itemSpecificCalculatorMayBeCalled===true&&
       a.nativeMealPriceProviderPlan.actualUnitSellPrice===null&&
       a.sourceIngredientProviderPlans.length===2&&
+      a.sourceIngredientStaticProviderSimulations.length===2&&
+      a.sourceIngredientStaticProviderSimulations.every(rows=>
+        rows.every(r=>r.actualSellPrice===null&&
+          r.originalRuntimeProviderSelected===null))&&
+      a.nativeStaticProviderResultsAreSourceConditionalOnly===true&&
       a.sourceIngredientProviderPlans.every(p=>
         p.itemSellPriceCalculatorInterfaceInNativeMetadata===false&&
         p.actualUnitSellPrice===null)&&
@@ -157,10 +168,21 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
   let withConfiguredSoftSell=0,withoutConfiguredSoftSell=0;
   let cachedDynamicBuyIngredientRows=0,cachedDynamicSellIngredientRows=0;
   let fixedIngredientsWithNativeItemCalculator=0;
+  let fixedIngredientsWithConditionalStaticProviderMatch=0;
   for(const [ingredientId,mealId] of fixedIngredients){
     const evidence=view.inspect(mealId,fakeMealData([ingredientId]));
     const source=evidence.sourceIngredientStaticSellEvidence;
     const priceProvider=view.getNativeSellPriceProviderPlan(ingredientId);
+    const conditionalStatic=view.getSourceStaticSellProviderSimulations(ingredientId);
+    requireValue(conditionalStatic.every(r=>
+      r.itemId===ingredientId&&
+      r.currencyId===80000000&&
+      r.originalRuntimeProviderSelected===null&&
+      r.actualSellPrice===null),
+      'STATIC_NATIVE_PROVIDER_ORIGINAL_SOURCE_CONDITIONAL_ONLY');
+    const conditionalMatch=conditionalStatic.filter(r=>
+      r.conditionalNativeTryGetSellPriceSucceeded);
+    if(conditionalMatch.length>0)fixedIngredientsWithConditionalStaticProviderMatch++;
     const originalClass=({302:'CropItemData',310:'FishItemData',
       311:'IngredientItemData'})[Math.floor(ingredientId/100000)];
     requireValue(originalClass!==undefined&&
@@ -203,6 +225,11 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
       requireValue(source.ingredientRows[0].sourceStaticSellOptions.length===1&&
         source.ingredientRows[0].sourceStaticSellOptions[0].currencyId===80000000,
         'NATIVE_SOFT_SELL_CURRENCY');
+      requireValue(conditionalMatch.length===1&&
+        conditionalMatch[0].sourceSellCostAmountFieldPresent===true&&
+        conditionalMatch[0].conditionalNativeOutPrice===
+          source.ingredientRows[0].configuredUnitSoftSellAmount,
+        'STATIC_NATIVE_PROVIDER_SOURCE_VALUE_DISAGREEMENT');
       withConfiguredSoftSell++;
     }else{
       requireValue(source.ingredientsWithoutObservedStaticSoftAmount===1&&
@@ -253,6 +280,10 @@ export async function runPrivateMealPriceSmoke(r5Path,staticPricePath,protoDbPat
     fixedIngredientItemsWithConfiguredSoftSell:withConfiguredSoftSell,
     fixedIngredientItemsWithoutStaticSoftSell:withoutConfiguredSoftSell,
     fixedIngredientItemsWithNativeOwnCalculator:fixedIngredientsWithNativeItemCalculator,
+    originalSourceDynamicCacheGateTrue:
+      protoDbPath===undefined?null:view.sourceNativeDynamicCacheGate.sourceDataCached,
+    fixedIngredientsWithConditionalStaticProviderMatch,
+    conditionalStaticProviderMatchIsNotRuntimePrice:true,
     mealNativeItemCalculatorInterfaceSupported:true,
     threeStageNativeTryGetSellPriceTopologyVerified:true,
     nativeActualProviderSelected:false,
