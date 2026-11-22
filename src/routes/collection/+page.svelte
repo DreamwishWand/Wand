@@ -12,6 +12,17 @@
     { id:'it',label:'Italiano' },{ id:'de',label:'Deutsch' },{ id:'es-ES',label:'Español' },
     { id:'zh-CN',label:'简体中文' },{ id:'pt-BR',label:'Português' }
   ];
+  const categoryPictogram:Record<string,string>={
+    Furniture:'chair',Landscaping:'plant','Roads & Fences':'mountain',
+    'Wallpaper & Flooring':'home',Buildings:'home','Environment Effects':'sun',
+    Clothing:'shirt',Appearance:'character','Touch of Magic':'sparkles',
+    'Photo Mode':'camera',Tools:'hammer',Upgrades:'hammer',Characters:'character',
+    Companions:'butterfly',Critters:'butterfly',Mounts:'world',
+    Crafting:'hammer',Meals:'cooking',Ingredients:'plant',Foraging:'plant',
+    Fish:'fish',Gems:'gem',Timebending:'sparkles',Memories:'book',
+    'Board Game':'puzzle',Snippets:'puzzle','Lorekeeper Tales':'book',
+    'Quest Puzzles':'puzzle',Exhibition:'gallery','Source Activity Items':'hammer'
+  };
   const terminology:Record<string,string> = {
     OWNERSHIP_AND_DISCOVERY:'所有・発見',
     OWNERSHIP_STOCK_AND_DISCOVERY:'所有・所持数・発見',
@@ -607,7 +618,7 @@
                         on:click={()=>toggleItemStatus(item.itemId)}
                         aria-label={entries[String(item.itemId)]?.status==='owned'?`${item.label} を未所持にする`:`${item.label} を所持済みにする`}
                         title={entries[String(item.itemId)]?.status==='owned'?'所持済み：押すと未所持':'押すと所持済みに記録'}>
-                        {entries[String(item.itemId)]?.status==='owned'?'✓':'＋'}
+                        <WandIcon name={entries[String(item.itemId)]?.status==='owned'?'check':'plus'} size={20}/>
                       </button>
                     </div>
                   {/each}
@@ -625,7 +636,7 @@
             <div class="facet-grid">
               {#each facets as facet (facet.id)}
                 <button type="button" class="facet-card" disabled={facet.total===0} on:click={()=>chooseFacet(facet.id)}>
-                  <span class="facet-flourish" aria-hidden="true"><WandIcon name="collection" size={20}/></span>
+                  <span class="facet-flourish" aria-hidden="true"><WandIcon name={categoryPictogram[facet.id]??'collection'} size={22}/></span>
                   <strong>{categoryLabel(locale,facet.id)}</strong>
                   {#if facet.total>0}
                     <span>{facet.total.toLocaleString(locale)} items</span>
