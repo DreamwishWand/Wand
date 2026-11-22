@@ -9,7 +9,7 @@
   import {localSaveSession,selectLocalSaveFile,closeLocalSaveFile} from '$lib/ui/local-save-session';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {shellCopy,type TutorialKey} from '$lib/ui/shell-copy';
-  import {afterNavigate} from '$app/navigation';
+  import {afterNavigate,goto} from '$app/navigation';
   import {
     UI_LANGUAGES,UI_THEMES,readWandLanguage,setWandLanguage,readWandTheme,setWandTheme,
     watchWandLanguage,type WandLanguage,type WandTheme
@@ -256,7 +256,9 @@
             <div class="shell-menu-divider"></div>
             <button type="button" on:click={rawSaveBackup}><WandIcon name="download" size={18}/>{copy.saveBackupOriginal}</button>
             <button type="button" disabled title={copy.saveEditUnavailable}><WandIcon name="download" size={18}/>{copy.saveExportEdited}</button>
-            <button type="button" disabled title={copy.saveEditUnavailable}><WandIcon name="edit" size={18}/>{copy.saveOpenEditor}</button>
+            <button type="button" on:click={()=>{saveMenuOpen=false;void goto(base+'/save/preview/');}}>
+              <WandIcon name="edit" size={18}/>{copy.saveOpenEditor}
+            </button>
             <button type="button" on:click={openGlobalSavePicker}><WandIcon name="folder" size={18}/>{copy.saveReplace}</button>
             <div class="shell-menu-divider"></div>
             <button type="button" on:click={closeSelectedSave}><WandIcon name="close" size={18}/>{copy.saveClose}</button>
