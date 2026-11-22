@@ -183,6 +183,78 @@ function validatedDb04GridReceipt(source:unknown):Db04GridPathReceipt{
   return source as unknown as Db04GridPathReceipt;
 }
 
+export interface Db04GridObjectSourceRow{
+  readonly localOrdinal:number;
+  readonly sourceStatus:
+    |'saved_grid_source_unavailable'
+    |'not_in_partial_source'
+    |'ambiguous_source_candidates'
+    |'diff_structural_candidate_hash_unverified'
+    |'full_exact_source_path_candidate';
+  readonly candidateCount:number;
+  readonly nativeSizeX:number|null;
+  readonly nativeSizeY:number|null;
+  readonly tessellationFactor:number|null;
+}
+export interface Db04GridObjectSourceReceipt{
+  readonly contract:'wand.db05.db04-grid-object-source-context@1';
+  readonly rows:readonly Db04GridObjectSourceRow[];
+  readonly sourceCoverageComplete:false;
+  readonly sourceArchiveRechecked:false;
+  readonly savedGridIdentityVerified:false;
+  readonly worldCoordinateTransformVerified:false;
+  readonly placementLegalityVerified:false;
+  readonly editPermissionAuthorized:false;
+}
+function validatedDb04GridObjectSources(input:unknown):Db04GridObjectSourceReceipt{
+  if(!object(input)||!exact(input,[
+    'contract','rows','sourceCoverageComplete','sourceArchiveRechecked',
+    'savedGridIdentityVerified','worldCoordinateTransformVerified',
+    'placementLegalityVerified','editPermissionAuthorized'
+  ])||input.contract!=='wand.db05.db04-grid-object-source-context@1'||
+     !Array.isArray(input.rows)||input.rows.length>20000||
+     input.sourceCoverageComplete!==false||
+     input.sourceArchiveRechecked!==false||
+     input.savedGridIdentityVerified!==false||
+     input.worldCoordinateTransformVerified!==false||
+     input.placementLegalityVerified!==false||
+     input.editPermissionAuthorized!==false)
+    throw new TypeError('DB05_DB04_OBJECT_SOURCE_RECEIPT_INVALID');
+  const validStatuses=[
+    'saved_grid_source_unavailable','not_in_partial_source',
+    'ambiguous_source_candidates','diff_structural_candidate_hash_unverified',
+    'full_exact_source_path_candidate'
+  ];
+  const rows=(input.rows as unknown[]).map((v,i)=>{
+    if(!object(v)||!exact(v,[
+      'localOrdinal','sourceStatus','candidateCount','nativeSizeX',
+      'nativeSizeY','tessellationFactor'
+    ])||v.localOrdinal!==i+1||
+      !validStatuses.includes(String(v.sourceStatus))||
+      !nonnegative(v.candidateCount,20000)||
+      (v.nativeSizeX===null)!==(v.nativeSizeY===null)||
+      (v.nativeSizeX!==null &&
+        (!nonnegative(v.nativeSizeX,65536)||v.nativeSizeX===0))||
+      (v.nativeSizeY!==null &&
+        (!nonnegative(v.nativeSizeY,65536)||v.nativeSizeY===0))||
+      (v.tessellationFactor!==null&&
+        (!nonnegative(v.tessellationFactor,256)||v.tessellationFactor===0))||
+      (v.nativeSizeX!==null&&v.nativeSizeY!==null&&
+        Number(v.nativeSizeX)*Number(v.nativeSizeY)>16777216)||
+      (['full_exact_source_path_candidate',
+        'diff_structural_candidate_hash_unverified'].includes(String(v.sourceStatus))
+        ?v.candidateCount!==1
+        :v.sourceStatus==='ambiguous_source_candidates'
+        ?Number(v.candidateCount)<2
+        :v.candidateCount!==0)||
+      (Number(v.candidateCount)!==1&&
+        (v.nativeSizeX!==null||v.tessellationFactor!==null)))
+      throw new TypeError('DB05_DB04_OBJECT_SOURCE_ROW_INVALID');
+    return v as unknown as Db04GridObjectSourceRow;
+  });
+  return {...input,rows} as unknown as Db04GridObjectSourceReceipt;
+}
+
 interface Db03MissionSlotReceipt {
   contract:'wand.db05.db03-mission-slot-summary@1';
   status:'not_observed'|'incompatible_structure'|'partial_inconclusive'|
@@ -566,7 +638,8 @@ type Reply =
   | { kind: 'slots'; rows: SaveEditableSlot[];
       grid:SaveGridReferenceReport;
       contract:'wand.db05.editable-slots@1'; complete:true; writerAuthorized:false }
-  | {kind:'db04';receipt:Db04GridPathReceipt}
+  | {kind:'db04';receipt:Db04GridPathReceipt;
+      sources:Db04GridObjectSourceReceipt}
   | {kind:'db03';receipt:Db03MissionSlotReceipt}
   | {kind:'grid-instances';receipt:GridInstancePreview};
 
@@ -876,6 +949,8 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
       // or Save grid paths leave this isolated Worker.
       const graphJson=new TextDecoder('utf-8',{fatal:true}).decode(graph as Uint8Array);
       const source=new WorldReferenceIndex(JSON.parse(graphJson));
+      if(source.target.gameVersion!=='1.26.2')
+        throw new TypeError('DB05_DB04_SOURCE_VERSION_UNSUPPORTED');
       const verified=source.toDb00WorldRelationsSidecar();
       const witness=JSON.stringify({
         contract:'wand.db05.db04-grid-path-witness@2',
@@ -886,7 +961,23 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
       });
       const receipt=validatedDb04GridReceipt(
         JSON.parse(rust.match_db04_grid_paths(witness)));
-      response={kind:'db04',receipt};
+      const detailWitness=JSON.stringify({
+        contract:'wand.db05.db04-object-source-witness@1',
+        gridRefs:verified.gridRefs.map(ref=>{
+          const data=source.originalGridDataPathCandidates(
+            ref.gridDataPath).originalGridDataFile;
+          return {
+            layoutId:ref.layoutId,gridDataPath:ref.gridDataPath,
+            nativeGridId:ref.nativeGridId,
+            nativeSizeX:data?.nativeSizeX??null,
+            nativeSizeY:data?.nativeSizeY??null,
+            tessellationFactor:ref.tessellationFactor
+          };
+        })
+      });
+      const sources=validatedDb04GridObjectSources(
+        JSON.parse(rust.match_db04_grid_object_sources(detailWitness)));
+      response={kind:'db04',receipt,sources};
     }else if(listing){
       const extracted:unknown=JSON.parse(rust.list_existing_slots());
       const grid=validateGridReport(
