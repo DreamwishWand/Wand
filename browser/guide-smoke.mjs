@@ -68,6 +68,10 @@ try {
 
   await page.setViewportSize({width: 390, height: 844});
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 2), true, 'mobile horizontal overflow');
+  await search.fill('');
+  await page.waitForFunction(()=>document.querySelectorAll('.quest-row').length>=35);
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),true,
+    'mobile full quest list with long untranslated/native names must wrap without horizontal overflow');
   await chooseLanguage(page,'ja');
 
   // Original-native selector ID 30000031 resolves through the published,
@@ -153,6 +157,43 @@ try {
   assert.match(await invalidStep.locator('.detail .step h3').innerText(),/ステップ 1/,
     'ambiguous duplicate query never resolves a random step');
   await invalidStep.close();
+
+  // Native Mission groups connect related static quest definitions, never
+  // imply a prerequisite or the player's unlock/finished state.
+  const related=await browser.newPage({viewport:{width:390,height:844}});
+  await related.goto(url+'?quest=2070000620',{waitUntil:'domcontentloaded'});
+  await related.locator('.detail .step').first().waitFor({timeout:20000});
+  assert.equal(await related.locator('.related-quests').evaluate(el=>el.open),false,
+    'source group navigation must be collapsed until requested');
+  assert.match(await related.locator('.related-quests summary').innerText(),/13件/);
+  await related.locator('.related-quests summary').click();
+  assert.equal(await related.locator('.related-quests a').count(),13,
+    'Welcome to Dreamlight Valley has exactly 13 other source-group quests');
+  assert.match(await related.locator('.related-quests').innerText(),/解放条件や達成順序を示すものではありません/);
+  assert.equal(await related.locator('.related-quests a').filter({hasText:'ドリームキャッスル'}).getAttribute('href'),
+    '/Wand/guide/quests/?quest=2070000629');
+  await related.locator('.related-quests a').filter({hasText:'ドリームキャッスル'}).click();
+  await related.waitForFunction(()=>location.search.includes('quest=2070000629'));
+  await related.locator('.detail-header h2').filter({hasText:'ドリームキャッスル'}).waitFor({timeout:20000});
+  await related.goBack();
+  await related.waitForFunction(()=>location.search.includes('quest=2070000620'));
+  await related.locator('.detail-header h2').filter({hasText:'ドリームライトバレーへようこそ'}).waitFor({timeout:20000});
+  await related.locator('.related-quests summary').click();
+  const relatedWidth=await related.evaluate(()=>({
+    viewport:innerWidth,
+    scroll:document.documentElement.scrollWidth,
+    offenders:[...document.querySelectorAll('main *')].filter(el=>{
+      const r=el.getBoundingClientRect();return r.right>innerWidth+2||r.left< -2;
+    }).slice(0,12).map(el=>({tag:el.tagName,class:el.className?.toString().slice(0,80),
+      width:Math.round(el.getBoundingClientRect().width),right:Math.round(el.getBoundingClientRect().right)}))
+  }));
+  assert(relatedWidth.scroll<=relatedWidth.viewport+2,
+    'expanded related quest links must not overflow on phones: '+JSON.stringify(relatedWidth));
+  await related.goto(url+'?quest=2070000651',{waitUntil:'domcontentloaded'});
+  await related.locator('.detail .step').first().waitFor({timeout:20000});
+  assert.equal(await related.locator('.related-quests').count(),0,
+    'a singleton Realm group must not invent a related quest or prerequisite');
+  await related.close();
 
   // Character names are source labels (not proof of unlocked residents).
   // Reuse only the existing verified public quest index; no private sources.

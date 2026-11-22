@@ -22,6 +22,7 @@
   let objective='';
   let limit=40;
   let selectionTicket=0;
+  let detailPanel:HTMLElement|null=null;
   let activeStep=0;
   let showAllSteps=false;
   $: visibleSteps=selected?.steps?
@@ -36,6 +37,10 @@
 
   $: filtered=catalog?collectWindow((offset:number,batch:number)=>filterPublicQuests(catalog,{query:query.slice(0,120),locale,character,objective,section,offset,limit:batch}),limit,'rows'):{total:0,rows:[]};
   $: characters=catalog?[...new Set(catalog.quests.map((x:any)=>x.characterId).filter(Boolean))].sort() as string[]:[];
+  // Native Mission group association, not an unlock prerequisite or chronological link.
+  $: relatedQuests=catalog&&selectedRow&&typeof selectedRow.groupId==='string'&&
+    catalog.groups&&Object.hasOwn(catalog.groups,selectedRow.groupId)
+    ?catalog.quests.filter((row:any)=>row.groupId===selectedRow.groupId&&row.id!==selectedRow.id):[];
   $: objectives=catalog?[...new Set(catalog.quests.flatMap((x:any)=>x.objectiveKinds))].sort() as string[]:[];
 
   function label(names:Record<string,string>|null|undefined,fallback='',language='ja') {return formatPublicGuideText(names?.[language]||names?.en||Object.values(names||{})[0]||fallback);}
@@ -195,7 +200,7 @@
         {#if filtered.total>limit}<div class="auto-sentinel" use:autoAppend={{hasMore:()=>filtered.total>limit,load:()=>limit+=40}} role="status" aria-label="スクロールでクエストを追加表示"></div>{/if}
         {#if filtered.total===0}<p class="empty">該当するクエストはありません。</p>{/if}
       </section>
-      <section class="detail" aria-label="クエスト詳細">
+      <section class="detail" aria-label="クエスト詳細" bind:this={detailPanel}>
         {#if !selectedRow}
           <p class="placeholder">左の一覧からクエストを選択してください。</p>
         {:else}
@@ -270,6 +275,28 @@
                 {/each}
               </section>
             {/each}
+            {#if relatedQuests.length}
+              <details class="related-quests">
+                <summary>関連クエスト（{relatedQuests.length}件）</summary>
+                <ul>
+                  {#each relatedQuests as linked (linked.id)}
+                    <li>
+                      <a href={`${base}/guide/quests/?quest=${linked.id}`}
+                        on:click={(event)=>{
+                          if(event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
+                          event.preventDefault();
+                          void openQuest(linked);
+                          if(detailPanel){
+                            detailPanel.scrollTop=0;
+                            detailPanel.scrollIntoView({block:'start'});
+                          }
+                        }}>{questName(linked,locale)}</a>
+                    </li>
+                  {/each}
+                </ul>
+                <p>ゲーム原本の同一グループに属するクエストです。解放条件や達成順序を示すものではありません。</p>
+              </details>
+            {/if}
           {/if}
         {/if}
       </section>
@@ -303,8 +330,10 @@
   .workspace{display:grid;grid-template-columns:minmax(270px,.85fr) minmax(0,1.5fr);gap:15px;align-items:start}
   .results,.detail{background:#1d1628;border:1px solid #4c3d5e;border-radius:15px;padding:15px;min-width:0}
   .count{font-size:12px;color:#bea9ce;margin:1px 4px 12px}
-  .quest-row{display:flex;flex-direction:column;align-items:start;text-align:left;width:100%;gap:5px;padding:13px 14px;border:1px solid transparent;border-radius:9px;background:none;color:inherit;cursor:pointer}
-  .quest-row:hover,.quest-row.active{background:#302440;border-color:#654b85}.quest-row strong{font-size:14px}.quest-row small{color:#aa9cb7;font-size:11px}
+  .quest-row{display:flex;flex-direction:column;align-items:start;text-align:left;width:100%;max-width:100%;min-width:0;box-sizing:border-box;gap:5px;padding:13px 14px;border:1px solid transparent;border-radius:9px;background:none;color:inherit;cursor:pointer}
+  .quest-row:hover,.quest-row.active{background:#302440;border-color:#654b85}
+  .quest-row strong,.quest-row small{display:block;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;white-space:normal}
+  .quest-row strong{font-size:14px}.quest-row small{color:#aa9cb7;font-size:11px}
   button{cursor:pointer}.auto-sentinel{height:18px;margin-top:8px}
   .detail{position:sticky;top:16px;max-height:calc(100vh - 28px);overflow:auto;scrollbar-width:thin}.placeholder,.empty{color:#ac9dbb;padding:20px 4px}
   .detail-header{border-bottom:1px solid #514260;padding:0 0 12px;margin-bottom:12px}.detail-header h2{font-size:21px;margin:4px 0}.detail-header p{font-size:13px;color:#c9b8db;margin:0}
@@ -321,6 +350,13 @@
   .step-permalink{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:space-between;color:#b9a5ca;font-size:12px;margin:4px 0 12px}
   .step-permalink a{color:#d9baff;text-underline-offset:3px}
   .step{border-top:1px solid #40344b;padding:13px 0}.step h3{font-size:15px;margin:0 0 8px}.step p{font-size:13px;color:#c2b4cb}.step ol{margin:0;padding-left:25px}.step li{padding:6px 0 8px;font-size:14px}.step li small{display:block;color:#9588a5;font-size:11px;margin-top:3px}
+  .related-quests{border-top:1px solid #4b3b5e;margin-top:15px;padding:13px 0 4px;font-size:12px;color:#c6b1d8;min-width:0;max-width:100%;box-sizing:border-box;overflow-wrap:anywhere}
+  .related-quests summary{cursor:pointer;font-size:13px;font-weight:650;color:#ddc5f7}
+  .related-quests ul{list-style:none;margin:12px 0 6px;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;min-width:0;max-width:100%;box-sizing:border-box}
+  .related-quests li{min-width:0;overflow:hidden}
+  .related-quests a{display:block;max-width:100%;box-sizing:border-box;padding:9px 10px;border-radius:7px;border:1px solid #524063;color:#e4d1f1;text-decoration:none;overflow-wrap:anywhere;word-break:break-word}
+  .related-quests a:hover,.related-quests a:focus-visible{background:#352643}
+  .related-quests p{margin:10px 0 0;line-height:1.5;color:#a799b8;font-size:11px}
   .source-amount{color:#c2addc!important}
   .source-id{font-size:11px;color:#ab9abd;margin:5px 0}
   .source-id summary{cursor:pointer;width:max-content;max-width:100%;color:#bda6d1}
@@ -332,5 +368,6 @@
   .target-chip small{font-size:10px!important;color:#bdabd0!important;margin:0!important}
   .error{color:#ffb5bc}.status{color:#d0b4e7}footer{margin-top:28px;color:#a99db6;font-size:12px}footer a{color:#c8a4f6}
   @media(max-width:850px){.searchbar{grid-template-columns:1fr 1fr}.workspace{grid-template-columns:1fr}.detail{position:static;max-height:none}}
+  @media(max-width:520px){.related-quests ul{grid-template-columns:1fr}}
   @media(max-width:510px){.quests-public{padding:18px 12px 70px}.searchbar{grid-template-columns:1fr}}
 </style>
