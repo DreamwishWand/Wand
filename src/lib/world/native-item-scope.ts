@@ -61,14 +61,9 @@ export interface Db04NativeItemScopeClient {
   byUniverseTag(tag:string,evidence:'direct'|'set_candidate',
     page?:Readonly<{offset:number;limit:number}>):Db04NativeScopePage;
 }
-interface OriginalScopeAudit {
-  readonly schema:typeof DB04_NATIVE_ITEM_SCOPE_SCHEMA;
-  readonly sourcePlatform:'Steam';
-  readonly gameVersion:'1.26.2';
-  readonly privateOnly:true;
-  readonly publicationAuthorized:false;
-  readonly sourceSha256:Readonly<Record<string,string>>;
+interface NormalizedScopeAudit {
   readonly rowsSha256:string;
+  readonly sourceSha256:Readonly<Record<string,string>>;
   readonly counts:Readonly<Record<'items'|'world_direct'|'universe_direct'|
     'universe_set_candidate'|'universe_any_evidence',number>>;
   readonly byWorldTag:Readonly<Record<string,number>>;
@@ -98,25 +93,65 @@ function sortedUnique<T extends string|number>(v:unknown,p:(v:unknown)=>v is T):
   }
   return true;
 }
-function checkAudit(v:unknown):asserts v is OriginalScopeAudit{
+/**
+ * The archived 2026-11-22 source ZIP uses originalSourceSha256/camelCase
+ * ledgers. The current offline extraction command emits sourceSha256 and
+ * snake_case. Both are the same explicit six SHA-pinned original files and
+ * exactly the same row schema; no other unrecognized audit variant is allowed.
+ */
+function normalizeAudit(v:unknown):NormalizedScopeAudit{
   check(obj(v)&&v.schema===DB04_NATIVE_ITEM_SCOPE_SCHEMA&&
     v.sourcePlatform==='Steam'&&v.gameVersion==='1.26.2'&&
     v.privateOnly===true&&v.publicationAuthorized===false&&
-    goodHash(v.rowsSha256)&&obj(v.sourceSha256)&&obj(v.counts)&&
-    obj(v.byWorldTag),'PRIVATE_CURRENT_SOURCE_REQUIRED');
-  // Capture checked records in locals so callback closures retain TS narrowing.
-  const sourceSha256=v.sourceSha256;
-  const counts=v.counts;
-  check(obj(sourceSha256)&&Object.keys(sourceSha256).length===ORIGINAL_FILES.length&&
-    ORIGINAL_FILES.every(p=>goodHash(sourceSha256[p])),
+    goodHash(v.rowsSha256)&&obj(v.counts)&&obj(v.byWorldTag),
+    'PRIVATE_CURRENT_SOURCE_REQUIRED');
+  const archived=obj(v.originalSourceSha256);
+  const current=obj(v.sourceSha256);
+  check(archived!==current,'AMBIGUOUS_AUDIT_VARIANT');
+  const original=archived?v.originalSourceSha256:v.sourceSha256;
+  check(obj(original)&&Object.keys(original).length===ORIGINAL_FILES.length&&
+    ORIGINAL_FILES.every(p=>goodHash(original[p])),
     'SOURCE_ORIGINAL_SHA_SET');
-  const counters=['items','world_direct','universe_direct',
-    'universe_set_candidate','universe_any_evidence'] as const;
-  check(obj(counts)&&Object.keys(counts).length===counters.length&&
-    counters.every(c=>nonnegative(counts[c]))&&counts.items===13202,
+  const sourceSha256=Object.freeze({...original}) as Record<string,string>;
+  const rawCounts=v.counts;
+  const keys=archived?
+    ['items','worldDirect','universeDirect','universeSetCandidate','universeAnyEvidence']:
+    ['items','world_direct','universe_direct','universe_set_candidate','universe_any_evidence'];
+  check(obj(rawCounts)&&Object.keys(rawCounts).length===keys.length&&
+    keys.every(k=>nonnegative(rawCounts[k]))&&rawCounts.items===13202,
     'AUDIT_COUNTS');
-  check(Object.entries(v.byWorldTag).every(([k,count])=>
+  const counts=Object.freeze({
+    items:rawCounts.items as number,
+    world_direct:rawCounts[keys[1]] as number,
+    universe_direct:rawCounts[keys[2]] as number,
+    universe_set_candidate:rawCounts[keys[3]] as number,
+    universe_any_evidence:rawCounts[keys[4]] as number
+  });
+  const rawWorldCounts=v.byWorldTag;
+  check(obj(rawWorldCounts)&&Object.entries(rawWorldCounts).every(([k,count])=>
     WORLD_SET.has(k)&&nonnegative(count)&&count>0),'AUDIT_WORLD_TAGS');
+  if(v.worlds!==undefined)check(Array.isArray(v.worlds)&&
+    JSON.stringify(v.worlds)===JSON.stringify(DB04_WORLD_TAGS),
+    'ARCHIVED_WORLD_TAG_DEFINITIONS');
+  if(v.importStatus!==undefined)check(
+    v.importStatus==='private_candidate_only_not_merged_into_public_catalog',
+    'ARCHIVED_PRIVATE_STATUS');
+  if(v.byNativeCategory!==undefined){
+    check(obj(v.byNativeCategory)&&
+      Object.keys(v.byNativeCategory).length===CATEGORIES.length,
+      'ARCHIVED_CATEGORY_LEDGER');
+    for(const category of CATEGORIES){
+      const stats=v.byNativeCategory[category];
+      check(obj(stats)&&stats.items===CATEGORY_COUNTS[category],
+        'ARCHIVED_CATEGORY_COUNT');
+    }
+  }
+  return Object.freeze({
+    rowsSha256:v.rowsSha256 as string,
+    sourceSha256,
+    counts,
+    byWorldTag:Object.freeze({...rawWorldCounts}) as Record<string,number>
+  });
 }
 function checkRow(v:unknown):asserts v is Db04NativeItemScopeRow{
   check(obj(v)&&Object.keys(v).length===6&&goodId(v.itemId)&&
@@ -190,8 +225,7 @@ export async function createDb04NativeItemScopeClient(args:{
   check(auditDigest===args.expectedAuditSha256&&
     rowsDigest===args.expectedRowsSha256,'TRUSTED_SHA_MISMATCH');
   const auditUnknown:unknown=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(auditRaw));
-  checkAudit(auditUnknown);
-  const audit=auditUnknown;
+  const audit=normalizeAudit(auditUnknown);
   check(audit.rowsSha256===rowsDigest,'AUDIT_ROWS_HASH_MISMATCH');
   const text=new TextDecoder('utf-8',{fatal:true}).decode(rowsRaw);
   check(text.endsWith('\n'),'INCOMPLETE_JSONL');
