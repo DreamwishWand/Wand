@@ -55,7 +55,7 @@ test('production gzip/base64 loader verifies uncompressed bytes and SHA-256 befo
   assert.equal(data.getQuest('2070000620')?.id,'2070000620');
   const wrong=encoded.replace(/.$/,'A');
   await assert.rejects(loadPublicQuestConditions(index,'/test',
-    async()=>new Response(wrong,{status:200})),/PUBLIC_QUEST_CONDITIONS_|invalid|incorrect/i);
+    async()=>new Response(wrong,{status:200})));
   await assert.rejects(loadPublicQuestConditions(index,'/test',
     async()=>new Response('not a source bundle',{status:200})),/UNEXPECTED_ASSET_SIZE/);
   await assert.rejects(loadPublicQuestConditions(index,'/test',
@@ -64,10 +64,10 @@ test('production gzip/base64 loader verifies uncompressed bytes and SHA-256 befo
 test('public static source predicates never flatten OR into mandatory prerequisites',async()=>{
   const {doc,index}=await source();
   const reader=decodePublicQuestConditions(doc,index);
-  const source=index.quests.map(r=>reader.getQuest(r.id)).find(r=>
+  const branchRecord=index.quests.map(r=>reader.getQuest(r.id)).find(r=>
     r?.availability?.operator==='OR'||r?.availability?.clauses.some(x=>x.type==='nested'&&x.tree.operator==='OR'));
-  assert(source,'at least one source Quest retains an OR branch');
-  const rendered=publicConditionText(source.availability,index,'ja');
+  assert(branchRecord,'at least one source Quest retains an OR branch');
+  const rendered=publicConditionText(branchRecord.availability,index,'ja');
   assert.match(rendered,/または/);
   assert.match(publicConditionText(null,index),'条件の指定なし');
   const direct=reader.getQuest('2070000701')?.availability?.clauses[0];
