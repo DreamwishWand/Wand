@@ -506,10 +506,10 @@
                r.receipt.changedCount!==edits?.length
              : r.receipt?.contract!=='wand.db05.grid-coordinate-preview@1'||
                r.receipt.changed!==true)||
-           r.receipt.lexicalBytesPreserved!==true||
-           r.receipt.reopenVerified!==true||
-           r.receipt.writerAuthorized!==false||
-           r.receipt.exportAuthorized!==false){
+           r.receipt?.lexicalBytesPreserved!==true||
+           r.receipt?.reopenVerified!==true||
+           r.receipt?.writerAuthorized!==false||
+           r.receipt?.exportAuthorized!==false){
           coordinateState='error';return;
         }
         coordinateSnapshot=batchMode
