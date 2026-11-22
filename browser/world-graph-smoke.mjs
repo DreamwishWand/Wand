@@ -19,6 +19,9 @@ const GRID=LAYOUT+'#grid=1';
 const EMPTY=LAYOUT+'#grid=2';
 const EMPTY_PATH='GridData/Village04/EmptyOriginalGrid.json';
 const UNLINKED=LOOSE+'#grid=0';
+const UNLINKED_EMPTY_LAYOUT='SceneLayouts/Houses/EmptyOriginalRoom.json';
+const UNLINKED_EMPTY_PATH='GridData/Houses/EmptyOriginalRoom.json';
+const UNLINKED_EMPTY=UNLINKED_EMPTY_LAYOUT+'#grid=0';
 const GRAPH_URL='http://127.0.0.1:4178/Wand/world/preview/';
 
 /** Entirely synthetic original-world ZIP, created in this test only. */
@@ -154,9 +157,11 @@ function syntheticSource(version='1.26.2'){
     layouts:[
       makeLayout(ROOT,0,WORLD,null),
       makeLayout(LAYOUT,105,WORLD,AREA),
-      makeLayout(LOOSE,2,null,null)
+      makeLayout(LOOSE,2,null,null),
+      makeLayout(UNLINKED_EMPTY_LAYOUT,0,null,null)
     ],
-    gridData:[linkedGridPath,unlinkedGridPath,EMPTY_PATH].map(gridDataPath=>({
+    gridData:[linkedGridPath,unlinkedGridPath,EMPTY_PATH,
+      UNLINKED_EMPTY_PATH].map(gridDataPath=>({
       gridDataPath,nativeSizeX:12,nativeSizeY:10,
       nativeSourceFormat:'original_json_direct_floor_values',
       gridLocalToWorldTransformVerified:false,placementLegalityVerified:false
@@ -166,7 +171,8 @@ function syntheticSource(version='1.26.2'){
       // Exact source Grid with no original default GridObject row.
       // Distinct exact source path: no synthetic Save-path ambiguity.
       makeGrid(LAYOUT,2,EMPTY_PATH,WORLD,AREA,0),
-      makeGrid(LOOSE,0,unlinkedGridPath,null,null,2)
+      makeGrid(LOOSE,0,unlinkedGridPath,null,null,2),
+      makeGrid(UNLINKED_EMPTY_LAYOUT,0,UNLINKED_EMPTY_PATH,null,null,0)
     ],
     initialItemRefs:refs,
     worldCoverage:[{
@@ -178,7 +184,7 @@ function syntheticSource(version='1.26.2'){
       sourceInitialGridObjects:107,
       sourceInitialGridObjectsWithoutVerifiedWorldLink:2,
       worldDefinitionsInSubset:1,nativeAreaLayoutReferences:1,
-      gridReferencesInSubset:3,
+      gridReferencesInSubset:4,
       completeGameHierarchyVerified:false,
       allDlcAndAdventurePackIdsVerified:false,
       worldPlacementPermissionVerified:false,sourceCoverageComplete:false
@@ -289,6 +295,29 @@ try{
   await page.waitForFunction(()=>document.querySelector('.graph-panel .graph-result-head strong')
     ?.textContent?.includes('2個'));
   assert.equal(await panel.locator('tbody tr').count(),1);
+  // The 0-object unlinked original Grid cannot be discovered from any
+  // GridObject row. It must remain navigable through its exact source ID.
+  const unlinkedSelector=panel.getByRole('combobox',{name:'原本関連Grid'});
+  const unlinkedSearch=panel.locator(
+    'input[placeholder="原本Layout・GridDataPath・Grid ID"]');
+  assert.equal(await unlinkedSelector.locator('option').count(),2);
+  await unlinkedSearch.fill('Houses/EmptyOriginalRoom');
+  await page.waitForFunction(()=>document.querySelectorAll(
+    '.graph-panel .graph-related-grids option').length===1);
+  await unlinkedSelector.selectOption(UNLINKED_EMPTY);
+  await panel.getByRole('button',{name:'Gridを開く'}).click();
+  await page.waitForFunction((ref)=>{
+    const controls=document.querySelectorAll('.graph-panel .graph-controls select');
+    return controls[0]?.value==='grid'&&controls[1]?.value===ref;
+  },UNLINKED_EMPTY);
+  await page.waitForFunction(()=>
+    document.querySelector('.graph-panel .graph-result-head strong')
+      ?.textContent?.includes('0件'));
+  await sourceScope.selectOption('unlinked_world');
+  await unlinkedSearch.fill('');
+  await page.waitForFunction(()=>document.querySelector('.graph-panel .graph-result-head strong')
+    ?.textContent?.includes('2個'));
+  assert.equal(await unlinkedSelector.locator('option').count(),2);
   assert.match(await panel.locator('tbody tr').first().innerText(),/未特定/);
   await panel.locator('tbody tr').first()
     .getByRole('button',{name:`原本Grid ${UNLINKED}を表示`}).click();
