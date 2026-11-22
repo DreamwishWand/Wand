@@ -59,6 +59,13 @@ const server = spawn(process.execPath,['node_modules/vite/bin/vite.js','preview'
 let output='';
 server.stderr.on('data',data=>{output+=String(data);});
 server.stdout.on('data',data=>{output+=String(data);});
+async function chooseWandLocale(page,code) {
+  const names={ja:'日本語',en:'English',fr:'Français',it:'Italiano',de:'Deutsch','es-ES':'Español','zh-CN':'简体中文','pt-BR':'Português'};
+  if(!names[code]) throw Error('Unsupported locale '+code);
+  await page.getByRole('button',{name:'表示言語を切り替える'}).click();
+  await page.locator('#wand-language-menu').getByRole('button',{name:names[code],exact:true}).click();
+}
+
 async function ready() {
   for(let i=0;i<80;i++){
     try {const r=await fetch(url);if(r.ok)return;}
@@ -154,7 +161,7 @@ try{
   const search=page.getByRole('searchbox',{name:/8言語/});
   // Locale changes must re-query Rust, not leave cached cards in the prior locale.
   // Item 40005160 has source-verified Japanese/English names; it is a unique search match.
-  const language=page.getByRole('combobox',{name:'アイテム表示言語'});
+  const language={selectOption:(code)=>chooseWandLocale(page,code)};
   await search.fill('40005160');
   await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
   await page.waitForFunction(()=>document.querySelector('.item-card-copy strong')?.textContent?.trim()==='ガラスの靴');
