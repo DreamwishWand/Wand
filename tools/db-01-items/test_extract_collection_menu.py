@@ -41,7 +41,7 @@ class DirectCollectionMenuTests(unittest.TestCase):
         self.set_id = 2120000015
         self.game_name = 'CollectionSet!Synthetic3'
         include = field(2, var(1))
-        ignored = field(1, 1) + field(2, var(2))
+        ignored = field(1, 1) + field(2, var(2) + var(0))
         group = field(1, include) + field(1, ignored) + field(2, field(6, b'\x08\x01'))
         self.original = frame(15,
             field(1, self.set_id) + field(2, self.game_name.encode()) +
@@ -91,7 +91,7 @@ class DirectCollectionMenuTests(unittest.TestCase):
         self.assertEqual(report['directListedItemIds'],1)
         self.assertEqual(report['directListedAssociations'],1)
         self.assertEqual(report['dynamicSelectorsUnresolved'],1)
-        self.assertEqual(report['ignoredExplicitListEntries'],1)
+        self.assertEqual(report['ignoredExplicitListEntries'],2)
         data=json.loads((self.out/'direct-items.json').read_bytes())
         self.assertEqual(data[0]['itemId'],1)
         self.assertEqual(data[0]['memberships'][0]['submenu'],'Foraging')
