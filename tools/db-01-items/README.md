@@ -157,10 +157,10 @@ key and source SHA against the existing `Db01CatalogClient`. Its
 `getItem(id)` / `getItems(ids)` calls preserve all source-exact Tag references
 and multiple Disney-universe/source-world-context tags.
 
-The initial current-source verified private output identifies **14,861**
-definitions containing **67,089** original Tag-ID references. Source
-association coverage by group: clothing slot 2,062; furniture kind 6,190;
-Disney-universe 1,966; world-context 11,163; colors 7,663; furniture style
+The initial current-source verified private output identifies **14,973**
+definitions containing **67,377** original Tag-ID references. Source
+association coverage by group: clothing slot 2,062; furniture kind 6,248;
+Disney-universe 1,997; world-context 11,275; colors 7,663; furniture style
 4,778; clothing style 1,872; ingredient kind 469; meal kind 618. These counts
 overlap. All 39,067 source definitions, including those without a proven Tag
 association, are queryable. An unknown field remains unknown.
@@ -280,6 +280,31 @@ The report separates confirmed cross-source agreements from unverified old
 metadata. Different versions and game platforms cannot be equated merely
 because an Item ID collides. The resulting private candidate file is *never*
 automatically applied to DB-00 or a current version of Collection.
+
+### Cross-service source-tag completeness check (2026-11-22)
+
+Current-version Collection scope evidence in the same owner-private
+SRC-01 Drive folder was independently generated from `ActivityItem`,
+`Clothing`, `Furniture`, `Trimming`, `Set` and `Tag` source files.
+Comparing its **13,202 native item IDs** against the complete DB-01
+Tag overlay exposed 112 missing furniture world-context links and 31 missing
+original Disney-universe links. Original Furniture wire field **7** stores a
+packed Tag-ID list for these items (distinct from the scalar subtype candidate
+in other furniture definitions). `TAG_FIELDS['Furniture']` now includes 7.
+
+After regenerating all 39,067 owner-private definitions with this field:
+- Original Tag references increase from 67,089 to **67,377**.
+- Definitions with a source Tag association increase from 14,861 to **14,973**.
+- Direct world-tag disagreements: **0 / 13,202**.
+- Direct universe-tag disagreements: **0 / 13,202**.
+
+The private source-to-source comparison report retains independent
+manifest and SHA-256 pins for both data producers. The newer Tag overlay
+is an immutable, owner-private **v2 data release** that retains the same
+versioned TypeScript schema; the older release is retained for rollback.
+This is proof of matching original direct Tag references, NOT evidence
+of where an item can be acquired, or user DLC entitlement. Set-derived
+Disney-universe names remain **candidates** (not direct tags).
 
 **Evidence boundaries:** `nativeCategory` is a source definition class, not
 necessarily the Collection screen menu; a Tag group is a source-record
