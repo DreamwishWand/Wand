@@ -306,7 +306,7 @@
       </div>
     {:else if targetReverseError}
       <small class="condition-warning">目標アイテムの逆引きデータは読み込めませんでした。</small>
-    {/if>
+    {/if}
     <div class="workspace">
       <section class="results" aria-label="クエスト一覧">
         <p class="count">{filtered.total.toLocaleString()}件のクエスト</p>
