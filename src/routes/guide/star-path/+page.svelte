@@ -1,6 +1,7 @@
 <script lang="ts">
   import {onMount} from 'svelte';
   import {base} from '$app/paths';
+  import {autoAppend} from '$lib/ui/auto-append';
   import {loadPublicStarpath} from '$lib/guide/public-starpath.mjs';
   import {loadStarpathWeeklyLocales,starpathWeeklyDescription} from '$lib/guide/public-starpath-locales.mjs';
   import {loadStarpathDailyLocales,starpathDailyDescription} from '$lib/guide/public-starpath-daily.mjs';
@@ -104,7 +105,7 @@
             <li><strong>{starpathDailyDescription(dailyLocales,season.id,t.id,locale)||'説明未確認'}</strong><small>{t.objectiveKind} · {t.id} · {t.tokenReward} {season.currencyName}{t.availableOnDay!==undefined?' · 解放設定日 '+t.availableOnDay:''}</small></li>
           {/each}
         </ul>
-        {#if filtered.length>limit}<button class="more" on:click={()=>limit+=60}>さらに表示</button>{/if}
+        {#if filtered.length>limit}<div class="auto-sentinel" use:autoAppend={{hasMore:()=>filtered.length>limit,load:()=>limit+=60}} role="status" aria-label="スクロールでタスクを追加表示"></div>{/if}
       {:else if tab==='weekly'}
         <p class="hint">週間タスクの説明はゲーム原本のLocDBと照合した正式な表記です。地域によって文章や数値が異なる場合も、原文をそのまま表示します。</p>
         {#each season.weeklyTasks as week,i}
