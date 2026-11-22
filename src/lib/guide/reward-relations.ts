@@ -188,8 +188,7 @@ const freeze=<T extends object>(x:T):Readonly<T>=>Object.freeze(x);
  * offline source validation tests. This entry point checks schema and provenance
  * but does not itself hash input bytes: use loadGuideRewardIndex() when fetching.
  */
-export function createGuideRewardIndex(snapshot:unknown,integrity:'source_structure_only'|'pinned_public_sha256'='source_structure_only'):GuideRewardIndex {
-  check(integrity==='source_structure_only'||integrity==='pinned_public_sha256','INVALID_INTEGRITY');
+function buildRewardIndex(snapshot:unknown,integrity:'source_structure_only'|'pinned_public_sha256'):GuideRewardIndex {
   const raw=verifyPublicStarpath(snapshot) as unknown as RawSnapshot;
   const calendar=guideCalendarEvents(raw) as CalendarEvent[];
   const starpathCalendar=calendar.filter(e=>e.kind==='starpath');
@@ -309,7 +308,7 @@ export function createGuideRewardIndex(snapshot:unknown,integrity:'source_struct
     getSeasonRewards:(id:string)=>seasonRewards.get(existingSeason(id)??'')??EMPTY_REWARDS,
     getItemRelations:(id:string|number)=>byItem.get(canonicalItemId(id))??EMPTY_RELATIONS,
     getItemAcquisitionCandidates:(id:string|number)=>
-      (byItem.get(canonicalItemId(id))??EMPTY_RELATIONS).filter(r=>r.role==='configured_reward'),
+      freeze((byItem.get(canonicalItemId(id))??EMPTY_RELATIONS).filter(r=>r.role==='configured_reward')),
     getEventRewards:(eventId:string):GuideEventRewards=>{
       const season=events.get(eventId);
       if(season)return freeze({
@@ -332,10 +331,14 @@ export function createGuideRewardIndex(snapshot:unknown,integrity:'source_struct
   });
 }
 
+/** Structural validation only: callers may supply a locally loaded snapshot. */
+export function createGuideRewardIndex(snapshot:unknown):GuideRewardIndex{
+  return buildRewardIndex(snapshot,'source_structure_only');
+}
 /** Only this entry point checks the SHA-256 of the published projection bytes. */
 export async function loadGuideRewardIndex(url:string,fetcher:typeof fetch=fetch):Promise<GuideRewardIndex>{
   const snapshot=await loadPublicStarpath(url,fetcher);
-  return createGuideRewardIndex(snapshot,'pinned_public_sha256');
+  return buildRewardIndex(snapshot,'pinned_public_sha256');
 }
 
 /**
