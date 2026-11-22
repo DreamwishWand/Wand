@@ -11,6 +11,7 @@ CONTRACT = 'wand.db02.native-formula-type-taxonomy@1'
 STEAM_1262_DUMP_SHA256 = '0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08'
 STEAM_1262_DUMP_SIZE = 89453137
 FIXED_RECIPE_SUBTYPES = ('Crop', 'Fish', 'Ingredient')
+MEAL_RESULT_SUBTYPE = 'Meal'
 
 
 def require(ok, code):
@@ -48,13 +49,14 @@ def verify_taxonomy_metadata_text(text, serialized_object_type):
     item_type = enum_values(text, 'ItemType')
     activity = enum_values(text, 'ActivityItemType')
     require(item_type.get(top) == 3 and activity.get(subtype) == 15 and
+            activity.get(MEAL_RESULT_SUBTYPE) == 3 and
             all(activity.get(t) is not None for t in FIXED_RECIPE_SUBTYPES) and
             {activity[t] for t in FIXED_RECIPE_SUBTYPES} == {2, 10, 11},
             'NATIVE_ENUM_CORRESPONDENCE')
-    require(len({activity[subtype]} |
-                {activity[t] for t in FIXED_RECIPE_SUBTYPES}) == 4,
+    require(len({activity[subtype], activity[MEAL_RESULT_SUBTYPE]} |
+                {activity[t] for t in FIXED_RECIPE_SUBTYPES}) == 5,
             'SUBTYPE_COLLISION')
-    for cls in ('ConsummableItemData', 'CropItemData',
+    for cls in ('ConsummableItemData', 'MealItemData', 'CropItemData',
                 'FishItemData', 'IngredientItemData'):
         require(len(re.findall(r'(?m)^public sealed class ' +
                                re.escape(cls) + r' : ', text)) == 1,
@@ -70,6 +72,7 @@ def verify_taxonomy_metadata_text(text, serialized_object_type):
         'sourceObjectTypeItemTypeEnumId': item_type[top],
         'sourceObjectTypeActivitySubtypeEnumId': activity[subtype],
         'fixedRecipeIngredientSourceSubtypesAreDifferent': True,
+        'cookingMealResultSourceSubtypeIsDifferent': True,
         'nativeTypeResolverMethodDeclared': True,
         'nativeTypeResolverExecutedOrDisassembledHere': False,
         'nativeRuntimeTypeIdentityResolved': False,
