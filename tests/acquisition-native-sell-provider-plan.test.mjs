@@ -58,7 +58,7 @@ test('native provider priority is item calculator, uncached formula, registered 
 });
 test('uncached formulas and registered DB enumeration are not runtime proven',()=>{
   const row=nativeSellPriceProviderPlan(31100053);
-  assert.deepEqual(row.registeredPriceDatabaseImplementations,[
+  assert.deepEqual(row.knownIItemPriceDatabaseNativeTypes,[
     'ItemPriceDatabase','DynamicItemPriceDatase'
   ]);
   assert.equal(row.registeredDatabaseIterationOrderVerified,false);
@@ -70,7 +70,7 @@ test('TryGetSellPrice false has out=0 while GetSellPrice may use caller default=
   const row=nativeSellPriceProviderPlan(31000001);
   assert.equal(row.nativeTrySellPriceFailureReturnsFalse,true);
   assert.equal(row.nativeTrySellPriceFailureOutput,0);
-  assert.equal(row.outerGetSellPriceDefaultOnFailure,1);
+  assert.equal(row.outerGetSellPriceDeclaredDefaultArgument,1);
   assert.equal(row.defaultOneAppliesOnlyAfterRuntimeLookupFailure,true);
   assert.equal(row.zeroOutParameterIsNotEffectiveSellPrice,true);
   assert.equal(row.actualUnitSellPrice,null);
