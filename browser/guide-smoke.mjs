@@ -112,7 +112,7 @@ try {
   people.on('response',r=>{if(r.url().includes('/guide/public/'))peopleDownloads.push(r.url());});
   await people.goto('http://127.0.0.1:4177/Wand/guide/characters/',{waitUntil:'domcontentloaded'});
   await people.locator('.counts').waitFor({timeout:30000});
-  assert.match(await people.locator('.counts').innerText(),/142[\\s\\S]*86[\\s\\S]*56/);
+  assert.match(await people.locator('.counts').innerText(),/142[\s\S]*86[\s\S]*56/);
   assert.equal(peopleDownloads.filter(u=>u.endsWith('/quest-index.json')).length,1);
   assert.equal(peopleDownloads.filter(u=>u.includes('quest-details-')).length,0,
     'character names need no private or lazily loaded quest details');
@@ -133,7 +133,7 @@ try {
     '/Wand/guide/characters/?character=10000001');
   assert.ok(await people.locator('.linked li').count()>0);
   const linked=await people.locator('.linked li a').first().getAttribute('href');
-  assert.match(linked,/^\\/Wand\\/guide\\/quests\\/\\?quest=[1-9][0-9]+$/);
+  assert.match(linked,/^\/Wand\/guide\/quests\/\?quest=[1-9][0-9]+$/);
   await people.goBack();
   await people.waitForFunction(()=>location.search.includes('character=10000049'));
   assert.match(await people.locator('.detail-head').innerText(),/Flounder/);
