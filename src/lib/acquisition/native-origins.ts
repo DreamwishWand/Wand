@@ -125,7 +125,9 @@ function activityDetails(raw:Data):NativeOriginDetails{
   assert(typeof type==='string'&&TYPES[type]!==undefined,'UNSUPPORTED_NATIVE_PATH');
   const shape=TYPES[type];
   const provenance=row(raw.source);
-  const definitionId=id(raw.definitionId);
+  // Growing rows in original r5 intentionally omit top-level definitionId;
+  // the source-verified ActivityItem definition ID is in source.definitionId.
+  const definitionId=id(raw.definitionId??provenance.definitionId);
   assert(provenance.kind==='game_native'&&provenance.file===shape.file&&
     id(provenance.definitionId)===definitionId,'PATH_SOURCE');
   const sourcePathId=key(raw.pathId);
