@@ -45,6 +45,12 @@ test('Complete public Steam 1.26.2 DB-02 catalog joins 1255 source-pinned Star P
   assert.equal(catalog.coverage.historicalNativeShopOffers,27);
   assert.equal(catalog.coverage.historicalNativeShopSourceRoutes,128);
   assert.equal(catalog.coverage.historicalNativeShopDistinctItemIds,120);
+  assert.equal(catalog.coverage.observedShopSnapshotOfferIds,56);
+  assert.equal(catalog.coverage.observedDistinctShopOfferIds,48);
+  assert.equal(catalog.coverage.observedRepeatedShopOfferIds,8);
+  assert.equal(catalog.coverage.combinedNativeShopItemIds,186);
+  assert.equal(catalog.shopHistory.coverage.liveAvailabilityVerified,false);
+  assert.equal(catalog.shopHistory.repeatedOffers.length,8);
   assert.equal(catalog.coverage.combinedSourceRoutes,1255);
   assert.equal(catalog.origins.getCoverage().linkedRoutes,1255);
   assert.equal(catalog.origins.getCoverage().routesBySourceKind.verified_game_native,904);
@@ -139,6 +145,14 @@ test('Unified lookup separates exact Quest, Event and Friendship Item ID routes 
   assert.equal(catalog.getSourceOrigin(historicalOrigin.originId)[0],historicalOrigin);
   assert.equal(catalog.getCampaign(historicalOrigin.campaignId)?.productId,
     'HouseSkin_FishermandHouse');
+  const itemHistory=catalog.shopHistory.getItemHistory('20500136');
+  assert(itemHistory);
+  assert(itemHistory.origins.includes(historicalOrigin));
+  assert(itemHistory.observedNativeOfferIds.includes('HouseSkin_FishermandHouse'));
+  assert.equal(catalog.shopHistory.getOfferHistory('VanityBundle_0001')
+    ?.identicalRewardContentsAcrossSnapshots,false);
+  assert.deepEqual(catalog.shopHistory.getOfferHistory('VanityBundle_0001')
+    ?.appearances.map(a=>a.origins.length),[16,17]);
   const iap=catalog.nativeIapSource.getPackage('Expansion4PackDeluxeEdition');
   assert(iap);
   assert.equal(iap.rewards.length,5);
