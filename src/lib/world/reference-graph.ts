@@ -414,13 +414,22 @@ export class WorldReferenceIndex {
         'INVALID_INITIAL_SOURCE_ITEM_REFERENCE');
       const immutableRow=Object.freeze({...row});
       byItem.set(row.itemId,[...(byItem.get(row.itemId)??[]),immutableRow]);
-      if(row.worldId!==null)
-        byItemWorld.set(row.worldId,
-          [...(byItemWorld.get(row.worldId)??[]),immutableRow]);
-      else withoutWorld.push(immutableRow);
-      if(row.areaRefId!==null)
-        byItemArea.set(row.areaRefId,
-          [...(byItemArea.get(row.areaRefId)??[]),immutableRow]);
+      if(row.worldId!==null){
+        let rows=byItemWorld.get(row.worldId);
+        if(rows===undefined){
+          rows=[];
+          byItemWorld.set(row.worldId,rows);
+        }
+        rows.push(immutableRow);
+      } else withoutWorld.push(immutableRow);
+      if(row.areaRefId!==null){
+        let rows=byItemArea.get(row.areaRefId);
+        if(rows===undefined){
+          rows=[];
+          byItemArea.set(row.areaRefId,rows);
+        }
+        rows.push(immutableRow);
+      }
       total+=row.instanceCount;
       if(row.worldId===null)unlinked+=row.instanceCount;
     }
