@@ -409,6 +409,38 @@ mod tests {
         assert!(edited.patched_json.contains(r#""Amount":999"#));
     }
     #[test]
+    fn single_owned_decoration_can_be_raised_above_game_quantity_limits() {
+        // Synthetic representation of an already-owned unique decoration.
+        // Game's normal one-only ownership rule must NOT cap save-editor Amount.
+        let raw = r#"{"GameInfo":{"Version":643},"Player":{
+          "ListInventories":{"101":{"Inventory":{"550":{
+            "Amount":1,"CollectionOnly":true,"Source":"exclusive-decor","CustomFlag":false
+          }}}},"ContainerInventories":{"202":{"Inventory":[
+            {"ItemID":0,"Amount":0},{"ItemID":440,"Amount":1,"Exclusive":true}
+          ]}}
+        },"World":{},"FutureUnknown":{"Meta":2.50}}"#;
+        for amount in [2, 99, 250, 1000, 31968, u32::MAX as u64] {
+            let inventory = preview_existing_quantity(raw, inventory(), 1, amount).unwrap();
+            assert!(inventory.changed && inventory.untouched_bytes_preserved);
+            assert_eq!(inventory.patched_json, raw.replacen(
+                r#""Amount":1"#, &format!(r#""Amount":{}"#, amount), 1));
+            assert!(inventory.patched_json.contains(r#""CollectionOnly":true"#));
+            assert!(inventory.patched_json.contains(r#""Meta":2.50"#));
+            let chest_edit = preview_existing_quantity(raw, chest(), 1, amount).unwrap();
+            assert!(chest_edit.changed);
+            assert_eq!(chest_edit.patched_json, raw.replacen(
+                r#""ItemID":440,"Amount":1"#,
+                &format!(r#""ItemID":440,"Amount":{}"#, amount), 1));
+            assert!(chest_edit.patched_json.contains(r#""Exclusive":true"#));
+        }
+        // This draft edits existing rows; it does not invent missing entries
+        // for one-of-a-kind items represented only in ownership/quest flags.
+        assert_eq!(preview_existing_quantity(raw, QuantityTarget::Inventory{
+            inventory_id:"101".into(),item_id:"9999".into()
+        },1,250).unwrap_err(),PatchError::MissingTarget);
+    }
+
+    #[test]
     fn chest_checks_slot_index_and_item_identity_before_change() {
         let raw = r#"{"Player":{"ContainerInventories":{"202":{"Inventory":[
           {"ItemID":0,"Amount":0},{"ItemID":440,"Amount":2,"Unknown":{"x":"a"}}

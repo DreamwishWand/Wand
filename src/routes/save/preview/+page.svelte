@@ -242,7 +242,7 @@
 <main class="dev-preview">
   <p class="eyebrow">DEVELOPMENT · DB-05 SAVE</p>
   <h1>セーブ数量編集（テスト用）</h1>
-  <p>JSONまたは暗号化P1Gの既存Inventory・Chest数量をRust/WASMで検証できます。明示的に選んだ場合だけ、原本を上書きしない編集済みコピーを生成します。</p>
+  <p>JSONまたは暗号化P1Gの既存Inventory・Chest数量をRust/WASMで検証できます。ゲーム内の通常所持上限（1個限定・99個制限など）は適用しません。明示的に選んだ場合だけ、原本を上書きしない編集済みコピーを生成します。</p>
   <section aria-label="数量変更の検証">
     <label>セーブファイル
       <input bind:this={fileInput} type="file" accept=".profile,.dat,.bin,.json"

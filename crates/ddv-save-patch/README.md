@@ -43,14 +43,42 @@ The optional WASM exports have explicit "preview" names. They produce a
 patched JSON string **inside the invoking execution context**, not a P1G save;
 they must not be posted to UI diagnostics, external services, or logs.
 
+## Owner-confirmed quantity policy: intentional over-cap editing
+
+Dreamwish Wand is a **save editor, not a gameplay-limit simulator**.
+Allow the owner to deliberately exceed the game's normal stack limits,
+shop purchase limits, and one-owned-only rules. In particular, the
+intended use case is duplicating an owned decoration/furniture item
+that gameplay normally grants only once so it can be placed multiple
+times. An Amount of 1 must be editable to 2, 99, 250 and higher even
+if the game's UI says the item is unique. No global `99` cap, per-item
+catalog cap or silent clamp should be added by the Save Editor.
+
+Only **storage/API numeric representability and structural safety** are
+hard constraints. This draft accepts positive JSON-safe integer amounts;
+the current browser Worker passes a 32-bit unsigned positive integer.
+These are implementation bounds, **not** gameplay or item-specific caps.
+
+There is an important distinction between *changing an Amount* and
+*unlocking actual duplicate decoration placement*: some one-only items
+may be represented by owned flags, collections, placement entitlements
+or other structures rather than a mutable Inventory Amount. This
+exact-target draft only patches existing Amount fields. Missing entries
+must not be fabricated without first decoding their real structure.
+Game placement, reload, display and persistence must be validated
+independently, and if a unique-item mechanism blocks placement the
+editor should eventually handle that mechanism explicitly—not lower
+the user's requested quantity to the normal gameplay cap.
+
 ## Remaining gates before any production Writer
 
 1. Verify the legacy authoritative Rust P1G/ZIP Codec or implement a strictly
    equivalent Rust/WASM lossless Codec with independent real encrypted-save
    round-trip evidence and preservation of untouched ZIP metadata.
 2. Tie requested changes to a local SaveSession and expected original bytes;
-   validate item/catalog identities, quantity caps and slot semantics with
-   real native evidence, including incomplete or user-modified saves.
+   validate item/catalog identities, **storage-level numeric boundaries** and
+   slot semantics with real native evidence, including incomplete or
+   user-modified saves. Do NOT impose normal-gameplay stack/ownership caps.
 3. Ensure all edits stay inside the Worker and all outputs require explicit
    user export. Never implicitly overwrite a supplied Save original.
 4. Compare decoded before/after changes and repacked/decrypted round-trips.
