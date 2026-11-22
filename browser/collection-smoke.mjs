@@ -87,7 +87,25 @@ try{
   const page=await context.newPage();
   const browserErrors=[];
   page.on('pageerror',error=>browserErrors.push(String(error)));
+  // The landing screen is a visual portal, with unavailable services clearly
+  // noninteractive and every page exposing a contextual tutorial.
+  const portal=await context.newPage();
+  portal.on('pageerror',error=>browserErrors.push(String(error)));
+  await portal.goto('http://127.0.0.1:4173/Wand/');
+  await portal.locator('.portal-card').filter({hasText:'Collection'}).first().waitFor();
+  assert.ok(await portal.locator('a.portal-card').count()>=4);
+  assert.ok(await portal.locator('.portal-card.planned').count()>=4);
+  await portal.getByRole('button',{name:'このページのチュートリアル'}).click();
+  assert.match(await portal.getByRole('dialog').innerText(),/サービスを選択|カードを選ぶ/);
+  await portal.getByRole('button',{name:'チュートリアルを閉じる'}).click();
+  assert.equal(await portal.getByRole('dialog').count(),0);
+  await portal.close();
   await page.goto(url);
+  await page.getByRole('button',{name:'このページのチュートリアル'}).click();
+  assert.match(await page.getByRole('dialog').innerText(),/Collection|セーブ/);
+  await page.getByRole('button',{name:'チュートリアルを閉じる'}).click();
+  assert.equal(await page.getByRole('button',{name:'セーブファイルを読み込む'}).count(),1);
+
   try {
     await page.locator('.summary-strip').waitFor({timeout:18000});
   } catch(error) {
