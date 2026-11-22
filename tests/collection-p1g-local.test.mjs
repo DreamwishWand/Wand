@@ -289,8 +289,4 @@ test('Collection native decoder injection remains Worker-local and fails closed 
     })),
     /Duplicate JSON object key/
   );
-  await assert.rejects(
-    inspectLocalSavedStore(bytes,async()=>({jsonText:'{"GameInfo":{},"Player":{},"World":{}}'})),
-    /PROFILE_TEXT_INVALID|REQUIRED_SECTIONS_MISSING|PROFILE_VERSION_INVALID/
-  ).catch(()=>{}); // A missing version is validated by native Rust before this point.
-});});
+});
