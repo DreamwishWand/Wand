@@ -100,7 +100,8 @@ export function verifyPublicQuestRewards(
     p.originalMissionSha256===ORIGINAL_MISSION&&p.originalMissionVersion==='1.26.1'&&
     p.staticCandidatesOnly===true&&p.notConfirmedGrantsOrPlayerProgress===true&&
     p.opaqueOverridesNotResolved===true,'SOURCE_PROVENANCE');
-  assert(obj(doc.counts)&&Object.entries(CENSUS).every(([key,value])=>doc.counts[key]===value),
+  const sourceCounts=doc.counts;
+  assert(obj(sourceCounts)&&Object.entries(CENSUS).every(([key,value])=>sourceCounts[key]===value),
     'SOURCE_CENSUS');
   assert(obj(doc.rows)&&Object.keys(doc.rows).length===CENSUS.questRowsWithAnyRewardEvidence,
     'ROW_CENSUS');
