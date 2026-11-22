@@ -1,5 +1,5 @@
 /** One-shot, isolated, Rust/WASM-first local Save reader. No network. */
-import {inspectLocalSavedStore} from './saved-store-worker-core';
+import {inspectLocalSavedStore} from './saved-store-worker-core.ts';
 
 let started=false;
 type Request = { command?:string; bytes?:Uint8Array; [key:string]:unknown };
