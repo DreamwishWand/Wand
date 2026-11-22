@@ -952,7 +952,7 @@ mod tests {
                 "GridOrientation_Up",invalid).err(),Some(PatchError::InvalidTarget));
         }
         let dup=source.replace(r#""Orientation":"GridOrientation_Up""#,
-            r#""Orientation":"GridOrientation_Up","\u004f rientation":1"#);
+            r#""Orientation":"GridOrientation_Up","\u004frientation":1"#);
         // The parser rejects malformed/wrong or duplicated JSON source,
         // rather than serializing a partially patched object.
         assert!(preview_existing_grid_orientation(&dup,full.clone(),
