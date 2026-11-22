@@ -74,7 +74,8 @@ test('one-shot worker core decodes encrypted P1G and returns ID-only data', asyn
  assert.equal(ui.items[0].referenceCount,2);
  const reply=JSON.stringify(result);
  assert.ok(!reply.includes('private test field'));
- assert.ok(!reply.includes('amount'));
+ assert.ok(!reply.includes('"amount":'));
+ assert.ok(!reply.includes('"Amount":'));
  assert.ok(!reply.includes('CurrencyId'));
  assert.ok(!reply.includes('IsAvailable'));
  assert.equal(ui.ownershipVerified,false);
