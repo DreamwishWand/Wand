@@ -25,7 +25,8 @@
       g.label.toLocaleLowerCase().includes(gridSearch.toLocaleLowerCase())||
       g.id.toLocaleLowerCase().includes(gridSearch.toLocaleLowerCase()))
     .slice(0,200);
-  $: options:readonly Db04GraphOption[]=scope==='world'?
+  let options:readonly Db04GraphOption[]=[];
+  $: options=scope==='world'?
     catalog?.sourceWorlds??[]:scope==='area'?
     catalog?.sourceAreas??[]:scope==='grid'?filteredGrids:[];
   $: activeOption=options.find(option=>option.id===scopeId);
@@ -49,7 +50,7 @@
   onDestroy(stop);
 
   function query(offset=0){
-    if(!worker||!canQuery||searching)return;
+    if(!worker||!canQuery)return;
     const chosen=exactItemId.trim();
     if(chosen!==''&&!/^[1-9][0-9]{0,19}$/.test(chosen)){
       errorMessage='Item IDは正の整数で指定してください。';
