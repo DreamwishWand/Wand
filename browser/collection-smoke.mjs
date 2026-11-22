@@ -103,7 +103,7 @@ try{
   assert.equal(await portal.locator('header.site-header .nav-link.unavailable').count(),4);
   assert.equal(await portal.locator('header.site-header a[href$="/guide/"]').count(),1);
   await portal.getByRole('button',{name:'このページのチュートリアル'}).click();
-  assert.match(await portal.getByRole('dialog').innerText(),/サービスを選択|カードを選ぶ/);
+  assert.match(await portal.getByRole('dialog').innerText(),/6つの主要サービス|カードを選択/);
   await portal.getByRole('button',{name:'チュートリアルを閉じる'}).click();
   assert.equal(await portal.getByRole('dialog').count(),0);
   await portal.close();
