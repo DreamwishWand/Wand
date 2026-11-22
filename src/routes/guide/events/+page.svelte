@@ -18,6 +18,8 @@
   import {verifyPublicQuestIndex,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
   import {loadPublicEventQuestLinks,DB03_EVENT_QUEST_FILE,
     type PublicEventQuestIndex} from '$lib/guide/public-event-quest-links.ts';
+  import {loadPublicEventDutyLinks,DB03_EVENT_DUTY_FILE,
+    type PublicEventDutyIndex} from '$lib/guide/public-event-duty-links.ts';
 
   type Filter='all'|'mini_event'|'floating_festival'|'default_friendship';
   let source:PublicEventFriendshipRewards|null=null;
@@ -25,6 +27,7 @@
   let refreshedNames:PublicEventRewardNameRefresh|null=null;
   let questCatalogue:any=null;
   let eventQuestLinks:PublicEventQuestIndex|null=null;
+  let eventDutyLinks:PublicEventDutyIndex|null=null;
   let loading=true;
   let error='';
   let labelError=false;
@@ -67,7 +70,8 @@
   function filterEvents(
     events:readonly NativeEventDefinition[],type:Filter,search:string,
     language:GuideRewardLocale,availableNames:EventRewardItemLabelIndex|null,
-    publishedRefresh:PublicEventRewardNameRefresh|null
+    publishedRefresh:PublicEventRewardNameRefresh|null,
+    dutyIndex:PublicEventDutyIndex|null
   ):NativeEventDefinition[]{
     const words=search.normalize('NFKC').trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
     return events.filter(event=>{
@@ -78,11 +82,13 @@
         reward.itemId,
         publishedRefresh?.getDisplayName(reward.itemId,language)??
           availableNames?.getDisplayName(reward.itemId,language)??reward.itemId,
-      ])].join(' ').normalize('NFKC').toLocaleLowerCase();
+      ]),...(event.kind==='mini_event'?
+        (dutyIndex?.getEventDuties(event.id).map(link=>link.dutyId)??[]):[])
+      ].join(' ').normalize('NFKC').toLocaleLowerCase();
       return words.every(word=>terms.includes(word));
     });
   }
-  $: visible=filterEvents(source?.events??[],category,query,locale,labels,refreshedNames);
+  $: visible=filterEvents(source?.events??[],category,query,locale,labels,refreshedNames,eventDutyLinks);
   $: selected=visible.find(event=>event.id===selectedKey)??visible[0]??null;
   $: eventQuests=selected&&eventQuestLinks?eventQuestLinks.getEventQuests(selected.id):[];
   $: selectedRewards=selected?.rewards.filter(row=>
@@ -114,13 +120,24 @@
       // Optional cross-navigation: keep source-authenticated rewards available.
     }
   }
+  async function loadEventDuties(eventSource:PublicEventFriendshipRewards){
+    try{
+      const links=await loadPublicEventDutyLinks(eventSource,
+        `${root}${DB03_EVENT_DUTY_FILE}`);
+      if(source===eventSource)eventDutyLinks=links;
+    }catch{
+      // Event and reward browsing is independent of optional duty-ID search.
+    }
+  }
   async function load(){
     loading=true;error='';labelError=false;labels=null;
     refreshedNames=null;questCatalogue=null;eventQuestLinks=null;
+    eventDutyLinks=null;
     try{
       const read=await loadPublicEventFriendshipRewards(`${root}${DB03_EVENT_FRIENDSHIP_REWARD_FILE}`);
       source=read;
       void loadEventQuestSources(read);
+      void loadEventDuties(read);
       const params=new URLSearchParams(window.location.search);
       const focused=resolveEventRewardItemDestination(read,params.get('item'));
       if(focused){
