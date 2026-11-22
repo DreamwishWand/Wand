@@ -139,7 +139,7 @@
           {#each filtered.slice(0,limit) as t (t.id)}
             {@const display=starpathTaskDisplay(season.id,t,locale,starpathDailyDescription(dailyLocales,season.id,t.id,locale))}
             {@const goal=starpathGoalLabel(goalAmounts,season.id,t)}
-            <li><strong>{display.headline}</strong><small>{display.note}</small><small class="task-data">{#if goal}<span class="goal-badge">目標 {goal}</span>{/if}<span class="token-badge"><WandIcon name="star" size={13}/> {t.tokenReward} {season.currencyName}</span><span>{t.id}{t.availableOnDay!==undefined?' · 解放設定日 '+t.availableOnDay:''}</span></small></li>
+            <li><strong>{display.headline}</strong>{#if display.note}<small>{display.note}</small>{/if}<small class="task-data">{#if goal}<span class="goal-badge">目標 {goal}</span>{/if}<span class="token-badge"><WandIcon name="star" size={13}/> {t.tokenReward} {season.currencyName}</span><span>{t.id}{t.availableOnDay!==undefined?' · 解放設定日 '+t.availableOnDay:''}</span></small></li>
           {/each}
         </ul>
         {#if filtered.length===0}<p role="status" class="empty-match">一致する通常タスクはありません。</p>{/if}
@@ -156,7 +156,7 @@
               {#each week.tasks as t (t.id)}
                 {@const display=starpathTaskDisplay(season.id,t,locale,starpathWeeklyDescription(weeklyLocales,t.descriptionKey,locale))}
                 {@const goal=starpathGoalLabel(goalAmounts,season.id,t)}
-                <li><strong>{display.headline}</strong><small>{display.note}</small><small class="task-data">{#if goal}<span class="goal-badge">目標 {goal}</span>{/if}<span class="token-badge"><WandIcon name="star" size={13}/> {t.tokenReward} {season.currencyName}</span><span>{t.id}</span></small></li>
+                <li><strong>{display.headline}</strong>{#if display.note}<small>{display.note}</small>{/if}<small class="task-data">{#if goal}<span class="goal-badge">目標 {goal}</span>{/if}<span class="token-badge"><WandIcon name="star" size={13}/> {t.tokenReward} {season.currencyName}</span><span>{t.id}</span></small></li>
               {/each}
             </ul>
           </section>
