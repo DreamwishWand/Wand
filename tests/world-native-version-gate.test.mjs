@@ -77,6 +77,14 @@ test('Steam 1.26.2 pinned native read-path supports only bounded grid-local prev
   assert.equal(getNativeTerrainWindow(source,gridId,
     {x:0,y:0,width:3,height:1}).status,'outside_native_grid_or_preview_limit');
 
+  // A console snapshot must not inherit Steam's native PE64 proof.
+  const consoleCatalog = catalog('1.26.2',decoded);
+  consoleCatalog.manifest.platform = 'Switch';
+  assert.equal(getNativeTerrainTile(consoleCatalog,gridId,0,0).status,
+    'native_terrain_packing_not_verified_for_game_version');
+  assert.equal(getNativeTerrainDistribution(consoleCatalog,gridId).status,
+    'native_terrain_packing_not_verified_for_game_version');
+
   // Older 1.26.2 snapshots retain their explicit unverified origin; the
   // catalog must not silently reinterpret an older private ZIP's data.
   const legacy = catalog('1.26.2',unresolved);
