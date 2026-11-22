@@ -8,6 +8,7 @@
   import {loadStarpathWeeklyLocales,starpathWeeklyDescription} from '$lib/guide/public-starpath-locales.mjs';
   import {loadStarpathDailyLocales,starpathDailyDescription} from '$lib/guide/public-starpath-daily.mjs';
   import {starpathRewardDisplayName,loadStarpathRewardExtras} from '$lib/guide/starpath-reward-extras.mjs';
+  import {createGuideRewardIndex,type GuideRewardIndex} from '$lib/guide/reward-relations.ts';
   import {loadStarpathMedia,starpathMediaThumbnail} from '$lib/guide/starpath-public-media.mjs';
   import {guideCalendarEvents,eventScheduleState} from '$lib/guide/event-calendar.mjs';
   import {starpathTaskDisplay} from '$lib/guide/starpath-task-guidance.ts';
@@ -16,6 +17,7 @@
   import {loadPublicStarpathGoals,starpathGoalLabel,starpathGoalHeading,starpathGoalSourceNote} from '$lib/guide/public-starpath-goals.mjs';
 
   let catalog:any=null, weeklyLocales:any=null, dailyLocales:any=null, rewardExtras:any=null, publicMedia:any=null, goalAmounts:any=null, goalWarning='', error='', loading=true;
+  let sharedRewardIndex:GuideRewardIndex|null=null;
   let locale='ja';
   let selectedId='HauntingElegance2026';
   let now=Date.now();
@@ -33,19 +35,10 @@
   $: season=selectableSeasons.find((s:any)=>s.id===selectedId)||selectableSeasons[0];
   $: selectedEvent=season?seasonEvents.find((e:any)=>e.sourceSeasonId===season.id):null;
   $: scheduleState=selectedEvent?eventScheduleState(selectedEvent,now):null;
-  $: rewardRows=season?[...season.rewardPages.flatMap((p:any)=>p.rewards),...season.bonusPages.flatMap((p:any)=>p.rewards),...season.vaultRewards]:[];
-  $: rewardGroups=season?[
-    ...season.rewardPages.map((page:any)=>({
-      key:'normal-'+page.page,title:'報酬ページ '+page.page,
-      rewards:page.rewards,minPurchased:page.minPurchasedFromPreviousPage
-    })),
-    ...season.bonusPages.map((page:any)=>({
-      key:'bonus-'+page.page,
-      title:'ボーナスページ '+page.page+(page.currencyConversionPage?'（通貨交換）':''),
-      rewards:page.rewards,minPurchased:page.minPurchasedFromPreviousPage
-    })),
-    {key:'vault',title:'Vault報酬',rewards:season.vaultRewards,minPurchased:undefined}
-  ]:[];
+  // The same source-backed reward relation index is available to Collection,
+  // DB-02 Acquisition and Save without copying or redefining Item IDs.
+  $: rewardRows=season?sharedRewardIndex?.getSeasonRewards(season.id)??[]:[];
+  $: rewardGroups=season?sharedRewardIndex?.getSeasonGroups(season.id)??[]:[];
   $: filtered=season?filterStarpathTasks(season.id,season.tasks,{
     query,locale,
     descriptionOf:(t:any)=>starpathDailyDescription(dailyLocales,season.id,t.id,locale),
@@ -96,7 +89,7 @@
     window.history.pushState(window.history.state,'',url);
     void displayDutyLink(link);
   }
-  function visibleRewards(rewards:any[],search:string,tier:string,language:string,extras:any){
+  function visibleRewards(rewards:readonly any[],search:string,tier:string,language:string,extras:any){
     const needle=search.trim().toLocaleLowerCase();
     return rewards.filter(r=>{
       if(tier==='free'&&r.premium||tier==='premium'&&!r.premium)return false;
@@ -107,9 +100,10 @@
     });
   }
   async function load(){
-    loading=true;error='';goalWarning='';goalAmounts=null;
+    loading=true;error='';goalWarning='';goalAmounts=null;sharedRewardIndex=null;
     try{
       catalog=await loadPublicStarpath(`${base}/guide/public/starpath-cache-2026-11-22.json`);
+      sharedRewardIndex=createGuideRewardIndex(catalog);
       [weeklyLocales,dailyLocales,rewardExtras]=await Promise.all([
         loadStarpathWeeklyLocales(`${base}/guide/public/starpath-weekly-locales-2026-11-22.json`,catalog),
         loadStarpathDailyLocales(`${base}/guide/public/`,catalog.seasons),
@@ -241,11 +235,13 @@
           {#each rewardGroups as group (group.key)}
             {#if visibleRewards(group.rewards,rewardQuery,rewardTier,locale,rewardExtras).length}
               <section class="week reward-section">
-                <h2>{group.title}</h2>
+                <h2>{group.section==='normal'?'報酬ページ '+group.page:
+                  group.section==='bonus'?'ボーナスページ '+group.page+(group.currencyConversionPage?'（通貨交換）':''):'Vault報酬'}</h2>
                 {#if group.minPurchased!==undefined}
                   <p class="reward-condition">前ページで必要な交換数：{group.minPurchased}件</p>
                 {/if}
-                <ul class="reward-grid" aria-label={group.title}>
+                <ul class="reward-grid" aria-label={group.section==='normal'?'報酬ページ '+group.page:
+                  group.section==='bonus'?'ボーナスページ '+group.page:'Vault報酬'}>
                   {#each visibleRewards(group.rewards,rewardQuery,rewardTier,locale,rewardExtras) as r,i (r.itemId+'-'+i)}
                     <li class="reward-entry" class:premium={r.premium}>
                       <div class="reward-art">
