@@ -566,7 +566,7 @@ export class SharedGameDatabase {
   ):SharedDbFacetSummary {
     check(object(request) &&
       (request.scope==='current' && FIELDS.includes(request.field as FactKey) &&
-        request.field!=='media' ||
+        String(request.field)!=='media' ||
        request.scope==='historical_candidate' &&
         ['category','worlds','universes','dlc'].includes(request.field)),
       'INVALID_FACET_REQUEST');
