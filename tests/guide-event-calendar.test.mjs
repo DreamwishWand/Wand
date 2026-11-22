@@ -5,7 +5,7 @@ import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.mjs';
 import {verifyPublicQuestIndex,publicQuestSection,filterPublicQuests} from '../src/lib/guide/public-guide.mjs';
 import {
   GUIDE_EVENT_CALENDAR_CONTRACT,GUIDE_EVENT_CALENDAR_AS_OF,GUIDE_EVENT_CALENDAR_SOURCES,
-  guideCalendarEvents,eventScheduleState,activeScheduleStarpaths,guideCalendarMonth,localGuideDateTime
+  guideCalendarEvents,eventScheduleState,activeScheduleStarpaths,guideCalendarMonth,guideCalendarEventsInMonth,localGuideDateTime
 } from '../src/lib/guide/event-calendar.mjs';
 import {
   actionableStarpathTask,STARPATH_REVIEWED_DAILY_COUNT,STARPATH_REVIEWED_WEEKLY_COUNT
@@ -125,4 +125,41 @@ test('reviewed actionable riddle solutions bind to native season+Task IDs, rejec
   assert.equal(actionableStarpathTask('Seafaring2026',{...real,description:'unverified riddle'}),null);
   assert.equal(actionableStarpathTask('Seafaring2026',{...real,id:'Task999'}),null);
   assert.equal(actionableStarpathTask('Seafaring2026',real,'de'),null);
+});
+
+test('Guide month event list uses JST days and exact exclusive UTC end, matching calendar cells',async()=>{
+  const real=guideCalendarEvents(await snapshot());
+  assert.deepEqual(guideCalendarEventsInMonth(real,'2026-10').map(e=>e.id),
+    ['haunting-elegance-2026','seafaring-2026','haunted-floating-festival-2026']);
+  assert.deepEqual(guideCalendarEventsInMonth(real,'2026-11').map(e=>e.id),
+    ['haunting-elegance-2026','seafaring-2026']);
+  const afterUtcMonth={
+    id:'starts-in-jst-december',precision:'utc-instant',
+    startUtc:'2026-11-30T15:30:00Z',
+    taskEndUtcExclusive:'2026-12-01T08:00:00Z',
+    endUtcExclusive:'2026-12-01T14:59:59Z'
+  };
+  const endsAtJstMidnight={
+    id:'ends-at-jst-new-year',precision:'utc-instant',
+    startUtc:'2026-12-31T13:00:00Z',
+    taskEndUtcExclusive:'2026-12-31T14:00:00Z',
+    endUtcExclusive:'2026-12-31T15:00:00Z'
+  };
+  const datesOnly={
+    id:'date-only-year-boundary',precision:'date-only',
+    startDay:'2026-12-31',endDayInclusive:'2027-01-01'
+  };
+  const fixtures=[afterUtcMonth,endsAtJstMidnight,datesOnly];
+  assert.deepEqual(guideCalendarEventsInMonth(fixtures,'2026-11').map(e=>e.id),[]);
+  assert.deepEqual(guideCalendarEventsInMonth(fixtures,'2026-12').map(e=>e.id),
+    fixtures.map(e=>e.id));
+  assert.deepEqual(guideCalendarEventsInMonth(fixtures,'2027-01').map(e=>e.id),
+    ['date-only-year-boundary']);
+  for(const month of ['2026-11','2026-12','2027-01']){
+    const ids=new Set(guideCalendarMonth(fixtures,month)
+      .filter(day=>day.isCurrent).flatMap(day=>day.events.map(event=>event.id)));
+    assert.deepEqual(guideCalendarEventsInMonth(fixtures,month).map(e=>e.id),
+      fixtures.filter(e=>ids.has(e.id)).map(e=>e.id));
+  }
+  assert.throws(()=>guideCalendarEventsInMonth(fixtures,'2026-13'),/month range/);
 });
