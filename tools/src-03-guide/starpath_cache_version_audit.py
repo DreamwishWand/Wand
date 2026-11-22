@@ -112,7 +112,7 @@ def make(early,late):
 
 def publish(early,late,dest):
     result=make(early,late)
-    payload=json.dumps(result,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf8')+b'\n'
+    payload=json.dumps(result,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf8')
     dest=Path(dest)
     if dest.is_symlink() or dest.resolve() in (Path(early).resolve(),Path(late).resolve()):
         raise ValueError('UNSAFE_PUBLIC_OUTPUT')
