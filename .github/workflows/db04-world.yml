@@ -5,6 +5,7 @@ on:
     paths:
       - 'tools/db-04-world/**'
       - 'src/lib/world/**'
+      - 'src/routes/world/preview/**'
       - 'tests/world.test.mjs'
       - 'tests/world-local-snapshot.test.mjs'
       - 'tests/world-preview-views.test.mjs'
@@ -15,6 +16,7 @@ on:
     paths:
       - 'tools/db-04-world/**'
       - 'src/lib/world/**'
+      - 'src/routes/world/preview/**'
       - 'tests/world.test.mjs'
       - 'tests/world-local-snapshot.test.mjs'
       - 'tests/world-preview-views.test.mjs'
