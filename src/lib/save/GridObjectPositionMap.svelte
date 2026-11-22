@@ -336,13 +336,14 @@
       {#each visibleTargets as target (`group-${target.ordinal}`)}
         <div class="draft-marker group-ghost"
           aria-hidden="true"
+          title={`移動先候補 #${target.ordinal} X ${target.x} Y ${target.y}`}
           style={`left:${percentage(target.x,xBounds.min,xBounds.max)}%;top:${percentage(target.y,yBounds.min,yBounds.max)}%`}>
           <span>+</span>
         </div>
       {/each}
       {#each visibleRotationTargets as target (`rotated-${target.localOrdinal}`)}
         <div class="draft-marker group-ghost" aria-hidden="true"
-          title={`90度回転候補 #${target.localOrdinal}`}
+          title={`90度回転候補 #${target.localOrdinal} X ${target.replacementX} Y ${target.replacementY}`}
           style={`left:${percentage(target.replacementX!,xBounds.min,xBounds.max)}%;top:${percentage(target.replacementY!,yBounds.min,yBounds.max)}%`}>
           <span>+</span>
         </div>
@@ -445,7 +446,7 @@
     {#if draftIsChanged&&draftX!==null&&draftY!==null}
       <small class="map-hint" role="status">
         移動先候補 X {draftX} / Y {draftY}。セーブはまだ変更されていません。
-        {#if !draftVisible}表示範囲外です。{/if}
+
       </small>
     {/if}
     {#if stagedTargets.length>0}
