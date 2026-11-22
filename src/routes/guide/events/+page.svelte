@@ -45,17 +45,22 @@
   function itemCategory(itemId:string):string|null{
     return labels?.getItem(itemId)?.sourceCategory??null;
   }
-  function matches(event:NativeEventDefinition):boolean{
-    if(category!=='all'&&category!==event.kind)return false;
-    if(event.id==='TestEv')return false; // Source-internal placeholder, not a playable event.
-    const words=query.normalize('NFKC').trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
-    if(!words.length)return true;
-    const candidates=[event.id,eventName(event),event.names.en,...event.rewards.flatMap(reward=>[
-      reward.itemId,itemName(reward.itemId),
-    ])].join(' ').normalize('NFKC').toLocaleLowerCase();
-    return words.every(word=>candidates.includes(word));
+  function filterEvents(
+    events:readonly NativeEventDefinition[],type:Filter,search:string,
+    language:GuideRewardLocale,availableNames:EventRewardItemLabelIndex|null
+  ):NativeEventDefinition[]{
+    const words=search.normalize('NFKC').trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+    return events.filter(event=>{
+      if(type!=='all'&&type!==event.kind)return false;
+      if(event.id==='TestEv')return false; // Source-internal placeholder, not playable.
+      if(!words.length)return true;
+      const terms=[event.id,event.names[language],event.names.en,...event.rewards.flatMap(reward=>[
+        reward.itemId,availableNames?.getDisplayName(reward.itemId,language)??reward.itemId,
+      ])].join(' ').normalize('NFKC').toLocaleLowerCase();
+      return words.every(word=>terms.includes(word));
+    });
   }
-  $: visible=source?.events.filter(matches)??[];
+  $: visible=filterEvents(source?.events??[],category,query,locale,labels);
   $: selected=visible.find(event=>event.id===selectedKey)??visible[0]??null;
   function choose(event:NativeEventDefinition){
     selectedKey=event.id;
@@ -116,6 +121,7 @@
         <button type="button" class:chosen={category===option.id} aria-pressed={category===option.id} on:click={()=>{category=option.id;query='';}}>{option.text}</button>
       {/each}
     </nav>
+    {#key locale}
     <section class="workspace" aria-label="報酬一覧">
       {#if category!=='default_friendship'}
         <div class="event-list" aria-label="イベントの選択">
@@ -179,6 +185,7 @@
         </article>
       {/if}
     </section>
+    {/key}
     {#if labelError}
       <p class="note" role="status">アイテム名の照合に失敗したため、Item IDを表示しています。</p>
     {/if}
