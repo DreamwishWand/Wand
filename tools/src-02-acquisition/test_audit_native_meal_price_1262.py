@@ -19,11 +19,11 @@ def synthetic_provider_dump():
     ]
     for name, method, rva in extra:
         parts.append(
-            "// Namespace: Synthetic.Price\\n"
-            + "public sealed class " + name + " // TypeDefIndex: 98\\n"
+            "// Namespace: Synthetic.Price\n"
+            + "public sealed class " + name + " // TypeDefIndex: 98\n"
             + "// RVA: " + hex(rva) + " Offset: " + hex(rva-0x200)
-            + " VA: " + hex(0x180000000+rva) + "\\n"
-            + "public bool " + method + "(int x) { }\\n"
+            + " VA: " + hex(0x180000000+rva) + "\n"
+            + "public bool " + method + "(int x) { }\n"
         )
     return "".join(parts)
 
