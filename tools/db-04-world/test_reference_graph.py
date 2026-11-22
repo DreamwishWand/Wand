@@ -139,6 +139,48 @@ class ReferenceGraphTests(unittest.TestCase):
         self.assertEqual(scenes[11]["worldId"], VP)
         self.assertIsNone(scenes[30]["worldId"])
 
+    def test_real_source_parent_world_reference_preserves_protobuf_field(self):
+        source = synthetic()
+        child = {
+            "worldId": WR + "!Subscene", "worldIdKind": "nativeWorldName",
+            "worldType": "realm", "parentWorldId": WR,
+            "defaultGridLayoutPath": "SceneLayouts/Realms/Example/Subscene.json",
+            "sceneId": 21, "universeTagItemId": 777,
+        }
+        source["worlds"].append(child)
+        source["scenes"].append({"sceneId": 21, "nativeName": "Subscene"})
+        graph = build_reference_graph(source, "f" * 64)
+        by_id = {row["worldId"]: row for row in graph["worlds"]}
+        self.assertEqual(by_id[child["worldId"]]["nativeParentWorldId"], WR)
+        self.assertTrue(by_id[child["worldId"]]["nativeParentWorldRelationVerified"])
+        self.assertIsNone(by_id[WR]["nativeParentWorldId"])
+        self.assertFalse(by_id[WR]["nativeParentWorldRelationVerified"])
+        self.assertEqual(graph["coverage"]["nativeParentWorldLinksInSubset"], 1)
+        source["worlds"][0]["parentWorldId"] = child["worldId"]
+        with self.assertRaisesRegex(ValueError, "NATIVE_WORLD_HIERARCHY_CYCLE"):
+            build_reference_graph(source, "f" * 64)
+        source["worlds"][0]["parentWorldId"] = None
+        source["worlds"][-1]["parentWorldId"] = "Worlds!Unverified"
+        with self.assertRaisesRegex(ValueError, "PARENT_WORLD_NOT_IN_EXACT_SOURCE"):
+            build_reference_graph(source, "f" * 64)
+
+    def test_proto_db_area_navmesh_ids_are_provenance_not_placement(self):
+        source = synthetic()
+        source["areas"][0].update({
+            "groundNavMeshAreaId": 7, "waterNavMeshAreaId": 8,
+            "unlockPlayerLevel": None, "nativeAreaTypeFieldPresent": True,
+        })
+        graph = build_reference_graph(source, "f" * 64)
+        by_layout = {row["gridLayoutId"]: row for row in graph["areas"]}
+        self.assertEqual(by_layout[A]["nativeGroundNavMeshAreaId"], 7)
+        self.assertEqual(by_layout[A]["nativeWaterNavMeshAreaId"], 8)
+        self.assertTrue(by_layout[A]["nativeProtoDbAreaRecordVerified"])
+        self.assertFalse(by_layout[A]["nativeNavMeshPlacementLegalityVerified"])
+        self.assertIsNone(by_layout[G]["nativeAreaId"])
+        self.assertIsNone(by_layout[G]["nativeGroundNavMeshAreaId"])
+        self.assertFalse(by_layout[G]["nativeProtoDbAreaRecordVerified"])
+        self.assertEqual(graph["coverage"]["nativeProtoDbAreaRecordsLinked"], 1)
+
     def test_scoped_grid_ids_never_join_by_integer_alone(self):
         graph = self.graph()
         refs = {ref["layoutId"]: ref for ref in graph["gridRefs"]}
