@@ -119,6 +119,11 @@ try{
   },seed);
   const page=await context.newPage();
   const browserErrors=[];
+  const nativeWasmLoads=[];
+  page.on('response',response=>{
+    if(response.url().includes('ddv_p1g_codec_bg.wasm'))
+      nativeWasmLoads.push({url:response.url(),status:response.status()});
+  });
   page.on('pageerror',error=>browserErrors.push(String(error)));
   // The landing screen is a visual portal, with unavailable services clearly
   // noninteractive and every page exposing a contextual tutorial.
@@ -407,7 +412,7 @@ try{
   await page.getByRole('button',{name:/を未所持にする/}).first().click();
   await page.getByRole('button',{name:/を所持済みにする/}).first().waitFor();
   await ownershipSearch.fill('');
-  const fixture=makeSyntheticP1g({
+  const saveRoot={
     GameInfo:{Version:643},
     Player:{
       PrivateName:'must-not-leak',
@@ -442,7 +447,8 @@ try{
         '7':{ID:7,ItemID:40006110}
       }}}
     }}
-  });
+  };
+  const fixture=makeSyntheticP1g(saveRoot);
   await page.locator('input[aria-label="DDVのセーブファイルを選択"]')
     .setInputFiles({name:'synthetic.profile',
       mimeType:'application/octet-stream',buffer:fixture});
@@ -464,6 +470,8 @@ try{
   assert.equal(stateAfter['99999999'].discovered,true);
   assert.equal(await page.getByRole('alert').filter({hasText:'do-not-leak'}).count(),0);
   assert.match(await page.getByRole('status').filter({hasText:'セーブの発見履歴'}).first().innerText(),/所持 2件/);
+  assert.ok(nativeWasmLoads.some(v=>v.status===200),
+    'Collection Save Worker must load actual Rust/WASM P1G reader');
   // Headless reader imports native state without visible diagnostics.
   assert.equal(await page.locator('.saved-store-preview,.empty-inspector').count(),0);
   await ownershipSearch.fill('40005160');
@@ -480,6 +488,24 @@ try{
   await page.getByRole('button',{name:'Collectionバックアップ出力'}).click();
   const afterBrowse=JSON.parse(await readFile(await (await postSaveBackup).path(),'utf8'));
   assert.deepEqual(afterBrowse.workspaces.find(x=>x.id==='local-1').entries,stateAfter);
+
+  // Real Steam .profile sources may be plain JSON, despite the extension.
+  // The same Collection importer must not force AES decryption by filename.
+  await page.locator('input[aria-label="DDVのセーブファイルを選択"]')
+    .setInputFiles({name:'plain-steam.profile',
+      mimeType:'application/octet-stream',
+      buffer:Buffer.from(JSON.stringify(saveRoot),'utf8')});
+  await page.waitForFunction(()=>
+    !document.querySelector('button[aria-label="セーブファイルを読み込む"]')?.disabled,
+    null,{timeout:30000});
+  const jsonBackupEvent=page.waitForEvent('download');
+  await page.getByRole('button',{name:'Collectionバックアップ出力'}).click();
+  const afterJson=JSON.parse(await readFile(
+    await (await jsonBackupEvent).path(),'utf8'));
+  const jsonState=afterJson.workspaces.find(x=>x.id==='local-1').entries;
+  assert.deepEqual(jsonState,stateAfter,
+    'Plaintext .profile and encrypted P1G import must produce identical Collection state');
+  assert.equal(await page.getByRole('alert').filter({hasText:'読み込めません'}).count(),0);
 
   // Hold the next local file read before its Worker starts. During this
   // asynchronous gap the user must not switch, delete, restore or replace
