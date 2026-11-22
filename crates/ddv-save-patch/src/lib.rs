@@ -256,7 +256,7 @@ impl<'a> JsonLocator<'a> {
             _ => return Err(PatchError::InvalidDocument)
         }
         let is_amount = path.as_slice() == self.amount_path.as_slice();
-        let is_item = self.item_path.as_ref().is_some_and(|p| p == path);
+        let is_item = self.item_path.as_ref().is_some_and(|p| p.as_slice() == path.as_slice());
         if is_amount || is_item {
             if !matches!(first, b'0'..=b'9') {
                 return Err(PatchError::NonIntegerTarget);
