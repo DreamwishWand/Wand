@@ -10,8 +10,8 @@
   import {starpathRewardDisplayName,loadStarpathRewardExtras} from '$lib/guide/starpath-reward-extras.mjs';
   import {loadStarpathMedia,starpathMediaThumbnail} from '$lib/guide/starpath-public-media.mjs';
   import {guideCalendarEvents,eventScheduleState} from '$lib/guide/event-calendar.mjs';
-  import {starpathTaskDisplay} from '$lib/guide/starpath-task-guidance.mjs';
-  import {filterStarpathTasks} from '$lib/guide/starpath-search.mjs';
+  import {starpathTaskDisplay} from '$lib/guide/starpath-task-guidance.ts';
+  import {filterStarpathTasks} from '$lib/guide/starpath-search.ts';
   import {resolveStarpathDutyLink,starpathDutyHref,type StarpathDutySelection} from '$lib/guide/starpath-duty-link.ts';
   import {loadPublicStarpathGoals,starpathGoalLabel,starpathGoalHeading,starpathGoalSourceNote} from '$lib/guide/public-starpath-goals.mjs';
 
