@@ -152,12 +152,20 @@
     candidateCount:number;
     nativeSizeX:number|null;nativeSizeY:number|null;
     tessellationFactor:number|null;
+    sourceAnchorEnvelopeWidth:number|null;
+    sourceAnchorEnvelopeHeight:number|null;
+    savedPositionNumericRelation:
+      |'within_source_anchor_numeric_envelope'
+      |'outside_source_anchor_numeric_envelope'
+      |'not_comparable';
   };
   type Db04ObjectSourceReceipt={
-    contract:'wand.db05.db04-grid-object-source-context@1';
+    contract:'wand.db05.db04-grid-object-source-context@2';
     rows:Db04ObjectSourceRow[];
     sourceCoverageComplete:false;sourceArchiveRechecked:false;
-    savedGridIdentityVerified:false;worldCoordinateTransformVerified:false;
+    savedGridIdentityVerified:false;
+    savedSourceCoordinateEquivalenceVerified:false;
+    worldCoordinateTransformVerified:false;
     placementLegalityVerified:false;editPermissionAuthorized:false;
   };
   let db04ObjectSources:Db04ObjectSourceRow[]=[];
@@ -568,8 +576,9 @@
            r.receipt.diffIdentityVerified!==false||
            r.receipt.saveWritingAuthorized!==false||
            r.sources?.contract!==
-             'wand.db05.db04-grid-object-source-context@1'||
+             'wand.db05.db04-grid-object-source-context@2'||
            r.sources.savedGridIdentityVerified!==false||
+           r.sources.savedSourceCoordinateEquivalenceVerified!==false||
            r.sources.worldCoordinateTransformVerified!==false||
            r.sources.placementLegalityVerified!==false||
            r.sources.editPermissionAuthorized!==false||
@@ -1473,6 +1482,18 @@
                             · Tessellation {ctx.tessellationFactor}
                           {/if}
                         {/if}
+                        {#if ctx.sourceAnchorEnvelopeWidth!==null&&
+                          ctx.sourceAnchorEnvelopeHeight!==null}
+                          <small class="slot-note">
+                            原本初期アンカー整数範囲
+                            0～{ctx.sourceAnchorEnvelopeWidth-1} ×
+                            0～{ctx.sourceAnchorEnvelopeHeight-1}：
+                            {ctx.savedPositionNumericRelation===
+                              'within_source_anchor_numeric_envelope'
+                              ?'数値的に範囲内':'数値的に範囲外'}
+                            （セーブとの座標系同一性は未確認）
+                          </small>
+                        {/if}
                       </small>
                     {/if}
                   </span>
@@ -1746,6 +1767,10 @@
               db04Match.hashUnverifiedDiffGrids}件。
               候補は配置・原本Gridの同一性を証明しません。</p>
           {/if}
+          <p class="slot-note">原本のTessellationFactor=2に限り、
+            原本初期アンカー範囲とセーブ位置の数値的な内外を比較します。
+            座標系の一致や配置可能範囲を証明するものではなく、
+            範囲外の編集も制限しません。</p>
           <p class="slot-note">配置オブジェクトの原本GridData寸法は、
             原本の参照候補に付属する情報です。セーブ上の配置範囲・衝突判定・
             編集可否は検証していません。</p>
