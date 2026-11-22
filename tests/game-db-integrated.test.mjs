@@ -25,6 +25,11 @@ const pack=(id,stream,rows)=>({schema:FACT_OVERLAY_SCHEMA,id,stream,target,
   sourceId:'source-'+stream,sourceSha256:'b'.repeat(64),
   scope:'source field checked for exact Item ID',rows});
 const encode=x=>new TextEncoder().encode(JSON.stringify(x));
+async function attach(db,overlay) {
+  const bytes=encode(overlay);
+  const pin=createHash('sha256').update(bytes).digest('hex');
+  await db.attachVerifiedOverlay(bytes,pin);
+}
 test('source-empty is unknown, historical worlds/universes/DLC never current verified',()=>{
   const db=new SharedGameDatabase(current(),old());
   const x=db.getItem(40005160);
@@ -58,22 +63,23 @@ test('exact current independent overlay proves multiple values, not ownership',a
   assert.equal(db.coverage().fields.worlds.verified,1);
   assert.equal(db.coverage().fields.worlds.unverified,1);
   assert.equal(db.getItem(40005160).historical.worlds.currentVersionVerified,false);
-  assert.throws(()=>db.attachOverlay(o),/INVALID_OR_REUSED_OVERLAY/);
-  assert.throws(()=>db.attachOverlay({...pack('stale','DB-01',[]),
+  assert.throws(()=>db.attachOverlay(verified),/INVALID_OR_REUSED_OVERLAY/);
+  assert.throws(()=>db.attachOverlay(o),/UNVERIFIED_OVERLAY_BYTES/);
+  await assert.rejects(attach(db,{...pack('stale','DB-01',[]),
     target:{...target,sourceSha256:'f'.repeat(64)}}),/CURRENT_SOURCE_TARGET_MISMATCH/);
-  assert.throws(()=>db.attachOverlay(pack('wrong-owner','DB-02',[
+  await assert.rejects(attach(db,pack('wrong-owner','DB-02',[
     {itemId:'40006110',facts:[{field:'worlds',state:'verified',value:['Valley']}]}
   ])),/FIELD_OWNER_OR_DUPLICATE/);
 });
-test('explicit no-results is different from not-applicable and not-covered',()=>{
+test('explicit no-results is different from not-applicable and not-covered',async()=>{
   const db=new SharedGameDatabase(current());
-  assert.throws(()=>db.attachOverlay(pack('no-proof','DB-03',[
+  await assert.rejects(attach(db,pack('no-proof','DB-03',[
     {itemId:'40005160',facts:[{field:'starpaths',state:'verified',value:[]}]}
   ])),/VERIFIED_ARRAY_REQUIRES_SOURCE_EVIDENCE/);
-  assert.throws(()=>db.attachOverlay(pack('bad-absence','DB-03',[
+  await assert.rejects(attach(db,pack('bad-absence','DB-03',[
     {itemId:'40005160',facts:[{field:'starpaths',state:'not_applicable'}]}
   ])),/ABSENCE_MUST_BE_VERIFIED/);
-  db.attachOverlay(pack('guide','DB-03',[
+  await attach(db,pack('guide','DB-03',[
     {itemId:'40005160',facts:[
       {field:'starpaths',state:'verified',value:[],emptyVerified:true},
       {field:'events',state:'verified',value:['eventA','eventB']}
@@ -88,17 +94,17 @@ test('explicit no-results is different from not-applicable and not-covered',()=>
   assert.deepEqual(db.coverage().fields.starpaths,
     {verified:1,notApplicable:1,unverified:0,notCovered:0,historicalCandidates:0,total:2});
 });
-test('conflicts and unrecognized item keys fail atomically',()=>{
+test('conflicts and unrecognized item keys fail atomically',async()=>{
   const db=new SharedGameDatabase(current());
-  db.attachOverlay(pack('first','DB-01',[{itemId:'40005160',facts:[
+  await attach(db,pack('first','DB-01',[{itemId:'40005160',facts:[
     {field:'worlds',state:'verified',value:['Valley']}
   ]}]));
-  assert.throws(()=>db.attachOverlay(pack('conflicting','DB-01',[
+  await assert.rejects(attach(db,pack('conflicting','DB-01',[
     {itemId:'40005160',facts:[{field:'worlds',state:'verified',value:['Other']}]},
     {itemId:'40006110',facts:[{field:'worlds',state:'verified',value:['Eternity']}]}
   ])),/CONFLICTING_CURRENT_EVIDENCE/);
   assert.equal(db.getItem(40006110).facts.worlds.state,'unverified');
-  assert.throws(()=>db.attachOverlay(pack('unknown','DB-04',[
+  await assert.rejects(attach(db,pack('unknown','DB-04',[
     {itemId:'99999',facts:[{field:'worldRegions',state:'verified',value:['region']}]}
   ])),/OVERLAY_ID_NOT_COVERED_OR_DUPLICATE/);
   assert.throws(()=>db.attachHistorical({...old(),index:{...old().index,

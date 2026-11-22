@@ -17,6 +17,8 @@ const HISTORICAL_TARGET = Object.freeze({
   buildId:'52BD625D9B4E0053'
 });
 
+const VERIFIED_OVERLAYS = new WeakSet<object>();
+const VERIFIED_BRAND: unique symbol = Symbol('verified-db00-overlay');
 export type DbStream = 'DB-01' | 'DB-02' | 'DB-03' | 'DB-04' | 'DB-05' | 'SRC-04';
 export type FactKey = 'category' | 'subcategory' | 'worlds' | 'universes' |
   'dlc' | 'acquisition' | 'starpaths' | 'events' | 'media' |
@@ -135,6 +137,7 @@ export interface FactOverlay {
   readonly scope:string;
   readonly rows:readonly OverlayRow[];
 }
+export type VerifiedFactOverlay = FactOverlay & Readonly<{[VERIFIED_BRAND]:true}>;
 export type HistoricalSource = Readonly<{
   index:{
     t:{platform:string;gameVersion:string;buildID:string};
@@ -315,7 +318,8 @@ export class SharedGameDatabase {
   }
 
   /** Attach a previously hashed and independently pinned current-source pack. */
-  attachOverlay(overlay:FactOverlay):void {
+  attachOverlay(overlay:VerifiedFactOverlay):void {
+    check(object(overlay) && VERIFIED_OVERLAYS.has(overlay), 'UNVERIFIED_OVERLAY_BYTES');
     check(overlay?.schema===FACT_OVERLAY_SCHEMA && stringToken(overlay.id) &&
       !this.usedOverlays.has(overlay.id),'INVALID_OR_REUSED_OVERLAY');
     checkTarget(overlay.target);
@@ -363,6 +367,10 @@ export class SharedGameDatabase {
       this.current.set(id,next);
     }
     this.usedOverlays.add(overlay.id);
+  }
+
+  async attachVerifiedOverlay(bytes:Uint8Array|ArrayBuffer,pinnedSha256:string):Promise<void> {
+    this.attachOverlay(await verifyFactOverlay(bytes,pinnedSha256));
   }
 
   getItem(value:string|number):SharedDbItem|null {
@@ -442,7 +450,7 @@ export class SharedGameDatabase {
  */
 export async function verifyFactOverlay(
   raw:Uint8Array|ArrayBuffer,expectedSha256:string
-):Promise<FactOverlay> {
+):Promise<VerifiedFactOverlay> {
   check(typeof expectedSha256==='string' && SHA.test(expectedSha256) &&
     globalThis.crypto?.subtle, 'INDEPENDENT_SHA_PIN_REQUIRED');
   const bytes=raw instanceof ArrayBuffer ? new Uint8Array(raw) : raw;
@@ -456,7 +464,9 @@ export async function verifyFactOverlay(
     typeof parsed.id==='string' && stringToken(parsed.id) &&
     Array.isArray(parsed.rows),'INVALID_OVERLAY_FORMAT');
   checkTarget(parsed.target);
-  return parsed as unknown as FactOverlay;
+  const verified = Object.freeze(parsed) as unknown as VerifiedFactOverlay;
+  VERIFIED_OVERLAYS.add(verified);
+  return verified;
 }
 
 /**
