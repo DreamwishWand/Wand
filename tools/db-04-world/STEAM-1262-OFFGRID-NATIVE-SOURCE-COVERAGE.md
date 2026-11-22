@@ -118,6 +118,26 @@ original bytes, source objects, positions, save data and derived snapshot
 arrays must not be committed to public Git. As before, world-coordinate,
 occupancy, collision, edit legality and full-game coverage stay **unverified**.
 
+## Steam v1.26.2 MythDungeon original direct JSON variant
+
+The original `GridData/OffGridBuildings/Expansion02/MythDungeon` directory
+includes **22 exact scene-referenced native GridData files** examined from
+the owner's Steam v1.26.2 archive (21 literal direct-value JSON files and
+one binary/protobuf GridData). **11 of the 21 direct JSON files** have five
+source fields: `SizeX`, `SizeY`, `FloorTypes`,
+`CompactedFloorTypeIndex: []`, and `CompactedFloorTypes: ""`.
+The other 10 direct JSON files have the established three-field form.
+The empty extra fields do not contain a compacted representation. The
+parser permits this exact five-field shape only when **both are empty**;
+a partially present or nonempty compacted representation fails closed.
+No inferred format precedence is applied.
+
+These 22 source hashes add **22,306** exact grid-local decoded cells to the
+read-only partial World source snapshot. They do not verify collisions,
+traversal, editor placement legality, full source closure, runtime
+transformations or player save positions. ZIP members and raw game files
+are not published to GitHub; only derived aggregate evidence is recorded.
+
 ## Unsupported semantics
 
 Player save coordinates, world-level transformations, scene transitions,
