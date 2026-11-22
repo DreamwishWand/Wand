@@ -146,11 +146,35 @@ and structural source evidence in an isolated, one-shot Worker. A second
 strict P1G read occurs in that Worker: no decoded private profile, source ZIP
 records, grid/object IDs or coordinates are returned to the page.
 
-**Fail-closed join**: source `nativeGridCollection` layout ID must equal
-the save grid's exact `GridDefaultLayoutPath`; a unique
-`nativeGridEntries[].gridDataPath` must equal its `GridDataPath`; the
-source's declared `defaultObjectCount` must exactly equal its extracted
-`layoutObjectsByGrid` record count. A save-local Grid ID is never compared
+**Corrected native identity boundary (2026-11-22, PR #228 follow-up):**
+A full `Grid` can be source-routed by exact
+`GridDefaultLayoutPath` + `GridDataPath`. A persistent `DiffGrid`
+does **not** have a `GridDataPath` field. Native protobuf fields 2..6
+persist the five-component identity:
+
+`(GridDefaultLayoutPath, GridDefaultLayoutType, DefaultLayoutGridID,
+DefaultGridHashCode, DefaultGridDataHashCode)`.
+
+A `DiffGrid` may be reconstructed **only** after all five components
+are source-correlated. The original native layout kind must match the
+saved fully qualified type and the source's native Grid ID must match
+`DefaultLayoutGridID`; exact path matching alone is not sufficient.
+The two persisted 32-bit signed hash values are **not** generic SHA-256
+digests and must not be fabricated from the file name or copied from
+the save to create a false witness. Current Steam v1.26.2 DB-04
+`nativeGridEntries` extractors do **not** yet emit native-method-correlated
+default Grid + GridData hash pairs. Therefore those matched-path
+`DiffGrid` candidates are counted as `hashUnverifiedGrids` and are
+explicitly omitted from complete effective layouts. Conflicting
+source hashes are counted as `hashMismatchGrids` and likewise omitted.
+Future native source extraction may emit a verified pair, but no
+broader ownership/unlock inference is authorized by that fact.
+
+**Fail-closed join for full Grids:** source `nativeGridCollection`
+layout ID must equal the save Grid's exact `GridDefaultLayoutPath`; a
+unique `nativeGridEntries[].gridDataPath` must equal `GridDataPath`;
+the source's declared `defaultObjectCount` must exactly equal its
+extracted `layoutObjectsByGrid` record count. A save-local Grid ID is never compared
 or normalized to a native layout Grid ID. No filename suffix/ordinal/area
 heuristics, automatic aliases or guessed source identity are used. Only
 Steam v1.26.2 source metadata and observed schema 643 are admitted for this

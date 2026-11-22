@@ -17,7 +17,15 @@ export function makeCollectionDb04ZipFixture(options={}){
     grids:[{gridId:TEST_DB04_GRID,sizeX:10,sizeY:10,
       terrainDecoding:{decoded:false,status:'native_packing_not_verified_for_game_version'}}],
     layouts:[{layoutId:TEST_DB04_LAYOUT,layoutKind:'nativeGridCollection',
+      source:{nativeType:'Meta.GridCollection'},
       nativeGridEntries:[{gridIdNative:0,gridDataPath:TEST_DB04_GRID,
+        // SYNTHETIC fixture-only proof; current real DB-04 source extraction
+        // does not expose source-native default hash witnesses.
+        ...(options.withNativeHashes===false?{}:{
+          defaultHashEvidence:'source_native_method_correlated',
+          defaultGridHashCode:-816650372,
+          defaultGridDataHashCode:-410688507
+        }),
         defaultObjectCount:3}],defaultObjectCount:3}],
     layoutObjects:[row(7,40005160),row(8,40006110),row(9,50000001)]
   };
