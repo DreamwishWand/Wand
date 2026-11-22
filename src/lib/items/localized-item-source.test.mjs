@@ -197,3 +197,13 @@ test('tampered native tag SHA and forged locale names never pass as source-exact
   await assert.rejects(createDb01LocalizedItemSourceClient(
     f.shared,badLabel).getItem(10,'ja'),/INCONSISTENT_ORIGINAL_TAG_LABEL/);
 });
+
+test('retired v1.26.2 partial Tag overlay is rejected before any known Item appears untagged',()=>{
+  const f=fixture();
+  assert.throws(()=>createDb01LocalizedItemSourceClient({
+    ...f.shared,
+    source:{...f.shared.source,definitions:39067},
+    getCoverage:()=>({totalDefinitions:39067,tagAssociatedDefinitions:14861}),
+  },f.taxonomy),/RETIRED_INCOMPLETE_TAG_OVERLAY/);
+  assert.equal(f.calls.reads,0);
+});
