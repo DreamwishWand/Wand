@@ -125,3 +125,38 @@ test('tampered signed audit ledgers and original semantic conflicts fail closed'
   await assert.rejects(createDb04NativeItemScopeClient(build(wrongCategory)),
     /NATIVE_CATEGORY_COUNT_MISMATCH/);
 });
+
+test('archived source-attested private ZIP audit preserves native tag counts',async()=>{
+  const original=build();
+  const audit=JSON.parse(new TextDecoder().decode(original.auditBytes));
+  audit.originalSourceSha256=audit.sourceSha256;
+  delete audit.sourceSha256;
+  audit.counts={
+    items:audit.counts.items,
+    worldDirect:audit.counts.world_direct,
+    universeDirect:audit.counts.universe_direct,
+    universeSetCandidate:audit.counts.universe_set_candidate,
+    universeAnyEvidence:audit.counts.universe_any_evidence
+  };
+  audit.byNativeCategory=Object.fromEntries(
+    Object.entries(CATEGORIES).map(([name,items])=>[name,{items}]));
+  audit.worlds=[...DB04_WORLD_TAGS];
+  audit.importStatus='private_candidate_only_not_merged_into_public_catalog';
+  const auditBytes=encode(JSON.stringify(audit)+'\n');
+  const result=await createDb04NativeItemScopeClient({
+    auditBytes,rowsBytes:original.rowsBytes,
+    expectedAuditSha256:hash(auditBytes),
+    expectedRowsSha256:original.expectedRowsSha256
+  });
+  assert.deepEqual(result.byWorldTag('IsEternityIsle').itemIds,[2]);
+  assert.deepEqual(result.byUniverseTag('Mickey','direct').itemIds,[1]);
+  assert.equal(result.source.privateOnly,true);
+  const forged=structuredClone(audit);
+  forged.byNativeCategory.Furniture.items+=1;
+  const tampered=encode(JSON.stringify(forged)+'\n');
+  await assert.rejects(createDb04NativeItemScopeClient({
+    auditBytes:tampered,rowsBytes:original.rowsBytes,
+    expectedAuditSha256:hash(tampered),
+    expectedRowsSha256:original.expectedRowsSha256
+  }),/ARCHIVED_CATEGORY_COUNT/);
+});
