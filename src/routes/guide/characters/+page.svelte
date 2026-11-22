@@ -1,6 +1,8 @@
 <script lang="ts">
   import {onMount} from 'svelte';
   import {base} from '$app/paths';
+  import {autoAppend} from '$lib/ui/auto-append';
+  import {collectWindow} from '$lib/ui/collect-window.mjs';
   import {verifyPublicQuestIndex,PUBLIC_GUIDE_LOCALES,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
   import {
     derivePublicGuideCharacters,sourceCharacterName,filterPublicGuideCharacters,
@@ -17,9 +19,9 @@
   let query='';
   let mode:'all'|'withQuests'|'withoutQuests'='all';
   let limit=48;
-  $: filtered=directory?filterPublicGuideCharacters(directory,{
-    query:query.slice(0,120),locale,mode,limit
-  }):{total:0,rows:[]};
+  $: filtered=directory?collectWindow((offset:number,batch:number)=>filterPublicGuideCharacters(directory,{
+    query:query.slice(0,120),locale,mode,offset,limit:batch
+  }),limit,'rows'):{total:0,rows:[]};
   $: linkedQuests=selected?[...selected.quests].sort((a:any,b:any)=>
     (a.names?.[locale]||a.names?.en||a.id).localeCompare(
       b.names?.[locale]||b.names?.en||b.id,locale==='ja'?'ja':'en')):[];
@@ -114,7 +116,7 @@
         {/each}
         {#if filtered.total===0}<p class="empty">一致する名称はありません。</p>{/if}
         {#if filtered.total>limit}
-          <button class="more" on:click={()=>limit+=48}>さらに表示（残り {filtered.total-limit} 件）</button>
+          <div class="auto-sentinel" use:autoAppend={{hasMore:()=>filtered.total>limit,load:()=>limit+=48}} role="status" aria-label="スクロールでキャラクターを追加表示"></div>
         {/if}
       </section>
       <section class="details" aria-label="関連クエスト">
@@ -170,7 +172,7 @@
   .person{display:flex;width:100%;flex-direction:column;align-items:start;gap:5px;padding:13px;border:1px solid transparent;border-radius:9px;color:#fff;background:transparent;text-align:left;overflow-wrap:anywhere}
   .person:hover,.person.active{background:#31243f;border-color:#735b8b}
   .person strong{font-size:14px}.person small{font-size:11px;color:#af9ebd}
-  .more,.retry{width:100%;padding:12px;background:#302440;border:1px solid #755b92;border-radius:9px;color:#fff}
+  .retry{width:100%;padding:12px;background:#302440;border:1px solid #755b92;border-radius:9px;color:#fff}.auto-sentinel{height:18px}
   .details{position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto}
   .detail-head{border-bottom:1px solid #493955;padding-bottom:15px}
   .detail-head h2{font-size:22px;margin:9px 0;overflow-wrap:anywhere}
