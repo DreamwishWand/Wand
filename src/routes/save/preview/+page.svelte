@@ -29,6 +29,9 @@
     | {mode:'batch';file:File;format:'json'|'auto';edits:BatchEdit[];
        signature:string};
   let queuedEdits:BatchEdit[]=[];
+  // A pending batch belongs to one selected Save. Edits may be staged before
+  // the first file is chosen, but must never carry over to another file.
+  let fileSelected=false;
   type EditableSlot =
     | {kind:'inventory';inventoryId:string;itemId:string;amount:number}
     | {kind:'chest';containerId:string;slotIndex:number;itemId:number;amount:number};
@@ -118,6 +121,8 @@
     catalogRevision++;
   });
   function onFileChange(){
+    if(fileSelected)queuedEdits=[];
+    fileSelected=Boolean(fileInput?.files?.[0]);
     cancel();
     result=null;
     dbWorker?.terminate();dbWorker=null;catalogRevision++;
@@ -555,6 +560,7 @@
       disabled={processing||queuedEdits.length>=16}>複数編集に追加</button>
     <button type="button" class="secondary" on:click={()=>{
       onFileChange();queuedEdits=[];if(fileInput)fileInput.value='';
+      fileSelected=false;
     }}>
       破棄
     </button>

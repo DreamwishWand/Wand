@@ -283,6 +283,18 @@ try{
   assert.equal(batchOpened.Player.ContainerInventories['202'].Inventory[1].Extra,null);
   assert.equal(quantityProfile.Player.ListInventories['100'].Inventory['777'].Amount,1);
 
+  // An edit queue may be prepared before the first file selection (tested
+  // above), but changing an already-selected Save must discard that queue
+  // and any previously generated edited-copy link.
+  await page.getByLabel('検証用セーブファイル').setInputFiles({
+    name:'another-save.profile',mimeType:'application/octet-stream',
+    buffer:syntheticEncryptedP1g(quantityProfile)
+  });
+  assert.equal(await page.getByRole('region',{name:'一括数量変更'}).count(),0,
+    'A batch staged for a different Save must not survive a file switch');
+  assert.equal(await page.getByRole('link',{name:'コピーをダウンロード'}).count(),0,
+    'A previously generated edited copy must not survive a file switch');
+
   await page.getByRole('button',{name:'破棄'}).click();
   await page.getByLabel('現在の数量').fill('99');
   await page.getByLabel('検証用セーブファイル').setInputFiles({
