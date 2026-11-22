@@ -126,3 +126,16 @@ Do not add a "Load more" button. Let the Collection UI schedule the next request
 ## Cross-stream target source fingerprint
 
 `applyPatch` requires exact `platform`, `gameVersion`, `buildId` **and** `sourceSha256` equality between a patch and its base snapshot. A matching game version alone does not prove the source file set is the same, especially across Steam hotfixes and archived v1.26.1/v1.26.2 inputs. The shared target fingerprint is the release anchor; each DB-01/02/03/04/05 stream's own file/probe hashes belong in additional `patch.sources` records. Never replace the target fingerprint with a stream-specific file digest to bypass this gate.
+
+
+## Cross-service typed Item ID and verified fact API
+
+Use `openSharedGameDatabase(base, fetch, {includeHistoricalCandidates:true})` from `src/lib/game-db/integrated.ts` in Collection, Guide, Save, World, Decorate and other services. The active Steam release is loaded from the existing SHA-pinned public manifest; no per-user ZIP import is needed. `getItem(itemId)` returns verified names, a display-only current category hint, and typed `facts` for category, subcategory, worlds, universes, DLC, acquisition, star paths, events, media, world regions and save references. `coverage()` reports verified, explicitly not-applicable, unverified, not-covered and historical-candidate counts over the exact current Item ID set.
+
+The current public Steam 1.26.2 source has **13,202 items** and **zero verified worlds/universes/DLC semantic assignments**. Their empty arrays are `unverified`, **not** verified absence. The public coarse category label is not promoted to verified semantic category because its source declares `semanticCategoriesVerified:false`.
+
+The optional Switch 1.25.0 history is joined by exact Item ID but remains under `historical`, marked `historical_candidate` with its distinct platform/version/build. No historical assignment can overwrite or verify a Steam fact.
+
+Source-domain streams can contribute only independently SHA-256-pinned `verifyFactOverlay(bytes, expectedSha256)` payloads. `attachOverlay` rejects mismatched platform/gameVersion/buildId/sourceManifestSHA, duplicate IDs, conflicting facts, and violations of field ownership: DB-01 item properties and scope, DB-02 acquisition, DB-03 events/star paths, DB-04 world regions, DB-05 static save references, SRC-04 media. A verified empty list requires explicit `emptyVerified:true`, and a confirmed non-applicable fact requires `absenceVerified:true`; missing facts remain `not_covered` or `unverified`. Source stream extraction is not reimplemented here. Private facts are **not automatically made public** by being bound to a UI object; release publication remains a separate approval step.
+
+The legacy `model.mjs` and `client.mjs` backend remain in service during their subsequent typed TypeScript migration; the new cross-service API itself is fully typed and independently tested. The active pointer is not modified by this change.

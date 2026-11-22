@@ -209,9 +209,9 @@ function checkTarget(raw:unknown):asserts raw is DbTarget {
     typeof raw.sourceSha256==='string' && SHA.test(raw.sourceSha256),
     'INVALID_TARGET');
 }
-function copyValue<K extends FactKey>(field:K,value:FactValueMap[K]):FactValueMap[K] {
-  if(Array.isArray(value))return Object.freeze([...value]) as FactValueMap[K];
-  if(object(value))return Object.freeze({...value}) as FactValueMap[K];
+function copyValue<T extends string|readonly string[]|DbMedia>(value:T):T {
+  if(Array.isArray(value))return Object.freeze([...value]) as T;
+  if(object(value))return Object.freeze({...value}) as T;
   return value;
 }
 function checkValue(field:FactKey,v:unknown,emptyVerified:boolean):void {
@@ -241,12 +241,12 @@ function missing<K extends FactKey>(state:'unverified'|'not_covered'):FieldFact<
   return {state,value:null,provenance:null};
 }
 function observed<K extends FactKey>(value:FactValueMap[K],source:FactProvenance):FieldFact<K> {
-  return {state:'verified',value:copyValue('category' as K,value),provenance:source};
+  return {state:'verified',value:copyValue(value),provenance:source};
 }
 function legacyCandidate<K extends 'worlds'|'universes'|'dlc'|'category'>(
   value:FactValueMap[K]):HistoricalCandidate<K> {
   return Object.freeze({
-    state:'historical_candidate',value:copyValue('category' as K,value),
+    state:'historical_candidate',value:copyValue(value),
     platform:HISTORICAL_TARGET.platform,gameVersion:HISTORICAL_TARGET.gameVersion,
     buildId:HISTORICAL_TARGET.buildId,
     sourceId:'legacy-collection-switch-1250',
@@ -448,7 +448,7 @@ export async function verifyFactOverlay(
   const bytes=raw instanceof ArrayBuffer ? new Uint8Array(raw) : raw;
   check(bytes instanceof Uint8Array && bytes.byteLength>0 && bytes.byteLength<=16*1024*1024,
     'OVERLAY_BYTES_INVALID');
-  const digest=await crypto.subtle.digest('SHA-256',bytes);
+  const digest=await crypto.subtle.digest('SHA-256',new Uint8Array(bytes));
   const actual=Array.from(new Uint8Array(digest),v=>v.toString(16).padStart(2,'0')).join('');
   check(actual===expectedSha256,'OVERLAY_SHA_MISMATCH');
   const parsed:unknown=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
