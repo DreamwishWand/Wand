@@ -335,10 +335,12 @@ export function starpathOriginRecords(verifiedDb03Snapshot: unknown): {
 /** Normal consumer: DB-03 verifies the 34,617 source bytes and pinned SHA-256 first. */
 export async function loadStarpathAcquisitionDatabase(
   fetcher: typeof fetch = fetch,
-  native: NativeAcquisitionReader | null = null
+  native: NativeAcquisitionReader | null = null,
+  basePath = ''
 ): Promise<OriginDatabase> {
+  assert(basePath === '' || /^\\/[a-zA-Z0-9/_-]+$/.test(basePath), 'BASE_PATH');
   const snapshot: unknown = await loadPublicStarpath(
-    '/guide/public/starpath-cache-2026-11-22.json', fetcher
+    basePath + '/guide/public/starpath-cache-2026-11-22.json', fetcher
   );
   const {origins, campaigns} = starpathOriginRecords(snapshot);
   return createAcquisitionOriginDatabase(origins, campaigns, native);
@@ -349,8 +351,9 @@ export async function loadUnifiedAcquisitionOriginDatabase(
   fetcher: typeof fetch = fetch,
   native: NativeAcquisitionReader | null = null
 ): Promise<OriginDatabase> {
+  assert(basePath === '' || /^\\/[a-zA-Z0-9/_-]+$/.test(basePath), 'BASE_PATH');
   const snapshot: unknown = await loadPublicStarpath(
-    '/guide/public/starpath-cache-2026-11-22.json', fetcher
+    basePath + '/guide/public/starpath-cache-2026-11-22.json', fetcher
   );
   const starpath = starpathOriginRecords(snapshot);
   return createAcquisitionOriginDatabase(
