@@ -16,6 +16,9 @@ def synthetic_provider_dump():
         ("ItemPriceDatabase", "TryGetSellPrice", 0x2900),
         ("DynamicItemPriceDatase", "TryGetSellPrice", 0x2A00),
         ("DynamicItemPriceDatase", "get_DataCached", 0x2B00),
+        ("SellPriceFormulaItemData", "GetSellPriceFormulaItemData", 0x2C00),
+        ("SellPriceFormulaItemData", "IsFormulaValidForItem", 0x2D00),
+        ("SellPriceFormulaItemData", "CalculateItemPrice", 0x2E00),
     ]
     for name, method, rva in extra:
         parts.append(
@@ -34,9 +37,9 @@ class NativeCrossPlatformMathTests(unittest.TestCase):
             path = Path(folder) / "synthetic.cs"
             path.write_text(synthetic_provider_dump(), encoding="utf-8")
             values = audit.direct_rvas(path)
-            self.assertEqual(len(values), 11)
+            self.assertEqual(len(values), 14)
             self.assertEqual(values[0], 0x2100)
-            self.assertEqual(values[-1], 0x2B00)
+            self.assertEqual(values[-1], 0x2E00)
             with self.assertRaisesRegex(ValueError, "METHOD_RVA_MISMATCH"):
                 audit.verify_rvas(values, audit.STEAM_RVAS)
 
@@ -78,11 +81,11 @@ class NativeCrossPlatformMathTests(unittest.TestCase):
     def test_shas_and_target_tables_remain_explicit(self):
         self.assertEqual(audit.CONTRACT,
                          "wand.db02.native-meal-price-cross-platform@1")
-        self.assertEqual(len(audit.STEAM_RVAS), 11)
-        self.assertEqual(len(audit.SWITCH_RVAS), 11)
+        self.assertEqual(len(audit.STEAM_RVAS), 14)
+        self.assertEqual(len(audit.SWITCH_RVAS), 14)
         self.assertNotEqual(audit.STEAM_RVAS, audit.SWITCH_RVAS)
-        self.assertEqual(len(audit.STEAM_WINDOWS), 27)
-        self.assertEqual(len(audit.SWITCH_WINDOWS), 24)
+        self.assertEqual(len(audit.STEAM_WINDOWS), 32)
+        self.assertEqual(len(audit.SWITCH_WINDOWS), 29)
         for windows in (audit.STEAM_WINDOWS, audit.SWITCH_WINDOWS):
             names = {window[0] for window in windows}
             self.assertTrue({
@@ -105,7 +108,12 @@ class NativeCrossPlatformMathTests(unittest.TestCase):
                 "dynamic_initial_out_zero",
                 "dynamic_cached_row_query",
                 "dynamic_missing_out_one",
-                "dynamic_data_cached_positive_count"
+                "dynamic_data_cached_positive_count",
+                "formula_currency_match",
+                "formula_item_type_eligibility_call",
+                "formula_first_eligible_return",
+                "formula_resolved_type_identity",
+                "formula_float_truncate_to_int32"
             }.issubset(names))
         self.assertTrue(all(len(s)==64
                             for s in (audit.STEAM_DLL_SHA,
