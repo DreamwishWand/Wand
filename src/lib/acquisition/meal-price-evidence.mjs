@@ -15,6 +15,8 @@ import {collectConfiguredIngredientSellEvidence} from './meal-ingredient-sell-ev
 import {loadPrivateDynamicPriceCache} from './private-dynamic-price-cache.mjs';
 import {classifyNativeMealSellPriceRoute} from './native-meal-price-route.mjs';
 import {nativeSellPriceProviderPlan} from './native-sell-provider-plan.mjs';
+import {classifyNativeSerializedDynamicCache,simulateNativeSerializedSellProvider}
+  from './native-serialized-sell-provider.mjs';
 
 export const DB02_MEAL_PRICE_VIEW_CONTRACT='wand.db02.private-meal-pricing-view@1';
 export const DB02_MEAL_PRICE_EVIDENCE_CONTRACT='wand.db02.meal-price-evidence@1';
@@ -152,6 +154,10 @@ function inspectAuthenticatedMeal({acquisitionBundle,shopPriceView,nativeCache,m
     nativeSellPriceProviderPlan(x.itemId)));
   const sourceIngredientStaticSellEvidence=collectConfiguredIngredientSellEvidence(
     ingredientAmounts,id=>shopPriceView.getSourceItemPriceDefinitions(id));
+  const sourceIngredientStaticProviderSimulations=frozen(ingredientAmounts.map(x=>
+    frozen(shopPriceView.getSourceItemPriceDefinitions(x.itemId).map(row=>
+      simulateNativeSerializedSellProvider({providerKind:'static',
+        itemId:x.itemId,currencyId:80000000,sourcePriceRow:row})))));
   const sourceIngredientDynamicCacheEvidence=nativeCache===null?null:
     frozen(ingredientAmounts.map(x=>nativeCache.lookup(x.itemId)));
   return frozen({
@@ -169,6 +175,8 @@ function inspectAuthenticatedMeal({acquisitionBundle,shopPriceView,nativeCache,m
     cookingRecipeCoverage:'partial_native_extraction',
     recordedIngredients:ingredientAmounts,
     sourceIngredientStaticSellEvidence,
+    sourceIngredientStaticProviderSimulations,
+    nativeStaticProviderResultsAreSourceConditionalOnly:true,
     sourceIngredientDynamicCacheEvidence,
     nativeDynamicCacheSourceVerified:nativeCache!==null,
     dynamicCachedSellRowCannotProveEffectivePrice:true,
@@ -222,6 +230,9 @@ export async function loadPrivateMealPricingView({
     shopPriceView.sourceManifestSha256===STATIC_PRICE_SHA&&
     shopPriceView.src02R5ManifestSha256===SRC02_R5_SHA,
     'ORIGINAL_SOURCE_CONTEXT_REQUIRED');
+  const sourceNativeDynamicCacheGate=nativeCache===null?null:
+    classifyNativeSerializedDynamicCache({cachedDataPresent:true,
+      serializedItemPricesCount:nativeCache.cacheRowCount});
   return frozen({
     contract:DB02_MEAL_PRICE_VIEW_CONTRACT,
     platform:'Steam',gameVersion:'1.26.2',
@@ -232,6 +243,14 @@ export async function loadPrivateMealPricingView({
     nativeCookingStarSettings:nativeStars,
     nativeDynamicCacheVerified:nativeCache!==null,
     nativeDynamicPriceCache:nativeCache,
+    sourceNativeDynamicCacheGate,
+    nativeRuntimeDataCachedVerified:false,
+    getSourceStaticSellProviderSimulations:itemId=>{
+      check(validId(itemId),'INVALID_STATIC_PROVIDER_ITEM_ID');
+      return frozen(shopPriceView.getSourceItemPriceDefinitions(itemId).map(row=>
+        simulateNativeSerializedSellProvider({providerKind:'static',
+          itemId,currencyId:80000000,sourcePriceRow:row})));
+    },
     getNativeSellPriceProviderPlan:itemId=>nativeSellPriceProviderPlan(itemId),
     getSourceCachedDynamicPriceRow:itemId=>{
       check(validId(itemId),'INVALID_DYNAMIC_ITEM_ID');

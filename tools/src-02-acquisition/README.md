@@ -1,5 +1,35 @@
 # DB-02 ACQUISITION — source-pinned extraction
 
+## Original static/dynamic sell provider failure distinctions (v1.26.2)
+
+`native-serialized-sell-provider.mjs` now models the exact
+Steam/Switch native provider-level `TryGetSellPrice` result
+**conditional on a caller-supplied ItemPrices record**:
+a matching `SellPrices` currency returns `true` and its int32
+Amount; otherwise a nonnull static/dynamic provider returns `false`
+with **out=1**, whereas a dynamic provider whose `CachedData=null`
+returns `false` with **out=0**. Neither failure out-value
+is a successful item sale price. Protobuf Amount field absence has
+a numeric default 0 on matched records.
+
+`DynamicItemPriceDatase.DataCached` is true for a nonnull
+`CachedData` with positive ItemPrices count. The original,
+SHA-authenticated **8,549-row** dynamic cache snapshot satisfies
+this test as **serialized source evidence only**, not known live
+cache state. The 371 unique fixed cooking ingredients have zero
+observed overlap with that snapshot.
+
+The authenticated private meal-price view now exposes per-ingredient
+conditional static-provider simulations and a separate source
+dynamic cache gate. **211/371** fixed cooking ingredients yield a
+conditional successful static soft-sell definition; the remaining
+**160** have no single source-configured static soft-sell amount.
+Runtime provider selection, formula evaluation, complete meal price
+and actual selling prices remain **unverified**. The strict
+original-binary audit now checks **11 method RVAs per platform,
+27 Steam + 24 Switch code windows**. Detailed context:
+[MEAL-STATE-SELL-PRICE.md](MEAL-STATE-SELL-PRICE.md).
+
 ## Original native sell-price provider lookup (Steam/Switch 1.26.2)
 
 `native-sell-provider-plan.mjs` exposes the executable-confirmed
