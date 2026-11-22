@@ -246,6 +246,31 @@ pub(super) fn resolve_grid_coordinate_targets(
     Ok(targets)
 }
 
+/// Resolve a cardinal orientation edit exclusively against the original,
+/// locally opened Save. No native Grid/Object ID leaves this Rust module.
+pub(super) fn resolve_grid_orientation_target(
+    profile:&[u8],ordinal:usize,expected_item:u64,
+    expected:(i32,i32),record_kind:&str,orientation:&str
+)->Result<GridCoordinateTarget,CodecError>{
+    let (scan,_status)=scan_grid_instances(profile)?;
+    if scan.sampled||scan.invalid>0||ordinal==0||ordinal>MAX_ROWS{
+        return Err(CodecError::Json);
+    }
+    let (target,xy)=scan.private_targets.get(ordinal-1)
+        .ok_or(CodecError::Json)?;
+    let row=scan.rows.get(ordinal-1).ok_or(CodecError::Json)?;
+    let kind=match target.kind{
+        GridObjectKind::Full=>"full",
+        GridObjectKind::DiffModified=>"diff_modified"
+    };
+    if target.item_id!=expected_item||xy!=&Some(expected)||
+       kind!=record_kind||
+       row.get("orientation").and_then(Value::as_str)!=Some(orientation){
+        return Err(CodecError::Json);
+    }
+    Ok(target.clone())
+}
+
 pub(super) fn saved_grid_instances_json(source:&[u8])->Result<String,CodecError>{
     let (scan,status)=scan_grid_instances(source)?;
     serde_json::to_string(&serde_json::json!({

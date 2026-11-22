@@ -348,6 +348,47 @@ function validateGridInstancePreview(source:unknown):GridInstancePreview{
   return {...source,rows} as unknown as GridInstancePreview;
 }
 
+type CardinalOrientation=
+  'GridOrientation_Up'|'GridOrientation_Right'|
+  'GridOrientation_Down'|'GridOrientation_Left';
+const cardinalNames:readonly string[]=[
+  'GridOrientation_Up','GridOrientation_Right',
+  'GridOrientation_Down','GridOrientation_Left'
+];
+interface GridOrientationEdit{
+  localOrdinal:number;
+  itemId:string;
+  recordKind:'full'|'diff_modified';
+  expectedX:number;
+  expectedY:number;
+  expectedOrientation:CardinalOrientation;
+  replacementOrientation:CardinalOrientation;
+}
+function validateGridOrientationEdit(raw:unknown):GridOrientationEdit{
+  if(!object(raw)||!exact(raw,[
+    'localOrdinal','itemId','recordKind','expectedX','expectedY',
+    'expectedOrientation','replacementOrientation'
+  ])||!nonnegative(raw.localOrdinal,20000)||
+    raw.localOrdinal===0||!validId(raw.itemId)||
+    BigInt(raw.itemId)>9007199254740991n||
+    !['full','diff_modified'].includes(String(raw.recordKind))||
+    !signed32(raw.expectedX)||!signed32(raw.expectedY)||
+    !cardinalNames.includes(String(raw.expectedOrientation))||
+    !cardinalNames.includes(String(raw.replacementOrientation))||
+    raw.expectedOrientation===raw.replacementOrientation)
+    throw new TypeError('DB05_ORIENTATION_EDIT_INVALID');
+  return raw as unknown as GridOrientationEdit;
+}
+interface GridOrientationPreviewReceipt{
+  contract:'wand.db05.grid-orientation-preview@1';
+  changed:true;
+  lexicalBytesPreserved:true;
+  reopenVerified:true;
+  writerAuthorized:false;
+  exportAuthorized:false;
+  placementLegalityVerified:false;
+}
+
 interface GridCoordinateEdit {
   localOrdinal:number;
   itemId:string;
@@ -428,7 +469,8 @@ interface CopyReceipt {
 type Reply =
   | { kind: 'error' }
   | { kind: 'result'; receipt: PreviewReceipt | BatchPreviewReceipt |
-      GridCoordinatePreviewReceipt | GridCoordinateBatchReceipt }
+      GridCoordinatePreviewReceipt | GridCoordinateBatchReceipt |
+      GridOrientationPreviewReceipt }
   | { kind: 'copy'; bytes: Uint8Array; receipt: CopyReceipt }
   | { kind: 'slots'; rows: SaveEditableSlot[];
       grid:SaveGridReferenceReport;
@@ -549,12 +591,16 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
     const gridPreview=input?.command==='preview-grid-coordinates';
     const gridCopy=input?.command==='export-grid-coordinate-copy';
     const gridEdit=gridPreview||gridCopy;
+    const orientationPreview=input?.command==='preview-grid-orientation';
+    const orientationCopy=input?.command==='export-grid-orientation-copy';
+    const orientationEdit=orientationPreview||orientationCopy;
     const gridBatchPreview=input?.command==='preview-grid-coordinate-batch';
     const gridBatchCopy=input?.command==='export-grid-coordinate-batch-copy';
     const gridBatch=gridBatchPreview||gridBatchCopy;
     const instances=input?.command === 'inspect-grid-instances';
     const exporting = input?.command === 'export-existing-amount-copy' ||
-      input?.command === 'export-batch-amount-copy'||gridCopy||gridBatchCopy;
+      input?.command === 'export-batch-amount-copy'||gridCopy||
+      gridBatchCopy||orientationCopy;
     const batch = input?.command === 'preview-batch-amounts' ||
       input?.command === 'export-batch-amount-copy';
     const expectedKeys = compareDb04
@@ -562,6 +608,9 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
       : compareDb03 ? ['command','format','bytes','base']
       : listing||instances ? ['command','format','bytes']
       : gridEdit ? (gridCopy
+        ? ['command','format','bytes','edit','allowExperimentalCopy']
+        : ['command','format','bytes','edit'])
+      : orientationEdit ? (orientationCopy
         ? ['command','format','bytes','edit','allowExperimentalCopy']
         : ['command','format','bytes','edit'])
       : gridBatch ? (gridBatchCopy
@@ -581,7 +630,8 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
           'inspect-existing-slots','inspect-db04-grid-paths',
           'inspect-db03-mission-slots','inspect-grid-instances',
           'preview-grid-coordinates','export-grid-coordinate-copy',
-          'preview-grid-coordinate-batch','export-grid-coordinate-batch-copy'].includes(
+          'preview-grid-coordinate-batch','export-grid-coordinate-batch-copy',
+          'preview-grid-orientation','export-grid-orientation-copy'].includes(
           String(input.command)) ||
         (exporting && input.allowExperimentalCopy !== true) ||
         !['auto', 'json', 'p1g'].includes(String(input.format)) ||
@@ -592,19 +642,21 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
           !(input.base===''||
             /^\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/.test(input.base)))) ||
         (!batch && !gridBatch && !listing && !instances && !compareDb04 &&
-          !compareDb03 && !gridEdit &&
+          !compareDb03 && !gridEdit && !orientationEdit &&
           (!uint32(input.expected)||!uint32(input.replacement))))
       throw new TypeError('DB05_WORKER_COMMAND_INVALID');
 
     const gridPlan=gridEdit
       ? JSON.stringify(validateGridCoordinateEdit(input.edit)):null;
+    const orientationPlan=orientationEdit
+      ? JSON.stringify(validateGridOrientationEdit(input.edit)):null;
     const gridBatchPlan=gridBatch
       ? JSON.stringify({edits:validateGridCoordinateBatchEdits(input.edits)})
       : null;
     const edits = batch ? validateBatchEdits(input.edits) : null;
     const plan = edits === null ? null : JSON.stringify({edits});
     const target = (batch||listing||instances||compareDb04||compareDb03||
-      gridEdit||gridBatch)
+      gridEdit||gridBatch||orientationEdit)
       ? null : validateTarget(input.target);
     const requestedFormat = input.format as InputFormat;
     const format: Exclude<InputFormat, 'auto'> =
@@ -622,7 +674,20 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
       rust.append_chunk(bytes.subarray(i, i + CHUNK));
     rust.finish_open();
 
-    if(gridBatchPreview){
+    if(orientationPreview){
+      const receipt:unknown=JSON.parse(rust.preview_grid_orientation(
+        orientationPlan!));
+      if(!object(receipt)||!exact(receipt,[
+        'contract','changed','lexicalBytesPreserved','reopenVerified',
+        'writerAuthorized','exportAuthorized','placementLegalityVerified'
+      ])||receipt.contract!=='wand.db05.grid-orientation-preview@1'||
+        receipt.changed!==true||receipt.lexicalBytesPreserved!==true||
+        receipt.reopenVerified!==true||receipt.writerAuthorized!==false||
+        receipt.exportAuthorized!==false||
+        receipt.placementLegalityVerified!==false)
+        throw new TypeError('DB05_ORIENTATION_RECEIPT_INVALID');
+      response={kind:'result',receipt:receipt as unknown as GridOrientationPreviewReceipt};
+    }else if(gridBatchPreview){
       const plan=validateGridCoordinateBatchEdits(input.edits);
       const raw:unknown=JSON.parse(
         rust.preview_grid_coordinate_batch(gridBatchPlan!));
@@ -694,7 +759,9 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
         complete:true,writerAuthorized:false
       };
     }else if (exporting) {
-      const length = gridCopy
+      const length = orientationCopy
+        ? rust.prepare_grid_orientation_copy(orientationPlan!)
+        : gridCopy
         ? rust.prepare_grid_coordinate_copy(gridPlan!)
         : gridBatchCopy
         ? rust.prepare_grid_coordinate_batch_copy(gridBatchPlan!)

@@ -84,6 +84,27 @@
     |null=null;
   let coordinateCopyUrl:string|null=null;
   let coordinateCopyName='';
+  type CardinalOrientation='GridOrientation_Up'|'GridOrientation_Right'|
+    'GridOrientation_Down'|'GridOrientation_Left';
+  const cardinalOptions:readonly CardinalOrientation[]=[
+    'GridOrientation_Up','GridOrientation_Right',
+    'GridOrientation_Down','GridOrientation_Left'
+  ];
+  type GridOrientationPlan={
+    localOrdinal:number;itemId:string;
+    recordKind:'full'|'diff_modified';
+    expectedX:number;expectedY:number;
+    expectedOrientation:CardinalOrientation;
+    replacementOrientation:CardinalOrientation;
+  };
+  let orientationSelection:LocalGridInstance|null=null;
+  let orientationValue:string='GridOrientation_Up';
+  let orientationState:'idle'|'checking'|'validated'|'exporting'|'error'='idle';
+  let orientationSnapshot:{
+    file:File;format:'json'|'auto';plan:GridOrientationPlan;signature:string
+  }|null=null;
+  let orientationCopyUrl:string|null=null;
+  let orientationCopyName='';
   let db04Input:HTMLInputElement|null=null;
   type Db04GridMatch={
     contract:'wand.db05.db04-grid-path-match@2';
@@ -164,6 +185,33 @@
     coordinateSnapshot=null;coordinateState='idle';
     discardCoordinateCopy();
   }
+  function isCardinal(v:string|null):v is CardinalOrientation{
+    return v!==null&&cardinalOptions.some(name=>name===v);
+  }
+  function discardOrientationCopy(){
+    if(orientationCopyUrl)URL.revokeObjectURL(orientationCopyUrl);
+    orientationCopyUrl=null;orientationCopyName='';
+  }
+  function invalidateOrientationEdit(){
+    orientationSnapshot=null;orientationState='idle';
+    discardOrientationCopy();
+  }
+  function selectedOrientationPlan():GridOrientationPlan|null{
+    const row=orientationSelection;
+    if(!row||!row.coordinatesObserved||row.x===null||row.y===null||
+       !isCardinal(row.orientation)||!isCardinal(orientationValue)||
+       row.orientation===orientationValue)return null;
+    return {localOrdinal:row.localOrdinal,itemId:row.itemId,
+      recordKind:row.recordKind,expectedX:row.x,expectedY:row.y,
+      expectedOrientation:row.orientation,
+      replacementOrientation:orientationValue};
+  }
+  function selectOrientation(row:LocalGridInstance){
+    if(!row.coordinatesObserved||!isCardinal(row.orientation))return;
+    cancel();result=null;
+    orientationSelection={...row};
+    orientationValue=row.orientation;
+  }
   function coordinateNumber(value:string):number|null{
     if(!/^(?:0|-?[1-9][0-9]*)$/.test(value))return null;
     const v=Number(value);
@@ -223,6 +271,7 @@
     snapshot=null;
     discardDownload();
     invalidateCoordinateEdit();
+    invalidateOrientationEdit();
   }
   onDestroy(()=>{
     cancel();
@@ -242,6 +291,7 @@
     instanceStatus='not_observed';instanceSampled=false;instanceQuery='';
     coordinateSelection=null;coordinateX='';coordinateY='';
     coordinateQueue=[];
+    orientationSelection=null;orientationValue='GridOrientation_Up';
     db04Match=null;db04State='idle';
     db03Summary=null;db03State='idle';
     dbMap=new Map();dbStatus='idle';
@@ -415,6 +465,7 @@
 
   async function loadGridInstances(){
     cancel();result=null;coordinateSelection=null;coordinateQueue=[];
+    orientationSelection=null;
     gridInstances=[];instanceStatus='not_observed';instanceSampled=false;
     instanceState='idle';
     const save=savedSlotsFile;
@@ -615,6 +666,139 @@
     }
   }
 
+  async function validateOrientationEdit(){
+    const plan=selectedOrientationPlan();
+    cancel();result=null;
+    const file=savedSlotsFile;
+    if(!file||fileInput?.files?.[0]!==file||!plan||
+       file.size<1||file.size>MAX_BYTES){
+      orientationState='error';return;
+    }
+    const format:'json'|'auto'=file.name.toLowerCase().endsWith('.json')
+      ?'json':'auto';
+    const signature=JSON.stringify(plan),request=revision;
+    orientationState='checking';processing=true;
+    let bytes:Uint8Array|null=null;
+    let worker:Worker|null=null;
+    try{
+      bytes=new Uint8Array(await file.arrayBuffer());
+      if(request!==revision)return;
+      worker=new Worker(
+        new URL('../../../lib/save/save-amount-preview.worker.ts',import.meta.url),
+        {type:'module'}
+      );
+      active=worker;const own=worker;
+      const finish=(message:unknown)=>{
+        if(request!==revision||active!==own)return;
+        own.terminate();active=null;processing=false;
+        const r=message as {kind?:string;receipt?:Record<string,unknown>};
+        if(r?.kind!=='result'||
+           r.receipt?.contract!=='wand.db05.grid-orientation-preview@1'||
+           r.receipt?.changed!==true||
+           r.receipt?.lexicalBytesPreserved!==true||
+           r.receipt?.reopenVerified!==true||
+           r.receipt?.writerAuthorized!==false||
+           r.receipt?.exportAuthorized!==false||
+           r.receipt?.placementLegalityVerified!==false){
+          orientationState='error';return;
+        }
+        orientationSnapshot={file,format,plan,signature};
+        orientationState='validated';
+      };
+      worker.onmessage=event=>finish(event.data);
+      worker.onerror=event=>{event.preventDefault();finish({kind:'error'});};
+      worker.onmessageerror=()=>finish({kind:'error'});
+      worker.postMessage({
+        command:'preview-grid-orientation',format,bytes,edit:plan
+      },[bytes.buffer]);
+      bytes=null;
+    }catch{
+      if(request===revision){
+        worker?.terminate();active=null;processing=false;
+        orientationState='error';
+      }
+    }finally{
+      if(bytes?.byteLength)bytes.fill(0);
+    }
+  }
+
+  async function exportOrientationCopy(){
+    if(processing||orientationState!=='validated'||!orientationSnapshot)return;
+    const saved=orientationSnapshot,plan=selectedOrientationPlan();
+    if(!plan||JSON.stringify(plan)!==saved.signature||
+       fileInput?.files?.[0]!==saved.file||
+       savedSlotsFile!==saved.file){
+      invalidateOrientationEdit();orientationState='error';return;
+    }
+    if(!window.confirm(
+      '向きを変更したセーブのコピーを作成します。ゲーム内での配置可否は未検証です。元のセーブをバックアップし、テスト用として使用してください。'
+    ))return;
+    discardOrientationCopy();discardDownload();
+    revision++;const request=revision;
+    orientationState='exporting';processing=true;
+    let bytes:Uint8Array|null=null;
+    let worker:Worker|null=null;
+    try{
+      bytes=new Uint8Array(await saved.file.arrayBuffer());
+      if(request!==revision)return;
+      worker=new Worker(
+        new URL('../../../lib/save/save-amount-preview.worker.ts',import.meta.url),
+        {type:'module'}
+      );
+      active=worker;const own=worker;
+      const finish=(message:unknown)=>{
+        if(request!==revision||active!==own)return;
+        own.terminate();active=null;processing=false;
+        const r=message as {
+          kind?:string;bytes?:Uint8Array;receipt?:Record<string,unknown>
+        };
+        const good=r?.kind==='copy'&&r.bytes instanceof Uint8Array&&
+          r.bytes.byteLength>0&&r.bytes.byteLength<=32*1024*1024&&
+          r.receipt?.contract==='wand.db05.experimental-copy@1'&&
+          r.receipt.copyBytes===r.bytes.byteLength&&
+          r.receipt.originalUnchanged===true&&
+          r.receipt.productionWriterAuthorized===false&&
+          r.receipt.independentReopenVerified===true&&
+          r.receipt.experimentalCopyOnly===true;
+        if(!good){
+          if(r?.bytes instanceof Uint8Array&&r.bytes.byteLength)
+            r.bytes.fill(0);
+          orientationState='error';orientationSnapshot=null;return;
+        }
+        const payload=r.bytes as Uint8Array;
+        try{
+          orientationCopyUrl=URL.createObjectURL(
+            new Blob([payload.buffer as ArrayBuffer],
+              {type:'application/octet-stream'})
+          );
+          payload.fill(0);
+          orientationCopyName=copiedName(saved.file.name);
+          orientationState='validated';
+        }catch{
+          payload.fill(0);discardOrientationCopy();
+          orientationState='error';orientationSnapshot=null;
+        }
+      };
+      worker.onmessage=event=>finish(event.data);
+      worker.onerror=event=>{event.preventDefault();finish({kind:'error'});};
+      worker.onmessageerror=()=>finish({kind:'error'});
+      worker.postMessage({
+        command:'export-grid-orientation-copy',
+        format:saved.format,allowExperimentalCopy:true,
+        bytes,edit:saved.plan
+      },[bytes.buffer]);
+      bytes=null;
+    }catch{
+      if(request===revision){
+        worker?.terminate();active=null;processing=false;
+        orientationState='error';orientationSnapshot=null;
+        discardOrientationCopy();
+      }
+    }finally{
+      if(bytes?.byteLength)bytes.fill(0);
+    }
+  }
+
   async function loadSavedSlots(){
     cancel();result=null;
     const file=fileInput?.files?.[0];
@@ -628,7 +812,7 @@
     slotState='loading';
     savedSlots=[];savedSlotsFile=null;
     gridInstances=[];instanceState='idle';instanceQuery='';
-    coordinateSelection=null;coordinateQueue=[];
+    coordinateSelection=null;coordinateQueue=[];orientationSelection=null;
     let bytes:Uint8Array|null=null;
     let worker:Worker|null=null;
     const request=revision;
@@ -1099,6 +1283,11 @@
                     disabled={processing||!object.coordinatesObserved}
                     aria-label={`配置 #${object.localOrdinal} の座標を編集`}
                     on:click={()=>selectGridInstance(object)}>座標を編集</button>
+                  <button type="button" class="secondary"
+                    disabled={processing||!object.coordinatesObserved||
+                      !isCardinal(object.orientation)}
+                    aria-label={`配置 #${object.localOrdinal} の向きを編集`}
+                    on:click={()=>selectOrientation(object)}>向きを編集</button>
                 </li>
               {/each}
             </ul>
@@ -1141,6 +1330,41 @@
                   <p role="alert">座標を変更できませんでした。
                     選択した配置、元の座標、入力範囲を確認してください。</p>
                 {/if}
+              </div>
+            {/if}
+            {#if orientationSelection}
+              <div class="orientation-editor" aria-label="向き編集">
+                <strong>{dbMap.get(orientationSelection.itemId)?.name??
+                  orientationSelection.itemId} · #{orientationSelection.localOrdinal}</strong>
+                <p class="slot-note">変更前：{orientationSelection.orientation}</p>
+                <label>新しい向き
+                  <select bind:value={orientationValue} aria-label="新しい向き"
+                    disabled={processing} on:change={invalidateOrientationEdit}>
+                    {#each cardinalOptions as direction}
+                      <option value={direction}>{direction.replace('GridOrientation_','')}</option>
+                    {/each}
+                  </select>
+                </label>
+                <button type="button"
+                  disabled={processing||!isCardinal(orientationSelection.orientation)||
+                    !isCardinal(orientationValue)||
+                    orientationValue===orientationSelection.orientation}
+                  on:click={validateOrientationEdit}>向き変更を検証</button>
+                {#if orientationState==='validated'}
+                  <p role="status">向き変更をRust/WASMで検証しました。</p>
+                  <button type="button" disabled={processing||!!orientationCopyUrl}
+                    on:click={exportOrientationCopy}>
+                    {orientationCopyUrl?'向きコピーを準備しました':'向き変更コピーを生成'}
+                  </button>
+                  {#if orientationCopyUrl}
+                    <a href={orientationCopyUrl} download={orientationCopyName}
+                      class="download-link">向きコピーをダウンロード</a>
+                  {/if}
+                {:else if orientationState==='error'}
+                  <p role="alert">向き変更を検証できませんでした。</p>
+                {/if}
+                <p class="slot-note">原本で確認された上下左右の4方向のみ。
+                  斜め方向・衝突判定・実ゲームでの配置可否は未検証です。</p>
               </div>
             {/if}
             {#if coordinateQueue.length}

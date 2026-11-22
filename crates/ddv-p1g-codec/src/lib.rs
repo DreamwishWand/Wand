@@ -437,7 +437,7 @@ mod browser_amount_preview {
     use ddv_save_patch::{
         preview_existing_quantity,preview_existing_quantity_batch,
         preview_existing_grid_coordinates,preview_existing_grid_coordinate_batch,
-        GridCoordinateEdit,QuantityEdit,QuantityTarget
+        preview_existing_grid_orientation,GridCoordinateEdit,QuantityEdit,QuantityTarget
     };
     use wasm_bindgen::prelude::*;
 
@@ -592,6 +592,62 @@ mod browser_amount_preview {
             out.push(edit);
         }
         Ok(out)
+    }
+
+    struct GridOrientationPlan{
+        ordinal:usize,item_id:u64,kind:String,
+        expected:(i32,i32),
+        expected_orientation:String,replacement_orientation:String,
+    }
+    fn parse_grid_orientation_plan(plan:&str)->Result<GridOrientationPlan,JsValue>{
+        if plan.len()>512||plan.is_empty()||
+           ddv_save_patch::validate_json_without_edit(plan).is_err(){
+            return Err(fail("DB05_ORIENTATION_PLAN_INVALID"));
+        }
+        let raw:serde_json::Value=serde_json::from_str(plan)
+            .map_err(|_|fail("DB05_ORIENTATION_PLAN_INVALID"))?;
+        let obj=raw.as_object().ok_or(fail("DB05_ORIENTATION_PLAN_INVALID"))?;
+        if obj.len()!=7||![
+            "localOrdinal","itemId","recordKind","expectedX","expectedY",
+            "expectedOrientation","replacementOrientation"
+        ].iter().all(|key|obj.contains_key(*key)){
+            return Err(fail("DB05_ORIENTATION_PLAN_INVALID"));
+        }
+        let ordinal=obj["localOrdinal"].as_u64()
+            .filter(|n|*n>0&&*n<=20000)
+            .ok_or(fail("DB05_ORIENTATION_PLAN_INVALID"))? as usize;
+        let id=obj["itemId"].as_str()
+            .ok_or(fail("DB05_ORIENTATION_PLAN_INVALID"))?;
+        if id.len()>16||id.is_empty()||id.starts_with('0')||
+           !id.bytes().all(|b|b.is_ascii_digit()){
+            return Err(fail("DB05_ORIENTATION_PLAN_INVALID"));
+        }
+        let item_id=id.parse::<u64>().ok()
+            .filter(|n|*n>0&&*n<=9_007_199_254_740_991)
+            .ok_or(fail("DB05_ORIENTATION_PLAN_INVALID"))?;
+        let kind=obj["recordKind"].as_str()
+            .filter(|s|matches!(*s,"full"|"diff_modified"))
+            .ok_or(fail("DB05_ORIENTATION_PLAN_INVALID"))?.to_owned();
+        let bound=|name:&str|->Result<i32,JsValue>{
+            let v=obj[name].as_i64()
+                .ok_or(fail("DB05_ORIENTATION_PLAN_INVALID"))?;
+            i32::try_from(v).map_err(|_|fail("DB05_ORIENTATION_PLAN_INVALID"))
+        };
+        let expected=(bound("expectedX")?,bound("expectedY")?);
+        let original=obj["expectedOrientation"].as_str()
+            .ok_or(fail("DB05_ORIENTATION_PLAN_INVALID"))?;
+        let replacement=obj["replacementOrientation"].as_str()
+            .ok_or(fail("DB05_ORIENTATION_PLAN_INVALID"))?;
+        if original==replacement||
+           !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&original)||
+           !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&replacement){
+            return Err(fail("DB05_ORIENTATION_NOT_CONFIRMED"));
+        }
+        Ok(GridOrientationPlan{
+            ordinal,item_id,kind,expected,
+            expected_orientation:original.to_owned(),
+            replacement_orientation:replacement.to_owned()
+        })
     }
 
     const MAX_DB04_WITNESS_BYTES:usize=16*1024*1024;
@@ -1219,6 +1275,46 @@ mod browser_amount_preview {
             if !draft.changed||!draft.untouched_bytes_preserved||
                draft.writer_authorized||draft.export_authorized{
                 return Err(fail("DB05_GRID_BATCH_UNAUTHORIZED"));
+            }
+            self.prepare_copy_from_patched(draft.patched_json,true)
+        }
+
+        /// Exact-string native cardinal rotation preview. An independent
+        /// JSON/P1G reopen is performed before reporting success. Preview
+        /// never exposes the rebuilt candidate bytes to TypeScript.
+        pub fn preview_grid_orientation(&mut self,plan:&str)->Result<String,JsValue>{
+            self.prepare_grid_orientation_copy(plan)?;
+            Ok(r#"{"contract":"wand.db05.grid-orientation-preview@1",
+              "changed":true,"lexicalBytesPreserved":true,
+              "reopenVerified":true,"writerAuthorized":false,
+              "exportAuthorized":false,"placementLegalityVerified":false}"#
+                .to_owned())
+        }
+        /// Experimental local COPY only. Native Grid/Object IDs remain
+        /// private inside Rust; the caller cannot submit them as a target.
+        pub fn prepare_grid_orientation_copy(&mut self,plan:&str)->Result<u32,JsValue>{
+            if !self.ready||self.closed||self.copy_prepared{
+                return Err(fail("DB05_ORIENTATION_SESSION_INVALID"));
+            }
+            let p=parse_grid_orientation_plan(plan)?;
+            let original=match self.kind{
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref()
+                    .ok_or(fail("DB05_ORIENTATION_SESSION_INVALID"))?
+                    .profile.as_slice()
+            };
+            let target=grid_instance_preview::resolve_grid_orientation_target(
+                original,p.ordinal,p.item_id,p.expected,&p.kind,
+                &p.expected_orientation
+            ).map_err(|_|fail("DB05_ORIENTATION_STALE_OR_AMBIGUOUS"))?;
+            let json=std::str::from_utf8(original)
+                .map_err(|_|fail("DB05_ORIENTATION_SOURCE_INVALID"))?;
+            let draft=preview_existing_grid_orientation(
+                json,target,&p.expected_orientation,&p.replacement_orientation
+            ).map_err(|_|fail("DB05_ORIENTATION_STALE_OR_INVALID"))?;
+            if !draft.changed||!draft.untouched_bytes_preserved||
+               draft.writer_authorized||draft.export_authorized{
+                return Err(fail("DB05_ORIENTATION_UNAUTHORIZED"));
             }
             self.prepare_copy_from_patched(draft.patched_json,true)
         }
