@@ -162,6 +162,8 @@ export interface Db01CatalogClient {
   /** Bounded multi-ID lookup for Save/Guide/Collection; one hash check per unique bucket. */
   getItems(ids: readonly number[]): Promise<readonly (Readonly<Db01Item> | null)[]>;
   getCategory(category: string): Promise<readonly Readonly<Db01Item>[]>;
+  /** Original SHA-pinned category names; includes native non-inventory types. */
+  getCategories(): readonly string[];
   getByNativeKey(category: string, nativeKey: string): Promise<Readonly<Db01Item> | null>;
   searchExactNames(query: string, locale: Db01Locale, limit?: number): Promise<readonly Db01NameResult[]>;
   getName(id: number, locale: Db01Locale, options?: {allowHistorical?: boolean}): Promise<Db01NameResult | null>;
@@ -319,6 +321,7 @@ export function createDb01CatalogClient(rawManifest: unknown, loadBytes: Db01Loa
       definitions:manifest.definitions,currentNativeItemDefinitions:manifest.currentNativeItemDefinitions,
       nativeSourceManifestSha256:manifest.nativeSourceManifestSha256,fullCorpusParsed:manifest.fullCorpusParsed,
       privateOnly:manifest.privateOnly,sourceItemsSha256:manifest.sourceItemsSha256}),
-    getItem,getItems,getCategory,getByNativeKey,searchExactNames,getName,
+    getItem,getItems,getCategory,getCategories:()=>manifest.categories,
+    getByNativeKey,searchExactNames,getName,
   });
 }
