@@ -151,6 +151,41 @@ test('encrypted synthetic P1G exposes positive-stock ownership only without raw 
  assert.ok(!json.includes('ListInventories'));
 });
 
+test('encrypted synthetic P1G observes surviving world furniture, not ownership',async()=>{
+ const source=makeFixture({GameInfo:{Version:643},Player:{Secret:'private-no-leak'},
+  World:{
+   Stores:[],
+   GridCollection:{
+    Grids:{'10':{ID:10,Objects:{
+     '3':{ID:3,ItemID:40005160,X:321,State:{Private:'never-leak'}},
+     '4':{ID:4,ItemID:40005160,X:321}
+    }}},
+    DiffGrids:{'11':{ID:11,RemovedObjects:[7],ModifiedObjects:{
+     '7':{ID:7,ItemID:40005160,From:'removed-reference'},
+     '9':{ID:9,ItemID:40006110,X:123}
+    }}}
+   }
+  }
+ });
+ const result=await inspectEncryptedSavedStore(source);
+ assert.equal(result.gridFurniture.status,'saved_furniture_references');
+ assert.equal(result.gridFurniture.fullReferences,2);
+ assert.equal(result.gridFurniture.diffModifiedReferences,1);
+ assert.deepEqual(result.gridFurniture.entries,[
+  {itemId:40005160,fullGridReferences:2,diffModifiedReferences:0},
+  {itemId:40006110,fullGridReferences:0,diffModifiedReferences:1}
+ ]);
+ assert.equal(result.positiveOwnership.entries.length,0);
+ assert.equal(result.gridFurniture.ownershipOrUnlockInferred,false);
+ const {sanitizeSavedGridFurnitureReferences}=await import(
+  '../src/lib/collection/saved-grid-furniture-references.mjs');
+ assert.deepEqual(sanitizeSavedGridFurnitureReferences(structuredClone(result.gridFurniture)),
+  result.gridFurniture);
+ const encoded=JSON.stringify(result);
+ for(const value of ['private-no-leak','never-leak','removed-reference',
+   '"X"','"State"','"From"','"RemovedObjects"'])assert.ok(!encoded.includes(value),value);
+});
+
 test('worker core rejects oversize or misaligned ciphertext before decoding',async()=>{
  await assert.rejects(()=>inspectEncryptedSavedStore(new Uint8Array(15)),/LOCAL_P1G_INVALID_CIPHERTEXT/);
  await assert.rejects(()=>inspectEncryptedSavedStore(new Uint8Array(33)),/LOCAL_P1G_INVALID_CIPHERTEXT/);
