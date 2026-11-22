@@ -40,6 +40,11 @@ import {
   createLootSourceDisplayClient,
   type LootSourceDisplayClient
 } from './loot-source-display.ts';
+import {
+  indexPublicOnlineNameCandidates,
+  type PublicOnlineNameCandidateIndex
+} from './public-online-name-candidates.ts';
+import {historicalPremiumShop} from './premium-shop-history.ts';
 import type {Db01CatalogClient} from '../items/index.ts';
 import type {createPrivateDb01MediaOverlayV2} from '../items/media-overlay-v2.ts';
 
@@ -81,6 +86,8 @@ export interface CurrentDb02OriginCatalog{
   readonly lootSources:NativeLootSourceIndex;
   /** 375 exact ActivityItem/Furniture field references, not verified drops. */
   readonly lootObjectSources:NativeLootObjectReferenceIndex;
+  /** Public DB-00 English-name online reward/shop hints; never verified grants. */
+  readonly publicOnlineNameCandidates:PublicOnlineNameCandidateIndex;
   getItemPotentialLootObjects(itemId:string|number):readonly ItemLootObjectCandidate[];
   /** Local-only DB-00/DB-01/SRC-04 presentation with exact source provenance. */
   createLootSourceDisplay(
@@ -186,6 +193,9 @@ export async function joinCurrentDb02Catalog(
   const joined=joinDb02OriginsWithDb00(db00,origins);
   const lootSources=indexNativeLootSourceFamilies(origins,ids);
   const coverage=coverageSummary(ids,origins,joined,lootSources);
+  const publicOnlineNameCandidates=indexPublicOnlineNameCandidates(
+    db00,origins.listCampaigns(),historicalPremiumShop.offers
+  );
   if(coverage.src02LootContextCandidates!==lootSources.coverage.candidateRoutes)
     throw new TypeError('DB02_CURRENT_CATALOG_LOOT_SOURCE_INDEX_MISMATCH');
   return Object.freeze({
@@ -194,6 +204,7 @@ export async function joinCurrentDb02Catalog(
     source:'verified_public_db00_and_local_private_src02_r5' as const,
     origins,db00:joined,lootSources,coverage,
     lootObjectSources:nativeLootObjectReferenceIndex,
+    publicOnlineNameCandidates,
     getItemPotentialLootObjects(itemId:string|number){
       return nativeLootObjectReferenceIndex.getItemPotentialObjectSources(
         itemId,lootSources);
