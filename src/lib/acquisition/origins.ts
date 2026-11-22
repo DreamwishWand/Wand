@@ -4,6 +4,7 @@ import {
   type GuideRewardIndex, type GuideRewardOccurrence
 } from '../guide/reward-relations.ts';
 import {STARPATH_PUBLIC_SHA} from '../guide/public-starpath.mjs';
+import {createGuideStarpathHistory} from '../guide/starpath-history.ts';
 import {OFFICIAL_CAMPAIGNS} from './official-campaigns.ts';
 import {historicalPremiumShop, type ShopAppearance} from './premium-shop-history.ts';
 import {projectVerifiedSrc02Origins, type VerifiedSrc02OriginReader} from './native-origins.ts';
@@ -354,6 +355,31 @@ export function starpathOriginRecords(snapshot:unknown):{
   return projectGuideRewardOrigins(createGuideRewardIndex(snapshot));
 }
 
+/**
+ * DB-03-owned 21-season official announcement history, strictly NOT
+ * game-native season IDs or proven reward Item IDs. These records are
+ * navigable as campaigns, but cannot become acquisition links.
+ */
+export function projectHistoricalGuideCampaigns(index:GuideRewardIndex):readonly OfficialCampaign[]{
+  const history=createGuideStarpathHistory(index);
+  assert(history.coverage.historicalCatalogueComplete===false &&
+    history.coverage.nativeRewardMappingsComplete===false,'DB03_HISTORICAL_SCOPE');
+  return Object.freeze(history.officialAnnouncementsOnly.map(record=>Object.freeze({
+    campaignId:'starpath-history:'+record.historyKey.replace('/','-'),
+    kind:'event_reward' as const,name:record.titleEn,code:null,productId:null,
+    window:{start:null,endExclusive:null},
+    conditions:Object.freeze([
+      'Official Star Path announcement only; native Season ID and Item ID reward mapping unknown',
+      'Historical event dates, reward unlock conditions and ownership not verified'
+    ]),rewards:Object.freeze([] as CampaignReward[]),
+    source:Object.freeze({
+      sourceId:'db03:official-history:'+record.historyKey.replace('/','-'),
+      kind:'official_publication' as const,sourceUrl:record.officialEvidenceUrl,
+      checkedOn:'2026-11-22',gameVersion:null,sha256:null
+    }),availability:'not_live_verified' as const
+  })));
+}
+
 /** Normal consumer: DB-03 verifies the 34,617 source bytes and pinned SHA-256 first. */
 export async function loadStarpathAcquisitionDatabase(
   fetcher: typeof fetch = fetch,
@@ -387,6 +413,7 @@ export async function loadUnifiedAcquisitionOriginDatabase(
   ) : [];
   return createAcquisitionOriginDatabase(
     [...starpath.origins, ...nativeRoutes],
-    [...starpath.campaigns, ...OFFICIAL_CAMPAIGNS], native
+    [...starpath.campaigns, ...projectHistoricalGuideCampaigns(guide),
+      ...OFFICIAL_CAMPAIGNS], native
   );
 }
