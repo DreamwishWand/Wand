@@ -108,6 +108,27 @@
           <button class="header-icon-button header-context-optional" type="button" on:click={()=>window.dispatchEvent(new Event('wand:save-clear'))} aria-label="Save診断結果を破棄" title="診断結果を破棄"><WandIcon name="close" size={20}/></button>
         </div>
       {/if}
+      <div class="header-file-tools" role="group" aria-label="ファイル操作">
+      {#if service==='collection'||service==='save'}
+        <button class="header-icon-button" type="button" on:click={openSaveFile} disabled={service==='collection'&&collectionBusy}
+          aria-label="セーブファイルを読み込む" title="セーブファイルを読み込む">
+          <WandIcon name="save" size={21}/>
+        </button>
+      {:else}
+        <a class="header-icon-button" href="{base}/save/diagnostics/" aria-label="セーブファイルを開く（開発用診断）" title="セーブファイルを開く"><WandIcon name="save" size={21}/></a>
+      {/if}
+      {#if service==='collection'}
+        <button class="header-icon-button" type="button" on:click={backupCollection}
+          aria-label="Collectionバックアップ出力" title="Collectionバックアップ出力">
+          <WandIcon name="download" size={21}/>
+        </button>
+        <button class="header-icon-button" type="button" on:click={restoreCollection} disabled={collectionBusy}
+          aria-label="Collectionバックアップ復元" title="Collectionバックアップ復元">
+          <WandIcon name="restore" size={21}/>
+        </button>
+      {/if}
+      </div>
+      <div class="header-preference-tools" role="group" aria-label="表示設定">
       <div class="header-language-menu">
         <button bind:this={languageButton} class="header-icon-button header-language-button" type="button"
           aria-label="表示言語を切り替える" title="表示言語を切り替える" aria-expanded={languageOpen}
@@ -130,24 +151,8 @@
         aria-label="テーマを切り替える" title={uiTheme==='dark'?'ライトテーマへ':'ダークテーマへ'}>
         <WandIcon name={uiTheme==='dark'?'sun':'moon'} size={21}/>
       </button>
-      {#if service==='collection'||service==='save'}
-        <button class="header-icon-button" type="button" on:click={openSaveFile} disabled={service==='collection'&&collectionBusy}
-          aria-label="セーブファイルを読み込む" title="セーブファイルを読み込む">
-          <WandIcon name="save" size={21}/>
-        </button>
-      {:else}
-        <a class="header-icon-button" href="{base}/save/diagnostics/" aria-label="セーブファイルを開く（開発用診断）" title="セーブファイルを開く"><WandIcon name="save" size={21}/></a>
-      {/if}
-      {#if service==='collection'}
-        <button class="header-icon-button" type="button" on:click={backupCollection}
-          aria-label="Collectionバックアップ出力" title="Collectionバックアップ出力">
-          <WandIcon name="download" size={21}/>
-        </button>
-        <button class="header-icon-button" type="button" on:click={restoreCollection} disabled={collectionBusy}
-          aria-label="Collectionバックアップ復元" title="Collectionバックアップ復元">
-          <WandIcon name="restore" size={21}/>
-        </button>
-      {/if}
+      </div>
+      <div class="header-support-tools" role="group" aria-label="ヘルプとアカウント">
       <button class="header-icon-button help-action" type="button" on:click={()=>tutorialOpen=true}
         aria-label="このページのチュートリアル" title="このページのチュートリアル">
         <WandIcon name="help" size={22}/>
@@ -156,6 +161,7 @@
         aria-label="ログイン・アカウント" title="ログイン・アカウント（準備中）">
         <WandIcon name="character" size={21}/>
       </button>
+      </div>
     </div>
   </header>
   <main class="site-main"><slot/></main>
