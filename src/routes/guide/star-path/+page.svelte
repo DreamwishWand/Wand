@@ -1,5 +1,6 @@
 <script lang="ts">
   import {onMount} from 'svelte';
+  import {readWandLocale, onWandLocaleChange} from '$lib/ui/wand-locale';
   import {base} from '$app/paths';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {autoAppend} from '$lib/ui/auto-append';
@@ -66,10 +67,12 @@
     finally{loading=false;}
   }
   onMount(()=>{
+    locale=readWandLocale();
+    const stopLocale=onWandLocaleChange(next=>{locale=next;limit=60;});
     now=Date.now();
     const clock=setInterval(()=>{now=Date.now()},60000);
     void load();
-    return ()=>clearInterval(clock);
+    return ()=>{stopLocale();clearInterval(clock);};
   });
 </script>
 
@@ -96,7 +99,6 @@
         <button class:selected={s.id===season?.id} on:click={()=>changeSeason(s.id)} aria-pressed={s.id===selectedId}>{s.title}</button>
       {/each}
     </div>
-    <label class="language">表示言語 <select bind:value={locale} aria-label="スターパスの表示言語">{#each languages as [code,name]}<option value={code}>{name}</option>{/each}</select></label>
     {#if !availableSeasons.length}<p role="status">現在の日程上、タスク期間内と確認できるスターパスはありません。過去の保存キャッシュだけを根拠に開催中とは表示しません。</p>{/if}
     {#if season}
       {#if goalWarning}<p class="hint" role="status">目標数量を検証できなかったため、ゲーム内の説明のみを表示しています。</p>{/if}
