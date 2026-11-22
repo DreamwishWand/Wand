@@ -26,7 +26,10 @@ BUCKETS = 256
 # the current Steam originals. Other unknown wire fields are not classified.
 TAG_FIELDS = {
     'ActivityItem': {8, 9, 10, 11, 12, 13, 14, 15, 16, 30, 31},
-    'Furniture': {9, 10}, 'Clothing': {9}, 'Trimming': {10},
+    # Some Furniture subsets store packed original Tag IDs in field 7
+    # rather than field 9. Field 7 scalar subtype codes are ignored unless
+    # they independently resolve to a real Tag.json Item ID.
+    'Furniture': {7, 9, 10}, 'Clothing': {9}, 'Trimming': {10},
     'Character': {12}, 'Set': {6}, 'TouchOfMagic': {6, 9},
     'Building': {30}, 'Companion': {6, 7, 10},
     'ActivityData': {8}, 'MemoryShard': {8, 15},

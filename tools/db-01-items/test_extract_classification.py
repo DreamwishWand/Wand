@@ -138,6 +138,25 @@ class NativeTagClassificationTest(unittest.TestCase):
         self.assertEqual(tags.tag_group(2001200028,'IsDreamlightValley'),'worldContextTag')
         self.assertEqual(tags.tag_group(2001200064,'IsWishingWell'),'otherTag')
 
+    def test_furniture_alternate_field7_packed_tag_references(self):
+        dictionary={
+            2000500001:'Mickey',
+            2001200028:'IsDreamlightValley',
+            2000300006:'Storage',
+        }
+        refs=tags.tag_refs('Furniture',[
+            (7,2,var(2000500001)+var(2001200028)),
+            (9,2,var(2000300006)),
+            (7,0,3), # a source numeric subtype is NOT itself a Tag ID
+        ], dictionary)
+        self.assertEqual(
+            {(r['wireField'],r['tagKey'],r['facet']) for r in refs},
+            {(7,'Mickey','disneyUniverse'),
+             (7,'IsDreamlightValley','worldContextTag'),
+             (9,'Storage','furnitureKind')},
+        )
+        self.assertFalse(any(r['tagId']==3 for r in refs))
+
     def test_wire_decoder_rejects_duplicate_ids_and_truncation(self):
         with self.assertRaisesRegex(ValueError,'DUPLICATE_OR_BROKEN_FRAME'):
             list(tags.source_frames(self.item_data+self.item_data))
