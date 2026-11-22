@@ -2,6 +2,7 @@
 import { PATCH_SCHEMA, validateItem, validateTarget } from '../game-db/model.mjs';
 import { DB01_LOCALES, type Db01CatalogClient } from './index.ts';
 import type { Db01Classification, Db01ClassificationClient } from './classification.ts';
+import type { Db01ItemType, Db01ItemTypeClient } from './item-types.ts';
 
 export const DB01_DB00_JOIN_CONTRACT = 'wand.db01.db00-private-source-join@1' as const;
 export interface Db00SourceTarget {
@@ -12,7 +13,8 @@ export interface Db00SourceTarget {
 }
 export async function createDb01Db00Patch(
   catalog: Db01CatalogClient, target: Db00SourceTarget,
-  classification?: Db01ClassificationClient
+  classification?: Db01ClassificationClient,
+  itemTypes?: Db01ItemTypeClient
 ) {
   if (!catalog?.source?.privateOnly || typeof catalog.getCategory !== 'function')
     throw new TypeError('DB01_PRIVATE_CATALOG_REQUIRED');
@@ -27,6 +29,12 @@ export async function createDb01Db00Patch(
       classification.source.sourceItemsSha256 !== catalog.source.sourceItemsSha256 ||
       classification.source.definitionCount !== catalog.source.definitions
   )) throw new TypeError('DB01_DB00_TAG_SOURCE_MISMATCH');
+  if (itemTypes && (
+      itemTypes.source.gameVersion !== catalog.source.gameVersion ||
+      itemTypes.source.sourceItemsSha256 !== catalog.source.sourceItemsSha256 ||
+      itemTypes.source.definitionCount !== catalog.source.definitions ||
+      itemTypes.source.sourceItemTypeVerified !== catalog.source.definitions
+  )) throw new TypeError('DB01_DB00_IL2CPP_SOURCE_MISMATCH');
   const nativeCategories = ['ActivityItem', 'Furniture', 'Clothing', 'Trimming'] as const;
   const batches = await Promise.all(nativeCategories.map(category => catalog.getCategory(category)));
   const nativeRows = batches.flat();
@@ -50,6 +58,24 @@ export async function createDb01Db00Patch(
       });
     }
   }
+  const typed = new Map<number, Readonly<Db01ItemType>>();
+  if (itemTypes) {
+    for (let index = 0; index < nativeRows.length; index += 4096) {
+      const subset = nativeRows.slice(index, index + 4096);
+      const found = await itemTypes.getItems(subset.map(row => row.itemId));
+      if (found.length !== subset.length)
+        throw new TypeError('DB01_DB00_IL2CPP_BATCH_MISMATCH');
+      found.forEach((metadata, i) => {
+        const base = subset[i];
+        if (!metadata || metadata.itemId !== base.itemId ||
+            metadata.nativeCategory !== base.nativeCategory ||
+            metadata.sourceSha256 !== base.sourceSha256 ||
+            metadata.itemTypeName !== base.nativeCategory)
+          throw new TypeError('DB01_DB00_IL2CPP_ITEM_MISMATCH');
+        typed.set(metadata.itemId, metadata);
+      });
+    }
+  }
   const records = nativeRows.map(row => {
     if (row.catalogDomain !== 'item') throw new TypeError('DB01_UNCLASSIFIED_PATCH_BLOCKED');
     const names: Record<string,string> = {};
@@ -57,14 +83,25 @@ export async function createDb01Db00Patch(
       if (row.names[locale] !== null) names[locale] = row.names[locale];
     }
     const metadata = tagged.get(row.itemId);
+    const itemType = typed.get(row.itemId);
     // Source Tag.json links are not synonymous with DLC entitlement or world
     // availability. Do NOT assert these DB-00 fields from Tag references.
-    const attributes = metadata ? {
-      gameOriginalTagReferences:metadata.tagReferences.map(tag => ({
-        id:tag.tagId,key:tag.tagKey,originalWireField:tag.wireField,facet:tag.facet,
-      })),
-      gameOriginalTagFacets:metadata.facets,
-      uninterpretedSubtypeCode:metadata.wireSubtypeCode,
+    const attributes = metadata || itemType ? {
+      ...(metadata ? {
+        gameOriginalTagReferences:metadata.tagReferences.map(tag => ({
+          id:tag.tagId,key:tag.tagKey,originalWireField:tag.wireField,facet:tag.facet,
+        })),
+        gameOriginalTagFacets:metadata.facets,
+        uninterpretedSubtypeCode:metadata.wireSubtypeCode,
+      } : {}),
+      ...(itemType ? {
+        sourceItemType:{code:itemType.itemTypeCode,name:itemType.itemTypeName,
+          evidence:'current_original_il2cpp_enum'},
+        sourceSubtype:{code:itemType.subtypeCode,
+          name:itemType.subtypeName,
+          enum:itemType.subtypeEnumName,
+          verified:itemType.subtypeNameVerified},
+      } : {}),
       gameUiCategoryVerified:false,worldAvailabilityVerified:false,
       dlcOwnershipVerified:false,
     } : undefined;
@@ -73,9 +110,11 @@ export async function createDb01Db00Patch(
       category:null, subcategory:null, nativeCategory:row.nativeCategory,
       worlds:[],universes:metadata?.facets.disneyUniverse ?? [],
       contentIds:[],releaseIds:[],relations:[],
-      sourceRefs:metadata ?
-        ['db01-src01-steam-native','db01-original-tag-relations'] :
-        ['db01-src01-steam-native'],
+      sourceRefs:[
+        'db01-src01-steam-native',
+        ...(metadata ? ['db01-original-tag-relations'] : []),
+        ...(itemType ? ['db01-original-il2cpp-types'] : []),
+      ],
       ...(attributes ? {attributes} : {}),
     });
   });
@@ -89,6 +128,8 @@ export async function createDb01Db00Patch(
       {id:'db01-src01-steam-native',sha256:catalog.source.nativeSourceManifestSha256,visibility:'private'},
       ...(classification ? [{id:'db01-original-tag-relations',
         sha256:classification.source.tagOriginalSha256,visibility:'private'}] : []),
+      ...(itemTypes ? [{id:'db01-original-il2cpp-types',
+        sha256:itemTypes.source.sourceIl2cppDumpSha256,visibility:'private'}] : []),
     ],
   };
   return Object.freeze({
@@ -99,6 +140,7 @@ export async function createDb01Db00Patch(
     historicalMetadataCopied:false,saveWritingAuthorized:false,
     currentNameCoverageOnly:!classification,
     sourceTagMetadataAdded:classification ? tagged.size : 0,
+    sourceItemTypeMetadataAdded:itemTypes ? typed.size : 0,
     worldAvailabilityDerivedFromTags:false,dlcOwnershipDerivedFromTags:false,
     publishable:false,
   });
