@@ -64,6 +64,104 @@ fixed ingredient intersections** for *both* cached purchase/sell rows, and
 protobuf rows, wrong currency, omitted-vs-zero amount, fake originals and
 unverified-source behavior.
 
+## Original Steam AND Switch v1.26.2 native executable evidence (new)
+
+The user-uploaded Dreamwish Wand Drive folder
+`v1.26.2/Steam` contains a real **176,820,736-byte** Steam
+`GameAssembly.dll`, `Il2CppDump/dump.cs` and an independent
+`FullVersion.txt` whose original value is
+`releases_1.26ex-v1.26.2-6-g77de7caf1acf-incremental-22`.
+The uploaded Steam dump has the same SHA-256 as the metadata previously
+available from a 1.26.1 context; this means the *textual metadata is byte
+identical*, **not** that the new Steam DLL lacks executable differences.
+The DLL was independently SHA-256 verified and method RVAs checked against
+the actual **executable PE32+ `il2cpp` section**.
+
+The same `v1.26.2/Switch` folder contains **99,771,988-byte**
+`ExeFS/main` (native AArch64 `NSO0`) and the independent
+`Il2CppDump/dump.cs`. Its NSO build ID is
+`bb9556d4bb715252a1f4fd16b29fece0`. The compressed executable
+text was decoded using LZ4, and the entire decompressed 162,397,712-byte
+code section was independently SHA-256 verified. The Switch version 1.26.2
+label is evidenced by the user-supplied folder; the NSO build ID is an
+independent binary identity, **not** by itself a textual game-version proof.
+
+| Target native method | Steam AMD64 RVA | Switch AArch64 RVA |
+|---|---:|---:|
+| `ItemPriceDatabases.GetSoftCurrencySellPrice` | `0x383B420` | `0x417EF70` |
+| `ItemPriceDatabases.GetSellPrice` | `0x383B530` | `0x417F0C0` |
+| `ItemPriceDatabases.GetDefaultSellPrice` | `0x383BA40` | `0x417FA60` |
+| `MealItemData.GetLowestPriceIngredients` | `0x3E1DA20` | `0x4A3E3E0` |
+| `MealItemData.TotalIngredientsValue` | `0x3E1E0F0` | `0x4A3EC50` |
+| `MealItemData.TotalIngredientsSellPrice` | `0x3E1E710` | `0x4A3F640` |
+| `MealItemData.GetSellPrice` | `0x3E1ECC0` | `0x4A3F880` |
+
+**Binary-confirmed behavior in both 1.26.2 builds:**
+
+- In `TotalIngredientsValue`, an ingredient's signed 32-bit integer
+  component is multiplied by the configured percentage using **signed
+  32-bit multiplication semantics**, followed by **division by 100 and
+  truncation toward zero**. Steam uses `IMUL` plus reciprocal-multiply
+  and signed correction; Switch uses `MUL W`, `SMULL` and a signed
+  shift/correction sequence. Applying one percentage to a pre-summed
+  value is not automatically equivalent to per-component truncation.
+- The adjustment is conditional upon a matching entry found in the
+  recipe-associated ingredient collection. The native code also includes
+  an unadjusted contribution branch and an upper-bound comparison. The
+  exact runtime eligibility set and full base/maximum semantics are **not
+  yet** fully reconstructed.
+- `TotalIngredientsSellPrice` delegates to
+  `TotalIngredientsValue`, providing the relevant cooking price selector.
+  Steam contains a direct `CALL` and Switch a `B` to the respective
+  `TotalIngredientsValue` entry.
+- `GetSoftCurrencySellPrice` uses the caller-supplied default when its
+  price lookup does not succeed. The default passed by each higher-level
+  call site still requires inspection.
+- Switch's `MealItemData.GetSellPrice` explicitly branches between the
+  serialized per-instance `MealData.IngredientsUsed` path and fallback
+  `GetLowestPriceIngredients`, then calls
+  `TotalIngredientsSellPrice`. This confirms why different source
+  ingredients for the same meal cannot be treated as one fixed item price.
+
+**Implementation and reproducibility:** The new
+`tools/src-02-acquisition/audit_native_meal_price_1262.py` verifies all
+five original SHA-pinned files (Steam version/dump/DLL and Switch dump/main),
+all 14 class-qualified method RVA mappings, five Steam and three Switch
+exact **machine-code instruction-window SHA-256 fingerprints**, the PE32+
+executable section and the decompressed NSO code SHA and build ID. Only
+method names, RVAs, hashes and the narrow results above are stored in Git.
+Run against owner-private paths:
+
+```sh
+python tools/src-02-acquisition/audit_native_meal_price_1262.py \
+  --steam-version-file "/private/v1.26.2/Steam/FullVersion.txt" \
+  --steam-dump "/private/v1.26.2/Steam/Il2CppDump/dump.cs" \
+  --steam-gameassembly "/private/v1.26.2/Steam/GameAssembly.dll" \
+  --switch-dump "/private/v1.26.2/Switch/Il2CppDump/dump.cs" \
+  --switch-main "/private/v1.26.2/Switch/ExeFS/main"
+```
+
+Switch native text decoding requires the local `lz4` Python package.
+The exact uploaded originals were verified locally with result
+`ORIGINAL_STEAM_SWITCH_NATIVE_METHOD_EVIDENCE_PASS`: **7/7 Steam methods,
+7/7 Switch methods, 5/5 Steam code windows and 3/3 Switch code windows**.
+
+`src/lib/acquisition/native-meal-percent-component.mjs` implements
+**only** this verified signed-int32, truncate-toward-zero arithmetic stage
+from caller-supplied numeric inputs and a caller-supplied eligibility flag.
+It does **not** compute an actual meal's price, authenticate input item
+values, infer eligibility, choose a live price database, assign defaults,
+or establish the complete base/cap/fallback formula. The native audit,
+the six standalone Python synthetic tests and six Node arithmetic tests
+prevent guessing these missing paths as proven.
+
+**Next verification:** Trace the native recipe ingredient-matching/
+consumption algorithm, exact `GetLowestPriceIngredients` fallback and
+`ItemPriceDatabases.TryGetSellPrice` runtime selection, then build real
+game-price examples with independently verified ingredient costs. Until
+those are confirmed, `loadPrivateMealPricingView` deliberately keeps
+`sellPrice:null`.
+
 ## Native method-body analysis: reproducible, fail-closed tooling
 
 The original-byte material currently available for this work consists of
