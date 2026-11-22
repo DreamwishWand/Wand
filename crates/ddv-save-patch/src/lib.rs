@@ -521,9 +521,10 @@ mod tests {
         assert!(!preview.writer_authorized && !preview.export_authorized);
         assert!(preview.untouched_bytes_preserved);
         assert_eq!(preview.patched_json,original
-            .replacen(r#""Amount":1"#,r#""Amount":250"#,1)
-            .replacen(r#""Amount":7"#,r#""Amount":32000"#,1)
-            .replacen(r#""Amount":2"#,r#""Amount":999"#,1));
+            .replacen(r#""550":{"Amount":1"#,r#""550":{"Amount":250"#,1)
+            .replacen(r#""777":{"Amount":7"#,r#""777":{"Amount":32000"#,1)
+            .replacen(r#""ItemID":440,"Amount":2"#,
+                r#""ItemID":440,"Amount":999"#,1));
         assert!(preview.patched_json.contains(r#""Value":2.50"#));
         assert!(preview.patched_json.contains(r#""Unknown":1.00e+2"#));
         // Stale second edit must reject the entire batch (no partial output).
