@@ -28,6 +28,14 @@ interface PreviewReceipt {
   writerAuthorized: false;
   exportAuthorized: false;
 }
+interface BatchPreviewReceipt {
+  contract: 'wand.db05.batch-preview@1';
+  changedCount: number;
+  lexicalBytesPreserved: true;
+  reopenVerified: true;
+  writerAuthorized: false;
+  exportAuthorized: false;
+}
 interface CopyReceipt {
   contract: 'wand.db05.experimental-copy@1';
   copyBytes: number;
@@ -38,7 +46,7 @@ interface CopyReceipt {
 }
 type Reply =
   | { kind: 'error' }
-  | { kind: 'result'; receipt: PreviewReceipt }
+  | { kind: 'result'; receipt: PreviewReceipt | BatchPreviewReceipt }
   | { kind: 'copy'; bytes: Uint8Array; receipt: CopyReceipt };
 
 interface IsolatedScope {
@@ -78,6 +86,25 @@ function validateTarget(raw: unknown): Target {
   throw new TypeError('DB05_TARGET_KIND_INVALID');
 }
 
+
+interface BatchEdit { target: Target; expected: number; replacement: number }
+function validateBatchEdits(raw: unknown): BatchEdit[] {
+  if (!Array.isArray(raw) || raw.length < 1 || raw.length > 16)
+    throw new TypeError('DB05_BATCH_COUNT_INVALID');
+  const seen = new Set<string>();
+  return raw.map((value: unknown) => {
+    if (!exact(value, ['target', 'expected', 'replacement']) || !object(value) ||
+        !uint32(value.expected) || !uint32(value.replacement) ||
+        value.expected === value.replacement)
+      throw new TypeError('DB05_BATCH_AMOUNT_INVALID');
+    const target = validateTarget(value.target);
+    const key = JSON.stringify(target);
+    if (seen.has(key)) throw new TypeError('DB05_BATCH_TARGET_DUPLICATED');
+    seen.add(key);
+    return {target, expected:value.expected, replacement:value.replacement};
+  });
+}
+
 let started = false;
 isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
   if (started) return;
@@ -88,21 +115,31 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
   let rust: WasmAmountPreview | null = null;
   let exported: Uint8Array | null = null;
   try {
-    const exporting = input?.command === 'export-existing-amount-copy';
-    const expectedKeys = exporting
-      ? ['command', 'format', 'bytes', 'target', 'expected', 'replacement',
-         'allowExperimentalCopy']
-      : ['command', 'format', 'bytes', 'target', 'expected', 'replacement'];
+    const exporting = input?.command === 'export-existing-amount-copy' ||
+      input?.command === 'export-batch-amount-copy';
+    const batch = input?.command === 'preview-batch-amounts' ||
+      input?.command === 'export-batch-amount-copy';
+    const expectedKeys = batch
+      ? (exporting
+        ? ['command', 'format', 'bytes', 'edits', 'allowExperimentalCopy']
+        : ['command', 'format', 'bytes', 'edits'])
+      : (exporting
+        ? ['command', 'format', 'bytes', 'target', 'expected', 'replacement',
+           'allowExperimentalCopy']
+        : ['command', 'format', 'bytes', 'target', 'expected', 'replacement']);
     if (!input || !exact(input, expectedKeys) ||
-        !['preview-existing-amount', 'export-existing-amount-copy'].includes(
+        !['preview-existing-amount', 'export-existing-amount-copy',
+          'preview-batch-amounts', 'export-batch-amount-copy'].includes(
           String(input.command)) ||
         (exporting && input.allowExperimentalCopy !== true) ||
         !['auto', 'json', 'p1g'].includes(String(input.format)) ||
         !(bytes instanceof Uint8Array) ||
-        !uint32(input.expected) || !uint32(input.replacement))
+        (!batch && (!uint32(input.expected) || !uint32(input.replacement))))
       throw new TypeError('DB05_WORKER_COMMAND_INVALID');
 
-    const target = validateTarget(input.target);
+    const edits = batch ? validateBatchEdits(input.edits) : null;
+    const plan = edits === null ? null : JSON.stringify({edits});
+    const target = batch ? null : validateTarget(input.target);
     const requestedFormat = input.format as InputFormat;
     const format: Exclude<InputFormat, 'auto'> =
       requestedFormat === 'auto' ? detectLocalSaveFormat(bytes) : requestedFormat;
@@ -120,12 +157,14 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
     rust.finish_open();
 
     if (exporting) {
-      const length = target.kind === 'inventory'
-        ? rust.prepare_inventory_copy(
-          target.inventoryId, target.itemId, input.expected, input.replacement)
-        : rust.prepare_chest_copy(
-          target.containerId, target.slotIndex, target.itemId,
-          input.expected, input.replacement);
+      const length = plan !== null
+        ? rust.prepare_batch_copy(plan)
+        : target?.kind === 'inventory'
+          ? rust.prepare_inventory_copy(
+            target.inventoryId, target.itemId, input.expected as number, input.replacement as number)
+          : rust.prepare_chest_copy(
+            target!.containerId, target!.slotIndex, target!.itemId,
+            input.expected as number, input.replacement as number);
       if (!Number.isSafeInteger(length) ||
           length < 1 || length > MAX_COPY_BYTES)
         throw new TypeError('DB05_COPY_SIZE_INVALID');
@@ -150,13 +189,38 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
         }
       };
     } else {
-      const raw = target.kind === 'inventory'
-        ? rust.preview_inventory(
-          target.inventoryId, target.itemId, input.expected, input.replacement)
-        : rust.preview_chest(
-          target.containerId, target.slotIndex, target.itemId,
-          input.expected, input.replacement);
+      const raw = plan !== null
+        ? rust.preview_batch(plan)
+        : target?.kind === 'inventory'
+          ? rust.preview_inventory(
+            target.inventoryId, target.itemId, input.expected as number, input.replacement as number)
+          : rust.preview_chest(
+            target!.containerId, target!.slotIndex, target!.itemId,
+            input.expected as number, input.replacement as number);
       const candidate: unknown = JSON.parse(raw);
+      if (batch) {
+        if (!object(candidate) || !exact(candidate, [
+          'contract','changedCount','lexicalBytesPreserved','reopenVerified',
+          'writerAuthorized','exportAuthorized'
+        ]) || candidate.contract !== 'wand.db05.batch-preview@1' ||
+            candidate.changedCount !== edits?.length ||
+            candidate.lexicalBytesPreserved !== true ||
+            candidate.reopenVerified !== true ||
+            candidate.writerAuthorized !== false ||
+            candidate.exportAuthorized !== false)
+          throw new TypeError('DB05_BATCH_UNTRUSTED_RECEIPT');
+        response = {
+          kind:'result',
+          receipt:{
+            contract:'wand.db05.batch-preview@1',
+            changedCount:edits!.length,
+            lexicalBytesPreserved:true,
+            reopenVerified:true,
+            writerAuthorized:false,
+            exportAuthorized:false
+          }
+        };
+      } else {
       if (!exact(candidate, [
         'contract', 'changed', 'lexicalBytesPreserved', 'reopenVerified',
         'writerAuthorized', 'exportAuthorized'
@@ -179,6 +243,7 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
           exportAuthorized: false
         }
       };
+      }
     }
   } catch {
     // Never forward private source fields, Rust errors, IDs, or save contents.

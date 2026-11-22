@@ -146,7 +146,7 @@ try{
     name:'plaintext.profile',mimeType:'application/octet-stream',
     buffer:Buffer.from(JSON.stringify(quantityProfile))
   });
-  await page.getByRole('button',{name:'変更を検証'}).click();
+  await page.getByRole('button',{name:'変更を検証',exact:true}).click();
   await page.getByRole('status').filter({hasText:'数量変更'}).waitFor({timeout:30000});
   assert.equal(await page.getByRole('alert').count(),0);
   page.once('dialog',dialog=>dialog.accept());
@@ -174,7 +174,7 @@ try{
     name:'single-owned-decor.profile',mimeType:'application/octet-stream',
     buffer:Buffer.from(JSON.stringify(quantityProfile))
   });
-  await page.getByRole('button',{name:'変更を検証'}).click();
+  await page.getByRole('button',{name:'変更を検証',exact:true}).click();
   await page.getByRole('status').filter({hasText:'数量変更'}).waitFor({timeout:30000});
   page.once('dialog',dialog=>dialog.accept());
   await page.getByRole('button',{name:'編集済みコピーを生成'}).click();
@@ -198,7 +198,7 @@ try{
     name:'encrypted.profile',mimeType:'application/octet-stream',
     buffer:syntheticEncryptedP1g(quantityProfile)
   });
-  await page.getByRole('button',{name:'変更を検証'}).click();
+  await page.getByRole('button',{name:'変更を検証',exact:true}).click();
   await page.getByRole('status').filter({hasText:'数量変更'}).waitFor({timeout:30000});
   assert.equal(await page.getByRole('alert').count(),0);
 
@@ -210,7 +210,7 @@ try{
     name:'encrypted.profile',mimeType:'application/octet-stream',
     buffer:syntheticEncryptedP1g(quantityProfile)
   });
-  await page.getByRole('button',{name:'変更を検証'}).click();
+  await page.getByRole('button',{name:'変更を検証',exact:true}).click();
   await page.getByRole('status').filter({hasText:'数量変更'}).waitFor({timeout:30000});
   assert.equal(await page.getByRole('alert').count(),0);
   page.once('dialog',dialog=>dialog.accept());
@@ -227,13 +227,52 @@ try{
   assert.equal(quantityProfile.Player.ContainerInventories['202'].Inventory[1].Amount,2);
   assert.equal(reopened.Player.ListInventories['100'].Inventory['550'].Amount,7);
 
+  // Batch combines two Inventory edits and one Chest edit in a single copy.
+  await page.getByRole('button',{name:'破棄'}).click();
+  await page.getByLabel('対象の種類').selectOption('inventory');
+  await page.getByLabel('Item ID').fill('777');
+  await page.getByLabel('現在の数量').fill('1');
+  await page.getByLabel('変更後の数量').fill('250');
+  await page.getByRole('button',{name:'複数編集に追加'}).click();
+  await page.getByLabel('Item ID').fill('550');
+  await page.getByLabel('現在の数量').fill('7');
+  await page.getByLabel('変更後の数量').fill('31968');
+  await page.getByRole('button',{name:'複数編集に追加'}).click();
+  await page.getByLabel('対象の種類').selectOption('chest');
+  await page.getByLabel('現在の数量').fill('2');
+  await page.getByLabel('変更後の数量').fill('888');
+  await page.getByRole('button',{name:'複数編集に追加'}).click();
+  await page.getByLabel('検証用セーブファイル').setInputFiles({
+    name:'batch.profile',mimeType:'application/octet-stream',
+    buffer:syntheticEncryptedP1g(quantityProfile)
+  });
+  await page.getByRole('button',{name:'一括変更を検証'}).click();
+  await page.getByRole('status').filter({hasText:'3件の一括変更'}).waitFor({timeout:30000});
+  assert.equal(await page.getByRole('alert').count(),0);
+  page.once('dialog',dialog=>dialog.accept());
+  await page.getByRole('button',{name:'編集済みコピーを生成'}).click();
+  const batchLink=page.getByRole('link',{name:'コピーをダウンロード'});
+  await batchLink.waitFor({timeout:30000});
+  const batchEvent=page.waitForEvent('download');
+  await batchLink.click();
+  const batchOpened=readSyntheticEncryptedP1g(
+    await readFile(await (await batchEvent).path())
+  );
+  assert.equal(batchOpened.Player.ListInventories['100'].Inventory['777'].Amount,250);
+  assert.equal(batchOpened.Player.ListInventories['100'].Inventory['550'].Amount,31968);
+  assert.equal(batchOpened.Player.ContainerInventories['202'].Inventory[1].Amount,888);
+  assert.equal(batchOpened.Player.ContainerInventories['202'].Inventory[1].ItemID,440);
+  assert.equal(batchOpened.Player.ListInventories['100'].Inventory['777'].ExclusiveDecor,true);
+  assert.equal(batchOpened.Player.ContainerInventories['202'].Inventory[1].Extra,null);
+  assert.equal(quantityProfile.Player.ListInventories['100'].Inventory['777'].Amount,1);
+
   await page.getByRole('button',{name:'破棄'}).click();
   await page.getByLabel('現在の数量').fill('99');
   await page.getByLabel('検証用セーブファイル').setInputFiles({
     name:'encrypted.profile',mimeType:'application/octet-stream',
     buffer:syntheticEncryptedP1g(quantityProfile)
   });
-  await page.getByRole('button',{name:'変更を検証'}).click();
+  await page.getByRole('button',{name:'変更を検証',exact:true}).click();
   await page.getByRole('alert').filter({hasText:'検証できませんでした'}).waitFor({timeout:30000});
   assert.equal(await page.getByRole('status').count(),0);
   assert.equal(await page.getByRole('link',{name:'コピーをダウンロード'}).count(),0);

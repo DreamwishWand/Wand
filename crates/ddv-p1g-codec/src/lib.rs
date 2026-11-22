@@ -429,12 +429,81 @@ mod browser_profile_reader {
 #[cfg(feature="wasm")]
 mod browser_amount_preview {
     use super::*;
-    use ddv_save_patch::{preview_existing_quantity,QuantityTarget};
+    use ddv_save_patch::{preview_existing_quantity,preview_existing_quantity_batch,QuantityEdit,QuantityTarget};
     use wasm_bindgen::prelude::*;
 
     const MAX_WORKER_CIPHERTEXT:usize=32*1024*1024;
     const CHUNK:usize=1024*1024;
     fn fail(code:&'static str)->JsValue{JsValue::from_str(code)}
+    /// Parse a strictly bounded TS->Rust edit plan. The plan contains only
+    /// targets and expected/new amounts, never raw private profile fields.
+    fn parse_batch_plan(plan:&str)->Result<Vec<QuantityEdit>,JsValue>{
+        if plan.len()>8192 || plan.is_empty() ||
+           ddv_save_patch::validate_json_without_edit(plan).is_err() {
+            return Err(fail("DB05_BATCH_PLAN_INVALID"));
+        }
+        let plan:serde_json::Value=serde_json::from_str(plan)
+            .map_err(|_|fail("DB05_BATCH_PLAN_INVALID"))?;
+        let root=plan.as_object().ok_or(fail("DB05_BATCH_PLAN_INVALID"))?;
+        if root.len()!=1{return Err(fail("DB05_BATCH_PLAN_INVALID"));}
+        let rows=root.get("edits").and_then(serde_json::Value::as_array)
+            .ok_or(fail("DB05_BATCH_PLAN_INVALID"))?;
+        if rows.is_empty() || rows.len()>16 {
+            return Err(fail("DB05_BATCH_COUNT_INVALID"));
+        }
+        let mut out=Vec::with_capacity(rows.len());
+        for row in rows {
+            let obj=row.as_object().ok_or(fail("DB05_BATCH_ROW_INVALID"))?;
+            if obj.len()!=3 {return Err(fail("DB05_BATCH_ROW_INVALID"));}
+            let old=obj.get("expected").and_then(serde_json::Value::as_u64)
+                .ok_or(fail("DB05_BATCH_AMOUNT_INVALID"))?;
+            let next=obj.get("replacement").and_then(serde_json::Value::as_u64)
+                .ok_or(fail("DB05_BATCH_AMOUNT_INVALID"))?;
+            if old==0 || next==0 || old>u32::MAX as u64 ||
+               next>u32::MAX as u64 || old==next {
+                return Err(fail("DB05_BATCH_AMOUNT_INVALID"));
+            }
+            let target=obj.get("target").and_then(serde_json::Value::as_object)
+                .ok_or(fail("DB05_BATCH_TARGET_INVALID"))?;
+            let target_kind=target.get("kind").and_then(serde_json::Value::as_str)
+                .ok_or(fail("DB05_BATCH_TARGET_INVALID"))?;
+            let id=|name:&str|->Result<String,JsValue>{
+                let value=target.get(name).and_then(serde_json::Value::as_str)
+                    .ok_or(fail("DB05_BATCH_TARGET_INVALID"))?;
+                if value.is_empty() || value.len()>20 ||
+                   !value.bytes().all(|b|b.is_ascii_digit()) ||
+                   value.parse::<u64>().ok().is_none_or(|n|n==0){
+                    return Err(fail("DB05_BATCH_TARGET_INVALID"));
+                }
+                Ok(value.to_owned())
+            };
+            let target=match target_kind {
+                "inventory" if target.len()==3=>QuantityTarget::Inventory{
+                    inventory_id:id("inventoryId")?,
+                    item_id:id("itemId")?
+                },
+                "chest" if target.len()==4=>{
+                    let index=target.get("slotIndex")
+                        .and_then(serde_json::Value::as_u64)
+                        .ok_or(fail("DB05_BATCH_TARGET_INVALID"))?;
+                    let item=target.get("itemId")
+                        .and_then(serde_json::Value::as_u64)
+                        .ok_or(fail("DB05_BATCH_TARGET_INVALID"))?;
+                    if index>1_000_000 || item==0 || item>u32::MAX as u64 {
+                        return Err(fail("DB05_BATCH_TARGET_INVALID"));
+                    }
+                    QuantityTarget::ChestSlot{
+                        container_id:id("containerId")?,
+                        slot_index:index as usize,item_id:item
+                    }
+                },
+                _=>return Err(fail("DB05_BATCH_TARGET_INVALID"))
+            };
+            out.push(QuantityEdit{target,expected:old,replacement:next});
+        }
+        Ok(out)
+    }
+
     #[derive(Clone,Copy)]
     enum InputKind{PlainJson,EncryptedP1g}
     #[wasm_bindgen]
@@ -530,6 +599,39 @@ mod browser_amount_preview {
                 item_id:item_id as u64
             },expected,replacement)
         }
+        /// All-or-nothing multi-edit preview. Reopens the fully patched P1G
+        /// internally; no source text, amounts or edited bytes leave WASM.
+        pub fn preview_batch(&mut self,plan:&str)->Result<String,JsValue>{
+            let changed=parse_batch_plan(plan)?.len();
+            self.prepare_batch_copy(plan)?;
+            Ok(format!(concat!(
+                r#"{{"contract":"wand.db05.batch-preview@1","changedCount":{},"#,
+                r#""lexicalBytesPreserved":true,"reopenVerified":true,"#,
+                r#""writerAuthorized":false,"exportAuthorized":false}}"#
+            ),changed))
+        }
+        /// Explicit user-authorized experimental copy, never original overwrite.
+        /// Each operation is checked against the same immutable save source.
+        pub fn prepare_batch_copy(&mut self,plan:&str)->Result<u32,JsValue>{
+            if !self.ready || self.closed || self.copy_prepared {
+                return Err(fail("DB05_BATCH_SESSION_INVALID"));
+            }
+            let edits=parse_batch_plan(plan)?;
+            let original=match self.kind{
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref()
+                    .ok_or(fail("DB05_BATCH_SESSION_INVALID"))?.profile.as_slice()
+            };
+            let text=std::str::from_utf8(original)
+                .map_err(|_|fail("DB05_BATCH_SOURCE_INVALID"))?;
+            let draft=preview_existing_quantity_batch(text,&edits)
+                .map_err(|_|fail("DB05_BATCH_STALE_OR_INVALID"))?;
+            if draft.changed_count!=edits.len(){
+                return Err(fail("DB05_BATCH_NOOP_REJECTED"));
+            }
+            self.prepare_copy_from_patched(draft.patched_json,true)
+        }
+
         /// At most 1 MiB is copied out of WASM per call. The Worker is
         /// required to transfer the assembled result only on explicit export.
         pub fn take_copy_chunk(&mut self,maximum:u32)->Result<Vec<u8>,JsValue>{
@@ -565,7 +667,6 @@ mod browser_amount_preview {
         fn prepare_copy(
             &mut self,target:QuantityTarget,expected:u32,replacement:u32
         )->Result<u32,JsValue>{
-            const MAX_EXPERIMENTAL_COPY:usize=32*1024*1024;
             if !self.ready||self.closed||self.copy_prepared||self.copy_position!=0 {
                 return Err(fail("DB05_COPY_SESSION_INVALID"));
             }
@@ -576,49 +677,54 @@ mod browser_amount_preview {
             };
             let json=std::str::from_utf8(source)
                 .map_err(|_|fail("DB05_COPY_INVALID_SOURCE"))?;
-            let mut draft=preview_existing_quantity(json,target,
+            let draft=preview_existing_quantity(json,target,
                 expected as u64,replacement as u64)
                 .map_err(|_|fail("DB05_COPY_STALE_OR_INVALID_AMOUNT"))?;
-            // Only an actual semantic edit can create a downloadable copy.
+            self.prepare_copy_from_patched(draft.patched_json,draft.changed)
+        }
+        fn prepare_copy_from_patched(
+            &mut self,mut patched_json:String,changed:bool
+        )->Result<u32,JsValue>{
+            const MAX_EXPERIMENTAL_COPY:usize=32*1024*1024;
+            if !self.ready||self.closed||self.copy_prepared||self.copy_position!=0 {
+                patched_json.zeroize();
+                return Err(fail("DB05_COPY_SESSION_INVALID"));
+            }
             let outcome=(||->Result<Vec<u8>,JsValue>{
-                if !draft.changed{return Err(fail("DB05_COPY_NO_CHANGE"));}
-                validate_profile(draft.patched_json.as_bytes())
+                if !changed{return Err(fail("DB05_COPY_NO_CHANGE"));}
+                validate_profile(patched_json.as_bytes())
                     .map_err(|_|fail("DB05_COPY_INVALID_RESULT"))?;
                 let copy=match self.kind{
-                    InputKind::PlainJson=>draft.patched_json.as_bytes().to_vec(),
+                    InputKind::PlainJson=>patched_json.as_bytes().to_vec(),
                     InputKind::EncryptedP1g=>{
                         let opened=self.p1g.as_ref()
                             .ok_or(fail("DB05_COPY_SESSION_INVALID"))?;
                         let mut archive=rezip_profile(&opened.original_zip,&opened.layout,
-                            draft.patched_json.as_bytes())
+                            patched_json.as_bytes())
                             .map_err(|_|fail("DB05_COPY_ZIP_FAILED"))?;
                         let encrypted=ecb_encrypt(&archive);
                         archive.zeroize();
                         let mut encrypted=encrypted
                             .map_err(|_|fail("DB05_COPY_ENCRYPT_FAILED"))?;
-                        // Independent strict reopen must match the exact patched
-                        // original profile bytes (unknown fields included).
                         let verified=OpenedP1g::open(&encrypted)
                             .is_ok_and(|reopened|reopened.profile==
-                                draft.patched_json.as_bytes());
-                        if !verified {
+                                patched_json.as_bytes());
+                        if !verified{
                             encrypted.zeroize();
                             return Err(fail("DB05_COPY_INDEPENDENT_REOPEN_FAILED"));
                         }
                         encrypted
                     }
                 };
-                // Prevent unbounded Worker -> UI transfers in the early beta.
-                if copy.is_empty()||copy.len()>MAX_EXPERIMENTAL_COPY{
-                    let mut copy=copy;
-                    copy.zeroize();
+                if copy.is_empty() || copy.len()>MAX_EXPERIMENTAL_COPY{
+                    let mut copy=copy;copy.zeroize();
                     return Err(fail("DB05_COPY_SIZE_DENIED"));
                 }
                 Ok(copy)
             })();
-            draft.patched_json.zeroize();
+            patched_json.zeroize();
             let copy=outcome?;
-            let len=copy.len() as u32; // bounded above by 32 MiB
+            let len=copy.len() as u32;
             self.copy_buffer=copy;
             self.copy_position=0;
             self.copy_prepared=true;
