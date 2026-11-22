@@ -51,7 +51,7 @@ function worldFixture(){
     }],
     initialItemRefs:[{
       itemId:'12345678',relation:'nativeSourceDefaultGridObject',
-      gridRefId,layoutId:layout,gridDataPath:gridData,
+      gridRefId:gridRef,layoutId:layout,gridDataPath:gridData,
       worldId,areaRefId:null,instanceCount:2,
       itemOriginWorldId:null,itemAcquisitionWorldId:null,
       playerPlacedWorldId:null,placeableWorldId:null,
