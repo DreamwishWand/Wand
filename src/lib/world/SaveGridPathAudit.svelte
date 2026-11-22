@@ -181,15 +181,16 @@
   {#if receipt}
     <div class="audit-result" aria-label="セーブGridDataPath照合結果">
       <div><strong>{receipt.observedFullGrids}</strong><span>保存済みGrid</span></div>
-      <div><strong>{receipt.matchedFullGrids}</strong><span>原本パス一致候補</span></div>
+      <div><strong>{receipt.matchedFullGrids}</strong><span>レイアウト・GridData一致候補</span></div>
       <div><strong>{receipt.ambiguousSourceFullGrids}</strong><span>複数候補</span></div>
       <div><strong>{receipt.notInPartialSourceFullGrids}</strong><span>部分原本に未登録</span></div>
       <div><strong>{receipt.observedDiffGrids}</strong><span>差分Grid</span></div>
       <div><strong>{receipt.structuralCandidateDiffGrids}</strong><span>差分構造の候補</span></div>
     </div>
     <p class="audit-note">
-      原本の候補数のみ確認しています。保存Gridの数値ID、配置先の同一性、
-      座標変換、差分ハッシュ、配置可能性、DLC所有権は未検証です。
+      元のレイアウトパスとGridDataPathの一致候補のみ確認しています。
+      保存Gridの数値ID、配置先の同一性、座標変換、差分ハッシュ、
+      配置可能性、DLC所有権は未検証です。
       照合できないパスもセーブ破損を意味しません。
     </p>
   {/if}
