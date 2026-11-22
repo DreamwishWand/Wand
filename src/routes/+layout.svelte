@@ -330,7 +330,7 @@
 {#if historyOpen}
   <div class="shell-history-overlay">
     <button class="shell-history-shade" type="button" on:click={closeHistory} aria-label={copy.close}></button>
-    <aside class="shell-history-panel" role="dialog" aria-modal="true" aria-label={copy.history}>
+    <div class="shell-history-panel" role="dialog" aria-modal="true" aria-label={copy.history}>
       <header class="shell-history-head">
         <div><WandIcon name="history" size={21}/><strong>{copy.history}</strong></div>
         <button class="header-icon-button" type="button" bind:this={historyCloseButton}
@@ -388,7 +388,7 @@
       {:else}
         <p class="shell-history-empty">{copy.historyUnavailable}</p>
       {/if}
-    </aside>
+    </div>
   </div>
 {/if}
 
