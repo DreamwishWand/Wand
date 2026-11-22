@@ -548,3 +548,115 @@ pub fn plan_recipe_basket_wasm(input:&str)->Result<String,wasm_bindgen::JsValue>
     plan_recipe_basket_json(input)
         .map_err(|code|wasm_bindgen::JsValue::from_str(&code))
 }
+
+
+#[cfg(test)]
+mod tests{
+    use super::*;
+    fn fixture()->Value{
+        json!({
+            "schema":"wand.db02.recipe-basket-request@1",
+            "source":{"platform":"Steam","gameVersion":"1.26.2"},
+            "goals":[{"recipeId":11,"batches":1},{"recipeId":12,"batches":2}],
+            "recipes":[
+                {"recipeId":11,"resultItemId":101,"type":"crafting",
+                 "resultQuantity":1,"conditionDigest":null,
+                 "ingredients":[{"kind":"item","itemId":201,"quantity":3},
+                                {"kind":"item","itemId":202,"quantity":1}]},
+                {"recipeId":12,"resultItemId":102,"type":"crafting",
+                 "resultQuantity":1,"conditionDigest":null,
+                 "ingredients":[{"kind":"item","itemId":201,"quantity":2},
+                                {"kind":"item","itemId":203,"quantity":2}]},
+                {"recipeId":13,"resultItemId":201,"type":"crafting",
+                 "resultQuantity":4,"conditionDigest":null,
+                 "ingredients":[{"kind":"item","itemId":301,"quantity":2}]}
+            ],
+            "ingredientMembershipScope":"not_supplied",
+            "acquisitionPaths":{"301":[{"pathId":"mining:1","type":"mining"}]},
+            "options":{}
+        })
+    }
+    fn run(req:Value)->Value{
+        serde_json::from_str(&plan_recipe_basket_json(&req.to_string()).unwrap()).unwrap()
+    }
+    #[test]
+    fn pools_nested_recipe_materials_and_shared_production_surplus(){
+        let result=run(fixture());
+        assert_eq!(result["schema"],"wand.db02.material-basket@1");
+        assert_eq!(result["materialsFullySpecified"],true);
+        assert_eq!(result["requiredMaterials"].as_array().unwrap().len(),3);
+        assert_eq!(result["requiredMaterials"][0]["itemId"],202);
+        assert_eq!(result["requiredMaterials"][0]["quantity"],1);
+        assert_eq!(result["requiredMaterials"][1]["itemId"],203);
+        assert_eq!(result["requiredMaterials"][1]["quantity"],4);
+        assert_eq!(result["requiredMaterials"][2]["itemId"],301);
+        assert_eq!(result["requiredMaterials"][2]["quantity"],4);
+        assert_eq!(result["requiredMaterials"][2]["acquisitionPaths"][0]["type"],"mining");
+        assert_eq!(result["steps"].as_array().unwrap().iter()
+            .map(|step|step["recipeId"].as_u64().unwrap()).collect::<Vec<_>>(),
+            vec![13,11,13,12]);
+        assert_eq!(result["producedSurplus"][0]["quantity"],1);
+        assert_eq!(result["acquisitionAvailabilityVerified"],false);
+        assert_eq!(result["recipeEligibilityEvaluated"],false);
+    }
+    #[test]
+    fn pooled_stock_and_non_mutating_conservative_cooking_yield(){
+        let mut req=fixture();
+        req["options"]=json!({"inventory":{"202":5,"203":1,"301":3,"777":2}});
+        let result=run(req);
+        assert_eq!(result["requiredMaterials"][0]["itemId"],203);
+        assert_eq!(result["requiredMaterials"][0]["quantity"],3);
+        assert_eq!(result["requiredMaterials"][1]["itemId"],301);
+        assert_eq!(result["requiredMaterials"][1]["quantity"],1);
+        assert_eq!(result["remainingInventory"].as_array().unwrap()
+            .iter().find(|x|x["itemId"]==777).unwrap()["quantity"],2);
+        let mut req=fixture();
+        req["goals"]=json!([{"recipeId":11,"batches":3}]);
+        req["recipes"][0]["type"]=json!("cooking");
+        req["recipes"][0]["resultQuantity"]=Value::Null;
+        let meal=run(req);
+        assert_eq!(meal["goals"][0]["outputQuantity"],Value::Null);
+        assert_eq!(meal["steps"].as_array().unwrap().last().unwrap()
+            ["plannedOutputQuantity"],Value::Null);
+    }
+    #[test]
+    fn explicit_item_alternative_choice_and_unspecified_selector(){
+        let mut req=fixture();
+        req["recipes"][0]["ingredients"]=json!([
+            {"kind":"itemAlternatives","itemIds":[302,301],"quantity":2}
+        ]);
+        req["goals"]=json!([{"recipeId":11,"batches":2}]);
+        let unresolved=run(req.clone());
+        assert_eq!(unresolved["materialsFullySpecified"],false);
+        assert_eq!(unresolved["unresolvedSelectors"][0]["candidateItemIds"],
+            json!([301,302]));
+        req["options"]=json!({"ingredientChoices":{"11:0":301}});
+        let chosen=run(req);
+        assert_eq!(chosen["materialsFullySpecified"],true);
+        assert_eq!(chosen["requiredMaterials"][0]["itemId"],301);
+        assert_eq!(chosen["requiredMaterials"][0]["quantity"],4);
+        assert_eq!(chosen["selectorSelections"][0]["availabilityVerified"],false);
+    }
+    #[test]
+    fn ambiguous_craft_cycle_and_bounds_fail_closed(){
+        let mut req=fixture();
+        req["recipes"].as_array_mut().unwrap().push(json!({
+          "recipeId":14,"resultItemId":201,"type":"crafting",
+          "resultQuantity":1,"ingredients":[{"kind":"item","itemId":301,"quantity":1}]
+        }));
+        let choice=run(req.clone());
+        assert_eq!(choice["blockers"][0]["reason"],"recipe_choice_required");
+        req["options"]=json!({"recipeChoices":{"201":13}});
+        let chosen=run(req.clone());
+        assert_eq!(chosen["materialsFullySpecified"],true);
+        req["options"]=json!({"recipeChoices":{"201":999}});
+        assert!(plan_recipe_basket_json(&req.to_string()).is_err());
+        req["options"]=json!({"maxDepth":25});
+        assert!(plan_recipe_basket_json(&req.to_string()).is_err());
+        req["options"]=json!({"inventory":{"0301":2}});
+        assert!(plan_recipe_basket_json(&req.to_string()).is_err());
+        req["options"]=json!({});
+        req["goals"]=json!([{"recipeId":11,"batches":1_000_001}]);
+        assert!(plan_recipe_basket_json(&req.to_string()).is_err());
+    }
+}
