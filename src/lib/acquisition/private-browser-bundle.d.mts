@@ -30,6 +30,8 @@ export interface PrivateSrc02BrowserBundle {
   getItem(itemId:number): unknown;
   getRecipe(recipeId:number): unknown;
   getStaticStall(stallId:number): unknown;
+  /** Source-only stall candidate rows; not verified live shop availability. */
+  getPossibleStallsForItem(itemId:number): unknown;
   getPossibleStallsForItem(itemId:number): unknown;
   getIngredientSelectorCandidates(selectorId:number): unknown;
 }

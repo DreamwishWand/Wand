@@ -4,6 +4,7 @@ on:
     paths:
       - 'tools/src-02-acquisition/**'
       - 'src/lib/acquisition/**'
+      - 'crates/wand-acquisition-core/**'
       - 'tests/acquisition*.test.mjs'
       - '.github/workflows/acquisition.yml'
   pull_request:
@@ -20,8 +21,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: v0.13.1
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - run: python -m unittest discover -s tools/src-02-acquisition -p 'test_*.py' -v
+      - run: cargo test --manifest-path crates/wand-acquisition-core/Cargo.toml
+      - run: wasm-pack build crates/wand-acquisition-core --release --target web --out-dir ../../src/lib/acquisition/wasm/pkg --features wasm
       - run: node --test tests/acquisition*.test.mjs
