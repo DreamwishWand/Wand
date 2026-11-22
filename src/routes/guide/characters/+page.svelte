@@ -1,5 +1,6 @@
 <script lang="ts">
   import {onMount} from 'svelte';
+  import {readWandLocale, onWandLocaleChange} from '$lib/ui/wand-locale';
   import {base} from '$app/paths';
   import {autoAppend} from '$lib/ui/auto-append';
   import {collectWindow} from '$lib/ui/collect-window.mjs';
@@ -56,9 +57,11 @@
     finally{loading=false}
   }
   onMount(()=>{
+    locale=readWandLocale();
+    const stopLocale=onWandLocaleChange(next=>{locale=next;limit=48;});
     window.addEventListener('popstate',restoreAddress);
     void load();
-    return ()=>window.removeEventListener('popstate',restoreAddress);
+    return ()=>{stopLocale();window.removeEventListener('popstate',restoreAddress);};
   });
 </script>
 
@@ -88,13 +91,6 @@
     <div class="controls">
       <label>名前・IDで検索
         <input type="search" aria-label="キャラクター名称を検索" bind:value={query} maxlength="120" on:input={()=>limit=48} placeholder="日本語・English・ID" />
-      </label>
-      <label>表示言語
-        <select aria-label="キャラクター名称の表示言語" bind:value={locale} on:change={()=>limit=48}>
-          {#each PUBLIC_GUIDE_LOCALES as language}
-            <option value={language}>{LANG[language]}</option>
-          {/each}
-        </select>
       </label>
       <label>クエスト関連付け
         <select aria-label="関連クエストで絞り込み" bind:value={mode} on:change={()=>limit=48}>
