@@ -226,6 +226,8 @@ test('private shard client freezes an independent caller-owned manifest snapshot
   f.manifest.gameVersion='9.9.9';
   assert.equal(db.source.definitions,2);
   assert.equal(db.source.gameVersion,'1.26.2');
+  assert.deepEqual(db.getCategories(),['ActivityItem','Character']);
+  assert.ok(Object.isFrozen(db.getCategories()));
   assert.equal((await db.getItem(5))?.itemId,5);
   assert.equal((await db.getCategory('ActivityItem'))[0].itemId,5);
   assert.equal((await db.getName(5,'en'))?.value,'Royal Cup');
@@ -264,5 +266,15 @@ test('complete future source manifest remains valid when every source file is ve
   assert.doesNotThrow(()=>validateDb01Shards(f.manifest));
   const db=createDb01CatalogClient(f.manifest,f.load);
   assert.equal(db.source.fullCorpusParsed,true);
+  assert.deepEqual(f.calls,[]);
+});
+
+test('source catalog enumerates all immutable canonical category shards without IO',()=>{
+  const f=fixture(false),db=createDb01CatalogClient(f.manifest,f.load);
+  const names=db.getCategories();
+  assert.deepEqual(names,['ActivityItem','Character']);
+  assert.strictEqual(names,db.getCategories());
+  assert.ok(Object.isFrozen(names));
+  assert.throws(()=>names.push('ForgedCategory'),TypeError);
   assert.deepEqual(f.calls,[]);
 });
