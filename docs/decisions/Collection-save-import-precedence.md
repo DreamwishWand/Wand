@@ -57,6 +57,17 @@ supports 12 of the 13 verified historical native roles:
 | 11 | MountGear | 21 |
 | 12 | Environment (EnvironmentFx) | 6 |
 
+**Current publication coverage:** The approved Steam v1.26.2 DB-00 release
+currently contains 13,202 items across only four Collection families:
+`Source Activity Items` (4,050), `Furniture` (6,746),
+`Clothing` (2,041) and `Wallpaper & Flooring` (365). The 12-role
+reader is prepared for later verified DB-00 families, but only existing
+catalog IDs are currently mutable. Native role 4 `Trimming` must map
+to the published `Wallpaper & Flooring` family (and role 2
+`ActivityItem` to `Source Activity Items`); native role names cannot
+be compared directly to public UI family names. A public DB-00 ID still
+must be present for any imported status.
+
 **Intentionally excluded**: role 6 TouchOfMagic (type 10). Native
 TouchOfMagic definitions include both collectible DecalItemData and
 non-collectible TextureItemData. A type prefix and inventory role alone do
