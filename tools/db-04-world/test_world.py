@@ -861,9 +861,9 @@ class PipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "histogram mismatches"):
             validate_snapshot(self.out)
 
-    def test_current_version_snapshot_preserves_raw_unverified_terrain(self):
-        # FullVersion.txt remains 1.26.2; original 1.26.1 getter semantics
-        # must not be inherited when extracting this archive.
+    def test_steam1262_snapshot_retains_raw_and_derives_readonly_terrain(self):
+        # The version-matched native 1.26.2 read path is now corroborated.
+        # The extractor retains original raw bytes alongside derived counts.
         target = self.base / "GridData/Villages/Village04-Test.json"
         original = bytes((0x01, 0x23, 0x41, 0x03, 0x20))
         target.write_bytes(
@@ -871,15 +871,17 @@ class PipelineTests(unittest.TestCase):
             field(4, struct.pack("<IIIII", 0, 8, 16, 32, 64)) +
             field(5, original))
         report = extract(self.game, self.out)
-        self.assertEqual(report["nativePackedGridHistogramCount"], 0)
+        self.assertEqual(report["nativePackedGridHistogramCount"], 1)
         data = json.loads((self.out / "grids.json").read_text(encoding="utf-8"))
         self.assertEqual(len(data), 1)
         grid_data = data[0]
         self.assertEqual(grid_data["terrainDecoding"]["status"],
-                         "native_packing_not_verified_for_game_version")
-        self.assertFalse(grid_data["terrainDecoding"]["decoded"])
-        self.assertFalse(grid_data["nativeFloorIndexToLocalXYCorroborated"])
-        self.assertIsNone(grid_data["nativePaletteIndexCellCounts"])
+                         "cross_validated_native_samples")
+        self.assertTrue(grid_data["terrainDecoding"]["decoded"])
+        self.assertTrue(grid_data["nativeFloorIndexToLocalXYCorroborated"])
+        self.assertEqual(grid_data["nativePaletteIndexCellCounts"],
+                         [2, 2, 2, 2, 1])
+        self.assertFalse(grid_data["terrainDecoding"]["placementLegalityVerified"])
         self.assertEqual(base64.b64decode(
             grid_data["compactedFloorTypesBase64"]), original)
         self.assertEqual(validate_snapshot(self.out)["counts"]["grids"], 1)
