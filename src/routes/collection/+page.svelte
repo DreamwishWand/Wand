@@ -44,6 +44,7 @@
   let loading=true;
   let storeError='';
   let saveReadInProgress=false;
+  let historySaveReadLock=false;
   let saveReadTarget:{runtime:CollectionRuntime;workspaceId:string}|null=null;
   let infoMessage='';
   let busy=false;
@@ -365,18 +366,20 @@
       }catch(error){if(alive)loadError=error instanceof Error?error.message:String(error);}
       finally{if(alive)loading=false;}
     })();
-    return()=>{alive=false;detachHistory();unwatchLanguage();window.removeEventListener('wand:collection-history-restored',onHistoryRestored);window.removeEventListener('wand:collection-backup',handleHeaderBackup);window.removeEventListener('wand:collection-filters',toggleHeaderFilters);media.removeEventListener('change',changed);runtime?.close();};
+    return()=>{alive=false;if(historySaveReadLock){historySaveReadLock=false;editHistory.endCollectionEdit();}detachHistory();unwatchLanguage();window.removeEventListener('wand:collection-history-restored',onHistoryRestored);window.removeEventListener('wand:collection-backup',handleHeaderBackup);window.removeEventListener('wand:collection-filters',toggleHeaderFilters);media.removeEventListener('change',changed);runtime?.close();};
   });
   function beginSaveRead():void {
     // Preserve the active workspace and runtime at file selection, not at
     // Worker completion. Do not let an asynchronous save update another record.
     saveReadTarget=runtime&&!busy&&!storeError?{runtime,workspaceId:state.active}:null;
     saveReadInProgress=true;
+    if(!historySaveReadLock){editHistory.beginCollectionEdit();historySaveReadLock=true;}
     window.dispatchEvent(new CustomEvent('wand:collection-busy',{detail:true}));
   }
   function finishSaveRead():void {
     saveReadInProgress=false;
     saveReadTarget=null;
+    if(historySaveReadLock){historySaveReadLock=false;editHistory.endCollectionEdit();}
     window.dispatchEvent(new CustomEvent('wand:collection-busy',{detail:false}));
   }
   /** Native save history and positive-stock ownership are applied together

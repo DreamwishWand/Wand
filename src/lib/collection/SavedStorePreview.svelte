@@ -2,6 +2,7 @@
   import { onDestroy, createEventDispatcher } from 'svelte';
   import ItemArtwork from './ItemArtwork.svelte';
   import {autoAppend} from '$lib/ui/auto-append';
+  import {localSaveSession,selectLocalSaveFile,needsCollectionRead,updateCollectionRead} from '$lib/ui/local-save-session';
   import { attachHistoricalStoreLabels } from './saved-store-preview.mjs';
   import { attachDb01PrivateNames } from './private-db01-names-view.mjs';
   import { sanitizeSavedCollectionPresence } from './saved-collection-presence.mjs';
@@ -61,6 +62,7 @@
   // The Worker receives local bytes; Rust/WASM validates profiles; UI receives only IDs.
   let activeWorker: Worker|null = null;
   let requestSequence = 0;
+  let seenGlobalSaveRevision=0;
 
   function stopWorker() {
     requestSequence++;
@@ -157,12 +159,23 @@
     saveSchema = null;
   }
 
-  async function openLocalFile(event:Event) {
-    const input = event.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file || busy || collectionCommitBusy) return;
+  function openLocalFile(event:Event):void {
+    const input=event.currentTarget as HTMLInputElement;
+    const file=input.files?.[0];
+    input.value='';
+    if(!file||collectionCommitBusy)return;
+    // The Collection-local chooser is a compatibility path into the same
+    // shared session as the header picker and full-page drop target.
+    if(headless){selectLocalSaveFile(file);return;}
+    void readLocalSave(file,0);
+  }
+
+  async function readLocalSave(file:File,sessionRevision:number):Promise<void>{
+    if(collectionCommitBusy)return;
+    // Cancels any earlier Worker and invalidates its asynchronous replies.
     clear();
     busy = true;
+    if(sessionRevision>0)updateCollectionRead(sessionRevision,'reading');
     dispatch('saveReadStarted');
     const request = requestSequence;
     let saveBytes:Uint8Array|null = null;
@@ -180,6 +193,7 @@
         w.terminate();
         activeWorker = null;
         busy = false;
+        let valid=false;
         try {
           if (result?.kind !== 'result' || result.result?.kind !== 'saved-store-summary' ||
               (result.result.saveSchema !== null &&
@@ -201,8 +215,12 @@
           saveSchema = result.result.saveSchema;
           if (discovery.entries.length||ownership.entries.length)
             dispatch('saveProfile',{discovered:discovery.entries,positiveOwned:ownership.entries});
+          valid=true;
         } catch { failedRead(); }
-        finally { dispatch('saveReadFinished'); }
+        finally {
+          if(sessionRevision>0)updateCollectionRead(sessionRevision,valid?'parsed':'invalid');
+          dispatch('saveReadFinished');
+        }
       };
       w.onmessage = event => finish(event.data);
       w.onerror = event => { event.preventDefault(); finish({kind:'error'}); };
@@ -217,11 +235,25 @@
         activeWorker = null;
         busy = false;
         failedRead();
+        if(sessionRevision>0)updateCollectionRead(sessionRevision,'invalid');
         dispatch('saveReadFinished');
       }
     } finally {
       if (saveBytes && saveBytes.byteLength) saveBytes.fill(0);
-      input.value = '';
+    }
+  }
+
+  // Svelte's reactive binding picks up a save selected in Home or any other
+  // service, and parses it once when Collection becomes available.
+  $: if(headless && $localSaveSession.revision!==seenGlobalSaveRevision &&
+       (!$localSaveSession.file||!collectionCommitBusy)){
+    const selection=$localSaveSession;
+    seenGlobalSaveRevision=selection.revision;
+    if(selection.file){
+      if(needsCollectionRead(selection.revision))
+        void readLocalSave(selection.file,selection.revision);
+    }else{
+      clear();
     }
   }
 
