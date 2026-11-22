@@ -14,6 +14,7 @@ import {loadPrivateCookingStarSettings} from './private-cooking-star-settings.mj
 import {collectConfiguredIngredientSellEvidence} from './meal-ingredient-sell-evidence.mjs';
 import {loadPrivateDynamicPriceCache} from './private-dynamic-price-cache.mjs';
 import {classifyNativeMealSellPriceRoute} from './native-meal-price-route.mjs';
+import {nativeSellPriceProviderPlan} from './native-sell-provider-plan.mjs';
 
 export const DB02_MEAL_PRICE_VIEW_CONTRACT='wand.db02.private-meal-pricing-view@1';
 export const DB02_MEAL_PRICE_EVIDENCE_CONTRACT='wand.db02.meal-price-evidence@1';
@@ -136,6 +137,7 @@ function inspectAuthenticatedMeal({acquisitionBundle,shopPriceView,nativeCache,m
     'MEAL_ITEM_ID_REQUIRED');
   const state=decodeMealItemStateEvidence(itemStateBytes);
   const nativeIngredientPriceRoute=classifyNativeMealSellPriceRoute(state);
+  const nativeMealPriceProviderPlan=nativeSellPriceProviderPlan(mealItemId);
   const linked=acquisitionBundle.getItem(mealItemId);
   const cookingRecipes=(linked?.madeBy??[]).filter(
     row=>row.type==='cooking'&&row.resultItemId===mealItemId);
@@ -146,6 +148,8 @@ function inspectAuthenticatedMeal({acquisitionBundle,shopPriceView,nativeCache,m
     row.sellValueDefinitions.length===0),
     'UNEXPECTED_MEAL_PRICE_DEFINITIONS');
   const ingredientAmounts=state.ingredientAmounts;
+  const sourceIngredientProviderPlans=frozen(ingredientAmounts.map(x=>
+    nativeSellPriceProviderPlan(x.itemId)));
   const sourceIngredientStaticSellEvidence=collectConfiguredIngredientSellEvidence(
     ingredientAmounts,id=>shopPriceView.getSourceItemPriceDefinitions(id));
   const sourceIngredientDynamicCacheEvidence=nativeCache===null?null:
@@ -155,6 +159,9 @@ function inspectAuthenticatedMeal({acquisitionBundle,shopPriceView,nativeCache,m
     mealItemId,platform:'Steam',gameVersion:'1.26.2',
     state,
     nativeIngredientPriceRoute,
+    nativeMealPriceProviderPlan,
+    sourceIngredientProviderPlans,
+    nativePriceProviderTopologyVerified:true,
     nativeIngredientRoutingImplementationVerified:true,
     nativeIngredientRuntimePricesVerified:false,
     nativeLookupDefaultCannotReplaceUnknownSourcePrices:true,
@@ -225,6 +232,7 @@ export async function loadPrivateMealPricingView({
     nativeCookingStarSettings:nativeStars,
     nativeDynamicCacheVerified:nativeCache!==null,
     nativeDynamicPriceCache:nativeCache,
+    getNativeSellPriceProviderPlan:itemId=>nativeSellPriceProviderPlan(itemId),
     getSourceCachedDynamicPriceRow:itemId=>{
       check(validId(itemId),'INVALID_DYNAMIC_ITEM_ID');
       return nativeCache?.lookup(itemId)??null;
