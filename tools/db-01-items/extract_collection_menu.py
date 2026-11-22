@@ -169,11 +169,13 @@ def extract(sqlite_path: Path, collectionset: Path, il2cpp_dump: Path,
                     ignore_flag = field_single(specification, 1, 0, 0)
                     require(ignore_flag in (0,1), 'BAD_IGNORE_FLAG')
                     for target_id in item_list_ids(specification):
-                        require(type(target_id) is int and 0 < target_id < 2**53,
-                                'UNSAFE_TARGET_ITEM_ID')
+                        # Ignore lists may contain a 0 sentinel in the current
+                        # original. Never promote or resolve ignored entries.
                         if ignore_flag:
                             ignored_ids += 1
                             continue
+                        require(type(target_id) is int and 0 < target_id < 2**53,
+                                'UNSAFE_TARGET_ITEM_ID')
                         require(target_id in canonical, 'UNRESOLVED_CURRENT_ITEM_ID')
                         identity = (set_id, group_index, target_id)
                         require(identity not in direct_pairs, 'DUPLICATE_DIRECT_ITEM')
