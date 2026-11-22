@@ -10,6 +10,8 @@ and joined to all 4 purchase / 1 sell formula references in the exact original
 cooking-ingredient applicability. See [NATIVE-SELL-FORMULA-SOURCE.md](NATIVE-SELL-FORMULA-SOURCE.md)
 and the read-only [audit script](audit_native_sell_formula_source.py).
 
+Native **code**, not only metadata, now verifies the formula ObjectType resolver and exact runtime class gate: 7 cross-checked direct-call targets and 9 native instruction hashes against the original Steam 1.26.2 `GameAssembly.dll` and `dump.cs`. The source formula targets `ActivityItem/Consummable` while cooked `Meal`, `Crop`, `Fish` and `Ingredient` are distinct native subtypes. Runtime database registration/selection and effective prices remain **UNKNOWN**. See [`audit_native_sell_formula_type_dispatch_1262.py`](audit_native_sell_formula_type_dispatch_1262.py) and [NATIVE-SELL-FORMULA-SOURCE.md](NATIVE-SELL-FORMULA-SOURCE.md).
+
 The SHA-pinned original Steam 1.26.2 sell formula ObjectType now cross-references original IL2CPP `ActivityItem/Consummable` metadata (`15`), distinct from the fixed cooking ingredient subtypes `Crop` (`2`), `Fish` (`10`) and `Ingredient` (`11`). The optional original `dump.cs` metadata audit is read-only, fail-closed and **does not resolve live runtime Type identity or a price**. See [NATIVE-SELL-FORMULA-SOURCE.md](NATIVE-SELL-FORMULA-SOURCE.md).
 
 ## Authenticated native sell formula references and selection gates (Steam/Switch v1.26.2)
