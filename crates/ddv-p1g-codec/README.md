@@ -73,3 +73,38 @@ CI separately executes a synthetic encrypted P1G upload in a real
 Chromium Worker and verifies that the compiled WASM module loaded and
 returned an independently matching decode. This is not a genuine
 Steam/Switch game-save round-trip and cannot authorize exporting edits.
+
+
+## Rust/WASM amount preview (still no Writer/export)
+
+The WasmAmountPreview class is Worker-local and accepts either:
+- json: plaintext .profile / .json UTF-8 root with GameInfo, Player and World
+- p1g: existing AES/ZIP packaged profile in the supported single-entry layout
+
+The Worker transfers chunks of at most 1 MiB, calls finish_open(),
+then previews one exact existing Inventory or Chest Amount using the
+pre-existing Rust lexical-edit scanner and an optimistic expected-old
+quantity. No creation, deletion or change to item identity/slot layout.
+
+The Rust operation validates the changed document and, for P1G, rebuilds
+the archive, encrypts it and decrypts/reopens the candidate internally
+to check exact profile bytes. All candidate bytes are discarded.
+The Worker emits only a fixed boolean receipt without IDs, amounts,
+plaintext, fingerprints or downloadable bytes.
+
+src/routes/save/preview/ is an unlinked development-only test surface,
+not the production editor. If WASM does not accept the save or the target,
+the preview fails closed and does not claim edit safety.
+
+Actual Steam v643 observation, private and not committed: a provided
+Steam .profile source was directly valid JSON, not encrypted P1G.
+Thus src/lib/save/save-diagnostics-worker-core.mjs resolves .profile,
+.dat and .bin contents inside the Worker rather than assuming a ZIP
+envelope from the filename. Other originals may remain encrypted.
+The observation alone does not establish independent provenance of the
+Steam build or game-accepted edits.
+
+Remaining work: genuine real-game reimport/acceptance, multi-entry ZIP
+handling, item quantity cap rules, production ownership/session/revision
+policy, intentional explicit export, and safe close/zeroization lifecycle
+for actual large edit sessions.
