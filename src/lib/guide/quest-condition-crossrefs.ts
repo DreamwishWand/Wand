@@ -73,6 +73,9 @@ export function createQuestConditionCrossrefs(
 ):QuestConditionCrossrefIndex{
   // Existing, source-validated direct Mission predicate extractor rejects
   // alien quest records, wrong wire hashes, unsupported native record kinds.
+  check((questSearch as {target?:{platform?:unknown;gameVersion?:unknown}})?.target?.platform==='Steam'&&
+    (questSearch as {target?:{platform?:unknown;gameVersion?:unknown}}).target?.gameVersion==='1.26.1',
+    'ARCHIVED_MISSION_SOURCE_REQUIRED');
   const direct=guideMissionReferences(record,questSearch,'en');
   const questId=record?.id;
   check(nativeId(questId),'INVALID_QUEST_ID');
