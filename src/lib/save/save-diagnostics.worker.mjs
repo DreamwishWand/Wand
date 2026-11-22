@@ -2,7 +2,7 @@
 import { inspectLocalSaveDiagnosticsBytes } from './save-diagnostics-worker-core.mjs';
 import {probeWasmReferenceParity,wasmReferenceUnavailable} from './save-wasm-reference.mjs';
 import {probeNativeP1gAudit,nativeP1gAuditUnavailable} from './save-native-p1g-audit.mjs';
-import {decodeNativeFirstLocalProfile} from '../collection/saved-profile-native-reader.mjs';
+import {decodeNativeFirstLocalProfile} from '../collection/saved-profile-native-reader';
 
 async function safeWasmProbe(strictJsonText,root){
   try { return await probeWasmReferenceParity(strictJsonText,root); }
