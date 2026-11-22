@@ -211,7 +211,7 @@
     loading = true;
     const id = ++requestId;
     const owned = new Worker(
-      new URL('../../../lib/world/world-preview.worker.mjs', import.meta.url),
+      new URL('../../../lib/world/world-preview.worker.ts', import.meta.url),
       { type:'module' });
     worker = owned;
     owned.onmessage = (message:MessageEvent) => {
