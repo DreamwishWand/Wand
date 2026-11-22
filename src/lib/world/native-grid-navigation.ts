@@ -94,7 +94,7 @@ export function matchSourceGridToLocalTerrain(
     return result('source_version_mismatch',null,null);
   const matches=zip.layouts.filter(layout=>
     layout.layoutId===request.layoutId&&
-    layout.grids.some(grid=>
+    layout.grids.some((grid:TerrainZipNavigationLayout['grids'][number])=>
       grid.gridIdNative===request.nativeGridId&&
       grid.gridDataPath===request.gridDataPath&&grid.knownGridData)
   );
