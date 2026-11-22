@@ -1,11 +1,11 @@
 # DB-02 × Collection: isolated one-shot saved-store inspection
 
 A user-selected encrypted P1G file on `/collection` is decoded by
-`src/lib/collection/saved-store.worker.mjs`, not by the Svelte main thread.
+`src/lib/collection/saved-store.worker.ts`, not by the Svelte main thread.
 The browser transfers the ciphertext ArrayBuffer to the Worker (rather than
 cloning it), so the main thread no longer retains a copy created for parsing.
-The Worker uses the existing read-only P1G codec, validates AES/ZIP/CRC/UTF-8
-and JSON, invokes DB-05's `inspectDecodedSave` through
+The Worker uses the Rust/WASM P1G reader for AES/ZIP/CRC/UTF-8 and
+strict JSON validation, then invokes DB-05's `inspectDecodedSave` through
 `inspectDecodedWorldStores`, and reduces the result with
 `createSavedStorePreview` **before** posting anything to the UI.
 
