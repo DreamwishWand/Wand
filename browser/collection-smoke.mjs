@@ -171,7 +171,7 @@ try{
   await portal.getByRole('button',{name:'サービスを切り替える'}).click();
   await portal.setViewportSize({width:390,height:844});
   const mobileLayout=await portal.evaluate(()=>{
-    const help=document.querySelector('.portal-community')?.getBoundingClientRect();
+    const help=document.querySelector('.portal-card-community')?.getBoundingClientRect();
     return Boolean(help&&help.height>=120&&help.bottom<=innerHeight+1&&document.documentElement.scrollWidth<=innerWidth+1);
   });
   assert.equal(mobileLayout,true,'mobile launcher must keep all services and Help Center usable');
