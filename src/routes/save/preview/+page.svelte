@@ -55,6 +55,21 @@
   };
   let db04Match:Db04GridMatch|null=null;
   let db04State:'idle'|'reading'|'verified'|'error'='idle';
+  type Db03MissionSummary={
+    contract:'wand.db05.db03-mission-slot-summary@1';
+    status:string;
+    observedMissionSlots:number;matchedPlayableQuestReferences:number;
+    unresolvedPlayableQuestReferences:number;zeroSentinels:number;
+    malformedMissionIds:number;typeIssues:number;missingOptionalMissionIds:number;
+    distinctPositiveMissionIds:number;sampled:boolean;
+    publishedQuestDefinitions:733;sourceGameVersion:'1.26.2';
+    indexMetadataValidated:true;originalGameSourceBytesRehashed:false;
+    conditionCompatibilityVerified:false;completeQuestHistoryVerified:false;
+    questProgressVerified:false;questCompletionVerified:false;
+    entitlementVerified:false;saveWritingAuthorized:false;exportAuthorized:false;
+  };
+  let db03Summary:Db03MissionSummary|null=null;
+  let db03State:'idle'|'reading'|'ready'|'error'='idle';
 
   let slotState:'idle'|'loading'|'ready'|'error'='idle';
   let slotQuery='';
@@ -129,6 +144,7 @@
     savedSlots=[];savedSlotsFile=null;slotState='idle';
     worldRefs=[];worldStatus='not_observed';worldQuery='';
     db04Match=null;db04State='idle';
+    db03Summary=null;db03State='idle';
     dbMap=new Map();dbStatus='idle';
   }
   function selectSavedSlot(slot:EditableSlot){
@@ -180,6 +196,62 @@
     worker.onmessageerror=()=>done({kind:'error'});
     worker.postMessage({command:'resolve-db00-item-ids',base,ids});
   }
+  async function matchPublicDb03(){
+    cancel();result=null;
+    db03Summary=null;db03State='idle';
+    const save=savedSlotsFile;
+    if(!save||fileInput?.files?.[0]!==save||
+       save.size<1||save.size>MAX_BYTES){
+      db03State='error';return;
+    }
+    const format:'auto'|'json'=save.name.toLowerCase().endsWith('.json')
+      ?'json':'auto';
+    const request=revision;
+    db03State='reading';processing=true;
+    let bytes:Uint8Array|null=null;
+    let worker:Worker|null=null;
+    try{
+      bytes=new Uint8Array(await save.arrayBuffer());
+      if(request!==revision)return;
+      worker=new Worker(
+        new URL('../../../lib/save/save-amount-preview.worker.ts',import.meta.url),
+        {type:'module'}
+      );
+      active=worker;
+      const own=worker;
+      const finish=(response:unknown)=>{
+        if(request!==revision||active!==own)return;
+        own.terminate();active=null;processing=false;
+        const r=response as {kind?:string;receipt?:Db03MissionSummary};
+        if(r?.kind!=='db03'||
+           r.receipt?.contract!=='wand.db05.db03-mission-slot-summary@1'||
+           r.receipt.indexMetadataValidated!==true||
+           r.receipt.originalGameSourceBytesRehashed!==false||
+           r.receipt.questProgressVerified!==false||
+           r.receipt.questCompletionVerified!==false||
+           r.receipt.entitlementVerified!==false||
+           r.receipt.saveWritingAuthorized!==false){
+          db03State='error';return;
+        }
+        db03Summary=r.receipt;db03State='ready';
+      };
+      worker.onmessage=event=>finish(event.data);
+      worker.onerror=event=>{event.preventDefault();finish({kind:'error'});};
+      worker.onmessageerror=()=>finish({kind:'error'});
+      worker.postMessage({
+        command:'inspect-db03-mission-slots',format,bytes,base
+      },[bytes.buffer]);
+      bytes=null;
+    }catch{
+      if(request===revision){
+        worker?.terminate();active=null;processing=false;
+        db03State='error';
+      }
+    }finally{
+      if(bytes?.byteLength)bytes.fill(0);
+    }
+  }
+
   async function matchLocalDb04(){
     cancel();result=null;
     db04State='idle';db04Match=null;
@@ -615,6 +687,39 @@
     {/if}
   </section>
   {#if slotState==='ready'}
+    <section class="saved-slots" aria-label="クエスト参照">
+      <div class="slot-actions">
+        <strong>クエストID参照</strong>
+        <button type="button" disabled={processing}
+          on:click={matchPublicDb03}>
+          {db03State==='reading'?'照合中…':'DB-03クエストIDと照合'}
+        </button>
+      </div>
+      {#if db03State==='ready'&&db03Summary}
+        <p role="status">保存中のMission ID：{db03Summary.observedMissionSlots}件
+          ／DB-03のクエスト定義と一致：{
+            db03Summary.matchedPlayableQuestReferences}件</p>
+        {#if db03Summary.unresolvedPlayableQuestReferences>0}
+          <p>公開Guide索引に未収録：{
+            db03Summary.unresolvedPlayableQuestReferences}件</p>
+        {/if}
+        {#if db03Summary.malformedMissionIds>0||db03Summary.typeIssues>0}
+          <p>構造または型が未確認：{
+            db03Summary.malformedMissionIds+db03Summary.typeIssues}件</p>
+        {/if}
+        {#if db03Summary.sampled}
+          <p>一部の参照のみ確認しました。</p>
+        {/if}
+        {#if db03Summary.status==='not_observed'}
+          <p>対象のMissionSlotがありません。</p>
+        {:else if db03Summary.status==='incompatible_structure'}
+          <p>MissionSlotの構造を読み取れません。</p>
+        {/if}
+        <p class="slot-note">ID定義の照合のみです。クエスト達成・解放条件・進行状況は判定しません。</p>
+      {:else if db03State==='error'}
+        <p role="alert">クエスト照合に失敗しました。公開Guideデータとセーブ形式を確認してください。</p>
+      {/if}
+    </section>
     <section class="saved-slots" aria-label="ワールド参照">
       <div class="slot-actions">
         <strong>ワールドのアイテム参照</strong>
