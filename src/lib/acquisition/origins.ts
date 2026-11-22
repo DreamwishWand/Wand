@@ -3,6 +3,7 @@ import {
   loadPublicStarpath, verifyPublicStarpath, STARPATH_PUBLIC_SHA
 } from '../guide/public-starpath.mjs';
 import {OFFICIAL_CAMPAIGNS} from './official-campaigns.ts';
+import {projectVerifiedSrc02Origins, type VerifiedSrc02OriginReader} from './native-origins.ts';
 
 export const ORIGIN_SCHEMA = 'wand.db02.item-origins@1' as const;
 
@@ -354,14 +355,21 @@ export async function loadStarpathAcquisitionDatabase(
 export async function loadUnifiedAcquisitionOriginDatabase(
   fetcher: typeof fetch = fetch,
   native: NativeAcquisitionReader | null = null,
-  basePath = ''
+  basePath = '',
+  nativeItemIds: readonly (string | number)[] = []
 ): Promise<OriginDatabase> {
   assert(basePath === '' || (basePath.startsWith('/') && !basePath.includes('..') && !basePath.endsWith('/')), 'BASE_PATH');
   const snapshot: unknown = await loadPublicStarpath(
     basePath + '/guide/public/starpath-cache-2026-11-22.json', fetcher
   );
   const starpath = starpathOriginRecords(snapshot);
+  // Import only requested Item IDs from the exact verified private r5 bundle.
+  // Other callers retain the static native view without making source claims.
+  const nativeRoutes = nativeItemIds.length ? projectVerifiedSrc02Origins(
+    native as VerifiedSrc02OriginReader, nativeItemIds
+  ) : [];
   return createAcquisitionOriginDatabase(
-    starpath.origins, [...starpath.campaigns, ...OFFICIAL_CAMPAIGNS], native
+    [...starpath.origins, ...nativeRoutes],
+    [...starpath.campaigns, ...OFFICIAL_CAMPAIGNS], native
   );
 }
