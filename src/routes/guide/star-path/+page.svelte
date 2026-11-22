@@ -10,6 +10,8 @@
   import {starpathRewardDisplayName,loadStarpathRewardExtras} from '$lib/guide/starpath-reward-extras.mjs';
   import {createGuideRewardIndex,type GuideRewardIndex} from '$lib/guide/reward-relations.ts';
   import {createGuideStarpathHistory,type GuideStarpathHistory} from '$lib/guide/starpath-history.ts';
+  import {loadStarpathNativeRevisionEvidence,STARPATH_NATIVE_REVISION_FILE,
+    type StarpathNativeRevisionEvidence} from '$lib/guide/starpath-native-revision.ts';
   import {loadStarpathMedia,starpathMediaThumbnail} from '$lib/guide/starpath-public-media.mjs';
   import {guideCalendarEvents,eventScheduleState} from '$lib/guide/event-calendar.mjs';
   import {starpathTaskDisplay} from '$lib/guide/starpath-task-guidance.ts';
@@ -22,6 +24,7 @@
   let catalog:any=null, weeklyLocales:any=null, dailyLocales:any=null, rewardExtras:any=null, publicMedia:any=null, goalAmounts:any=null, goalWarning='', error='', loading=true;
   let sharedRewardIndex:GuideRewardIndex|null=null;
   let officialHistory:GuideStarpathHistory|null=null;
+  let nativeRevisionEvidence:StarpathNativeRevisionEvidence|null=null;
   let locale='ja';
   let selectedId='HauntingElegance2026';
   let now=Date.now();
@@ -38,6 +41,7 @@
   $: seasonEvents=catalog?guideCalendarEvents(catalog).filter((e:any)=>e.kind==='starpath'):[];
   $: selectableSeasons=catalog?.seasons||[];
   $: season=selectableSeasons.find((s:any)=>s.id===selectedId)||selectableSeasons[0];
+  $: seasonRevision=season?nativeRevisionEvidence?.getVerifiedSeasonRevision(season.id)??null:null;
   $: selectedEvent=season?seasonEvents.find((e:any)=>e.sourceSeasonId===season.id):null;
   $: scheduleState=selectedEvent?eventScheduleState(selectedEvent,now):null;
   // The same source-backed reward relation index is available to Collection,
@@ -134,10 +138,18 @@
   }
   async function load(){
     loading=true;error='';goalWarning='';goalAmounts=null;sharedRewardIndex=null;officialHistory=null;
+    nativeRevisionEvidence=null;
     try{
       catalog=await loadPublicStarpath(`${base}/guide/public/starpath-cache-2026-11-22.json`);
       sharedRewardIndex=createGuideRewardIndex(catalog);
       officialHistory=createGuideStarpathHistory(sharedRewardIndex);
+      const verifiedSnapshot=catalog;
+      // Optional historical verification must never block current Quest/Star Path browsing.
+      void loadStarpathNativeRevisionEvidence(
+        `${base}/guide/public/${STARPATH_NATIVE_REVISION_FILE}`,verifiedSnapshot
+      ).then(result=>{
+        if(catalog===verifiedSnapshot)nativeRevisionEvidence=result;
+      }).catch(()=>{if(catalog===verifiedSnapshot)nativeRevisionEvidence=null;});
       [weeklyLocales,dailyLocales,rewardExtras]=await Promise.all([
         loadStarpathWeeklyLocales(`${base}/guide/public/starpath-weekly-locales-2026-11-22.json`,catalog),
         loadStarpathDailyLocales(`${base}/guide/public/`,catalog.seasons),
@@ -234,6 +246,13 @@
         <div><span>通常 / ボーナス / Vault報酬</span><strong>{season.counts.normalRewards} / {season.counts.bonusRewards} / {season.counts.vaultRewards}</strong></div>
         <div><span>プレミアム設定価格</span><strong>{season.premiumPrice.amount} {starpathRewardDisplayName(season.premiumPrice.itemId,locale,rewardExtras)}（ID {season.premiumPrice.itemId}）</strong></div>
       </section>
+      {#if seasonRevision}
+        <section class="version-evidence" aria-label="原本で確認したスターパスの設定更新">
+          <strong>原本比較：v1.25.0 → v1.26.2</strong>
+          <span>報酬 {seasonRevision.rewardSlotsWithIdenticalFullSourceDefinition} 枠は設定が同一。通常タスクの説明のみ {seasonRevision.descriptionEdits.length} 件変更。</span>
+          <small>v1.26.2ではApple Arcadeの除外設定が追加されています。原本の比較結果であり、プレイヤーの参加・所有状況や現在の開催状態は示していません。</small>
+        </section>
+      {/if}
       </details>
       <nav class="tabs" aria-label="表示内容">
         <button class:active={tab==='tasks'} on:click={()=>changeTab('tasks')}>通常タスク</button>
@@ -371,6 +390,9 @@
   .deadline-strip{display:flex;align-items:center;gap:18px;flex-wrap:wrap;background:#241a32;border:1px solid #4b3d5e;border-radius:10px;padding:9px 13px;margin:12px 0 6px;font-size:12px;color:#bdaacc}
   .deadline-strip strong{color:#f4eafa;font-size:12px;margin-left:6px}
   .season-more{margin:6px 0 0;font-size:12px;color:#cfbde1}
+  .version-evidence{display:grid;gap:5px;padding:10px 12px;margin:6px 0 12px;border:1px solid #59456f;border-radius:8px;background:#261b32;line-height:1.5}
+  .version-evidence strong{color:#f4eafa;font-size:12px}
+  .version-evidence small{font-size:11px;color:#b6a4c5}
   .season-more summary,.source-more summary{cursor:pointer;padding:5px 0;color:#c7a9e4}
   .summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:8px 0 14px}
   .summary>div{display:grid;gap:5px;background:#20192c;border:1px solid #4c3e60;padding:10px;border-radius:9px}
