@@ -15,6 +15,7 @@ PUBLIC_MISSION_SHA = 'f13958b52234f4cda92f0dd0bfff50be8a7f6625c8478785e2a077a5c7
 PUBLIC_ITEM_INDEX_SHA = '06912b156823d920d1b3a2b937ebff3d06e1ca670043db616c907c683b46599f'
 SCHEMA = 'wand.db03.public-quest-targets@1'
 PART_SCHEMA = 'wand.db03.public-quest-targets-part@1'
+LANGS = ('ja','en','fr','it','de','es-ES','zh-CN','pt-BR')
 PREFIX = 'Wand-Guide-Steam-v1.26.2/'
 
 
