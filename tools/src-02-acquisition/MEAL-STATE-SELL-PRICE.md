@@ -3,6 +3,72 @@
 **Scope:** Cooking and meal instance state only. This is **not** the separate
 static stall/shop purchase-price evidence from `SHOP-PRICE-OVERLAP.md`.
 
+## Native dynamic sell formula selection and authenticated source references (Steam/Switch 1.26.2)
+
+The original native `SellPriceFormulaItemData` method bodies on BOTH
+Steam and Switch were independently inspected, not inferred solely from
+configuration or method names.
+
+- `GetSellPriceFormulaItemData(IItemData, Item)` enumerates candidate
+  formula Item data. It compares `SellPriceFormulaItemData.ForCurrency`
+  to the requested currency and then checks
+  `IsFormulaValidForItem(IItemData)`; **the first candidate passing
+  both checks is conditionally selected**. Formula definition source,
+  item type resolution and live candidate enumeration remain separate
+  questions.
+- `IsFormulaValidForItem` resolves the formula's ObjectType metadata
+  and checks identity of the resolved runtime Type against the
+  candidate item's native Type. It is **not** permission to equate
+  arbitrary textual names, numeric Item ID families, or tags with
+  native type identity.
+- `CalculateItemPrice` evaluates the game's equation and converts its
+  single-precision floating value to signed int32 with **truncation
+  toward zero** (Steam `cvttss2si`, Switch `fcvtzs`). This
+  establishes the conversion instruction **only**; the specific
+  formula expression, variables, evaluated float, valid range
+  and final effective item selling price are **not verified**.
+- The original, independently SHA-authenticated Steam v1.26.2
+  `FormulaDynamicPriceDatabase` protoDb entry contains exactly
+  **four source purchase-formula Item references and one source
+  sell-formula Item reference**. The source reference(s) are a set
+  of Item IDs; **the full SellPriceFormulaItemData definitions are
+  not inside this dynamic-cache entry**. Source existence is NOT
+  evidence that the selected native formula matches any of the
+  371 fixed cooking ingredient IDs, nor that it fills the
+  **160** ingredients missing a configured static soft-sell amount.
+
+**Implementation:** the existing SHA-verified
+`loadPrivateDynamicPriceCache(protoDbBytes)` now retains immutable
+`sourcePurchaseFormulaItemIds` (four) and
+`sourceSellFormulaItemIds` (one), not only their counts.
+`classifyConditionalNativeSellFormulaCandidates` is a pure, typed
+hypothetical evaluator that preserves source reference order,
+checks currency and **caller-supplied native type-match results**,
+and refuses to select a known later candidate if an earlier
+candidate's eligibility is unknown. `conditionalFirstFormulaItemId`
+is never proof of original runtime selection or price.
+When only original `protoDb.bin` is available, *all candidate
+definitions/eligibility remain unknown*. No public runtime
+product includes private formula Item IDs or original equations.
+
+The SHA-authenticated private
+`loadPrivateMealPricingView` includes
+`sourceSellFormulaItemIds`,
+`sourcePurchaseFormulaItemIds`,
+`getSourceSellFormulaCandidatePlan(forCurrencyId)`, and a
+`sourceSellFormulaCandidatePlan` on each meal inspection.
+The 625-recipe/618-meal owner-private smoke verifies the
+one/four source references and unresolved formula status.
+Actual formula selection, `ItemTypeMetaInfo`, equation evaluation
+and live ingredient sell prices all remain **null/unknown**.
+
+The original-executable audit now pins **14 qualified native methods
+on each platform** and **32 Steam + 29 Switch instruction windows**
+(61 window definitions). The added Windows pin the native
+formula currency comparison, type-check call and identity comparison,
+first-eligible path, and floating-result conversion. All
+proprietary executable bytes and raw game source remain private.
+
 ## Original static vs dynamic serialized sell-provider behavior (Steam/Switch 1.26.2)
 
 **Original native method bodies independently inspected on both platforms:**

@@ -17,6 +17,8 @@ import {classifyNativeMealSellPriceRoute} from './native-meal-price-route.mjs';
 import {nativeSellPriceProviderPlan} from './native-sell-provider-plan.mjs';
 import {classifyNativeSerializedDynamicCache,simulateNativeSerializedSellProvider}
   from './native-serialized-sell-provider.mjs';
+import {classifyConditionalNativeSellFormulaCandidates}
+  from './native-sell-formula-candidates.mjs';
 
 export const DB02_MEAL_PRICE_VIEW_CONTRACT='wand.db02.private-meal-pricing-view@1';
 export const DB02_MEAL_PRICE_EVIDENCE_CONTRACT='wand.db02.meal-price-evidence@1';
@@ -158,6 +160,11 @@ function inspectAuthenticatedMeal({acquisitionBundle,shopPriceView,nativeCache,m
     frozen(shopPriceView.getSourceItemPriceDefinitions(x.itemId).map(row=>
       simulateNativeSerializedSellProvider({providerKind:'static',
         itemId:x.itemId,currencyId:80000000,sourcePriceRow:row})))));
+  const sourceSellFormulaCandidatePlan=nativeCache===null?null:
+    classifyConditionalNativeSellFormulaCandidates({
+      formulaItemIds:nativeCache.sourceSellFormulaItemIds,
+      forCurrencyId:80000000
+    });
   const sourceIngredientDynamicCacheEvidence=nativeCache===null?null:
     frozen(ingredientAmounts.map(x=>nativeCache.lookup(x.itemId)));
   return frozen({
@@ -178,6 +185,8 @@ function inspectAuthenticatedMeal({acquisitionBundle,shopPriceView,nativeCache,m
     sourceIngredientStaticProviderSimulations,
     nativeStaticProviderResultsAreSourceConditionalOnly:true,
     sourceIngredientDynamicCacheEvidence,
+    sourceSellFormulaCandidatePlan,
+    nativeSellFormulaRuntimeResolutionVerified:false,
     nativeDynamicCacheSourceVerified:nativeCache!==null,
     dynamicCachedSellRowCannotProveEffectivePrice:true,
     ingredientStaticPriceDatabaseOriginalVerified:true,
@@ -243,6 +252,15 @@ export async function loadPrivateMealPricingView({
     nativeCookingStarSettings:nativeStars,
     nativeDynamicCacheVerified:nativeCache!==null,
     nativeDynamicPriceCache:nativeCache,
+    sourceSellFormulaItemIds:nativeCache?.sourceSellFormulaItemIds??null,
+    sourcePurchaseFormulaItemIds:nativeCache?.sourcePurchaseFormulaItemIds??null,
+    getSourceSellFormulaCandidatePlan:forCurrencyId=>{
+      check(validId(forCurrencyId),'INVALID_FORMULA_CURRENCY_ID');
+      return nativeCache===null?null:
+        classifyConditionalNativeSellFormulaCandidates({
+          formulaItemIds:nativeCache.sourceSellFormulaItemIds,forCurrencyId
+        });
+    },
     sourceNativeDynamicCacheGate,
     nativeRuntimeDataCachedVerified:false,
     getSourceStaticSellProviderSimulations:itemId=>{
