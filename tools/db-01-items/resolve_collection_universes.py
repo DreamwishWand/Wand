@@ -224,7 +224,7 @@ def produce(sqlite_path:Path, original_dir:Path, il2cpp:Path, output:Path, *,
                 'DYNAMIC_SELECTOR_TOTAL')
         # Full source hashes pinned before use and re-verified before output.
         for cat,old_hash in sources.items():
-            require(sha(wire.read_original(original_dir,cat))==old_hash,
+            require(sha_bytes(wire.read_original(original_dir,cat))==old_hash,
                     'SOURCE_CHANGED_'+cat)
         require(sha(sqlite_path)==expected_sqlite_sha256 and
                 sha(il2cpp)==expected_il2cpp_sha256,
