@@ -36,6 +36,12 @@ import {
   type NativeLootObjectReferenceIndex,
   type ItemLootObjectCandidate
 } from './native-loot-object-references.ts';
+import {
+  createLootSourceDisplayClient,
+  type LootSourceDisplayClient
+} from './loot-source-display.ts';
+import type {Db01CatalogClient} from '../items/index.ts';
+import type {createPrivateDb01MediaOverlayV2} from '../items/media-overlay-v2.ts';
 
 export const DB02_CURRENT_CATALOG_SCHEMA='wand.db02.current-db00-origins@1' as const;
 const RELEASE='steam-1.26.2-native-itemlist-v1';
@@ -76,6 +82,11 @@ export interface CurrentDb02OriginCatalog{
   /** 375 exact ActivityItem/Furniture field references, not verified drops. */
   readonly lootObjectSources:NativeLootObjectReferenceIndex;
   getItemPotentialLootObjects(itemId:string|number):readonly ItemLootObjectCandidate[];
+  /** Local-only DB-00/DB-01/SRC-04 presentation with exact source provenance. */
+  createLootSourceDisplay(
+    db01?:Db01CatalogClient|null,
+    media?:ReturnType<typeof createPrivateDb01MediaOverlayV2>|null
+  ):LootSourceDisplayClient;
   readonly coverage:CurrentDb02CatalogCoverage;
   /** Lazy public Guide join; no extra transfer until Guide/Collection asks. */
   loadMissionLootQuestIndex(
@@ -186,6 +197,12 @@ export async function joinCurrentDb02Catalog(
     getItemPotentialLootObjects(itemId:string|number){
       return nativeLootObjectReferenceIndex.getItemPotentialObjectSources(
         itemId,lootSources);
+    },
+    createLootSourceDisplay(
+      db01:Db01CatalogClient|null=null,
+      media:ReturnType<typeof createPrivateDb01MediaOverlayV2>|null=null
+    ){
+      return createLootSourceDisplayClient(this,db01,media);
     },
     loadMissionLootQuestIndex(
       questFetcher:typeof fetch=fetch,questBasePath=basePath,
