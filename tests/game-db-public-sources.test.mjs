@@ -22,13 +22,19 @@ function publicFetcher(corrupt=''){
   };
   return {fetcher,calls};
 }
-test('one public shared DB-00 API joins all 1255 published source routes, with 24 distinct requests',async()=>{
+test('one public shared DB-00 API joins all 1255 published source routes, with 25 distinct requests',async()=>{
   const {fetcher,calls}=publicFetcher();
   const app=await openPublicSharedGameSources('/Wand',fetcher);
   assert.equal(app.schema,DB00_PUBLIC_SOURCES_SCHEMA);
   assert.equal(app.snapshotId,'steam-1.26.2-native-itemlist-v1');
   assert.equal(app.database.itemCount,13202);
   assert.equal(app.acquisition.coverage.combinedSourceRoutes,1255);
+  assert.equal(app.acquisition.coverage.staticContainerCandidateRoutes,146);
+  assert.equal(app.acquisition.staticContainerSource.coverage.distinctItemIds,115);
+  assert(app.acquisition.lookup('31500006').staticContainerCandidates.length>=3);
+  assert(app.acquisition.lookup('31500006').staticContainerCandidates.every(x=>
+    x.routeStatus==='static_candidate_only'));
+
   assert.equal(app.acquisition.nativeIapPackReferences.coverage.totalPackReferences,6);
   assert.equal(app.acquisition.nativeIapPackReferences
     .getAdditionalForMarketplace('Expansion4PackDeluxeEdition',5).length,0);
@@ -36,8 +42,8 @@ test('one public shared DB-00 API joins all 1255 published source routes, with 2
   assert.equal(app.hasPrivateGameSource,false);
   assert.equal(app.currentAvailabilityVerified,false);
   assert.equal(app.playerOwnershipVerified,false);
-  assert.equal(calls.length,24);
-  assert.equal(new Set(calls).size,24);
+  assert.equal(calls.length,25);
+  assert.equal(new Set(calls).size,25);
   assert.equal(calls.filter(x=>x.endsWith('/active.json')).length,1);
   assert.equal(calls.filter(x=>x.endsWith('/starpath-cache-2026-11-22.json')).length,1);
   assert.equal(calls.filter(x=>x.endsWith('/items-013.json')).length,1);
@@ -76,9 +82,9 @@ test('one public shared DB-00 API joins all 1255 published source routes, with 2
 test('fresh calls do not share stale asset bytes; existing source SHA checks remain required',async()=>{
   const {fetcher,calls}=publicFetcher();
   await openPublicSharedGameSources('/Wand',fetcher);
-  assert.equal(calls.length,24);
+  assert.equal(calls.length,25);
   await openPublicSharedGameSources('/Wand',fetcher);
-  assert.equal(calls.length,48,'fetch deduplication is per call, not a persistent stale cache');
+  assert.equal(calls.length,50,'fetch deduplication is per call, not a persistent stale cache');
   await assert.rejects(
     openPublicSharedGameSources('/Wand',publicFetcher('items-012.json').fetcher),
     /SHA-256 mismatch/

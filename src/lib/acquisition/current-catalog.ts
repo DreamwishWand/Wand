@@ -15,7 +15,7 @@ import {
 import type {Src02IndependentPin} from './private-browser-bundle.mjs';
 import {
   loadUnifiedAcquisitionOriginDatabase,
-  type OriginDatabase
+  type OriginDatabase,type ItemOrigin
 } from './origins.ts';
 import {
   joinDb02OriginsWithDb00,
@@ -31,6 +31,8 @@ import {loadPinnedPublicIapSource,
   type PublicIapSourceIndex} from './public-static-iap.ts';
 import {loadPinnedIapPackReferences,type PinnedIapPackReferenceIndex}
   from './public-iap-pack-references.ts';
+import {loadPinnedStaticContainerContents,type PinnedStaticContainerContents}
+  from './public-static-container.ts';
 import {indexNativeShopHistory,type NativeShopHistoryIndex}
   from './shop-history-index.ts';
 import {
@@ -117,6 +119,7 @@ export interface CurrentDb02OriginCatalog{
   readonly nativeIapSource:PublicIapSourceIndex;
   /** Source-native IAP pack edges; never interpreted as granted items. */
   readonly nativeIapPackReferences:PinnedIapPackReferenceIndex;
+  readonly staticContainerSource:PinnedStaticContainerContents;
   /** Lazy SHA-pinned 395 explicit Quest reward references, including 65 currency configurations. */
   loadQuestAcquisitionIndex(
     fetcher?:typeof fetch,basePath?:string
@@ -133,7 +136,9 @@ export interface CurrentDb02OriginCatalog{
     fetcher?:typeof fetch,basePath?:string,
     questRefs?:PrivateQuestAcquisitionView|null
   ):Promise<MissionLootQuestIndex>;
-  lookup(itemId:string|number):ReturnType<Db00OriginJoin['lookup']>;
+  lookup(itemId:string|number):ReturnType<Db00OriginJoin['lookup']>&{
+    readonly staticContainerCandidates:readonly ItemOrigin[];
+  };
 }
 
 /** Structural scope check; DOES NOT authenticate files by itself. */
@@ -222,13 +227,14 @@ export async function joinCurrentDb02Catalog(
   const ids=currentDb00ItemIds(db00);
   const [
     publicQuestRewards,publicEventFriendship,nativeShopSource,nativeIapSource,
-    historicalNativeShopSource
+    historicalNativeShopSource,staticContainerSource
   ]=await Promise.all([
     loadPinnedPublicQuestAcquisition(basePath,fetcher),
     loadPinnedPublicEventFriendshipAcquisition(basePath,fetcher),
     loadPinnedPublicNativeShopSnapshot(basePath,fetcher),
     loadPinnedPublicIapSource(basePath,fetcher),
-    loadPinnedHistoricalNativeShopSnapshot(basePath,fetcher)
+    loadPinnedHistoricalNativeShopSnapshot(basePath,fetcher),
+    loadPinnedStaticContainerContents(basePath,fetcher)
   ]);
   const [origins,nativeIapPackReferences]=await Promise.all([
     loadUnifiedAcquisitionOriginDatabase(
@@ -256,6 +262,7 @@ export async function joinCurrentDb02Catalog(
     lootObjectSources:nativeLootObjectReferenceIndex,
     publicOnlineNameCandidates,nativeShopSource,nativeIapSource,
     nativeIapPackReferences,historicalNativeShopSource,shopHistory,
+    staticContainerSource,
     loadQuestAcquisitionIndex(
       questFetcher:typeof fetch=fetch,questBasePath=basePath
     ){return loadPublicQuestAcquisitionIndex(questBasePath,questFetcher);},
@@ -273,7 +280,12 @@ export async function joinCurrentDb02Catalog(
       questFetcher:typeof fetch=fetch,questBasePath=basePath,
       refs:PrivateQuestAcquisitionView|null=null
     ){return loadMissionLootQuestCandidates(lootSources,questBasePath,questFetcher,refs);},
-    lookup(itemId:string|number){return joined.lookup(itemId);}
+    lookup(itemId:string|number){
+      const row=joined.lookup(itemId);
+      return Object.freeze({...row,
+        staticContainerCandidates:staticContainerSource.getItemCandidates(row.itemId)
+      });
+    }
   });
 }
 
