@@ -5,6 +5,15 @@
   import {launcherServices} from '$lib/ui/services';
   import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences';
 
+  // Home only: 2x2 decoration services on the left, Collection/Guide above Help on the right.
+  // Keep global navigation order unchanged and avoid introducing new imagery.
+  const homeTileOrder = ['decorate','presets','collection','guide','gallery','dreamsnaps','community'] as const;
+  const homeTiles = homeTileOrder.map(key=>{
+    const service=launcherServices.find(candidate=>candidate.key===key);
+    if(!service)throw new Error(`Unknown launcher tile: ${key}`);
+    return service;
+  });
+
   let uiLocale:WandLanguage='ja';
   onMount(()=>watchWandLanguage(code=>uiLocale=code));
   const copy:Record<WandLanguage,{directory:string;planned:string}>={
@@ -26,7 +35,7 @@
 <section class="portal-page" aria-label={words.directory}>
   <h1 class="visually-hidden">{words.directory}</h1>
   <div class="portal-grid">
-    {#each launcherServices as service (service.key)}
+    {#each homeTiles as service (service.key)}
       {#if service.href}
         <a class="portal-card" href="{base}{service.href}" aria-label={service.name}>
           <span class="portal-card-visual" aria-hidden="true">
