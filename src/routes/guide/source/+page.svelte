@@ -7,6 +7,7 @@
     detailStepRows, guideStaticFacts, guideMissionReferences, guideVerifiedSourceBridge, MAX_SHARD_BYTES
   } from '$lib/guide/client.mjs';
   import {importCurrentGuideConditions, currentConditionMentionsForQuest, withVerifiedConditionStepDetails} from '$lib/guide/current-conditions.mjs';
+  import {createStructuralGuideConditionRelations,type GuideConditionRelationIndex} from '$lib/guide/condition-relations.ts';
   import {guideVerifiedStaticComposite} from '$lib/guide/source-composite.mjs';
 
   const languageLabels: Record<string, string> = {
@@ -36,6 +37,7 @@
   let detailEpoch = 0;
   let conditionEpoch = 0;
   let conditionRegistry: any = null;
+  let conditionRelations: GuideConditionRelationIndex|null = null;
   let conditionError = '';
   let loadingConditions = false;
 
@@ -53,7 +55,10 @@
   $: staticComposite = searchIndex && conditionRegistry
     ? guideVerifiedStaticComposite(searchIndex, conditionRegistry) : null;
   $: currentConditionMentions = conditionRegistry && selectedId
-    ? currentConditionMentionsForQuest(conditionRegistry, selectedId) : {total: 0, rows: []};
+    ? (conditionRelations
+      ? conditionRelations.getMissionReferences(selectedId)
+      : currentConditionMentionsForQuest(conditionRegistry,selectedId))
+    : {total:0,rows:[]};
   $: detailSteps = selectedDetail ? detailStepRows(selectedDetail, locale) : [];
   $: conditionDisplayRows = selectedDetail && selectedId && conditionRegistry
     ? withVerifiedConditionStepDetails(selectedDetail, detailSteps, currentConditionMentions.rows, selectedId)
@@ -89,6 +94,7 @@
     detailEpoch++;
     conditionEpoch++;
     conditionRegistry = null;
+    conditionRelations = null;
     conditionError = '';
     loadingConditions = false;
     searchIndex = null;
@@ -125,6 +131,7 @@
       shardFiles = result.shardFiles;
       characterNames = result.characterNames;
       groupInfo = result.groupInfo;
+      conditionRelations = current?.formatVersion===2 ? createStructuralGuideConditionRelations(current) : null;
       conditionRegistry = current;
       info = `${searchIndex.target.platform} ${searchIndex.target.gameVersion}：検索索引と詳細ファイル ${result.matchedShards}/${result.requiredShards} 個とキャラクター名 ${Object.keys(result.characterNames).length} 件、原本クエストグループ ${Object.keys(result.groupInfo).length} 件を接続しました。${current ? ' Steam '+current.targetVersion+'のCondition '+current.count.toLocaleString()+'件（ミッション参照 '+(typeof current.missionReferenceCount === 'number' ? current.missionReferenceCount.toLocaleString() : '未提供')+'件）も原本SHA-256検証後に自動接続しました。' : ''}データは送信せず、詳細は選択時だけ読み込みます。`;
     } catch (error) {
@@ -157,6 +164,7 @@
     const request = ++conditionEpoch;
     const activeIndex = searchIndex;
     conditionRegistry = null;
+    conditionRelations = null;
     conditionError = '';
     if (!sourceBridge) {
       conditionError = '原本SHA-256を確認したSteam 1.26.1のGuide検索索引が必要です。';
@@ -181,6 +189,7 @@
         sourceBridge
       );
       if (request === conditionEpoch && activeIndex === searchIndex) {
+        conditionRelations = result.formatVersion===2 ? createStructuralGuideConditionRelations(result) : null;
         conditionRegistry = result;
       }
     } catch (error) {
