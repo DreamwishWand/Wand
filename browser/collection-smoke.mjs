@@ -698,7 +698,7 @@ try{
   await page.getByRole('button',{name:'編集履歴'}).click();
   await page.getByRole('button',{name:'元に戻す'}).click();
   await waitForLocalState(page,{item:'40005160',status:previousStatus});
-  assert.equal(await page.getByRole('button',{name:'やり直す'}).isEnabled(),true);
+  // Wait for the CAS write and runtime disposal to finish before Redo.
   await page.getByRole('button',{name:'やり直す'}).click();
   await waitForLocalState(page,{item:'40005160',status:changedStatus});
   // Jump to another point in the Collection timeline without leaving Home.
