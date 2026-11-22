@@ -118,6 +118,12 @@ test('local-only browser projects original World, Area, Grid IDs but not private
   assert.equal(b.catalog.sourceAreas.length,1);
   assert.equal(b.catalog.sourceGrids.length,2);
   assert.equal(b.catalog.sourceGrids[1].worldId,null);
+  assert.equal(b.catalog.sourceGrids[0].gridDataPath,
+    'GridData/Villages/Area.json');
+  assert.equal(b.catalog.sourceGrids[1].gridDataPath,
+    'GridData/OffGrid/Detached.json');
+  assert.equal(b.catalog.sourceAreas[0].gridDataPath,null);
+  assert.equal(b.catalog.sourceWorlds[0].gridDataPath,null);
   assert.equal(b.catalog.sourceGrids[1].sourceDefaultInstances,2);
   assert.equal(b.catalog.totalSourceDefaultInstances,5);
   assert.equal(b.catalog.worldUnlinkedSourceDefaultInstances,2);
