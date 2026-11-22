@@ -1,0 +1,186 @@
+/* UI-00: scoped shell layout. Does not change Collection/Guide internals. */
+.site-shell{--shell-height:52px;min-height:100dvh;min-width:0}
+.site-shell .site-main{min-width:0;flex:1 1 auto}
+.site-shell .site-header{
+  position:sticky;top:0;z-index:45;height:var(--shell-height);min-height:var(--shell-height);
+  display:flex;align-items:center;gap:8px;justify-content:flex-start;flex-wrap:nowrap;
+  padding:0 clamp(10px,1.3vw,22px);background:#1c1525f4;
+  border-bottom:1px solid #a68bbd43;box-shadow:none
+}
+.site-shell .header-home-button,
+.site-shell .header-icon-button{
+  width:34px;height:34px;min-width:34px;min-height:34px;border-radius:8px;
+  display:inline-flex;align-items:center;justify-content:center;gap:5px;flex:none;
+  background:transparent;border:1px solid transparent;color:#e6d9ef;cursor:pointer
+}
+.site-shell .header-home-button:hover,
+.site-shell .header-icon-button:hover:not(:disabled),
+.site-shell .shell-shortcut:hover{background:#ffffff17;border-color:#ffffff28}
+.site-shell .header-icon-button:disabled{opacity:.4;cursor:not-allowed}
+.site-shell .header-home-button:focus-visible,
+.site-shell .header-icon-button:focus-visible,
+.site-shell .shell-shortcut:focus-visible,
+.site-shell .shell-menu a:focus-visible,
+.site-shell .shell-menu button:focus-visible{outline:2px solid #e2bcff;outline-offset:2px}
+.site-shell .shell-home-brand{font-size:14px;line-height:1;font-weight:750;letter-spacing:.015em;white-space:nowrap}
+.site-shell .shell-nav-root,.site-shell .shell-file-root,.site-shell .header-language-menu{position:relative;display:flex;align-items:center}
+.site-shell .shell-nav-trigger{width:auto;min-width:40px;padding:0 8px}
+.site-shell .shell-nav-trigger span{font-size:12px;font-weight:700}
+.site-shell .shell-nav-trigger .shell-chevron{width:13px;height:13px;opacity:.7}
+.site-shell .shell-shortcuts{display:flex;align-items:center;gap:2px;padding-left:5px}
+.site-shell .shell-shortcut{
+  display:flex;align-items:center;gap:6px;min-height:33px;padding:0 9px;color:#cdbbdc;
+  border:1px solid transparent;border-radius:8px;text-decoration:none;font-size:12px
+}
+.site-shell .shell-shortcut[aria-current=page]{background:#7d5b9c3b;color:#f5e5ff}
+.site-shell .shell-shortcut svg{width:17px;height:17px}
+.site-shell .shell-current{min-width:0;max-width:170px;overflow:hidden;text-overflow:ellipsis;
+  color:#ac9bbb;font-size:12px;white-space:nowrap;padding-left:8px;border-left:1px solid #ffffff21}
+.site-shell .header-spacer{flex:1 1 auto;min-width:0}
+.site-shell .site-actions{display:flex;align-items:center;gap:3px;margin:0;min-width:0;flex:none}
+.site-shell .header-context-tools,
+.site-shell .header-file-tools,.site-shell .header-preference-tools,.site-shell .header-support-tools{
+  display:flex;align-items:center;gap:2px;flex:none
+}
+.site-shell .header-context-tools{border:0;padding:0;margin:0}
+.site-shell .header-file-tools,.site-shell .header-preference-tools,.site-shell .header-support-tools{
+  padding-left:7px;margin-left:5px;border-left:1px solid #ffffff26
+}
+.site-shell .shell-file-desktop{display:flex;gap:2px}
+.site-shell .shell-file-mobile{display:none}
+.site-shell .header-language-button{width:auto;min-width:56px;padding:0 6px}
+.site-shell .header-locale-code{font-size:10px;font-weight:750}
+.site-shell .site-actions .help-action{border-color:transparent;color:#ebd9f3}
+.site-shell .shell-menu{
+  position:absolute;top:calc(100% + 8px);left:0;z-index:70;width:min(310px,calc(100vw - 20px));
+  max-height:min(75dvh,540px);overflow:auto;background:#241c2e;border:1px solid #9c7cb350;
+  border-radius:12px;padding:6px;box-shadow:0 18px 55px #0009
+}
+.site-shell .shell-menu a,.site-shell .shell-menu button,.site-shell .shell-menu .shell-unavailable{
+  display:flex;align-items:center;gap:10px;width:100%;min-width:0;min-height:43px;
+  padding:9px 11px;border-radius:8px;background:none;border:0;text-decoration:none;
+  color:#f0e2f9;font:inherit;font-size:13px;text-align:left
+}
+.site-shell .shell-menu a:hover,.site-shell .shell-menu button:hover{background:#6f528647}
+.site-shell .shell-menu a[aria-current=page]{background:#77589455}
+.site-shell .shell-menu .shell-unavailable{opacity:.48;cursor:default}
+.site-shell .shell-menu span.shell-menu-title{min-width:0;flex:1}
+.site-shell .shell-menu .shell-menu-state{font-size:10px;white-space:nowrap}
+.site-shell .shell-menu-divider{height:1px;background:#ffffff24;margin:5px 6px}
+.site-shell .shell-menu .shell-menu-account{display:none}
+.site-shell .language-popover{top:calc(100% + 8px);right:0}
+.site-shell .shell-file-menu{left:auto;right:0;width:215px}
+.site-shell .site-main:has(.portal-page){min-height:0;flex:1 1 auto}
+.site-shell .portal-page{
+  height:calc(100dvh - var(--shell-height));min-height:0;max-width:none;width:100%;
+  margin:0;padding:0;display:block;overflow:auto;background:#120e19
+}
+.site-shell .portal-grid{
+  display:grid;width:100%;height:100%;min-height:0;gap:2px;
+  grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));
+  background:#100c15
+}
+.site-shell .portal-card,.site-shell .portal-card:first-child{
+  grid-column:auto;min-width:0;min-height:0;position:relative;display:flex;align-items:stretch;
+  border:0;border-radius:0;padding:clamp(14px,2vw,30px);margin:0;overflow:hidden;
+  color:#f2e7fb;text-decoration:none;
+  background:radial-gradient(ellipse at 88% 10%,#7f568d52,transparent 58%),linear-gradient(150deg,#322640,#1d1827);
+  box-shadow:none;transform:none
+}
+.site-shell .portal-card:nth-child(2),.site-shell .portal-card:nth-child(5){background:radial-gradient(ellipse at 90% 12%,#49628243,transparent 58%),linear-gradient(150deg,#293344,#1c1c2c)}
+.site-shell .portal-card:nth-child(3),.site-shell .portal-card:nth-child(6){background:radial-gradient(ellipse at 80% 12%,#82604a55,transparent 60%),linear-gradient(150deg,#3c2b39,#211b2a)}
+.site-shell .portal-card:nth-child(7){grid-column:span 2;background:radial-gradient(ellipse at 83% 10%,#64729b52,transparent 62%),linear-gradient(125deg,#332943,#252237)}
+.site-shell a.portal-card:hover{box-shadow:inset 0 0 0 3px #d4a8f7;transform:none;filter:brightness(1.11)}
+.site-shell a.portal-card:focus-visible{outline:3px solid #f5d6ff;outline-offset:-5px;z-index:2}
+.site-shell .portal-card-visual,.site-shell .portal-card:first-child .portal-card-visual{
+  position:absolute;top:clamp(12px,2.6vh,28px);right:clamp(12px,2vw,28px);
+  width:clamp(62px,8vw,126px);height:clamp(62px,8vw,126px);
+  border:0;border-radius:0;background:none;color:#d6b9e8;display:grid;place-items:center
+}
+.site-shell .portal-card-visual>svg{width:clamp(48px,5.3vw,75px);height:clamp(48px,5.3vw,75px)}
+.site-shell .portal-game-art,.site-shell .portal-card:first-child .portal-game-art{
+  width:100%;height:100%;position:absolute;inset:0;object-fit:contain
+}
+.site-shell .portal-card-label{
+  display:flex;flex-direction:column;align-self:flex-end;justify-content:flex-end;gap:7px;
+  position:relative;z-index:1;min-width:0;max-width:100%;padding-right:12px
+}
+.site-shell .portal-card-label strong{font-size:clamp(18px,1.9vw,30px);letter-spacing:-.035em;
+  line-height:1.2;overflow-wrap:anywhere}
+.site-shell .portal-card-label small{font-size:11px;color:#c7b5d5}
+.site-shell .portal-card-action{right:clamp(11px,2vw,28px);bottom:clamp(12px,2vw,30px);color:#d5b2ed}
+.site-shell .portal-card.planned,.site-shell .portal-card:first-child.planned{
+  background:#211a2b;opacity:1;color:#a99ab9;cursor:default
+}
+.site-shell .portal-card.planned .portal-card-visual{color:#756884}
+.site-shell .portal-card.planned .portal-card-label strong{color:#ad9dbb}
+.site-shell .portal-card.planned .portal-card-label small{color:#9787a4}
+.site-shell .portal-card.planned .portal-card-action{color:#877794}
+.site-shell .portal-card-community .portal-card-visual{width:clamp(72px,8vw,126px);height:clamp(72px,8vw,126px)}
+:root[data-wand-theme='light'] .site-shell .site-header{background:#f0e8f7f5;border-color:#bfadd2}
+:root[data-wand-theme='light'] .site-shell .shell-shortcut,
+:root[data-wand-theme='light'] .site-shell .shell-current{color:#604e70}
+:root[data-wand-theme='light'] .site-shell .shell-shortcut[aria-current=page]{color:#583977;background:#cab4dd70}
+:root[data-wand-theme='light'] .site-shell .shell-menu{background:#fff;color:#362646;border-color:#c1b1d1;box-shadow:0 15px 45px #4030533d}
+:root[data-wand-theme='light'] .site-shell .shell-menu a,
+:root[data-wand-theme='light'] .site-shell .shell-menu button{color:#473459}
+:root[data-wand-theme='light'] .site-shell .shell-menu a:hover,
+:root[data-wand-theme='light'] .site-shell .shell-menu button:hover{background:#e8dcf1}
+:root[data-wand-theme='light'] .site-shell .shell-menu a[aria-current=page]{background:#ddcaed}
+:root[data-wand-theme='light'] .site-shell .portal-card{color:#332240;background:radial-gradient(ellipse at 90% 12%,#d3bae68a,transparent 60%),linear-gradient(145deg,#fff,#f1e8f8)}
+:root[data-wand-theme='light'] .site-shell .portal-card:nth-child(2),
+:root[data-wand-theme='light'] .site-shell .portal-card:nth-child(5){background:linear-gradient(145deg,#eef3fd,#dfe8f5)}
+:root[data-wand-theme='light'] .site-shell .portal-card:nth-child(3),
+:root[data-wand-theme='light'] .site-shell .portal-card:nth-child(6){background:linear-gradient(145deg,#fcf1ed,#f1e3ed)}
+:root[data-wand-theme='light'] .site-shell .portal-card:nth-child(7){background:linear-gradient(145deg,#e5daf3,#d8dcef)}
+:root[data-wand-theme='light'] .site-shell .portal-card.planned{background:#e8e0ef;color:#786985}
+:root[data-wand-theme='light'] .site-shell .portal-card.planned .portal-card-label strong{color:#756682}
+:root[data-wand-theme='light'] .site-shell .portal-card-label small{color:#665472}
+:root[data-wand-theme='light'] .site-shell .portal-card.planned .portal-card-label small{color:#81748e}
+:root[data-wand-theme='light'] .site-shell .portal-card-visual{color:#815a9d}
+@media(max-width:1060px){
+  .site-shell .shell-current{display:none}
+  .site-shell .shell-shortcuts{gap:0}
+}
+@media(max-width:850px){
+  .site-shell .portal-grid{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(4,minmax(0,1fr))}
+  .site-shell .portal-card-visual,.site-shell .portal-card:first-child .portal-card-visual{
+    width:clamp(54px,9vw,92px);height:clamp(54px,9vw,92px)}
+  .site-shell .portal-card-visual>svg{width:clamp(37px,6vw,62px);height:clamp(37px,6vw,62px)}
+}
+@media(max-width:700px){
+  .site-shell{--shell-height:48px}
+  .site-shell .site-header{gap:3px;padding:0 7px}
+  .site-shell .shell-home-brand,.site-shell .shell-shortcuts{display:none}
+  .site-shell .shell-nav-trigger{width:34px;min-width:34px;padding:0}
+  .site-shell .shell-nav-trigger span,.site-shell .shell-nav-trigger .shell-chevron{display:none}
+  .site-shell .header-context-tools .header-context-optional{display:none}
+  .site-shell .header-file-tools,.site-shell .header-preference-tools,.site-shell .header-support-tools{
+    padding-left:4px;margin-left:2px}
+  .site-shell .shell-file-desktop{display:none}
+  .site-shell .shell-file-mobile{display:block}
+  .site-shell .header-language-button{min-width:48px}
+  .site-shell .header-context-tools{display:none}
+  .site-shell .site-actions .header-icon-button{width:32px;min-width:32px;height:34px}
+  .site-shell .site-actions .header-language-button{min-width:48px}
+  .site-shell .portal-card,.site-shell .portal-card:first-child{padding:13px}
+  .site-shell .portal-card-visual,.site-shell .portal-card:first-child .portal-card-visual{right:10px;top:12px;width:56px;height:56px}
+  .site-shell .portal-card-visual>svg{width:38px;height:38px}
+  .site-shell .portal-card-label strong{font-size:clamp(15px,3.1vw,21px)}
+  .site-shell .portal-card-label small{font-size:10px}
+}
+@media(max-width:460px){
+  .site-shell .shell-account-header{display:none}
+  .site-shell .shell-menu .shell-menu-account{display:flex}
+  .site-shell .portal-card-visual,.site-shell .portal-card:first-child .portal-card-visual{width:46px;height:46px}
+  .site-shell .portal-card-visual>svg{width:31px;height:31px}
+  .site-shell .portal-card-label strong{font-size:clamp(14px,4vw,18px)}
+  .site-shell .portal-card-action{right:9px;bottom:10px}
+}
+@media(max-height:720px){
+  .site-shell .portal-page{height:auto;min-height:calc(100dvh - var(--shell-height));overflow:visible}
+  .site-shell .portal-grid{height:auto;grid-template-rows:none;grid-auto-rows:minmax(145px,1fr)}
+}
+@media(prefers-reduced-motion:reduce){
+  .site-shell .portal-card{transition:none}
+}
