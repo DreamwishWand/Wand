@@ -308,6 +308,33 @@
     })();
     return()=>{alive=false;media.removeEventListener('change',changed);runtime?.close();};
   });
+  /** A local P1G read automatically supersedes matching manual discovery
+   * values, not ownership. Unknown/conflicting native IDs are not projected.
+   * Normal multi-tab CAS storage rules and rollback still apply. */
+  async function importSaveDiscovery(event:CustomEvent<{
+    entries:{itemId:number;discovered:boolean}[];
+    ambiguousItemIds:number;invalidReferences:number;
+  }>):Promise<void> {
+    if(!runtime||busy||storeError){
+      infoMessage='Collectionの保存処理が実行できないため、発見履歴は反映していません。競合がある場合は最新のローカル記録を読み込んでからセーブを再選択してください。';
+      return;
+    }
+    const projection=event.detail;
+    if(!Array.isArray(projection?.entries)||!projection.entries.length)return;
+    busy=true;
+    try{
+      const applied=await runtime.applyMappedSaveDiscovery({
+        schema:'wand.collection.mapped-save-discovery@1',
+        entries:projection.entries
+      });
+      storeError='';
+      refresh();
+      infoMessage=`セーブから発見履歴 ${applied.toLocaleString(locale)}件をCollectionに反映しました。未収録ID・矛盾するIDは手動記録を維持します。所持状況やDDVのセーブファイルは変更していません。`;
+    }catch(error){
+      storeError=error instanceof Error?error.message:String(error);
+      infoMessage='セーブの発見履歴は反映されませんでした。既存の手動記録は維持しています。';
+    }finally{busy=false;}
+  }
   function lookupSavedCollectionId(itemId:number):void {
     if(!Number.isSafeInteger(itemId)||itemId<=0||!runtime)return;
     selected='';worldFilter='';universeFilter='';expansion='';
@@ -400,7 +427,7 @@
   <section class="personal-bar" aria-label="Personal Collection">
     <div class="personal-left">
       <span class="personal-symbol">✧</span>
-      <div><strong>My Collection</strong><span>ローカル記録 · セーブファイル未接続</span></div>
+      <div><strong>My Collection</strong><span>手動編集に対応 · セーブ読込で発見履歴を優先</span></div>
       <select aria-label="ローカル記録を選択" value={state.active} on:change={(event)=>changeWorkspace((event.currentTarget as HTMLSelectElement).value)} disabled={Boolean(storeError)}>
         {#each state.workspaces as work}<option value={work.id}>{work.name}</option>{/each}
       </select>
@@ -420,13 +447,15 @@
   {:else if loadError}
     <div class="error-banner" role="alert">データの検証または読み込みに失敗しました。{loadError}</div>
   {:else}
-    <SavedStorePreview resolveHistorical={historicalLookup} {locale} {gameImageMap}
-      on:lookupItem={(event:CustomEvent<number>)=>lookupSavedCollectionId(event.detail)} />
+    <SavedStorePreview resolveHistorical={historicalLookup} {locale} {gameImageMap} collectionCommitBusy={busy}
+      on:lookupItem={(event:CustomEvent<number>)=>lookupSavedCollectionId(event.detail)}
+      on:saveDiscovery={importSaveDiscovery} />
     <div class="summary-strip">
       <div><strong>{overall.total.toLocaleString(locale)}</strong><span>参照データ</span></div>
       <div><strong>{overall.owned.toLocaleString(locale)} / {overall.total.toLocaleString(locale)}</strong><span>所持・解放の手動記録 / 参照件数</span></div>
       <div><strong>{overall.missing.toLocaleString(locale)}</strong><span>未所持の手動記録</span></div>
       <div><strong>{overall.unknown.toLocaleString(locale)}</strong><span>未記録</span></div>
+      <div><strong>{overall.discovered.toLocaleString(locale)}</strong><span>発見済み（手動・セーブ）</span></div>
     </div>
     <div class="collection-workspace">
       <div class="workspace-top">
@@ -572,8 +601,8 @@
               </dl>
             </div>
             <div class="inspector-section">
-              <h3>手動Collection記録</h3>
-              <p class="inspector-hint">ここでの変更はローカル記録のみです。実際のDDVセーブデータには書き込みません。</p>
+              <h3>Collection記録</h3>
+              <p class="inspector-hint">セーブなしでも手動編集できます。セーブを読み込むと確認済みの発見履歴が優先されますが、所持状態とお気に入りは維持します。元のDDVセーブには書き込みません。</p>
               <div class="ownership-actions">
                 <button type="button" disabled={Boolean(storeError)} class:active={selectedEntry.status==='owned'} on:click={()=>changeEntry({status:'owned'})}>所持 / 解放</button>
                 <button type="button" disabled={Boolean(storeError)} class:active={selectedEntry.status==='missing'} on:click={()=>changeEntry({status:'missing'})}>未所持</button>
@@ -589,7 +618,7 @@
                     }} placeholder="未記録"/>
                 </label>
               {/if}
-              {#if selectedItem.stateSemantic.includes('DISCOVERY')}
+              {#if selectedItem.stateSemantic.includes('DISCOVERY') || selectedEntry.discovered!==undefined}
                 <label class="check-row"><input type="checkbox" checked={selectedEntry.discovered===true}
                   disabled={Boolean(storeError)} on:change={(event)=>changeEntry({discovered:(event.currentTarget as HTMLInputElement).checked})}/> 発見済み</label>
               {/if}
@@ -598,7 +627,7 @@
             </div>
           </aside>
         {:else}
-          <aside class="item-inspector empty-inspector"><div class="inspector-empty-symbol">✦</div><h2>Item Details</h2><p>アイテムを選択すると、データとローカル収集状況を確認できます。</p><p class="inspector-hint">参照データ：{runtime?.metadata.platform??'公開ゲームDB'}{#if runtime?.metadata.version}{' · DDV v'}{runtime.metadata.version}{/if}。一部の画像には別バージョンのゲーム由来素材を使用しており、データとの同一性は保証されません。セーブ内の一部情報は上部で読み取り専用プレビューできますが、Collectionへの自動反映・セーブへの書き戻し・個別詳細ページは未接続です。</p></aside>
+          <aside class="item-inspector empty-inspector"><div class="inspector-empty-symbol">✦</div><h2>Item Details</h2><p>アイテムを選択すると、データとローカル収集状況を確認できます。</p><p class="inspector-hint">参照データ：{runtime?.metadata.platform??'公開ゲームDB'}{#if runtime?.metadata.version}{' · DDV v'}{runtime.metadata.version}{/if}。一部の画像には別バージョンのゲーム由来素材を使用しており、データとの同一性は保証されません。セーブ内の発見履歴は上部の読込機能からCollectionのローカル記録に反映できます。所有・所持数の自動判定やセーブへの書き戻しには未対応です。</p></aside>
         {/if}
       </div>
     </div>
