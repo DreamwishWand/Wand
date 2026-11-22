@@ -1,4 +1,4 @@
-/** Worker-local anonymous save diagnostics. No decrypted profile leaves. */
+/** Worker-only diagnostics. */
 import { decodeP1gPackagedProfile } from '../collection/private-p1g-codec.js';
 import { parseSafeJson } from '../collection/safe-profile-json.mjs';
 import { makeSaveDiagnosticView } from './diagnostic-view.mjs';
