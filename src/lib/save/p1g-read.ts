@@ -21,7 +21,10 @@ export interface RustReadResult {
   readonly backend: 'rust_wasm' | 'legacy_unsupported_envelope';
 }
 
-export async function decodeP1gRustFirst(source: Uint8Array): Promise<RustReadResult> {
+export async function decodeP1gRustFirst(
+  source: Uint8Array,
+  allowLegacyUnsupportedEnvelope = true
+): Promise<RustReadResult> {
   if (!(source instanceof Uint8Array) || source.byteLength < 16 ||
       source.byteLength > MAX_INPUT || source.byteLength % 16 !== 0) {
     throw new TypeError('DB05_RUST_READ_INPUT_DENIED');
@@ -68,10 +71,18 @@ export async function decodeP1gRustFirst(source: Uint8Array): Promise<RustReadRe
     reader.close();
     reader.free();
   }
-  // The legacy decoder is only reachable when Rust has explicitly recognized
-  // a ZIP layout it does not yet support (e.g. multiple entries).
+  // Save Diagnostics and other strict Rust-only callers fail closed here.
+  // Only the existing Collection compatibility path allows this legacy case.
+  if (!allowLegacyUnsupportedEnvelope)
+    throw new TypeError('DB05_RUST_UNSUPPORTED_ZIP_ENVELOPE');
+  // Legacy only for a verified unsupported ZIP layout; no malformed fallback.
   // Remove this branch after the Rust codec covers that envelope.
   const {decodeP1gPackagedProfile} = await import('../collection/private-p1g-codec.js');
   const decoded = await decodeP1gPackagedProfile(source);
   return {jsonText: decoded.jsonText, backend: 'legacy_unsupported_envelope'};
+}
+
+/** Enforce the final Rust/WASM runtime for this Worker; never JS fallback. */
+export async function decodeP1gRustOnly(source: Uint8Array): Promise<RustReadResult> {
+  return decodeP1gRustFirst(source, false);
 }
