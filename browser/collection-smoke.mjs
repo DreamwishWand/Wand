@@ -93,10 +93,17 @@ try{
   portal.on('pageerror',error=>browserErrors.push(String(error)));
   await portal.goto('http://127.0.0.1:4173/Wand/');
   await portal.locator('.portal-card').filter({hasText:'Collection'}).first().waitFor();
-  assert.ok(await portal.locator('a.portal-card').count()>=4);
-  assert.ok(await portal.locator('.portal-card.planned').count()>=4);
+  assert.equal(await portal.locator('.portal-grid .portal-card').count(),6);
+  assert.deepEqual(await portal.locator('.portal-grid .portal-card-label strong').allTextContents(),
+    ['Decorate','Collection','Guide','Presets','Gallery','DreamSnaps']);
+  assert.equal(await portal.locator('a.portal-card').count(),2);
+  assert.equal(await portal.locator('.portal-card.planned').count(),4);
+  assert.equal(await portal.locator('.portal-community').count(),1);
+  assert.match(await portal.locator('.portal-community').innerText(),/Community Help Center/);
+  assert.equal(await portal.locator('header.site-header .nav-link.unavailable').count(),4);
+  assert.equal(await portal.locator('header.site-header a[href$="/guide/"]').count(),1);
   await portal.getByRole('button',{name:'このページのチュートリアル'}).click();
-  assert.match(await portal.getByRole('dialog').innerText(),/サービスを選択|カードを選ぶ/);
+  assert.match(await portal.getByRole('dialog').innerText(),/6つの主要サービス|カードを選択/);
   await portal.getByRole('button',{name:'チュートリアルを閉じる'}).click();
   assert.equal(await portal.getByRole('dialog').count(),0);
   await portal.close();
