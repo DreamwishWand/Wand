@@ -1319,7 +1319,8 @@ mod tests {
             let bytes=std::fs::read_to_string(root.join(file)).unwrap();
             core.append_shard_impl(&bytes).unwrap();
         }
-        let first=core.rows[0].id,second=core.rows[1].id;
+        let first=core.rows[0].id;
+        let second=core.rows[1].id;
         core.set_entry_impl(first,r#"{"status":"owned","quantity":4,"favorite":true,"discovered":false}"#).unwrap();
         core.set_entry_impl(second,r#"{"status":"missing","discovered":true}"#).unwrap();
         core.workspace_impl("add","local-2","Second").unwrap();
