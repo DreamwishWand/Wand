@@ -255,7 +255,7 @@ test('facet summaries preserve current verification, history and multi-valued co
 test('public Steam facets refuse to convert unknown World into a filter option',async()=>{
   const root=resolve(new URL('..',import.meta.url).pathname);
   const local=async(url)=>{
-    try{return new Response(await readFile(join(root,'static',url.replace(/^\\/Wand\\/,''))),{status:200});}
+    try{return new Response(await readFile(join(root,'static',url.replace('/Wand/',''))),{status:200});}
     catch(e){if(e?.code==='ENOENT')return new Response('',{status:404});throw e;}
   };
   const db=await openSharedGameDatabase('/Wand',local);
