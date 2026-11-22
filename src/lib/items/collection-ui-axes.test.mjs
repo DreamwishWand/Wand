@@ -186,7 +186,7 @@ test('source category groups expose original sorted Set IDs and exact locale lab
   const category=await client.getCategoryOptions('ja');
   const crop=await client.getCategorySourceSets('ja',0);
   assert.equal(crop.length,category.find(x=>x.submenuCode===0).originalCollectionSetCount);
-  assert.deepEqual(crop.map(x=>x.setId),[288,270,252,234,216,198,180,162,144,126,108,90,72,54,36,18,0].filter(x=>x!==0).map(i=>2120000001+i));
+  assert.deepEqual(crop.map(x=>x.setId),[288,270,252,234,216,198,180,162,144,126,108,90,72,54,36,18,0].map(i=>2120000001+i));
   assert.equal(crop[0].originalSetSortPriority,304-288);
   assert.equal(crop[0].currentExactSetName,'ja set 288');
   assert.equal(crop[0].currentOriginalLocDbLabelVerified,true);
@@ -205,10 +205,10 @@ test('zero-source-set category returns empty and a non-display original label st
     f.menus,f.labels);
   assert.deepEqual(await client.getCategorySourceSets('ja',17),[]);
   assert.deepEqual(await client.getCategorySourceSets('ja',19),[]);
-  const sidekicks=await client.getCategorySourceSets('ja',20);
-  assert.equal(sidekicks[0].currentExactSetName,null);
-  assert.equal(sidekicks[0].currentOriginalLocDbLabelVerified,false);
-  assert.equal(sidekicks[0].setId,2120000305);
+  const puzzles=await client.getCategorySourceSets('ja',18);
+  assert.equal(puzzles[0].currentExactSetName,null);
+  assert.equal(puzzles[0].currentOriginalLocDbLabelVerified,false);
+  assert.equal(puzzles[0].setId,2120000305);
 });
 test('original source category aliases cannot inherit a different source Set localized name',async()=>{
   const f=fixture(),raw=f.labels.getSetLabels;
