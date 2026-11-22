@@ -43,11 +43,13 @@
   let worldQuery='';
   let db04Input:HTMLInputElement|null=null;
   type Db04GridMatch={
-    contract:'wand.db05.db04-grid-path-match@1';
+    contract:'wand.db05.db04-grid-path-match@2';
     status:string;observedFullGrids:number;matchedFullGrids:number;
     notInPartialSourceFullGrids:number;ambiguousSourceFullGrids:number;
     malformedFullGrids:number;observedDiffGrids:number;
-    hashUnverifiedDiffGrids:number;malformedDiffGrids:number;
+    hashUnverifiedDiffGrids:number;
+    structuralCandidateDiffGrids:number;notInPartialSourceDiffGrids:number;
+    ambiguousSourceDiffGrids:number;malformedDiffGrids:number;
     sourceCoverageComplete:false;sourceOriginalArchiveRechecked:false;
     saveGridNumericIdUsedAsNativeKey:false;diffIdentityVerified:false;
     worldCoordinatesVerified:false;playerPlacementVerified:false;
@@ -286,7 +288,7 @@
         own.terminate();active=null;processing=false;
         const r=response as {kind?:string;receipt?:Db04GridMatch};
         if(r?.kind!=='db04'||r.receipt?.contract!==
-           'wand.db05.db04-grid-path-match@1'||
+           'wand.db05.db04-grid-path-match@2'||
            r.receipt.sourceCoverageComplete!==false||
            r.receipt.sourceOriginalArchiveRechecked!==false||
            r.receipt.saveGridNumericIdUsedAsNativeKey!==false||
@@ -781,8 +783,20 @@
               db04Match.malformedFullGrids}</p>
           {/if}
           {#if db04Match.observedDiffGrids>0}
-            <p>差分Grid：{db04Match.hashUnverifiedDiffGrids}件は
-              原本ハッシュの証拠がなく照合未完了</p>
+            <p>差分Gridの構造上の候補：{
+              db04Match.structuralCandidateDiffGrids} / {
+              db04Match.observedDiffGrids}件</p>
+            {#if db04Match.notInPartialSourceDiffGrids>0}
+              <p>DB-04部分データに未収録の差分Grid：{
+                db04Match.notInPartialSourceDiffGrids}件</p>
+            {/if}
+            {#if db04Match.ambiguousSourceDiffGrids>0}
+              <p>複数候補のある差分Grid：{
+                db04Match.ambiguousSourceDiffGrids}件</p>
+            {/if}
+            <p>差分Gridの原本ハッシュ未検証：{
+              db04Match.hashUnverifiedDiffGrids}件。
+              候補は配置・原本Gridの同一性を証明しません。</p>
           {/if}
           <p class="slot-note">DB-04索引との参照パス比較です。
             原本再検証・全配置数・所有権・編集可否の証明ではありません。</p>
