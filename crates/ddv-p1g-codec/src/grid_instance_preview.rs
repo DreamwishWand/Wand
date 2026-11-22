@@ -246,6 +246,44 @@ pub(super) fn resolve_grid_coordinate_targets(
     Ok(targets)
 }
 
+/// Resolve mixed 1..=16 Grid edits against the same immutable opened Save
+/// with ONE native GridObject scan. Private native map IDs stay in WASM.
+pub(super) fn resolve_grid_mixed_targets(
+    profile:&[u8],
+    selections:&[(usize,u64,(i32,i32),String,Option<String>)]
+)->Result<Vec<GridCoordinateTarget>,CodecError>{
+    if selections.is_empty()||selections.len()>16{
+        return Err(CodecError::Bounds);
+    }
+    let (scan,_status)=scan_grid_instances(profile)?;
+    if scan.sampled||scan.invalid>0{
+        return Err(CodecError::Json);
+    }
+    let mut seen=HashSet::new();
+    let mut out=Vec::with_capacity(selections.len());
+    for (ordinal,item,expected,kind,orientation) in selections{
+        if *ordinal==0||*ordinal>MAX_ROWS||*item==0||
+           !seen.insert(*ordinal){
+            return Err(CodecError::Json);
+        }
+        let (target,xy)=scan.private_targets.get(ordinal-1)
+            .ok_or(CodecError::Json)?;
+        let observed_kind=match target.kind{
+            GridObjectKind::Full=>"full",
+            GridObjectKind::DiffModified=>"diff_modified"
+        };
+        let observed_orientation=scan.rows.get(ordinal-1)
+            .and_then(|row|row.get("orientation")).and_then(Value::as_str);
+        if target.item_id!=*item||xy!=&Some(*expected)||
+           kind!=observed_kind||
+           orientation.as_ref().is_some_and(|o|Some(o.as_str())!=observed_orientation){
+            return Err(CodecError::Json);
+        }
+        out.push(target.clone());
+    }
+    Ok(out)
+}
+
 /// Resolve a cardinal orientation edit exclusively against the original,
 /// locally opened Save. No native Grid/Object ID leaves this Rust module.
 pub(super) fn resolve_grid_orientation_target(
