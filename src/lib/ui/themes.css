@@ -288,3 +288,87 @@ body{background:var(--wand-halo),var(--wand-bg);color:var(--wand-text)}
 :root:is([data-wand-theme='dawn'],[data-wand-theme='coral']) .tutorial-done{
   background:var(--wand-accent-strong);color:var(--wand-accent-contrast)
 }
+
+/* Global edit timeline: transient overlay, never consumes permanent workspace area. */
+:root .shell-history-overlay{position:fixed;inset:0;z-index:180}
+:root .shell-history-shade{
+  position:absolute;inset:0;width:100%;height:100%;border:0;
+  background:#030817a3;cursor:default
+}
+:root .shell-history-panel{
+  position:absolute;inset:0 0 0 auto;width:min(430px,100vw);
+  display:flex;flex-direction:column;min-width:0;min-height:0;
+  background:var(--wand-menu);color:var(--wand-text);
+  border-left:1px solid var(--wand-line);box-shadow:-18px 0 50px #0005
+}
+:root .shell-history-head{
+  display:flex;justify-content:space-between;align-items:center;
+  gap:10px;min-height:60px;padding:8px 14px;
+  border-bottom:1px solid var(--wand-line)
+}
+:root .shell-history-head>div{display:flex;align-items:center;gap:9px;font-size:16px}
+:root .shell-history-head button{
+  width:44px;min-width:44px;height:44px;min-height:44px;
+  display:grid;place-items:center;border:1px solid transparent;
+  border-radius:9px;background:transparent;color:inherit;cursor:pointer
+}
+:root .shell-history-head button:hover{background:var(--wand-header-hover)}
+:root .shell-history-tabs{display:flex;gap:4px;padding:10px 12px}
+:root .shell-history-tabs button{
+  flex:1;min-width:0;min-height:42px;padding:7px 8px;
+  border:1px solid var(--wand-line);border-radius:9px;
+  color:var(--wand-text);background:transparent;font-size:13px;font-weight:650;cursor:pointer
+}
+:root .shell-history-tabs button.active{
+  background:var(--wand-header-hover);border-color:var(--wand-accent-strong)
+}
+:root .shell-history-actions{display:flex;gap:8px;padding:0 12px 10px}
+:root .shell-history-actions button{
+  flex:1;display:flex;align-items:center;justify-content:center;gap:7px;
+  min-height:44px;border:1px solid var(--wand-line);border-radius:9px;
+  background:var(--wand-header-hover);color:var(--wand-text);
+  font-size:13px;font-weight:650;cursor:pointer
+}
+:root .shell-history-actions button:disabled{opacity:.4;cursor:not-allowed}
+:root .shell-history-timeline{
+  flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:3px;
+  padding:4px 12px 24px
+}
+:root .shell-history-entry{
+  width:100%;display:flex;flex-direction:column;align-items:stretch;gap:5px;
+  min-height:54px;padding:11px 12px;text-align:left;
+  border:1px solid transparent;border-radius:9px;
+  background:transparent;color:var(--wand-text);cursor:pointer
+}
+:root .shell-history-entry:hover:not(:disabled){background:var(--wand-header-hover)}
+:root .shell-history-entry.active{
+  border-color:var(--wand-accent);background:var(--wand-header-hover)
+}
+:root .shell-history-entry.undone{opacity:.5}
+:root .shell-history-entry:disabled{cursor:wait}
+:root .shell-history-entry-top{display:flex;gap:8px;align-items:baseline;justify-content:space-between}
+:root .shell-history-entry-top strong{
+  min-width:0;font-size:13px;font-weight:650;overflow-wrap:anywhere
+}
+:root .shell-history-entry-top time{
+  flex:none;color:var(--wand-muted);font-size:11px;font-variant-numeric:tabular-nums
+}
+:root .shell-history-change{color:var(--wand-muted);font-size:12px;line-height:1.3}
+:root .shell-history-empty{
+  margin:22px 12px;color:var(--wand-muted);font-size:13px;line-height:1.5
+}
+:root .shell-history-error{
+  margin:0 12px 12px;color:var(--wand-text);border:1px solid var(--wand-accent);
+  border-radius:8px;padding:10px;font-size:12px
+}
+:root .shell-history-working{
+  margin:0 12px 10px;color:var(--wand-muted);font-size:12px
+}
+:root .shell-history-panel :focus-visible{
+  outline:3px solid var(--wand-focus);outline-offset:2px
+}
+:root .site-shell .shell-more-history{display:none}
+@media(max-width:490px){
+  :root .site-shell .shell-history-button{display:none}
+  :root .site-shell .shell-more-history{display:flex}
+}
