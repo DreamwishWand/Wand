@@ -54,6 +54,9 @@ export interface Db04NativeItemScopeClient {
     auditSha256:string;
     rowsSha256:string;
     sourceSha256ByCategory:Readonly<Record<Db04NativeCategory,string>>;
+    /** Original Tag and Set source files are already verified by the audit. */
+    originalTagSha256:string;
+    originalSetSha256:string;
     originalItemDefinitions:13202;
     privateOnly:true;
     publicationAuthorized:false;
@@ -293,6 +296,8 @@ export async function createDb04NativeItemScopeClient(args:{
     sourceSha256ByCategory:Object.freeze(Object.fromEntries(CATEGORIES.map(c=>
       [c,audit.sourceSha256[c+'.json']])) as Record<Db04NativeCategory,string>),
     originalItemDefinitions:13202 as const,
+    originalTagSha256:audit.sourceSha256['Tag.json'],
+    originalSetSha256:audit.sourceSha256['Set.json'],
     privateOnly:true as const,publicationAuthorized:false as const
   });
   const freezeIndexes=(map:Map<string,number[]>)=>
