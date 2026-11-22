@@ -1,16 +1,15 @@
 <script lang="ts">
   import {onMount} from 'svelte';
   import {base} from '$app/paths';
+  import {watchWandLanguage} from '$lib/ui/preferences';
   import {autoAppend} from '$lib/ui/auto-append';
   import {collectWindow} from '$lib/ui/collect-window.mjs';
-  import {verifyPublicQuestIndex,PUBLIC_GUIDE_LOCALES,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
+  import {verifyPublicQuestIndex,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
   import {
     derivePublicGuideCharacters,sourceCharacterName,filterPublicGuideCharacters,
     findPublicCharacterByLink
   } from '$lib/guide/public-characters.mjs';
 
-  const LANG:Record<string,string>={ja:'日本語',en:'English',fr:'Français',it:'Italiano',
-    de:'Deutsch','es-ES':'Español','zh-CN':'简体中文','pt-BR':'Português'};
   let directory:any=null;
   let selected:any=null;
   let loading=true;
@@ -56,9 +55,10 @@
     finally{loading=false}
   }
   onMount(()=>{
+    const unwatch=watchWandLanguage(next=>{locale=next;limit=48;});
     window.addEventListener('popstate',restoreAddress);
     void load();
-    return ()=>window.removeEventListener('popstate',restoreAddress);
+    return ()=>{unwatch();window.removeEventListener('popstate',restoreAddress);};
   });
 </script>
 
@@ -88,13 +88,6 @@
     <div class="controls">
       <label>名前・IDで検索
         <input type="search" aria-label="キャラクター名称を検索" bind:value={query} maxlength="120" on:input={()=>limit=48} placeholder="日本語・English・ID" />
-      </label>
-      <label>表示言語
-        <select aria-label="キャラクター名称の表示言語" bind:value={locale} on:change={()=>limit=48}>
-          {#each PUBLIC_GUIDE_LOCALES as language}
-            <option value={language}>{LANG[language]}</option>
-          {/each}
-        </select>
       </label>
       <label>クエスト関連付け
         <select aria-label="関連クエストで絞り込み" bind:value={mode} on:change={()=>limit=48}>
