@@ -7,6 +7,7 @@ on:
       - 'src/lib/save/**'
       - 'crates/ddv-save-schema/**'
       - 'crates/ddv-save-patch/**'
+      - 'crates/ddv-p1g-codec/**'
       - 'tools/db-05-save/**'
       - 'tests/save-schema.test.mjs'
       - 'tests/save-db00-join.test.mjs'
@@ -45,6 +46,7 @@ on:
       - 'src/lib/save/**'
       - 'crates/ddv-save-schema/**'
       - 'crates/ddv-save-patch/**'
+      - 'crates/ddv-p1g-codec/**'
       - 'tools/db-05-save/**'
       - 'tests/save-schema.test.mjs'
       - 'tests/save-db00-join.test.mjs'
@@ -105,6 +107,8 @@ jobs:
         run: cargo test --manifest-path crates/ddv-save-schema/Cargo.toml
       - name: Rust byte-preserving inventory and chest draft (synthetic only)
         run: cargo test --manifest-path crates/ddv-save-patch/Cargo.toml
+      - name: Rust native P1G packaged-profile synthetic roundtrip (no export)
+        run: cargo test --manifest-path crates/ddv-p1g-codec/Cargo.toml --features native-p1g-lab
       - name: Cross-language Rust/JS save reference parity (synthetic only)
         run: node tools/db-05-save/compare_js_rust.mjs
       - name: Cross-language Rust/JS 440-field shape parity (synthetic only)
