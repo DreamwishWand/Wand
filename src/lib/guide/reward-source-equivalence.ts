@@ -79,8 +79,6 @@ const MISSION_SHA='f13958b52234f4cda92f0dd0bfff50be8a7f6625c8478785e2a077a5c7933
 const BRIDGE_SHA='dcf79a666f16aa64a2cfa9505c4e6f309d160a16db7190c550bd415a3acbeab9';
 const BRIDGE_BYTES=1470;
 const ID=/^[1-9][0-9]{0,15}$/;
-const SHA=/^[a-f0-9]{64}$/;
-const EMPTY=Object.freeze([]) as readonly CurrentCompatibleGuideReward[];
 function check(value:unknown,code:string):asserts value{
   if(!value)throw new TypeError('DB03_SOURCE_EQUIVALENCE_'+code);
 }
@@ -91,9 +89,6 @@ function itemId(id:string|number):string{
   const value=typeof id==='number'&&Number.isSafeInteger(id)?String(id):id;
   check(typeof value==='string'&&ID.test(value)&&Number.isSafeInteger(Number(value)),'INVALID_ITEM_ID');
   return value;
-}
-function checkedSha(sha:unknown):sha is string{
-  return typeof sha==='string'&&SHA.test(sha);
 }
 function sourceFamily(row:PrivateGuideRewardCandidate):GuideRewardSourceFamily{
   const file=row.sourceFile;
