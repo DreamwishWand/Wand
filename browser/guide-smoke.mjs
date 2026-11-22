@@ -106,7 +106,9 @@ try {
   // Public Star Path is source-pinned static cache data, not a personal import.
   const star = await browser.newPage({viewport:{width:390,height:844}});
   const starErrors = [];
+  const inactiveMediaRequests = [];
   star.on('pageerror',e=>starErrors.push(String(e)));
+  star.on('request',r=>{if(/starpath-media-[a-f0-9]+|\/media\/steam-v1\.26\.2\//.test(r.url()))inactiveMediaRequests.push(r.url());});
   await star.goto('http://127.0.0.1:4177/Wand/guide/star-path/',{waitUntil:'domcontentloaded'});
   await star.getByRole('button',{name:'Seafaring Star Path'}).waitFor({timeout:20000});
   assert.match(await star.locator('.summary').innerText(),/121 \/ 21/);
@@ -135,6 +137,8 @@ try {
   assert.match(await star.locator('.week').nth(2).innerText(),/輝きの浜辺で魚を25匹釣る/);
   await star.getByRole('button',{name:'報酬'}).click();
   assert.equal(await star.locator('.week').count(),4);
+  assert.match(await star.locator('.hint').first().innerText(),/報酬画像はSRC-04の正式な公開後/);
+  assert.equal(await star.locator('.reward-entry img').count(),0,'non-public SRC04 must not render images');
   assert.match(await star.locator('.week').first().innerText(),/アクアマーメイドバックパック/);
   assert.match(await star.locator('.week').first().innerText(),/サル（大尉）/);
   assert.match(await star.locator('.week').first().innerText(),/ムーンストーン/);
@@ -145,7 +149,24 @@ try {
   assert.match(await star.locator('.summary').innerText(),/700 Moonstone/);
   assert.match(await star.locator('.week').first().innerText(),/Lieutenant Monkey/);
   assert.match(await star.locator('.week').first().innerText(),/Motif \(no official display name\)/);
+  const rewardSearch=star.getByRole('textbox',{name:'報酬を検索'});
+  const rewardTier=star.getByRole('combobox',{name:'報酬の入手枠'});
+  await rewardSearch.fill('Lieutenant Monkey');
+  assert.equal(await star.locator('.reward-entry').count(),1,'localized reward name search');
+  await rewardTier.selectOption('free');
+  assert.equal(await star.locator('.reward-entry').count(),0,'free tier excludes premium monkey');
+  assert.match(await star.getByRole('status').innerText(),/一致する報酬はありません/);
+  await rewardTier.selectOption('premium');
+  assert.equal(await star.locator('.reward-entry').count(),1,'premium tier shows premium monkey');
+  await rewardSearch.fill('80100000');
+  await rewardTier.selectOption('free');
+  assert.equal(await star.locator('.reward-entry').count(),1,'free Moonstone excludes paid and recurrent');
+  assert.match(await star.locator('.reward-entry').innerText(),/Moonstone/);
+  await rewardSearch.fill('');
+  await rewardTier.selectOption('all');
+  assert.equal(await star.locator('.week').count(),4,'all reward pages restored');
   assert.equal(await star.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+2),true,'Star Path mobile overflow');
+  assert.deepEqual(inactiveMediaRequests,[],'inactive media release must not make requests');
   assert.deepEqual(starErrors,[],starErrors.join('\n'));
   await star.close();
   const tampered=await browser.newPage();

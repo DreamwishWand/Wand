@@ -5,15 +5,19 @@
   import {loadStarpathWeeklyLocales,starpathWeeklyDescription} from '$lib/guide/public-starpath-locales.mjs';
   import {loadStarpathDailyLocales,starpathDailyDescription} from '$lib/guide/public-starpath-daily.mjs';
   import {starpathRewardDisplayName,loadStarpathRewardExtras} from '$lib/guide/starpath-reward-extras.mjs';
+  import {loadStarpathMedia,starpathMediaThumbnail} from '$lib/guide/starpath-public-media.mjs';
 
-  let catalog:any=null, weeklyLocales:any=null, dailyLocales:any=null, rewardExtras:any=null, error='', loading=true;
+  let catalog:any=null, weeklyLocales:any=null, dailyLocales:any=null, rewardExtras:any=null, publicMedia:any=null, error='', loading=true;
   let locale='ja';
   const languages=[['ja','日本語'],['en','English'],['fr','Français'],['it','Italiano'],['de','Deutsch'],['es-ES','Español'],['pt-BR','Português'],['zh-CN','简体中文']];
   let selectedId='HauntingElegance2026';
   let tab:'tasks'|'weekly'|'rewards'='tasks';
   let query='';
+  let rewardQuery='';
+  let rewardTier:'all'|'free'|'premium'='all';
   let limit=60;
   $: season=catalog?.seasons?.find((s:any)=>s.id===selectedId);
+  $: rewardRows=season?[...season.rewardPages.flatMap((p:any)=>p.rewards),...season.bonusPages.flatMap((p:any)=>p.rewards),...season.vaultRewards]:[];
   $: filtered=season?.tasks?.filter((t:any)=>(starpathDailyDescription(dailyLocales,season.id,t.id,locale)||t.description||'').toLowerCase().includes(query.toLowerCase().trim())
       ||(t.description||'').toLowerCase().includes(query.toLowerCase().trim())
       ||t.id.toLowerCase().includes(query.toLowerCase().trim())
@@ -21,7 +25,17 @@
   function date(value:string){
     return new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(value));
   }
-  function changeSeason(id:string){selectedId=id;limit=60;query='';}
+  function changeSeason(id:string){selectedId=id;limit=60;query='';rewardQuery='';rewardTier='all';}
+  function visibleRewards(rewards:any[],search:string,tier:string,language:string,extras:any){
+    const needle=search.trim().toLocaleLowerCase();
+    return rewards.filter(r=>{
+      if(tier==='free'&&r.premium||tier==='premium'&&!r.premium)return false;
+      if(!needle)return true;
+      const label=starpathRewardDisplayName(r.itemId,language,extras)||'';
+      const alt=r.alternateItemId?starpathRewardDisplayName(r.alternateItemId,language,extras)||'':'';
+      return [r.itemId,r.alternateItemId||'',label,alt].join(' ').toLocaleLowerCase().includes(needle);
+    });
+  }
   function item(r:any,language:string){
     const name=starpathRewardDisplayName(r.itemId,language,rewardExtras);
     return (name||'名称未確認')+' · ID '+r.itemId+' · '+r.amount+'個'+(r.price!==undefined?' · 価格 '+r.price:'')+(r.premium?' · プレミアム':'')+(r.recurrent?' · 繰り返し':'');
@@ -35,6 +49,7 @@
         loadStarpathDailyLocales(`${base}/guide/public/`,catalog.seasons),
         loadStarpathRewardExtras(`${base}/guide/public/starpath-reward-extras-2026-11-22.json`,catalog)
       ]);
+      publicMedia=await loadStarpathMedia(`${base}/`,catalog);
     }
     catch(e){error=e instanceof Error?e.message:String(e)}
     finally{loading=false;}
@@ -102,24 +117,37 @@
           </section>
         {/each}
       {:else}
-        <p class="hint">52種類の正式名称はSteam v1.26.2のゲーム原本と照合しています。残り8種類は、原本に個別表示名がない「タッチ・オブ・マジック」のモチーフとして表示します。Vaultの代替報酬は付与を意味しません。</p>
+        <div class="reward-search" role="search">
+          <label>報酬を検索<input bind:value={rewardQuery} aria-label="報酬を検索" placeholder="報酬名・アイテムID" /></label>
+          <label>入手枠<select bind:value={rewardTier} aria-label="報酬の入手枠"><option value="all">すべて</option><option value="free">無料</option><option value="premium">プレミアム</option></select></label>
+        </div>
+        <p class="hint">52種類の正式名称はSteam v1.26.2のゲーム原本と照合しています。残り8種類は、原本に個別表示名がない「タッチ・オブ・マジック」のモチーフとして表示します。Vaultの代替報酬は付与を意味しません。{publicMedia?'公開済み・検証済みの画像のみ表示しています。':'報酬画像はSRC-04の正式な公開後に表示されます。'}</p>
         {#each season.rewardPages as p}
+          {#if visibleRewards(p.rewards,rewardQuery,rewardTier,locale,rewardExtras).length}
           <section class="week"><h2>報酬ページ {p.page}</h2>
             {#if p.minPurchasedFromPreviousPage!==undefined}<p class="hint">前ページの購入設定：{p.minPurchasedFromPreviousPage}件</p>{/if}
-            <ul class="entries">{#each p.rewards as r,i (i)}<li>{item(r,locale)}</li>{/each}</ul>
+            <ul class="entries">{#each visibleRewards(p.rewards,rewardQuery,rewardTier,locale,rewardExtras) as r,i (i)}<li class="reward-entry">{#if starpathMediaThumbnail(publicMedia,r.itemId)}<img class="reward-thumb" src={starpathMediaThumbnail(publicMedia,r.itemId)??''} alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" />{/if}<span>{item(r,locale)}</span></li>{/each}</ul>
           </section>
+          {/if}
         {/each}
         {#each season.bonusPages as p}
+          {#if visibleRewards(p.rewards,rewardQuery,rewardTier,locale,rewardExtras).length}
           <section class="week"><h2>ボーナスページ {p.page}{p.currencyConversionPage?'（通貨交換）':''}</h2>
             {#if p.minPurchasedFromPreviousPage!==undefined}<p class="hint">前ページの購入設定：{p.minPurchasedFromPreviousPage}件</p>{/if}
-            <ul class="entries">{#each p.rewards as r,i (i)}<li>{item(r,locale)}</li>{/each}</ul>
+            <ul class="entries">{#each visibleRewards(p.rewards,rewardQuery,rewardTier,locale,rewardExtras) as r,i (i)}<li class="reward-entry">{#if starpathMediaThumbnail(publicMedia,r.itemId)}<img class="reward-thumb" src={starpathMediaThumbnail(publicMedia,r.itemId)??''} alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" />{/if}<span>{item(r,locale)}</span></li>{/each}</ul>
           </section>
+          {/if}
         {/each}
+        {#if visibleRewards(season.vaultRewards,rewardQuery,rewardTier,locale,rewardExtras).length}
         <section class="week"><h2>Vault報酬</h2>
-          <ul class="entries">{#each season.vaultRewards as r,i (i)}
-            <li>{item(r,locale)}{r.alternateItemId?' · 代替候補: '+(starpathRewardDisplayName(r.alternateItemId,locale,rewardExtras)||'名称未確認')+' (ID '+r.alternateItemId+')':''}</li>
+          <ul class="entries">{#each visibleRewards(season.vaultRewards,rewardQuery,rewardTier,locale,rewardExtras) as r,i (i)}
+            <li class="reward-entry">{#if starpathMediaThumbnail(publicMedia,r.itemId)}<img class="reward-thumb" src={starpathMediaThumbnail(publicMedia,r.itemId)??''} alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" />{/if}<span>{item(r,locale)}{r.alternateItemId?' · 代替候補: '+(starpathRewardDisplayName(r.alternateItemId,locale,rewardExtras)||'名称未確認')+' (ID '+r.alternateItemId+')':''}</span></li>
           {/each}</ul>
         </section>
+        {/if}
+        {#if visibleRewards(rewardRows,rewardQuery,rewardTier,locale,rewardExtras).length===0}
+          <p role="status">一致する報酬はありません。</p>
+        {/if}
       {/if}
     {/if}
   {/if}
@@ -141,9 +169,12 @@
   .search{display:flex;gap:18px;align-items:end;justify-content:space-between;margin:20px 0}
   .search label{font-size:12px;color:#d2c1df;display:grid;gap:8px;flex:1}
   .search input{width:100%;max-width:460px;padding:12px;color:white;background:#261d34;border:1px solid #66537e;border-radius:9px}
+  .reward-search{display:flex;flex-wrap:wrap;gap:12px;margin:18px 0}.reward-search label{display:grid;gap:7px;font-size:12px;flex:1;min-width:150px;color:#d2c1df}.reward-search input,.reward-search select{width:100%;padding:11px;background:#261d34;color:white;border:1px solid #66537e;border-radius:9px}.reward-search label:first-child{flex:3}
   .entries{list-style:none;padding:0;display:grid;gap:8px}
   .entries li{display:grid;gap:6px;border:1px solid #493956;background:#21192b;border-radius:10px;padding:12px 16px;font-size:13px;overflow-wrap:anywhere}
   .entries li strong{font-size:14px}.entries li small{color:#ab9ab9;font-size:11px}
+  .entries li.reward-entry{display:flex;align-items:center;gap:12px;min-width:0}.reward-entry span{min-width:0;overflow-wrap:anywhere}
+  .reward-thumb{display:block;width:56px;height:56px;object-fit:contain;flex:0 0 56px;border-radius:9px;background:#33273f}
   .week{margin:28px 0}.week h2{font-size:17px}
   .hint{line-height:1.7}.error{color:#ffb9c3}
   footer{margin-top:38px;font-size:12px;color:#a99ab8}footer a{color:#d7baff}
