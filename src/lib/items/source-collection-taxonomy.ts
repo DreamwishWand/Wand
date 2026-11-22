@@ -194,8 +194,11 @@ export function createDb01SourceCollectionTaxonomyClient(
     if(sortedIds.length===0)return new Map();
     // The full original Set hierarchy has only 305 definitions in v1.26.2.
     check(sortedIds.length<=4096,'COLLECTION_SET_BATCH_LIMIT');
+    // Do not retain an unbounded key for each arbitrary Item lookup batch.
+    // Only the complete 305-Set hierarchy needs locale-level memoization.
+    const cacheFullHierarchy=sortedIds.length===source.sourceSetDefinitions;
     const key=locale+':'+sortedIds.join(',');
-    const pending=exactNameCache.get(key);
+    const pending=cacheFullHierarchy?exactNameCache.get(key):undefined;
     if(pending)return pending;
     const task=(async()=>{
       const definitions=await catalog.getItems(sortedIds);
@@ -234,9 +237,13 @@ export function createDb01SourceCollectionTaxonomyClient(
       }
       return resolved as ReadonlyMap<number,Readonly<Db01LocalizedOriginalCollectionSet>>;
     })();
-    exactNameCache.set(key,task);
+    if(cacheFullHierarchy)exactNameCache.set(key,task);
     try{return await task;}
-    catch(e){if(exactNameCache.get(key)===task)exactNameCache.delete(key);throw e;}
+    catch(e){
+      if(cacheFullHierarchy&&exactNameCache.get(key)===task)
+        exactNameCache.delete(key);
+      throw e;
+    }
   }
   async function getSourceHierarchy(locale:Db01Locale):
     Promise<readonly Readonly<Db01OriginalCollectionSubmenu>[]>{
@@ -272,7 +279,7 @@ export function createDb01SourceCollectionTaxonomyClient(
       menus(),shared.getItems(itemIds),
     ]);
     check(rows.length===itemIds.length,'SOURCE_ITEM_BATCH_LENGTH');
-    const referenced=new Map<number,Map<number,MutableGroup>>();
+    const referenced=new Set<number>();
     const byItem=new Map<number,Map<number,Map<number,MutableGroup>>>();
     function ensure(setId:number,groupIndex:number,
       sourceMenu?:Readonly<Db01OriginalCollectionMenu>|null){
@@ -322,10 +329,9 @@ export function createDb01SourceCollectionTaxonomyClient(
       }
       // No suppressed candidates are promoted to a positive membership.
       byItem.set(i,sets);
-      for(const [setId,groups] of sets)
-        referenced.set(setId,groups);
+      for(const setId of sets.keys())referenced.add(setId);
     }
-    const needed=[...referenced.keys()].map(setId=>data.byId.get(setId)!);
+    const needed=[...referenced].map(setId=>data.byId.get(setId)!);
     const localized=await localizedSets(needed,locale);
     return Object.freeze(rows.map((row,index)=>{
       if(row===null)return null;
