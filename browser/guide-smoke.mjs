@@ -103,6 +103,61 @@ try {
   await direct.locator('.detail-header h2').filter({hasText:'ドリームライトバレーへようこそ'}).waitFor({timeout:20000});
   assert.deepEqual(deepErrors,[],deepErrors.join('\n'));
   await direct.close();
+
+  // Character names are source labels (not proof of unlocked residents).
+  // Reuse only the existing verified public quest index; no private sources.
+  const people=await browser.newPage({viewport:{width:390,height:844}});
+  const peopleErrors=[],peopleDownloads=[];
+  people.on('pageerror',e=>peopleErrors.push(String(e)));
+  people.on('response',r=>{if(r.url().includes('/guide/public/'))peopleDownloads.push(r.url());});
+  await people.goto('http://127.0.0.1:4177/Wand/guide/characters/',{waitUntil:'domcontentloaded'});
+  await people.locator('.counts').waitFor({timeout:30000});
+  assert.match(await people.locator('.counts').innerText(),/142[\s\S]*86[\s\S]*56/);
+  assert.equal(peopleDownloads.filter(u=>u.endsWith('/quest-index.json')).length,1);
+  assert.equal(peopleDownloads.filter(u=>u.includes('quest-details-')).length,0,
+    'character names need no private or lazily loaded quest details');
+  assert.equal(await people.locator('input[type=file]').count(),0);
+  const charSearch=people.getByRole('searchbox',{name:'キャラクター名称を検索'});
+  await charSearch.fill('フランダー');
+  assert.equal(await people.locator('.person').count(),1);
+  await people.locator('.person').first().click();
+  await people.waitForFunction(()=>location.search.includes('character=10000049'));
+  assert.equal(await people.locator('.linked li').count(),0,'Flounder has no direct index link');
+  assert.match(await people.locator('.details').innerText(),/ゲーム内にクエストが存在しないことを意味しません/);
+  await people.getByRole('combobox',{name:'キャラクター名称の表示言語'}).selectOption('en');
+  assert.match(await people.locator('.detail-head h2').innerText(),/Flounder/);
+  await charSearch.fill('Captain Jack Sparrow');
+  await people.locator('.person').first().click();
+  await people.waitForFunction(()=>location.search.includes('character=10000001'));
+  assert.equal(await people.locator('.detail-head .permalink').getAttribute('href'),
+    '/Wand/guide/characters/?character=10000001');
+  assert.ok(await people.locator('.linked li').count()>0);
+  const linked=await people.locator('.linked li a').first().getAttribute('href');
+  assert.match(linked,/^\/Wand\/guide\/quests\/\?quest=[1-9][0-9]+$/);
+  await people.goBack();
+  await people.waitForFunction(()=>location.search.includes('character=10000049'));
+  assert.match(await people.locator('.detail-head').innerText(),/Flounder/);
+  await people.goForward();
+  await people.waitForFunction(()=>location.search.includes('character=10000001'));
+  await people.getByRole('combobox',{name:'関連クエストで絞り込み'}).selectOption('withoutQuests');
+  assert.equal(await people.locator('.person').count(),0,'Jack has direct linked quests');
+  await people.getByRole('combobox',{name:'関連クエストで絞り込み'}).selectOption('all');
+  await charSearch.fill('10000100');
+  await people.locator('.person').first().click();
+  assert.match(await people.locator('.warning').innerText(),/内部マーカー/);
+  assert.equal(await people.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),true,
+    'mobile character directory overflow');
+  assert.deepEqual(peopleErrors,[],peopleErrors.join('\n'));
+  await people.close();
+
+  const invalidCharacter=await browser.newPage();
+  await invalidCharacter.goto('http://127.0.0.1:4177/Wand/guide/characters/?character=10000001&character=10000049',
+    {waitUntil:'domcontentloaded'});
+  await invalidCharacter.locator('.counts').waitFor({timeout:30000});
+  assert.equal(await invalidCharacter.locator('.detail-head').count(),0,
+    'duplicate deep link must not select any character');
+  await invalidCharacter.close();
+
   // Public Star Path is source-pinned static cache data, not a personal import.
   const star = await browser.newPage({viewport:{width:390,height:844}});
   const starErrors = [];
