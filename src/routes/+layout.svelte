@@ -29,7 +29,7 @@
   let helpButton:HTMLButtonElement|null=null;
   let accountButton:HTMLButtonElement|null=null;
   let uiLocale:WandLanguage='ja';
-  let uiTheme:WandTheme='dark';
+  let uiTheme:WandTheme='night';
   let languageButton:HTMLButtonElement|null=null;
   let themeButton:HTMLButtonElement|null=null;
   const LANGUAGE_SHORT=Object.fromEntries(UI_LANGUAGES.map(x=>[x.code,x.short]));
