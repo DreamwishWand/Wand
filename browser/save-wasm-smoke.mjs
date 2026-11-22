@@ -350,6 +350,23 @@ try{
   assert.match(await objects.innerText(),/ピュアナイトシャード/);
   assert.doesNotMatch(await objects.innerText(),/X -12/);
   await objects.getByLabel('配置アイテム検索').fill('');
+  // Native Grid IDs never cross this Rust/WASM boundary. Display only an
+  // ephemeral per-open Grid number and real signed X/Y values in a bounded
+  // 2D coordinate plane. Clicking the map reuses the existing secure editor.
+  const map=objects.getByRole('region',{name:'セーブ内Grid配置マップ'});
+  const pickGrid=map.getByLabel('表示するセーブGrid');
+  await map.getByRole('button',{name:'配置 #1 をマップから選択'}).click();
+  const mapCoordinateEditor=objects.getByLabel('座標編集',{exact:true});
+  assert.equal(await mapCoordinateEditor.getByLabel('新しいX').inputValue(),'45');
+  assert.equal(await mapCoordinateEditor.getByLabel('新しいY').inputValue(),'9');
+  await pickGrid.selectOption('2');
+  await map.getByRole('button',{name:'配置 #3 をマップから選択'}).click();
+  assert.equal(await mapCoordinateEditor.getByLabel('新しいX').inputValue(),'-12');
+  assert.equal(await mapCoordinateEditor.getByLabel('新しいY').inputValue(),'8');
+  assert.match(await map.innerText(),/Y 8 ～ 8/);
+  assert.match(await map.innerText(),/配置範囲、衝突判定やワールド座標ではありません/);
+  await pickGrid.selectOption('1');
+  await map.getByRole('button',{name:'配置 #1 をマップから選択'}).click();
   // The signed X/Y coordinates are edited only after Rust re-resolves a
   // private grid/object identity from this file's local ordinal. The P1G
   // is rebuilt and independently reopened; no private identity is published.
