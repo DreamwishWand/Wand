@@ -961,8 +961,8 @@ function originalTerrainFixture() {
   return data;
 }
 
-test('later game versions cannot inherit original GridData native indexing proof', () => {
-  for (const gameVersion of ['1.26.2', '1.27.0']) {
+test('unverified future game versions cannot inherit Steam GridData native read proof', () => {
+  for (const gameVersion of ['1.27.0', '2.0.0']) {
     const source = fixture();
     source.manifest.gameVersion = gameVersion;
     const rawGrid = nativeRoomGrid();
