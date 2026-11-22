@@ -185,6 +185,31 @@ shards and a versioned manifest; the old catalog, icon GUIDs and eight exact
 current-version names are unchanged. The private original Tag overlay is
 stored alongside the audited DB-01 release in the owner's SRC-01 Drive folder.
 
+### Legacy Switch v1.25.0 taxonomy comparison (candidate-only)
+
+The optional `correlate_switch_classification.py` joins the already
+SHA-verified Switch v1.25.0 Collection index/shards to the current Steam
+v1.26.2 SQLite and the complete current original-Tag overlay. It validates
+each input hash, only correlates existing Item IDs, and separately reports
+exact current name matches, source Tag universe overlap and source world-
+context tag overlap. All old categories, universe/world candidates and
+expansions retain explicit **historical-only** labels; zero inferred
+promotions into current UI taxonomy, actual obtainability or DLC entitlement.
+
+```sh
+python tools/db-01-items/correlate_switch_classification.py \
+  --sqlite /owner/private/complete-1262.sqlite \
+  --overlay /owner/private/db01-1262-source-tags \
+  --switch-reference static/ddv/collection/v1.25 \
+  --expected-sqlite-sha256 <independently pinned actual SQLite SHA256> \
+  --out /owner/private/db01-switch125-classification-candidates
+```
+
+The report separates confirmed cross-source agreements from unverified old
+metadata. Different versions and game platforms cannot be equated merely
+because an Item ID collides. The resulting private candidate file is *never*
+automatically applied to DB-00 or a current version of Collection.
+
 **Evidence boundaries:** `nativeCategory` is a source definition class, not
 necessarily the Collection screen menu; a Tag group is a source-record
 association, not a proved parent/child menu or universally applicable
