@@ -140,6 +140,16 @@
     route.includes('/save')?'save':'home';
   $: copy=shellCopy(uiLocale);
   $: tutorial=copy.tutorials[(service as TutorialKey)]??copy.tutorials.home;
+  function focusContextSearch():boolean{
+    const label=service==='collection'?'8言語のアイテム名で検索':
+      service==='starpath'?'通常タスクを検索':
+      service==='characters'?'キャラクター名称を検索':'クエスト名・IDを検索';
+    const field=Array.from(document.querySelectorAll<HTMLInputElement>('input')).find(
+      input=>input.getAttribute('aria-label')===label&&!input.disabled);
+    if(!field)return false;
+    field.focus();field.scrollIntoView({block:'nearest'});
+    return true;
+  }
   function openWorldSource(){
     document.querySelector<HTMLInputElement>('.world-preview input[type="file"][accept*=".zip"]:not(:disabled)')?.click();
   }
