@@ -69,7 +69,7 @@ test('public static source predicates never flatten OR into mandatory prerequisi
   assert(branchRecord,'at least one source Quest retains an OR branch');
   const rendered=publicConditionText(branchRecord.availability,index,'ja');
   assert.match(rendered,/または/);
-  assert.match(publicConditionText(null,index),'条件の指定なし');
+  assert.equal(publicConditionText(null,index),'条件の指定なし');
   const direct=reader.getQuest('2070000701')?.availability?.clauses[0];
   assert.equal(direct.type,'predicate');
   assert.match(publicConditionDisplay(direct,index,'ja'),/完了/);
