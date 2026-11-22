@@ -184,6 +184,9 @@ function validateOrigin(o: ItemOrigin): void {
   period(o.window);
   for (const p of o.salePeriods) period(p);
   provenance(o.source);
+  // The official web articles cited in this release list names, not native Item IDs.
+  if (o.routeStatus === 'confirmed_source_link')
+    assert(o.source.kind !== 'official_publication', 'OFFICIAL_NAME_NOT_ITEM_ID_EVIDENCE');
 }
 
 function frozen<T>(v: T): Readonly<T> { return Object.freeze(v); }
@@ -312,6 +315,7 @@ export function starpathOriginRecords(verifiedDb03Snapshot: unknown): {
           group === 'bonus' ? 'Bonus page unlock conditions' : 'Reward page unlock conditions'
       ];
       if (r.alternateItemId) conditions.push('Alternate Item ID: ' + id(r.alternateItemId));
+      if (r.recurrent) conditions.push('Repeatable reward in native snapshot');
       origins.push({
         originId: `starpath:${season.id}:${group}:${page}:${position}`,
         itemId: id(r.itemId), kind, routeStatus: 'confirmed_source_link',
