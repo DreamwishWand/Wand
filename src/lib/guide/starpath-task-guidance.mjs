@@ -121,8 +121,10 @@ const weekly={
     en:'Hang out with Jack Skellington.'},
   'HauntingElegance2026/Week02Task03':{
     kind:'TakePicture',
-    ja:'ジャック・スケリントンの家のドアを写真に撮る。',
-    en:"Photograph the door of Jack Skellington's house."},
+    // Source-verified furniture target: Star Path tier-5 Candy Cane Door;
+    // do not misdirect the player toward Jack's exterior house entrance.
+    ja:'スターパス報酬の「Candy Cane Door」を自宅の室内ドアに設置して写真に撮る。',
+    en:'Place the Candy Cane Door reward on an interior house door, then photograph it.'},
   'HauntingElegance2026/Week07Task01':{
     kind:'GiftToCharacter',
     ja:'ジャック・スケリントンに、その日の好物のギフトを渡す。',
