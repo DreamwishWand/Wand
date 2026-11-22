@@ -12,6 +12,9 @@
  * The caller must pass the SHA-verified DB-00 loader result; metadata alone
  * cannot cryptographically authenticate an arbitrary in-memory snapshot.
  */
+import {loadCurrentGameDatabase} from '../game-db/client.ts';
+import {OFFICIAL_CAMPAIGNS} from './official-campaigns.ts';
+import {historicalPremiumShop} from './premium-shop-history.ts';
 import type {Db00PublishedSnapshot} from './db00-origins.ts';
 import type {OfficialCampaign,OriginWindow} from './origins.ts';
 import type {ShopAppearance} from './premium-shop-history.ts';
@@ -249,4 +252,19 @@ export function indexPublicOnlineNameCandidates(
       return byProduct.get(productName)??EMPTY as readonly PublicShopNameCandidate[];
     }
   });
+}
+
+/**
+ * Browser-facing public entrypoint. The existing DB-00 loader verifies the
+ * active pointer, release index and ALL item shard byte hashes before any
+ * name is treated as current-version evidence. No private archive required.
+ */
+export async function loadPublishedOnlineNameCandidates(
+  basePath='',fetcher:typeof fetch=fetch
+):Promise<PublicOnlineNameCandidateIndex>{
+  const loaded=await loadCurrentGameDatabase(basePath,fetcher);
+  requireValue(loaded.kind==='db_snapshot','CURRENT_DB00_RELEASE_REQUIRED');
+  return indexPublicOnlineNameCandidates(
+    loaded as Db00PublishedSnapshot,OFFICIAL_CAMPAIGNS,historicalPremiumShop.offers
+  );
 }
