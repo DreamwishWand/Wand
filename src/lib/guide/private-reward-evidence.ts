@@ -92,7 +92,11 @@ function bytesOf(input:Uint8Array|ArrayBuffer,size:number):Uint8Array{
 async function pinnedFile(input:Uint8Array|ArrayBuffer,kind:keyof typeof DB03_PRIVATE_REWARD_SOURCE):Promise<unknown>{
   const spec=DB03_PRIVATE_REWARD_SOURCE[kind],copy=bytesOf(input,spec.bytes);
   ensure(!!globalThis.crypto?.subtle,'SHA_UNAVAILABLE');
-  const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',copy)),
+  // WebCrypto's BufferSource requires ArrayBuffer, not an ArrayBufferLike
+  // backing store; detach caller-controlled bytes before calculating the hash.
+  const sealed=new ArrayBuffer(copy.byteLength);
+  new Uint8Array(sealed).set(copy);
+  const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',sealed)),
     x=>x.toString(16).padStart(2,'0')).join('');
   ensure(hash===spec.sha256,'SOURCE_DIGEST_'+kind);
   try{return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(copy));}
