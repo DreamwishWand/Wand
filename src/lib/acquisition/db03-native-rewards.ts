@@ -9,8 +9,7 @@
  * This module neither fetches nor publishes any private original game bytes.
  */
 import {
-  loadPinnedPrivateGuideRewardIndex,
-  type PrivateGuideRewardIndex
+  loadPinnedPrivateGuideRewardIndex
 } from '../guide/private-reward-evidence.ts';
 import {
   joinEquivalentCurrentRewardCandidates,
