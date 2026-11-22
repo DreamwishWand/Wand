@@ -13,7 +13,7 @@ export type ShellCopy={
   accountOpen:string;accountPreparing:string;accountInfo:string;
   help:string;tutorialHelp:string;tutorialClose:string;close:string;
   readSave:string;collectionBackup:string;collectionRestore:string;
-  saveManager:string;saveNotParsed:string;saveBackupOriginal:string;
+  saveManager:string;saveNotParsed:string;saveReading:string;saveParsed:string;saveBackupOriginal:string;
   saveExportEdited:string;saveEditUnavailable:string;saveOpenEditor:string;
   saveReplace:string;saveClose:string;saveInvalid:string;saveDrop:string;moreActions:string;
   backup:string;restore:string;worldSource:string;collectionSearch:string;
@@ -44,6 +44,8 @@ ja:{
   historyCollection:"Collection",
   historyWorld:"World Editor",
   saveManager:"セーブファイル管理",
+  saveReading:"セーブを解析中…",
+  saveParsed:"セーブを解析済み",
   saveNotParsed:"ファイルを選択済み（未解析・未編集）",
   saveBackupOriginal:"原本をバックアップ",
   saveExportEdited:"編集済みセーブを出力",
@@ -87,6 +89,8 @@ en:{
   historyCollection:"Collection",
   historyWorld:"World Editor",
   saveManager:"Save file",
+  saveReading:"Reading save…",
+  saveParsed:"Save parsed",
   saveNotParsed:"File selected (not yet parsed or edited)",
   saveBackupOriginal:"Back up original",
   saveExportEdited:"Export edited save",
@@ -130,6 +134,8 @@ fr:{
   historyCollection:"Collection",
   historyWorld:"World Editor",
   saveManager:"Fichier de sauvegarde",
+  saveReading:"Analyse de la sauvegarde…",
+  saveParsed:"Sauvegarde analysée",
   saveNotParsed:"Fichier sélectionné (non analysé ni modifié)",
   saveBackupOriginal:"Sauvegarder l’original",
   saveExportEdited:"Exporter la sauvegarde modifiée",
@@ -173,6 +179,8 @@ it:{
   historyCollection:"Collection",
   historyWorld:"World Editor",
   saveManager:"File di salvataggio",
+  saveReading:"Analisi del salvataggio…",
+  saveParsed:"Salvataggio analizzato",
   saveNotParsed:"File selezionato (non analizzato né modificato)",
   saveBackupOriginal:"Salva copia originale",
   saveExportEdited:"Esporta salvataggio modificato",
@@ -216,6 +224,8 @@ de:{
   historyCollection:"Collection",
   historyWorld:"World Editor",
   saveManager:"Spielstand",
+  saveReading:"Spielstand wird analysiert…",
+  saveParsed:"Spielstand analysiert",
   saveNotParsed:"Datei ausgewählt (noch nicht analysiert oder bearbeitet)",
   saveBackupOriginal:"Original sichern",
   saveExportEdited:"Bearbeiteten Spielstand exportieren",
@@ -259,6 +269,8 @@ de:{
   historyCollection:"Collection",
   historyWorld:"World Editor",
   saveManager:"Partida guardada",
+  saveReading:"Analizando la partida…",
+  saveParsed:"Partida analizada",
   saveNotParsed:"Archivo seleccionado (sin analizar ni editar)",
   saveBackupOriginal:"Guardar copia del original",
   saveExportEdited:"Exportar partida editada",
@@ -302,6 +314,8 @@ de:{
   historyCollection:"Collection",
   historyWorld:"World Editor",
   saveManager:"存档文件",
+  saveReading:"正在解析存档…",
+  saveParsed:"存档已解析",
   saveNotParsed:"已选择文件（尚未解析或编辑）",
   saveBackupOriginal:"备份原始文件",
   saveExportEdited:"导出编辑后的存档",
@@ -345,6 +359,8 @@ de:{
   historyCollection:"Collection",
   historyWorld:"World Editor",
   saveManager:"Arquivo de save",
+  saveReading:"Analisando save…",
+  saveParsed:"Save analisado",
   saveNotParsed:"Arquivo selecionado (não analisado nem editado)",
   saveBackupOriginal:"Fazer backup do original",
   saveExportEdited:"Exportar save editado",
