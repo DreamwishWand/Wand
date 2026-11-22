@@ -190,6 +190,70 @@ shards and a versioned manifest; the old catalog, icon GUIDs and eight exact
 current-version names are unchanged. The private original Tag overlay is
 stored alongside the audited DB-01 release in the owner's SRC-01 Drive folder.
 
+### Final 40 Steam Collection Activity/Crafting source predicates (current originals)
+
+The verified Steam 1.26.2 `CollectionSet` contains **12** `CollectionActivity`
+conditions and **28** `CollectionCrafting` conditions. The new offline
+`resolve_collection_remaining.py` checks the current
+`CollectionSet.json`, `Tag.json`, `ActivityItem.json`,
+`ActivityData.json`, SHA-256-pinned full private 39,067-definition SQLite,
+and independently pinned **matching-version IL2CPP field declarations**.
+
+For Activity, it resolves original `CropItemData.Tags` gameplay tags,
+`MealItemData.MealType`, `IngredientItemData.CookingIngredientType`,
+and verified `ActivityItemType` values for Fish, Flower, Mineral and
+CraftingMaterial. For Crafting, it traces current
+`CraftingRecipeItemData.RecipeType` through
+`CraftingRecipeItemData.Types.ResultInstance.ItemID` to the exact
+current canonical result item. **19 of the 28 original Crafting selectors
+are `Ignore=true`**; these are recorded only as negative exclusions.
+Same CollectionSet/group negatives are applied to this producer's positive
+candidates and supplied to DB-00 to suppress the corresponding
+Furniture/Clothing source-universe predicate matches.
+
+Independent full-original audit of the current private release:
+
+- **40 / 40** remaining selectors have source-exact interpretation.
+- **2,050** current Item IDs have positive predicate candidate links
+  (**2,073** positive links); **88** IDs have original negative recipe
+  evidence (**358** negative links). The union is **2,052** Item IDs,
+  preserving overlap. **32** same-group positive matches were suppressed
+  by negative recipe evidence.
+- Combining negative recipe evidence with the earlier Furniture/Clothing
+  **6,087** source predicates removes **35** same-group links, leaving
+  **6,052** Furniture/Clothing *source-predicate candidates*. The earlier
+  count remains the unfiltered original-universe source overlay.
+- All **257 private assets** match their manifest SHA-256, the complete
+  current SQLite identities and the original source-file hashes.
+- Together, the three source predicate readers parse **262/262 original
+  dynamic selectors** (124 Furniture/Clothing, 98
+  Character/Memory/Figurine/Pet/Sidekick, 40 Activity/Crafting).
+
+```sh
+python tools/db-01-items/resolve_collection_remaining.py \
+  --sqlite /owner/private/complete-1262.sqlite \
+  --original-dir /owner/private/steam-1262/itemlist \
+  --il2cpp-dump /owner/private/steam-1262/Il2CppDump/dump.cs \
+  --expected-sqlite-sha256 <trusted SQLite SHA256> \
+  --expected-il2cpp-sha256 <trusted original dump SHA256> \
+  --out /owner/private/db01-1262-activity-crafting
+```
+
+The read-only TypeScript `src/lib/items/collection-remaining.ts` returns
+`getItem(id)`, `getItems(ids)` and `getSelectors()`, preserving
+`positive` candidate links and `negative` exclusion links **separately**.
+The opt-in private DB-00 bridge combines same-set/group negative Crafting
+filters with the existing source-universe candidate records; it does not
+turn unknown UI category/subcategory, DLC ownership or obtainable-world
+fields into asserted values.
+
+**Boundary:** 262/262 represents decoded, current-original selector
+*static source conditions*. It is NOT a guarantee of complete actual game
+Collection menu membership: the runtime's visibility, collection state,
+progress/unlock and other transient rules still require separate validation.
+The source-original datasets and generated overlay remain owner-private,
+never part of a public Pages deployment.
+
 ### Current Steam Collection character/memory/figurine/pet/sidekick predicates
 
 `resolve_collection_special.py` independently pins the owner-private current

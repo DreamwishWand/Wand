@@ -187,3 +187,64 @@ test('DB-00 exposes source predicate matches while keeping game UI category/worl
     {...universe,getItems:async()=>[[{...candidate,nativeCategory:'Clothing'}]]}),
     /UNIVERSE_PREDICATE_ITEM_MISMATCH/);
 });
+
+
+test('DB-00 crafting negative predicate suppresses same-set original furniture universe candidate',async()=>{
+  const existing={...record,itemId:40002116,nativeCategory:'Furniture'};
+  const current={...client,source:{...source,sourceItemsSha256:sha},
+    getCategory:async category=>category==='Furniture'?[existing]:[]};
+  const universe={
+    source:{gameVersion:'1.26.2',sourceItemsSha256:sha,sourceDefinitionCount:3,
+      sourceSqliteSha256:'a'.repeat(64),
+      sourceIl2cppDumpSha256:'b'.repeat(64)},
+    getItems:async ids=>ids.map(()=>[{
+      setId:2120000024,groupIndex:0,nativeCategory:'Furniture',
+      sourceSetItemId:2040000009,universeTagId:2000500001,
+      universeTagKey:'Mickey',
+      sourcePredicateMatched:true,gameUiMembershipVerified:false,
+    }]),
+  };
+  const excluded={
+    collectionSetId:2120000024,groupIndex:0,selectorIndex:1,
+    criterion:2001100008,criterionName:'TimeBending!ShardFurniture',
+    sourceRecipeItemId:2050300548,
+    sourceRule:'source_crafting_recipe_type_and_result_item_id',
+    evidence:'current_original_activity_or_crafting_predicate',
+    negative:true,gameUiMembershipVerified:false,
+  };
+  const crafting={
+    source:{gameVersion:'1.26.2',sourceItemsSha256:sha,definitionCount:3,
+      sourceSqliteSha256:'c'.repeat(64),
+      sourceIl2cppDumpSha256:'d'.repeat(64)},
+    getItems:async ids=>ids.map(()=>({
+      itemId:existing.itemId,nativeCategory:'Furniture',sourceSha256:sha,
+      positive:[],negative:[excluded],
+    })),
+  };
+  const result=await createDb01Db00Patch(current,target,
+    undefined,undefined,undefined,universe,crafting);
+  assert.equal(result.patch.items.length,1);
+  const data=result.patch.items[0];
+  assert.equal(data.attributes.gameOriginalCollectionUniversePredicateMatches,undefined);
+  assert.equal(data.attributes.gameOriginalCollectionActivityCraftingSource.positive.length,0);
+  assert.equal(data.attributes.gameOriginalCollectionActivityCraftingSource.negativeExclusions.length,1);
+  assert.equal(data.attributes.gameOriginalCollectionActivityCraftingSource.gameUiMembershipVerified,false);
+  assert.equal(result.sourceUniversePredicatesSuppressedByCrafting,1);
+  assert.equal(result.sourceCollectionUniversePredicateCandidatesAdded,0);
+  assert.equal(result.sourceActivityCraftingPredicateEvidenceAdded,1);
+  assert.equal(data.category,null);
+  assert.deepEqual(data.worlds,[]);
+  assert.deepEqual(data.contentIds,[]);
+  assert.equal(result.publishable,false);
+  await assert.rejects(createDb01Db00Patch(current,target,
+    undefined,undefined,undefined,universe,{
+      ...crafting,source:{...crafting.source,gameVersion:'1.25.0'},
+    }),/ACTIVITY_CRAFTING_SOURCE_MISMATCH/);
+  await assert.rejects(createDb01Db00Patch(current,target,
+    undefined,undefined,undefined,universe,{
+      ...crafting,getItems:async ids=>ids.map(()=>({
+        itemId:existing.itemId,nativeCategory:'Clothing',
+        sourceSha256:sha,positive:[],negative:[excluded],
+      })),
+    }),/ACTIVITY_CRAFTING_ITEM_MISMATCH/);
+});
