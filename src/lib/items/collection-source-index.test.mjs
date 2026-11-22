@@ -204,3 +204,53 @@ test('input validation rejects invented menu/submenu and unbounded pages',async(
   await assert.rejects(api.search({limit:1001}),/QUERY_PAGINATION/);
   await assert.rejects(api.search({nativeCategories:['What']}),/QUERY_DIMENSIONS/);
 });
+
+test('source-exact CollectionSet groups can be listed and filtered without UI guesses',async()=>{
+  const f=fixture(),api=createDb01OriginalSourceMenuQuery(f.catalog,f.shared);
+  const groups=await api.getSourceGroups(13);
+  assert.deepEqual(groups.map(x=>[
+    x.collectionSetId,x.groupIndex,x.distinctCandidateItemIds,
+  ]),[[13,0,0],[13,1,1]]);
+  assert.equal(groups[0].originalSetKey,'Furniture!Two');
+  assert.equal(groups[0].gameRuntimeMembershipVerified,false);
+  assert.equal((await api.getCoverage()).originalSourceGroups,4);
+  assert.deepEqual((await api.search({sourceGroups:[
+    {collectionSetId:13,groupIndex:0},
+  ]})).itemIds,[]);
+  assert.deepEqual((await api.search({sourceGroups:[
+    {collectionSetId:13,groupIndex:1},
+  ]})).itemIds,[300]);
+  assert.deepEqual((await api.search({sourceGroups:[
+    {collectionSetId:11,groupIndex:0},
+    {collectionSetId:13,groupIndex:1},
+  ]})).itemIds,[100,200,300]);
+  assert.deepEqual((await api.search({sourceGroups:[
+    {collectionSetId:11,groupIndex:0},
+    {collectionSetId:13,groupIndex:1},
+  ],submenuCodes:[3],collectionSetIds:[13]})).itemIds,[300]);
+  assert.equal((await api.search({sourceGroups:[
+    {collectionSetId:13,groupIndex:1},
+  ],offset:1,limit:1})).hasMore,false);
+  assert.equal((await api.search({sourceGroups:[
+    {collectionSetId:13,groupIndex:1},
+  ]})).sourceOnly,true);
+});
+
+test('source group queries reject unknown or malformed original groups',async()=>{
+  const f=fixture(),api=createDb01OriginalSourceMenuQuery(f.catalog,f.shared);
+  await assert.rejects(api.getSourceGroups(999),/UNKNOWN_COLLECTION_SET/);
+  await assert.rejects(api.search({sourceGroups:[
+    {collectionSetId:13,groupIndex:2},
+  ]}),/UNKNOWN_SOURCE_GROUP/);
+  await assert.rejects(api.search({sourceGroups:[
+    {collectionSetId:999,groupIndex:0},
+  ]}),/UNKNOWN_SOURCE_GROUP/);
+  await assert.rejects(api.search({sourceGroups:[
+    {collectionSetId:13,groupIndex:-1},
+  ]}),/QUERY_DIMENSIONS/);
+  await assert.rejects(api.search({sourceGroups:[
+    {collectionSetId:13,groupIndex:1.5},
+  ]}),/QUERY_DIMENSIONS/);
+  await assert.rejects(api.search({sourceGroups:'not an array'}),
+    /QUERY_DIMENSIONS/);
+});

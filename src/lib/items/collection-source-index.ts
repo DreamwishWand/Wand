@@ -45,10 +45,23 @@ export interface Db01OriginalSourceSubmenuOption{
   readonly distinctCandidateItemIds:number;
   readonly gameRuntimeMembershipVerified:false;
 }
+/** Original CollectionSet groups are source indexes, not translated UI subcategories. */
+export interface Db01OriginalSourceGroupSelection{
+  readonly collectionSetId:number;
+  readonly groupIndex:number;
+}
+export interface Db01OriginalSourceGroupOption extends Db01OriginalSourceGroupSelection{
+  readonly originalSetKey:string;
+  readonly submenu:string;
+  readonly distinctCandidateItemIds:number;
+  readonly gameRuntimeMembershipVerified:false;
+}
 export interface Db01OriginalSourceMenuQuery{
   /** OR within a dimension; AND between set, submenu, native category, facet filters. */
   readonly collectionSetIds?:readonly number[];
   readonly submenuCodes?:readonly number[];
+  /** OR across exact (CollectionSet ID, source group index) pairs. */
+  readonly sourceGroups?:readonly Db01OriginalSourceGroupSelection[];
   readonly nativeCategories?:readonly string[];
   /** Reuses the existing source-exact native ItemType and Tag filter engine. */
   readonly native?:Omit<Db01NativeFilterQuery,'offset'|'limit'>;
@@ -71,6 +84,7 @@ export interface Db01OriginalSourceMenuCoverage{
   readonly catalogCategories:number;
   readonly originalCollectionSetDefinitions:number;
   readonly originalCollectionSubmenus:number;
+  readonly originalSourceGroups:number;
   readonly originalDynamicSelectorsInterpreted:number;
   readonly directListedItemIds:number;
   readonly sourceMatchedDistinctItemIds:number;
@@ -88,6 +102,9 @@ export interface Db01OriginalSourceMenuQueryClient{
   getCoverage():Promise<Readonly<Db01OriginalSourceMenuCoverage>>;
   getCollectionSets():Promise<readonly Readonly<Db01OriginalSourceMenuOption>[]>;
   getSubmenus():Promise<readonly Readonly<Db01OriginalSourceSubmenuOption>[]>;
+  /** Includes empty source groups, never invents display category labels. */
+  getSourceGroups(collectionSetId:number):
+    Promise<readonly Readonly<Db01OriginalSourceGroupOption>[]>;
   /** Null = unknown Item ID in catalog. Empty = known, no original CollectionSet link. */
   getItemLinks(id:number):Promise<readonly Readonly<Db01SourceMenuLink>[]|null>;
   search(query?:Db01OriginalSourceMenuQuery):
@@ -111,6 +128,7 @@ type Index={
   byId:ReadonlyMap<number,IndexedItem>;
   setOptions:readonly Readonly<Db01OriginalSourceMenuOption>[];
   submenuOptions:readonly Readonly<Db01OriginalSourceSubmenuOption>[];
+  groupOptions:ReadonlyMap<number,readonly Readonly<Db01OriginalSourceGroupOption>[]>;
   sortedMatchedIds:readonly number[];
   coverage:Readonly<Db01OriginalSourceMenuCoverage>;
 };
@@ -168,10 +186,14 @@ export function createDb01OriginalSourceMenuQuery(
     const byId=new Map<number,IndexedItem>();
     const perSet=new Map<number,{all:Set<number>;direct:Set<number>;dynamic:Set<number>}>();
     const perSubmenu=new Map<number,Set<number>>();
+    const perGroup=new Map<string,Set<number>>();
     const submenuNames=new Map<number,string>();
     let suppressed=0,defined=0,directUnique=0,dynamicUnique=0;
     for(const menu of sourceMenus){
       perSet.set(menu.setId,{all:new Set(),direct:new Set(),dynamic:new Set()});
+      check(nonneg(menu.groupCount)&&menu.groupCount<=4096,'INVALID_SOURCE_GROUP_COUNT');
+      for(let n=0;n<menu.groupCount;n++)
+        perGroup.set(menu.setId+':'+n,new Set());
       perSubmenu.set(menu.submenuCode,perSubmenu.get(menu.submenuCode)??new Set());
       const older=submenuNames.get(menu.submenuCode);
       check(older===undefined||older===menu.submenu,'CONFLICTING_NATIVE_SUBMENU');
@@ -218,6 +240,7 @@ export function createDb01OriginalSourceMenuQuery(
             matches.set(setId,record);
           }
           record.groups.add(group);
+          perGroup.get(setId+':'+group)!.add(item.itemId);
           return record;
         }
         const direct=item.collection.direct;
@@ -287,6 +310,17 @@ export function createDb01OriginalSourceMenuQuery(
         distinctCandidateItemIds:ids.size,
         gameRuntimeMembershipVerified:false as const,
       })).sort((a,b)=>a.submenuCode-b.submenuCode);
+    const groupOptions=new Map<number,readonly Readonly<Db01OriginalSourceGroupOption>[]>();
+    for(const menu of sourceMenus){
+      groupOptions.set(menu.setId,Object.freeze(Array.from(
+        {length:menu.groupCount},(_,groupIndex)=>Object.freeze({
+          collectionSetId:menu.setId,groupIndex,
+          originalSetKey:menu.setKey,submenu:menu.submenu,
+          distinctCandidateItemIds:perGroup.get(menu.setId+':'+groupIndex)!.size,
+          gameRuntimeMembershipVerified:false as const,
+        })
+      )));
+    }
     const matchedIds=[...byId].filter(([,item])=>item.links.length>0)
       .map(([itemId])=>itemId).sort((a,b)=>a-b);
     check(sourceMenus.length===options.length&&
@@ -296,6 +330,7 @@ export function createDb01OriginalSourceMenuQuery(
       ...source,catalogDefinitions:defined,catalogCategories:categories.length,
       originalCollectionSetDefinitions:options.length,
       originalCollectionSubmenus:submenus.length,
+      originalSourceGroups:perGroup.size,
       originalDynamicSelectorsInterpreted:prior.sourceDynamicSelectorsResolved,
       directListedItemIds:directUnique,
       sourceMatchedDistinctItemIds:matchedIds.length,
@@ -311,6 +346,7 @@ export function createDb01OriginalSourceMenuQuery(
     return {
       byId,
       setOptions:Object.freeze(options),submenuOptions:Object.freeze(submenus),
+      groupOptions,
       sortedMatchedIds:Object.freeze(matchedIds),coverage,
     };
   }
@@ -324,10 +360,14 @@ export function createDb01OriginalSourceMenuQuery(
     const sets=query.collectionSetIds??[];
     const subs=query.submenuCodes??[];
     const nativeCategories=query.nativeCategories??[];
+    const sourceGroups=query.sourceGroups??[];
     check(Array.isArray(sets)&&sets.length<=305&&sets.every(id)&&
       Array.isArray(subs)&&subs.length<=64&&subs.every(nonneg)&&
       Array.isArray(nativeCategories)&&nativeCategories.length<=categories.length&&
-      nativeCategories.every(c=>categories.includes(c)),
+      nativeCategories.every(c=>categories.includes(c))&&
+      Array.isArray(sourceGroups)&&sourceGroups.length<=4096&&
+      sourceGroups.every(g=>g!==null&&typeof g==='object'&&
+        id(g.collectionSetId)&&nonneg(g.groupIndex)),
       'QUERY_DIMENSIONS');
     const offset=query.offset??0,limit=query.limit??100;
     check(nonneg(offset)&&offset<=1_000_000&&nonneg(limit)&&limit<=1000,
@@ -335,6 +375,7 @@ export function createDb01OriginalSourceMenuQuery(
     check(query.native===undefined||native!==undefined,
       'NATIVE_TAG_FACETS_NOT_CONNECTED');
     return {sets:new Set(sets),submenus:new Set(subs),
+      groups:new Set(sourceGroups.map(g=>g.collectionSetId+':'+g.groupIndex)),
       cats:new Set(nativeCategories),offset,limit};
   }
   async function search(
@@ -348,6 +389,10 @@ export function createDb01OriginalSourceMenuQuery(
     for(const submenu of q.submenus)
       check(i.submenuOptions.some(v=>v.submenuCode===submenu),
         'UNKNOWN_SUBMENU');
+    for(const group of q.groups)
+      check([...i.groupOptions.values()].some(options=>
+        options.some(v=>v.collectionSetId+':'+v.groupIndex===group)),
+        'UNKNOWN_SOURCE_GROUP');
     let nativeIds:Set<number>|null=null;
     if(raw.native){
       nativeIds=new Set<number>();
@@ -369,7 +414,9 @@ export function createDb01OriginalSourceMenuQuery(
       if(nativeIds&&!nativeIds.has(id))continue;
       const linked=item.links.some(l=>
         (!q.sets.size||q.sets.has(l.collectionSetId))&&
-        (!q.submenus.size||q.submenus.has(l.submenuCode)));
+        (!q.submenus.size||q.submenus.has(l.submenuCode))&&
+        (!q.groups.size||l.groupIndexes.some(g=>
+          q.groups.has(l.collectionSetId+':'+g))));
       if(!linked)continue;
       if(total>=q.offset&&selected.length<q.limit)selected.push(id);
       total++;
@@ -383,6 +430,12 @@ export function createDb01OriginalSourceMenuQuery(
       dlcOwnershipVerified:false as const,
     });
   }
+  async function getSourceGroups(collectionSetId:number){
+    check(id(collectionSetId),'COLLECTION_SET_ID');
+    const groups=(await index()).groupOptions.get(collectionSetId);
+    check(groups,'UNKNOWN_COLLECTION_SET');
+    return groups;
+  }
   async function getItemLinks(itemId:number){
     check(id(itemId),'ITEM_ID');
     const data=(await index()).byId.get(itemId);
@@ -393,6 +446,6 @@ export function createDb01OriginalSourceMenuQuery(
     getCoverage:async()=>(await index()).coverage,
     getCollectionSets:async()=>(await index()).setOptions,
     getSubmenus:async()=>(await index()).submenuOptions,
-    getItemLinks,search,
+    getSourceGroups,getItemLinks,search,
   });
 }
