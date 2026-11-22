@@ -6,17 +6,22 @@
   import {loadStarpathDailyLocales,starpathDailyDescription} from '$lib/guide/public-starpath-daily.mjs';
   import {starpathRewardDisplayName,loadStarpathRewardExtras} from '$lib/guide/starpath-reward-extras.mjs';
   import {loadStarpathMedia,starpathMediaThumbnail} from '$lib/guide/starpath-public-media.mjs';
+  import {guideCalendarEvents,activeScheduleStarpaths} from '$lib/guide/event-calendar.mjs';
+  import {actionableStarpathTask} from '$lib/guide/starpath-task-guidance.mjs';
 
   let catalog:any=null, weeklyLocales:any=null, dailyLocales:any=null, rewardExtras:any=null, publicMedia:any=null, error='', loading=true;
   let locale='ja';
   const languages=[['ja','日本語'],['en','English'],['fr','Français'],['it','Italiano'],['de','Deutsch'],['es-ES','Español'],['pt-BR','Português'],['zh-CN','简体中文']];
   let selectedId='HauntingElegance2026';
+  let now=Date.now();
   let tab:'tasks'|'weekly'|'rewards'='tasks';
   let query='';
   let rewardQuery='';
   let rewardTier:'all'|'free'|'premium'='all';
   let limit=60;
-  $: season=catalog?.seasons?.find((s:any)=>s.id===selectedId);
+  $: activeIds=catalog?new Set(activeScheduleStarpaths(guideCalendarEvents(catalog),now).map((e:any)=>e.sourceSeasonId)):new Set<string>();
+  $: availableSeasons=catalog?.seasons?.filter((s:any)=>activeIds.has(s.id))||[];
+  $: season=availableSeasons.find((s:any)=>s.id===selectedId)||availableSeasons[0];
   $: rewardRows=season?[...season.rewardPages.flatMap((p:any)=>p.rewards),...season.bonusPages.flatMap((p:any)=>p.rewards),...season.vaultRewards]:[];
   $: filtered=season?.tasks?.filter((t:any)=>(starpathDailyDescription(dailyLocales,season.id,t.id,locale)||t.description||'').toLowerCase().includes(query.toLowerCase().trim())
       ||(t.description||'').toLowerCase().includes(query.toLowerCase().trim())
@@ -54,7 +59,12 @@
     catch(e){error=e instanceof Error?e.message:String(e)}
     finally{loading=false;}
   }
-  onMount(()=>{void load()});
+  onMount(()=>{
+    now=Date.now();
+    const clock=setInterval(()=>{now=Date.now()},60000);
+    void load();
+    return ()=>clearInterval(clock);
+  });
 </script>
 
 <svelte:head>
@@ -65,8 +75,9 @@
   <header>
     <div class="eyebrow">DREAMWISH WAND · GUIDE</div>
     <h1>スターパスガイド</h1>
-    <p>Steam v1.26.2環境で保存された、2026年11月22日時点のキャッシュに基づく静的定義です。</p>
-    <p class="disclaimer">キャッシュは開催中であること、タスクが解放済みであること、アイテムを所持していることの証明ではありません。通常タスク146件・週間タスク39件の説明と確認済み報酬名はゲーム原本の8言語に対応しています。</p>
+    <p>現在の公式発表日程でタスク期間内にあるスターパスのみ、ガイドの対象として表示します。</p>
+    <a class="guide-back" href="{base}/guide/">Guide・イベントカレンダーへ</a>
+    <p class="disclaimer">表示期間は公式発表とSteamの保存済み日程を照合したものです。ゲームサーバーの即時開催状態は未取得です。タスクの解放や達成状況も取得していません。タスクの具体的な操作説明は原本の文言とは別に検証し、未確認の解答は推測で埋めません。</p>
   </header>
   {#if loading}
     <p role="status">キャッシュ定義を検証しています…</p>
@@ -75,11 +86,12 @@
     <button on:click={load}>再読み込み</button>
   {:else if catalog}
     <div class="seasons" role="group" aria-label="シーズンを選択">
-      {#each catalog.seasons as s}
-        <button class:selected={s.id===selectedId} on:click={()=>changeSeason(s.id)} aria-pressed={s.id===selectedId}>{s.title}</button>
+      {#each availableSeasons as s}
+        <button class:selected={s.id===season?.id} on:click={()=>changeSeason(s.id)} aria-pressed={s.id===selectedId}>{s.title}</button>
       {/each}
     </div>
     <label class="language">表示言語 <select bind:value={locale} aria-label="スターパスの表示言語">{#each languages as [code,name]}<option value={code}>{name}</option>{/each}</select></label>
+    {#if !availableSeasons.length}<p role="status">現在の日程上、タスク期間内と確認できるスターパスはありません。過去の保存キャッシュだけを根拠に開催中とは表示しません。</p>{/if}
     {#if season}
       <section class="summary" aria-label="シーズン情報">
         <div><span>開始日時</span><strong>{date(season.startUtc)}</strong></div>
@@ -101,17 +113,17 @@
         </div>
         <ul class="entries">
           {#each filtered.slice(0,limit) as t (t.id)}
-            <li><strong>{starpathDailyDescription(dailyLocales,season.id,t.id,locale)||'説明未確認'}</strong><small>{t.objectiveKind} · {t.id} · {t.tokenReward} {season.currencyName}{t.availableOnDay!==undefined?' · 解放設定日 '+t.availableOnDay:''}</small></li>
+            <li><strong>{actionableStarpathTask(season.id,t,locale==='ja'?'ja':'en')?.action||'達成方法は検証中'}</strong><small>{actionableStarpathTask(season.id,t,locale==='ja'?'ja':'en')?'確認済みの具体的な操作 · ':'解答未確認 · '}ゲーム内表記：{starpathDailyDescription(dailyLocales,season.id,t.id,locale)||'説明未確認'}</small><small>{t.objectiveKind} · {t.id} · {t.tokenReward} {season.currencyName}{t.availableOnDay!==undefined?' · 解放設定日 '+t.availableOnDay:''}</small></li>
           {/each}
         </ul>
         {#if filtered.length>limit}<button class="more" on:click={()=>limit+=60}>さらに表示</button>{/if}
       {:else if tab==='weekly'}
-        <p class="hint">週間タスクの説明はゲーム原本のLocDBと照合した正式な表記です。地域によって文章や数値が異なる場合も、原文をそのまま表示します。</p>
+        <p class="hint">週間タスクも具体的な操作・謎解きの答えを優先して表示します。未検証のものは解答を創作せず、ゲーム内文言を参考情報として併記します。</p>
         {#each season.weeklyTasks as week,i}
           <section class="week"><h2>第{i+1}週</h2>
             <ul class="entries">
               {#each week as t (t.id)}
-                <li><strong>{starpathWeeklyDescription(weeklyLocales,t.descriptionKey,locale)||'説明未確認'}</strong><small>{t.objectiveKind} · {t.id} · {t.tokenReward} {season.currencyName}</small></li>
+                <li><strong>{actionableStarpathTask(season.id,t,locale==='ja'?'ja':'en')?.action||'達成方法は検証中'}</strong><small>{actionableStarpathTask(season.id,t,locale==='ja'?'ja':'en')?'確認済みの具体的な操作 · ':'解答未確認 · '}ゲーム内表記：{starpathWeeklyDescription(weeklyLocales,t.descriptionKey,locale)||'説明未確認'}</small><small>{t.objectiveKind} · {t.id} · {t.tokenReward} {season.currencyName}</small></li>
               {/each}
             </ul>
           </section>
@@ -158,6 +170,7 @@
   header h1{font-size:clamp(28px,4vw,42px);margin:10px 0}
   header>p{font-size:14px;color:#c7bbd2;line-height:1.8}
   .eyebrow{font-size:11px;font-weight:700;letter-spacing:.18em;color:#caa6ed}
+  .guide-back{display:inline-block;color:#d2b5f0;font-size:12px;margin-bottom:8px}
   .disclaimer,.hint{font-size:12px!important;color:#c0afce!important}
   .seasons,.tabs{display:flex;gap:9px;flex-wrap:wrap;margin:23px 0}
   .language{display:inline-flex;align-items:center;gap:10px;font-size:12px;color:#dfcfed}.language select{padding:9px;background:#251e31;color:#fff;border:1px solid #66537e;border-radius:9px}
