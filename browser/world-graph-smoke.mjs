@@ -415,6 +415,44 @@ try{
     .filter({hasText:'指定Item IDの初期配置はありません'}).waitFor();
   assert.equal(await page.getByRole('button',{name:'次の一致'}).count(),0);
 
+  // Search the entire local partial ORIGINAL source by Item ID without
+  // knowing any original layout or grid in advance. Two layouts reuse
+  // item 100 but own distinct Grid IDs and source-local X/Y positions.
+  const globalItemQuery=page.getByRole('searchbox',{
+    name:'すべての原本GridからItem IDを探す'
+  });
+  await globalItemQuery.fill('100');
+  await page.getByRole('button',{name:'原本全Gridを検索'}).click();
+  await page.getByRole('status')
+    .filter({hasText:'原本初期配置 1 / 2件'}).waitFor();
+  assert.match(await terrainSelectors.nth(1).locator('option:checked').innerText(),
+    /Village04\/Beach.json/);
+  assert.equal(await terrainSelectors.nth(2).inputValue(),'1');
+  await page.waitForFunction(()=>document.querySelector(
+    '.grid-view button.current')?.getAttribute('aria-label')
+      ==='座標4,5：アンカー1件');
+  await page.getByRole('button',{name:'次の候補'}).click();
+  await page.getByRole('status')
+    .filter({hasText:'原本初期配置 2 / 2件'}).waitFor();
+  assert.match(await terrainSelectors.nth(1).locator('option:checked').innerText(),
+    /OffGridBuildings\/Detached.json/);
+  assert.equal(await terrainSelectors.nth(2).inputValue(),'0');
+  await page.waitForFunction(()=>document.querySelector(
+    '.grid-view button.current')?.getAttribute('aria-label')
+      ==='座標5,5：アンカー1件');
+  await page.getByRole('button',{name:'前の候補'}).click();
+  await page.getByRole('status')
+    .filter({hasText:'原本初期配置 1 / 2件'}).waitFor();
+  assert.equal(await terrainSelectors.nth(2).inputValue(),'1');
+  await globalItemQuery.fill('999');
+  await globalItemQuery.press('Enter');
+  await page.getByRole('status')
+    .filter({hasText:'この部分的な原本ZIPに指定Item IDの初期配置はありません'}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'次の候補'}).count(),0);
+  assert.match(await page.getByRole('status')
+    .filter({hasText:'この部分的な原本ZIPに指定Item IDの初期配置はありません'})
+    .innerText(),/セーブの位置や配置可否は判定しません/);
+
   // The DB-04 UI reuses DB-05's existing Rust/WASM grid-path matcher.
   // Synthetic Save map IDs 19/20/21 are intentionally NOT native Grid.IDs.
   // All private fields remain in the isolated Worker; only count receipts

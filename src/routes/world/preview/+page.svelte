@@ -2,7 +2,7 @@
   import { onDestroy,tick } from 'svelte';
   import {autoAppend} from '$lib/ui/auto-append';
   import NativeGraphExplorer from '$lib/world/NativeGraphExplorer.svelte';
-  import type {OriginalItemAnchorFindResult}
+  import type {OriginalItemAnchorFindResult, GlobalOriginalItemAnchorResult}
     from '$lib/world/native-item-anchor-finder.ts';
   import {matchSourceGridToLocalTerrain,
     type SourceGridNavigationRequest}
@@ -87,6 +87,10 @@
   let anchorFindResult:OriginalItemAnchorFindResult|null=null;
   let anchorFindMessage='';
   let findingAnchor=false;
+  let globalItemSearch='';
+  let globalFindResult:GlobalOriginalItemAnchorResult|null=null;
+  let globalFindMessage='';
+  let findingGlobal=false;
 
   $: regionKeys = [...new Set(layouts.map(a => a.regionKey))].sort();
   $: filteredLayouts = selectedRegion
@@ -134,6 +138,39 @@
     loading = false;
     viewing = false;
     findingAnchor=false;
+    findingGlobal=false;
+  }
+  function resetGlobalFind(clearInput=true){
+    globalFindResult=null;
+    globalFindMessage='';
+    findingGlobal=false;
+    if(clearInput)globalItemSearch='';
+  }
+  function findGlobalOriginalItem(matchIndex=0){
+    const input=globalItemSearch.trim();
+    if(!/^[1-9][0-9]{0,15}$/.test(input)||
+       !Number.isSafeInteger(Number(input))){
+      globalFindResult=null;
+      globalFindMessage='原本Item IDは正の整数で入力してください。';
+      return;
+    }
+    if(!worker||!version){
+      globalFindMessage='先に原本ZIPを読み込んでください。';
+      globalFindResult=null;
+      return;
+    }
+    findingGlobal=true;
+    globalFindMessage='';
+    const id=++requestId;
+    worker.postMessage({command:'find-global-anchor',requestId:id,
+      itemId:Number(input),matchIndex});
+  }
+  function stepGlobalOriginalItem(direction:-1|1){
+    const result=globalFindResult;
+    if(result?.status!=='found'||result.matchedIndex===null||
+       result.matchingOriginalDefaultObjectCount<2)return;
+    const count=result.matchingOriginalDefaultObjectCount;
+    findGlobalOriginalItem((result.matchedIndex+direction+count)%count);
   }
   function resetAnchorFind(clearInput=true) {
     anchorFindResult=null;
@@ -191,6 +228,7 @@
     infoMessage = 'ブラウザ内のWorldデータを破棄しました。';
     terrainLinkNotice='';
     resetAnchorFind();
+    resetGlobalFind();
     if (fileInput) fileInput.value = '';
   }
   onDestroy(stop);
@@ -267,6 +305,7 @@
   }
   function changeLayout() {
     resetAnchorFind();
+    resetGlobalFind();
     const grids = layouts.find(a => a.viewKey === selectedViewKey)?.grids ?? [];
     selectedGridId = grids.length ? String(grids[0].gridIdNative) : '';
     x = 0; y = 0; width = 16; height = 16;
@@ -275,6 +314,7 @@
   }
   function changeGrid() {
     resetAnchorFind();
+    resetGlobalFind();
     x = 0; y = 0; width = 16; height = 16;
     viewport = null;
     requestWindow();
@@ -299,6 +339,7 @@
     infoMessage = '';
     terrainLinkNotice='';
     resetAnchorFind();
+    resetGlobalFind();
     if (!file) return;
     if (!file.name.toLowerCase().endsWith('.zip') ||
         file.size < 22 || file.size > 96 * 1024 * 1024) {
@@ -320,6 +361,7 @@
         loading = false;
         viewing = false;
         findingAnchor=false;
+        findingGlobal=false;
         return;
       }
       if (result.kind === 'loaded') {
@@ -337,6 +379,65 @@
           String(layouts[0].grids[0].gridIdNative) : '';
         infoMessage = 'ローカルZIP内のマニフェスト整合性を確認しました。原本の真正性までは証明していません。';
         if (selectedGridId) requestWindow();
+        return;
+      }
+      if (result.kind==='global-anchor-found'){
+        findingGlobal=false;
+        const match=result.result as GlobalOriginalItemAnchorResult;
+        if(match.contract!=='wand.db04.global-original-item-anchor-finder@1'||
+          match.itemId!==Number(globalItemSearch.trim())){
+          globalFindResult=null;
+          globalFindMessage='原本検索結果と入力値が一致しません。';
+          return;
+        }
+        globalFindResult=match;
+        if(match.status==='found'&&match.sourceLayoutId&&
+           match.nativeGridId!==null&&match.gridDataPath&&
+           match.sourceAnchorX!==null&&match.sourceAnchorY!==null){
+          const candidates=layouts.filter(view=>
+            view.kind==='gridCollection'&&
+            view.layoutId===match.sourceLayoutId&&
+            view.grids.some(grid=>grid.gridIdNative===match.nativeGridId&&
+              grid.gridDataPath===match.gridDataPath&&grid.knownGridData));
+          if(candidates.length!==1){
+            globalFindMessage='原本参照に一致する地形ビューが一意に特定できません。';
+            return;
+          }
+          const view=candidates[0];
+          const grid=view.grids.find(grid=>
+            grid.gridIdNative===match.nativeGridId&&
+            grid.gridDataPath===match.gridDataPath)!;
+          if(!grid.anchorSizeX||!grid.anchorSizeY){
+            globalFindMessage='この原本Gridの座標範囲は未検証です。';
+            return;
+          }
+          selectedRegion=view.regionKey;
+          selectedViewKey=view.viewKey;
+          selectedGridId=String(grid.gridIdNative);
+          resetAnchorFind();
+          const cx=match.sourceAnchorX,cy=match.sourceAnchorY;
+          x=Math.max(0,Math.min(grid.anchorSizeX-1,cx-Math.floor(width/2)));
+          y=Math.max(0,Math.min(grid.anchorSizeY-1,cy-Math.floor(height/2)));
+          viewport=null;
+          globalFindMessage='原本初期配置 '+String(match.matchedIndex!+1)+
+            ' / '+String(match.matchingOriginalDefaultObjectCount)+
+            '件 · GridObject '+String(match.gridObjectIdNative)+
+            ' · ('+cx+', '+cy+')。'+
+            (match.unverifiedOriginalDefaultObjectCount>0
+              ?'他に座標未検証の原本記録'+match.unverifiedOriginalDefaultObjectCount+'件。':'');
+          requestWindow();
+          selectedCell={x:cx,y:cy};
+          void tick().then(()=>terrainPanel?.scrollIntoView({
+            behavior:'smooth',block:'start'}));
+        }else{
+          globalFindMessage=match.status==='not_in_partial_original_source'
+            ?'この部分的な原本ZIPに指定Item IDの初期配置はありません。'
+            :match.status==='source_game_version_unverified'
+            ?'このゲームバージョン・プラットフォームの原本座標は未検証です。'
+            :match.status==='source_anchor_domain_unverified'
+            ?'該当する原本Gridの座標範囲は未検証です。'
+            :'この番号の原本初期配置候補はありません。';
+        }
         return;
       }
       if (result.kind==='anchor-found') {
@@ -454,6 +555,37 @@
     {#if integrity !== 'manifest_sha256_self_consistent_not_original_source_authenticated'}
       <p class="error">未対応の検証状態です。</p>
     {/if}
+    <div class="world-panel">
+      <div class="anchor-find-row">
+        <label>すべての原本GridからItem IDを探す
+          <input type="search" inputmode="numeric"
+            bind:value={globalItemSearch}
+            on:input={()=>resetGlobalFind(false)}
+            on:keydown={event=>{
+              if(event.key==='Enter'&&!findingGlobal&&!viewing){
+                event.preventDefault();
+                findGlobalOriginalItem();
+              }
+            }}
+            placeholder="原本全GridのItem ID"/>
+        </label>
+        <button type="button" disabled={!worker||findingGlobal||viewing}
+          on:click={()=>findGlobalOriginalItem()}>
+          原本全Gridを検索
+        </button>
+        {#if globalFindResult?.status==='found'&&
+          globalFindResult.matchingOriginalDefaultObjectCount>1}
+          <button type="button" disabled={findingGlobal||viewing}
+            on:click={()=>stepGlobalOriginalItem(-1)}>前の候補</button>
+          <button type="button" disabled={findingGlobal||viewing}
+            on:click={()=>stepGlobalOriginalItem(1)}>次の候補</button>
+        {/if}
+      </div>
+      {#if globalFindMessage}
+        <p class="note" role="status">{globalFindMessage}
+          原本の初期配置のみを検索しています。セーブの位置や配置可否は判定しません。</p>
+      {/if}
+    </div>
     <div class="world-panel" bind:this={terrainPanel}>
       <div class="selector-row">
         <label>原本地域

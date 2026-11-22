@@ -6,7 +6,7 @@
  */
 import { openLocalWorldZip } from './local-snapshot.mjs';
 import { getNativeTerrainWindow } from './catalog.mjs';
-import { findOriginalItemAnchor } from './native-item-anchor-finder.ts';
+import { findOriginalItemAnchor, findOriginalItemAnchorAcrossGrids } from './native-item-anchor-finder.ts';
 import { getSourceAnchorDomain, getTessellatedSourceAnchorWindow } from './native-anchor-domain';
 import {
   listWorldPreviewViews,
@@ -36,7 +36,9 @@ type Request =
   | { command:'view'; requestId:number; viewKey:string;
       gridIdNative:number; rect:Rect; offset:number }
   | { command:'find-anchor'; requestId:number; viewKey:string;
-      gridIdNative:number; itemId:number; matchIndex:number };
+      gridIdNative:number; itemId:number; matchIndex:number }
+  | { command:'find-global-anchor'; requestId:number;
+      itemId:number; matchIndex:number };
 
 interface WorkerScope {
   onmessage: ((event: MessageEvent<unknown>) => Promise<void>) | null;
@@ -64,6 +66,10 @@ function parseRequest(data:unknown): Request {
       throw new TypeError('DB04_WORKER_SOURCE_FILE_REQUIRED');
     return {command:'load',requestId,file:data.file};
   }
+  if(data.command==='find-global-anchor'&&positive(data.itemId)&&
+     nonnegative(data.matchIndex)&&data.matchIndex<=1_000_000)
+    return {command:'find-global-anchor',requestId,
+      itemId:data.itemId,matchIndex:data.matchIndex};
   if (data.command==='find-anchor' &&
       typeof data.viewKey==='string' && data.viewKey.length<=2048 &&
       data.viewKey.length>0 &&
@@ -134,6 +140,12 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
     }
     if (catalog===null)
       throw new TypeError('No selected local World source');
+    if(message.command==='find-global-anchor'){
+      const found=findOriginalItemAnchorAcrossGrids(
+        catalog,message.itemId,message.matchIndex);
+      worker.postMessage({kind:'global-anchor-found',requestId,result:found});
+      return;
+    }
     const sourceView=views.find(view=>view.viewKey===message.viewKey);
     if (!sourceView)
       throw new TypeError('Unknown local World view');
