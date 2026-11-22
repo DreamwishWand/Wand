@@ -523,30 +523,34 @@ mod browser_amount_preview {
         let mut sampled=false;
         let mut inspected=0usize;
         let mut by_item=BTreeMap::<u64,(u32,u32)>::new();
-        let mut scan_objects=|objects:&serde_json::Map<String,serde_json::Value>,
-                              is_diff:bool,removed:&HashSet<String>|{
+        fn scan_objects(
+            objects:&serde_json::Map<String,serde_json::Value>,
+            is_diff:bool,removed:&HashSet<String>,
+            by_item:&mut BTreeMap<u64,(u32,u32)>,
+            inspected:&mut usize,sampled:&mut bool,invalid:&mut usize
+        ){
             for (key,object) in objects {
-                if inspected>=MAX_GRID_OBJECT_SCAN{sampled=true;break;}
-                inspected+=1;
+                if *inspected>=MAX_GRID_OBJECT_SCAN{*sampled=true;break;}
+                *inspected+=1;
                 let parsed=key.parse::<u64>().ok()
                     .filter(|id|id.to_string()==*key);
-                let Some(fields)=object.as_object() else {invalid+=1;continue;};
-                let Some(id)=parsed else {invalid+=1;continue;};
+                let Some(fields)=object.as_object() else {*invalid+=1;continue;};
+                let Some(id)=parsed else {*invalid+=1;continue;};
                 if fields.get("ID").is_some_and(|v|v.as_u64()!=Some(id)){
-                    invalid+=1;continue;
+                    *invalid+=1;continue;
                 }
                 if removed.contains(key){continue;}
                 let Some(item_id)=fields.get("ItemID")
                     .and_then(serde_json::Value::as_u64)
-                    .filter(|v|*v>0) else {invalid+=1;continue;};
+                    .filter(|v|*v>0) else {*invalid+=1;continue;};
                 if !by_item.contains_key(&item_id) &&
                     by_item.len()>=MAX_GRID_ITEM_IDS{
-                    sampled=true;break;
+                    *sampled=true;break;
                 }
                 let counter=by_item.entry(item_id).or_insert((0,0));
                 if is_diff{counter.1+=1;}else{counter.0+=1;}
             }
-        };
+        }
         let status=match collection {
             None=>"not_observed",
             Some(value) if !value.is_object()=>"incompatible_structure",
@@ -575,7 +579,8 @@ mod browser_amount_preview {
                         invalid+=1;continue;
                     };
                     observed_full+=1;
-                    scan_objects(objects,false,&HashSet::new());
+                    scan_objects(objects,false,&HashSet::new(),
+                        &mut by_item,&mut inspected,&mut sampled,&mut invalid);
                 }
                 for (key,value) in diff{
                     if seen>=MAX_GRID_SCAN{sampled=true;break;}
@@ -602,7 +607,8 @@ mod browser_amount_preview {
                             .map(|v|v.to_string()));
                     }
                     observed_diff+=1;
-                    scan_objects(objects,true,&removed);
+                    scan_objects(objects,true,&removed,
+                        &mut by_item,&mut inspected,&mut sampled,&mut invalid);
                 }
                 if sampled||invalid>0{"partial_inconclusive"}
                 else if by_item.is_empty(){"observed_no_item_refs"}
