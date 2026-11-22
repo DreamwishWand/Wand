@@ -24,6 +24,9 @@ test('original cached source is positive but runtime rebuild is unobserved',()=>
   assert.equal(plan.originalNativeProtoDatabaseRefreshCallsLoadBinary,true);
   assert.equal(plan.originalNativeLoadBinaryResolvesSerializedType,true);
   assert.equal(plan.originalNativeExportForBuildCallsSaveBinary,true);
+  assert.equal(plan.originalNativeSaveBinaryChecksProtoDescMessageRuntimeType,true);
+  assert.equal(plan.originalNativeSaveBinaryHasConditionalInterfaceSlotDispatch,true);
+  assert.equal(plan.originalSaveBinaryDispatchedInterfaceIdentityVerified,false);
   assert.equal(plan.originalNativeTrySellPriceUsesProtoDatabaseEnumerator,true);
   assert.equal(plan.originalNativeDirectTransfersToOnBinarize,0);
   assert.equal(plan.originalNativeDirectTransfersToCacheData,1);
