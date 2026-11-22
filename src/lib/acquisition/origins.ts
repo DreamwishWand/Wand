@@ -2,6 +2,7 @@
 import {
   loadPublicStarpath, verifyPublicStarpath, STARPATH_PUBLIC_SHA
 } from '../guide/public-starpath.mjs';
+import {OFFICIAL_CAMPAIGNS} from './official-campaigns.ts';
 
 export const ORIGIN_SCHEMA = 'wand.db02.item-origins@1' as const;
 
@@ -341,4 +342,18 @@ export async function loadStarpathAcquisitionDatabase(
   );
   const {origins, campaigns} = starpathOriginRecords(snapshot);
   return createAcquisitionOriginDatabase(origins, campaigns, native);
+}
+
+/** Source-authenticated DB-03 paths plus independent official campaign history. */
+export async function loadUnifiedAcquisitionOriginDatabase(
+  fetcher: typeof fetch = fetch,
+  native: NativeAcquisitionReader | null = null
+): Promise<OriginDatabase> {
+  const snapshot: unknown = await loadPublicStarpath(
+    '/guide/public/starpath-cache-2026-11-22.json', fetcher
+  );
+  const starpath = starpathOriginRecords(snapshot);
+  return createAcquisitionOriginDatabase(
+    starpath.origins, [...starpath.campaigns, ...OFFICIAL_CAMPAIGNS], native
+  );
 }
