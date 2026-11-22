@@ -1,6 +1,7 @@
 <script lang="ts">
   import { base } from '$app/paths';
   import { gameImageHref } from './game-images';
+  import WandIcon from '$lib/ui/WandIcon.svelte';
   export let itemId:number;
   export let alt:string='';
   export let large:boolean=false;
@@ -13,7 +14,7 @@
   {#if href && !failed}
     <img src={href} alt={alt} loading="lazy" decoding="async" on:error={()=>failed=true} />
   {:else}
-    <span class="fallback" aria-hidden="true">✦</span>
+    <span class="fallback" aria-hidden="true"><WandIcon name="sparkles" size={large?50:20} strokeWidth={1.45}/></span>
   {/if}
 </span>
 <style>
