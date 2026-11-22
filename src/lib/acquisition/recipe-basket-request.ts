@@ -75,7 +75,7 @@ function normalizeOptions(value:RecipeBasketOptions|undefined){
   const options=value??{};
   const expand=options.expandSingleRecipe??true;
   const depth=options.maxDepth??12;
-  if(typeof expand!=='boolean'||!Number.isInteger(depth)||depth<0||depth>24)
+  if(typeof expand!=='boolean'||typeof depth!=='number'||!Number.isInteger(depth)||depth<0||depth>24)
     return invalid('INVALID_OPTIONS');
   const ingredients:Record<string,number>=Object.create(null);
   if(options.ingredientChoices!==undefined){
