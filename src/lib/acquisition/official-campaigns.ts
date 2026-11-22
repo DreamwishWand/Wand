@@ -12,6 +12,11 @@ export const OFFICIAL_CAMPAIGNS: readonly OfficialCampaign[] = Object.freeze([
     name:'2026 Showcase Twitch Drops',
     code:null,productId:null,
     window:{start:'2026-10-21T16:00:00Z',endExclusive:'2026-10-28T16:00:00Z'},
+    windowEvidence:[{
+      window:{start:'2026-10-21T16:00:00Z',endExclusive:'2026-10-28T16:00:00Z'},
+      officialUrl:'https://disneydreamlightvalley.com/twitch-drops',
+      checkedOn:'2026-11-22',status:'published_schedule'
+    }],
     conditions:['Link Twitch and game account','Watch partnered creators',
       '60 / 90 cumulative viewing minutes according to the 2026-10-21 original Drops campaign page'],
     rewards:[
@@ -54,6 +59,14 @@ export const OFFICIAL_CAMPAIGNS: readonly OfficialCampaign[] = Object.freeze([
     code: null,
     productId: null,
     window: {start:'2026-11-18T14:00:00Z',endExclusive:'2026-12-03T05:00:00Z'},
+    windowEvidence:[
+      {window:{start:'2026-11-18T14:00:00Z',endExclusive:'2026-12-03T05:00:00Z'},
+        officialUrl:'https://disneydreamlightvalley.com/twitch-drops',
+        checkedOn:'2026-11-22',status:'published_schedule'},
+      {window:{start:'2026-11-18T14:00:00Z',endExclusive:'2026-11-26T05:00:00Z'},
+        officialUrl:'https://disneydreamlightvalley.com/news/TheKeepsakeSea2026',
+        checkedOn:'2026-11-22',status:'conflicting_official_announcement'}
+    ],
     conditions: ['Link Twitch and game account', 'Watch eligible creators',
       'Claim on Twitch and redeem from in-game mailbox',
       'Official Twitch campaign page specifies December 2 end',
