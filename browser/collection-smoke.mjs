@@ -4,6 +4,9 @@ import { readFile } from 'node:fs/promises';
 import { createHash, createCipheriv } from 'node:crypto';
 import { deflateRawSync } from 'node:zlib';
 import { chromium } from 'playwright';
+import {
+  makeCollectionDb04ZipFixture,TEST_DB04_LAYOUT,TEST_DB04_GRID
+} from '../tests/helpers/collection-db04-zip-fixture.mjs';
 
 // One synthetic P1G, never a real user's save. Browser e2e verifies that
 // decoded native discovery booleans flow through Worker -> Rust/WASM -> IDB.
@@ -339,7 +342,10 @@ try{
         '2':{ID:2,ItemID:40005160,X:1},
         '3':{ID:3,ItemID:40005160,X:2}
       }}},
-      DiffGrids:{'6':{ID:6,RemovedObjects:[5],ModifiedObjects:{
+      DiffGrids:{'6':{ID:6,
+        GridDefaultLayoutPath:TEST_DB04_LAYOUT,
+        GridDataPath:TEST_DB04_GRID,
+        RemovedObjects:[5],ModifiedObjects:{
         '5':{ID:5,ItemID:40003256},
         '7':{ID:7,ItemID:40006110}
       }}}
@@ -378,6 +384,26 @@ try{
   // an unobserved owned/missing status in the local Collection backup.
   assert.equal(stateAfter['40005160'].quantity,7);
   assert.equal(stateAfter['40006110'].status,undefined);
+  // Exact-path join uses an independently selected local native DB-04 ZIP.
+  // It re-opens the selected synthetic P1G in a second isolated Worker:
+  // neither source nor save is uploaded or written to Collection state.
+  const worldZip=makeCollectionDb04ZipFixture();
+  await page.locator('input[aria-label="DB-04 原本ZIPで初期配置との差分を照合"]')
+    .setInputFiles({name:'synthetic-db04.zip',mimeType:'application/zip',buffer:worldZip});
+  const joinStatus=page.getByRole('status').filter({hasText:'原本パスによる照合'});
+  await joinStatus.first().waitFor({timeout:25000});
+  const joinText=await joinStatus.first().innerText();
+  assert.match(joinText,/1\s*\/\s*2保存グリッド/);
+  assert.match(joinText,/原本オブジェクト参照 3件/);
+  assert.match(joinText,/差分適用後の参照 3件/);
+  assert.match(await page.getByRole('region',{name:'セーブ内の家具配置参照'}).innerText(),
+    /原本の初期参照 1件/);
+  assert.match(await page.locator('.item-inspector').innerText(),
+    /DB-04の完全一致パスで照合したグリッドの参照/);
+  const postJoinBackup=page.waitForEvent('download');
+  await page.getByRole('button',{name:'バックアップ出力'}).click();
+  const joinSavedState=JSON.parse(await readFile(await (await postJoinBackup).path(),'utf8'));
+  assert.deepEqual(joinSavedState.workspaces.find(x=>x.id==='local-1').entries,stateAfter);
 
   await context.close();
   console.log('Collection browser WASM/IndexedDB/migration/search/paging smoke passed');
