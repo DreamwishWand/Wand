@@ -203,6 +203,21 @@ The first query scans just the current `ActivityItem`, `Furniture`,
 caches an on-demand original-source index. No game images or raw assets
 are added to public Git.
 
+**Current owner-private release prerequisite (2026-11-22):** the 33,627-row
+historical v2 shard ZIP is a *partial* corpus, with
+`sourceItemsSha256=f809dc5aa378...`, and cannot be combined with the
+current 39,067-row original Tag/IL2CPP overlays
+(`sourceItemsSha256=de579d94fa10...`). A new full
+`db01-steam-v1262-full-catalog-typescript-v2-private.zip` in the
+owner's SRC-01 Drive folder was regenerated from the SHA-pinned
+39,067-row SQLite `cbc00db793c8...`. It has 13,202 native inventory
+definitions, 38 source categories, 111,088 source-exact localized names,
+and all 303 assets (256 ID, 38 category, 8 locale, manifest) audited
+against the original SQLite row-by-row and content SHA-256. Use **this**
+full v2 catalog with the current Tag and IL2CPP overlays. Prior partial
+releases are kept only for provenance/rollback and must fail closed on
+version+source fingerprint mismatch. Never publish this private ZIP to Pages.
+
 ```ts
 const filter=createDb01NativeFacetFilterClient(catalog,tagClient,typeClient);
 const groups=await filter.getSubtypeOptions('Furniture');
