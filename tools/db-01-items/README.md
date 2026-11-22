@@ -208,12 +208,19 @@ const shared = createDb01SharedItemClient({
 const item = await shared.getItem(itemId);
 const many = await shared.getItems(itemIds); // maximum 4096 per call
 const coverage = shared.getCoverage();
+const menus = await shared.getSourceMenus(); // original CollectionSubMenu set definitions
 ```
 
 An item result preserves original 8-language names, icon GUID and native
 identity, the current IL2CPP exact item class/subtype when connected,
 original Tag facets, directly listed CollectionSet associations,
-and all source-predicate matches from the 262 current selectors. **Static
+and all source-predicate matches from the 262 current selectors. Each
+source-predicate candidate also references the verified original
+`CollectionSet` definition: `sourceMenu.submenu` and
+`sourceMenu.collectionLabelKey` identify the source Collection sub-menu
+without falsely claiming that the item is unlocked/visible there.
+When the optional CollectionSet source is not connected,
+`sourceMenu` is `null`, not an inferred label. **Static
 candidate matches and explicit negative Crafting source filters remain
 separate**: `item.collection.candidates` contains retained positive source
 matches; `item.collection.suppressed` retains the matched original predicate
