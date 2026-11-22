@@ -211,6 +211,23 @@ try{
     console.error('DB04_MOBILE_OVERFLOW_DIAGNOSTICS '+JSON.stringify(mobileLayout));
   assert.equal(mobileLayout.documentWidth<=mobileLayout.screenWidth+2,true,
     'DB-04 source graph mobile horizontal overflow');
+  await page.setViewportSize({width:320,height:720});
+  const narrowLayout=await page.evaluate(()=>{
+    const width=window.innerWidth;
+    return {width,actual:document.documentElement.scrollWidth,
+      offenders:[...document.querySelectorAll('body *')].map(el=>{
+        const r=el.getBoundingClientRect();
+        return {tag:el.tagName.toLowerCase(),
+          className:typeof el.className==='string'?el.className.slice(0,90):'',
+          left:Math.round(r.left),right:Math.round(r.right),
+          width:Math.round(r.width)};
+      }).filter(row=>row.width>0&&row.right>width+2)
+        .sort((a,b)=>b.right-a.right).slice(0,12)};
+  });
+  if(narrowLayout.actual>narrowLayout.width+2)
+    console.error('DB04_NARROW_MOBILE_OVERFLOW '+JSON.stringify(narrowLayout));
+  assert.equal(narrowLayout.actual<=narrowLayout.width+2,true,
+    'DB-04 320px mobile horizontal overflow');
   await panel.getByRole('button',{name:'原本参照グラフを破棄'}).click();
   assert.equal(await panel.locator('.graph-result-head').count(),0);
   assert.equal(await panel.locator('.graph-controls').count(),0);
