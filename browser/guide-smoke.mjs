@@ -310,12 +310,26 @@ try {
   assert.match(await star.locator('.week').nth(2).innerText(),/輝きの浜辺で魚を25匹釣る/);
   await star.getByRole('button',{name:'報酬'}).click();
   assert.equal(await star.locator('.week').count(),4);
-  assert.match(await star.locator('.hint').first().innerText(),/報酬画像はSRC-04の正式な公開後/);
+  assert.equal(await star.locator('.reward-entry').count(),17,
+    'all 10 original, 1 bonus and 6 Vault rewards must render as cards');
+  assert.equal(await star.locator('.reward-provenance').evaluate(el=>el.open),false,
+    'source technical caveats should not consume card space by default');
+  await star.locator('.reward-provenance summary').click();
+  assert.match(await star.locator('.reward-provenance').innerText(),/SRC-04の正式公開後/);
+  assert.equal(await star.locator('.reward-source').first().evaluate(el=>el.open),false,
+    'raw item IDs should stay collapsed');
+  assert.match(await star.locator('.reward-entry').first().innerText(),/×1/);
+  assert.match(await star.locator('.reward-entry').first().innerText(),/プレミアム/);
+  assert.match(await star.locator('.reward-entry').first().innerText(),/100 Doubloon Tokens/,
+    'reward price must show the actual source token currency');
+  await star.locator('.reward-source summary').first().click();
+  assert.match(await star.locator('.reward-source').first().innerText(),/120000253/);
   assert.equal(await star.locator('.reward-entry img').count(),0,'non-public SRC04 must not render images');
   assert.match(await star.locator('.week').first().innerText(),/アクアマーメイドバックパック/);
   assert.match(await star.locator('.week').first().innerText(),/サル（大尉）/);
   assert.match(await star.locator('.week').first().innerText(),/ムーンストーン/);
   assert.match(await star.locator('.week').first().innerText(),/モチーフ（正式名称なし）/);
+  assert.equal(await star.locator('.reward-grid').count(),4,'render 4 distinct reward groups');
   assert.match(await star.locator('.summary').innerText(),/700 ムーンストーン/);
   await chooseLanguage(star,'en');
   assert.match(await star.locator('.week').first().innerText(),/Aqua Mermaid Backpack/);
@@ -326,6 +340,7 @@ try {
   const rewardTier=star.getByRole('combobox',{name:'報酬の入手枠'});
   await rewardSearch.fill('Lieutenant Monkey');
   assert.equal(await star.locator('.reward-entry').count(),1,'localized reward name search');
+  assert.match(await star.locator('.reward-entry .reward-name').innerText(),/Lieutenant Monkey/);
   await rewardTier.selectOption('free');
   assert.equal(await star.locator('.reward-entry').count(),0,'free tier excludes premium monkey');
   assert.match(await star.getByRole('status').innerText(),/一致する報酬はありません/);
@@ -335,6 +350,8 @@ try {
   await rewardTier.selectOption('free');
   assert.equal(await star.locator('.reward-entry').count(),1,'free Moonstone excludes paid and recurrent');
   assert.match(await star.locator('.reward-entry').innerText(),/Moonstone/);
+  assert.match(await star.locator('.reward-entry').innerText(),/×100/,
+    'source reward quantity is not hidden in the token price');
   await rewardSearch.fill('');
   await rewardTier.selectOption('all');
   assert.equal(await star.locator('.week').count(),4,'all reward pages restored');
