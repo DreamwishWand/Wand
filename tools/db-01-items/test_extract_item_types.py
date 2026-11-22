@@ -127,8 +127,7 @@ public const TagItemType Universe = 5;
         with self.assertRaisesRegex(ValueError,'DUPLICATE_ENUM_ENTRY'):
             enums.decode_enums(text)
         with self.assertRaisesRegex(ValueError,'ITEMTYPE_MISSING'):
-            enums.decode_enums(text.replace('ItemType //','NotItemType //').replace(
-                'public const ItemType','public const NotItemType'))
+            enums.decode_enums(dumped({'TagItemType':[('Universe',5)]}).decode())
 
     def test_no_overwrite_and_no_private_bytes_to_checkout(self):
         self.build()
