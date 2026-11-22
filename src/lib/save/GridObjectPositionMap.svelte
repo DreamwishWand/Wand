@@ -17,6 +17,7 @@
     (ordinals:readonly number[],dx:number,dy:number)=>boolean=()=>false;
   let placing=false;
   let groupMode=false;
+  let groupPlacing=false;
   let groupOrdinals:number[]=[];
   let groupOffsetX='0';
   let groupOffsetY='0';
@@ -62,6 +63,8 @@
   }
   function choose(marker:Marker){
     if(groupMode){
+      // A changed selection needs an explicit new destination click.
+      groupPlacing=false;
       // Same-point objects must be selected as a unit on the map;
       // the original coordinates and unique ordinals are not altered.
       const allSelected=marker.ordinals.every(id=>groupOrdinals.includes(id));
@@ -116,6 +119,7 @@
     if(onStageGroupMove([...groupOrdinals],groupDeltaX,groupDeltaY)){
       groupOrdinals=[];
       groupMode=false;
+      groupPlacing=false;
       groupIssue='';
     }else{
       groupIssue='選択済みの編集と重複している可能性があります。';
@@ -140,8 +144,9 @@
     return max===min?50:5+90*(value-min)/(max-min);
   }
   function proposal(event:MouseEvent){
-    if(!placing||disabled||!currentRows.some(row=>
-      row.localOrdinal===selectedOrdinal&&hasCoordinates(row)))return;
+    if(disabled||(!placing&&!groupPlacing))return;
+    if(placing&&!selectedInGrid)return;
+    if(groupPlacing&&(!groupMode||groupOrdinals.length<2))return;
     const rect=event.currentTarget instanceof HTMLElement
       ?event.currentTarget.getBoundingClientRect():null;
     if(!rect||rect.width<=0||rect.height<=0)return;
@@ -150,9 +155,24 @@
     const ty=(clamp((event.clientY-rect.top)/rect.height)-0.05)/0.9;
     const x=Math.round(xBounds.min+tx*(xBounds.max-xBounds.min));
     const y=Math.round(yBounds.min+ty*(yBounds.max-yBounds.min));
-    if(Number.isSafeInteger(x)&&Number.isSafeInteger(y)&&
-       x>=I32_MIN&&x<=I32_MAX&&y>=I32_MIN&&y<=I32_MAX)
-      onDraftMove(x,y);
+    if(!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||
+       x<I32_MIN||x>I32_MAX||y<I32_MIN||y>I32_MAX)return;
+    if(groupPlacing){
+      // The first selected saved object is the anchor. No native Grid
+      // coordinate conversion or collision assumption is made here.
+      const anchor=points.find(row=>row.localOrdinal===groupOrdinals[0]);
+      if(!anchor)return;
+      const dx=x-anchor.x,dy=y-anchor.y;
+      if(!moveCandidates(points,groupOrdinals,String(dx),String(dy))){
+        groupIssue='選択した配置をその移動先へ移動できません。';
+        return;
+      }
+      groupOffsetX=String(dx);
+      groupOffsetY=String(dy);
+      groupIssue='';
+      return;
+    }
+    onDraftMove(x,y);
   }
 
   $: grids=summarize(rows);
@@ -177,6 +197,7 @@
     lastRows=rows;
     groupOrdinals=[];
     groupMode=false;
+    groupPlacing=false;
     groupIssue='';
   }
   $: groupDeltaX=offsetNumber(groupOffsetX);
@@ -197,7 +218,8 @@
     <select id="save-grid-map-select" aria-label="表示するセーブGrid"
       bind:value={selectedGrid} disabled={disabled||grids.length===0}
       on:change={()=>{
-        placing=false;groupMode=false;groupOrdinals=[];groupIssue='';
+        placing=false;groupMode=false;groupPlacing=false;
+        groupOrdinals=[];groupIssue='';
       }}>
       {#each grids as grid}
         <option value={grid.id}>
@@ -210,14 +232,17 @@
     <button type="button" class="placement-mode"
       aria-pressed={placing}
       disabled={disabled||!selectedInGrid}
-      on:click={()=>{placing=!placing;groupMode=false;groupOrdinals=[];}}>
+      on:click={()=>{
+        placing=!placing;groupMode=false;groupPlacing=false;groupOrdinals=[];
+      }}>
       {placing?'移動先の指定を終了':'移動先をマップで指定'}
     </button>
     <button type="button" class="placement-mode"
       aria-pressed={groupMode}
       disabled={disabled||points.length<2}
       on:click={()=>{
-        groupMode=!groupMode;placing=false;groupOrdinals=[];groupIssue='';
+        groupMode=!groupMode;placing=false;groupPlacing=false;
+        groupOrdinals=[];groupIssue='';
       }}>
       {groupMode?'複数選択を終了':'複数配置を一括移動'}
     </button>
@@ -226,8 +251,9 @@
     <div class="coordinate-plane" role="group"
       aria-label="保存済みX/Y座標の相対表示">
       <button type="button" class="placement-surface"
-        aria-label="マップ上で移動先を指定"
-        disabled={disabled||!placing||!selectedInGrid}
+        aria-label={groupPlacing?'グループの移動先をマップで指定':'マップ上で移動先を指定'}
+        disabled={disabled||!((placing&&selectedInGrid)||
+          (groupPlacing&&groupMode&&groupOrdinals.length>=2))}
         on:click={proposal}></button>
       <div class="x-axis">X {xBounds.min} ～ {xBounds.max}</div>
       <div class="y-axis">Y {yBounds.min} ～ {yBounds.max}</div>
@@ -282,6 +308,12 @@
             aria-label="グループ移動Y" disabled={disabled} />
         </label>
         <button type="button" class="placement-mode"
+          aria-pressed={groupPlacing}
+          disabled={disabled||groupOrdinals.length<2}
+          on:click={()=>{groupPlacing=!groupPlacing;groupIssue='';}}>
+          {groupPlacing?'マップ指定を終了':'グループの移動先をマップで指定'}
+        </button>
+        <button type="button" class="placement-mode"
           disabled={disabled||!groupReady}
           on:click={stageGroup}>
           選択した{groupOrdinals.length}件を座標編集に追加
@@ -289,7 +321,9 @@
         {#if groupOrdinals.length>0}
           <button type="button" class="placement-mode"
             disabled={disabled}
-            on:click={()=>{groupOrdinals=[];groupIssue='';}}>
+            on:click={()=>{
+              groupOrdinals=[];groupPlacing=false;groupIssue='';
+            }}>
             選択を解除
           </button>
         {/if}
@@ -298,7 +332,7 @@
           <small>移動量を確認してください。0移動、整数範囲外、または未確認座標は登録できません。</small>
         {/if}
       </div>
-      <small class="map-hint">同一Gridのマーカーを選択します。座標が重複する配置は同時選択されます。移動量は各オブジェクトの元座標に加算され、相対位置は変わりません。編集キューへ追加してもセーブは変更されません。</small>
+      <small class="map-hint">同一Gridのマーカーを選択します。座標が重複する配置は同時選択されます。マップ指定では最初に選択した配置をクリック位置へ移動する移動量を算出します。相対位置は変わらず、編集キューへ追加してもセーブは変更されません。</small>
     {/if}
     {#if draftIsChanged&&draftX!==null&&draftY!==null}
       <small class="map-hint" role="status">
