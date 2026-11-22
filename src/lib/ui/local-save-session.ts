@@ -30,3 +30,8 @@ export function updateCollectionRead(revision:number,status:Exclude<LocalSaveRea
   state.set(current);
   if(status==='parsed'||status==='invalid')completedRevision=revision;
 }
+
+/** Reject responses from a file that has since been replaced or closed. */
+export function isCurrentLocalSaveSelection(revision:number,file:File):boolean{
+  return current.revision===revision && current.file===file;
+}

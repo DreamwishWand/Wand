@@ -721,6 +721,63 @@ try{
   await page.locator('.shell-save-status').getByText(/解析済み/).waitFor({timeout:15000});
   await page.getByRole('button',{name:'ファイルを閉じる'}).click();
   assert.equal(await page.getByRole('button',{name:'セーブファイルを読み込む'}).count(),1);
+
+  // A slow old File.arrayBuffer() must not apply its evidence after the user
+  // chooses a different file or closes the session. The new file's validity
+  // and current Collection records must win, not a late old Worker reply.
+  await page.locator('.search-box input[type="search"]').fill('40005160');
+  await page.waitForFunction(()=>document.querySelectorAll('.item-state-toggle').length===1);
+  const raceBefore=await readLocalState(page);
+  assert.equal(raceBefore.workspaces.find(x=>x.id==='local-1').entries['40005160'].status,'owned');
+  await page.locator('.item-state-toggle').first().click();
+  await waitForLocalState(page,{item:'40005160',status:'missing'});
+  await page.evaluate(()=>{
+    window.__saveBusySignals=[];
+    window.addEventListener('wand:collection-busy',event=>
+      window.__saveBusySignals.push(event.detail));
+    const native=File.prototype.arrayBuffer;
+    File.prototype.arrayBuffer=function(...args){
+      if(this.name.startsWith('stale-pending-')){
+        return new Promise((resolve,reject)=>{
+          window.__releaseStaleSave=()=>native.apply(this,args).then(resolve,reject);
+        });
+      }
+      return native.apply(this,args);
+    };
+  });
+  const globalSaveInput=page.locator('input[aria-hidden="true"][accept*=".profile"]');
+  await globalSaveInput.setInputFiles({
+    name:'stale-pending-replaced.profile',mimeType:'application/octet-stream',buffer:fixture
+  });
+  await page.waitForFunction(()=>typeof window.__releaseStaleSave==='function');
+  assert.deepEqual(await page.evaluate(()=>window.__saveBusySignals),[true],
+    'the save read must not announce Finished before the Worker even starts');
+  assert.equal(await page.getByRole('combobox',{name:'ローカル記録を選択'}).isDisabled(),true);
+  await globalSaveInput.setInputFiles({
+    name:'replacement-invalid.profile',mimeType:'application/octet-stream',
+    buffer:Buffer.from('{"invalid":','utf8')
+  });
+  await page.getByRole('button',{name:'セーブファイル管理'}).click();
+  await page.locator('.shell-save-status').getByText(/対応するセーブファイル/).waitFor({timeout:30000});
+  await page.evaluate(async()=>{await window.__releaseStaleSave();await Promise.resolve();});
+  await waitForLocalState(page,{item:'40005160',status:'missing'});
+  assert.match(await page.locator('.shell-save-filename').innerText(),/replacement-invalid\.profile/);
+  assert.deepEqual(await page.evaluate(()=>window.__saveBusySignals),[true,false,true,false],
+    'a replacement must close the prior read exactly once and open/finish the next');
+  await page.getByRole('button',{name:'ファイルを閉じる'}).click();
+
+  // A second delayed read gets its own release callback; the first callback
+  // must not accidentally satisfy the second wait.
+  await page.evaluate(()=>{window.__releaseStaleSave=undefined;});
+  await globalSaveInput.setInputFiles({
+    name:'stale-pending-closed.profile',mimeType:'application/octet-stream',buffer:fixture
+  });
+  await page.waitForFunction(()=>typeof window.__releaseStaleSave==='function');
+  await page.getByRole('button',{name:'セーブファイル管理'}).click();
+  await page.getByRole('button',{name:'ファイルを閉じる'}).click();
+  await page.evaluate(async()=>{await window.__releaseStaleSave();await Promise.resolve();});
+  await waitForLocalState(page,{item:'40005160',status:'missing'});
+  assert.equal(await page.getByRole('button',{name:'セーブファイルを読み込む'}).count(),1);
   await context.close();
   console.log('Collection browser WASM/IndexedDB/migration/search/paging/history/shared-save smoke passed');
 } finally {
