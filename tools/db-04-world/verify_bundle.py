@@ -12,6 +12,7 @@ import re
 import sys
 from pathlib import Path
 
+from local_anchor_audit import audit_anchor_envelopes
 from terrain_codec import (describe_native_packing, count_packed_palette_indices,
                            describe_native_direct_floor_types,
                            DIRECT_JSON_SOURCE_FORMAT)
@@ -244,6 +245,10 @@ def validate_snapshot(directory):
         "counts": {key: len(value) for key, value in families.items()},
         "missingSourceReferences": warnings[:200],
         "missingSourceReferenceCount": len(warnings),
+        "nativeAnchorEnvelopeEvidence": audit_anchor_envelopes(
+            list(families["layouts"].values()),
+            list(families["grids"].values()),
+            list(families["layoutObjects"].values())),
         "note": "Integrity proof does not mean complete game coverage or verified placement legality",
     }
 
