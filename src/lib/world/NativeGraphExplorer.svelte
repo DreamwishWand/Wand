@@ -2,6 +2,9 @@
   import {onDestroy} from 'svelte';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import SaveGridPathAudit from './SaveGridPathAudit.svelte';
+  import type {SourceGridNavigationRequest} from './native-grid-navigation.ts';
+
+  export let onOpenSourceGrid:((selection:SourceGridNavigationRequest)=>void)|undefined=undefined;
   import type {
     Db04GraphBrowserCatalog, Db04GraphBrowserPage,
     Db04GraphScope, Db04GraphOption
@@ -98,6 +101,18 @@
       scopeId=matches[0]?.id??'';
       page=null;pageOffset=0;
     }
+  }
+  function navigateGrid(){
+    if(!catalog||scope!=='grid'||!activeOption||
+      activeOption.nativeGridId===null||
+      activeOption.gridDataPath===null)return;
+    onOpenSourceGrid?.({
+      sourceGameVersion:catalog.sourceGameVersion,
+      sourceWorldManifestSha256:catalog.sourceWorldManifestSha256,
+      layoutId:activeOption.layoutId,
+      nativeGridId:activeOption.nativeGridId,
+      gridDataPath:activeOption.gridDataPath
+    });
   }
   function chooseSourceOption(event:Event){
     scopeId=(event.currentTarget as HTMLSelectElement).value;
@@ -227,6 +242,13 @@
         {/if}
       </p>
     {/if}
+    {#if scope==='grid'&&activeOption?.nativeGridId!==null&&
+      activeOption?.gridDataPath&&onOpenSourceGrid}
+      <button type="button" class="graph-open-terrain"
+        on:click={navigateGrid}>
+        <WandIcon name="map" size={17}/>地形ビューに表示
+      </button>
+    {/if}
     {#if activeOption}
       <p class="graph-note source-link">
         {#if activeOption.gridDataPath}GridDataPath: {activeOption.gridDataPath}{/if}
@@ -303,6 +325,7 @@
   select,input[type=search]{box-sizing:border-box;min-width:0;max-width:100%;width:100%;padding:8px;background:#292039;color:#eee7f6;border:1px solid #ffffff32;border-radius:8px;font:inherit}
   .source-link{overflow-wrap:anywhere}
   .graph-search{min-height:36px}
+  .graph-open-terrain{margin-top:10px}
   .graph-result-head{margin-top:16px;font-size:12px;color:#d9cce6}
   .graph-result-head span{color:#b9aac9}
   .graph-table-wrap{overflow:auto;margin-top:9px;max-height:440px}
