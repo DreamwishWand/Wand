@@ -24,7 +24,8 @@ test('source-pinned Quest target reverse index recovers 4,897 explicit Item-ID p
   assert.equal(createHash('sha256').update(bytes).digest('hex'),DB03_QUEST_TARGET_REVERSE_SHA);
   const data=verifyPublicQuestTargetReverse(raw,catalog);
   assert.equal(data.coverage.distinctItemIds,2551);
-  assert.equal(data.coverage.distinctQuestsWithExplicitCandidates,639);
+  assert.equal(data.coverage.distinctQuestsWithTargetObjectives,639);
+  assert.equal(data.coverage.distinctQuestsWithExplicitCandidates,627);
   assert.equal(data.coverage.directOccurrences,4641);
   assert.equal(data.coverage.alternativeOccurrences,256);
   assert.equal(data.coverage.mandatoryRequirementVerified,false);
