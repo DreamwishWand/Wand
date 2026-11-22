@@ -524,7 +524,7 @@ mod tests{
             "DefaultLayoutGridID":7,"DefaultGridHashCode":19,
             "DefaultGridDataHashCode":-9,
             "ModifiedObjects":{"6":{"ID":6,"ItemID":88,"X":3,"Y":3}}}}
-        }}}}"#;
+        }}}"#;
         let witness=serde_json::json!({
             "contract":"wand.db05.db04-object-source-witness@1",
             "gridRefs":[
