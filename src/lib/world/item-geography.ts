@@ -13,10 +13,12 @@ import type { Db01CatalogClient, Db01Item } from '../items/index.ts';
 import type { Db01Db02Join, Db01Db02JoinResult } from '../items/db02-join.ts';
 import type { Db01UniversePredicateClient, Db01UniversePredicateMatch } from
   '../items/collection-universe.ts';
+import type { Db01ClassificationClient } from '../items/classification.ts';
 import { WorldReferenceIndex, type ItemWorldRelations,
   type NativeAreaReference, type NativeSourceItemReference,
   type WorldIdentity } from './reference-graph.ts';
-import {DB04_NATIVE_SCOPE_CLIENT, type Db04NativeItemScopeClient,
+import {DB04_NATIVE_SCOPE_CLIENT, DB04_WORLD_TAGS,
+  type Db04WorldTag, type Db04NativeItemScopeClient,
   type Db04NativeItemScopeRow} from './native-item-scope.ts';
 
 export const DB04_ITEM_GEOGRAPHY_JOIN = 'wand.db04.item-geography-join@1' as const;
@@ -50,6 +52,22 @@ export interface SourceUniverseReconciliation {
   readonly gameUiVisibilityVerified: false;
   readonly dlcOwnershipVerified: false;
 }
+/**
+ * Exact native Tag reference in the DB-01 39,067-definition source catalog.
+ * A native world-context Tag is neither an item origin nor an acquisition
+ * location, player-save placement, game UI category or DLC entitlement.
+ */
+export interface SourceNativeWorldTagContext {
+  readonly status:'source_native_tag_present'|'no_direct_world_tag_in_source_definition';
+  readonly nativeCategory:string;
+  readonly sourceCategorySha256:string;
+  readonly worldTagKeys:readonly Db04WorldTag[];
+  readonly scopeTagCrosscheck:'matched'|'not_loaded'|'outside_four_item_scope';
+  readonly gameUiMembershipVerified:false;
+  readonly acquisitionLocationVerified:false;
+  readonly dlcOwnershipVerified:false;
+  readonly publicationAuthorized:false;
+}
 export interface WorldItemGeography {
   readonly contract: typeof DB04_ITEM_GEOGRAPHY_JOIN;
   readonly itemId: number;
@@ -65,6 +83,8 @@ export interface WorldItemGeography {
   readonly sourceRelations: ItemWorldRelations;
   /** Exact original itemlist Tag IDs, independent of default GridObjects. */
   readonly originalItemScopeTags: Readonly<Db04NativeItemScopeRow> | null;
+  /** Verified DB-01 original Tag evidence, including non-Collection definitions. */
+  readonly sourceNativeWorldTagContext: SourceNativeWorldTagContext | null;
   /** Null = client not attached; [] = source checked, no predicate match. */
   readonly sourceCollectionUniversePredicateMatches:
     readonly Readonly<Db01UniversePredicateMatch>[] | null;
@@ -88,6 +108,7 @@ export interface Db04ItemGeographyBridge {
     db02Attached: boolean;
     originalItemScopeAttached: boolean;
     collectionUniversePredicatesAttached: boolean;
+    allDefinitionNativeTagsAttached: boolean;
   }>;
   getItem(itemId: number): Promise<WorldItemGeography>;
 }
@@ -110,7 +131,8 @@ export function createDb04ItemGeographyBridge(
   db01:Db01CatalogClient,
   db02:Db01Db02Join|null=null,
   nativeScope:Db04NativeItemScopeClient|null=null,
-  collectionUniverse:Db01UniversePredicateClient|null=null
+  collectionUniverse:Db01UniversePredicateClient|null=null,
+  db01Tags:Db01ClassificationClient|null=null
 ):Db04ItemGeographyBridge{
   check(world instanceof WorldReferenceIndex,'VERIFIED_WORLD_INDEX_REQUIRED');
   check(db01?.source?.privateOnly===true &&
@@ -153,6 +175,19 @@ export function createDb04ItemGeographyBridge(
       typeof collectionUniverse.getItem==='function',
       'DB01_UNIVERSE_PREDICATE_SOURCE_MISMATCH');
   }
+  if(db01Tags!==null){
+    check(db01Tags.source?.privateOnly===true &&
+      db01Tags.source.gameVersion===world.target.gameVersion &&
+      db01Tags.source.sourceItemsSha256===db01.source.sourceItemsSha256 &&
+      db01Tags.source.definitionCount===db01.source.definitions &&
+      SHA.test(db01Tags.source.sourceSqliteSha256) &&
+      SHA.test(db01Tags.source.tagOriginalSha256) &&
+      (collectionUniverse===null ||
+        db01Tags.source.sourceSqliteSha256===
+          collectionUniverse.source.sourceSqliteSha256) &&
+      typeof db01Tags.getItem==='function',
+      'DB01_NATIVE_TAG_SOURCE_MISMATCH');
+  }
   const source=Object.freeze({
     platform:'Steam' as const,
     gameVersion:world.target.gameVersion,
@@ -160,7 +195,8 @@ export function createDb04ItemGeographyBridge(
     db01NativeManifestSha256:db01.source.nativeSourceManifestSha256,
     db02Attached:db02!==null,
     originalItemScopeAttached:nativeScope!==null,
-    collectionUniversePredicatesAttached:collectionUniverse!==null
+    collectionUniversePredicatesAttached:collectionUniverse!==null,
+    allDefinitionNativeTagsAttached:db01Tags!==null
   });
   return Object.freeze({
     contract:DB04_ITEM_GEOGRAPHY_JOIN,
@@ -168,11 +204,13 @@ export function createDb04ItemGeographyBridge(
     async getItem(itemId:number):Promise<WorldItemGeography>{
       check(Number.isSafeInteger(itemId)&&itemId>0,
         'INVALID_ITEM_ID');
-      const [definition,staticDb02Acquisition,rawUniverseMatches]=await Promise.all([
+      const [definition,staticDb02Acquisition,rawUniverseMatches,tagRecord]=
+        await Promise.all([
         db01.getItem(itemId),
         db02===null ? Promise.resolve(null) : db02.getItem(itemId),
         collectionUniverse===null?Promise.resolve(null):
-          collectionUniverse.getItem(itemId)
+          collectionUniverse.getItem(itemId),
+        db01Tags===null?Promise.resolve(null):db01Tags.getItem(itemId)
       ]);
       check(definition===null||definition.itemId===itemId,
         'DB01_ITEM_ID_MISMATCH');
@@ -233,6 +271,45 @@ export function createDb04ItemGeographyBridge(
             dlcOwnershipVerified:false as const,
           });
         })();
+      check((db01Tags===null||((definition===null)===(tagRecord===null))) &&
+        (tagRecord===null||(definition!==null &&
+          tagRecord.itemId===definition.itemId &&
+          tagRecord.nativeCategory===definition.nativeCategory &&
+          tagRecord.nativeKey===definition.nativeKey &&
+          tagRecord.sourceSha256===definition.sourceSha256 &&
+          tagRecord.gameUiCategoryVerified===false &&
+          tagRecord.dlcOwnershipVerified===false &&
+          tagRecord.worldAvailabilityVerified===false)),
+        'DB01_NATIVE_TAG_ORIGINAL_IDENTITY_MISMATCH');
+      const sourceNativeWorldTagContext:SourceNativeWorldTagContext|null=
+        tagRecord===null?null:(()=>{
+          const keys=tagRecord.facets.worldContextTag??[];
+          const known=new Set<string>(DB04_WORLD_TAGS);
+          check(Array.isArray(keys)&&keys.length<=6 &&
+            keys.every(key=>typeof key==='string'&&known.has(key)) &&
+            new Set(keys).size===keys.length,
+            'INVALID_ORIGINAL_WORLD_TAGS');
+          const worldTagKeys=Object.freeze([...keys].sort() as Db04WorldTag[]);
+          if(originalItemScopeTags!==null){
+            const nativeKeys=[...originalItemScopeTags.worldsDirect].sort();
+            check(JSON.stringify(nativeKeys)===JSON.stringify(worldTagKeys),
+              'INDEPENDENT_WORLD_TAG_EVIDENCE_CONFLICT');
+          }
+          return Object.freeze({
+            status:worldTagKeys.length?'source_native_tag_present' as const:
+              'no_direct_world_tag_in_source_definition' as const,
+            nativeCategory:tagRecord.nativeCategory,
+            sourceCategorySha256:tagRecord.sourceSha256,
+            worldTagKeys,
+            scopeTagCrosscheck:nativeScope===null?'not_loaded' as const:
+              originalItemScopeTags===null?'outside_four_item_scope' as const:
+              'matched' as const,
+            gameUiMembershipVerified:false as const,
+            acquisitionLocationVerified:false as const,
+            dlcOwnershipVerified:false as const,
+            publicationAuthorized:false as const
+          });
+        })();
       check(staticDb02Acquisition===null||(
         staticDb02Acquisition.contract==='wand.db01.db02-private-source-join@1' &&
         staticDb02Acquisition.itemId===itemId &&
@@ -276,6 +353,7 @@ export function createDb04ItemGeographyBridge(
         originalDefaultLocations:Object.freeze(originalDefaultLocations),
         sourceRelations:relations,
         originalItemScopeTags,
+        sourceNativeWorldTagContext,
         sourceCollectionUniversePredicateMatches,
         sourceUniverseReconciliation,
         sourceVersionMatched:true,
