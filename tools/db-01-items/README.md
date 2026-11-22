@@ -185,6 +185,56 @@ shards and a versioned manifest; the old catalog, icon GUIDs and eight exact
 current-version names are unchanged. The private original Tag overlay is
 stored alongside the audited DB-01 release in the owner's SRC-01 Drive folder.
 
+### Steam v1.26.2 IL2CPP ItemType and source-exact subtypes
+
+The SHA-verified original `Il2CppDump/dump.cs` defines the authoritative
+`Definitions.Items.ItemType` and native per-class subtype enums.
+`extract_item_types.py` independently pins BOTH the private SQLite
+SHA-256 and the current game's full IL2CPP dump SHA-256, parses the
+`Definitions.Items` enum namespace, and fails closed if ANY of the
+39,067 original source definitions disagrees with the official ItemType
+code inferred from its original numeric ID.
+
+**Observed Steam 1.26.2 coverage (all source-verified records):**
+
+- **39,067 / 39,067** Item IDs agree with the source `ItemType` enum.
+- **28,520** have an exact source subtype name from the matching native enum;
+  **10,547** have a source ItemType but no evidenced subtype label.
+- For source-proved ID associations only, the native top-level ItemType code
+  is the 10,000,000-place prefix; the 100,000-place remainder holds a
+  subtype code when a corresponding original enum is present. Unknown
+  future IDs, Collection-menu category and DLC are NOT inferred.
+- `ActivityItemType` includes `Crop`, `Meal`, `Fish`, `Seed` and
+  `Ingredient`; `FurnitureItemType` includes `Landscaping`,
+  `Fence`, `Door`, etc.; `ClothingItemType` includes `CloTopOuter`,
+  `CloBottomInner` and many more. Original enum names are preserved
+  verbatim instead of guessing user-visible game labels.
+- The existing raw wire field-7/8 subtype **candidate** in the separate
+  Tag overlay remains uninterpreted; it is NOT treated as the original
+  Item ID's encoded subtype.
+
+Use the offline producer with an **independently trusted** Steam 1.26.2
+IL2CPP dump; the original bytes and generated metadata stay owner-private:
+
+```sh
+python tools/db-01-items/extract_item_types.py \
+  --sqlite /owner/private/complete-1262.sqlite \
+  --il2cpp-dump /owner/private/steam-1262/Il2CppDump/dump.cs \
+  --expected-sqlite-sha256 <trusted SQLite SHA256> \
+  --expected-dump-sha256 <trusted IL2CPP dump SHA256> \
+  --out /owner/private/db01-steam-1262-item-types
+```
+
+The TypeScript `src/lib/items/item-types.ts` reads only the requested
+SHA-checked Item-ID buckets, verifies the same-version canonical
+`Db01CatalogClient` source identity, and exposes `getItem(id)`,
+`getItems(ids)`, and exact or explicitly unknown subtype names. In the
+optional private DB-00 join, these are returned through
+`attributes.sourceItemType` and `attributes.sourceSubtype`; they are
+not promoted to unverified `category` or `subcategory` user-menu
+fields. The owner-private original-type overlay has 256 audited shards
+alongside the original DB-01 release in SRC-01 Drive.
+
 ### Item ID numeric-range audit (original-class identity only)
 
 The offline `audit_id_ranges.py` examines **every source-verified Item ID** in
