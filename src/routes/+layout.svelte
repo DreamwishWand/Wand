@@ -6,6 +6,7 @@
   import {page} from '$app/stores';
   import {onMount,tick} from 'svelte';
   import {editHistory,historyView,type HistoryArea} from '$lib/ui/edit-history';
+  import {localSaveSession,selectLocalSaveFile,closeLocalSaveFile} from '$lib/ui/local-save-session';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {shellCopy,type TutorialKey} from '$lib/ui/shell-copy';
   import {afterNavigate} from '$app/navigation';
@@ -26,7 +27,7 @@
   let moreOpen=false;
   let draggingFile=false;
   let dragDepth=0;
-  let selectedSave:File|null=null;
+  $: selectedSave=$localSaveSession.file;
   let saveError='';
   let globalSaveInput:HTMLInputElement;
   let saveRoot:HTMLElement|null=null;
@@ -72,7 +73,7 @@
       saveError=copy.saveInvalid;
       return;
     }
-    selectedSave=file;saveError='';saveMenuOpen=false;
+    selectLocalSaveFile(file);saveError='';saveMenuOpen=false;
   }
   function globalSavePicked(event:Event):void{
     const input=event.currentTarget as HTMLInputElement;
@@ -90,7 +91,7 @@
   }
   function closeSelectedSave():void{
     // Only the untouched File object is held in browser memory.
-    selectedSave=null;saveError='';saveMenuOpen=false;
+    closeLocalSaveFile();saveError='';saveMenuOpen=false;
   }
   function onGlobalDragEnter(event:DragEvent):void{
     if(!event.dataTransfer?.types.includes('Files'))return;
@@ -248,7 +249,9 @@
         {#if selectedSave&&saveMenuOpen}
           <div class="shell-menu shell-save-menu" role="group" aria-label={copy.saveManager}>
             <div class="shell-save-filename" title={selectedSave.name}><WandIcon name="save" size={18}/><span>{selectedSave.name}</span></div>
-            <div class="shell-save-status">{copy.saveNotParsed}</div>
+            <div class="shell-save-status">{$localSaveSession.collectionStatus==='reading'?copy.saveReading:
+              $localSaveSession.collectionStatus==='parsed'?copy.saveParsed:
+              $localSaveSession.collectionStatus==='invalid'?copy.saveInvalid:copy.saveNotParsed}</div>
             <div class="shell-menu-divider"></div>
             <button type="button" on:click={rawSaveBackup}><WandIcon name="download" size={18}/>{copy.saveBackupOriginal}</button>
             <button type="button" disabled title={copy.saveEditUnavailable}><WandIcon name="download" size={18}/>{copy.saveExportEdited}</button>
