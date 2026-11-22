@@ -43,6 +43,32 @@ registration/selection are **not authenticated** by this source join.
 The expression has **not been evaluated** for any arbitrary item.
 No actual ingredient, meal, or other live sell price is established.
 
+
+## SHA-verified source ObjectType and IL2CPP subtype correspondence
+
+The exact original Steam 1.26.2 sell formula's serialized ObjectType
+references the native **ActivityItem / Consummable** subtype. The exact
+original 89,453,137-byte IL2CPP \`dump.cs\`, SHA-256
+\`0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08\`,
+declares \`ItemType.ActivityItem = 3\` and
+\`ActivityItemType.Consummable = 15\`. The 371 independently enumerated
+fixed cooking ingredients belong to the *different* declared native
+ActivityItem subtypes \`Crop = 2\`, \`Fish = 10\`, and
+\`Ingredient = 11\`, with distinct C# item data classes. This is a
+**source-to-metadata taxonomy correspondence**; it is not an execution
+trace of \`GetObjectTypeMetaInfo\`, native formula registration, or any
+runtime price provider. The seven formula-table/cache keyed matches are
+also distinct from the 371 fixed ingredient IDs.
+
+\`native_formula_type_taxonomy.py\` fails closed on the complete original
+IL2CPP dump SHA, matching enum/class declarations and required native
+type API declarations. Pass the optional \`--dump\` flag to
+\`audit_native_sell_formula_source.py\` to enable this second source
+authentication gate; without it, the report explicitly indicates that
+the metadata correspondence was not verified. The result never prints
+source-specific formula IDs, equations or per-item amounts.
+**No actual cooking-item sell price is established.**
+
 ## Local private audit
 
 From a checked-out Wand repository with the **original** Steam 1.26.2
@@ -51,7 +77,8 @@ files supplied privately:
 ```powershell
 py -3 tools/src-02-acquisition/audit_native_sell_formula_source.py `
   --formula "D:\Private\Steam-v1.26.2\ddv_Data\StreamingAssets\itemlist\Formula.json" `
-  --protodb "D:\Private\Steam-v1.26.2\ddv_Data\StreamingAssets\protoDb.bin"
+  --protodb "D:\Private\Steam-v1.26.2\ddv_Data\StreamingAssets\protoDb.bin" `
+  --dump "D:\Private\Steam-v1.26.2\Il2CppDump\dump.cs"
 ```
 
 The script validates complete file SHA-256, 32 frames, native source
