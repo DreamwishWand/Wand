@@ -135,6 +135,7 @@
     <h1>クエストガイド</h1>
     <p>ゲームのクエストを検索し、目標と手順を確認できます。データファイルの準備は不要です。</p>
     <div class="meta">Steam v1.26.2に対応 · 8言語 · 静的クエスト情報</div>
+    <a class="characters-nav" href="{base}/guide/characters/">キャラクター名称索引を開く</a>
   </header>
 
   {#if loading}
@@ -166,7 +167,7 @@
         {#if !selectedRow}
           <p class="placeholder">左の一覧からクエストを選択してください。</p>
         {:else}
-          <div class="detail-header"><span>クエストID {selectedRow.id}</span><h2>{questName(selectedRow,locale)}</h2><p>{characterName(selectedRow.characterId,locale)}</p><a class="quest-permalink" href={`${base}/guide/quests/?quest=${selectedRow.id}`}>このクエストへの直接リンク</a></div>
+          <div class="detail-header"><span>クエストID {selectedRow.id}</span><h2>{questName(selectedRow,locale)}</h2><p><a class="character-link" href={`${base}/guide/characters/?character=${selectedRow.characterId}`}>{characterName(selectedRow.characterId,locale)}</a></p><a class="quest-permalink" href={`${base}/guide/quests/?quest=${selectedRow.id}`}>このクエストへの直接リンク</a></div>
           {#if detailLoading}<p class="status">目標データを検証しています…</p>{/if}
           {#if detailError}<p class="error" role="alert">{detailError}</p>{/if}
           {#if selected}
@@ -241,6 +242,8 @@
   .detail{position:sticky;top:16px;max-height:calc(100vh - 28px);overflow:auto;scrollbar-width:thin}.placeholder,.empty{color:#ac9dbb;padding:20px 4px}
   .detail-header{border-bottom:1px solid #514260;padding:0 0 16px;margin-bottom:16px}.detail-header span{font-size:11px;color:#b79aca}.detail-header h2{font-size:22px;margin:7px 0}.detail-header p{font-size:13px;color:#c9b8db;margin:0}
   .quest-permalink{display:inline-block;margin-top:10px;font-size:12px;color:#d5b4ff;text-underline-offset:3px}
+  .characters-nav{display:inline-block;margin:11px 0 0;font-size:13px;color:#dbbaff;text-underline-offset:3px}
+  .character-link{color:#dbbaff;text-underline-offset:3px}
   .detail-stats{display:flex;flex-wrap:wrap;gap:8px;font-size:12px;color:#d6c1e5;margin-bottom:17px}.detail-stats span{padding:5px 9px;border-radius:8px;background:#30243f}
   .step{border-top:1px solid #40344b;padding:13px 0}.step h3{font-size:15px;margin:0 0 8px}.step p{font-size:13px;color:#c2b4cb}.step ol{margin:0;padding-left:25px}.step li{padding:6px 0 8px;font-size:14px}.step li small{display:block;color:#9588a5;font-size:11px;margin-top:3px}
   .source-amount{color:#c2addc!important}.target-status{color:#c9b0e6;font-size:12px}
