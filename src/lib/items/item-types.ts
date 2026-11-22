@@ -87,7 +87,9 @@ export function validateDb01ItemTypesManifest(value:unknown):
   check(object(value.byNativeCategory) && object(value.subtypeVerifiedByCategory) &&
     object(value.subtypeUnverifiedByCategory) && object(value.files),
     'INVALID_FILE_LEDGER');
-  const byCategory=value.byNativeCategory;
+  const byCategory=value.byNativeCategory as Record<string,unknown>;
+  const subtypeVerified=value.subtypeVerifiedByCategory as Record<string,unknown>;
+  const subtypeUnverified=value.subtypeUnverifiedByCategory as Record<string,unknown>;
   check(Object.keys(byCategory).length>0 &&
     Object.entries(byCategory).every(([category,count])=>
       CAT.test(category) && Number.isSafeInteger(count) && Number(count)>0) &&
@@ -101,8 +103,8 @@ export function validateDb01ItemTypesManifest(value:unknown):
     category in byCategory && Number.isSafeInteger(n) && Number(n)>=0 &&
       Number(n)<=Number(byCategory[category])) &&
     Object.keys(byCategory).every(category=>
-      Number(value.subtypeVerifiedByCategory[category]??0)+
-      Number(value.subtypeUnverifiedByCategory[category]??0)===
+      Number(subtypeVerified[category]??0)+
+      Number(subtypeUnverified[category]??0)===
       Number(byCategory[category])), 'SUBTYPE_CATEGORY_LEDGER');
   const paths=Array.from({length:256},(_,i)=>
     'id/'+i.toString(16).padStart(2,'0')+'.json');
