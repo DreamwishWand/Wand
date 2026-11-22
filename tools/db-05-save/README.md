@@ -1230,3 +1230,75 @@ rejected prior to publishing a WASM result.
 All owner-private save files, source bytes and decoded strings
 remain outside the public artifact. Rust/WASM Writer and
 lossless SaveSession serialization are still **not implemented**.
+
+
+## Owner-private QwX clean versus historical save regression — real decoded originals
+
+The owner's newly created, **no-cheats/no-restricted-object-edits
+declared** Switch v1.26.2 QwX save was compared **privately** with
+three separately kept historical Switch-origin save originals:
+one schema **626** and two schema **643**. Every file passed
+duplicate-JSON-key and unsafe-number validation; the fresh encrypted
+P1G also passed AES/ZIP/CRC checks. The existing **23-rule** clean
+baseline independently reproduced the original QwX counts exactly.
+
+Anonymous real-file comparisons over these 23 fixed templates:
+
+| Other save schema | Cardinality-different fixed templates | Newly observed type differences |
+| --- | ---: | ---: |
+| 626 | 18/23 | 0 |
+| 643 (historical) | 9/23 | 0 |
+| 643 (other) | 0/23 | 0 |
+
+This proves neither that all four profiles belong to the same
+account or continuous gameplay history, nor identical fields,
+absence of cheating, game acceptance or safe writing. The final
+643 original matched **23 structural counts** only, not the full
+save JSON or user progress. Intentional earlier save deletions,
+normal gameplay progression and changes between different player
+accounts are deliberately not conflated.
+Originals and the private per-rule comparison report are **not**
+committed or shipped to GitHub Pages.
+
+`src/lib/save/clean-regression.mjs` now builds a redacted immutable
+snapshot of the **23 clean reference fields**, the **60 editor
+readset templates**, and the **14 Rust/JS internal reference graph
+rules**. `createCleanSaveRegression(cleanRoot,ownerDeclaration)`
+returns `reference` and `compare(candidateRoot)`. A comparison
+emits fixed public labels, anonymous counts and distinct diagnostic
+statuses for changed cardinality, newly unobserved optional fields,
+unexpected observed kinds, reference relation changes, and sampling.
+It NEVER compares private record identifiers for supposed
+cross-account equivalence, promotes a partial source join to
+authoritative, or authorizes save writes/exports.
+
+`tools/db-05-save/clean-regression-cli.mjs` runs the **same**
+checks against encrypted P1G files (regardless of `.json` suffix)
+and previously decoded plaintext JSON (including historical
+`.profile`-named archives). JSON is strictly read with duplicate
+key, UTF-8 and unsafe integer checks, P1G via the existing strict
+read-only Codec. At most eight candidate files are accepted in
+one run. Example local private use:
+
+```bash
+node tools/db-05-save/clean-regression-cli.mjs \
+  --clean /PRIVATE/qwx-initial.profile \
+  --candidate /PRIVATE/older-626.profile \
+  --candidate /PRIVATE/older-643.profile \
+  --out /PRIVATE/clean-vs-older-regression.json \
+  --owner-declared-clean \
+  --owner-declared-no-cheats \
+  --owner-declared-no-restricted-edits
+```
+
+The result includes only anonymous fixed observations and positional
+`candidate_1`, `candidate_2` labels, not original filenames,
+save account strings, IDs, raw values, map keys or paths.
+The CLI refuses public Git output and any overwrite of an
+existing report/input; original saves are never modified.
+All source-verification, entitlement, full strict round-trip,
+actual player object-edit provenance, Writer and export
+permissions remain explicitly false.
+
+CI: `node --test tests/save-clean-regression.test.mjs
+tests/save-clean-regression-cli.test.mjs` (synthetic fixtures only).
