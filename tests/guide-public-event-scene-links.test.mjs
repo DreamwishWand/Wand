@@ -7,7 +7,7 @@ import {verifyPublicEventFriendshipRewards}
 import {
   DB03_EVENT_SCENE_SCHEMA,DB03_EVENT_SCENE_FILE,
   DB03_EVENT_SCENE_BYTES,DB03_EVENT_SCENE_SHA,
-  verifyPublicEventSceneLinks,loadPublicEventSceneLinks
+  verifyPublicEventSceneLinks,loadPublicEventSceneLinks,guideFestivalSceneHref
 } from '../src/lib/guide/public-event-scene-links.ts';
 
 const folder=new URL('../static/guide/public/',import.meta.url);
@@ -139,4 +139,27 @@ test('source flags, false scene IDs, duplicate and internal event entries fail c
   assert.throws(()=>verifyPublicEventSceneLinks(edited,events),/EXPANSION_SCENE_ID/);
   edited=structuredClone(raw);edited.festivals.HauntedFloatingFestival.subscenes=[];
   assert.throws(()=>verifyPublicEventSceneLinks(edited,events),/FESTIVAL/);
+});
+
+test('DB-04 clients can build festival-only Scene deep links from exact authenticated membership',async()=>{
+  const {events,raw}=await inputs();
+  const graph=verifyPublicEventSceneLinks(raw,events);
+  assert.equal(guideFestivalSceneHref(graph,'1540000195','/Wand'),
+    '/Wand/guide/events/?scene=1540000195');
+  assert.equal(guideFestivalSceneHref(graph,1540000252,'Wand'),
+    '/Wand/guide/events/?scene=1540000252');
+  assert.equal(guideFestivalSceneHref(graph,'1540000210','/Wand'),null,
+    'Expansion village Scene is not necessarily a Floating Festival');
+  assert.equal(guideFestivalSceneHref(graph,'0','/Wand'),null);
+  assert.equal(guideFestivalSceneHref(graph,'1540000195x','/Wand'),null);
+  assert.throws(()=>guideFestivalSceneHref(graph,'1540000195','https://example.org'),
+    /DB03_EVENT_SCENE_BASE/);
+  assert.throws(()=>guideFestivalSceneHref(null,'1540000195',''),
+    /DB03_EVENT_SCENE_INDEX_REQUIRED/);
+});
+test('existing public Event UI integrates Scene ID search without a new technical panel',async()=>{
+  const route=await readFile(new URL('../src/routes/guide/events/+page.svelte',import.meta.url),'utf8');
+  assert.match(route,/loadPublicEventSceneLinks\(eventSource,/);
+  assert.match(route,/sceneIndex\?\.getFestivalScenes\(event.id\)/);
+  assert.match(route,/incoming\.length===1&&!params\.has\('item'\)/);
 });
