@@ -136,5 +136,5 @@ test('current DB-02 full catalog calls the verified public Quest loader before u
     new URL('../src/lib/acquisition/current-catalog.ts',import.meta.url),'utf8'
   );
   assert.match(reader,/loadPinnedPublicQuestAcquisition\(basePath,fetcher\)/);
-  assert.match(reader,/basePath,ids,db03NativeRewards,publicQuestRewards/);
+  assert.match(reader,/basePath,ids,db03NativeRewards,\s*publicQuestRewards/);
 });
