@@ -51,7 +51,9 @@ python tools/src-02-acquisition/native_meal_price_probe.py \
 ```
 
 `--extract-only` uses Python standard library only, including on Windows;
-it emits 13 native method-prefix excerpts (**256 bytes by default**;\nuse `--excerpt-bytes 4096` for larger bounded 4-KiB samples, up to 8192)\nand a JSON report
+it emits 13 native method-prefix excerpts (**256 bytes by default**;
+use `--excerpt-bytes 4096` for larger bounded 4-KiB samples, up to 8192)
+and a JSON report
 **only into the existing owner-private output directory**. Without
 `--extract-only`, GNU `objdump` must be on PATH (or passed with
 `--objdump-path`), and it emits assembly-text prefixes instead. The source
