@@ -1,8 +1,4 @@
-/**
- * Browser-Worker-only read-only DDV save diagnostics. Only anonymous
- * DB-05 counts and fixed public labels cross the Worker boundary.
- * Reuse the existing Collection P1G read Codec; no Writer or re-encoding.
- */
+/** Worker-only diagnostics. */
 import { decodeP1gPackagedProfile } from '../collection/private-p1g-codec.js';
 import { parseSafeJson } from '../collection/safe-profile-json.mjs';
 import { makeSaveDiagnosticView } from './diagnostic-view.mjs';
@@ -69,12 +65,7 @@ function sanitizeNativeP1gAudit(raw) {
   });
 }
 
-/**
- * A .profile/.dat/.bin file may contain raw UTF-8 JSON or AES/ZIP P1G.
- * Classify by the actual bytes exclusively inside the Worker, never by a
- * user-controlled filename or the page runtime. Malformed JSON stays JSON
- * (fail closed); it must not silently fall back to P1G.
- */
+/** Sniff file bytes in Worker; never fall back from malformed JSON. */
 export function detectLocalSaveFormat(bytes) {
   if(!(bytes instanceof Uint8Array) || bytes.byteLength===0)
     throw new TypeError('DB05_LOCAL_SOURCE_INVALID');
@@ -85,7 +76,16 @@ export function detectLocalSaveFormat(bytes) {
   return bytes[index]===0x7b?'json':'p1g';
 }
 
-export async function inspectLocalSaveDiagnosticsBytes(format, bytes, verifyNative=null, verifyP1g=null) {
+/**
+ * @param {unknown} format
+ * @param {Uint8Array} bytes
+ * @param {((json:string,root:any)=>Promise<any>)|null} verifyNative
+ * @param {((ciphertext:Uint8Array,json:string)=>Promise<any>)|null} verifyP1g
+ * @param {(bytes:Uint8Array)=>Promise<{jsonText:string}>} decodeEncryptedProfile
+ */
+export async function inspectLocalSaveDiagnosticsBytes(format, bytes, verifyNative=null, verifyP1g=null,decodeEncryptedProfile=decodeP1gPackagedProfile) {
+  if(typeof decodeEncryptedProfile!=='function')
+    throw new TypeError('DB05_LOCAL_NATIVE_PROFILE_READER_REQUIRED');
   if (verifyNative!==null && typeof verifyNative!=='function')
     throw new TypeError('DB05_LOCAL_WASM_CALLBACK_INVALID');
   if (verifyP1g!==null && typeof verifyP1g!=='function')
@@ -102,9 +102,8 @@ export async function inspectLocalSaveDiagnosticsBytes(format, bytes, verifyNati
   }
   let root,strictJsonText;
   if (format === 'p1g') {
-    // Reuses Collection's strict CRC, ZIP, UTF-8, duplicate-key and
-    // unsafe-number verification. The decrypted JSON stays in this Worker.
-    const decoded = await decodeP1gPackagedProfile(bytes);
+    // The production decoder is Rust/WASM; plaintext remains inside Worker.
+    const decoded = await decodeEncryptedProfile(bytes);
     strictJsonText=decoded.jsonText;
     root = JSON.parse(strictJsonText); // text was already strictly validated
   } else {
