@@ -140,6 +140,63 @@ A separately trusted manifest provenance/SHA and the complete independent
 `audit_shards.py` release audit are still required: consistent but forged
 source metadata cannot be authenticated by runtime self-consistency alone.
 
+## Steam v1.26.2 source-exact item classification (original Tag ID metadata)
+
+`extract_classification.py` is the source-verified offline **Python** producer
+for a separate **private** lazy-read overlay. It uses the existing audited
+39,067-definition SQLite v2 as the identity authority, verifies its pinned
+SHA-256, and rejects every original itemlist that differs from that SQLite's
+exact source hash. It decodes original `Tag.json` identifiers (409 source
+definitions), the exact original Tag IDs referenced in supported wire fields,
+the unmodified native key and any uninterpreted numeric subtype codes.
+
+The type-safe **TypeScript** consumer is
+`src/lib/items/classification.ts`; it loads only an item-ID bucket, pins each
+file to the manifest's SHA-256, and compares native category, Item ID, native
+key and source SHA against the existing `Db01CatalogClient`. Its
+`getItem(id)` / `getItems(ids)` calls preserve all source-exact Tag references
+and multiple Disney-universe/source-world-context tags.
+
+The initial current-source verified private output identifies **14,861**
+definitions containing **67,089** original Tag-ID references. Source
+association coverage by group: clothing slot 2,062; furniture kind 6,190;
+Disney-universe 1,966; world-context 11,163; colors 7,663; furniture style
+4,778; clothing style 1,872; ingredient kind 469; meal kind 618. These counts
+overlap. All 39,067 source definitions, including those without a proven Tag
+association, are queryable. An unknown field remains unknown.
+
+To reproduce **from owner-private originals**, supply the audited complete
+SQLite and the game `itemlist` directory. Never put any of these output
+files in the public repo:
+
+```sh
+python tools/db-01-items/extract_classification.py \
+  --sqlite /owner/private/complete-1262.sqlite \
+  --original-dir /owner/private/steam-1262/itemlist \
+  --expected-sqlite-sha256 <independently pinned actual SQLite SHA256> \
+  --out /owner/private/db01-1262-source-tags
+```
+
+Source Tag hashes must match the exact current SQLite ledger. If a reduced
+synthetic SQLite lacks a `Tag` category, additionally supply an independently
+trusted `--expected-tag-sha256`; this is not needed for the complete original
+Steam 1.26.2 release. The output is 256 private SHA-checked on-demand JSON
+shards and a versioned manifest; the old catalog, icon GUIDs and eight exact
+current-version names are unchanged. The private original Tag overlay is
+stored alongside the audited DB-01 release in the owner's SRC-01 Drive folder.
+
+**Evidence boundaries:** `nativeCategory` is a source definition class, not
+necessarily the Collection screen menu; a Tag group is a source-record
+association, not a proved parent/child menu or universally applicable
+ItemType enum. `wireSubtypeCode` is numeric and explicitly uninterpreted.
+An original `IsEternityIsle` tag indicates a *world-context tag*, not a proof
+that an item is obtainable there; a Disney universe tag does **not** assert a
+DLC entitlement or shop availability. No source Tag inference populates
+DB-00's `worlds`/`contentIds`, and unknown UI category/subcategory remain
+`null`. In the opt-in DB-00 join, original tags/facets and subtype codes are
+passed in `attributes`, with multiple verified Disney universe links retained.
+DB-02 owns acquisitions, DB-03 season data and DB-04 world hierarchy.
+
 ## Multi-version update pipeline and SHA-exact original-file reuse
 
 **New version-independent operational entrypoint:** `release_pipeline.py` accepts
