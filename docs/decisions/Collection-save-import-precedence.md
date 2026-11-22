@@ -177,6 +177,8 @@ Even an apparently matching GridObject ID can have been repurposed.
 The result therefore does not claim a global placed count, update
 `status`, `quantity` or `discovered`, or change the P1G. It is held
 ephemerally in the Collection UI, never in IndexedDB or backups.
+The additional DB-04 upload is optional: manual Collection browsing, original
+P1G positive-stock status and discovery imports still function without it.
 
 Current DDV v1.26.2 real-save and exact current DB-04 original-source
 pairing remains outside the public CI synthetic fixtures. Native default
