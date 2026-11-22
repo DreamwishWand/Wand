@@ -368,7 +368,7 @@ body{background:var(--wand-halo),var(--wand-bg);color:var(--wand-text)}
   outline:3px solid var(--wand-focus);outline-offset:2px
 }
 :root .site-shell .shell-more-history{display:none}
-@media(max-width:370px){
+@media(max-width:490px){
   :root .site-shell .shell-history-button{display:none}
   :root .site-shell .shell-more-history{display:flex}
 }
