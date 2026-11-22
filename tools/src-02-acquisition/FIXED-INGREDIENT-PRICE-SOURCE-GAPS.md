@@ -43,13 +43,8 @@ The full row-absence claim is returned only when the caller loaded BOTH the auth
 The Python script audit_fixed_ingredient_price_source_gap_1262.py authenticates the complete source digests, joins every fixed cooking ingredient to the 11 exact original price providers, asserts the aggregate breakdown and prints no original IDs or price amounts.
 
 ~~~powershell
-py -3 tools/src-02-acquisition/audit_fixed_ingredient_price_source_gap_1262.py ^
-  --manifest "D:\Private\SRC-02-r5\manifest.json" ^
-  --recipes "D:\Private\SRC-02-r5\recipes.jsonl" ^
-  --protodb "D:\Private\Steam-v1.26.2\ddv_Data\StreamingAssets\protoDb.bin"
+py -3 tools/src-02-acquisition/audit_fixed_ingredient_price_source_gap_1262.py --manifest "D:\Private\SRC-02-r5\manifest.json" --recipes "D:\Private\SRC-02-r5\recipes.jsonl" --protodb "D:\Private\Steam-v1.26.2\ddv_Data\StreamingAssets\protoDb.bin"
 ~~~
-
-Run this as a single line on PowerShell or use its backtick line continuations; ^ is the CMD continuation character.
 
 Synthetic Python and Node tests run in the SRC-02 Acquisition CI workflow. No proprietary source dataset, individual item IDs, actual price records, original game bytes or player saves are publicly committed.
 
