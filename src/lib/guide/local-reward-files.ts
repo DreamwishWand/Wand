@@ -8,11 +8,11 @@
  */
 import {
   DB03_PRIVATE_REWARD_SOURCE,loadPinnedPrivateGuideRewardIndex
-} from './private-reward-evidence';
+} from './private-reward-evidence.ts';
 import {
   loadVerifiedRewardSourceEquivalence,joinEquivalentCurrentRewardCandidates,
   type CurrentCompatibleRewardReader
-} from './reward-source-equivalence';
+} from './reward-source-equivalence.ts';
 import {GUIDE_SOURCE_COMPOSITE_V2_BYTES} from './source-composite.mjs';
 
 export type LocalRewardFileRole=
