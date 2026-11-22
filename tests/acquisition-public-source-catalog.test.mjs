@@ -25,7 +25,7 @@ function publicFetcher(options={}){
   };
   return {seen,fetcher};
 }
-test('Complete public Steam 1.26.2 DB-02 catalog joins 1127 source-pinned Star Path, Quest, Event, Friendship, Shop and IAP rewards without a private ZIP',async()=>{
+test('Complete public Steam 1.26.2 DB-02 catalog joins 1255 source-pinned Star Path, Quest, Event, Friendship, current and historical Shop and IAP rewards without a private ZIP',async()=>{
   const {seen,fetcher}=publicFetcher();
   const catalog=await loadPublicSourceCatalog('/Wand',fetcher);
   assert.equal(catalog.schema,DB02_PUBLIC_SOURCE_CATALOG_SCHEMA);
@@ -42,10 +42,13 @@ test('Complete public Steam 1.26.2 DB-02 catalog joins 1127 source-pinned Star P
   assert.equal(catalog.coverage.nativeIapDirectRewardRoutes,150);
   assert.equal(catalog.coverage.nativeIapExtendedRewardRoutes,141);
   assert.equal(catalog.coverage.nativeIapSourceRoutes,291);
-  assert.equal(catalog.coverage.combinedSourceRoutes,1127);
-  assert.equal(catalog.origins.getCoverage().linkedRoutes,1127);
+  assert.equal(catalog.coverage.historicalNativeShopOffers,27);
+  assert.equal(catalog.coverage.historicalNativeShopSourceRoutes,128);
+  assert.equal(catalog.coverage.historicalNativeShopDistinctItemIds,120);
+  assert.equal(catalog.coverage.combinedSourceRoutes,1255);
+  assert.equal(catalog.origins.getCoverage().linkedRoutes,1255);
   assert.equal(catalog.origins.getCoverage().routesBySourceKind.verified_game_native,904);
-  assert.equal(catalog.origins.getCoverage().routesBySourceKind.verified_liveops_cache,223);
+  assert.equal(catalog.origins.getCoverage().routesBySourceKind.verified_liveops_cache,351);
   assert.equal(catalog.eventFriendshipSource.origins.length,218);
   assert.equal(catalog.coverage.liveOfferAvailabilityVerified,false);
   assert.equal(catalog.coverage.sourceCoverageComplete,false);
@@ -56,8 +59,9 @@ test('Complete public Steam 1.26.2 DB-02 catalog joins 1127 source-pinned Star P
     catalog.coverage.linkedOutsidePublishedItemIds,
     catalog.coverage.allSourceLinkedItemIds);
   const urlList=new Set(seen);
-  assert.equal(seen.length,22); // pointer + index + 14 shards + 4 Guide + Shop + IAP
-  assert.equal(urlList.size,22);
+  assert.equal(seen.length,23); // pointer + index + 14 shards + 4 Guide + Nov Shop + July Shop + IAP
+  assert.equal(urlList.size,23);
+  assert(seen.some(s=>s.endsWith('/shop-cache-2026-07-15.json')));
   assert(seen.some(s=>s.endsWith('/iap-rewards-1.26.2.json')));
   assert(seen.some(s=>s.endsWith('/shop-cache-2026-11-22.json')));
   assert(seen.some(s=>s.endsWith('/event-friendship-rewards-1.26.2.json')));
@@ -116,6 +120,25 @@ test('Unified lookup separates exact Quest, Event and Friendship Item ID routes 
   assert.equal(discounted.length,2);
   assert(discounted.every(r=>r.price===null&&r.conditions.some(x=>
     x.includes('discount: 10%'))));
+  const history=catalog.historicalNativeShopSource;
+  assert.equal(history.snapshotKey,'Shop20260715');
+  assert.equal(history.coverage.fullGameVersionVerified,false);
+  assert.equal(history.coverage.currentAvailabilityVerified,false);
+  const historicalOffer=history.getOffer('HouseSkin_FishermandHouse');
+  assert(historicalOffer);
+  assert.equal(historicalOffer.configuredAllocationTotal,3000);
+  const historicalOrigin=catalog.lookup('20500136').origins.find(x=>
+    x.campaignId==='native-shop:Shop20260715:HouseSkin_FishermandHouse');
+  assert(historicalOrigin);
+  assert.equal(historicalOrigin.kind,'premium_shop');
+  assert.equal(historicalOrigin.routeStatus,'confirmed_source_link');
+  assert.equal(historicalOrigin.availability,'not_live_verified');
+  assert.equal(historicalOrigin.window.endExclusive,'2026-07-22T13:00:00Z');
+  assert.equal(historicalOrigin.source.gameVersion,null);
+  assert(historicalOrigin.conditions.some(x=>x.includes('full original game build')));
+  assert.equal(catalog.getSourceOrigin(historicalOrigin.originId)[0],historicalOrigin);
+  assert.equal(catalog.getCampaign(historicalOrigin.campaignId)?.productId,
+    'HouseSkin_FishermandHouse');
   const iap=catalog.nativeIapSource.getPackage('Expansion4PackDeluxeEdition');
   assert(iap);
   assert.equal(iap.rewards.length,5);
@@ -169,6 +192,9 @@ test('Public-only startup rejects corrupt source-pinned DB-00 and Guide bytes; u
   await assert.rejects(loadPublicSourceCatalog(
     '/Wand',publicFetcher({corrupt:'iap-rewards-1.26.2.json'}).fetcher
   ),/PUBLIC_SHA/);
+  await assert.rejects(loadPublicSourceCatalog(
+    '/Wand',publicFetcher({corrupt:'shop-cache-2026-07-15.json'}).fetcher
+  ),/PROJECTION_SHA/);
   const noFetch=async()=>{throw new Error('SHOULD_NOT_FETCH');};
   await assert.rejects(loadPublicSourceCatalog('/Wand/../exfil',noFetch),
     /INVALID_BASE_PATH/);
