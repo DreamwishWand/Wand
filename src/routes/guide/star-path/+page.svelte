@@ -28,6 +28,18 @@
   $: availableSeasons=catalog?.seasons?.filter((s:any)=>activeIds.has(s.id))||[];
   $: season=availableSeasons.find((s:any)=>s.id===selectedId)||availableSeasons[0];
   $: rewardRows=season?[...season.rewardPages.flatMap((p:any)=>p.rewards),...season.bonusPages.flatMap((p:any)=>p.rewards),...season.vaultRewards]:[];
+  $: rewardGroups=season?[
+    ...season.rewardPages.map((page:any)=>({
+      key:'normal-'+page.page,title:'報酬ページ '+page.page,
+      rewards:page.rewards,minPurchased:page.minPurchasedFromPreviousPage
+    })),
+    ...season.bonusPages.map((page:any)=>({
+      key:'bonus-'+page.page,
+      title:'ボーナスページ '+page.page+(page.currencyConversionPage?'（通貨交換）':''),
+      rewards:page.rewards,minPurchased:page.minPurchasedFromPreviousPage
+    })),
+    {key:'vault',title:'Vault報酬',rewards:season.vaultRewards,minPurchased:undefined}
+  ]:[];
   $: filtered=season?filterStarpathTasks(season.id,season.tasks,{
     query,locale,
     descriptionOf:(t:any)=>starpathDailyDescription(dailyLocales,season.id,t.id,locale),
@@ -55,10 +67,6 @@
       const alt=r.alternateItemId?starpathRewardDisplayName(r.alternateItemId,language,extras)||'':'';
       return [r.itemId,r.alternateItemId||'',label,alt].join(' ').toLocaleLowerCase().includes(needle);
     });
-  }
-  function item(r:any,language:string){
-    const name=starpathRewardDisplayName(r.itemId,language,rewardExtras);
-    return (name||'名称未確認')+' · ID '+r.itemId+' · '+r.amount+'個'+(r.price!==undefined?' · 価格 '+r.price:'')+(r.premium?' · プレミアム':'')+(r.recurrent?' · 繰り返し':'');
   }
   async function load(){
     loading=true;error='';goalWarning='';goalAmounts=null;
@@ -170,30 +178,58 @@
           <label>報酬を検索<input bind:value={rewardQuery} aria-label="報酬を検索" placeholder="報酬名・アイテムID" /></label>
           <label>入手枠<select bind:value={rewardTier} aria-label="報酬の入手枠"><option value="all">すべて</option><option value="free">無料</option><option value="premium">プレミアム</option></select></label>
         </div>
-        <p class="hint">52種類の正式名称はSteam v1.26.2のゲーム原本と照合しています。残り8種類は、原本に個別表示名がない「タッチ・オブ・マジック」のモチーフとして表示します。Vaultの代替報酬は付与を意味しません。{publicMedia?'公開済み・検証済みの画像のみ表示しています。':'報酬画像はSRC-04の正式な公開後に表示されます。'}</p>
-        {#each season.rewardPages as p}
-          {#if visibleRewards(p.rewards,rewardQuery,rewardTier,locale,rewardExtras).length}
-          <section class="week"><h2>報酬ページ {p.page}</h2>
-            {#if p.minPurchasedFromPreviousPage!==undefined}<p class="hint">前ページの購入設定：{p.minPurchasedFromPreviousPage}件</p>{/if}
-            <ul class="entries">{#each visibleRewards(p.rewards,rewardQuery,rewardTier,locale,rewardExtras) as r,i (i)}<li class="reward-entry">{#if starpathMediaThumbnail(publicMedia,r.itemId)}<img class="reward-thumb" src={starpathMediaThumbnail(publicMedia,r.itemId)??''} alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" />{/if}<span>{item(r,locale)}</span></li>{/each}</ul>
-          </section>
-          {/if}
-        {/each}
-        {#each season.bonusPages as p}
-          {#if visibleRewards(p.rewards,rewardQuery,rewardTier,locale,rewardExtras).length}
-          <section class="week"><h2>ボーナスページ {p.page}{p.currencyConversionPage?'（通貨交換）':''}</h2>
-            {#if p.minPurchasedFromPreviousPage!==undefined}<p class="hint">前ページの購入設定：{p.minPurchasedFromPreviousPage}件</p>{/if}
-            <ul class="entries">{#each visibleRewards(p.rewards,rewardQuery,rewardTier,locale,rewardExtras) as r,i (i)}<li class="reward-entry">{#if starpathMediaThumbnail(publicMedia,r.itemId)}<img class="reward-thumb" src={starpathMediaThumbnail(publicMedia,r.itemId)??''} alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" />{/if}<span>{item(r,locale)}</span></li>{/each}</ul>
-          </section>
-          {/if}
-        {/each}
-        {#if visibleRewards(season.vaultRewards,rewardQuery,rewardTier,locale,rewardExtras).length}
-        <section class="week"><h2>Vault報酬</h2>
-          <ul class="entries">{#each visibleRewards(season.vaultRewards,rewardQuery,rewardTier,locale,rewardExtras) as r,i (i)}
-            <li class="reward-entry">{#if starpathMediaThumbnail(publicMedia,r.itemId)}<img class="reward-thumb" src={starpathMediaThumbnail(publicMedia,r.itemId)??''} alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" />{/if}<span>{item(r,locale)}{r.alternateItemId?' · 代替候補: '+(starpathRewardDisplayName(r.alternateItemId,locale,rewardExtras)||'名称未確認')+' (ID '+r.alternateItemId+')':''}</span></li>
-          {/each}</ul>
-        </section>
-        {/if}
+        <div class="reward-groups">
+          {#each rewardGroups as group (group.key)}
+            {#if visibleRewards(group.rewards,rewardQuery,rewardTier,locale,rewardExtras).length}
+              <section class="week reward-section">
+                <h2>{group.title}</h2>
+                {#if group.minPurchased!==undefined}
+                  <p class="reward-condition">前ページで必要な交換数：{group.minPurchased}件</p>
+                {/if}
+                <ul class="reward-grid" aria-label={group.title}>
+                  {#each visibleRewards(group.rewards,rewardQuery,rewardTier,locale,rewardExtras) as r,i (r.itemId+'-'+i)}
+                    <li class="reward-entry" class:premium={r.premium}>
+                      <div class="reward-art">
+                        {#if starpathMediaThumbnail(publicMedia,r.itemId)}
+                          <img class="reward-thumb" src={starpathMediaThumbnail(publicMedia,r.itemId)??''}
+                            alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" />
+                        {:else}
+                          <WandIcon name="collection" size={27}/>
+                        {/if}
+                      </div>
+                      <div class="reward-info">
+                        <strong class="reward-name">{starpathRewardDisplayName(r.itemId,locale,rewardExtras)||'名称未確認'}</strong>
+                        <div class="reward-tags">
+                          <span class="reward-amount">×{r.amount.toLocaleString(locale==='ja'?'ja-JP':locale)}</span>
+                          {#if r.premium}<span class="reward-premium"><WandIcon name="lock" size={12}/> プレミアム</span>
+                          {:else}<span class="reward-standard">無料枠</span>{/if}
+                          {#if r.recurrent}<span>繰り返し交換</span>{/if}
+                        </div>
+                        {#if r.price!==undefined}
+                          <div class="reward-price"><WandIcon name="star" size={14}/>
+                            <span>{r.price.toLocaleString(locale==='ja'?'ja-JP':locale)} {season.currencyName}</span>
+                          </div>
+                        {/if}
+                        <details class="reward-source">
+                          <summary>アイテム情報</summary>
+                          <div>ID {r.itemId}</div>
+                          {#if r.alternateItemId}
+                            <div>Vault代替候補：{starpathRewardDisplayName(r.alternateItemId,locale,rewardExtras)||'名称未確認'}（ID {r.alternateItemId}）</div>
+                            <div>代替候補は自動的な付与を意味しません。</div>
+                          {/if}
+                        </details>
+                      </div>
+                    </li>
+                  {/each}
+                </ul>
+              </section>
+            {/if}
+          {/each}
+        </div>
+        <details class="reward-provenance">
+          <summary>報酬データについて</summary>
+          <p>52種類はSteam v1.26.2の原本から名称を照合しています。8種類のモチーフには公式の個別表示名がありません。{publicMedia?'画像は公開済み・検証済みのものだけを表示しています。':'画像はSRC-04の正式公開後に追加されます。'}</p>
+        </details>
         {#if visibleRewards(rewardRows,rewardQuery,rewardTier,locale,rewardExtras).length===0}
           <p role="status">一致する報酬はありません。</p>
         {/if}
@@ -237,13 +273,34 @@
   .source-discrepancy{display:block;color:#e6c38c;font-size:11px;line-height:1.45;margin-top:4px}
   .goal-badge{border:1px solid #8063a0;color:#f8eaff}
   .token-badge{color:#e7ca93}
-  .entries li.reward-entry{display:flex;align-items:center;gap:12px;min-width:0}.reward-entry span{min-width:0;overflow-wrap:anywhere}
-  .reward-thumb{display:block;width:56px;height:56px;object-fit:contain;flex:0 0 56px;border-radius:9px;background:#33273f}
-  .week{margin:28px 0}.week h2{font-size:17px}
+  .reward-groups{display:grid;gap:18px;margin:12px 0}
+  .reward-section{margin:0}
+  .reward-grid{list-style:none;padding:0;margin:9px 0 0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+  .reward-grid .reward-entry{display:flex;gap:10px;min-width:0;padding:11px;background:#21192b;border:1px solid #493956;border-radius:11px;overflow-wrap:anywhere}
+  .reward-grid .reward-entry.premium{border-color:#745c8e}
+  .reward-art{display:grid;place-items:center;flex:0 0 58px;width:58px;height:58px;color:#9b80b8;background:#30243e;border-radius:9px;overflow:hidden}
+  .reward-thumb{display:block;width:58px;height:58px;object-fit:contain}
+  .reward-info{min-width:0;flex:1;display:grid;align-content:start;gap:7px}
+  .reward-name{font-size:13px;line-height:1.45;color:#f4eafa;overflow-wrap:anywhere}
+  .reward-tags{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11px;color:#c2b1d0}
+  .reward-tags span{display:inline-flex;align-items:center;gap:4px}
+  .reward-amount{font-weight:750;color:#f4eafa}
+  .reward-premium{color:#e5c594}
+  .reward-standard{color:#c3b6d0}
+  .reward-price{display:flex;gap:5px;align-items:center;font-size:12px;color:#e5c594;overflow-wrap:anywhere}
+  .reward-source{font-size:10px;color:#b09fbe}
+  .reward-source summary{cursor:pointer;width:max-content;max-width:100%}
+  .reward-source div{margin-top:4px;overflow-wrap:anywhere}
+  .reward-condition{font-size:11px;color:#c0afce;margin:6px 0}
+  .reward-provenance{font-size:11px;color:#b9a7c8;line-height:1.5;margin:12px 0}
+  .reward-provenance summary{cursor:pointer;width:max-content}
+  .week{margin:23px 0}.week h2{font-size:16px;margin:0 0 5px}
   .hint{line-height:1.7}.error{color:#ffb9c3}
   .empty-match{font-size:13px;color:#c4b2d2;padding:14px 0}
   footer{margin-top:24px;font-size:12px;color:#a99ab8}footer a{color:#d7baff}
   .source-more{margin:8px 0 0;line-height:1.7}
+  @media(max-width:850px){.reward-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
   @media(max-width:720px){.summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media(max-width:510px){.reward-grid{grid-template-columns:1fr}}
   @media(max-width:420px){.summary{grid-template-columns:1fr}.starpath{padding:20px 12px 65px}}
 </style>
