@@ -1345,7 +1345,10 @@
                     {/each}
                   </select>
                 </label>
-                <button type="button" disabled={processing||!selectedOrientationPlan()}
+                <button type="button"
+                  disabled={processing||!isCardinal(orientationSelection.orientation)||
+                    !isCardinal(orientationValue)||
+                    orientationValue===orientationSelection.orientation}
                   on:click={validateOrientationEdit}>向き変更を検証</button>
                 {#if orientationState==='validated'}
                   <p role="status">向き変更をRust/WASMで検証しました。</p>
