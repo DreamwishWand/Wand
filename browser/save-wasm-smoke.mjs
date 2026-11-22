@@ -86,6 +86,13 @@ try{
   assert.equal(await page.getByRole('alert').count(),0);
   assert.deepEqual(errors,[],errors.join('\n'));
   await page.getByRole('button',{name:'読み込み内容を破棄'}).click();
+  // Genuine Steam snapshots also use the .profile extension for raw JSON.
+  await page.locator('input[type=file]').setInputFiles({
+    name:'plaintext.profile',mimeType:'application/octet-stream',buffer:bytes
+  });
+  await page.getByText(/JSONを専用Worker内で検査しました/).waitFor({timeout:25000});
+  assert.equal(await page.getByRole('alert').count(),0);
+  await page.getByRole('button',{name:'読み込み内容を破棄'}).click();
   await page.locator('input[type=file]').setInputFiles({
     name:'synthetic.profile',mimeType:'application/octet-stream',
     buffer:syntheticEncryptedP1g(freshSynthetic)
@@ -103,8 +110,63 @@ try{
   await page.getByRole('alert').filter({hasText:'診断できません'}).waitFor({timeout:15000});
   assert.equal(await page.getByText(/Rust\/WASMによる内部参照14規則/).count(),0,
     'Strict input errors must stop before the Rust/WASM result is shown');
+  // Inventory/Chest change *without* export, using real Rust/WASM inside a
+  // dedicated one-shot preview Worker. Both plaintext .profile and AES P1G.
+  const quantityProfile={
+    GameInfo:{Version:643},
+    Player:{
+      ListInventories:{'100':{Inventory:{'550':{Amount:7,UnknownRatio:1.00}}}},
+      ContainerInventories:{'202':{Inventory:[
+        {ItemID:0,Amount:0},{ItemID:440,Amount:2,Extra:null}
+      ]}}
+    },
+    World:{}
+  };
+  await page.goto('http://127.0.0.1:4185/Wand/save/preview/',{
+    waitUntil:'domcontentloaded'
+  });
+  await page.getByLabel('検証用セーブファイル').setInputFiles({
+    name:'plaintext.profile',mimeType:'application/octet-stream',
+    buffer:Buffer.from(JSON.stringify(quantityProfile))
+  });
+  await page.getByRole('button',{name:'変更を検証'}).click();
+  await page.getByRole('status').filter({hasText:'数量変更'}).waitFor({timeout:30000});
+  assert.equal(await page.getByRole('alert').count(),0);
+
+  await page.getByRole('button',{name:'破棄'}).click();
+  await page.getByLabel('検証用セーブファイル').setInputFiles({
+    name:'encrypted.profile',mimeType:'application/octet-stream',
+    buffer:syntheticEncryptedP1g(quantityProfile)
+  });
+  await page.getByRole('button',{name:'変更を検証'}).click();
+  await page.getByRole('status').filter({hasText:'数量変更'}).waitFor({timeout:30000});
+  assert.equal(await page.getByRole('alert').count(),0);
+
+  await page.getByRole('button',{name:'破棄'}).click();
+  await page.getByLabel('対象の種類').selectOption('chest');
+  await page.getByLabel('現在の数量').fill('2');
+  await page.getByLabel('変更後の数量').fill('3');
+  await page.getByLabel('検証用セーブファイル').setInputFiles({
+    name:'encrypted.profile',mimeType:'application/octet-stream',
+    buffer:syntheticEncryptedP1g(quantityProfile)
+  });
+  await page.getByRole('button',{name:'変更を検証'}).click();
+  await page.getByRole('status').filter({hasText:'数量変更'}).waitFor({timeout:30000});
+  assert.equal(await page.getByRole('alert').count(),0);
+
+  await page.getByRole('button',{name:'破棄'}).click();
+  await page.getByLabel('現在の数量').fill('99');
+  await page.getByLabel('検証用セーブファイル').setInputFiles({
+    name:'encrypted.profile',mimeType:'application/octet-stream',
+    buffer:syntheticEncryptedP1g(quantityProfile)
+  });
+  await page.getByRole('button',{name:'変更を検証'}).click();
+  await page.getByRole('alert').filter({hasText:'検証できませんでした'}).waitFor({timeout:30000});
+  assert.equal(await page.getByRole('status').count(),0);
+
+  assert.deepEqual(errors,[],errors.join('\n'));
   await page.close();
-  console.log('DB-05 real Worker Rust/WASM P1G decrypt parity, reference parity, strict JSON guard PASS');
+  console.log('DB-05 browser: auto plaintext/P1G, Rust/WASM quantity preview/repack and reject stale expected amount PASS');
 }finally{
   await browser?.close();
   server.kill('SIGTERM');
