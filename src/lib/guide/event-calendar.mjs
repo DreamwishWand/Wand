@@ -110,6 +110,18 @@ export function guideCalendarMonth(events,month){
     return {day,isCurrent,dayOfMonth:date.getUTCDate(),events:shown};
   });
 }
+/**
+ * The Guide event list and calendar cells must agree on Japan-local month
+ * membership. In particular, events starting after 15:00 UTC on the last day
+ * of a month belong to the NEXT month in Japan; the exclusive end is honored.
+ * Reuse the calendar's day projection so date-only events stay date-only.
+ */
+export function guideCalendarEventsInMonth(events,month){
+  const days=guideCalendarMonth(events,month);
+  const ids=new Set(days.filter(day=>day.isCurrent)
+    .flatMap(day=>day.events.map(event=>event.id)));
+  return events.filter(event=>ids.has(event.id));
+}
 export function localGuideDateTime(utc){
   return new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',
     year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',
