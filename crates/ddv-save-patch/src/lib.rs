@@ -176,9 +176,9 @@ impl<'a> JsonLocator<'a> {
             while self.bytes.get(self.pos).is_some_and(u8::is_ascii_digit) { self.pos += 1; }
             if self.pos == before { return Err(PatchError::InvalidDocument); }
         }
-        if matches!(self.bytes.get(self.pos), Some(b'e'|b'E')) {
+        if matches!(self.bytes.get(self.pos).copied(), Some(b'e'|b'E')) {
             self.pos += 1;
-            if matches!(self.bytes.get(self.pos), Some(b'+'|b'-')) { self.pos += 1; }
+            if matches!(self.bytes.get(self.pos).copied(), Some(b'+'|b'-')) { self.pos += 1; }
             let before = self.pos;
             while self.bytes.get(self.pos).is_some_and(u8::is_ascii_digit) { self.pos += 1; }
             if self.pos == before { return Err(PatchError::InvalidDocument); }
@@ -208,7 +208,7 @@ impl<'a> JsonLocator<'a> {
             path.pop();
             outcome?;
             self.space();
-            match self.bytes.get(self.pos) {
+            match self.bytes.get(self.pos).copied() {
                 Some(b',') => self.pos += 1,
                 Some(b'}') => { self.pos += 1; break; },
                 _ => return Err(PatchError::InvalidDocument)
@@ -228,7 +228,7 @@ impl<'a> JsonLocator<'a> {
             outcome?;
             index = index.checked_add(1).ok_or(PatchError::InvalidDocument)?;
             self.space();
-            match self.bytes.get(self.pos) {
+            match self.bytes.get(self.pos).copied() {
                 Some(b',') => self.pos += 1,
                 Some(b']') => { self.pos += 1; break; },
                 _ => return Err(PatchError::InvalidDocument)
