@@ -4,12 +4,20 @@ import {
 } from './catalog.mjs';
 
 // Source paths, not inferred coordinate transforms or server-side world IDs.
-// This grouping works for Village04, Expansion01..04, WinnieDLC and realms.
+// The game sources the three Expansion04 underwater roots from nested paths.
+// Keep their exact original subregion names instead of presenting all three
+// independent GridCollections as a single terrestrial Expansion04 grid.
 function regionKeyFromLayoutId(layoutId) {
   if (typeof layoutId !== 'string') return 'Other';
   const parts = layoutId.split('/');
-  return parts.length >= 3 && parts[0] === 'SceneLayouts' && parts[1]
-    ? parts[1] : 'Other';
+  if (parts[0] !== 'SceneLayouts' || parts.length < 3 || !parts[1]) {
+    return 'Other';
+  }
+  if (parts[1] === 'VillageExpansion04UnderwaterAreas' &&
+      parts.length >= 4 && parts[2]) {
+    return parts[1] + '/' + parts[2];
+  }
+  return parts[1];
 }
 
 /**
@@ -29,6 +37,8 @@ export function summarizeWorldPreviewSourceCoverage(catalog) {
         sourceDefaultAnchorCount: 0,
         nativeGridReferenceCount: 0, presentNativeGridReferenceCount: 0,
         missingNativeGridReferenceCount: 0,
+        separateAreaReferenceCount: 0, resolvedSeparateAreaReferenceCount: 0,
+        missingSeparateAreaReferenceCount: 0,
         worldCoordinatesVerified: false, placementLegalityVerified: false,
       };
       groups.set(regionKey, group);
@@ -44,6 +54,24 @@ export function summarizeWorldPreviewSourceCoverage(catalog) {
     group.villageLayoutCount++;
     const seen = seenLayouts.get(regionKey) ?? new Set();
     const grids = gridSets.get(regionKey) ?? new Set();
+    // Meta.DefaultVillageData's separatedAreasRaw contains native, explicit
+    // references to OTHER DefaultVillageData roots, not additional grid IDs.
+    // Report them separately from AreaType -> GridCollection mappings.
+    const separate = new Set();
+    if (Array.isArray(layout.separatedAreasRaw)) {
+      for (const path of layout.separatedAreasRaw) {
+        if (typeof path !== 'string' || !path.startsWith('SceneLayouts/') ||
+            separate.has(path)) continue;
+        separate.add(path);
+        const nested = catalog.layouts.get(path);
+        if (nested?.layoutKind === 'nativeDefaultVillageData') {
+          group.resolvedSeparateAreaReferenceCount++;
+        } else {
+          group.missingSeparateAreaReferenceCount++;
+        }
+      }
+    }
+    group.separateAreaReferenceCount += separate.size;
     for (const reference of layout.areaLayoutReferences ?? []) {
       group.areaReferenceCount++;
       const linked = catalog.layouts.get(reference.gridLayoutPath);

@@ -162,3 +162,81 @@ test('two AreaTypes linking the same GridCollection do not double-count anchors'
   assert.equal(summary.sourceDefaultAnchorCount,1);
   assert.equal(summary.nativeGridReferenceCount,1);
 });
+
+test('original Expansion04 separate-area references resolve three independent underwater roots', () => {
+  const underwater = [
+    ['UnderwaterPirate',61,'UnderwaterPirates'],
+    ['UnderwaterCandy',62,'UnderwaterCandy'],
+    ['UnderwaterKingdom',63,'UnderwaterKingdom'],
+  ];
+  const layoutId = 'SceneLayouts/VillageExpansion04/DefaultVillageExpansion04Layout.json';
+  const roots = underwater.map(([region]) =>
+    `SceneLayouts/VillageExpansion04UnderwaterAreas/${region}/${region}-DefaultLayout.json`);
+  const layouts = [{
+    layoutId,layoutKind:'nativeDefaultVillageData',
+    areaLayoutReferences:[],separatedAreasRaw:roots,
+  }];
+  const grids = [];
+  for (let i=0;i<underwater.length;i++) {
+    const [region,code,nativeAreaTypeName]=underwater[i];
+    const root=roots[i];
+    const gridLayout=`SceneLayouts/VillageExpansion04UnderwaterAreas/${region}/${region}-DefaultLayout-${nativeAreaTypeName}Grids.json`;
+    const gridPath=`GridData/OffGridBuildings/Expansion04/${region}/Grid${code}.json`;
+    layouts.push({
+      layoutId:root,layoutKind:'nativeDefaultVillageData',
+      areaLayoutReferences:[{nativeAreaTypeCode:code,nativeAreaTypeName,
+        gridLayoutPath:gridLayout}],
+    });
+    layouts.push({layoutId:gridLayout,layoutKind:'nativeGridCollection',
+      nativeGridEntries:[{gridIdNative:1,gridDataPath:gridPath,
+        defaultObjectCount:0}]});
+    grids.push({gridId:gridPath,sizeX:2,sizeY:2,
+      terrainDecoding:{decoded:false,status:'not_compacted'}});
+  }
+  const catalog=createWorldCatalog({
+    manifest:{schema:WORLD_SCHEMA,status:'partial_game_native_evidence',
+      platform:'Steam',gameVersion:'1.26.2',sourceScopeVerified:false},
+    objects:[],scenes:[],areas:[],worlds:[],layoutObjects:[],layouts,grids,
+  });
+  const coverage=summarizeWorldPreviewSourceCoverage(catalog);
+  const parent=coverage.find(x=>x.regionKey==='VillageExpansion04');
+  assert.equal(parent?.separateAreaReferenceCount,3);
+  assert.equal(parent?.resolvedSeparateAreaReferenceCount,3);
+  assert.equal(parent?.missingSeparateAreaReferenceCount,0);
+  for (const [region,code] of underwater) {
+    const name='VillageExpansion04UnderwaterAreas/'+region;
+    const row=coverage.find(x=>x.regionKey===name);
+    assert.equal(row?.villageLayoutCount,1);
+    assert.equal(row?.areaReferenceCount,1);
+    assert.equal(row?.presentNativeGridReferenceCount,1);
+    assert.equal(row?.sourceDefaultAnchorCount,0);
+    assert.equal(row?.worldCoordinatesVerified,false);
+    assert.equal(row?.placementLegalityVerified,false);
+    const views=listWorldPreviewViews(catalog).filter(x=>x.regionKey===name);
+    assert.equal(views.length,2); // native GridCollection and source AreaType
+    assert.equal(views.filter(x=>x.kind==='villageArea')[0].nativeAreaTypeCode,code);
+  }
+  catalog.layouts.delete(roots[1]);
+  const degraded=summarizeWorldPreviewSourceCoverage(catalog);
+  const parentMissing=degraded.find(x=>x.regionKey==='VillageExpansion04');
+  assert.equal(parentMissing?.separateAreaReferenceCount,3);
+  assert.equal(parentMissing?.resolvedSeparateAreaReferenceCount,2);
+  assert.equal(parentMissing?.missingSeparateAreaReferenceCount,1);
+  // No fabricated replacements when the original separated root is missing.
+  assert.equal(degraded.find(x=>x.regionKey===
+    'VillageExpansion04UnderwaterAreas/UnderwaterCandy')?.villageLayoutCount,0);
+});
+
+test('separate layout reference counts deduplicate exact original paths', () => {
+  const catalog=source();
+  const root=catalog.layouts.get('SceneLayouts/Village04/Default.json');
+  root.separatedAreasRaw=[
+    'SceneLayouts/Village04/Uncollected.json',
+    'SceneLayouts/Village04/Uncollected.json',
+    'SceneLayouts/Village04/Default.json',
+  ];
+  const [group]=summarizeWorldPreviewSourceCoverage(catalog);
+  assert.equal(group.separateAreaReferenceCount,2);
+  assert.equal(group.resolvedSeparateAreaReferenceCount,1);
+  assert.equal(group.missingSeparateAreaReferenceCount,1);
+});
