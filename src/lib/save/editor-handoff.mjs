@@ -15,7 +15,7 @@ import {getSaveAchievementLinkRules} from './achievement-links.mjs';
 import {inspectDecodedSave} from './registry.mjs';
 
 export const SAVE_EDITOR_HANDOFF_CONTRACT='wand.db05.editor-readonly-handoff@1';
-const expected={DB01:5,DB03:2,DB04:1};
+const expected={'DB-01':5,'DB-03':2,'DB-04':1};
 const plain=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
 function freeze(x){
   if(x&&typeof x==='object'&&!Object.isFrozen(x)){
@@ -64,7 +64,7 @@ function validate(){
     seen.add(link.id);
     const field=fields.get(link.fieldId);
     if(!field||field.writable!==false||
-       !field.referenceCandidate?.startsWith(link.catalog+':'))
+       !field.referenceCandidate?.startsWith(link.catalog.replace('-','')+':'))
       throw new TypeError('DB05_EDITOR_HANDOFF_READSET_LINK_INVALID');
     if(link.sourceFamily===null){
       if(link.id!=='container_parent_item'||
@@ -77,10 +77,10 @@ function validate(){
       continue;
     }
     const source=sources.get(link.sourceFamily);
-    const category=link.catalog==='DB01'?'item':
-      link.catalog==='DB04'?'grid_source':'db03';
+    const category=link.catalog==='DB-01'?'item':
+      link.catalog==='DB-04'?'grid_source':'db03';
     if(!source||source.id!==link.id||link.evidence!==
-       (link.catalog==='DB03'?
+       (link.catalog==='DB-03'?
          (source.origin==='quest'?'existing_db05_quest_link_rule':
           'existing_db05_achievement_link_rule'):
         'existing_db05_catalog_link_rule'))
@@ -88,7 +88,7 @@ function validate(){
     if(source.origin==='catalog'){
       if(source.catalog!==(category==='db03'?'item':category))
         throw new TypeError('DB05_EDITOR_HANDOFF_NAMESPACE_INVALID');
-    }else if(link.catalog!=='DB03')
+    }else if(link.catalog!=='DB-03')
       throw new TypeError('DB05_EDITOR_HANDOFF_NAMESPACE_INVALID');
     const a=normalized(source.path),b=normalized(field.path);
     if(a!==b && !(source.extraction==='canonical_map_key'&&
