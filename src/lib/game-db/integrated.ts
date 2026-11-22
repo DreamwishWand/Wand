@@ -155,6 +155,8 @@ interface PublicRow {
   subcategory?:string|null;
   stateClass?:string|null;
   stateSemantic?:string|null;
+  releaseIds:readonly string[];
+  relations:readonly string[];
   nativeCategory?:string|null;
   worlds:readonly string[];
   universes:readonly string[];

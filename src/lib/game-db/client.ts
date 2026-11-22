@@ -12,7 +12,7 @@ interface ReleaseShard {
 interface ReleaseIndex {
   schema:string; id:string; count:number; target:DbTarget;
   coverage:PublicSnapshot['coverage']; sources:PublicSnapshot['sources'];
-  releases:PublicSnapshot['releases']; shards:readonly ReleaseShard[];
+  releases:readonly {id:string}[]; shards:readonly ReleaseShard[];
   search?:readonly {locale:string;file:string;bytes:number;sha256:string}[];
 }
 interface ShardPayload {
@@ -91,7 +91,7 @@ export async function loadCurrentGameDatabase(base:string = '', fetchImpl:FetchI
   if (!pointer || pointer.kind === 'legacy_collection') {
     const legacy = await loadCollectionRuntime(base, fetchImpl);
     return {
-      kind: 'legacy_collection', id: pointer?.snapshot ?? 'legacy-switch-1.25.0',
+      kind: 'legacy_collection' as const, id: pointer?.snapshot ?? 'legacy-switch-1.25.0',
       target: legacy.index.t,
       coverage: { scope: 'collection-legacy-reference', complete: true },
       items: legacy.rows.map((row) => legacyItem(legacy.index, row)),
@@ -158,6 +158,7 @@ export async function loadActiveCollectionRuntime(base:string = '', fetchImpl:Fe
   const pointer = await loadActivePointer(base, fetchImpl);
   if (!pointer || pointer.kind === 'legacy_collection') return loadCollectionRuntime(base, fetchImpl);
   const database = await loadCurrentGameDatabase(base, fetchImpl);
+  if(database.kind!=='db_snapshot')throw new TypeError('ACTIVE_DB_RUNTIME_KIND_MISMATCH');
   return collectionCompatibility(database);
 }
 
@@ -214,7 +215,7 @@ export async function openCurrentGameDatabasePages(base:string = '', fetchImpl:F
   }
 
   const root = pointer.path;
-  const index = await checkedJSON(asset(base, root + '/index.json'), pointer.indexSha256, null, fetchImpl);
+  const index = await checkedJSON(asset(base, root + '/index.json'), pointer.indexSha256, null, fetchImpl) as ReleaseIndex;
   if (index?.schema !== RELEASE_SCHEMA || index.id !== pointer.snapshot ||
       !Number.isSafeInteger(index.count) || index.count < 0 || index.count > 10_000_000 ||
       !Array.isArray(index.shards) ||
