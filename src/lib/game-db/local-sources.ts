@@ -149,7 +149,8 @@ export function joinLocalGameSources(
       assert(!db01||(
         originalDefinition!==null &&
         originalDefinition.item.catalogDomain==='item' &&
-        originalDefinition.nativeCategory===shared.catalog.nativeCategory
+        (!shared.catalog.nativeCategory ||
+          originalDefinition.nativeCategory===shared.catalog.nativeCategory)
       ),'DB01_PUBLISHED_ITEM_IDENTITY_MISMATCH');
     }else{
       assert(!originalDefinition||
