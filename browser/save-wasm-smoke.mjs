@@ -335,6 +335,7 @@ try{
   const worldPanel=page.getByRole('region',{name:'ワールド参照'});
   await worldPanel.getByRole('status').filter({hasText:'2種類'}).waitFor({timeout:30000});
   await worldPanel.getByText('ピュアナイトシャード').waitFor({timeout:30000});
+  assert.match(await worldPanel.innerText(),/差分Gridの削除マーカー：1件/);
   assert.match(await worldPanel.innerText(),/所有数・全配置数・配置可否を示すものではありません/);
   // Two saved references for sample furniture: one full and one non-removed
   // DiffGrid object, not three (the removed DiffGrid identity is suppressed).
