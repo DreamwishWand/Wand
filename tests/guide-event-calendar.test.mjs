@@ -93,11 +93,25 @@ test('reviewed actionable riddle solutions bind to native season+Task IDs, rejec
   const expected={
     'HauntingElegance2026/Task17':'ドナルドダック',
     'HauntingElegance2026/Task26':'マーリン',
+    'HauntingElegance2026/Task51':'ジャック・スケリントン',
+    'HauntingElegance2026/Task52':'ジャック・スケリントン',
+    'HauntingElegance2026/Task59':'スクルージ・マクダック',
+    'HauntingElegance2026/Task70':'サリー',
+    'HauntingElegance2026/Task76':'ドナルドダック',
+    'HauntingElegance2026/Task78':'ヴァネロペ',
+    'HauntingElegance2026/Task80':'ジャック・スケリントン',
+    'HauntingElegance2026/Task95':'粘土',
+    'HauntingElegance2026/Task97':'ジャック・スケリントン',
+    'HauntingElegance2026/Task102':'サリー',
+    'HauntingElegance2026/Task106':'ニンニク',
+    'HauntingElegance2026/Task108':'ジャック・スケリントン',
+    'HauntingElegance2026/Task112':'マーリン',
     'Seafaring2026/Task19':'ピーター・パン',
     'Seafaring2026/Task23':'アリエル',
     'Seafaring2026/Task39':'アリエル',
     'Seafaring2026/Task44':'エリック王子',
     'Seafaring2026/Task55':'エリック王子',
+    'HauntingElegance2026/Week02Task03':'ジャック・スケリントン',
     'HauntingElegance2026/Week07Task02':'サリー',
     'Seafaring2026/Week04Task01':'モアナ'
   };
@@ -117,14 +131,23 @@ test('reviewed actionable riddle solutions bind to native season+Task IDs, rejec
   }
   assert.equal(verifiedDaily,STARPATH_REVIEWED_DAILY_COUNT);
   assert.equal(verifiedWeekly,STARPATH_REVIEWED_WEEKLY_COUNT);
-  assert.equal(verifiedDaily,14);
-  assert.equal(verifiedWeekly,7);
+  assert.equal(verifiedDaily,27);
+  assert.equal(verifiedWeekly,8);
   const real=snap.seasons[1].tasks.find(t=>t.id==='Task19');
   assert.equal(actionableStarpathTask('HauntingElegance2026',real),null);
   assert.equal(actionableStarpathTask('Seafaring2026',{...real,objectiveKind:'ReadBook'}),null);
   assert.equal(actionableStarpathTask('Seafaring2026',{...real,description:'unverified riddle'}),null);
   assert.equal(actionableStarpathTask('Seafaring2026',{...real,id:'Task999'}),null);
   assert.equal(actionableStarpathTask('Seafaring2026',real,'de'),null);
+  const newWeekly=snap.seasons[0].weeklyTasks.flat().find(t=>t.id==='Week02Task03');
+  assert(newWeekly);
+  assert.equal(actionableStarpathTask('HauntingElegance2026',{
+    ...newWeekly,objectiveKind:'MineMineral'
+  }),null,'reviewed weekly interpretation must reject source-kind drift');
+  assert.equal(actionableStarpathTask('HauntingElegance2026',{
+    ...newWeekly,descriptionKey:'Liveops.OTHER'
+  }),null,'reviewed weekly interpretation must reject description key drift');
+
 });
 
 test('Guide month event list uses JST days and exact exclusive UTC end, matching calendar cells',async()=>{
