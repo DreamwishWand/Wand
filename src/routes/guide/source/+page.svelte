@@ -716,6 +716,10 @@
   .guide-candidates ul { margin:8px 0; padding-left:18px; color:#d0c0df; }
   .guide-candidates small, .guide-candidates p { color:#a895b8; font-size:10px; }
   .guide-source-facts p { font-size:11px; color:#ad9bbc; line-height:1.7; overflow-wrap:anywhere; }
+  .guide-reward-candidates { margin:18px 0; }
+  .guide-reward-candidates>summary { color:#ddc3f0; cursor:pointer; font-size:13px; font-weight:650; }
+  .guide-reward-candidates .guide-source-tree { display:grid; gap:7px; }
+  .guide-reward-candidates .guide-source-tree small { display:block; color:#b8a6c6; font-size:10px; overflow-wrap:anywhere; }
   .guide-source-tree { background:#281f33; border:1px solid #ffffff1f; border-radius:9px; padding:11px 13px; margin-top:9px; }
   .guide-source-tree summary { cursor:pointer; color:#d9bfec; font-size:12px; }
   .guide-source-tree pre { margin:12px 0 2px; padding:11px; background:#17111e; border-radius:7px; color:#cab8dc; font-size:10px; white-space:pre-wrap; overflow-wrap:anywhere; max-height:340px; overflow:auto; }
