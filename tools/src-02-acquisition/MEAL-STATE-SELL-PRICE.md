@@ -3,6 +3,74 @@
 **Scope:** Cooking and meal instance state only. This is **not** the separate
 static stall/shop purchase-price evidence from `SHOP-PRICE-OVERLAP.md`.
 
+## Native ingredient source selection and actual lookup failure default (v1.26.2)
+
+**Steam x86-64 and Switch AArch64 executable bodies**, not only IL2CPP
+signatures, now confirm the following `MealItemData.GetSellPrice` routing:
+
+1. If the serialized `ItemState` is a Meal state **and** the
+   `MealData.IngredientsUsed` list is **nonempty**, the executable converts
+   the **recorded Item ID sequence** to individual price tuples, including
+   repeated Item IDs.
+2. If the state is absent, is not a meal state, or has **no recorded
+   ingredients**, the executable falls back to
+   `MealItemData.GetLowestPriceIngredients(recipeItemData)`. That method
+   constructs a recipe-dependent selector. It is **not** permission to
+   assign any user-chosen fixed recipe or static ingredient list as the
+   real lowest-price result.
+3. Both the lowest-price selector's per-item lambda and the recorded
+   ingredient tuple helper use the same **soft-currency lookup**:
+   `ItemPriceDatabases.GetSoftCurrencySellPrice(itemId, state:null,
+   defaultPrice:1)`. **1 is only the result when the native runtime price
+   lookup fails.** It is *not* evidence that an ingredient missing a
+   serialized SellPrices field, or absent from the dynamic-price cache, is
+   worth 1. The actual native `TryGetSellPrice` path may consult multiple
+   registered price providers; those live selections are still unknown.
+4. `TotalIngredientsSellPrice` passes a **null base selector** and a
+   **null maximum selector** into `TotalIngredientsValue`. Thus this
+   particular sell-price path uses a base of **0** and the default signed
+   cap **2,147,483,647**, unlike general TotalIngredientsValue callers
+   that may supply other delegates. It passes a nonnull star-result
+   percentage selector
+   `RecipeStarResult.SellPriceIngredientPercentage`. Ingredient
+   *eligibility* for that bonus is not yet fully resolved.
+
+| Pinned native step | Steam AMD64 RVA | Switch AArch64 RVA |
+|---|---:|---:|
+| Recorded/nonrecorded branch, `MealItemData.GetSellPrice` | `0x3E1EDBE` | `0x4A3F92C` |
+| Lowest-price Item lookup lambda | `0x3E1FFC3` | `0x4A410D0` |
+| Recorded Item price tuple helper | `0x3E1FE25` | `0x4A40E44` |
+| Null base / null cap sell-wrapper call | `0x3E1E856` | `0x4A3F784` |
+| `RecipeStarResult` sell percentage property selector | `0x3B3E0C0` | `0x4A41130` |
+
+The original full SHA-pinned native executable auditor now independently
+checks **14 Steam and 11 Switch code windows** (25 window definitions,
+including the previously recorded Switch sell-wrapper alias), as well as
+7 principal class-qualified method RVAs on each platform and the full
+Steam DLL / Switch NSO hashes. No original executable bytes or private
+raw metadata are stored in Git.
+
+`native-meal-price-route.mjs` exposes the exact
+`recorded_ingredients_used` versus
+`recipe_lowest_price_ingredients` branch, preserves the original
+ordered ingredient IDs including duplicates, records the **conditional**
+native fallback value of 1 and sell-wrapper base/cap, and explicitly
+returns `actualMealSellPrice:null`. The current
+`loadPrivateMealPricingView(...).inspect()` now includes the pure
+`nativeIngredientPriceRoute` evidence for each decoded
+`ItemState`, distinct from the separate, SHA-authenticated **static
+source** price candidates, native dynamic-price-cache membership, and
+actual runtime price outcome. The private smoke verifies these
+boundaries for **all 618 distinct meals**, and an empty synthetic
+MealData fallback, against the independently SHA-verified 625 cooking
+source definitions. **No player save is modified**.
+
+**Remaining:** Determine which runtime price providers supply actual
+ingredient prices and how recipe-ingredient matching chooses which of
+them receive the percentage adjustment. The lowest-price fallback's
+actual chosen IDs/price values cannot yet be derived from the
+static metadata alone. Numerical final meal sell values remain withheld.
+
 ## Source-authenticated native FormulaDynamicPriceDatabase cache (Steam v1.26.2)
 
 The exact owner-private Steam `protoDb.bin` has one dynamic price source entry
