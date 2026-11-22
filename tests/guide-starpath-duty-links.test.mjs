@@ -41,6 +41,7 @@ test('missing, ambiguous, forged, foreign and unsafe Star Path duty URLs fail cl
     '?season=Seafaring2026&task=Week07Task01',
     '?season=Seafaring2026&task=Task01', // Seafaring Task01 does not exist
     '?season=HauntingElegance2026&task=Task01&task=Task02',
+    '?season=HauntingElegance2026&task=Task01&reward=HauntingElegance2026%2Fnormal-1%2F1',
     '?season=HauntingElegance2026&season=Seafaring2026&task=Task01',
     '?season=hauntingelegance2026&task=Task01',
     '?season=HauntingElegance2026&task=task01',

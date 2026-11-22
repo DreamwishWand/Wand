@@ -15,6 +15,8 @@
   import {starpathTaskDisplay} from '$lib/guide/starpath-task-guidance.ts';
   import {filterStarpathTasks} from '$lib/guide/starpath-search.ts';
   import {resolveStarpathDutyLink,starpathDutyHref,type StarpathDutySelection} from '$lib/guide/starpath-duty-link.ts';
+  import {resolveStarpathRewardLink,starpathRewardHref,type StarpathRewardSelection} from '$lib/guide/starpath-reward-link.ts';
+  import type {GuideRewardOccurrence} from '$lib/guide/reward-relations.ts';
   import {loadPublicStarpathGoals,starpathGoalLabel,starpathGoalHeading,starpathGoalSourceNote} from '$lib/guide/public-starpath-goals.mjs';
 
   let catalog:any=null, weeklyLocales:any=null, dailyLocales:any=null, rewardExtras:any=null, publicMedia:any=null, goalAmounts:any=null, goalWarning='', error='', loading=true;
@@ -30,6 +32,7 @@
   let rewardTier:'all'|'free'|'premium'='all';
   let limit=60;
   let highlightedTaskId='';
+  let highlightedRewardId='';
   // Source-snapshot browsing is permanent; scheduled status must not gate access
   // to the original static tasks and rewards or imply live server availability.
   $: seasonEvents=catalog?guideCalendarEvents(catalog).filter((e:any)=>e.kind==='starpath'):[];
@@ -60,9 +63,11 @@
   }
   function clearDutyLink(){
     highlightedTaskId='';
+    highlightedRewardId='';
     const url=new URL(window.location.href);
     url.searchParams.delete('season');
     url.searchParams.delete('task');
+    url.searchParams.delete('reward');
     window.history.replaceState(window.history.state,'',url);
   }
   function changeSeason(id:string){
@@ -70,12 +75,23 @@
     clearDutyLink();
   }
   function changeTab(next:'tasks'|'weekly'|'rewards'){tab=next;clearDutyLink();}
+  async function displayRewardLink(link:StarpathRewardSelection){
+    selectedId=link.seasonId;
+    tab='rewards';
+    rewardQuery=link.occurrence.itemId;
+    rewardTier='all';
+    highlightedTaskId='';
+    highlightedRewardId=link.occurrence.occurrenceId;
+    await tick();
+    document.getElementById('starpath-reward-'+link.occurrence.occurrenceId)?.scrollIntoView({block:'center'});
+  }
   async function displayDutyLink(link:StarpathDutySelection){
     selectedId=link.seasonId;
     tab=link.tab;
     query='';weeklyQuery='';
     limit=link.tab==='tasks'?Math.max(60,link.index+1):60;
     highlightedTaskId=link.taskId;
+    highlightedRewardId='';
     await tick();
     document.getElementById(`starpath-${link.seasonId}-${link.taskId}`)?.scrollIntoView({block:'center'});
   }
@@ -88,8 +104,23 @@
     const url=new URL(window.location.href);
     url.searchParams.set('season',seasonId);
     url.searchParams.set('task',taskId);
+    url.searchParams.delete('reward');
     window.history.pushState(window.history.state,'',url);
     void displayDutyLink(link);
+  }
+  function navigateReward(event:MouseEvent,occurrence:GuideRewardOccurrence){
+    if(event.button!==0||event.ctrlKey||event.shiftKey||event.altKey||event.metaKey)return;
+    if(!sharedRewardIndex)return;
+    const target=starpathRewardHref(base,occurrence);
+    const link=resolveStarpathRewardLink(new URL(target,window.location.href).search,sharedRewardIndex);
+    if(!link)return;
+    event.preventDefault();
+    const url=new URL(window.location.href);
+    url.searchParams.set('season',link.seasonId);
+    url.searchParams.set('reward',link.occurrence.occurrenceId);
+    url.searchParams.delete('task');
+    window.history.pushState(window.history.state,'',url);
+    void displayRewardLink(link);
   }
   function visibleRewards(rewards:readonly any[],search:string,tier:string,language:string,extras:any){
     const needle=search.trim().toLocaleLowerCase();
@@ -120,8 +151,10 @@
     catch(e){error=e instanceof Error?e.message:String(e)}
     finally{loading=false;}
     if(!error&&catalog){
+      const reward=resolveStarpathRewardLink(window.location.search,sharedRewardIndex);
       const selected=resolveStarpathDutyLink(window.location.search,catalog);
-      if(selected)await displayDutyLink(selected);
+      if(reward)await displayRewardLink(reward);
+      else if(selected)await displayDutyLink(selected);
     }
   }
   onMount(()=>{
@@ -130,9 +163,11 @@
     const clock=setInterval(()=>{now=Date.now()},60000);
     const restoreLink=()=>{
       if(!catalog)return;
+      const reward=resolveStarpathRewardLink(window.location.search,sharedRewardIndex);
       const restored=resolveStarpathDutyLink(window.location.search,catalog);
-      if(restored)void displayDutyLink(restored);
-      else{highlightedTaskId='';}
+      if(reward)void displayRewardLink(reward);
+      else if(restored)void displayDutyLink(restored);
+      else{highlightedTaskId='';highlightedRewardId='';}
     };
     window.addEventListener('popstate',restoreLink);
     void load();
@@ -256,8 +291,8 @@
                 {/if}
                 <ul class="reward-grid" aria-label={group.section==='normal'?'報酬ページ '+group.page:
                   group.section==='bonus'?'ボーナスページ '+group.page:'Vault報酬'}>
-                  {#each visibleRewards(group.rewards,rewardQuery,rewardTier,locale,rewardExtras) as r,i (r.itemId+'-'+i)}
-                    <li class="reward-entry" class:premium={r.premium}>
+                  {#each visibleRewards(group.rewards,rewardQuery,rewardTier,locale,rewardExtras) as r (r.occurrenceId)}
+                    <li id={'starpath-reward-'+r.occurrenceId} class="reward-entry" class:premium={r.premium} class:permalink-focused={highlightedRewardId===r.occurrenceId}>
                       <div class="reward-art">
                         {#if starpathMediaThumbnail(publicMedia,r.itemId)}
                           <img class="reward-thumb" src={starpathMediaThumbnail(publicMedia,r.itemId)??''}
@@ -287,6 +322,7 @@
                             <div>代替候補は自動的な付与を意味しません。</div>
                           {/if}
                         </details>
+                         <a class="duty-permalink" href={starpathRewardHref(base,r)} aria-label={`報酬 ${r.itemId} の共有リンク`} on:click={event=>navigateReward(event,r)}><WandIcon name="arrow" size={13}/> リンク</a>
                       </div>
                     </li>
                   {/each}
@@ -359,6 +395,7 @@
   .reward-grid{list-style:none;padding:0;margin:9px 0 0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
   .reward-grid .reward-entry{display:flex;gap:10px;min-width:0;padding:11px;background:#21192b;border:1px solid #493956;border-radius:11px;overflow-wrap:anywhere}
   .reward-grid .reward-entry.premium{border-color:#745c8e}
+  .reward-grid .reward-entry.permalink-focused{border-color:#bd92eb;box-shadow:inset 0 0 0 1px #8e65ba}
   .reward-art{display:grid;place-items:center;flex:0 0 58px;width:58px;height:58px;color:#9b80b8;background:#30243e;border-radius:9px;overflow:hidden}
   .reward-thumb{display:block;width:58px;height:58px;object-fit:contain}
   .reward-info{min-width:0;flex:1;display:grid;align-content:start;gap:7px}
