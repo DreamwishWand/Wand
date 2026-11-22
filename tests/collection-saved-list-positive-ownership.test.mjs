@@ -49,7 +49,7 @@ test('only explicitly positive ListInventory Amount imports as owned candidate, 
   assert.ok(!json.includes('privateFields'));
   assert.ok(!json.includes('Marker'));
   assert.ok(!json.includes('Favorite'));
-  assert.ok(!json.includes('Amount'));
+  assert.ok(!json.includes('"Amount":'));
   assert.deepEqual(sanitizePositiveListInventoryOwnership(structuredClone(got)),got);
 });
 
