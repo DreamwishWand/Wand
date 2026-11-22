@@ -308,6 +308,14 @@
     })();
     return()=>{alive=false;media.removeEventListener('change',changed);runtime?.close();};
   });
+  function lookupSavedCollectionId(itemId:number):void {
+    if(!Number.isSafeInteger(itemId)||itemId<=0||!runtime)return;
+    selected='';worldFilter='';universeFilter='';expansion='';
+    status='all';nameStatus='all';search=String(itemId);
+    filtersOpen=false;resetView();
+    infoMessage='セーブに保存されたItem ID '+itemId+'の公開カタログ参照を表示しています。所持・解放判定ではありません。';
+    document.querySelector('.collection-workspace')?.scrollIntoView({behavior:'smooth',block:'start'});
+  }
   function historicalLookup(itemId:number):{itemId:number;label:string;family:string}|null{
     if(!runtime)return null;
     try{
@@ -412,7 +420,8 @@
   {:else if loadError}
     <div class="error-banner" role="alert">データの検証または読み込みに失敗しました。{loadError}</div>
   {:else}
-    <SavedStorePreview resolveHistorical={historicalLookup} {locale} {gameImageMap} />
+    <SavedStorePreview resolveHistorical={historicalLookup} {locale} {gameImageMap}
+      on:lookupItem={(event:CustomEvent<number>)=>lookupSavedCollectionId(event.detail)} />
     <div class="summary-strip">
       <div><strong>{overall.total.toLocaleString(locale)}</strong><span>参照データ</span></div>
       <div><strong>{overall.owned.toLocaleString(locale)} / {overall.total.toLocaleString(locale)}</strong><span>所持・解放の手動記録 / 参照件数</span></div>

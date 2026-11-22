@@ -1,14 +1,19 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, createEventDispatcher } from 'svelte';
   import ItemArtwork from './ItemArtwork.svelte';
   import { attachHistoricalStoreLabels } from './saved-store-preview.mjs';
   import { attachDb01PrivateNames } from './private-db01-names-view.mjs';
+  import { sanitizeSavedCollectionPresence } from './saved-collection-presence.mjs';
 
   export let resolveHistorical:(id:number)=>({itemId:number;label:string;family:string}|null) = ()=>null;
   export let locale = 'ja';
   export let gameImageMap: Record<string,string> = {};
+  const dispatch=createEventDispatcher<{ lookupItem:number }>();
 
   let preview: any = null;
+  let collectionPreview:any=null;
+  let collectionQuery='';
+  let collectionLimit=48;
   let errorMessage = '';
   let busy = false;
   let query = '';
@@ -44,6 +49,8 @@
   onDestroy(stopNameWorker);
   $: labeledPreview = preview && exactNameOverlay
     ? attachDb01PrivateNames(preview,exactNameOverlay,locale,{allowHistorical:allowPrivateHistorical}) : preview;
+  $: collectionRows = collectionPreview ? collectionPreview.items
+    .filter((item:any)=>!collectionQuery.trim() || String(item.itemId).includes(collectionQuery.trim())) : [];
   $: shown = labeledPreview ? labeledPreview.items.filter((item:any)=>
     !query.trim() || String(item.itemId).includes(query.trim()) ||
     (item.currentExactName??'').toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()) ||
@@ -59,9 +66,12 @@
     exactNameError = '';
     busy = false;
     preview = null;
+    collectionPreview = null;
     saveSchema = null;
     errorMessage = '';
     query = '';
+    collectionQuery = '';
+    collectionLimit = 48;
     showImages = false;
     limit = 48;
     if (fileInput) fileInput.value = '';
@@ -71,6 +81,7 @@
   function failedRead() {
     errorMessage = 'このセーブは読み取れませんでした。対応するP1G形式・データ構造を確認してください。元のファイルは変更されていません。';
     preview = null;
+    collectionPreview = null;
     saveSchema = null;
   }
 
@@ -103,7 +114,9 @@
             throw new TypeError('LOCAL_P1G_INVALID_WORKER_REPLY');
           const historical=(result.result.summary?.items??[]).map((item:{itemId:number})=>resolveHistorical(item.itemId))
             .filter((item:unknown):item is {itemId:number;label:string;family:string}=>item!==null);
+          const collection=sanitizeSavedCollectionPresence(result.result.collection);
           preview = attachHistoricalStoreLabels(result.result.summary,historical);
+          collectionPreview=collection;
           saveSchema = result.result.saveSchema;
         } catch { failedRead(); }
       };
@@ -177,12 +190,12 @@
   }
 </script>
 
-<section class="saved-store-preview" aria-label="セーブ内の店舗商品・読み取り専用プレビュー">
+<section class="saved-store-preview" aria-label="セーブ内の店舗商品・コレクションIDの読み取り専用プレビュー">
   <div class="store-head">
     <div>
       <span class="store-eyebrow">LOCAL / READ-ONLY</span>
-      <h2>セーブ内の店舗商品</h2>
-      <p>DDVのP1G形式セーブを専用のブラウザー内Workerで開き、保存されている店舗の商品参照だけを一覧にします。ファイルの送信・編集・保存は行いません。</p>
+      <h2>セーブ内の参照データ</h2>
+      <p>DDVのP1G形式セーブを専用のブラウザー内Workerで開き、店舗商品とCollectionSetsのアイテムID参照を表示します。ファイルの送信・編集・保存は行いません。</p>
     </div>
     {#if preview || busy}
       <button type="button" class="store-clear" on:click={clear}>{busy?'読み込みを中止':'読み込み結果を消去'}</button>
@@ -204,7 +217,7 @@
       {#if preview.status==='not_observed'}
         このセーブに World.Stores フィールドは確認できませんでした。店舗が存在しないという意味ではありません。
       {:else}
-        保存された店舗データのみを表示します。現在の販売商品・在庫・価格、購入履歴、所有・収集状態は確認できません。
+        店舗に保存された商品参照のみを表示します。現在の販売商品・在庫・価格、購入履歴、所有・収集状態は確認できません。
       {/if}
     </div>
     <div class="store-metrics">
@@ -257,6 +270,53 @@
         <p>検索条件に一致する商品参照はありません。</p>
       {/if}
     {/if}
+    {#if collectionPreview}
+      <section class="saved-collection-section" aria-label="セーブ内のCollection ID参照">
+        <h3>CollectionSets の保存ID参照</h3>
+        <p class="store-warning">セーブ内の <code>Player.CollectionSets[].GroupData[].GroupsCollectionItems</code> にあるIDキーの存在だけを表示します。保存された値は判定せず、所持・収集完了・解放・DLC権利を証明しません。Collectionの手動記録も変更しません。</p>
+        {#if collectionPreview.status==='not_observed'}
+          <p class="store-caveat">CollectionSets フィールドは確認できませんでした。セーブを改変している場合も含め、収集状態やデータ破損を意味しません。</p>
+        {:else if collectionPreview.status==='partial_inconclusive'}
+          <p class="store-caveat">一部の構造を解釈できない、または参照件数の上限に達しました。表示内容は部分的な観測です。セーブ破損とは断定しません。</p>
+        {:else if collectionPreview.status==='observed_empty'}
+          <p class="store-caveat">CollectionSets は確認できましたが、この読込で有効なアイテムIDキーは観測されませんでした。未所持である証拠ではありません。</p>
+        {/if}
+        <div class="store-metrics">
+          <span>CollectionSets <strong>{collectionPreview.observedSets}</strong></span>
+          <span>グループ <strong>{collectionPreview.observedGroups}</strong></span>
+          <span>保存ID参照 <strong>{collectionPreview.referenceCount.toLocaleString(locale)}</strong></span>
+          <span>異なるID <strong>{collectionPreview.distinctItemCount.toLocaleString(locale)}</strong></span>
+        </div>
+        {#if collectionPreview.items.length}
+          <div class="store-controls">
+            <input type="search" aria-label="セーブ内のCollection IDを検索"
+              placeholder="Item ID" bind:value={collectionQuery} on:input={()=>collectionLimit=48}/>
+          </div>
+          <div class="store-items">
+            {#each collectionRows.slice(0,collectionLimit) as item (item.itemId)}
+              {@const catalog=resolveHistorical(item.itemId)}
+              <div class="store-item">
+                <div class="store-detail">
+                  <strong>{catalog?.label??`Item ID ${item.itemId}`}</strong>
+                  <small>Item ID {item.itemId} · 参照 {item.referenceCount}件</small>
+                  <small>{catalog?'公開カタログの同一ID（セーブ版一致は未検証）':'公開カタログに未収録のID'}</small>
+                  {#if catalog}
+                    <button type="button" class="store-clear" on:click={()=>dispatch('lookupItem',item.itemId)}>Collectionで探す</button>
+                  {/if}
+                </div>
+              </div>
+            {/each}
+          </div>
+          {#if collectionRows.length>collectionLimit}
+            <button type="button" class="store-more" on:click={()=>collectionLimit+=48}>
+              さらに表示（残り {collectionRows.length-collectionLimit}件）
+            </button>
+          {:else if !collectionRows.length}
+            <p>該当するID参照はありません。</p>
+          {/if}
+        {/if}
+      </section>
+    {/if}
   {/if}
 </section>
 
@@ -286,5 +346,8 @@
   .store-detail strong { overflow-wrap:anywhere; font-size:.84rem; }
   .store-detail small { opacity:.72; font-size:.72rem; }
   .store-more { margin-top:14px; }
+  .saved-collection-section { margin-top:20px; padding-top:18px; border-top:1px solid rgba(150,126,190,.3); }
+  .saved-collection-section h3 {font-size:1rem; margin:0 0 8px;}
+  .saved-collection-section .store-detail .store-clear {font-size:.7rem;align-self:flex-start;padding:5px 9px;margin-top:4px;}
   @media(max-width:600px){ .saved-store-preview{padding:14px;} .store-import{align-items:flex-start;} }
 </style>
