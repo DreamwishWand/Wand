@@ -816,6 +816,59 @@ def realm_grid_collection_layout(data, relative):
     return layout, objects
 
 
+
+def offgrid_grid_collection_layout(data, relative):
+    """Decode only explicit original OffGridBuildings embedded collections.
+
+    The OffGrid original native wrapper differs from Realm in its context:
+    root.1.2 = source custom locations path (Realm uses root.1.3).
+    root.2 contains a native Meta.GridCollection in BOTH source families.
+    All native anchors remain grid-local and read-only; the wrapper is not
+    an area or evidence of a world-space transform.
+    """
+    parts = relative.relative_to(STREAM).parts
+    if len(parts) < 3 or parts[:2] != ("SceneLayouts", "OffGridBuildings"):
+        return None
+    if relative.name == "CustomLocations.json" or "PuzzleAnswer" in relative.name:
+        return None
+    root = wire_fields(data)
+    context_raw = one(root, 1, 2)
+    if context_raw is None:
+        return None
+    try:
+        context = wire_fields(context_raw)
+        custom = text_field(context, 2)
+    except (ValueError, UnicodeError):
+        return None
+    if custom is None:
+        return None
+    if not (custom.startswith("SceneLayouts/OffGridBuildings/") and
+            custom.endswith("/CustomLocations.json") and
+            safe_reference(custom)):
+        raise ValueError("invalid native off-grid custom location reference")
+    # Fail closed for a missing or malformed native GridCollection. Do not
+    # silently reinterpret a native off-grid scene as a village AreaType.
+    embedded = one(root, 2, 2, True)
+    parsed = grid_collection_layout(embedded, relative)
+    if parsed is None:
+        raise ValueError("native off-grid wrapper has no recognized embedded GridCollection")
+    layout, objects = parsed
+    layout["embeddedGridCollectionWireField"] = 2
+    layout["offGridCustomLocationPath"] = custom
+    layout["source"] = {
+        "path": relative.as_posix(),
+        "nativeType": "offgrid_source_with_embedded_Meta.GridCollection",
+        "embeddedGridCollectionWireField": 2,
+    }
+    for entry in layout["nativeGridEntries"]:
+        entry["gridDataPathWireField"] = "2.1.2.2"
+    layout["gridReferences"] = [
+        {"path": entry["gridDataPath"], "wireField": "2.1.2.2"}
+        for entry in layout["nativeGridEntries"]
+    ]
+    return layout, objects
+
+
 def default_village_layout(data, relative):
     """Meta.DefaultVillageData with explicit area->GridLayoutPath map."""
     root = wire_fields(data)
@@ -875,6 +928,12 @@ def scene_layouts(root, sources):
     layouts, layout_objects = [], []
     for relative in optional_files(root, STREAM / "SceneLayouts", sources):
         data = source_bytes(root, relative, sources)
+        offgrid = offgrid_grid_collection_layout(data, relative)
+        if offgrid is not None:
+            layout, objects = offgrid
+            layouts.append(layout)
+            layout_objects.extend(objects)
+            continue
         realm = realm_grid_collection_layout(data, relative)
         if realm is not None:
             layout, objects = realm

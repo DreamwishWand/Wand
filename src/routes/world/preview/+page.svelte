@@ -20,7 +20,7 @@
   };
   type RegionCoverage = {
     regionKey: string;
-    villageLayoutCount: number; realmLayoutCount: number; areaReferenceCount: number;
+    villageLayoutCount: number; realmLayoutCount: number; offGridLayoutCount: number; areaReferenceCount: number;
     resolvedAreaReferenceCount: number; missingAreaLayoutReferenceCount: number;
     nativeGridReferenceCount: number; presentNativeGridReferenceCount: number;
     missingNativeGridReferenceCount: number; sourceDefaultAnchorCount: number;
@@ -308,7 +308,7 @@
             {/each}
           </select>
         </label>
-        <label>原本GridCollection / Realm / Village Area
+        <label>原本GridCollection / Realm / OffGrid / Village Area
           <select bind:value={selectedViewKey} on:change={changeLayout}>
             {#each filteredLayouts as layout}
               <option value={layout.viewKey}>{layout.label}</option>
@@ -329,6 +329,8 @@
         <p class="note">このZIPに含まれる原本参照：
           {#if selectedRegionCoverage.realmLayoutCount > 0}
             Realmレイアウト {selectedRegionCoverage.realmLayoutCount}件、
+          {:else if selectedRegionCoverage.offGridLayoutCount > 0}
+            OffGridレイアウト {selectedRegionCoverage.offGridLayoutCount}件、
           {:else}
             AreaType {selectedRegionCoverage.areaReferenceCount}件
             （対応レイアウト {selectedRegionCoverage.resolvedAreaReferenceCount}件・未収録 {selectedRegionCoverage.missingAreaLayoutReferenceCount}件）、

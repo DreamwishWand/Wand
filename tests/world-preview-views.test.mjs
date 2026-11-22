@@ -305,3 +305,97 @@ test('embedded native Realm GridCollections are region-scoped and never AreaType
   assert.equal(views.filter(v=>v.regionKey==='Realms/WallE').length,1);
   assert.equal(catalog.areas.size,0);
 });
+
+test('off-grid native scenes stay separate from Realm and Village AreaType references', () => {
+  const a='SceneLayouts/OffGridBuildings/SkullRock/SkullRock_DefaultLayout.json';
+  const b='SceneLayouts/OffGridBuildings/Expansion01/SandCavern/CavernLayout.json';
+  const c='SceneLayouts/OffGridBuildings/Expansion01/Elsewhere/ElseLayout.json';
+  const g1='GridData/OffGridBuildings/SkullRock/Ship.json';
+  const g2='GridData/OffGridBuildings/Expansion01/SandCavern/SandCavern.json';
+  const catalog=createWorldCatalog({
+    manifest:{schema:WORLD_SCHEMA,status:'partial_game_native_evidence',
+      platform:'Steam',gameVersion:'1.26.2',sourceScopeVerified:false},
+    objects:[],scenes:[],worlds:[],areas:[],
+    layouts:[
+      {layoutId:a, layoutKind:'nativeGridCollection',
+       offGridCustomLocationPath:'SceneLayouts/OffGridBuildings/SkullRock/CustomLocations.json',
+       embeddedGridCollectionWireField:2,
+       nativeGridEntries:[{gridIdNative:0,gridDataPath:g1,defaultObjectCount:1}]},
+      {layoutId:b, layoutKind:'nativeGridCollection',
+       offGridCustomLocationPath:'SceneLayouts/OffGridBuildings/Expansion01/SandCavern/CustomLocations.json',
+       embeddedGridCollectionWireField:2,
+       nativeGridEntries:[{gridIdNative:0,gridDataPath:g2,defaultObjectCount:1}]},
+      {layoutId:c, layoutKind:'nativeGridCollection',
+       offGridCustomLocationPath:'SceneLayouts/OffGridBuildings/Expansion01/Elsewhere/CustomLocations.json',
+       embeddedGridCollectionWireField:2,
+       nativeGridEntries:[{gridIdNative:4,gridDataPath:g2,defaultObjectCount:0}]},
+    ],
+    grids:[{gridId:g1,sizeX:4,sizeY:4,
+      terrainDecoding:{decoded:false,status:'not_compacted'}}],
+    layoutObjects:[
+      {layoutObjectId:a+'#grid=0#object=7',layoutId:a,
+       gridIdNative:0,gridObjectIdNative:7,itemId:40000001,
+       x:1,y:2,orientationCode:0,
+       worldCoordinatesVerified:false,fixedImmovableVerified:false},
+      {layoutObjectId:b+'#grid=0#object=3',layoutId:b,
+       gridIdNative:0,gridObjectIdNative:3,itemId:40000001,
+       x:3,y:2,orientationCode:0,
+       worldCoordinatesVerified:false,fixedImmovableVerified:false},
+    ],
+  });
+  const coverage=summarizeWorldPreviewSourceCoverage(catalog);
+  assert.deepEqual(coverage.map(group=>group.regionKey),
+    ['OffGridBuildings/Expansion01/Elsewhere',
+     'OffGridBuildings/Expansion01/SandCavern',
+     'OffGridBuildings/SkullRock']);
+  const skull=coverage.find(group=>group.regionKey==='OffGridBuildings/SkullRock');
+  assert.equal(skull?.offGridLayoutCount,1);
+  assert.equal(skull?.realmLayoutCount,0);
+  assert.equal(skull?.areaReferenceCount,0);
+  assert.equal(skull?.sourceDefaultAnchorCount,1);
+  assert.equal(skull?.nativeGridReferenceCount,1);
+  assert.equal(skull?.presentNativeGridReferenceCount,1);
+  assert.equal(skull?.worldCoordinatesVerified,false);
+  assert.equal(skull?.placementLegalityVerified,false);
+  const sand=coverage.find(group=>group.regionKey==='OffGridBuildings/Expansion01/SandCavern');
+  assert.equal(sand?.offGridLayoutCount,1);
+  assert.equal(sand?.missingNativeGridReferenceCount,1);
+  assert.equal(sand?.sourceDefaultAnchorCount,1);
+  const views=listWorldPreviewViews(catalog);
+  assert.equal(views.length,3);
+  assert.equal(views.filter(view=>view.kind==='gridCollection').length,3);
+  assert.equal(views.filter(view=>view.regionKey==='OffGridBuildings/SkullRock').length,1);
+  const viewport=getWorldPreviewAnchorWindow(
+    catalog,views.find(view=>view.regionKey==='OffGridBuildings/SkullRock'),
+    0,{x:0,y:0,width:4,height:4},{offset:0,limit:20});
+  assert.equal(viewport.status,'source_native_default_layout_anchors_only');
+  assert.equal(viewport.defaultObjectAnchors.length,1);
+  assert.equal(viewport.defaultObjectAnchors[0].gridObjectIdNative,7);
+  assert.equal(viewport.worldCoordinatesVerified,false);
+  assert.equal(catalog.areas.size,0);
+});
+
+test('root OffGridTemplate keeps an independent source region and zero anchors', () => {
+  const id='SceneLayouts/OffGridBuildings/OffGridTemplate-DefaultLayout.json';
+  const path='GridData/OffGridBuildings/OffGridTemplate-GridData.json';
+  const catalog=createWorldCatalog({
+    manifest:{schema:WORLD_SCHEMA,status:'partial_game_native_evidence',
+      platform:'Steam',gameVersion:'1.26.2',sourceScopeVerified:false},
+    objects:[],scenes:[],areas:[],worlds:[],
+    layouts:[{layoutId:id,layoutKind:'nativeGridCollection',
+      embeddedGridCollectionWireField:2,
+      offGridCustomLocationPath:'SceneLayouts/OffGridBuildings/CustomLocations.json',
+      nativeGridEntries:[{gridIdNative:0,gridDataPath:path,defaultObjectCount:0}]}],
+    layoutObjects:[],
+    grids:[{gridId:path,sizeX:6,sizeY:6,
+      terrainDecoding:{decoded:false,status:'not_compacted'}}],
+  });
+  const [group]=summarizeWorldPreviewSourceCoverage(catalog);
+  assert.equal(group.regionKey,'OffGridBuildings');
+  assert.equal(group.offGridLayoutCount,1);
+  assert.equal(group.nativeGridReferenceCount,1);
+  assert.equal(group.presentNativeGridReferenceCount,1);
+  assert.equal(group.sourceDefaultAnchorCount,0);
+  assert.equal(group.areaReferenceCount,0);
+  assert.equal(listWorldPreviewViews(catalog).length,1);
+});

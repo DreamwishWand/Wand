@@ -29,7 +29,8 @@ from terrain_codec import (describe_native_packing, floor_at, decode_window,
 from world import (STREAM, diff_records, encode_varint, explicit_references,
                    extract, footprint, parse_grid_structure, parse_itemlist,
                    parse_world_registry, grid_collection_layout,
-                   realm_grid_collection_layout, default_village_layout,
+                   realm_grid_collection_layout, offgrid_grid_collection_layout,
+                   default_village_layout,
                    restrictions, wire_fields)
 
 
@@ -367,6 +368,67 @@ class NativeWireTests(unittest.TestCase):
                 field(1, field(3,
                     "SceneLayouts/Realms/Example/CustomLocations.json")) +
                 field(2, corrupt_object), path)
+
+    def test_offgrid_embedded_gridcollection_keeps_native_context_and_anchors(self):
+        path = (STREAM / "SceneLayouts/OffGridBuildings/SkullRock/"
+                "SkullRock_DefaultLayout.json")
+        native_grid = (
+            field(2, "GridData/OffGridBuildings/SkullRock/Floor.json") +
+            field(4, 1) +
+            field(5, field(1, 3) +
+                  field(2, field(1, 3) + field(2, 40000001) +
+                        field(3, 9) + field(4, 11))))
+        wrapper = (
+            field(1, field(2, "SceneLayouts/OffGridBuildings/"
+                              "SkullRock/CustomLocations.json") +
+                  field(3, field(1, 1540000000))) +
+            field(2, field(1, field(1, 7) +
+                            field(2, field(1, 7) + native_grid)) +
+                  field(3, 1)))
+        parsed = offgrid_grid_collection_layout(wrapper, path)
+        self.assertIsNotNone(parsed)
+        layout, objects = parsed
+        self.assertEqual(layout["layoutKind"], "nativeGridCollection")
+        self.assertEqual(layout["embeddedGridCollectionWireField"], 2)
+        self.assertEqual(layout["offGridCustomLocationPath"],
+                         "SceneLayouts/OffGridBuildings/"
+                         "SkullRock/CustomLocations.json")
+        self.assertEqual(layout["source"]["nativeType"],
+                         "offgrid_source_with_embedded_Meta.GridCollection")
+        self.assertEqual(layout["gridReferences"][0]["wireField"], "2.1.2.2")
+        self.assertEqual(layout["nativeGridEntries"][0]["gridIdNative"], 7)
+        self.assertEqual(layout["defaultObjectCount"], 1)
+        self.assertEqual((objects[0]["x"], objects[0]["y"]), (9, 11))
+        self.assertFalse(objects[0]["worldCoordinatesVerified"])
+        self.assertFalse(layout["worldCoordinatesVerified"])
+        self.assertFalse(objects[0]["fixedImmovableVerified"])
+        self.assertIsNone(realm_grid_collection_layout(wrapper, path))
+        self.assertIsNone(offgrid_grid_collection_layout(
+            wrapper, STREAM / "SceneLayouts/Realms/SkullRock/Foo.json"))
+
+        # The root source uses context field 1.2, NOT Realm field 1.3.
+        wrong_context = wrapper.replace(
+            field(1, field(2, "SceneLayouts/OffGridBuildings/"
+                              "SkullRock/CustomLocations.json") +
+                  field(3, field(1, 1540000000))),
+            field(1, field(3, "SceneLayouts/OffGridBuildings/"
+                              "SkullRock/CustomLocations.json")))
+        self.assertIsNone(offgrid_grid_collection_layout(wrong_context, path))
+        unsafe = wrapper.replace(
+            b"SkullRock/CustomLocations.json",
+            b"../badxxx/CustomLocations.json")
+        with self.assertRaises(ValueError):
+            offgrid_grid_collection_layout(unsafe, path)
+        with self.assertRaisesRegex(ValueError, "GridCollection"):
+            offgrid_grid_collection_layout(
+                field(1, field(2, "SceneLayouts/OffGridBuildings/"
+                                  "SkullRock/CustomLocations.json")) +
+                field(2, field(3, 1)), path)
+        bad_id = wrapper.replace(
+            field(1, 7) + field(2, field(1, 7) + native_grid),
+            field(1, 6) + field(2, field(1, 7) + native_grid))
+        with self.assertRaisesRegex(ValueError, "disagree"):
+            offgrid_grid_collection_layout(bad_id, path)
 
     def test_default_village_grid_layout_map_exact_area_paths(self):
         path = STREAM / "SceneLayouts/Village04/DefaultVillageLayout01.json"

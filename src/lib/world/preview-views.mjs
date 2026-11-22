@@ -16,6 +16,15 @@ function regionKeyFromLayoutId(layoutId) {
   if (parts[1] === 'Realms' && parts.length >= 4 && parts[2]) {
     return 'Realms/' + parts[2];
   }
+  if (parts[1] === 'OffGridBuildings' && parts.length >= 4 && parts[2]) {
+    // The source hierarchy nests the Expansion/DLC/season scene types. Do
+    // not collapse independent off-grid scenes into world Village AreaTypes.
+    if (/^(Expansion0[1-9]|WinnieDLC|EventFloatingIslands)$/.test(parts[2]) &&
+        parts.length >= 5 && parts[3]) {
+      return 'OffGridBuildings/' + parts[2] + '/' + parts[3];
+    }
+    return 'OffGridBuildings/' + parts[2];
+  }
   if (parts[1] === 'VillageExpansion04UnderwaterAreas' &&
       parts.length >= 4 && parts[2]) {
     return parts[1] + '/' + parts[2];
@@ -34,7 +43,7 @@ export function summarizeWorldPreviewSourceCoverage(catalog) {
     let group = groups.get(regionKey);
     if (!group) {
       group = {
-        regionKey, villageLayoutCount: 0, realmLayoutCount: 0,
+        regionKey, villageLayoutCount: 0, realmLayoutCount: 0, offGridLayoutCount: 0,
         areaReferenceCount: 0, resolvedAreaReferenceCount: 0,
         missingAreaLayoutReferenceCount: 0,
         sourceDefaultAnchorCount: 0,
@@ -58,6 +67,19 @@ export function summarizeWorldPreviewSourceCoverage(catalog) {
         regionKey.startsWith('Realms/')) {
       const group = groupFor(regionKey);
       group.realmLayoutCount++;
+      group.sourceDefaultAnchorCount +=
+        catalog.layoutObjectsByLayout.get(layout.layoutId)?.length ?? 0;
+      const grids = gridSets.get(regionKey) ?? new Set();
+      for (const entry of layout.nativeGridEntries ?? []) {
+        grids.add(entry.gridDataPath);
+      }
+      gridSets.set(regionKey, grids);
+    }
+    if (layout.layoutKind === 'nativeGridCollection' &&
+        (regionKey === 'OffGridBuildings' ||
+         regionKey.startsWith('OffGridBuildings/'))) {
+      const group = groupFor(regionKey);
+      group.offGridLayoutCount++;
       group.sourceDefaultAnchorCount +=
         catalog.layoutObjectsByLayout.get(layout.layoutId)?.length ?? 0;
       const grids = gridSets.get(regionKey) ?? new Set();
