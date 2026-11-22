@@ -4,7 +4,8 @@
   import '$lib/ui/themes.css';
   import {base} from '$app/paths';
   import {page} from '$app/stores';
-  import {onMount} from 'svelte';
+  import {onMount,tick} from 'svelte';
+  import {editHistory,historyView,type HistoryArea} from '$lib/ui/edit-history';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {shellCopy,type TutorialKey} from '$lib/ui/shell-copy';
   import {afterNavigate} from '$app/navigation';
@@ -15,6 +16,10 @@
 
   let tutorialOpen=false;
   let accountOpen=false;
+  let historyOpen=false;
+  let historyArea:HistoryArea='collection';
+  let historyButton:HTMLButtonElement|null=null;
+  let historyCloseButton:HTMLButtonElement|null=null;
   let collectionBusy=false;
   let languageOpen=false;
   let saveMenuOpen=false;
@@ -104,6 +109,11 @@
     event.preventDefault();dragDepth=0;draggingFile=false;
     setSelectedSave(event.dataTransfer.files[0]);
   }
+  async function openHistory():Promise<void>{
+    closeMenus();historyOpen=true;historyArea='collection';
+    await tick();historyCloseButton?.focus();
+  }
+  function closeHistory():void{historyOpen=false;historyButton?.focus();}
   function openAccount(){closeMenus();accountOpen=true;}
   function closeAccount(){accountOpen=false;accountButton?.focus();}
   function closeTutorial(){tutorialOpen=false;helpButton?.focus();}
@@ -162,7 +172,8 @@
   if(event.key==='Escape'){
     const hadSave=saveMenuOpen,hadMore=moreOpen,hadFiles=filesOpen,hadLanguage=languageOpen;
     closeMenus();
-    if(tutorialOpen)closeTutorial();
+    if(historyOpen)closeHistory();
+    else if(tutorialOpen)closeTutorial();
     else if(accountOpen)closeAccount();
     else if(hadSave)saveButton?.focus();
     else if(hadMore)moreButton?.focus();
@@ -221,6 +232,11 @@
           </div>
         </div>
       {/if}
+      <button class="header-icon-button shell-history-button" bind:this={historyButton}
+        type="button" aria-label={copy.history} title={copy.history} aria-expanded={historyOpen}
+        on:click={()=>{void openHistory();}}>
+        <WandIcon name="history" size={21}/>
+      </button>
       <div class="header-save-root" bind:this={saveRoot}>
         <button class="header-icon-button shell-save-button" bind:this={saveButton} type="button"
           aria-label={selectedSave?copy.saveManager:copy.readSave}
@@ -259,6 +275,9 @@
         </button>
         {#if moreOpen}
           <div class="shell-menu shell-more-menu" role="group" aria-label={copy.moreActions}>
+            <button type="button" class="shell-more-history" on:click={()=>{void openHistory();}}>
+              <WandIcon name="history" size={18}/>{copy.history}
+            </button>
             <button type="button" on:click={()=>{moreOpen=false;tutorialOpen=true;}}><WandIcon name="help" size={18}/>{copy.help}</button>
             <button type="button" on:click={openAccount}><WandIcon name="character" size={18}/>{copy.account}</button>
             {#if service==='collection'}
@@ -308,6 +327,71 @@
   {#if draggingFile}<div class="shell-save-drop" role="status"><WandIcon name="upload" size={44}/><span>{copy.saveDrop}</span></div>{/if}
   <main class="site-main"><slot/></main>
 </div>
+{#if historyOpen}
+  <div class="shell-history-overlay">
+    <button class="shell-history-shade" type="button" on:click={closeHistory} aria-label={copy.close}></button>
+    <div class="shell-history-panel" role="dialog" aria-modal="true" aria-label={copy.history}>
+      <header class="shell-history-head">
+        <div><WandIcon name="history" size={21}/><strong>{copy.history}</strong></div>
+        <button class="header-icon-button" type="button" bind:this={historyCloseButton}
+          on:click={closeHistory} aria-label={copy.close}><WandIcon name="close" size={21}/></button>
+      </header>
+      <div class="shell-history-tabs" role="group" aria-label={copy.history}>
+        <button type="button" class:active={historyArea==='collection'}
+          aria-pressed={historyArea==='collection'}
+          on:click={()=>historyArea='collection'}>{copy.historyCollection}</button>
+        <button type="button" class:active={historyArea==='world'}
+          aria-pressed={historyArea==='world'}
+          on:click={()=>historyArea='world'}>{copy.historyWorld}</button>
+      </div>
+      {#if historyArea==='collection'}
+        <div class="shell-history-actions">
+          <button type="button" disabled={$historyView.busy||$historyView.cursor===0}
+            on:click={()=>void editHistory.undo()} title={copy.historyUndo}>
+            <WandIcon name="undo" size={20}/><span>{copy.historyUndo}</span>
+          </button>
+          <button type="button" disabled={$historyView.busy||$historyView.cursor===$historyView.entries.length}
+            on:click={()=>void editHistory.redo()} title={copy.historyRedo}>
+            <WandIcon name="redo" size={20}/><span>{copy.historyRedo}</span>
+          </button>
+        </div>
+        {#if $historyView.error}
+          <p class="shell-history-error" role="alert">{$historyView.error==='stale'?copy.historyStale:copy.historyFailed}</p>
+        {/if}
+        {#if $historyView.busy}
+          <p class="shell-history-working" role="status">{copy.historyWorking}</p>
+        {/if}
+        <div class="shell-history-timeline">
+          {#if $historyView.entries.length===0}
+            <p class="shell-history-empty">{copy.historyEmpty}</p>
+          {:else}
+            {#each [...$historyView.entries].reverse() as entry,i (entry.id)}
+              <button type="button" class="shell-history-entry"
+                class:active={$historyView.cursor===$historyView.entries.length-i}
+                class:undone={$historyView.cursor<$historyView.entries.length-i}
+                aria-current={$historyView.cursor===$historyView.entries.length-i?'step':undefined}
+                disabled={$historyView.busy}
+                on:click={()=>void editHistory.travelCollection($historyView.entries.length-i)}>
+                <span class="shell-history-entry-top">
+                  <strong>{entry.title}</strong>
+                  <time>{new Date(entry.timestamp).toLocaleTimeString(uiLocale,{hour:'2-digit',minute:'2-digit'})}</time>
+                </span>
+                <span class="shell-history-change">{entry.change}</span>
+              </button>
+            {/each}
+            <button class="shell-history-entry" type="button" class:active={$historyView.cursor===0}
+              aria-current={$historyView.cursor===0?'step':undefined}
+              disabled={$historyView.busy}
+              on:click={()=>void editHistory.travelCollection(0)}>{copy.historyInitial}</button>
+          {/if}
+        </div>
+      {:else}
+        <p class="shell-history-empty">{copy.historyUnavailable}</p>
+      {/if}
+    </div>
+  </div>
+{/if}
+
 {#if tutorialOpen}
   <div class="tutorial-backdrop">
     <div class="tutorial-dialog" role="dialog" aria-modal="true" aria-label={tutorial.title}>
