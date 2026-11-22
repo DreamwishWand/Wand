@@ -168,3 +168,30 @@ and original verification status as `getItem`.
 The loader copies validated source rows into immutable records, so UI mutation
 cannot silently alter source-backed facts or search indexes. No private source
 data, save file or live entitlement information is exposed by these queries.
+
+
+### Source-aware facet summaries for every service
+
+Use `db.summarizeFacet({scope:'current',field:'worlds'}, filters)` to build
+World selectors from the same validated matching Item IDs as `queryItems`.
+The result contains `matchedItems`, a complete `states` count for
+`verified`, `unverified`, `not_covered`, and `not_applicable`, and
+a `values` list of `{value,itemCount}` entries. Multi-valued relationships
+count each Item ID at most once for a value. Values are sorted by descending
+Item count then lexical key. An empty verified array does not create a
+fabricated "none" selector option. The `media` field is excluded from text
+facet aggregation.
+
+`db.summarizeFacet({scope:'historical_candidate',field:'worlds'}, filters)`
+is explicitly different: it returns `candidateItems`,
+`missingCandidates` and historical candidate values, without marking them
+as current-version facts. Supported historical facets are category, worlds,
+universes and DLC. Both APIs accept the identical AND / any / all filter
+semantics of the shared search API. No extra Collection-specific index or
+private original game-data publication is necessary.
+
+Steam v1.26.2's public snapshot currently has no source-verified native
+World membership, so a current-world summary intentionally returns an empty
+`values` array and `unverified` counts until the owning DB-01 stream
+supplies independently verified current-source overlays. Prior Switch
+Collection classifications must not be silently promoted into them.

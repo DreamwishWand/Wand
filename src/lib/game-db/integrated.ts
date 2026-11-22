@@ -95,6 +95,26 @@ export interface SharedDbQueryResult {
   readonly items:readonly SharedDbItem[];
 }
 
+/** One occurrence per matching Item ID, not per source row or acquisition event. */
+export interface SharedDbFacetValueCount {
+  readonly value:string;
+  readonly itemCount:number;
+}
+export type SharedDbFacetRequest =
+  | Readonly<{scope:'current';field:SharedDbTextFacet}>
+  | Readonly<{scope:'historical_candidate';field:SharedDbHistoricalFacet}>;
+export type SharedDbFacetSummary =
+  | Readonly<{
+    scope:'current';field:SharedDbTextFacet;matchedItems:number;
+    states:Readonly<Record<FactState,number>>;
+    values:readonly SharedDbFacetValueCount[];
+  }>
+  | Readonly<{
+    scope:'historical_candidate';field:SharedDbHistoricalFacet;
+    matchedItems:number;candidateItems:number;missingCandidates:number;
+    values:readonly SharedDbFacetValueCount[];
+  }>;
+
 export interface SharedDbItem {
   readonly id:string;
   readonly names:Readonly<Partial<Record<DbLocale,string>>>;
@@ -528,19 +548,82 @@ export class SharedGameDatabase {
     return selected;
   }
 
+  /** Apply the exact same filter semantics to pages and selector counts. */
+  private matchingIds(filters:readonly SharedDbFilter[]):readonly string[] {
+    check(Array.isArray(filters)&&filters.length<=16,'INVALID_QUERY_FILTERS');
+    const selections=filters.map(filter=>this.queryIds(filter));
+    return this.orderedIds.filter(id=>selections.every(index=>index.has(id)));
+  }
+
+  /**
+   * Verified-current facet options and historical candidates are separate,
+   * including their absence semantics. Useful for shared Collection, Guide,
+   * World, Gallery and Save selectors without fabricated "no world" entries.
+   * Filters have the same AND / any / all semantics as queryItems.
+   */
+  summarizeFacet(
+    request:SharedDbFacetRequest,filters:readonly SharedDbFilter[]=[]
+  ):SharedDbFacetSummary {
+    check(object(request) &&
+      (request.scope==='current' && FIELDS.includes(request.field as FactKey) &&
+        String(request.field)!=='media' ||
+       request.scope==='historical_candidate' &&
+        ['category','worlds','universes','dlc'].includes(request.field)),
+      'INVALID_FACET_REQUEST');
+    const ids=this.matchingIds(filters);
+    const counts=new Map<string,number>();
+    const add=(values:readonly string[]):void=>{
+      // A multi-valued relationship counts the Item ID once per distinct value.
+      for(const value of new Set(values))counts.set(value,(counts.get(value)??0)+1);
+    };
+    const values=():readonly SharedDbFacetValueCount[]=>Object.freeze(
+      [...counts].map(([value,itemCount])=>Object.freeze({value,itemCount}))
+        .sort((a,b)=>b.itemCount-a.itemCount ||
+          (a.value<b.value?-1:a.value>b.value?1:0))
+    );
+    if(request.scope==='historical_candidate') {
+      let candidateItems=0;
+      for(const id of ids) {
+        const candidate=this.historical.get(id)?.[request.field];
+        if(!candidate)continue;
+        candidateItems++;
+        add(typeof candidate.value==='string'?[candidate.value]:candidate.value);
+      }
+      return Object.freeze({
+        scope:'historical_candidate' as const,field:request.field,
+        matchedItems:ids.length,candidateItems,
+        missingCandidates:ids.length-candidateItems,values:values()
+      });
+    }
+    const states:Record<FactState,number>={
+      verified:0,not_applicable:0,unverified:0,not_covered:0
+    };
+    for(const id of ids) {
+      const item=this.getItem(id);
+      if(!item)continue;
+      const fact=item.facts[request.field];
+      states[fact.state]++;
+      if(fact.state!=='verified')continue;
+      add(typeof fact.value==='string'?[fact.value]:
+        Array.isArray(fact.value)?fact.value:[]);
+    }
+    return Object.freeze({
+      scope:'current' as const,field:request.field,
+      matchedItems:ids.length,states:Object.freeze(states),values:values()
+    });
+  }
+
   /** One pagination contract for Collection, Guide, World, Gallery and editors.
    * Multiple filters combine with AND; within a multi-value filter choose
    * explicit any/all. Historical candidates are opt-in, never current facts.
    */
   queryItems(filters:readonly SharedDbFilter[]=[],
     page:Readonly<{offset?:number;limit?:number}>={}):SharedDbQueryResult {
-    check(Array.isArray(filters)&&filters.length<=16,'INVALID_QUERY_FILTERS');
     const offset=page.offset??0,limit=page.limit??100;
     check(Number.isSafeInteger(offset)&&offset>=0&&
       Number.isSafeInteger(limit)&&limit>=1&&limit<=500,
       'INVALID_QUERY_PAGE');
-    const selections=filters.map(filter=>this.queryIds(filter));
-    const matches=this.orderedIds.filter(id=>selections.every(index=>index.has(id)));
+    const matches=this.matchingIds(filters);
     const pageIds=matches.slice(offset,offset+limit);
     const items=pageIds.map(id=>this.getItem(id)).filter((row):row is SharedDbItem=>row!==null);
     const nextOffset=offset+items.length;
