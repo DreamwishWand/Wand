@@ -445,7 +445,7 @@
   {#if infoMessage}<div class="info-banner" role="status">{infoMessage}<button type="button" on:click={()=>infoMessage=''} aria-label="通知を閉じる">×</button></div>{/if}
 
   {#if loading}
-    <div class="loading-panel" role="status">検証済みCollectionデータを読み込み中…</div>
+    <div class="loading-panel" role="status">読み込み中…</div>
   {:else if loadError}
     <div class="error-banner" role="alert">データの検証または読み込みに失敗しました。{loadError}</div>
   {:else}
