@@ -1,5 +1,5 @@
 <script lang="ts">
-  import {onMount} from 'svelte';
+  import {onMount,tick} from 'svelte';
   import {base} from '$app/paths';
   import {watchWandLanguage} from '$lib/ui/preferences';
   import WandIcon from '$lib/ui/WandIcon.svelte';
@@ -12,6 +12,7 @@
   import {guideCalendarEvents,eventScheduleState} from '$lib/guide/event-calendar.mjs';
   import {starpathTaskDisplay} from '$lib/guide/starpath-task-guidance.mjs';
   import {filterStarpathTasks} from '$lib/guide/starpath-search.mjs';
+  import {resolveStarpathDutyLink,starpathDutyHref,type StarpathDutySelection} from '$lib/guide/starpath-duty-link.ts';
   import {loadPublicStarpathGoals,starpathGoalLabel,starpathGoalHeading,starpathGoalSourceNote} from '$lib/guide/public-starpath-goals.mjs';
 
   let catalog:any=null, weeklyLocales:any=null, dailyLocales:any=null, rewardExtras:any=null, publicMedia:any=null, goalAmounts:any=null, goalWarning='', error='', loading=true;
@@ -24,6 +25,7 @@
   let rewardQuery='';
   let rewardTier:'all'|'free'|'premium'='all';
   let limit=60;
+  let highlightedTaskId='';
   // Source-snapshot browsing is permanent; scheduled status must not gate access
   // to the original static tasks and rewards or imply live server availability.
   $: seasonEvents=catalog?guideCalendarEvents(catalog).filter((e:any)=>e.kind==='starpath'):[];
@@ -61,7 +63,39 @@
   function date(value:string){
     return new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(value));
   }
-  function changeSeason(id:string){selectedId=id;limit=60;query='';weeklyQuery='';rewardQuery='';rewardTier='all';}
+  function clearDutyLink(){
+    highlightedTaskId='';
+    const url=new URL(window.location.href);
+    url.searchParams.delete('season');
+    url.searchParams.delete('task');
+    window.history.replaceState(window.history.state,'',url);
+  }
+  function changeSeason(id:string){
+    selectedId=id;limit=60;query='';weeklyQuery='';rewardQuery='';rewardTier='all';
+    clearDutyLink();
+  }
+  function changeTab(next:'tasks'|'weekly'|'rewards'){tab=next;clearDutyLink();}
+  async function displayDutyLink(link:StarpathDutySelection){
+    selectedId=link.seasonId;
+    tab=link.tab;
+    query='';weeklyQuery='';
+    limit=link.tab==='tasks'?Math.max(60,link.index+1):60;
+    highlightedTaskId=link.taskId;
+    await tick();
+    document.getElementById(`starpath-${link.seasonId}-${link.taskId}`)?.scrollIntoView({block:'center'});
+  }
+  function navigateDuty(event:MouseEvent,seasonId:string,taskId:string){
+    if(event.button!==0||event.ctrlKey||event.shiftKey||event.altKey||event.metaKey)return;
+    if(!catalog)return;
+    const link=resolveStarpathDutyLink('?season='+seasonId+'&task='+taskId,catalog);
+    if(!link)return;
+    event.preventDefault();
+    const url=new URL(window.location.href);
+    url.searchParams.set('season',seasonId);
+    url.searchParams.set('task',taskId);
+    window.history.pushState(window.history.state,'',url);
+    void displayDutyLink(link);
+  }
   function visibleRewards(rewards:any[],search:string,tier:string,language:string,extras:any){
     const needle=search.trim().toLocaleLowerCase();
     return rewards.filter(r=>{
@@ -88,13 +122,24 @@
     }
     catch(e){error=e instanceof Error?e.message:String(e)}
     finally{loading=false;}
+    if(!error&&catalog){
+      const selected=resolveStarpathDutyLink(window.location.search,catalog);
+      if(selected)await displayDutyLink(selected);
+    }
   }
   onMount(()=>{
     const unwatch=watchWandLanguage(next=>locale=next);
     now=Date.now();
     const clock=setInterval(()=>{now=Date.now()},60000);
+    const restoreLink=()=>{
+      if(!catalog)return;
+      const restored=resolveStarpathDutyLink(window.location.search,catalog);
+      if(restored)void displayDutyLink(restored);
+      else{highlightedTaskId='';}
+    };
+    window.addEventListener('popstate',restoreLink);
     void load();
-    return ()=>{unwatch();clearInterval(clock);};
+    return ()=>{unwatch();clearInterval(clock);window.removeEventListener('popstate',restoreLink);};
   });
 </script>
 
@@ -148,9 +193,9 @@
       </section>
       </details>
       <nav class="tabs" aria-label="表示内容">
-        <button class:active={tab==='tasks'} on:click={()=>tab='tasks'}>通常タスク</button>
-        <button class:active={tab==='weekly'} on:click={()=>tab='weekly'}>週間タスク</button>
-        <button class:active={tab==='rewards'} on:click={()=>tab='rewards'}>報酬</button>
+        <button class:active={tab==='tasks'} on:click={()=>changeTab('tasks')}>通常タスク</button>
+        <button class:active={tab==='weekly'} on:click={()=>changeTab('weekly')}>週間タスク</button>
+        <button class:active={tab==='rewards'} on:click={()=>changeTab('rewards')}>報酬</button>
       </nav>
       {#if tab==='tasks'}
         <div class="search">
@@ -161,7 +206,7 @@
           {#each filtered.slice(0,limit) as t (t.id)}
             {@const display=starpathTaskDisplay(season.id,t,locale,starpathDailyDescription(dailyLocales,season.id,t.id,locale))}
             {@const goal=starpathGoalLabel(goalAmounts,season.id,t,locale)}
-            <li><strong>{display.headline}</strong>{#if display.note}<small>{display.note}</small>{/if}<small class="task-data">{#if goal}<span class="goal-badge">{starpathGoalHeading(locale)} {goal}</span>{/if}<span class="token-badge"><WandIcon name="star" size={13}/> {t.tokenReward} {season.currencyName}</span><span>{t.id}{t.availableOnDay!==undefined?' · 解放設定日 '+t.availableOnDay:''}</span></small></li>
+            <li id={`starpath-${season.id}-${t.id}`} class:permalink-focused={highlightedTaskId===t.id}><strong>{display.headline}</strong>{#if display.note}<small>{display.note}</small>{/if}<small class="task-data">{#if goal}<span class="goal-badge">{starpathGoalHeading(locale)} {goal}</span>{/if}<span class="token-badge"><WandIcon name="star" size={13}/> {t.tokenReward} {season.currencyName}</span><span>{t.id}{t.availableOnDay!==undefined?' · 解放設定日 '+t.availableOnDay:''}</span><a class="duty-permalink" href={starpathDutyHref(base,season.id,t.id)} aria-label={`タスク ${t.id} の共有リンク`} title="このタスクへのリンク" on:click={event=>navigateDuty(event,season.id,t.id)}><WandIcon name="arrow" size={13}/> リンク</a></small></li>
           {/each}
         </ul>
         {#if filtered.length===0}<p role="status" class="empty-match">一致する通常タスクはありません。</p>{/if}
@@ -180,7 +225,7 @@
                 {@const display=starpathTaskDisplay(season.id,t,locale,sourceText)}
                 {@const goal=starpathGoalLabel(goalAmounts,season.id,t,locale)}
                 {@const discrepancy=starpathGoalSourceNote(goalAmounts,season.id,t,locale,sourceText)}
-                <li><strong>{display.headline}</strong>{#if display.note}<small>{display.note}</small>{/if}{#if discrepancy}<small class="source-discrepancy">{discrepancy}</small>{/if}<small class="task-data">{#if goal}<span class="goal-badge">{starpathGoalHeading(locale)} {goal}</span>{/if}<span class="token-badge"><WandIcon name="star" size={13}/> {t.tokenReward} {season.currencyName}</span><span>{t.id}</span></small></li>
+                <li id={`starpath-${season.id}-${t.id}`} class:permalink-focused={highlightedTaskId===t.id}><strong>{display.headline}</strong>{#if display.note}<small>{display.note}</small>{/if}{#if discrepancy}<small class="source-discrepancy">{discrepancy}</small>{/if}<small class="task-data">{#if goal}<span class="goal-badge">{starpathGoalHeading(locale)} {goal}</span>{/if}<span class="token-badge"><WandIcon name="star" size={13}/> {t.tokenReward} {season.currencyName}</span><span>{t.id}</span><a class="duty-permalink" href={starpathDutyHref(base,season.id,t.id)} aria-label={`タスク ${t.id} の共有リンク`} title="このタスクへのリンク" on:click={event=>navigateDuty(event,season.id,t.id)}><WandIcon name="arrow" size={13}/> リンク</a></small></li>
               {/each}
             </ul>
           </section>
@@ -284,6 +329,9 @@
   .entries{list-style:none;padding:0;display:grid;gap:8px}
   .entries li{display:grid;gap:6px;border:1px solid #493956;background:#21192b;border-radius:10px;padding:12px 16px;font-size:13px;overflow-wrap:anywhere}
   .entries li strong{font-size:14px}.entries li small{color:#ab9ab9;font-size:11px}
+  .entries li.permalink-focused{border-color:#bd92eb;box-shadow:inset 0 0 0 1px #8e65ba}
+  .duty-permalink{display:inline-flex;gap:4px;align-items:center;padding:4px 6px;color:#dcc1f5;text-decoration:none;border:1px solid #695080;border-radius:6px}
+  .duty-permalink:hover,.duty-permalink:focus-visible{background:#453054}
   .task-data{display:flex!important;gap:8px;align-items:center;flex-wrap:wrap}
   .goal-badge,.token-badge{display:inline-flex;align-items:center;gap:4px;border-radius:7px;padding:4px 7px;background:#352342;color:#f0dcff}
   .source-discrepancy{display:block;color:#e6c38c;font-size:11px;line-height:1.45;margin-top:4px}
