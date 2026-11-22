@@ -51,6 +51,9 @@
   let importInput:HTMLInputElement;
   let localCatalogInput:HTMLInputElement;
   let gameImageMap:Record<string,string>={};
+  // Ephemeral projection of saved GridObject references. Never put these
+  // observations in the manual Collection state or IndexedDB backup.
+  let savedGridByItem:Record<string,{fullGridReferences:number;diffModifiedReferences:number}>={};
   let mobileInspector=false;
   let inspectorClose:HTMLButtonElement;
   let inspectorTrigger:HTMLElement|null=null;
@@ -66,6 +69,7 @@
     .filter(group=>group.items.length);
   $: selectedItem=selectedItemId!==null && runtime?runtime.item(selectedItemId,locale):null;
   $: selectedEntry=selectedItem?entries[String(selectedItem.itemId)]??{}:{};
+  $: selectedGridRefs=selectedItem?savedGridByItem[String(selectedItem.itemId)]??null:null;
   $: isBrowsing=Boolean(selected||search.trim()||status!=='all'||nameStatus!=='all'||expansion||worldFilter||universeFilter);
 
   function categoryLabel(lang:string,id:string):string {
@@ -333,6 +337,17 @@
       infoMessage='セーブの状態は反映されませんでした。既存の手動記録は維持しています。';
     }finally{busy=false;}
   }
+  function receiveSavedGridReferences(event:CustomEvent<{
+    entries:{itemId:number;fullGridReferences:number;diffModifiedReferences:number}[];
+  }|null>):void {
+    const rows=event.detail?.entries??[];
+    const projection:Record<string,{fullGridReferences:number;diffModifiedReferences:number}>={};
+    for(const row of rows)projection[String(row.itemId)]={
+      fullGridReferences:row.fullGridReferences,
+      diffModifiedReferences:row.diffModifiedReferences
+    };
+    savedGridByItem=projection;
+  }
   function lookupSavedCollectionId(itemId:number):void {
     if(!Number.isSafeInteger(itemId)||itemId<=0||!runtime)return;
     selected='';worldFilter='';universeFilter='';expansion='';
@@ -447,7 +462,8 @@
   {:else}
     <SavedStorePreview resolveHistorical={historicalLookup} {locale} {gameImageMap} collectionCommitBusy={busy}
       on:lookupItem={(event:CustomEvent<number>)=>lookupSavedCollectionId(event.detail)}
-      on:saveProfile={importSaveProfile} />
+      on:saveProfile={importSaveProfile}
+      on:gridReferences={receiveSavedGridReferences} />
     <div class="summary-strip">
       <div><strong>{overall.total.toLocaleString(locale)}</strong><span>参照データ</span></div>
       <div><strong>{overall.owned.toLocaleString(locale)} / {overall.total.toLocaleString(locale)}</strong><span>所持済み記録（手動・セーブ） / 参照件数</span></div>
@@ -600,6 +616,9 @@
             </div>
             <div class="inspector-section">
               <h3>Collection記録</h3>
+              {#if selectedGridRefs}
+                <p class="inspector-hint">セーブ内の家具配置参照：全体グリッド {selectedGridRefs.fullGridReferences}件、差分参照 {selectedGridRefs.diffModifiedReferences}件。これは総配置数・解放・所有の証明ではなく、手動記録や未配置ストックには加算しません。</p>
+              {/if}
               <p class="inspector-hint">セーブなしでも手動編集できます。セーブを読み込むと発見履歴と明示的な正の数量による所持状態が優先されます。お気に入りは維持し、元のDDVセーブには書き込みません。</p>
               <div class="ownership-actions">
                 <button type="button" disabled={Boolean(storeError)} class:active={selectedEntry.status==='owned'} on:click={()=>changeEntry({status:'owned'})}>所持 / 解放</button>
