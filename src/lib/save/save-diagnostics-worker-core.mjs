@@ -85,7 +85,9 @@ export function detectLocalSaveFormat(bytes) {
   return bytes[index]===0x7b?'json':'p1g';
 }
 
-export async function inspectLocalSaveDiagnosticsBytes(format, bytes, verifyNative=null, verifyP1g=null) {
+export async function inspectLocalSaveDiagnosticsBytes(format, bytes, verifyNative=null, verifyP1g=null,decodeEncryptedProfile=decodeP1gPackagedProfile) {
+  if(typeof decodeEncryptedProfile!=='function')
+    throw new TypeError('DB05_LOCAL_NATIVE_PROFILE_READER_REQUIRED');
   if (verifyNative!==null && typeof verifyNative!=='function')
     throw new TypeError('DB05_LOCAL_WASM_CALLBACK_INVALID');
   if (verifyP1g!==null && typeof verifyP1g!=='function')
@@ -104,7 +106,7 @@ export async function inspectLocalSaveDiagnosticsBytes(format, bytes, verifyNati
   if (format === 'p1g') {
     // Reuses Collection's strict CRC, ZIP, UTF-8, duplicate-key and
     // unsafe-number verification. The decrypted JSON stays in this Worker.
-    const decoded = await decodeP1gPackagedProfile(bytes);
+    const decoded = await decodeEncryptedProfile(bytes);
     strictJsonText=decoded.jsonText;
     root = JSON.parse(strictJsonText); // text was already strictly validated
   } else {
