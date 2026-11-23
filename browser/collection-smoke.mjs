@@ -653,7 +653,8 @@ try{
   await page.locator('.facet-card').first().waitFor();
   assert.match(await page.locator('.facet-card').first().innerText(),/家具|Furniture/);
   assert.equal(await page.locator('.mode-tabs').count(),0);
-  assert.equal(await page.locator('.collection-scope-toolbar').count(),0);
+  assert.equal(await page.locator('.collection-scope-toolbar').count(),1);
+  assert.equal(await page.locator('.collection-scope-scroll button:disabled').count(),6);
   await page.getByRole('button',{name:/フィルター/}).click();
   assert.equal(await page.getByRole('combobox',{name:'ワールドで絞り込み'}).count(),0);
   assert.equal(await page.getByRole('combobox',{name:'ユニバースで絞り込み'}).count(),0);
