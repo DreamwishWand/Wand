@@ -32,5 +32,10 @@ export function queuedSaveExportMode(
       mergedGridCount>0&&mergedGridCount<=16
       ?'combined':'conflict';
   }
+  // Even one Grid queue must pass the shared local composition
+  // check; an invalid ordinal/duplicate cannot fall back to a subset.
+  if(quantityGridCount===null||
+     !Number.isSafeInteger(quantityGridCount)||
+     quantityGridCount<1||quantityGridCount>16)return 'conflict';
   return mixedCount>0?'mixed':'coordinates';
 }
