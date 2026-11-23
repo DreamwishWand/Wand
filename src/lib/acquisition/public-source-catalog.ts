@@ -33,8 +33,10 @@ import {indexNativeShopHistory,type NativeShopHistoryIndex}
   from './shop-history-index.ts';
 import {loadPinnedIapPackReferences,type PinnedIapPackReferenceIndex}
   from './public-iap-pack-references.ts';
-import {indexItemSourceBrowser,type ItemSourceBrowser}
-  from './item-source-browser.ts';
+import {
+  indexItemSourceBrowser,indexExpandedNativeItemSourceBrowser,
+  type ItemSourceBrowser,type ExpandedNativeItemSourceBrowser
+} from './item-source-browser.ts';
 import {loadPinnedStaticContainerContents,type PinnedStaticContainerContents}
   from './public-static-container.ts';
 import {loadPinnedDefaultInventorySource,type PinnedDefaultInventorySource}
@@ -205,6 +207,9 @@ export interface PublicSourceCatalog{
   readonly origins:OriginDatabase;
   /** Browse actual source relations by type/status with no name-only promotions. */
   readonly itemSources:ItemSourceBrowser;
+  /** Full 1,255+1,943+763 exact static Item-origin paths on demand.
+   * Recipe unlock, live supply and actual catches are NOT verified. */
+  loadExpandedNativeItemSources():Promise<ExpandedNativeItemSourceBrowser>;
   readonly db00:Db00OriginJoin;
   readonly nameCandidates:PublicOnlineNameCandidateIndex;
   readonly questSource:PublicQuestAcquisitionIndex;
@@ -439,6 +444,7 @@ export async function loadPublicSourceCatalog(
   let distributionScopePromise:Promise<DistributionScopeIndex>|null=null;
   let nativeRecipePromise:Promise<NativeRecipeIndex>|null=null;
   let nativeActivityPromise:Promise<NativeActivityResultIndex>|null=null;
+  let expandedNativeBrowserPromise:Promise<ExpandedNativeItemSourceBrowser>|null=null;
   let nativeCookingMembersPromise:Promise<NativeCookingMemberIndex>|null=null;
   let cookingRecipeResolverPromise:Promise<NativeCookingRecipeResolver>|null=null;
   let nativeLootPromise:Promise<NativeLootCandidateIndex>|null=null;
@@ -457,6 +463,10 @@ export async function loadPublicSourceCatalog(
     loadPinnedNativeRecipeResults(basePath,fetcher);
   const loadActivities=()=>nativeActivityPromise??=
     loadPinnedNativeActivityResults(basePath,fetcher);
+  const loadExpandedNativeBrowser=()=>expandedNativeBrowserPromise??=
+    Promise.all([loadRecipes(),loadActivities()]).then(([recipes,activities])=>
+      indexExpandedNativeItemSourceBrowser(origins,recipes,activities)
+    );
   const loadCookingMembers=()=>nativeCookingMembersPromise??=
     loadPinnedNativeCookingMembers(basePath,fetcher);
   const loadCookingRecipeResolver=()=>cookingRecipeResolverPromise??=
@@ -535,6 +545,7 @@ export async function loadPublicSourceCatalog(
     },
     loadNativeRecipeResults(){return loadRecipes();},
     loadNativeActivityResults(){return loadActivities();},
+    loadExpandedNativeItemSources(){return loadExpandedNativeBrowser();},
     loadNativeCookingMembers(){return loadCookingMembers();},
     loadCookingRecipeResolver(){return loadCookingRecipeResolver();},
     loadNativeLootCandidates(){return loadLoot();},
