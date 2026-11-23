@@ -9,6 +9,8 @@
   export let selectedOrdinal:number|null=null;
   export let disabled=false;
   export let onPick:(localOrdinal:number)=>void;
+  /** Public item names are display/search aids only, never Save identities. */
+  export let itemName:(itemId:string)=>string=()=>'';
   /** Candidate only: these UI values do not authorize a Save mutation. */
   export let draftX:number|null=null;
   export let draftY:number|null=null;
@@ -35,6 +37,7 @@
   let groupOffsetX='0';
   let groupOffsetY='0';
   let groupIssue='';
+  let markerQuery='';
   let lastRows:readonly LocalGridInstance[]|null=null;
 
   type Point=LocalGridInstance&{x:number;y:number};
@@ -222,7 +225,27 @@
   $: currentRows=rows.filter(row=>row.localGridOrdinal===selectedGrid);
   $: points=currentRows.filter(hasCoordinates);
   $: allMarkers=aggregate(points);
-  $: markers=allMarkers.slice(0,256);
+  $: pointByOrdinal=new Map(points.map(row=>[row.localOrdinal,row]));
+  // Keep the first 256 markers for a bounded default DOM, but always render
+  // an explicitly selected object even when it lies later in the Save.
+  $: markers=[
+    ...allMarkers.slice(0,256),
+    ...allMarkers.slice(256).filter(marker=>
+      marker.ordinals.includes(selectedOrdinal??-1)||
+      (groupMode&&marker.ordinals.some(id=>groupOrdinals.includes(id))))
+  ];
+  $: normalizedMarkerQuery=markerQuery.trim().toLocaleLowerCase()
+    .replace(/^#/,'');
+  $: searchedMarkers=normalizedMarkerQuery
+    ?allMarkers.filter(marker=>marker.ordinals.some(id=>{
+      const row=pointByOrdinal.get(id);
+      return String(id).includes(normalizedMarkerQuery)||
+        (row!==undefined&&(
+          row.itemId.includes(normalizedMarkerQuery)||
+          itemName(row.itemId).toLocaleLowerCase()
+            .includes(normalizedMarkerQuery)
+        ));
+    })).slice(0,20):[];
   // Discard stale ordinals, changed source coordinates and invalid staged
   // numbers. Staged positions are visual hints, never export authorization.
   $: stagedTargets=stagedMoves.filter(move=>{
@@ -246,6 +269,7 @@
     groupOrdinals=[];
     groupMode=false;
     groupPlacing=false;
+    markerQuery='';
     rotationDirection=null;
     rotationPivotOrdinal=null;
     groupIssue='';
@@ -318,6 +342,10 @@
       {points.length}件の座標を表示
       {#if stagedTargets.length>0} · 編集候補 {stagedTargets.length}件{/if}
     </span>
+    <input type="search" class="marker-search"
+      aria-label="マップ内の配置を検索"
+      placeholder="配置番号・アイテムを検索" bind:value={markerQuery}
+      disabled={disabled||points.length===0} />
     <button type="button" class="placement-mode"
       aria-pressed={placing}
       disabled={disabled||!selectedInGrid}
@@ -338,6 +366,30 @@
       {groupMode?'複数選択を終了':'複数配置を一括移動'}
     </button>
   </div>
+  {#if markerQuery.trim()&&points.length>0}
+    <div class="marker-search-results" role="group" aria-label="マップ配置検索結果">
+      {#each searchedMarkers as marker (`${marker.x}:${marker.y}`)}
+        <button type="button" class="marker-search-result"
+          disabled={disabled}
+          aria-label={`検索結果: 配置 #${marker.ordinals.join(', #')} を${groupMode?'グループに追加または除外':'選択'}`}
+          on:click={()=>{
+            choose(marker);
+            markerQuery='';
+          }}>
+          <span>#{marker.ordinals.join(', #')} · {
+            itemName(pointByOrdinal.get(marker.ordinals[0])?.itemId??'')||
+            pointByOrdinal.get(marker.ordinals[0])?.itemId??''
+          }</span>
+          <small>X {marker.x} / Y {marker.y}</small>
+        </button>
+      {/each}
+      {#if searchedMarkers.length===0}
+        <small>該当する配置はありません。</small>
+      {:else if searchedMarkers.length===20}
+        <small>先頭20座標を表示。検索語を追加して絞り込めます。</small>
+      {/if}
+    </div>
+  {/if}
   {#if points.length>0}
     <div class="coordinate-plane" role="group"
       aria-label="保存済みX/Y座標の相対表示">
@@ -496,6 +548,16 @@
 <style>
   .grid-map{display:grid;gap:10px;width:100%;padding:10px 0;}
   .toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  .marker-search{min-width:170px;max-width:330px;flex:1;
+    padding:10px 12px;border:1px solid #745b8b;border-radius:7px;
+    background:#f5ecfa;color:#291d34;}
+  .marker-search-results{display:flex;gap:6px;flex-wrap:wrap;}
+  .marker-search-result{display:flex;gap:7px;align-items:center;
+    border:1px solid #745b8b;background:#392a48;color:#f9efff;
+    padding:7px 10px;border-radius:7px;cursor:pointer;}
+  .marker-search-result small{opacity:.75;font-size:11px;}
+  .marker-search-result:disabled{opacity:.55;cursor:not-allowed;}
+  .marker-search-results>small{font-size:11px;color:#d4c2df;}
   .toolbar label{flex:none;font-size:13px;color:#e9d5f1;}
   select{min-width:180px;max-width:420px;flex:1;padding:10px 12px;
     background:#f5ecfa;color:#291d34;border:0;border-radius:7px;}
@@ -547,5 +609,6 @@
   @media(max-width:580px){
     .coordinate-plane{min-height:260px;}
     select{min-width:150px;}
+    .marker-search{min-width:135px;}
   }
 </style>
