@@ -110,6 +110,12 @@ import {
   type Db00OriginalCollectionAreaReader
 } from './collection-area-sources.ts';
 import {
+  joinDb00SixOriginalCollectionAreas,
+  type Db00SixOriginalAreaReader
+} from './local-six-category-areas.ts';
+import type {Db01SixSourceClient}
+  from '../items/native-positive-area-six-categories.ts';
+import {
   createDb00PublicItemSearch,
   type Db00PublicItemSearchRequest,type Db00PublicItemSearchResult
 } from './public-search.ts';
@@ -160,6 +166,13 @@ export interface PublicSharedGameSources{
   readonly guideEvents:Db00PublicEventSources;
   /** Seven verified original Collection-area config records (not Item membership). */
   readonly originalCollectionAreas:Db00OriginalCollectionAreaReader;
+  /** Explicit owner-local only: attach DB-01 SHA-verified original shards.
+   * No private origin/file download and no change to public startup IO.
+   * Use a Worker for broad original-source searches.
+   */
+  connectOwnerLocalSixAreaSource(
+    source:Db01SixSourceClient
+  ):Db00SixOriginalAreaReader;
   readonly hasPrivateGameSource:false;
   readonly currentAvailabilityVerified:false;
   readonly playerOwnershipVerified:false;
@@ -588,10 +601,12 @@ export async function openPublicSharedGameSources(
     guideEvents.currentAvailabilityVerified===false &&
     guideEvents.playerProgressVerified===false &&
     joined.snapshotId===database.snapshotId,'CROSS_SOURCE_MISMATCH');
-  return Object.freeze({
+  const publicReader:PublicSharedGameSources=Object.freeze({
     schema:DB00_PUBLIC_SOURCES_SCHEMA,
     snapshotId:database.snapshotId,database,joined,acquisition,guide,
     guideQuestTargets,guideEvents,originalCollectionAreas,
+    connectOwnerLocalSixAreaSource:(source:Db01SixSourceClient)=>
+      joinDb00SixOriginalCollectionAreas(publicReader,source),
     hasPrivateGameSource:false as const,
     currentAvailabilityVerified:false as const,
     playerOwnershipVerified:false as const,
@@ -616,4 +631,5 @@ export async function openPublicSharedGameSources(
     summarizeFacet:(request:SharedDbFacetRequest,filters:readonly SharedDbFilter[]=[])=>
       database.summarizeFacet(request,filters)
   });
+  return publicReader;
 }
