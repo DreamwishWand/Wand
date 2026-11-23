@@ -7,6 +7,10 @@
  * No private source bytes, saves, or reconstructed game records are published.
  */
 import { canonicalId } from './model.ts';
+import {
+  hasPinnedDefaultInventoryEvidence,
+  type PinnedDefaultInventorySource
+} from '../acquisition/public-default-inventories.ts';
 import type {SharedGameDatabase,SharedDbItem} from './integrated.ts';
 import type {OriginDatabase,ItemOrigin} from '../acquisition/origins.ts';
 import {
@@ -34,6 +38,8 @@ export interface Db00SourceJoinOptions{
   readonly origins?:OriginDatabase;
   /** SHA-validated original static container templates, NEVER live chest contents. */
   readonly staticContainers?:PinnedStaticContainerContents;
+  /** Original default-inventory definitions; not player inventory or grants. */
+  readonly defaultInventories?:PinnedDefaultInventorySource;
   /** Already SHA-validated DB-03 reward index. Does not prove redemption. */
   readonly rewards?:GuideRewardIndex;
   /** Already SHA-pinned DB-03 original Quest objective Item candidates. */
@@ -63,6 +69,10 @@ export interface Db00SourceJoinedItem{
   /** null = source omitted; [] = no configured slot. Never merge with confirmed origins. */
   readonly staticContainerCandidates:readonly ItemOrigin[]|null;
   readonly staticContainerLiveContentsVerified:false;
+  /** null = source absent, [] = no matching configured default; not player state. */
+  readonly configuredDefaultInventoryCandidates:readonly ItemOrigin[]|null;
+  readonly configuredDefaultInventoryPlayerOwnershipVerified:false;
+  readonly configuredDefaultInventoryNewPlayerGrantVerified:false;
   /** null means no verified reward source supplied, not "no rewards". */
   readonly starpathRelations:readonly GuideItemRelation[]|null;
   readonly starpathRewardsOnlyConfigured:true;
@@ -113,7 +123,7 @@ export function joinCurrentGameSources(
     db.target.platform==='Steam'&&db.target.gameVersion==='1.26.2'&&
     db.target.buildId===null&&db.target.sourceSha256===CURRENT_SOURCE_SHA,
     'CURRENT_STEAM_ITEMLIST_REQUIRED');
-  const {origins,staticContainers,rewards,questTargets,nativeScope,nativeScopePins}=options;
+  const {origins,staticContainers,defaultInventories,rewards,questTargets,nativeScope,nativeScopePins}=options;
   if(origins)check(origins.schema==='wand.db02.item-origins@1' &&
     origins.originCoverageComplete===false,'DB02_READER_INVALID');
   if(staticContainers)check(
@@ -127,6 +137,20 @@ export function joinCurrentGameSources(
     staticContainers.coverage.guaranteedLootVerified===false &&
     staticContainers.coverage.personalSaveContentsIncluded===false,
     'DB02_PINNED_STATIC_CONTAINER_SOURCE_REQUIRED');
+  if(defaultInventories)check(
+    hasPinnedDefaultInventoryEvidence(defaultInventories) &&
+    defaultInventories.schema==='wand.db02.static-default-inventories@1' &&
+    defaultInventories.sourceIntegrity==='source_protoDb_and_public_sha256_pinned' &&
+    defaultInventories.coverage.groups===15 &&
+    defaultInventories.coverage.configuredEntries===289 &&
+    defaultInventories.coverage.distinctItemIds===288 &&
+    defaultInventories.coverage.containerEntries===3 &&
+    defaultInventories.coverage.listEntries===286 &&
+    defaultInventories.coverage.playerInventoryVerified===false &&
+    defaultInventories.coverage.newPlayerGrantVerified===false &&
+    defaultInventories.coverage.onlineOwnershipVerified===false &&
+    defaultInventories.coverage.privateSaveIncluded===false,
+    'DB02_PINNED_DEFAULT_INVENTORY_SOURCE_REQUIRED');
   if(rewards)check(rewards.contract==='wand.db03.reward-relations@1' &&
     rewards.evidence.platform==='Steam'&&rewards.evidence.gameVersion==='1.26.2'&&
     rewards.evidence.integrity==='pinned_public_sha256'&&
@@ -197,6 +221,16 @@ export function joinCurrentGameSources(
         row.source.sourceId==='db02:native:steam-1262:container-template' &&
         row.source.gameVersion==='1.26.2'),
       'DB02_STATIC_CONTAINER_ITEM_OR_STATUS_MISMATCH');
+    const defaultEntries=defaultInventories?.getItemCandidates(itemId);
+    check(!defaultEntries || Array.isArray(defaultEntries) &&
+      defaultEntries.every(row=>row.itemId===itemId &&
+        row.kind==='other' && row.routeStatus==='static_candidate_only' &&
+        row.availability==='not_live_verified' &&
+        row.source.sourceId==='db02:static:default-inventories:steam-1262' &&
+        row.source.gameVersion==='1.26.2' &&
+        row.quantity!==null && Number.isSafeInteger(row.quantity) &&
+        row.quantity>0),
+      'DB02_DEFAULT_INVENTORY_ITEM_OR_STATUS_MISMATCH');
     const relations=rewards?.getItemRelations(itemId);
     check(!relations||Array.isArray(relations) && relations.every(relation=>
       relation.itemId===itemId && relation.configuredRewardOnly===true &&
@@ -219,6 +253,10 @@ export function joinCurrentGameSources(
       staticContainerCandidates:configuredSlots?
         Object.freeze([...configuredSlots]):null,
       staticContainerLiveContentsVerified:false as const,
+      configuredDefaultInventoryCandidates:defaultEntries?
+        Object.freeze([...defaultEntries]):null,
+      configuredDefaultInventoryPlayerOwnershipVerified:false as const,
+      configuredDefaultInventoryNewPlayerGrantVerified:false as const,
       starpathRelations:relations?Object.freeze([...relations]):null,
       starpathRewardsOnlyConfigured:true as const,
       questTargetCandidates:objectives?Object.freeze([...objectives]):null,
