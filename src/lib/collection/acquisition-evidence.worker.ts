@@ -36,9 +36,11 @@ self.addEventListener('message',(event:MessageEvent<unknown>)=>{
          catalog.database.target.platform!=='Steam'||
          catalog.database.target.gameVersion!=='1.26.2')
         throw new Error('COLLECTION_ACQUISITION_VERSION_MISMATCH');
-      const summary=summarizeCollectionAcquisition(
-        await catalog.getNativeAcquisitionEvidence(request.itemId)
-      );
+      const [evidence,stalls]=await Promise.all([
+        catalog.getAllNativeAcquisitionEvidence(request.itemId),
+        catalog.acquisition.loadNativeStallSources()
+      ]);
+      const summary=summarizeCollectionAcquisition(evidence,stalls);
       const reply:Reply={requestId:request.requestId,itemId:request.itemId,
         ok:true,summary};
       self.postMessage(reply);
