@@ -17,6 +17,9 @@ export const COLLECTION_TOP_CATEGORIES=[
   {id:"upgrades",icon:"sparkles",keys:[],names:["アップグレード","Upgrades","Améliorations","Potenziamenti","Verbesserungen","Mejoras","升级","Melhorias"]},
   {id:"characters",icon:"character",keys:[],names:["キャラクター","Characters","Personnages","Personaggi","Charaktere","Personajes","角色","Personagens"]},
   {id:"companions",icon:"paw",keys:[],names:["コンパニオン","Companions","Compagnons","Compagni","Begleiter","Compañeros","伙伴","Companheiros"]},
+  // Steam 1.26.2 CollectionSubMenu.Sidekicks (code 20) is a distinct
+  // native selector. Keep its player-facing place beside Companions.
+  {id:"adventure-companions",icon:"butterfly",keys:[],names:["冒険の仲間","Adventure Companions","Compagnons d’aventure","Compagni d’avventura","Abenteuerbegleiter","Compañeros de aventura","冒险伙伴","Companheiros de aventura"]},
   {id:"critters",icon:"paw",keys:[],names:["動物","Critters","Bestioles","Animaletti","Tierchen","Animalitos","小动物","Criaturinhas"]},
   {id:"mounts",icon:"paw",keys:[],names:["マウント","Mounts","Montures","Cavalcature","Reittiere","Monturas","坐骑","Montarias"]},
   {id:"crafting",icon:"tool",keys:[],names:["クラフト","Crafting","Fabrication","Creazione","Herstellung","Fabricación","制作","Fabricação"]},
