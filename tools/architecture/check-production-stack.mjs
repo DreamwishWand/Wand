@@ -59,7 +59,6 @@ const knownLegacy=new Set([
   "src/lib/guide/client.mjs",
   "src/lib/guide/current-conditions.mjs",
   "src/lib/guide/public-guide.mjs",
-  "src/lib/guide/public-starpath-goals.mjs",
   "src/lib/guide/shard-fingerprints.mjs",
   "src/lib/guide/source-composite.mjs",
   "src/lib/guide/starpath-public-media.mjs",
