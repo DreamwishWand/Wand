@@ -37,19 +37,27 @@ test('DB-00 discovers exact source-linked outside-ItemList IDs without inventing
     ...db.acquisition.defaultInventorySource.linkedItemIds,
     ...db.guide.itemIds
   ]);
-  const questsSeen=new Set();
-  for(const row of rows)for(const ref of row.item.questTargetCandidates??[])
-    questsSeen.add(ref.questId);
-  // Include original Quest target candidates, not merely acquisition relations.
-  // DB-03 target reader accepts any Quest ID in its pinned original index.
+  // Reconstruct the complete native positive-ID universe from the same
+  // independently DB-03-validated, public Quest catalogue. This does not
+  // treat an omitted ItemList record as a new Collection item.
+  const originalQuestIndex=JSON.parse(readFileSync(
+    new URL('guide/public/quest-index.json',root),'utf8'
+  ));
+  assert.equal(originalQuestIndex.quests.length,733);
   let questRefs=0;
-  for(const id of db.guideQuestTargets.coverage.knownQuests===733
-    ?new Set(rows.flatMap(row=>(row.item.questTargetCandidates??[]).map(x=>x.questId)))
-    :[]){
-    const source=db.guideQuestTargets.getQuestCandidates(id);
-    for(const ref of source){known.add(ref.itemId);questRefs++;}
+  const questItemIds=new Set();
+  for(const quest of originalQuestIndex.quests){
+    for(const ref of db.guideQuestTargets.getQuestCandidates(quest.id)){
+      known.add(ref.itemId);
+      questItemIds.add(ref.itemId);
+      questRefs++;
+    }
   }
-  assert(questRefs>=0);
+  assert.equal(questRefs,4897);
+  assert.equal(questItemIds.size,2551);
+  const expected=[...known].filter(id=>db.database.getItem(id)===null)
+    .sort((a,b)=>Number(a)-Number(b));
+  assert.deepEqual(rows.map(row=>row.itemId),expected);
   for(const row of rows){
     assert.equal(row.item.itemId,row.itemId);
     assert.equal(row.item.catalog,null);
