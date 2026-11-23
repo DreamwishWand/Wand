@@ -811,7 +811,7 @@ try{
 
   // Source/GridData path match with a generated local Save remains a
   // SEPARATE numeric plot; it is never painted as original terrain occupancy.
-  const syntheticSave={World:{GridCollection:{Grids:{
+  const syntheticSave={GameInfo:{Version:1262},Player:{},World:{GridCollection:{Grids:{
     "777":{ID:777,GridDefaultLayoutPath:LAYOUT,
       GridDataPath:'GridData/Village04/Beach.json',
       Objects:{
@@ -848,6 +848,7 @@ try{
   await saveChooser.setInputFiles({
     name:'replacement-save.json',mimeType:'application/json',
     buffer:Buffer.from(JSON.stringify({
+      GameInfo:{Version:1262},Player:{},
       World:{GridCollection:{Grids:{},DiffGrids:{}}}
     })),
   });
