@@ -586,9 +586,10 @@
     sourceFacetGroups=[];
     sourceGroupsCacheKey='';
     sourceChoices={};
-    sourceActivityType=null;
+    sourceActivityType=null;sourceNativeSubtype=null;
     sourceUniverseSelection=null;
     sourceActivityTypeCards=[];
+    sourceNativeSubtypeCards=[];
   }
   function ensureSourceIndex():void{
     if(!canUseDb01SourceFacets()||sourceIndex||sourceLoad)return;
@@ -843,7 +844,7 @@
   function browseEveryItem():void{
     browsingAllItems=true;
     viewAxis='world';
-    selected='';sourceActivityType=null;sourceUniverseSelection=null;
+    selected='';sourceActivityType=null;sourceNativeSubtype=null;sourceUniverseSelection=null;
     worldFilter='';universeFilter='';
     search='';status='all';favoriteOnly=false;nameStatus='all';expansion='';
     sourceChoices={};acquisitionFilter='';bypassCategoryGroups=true;
@@ -854,12 +855,13 @@
     if(viewAxis!=='world'||(!worldFilter&&!sourceChoices.worldContextTag)){
       browseEveryItem();return;
     }
-    browsingAllItems=true;selected='';sourceActivityType=null;
+    browsingAllItems=true;selected='';sourceActivityType=null;sourceNativeSubtype=null;
     search='';status='all';favoriteOnly=false;nameStatus='all';expansion='';
     sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
   }
   function chooseActivityType(code:number):void{
     if(!sourceIndex?.itemsByActivityType.has(code))return;
+    sourceNativeSubtype=null;
     sourceActivityType=code;
     selected='';browsingAllItems=false;
     sourceChoices=viewAxis==='world'&&sourceChoices.worldContextTag
@@ -868,8 +870,19 @@
     bypassCategoryGroups=true;
     resetView();
   }
-  function chooseFacet(id:string):void{
+  function chooseNativeSubtype(key:string):void{
+    if(!sourceIndex?.itemsByNativeSubtype.has(key))return;
     sourceActivityType=null;
+    sourceNativeSubtype=key;
+    selected='';browsingAllItems=false;
+    sourceChoices=viewAxis==='world'&&sourceChoices.worldContextTag
+      ?{worldContextTag:sourceChoices.worldContextTag}:{};
+    sourceFacetGroups=[];sourceGroupsCacheKey='';
+    bypassCategoryGroups=true;
+    resetView();
+  }
+  function chooseFacet(id:string):void{
+    sourceActivityType=null;sourceNativeSubtype=null;
     selected=id;bypassCategoryGroups=true;browsingAllItems=false;
     sourceChoices=viewAxis==='world'&&sourceChoices.worldContextTag
       ?{worldContextTag:sourceChoices.worldContextTag}:
@@ -882,7 +895,7 @@
   }
   function changeViewAxis(axis:CollectionViewAxis):void{
     if(viewAxis===axis)return;
-    viewAxis=axis;selected='';sourceActivityType=null;
+    viewAxis=axis;selected='';sourceActivityType=null;sourceNativeSubtype=null;
     sourceUniverseSelection=null;browsingAllItems=false;
     worldFilter='';universeFilter='';universeSearch='';
     sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';
@@ -890,7 +903,7 @@
     nameStatus='all';expansion='';resetView();
   }
   function chooseWorld(id:string):void{
-    selected='';sourceActivityType=null;sourceUniverseSelection=null;
+    selected='';sourceActivityType=null;sourceNativeSubtype=null;sourceUniverseSelection=null;
     universeFilter='';bypassCategoryGroups=false;browsingAllItems=false;
     const fromSource=sourceIndex&&sourceWorldOptions.some(option=>option.key===id);
     worldFilter=fromSource?'':id;
@@ -898,7 +911,7 @@
     sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
   }
   function chooseUniverse(id:string):void{
-    selected='';sourceActivityType=null;bypassCategoryGroups=false;browsingAllItems=false;
+    selected='';sourceActivityType=null;sourceNativeSubtype=null;bypassCategoryGroups=false;browsingAllItems=false;
     worldFilter='';
     sourceUniverseSelection=sourceIndex&&id?id:null;
     universeFilter=sourceIndex?'':id;
@@ -908,7 +921,7 @@
     sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
   }
   function returnToCategory():void{
-    browsingAllItems=false;selected='';sourceActivityType=null;
+    browsingAllItems=false;selected='';sourceActivityType=null;sourceNativeSubtype=null;
     sourceChoices=viewAxis==='world'&&sourceChoices.worldContextTag
       ?{worldContextTag:sourceChoices.worldContextTag}:
       viewAxis==='universe'&&sourceUniverseSelection&&
@@ -923,7 +936,7 @@
     universeFilter='';bypassCategoryGroups=false;resetView();
   }
   function clearScope():void{
-    browsingAllItems=false;selected='';sourceActivityType=null;
+    browsingAllItems=false;selected='';sourceActivityType=null;sourceNativeSubtype=null;
     sourceUniverseSelection=null;
     search='';status='all';favoriteOnly=false;nameStatus='all';
     expansion='';worldFilter='';universeFilter='';universeSearch='';
