@@ -6,8 +6,8 @@ import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.mjs';
 import {
   STARPATH_EXTRA_RELEASE,STARPATH_EXTRA_CATEGORIES,
   verifyStarpathRewardExtras,loadStarpathRewardExtras,starpathRewardDisplayName
-} from '../src/lib/guide/starpath-reward-extras.mjs';
-import {VERIFIED_STARPATH_REWARD_NAMES} from '../src/lib/guide/starpath-reward-names.mjs';
+} from '../src/lib/guide/starpath-reward-extras.ts';
+import {VERIFIED_STARPATH_REWARD_NAMES} from '../src/lib/guide/starpath-reward-names.ts';
 const pub=new URL('../static/guide/public/',import.meta.url);
 const read=async name=>readFile(new URL(name,pub));
 const hash=buf=>createHash('sha256').update(buf).digest('hex');
