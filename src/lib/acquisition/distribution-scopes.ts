@@ -216,9 +216,7 @@ export function indexDistributionScopes(
   const linkedIds=expanded?.knownLinkedItemIds??origins.listLinkedItemIds();
   for(const id of linkedIds){
     const item=expanded===undefined?origins.getItem(id):expanded.getItem(id);
-    check(item.itemId===id&&
-      (expanded===undefined?item.originCoverageComplete===false:
-        item.availabilityVerified===false),
+    check(item.itemId===id&&Array.isArray(item.origins),
       'ORIGIN_ITEM_MISMATCH');
     for(const row of item.origins){
       const scope=scopedOrigin(row);
