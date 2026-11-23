@@ -13,6 +13,7 @@
     from '$lib/collection/browse-layout.ts';
   import {COLLECTION_UNIVERSE_TAG_BY_ID,COLLECTION_UNIVERSE_TAG_NAMES}
     from '$lib/collection/universe-tag-names.ts';
+  import {buildWorldBrowseIndex,countOwnedInWorldScope,type WorldBrowseScope} from '$lib/collection/world-browse-index.ts';
   import {collectionTopCategory,collectionTopCategoryLabel,collectionTopCategoryRank,
     collectionTopCategoryCards,type CollectionTopCategory} from '$lib/collection/category-hierarchy.ts';
   import {collectionNativeSubtypeLabel}
@@ -96,6 +97,8 @@
   // Collection and ownership axes continue to use the independent DB-00/Save
   // evidence and are never inferred from these Tags.
   let sourceIndex:CollectionDb01Index|null=null;
+  let worldBrowseIndex:ReadonlyMap<string,WorldBrowseScope>=new Map();
+  let worldScopedItemCount:number|null=null;
   let sourceLoad:Promise<void>|null=null;
   let sourceLoadError=false;
   let sourceUniverseOptions:{key:string;count:number}[]=[];
@@ -294,10 +297,15 @@
       expansion,status,favoriteOnly,nameStatus,offset,limit
     };
   }
-  function refresh():void {
+  function refresh(navigationOnly=false):void {
     if(!runtime)return;
     try{
-      facets=runtime.facets('category',locale);
+      // Switching a world never mutates the active profile. Reuse global
+      // metrics on navigation; normal refresh after edits/import still reads WASM.
+      const reuseGlobal=navigationOnly&&scopeRuntimeCache===runtime&&scopeLocaleCache===locale;
+      if(!reuseGlobal)state=runtime.state;
+      const activeEntries=(state.workspaces.find(row=>row.id===state.active)??state.workspaces[0])?.entries??{};
+      if(!reuseGlobal)facets=runtime.facets('category',locale);
       // Source Tag associations are not CollectionArea membership. The
       // runtime only exposes these options when the catalog explicitly carries
       // reviewed, source-validated per-item scope evidence.
@@ -335,64 +343,46 @@
       // Show the original item-type cards scoped by exact DB-01 world tags.
       // These tags are not game CollectionArea or availability evidence.
       const tag=viewAxis==='world'?sourceChoices.worldContextTag:'';
-      const worldIds=tag&&sourceIndex?[...sourceIndex.byItem.keys()].filter(id=>
-        collectionDb01Matches(sourceIndex!,id,'worldContextTag',tag)):null;
-      const familyCounts=new Map<string,{total:number;owned:number}>();
-      const typeCounts=new Map<number,{total:number;owned:number}>();
-      const nativeCounts=new Map<string,{total:number;owned:number}>();
-      if(worldIds){
+      const worldScope=sourceIndex?worldBrowseIndex.get(tag??''):undefined;
+      const worldIds=tag?worldScope?.itemIds??[]:null;
+      worldScopedItemCount=worldIds?.length??null;
+      const completeNative=sourceIndex?.nativeSubtypeByItem.size===sourceIndex?.sourceItemCount;
+      // The category-only path needs no individual runtime.item() calls.
+      // Native membership and totals were built once from the exact source index.
+      if(worldIds&&!completeNative){
+        const familyCounts=new Map<string,{total:number;owned:number}>();
         for(const id of worldIds){
           const item=runtime!.item(id,locale);
-          const owned=entries[String(id)]?.status==='owned'?1:0;
-          const family=familyCounts.get(item.family)??{total:0,owned:0};
-          family.total++;family.owned+=owned;familyCounts.set(item.family,family);
-          const activity=sourceIndex!.activityTypesByItem.get(id);
-          if(activity){
-            const counts=typeCounts.get(activity.code)??{total:0,owned:0};
-            counts.total++;counts.owned+=owned;typeCounts.set(activity.code,counts);
-          }
-          const native=sourceIndex!.nativeSubtypeByItem.get(id);
-          if(native){
-            const key=native.nativeType+':'+native.code;
-            const counts=nativeCounts.get(key)??{total:0,owned:0};
-            counts.total++;counts.owned+=owned;nativeCounts.set(key,counts);
-          }
+          const count=familyCounts.get(item.family)??{total:0,owned:0};
+          count.total++;count.owned+=activeEntries[String(id)]?.status==='owned'?1:0;
+          familyCounts.set(item.family,count);
         }
         scopedCategoryFacets=facets.flatMap(facet=>{
-          const found=familyCounts.get(facet.id);
-          return found?[{...facet,...found}]:[];
+          const count=familyCounts.get(facet.id);
+          return count?[{...facet,...count}]:[];
         });
       }
-      sourceActivityTypeCards=sourceIndex
-        ?[...sourceIndex.itemsByActivityType.entries()].sort((a,b)=>a[0]-b[0])
-          .flatMap(([code,ids])=>{
-            const counts=worldIds?typeCounts.get(code):{
-              total:ids.length,
-              owned:ids.filter(id=>entries[String(id)]?.status==='owned').length
-            };
-            return counts?.total?[{
-              code,nativeName:sourceIndex!.activityTypeNames.get(code)??null,...counts
-            }]:[];
-          })
-        :[];
+      const ownedCounts=sourceIndex&&worldScope
+        ?countOwnedInWorldScope(sourceIndex,worldScope,activeEntries):null;
+      sourceActivityTypeCards=sourceIndex&&worldScope
+        ?[...worldScope.activityCounts].sort((a,b)=>a[0]-b[0]).map(([code,total])=>({
+          code,nativeName:sourceIndex!.activityTypeNames.get(code)??null,total,
+          owned:ownedCounts?.activity.get(code)??0
+        })): [];
       const nativeOrder=['Furniture','Clothing','Trimming'];
-      sourceNativeSubtypeCards=sourceIndex?.nativeSubtypeByItem.size===13202
-        ?[...sourceIndex.itemsByNativeSubtype.entries()]
+      sourceNativeSubtypeCards=sourceIndex&&worldScope&&completeNative
+        ?[...worldScope.nativeCounts.entries()]
           .filter(([key])=>!key.startsWith('ActivityItem:'))
           .sort((a,b)=>{
             const [typeA,codeA]=a[0].split(':'),[typeB,codeB]=b[0].split(':');
             return nativeOrder.indexOf(typeA)-nativeOrder.indexOf(typeB)||
               Number(codeA)-Number(codeB);
           })
-          .flatMap(([key,ids])=>{
-            const counts=worldIds?nativeCounts.get(key):{
-              total:ids.length,
-              owned:ids.filter(id=>entries[String(id)]?.status==='owned').length
-            };
-            if(!counts?.total)return [];
+          .map(([key,total])=>{
             const [nativeType,codeText]=key.split(':');
-            return [{key,nativeType,code:Number(codeText),
-              nativeName:sourceIndex!.nativeSubtypeNames.get(key)??null,...counts}];
+            return {key,nativeType,code:Number(codeText),
+              nativeName:sourceIndex!.nativeSubtypeNames.get(key)??null,total,
+              owned:ownedCounts?.native.get(key)??0};
           })
         :[];
       const universeCategoryIds=new Set(['Furniture','Clothing']);
@@ -422,12 +412,25 @@
               }).map(row=>row.itemId):sourceTopCategory!==null
                 ?[...sourceIndex.itemsByNativeSubtype].flatMap(([key,ids])=>
                   collectionTopCategory(key)===sourceTopCategory?[...ids]:[])
-                :[...sourceIndex.byItem.keys()];
+                :worldScope?.itemIds??[...sourceIndex.byItem.keys()];
           sourceFacetGroups=collectionDb01Groups(sourceIndex,ids);
           sourceGroupsCacheKey=key;
         }
       }else if(!filtersOpen){
         sourceFacetGroups=[];sourceGroupsCacheKey='';
+      }
+      // Compute the navigation predicate from current input values, not a
+      // stale Svelte reactive value during the synchronous click handler.
+      const categoryOverview=viewAxis==='world'&&!selected&&
+        sourceActivityType===null&&sourceNativeSubtype===null&&!browsingAllItems&&
+        !search.trim()&&status==='all'&&!favoriteOnly&&nameStatus==='all'&&
+        !expansion&&!acquisitionFilter&&Object.keys(sourceChoices).every(key=>key==='worldContextTag');
+      const universeOverview=viewAxis==='universe'&&!universeFilter&&sourceUniverseSelection===null&&
+        !sourceChoices.disneyUniverse&&!selected&&sourceActivityType===null&&sourceNativeSubtype===null&&
+        !search.trim()&&status==='all'&&!favoriteOnly&&!expansion&&!acquisitionFilter;
+      if(categoryOverview||universeOverview){
+        sourceAllMatching=[];filtered=[];totalMatches=0;if(!reuseGlobal)overall=runtime.progress;
+        return;
       }
       if((sourceTopCategory!==null||sourceActivityType!==null||sourceNativeSubtype!==null||
           sourceUniverseSelection!==null||
@@ -450,7 +453,7 @@
         const topIds=sourceTopCategory===null?null:
           [...(sourceIndex?.itemsByNativeSubtype??[])].flatMap(([key,ids])=>
             collectionTopCategory(key)===sourceTopCategory?[...ids]:[]);
-        const candidateIds=[universeIds,acquisitionIds,activityIds,nativeIds,topIds]
+        const candidateIds=[universeIds,acquisitionIds,activityIds,nativeIds,topIds,worldIds]
           .reduce<readonly number[]|null>((shortest,ids)=>
             ids===null?shortest:
             shortest===null||ids.length<shortest.length?ids:shortest,null);
@@ -570,6 +573,7 @@
   function discardSourceIndex():void{
     sourceGeneration++;
     sourceIndex=null;
+    worldBrowseIndex=new Map();worldScopedItemCount=null;
     sourceLoad=null;
     sourceLoadError=false;
     sourceUniverseOptions=[];
@@ -592,7 +596,7 @@
     const generation=sourceGeneration;
     const task=loadCollectionDb01Facets(base).then(index=>{
       if(generation!==sourceGeneration||!canUseDb01SourceFacets())return;
-      sourceIndex=index;sourceGroupsCacheKey='';
+      sourceIndex=index;worldBrowseIndex=buildWorldBrowseIndex(index);sourceGroupsCacheKey='';
       const sourceGroups=collectionDb01Groups(index,[...index.byItem.keys()]);
       sourceUniverseOptions=COLLECTION_UNIVERSE_TAG_NAMES.map(row=>({
         key:String(row.id),
@@ -668,9 +672,9 @@
     selectedItemId=item.itemId;
     if(mobileInspector)void tick().then(()=>inspectorClose?.focus({preventScroll:true}));
   }
-  function resetView():void{
+  function resetView(navigationOnly:boolean|Event=false):void{
     if(selectedItemId!==null)updateItemAddress(null,'replace');
-    visible=72;selectedIds=[];selectedItemId=null;refresh();
+    visible=72;selectedIds=[];selectedItemId=null;refresh(navigationOnly===true);
   }
   /** Scroll only requests the next page from Rust. Re-querying 0..visible
    * after every intersection creates quadratic decoding and DOM churn for
@@ -921,7 +925,7 @@
     const fromSource=sourceIndex&&sourceWorldOptions.some(option=>option.key===id);
     worldFilter=fromSource?'':id;
     sourceChoices=fromSource?{worldContextTag:id}:{};
-    sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
+    sourceFacetGroups=[];sourceGroupsCacheKey='';resetView(true);
   }
   function chooseUniverse(id:string):void{
     sourceTopCategory=null;
@@ -1556,7 +1560,7 @@
                 {copy.showAllItems} ({(sourceTopCategory!==null
                   ?topCategoryCards.find(card=>card.id===sourceTopCategory)?.total??0
                   :sourceChoices.worldContextTag||worldFilter
-                    ?scopedCategoryFacets.reduce((sum,facet)=>sum+facet.total,0)
+                    ?worldScopedItemCount??scopedCategoryFacets.reduce((sum,facet)=>sum+facet.total,0)
                     :overall.total).toLocaleString(locale)})
               </button>
             </div>
