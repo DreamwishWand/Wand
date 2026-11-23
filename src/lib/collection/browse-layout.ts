@@ -2,6 +2,8 @@
  * Never interprets an original Tag as a game UI membership or DLC entitlement.
  */
 import type {CollectionDb01Index} from './db01-native-facets.ts';
+import {COLLECTION_UNIVERSE_TAG_BY_ID,COLLECTION_UNIVERSE_TAG_NAMES}
+  from './universe-tag-names.ts';
 import type {CollectionItem} from './runtime.ts';
 export const COLLECTION_UNIVERSE_UNTAGGED='__no_universe_tag__' as const;
 export interface CollectionUniverseBrowseOption{
@@ -17,16 +19,22 @@ export interface CollectionUniverseBrowseSection{
 }
 const norm=(value:string)=>value.replace(/[^a-z0-9]/gi,'').toLowerCase();
 export function isDreamlightUniverse(key:string):boolean{
-  return norm(key)==='disneydreamlightvalley'||norm(key)==='dreamlightvalley';
+  return key==='2000500023'||norm(key)==='disneydreamlightvalley'||
+    norm(key)==='dreamlightvalley';
 }
 export function isOtherUniverse(key:string):boolean{
   // Steam original Tag "NonIP" is the native Other universe, not an
   // untagged Item. Keep both notions distinct.
-  return norm(key)==='other'||norm(key)==='nonip';
+  return key==='2000500017'||norm(key)==='other'||norm(key)==='nonip';
 }
 /** UI presentation only. Neither source Tag counts nor membership depend on
  * these labels; unverified names continue to use their native keys. */
 export function collectionUniverseDisplayLabel(locale:string,key:string):string{
+  const original=COLLECTION_UNIVERSE_TAG_BY_ID.get(Number(key));
+  if(original){
+    const localized=original.names as Readonly<Record<string,string>>;
+    return localized[locale]??localized.en;
+  }
   if(isOtherUniverse(key)){
     const labels:Readonly<Record<string,string>>={
       ja:'その他',en:'Other',fr:'Autres',it:'Altro',de:'Sonstige',
@@ -43,11 +51,24 @@ export function sortedCollectionUniverseOptions(
   index:CollectionDb01Index,locale:string,display:(key:string)=>string,
   untaggedLabel:string,
 ):readonly CollectionUniverseBrowseOption[]{
-  const options=[...index.itemsByUniverse].map(([id,ids])=>({
-    id,label:display(id),total:ids.length
-  }));
+  const canonical=index.itemsByUniverseTagId.size>0;
+  const options=canonical
+    ?COLLECTION_UNIVERSE_TAG_NAMES.map(row=>({
+      id:String(row.id),label:display(String(row.id)),
+      total:index.itemsByUniverseTagId.get(row.id)?.length??0
+    }))
+    :[...index.itemsByUniverse].map(([id,ids])=>({
+      id,label:display(id),total:ids.length
+    }));
+  // For Japanese, sort by curated phonetic readings; Unicode/Intl ordering
+  // of kanji franchise titles is NOT gojuon ordering.
+  const sortLabel=(option:CollectionUniverseBrowseOption):string=>
+    locale==='ja'
+      ?COLLECTION_UNIVERSE_TAG_BY_ID.get(Number(option.id))?.jaReading??option.label
+      :option.label;
   const collator=new Intl.Collator(locale,{usage:'sort',sensitivity:'base',numeric:true});
-  options.sort((a,b)=>collator.compare(a.label,b.label)||a.id.localeCompare(b.id,'en'));
+  options.sort((a,b)=>collator.compare(sortLabel(a),sortLabel(b))||
+    a.id.localeCompare(b.id,'en'));
   const generic=options.filter(option=>isOtherUniverse(option.id));
   const home=options.filter(option=>isDreamlightUniverse(option.id));
   const others=options.filter(option=>
@@ -56,7 +77,8 @@ export function sortedCollectionUniverseOptions(
   // items are distinct from that Tag and cannot be called "Other" without
   // evidence. Put the original Other + Dreamlight front, and untagged last.
   const noTag={id:COLLECTION_UNIVERSE_UNTAGGED,label:untaggedLabel,
-    total:index.sourceItemCount-index.universesByItem.size};
+    total:index.sourceItemCount-(canonical
+      ?index.universeTagIdsByItem.size:index.universesByItem.size)};
   return Object.freeze(generic.length
     ?[...generic,...home,...others,noTag]
     :[noTag,...home,...others]);
