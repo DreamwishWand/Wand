@@ -105,9 +105,14 @@
   let sourceChoices:Partial<Record<CollectionDb01Facet,string>>={};
   let sourceAllMatching:CollectionItem[]=[];
   let sourceActivityType:number|null=null;
+  let sourceNativeSubtype:string|null=null;
   let sourceUniverseSelection:string|null=null;
   let sourceActivityTypeCards:{
     code:number;nativeName:string|null;total:number;owned:number
+  }[]=[];
+  let sourceNativeSubtypeCards:{
+    key:string;nativeType:string;code:number;nativeName:string|null;
+    total:number;owned:number
   }[]=[];
   let sourceGroupsCacheKey='';
   let universeSections:{facet:CollectionFacet;items:CollectionItem[]}[]=[];
@@ -140,10 +145,13 @@
 
   $: workspace=state.workspaces.find(x=>x.id===state.active)??state.workspaces[0];
   $: entries=workspace?.entries??{};
-  $: selectionLabel=sourceActivityType!==null
-    ?sourceActivityTypeLabel(locale,sourceActivityType,
-        sourceIndex?.activityTypeNames.get(sourceActivityType)??null)
-    :facets.find(x=>x.id===selected)?.label??'';
+  $: selectionLabel=sourceNativeSubtype!==null
+    ?nativeSubtypeLabel(locale,sourceNativeSubtype,
+        sourceIndex?.nativeSubtypeNames.get(sourceNativeSubtype)??null)
+    :sourceActivityType!==null
+      ?sourceActivityTypeLabel(locale,sourceActivityType,
+          sourceIndex?.activityTypeNames.get(sourceActivityType)??null)
+      :facets.find(x=>x.id===selected)?.label??'';
   // Render each Rust/WASM query result in its original order. Grouping all
   // visible rows by category would move existing cards when another page is
   // appended, producing scroll jumps and misleading partial group counts.
@@ -161,9 +169,10 @@
       option.label.toLocaleLowerCase(locale).includes(universeSearch.trim().toLocaleLowerCase(locale)));
   $: landingUniverse=viewAxis==='universe'&&!universeFilter&&
     sourceUniverseSelection===null&&!sourceChoices.disneyUniverse&&
-    !selected&&sourceActivityType===null&&!search.trim()&&
-    status==='all'&&!favoriteOnly&&!expansion&&!acquisitionFilter;
+    !selected&&sourceActivityType===null&&sourceNativeSubtype===null&&
+    !search.trim()&&status==='all'&&!favoriteOnly&&!expansion&&!acquisitionFilter;
   $: landingWorld=viewAxis==='world'&&!selected&&sourceActivityType===null&&
+    sourceNativeSubtype===null&&
     !browsingAllItems&&!search.trim()&&status==='all'&&!favoriteOnly&&
     nameStatus==='all'&&!expansion&&!acquisitionFilter&&
     Object.keys(sourceChoices).every(key=>key==='worldContextTag');
@@ -172,10 +181,12 @@
   // Biome/subtype families go directly to items until exact source groups land.
   $: universeSectionView=viewAxis==='universe'&&Boolean(
     sourceUniverseSelection!==null||universeFilter)&&!selected&&
-    sourceActivityType===null&&!search.trim()&&status==='all'&&
+    sourceActivityType===null&&sourceNativeSubtype===null&&
+    !search.trim()&&status==='all'&&
     !favoriteOnly&&!expansion&&!acquisitionFilter;
   $: isBrowsing=Boolean(browsingAllItems||selected||sourceUniverseSelection!==null||
-    sourceActivityType!==null||search.trim()||status!=='all'||favoriteOnly||
+    sourceActivityType!==null||sourceNativeSubtype!==null||
+    search.trim()||status!=='all'||favoriteOnly||
     nameStatus!=='all'||expansion||worldFilter||universeFilter||
     Object.keys(sourceChoices).length||acquisitionFilter||viewAxis==='universe');
 
