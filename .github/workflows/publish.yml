@@ -43,7 +43,7 @@ jobs:
           for page in guide guide/quests guide/characters guide/star-path guide/events guide/source; do
             test -s "build/$page/index.html"
           done
-          grep -q 'イベントカレンダー' build/guide/index.html
+          grep -q 'イベント開催期間' build/guide/index.html
           grep -q '期間限定イベント' build/guide/events/index.html
       - name: Verify public Quest Guide is included in Pages artifact
         run: |

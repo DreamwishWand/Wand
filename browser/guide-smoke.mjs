@@ -448,53 +448,68 @@ try {
     'duplicate deep link must not select any character');
   await invalidCharacter.close();
 
-  // Guide is the top-level user destination; calendar is client-date-driven
-  // but explicitly NOT a live API / proof of server availability.
+  // Guide is an app-width event timeline; Wednesday resets are visually
+  // central in each Sun-Sat row. Original UTC boundaries and date-only
+  // festival source remain separate, never fabricated live server state.
   const hub=await browser.newPage({viewport:{width:390,height:844}});
   const hubErrors=[];
   hub.on('pageerror',e=>hubErrors.push(String(e)));
   await hub.addInitScript(()=>{Date.now=()=>Date.parse('2026-11-22T12:00:00Z');});
   await hub.goto('http://127.0.0.1:4177/Wand/guide/',{waitUntil:'domcontentloaded'});
-  await hub.locator('.events-list .schedule-card').first().waitFor({timeout:20000});
+  await hub.locator('.timeline-row').first().waitFor({timeout:20000});
   assert.equal(await hub.locator('.guide-sections a').count(),3);
-  assert.match(await hub.locator('.calendar-nav').innerText(),/2026年11月/);
-  assert.equal(await hub.locator('.events-list .schedule-card').count(),3);
-  assert.match(await hub.locator('.events-list').innerText(),/Haunting Elegance/);
-  assert.match(await hub.locator('.events-list').innerText(),/Seafaring Star Path/);
-  assert.match(await hub.locator('.events-list').innerText(),/The Haunted Floating Festival/);
-  assert.match(await hub.locator('.events-list').innerText(),/終了した日程/);
-  assert.match(await hub.locator('.events-list').innerText(),/日程上のタスク期間内/);
-  assert.match(await hub.locator('.source-note').first().innerText(),/ゲームサーバーの開催状態をリアルタイム取得したものではありません/);
-  await hub.getByRole('button',{name:'前の月'}).click();
-  assert.match(await hub.locator('.calendar-nav').innerText(),/2026年10月/);
-  assert.equal(await hub.locator('.day[aria-label="2026-10-07"] .limited').count(),1);
-  assert.equal(await hub.locator('.day[aria-label="2026-10-31"] .limited').count(),1);
-  assert.equal(await hub.locator('.day[aria-label="2026-11-01"] .limited').count(),0);
+  assert.equal(await hub.locator('.timeline-row').count(),2,
+    'only scheduled events overlapping the visible five-week range appear');
+  assert.equal(await hub.locator('.timeline-heading .date-slot').count(),35);
+  assert.equal(await hub.locator('.date-slot.reset').count(),5);
+  assert.equal(await hub.locator('.date-slot.today').count(),1);
+  assert.match(await hub.locator('.calendar-nav').innerText(),/11\/8.*12\/12/);
+  assert.match(await hub.locator('.timeline-content').innerText(),/Haunting Elegance/);
+  assert.match(await hub.locator('.timeline-content').innerText(),/Seafaring Star Path/);
+  assert.equal(await hub.locator('.timeline-bar.task').count(),2);
+  assert.equal(await hub.locator('.timeline-bar.exchange').count(),2);
+  assert.equal(await hub.locator('.timeline-bar.limited').count(),0);
+  assert.equal(await hub.locator('.events-list,.schedule-card,.day').count(),0,
+    'do not duplicate daily events into a second text-heavy schedule');
   assert.equal(await hub.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),true,
-    'mobile event calendar overflow');
+    'timeline should scroll internally without overflowing the mobile viewport');
+  assert.equal(await hub.locator('.timeline-scroll').evaluate(el=>el.scrollWidth>el.clientWidth),true,
+    'dates remain horizontally scrollable on narrow screens');
+  await hub.locator('.source-info summary').click();
+  assert.match(await hub.locator('.source-info').innerText(),
+    /ゲームサーバーの開催状況をリアルタイム確認したものではありません/);
+  await hub.locator('.source-info summary').click();
+  await hub.getByRole('button',{name:'前の期間'}).click();
+  assert.match(await hub.locator('.calendar-nav').innerText(),/10\/4.*11\/7/);
+  assert.equal(await hub.locator('.timeline-bar.limited').count(),1);
+  const festival=hub.locator('.timeline-row')
+    .filter({hasText:'The Haunted Floating Festival'});
+  await festival.locator('.event-label').click();
+  assert.match(await hub.locator('.event-inspector').innerText(),/2026-10-07/);
+  assert.match(await hub.locator('.event-inspector').innerText(),/2026-10-31/);
+  assert.match(await hub.locator('.event-inspector').innerText(),/時刻は未確認/);
   const festivalCalendarHref='/Wand/guide/events/?event=HauntedFloatingFestival2026';
-  const festivalGuideLink=hub.locator('.schedule-card')
-    .filter({hasText:'The Haunted Floating Festival'}).locator('.event-actions a').first();
-  assert.equal(await festivalGuideLink.getAttribute('href'),festivalCalendarHref);
-  assert.equal(await hub.locator('.day[aria-label="2026-10-07"] a.limited[href="'+festivalCalendarHref+'"]').count(),1);
-  await festivalGuideLink.click();
-  await hub.locator('.reward-detail .native-id').filter({hasText:'HauntedFloatingFestival2026'}).waitFor({timeout:20000});
+  assert.equal(await hub.locator('.event-inspector a.primary').getAttribute('href'),
+    festivalCalendarHref);
+  await hub.locator('.event-inspector a.primary').click();
+  await hub.locator('.reward-detail .native-id')
+    .filter({hasText:'HauntedFloatingFestival2026'}).waitFor({timeout:20000});
   assert.equal(await hub.locator('.reward-detail .reward-row').count(),9,
-    'calendar must select the year-specific native Festival instead of the earlier 5-reward edition');
+    'the timeline opens the 2026 native Festival, not the old 5-reward version');
   await hub.goBack({waitUntil:'domcontentloaded'});
-  await hub.locator('.events-list .schedule-card').first().waitFor({timeout:20000});
-  // Month selection is page-local state: browser navigation restores current month.
-  await hub.getByRole('button',{name:'前の月'}).click();
-  assert.match(await hub.locator('.calendar-nav').innerText(),/2026年10月/);
+  await hub.locator('.timeline-row').first().waitFor({timeout:20000});
+  // Week range navigation is local state, not a URL that persists on Back.
+  assert.match(await hub.locator('.calendar-nav').innerText(),/11\/8.*12\/12/);
   const seafaringCalendarHref='/Wand/guide/star-path/?season=Seafaring2026';
-  const seafaringGuideLink=hub.locator('.schedule-card')
-    .filter({hasText:'Seafaring Star Path'}).locator('.event-actions a').first();
-  assert.equal(await seafaringGuideLink.getAttribute('href'),seafaringCalendarHref);
-  assert.equal(await hub.locator('.day[aria-label="2026-10-22"] a.starpath[href="'+seafaringCalendarHref+'"]').count(),1);
-  await seafaringGuideLink.click();
-  await hub.locator('.seasons button.selected').filter({hasText:'Seafaring Star Path'}).waitFor({timeout:20000});
-  assert.match(await hub.locator('.seasons button.selected').innerText(),/Seafaring Star Path/,
-    'calendar must open the clicked season, not the default Haunting season');
+  await hub.locator('.timeline-row')
+    .filter({hasText:'Seafaring Star Path'}).locator('.event-label').click();
+  assert.equal(await hub.locator('.event-inspector a.primary').getAttribute('href'),
+    seafaringCalendarHref);
+  assert.match(await hub.locator('.event-inspector').innerText(),/2026\/12\/01 23:00 JST/);
+  await hub.locator('.event-inspector a.primary').click();
+  await hub.locator('.seasons button.selected')
+    .filter({hasText:'Seafaring Star Path'}).waitFor({timeout:20000});
+  assert.match(await hub.locator('.seasons button.selected').innerText(),/Seafaring Star Path/);
   assert.deepEqual(hubErrors,[],hubErrors.join('\\n'));
   await hub.close();
 

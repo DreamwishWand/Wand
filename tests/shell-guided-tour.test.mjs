@@ -8,7 +8,7 @@ import {UI_LANGUAGES} from '../src/lib/ui/preferences.ts';
 const pages=[
   ['/',3,'.portal-card-collection'],
   ['/collection/',4,'.collection-workspace .search-box'],
-  ['/guide/',3,'.guide-hub .guide-sections'],
+  ['/guide/',3,'.guide-app .guide-sections'],
   ['/guide/quests/',2,'.quests-public .searchbar'],
   ['/guide/characters/',2,'.character-guide .controls'],
   ['/guide/star-path/',2,'.starpath .seasons'],
