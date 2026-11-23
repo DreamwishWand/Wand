@@ -37,6 +37,8 @@
   $: selected=events.find(event=>event.id===selectedId)??null;
   $: selectedHref=selected?eventHref(selected):null;
   $: previousOffset=offsetWeeks-weeks;
+  $: yearOptions=Array.from({length:Math.max(2022,Number(windowRange.todayDay.slice(0,4)))-2021},(_,i)=>2022+i);
+  $: selectedYear=windowRange.days[4]?.day.slice(0,4)??windowRange.todayDay.slice(0,4);
   $: atFirstRelease=previousOffset< -520||
     guideTimelineWindow(now,weeks,Math.max(-520,previousOffset),viewerZone)
       .lastDay<GUIDE_EARLY_ACCESS_FIRST_DAY;
@@ -127,11 +129,17 @@
     offsetWeeks=0;selectedId=null;
     void positionToday();
   }
-  function goLaunch(){
-    // A single click must reach the Early Access date, not 40+ range clicks.
-    const delta=(Date.parse(GUIDE_EARLY_ACCESS_FIRST_DAY+'T00:00:00Z')-
+  function goYear(year:number){
+    if(!Number.isInteger(year)||year<2022||year>Number(windowRange.todayDay.slice(0,4)))return;
+    // Jump to the first VERIFIED event in the chosen year, not to a blank
+    // January when the officially dated schedule begins much later.
+    const starts=events.map(event=>event.precision==='date-only'
+      ?event.startDay:new Date(event.startUtc).toISOString().slice(0,10))
+      .filter(day=>day.startsWith(String(year))).sort();
+    const target=starts[0]??(year===2022?GUIDE_EARLY_ACCESS_FIRST_DAY:`${year}-01-01`);
+    const delta=(Date.parse(target+'T00:00:00Z')-
       Date.parse(windowRange.todayDay+'T00:00:00Z'))/86_400_000;
-    offsetWeeks=Math.max(-520,Math.min(0,Math.floor((delta+4)/7)));
+    offsetWeeks=Math.max(-520,Math.min(520,Math.floor((delta+4)/7)));
     selectedId=null;
     if(timelineScroller)timelineScroller.scrollLeft=0;
   }
@@ -198,8 +206,12 @@
         <button class="nav-arrow next" aria-label={copy.next} title={copy.next}
           on:click={()=>navigate(1)}><WandIcon name="chevron" size={17}/></button>
         <button class="today-button" on:click={goToday}>{copy.today}</button>
-        <button class="launch-button" title={copy.launch} aria-label={copy.launch}
-          on:click={goLaunch}>2022</button>
+        <select class="calendar-year" aria-label={copy.launch}
+          value={selectedYear} on:change={event=>goYear(Number(event.currentTarget.value))}>
+          {#each yearOptions as year (year)}
+            <option value={year}>{year}</option>
+          {/each}
+        </select>
       </div>
     </div>
 
@@ -348,7 +360,7 @@
   .nav-arrow.previous :global(svg){transform:rotate(90deg)}
   .nav-arrow.next :global(svg){transform:rotate(-90deg)}
   .calendar-nav .today-button{background:#4c365e}
-  .calendar-nav .launch-button{background:#29243f;border-color:#65537a;color:#d0c2de}
+  .calendar-nav .calendar-year{background:#29243f;border:1px solid #65537a;color:#d0c2de;border-radius:8px;padding:7px 4px;font:inherit;font-size:12px;cursor:pointer;max-width:83px}
   .calendar-nav button:disabled{opacity:.35;cursor:not-allowed}
   .historic-status{font-size:11px;color:#d4bbeb;white-space:nowrap}
 
