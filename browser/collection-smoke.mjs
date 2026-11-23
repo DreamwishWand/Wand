@@ -810,6 +810,11 @@ try{
         }},
         '4':{ID:4,CompatibleItemType:'Trimming',Inventory:{
           '160000165':{Amount:1,Marker:'Favorite'}
+        }},
+        '2':{ID:2,CompatibleItemType:'ActivityItem',Inventory:{
+          '30200000':{Amount:2},  // Source Crop: Carrot
+          '30300001':{Amount:1},  // Source Meal: Apple Pie
+          '30400010':{Amount:9}   // Source Seed: Carrot Seed
         }}
       },
       CollectionSets:[{GroupData:[
@@ -855,10 +860,14 @@ try{
   // Steam 1.26.2 DB-00 calls native Trimming "Wallpaper & Flooring".
   // Verify actual catalog ItemID 160000165 is imported despite that alias.
   assert.equal(stateAfter['160000165'].status,'owned');
+  // Source subtype facets must not block verified native ActivityItem stock.
+  assert.equal(stateAfter['30200000'].status,'owned');
+  assert.equal(stateAfter['30300001'].status,'owned');
+  assert.equal(stateAfter['30400010'].status,'owned');
   assert.equal(stateAfter['40003256'],undefined);
   assert.equal(stateAfter['99999999'].discovered,true);
   assert.equal(await page.getByRole('alert').filter({hasText:'do-not-leak'}).count(),0);
-  assert.match(await page.getByRole('status').filter({hasText:'セーブの発見履歴'}).first().innerText(),/所持 2件/);
+  assert.match(await page.getByRole('status').filter({hasText:'セーブの発見履歴'}).first().innerText(),/所持 5件/);
   // Headless reader imports native state without visible diagnostics.
   assert.equal(await page.locator('.saved-store-preview,.empty-inspector').count(),0);
   await ownershipSearch.fill('40005160');
