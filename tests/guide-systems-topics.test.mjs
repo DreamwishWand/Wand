@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {verifyPublicEventFriendshipRewards} from '../src/lib/guide/public-event-friendship-rewards.ts';
 import {GUIDE_SYSTEM_CATEGORIES} from '../src/lib/guide/system-topics.ts';
 import {GUIDE_LOCALES,guideTimelineCopy} from '../src/lib/guide/timeline-copy.ts';
 
@@ -63,4 +65,23 @@ test('Star Path keeps its own name; stripes mean rewards-only after tasks finish
     assert(copy.exchange.length>0&&copy.exchangeEnd.length>0);
     assert(!/grace period|猶予期間/i.test(copy.exchange+' '+copy.exchangeEnd));
   }
+});
+
+test('Haunted Floating Festival names come from native v1.26.2 localized definitions',async()=>{
+  const file=new URL('../static/guide/public/event-friendship-rewards-1.26.2.json',import.meta.url);
+  const source=verifyPublicEventFriendshipRewards(JSON.parse(await readFile(file,'utf8')));
+  const native=source.getEvent('floating_festival','HauntedFloatingFestival2026');
+  assert(native,'2026 Haunted Floating Festival must be source-authenticated');
+  const expected={
+    ja:'ホーンテッドフローティングフェスティバル',
+    en:'The Haunted Floating Festival',
+    fr:'Le Festival volant hanté',
+    it:'Festival volante stregato',
+    de:'Das schwebende Spukfest',
+    'es-ES':'El Festival Flotante hechizado',
+    'zh-CN':'幽灵浮空节',
+    'pt-BR':'O Festival Flutuante Assombrado'
+  };
+  assert.deepEqual(Object.keys(native.names).sort(),Object.keys(expected).sort());
+  for(const [locale,title] of Object.entries(expected))assert.equal(native.names[locale],title);
 });
