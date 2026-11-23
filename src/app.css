@@ -777,3 +777,31 @@ a.portal-card:focus-visible{outline:3px solid #f5d6ff;outline-offset:-5px;z-inde
 
 .collection-scope-scroll button:disabled{cursor:not-allowed;opacity:.4}
 .collection-scope-scroll button:disabled:hover{background:transparent}
+
+
+/* DB-01 source-tag browse controls; appear only for the selected Collection
+   category, never as unverified top-level world/Collection membership. */
+.collection-native-tag-panel{flex:1 1 100%;min-width:0;display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:9px 13px;
+  padding:5px 0;align-items:start}
+.collection-native-tag-panel fieldset{min-width:0;max-width:100%;margin:0;
+  padding:4px 0 7px;border:0}
+.collection-native-tag-panel legend{font-size:11px;font-weight:700;
+  color:#c6b6d6;margin:0 0 7px}
+.collection-native-tag-options{display:flex;flex-wrap:wrap;gap:5px}
+.collection-native-tag-options button{display:inline-flex;align-items:center;
+  gap:6px;min-height:31px;max-width:100%;border:1px solid #6e5684;
+  border-radius:7px;background:#ffffff08;color:inherit;cursor:pointer;
+  padding:5px 10px;font-size:11px}
+.collection-native-tag-options button.chosen{background:#76569d7a;
+  border-color:#aa85d3}
+.collection-native-tag-panel select{width:100%;min-width:0;max-width:400px;
+  border-radius:8px;border:1px solid #765f89;background:#2d223a;
+  padding:8px;color:#f3eafa;font-size:12px}
+.collection-native-color{display:inline-block;flex:none;width:16px;height:16px;
+  border:1px solid #ffffff70;border-radius:4px}
+:root:is([data-wand-theme='light'],[data-wand-theme='dawn'],[data-wand-theme='coral'])
+  .collection-native-tag-panel legend{color:#614176}
+:root:is([data-wand-theme='light'],[data-wand-theme='dawn'],[data-wand-theme='coral'])
+  .collection-native-tag-panel select{color:#35233f;background:white;
+    border-color:#c5acd5}
