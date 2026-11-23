@@ -340,7 +340,7 @@ try {
   assert.equal(await seafaringGuideLink.getAttribute('href'),seafaringCalendarHref);
   assert.equal(await hub.locator('.day[aria-label="2026-10-22"] a.starpath[href="'+seafaringCalendarHref+'"]').count(),1);
   await seafaringGuideLink.click();
-  await hub.locator('.seasons button.selected').waitFor({timeout:20000});
+  await hub.locator('.seasons button.selected').filter({hasText:'Seafaring Star Path'}).waitFor({timeout:20000});
   assert.match(await hub.locator('.seasons button.selected').innerText(),/Seafaring Star Path/,
     'calendar must open the clicked season, not the default Haunting season');
   assert.deepEqual(hubErrors,[],hubErrors.join('\\n'));
