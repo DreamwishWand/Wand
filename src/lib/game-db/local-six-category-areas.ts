@@ -261,7 +261,8 @@ export function joinDb00SixOriginalCollectionAreas(
       companionKind:row.companionKind,
       originalAreaEvidence:row.sourceAreaEvidence,
       positiveSourceAreas:matched,
-      firstPositiveSourceAreaCode:matched?.[0]?.areaCode??null,
+      // Original DB-01 positive code type excludes the unfiltered code 0.
+      firstPositiveSourceAreaCode:row.positiveAreaCodes?.[0]??null,
       pendingSourceAreaReason:critter?'critter_requires_profile_world_scene':
         skinNoTag?'skin_missing_original_ihastags':
           noPositive?'ihastags_no_positive_source_tag':null,
