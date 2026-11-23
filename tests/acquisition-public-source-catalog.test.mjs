@@ -64,6 +64,19 @@ test('Complete public Steam 1.26.2 DB-02 catalog joins 1255 source-pinned Star P
   assert.equal(catalog.coverage.configuredDefaultInventoryGroups,15);
   assert.equal(catalog.coverage.configuredDefaultInventoryEntries,289);
   assert.equal(catalog.coverage.configuredDefaultInventoryItemIds,288);
+  assert.equal(catalog.coverage.nativePetSourceCategoryRows,134);
+  assert.equal(catalog.coverage.nativePetPremiumStoreCategoryIds,95);
+  assert.equal(catalog.coverage.nativePetExclusivePromotionCategoryIds,14);
+  assert.equal(catalog.nativePetSources.getCategoryItemIds('premium_shop').length,95);
+  assert.equal(catalog.nativePetSources.getCategoryItemIds('exclusive_promotion').length,14);
+  const nativePromotion=catalog.lookup('120000043').nativePetSourceCategories;
+  assert.equal(nativePromotion.length,1);
+  assert.equal(nativePromotion[0].category,'exclusive_promotion');
+  assert.equal(nativePromotion[0].sourceCategoryOnly,true);
+  assert.equal(nativePromotion[0].campaignLinkVerified,false);
+  assert.equal(nativePromotion[0].playerAcquisitionVerified,false);
+  assert.deepEqual(catalog.lookup('120000249').nativePetSourceCategories,[]);
+  assert.equal(catalog.nativePetSources.coverage.specificOnlineCampaignLinksVerified,0);
   assert.equal(catalog.coverage.totalPublishedSourceAndStaticCandidateRelations,1690);
   assert.equal(catalog.defaultInventorySource.coverage.newPlayerGrantVerified,false);
   assert.equal(catalog.defaultInventorySource.coverage.playerInventoryVerified,false);
@@ -103,8 +116,9 @@ test('Complete public Steam 1.26.2 DB-02 catalog joins 1255 source-pinned Star P
     catalog.coverage.linkedOutsidePublishedItemIds,
     catalog.coverage.allSourceLinkedItemIds);
   const urlList=new Set(seen);
-  assert.equal(seen.length,26); // 25 existing public assets + default-inventories source
-  assert.equal(urlList.size,26);
+  assert.equal(seen.length,27); // adds one exact native pet category projection
+  assert.equal(urlList.size,27);
+  assert(seen.some(s=>s.endsWith('/pet-source-categories-1.26.2.json')));
   assert(seen.some(s=>s.endsWith('/default-inventories-1.26.2.json')));
   assert(seen.some(s=>s.endsWith('/container-inventory-1.26.2.json')));
   assert(seen.some(s=>s.endsWith('/iap-pack-links-1.26.2.json')));
