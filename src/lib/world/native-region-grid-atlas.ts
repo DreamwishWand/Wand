@@ -55,7 +55,7 @@ const safeIndex=(n:unknown):n is number=>
  * same GridData is referenced by both a GridCollection and a Village Area,
  * show it ONCE under the richer native Village Area reference.
  */
-function regionGridRefs(views:readonly WorldPreviewView[],regionKey:string):GridRef[]{
+export function regionGridRefs(views:readonly WorldPreviewView[],regionKey:string):GridRef[]{
   const relevant=views.filter(view=>view.regionKey===regionKey);
   const ordered=[...relevant].sort((a,b)=>
     Number(b.kind==='villageArea')-Number(a.kind==='villageArea')||
