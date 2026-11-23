@@ -5,7 +5,7 @@ import {verifyPublicQuestIndex} from '../src/lib/guide/public-guide.mjs';
 import {
   GUIDE_CHARACTER_LABEL_CENSUS,derivePublicGuideCharacters,
   sourceCharacterName,filterPublicGuideCharacters,findPublicCharacterByLink
-} from '../src/lib/guide/public-characters.mjs';
+} from '../src/lib/guide/public-characters.ts';
 
 const filename=new URL('../static/guide/public/quest-index.json',import.meta.url);
 const read=async()=>verifyPublicQuestIndex(JSON.parse(await readFile(filename,'utf8')));
@@ -67,4 +67,23 @@ test('source label or quest-link tampering fails closed before a directory is di
   assert.throws(()=>derivePublicGuideCharacters(forged),/unknown source label/);
   assert.equal(sourceCharacterName(null,'ja'),'');
   assert.equal(sourceCharacterName({names:{ja:'A'}},'unknown'),'');
+});
+
+test('typed directory preserves one authenticated relation for each Quest without mutable derived rows',async()=>{
+  const directory=derivePublicGuideCharacters(await read());
+  assert.equal(directory.gameVersion,'1.26.2');
+  assert.equal(directory.sourceDefinitionOnly,true);
+  assert.equal(directory.playerUnlockVerified,false);
+  assert(Object.isFrozen(directory));
+  assert(Object.isFrozen(directory.rows));
+  assert(Object.isFrozen(directory.counts));
+  assert(Object.isFrozen(directory.rows[0]));
+  assert(Object.isFrozen(directory.rows[0].names));
+  assert(Object.isFrozen(directory.rows[0].quests));
+  const results=filterPublicGuideCharacters(directory,{query:'Sebastian'});
+  assert(Object.isFrozen(results));
+  assert(Object.isFrozen(results.rows));
+  assert.equal(results.total,1);
+  assert.equal(results.rows[0].id,'10000050');
+  assert.equal(directory.rows.flatMap(row=>row.quests).length,733);
 });
