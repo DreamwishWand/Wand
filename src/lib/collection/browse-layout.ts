@@ -20,7 +20,24 @@ export function isDreamlightUniverse(key:string):boolean{
   return norm(key)==='disneydreamlightvalley'||norm(key)==='dreamlightvalley';
 }
 export function isOtherUniverse(key:string):boolean{
-  return norm(key)==='other';
+  // Steam original Tag "NonIP" is the native Other universe, not an
+  // untagged Item. Keep both notions distinct.
+  return norm(key)==='other'||norm(key)==='nonip';
+}
+/** UI presentation only. Neither source Tag counts nor membership depend on
+ * these labels; unverified names continue to use their native keys. */
+export function collectionUniverseDisplayLabel(locale:string,key:string):string{
+  if(isOtherUniverse(key)){
+    const labels:Readonly<Record<string,string>>={
+      ja:'その他',en:'Other',fr:'Autres',it:'Altro',de:'Sonstige',
+      'es-ES':'Otros','zh-CN':'其他','pt-BR':'Outros'
+    };
+    return labels[locale]??labels.en;
+  }
+  if(isDreamlightUniverse(key)){
+    return locale==='ja'?'ドリームライトバレー':'Dreamlight Valley';
+  }
+  return key.replace(/^(?:F_|C_)/,'').replace(/([a-z])([A-Z])/g,'$1 $2');
 }
 export function sortedCollectionUniverseOptions(
   index:CollectionDb01Index,locale:string,display:(key:string)=>string,
