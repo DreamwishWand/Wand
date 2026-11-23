@@ -3,6 +3,8 @@
  * the Worker and the independently validated DB-00/02/03 readers. */
 import type {CollectionAcquisitionSummary} from './acquisition-summary.ts';
 import type {CollectionQuestSummary} from './quest-evidence.ts';
+import type {CollectionAcquisitionWithDistribution}
+  from './distribution-evidence.ts';
 
 export type CollectionEvidenceKind='acquisition'|'quests';
 export interface CollectionEvidenceRequest {
@@ -11,10 +13,10 @@ export interface CollectionEvidenceRequest {
   readonly itemId:number;
   readonly basePath:string;
 }
-type Summary=CollectionAcquisitionSummary|CollectionQuestSummary;
+type Summary=CollectionAcquisitionWithDistribution|CollectionQuestSummary;
 export type CollectionEvidenceReply=
   | Readonly<Omit<CollectionEvidenceRequest,'basePath'> & {
-      ok:true;summary:CollectionAcquisitionSummary|CollectionQuestSummary;
+      ok:true;summary:CollectionAcquisitionWithDistribution|CollectionQuestSummary;
     }>
   | Readonly<Omit<CollectionEvidenceRequest,'basePath'> & {ok:false}>;
 
@@ -26,7 +28,7 @@ export interface CollectionSourceWorker {
 }
 export interface CollectionEvidenceHandle {
   loadAcquisition(itemId:number,basePath:string):
-    Promise<CollectionAcquisitionSummary>;
+    Promise<CollectionAcquisitionWithDistribution>;
   loadQuests(itemId:number,basePath:string):
     Promise<CollectionQuestSummary>;
   release():void;
@@ -45,9 +47,23 @@ function isSummary(raw:unknown,kind:CollectionEvidenceKind,id:number):
   if(raw===null||typeof raw!=='object'||Array.isArray(raw))return false;
   const s=raw as Record<string,unknown>;
   if(s.itemId!==id||s.staticSourceOnly!==true)return false;
+  const d=s.distribution as Record<string,unknown>|undefined;
   return kind==='acquisition'
     ?Array.isArray(s.kinds)&&Array.isArray(s.candidates)&&
-      s.availabilityVerified===false&&s.ownershipVerified===false
+      s.availabilityVerified===false&&s.ownershipVerified===false&&
+      d!==null&&typeof d==='object'&&d.itemId===id&&
+      d.sourceCoverageComplete===false&&
+      d.exclusiveLimitedItemVerified===false&&
+      d.currentAvailabilityVerified===false&&
+      d.playerOwnershipVerified===false&&
+      d.collectionUiMembershipVerified===false&&
+      Array.isArray(d.groups)&&d.groups.every(row=>
+        row&&typeof row==='object'&&
+        ['ordinary_gameplay','gameplay_time_condition','real_world_distribution']
+          .includes(row.group)&&Array.isArray(row.proofs)&&
+        row.proofs.length>0&&row.proofs.every((proof:unknown)=>
+          ['configured_item_id_link','native_source_category',
+           'configured_route_unverified','name_only_candidate'].includes(String(proof))))
     :Array.isArray(s.targets)&&Array.isArray(s.rewards)&&
       s.mandatoryRequirementVerified===false&&
       s.guaranteedRewardVerified===false&&s.playerProgressVerified===false;
@@ -138,7 +154,7 @@ export function createCollectionEvidencePool(makeWorker:()=>CollectionSourceWork
       }
       return {
         loadAcquisition:(id,base)=>request('acquisition',id,base) as
-          Promise<CollectionAcquisitionSummary>,
+          Promise<CollectionAcquisitionWithDistribution>,
         loadQuests:(id,base)=>request('quests',id,base) as
           Promise<CollectionQuestSummary>,
         release:()=>{
