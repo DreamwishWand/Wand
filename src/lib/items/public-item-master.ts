@@ -25,6 +25,7 @@ export interface ItemMasterVersions {
     gameVersion: string;
     release: string;
     count: number;
+    archiveSha256: string;
   }>[];
 }
 export const ITEM_MASTER_LOCALES =
@@ -187,7 +188,9 @@ export async function openPublicItemMaster(
         RELEASE_VERSION.test(entry.release) &&
         entry.release.startsWith('steam-'+entry.gameVersion+'-') &&
         Number.isSafeInteger(entry.count) && entry.count>0 &&
-        entry.count<=MAX_DEFINITIONS, 'INVALID_VERSIONS');
+        entry.count<=MAX_DEFINITIONS &&
+        typeof entry.archiveSha256 === 'string' &&
+        SHA.test(entry.archiveSha256), 'INVALID_VERSIONS');
       unique.add(entry.gameVersion);
     }
     gameVersion = raw.current;
