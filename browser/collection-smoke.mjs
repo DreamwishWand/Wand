@@ -382,7 +382,7 @@ try{
   await page.locator('.collection-detail-category-grid .facet-card').first().waitFor();
   assert.match(await page.locator('.collection-detail-category-grid .facet-card').filter({
     hasText:/家具|Furniture/
-  }).first().innerText(),/[0-9][0-9,]* \/ [0-9][0-9,]*/);
+  }).first().innerText(),/[1-9][0-9,]*\\s*件/);
   // Native detail classification is the normal browse view (no expand button).
   const sourceTypes=page.locator('.collection-native-activity');
   assert.equal(await sourceTypes.count(),15,
@@ -393,7 +393,7 @@ try{
   assert.equal(await page.locator('.collection-detail-category-grid .facet-card').count(),50,
     'every published Item ID must be assigned to one of 50 real source groups');
   const countsNonzero=await page.locator('.collection-detail-category-grid .facet-card')
-    .evaluateAll(cards=>cards.every(card=>/\/\s*[1-9][\d,]*\s*$/.test(card.textContent??'')));
+    .evaluateAll(cards=>cards.every(card=>/[1-9][\\d,]*\\s*件\\s*$/.test(card.textContent??'')));
   assert.equal(countsNonzero,true,'all 50 visible categories must have real nonzero Item counts');
   for(const [code,label,count] of [
     [3,'料理','618'],[11,'食材','201'],[10,'魚','103']
