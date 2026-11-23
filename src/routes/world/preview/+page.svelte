@@ -366,7 +366,7 @@
   }
   onDestroy(stop);
 
-  function requestWindow(reset = true) {
+  function requestWindow(reset = true,preserveSelectedCell = false) {
     // Resolve against current selections synchronously: Svelte's reactive
     // derived variables may not update until after an event handler returns.
     const chosen = layouts.find(a => a.viewKey === selectedViewKey)?.grids
@@ -390,7 +390,8 @@
     y = Math.min(Math.max(0, Number.isSafeInteger(y) ? y : 0), sy - 1);
     width = Math.min(Math.max(1, Number.isSafeInteger(width) ? width : 16), 32, sx - x);
     height = Math.min(Math.max(1, Number.isSafeInteger(height) ? height : 16), 32, sy - y);
-    if (reset){offset = 0;displayedAnchors = [];selectedCell = null;
+    if (reset){offset = 0;displayedAnchors = [];
+      if(!preserveSelectedCell)selectedCell=null;
       selectedCellLayers=null;loadingCellLayers=false;}
     viewing = true;
     errorMessage = '';
@@ -1045,7 +1046,7 @@
         </p>
         <label class="source-grid-layers-toggle">
           <input type="checkbox" bind:checked={showSourceDefaultLayerOverlay}
-            on:change={()=>requestWindow()}/>
+            on:change={()=>requestWindow(true,true)}/>
           原本Itemの既定レイヤー
         </label>
         {#if activeLayerWindow}
