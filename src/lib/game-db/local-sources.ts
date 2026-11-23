@@ -21,6 +21,7 @@ import type {
   Db04NativeItemScopeClient,Db04WorldTag,Db04NativeScopePage
 } from '../world/native-item-scope.ts';
 import type {SharedDbFilter} from './integrated.ts';
+import type {Db00OriginalCollectionArea} from './collection-area-sources.ts';
 
 export const DB00_LOCAL_SOURCES_SCHEMA='wand.game-db.local-sources@1' as const;
 const SHA=/^[a-f0-9]{64}$/;
@@ -68,6 +69,25 @@ export interface Db00LocalWorldPage{
   readonly items:readonly Db00LocalItem[];
   readonly gameUiMembershipVerified:false;
 }
+/** Source Item Tags in one original CollectionArea config.
+ * NOT actual GetAreaConfigs UI membership and NOT entitlement.
+ * Original ItemLocationException IDs are flagged, not reclassified. */
+export interface Db00LocalAreaTagCandidate{
+  readonly item:Db00LocalItem;
+  readonly nativeTagDirectVerified:true;
+  readonly originalLocationException:boolean;
+  readonly gameUiCollectionMembershipVerified:false;
+}
+export interface Db00LocalAreaTagPage{
+  readonly area:Db00OriginalCollectionArea;
+  readonly sourcePage:Db04NativeScopePage;
+  readonly items:readonly Db00LocalAreaTagCandidate[];
+  readonly sourceTagCandidateOnly:true;
+  readonly gameUiCollectionMembershipVerified:false;
+  readonly worldAvailabilityVerified:false;
+  readonly dlcEntitlementVerified:false;
+  readonly playerOwnershipVerified:false;
+}
 export interface Db00LocalSourceReader{
   readonly contract:typeof DB00_LOCAL_SOURCES_SCHEMA;
   readonly snapshotId:string;
@@ -83,6 +103,11 @@ export interface Db00LocalSourceReader{
   /** This is an original Tag lookup; never a Collection world selector. */
   byNativeWorldTag(tag:Db04WorldTag,
     page?:Readonly<{offset:number;limit:number}>):Promise<Db00LocalWorldPage>;
+  /** Exact original Collection config -> direct native DB-04 Item Tag candidates.
+   * AllAreas (0) has no direct Tag: use queryPublishedItems instead. */
+  byOriginalCollectionAreaTag(
+    areaCode:number,page?:Readonly<{offset:number;limit:number}>
+  ):Promise<Db00LocalAreaTagPage>;
 }
 function assert(ok:unknown,code:string):asserts ok {
   if(!ok)throw new TypeError('DB00_LOCAL_SOURCES_'+code);
@@ -101,7 +126,11 @@ export function joinLocalGameSources(
     publicData.database.target.gameVersion==='1.26.2' &&
     publicData.database.itemCount===13202 &&
     publicData.acquisition?.coverage.requiresPrivateGameArchive===false &&
-    publicData.guide?.evidence.integrity==='pinned_public_sha256',
+    publicData.guide?.evidence.integrity==='pinned_public_sha256' &&
+    publicData.originalCollectionAreas?.contract===
+      'wand.game-db.original-collection-area-reference@1' &&
+    publicData.originalCollectionAreas.sourceConfigCount===7 &&
+    publicData.originalCollectionAreas.gameUiItemMembershipVerified===false,
     'PUBLIC_EXACT_SOURCE_REQUIRED');
   assert(options!==null&&typeof options==='object'&&
     (options.db01!==undefined||options.nativeScope!==undefined),
@@ -231,6 +260,46 @@ export function joinLocalGameSources(
       return Object.freeze({
         sourcePage:result.sourcePage,items,
         gameUiMembershipVerified:false as const
+      });
+    },
+    async byOriginalCollectionAreaTag(
+      areaCode:number,page?:Readonly<{offset:number;limit:number}>
+    ):Promise<Db00LocalAreaTagPage>{
+      assert(nativeScope,'DB04_NATIVE_SCOPE_REQUIRED');
+      const area=publicData.originalCollectionAreas.getArea(areaCode);
+      assert(area.worldTag!==null,'ALL_AREAS_HAS_NO_NATIVE_SOURCE_TAG');
+      // DB-01 Unity config and DB-04 Item Tag projection must refer to the
+      // SAME Steam 1.26.2 original Tag.json, not merely similar tag names.
+      assert(nativeScope.source.originalTagSha256===
+        publicData.originalCollectionAreas.originalTagSha256,
+        'DB01_DB04_ORIGINAL_TAG_SOURCE_SHA_MISMATCH');
+      const pageResult=joined.byNativeWorldTag(area.worldTag,page);
+      assert(pageResult.gameUiMembershipVerified===false &&
+        pageResult.sourcePage.gameUiMembershipVerified===false,
+        'DB04_NOT_SOURCE_ONLY');
+      const local=await getItems(pageResult.items.map(item=>item.itemId));
+      const items=local.map((item,i):Db00LocalAreaTagCandidate=>{
+        assert(item.itemId===pageResult.items[i].itemId &&
+          item.shared.nativeTags.worldsDirect.includes(area.worldTag!) &&
+          item.collectionUiMembershipVerified===false,
+          'ORIGINAL_AREA_TAG_ID_MISMATCH');
+        return Object.freeze({
+          item,
+          nativeTagDirectVerified:true as const,
+          originalLocationException:
+            publicData.originalCollectionAreas.isOriginalLocationException(
+              item.itemId),
+          gameUiCollectionMembershipVerified:false as const
+        });
+      });
+      return Object.freeze({
+        area,sourcePage:pageResult.sourcePage,
+        items:Object.freeze(items),
+        sourceTagCandidateOnly:true as const,
+        gameUiCollectionMembershipVerified:false as const,
+        worldAvailabilityVerified:false as const,
+        dlcEntitlementVerified:false as const,
+        playerOwnershipVerified:false as const
       });
     }
   });
