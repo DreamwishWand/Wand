@@ -41,6 +41,8 @@ import {loadPinnedDefaultInventorySource,type PinnedDefaultInventorySource}
   from './public-default-inventories.ts';
 import {loadPinnedNativePetSourceCategories,type NativePetSourceIndex}
   from './public-pet-source-categories.ts';
+import {loadPinnedNativeOnlineCategories,type NativeOnlineCategoryIndex}
+  from './public-online-categories.ts';
 import {indexPublicOnlineNameCandidates,
   type PublicOnlineNameCandidateIndex,
   type PublicOnlineNameCandidate} from './public-online-name-candidates.ts';
@@ -123,6 +125,8 @@ export interface PublicSourceCatalog{
   readonly defaultInventorySource:PinnedDefaultInventorySource;
   /** Optional, source-pinned native PetItemData.Source categories. No eager fetch. */
   loadNativePetSources():Promise<NativePetSourceIndex>;
+  /** Native OnlineCategory enum: Premium/TimeLimited, not a specific sale. */
+  loadNativeOnlineCategories():Promise<NativeOnlineCategoryIndex>;
   readonly coverage:PublicSourceCatalogCoverage;
   lookup(itemId:string|number):PublicSourceItemLookup;
   getSourceOrigin(originId:string):readonly ItemOrigin[];
@@ -281,6 +285,7 @@ export async function loadPublicSourceCatalog(
   // Existing DB-00 and every current public consumer retain their original
   // asset requests; the 2 KB source is fetched only when explicitly requested.
   let nativePetSourcePromise:Promise<NativePetSourceIndex>|null=null;
+  let nativeOnlineCategoryPromise:Promise<NativeOnlineCategoryIndex>|null=null;
   return Object.freeze({
     schema:DB02_PUBLIC_SOURCE_CATALOG_SCHEMA,
     gameVersion:'1.26.2' as const,
@@ -291,6 +296,11 @@ export async function loadPublicSourceCatalog(
     shopHistory,itemSources,coverage,
     loadNativePetSources(){
       return nativePetSourcePromise??=loadPinnedNativePetSourceCategories(
+        basePath,fetcher
+      );
+    },
+    loadNativeOnlineCategories(){
+      return nativeOnlineCategoryPromise??=loadPinnedNativeOnlineCategories(
         basePath,fetcher
       );
     },

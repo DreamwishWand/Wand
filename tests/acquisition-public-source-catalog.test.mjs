@@ -307,3 +307,26 @@ test('native Pet.Source categories are available on demand without extra shared 
   assert.equal(catalog.coverage.combinedSourceRoutes,1255);
   assert.equal(catalog.origins.getCoverage().linkedRoutes,1255);
 });
+
+test('native online categories remain an opt-in public source with no shared-startup fetch',async()=>{
+  const {seen,fetcher}=publicFetcher();
+  const catalog=await loadPublicSourceCatalog('/Wand',fetcher);
+  const startupFetches=seen.length;
+  assert.equal(seen.some(url=>url.endsWith('/online-categories-1.26.2.json')),false);
+  assert.equal(catalog.coverage.combinedSourceRoutes,1255);
+  const one=catalog.loadNativeOnlineCategories();
+  const two=catalog.loadNativeOnlineCategories();
+  assert.equal(one,two,'same catalog call must reuse its SHA-pinned online category load');
+  const index=await one;
+  assert.equal(seen.length,startupFetches+1);
+  assert.equal(seen.filter(url=>url.endsWith('/online-categories-1.26.2.json')).length,1);
+  assert.equal(index.coverage.explicitNonzeroCategoryRows,2198);
+  assert.equal(index.getCategoryItemIds('premium').length,1830);
+  assert.equal(index.getCategoryItemIds('time_limited').length,368);
+  assert.equal(index.getItemClassifications('40000152')[0].originalCategoryOnly,true);
+  assert.equal(index.getItemClassifications('40000152')[0].specificOfferOrCampaignVerified,false);
+  assert.equal(index.getItemClassifications('40001569')[0].category,'time_limited');
+  assert.equal(catalog.itemSources.getKindItemIds('twitch_drop').length,0);
+  assert.equal(catalog.itemSources.getKindItemIds('redeem_code').length,0);
+  assert.equal(catalog.coverage.combinedSourceRoutes,1255);
+});
