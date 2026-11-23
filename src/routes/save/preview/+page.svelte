@@ -1809,6 +1809,22 @@
                 </ul>
               </div>
             {/if}
+            {#if coordinateQueue.length>0&&mixedQueue.length>0}
+              <div class="coordinate-batch" aria-label="座標と配置の統合編集">
+                <div class="slot-actions">
+                  <strong>座標＋向きの一括出力</strong>
+                  <button type="button"
+                    disabled={processing||!combinedGridEdits}
+                    on:click={()=>validateCoordinateEdit(false,false,false,true)}>
+                    両キューをまとめて検証
+                    {#if combinedGridEdits}（{combinedGridEdits.length}件）{/if}
+                  </button>
+                </div>
+                {#if !combinedGridEdits}
+                  <small class="slot-note">同じ配置への異なる座標変更が重複しているか、合計が16件を超えています。競合する編集を削除してください。</small>
+                {/if}
+              </div>
+            {/if}
             {#if gridInstances.length>120&&visibleGridInstances.length===120}
               <p class="slot-note">アイテム名・Item IDで絞り込めます。</p>
             {/if}
