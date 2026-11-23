@@ -592,6 +592,7 @@
     if(!window.confirm('登録した数量・配置の変更をすべて破棄しますか？元のセーブは変更されません。'))return;
     cancel();result=null;
     queuedEdits=[];coordinateQueue=[];mixedQueue=[];
+    bulkAmountError='';bulkAmountStatus='';
     amountRevisionIndex=null;amountEditorReady=false;amountSource='saved';
     coordinateSelection=null;orientationSelection=null;
   }
@@ -1923,17 +1924,26 @@
     {#if slotState==='ready'}
       <div class="slot-search">
         <input bind:value={slotQuery} aria-label="所持アイテム検索"
-          on:input={()=>slotVisibleLimit=SAVE_LIST_WINDOW_SIZE}
+          on:input={()=>{
+            slotVisibleLimit=SAVE_LIST_WINDOW_SIZE;
+            bulkAmountError='';bulkAmountStatus='';
+          }}
           placeholder="アイテム名・Item IDを検索" />
         <select bind:value={slotFilter} aria-label="所持アイテム分類"
-          on:change={()=>slotVisibleLimit=SAVE_LIST_WINDOW_SIZE}>
+          on:change={()=>{
+            slotVisibleLimit=SAVE_LIST_WINDOW_SIZE;
+            bulkAmountError='';bulkAmountStatus='';
+          }}>
           <option value="all">すべて</option>
           <option value="inventory">Inventory</option>
           <option value="chest">Chest</option>
         </select>
         {#if dbStatus==='ready'}
           <select bind:value={slotCategoryFilter} aria-label="共通DB分類"
-            on:change={()=>slotVisibleLimit=SAVE_LIST_WINDOW_SIZE}>
+            on:change={()=>{
+            slotVisibleLimit=SAVE_LIST_WINDOW_SIZE;
+            bulkAmountError='';bulkAmountStatus='';
+          }}>
             <option value="all">全分類</option>
             {#each slotCategories as category}
               <option value={category.value}>{category.label}（{category.count}）</option>
