@@ -691,3 +691,25 @@ a.portal-card:focus-visible{outline:3px solid #f5d6ff;outline-offset:-5px;z-inde
   .collection-scope-scroll button{font-size:11px;padding:7px 9px}
   .collection-universe-switcher select{max-width:55vw}
 }
+
+/* Collection's local-only favorites are a single compact search control. */
+.collection-favorites-filter{
+  flex:none;display:grid;place-items:center;width:40px;height:40px;
+  color:#c9b2dd;border:1px solid #ffffff33;border-radius:9px;
+  background:#ffffff0b;cursor:pointer;
+}
+.collection-favorites-filter:hover:not(:disabled){border-color:#ba91da;background:#65468155}
+.collection-favorites-filter.active{
+  border-color:#cba36b;background:#59462f;color:#f8d6a0
+}
+.collection-favorites-filter:focus-visible{outline:2px solid #dbb4ff;outline-offset:3px}
+.collection-favorites-filter:disabled{opacity:.45;cursor:default}
+:root:is([data-wand-theme='dawn'],[data-wand-theme='coral']) .collection-favorites-filter{
+  background:#fff;color:#725a82;border-color:#c0aaca
+}
+:root:is([data-wand-theme='dawn'],[data-wand-theme='coral']) .collection-favorites-filter.active{
+  color:#825c1f;background:#fff1d1;border-color:#b88d40
+}
+@media(max-width:650px){
+  .collection-favorites-filter{height:36px;width:36px}
+}
