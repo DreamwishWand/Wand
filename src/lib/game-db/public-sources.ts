@@ -68,6 +68,10 @@ import {
   createDb00CookingIngredientReader,
   type Db00CookingIngredientReader
 } from './native-cooking.ts';
+import {
+  createDb00NativeStallReader,
+  type Db00NativeStallReader,type Db00NativeStallItem
+} from './native-stalls.ts';
 import {loadPublicStarpath} from '../guide/public-starpath.ts';
 import {
   loadStarpathRewardExtras,STARPATH_EXTRA_RELEASE
@@ -107,6 +111,18 @@ export interface Db00AllNativeAcquisitionEvidence extends Db00NativeAcquisitionE
   readonly actualLootContextVerified:false;
   readonly guaranteedLootDropVerified:false;
 }
+/** Original stall-slot candidates are independent of live or historical sales. */
+export interface Db00NativeStallCandidateEvidence {
+  readonly itemId:string;
+  readonly shared:Db00SourceJoinedItem;
+  readonly stalls:Db00NativeStallItem;
+  readonly staticStallSlotCandidateCount:number;
+  readonly staticStorePoolOnly:true;
+  readonly liveShopStockVerified:false;
+  readonly livePurchasePriceVerified:false;
+  readonly purchasingEligibilityVerified:false;
+  readonly playerOwnershipVerified:false;
+}
 export interface PublicSharedGameSources{
   readonly schema:typeof DB00_PUBLIC_SOURCES_SCHEMA;
   readonly snapshotId:string;
@@ -141,6 +157,12 @@ export interface PublicSharedGameSources{
   loadNativeLootCandidateSources():Promise<Db00NativeLootReader>;
   /** Original 469 cooking members and 238 ingredient selector uses. */
   loadNativeCookingIngredientSources():Promise<Db00CookingIngredientReader>;
+  /** SHA-pinned 65 original stalls and 335 pool slots, loaded on demand. */
+  loadNativeStallPoolSources():Promise<Db00NativeStallReader>;
+  /** Per-Item original stall pool references, not proof of a sale. */
+  getNativeStallCandidateEvidence(
+    itemId:string|number
+  ):Promise<Db00NativeStallCandidateEvidence>;
   /** One cross-service Item lookup, with both optional sources loaded lazily. */
   getNativeAcquisitionEvidence(
     itemId:string|number
@@ -336,6 +358,34 @@ export async function openPublicSharedGameSources(
       acquisition.loadNativeCookingMembers()
     ]).then(([recipes,members])=>
       createDb00CookingIngredientReader(database,joined,recipes,members));
+  let nativeStallSources:Promise<Db00NativeStallReader>|null=null;
+  const loadNativeStallPoolSources=():Promise<Db00NativeStallReader>=>
+    nativeStallSources??=acquisition.loadNativeStallSources().then(source=>
+      createDb00NativeStallReader(database,joined,source)
+    );
+  const getNativeStallCandidateEvidence=async(
+    itemId:string|number
+  ):Promise<Db00NativeStallCandidateEvidence>=>{
+    // Reject invalid IDs without fetching optional original source files.
+    const shared=joined.getItem(itemId);
+    const stalls=(await loadNativeStallPoolSources()).getItem(shared.itemId);
+    assert(stalls.itemId===shared.itemId &&
+      stalls.item.itemId===shared.itemId &&
+      stalls.staticSlotCandidates.length===stalls.staticSlotOrigins.length &&
+      stalls.staticPoolOnly===true &&
+      stalls.currentShopStockVerified===false &&
+      stalls.currentPricesVerified===false,
+      'NATIVE_STALL_ITEM_JOIN_MISMATCH');
+    return Object.freeze({
+      itemId:shared.itemId,shared,stalls,
+      staticStallSlotCandidateCount:stalls.staticSlotCandidates.length,
+      staticStorePoolOnly:true as const,
+      liveShopStockVerified:false as const,
+      livePurchasePriceVerified:false as const,
+      purchasingEligibilityVerified:false as const,
+      playerOwnershipVerified:false as const
+    });
+  };
   let starpathCrosswalk:Promise<Db00StarpathRewardReader>|null=null;
   const loadStarpathRewardCrosswalk=():Promise<Db00StarpathRewardReader>=>
     starpathCrosswalk??=(async()=>{
@@ -399,6 +449,7 @@ export async function openPublicSharedGameSources(
     loadNativeActivitySources,getNativeAcquisitionEvidence,
     loadNativeLootCandidateSources,getAllNativeAcquisitionEvidence,
     loadNativeCookingIngredientSources,
+    loadNativeStallPoolSources,getNativeStallCandidateEvidence,
     loadStarpathRewardCrosswalk,
     queryItems:(filters:readonly SharedDbFilter[]=[],
       page:Readonly<{offset?:number;limit?:number}>={})=>
