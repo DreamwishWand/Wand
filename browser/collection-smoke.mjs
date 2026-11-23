@@ -420,13 +420,16 @@ try{
   assert.equal(backup.workspaces[0].entries['40005160'].quantity,7);
   assert.equal(backup.workspaces[0].entries['40005160'].status,'missing');
   await search.fill('');
-  // Category is the only root navigation. World/Universe are semantic filters.
+  // The current published 1.26.2 snapshot lacks reviewed per-item
+  // CollectionArea/Universe membership. Never expose dead-end filters or
+  // incorrectly treat source Tag associations as game-screen membership.
   await page.locator('.facet-card').first().waitFor();
   assert.match(await page.locator('.facet-card').first().innerText(),/家具|Furniture/);
   assert.equal(await page.locator('.mode-tabs').count(),0);
+  assert.equal(await page.locator('.collection-scope-toolbar').count(),0);
   await page.getByRole('button',{name:/フィルター/}).click();
-  assert.equal(await page.getByRole('combobox',{name:'ワールドで絞り込み'}).count(),1);
-  assert.equal(await page.getByRole('combobox',{name:'ユニバースで絞り込み'}).count(),1);
+  assert.equal(await page.getByRole('combobox',{name:'ワールドで絞り込み'}).count(),0);
+  assert.equal(await page.getByRole('combobox',{name:'ユニバースで絞り込み'}).count(),0);
   const facet=page.locator('.facet-card').filter({hasText:/家具|Furniture/}).first();
   try {
     await facet.click({timeout:10000});
