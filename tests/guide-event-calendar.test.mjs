@@ -19,10 +19,10 @@ test('Guide event calendar distinguishes owner-cache UTC schedule from unverifie
   const events=guideCalendarEvents(await snapshot());
   assert.equal(GUIDE_EVENT_CALENDAR_CONTRACT,'wand.db03.event-calendar-schedule@1');
   assert.equal(GUIDE_EVENT_CALENDAR_AS_OF,'2026-11-22');
-  assert.equal(events.length,10);
+  assert.equal(events.length,11);
   assert.equal(events.filter(e=>e.kind==='starpath').length,2);
   assert.equal(events.filter(e=>e.kind==='limited-event').length,7);
-  assert.equal(events.filter(e=>e.kind==='starpath-history').length,1);
+  assert.equal(events.filter(e=>e.kind==='starpath-history').length,2);
   assert(events.every(e=>e.liveVerified===false));
   assert(events.every(e=>e.sourceUrl.startsWith('https://disneydreamlightvalley.com/')));
   assert.equal(events[0].taskEndUtcExclusive,'2026-12-08T14:00:00Z');
@@ -253,7 +253,7 @@ test('typed event windows reject forged source and forbid invented UTC clock tim
   assert.throws(()=>guideCalendarEvents(altered),/provenance/);
   const entries=guideCalendarEvents(verified);
   assert.deepEqual(entries.map(row=>row.precision),
-    ['utc-instant','utc-instant',...Array(8).fill('date-only')]);
+    ['utc-instant','utc-instant',...Array(9).fill('date-only')]);
   assert(entries.every(row=>row.liveVerified===false));
   const festival=entries[2];
   assert.equal(festival.startDay,'2026-10-07');
