@@ -4,6 +4,8 @@ import {readFile} from 'node:fs/promises';
 import {COLLECTION_NATIVE_SUBTYPE_UI,collectionNativeSubtypeLabel}
   from '../src/lib/collection/native-subtype-labels.ts';
 import {join} from 'node:path';
+import {COLLECTION_TOP_CATEGORIES,collectionTopCategory,collectionTopCategoryCards,collectionTopCategoryLabel}
+  from '../src/lib/collection/category-hierarchy.ts';
 import {
   COLLECTION_DB01_FACETS_SCHEMA,COLLECTION_DB01_ARCHIVE_SHA,
   parseCollectionDb01Facets,collectionDb01Groups,collectionDb01Matches,
@@ -78,6 +80,22 @@ test('DB-01 source native filtering is a narrow projection, not a second Item ma
   assert.equal(byClass.get('Clothing'),2041);
   assert.equal(byClass.get('Trimming'),365);
   assert.equal(counts.length,50);
+  const explicitKeys=COLLECTION_TOP_CATEGORIES.flatMap(group=>group.keys);
+  assert.equal(explicitKeys.length,50);
+  assert.equal(new Set(explicitKeys).size,50);
+  assert.deepEqual(new Set(explicitKeys),new Set(counts.map(row=>row.key)));
+  const parents=collectionTopCategoryCards(counts.map(row=>({
+    key:row.key,total:row.count,owned:0
+  })));
+  assert.equal(parents.length,10);
+  assert.equal(parents.reduce((sum,row)=>sum+row.total,0),13202);
+  for(const key of ['Clothing:5','Clothing:16','Clothing:17','Clothing:18'])
+    assert.equal(collectionTopCategory(key),'appearance');
+  assert.equal(collectionTopCategory('Furniture:7'),'outdoor');
+  assert.equal(collectionTopCategory('Trimming:0'),'interior');
+  for(const group of parents)for(const locale of ['en','ja','fr','it','de','es-ES','zh-CN','pt-BR'])
+    assert.ok(collectionTopCategoryLabel(locale,group.id).length>0);
+
   assert.equal(COLLECTION_NATIVE_SUBTYPE_UI.length,35);
   const languages=['en','fr','it','de','es-ES','ja','zh-CN','pt-BR'];
   for(const spec of COLLECTION_NATIVE_SUBTYPE_UI){
