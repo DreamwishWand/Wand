@@ -60,7 +60,6 @@ const BASE=/^\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/;
 const MARK=new WeakSet<object>();
 const EMPTY=Object.freeze([]) as readonly Db01ItemSourceLink[];
 const EMPTY_CATS=Object.freeze([]) as readonly GameNativeItemCategory[];
-const SHA=/^[a-f0-9]{64}$/;
 
 export type Db01SourceKind=typeof DB02_SOURCE_KINDS[number];
 export type Db01SourceRole=typeof DB02_SOURCE_ROLES[number];
@@ -122,7 +121,6 @@ function sourcePosition(value:unknown):value is Db01SourcePosition[]{
 function sortedIds(ids:Iterable<string>):readonly string[]{
   return Object.freeze([...ids].sort((a,b)=>Number(a)-Number(b)));
 }
-const MISS=Object.freeze({}) as Readonly<Record<string,never>>;
 
 export function parseDb01ItemSourceRelations(data:unknown):Db01ItemSourceRelations{
   check(record(data)&&data.schema===DB02_ITEM_SOURCE_RELATIONS_SCHEMA&&
@@ -136,8 +134,9 @@ export function parseDb01ItemSourceRelations(data:unknown):Db01ItemSourceRelatio
     JSON.stringify(data.roleCategory)===JSON.stringify(ROLE_CATEGORY)&&
     record(data.sourceProjections)&&
     REQUIRED_PROJECTIONS.length===Object.keys(data.sourceProjections).length&&
-    REQUIRED_PROJECTIONS.every(k=>typeof data.sourceProjections[k]==='string'&&
-      (data.sourceProjections[k] as string).startsWith('static/'))&&
+    REQUIRED_PROJECTIONS.every(k=>
+      typeof (data.sourceProjections as Record<string,unknown>)[k]==='string'&&
+      ((data.sourceProjections as Record<string,string>)[k]).startsWith('static/'))&&
     record(data.semantics)&&data.semantics.expertOnlyIds===true&&
     data.semantics.sourceDefinitionsOnly===true&&
     data.semantics.guaranteedItemGrantVerified===false&&
@@ -157,8 +156,10 @@ export function parseDb01ItemSourceRelations(data:unknown):Db01ItemSourceRelatio
     record(coverage.linksBySourceKind)&&
     record(coverage.linksByRole)&&
     data.items.length===4137&&
-    categories.every((c,i)=>coverage.itemIdsByCategory[c]===EXPECTED_CATEGORY_COUNTS[i])&&
-    sourceKinds.every((k,i)=>coverage.linksBySourceKind[k]===EXPECTED_SOURCE_COUNTS[i]),
+    categories.every((c,i)=>
+      (coverage.itemIdsByCategory as Record<string,unknown>)[c]===EXPECTED_CATEGORY_COUNTS[i])&&
+    sourceKinds.every((k,i)=>
+      (coverage.linksBySourceKind as Record<string,unknown>)[k]===EXPECTED_SOURCE_COUNTS[i]),
     'COVERAGE');
   const byItem=new Map<string,Db01ItemSourceRecord>();
   const reverse=new Map<string,Set<string>>();
@@ -218,7 +219,7 @@ export function parseDb01ItemSourceRelations(data:unknown):Db01ItemSourceRelatio
   }
   check(classCount===3247&&totalLinks===15444&&
     actualSources.every((n,i)=>n===EXPECTED_SOURCE_COUNTS[i])&&
-    roles.every((r,i)=>Number(coverage.linksByRole[r])===actualRoles[i])&&
+    roles.every((r,i)=>Number((coverage.linksByRole as Record<string,unknown>)[r])===actualRoles[i])&&
     categories.every((c,i)=>byCategory.get(c)!.size===EXPECTED_CATEGORY_COUNTS[i]),
     'RECOMPUTED_COVERAGE');
   // Keep normal UI free of IDs; the UI can resolve names from existing
