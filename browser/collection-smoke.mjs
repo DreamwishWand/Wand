@@ -316,7 +316,12 @@ try{
   await saveButton.click();
   assert.match(await portal.locator('.shell-save-menu').innerText(),/profile\.json/);
   assert.match(await portal.locator('.shell-save-menu').innerText(),/未解析/);
-  assert.equal(await portal.getByRole('button',{name:'編集済みセーブを出力'}).isDisabled(),true);
+  assert.equal(await portal.getByRole('button',{
+    name:'編集済みセーブを出力'
+  }).count(),0,'no permanently disabled Save export entry');
+  assert.equal(await portal.getByRole('button',{
+    name:'Save Editor（テスト版）'
+  }).count(),1);
   const [rawDownload]=await Promise.all([
     portal.waitForEvent('download'),
     portal.getByRole('button',{name:'原本をバックアップ'}).click()
