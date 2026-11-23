@@ -16,7 +16,7 @@ const CATEGORIES=Object.freeze([
 ] as const);
 const COUNTS=Object.freeze([8,1,9,7,95,14]);
 const ID=/^[1-9][0-9]{0,15}$/;
-const BASE=/^\\/[A-Za-z0-9_-]+(?:\\/[A-Za-z0-9_-]+)*$/;
+const BASE=/^\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/;
 const PINNED=new WeakSet<object>();
 const EMPTY=Object.freeze([]) as readonly NativePetSourceCategory[];
 const EMPTY_IDS=Object.freeze([]) as readonly string[];
