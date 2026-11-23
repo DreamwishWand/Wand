@@ -404,6 +404,24 @@ try{
   await page.getByRole('checkbox',{name:'お気に入り'}).check();
   await waitForLocalState(page,{item:'40005160',status:'owned',favorite:true});
   await page.getByRole('button',{name:'詳細を閉じる'}).click();
+  // Searching across categories uses a single stable Rust-sorted grid.
+  // New pages must append at the bottom without moving the initial 72 cards.
+  await search.fill('a');
+  await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===72);
+  assert.equal(await page.locator('.result-group-title').count(),0);
+  const initialOrder=await page.locator('.item-card').evaluateAll(cards=>
+    cards.map(card=>card.getAttribute('data-item-id')));
+  assert.equal(initialOrder.length,72);
+  assert.equal(new Set(initialOrder).size,72);
+  await page.locator('.more-button').scrollIntoViewIfNeeded();
+  await page.waitForFunction(()=>document.querySelectorAll('.item-card').length>=144);
+  const afterAppend=await page.locator('.item-card').evaluateAll(cards=>
+    cards.map(card=>card.getAttribute('data-item-id')));
+  assert.deepEqual(afterAppend.slice(0,72),initialOrder,
+    'cross-category pagination must not reorder or displace previous results');
+  assert.equal(new Set(afterAppend).size,afterAppend.length);
+  await search.fill('40005160');
+  await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
   // Both tabs opened the same IndexedDB version. A stale writer must fail closed.
   const staleTab=await context.newPage();
   await staleTab.goto(url);
