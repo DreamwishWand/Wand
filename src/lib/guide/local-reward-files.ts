@@ -13,7 +13,7 @@ import {
   loadVerifiedRewardSourceEquivalence,joinEquivalentCurrentRewardCandidates,
   type CurrentCompatibleRewardReader
 } from './reward-source-equivalence.ts';
-import {GUIDE_SOURCE_COMPOSITE_V2_BYTES} from './source-composite.mjs';
+import {GUIDE_SOURCE_COMPOSITE_V2_BYTES} from './source-composite.ts';
 
 export type LocalRewardFileRole=
   'eventLinks'|'questFlows'|'friendshipDefaults'|'guideSourceCompositeV2'|'protoDbBridge';

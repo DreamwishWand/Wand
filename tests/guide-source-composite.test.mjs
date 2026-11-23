@@ -5,7 +5,7 @@ import {
   GUIDE_SOURCE_COMPOSITE_SHA, GUIDE_SOURCE_COMPOSITE_BYTES,
   GUIDE_SOURCE_COMPOSITE_V2_SCHEMA, GUIDE_SOURCE_COMPOSITE_V2_SHA, GUIDE_SOURCE_COMPOSITE_V2_BYTES,
   GUIDE_FRIENDSHIP_ORIGINAL_SHA
-} from '../src/lib/guide/source-composite.mjs';
+} from '../src/lib/guide/source-composite.ts';
 
 const bridge={baselineVersion:'1.26.1',targetVersion:'1.26.2',
   originalSearchIndexSha256:'26c29bc0df15161602d75578c9842c5b7cca56caee0d6dd1031180949cceb30d',
@@ -71,4 +71,41 @@ test('new full-shard proof does not imply live Guide or player progress', () => 
   assert.equal(r.playerProgressVerified,false);
   assert.equal(r.originalQuestFilesRelabelled,false);
   assert.equal(r.gameTextPublished,false);
+});
+
+test('composite display is fail-closed for any missing source-v2 proof, not a live or progress claim',()=>{
+  for(const missing of ['targetVersion','baselineVersion','originalSearchIndexSha256',
+    'localePayloadsEqual','conditionDefinitionsEquivalent','compatibleFamilies']){
+    const forged={...bridge};
+    delete forged[missing];
+    assert.equal(composeVerifiedGuideSources(forged,conditions),null,missing);
+  }
+  for(const key of ['count','missionReferenceCount','formatVersion',
+    'sourceSha256','indexSha256','evaluation','targetVersion']){
+    const forged={...conditions};
+    delete forged[key];
+    assert.equal(composeVerifiedGuideSources(bridge,forged),null,key);
+  }
+  assert.equal(composeVerifiedGuideSources(bridge,{...conditions,byMission:[]}),null);
+  assert.equal(composeVerifiedGuideSources({...bridge,compatibleFamilies:['Mission.json']},conditions),null);
+  assert.equal(composeVerifiedGuideSources({...bridge,compatibleFamilies:['LocDB (8 payloads)']},conditions),null);
+  assert.equal(composeVerifiedGuideSources(undefined,conditions),null);
+  assert.equal(composeVerifiedGuideSources(bridge,undefined),null);
+});
+test('typed 1.26.1-versus-1.26.2 composite preserves every explicit safety boundary',()=>{
+  const proof=composeVerifiedGuideSources(bridge,conditions);
+  assert(proof);
+  assert(Object.isFrozen(proof));
+  assert.deepEqual(
+    [proof.questSearchOriginalVersion,proof.targetGameVersion,proof.targetPlatform],
+    ['1.26.1','1.26.2','Steam']);
+  assert.deepEqual(
+    [proof.originalQuestFilesRelabelled,proof.playerProgressVerified,
+      proof.runtimeConditionConsumptionVerified,proof.serverOrLiveStarPathVerified,
+      proof.gameTextPublished],
+    [false,false,false,false,false]);
+  assert.deepEqual(
+    [proof.questShardCountReferenced,proof.questSearchNativeMissions,
+      proof.currentConditionDefinitions,proof.currentConditionMissionMentions],
+    [32,733,5440,4960]);
 });

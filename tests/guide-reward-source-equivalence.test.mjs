@@ -7,7 +7,7 @@ import {
 import {
   GUIDE_SOURCE_COMPOSITE_V2_SHA,GUIDE_SOURCE_COMPOSITE_V2_BYTES,
   GUIDE_FRIENDSHIP_ORIGINAL_SHA
-} from '../src/lib/guide/source-composite.mjs';
+} from '../src/lib/guide/source-composite.ts';
 
 const PROTO='dc5015cc37b30f14ebda2b13822ddfa21b311e6f651ba29dc5c5eccaefa2a623';
 const MISSION='f13958b52234f4cda92f0dd0bfff50be8a7f6625c8478785e2a077a5c7933d24';
