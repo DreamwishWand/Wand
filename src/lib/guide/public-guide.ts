@@ -10,12 +10,13 @@ export const PUBLIC_GUIDE_LOCALES=Object.freeze([
   'ja','en','fr','it','de','es-ES','zh-CN','pt-BR'
 ] as const);
 export type PublicGuideLocale=typeof PUBLIC_GUIDE_LOCALES[number];
-export type PublicQuestSection='all'|'story'|'friendship'|'other';
+export type PublicQuestSection='all'|'story'|'realm'|'friendship'|'repeatable'|'other';
+export type PublicQuestStoryArc='valley'|'rift'|'storybook'|'ranch'|'honeyglow'|'keepsake';
 export type PublicGuideNames=Readonly<Partial<Record<PublicGuideLocale,string>>>;
 export const PUBLIC_GUIDE_SOURCE_SHA=
   'f13958b52234f4cda92f0dd0bfff50be8a7f6625c8478785e2a077a5c7933d24' as const;
 const LOCALES=new Set<string>(PUBLIC_GUIDE_LOCALES);
-const SECTION=new Set<string>(['all','story','friendship','other']);
+const SECTION=new Set<string>(['all','story','realm','friendship','repeatable','other']);
 const ID=/^[1-9]\d{0,15}$/;
 const HASH=/^[a-f0-9]{64}$/;
 
@@ -201,15 +202,80 @@ export function findPublicQuestByLink(
   if(ids.length!==1||!canonicalId(ids[0]))return null;
   return index.quests.find(row=>row.id===ids[0])??null;
 }
-/** Native Mission prefixes are only a display classification. */
+/** The original Mission category is more specific than the former
+ * Story+Realm lumping. No runtime unlock or friendship level is inferred.
+ */
 export function publicQuestSection(
   row:Pick<PublicQuestIndexRow,'internalName'>|null|undefined
 ):Exclude<PublicQuestSection,'all'>{
   const prefix=typeof row?.internalName==='string'?
     row.internalName.split('!')[0]:'';
-  if(prefix==='Story'||prefix==='Realm')return 'story';
+  if(prefix==='Story')return 'story';
+  if(prefix==='Realm')return 'realm';
   if(prefix==='Village')return 'friendship';
+  if(prefix==='Repeatable')return 'repeatable';
   return 'other';
+}
+const STORY_ARCS:readonly PublicQuestStoryArc[]=[
+  'valley','rift','storybook','ranch','honeyglow','keepsake'
+];
+/** Source-native Story!ExpansionNN / Story!Mini01 identity only.
+ * The marketing area name is a display grouping, not a story prerequisite.
+ */
+export function publicQuestStoryArc(
+  row:Pick<PublicQuestIndexRow,'internalName'>|null|undefined
+):PublicQuestStoryArc|null{
+  if(publicQuestSection(row)!=='story')return null;
+  const name=row?.internalName??'';
+  if(name.startsWith('Story!Expansion01!'))return 'rift';
+  if(name.startsWith('Story!Expansion02!'))return 'storybook';
+  if(name.startsWith('Story!Expansion03!'))return 'ranch';
+  if(name.startsWith('Story!Expansion04!'))return 'keepsake';
+  if(name.startsWith('Story!Mini01!'))return 'honeyglow';
+  return 'valley';
+}
+/** Native sequence numbers are useful for ordering the original Mission
+ * series, but never claimed to be a complete dependency/availability graph.
+ */
+export function publicQuestNativeOrder(row:Pick<PublicQuestIndexRow,'internalName'|'id'>):number|null{
+  if(typeof row.internalName!=='string')return null;
+  const name=row.internalName;
+  const mrqs=/^Story!MRQS([0-9]{3})([A-Z]?)(?:_|!|$)/.exec(name);
+  if(mrqs)return Number(mrqs[1])*100+(mrqs[2]?mrqs[2].charCodeAt(0)-64:0);
+  const suffix=/(?:_|!)([0-9]{3})(?:_|!|$)/g;
+  let last:RegExpExecArray|null=null,m:RegExpExecArray|null;
+  while((m=suffix.exec(name))!==null)last=m;
+  if(last&&['friendship','realm'].includes(publicQuestSection(row)))
+    return Number(last[1]);
+  return null;
+}
+/** Stable browse order: Story by native expansion & numbered Mission line;
+ * friendship/realm by character then native suffix. Original IDs tie-break.
+ */
+export function comparePublicQuestBrowseOrder(
+  a:PublicQuestIndexRow,b:PublicQuestIndexRow,
+  index:PublicQuestIndex,locale:string
+):number{
+  const ka=publicQuestSection(a),kb=publicQuestSection(b);
+  const ranks:Record<Exclude<PublicQuestSection,'all'>,number>={
+    story:0,realm:1,friendship:2,repeatable:3,other:4};
+  if(ka!==kb)return ranks[ka]-ranks[kb];
+  if(ka==='story'){
+    const ra=STORY_ARCS.indexOf(publicQuestStoryArc(a)??'valley');
+    const rb=STORY_ARCS.indexOf(publicQuestStoryArc(b)??'valley');
+    if(ra!==rb)return ra-rb;
+  }else if(ka==='friendship'||ka==='realm'){
+    const lang=LOCALES.has(locale)?locale:'ja';
+    const aa=index.characters[a.characterId],bb=index.characters[b.characterId];
+    const an=aa?.[lang as PublicGuideLocale]||aa?.en||a.characterId;
+    const bn=bb?.[lang as PublicGuideLocale]||bb?.en||b.characterId;
+    const diff=an.localeCompare(bn,lang);if(diff)return diff;
+  }
+  const na=publicQuestNativeOrder(a),nb=publicQuestNativeOrder(b);
+  if(na!==null&&nb!==null&&na!==nb)return na-nb;
+  if(na!==null&&nb===null)return -1;
+  if(na===null&&nb!==null)return 1;
+  return Number(a.id)-Number(b.id);
 }
 /** Search the verified native Quest names, characters and objective classes.
  * Empty localized Quest names remain unresolved, not guessed. */
@@ -238,11 +304,11 @@ export function filterPublicQuests(
     ].join(' ').normalize('NFKC').toLowerCase();
     return words.every(word=>labels.includes(word));
   });
-  matched.sort((a,b)=>
-    (a.names[locale as PublicGuideLocale]||a.names.en||a.id)
+  matched.sort((a,b)=>words.length>0
+    ?((a.names[locale as PublicGuideLocale]||a.names.en||a.id)
       .localeCompare(b.names[locale as PublicGuideLocale]||b.names.en||b.id,
-        locale==='ja'?'ja':'en')||
-    a.id.localeCompare(b.id));
+        locale==='ja'?'ja':'en')||Number(a.id)-Number(b.id))
+    :comparePublicQuestBrowseOrder(a,b,index,locale));
   return {total:matched.length,rows:matched.slice(offset,offset+limit)};
 }
 /** Check one original source-aligned 0..7 shard, including 1:1 Quest
