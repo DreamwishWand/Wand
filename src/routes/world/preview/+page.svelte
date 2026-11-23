@@ -3,6 +3,8 @@
   import {autoAppend} from '$lib/ui/auto-append';
   import NativeGraphExplorer from '$lib/world/NativeGraphExplorer.svelte';
   import NativeTerrainGridOverview from '$lib/world/NativeTerrainGridOverview.svelte';
+  import NativeTerrainFloorMatchPanel from '$lib/world/NativeTerrainFloorMatchPanel.svelte';
+  import type {OriginalFloorItem,NativeFloorMatchResult} from '$lib/world/native-floor-match.ts';
   import NativeTerrainRegionAtlas from '$lib/world/NativeTerrainRegionAtlas.svelte';
   import type {SourceRegionAtlasPage} from '$lib/world/native-region-grid-atlas.ts';
   import type {OriginalItemAnchorFindResult, GlobalOriginalItemAnchorResult}
@@ -116,6 +118,15 @@
   let regionAtlasRequestId=-1;
   let regionAtlasLoading=false;
   let regionAtlasError='';
+  let floorSearchQuery='';
+  let floorSearchRequestId=-1;
+  let floorSearchLoading=false;
+  let floorItemMatches:OriginalFloorItem[]=[];
+  let selectedFloorItem:OriginalFloorItem|null=null;
+  let floorMatchResult:NativeFloorMatchResult|null=null;
+  let floorMatchRequestId=-1;
+  let floorMatchLoading=false;
+  let floorMatchError='';
   let selectedCell: {x:number;y:number} | null = null;
   let showSourceDefaultLayerOverlay=false;
   let selectedCellLayers:OriginalDefaultGridLayersCell|null=null;
@@ -368,6 +379,15 @@
     regionAtlasRequestId=-1;
     regionAtlasLoading=false;
     regionAtlasError='';
+    floorSearchQuery='';
+    floorSearchRequestId=-1;
+    floorSearchLoading=false;
+    floorItemMatches=[];
+    selectedFloorItem=null;
+    floorMatchResult=null;
+    floorMatchRequestId=-1;
+    floorMatchLoading=false;
+    floorMatchError='';
     worker?.terminate();
     worker = null;
     loading = false;
@@ -490,6 +510,40 @@
   }
   onDestroy(stop);
 
+  function searchFloorItems(query:string){
+    floorSearchQuery=query;
+    floorItemMatches=[];
+    floorSearchLoading=false;
+    if(!worker||query.trim().length<2)return;
+    floorSearchLoading=true;
+    floorSearchRequestId=++requestId;
+    worker.postMessage({command:'floor-items',requestId:floorSearchRequestId,query});
+  }
+  function chooseFloorItem(item:OriginalFloorItem){
+    selectedFloorItem=item;
+    requestFloorMatch();
+  }
+  function clearFloorItem(){
+    selectedFloorItem=null;
+    floorMatchResult=null;
+    floorMatchLoading=false;
+    floorMatchRequestId=-1;
+    floorMatchError='';
+  }
+  function requestFloorMatch(){
+    floorMatchResult=null;
+    floorMatchLoading=false;
+    floorMatchError='';
+    const item=selectedFloorItem;
+    const view=layouts.find(row=>row.viewKey===selectedViewKey);
+    const grid=view?.grids.find(row=>String(row.gridIdNative)===selectedGridId);
+    if(!worker||!item||!view||!grid||!selectedRegion)return;
+    floorMatchLoading=true;
+    floorMatchRequestId=++requestId;
+    worker.postMessage({command:'floor-match',requestId:floorMatchRequestId,
+      regionKey:selectedRegion,viewKey:selectedViewKey,
+      gridIdNative:grid.gridIdNative,itemId:item.itemId});
+  }
   function requestRegionAtlas(reset=true){
     if(reset){
       regionAtlas=null;
@@ -518,6 +572,7 @@
     x=0;y=0;width=16;height=16;
     viewport=null;
     requestTerrainRaster();
+    requestFloorMatch();
     requestWindow();
   }
   function requestTerrainRaster(){
@@ -614,6 +669,7 @@
     viewport=null;
     requestRegionAtlas();
     requestTerrainRaster();
+    requestFloorMatch();
     requestWindow();
     await tick();
     terrainPanel?.scrollIntoView({behavior:'smooth',block:'start'});
@@ -634,6 +690,7 @@
     x = 0; y = 0; width = 16; height = 16;
     viewport = null;
     requestTerrainRaster();
+    requestFloorMatch();
     requestWindow();
   }
   function changeGrid() {
@@ -643,6 +700,7 @@
     x = 0; y = 0; width = 16; height = 16;
     viewport = null;
     requestTerrainRaster();
+    requestFloorMatch();
     requestWindow();
   }
   function appendNextPage() {
@@ -683,6 +741,36 @@
     owned.onmessage = (message:MessageEvent) => {
       if (owned !== worker) return;
       const result = message.data;
+      if(result?.kind==='floor-items'||
+        (result?.kind==='error'&&result.requestId===floorSearchRequestId)){
+        if(result.requestId!==floorSearchRequestId)return;
+        floorSearchLoading=false;
+        if(result.kind==='error'){floorItemMatches=[];return;}
+        if(result.query!==floorSearchQuery)return;
+        floorItemMatches=Array.isArray(result.items)
+          ?result.items as OriginalFloorItem[]:[];
+        return;
+      }
+      if(result?.kind==='floor-match'||
+        (result?.kind==='error'&&result.requestId===floorMatchRequestId)){
+        if(result.requestId!==floorMatchRequestId)return;
+        floorMatchLoading=false;
+        if(result.kind==='error'){
+          floorMatchResult=null;
+          floorMatchError=String(result.message??'原本地形の条件を照合できません。');
+          return;
+        }
+        const matched=result.result as NativeFloorMatchResult;
+        const view=layouts.find(row=>row.viewKey===selectedViewKey);
+        const grid=view?.grids.find(row=>String(row.gridIdNative)===selectedGridId);
+        if(matched?.contract!=='wand.db04.original-floor-mask-bit-overlap@1'||
+          matched?.regionKey!==selectedRegion||
+          matched?.gridDataPath!==grid?.gridDataPath||
+          matched?.item?.itemId!==selectedFloorItem?.itemId)return;
+        floorMatchResult=matched;
+        floorMatchError='';
+        return;
+      }
       if(result?.kind==='region-atlas'||
          (result?.kind==='error'&&
           result?.requestId===regionAtlasRequestId)){
@@ -766,6 +854,7 @@
         infoMessage = 'ローカルZIP内のマニフェスト整合性を確認しました。原本の真正性までは証明していません。';
         if(selectedRegion)requestRegionAtlas();
         if (selectedGridId){
+          requestFloorMatch();
           requestTerrainRaster();
           requestWindow();
         }
@@ -893,6 +982,7 @@
           y=Math.max(0,Math.min(grid.anchorSizeY-1,cy-Math.floor(height/2)));
           viewport=null;
           requestRegionAtlas();
+          requestFloorMatch();
           requestTerrainRaster();
           globalFindMessage='原本初期配置 '+String(match.matchedIndex!+1)+
             ' / '+String(match.matchingOriginalDefaultObjectCount)+
@@ -1165,6 +1255,12 @@
         {:else if terrainRasterStatus}
           <p class="note">原本地形全体図：{terrainRasterStatus}</p>
         {/if}
+        <NativeTerrainFloorMatchPanel
+          matches={floorItemMatches} selected={selectedFloorItem}
+          result={floorMatchResult} searching={floorSearchLoading}
+          loading={floorMatchLoading} errorMessage={floorMatchError}
+          onSearch={searchFloorItems} onPick={chooseFloorItem}
+          onClear={clearFloorItem}/>
         <p class="note">選択Grid内の初期配置記録：{selectedGrid.defaultObjectCount ?? '不明'}件。
           地形データ：{selectedGrid.knownGridData ? '原本レコードあり' : '参照先未収録'}。
           地形GridDataの寸法：{selectedGrid.sizeX ?? '?'} × {selectedGrid.sizeY ?? '?'}。
