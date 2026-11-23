@@ -175,29 +175,30 @@
         <strong>{format(result.matchingGridDataCount)} / {format(result.matchingGridDataCount+result.unresolvedGridDataCount)}</strong>
       </div>
     </div>
-    {#if windowResult?.status==='source_rectangle_floor_windows_only'&&
+    {#if windowResult?.status==='source_mapped_gridarea_floor_windows_only'&&
       windowResult.itemId===result.item?.itemId&&
       windowResult.orientationCode===orientationCode}
-      <div class="stats" aria-label="家具の外接矩形を考慮した原本床条件">
+      <div class="stats" aria-label="家具の回転形状を考慮した原本床条件">
         <div>
-          <small>選択Grid・矩形全体が一致</small>
+          <small>選択Grid・回転形状が一致</small>
           <strong>{windowResult.selectedGridOriginCount===null
             ?'未確認':format(windowResult.selectedGridOriginCount)}地点</strong>
         </div>
         <div>
-          <small>地域内の矩形一致地点（Gridごと）</small>
+          <small>地域内の形状一致地点（Gridごと）</small>
           <strong>{windowResult.regionOriginCount===null
             ?'一部未確認':format(windowResult.regionOriginCount)}地点</strong>
         </div>
         <div>
           <small>外接矩形の寸法（GridDataセル）</small>
           <strong>{windowResult.boundingWidth} × {windowResult.boundingHeight}</strong>
+          <small>原本形状：{windowResult.mappedShapeCellCount??'未確認'}マス</small>
         </div>
       </div>
     {/if}
     <div class="map-mode" role="group" aria-label="地形図の表示内容">
       <button type="button" class:chosen={mapMode==='windows'}
-        on:click={()=>mapMode='windows'}>矩形全体の条件</button>
+        on:click={()=>mapMode='windows'}>回転形状の条件</button>
       <button type="button" class:chosen={mapMode==='cells'}
         on:click={()=>mapMode='cells'}>床属性だけ</button>
     </div>
@@ -220,7 +221,7 @@
       {:else if inspectionError}
         <p class="hint" role="alert">{inspectionError}</p>
       {/if}
-      <p class="legend"><span class="yes"></span>外接矩形全体が床条件に一致
+      <p class="legend"><span class="yes"></span>回転形状の対応マスが床条件に一致
         <span class="no"></span>一致しない</p>
       {#if windowResult.originalDefaultAnchorCounts instanceof Uint16Array}
         <label class="anchor-toggle">
@@ -232,7 +233,7 @@
         {/if}
       {/if}
     {:else if mapMode==='windows'}
-      <p class="hint">この原本Gridには、矩形全体の床条件を表示できません。</p>
+      <p class="hint">この原本Gridには、回転形状の床条件を表示できません。</p>
     {/if}
     {#if mapMode==='cells'&&result.raster!==null&&
       result.rasterSizeX!==null&&result.rasterSizeY!==null}
@@ -242,12 +243,12 @@
       <p class="legend"><span class="yes"></span>床マスクが一致
         <span class="no"></span>一致しない</p>
     {/if}
-    {#if windowResult?.status==='source_rectangle_floor_windows_only'}
+    {#if windowResult?.status==='source_mapped_gridarea_floor_windows_only'}
       <details class="area-breakdown">
         <summary>エリア別の床条件候補（{areaSummary.length}エリア）</summary>
         <div class="area-table-scroll">
           <table class="area-table">
-            <thead><tr><th>原本エリア</th><th>矩形一致地点</th><th>GridData</th></tr></thead>
+            <thead><tr><th>原本エリア</th><th>形状一致地点</th><th>GridData</th></tr></thead>
             <tbody>
               {#each areaSummary as area (area.name)}
                 <tr>
@@ -261,7 +262,7 @@
         </div>
       </details>
     {/if}
-    <p class="hint">家具の外接矩形が収まり、矩形内の全マスの床属性が一致する原本GridData座標を示します。実際のフットプリント形状、衝突、建築制限、Grid倍率、現在のセーブ状態は未判定です。<strong>設置可能マス数ではありません。</strong></p>
+    <p class="hint">原本の回転形状に対応するマスの床属性が一致するGridData座標を示します（倍率1）。実際の占有マス、衝突、建築制限、Grid倍率、現在のセーブ状態は未判定です。<strong>設置可能マス数ではありません。</strong></p>
   {:else if result}
     <p class="hint">このゲームバージョン、または家具の原本定義では照合できません。</p>
   {/if}

@@ -12,7 +12,7 @@ import {
 // Small synthetic reference oracle ONLY in tests; browser production uses
 // Rust/WASM. Independent nested loops verify its native prefix-sum output.
 function referenceFloorWindow(
-  source,accepted,boundsX,boundsY
+  source,accepted,boundsX,boundsY,shape=new Uint8Array(boundsX*boundsY).fill(1)
 ){
   const {sizeX:sx,sizeY:sy,nativeFloorValues:floor}=source;
   if(!Number.isSafeInteger(sx)||!Number.isSafeInteger(sy)||
@@ -26,7 +26,7 @@ function referenceFloorWindow(
       let match=true;
       for(let dy=0;dy<boundsY;dy++){
         for(let dx=0;dx<boundsX;dx++){
-          if((floor[(y+dy)*sx+x+dx]&accepted)===0)match=false;
+          if(shape[dy*boundsX+dx]&&(floor[(y+dy)*sx+x+dx]&accepted)===0)match=false;
         }
       }
       if(match){out[y*sx+x]=1;originCount++;}
@@ -131,9 +131,11 @@ test('reliable source floor-rectangle candidates shift with original cardinal ro
   const catalog=fixture();
   const unrotated=resolve(catalog,8);
   assert.equal(unrotated.contract,NATIVE_FLOOR_WINDOW_CONTRACT);
-  assert.equal(unrotated.status,'source_rectangle_floor_windows_only');
+  assert.equal(unrotated.status,'source_mapped_gridarea_floor_windows_only');
   assert.equal(unrotated.boundingWidth,2);
   assert.equal(unrotated.boundingHeight,1);
+  assert.equal(unrotated.mappedShapeCellCount,2);
+  assert.equal(unrotated.intrinsicGridFactor,1);
   assert.equal(unrotated.selectedGridOriginCount,7);
   // The second GridData (2x3, all matching) contributes 3 starts.
   assert.equal(unrotated.regionOriginCount,10);
@@ -164,7 +166,7 @@ test('reliable source floor-rectangle candidates shift with original cardinal ro
 test('factor-two original GridObject anchors are NOT overlaid on raw terrain cells',()=>{
   const sample=fixture({scale:2,anchorX:5,anchorY:4});
   const result=resolve(sample,8);
-  assert.equal(result.status,'source_rectangle_floor_windows_only');
+  assert.equal(result.status,'source_mapped_gridarea_floor_windows_only');
   assert.equal(result.originalDefaultAnchorStatus,'anchor_coordinates_not_compatible');
   assert.equal(result.originalDefaultAnchorCounts,null);
   assert.equal(result.saveWritingAuthorized,false);
@@ -264,4 +266,21 @@ test('source layer inspection never joins a grid from a different view or invali
   assert.throws(()=>inspectSourceDefaultGridLayers(
     catalog,views,views[0].viewKey,1,-1,0),
     /DB04_SOURCE_LAYER_INSPECTION_INVALID_REQUEST/);
+});
+
+ test('noncardinal mapped geometry is passed once to the region solver',()=>{
+  const sample=fixture();
+  const views=listWorldPreviewViews(sample);
+  const view=views.find(row=>row.kind==='villageArea');
+  const calls=[];
+  const out=getNativeFloorWindowResult(sample,views,'Village04',view.viewKey,1,42,10,
+    (grid,accepted,bx,by,shape)=>{
+      assert.equal(shape.length,bx*by);
+      calls.push(shape);
+      return referenceFloorWindow(grid,accepted,bx,by,shape);
+    });
+  assert.equal(calls.length,2);
+  assert.equal(calls[0],calls[1]);
+  assert.equal(out.mappedShapeCellCount,[...calls[0]].reduce((a,b)=>a+b,0));
+  assert.equal(out.actualGamePlacementVerified,false);
 });

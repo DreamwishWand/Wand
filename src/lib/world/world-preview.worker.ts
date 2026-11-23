@@ -13,7 +13,7 @@ import {searchNativeFloorItems,getNativeFloorMatchResult} from './native-floor-m
 import {
   getNativeFloorWindowResult,type FloorWindowMapper
 } from './native-floor-rectangle-window.ts';
-import {WasmSourceFloorRectangle} from './wasm/pkg/wand_world_core.js';
+import {WasmSourceFloorShape} from './wasm/pkg/wand_world_core.js';
 import { findOriginalItemAnchor, findOriginalItemAnchorAcrossGrids } from './native-item-anchor-finder.ts';
 import { getOriginalGridAreaEvidence } from './native-gridarea-evidence.ts';
 import { getOriginalGridAreaLocalWindow } from './native-gridarea-local-window.ts';
@@ -66,11 +66,11 @@ const worker = self as unknown as WorkerScope;
 
 /**
  * Invoked only after the same Worker initialized its World ZIP Rust/WASM
- * module. All O(GridData cells) rectangle scanning runs in Rust.
+ * module. All O(GridData cells) mapped shape scanning runs in Rust.
  */
-const wasmFloorWindow:FloorWindowMapper=(grid,accepted,bx,by)=>{
-  const solver=new WasmSourceFloorRectangle(
-    grid.nativeFloorValues,grid.sizeX,grid.sizeY,accepted,bx,by);
+const wasmFloorWindow:FloorWindowMapper=(grid,accepted,bx,by,shape)=>{
+  const solver=new WasmSourceFloorShape(
+    grid.nativeFloorValues,grid.sizeX,grid.sizeY,accepted,bx,by,shape);
   try{
     return {originBitmap:solver.origin_bitmap(),
       originCount:solver.origin_count()};
