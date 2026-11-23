@@ -12,6 +12,8 @@
     from '$lib/world/native-default-gridlayers-cell.ts';
   import type {OriginalDefaultGridLayersWindow}
     from '$lib/world/native-default-gridlayers-window.ts';
+  import type {SourceDefaultCandidateLayerProbe,SourceDefaultCandidateLayerCell}
+    from '$lib/world/native-default-candidate-probe.ts';
   import {getOriginalGridAreaDisplayDimensions,
     type SourceLocalGridAreaWindow}
     from '$lib/world/native-gridarea-local-window.ts';
@@ -104,6 +106,13 @@
   let findingAnchor=false;
   let itemGridArea:OriginalGridAreaEvidence|null=null;
   let itemAreaLink:OriginalGridObjectAreaLink|null=null;
+  let candidateExpanded=false;
+  let candidateX=0;
+  let candidateY=0;
+  let candidateOrientation=8;
+  let candidateProbe:SourceDefaultCandidateLayerProbe|null=null;
+  let candidateProbeError='';
+  let probingCandidate=false;
   let areaWindow:SourceLocalGridAreaWindow|null=null;
   let areaOrientation=8;
   let areaFactor:1|2=1;
@@ -126,6 +135,17 @@
   $: selectedGrid = gridOptions.find(a => String(a.gridIdNative) === selectedGridId);
   $: visibleSourceDefaultBounds = clippedDefaultSourceBounds(
     itemAreaLink,viewport?.page??null,selectedLayout?.layoutId,selectedGrid);
+  $: visibleCandidateBounds=clippedCandidateSourceBounds(
+    candidateProbe,viewport?.page??null,selectedLayout?.layoutId,selectedGrid);
+  $: candidateCells=(candidateProbe?.status==='source_default_candidate_layers_observed'&&
+    candidateProbe.sourceLayoutId===selectedLayout?.layoutId&&
+    candidateProbe.nativeGridId===selectedGrid?.gridIdNative&&
+    candidateProbe.sourceGridDataPath===selectedGrid?.gridDataPath&&
+    candidateProbe.originalGridObjectId===itemAreaLink?.nativeGridObjectId&&
+    candidateProbe.itemId===itemAreaLink?.itemId
+    ?candidateProbe.rows:null)?.flat()??[];
+  $: candidateCellsByPosition=new Map<string,SourceDefaultCandidateLayerCell>(
+    candidateCells.map(cell=>[`${cell.x}:${cell.y}`,cell]));
   $: activeLayerWindow = showSourceDefaultLayerOverlay&&
     viewport?.defaultLayersWindow?.status==='source_item_default_layer_window'&&
     viewport.page?.rect?.x===viewport.defaultLayersWindow.rect.x&&
@@ -147,8 +167,10 @@
         const originalDefaultLayer=activeLayerWindow?.rawLayerOrRows?.[iy]?.[ix]??null;
         const possibleUnknown=activeLayerWindow
           ?.potentiallyUnresolvedContributorCountRows?.[iy]?.[ix]??0;
+        const candidate=candidateCellsByPosition.get(`${cx}:${cy}`);
         return {x:cx,y:cy,count:markersByCell.get(`${cx}:${cy}`) ?? 0,
-          nativeFloorValue:value,originalDefaultLayer,possibleUnknown};
+          nativeFloorValue:value,originalDefaultLayer,possibleUnknown,
+          candidate};
       }) : [];
   $: selectedPointCount = selectedCell
     ? markersByCell.get(`${selectedCell.x}:${selectedCell.y}`) ?? 0 : 0;
@@ -186,6 +208,31 @@
     };
   }
 
+  function clippedCandidateSourceBounds(
+    probe:SourceDefaultCandidateLayerProbe|null,
+    page:PageResult|null,layoutId:string|undefined,grid:GridOption|undefined
+  ):{left:number;top:number;width:number;height:number}|null{
+    if(probe?.status!=='source_default_candidate_layers_observed'||
+       !page?.rect||page.status!=='source_native_default_layout_anchors_only'||
+       probe.sourceLayoutId!==layoutId||
+       probe.nativeGridId!==grid?.gridIdNative||
+       probe.sourceGridDataPath!==grid?.gridDataPath||
+       probe.candidateDefaultWidth===null||
+       probe.candidateDefaultHeight===null)return null;
+    const r=page.rect;
+    const x1=Math.max(r.x,probe.candidateAnchorX);
+    const y1=Math.max(r.y,probe.candidateAnchorY);
+    const x2=Math.min(r.x+r.width,
+      probe.candidateAnchorX+probe.candidateDefaultWidth);
+    const y2=Math.min(r.y+r.height,
+      probe.candidateAnchorY+probe.candidateDefaultHeight);
+    if(x2<=x1||y2<=y1)return null;
+    return {
+      left:5+(x1-r.x)*26,top:5+(y1-r.y)*26,
+      width:(x2-x1)*26-2,height:(y2-y1)*26-2
+    };
+  }
+
   function floorTint(nativeValue: number | undefined): string | undefined {
     if (!Number.isSafeInteger(nativeValue) || nativeValue === undefined) return undefined;
     if (nativeValue === 0) return '#34313f';
@@ -200,6 +247,37 @@
     return `hsl(${hue} 29% 39%)`;
   }
 
+  function resetCandidateProbe(){
+    candidateProbe=null;
+    candidateProbeError='';
+    probingCandidate=false;
+    candidateExpanded=false;
+  }
+  function requestCandidateProbe(){
+    const link=itemAreaLink;
+    const selected=layouts.find(row=>row.viewKey===selectedViewKey);
+    const grid=selected?.grids.find(row=>String(row.gridIdNative)===selectedGridId);
+    candidateProbe=null;
+    candidateProbeError='';
+    if(!worker||!link||!grid||!selected||
+       link.status!=='original_item_default_gridarea_linked'||
+       link.sourceLayoutId!==selected.layoutId||
+       link.nativeGridId!==grid.gridIdNative||
+       link.gridDataPath!==grid.gridDataPath||
+       !Number.isSafeInteger(candidateX)||!Number.isSafeInteger(candidateY)||
+       candidateX<0||candidateY<0||
+       candidateX>0xffffffff||candidateY>0xffffffff||
+       !Number.isSafeInteger(candidateOrientation)||
+       candidateOrientation<0||candidateOrientation>15){
+      candidateProbeError='原本Gridと候補位置を確認してください。';
+      return;
+    }
+    probingCandidate=true;
+    worker.postMessage({command:'candidate-probe',requestId:++requestId,
+      viewKey:selected.viewKey,gridIdNative:grid.gridIdNative,
+      gridObjectIdNative:link.nativeGridObjectId,itemId:link.itemId,
+      candidateX,candidateY,orientationCode:candidateOrientation});
+  }
   function resetAreaWindow(){
     areaWindow=null;
     areaWindowError='';
