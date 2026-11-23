@@ -275,7 +275,7 @@
   .clear{background:transparent;color:#d8c2eb;border:1px solid #ffffff40;border-radius:7px;padding:7px 11px;font:inherit;font-size:11px}
   .search{display:grid;gap:6px;font-size:12px;color:#d1bfdf}
   .inspect-map{display:block;max-width:100%;min-width:0;padding:0;margin:0;border:0;background:transparent;cursor:crosshair;line-height:0}
-  .inspect-map canvas{width:100%;height:auto;max-height:none;max-width:100%}
+  .raster .inspect-map canvas{display:block;width:100%;height:auto;max-width:100%;max-height:none}
   .inspect-map:focus-visible{outline:2px solid #e0bdff;outline-offset:4px}
   .area-breakdown{border:1px solid #ffffff23;border-radius:9px;padding:9px 11px;color:#d6c6e4;font-size:11px}
   .area-breakdown summary{cursor:pointer;font-size:12px}
