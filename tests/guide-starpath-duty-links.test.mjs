@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.ts';
-import {resolveStarpathDutyLink,starpathDutyHref} from '../src/lib/guide/starpath-duty-link.ts';
+import {resolveStarpathDutyLink,resolveStarpathSeasonLink,starpathDutyHref,starpathSeasonHref} from '../src/lib/guide/starpath-duty-link.ts';
 
 const load=async()=>verifyPublicStarpath(JSON.parse(await readFile(
   new URL('../static/guide/public/starpath-cache-2026-11-22.json',import.meta.url),'utf8')));
@@ -76,4 +76,30 @@ test('permalink display is a Svelte+TypeScript UI link, not persisted task state
   assert.match(page,/window\.addEventListener\('popstate',restoreLink\)/);
   assert.match(page,/starpathDutyHref\(base,season\.id,t\.id\)/);
   assert.doesNotMatch(page,/localStorage|sessionStorage|fetch\(.*save/i);
+});
+
+test('calendar season links open the correct Star Path and reject forged links',async()=>{
+  const data=await load();
+  for(const season of data.seasons){
+    const href=starpathSeasonHref('/Wand',season.id);
+    assert.equal(href,'/Wand/guide/star-path/?season='+season.id);
+    assert.equal(resolveStarpathSeasonLink(new URL(href,'https://example.org').search,data),season.id);
+  }
+  assert.equal(starpathSeasonHref('','Seafaring2026'),'/guide/star-path/?season=Seafaring2026');
+  for(const query of [
+    '?season=Other2026','?season=Seafaring2026&season=HauntingElegance2026',
+    '?season=Seafaring2026&task=Task47',
+    '?season=Seafaring2026&reward=Seafaring2026%2Freward',
+    '?season=seafaring2026','?season=Seafaring2026&'+('x'.repeat(2100))
+  ])assert.equal(resolveStarpathSeasonLink(query,data),null,query);
+  const duplicate=structuredClone(data);
+  duplicate.seasons[1].id=duplicate.seasons[0].id;
+  assert.equal(resolveStarpathSeasonLink('?season=HauntingElegance2026',duplicate),null);
+  for(const [base,id] of [
+    ['//malicious.example','Seafaring2026'],['/Wand?x=1','Seafaring2026'],['/Wand','Other2026']
+  ])assert.throws(()=>starpathSeasonHref(base,id),/invalid link/);
+  const hub=await readFile(new URL('../src/routes/guide/+page.svelte',import.meta.url),'utf8');
+  const route=await readFile(new URL('../src/routes/guide/star-path/+page.svelte',import.meta.url),'utf8');
+  assert.equal((hub.match(/starpathSeasonHref\(base,event\.sourceSeasonId\)/g)||[]).length,2);
+  assert.match(route,/resolveStarpathSeasonLink\(window\.location\.search,catalog\)/);
 });
