@@ -55,8 +55,12 @@ test('DB-01 source native filtering is a narrow projection, not a second Item ma
   assert.equal(raw.activityTypeItemCount,4050);
   assert.equal(index.activityTypesByItem.size,4050);
   assert.equal(index.itemsByActivityType.size,15);
-  console.log('DB01_SOURCE_ACTIVITY_ENUMS',JSON.stringify(
-    [...index.activityTypeNames.entries()].sort((a,b)=>a[0]-b[0])));
+  assert.deepEqual([...index.activityTypeNames.entries()].sort((a,b)=>a[0]-b[0]),[
+    [0,'Default'],[2,'Crop'],[3,'Meal'],[4,'Seed'],[8,'Flower'],
+    [10,'Fish'],[11,'Ingredient'],[12,'RequestItem'],
+    [13,'Ephemeral'],[14,'LootPresent'],[15,'Consummable'],
+    [16,'Mineral'],[17,'CraftingMaterial'],[18,'BuffElixir'],[19,'Manual']
+  ],'source-native subtype names must match the SHA-pinned DB-01 release');
   const expected=new Map([
     [0,34],[2,165],[3,618],[4,171],[8,129],[10,103],
     [11,201],[12,1559],[13,193],[14,168],[15,481],
