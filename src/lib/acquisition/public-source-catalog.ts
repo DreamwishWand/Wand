@@ -39,6 +39,8 @@ import {loadPinnedStaticContainerContents,type PinnedStaticContainerContents}
   from './public-static-container.ts';
 import {loadPinnedDefaultInventorySource,type PinnedDefaultInventorySource}
   from './public-default-inventories.ts';
+import {loadPinnedNativePetSourceCategories,type NativePetSourceIndex}
+  from './public-pet-source-categories.ts';
 import {indexPublicOnlineNameCandidates,
   type PublicOnlineNameCandidateIndex,
   type PublicOnlineNameCandidate} from './public-online-name-candidates.ts';
@@ -119,6 +121,8 @@ export interface PublicSourceCatalog{
   /** Source-native configured container template slots, never live contents. */
   readonly staticContainerSource:PinnedStaticContainerContents;
   readonly defaultInventorySource:PinnedDefaultInventorySource;
+  /** Optional, source-pinned native PetItemData.Source categories. No eager fetch. */
+  loadNativePetSources():Promise<NativePetSourceIndex>;
   readonly coverage:PublicSourceCatalogCoverage;
   lookup(itemId:string|number):PublicSourceItemLookup;
   getSourceOrigin(originId:string):readonly ItemOrigin[];
@@ -274,6 +278,9 @@ export async function loadPublicSourceCatalog(
     sourceCoverageComplete:false as const,
     requiresPrivateGameArchive:false as const
   });
+  // Existing DB-00 and every current public consumer retain their original
+  // asset requests; the 2 KB source is fetched only when explicitly requested.
+  let nativePetSourcePromise:Promise<NativePetSourceIndex>|null=null;
   return Object.freeze({
     schema:DB02_PUBLIC_SOURCE_CATALOG_SCHEMA,
     gameVersion:'1.26.2' as const,
@@ -282,6 +289,11 @@ export async function loadPublicSourceCatalog(
     nativeShopSource,nativeIapSource,historicalNativeShopSource,
     nativeIapPackReferences,staticContainerSource,defaultInventorySource,
     shopHistory,itemSources,coverage,
+    loadNativePetSources(){
+      return nativePetSourcePromise??=loadPinnedNativePetSourceCategories(
+        basePath,fetcher
+      );
+    },
     lookup(itemId:string|number){
       // db00.lookup validates IDs and keeps extra-ItemList Quest/Currency IDs.
       const row=db00.lookup(itemId);

@@ -281,3 +281,29 @@ test('Public-only startup rejects corrupt source-pinned DB-00 and Guide bytes; u
   await assert.rejects(loadPublicSourceCatalog('//Wand',noFetch),
     /INVALID_BASE_PATH/);
 });
+
+test('native Pet.Source categories are available on demand without extra shared startup requests',async()=>{
+  const {seen,fetcher}=publicFetcher();
+  const catalog=await loadPublicSourceCatalog('/Wand',fetcher);
+  assert.equal(seen.length,26);
+  assert.equal(seen.some(x=>x.endsWith('/pet-source-categories-1.26.2.json')),false);
+  const first=catalog.loadNativePetSources();
+  const second=catalog.loadNativePetSources();
+  assert.equal(first,second);
+  const categories=await first;
+  assert.equal(seen.length,27);
+  assert.equal(new Set(seen).size,27);
+  assert.equal(seen.filter(x=>x.endsWith('/pet-source-categories-1.26.2.json')).length,1);
+  assert.equal(categories.coverage.explicitSourceRows,134);
+  assert.equal(categories.getCategoryItemIds('premium_shop').length,95);
+  assert.equal(categories.getCategoryItemIds('exclusive_promotion').length,14);
+  assert.equal(categories.getItemClassifications('120000043')[0].category,
+    'exclusive_promotion');
+  assert.equal(categories.getItemClassifications('120000043')[0].campaignLinkVerified,
+    false);
+  assert.equal(categories.getItemClassifications('120000043')[0].playerAcquisitionVerified,
+    false);
+  assert.deepEqual(categories.getItemCategories('120000249'),[]);
+  assert.equal(catalog.coverage.combinedSourceRoutes,1255);
+  assert.equal(catalog.origins.getCoverage().linkedRoutes,1255);
+});
