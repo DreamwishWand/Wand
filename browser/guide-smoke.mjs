@@ -157,6 +157,19 @@ try {
     .waitFor({timeout:25000});
   await targetDeep.locator('.target-chip').filter({hasText:'ピュアナイトシャード'})
     .first().waitFor({timeout:25000});
+  const questItemLink=targetDeep.locator('.target-chip')
+    .filter({hasText:'ピュアナイトシャード'}).first()
+    .getByRole('link',{name:'Collectionで開く：ピュアナイトシャード'});
+  await questItemLink.waitFor({timeout:20000});
+  assert.equal(await questItemLink.getAttribute('href'),'/Wand/collection/?item=30000031');
+  await questItemLink.click();
+  await targetDeep.locator('.item-inspector h2').waitFor({timeout:30000});
+  assert.match(await targetDeep.locator('.item-inspector h2').innerText(),
+    /ピュアナイトシャード|Purified Night Shard/,
+    'verified original Quest objective Item must open its Collection inspector');
+  await targetDeep.goBack({waitUntil:'domcontentloaded'});
+  await targetDeep.locator('.target-chip').filter({hasText:'ピュアナイトシャード'})
+    .first().waitFor({timeout:25000});
   assert.equal(await targetDeep.locator('.detail .step').count(),1,
     'only the relevant source Quest step should initially render');
   assert.match(await targetDeep.locator('.detail .step h3').innerText(),/ステップ 1/);
