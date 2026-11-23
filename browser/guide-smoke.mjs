@@ -569,7 +569,7 @@ try {
   assert.match(await hub.locator('.seasons button.selected').innerText(),/Seafaring Star Path/);
   await hub.goto('http://127.0.0.1:4177/Wand/guide/',{waitUntil:'domcontentloaded'});
   await hub.locator('.timeline-row').first().waitFor({timeout:20000});
-  await hub.getByRole('button',{name:'発売当初へ'}).click();
+  await hub.locator('.calendar-year').selectOption('2022');
   await hub.waitForFunction(()=>document.querySelector('.calendar-nav .range')?.textContent?.includes('2022')||
     document.querySelector('.timeline-content')?.textContent?.includes('Pixar Fest Star Path'));
   assert.match(await hub.locator('.timeline-content').innerText(),/Pixar Fest Star Path/);
@@ -582,6 +582,12 @@ try {
   assert.equal(await hub.locator('.event-inspector a.primary').count(),0,
     'historic online-only passes must not link to current season duties');
   assert.equal(await hub.locator('.event-inspector a[href^="https://disneydreamlightvalley.com/"]').count(),1);
+  await hub.locator('.calendar-year').selectOption('2023');
+  assert.match(await hub.locator('.timeline-content').innerText(),/Trick or Treat/);
+  assert.equal(await hub.locator('.timeline-bar.other').count(),1,
+    '2023 verified game-calendar event must be available from the archive');
+  assert.equal(await hub.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),true,
+    'adding the year selector must not cause mobile page overflow');
   // 2022 must not require dozens of repeated backward clicks.
   await hub.goto('http://127.0.0.1:4177/Wand/guide/systems/',{waitUntil:'domcontentloaded'});
   await hub.locator('.system-categories button').first().waitFor({timeout:20000});
