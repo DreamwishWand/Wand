@@ -54,7 +54,7 @@ for(const [cls,layout] of Object.entries(DB01_ORIGINAL_SKIN_SOURCE_LAYOUTS)){
     const code=skinCodes[idx]??null;
     const absent=layout.tagsFieldNumber===null;
     rowsSkin.push({
-      id:400_000_001+idx*2,
+      id:400_000_001+idx*2,nativeCategory:'Skin',
       class:cls,codes:absent?null:code===null?[]:[code],
       state:absent?'not_ihas_tags':
         code===null?'no_positive_native_tag':'positive_native_tag',
