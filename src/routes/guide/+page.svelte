@@ -4,9 +4,10 @@
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {loadPublicStarpath} from '$lib/guide/public-starpath.ts';
   import {starpathSeasonHref} from '$lib/guide/starpath-duty-link.ts';
-  import {guideCalendarEvents,eventScheduleState,localGuideDateTime,
+  import {guideCalendarEvents,eventScheduleState,
     GUIDE_EVENT_CALENDAR_AS_OF,type GuideCalendarEvent
   } from '$lib/guide/event-calendar.ts';
+  import {viewerEventDateTime} from '$lib/guide/viewer-event-time.ts';
   import {guideTimelineWindow,guideTimelineRows,
     type GuideTimelinePhase
   } from '$lib/guide/event-timeline.ts';
@@ -15,6 +16,9 @@
   let loading=true;
   let loadError='';
   let now=Date.now();
+  let viewerZone='UTC';
+  let viewerLocale='ja-JP';
+  $: formatLocal=(utc:string)=>viewerEventDateTime(utc,viewerZone,viewerLocale);
   let weeks:5|9=5;
   let offsetWeeks=0;
   let selectedId:string|null=null;
@@ -52,7 +56,7 @@
   function eventBoundary(event:GuideCalendarEvent):string{
     if(event.precision==='date-only')
       return `${event.startDay} ～ ${event.endDayInclusive}（時刻未確認）`;
-    return `${localGuideDateTime(event.startUtc)} ～ ${localGuideDateTime(event.endUtcExclusive)}`;
+    return `${formatLocal(event.startUtc)} ～ ${formatLocal(event.endUtcExclusive)}`;
   }
   function showEvent(id:string){selectedId=selectedId===id?null:id;}
   function navigate(direction:-1|1){
@@ -95,6 +99,8 @@
     }
   }
   onMount(()=>{
+    viewerZone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';
+    viewerLocale=navigator.language||'ja-JP';
     now=Date.now();
     const timer=setInterval(()=>{now=Date.now();},60000);
     void load();
@@ -109,6 +115,7 @@
 
 <main class="guide-app" aria-label="Guide">
   <nav class="guide-sections" aria-label="ガイドの機能">
+    <span class="pending" aria-disabled="true" title="準備中"><WandIcon name="grid" size={20}/><span>システム</span></span>
     <a href={`${base}/guide/quests/`}><WandIcon name="guide" size={20}/><span>クエスト</span></a>
     <a href={`${base}/guide/star-path/`}><WandIcon name="star" size={20}/><span>スターパス</span></a>
     <a href={`${base}/guide/events/`}><WandIcon name="world" size={20}/><span>イベント</span></a>
@@ -119,7 +126,7 @@
       <div class="timeline-title">
         <WandIcon name="grid" size={19}/>
         <strong>イベント</strong>
-        <span class="zone">JST</span>
+        <span class="zone" title="タイムラインの日付軸は日本時間。選択したイベントの日時は閲覧者の現地時間">JST軸</span>
         <details class="source-info">
           <summary aria-label="日程の出典と注意"><WandIcon name="info" size={17}/></summary>
           <p>公式発表とSteam v1.26.2の保存済みデータ（確認日：{GUIDE_EVENT_CALENDAR_AS_OF}）。ゲームサーバーの開催状況をリアルタイム確認したものではありません。時刻未確認のイベントは日付単位で表示します。</p>
@@ -221,7 +228,7 @@
         <div class="event-inspector" aria-label="選択したイベントの詳細">
           <div class="event-inspector-heading">
             <WandIcon name={eventIcon(selected)} size={22}/>
-            <div><strong>{selected.title}</strong><small>{stateName(selected)} · 日程情報</small></div>
+            <div><strong>{selected.title}</strong><small>{stateName(selected)} · {selected.precision==='utc-instant'?viewerZone:'日付のみ'}</small></div>
             <button class="close" aria-label="詳細を閉じる" on:click={()=>selectedId=null}>
               <WandIcon name="close" size={18}/>
             </button>
@@ -232,9 +239,9 @@
               <div><small>終了日</small><strong>{selected.endDayInclusive}</strong></div>
               <span class="uncertain"><WandIcon name="info" size={15}/>開始・終了時刻は未確認</span>
             {:else}
-              <div><small>開始</small><strong>{localGuideDateTime(selected.startUtc)}</strong></div>
-              <div><small>タスク終了</small><strong>{localGuideDateTime(selected.taskEndUtcExclusive)}</strong></div>
-              <div><small>交換終了</small><strong>{localGuideDateTime(selected.endUtcExclusive)}</strong></div>
+              <div><small>開始</small><strong>{formatLocal(selected.startUtc)}</strong></div>
+              <div><small>タスク終了</small><strong>{formatLocal(selected.taskEndUtcExclusive)}</strong></div>
+              <div><small>交換終了</small><strong>{formatLocal(selected.endUtcExclusive)}</strong></div>
             {/if}
           </div>
           <div class="inspector-actions">
@@ -252,7 +259,8 @@
 <style>
   .guide-app{box-sizing:border-box;width:100%;max-width:none;min-width:0;margin:0;padding:12px clamp(8px,1.4vw,22px) 14px;min-height:calc(100dvh - 64px);display:flex;flex-direction:column;gap:10px;color:#eee9f6}
   .guide-sections{display:flex;gap:7px;flex-wrap:wrap}
-  .guide-sections a{display:flex;align-items:center;justify-content:center;gap:9px;min-width:0;padding:9px 15px;border:1px solid #544261;background:#251c32;border-radius:10px;color:#e2d6ed;text-decoration:none;font-size:13px;font-weight:650}
+  .guide-sections a,.guide-sections .pending{display:flex;align-items:center;justify-content:center;gap:9px;min-width:0;padding:9px 15px;border:1px solid #544261;background:#251c32;border-radius:10px;color:#e2d6ed;text-decoration:none;font-size:13px;font-weight:650}
+  .guide-sections .pending{opacity:.5;cursor:not-allowed}
   .guide-sections a:hover,.guide-sections a:focus-visible{background:#403052;border-color:#b18bd7}
   .guide-sections :global(svg){color:#dcb8ff}
   .timeline-panel{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0;background:#181321;border:1px solid #493952;border-radius:15px;overflow:hidden}
@@ -349,7 +357,7 @@
   @media(max-width:560px){
     .guide-app{min-height:calc(100dvh - 50px);padding:7px;gap:7px}
     .guide-sections{gap:5px}
-    .guide-sections a{padding:8px 10px;gap:6px;font-size:12px}
+    .guide-sections a,.guide-sections .pending{padding:8px 10px;gap:6px;font-size:12px}
     .timeline-toolbar{padding:9px;gap:8px}
     .timeline-title>strong{font-size:15px}
     .calendar-nav{width:100%;justify-content:space-between;gap:3px}
