@@ -4,7 +4,7 @@
  * user-owned quantities or dynamic URLs containing saved item IDs.
  * This Worker must not grant editing permissions or DLC entitlements.
  */
-import {loadCurrentGameDatabase} from '../game-db/client.mjs';
+import {loadCurrentGameDatabase} from '../game-db/client.ts';
 import {matchSaveItemIdsToDb00,type Db00SaveSnapshot,
   type Db00SaveLookup} from './common-db-context';
 
