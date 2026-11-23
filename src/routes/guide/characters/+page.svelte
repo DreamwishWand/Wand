@@ -1,7 +1,7 @@
 <script lang="ts">
   import {onMount} from 'svelte';
   import {base} from '$app/paths';
-  import {watchWandLanguage} from '$lib/ui/preferences';
+  import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences';
   import {autoAppend} from '$lib/ui/auto-append';
   import {collectWindow} from '$lib/ui/collect-window.mjs';
   import {verifyPublicQuestIndex,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
@@ -15,11 +15,11 @@
   let selected:PublicCharacterEntry|null=null;
   let loading=true;
   let error='';
-  let locale='ja';
+  let locale:WandLanguage='ja';
   let query='';
   let mode:'all'|'withQuests'|'withoutQuests'='all';
   let limit=48;
-  $: filtered=directory?collectWindow((offset:number,batch:number)=>filterPublicGuideCharacters(directory,{
+  $: filtered=directory?collectWindow((offset:number,batch:number)=>filterPublicGuideCharacters(directory!,{
     query:query.slice(0,120),locale,mode,offset,limit:batch
   }),limit,'rows'):{total:0,rows:[]};
   $: linkedQuests=selected?[...selected.quests].sort((a:PublicCharacterQuest,b:PublicCharacterQuest)=>
