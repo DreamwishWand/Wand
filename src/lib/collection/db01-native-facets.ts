@@ -17,6 +17,11 @@ export const COLLECTION_DB01_FACETS=[
 export type CollectionDb01Facet=typeof COLLECTION_DB01_FACETS[number];
 export type CollectionDb01Pair=readonly [facet:CollectionDb01Facet,key:string];
 export type CollectionDb01Row=readonly [itemId:number,tags:readonly CollectionDb01Pair[]];
+export interface CollectionDb01ActivityType{
+  readonly code:number;
+  /** Steam v1.26.2's exact verified IL2CPP subtype, or null if unavailable. */
+  readonly nativeName:string|null;
+}
 
 // Native CollectionSubMenu definitions from the verified Steam v1.26.2
 // IL2CPP enum, kept independent of user-facing progress/visibility evidence.
@@ -53,6 +58,9 @@ export interface CollectionDb01Index{
   /** The original menu candidate index is separate from tag filtering. */
   readonly categoriesByItem:ReadonlyMap<number,readonly CollectionDb01SubmenuCode[]>;
   readonly itemsByCategory:ReadonlyMap<CollectionDb01SubmenuCode,readonly number[]>;
+  readonly activityTypesByItem:ReadonlyMap<number,Readonly<CollectionDb01ActivityType>>;
+  readonly itemsByActivityType:ReadonlyMap<number,readonly number[]>;
+  readonly activityTypeNames:ReadonlyMap<number,string|null>;
 }
 export interface CollectionDb01Option {
   readonly key:string;
@@ -116,6 +124,38 @@ export function parseCollectionDb01Facets(payload:unknown):CollectionDb01Index{
       }
     }
   }
+  // A semantic ItemType/subtype is not the same as the game's Collection
+  // menu. Keep it as an independent Item ID browse index.
+  const activityTypesByItem=new Map<number,Readonly<CollectionDb01ActivityType>>();
+  const itemsByActivityType=new Map<number,number[]>();
+  const activityTypeNames=new Map<number,string|null>();
+  if(payload.activityTypeItems!==undefined){
+    assert(payload.activityTypeEvidence==='original_il2cpp_activity_item_type'&&
+      payload.activityTypeGameUiMembershipVerified===false&&
+      Array.isArray(payload.activityTypeItems)&&
+      payload.activityTypeItemCount===payload.activityTypeItems.length&&
+      payload.activityTypeItemCount===4050,'ACTIVITY_TYPE_MANIFEST');
+    let previous=0;
+    for(const raw of payload.activityTypeItems){
+      assert(Array.isArray(raw)&&raw.length===3&&validId(raw[0])&&
+        raw[0]>previous&&raw[0]>=30000000&&raw[0]<40000000&&
+        Number.isInteger(raw[1])&&raw[1]>=0&&raw[1]<=99&&
+        Math.floor((raw[0]%10000000)/100000)===raw[1]&&
+        (raw[2]===null||(typeof raw[2]==='string'&&
+          raw[2].length>0&&raw[2].length<=128)),
+        'ACTIVITY_TYPE_ITEM');
+      const [itemId,code,nativeName]=raw as [number,number,string|null];
+      previous=itemId;
+      if(activityTypeNames.has(code)){
+        const known=activityTypeNames.get(code);
+        assert(known===nativeName,'ACTIVITY_TYPE_NAME_CONFLICT');
+      }else activityTypeNames.set(code,nativeName);
+      activityTypesByItem.set(itemId,Object.freeze({code,nativeName}));
+      const ids=itemsByActivityType.get(code)??[];
+      ids.push(itemId);
+      itemsByActivityType.set(code,ids);
+    }
+  }
   const byItem=new Map<number,readonly CollectionDb01Pair[]>();
   let prev=0;
   for(const entry of payload.items){
@@ -133,7 +173,10 @@ export function parseCollectionDb01Facets(payload:unknown):CollectionDb01Index{
     taggedItems:byItem.size,
     byItem,
     categoriesByItem,
-    itemsByCategory
+    itemsByCategory,
+    activityTypesByItem,
+    itemsByActivityType,
+    activityTypeNames
   });
 }
 export async function loadCollectionDb01Facets(
