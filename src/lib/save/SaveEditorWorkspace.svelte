@@ -2409,10 +2409,21 @@
       <ol>
         {#each queuedEdits as edit,i}
           <li>
-            {edit.target.kind==='inventory'
-              ? `Inventory ${edit.target.inventoryId} / ${edit.target.itemId}`
-              : `Chest ${edit.target.containerId} / ${edit.target.slotIndex} / ${edit.target.itemId}`}
-            ：{edit.expected} → {edit.replacement}
+            {@const pendingItemId=String(edit.target.itemId)}
+            {#if developmentMode}
+              {edit.target.kind==='inventory'
+                ? `Inventory ${edit.target.inventoryId} / ${edit.target.itemId}`
+                : `Chest ${edit.target.containerId} / ${edit.target.slotIndex} / ${edit.target.itemId}`}
+              ：{edit.expected} → {edit.replacement}
+            {:else}
+              <span class="queued-amount-summary">
+                <strong>{dbMap.get(pendingItemId)?.name??pendingItemId}</strong>
+                <small>{edit.target.kind==='inventory'
+                  ? `Inventory ${edit.target.inventoryId}`
+                  : `Chest ${edit.target.containerId} / Slot ${edit.target.slotIndex}`}</small>
+                <span>×{edit.expected} → ×{edit.replacement}</span>
+              </span>
+            {/if}
             <button type="button" class="secondary" disabled={processing}
               aria-label={`数量変更${i+1}を修正`}
               on:click={()=>beginQueuedAmountRevision(i)}>修正</button>
@@ -2561,6 +2572,10 @@
   .batch-edits{display:block}
   .batch-edits ol{margin:8px 0 16px;padding-left:24px}
   .batch-edits li{margin:7px 0;font-size:13px}
+  .queued-amount-summary{display:inline-flex;align-items:baseline;
+    flex-wrap:wrap;column-gap:12px;row-gap:2px;}
+  .queued-amount-summary strong{font-size:14px;}
+  .queued-amount-summary small{font-size:12px;color:#d4c2df;}
   .batch-edits li button{margin-left:12px;padding:5px 10px}
   .saved-slots{display:block;}
   .slot-actions{display:flex;align-items:center;gap:15px;}
