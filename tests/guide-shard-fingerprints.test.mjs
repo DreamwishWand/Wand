@@ -8,7 +8,7 @@ import {
   ORIGINAL_GUIDE_SHARD_AUDIT_SHA,
   ORIGINAL_GUIDE_SHARD_TOTAL_BYTES,
   expectedOriginalGuideShardSha
-} from '../src/lib/guide/shard-fingerprints.mjs';
+} from '../src/lib/guide/shard-fingerprints.ts';
 
 test('owner private original shard audit has exactly 32 full-file SHA-256 pins',()=>{
   const names=Object.keys(ORIGINAL_GUIDE_SHARD_FILE_SHA).sort();
