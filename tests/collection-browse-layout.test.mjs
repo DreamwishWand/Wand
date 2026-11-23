@@ -49,7 +49,7 @@ test('all 67 universe source definitions have eight original display names and J
     for(const lang of locales){
       const title=collectionUniverseDisplayLabel(lang,String(row.id));
       assert.equal(title,row.names[lang]);
-      assert.ok(title.length>0&&!/<[^>]+>|\\u200b/.test(title));
+      assert.ok(title.length>0&&!/<[^>]+>|\u200b/.test(title));
     }
     assert.ok(/^[ぁ-んー]+$/.test(row.jaReading));
   }
@@ -77,7 +77,7 @@ test('all 67 universe source definitions have eight original display names and J
   // source Tag enum keys or Unicode kanji codepoint order.
   const e=english.map(x=>x.id);
   assert.ok(e.indexOf('2000500072')<e.indexOf('2000500048'),
-    'A Bug\\'s Life precedes Aladdin');
+    "A Bug\'s Life precedes Aladdin");
   const j=japanese.map(x=>x.id);
   assert.ok(j.indexOf('2000500005')<j.indexOf('2000500062')&&
     j.indexOf('2000500062')<j.indexOf('2000500048'),
