@@ -293,7 +293,7 @@
                 <strong>{selected.kind==='starpath-history'
                   ?formatLocal(selected.officialEndUtc)
                   :longDay(selected.endDayInclusive)}</strong></div>
-              <span class="uncertain"><WandIcon name="info" size={15}/>{copy.startTimeUnknown}</span>
+              <span class="uncertain"><WandIcon name="info" size={15}/>{selected.kind==='starpath-history'?copy.startTimeUnknown:copy.dateUnknown}</span>
             {:else}
               <div><small>{copy.start}</small><strong>{formatLocal(selected.startUtc)}</strong></div>
               <div><small>{copy.taskEnd}</small><strong>{formatLocal(selected.taskEndUtcExclusive)}</strong></div>
