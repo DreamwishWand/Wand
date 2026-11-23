@@ -1539,7 +1539,7 @@
                       ]??'collection'} size={22}/>
                     </span>
                     <strong>{nativeSubtypeLabel(locale,type.key,type.nativeName)}</strong>
-                    <span>{type.owned.toLocaleString(locale)} / {type.total.toLocaleString(locale)}</span>
+                    <span>{type.total.toLocaleString(locale)} {copy.countUnit}</span>
                   </button>
                 {/each}
               {:else}
@@ -1552,7 +1552,7 @@
                       <WandIcon name={categoryPictogram[facet.id]??'collection'} size={22}/>
                     </span>
                     <strong>{categoryLabel(locale,facet.id)}</strong>
-                    <span>{facet.owned.toLocaleString(locale)} / {facet.total.toLocaleString(locale)}</span>
+                    <span>{facet.total.toLocaleString(locale)} {copy.countUnit}</span>
                   </button>
                 {/each}
               {/if}
@@ -1564,7 +1564,7 @@
                     <WandIcon name={categoryPictogram[sourceActivityLegacyNames[type.code]??'']??'collection'} size={22}/>
                   </span>
                   <strong>{sourceActivityTypeLabel(locale,type.code,type.nativeName)}</strong>
-                  <span>{type.owned.toLocaleString(locale)} / {type.total.toLocaleString(locale)}</span>
+                  <span>{type.total.toLocaleString(locale)} {copy.countUnit}</span>
                 </button>
               {/each}
             </div>
