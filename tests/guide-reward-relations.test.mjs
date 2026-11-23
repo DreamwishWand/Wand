@@ -6,7 +6,7 @@ import {
   DB03_REWARD_RELATION_CONTRACT,createGuideRewardIndex,loadGuideRewardIndex,joinGuideRewardsToDb01
 } from '../src/lib/guide/reward-relations.ts';
 import {guideCalendarEvents} from '../src/lib/guide/event-calendar.ts';
-import {STARPATH_PUBLIC_SHA} from '../src/lib/guide/public-starpath.mjs';
+import {STARPATH_PUBLIC_SHA} from '../src/lib/guide/public-starpath.ts';
 
 const original=new URL('../static/guide/public/starpath-cache-2026-11-22.json',import.meta.url);
 const bytes=()=>readFile(original);
