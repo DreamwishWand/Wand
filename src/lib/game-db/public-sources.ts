@@ -53,8 +53,13 @@ import {
   createDb00NativeOnlineReader,type Db00NativeOnlineReader
 } from './native-online-categories.ts';
 import {
-  createDb00NativeRecipeReader,type Db00NativeRecipeReader
+  createDb00NativeRecipeReader,
+  type Db00NativeRecipeReader,type Db00NativeRecipeResult
 } from './native-recipes.ts';
+import {
+  createDb00NativeActivityReader,
+  type Db00NativeActivityReader,type Db00NativeActivityItem
+} from './native-activities.ts';
 import {loadPublicStarpath} from '../guide/public-starpath.ts';
 import {
   loadStarpathRewardExtras,STARPATH_EXTRA_RELEASE
@@ -74,6 +79,19 @@ import {
 export const DB00_PUBLIC_SOURCES_SCHEMA='wand.game-db.public-sources@1' as const;
 const BASE=/^\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/;
 
+export interface Db00NativeAcquisitionEvidence {
+  readonly itemId:string;
+  readonly shared:Db00SourceJoinedItem;
+  readonly recipes:Db00NativeRecipeResult;
+  readonly activities:Db00NativeActivityItem;
+  /** Counts only source-defined recipe/path links, not possible live grants. */
+  readonly nativeResultDefinitionCount:number;
+  readonly staticSourceOnly:true;
+  readonly acquisitionRouteCoverageComplete:false;
+  readonly currentAvailabilityVerified:false;
+  readonly playerOwnershipVerified:false;
+  readonly collectionUiMembershipVerified:false;
+}
 export interface PublicSharedGameSources{
   readonly schema:typeof DB00_PUBLIC_SOURCES_SCHEMA;
   readonly snapshotId:string;
@@ -102,6 +120,12 @@ export interface PublicSharedGameSources{
   loadNativeOnlineCategories():Promise<Db00NativeOnlineReader>;
   /** SHA-pinned original cooking/crafting results, loaded only on demand. */
   loadNativeRecipeSources():Promise<Db00NativeRecipeReader>;
+  /** Optional original fishing/mining/timebending/growing source paths. */
+  loadNativeActivitySources():Promise<Db00NativeActivityReader>;
+  /** One cross-service Item lookup, with both optional sources loaded lazily. */
+  getNativeAcquisitionEvidence(
+    itemId:string|number
+  ):Promise<Db00NativeAcquisitionEvidence>;
   /** Optional verified 60-reward name/category crosswalk, including unnamed motifs. */
   loadStarpathRewardCrosswalk():Promise<Db00StarpathRewardReader>;
   queryItems(filters?:readonly SharedDbFilter[],
@@ -217,6 +241,41 @@ export async function openPublicSharedGameSources(
     nativeRecipes??=acquisition.loadNativeRecipeResults().then(source=>
       createDb00NativeRecipeReader(database,joined,source)
     );
+  let nativeActivities:Promise<Db00NativeActivityReader>|null=null;
+  const loadNativeActivitySources=():Promise<Db00NativeActivityReader>=>
+    nativeActivities??=acquisition.loadNativeActivityResults().then(source=>
+      createDb00NativeActivityReader(database,joined,source)
+    );
+  const getNativeAcquisitionEvidence=async(
+    itemId:string|number
+  ):Promise<Db00NativeAcquisitionEvidence>=>{
+    // Validate IDs through the existing DB-00 reader before optional fetches.
+    const shared=joined.getItem(itemId);
+    const [recipeReader,activityReader]=await Promise.all([
+      loadNativeRecipeSources(),loadNativeActivitySources()
+    ]);
+    const recipes=recipeReader.getResult(shared.itemId);
+    const activities=activityReader.getItem(shared.itemId);
+    assert(recipes.itemId===shared.itemId &&
+      activities.itemId===shared.itemId &&
+      recipes.item.itemId===shared.itemId &&
+      activities.item.itemId===shared.itemId &&
+      recipes.sourceRecipeOrigins.length===recipes.recipes.length &&
+      activities.sourcePathOrigins.length===activities.sourcePaths.length &&
+      recipes.recipeUnlockedVerified===false &&
+      activities.currentAvailabilityVerified===false,
+      'NATIVE_ACQUISITION_JOIN_MISMATCH');
+    return Object.freeze({
+      itemId:shared.itemId,shared,recipes,activities,
+      nativeResultDefinitionCount:recipes.recipes.length+
+        activities.sourcePaths.length,
+      staticSourceOnly:true as const,
+      acquisitionRouteCoverageComplete:false as const,
+      currentAvailabilityVerified:false as const,
+      playerOwnershipVerified:false as const,
+      collectionUiMembershipVerified:false as const
+    });
+  };
   let starpathCrosswalk:Promise<Db00StarpathRewardReader>|null=null;
   const loadStarpathRewardCrosswalk=():Promise<Db00StarpathRewardReader>=>
     starpathCrosswalk??=(async()=>{
@@ -277,6 +336,7 @@ export async function openPublicSharedGameSources(
     searchItems:search.searchItems,
     searchOutsideSourceItems,loadNativeCompanionSources,
     loadNativeOnlineCategories,loadNativeRecipeSources,
+    loadNativeActivitySources,getNativeAcquisitionEvidence,
     loadStarpathRewardCrosswalk,
     queryItems:(filters:readonly SharedDbFilter[]=[],
       page:Readonly<{offset?:number;limit?:number}>={})=>
