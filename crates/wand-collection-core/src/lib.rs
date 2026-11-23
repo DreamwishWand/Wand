@@ -1235,7 +1235,6 @@ mod tests {
         assert_eq!(entries["102"].quantity,Some(3));
         assert_eq!(entries["103"].status.as_deref(),Some("missing"));
         assert!(!entries.contains_key("104"));
-        let before=engine.state.clone();
         assert_eq!(engine.bulk_matching_impl(matching,"owned").unwrap(),0);
         // Favorites are a separate local annotation, never inferred from
         // owned status. Paging and bulk operations share this same Rust filter.
@@ -1251,6 +1250,7 @@ mod tests {
         assert_eq!(engine.state.workspaces[0].entries["101"].status.as_deref(),Some("missing"));
         assert_eq!(engine.state.workspaces[0].entries["101"].favorite,Some(true));
         assert_eq!(engine.state.workspaces[0].entries["102"].status.as_deref(),Some("owned"));
+        let before=engine.state.clone();
         assert!(engine.bulk_matching_impl(matching,"invalid").is_err());
         assert!(engine.bulk_matching_impl(r#"{"status":"invalid"}"#,"missing").is_err());
         assert!(engine.state==before);
