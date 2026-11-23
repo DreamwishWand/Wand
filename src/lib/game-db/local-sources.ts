@@ -129,6 +129,7 @@ export function joinLocalGameSources(
     origins:publicData.acquisition.origins,rewards:publicData.guide,
     staticContainers:publicData.acquisition.staticContainerSource,
     defaultInventories:publicData.acquisition.defaultInventorySource,
+    officialNameCandidates:publicData.acquisition.nameCandidates,
     questTargets:publicData.guideQuestTargets,
     nativeScope,nativeScopePins
   });
