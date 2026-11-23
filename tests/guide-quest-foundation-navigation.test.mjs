@@ -68,8 +68,8 @@ test('341 native Village Quests are grouped by exactly 77 original-character IDs
   assert.deepEqual(goofys.rows.map(q=>publicQuestNativeOrder(q)),[10,30,40,50,70]);
   assert(goofys.rows.every(q=>q.characterId===goofy.characterId));
   assert.equal(roster.find(x=>x.id===goofy.characterId).quests,5);
-  assert.throws(()=>filterPublicQuests(data,{section:'friendship',character:'invalid'}),
-    /invalid search|foreign character/);
+  assert.equal(filterPublicQuests(data,{section:'friendship',character:'invalid'}).total,0,
+    'an unknown character never gains a fabricated original Quest');
 });
 
 test('unpublished Quest names never become internal Mission identifiers presented as names',async()=>{
