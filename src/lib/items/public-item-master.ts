@@ -1,8 +1,9 @@
 /**
  * Read-only public item master for Collection, Explore and World Editor.
- * Item ID is the only join key. The source data is Steam 1.26.2 and is
- * independent of player saves. The index is the only eager request; exact-ID
- * reads fetch one small immutable shard and cache it for later consumers.
+ * Item ID is the only join key. Every source release is version-isolated and
+ * independent of player saves. The selected release index is the only eager
+ * request for explicit versions; "current" first resolves a small version
+ * catalog. Exact-ID reads fetch one verified shard; batch reads are bounded.
  *
  * Original tags are facts; Collection source candidates are NOT proof of
  * visible game-screen membership or availability.
@@ -10,6 +11,23 @@
 export const ITEM_MASTER_RELEASE = 'steam-1.26.2-item-id-master-v1' as const;
 export const ITEM_MASTER_INDEX_PATH =
   'ddv/item-master/steam-1.26.2/index.json' as const;
+/** Backward-compatible default until all dependent source DBs are versioned. */
+export const ITEM_MASTER_DEFAULT_GAME_VERSION = '1.26.2' as const;
+export const ITEM_MASTER_VERSIONS_PATH = 'ddv/item-master-releases.json' as const;
+/** Pass "current" for the release selected by the public version catalog. */
+export interface ItemMasterOpenOptions {
+  readonly gameVersion?: string;
+}
+export interface ItemMasterVersions {
+  readonly schema: 'wand.item-master.versions@1';
+  readonly current: string;
+  readonly releases: readonly Readonly<{
+    gameVersion: string;
+    release: string;
+    count: number;
+    archiveSha256: string;
+  }>[];
+}
 export const ITEM_MASTER_LOCALES =
   ['en','fr','it','de','es-ES','ja','zh-CN','pt-BR'] as const;
 export type ItemMasterLocale = (typeof ITEM_MASTER_LOCALES)[number];
@@ -61,9 +79,9 @@ export interface ItemMasterRecord {
 }
 export interface ItemMasterRelease {
   readonly schema: 'wand.item-master.release@1';
-  readonly version: typeof ITEM_MASTER_RELEASE;
-  readonly target: Readonly<{platform:'Steam';gameVersion:'1.26.2'}>;
-  readonly count: 13202;
+  readonly version: string;
+  readonly target: Readonly<{platform:'Steam';gameVersion:string}>;
+  readonly count: number;
   readonly bucketCount: 256;
   readonly coverage: Readonly<{
     itemNamesVerified: number;
@@ -88,6 +106,10 @@ export interface PublicItemMaster {
   getItems(itemIds: readonly number[]): Promise<(ItemMasterRecord | null)[]>;
 }
 const SHA = /^[0-9a-f]{64}$/;
+const GAME_VERSION = /^[0-9]+\.[0-9]+\.[0-9]+$/;
+const RELEASE_VERSION = /^steam-([0-9]+\.[0-9]+\.[0-9]+)-item-id-master-v[1-9][0-9]*$/;
+const MAX_DEFINITIONS = 1_000_000;
+const MAX_SHARD_BYTES = 16 * 1024 * 1024;
 const GUID = /^[0-9a-f]{32}$/;
 const ID = (n: unknown): n is number =>
   typeof n === 'number' && Number.isSafeInteger(n) && n > 0;
@@ -143,30 +165,74 @@ async function checkedJson(url:string, meta?:Readonly<{bytes?:number;sha256?:str
 export async function openPublicItemMaster(
   basePath: string = '',
   fetcher: typeof fetch = fetch,
+  options: ItemMasterOpenOptions = {},
 ):Promise<PublicItemMaster> {
   assert(typeof basePath === 'string' &&
     /^\/?(?:[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*)?$/.test(basePath),
     'INVALID_BASE_PATH');
-  const root = (basePath ? '/' + basePath.replace(/^\/+|\/+$/g,'') : '') +
-    '/ddv/item-master/steam-1.26.2';
+  const base = basePath ? '/' + basePath.replace(/^\/+|\/+$/g,'') : '';
+  let gameVersion = options.gameVersion ?? ITEM_MASTER_DEFAULT_GAME_VERSION;
+  let selected: Readonly<ItemMasterVersions['releases'][number]> | undefined;
+  assert(typeof gameVersion === 'string', 'INVALID_GAME_VERSION');
+  if (gameVersion === 'current') {
+    const raw = await checkedJson(base+'/'+ITEM_MASTER_VERSIONS_PATH,undefined,fetcher);
+    assert(isObject(raw) && raw.schema === 'wand.item-master.versions@1' &&
+      typeof raw.current === 'string' && GAME_VERSION.test(raw.current) &&
+      Array.isArray(raw.releases) && raw.releases.length>0,
+      'INVALID_VERSIONS');
+    const unique = new Set<string>();
+    for (const entry of raw.releases) {
+      assert(isObject(entry) && typeof entry.gameVersion === 'string' &&
+        GAME_VERSION.test(entry.gameVersion) && !unique.has(entry.gameVersion) &&
+        typeof entry.release === 'string' &&
+        RELEASE_VERSION.test(entry.release) &&
+        entry.release.startsWith('steam-'+entry.gameVersion+'-') &&
+        typeof entry.count === 'number' &&
+        Number.isSafeInteger(entry.count) && entry.count>0 &&
+        entry.count<=MAX_DEFINITIONS &&
+        typeof entry.archiveSha256 === 'string' &&
+        SHA.test(entry.archiveSha256), 'INVALID_VERSIONS');
+      unique.add(entry.gameVersion);
+    }
+    gameVersion = raw.current;
+    selected = (raw.releases as ItemMasterVersions['releases'])
+      .find(entry => entry.gameVersion === gameVersion);
+    assert(selected, 'CURRENT_RELEASE_MISSING');
+  }
+  assert(GAME_VERSION.test(gameVersion), 'INVALID_GAME_VERSION');
+  const root = base + '/ddv/item-master/steam-' + gameVersion;
   const release = await checkedJson(root+'/index.json',undefined,fetcher);
   assert(isObject(release) &&
     release.schema === 'wand.item-master.release@1' &&
-    release.version === ITEM_MASTER_RELEASE &&
-    release.count === 13202 && release.bucketCount === 256 &&
-    isObject(release.target) && release.target.gameVersion === '1.26.2' &&
-    isObject(release.shards), 'INVALID_RELEASE');
+    typeof release.version === 'string' &&
+    RELEASE_VERSION.test(release.version) &&
+    release.version.startsWith('steam-'+gameVersion+'-') &&
+    typeof release.count === 'number' &&
+    Number.isSafeInteger(release.count) &&
+    release.count>0 && release.count<=MAX_DEFINITIONS &&
+    release.bucketCount === 256 &&
+    isObject(release.target) &&
+    release.target.platform === 'Steam' &&
+    release.target.gameVersion === gameVersion &&
+    isObject(release.shards) &&
+    (!selected || (release.version === selected.release &&
+      release.count === selected.count)), 'INVALID_RELEASE');
   const m = release as unknown as ItemMasterRelease;
   const expected = Array.from({length:256},(_,i) =>
     'id/'+i.toString(16).padStart(2,'0')+'.json');
   assert(Object.keys(m.shards).length === 256 &&
     expected.every(p => p in m.shards), 'INCOMPLETE_RELEASE');
-  const meta = (path:string): Readonly<{count:number;bytes?:number;sha256?:string}> => {
+  const meta = (path:string): Readonly<{count:number;bytes:number;sha256:string}> => {
     const raw = m.shards[path];
-    return typeof raw === 'number' ? {count:raw} : raw;
+    assert(isObject(raw) && Number.isSafeInteger(raw.count) && raw.count>=0 &&
+      typeof raw.bytes === 'number' &&
+      Number.isSafeInteger(raw.bytes) && raw.bytes>0 &&
+      raw.bytes<=MAX_SHARD_BYTES &&
+      typeof raw.sha256 === 'string' && SHA.test(raw.sha256),
+      'INVALID_SHARD_METADATA');
+    return raw as unknown as {count:number;bytes:number;sha256:string};
   };
-  assert(expected.every(p => Number.isInteger(meta(p).count) &&
-    meta(p).count >= 0) &&
+  assert(expected.every(p => !!meta(p)) &&
     expected.reduce((n,p)=>n+meta(p).count,0) === m.count,
     'RELEASE_COUNT_MISMATCH');
 
@@ -200,10 +266,19 @@ export async function openPublicItemMaster(
       assert(Array.isArray(ids) && ids.length <= 10000 &&
         ids.every(ID),'INVALID_ITEM_BATCH');
       const groups = [...new Set(ids.map(pathFor))];
-      const results = await Promise.all(groups.map(bucket));
       const found = new Map<number,ItemMasterRecord>();
-      for (const group of results)
-        for (const [id,item] of group) found.set(id,item);
+      let next = 0;
+      // Bound I/O to eight shards, even when 10,000 IDs span all 256 buckets.
+      async function worker(): Promise<void> {
+        while (next < groups.length) {
+          const path = groups[next++];
+          const records = await bucket(path);
+          for (const [id,item] of records) found.set(id,item);
+        }
+      }
+      await Promise.all(Array.from(
+        {length:Math.min(8,groups.length)},()=>worker()
+      ));
       return ids.map(id => found.get(id) ?? null);
     }
   });

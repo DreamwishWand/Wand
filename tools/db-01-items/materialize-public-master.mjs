@@ -1,7 +1,7 @@
 /**
  * Build-only unpacker for the sanitized public DB-01 master archive.
- * Runs before Vite dev/build. No original game file, credentials, or
- * player saves are distributed; only the 13,202 normalized Item records.
+ * Runs before Vite dev/build. Publishes all version-listed releases, preserving
+ * older snapshots; no original game file, credentials or player saves ship.
  */
 import {readFileSync,writeFileSync,mkdirSync,mkdtempSync,renameSync,rmSync} from 'node:fs';
 import {join,dirname,resolve} from 'node:path';
@@ -10,12 +10,35 @@ import {createHash} from 'node:crypto';
 import {inflateRawSync} from 'node:zlib';
 
 const project=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
-const archive=join(project,'data/ddv/item-master/steam-1.26.2.zip');
 const targetRoot=join(project,'static/ddv/item-master');
-const destination=join(targetRoot,'steam-1.26.2');
-const RELEASE_SHA='3c80a42139014211100eb556665636088af45d1d0b54ebd2933a4aeab2a405c6';
+const catalog=JSON.parse(readFileSync(join(project,'static/ddv/item-master-releases.json'),'utf8'));
 const hex=b=>createHash('sha256').update(b).digest('hex');
 function check(ok,code){if(!ok)throw Error('DB01_PUBLIC_MASTER_'+code)}
+const VERSION=/^[0-9]+\.[0-9]+\.[0-9]+$/;
+const SHA=/^[0-9a-f]{64}$/;
+check(catalog.schema==='wand.item-master.versions@1' &&
+  typeof catalog.current==='string' &&
+  VERSION.test(catalog.current) &&
+  Array.isArray(catalog.releases)&&catalog.releases.length>0,
+  'INVALID_VERSION_CATALOG');
+const seenVersions=new Set();
+for(const entry of catalog.releases){
+  check(entry && typeof entry==='object' &&
+    typeof entry.gameVersion==='string' && VERSION.test(entry.gameVersion) &&
+    !seenVersions.has(entry.gameVersion) &&
+    typeof entry.release==='string' &&
+    entry.release.startsWith('steam-'+entry.gameVersion+'-item-id-master-v') &&
+    Number.isSafeInteger(entry.count) && entry.count>0 && entry.count<=1000000 &&
+    typeof entry.archiveSha256==='string' && SHA.test(entry.archiveSha256),
+    'INVALID_RELEASE_ENTRY');
+  seenVersions.add(entry.gameVersion);
+}
+check(seenVersions.has(catalog.current),'CURRENT_VERSION_UNPUBLISHED');
+for(const entry of catalog.releases){
+const gameVersion=entry.gameVersion;
+const destination=join(targetRoot,'steam-'+gameVersion);
+const archive=join(project,'data/ddv/item-master','steam-'+gameVersion+'.zip');
+const RELEASE_SHA=entry.archiveSha256;
 const bytes=readFileSync(archive);
 check(hex(bytes)===RELEASE_SHA,'ARCHIVE_SHA_MISMATCH');
 const u16=n=>bytes.readUInt16LE(n),u32=n=>bytes.readUInt32LE(n);
@@ -47,9 +70,10 @@ for(let i=0;i<count;i++){
 }
 const release=JSON.parse(files.get('index.json').toString('utf8'));
 check(release.schema==='wand.item-master.release@1'&&
-  release.version==='steam-1.26.2-item-id-master-v1'&&
-  release.target.gameVersion==='1.26.2'&&
-  release.count===13202&&release.bucketCount===256&&
+  release.version===entry.release&&
+  release.target.platform==='Steam'&&
+  release.target.gameVersion===gameVersion&&
+  release.count===entry.count&&release.bucketCount===256&&
   Object.keys(release.shards).length===256,'RELEASE_SCHEMA');
 // A minimal Collection-only projection: Item ID + browseable source Tags.
  // No names, GUIDs, raw source definitions, CollectionSet predicates, or
@@ -107,16 +131,19 @@ try{
 // Generated from the SHA-pinned archive by the existing build-only tool.
 // Collection consumes this small filter index only on demand, and continues
 // to use DB-01 getItem() for the complete per-ID detail on inspection.
-const collectionDestination=join(project,'static/ddv/collection/db01-facets-1262.json');
+const collectionDestination=join(project,'static/ddv/collection',
+  'db01-facets-'+gameVersion.replaceAll('.','')+'.json');
 mkdirSync(dirname(collectionDestination),{recursive:true});
 collectionRows.sort((a,b)=>a[0]-b[0]);
 writeFileSync(collectionDestination,JSON.stringify({
   schema:'wand.collection.db01-native-facets@1',
-  release:'steam-1.26.2-item-id-master-v1',
+  release:entry.release,
   sourceArchiveSha256:RELEASE_SHA,
   sourceItemCount:found,
   taggedItems:collectionRows.length,
   items:collectionRows
 })+'\n');
 console.log('DB-01 Collection browse subset:',collectionRows.length,'tagged Item IDs');
-console.log('DB-01 public Item master:',found,'items,',tagRefs,'tags,',candidates,'Collection source candidates');
+console.log('DB-01 public Item master:',gameVersion,found,'items,',tagRefs,'tags,',candidates,'Collection source candidates');
+}
+
