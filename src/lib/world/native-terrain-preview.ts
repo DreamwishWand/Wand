@@ -41,6 +41,9 @@ type PreparedGrid =
     readonly evidence:unknown;readonly status?:never};
 type TerrainUnavailable={readonly status:string;readonly kind?:never};
 type PreparedOrUnavailable=PreparedGrid|TerrainUnavailable;
+function hasPreparedGrid(source:PreparedOrUnavailable):source is PreparedGrid{
+  return source.kind==='direct'||source.kind==='packed';
+}
 const isRecord=(v:unknown):v is Record<string,unknown>=>
   v!==null&&typeof v==='object'&&!Array.isArray(v);
 function requireTerrainCatalog(source:unknown):NativeTerrainCatalog{
@@ -125,14 +128,15 @@ function packedGridForPreview(catalog:NativeTerrainCatalog,gridId:string|number)
     let cache = decodedGridCache.get(catalog);
     if (!cache) { cache = new Map(); decodedGridCache.set(catalog, cache); }
     const key = String(gridId);
-    if (cache.has(key)) return cache.get(key);
+    const cached=cache.get(key);
+    if(cached!==undefined)return cached;
     const prepared:PreparedGrid = { kind: 'direct', sizeX: sx, sizeY: sy, values,
       evidence: evidence.sampleBasedEncodingEvidence ?? null };
     cache.set(key, prepared);
     return prepared;
   }
   if (evidence?.decoded !== true || evidence?.packing !== 'x_major_msb_first' ||
-      ![1, 2, 4].includes(evidence.cellBits)) {
+      ![1, 2, 4].includes(evidence.cellBits as number)) {
     return { status: 'unresolved_native_packing' };
   }
   if (evidence.nativeCodeBodyVerified !== false ||
@@ -159,7 +163,8 @@ function packedGridForPreview(catalog:NativeTerrainCatalog,gridId:string|number)
     decodedGridCache.set(catalog, gridCache);
   }
   const key = String(gridId);
-  if (gridCache.has(key)) return gridCache.get(key);
+  const cached=gridCache.get(key);
+  if(cached!==undefined)return cached;
   const expectedBytes = Math.ceil(sx * sy * bits / 8);
   const expectedBase64Length = Math.ceil(expectedBytes / 3) * 4;
   if (grid.compactedFloorTypesBase64.length !== expectedBase64Length ||
@@ -201,7 +206,7 @@ function previewFloorValue(grid:PreparedGrid,x:number,y:number):number {
 export function getNativeTerrainTile(sourceCatalog:unknown,gridId:string|number,x:number,y:number) {
   const catalog=requireTerrainCatalog(sourceCatalog);
   const grid = packedGridForPreview(catalog, gridId);
-  if (grid.status) return { status: grid.status };
+  if(!hasPreparedGrid(grid)) return {status:grid.status};
   if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y) ||
       x < 0 || y < 0 || x >= grid.sizeX || y >= grid.sizeY) {
     return { status: 'outside_native_grid' };
@@ -217,7 +222,7 @@ export function getNativeTerrainTile(sourceCatalog:unknown,gridId:string|number,
 export function getNativeTerrainWindow(sourceCatalog:unknown,gridId:string|number,rect:unknown) {
   const catalog=requireTerrainCatalog(sourceCatalog);
   const grid = packedGridForPreview(catalog, gridId);
-  if (grid.status) return { status: grid.status };
+  if(!hasPreparedGrid(grid)) return {status:grid.status};
   if (!isRecord(rect)) throw new TypeError('Native grid preview rectangle required');
   const { x, y, width, height } = rect as {x:number;y:number;width:number;height:number};
   if (![x, y, width, height].every(Number.isSafeInteger) ||
@@ -256,7 +261,7 @@ export function getNativeTerrainDistribution(sourceCatalog:unknown,gridId:string
   }
   if (grid.nativeSourceFormat === 'original_json_direct_floor_values') {
     const source = packedGridForPreview(catalog, gridId);
-    if (source.status) return { status: source.status };
+    if(!hasPreparedGrid(source)) return {status:source.status};
     if (source.kind !== 'direct') {
       throw new TypeError('Invalid original native direct terrain source');
     }
@@ -299,7 +304,7 @@ export function getNativeTerrainDistribution(sourceCatalog:unknown,gridId:string
     throw new TypeError('Invalid native terrain histogram integrity');
   }
   const source = packedGridForPreview(catalog, gridId);
-  if (source.status) return { status: source.status };
+  if(!hasPreparedGrid(source)) return {status:source.status};
   if (source.kind !== 'packed')
     throw new TypeError('Invalid original native compacted terrain source');
   if (source.observedCounts.length !== counts.length ||
