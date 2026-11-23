@@ -290,3 +290,146 @@ test('connected original CollectionSet index fails closed when a source predicat
   await assert.rejects(c.getItem(furniture.itemId),
     /COLLECTION_SET_NOT_IN_CURRENT_ORIGINAL/);
 });
+
+function nativeAreaFixture(){
+  const counts={coverage:0,getItem:[]};
+  const row=(item,positiveAreaCodes,sourceAreaEvidence)=>Object.freeze({
+    itemId:item.itemId,nativeCategory:item.nativeCategory,
+    sourceProtobufClass:item.nativeCategory+'ItemData',
+    companionKind:item.nativeCategory==='Companion'?'critter':null,
+    positiveAreaCodes,sourceAreaEvidence,
+    critterLocationOneofFieldNumber:
+      item.nativeCategory==='Companion'?6:null,
+    originalSourceVerified:true,
+    runtimeSkinClassIndependentlyVerified:false,
+    runtimeCritterSceneResolved:false,
+    nativeAllAreasDefaultVerified:false,
+    gameCollectionUiMembershipVerified:false,
+    worldAvailabilityVerified:false,
+    playerOwnershipVerified:false,
+    dlcEntitlementVerified:false,
+  });
+  const mapping=new Map([
+    [furniture.itemId,row(furniture,[1],'native_positive_tag')],
+    [pet.itemId,row(pet,null,'requires_profile_world_scene')],
+  ]);
+  const client={
+    schema:'wand.db01.native-positive-area-six-category-steam-1262@1',
+    gameVersion:'1.26.2',
+    async getCoverage(){
+      counts.coverage++;
+      return {
+        gameVersion:'1.26.2',sourceDefinitions:9778,
+        sourcePositiveAreaItems:8976,
+        sourceIHasTagsWithoutPositiveArea:673,
+        sourceWithoutIHasTags:4,critterSceneUnresolved:125,
+        nativeAllAreasDefaultVerified:false,
+        gameCollectionUiMembershipVerified:false,
+        runtimeSkinClassIndependentlyVerified:false,
+        runtimeCritterSceneResolved:false,
+      };
+    },
+    async getItem(id){counts.getItem.push(id);return mapping.get(id)??null;},
+    async search(){throw new Error('unused synthetic search');},
+  };
+  return {client,counts,mapping};
+}
+
+test('optional native six-domain reader attaches source facts to existing shared Item records',async()=>{
+  const f=fixture(),a=nativeAreaFixture();
+  const shared=createDb01SharedItemClient({
+    catalog:f.catalog,nativeAreas:a.client,
+  });
+  const ids=[furniture.itemId,pet.itemId,furniture.itemId,123456];
+  const records=await shared.getItems(ids);
+  assert.equal(records.length,4);
+  assert.equal(records[0].nativeAreaSourceStatus,'original_source_record');
+  assert.deepEqual(records[0].originalNativeAreas.positiveAreaCodes,[1]);
+  assert.equal(records[0].originalNativeAreas.sourceAreaEvidence,'native_positive_tag');
+  assert.equal(records[1].nativeAreaSourceStatus,'original_source_record');
+  assert.equal(records[1].originalNativeAreas.sourceAreaEvidence,
+    'requires_profile_world_scene');
+  assert.equal(records[1].originalNativeAreas.positiveAreaCodes,null);
+  assert.equal(records[1].availableWorlds,null);
+  assert.equal(records[1].screenCategory,null);
+  assert.equal(records[1].dlcEntitlements,null);
+  assert.equal(records[2].originalNativeAreas,records[0].originalNativeAreas);
+  assert.equal(records[3],null);
+  assert.deepEqual(a.counts.getItem.sort(),[furniture.itemId,pet.itemId].sort());
+  assert.equal(a.counts.coverage,1);
+  const again=await shared.getItem(furniture.itemId);
+  assert.equal(again.nativeAreaSourceStatus,'original_source_record');
+  assert.equal(a.counts.coverage,1);
+});
+
+test('absence of native area reader and out-of-domain Item are not false no-tag matches',async()=>{
+  const f=fixture();
+  const disconnected=createDb01SharedItemClient({catalog:f.catalog});
+  const r=await disconnected.getItem(furniture.itemId);
+  assert.equal(r.nativeAreaSourceStatus,'reader_not_connected');
+  assert.equal(r.originalNativeAreas,null);
+  const x=nativeAreaFixture();
+  const activity={
+    ...furniture,itemId:20000042,nativeCategory:'ActivityItem',
+    nativeKey:'ActivityItem!Synthetic',catalogDomain:'item',
+  };
+  const catalog={...f.catalog,
+    getItems:async ids=>ids.map(id=>id===activity.itemId?activity:null),
+  };
+  const connected=createDb01SharedItemClient({
+    catalog,nativeAreas:x.client,
+  });
+  const row=await connected.getItem(activity.itemId);
+  assert.equal(row.nativeCategory,'ActivityItem');
+  assert.equal(row.nativeAreaSourceStatus,'outside_six_verified_domains');
+  assert.equal(row.originalNativeAreas,null);
+  assert.equal(row.availableWorlds,null);
+  assert.deepEqual(x.counts.getItem,[]);
+  assert.equal(x.counts.coverage,1);
+});
+
+test('cross-version, count-drift, missing and forged source records fail closed',async()=>{
+  const f=fixture(),a=nativeAreaFixture();
+  assert.throws(()=>createDb01SharedItemClient({
+    catalog:f.catalog,nativeAreas:{...a.client,gameVersion:'1.25.0'},
+  }),/NATIVE_AREA_VERSION_OR_CONTRACT/);
+  assert.throws(()=>createDb01SharedItemClient({
+    catalog:f.catalog,nativeAreas:{...a.client,schema:'unknown'},
+  }),/NATIVE_AREA_VERSION_OR_CONTRACT/);
+
+  const census={...a.client,getCoverage:async()=>({
+    ...await a.client.getCoverage(),sourcePositiveAreaItems:8975,
+  })};
+  await assert.rejects(
+    createDb01SharedItemClient({catalog:f.catalog,nativeAreas:census})
+      .getItem(furniture.itemId),
+    /NATIVE_AREA_SOURCE_COVERAGE/,
+  );
+  assert.deepEqual(a.counts.getItem,[]);
+
+  const identity={...a.client,getItem:async id=>{
+    const v=await a.client.getItem(id);
+    return {...v,nativeCategory:'Skin'};
+  }};
+  await assert.rejects(
+    createDb01SharedItemClient({catalog:f.catalog,nativeAreas:identity})
+      .getItem(furniture.itemId),
+    /NATIVE_AREA_CANONICAL_IDENTITY_OR_PROOF/,
+  );
+  const negative={...a.client,getItem:async id=>{
+    const v=await a.client.getItem(id);
+    return {...v,positiveAreaCodes:[],sourceAreaEvidence:
+      'native_ihastags_without_positive_tag'};
+  }};
+  await assert.rejects(
+    createDb01SharedItemClient({catalog:f.catalog,nativeAreas:negative})
+      .getItem(pet.itemId),
+    /NATIVE_AREA_CANONICAL_IDENTITY_OR_PROOF/,
+  );
+  const missing={...a.client,getItem:async()=>null};
+  await assert.rejects(
+    createDb01SharedItemClient({catalog:f.catalog,nativeAreas:missing})
+      .getItem(furniture.itemId),
+    /NATIVE_AREA_CANONICAL_IDENTITY_OR_PROOF/,
+  );
+});
