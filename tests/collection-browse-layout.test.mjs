@@ -79,9 +79,9 @@ test('all 67 universe source definitions have eight original display names and J
   assert.ok(e.indexOf('2000500072')<e.indexOf('2000500048'),
     "A Bug\'s Life precedes Aladdin");
   const j=japanese.map(x=>x.id);
-  assert.ok(j.indexOf('2000500005')<j.indexOf('2000500062')&&
-    j.indexOf('2000500062')<j.indexOf('2000500048'),
-    'Japanese gojuon: アナ, アトランティス, アラジン');
+  assert.ok(j.indexOf('2000500062')<j.indexOf('2000500005')&&
+    j.indexOf('2000500005')<j.indexOf('2000500048'),
+    'Japanese gojuon: アトランティス, アナ, アラジン');
 });
 
 test('selected universe groups source-native Item IDs, keeps all headings on first page',()=>{
