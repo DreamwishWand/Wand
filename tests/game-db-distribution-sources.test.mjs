@@ -244,7 +244,7 @@ test('invalid requests, forged source coverage and corrupted native assets fail 
     /invalid numeric Item ID/);
   assert.equal(calls.length,before);
   await assert.rejects(bad.loadDistributionSourceSearch(),
-    /DB02_ONLINE/);
+    /DB02_NATIVE_ONLINE_CATEGORY_SHA/);
   const missing=await openPublicSharedGameSources('/Wand',
     local({corruptPet:true}).fetcher);
   await assert.rejects(missing.searchDistributionSources({scope:
