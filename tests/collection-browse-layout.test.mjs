@@ -52,4 +52,9 @@ test('selected universe groups source-native Item IDs, keeps all headings on fir
   assert.deepEqual(sections.find(x=>x.id==='Fish').items.map(x=>x.itemId),[11,13]);
   assert.deepEqual(sections.find(x=>x.id==='Furniture').items.map(x=>x.itemId),[21,32]);
   assert.deepEqual(sections.map(x=>x.total),[1,2,2]);
+  const full=groupCollectionUniverseItems(rows,item=>({
+    id:item.family,label:item.family,
+    rank:item.family==='Clothing'?1:item.family==='Furniture'?2:3
+  }),rows.length);
+  assert.equal(full.reduce((sum,section)=>sum+section.items.length,0),rows.length);
 });
