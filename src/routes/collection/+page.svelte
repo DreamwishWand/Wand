@@ -84,6 +84,8 @@
   // evidence and are never inferred from these Tags.
   let sourceIndex:CollectionDb01Index|null=null;
   let sourceLoad:Promise<void>|null=null;
+  let sourceLoadError=false;
+  let sourceGeneration=0;
   let sourceFacetGroups:readonly CollectionDb01Group[]=[];
   let sourceChoices:Partial<Record<CollectionDb01Facet,string>>={};
   let sourceAllMatching:CollectionItem[]=[];
@@ -322,16 +324,34 @@
     return Boolean(runtime&&!runtime.isOwnerLocal&&
       runtime.metadata.snapshot==='steam-1.26.2-native-itemlist-v1');
   }
+  /** A catalog swap must invalidate pending source index requests. In
+   * particular, never show public category candidates in an owner-local
+   * catalog, or keep stale filters when switching back to public data. */
+  function discardSourceIndex():void{
+    sourceGeneration++;
+    sourceIndex=null;
+    sourceLoad=null;
+    sourceLoadError=false;
+    sourceFacetGroups=[];
+    sourceGroupsCacheKey='';
+    sourceChoices={};
+    sourceCategory=null;
+    originalCategoryCards=[];
+  }
   function ensureSourceIndex():void{
     if(!canUseDb01SourceFacets()||sourceIndex||sourceLoad)return;
+    sourceLoadError=false;
+    const generation=sourceGeneration;
     const task=loadCollectionDb01Facets(base).then(index=>{
-      if(!canUseDb01SourceFacets())return;
+      if(generation!==sourceGeneration||!canUseDb01SourceFacets())return;
       sourceIndex=index;sourceGroupsCacheKey='';
       // Source-native category cards become visible on the initial overview.
       // Refresh does not change saved user progress.
       refresh();
     }).catch(()=>{ // Optional browse facets never block Collection startup.
+      if(generation!==sourceGeneration)return;
       sourceIndex=null;
+      sourceLoadError=canUseDb01SourceFacets();
     }).finally(()=>{if(sourceLoad===task)sourceLoad=null;});
     sourceLoad=task;
   }
@@ -611,6 +631,7 @@
     let loaded:CollectionRuntime|null=null;
     try {
       loaded=await CollectionRuntime.openOwnerLocalDb01(file);
+      discardSourceIndex();
       detachHistory();runtime?.close();
       runtime=loaded;
       detachHistory=editHistory.attachCollection(runtime);
@@ -633,6 +654,7 @@
     let loaded:CollectionRuntime|null=null;
     try {
       loaded=await CollectionRuntime.open(base);
+      discardSourceIndex();
       detachHistory();runtime?.close();
       runtime=loaded;
       detachHistory=editHistory.attachCollection(runtime);
@@ -640,6 +662,7 @@
       loadError='';
       storeError='';
       clearScope();
+      ensureSourceIndex();
       infoMessage='公開されている検証済みCollection参照データに戻しました。';
     }catch(error){
       loaded?.close();
@@ -669,7 +692,10 @@
     finally{input.value='';}
   }
   onMount(()=>{
-    const toggleHeaderFilters=()=>{filtersOpen=!filtersOpen;};
+    const toggleHeaderFilters=()=>{
+      filtersOpen=!filtersOpen;
+      if(filtersOpen){ensureSourceIndex();refresh();}
+    };
     window.addEventListener('wand:collection-filters',toggleHeaderFilters);
     const handleHeaderBackup=()=>downloadBackup();
     window.addEventListener('wand:collection-backup',handleHeaderBackup);
@@ -689,6 +715,7 @@
       try{
         const loaded=await CollectionRuntime.open(base);
         if(!alive){loaded.close();return;}
+        discardSourceIndex();
         runtime=loaded;
         detachHistory=editHistory.attachCollection(loaded);
         refresh();
@@ -1146,10 +1173,24 @@
                   <WandIcon name="chevron" size={15}/>
                 </button>
               </div>
-            {:else}
-              <!-- The catalog can be used while DB-01's optional source menu index loads. -->
+            {:else if sourceLoadError}
+              <div class="collection-source-category-footer" role="alert">
+                <span>{locale==='ja'
+                  ?'カテゴリーを読み込めませんでした。アイテムの種類から閲覧できます。'
+                  :'Categories could not be loaded. You can still browse by item type.'}</span>
+                <button type="button" class="subtle-button" on:click={ensureSourceIndex}>
+                  {locale==='ja'?'再試行':'Retry'}
+                </button>
+              </div>
+            {:else if canUseDb01SourceFacets() && sourceLoad}
               <p class="collection-source-category-footer" role="status">
                 {locale==='ja'?'カテゴリーを読み込み中':'Loading categories'}
+              </p>
+            {:else}
+              <p class="collection-source-category-footer" role="status">
+                {locale==='ja'
+                  ?'このカタログのカテゴリー対応表はありません。アイテムの種類から閲覧できます。'
+                  :'No category mapping is available for this catalog. Browse by item type.'}
               </p>
             {/if}
             {#if originalClassesOpen||!sourceIndex}
