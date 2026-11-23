@@ -70,11 +70,13 @@
     await tick();
     const scroller=timelineScroller;
     const today=scroller?.querySelector('.date-slot.today') as HTMLElement|null;
-    const side=scroller?.querySelector('.date-label') as HTMLElement|null;
-    if(!scroller||!today||!side)return;
-    // Only the timeline scrolls; never scroll the entire app viewport.
-    scroller.scrollLeft=Math.max(0,
-      side.offsetWidth+today.offsetLeft+today.offsetWidth/2-scroller.clientWidth/2);
+    if(!scroller||!today)return;
+    // Use viewport-relative rectangles: offsetLeft depends on layout/offsetParent.
+    // The outer page never scrolls; only the event timeline moves.
+    const scrollerBox=scroller.getBoundingClientRect();
+    const dayBox=today.getBoundingClientRect();
+    scroller.scrollLeft+=dayBox.left+dayBox.width/2-
+      (scrollerBox.left+scrollerBox.width/2);
   }
   function goToday(){
     offsetWeeks=0;selectedId=null;
@@ -153,7 +155,7 @@
     {:else}
       <div class="timeline-scroll" bind:this={timelineScroller} role="region" tabindex="0"
         aria-label="開催期間タイムライン（横スクロールで日付を移動）">
-        <div class="timeline-content" style={`--day-count:${windowRange.days.length}`}>
+        <div class="timeline-content" style={`--day-count:${windowRange.days.length};min-width:${205+windowRange.days.length*30}px`}>
           <div class="timeline-heading">
             <div class="date-label">イベント</div>
             <div class="dates-grid">
@@ -281,7 +283,7 @@
   .sample.task{background:#9c6dd2}.sample.exchange{background:#b5a4b9}.sample.limited{background:#4aabae}
   .reset-key :global(svg){color:#c3a4e2}
   .timeline-scroll{min-width:0;max-width:100%;overflow-x:auto;overflow-y:hidden;flex:1;scrollbar-color:#705b84 #21172d;scrollbar-width:thin}
-  .timeline-content{--sidebar-width:205px;--day-width:30px;min-width:calc(var(--sidebar-width) + var(--day-count) * var(--day-width));width:100%}
+  .timeline-content{--sidebar-width:205px;width:100%}
   .timeline-heading,.timeline-row{display:grid;grid-template-columns:var(--sidebar-width) minmax(0,1fr);min-width:0}
   .timeline-heading{min-height:64px;border-top:1px solid #4a3953;border-bottom:1px solid #52415e;background:#221a2b}
   .date-label{position:sticky;left:0;z-index:5;display:flex;align-items:center;padding-left:16px;background:#231a30;font-size:12px;color:#c0aeca;border-right:1px solid #52415e}
@@ -338,7 +340,7 @@
   .inspector-actions a.primary{background:#694687;color:#fff;padding:10px 12px;border-radius:8px}
   @media(max-width:800px){
     .timeline-toolbar{align-items:flex-start}
-    .timeline-content{--sidebar-width:172px;--day-width:28px}
+    .timeline-content{--sidebar-width:172px}
     .timeline-row{height:64px}
     .event-label{padding:8px}
     .date-facts{gap:8px 15px}
@@ -355,7 +357,7 @@
     .calendar-nav .range{min-width:103px;font-size:12px}
     .calendar-nav button{padding:6px 8px}
     .timeline-key{padding:7px 9px;gap:10px;font-size:10px}
-    .timeline-content{--sidebar-width:139px;--day-width:26px}
+    .timeline-content{--sidebar-width:139px}
     .event-name{font-size:11px}
     .event-symbol :global(svg){width:15px;height:15px}
     .event-label{gap:5px}
