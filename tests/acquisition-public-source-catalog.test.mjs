@@ -578,3 +578,41 @@ test('public original object-LootTable bridge is lazy and does not promote stati
   assert(Object.isFrozen(row));
   assert(Object.isFrozen(row.nativeObjectLootCandidates));
 });
+
+test('original LootTable name key lookup loads only when requested and never invents gameplay acquisition',async()=>{
+  const {seen,fetcher}=publicFetcher();
+  const catalog=await loadPublicSourceCatalog('/Wand',fetcher);
+  const before=seen.length;
+  assert.equal(catalog.coverage.combinedSourceRoutes,1255);
+  assert.equal(seen.some(u=>u.endsWith('/native-loot-name-keys-1.26.2.json')),false);
+  const first=catalog.loadNamedNativeLootSources();
+  assert.equal(first,catalog.loadNamedNativeLootSources());
+  const raw=catalog.loadNativeLootNames();
+  assert.equal(raw,catalog.loadNativeLootNames());
+  const [joined,names]=await Promise.all([first,raw]);
+  assert.equal(names.tableNames.length,960);
+  assert.equal(names.listNativeFamilies().length,28);
+  assert.equal(joined.candidateRelations.length,3804);
+  assert.equal(joined.familySummaries.length,28);
+  assert.equal(seen.length,before+2,'reuse existing LootTable plus one name key asset');
+  assert.equal(seen.filter(u=>u.endsWith('/native-loot-candidates-1.26.2.json')).length,1);
+  assert.equal(seen.filter(u=>u.endsWith('/native-loot-name-keys-1.26.2.json')).length,1);
+  const old=catalog.lookup('80000000');
+  const row=await catalog.lookupWithNamedNativeLootCandidates('80000000');
+  assert.equal(seen.length,before+2);
+  assert.equal(row.itemId,old.itemId);
+  assert.deepEqual(row.origins,old.origins);
+  assert.equal(row.nativeLootNameKeysLoaded,true);
+  assert.equal(row.originalNameKeyVerified,true);
+  assert.equal(row.actualDropVerified,false);
+  assert.equal(row.localizedNameVerified,false);
+  assert(row.nativeNamedLootCandidates.some(candidate=>
+    candidate.nativeNameKey==='Chest!LootPresent1'&&
+    candidate.routeStatus==='static_candidate_only'));
+  assert(row.nativeNamedLootCandidates.every(candidate=>
+    candidate.nativeNameOnlyNotGameplayContext===true&&
+    candidate.actualDropVerified===false&&candidate.availabilityVerified===false));
+  assert.equal(catalog.coverage.combinedSourceRoutes,1255);
+  assert.equal(catalog.itemSources.getKindItemIds('loot').length,0);
+  assert(Object.isFrozen(row)&&Object.isFrozen(row.nativeNamedLootCandidates));
+});
