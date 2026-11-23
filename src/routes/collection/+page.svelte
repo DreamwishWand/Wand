@@ -486,10 +486,9 @@
     sourceFacetGroups=[];
     sourceGroupsCacheKey='';
     sourceChoices={};
-    sourceCategory=null;
     sourceActivityType=null;
+    sourceUniverseSelection=null;
     sourceActivityTypeCards=[];
-    originalCategoryCards=[];
   }
   function ensureSourceIndex():void{
     if(!canUseDb01SourceFacets()||sourceIndex||sourceLoad)return;
@@ -499,8 +498,9 @@
       if(generation!==sourceGeneration||!canUseDb01SourceFacets())return;
       sourceIndex=index;sourceGroupsCacheKey='';
       const sourceGroups=collectionDb01Groups(index,[...index.byItem.keys()]);
-      sourceUniverseOptions=sourceGroups
-        .find(group=>group.facet==='disneyUniverse')?.options.map(x=>({...x}))??[];
+      sourceUniverseOptions=[...index.itemsByUniverse].map(([key,ids])=>({
+        key,count:ids.length
+      }));
       sourceWorldOptions=sourceGroups
         .find(group=>group.facet==='worldContextTag')?.options.map(x=>({...x}))??[];
       // Source-native category cards become visible on the initial overview.
@@ -736,7 +736,8 @@
   function browseEveryItem():void{
     browsingAllItems=true;
     viewAxis='world';
-    selected='';sourceCategory=null;sourceActivityType=null;worldFilter='';universeFilter='';
+    selected='';sourceActivityType=null;sourceUniverseSelection=null;
+    worldFilter='';universeFilter='';
     search='';status='all';favoriteOnly=false;nameStatus='all';expansion='';
     sourceChoices={};acquisitionFilter='';bypassCategoryGroups=true;
     sourceFacetGroups=[];sourceGroupsCacheKey='';
@@ -745,43 +746,47 @@
   function chooseActivityType(code:number):void{
     if(!sourceIndex?.itemsByActivityType.has(code))return;
     sourceActivityType=code;
-    sourceCategory=null;selected='';browsingAllItems=false;
-    sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';
+    selected='';browsingAllItems=false;
+    sourceChoices=viewAxis==='world'&&sourceChoices.worldContextTag
+      ?{worldContextTag:sourceChoices.worldContextTag}:{};
+    sourceFacetGroups=[];sourceGroupsCacheKey='';
     bypassCategoryGroups=true;
     resetView();
   }
-  function chooseOriginalCategory(code:CollectionDb01SubmenuCode):void{
-    if(!sourceIndex||!(sourceIndex.itemsByCategory.get(code)?.length))return;
-    sourceActivityType=null;
-    sourceCategory=code;selected='';originalClassesOpen=false;browsingAllItems=false;
-    sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';
-    bypassCategoryGroups=true;resetView();
-  }
   function chooseFacet(id:string):void{
-    sourceCategory=null;sourceActivityType=null;
-    selected=id;bypassCategoryGroups=false;browsingAllItems=false;
-    sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';
+    sourceActivityType=null;
+    selected=id;bypassCategoryGroups=true;browsingAllItems=false;
+    sourceChoices=viewAxis==='world'&&sourceChoices.worldContextTag
+      ?{worldContextTag:sourceChoices.worldContextTag}:
+      viewAxis==='universe'&&sourceUniverseSelection&&
+        sourceUniverseSelection!==COLLECTION_UNIVERSE_UNTAGGED
+        ?{disneyUniverse:sourceUniverseSelection}:{};
+    sourceFacetGroups=[];sourceGroupsCacheKey='';
     resetView();ensureSourceIndex();
   }
   function changeViewAxis(axis:CollectionViewAxis):void{
     if(viewAxis===axis)return;
-    viewAxis=axis;selected='';sourceCategory=null;sourceActivityType=null;browsingAllItems=false;
+    viewAxis=axis;selected='';sourceActivityType=null;
+    sourceUniverseSelection=null;browsingAllItems=false;
     worldFilter='';universeFilter='';universeSearch='';
     sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';
     bypassCategoryGroups=false;search='';status='all';favoriteOnly=false;
     nameStatus='all';expansion='';resetView();
   }
   function chooseWorld(id:string):void{
-    selected='';sourceCategory=null;sourceActivityType=null;universeFilter='';bypassCategoryGroups=false;browsingAllItems=false;
+    selected='';sourceActivityType=null;sourceUniverseSelection=null;
+    universeFilter='';bypassCategoryGroups=false;browsingAllItems=false;
     const fromSource=sourceIndex&&sourceWorldOptions.some(option=>option.key===id);
     worldFilter=fromSource?'':id;
     sourceChoices=fromSource?{worldContextTag:id}:{};
     sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
   }
   function chooseUniverse(id:string):void{
-    selected='';sourceCategory=null;sourceActivityType=null;bypassCategoryGroups=false;browsingAllItems=false;
-    universeFilter=sourceIndex&&sourceUniverseOptions.length?'':id;
-    sourceChoices=sourceIndex&&sourceUniverseOptions.length&&id
+    selected='';sourceActivityType=null;bypassCategoryGroups=false;browsingAllItems=false;
+    worldFilter='';
+    sourceUniverseSelection=sourceIndex&&id?id:null;
+    universeFilter=sourceIndex?'':id;
+    sourceChoices=sourceIndex&&id&&id!==COLLECTION_UNIVERSE_UNTAGGED
       ?{disneyUniverse:id}:{};
     sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
   }
@@ -789,9 +794,13 @@
     bypassCategoryGroups=true;universeFilter='';resetView();
   }
   function returnToCategory():void{
-    browsingAllItems=false;selected='';sourceCategory=null;sourceActivityType=null;
-    universeFilter=viewAxis==='universe'?universeFilter:'';
-    sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';
+    browsingAllItems=false;selected='';sourceActivityType=null;
+    sourceChoices=viewAxis==='world'&&sourceChoices.worldContextTag
+      ?{worldContextTag:sourceChoices.worldContextTag}:
+      viewAxis==='universe'&&sourceUniverseSelection&&
+        sourceUniverseSelection!==COLLECTION_UNIVERSE_UNTAGGED
+        ?{disneyUniverse:sourceUniverseSelection}:{};
+    sourceFacetGroups=[];sourceGroupsCacheKey='';
     bypassCategoryGroups=false;search='';status='all';favoriteOnly=false;
     nameStatus='all';expansion='';resetView();
   }
@@ -799,7 +808,8 @@
     universeFilter='';bypassCategoryGroups=false;resetView();
   }
   function clearScope():void{
-    browsingAllItems=false;selected='';sourceCategory=null;sourceActivityType=null;
+    browsingAllItems=false;selected='';sourceActivityType=null;
+    sourceUniverseSelection=null;
     search='';status='all';favoriteOnly=false;nameStatus='all';
     expansion='';worldFilter='';universeFilter='';universeSearch='';
     bypassCategoryGroups=false;sourceChoices={};acquisitionFilter='';
