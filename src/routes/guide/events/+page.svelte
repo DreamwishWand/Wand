@@ -1,5 +1,6 @@
 <script lang="ts">
   import {onMount} from 'svelte';
+  import WandIcon from '$lib/ui/WandIcon.svelte';
   import {base} from '$app/paths';
   import {watchWandLanguage} from '$lib/ui/preferences';
   import {
@@ -11,7 +12,8 @@
     type EventRewardItemLabelIndex,type GuideRewardLocale,
   } from '$lib/guide/event-reward-item-labels.ts';
   import {resolveEventRewardItemDestination,resolveEventRewardOccurrenceDestination,
-    guideEventRewardOccurrenceHref,relatedEventRewardIds}
+    guideEventRewardOccurrenceHref,relatedEventRewardIds,
+    guideEventRewardCollectionHref}
     from '$lib/guide/event-reward-navigation.ts';
   import {loadNewPublishedEventRewardNames,
     type PublicEventRewardNameRefresh}
@@ -69,6 +71,10 @@
   function itemCategory(itemId:string):string|null{
     return refreshedNames?.getSourceCategory(itemId)??
       labels?.getItem(itemId)?.sourceCategory??null;
+  }
+  function collectionHref(itemId:string):string|null{
+    return source?guideEventRewardCollectionHref(
+      source,labels,refreshedNames,itemId,base):null;
   }
   function questTitle(questId:string):string{
     const quest=questCatalogue?.quests.find((row:any)=>row.id===questId);
@@ -379,6 +385,11 @@
                     {/if}
                   </div>
                   {#if reward.configuredAmount!==null}<span class="amount">×{reward.configuredAmount}</span>{/if}
+                  {#if collectionHref(reward.itemId)}
+                    <a class="collection-reward-link" href={collectionHref(reward.itemId)}
+                      aria-label={`Collectionで開く：${itemName(reward.itemId)}`}
+                      title="Collectionで開く"><WandIcon name="collection" size={18}/></a>
+                  {/if}
                 </div>
               {/each}
             </div>
@@ -403,6 +414,11 @@
                       <span class="meta">{stages[reward.stage]} · ID {reward.itemId}</span>
                     </div>
                     <span class="amount">×{reward.configuredAmount}</span>
+                    {#if collectionHref(reward.itemId)}
+                      <a class="collection-reward-link" href={collectionHref(reward.itemId)}
+                        aria-label={`Collectionで開く：${itemName(reward.itemId)}`}
+                        title="Collectionで開く"><WandIcon name="collection" size={18}/></a>
+                    {/if}
                   </div>
                 {/each}
               </div>
@@ -462,6 +478,8 @@
   .reward-text{min-width:0;display:flex;flex-direction:column;gap:3px;flex:1}
   .reward-text strong{font-size:12px;font-weight:650;overflow-wrap:anywhere}
   .reward-text .meta{font-size:10px;color:#b3a1c0;overflow-wrap:anywhere}
+  .collection-reward-link{display:grid;place-items:center;flex:0 0 30px;width:30px;height:30px;border:1px solid #655079;border-radius:8px;color:#ddc3f5;text-decoration:none}
+  .collection-reward-link:hover,.collection-reward-link:focus-visible{background:#453358;color:#fff}
   .related-item-events{align-self:flex-start;font-size:11px;color:#dec6ff;text-underline-offset:3px}
   .related-item-events:hover,.related-item-events:focus-visible{color:white}
   .amount{font-size:13px;color:#e3cfef;white-space:nowrap}

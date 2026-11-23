@@ -384,6 +384,16 @@ try {
   assert.match(await limited.locator('.reward-detail').innerText(),/HauntedFloatingFestival2026/);
   assert.equal(await limited.locator('.reward-detail .reward-row').count(),1,
     'direct item link narrows the source event to the exact matching reward slot');
+  const collectionReward=limited.locator('.reward-detail a.collection-reward-link');
+  await collectionReward.waitFor({timeout:20000});
+  assert.equal(await collectionReward.getAttribute('href'),'/Wand/collection/?item=40006319');
+  await collectionReward.click();
+  await limited.locator('.item-inspector h2').waitFor({timeout:30000});
+  assert.match(await limited.locator('.item-inspector h2').innerText(),/人食い宝箱|Chomping Chest/,
+    'published v1.26.2 reward must open its verified Collection item inspector');
+  await limited.goBack({waitUntil:'domcontentloaded'});
+  await limited.locator('.reward-detail .reward-row').first().waitFor({timeout:20000});
+  assert.equal(await limited.locator('.reward-detail .reward-row').count(),1);
   await limited.getByRole('button',{name:'すべて表示'}).click();
   assert.equal(await limited.locator('.reward-detail .reward-row').count(),9,
     'clearing a direct Item-ID focus restores all original event reward slots');
@@ -395,6 +405,8 @@ try {
   assert.match(await limited.locator('.friendship .reward-row').first().innerText(),
     /Item ID 80000000/,
     'a reward outside the published DB-00 release must not acquire a fabricated name');
+  assert.equal(await limited.locator('.friendship a.collection-reward-link').count(),0,
+    'do not generate a Collection deep link for unpublished source Item IDs');
   // Native Duty IDs are searchable without an unattributed duty-name UI:
   // one 2026-only original duty must select the exact source Mini Event.
   await limited.goto('http://127.0.0.1:4177/Wand/guide/events/',
