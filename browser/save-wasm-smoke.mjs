@@ -1878,6 +1878,66 @@ try{
   assert.equal(await gridRows.locator('li').count(),0);
   await largeGrid.getByLabel('配置アイテム検索').fill('');
   assert.equal(await gridRows.locator('li').count(),120);
+
+  // Verify the SvelteKit route-leave guard separately from the shared File
+  // close/replace dialogs. A cancelled internal navigation must preserve the
+  // exact staged edit and stay on Save; accepting it may leave the workspace.
+  await tabs.getByRole('button',{name:'Inventory / Chest'}).click();
+  await largeItems.getByRole('button',{
+    name:'所持アイテム 777 を選択'
+  }).click();
+  assert.equal(await regular.getByLabel('現在の数量').inputValue(),'1');
+  await regular.getByLabel('変更後の数量').fill('88');
+  await regular.getByRole('button',{name:'複数編集に追加'}).click();
+  assert.match(await unifiedSave.innerText(),/数量1件・配置0件/);
+  const exitDialogs=[];
+  const declineExit=async dialog=>{
+    exitDialogs.push({kind:dialog.type(),message:dialog.message()});
+    await dialog.dismiss();
+  };
+  page.on('dialog',declineExit);
+  await page.locator('a.header-home-button').click({noWaitAfter:true});
+  await page.waitForFunction(()=>
+    window.location.pathname.endsWith('/save/')&&
+    document.querySelector('[aria-label="編集済みセーブの出力"]')!==null
+  );
+  assert.equal(exitDialogs.length,1,
+    'one route-leave attempt must not display stacked confirmation dialogs');
+  assert.match(exitDialogs[0].message,/未出力の数量・配置/);
+  assert.match(exitDialogs[0].message,/移動/);
+  assert.match(await unifiedSave.innerText(),/数量1件・配置0件/);
+  await largeItems.getByRole('button',{
+    name:'所持アイテム 777 を選択'
+  }).click();
+  assert.equal(await regular.getByLabel('変更後の数量').inputValue(),'88',
+    'cancelling internal navigation must preserve the draft amount');
+  page.off('dialog',declineExit);
+
+  const acceptedDialogs=[];
+  const acceptExit=async dialog=>{
+    acceptedDialogs.push({kind:dialog.type(),message:dialog.message()});
+    await dialog.accept();
+  };
+  page.on('dialog',acceptExit);
+  await page.locator('a.header-home-button').click({noWaitAfter:true});
+  await page.waitForURL('**/Wand/',{timeout:30000});
+  page.off('dialog',acceptExit);
+  assert.equal(acceptedDialogs.length,1,
+    'confirmed internal route-leave must use one confirmation');
+  assert.match(acceptedDialogs[0].message,/未出力の数量・配置/);
+
+  // The File session is shared, but the editor's staged edits must not
+  // leak into a fresh workspace after an explicit, approved route exit.
+  await page.getByRole('button',{name:'セーブファイル管理'}).click();
+  await page.getByRole('button',{name:'Save Editor（テスト版）'}).click();
+  await page.waitForURL('**/save/');
+  await page.locator('main.editor-workspace')
+    .getByRole('region',{name:'セーブ内アイテム'})
+    .getByRole('status').filter({hasText:'154件'})
+    .waitFor({timeout:30000});
+  assert.equal(await page.getByRole('region',{
+    name:'編集済みセーブの出力'
+  }).count(),0,'approved route change discards only prior editor drafts');
   assert.deepEqual(errors,[],errors.join('\n'));
   await page.close();
   console.log('DB-05 browser: explicit JSON/P1G edited-copy downloads, native reopen, stale rejection, original preservation PASS');
