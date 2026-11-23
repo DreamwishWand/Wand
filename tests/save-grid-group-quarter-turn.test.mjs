@@ -32,6 +32,31 @@ test('quarter-turn drafts preserve the first saved anchor and turn cardinal orie
   assert.deepEqual(original,before,'the candidate engine must not mutate source');
 });
 
+test('explicit pivot can be any selected ordinal but never an outsider',()=>{
+  const original=[{...a},{...b}];
+  const prior=structuredClone(original);
+  const rightPivot=draftGridGroupQuarterTurn(original,'clockwise',2);
+  assert.ok(rightPivot);
+  assert.deepEqual(rightPivot.map(p=>[
+    p.localOrdinal,p.replacementX,p.replacementY,p.replacementOrientation
+  ]),[
+    [1,51,5,'GridOrientation_Right'],
+    [2,null,null,'GridOrientation_Up']
+  ]);
+  const leftPivot=draftGridGroupQuarterTurn(original,'counterclockwise',2);
+  assert.ok(leftPivot);
+  assert.deepEqual(leftPivot.map(p=>[
+    p.localOrdinal,p.replacementX,p.replacementY,p.replacementOrientation
+  ]),[
+    [1,49,15,'GridOrientation_Left'],
+    [2,null,null,'GridOrientation_Down']
+  ]);
+  assert.equal(draftGridGroupQuarterTurn(original,'clockwise',3),null);
+  assert.equal(draftGridGroupQuarterTurn(original,'clockwise',null),null);
+  assert.equal(draftGridGroupQuarterTurn(original,'clockwise',1.5),null);
+  assert.deepEqual(original,prior);
+});
+
 test('no unknown orientation, non-positioned object, mixed grid or duplicate is staged',()=>{
   assert.equal(draftGridGroupQuarterTurn([a,{...b,orientation:null}],'clockwise'),null);
   assert.equal(draftGridGroupQuarterTurn([a,{...b,orientation:'Oblique'}],'clockwise'),null);

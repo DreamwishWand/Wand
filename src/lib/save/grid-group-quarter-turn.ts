@@ -41,10 +41,11 @@ const int32=(value:unknown):value is number=>
 function cardinalIndex(value:unknown):number {
   return cardinals.findIndex(candidate=>candidate===value);
 }
-/** The first selected object is the fixed pivot; Y grows down on this map. */
+/** The chosen selected object is the fixed pivot; Y grows down on this map. */
 export function draftGridGroupQuarterTurn(
   sources:readonly GridQuarterTurnSource[],
-  direction:GridQuarterTurnDirection
+  direction:GridQuarterTurnDirection,
+  pivotOrdinal?:number
 ):readonly GridQuarterTurnDraft[]|null {
   if(!Array.isArray(sources)||sources.length<2||sources.length>16||
      (direction!=='clockwise'&&direction!=='counterclockwise'))return null;
@@ -60,13 +61,18 @@ export function draftGridGroupQuarterTurn(
        cardinalIndex(row.orientation)<0)return null;
     ids.add(row.localOrdinal);
   }
+  // Explicit pivots must refer to a selected ordinal. Never silently rotate
+  // about a different point when a stale/foreign ordinal is supplied.
+  const pivot=pivotOrdinal===undefined?first:
+    sources.find(row=>row.localOrdinal===pivotOrdinal);
+  if(!pivot||!int32(pivot.x)||!int32(pivot.y))return null;
   const sign=direction==='clockwise'?1:-1;
   const result:GridQuarterTurnDraft[]=[];
   for(const row of sources){
     // The above guard establishes original integer coordinates and orientation.
     const x=row.x as number,y=row.y as number;
-    const dx=x-first.x,dy=y-first.y;
-    const newX=first.x-sign*dy,newY=first.y+sign*dx;
+    const dx=x-pivot.x,dy=y-pivot.y;
+    const newX=pivot.x-sign*dy,newY=pivot.y+sign*dx;
     if(!int32(newX)||!int32(newY))return null;
     const current=cardinalIndex(row.orientation);
     result.push({

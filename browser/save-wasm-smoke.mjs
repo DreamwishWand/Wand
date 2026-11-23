@@ -839,6 +839,22 @@ try{
   const rotateYMaximum=Number((await rotateMap.locator('.y-axis')
     .innerText()).split('～')[1].trim());
   assert.ok(rotateYMaximum>=114,'viewport includes offscreen rotation target');
+  // Change the pivot AFTER requesting a right turn. The preview must
+  // recompute immediately without changing the selected group or original.
+  const pivotSelect=rotateMap.getByLabel('回転中心');
+  assert.equal(await pivotSelect.inputValue(),'1');
+  await pivotSelect.selectOption('2');
+  assert.equal(await rotateMap.locator('.group-ghost').count(),1);
+  assert.equal(await rotateMap.locator(
+    '.group-ghost[title*="#1 X 151 Y -95"]'
+  ).count(),1);
+  assert.equal(await rotateMap.locator('.marker.pivot').count(),1);
+  assert.equal(await rotateMap.locator(
+    '.marker.pivot[aria-label="配置 2 をグループから除外"]'
+  ).count(),1);
+  const shiftedYMinimum=Number((await rotateMap.locator('.y-axis')
+    .innerText()).split('～')[0].replace('Y','').trim());
+  assert.ok(shiftedYMinimum<=-95,'chosen pivot destination is in view');
   await rotateMap.getByRole('button',{
     name:'2件の回転を配置編集に追加'
   }).click();
@@ -846,7 +862,7 @@ try{
   await rotateBatch.getByText('2 / 16件').waitFor();
   assert.equal(await rotateMap.locator('.queued-ghost').count(),1);
   assert.equal(await rotateMap.locator(
-    '.queued-ghost[title*="#2 X 44 Y 114"]'
+    '.queued-ghost[title*="#1 X 151 Y -95"]'
   ).count(),1);
   const rotateEditor=objects.getByLabel('座標編集',{exact:true});
   await rotateBatch.getByRole('button',{name:'一括配置変更を検証'}).click();
@@ -868,11 +884,11 @@ try{
   assert.deepEqual([
     rotatedObjects['1'].X,rotatedObjects['1'].Y,
     rotatedObjects['1'].Orientation
-  ],[45,9,'GridOrientation_Right']);
+  ],[151,-95,'GridOrientation_Right']);
   assert.deepEqual([
     rotatedObjects['2'].X,rotatedObjects['2'].Y,
     rotatedObjects['2'].Orientation
-  ],[44,114,'GridOrientation_Up']);
+  ],[150,10,'GridOrientation_Up']);
   assert.equal(rotatedObjects['1'].PrivateState,'do-not-export');
   assert.equal(rotatedObjects['2'].PrivateGroup,'keep-both');
   assert.equal(rotatedCopy.World.GridCollection.DiffGrids['102']

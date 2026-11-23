@@ -24,9 +24,10 @@
     (ordinals:readonly number[],dx:number,dy:number)=>boolean=()=>false;
   export let mixedQueuedOrdinals:readonly number[]=[];
   export let onStageGroupRotation:
-    (ordinals:readonly number[],direction:GridQuarterTurnDirection)=>boolean=
-      ()=>false;
+    (ordinals:readonly number[],direction:GridQuarterTurnDirection,
+      pivotOrdinal:number)=>boolean=()=>false;
   let rotationDirection:GridQuarterTurnDirection|null=null;
+  let rotationPivotOrdinal:number|null=null;
   let placing=false;
   let groupMode=false;
   let groupPlacing=false;
@@ -78,6 +79,7 @@
       // A changed selection needs an explicit new destination click.
       groupPlacing=false;
       rotationDirection=null;
+      rotationPivotOrdinal=null;
       // Same-point objects must be selected as a unit on the map;
       // the original coordinates and unique ordinals are not altered.
       const allSelected=marker.ordinals.every(id=>groupOrdinals.includes(id));
@@ -138,20 +140,27 @@
       groupIssue='選択済みの編集と重複している可能性があります。';
     }
   }
-  function rotationCandidates(direction:GridQuarterTurnDirection|null){
-    if(!direction||groupOrdinals.length<2||groupOrdinals.length>16)return null;
+  function rotationCandidates(
+    direction:GridQuarterTurnDirection|null,pivot:number|null
+  ){
+    if(!direction||pivot===null||groupOrdinals.length<2||
+       groupOrdinals.length>16)return null;
     const selected=groupOrdinals.map(id=>
       points.find(row=>row.localOrdinal===id));
     if(selected.some(row=>row===undefined))return null;
-    return draftGridGroupQuarterTurn(selected as Point[],direction);
+    return draftGridGroupQuarterTurn(selected as Point[],direction,pivot);
   }
   function stageRotation(){
-    if(!groupMode||disabled||!rotationDirection||!rotationReady)return;
-    if(onStageGroupRotation([...groupOrdinals],rotationDirection)){
+    if(!groupMode||disabled||!rotationDirection||!rotationReady||
+       effectiveRotationPivot===null)return;
+    if(onStageGroupRotation(
+      [...groupOrdinals],rotationDirection,effectiveRotationPivot
+    )){
       groupOrdinals=[];
       groupMode=false;
       groupPlacing=false;
       rotationDirection=null;
+      rotationPivotOrdinal=null;
       groupIssue='';
     }else{
       groupIssue='回転対象の状態または編集キューを確認してください。';
@@ -238,6 +247,7 @@
     groupMode=false;
     groupPlacing=false;
     rotationDirection=null;
+    rotationPivotOrdinal=null;
     groupIssue='';
   }
   $: groupDeltaX=offsetNumber(groupOffsetX);
@@ -247,7 +257,10 @@
   $: groupReady=groupTargets!==null&&
     queuedOrdinals.length+groupOrdinals.length<=16&&
     !groupOrdinals.some(id=>queuedOrdinals.includes(id));
-  $: rotationTargets=groupMode?rotationCandidates(rotationDirection):null;
+  $: effectiveRotationPivot=groupOrdinals.includes(rotationPivotOrdinal??-1)
+    ?rotationPivotOrdinal:groupOrdinals[0]??null;
+  $: rotationTargets=groupMode
+    ?rotationCandidates(rotationDirection,effectiveRotationPivot):null;
   $: rotationReady=rotationTargets!==null&&
     mixedQueuedOrdinals.length+groupOrdinals.length<=16&&
     !groupOrdinals.some(id=>
@@ -291,7 +304,8 @@
       bind:value={selectedGrid} disabled={disabled||grids.length===0}
       on:change={()=>{
         placing=false;groupMode=false;groupPlacing=false;
-        rotationDirection=null;groupOrdinals=[];groupIssue='';
+        rotationDirection=null;rotationPivotOrdinal=null;
+        groupOrdinals=[];groupIssue='';
       }}>
       {#each grids as grid}
         <option value={grid.id}>
@@ -309,7 +323,7 @@
       disabled={disabled||!selectedInGrid}
       on:click={()=>{
         placing=!placing;groupMode=false;groupPlacing=false;
-        rotationDirection=null;groupOrdinals=[];
+        rotationDirection=null;rotationPivotOrdinal=null;groupOrdinals=[];
       }}>
       {placing?'移動先の指定を終了':'移動先をマップで指定'}
     </button>
@@ -318,7 +332,8 @@
       disabled={disabled||points.length<2}
       on:click={()=>{
         groupMode=!groupMode;placing=false;groupPlacing=false;
-        rotationDirection=null;groupOrdinals=[];groupIssue='';
+        rotationDirection=null;rotationPivotOrdinal=null;
+        groupOrdinals=[];groupIssue='';
       }}>
       {groupMode?'複数選択を終了':'複数配置を一括移動'}
     </button>
@@ -367,6 +382,8 @@
           class:selected={groupMode
             ?marker.ordinals.every(id=>groupOrdinals.includes(id))
             :marker.ordinals.includes(selectedOrdinal??-1)}
+          class:pivot={groupMode&&groupOrdinals.length>=2&&
+            marker.ordinals.includes(effectiveRotationPivot??-1)}
           class="marker" disabled={disabled}
           aria-pressed={groupMode
             ?marker.ordinals.every(id=>groupOrdinals.includes(id))
@@ -409,6 +426,21 @@
           on:click={stageGroup}>
           選択した{groupOrdinals.length}件を座標編集に追加
         </button>
+        {#if groupOrdinals.length>=2}
+          <label>回転中心
+            <select aria-label="回転中心"
+              value={effectiveRotationPivot??''}
+              disabled={disabled}
+              on:change={event=>{
+                rotationPivotOrdinal=Number(event.currentTarget.value);
+                groupIssue='';
+              }}>
+              {#each groupOrdinals as ordinal}
+                <option value={ordinal}>配置 #{ordinal}</option>
+              {/each}
+            </select>
+          </label>
+        {/if}
         <button type="button" class="placement-mode"
           aria-pressed={rotationDirection==='counterclockwise'}
           disabled={disabled||groupOrdinals.length<2}
@@ -431,7 +463,7 @@
             disabled={disabled}
             on:click={()=>{
               groupOrdinals=[];groupPlacing=false;
-              rotationDirection=null;groupIssue='';
+              rotationDirection=null;rotationPivotOrdinal=null;groupIssue='';
             }}>
             選択を解除
           </button>
@@ -441,7 +473,7 @@
           <small>移動量を確認してください。0移動、整数範囲外、または未確認座標は登録できません。</small>
         {/if}
       </div>
-      <small class="map-hint">同一Gridのマーカーを選択します。座標が重複する配置は同時選択されます。マップ指定では最初に選択した配置をクリック位置へ移動する移動量を算出します。回転では最初の選択位置を中心に数値X/Yと上下左右の向きを90°変更します。座標範囲外・向き不明・既存編集と重複する候補は登録できません。編集キューへ追加してもセーブは変更されません。</small>
+      <small class="map-hint">同一Gridのマーカーを選択します。座標が重複する配置は同時選択されます。マップ指定では最初に選択した配置をクリック位置へ移動する移動量を算出します。回転では指定した配置物の座標を中心に数値X/Yと上下左右の向きを90°変更します。座標範囲外・向き不明・既存編集と重複する候補は登録できません。編集キューへ追加してもセーブは変更されません。</small>
     {/if}
     {#if draftIsChanged&&draftX!==null&&draftY!==null}
       <small class="map-hint" role="status">
@@ -508,6 +540,7 @@
   .marker:hover,.marker:focus-visible,.marker.selected{
     border-color:#fff;background:#f3c66b;color:#2a1b25;
     outline:2px solid #f3c66b;outline-offset:2px;z-index:3;}
+  .marker.pivot{box-shadow:0 0 0 4px #5cdcc5;}
   .marker:disabled{opacity:.55;cursor:not-allowed;}
   .empty{margin:0;font-size:13px;color:#d4c2df;}
   .map-hint{font-size:11px;color:#d4c2df;line-height:1.4;}
