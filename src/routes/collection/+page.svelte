@@ -283,7 +283,10 @@
     if(!canUseDb01SourceFacets()||sourceIndex||sourceLoad)return;
     const task=loadCollectionDb01Facets(base).then(index=>{
       if(!canUseDb01SourceFacets())return;
-      sourceIndex=index;sourceGroupsCacheKey='';refresh();
+      sourceIndex=index;sourceGroupsCacheKey='';
+      // Do not discard or re-query the user's current 72-item scroll page
+      // when an optional Tag index finishes loading in the background.
+      if(filtersOpen&&selected)refresh();
     }).catch(()=>{ // Optional browse facets never block Collection startup.
       sourceIndex=null;
     }).finally(()=>{if(sourceLoad===task)sourceLoad=null;});
