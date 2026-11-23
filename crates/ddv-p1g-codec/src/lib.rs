@@ -1564,6 +1564,89 @@ mod browser_amount_preview {
             self.prepare_copy_from_patched(draft.patched_json,true)
         }
 
+        /// Experimental combined amount + Grid transaction. Both plans
+        /// are optimistic-checked against the SAME immutable original source.
+        /// Save bytes and private native object identities never leave WASM.
+        pub fn preview_grid_and_quantity_batch(
+            &mut self,grid_plan:&str,quantity_plan:&str
+        )->Result<String,JsValue>{
+            let grid_count=parse_grid_mixed_batch_plan(grid_plan)?.len();
+            let amount_count=parse_batch_plan(quantity_plan)?.len();
+            self.prepare_grid_and_quantity_batch_copy(grid_plan,quantity_plan)?;
+            Ok(format!(concat!(
+                r#"{{"contract":"wand.db05.grid-quantity-preview@1","#,
+                r#""gridChangedCount":{},"amountChangedCount":{},"#,
+                r#""lexicalBytesPreserved":true,"reopenVerified":true,"#,
+                r#""writerAuthorized":false,"exportAuthorized":false,"#,
+                r#""placementLegalityVerified":false}}"#
+            ),grid_count,amount_count))
+        }
+        pub fn prepare_grid_and_quantity_batch_copy(
+            &mut self,grid_plan:&str,quantity_plan:&str
+        )->Result<u32,JsValue>{
+            if !self.ready||self.closed||self.copy_prepared||
+               self.copy_position!=0{
+                return Err(fail("DB05_GRID_QUANTITY_SESSION_INVALID"));
+            }
+            let grid_plans=parse_grid_mixed_batch_plan(grid_plan)?;
+            let quantity_edits=parse_batch_plan(quantity_plan)?;
+            let original=match self.kind{
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref()
+                    .ok_or(fail("DB05_GRID_QUANTITY_SESSION_INVALID"))?
+                    .profile.as_slice()
+            };
+            let source=std::str::from_utf8(original)
+                .map_err(|_|fail("DB05_GRID_QUANTITY_SOURCE_INVALID"))?;
+            // Quantity targets are checked on the immutable original, not
+            // merely on an intermediate candidate produced by Grid edits.
+            let mut amount_check=preview_existing_quantity_batch(
+                source,&quantity_edits
+            ).map_err(|_|fail("DB05_GRID_QUANTITY_AMOUNT_STALE"))?;
+            let valid_amounts=amount_check.changed_count==quantity_edits.len()&&
+                amount_check.untouched_bytes_preserved&&
+                !amount_check.writer_authorized&&!amount_check.export_authorized;
+            amount_check.patched_json.zeroize();
+            if !valid_amounts{
+                return Err(fail("DB05_GRID_QUANTITY_AMOUNT_INVALID"));
+            }
+            let selectors=grid_plans.iter().map(|p|(
+                p.ordinal,p.item_id,p.expected,p.kind.clone(),
+                p.orientation.as_ref().map(|v|v.0.clone())
+            )).collect::<Vec<_>>();
+            let targets=grid_instance_preview::resolve_grid_mixed_targets(
+                original,&selectors
+            ).map_err(|_|fail("DB05_GRID_QUANTITY_GRID_STALE"))?;
+            let edits=grid_plans.iter().zip(targets).map(|(p,target)|
+                GridMixedEdit{
+                    target,expected:p.expected,position:p.position,
+                    orientation:p.orientation.clone()
+                }
+            ).collect::<Vec<_>>();
+            let mut grid_draft=preview_existing_grid_mixed_batch(source,&edits)
+                .map_err(|_|fail("DB05_GRID_QUANTITY_GRID_INVALID"))?;
+            if !grid_draft.changed||!grid_draft.untouched_bytes_preserved||
+               grid_draft.writer_authorized||grid_draft.export_authorized{
+                grid_draft.patched_json.zeroize();
+                return Err(fail("DB05_GRID_QUANTITY_GRID_UNAUTHORIZED"));
+            }
+            // Separate known JSON paths: GridObject coordinates/orientation
+            // versus Inventory/Chest Amount. A second optimistic check after
+            // Grid editing guarantees that no quantity field was touched.
+            let amount_draft=preview_existing_quantity_batch(
+                &grid_draft.patched_json,&quantity_edits
+            );
+            grid_draft.patched_json.zeroize();
+            let amount_draft=amount_draft
+                .map_err(|_|fail("DB05_GRID_QUANTITY_SOURCE_OVERLAP"))?;
+            if amount_draft.changed_count!=quantity_edits.len()||
+               !amount_draft.untouched_bytes_preserved||
+               amount_draft.writer_authorized||amount_draft.export_authorized{
+                return Err(fail("DB05_GRID_QUANTITY_UNAUTHORIZED"));
+            }
+            self.prepare_copy_from_patched(amount_draft.patched_json,true)
+        }
+
         pub fn preview_inventory(
             &mut self,inventory_id:&str,item_id:&str,expected:u32,replacement:u32
         )->Result<String,JsValue>{

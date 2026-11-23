@@ -658,6 +658,16 @@ interface BatchPreviewReceipt {
   writerAuthorized: false;
   exportAuthorized: false;
 }
+interface GridQuantityPreviewReceipt {
+  contract:'wand.db05.grid-quantity-preview@1';
+  gridChangedCount:number;
+  amountChangedCount:number;
+  lexicalBytesPreserved:true;
+  reopenVerified:true;
+  writerAuthorized:false;
+  exportAuthorized:false;
+  placementLegalityVerified:false;
+}
 interface CopyReceipt {
   contract: 'wand.db05.experimental-copy@1';
   copyBytes: number;
@@ -671,7 +681,7 @@ type Reply =
   | { kind: 'result'; receipt: PreviewReceipt | BatchPreviewReceipt |
       GridCoordinatePreviewReceipt | GridCoordinateBatchReceipt |
       GridOrientationPreviewReceipt | GridTransformPreviewReceipt |
-      GridMixedPreviewReceipt }
+      GridMixedPreviewReceipt | GridQuantityPreviewReceipt }
   | { kind: 'copy'; bytes: Uint8Array; receipt: CopyReceipt }
   | { kind: 'slots'; rows: SaveEditableSlot[];
       grid:SaveGridReferenceReport;
@@ -802,13 +812,17 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
     const gridMixedPreview=input?.command==='preview-grid-mixed-batch';
     const gridMixedCopy=input?.command==='export-grid-mixed-batch-copy';
     const gridMixed=gridMixedPreview||gridMixedCopy;
+    const jointPreview=input?.command==='preview-grid-and-quantity-batch';
+    const jointCopy=input?.command==='export-grid-and-quantity-batch-copy';
+    const joint=jointPreview||jointCopy;
     const gridBatchPreview=input?.command==='preview-grid-coordinate-batch';
     const gridBatchCopy=input?.command==='export-grid-coordinate-batch-copy';
     const gridBatch=gridBatchPreview||gridBatchCopy;
     const instances=input?.command === 'inspect-grid-instances';
     const exporting = input?.command === 'export-existing-amount-copy' ||
       input?.command === 'export-batch-amount-copy'||gridCopy||
-      gridBatchCopy||orientationCopy||transformCopy||gridMixedCopy;
+      gridBatchCopy||orientationCopy||transformCopy||gridMixedCopy||
+      jointCopy;
     const batch = input?.command === 'preview-batch-amounts' ||
       input?.command === 'export-batch-amount-copy';
     const expectedKeys = compareDb04
@@ -830,6 +844,10 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
       : gridMixed ? (gridMixedCopy
         ? ['command','format','bytes','edits','allowExperimentalCopy']
         : ['command','format','bytes','edits'])
+      : joint ? (jointCopy
+        ? ['command','format','bytes','gridEdits','quantityEdits',
+           'allowExperimentalCopy']
+        : ['command','format','bytes','gridEdits','quantityEdits'])
       : batch
       ? (exporting
         ? ['command', 'format', 'bytes', 'edits', 'allowExperimentalCopy']
@@ -847,7 +865,9 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
           'preview-grid-coordinate-batch','export-grid-coordinate-batch-copy',
           'preview-grid-orientation','export-grid-orientation-copy',
           'preview-grid-transform','export-grid-transform-copy',
-          'preview-grid-mixed-batch','export-grid-mixed-batch-copy'].includes(
+          'preview-grid-mixed-batch','export-grid-mixed-batch-copy',
+          'preview-grid-and-quantity-batch',
+          'export-grid-and-quantity-batch-copy'].includes(
           String(input.command)) ||
         (exporting && input.allowExperimentalCopy !== true) ||
         !['auto', 'json', 'p1g'].includes(String(input.format)) ||
@@ -857,7 +877,8 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
         (compareDb03 && (typeof input.base!=='string' ||
           !(input.base===''||
             /^\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/.test(input.base)))) ||
-        (!batch && !gridBatch && !gridMixed && !listing && !instances && !compareDb04 &&
+        (!batch && !gridBatch && !gridMixed && !joint &&
+        !listing && !instances && !compareDb04 &&
           !compareDb03 && !gridEdit && !orientationEdit && !transformEdit &&
           (!uint32(input.expected)||!uint32(input.replacement))))
       throw new TypeError('DB05_WORKER_COMMAND_INVALID');
@@ -871,13 +892,15 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
     const gridBatchPlan=gridBatch
       ? JSON.stringify({edits:validateGridCoordinateBatchEdits(input.edits)})
       : null;
-    const gridMixedPlan=gridMixed
-      ? JSON.stringify({edits:validateGridMixedEdits(input.edits)})
+    const gridMixedPlan=gridMixed||joint
+      ? JSON.stringify({edits:validateGridMixedEdits(
+          joint?input.gridEdits:input.edits)})
       : null;
-    const edits = batch ? validateBatchEdits(input.edits) : null;
+    const edits = batch||joint
+      ? validateBatchEdits(joint?input.quantityEdits:input.edits):null;
     const plan = edits === null ? null : JSON.stringify({edits});
     const target = (batch||listing||instances||compareDb04||compareDb03||
-      gridEdit||gridBatch||gridMixed||orientationEdit||transformEdit)
+      gridEdit||gridBatch||gridMixed||joint||orientationEdit||transformEdit)
       ? null : validateTarget(input.target);
     const requestedFormat = input.format as InputFormat;
     const format: Exclude<InputFormat, 'auto'> =
@@ -895,7 +918,26 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
       rust.append_chunk(bytes.subarray(i, i + CHUNK));
     rust.finish_open();
 
-    if(gridMixedPreview){
+    if(jointPreview){
+      const gridCount=validateGridMixedEdits(input.gridEdits).length;
+      const amountCount=validateBatchEdits(input.quantityEdits).length;
+      const receipt:unknown=JSON.parse(rust.preview_grid_and_quantity_batch(
+        gridMixedPlan!,plan!));
+      if(!object(receipt)||!exact(receipt,[
+        'contract','gridChangedCount','amountChangedCount',
+        'lexicalBytesPreserved','reopenVerified','writerAuthorized',
+        'exportAuthorized','placementLegalityVerified'
+      ])||receipt.contract!=='wand.db05.grid-quantity-preview@1'||
+         receipt.gridChangedCount!==gridCount||
+         receipt.amountChangedCount!==amountCount||
+         receipt.lexicalBytesPreserved!==true||
+         receipt.reopenVerified!==true||receipt.writerAuthorized!==false||
+         receipt.exportAuthorized!==false||
+         receipt.placementLegalityVerified!==false)
+        throw new TypeError('DB05_GRID_QUANTITY_RECEIPT_INVALID');
+      response={kind:'result',
+        receipt:receipt as unknown as GridQuantityPreviewReceipt};
+    }else if(gridMixedPreview){
       const selected=validateGridMixedEdits(input.edits);
       const receipt:unknown=JSON.parse(
         rust.preview_grid_mixed_batch(gridMixedPlan!));
@@ -1026,7 +1068,9 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
         complete:true,writerAuthorized:false
       };
     }else if (exporting) {
-      const length = gridMixedCopy
+      const length = jointCopy
+        ? rust.prepare_grid_and_quantity_batch_copy(gridMixedPlan!,plan!)
+        : gridMixedCopy
         ? rust.prepare_grid_mixed_batch_copy(gridMixedPlan!)
         : transformCopy
         ? rust.prepare_grid_transform_copy(transformPlan!)
