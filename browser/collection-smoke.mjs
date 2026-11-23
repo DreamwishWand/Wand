@@ -506,7 +506,11 @@ try{
     // Exact verified per-Item membership in this synthetic 1-item release.
     collectionScopeEvidence:{schema:'wand.collection.scope-membership@1',
       world:'verified_game_collection_area_item_membership',
-      universe:'verified_game_collection_universe_item_membership'},
+      universe:'verified_game_collection_universe_item_membership',
+      worldLabels:{IsDreamlightValley:['Dreamlight Valley','Dreamlight Valley','Dreamlight Valley',
+        'Dreamlight Valley','Dreamlight Valley','ドリームライトバレー','Dreamlight Valley','Dreamlight Valley']},
+      universeLabels:{Cinderella:['Cinderella','Cinderella','Cinderella','Cinderella',
+        'Cinderella','シンデレラ','Cinderella','Cinderella']}},
     sources:[{id:'public-source',sha256:'b'.repeat(64),visibility:'public_reference'}],
     releases:[],search:[],
     shards:[{file:'items-000.json',offset:0,count:1,bytes:Buffer.byteLength(shardText),sha256:sha(shardText)}]
@@ -535,11 +539,12 @@ try{
   await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
   assert.match(await page.locator('.item-card').first().innerText(),/検証済みの靴/);
   const worldChoices=page.getByRole('group',{name:'ワールド',exact:true});
-  await worldChoices.getByRole('button',{name:'IsDreamlightValley'}).click();
+  await worldChoices.getByRole('button',{name:'ドリームライトバレー'}).click();
   await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
   await page.getByRole('combobox',{name:'ユニバースで絞り込み'}).selectOption('Cinderella');
   await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
-  assert.equal(await worldChoices.getByRole('button',{name:'IsDreamlightValley'}).getAttribute('aria-pressed'),'true');
+  assert.equal(await worldChoices.getByRole('button',{name:'ドリームライトバレー'}).getAttribute('aria-pressed'),'true');
+  assert.equal(await page.getByRole('combobox',{name:'ユニバースで絞り込み'}).inputValue(),'Cinderella');
   await worldChoices.getByRole('button',{name:'すべて'}).click();
   assert.equal(await page.getByRole('combobox',{name:'ユニバースで絞り込み'}).inputValue(),'Cinderella',
     'world All must not clear the independent universe selection');
