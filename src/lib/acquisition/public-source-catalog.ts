@@ -62,6 +62,10 @@ import {
   type NativeStallSlotIndex,type NativeStallSourceIndex,
   type NativeStallItemCandidate
 } from './public-native-stalls.ts';
+import {joinPinnedNativeObjectLoot,
+  type PublicNativeObjectLootIndex,
+  type NativeObjectLootCandidate
+} from './public-native-loot-objects.ts';
 import {indexPublicOnlineNameCandidates,
   type PublicOnlineNameCandidateIndex,
   type PublicOnlineNameCandidate} from './public-online-name-candidates.ts';
@@ -152,7 +156,7 @@ export type PublicSourceItemStallCandidateLookup=PublicSourceItemLookup&{
 };
 export type PublicSourceItemObjectLootLookup=PublicSourceItemLookup&{
   /** Native objects reference a table with this Item: still only a candidate. */
-  readonly nativeObjectLootCandidates:readonly import('./public-native-loot-objects.ts').NativeObjectLootCandidate[];
+  readonly nativeObjectLootCandidates:readonly NativeObjectLootCandidate[];
   readonly nativeObjectLootSourceLoaded:true;
   readonly objectTableReferenceVerified:true;
   readonly actualObjectDropVerified:false;
@@ -193,7 +197,7 @@ export interface PublicSourceCatalog{
   /** Original 3804 LootTable candidates, with no verified gameplay context. */
   loadNativeLootCandidates():Promise<NativeLootCandidateIndex>;
   /** Original 375 object -> table refs with 698 static candidate Item entries. */
-  loadNativeObjectLootSources():Promise<import('./public-native-loot-objects.ts').PublicNativeObjectLootIndex>;
+  loadNativeObjectLootSources():Promise<PublicNativeObjectLootIndex>;
   /** Item-ID reverse lookup of original Furniture/ActivityItem table referrers. */
   lookupWithNativeObjectLootCandidates(
     itemId:string|number
@@ -378,7 +382,7 @@ export async function loadPublicSourceCatalog(
   let nativeCookingMembersPromise:Promise<NativeCookingMemberIndex>|null=null;
   let cookingRecipeResolverPromise:Promise<NativeCookingRecipeResolver>|null=null;
   let nativeLootPromise:Promise<NativeLootCandidateIndex>|null=null;
-  let nativeObjectLootPromise:Promise<import('./public-native-loot-objects.ts').PublicNativeObjectLootIndex>|null=null;
+  let nativeObjectLootPromise:Promise<PublicNativeObjectLootIndex>|null=null;
   let nativeStallSlotsPromise:Promise<NativeStallSlotIndex>|null=null;
   let nativeStallSourcesPromise:Promise<NativeStallSourceIndex>|null=null;
   const loadRecipes=()=>nativeRecipePromise??=
@@ -394,10 +398,7 @@ export async function loadPublicSourceCatalog(
   const loadLoot=()=>nativeLootPromise??=
     loadPinnedNativeLootCandidates(basePath,fetcher);
   const loadObjectLoot=()=>nativeObjectLootPromise??=
-    Promise.all([
-      loadLoot(),
-      import('./public-native-loot-objects.ts')
-    ]).then(([loot,module])=>module.joinPinnedNativeObjectLoot(loot));
+    loadLoot().then(loot=>joinPinnedNativeObjectLoot(loot));
   const loadStallSlots=()=>nativeStallSlotsPromise??=
     loadPinnedNativeStallSlots(basePath,fetcher);
   const loadStallSources=()=>nativeStallSourcesPromise??=
