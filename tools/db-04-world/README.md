@@ -139,7 +139,7 @@ fields; no global world-coordinate transform is performed. A village-area
 reference whose GridCollection is absent from the partial snapshot is visibly
 marked unavailable rather than replaced with an invented layout.
 
-`src/lib/world/preview-views.mjs` shares the exact selection and routing
+`src/lib/world/preview-views.ts` shares the exact selection and routing
 logic with the Worker. Native village reads call the existing
 `getNativeVillageAreaAnchorWindow` API, retaining their village layout ID,
 AreaType code and native GridCollection path. The strict, read-only version gate now admits the original Steam v1.26.2

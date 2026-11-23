@@ -17,25 +17,13 @@ import { getSourceAnchorDomain, getTessellatedSourceAnchorWindow } from './nativ
 import {
   listWorldPreviewViews,
   summarizeWorldPreviewSourceCoverage,
-  getWorldPreviewAnchorWindow
-} from './preview-views.mjs';
+  getWorldPreviewAnchorWindow,
+  requireWorldPreviewCatalog,
+  type WorldPreviewCatalog,
+  type WorldPreviewView
+} from './preview-views.ts';
 
 type Rect = Readonly<{x:number; y:number; width:number; height:number}>;
-type View = Readonly<{
-  viewKey:string;
-  layoutId:string;
-  grids:ReadonlyArray<{gridIdNative:number;gridDataPath:string}>;
-}>;
-/** A small, explicit typed adapter around the old untyped read-only JS view. */
-interface NativeSourcePage {
-  status:string;
-  gridDataPath?:string;
-  defaultObjectAnchors?:unknown[];
-}
-const readNativeSourceWindow = getWorldPreviewAnchorWindow as unknown as (
-  catalog:unknown, view:View, gridId:number, rect:Rect,
-  options?:{offset:number;limit:number}|null
-)=>NativeSourcePage;
 type Request =
   | { command:'clear'; requestId:number }
   | { command:'load'; requestId:number; file:Blob }
@@ -136,8 +124,8 @@ function parseRequest(data:unknown): Request {
 
 // No source objects, full archive, save bytes or World edits cross the UI edge.
 let loaded:Awaited<ReturnType<typeof openLocalWorldZip>>|null=null;
-let catalog:unknown=null;
-let views:View[]=[];
+let catalog:WorldPreviewCatalog|null=null;
+let views:WorldPreviewView[]=[];
 
 worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
   const rawId = object(data) ? data.requestId : undefined;
@@ -156,9 +144,9 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
       catalog=null;
       views=[];
       const source = await openLocalWorldZip(message.file);
-      catalog=source.catalog;
+      catalog=requireWorldPreviewCatalog(source.catalog);
       loaded=source;
-      views=(listWorldPreviewViews(catalog) as View[]).map(view=>({
+      views=listWorldPreviewViews(catalog).map(view=>({
         ...view,
         grids:view.grids.map(grid=>{
           const domain=getSourceAnchorDomain(catalog,view.layoutId,grid.gridIdNative);
@@ -267,7 +255,7 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
       });
       return;
     }
-    const page=readNativeSourceWindow(catalog,sourceView,
+    const page=getWorldPreviewAnchorWindow(catalog,sourceView,
       message.gridIdNative,message.rect,{offset:message.offset,limit:64});
     if (page.status!=='source_native_default_layout_anchors_only') {
       worker.postMessage({kind:'view',requestId,page,markers:[],
@@ -276,7 +264,7 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
     }
 
     // Point counts are SOURCE ANCHORS, never footprint or collision masks.
-    const full=readNativeSourceWindow(catalog,sourceView,
+    const full=getWorldPreviewAnchorWindow(catalog,sourceView,
       message.gridIdNative,message.rect);
     const originalAnchors:unknown=full.defaultObjectAnchors;
     if (!Array.isArray(originalAnchors))

@@ -3,8 +3,17 @@ import assert from 'node:assert/strict';
 import {createWorldCatalog, WORLD_SCHEMA} from '../src/lib/world/catalog.mjs';
 import {
   listWorldPreviewViews, summarizeWorldPreviewSourceCoverage,
-  getWorldPreviewAnchorWindow,
-} from '../src/lib/world/preview-views.mjs';
+  getWorldPreviewAnchorWindow,requireWorldPreviewCatalog,
+} from '../src/lib/world/preview-views.ts';
+
+test('legacy source boundary refuses incomplete catalogs and native response shells',()=>{
+  for(const invalid of [null,{},{
+    layouts:new Map(),grids:new Map()
+  }])assert.throws(()=>requireWorldPreviewCatalog(invalid),
+    /DB04_WORLD_PREVIEW_CATALOG_INVALID/);
+  const valid=source();
+  assert.equal(requireWorldPreviewCatalog(valid),valid);
+});
 
 function source() {
   const gridLayout = 'SceneLayouts/Village04/Area.json';
