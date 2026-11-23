@@ -1,5 +1,7 @@
 <script lang="ts">
   import type {LocalGridInstance} from './save-amount-preview.worker';
+  import {searchLocalGridPositions} from './grid-cross-grid-search';
+  import type {LocalGridSearchHit} from './grid-cross-grid-search';
   import {draftGridGroupQuarterTurn} from './grid-group-quarter-turn';
   import type {GridQuarterTurnDirection} from './grid-group-quarter-turn';
 
@@ -76,6 +78,21 @@
       if(hasCoordinates(row))group.positioned++;
     }
     return [...map.values()];
+  }
+  function chooseSearchHit(hit:LocalGridSearchHit){
+    if(hit.localGridOrdinal!==selectedGrid){
+      // A group is a transaction on ONE saved local Grid only. Selecting a
+      // search hit from another Grid must never mix unrelated coordinates.
+      selectedGrid=hit.localGridOrdinal;
+      placing=false;
+      groupPlacing=false;
+      rotationDirection=null;
+      rotationPivotOrdinal=null;
+      groupOrdinals=[];
+      groupIssue='';
+    }
+    choose({x:hit.x,y:hit.y,ordinals:[...hit.ordinals]});
+    markerQuery='';
   }
   function choose(marker:Marker){
     if(groupMode){
@@ -234,18 +251,8 @@
       marker.ordinals.includes(selectedOrdinal??-1)||
       (groupMode&&marker.ordinals.some(id=>groupOrdinals.includes(id))))
   ];
-  $: normalizedMarkerQuery=markerQuery.trim().toLocaleLowerCase()
-    .replace(/^#/,'');
-  $: searchedMarkers=normalizedMarkerQuery
-    ?allMarkers.filter(marker=>marker.ordinals.some(id=>{
-      const row=pointByOrdinal.get(id);
-      return String(id).includes(normalizedMarkerQuery)||
-        (row!==undefined&&(
-          row.itemId.includes(normalizedMarkerQuery)||
-          itemName(row.itemId).toLocaleLowerCase()
-            .includes(normalizedMarkerQuery)
-        ));
-    })).slice(0,20):[];
+  $: anyPositioned=rows.some(hasCoordinates);
+  $: searchedMarkers=searchLocalGridPositions(rows,markerQuery,itemName);
   // Discard stale ordinals, changed source coordinates and invalid staged
   // numbers. Staged positions are visual hints, never export authorization.
   $: stagedTargets=stagedMoves.filter(move=>{
@@ -344,8 +351,8 @@
     </span>
     <input type="search" class="marker-search"
       aria-label="マップ内の配置を検索"
-      placeholder="配置番号・アイテムを検索" bind:value={markerQuery}
-      disabled={disabled||points.length===0} />
+      placeholder="全Gridから配置番号・アイテムを検索" bind:value={markerQuery}
+      disabled={disabled||!anyPositioned} />
     <button type="button" class="placement-mode"
       aria-pressed={placing}
       disabled={disabled||!selectedInGrid}
@@ -366,21 +373,19 @@
       {groupMode?'複数選択を終了':'複数配置を一括移動'}
     </button>
   </div>
-  {#if markerQuery.trim()&&points.length>0}
+  {#if markerQuery.trim()&&anyPositioned}
     <div class="marker-search-results" role="group" aria-label="マップ配置検索結果">
-      {#each searchedMarkers as marker (`${marker.x}:${marker.y}`)}
+      {#each searchedMarkers as marker (`${marker.localGridOrdinal}:${marker.x}:${marker.y}`)}
         <button type="button" class="marker-search-result"
           disabled={disabled}
           aria-label={`検索結果: 配置 #${marker.ordinals.join(', #')} を${groupMode?'グループに追加または除外':'選択'}`}
-          on:click={()=>{
-            choose(marker);
-            markerQuery='';
-          }}>
+          on:click={()=>chooseSearchHit(marker)}>
           <span>#{marker.ordinals.join(', #')} · {
-            itemName(pointByOrdinal.get(marker.ordinals[0])?.itemId??'')||
-            (pointByOrdinal.get(marker.ordinals[0])?.itemId??'')
+            itemName(marker.matchedItemId)||marker.matchedItemId
           }</span>
-          <small>X {marker.x} / Y {marker.y}</small>
+          <small>{marker.recordKind==='full'?'通常Grid':'差分Grid'}
+            · ローカル #{marker.localGridOrdinal}
+            · X {marker.x} / Y {marker.y}</small>
         </button>
       {/each}
       {#if searchedMarkers.length===0}
@@ -537,7 +542,7 @@
       <small class="map-hint">緑色の＋は編集キュー内の移動先候補です。保存・ゲーム内反映はまだ行われていません。</small>
     {/if}
     {#if allMarkers.length>256}
-      <small class="map-hint">表示点は先頭256座標です。下の一覧では全件を検索できます。</small>
+      <small class="map-hint">表示点は先頭256座標です。上の検索欄から他のGrid・表示範囲外の配置も選択できます。</small>
     {/if}
   {:else}
     <p class="empty">このGridに表示可能なX/Y座標はありません。</p>
