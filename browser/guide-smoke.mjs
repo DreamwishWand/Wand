@@ -123,9 +123,9 @@ try {
     /ドリームライトバレーへようこそ/,
     'the first screen must follow the source-numbered original Valley story');
   assert.equal(await browse.locator('.story-arcs button').count(),6);
-  await browse.getByRole('button',{name:'リフト・イン・タイム',exact:true}).click();
+  await browse.getByRole('button',{name:'時間の裂け目',exact:true}).click();
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('30件'));
-  await browse.getByRole('button',{name:'The Keepsake Sea',exact:true}).click();
+  await browse.getByRole('button',{name:'思い出の海',exact:true}).click();
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('25件'));
   await browse.getByRole('button',{name:'王国',exact:true}).click();
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('61件'));
