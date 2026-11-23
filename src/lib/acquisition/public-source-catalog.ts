@@ -563,7 +563,7 @@ export async function loadPublicSourceCatalog(
     Promise.all([loadOnline(),loadPets()]).then(([online,pets])=>
       indexGameNativeItemCategories(
         origins,nativeShopSource,historicalNativeShopSource,
-        eventFriendshipSource,pets,online
+        nativeIapSource,eventFriendshipSource,pets,online
       )
     );
   const loadDistribution=()=>distributionScopePromise??=
