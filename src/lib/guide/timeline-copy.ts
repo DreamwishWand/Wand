@@ -38,7 +38,8 @@ const DICTIONARY={
     "launch": "発売当初へ",
     "startTimeUnknown": "開始時刻未確認",
     "onlineHistory": "過去のスターパスは再参加不可",
-    "gameClock": "ゲーム内時間イベント"
+    "gameClock": "ゲーム内時間イベント",
+    "year": "開催年"
   },
   "en": {
     "systems": "Systems",
@@ -72,7 +73,8 @@ const DICTIONARY={
     "launch": "Early Access",
     "startTimeUnknown": "Start time unconfirmed",
     "onlineHistory": "Past Star Paths cannot be replayed",
-    "gameClock": "In-game time event"
+    "gameClock": "In-game time event",
+    "year": "Event year"
   },
   "fr": {
     "systems": "Systèmes",
@@ -106,7 +108,8 @@ const DICTIONARY={
     "launch": "Accès anticipé",
     "startTimeUnknown": "Heure de début inconnue",
     "onlineHistory": "Les anciennes Voies des étoiles ne sont plus accessibles",
-    "gameClock": "Événement selon l'heure du jeu"
+    "gameClock": "Événement selon l'heure du jeu",
+    "year": "Année de l'événement"
   },
   "it": {
     "systems": "Sistemi",
@@ -140,7 +143,8 @@ const DICTIONARY={
     "launch": "Accesso anticipato",
     "startTimeUnknown": "Ora di inizio non confermata",
     "onlineHistory": "I Percorsi stellari passati non sono ripetibili",
-    "gameClock": "Evento basato sull'ora di gioco"
+    "gameClock": "Evento basato sull'ora di gioco",
+    "year": "Anno dell'evento"
   },
   "de": {
     "systems": "Systeme",
@@ -174,7 +178,8 @@ const DICTIONARY={
     "launch": "Early Access",
     "startTimeUnknown": "Startzeit nicht bestätigt",
     "onlineHistory": "Vergangene Sternenpfade sind nicht erneut spielbar",
-    "gameClock": "Event nach Spielzeit"
+    "gameClock": "Event nach Spielzeit",
+    "year": "Eventjahr"
   },
   "es-ES": {
     "systems": "Sistemas",
@@ -208,7 +213,8 @@ const DICTIONARY={
     "launch": "Acceso anticipado",
     "startTimeUnknown": "Hora de inicio sin confirmar",
     "onlineHistory": "Los Caminos de estrellas anteriores no pueden repetirse",
-    "gameClock": "Evento basado en la hora del juego"
+    "gameClock": "Evento basado en la hora del juego",
+    "year": "Año del evento"
   },
   "zh-CN": {
     "systems": "系统",
@@ -242,7 +248,8 @@ const DICTIONARY={
     "launch": "抢先体验开始",
     "startTimeUnknown": "开始时间未确认",
     "onlineHistory": "无法重玩往期星光之路",
-    "gameClock": "游戏时间活动"
+    "gameClock": "游戏时间活动",
+    "year": "活动年份"
   },
   "pt-BR": {
     "systems": "Sistemas",
@@ -276,7 +283,8 @@ const DICTIONARY={
     "launch": "Acesso antecipado",
     "startTimeUnknown": "Hora de início não confirmada",
     "onlineHistory": "Caminhos Estelares passados não podem ser repetidos",
-    "gameClock": "Evento do horário do jogo"
+    "gameClock": "Evento do horário do jogo",
+    "year": "Ano do evento"
   }
 } as const;
 export function guideTimelineCopy(language:WandLanguage){return DICTIONARY[language]??DICTIONARY.en;}
