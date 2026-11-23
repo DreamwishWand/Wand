@@ -215,6 +215,8 @@ export function indexPublicOnlineNameCandidates(
         communityEvidence.officialArticleProvidesRewardNames===false&&
         communityEvidence.nativeRewardItemIdVerified===false&&
         communityEvidence.actualRewardGrantedVerified===false&&
+        campaign.rewards.length>0&&
+        campaign.rewards.every(r=>r.itemId===null)&&
         campaign.source.sourceUrl===
           'https://disneydreamlightvalley.com/news/FestivalofFoolishness2024',
         'COMMUNITY_REWARD_PROVENANCE');
