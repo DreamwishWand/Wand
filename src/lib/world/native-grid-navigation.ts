@@ -131,9 +131,11 @@ export function matchSourceGridToLocalTerrain(
     // Count equality cannot establish two independently loaded files are
     // byte-identical, nor is it evidence of actual Save Grid object state.
     const excerptCounts=matches.flatMap(layout=>layout.grids
-      .filter(grid=>grid.gridIdNative===request.nativeGridId&&
+      .filter((grid:TerrainZipNavigationLayout['grids'][number])=>
+        grid.gridIdNative===request.nativeGridId&&
         grid.gridDataPath===request.gridDataPath&&grid.knownGridData)
-      .map(grid=>grid.defaultObjectCount));
+      .map((grid:TerrainZipNavigationLayout['grids'][number])=>
+        grid.defaultObjectCount));
     const graph=request.sourceDefaultObjectCount;
     if(excerptCounts.some(value=>typeof value!=='number'||
         !Number.isSafeInteger(value)||value<0||value>10000000))
