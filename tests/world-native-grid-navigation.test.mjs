@@ -156,3 +156,40 @@ test('zero original objects are valid; contradictory aliases and malformed count
       {...direct.grids[0],defaultObjectCount:null}]}]
   }).status,'source_default_count_unavailable');
 });
+
+
+test('original World reference graph target SHA-256 must match raw ZIP manifest digest',()=>{
+  const correct=matchSourceGridToLocalTerrain(source,{
+    ...zip,manifestRawSha256:'f'.repeat(64)
+  });
+  assert.equal(correct.status,'ready');
+  assert.equal(correct.sourceSnapshotManifestSha256Compared,true);
+  assert.equal(correct.sourceSnapshotManifestSha256Equal,true);
+  assert.equal(correct.independentOriginalArchiveBinaryIdentityVerified,false);
+  assert.equal(correct.savedGridIdentityVerified,false);
+  const wrong=matchSourceGridToLocalTerrain(source,{
+    ...zip,manifestRawSha256:'a'.repeat(64)
+  });
+  assert.equal(wrong.status,'source_manifest_mismatch');
+  assert.equal(wrong.viewKey,null);
+  assert.equal(wrong.sourceSnapshotManifestSha256Compared,true);
+  assert.equal(wrong.sourceSnapshotManifestSha256Equal,false);
+  assert.equal(wrong.saveWritingAuthorized,false);
+  for(const raw of [null,'bad',0,'F'.repeat(64)]){
+    const missing=matchSourceGridToLocalTerrain(source,{
+      ...zip,manifestRawSha256:raw
+    });
+    assert.equal(missing.status,'source_manifest_unavailable');
+    assert.equal(missing.sourceSnapshotManifestSha256Compared,false);
+  }
+});
+test('manifest mismatch rejects even an otherwise exact source path/count match',()=>{
+  const sameCount={...source,sourceDefaultObjectCount:4};
+  const layout={...direct,grids:[{...direct.grids[0],defaultObjectCount:4}]};
+  const mismatch=matchSourceGridToLocalTerrain(sameCount,{
+    ...zip,layouts:[layout],manifestRawSha256:'0'.repeat(64)
+  });
+  assert.equal(mismatch.status,'source_manifest_mismatch');
+  assert.equal(mismatch.sourceDefaultCountCompared,false);
+  assert.equal(mismatch.savedGridIdentityVerified,false);
+});
