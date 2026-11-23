@@ -19,6 +19,9 @@ const norm=(value:string)=>value.replace(/[^a-z0-9]/gi,'').toLowerCase();
 export function isDreamlightUniverse(key:string):boolean{
   return norm(key)==='disneydreamlightvalley'||norm(key)==='dreamlightvalley';
 }
+export function isOtherUniverse(key:string):boolean{
+  return norm(key)==='other';
+}
 export function sortedCollectionUniverseOptions(
   index:CollectionDb01Index,locale:string,display:(key:string)=>string,
   untaggedLabel:string,
@@ -28,15 +31,18 @@ export function sortedCollectionUniverseOptions(
   }));
   const collator=new Intl.Collator(locale,{usage:'sort',sensitivity:'base',numeric:true});
   options.sort((a,b)=>collator.compare(a.label,b.label)||a.id.localeCompare(b.id,'en'));
+  const generic=options.filter(option=>isOtherUniverse(option.id));
   const home=options.filter(option=>isDreamlightUniverse(option.id));
-  const other=options.filter(option=>!isDreamlightUniverse(option.id));
-  // "No native universe tag" is not a proof that the item belongs to no
-  // Disney franchise. Its count is exact over the source-backed Item catalog.
-  return Object.freeze([
-    {id:COLLECTION_UNIVERSE_UNTAGGED,label:untaggedLabel,
-      total:index.sourceItemCount-index.universesByItem.size},
-    ...home,...other
-  ]);
+  const others=options.filter(option=>
+    !isOtherUniverse(option.id)&&!isDreamlightUniverse(option.id));
+  // Original "Other" is an explicit native Disney-universe Tag. Untagged
+  // items are distinct from that Tag and cannot be called "Other" without
+  // evidence. Put the original Other + Dreamlight front, and untagged last.
+  const noTag={id:COLLECTION_UNIVERSE_UNTAGGED,label:untaggedLabel,
+    total:index.sourceItemCount-index.universesByItem.size};
+  return Object.freeze(generic.length
+    ?[...generic,...home,...others,noTag]
+    :[noTag,...home,...others]);
 }
 /** Native order is stable across languages: source Item IDs, not translated
  * alphabetical names. Group names may be localized for the current screen.
