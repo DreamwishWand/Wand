@@ -91,7 +91,7 @@ const STEP_REFERENCE_KINDS:ReadonlySet<string> = new Set([
 ]);
 export const GUIDE_CONDITION_SOURCE_BYTES = 571341 as const;
 export const GUIDE_CONDITION_NATIVE_COUNT = 5440 as const;
-export const GUIDE_CONDITION_MAX_FILE_BYTES = 6 * 1024 * 1024 as const;
+export const GUIDE_CONDITION_MAX_FILE_BYTES = 6 * 1024 * 1024;
 const MISSION_SOURCE_SHA = 'f13958b52234f4cda92f0dd0bfff50be8a7f6625c8478785e2a077a5c7933d24';
 const BASE_SEARCH_SHA = '26c29bc0df15161602d75578c9842c5b7cca56caee0d6dd1031180949cceb30d';
 const CONDITION_FILE = 'ddv_Data/StreamingAssets/itemlist/Condition.json';
