@@ -9,8 +9,10 @@
     "preview": "vite preview --host",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "test": "node tools/architecture/check-production-stack.mjs && node --experimental-strip-types --test tests/*.test.mjs",
-    "predev": "node tools/db-01-items/materialize-public-master.mjs",
-    "prebuild": "node tools/db-01-items/materialize-public-master.mjs"
+    "predev": "python3 scripts/build-item-master.py",
+    "prebuild": "python3 scripts/build-item-master.py",
+    "pretest": "python3 scripts/build-item-master.py",
+    "prepreview": "python3 scripts/build-item-master.py"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.9",
