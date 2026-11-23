@@ -931,7 +931,7 @@
           matched?.gridDataPath!==grid?.gridDataPath||
           matched?.item?.itemId!==selectedFloorItem?.itemId)return;
         const bounds=result.windowResult as NativeFloorWindowResult;
-        if(bounds?.contract!=='wand.db04.original-full-rectangle-floor-window@1'||
+        if(bounds?.contract!=='wand.db04.original-mapped-gridarea-floor-window@2'||
            bounds?.regionKey!==selectedRegion||
            bounds?.viewKey!==selectedViewKey||
            bounds?.gridIdNative!==grid?.gridIdNative||
