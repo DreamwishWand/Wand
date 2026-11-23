@@ -50,7 +50,7 @@ The scripts reject altered/duplicate/extra/missing shards, a duplicate/foreign n
 
 ## Browser behavior
 
-`src/lib/guide/shard-fingerprints.mjs` stores only **public-safe fingerprints** for the 32 originals, not any original shard content. The existing `Guide` browser accepts the same local `quest-search.json` and deferred details without new file-selection steps:
+`src/lib/guide/shard-fingerprints.ts` stores only **public-safe fingerprints** for the 32 originals, not any original shard content. The existing `Guide` browser accepts the same local `quest-search.json` and deferred details without new file-selection steps:
 
 - When the selected search index is **exactly** the original owner-private 1.26.1 search (confirmed from its actual JSON raw bytes in an out-of-band WeakMap plus source/version checks), opening an original detail shard first requires **full selected file-byte SHA-256** equality against the matching original shard. Only then is JSON decoded and the existing native quest record SHA-256 checked.
 - For separately generated user/test indexes without the owner-original raw search SHA, the preexisting per-record canonical digest/source/schema validation is unchanged. A custom shard is never falsely presented as owner-original.
