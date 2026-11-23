@@ -50,6 +50,9 @@ import {
 } from './public-native-companion-identities.ts';
 import {loadPinnedNativeOnlineCategories,type NativeOnlineCategoryIndex}
   from './public-online-categories.ts';
+import {indexDistributionScopes,
+  type DistributionScopeIndex,type DistributionScopeItem
+} from './distribution-scopes.ts';
 import {loadPinnedNativeRecipeResults,
   type NativeRecipeIndex,type NativeRecipe}
   from './public-native-recipes.ts';
@@ -137,6 +140,10 @@ export type PublicSourceItemLookup=ReturnType<Db00OriginJoin['lookup']>&{
   readonly configuredDefaultInventoryCandidates:readonly ItemOrigin[];
   readonly originCoverageComplete:false;
 };
+export type PublicSourceItemDistributionScopeLookup=PublicSourceItemLookup&{
+  readonly distributionScope:DistributionScopeItem;
+  readonly distributionScopeEvidenceLoaded:true;
+};
 export type PublicSourceItemRecipeLookup=PublicSourceItemLookup&{
   readonly nativeRecipes:readonly NativeRecipe[];
   /** Exact original recipe-result links, separate from the original 1255 routes. */
@@ -223,6 +230,12 @@ export interface PublicSourceCatalog{
   ):Promise<PublicSourceItemCompanionNameLookup>;
   /** Native OnlineCategory enum: Premium/TimeLimited, not a specific sale. */
   loadNativeOnlineCategories():Promise<NativeOnlineCategoryIndex>;
+  /** Item distribution routes grouped by ordinary/game time/real-world sources.
+   * A category is source evidence, never exclusive Item rarity or availability. */
+  loadDistributionScopes():Promise<DistributionScopeIndex>;
+  lookupWithDistributionScopes(
+    itemId:string|number
+  ):Promise<PublicSourceItemDistributionScopeLookup>;
   /** Optional original 1943 cooking/crafting result links and ingredient rules. */
   loadNativeRecipeResults():Promise<NativeRecipeIndex>;
   /** Optional SHA-pinned fishing/mining/timebending/growing source routes. */
@@ -423,6 +436,7 @@ export async function loadPublicSourceCatalog(
   let nativeCompanionIdentityPromise:Promise<PinnedNativeCompanionIdentityIndex>|null=null;
   let officialCompanionNamePromise:Promise<CompanionOfficialNameCandidateIndex>|null=null;
   let nativeOnlineCategoryPromise:Promise<NativeOnlineCategoryIndex>|null=null;
+  let distributionScopePromise:Promise<DistributionScopeIndex>|null=null;
   let nativeRecipePromise:Promise<NativeRecipeIndex>|null=null;
   let nativeActivityPromise:Promise<NativeActivityResultIndex>|null=null;
   let nativeCookingMembersPromise:Promise<NativeCookingMemberIndex>|null=null;
@@ -465,6 +479,14 @@ export async function loadPublicSourceCatalog(
     Promise.all([loadStallSlots(),loadLoot()]).then(
       ([stalls,loot])=>joinPinnedNativeStallLoot(stalls,loot)
     );
+  const loadPets=()=>nativePetSourcePromise??=
+    loadPinnedNativePetSourceCategories(basePath,fetcher);
+  const loadOnline=()=>nativeOnlineCategoryPromise??=
+    loadPinnedNativeOnlineCategories(basePath,fetcher);
+  const loadDistribution=()=>distributionScopePromise??=
+    Promise.all([loadOnline(),loadPets()]).then(([online,pets])=>
+      indexDistributionScopes(origins,online,pets,nameCandidates)
+    );
   const lookupCurrent=(itemId:string|number):PublicSourceItemLookup=>{
     // db00.lookup validates IDs and keeps extra-ItemList Quest/Currency IDs.
     const row=db00.lookup(itemId);
@@ -485,11 +507,7 @@ export async function loadPublicSourceCatalog(
     nativeShopSource,nativeIapSource,historicalNativeShopSource,
     nativeIapPackReferences,staticContainerSource,defaultInventorySource,
     shopHistory,itemSources,coverage,
-    loadNativePetSources(){
-      return nativePetSourcePromise??=loadPinnedNativePetSourceCategories(
-        basePath,fetcher
-      );
-    },
+    loadNativePetSources(){return loadPets();},
     loadNativeCompanionIdentities(){return loadCompanionIdentities();},
     loadOfficialCompanionNameCandidates(){return loadCompanionNames();},
     async lookupWithNativeCompanionNameCandidates(itemId:string|number){
@@ -505,10 +523,15 @@ export async function loadPublicSourceCatalog(
         actualCompanionGrantVerified:false as const
       });
     },
-    loadNativeOnlineCategories(){
-      return nativeOnlineCategoryPromise??=loadPinnedNativeOnlineCategories(
-        basePath,fetcher
-      );
+    loadNativeOnlineCategories(){return loadOnline();},
+    loadDistributionScopes(){return loadDistribution();},
+    async lookupWithDistributionScopes(itemId:string|number){
+      const row=lookupCurrent(itemId);
+      const scopes=await loadDistribution();
+      return Object.freeze({
+        ...row,distributionScope:scopes.getItem(row.itemId),
+        distributionScopeEvidenceLoaded:true as const
+      });
     },
     loadNativeRecipeResults(){return loadRecipes();},
     loadNativeActivityResults(){return loadActivities();},
