@@ -55,6 +55,10 @@ import {
 } from './public-native-companion-identities.ts';
 import {loadPinnedNativeOnlineCategories,type NativeOnlineCategoryIndex}
   from './public-online-categories.ts';
+import {
+  indexGameNativeItemCategories,
+  type GameNativeItemCategoryIndex,type GameNativeItemCategoryRecord
+} from './game-native-item-categories.ts';
 import {indexDistributionScopes,
   type DistributionScopeIndex,type DistributionScopeItem
 } from './distribution-scopes.ts';
@@ -158,6 +162,10 @@ export type PublicSourceItemNativeLootContextsLookup=PublicSourceItemLookup&{
   readonly nativeLootContextsLoaded:true;
   readonly actualDropVerified:false;
   readonly liveStallStockVerified:false;
+};
+export type PublicSourceItemGameNativeCategoriesLookup=PublicSourceItemLookup&{
+  readonly gameNativeItemCategories:GameNativeItemCategoryRecord;
+  readonly gameNativeItemCategoriesLoaded:true;
 };
 export type PublicSourceItemDistributionScopeLookup=PublicSourceItemLookup&{
   readonly distributionScope:DistributionScopeItem;
@@ -267,6 +275,12 @@ export interface PublicSourceCatalog{
   ):Promise<PublicSourceItemCompanionNameLookup>;
   /** Native OnlineCategory enum: Premium/TimeLimited, not a specific sale. */
   loadNativeOnlineCategories():Promise<NativeOnlineCategoryIndex>;
+  /** Original Steam game files only: 4 Item-ID categories with overlaps.
+   * No shop history schedule/price, code text, web claims or live status. */
+  loadGameNativeItemCategories():Promise<GameNativeItemCategoryIndex>;
+  lookupWithGameNativeItemCategories(
+    itemId:string|number
+  ):Promise<PublicSourceItemGameNativeCategoriesLookup>;
   /** All 3961 pinned source links plus original online categories and name
    * candidates, grouped by ordinary/game time/real-world distribution.
    * Classification never proves exclusive rarity, a drop, or live availability. */
@@ -475,6 +489,7 @@ export async function loadPublicSourceCatalog(
   let officialCompanionNamePromise:Promise<CompanionOfficialNameCandidateIndex>|null=null;
   let nativeOnlineCategoryPromise:Promise<NativeOnlineCategoryIndex>|null=null;
   let distributionScopePromise:Promise<DistributionScopeIndex>|null=null;
+  let gameNativeCategoriesPromise:Promise<GameNativeItemCategoryIndex>|null=null;
   let nativeRecipePromise:Promise<NativeRecipeIndex>|null=null;
   let nativeActivityPromise:Promise<NativeActivityResultIndex>|null=null;
   let expandedNativeBrowserPromise:Promise<ExpandedNativeItemSourceBrowser>|null=null;
@@ -544,6 +559,13 @@ export async function loadPublicSourceCatalog(
     loadPinnedNativePetSourceCategories(basePath,fetcher);
   const loadOnline=()=>nativeOnlineCategoryPromise??=
     loadPinnedNativeOnlineCategories(basePath,fetcher);
+  const loadGameNativeCategories=()=>gameNativeCategoriesPromise??=
+    Promise.all([loadOnline(),loadPets()]).then(([online,pets])=>
+      indexGameNativeItemCategories(
+        origins,nativeShopSource,historicalNativeShopSource,
+        nativeIapSource,eventFriendshipSource,pets,online
+      )
+    );
   const loadDistribution=()=>distributionScopePromise??=
     Promise.all([loadOnline(),loadPets(),loadExpandedNativeBrowser()]).then(
       ([online,pets,expanded])=>
@@ -587,6 +609,16 @@ export async function loadPublicSourceCatalog(
     },
     loadNativeOnlineCategories(){return loadOnline();},
     loadDistributionScopes(){return loadDistribution();},
+    loadGameNativeItemCategories(){return loadGameNativeCategories();},
+    async lookupWithGameNativeItemCategories(itemId:string|number){
+      const row=lookupCurrent(itemId);
+      const index=await loadGameNativeCategories();
+      return Object.freeze({
+        ...row,
+        gameNativeItemCategories:index.getItem(row.itemId),
+        gameNativeItemCategoriesLoaded:true as const
+      });
+    },
     async lookupWithDistributionScopes(itemId:string|number){
       const row=lookupCurrent(itemId);
       const scopes=await loadDistribution();
