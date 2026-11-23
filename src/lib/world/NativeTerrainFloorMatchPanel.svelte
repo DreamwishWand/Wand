@@ -1,12 +1,20 @@
 <script lang="ts">
   import type {OriginalFloorItem,NativeFloorMatchResult} from './native-floor-match.ts';
-  import type {NativeFloorWindowResult} from './native-floor-rectangle-window.ts';
+  import type {
+    NativeFloorWindowResult,NativeFloorWindowGrid,
+  } from './native-floor-rectangle-window.ts';
+  import type {SourceLayerInspection} from './native-source-layer-inspection.ts';
+  import NativeSourceLayerInspection from './NativeSourceLayerInspection.svelte';
   export let matches:readonly OriginalFloorItem[]=[];
   export let selected:OriginalFloorItem|null=null;
   export let result:NativeFloorMatchResult|null=null;
   export let windowResult:NativeFloorWindowResult|null=null;
   export let orientationCode=8;
   export let onOrientationChange:(orientation:number)=>void;
+  export let onInspect:(x:number,y:number)=>void;
+  export let inspection:SourceLayerInspection|null=null;
+  export let inspecting=false;
+  export let inspectionError='';
   export let searching=false;
   export let loading=false;
   export let errorMessage='';
@@ -17,6 +25,36 @@
   let mapMode:'windows'|'cells'='windows';
   let showDefaultAnchors=true;
   const directions=[8,9,10,11,12,13,14,15,0,1,2,3,4,5,6,7];
+  type AreaRow={name:string;matched:number;known:number;missing:number};
+  function areaRows(grids:readonly NativeFloorWindowGrid[]):AreaRow[]{
+    const areas=new Map<string,AreaRow>();
+    for(const entry of grids){
+      let row=areas.get(entry.areaName);
+      if(!row){
+        row={name:entry.areaName,matched:0,known:0,missing:0};
+        areas.set(entry.areaName,row);
+      }
+      if(entry.matchedWindowOriginCount===null)row.missing++;
+      else{row.matched+=entry.matchedWindowOriginCount;row.known++;}
+    }
+    return[...areas.values()].sort((a,b)=>a.name.localeCompare(b.name,'ja'));
+  }
+  $: areaSummary=windowResult?areaRows(windowResult.grids):[];
+  function openLayerAt(event:MouseEvent){
+    if(!windowResult?.originBitmap||!windowResult.bitmapWidth||
+       !windowResult.bitmapHeight)return;
+    const canvas=(event.currentTarget as HTMLButtonElement)
+      .querySelector('canvas');
+    if(!canvas)return;
+    const rect=canvas.getBoundingClientRect();
+    if(!rect.width||!rect.height)return;
+    const nx=(event.clientX-rect.left)/rect.width;
+    const ny=(event.clientY-rect.top)/rect.height;
+    if(nx<0||ny<0||nx>=1||ny>=1)return;
+    const x=Math.floor(nx*windowResult.bitmapWidth);
+    const y=Math.floor(ny*windowResult.bitmapHeight);
+    onInspect(x,y);
+  }
   function paintWindow(node:HTMLCanvasElement,options:{
     result:NativeFloorWindowResult;showAnchors:boolean;
   }){
@@ -158,10 +196,21 @@
     {#if mapMode==='windows'&&windowResult?.originBitmap instanceof Uint8Array&&
       windowResult.bitmapWidth!==null&&windowResult.bitmapHeight!==null}
       <div class="raster">
-        <canvas use:paintWindow={{
-          result:windowResult,showAnchors:showDefaultAnchors,
-        }} aria-label="家具の外接矩形全体が原本の床マスク条件に一致する起点マップ"></canvas>
+        <button type="button" class="inspect-map" on:click={openLayerAt}
+          aria-label="地形マップから原本初期配置のマスを調べる">
+          <canvas use:paintWindow={{
+            result:windowResult,showAnchors:showDefaultAnchors,
+          }} aria-hidden="true"></canvas>
+        </button>
       </div>
+      <p class="hint">マップのマスを選ぶと、周囲の原本初期配置レイヤーを確認できます。</p>
+      {#if inspecting}
+        <p class="hint" role="status">原本の初期配置レイヤーを確認しています…</p>
+      {:else if inspection}
+        <NativeSourceLayerInspection {inspection}/>
+      {:else if inspectionError}
+        <p class="hint" role="alert">{inspectionError}</p>
+      {/if}
       <p class="legend"><span class="yes"></span>外接矩形全体が床条件に一致
         <span class="no"></span>一致しない</p>
       {#if windowResult.originalDefaultAnchorCounts instanceof Uint16Array}
@@ -184,6 +233,25 @@
       <p class="legend"><span class="yes"></span>床マスクが一致
         <span class="no"></span>一致しない</p>
     {/if}
+    {#if windowResult?.status==='source_rectangle_floor_windows_only'}
+      <details class="area-breakdown">
+        <summary>エリア別の床条件候補（{areaSummary.length}エリア）</summary>
+        <div class="area-table-scroll">
+          <table class="area-table">
+            <thead><tr><th>原本エリア</th><th>矩形一致地点</th><th>GridData</th></tr></thead>
+            <tbody>
+              {#each areaSummary as area (area.name)}
+                <tr>
+                  <td>{area.name}</td>
+                  <td>{area.missing>0?'一部未確認':format(area.matched)}</td>
+                  <td>{area.known}/{area.known+area.missing}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    {/if}
     <p class="hint">家具の外接矩形が収まり、矩形内の全マスの床属性が一致する原本GridData座標を示します。実際のフットプリント形状、衝突、建築制限、Grid倍率、現在のセーブ状態は未判定です。<strong>設置可能マス数ではありません。</strong></p>
   {:else if result}
     <p class="hint">このゲームバージョン、または家具の原本定義では照合できません。</p>
@@ -197,6 +265,15 @@
   h2{font-size:15px;margin:0;color:#f1e8f9}
   .clear{background:transparent;color:#d8c2eb;border:1px solid #ffffff40;border-radius:7px;padding:7px 11px;font:inherit;font-size:11px}
   .search{display:grid;gap:6px;font-size:12px;color:#d1bfdf}
+  .inspect-map{display:block;max-width:100%;min-width:0;padding:0;margin:0;border:0;background:transparent;cursor:crosshair;line-height:0}
+  .inspect-map:focus-visible{outline:2px solid #e0bdff;outline-offset:4px}
+  .area-breakdown{border:1px solid #ffffff23;border-radius:9px;padding:9px 11px;color:#d6c6e4;font-size:11px}
+  .area-breakdown summary{cursor:pointer;font-size:12px}
+  .area-table-scroll{max-height:230px;overflow:auto;margin-top:8px}
+  .area-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  .area-table th,.area-table td{padding:6px 8px;border-bottom:1px solid #ffffff1f;text-align:left}
+  .area-table th:nth-child(n+2),.area-table td:nth-child(n+2){text-align:right}
+  .area-table td:first-child{overflow-wrap:anywhere}
   .rotation{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;color:#cfbcdc}
   .rotation select{border-radius:7px;border:1px solid #65557d;background:#2b223b;color:#eee7f6;padding:6px 9px;font:inherit}
   .anchor-toggle{display:flex;align-items:center;gap:7px;font-size:11px;color:#c8bad5}
