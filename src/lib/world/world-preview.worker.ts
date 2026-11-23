@@ -6,6 +6,7 @@
  * It is not a World Editor, collision solver, placement Writer or save Codec.
  */
 import { openLocalWorldZip } from './local-snapshot.ts';
+import { WorldSourceLoadEpoch } from './world-source-load-epoch.ts';
 import { getNativeTerrainWindow } from './native-terrain-preview.ts';
 import { findOriginalItemAnchor, findOriginalItemAnchorAcrossGrids } from './native-item-anchor-finder.ts';
 import { getOriginalGridAreaEvidence } from './native-gridarea-evidence.ts';
@@ -127,13 +128,16 @@ function parseRequest(data:unknown): Request {
 let loaded:Awaited<ReturnType<typeof openLocalWorldZip>>|null=null;
 let catalog:WorldPreviewCatalog|null=null;
 let views:WorldPreviewView[]=[];
+const worldLoadEpoch=new WorldSourceLoadEpoch();
 
 worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
   const rawId = object(data) ? data.requestId : undefined;
   const requestId = nonnegative(rawId) ? rawId : 0;
+  let pendingLoadTicket:number|null=null;
   try {
     const message = parseRequest(data);
     if (message.command==='clear') {
+      worldLoadEpoch.invalidate();
       loaded=null;
       catalog=null;
       views=[];
@@ -141,10 +145,14 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
       return;
     }
     if (message.command==='load') {
+      pendingLoadTicket=worldLoadEpoch.begin();
       loaded=null;
       catalog=null;
       views=[];
       const source = await openLocalWorldZip(message.file);
+      // A clear or replacement load may have arrived while Rust/WASM read.
+      // Never publish late bytes, metadata, or an outdated source catalog.
+      if(!worldLoadEpoch.isCurrent(pendingLoadTicket))return;
       catalog=requireWorldPreviewCatalog(source.catalog);
       loaded=source;
       views=listWorldPreviewViews(catalog).map(view=>({
@@ -298,6 +306,9 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
           message.gridIdNative,message.rect):null
     });
   }catch(error){
+    // A rejected older archive must not replace a newer source's status.
+    if(pendingLoadTicket!==null &&
+       !worldLoadEpoch.isCurrent(pendingLoadTicket))return;
     worker.postMessage({
       kind:'error',requestId,
       message:error instanceof Error?error.message.slice(0,240):
