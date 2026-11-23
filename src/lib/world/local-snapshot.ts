@@ -18,7 +18,7 @@ export async function openLocalWorldZip(blob:Blob){
   if(!(blob instanceof Blob)||blob.size<22||blob.size>MAX_ZIP_BYTES)
     throw new TypeError('DB04_LOCAL_WORLD_ZIP: invalid local ZIP file');
   if(!initializing){
-    initializing=init(wasmUrl).catch(error=>{
+    initializing=init(wasmUrl).catch((error:unknown)=>{
       initializing=null;
       throw error;
     });
