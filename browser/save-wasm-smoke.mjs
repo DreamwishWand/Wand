@@ -282,6 +282,34 @@ try{
   await page.getByLabel('現在の数量').fill('2');
   await page.getByLabel('変更後の数量').fill('888');
   await page.getByRole('button',{name:'複数編集に追加'}).click();
+  // Editing a queued amount does not remove the target, reset unrelated
+  // edits, or accidentally change its immutable expected source Amount.
+  const amountBatch=page.getByRole('region',{name:'一括数量変更'});
+  await amountBatch.getByRole('button',{name:'数量変更2を修正'}).click();
+  assert.equal(await page.getByLabel('対象の種類').inputValue(),'inventory');
+  assert.equal(await page.getByLabel('Item ID').inputValue(),'550');
+  assert.equal(await page.getByLabel('現在の数量').inputValue(),'7');
+  assert.equal(await page.getByLabel('変更後の数量').inputValue(),'31968');
+  await page.getByLabel('変更後の数量').fill('0');
+  await page.getByRole('button',{name:'登録済みの数量を更新'}).click();
+  assert.match(await amountBatch.innerText(),/7 → 31968/);
+  await page.getByLabel('現在の数量').fill('8');
+  await page.getByLabel('変更後の数量').fill('65000');
+  await page.getByRole('button',{name:'登録済みの数量を更新'}).click();
+  assert.match(await amountBatch.innerText(),/7 → 31968/);
+  await page.getByLabel('現在の数量').fill('7');
+  await page.getByRole('button',{name:'登録済みの数量を更新'}).click();
+  assert.match(await amountBatch.innerText(),/7 → 65000/);
+  assert.match(await amountBatch.innerText(),/1 → 250/);
+  await amountBatch.getByRole('button',{name:'数量変更3を修正'}).click();
+  assert.equal(await page.getByLabel('対象の種類').inputValue(),'chest');
+  assert.equal(await page.getByLabel('Container ID').inputValue(),'202');
+  assert.equal(await page.getByLabel('Slot index').inputValue(),'1');
+  await page.getByLabel('変更後の数量').fill('777');
+  await page.getByRole('button',{name:'登録済みの数量を更新'}).click();
+  assert.match(await amountBatch.innerText(),/2 → 777/);
+  assert.match(await amountBatch.innerText(),/7 → 65000/);
+  assert.match(await amountBatch.innerText(),/3件/);
   await page.getByLabel('検証用セーブファイル').setInputFiles({
     name:'batch.profile',mimeType:'application/octet-stream',
     buffer:syntheticEncryptedP1g(quantityProfile)
@@ -299,8 +327,8 @@ try{
     await readFile(await (await batchEvent).path())
   );
   assert.equal(batchOpened.Player.ListInventories['100'].Inventory['777'].Amount,250);
-  assert.equal(batchOpened.Player.ListInventories['100'].Inventory['550'].Amount,31968);
-  assert.equal(batchOpened.Player.ContainerInventories['202'].Inventory[1].Amount,888);
+  assert.equal(batchOpened.Player.ListInventories['100'].Inventory['550'].Amount,65000);
+  assert.equal(batchOpened.Player.ContainerInventories['202'].Inventory[1].Amount,777);
   assert.equal(batchOpened.Player.ContainerInventories['202'].Inventory[1].ItemID,440);
   assert.equal(batchOpened.Player.ListInventories['100'].Inventory['777'].ExclusiveDecor,true);
   assert.equal(batchOpened.Player.ContainerInventories['202'].Inventory[1].Extra,null);
@@ -1469,6 +1497,32 @@ try{
   await regularJoint.getByRole('status').filter({
     hasText:'数量1件・配置1件をRust/WASMで検証しました'
   }).waitFor({timeout:30000});
+  // An already validated combined batch becomes stale on an in-place
+  // inventory quantity revision, and must be rechecked by Rust/WASM.
+  await regular.getByRole('region',{name:'一括数量変更'})
+    .getByRole('button',{name:'数量変更1を修正'}).click();
+  assert.equal(await regular.getByLabel('変更後の数量').inputValue(),'250');
+  await regular.getByLabel('変更後の数量').fill('251');
+  await regular.getByRole('button',{name:'登録済みの数量を更新'}).click();
+  assert.equal(await regularJoint.getByRole('status').filter({
+    hasText:'数量1件・配置1件をRust/WASMで検証しました'
+  }).count(),0,'old combined Rust validation cannot authorize revised quantities');
+  assert.equal(await regularJoint.getByRole('link',{
+    name:'統合コピーをダウンロード'
+  }).count(),0);
+  // Selecting a queued slot from the owned list returns its proposed
+  // amount, rather than silently suggesting a second conflicting edit.
+  await userSlot.click();
+  assert.equal(await regular.getByLabel('変更後の数量').inputValue(),'251');
+  assert.equal(await regular.getByRole('button',{
+    name:'登録済みの数量を更新'
+  }).isVisible(),true);
+  await regularJoint.getByRole('button',{
+    name:/数量と配置をまとめて検証/
+  }).click();
+  await regularJoint.getByRole('status').filter({
+    hasText:'数量1件・配置1件をRust/WASMで検証しました'
+  }).waitFor({timeout:30000});
   page.once('dialog',dialog=>dialog.accept());
   await regularJoint.getByRole('button',{name:'統合コピーを生成'}).click();
   const regularLink=regularJoint.getByRole('link',{
@@ -1481,7 +1535,7 @@ try{
     await readFile(await (await regularEvent).path())
   );
   assert.equal(regularCopy.Player.ListInventories['100']
-    .Inventory['777'].Amount,250);
+    .Inventory['777'].Amount,251);
   assert.deepEqual([
     regularCopy.World.GridCollection.Grids['101'].Objects['1'].X,
     regularCopy.World.GridCollection.Grids['101'].Objects['1'].Y
