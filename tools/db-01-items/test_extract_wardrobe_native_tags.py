@@ -99,7 +99,7 @@ class WardrobeNativeHasTagsTests(unittest.TestCase):
             "Clothing": 2040, "Trimming": 365,
         })
         self.assertEqual(report["sourceNewInheritedSetTagItems"], {
-            "Clothing": 2040, "Trimming": 365,
+            "Clothing": 2040, "Makeup": 0, "Trimming": 365,
         })
         self.assertEqual(report["sourcePositiveAreaByCategory"]["Clothing"][
             "4097"],31)
