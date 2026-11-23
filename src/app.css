@@ -774,3 +774,6 @@ a.portal-card:focus-visible{outline:3px solid #f5d6ff;outline-offset:-5px;z-inde
   .collection-universe-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
   .collection-universe-card{min-height:112px;padding:10px 6px}
 }
+
+.collection-scope-scroll button:disabled{cursor:not-allowed;opacity:.4}
+.collection-scope-scroll button:disabled:hover{background:transparent}
