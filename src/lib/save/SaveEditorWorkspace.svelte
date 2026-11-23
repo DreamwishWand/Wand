@@ -1,6 +1,8 @@
 <script lang="ts">
   import {onDestroy,onMount} from 'svelte';
-  import {localSaveSession,selectLocalSaveFile,closeLocalSaveFile} from '$lib/ui/local-save-session';
+  import {localSaveSession,selectLocalSaveFile,closeLocalSaveFile,
+    registerLocalSaveChangeGuard} from '$lib/ui/local-save-session';
+  import {beforeNavigate} from '$app/navigation';
   import {base} from '$app/paths';
   import type {Db00ItemContext} from './common-db-context';
   import type {SavedGridItemReference} from './save-world-db04-context';
@@ -43,6 +45,7 @@
   }
   // Explicit copy export never overwrites the source. No production Writer.
   let fileInput:HTMLInputElement|null=null;
+  let approvedReopenFile:File|null=null;
   let activeFile:File|null=null;
   let knownSaveRevision=-1;
   let kind:'inventory'|'chest'='inventory';
@@ -588,10 +591,8 @@
   }
   function closeSelectedSave():void{
     if(processing)return;
-    if(!developmentMode&&hasQueuedChanges()&&
-       !window.confirm('未出力の数量・配置の変更が消えます。セーブを閉じますか？'))return;
-    closeLocalSaveFile();
-    if(fileInput)fileInput.value='';
+    // All shared entry points use the same guard, including the header.
+    if(closeLocalSaveFile()&&fileInput)fileInput.value='';
   }
   function selectGridInstance(row:LocalGridInstance){
     if(!row.coordinatesObserved||row.x===null||row.y===null)return;
@@ -641,9 +642,12 @@
     ))return;
     // File owns the Blob bytes even after the old object URL is revoked.
     // The shared session resets drafts, then reopens via Rust/WASM.
-    selectLocalSaveFile(new File([copy.blob],copy.name,{
+    const reopened=new File([copy.blob],copy.name,{
       type:'application/octet-stream'
-    }));
+    });
+    approvedReopenFile=reopened;
+    try{selectLocalSaveFile(reopened);}
+    finally{approvedReopenFile=null;}
   }
   function copiedName(name:string):string{
     const safe=name.replace(/[\\/\u0000-\u001f]/g,'_');
@@ -703,8 +707,24 @@
     if(file)selectLocalSaveFile(file);
     else closeLocalSaveFile();
   }
+  beforeNavigate(({cancel,willUnload})=>{
+    if(developmentMode||!hasQueuedChanges())return;
+    // Browser-native leave confirmation for unloads; explicit for in-app routes.
+    if(willUnload||!window.confirm(
+      '未出力の数量・配置の変更が消えます。このページから移動しますか？'
+    ))cancel();
+  });
   onMount(()=>{
-    return localSaveSession.subscribe(session=>{
+    const unregister=developmentMode?()=>{}:registerLocalSaveChangeGuard(
+      (previous,next)=>{
+        if(approvedReopenFile!==null&&next===approvedReopenFile)return true;
+        if(previous!==activeFile||!hasQueuedChanges())return true;
+        return window.confirm(next===null
+          ?'未出力の数量・配置の変更が消えます。セーブを閉じますか？'
+          :'未出力の数量・配置の変更が消えます。別のセーブを選択しますか？');
+      }
+    );
+    const unsubscribe=localSaveSession.subscribe(session=>{
       if(session.revision===knownSaveRevision)return;
       knownSaveRevision=session.revision;
       if(session.file===activeFile)return;
@@ -714,6 +734,7 @@
       // using the existing Rust/WASM Worker, with no extra picker or parser.
       if(session.file&&!fromLocalPicker)void loadSavedSlots();
     });
+    return ()=>{unsubscribe();unregister();};
   });
   $: if(!developmentMode&&activeEditorPane==='world'&&
         slotState==='ready'&&instanceState==='idle'&&!processing){
@@ -1713,8 +1734,6 @@
             const file=input.files?.[0];
             input.value='';
             if(file){
-              if(hasQueuedChanges()&&
-                 !window.confirm('未出力の変更が消えます。別のセーブを選択しますか？'))return;
               selectLocalSaveFile(file);
             }
           }} />
