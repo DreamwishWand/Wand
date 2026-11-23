@@ -1268,9 +1268,11 @@ try{
   assert.equal(await page.locator('.wand-tour-layer').count(),0,'tour must not auto-start on navigation');
   await page.getByRole('button',{name:'このページのチュートリアル'}).click();
   await page.locator('.wand-tour-spotlight').waitFor();
-  assert.match(await page.locator('.wand-tour-description').innerText(),/クエスト|スターパス/);
-  await page.locator('.wand-tour-primary').click();
   assert.match(await page.locator('.wand-tour-description').innerText(),/タイムライン/);
+  await page.locator('.wand-tour-primary').click();
+  assert.match(await page.locator('.wand-tour-description').innerText(),/期間移動/);
+  await page.locator('.wand-tour-primary').click();
+  assert.match(await page.locator('.wand-tour-description').innerText(),/システム・クエスト/);
   await page.keyboard.press('Escape');
   await page.locator('.wand-tour-layer').waitFor({state:'detached'});
 
