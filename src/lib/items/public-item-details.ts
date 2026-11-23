@@ -1,14 +1,16 @@
 /**
  * Public DB-01 Item-ID entry point with DB-02's verified six acquisition groups.
  *
- * This joins the already-published Steam 1.26.2 releases; it does not copy
- * game definitions or guess missing acquisition methods. The detailed sidecar
- * is fetched once, on first use, while the master remains shard-lazy.
+ * The Item Master can select newer releases, but the DB-02 origin datasets
+ * remain pinned to Steam 1.26.2. A cross-version join MUST fail closed, not
+ * silently return 1.26.2 acquisition info for a newer Item definition.
+ * Source sidecars remain on-demand within the supported release.
  */
 import {
   openPublicItemMaster,
   type ItemMasterRecord,
   type ItemMasterRelease,
+  type ItemMasterOpenOptions,
 } from './public-item-master.ts';
 import {
   loadDb01ItemAcquisitionHandoff,
@@ -27,6 +29,8 @@ import {
 
 export const PUBLIC_ITEM_DETAILS_CONTRACT =
   'wand.db01.public-item-details@1' as const;
+/** DB-02 source datasets are independently verified only for this version. */
+export const PUBLIC_ITEM_DETAILS_SOURCE_VERSION = '1.26.2' as const;
 
 export interface PublicItemDetails {
   readonly itemId: number;
@@ -74,11 +78,14 @@ function assert(ok: unknown, code: string): asserts ok {
 
 export async function openPublicItemDetails(
   basePath: string = '',
-  fetcher: typeof fetch = fetch
+  fetcher: typeof fetch = fetch,
+  options: ItemMasterOpenOptions = {},
 ): Promise<PublicItemDetailsClient> {
-  // The public master accepts both "Wand" and "/Wand"; the DB-02 loader
-  // expects an absolute app base. Validate with the master before normalizing.
-  const master = await openPublicItemMaster(basePath, fetcher);
+  // Do not join a newer Item Master to historic v1.26.2 DB-02 data.
+  // Definition-only readers should use openPublicItemMaster instead.
+  const master = await openPublicItemMaster(basePath, fetcher, options);
+  assert(master.release.target.gameVersion === PUBLIC_ITEM_DETAILS_SOURCE_VERSION,
+    'SOURCE_HANDOFF_VERSION_NOT_PUBLISHED');
   const publicBase = basePath && !basePath.startsWith('/')
     ? '/' + basePath : basePath;
   let sidecarTask: Promise<Db01ItemAcquisitionIndex> | null = null;

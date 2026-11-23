@@ -122,6 +122,16 @@ function pathFor(id:number): string {
 function isObject(x:unknown): x is Record<string,unknown> {
   return !!x && typeof x === 'object' && !Array.isArray(x);
 }
+/** Freeze the shared per-shard Item objects so one consumer cannot corrupt others. */
+function freezeItemRecord(item:ItemMasterRecord):ItemMasterRecord {
+  Object.freeze(item.names);
+  Object.freeze(item.itemType);
+  item.tags.forEach(tag=>Object.freeze(tag));
+  Object.freeze(item.tags);
+  item.collectionSourceCandidates.forEach(candidate=>Object.freeze(candidate));
+  Object.freeze(item.collectionSourceCandidates);
+  return Object.freeze(item);
+}
 function validRecord(raw:unknown, bucket:string): raw is ItemMasterRecord {
   if (!isObject(raw) || !ID(raw.itemId) || pathFor(raw.itemId) !== bucket ||
       typeof raw.nativeCategory !== 'string' ||
@@ -217,7 +227,19 @@ export async function openPublicItemMaster(
     isObject(release.shards) &&
     (!selected || (release.version === selected.release &&
       release.count === selected.count)), 'INVALID_RELEASE');
-  const m = release as unknown as ItemMasterRelease;
+  const source = release as unknown as ItemMasterRelease;
+  // The caller may share this reader with Collection, Explorer and Save.
+  // Snapshot all mutable release metadata before any lazy asynchronous read.
+  const m:ItemMasterRelease = Object.freeze({
+    ...source,
+    target:Object.freeze({...source.target}),
+    coverage:Object.freeze({...source.coverage}),
+    shards:Object.freeze(Object.fromEntries(
+      Object.entries(source.shards).map(([path,entry])=>[
+        path, typeof entry === 'number' ? entry : Object.freeze({...entry}),
+      ])
+    )),
+  });
   const expected = Array.from({length:256},(_,i) =>
     'id/'+i.toString(16).padStart(2,'0')+'.json');
   assert(Object.keys(m.shards).length === 256 &&
@@ -249,7 +271,7 @@ export async function openPublicItemMaster(
       for (const value of raw.items) {
         assert(validRecord(value,path) && !result.has(value.itemId),
           'INVALID_ITEM_ROW');
-        result.set(value.itemId,value);
+        result.set(value.itemId,freezeItemRecord(value));
       }
       return result;
     })();
