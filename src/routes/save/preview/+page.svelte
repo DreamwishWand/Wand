@@ -103,7 +103,9 @@
       edits:GridCoordinatePlan[];signature:string}
     |{mode:'transform';file:File;format:'json'|'auto';
       plan:GridTransformPlan;signature:string}
-    |{mode:'mixed'|'combined';file:File;format:'json'|'auto';
+    |{mode:'mixed';file:File;format:'json'|'auto';
+      edits:GridMixedPlan[];signature:string}
+    |{mode:'combined';file:File;format:'json'|'auto';
       edits:GridMixedPlan[];signature:string}
     |null=null;
   let coordinateCopyUrl:string|null=null;
@@ -810,8 +812,11 @@
         coordinateSnapshot=batchMode
           ? {mode:'batch',file,format,
              edits:edits as GridCoordinatePlan[],signature}
-          : mixedMode||combinedMode
-          ? {mode:combinedMode?'combined':'mixed',file,format,
+          : combinedMode
+          ? {mode:'combined',file,format,
+             edits:edits as GridMixedPlan[],signature}
+          : mixedMode
+          ? {mode:'mixed',file,format,
              edits:edits as GridMixedPlan[],signature}
           : transformMode
           ? {mode:'transform',file,format,
