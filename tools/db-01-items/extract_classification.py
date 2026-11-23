@@ -26,10 +26,13 @@ BUCKETS = 256
 # the current Steam originals. Other unknown wire fields are not classified.
 TAG_FIELDS = {
     'ActivityItem': {8, 9, 10, 11, 12, 13, 14, 15, 16, 30, 31},
-    # Some Furniture subsets store packed original Tag IDs in field 7
-    # rather than field 9. Field 7 scalar subtype codes are ignored unless
-    # they independently resolve to a real Tag.json Item ID.
-    'Furniture': {7, 9, 10}, 'Clothing': {9}, 'Trimming': {10},
+    # Furniture.json contains SEVEN Steam 1.26.2 original protobuf
+    # subtypes with different Tags fields, verified in the same-version
+    # IL2CPP dump. In particular FurnitureBlockerItemData uses field 14:
+    # omitting it loses 19 original references (18 universe, 1 other).
+    # A wire field counts ONLY if the complete value is a known Tag ID list.
+    # Scalar field-7 subtype codes are not Tags.
+    'Furniture': {7, 9, 10, 14}, 'Clothing': {9}, 'Trimming': {10},
     'Character': {12}, 'Set': {6}, 'TouchOfMagic': {6, 9},
     'Building': {30}, 'Companion': {6, 7, 10},
     'ActivityData': {8}, 'MemoryShard': {8, 15},
