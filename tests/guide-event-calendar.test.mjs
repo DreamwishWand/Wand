@@ -19,9 +19,10 @@ test('Guide event calendar distinguishes owner-cache UTC schedule from unverifie
   const events=guideCalendarEvents(await snapshot());
   assert.equal(GUIDE_EVENT_CALENDAR_CONTRACT,'wand.db03.event-calendar-schedule@1');
   assert.equal(GUIDE_EVENT_CALENDAR_AS_OF,'2026-11-22');
-  assert.equal(events.length,3);
+  assert.equal(events.length,21);
   assert.equal(events.filter(e=>e.kind==='starpath').length,2);
-  assert.equal(events.filter(e=>e.kind==='limited-event').length,1);
+  assert.equal(events.filter(e=>e.kind==='limited-event').length,17);
+  assert.equal(events.filter(e=>e.kind==='starpath-history').length,2);
   assert(events.every(e=>e.liveVerified===false));
   assert(events.every(e=>e.sourceUrl.startsWith('https://disneydreamlightvalley.com/')));
   assert.equal(events[0].taskEndUtcExclusive,'2026-12-08T14:00:00Z');
@@ -33,6 +34,9 @@ test('Guide event calendar distinguishes owner-cache UTC schedule from unverifie
   // The official 2026 date-only announcement links to the DISTINCT original
   // 2026 native Festival definition, not the similarly named old definition.
   assert.equal(events[2].href,'/guide/events/?event=HauntedFloatingFestival2026');
+  assert.equal(events.find(e=>e.id==='haunted-floating-festival-2025')?.href,
+    '/guide/events/?event=HauntedFloatingFestival',
+    '2025 Festival must not silently link to the separate 2026 definition');
   const native=verifyPublicEventFriendshipRewards(JSON.parse(
     await readFile(new URL('event-friendship-rewards-1.26.2.json',sourceDir),'utf8')));
   const requested=new URL(events[2].href,'https://example.invalid').searchParams.get('event');
@@ -210,7 +214,7 @@ test('reviewed actionable riddle solutions bind to native season+Task IDs, rejec
 test('Guide month event list uses JST days and exact exclusive UTC end, matching calendar cells',async()=>{
   const real=guideCalendarEvents(await snapshot());
   assert.deepEqual(guideCalendarEventsInMonth(real,'2026-10').map(e=>e.id),
-    ['haunting-elegance-2026','seafaring-2026','haunted-floating-festival-2026']);
+    ['haunting-elegance-2026','seafaring-2026','haunted-floating-festival-2026','trick-or-treat-2026']);
   assert.deepEqual(guideCalendarEventsInMonth(real,'2026-11').map(e=>e.id),
     ['haunting-elegance-2026','seafaring-2026']);
   const afterUtcMonth={
@@ -252,7 +256,7 @@ test('typed event windows reject forged source and forbid invented UTC clock tim
   assert.throws(()=>guideCalendarEvents(altered),/provenance/);
   const entries=guideCalendarEvents(verified);
   assert.deepEqual(entries.map(row=>row.precision),
-    ['utc-instant','utc-instant','date-only']);
+    ['utc-instant','utc-instant',...Array(19).fill('date-only')]);
   assert(entries.every(row=>row.liveVerified===false));
   const festival=entries[2];
   assert.equal(festival.startDay,'2026-10-07');

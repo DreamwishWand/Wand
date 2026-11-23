@@ -24,7 +24,7 @@ test('published Guide Star Path projection retains 67 exact slots, 60 distinct r
   assert.equal(view.evidence.publicProjectionSha256,STARPATH_PUBLIC_SHA);
   same(view.coverage,{
     knownSeasonCount:2,recordedRewardSlots:67,
-    distinctPrimaryRewardIds:58,distinctRelatedItemIds:60,knownEventCount:3,
+    distinctPrimaryRewardIds:58,distinctRelatedItemIds:60,knownEventCount:21,
     historicalSeasonCatalogComplete:false,playerProgressIncluded:false,
     currentAvailabilityVerified:false,
     questRewardRelations:'not_in_published_starpath_snapshot',
