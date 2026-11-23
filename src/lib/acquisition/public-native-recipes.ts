@@ -241,8 +241,10 @@ function parse(raw:unknown):NativeRecipeIndex{
   }
   check(cooking===625&&crafting===1318&&itemIds.size===1912&&
     recipes.length===1943&&origins.length===1943,'RECIPE_TOTALS');
-  for(const m of [byResult,originsByResult,ingredientItemUses,ingredientTagUses])
-    freezeArrays(m);
+  freezeArrays(byResult);
+  freezeArrays(originsByResult);
+  freezeArrays(ingredientItemUses);
+  freezeArrays(ingredientTagUses);
   const allItems=Object.freeze([...itemIds].sort((a,b)=>Number(a)-Number(b)));
   const craftItems=Object.freeze([...craftingIds].sort((a,b)=>Number(a)-Number(b)));
   const cookItems=Object.freeze([...cookingIds].sort((a,b)=>Number(a)-Number(b)));
