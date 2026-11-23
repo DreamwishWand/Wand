@@ -699,14 +699,21 @@ try{
     }));
     throw error;
   }
-  const colorTags=nativeTags.locator('fieldset').filter({has:nativeTags.locator('legend').filter({hasText:/^色$/})});
-  await colorTags.getByRole('button',{name:'白',exact:true}).click();
+  const colorTags=nativeTags.locator('fieldset').filter({hasText:/^色/}).first();
+  assert.equal(await colorTags.count(),1,'native Color facet must be present');
+  if(await colorTags.getByRole('button',{name:'白',exact:true}).count()){
+    await colorTags.getByRole('button',{name:'白',exact:true}).click();
+  }else{
+    await colorTags.getByRole('combobox',{name:'色'}).selectOption('White');
+  }
   assert.match(await page.locator('.result-count').innerText(),/件/);
   await search.fill('40005160');
   await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
   assert.match(await page.locator('.item-card').innerText(),/ガラスの靴/);
   await search.fill('');
-  await colorTags.getByRole('button',{name:'すべて'}).click();
+  if(await colorTags.getByRole('button',{name:'すべて'}).count())
+    await colorTags.getByRole('button',{name:'すべて'}).click();
+  else await colorTags.getByRole('combobox',{name:'色'}).selectOption('');
   await page.getByRole('button',{name:/フィルター/}).click();
   await page.locator('.item-card').first().waitFor();
   const before=await page.locator('.item-card').count();
