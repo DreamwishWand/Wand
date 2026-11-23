@@ -374,6 +374,7 @@ mod tests {
         assert!(decode_zip(&source).is_err());
         let mut source=archive(false,None);
         let eocd=source.len()-22;
+        write16(&mut source,eocd+8,MAX_MEMBERS as u16+1);
         write16(&mut source,eocd+10,MAX_MEMBERS as u16+1);
         assert!(decode_zip(&source).unwrap_err().contains("unsupported ZIP directory size"));
     }
