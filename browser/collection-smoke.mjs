@@ -441,8 +441,13 @@ try{
   await page.locator('.item-card').first().waitFor();
   const before=await page.locator('.item-card').count();
   assert.equal(before,72);
+  const firstCardText=await page.locator('.item-card-body').first().innerText();
   await page.locator('.more-button').scrollIntoViewIfNeeded();
-  await page.waitForFunction(()=>document.querySelectorAll('.item-card').length>72,{timeout:20000});
+  await page.waitForFunction(()=>document.querySelectorAll('.item-card').length>=144,{timeout:20000});
+  // A second intersection appends page 3; the first batch is not discarded.
+  await page.locator('.more-button').scrollIntoViewIfNeeded();
+  await page.waitForFunction(()=>document.querySelectorAll('.item-card').length>=216,{timeout:20000});
+  assert.equal(await page.locator('.item-card-body').first().innerText(),firstCardText);
   assert.equal(browserErrors.length,0,browserErrors.join('\n'));
   // A filtered batch applies to the entire category, not just the 72 or
   // 144 cards currently rendered. Confirm the write and exact owned/missing
