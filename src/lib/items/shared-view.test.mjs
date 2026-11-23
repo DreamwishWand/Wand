@@ -292,7 +292,7 @@ test('connected original CollectionSet index fails closed when a source predicat
 });
 
 function nativeAreaFixture(){
-  const counts={coverage:0,getItem:[]};
+  const counts={coverage:0,getItem:[],batches:[]};
   const row=(item,positiveAreaCodes,sourceAreaEvidence)=>Object.freeze({
     itemId:item.itemId,nativeCategory:item.nativeCategory,
     sourceProtobufClass:item.nativeCategory+'ItemData',
@@ -330,6 +330,10 @@ function nativeAreaFixture(){
       };
     },
     async getItem(id){counts.getItem.push(id);return mapping.get(id)??null;},
+    async getItems(ids){
+      counts.batches.push([...ids]);
+      return ids.map(id=>mapping.get(id)??null);
+    },
     async search(){throw new Error('unused synthetic search');},
   };
   return {client,counts,mapping};
@@ -355,10 +359,12 @@ test('optional native six-domain reader attaches source facts to existing shared
   assert.equal(records[1].dlcEntitlements,null);
   assert.equal(records[2].originalNativeAreas,records[0].originalNativeAreas);
   assert.equal(records[3],null);
-  assert.deepEqual(a.counts.getItem.sort(),[furniture.itemId,pet.itemId].sort());
+  assert.deepEqual(a.counts.getItem,[]);
+  assert.deepEqual(a.counts.batches,[[furniture.itemId,pet.itemId]]);
   assert.equal(a.counts.coverage,1);
   const again=await shared.getItem(furniture.itemId);
   assert.equal(again.nativeAreaSourceStatus,'original_source_record');
+  assert.deepEqual(a.counts.batches[1],[furniture.itemId]);
   assert.equal(a.counts.coverage,1);
 });
 
@@ -407,29 +413,53 @@ test('cross-version, count-drift, missing and forged source records fail closed'
   );
   assert.deepEqual(a.counts.getItem,[]);
 
-  const identity={...a.client,getItem:async id=>{
-    const v=await a.client.getItem(id);
+  const identity={...a.client,getItems:async ids=>ids.map(id=>{
+    const v=a.mapping.get(id);
     return {...v,nativeCategory:'Skin'};
-  }};
+  })};
   await assert.rejects(
     createDb01SharedItemClient({catalog:f.catalog,nativeAreas:identity})
       .getItem(furniture.itemId),
     /NATIVE_AREA_CANONICAL_IDENTITY_OR_PROOF/,
   );
-  const negative={...a.client,getItem:async id=>{
-    const v=await a.client.getItem(id);
+  const negative={...a.client,getItems:async ids=>ids.map(id=>{
+    const v=a.mapping.get(id);
     return {...v,positiveAreaCodes:[],sourceAreaEvidence:
       'native_ihastags_without_positive_tag'};
-  }};
+  })};
   await assert.rejects(
     createDb01SharedItemClient({catalog:f.catalog,nativeAreas:negative})
       .getItem(pet.itemId),
     /NATIVE_AREA_CANONICAL_IDENTITY_OR_PROOF/,
   );
-  const missing={...a.client,getItem:async()=>null};
+  const missing={...a.client,getItems:async ids=>ids.map(()=>null)};
   await assert.rejects(
     createDb01SharedItemClient({catalog:f.catalog,nativeAreas:missing})
       .getItem(furniture.itemId),
     /NATIVE_AREA_CANONICAL_IDENTITY_OR_PROOF/,
   );
+});
+
+test('native area batch truncation is rejected by the shared Item reader',async()=>{
+  const f=fixture(),a=nativeAreaFixture();
+  const bad={...a.client,getItems:async()=>[]};
+  const client=createDb01SharedItemClient({
+    catalog:f.catalog,nativeAreas:bad,
+  });
+  await assert.rejects(client.getItems([furniture.itemId,pet.itemId]),
+    /DB01_UNIFIED_NATIVE_AREA_BATCH_LENGTH/);
+});
+
+test('shared Item read uses one native source batch per valid selection',async()=>{
+  const f=fixture(),a=nativeAreaFixture();
+  const shared=createDb01SharedItemClient({
+    catalog:f.catalog,nativeAreas:a.client,
+  });
+  const records=await shared.getItems(
+    [pet.itemId,furniture.itemId,pet.itemId,999_999_999]);
+  assert.equal(records[0].nativeAreaSourceStatus,'original_source_record');
+  assert.strictEqual(records[0].originalNativeAreas,records[2].originalNativeAreas);
+  assert.deepEqual(a.counts.batches,[[pet.itemId,furniture.itemId]]);
+  assert.equal(a.counts.getItem.length,0);
+  assert.equal(a.counts.coverage,1);
 });

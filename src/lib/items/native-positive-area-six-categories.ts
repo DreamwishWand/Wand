@@ -10,6 +10,7 @@ import {
   DB01_FIVE_CATEGORY_POSITIVE_AREA_COUNTS,
   type Db01FiveCategorySourceClient,
   type Db01FiveCategoryNativeCategory,
+  type Db01FiveCategorySourceItem,
   type Db01SourceAreaEvidence,
 } from './native-positive-area-five-categories.ts';
 import {
@@ -17,6 +18,7 @@ import {
   DB01_ORIGINAL_SKIN_POSITIVE_AREA_COUNTS,
   DB01_ORIGINAL_SKIN_SOURCE_LAYOUTS,
   type Db01OriginalSkinClient,
+  type Db01OriginalSkinItem,
   type Db01SkinSourceProtobufClass,
 } from './skin-native-subtypes.ts';
 import type {Db01OriginalCompanionKind} from './companion-native-has-tag.ts';
@@ -97,6 +99,9 @@ export interface Db01SixSourceClient {
   readonly gameVersion:'1.26.2';
   getCoverage():Promise<Readonly<Db01SixSourceCoverage>>;
   getItem(id:number):Promise<Readonly<Db01SixSourceItem>|null>;
+  /** Canonical order and duplicates preserved, bounded to 4,096 IDs. */
+  getItems(ids:readonly number[]):Promise<
+    readonly (Readonly<Db01SixSourceItem>|null)[]>;
   search(query?:Db01SixSourceQuery):Promise<Readonly<Db01SixSourcePage>>;
 }
 
@@ -180,11 +185,14 @@ export function createDb01SixCategorySourceClient(
     typeof five.search==='function'&&
     typeof skin.getCoverage==='function'&&
     typeof skin.getItem==='function'&&
+    typeof skin.getItems==='function'&&
     typeof skin.search==='function','PINNED_READERS_REQUIRED');
 
-  async function getItem(id:number):Promise<Readonly<Db01SixSourceItem>|null> {
-    check(pos(id),'INVALID_ITEM_ID');
-    const [f,s]=await Promise.all([five.getItem(id),skin.getItem(id)]);
+  function assemble(
+    id:number,
+    f:Readonly<Db01FiveCategorySourceItem>|null,
+    s:Readonly<Db01OriginalSkinItem>|null,
+  ):Readonly<Db01SixSourceItem>|null {
     check(!(f&&s),'CROSS_SOURCE_ID_COLLISION');
     if(f){
       check(f.itemId===id&&f.originalSourceVerified===true&&
@@ -254,6 +262,44 @@ export function createDb01SixCategorySourceClient(
       playerOwnershipVerified:false as const,
       dlcEntitlementVerified:false as const,
     });
+  }
+
+  async function getItem(id:number):Promise<Readonly<Db01SixSourceItem>|null> {
+    check(pos(id),'INVALID_ITEM_ID');
+    const [f,s]=await Promise.all([five.getItem(id),skin.getItem(id)]);
+    return assemble(id,f,s);
+  }
+
+  /** One SHA-verified Skin batch plus bounded parallel original five-domain
+   * item reads. Duplicate IDs are resolved once and returned in input order.
+   * Both original sources are queried; collisions still fail closed.
+   */
+  async function getItems(ids:readonly number[]):Promise<
+    readonly (Readonly<Db01SixSourceItem>|null)[]> {
+    check(Array.isArray(ids)&&ids.length<=4096&&ids.every(pos),
+      'INVALID_ITEM_BATCH');
+    if(ids.length===0)return Object.freeze([]);
+    const unique=[...new Set(ids)];
+    const fiveRows:(Readonly<Db01FiveCategorySourceItem>|null)[]=
+      new Array(unique.length).fill(null);
+    let next=0;
+    async function worker():Promise<void> {
+      while(next<unique.length){
+        const index=next++;
+        fiveRows[index]=await five.getItem(unique[index]);
+      }
+    }
+    const [skinRows]=await Promise.all([
+      skin.getItems(unique),
+      ...Array.from({length:Math.min(16,unique.length)},()=>worker()),
+    ]);
+    check(Array.isArray(skinRows)&&skinRows.length===unique.length,
+      'SKIN_BATCH_RESULT_LENGTH');
+    const resolved=new Map<number,Readonly<Db01SixSourceItem>|null>();
+    for(let i=0;i<unique.length;i++){
+      resolved.set(unique[i],assemble(unique[i],fiveRows[i],skinRows[i]));
+    }
+    return Object.freeze(ids.map(id=>resolved.get(id)??null));
   }
 
   let task:Promise<Readonly<Db01SixSourceCoverage>>|null=null;
@@ -412,6 +458,6 @@ export function createDb01SixCategorySourceClient(
   }
   return Object.freeze({
     schema:DB01_SIX_CATEGORY_NATIVE_AREA_SCHEMA,
-    gameVersion:'1.26.2' as const,getCoverage,getItem,search,
+    gameVersion:'1.26.2' as const,getCoverage,getItem,getItems,search,
   });
 }

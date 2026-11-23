@@ -81,10 +81,12 @@ const hasArea=(codes,areas)=>areas.includes(0)||
   codes?.some(code=>areas.includes(code))===true;
 
 function fake(){
-  const calls={five:[],skin:[],fiveCoverage:0,skinCoverage:0};
+  const calls={five:[],skin:[],fiveCoverage:0,skinCoverage:0,
+    fiveItemIds:[],skinBatchIds:[]};
   const five={
     schema:DB01_FIVE_CATEGORY_NATIVE_AREA_SCHEMA,gameVersion:'1.26.2',
     async getItem(id){
+      calls.fiveItemIds.push(id);
       const item=byFive.get(id);
       return item?{
         ...item,itemId:id,
@@ -152,6 +154,10 @@ function fake(){
         playerOwnershipVerified:false,
         dlcEntitlementVerified:false,
       }:null;
+    },
+    async getItems(ids){
+      calls.skinBatchIds.push([...ids]);
+      return Promise.all(ids.map(id=>skin.getItem(id)));
     },
     async getCoverage(){
       calls.skinCoverage++;
@@ -362,4 +368,90 @@ test('bad input, forged proof, count drift and duplicate cross-source ID fail cl
     /DB01_SIX_NATIVE_AREA_CROSS_SOURCE_ID_COLLISION/);
   i.skin.gameVersion='1.25.0';
   assert.throws(()=>api(i),/DB01_SIX_NATIVE_AREA_PINNED_READERS_REQUIRED/);
+});
+
+test('batch keeps 4,096-ID limit, original order, duplicates and source tri-state',async()=>{
+  const f=fake(),reader=api(f);
+  assert.deepEqual(await reader.getItems([]),[]);
+  assert.deepEqual(f.calls.skinBatchIds,[]);
+  const skinMissing=rowsSkin.find(x=>x.codes===null);
+  const ids=[
+    rowsFive[0].id,rowsSkin[0].id,rowsFive.at(-1).id,
+    skinMissing.id,rowsSkin.at(-1).id,rowsFive[0].id,99999999,
+  ];
+  const result=await reader.getItems(ids);
+  assert.equal(result.length,ids.length);
+  assert.equal(result[0].nativeCategory,'Furniture');
+  assert.equal(result[1].nativeCategory,'Skin');
+  assert.equal(result[2].sourceAreaEvidence,'requires_profile_world_scene');
+  assert.equal(result[3].sourceAreaEvidence,'original_interface_absent');
+  assert.equal(result[3].positiveAreaCodes,null);
+  assert.strictEqual(result[0],result[5]);
+  assert.equal(result[6],null);
+  assert.ok(Object.isFrozen(result));
+  assert.deepEqual(f.calls.skinBatchIds,[ids.slice(0,5).concat(ids[6])]);
+  assert.deepEqual(f.calls.fiveItemIds,ids.slice(0,5).concat(ids[6]));
+  for(const id of ids.slice(0,5)){
+    const serial=await reader.getItem(id);
+    assert.deepEqual(result[ids.indexOf(id)],serial);
+  }
+});
+
+test('batch validates input before touching original readers',async()=>{
+  const f=fake(),reader=api(f);
+  for(const ids of [null,'1',[0],[-1],[2.1],[Infinity],
+    Array(4097).fill(rowsFive[0].id)]){
+    await assert.rejects(reader.getItems(ids),
+      /DB01_SIX_NATIVE_AREA_INVALID_ITEM_BATCH/);
+  }
+  assert.deepEqual(f.calls.fiveItemIds,[]);
+  assert.deepEqual(f.calls.skinBatchIds,[]);
+});
+
+test('batch keeps at most sixteen concurrent five-source Item reads',async()=>{
+  const f=fake();
+  let concurrent=0,peak=0;
+  const original=f.five.getItem;
+  f.five.getItem=async id=>{
+    concurrent++;
+    peak=Math.max(peak,concurrent);
+    await Promise.resolve();
+    const value=await original(id);
+    concurrent--;
+    return value;
+  };
+  const apiBatch=api(f);
+  const ids=rowsFive.slice(0,150).map(x=>x.id);
+  const result=await apiBatch.getItems(ids);
+  assert.equal(result.length,150);
+  assert.equal(peak,16);
+  assert.equal(concurrent,0);
+  assert.equal(f.calls.fiveItemIds.length,150);
+  assert.equal(f.calls.skinBatchIds.length,1);
+});
+
+test('batch rejects incomplete Skin responses, mismatched source identities and collisions',async()=>{
+  const f=fake();
+  f.skin.getItems=async()=>[];
+  await assert.rejects(api(f).getItems([rowsFive[0].id]),
+    /DB01_SIX_NATIVE_AREA_SKIN_BATCH_RESULT_LENGTH/);
+  const g=fake();
+  const original=g.skin.getItems;
+  g.skin.getItems=async ids=>{
+    const rows=await original(ids);
+    const injected=await g.skin.getItem(rowsSkin[0].id);
+    return rows.map((row,i)=>i===0?{
+      ...injected,
+      source:{...injected.source,itemId:ids[i]},
+    }:row);
+  };
+  await assert.rejects(api(g).getItems([rowsFive[0].id]),
+    /DB01_SIX_NATIVE_AREA_CROSS_SOURCE_ID_COLLISION/);
+  const h=fake();
+  h.skin.getItems=async ids=>ids.map(()=>({
+    source:{itemId:rowsSkin[0].id,nativeCategory:'Skin'},
+    positiveNativeAreaCodes:[],
+  }));
+  await assert.rejects(api(h).getItems([rowsSkin[0].id]),
+    /DB01_SIX_NATIVE_AREA_SKIN_INTERFACE_OR_EVIDENCE_DRIFT/);
 });
