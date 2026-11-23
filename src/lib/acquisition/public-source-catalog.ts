@@ -58,6 +58,11 @@ import {
   type NativeLootCandidateIndex,type NativeLootCandidate
 } from './public-native-loot.ts';
 import {
+  loadPinnedNativeLootNames,joinPinnedNativeLootNames,
+  type NativeLootNameIndex,type NativeNamedLootIndex,
+  type NamedNativeLootCandidate
+} from './public-native-loot-names.ts';
+import {
   loadPinnedNativeStallSlots,joinPinnedNativeStallLoot,
   type NativeStallSlotIndex,type NativeStallSourceIndex,
   type NativeStallItemCandidate
@@ -161,6 +166,14 @@ export type PublicSourceItemObjectLootLookup=PublicSourceItemLookup&{
   readonly objectTableReferenceVerified:true;
   readonly actualObjectDropVerified:false;
 };
+export type PublicSourceItemNamedLootLookup=PublicSourceItemLookup&{
+  /** Exact original LootTable name label; never gameplay drop/source proof. */
+  readonly nativeNamedLootCandidates:readonly NamedNativeLootCandidate[];
+  readonly nativeLootNameKeysLoaded:true;
+  readonly originalNameKeyVerified:true;
+  readonly actualDropVerified:false;
+  readonly localizedNameVerified:false;
+};
 export interface PublicSourceCatalog{
   readonly schema:typeof DB02_PUBLIC_SOURCE_CATALOG_SCHEMA;
   readonly gameVersion:'1.26.2';
@@ -196,6 +209,13 @@ export interface PublicSourceCatalog{
   loadCookingRecipeResolver():Promise<NativeCookingRecipeResolver>;
   /** Original 3804 LootTable candidates, with no verified gameplay context. */
   loadNativeLootCandidates():Promise<NativeLootCandidateIndex>;
+  /** Optional original LootTable name keys, 960 tables and 28 native families. */
+  loadNativeLootNames():Promise<NativeLootNameIndex>;
+  /** Associate original keys with source-static LootTable candidate Item IDs. */
+  loadNamedNativeLootSources():Promise<NativeNamedLootIndex>;
+  lookupWithNamedNativeLootCandidates(
+    itemId:string|number
+  ):Promise<PublicSourceItemNamedLootLookup>;
   /** Original 375 object -> table refs with 698 static candidate Item entries. */
   loadNativeObjectLootSources():Promise<PublicNativeObjectLootIndex>;
   /** Item-ID reverse lookup of original Furniture/ActivityItem table referrers. */
@@ -382,6 +402,8 @@ export async function loadPublicSourceCatalog(
   let nativeCookingMembersPromise:Promise<NativeCookingMemberIndex>|null=null;
   let cookingRecipeResolverPromise:Promise<NativeCookingRecipeResolver>|null=null;
   let nativeLootPromise:Promise<NativeLootCandidateIndex>|null=null;
+  let nativeLootNamesPromise:Promise<NativeLootNameIndex>|null=null;
+  let namedLootSourcePromise:Promise<NativeNamedLootIndex>|null=null;
   let nativeObjectLootPromise:Promise<PublicNativeObjectLootIndex>|null=null;
   let nativeStallSlotsPromise:Promise<NativeStallSlotIndex>|null=null;
   let nativeStallSourcesPromise:Promise<NativeStallSourceIndex>|null=null;
@@ -397,6 +419,12 @@ export async function loadPublicSourceCatalog(
     );
   const loadLoot=()=>nativeLootPromise??=
     loadPinnedNativeLootCandidates(basePath,fetcher);
+  const loadLootNames=()=>nativeLootNamesPromise??=
+    loadPinnedNativeLootNames(basePath,fetcher);
+  const loadNamedLoot=()=>namedLootSourcePromise??=
+    Promise.all([loadLoot(),loadLootNames()]).then(
+      ([loot,names])=>joinPinnedNativeLootNames(loot,names)
+    );
   const loadObjectLoot=()=>nativeObjectLootPromise??=
     loadLoot().then(loot=>joinPinnedNativeObjectLoot(loot));
   const loadStallSlots=()=>nativeStallSlotsPromise??=
@@ -440,6 +468,20 @@ export async function loadPublicSourceCatalog(
     loadNativeCookingMembers(){return loadCookingMembers();},
     loadCookingRecipeResolver(){return loadCookingRecipeResolver();},
     loadNativeLootCandidates(){return loadLoot();},
+    loadNativeLootNames(){return loadLootNames();},
+    loadNamedNativeLootSources(){return loadNamedLoot();},
+    async lookupWithNamedNativeLootCandidates(itemId:string|number){
+      const row=lookupCurrent(itemId);
+      const source=await loadNamedLoot();
+      return Object.freeze({
+        ...row,
+        nativeNamedLootCandidates:source.getItemNamedCandidates(row.itemId),
+        nativeLootNameKeysLoaded:true as const,
+        originalNameKeyVerified:true as const,
+        actualDropVerified:false as const,
+        localizedNameVerified:false as const
+      });
+    },
     loadNativeObjectLootSources(){return loadObjectLoot();},
     async lookupWithNativeObjectLootCandidates(itemId:string|number){
       const row=lookupCurrent(itemId);
