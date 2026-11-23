@@ -683,7 +683,22 @@ try{
   if(await nativeFilterButton.getAttribute('aria-expanded')==='false')
     await nativeFilterButton.click();
   const nativeTags=page.getByRole('group',{name:'ゲーム原本のタグ'});
-  await nativeTags.waitFor({timeout:30000});
+  try{await nativeTags.waitFor({timeout:8000});}
+  catch(error){
+    const probe=await page.evaluate(async()=>{
+      const r=await fetch('/Wand/ddv/collection/db01-facets-1262.json');
+      const t=await r.text();
+      return {status:r.status,length:t.length,head:t.slice(0,160)};
+    });
+    console.error('COLLECTION_NATIVE_TAG_DEBUG',JSON.stringify({
+      probe,filterExpanded:await nativeFilterButton.getAttribute('aria-expanded'),
+      panelCount:await page.locator('.filter-panel').count(),
+      tagPanels:await page.locator('.collection-native-tag-panel').count(),
+      body:(await page.locator('body').innerText()).slice(0,3000),
+      browserErrors
+    }));
+    throw error;
+  }
   const colorTags=nativeTags.locator('fieldset').filter({has:nativeTags.locator('legend').filter({hasText:/^色$/})});
   await colorTags.getByRole('button',{name:'白',exact:true}).click();
   assert.match(await page.locator('.result-count').innerText(),/件/);
