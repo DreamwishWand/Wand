@@ -86,14 +86,16 @@ test('festival without source times only gets date-granularity scheduled state, 
   assert.equal(eventScheduleState(e,at('2026-10-31T14:59:59Z')),'date-window');
   assert.equal(eventScheduleState(e,at('2026-10-31T15:00:00Z')),'ended');
 });
-test('source-native quest taxonomies project 733 names into story/realm, village and honest other bucket',async()=>{
+test('source-native taxonomy separates Story, Realm, Village, Repeatable and unsupported kinds',async()=>{
   const index=await quests();
   assert.equal(filterPublicQuests(index,{section:'all'}).total,733);
-  assert.equal(filterPublicQuests(index,{section:'story'}).total,227);
+  assert.equal(filterPublicQuests(index,{section:'story'}).total,166);
+  assert.equal(filterPublicQuests(index,{section:'realm'}).total,61);
   assert.equal(filterPublicQuests(index,{section:'friendship'}).total,341);
-  assert.equal(filterPublicQuests(index,{section:'other'}).total,165);
+  assert.equal(filterPublicQuests(index,{section:'repeatable'}).total,75);
+  assert.equal(filterPublicQuests(index,{section:'other'}).total,90);
   assert.equal(publicQuestSection(index.quests.find(r=>r.id==='2070000620')),'story');
-  assert.equal(publicQuestSection(index.quests.find(r=>r.id==='2070000651')),'story');
+  assert.equal(publicQuestSection(index.quests.find(r=>r.id==='2070000651')),'realm');
   assert.equal(publicQuestSection(index.quests.find(r=>r.id==='2070000653')),'friendship');
   assert.equal(publicQuestSection(index.quests.find(r=>r.id==='2070000865')),'other');
   assert.throws(()=>filterPublicQuests(index,{section:'fictional'}),/invalid search/);

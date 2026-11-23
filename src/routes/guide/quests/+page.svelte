@@ -5,9 +5,10 @@
   import {watchWandLanguage} from '$lib/ui/preferences';
   import {autoAppend} from '$lib/ui/auto-append';
   import {collectWindow} from '$lib/ui/collect-window.mjs';
-  import {verifyPublicQuestIndex,filterPublicQuests,publicQuestSection,findPublicQuestByLink,loadPublicQuestPart,formatPublicGuideText,
+  import {verifyPublicQuestIndex,filterPublicQuests,publicQuestSection,publicQuestStoryArc,
+    publicQuestNativeOrder,publicFriendshipCharacters,findPublicQuestByLink,loadPublicQuestPart,formatPublicGuideText,
     type PublicQuestIndex,type PublicQuestPart,type PublicQuestIndexRow,type PublicQuestDetailRow,
-    type PublicQuestObjective,type PublicGuideNames
+    type PublicQuestObjective,type PublicGuideNames,type PublicQuestSection,type PublicQuestStoryArc
   } from '$lib/guide/public-guide.ts';
   import {loadPublicQuestTargetsIndex,loadPublicQuestTargetsPart,itemTargetName,originalTargetLookup,
     guideQuestTargetCollectionHref,
@@ -41,7 +42,16 @@
   let query='';
   let locale='ja';
   let character='';
-  let section:'all'|'story'|'friendship'|'other'='all';
+  let section:PublicQuestSection='story';
+  let storyArc:PublicQuestStoryArc='valley';
+  const arcs:readonly {id:PublicQuestStoryArc;name:string}[]=[
+    {id:'valley',name:'ドリームライトバレー'},
+    {id:'rift',name:'時間の裂け目'},
+    {id:'storybook',name:'物語の谷'},
+    {id:'ranch',name:'願い咲く牧場'},
+    {id:'honeyglow',name:'ハニーグローの森'},
+    {id:'keepsake',name:'思い出の海'}
+  ];
   let objective='';
   let limit=40;
   let selectionTicket=0;
@@ -94,8 +104,12 @@
       :matchedRewardNames
         ?{total:matchedRewardNames.questIds.length,
           rows:catalog.quests.filter((row:any)=>matchedRewardNames?.questIds.includes(row.id))}
-        :collectWindow((offset:number,batch:number)=>filterPublicQuests(catalog!,{query:query.slice(0,120),locale,character,objective,section,offset,limit:batch}),limit,'rows')):{total:0,rows:[]};
-  $: characters=catalog?[...new Set(catalog.quests.map((x:any)=>x.characterId).filter(Boolean))].sort() as string[]:[];
+        :collectWindow((offset:number,batch:number)=>filterPublicQuests(catalog!,{
+      query:query.slice(0,120),locale,character,objective,
+      section:query.trim()?'all':section,
+      arc:section==='story'&&!query.trim()?storyArc:'all',offset,limit:batch
+    }),limit,'rows')):{total:0,rows:[]};
+  $: friendshipCharacters=catalog?publicFriendshipCharacters(catalog,locale):[];
   // Native Mission group association, not an unlock prerequisite or chronological link.
   $: questConditions=selectedRow&&conditionIndex?conditionIndex.getQuest(selectedRow.id):null;
   $: linkedEventRefs=selectedRow&&relatedEventIndex
@@ -108,7 +122,9 @@
   $: objectives=catalog?[...new Set(catalog.quests.flatMap((x:any)=>x.objectiveKinds))].sort() as string[]:[];
 
   function label(names:PublicGuideNames|null|undefined,fallback='',language='ja') {return formatPublicGuideText(names?.[language as keyof PublicGuideNames]||names?.en||Object.values(names||{})[0]||fallback);}
-  function questName(row:PublicQuestIndexRow,language:string) {return label(row.names,row.internalName||row.id,language);}
+  function questName(row:PublicQuestIndexRow,language:string) {
+    return label(row.names,'',language)||`名称未確認（ID ${row.id}）`;
+  }
   function characterName(id:string|undefined,language:string) {return label(catalog?.characters?.[id||''],id||'',language);}
   function relatedEventName(eventId:string):string{
     const event=relatedEventSource?.getEvent('mini_event',eventId);
@@ -129,6 +145,28 @@
     window.history.replaceState(window.history.state,'',url);
   }
   function setSearch(){limit=40;clearRewardItemFocus();clearTargetItemFocus();}
+  function resetBrowsedSelection(){
+    selectionTicket++;
+    selectedRow=null;selected=null;detailError='';detailLoading=false;
+    targetLookup={};targetLoading=false;targetError='';
+    const url=new URL(window.location.href);
+    url.searchParams.delete('quest');
+    url.searchParams.delete('step');
+    window.history.replaceState(window.history.state,'',url);
+  }
+  function selectSection(next:PublicQuestSection){
+    if(section===next)return;
+    section=next;character='';storyArc='valley';objective='';query='';
+    setSearch();resetBrowsedSelection();
+  }
+  function selectArc(next:PublicQuestStoryArc){
+    if(storyArc===next)return;
+    storyArc=next;limit=40;resetBrowsedSelection();
+  }
+  function selectCharacter(next:string){
+    if(character===next)return;
+    character=next;limit=40;resetBrowsedSelection();
+  }
   function targetStep(questId:string,numberOfSteps:number):number{
     const step=publicQuestStepIndex(window.location.search,questId,numberOfSteps);
     if(new URLSearchParams(window.location.search).has('step'))return step;
@@ -206,6 +244,11 @@
           catalog.quests.find((candidate:any)=>targetIds.has(candidate.id))??null)
         :addressed;
     if(row){
+      if(!focus&&!sourceTargets.length&&params.has('quest')){
+        section=publicQuestSection(row);
+        if(section==='story')storyArc=publicQuestStoryArc(row)??'valley';
+        character=section==='friendship'?row.characterId:'';
+      }
       if(selectedRow?.id!==row.id)void openQuest(row,false);
       else if(selected) {
         activeStep=targetStep(row.id,selected.steps.length);
@@ -338,11 +381,7 @@
 </svelte:head>
 
 <main class="quests-public">
-  <header class="hero">
-    <h1>クエスト</h1>
-    <p>クエストを検索して、目標と手順を確認できます。</p>
-    <a class="characters-nav" href="{base}/guide/characters/">キャラクターから探す</a>
-  </header>
+  <header class="hero"><h1>クエスト</h1></header>
 
   {#if loading}
     <p class="status" role="status">クエスト一覧を読み込んでいます…</p>
@@ -351,14 +390,25 @@
     <button on:click={loadCatalog}>再読み込み</button>
   {:else if catalog}
     <nav class="quest-sections" aria-label="クエストの大分類">
-      {#each [['all','すべて'],['story','ストーリー'],['friendship','村人関連'],['other','その他']] as [key,name]}
-        <button class:chosen={section===key} on:click={()=>{section=key as typeof section;setSearch()}} aria-pressed={section===key}>{name}</button>
+      {#each [
+        ['story','ストーリー'],['realm','王国'],['friendship','フレンドシップ'],
+        ['repeatable','イベント・繰り返し'],['other','その他'],['all','すべて']
+      ] as [key,name]}
+        <button class:chosen={section===key} on:click={()=>selectSection(key as PublicQuestSection)}
+          aria-pressed={section===key}>{name}</button>
       {/each}
     </nav>
+    {#if section==='story'}
+      <nav class="story-arcs" aria-label="ストーリーの舞台">
+        {#each arcs as arc}
+          <button class:chosen={storyArc===arc.id} on:click={()=>selectArc(arc.id)}
+            aria-pressed={storyArc===arc.id}>{arc.name}</button>
+        {/each}
+      </nav>
+    {/if}
     <div class="searchbar">
-      <label>クエストを検索<input aria-label="クエスト名・IDを検索" placeholder="クエスト名・報酬名・目標アイテムID" bind:value={query} on:input={setSearch}/></label>
-      <label>キャラクター<select aria-label="キャラクターで絞り込み" bind:value={character} on:change={setSearch}><option value="">すべて</option>{#each characters as id}<option value={id}>{characterName(id,locale)}</option>{/each}</select></label>
-      <label>目標の種類<select aria-label="目標で絞り込み" bind:value={objective} on:change={setSearch}><option value="">すべて</option>{#each objectives as kind}<option value={kind}>{kind}</option>{/each}</select></label>
+      <label>クエストを検索<input aria-label="クエスト名・IDを検索"
+        placeholder="クエスト名・キャラクター・報酬名" bind:value={query} on:input={setSearch}/></label>
     </div>
     {#if rewardFocus}
       <div class="reward-focus" role="status">
@@ -377,13 +427,31 @@
     {:else if targetReverseError}
       <small class="condition-warning">目標アイテムの逆引きデータは読み込めませんでした。</small>
     {/if}
-    <div class="workspace">
+    <div class="workspace" class:with-character-rail={section==='friendship'}>
+      {#if section==='friendship'}
+        <nav class="character-rail" aria-label="フレンドシップクエストのキャラクター">
+          <button class:chosen={character===''} aria-pressed={character===''}
+            on:click={()=>selectCharacter('')}>すべてのキャラクター
+            <small>341</small></button>
+          {#each friendshipCharacters as member (member.id)}
+            <button class:chosen={character===member.id} aria-pressed={character===member.id}
+              on:click={()=>selectCharacter(member.id)}>
+              <span>{member.name}</span><small>{member.quests}</small>
+            </button>
+          {/each}
+        </nav>
+      {/if}
       <section class="results" aria-label="クエスト一覧">
         <p class="count">{filtered.total.toLocaleString()}件のクエスト</p>
         {#each filtered.rows as row (row.id)}
           <button class:active={selectedRow?.id===row.id} class="quest-row" title={'クエストID '+row.id} on:click={()=>openQuest(row)}>
             <strong>{questName(row,locale)}</strong>
-            <small>{characterName(row.characterId,locale)}</small>
+            <small>
+              {#if section==='story' && publicQuestNativeOrder(row)!==null && row.internalName.startsWith('Story!MRQS')}
+                メインクエストライン ·
+              {/if}
+              {characterName(row.characterId,locale)}
+            </small>
           </button>
         {/each}
         {#if filtered.total>limit}<div class="auto-sentinel" use:autoAppend={{hasMore:()=>filtered.total>limit,load:()=>limit+=40}} role="status" aria-label="スクロールでクエストを追加表示"></div>{/if}
@@ -617,7 +685,7 @@
 </main>
 
 <style>
-  .quests-public{max-width:1300px;margin:0 auto;padding:14px 22px 65px;color:#f2eafa}
+  .quests-public{width:100%;max-width:none;box-sizing:border-box;margin:0;padding:10px 16px 30px;color:#f2eafa}
   .hero{padding:4px 6px 10px}
   h1{font-size:clamp(26px,3vw,33px);margin:2px 0 4px}.hero p{color:#b9afc5;font-size:13px;margin:0}
   .numbers{display:flex;gap:18px;flex-wrap:wrap;margin:8px 0;color:#c7b7d5;font-size:12px}
@@ -625,13 +693,26 @@
   .quest-sections{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 9px}
   .quest-sections button{padding:10px 14px;border:1px solid #665077;border-radius:9px;background:#261c33;color:#e3d0f0;font-size:12px}
   .quest-sections button.chosen{border-color:#ba91ee;background:#543672;color:white}
+  .story-arcs{display:flex;gap:6px;overflow-x:auto;scrollbar-width:thin;padding:0 0 8px;margin-bottom:6px}
+  .story-arcs button{flex:0 0 auto;border:1px solid #554367;border-radius:8px;padding:9px 12px;
+    background:#271e35;color:#d7c5e7;font-size:12px}
+  .story-arcs button.chosen{background:#53366e;border-color:#bd9de3;color:white}
   .section-note{font-size:11px;color:#b49fbf;line-height:1.65;margin:7px 0}
-  .searchbar{display:grid;grid-template-columns:minmax(0,2fr) repeat(2,minmax(120px,1fr));gap:10px;margin-bottom:12px}
+  .searchbar{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin-bottom:10px}
+  .searchbar input{max-width:560px}
   .searchbar label{display:grid;gap:5px;font-size:12px;color:#d6c5e8}
   .searchbar input,.searchbar select{box-sizing:border-box;min-width:0;width:100%;background:#231b30;border:1px solid #65577c;color:#fff;border-radius:9px;padding:11px;font:inherit}
   .reward-focus{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 10px;font-size:12px;color:#d6c5e8}
   .reward-focus button{background:#392849;color:#f2e9fc;border:1px solid #755c8f;border-radius:7px;padding:6px 10px}
-  .workspace{display:grid;grid-template-columns:minmax(270px,.85fr) minmax(0,1.5fr);gap:15px;align-items:start}
+  .workspace{display:grid;grid-template-columns:minmax(240px,.75fr) minmax(0,1.6fr);gap:10px;align-items:start}
+  .workspace.with-character-rail{grid-template-columns:minmax(170px,.5fr) minmax(220px,.7fr) minmax(0,1.5fr)}
+  .character-rail{background:#1d1628;border:1px solid #4c3d5e;border-radius:12px;
+    padding:7px;min-width:0;max-height:calc(100vh - 28px);overflow:auto;scrollbar-width:thin;position:sticky;top:12px}
+  .character-rail button{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;
+    border:1px solid transparent;background:none;color:#e3d7ea;text-align:left;border-radius:8px;
+    padding:9px 10px;font-size:12px}
+  .character-rail button.chosen,.character-rail button:hover{background:#38284a;border-color:#82629d}
+  .character-rail small{color:#bfa6d1;font-size:11px}
   .results,.detail{background:#1d1628;border:1px solid #4c3d5e;border-radius:15px;padding:15px;min-width:0}
   .count{font-size:12px;color:#bea9ce;margin:1px 4px 12px}
   .quest-row{display:flex;flex-direction:column;align-items:start;text-align:left;width:100%;max-width:100%;min-width:0;box-sizing:border-box;gap:5px;padding:13px 14px;border:1px solid transparent;border-radius:9px;background:none;color:inherit;cursor:pointer}
@@ -690,7 +771,19 @@
   .target-collection-link{display:inline-grid;place-items:center;align-self:center;flex:0 0 24px;width:24px;height:24px;border-radius:5px;color:#e2c9ff;text-decoration:none}
   .target-collection-link:hover,.target-collection-link:focus-visible{background:#594070;color:#fff}
   .error{color:#ffb5bc}.status{color:#d0b4e7}footer{margin-top:28px;color:#a99db6;font-size:12px}footer a{color:#c8a4f6}
-  @media(max-width:850px){.searchbar{grid-template-columns:1fr 1fr}.workspace{grid-template-columns:1fr}.detail{position:static;max-height:none}}
+  @media(max-width:1100px){.workspace.with-character-rail{grid-template-columns:minmax(180px,.55fr) minmax(0,1.4fr)}
+    .workspace.with-character-rail .character-rail{grid-row:1;grid-column:1}
+    .workspace.with-character-rail .results{grid-row:2;grid-column:1}
+    .workspace.with-character-rail .detail{grid-row:1 / span 2;grid-column:2}}
+  @media(max-width:850px){.workspace,.workspace.with-character-rail{grid-template-columns:minmax(0,1fr)}
+    .workspace.with-character-rail .character-rail,.workspace.with-character-rail .results,
+    .workspace.with-character-rail .detail{grid-row:auto;grid-column:auto}
+    .character-rail{position:static;max-height:none;display:flex;overflow-x:auto;gap:5px}
+    .character-rail button{flex:0 0 auto;width:auto;white-space:nowrap;gap:7px}
+    .detail{position:static;max-height:none}}
   @media(max-width:520px){.related-quests ul{grid-template-columns:1fr}}
-  @media(max-width:510px){.quests-public{padding:18px 12px 70px}.searchbar{grid-template-columns:1fr}}
+  @media(max-width:510px){.quests-public{padding:8px 10px 24px}
+    .quest-sections{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin}
+    .quest-sections button{white-space:nowrap;flex:0 0 auto}
+    .searchbar{grid-template-columns:1fr}}
 </style>
