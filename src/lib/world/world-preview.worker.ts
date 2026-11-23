@@ -11,6 +11,7 @@ import { getOriginalGridAreaEvidence } from './native-gridarea-evidence.ts';
 import { getOriginalGridAreaLocalWindow } from './native-gridarea-local-window.ts';
 import { getOriginalGridObjectItemAreaLink } from './native-gridobject-item-area-link.ts';
 import {getOriginalDefaultGridLayersAtCell} from './native-default-gridlayers-cell.ts';
+import {getOriginalDefaultGridLayersWindow} from './native-default-gridlayers-window.ts';
 import { getSourceAnchorDomain, getTessellatedSourceAnchorWindow } from './native-anchor-domain';
 import {
   listWorldPreviewViews,
@@ -38,7 +39,8 @@ type Request =
   | { command:'clear'; requestId:number }
   | { command:'load'; requestId:number; file:Blob }
   | { command:'view'; requestId:number; viewKey:string;
-      gridIdNative:number; rect:Rect; offset:number }
+      gridIdNative:number; rect:Rect; offset:number;
+      includeDefaultLayers:boolean }
   | { command:'find-anchor'; requestId:number; viewKey:string;
       gridIdNative:number; itemId:number; matchIndex:number }
   | { command:'find-global-anchor'; requestId:number;
@@ -109,7 +111,8 @@ function parseRequest(data:unknown): Request {
       nonnegative(data.offset))
     return {command:'view',requestId,
       viewKey:data.viewKey,gridIdNative:data.gridIdNative,
-      rect:data.rect,offset:data.offset};
+      rect:data.rect,offset:data.offset,
+      includeDefaultLayers:data.includeDefaultLayers===true};
   throw new TypeError('DB04_WORKER_INVALID_REQUEST');
 }
 
@@ -221,7 +224,10 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
       worker.postMessage({
         kind:'view',requestId,page:result.page,markers:result.markers,
         terrainStatus:'native_terrain_not_projected_to_source_anchor_coordinates',
-        terrainRows:null
+        terrainRows:null,
+        defaultLayersWindow:message.includeDefaultLayers?
+          getOriginalDefaultGridLayersWindow(catalog,sourceView.layoutId,
+            message.gridIdNative,message.rect):null
       });
       return;
     }
@@ -237,7 +243,7 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
       message.gridIdNative,message.rect,{offset:message.offset,limit:64});
     if (page.status!=='source_native_default_layout_anchors_only') {
       worker.postMessage({kind:'view',requestId,page,markers:[],
-        terrainStatus:null});
+        terrainStatus:null,defaultLayersWindow:null});
       return;
     }
 
@@ -268,7 +274,10 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
       kind:'view',requestId,page,markers,
       terrainStatus:terrain.status,
       terrainRows:terrain.status==='source_corroborated_grid_local_preview'
-        ? terrain.rows : null
+        ? terrain.rows : null,
+      defaultLayersWindow:message.includeDefaultLayers?
+        getOriginalDefaultGridLayersWindow(catalog,sourceView.layoutId,
+          message.gridIdNative,message.rect):null
     });
   }catch(error){
     worker.postMessage({
