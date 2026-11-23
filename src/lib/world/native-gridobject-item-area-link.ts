@@ -9,8 +9,13 @@
  * Definitions.Grid.GridAreaData.GetGridArea after source item lookup,
  * unless its cached/runtime GridArea is already initialized.
  *
- * This is NOT a placed GridArea or world-coordinate projection. A runtime
- * GridArea override, collision rules, anchor pivot and Save identity may
+ * Steam 1.26.2 Meta.Grids.GridExtensions.IsAreaInside
+ * (token 0x0600F341, RVA 0x042E51B0, 72 instructions) checks original
+ * GridObject position plus GetSizeForOrientation against Grid Size×factor.
+ * This supports source Item DEFAULT outer bounding arithmetic only.
+ * This is NOT full IsAreaInside, a placed occupancy mask or world position:
+ * a cached GridArea override, other boundary checks, collision rules,
+ * anchor pivot for occupied cells, and Save identity may
  * differ from the fallback original item definition. No writes.
  */
 import {getSourceAnchorDomain} from './native-anchor-domain.ts';
@@ -46,6 +51,15 @@ export interface OriginalGridObjectAreaLink {
   /** Intrinsic local extent, NOT an actual bounding box on the source Grid. */
   readonly intrinsicOrientedLocalSizeX:number|null;
   readonly intrinsicOrientedLocalSizeY:number|null;
+  /** Source-item DEFAULT area outer rectangle anchored to original GridObject.X/Y.
+   * This is the native IsAreaInside boundary operand, NOT occupied cells. */
+  readonly sourceDefaultBoundingRect:Readonly<{x:number;y:number;width:number;height:number}>|null;
+  readonly sourceDefaultRectWithinGridExtent:boolean|null;
+  readonly sourceGridScaledSizeX:number|null;
+  readonly sourceGridScaledSizeY:number|null;
+  readonly nativeDefaultBoundaryArithmeticCorroborated:boolean;
+  readonly sourceDefaultRectNotPhysicalOccupancy:true;
+  readonly entireNativePlacementValidationVerified:false;
   readonly coordinateBasis:'source_gridobject_anchor_and_independent_item_local_area';
   readonly originalGridObjectNativeGetGridAreaFallbackCorroborated:boolean;
   readonly originalItemFactoryFactorOneCorroborated:boolean;
@@ -76,19 +90,35 @@ function response(status:OriginalGridObjectAreaLinkStatus,
   layoutId:string,gridId:number,gridObjectId:number,itemId:number,
   gridDataPath:string|null=null,sourceObject:Row|null=null,
   factor:1|2|null=null,sx:number|null=null,sy:number|null=null,
-  rx:number|null=null,ry:number|null=null
+  rx:number|null=null,ry:number|null=null,
+  gridScaledX:number|null=null,gridScaledY:number|null=null
 ):OriginalGridObjectAreaLink {
   const linked=status==='original_item_default_gridarea_linked';
+  const ox=sourceObject?sourceObject.x as number:null;
+  const oy=sourceObject?sourceObject.y as number:null;
+  const rectangle=linked&&ox!==null&&oy!==null&&
+    rx!==null&&ry!==null&&rx>0&&ry>0
+    ?Object.freeze({x:ox,y:oy,width:rx,height:ry}):null;
+  const inside=rectangle!==null&&gridScaledX!==null&&gridScaledY!==null
+    ?rectangle.x>=0&&rectangle.y>=0&&
+      rectangle.x+rectangle.width<=gridScaledX&&
+      rectangle.y+rectangle.height<=gridScaledY:null;
   return Object.freeze({
     contract:DB04_ORIGINAL_GRIDOBJECT_ITEM_AREA_LINK,
     status,sourceLayoutId:layoutId,nativeGridId:gridId,
     nativeGridObjectId:gridObjectId,itemId,gridDataPath,
-    originalAnchorX:sourceObject?sourceObject.x as number:null,
-    originalAnchorY:sourceObject?sourceObject.y as number:null,
+    originalAnchorX:ox,
+    originalAnchorY:oy,
     originalOrientationCode:sourceObject?sourceObject.orientationCode as number:null,
     originalGridTessellationFactor:factor,
     itemGridAreaSizeX:sx,itemGridAreaSizeY:sy,
     intrinsicOrientedLocalSizeX:rx,intrinsicOrientedLocalSizeY:ry,
+    sourceDefaultBoundingRect:inside===true?rectangle:null,
+    sourceDefaultRectWithinGridExtent:inside,
+    sourceGridScaledSizeX:gridScaledX,sourceGridScaledSizeY:gridScaledY,
+    nativeDefaultBoundaryArithmeticCorroborated:linked,
+    sourceDefaultRectNotPhysicalOccupancy:true as const,
+    entireNativePlacementValidationVerified:false as const,
     coordinateBasis:'source_gridobject_anchor_and_independent_item_local_area' as const,
     originalGridObjectNativeGetGridAreaFallbackCorroborated:linked,
     originalItemFactoryFactorOneCorroborated:linked,
@@ -167,5 +197,6 @@ export function getOriginalGridObjectItemAreaLink(
     evidence.rawSizeX,evidence.rawSizeY,
     object.orientationCode as number,factor);
   return response('original_item_default_gridarea_linked',...args,
-    evidence.rawSizeX,evidence.rawSizeY,dims.width,dims.height);
+    evidence.rawSizeX,evidence.rawSizeY,dims.width,dims.height,
+    domain.anchorSizeX,domain.anchorSizeY);
 }

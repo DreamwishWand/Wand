@@ -69,6 +69,14 @@ test('exact source layout+Grid+GridObject join resolves native orientation and i
   assert.equal(r.originalGridTessellationFactor,2);
   assert.deepEqual([r.itemGridAreaSizeX,r.itemGridAreaSizeY],[3,2]);
   assert.deepEqual([r.intrinsicOrientedLocalSizeX,r.intrinsicOrientedLocalSizeY],[6,6]);
+  assert.deepEqual(r.sourceDefaultBoundingRect,{x:5,y:6,width:6,height:6});
+  assert.equal(r.sourceDefaultRectWithinGridExtent,true);
+  assert.equal(r.sourceGridScaledSizeX,260);
+  assert.equal(r.sourceGridScaledSizeY,260);
+  assert.equal(r.nativeDefaultBoundaryArithmeticCorroborated,true);
+  assert.equal(r.sourceDefaultRectNotPhysicalOccupancy,true);
+  assert.equal(r.entireNativePlacementValidationVerified,false);
+  assert.throws(()=>{r.sourceDefaultBoundingRect.width=20;},TypeError);
   assert.equal(r.originalGridObjectNativeGetGridAreaFallbackCorroborated,true);
   assert.equal(r.originalItemFactoryFactorOneCorroborated,true);
   for(const k of ['runtimeAreaOverrideExcluded','actualPlacedGridAreaVerified',
@@ -90,6 +98,9 @@ test('source Grid.ID and GridObject.ID may repeat in other SceneLayouts without 
   assert.equal(other.originalGridTessellationFactor,1);
   assert.deepEqual([other.intrinsicOrientedLocalSizeX,
     other.intrinsicOrientedLocalSizeY],[3,2]);
+  assert.deepEqual(other.sourceDefaultBoundingRect,{x:4,y:5,width:3,height:2});
+  assert.equal(other.sourceDefaultRectWithinGridExtent,true);
+  assert.equal(other.sourceGridScaledSizeX,130);
 });
 
 test('source subset missing item, no-GridArea item, missing object and Grid remain distinct unknowns',()=>{
@@ -99,6 +110,8 @@ test('source subset missing item, no-GridArea item, missing object and Grid rema
   assert.equal(unknown.originalOrientationCode,4);
   assert.equal(unknown.originalGridTessellationFactor,2);
   assert.equal(unknown.itemGridAreaSizeX,null);
+  assert.equal(unknown.sourceDefaultBoundingRect,null);
+  assert.equal(unknown.sourceDefaultRectWithinGridExtent,null);
   assert.equal(unknown.actualPlacedGridAreaVerified,false);
   const noArea=getOriginalGridObjectItemAreaLink(f,L,7,1,200);
   assert.equal(noArea.status,'item_has_no_source_gridarea');
@@ -155,4 +168,37 @@ test('exact native identity, coordinates, orientation and source cardinality fai
   count.layouts.get(L).nativeGridEntries[0].defaultObjectCount=100;
   assert.throws(()=>getOriginalGridObjectItemAreaLink(count,L,7,0,100),
     /GRID_COUNT_MISMATCH/);
+});
+
+test('source Item default bounding arithmetic is a necessary condition, never edit permission',()=>{
+  const edge=fixture({
+    rows:[object(L,7,0,100,2,254,254)]
+  });
+  const inside=getOriginalGridObjectItemAreaLink(edge,L,7,0,100);
+  assert.deepEqual(inside.sourceDefaultBoundingRect,
+    {x:254,y:254,width:6,height:6});
+  assert.equal(inside.sourceDefaultRectWithinGridExtent,true);
+  assert.equal(inside.placementLegalityVerified,false);
+  const inconsistent=fixture({
+    rows:[object(L,7,0,100,2,259,259)]
+  });
+  const outside=getOriginalGridObjectItemAreaLink(inconsistent,L,7,0,100);
+  assert.equal(outside.status,'original_item_default_gridarea_linked');
+  assert.equal(outside.sourceDefaultRectWithinGridExtent,false);
+  assert.equal(outside.sourceDefaultBoundingRect,null);
+  assert.equal(outside.nativeDefaultBoundaryArithmeticCorroborated,true);
+  assert.equal(outside.placementLegalityVerified,false);
+  assert.equal(outside.actualPlacedGridAreaVerified,false);
+  const narrower=fixture({
+    factor:1,rows:[object(L,7,0,100,2,125,125)]
+  });
+  const small=getOriginalGridObjectItemAreaLink(narrower,L,7,0,100);
+  assert.deepEqual(small.sourceDefaultBoundingRect,
+    {x:125,y:125,width:3,height:3});
+  assert.equal(small.sourceGridScaledSizeX,130);
+  assert.equal(small.sourceDefaultRectWithinGridExtent,true);
+  // X and Y of original GridObject are the source-native outer-rectangle
+  // corner, but this does not establish any occupied point INSIDE it.
+  assert.equal(small.occupancyPredicateVerified,false);
+  assert.equal(small.nativeAnchorToAreaPivotVerified,false);
 });

@@ -378,3 +378,43 @@ dimensions. It is read-only and explicitly leaves
 `placementLegalityVerified`, `savedGridIdentityVerified` and
 `saveWritingAuthorized` as **false**. No original game binaries, Save
 records or raw Item GridLayers are committed to public Git.
+
+
+## Original source default GridArea outer-bound check (Steam v1.26.2)
+
+Further source-native correlation of
+`Meta.Grids.GridExtensions.IsAreaInside` (IL2CPP token `0x0600F341`)
+resolves the 1.26.1 PE64 method window `0x042E5100..0x042E5207`
+(SHA-256 `c78882799d69f1c169b38716a392e4337f4c4f148caf009c798a1ae89037c3c9`)
+to the 1.26.2 window `0x042E51B0..0x042E52B7`
+(SHA-256 `b9e514c28be3c3f8261fd329c71f8afa7be06cacab10224a5c33d9e7a5d0c457`).
+Their **72** aligned instructions have no non-relative byte changes:
+**61** byte-identical, **11** PC-relative displacement changes.
+
+The 1.26.2 function calls the original
+`GridArea.GetSizeForOrientation(orientation, Grid.TessellationFactor)`
+and verifies that the **source position X/Y** and
+`X + orientedWidth - 1`, `Y + orientedHeight - 1`
+remain inside the original GridData dimensions multiplied by the
+Grid tessellation factor. This verifies the **native boundary arithmetic
+for an original item's DEFAULT area**, not the entire
+`IsAreaInside` predicate: the function performs an additional
+GridData/position validity call that is **not** implemented by the
+source preview. It does not establish physical occupancy within the
+outer rectangle, a cached runtime/overridden GridArea, collisions,
+valid floor types, world-space transforms, EditMode permissions or
+safe Save writing.
+
+Independent source-only audit of the same owner-private Steam 1.26.2
+260-layout/891-GridData subset: all **25,674 / 25,674** initial GridObject
+records with available original Item `GridAreaData` fit this
+strictly bounded **source default** oriented outer rectangle.
+The other **4,660** Item references lack definitions in this
+*partial* Item archive and are **not** classified as valid or invalid.
+
+The read-only typed DB-04 result exposes an immutable
+`sourceDefaultBoundingRect` only when this source-default geometry is
+within the original Grid's factor-scaled bounds; otherwise it exposes
+an explicit failure without drawing a rectangle. The World preview
+draws a **dashed rectangle border only**, never filled occupied cells.
+These results do **not** authorize editing, collisions or placement.

@@ -116,6 +116,8 @@
   $: selectedLayout = layouts.find(a => a.viewKey === selectedViewKey);
   $: gridOptions = selectedLayout?.grids ?? [];
   $: selectedGrid = gridOptions.find(a => String(a.gridIdNative) === selectedGridId);
+  $: visibleSourceDefaultBounds = clippedDefaultSourceBounds(
+    itemAreaLink,viewport?.page??null,selectedLayout?.layoutId,selectedGrid);
   $: markersByCell = new Map((viewport?.markers ?? []).map(a => [`${a.x}:${a.y}`, a.count]));
   $: cells = viewport?.page?.rect && viewport.page.status === 'source_native_default_layout_anchors_only'
     ? Array.from({length:viewport.page.rect.width * viewport.page.rect.height}, (_, index) => {
@@ -134,6 +136,34 @@
 
   // Deterministic source-value palette for inspection, NOT gameplay terrain
   // colors, collision status, occupancy or object placement permission.
+  /**
+   * Draw only the SOURCE Item default area's OUTER bounding outline. It is
+   * never an occupancy fill and never a World/Save position transform.
+   * The grid-view uses 24px cells, 2px gaps, 4px padding and 1px border.
+   */
+  function clippedDefaultSourceBounds(
+    link:OriginalGridObjectAreaLink|null,
+    page:PageResult|null,layoutId:string|undefined,
+    grid:GridOption|undefined
+  ):{left:number;top:number;width:number;height:number}|null {
+    const area=link?.sourceDefaultBoundingRect;
+    const rect=page?.rect;
+    if(!area||!rect||page?.status!=='source_native_default_layout_anchors_only'||
+       link?.sourceDefaultRectWithinGridExtent!==true||
+       link.sourceLayoutId!==layoutId||
+       link.nativeGridId!==grid?.gridIdNative||
+       link.gridDataPath!==grid?.gridDataPath)
+      return null;
+    const x1=Math.max(area.x,rect.x),y1=Math.max(area.y,rect.y);
+    const x2=Math.min(area.x+area.width,rect.x+rect.width);
+    const y2=Math.min(area.y+area.height,rect.y+rect.height);
+    if(x1>=x2||y1>=y2)return null;
+    return {
+      left:5+(x1-rect.x)*26,top:5+(y1-rect.y)*26,
+      width:(x2-x1)*26-2,height:(y2-y1)*26-2
+    };
+  }
+
   function floorTint(nativeValue: number | undefined): string | undefined {
     if (!Number.isSafeInteger(nativeValue) || nativeValue === undefined) return undefined;
     if (nativeValue === 0) return '#34313f';
@@ -815,6 +845,16 @@
             {#if itemAreaLink.status==='original_item_default_gridarea_linked'}
               Item定義からのGridArea参照を確認しました。
               表示するサイズ・原値はローカルであり、アンカーからの占有範囲ではありません。
+              {#if itemAreaLink.sourceDefaultBoundingRect}
+                原本既定GridAreaの外接枠：
+                ({itemAreaLink.sourceDefaultBoundingRect.x},
+                {itemAreaLink.sourceDefaultBoundingRect.y}) ·
+                {itemAreaLink.sourceDefaultBoundingRect.width} ×
+                {itemAreaLink.sourceDefaultBoundingRect.height}。
+                外接枠の中がすべて占有セルという意味ではありません。
+              {:else}
+                原本Item既定枠がGrid境界と整合しないため、外接枠は表示しません。
+              {/if}
             {:else}
               Itemの形状定義はこの部分的な原本データでは特定できません。
             {/if}
@@ -926,10 +966,14 @@
           {#if viewport.terrainStatus === 'source_corroborated_grid_local_preview'}
             セルの色は原本のマスク値を識別するための便宜的な色です。
           {/if}
+          {#if visibleSourceDefaultBounds}
+            点線は原本Item既定GridAreaの外接枠です（占有セル・衝突判定ではありません）。
+          {/if}
         </p>
         <div class="map-scroll">
-          <div class="grid-view" style={'grid-template-columns: repeat(' + width + ', 24px)'}>
-            {#each cells as cell (`${cell.x}:${cell.y}`)}
+          <div class="grid-source-bounds-canvas">
+            <div class="grid-view" style={'grid-template-columns: repeat(' + width + ', 24px)'}>
+              {#each cells as cell (`${cell.x}:${cell.y}`)}
               <button type="button" class:has-anchor={cell.count > 0}
                 class:current={selectedCell?.x === cell.x && selectedCell?.y === cell.y}
                 style:background-color={floorTint(cell.nativeFloorValue)}
@@ -938,7 +982,16 @@
                 aria-label={`座標${cell.x},${cell.y}：アンカー${cell.count}件`}>
                 {cell.count > 0 ? Math.min(cell.count, 99) : ''}
               </button>
-            {/each}
+              {/each}
+            </div>
+            {#if visibleSourceDefaultBounds}
+              <div class="grid-source-default-outline"
+                aria-label="原本Item既定GridArea外接枠"
+                style={'left:'+visibleSourceDefaultBounds.left+'px;top:'+
+                  visibleSourceDefaultBounds.top+'px;width:'+
+                  visibleSourceDefaultBounds.width+'px;height:'+
+                  visibleSourceDefaultBounds.height+'px'}></div>
+            {/if}
           </div>
         </div>
         {#if selectedCell}
@@ -1005,6 +1058,9 @@
   .view-head h2 {font-size:17px;margin:0;}
   .view-head span {font-size:12px;color:#a99bb8;}
   .map-scroll {overflow:auto;max-width:100%;margin-top:20px;padding-bottom:10px;}
+  .grid-source-bounds-canvas {position:relative;width:max-content;}
+  .grid-source-default-outline {position:absolute;border:2px dashed #d6a55f;
+    border-radius:3px;pointer-events:none;box-sizing:border-box;}
   .grid-view {display:grid;gap:2px;width:max-content;border:1px solid #ffffff24;padding:4px;background:#16121f;}
   .grid-view button {height:24px;width:24px;padding:0;border:1px solid #ffffff10;border-radius:2px;background:#2d2837;color:#e8dafa;font-size:9px;line-height:1;}
   .grid-view button.has-anchor {color:white;border:2px solid #ecd1ff;box-shadow:inset 0 0 0 1px #2a2134;font-weight:700;}
