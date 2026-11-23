@@ -39,6 +39,7 @@ export const DB02_ALL_ORIGINAL_SOURCE_BROWSER_SCHEMA=
   'wand.db02.all-original-item-source-browser@1' as const;
 const PINNED_EXPANDED_BROWSER=new WeakSet<object>();
 const PINNED_STATIC_BROWSER=new WeakSet<object>();
+const PINNED_ALL_ORIGINAL_BROWSER=new WeakSet<object>();
 const ID=/^[1-9][0-9]{0,15}$/;
 const SAFE_KEY=/^[a-zA-Z0-9][a-zA-Z0-9:._\/-]{0,127}$/;
 const KINDS:readonly OriginKind[]=Object.freeze([
@@ -555,7 +556,7 @@ export function indexAllOriginalItemSources(
   const rows=[...byItem].sort(([a],[b])=>Number(a)-Number(b))
     .map(([itemId,origins])=>({itemId,origins}));
   const browser=indexSourceRows(rows,8200);
-  return Object.freeze({
+  const combined:AllOriginalItemSourceBrowser=Object.freeze({
     ...browser,
     combinedSchema:DB02_ALL_ORIGINAL_SOURCE_BROWSER_SCHEMA,
     gameVersion:'1.26.2' as const,
@@ -572,4 +573,15 @@ export function indexAllOriginalItemSources(
       playerOwnershipVerified:false as const
     })
   });
+  PINNED_ALL_ORIGINAL_BROWSER.add(combined);
+  return combined;
 }
+
+/** Only a browser built by the SHA-pinned 3,961+4,239 source join is trusted. */
+export function hasPinnedAllOriginalItemSourceEvidence(
+  value:unknown
+):value is AllOriginalItemSourceBrowser{
+  return value!==null&&typeof value==='object'&&
+    PINNED_ALL_ORIGINAL_BROWSER.has(value);
+}
+
