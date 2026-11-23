@@ -161,8 +161,12 @@
   };
   function categoryLabel(lang:string,id:string):string {
     const special:Record<string,Record<string,string>>={
-      ja:{Memories:'思い出','Quest Puzzles':'クエストのパズル',Exhibition:'展示','Source Activity Items':'その他のアイテム（詳細分類未確認）'},
-      en:{Memories:'Memories','Quest Puzzles':'Quest Puzzles',Exhibition:'Exhibition','Source Activity Items':'Other items (unclassified)'},
+      ja:{Memories:'思い出','Quest Puzzles':'クエストのパズル',
+        Exhibition:'展示','Photo Gallery':'フォトギャラリー',
+        'Adventure Companions':'冒険の仲間','Source Activity Items':'その他のアイテム（詳細分類未確認）'},
+      en:{Memories:'Memories','Quest Puzzles':'Quest Puzzles',
+        Exhibition:'Exhibition','Photo Gallery':'Photo Gallery',
+        'Adventure Companions':'Adventure Companions','Source Activity Items':'Other items (unclassified)'},
       fr:{Memories:'Souvenirs','Quest Puzzles':'Énigmes de quête',Exhibition:'Exposition','Source Activity Items':'Autres objets (non classés)'},
       it:{Memories:'Ricordi','Quest Puzzles':'Enigmi delle missioni',Exhibition:'Esposizione','Source Activity Items':'Altri oggetti (non classificati)'},
       de:{Memories:'Erinnerungen','Quest Puzzles':'Quest-Rätsel',Exhibition:'Ausstellung','Source Activity Items':'Andere Gegenstände (unklassifiziert)'},
@@ -1093,22 +1097,54 @@
               {/if}
             {/if}
           {:else}
-            <div class="section-lead">
-              <h2>{copy.categories}</h2>
-            </div>
-            <div class="facet-grid">
-              {#each scopedCategoryFacets as facet (facet.id)}
-                <button type="button" class="facet-card" disabled={facet.total===0} on:click={()=>chooseFacet(facet.id)}>
-                  <span class="facet-flourish" aria-hidden="true"><WandIcon name={categoryPictogram[facet.id]??'collection'} size={22}/></span>
-                  <strong>{categoryLabel(locale,facet.id)}</strong>
-                  {#if facet.total>0}
-                    <span>{facet.owned.toLocaleString(locale)} / {facet.total.toLocaleString(locale)}</span>
-                  {:else}
-                    <span>0</span>
-                  {/if}
+            <div class="section-lead"><h2>{copy.categories}</h2></div>
+            {#if sourceIndex&&originalCategoryCards.length}
+              <div class="facet-grid collection-original-category-grid"
+                aria-label={locale==='ja'?'ゲーム原本のコレクションカテゴリー':'Original Collection categories'}>
+                {#each originalCategoryCards as category (category.code)}
+                  <button type="button" class="facet-card collection-original-category"
+                    disabled={!category.total}
+                    title={category.total?
+                      (locale==='ja'?'原本に対応付けられたアイテム。ゲーム内での所属・完成率は未検証':'Source-linked items; in-game membership and completion are unverified'):
+                      (locale==='ja'?'対応する公開データは未収録':'No linked public item data yet')}
+                    on:click={()=>chooseOriginalCategory(category.code)}>
+                    <span class="facet-flourish" aria-hidden="true">
+                      <WandIcon name={categoryPictogram[category.family]??'collection'} size={23}/>
+                    </span>
+                    <strong>{categoryLabel(locale,category.family)}</strong>
+                    <span>{category.total?
+                      `${category.owned.toLocaleString(locale)} / ${category.total.toLocaleString(locale)}`:'—'}</span>
+                  </button>
+                {/each}
+              </div>
+              <div class="collection-source-category-footer">
+                <span>{locale==='ja'?'原本の分類候補・記録済み / 公開データ件数':'Source-based groups · recorded / published items'}</span>
+                <button type="button" class="subtle-button" aria-expanded={originalClassesOpen}
+                  on:click={()=>originalClassesOpen=!originalClassesOpen}>
+                  {locale==='ja'?'アイテムの種類から探す':'Browse by item type'}
+                  <WandIcon name={originalClassesOpen?'chevron-up':'chevron-down'} size={15}/>
                 </button>
-              {/each}
-            </div>
+              </div>
+            {:else}
+              <!-- The catalog can be used while DB-01's optional source menu index loads. -->
+              <p class="collection-source-category-footer" role="status">
+                {locale==='ja'?'カテゴリーを読み込み中':'Loading categories'}
+              </p>
+            {/if}
+            {#if originalClassesOpen||!sourceIndex}
+              <div class="facet-grid">
+                {#each scopedCategoryFacets as facet (facet.id)}
+                  <button type="button" class="facet-card" disabled={facet.total===0}
+                    on:click={()=>chooseFacet(facet.id)}>
+                    <span class="facet-flourish" aria-hidden="true">
+                      <WandIcon name={categoryPictogram[facet.id]??'collection'} size={22}/>
+                    </span>
+                    <strong>{categoryLabel(locale,facet.id)}</strong>
+                    <span>{facet.owned.toLocaleString(locale)} / {facet.total.toLocaleString(locale)}</span>
+                  </button>
+                {/each}
+              </div>
+            {/if}
           {/if}
         </div>
         {#if selectedItem}
