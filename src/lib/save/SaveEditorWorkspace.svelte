@@ -15,6 +15,17 @@
   /** Same Rust/WASM Save session in both user workspace and diagnostic route. */
   export let developmentMode=false;
   let activeEditorPane:'items'|'world'='items';
+  let amountEditorReady=false;
+  function startManualAmountEntry():void{
+    if(processing)return;
+    cancel();result=null;
+    amountRevisionIndex=null;
+    kind='inventory';
+    inventoryId='';itemId='';containerId='';
+    slotIndex='';chestItemId='';
+    expected='';replacement='';
+    amountEditorReady=true;
+  }
   function changeEditorPane(pane:'items'|'world'):void{
     activeEditorPane=pane;
     if(pane==='world'&&slotState==='ready'&&instanceState==='idle'&&
@@ -560,6 +571,7 @@
   function adoptSharedSave(file:File|null):void{
     if(fileSelected)queuedEdits=[];
     amountRevisionIndex=null;
+    amountEditorReady=false;
     fileSelected=file!==null;
     activeFile=file;
     // Do not leave an obsolete native filename visible when the shared
@@ -612,6 +624,7 @@
   }
   function populateAmountEditor(edit:BatchEdit,index:number):void{
     cancel();result=null;
+    amountEditorReady=true;
     amountRevisionIndex=index;
     kind=edit.target.kind;
     if(edit.target.kind==='inventory'){
@@ -642,6 +655,7 @@
       return;
     }
     cancel();result=null;
+    amountEditorReady=true;
     amountRevisionIndex=null;
     kind=slot.kind;
     if(slot.kind==='inventory'){
@@ -652,7 +666,10 @@
       chestItemId=String(slot.itemId);
     }
     expected=String(slot.amount);
-    replacement=String(Math.min(0xffffffff,slot.amount+1));
+    // The user must choose a replacement explicitly; the diagnostic
+    // workspace keeps its historic +1 default for regression tests.
+    replacement=developmentMode
+      ?String(Math.min(0xffffffff,slot.amount+1)):'';
   }
   function beginCatalogLookup(rows:readonly EditableSlot[],file:File,
     gridRows:readonly SavedGridItemReference[]){
@@ -1598,6 +1615,7 @@
     {#if activeFile}
       <p class="active-save-file" title={activeFile.name}>{activeFile.name}</p>
     {/if}
+    {#if developmentMode||amountEditorReady}
     <label>対象
       <select bind:value={kind} aria-label="対象の種類" disabled={processing}>
         <option value="inventory">Inventory</option>
@@ -1630,6 +1648,14 @@
     }}>
       破棄
     </button>
+    {:else}
+      <div class="editor-amount-empty">
+        <p>一覧からアイテムを選択してください。</p>
+        <button type="button" class="secondary"
+          disabled={processing}
+          on:click={startManualAmountEntry}>IDで指定</button>
+      </div>
+    {/if}
   </section>
   <section class="saved-slots editor-owned-panel" aria-label="セーブ内アイテム">
     <div class="slot-actions">
@@ -2289,6 +2315,9 @@
     box-shadow:inset 0 -2px 0 #d8b9f0;}
   .editor-empty{margin:14px 0;padding:18px;background:#261d32;
     border-radius:10px;font-size:14px;}
+  .editor-amount-empty{display:flex;align-items:center;flex-wrap:wrap;
+    gap:12px;min-height:90px;}
+  .editor-amount-empty p{margin:0;font-size:13px;}
   .active-save-file{flex:1 1 100%;margin:0;padding:6px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:#e5d5f1;}
   .eyebrow{font-size:11px;letter-spacing:.17em;color:#d4b0ee;}
   h1{font-size:clamp(26px,4vw,42px);margin:12px 0;}
