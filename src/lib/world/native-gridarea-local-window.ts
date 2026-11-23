@@ -1,36 +1,42 @@
 /**
- * Source-only Steam 1.26.2 GridArea.get_Item and intrinsic cardinal
- * TryGetGridLocalPosition projection (1:1 AREA-local factor). Source-native
- * instructions were independently compared with pinned Steam 1.26.1:
- * 0x0600343F and 0x0600344A have relocation-only code changes.
+ * Source-only Steam v1.26.2 original GridArea cell lookup for all 16 source
+ * orientation codes, with an EXPLICIT hypothetical caller grid factor 1/2.
  *
- * This DOES NOT map a GridArea to a SceneLayouts anchor or saved Grid,
- * prove item GridArea factory/grid tessellation ratio, physical occupancy,
- * collisions, terrain permissions, or safe placement. No writes.
+ * Pinned IL2CPP v31 native methods + bounded original PE64 code comparison:
+ * GridAreaData.GetGridArea, GridArea.get_Item, TryGetGridLocalPosition,
+ * MoreRotationGetGridLocalPosition, MoreRotationSize, GetUnRotated, Cos/Sin
+ * and .cctor. Actual saved/source placed-object-to-GridArea transform is
+ * NOT verified. GridLayers values are NOT occupied cells or permissions.
  */
 import {
   getOriginalGridAreaEvidence,
   type OriginalGridAreaStatus
 } from './native-gridarea-evidence.ts';
 
-export const DB04_SOURCE_LOCAL_GRIDAREA_WINDOW =
+export const DB04_SOURCE_LOCAL_GRIDAREA_WINDOW=
   'wand.db04.original-gridarea-local-window@1' as const;
-export type SourceLocalGridAreaStatus =
+export type SourceLocalGridAreaStatus=
   'source_native_local_layers'|'unsupported_intrinsic_orientation'|
   OriginalGridAreaStatus;
-
 export interface SourceLocalGridAreaWindow {
   readonly contract:typeof DB04_SOURCE_LOCAL_GRIDAREA_WINDOW;
   readonly status:SourceLocalGridAreaStatus;
   readonly itemId:number;
   readonly orientationCode:number;
+  readonly callerGridFactor:1|2;
   readonly orientedSizeX:number|null;
   readonly orientedSizeY:number|null;
   readonly rect:Readonly<{x:number;y:number;width:number;height:number}>|null;
-  readonly rows:readonly (readonly number[])[]|null;
-  readonly coordinateBasis:'isolated_original_gridarea_local_1_to_1_only';
+  readonly rows:readonly (readonly (number|null)[])[]|null;
+  readonly unmappedOriginalLocalCellCount:number;
+  readonly nullMeansUnmappedNotFree:true;
+  readonly coordinateBasis:
+    'isolated_original_gridarea_local_1_to_1_only'|
+    'isolated_original_gridarea_local_explicit_factor_only';
   readonly steam1262GetterReadPathCorroborated:boolean;
   readonly steam1262CardinalIntrinsicMappingCorroborated:boolean;
+  readonly steam1262ObliqueIntrinsicMappingCorroborated:boolean;
+  readonly steam1262GridAreaDataFactoryFactorOneCorroborated:boolean;
   readonly actualGridToAreaTessellationRatioVerified:false;
   readonly nativeGridObjectAnchorTransformVerified:false;
   readonly occupancyPredicateVerified:false;
@@ -45,22 +51,30 @@ const obj=(v:unknown):v is RecordValue=>
 const int=(v:unknown):v is number=>
   typeof v==='number'&&Number.isSafeInteger(v);
 const CARDINAL=new Set([0,4,8,12]);
+// Original signed int32 rotation tables, 16 entries each. Verified from
+// source-hashed field-default blobs in BOTH IL2CPP metadata v31 originals.
+const COS=[-100,-92,-71,-38,0,38,71,92,100,92,71,38,0,-38,-71,-92] as const;
+const SIN=[0,38,71,92,100,92,71,38,0,-38,-71,-92,-100,-92,-71,-38] as const;
 
 function result(
   status:SourceLocalGridAreaStatus,itemId:number,orientationCode:number,
-  sizeX:number|null,sizeY:number|null,
+  factor:1|2,sizeX:number|null,sizeY:number|null,
   rect:SourceLocalGridAreaWindow['rect'],
-  rows:SourceLocalGridAreaWindow['rows']
+  rows:SourceLocalGridAreaWindow['rows'],unmapped:number
 ):SourceLocalGridAreaWindow {
-  const isValid=status==='source_native_local_layers';
+  const good=status==='source_native_local_layers';
   return Object.freeze({
-    contract:DB04_SOURCE_LOCAL_GRIDAREA_WINDOW,
-    status,itemId,orientationCode,
-    orientedSizeX:sizeX,orientedSizeY:sizeY,
-    rect,rows,
-    coordinateBasis:'isolated_original_gridarea_local_1_to_1_only' as const,
-    steam1262GetterReadPathCorroborated:isValid,
-    steam1262CardinalIntrinsicMappingCorroborated:isValid,
+    contract:DB04_SOURCE_LOCAL_GRIDAREA_WINDOW,status,itemId,orientationCode,
+    callerGridFactor:factor,orientedSizeX:sizeX,orientedSizeY:sizeY,
+    rect,rows,unmappedOriginalLocalCellCount:unmapped,
+    nullMeansUnmappedNotFree:true as const,
+    coordinateBasis:factor===1
+      ?'isolated_original_gridarea_local_1_to_1_only' as const
+      :'isolated_original_gridarea_local_explicit_factor_only' as const,
+    steam1262GetterReadPathCorroborated:good,
+    steam1262CardinalIntrinsicMappingCorroborated:good&&CARDINAL.has(orientationCode),
+    steam1262ObliqueIntrinsicMappingCorroborated:good&&!CARDINAL.has(orientationCode),
+    steam1262GridAreaDataFactoryFactorOneCorroborated:good,
     actualGridToAreaTessellationRatioVerified:false as const,
     nativeGridObjectAnchorTransformVerified:false as const,
     occupancyPredicateVerified:false as const,
@@ -70,29 +84,69 @@ function result(
     originalSourceAuthenticationVerified:false as const
   });
 }
-
 /**
- * A maximum 16×16 bounded read-only matrix of LITERAL GridLayers uint32s.
- * Orientation applies the original GridArea cardinal transform in an
- * isolated 1:1 area-local frame, NOT the live GridObject's placement.
+ * Native GridArea.GetSizeForOrientation base bounding dimensions (not
+ * occupancy). For oblique branches, preserve x86 signed-int arithmetic and
+ * integer truncation; source sizes <=256 cannot overflow the products.
  */
+function originalOrientedBaseSize(sx:number,sy:number,orientation:number){
+  if(orientation===0||orientation===8)return {x:sx,y:sy};
+  if(orientation===4||orientation===12)return {x:sy,y:sx};
+  const c=Math.abs(COS[orientation]),s=Math.abs(SIN[orientation]);
+  return {
+    x:Math.trunc((Math.imul(c,sx)+Math.imul(s,sy))/100),
+    y:Math.trunc((Math.imul(c,sy)+Math.imul(s,sx))/100)
+  };
+}
+function originalLayerCoordinates(
+  sx:number,sy:number,nx:number,ny:number,
+  x:number,y:number,orientation:number
+):Readonly<{x:number;y:number}>|null {
+  if(CARDINAL.has(orientation)){
+    const lx=orientation===0?sx-1-x:
+      orientation===4?y:
+      orientation===12?sx-1-y:x;
+    const ly=orientation===0?sy-1-y:
+      orientation===4?sy-1-x:
+      orientation===12?x:y;
+    return lx<0||ly<0||lx>=sx||ly>=sy?null:{x:lx,y:ly};
+  }
+  // Native MoreRotationGetGridLocalPosition source coordinates in
+  // hundredths: cell centres, inverse integer rotation, then floor /100.
+  // Math.imul and |0 preserve original signed 32-bit product wrapping;
+  // division of each product is truncation toward zero, NOT Math.round().
+  const cx=(Math.imul(x,100)+50-Math.imul(nx,50))|0;
+  const cy=(Math.imul(y,100)+50-Math.imul(ny,50))|0;
+  const cos=COS[orientation],sin=SIN[orientation];
+  const rx=(
+    Math.trunc(Math.imul(cx,cos)/100)+
+    Math.trunc(Math.imul(cy,sin)/100)+Math.imul(sx,50))|0;
+  const ry=(
+    Math.trunc(Math.imul(cy,cos)/100)-
+    Math.trunc(Math.imul(cx,sin)/100)+Math.imul(sy,50))|0;
+  if(rx<0||ry<0)return null;
+  const lx=Math.trunc(rx/100),ly=Math.trunc(ry/100);
+  return lx>=sx||ly>=sy?null:{x:lx,y:ly};
+}
+
+/** Max 16×16 literal raw source values, never a physical occupancy map. */
 export function getOriginalGridAreaLocalWindow(
   source:unknown,itemId:number,orientationCode:number,
-  x:number,y:number,width:number,height:number
+  x:number,y:number,width:number,height:number,
+  callerGridFactor:1|2=1
 ):SourceLocalGridAreaWindow {
   if(!int(orientationCode)||orientationCode<0||orientationCode>15||
      ![x,y,width,height].every(int)||x<0||y<0||
-     width<1||height<1||width>16||height>16)
+     width<1||height<1||width>16||height>16||
+     (callerGridFactor!==1&&callerGridFactor!==2))
     throw new TypeError('DB04_GRIDAREA_LOCAL_WINDOW_INVALID_REQUEST');
   const evidence=getOriginalGridAreaEvidence(source,itemId);
   if(evidence.status!=='source_raw_gridarea_available')
-    return result(evidence.status,itemId,orientationCode,null,null,null,null);
-  if(!CARDINAL.has(orientationCode))
-    return result('unsupported_intrinsic_orientation',
-      itemId,orientationCode,null,null,null,null);
+    return result(evidence.status,itemId,orientationCode,callerGridFactor,
+      null,null,null,null,0);
   const sx=evidence.rawSizeX!,sy=evidence.rawSizeY!;
-  const swap=orientationCode===4||orientationCode===12;
-  const nx=swap?sy:sx,ny=swap?sx:sy;
+  const base=originalOrientedBaseSize(sx,sy,orientationCode);
+  const nx=base.x*callerGridFactor,ny=base.y*callerGridFactor;
   if(x+width>nx||y+height>ny)
     throw new TypeError('DB04_GRIDAREA_LOCAL_WINDOW_OUT_OF_RANGE');
   if(!obj(source)||!(source.objects instanceof Map))
@@ -103,21 +157,18 @@ export function getOriginalGridAreaLocalWindow(
      entry.footprint.layerValues.length!==sx*sy)
     throw new TypeError('DB04_GRIDAREA_LOCAL_SOURCE_INCONSISTENT');
   const layers=entry.footprint.layerValues as readonly number[];
-  const generated:number[][]=[];
+  const generated:(number|null)[][]=[];
+  let unmapped=0;
   for(let iy=y;iy<y+height;iy++){
-    const row:number[]=[];
+    const row:(number|null)[]=[];
     for(let ix=x;ix<x+width;ix++){
-      // The 1.26.2 source getter resolves layer[x*SizeY+y].
-      // Cardinal mapping is confined to a hypothetical 1:1 Area frame.
-      const lx=orientationCode===0?sx-1-ix:
-        orientationCode===4?iy:
-        orientationCode===12?sx-1-iy:ix;
-      const ly=orientationCode===0?sy-1-iy:
-        orientationCode===4?sy-1-ix:
-        orientationCode===12?ix:iy;
-      if(lx<0||ly<0||lx>=sx||ly>=sy)
-        throw new TypeError('DB04_GRIDAREA_LOCAL_NATIVE_TRANSFORM_OUT_OF_RANGE');
-      const raw=layers[lx*sy+ly];
+      const local=originalLayerCoordinates(sx,sy,base.x,base.y,
+        Math.floor(ix/callerGridFactor),Math.floor(iy/callerGridFactor),
+        orientationCode);
+      if(!local){
+        row.push(null);unmapped++;continue;
+      }
+      const raw=layers[local.x*sy+local.y];
       if(!Number.isSafeInteger(raw)||raw<0||raw>0xffffffff)
         throw new TypeError('DB04_GRIDAREA_LOCAL_INVALID_NATIVE_LAYER');
       row.push(raw);
@@ -125,6 +176,7 @@ export function getOriginalGridAreaLocalWindow(
     generated.push(row);
   }
   const immutableRows=Object.freeze(generated.map(row=>Object.freeze(row)));
-  return result('source_native_local_layers',itemId,orientationCode,nx,ny,
-    Object.freeze({x,y,width,height}),immutableRows);
+  return result('source_native_local_layers',itemId,orientationCode,
+    callerGridFactor,nx,ny,
+    Object.freeze({x,y,width,height}),immutableRows,unmapped);
 }
