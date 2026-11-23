@@ -106,7 +106,6 @@
   let sourceActivityTypeCards:{
     code:number;nativeName:string|null;total:number;owned:number
   }[]=[];
-  let sourceCategoryCardsVisible=true;
   let sourceGroupsCacheKey='';
   let universeSections:{facet:CollectionFacet;items:CollectionItem[]}[]=[];
   let worldFilter='';
@@ -158,7 +157,8 @@
     :universeScopeOptions).filter(option=>
       option.label.toLocaleLowerCase(locale).includes(universeSearch.trim().toLocaleLowerCase(locale)));
   $: landingUniverse=viewAxis==='universe'&&!universeFilter&&
-    sourceUniverseSelection===null&&!selected&&sourceActivityType===null&&!search.trim()&&
+    sourceUniverseSelection===null&&!sourceChoices.disneyUniverse&&
+    !selected&&sourceActivityType===null&&!search.trim()&&
     status==='all'&&!favoriteOnly&&!expansion&&!acquisitionFilter;
   $: landingWorld=viewAxis==='world'&&!selected&&sourceActivityType===null&&
     !browsingAllItems&&!search.trim()&&status==='all'&&!favoriteOnly&&
@@ -167,7 +167,6 @@
   // Each category may use a different proven subgroup axis. Only Furniture
   // and Clothing currently have a verified Universe-based browse path.
   // Biome/subtype families go directly to items until exact source groups land.
-  $: landingSubgroup=false;
   $: universeSectionView=viewAxis==='universe'&&Boolean(
     sourceUniverseSelection!==null||universeFilter)&&!selected&&
     sourceActivityType===null&&!search.trim()&&status==='all'&&
@@ -416,7 +415,9 @@
             ?a.itemId-b.itemId:
             Number(b.nameVerified)-Number(a.nameVerified)||
               a.label.localeCompare(b.label,locale)||a.itemId-b.itemId);
-        if(universeSectionView){
+        if(viewAxis==='universe'&&sourceUniverseSelection!==null&&!selected&&
+          sourceActivityType===null&&!search.trim()&&status==='all'&&
+          !favoriteOnly&&!expansion&&!acquisitionFilter){
           const groups=groupCollectionUniverseItems(sourceAllMatching,item=>{
             const activity=sourceIndex?.activityTypesByItem.get(item.itemId);
             const id=activity?'activity-'+activity.code:item.family;
@@ -789,9 +790,6 @@
     sourceChoices=sourceIndex&&id&&id!==COLLECTION_UNIVERSE_UNTAGGED
       ?{disneyUniverse:id}:{};
     sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
-  }
-  function openCategoryItems():void{
-    bypassCategoryGroups=true;universeFilter='';resetView();
   }
   function returnToCategory():void{
     browsingAllItems=false;selected='';sourceActivityType=null;
