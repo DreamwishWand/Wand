@@ -170,8 +170,9 @@ try{
     buffer:Buffer.from(JSON.stringify(quantityProfile))
   });
   await page.getByRole('button',{name:'セーブファイル管理'}).click();
-  await page.getByRole('button',{name:'編集プレビューを開く（開発用）'}).click();
-  await page.waitForURL('**/save/preview/');
+  await page.getByRole('button',{name:'Save Editor（テスト版）'}).click();
+  await page.waitForURL('**/save/');
+  await page.locator('main.editor-workspace').getByRole('heading',{name:'Save Editor'}).waitFor();
   await page.locator('.active-save-file').getByText('shared-preview.profile').waitFor();
   const sharedSlotCount=page.locator('.slot-actions [role="status"]').filter({hasText:'件'}).first();
   await sharedSlotCount.waitFor({timeout:30000});
@@ -1381,6 +1382,94 @@ try{
   assert.equal(quantityProfile.World.GridCollection.DiffGrids['102']
     .ModifiedObjects['6'].X,-12);
 
+  // The user-facing Save Editor MUST share the same Rust/WASM editing
+  // engine; no duplicate patch logic or developer-preview-only route.
+  await page.goto('http://127.0.0.1:4185/Wand/',{
+    waitUntil:'domcontentloaded'
+  });
+  await page.locator('input[aria-hidden="true"][accept*=".profile"]')
+    .setInputFiles({
+      name:'user-save-editor.profile',mimeType:'application/octet-stream',
+      buffer:syntheticEncryptedP1g(quantityProfile)
+    });
+  await page.getByRole('button',{name:'セーブファイル管理'}).click();
+  await page.getByRole('button',{
+    name:'Save Editor（テスト版）'
+  }).click();
+  await page.waitForURL('**/save/');
+  const regular=page.locator('main.editor-workspace');
+  await regular.getByRole('heading',{name:'Save Editor'}).waitFor();
+  assert.equal(await regular.locator('.eyebrow').count(),0);
+  assert.equal(await regular.getByRole('region',{
+    name:'クエスト参照'
+  }).count(),0,'source diagnostics must not occupy the editor viewport');
+  await regular.getByRole('region',{name:'セーブ内アイテム'})
+    .getByRole('status').filter({hasText:'4件'})
+    .waitFor({timeout:30000});
+  const userSlot=regular.getByRole('button',{
+    name:'所持アイテム 777 を選択'
+  });
+  await userSlot.click();
+  assert.equal(await regular.getByLabel('現在の数量').inputValue(),'1');
+  await regular.getByLabel('変更後の数量').fill('250');
+  await regular.getByRole('button',{name:'複数編集に追加'}).click();
+  const tabs=regular.getByRole('navigation',{
+    name:'Save Editorの編集対象'
+  });
+  await tabs.getByRole('button',{name:'配置編集'}).click();
+  await regular.getByRole('region',{name:'配置オブジェクト'})
+    .getByRole('button',{name:'配置 #1 の座標を編集'})
+    .waitFor({timeout:30000});
+  assert.equal(await regular.getByRole('region',{
+    name:'セーブ内アイテム'
+  }).count(),0,'standard mode shows one work area at a time');
+  assert.equal(await regular.getByText('DB-04参照データ（ローカル・任意）')
+    .count(),0,'native diagnostic controls are not part of user workspace');
+  await regular.getByRole('button',{
+    name:'配置 #1 の座標を編集'
+  }).click();
+  const standardCoordinate=regular.getByLabel('座標編集',{exact:true});
+  await standardCoordinate.getByLabel('新しいX').fill('81');
+  await standardCoordinate.getByLabel('新しいY').fill('22');
+  await standardCoordinate.getByRole('button',{
+    name:'座標編集に追加'
+  }).click();
+  await tabs.getByRole('button',{name:'Inventory / Chest'}).click();
+  assert.equal(await regular.getByRole('region',{
+    name:'一括数量変更'
+  }).count(),1,'the queued item change survives tab switching');
+  const regularJoint=regular.getByRole('region',{
+    name:'所持品と配置の統合編集'
+  });
+  await regularJoint.getByRole('button',{
+    name:/数量と配置をまとめて検証/
+  }).click();
+  await regularJoint.getByRole('status').filter({
+    hasText:'数量1件・配置1件をRust/WASMで検証しました'
+  }).waitFor({timeout:30000});
+  page.once('dialog',dialog=>dialog.accept());
+  await regularJoint.getByRole('button',{name:'統合コピーを生成'}).click();
+  const regularLink=regularJoint.getByRole('link',{
+    name:'統合コピーをダウンロード'
+  });
+  await regularLink.waitFor({timeout:30000});
+  const regularEvent=page.waitForEvent('download');
+  await regularLink.click();
+  const regularCopy=readSyntheticEncryptedP1g(
+    await readFile(await (await regularEvent).path())
+  );
+  assert.equal(regularCopy.Player.ListInventories['100']
+    .Inventory['777'].Amount,250);
+  assert.deepEqual([
+    regularCopy.World.GridCollection.Grids['101'].Objects['1'].X,
+    regularCopy.World.GridCollection.Grids['101'].Objects['1'].Y
+  ],[81,22]);
+  assert.equal(regularCopy.World.GridCollection.Grids['101']
+    .Objects['1'].PrivateState,'do-not-export');
+  assert.equal(quantityProfile.Player.ListInventories['100']
+    .Inventory['777'].Amount,1);
+  assert.equal(quantityProfile.World.GridCollection.Grids['101']
+    .Objects['1'].X,45);
   assert.deepEqual(errors,[],errors.join('\n'));
   await page.close();
   console.log('DB-05 browser: explicit JSON/P1G edited-copy downloads, native reopen, stale rejection, original preservation PASS');
