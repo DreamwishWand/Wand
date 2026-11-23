@@ -94,7 +94,7 @@ test('exact native ActivityItem and Furniture source fields are retained separat
     x.nativeLootCandidate.groupIndex===0));
   assert(index.getTableObjectReferences('2090000003').some(x=>
     x.sourceObjectItemId==='31300003'));
-  const furnitureRef=index.getObjectTableReferences('31500371');
+  const furnitureRef=index.getObjectTableReferences('40600000');
   assert(furnitureRef.length>0);
   assert.equal(furnitureRef[0].sourceFamily,'Furniture');
   assert.equal(furnitureRef[0].sourceWirePath,'protobuf.12');
