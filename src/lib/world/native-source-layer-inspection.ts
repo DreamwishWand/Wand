@@ -96,8 +96,12 @@ export function inspectSourceDefaultGridLayers(
       candidate.gridIdNative===gridIdNative);
   if(!view||!grid)throw new TypeError('DB04_SOURCE_LAYER_INSPECTION_GRID_NOT_FOUND');
   const path=grid.gridDataPath;
-  if(catalog.manifest.gameVersion!=='1.26.2'||
-     catalog.manifest.platform!=='Steam')
+  const manifest=source!==null&&typeof source==='object'&&
+    'manifest' in source&&source.manifest!==null&&
+    typeof source.manifest==='object'
+    ?source.manifest:null;
+  if(!manifest||!('gameVersion' in manifest)||!('platform' in manifest)||
+     manifest.gameVersion!=='1.26.2'||manifest.platform!=='Steam')
     return result('source_game_version_not_verified',
       viewKey,gridIdNative,path,focusX,focusY);
   const domain=getSourceAnchorDomain(catalog,view.layoutId,gridIdNative);
