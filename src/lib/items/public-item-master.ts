@@ -111,9 +111,10 @@ function validRecord(raw:unknown, bucket:string): raw is ItemMasterRecord {
       raw.collectionMembershipVerified !== false ||
       raw.worldMembershipVerified !== false ||
       raw.availabilityVerified !== false) return false;
+  const names = raw.names as Record<string,unknown>;
   if (!ITEM_MASTER_LOCALES.every(locale =>
-    raw.names[locale] === null ||
-    (typeof raw.names[locale] === 'string' && raw.names[locale].length > 0)))
+    names[locale] === null ||
+    (typeof names[locale] === 'string' && (names[locale] as string).length > 0)))
     return false;
   if (raw.tags.some((v:unknown) => !isObject(v) || !ID(v.id) ||
     typeof v.key !== 'string' || typeof v.facet !== 'string' ||
