@@ -534,7 +534,7 @@ outside the original SRC-01 set, with classifications
 not change the original SRC-02 extraction or certify acquisition eligibility.
 
 The browser-safe `createAcquisitionCatalogEvidence(audit, {src02ManifestSha256,
-db01ManifestSha256})` in `src/lib/acquisition/catalog-evidence.mjs` makes the
+db01ManifestSha256})` in `src/lib/acquisition/catalog-evidence.ts` makes the
 supplemental status queryable by ID. Both expected SHA values must come from a
 separately trusted provider; calculating them from the unauthenticated audit
 would not be a useful security check. An unlisted ID returns `null` rather than
