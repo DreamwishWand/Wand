@@ -9,6 +9,7 @@ import { openLocalWorldZip } from './local-snapshot.ts';
 import { WorldSourceLoadEpoch } from './world-source-load-epoch.ts';
 import { getNativeTerrainWindow,getNativeTerrainRaster } from './native-terrain-preview.ts';
 import {getNativeRegionGridAtlasPage} from './native-region-grid-atlas.ts';
+import {searchNativeFloorItems,getNativeFloorMatchResult} from './native-floor-match.ts';
 import { findOriginalItemAnchor, findOriginalItemAnchorAcrossGrids } from './native-item-anchor-finder.ts';
 import { getOriginalGridAreaEvidence } from './native-gridarea-evidence.ts';
 import { getOriginalGridAreaLocalWindow } from './native-gridarea-local-window.ts';
@@ -30,6 +31,9 @@ type Rect = Readonly<{x:number; y:number; width:number; height:number}>;
 type Request =
   | { command:'clear'; requestId:number }
   | { command:'load'; requestId:number; file:Blob }
+  | { command:'floor-items'; requestId:number; query:string }
+  | { command:'floor-match';requestId:number;regionKey:string;
+      viewKey:string;gridIdNative:number;itemId:number }
   | { command:'terrain-raster'; requestId:number; viewKey:string; gridIdNative:number }
   | { command:'region-atlas'; requestId:number; regionKey:string;offset:number }
   | { command:'view'; requestId:number; viewKey:string;
@@ -116,6 +120,19 @@ function parseRequest(data:unknown): Request {
     return {command:'find-anchor',requestId,
       viewKey:data.viewKey,gridIdNative:data.gridIdNative,
       itemId:data.itemId,matchIndex:data.matchIndex};
+  if(data.command==='floor-items'&&
+    typeof data.query==='string'&&data.query.length<=100)
+    return {command:'floor-items',requestId,query:data.query};
+  if(data.command==='floor-match'&&
+    typeof data.regionKey==='string'&&data.regionKey.length>0&&
+    data.regionKey.length<=256&&
+    typeof data.viewKey==='string'&&data.viewKey.length>0&&
+    data.viewKey.length<=2048&&
+    nonnegative(data.gridIdNative)&&data.gridIdNative<=0xffffffff&&
+    positive(data.itemId)&&data.itemId<=0xffffffff)
+    return {command:'floor-match',requestId,
+      regionKey:data.regionKey,viewKey:data.viewKey,
+      gridIdNative:data.gridIdNative,itemId:data.itemId};
   if(data.command==='region-atlas'&&
     typeof data.regionKey==='string'&&data.regionKey.length>0&&
     data.regionKey.length<=256&&nonnegative(data.offset)&&
@@ -218,6 +235,19 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
         message.itemId,message.orientationCode,x,y,width,height,
         message.callerGridFactor);
       worker.postMessage({kind:'gridarea-window',requestId,result:window});
+      return;
+    }
+    if(message.command==='floor-items'){
+      const items=searchNativeFloorItems(catalog,message.query,24);
+      worker.postMessage({kind:'floor-items',requestId,
+        query:message.query,items});
+      return;
+    }
+    if(message.command==='floor-match'){
+      const result=getNativeFloorMatchResult(catalog,views,
+        message.regionKey,message.viewKey,
+        message.gridIdNative,message.itemId);
+      worker.postMessage({kind:'floor-match',requestId,result});
       return;
     }
     if(message.command==='region-atlas'){
