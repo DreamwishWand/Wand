@@ -20,7 +20,7 @@ export type CollectionEvidenceReply=
 
 export interface CollectionSourceWorker {
   onmessage:((event:MessageEvent<CollectionEvidenceReply>)=>void)|null;
-  onerror:((event:Event)=>void)|null;
+  onerror:((event:ErrorEvent)=>void)|null;
   postMessage(message:CollectionEvidenceRequest):void;
   terminate():void;
 }
