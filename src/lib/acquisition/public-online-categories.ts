@@ -25,6 +25,7 @@ const FAMILY_PINS=Object.freeze([
 const KINDS=Object.freeze(['premium','time_limited'] as const);
 const BASE=/^\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/;
 const ID=/^[1-9][0-9]{0,15}$/;
+const PINNED=new WeakSet<object>();
 const EMPTY_CATEGORIES=Object.freeze([]) as readonly NativeOnlineCategory[];
 const EMPTY_ROWS=Object.freeze([]) as readonly NativeOnlineCategoryRow[];
 const EMPTY_IDS=Object.freeze([]) as readonly string[];
@@ -149,7 +150,7 @@ function parse(raw:unknown):NativeOnlineCategoryIndex {
   for(const itemRows of byItem.values())Object.freeze(itemRows);
   for(const ids of byCategory.values())ids.sort((a,b)=>Number(a)-Number(b));
   for(const ids of byCategory.values())Object.freeze(ids);
-  return Object.freeze({
+  const index:NativeOnlineCategoryIndex=Object.freeze({
     schema:DB02_ONLINE_CATEGORY_SCHEMA,gameVersion:'1.26.2' as const,
     nativeEnum:ENUM,rows:Object.freeze(rows),
     coverage:Object.freeze({
@@ -177,6 +178,14 @@ function parse(raw:unknown):NativeOnlineCategoryIndex {
       return byFamily.get(family)?.get(kind)??EMPTY_IDS;
     }
   });
+  PINNED.add(index);
+  return index;
+}
+/** Only SHA-verified original-source projections are admitted to joins. */
+export function hasPinnedNativeOnlineCategoryEvidence(
+  value:unknown
+):value is NativeOnlineCategoryIndex {
+  return value!==null&&typeof value==='object'&&PINNED.has(value);
 }
 /** SHA-pinned, opt-in browser loader. No per-user Save or online server access. */
 export async function loadPinnedNativeOnlineCategories(
