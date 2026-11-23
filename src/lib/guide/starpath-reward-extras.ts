@@ -100,8 +100,7 @@ export function verifyStarpathRewardExtras(
   check(record(data.rows)&&Object.keys(data.rows).length===17&&
     Object.keys(data.rows).every(id=>Object.hasOwn(STARPATH_EXTRA_CATEGORIES,id)),
     '17 source IDs');
-  check(Array.isArray(sourceCatalog.seasons)&&sourceCatalog.seasons.length===2,
-    'season context');
+  check(sourceCatalog.seasons.length===2,'season context');
   const references=new Set<string>();
   for(const season of sourceCatalog.seasons){
     for(const reward of [
@@ -125,10 +124,11 @@ export function verifyStarpathRewardExtras(
     if(category==='TouchOfMagic'){
       check(row.names===null,'motif must not invent native name');motifs++;
     }else{
-      check(record(row.names)&&Object.keys(row.names).length===8&&
-        ORIGINAL_LANGS.every(locale=>Object.hasOwn(row.names,locale)),
+      const nativeNames=row.names;
+      check(record(nativeNames)&&Object.keys(nativeNames).length===8&&
+        ORIGINAL_LANGS.every(locale=>Object.hasOwn(nativeNames,locale)),
         'original locales');
-      for(const value of Object.values(row.names)){
+      for(const value of Object.values(nativeNames)){
         check(typeof value==='string'&&value.length>0&&value.length<=300&&
           !/[<>\u0000-\u001f]/.test(value),'unsafe original label');
       }
