@@ -43,6 +43,7 @@
   let locale='ja';
   let character='';
   let section:PublicQuestSection='story';
+  let unclassifiedOpen=false;
   let storyArc:PublicQuestStoryArc='valley';
   const arcs:readonly {id:PublicQuestStoryArc;name:string}[]=[
     {id:'valley',name:'ドリームライトバレー'},
@@ -246,6 +247,7 @@
     if(row){
       if(!focus&&!sourceTargets.length&&params.has('quest')){
         section=publicQuestSection(row);
+        if(section==='special'||section==='tutorial')unclassifiedOpen=true;
         if(section==='story')storyArc=publicQuestStoryArc(row)??'valley';
         character=section==='friendship'?row.characterId:'';
       }
@@ -406,7 +408,7 @@
     </nav>
     <!-- Secret and FTUE are Mission source categories, not verified Japanese
          in-game Quest Log categories. Keep them accessible but distinct. -->
-    <details class="quest-unclassified" open={section==='special'||section==='tutorial'}>
+    <details class="quest-unclassified" bind:open={unclassifiedOpen}>
       <summary>分類確認中のクエスト</summary>
       <nav class="quest-sections" aria-label="原本内の分類確認中クエスト">
         <button class:chosen={section==='special'} on:click={()=>selectSection('special')}
