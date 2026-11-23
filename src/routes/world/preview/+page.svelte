@@ -892,6 +892,7 @@
           x=Math.max(0,Math.min(grid.anchorSizeX-1,cx-Math.floor(width/2)));
           y=Math.max(0,Math.min(grid.anchorSizeY-1,cy-Math.floor(height/2)));
           viewport=null;
+          requestRegionAtlas();
           requestTerrainRaster();
           globalFindMessage='原本初期配置 '+String(match.matchedIndex!+1)+
             ' / '+String(match.matchingOriginalDefaultObjectCount)+
