@@ -260,7 +260,9 @@ export function guideQuestTargetCollectionHref(
     index.itemNamesSource.releaseIndexSha256===PUBLIC_ITEM_INDEX_SHA&&
     index.itemNamesSource.verifiedNamesOnly===true&&
     record(index.itemNames),'Collection link requires source-verified DB-00 Item names');
-  if(!canonicalId(rawItemId)||!Object.hasOwn(index.itemNames,rawItemId)||
-    !itemTargetName(index,rawItemId,'en'))return null;
-  return collectionItemHref(base,Number(rawItemId));
+  const itemId=typeof rawItemId==='number'&&Number.isSafeInteger(rawItemId)?
+    String(rawItemId):rawItemId;
+  if(!canonicalId(itemId)||!Object.hasOwn(index.itemNames,itemId)||
+    !itemTargetName(index,itemId,'en'))return null;
+  return collectionItemHref(base,Number(itemId));
 }
