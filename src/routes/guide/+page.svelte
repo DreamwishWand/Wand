@@ -38,21 +38,22 @@
   $: selected=events.find(event=>event.id===selectedId)??null;
   $: selectedHref=selected?eventHref(selected):null;
   $: previousOffset=offsetWeeks-weeks;
-  $: yearOptions=Array.from({length:Math.max(2022,Number(windowRange.todayDay.slice(0,4)))-2021},(_,i)=>2022+i);
-  $: selectedYear=windowRange.days[4]?.day.slice(0,4)??windowRange.todayDay.slice(0,4);
+  $: selectedYear=Number((windowRange.days[4]?.day??windowRange.todayDay).slice(0,4));
+  $: lastSelectableYear=Math.max(2022,selectedYear,Number(windowRange.todayDay.slice(0,4)));
+  $: yearOptions=Array.from({length:lastSelectableYear-2021},(_,i)=>2022+i);
   $: atFirstRelease=previousOffset< -520||
     guideTimelineWindow(now,weeks,Math.max(-520,previousOffset),viewerZone)
       .lastDay<GUIDE_EARLY_ACCESS_FIRST_DAY;
-  $: rangeText=shortDay(windowRange.firstDay,viewerLocale)+' – '+shortDay(windowRange.lastDay,viewerLocale);
+  $: rangeText=longDay(windowRange.firstDay,viewerLocale)+' – '+longDay(windowRange.lastDay,viewerLocale);
   $: zoneLabel=new Intl.DateTimeFormat(viewerLocale,{timeZone:viewerZone,timeZoneName:'short'})
     .formatToParts(new Date(now)).find(p=>p.type==='timeZoneName')?.value??viewerZone;
 
-  function shortDay(day:string,locale=viewerLocale):string{
-    return new Intl.DateTimeFormat(locale,{timeZone:'UTC',month:'short',day:'numeric'})
+  function monthLabel(day:string,locale:string):string{
+    return new Intl.DateTimeFormat(locale,{timeZone:'UTC',month:'short'})
       .format(new Date(day+'T12:00:00Z'));
   }
-  function longDay(day:string):string{
-    return new Intl.DateTimeFormat(viewerLocale,{
+  function longDay(day:string,locale=viewerLocale):string{
+    return new Intl.DateTimeFormat(locale,{
       timeZone:'UTC',year:'numeric',month:'short',day:'numeric'
     }).format(new Date(day+'T12:00:00Z'));
   }
@@ -135,7 +136,7 @@
     void positionToday();
   }
   function goYear(year:number){
-    if(!Number.isInteger(year)||year<2022||year>Number(windowRange.todayDay.slice(0,4)))return;
+    if(!Number.isInteger(year)||year<2022||year>lastSelectableYear)return;
     // Jump to the first VERIFIED event in the chosen year, not to a blank
     // January when the officially dated schedule begins much later.
     const starts=events.map(event=>event.precision==='date-only'
@@ -183,12 +184,7 @@
 </svelte:head>
 
 <main class="guide-app" aria-label="Guide">
-  <nav class="guide-sections" aria-label="ガイドの機能">
-    <a href={`${base}/guide/systems/`}><WandIcon name="settings" size={20}/><span>{copy.systems}</span></a>
-    <a href={`${base}/guide/quests/`}><WandIcon name="guide" size={20}/><span>{copy.quests}</span></a>
-    <a href={`${base}/guide/star-path/`}><WandIcon name="star" size={20}/><span>{copy.starPaths}</span></a>
-    <a href={`${base}/guide/events/`}><WandIcon name="world" size={20}/><span>{copy.events}</span></a>
-  </nav>
+
 
   <section class="timeline-panel" aria-label="イベント開催期間">
     <div class="timeline-toolbar">
@@ -206,11 +202,13 @@
           <button class:active={weeks===5} aria-pressed={weeks===5} on:click={()=>changeZoom(5)}>5 {copy.weeks}</button>
           <button class:active={weeks===9} aria-pressed={weeks===9} on:click={()=>changeZoom(9)}>9 {copy.weeks}</button>
         </div>
+        <div class="range-controls">
         <button class="nav-arrow previous" aria-label={copy.previous} title={copy.previous}
           disabled={atFirstRelease} on:click={()=>navigate(-1)}><WandIcon name="chevron" size={17}/></button>
         <strong class="range" aria-live="polite">{rangeText}</strong>
         <button class="nav-arrow next" aria-label={copy.next} title={copy.next}
           on:click={()=>navigate(1)}><WandIcon name="chevron" size={17}/></button>
+        </div>
         <button class="today-button" on:click={goToday}>{copy.today}</button>
         <select class="calendar-year" aria-label={copy.year}
           value={selectedYear} on:change={event=>goYear(Number(event.currentTarget.value))}>
@@ -247,19 +245,27 @@
                   title={longDay(day.day)+(day.today?' · '+copy.today:'')+(day.reset?' · '+copy.reset:'')}>
                   <span class="weekday">{weekdayLabel(day.day)}</span>
                   <span class="date-number">{day.dayNumber}</span>
-                  {#if day.dayNumber===1}<span class="month-label">{shortDay(day.day)}</span>{/if}
+                  {#if day.dayNumber===1}<span class="month-label">{monthLabel(day.day,viewerLocale)}</span>{/if}
                 </div>
               {/each}
             </div>
           </div>
           {#each visibleRows as row (row.event.id)}
             <div class="timeline-row" class:selected={selectedId===row.event.id} data-category={displayCategory(row.event)}>
+              {#if eventHref(row.event)}
+                <a class="event-label" href={eventHref(row.event)??undefined} title={eventTitle(row.event)}>
+                <span class="event-symbol"><WandIcon name={eventIcon(row.event)} size={17}/></span>
+                <span class="event-name">{eventTitle(row.event)}</span>
+                <span class="row-chevron"><WandIcon name="chevron" size={15}/></span>
+                </a>
+              {:else}
               <button class="event-label" on:click={()=>showEvent(row.event.id)}
                 aria-pressed={selectedId===row.event.id} title={eventTitle(row.event)}>
                 <span class="event-symbol"><WandIcon name={eventIcon(row.event)} size={17}/></span>
                 <span class="event-name">{eventTitle(row.event)}</span>
                 <span class="row-chevron"><WandIcon name="chevron" size={15}/></span>
               </button>
+              {/if}
               <div class="event-track">
                 <div class="track-grid" aria-hidden="true">
                   {#each windowRange.days as day (day.day)}
@@ -340,16 +346,34 @@
       {/if}
     {/if}
   </section>
+
+  <nav class="guide-sections" aria-label="Guide">
+    <a class="service-card systems-card" href={`${base}/guide/systems/`}>
+      <span class="service-icon"><WandIcon name="settings" size={46}/></span>
+      <span class="service-name">{copy.systems}</span>
+      <span class="service-chevron"><WandIcon name="chevron" size={22}/></span>
+    </a>
+    <a class="service-card quests-card" href={`${base}/guide/quests/`}>
+      <span class="service-icon"><WandIcon name="guide" size={46}/></span>
+      <span class="service-name">{copy.quests}</span>
+      <span class="service-chevron"><WandIcon name="chevron" size={22}/></span>
+    </a>
+  </nav>
 </main>
 
 <style>
   .guide-app{box-sizing:border-box;width:100%;max-width:none;min-width:0;margin:0;padding:12px clamp(8px,1.4vw,22px) 14px;min-height:calc(100dvh - 64px);display:flex;flex-direction:column;gap:10px;color:#eee9f6}
-  .guide-sections{display:flex;gap:7px;flex-wrap:wrap}
-  .guide-sections a,.guide-sections .pending{display:flex;align-items:center;justify-content:center;gap:9px;min-width:0;padding:9px 15px;border:1px solid #544261;background:#251c32;border-radius:10px;color:#e2d6ed;text-decoration:none;font-size:13px;font-weight:650}
-  .guide-sections .pending{opacity:.5;cursor:not-allowed}
-  .guide-sections a:hover,.guide-sections a:focus-visible{background:#403052;border-color:#b18bd7}
-  .guide-sections :global(svg){color:#dcb8ff}
-  .timeline-panel{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0;background:#181321;border:1px solid #493952;border-radius:15px;overflow:hidden}
+  .guide-sections{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;flex:0 0 auto}
+  .service-card{position:relative;display:flex;align-items:center;gap:clamp(16px,2.5vw,36px);min-width:0;min-height:clamp(122px,22vh,218px);box-sizing:border-box;padding:clamp(16px,3vw,38px);border:1px solid #66517e;border-radius:15px;color:#f4ecff;text-decoration:none;overflow:hidden;isolation:isolate;background:linear-gradient(125deg,#332747,#242037)}
+  .quests-card{background:linear-gradient(125deg,#273c57,#252940);border-color:#526b8c}
+  .service-card:hover,.service-card:focus-visible{border-color:#c8a6ef;box-shadow:inset 0 0 0 1px #c8a6ef;background:linear-gradient(125deg,#473460,#302542)}
+  .quests-card:hover,.quests-card:focus-visible{border-color:#9abdeb;box-shadow:inset 0 0 0 1px #9abdeb;background:linear-gradient(125deg,#324e71,#303650)}
+  .service-icon{display:grid;place-items:center;flex-shrink:0;width:clamp(64px,7vw,100px);aspect-ratio:1;border:1px solid #ffffff24;border-radius:18px;background:#ffffff0c;color:#dcc1ff}
+  .quests-card .service-icon{color:#b8d8ff}
+  .service-name{font-size:clamp(18px,2vw,30px);font-weight:700;overflow-wrap:anywhere}
+  .service-chevron{margin-left:auto;flex-shrink:0;color:#bfb1d5}
+  .service-chevron :global(svg){transform:rotate(-90deg)}
+   .timeline-panel{display:flex;flex-direction:column;flex:1 0 auto;min-height:260px;min-width:0;background:#181321;border:1px solid #493952;border-radius:15px;overflow:hidden}
   .timeline-toolbar{position:relative;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;padding:12px 15px;border-bottom:1px solid #48374f;background:#211a2c}
   .timeline-title{display:flex;align-items:center;gap:9px;min-width:0}
   .timeline-title>strong{font-size:17px;font-weight:700}
@@ -359,10 +383,12 @@
   .source-info summary{display:flex;align-items:center;cursor:pointer;list-style:none;padding:5px;color:#c1afcc}
   .source-info summary::-webkit-details-marker{display:none}
   .source-info p{position:absolute;z-index:15;top:100%;right:12px;width:min(360px,calc(100% - 24px));box-sizing:border-box;padding:13px;margin:0;background:#352844;border:1px solid #8869a2;border-radius:9px;color:#ded1e9;box-shadow:0 8px 25px #0007;line-height:1.6}
-  .calendar-nav{display:flex;align-items:center;gap:7px;min-width:0}
+  .calendar-nav{display:flex;align-items:center;gap:7px;min-width:0;flex-wrap:wrap}
+  .range-controls{display:flex;align-items:center;gap:7px;min-width:0}
+  .range-controls .nav-arrow{flex:0 0 auto}
   .calendar-nav button{border:1px solid #624b75;background:#2e233b;color:#ede2f5;border-radius:8px;padding:7px 10px;font:inherit;font-size:12px;cursor:pointer;white-space:nowrap}
   .calendar-nav button:hover,.calendar-nav button:focus-visible{background:#4c3765;border-color:#aa88d0}
-  .calendar-nav .range{min-width:125px;font-size:13px;text-align:center;font-variant-numeric:tabular-nums;color:#f0e8f9}
+  .calendar-nav .range{min-width:0;font-size:13px;text-align:center;font-variant-numeric:tabular-nums;color:#f0e8f9}
   .calendar-nav .zoom{display:flex;border:1px solid #624b75;border-radius:8px;overflow:hidden;margin-right:8px}
   .zoom button{border:0;border-radius:0;padding:7px 10px}
   .zoom button+button{border-left:1px solid #624b75}
@@ -371,7 +397,7 @@
   .nav-arrow.previous :global(svg){transform:rotate(90deg)}
   .nav-arrow.next :global(svg){transform:rotate(-90deg)}
   .calendar-nav .today-button{background:#4c365e}
-  .calendar-nav .calendar-year{background:#29243f;border:1px solid #65537a;color:#d0c2de;border-radius:8px;padding:7px 4px;font:inherit;font-size:12px;cursor:pointer;max-width:83px}
+  .calendar-nav .calendar-year{background:#29243f;border:1px solid #65537a;color:#d0c2de;border-radius:8px;padding:7px 4px;font:inherit;font-size:12px;cursor:pointer;min-width:70px;max-width:88px}
   .calendar-nav button:disabled{opacity:.35;cursor:not-allowed}
   .historic-status{font-size:11px;color:#d4bbeb;white-space:nowrap}
 
@@ -398,12 +424,14 @@
   .date-slot.today{background:#56394f;box-shadow:inset 0 -2px #e6a4c7}
   .date-slot.today .weekday,.date-slot.today .date-number{color:#ffd3e6;font-weight:750}
   .date-slot.today.reset{background:linear-gradient(135deg,#56394f 0 50%,#244153 50%);box-shadow:inset 0 -2px #c2b2e6}
-  .month-label{position:absolute;top:1px;font-size:9px;color:#b4a1c9}
+  .month-label{position:absolute;top:1px;font-size:9px;color:#b4a1c9;white-space:nowrap}
   .timeline-row{height:71px;border-bottom:1px solid #35293f}
   .timeline-row.selected{background:#2a2037}
   .event-label{position:sticky;left:0;z-index:5;display:flex;align-items:center;gap:9px;width:100%;min-width:0;box-sizing:border-box;padding:10px 12px;background:#211829;color:#eee3f4;text-align:left;border:0;border-right:1px solid #52415e;cursor:pointer}
   .timeline-row.selected .event-label{background:#382847}
-  .event-label:hover{background:#34243f}
+  .event-label:hover,.event-label:focus-visible{background:#34243f}
+  a.event-label{text-decoration:none}
+  a.event-label:hover .event-name{text-decoration:underline;text-underline-offset:3px}
   .row-chevron{display:flex;flex-shrink:0;margin-left:auto}
   .row-chevron :global(svg){transform:rotate(-90deg);color:#9581aa}
   .event-symbol{color:#ca9bf2;flex-shrink:0}
@@ -452,13 +480,19 @@
   }
   @media(max-width:560px){
     .guide-app{min-height:calc(100dvh - 50px);padding:7px;gap:7px}
-    .guide-sections{gap:5px}
-    .guide-sections a,.guide-sections .pending{padding:8px 10px;gap:6px;font-size:12px}
+    .guide-sections{gap:7px}
+    .service-card{min-height:122px;padding:13px 9px;gap:7px;flex-direction:column;justify-content:center;text-align:center}
+    .service-icon{width:48px;border-radius:12px}
+    .service-icon :global(svg){width:30px;height:30px}
+    .service-name{font-size:16px}
+    .service-chevron{position:absolute;right:7px;top:8px}
+    .service-chevron :global(svg){width:14px;height:14px}
     .timeline-toolbar{padding:9px;gap:8px}
     .timeline-title>strong{font-size:15px}
-    .calendar-nav{width:100%;justify-content:space-between;gap:3px}
-    .calendar-nav .zoom{margin-right:3px}
-    .calendar-nav .range{min-width:103px;font-size:12px}
+    .calendar-nav{width:100%;justify-content:space-between;gap:5px}
+    .range-controls{flex:1 1 100%;justify-content:space-between;order:-1}
+    .calendar-nav .zoom{margin-right:auto}
+    .calendar-nav .range{min-width:0;flex:1;font-size:12px;overflow-wrap:anywhere}
     .calendar-nav button{padding:6px 8px}
     .timeline-key{padding:7px 9px;gap:10px;font-size:10px}
     .timeline-content{--sidebar-width:139px}
