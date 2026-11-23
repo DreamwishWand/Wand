@@ -9,7 +9,7 @@
  */
 import {
   hasPinnedNativeLootCandidateEvidence,
-  type NativeLootCandidateIndex,type NativeLootCandidate
+  type NativeLootCandidateIndex
 } from './public-native-loot.ts';
 import type {ItemOrigin,OriginProvenance} from './origins.ts';
 
@@ -31,7 +31,7 @@ const NO_STALLS=Object.freeze([]) as readonly NativeStallDefinition[];
 const NO_CANDIDATES=Object.freeze([]) as readonly NativeStallItemCandidate[];
 const NO_SLOTS=Object.freeze([]) as readonly NativeStallLootSlot[];
 const NO_ORIGINS=Object.freeze([]) as readonly ItemOrigin[];
-const NO_IDS=Object.freeze([]) as readonly string[];
+const NO_STORES=Object.freeze([]) as readonly NativeStallWithPools[];
 const WINDOW=Object.freeze({start:null,endExclusive:null});
 const CONDITIONS=Object.freeze([
   'Native stall slot and LootTable candidate only; stock, shop sale, eligibility and purchase are not verified'
@@ -409,7 +409,7 @@ export function joinPinnedNativeStallLoot(
       return byTable.get(id(rawId))??NO_SLOTS;
     },
     getShopDataStalls(rawKey:string){
-      return byShop.get(key(rawKey))??Object.freeze([]) as readonly NativeStallWithPools[];
+      return byShop.get(key(rawKey))??NO_STORES;
     },
     listCandidateItemIds(){return itemIds;}
   });
