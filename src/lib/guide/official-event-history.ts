@@ -58,6 +58,13 @@ export const GUIDE_OFFICIAL_HISTORICAL_EVENTS=[
     sourceUrl:'https://disneydreamlightvalley.com/fr/news/update-oct-9-2024'
   },
   {
+    id:'gift-of-giving-2024',kind:'limited-event',category:'other',
+    title:'The Gift of Giving',
+    startDay:'2024-12-18',endDayInclusive:'2024-12-31',
+    participation:'game-clock',
+    sourceUrl:'https://disneydreamlightvalley.com/zh/news/SewDelightfulUpdate'
+  },
+  {
     id:'trick-or-treat-2025',kind:'limited-event',category:'other',
     title:'Trick or Treat',
     startDay:'2025-10-15',endDayInclusive:'2025-10-31',
