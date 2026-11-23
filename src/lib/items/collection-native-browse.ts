@@ -24,6 +24,7 @@ import {
   type Db01OriginalSourceMenuQueryClient,
   type Db01OriginalSourceMenuOption,
   type Db01OriginalSourceSubmenuOption,
+  type Db01OriginalSourceGroupOption,
   type Db01OriginalSourceMenuQuery,
 } from './collection-source-index.ts';
 import {
@@ -51,6 +52,12 @@ export interface Db01CollectionBrowseSet{
   readonly positivePredicateSourceItemCount:number;
   readonly gameRuntimeSetVisibleVerified:false;
 }
+/** One source-native Group within a verified CollectionSet, not an in-game tab. */
+export interface Db01CollectionBrowseGroup{
+  readonly original:Readonly<Db01OriginalSourceGroupOption>;
+  readonly sourceSet:Readonly<Db01CollectionNativeSourceSet>;
+  readonly gameRuntimeGroupVisibleVerified:false;
+}
 export interface Db01CollectionBrowseNavigation{
   readonly locale:Db01Locale;
   readonly categories:readonly Db01CollectionBrowseCategory[];
@@ -69,6 +76,8 @@ export interface Db01CollectionBrowseSelection{
   readonly submenuCode?:number;
   /** Only valid with a submenuCode, verified against original source Set IDs. */
   readonly setId?:number;
+  /** Zero-based source Group index; requires a verified submenuCode + setId. */
+  readonly groupIndex?:number;
   readonly searchText?:string;
   readonly listingEvidence?:Db01OriginalSourceMenuQuery['listingEvidence'];
   readonly nativeCategories?:Db01OriginalSourceMenuQuery['nativeCategories'];
@@ -97,6 +106,9 @@ export interface Db01CollectionNativeBrowseClient{
   /** Original source Set order, exact 8-locale names and candidate counts. */
   getSets(locale:Db01Locale,submenuCode:number):
     Promise<readonly Db01CollectionBrowseSet[]>;
+  /** Original Group indexes and evidence counts, including empty Groups. */
+  getGroups(locale:Db01Locale,submenuCode:number,setId:number):
+    Promise<readonly Db01CollectionBrowseGroup[]>;
   /** All = complete published DB-00 current items. Selected original
    * Set/category = only verified source-predicate candidates intersected with
    * published Items. Never infer game Collection UI membership from either.
@@ -164,6 +176,7 @@ export function createDb01CollectionNativeBrowseClient(
     typeof axes.getUnmatchedTabLabels==='function'&&
     typeof index.getSubmenus==='function'&&
     typeof index.getCollectionSets==='function'&&
+    typeof index.getSourceGroups==='function'&&
     typeof results.search==='function','CURRENT_VERIFIED_SOURCE_COMPOSITION_REQUIRED');
 
   type SourceIndex=Readonly<{
@@ -334,6 +347,53 @@ export function createDb01CollectionNativeBrowseClient(
     catch(error){if(localeSets.get(key)===task)localeSets.delete(key);throw error;}
   }
 
+  const setGroups=new Map<string,Promise<readonly Db01CollectionBrowseGroup[]>>();
+  async function getGroups(locale:Db01Locale,submenuCode:number,setId:number):
+    Promise<readonly Db01CollectionBrowseGroup[]>{
+    validLocale(locale);
+    check(Number.isSafeInteger(submenuCode)&&
+      DB01_ORIGINAL_COLLECTION_SUBMENUS.some(x=>x.code===submenuCode),
+      'UNKNOWN_ORIGINAL_SUBMENU');
+    check(validId(setId),'INVALID_ORIGINAL_SET');
+    const key=locale+':'+submenuCode+':'+setId;
+    const existing=setGroups.get(key);
+    if(existing)return existing;
+    const task=(async()=>{
+      // Authenticate the Set-to-category association before reading Groups.
+      const sets=await getSets(locale,submenuCode);
+      const sourceSet=sets.find(x=>x.original.setId===setId);
+      check(sourceSet,'SET_NOT_IN_SELECTED_CATEGORY');
+      const rows=await index.getSourceGroups(setId);
+      check(Array.isArray(rows)&&
+        rows.length===sourceSet.original.sourceGroupCount,
+        'ORIGINAL_GROUP_CENSUS');
+      return Object.freeze(rows.map((row,i)=>{
+        check(row.collectionSetId===setId&&row.groupIndex===i&&
+          row.originalSetKey===sourceSet.original.nativeSetKey&&
+          row.submenu===DB01_ORIGINAL_COLLECTION_SUBMENUS.find(
+            x=>x.code===submenuCode)!.enumName&&
+          row.gameRuntimeMembershipVerified===false&&
+          Number.isSafeInteger(row.distinctCandidateItemIds)&&
+          row.distinctCandidateItemIds>=0&&
+          row.distinctCandidateItemIds<=sourceSet.sourceCandidateItemCount&&
+          Number.isSafeInteger(row.directListedItemIds)&&
+          row.directListedItemIds>=0&&
+          row.directListedItemIds<=sourceSet.directlyListedSourceItemCount&&
+          Number.isSafeInteger(row.staticPredicateItemIds)&&
+          row.staticPredicateItemIds>=0&&
+          row.staticPredicateItemIds<=sourceSet.positivePredicateSourceItemCount,
+          'ORIGINAL_GROUP_IDENTITY_OR_EVIDENCE');
+        return Object.freeze({
+          original:row,sourceSet:sourceSet.original,
+          gameRuntimeGroupVisibleVerified:false as const,
+        });
+      }));
+    })();
+    setGroups.set(key,task);
+    try{return await task;}
+    catch(error){if(setGroups.get(key)===task)setGroups.delete(key);throw error;}
+  }
+
   async function search(selection:Db01CollectionBrowseSelection,
     page:Readonly<{offset?:number;limit?:number}>={}):
     Promise<Db01CollectionBrowseSearchPage>{
@@ -343,6 +403,10 @@ export function createDb01CollectionNativeBrowseClient(
     validPage(page);
     const code=selection.submenuCode;
     const setId=selection.setId;
+    const groupIndex=selection.groupIndex;
+    if(groupIndex!==undefined)
+      check(Number.isSafeInteger(groupIndex)&&groupIndex>=0&&
+        setId!==undefined,'GROUP_REQUIRES_SOURCE_SET');
     if(setId!==undefined){
       check(validId(setId)&&code!==undefined,
         'SET_REQUIRES_NATIVE_CATEGORY');
@@ -354,7 +418,7 @@ export function createDb01CollectionNativeBrowseClient(
     // We don't yet have a source-verified Item -> CollectionArea map; an
     // area-based filter must not sneak through this browser entrypoint.
     const unknown=Object.keys(selection).filter(k=>![
-      'locale','submenuCode','setId','searchText','listingEvidence',
+      'locale','submenuCode','setId','groupIndex','searchText','listingEvidence',
       'nativeCategories','native',
     ].includes(k));
     check(unknown.length===0,'UNSUPPORTED_FILTER_DIMENSION');
@@ -396,6 +460,11 @@ export function createDb01CollectionNativeBrowseClient(
       if(setId!==undefined){
         check(sets.some(set=>set.original.setId===setId),
           'SET_NOT_IN_SELECTED_CATEGORY');
+        if(groupIndex!==undefined){
+          const groups=await getGroups(selection.locale,code,setId);
+          check(groups.some(group=>group.original.groupIndex===groupIndex),
+            'UNKNOWN_ORIGINAL_SOURCE_GROUP');
+        }
       }
       // Original enum members 17 and 19 carry zero source Set definitions.
       // Their runtime screen behavior is unknown; an empty source-only search
@@ -428,6 +497,9 @@ export function createDb01CollectionNativeBrowseClient(
       locale:selection.locale,
       ...(code===undefined?{}:{submenuCodes:[code]}),
       ...(setId===undefined?{}:{collectionSetIds:[setId]}),
+      ...(groupIndex===undefined?{}:{sourceGroups:[{
+        collectionSetId:setId!,groupIndex,
+      }]}),
       ...(selection.searchText===undefined?{}:{searchText:selection.searchText}),
       ...(selection.listingEvidence===undefined?{}:{
         listingEvidence:selection.listingEvidence,
@@ -447,6 +519,6 @@ export function createDb01CollectionNativeBrowseClient(
     publicationAuthorized:false as const,
     gameUiMembershipVerified:false as const,
     worldAvailabilityVerified:false as const,
-    getNavigation,getSets,search,
+    getNavigation,getSets,getGroups,search,
   });
 }
