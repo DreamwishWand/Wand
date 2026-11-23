@@ -594,12 +594,68 @@ try{
   await coordinates.getByRole('button',{name:'一括配置変更に追加'}).click();
   const mixedPanel=objects.getByLabel('一括配置変更',{exact:true});
   await mixedPanel.getByText('2 / 16件').waitFor();
+
+  // First preview the original queued batch, then modify drafts in-place.
+  // A revision invalidates the previous Rust receipt and requires a new
+  // validation before the independently generated encrypted P1G copy.
+  await mixedPanel.getByRole('button',{name:'一括配置変更を検証'}).click();
+  await coordinates.getByRole('status').filter({
+    hasText:'2件の配置変更をRust/WASMで検証しました'
+  }).waitFor({timeout:30000});
+  await mixedPanel.getByRole('button',{name:'配置編集 #1 を修正'}).click();
+  assert.equal(await coordinates.getByRole('status').filter({
+    hasText:'2件の配置変更をRust/WASMで検証しました'
+  }).count(),0,'queued revision invalidates old Rust preview receipt');
+  assert.equal(await coordinates.getByLabel('新しいX').inputValue(),'45');
+  assert.equal(await coordinates.getByLabel('新しいY').inputValue(),'9');
+  assert.equal(await coordinates.getByLabel('座標と同時変更する向き')
+    .inputValue(),'GridOrientation_Right');
+  // Invalid no-op orientation-only modification may not remove an already
+  // queued rotation, and must leave other queued edits untouched.
+  await coordinates.getByLabel('座標と同時変更する向き')
+    .selectOption('GridOrientation_Up');
+  await coordinates.getByRole('button',{
+    name:'登録済みの配置変更を更新'
+  }).click();
+  assert.match(await mixedPanel.innerText(),/Right/);
+  await coordinates.getByLabel('座標と同時変更する向き')
+    .selectOption('GridOrientation_Down');
+  await coordinates.getByRole('button',{
+    name:'登録済みの配置変更を更新'
+  }).click();
+  assert.match(await mixedPanel.innerText(),/Up\s*→Down/);
+  assert.match(await mixedPanel.innerText(),/X -12→34/);
+
+  // Change a combined numeric position + rotation draft. An out-of-range
+  // coordinate is rejected even if the orientation is a valid cardinal.
+  await mixedPanel.getByRole('button',{name:'配置編集 #3 を修正'}).click();
+  assert.equal(await coordinates.getByLabel('新しいX').inputValue(),'34');
+  assert.equal(await coordinates.getByLabel('新しいY').inputValue(),'-6');
+  assert.equal(await coordinates.getByLabel('座標と同時変更する向き')
+    .inputValue(),'GridOrientation_Down');
+  await coordinates.getByLabel('新しいX').fill('2147483648');
+  await coordinates.getByRole('button',{
+    name:'登録済みの配置変更を更新'
+  }).click();
+  assert.match(await mixedPanel.innerText(),/X -12→34/);
+  await coordinates.getByLabel('新しいX').fill('46');
+  await coordinates.getByLabel('新しいY').fill('-9');
+  await coordinates.getByLabel('座標と同時変更する向き')
+    .selectOption('GridOrientation_Right');
+  await coordinates.getByRole('button',{
+    name:'登録済みの配置変更を更新'
+  }).click();
+  assert.match(await mixedPanel.innerText(),/X -12→46/);
+  assert.match(await mixedPanel.innerText(),/Y 8→-9/);
+  assert.match(await mixedPanel.innerText(),/Left\s*→Right/);
+  assert.match(await mixedPanel.innerText(),/Up\s*→Down/);
+  assert.match(await mixedPanel.innerText(),/2 \/ 16件/);
   // Preserve the earlier coordinate batch while showing the independent
   // mixed batch. Rotation-only edits do not create additional ghost markers.
   await pickGrid.selectOption('2');
   assert.equal(await map.locator('.queued-ghost').count(),2);
   assert.equal(await map.locator('.queued-ghost[title*="#3 X 141 Y 15"]').count(),1);
-  assert.equal(await map.locator('.queued-ghost[title*="#3 X 34 Y -6"]').count(),1);
+  assert.equal(await map.locator('.queued-ghost[title*="#3 X 46 Y -9"]').count(),1);
   await pickGrid.selectOption('1');
   assert.equal(await map.locator('.queued-ghost').count(),1);
   assert.equal(await map.locator('.queued-ghost[title*="#1 X -80 Y 25"]').count(),1);
@@ -621,10 +677,10 @@ try{
   const mixedDiff=mixedSave.World.GridCollection.DiffGrids['102'].ModifiedObjects['6'];
   assert.equal(mixedFull.X,45);
   assert.equal(mixedFull.Y,9);
-  assert.equal(mixedFull.Orientation,'GridOrientation_Right');
-  assert.equal(mixedDiff.X,34);
-  assert.equal(mixedDiff.Y,-6);
-  assert.equal(mixedDiff.Orientation,'GridOrientation_Down');
+  assert.equal(mixedFull.Orientation,'GridOrientation_Down');
+  assert.equal(mixedDiff.X,46);
+  assert.equal(mixedDiff.Y,-9);
+  assert.equal(mixedDiff.Orientation,'GridOrientation_Right');
   assert.equal(mixedFull.PrivateState,'do-not-export');
   assert.equal(mixedSave.World.GridCollection.DiffGrids['102'].RemovedObjects[0],5);
   assert.equal(mixedSave.Player.ListInventories['100'].Inventory['550'].Amount,7);
