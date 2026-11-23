@@ -113,6 +113,8 @@ a { color: inherit; }
 .item-inspector { border-left: 1px solid #ffffff19; padding: 24px 22px; background: #1e1729; min-width: 0; }
 .inspector-heading { display: flex; justify-content: space-between; align-items: center; color: #aa92c4; letter-spacing: .14em; font-size: 10px; font-weight: 750; }
 .inspector-heading button { border: 0; background: #ffffff12; color: #e8d3f9; width: 30px; height: 30px; border-radius: 8px; font-size: 18px; }
+.inspector-header-actions{display:flex;align-items:center;gap:6px;margin-left:auto}
+.inspector-header-actions button{display:grid;place-items:center;cursor:pointer}
 .inspector-art { height: 150px; overflow: hidden; display: grid; place-items: center; border-radius: 12px; background: radial-gradient(circle at 50% 35%,#53406c,#30263e 60%,#2a2235); color: #cdb4e9; font-size: 76px; margin: 18px 0 20px; }
 .item-inspector h2 { font-size: 19px; line-height: 1.5; margin: 0 0 6px; overflow-wrap: anywhere; }
 .inspector-meta { color: #b198cf; font-size: 11px; margin: 0 0 22px; }

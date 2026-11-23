@@ -382,6 +382,37 @@ try{
   });
   assert.deepEqual(JSON.parse(stored.legacy),seed);
   assert.equal(JSON.parse(stored.value).workspaces[0].entries['99999999'].discovered,true);
+  // Source-authenticated public Item IDs open directly without Category,
+  // World or Universe membership and without mutating the user's records.
+  const deep=await context.newPage();
+  await deep.goto(url+'?item=40005160');
+  await deep.locator('.item-inspector h2').waitFor({timeout:30000});
+  assert.match(await deep.locator('.item-inspector h2').innerText(),/ガラスの靴|Glass Shoe/);
+  assert.equal(await deep.getByRole('searchbox',{name:/8言語/}).inputValue(),'40005160');
+  assert.equal(await deep.getByRole('button',{name:'アイテムへのリンクをコピー'}).count(),1);
+  assert.equal(new URL(deep.url()).searchParams.get('item'),'40005160');
+  const initialDeepStore=await readLocalState(deep);
+  await deep.getByRole('button',{name:'詳細を閉じる'}).click();
+  assert.equal(new URL(deep.url()).searchParams.has('item'),false);
+  await deep.goBack();
+  await deep.locator('.item-inspector h2').waitFor();
+  assert.equal(new URL(deep.url()).searchParams.get('item'),'40005160');
+  await deep.goForward();
+  await deep.waitForFunction(()=>!document.querySelector('.item-inspector'));
+  assert.equal(new URL(deep.url()).searchParams.has('item'),false);
+  await deep.goto(url+'?item=99999999');
+  await deep.locator('.facet-card').first().waitFor();
+  assert.equal(await deep.locator('.item-inspector').count(),0,
+    'an Item ID absent from the verified Rust catalog cannot open details');
+  assert.equal(new URL(deep.url()).searchParams.has('item'),false);
+  await deep.goto(url+'?item=40005160&item=40005160');
+  await deep.locator('.facet-card').first().waitFor();
+  assert.equal(await deep.locator('.item-inspector').count(),0,
+    'ambiguous repeated Item IDs must not open an inspector');
+  assert.equal(new URL(deep.url()).searchParams.has('item'),false);
+  assert.deepEqual(await readLocalState(deep),initialDeepStore,
+    'navigating Item links must never write the manual Collection record');
+  await deep.close();
   const search=page.getByRole('searchbox',{name:/8言語/});
   // Locale changes must re-query Rust, not leave cached cards in the prior locale.
   // Item 40005160 has source-verified Japanese/English names; it is a unique search match.

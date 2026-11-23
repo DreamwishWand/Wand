@@ -11,6 +11,8 @@
   import { CollectionRuntime, type CollectionState, type CollectionItem, type CollectionFacet, type CollectionProgress, type CollectionFilter } from '$lib/collection/runtime';
   import { collectionFamilyLabel } from '$lib/collection/copy';
   import {collectionScopeOptions,collectionItemScopeLabels,type CollectionScopeOption} from '$lib/collection/scope-options';
+  import {collectionItemHref,collectionItemFromLink}
+    from '$lib/collection/item-permalink.ts';
 
   const categoryPictogram:Record<string,string>={
     Furniture:'chair',Landscaping:'plant','Roads & Fences':'mountain',
@@ -156,7 +158,43 @@
       state=runtime.state;
     }catch(error){storeError=error instanceof Error?error.message:String(error);}
   }
-  function resetView():void{visible=72;selectedIds=[];selectedItemId=null;refresh();}
+  function updateItemAddress(id:number|null,mode:'push'|'replace'):void{
+    const url=new URL(window.location.href);
+    if(id===null)url.searchParams.delete('item');
+    else url.searchParams.set('item',String(id));
+    if(url.href===window.location.href)return;
+    if(mode==='push')window.history.pushState(window.history.state,'',url);
+    else window.history.replaceState(window.history.state,'',url);
+  }
+  /** Only a canonical ID confirmed by the active Rust item index may open
+   * the inspector. Source-area tags/CollectionSet candidates are not needed. */
+  function restoreAddressSelection():void{
+    const params=new URLSearchParams(window.location.search);
+    if(!params.has('item')){selectedItemId=null;return;}
+    if(!runtime)return;
+    const item=collectionItemFromLink(runtime,window.location.search,locale);
+    if(!item){
+      selectedItemId=null;
+      updateItemAddress(null,'replace');
+      infoMessage='指定されたItem IDは現在のCollectionデータにありません。';
+      return;
+    }
+    // Linked Items may be outside the currently visible category, filter or
+    // first 72 cards. Resolve against the complete native Rust Item index.
+    if(!filtered.some(row=>row.itemId===item.itemId)){
+      selected='';search=String(item.itemId);status='all';
+      favoriteOnly=false;nameStatus='all';expansion='';
+      worldFilter='';universeFilter='';
+      visible=72;refresh();
+    }
+    selectionMode=false;selectedIds=[];
+    selectedItemId=item.itemId;
+    if(mobileInspector)void tick().then(()=>inspectorClose?.focus({preventScroll:true}));
+  }
+  function resetView():void{
+    if(selectedItemId!==null)updateItemAddress(null,'replace');
+    visible=72;selectedIds=[];selectedItemId=null;refresh();
+  }
   /** Scroll only requests the next page from Rust. Re-querying 0..visible
    * after every intersection creates quadratic decoding and DOM churn for
    * the 13k+ item catalog. Edits/filter changes still use full refresh().
@@ -222,6 +260,7 @@
       editHistory.reconcileCollection(runtime.state);
       storeError='';
       selectedItemId=null;
+      updateItemAddress(null,'replace');
       selectedIds=[];
       selectionMode=false;
       refresh();
@@ -247,12 +286,33 @@
   async function showItem(id:number,event:MouseEvent):Promise<void>{
     inspectorTrigger=event.currentTarget as HTMLElement;
     selectedItemId=id;
+    updateItemAddress(id,'push');
     if(mobileInspector){await tick();inspectorClose?.focus({preventScroll:true});}
   }
   async function closeItem():Promise<void>{
-    selectedItemId=null;await tick();
+    selectedItemId=null;
+    updateItemAddress(null,'push');
+    await tick();
     if(inspectorTrigger?.isConnected)inspectorTrigger.focus({preventScroll:true});
     inspectorTrigger=null;
+  }
+  async function copySelectedItemLink():Promise<void>{
+    if(selectedItemId===null)return;
+    try{
+      const url=new URL(collectionItemHref(base,selectedItemId),window.location.href);
+      await navigator.clipboard.writeText(url.href);
+      infoMessage='アイテムへのリンクをコピーしました。';
+    }catch{
+      infoMessage='コピーできませんでした。ブラウザのアドレスをコピーしてください。';
+    }
+  }
+  function toggleSelectionMode():void{
+    selectionMode=!selectionMode;
+    selectedIds=[];
+    if(selectedItemId!==null){
+      selectedItemId=null;
+      updateItemAddress(null,'replace');
+    }
   }
   function toggleSelected(id:number):void{
     selectedIds=selectedIds.includes(id)?selectedIds.filter(x=>x!==id):[...selectedIds,id];
@@ -282,7 +342,7 @@
   function changeWorkspace(id:string):void{
     if(!runtime||busy||saveReadInProgress)return;
     const target=state.workspaces.find(x=>x.id===id)?.name??id;
-    void commit(async()=>{await runtime!.workspace('select',id);selectedItemId=null;selectedIds=[];},
+    void commit(async()=>{await runtime!.workspace('select',id);selectedItemId=null;updateItemAddress(null,'replace');selectedIds=[];},
       {title:'記録を切り替え',change:`${workspace.name} → ${target}`});
   }
   function newWorkspace():void{
@@ -373,7 +433,9 @@
     window.addEventListener('wand:collection-filters',toggleHeaderFilters);
     const handleHeaderBackup=()=>downloadBackup();
     window.addEventListener('wand:collection-backup',handleHeaderBackup);
-    const onHistoryRestored=()=>{selectedItemId=null;selectedIds=[];selectionMode=false;refresh();};
+    const onHistoryRestored=()=>{selectedItemId=null;updateItemAddress(null,'replace');selectedIds=[];selectionMode=false;refresh();};
+    const onCollectionPopState=()=>restoreAddressSelection();
+    window.addEventListener('popstate',onCollectionPopState);
     window.addEventListener('wand:collection-history-restored',onHistoryRestored);
     const unwatchLanguage=watchWandLanguage(next=>{
       if(locale!==next){locale=next;refresh();}
@@ -390,6 +452,7 @@
         runtime=loaded;
         detachHistory=editHistory.attachCollection(loaded);
         refresh();
+        restoreAddressSelection();
         try{
           const response=await fetch(base+'/ddv/collection/item-images-r39.json');
           if(response.ok){
@@ -401,7 +464,7 @@
       }catch(error){if(alive)loadError=error instanceof Error?error.message:String(error);}
       finally{if(alive)loading=false;}
     })();
-    return()=>{alive=false;if(historySaveReadLock){historySaveReadLock=false;editHistory.endCollectionEdit();}detachHistory();unwatchLanguage();window.removeEventListener('wand:collection-history-restored',onHistoryRestored);window.removeEventListener('wand:collection-backup',handleHeaderBackup);window.removeEventListener('wand:collection-filters',toggleHeaderFilters);media.removeEventListener('change',changed);runtime?.close();};
+    return()=>{alive=false;if(historySaveReadLock){historySaveReadLock=false;editHistory.endCollectionEdit();}detachHistory();unwatchLanguage();window.removeEventListener('popstate',onCollectionPopState);window.removeEventListener('wand:collection-history-restored',onHistoryRestored);window.removeEventListener('wand:collection-backup',handleHeaderBackup);window.removeEventListener('wand:collection-filters',toggleHeaderFilters);media.removeEventListener('change',changed);runtime?.close();};
   });
   function beginSaveRead():void {
     // Preserve the active workspace and runtime at file selection, not at
@@ -637,7 +700,7 @@
               <div class="result-actions">
                 <span class="result-count">{totalMatches.toLocaleString(locale)} 件</span>
                 <button type="button" class="subtle-button" disabled={Boolean(storeError)} aria-pressed={selectionMode}
-                  on:click={()=>{selectionMode=!selectionMode;selectedIds=[];selectedItemId=null;}}>{selectionMode?'選択を終了':'複数選択'}</button>
+                  on:click={toggleSelectionMode}>{selectionMode?'選択を終了':'複数選択'}</button>
               </div>
             </div>
             {#if selectionMode && filtered.length}
@@ -706,7 +769,17 @@
         </div>
         {#if selectedItem}
           <aside class="item-inspector" role={mobileInspector?"dialog":undefined} aria-modal={mobileInspector?"true":undefined} aria-label="アイテム情報">
-            <div class="inspector-heading"><span class="visually-hidden">アイテム情報</span><button type="button" bind:this={inspectorClose} on:click={closeItem} aria-label="詳細を閉じる">×</button></div>
+            <div class="inspector-heading">
+              <span class="visually-hidden">アイテム情報</span>
+              <div class="inspector-header-actions">
+                <button type="button" aria-label="アイテムへのリンクをコピー"
+                  title="アイテムへのリンクをコピー" on:click={copySelectedItemLink}>
+                  <WandIcon name="link" size={17}/>
+                </button>
+                <button type="button" bind:this={inspectorClose}
+                  on:click={closeItem} aria-label="詳細を閉じる">×</button>
+              </div>
+            </div>
             <div class="inspector-art"><ItemArtwork itemId={selectedItem.itemId} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large /></div>
             <h2>{selectedItem.label}</h2>
             <p class="inspector-meta">{categoryLabel(locale,selectedItem.family)}</p>
