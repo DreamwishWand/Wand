@@ -457,7 +457,17 @@ try {
   await hub.addInitScript(()=>{Date.now=()=>Date.parse('2026-11-22T12:00:00Z');});
   await hub.goto('http://127.0.0.1:4177/Wand/guide/',{waitUntil:'domcontentloaded'});
   await hub.locator('.timeline-row').first().waitFor({timeout:20000});
-  assert.equal(await hub.locator('.guide-sections a').count(),4);
+  assert.equal(await hub.locator('.guide-sections a.service-card').count(),2);
+  assert.equal(await hub.locator('.guide-sections a[href="/Wand/guide/quests/"]').count(),1);
+  assert.equal(await hub.locator('.guide-sections a[href="/Wand/guide/star-path/"],.guide-sections a[href="/Wand/guide/events/"]').count(),0);
+  assert.equal(await hub.locator('.guide-app').evaluate(root=>
+    !!(root.querySelector('.timeline-panel').compareDocumentPosition(root.querySelector('.guide-sections'))&Node.DOCUMENT_POSITION_FOLLOWING)),true,
+    'calendar is first, with the two guide service cards beneath it');
+  assert.equal(await hub.locator('.calendar-year').inputValue(),'2026',
+    'the year control must have a visible selected year rather than a blank value');
+  assert.equal(await hub.locator('.date-slot .month-label').innerText(),'12月');
+  assert.equal(await hub.locator('.date-slot .month-label').evaluate(el=>
+    el.parentElement.querySelector('.date-number').textContent),'1');
   assert.equal(await hub.locator('.guide-sections a[href="/Wand/guide/systems/"]').count(),1,
     'Systems is now a working Guide service, not a disabled placeholder');
   assert.equal(await hub.locator('.timeline-row').count(),2,
@@ -489,7 +499,7 @@ try {
   });
   assert(markerRatio>.1&&markerRatio<.16,'today should be in the left 10–15% of the date axis');
 
-  assert.match(await hub.locator('.calendar-nav').innerText(),/11月18日.*12月22日/);
+  assert.match(await hub.locator('.calendar-nav').innerText(),/2026年11月18日.*2026年12月22日/);
   assert.match(await hub.locator('.timeline-content').innerText(),/Haunting Elegance/);
   assert.match(await hub.locator('.timeline-content').innerText(),/Seafaring Star Path/);
   assert.equal(await hub.locator('.timeline-bar.task').count(),2);
@@ -532,7 +542,7 @@ try {
     /日程は保存済みの情報です/);
   await hub.locator('.source-info summary').click();
   await hub.getByRole('button',{name:'前の期間'}).click();
-  assert.match(await hub.locator('.calendar-nav').innerText(),/10月14日.*11月17日/);
+  assert.match(await hub.locator('.calendar-nav').innerText(),/2026年10月14日.*2026年11月17日/);
   assert.equal(await hub.locator('.timeline-bar.limited').count(),2);
   assert.equal(await hub.locator('.timeline-bar.floating').count(),1);
   assert.equal(await hub.locator('.timeline-bar.other').count(),1,
@@ -540,7 +550,7 @@ try {
 
   const festival=hub.locator('.timeline-row')
     .filter({hasText:'ホーンテッドフローティングフェスティバル'});
-  await festival.locator('.event-label').click();
+  await festival.locator('.timeline-bar').first().click();
   assert.match(await hub.locator('.event-inspector').innerText(),/2026\/10\/06 17:00 GMT-7/,
     'native Festival opening UTC instant must convert to Los Angeles local time');
   assert.match(await hub.locator('.event-inspector').innerText(),/2026\/10\/31 16:59 GMT-7/);
@@ -549,7 +559,8 @@ try {
   const festivalCalendarHref='/Wand/guide/events/?event=HauntedFloatingFestival2026';
   assert.equal(await hub.locator('.event-inspector a.primary').getAttribute('href'),
     festivalCalendarHref);
-  await hub.locator('.event-inspector a.primary').click();
+  assert.equal(await festival.locator('a.event-label').getAttribute('href'),festivalCalendarHref);
+  await festival.locator('a.event-label').click();
   await hub.locator('.reward-detail .native-id')
     .filter({hasText:'HauntedFloatingFestival2026'}).waitFor({timeout:20000});
   assert.equal(await hub.locator('.reward-detail .reward-row').count(),9,
@@ -557,28 +568,30 @@ try {
   await hub.goBack({waitUntil:'domcontentloaded'});
   await hub.locator('.timeline-row').first().waitFor({timeout:20000});
   // Week range navigation is local state, not a URL that persists on Back.
-  assert.match(await hub.locator('.calendar-nav').innerText(),/11月18日.*12月22日/);
+  assert.match(await hub.locator('.calendar-nav').innerText(),/2026年11月18日.*2026年12月22日/);
   const seafaringCalendarHref='/Wand/guide/star-path/?season=Seafaring2026';
-  await hub.locator('.timeline-row')
-    .filter({hasText:'Seafaring Star Path'}).locator('.event-label').click();
+  const seafaringRow=hub.locator('.timeline-row').filter({hasText:'Seafaring Star Path'});
+  await seafaringRow.locator('.timeline-bar.task').click();
   assert.equal(await hub.locator('.event-inspector a.primary').getAttribute('href'),
     seafaringCalendarHref);
   assert.match(await hub.locator('.event-inspector').innerText(),/2026\/12\/01 06:00 GMT-8/,
     'the player sees exact source deadline in the browser-local timezone');
-  await hub.locator('.event-inspector a.primary').click();
+  assert.equal(await seafaringRow.locator('a.event-label').getAttribute('href'),seafaringCalendarHref);
+  await seafaringRow.locator('a.event-label').click();
   await hub.locator('.seasons button.selected')
     .filter({hasText:'Seafaring Star Path'}).waitFor({timeout:20000});
   assert.match(await hub.locator('.seasons button.selected').innerText(),/Seafaring Star Path/);
   await hub.goto('http://127.0.0.1:4177/Wand/guide/',{waitUntil:'domcontentloaded'});
   await hub.locator('.timeline-row').first().waitFor({timeout:20000});
   await hub.locator('.calendar-year').selectOption('2022');
+  assert.equal(await hub.locator('.calendar-year').inputValue(),'2022');
   await hub.waitForFunction(()=>document.querySelector('.calendar-nav .range')?.textContent?.includes('2022')||
     document.querySelector('.timeline-content')?.textContent?.includes('Pixar Fest Star Path'));
   assert.match(await hub.locator('.timeline-content').innerText(),/Pixar Fest Star Path/);
   assert.equal(await hub.locator('.timeline-bar.exchange').count(),0,
     'do not fabricate an unconfirmed 2022 rewards-only grace period');
   await hub.locator('.timeline-row').filter({hasText:'Pixar Fest Star Path'})
-    .locator('.event-label').click();
+    .locator('button.event-label').click();
   assert.match(await hub.locator('.event-inspector').innerText(),/2022\/10\/11 06:00 GMT-7/);
   assert.match(await hub.locator('.event-inspector').innerText(),/過去のスターパスは再参加不可/);
   assert.equal(await hub.locator('.event-inspector a.primary').count(),0,
