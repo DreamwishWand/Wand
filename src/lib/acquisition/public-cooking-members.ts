@@ -34,7 +34,6 @@ const SCOPED=new WeakSet<object>();
 const EMPTY_IDS=Object.freeze([]) as readonly string[];
 const EMPTY_MEMBERS=Object.freeze([]) as readonly NativeCookingSelectorCandidate[];
 const EMPTY_USES=Object.freeze([]) as readonly NativeRecipeIngredientCandidateUse[];
-const EMPTY_OPTIONS=Object.freeze([]) as readonly NativeRecipeIngredientOptions[];
 export type NativeCookingMemberClass=typeof FAMILIES[number][0];
 export type NativeCookingSelectorKind='cooking_ingredient_type'|'item_tag';
 export interface NativeCookingMember{
@@ -394,8 +393,8 @@ export function joinNativeRecipeCookingMembers(
           match:option.resolution==='explicit_item'?'fixed_recipe_item':
             option.resolution==='explicit_item_alternatives'?
               'recipe_item_alternative':'native_selector_candidate',
-          matchedSelectorIds:option.selectorIds.filter(selector=>
-            source.getSelectorCandidateItemIds(selector).includes(candidate)),
+          matchedSelectorIds:Object.freeze(option.selectorIds.filter(selector=>
+            source.getSelectorCandidateItemIds(selector).includes(candidate))),
           ingredientAvailabilityVerified:false as const,
           playerOwnershipVerified:false as const,
           candidateOnly:option.materialChoiceRequired
