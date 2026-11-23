@@ -60,11 +60,14 @@ export function groupCollectionUniverseItems(
     section.total++;
     section.items.push(item);
   }
-  let remaining=visible;
-  return [...groups.values()].sort((a,b)=>a.rank-b.rank||a.id.localeCompare(b.id,'en'))
-    .map(section=>{
-      const items=section.items.slice(0,Math.max(0,remaining));
-      remaining-=items.length;
-      return {id:section.id,label:section.label,total:section.total,items};
-    }).filter(section=>section.items.length>0);
+  const sorted=[...groups.values()].sort((a,b)=>
+    a.rank-b.rank||a.id.localeCompare(b.id,'en'));
+  // Each category stays visible from the first render. Scroll advances the
+  // per-category cap rather than hiding all later headings behind a huge
+  // early category such as furniture.
+  const perGroup=Math.max(12,Math.ceil(visible/Math.max(1,sorted.length)));
+  return sorted.map(section=>({
+    id:section.id,label:section.label,total:section.total,
+    items:section.items.slice(0,perGroup)
+  }));
 }
