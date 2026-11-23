@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview --host",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "test": "node tools/architecture/check-production-stack.mjs && node --experimental-strip-types --test tests/*.test.mjs"
+    "test": "node tools/architecture/check-production-stack.mjs && node --experimental-strip-types --test tests/*.test.mjs",
+    "predev": "node tools/db-01-items/materialize-public-master.mjs",
+    "prebuild": "node tools/db-01-items/materialize-public-master.mjs"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.9",
