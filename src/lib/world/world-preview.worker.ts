@@ -42,7 +42,7 @@ type Request =
   | { command:'find-global-anchor'; requestId:number;
       itemId:number; matchIndex:number }
   | { command:'gridarea-window'; requestId:number;
-      itemId:number; orientationCode:number; rect:Rect };
+      itemId:number; orientationCode:number; callerGridFactor:1|2; rect:Rect };
 
 interface WorkerScope {
   onmessage: ((event: MessageEvent<unknown>) => Promise<void>) | null;
@@ -72,9 +72,11 @@ function parseRequest(data:unknown): Request {
   }
   if(data.command==='gridarea-window'&&positive(data.itemId)&&
      nonnegative(data.orientationCode)&&data.orientationCode<=15&&
+     (data.callerGridFactor===1||data.callerGridFactor===2)&&
      validRect(data.rect)&&data.rect.width<=16&&data.rect.height<=16)
     return {command:'gridarea-window',requestId,
-      itemId:data.itemId,orientationCode:data.orientationCode,rect:data.rect};
+      itemId:data.itemId,orientationCode:data.orientationCode,
+      callerGridFactor:data.callerGridFactor,rect:data.rect};
   if(data.command==='find-global-anchor'&&positive(data.itemId)&&
      nonnegative(data.matchIndex)&&data.matchIndex<=1_000_000)
     return {command:'find-global-anchor',requestId,
@@ -159,7 +161,8 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
     if(message.command==='gridarea-window'){
       const {x,y,width,height}=message.rect;
       const window=getOriginalGridAreaLocalWindow(catalog,
-        message.itemId,message.orientationCode,x,y,width,height);
+        message.itemId,message.orientationCode,x,y,width,height,
+        message.callerGridFactor);
       worker.postMessage({kind:'gridarea-window',requestId,result:window});
       return;
     }
