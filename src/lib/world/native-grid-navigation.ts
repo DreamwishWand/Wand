@@ -32,12 +32,15 @@ export interface TerrainZipNavigationLayout {
 export interface TerrainZipNavigationInput {
   readonly gameVersion:string|null;
   readonly platform:string|null;
+  /** SHA-256 of raw uncompressed manifest.json from the Rust ZIP reader. */
+  readonly manifestRawSha256?:string|null;
   readonly layouts:readonly TerrainZipNavigationLayout[];
 }
 export type TerrainZipNavigationStatus=
   'ready'|'zip_not_loaded'|'source_version_mismatch'|
   'not_in_terrain_source'|'ambiguous_terrain_view'|
-  'source_default_count_unavailable'|'source_default_count_mismatch';
+  'source_default_count_unavailable'|'source_default_count_mismatch'|
+  'source_manifest_unavailable'|'source_manifest_mismatch';
 export interface TerrainZipNavigationResult {
   readonly contract:typeof DB04_SOURCE_TERRAIN_NAVIGATION;
   readonly status:TerrainZipNavigationStatus;
@@ -47,6 +50,8 @@ export interface TerrainZipNavigationResult {
   readonly sourceLayoutAndGridDataPathExactMatched:boolean;
   readonly sourceDefaultCountCompared:boolean;
   readonly sourceDefaultCountEqual:boolean;
+  readonly sourceSnapshotManifestSha256Compared:boolean;
+  readonly sourceSnapshotManifestSha256Equal:boolean;
   readonly graphSourceDefaultObjectCount:number|null;
   readonly terrainSourceDefaultObjectCount:number|null;
   readonly independentOriginalArchiveBinaryIdentityVerified:false;
@@ -65,7 +70,8 @@ function result(
   status:TerrainZipNavigationStatus,
   selected:TerrainZipNavigationLayout|null,
   gridId:number|null,
-  counts:Readonly<{graph:number|null;terrain:number|null}>={graph:null,terrain:null}
+  counts:Readonly<{graph:number|null;terrain:number|null}>={graph:null,terrain:null},
+  manifests:Readonly<{graph:string;zip:string|null}>|null=null
 ):TerrainZipNavigationResult{
   return Object.freeze({
     contract:DB04_SOURCE_TERRAIN_NAVIGATION,
@@ -77,6 +83,9 @@ function result(
     sourceDefaultCountCompared:counts.graph!==null&&counts.terrain!==null,
     sourceDefaultCountEqual:counts.graph!==null&&counts.terrain!==null&&
       counts.graph===counts.terrain,
+    sourceSnapshotManifestSha256Compared:manifests!==null&&manifests.zip!==null,
+    sourceSnapshotManifestSha256Equal:manifests!==null&&
+      manifests.zip!==null&&manifests.graph===manifests.zip,
     graphSourceDefaultObjectCount:counts.graph,
     terrainSourceDefaultObjectCount:counts.terrain,
     independentOriginalArchiveBinaryIdentityVerified:false as const,
@@ -109,9 +118,26 @@ export function matchSourceGridToLocalTerrain(
     throw new TypeError('DB04_TERRAIN_NAV_INVALID_LOCAL_ZIP');
   if(zip.gameVersion===null||zip.platform===null)
     return result('zip_not_loaded',null,null);
+  const manifestEvidence=zip.manifestRawSha256===undefined?null:{
+    graph:request.sourceWorldManifestSha256,
+    zip:typeof zip.manifestRawSha256==='string'&&
+      /^[a-f0-9]{64}$/.test(zip.manifestRawSha256)
+      ?zip.manifestRawSha256:null
+  };
+  const response=(
+    status:TerrainZipNavigationStatus,
+    selected:TerrainZipNavigationLayout|null,
+    id:number|null,
+    counts:Readonly<{graph:number|null;terrain:number|null}>={graph:null,terrain:null}
+  ):TerrainZipNavigationResult=>result(status,selected,id,counts,manifestEvidence);
   if(request.sourceGameVersion!=='1.26.2'||zip.gameVersion!=='1.26.2'||
     zip.platform!=='Steam')
-    return result('source_version_mismatch',null,null);
+    return response('source_version_mismatch',null,null);
+  if(manifestEvidence?.zip===null)
+    return response('source_manifest_unavailable',null,null);
+  if(manifestEvidence!==null&&
+    manifestEvidence.graph!==manifestEvidence.zip)
+    return response('source_manifest_mismatch',null,null);
   const matches=zip.layouts.filter(layout=>
     layout.layoutId===request.layoutId&&
     layout.grids.some((grid:TerrainZipNavigationLayout['grids'][number])=>
@@ -126,7 +152,7 @@ export function matchSourceGridToLocalTerrain(
     direct.length===0&&matches.length===1?matches[0]:null;
   if(chosen){
     if(request.sourceDefaultObjectCount===undefined)
-      return result('ready',chosen,request.nativeGridId);
+      return response('ready',chosen,request.nativeGridId);
     // Reject even a contradictory Village alias of an otherwise direct view.
     // Count equality cannot establish two independently loaded files are
     // byte-identical, nor is it evidence of actual Save Grid object state.
@@ -139,15 +165,15 @@ export function matchSourceGridToLocalTerrain(
     const graph=request.sourceDefaultObjectCount;
     if(excerptCounts.some(value=>typeof value!=='number'||
         !Number.isSafeInteger(value)||value<0||value>10000000))
-      return result('source_default_count_unavailable',null,null,
+      return response('source_default_count_unavailable',null,null,
         {graph,terrain:null});
     const distinct=new Set(excerptCounts);
     if(distinct.size!==1||!distinct.has(graph))
-      return result('source_default_count_mismatch',null,null,
+      return response('source_default_count_mismatch',null,null,
         {graph,terrain:distinct.size===1?excerptCounts[0]??null:null});
-    return result('ready',chosen,request.nativeGridId,
+    return response('ready',chosen,request.nativeGridId,
       {graph,terrain:excerptCounts[0]??null});
   }
-  return result(matches.length?'ambiguous_terrain_view':'not_in_terrain_source',
+  return response(matches.length?'ambiguous_terrain_view':'not_in_terrain_source',
     null,null);
 }

@@ -1218,3 +1218,22 @@ hashes. The FULL Grid candidate contract does not estimate or synthesize
 either value and NEVER certifies Save Grid identity, player placement,
 collision or edits. DB-05 can consume this source-only candidate API
 without taking ownership of DB-04 source data.
+
+
+## Exact original snapshot manifest bytes (not Save Diff hashes)
+
+The private \`reference_graph.py\` exporter already pins
+\`target.nativeWorldManifestSha256\` to the SHA-256 digest of the raw
+\`world.py\` snapshot \`manifest.json\` file. The Rust/WASM World archive
+reader now returns \`manifestRawSha256\`, computed from the **uncompressed
+raw manifest bytes** of the selected local ZIP (never a reserialized JSON
+object). World navigation compares these digests before attempting the
+original Layout + Grid.ID + GridDataPath + initial-count checks.
+
+A mismatch fails closed; missing digest is distinguished; legacy
+programmatic navigation without a ZIP digest remains uncorroborated.
+A matching hash supports exact snapshot manifest-byte equality only:
+it is not a game publisher signature, authentic original-game content,
+a proof that graph records are faithful, a Save Grid identity, or either
+of the native DiffGrid \`DefaultGridHashCode\` and
+\`DefaultGridDataHashCode\` values. No upload or Save writing.

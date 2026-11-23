@@ -83,6 +83,7 @@
   let platform = '';
   let integrity = '';
   let manifestFilesVerified = 0;
+  let manifestRawSha256:string|null=null;
   let layouts: LayoutOption[] = [];
   let regions: RegionCoverage[] = [];
   let selectedRegion = '';
@@ -439,6 +440,7 @@
     showSourceDefaultLayerOverlay=false;
     integrity = '';
     manifestFilesVerified = 0;
+    manifestRawSha256=null;
     errorMessage = '';
     infoMessage = 'ブラウザ内のWorldデータを破棄しました。';
     terrainLinkNotice='';
@@ -490,7 +492,8 @@
     // Match the exact original layout + Grid.ID + GridDataPath; no saved
     // Grid ID, player position or placement legality is inferred.
     const resolved=matchSourceGridToLocalTerrain(selection,{
-      gameVersion:version||null,platform:platform||null,layouts
+      gameVersion:version||null,platform:platform||null,
+      manifestRawSha256,layouts
     });
     if(resolved.status!=='ready'||!resolved.viewKey||
       resolved.nativeGridId===null){
@@ -504,6 +507,10 @@
         ? '原本参照グラフと地形ZIPの初期GridObject件数が一致しません。別の原本データが混在していないか確認してください。'
         : resolved.status==='source_default_count_unavailable'
         ? '初期GridObject件数を両方の原本データで確認できないため、自動選択できません。'
+        : resolved.status==='source_manifest_mismatch'
+        ? '原本参照グラフと地形ZIPのマニフェストSHA-256が一致しません。異なるスナップショットです。'
+        : resolved.status==='source_manifest_unavailable'
+        ? '原本のマニフェストSHA-256を確認できず、自動移動はできません。'
         : 'この部分的な地形ZIPには該当するGridが収録されていません。';
       return;
     }
@@ -558,6 +565,7 @@
     viewport = null;
     displayedAnchors = [];
     version = '';
+    manifestRawSha256=null;
     errorMessage = '';
     infoMessage = '';
     terrainLinkNotice='';
@@ -596,6 +604,8 @@
         platform = String(result.platform);
         integrity = String(result.integrity);
         manifestFilesVerified = Number(result.manifestFilesVerified);
+        manifestRawSha256=typeof result.manifestRawSha256==='string'
+          ?result.manifestRawSha256:null;
         layouts = result.layouts as LayoutOption[];
         regions = Array.isArray(result.regionCoverage)
           ? result.regionCoverage as RegionCoverage[] : [];

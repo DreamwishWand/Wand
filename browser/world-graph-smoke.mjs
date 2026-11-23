@@ -66,11 +66,14 @@ function syntheticTerrainZip(){
     '{"status":"native_partial_world_extraction"}'));
   const hashes=Object.fromEntries([...entries].map(([name,buf])=>[
     name,createHash('sha256').update(buf).digest('hex')]));
-  entries.set('manifest.json',Buffer.from(JSON.stringify({
+  const rawManifest=Buffer.from(JSON.stringify({
     schema:'wand.db04.world@1',status:'partial_game_native_evidence',
     platform:'Steam',gameVersion:'1.26.2',
     sourceScopeVerified:false,outputSha256:hashes
-  })));
+  }));
+  const manifestRawSha256=createHash('sha256')
+    .update(rawManifest).digest('hex');
+  entries.set('manifest.json',rawManifest);
   const locals=[],centrals=[];
   let current=0;
   for(const [name,content] of entries){
@@ -100,7 +103,7 @@ function syntheticTerrainZip(){
   end.writeUInt16LE(entries.size,10);
   end.writeUInt32LE(centralSize,12);
   end.writeUInt32LE(current,16);
-  return Buffer.concat([...locals,...centrals,end]);
+  return {archive:Buffer.concat([...locals,...centrals,end]),manifestRawSha256};
 }
 
 function syntheticSource(version='1.26.2'){
@@ -227,7 +230,12 @@ try{
   await panel.waitFor({timeout:20000});
   assert.equal(await panel.getByText('原本ワールド参照',{exact:true}).count(),1);
   const pick=panel.locator('input[type="file"]');
+  const sourceZip=syntheticTerrainZip();
   const source=syntheticSource();
+  // The synthetic graph and ZIP intentionally share one literal manifest,
+  // while their initial GridObject counts differ. Hash equality is a
+  // snapshot-consistency check; it is not a publisher signature.
+  source.target.nativeWorldManifestSha256=sourceZip.manifestRawSha256;
   await pick.setInputFiles({
     name:'synthetic-db04-native-reference-graph.json',
     mimeType:'application/json',
@@ -374,7 +382,7 @@ try{
     .filter({hasText:'先に下の'}).innerText(),/非公開DB-04 ZIP/);
   await page.locator('.world-toolbar input[type=file]').setInputFiles({
     name:'synthetic-native-terrain.zip',mimeType:'application/zip',
-    buffer:syntheticTerrainZip()
+    buffer:sourceZip.archive
   });
   await page.waitForFunction(()=>{
     const text=document.querySelector('.world-toolbar')?.parentElement
