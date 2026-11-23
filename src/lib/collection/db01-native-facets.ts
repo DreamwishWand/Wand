@@ -23,6 +23,15 @@ export interface CollectionDb01ActivityType{
   /** Steam v1.26.2's exact verified IL2CPP subtype, or null if unavailable. */
   readonly nativeName:string|null;
 }
+export interface CollectionDb01NativeSubtype{
+  /** Native source IL2CPP ItemType enum, not an invented UI classification. */
+  readonly nativeType:string;
+  readonly code:number;
+  readonly nativeName:string|null;
+}
+export function collectionNativeSubtypeKey(nativeType:string,code:number):string{
+  return nativeType+':'+code;
+}
 
 // Native CollectionSubMenu definitions from the verified Steam v1.26.2
 // IL2CPP enum, kept independent of user-facing progress/visibility evidence.
@@ -62,6 +71,9 @@ export interface CollectionDb01Index{
   readonly activityTypesByItem:ReadonlyMap<number,Readonly<CollectionDb01ActivityType>>;
   readonly itemsByActivityType:ReadonlyMap<number,readonly number[]>;
   readonly activityTypeNames:ReadonlyMap<number,string|null>;
+  readonly nativeSubtypeByItem:ReadonlyMap<number,Readonly<CollectionDb01NativeSubtype>>;
+  readonly itemsByNativeSubtype:ReadonlyMap<string,readonly number[]>;
+  readonly nativeSubtypeNames:ReadonlyMap<string,string|null>;
   readonly universesByItem:ReadonlyMap<number,readonly string[]>;
   readonly itemsByUniverse:ReadonlyMap<string,readonly number[]>;
   readonly universeTagIdsByItem:ReadonlyMap<number,readonly number[]>;
@@ -161,6 +173,39 @@ export function parseCollectionDb01Facets(payload:unknown):CollectionDb01Index{
       itemsByActivityType.set(code,ids);
     }
   }
+  // These records partition the *complete* public 13,202 Item ID set.
+  // Empty placeholder categories cannot be presented as collection cards.
+  const nativeSubtypeByItem=new Map<number,Readonly<CollectionDb01NativeSubtype>>();
+  const itemsByNativeSubtype=new Map<string,number[]>();
+  const nativeSubtypeNames=new Map<string,string|null>();
+  if(payload.nativeSubtypeItems!==undefined){
+    assert(payload.nativeSubtypeEvidence==='original_il2cpp_item_type_and_subtype'&&
+      payload.nativeSubtypeGameUiMembershipVerified===false&&
+      payload.nativeSubtypeItemCount===13202&&
+      Array.isArray(payload.nativeSubtypeItems)&&
+      payload.nativeSubtypeItems.length===13202,'NATIVE_SUBTYPE_MANIFEST');
+    let last=0;
+    for(const row of payload.nativeSubtypeItems){
+      assert(Array.isArray(row)&&row.length===4&&validId(row[0])&&row[0]>last&&
+        typeof row[1]==='string'&&/^[A-Za-z][A-Za-z0-9]{0,63}$/.test(row[1])&&
+        Number.isInteger(row[2])&&row[2]>=0&&row[2]<=99&&
+        Math.floor((row[0]%10000000)/100000)===row[2]&&
+        (row[3]===null||(typeof row[3]==='string'&&
+          /^[A-Za-z][A-Za-z0-9_]{0,127}$/.test(row[3]))),
+        'NATIVE_SUBTYPE_ITEM');
+      const [id,nativeType,code,nativeName]=row as [number,string,number,string|null];
+      last=id;
+      const key=collectionNativeSubtypeKey(nativeType,code);
+      if(nativeSubtypeNames.has(key))assert(nativeSubtypeNames.get(key)===nativeName,
+        'NATIVE_SUBTYPE_NAME_CONFLICT');
+      else nativeSubtypeNames.set(key,nativeName);
+      nativeSubtypeByItem.set(id,Object.freeze({nativeType,code,nativeName}));
+      const ids=itemsByNativeSubtype.get(key)??[];
+      ids.push(id);itemsByNativeSubtype.set(key,ids);
+    }
+    assert(nativeSubtypeByItem.size===payload.sourceItemCount,
+      'NATIVE_SUBTYPE_COVERAGE');
+  }
   const universesByItem=new Map<number,readonly string[]>();
   const itemsByUniverse=new Map<string,number[]>();
   if(payload.universeSourceItems!==undefined){
@@ -235,6 +280,9 @@ export function parseCollectionDb01Facets(payload:unknown):CollectionDb01Index{
     activityTypesByItem,
     itemsByActivityType,
     activityTypeNames,
+    nativeSubtypeByItem,
+    itemsByNativeSubtype,
+    nativeSubtypeNames,
     universesByItem,
     itemsByUniverse,
     universeTagIdsByItem,
