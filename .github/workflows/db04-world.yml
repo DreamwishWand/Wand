@@ -17,6 +17,7 @@ on:
       - 'tests/world-native-gridarea-evidence.test.mjs'
       - 'tests/world-native-gridarea-local-window.test.mjs'
       - 'tests/world-native-oblique.test.mjs'
+      - 'tests/world-native-terrain-preview.test.mjs'
       - 'src/lib/world/native-oblique.ts'
       - 'tests/world-native-oblique.test.mjs'
       - 'src/lib/world/native-oblique.ts'
@@ -54,6 +55,7 @@ on:
       - 'tests/world-native-item-anchor-finder.test.mjs'
       - 'tests/world-native-gridarea-evidence.test.mjs'
       - 'tests/world-native-gridarea-local-window.test.mjs'
+      - 'tests/world-native-terrain-preview.test.mjs'
       - 'tests/world-native-gridobject-item-area-link.test.mjs'
       - 'tests/world-native-default-gridlayers-cell.test.mjs'
       - 'tests/world-native-default-gridlayers-window.test.mjs'
@@ -147,4 +149,4 @@ jobs:
       - name: Test browser-facing world catalog
         run: node --experimental-strip-types --test tests/world.test.mjs tests/world-local-snapshot.test.mjs tests/world-preview-views.test.mjs tests/world-native-version-gate.test.mjs
       - name: Test native source-local anchor envelope under TypeScript
-        run: node --experimental-strip-types --test tests/world-native-anchor-domain.test.mjs tests/world-native-item-anchor-finder.test.mjs tests/world-native-gridarea-evidence.test.mjs tests/world-native-gridarea-local-window.test.mjs tests/world-native-oblique.test.mjs tests/world-native-gridobject-item-area-link.test.mjs tests/world-native-default-gridlayers-cell.test.mjs tests/world-native-default-gridlayers-window.test.mjs tests/world-native-default-candidate-probe.test.mjs tests/world-reference-graph.test.mjs tests/world-item-geography.test.mjs tests/world-native-item-scope.test.mjs tests/world-native-realm-universe.test.mjs tests/world-native-tag-taxonomy.test.mjs tests/world-worldless-source-placements.test.mjs tests/world-village-world-tag-overlap.test.mjs tests/world-native-area-tag-overlap.test.mjs tests/world-native-realm-subtree.test.mjs tests/world-native-graph-browser.test.mjs tests/world-native-grid-navigation.test.mjs
+        run: node --experimental-strip-types --test tests/world-native-anchor-domain.test.mjs tests/world-native-item-anchor-finder.test.mjs tests/world-native-gridarea-evidence.test.mjs tests/world-native-gridarea-local-window.test.mjs tests/world-native-oblique.test.mjs tests/world-native-terrain-preview.test.mjs tests/world-native-gridobject-item-area-link.test.mjs tests/world-native-default-gridlayers-cell.test.mjs tests/world-native-default-gridlayers-window.test.mjs tests/world-native-default-candidate-probe.test.mjs tests/world-reference-graph.test.mjs tests/world-item-geography.test.mjs tests/world-native-item-scope.test.mjs tests/world-native-realm-universe.test.mjs tests/world-native-tag-taxonomy.test.mjs tests/world-worldless-source-placements.test.mjs tests/world-village-world-tag-overlap.test.mjs tests/world-native-area-tag-overlap.test.mjs tests/world-native-realm-subtree.test.mjs tests/world-native-graph-browser.test.mjs tests/world-native-grid-navigation.test.mjs
