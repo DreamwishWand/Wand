@@ -5,7 +5,7 @@ import {
   DB03_LOCAL_REWARD_REQUIRED_FILES,loadVerifiedLocalGuideRewards
 } from '../src/lib/guide/local-reward-files.ts';
 import {DB03_PRIVATE_REWARD_SOURCE} from '../src/lib/guide/private-reward-evidence.ts';
-import {GUIDE_SOURCE_COMPOSITE_V2_BYTES} from '../src/lib/guide/source-composite.mjs';
+import {GUIDE_SOURCE_COMPOSITE_V2_BYTES} from '../src/lib/guide/source-composite.ts';
 
 const sizes=Object.values(DB03_LOCAL_REWARD_REQUIRED_FILES);
 const mock=(size,name='private.json',read=()=>new ArrayBuffer(size))=>({
