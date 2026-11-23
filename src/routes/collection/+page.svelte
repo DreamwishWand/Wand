@@ -13,6 +13,8 @@
     from '$lib/collection/browse-layout.ts';
   import {COLLECTION_UNIVERSE_TAG_BY_ID,COLLECTION_UNIVERSE_TAG_NAMES}
     from '$lib/collection/universe-tag-names.ts';
+  import {collectionNativeSubtypeLabel}
+    from '$lib/collection/native-subtype-labels.ts';
   import AcquisitionEvidence from '$lib/collection/AcquisitionEvidence.svelte';
   import {loadDb01ItemAcquisitionHandoff,type Db01ItemAcquisitionIndex}
     from '$lib/acquisition/db01-item-acquisition.ts';
@@ -246,31 +248,10 @@
     return native?.replace(/([a-z])([A-Z])/g,'$1 $2') ??
       (lang==='ja'?'その他のアクティビティアイテム':'Other activity items');
   }
-  const furnitureSubtypeJa:Readonly<Record<number,string>>={
-    0:'家具',1:'道',2:'景観',3:'扉',5:'装飾台',
-    6:'自然の装飾',7:'フェンス',8:'古代の装置',9:'装置'
-  };
-  const clothingSubtypeJa:Readonly<Record<number,string>>={
-    0:'トップス',1:'ズボン',2:'靴',3:'メガネ',4:'帽子',
-    5:'髪型',6:'手袋',7:'アウター',8:'バッグ',9:'衣装セット',
-    10:'イヤリング',11:'腕飾り',12:'スカーフ',13:'ネックレス',
-    14:'靴下',15:'スカート',16:'口ひげ',17:'ひげ',18:'耳',
-    19:'メイク',20:'人魚の尾',21:'外見',22:'模様',23:'スキン'
-  };
   function nativeSubtypeLabel(lang:string,key:string,nativeName:string|null):string{
-    const [nativeType,rawCode]=key.split(':');
-    const code=Number(rawCode);
-    if(nativeType==='ActivityItem')
-      return sourceActivityTypeLabel(lang,code,nativeName);
-    const special=lang==='ja'?
-      (nativeType==='Furniture'?furnitureSubtypeJa:
-        nativeType==='Clothing'?clothingSubtypeJa:
-        nativeType==='Trimming'?{0:'壁紙',1:'床材'}:{})[code]:undefined;
-    if(special)return special;
-    const original=nativeName?.replace(/([a-z])([A-Z])/g,'$1 $2').trim();
-    if(original)return original;
-    return categoryLabel(lang,nativeType==='Trimming'?'Wallpaper & Flooring':
-      nativeType)+' '+rawCode;
+    if(key.startsWith('ActivityItem:'))
+      return sourceActivityTypeLabel(lang,Number(key.split(':')[1]),nativeName);
+    return collectionNativeSubtypeLabel(lang,key,nativeName);
   }
   function displayItemCategory(item:CollectionItem):string {
     const original=sourceIndex?.nativeSubtypeByItem.get(item.itemId);
