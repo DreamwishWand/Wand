@@ -64,6 +64,10 @@ import {
   createDb00NativeLootReader,
   type Db00NativeLootReader,type Db00NativeLootItem
 } from './native-loot.ts';
+import {
+  createDb00CookingIngredientReader,
+  type Db00CookingIngredientReader
+} from './native-cooking.ts';
 import {loadPublicStarpath} from '../guide/public-starpath.ts';
 import {
   loadStarpathRewardExtras,STARPATH_EXTRA_RELEASE
@@ -135,6 +139,8 @@ export interface PublicSharedGameSources{
   loadNativeActivitySources():Promise<Db00NativeActivityReader>;
   /** SHA-pinned 3,804 original LootTable entries; static candidates, NOT drops. */
   loadNativeLootCandidateSources():Promise<Db00NativeLootReader>;
+  /** Original 469 cooking members and 238 ingredient selector uses. */
+  loadNativeCookingIngredientSources():Promise<Db00CookingIngredientReader>;
   /** One cross-service Item lookup, with both optional sources loaded lazily. */
   getNativeAcquisitionEvidence(
     itemId:string|number
@@ -322,6 +328,14 @@ export async function openPublicSharedGameSources(
       guaranteedLootDropVerified:false as const
     });
   };
+  let nativeCooking:Promise<Db00CookingIngredientReader>|null=null;
+  const loadNativeCookingIngredientSources=():
+    Promise<Db00CookingIngredientReader>=>
+    nativeCooking??=Promise.all([
+      acquisition.loadNativeRecipeResults(),
+      acquisition.loadNativeCookingMembers()
+    ]).then(([recipes,members])=>
+      createDb00CookingIngredientReader(database,joined,recipes,members));
   let starpathCrosswalk:Promise<Db00StarpathRewardReader>|null=null;
   const loadStarpathRewardCrosswalk=():Promise<Db00StarpathRewardReader>=>
     starpathCrosswalk??=(async()=>{
@@ -384,6 +398,7 @@ export async function openPublicSharedGameSources(
     loadNativeOnlineCategories,loadNativeRecipeSources,
     loadNativeActivitySources,getNativeAcquisitionEvidence,
     loadNativeLootCandidateSources,getAllNativeAcquisitionEvidence,
+    loadNativeCookingIngredientSources,
     loadStarpathRewardCrosswalk,
     queryItems:(filters:readonly SharedDbFilter[]=[],
       page:Readonly<{offset?:number;limit?:number}>={})=>
