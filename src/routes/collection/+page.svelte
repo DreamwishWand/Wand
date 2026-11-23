@@ -419,13 +419,16 @@
             facet,items:runtime!.query({...scopeFilter,category:facet.id,limit:8}).items
           })):[];
       if(sourceIndex&&filtersOpen){
-        const key=(sourceActivityType!==null?'activity-'+sourceActivityType:
+        const key=(sourceNativeSubtype!==null?'native-'+sourceNativeSubtype:
+          sourceActivityType!==null?'activity-'+sourceActivityType:
           selected||'all')+'|'+worldFilter+'|'+universeFilter+
           '|'+(sourceChoices.worldContextTag??'')+'|'+(sourceUniverseSelection??'');
         if(key!==sourceGroupsCacheKey){
-          const ids=sourceActivityType!==null
-            ?sourceIndex.itemsByActivityType.get(sourceActivityType)??[]
-            :selected?queryAllCollectionRows({
+          const ids=sourceNativeSubtype!==null
+            ?sourceIndex.itemsByNativeSubtype.get(sourceNativeSubtype)??[]
+            :sourceActivityType!==null
+              ?sourceIndex.itemsByActivityType.get(sourceActivityType)??[]
+              :selected?queryAllCollectionRows({
                 ...currentFilter(0,200),status:'all',search:'',
                 favoriteOnly:false,nameStatus:'all',expansion:''
               }).map(row=>row.itemId):[...sourceIndex.byItem.keys()];
@@ -435,7 +438,8 @@
       }else if(!filtersOpen){
         sourceFacetGroups=[];sourceGroupsCacheKey='';
       }
-      if((sourceActivityType!==null||sourceUniverseSelection!==null||
+      if((sourceActivityType!==null||sourceNativeSubtype!==null||
+          sourceUniverseSelection!==null||
           Object.keys(sourceChoices).length||acquisitionFilter)&&
          (sourceIndex||acquisitionIndex)){
         // An original submenu can contain 6k+ Item IDs. Repeating the
@@ -450,7 +454,9 @@
           ?acquisitionIndex.listItemIds(acquisitionFilter).map(Number):null;
         const activityIds=sourceActivityType===null?null:
           sourceIndex?.itemsByActivityType.get(sourceActivityType)??[];
-        const candidateIds=[universeIds,acquisitionIds,activityIds]
+        const nativeIds=sourceNativeSubtype===null?null:
+          sourceIndex?.itemsByNativeSubtype.get(sourceNativeSubtype)??[];
+        const candidateIds=[universeIds,acquisitionIds,activityIds,nativeIds]
           .reduce<readonly number[]|null>((shortest,ids)=>
             ids===null?shortest:
             shortest===null||ids.length<shortest.length?ids:shortest,null);
@@ -474,6 +480,9 @@
                 ?.includes(sourceUniverseSelection)===true))&&
           (sourceActivityType===null||
             sourceIndex?.activityTypesByItem.get(item.itemId)?.code===sourceActivityType)&&
+          (sourceNativeSubtype===null||
+            (sourceIndex?.nativeSubtypeByItem.get(item.itemId)?.nativeType+':'+
+              sourceIndex?.nativeSubtypeByItem.get(item.itemId)?.code)===sourceNativeSubtype)&&
           (!acquisitionFilter||
             (acquisitionIndex?.getItem(item.itemId).categories.includes(acquisitionFilter)??false))&&
           (selected===''||item.family===selected)&&
@@ -521,6 +530,16 @@
   }
   function rebuildSourceUniverseSections():void{
     const groups=groupCollectionUniverseItems(sourceAllMatching,item=>{
+      const native=sourceIndex?.nativeSubtypeByItem.get(item.itemId);
+      if(native){
+        const key=native.nativeType+':'+native.code;
+        const ranks:Readonly<Record<string,number>>={
+          Furniture:0,Clothing:100,Trimming:200,ActivityItem:300
+        };
+        return {id:key,
+          label:nativeSubtypeLabel(locale,key,native.nativeName),
+          rank:(ranks[native.nativeType]??400)+native.code};
+      }
       const activity=sourceIndex?.activityTypesByItem.get(item.itemId);
       const id=activity?'activity-'+activity.code:item.family;
       return {id,
@@ -663,7 +682,8 @@
    */
   function appendNextPage():void {
     if(!runtime||busy||loading||storeError||filtered.length>=totalMatches)return;
-    if((sourceActivityType!==null||sourceUniverseSelection!==null||
+    if((sourceActivityType!==null||sourceNativeSubtype!==null||
+          sourceUniverseSelection!==null||
           Object.keys(sourceChoices).length||acquisitionFilter)&&
          (sourceIndex||acquisitionIndex)){
       const next=Math.min(sourceAllMatching.length,filtered.length+72);
@@ -806,7 +826,8 @@
     if(!window.confirm(`現在の条件に一致する全${count.toLocaleString(locale)}件を「${label}」に変更します。画面に未表示のアイテムも対象です。実行しますか？`))return;
     const filter=currentFilter(0,1);
     void commit(async()=>{
-      if((sourceActivityType!==null||sourceUniverseSelection!==null||
+      if((sourceActivityType!==null||sourceNativeSubtype!==null||
+          sourceUniverseSelection!==null||
           Object.keys(sourceChoices).length||acquisitionFilter)&&
          (sourceIndex||acquisitionIndex)){
         // Rust's bulk_matching predicate does not know DB-01 menu candidates or Tags.
