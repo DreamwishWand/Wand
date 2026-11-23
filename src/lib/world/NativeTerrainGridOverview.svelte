@@ -1,4 +1,5 @@
 <script lang="ts">
+  import {paintNativeTerrainCanvas as paint} from './native-terrain-canvas.ts';
   type Count = {nativeFloorValue:number;cellCount:number};
   type TerrainRaster = {
     status:'source_corroborated_grid_local_raster';
@@ -12,40 +13,6 @@
   export let onNavigate:(x:number,y:number)=>void;
   let hovered:{x:number;y:number;value:number}|null=null;
   const integer=(v:number)=>v.toLocaleString('ja-JP');
-  const rgb=(value:number):[number,number,number]=>{
-    if(value===0)return [47,45,55];
-    if(value&512)return [48,106,152];
-    if(value&256)return [56,127,121];
-    if(value&2048)return [127,105,127];
-    if(value&4)return [80,137,95];
-    if(value&1024)return [119,107,132];
-    const v=Math.imul(value,2654435761)>>>0;
-    return [66+(v&63),67+((v>>>8)&63),71+((v>>>16)&63)];
-  };
-  function paint(node:HTMLCanvasElement,source:TerrainRaster){
-    function render(current:TerrainRaster){
-      const {sizeX,sizeY,nativeFloorValues}=current;
-      node.width=sizeX;node.height=sizeY;
-      if(nativeFloorValues.length!==sizeX*sizeY)throw new TypeError('DB04_TERRAIN_RASTER_LENGTH');
-      const ctx=node.getContext('2d',{alpha:false});
-      if(!ctx)return;
-      const bitmap=ctx.createImageData(sizeX,sizeY);
-      const palette=new Map<number,[number,number,number]>();
-      for(let i=0;i<nativeFloorValues.length;i++){
-        const value=nativeFloorValues[i];
-        let color=palette.get(value);
-        if(!color){color=rgb(value);palette.set(value,color);}
-        const offset=i*4;
-        bitmap.data[offset]=color[0];
-        bitmap.data[offset+1]=color[1];
-        bitmap.data[offset+2]=color[2];
-        bitmap.data[offset+3]=255;
-      }
-      ctx.putImageData(bitmap,0,0);
-    }
-    render(source);
-    return {update:render};
-  }
   function position(event:MouseEvent):{x:number;y:number}|null{
     const target=event.currentTarget as HTMLButtonElement;
     const canvas=target.querySelector('canvas');
