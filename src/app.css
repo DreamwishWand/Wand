@@ -808,9 +808,9 @@ a.portal-card:focus-visible{outline:3px solid #f5d6ff;outline-offset:-5px;z-inde
 
 /* Original CollectionSubMenu browse categories: native 20-category hierarchy.
    Source candidates are explicitly NOT verified in-game completion counts. */
-.collection-categories-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.collection-categories-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:0}
 .collection-categories-heading h2{margin:0}
-.collection-categories-heading .subtle-button{flex:none}
+.collection-categories-heading .subtle-button{flex:none;padding:4px 9px;font-size:11px;line-height:1.2}
 .collection-original-category-grid .facet-card{min-height:122px}
 .collection-original-category-grid .facet-card:disabled{opacity:.38;cursor:not-allowed}
 .collection-original-category-grid .facet-card strong{line-height:1.25}
