@@ -231,10 +231,14 @@ const COPY={
     storageConflict:'O registro mudou em outra aba. Alterações antigas foram bloqueadas.',
     reloadRecord:'Recarregar registro recente',storageKept:'Os dados do navegador foram mantidos.'
   }
-} as const satisfies Record<CollectionInterfaceLocale,Record<keyof typeof COPY.ja,string>>;
+} as const satisfies Record<CollectionInterfaceLocale,Record<string,string>>;
+export type CollectionInterfaceKey=keyof typeof COPY.ja;
+export const COLLECTION_INTERFACE_COPY=COPY;
 
 // All copy is presentation-only: data, provenance, filtering and persistence
 // must not depend on which language is selected.
-export function collectionInterfaceCopy(locale:string):Readonly<typeof COPY.ja>{
-  return (COPY as Record<string,typeof COPY.ja>)[locale]??COPY.en;
+export function collectionInterfaceCopy(locale:string):
+  Readonly<Record<CollectionInterfaceKey,string>>{
+  return Object.prototype.hasOwnProperty.call(COPY,locale)
+    ? COPY[locale as CollectionInterfaceLocale] : COPY.en;
 }
