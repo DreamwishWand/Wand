@@ -5,6 +5,7 @@
   import type {Db00ItemContext} from './common-db-context';
   import type {SavedGridItemReference} from './save-world-db04-context';
   import GridObjectPositionMap from './GridObjectPositionMap.svelte';
+  import VerifiedSaveItemIcon from './VerifiedSaveItemIcon.svelte';
   import {combineSavedGridQueues,gridEditsForQuantityExport}
     from './grid-combined-queues';
   import {queuedSaveExportMode}
@@ -753,6 +754,9 @@
     gridRows:readonly SavedGridItemReference[]){
     dbWorker?.terminate();
     const request=++catalogRevision;
+    // Reinspection must not display stale names or category matches while the
+    // current publication is unresolved (including a failed catalog request).
+    dbMap=new Map();
     dbStatus='loading';
     const ids=[...new Set([
       ...rows.map(row=>String(row.itemId)),
@@ -1828,10 +1832,15 @@
               disabled={processing}
               aria-label={`所持アイテム ${String(slot.itemId)} を選択 · ${ownedSlotLocation(slot)}`}
               on:click={()=>selectSavedSlot(slot)}>
-              <span>
-                <strong>{meta?.name??String(slot.itemId)}</strong>
-                <small>{ownedSlotLocation(slot)} · {
-                  meta?.category??meta?.nativeCategory??'分類未確認'}</small>
+              <span class="slot-item-detail">
+                {#if meta?.media}
+                  <VerifiedSaveItemIcon media={meta.media} basePath={base}/>
+                {/if}
+                <span>
+                  <strong>{meta?.name??String(slot.itemId)}</strong>
+                  <small>{ownedSlotLocation(slot)} · {
+                    meta?.category??meta?.nativeCategory??'分類未確認'}</small>
+                </span>
               </span>
               <span class="slot-amount">
                 {#if pending!==null}
@@ -2528,6 +2537,9 @@
     display:flex;align-items:center;justify-content:space-between;gap:12px;
     min-height:54px;padding:10px 12px;}
   .slot-select:hover{background:#443452;}
+  .slot-item-detail{display:flex;align-items:center;gap:10px;min-width:0;}
+  .slot-item-detail>span{min-width:0;}
+  .slot-item-detail strong{overflow-wrap:anywhere;}
   .slot-select.queued{box-shadow:inset 3px 0 0 #d8b9f0;}
   .slot-prior{display:block;font-size:12px;color:#d4c2df;}
   .slot-select strong{font-size:15px;display:block;}
