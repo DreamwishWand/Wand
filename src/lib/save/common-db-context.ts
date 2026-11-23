@@ -66,12 +66,12 @@ export function currentSaveItemMedia(
      typeof media.sha256!=='string'||
      !/^[0-9a-f]{64}$/.test(media.sha256)||
      snapshot.target.platform!=='Steam'||
-     typeof version!=='string'||!/^\\d+\\.\\d+\\.\\d+$/.test(version))return null;
+     typeof version!=='string'||!/^\d+\.\d+\.\d+$/.test(version))return null;
   // Public SRC-04 release directory must identify the exact Steam game release.
   // Do not silently substitute the older 1.25.3 gallery icons for 1.26.2.
   const prefix='ddv/item-images/steam-'+version+'-';
   if(!media.path.startsWith(prefix)||
-     !/^ddv\\/item-images\\/[a-z0-9.-]+\\/[a-f0-9]{2}\\/[a-f0-9]{64}\\.webp$/.test(media.path)||
+     !/^ddv\/item-images\/[a-z0-9.-]+\/[a-f0-9]{2}\/[a-f0-9]{64}\.webp$/.test(media.path)||
      media.path.includes('..'))return null;
   return Object.freeze({path:media.path,sha256:media.sha256});
 }
