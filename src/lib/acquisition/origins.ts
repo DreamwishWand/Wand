@@ -133,6 +133,19 @@ export interface OfficialCampaign {
     'official_campaign' | 'purchase_bonus' | 'gift' | 'event_reward';
   readonly name: string;
   readonly code: string | null;
+  /**
+   * Optional when a code string is reported by a community archive but the
+   * official reward announcement itself omits it from readable page text.
+   * Never conflate the reported code with an official Item ID or grant.
+   */
+  readonly codeEvidence?: Readonly<{
+    evidence:'community_code_report_official_reward_announcement';
+    codeSourceKind:'community_wiki';
+    codeSourceUrl:string;
+    checkedOn:string;
+    officialArticleContainsReadableCode:false;
+    nativeRewardItemIdVerified:false;
+  }>;
   readonly productId: string | null;
   readonly window: OriginWindow;
   /** Preserve contradictory official windows without silently overwriting. */
@@ -228,6 +241,18 @@ function validateCampaign(c: OfficialCampaign): void {
     (c.code === null || /^[A-Za-z0-9_-]{3,80}$/.test(c.code)) &&
     (c.productId === null || SAFE_KEY.test(c.productId)), 'CAMPAIGN');
   period(c.window);
+  if(c.codeEvidence!==undefined){
+    const ev=c.codeEvidence;
+    assert(c.kind==='redeem_code'&&c.code!==null&&
+      ev.evidence==='community_code_report_official_reward_announcement'&&
+      ev.codeSourceKind==='community_wiki'&&
+      ev.codeSourceUrl==='https://dreamlightvalleywiki.com/Redemption_Codes'&&
+      DATE.test(ev.checkedOn)&&
+      ev.officialArticleContainsReadableCode===false&&
+      ev.nativeRewardItemIdVerified===false&&
+      c.source.kind==='official_publication',
+      'CAMPAIGN_CODE_PROVENANCE');
+  }
   if(c.windowEvidence!==undefined){
     assert(Array.isArray(c.windowEvidence)&&c.windowEvidence.length>0,'CAMPAIGN_WINDOW_EVIDENCE');
     for(const claim of c.windowEvidence){
