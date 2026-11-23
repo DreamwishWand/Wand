@@ -72,15 +72,17 @@
   $: targetMatches=targetReverseIndex&&targetFocusId
     ?targetReverseIndex.getItemCandidates(targetFocusId):[];
   $: targetQuestIds=[...new Set(targetMatches.map(row=>row.questId))];
-  $: selectedTargetRefs=selectedRow
-    ?targetMatches.filter(row=>row.questId===selectedRow.id):[];
+  $: selectedQuestId=selectedRow?.id??null;
+  $: selectedGroupId=selectedRow?.groupId??null;
+  $: selectedTargetRefs=selectedQuestId
+    ?targetMatches.filter(row=>row.questId===selectedQuestId):[];
   $: filtered=catalog?(rewardFocus
     ?{total:rewardFocus.questIds.length,
       rows:catalog.quests.filter((row:any)=>rewardFocus.questIds.includes(row.id))}
     :targetMatches.length
       ?{total:targetQuestIds.length,
         rows:catalog.quests.filter((row:any)=>targetQuestIds.includes(row.id))}
-      :collectWindow((offset:number,batch:number)=>filterPublicQuests(catalog,{query:query.slice(0,120),locale,character,objective,section,offset,limit:batch}),limit,'rows')):{total:0,rows:[]};
+      :collectWindow((offset:number,batch:number)=>filterPublicQuests(catalog!,{query:query.slice(0,120),locale,character,objective,section,offset,limit:batch}),limit,'rows')):{total:0,rows:[]};
   $: characters=catalog?[...new Set(catalog.quests.map((x:any)=>x.characterId).filter(Boolean))].sort() as string[]:[];
   // Native Mission group association, not an unlock prerequisite or chronological link.
   $: questConditions=selectedRow&&conditionIndex?conditionIndex.getQuest(selectedRow.id):null;
@@ -88,9 +90,9 @@
     ?relatedEventIndex.getQuestEvents(selectedRow.id):[];
   $: questRewardInfo=selectedRow&&rewardIndex?rewardIndex.getQuest(selectedRow.id):null;
   $: questOverrideInfo=selectedRow&&overrideIndex?overrideIndex.getQuest(selectedRow.id):null;
-  $: relatedQuests=catalog&&selectedRow&&typeof selectedRow.groupId==='string'&&
-    catalog.groups&&Object.hasOwn(catalog.groups,selectedRow.groupId)
-    ?catalog.quests.filter((row:any)=>row.groupId===selectedRow.groupId&&row.id!==selectedRow.id):[];
+  $: relatedQuests=catalog&&selectedGroupId&&
+    catalog.groups&&Object.hasOwn(catalog.groups,selectedGroupId)
+    ?catalog.quests.filter(row=>row.groupId===selectedGroupId&&row.id!==selectedQuestId):[];
   $: objectives=catalog?[...new Set(catalog.quests.flatMap((x:any)=>x.objectiveKinds))].sort() as string[]:[];
 
   function label(names:PublicGuideNames|null|undefined,fallback='',language='ja') {return formatPublicGuideText(names?.[language as keyof PublicGuideNames]||names?.en||Object.values(names||{})[0]||fallback);}
@@ -274,6 +276,8 @@
   });
 
   async function openQuest(row:PublicQuestIndexRow,updateAddress=true) {
+    const currentCatalog=catalog;
+    if(!currentCatalog)return;
     if(rewardFocus&&!rewardFocus.questIds.includes(row.id))clearRewardItemFocus();
     if(targetItemFocus&&targetReverseIndex&&
       !targetReverseIndex.getItemQuestIds(targetItemFocus).includes(row.id))clearTargetItemFocus();
@@ -292,7 +296,7 @@
     try {
       let part=cached.get(row.detailPart);
       if(!part){
-        part=await loadPublicQuestPart(catalog,row.detailPart,`${prefix}quest-details-${String(row.detailPart).padStart(2,'0')}.json`);
+        part=await loadPublicQuestPart(currentCatalog,row.detailPart,`${prefix}quest-details-${String(row.detailPart).padStart(2,'0')}.json`);
         cached.set(row.detailPart,part);
       }
       const match=part.quests.find((x:any)=>x.id===row.id);
