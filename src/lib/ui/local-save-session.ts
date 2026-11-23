@@ -13,13 +13,34 @@ let current:LocalSaveSession={file:null,revision:0,collectionStatus:'selected'};
 const state=writable<LocalSaveSession>(current);
 export const localSaveSession={subscribe:state.subscribe};
 
-export function selectLocalSaveFile(file:File):void{
+/** A mounted editor may veto a user-initiated file change before subscribers
+ * see it. This guards *all* entry points: header, drop, Collection, and editor.
+ * No File or Save bytes are retained by the guard registration itself.
+ */
+type LocalSaveChangeGuard=(previous:File|null,next:File|null)=>boolean;
+let changeGuard:LocalSaveChangeGuard|null=null;
+export function registerLocalSaveChangeGuard(
+  guard:LocalSaveChangeGuard
+):()=>void{
+  if(changeGuard!==null)throw new Error('LOCAL_SAVE_GUARD_ALREADY_REGISTERED');
+  changeGuard=guard;
+  return ()=>{
+    if(changeGuard===guard)changeGuard=null;
+  };
+}
+export function selectLocalSaveFile(file:File):boolean{
+  if(current.file===file)return true;
+  if(changeGuard&&!changeGuard(current.file,file))return false;
   current={file,revision:++nextRevision,collectionStatus:'selected'};
   state.set(current);
+  return true;
 }
-export function closeLocalSaveFile():void{
+export function closeLocalSaveFile():boolean{
+  if(current.file===null)return true;
+  if(changeGuard&&!changeGuard(current.file,null))return false;
   current={file:null,revision:++nextRevision,collectionStatus:'selected'};
   state.set(current);
+  return true;
 }
 export function needsCollectionRead(revision:number):boolean{
   return revision>completedRevision;
