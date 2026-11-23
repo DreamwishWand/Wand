@@ -57,3 +57,27 @@ export function starpathDutyHref(base: string, seasonId: string, taskId: string)
     throw new TypeError('Star Path permalink: invalid link');
   return base+'/guide/star-path/?season='+seasonId+'&task='+taskId;
 }
+
+/** A season-only permalink selects a source-verified static season, not
+ * player progress, a claimed active event, or a reward entitlement. */
+export function resolveStarpathSeasonLink(search:string,catalog:unknown):StarpathDutySelection['seasonId']|null{
+  if(typeof search!=='string'||search.length>2048||
+    !catalog||typeof catalog!=='object')return null;
+  const seasons=(catalog as Partial<Catalog>).seasons;
+  if(!Array.isArray(seasons)||seasons.length!==2)return null;
+  const params=new URLSearchParams(search);
+  const requested=params.getAll('season');
+  if(requested.length!==1||params.has('task')||params.has('reward')||
+    !SEASONS.has(requested[0]))return null;
+  const ids=seasons.map(season=>season?.id);
+  if(ids.some(id=>typeof id!=='string'||!SEASONS.has(id))||
+    new Set(ids).size!==2||ids.filter(id=>id===requested[0]).length!==1)return null;
+  return requested[0] as StarpathDutySelection['seasonId'];
+}
+
+/** Calendar links preserve the selected public Star Path season. */
+export function starpathSeasonHref(base:string,seasonId:string):string{
+  if(typeof base!=='string'||!APP_BASE.test(base)||!SEASONS.has(seasonId))
+    throw new TypeError('Star Path permalink: invalid link');
+  return base+'/guide/star-path/?season='+seasonId;
+}
