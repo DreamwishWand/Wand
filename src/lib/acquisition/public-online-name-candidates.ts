@@ -314,8 +314,9 @@ export function indexPublicOnlineNameCandidates(
       return byCampaign.get(campaignId)??EMPTY as readonly PublicCampaignNameCandidate[];
     },
     getCampaignRewardResolution(campaignId:string){
-      requireValue(typeof campaignId==='string'&&campaignId.length>0&&
-        campaignId.length<=128,'INVALID_CAMPAIGN_ID');
+      requireValue(typeof campaignId==='string'&&
+        /^[A-Za-z0-9][A-Za-z0-9:._/-]{0,127}$/.test(campaignId),
+        'INVALID_CAMPAIGN_ID');
       return resolutionByCampaign.get(campaignId)??null;
     },
     listCampaignRewardResolutions(kind?:OfficialCampaign['kind']){
