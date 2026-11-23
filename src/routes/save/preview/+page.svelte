@@ -5,6 +5,7 @@
   import type {Db00ItemContext} from '../../../lib/save/common-db-context';
   import type {SavedGridItemReference} from '../../../lib/save/save-world-db04-context';
   import GridObjectPositionMap from '../../../lib/save/GridObjectPositionMap.svelte';
+  import {combineSavedGridQueues} from '../../../lib/save/grid-combined-queues';
   import {draftGridGroupQuarterTurn}
     from '../../../lib/save/grid-group-quarter-turn';
   import type {GridQuarterTurnDirection}
@@ -94,6 +95,7 @@
     replacementOrientation:CardinalOrientation|null;
   };
   let mixedQueue:GridMixedPlan[]=[];
+  $: combinedGridEdits=combineSavedGridQueues(coordinateQueue,mixedQueue);
   let coordinateSnapshot:
     |{mode:'single';file:File;format:'json'|'auto';
       plan:GridCoordinatePlan;signature:string}
@@ -101,7 +103,7 @@
       edits:GridCoordinatePlan[];signature:string}
     |{mode:'transform';file:File;format:'json'|'auto';
       plan:GridTransformPlan;signature:string}
-    |{mode:'mixed';file:File;format:'json'|'auto';
+    |{mode:'mixed'|'combined';file:File;format:'json'|'auto';
       edits:GridMixedPlan[];signature:string}
     |null=null;
   let coordinateCopyUrl:string|null=null;
@@ -750,7 +752,7 @@
 
   async function validateCoordinateEdit(
     batchMode:boolean=false,transformMode:boolean=false,
-    mixedMode:boolean=false
+    mixedMode:boolean=false,combinedMode:boolean=false
   ){
     cancel();result=null;
     const file=savedSlotsFile;
@@ -758,16 +760,17 @@
       ?selectedTransformPlan():selectedCoordinatePlan();
     const edits=batchMode
       ?coordinateQueue.map(p=>({...p}))
+      :combinedMode?combineSavedGridQueues(coordinateQueue,mixedQueue)
       :mixedMode?mixedQueue.map(p=>({...p})):null;
     if(!file||activeFile!==file||
-       (batchMode||mixedMode
+       (batchMode||mixedMode||combinedMode
           ?(!edits||!edits.length||edits.length>16):!plan)||
        file.size<1||file.size>MAX_BYTES){
       coordinateState='error';return;
     }
     const format:'json'|'auto'=file.name.toLowerCase().endsWith('.json')
       ?'json':'auto';
-    const signature=JSON.stringify(batchMode||mixedMode?edits:plan),
+    const signature=JSON.stringify(batchMode||mixedMode||combinedMode?edits:plan),
       request=revision;
     coordinateState='checking';processing=true;
     let bytes:Uint8Array|null=null;
@@ -788,7 +791,7 @@
            (batchMode
              ? r.receipt?.contract!=='wand.db05.grid-coordinate-batch-preview@1'||
                r.receipt.changedCount!==edits?.length
-             : mixedMode
+             : mixedMode||combinedMode
              ? r.receipt?.contract!=='wand.db05.grid-mixed-batch-preview@1'||
                r.receipt.changedCount!==edits?.length||
                r.receipt.placementLegalityVerified!==false
@@ -807,8 +810,8 @@
         coordinateSnapshot=batchMode
           ? {mode:'batch',file,format,
              edits:edits as GridCoordinatePlan[],signature}
-          : mixedMode
-          ? {mode:'mixed',file,format,
+          : mixedMode||combinedMode
+          ? {mode:combinedMode?'combined':'mixed',file,format,
              edits:edits as GridMixedPlan[],signature}
           : transformMode
           ? {mode:'transform',file,format,
@@ -822,7 +825,7 @@
       worker.onmessageerror=()=>finish({kind:'error'});
       worker.postMessage(batchMode
         ?{command:'preview-grid-coordinate-batch',format,bytes,edits}
-        :mixedMode
+        :mixedMode||combinedMode
         ?{command:'preview-grid-mixed-batch',format,bytes,edits}
         :transformMode
         ?{command:'preview-grid-transform',format,bytes,edit:plan}
@@ -847,6 +850,9 @@
       ?selectedTransformPlan():selectedCoordinatePlan();
     if((saved.mode==='batch'
         ?JSON.stringify(coordinateQueue)!==saved.signature
+        :saved.mode==='combined'
+        ?JSON.stringify(combineSavedGridQueues(coordinateQueue,mixedQueue))!==
+          saved.signature
         :saved.mode==='mixed'
         ?JSON.stringify(mixedQueue)!==saved.signature
         :!plan||JSON.stringify(plan)!==saved.signature)||
@@ -908,7 +914,7 @@
         ?{command:'export-grid-coordinate-batch-copy',
           format:saved.format,allowExperimentalCopy:true,
           bytes,edits:saved.edits}
-        :saved.mode==='mixed'
+        :saved.mode==='mixed'||saved.mode==='combined'
         ?{command:'export-grid-mixed-batch-copy',
           format:saved.format,allowExperimentalCopy:true,
           bytes,edits:saved.edits}
@@ -1682,6 +1688,8 @@
                 {#if coordinateState==='validated'}
                   <p role="status">{coordinateSnapshot?.mode==='batch'
                     ? `${coordinateQueue.length}件の座標変更をRust/WASMで検証しました。`
+                    : coordinateSnapshot?.mode==='combined'
+                    ? `${coordinateSnapshot.edits.length}件の座標・向き変更をRust/WASMで検証しました。`
                     : coordinateSnapshot?.mode==='mixed'
                     ? `${mixedQueue.length}件の配置変更をRust/WASMで検証しました。`
                     : coordinateSnapshot?.mode==='transform'
