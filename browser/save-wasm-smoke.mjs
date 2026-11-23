@@ -1545,9 +1545,8 @@ try{
   await regularGrid.getByRole('button',{name:'配置 #1 の座標を編集'})
     .waitFor({timeout:30000});
   assert.match(await unifiedSave.innerText(),/数量1件・配置1件/);
-  assert.equal(await regular.getByRole('region',{
-    name:'一括座標編集'
-  }).getByRole('button',{name:'座標編集 #1 を修正'}).count(),1);
+  assert.equal(await regular.locator('[aria-label="一括座標編集"]')
+    .getByRole('button',{name:'座標編集 #1 を修正'}).count(),1);
   await tabs.getByRole('button',{name:'Inventory / Chest'}).click();
   assert.equal(await regular.getByRole('region',{
     name:'一括数量変更'
