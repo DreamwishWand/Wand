@@ -279,7 +279,7 @@ function validateCampaign(c: OfficialCampaign): void {
       c.source.kind==='official_publication'&&
       c.source.sourceUrl===
         'https://disneydreamlightvalley.com/news/FestivalofFoolishness2024'&&
-      c.window.start==='2024-07-16'&&c.window.endExclusive==='2024-08-16'&&
+      c.window.start==='2024-07-16'&&c.window.endExclusive===null&&
       ev.evidence==='community_code_and_reward_mapping_for_official_event'&&
       ev.archiveKind==='community_wiki'&&
       ev.archiveUrl==='https://dreamlightvalleywiki.com/Festival_of_Foolishness_(2024)'&&
