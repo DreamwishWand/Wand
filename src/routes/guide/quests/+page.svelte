@@ -391,8 +391,9 @@
   {:else if catalog}
     <nav class="quest-sections" aria-label="クエストの大分類">
       {#each [
-        ['story','ストーリー'],['realm','王国'],['friendship','フレンドシップ'],
-        ['repeatable','イベント・繰り返し'],['other','その他'],['all','すべて']
+        ['story','ストーリー'],['realm','レルム'],['friendship','フレンドシップ'],
+        ['event','イベント'],['daily','デイリー'],['special','追加・特殊'],
+        ['premium','ドリームバンドル'],['tutorial','チュートリアル'],['all','すべて']
       ] as [key,name]}
         <button class:chosen={section===key} on:click={()=>selectSection(key as PublicQuestSection)}
           aria-pressed={section===key}>{name}</button>

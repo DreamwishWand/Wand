@@ -10,13 +10,13 @@ export const PUBLIC_GUIDE_LOCALES=Object.freeze([
   'ja','en','fr','it','de','es-ES','zh-CN','pt-BR'
 ] as const);
 export type PublicGuideLocale=typeof PUBLIC_GUIDE_LOCALES[number];
-export type PublicQuestSection='all'|'story'|'realm'|'friendship'|'repeatable'|'other';
+export type PublicQuestSection='all'|'story'|'realm'|'friendship'|'event'|'daily'|'special'|'premium'|'tutorial'|'other';
 export type PublicQuestStoryArc='valley'|'rift'|'storybook'|'ranch'|'honeyglow'|'keepsake';
 export type PublicGuideNames=Readonly<Partial<Record<PublicGuideLocale,string>>>;
 export const PUBLIC_GUIDE_SOURCE_SHA=
   'f13958b52234f4cda92f0dd0bfff50be8a7f6625c8478785e2a077a5c7933d24' as const;
 const LOCALES=new Set<string>(PUBLIC_GUIDE_LOCALES);
-const SECTION=new Set<string>(['all','story','realm','friendship','repeatable','other']);
+const SECTION=new Set<string>(['all','story','realm','friendship','event','daily','special','premium','tutorial','other']);
 const ID=/^[1-9]\d{0,15}$/;
 const HASH=/^[a-f0-9]{64}$/;
 
@@ -214,8 +214,12 @@ export function publicQuestSection(
   if(prefix==='Story')return 'story';
   if(prefix==='Realm')return 'realm';
   if(prefix==='Village')return 'friendship';
-  if(prefix==='Repeatable')return 'repeatable';
-  return 'other';
+  if(prefix==='Repeatable')
+    return row?.internalName.startsWith('Repeatable!Event!')?'event':'daily';
+  if(prefix==='Secret')return 'special';
+  if(prefix==='Premium')return 'premium';
+  if(prefix==='FTUE')return 'tutorial';
+  return 'other'; // Reserved for unsupported native prefixes; no v1.26.2 matches.
 }
 const STORY_ARCS:readonly PublicQuestStoryArc[]=[
   'valley','rift','storybook','ranch','honeyglow','keepsake'
@@ -259,7 +263,8 @@ export function comparePublicQuestBrowseOrder(
 ):number{
   const ka=publicQuestSection(a),kb=publicQuestSection(b);
   const ranks:Record<Exclude<PublicQuestSection,'all'>,number>={
-    story:0,realm:1,friendship:2,repeatable:3,other:4};
+    story:0,realm:1,friendship:2,event:3,daily:4,special:5,
+    premium:6,tutorial:7,other:8};
   if(ka!==kb)return ranks[ka]-ranks[kb];
   if(ka==='story'){
     const ra=STORY_ARCS.indexOf(publicQuestStoryArc(a)??'valley');
