@@ -46,6 +46,7 @@
     | {mode:'batch';file:File;format:'json'|'auto';edits:BatchEdit[];
        signature:string};
   let queuedEdits:BatchEdit[]=[];
+  let amountRevisionIndex:number|null=null;
   // A pending batch belongs to one selected Save. Edits may be staged before
   // the first file is chosen, but must never carry over to another file.
   let fileSelected=false;
@@ -558,6 +559,7 @@
   });
   function adoptSharedSave(file:File|null):void{
     if(fileSelected)queuedEdits=[];
+    amountRevisionIndex=null;
     fileSelected=file!==null;
     activeFile=file;
     // Do not leave an obsolete native filename visible when the shared
@@ -600,9 +602,47 @@
         slotState==='ready'&&instanceState==='idle'&&!processing){
     void loadGridInstances();
   }
+  function sameAmountTarget(a:EditTarget,b:EditTarget):boolean{
+    if(a.kind!==b.kind)return false;
+    if(a.kind==='inventory'&&b.kind==='inventory')
+      return a.inventoryId===b.inventoryId&&a.itemId===b.itemId;
+    return a.kind==='chest'&&b.kind==='chest'&&
+      a.containerId===b.containerId&&a.slotIndex===b.slotIndex&&
+      a.itemId===b.itemId;
+  }
+  function populateAmountEditor(edit:BatchEdit,index:number):void{
+    cancel();result=null;
+    amountRevisionIndex=index;
+    kind=edit.target.kind;
+    if(edit.target.kind==='inventory'){
+      inventoryId=edit.target.inventoryId;itemId=edit.target.itemId;
+    }else{
+      containerId=edit.target.containerId;
+      slotIndex=String(edit.target.slotIndex);
+      chestItemId=String(edit.target.itemId);
+    }
+    expected=String(edit.expected);
+    replacement=String(edit.replacement);
+  }
+  function beginQueuedAmountRevision(index:number):void{
+    if(processing||!Number.isInteger(index))return;
+    const edit=queuedEdits[index];
+    if(!edit)return;
+    populateAmountEditor(edit,index);
+  }
   function selectSavedSlot(slot:EditableSlot){
-    cancel();
-    result=null;
+    const target:EditTarget=slot.kind==='inventory'
+      ?{kind:'inventory',inventoryId:slot.inventoryId,itemId:slot.itemId}
+      :{kind:'chest',containerId:slot.containerId,
+        slotIndex:slot.slotIndex,itemId:slot.itemId};
+    const index=queuedEdits.findIndex(edit=>
+      sameAmountTarget(edit.target,target)&&edit.expected===slot.amount);
+    if(index>=0){
+      populateAmountEditor(queuedEdits[index],index);
+      return;
+    }
+    cancel();result=null;
+    amountRevisionIndex=null;
     kind=slot.kind;
     if(slot.kind==='inventory'){
       inventoryId=slot.inventoryId;itemId=slot.itemId;
@@ -1296,10 +1336,35 @@
       result='error';return;
     }
     queuedEdits=[...queuedEdits,{target:candidate,expected:old,replacement:next}];
+    amountRevisionIndex=null;
+  }
+  function updateQueuedAmountRevision(){
+    if(processing||amountRevisionIndex===null)return;
+    const index=amountRevisionIndex,previous=queuedEdits[index];
+    const old=uint32(expected),next=uint32(replacement);
+    const target=parameters().target;
+    const valid=target.kind==='inventory'
+      ?identity(target.inventoryId)&&identity(target.itemId)
+      :identity(target.containerId)&&uint32(String(target.itemId))!==null&&
+        Number.isInteger(target.slotIndex)&&target.slotIndex>=0&&
+        target.slotIndex<=1000000;
+    if(!previous||old===null||next===null||old===next||!valid||
+       previous.expected!==old||!sameAmountTarget(previous.target,target)){
+      // The draft remains untouched on invalid inputs. Never silently edit
+      // another saved slot or change the optimistic original Amount.
+      result='error';return;
+    }
+    cancel();result=null;
+    queuedEdits=queuedEdits.map((edit,i)=>i===index
+      ?{target:{...edit.target},expected:edit.expected,replacement:next}
+      :edit);
   }
   function removeQueued(index:number){
     cancel();result=null;
     queuedEdits=queuedEdits.filter((_,i)=>i!==index);
+    if(amountRevisionIndex===index)amountRevisionIndex=null;
+    else if(amountRevisionIndex!==null&&amountRevisionIndex>index)
+      amountRevisionIndex--;
   }
   function batchSignature():string{return JSON.stringify(queuedEdits);}
 
@@ -1553,7 +1618,13 @@
       {processing?'Rust/WASMで確認中…':'変更を検証'}
     </button>
     <button type="button" class="secondary" on:click={queueCurrentEdit}
-      disabled={processing||queuedEdits.length>=16}>複数編集に追加</button>
+      disabled={processing||queuedEdits.length>=16||
+        amountRevisionIndex!==null}>複数編集に追加</button>
+    {#if amountRevisionIndex!==null}
+      <button type="button" class="secondary"
+        disabled={processing}
+        on:click={updateQueuedAmountRevision}>登録済みの数量を更新</button>
+    {/if}
     <button type="button" class="secondary" on:click={()=>{
       closeLocalSaveFile();if(fileInput)fileInput.value='';
     }}>
@@ -2111,6 +2182,9 @@
               ? `Inventory ${edit.target.inventoryId} / ${edit.target.itemId}`
               : `Chest ${edit.target.containerId} / ${edit.target.slotIndex} / ${edit.target.itemId}`}
             ：{edit.expected} → {edit.replacement}
+            <button type="button" class="secondary" disabled={processing}
+              aria-label={`数量変更${i+1}を修正`}
+              on:click={()=>beginQueuedAmountRevision(i)}>修正</button>
             <button type="button" class="secondary" disabled={processing}
               aria-label={`変更${i+1}を削除`} on:click={()=>removeQueued(i)}>削除</button>
           </li>
