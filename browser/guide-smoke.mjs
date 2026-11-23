@@ -411,6 +411,29 @@ try {
     'TrickOrTreat_2026');
   await limited.close();
 
+  // Duplicate static reward Items have exact per-edition deep links.
+  // Selecting another event must retain the Item focus, not claim a grant.
+  const crossEvent=await browser.newPage({viewport:{width:390,height:844}});
+  await crossEvent.goto('http://127.0.0.1:4177/Wand/guide/events/?event=HauntedFloatingFestival2026',
+    {waitUntil:'domcontentloaded'});
+  const repeated=crossEvent.locator('.reward-detail .related-item-events')
+    .filter({hasText:'他のイベントを表示'}).first();
+  await repeated.waitFor({timeout:20000});
+  const exactHref=await repeated.getAttribute('href');
+  assert.match(exactHref,/^\/Wand\/guide\/events\/\?event=HauntedFloatingFestival2026&item=\d+$/);
+  const itemId=new URL(exactHref,'http://127.0.0.1').searchParams.get('item');
+  await repeated.click();
+  await crossEvent.locator('.event-option').filter({hasText:'ホーンテッドフローティングフェスティバル'}).first().waitFor({timeout:20000});
+  assert.equal(await crossEvent.locator('.event-list .event-option').count(),2);
+  assert.equal(await crossEvent.locator('.reward-detail .native-id').innerText(),'HauntedFloatingFestival2026');
+  assert.equal(await crossEvent.locator('.reward-detail .reward-row').count(),1);
+  await crossEvent.locator('.event-option').filter({hasText:'ホーンテッドフローティングフェスティバル'}).first().click();
+  assert.equal(await crossEvent.locator('.reward-detail .native-id').innerText(),'HauntedFloatingFestival');
+  assert.equal(await crossEvent.locator('.reward-detail .reward-row').count(),1);
+  assert.equal(new URL(crossEvent.url()).searchParams.get('item'),itemId);
+  assert.equal(new URL(crossEvent.url()).searchParams.get('event'),'HauntedFloatingFestival');
+  await crossEvent.close();
+
   // Steam 1.26.2 original Scene references locate only source-linked
   // Floating Festivals, without treating a Scene ID as a live venue or access.
   const scenePage=await browser.newPage({viewport:{width:390,height:844}});
