@@ -11,16 +11,27 @@ import {parseSafeJson} from './safe-profile-json.mjs';
 import { inspectDecodedWorldStores } from '../acquisition/world-store-save.mjs';
 import { createSavedStorePreview } from './saved-store-preview.mjs';
 import { createSavedCollectionPresence } from './saved-collection-presence.mjs';
-import { projectSavedCollectionDiscovery } from './saved-collection-discovery.mjs';
+import type {SavedCollectionDiscoveryProjection} from './saved-collection-discovery.ts';
 import { projectPositiveListInventoryOwnership } from './saved-list-positive-ownership.mjs';
 import { projectSavedGridFurnitureReferences } from './saved-grid-furniture-references.mjs';
 
 const staticStallUnavailable = Object.freeze({ getStallStaticCatalog: () => null });
 const MAX_ENCRYPTED_BYTES = 32 * 1024 * 1024;
+export type SaveDiscoveryProjector=
+  (decodedJson:string)=>Promise<SavedCollectionDiscoveryProjection>;
+
+/** Runtime always executes the real Rust/WASM parser; the injected projector
+ * only supports deterministic Node integration tests with the same WASM. */
+const rustDiscovery:SaveDiscoveryProjector=async decodedJson=>{
+  const {projectCollectionDiscoveryRust}=
+    await import('./rust-collection-discovery.ts');
+  return projectCollectionDiscoveryRust(decodedJson);
+};
 
 export async function inspectEncryptedSavedStore(
   ciphertext: Uint8Array,
-  decoder: (encrypted: Uint8Array) => Promise<{jsonText:string}> = decodeP1gPackagedProfile
+  decoder: (encrypted: Uint8Array) => Promise<{jsonText:string}> = decodeP1gPackagedProfile,
+  discovery:SaveDiscoveryProjector=rustDiscovery
 ) {
   if (!(ciphertext instanceof Uint8Array) || ciphertext.byteLength < 16 ||
       ciphertext.byteLength > MAX_ENCRYPTED_BYTES || (ciphertext.byteLength % 16) !== 0)
@@ -31,18 +42,21 @@ export async function inspectEncryptedSavedStore(
   // in the dedicated Worker, which is terminated after its single response.
   const decoded = await decoder(ciphertext);
   const root = parseSafeJson(decoded.jsonText);
-  return projectSavedRoot(root);
+  return projectSavedRoot(root,decoded.jsonText,discovery);
 }
 
-function projectSavedRoot(root:any) {
+async function projectSavedRoot(
+  root:any,decodedJson:string,discovery:SaveDiscoveryProjector
+) {
   const evidence = inspectDecodedWorldStores(staticStallUnavailable, root);
+  const projectedDiscovery=await discovery(decodedJson);
   return Object.freeze({
     kind: 'saved-store-summary',
     saveSchema: Number.isSafeInteger(root.GameInfo?.Version)
       ? root.GameInfo.Version : null,
     summary: createSavedStorePreview(evidence, []),
     collection: createSavedCollectionPresence(root),
-    discovery: projectSavedCollectionDiscovery(root),
+    discovery: projectedDiscovery,
     positiveOwnership: projectPositiveListInventoryOwnership(root),
     gridFurniture: projectSavedGridFurnitureReferences(root)
   });
@@ -51,12 +65,14 @@ function projectSavedRoot(root:any) {
 /**
  * Browser Worker entry: detect actual local bytes (not .profile filename).
  * Rust owns both the plaintext structural validation and P1G envelope;
- * only the minimal JS Collection projections remain pending migration.
+ * CollectionSet discovery is Rust/WASM; other legacy projections are
+ * independently scheduled for migration.
  */
 export async function inspectLocalSavedStore(
   source:Uint8Array,
   decodeEncrypted:(source:Uint8Array)=>Promise<{jsonText:string}>,
-  decodePlain:(source:Uint8Array)=>Promise<{jsonText:string}>
+  decodePlain:(source:Uint8Array)=>Promise<{jsonText:string}>,
+  discovery:SaveDiscoveryProjector=rustDiscovery
 ){
   if(!(source instanceof Uint8Array)||source.byteLength===0||
       source.byteLength>128*1024*1024)
@@ -68,8 +84,10 @@ export async function inspectLocalSavedStore(
   if(isPlain){
     // The Rust validator rejects malformed/plaintext duplicate-key JSON.
     const decoded=await decodePlain(source);
-    return projectSavedRoot(parseSafeJson(decoded.jsonText));
+    return projectSavedRoot(
+      parseSafeJson(decoded.jsonText),decoded.jsonText,discovery
+    );
   }
   // P1G size and padding gates remain in the existing encrypted wrapper.
-  return inspectEncryptedSavedStore(source,decodeEncrypted);
+  return inspectEncryptedSavedStore(source,decodeEncrypted,discovery);
 }
