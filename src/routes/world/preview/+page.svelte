@@ -1065,6 +1065,57 @@
           <p class="note">全16方向の原本ローカル値を参照できます。
             配列の非ゼロ値は占有セル数ではありません。
             実際のGridへの座標変換・衝突判定・配置可否は未検証です。</p>
+          {#if itemAreaLink?.status==='original_item_default_gridarea_linked'&&
+                selectedLayout?.layoutId===itemAreaLink.sourceLayoutId&&
+                selectedGrid?.gridIdNative===itemAreaLink.nativeGridId}
+            <details class="candidate-probe" open={candidateExpanded}
+              on:toggle={(event)=>candidateExpanded=(event.currentTarget as HTMLDetailsElement).open}>
+              <summary>候補位置の原本レイヤー照合</summary>
+              <div class="coord-row">
+                <label>候補 X
+                  <input type="number" min="0" step="1" bind:value={candidateX}
+                    on:input={()=>{candidateProbe=null;candidateProbeError=''}}/>
+                </label>
+                <label>候補 Y
+                  <input type="number" min="0" step="1" bind:value={candidateY}
+                    on:input={()=>{candidateProbe=null;candidateProbeError=''}}/>
+                </label>
+                <label>候補の向き
+                  <select bind:value={candidateOrientation}
+                    on:change={()=>{candidateProbe=null;candidateProbeError=''}}>
+                    {#each areaOrientations as code}
+                      <option value={code}>{code}</option>
+                    {/each}
+                  </select>
+                </label>
+                <button type="button" on:click={requestCandidateProbe}
+                  disabled={probingCandidate||viewing||findingGlobal||findingAnchor}>
+                  {probingCandidate?'照合中…':'原本レイヤーの重なりを確認'}
+                </button>
+              </div>
+              {#if candidateProbeError}
+                <p class="note" role="status">{candidateProbeError}</p>
+              {/if}
+              {#if candidateProbe?.status==='source_default_candidate_layers_observed'}
+                <p class="note" role="status" aria-label="原本候補レイヤー照合結果">
+                  原本既定形状 {candidateProbe.candidateDefaultWidth} ×
+                  {candidateProbe.candidateDefaultHeight}。
+                  原本レイヤー共通ビット {candidateProbe.rawSharedBitCellCount}セル、
+                  他Itemの原本定義が不完全な可能性
+                  {candidateProbe.potentiallyUnknownOtherSourceCellCount}セル。
+                  元のGridObject自身は比較対象から除外しています。
+                </p>
+                <p class="note">共通ビットはゲーム内衝突・配置不可の判定ではありません。
+                  この仮置きはセーブファイルを変更しません。</p>
+              {:else if candidateProbe?.status==='source_default_candidate_outside_original_grid_extent'}
+                <p class="note" role="status">候補の既定外接枠は原本Grid範囲外です。
+                  ランタイムの形状・配置可否は未検証です。</p>
+              {:else if candidateProbe?.status==='source_default_candidate_exceeds_probe_limit'}
+                <p class="note" role="status">既定形状が32×32の照合範囲を超えるため、
+                  セル単位の重なりを表示できません。</p>
+              {/if}
+            </details>
+          {/if}
           <div class="coord-row">
             <label>原本GridAreaの向き
               <select bind:value={areaOrientation}
@@ -1175,10 +1226,12 @@
               <button type="button" class:has-anchor={cell.count > 0}
                 class:has-source-default-layer={cell.originalDefaultLayer!==null&&cell.originalDefaultLayer!==0}
                 class:source-default-possibly-unknown={cell.possibleUnknown>0}
+                class:candidate-source-shared-bits={(cell.candidate?.rawSharedBits??0)>0}
+                class:candidate-source-possibly-unknown={(cell.candidate?.potentiallyUnknownOtherSourceCount??0)>0}
                 class:current={selectedCell?.x === cell.x && selectedCell?.y === cell.y}
                 style:background-color={floorTint(cell.nativeFloorValue)}
                 on:click={() => selectGridCell(cell.x,cell.y)}
-                title={`Grid local (${cell.x},${cell.y}); source anchors: ${cell.count}; native floor mask: ${cell.nativeFloorValue ?? 'unverified'}; source Item DEFAULT GridLayers: ${cell.originalDefaultLayer===null?'not calculated':'0x'+cell.originalDefaultLayer.toString(16)}; possible unresolved: ${cell.possibleUnknown}; not occupancy`}
+                title={`Grid local (${cell.x},${cell.y}); source anchors: ${cell.count}; native floor mask: ${cell.nativeFloorValue ?? 'unverified'}; source Item DEFAULT GridLayers: ${cell.originalDefaultLayer===null?'not calculated':'0x'+cell.originalDefaultLayer.toString(16)}; possible unresolved: ${cell.possibleUnknown}; candidate raw shared bits: ${cell.candidate?'0x'+cell.candidate.rawSharedBits.toString(16):'not probed'}; not occupancy`}
                 aria-label={`座標${cell.x},${cell.y}：アンカー${cell.count}件`}>
                 {cell.count > 0 ? Math.min(cell.count, 99) : ''}
               </button>
@@ -1191,6 +1244,14 @@
                   visibleSourceDefaultBounds.top+'px;width:'+
                   visibleSourceDefaultBounds.width+'px;height:'+
                   visibleSourceDefaultBounds.height+'px'}></div>
+            {/if}
+            {#if visibleCandidateBounds}
+              <div class="grid-source-candidate-outline"
+                aria-label="仮置きの原本既定GridArea外接枠"
+                style={'left:'+visibleCandidateBounds.left+'px;top:'+
+                  visibleCandidateBounds.top+'px;width:'+
+                  visibleCandidateBounds.width+'px;height:'+
+                  visibleCandidateBounds.height+'px'}></div>
             {/if}
           </div>
         </div>
@@ -1296,6 +1357,13 @@
   .grid-view button {height:24px;width:24px;padding:0;border:1px solid #ffffff10;border-radius:2px;background:#2d2837;color:#e8dafa;font-size:9px;line-height:1;}
   .grid-view button.has-anchor {color:white;border:2px solid #ecd1ff;box-shadow:inset 0 0 0 1px #2a2134;font-weight:700;}
   .grid-view button.current {outline:2px solid #fff;outline-offset:1px;}
+  .grid-source-candidate-outline {position:absolute;border:2px dotted #77c8ea;
+    box-sizing:border-box;pointer-events:none;z-index:4;}
+  .grid-view button.candidate-source-shared-bits {box-shadow:inset 0 0 0 3px #f28b77;}
+  .grid-view button.candidate-source-possibly-unknown {outline:1px dashed #f0d088;outline-offset:-2px;}
+  .candidate-probe {margin:10px 0;}
+  .candidate-probe summary {cursor:pointer;font-size:13px;color:#d7c7e8;}
+  .candidate-probe .coord-row {margin-top:12px;}
   .grid-view button.has-source-default-layer {background-image:radial-gradient(circle at 75% 75%, #e0b163 0 3px, transparent 3.2px);}
   .grid-view button.source-default-possibly-unknown {border-style:dashed;border-color:#a2a2a2;}
   .source-grid-layers-toggle {display:inline-flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;}
