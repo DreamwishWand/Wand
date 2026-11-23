@@ -1430,7 +1430,7 @@
   .world-preview { width:min(1180px,100%); margin:0 auto; padding:48px clamp(18px,4vw,56px) 76px; }
   header h1 {font-size:clamp(30px,5vw,50px);letter-spacing:-.05em;margin:10px 0;}
   header p:not(.eyebrow) {max-width:820px;color:#aea0c0;line-height:1.8;font-size:14px;}
-  .world-panel {margin:20px 0;padding:22px;background:#1c1728;border:1px solid #ffffff22;border-radius:15px;}
+  .world-panel {margin:20px 0;padding:22px;background:#1c1728;border:1px solid #ffffff22;border-radius:15px;min-width:0;max-width:100%;overflow-x:clip;}
   .world-toolbar,.selector-row,.coord-row,.anchor-find-row,.view-head,.paging {display:flex;align-items:end;gap:14px;flex-wrap:wrap;}
   .anchor-find-row {margin-top:14px;}
   .anchor-find-row label {flex:1 1 220px;min-width:0;}
@@ -1455,7 +1455,7 @@
   .view-head {align-items:center;justify-content:space-between;}
   .view-head h2 {font-size:17px;margin:0;}
   .view-head span {font-size:12px;color:#a99bb8;}
-  .map-scroll {overflow:auto;max-width:100%;margin-top:20px;padding-bottom:10px;}
+  .map-scroll {overflow:auto;width:100%;min-width:0;max-width:100%;margin-top:20px;padding-bottom:10px;}
   .grid-source-bounds-canvas {position:relative;width:max-content;}
   .grid-source-default-outline {position:absolute;border:2px dashed #d6a55f;
     border-radius:3px;pointer-events:none;box-sizing:border-box;}
