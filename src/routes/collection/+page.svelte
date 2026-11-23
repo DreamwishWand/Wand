@@ -10,6 +10,7 @@
   import SavedStorePreview from '$lib/collection/SavedStorePreview.svelte';
   import { CollectionRuntime, type CollectionState, type CollectionItem, type CollectionFacet, type CollectionProgress, type CollectionFilter } from '$lib/collection/runtime';
   import { collectionFamilyLabel } from '$lib/collection/copy';
+  import {collectionInterfaceCopy} from '$lib/collection/interface-copy.ts';
   import {collectionScopeOptions,collectionItemScopeLabels,type CollectionScopeOption} from '$lib/collection/scope-options';
   import {collectionItemHref,collectionItemFromLink}
     from '$lib/collection/item-permalink.ts';
@@ -24,10 +25,6 @@
     Fish:'fish',Gems:'gem',Timebending:'sparkles',Memories:'book',
     'Board Game':'puzzle',Snippets:'puzzle','Lorekeeper Tales':'book',
     'Quest Puzzles':'puzzle',Exhibition:'gallery','Source Activity Items':'hammer'
-  };
-  const categoryNavLabels:Readonly<Record<string,string>>={
-    ja:'カテゴリ',en:'Categories',fr:'Catégories',it:'Categorie',
-    de:'Kategorien','es-ES':'Categorías','zh-CN':'类别','pt-BR':'Categorias'
   };
   const terminology:Record<string,string> = {
     OWNERSHIP_AND_DISCOVERY:'所有・発見',
@@ -62,6 +59,7 @@
   let infoMessage='';
   let busy=false;
   let locale='ja';
+  $: copy=collectionInterfaceCopy(locale);
   let worldFilter='';
   let universeFilter='';
   let selected='';
@@ -574,20 +572,20 @@
   {#if storeError}
     <div class="error-banner" role="alert">
       {#if storeError==='COLLECTION_STORAGE_CONFLICT'}
-        別のタブでCollectionの記録が更新されました。古い記録による上書きを防止しています。
-        <button type="button" disabled={busy} on:click={()=>void reloadLatestRecord()}>最新の記録を読み直す</button>
+        {copy.storageConflict}
+        <button type="button" disabled={busy} on:click={()=>void reloadLatestRecord()}>{copy.reloadRecord}</button>
         <small>COLLECTION_STORAGE_CONFLICT</small>
       {:else}
-        {storeError}　ブラウザのデータは削除していません。
+        {storeError} {copy.storageKept}
       {/if}
     </div>
   {/if}
-  {#if infoMessage}<div class="info-banner" role="status">{infoMessage}<button type="button" on:click={()=>infoMessage=''} aria-label="通知を閉じる">×</button></div>{/if}
+  {#if infoMessage}<div class="info-banner" role="status">{infoMessage}<button type="button" on:click={()=>infoMessage=''} aria-label={copy.noticeClose}>×</button></div>{/if}
 
   {#if loading}
-    <div class="loading-panel" role="status">読み込み中…</div>
+    <div class="loading-panel" role="status">{copy.loading}</div>
   {:else if loadError}
-    <div class="error-banner" role="alert">データの検証または読み込みに失敗しました。{loadError}</div>
+    <div class="error-banner" role="alert">{copy.failed}{loadError}</div>
   {:else}
     <SavedStorePreview headless resolveHistorical={historicalLookup} {locale} {gameImageMap} collectionCommitBusy={busy}
       on:lookupItem={(event:CustomEvent<number>)=>lookupSavedCollectionId(event.detail)}
@@ -599,31 +597,31 @@
       on:db04Join={receiveDb04Join} />
     <div class="collection-workspace">
       <div class="workspace-top">
-        <div class="collection-record-switcher" role="group" aria-label="ローカル記録">
-          <select aria-label="ローカル記録を選択" value={state.active}
+        <div class="collection-record-switcher" role="group" aria-label={copy.record}>
+          <select aria-label={copy.selectRecord} value={state.active}
             disabled={Boolean(storeError)||busy||saveReadInProgress}
             on:change={(event)=>changeWorkspace((event.currentTarget as HTMLSelectElement).value)}>
             {#each state.workspaces as work}<option value={work.id}>{work.name}</option>{/each}
           </select>
           <details class="collection-record-menu" bind:this={workspaceOptions}>
-            <summary aria-label="記録の管理" title="記録の管理"><WandIcon name="ellipsis" size={21}/></summary>
-            <div class="collection-record-actions" role="group" aria-label="ローカル記録の管理">
+            <summary aria-label={copy.manageRecord} title={copy.manageRecord}><WandIcon name="ellipsis" size={21}/></summary>
+            <div class="collection-record-actions" role="group" aria-label={copy.manageRecord}>
               <button type="button" disabled={Boolean(storeError)||busy||saveReadInProgress||state.workspaces.length>=5}
                 on:click={()=>{workspaceOptions.open=false;newWorkspace();}}>
-                <WandIcon name="plus" size={16}/>新規
+                <WandIcon name="plus" size={16}/>{copy.newRecord}
               </button>
               <button type="button" disabled={Boolean(storeError)||busy||saveReadInProgress}
                 on:click={()=>{workspaceOptions.open=false;editWorkspaceName();}}>
-                <WandIcon name="edit" size={16}/>名前変更
+                <WandIcon name="edit" size={16}/>{copy.renameRecord}
               </button>
               <button type="button" disabled={Boolean(storeError)||busy||saveReadInProgress||state.workspaces.length<2}
                 on:click={()=>{workspaceOptions.open=false;deleteWorkspace();}}>
-                <WandIcon name="trash" size={16}/>削除
+                <WandIcon name="trash" size={16}/>{copy.deleteRecord}
               </button>
               {#if runtime?.isOwnerLocal || (runtime && runtime.metadata.snapshot!=='steam-1.26.2-native-itemlist-v1')}
                 <button type="button" disabled={busy||loading||saveReadInProgress}
                   on:click={()=>{workspaceOptions.open=false;runtime?.isOwnerLocal?void usePublicCatalog():localCatalogInput.click();}}>
-                  <WandIcon name="folder" size={16}/>{runtime?.isOwnerLocal?'公開データに戻す':'カタログファイルを開く'}
+                  <WandIcon name="folder" size={16}/>{runtime?.isOwnerLocal?copy.publicData:copy.openCatalog}
                 </button>
               {/if}
             </div>
@@ -632,25 +630,25 @@
         <div class="toolbar">
           <label class="search-box">
             <span aria-hidden="true"><WandIcon name="search" size={19}/></span>
-            <input type="search" aria-label="8言語のアイテム名で検索" bind:value={search} on:input={resetView} placeholder="アイテム名を検索"/>
+            <input type="search" aria-label={copy.searchLabel} bind:value={search} on:input={resetView} placeholder={copy.searchPlaceholder}/>
           </label>
           <button type="button" class="collection-favorites-filter" class:active={favoriteOnly}
-            aria-label="お気に入りのみ表示" title="お気に入りのみ表示"
+            aria-label={copy.favoritesOnly} title={copy.favoritesOnly}
             aria-pressed={favoriteOnly} disabled={Boolean(storeError)||busy}
             on:click={()=>{favoriteOnly=!favoriteOnly;resetView();}}>
             <WandIcon name="star" size={19}/>
           </button>
-          <button type="button" class="subtle-button" aria-expanded={filtersOpen} on:click={()=>filtersOpen=!filtersOpen}>フィルター {filtersOpen?'▴':'▾'}</button>
+          <button type="button" class="subtle-button" aria-expanded={filtersOpen} on:click={()=>filtersOpen=!filtersOpen}>{copy.filters} {filtersOpen?'▴':'▾'}</button>
         </div>
       </div>
       {#if worldScopeOptions.length||universeScopeOptions.length}
-        <div class="collection-scope-toolbar" role="group" aria-label="コレクションの表示範囲">
+        <div class="collection-scope-toolbar" role="group" aria-label={copy.scope}>
           {#if worldScopeOptions.length}
-            <div class="collection-world-switcher" role="group" aria-label="ワールド">
-              <span class="scope-axis-label" aria-hidden="true">ワールド</span>
+            <div class="collection-world-switcher" role="group" aria-label={copy.world}>
+              <span class="scope-axis-label" aria-hidden="true">{copy.world}</span>
               <div class="collection-scope-scroll">
                 <button type="button" class:chosen={!worldFilter} aria-pressed={!worldFilter}
-                  on:click={()=>{worldFilter='';resetView();}}>すべて</button>
+                  on:click={()=>{worldFilter='';resetView();}}>{copy.all}</button>
                 {#each worldScopeOptions as option (option.id)}
                   <button type="button" class:chosen={worldFilter===option.id}
                     aria-pressed={worldFilter===option.id}
@@ -661,10 +659,10 @@
           {/if}
           {#if universeScopeOptions.length}
             <label class="collection-universe-switcher">
-              <span>ユニバース</span>
-              <select aria-label="ユニバースで絞り込み" value={universeFilter}
+              <span>{copy.universe}</span>
+              <select aria-label={copy.universeFilter} value={universeFilter}
                 on:change={(event)=>{universeFilter=(event.currentTarget as HTMLSelectElement).value;resetView();}}>
-                <option value="">すべて</option>
+                <option value="">{copy.all}</option>
                 {#each universeScopeOptions as option (option.id)}
                   <option value={option.id}>{option.label}</option>
                 {/each}
@@ -675,18 +673,18 @@
       {/if}
       {#if filtersOpen}
         <div class="filter-panel">
-          <fieldset><legend>収集状況（手動記録）</legend>
-            {#each [{id:'all',name:'すべて'},{id:'owned',name:'所持 / 解放'},{id:'missing',name:'未所持'},{id:'unknown',name:'未記録'}] as option}
+          <fieldset><legend>{copy.manualStatus}</legend>
+            {#each [{id:'all',name:copy.all},{id:'owned',name:copy.owned},{id:'missing',name:copy.missing},{id:'unknown',name:copy.unrecorded}] as option}
               <button type="button" class:chosen={status===option.id} aria-pressed={status===option.id} on:click={()=>{status=option.id as typeof status;resetView();}}>{option.name}</button>
             {/each}
           </fieldset>
-          <label class="filter-label">追加コンテンツ
+          <label class="filter-label">{copy.expansions}
             <select bind:value={expansion} on:change={resetView}>
-              <option value="">すべて</option>
+              <option value="">{copy.all}</option>
               {#each runtime?.metadata.expansions??[] as id}<option value={id}>{id}</option>{/each}
             </select>
           </label>
-          <button type="button" class="subtle-button" on:click={clearScope}>条件を解除</button>
+          <button type="button" class="subtle-button" on:click={clearScope}>{copy.clear}</button>
         </div>
       {/if}
       <div class="workspace-body" class:has-inspector={Boolean(selectedItem)}>
@@ -694,34 +692,34 @@
           {#if isBrowsing}
             <div class="results-heading">
               <div class="breadcrumbs">
-                <button type="button" on:click={clearScope}>{categoryNavLabels[locale]??categoryNavLabels.en}</button>
+                <button type="button" on:click={clearScope}>{copy.categories}</button>
                 {#if selected}<span> / {selectionLabel}</span>{/if}
               </div>
               <div class="result-actions">
-                <span class="result-count">{totalMatches.toLocaleString(locale)} 件</span>
+                <span class="result-count">{totalMatches.toLocaleString(locale)} {copy.countUnit}</span>
                 <button type="button" class="subtle-button" disabled={Boolean(storeError)} aria-pressed={selectionMode}
-                  on:click={toggleSelectionMode}>{selectionMode?'選択を終了':'複数選択'}</button>
+                  on:click={toggleSelectionMode}>{selectionMode?copy.finishSelect:copy.selectMultiple}</button>
               </div>
             </div>
             {#if selectionMode && filtered.length}
-              <div class="bulk-actions" role="group" aria-label="Collectionの一括記録">
-                <span>{selectedIds.length} 件選択</span>
-                <button type="button" on:click={()=>selectedIds=[...new Set<number>(visibleItems.map((item:any)=>Number(item.itemId)))]}>表示中を選択</button>
-                <button type="button" on:click={()=>selectedIds=[]} disabled={!selectedIds.length}>選択解除</button>
-                <button type="button" on:click={()=>applyBulk('owned')} disabled={!selectedIds.length}>所持 / 解放</button>
-                <button type="button" on:click={()=>applyBulk('missing')} disabled={!selectedIds.length}>未所持</button>
-                <button type="button" on:click={()=>applyBulk(null)} disabled={!selectedIds.length}>未記録</button>
+              <div class="bulk-actions" role="group" aria-label={copy.bulk}>
+                <span>{selectedIds.length} {copy.selectedUnit}</span>
+                <button type="button" on:click={()=>selectedIds=[...new Set<number>(visibleItems.map((item:any)=>Number(item.itemId)))]}>{copy.selectVisible}</button>
+                <button type="button" on:click={()=>selectedIds=[]} disabled={!selectedIds.length}>{copy.clearSelected}</button>
+                <button type="button" on:click={()=>applyBulk('owned')} disabled={!selectedIds.length}>{copy.owned}</button>
+                <button type="button" on:click={()=>applyBulk('missing')} disabled={!selectedIds.length}>{copy.missing}</button>
+                <button type="button" on:click={()=>applyBulk(null)} disabled={!selectedIds.length}>{copy.unrecorded}</button>
                 <span class="bulk-all-separator" aria-hidden="true">｜</span>
-                <span>条件一致の全{totalMatches.toLocaleString(locale)}件：</span>
-                <button type="button" disabled={busy||Boolean(storeError)} on:click={()=>applyFilteredBulk('owned')}>全件を所持 / 解放</button>
-                <button type="button" disabled={busy||Boolean(storeError)} on:click={()=>applyFilteredBulk('missing')}>全件を未所持</button>
-                <button type="button" disabled={busy||Boolean(storeError)} on:click={()=>applyFilteredBulk('unknown')}>全件を未記録</button>
+                <span>{copy.allMatching} {totalMatches.toLocaleString(locale)} {copy.countUnit}:</span>
+                <button type="button" disabled={busy||Boolean(storeError)} on:click={()=>applyFilteredBulk('owned')}>{copy.allOwned}</button>
+                <button type="button" disabled={busy||Boolean(storeError)} on:click={()=>applyFilteredBulk('missing')}>{copy.allMissing}</button>
+                <button type="button" disabled={busy||Boolean(storeError)} on:click={()=>applyFilteredBulk('unknown')}>{copy.allUnrecorded}</button>
               </div>
             {/if}
             {#if !totalMatches}
               <div class="empty-panel" role="status">
-                <p>該当するアイテムはありません</p>
-                <button type="button" class="subtle-button" on:click={clearScope}>条件を解除</button>
+                <p>{copy.noItems}</p>
+                <button type="button" class="subtle-button" on:click={clearScope}>{copy.clear}</button>
               </div>
             {:else}
               <div class="items-grid">
@@ -730,27 +728,27 @@
                       <button type="button" class="item-card-body"
                         on:click={(event)=>selectionMode?toggleSelected(item.itemId):void showItem(item.itemId,event)}
                         aria-pressed={selectionMode?selectedIds.includes(item.itemId):selectedItemId===item.itemId}
-                        aria-label={selectionMode?`${item.label} を選択`:`${item.label} の詳細`}>
+                        aria-label={selectionMode?`${item.label}${copy.itemSelect}`:`${item.label}${copy.itemDetails}`}>
                         <span class="item-icon" aria-hidden="true">{#if selectionMode}{selectedIds.includes(item.itemId)?'☑':'☐'}{:else}<ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null} />{/if}</span>
                         <span class="item-card-copy"><strong>{item.label}</strong><span>{categoryLabel(locale,item.family)}</span></span>
                       </button>
                       <button type="button" class="item-state-toggle" disabled={Boolean(storeError)||selectionMode}
                         class:owned={entries[String(item.itemId)]?.status==='owned'}
                         on:click={()=>toggleItemStatus(item.itemId)}
-                        aria-label={entries[String(item.itemId)]?.status==='owned'?`${item.label} を未所持にする`:`${item.label} を所持済みにする`}
-                        title={entries[String(item.itemId)]?.status==='owned'?'所持済み：押すと未所持':'押すと所持済みに記録'}>
+                        aria-label={entries[String(item.itemId)]?.status==='owned'?`${item.label}${copy.markMissing}`:`${item.label}${copy.markOwned}`}
+                        title={entries[String(item.itemId)]?.status==='owned'?copy.ownedTip:copy.missingTip}>
                         <WandIcon name={entries[String(item.itemId)]?.status==='owned'?'check':'plus'} size={20}/>
                       </button>
                     </div>
                   {/each}
               </div>
               {#if visible<totalMatches}
-                <div class="more-button" use:observeMore aria-label="スクロールで続きを自動読み込み" role="status"><WandIcon name="sparkles" size={18}/></div>
+                <div class="more-button" use:observeMore aria-label={copy.loadMore} role="status"><WandIcon name="sparkles" size={18}/></div>
               {/if}
             {/if}
           {:else}
             <div class="section-lead">
-              <h2>カテゴリ</h2>
+              <h2>{copy.categories}</h2>
             </div>
             <div class="facet-grid">
               {#each facets as facet (facet.id)}
@@ -768,16 +766,16 @@
           {/if}
         </div>
         {#if selectedItem}
-          <aside class="item-inspector" role={mobileInspector?"dialog":undefined} aria-modal={mobileInspector?"true":undefined} aria-label="アイテム情報">
+          <aside class="item-inspector" role={mobileInspector?"dialog":undefined} aria-modal={mobileInspector?"true":undefined} aria-label={copy.itemInfo}>
             <div class="inspector-heading">
-              <span class="visually-hidden">アイテム情報</span>
+              <span class="visually-hidden">{copy.itemInfo}</span>
               <div class="inspector-header-actions">
-                <button type="button" aria-label="アイテムへのリンクをコピー"
-                  title="アイテムへのリンクをコピー" on:click={copySelectedItemLink}>
+                <button type="button" aria-label={copy.copyLink}
+                  title={copy.copyLink} on:click={copySelectedItemLink}>
                   <WandIcon name="link" size={17}/>
                 </button>
                 <button type="button" bind:this={inspectorClose}
-                  on:click={closeItem} aria-label="詳細を閉じる">×</button>
+                  on:click={closeItem} aria-label={copy.closeDetails}>×</button>
               </div>
             </div>
             <div class="inspector-art"><ItemArtwork itemId={selectedItem.itemId} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large /></div>
@@ -785,13 +783,13 @@
             <p class="inspector-meta">{categoryLabel(locale,selectedItem.family)}</p>
             {#if selectedScopeLabels.worlds.length || selectedScopeLabels.universes.length}
               <details class="inspector-details">
-                <summary>詳細情報</summary>
+                <summary>{copy.details}</summary>
                 <dl>
                   {#if selectedScopeLabels.worlds.length}
-                    <dt>ワールド</dt><dd>{selectedScopeLabels.worlds.join('、')}</dd>
+                    <dt>{copy.world}</dt><dd>{selectedScopeLabels.worlds.join('、')}</dd>
                   {/if}
                   {#if selectedScopeLabels.universes.length}
-                    <dt>ユニバース</dt><dd>{selectedScopeLabels.universes.join('、')}</dd>
+                    <dt>{copy.universe}</dt><dd>{selectedScopeLabels.universes.join('、')}</dd>
                   {/if}
                 </dl>
               </details>
@@ -801,28 +799,28 @@
               <RelatedQuests itemId={selectedItem.itemId} {locale}/>
             {/if}
             <div class="inspector-section">
-              <h3>Collection記録</h3>
+              <h3>{copy.collectionRecord}</h3>
               <div class="ownership-actions">
-                <button type="button" disabled={Boolean(storeError)} class:active={selectedEntry.status==='owned'} on:click={()=>changeEntry({status:'owned'})}>所持 / 解放</button>
-                <button type="button" disabled={Boolean(storeError)} class:active={selectedEntry.status==='missing'} on:click={()=>changeEntry({status:'missing'})}>未所持</button>
-                <button type="button" disabled={Boolean(storeError)} class:active={!selectedEntry.status} on:click={()=>changeEntry({status:null})}>未記録</button>
+                <button type="button" disabled={Boolean(storeError)} class:active={selectedEntry.status==='owned'} on:click={()=>changeEntry({status:'owned'})}>{copy.owned}</button>
+                <button type="button" disabled={Boolean(storeError)} class:active={selectedEntry.status==='missing'} on:click={()=>changeEntry({status:'missing'})}>{copy.missing}</button>
+                <button type="button" disabled={Boolean(storeError)} class:active={!selectedEntry.status} on:click={()=>changeEntry({status:null})}>{copy.unrecorded}</button>
               </div>
               {#if ['QUANTITY_STOCK','OWNERSHIP_STOCK_AND_DISCOVERY'].includes(selectedItem.stateSemantic)}
-                <label class="numeric-field">手動所持数
+                <label class="numeric-field">{copy.manualQuantity}
                   <input type="number" min="0" max="999999" step="1" value={selectedEntry.quantity??''}
                     disabled={Boolean(storeError)}
                     on:change={(event)=>{
                       const value=(event.currentTarget as HTMLInputElement).value;
                       changeEntry({quantity:value===''?null:Number(value)});
-                    }} placeholder="未記録"/>
+                    }} placeholder={copy.unrecorded}/>
                 </label>
               {/if}
               {#if selectedItem.stateSemantic.includes('DISCOVERY') || selectedEntry.discovered!==undefined}
                 <label class="check-row"><input type="checkbox" checked={selectedEntry.discovered===true}
-                  disabled={Boolean(storeError)} on:change={(event)=>changeEntry({discovered:(event.currentTarget as HTMLInputElement).checked})}/> 発見済み</label>
+                  disabled={Boolean(storeError)} on:change={(event)=>changeEntry({discovered:(event.currentTarget as HTMLInputElement).checked})}/> {copy.discovered}</label>
               {/if}
               <label class="check-row"><input type="checkbox" checked={selectedEntry.favorite===true}
-                disabled={Boolean(storeError)} on:change={(event)=>changeEntry({favorite:(event.currentTarget as HTMLInputElement).checked})}/> お気に入り</label>
+                disabled={Boolean(storeError)} on:change={(event)=>changeEntry({favorite:(event.currentTarget as HTMLInputElement).checked})}/> {copy.favorite}</label>
             </div>
           </aside>
         {/if}

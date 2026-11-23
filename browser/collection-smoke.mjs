@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { createHash, createCipheriv } from 'node:crypto';
 import { deflateRawSync } from 'node:zlib';
 import { chromium } from 'playwright';
+import {collectionInterfaceCopy} from '../src/lib/collection/interface-copy.ts';
 import {TEST_DB04_LAYOUT} from '../tests/helpers/collection-db04-zip-fixture.mjs';
 
 // One synthetic P1G, never a real user's save. Browser e2e verifies that
@@ -500,6 +501,23 @@ try{
       document.querySelector('.collection-acquisition summary')?.textContent?.trim()===expected,title);
     await page.waitForFunction(expected=>
       document.querySelector('.collection-related-quests summary')?.textContent?.trim()===expected,questTitle);
+    const copy=collectionInterfaceCopy(({
+      'English':'en','Français':'fr','Italiano':'it','Deutsch':'de',
+      'Español':'es-ES','简体中文':'zh-CN','Português':'pt-BR','日本語':'ja'
+    })[language]);
+    assert.equal(await page.locator('.toolbar input[type=search]').getAttribute('aria-label'),
+      copy.searchLabel,'search accessibility must match the active language');
+    assert.equal(await page.locator('.toolbar input[type=search]').getAttribute('placeholder'),
+      copy.searchPlaceholder,'search placeholder must match the active language');
+    assert.equal(await page.locator('.collection-favorites-filter').getAttribute('aria-label'),
+      copy.favoritesOnly,'favorites filter must match the active language');
+    assert.equal(await page.locator('.item-inspector button[title]').first().getAttribute('title'),
+      copy.copyLink,'item permalink action must match the active language');
+    assert.deepEqual(await page.locator('.ownership-actions button').allTextContents(),
+      [copy.owned,copy.missing,copy.unrecorded],
+      'manual status actions must preserve their meaning in all 8 languages');
+    assert.equal(await page.locator('.toolbar .subtle-button').innerText(),
+      copy.filters+' ▾','filter control must update without resetting the Item');
     assert.equal(await acquisitionPanel.getAttribute('open'),'',
       'locale switch must not close the acquisition panel');
     assert.equal(await relatedQuests.getAttribute('open'),'',
