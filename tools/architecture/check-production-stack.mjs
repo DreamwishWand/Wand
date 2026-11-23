@@ -43,7 +43,6 @@ const knownLegacy=new Set([
   "src/lib/collection/private-db01-zip.mjs",
   "src/lib/collection/private-p1g-codec.js",
   "src/lib/collection/safe-profile-json.mjs",
-  "src/lib/collection/saved-collection-discovery.mjs",
   "src/lib/collection/saved-collection-presence.mjs",
   "src/lib/collection/saved-grid-furniture-references.mjs",
   "src/lib/collection/saved-list-positive-ownership.mjs",
