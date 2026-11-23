@@ -632,8 +632,11 @@
     sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
   }
   function chooseUniverse(id:string):void{
-    universeFilter=id;selected='';sourceCategory=null;bypassCategoryGroups=false;
-    sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
+    selected='';sourceCategory=null;bypassCategoryGroups=false;
+    universeFilter=sourceIndex&&sourceUniverseOptions.length?'':id;
+    sourceChoices=sourceIndex&&sourceUniverseOptions.length&&id
+      ?{disneyUniverse:id}:{};
+    sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
   }
   function openCategoryItems():void{
     bypassCategoryGroups=true;universeFilter='';resetView();
@@ -650,7 +653,7 @@
   function clearScope():void{
     selected='';sourceCategory=null;search='';status='all';favoriteOnly=false;nameStatus='all';
     expansion='';worldFilter='';universeFilter='';universeSearch='';
-    bypassCategoryGroups=false;sourceChoices={};
+    bypassCategoryGroups=false;sourceChoices={};acquisitionFilter='';
     sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
   }
   function changeWorkspace(id:string):void{
@@ -748,7 +751,7 @@
   onMount(()=>{
     const toggleHeaderFilters=()=>{
       filtersOpen=!filtersOpen;
-      if(filtersOpen){ensureSourceIndex();refresh();}
+      if(filtersOpen){ensureSourceIndex();ensureAcquisitionIndex();refresh();}
     };
     window.addEventListener('wand:collection-filters',toggleHeaderFilters);
     const handleHeaderBackup=()=>downloadBackup();
@@ -963,7 +966,7 @@
             <WandIcon name="star" size={19}/>
           </button>
           <button type="button" class="subtle-button" aria-expanded={filtersOpen}
-            on:click={()=>{filtersOpen=!filtersOpen;if(filtersOpen){ensureSourceIndex();refresh();}}}>
+            on:click={()=>{filtersOpen=!filtersOpen;if(filtersOpen){ensureSourceIndex();ensureAcquisitionIndex();refresh();}}}>
             {copy.filters} {filtersOpen?'▴':'▾'}
           </button>
         </div>
@@ -996,11 +999,15 @@
               {/each}
             </div>
           </div>
-        {:else if universeFilter}
+        {:else if universeFilter||sourceChoices.disneyUniverse}
           <button type="button" class="collection-back-axis" on:click={()=>chooseUniverse('')}>
             <WandIcon name="chevron-left" size={16}/>{copy.universeList}
           </button>
-          <span class="collection-axis-selected">{universeScopeOptions.find(x=>x.id===universeFilter)?.label??''}</span>
+          <span class="collection-axis-selected">
+            {sourceChoices.disneyUniverse
+              ?collectionDb01TagLabel(locale,sourceChoices.disneyUniverse)
+              :universeScopeOptions.find(x=>x.id===universeFilter)?.label??''}
+          </span>
         {/if}
       </div>
       {#if filtersOpen}
@@ -1016,7 +1023,7 @@
               {#each runtime?.metadata.expansions??[] as id}<option value={id}>{id}</option>{/each}
             </select>
           </label>
-          {#if (selected||sourceCategory!==null)&&sourceFacetGroups.length}
+          {#if sourceFacetGroups.length}
             <div class="collection-native-tag-panel" role="group"
               aria-label={locale==='ja'?'ゲーム原本のタグ':'Source tags'}
               title={locale==='ja'?'元のゲームのタグ。Collection所属やワールドでの入手可能性を確定する情報ではありません。':'Original source tags, not verified Collection membership or availability.'}>
@@ -1054,6 +1061,27 @@
               {/each}
             </div>
           {/if}
+          {#if canUseDb01SourceFacets()}
+            <fieldset class="collection-db01-acquisition">
+              <legend>{collectionDb01AcquisitionHeading(locale)}</legend>
+              {#if acquisitionIndex}
+                <select aria-label={collectionDb01AcquisitionHeading(locale)}
+                  value={acquisitionFilter}
+                  on:change={(event)=>selectAcquisition((event.currentTarget as HTMLSelectElement).value)}>
+                  <option value="">{copy.all}</option>
+                  {#each DB02_ACQUISITION_CATEGORY_ORDER as category}
+                    <option value={category}>{collectionDb01AcquisitionLabel(locale,category)}</option>
+                  {/each}
+                </select>
+              {:else if acquisitionLoadError}
+                <button type="button" class="subtle-button" on:click={ensureAcquisitionIndex}>
+                  {locale==='ja'?'再試行':'Retry'}
+                </button>
+              {:else}
+                <span>{copy.loading}</span>
+              {/if}
+            </fieldset>
+          {/if}
           <button type="button" class="subtle-button" on:click={clearScope}>{copy.clear}</button>
         </div>
       {/if}
@@ -1075,7 +1103,16 @@
                   </button>
                 {/each}
               </div>
+              {#if sourceUniverseOptions.length}
+                <p class="collection-axis-notice">
+                  {locale==='ja'
+                    ?'ゲーム原本の作品タグによる検索です。コレクション所属や入手可能なワールドを示すものではありません。'
+                    :'Source Disney universe tags: not Collection membership or acquisition worlds.'}
+                </p>
+              {/if}
               {#if universeChoices.length===0}<p class="collection-axis-notice">{copy.noItems}</p>{/if}
+            {:else if sourceLoad}
+              <p class="collection-axis-notice" role="status">{copy.loading}</p>
             {:else}
               <p class="collection-axis-notice">{copy.universeDataUnavailable}</p>
             {/if}
@@ -1143,6 +1180,9 @@
               <div class="breadcrumbs">
                 <button type="button" on:click={returnToCategory}>{viewAxis==='universe'?copy.universeList:copy.categories}</button>
                 {#if selected||sourceCategory!==null}<span> / {selectionLabel}</span>{/if}
+                {#if viewAxis==='universe'&&sourceChoices.disneyUniverse}
+                  <span> / {collectionDb01TagLabel(locale,sourceChoices.disneyUniverse)}</span>
+                {/if}
                 {#if selected&&universeFilter&&viewAxis==='world'}
                   <button type="button" on:click={returnToSubgroups}>{copy.universeList}</button>
                 {/if}
