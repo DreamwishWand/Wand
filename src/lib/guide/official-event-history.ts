@@ -44,11 +44,39 @@ export const GUIDE_OFFICIAL_HISTORICAL_EVENTS=[
     sourceUrl:GUIDE_EARLY_ACCESS_SOURCE
   },
   {
+    id:'eggstravaganza-2023',kind:'limited-event',category:'other',
+    title:'Eggstravaganza',
+    startDay:'2023-04-08',endDayInclusive:'2023-04-29',
+    participation:'game-clock',
+    sourceUrl:'https://disneydreamlightvalley.com/news/Eggstravaganza'
+  },
+  {
     id:'trick-or-treat-2023',kind:'limited-event',category:'other',
     title:'Trick or Treat',
     startDay:'2023-10-24',endDayInclusive:'2023-11-01',
     participation:'game-clock',
     sourceUrl:'https://disneydreamlightvalley.com/news/EnchantedAdventure_Update'
+  },
+  {
+    id:'eggstravaganza-2024',kind:'limited-event',category:'other',
+    title:'Eggstravaganza',
+    startDay:'2024-03-27',endDayInclusive:'2024-04-17',
+    participation:'game-clock',
+    sourceUrl:'https://disneydreamlightvalley.com/news/TheLaughFloorUpdate'
+  },
+  {
+    id:'dreamlight-parks-fest-2024',kind:'limited-event',category:'other',
+    title:'Dreamlight Parks Fest',
+    startDay:'2024-05-15',endDayInclusive:'2024-06-05',
+    participation:'game-clock',
+    sourceUrl:'https://disneydreamlightvalley.com/news/DreamlightParksFest2024'
+  },
+  {
+    id:'end-of-summer-2024',kind:'limited-event',category:'other',
+    title:'End of Summer',
+    startDay:'2024-09-04',endDayInclusive:'2024-09-26',
+    participation:'game-clock',
+    sourceUrl:'https://disneydreamlightvalley.com/news/EndofSummerEvent'
   },
   {
     id:'the-night-show-star-path-2024',kind:'starpath-history',
@@ -72,6 +100,13 @@ export const GUIDE_OFFICIAL_HISTORICAL_EVENTS=[
     sourceUrl:'https://disneydreamlightvalley.com/zh/news/SewDelightfulUpdate'
   },
   {
+    id:'dreamlight-parks-fest-2025',kind:'limited-event',category:'other',
+    title:'Dreamlight Parks Fest',
+    startDay:'2025-05-28',endDayInclusive:'2025-06-17',
+    participation:'game-clock',
+    sourceUrl:'https://disneydreamlightvalley.com/news/DreamlightParksFest2025'
+  },
+  {
     id:'trick-or-treat-2025',kind:'limited-event',category:'other',
     title:'Trick or Treat',
     startDay:'2025-10-15',endDayInclusive:'2025-10-31',
@@ -84,6 +119,41 @@ export const GUIDE_OFFICIAL_HISTORICAL_EVENTS=[
     startDay:'2025-10-22',endDayInclusive:'2025-11-11',
     participation:'not-verified',
     sourceUrl:'https://disneydreamlightvalley.com/news/HauntedFloatingFestival2025'
+  },
+  {
+    id:'valley-valentines-2026',kind:'limited-event',category:'other',
+    title:'Valley Valentines',
+    startDay:'2026-02-11',endDayInclusive:'2026-02-25',
+    participation:'not-verified',
+    sourceUrl:'https://disneydreamlightvalley.com/news/ThePuppyLoveUpdate'
+  },
+  {
+    id:'lucky-you-2026',kind:'limited-event',category:'other',
+    title:'Lucky You!',
+    startDay:'2026-03-11',endDayInclusive:'2026-03-17',
+    participation:'game-clock',
+    sourceUrl:'https://disneydreamlightvalley.com/news/ThePuppyLoveUpdate'
+  },
+  {
+    id:'eggstravaganza-2026',kind:'limited-event',category:'other',
+    title:'Eggstravaganza',
+    startDay:'2026-04-01',endDayInclusive:'2026-04-21',
+    participation:'game-clock',
+    sourceUrl:'https://disneydreamlightvalley.com/news/ThePuppyLoveUpdate'
+  },
+  {
+    id:'dreamlight-parks-fest-2026',kind:'limited-event',category:'other',
+    title:'Dreamlight Parks Fest',
+    startDay:'2026-06-10',endDayInclusive:'2026-06-30',
+    participation:'game-clock',
+    sourceUrl:'https://disneydreamlightvalley.com/ja/news/DreamlightParks2026'
+  },
+  {
+    id:'picture-pursuit-2026',kind:'limited-event',category:'other',
+    title:'Picture Pursuit',
+    startDay:'2026-07-15',endDayInclusive:'2026-07-28',
+    participation:'not-verified',
+    sourceUrl:'https://disneydreamlightvalley.com/news/update-jun-03-2026'
   },
   {
     id:'trick-or-treat-2026',kind:'limited-event',category:'other',
