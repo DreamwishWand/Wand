@@ -244,14 +244,13 @@
       if(sourceIndex&&(selected||sourceCategory!==null)&&filtersOpen){
         const key=(sourceCategory===null?selected:'original-'+sourceCategory)+'|'+worldFilter+'|'+universeFilter;
         if(key!==sourceGroupsCacheKey){
-          const categoryRows=queryAllCollectionRows({
-            ...currentFilter(0,200),status:'all',search:'',
-            favoriteOnly:false,nameStatus:'all',expansion:''
-          });
-          sourceFacetGroups=collectionDb01Groups(sourceIndex,
-            categoryRows.filter(row=>sourceCategory===null||
-              collectionDb01InCategory(sourceIndex!,row.itemId,sourceCategory))
-              .map(row=>row.itemId));
+          const ids=sourceCategory!==null
+            ?sourceIndex.itemsByCategory.get(sourceCategory)??[]
+            :queryAllCollectionRows({
+                ...currentFilter(0,200),status:'all',search:'',
+                favoriteOnly:false,nameStatus:'all',expansion:''
+              }).map(row=>row.itemId);
+          sourceFacetGroups=collectionDb01Groups(sourceIndex,ids);
           sourceGroupsCacheKey=key;
         }
       }else if(!selected&&sourceCategory===null){
