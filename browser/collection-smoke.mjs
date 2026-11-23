@@ -423,7 +423,7 @@ try{
   await page.locator('.item-card').first().waitFor({timeout:12000});
   const starPathIds=await page.evaluate(async()=>{
     const response=await fetch('/Wand/acquisition/public/db01-item-acquisition-1.26.2.json');
-    assert.ok(response.ok);
+    if(!response.ok)throw Error('DB01_ACQUISITION_FETCH_FAILED');
     const doc=await response.json();
     return doc.items.filter(row=>row[1].some(group=>group[0]==='star_path'))
       .map(row=>String(row[0]));
