@@ -7,7 +7,6 @@ import {readdir,readFile} from 'node:fs/promises';
 import {resolve,relative,join} from 'node:path';
 const root=resolve(new URL('../..',import.meta.url).pathname);
 const knownLegacy=new Set([
-  "src/lib/acquisition/catalog-evidence.mjs",
   "src/lib/acquisition/conditional-ingredient-sell-fallback.mjs",
   "src/lib/acquisition/db00-join.mjs",
   "src/lib/acquisition/index.mjs",
