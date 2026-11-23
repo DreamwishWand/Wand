@@ -235,7 +235,7 @@ export function createDb01VerifiedFurnitureTagClient(
     ensure((missingItems===19&&missingRefs===19)||
       (missingItems===0&&missingRefs===0),
       'SOURCE_CLASSIFICATION_COVERAGE_DRIFT');
-    const coverage:Object=Object.freeze({
+    const coverage:Readonly<Db01VerifiedFurnitureTagCoverage>=Object.freeze({
       gameVersion:'1.26.2' as const,sourceFurnitureItems:6746 as const,
       originalNativeClasses:Object.freeze(Object.fromEntries(
         Object.entries(specs).map(([name,v])=>[name,v.count]))
@@ -249,7 +249,7 @@ export function createDb01VerifiedFurnitureTagClient(
     });
     return Object.freeze({
       rows,ids:Object.freeze([...rows.keys()].sort((a,b)=>a-b)),
-      coverage:coverage as Db01VerifiedFurnitureTagCoverage,
+      coverage,
     });
   }
   function indexed():Promise<Index>{
