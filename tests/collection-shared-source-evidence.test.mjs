@@ -3,9 +3,16 @@ import assert from 'node:assert/strict';
 import {createCollectionEvidencePool}
   from '../src/lib/collection/source-evidence-client.ts';
 
+const distribution=id=>Object.freeze({
+  itemId:id,groups:[],
+  sourceCoverageComplete:false,exclusiveLimitedItemVerified:false,
+  currentAvailabilityVerified:false,playerOwnershipVerified:false,
+  collectionUiMembershipVerified:false
+});
 const acquisition=id=>Object.freeze({
   itemId:id,kinds:['fishing'],candidates:['loot_table'],
-  staticSourceOnly:true,availabilityVerified:false,ownershipVerified:false
+  staticSourceOnly:true,availabilityVerified:false,ownershipVerified:false,
+  distribution:distribution(id)
 });
 const quests=id=>Object.freeze({
   itemId:id,targets:[],rewards:[],
@@ -71,14 +78,17 @@ test('source kind, exact Item ID and provenance flags are checked before caching
   for(const corrupt of [
     {kind:'quests',summary:quests(40005160)},
     {summary:acquisition(40005161)},
-    {summary:{...acquisition(40005160),availabilityVerified:true}}
+    {summary:{...acquisition(40005160),availabilityVerified:true}},
+    {summary:{...acquisition(40005160),distribution:{
+      ...distribution(40005160),exclusiveLimitedItemVerified:true
+    }}}
   ]){
     const work=h.loadAcquisition(40005160,'/Wand');
     const last=f.workers[0].sent.at(-1);
     f.workers[0].emit({...last,ok:true,...corrupt});
     await assert.rejects(work,/EVIDENCE_MISMATCH/);
   }
-  assert.equal(f.workers[0].sent.length,3,
+  assert.equal(f.workers[0].sent.length,4,
     'tampered messages must never enter the cache');
   const good=h.loadAcquisition(40005160,'/Wand');
   f.workers[0].emit({...f.workers[0].sent.at(-1),

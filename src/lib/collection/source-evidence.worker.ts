@@ -5,6 +5,8 @@ import {openPublicSharedGameSources,type PublicSharedGameSources}
   from '../game-db/public-sources.ts';
 import {summarizeCollectionAcquisition} from './acquisition-summary.ts';
 import {summarizeCollectionQuests} from './quest-evidence.ts';
+import {summarizeCollectionDistribution,type CollectionAcquisitionWithDistribution}
+  from './distribution-evidence.ts';
 import type {CollectionEvidenceRequest,CollectionEvidenceReply}
   from './source-evidence-client.ts';
 
@@ -41,11 +43,15 @@ self.addEventListener('message',(event:MessageEvent<unknown>)=>{
          catalog.playerOwnershipVerified!==false)
         throw new Error('COLLECTION_SOURCE_VERSION_MISMATCH');
       if(request.kind==='acquisition'){
-        const [evidence,stalls]=await Promise.all([
+        const [evidence,stalls,distribution]=await Promise.all([
           catalog.getAllNativeAcquisitionEvidence(request.itemId),
-          catalog.acquisition.loadNativeStallSources()
+          catalog.acquisition.loadNativeStallSources(),
+          catalog.getItemDistributionEvidence(request.itemId)
         ]);
-        const summary=summarizeCollectionAcquisition(evidence,stalls);
+        const summary:CollectionAcquisitionWithDistribution=Object.freeze({
+          ...summarizeCollectionAcquisition(evidence,stalls),
+          distribution:summarizeCollectionDistribution(distribution)
+        });
         const reply:CollectionEvidenceReply={
           requestId:request.requestId,kind:request.kind,
           itemId:request.itemId,ok:true,summary

@@ -413,6 +413,31 @@ try{
   assert.equal(new URL(deep.url()).searchParams.has('item'),false);
   assert.deepEqual(await readLocalState(deep),initialDeepStore,
     'navigating Item links must never write the manual Collection record');
+  // Original Steam v1.26.2 Item 40001569 has an exact native OnlineCategory
+  // time_limited source label. It is a distribution CATEGORY, never proof of
+  // a current sale, exclusive event reward or intrinsically limited Item.
+  await deep.goto(url+'?item=40001569');
+  await deep.locator('.item-inspector h2').waitFor({timeout:30000});
+  const distributionPanel=deep.locator('.collection-acquisition');
+  await distributionPanel.locator('summary').click();
+  await distributionPanel.locator('.distribution-groups li').first()
+    .waitFor({timeout:60000});
+  const rows=await distributionPanel.locator('.distribution-groups li').allTextContents();
+  assert(rows.some(row=>row.includes('現実時間・オンラインに連動する配布元')
+    &&row.includes('原本のカテゴリ分類')),
+    'the original 1.26.2 OnlineCategory must remain source category evidence');
+  assert(!rows.join(' ').includes('期間限定アイテム'),
+    'a source distribution route never makes the Item intrinsically time limited');
+  await deep.locator('.header-language-button').click();
+  await deep.locator('.language-popover').getByRole('button',{name:'English',exact:true}).click();
+  await deep.waitForFunction(()=>document.querySelector('.distribution-groups')?.textContent
+    ?.includes('Real-world and online distribution sources'));
+  assert.equal(await distributionPanel.getAttribute('open'),'',
+    'switching language must not close the source evidence');
+  await deep.locator('.header-language-button').click();
+  await deep.locator('.language-popover').getByRole('button',{name:'日本語',exact:true}).click();
+  assert.deepEqual(await readLocalState(deep),initialDeepStore,
+    'source distribution viewing cannot modify a personal Collection record');
   await deep.close();
   const search=page.getByRole('searchbox',{name:/8言語/});
   // Locale changes must re-query Rust, not leave cached cards in the prior locale.
@@ -448,7 +473,7 @@ try{
     'source-only acquisition files must remain lazy until the panel opens');
   await acquisitionPanel.locator('summary').click();
   await acquisitionPanel.locator('.evidence-status').filter({
-    hasText:/原本上の経路・候補です|登録済みの入手元情報はありません/
+    hasText:/原本上の経路・候補です|現在の販売・入手可否は未確認です|経路は重複します|登録済みの入手元情報はありません/
   }).waitFor({timeout:60000});
   assert.equal(await acquisitionPanel.getByRole('alert').count(),0);
   for(const file of [
