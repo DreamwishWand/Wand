@@ -338,7 +338,7 @@ try {
   const seafaringGuideLink=hub.locator('.schedule-card')
     .filter({hasText:'Seafaring Star Path'}).locator('.event-actions a').first();
   assert.equal(await seafaringGuideLink.getAttribute('href'),seafaringCalendarHref);
-  assert.equal(await hub.locator('.day[aria-label="2026-10-20"] a.starpath[href="'+seafaringCalendarHref+'"]').count(),1);
+  assert.equal(await hub.locator('.day[aria-label="2026-10-22"] a.starpath[href="'+seafaringCalendarHref+'"]').count(),1);
   await seafaringGuideLink.click();
   await hub.locator('.seasons button.selected').waitFor({timeout:20000});
   assert.match(await hub.locator('.seasons button.selected').innerText(),/Seafaring Star Path/,
