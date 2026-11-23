@@ -788,7 +788,7 @@
               <select bind:value={areaOrientation}
                 on:change={()=>{areaX=0;areaY=0;resetAreaWindow();}}>
                 {#each areaOrientations as code}
-                  <option value={code}>{code===8?'8 · 元の向き':code+' · '+((code+8)%16*22.5)+'°'}</option>
+                  <option value={code}>{code===8?'8 · 元の向き':code+' · '+((8-code+16)%16*22.5)+'°'}</option>
                 {/each}
               </select>
             </label>
