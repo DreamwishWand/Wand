@@ -63,8 +63,7 @@ export async function inspectPrivateDb01Names(
   if(digest!==trusted.manifestSha256)fail('MANIFEST_PIN_MISMATCH');
   let manifest:Db01ShardManifest;
   try{
-    manifest=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(manifestBytes))
-      as Db01ShardManifest;
+    manifest=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(manifestBytes)) as Db01ShardManifest;
   }catch{
     fail('MANIFEST_INVALID');
   }
