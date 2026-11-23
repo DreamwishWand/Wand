@@ -8,6 +8,7 @@ export type CollectionInterfaceLocale=typeof COLLECTION_INTERFACE_LANGUAGES[numb
 
 const COPY={
   ja:{
+    worldView:'ワールド表示',universeView:'ユニバース表示',universeList:'ユニバース一覧',universeSearch:'ユニバースを検索',universeDataUnavailable:'ユニバース所属データはまだ利用できません。',showAllItems:'すべて表示',
     categories:'カテゴリ',record:'ローカル記録',selectRecord:'ローカル記録を選択',
     manageRecord:'ローカル記録の管理',newRecord:'新規',renameRecord:'名前変更',deleteRecord:'削除',
     publicData:'公開データに戻す',openCatalog:'カタログファイルを開く',
@@ -36,6 +37,7 @@ const COPY={
     reloadRecord:'最新の記録を読み直す',storageKept:'ブラウザのデータは削除していません。'
   },
   en:{
+    worldView:'World view',universeView:'Universe view',universeList:'Universes',universeSearch:'Search universes',universeDataUnavailable:'Universe membership data is not available yet.',showAllItems:'View all',
     categories:'Categories',record:'Local records',selectRecord:'Select local record',
     manageRecord:'Manage records',newRecord:'New',renameRecord:'Rename',deleteRecord:'Delete',
     publicData:'Return to public data',openCatalog:'Open catalog file',
@@ -64,6 +66,7 @@ const COPY={
     reloadRecord:'Reload latest record',storageKept:'Browser data was not deleted.'
   },
   fr:{
+    worldView:'Vue par monde',universeView:'Vue par univers',universeList:'Univers',universeSearch:'Rechercher un univers',universeDataUnavailable:'Les données des univers ne sont pas encore disponibles.',showAllItems:'Tout afficher',
     categories:'Catégories',record:'Données locales',selectRecord:'Choisir un suivi local',
     manageRecord:'Gérer les suivis',newRecord:'Nouveau',renameRecord:'Renommer',deleteRecord:'Supprimer',
     publicData:'Revenir aux données publiques',openCatalog:'Ouvrir un catalogue',
@@ -92,6 +95,7 @@ const COPY={
     reloadRecord:'Recharger les dernières données',storageKept:'Les données du navigateur sont conservées.'
   },
   it:{
+    worldView:'Vista mondi',universeView:'Vista universi',universeList:'Universi',universeSearch:'Cerca universi',universeDataUnavailable:'I dati degli universi non sono ancora disponibili.',showAllItems:'Mostra tutti',
     categories:'Categorie',record:'Registri locali',selectRecord:'Seleziona registro locale',
     manageRecord:'Gestisci registri',newRecord:'Nuovo',renameRecord:'Rinomina',deleteRecord:'Elimina',
     publicData:'Torna ai dati pubblici',openCatalog:'Apri file catalogo',
@@ -120,6 +124,7 @@ const COPY={
     reloadRecord:'Ricarica il registro aggiornato',storageKept:'I dati del browser non sono stati eliminati.'
   },
   de:{
+    worldView:'Weltenansicht',universeView:'Universenansicht',universeList:'Universen',universeSearch:'Universen suchen',universeDataUnavailable:'Universenzuordnungen sind noch nicht verfügbar.',showAllItems:'Alle anzeigen',
     categories:'Kategorien',record:'Lokale Einträge',selectRecord:'Lokalen Eintrag auswählen',
     manageRecord:'Einträge verwalten',newRecord:'Neu',renameRecord:'Umbenennen',deleteRecord:'Löschen',
     publicData:'Zu öffentlichen Daten zurück',openCatalog:'Katalogdatei öffnen',
@@ -148,6 +153,7 @@ const COPY={
     reloadRecord:'Aktuelle Daten laden',storageKept:'Browserdaten wurden nicht gelöscht.'
   },
   'es-ES':{
+    worldView:'Vista por mundos',universeView:'Vista por universos',universeList:'Universos',universeSearch:'Buscar universos',universeDataUnavailable:'Los datos de universos aún no están disponibles.',showAllItems:'Ver todos',
     categories:'Categorías',record:'Registros locales',selectRecord:'Seleccionar registro local',
     manageRecord:'Administrar registros',newRecord:'Nuevo',renameRecord:'Renombrar',deleteRecord:'Eliminar',
     publicData:'Volver a datos públicos',openCatalog:'Abrir catálogo',
@@ -176,6 +182,7 @@ const COPY={
     reloadRecord:'Recargar datos recientes',storageKept:'No se han borrado datos del navegador.'
   },
   'zh-CN':{
+    worldView:'世界视图',universeView:'作品系列视图',universeList:'作品系列',universeSearch:'搜索作品系列',universeDataUnavailable:'作品系列归属数据尚不可用。',showAllItems:'查看全部',
     categories:'类别',record:'本地记录',selectRecord:'选择本地记录',
     manageRecord:'管理记录',newRecord:'新建',renameRecord:'重命名',deleteRecord:'删除',
     publicData:'返回公开数据',openCatalog:'打开目录文件',
@@ -204,6 +211,7 @@ const COPY={
     reloadRecord:'重新读取最新记录',storageKept:'浏览器数据未被删除。'
   },
   'pt-BR':{
+    worldView:'Visão por mundos',universeView:'Visão por universos',universeList:'Universos',universeSearch:'Buscar universos',universeDataUnavailable:'Os dados dos universos ainda não estão disponíveis.',showAllItems:'Ver todos',
     categories:'Categorias',record:'Registros locais',selectRecord:'Selecionar registro local',
     manageRecord:'Gerenciar registros',newRecord:'Novo',renameRecord:'Renomear',deleteRecord:'Excluir',
     publicData:'Voltar aos dados públicos',openCatalog:'Abrir catálogo',
