@@ -192,7 +192,7 @@ test('mutated source rows are rejected, and public loader requires exact pinned 
   })),/fingerprint mismatch/);
   const edit=await read();
   edit.seasons[1].rewardPages[0].rewards[0].price=-1;
-  assert.throws(()=>createGuideRewardIndex(edit),/INVALID_PRICE/);
+  assert.throws(()=>createGuideRewardIndex(edit),/INVALID_PRICE|Public Star Path: reward price/);
   edit.seasons[1].rewardPages[0].rewards[0].price=100;
   edit.seasons[1].rewardPages[0].rewards[0].itemId='__proto__';
   assert.throws(()=>createGuideRewardIndex(edit),/(?:Public Star Path: reward|INVALID_ITEM_ID)/,
