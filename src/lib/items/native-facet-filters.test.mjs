@@ -280,3 +280,33 @@ test('current Steam v1.26.2 native filters reject the retired partial Tag overla
   assert.equal(f.calls.category,0);
   assert.equal(f.calls.tags,0);
 });
+
+test('v1.26.2 field14 corrected source Tag release and previous verified release both remain readable',async()=>{
+  function release(tagged,universe,world){
+    const f=fixture();
+    f.catalog.source.definitions=39067;
+    f.tags.source.definitionCount=39067;
+    f.types.source.definitionCount=39067;
+    f.types.source.sourceItemTypeVerified=39067;
+    f.tags.source.taggedDefinitions=tagged;
+    f.tags.source.facetCoverage={
+      worldContextTag:world,disneyUniverse:universe,
+    };
+    return f;
+  }
+  const old=release(14973,1997,11275);
+  const oldReader=createDb01NativeFacetFilterClient(
+    old.catalog,old.tags,old.types);
+  assert.equal((await oldReader.getCoverage())
+    .furnitureBlockerField14TagsIncluded,false);
+  const current=release(14992,2015,11275);
+  const reader=createDb01NativeFacetFilterClient(
+    current.catalog,current.tags,current.types);
+  assert.equal((await reader.getCoverage())
+    .furnitureBlockerField14TagsIncluded,true);
+  assert.throws(()=>createDb01NativeFacetFilterClient(
+    release(14973,2015,11275).catalog,
+    release(14973,2015,11275).tags,
+    release(14973,2015,11275).types,
+  ),/DB01_NATIVE_FILTER_RETIRED_INCOMPLETE_TAG_OVERLAY/);
+});
