@@ -453,3 +453,53 @@ are **not** a permission, free-cell verdict, or proof of an empty
 live Grid. A runtime GridArea override, dynamic Save object, native
 GridCells index membership, collision and all placement rules remain
 unverified; no Save writes or private original arrays are published.
+
+
+## Runtime GridArea override and source-default viewport layers (Steam v1.26.2)
+
+An additional owner-private IL2CPP v31 structural comparison resolves:
+
+| Original Meta.dll native method | Token | Steam 1.26.2 RVA | Original method length | 1.26.1→1.26.2 instruction comparison |
+| --- | --- | --- | ---: | --- |
+| `Meta.Grids.GridObject.Meta.Grids.IGridAreaOverride.SetGridArea` | `0x0600F006` | `0x042AD7D0` | 82 bytes | 21 aligned; 19 identical; 2 PC-relative-only |
+| `Meta.Grids.GridCells.CreateGridCells` | `0x0600F370` | `0x042E9930` | 1308-byte unwind window | 300 aligned; 231 identical; 69 PC-relative-only |
+| `Meta.Grids.GridCells.AddToGridCells` | `0x0600F371` | `0x042E9E50` | 213-byte unwind window | 39 aligned; 21 identical; 18 PC-relative-only |
+| `Meta.Grids.GridCells.RemoveFromGridCells` | `0x0600F372` | `0x042EA270` | 194-byte unwind window | 35 aligned; 17 identical; 18 PC-relative-only |
+| `Meta.Grids.GridCells.TryGetGridObjectsForPosition` | `0x0600F36C` | `0x042E8720` | 1335-byte unwind window | 286 aligned; 230 identical; 56 PC-relative-only |
+
+All of these bounded comparisons have **zero differences outside confirmed
+PC-relative instruction fields**. In the source **82-byte**
+`SetGridArea` body, two 16-byte native area chunks are written directly
+from the supplied argument into GridObject at offsets `0x48` and
+`0x58`, followed by a GC write barrier. Thus a cached/overridden
+runtime GridArea is real and can differ from the Item definition.
+The setter is **not evidence that a player Save contains that override**.
+
+The initial `GridCells.CreateGridCells`, `AddToGridCells` and
+`RemoveFromGridCells` method entry windows prove dedicated index
+maintenance paths exist, but some functions span additional unwind
+regions. Their full data-structure invariants and per-cell membership
+behavior are **not claimed as verified**. This is why source Item
+default layers cannot be called an exact runtime GridCells occupancy
+snapshot.
+
+The read-only `getOriginalDefaultGridLayersWindow` TypeScript utility
+projects the original default Item layer masks onto a bounded
+**32×32 source Grid-local viewport** by iterating source default objects
+once and using the previously verified 16-direction/factor-1/2 original
+GridArea cell mapper in 16×16 tiles. The resulting unsigned values are
+bitwise-ORs of **available original Item-default** `GridLayers`.
+It also returns separate conservative counts for cells *possibly*
+affected by missing Item definitions, no recorded GridArea, or invalid
+source-default extents; such cells are **never marked free**.
+
+This original-only window is intentionally distinct from:
+- live GridCells index membership and runtime overrides;
+- current player Save positions, hidden objects and dynamic updates;
+- floor type permission, true occupied cells, collision and placement
+  legality.
+
+The preview uses small markers for nonzero original default layer
+values and dashed edges for possibly unresolved source definitions.
+Neither symbol is a gameplay occupancy assertion. Raw binaries, actual
+source Item masks and private Saves remain outside the public repo.
