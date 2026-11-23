@@ -1158,3 +1158,16 @@ once; read-only World Preview views now call the typed module directly.
 
 The source-local anchor coordinate is NOT a Save coordinate, an occupied
 cell mask, GridCells runtime state, or permission to move any object.
+
+
+## Typed GridArea base / cardinal source-only math
+
+\`src/lib/world/native-gridarea-base.ts\` now owns the original game-
+corroborated RAW GridArea layer API, unrotated X-major indexing,
+version-specific all-16 integer vector/size math and cardinal 0/4/8/12
+local layer lookup. The legacy \`catalog.mjs\` retains API-compatible
+re-exports while consuming the typed functions for its subsequent
+orientation/tessellation projections. These native machine-code
+calculations are verified **only for Steam v1.26.1**. The source
+remains RAW evidence: this migration never infers occupied cells,
+anchor conventions, placement permission or valid Save transforms.
