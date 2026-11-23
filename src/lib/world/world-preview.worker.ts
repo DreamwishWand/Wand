@@ -10,7 +10,10 @@ import { WorldSourceLoadEpoch } from './world-source-load-epoch.ts';
 import { getNativeTerrainWindow,getNativeTerrainRaster } from './native-terrain-preview.ts';
 import {getNativeRegionGridAtlasPage} from './native-region-grid-atlas.ts';
 import {searchNativeFloorItems,getNativeFloorMatchResult} from './native-floor-match.ts';
-import {getNativeFloorWindowResult} from './native-floor-rectangle-window.ts';
+import {
+  getNativeFloorWindowResult,type FloorWindowMapper
+} from './native-floor-rectangle-window.ts';
+import {WasmSourceFloorRectangle} from './wasm/pkg/wand_world_core.js';
 import { findOriginalItemAnchor, findOriginalItemAnchorAcrossGrids } from './native-item-anchor-finder.ts';
 import { getOriginalGridAreaEvidence } from './native-gridarea-evidence.ts';
 import { getOriginalGridAreaLocalWindow } from './native-gridarea-local-window.ts';
@@ -57,6 +60,19 @@ interface WorkerScope {
   postMessage: (message: unknown) => void;
 }
 const worker = self as unknown as WorkerScope;
+
+/**
+ * Invoked only after the same Worker initialized its World ZIP Rust/WASM
+ * module. All O(GridData cells) rectangle scanning runs in Rust.
+ */
+const wasmFloorWindow:FloorWindowMapper=(grid,accepted,bx,by)=>{
+  const solver=new WasmSourceFloorRectangle(
+    grid.nativeFloorValues,grid.sizeX,grid.sizeY,accepted,bx,by);
+  try{
+    return {originBitmap:solver.origin_bitmap(),
+      originCount:solver.origin_count()};
+  }finally{solver.free();}
+};
 const object = (x:unknown): x is Record<string,unknown> =>
   x!==null && typeof x==='object' && !Array.isArray(x);
 const nonnegative = (x:unknown): x is number =>
@@ -252,7 +268,8 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
         message.gridIdNative,message.itemId);
       const windowResult=getNativeFloorWindowResult(catalog,views,
         message.regionKey,message.viewKey,
-        message.gridIdNative,message.itemId,message.orientationCode);
+        message.gridIdNative,message.itemId,message.orientationCode,
+        wasmFloorWindow);
       worker.postMessage({kind:'floor-match',requestId,result,windowResult});
       return;
     }
