@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
-import {verifyPublicQuestIndex} from '../src/lib/guide/public-guide.mjs';
+import {verifyPublicQuestIndex} from '../src/lib/guide/public-guide.ts';
 import {verifyPublicQuestRewards,loadPublicQuestRewards,DB03_QUEST_REWARDS_FILE,
   DB03_QUEST_REWARDS_SHA,DB03_QUEST_REWARDS_BYTES} from '../src/lib/guide/public-quest-rewards.ts';
 

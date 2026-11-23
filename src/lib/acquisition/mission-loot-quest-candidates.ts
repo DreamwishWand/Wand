@@ -12,7 +12,7 @@
  *
  * Source game bytes remain owner-local. No production JavaScript added.
  */
-import {verifyPublicQuestIndex} from '../guide/public-guide.mjs';
+import {verifyPublicQuestIndex} from '../guide/public-guide.ts';
 import {
   loadPrivateQuestAcquisitionView,
   type PrivateQuestAcquisitionView,

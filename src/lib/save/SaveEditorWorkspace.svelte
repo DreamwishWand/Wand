@@ -7,6 +7,8 @@
   import GridObjectPositionMap from './GridObjectPositionMap.svelte';
   import {combineSavedGridQueues,gridEditsForQuantityExport}
     from './grid-combined-queues';
+  import {queuedSaveExportMode}
+    from './queued-save-export';
   import {draftGridGroupQuarterTurn}
     from './grid-group-quarter-turn';
   import type {GridQuarterTurnDirection}
@@ -118,6 +120,11 @@
   let mixedQueue:GridMixedPlan[]=[];
   $: combinedGridEdits=combineSavedGridQueues(coordinateQueue,mixedQueue);
   $: quantityGridEdits=gridEditsForQuantityExport(coordinateQueue,mixedQueue);
+  $: queuedExportMode=queuedSaveExportMode(
+    queuedEdits.length,coordinateQueue.length,mixedQueue.length,
+    combinedGridEdits?.length??null,quantityGridEdits?.length??null);
+  $: queuedGridCount=quantityGridEdits?.length??
+    (combinedGridEdits?.length??coordinateQueue.length+mixedQueue.length);
   let coordinateSnapshot:
     |{mode:'single';file:File;format:'json'|'auto';
       plan:GridCoordinatePlan;signature:string}
@@ -134,6 +141,32 @@
     |null=null;
   let coordinateCopyUrl:string|null=null;
   let coordinateCopyName='';
+  $: queuedExportVerified=queuedExportMode==='quantity'
+    ?result==='changed'&&snapshot?.mode==='batch'&&
+      snapshot.file===activeFile&&
+      snapshot.signature===JSON.stringify(queuedEdits)
+    :coordinateState==='validated'&&
+      coordinateSnapshot?.file===activeFile&&
+      (queuedExportMode==='quantity-grid'
+        ?coordinateSnapshot?.mode==='quantity-grid'&&
+          coordinateSnapshot.signature===JSON.stringify({
+            gridEdits:quantityGridEdits,quantityEdits:queuedEdits
+          })
+        :queuedExportMode==='coordinates'
+        ?coordinateSnapshot?.mode==='batch'&&
+          coordinateSnapshot.signature===JSON.stringify(coordinateQueue)
+        :queuedExportMode==='mixed'
+        ?coordinateSnapshot?.mode==='mixed'&&
+          coordinateSnapshot.signature===JSON.stringify(mixedQueue)
+        :queuedExportMode==='combined'
+        ?coordinateSnapshot?.mode==='combined'&&
+          coordinateSnapshot.signature===JSON.stringify(combinedGridEdits)
+        :false);
+  $: queuedExportCopyUrl=queuedExportVerified
+    ?queuedExportMode==='quantity'
+      ?exportReady?downloadUrl:null
+      :coordinateCopyUrl
+    :null;
   type CardinalOrientation='GridOrientation_Up'|'GridOrientation_Right'|
     'GridOrientation_Down'|'GridOrientation_Left';
   const cardinalOptions:readonly CardinalOrientation[]=[
@@ -544,6 +577,24 @@
     const format:'json'|'auto'=activeFile?.name.toLowerCase().endsWith('.json')?'json':'auto';
     return {expected:old,replacement:next,target,format,
       signature:JSON.stringify({expected:old,replacement:next,target,format})};
+  }
+  function validateAllQueuedSave():void{
+    if(developmentMode||processing||!activeFile||
+       savedSlotsFile!==activeFile||
+       queuedExportMode==='none'||queuedExportMode==='conflict')return;
+    switch(queuedExportMode){
+      case 'quantity':void preview(true);break;
+      case 'coordinates':void validateCoordinateEdit(true);break;
+      case 'mixed':void validateCoordinateEdit(false,false,true);break;
+      case 'combined':void validateCoordinateEdit(false,false,false,true);break;
+      case 'quantity-grid':
+        void validateCoordinateEdit(false,false,false,false,true);break;
+    }
+  }
+  function exportAllQueuedSave():void{
+    if(developmentMode||processing||!queuedExportVerified)return;
+    if(queuedExportMode==='quantity')void makeExperimentalCopy();
+    else void exportCoordinateCopy();
   }
   function copiedName(name:string):string{
     const safe=name.replace(/[\\/\u0000-\u001f]/g,'_');
@@ -1570,7 +1621,8 @@
   <meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
-<main class="dev-preview" class:editor-workspace={!developmentMode}>
+<main class="dev-preview" class:editor-workspace={!developmentMode}
+  class:queued-editor={!developmentMode&&queuedExportMode!=='none'}>
   {#if developmentMode}
     <p class="eyebrow">DEVELOPMENT · DB-05 SAVE</p>
     <h1>セーブ数量編集（テスト用）</h1>
@@ -1599,6 +1651,36 @@
         aria-pressed={activeEditorPane==='world'}
         on:click={()=>changeEditorPane('world')}>配置編集</button>
     </nav>
+    {#if queuedExportMode!=='none'}
+      <section class="editor-commit-toolbar"
+        aria-label="編集済みセーブの出力">
+        <strong>編集内容：数量{queuedEdits.length}件・配置{queuedGridCount}件</strong>
+        {#if queuedExportMode==='conflict'}
+          <p role="alert">編集が重複または16件を超えています。登録済みの変更を確認してください。</p>
+        {:else}
+          <button type="button" disabled={processing||
+            !activeFile||savedSlotsFile!==activeFile}
+            on:click={validateAllQueuedSave}>すべての変更を検証</button>
+          {#if queuedExportVerified}
+            <span role="status" class="editor-verified">Rust/WASM検証済み</span>
+            <button type="button"
+              disabled={processing||!!queuedExportCopyUrl}
+              on:click={exportAllQueuedSave}>
+              {queuedExportCopyUrl?'コピーを準備しました':'すべての変更をコピーに出力'}
+            </button>
+          {/if}
+          {#if queuedExportCopyUrl}
+            <a href={queuedExportCopyUrl}
+              download={queuedExportMode==='quantity'
+                ?downloadName:coordinateCopyName}
+              class="download-link">編集済みコピーをダウンロード</a>
+          {/if}
+          {#if result==='error'||coordinateState==='error'}
+            <p role="alert">編集を検証できませんでした。変更内容と元データを確認してください。</p>
+          {/if}
+        {/if}
+      </section>
+    {/if}
     {#if !activeFile}
       <p class="editor-empty" role="status">セーブファイルを選択してください。</p>
     {/if}
@@ -1632,9 +1714,11 @@
     {/if}
     <label>現在の数量 <input bind:value={expected} aria-label="現在の数量" disabled={processing}/></label>
     <label>変更後の数量 <input bind:value={replacement} aria-label="変更後の数量" disabled={processing}/></label>
-    <button type="button" on:click={()=>preview(false)} disabled={processing}>
-      {processing?'Rust/WASMで確認中…':'変更を検証'}
-    </button>
+    {#if developmentMode}
+      <button type="button" on:click={()=>preview(false)} disabled={processing}>
+        {processing?'Rust/WASMで確認中…':'変更を検証'}
+      </button>
+    {/if}
     <button type="button" class="secondary" on:click={queueCurrentEdit}
       disabled={processing||queuedEdits.length>=16||
         amountRevisionIndex!==null}>複数編集に追加</button>
@@ -1642,6 +1726,9 @@
       <button type="button" class="secondary"
         disabled={processing}
         on:click={updateQueuedAmountRevision}>登録済みの数量を更新</button>
+    {/if}
+    {#if !developmentMode&&result==='error'}
+      <p role="alert">数量を登録できませんでした。入力値を確認してください。</p>
     {/if}
     <button type="button" class="secondary" on:click={()=>{
       closeLocalSaveFile();if(fileInput)fileInput.value='';
@@ -1927,11 +2014,13 @@
                       {/each}
                     </select>
                   </label>
-                  <button type="button" class="secondary"
-                    disabled={processing||!transformReady}
-                    on:click={()=>validateCoordinateEdit(false,true)}>
-                    位置と向きを同時検証
-                  </button>
+                  {#if developmentMode}
+                    <button type="button" class="secondary"
+                      disabled={processing||!transformReady}
+                      on:click={()=>validateCoordinateEdit(false,true)}>
+                      位置と向きを同時検証
+                    </button>
+                  {/if}
                 {/if}
                 <button type="button" class="secondary"
                   disabled={processing||mixedQueue.length>=16||
@@ -1961,6 +2050,7 @@
                     登録済みの座標を更新
                   </button>
                 {/if}
+                {#if developmentMode}
                 <button type="button" disabled={processing}
                   on:click={()=>validateCoordinateEdit(false)}>
                   {coordinateState==='checking'?'座標を検証中…':'座標変更を検証'}
@@ -1991,6 +2081,7 @@
                   <p role="alert">座標を変更できませんでした。
                     選択した配置、元の座標、入力範囲を確認してください。</p>
                 {/if}
+                {/if}
               </div>
             {/if}
             {#if orientationSelection}
@@ -2013,6 +2104,7 @@
                   on:click={queueMixedFromOrientation}>
                   向きを一括配置変更に追加
                 </button>
+                {#if developmentMode}
                 <button type="button"
                   disabled={processing||!isCardinal(orientationSelection.orientation)||
                     !isCardinal(orientationValue)||
@@ -2031,18 +2123,23 @@
                 {:else if orientationState==='error'}
                   <p role="alert">向き変更を検証できませんでした。</p>
                 {/if}
+                {/if}
+                {#if developmentMode}
                 <p class="slot-note">原本で確認された上下左右の4方向のみ。
                   斜め方向・衝突判定・実ゲームでの配置可否は未検証です。</p>
+                {/if}
               </div>
             {/if}
             {#if coordinateQueue.length}
               <div class="coordinate-batch" aria-label="一括座標編集">
                 <div class="slot-actions">
                   <strong>一括座標編集 · {coordinateQueue.length} / 16件</strong>
+                  {#if developmentMode}
                   <button type="button" disabled={processing}
                     on:click={()=>validateCoordinateEdit(true)}>
                     {coordinateState==='checking'?'一括検証中…':'一括座標変更を検証'}
                   </button>
+                  {/if}
                 </div>
                 <ul class="slot-list">
                   {#each coordinateQueue as edit}
@@ -2066,10 +2163,12 @@
               <div class="coordinate-batch" aria-label="一括配置変更">
                 <div class="slot-actions">
                   <strong>一括配置変更 · {mixedQueue.length} / 16件</strong>
+                  {#if developmentMode}
                   <button type="button" disabled={processing}
                     on:click={()=>validateCoordinateEdit(false,false,true)}>
                     一括配置変更を検証
                   </button>
+                  {/if}
                 </div>
                 <ul class="slot-list">
                   {#each mixedQueue as edit}
@@ -2097,7 +2196,7 @@
                 </ul>
               </div>
             {/if}
-            {#if coordinateQueue.length>0&&mixedQueue.length>0}
+            {#if developmentMode&&coordinateQueue.length>0&&mixedQueue.length>0}
               <div class="coordinate-batch" aria-label="座標と配置の統合編集">
                 <div class="slot-actions">
                   <strong>座標＋向きの一括出力</strong>
@@ -2216,12 +2315,15 @@
           </li>
         {/each}
       </ol>
+      {#if developmentMode}
       <button type="button" on:click={()=>preview(true)} disabled={processing}>
         {processing?'Rust/WASMで確認中…':'一括変更を検証'}
       </button>
+      {/if}
     </section>
   {/if}
-  {#if queuedEdits.length>0&&(coordinateQueue.length>0||mixedQueue.length>0)}
+  {#if developmentMode&&queuedEdits.length>0&&
+    (coordinateQueue.length>0||mixedQueue.length>0)}
     <section aria-label="所持品と配置の統合編集">
       <div class="slot-actions">
         <strong>所持品＋配置の一括出力</strong>
@@ -2253,7 +2355,7 @@
       {/if}
     </section>
   {/if}
-  {#if result==='changed'}
+  {#if developmentMode&&result==='changed'}
     <p role="status">Rust/WASMで{snapshot?.mode==='batch'?snapshot.edits.length+'件の一括変更':'数量変更'}の検証に成功しました。変更後の構造を内部で再検証しました。</p>
     <div class="export-controls">
       <button type="button" disabled={processing || exportReady || snapshot===null}
@@ -2264,9 +2366,9 @@
         <a href={downloadUrl} download={downloadName} class="download-link">コピーをダウンロード</a>
       {/if}
     </div>
-  {:else if result==='unchanged'}
+  {:else if developmentMode&&result==='unchanged'}
     <p role="status">変更前後の数量が同じです。元データは変更されていません。</p>
-  {:else if result==='error'}
+  {:else if developmentMode&&result==='error'}
     <p role="alert">検証できませんでした。対象・数量・形式を確認してください。元ファイルは変更していません。</p>
   {/if}
   {#if developmentMode}
@@ -2287,12 +2389,24 @@
   .editor-workspace>.export-controls{grid-column:1/-1;}
   .editor-workspace>.editor-owned-panel{grid-column:1;grid-row:3;}
   .editor-workspace>.editor-amount-panel{grid-column:2;grid-row:3;}
+  .editor-workspace>.editor-commit-toolbar{
+    grid-column:1/-1;grid-row:3;display:flex;gap:10px;
+    flex-wrap:wrap;align-items:center;padding:10px 14px;
+    background:#32263f;border:1px solid #ffffff30;
+  }
+  .editor-workspace.queued-editor>.editor-owned-panel,
+  .editor-workspace.queued-editor>.editor-amount-panel{grid-row:4;}
+  .editor-commit-toolbar strong{font-size:13px;margin-right:auto;}
+  .editor-commit-toolbar button{padding:9px 13px;font-weight:600;}
+  .editor-commit-toolbar [role=alert]{flex-basis:100%;margin:0;}
   .editor-workspace>section:not(.editor-amount-panel):not(.editor-owned-panel){
     grid-column:1/-1;}
   @media(max-width:860px){
     .editor-workspace{grid-template-columns:minmax(0,1fr);}
     .editor-workspace>.editor-owned-panel{grid-column:1;grid-row:3;}
     .editor-workspace>.editor-amount-panel{grid-column:1;grid-row:4;}
+    .editor-workspace.queued-editor>.editor-owned-panel{grid-row:4;}
+    .editor-workspace.queued-editor>.editor-amount-panel{grid-row:5;}
     .editor-workspace>.editor-topbar,.editor-workspace>.editor-tabs,
     .editor-workspace>section:not(.editor-amount-panel):not(.editor-owned-panel),
     .editor-workspace>.editor-empty,.editor-workspace>p,

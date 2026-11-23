@@ -58,7 +58,6 @@ const knownLegacy=new Set([
   "src/lib/game-db/model.mjs",
   "src/lib/guide/client.mjs",
   "src/lib/guide/current-conditions.mjs",
-  "src/lib/guide/public-guide.mjs",
   "src/lib/guide/source-composite.mjs",
   "src/lib/guide/starpath-public-media.mjs",
   "src/lib/save/achievement-links.mjs",

@@ -10,7 +10,7 @@
  * it does not reinterpret roll counts as item amounts, nor assert that a
  * quest is currently available, completed or grants any of these rewards.
  */
-import {verifyPublicQuestIndex} from '../guide/public-guide.mjs';
+import {verifyPublicQuestIndex} from '../guide/public-guide.ts';
 import {
   loadPublicQuestRewards,DB03_QUEST_REWARDS_FILE,
   DB03_QUEST_REWARDS_SHA,DB03_QUEST_REWARDS_SCHEMA,

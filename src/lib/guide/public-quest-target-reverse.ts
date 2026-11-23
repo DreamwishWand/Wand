@@ -3,7 +3,7 @@
  * Candidate references are NOT proof of mandatory requirements, completion,
  * ownership or availability. Alternative lists remain alternatives.
  */
-import {verifyPublicQuestIndex} from './public-guide.mjs';
+import {verifyPublicQuestIndex} from './public-guide.ts';
 
 export const DB03_QUEST_TARGET_REVERSE_SCHEMA='wand.db03.public-quest-target-reverse@1' as const;
 export const DB03_QUEST_TARGET_REVERSE_FILE='quest-target-reverse-1.26.2.json' as const;

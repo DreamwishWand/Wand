@@ -27,6 +27,16 @@ if _spec is None or _spec.loader is None:
 _wire = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_wire)
 
+FURNITURE_HELPER = Path(__file__).with_name("extract_furniture_subtypes.py")
+_fspec = importlib.util.spec_from_file_location(
+    "db01_native_furniture_subtype_audit", FURNITURE_HELPER)
+if _fspec is None or _fspec.loader is None:
+    raise RuntimeError("DB01_FURNITURE_SUBTYPE_HELPER_MISSING")
+import sys
+_furniture = importlib.util.module_from_spec(_fspec)
+sys.modules[_fspec.name] = _furniture
+_fspec.loader.exec_module(_furniture)
+
 SCHEMA = "wand.db01.original-has-tag-set-audit.private@1"
 ORIGINAL_SHA = {
     "Tag": "bc537ad3278483cb6b64a344fa70f73dca7e66ff146b1e0d032e2f209ba813a4",
@@ -207,41 +217,55 @@ def join_source(
     for family,(set_field,tag_field) in SOURCE_FAMILIES.items():
         rows=families[family]
         stats=Counter()
-        for _,_,ff in rows:
+        class_counts=Counter()
+        if family=="Furniture":
+            # All seven original protobuf subtypes have distinct field
+            # contracts. Fields 7/9/10/14 are NOT interchangeable Tags.
+            # Only FurnitureItemData implements IHasSet, whereas the
+            # similarly named FurnitureAncientMachineItemData.SetItemID
+            # does not grant inherited SetItemData.Tags semantics.
+            typed=_furniture.classify_corpus(rows,set(tags))
+            source_rows=[
+                (row.native_tags,
+                 row.set_item_id if row.implements_has_set else None,
+                 row.implements_has_set,
+                 row.data_class)
+                for row in typed]
+        else:
+            source_rows=[
+                (exactly_one_packed(ff,tag_field,set(tags)),
+                 one_set_reference(ff,set_field),True,family)
+                for _,_,ff in rows]
+        for direct_tags,source_set,has_set,data_class in source_rows:
+            direct=set(direct_tags)
+            linked=definition.get(source_set,set()) if has_set else set()
+            class_counts[data_class]+=1
             stats["items"]+=1
-            # The top-level Furniture itemlist mixes subtype wire schemas.
-            # 395 original rows use field 9 for non-Tag message bytes
-            # (e.g. Road/Brick), while another 525 omit field 9.
-            # Do NOT call either group FurnitureItemData.Tags.
-            # Only complete, nonempty Tag-ID frames prove that wire field 9
-            # was the exact IHasTags.Tags field for this source record.
-            if family=="Furniture":
-                candidates=[raw for f,w,raw in ff
-                            if f==tag_field and w==2]
-                if len(candidates)!=1 or not _wire.packed_tags(
-                        bytes(candidates[0]),set(tags)):
-                    stats["sourceSubtypeNotProven"]+=1
-                    continue
-            direct=set(exactly_one_packed(ff,tag_field,set(tags)))
-            source_set=one_set_reference(ff,set_field)
-            linked=definition.get(source_set,set())
             stats["hasTagSourceRowsVerified"]+=1
+            stats["nativeHasSetItemsVerified"]+=has_set
+            stats["notNativeHasSetItemsVerified"]+=not has_set
             stats["directTagItems"]+=bool(direct)
-            stats["withSetItemReference"]+=source_set is not None
-            stats["resolvedSetItemReference"]+=source_set in definition
+            stats["withSetItemReference"]+=has_set and source_set is not None and source_set>0
+            stats["resolvedSetItemReference"]+=has_set and source_set in definition
             stats["unresolvedSetItemReference"]+=(
-                source_set is not None and source_set not in definition)
+                has_set and source_set is not None and source_set>0 and
+                source_set not in definition)
             stats["setInheritedAnyTag"]+=bool(linked-direct)
             stats["directCollectionAreaTag"]+=bool(direct&world)
             stats["setInheritedCollectionAreaTag"]+=bool((linked-direct)&world)
             stats["nativeHasTagAnyAreaCandidate"]+=bool((direct|linked)&world)
+        stats["sourceSubtypeNotProven"]=0
         by_family[family]=dict(stats)
+        if family=="Furniture":
+            result["originalFurnitureNativeClassCounts"]=dict(
+                sorted(class_counts.items()))
     require(result["originalSetsWithCollectionAreaTags"]==0 and
             all(c["setInheritedCollectionAreaTag"]==0
                 for c in by_family.values()),
             "UNEXPECTED_WORLD_SET_TAG_INHERITANCE")
-    require(by_family["Furniture"]["sourceSubtypeNotProven"]==920 and
-            by_family["Furniture"]["hasTagSourceRowsVerified"]==5826 and
+    require(by_family["Furniture"]["hasTagSourceRowsVerified"]==6746 and
+            by_family["Furniture"]["nativeHasSetItemsVerified"]==5288 and
+            by_family["Furniture"]["notNativeHasSetItemsVerified"]==1458 and
             by_family["Clothing"]["hasTagSourceRowsVerified"]==2041 and
             by_family["Trimming"]["hasTagSourceRowsVerified"]==365,
             "SOURCE_SUBTYPE_COVERAGE_DRIFT")

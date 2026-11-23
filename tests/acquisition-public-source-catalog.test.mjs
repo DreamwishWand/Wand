@@ -487,3 +487,54 @@ test('source-native LootTable candidates are loaded on demand but never promoted
   assert.equal(catalog.itemSources.getKindItemIds('redeem_code').length,0);
   assert(Object.isFrozen(item)&&Object.isFrozen(item.nativeLootCandidates));
 });
+
+test('original stall slot candidates enrich Item lookup lazily without claiming sale prices or increasing 1255 baseline routes',async()=>{
+  const {seen,fetcher}=publicFetcher();
+  const catalog=await loadPublicSourceCatalog('/Wand',fetcher);
+  const startupRequests=seen.length;
+  const original=catalog.lookup('30200000');
+  assert.equal(original.originCoverageComplete,false);
+  assert.equal(catalog.coverage.combinedSourceRoutes,1255);
+  assert.equal(seen.some(u=>u.endsWith('/native-stall-slots-1.26.2.json')),false);
+  const first=catalog.loadNativeStallSources();
+  const second=catalog.loadNativeStallSources();
+  assert.equal(first,second,'one stall+loot join promise per catalog');
+  const raw=catalog.loadNativeStallSlots();
+  assert.equal(raw,catalog.loadNativeStallSlots());
+  const [joined,stalls]=await Promise.all([first,raw]);
+  assert.equal(joined.coverage.staticStallDefinitions,65);
+  assert.equal(joined.coverage.slotExpandedCandidateRelations,1385);
+  assert.equal(joined.listCandidateItemIds().length,606);
+  assert.equal(stalls.coverage.slotLootTableReferences,335);
+  assert.equal(seen.length,startupRequests+2,
+    'new native stall and existing loot assets are loaded only on demand');
+  assert.equal(seen.filter(u=>u.endsWith('/native-stall-slots-1.26.2.json')).length,1);
+  assert.equal(seen.filter(u=>u.endsWith('/native-loot-candidates-1.26.2.json')).length,1);
+  const expanded=await catalog.lookupWithNativeStallCandidates('30200000');
+  assert.equal(seen.length,startupRequests+2,'single Item lookup reuses sources');
+  assert.equal(expanded.itemId,original.itemId);
+  assert.deepEqual(expanded.origins,original.origins);
+  assert.deepEqual(expanded.onlineNameCandidates,original.onlineNameCandidates);
+  assert.equal(expanded.nativeStallSourcesLoaded,true);
+  assert.equal(expanded.liveStallStockVerified,false);
+  assert.equal(expanded.liveStallPriceVerified,false);
+  assert.equal(expanded.purchasingEligibleVerified,false);
+  assert(expanded.nativeStallCandidates.length>0);
+  assert(expanded.nativeStallCandidates.some(x=>
+    x.stallId==='20100000'&&x.slotIndex===1));
+  assert(expanded.nativeStallCandidates.every(x=>
+    x.routeStatus==='static_candidate_only'&&
+    x.liveStockVerified===false&&x.livePriceVerified===false));
+  assert.equal(expanded.nativeStallCandidates.length,
+    expanded.nativeStallStaticOrigins.length);
+  assert(expanded.nativeStallStaticOrigins.every(x=>
+    x.routeStatus==='static_candidate_only'&&
+    x.kind==='game_shop'&&x.price===null&&
+    x.availability==='not_live_verified'));
+  assert.equal(catalog.coverage.combinedSourceRoutes,1255);
+  assert.equal(catalog.itemSources.getKindItemIds('game_shop').length,0,
+    'baseline kind browser does not silently include additional static stall pools');
+  assert.equal(catalog.itemSources.getKindItemIds('redeem_code').length,0);
+  assert.equal(catalog.itemSources.getKindItemIds('twitch_drop').length,0);
+  assert(Object.isFrozen(expanded)&&Object.isFrozen(expanded.nativeStallCandidates));
+});

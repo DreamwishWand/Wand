@@ -57,6 +57,11 @@ import {
   loadPinnedNativeLootCandidates,
   type NativeLootCandidateIndex,type NativeLootCandidate
 } from './public-native-loot.ts';
+import {
+  loadPinnedNativeStallSlots,joinPinnedNativeStallLoot,
+  type NativeStallSlotIndex,type NativeStallSourceIndex,
+  type NativeStallItemCandidate
+} from './public-native-stalls.ts';
 import {indexPublicOnlineNameCandidates,
   type PublicOnlineNameCandidateIndex,
   type PublicOnlineNameCandidate} from './public-online-name-candidates.ts';
@@ -136,6 +141,15 @@ export type PublicSourceItemLootCandidateLookup=PublicSourceItemLookup&{
   readonly nativeLootSourceLoaded:true;
   readonly actualLootContextVerified:false;
 };
+export type PublicSourceItemStallCandidateLookup=PublicSourceItemLookup&{
+  /** Source-linked stall slot candidates; NOT a verified live shop sale. */
+  readonly nativeStallCandidates:readonly NativeStallItemCandidate[];
+  readonly nativeStallStaticOrigins:readonly ItemOrigin[];
+  readonly nativeStallSourcesLoaded:true;
+  readonly liveStallStockVerified:false;
+  readonly liveStallPriceVerified:false;
+  readonly purchasingEligibleVerified:false;
+};
 export interface PublicSourceCatalog{
   readonly schema:typeof DB02_PUBLIC_SOURCE_CATALOG_SCHEMA;
   readonly gameVersion:'1.26.2';
@@ -174,6 +188,13 @@ export interface PublicSourceCatalog{
   lookupWithNativeLootCandidates(
     itemId:string|number
   ):Promise<PublicSourceItemLootCandidateLookup>;
+  /** Original 65 native stall definitions and 335 ordered LootTable slots. */
+  loadNativeStallSlots():Promise<NativeStallSlotIndex>;
+  /** Source-verified slot -> table links, 1,385 candidate-only Item relations. */
+  loadNativeStallSources():Promise<NativeStallSourceIndex>;
+  lookupWithNativeStallCandidates(
+    itemId:string|number
+  ):Promise<PublicSourceItemStallCandidateLookup>;
   /** Item-ID lookup with optional source-pinned recipe routes (one new fetch). */
   lookupWithNativeRecipes(itemId:string|number):Promise<PublicSourceItemRecipeLookup>;
   /** Enrich one Item ID with both recipe and original activity paths on demand. */
@@ -344,6 +365,8 @@ export async function loadPublicSourceCatalog(
   let nativeCookingMembersPromise:Promise<NativeCookingMemberIndex>|null=null;
   let cookingRecipeResolverPromise:Promise<NativeCookingRecipeResolver>|null=null;
   let nativeLootPromise:Promise<NativeLootCandidateIndex>|null=null;
+  let nativeStallSlotsPromise:Promise<NativeStallSlotIndex>|null=null;
+  let nativeStallSourcesPromise:Promise<NativeStallSourceIndex>|null=null;
   const loadRecipes=()=>nativeRecipePromise??=
     loadPinnedNativeRecipeResults(basePath,fetcher);
   const loadActivities=()=>nativeActivityPromise??=
@@ -356,6 +379,12 @@ export async function loadPublicSourceCatalog(
     );
   const loadLoot=()=>nativeLootPromise??=
     loadPinnedNativeLootCandidates(basePath,fetcher);
+  const loadStallSlots=()=>nativeStallSlotsPromise??=
+    loadPinnedNativeStallSlots(basePath,fetcher);
+  const loadStallSources=()=>nativeStallSourcesPromise??=
+    Promise.all([loadStallSlots(),loadLoot()]).then(
+      ([stalls,loot])=>joinPinnedNativeStallLoot(stalls,loot)
+    );
   const lookupCurrent=(itemId:string|number):PublicSourceItemLookup=>{
     // db00.lookup validates IDs and keeps extra-ItemList Quest/Currency IDs.
     const row=db00.lookup(itemId);
@@ -391,6 +420,21 @@ export async function loadPublicSourceCatalog(
     loadNativeCookingMembers(){return loadCookingMembers();},
     loadCookingRecipeResolver(){return loadCookingRecipeResolver();},
     loadNativeLootCandidates(){return loadLoot();},
+    loadNativeStallSlots(){return loadStallSlots();},
+    loadNativeStallSources(){return loadStallSources();},
+    async lookupWithNativeStallCandidates(itemId:string|number){
+      const row=lookupCurrent(itemId);
+      const stalls=await loadStallSources();
+      return Object.freeze({
+        ...row,
+        nativeStallCandidates:stalls.getItemCandidates(row.itemId),
+        nativeStallStaticOrigins:stalls.getItemStaticOrigins(row.itemId),
+        nativeStallSourcesLoaded:true as const,
+        liveStallStockVerified:false as const,
+        liveStallPriceVerified:false as const,
+        purchasingEligibleVerified:false as const
+      });
+    },
     async lookupWithNativeLootCandidates(itemId:string|number){
       const row=lookupCurrent(itemId);
       const loot=await loadLoot();
