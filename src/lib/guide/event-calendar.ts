@@ -49,7 +49,7 @@ export interface GuideDateOnlyCalendarEvent extends GuideCalendarDateWindow{
    */
   readonly category:'floating'|'other';
   readonly title:string;
-  readonly sourceUrl:string;
+  readonly sourceUrl:string|null;
   readonly evidence:'official-announcement'|'verified-game-original';
   readonly liveVerified:false;
   readonly checkedDate:typeof GUIDE_EVENT_CALENDAR_AS_OF;
