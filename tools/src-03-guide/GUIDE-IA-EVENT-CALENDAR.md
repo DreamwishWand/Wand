@@ -21,7 +21,7 @@ The existing authenticated source is `Cache/liveops/battlepasses.dat` captured *
 
 **These are historical cached definitions**, not an authoritative live event feed; the game may have changed and the response may be incomplete or account-/platform-specific. Its `Active` field must not be read as a live authoritative availability signal.
 
-The new `src/lib/guide/event-calendar.mjs` has an explicit `liveVerified:false` for every entry. Its scheduled dates are published evidence:
+The new `src/lib/guide/event-calendar.ts` has an explicit `liveVerified:false` for every entry. Its scheduled dates are published evidence:
 
 - **Haunting Elegance Star Path**: Steam snapshot `2026-09-23T13:00:00Z` to task **exclusive** `2026-12-08T14:00:00Z`; reward exchange until **exclusive** `2026-12-09T14:00:00Z`. Announced by the official **Season of Scares** patch notes: https://disneydreamlightvalley.com/news/update-sep-23-2026
 - **Seafaring Star Path**: Steam snapshot `2026-10-21T17:00:00Z` to task **exclusive** `2026-12-01T14:00:00Z`; exchange until **exclusive** `2026-12-02T14:00:00Z`. The official showcase independently confirms the October 21–December 2 public window: https://disneydreamlightvalley.com/news/2026ShowcaseHighlights

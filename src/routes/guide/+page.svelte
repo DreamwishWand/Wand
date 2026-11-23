@@ -6,16 +6,17 @@
   import {
     guideCalendarEvents,guideCalendarMonth,guideCalendarEventsInMonth,eventScheduleState,
     localGuideDateTime,GUIDE_EVENT_CALENDAR_AS_OF
-  } from '$lib/guide/event-calendar.mjs';
+  } from '$lib/guide/event-calendar.ts';
 
-  let events:any[]=[];
+  import type {GuideCalendarEvent} from '$lib/guide/event-calendar.ts';
+  let events:GuideCalendarEvent[]=[];
   let loading=true;
   let loadError='';
   let now=Date.now();
   let month='';
   $: monthGrid=month?guideCalendarMonth(events,month):[];
   $: thisMonthEvents=month?guideCalendarEventsInMonth(events,month):[];
-  $: scheduledStarpaths=events.filter((e:any)=>e.kind==='starpath'&&eventScheduleState(e,now)==='task-window');
+  $: scheduledStarpaths=events.filter(e=>e.kind==='starpath'&&eventScheduleState(e,now)==='task-window');
 
   function shiftMonth(delta:number){
     const [y,m]=month.split('-').map(Number);
@@ -24,11 +25,11 @@
     const target=d.toISOString().slice(0,7);
     if(d.getUTCFullYear()>=2025&&d.getUTCFullYear()<=2031)month=target;
   }
-  function timeLabel(event:any){
+  function timeLabel(event:GuideCalendarEvent){
     if(event.precision==='date-only')return `${event.startDay} ～ ${event.endDayInclusive}（開始・終了時刻は未確認）`;
     return `${localGuideDateTime(event.startUtc)} ～ ${localGuideDateTime(event.taskEndUtcExclusive)}（タスク期限・未満）`;
   }
-  function scheduleLabel(event:any){
+  function scheduleLabel(event:GuideCalendarEvent){
     switch(eventScheduleState(event,now)){
       case 'task-window':return '日程上のタスク期間内';
       case 'exchange-only':return 'タスク終了・交換期間内';

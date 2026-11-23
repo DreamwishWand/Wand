@@ -14,7 +14,7 @@
   import {loadStarpathNativeRevisionEvidence,STARPATH_NATIVE_REVISION_FILE,
     type StarpathNativeRevisionEvidence} from '$lib/guide/starpath-native-revision.ts';
   import {loadStarpathMedia,starpathMediaThumbnail} from '$lib/guide/starpath-public-media.mjs';
-  import {guideCalendarEvents,eventScheduleState} from '$lib/guide/event-calendar.mjs';
+  import {guideCalendarEvents,eventScheduleState} from '$lib/guide/event-calendar.ts';
   import {starpathTaskDisplay} from '$lib/guide/starpath-task-guidance.ts';
   import {filterStarpathTasks} from '$lib/guide/starpath-search.ts';
   import {resolveStarpathDutyLink,starpathDutyHref,type StarpathDutySelection} from '$lib/guide/starpath-duty-link.ts';
