@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
-import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.mjs';
+import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.ts';
 import {STARPATH_DAILY_RELEASE,verifyStarpathDailyPart,loadStarpathDailyPart,loadStarpathDailyLocales,starpathDailyDescription} from '../src/lib/guide/public-starpath-daily.ts';
 const root=new URL('../static/guide/public/',import.meta.url);
 const read=async file=>readFile(new URL(file,root));
