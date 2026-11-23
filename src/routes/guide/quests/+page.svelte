@@ -490,7 +490,7 @@
                       <li class:target-item-match={selectedTargetRefs.some(ref=>
                             ref.step===step.index&&ref.subStep===sub.index&&ref.objectiveIndex===i)}>
                          <span>{objectiveText(goal,targetLookup[`${step.index}:${sub.index}:${i}`]?.[0],locale)}</span>
-                         <details class="source-id"><summary>条件の識別情報</summary><small>{goal.type}{goal.objectiveId?' · ID '+goal.objectiveId:''}</small></details>
+                         <details class="source-id"><summary>条件の識別情報</summary><small>{goal.type}</small></details>
                          {#each targetLookup[`${step.index}:${sub.index}:${i}`]||[] as target}
                            {#if target.amount?.kind==='value'}
                              <small class="source-amount">必要数 {target.amount.value}</small>
