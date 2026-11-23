@@ -235,8 +235,9 @@ export interface PublicSourceCatalog{
   ):Promise<PublicSourceItemCompanionNameLookup>;
   /** Native OnlineCategory enum: Premium/TimeLimited, not a specific sale. */
   loadNativeOnlineCategories():Promise<NativeOnlineCategoryIndex>;
-  /** Item distribution routes grouped by ordinary/game time/real-world sources.
-   * A category is source evidence, never exclusive Item rarity or availability. */
+  /** All 3961 pinned source links plus original online categories and name
+   * candidates, grouped by ordinary/game time/real-world distribution.
+   * Classification never proves exclusive rarity, a drop, or live availability. */
   loadDistributionScopes():Promise<DistributionScopeIndex>;
   lookupWithDistributionScopes(
     itemId:string|number
@@ -494,8 +495,9 @@ export async function loadPublicSourceCatalog(
   const loadOnline=()=>nativeOnlineCategoryPromise??=
     loadPinnedNativeOnlineCategories(basePath,fetcher);
   const loadDistribution=()=>distributionScopePromise??=
-    Promise.all([loadOnline(),loadPets()]).then(([online,pets])=>
-      indexDistributionScopes(origins,online,pets,nameCandidates)
+    Promise.all([loadOnline(),loadPets(),loadExpandedNativeBrowser()]).then(
+      ([online,pets,expanded])=>
+        indexDistributionScopes(origins,online,pets,nameCandidates,expanded)
     );
   const lookupCurrent=(itemId:string|number):PublicSourceItemLookup=>{
     // db00.lookup validates IDs and keeps extra-ItemList Quest/Currency IDs.
