@@ -298,11 +298,10 @@ export class CollectionRuntime {
         metadata = {
           snapshot: active.snapshot, platform: manifest.t.platform, version: manifest.t.gameVersion,
           expansions:manifest.e, worlds:manifest.w, universes:manifest.u,
-          worldLabels:manifest.wl, universeLabels:manifest.ul,
-          verifiedScopeMembership:{
-            world:'verified_game_collection_area_item_membership',
-            universe:'verified_game_collection_universe_item_membership'
-          }
+          worldLabels:manifest.wl, universeLabels:manifest.ul
+          // The historical Switch reference contains world/universe Tag
+          // associations, not source-reviewed game CollectionArea membership.
+          // Do NOT automatically certify these legacy axes.
         };
       } else if (active.kind === 'db_snapshot') {
         if (active.publication !== 'validated_public_snapshot'
