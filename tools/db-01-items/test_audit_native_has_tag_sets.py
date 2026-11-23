@@ -62,22 +62,16 @@ def fixtures():
     tag_rows += [(2000900000+i,f"FakeTag_{i}",[])
                  for i in range(402)]
     assert len(tag_rows)==409
+    # The original itemlist mixes seven typed records. Reuse the single
+    # synthetic subtype corpus fixture rather than incorrectly assuming all
+    # source Furniture records are FurnitureItemData.
+    from test_extract_furniture_subtypes import synthetic_corpus
+    furniture=synthetic_corpus()
     set_rows=[
-        (2100000000+i,f"TestSet_{i}",
+        (2040000009 if i==0 else 2100000000+i,f"TestSet_{i}",
          [(6,2,varint(2000500001))] if i<725 else [])
         for i in range(727)
     ]
-    furniture=[]
-    for i in range(6746):
-        fields=[]
-        if i<5826:
-            fields.append((9,2,varint(2001200028)))
-            if i==0:
-                fields.append((8,0,2100000000))
-        elif i<6221:
-            fields.append((9,2,b"\x98\x00"))  # non-tag Road data
-        # The other 525 omit field 9, so class is not source-proven.
-        furniture.append((40000000+i,f"Furniture_{i}",fields))
     clothing=[
         (50000000+i,f"Clothing_{i}",[
             (9,2,varint(2001200029)),(8,0,2100000000)])
@@ -142,8 +136,12 @@ class OriginalNativeHasTagAuditTests(unittest.TestCase):
         self.assertEqual(result["originalSetsWithCollectionAreaTags"],0)
         furniture=result["sourceFamilyCounts"]["Furniture"]
         self.assertEqual(furniture["items"],6746)
-        self.assertEqual(furniture["sourceSubtypeNotProven"],920)
-        self.assertEqual(furniture["hasTagSourceRowsVerified"],5826)
+        self.assertEqual(furniture["sourceSubtypeNotProven"],0)
+        self.assertEqual(furniture["hasTagSourceRowsVerified"],6746)
+        self.assertEqual(furniture["nativeHasSetItemsVerified"],5288)
+        self.assertEqual(furniture["notNativeHasSetItemsVerified"],1458)
+        self.assertEqual(result["originalFurnitureNativeClassCounts"],
+                         audit._furniture.EXPECTED_SOURCE_COUNTS)
         self.assertGreater(furniture["setInheritedAnyTag"],0)
         self.assertEqual(furniture["setInheritedCollectionAreaTag"],0)
         self.assertEqual(
@@ -161,15 +159,25 @@ class OriginalNativeHasTagAuditTests(unittest.TestCase):
                                     "UNEXPECTED_WORLD_SET_TAG_INHERITANCE"):
             audit.join_source(tags,sets,families)
 
-    def test_type_unproven_furniture_does_not_inherit_from_arbitrary_field9(self):
+    def test_road_field_9_is_not_tag_and_ancient_machine_is_not_ihasset(self):
         tags,sets,families=fixtures()
-        # Road is not FurnitureItemData even though it is in Furniture.json.
-        road=families["Furniture"][5826]
-        self.assertEqual(road[2],[(9,2,b"\x98\x00")])
-        data=audit.join_source(tags,sets,families)
+        road=next(rec for rec in families["Furniture"] if
+                  "FenceAndRoadItemData" in rec[1])
+        source=audit._furniture.classify_furniture(
+            road[0],road[1],road[2],{item_id for item_id,_,_ in tags})
+        self.assertEqual(source.data_class,"FenceAndRoadItemData")
+        self.assertEqual(source.tags_field,10)
+        ancient=next(rec for rec in families["Furniture"] if
+                     "FurnitureAncientMachineItemData" in rec[1])
+        original=audit._furniture.classify_furniture(
+            ancient[0],ancient[1],ancient[2],
+            {item_id for item_id,_,_ in tags})
+        self.assertFalse(original.implements_has_set)
+        self.assertIsNone(original.set_item_id)
+        result=audit.join_source(tags,sets,families)
         self.assertEqual(
-            data["sourceFamilyCounts"]["Furniture"]["sourceSubtypeNotProven"],
-            920)
+            result["sourceFamilyCounts"]["Furniture"]["nativeHasSetItemsVerified"],
+            5288)
 
     def test_rva_reader_refuses_non_pe_or_missing_segments(self):
         for raw in (b"",b"MZ"+bytes(600)):
