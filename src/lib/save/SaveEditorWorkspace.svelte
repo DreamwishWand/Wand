@@ -1661,6 +1661,7 @@
             !activeFile||savedSlotsFile!==activeFile}
             on:click={validateAllQueuedSave}>すべての変更を検証</button>
           {#if queuedExportVerified}
+            <span role="status" class="editor-verified">Rust/WASM検証済み</span>
             <button type="button"
               disabled={processing||!!queuedExportCopyUrl}
               on:click={exportAllQueuedSave}>
