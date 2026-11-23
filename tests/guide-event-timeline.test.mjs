@@ -121,6 +121,7 @@ test('dated archived in-game events are visible independently of the liveops cac
   const cases=[
     ['2023-10-25','trick-or-treat-2023'],
     ['2024-10-24','trick-or-treat-2024'],
+    ['2024-12-20','gift-of-giving-2024'],
     ['2025-10-23','haunted-floating-festival-2025'],
     ['2026-10-20','trick-or-treat-2026']
   ];
