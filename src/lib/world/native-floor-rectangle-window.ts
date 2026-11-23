@@ -156,9 +156,14 @@ function sourceDefaultAnchorCounts(
   for(const record of records){
     if(!record||typeof record!=='object'||record.layoutId!==layoutId||
       record.gridIdNative!==gridIdNative||
-      !uintCheck(record.x)||!uintCheck(record.y)||
-      record.x>=sx||record.y>=sy)
+      !Number.isSafeInteger(record.x)||!Number.isSafeInteger(record.y))
       throw new TypeError('DB04_FLOOR_RECT_ORIGINAL_ANCHOR_INVALID');
+    // Source-default anchors outside the raw GridData extent can be valid
+    // metadata (or belong to another source-coordinate convention). Do not
+    // turn them into false in-bounds obstacle markers or abort the floor map.
+    if(record.x<0||record.y<0||record.x>=sx||record.y>=sy)
+      return{originalDefaultAnchorCounts:null,
+        originalDefaultAnchorStatus:'anchor_coordinates_not_compatible'};
     const at=record.y*sx+record.x;
     if(counts[at]===65535)
       throw new TypeError('DB04_FLOOR_RECT_ORIGINAL_ANCHOR_OVERFLOW');
