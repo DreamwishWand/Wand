@@ -16,11 +16,12 @@ function object(value:unknown):value is Record<string,unknown>{
   return value!==null&&typeof value==='object'&&!Array.isArray(value);
 }
 function validateNames(value:unknown):Readonly<Record<string,string>>{
-  if(!object(value))fail('UNVERIFIED_ITEM');
+  if(!object(value))throw new TypeError('DB01_PRIVATE_VIEW_UNVERIFIED_ITEM');
   const names:Record<string,string>={};
   for(const [locale,name] of Object.entries(value)){
     if(!LOCALES.has(locale)||typeof name!=='string'||
-      !name.trim()||name.length>500)fail('UNVERIFIED_NAME');
+      !name.trim()||name.length>500)
+      throw new TypeError('DB01_PRIVATE_VIEW_UNVERIFIED_NAME');
     names[locale]=name;
   }
   return Object.freeze(names);
