@@ -3,6 +3,7 @@
   import { base } from '$app/paths';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
   import AcquisitionEvidence from '$lib/collection/AcquisitionEvidence.svelte';
+  import RelatedQuests from '$lib/collection/RelatedQuests.svelte';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {watchWandLanguage} from '$lib/ui/preferences';
   import {editHistory,type HistoryDescription} from '$lib/ui/edit-history';
@@ -724,6 +725,7 @@
             {/if}
             {#if runtime?.metadata.snapshot==='steam-1.26.2-native-itemlist-v1' && !runtime.isOwnerLocal}
               <AcquisitionEvidence itemId={selectedItem.itemId} {locale}/>
+              <RelatedQuests itemId={selectedItem.itemId} {locale}/>
             {/if}
             <div class="inspector-section">
               <h3>Collection記録</h3>
