@@ -282,7 +282,8 @@ test('source native category selection never misclassifies Makeup as Dreamlight 
     nativeCategories:['Furniture'],areaCodes:[0],limit:0,
   });
   assert.equal(furniture.total,6746);
-  assert.equal(f.calls.w.length,3);
+  assert.equal(f.calls.w.length,4,
+    'two-step source page requests from earlier Makeup queries remain cached, Furniture-only performs no wardrobe IO');
   const empty=await c.search({nativeCategories:[]});
   assert.equal(empty.total,0);
   assert.deepEqual(empty.itemIds,[]);
