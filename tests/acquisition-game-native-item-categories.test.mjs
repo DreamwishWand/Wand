@@ -6,7 +6,7 @@ import {
 } from '../src/lib/acquisition/public-source-catalog.ts';
 import {
   indexGameNativeItemCategories,hasGameNativeItemCategoryEvidence,
-  DB02_GAME_NATIVE_ITEM_CATEGORIES_SCHEMA
+  DB02_GAME_NATIVE_ITEM_CATEGORIES_SCHEMA,DB02_ACQUISITION_CATEGORY_ORDER
 } from '../src/lib/acquisition/game-native-item-categories.ts';
 
 const STATIC=new URL('../static/',import.meta.url);
@@ -26,14 +26,15 @@ async function sourceIndex(){
   return {catalog,calls,fetcher};
 }
 
-test('4 game-native Item categories are lazy, unique and include only original source evidence',async()=>{
+test('six Owner-approved Item acquisition groups are lazy, unique and original-source-only',async()=>{
   const {catalog,calls}=await sourceIndex();
   assert.equal(calls.length,26);
   const promise=catalog.loadGameNativeItemCategories();
   assert.equal(catalog.loadGameNativeItemCategories(),promise);
   const index=await promise;
-  assert.equal(calls.length,28,'original Pet and Online metadata only, no external archive');
-  assert.equal(new Set(calls).size,28);
+  assert.equal(calls.length,30,
+    'reused native Pet, Online, recipe and activity metadata; no external archive');
+  assert.equal(new Set(calls).size,30);
   assert(index.originalGameFilesOnly);
   assert.equal(index.complete,false);
   assert.equal(index.schema,DB02_GAME_NATIVE_ITEM_CATEGORIES_SCHEMA);
@@ -45,6 +46,11 @@ test('4 game-native Item categories are lazy, unique and include only original s
   assert.equal(c.nativeStarPathRewardOccurrences,67);
   assert.equal(c.nativeGameEventRewardOccurrences,202);
   assert.equal(c.originalIapPackageRewardOccurrences,291);
+  assert.equal(c.originalRecipeResultOccurrences,1943);
+  assert.equal(c.originalActivityResultOccurrences,763);
+  assert.equal(c.originalQuestRewardOccurrences,395);
+  assert.equal(c.originalFriendshipRewardOccurrences,16);
+  assert.equal(c.nativePetOrdinaryRows,9);
   assert.equal(c.nativePetPremiumShopRows,95);
   assert.equal(c.nativePetStarPathRows,7);
   assert.equal(c.nativePetGameEventRows,9);
@@ -58,9 +64,10 @@ test('4 game-native Item categories are lazy, unique and include only original s
   assert.equal(c.gameSourceCoverageComplete,false);
   assert.equal(c.currentAvailabilityVerified,false);
   const types=[
-    'premium_shop','star_path','in_game_limited_event',
+    'ordinary_gameplay','premium_shop','star_path','in_game_limited_event',
     'real_time_limited_event','iap_package_reward'
   ];
+  assert.deepEqual(DB02_ACQUISITION_CATEGORY_ORDER,types);
   for(const kind of types){
     const ids=index.listItemIds(kind);
     assert(Object.isFrozen(ids));
@@ -76,12 +83,14 @@ test('4 game-native Item categories are lazy, unique and include only original s
         e.specificExternalCampaignVerified===false));
     }
   }
+  assert.equal(index.listItemIds('ordinary_gameplay').length,c.ordinaryGameplayItemIds);
   assert.equal(index.listItemIds('premium_shop').length,c.premiumShopItemIds);
   assert.equal(index.listItemIds('star_path').length,c.starPathItemIds);
   assert.equal(index.listItemIds('in_game_limited_event').length,c.inGameLimitedEventItemIds);
   assert.equal(index.listItemIds('real_time_limited_event').length,c.realTimeLimitedEventItemIds);
   assert.equal(index.listItemIds('iap_package_reward').length,c.iapPackageRewardItemIds);
   assert.equal(index.listItemIds().length,c.distinctClassifiedItemIds);
+  assert(index.listItemIds('ordinary_gameplay').length>=1912);
   assert(index.listItemIds('premium_shop').length>=186);
   assert(index.listItemIds('star_path').length>=7);
   assert(index.listItemIds('in_game_limited_event').length>=9);
@@ -123,7 +132,8 @@ test('game-native event, original Star Path and native Pet.Source map to source 
   const pets=await catalog.loadNativePetSources();
   for(const row of pets.classifications){
     const expected={
-      quest:null,timebending:null,event:'in_game_limited_event',
+      quest:'ordinary_gameplay',timebending:'ordinary_gameplay',
+      event:'in_game_limited_event',
       star_path:'star_path',premium_shop:'premium_shop',
       exclusive_promotion:'real_time_limited_event'
     }[row.category];
@@ -156,6 +166,40 @@ test('game-native event, original Star Path and native Pet.Source map to source 
   }
 });
 
+test('ordinary gameplay group includes source-exact recipe, activity, quest and friendship references without claiming availability',async()=>{
+  const {catalog}=await sourceIndex();
+  const index=await catalog.loadGameNativeItemCategories();
+  const sources=[
+    [await catalog.loadNativeRecipeResults(),'original_recipe_result_item_id'],
+    [await catalog.loadNativeActivityResults(),'original_activity_result_item_id'],
+    [catalog.questSource,'original_quest_reward_item_id']
+  ];
+  for(const [source,basis] of sources){
+    for(const origin of source.origins){
+      const row=index.getItem(origin.itemId);
+      assert(row.categories.includes('ordinary_gameplay'));
+      assert(row.evidence.some(x=>x.basis===basis&&
+        x.category==='ordinary_gameplay'&&x.originalCategoryOnly===false));
+      assert.equal(row.currentAvailabilityVerified,false);
+    }
+  }
+  for(const origin of catalog.eventFriendshipSource.origins){
+    if(origin.kind!=='friendship_reward')continue;
+    const item=index.getItem(origin.itemId);
+    assert(item.categories.includes('ordinary_gameplay'));
+    assert(item.evidence.some(e=>e.basis==='original_friendship_reward_item_id'));
+  }
+  const pets=await catalog.loadNativePetSources();
+  for(const family of ['quest','timebending']){
+    for(const id of pets.getCategoryItemIds(family)){
+      const item=index.getItem(id);
+      assert(item.categories.includes('ordinary_gameplay'));
+      assert(item.evidence.some(e=>e.originalCategoryOnly&&
+        e.basis==='original_pet_source_enum'&&e.category==='ordinary_gameplay'));
+    }
+  }
+});
+
 test('generic OnlineCategory Premium/TimeLimited never promotes an item into a shop or named external reward',async()=>{
   const {catalog,calls}=await sourceIndex();
   const index=await catalog.loadGameNativeItemCategories();
@@ -176,7 +220,7 @@ test('generic OnlineCategory Premium/TimeLimited never promotes an item into a s
     index.getItem(row.itemId).categories.length===0));
   assert.equal(index.coverage.explicitlyMappedTwitchDropItemIds,0);
   assert.equal(index.coverage.explicitlyMappedCampaignCodeItemIds,0);
-  assert.equal(calls.length,28);
+  assert.equal(calls.length,30);
   assert.throws(()=>index.getItem('01300000'),/INVALID_ITEM_ID/);
   assert.throws(()=>index.listItemIds('twitch_drop'),/INVALID_CATEGORY/);
 });
@@ -186,10 +230,13 @@ test('branded game-file-only source inputs are required; consumers share lazy me
   const [online,pets]=await Promise.all([
     catalog.loadNativeOnlineCategories(),catalog.loadNativePetSources()
   ]);
-  const build=(a,b,c,d,e,f,g)=>indexGameNativeItemCategories(a,b,c,d,e,f,g);
+  const recipes=await catalog.loadNativeRecipeResults();
+  const activities=await catalog.loadNativeActivityResults();
+  const build=(...inputs)=>indexGameNativeItemCategories(...inputs);
   const args=[
     catalog.origins,catalog.nativeShopSource,catalog.historicalNativeShopSource,
-    catalog.nativeIapSource,catalog.eventFriendshipSource,pets,online
+    catalog.nativeIapSource,catalog.eventFriendshipSource,pets,online,
+    recipes,activities,catalog.questSource
   ];
   assert.throws(()=>build(...args.slice(0,1),{...args[1]},...args.slice(2)),
     /ORIGINAL_SOURCE_REQUIRED/);
@@ -201,8 +248,10 @@ test('branded game-file-only source inputs are required; consumers share lazy me
     /ORIGINAL_SOURCE_REQUIRED/);
   assert.throws(()=>build(...args.slice(0,5),{...args[5]},...args.slice(6)),
     /ORIGINAL_SOURCE_REQUIRED/);
-  assert.throws(()=>build(...args.slice(0,6),{...args[6]}),
-    /ORIGINAL_SOURCE_REQUIRED/);
+  for(const i of [6,7,8,9]){
+    assert.throws(()=>build(...args.slice(0,i),{...args[i]},...args.slice(i+1)),
+      /ORIGINAL_SOURCE_REQUIRED/);
+  }
   const idx=build(...args);
   assert(hasGameNativeItemCategoryEvidence(idx));
   const result=await catalog.lookupWithGameNativeItemCategories(
