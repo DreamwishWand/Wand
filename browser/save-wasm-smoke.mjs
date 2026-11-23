@@ -1606,6 +1606,65 @@ try{
     .Inventory['777'].Amount,1);
   assert.equal(quantityProfile.World.GridCollection.Grids['101']
     .Objects['1'].X,45);
+  // A large, synthetic local Save must not trap user-editable records
+  // behind the old first-120-row cap in either workspace tab.
+  const largeSave=structuredClone(quantityProfile);
+  const largeInventory=largeSave.Player.ListInventories['100'].Inventory;
+  const largeGridObjects=largeSave.World.GridCollection.Grids['101'].Objects;
+  for(let i=0;i<150;i++){
+    largeInventory[String(800000+i)]={Amount:13};
+    const objectId=100+i;
+    largeGridObjects[String(objectId)]={
+      ID:objectId,ItemID:40000001,X:i,Y:i,
+      Orientation:'GridOrientation_Up'
+    };
+  }
+  await regular.getByLabel('セーブファイルを選択').setInputFiles({
+    name:'large-local-save.profile',mimeType:'application/octet-stream',
+    buffer:syntheticEncryptedP1g(largeSave)
+  });
+  const largeItems=regular.getByRole('region',{name:'セーブ内アイテム'});
+  await largeItems.getByRole('status').filter({hasText:'154件'})
+    .waitFor({timeout:30000});
+  const itemRows=largeItems.locator('ul.slot-list');
+  assert.equal(await itemRows.locator('li').count(),120);
+  assert.equal(await largeItems.getByRole('button',{
+    name:'所持アイテム 800149 を選択'
+  }).count(),0);
+  await itemRows.evaluate(el=>{
+    el.scrollTop=el.scrollHeight;
+    el.dispatchEvent(new Event('scroll'));
+  });
+  await page.waitForFunction(()=>document.querySelector(
+    '[aria-label="セーブ内アイテム"] ul.slot-list'
+  )?.querySelectorAll('li').length===154);
+  await largeItems.getByRole('button',{
+    name:'所持アイテム 800149 を選択'
+  }).click();
+  assert.equal(await regular.getByLabel('Item ID').inputValue(),'800149');
+  await largeItems.getByLabel('所持アイテム検索').fill('800149');
+  assert.equal(await itemRows.locator('li').count(),1);
+  await largeItems.getByLabel('所持アイテム検索').fill('');
+  assert.equal(await itemRows.locator('li').count(),120,
+    'filter reset must restore the bounded window');
+
+  await tabs.getByRole('button',{name:'配置編集'}).click();
+  const largeGrid=regular.getByRole('region',{name:'配置オブジェクト'});
+  await largeGrid.getByRole('status').filter({hasText:'153件'})
+    .waitFor({timeout:30000});
+  const gridRows=largeGrid.locator('ul.slot-list').first();
+  assert.equal(await gridRows.locator('li').count(),120);
+  await gridRows.evaluate(el=>{
+    el.scrollTop=el.scrollHeight;
+    el.dispatchEvent(new Event('scroll'));
+  });
+  await page.waitForFunction(()=>document.querySelector(
+    '[aria-label="配置オブジェクト"] ul.slot-list'
+  )?.querySelectorAll('li').length===153);
+  await largeGrid.getByLabel('配置アイテム検索').fill('never-a-real-id');
+  assert.equal(await gridRows.locator('li').count(),0);
+  await largeGrid.getByLabel('配置アイテム検索').fill('');
+  assert.equal(await gridRows.locator('li').count(),120);
   assert.deepEqual(errors,[],errors.join('\n'));
   await page.close();
   console.log('DB-05 browser: explicit JSON/P1G edited-copy downloads, native reopen, stale rejection, original preservation PASS');

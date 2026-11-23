@@ -9,6 +9,8 @@
     from './grid-combined-queues';
   import {queuedSaveExportMode}
     from './queued-save-export';
+  import {nextSaveListWindowLimit,SAVE_LIST_WINDOW_SIZE}
+    from './save-list-scroll';
   import {draftGridGroupQuarterTurn}
     from './grid-group-quarter-turn';
   import type {GridQuarterTurnDirection}
@@ -72,6 +74,7 @@
   let worldStatus:'not_observed'|'incompatible_structure'|'partial_inconclusive'|
     'observed_no_item_refs'|'saved_item_refs'='not_observed';
   let worldQuery='';
+  let worldVisibleLimit=SAVE_LIST_WINDOW_SIZE;
   let removedGridMarkers=0;
   type LocalGridInstance={
     localOrdinal:number;localGridOrdinal:number;itemId:string;
@@ -97,6 +100,7 @@
   let instanceStatus:GridInstancesReceipt['status']='not_observed';
   let instanceSampled=false;
   let instanceQuery='';
+  let gridVisibleLimit=SAVE_LIST_WINDOW_SIZE;
   type GridCoordinatePlan={
     localOrdinal:number;itemId:string;
     recordKind:'full'|'diff_modified';
@@ -254,12 +258,13 @@
 
   let slotState:'idle'|'loading'|'ready'|'error'='idle';
   let slotQuery='';
+  let slotVisibleLimit=SAVE_LIST_WINDOW_SIZE;
   let slotFilter:'all'|'inventory'|'chest'='all';
   let dbMap=new Map<string,Db00ItemContext>();
   let dbStatus:'idle'|'loading'|'ready'|'unavailable'='idle';
   let dbWorker:Worker|null=null;
   let catalogRevision=0;
-  $: visibleSlots=savedSlots.filter(slot=>{
+  $: matchedSlots=savedSlots.filter(slot=>{
     if(slotFilter!=='all' && slot.kind!==slotFilter)return false;
     const id=String(slot.itemId);
     const meta=dbMap.get(id);
@@ -267,20 +272,23 @@
     return !query || id.includes(query) ||
       (meta?.name??'').toLocaleLowerCase().includes(query) ||
       (meta?.category??'').toLocaleLowerCase().includes(query);
-  }).slice(0,120);
-  $: visibleGridInstances=gridInstances.filter(row=>{
+  });
+  $: visibleSlots=matchedSlots.slice(0,slotVisibleLimit);
+  $: matchedGridInstances=gridInstances.filter(row=>{
     const q=instanceQuery.trim().toLocaleLowerCase();
     const name=dbMap.get(row.itemId)?.name??'';
     return !q||row.itemId.includes(q)||
       name.toLocaleLowerCase().includes(q);
-  }).slice(0,120);
-  $: visibleWorldRefs=worldRefs.filter(row=>{
+  });
+  $: visibleGridInstances=matchedGridInstances.slice(0,gridVisibleLimit);
+  $: matchedWorldRefs=worldRefs.filter(row=>{
     const meta=dbMap.get(row.itemId);
     const q=worldQuery.trim().toLocaleLowerCase();
     return !q||row.itemId.includes(q)||
       (meta?.name??'').toLocaleLowerCase().includes(q)||
       (meta?.category??'').toLocaleLowerCase().includes(q);
-  }).slice(0,100);
+  });
+  $: visibleWorldRefs=matchedWorldRefs.slice(0,worldVisibleLimit);
   let snapshot:PreviewSnapshot|null=null;
   let downloadUrl:string|null=null;
   let downloadName='';
@@ -633,6 +641,9 @@
     dbWorker?.terminate();dbWorker=null;catalogRevision++;
     savedSlots=[];savedSlotsFile=null;slotState='idle';
     worldRefs=[];worldStatus='not_observed';worldQuery='';
+    slotVisibleLimit=SAVE_LIST_WINDOW_SIZE;
+    gridVisibleLimit=SAVE_LIST_WINDOW_SIZE;
+    worldVisibleLimit=SAVE_LIST_WINDOW_SIZE;
     removedGridMarkers=0;
     gridInstances=[];instanceState='idle';
     instanceStatus='not_observed';instanceSampled=false;instanceQuery='';
@@ -1314,8 +1325,11 @@
       /\.(profile|dat|bin)$/.test(name)?'auto':null;
     if(!format){slotState='error';return;}
     slotState='loading';
+    slotVisibleLimit=SAVE_LIST_WINDOW_SIZE;
+    worldVisibleLimit=SAVE_LIST_WINDOW_SIZE;
     savedSlots=[];savedSlotsFile=null;
     gridInstances=[];instanceState='idle';instanceQuery='';
+    gridVisibleLimit=SAVE_LIST_WINDOW_SIZE;
     coordinateSelection=null;coordinateQueue=[];orientationSelection=null;
     let bytes:Uint8Array|null=null;
     let worker:Worker|null=null;
@@ -1758,14 +1772,19 @@
     {#if slotState==='ready'}
       <div class="slot-search">
         <input bind:value={slotQuery} aria-label="所持アイテム検索"
+          on:input={()=>slotVisibleLimit=SAVE_LIST_WINDOW_SIZE}
           placeholder="アイテム名・Item IDを検索" />
-        <select bind:value={slotFilter} aria-label="所持アイテム分類">
+        <select bind:value={slotFilter} aria-label="所持アイテム分類"
+          on:change={()=>slotVisibleLimit=SAVE_LIST_WINDOW_SIZE}>
           <option value="all">すべて</option>
           <option value="inventory">Inventory</option>
           <option value="chest">Chest</option>
         </select>
       </div>
-      <ul class="slot-list">
+      <ul class="slot-list" on:scroll={(event)=>{
+        slotVisibleLimit=nextSaveListWindowLimit(
+          slotVisibleLimit,matchedSlots.length,event.currentTarget);
+      }}>
         {#each visibleSlots as slot,i}
           <li>
             <button type="button" class="slot-select" disabled={processing}
@@ -1787,9 +1806,6 @@
         <p class="slot-note">共通DBを読み込み中…</p>
       {:else if dbStatus==='unavailable'}
         <p class="slot-note">共通DBを参照できません。Item IDで編集できます。</p>
-      {/if}
-      {#if savedSlots.length>120 && visibleSlots.length===120}
-        <p class="slot-note">検索すると絞り込めます。</p>
       {/if}
     {/if}
   </section>
@@ -1841,8 +1857,12 @@
       </div>
       {#if worldStatus==='saved_item_refs'||worldStatus==='partial_inconclusive'}
         <input bind:value={worldQuery} aria-label="ワールド参照検索"
+          on:input={()=>worldVisibleLimit=SAVE_LIST_WINDOW_SIZE}
           placeholder="アイテム名・Item IDを検索" />
-        <ul class="slot-list">
+        <ul class="slot-list" on:scroll={(event)=>{
+          worldVisibleLimit=nextSaveListWindowLimit(
+            worldVisibleLimit,matchedWorldRefs.length,event.currentTarget);
+        }}>
           {#each visibleWorldRefs as row}
             <li class="world-reference-row">
               <span>
@@ -1884,8 +1904,12 @@
         {#if instanceState==='ready'}
           {#if gridInstances.length}
             <input bind:value={instanceQuery} aria-label="配置アイテム検索"
+              on:input={()=>gridVisibleLimit=SAVE_LIST_WINDOW_SIZE}
               placeholder="アイテム名・Item IDを検索" />
-            <ul class="slot-list">
+            <ul class="slot-list" on:scroll={(event)=>{
+              gridVisibleLimit=nextSaveListWindowLimit(
+                gridVisibleLimit,matchedGridInstances.length,event.currentTarget);
+            }}>
               {#each visibleGridInstances as object}
                 <li class="world-reference-row">
                   <span>
@@ -2211,9 +2235,6 @@
                   <small class="slot-note">同じ配置への異なる座標変更が重複しているか、合計が16件を超えています。競合する編集を削除してください。</small>
                 {/if}
               </div>
-            {/if}
-            {#if gridInstances.length>120&&visibleGridInstances.length===120}
-              <p class="slot-note">アイテム名・Item IDで絞り込めます。</p>
             {/if}
           {:else if instanceStatus==='not_observed'}
             <p class="slot-note">Grid情報はこのセーブにありません。</p>
