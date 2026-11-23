@@ -24,8 +24,10 @@ export function getNativeFootprintCandidateCells(catalog:WorldSourceCatalog,item
     throw new TypeError('Explicit native grid-local candidate anchor required');
   }
   if (!isRecord(options) ||
-      !['x_major', 'y_major'].includes(options.cellOrder) ||
-      !['top_left', 'center_floor'].includes(options.anchorModel)) {
+      typeof options.cellOrder!=='string' ||
+      !['x_major','y_major'].includes(options.cellOrder) ||
+      typeof options.anchorModel!=='string' ||
+      !['top_left','center_floor'].includes(options.anchorModel)) {
     throw new TypeError('Explicit unverified footprint projection hypothesis required');
   }
   const orientationCode=options.orientationCode as number;
