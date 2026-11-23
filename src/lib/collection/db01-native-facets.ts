@@ -21,26 +21,26 @@ export type CollectionDb01Row=readonly [itemId:number,tags:readonly CollectionDb
 // Native CollectionSubMenu definitions from the verified Steam v1.26.2
 // IL2CPP enum, kept independent of user-facing progress/visibility evidence.
 export const COLLECTION_DB01_SUBMENUS=Object.freeze([
-  {code:0,family:'Ingredients',native:'Crop'},
-  {code:1,family:'Fish',native:'Fish'},
-  {code:2,family:'Meals',native:'Meals'},
-  {code:3,family:'Furniture',native:'FurnitureSets'},
-  {code:4,family:'Clothing',native:'ClothingSets'},
   {code:6,family:'Memories',native:'Memories'},
   {code:7,family:'Characters',native:'Characters'},
-  {code:8,family:'Foraging',native:'Foraging'},
-  {code:9,family:'Gems',native:'Minerals'},
   {code:10,family:'Crafting',native:'Crafting'},
+  {code:15,family:'Companions',native:'Companions'},
+  {code:20,family:'Adventure Companions',native:'Sidekicks'},
+  {code:1,family:'Fish',native:'Fish'},
+  {code:8,family:'Foraging',native:'Foraging'},
+  {code:0,family:'Ingredients',native:'Crop'},
+  {code:2,family:'Meals',native:'Meals'},
+  {code:9,family:'Gems',native:'Minerals'},
+  {code:4,family:'Clothing',native:'ClothingSets'},
+  {code:3,family:'Furniture',native:'FurnitureSets'},
   {code:11,family:'Timebending',native:'TimeBending'},
   {code:12,family:'Board Game',native:'BoardGame'},
   {code:13,family:'Snippets',native:'Snippets'},
   {code:14,family:'Lorekeeper Tales',native:'Stories'},
-  {code:15,family:'Companions',native:'Companions'},
-  {code:16,family:'Mounts',native:'Mounts'},
-  {code:17,family:'Photo Gallery',native:'PhotoGallery'},
   {code:18,family:'Quest Puzzles',native:'QuestPuzzles'},
+  {code:17,family:'Photo Gallery',native:'PhotoGallery'},
+  {code:16,family:'Mounts',native:'Mounts'},
   {code:19,family:'Exhibition',native:'Exhibition'},
-  {code:20,family:'Adventure Companions',native:'Sidekicks'},
 ] as const);
 export type CollectionDb01SubmenuCode=typeof COLLECTION_DB01_SUBMENUS[number]['code'];
 const nativeCodeSet=new Set<number>(COLLECTION_DB01_SUBMENUS.map(x=>x.code));
