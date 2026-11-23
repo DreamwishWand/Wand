@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
-import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.mjs';
+import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.ts';
 import {
   STARPATH_GOALS_SCHEMA,STARPATH_GOALS_SHA,STARPATH_GOALS_BYTES,
   verifyPublicStarpathGoals,loadPublicStarpathGoals,starpathGoalLabel,
