@@ -54,6 +54,13 @@ test('DB-01 source native filtering is a narrow projection, not a second Item ma
   // unclassified bucket must resolve to six distinct native type groups.
   assert.equal(raw.activityTypeItemCount,4050);
   assert.equal(index.activityTypesByItem.size,4050);
+  assert.ok(raw.universeSourceItemCount>0);
+  assert.equal(index.universesByItem.size,raw.universeSourceItemCount);
+  assert.ok(index.itemsByUniverse.size>0&&index.itemsByUniverse.size<=67);
+  console.log('DB01_AVAILABLE_UNIVERSE_KEYS',index.itemsByUniverse.size,
+    [...index.itemsByUniverse.keys()].sort().join(','));
+  for(const [key,ids] of index.itemsByUniverse)
+    assert.ok(ids.every(id=>index.universesByItem.get(id)?.includes(key)));
   assert.equal(index.itemsByActivityType.size,15);
   assert.deepEqual([...index.activityTypeNames.entries()].sort((a,b)=>a[0]-b[0]),[
     [0,'Default'],[2,'Crop'],[3,'Meal'],[4,'Seed'],[8,'Flower'],
