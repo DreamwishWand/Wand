@@ -4,7 +4,11 @@ import {createCipheriv} from 'node:crypto';
 import {deflateRawSync} from 'node:zlib';
 import {decodeP1gPackagedProfile,p1gPackagedProfileCodec} from '../src/lib/collection/private-p1g-codec.js';
 import {createSavedStorePreview, attachHistoricalStoreLabels} from '../src/lib/collection/saved-store-preview.mjs';
-import {inspectEncryptedSavedStore} from '../src/lib/collection/saved-store-worker-core.mjs';
+import {inspectEncryptedSavedStore as inspectEncryptedSavedStoreCore}
+  from '../src/lib/collection/saved-store-worker-core.mjs';
+import {projectRustDiscoveryText} from './helpers/rust-collection-discovery.mjs';
+const inspectEncryptedSavedStore=(source,decoder=decodeP1gPackagedProfile)=>
+  inspectEncryptedSavedStoreCore(source,decoder,projectRustDiscoveryText);
 import {inspectLocalDb04SaveJoin} from '../src/lib/collection/saved-world-db04-join-worker-core.mjs';
 import {
   makeCollectionDb04ZipFixture,TEST_DB04_LAYOUT,TEST_DB04_GRID
@@ -117,7 +121,7 @@ test('synthetic encrypted P1G keeps native discovery booleans and excludes categ
  assert.ok(!json.includes('CollectionDefinitionID'));
  assert.ok(!json.includes('GroupIndex'));
  assert.equal(result.discovery.ownershipVerified,false);
- const {sanitizeSavedCollectionDiscovery}=await import('../src/lib/collection/saved-collection-discovery.mjs');
+ const {sanitizeSavedCollectionDiscovery}=await import('../src/lib/collection/saved-collection-discovery.ts');
  assert.deepEqual(sanitizeSavedCollectionDiscovery(structuredClone(result.discovery)),result.discovery);
 });
 
