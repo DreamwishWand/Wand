@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.mjs';
+import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.ts';
 import {resolveStarpathDutyLink,starpathDutyHref} from '../src/lib/guide/starpath-duty-link.ts';
 
 const load=async()=>verifyPublicStarpath(JSON.parse(await readFile(
