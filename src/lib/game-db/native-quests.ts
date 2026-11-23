@@ -142,6 +142,8 @@ export function createDb00QuestReader(
     index.counts.objectives===11782 &&
     index.quests.length===733 &&
     conditions?.schema===PUBLIC_QUEST_CONDITIONS_SCHEMA &&
+    Object.isFrozen(conditions) &&
+    Object.isFrozen(conditions.coverage) &&
     conditions.targetVersion==='1.26.2' &&
     conditions.sourceProjectionVersion==='1.26.1' &&
     conditions.coverage.quests===733 &&
@@ -149,6 +151,8 @@ export function createDb00QuestReader(
     conditions.coverage.runtimePrerequisitesVerified===false &&
     conditions.coverage.sourceIsStaticNotPlayerProgress===true &&
     targets?.schema===DB03_QUEST_TARGET_REVERSE_SCHEMA &&
+    Object.isFrozen(targets) &&
+    Object.isFrozen(targets.coverage) &&
     targets.coverage.knownQuests===733 &&
     targets.coverage.sourceTargetObjectives===4869 &&
     targets.coverage.sourceCandidateOccurrences===4897 &&
@@ -158,6 +162,8 @@ export function createDb00QuestReader(
     targets.coverage.mandatoryRequirementVerified===false &&
     targets.coverage.playerProgressVerified===false &&
     rewards?.schema===DB03_QUEST_REWARDS_SCHEMA &&
+    Object.isFrozen(rewards) &&
+    Object.isFrozen(rewards.coverage) &&
     rewards.coverage.quests===733 &&
     rewards.coverage.questRowsWithAnyRewardEvidence===247 &&
     rewards.coverage.additionalItemOccurrences===330 &&
