@@ -1659,28 +1659,122 @@ try{
     .Inventory['777'].Amount,1);
   assert.equal(quantityProfile.World.GridCollection.Grids['101']
     .Objects['1'].X,45);
-  // Leaving a queued edit, including an already exported copy, cannot
-  // silently discard drafts: both file close and clear-all require consent.
+  // A verified combined copy can be reopened in memory without uploading or
+  // selecting a downloaded file. Cancel must preserve BOTH draft and link.
+  // Confirm must replace the active File, clear all optimistic drafts and
+  // force Rust/WASM to inspect the actual new encrypted P1G bytes.
+  const reopen=unifiedSave.getByRole('button',{
+    name:'このコピーを続けて編集'
+  });
+  page.once('dialog',dialog=>dialog.dismiss());
+  await reopen.click();
+  assert.match(await unifiedSave.innerText(),/数量1件・配置1件/);
+  assert.equal(await regularLink.count(),1);
+  // Closing the source, even after a downloaded copy exists, still requires consent.
   page.once('dialog',dialog=>dialog.dismiss());
   await regular.getByRole('button',{name:'セーブを閉じる'}).click();
   assert.match(await unifiedSave.innerText(),/数量1件・配置1件/);
-  assert.equal(await regular.getByLabel('変更後の数量').inputValue(),'251');
   page.once('dialog',dialog=>dialog.dismiss());
   await unifiedSave.getByRole('button',{name:'変更をすべて破棄'}).click();
-  assert.match(await unifiedSave.innerText(),/数量1件・配置1件/);
-  assert.equal(await unifiedSave.getByRole('link',{
-    name:'編集済みコピーをダウンロード'
-  }).count(),1);
+  assert.equal(await regularLink.count(),1);
   page.once('dialog',dialog=>dialog.accept());
-  await unifiedSave.getByRole('button',{name:'変更をすべて破棄'}).click();
-  assert.equal(await regular.getByRole('region',{
-    name:'編集済みセーブの出力'
-  }).count(),0);
+  await reopen.click();
+  await regular.locator('.active-save-file')
+    .filter({hasText:'.wand-edited.profile'}).waitFor({timeout:30000});
+  await ownedPanel.getByRole('status').filter({hasText:'4件'})
+    .waitFor({timeout:30000});
+  assert.equal(await unifiedSave.count(),0,
+    'opening a validated copy clears the old quantity and Grid queues');
   assert.equal(await regular.getByRole('region',{
     name:'一括数量変更'
   }).count(),0);
+  assert.equal(await regularLink.count(),0,
+    'old output object URL must no longer be available after reopening');
+  const copiedSlot=regular.getByRole('button',{
+    name:'所持アイテム 777 を選択'
+  });
+  await copiedSlot.click();
+  assert.equal(await regular.getByLabel('現在の数量').inputValue(),'251',
+    'new session must read the edited amount from the actual P1G copy');
+  assert.equal(await regular.getByLabel('変更後の数量').inputValue(),'',
+    'previous replacement must not be carried forward as a new draft');
+  await tabs.getByRole('button',{name:'配置編集'}).click();
+  const copiedGrid=regular.getByRole('region',{name:'配置オブジェクト'});
+  await copiedGrid.getByRole('button',{name:'配置 #1 の座標を編集'})
+    .waitFor({timeout:30000});
+  assert.match(await copiedGrid.innerText(),/X 81 \/ Y 22/,
+    'new session must read edited Grid coordinates from combined P1G copy');
+
+  // Second edit: the last copy is now the immutable source. The next export
+  // uses the quantity-only Rust path and preserves previously edited Grid.
+  await tabs.getByRole('button',{name:'Inventory / Chest'}).click();
+  await copiedSlot.click();
+  await regular.getByLabel('変更後の数量').fill('252');
+  await regular.getByRole('button',{name:'複数編集に追加'}).click();
+  assert.match(await unifiedSave.innerText(),/数量1件・配置0件/);
+  await unifiedSave.getByRole('button',{name:'すべての変更を検証'}).click();
+  await unifiedSave.getByRole('status').filter({
+    hasText:'Rust/WASM検証済み'
+  }).waitFor({timeout:30000});
+  page.once('dialog',dialog=>dialog.accept());
+  await unifiedSave.getByRole('button',{
+    name:'すべての変更をコピーに出力'
+  }).click();
+  const secondLink=unifiedSave.getByRole('link',{
+    name:'編集済みコピーをダウンロード'
+  });
+  await secondLink.waitFor({timeout:30000});
+  const secondEvent=page.waitForEvent('download');
+  await secondLink.click();
+  const secondDownload=await secondEvent;
+  assert.match(secondDownload.suggestedFilename(),/\.wand-edited\.profile$/);
+  assert.doesNotMatch(secondDownload.suggestedFilename(),
+    /\.wand-edited\.wand-edited\./,
+    're-editing a copy must not duplicate the edited filename suffix');
+  const secondCopy=readSyntheticEncryptedP1g(
+    await readFile(await secondDownload.path())
+  );
+  assert.equal(secondCopy.Player.ListInventories['100']
+    .Inventory['777'].Amount,252);
+  assert.deepEqual([
+    secondCopy.World.GridCollection.Grids['101'].Objects['1'].X,
+    secondCopy.World.GridCollection.Grids['101'].Objects['1'].Y
+  ],[81,22]);
+  assert.equal(secondCopy.World.GridCollection.Grids['101']
+    .Objects['1'].PrivateState,'do-not-export');
+  assert.equal(regularCopy.Player.ListInventories['100']
+    .Inventory['777'].Amount,251,
+    'prior generated copy must remain independently unchanged');
+  assert.equal(quantityProfile.Player.ListInventories['100']
+    .Inventory['777'].Amount,1,
+    'original input must remain independently unchanged');
+
+  // The quantity-only Blob follows the same direct reopen path, not a
+  // privileged shortcut: it must re-inspect and start with no queued edits.
+  page.once('dialog',dialog=>dialog.accept());
+  await unifiedSave.getByRole('button',{
+    name:'このコピーを続けて編集'
+  }).click();
+  await ownedPanel.getByRole('status').filter({hasText:'4件'})
+    .waitFor({timeout:30000});
+  assert.equal(await unifiedSave.count(),0);
+  await copiedSlot.click();
+  assert.equal(await regular.getByLabel('現在の数量').inputValue(),'252');
+  // Accepting clear-all leaves the currently reopened copy intact.
+  await regular.getByLabel('変更後の数量').fill('253');
+  await regular.getByRole('button',{name:'複数編集に追加'}).click();
+  page.once('dialog',dialog=>dialog.dismiss());
+  await unifiedSave.getByRole('button',{name:'変更をすべて破棄'}).click();
+  assert.match(await unifiedSave.innerText(),/数量1件・配置0件/);
+  page.once('dialog',dialog=>dialog.accept());
+  await unifiedSave.getByRole('button',{name:'変更をすべて破棄'}).click();
+  assert.equal(await unifiedSave.count(),0);
   assert.equal(await ownedPanel.getByRole('status').filter({hasText:'4件'}).count(),1,
-    'clearing queued edits must keep the currently opened local Save');
+    'clearing new edits keeps the currently reopened edited copy');
+  assert.equal(await regular.getByLabel('現在の数量').count(),0,
+    'clearing drafts closes the amount editor, not the active copied Save');
+  await copiedSlot.click();
+  assert.equal(await regular.getByLabel('現在の数量').inputValue(),'252');
   // A large, synthetic local Save must not trap user-editable records
   // behind the old first-120-row cap in either workspace tab.
   const largeSave=structuredClone(quantityProfile);
