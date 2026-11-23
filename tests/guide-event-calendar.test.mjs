@@ -92,12 +92,16 @@ test('source-native taxonomy separates Story, Realm, Village, Repeatable and uns
   assert.equal(filterPublicQuests(index,{section:'story'}).total,166);
   assert.equal(filterPublicQuests(index,{section:'realm'}).total,61);
   assert.equal(filterPublicQuests(index,{section:'friendship'}).total,341);
-  assert.equal(filterPublicQuests(index,{section:'repeatable'}).total,75);
-  assert.equal(filterPublicQuests(index,{section:'other'}).total,90);
+  assert.equal(filterPublicQuests(index,{section:'event'}).total,66);
+  assert.equal(filterPublicQuests(index,{section:'daily'}).total,9);
+  assert.equal(filterPublicQuests(index,{section:'special'}).total,70);
+  assert.equal(filterPublicQuests(index,{section:'premium'}).total,19);
+  assert.equal(filterPublicQuests(index,{section:'tutorial'}).total,1);
+  assert.equal(filterPublicQuests(index,{section:'other'}).total,0);
   assert.equal(publicQuestSection(index.quests.find(r=>r.id==='2070000620')),'story');
   assert.equal(publicQuestSection(index.quests.find(r=>r.id==='2070000651')),'realm');
   assert.equal(publicQuestSection(index.quests.find(r=>r.id==='2070000653')),'friendship');
-  assert.equal(publicQuestSection(index.quests.find(r=>r.id==='2070000865')),'other');
+  assert.equal(publicQuestSection(index.quests.find(r=>r.id==='2070000865')),'special');
   assert.throws(()=>filterPublicQuests(index,{section:'fictional'}),/invalid search/);
 });
 test('reviewed actionable riddle solutions bind to native season+Task IDs, reject drift and never invent others',async()=>{
