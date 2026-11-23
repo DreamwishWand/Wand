@@ -776,6 +776,28 @@ try{
   assert.equal(await floorPanel.locator('canvas').count(),1);
   await floorPanel.getByRole('button',{name:'矩形全体の条件'}).click();
   assert.equal(await floorPanel.locator('canvas').count(),1);
+  // The floor map now supports source-local inspection of original default
+  // object raw GridLayers; these bits NEVER represent valid placement.
+  const inspectMap=floorPanel.getByRole('button',{
+    name:'地形マップから原本初期配置のマスを調べる'
+  });
+  await inspectMap.click({position:{x:24,y:24}});
+  const originalLayers=floorPanel.locator('.local-inspection');
+  await originalLayers.waitFor({timeout:20000});
+  assert.match(await originalLayers.innerText(),/原本の初期オブジェクト/);
+  assert.match(await originalLayers.innerText(),/定義上の寄与セル/);
+  assert.match(await originalLayers.innerText(),/配置可能・不可能は示しません/);
+  assert.equal(await originalLayers.locator('canvas').count(),1);
+  const areaSummary=floorPanel.locator('.area-breakdown');
+  await areaSummary.locator('summary').click();
+  assert.match(await areaSummary.innerText(),/原本エリア/);
+  assert.match(await areaSummary.innerText(),/矩形一致地点/);
+  // All World source components must stay within a 320px phone viewport.
+  await page.setViewportSize({width:320,height:720});
+  assert.equal(await page.evaluate(()=>
+    document.documentElement.scrollWidth<=window.innerWidth+2),true,
+    'DB04_INSPECT_FLOOR_320PX_OVERFLOW');
+  await page.setViewportSize({width:1280,height:800});
 
   // Reject a wrong original game version without showing previously loaded
   // source records. The test fixture is entirely synthetic and local.
