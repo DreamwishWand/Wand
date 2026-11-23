@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {collectionScopeOptions} from '../src/lib/collection/scope-options.ts';
+import {collectionScopeOptions,collectionItemScopeLabels} from '../src/lib/collection/scope-options.ts';
 
 const WORLD='verified_game_collection_area_item_membership';
 const UNIVERSE='verified_game_collection_universe_item_membership';
@@ -53,4 +53,27 @@ test('malformed and absent source label arrays cannot fabricate visible choices'
   assert.deepEqual(collectionScopeOptions(emptyNames,'world',facets,'ja'),[]);
   assert.deepEqual(collectionScopeOptions(null,'world',facets,'ja'),[]);
   assert.deepEqual(collectionScopeOptions(meta({world:WORLD}),'world',facets,'xx'),[]);
+});
+
+test('Item inspector never presents unreviewed source tags as Collection membership',()=>{
+  const item={
+    worlds:['isHoneywood','IsDreamlightValley','UnknownSourceTag','isHoneywood'],
+    universes:['Winnie','Mickey','UnknownSourceTag'],
+    expansions:['unverified-original-expansion-tag'],
+  };
+  const absent=collectionItemScopeLabels(item,
+    collectionScopeOptions(meta(),'world',facets,'ja'),
+    collectionScopeOptions(meta(),'universe',facets,'ja'));
+  assert.deepEqual(absent,{worlds:[],universes:[]});
+  const proven=collectionItemScopeLabels(item,
+    collectionScopeOptions(meta({world:WORLD}),'world',facets,'ja'),
+    collectionScopeOptions(meta({universe:UNIVERSE}),'universe',facets,'ja'));
+  assert.deepEqual(proven,{
+    worlds:['ハニーグローの森','ドリームライトバレー'],
+    universes:['ミッキー＆フレンズ'],
+  });
+  assert.deepEqual(collectionItemScopeLabels(null,[],[]),{worlds:[],universes:[]});
+  assert.equal(Object.isFrozen(proven),true);
+  assert.equal(Object.isFrozen(proven.worlds),true);
+  assert.equal(Object.isFrozen(proven.universes),true);
 });

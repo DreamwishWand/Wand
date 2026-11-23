@@ -503,3 +503,32 @@ The preview uses small markers for nonzero original default layer
 values and dashed edges for possibly unresolved source definitions.
 Neither symbol is a gameplay occupancy assertion. Raw binaries, actual
 source Item masks and private Saves remain outside the public repo.
+
+## Original-Grid candidate default-layer intersection (read-only)
+
+The original Steam v1.26.2 `Meta.Grids.Grid.HasConflicts`
+(token `0x0600F041`, RVA `0x042B1A40`) lazily initializes
+GridCells at `0x042E9930` and invokes the distinct
+`Meta.Grids.GridExtensions.VerifyConflicts` path at
+`0x042E5EC0`. `Grid.GetConflicts` (token `0x0600F042`,
+RVA `0x042B1B20`) also delegates to that native helper.
+The bounded native 1.26.1/1.26.2 instruction comparisons for
+`Grid.HasConflicts` (51 instructions, 46 identical, five relative-only)
+and `Grid.GetConflicts` (63 instructions, 54 identical, nine relative-only)
+show **no nonrelative instruction changes**. These calls are **separate**
+from `GridCells.GetLayersForPosition`; raw common GridLayer bits
+must **not** be treated as native `HasConflicts`, placement permission,
+or actual runtime occupancy.
+
+The new `probeOriginalSourceDefaultCandidate` accepts an exact
+original `(SceneLayout, Grid.ID, GridObject.ID, Item.ID)` and an
+explicit source Grid-local candidate X/Y and 16-way orientation.
+It checks only the original Item-definition **default** oriented
+boundary arithmetic, excludes the original GridObject from the
+**other original object** default layer OR (avoids self-overlap),
+and returns bounded source-local cells with raw bit intersections and
+separate potentially unresolved source-definition counts.
+It never changes original source, GridCells or player Saves. Unknown
+runtime GridArea overrides, live GridCells membership, valid floor
+types, actual collision, movable/immovable status and complete game
+placement validation remain unverified; no Save writer is authorized.

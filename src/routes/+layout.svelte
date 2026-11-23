@@ -256,8 +256,7 @@
               $localSaveSession.collectionStatus==='invalid'?copy.saveInvalid:copy.saveNotParsed}</div>
             <div class="shell-menu-divider"></div>
             <button type="button" on:click={rawSaveBackup}><WandIcon name="download" size={18}/>{copy.saveBackupOriginal}</button>
-            <button type="button" disabled title={copy.saveEditUnavailable}><WandIcon name="download" size={18}/>{copy.saveExportEdited}</button>
-            <button type="button" on:click={()=>{saveMenuOpen=false;void goto(base+'/save/preview/');}}>
+            <button type="button" on:click={()=>{saveMenuOpen=false;void goto(base+'/save/');}}>
               <WandIcon name="edit" size={18}/>{copy.saveOpenEditor}
             </button>
             <button type="button" on:click={openGlobalSavePicker}><WandIcon name="folder" size={18}/>{copy.saveReplace}</button>
