@@ -13,6 +13,10 @@ import {
   type OriginDatabase,type ItemOrigin,type OriginKind
 } from './origins.ts';
 import {
+  hasPinnedExpandedNativeItemSourceEvidence,
+  type ExpandedNativeItemSourceBrowser
+} from './item-source-browser.ts';
+import {
   hasPinnedNativeOnlineCategoryEvidence,
   type NativeOnlineCategoryIndex,type NativeOnlineCategoryRow
 } from './public-online-categories.ts';
@@ -73,6 +77,10 @@ export interface DistributionScopeIndex {
     nativeOnlineCategoryRows:2198;
     nativePetSourceRows:134;
     existingSourceOriginRoutes:1255;
+    nativeRecipeDefinitionRoutes:number;
+    nativeActivityResultRoutes:number;
+    indexedOriginalSourceRoutes:number;
+    expandedNativeSourceEvidenceLoaded:boolean;
     nameOnlyCandidateRelations:number;
     distinctItemsWithSourceEvidence:number;
     ordinaryGameplayItemIds:number;
@@ -128,15 +136,18 @@ function sortedIds(ids:Iterable<string>):readonly string[] {
 }
 
 /**
- * Full evidence crosswalk on demand. All three native/online inputs must have
+ * Full evidence crosswalk on demand. All native/online inputs must have
  * passed their original-source integrity checks in the same browser session.
+ * The optional expanded browser provides all 1943 recipe and 763 activity
+ * result links, without re-deriving them or promoting an actual unlock claim.
  * Does not mutate the baseline OriginDatabase or add artificial ItemOrigins.
  */
 export function indexDistributionScopes(
   origins:OriginDatabase,
   online:NativeOnlineCategoryIndex,
   pets:NativePetSourceIndex,
-  nameCandidates:PublicOnlineNameCandidateIndex
+  nameCandidates:PublicOnlineNameCandidateIndex,
+  expanded?:ExpandedNativeItemSourceBrowser
 ):DistributionScopeIndex{
   check(origins?.schema===ORIGIN_SCHEMA&&
     origins.originCoverageComplete===false&&
@@ -148,8 +159,25 @@ export function indexDistributionScopes(
     nameCandidates?.schema===DB02_PUBLIC_NAME_CANDIDATE_SCHEMA&&
     nameCandidates.evidence==='name_only_no_grant_or_sale_proof'&&
     nameCandidates.coverage.verifiedOnlineAcquisitionLinks===0&&
-    typeof nameCandidates.listCandidateItemIds==='function',
+    typeof nameCandidates.listCandidateItemIds==='function'&&
+    (expanded===undefined||
+      hasPinnedExpandedNativeItemSourceEvidence(expanded)&&
+      expanded.coverage.baselineLedgerSourceRoutes===1255&&
+      expanded.coverage.originalRecipeDefinitionRoutes===1943&&
+      expanded.coverage.originalActivityResultRoutes===763&&
+      expanded.coverage.combinedSourceRoutes===3961&&
+      expanded.coverage.originalSourceCoverageComplete===false),
     'PINNED_SOURCE_REQUIRED');
+  // Prevent accidentally joining a valid expanded index built from a
+  // different ledger/release: every original source relation must be identical.
+  if(expanded!==undefined){
+    for(const id of origins.listLinkedItemIds()){
+      const expected=origins.getItem(id).origins;
+      const actual=expanded.getItem(id).origins;
+      check(expected.every(origin=>actual.includes(origin)),
+        'EXPANDED_LEDGER_MISMATCH');
+    }
+  }
 
   const byItem=new Map<string,DistributionScopeEvidence[]>();
   const byScope=new Map<DistributionScope,Set<string>>(
@@ -185,9 +213,12 @@ export function indexDistributionScopes(
       'native_pet_source_category',row,false,false,false);
   }
   let sourceRoutes=0;
-  for(const id of origins.listLinkedItemIds()){
-    const item=origins.getItem(id);
-    check(item.itemId===id&&item.originCoverageComplete===false,
+  const linkedIds=expanded?.knownLinkedItemIds??origins.listLinkedItemIds();
+  for(const id of linkedIds){
+    const item=expanded===undefined?origins.getItem(id):expanded.getItem(id);
+    check(item.itemId===id&&
+      (expanded===undefined?item.originCoverageComplete===false:
+        item.availabilityVerified===false),
       'ORIGIN_ITEM_MISMATCH');
     for(const row of item.origins){
       const scope=scopedOrigin(row);
@@ -197,7 +228,7 @@ export function indexDistributionScopes(
       sourceRoutes++;
     }
   }
-  check(sourceRoutes===1255,'ORIGIN_CENSUS');
+  check(sourceRoutes===(expanded===undefined?1255:3961),'ORIGIN_CENSUS');
   let nameRelations=0;
   const knownNameIds=nameCandidates.listCandidateItemIds();
   check(Object.isFrozen(knownNameIds)&&
@@ -236,6 +267,10 @@ export function indexDistributionScopes(
     nativeOnlineCategoryRows:2198 as const,
     nativePetSourceRows:134 as const,
     existingSourceOriginRoutes:1255 as const,
+    nativeRecipeDefinitionRoutes:expanded===undefined?0:1943,
+    nativeActivityResultRoutes:expanded===undefined?0:763,
+    indexedOriginalSourceRoutes:sourceRoutes,
+    expandedNativeSourceEvidenceLoaded:expanded!==undefined,
     nameOnlyCandidateRelations:nameRelations,
     distinctItemsWithSourceEvidence:allIds.length,
     ordinaryGameplayItemIds:scopeIds.get('ordinary_gameplay')!.length,
