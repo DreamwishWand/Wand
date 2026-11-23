@@ -11,52 +11,68 @@
   import {guideTimelineWindow,guideTimelineRows,
     type GuideTimelinePhase
   } from '$lib/guide/event-timeline.ts';
+  import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences.ts';
+  import {guideTimelineCopy,GUIDE_LOCALES} from '$lib/guide/timeline-copy.ts';
 
   let events:GuideCalendarEvent[]=[];
   let loading=true;
   let loadError='';
   let now=Date.now();
   let viewerZone='UTC';
-  let viewerLocale='ja-JP';
-  $: formatLocal=(utc:string)=>viewerEventDateTime(utc,viewerZone,viewerLocale);
+  let language:WandLanguage='ja';
   let weeks:5|9=5;
   let offsetWeeks=0;
   let selectedId:string|null=null;
   let timelineScroller:HTMLDivElement|null=null;
-
-  $: windowRange=guideTimelineWindow(now,weeks,offsetWeeks);
+  $: viewerLocale=GUIDE_LOCALES[language];
+  $: copy=guideTimelineCopy(language);
+  $: formatLocal=(utc:string)=>viewerEventDateTime(utc,viewerZone,viewerLocale);
+  $: windowRange=guideTimelineWindow(now,weeks,offsetWeeks,viewerZone);
   $: visibleRows=guideTimelineRows(events,windowRange);
   $: selected=events.find(event=>event.id===selectedId)??null;
-  $: rangeText=shortDay(windowRange.firstDay)+' – '+shortDay(windowRange.lastDay);
-  const weekdays=['日','月','火','水','木','金','土'];
+  $: rangeText=shortDay(windowRange.firstDay,viewerLocale)+' – '+shortDay(windowRange.lastDay,viewerLocale);
+  $: zoneLabel=new Intl.DateTimeFormat(viewerLocale,{timeZone:viewerZone,timeZoneName:'short'})
+    .formatToParts(new Date(now)).find(p=>p.type==='timeZoneName')?.value??viewerZone;
 
-  function shortDay(day:string):string{
-    const parts=day.split('-');
-    return Number(parts[1])+'/'+Number(parts[2]);
+  function shortDay(day:string,locale=viewerLocale):string{
+    return new Intl.DateTimeFormat(locale,{timeZone:'UTC',month:'short',day:'numeric'})
+      .format(new Date(day+'T12:00:00Z'));
+  }
+  function longDay(day:string):string{
+    return new Intl.DateTimeFormat(viewerLocale,{
+      timeZone:'UTC',year:'numeric',month:'short',day:'numeric'
+    }).format(new Date(day+'T12:00:00Z'));
+  }
+  function weekdayLabel(day:string):string{
+    return new Intl.DateTimeFormat(viewerLocale,{timeZone:'UTC',weekday:'narrow'})
+      .format(new Date(day+'T12:00:00Z'));
+  }
+  function displayCategory(event:GuideCalendarEvent):'starpath'|'floating'|'valley'{
+    return event.kind==='starpath'?'starpath':event.category;
   }
   function eventHref(event:GuideCalendarEvent):string{
     return event.kind==='starpath'
       ?starpathSeasonHref(base,event.sourceSeasonId):`${base}${event.href}`;
   }
   function eventIcon(event:GuideCalendarEvent):string{
-    return event.kind==='starpath'?'star':'world';
+    return event.kind==='starpath'?'star':event.category==='floating'?'world':'plant';
   }
   function phaseName(phase:GuideTimelinePhase):string{
-    return phase==='task'?'タスク期間':phase==='exchange'?'交換期間':'開催日';
+    return phase==='task'?copy.task:phase==='exchange'?copy.exchange:copy.events;
   }
   function stateName(event:GuideCalendarEvent):string{
     switch(eventScheduleState(event,now)){
-      case 'task-window':return 'タスク期間内';
-      case 'exchange-only':return '交換期間内';
-      case 'date-window':return '開催日';
-      case 'upcoming':return '開始前';
-      default:return '終了';
+      case 'task-window':return copy.task;
+      case 'exchange-only':return copy.exchange;
+      case 'date-window':return copy.active;
+      case 'upcoming':return copy.upcoming;
+      default:return copy.ended;
     }
   }
   function eventBoundary(event:GuideCalendarEvent):string{
     if(event.precision==='date-only')
-      return `${event.startDay} ～ ${event.endDayInclusive}（時刻未確認）`;
-    return `${formatLocal(event.startUtc)} ～ ${formatLocal(event.endUtcExclusive)}`;
+      return `${longDay(event.startDay)} – ${longDay(event.endDayInclusive)} (${copy.dateUnknown})`;
+    return `${formatLocal(event.startUtc)} – ${formatLocal(event.endUtcExclusive)}`;
   }
   function showEvent(id:string){selectedId=selectedId===id?null:id;}
   function navigate(direction:-1|1){
@@ -68,23 +84,26 @@
   function changeZoom(value:5|9){
     if(weeks===value)return;
     weeks=value;offsetWeeks=0;selectedId=null;
-    void centreToday();
+    void positionToday();
   }
-  async function centreToday(){
+  async function positionToday(){
     await tick();
     const scroller=timelineScroller;
     const today=scroller?.querySelector('.date-slot.today') as HTMLElement|null;
-    if(!scroller||!today)return;
-    // Use viewport-relative rectangles: offsetLeft depends on layout/offsetParent.
-    // The outer page never scrolls; only the event timeline moves.
-    const scrollerBox=scroller.getBoundingClientRect();
-    const dayBox=today.getBoundingClientRect();
-    scroller.scrollLeft+=dayBox.left+dayBox.width/2-
-      (scrollerBox.left+scrollerBox.width/2);
+    const line=scroller?.querySelector('.today-line') as HTMLElement|null;
+    const sidebar=scroller?.querySelector('.date-label') as HTMLElement|null;
+    if(!scroller||!today||!sidebar)return;
+    const box=scroller.getBoundingClientRect();
+    const side=sidebar.getBoundingClientRect().width;
+    const marker=line?line.getBoundingClientRect().left:
+      today.getBoundingClientRect().left+today.getBoundingClientRect().width/2;
+    // Show a little context before now; reserve most of the view for upcoming.
+    const target=box.left+side+(box.width-side)*0.13;
+    scroller.scrollLeft=Math.max(0,scroller.scrollLeft+marker-target);
   }
   function goToday(){
     offsetWeeks=0;selectedId=null;
-    void centreToday();
+    void positionToday();
   }
   async function load(){
     loading=true;loadError='';
@@ -95,16 +114,16 @@
       loadError=error instanceof Error?error.message:String(error);
     }finally{
       loading=false;
-      if(!loadError)void centreToday();
+      if(!loadError)void positionToday();
     }
   }
   onMount(()=>{
     viewerZone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';
-    viewerLocale=navigator.language||'ja-JP';
+    const unwatch=watchWandLanguage(value=>{language=value;});
     now=Date.now();
     const timer=setInterval(()=>{now=Date.now();},60000);
     void load();
-    return ()=>clearInterval(timer);
+    return ()=>{clearInterval(timer);unwatch();};
   });
 </script>
 
@@ -115,46 +134,47 @@
 
 <main class="guide-app" aria-label="Guide">
   <nav class="guide-sections" aria-label="ガイドの機能">
-    <span class="pending" aria-disabled="true" title="準備中"><WandIcon name="grid" size={20}/><span>システム</span></span>
-    <a href={`${base}/guide/quests/`}><WandIcon name="guide" size={20}/><span>クエスト</span></a>
-    <a href={`${base}/guide/star-path/`}><WandIcon name="star" size={20}/><span>スターパス</span></a>
-    <a href={`${base}/guide/events/`}><WandIcon name="world" size={20}/><span>イベント</span></a>
+    <a href={`${base}/guide/systems/`}><WandIcon name="settings" size={20}/><span>{copy.systems}</span></a>
+    <a href={`${base}/guide/quests/`}><WandIcon name="guide" size={20}/><span>{copy.quests}</span></a>
+    <a href={`${base}/guide/star-path/`}><WandIcon name="star" size={20}/><span>{copy.starPaths}</span></a>
+    <a href={`${base}/guide/events/`}><WandIcon name="world" size={20}/><span>{copy.events}</span></a>
   </nav>
 
   <section class="timeline-panel" aria-label="イベント開催期間">
     <div class="timeline-toolbar">
       <div class="timeline-title">
         <WandIcon name="grid" size={19}/>
-        <strong>イベント</strong>
-        <span class="zone" title="タイムラインの日付軸は日本時間。選択したイベントの日時は閲覧者の現地時間">JST軸</span>
+        <strong>{copy.timeline}</strong>
+        <span class="zone" title={viewerZone}>{zoneLabel}</span>
         <details class="source-info">
           <summary aria-label="日程の出典と注意"><WandIcon name="info" size={17}/></summary>
-          <p>公式発表とSteam v1.26.2の保存済みデータ（確認日：{GUIDE_EVENT_CALENDAR_AS_OF}）。ゲームサーバーの開催状況をリアルタイム確認したものではありません。時刻未確認のイベントは日付単位で表示します。</p>
+          <p>{copy.sourceNote} · Steam v1.26.2 · {GUIDE_EVENT_CALENDAR_AS_OF}</p>
         </details>
       </div>
       <div class="calendar-nav">
         <div class="zoom" role="group" aria-label="表示する期間">
-          <button class:active={weeks===5} aria-pressed={weeks===5} on:click={()=>changeZoom(5)}>5週</button>
-          <button class:active={weeks===9} aria-pressed={weeks===9} on:click={()=>changeZoom(9)}>9週</button>
+          <button class:active={weeks===5} aria-pressed={weeks===5} on:click={()=>changeZoom(5)}>5 {copy.weeks}</button>
+          <button class:active={weeks===9} aria-pressed={weeks===9} on:click={()=>changeZoom(9)}>9 {copy.weeks}</button>
         </div>
-        <button class="nav-arrow previous" aria-label="前の期間" title="前の期間"
+        <button class="nav-arrow previous" aria-label={copy.previous} title={copy.previous}
           on:click={()=>navigate(-1)}><WandIcon name="chevron" size={17}/></button>
         <strong class="range" aria-live="polite">{rangeText}</strong>
-        <button class="nav-arrow next" aria-label="次の期間" title="次の期間"
+        <button class="nav-arrow next" aria-label={copy.next} title={copy.next}
           on:click={()=>navigate(1)}><WandIcon name="chevron" size={17}/></button>
-        <button class="today-button" on:click={goToday}>今日</button>
+        <button class="today-button" on:click={goToday}>{copy.today}</button>
       </div>
     </div>
 
     <div class="timeline-key" aria-label="表示記号">
-      <span><i class="sample task"></i>タスク</span>
-      <span><i class="sample exchange"></i>交換</span>
-      <span><i class="sample limited"></i>イベント</span>
-      <span class="reset-key"><WandIcon name="restore" size={14}/>水曜リセット</span>
+      <span><i class="sample task"></i>{copy.starPaths} · {copy.task}</span>
+      <span><i class="sample exchange"></i>{copy.exchange}</span>
+      <span><i class="sample floating"></i>{copy.floating}</span>
+      <span><i class="sample valley"></i>{copy.valley}</span>
+      <span class="reset-key"><i class="sample reset-sample"></i>{copy.reset}</span>
     </div>
 
     {#if loading}
-      <div class="message" role="status">読み込み中…</div>
+      <div class="message" role="status">{copy.loading}…</div>
     {:else if loadError}
       <div class="message error" role="alert">日程を読み込めませんでした
         <button on:click={load}>再読み込み</button>
@@ -164,21 +184,25 @@
         aria-label="開催期間タイムライン（横スクロールで日付を移動）">
         <div class="timeline-content" style={`--day-count:${windowRange.days.length};min-width:${205+windowRange.days.length*30}px`}>
           <div class="timeline-heading">
-            <div class="date-label">イベント</div>
+            <div class="date-label">{copy.events}</div>
             <div class="dates-grid">
               {#each windowRange.days as day (day.day)}
                 <div class="date-slot" class:reset={day.reset} class:today={day.today}
-                  title={day.day+(day.reset?' · 水曜リセット':'')}>
-                  <span class="weekday">{weekdays[day.weekday]}</span>
+                  title={longDay(day.day)+(day.reset?' · '+copy.reset:'')}>
+                  <span class="weekday">{weekdayLabel(day.day)}</span>
                   <span class="date-number">{day.dayNumber}</span>
-                  {#if day.weekday===0}<span class="month-label">{day.month}月</span>{/if}
+                  {#if day.dayNumber===1}<span class="month-label">{shortDay(day.day)}</span>{/if}
                   {#if day.reset}<span class="reset-symbol"><WandIcon name="restore" size={12}/></span>{/if}
                 </div>
               {/each}
+              {#if windowRange.todayPosition!==null}
+                <div class="header-today-line" style={`left:${windowRange.todayPosition}%`}
+                  aria-hidden="true"></div>
+              {/if}
             </div>
           </div>
           {#each visibleRows as row (row.event.id)}
-            <div class="timeline-row" class:selected={selectedId===row.event.id}>
+            <div class="timeline-row" class:selected={selectedId===row.event.id} data-category={displayCategory(row.event)}>
               <button class="event-label" on:click={()=>showEvent(row.event.id)}
                 aria-pressed={selectedId===row.event.id} title={row.event.title}>
                 <span class="event-symbol"><WandIcon name={eventIcon(row.event)} size={17}/></span>
@@ -196,6 +220,8 @@
                     class:task={segment.phase==='task'}
                     class:exchange={segment.phase==='exchange'}
                     class:limited={segment.phase==='limited'}
+                    class:floating={segment.phase==='limited'&&displayCategory(row.event)==='floating'}
+                    class:valley={segment.phase==='limited'&&displayCategory(row.event)==='valley'}
                     class:clipped-start={segment.clippedStart}
                     class:clipped-end={segment.clippedEnd}
                     class:selected={selectedId===row.event.id}
@@ -209,6 +235,12 @@
                     {/if}
                   </button>
                 {/each}
+                {#each windowRange.days as day,i (day.day)}
+                  {#if day.reset}
+                    <div class="reset-line" style={`left:${100*(i+0.5)/windowRange.days.length}%`}
+                      aria-hidden="true"></div>
+                  {/if}
+                {/each}
                 {#if windowRange.todayPosition!==null}
                   <div class="today-line" style={`left:${windowRange.todayPosition}%`} aria-hidden="true"></div>
                 {/if}
@@ -218,7 +250,7 @@
           {#if visibleRows.length===0}
             <div class="timeline-row empty-row">
               <div class="event-label blank"></div>
-              <div class="empty-events">この期間に登録されたイベントはありません</div>
+              <div class="empty-events">{copy.empty}</div>
             </div>
           {/if}
         </div>
@@ -228,26 +260,26 @@
         <div class="event-inspector" aria-label="選択したイベントの詳細">
           <div class="event-inspector-heading">
             <WandIcon name={eventIcon(selected)} size={22}/>
-            <div><strong>{selected.title}</strong><small>{stateName(selected)} · {selected.precision==='utc-instant'?viewerZone:'日付のみ'}</small></div>
+            <div><strong>{selected.title}</strong><small>{stateName(selected)} · {selected.precision==='utc-instant'?viewerZone:copy.dateOnly}</small></div>
             <button class="close" aria-label="詳細を閉じる" on:click={()=>selectedId=null}>
               <WandIcon name="close" size={18}/>
             </button>
           </div>
           <div class="date-facts">
             {#if selected.precision==='date-only'}
-              <div><small>開始日</small><strong>{selected.startDay}</strong></div>
-              <div><small>終了日</small><strong>{selected.endDayInclusive}</strong></div>
-              <span class="uncertain"><WandIcon name="info" size={15}/>開始・終了時刻は未確認</span>
+              <div><small>{copy.start}</small><strong>{longDay(selected.startDay)}</strong></div>
+              <div><small>{copy.end}</small><strong>{longDay(selected.endDayInclusive)}</strong></div>
+              <span class="uncertain"><WandIcon name="info" size={15}/>{copy.dateUnknown}</span>
             {:else}
-              <div><small>開始</small><strong>{formatLocal(selected.startUtc)}</strong></div>
-              <div><small>タスク終了</small><strong>{formatLocal(selected.taskEndUtcExclusive)}</strong></div>
-              <div><small>交換終了</small><strong>{formatLocal(selected.endUtcExclusive)}</strong></div>
+              <div><small>{copy.start}</small><strong>{formatLocal(selected.startUtc)}</strong></div>
+              <div><small>{copy.taskEnd}</small><strong>{formatLocal(selected.taskEndUtcExclusive)}</strong></div>
+              <div><small>{copy.exchangeEnd}</small><strong>{formatLocal(selected.endUtcExclusive)}</strong></div>
             {/if}
           </div>
           <div class="inspector-actions">
-            <a class="primary" href={eventHref(selected)}>攻略を見る <WandIcon name="arrow" size={16}/></a>
+            <a class="primary" href={eventHref(selected)}>{copy.guideLink} <WandIcon name="arrow" size={16}/></a>
             <a href={selected.sourceUrl} target="_blank" rel="noopener noreferrer">
-              公式情報 <WandIcon name="link" size={14}/>
+              {copy.official} <WandIcon name="link" size={14}/>
             </a>
           </div>
         </div>
@@ -288,7 +320,9 @@
   .timeline-key{display:flex;align-items:center;flex-wrap:wrap;gap:15px;padding:7px 15px;font-size:11px;color:#b6a4c1}
   .timeline-key span{display:flex;align-items:center;gap:6px}
   .sample{display:inline-block;width:17px;height:6px;border-radius:8px}
-  .sample.task{background:#9c6dd2}.sample.exchange{background:#b5a4b9}.sample.limited{background:#4aabae}
+  .sample.task{background:#9c6dd2}.sample.exchange{background:repeating-linear-gradient(90deg,#c0a5db 0 4px,#705283 4px 7px)}
+  .sample.floating{background:#30a6ab}.sample.valley{background:#d39747}
+  .sample.reset-sample{width:2px;height:16px;background:#60cfff;border-radius:1px}
   .reset-key :global(svg){color:#c3a4e2}
   .timeline-scroll{min-width:0;max-width:100%;overflow-x:auto;overflow-y:hidden;flex:1;scrollbar-color:#705b84 #21172d;scrollbar-width:thin}
   .timeline-content{--sidebar-width:205px;width:100%}
@@ -296,14 +330,16 @@
   .timeline-heading{min-height:64px;border-top:1px solid #4a3953;border-bottom:1px solid #52415e;background:#221a2b}
   .date-label{position:sticky;left:0;z-index:5;display:flex;align-items:center;padding-left:16px;background:#231a30;font-size:12px;color:#c0aeca;border-right:1px solid #52415e}
   .dates-grid,.track-grid{display:grid;grid-template-columns:repeat(var(--day-count),minmax(0,1fr));min-width:0}
+  .dates-grid{position:relative}
   .date-slot{position:relative;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border-right:1px solid #352a3f;font-variant-numeric:tabular-nums;font-size:11px;color:#a99ab9}
   .date-slot .weekday{font-size:10px;color:#83758f}
   .date-number{font-size:13px;color:#d1c5dc}
-  .date-slot.reset{background:#3a2b4c;border-left:1px solid #8363a9}
-  .date-slot.reset .weekday,.date-slot.reset .date-number{color:#e6c9fa;font-weight:700}
-  .date-slot.today{background:#4b3559;box-shadow:inset 0 -3px #e3bad5}
+  .date-slot.reset::before{content:'';position:absolute;left:50%;top:0;bottom:0;width:2px;background:#60cfff;opacity:.8;pointer-events:none}
+  .date-slot.reset .weekday,.date-slot.reset .date-number{color:#bfeeff;font-weight:700}
+  .date-slot.today .date-number{color:#ffc5dd;font-weight:750}
+  .header-today-line{position:absolute;z-index:4;top:0;bottom:0;width:2px;background:#ffb4d8;pointer-events:none;box-shadow:0 0 5px #ffb4d87a}
   .month-label{position:absolute;top:1px;font-size:9px;color:#b4a1c9}
-  .reset-symbol{position:absolute;bottom:0;color:#b894df}
+  .reset-symbol{position:absolute;bottom:0;left:50%;transform:translateX(-50%);color:#81d9fd;background:#241c2f}
   .timeline-row{height:71px;border-bottom:1px solid #35293f}
   .timeline-row.selected{background:#2a2037}
   .event-label{position:sticky;left:0;z-index:5;display:flex;align-items:center;gap:9px;width:100%;min-width:0;box-sizing:border-box;padding:10px 12px;background:#211829;color:#eee3f4;text-align:left;border:0;border-right:1px solid #52415e;cursor:pointer}
@@ -316,17 +352,18 @@
   .event-track{position:relative;min-width:0;height:100%;display:flex;align-items:center}
   .track-grid{position:absolute;inset:0;pointer-events:none}
   .track-day{border-right:1px solid #33293d}
-  .track-day.reset{background:#3c2d4e55;border-left:1px solid #694e82}
-  .track-day.today{background:#70475c35}
+  .track-day.reset,.track-day.today{background:transparent}
   .timeline-bar{position:absolute;z-index:2;top:50%;transform:translateY(-50%);height:30px;min-width:0;box-sizing:border-box;border:1px solid #c9a5f44d;border-radius:5px;background:#8d5cbc;color:#fff;cursor:pointer;overflow:hidden;padding:0 4px}
   .timeline-bar span{display:block;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;font-size:10px;line-height:1.2}
   .timeline-bar.task{background:linear-gradient(180deg,#8055ac,#9d68d2)}
   .timeline-bar.exchange{background:linear-gradient(180deg,#6d6078,#8c7c94);border-color:#b4a7c2}
-  .timeline-bar.limited{background:linear-gradient(180deg,#2b777c,#43a0a6);border-color:#7bc2c4}
+  .timeline-bar.floating{background:linear-gradient(180deg,#227d85,#37a9b2);border-color:#8cd9e1}
+  .timeline-bar.valley{background:linear-gradient(180deg,#996528,#d39b4d);border-color:#f4ce91}
   .timeline-bar.clipped-start{border-top-left-radius:0;border-bottom-left-radius:0;border-left:2px dashed #ddc6ed}
   .timeline-bar.clipped-end{border-top-right-radius:0;border-bottom-right-radius:0;border-right:2px dashed #ddc6ed}
   .timeline-bar:hover,.timeline-bar.selected{filter:brightness(1.2);box-shadow:0 0 0 2px #dab6ff90}
-  .today-line{position:absolute;top:0;bottom:0;width:2px;z-index:3;pointer-events:none;background:#f5b8d2;box-shadow:0 0 6px #f5b8d260}
+  .reset-line{position:absolute;top:0;bottom:0;width:2px;z-index:3;pointer-events:none;background:#60cfff;opacity:.86;box-shadow:0 0 4px #60cfff70}
+  .today-line{position:absolute;top:0;bottom:0;width:2px;z-index:4;pointer-events:none;background:#ffb4d8;box-shadow:0 0 7px #ffb4d8}
   .empty-row .event-label{cursor:default}
   .empty-events{align-self:center;color:#ab99b5;text-align:center;font-size:12px}
   .message{padding:40px 16px;text-align:center;color:#cbb5de}

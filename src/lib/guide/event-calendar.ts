@@ -42,6 +42,8 @@ export interface GuideStarpathCalendarEvent extends GuideCalendarUtcWindow{
 }
 export interface GuideDateOnlyCalendarEvent extends GuideCalendarDateWindow{
   readonly kind:'limited-event';
+  /** Visual type (not a claim of UTC time precision). */
+  readonly category:'floating'|'valley';
   readonly title:string;
   readonly sourceUrl:string;
   readonly evidence:'official-announcement';
@@ -136,7 +138,7 @@ export function guideCalendarEvents(raw:unknown):GuideCalendarEvent[]{
   });
   // Announcement verifies calendar DAYS only; do not fabricate clock times.
   events.push({
-    id:'haunted-floating-festival-2026',kind:'limited-event',
+    id:'haunted-floating-festival-2026',kind:'limited-event',category:'floating',
     title:'The Haunted Floating Festival',
     sourceUrl:GUIDE_EVENT_CALENDAR_SOURCES.festival,
     evidence:'official-announcement',

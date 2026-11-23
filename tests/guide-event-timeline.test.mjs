@@ -12,73 +12,89 @@ const snapshot=async()=>verifyPublicStarpath(JSON.parse(await readFile(
 const events=async()=>guideCalendarEvents(await snapshot());
 const approx=(a,b)=>assert(Math.abs(a-b)<1e-8,`${a} expected ${b}`);
 
-test('JST week tracks keep every reset Wednesday in the middle of a Sun–Sat week',()=>{
+test('today is four days into a future-first local five-week timeline',()=>{
   const range=guideTimelineWindow(at('2026-11-22T12:00:00Z'));
+  assert.equal(range.firstDay,'2026-11-18');
+  assert.equal(range.lastDay,'2026-12-22');
   assert.equal(range.days.length,35);
-  assert.equal(range.firstDay,'2026-11-08');
-  assert.equal(range.lastDay,'2026-12-12');
+  assert.equal(range.days.findIndex(x=>x.today),4);
   assert.equal(range.todayDay,'2026-11-22');
-  assert.equal(range.days.filter(x=>x.reset).length,5);
+  assert(range.todayPosition>10&&range.todayPosition<15);
   assert.deepEqual(range.days.filter(x=>x.reset).map(x=>x.day),
-    ['2026-11-11','2026-11-18','2026-11-25','2026-12-02','2026-12-09']);
-  for(let i=0;i<range.days.length;i++)
-    assert.equal(range.days[i].reset,i%7===3);
-  assert.equal(range.days.filter(x=>x.today).length,1);
-  const season=guideTimelineWindow(at('2026-11-22T12:00:00Z'),9);
-  assert.equal(season.days.length,63);
-  assert.equal(season.days.filter(x=>x.reset).length,9);
-  assert.equal(guideTimelineWindow(at('2026-11-22T12:00:00Z'),5,-5).firstDay,
-    '2026-10-04');
+    ['2026-11-18','2026-11-25','2026-12-02','2026-12-09','2026-12-16']);
+  assert.equal(guideTimelineWindow(at('2026-11-22T12:00:00Z'),9).days.length,63);
+  assert.equal(guideTimelineWindow(at('2026-11-22T12:00:00Z'),5,-5).firstDay,'2026-10-14');
+  assert.equal(guideTimelineWindow(at('2026-11-22T12:00:00Z'),5,5).firstDay,'2026-12-23');
 });
-test('real source star paths stay separate task/exchange bands with exact non-midnight JST boundaries',async()=>{
-  const data=await events();
+test('same UTC instant projects different date cells for users in different timezones',()=>{
+  const now=at('2026-11-23T00:30:00Z');
+  const tokyo=guideTimelineWindow(now,5,0,'Asia/Tokyo');
+  const losAngeles=guideTimelineWindow(now,5,0,'America/Los_Angeles');
+  assert.equal(tokyo.todayDay,'2026-11-23');
+  assert.equal(losAngeles.todayDay,'2026-11-22');
+  assert.equal(tokyo.firstDay,'2026-11-19');
+  assert.equal(losAngeles.firstDay,'2026-11-18');
+  for(const range of [tokyo,losAngeles]){
+    assert.equal(range.days.filter(x=>x.today).length,1);
+    assert.equal(range.days.filter(x=>x.reset).length,5);
+  }
+});
+test('DST days have real 23- and 25-hour lengths with exact source UTC projection',()=>{
+  const spring=guideTimelineWindow(at('2026-03-08T12:00:00Z'),5,0,'America/Los_Angeles');
+  const fall=guideTimelineWindow(at('2026-11-01T12:00:00Z'),5,0,'America/Los_Angeles');
+  const length=(range,day)=>{
+    const i=range.days.findIndex(d=>d.day===day);
+    assert(i>=0);return (range.starts[i+1]-range.starts[i])/3_600_000;
+  };
+  assert.equal(length(spring,'2026-03-08'),23);
+  assert.equal(length(fall,'2026-11-01'),25);
+  for(const range of [spring,fall])assert(range.todayPosition>10&&range.todayPosition<15);
+});
+test('real star paths keep exact task/exchange boundary at local fractions',async()=>{
   const range=guideTimelineWindow(at('2026-11-22T12:00:00Z'));
-  const rows=guideTimelineRows(data,range);
+  const rows=guideTimelineRows(await events(),range);
   assert.deepEqual(rows.map(x=>x.event.id),
     ['haunting-elegance-2026','seafaring-2026']);
   assert.deepEqual(rows.map(x=>x.segments.map(s=>s.phase)),
     [['task','exchange'],['task','exchange']]);
-  const haunting=rows[0].segments;
-  assert.equal(haunting[0].clippedStart,true);
-  assert.equal(haunting[1].clippedEnd,false);
-  approx(haunting[0].left,0);
-  // 2026-12-08 14:00Z corresponds exactly to Dec 8 23:00 JST, i.e.
-  // 30 days + 23 hours after Sunday Nov 8 JST, not an all-day deadline.
-  const finish=100*(30+23/24)/35;
-  approx(haunting[0].left+haunting[0].width,finish);
-  approx(haunting[1].left,finish);
-  assert(haunting[1].width>0);
+  const h=rows[0].segments;
+  assert.equal(h[0].clippedStart,true);
+  approx(h[0].left,0);
+  // Dec 8 23:00 JST is 20 whole days + 23 hours from Nov 18 00:00 JST.
+  const finish=100*(20+23/24)/35;
+  approx(h[0].left+h[0].width,finish);
+  approx(h[1].left,finish);
 });
-test('date-only festival covers exactly its announced calendar days, without an invented UTC clock',async()=>{
+test('floating festival is still date-only and classified separately from Star Paths',async()=>{
   const range=guideTimelineWindow(at('2026-11-22T12:00:00Z'),5,-5);
   const festival=guideTimelineRows(await events(),range)
     .find(row=>row.event.id==='haunted-floating-festival-2026');
   assert(festival);
+  assert.equal(festival.event.category,'floating');
+  assert.equal(festival.event.precision,'date-only');
+  assert.equal(Object.hasOwn(festival.event,'startUtc'),false);
   assert.equal(festival.segments.length,1);
   const s=festival.segments[0];
   assert.equal(s.phase,'limited');
-  approx(s.left,100*3/35); // Oct 7 JST
-  approx(s.width,100*25/35); // inclusive Oct 31, 25 complete calendar dates
-  assert.equal(s.clippedStart,false);
-  assert.equal(s.clippedEnd,false);
-  assert.equal(festival.event.precision,'date-only');
-  assert.equal(Object.hasOwn(festival.event,'startUtc'),false);
+  assert.equal(s.clippedStart,true); // Oct 7 festival started before Oct 14
+  approx(s.left,0);
+  approx(s.width,100*18/35); // Oct 14..31 inclusive
 });
-test('exclusive deadline and exact midnight transitions neither extend nor disappear',()=>{
+test('phase transitions stay contiguous and invalid source times fail closed',()=>{
   const range=guideTimelineWindow(at('2026-11-22T12:00:00Z'));
   const source={
     id:'fixture',kind:'starpath',precision:'utc-instant',
-    startUtc:'2026-11-11T15:00:00Z', // 11/12 JST midnight
-    taskEndUtcExclusive:'2026-11-12T03:00:00Z', // 11/12 JST noon
-    endUtcExclusive:'2026-11-12T15:00:00Z' // 11/13 JST midnight
+    startUtc:'2026-11-18T15:00:00Z',
+    taskEndUtcExclusive:'2026-11-19T03:00:00Z',
+    endUtcExclusive:'2026-11-19T15:00:00Z'
   };
   const segments=guideTimelineRows([source],range)[0].segments;
   assert.equal(segments.length,2);
-  approx(segments[0].width,100*0.5/35);
-  approx(segments[1].width,100*0.5/35);
+  approx(segments[0].width,100*.5/35);
+  approx(segments[1].width,100*.5/35);
   approx(segments[0].left+segments[0].width,segments[1].left);
   assert.equal(guideTimelineRows([{
-    ...source,id:'outside',startUtc:'2026-10-01T00:00:00Z',
+    ...source,startUtc:'2026-10-01T00:00:00Z',
     taskEndUtcExclusive:'2026-10-02T00:00:00Z',
     endUtcExclusive:'2026-10-03T00:00:00Z'
   }],range).length,0);

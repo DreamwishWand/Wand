@@ -448,25 +448,36 @@ try {
     'duplicate deep link must not select any character');
   await invalidCharacter.close();
 
-  // Guide is an app-width event timeline; Wednesday resets are visually
-  // central in each Sun-Sat row. Original UTC boundaries and date-only
-  // festival source remain separate, never fabricated live server state.
+  // Guide is a future-first viewer-local event timeline. UTC task/exchange
+  // instants remain exact; reset is a colored Wednesday day-marker, not a
+  // claim of a verified precise server reset hour.
   const hub=await browser.newPage({viewport:{width:390,height:844},timezoneId:'America/Los_Angeles',locale:'ja-JP'});
   const hubErrors=[];
   hub.on('pageerror',e=>hubErrors.push(String(e)));
   await hub.addInitScript(()=>{Date.now=()=>Date.parse('2026-11-22T12:00:00Z');});
   await hub.goto('http://127.0.0.1:4177/Wand/guide/',{waitUntil:'domcontentloaded'});
   await hub.locator('.timeline-row').first().waitFor({timeout:20000});
-  assert.equal(await hub.locator('.guide-sections a').count(),3);
-  assert.equal(await hub.locator('.guide-sections .pending[aria-disabled="true"]').count(),1,
-    'the original Systems root remains visible but does not navigate before content exists');
-  assert.match(await hub.locator('.guide-sections .pending').innerText(),/システム/);
+  assert.equal(await hub.locator('.guide-sections a').count(),4);
+  assert.equal(await hub.locator('.guide-sections a[href="/Wand/guide/systems/"]').count(),1,
+    'Systems is now a working Guide service, not a disabled placeholder');
   assert.equal(await hub.locator('.timeline-row').count(),2,
     'only scheduled events overlapping the visible five-week range appear');
   assert.equal(await hub.locator('.timeline-heading .date-slot').count(),35);
   assert.equal(await hub.locator('.date-slot.reset').count(),5);
   assert.equal(await hub.locator('.date-slot.today').count(),1);
-  assert.match(await hub.locator('.calendar-nav').innerText(),/11\/8.*12\/12/);
+  assert.equal(await hub.locator('.timeline-row .reset-line').count(),10);
+  assert.equal(await hub.locator('.timeline-row .today-line').count(),2);
+  assert.equal(await hub.locator('.timeline-row[data-category="starpath"]').count(),2);
+  const markerRatio=await hub.locator('.date-slot.today').evaluate(el=>{
+    const scroll=el.closest('.timeline-scroll');
+    const sidebar=scroll.querySelector('.date-label').getBoundingClientRect().width;
+    const header=el.closest('.dates-grid').getBoundingClientRect();
+    const track=header.width;
+    return (el.getBoundingClientRect().left+el.getBoundingClientRect().width/2-header.left)/track;
+  });
+  assert(markerRatio>.1&&markerRatio<.16,'today should be in the left 10–15% of the date axis');
+
+  assert.match(await hub.locator('.calendar-nav').innerText(),/11月18日.*12月22日/);
   assert.match(await hub.locator('.timeline-content').innerText(),/Haunting Elegance/);
   assert.match(await hub.locator('.timeline-content').innerText(),/Seafaring Star Path/);
   assert.equal(await hub.locator('.timeline-bar.task').count(),2);
@@ -480,17 +491,17 @@ try {
     'dates remain horizontally scrollable on narrow screens');
   await hub.locator('.source-info summary').click();
   assert.match(await hub.locator('.source-info').innerText(),
-    /ゲームサーバーの開催状況をリアルタイム確認したものではありません/);
+    /日程は保存済みの情報です/);
   await hub.locator('.source-info summary').click();
   await hub.getByRole('button',{name:'前の期間'}).click();
-  assert.match(await hub.locator('.calendar-nav').innerText(),/10\/4.*11\/7/);
+  assert.match(await hub.locator('.calendar-nav').innerText(),/10月14日.*11月17日/);
   assert.equal(await hub.locator('.timeline-bar.limited').count(),1);
   const festival=hub.locator('.timeline-row')
     .filter({hasText:'The Haunted Floating Festival'});
   await festival.locator('.event-label').click();
-  assert.match(await hub.locator('.event-inspector').innerText(),/2026-10-07/);
-  assert.match(await hub.locator('.event-inspector').innerText(),/2026-10-31/);
-  assert.match(await hub.locator('.event-inspector').innerText(),/時刻は未確認/);
+  assert.match(await hub.locator('.event-inspector').innerText(),/2026年10月7日/);
+  assert.match(await hub.locator('.event-inspector').innerText(),/2026年10月31日/);
+  assert.match(await hub.locator('.event-inspector').innerText(),/時刻未確認/);
   const festivalCalendarHref='/Wand/guide/events/?event=HauntedFloatingFestival2026';
   assert.equal(await hub.locator('.event-inspector a.primary').getAttribute('href'),
     festivalCalendarHref);
@@ -502,7 +513,7 @@ try {
   await hub.goBack({waitUntil:'domcontentloaded'});
   await hub.locator('.timeline-row').first().waitFor({timeout:20000});
   // Week range navigation is local state, not a URL that persists on Back.
-  assert.match(await hub.locator('.calendar-nav').innerText(),/11\/8.*12\/12/);
+  assert.match(await hub.locator('.calendar-nav').innerText(),/11月18日.*12月22日/);
   const seafaringCalendarHref='/Wand/guide/star-path/?season=Seafaring2026';
   await hub.locator('.timeline-row')
     .filter({hasText:'Seafaring Star Path'}).locator('.event-label').click();
@@ -514,6 +525,18 @@ try {
   await hub.locator('.seasons button.selected')
     .filter({hasText:'Seafaring Star Path'}).waitFor({timeout:20000});
   assert.match(await hub.locator('.seasons button.selected').innerText(),/Seafaring Star Path/);
+  await hub.goto('http://127.0.0.1:4177/Wand/guide/systems/',{waitUntil:'domcontentloaded'});
+  await hub.locator('.system-categories button').first().waitFor({timeout:20000});
+  assert.equal(await hub.locator('.system-categories button').count(),7);
+  assert.equal(await hub.locator('.topic-buttons button').count(),16);
+  await hub.locator('.system-categories button').nth(3).click();
+  assert.equal(await hub.locator('.topic-buttons button').count(),21);
+  await hub.locator('.system-search input').fill('浮島');
+  assert.equal(await hub.locator('.topic-buttons button').count(),1);
+  assert.match(await hub.locator('.topic-buttons button').innerText(),/浮島/);
+  await hub.locator('.topic-buttons button').click();
+  assert.equal(await hub.locator('.topic-detail').count(),1);
+  assert.equal(await hub.locator('.topic-detail a.related').getAttribute('href'),'/Wand/world/preview/');
   assert.deepEqual(hubErrors,[],hubErrors.join('\\n'));
   await hub.close();
 
