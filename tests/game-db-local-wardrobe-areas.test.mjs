@@ -239,7 +239,8 @@ test('refuse ambiguous AllAreas, out-of-bounds batches, source class mismatch, f
   });
   await assert.rejects(stale.getCoverage(),
     /ORIGINAL_WARDROBE_AREA_CENSUS_DRIFT/);
+  const pub=await app();
   assert.throws(()=>joinDb00LocalWardrobeCollectionAreas(
-    {...await app(),hasPrivateGameSource:true},wardrobe
+    {...pub,hasPrivateGameSource:true},wardrobe
   ),/VERIFIED_PUBLIC_ITEM_AND_AREA_SOURCE_REQUIRED/);
 });
