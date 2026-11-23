@@ -1818,7 +1818,9 @@
                   {coordinateState==='checking'?'座標を検証中…':'座標変更を検証'}
                 </button>
                 {#if coordinateState==='validated'}
-                  <p role="status">{coordinateSnapshot?.mode==='batch'
+                  <p role="status">{coordinateSnapshot?.mode==='quantity-grid'
+                    ? `${coordinateSnapshot.amounts.length}件の数量変更と${coordinateSnapshot.edits.length}件の配置変更をRust/WASMで検証しました。`
+                    :coordinateSnapshot?.mode==='batch'
                     ? `${coordinateQueue.length}件の座標変更をRust/WASMで検証しました。`
                     : coordinateSnapshot?.mode==='combined'
                     ? `${coordinateSnapshot.edits.length}件の座標・向き変更をRust/WASMで検証しました。`
@@ -2061,6 +2063,38 @@
       <button type="button" on:click={()=>preview(true)} disabled={processing}>
         {processing?'Rust/WASMで確認中…':'一括変更を検証'}
       </button>
+    </section>
+  {/if}
+  {#if queuedEdits.length>0&&(coordinateQueue.length>0||mixedQueue.length>0)}
+    <section aria-label="所持品と配置の統合編集">
+      <div class="slot-actions">
+        <strong>所持品＋配置の一括出力</strong>
+        <button type="button"
+          disabled={processing||!quantityGridEdits||
+            savedSlotsFile!==activeFile}
+          on:click={()=>validateCoordinateEdit(false,false,false,false,true)}>
+          数量と配置をまとめて検証
+          {#if quantityGridEdits}
+            （数量{queuedEdits.length}件・配置{quantityGridEdits.length}件）
+          {/if}
+        </button>
+      </div>
+      {#if !quantityGridEdits}
+        <small class="slot-note">配置変更の競合または16件超過があります。編集内容を修正してください。</small>
+      {/if}
+      {#if coordinateSnapshot?.mode==='quantity-grid'&&
+           coordinateState==='validated'}
+        <p role="status">数量{coordinateSnapshot.amounts.length}件・配置{
+          coordinateSnapshot.edits.length}件をRust/WASMで検証しました。</p>
+        <button type="button" disabled={processing||!!coordinateCopyUrl}
+          on:click={exportCoordinateCopy}>
+          {coordinateCopyUrl?'統合コピーを準備しました':'統合コピーを生成'}
+        </button>
+        {#if coordinateCopyUrl}
+          <a href={coordinateCopyUrl} download={coordinateCopyName}
+            class="download-link">統合コピーをダウンロード</a>
+        {/if}
+      {/if}
     </section>
   {/if}
   {#if result==='changed'}
