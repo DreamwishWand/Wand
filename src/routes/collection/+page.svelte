@@ -297,12 +297,15 @@
       expansion,status,favoriteOnly,nameStatus,offset,limit
     };
   }
-  function refresh():void {
+  function refresh(navigationOnly=false):void {
     if(!runtime)return;
     try{
-      state=runtime.state;
+      // Switching a world never mutates the active profile. Reuse global
+      // metrics on navigation; normal refresh after edits/import still reads WASM.
+      const reuseGlobal=navigationOnly&&scopeRuntimeCache===runtime&&scopeLocaleCache===locale;
+      if(!reuseGlobal)state=runtime.state;
       const activeEntries=(state.workspaces.find(row=>row.id===state.active)??state.workspaces[0])?.entries??{};
-      facets=runtime.facets('category',locale);
+      if(!reuseGlobal)facets=runtime.facets('category',locale);
       // Source Tag associations are not CollectionArea membership. The
       // runtime only exposes these options when the catalog explicitly carries
       // reviewed, source-validated per-item scope evidence.
@@ -426,7 +429,7 @@
         !sourceChoices.disneyUniverse&&!selected&&sourceActivityType===null&&sourceNativeSubtype===null&&
         !search.trim()&&status==='all'&&!favoriteOnly&&!expansion&&!acquisitionFilter;
       if(categoryOverview||universeOverview){
-        sourceAllMatching=[];filtered=[];totalMatches=0;overall=runtime.progress;
+        sourceAllMatching=[];filtered=[];totalMatches=0;if(!reuseGlobal)overall=runtime.progress;
         return;
       }
       if((sourceTopCategory!==null||sourceActivityType!==null||sourceNativeSubtype!==null||
@@ -669,9 +672,9 @@
     selectedItemId=item.itemId;
     if(mobileInspector)void tick().then(()=>inspectorClose?.focus({preventScroll:true}));
   }
-  function resetView():void{
+  function resetView(navigationOnly:boolean|Event=false):void{
     if(selectedItemId!==null)updateItemAddress(null,'replace');
-    visible=72;selectedIds=[];selectedItemId=null;refresh();
+    visible=72;selectedIds=[];selectedItemId=null;refresh(navigationOnly===true);
   }
   /** Scroll only requests the next page from Rust. Re-querying 0..visible
    * after every intersection creates quadratic decoding and DOM churn for
@@ -922,7 +925,7 @@
     const fromSource=sourceIndex&&sourceWorldOptions.some(option=>option.key===id);
     worldFilter=fromSource?'':id;
     sourceChoices=fromSource?{worldContextTag:id}:{};
-    sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
+    sourceFacetGroups=[];sourceGroupsCacheKey='';resetView(true);
   }
   function chooseUniverse(id:string):void{
     sourceTopCategory=null;
