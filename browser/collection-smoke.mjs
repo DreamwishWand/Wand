@@ -725,7 +725,13 @@ try{
   assert.match(await page.locator('.facet-card').first().innerText(),/思い出|Memories/);
   assert.equal(await page.locator('.mode-tabs').count(),0);
   assert.equal(await page.locator('.collection-scope-toolbar').count(),1);
-  assert.equal(await page.locator('.collection-scope-scroll button:disabled').count(),6);
+  const nativeWorld=page.locator('.collection-scope-scroll button').filter({hasText:'Dreamlight Valley'});
+  assert.equal(await nativeWorld.isDisabled(),false,
+    'DB-01 original World-context tag must enable world source browsing');
+  await nativeWorld.click();
+  await page.locator('.item-card').first().waitFor({timeout:15000});
+  assert.ok(await page.locator('.item-card').count()>0);
+  await page.locator('.collection-scope-scroll').getByRole('button',{name:'すべて'}).click();
   await page.getByRole('button',{name:/フィルター/}).click();
   assert.equal(await page.getByRole('combobox',{name:'ワールドで絞り込み'}).count(),0);
   assert.equal(await page.getByRole('combobox',{name:'ユニバースで絞り込み'}).count(),0);
