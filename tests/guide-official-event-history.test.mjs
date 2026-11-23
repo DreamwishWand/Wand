@@ -7,13 +7,18 @@ import {viewerEventDateTime} from '../src/lib/guide/viewer-event-time.ts';
 
 test('historical calendar is bounded by the 2022 Early Access launch, not 2023 full release',()=>{
   assert.equal(GUIDE_EARLY_ACCESS_FIRST_DAY,'2022-09-06');
-  assert.equal(GUIDE_OFFICIAL_HISTORICAL_EVENTS.length,7);
+  assert.equal(GUIDE_OFFICIAL_HISTORICAL_EVENTS.length,8);
   const first=GUIDE_OFFICIAL_HISTORICAL_EVENTS[0];
   assert.equal(first.id,'pixar-fest-star-path-2022');
   assert.equal(first.sourceUrl,GUIDE_EARLY_ACCESS_SOURCE);
   assert.equal(first.startDay,GUIDE_EARLY_ACCESS_FIRST_DAY);
   assert.equal(first.endDayInclusive,'2022-10-11');
   assert.equal(first.kind,'starpath-history');
+  const nightShow=GUIDE_OFFICIAL_HISTORICAL_EVENTS.find(row=>row.id==='the-night-show-star-path-2024');
+  assert(nightShow);
+  assert.equal(nightShow.startDay,'2024-10-09');
+  assert.equal(nightShow.endDayInclusive,'2024-11-27');
+  assert.equal(Object.hasOwn(nightShow,'officialEndUtc'),false);
   assert.equal(first.officialEndUtc,'2022-10-11T13:00:00Z');
   assert.match(viewerEventDateTime(first.officialEndUtc,'America/New_York'),/09:00 GMT-4/);
   assert.match(viewerEventDateTime(first.officialEndUtc,'Asia/Tokyo'),/22:00 GMT\+9/);
@@ -30,7 +35,7 @@ test('all historical entries have dated official publisher sources, no wiki date
     if(row.kind==='limited-event')assert(['floating','other'].includes(row.category));
   }
   assert.deepEqual([...years].sort(),['2022','2023','2024','2025','2026']);
-  assert.equal(GUIDE_OFFICIAL_HISTORICAL_EVENTS.filter(row=>row.kind==='starpath-history').length,1,
+  assert.equal(GUIDE_OFFICIAL_HISTORICAL_EVENTS.filter(row=>row.kind==='starpath-history').length,2,
     'without verified official start AND end, other historic passes remain excluded');
   const past=GUIDE_OFFICIAL_HISTORICAL_EVENTS.filter(row=>row.kind==='limited-event');
   assert(past.every(row=>row.participation==='game-clock'||row.participation==='not-verified'));
