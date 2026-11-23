@@ -115,6 +115,47 @@
       window.history.replaceState(window.history.state,'',url);
     }
   }
+  function navigateRelatedItem(event:MouseEvent,eventId:string,itemId:string){
+    if(event.button!==0||event.defaultPrevented||event.ctrlKey||event.metaKey||
+      event.shiftKey||event.altKey||!source)return;
+    const href=guideEventRewardOccurrenceHref(source,eventId,itemId,base);
+    if(!href)return;
+    const url=new URL(href,window.location.href);
+    const exact=resolveEventRewardOccurrenceDestination(source,url.search);
+    if(!exact)return;
+    event.preventDefault();
+    window.history.pushState(window.history.state,'',url);
+    category='all';query=exact.itemId;selectedKey=exact.eventId;
+    highlightItem=exact.itemId;
+  }
+  function restoreRewardLocation(){
+    if(!source)return;
+    const params=new URLSearchParams(window.location.search);
+    const exact=resolveEventRewardOccurrenceDestination(source,window.location.search);
+    if(exact){
+      category='all';query=exact.itemId;
+      selectedKey=exact.eventId;highlightItem=exact.itemId;
+      return;
+    }
+    if(params.has('event')&&params.has('item'))return;
+    const focused=resolveEventRewardItemDestination(source,params.get('item'));
+    if(focused){
+      highlightItem=focused.itemId;
+      if(focused.section==='default_friendship'){
+        category='default_friendship';query='';selectedKey='';
+      }else{
+        category='all';query=focused.itemId;
+        selectedKey=focused.eventId??'';
+      }
+      return;
+    }
+    // Other optional Quest/Duty/Scene navigation has its own source loaders.
+    if(['quest','duty','scene'].some(key=>params.has(key)))return;
+    const eventId=params.getAll('event');
+    highlightItem='';query='';category='all';
+    selectedKey=eventId.length===1&&source.events.some(event=>
+      event.id===eventId[0]&&event.id!=='TestEv')?eventId[0]:'';
+  }
   function choose(event:NativeEventDefinition){
     const retainItem=Boolean(highlightItem)&&event.rewards.some(reward=>reward.itemId===highlightItem);
     if(!retainItem)clearItemFocus();
@@ -252,8 +293,10 @@
   }
   onMount(()=>{
     const unwatch=watchWandLanguage(lang=>{locale=lang as GuideRewardLocale;});
+    const restore=()=>restoreRewardLocation();
+    window.addEventListener('popstate',restore);
     void load();
-    return ()=>unwatch();
+    return ()=>{unwatch();window.removeEventListener('popstate',restore);};
   });
 </script>
 
@@ -331,6 +374,7 @@
                     {#if source && relatedEventRewardIds(source,reward.itemId).length>1}
                       <a class="related-item-events"
                         href={guideEventRewardOccurrenceHref(source,selected.id,reward.itemId,base)}
+                        on:click={(event:MouseEvent)=>navigateRelatedItem(event,selected.id,reward.itemId)}
                         title="同じアイテムが登場する他の原本イベント定義を表示">他のイベントを表示</a>
                     {/if}
                   </div>
