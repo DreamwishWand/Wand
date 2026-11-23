@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
+import {COLLECTION_NATIVE_SUBTYPE_UI,collectionNativeSubtypeLabel}
+  from '../src/lib/collection/native-subtype-labels.ts';
 import {join} from 'node:path';
 import {
   COLLECTION_DB01_FACETS_SCHEMA,COLLECTION_DB01_ARCHIVE_SHA,
@@ -76,8 +78,26 @@ test('DB-01 source native filtering is a narrow projection, not a second Item ma
   assert.equal(byClass.get('Clothing'),2041);
   assert.equal(byClass.get('Trimming'),365);
   assert.equal(counts.length,50);
-  console.log('DB01_SOURCE_NATIVE_DETAIL_GROUPS',
-    JSON.stringify(counts.sort((a,b)=>a.key.localeCompare(b.key))));
+  assert.equal(COLLECTION_NATIVE_SUBTYPE_UI.length,35);
+  const languages=['en','fr','it','de','es-ES','ja','zh-CN','pt-BR'];
+  for(const spec of COLLECTION_NATIVE_SUBTYPE_UI){
+    assert.equal(index.nativeSubtypeNames.get(spec.key),spec.source,
+      'UI subtype labels require the exact original IL2CPP subtype name');
+    assert.equal(Object.keys(spec.labels).length,8);
+    for(const lang of languages){
+      const translated=collectionNativeSubtypeLabel(lang,spec.key,spec.source);
+      assert.equal(translated,spec.labels[lang]);
+      assert.ok(translated.length>0);
+    }
+    assert.notEqual(
+      collectionNativeSubtypeLabel('ja',spec.key,'UnverifiedType'),spec.labels.ja,
+      'mismatched original enum must fall back to original name');
+  }
+  assert.equal(index.itemsByNativeSubtype.get('ActivityItem:3')?.length,618);
+  assert.equal(index.itemsByNativeSubtype.get('ActivityItem:11')?.length,201);
+  assert.equal(index.itemsByNativeSubtype.get('Furniture:7')?.length,319);
+  assert.equal(index.itemsByNativeSubtype.get('Clothing:5')?.length,114);
+  assert.equal(index.itemsByNativeSubtype.get('Trimming:0')?.length,218);
   assert.ok(raw.universeSourceItemCount>0);
   assert.equal(index.universesByItem.size,raw.universeSourceItemCount);
   assert.ok(index.itemsByUniverse.size>0&&index.itemsByUniverse.size<=67);
