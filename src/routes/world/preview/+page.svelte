@@ -8,6 +8,8 @@
     from '$lib/world/native-gridarea-evidence.ts';
   import type {OriginalGridObjectAreaLink}
     from '$lib/world/native-gridobject-item-area-link.ts';
+  import type {OriginalDefaultGridLayersCell}
+    from '$lib/world/native-default-gridlayers-cell.ts';
   import {getOriginalGridAreaDisplayDimensions,
     type SourceLocalGridAreaWindow}
     from '$lib/world/native-gridarea-local-window.ts';
@@ -87,6 +89,8 @@
   let viewing = false;
   let viewport: ViewResult | null = null;
   let selectedCell: {x:number;y:number} | null = null;
+  let selectedCellLayers:OriginalDefaultGridLayersCell|null=null;
+  let loadingCellLayers=false;
   let fileInput: HTMLInputElement | null = null;
   let terrainPanel:HTMLDivElement|null=null;
   let terrainLinkNotice='';
@@ -206,11 +210,32 @@
       rect:{x:areaX,y:areaY,
         width:Math.min(16,sx-areaX),height:Math.min(16,sy-areaY)}});
   }
+  function requestSelectedCellLayers(x:number,y:number){
+    const selected=layouts.find(row=>row.viewKey===selectedViewKey);
+    const grid=selected?.grids.find(row=>String(row.gridIdNative)===selectedGridId);
+    selectedCellLayers=null;
+    loadingCellLayers=false;
+    if(!worker||!selected||!grid||!grid.knownGridData||
+       !Number.isSafeInteger(x)||!Number.isSafeInteger(y)||x<0||y<0||
+       !Number.isSafeInteger(grid.anchorSizeX)||
+       !Number.isSafeInteger(grid.anchorSizeY)||
+       x>=grid.anchorSizeX!||y>=grid.anchorSizeY!)return;
+    loadingCellLayers=true;
+    const id=++requestId;
+    worker.postMessage({command:'grid-cell-layers',requestId:id,
+      viewKey:selected.viewKey,gridIdNative:grid.gridIdNative,x,y});
+  }
+  function selectGridCell(x:number,y:number){
+    selectedCell={x,y};
+    requestSelectedCellLayers(x,y);
+  }
   function stop() {
     requestId++;
     worker?.terminate();
     worker = null;
     loading = false;
+    loadingCellLayers=false;
+    selectedCellLayers=null;
     viewing = false;
     findingAnchor=false;
     findingGlobal=false;
@@ -309,6 +334,8 @@
     viewport = null;
     displayedAnchors = [];
     selectedCell = null;
+    selectedCellLayers=null;
+    loadingCellLayers=false;
     integrity = '';
     manifestFilesVerified = 0;
     errorMessage = '';
@@ -344,7 +371,8 @@
     y = Math.min(Math.max(0, Number.isSafeInteger(y) ? y : 0), sy - 1);
     width = Math.min(Math.max(1, Number.isSafeInteger(width) ? width : 16), 32, sx - x);
     height = Math.min(Math.max(1, Number.isSafeInteger(height) ? height : 16), 32, sy - y);
-    if (reset){offset = 0;displayedAnchors = [];selectedCell = null;}
+    if (reset){offset = 0;displayedAnchors = [];selectedCell = null;
+      selectedCellLayers=null;loadingCellLayers=false;}
     viewing = true;
     errorMessage = '';
     const id = ++requestId;
@@ -451,6 +479,7 @@
         findingAnchor=false;
         findingGlobal=false;
         loadingAreaWindow=false;
+        loadingCellLayers=false;
         return;
       }
       if (result.kind === 'loaded') {
@@ -468,6 +497,23 @@
           String(layouts[0].grids[0].gridIdNative) : '';
         infoMessage = 'ローカルZIP内のマニフェスト整合性を確認しました。原本の真正性までは証明していません。';
         if (selectedGridId) requestWindow();
+        return;
+      }
+      if(result.kind==='grid-cell-layers'){
+        loadingCellLayers=false;
+        const raw=result.result as OriginalDefaultGridLayersCell;
+        const selection=selectedCell;
+        const selected=layouts.find(row=>row.viewKey===selectedViewKey);
+        const grid=selected?.grids.find(row=>String(row.gridIdNative)===selectedGridId);
+        if(raw?.contract!=='wand.db04.original-default-gridlayers-cell@1'||
+           !selection||raw.x!==selection.x||raw.y!==selection.y||
+           raw.sourceLayoutId!==selected?.layoutId||
+           raw.nativeGridId!==grid?.gridIdNative||
+           raw.gridDataPath!==grid?.gridDataPath){
+          selectedCellLayers=null;
+          return;
+        }
+        selectedCellLayers=raw;
         return;
       }
       if(result.kind==='gridarea-window'){
@@ -642,6 +688,12 @@
           page:result.page, markers:result.markers,
           terrainStatus:result.terrainStatus, terrainRows:result.terrainRows,
         };
+        const point=selectedCell;
+        const rect=result.page?.rect as {x:number;y:number;width:number;height:number}|undefined;
+        if(point&&result.page?.status==='source_native_default_layout_anchors_only'&&
+           rect&&point.x>=rect.x&&point.y>=rect.y&&
+           point.x<rect.x+rect.width&&point.y<rect.y+rect.height)
+          requestSelectedCellLayers(point.x,point.y);
       }
     };
     owned.onerror = (error) => {
@@ -977,7 +1029,7 @@
               <button type="button" class:has-anchor={cell.count > 0}
                 class:current={selectedCell?.x === cell.x && selectedCell?.y === cell.y}
                 style:background-color={floorTint(cell.nativeFloorValue)}
-                on:click={() => selectedCell = {x:cell.x,y:cell.y}}
+                on:click={() => selectGridCell(cell.x,cell.y)}
                 title={`Grid local (${cell.x},${cell.y}); source anchors: ${cell.count}; native floor mask: ${cell.nativeFloorValue ?? 'unverified'}`}
                 aria-label={`座標${cell.x},${cell.y}：アンカー${cell.count}件`}>
                 {cell.count > 0 ? Math.min(cell.count, 99) : ''}
@@ -998,6 +1050,37 @@
           <p class="note">座標（{selectedCell.x}, {selectedCell.y}）の初期配置アンカー：{selectedPointCount}件。
             地形マスク：{selectedFloorValue ?? '未検証'}。
             ページ一覧に全件が含まれるとは限りません。</p>
+          {#if loadingCellLayers}
+            <p class="note" role="status">原本レイヤー値を照合中…</p>
+          {:else if selectedCellLayers?.status==='source_item_default_layer_or_only'}
+            <div class="source-cell-layer" aria-label="原本既定GridLayers照会">
+              <strong>Item既定レイヤー OR：
+                0x{selectedCellLayers.rawDefaultItemLayerOr!.toString(16).toUpperCase().padStart(8,'0')}</strong>
+              <span>参照{selectedCellLayers.sourceDefaultContributorCount}件
+                {#if selectedCellLayers.unresolvedSourceItemCount>0}
+                  · Item定義未収録 {selectedCellLayers.unresolvedSourceItemCount}件
+                {/if}
+                {#if selectedCellLayers.unresolvedSourceGridAreaCount>0}
+                  · 形状未定義 {selectedCellLayers.unresolvedSourceGridAreaCount}件
+                {/if}
+              </span>
+              <p class="note">原本初期配置の既定Item定義から計算した値です。
+                0でも空きマスとは判定できません。ランタイムの占有・衝突・配置可否とは別です。</p>
+              {#if selectedCellLayers.contributors.length>0}
+                <details>
+                  <summary>対応する原本GridObjectを表示（{selectedCellLayers.sourceDefaultContributorCount}件）</summary>
+                  {#each selectedCellLayers.contributors as contributor (contributor.nativeGridObjectId)}
+                    <p class="note">GridObject {contributor.nativeGridObjectId} ·
+                      Item {contributor.itemId} · レイヤー原値 {contributor.rawGridLayerValue}
+                      · 原本向き {contributor.originalOrientationCode}</p>
+                  {/each}
+                  {#if selectedCellLayers.contributorListTruncated}
+                    <p class="note">一覧は先頭{selectedCellLayers.contributors.length}件のみです。</p>
+                  {/if}
+                </details>
+              {/if}
+            </div>
+          {/if}
         {/if}
       </div>
 
