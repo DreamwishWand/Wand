@@ -7,7 +7,7 @@
   import { attachDb01PrivateNames } from './private-db01-names-view.ts';
   import { sanitizeSavedCollectionPresence } from './saved-collection-presence.mjs';
   import { sanitizeSavedCollectionDiscovery } from './saved-collection-discovery.ts';
-  import { sanitizePositiveListInventoryOwnership } from './saved-list-positive-ownership.mjs';
+  import { sanitizePositiveListInventoryOwnership } from './saved-list-positive-ownership.ts';
   import { sanitizeSavedGridFurnitureReferences } from './saved-grid-furniture-references.mjs';
   import { sanitizeSavedWorldDb04Join } from './saved-world-db04-join.mjs';
 
