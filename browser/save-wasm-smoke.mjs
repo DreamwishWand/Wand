@@ -598,7 +598,7 @@ try{
   // mixed batch. Rotation-only edits do not create additional ghost markers.
   await pickGrid.selectOption('2');
   assert.equal(await map.locator('.queued-ghost').count(),2);
-  assert.equal(await map.locator('.queued-ghost[title*="#3 X 130 Y 14"]').count(),1);
+  assert.equal(await map.locator('.queued-ghost[title*="#3 X 141 Y 15"]').count(),1);
   assert.equal(await map.locator('.queued-ghost[title*="#3 X 34 Y -6"]').count(),1);
   await pickGrid.selectOption('1');
   assert.equal(await map.locator('.queued-ghost').count(),1);
