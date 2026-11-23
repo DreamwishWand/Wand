@@ -131,7 +131,7 @@ class OriginalAreaSourceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "AREA_CONFIG_ARRAY_AMBIGUOUS"):
             area.extract_serialized_config(cab + cab, TAGS, SCENES)
         swapped = list(CONFIGS)
-        swapped[0] = (2, *swapped[0][1:])
+        swapped[1] = (3, *swapped[1][1:])
         with self.assertRaisesRegex(ValueError, "AREA_CODE_ORDER_OR_SOURCE_ID"):
             area.extract_serialized_config(fake_cab(swapped), TAGS, SCENES)
 
