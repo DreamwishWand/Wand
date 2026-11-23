@@ -47,6 +47,9 @@ import {
   type Db00OutsideSearchResult
 } from './outside-item-search.ts';
 import {
+  createDb00NativeCompanionReader,type Db00NativeCompanionReader
+} from './native-companions.ts';
+import {
   createDb00PublicItemSearch,
   type Db00PublicItemSearchRequest,type Db00PublicItemSearchResult
 } from './public-search.ts';
@@ -74,6 +77,8 @@ export interface PublicSharedGameSources{
   searchOutsideSourceItems(
     request?:Db00OutsideSearchRequest
   ):Db00OutsideSearchResult;
+  /** Optional 2-KB SHA-pinned native Companion source index, fetched on demand. */
+  loadNativeCompanionSources():Promise<Db00NativeCompanionReader>;
   queryItems(filters?:readonly SharedDbFilter[],
     page?:Readonly<{offset?:number;limit?:number}>):SharedDbQueryResult;
   summarizeFacet(request:SharedDbFacetRequest,
@@ -171,6 +176,11 @@ export async function openPublicSharedGameSources(
     }
     return outsideSearch.search(request);
   };
+  let companions:Promise<Db00NativeCompanionReader>|null=null;
+  const loadNativeCompanionSources=():Promise<Db00NativeCompanionReader>=>
+    companions??=acquisition.loadNativePetSources().then(pets=>
+      createDb00NativeCompanionReader(database,joined,pets)
+    );
   const search=createDb00PublicItemSearch(
     database,joined,acquisition.origins,guide,acquisition.staticContainerSource,
     guideQuestTargets,acquisition.defaultInventorySource,
@@ -215,7 +225,7 @@ export async function openPublicSharedGameSources(
     getItem:(id:string|number)=>joined.getItem(id),
     getItems:(ids:readonly (string|number)[])=>joined.getItems(ids),
     searchItems:search.searchItems,
-    searchOutsideSourceItems,
+    searchOutsideSourceItems,loadNativeCompanionSources,
     queryItems:(filters:readonly SharedDbFilter[]=[],
       page:Readonly<{offset?:number;limit?:number}>={})=>
       database.queryItems(filters,page),
