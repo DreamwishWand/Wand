@@ -283,21 +283,40 @@ export function comparePublicQuestBrowseOrder(
   if(na===null&&nb!==null)return 1;
   return Number(a.id)-Number(b.id);
 }
-/** Only characters who actually own source-native Village Quest definitions.
- * The group is based on the authoritative Quest characterId, not name matching.
+/** These are source Character IDs linked to Quest definitions, not proof
+ * of unlockability, villager status, or a friendship quest classification.
  */
-export function publicFriendshipCharacters(index:PublicQuestIndex,locale='ja'){
+export interface PublicQuestCharacterFacet {
+  readonly id:string;
+  readonly quests:number;
+  readonly name:string;
+}
+function questCharactersForSection(
+  index:PublicQuestIndex,section:'friendship'|'special',locale='ja'
+):PublicQuestCharacterFacet[]{
   verifyPublicQuestIndex(index);
   const lang=LOCALES.has(locale)?locale:'en';
   const count=new Map<string,number>();
   for(const row of index.quests){
-    if(publicQuestSection(row)==='friendship')
+    if(publicQuestSection(row)===section)
       count.set(row.characterId,(count.get(row.characterId)??0)+1);
   }
   return [...count].map(([id,quests])=>({
     id,quests,name:index.characters[id]?.[lang as PublicGuideLocale]||
       index.characters[id]?.en||id
   })).sort((a,b)=>a.name.localeCompare(b.name,lang)||Number(a.id)-Number(b.id));
+}
+/** Only source-native Village Quests belong to the verified Friendship tab.
+ * Secret quests with matching characters are NOT silently added to its count.
+ */
+export function publicFriendshipCharacters(index:PublicQuestIndex,locale='ja'){
+  return questCharactersForSection(index,'friendship',locale);
+}
+/** Source-only Secret Quests are grouped by their actual native Character ID.
+ * They remain in the separately labeled classification-pending category.
+ */
+export function publicSpecialCharacters(index:PublicQuestIndex,locale='ja'){
+  return questCharactersForSection(index,'special',locale);
 }
 /** Search the verified native Quest names, characters and objective classes.
  * Empty localized Quest names remain unresolved, not guessed. */
