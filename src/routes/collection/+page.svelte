@@ -40,6 +40,8 @@
   let facets:CollectionFacet[]=[];
   let worldScopeOptions:readonly CollectionScopeOption[]=[];
   let universeScopeOptions:readonly CollectionScopeOption[]=[];
+  let scopeRuntimeCache:CollectionRuntime|null=null;
+  let scopeLocaleCache='';
   let filtered:CollectionItem[]=[];
   let totalMatches=0;
   let overall:CollectionProgress={owned:0,missing:0,unknown:0,discovered:0,total:0};
@@ -130,11 +132,17 @@
       // Source Tag associations are not CollectionArea membership. The
       // runtime only exposes these options when the catalog explicitly carries
       // reviewed, source-validated per-item scope evidence.
-      const provenance=runtime.metadata.verifiedScopeMembership;
-      worldScopeOptions=collectionScopeOptions(runtime.metadata,'world',
-        provenance?.world?runtime.facets('world',locale):[],locale);
-      universeScopeOptions=collectionScopeOptions(runtime.metadata,'universe',
-        provenance?.universe?runtime.facets('universe',locale):[],locale);
+      if(scopeRuntimeCache!==runtime||scopeLocaleCache!==locale){
+        const provenance=runtime.metadata.verifiedScopeMembership;
+        worldScopeOptions=collectionScopeOptions(runtime.metadata,'world',
+          provenance?.world?runtime.facets('world',locale):[],locale);
+        universeScopeOptions=collectionScopeOptions(runtime.metadata,'universe',
+          provenance?.universe?runtime.facets('universe',locale):[],locale);
+        // Counts of catalog members are static across user manual edits.
+        // Do not scan 13k source facets on every infinite-scroll page.
+        scopeRuntimeCache=runtime;
+        scopeLocaleCache=locale;
+      }
       if(worldFilter&&!worldScopeOptions.some(x=>x.id===worldFilter))worldFilter='';
       if(universeFilter&&!universeScopeOptions.some(x=>x.id===universeFilter))universeFilter='';
       const collected:CollectionItem[]=[];
