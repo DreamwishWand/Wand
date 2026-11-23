@@ -439,9 +439,10 @@ test('batch rejects incomplete Skin responses, mismatched source identities and 
   const original=g.skin.getItems;
   g.skin.getItems=async ids=>{
     const rows=await original(ids);
+    const injected=await g.skin.getItem(rowsSkin[0].id);
     return rows.map((row,i)=>i===0?{
-      ...await g.skin.getItem(rowsSkin[0].id),
-      source:{...(await g.skin.getItem(rowsSkin[0].id)).source,itemId:ids[i]},
+      ...injected,
+      source:{...injected.source,itemId:ids[i]},
     }:row);
   };
   await assert.rejects(api(g).getItems([rowsFive[0].id]),
