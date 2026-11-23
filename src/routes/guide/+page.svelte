@@ -3,6 +3,8 @@
   import {base} from '$app/paths';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {loadPublicStarpath} from '$lib/guide/public-starpath.ts';
+  import {loadPublicEventFriendshipRewards,DB03_EVENT_FRIENDSHIP_REWARD_FILE}
+    from '$lib/guide/public-event-friendship-rewards.ts';
   import {starpathSeasonHref} from '$lib/guide/starpath-duty-link.ts';
   import {guideCalendarEvents,eventScheduleState,
     GUIDE_EVENT_CALENDAR_AS_OF,type GuideCalendarEvent
@@ -15,6 +17,7 @@
   import {guideTimelineCopy,GUIDE_LOCALES} from '$lib/guide/timeline-copy.ts';
 
   let events:GuideCalendarEvent[]=[];
+  let nativeFestivalNames:Readonly<Record<string,string>>|null=null;
   let loading=true;
   let loadError='';
   let now=Date.now();
@@ -47,8 +50,14 @@
     return new Intl.DateTimeFormat(viewerLocale,{timeZone:'UTC',weekday:'narrow'})
       .format(new Date(day+'T12:00:00Z'));
   }
-  function displayCategory(event:GuideCalendarEvent):'starpath'|'floating'|'valley'{
+  function displayCategory(event:GuideCalendarEvent):'starpath'|'floating'|'other'{
     return event.kind==='starpath'?'starpath':event.category;
+  }
+  function eventTitle(event:GuideCalendarEvent):string{
+    // Original game-data localization; never fabricate translated event names.
+    return event.kind==='limited-event'
+      ?(nativeFestivalNames?.[language]||nativeFestivalNames?.en||event.title)
+      :event.title;
   }
   function eventHref(event:GuideCalendarEvent):string{
     return event.kind==='starpath'
@@ -106,8 +115,13 @@
   async function load(){
     loading=true;loadError='';
     try{
-      const snapshot=await loadPublicStarpath(`${base}/guide/public/starpath-cache-2026-11-22.json`);
+      const [snapshot,native]=await Promise.all([
+        loadPublicStarpath(`${base}/guide/public/starpath-cache-2026-11-22.json`),
+        loadPublicEventFriendshipRewards(`${base}/guide/public/${DB03_EVENT_FRIENDSHIP_REWARD_FILE}`)
+          .catch(()=>null)
+      ]);
       events=guideCalendarEvents(snapshot);
+      nativeFestivalNames=native?.getEvent('floating_festival','HauntedFloatingFestival2026')?.names??null;
     }catch(error){
       loadError=error instanceof Error?error.message:String(error);
     }finally{
@@ -164,10 +178,9 @@
     </div>
 
     <div class="timeline-key" aria-label="表示記号">
-      <span><i class="sample task"></i>{copy.starPaths}</span>
-      <span><i class="sample exchange"></i>{copy.exchange}</span>
+      <span title={copy.exchange}><i class="sample task"></i>{copy.starPaths}</span>
       <span><i class="sample floating"></i>{copy.floating}</span>
-      <span><i class="sample valley"></i>{copy.valley}</span>
+      <span><i class="sample other"></i>{copy.other}</span>
       <span><i class="sample today-sample"></i>{copy.today}</span>
       <span><i class="sample reset-sample"></i>{copy.reset}</span>
     </div>
@@ -198,9 +211,9 @@
           {#each visibleRows as row (row.event.id)}
             <div class="timeline-row" class:selected={selectedId===row.event.id} data-category={displayCategory(row.event)}>
               <button class="event-label" on:click={()=>showEvent(row.event.id)}
-                aria-pressed={selectedId===row.event.id} title={row.event.title}>
+                aria-pressed={selectedId===row.event.id} title={eventTitle(row.event)}>
                 <span class="event-symbol"><WandIcon name={eventIcon(row.event)} size={17}/></span>
-                <span class="event-name">{row.event.title}</span>
+                <span class="event-name">{eventTitle(row.event)}</span>
                 <span class="row-chevron"><WandIcon name="chevron" size={15}/></span>
               </button>
               <div class="event-track">
@@ -215,18 +228,15 @@
                     class:exchange={segment.phase==='exchange'}
                     class:limited={segment.phase==='limited'}
                     class:floating={segment.phase==='limited'&&displayCategory(row.event)==='floating'}
-                    class:valley={segment.phase==='limited'&&displayCategory(row.event)==='valley'}
+                    class:other={segment.phase==='limited'&&displayCategory(row.event)==='other'}
                     class:clipped-start={segment.clippedStart}
                     class:clipped-end={segment.clippedEnd}
                     class:selected={selectedId===row.event.id}
                     style={`left:${segment.left}%;width:${segment.width}%`}
-                    title={`${row.event.title} · ${phaseName(segment.phase)} · ${eventBoundary(row.event)}`}
-                    aria-label={`${row.event.title} · ${phaseName(segment.phase)} · 詳細を表示`}
+                    title={`${eventTitle(row.event)} · ${phaseName(segment.phase)} · ${eventBoundary(row.event)}`}
+                    aria-label={`${eventTitle(row.event)} · ${phaseName(segment.phase)}`}
                     aria-pressed={selectedId===row.event.id}
                     on:click={()=>showEvent(row.event.id)}>
-                    {#if segment.width>12}
-                      <span>{phaseName(segment.phase)}</span>
-                    {/if}
                   </button>
                 {/each}
               </div>
@@ -245,7 +255,7 @@
         <div class="event-inspector" aria-label="選択したイベントの詳細">
           <div class="event-inspector-heading">
             <WandIcon name={eventIcon(selected)} size={22}/>
-            <div><strong>{selected.title}</strong><small>{stateName(selected)} · {selected.precision==='utc-instant'?viewerZone:copy.dateOnly}</small></div>
+            <div><strong>{eventTitle(selected)}</strong><small>{stateName(selected)} · {selected.precision==='utc-instant'?viewerZone:copy.dateOnly}</small></div>
             <button class="close" aria-label="詳細を閉じる" on:click={()=>selectedId=null}>
               <WandIcon name="close" size={18}/>
             </button>
@@ -307,7 +317,7 @@
   .sample{display:inline-block;width:17px;height:6px;border-radius:8px}
   .sample.task{background:linear-gradient(180deg,#8055ac,#9d68d2)}
   .sample.exchange{background:repeating-linear-gradient(135deg,transparent 0 5px,#ffffff38 5px 8px),linear-gradient(180deg,#8055ac,#9d68d2)}
-  .sample.floating{background:#30a6ab}.sample.valley{background:#d39747}
+  .sample.floating{background:#30a6ab}.sample.other{background:#d39747}
   .sample.today-sample{width:12px;height:12px;background:#674158;border:1px solid #e8a1c8;border-radius:3px}
   .sample.reset-sample{width:12px;height:12px;background:#224758;border:1px solid #74cde6;border-radius:3px}
   .timeline-scroll{min-width:0;max-width:100%;overflow-x:auto;overflow-y:hidden;flex:1;scrollbar-color:#705b84 #21172d;scrollbar-width:thin}
@@ -346,7 +356,7 @@
   .timeline-bar.task:not(.clipped-end){border-top-right-radius:0;border-bottom-right-radius:0}
   .timeline-bar.exchange:not(.clipped-start){border-top-left-radius:0;border-bottom-left-radius:0}
   .timeline-bar.floating{background:linear-gradient(180deg,#227d85,#37a9b2);border-color:#8cd9e1}
-  .timeline-bar.valley{background:linear-gradient(180deg,#996528,#d39b4d);border-color:#f4ce91}
+  .timeline-bar.other{background:linear-gradient(180deg,#996528,#d39b4d);border-color:#f4ce91}
   .timeline-bar.clipped-start{border-top-left-radius:0;border-bottom-left-radius:0;border-left:2px dashed #ddc6ed}
   .timeline-bar.clipped-end{border-top-right-radius:0;border-bottom-right-radius:0;border-right:2px dashed #ddc6ed}
   .timeline-bar:hover,.timeline-bar.selected{filter:brightness(1.2);box-shadow:0 0 0 2px #dab6ff90}
