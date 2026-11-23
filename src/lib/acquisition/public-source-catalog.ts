@@ -37,6 +37,8 @@ import {indexItemSourceBrowser,type ItemSourceBrowser}
   from './item-source-browser.ts';
 import {loadPinnedStaticContainerContents,type PinnedStaticContainerContents}
   from './public-static-container.ts';
+import {loadPinnedDefaultInventorySource,type PinnedDefaultInventorySource}
+  from './public-default-inventories.ts';
 import {indexPublicOnlineNameCandidates,
   type PublicOnlineNameCandidateIndex,
   type PublicOnlineNameCandidate} from './public-online-name-candidates.ts';
@@ -75,7 +77,12 @@ export interface PublicSourceCatalogCoverage {
   readonly staticContainerDefinitions:88;
   readonly staticContainerCandidateRoutes:146;
   readonly staticContainerCandidateItemIds:115;
+  readonly configuredDefaultInventoryGroups:15;
+  readonly configuredDefaultInventoryEntries:289;
+  readonly configuredDefaultInventoryItemIds:288;
   readonly totalPublishedOriginAndContainerCandidateRoutes:1401;
+  /** All exact configured source relations: does not assert actual acquisition. */
+  readonly totalPublishedSourceAndStaticCandidateRelations:1690;
   readonly publicNameOnlyCandidateRelations:number;
   readonly distinctNameOnlyCandidateItemIds:number;
   readonly verifiedOnlineNameAcquisitionLinks:0;
@@ -87,6 +94,8 @@ export type PublicSourceItemLookup=ReturnType<Db00OriginJoin['lookup']>&{
   readonly onlineNameCandidates:readonly PublicOnlineNameCandidate[];
   /** Independent static template evidence, not confirmed loot or player contents. */
   readonly staticContainerCandidates:readonly ItemOrigin[];
+  /** Native configured defaults: never proof the user's save owns them. */
+  readonly configuredDefaultInventoryCandidates:readonly ItemOrigin[];
   readonly originCoverageComplete:false;
 };
 export interface PublicSourceCatalog{
@@ -109,6 +118,7 @@ export interface PublicSourceCatalog{
   readonly nativeIapPackReferences:PinnedIapPackReferenceIndex;
   /** Source-native configured container template slots, never live contents. */
   readonly staticContainerSource:PinnedStaticContainerContents;
+  readonly defaultInventorySource:PinnedDefaultInventorySource;
   readonly coverage:PublicSourceCatalogCoverage;
   lookup(itemId:string|number):PublicSourceItemLookup;
   getSourceOrigin(originId:string):readonly ItemOrigin[];
@@ -130,7 +140,7 @@ export async function loadPublicSourceCatalog(
     'INVALID_BASE_PATH');
   const [
     rawDb00,questSource,eventFriendshipSource,nativeShopSource,nativeIapSource,
-    historicalNativeShopSource,staticContainerSource
+    historicalNativeShopSource,staticContainerSource,defaultInventorySource
   ]=await Promise.all([
     loadCurrentGameDatabase(basePath,fetcher),
     loadPinnedPublicQuestAcquisition(basePath,fetcher),
@@ -138,7 +148,8 @@ export async function loadPublicSourceCatalog(
     loadPinnedPublicNativeShopSnapshot(basePath,fetcher),
     loadPinnedPublicIapSource(basePath,fetcher),
     loadPinnedHistoricalNativeShopSnapshot(basePath,fetcher),
-    loadPinnedStaticContainerContents(basePath,fetcher)
+    loadPinnedStaticContainerContents(basePath,fetcher),
+    loadPinnedDefaultInventorySource(basePath,fetcher)
   ]);
   ensure(rawDb00.kind==='db_snapshot'&&rawDb00.items.length===13202,
     'CURRENT_DB00_REQUIRED');
@@ -184,6 +195,12 @@ export async function loadPublicSourceCatalog(
     shopHistory.coverage.repeatedNativeOfferIds===8&&
     shopHistory.coverage.distinctItemIds===186&&
     shopHistory.coverage.liveAvailabilityVerified===false&&
+    defaultInventorySource.coverage.groups===15&&
+    defaultInventorySource.coverage.configuredEntries===289&&
+    defaultInventorySource.coverage.distinctItemIds===288&&
+    defaultInventorySource.coverage.playerInventoryVerified===false&&
+    defaultInventorySource.coverage.newPlayerGrantVerified===false&&
+    defaultInventorySource.coverage.privateSaveIncluded===false&&
     staticContainerSource.coverage.definitionRecords===88&&
     staticContainerSource.coverage.populatedDefinitions===84&&
     staticContainerSource.coverage.populatedSourceSlots===146&&
@@ -245,7 +262,11 @@ export async function loadPublicSourceCatalog(
     staticContainerDefinitions:88 as const,
     staticContainerCandidateRoutes:146 as const,
     staticContainerCandidateItemIds:115 as const,
+    configuredDefaultInventoryGroups:15 as const,
+    configuredDefaultInventoryEntries:289 as const,
+    configuredDefaultInventoryItemIds:288 as const,
     totalPublishedOriginAndContainerCandidateRoutes:1401 as const,
+    totalPublishedSourceAndStaticCandidateRelations:1690 as const,
     publicNameOnlyCandidateRelations:nameCandidates.coverage.totalCandidateRelations,
     distinctNameOnlyCandidateItemIds:nameCandidates.coverage.distinctCandidateItemIds,
     verifiedOnlineNameAcquisitionLinks:0 as const,
@@ -259,7 +280,8 @@ export async function loadPublicSourceCatalog(
     source:'sha_pinned_public_db00_starpath_quest_event_friendship_native_shop_history_iap_and_official_records' as const,
     origins,db00,nameCandidates,questSource,eventFriendshipSource,
     nativeShopSource,nativeIapSource,historicalNativeShopSource,
-    nativeIapPackReferences,staticContainerSource,shopHistory,itemSources,coverage,
+    nativeIapPackReferences,staticContainerSource,defaultInventorySource,
+    shopHistory,itemSources,coverage,
     lookup(itemId:string|number){
       // db00.lookup validates IDs and keeps extra-ItemList Quest/Currency IDs.
       const row=db00.lookup(itemId);
@@ -267,12 +289,16 @@ export async function loadPublicSourceCatalog(
         ...row,
         onlineNameCandidates:nameCandidates.getItemCandidates(row.itemId),
         staticContainerCandidates:staticContainerSource.getItemCandidates(row.itemId),
+        configuredDefaultInventoryCandidates:
+          defaultInventorySource.getItemCandidates(row.itemId),
         originCoverageComplete:false as const
       });
     },
     getSourceOrigin(originId:string){
       const native=origins.getOrigin(originId);
-      return native.length?native:staticContainerSource.getOrigin(originId);
+      if(native.length)return native;
+      const containers=staticContainerSource.getOrigin(originId);
+      return containers.length?containers:defaultInventorySource.getOrigin(originId);
     },
     getCampaign(campaignId:string){return origins.getCampaign(campaignId);}
   });

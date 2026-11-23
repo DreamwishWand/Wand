@@ -61,6 +61,17 @@ test('Complete public Steam 1.26.2 DB-02 catalog joins 1255 source-pinned Star P
   assert.equal(catalog.coverage.staticContainerCandidateRoutes,146);
   assert.equal(catalog.coverage.staticContainerCandidateItemIds,115);
   assert.equal(catalog.coverage.totalPublishedOriginAndContainerCandidateRoutes,1401);
+  assert.equal(catalog.coverage.configuredDefaultInventoryGroups,15);
+  assert.equal(catalog.coverage.configuredDefaultInventoryEntries,289);
+  assert.equal(catalog.coverage.configuredDefaultInventoryItemIds,288);
+  assert.equal(catalog.coverage.totalPublishedSourceAndStaticCandidateRelations,1690);
+  assert.equal(catalog.defaultInventorySource.coverage.newPlayerGrantVerified,false);
+  assert.equal(catalog.defaultInventorySource.coverage.playerInventoryVerified,false);
+  const defaultWardrobe=catalog.lookup('50000320').configuredDefaultInventoryCandidates;
+  assert.equal(defaultWardrobe.length,1);
+  assert.equal(defaultWardrobe[0].quantity,3);
+  assert.equal(defaultWardrobe[0].routeStatus,'static_candidate_only');
+  assert.equal(catalog.getSourceOrigin(defaultWardrobe[0].originId)[0],defaultWardrobe[0]);
   assert.equal(catalog.staticContainerSource.coverage.liveContentsVerified,false);
   assert.equal(catalog.staticContainerSource.coverage.guaranteedLootVerified,false);
   assert.equal(catalog.staticContainerSource.origins.length,146);
@@ -92,8 +103,9 @@ test('Complete public Steam 1.26.2 DB-02 catalog joins 1255 source-pinned Star P
     catalog.coverage.linkedOutsidePublishedItemIds,
     catalog.coverage.allSourceLinkedItemIds);
   const urlList=new Set(seen);
-  assert.equal(seen.length,25); // 24 existing public assets + static container template source
-  assert.equal(urlList.size,25);
+  assert.equal(seen.length,26); // 25 existing public assets + default-inventories source
+  assert.equal(urlList.size,26);
+  assert(seen.some(s=>s.endsWith('/default-inventories-1.26.2.json')));
   assert(seen.some(s=>s.endsWith('/container-inventory-1.26.2.json')));
   assert(seen.some(s=>s.endsWith('/iap-pack-links-1.26.2.json')));
   assert(seen.some(s=>s.endsWith('/shop-cache-2026-07-15.json')));
@@ -257,6 +269,9 @@ test('Public-only startup rejects corrupt source-pinned DB-00 and Guide bytes; u
   await assert.rejects(loadPublicSourceCatalog(
     '/Wand',publicFetcher({corrupt:'container-inventory-1.26.2.json'}).fetcher
   ),/PUBLIC_SHA/);
+  await assert.rejects(loadPublicSourceCatalog(
+    '/Wand',publicFetcher({corrupt:'default-inventories-1.26.2.json'}).fetcher
+  ),/PROJECTION_SHA/);
   await assert.rejects(loadPublicSourceCatalog(
     '/Wand',publicFetcher({corrupt:'shop-cache-2026-07-15.json'}).fetcher
   ),/PROJECTION_SHA/);

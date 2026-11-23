@@ -22,7 +22,7 @@ function publicFetcher(corrupt=''){
   };
   return {fetcher,calls};
 }
-test('one public shared DB-00 API joins all 1255 published source routes, with 26 distinct requests',async()=>{
+test('one public shared DB-00 API joins all 1255 published source routes, with 27 distinct requests',async()=>{
   const {fetcher,calls}=publicFetcher();
   const app=await openPublicSharedGameSources('/Wand',fetcher);
   assert.equal(app.schema,DB00_PUBLIC_SOURCES_SCHEMA);
@@ -30,6 +30,14 @@ test('one public shared DB-00 API joins all 1255 published source routes, with 2
   assert.equal(app.database.itemCount,13202);
   assert.equal(app.acquisition.coverage.combinedSourceRoutes,1255);
   assert.equal(app.acquisition.coverage.staticContainerCandidateRoutes,146);
+  assert.equal(app.acquisition.coverage.configuredDefaultInventoryEntries,289);
+  assert.equal(app.acquisition.defaultInventorySource.coverage.distinctItemIds,288);
+  const clothingDefault=app.acquisition.lookup('50000320')
+    .configuredDefaultInventoryCandidates;
+  assert.equal(clothingDefault.length,1);
+  assert.equal(clothingDefault[0].routeStatus,'static_candidate_only');
+  assert.equal(clothingDefault[0].source.gameVersion,'1.26.2');
+
   assert.equal(app.acquisition.staticContainerSource.coverage.distinctItemIds,115);
   assert(app.acquisition.lookup('31500006').staticContainerCandidates.length>=3);
   assert(app.acquisition.lookup('31500006').staticContainerCandidates.every(x=>
@@ -42,8 +50,8 @@ test('one public shared DB-00 API joins all 1255 published source routes, with 2
   assert.equal(app.hasPrivateGameSource,false);
   assert.equal(app.currentAvailabilityVerified,false);
   assert.equal(app.playerOwnershipVerified,false);
-  assert.equal(calls.length,26);
-  assert.equal(new Set(calls).size,26);
+  assert.equal(calls.length,27);
+  assert.equal(new Set(calls).size,27);
   assert.equal(calls.filter(x=>x.endsWith('/active.json')).length,1);
   assert.equal(calls.filter(x=>x.endsWith('/starpath-cache-2026-11-22.json')).length,1);
   assert.equal(calls.filter(x=>x.endsWith('/items-013.json')).length,1);
@@ -82,9 +90,9 @@ test('one public shared DB-00 API joins all 1255 published source routes, with 2
 test('fresh calls do not share stale asset bytes; existing source SHA checks remain required',async()=>{
   const {fetcher,calls}=publicFetcher();
   await openPublicSharedGameSources('/Wand',fetcher);
-  assert.equal(calls.length,26);
+  assert.equal(calls.length,27);
   await openPublicSharedGameSources('/Wand',fetcher);
-  assert.equal(calls.length,52,'fetch deduplication is per call, not a persistent stale cache');
+  assert.equal(calls.length,54,'fetch deduplication is per call, not a persistent stale cache');
   await assert.rejects(
     openPublicSharedGameSources('/Wand',publicFetcher('items-012.json').fetcher),
     /SHA-256 mismatch/
