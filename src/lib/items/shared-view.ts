@@ -308,7 +308,16 @@ export function createDb01SharedItemClient(inputs:Db01EvidenceSources):Db01Share
           row.playerOwnershipVerified===false&&
           row.dlcEntitlementVerified===false&&
           row.runtimeSkinClassIndependentlyVerified===false&&
-          row.runtimeCritterSceneResolved===false,
+          row.runtimeCritterSceneResolved===false&&
+          (row.positiveAreaCodes===null?
+            (row.sourceAreaEvidence==='requires_profile_world_scene'&&
+              row.nativeCategory==='Companion')||
+            (row.sourceAreaEvidence==='original_interface_absent'&&
+              row.nativeCategory==='Skin'):
+            Array.isArray(row.positiveAreaCodes)&&
+            row.positiveAreaCodes.length<=1&&
+            row.sourceAreaEvidence===(row.positiveAreaCodes.length?
+              'native_positive_tag':'native_ihastags_without_positive_tag')),
           'NATIVE_AREA_CANONICAL_IDENTITY_OR_PROOF');
         found.set(id,row);
       }
