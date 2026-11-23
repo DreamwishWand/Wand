@@ -17,7 +17,16 @@ export const ITEM_MASTER_VERSIONS_PATH = 'ddv/item-master-releases.json' as cons
 /** Pass "current" for the release selected by the public version catalog. */
 export interface ItemMasterOpenOptions {
   readonly gameVersion?: string;
+  /** Expanded view adds original collectibles without replacing the base snapshot. */
+  readonly scope?: 'base' | 'expanded';
 }
+export interface ItemMasterExpandedRelease {
+  readonly release: string;
+  readonly count: number;
+  readonly extensionSha256: string;
+}
+export type ItemMasterUniverseStatus =
+  'source_linked' | 'unresolved_source' | 'no_universe_in_verified_tag_fields';
 export interface ItemMasterVersions {
   readonly schema: 'wand.item-master.versions@1';
   readonly current: string;
@@ -26,6 +35,7 @@ export interface ItemMasterVersions {
     release: string;
     count: number;
     archiveSha256: string;
+    expanded?: Readonly<ItemMasterExpandedRelease>;
   }>[];
 }
 export const ITEM_MASTER_LOCALES =
@@ -70,6 +80,15 @@ export interface ItemMasterRecord {
   readonly nativeKey: string;
   /** GUID uniquely resolves the icon asset, not an active CDN URL. */
   readonly iconGuid: string;
+  /** Exact original artwork addresses; MemoryShard retains image and mask. */
+  readonly artwork?: Readonly<{
+    iconGuid: string;
+    imageGuid?: string | null;
+    maskGuid?: string | null;
+  }>;
+  /** Numeric original universe references, not inferred ownership. */
+  readonly universeTagIds?: readonly number[];
+  readonly universeSourceStatus?: ItemMasterUniverseStatus;
   readonly itemType: Readonly<ItemMasterType>;
   readonly tags: readonly Readonly<ItemMasterTag>[];
   readonly collectionSourceCandidates: readonly Readonly<ItemMasterCollectionCandidate>[];
@@ -82,6 +101,11 @@ export interface ItemMasterRelease {
   readonly version: string;
   readonly target: Readonly<{platform:'Steam';gameVersion:string}>;
   readonly count: number;
+  readonly scope?: 'expanded';
+  readonly baseRelease?: string;
+  readonly baseCount?: number;
+  readonly extensionCount?: number;
+  readonly extensionSha256?: string;
   readonly bucketCount: 256;
   readonly coverage: Readonly<{
     itemNamesVerified: number;
@@ -126,6 +150,8 @@ function isObject(x:unknown): x is Record<string,unknown> {
 function freezeItemRecord(item:ItemMasterRecord):ItemMasterRecord {
   Object.freeze(item.names);
   Object.freeze(item.itemType);
+  if(item.artwork)Object.freeze(item.artwork);
+  if(item.universeTagIds)Object.freeze(item.universeTagIds);
   item.tags.forEach(tag=>Object.freeze(tag));
   Object.freeze(item.tags);
   item.collectionSourceCandidates.forEach(candidate=>Object.freeze(candidate));
@@ -143,6 +169,18 @@ function validRecord(raw:unknown, bucket:string): raw is ItemMasterRecord {
       raw.collectionMembershipVerified !== false ||
       raw.worldMembershipVerified !== false ||
       raw.availabilityVerified !== false) return false;
+  if(raw.artwork!==undefined && (!isObject(raw.artwork) ||
+      raw.artwork.iconGuid!==raw.iconGuid ||
+      !['imageGuid','maskGuid'].every(key=>raw.artwork===undefined||
+        (isObject(raw.artwork)&&(raw.artwork[key]===undefined||
+        raw.artwork[key]===null||
+        typeof raw.artwork[key]==='string'&&GUID.test(raw.artwork[key]))))))return false;
+  if(raw.universeTagIds!==undefined && (!Array.isArray(raw.universeTagIds)||
+      !raw.universeTagIds.every((id:unknown)=>ID(id)&&id>=2000500000&&id<2000600000)||
+      new Set(raw.universeTagIds).size!==raw.universeTagIds.length))return false;
+  if(raw.universeSourceStatus!==undefined &&
+      !['source_linked','unresolved_source','no_universe_in_verified_tag_fields']
+        .includes(String(raw.universeSourceStatus)))return false;
   const names = raw.names as Record<string,unknown>;
   if (!ITEM_MASTER_LOCALES.every(locale =>
     names[locale] === null ||
@@ -181,6 +219,8 @@ export async function openPublicItemMaster(
     /^\/?(?:[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*)?$/.test(basePath),
     'INVALID_BASE_PATH');
   const base = basePath ? '/' + basePath.replace(/^\/+|\/+$/g,'') : '';
+  const scope=options.scope??'base';
+  assert(scope==='base'||scope==='expanded','INVALID_SCOPE');
   let gameVersion = options.gameVersion ?? ITEM_MASTER_DEFAULT_GAME_VERSION;
   let selected: Readonly<ItemMasterVersions['releases'][number]> | undefined;
   assert(typeof gameVersion === 'string', 'INVALID_GAME_VERSION');
@@ -202,6 +242,16 @@ export async function openPublicItemMaster(
         entry.count<=MAX_DEFINITIONS &&
         typeof entry.archiveSha256 === 'string' &&
         SHA.test(entry.archiveSha256), 'INVALID_VERSIONS');
+      if(entry.expanded!==undefined){
+        const expanded=entry.expanded;
+        assert(isObject(expanded)&&typeof expanded.release==='string'&&
+          RELEASE_VERSION.test(expanded.release)&&
+          expanded.release.startsWith('steam-'+entry.gameVersion+'-')&&
+          expanded.release!==entry.release&&typeof expanded.count==='number'&&
+          Number.isSafeInteger(expanded.count)&&expanded.count>entry.count&&
+          expanded.count<=MAX_DEFINITIONS&&typeof expanded.extensionSha256==='string'&&
+          SHA.test(expanded.extensionSha256),'INVALID_EXPANDED_RELEASE');
+      }
       unique.add(entry.gameVersion);
     }
     gameVersion = raw.current;
@@ -210,7 +260,10 @@ export async function openPublicItemMaster(
     assert(selected, 'CURRENT_RELEASE_MISSING');
   }
   assert(GAME_VERSION.test(gameVersion), 'INVALID_GAME_VERSION');
-  const root = base + '/ddv/item-master/steam-' + gameVersion;
+  if(scope==='expanded'&&selected)assert(selected.expanded,'EXPANDED_RELEASE_NOT_PUBLISHED');
+  const selectedView=scope==='expanded'?selected?.expanded:selected;
+  const root = base + '/ddv/item-master/steam-' + gameVersion +
+    (scope==='expanded'?'-expanded':'');
   const release = await checkedJson(root+'/index.json',undefined,fetcher);
   assert(isObject(release) &&
     release.schema === 'wand.item-master.release@1' &&
@@ -225,8 +278,21 @@ export async function openPublicItemMaster(
     release.target.platform === 'Steam' &&
     release.target.gameVersion === gameVersion &&
     isObject(release.shards) &&
-    (!selected || (release.version === selected.release &&
-      release.count === selected.count)), 'INVALID_RELEASE');
+    (!selectedView || (release.version === selectedView.release &&
+      release.count === selectedView.count)), 'INVALID_RELEASE');
+  if(scope==='expanded'){
+    assert(release.scope==='expanded'&&typeof release.baseRelease==='string'&&
+      RELEASE_VERSION.test(release.baseRelease)&&
+      release.baseRelease.startsWith('steam-'+gameVersion+'-')&&
+      release.baseRelease!==release.version&&typeof release.baseCount==='number'&&
+      Number.isSafeInteger(release.baseCount)&&release.baseCount>0&&
+      typeof release.extensionCount==='number'&&Number.isSafeInteger(release.extensionCount)&&
+      release.extensionCount>0&&release.baseCount+release.extensionCount===release.count&&
+      typeof release.extensionSha256==='string'&&SHA.test(release.extensionSha256)&&
+      (!selected||(release.baseRelease===selected.release&&release.baseCount===selected.count&&
+        release.extensionSha256===selected.expanded?.extensionSha256)),
+      'INVALID_EXPANDED_RELEASE');
+  }else assert(release.scope===undefined,'UNEXPECTED_EXPANDED_RELEASE');
   const source = release as unknown as ItemMasterRelease;
   // The caller may share this reader with Collection, Explorer and Save.
   // Snapshot all mutable release metadata before any lazy asynchronous read.
