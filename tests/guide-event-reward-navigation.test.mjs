@@ -4,11 +4,12 @@ import {readFile} from 'node:fs/promises';
 import {
   verifyPublicEventFriendshipRewards
 } from '../src/lib/guide/public-event-friendship-rewards.ts';
+import {verifyEventRewardItemLabels} from '../src/lib/guide/event-reward-item-labels.ts';
 import {
   DB03_EVENT_REWARD_NAVIGATION_SCHEMA,
   guideEventRewardItemHref,guideEventRewardOccurrenceHref,
   resolveEventRewardItemDestination,resolveEventRewardOccurrenceDestination,
-  relatedEventRewardIds
+  relatedEventRewardIds,guideEventRewardCollectionHref
 } from '../src/lib/guide/event-reward-navigation.ts';
 
 const raw=JSON.parse(await readFile(
@@ -120,4 +121,34 @@ test('malformed, forged, mismatched and ambiguous event-reward pairs cannot crea
       guide,'HauntedFloatingFestival2026','40004651',bad),/BASE/);
   assert.equal(guideEventRewardOccurrenceHref(guide,'HauntedFloatingFestival2026','40002421'),null);
   assert.throws(()=>relatedEventRewardIds({...guide,coverage:{...guide.coverage,sourceNativeEvents:1}},'40004651'),/SOURCE_REQUIRED/);
+});
+
+test('only 109 native reward Items in published DB-00 receive Collection links',async()=>{
+  const names=verifyEventRewardItemLabels(JSON.parse(await readFile(
+    new URL('../static/guide/public/event-reward-item-labels-1.26.2.json',import.meta.url),
+    'utf8')),guide);
+  const items=[...new Set([
+    ...guide.events.flatMap(event=>event.rewards.map(reward=>reward.itemId)),
+    ...guide.defaultFriendship.map(reward=>reward.itemId)
+  ])];
+  const valid=items.map(itemId=>guideEventRewardCollectionHref(
+    guide,names,null,itemId,'/Wand')).filter(Boolean);
+  assert.equal(items.length,141);
+  assert.equal(valid.length,109);
+  assert.equal(guideEventRewardCollectionHref(guide,names,null,'40006319','/Wand'),
+    '/Wand/collection/?item=40006319');
+  assert.equal(guideEventRewardCollectionHref(guide,names,null,'80000000','/Wand'),null);
+  assert.equal(guideEventRewardCollectionHref(guide,names,null,'80100000'),null);
+  assert.equal(guideEventRewardCollectionHref(guide,null,null,'40006319'),null,
+    'do not link until source-verified names have loaded');
+  for(const itemId of ['0','00040006319','__proto__','999999999999999','99999999999999999',
+    'javascript:alert(1)',null]){
+    assert.equal(guideEventRewardCollectionHref(guide,names,null,itemId),null);
+  }
+  for(const base of ['//evil','/Wand/../evil','https://evil.site']){
+    assert.throws(()=>guideEventRewardCollectionHref(guide,names,null,'40006319',base),
+      /COLLECTION_INVALID_ITEM_LINK/);
+  }
+  assert.throws(()=>guideEventRewardCollectionHref({...guide,schema:'forged'},
+    names,null,'40006319'),/DB03_EVENT_COLLECTION_SOURCE_REQUIRED/);
 });
