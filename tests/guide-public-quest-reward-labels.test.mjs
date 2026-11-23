@@ -49,6 +49,14 @@ test('281 published native Quest reward Item names have exact 8-language and Col
   assert.equal(labels.getDisplayName('80000000','ja'),null);
   assert.equal(labels.getCollectionHref('80000000','/Wand'),null);
   assert.equal(labels.getDisplayName('120000051','ja'),null);
+  for(const unpublished of [
+    '80000000','80300000','100000166','120000051','80000003',
+    '150100035','170000029','80000010','120000159','110800052',
+    '120000192','210600006','110800057','120000203','2050301460'
+  ]){
+    assert.equal(labels.getDisplayName(unpublished,'ja'),null,unpublished);
+    assert.equal(labels.getCollectionHref(unpublished,'/Wand'),null,unpublished);
+  }
   for(const input of ['0','0040004032','__proto__','999999999999999','99999999999999999',null]){
     assert.equal(labels.getDisplayName(input,'ja'),null);
     assert.equal(labels.getCollectionHref(input,'/Wand'),null);
@@ -104,7 +112,12 @@ test('changed, foreign or incomplete reward label projections cannot be trusted'
   assert.throws(()=>verifyPublicQuestRewardItemLabels(forged,rewards,overrides),/TARGET/);
   forged=edited();const item=forged.items['40004032'];
   delete forged.items['40004032'];forged.items['80000000']=item;
-  assert.throws(()=>verifyPublicQuestRewardItemLabels(forged,rewards,overrides),/PUBLISHED_ITEM/);
+  assert.throws(()=>verifyPublicQuestRewardItemLabels(forged,rewards,overrides),/PUBLISHED_MEMBERSHIP/,
+    'an unpublished native currency ID cannot be spoofed as a published Item');
+  forged=edited();delete forged.items['40004032'];
+  forged.items['999999999']=item;
+  assert.throws(()=>verifyPublicQuestRewardItemLabels(forged,rewards,overrides),/PUBLISHED_ITEM/,
+    'an Item ID absent from the source graph cannot enter the crosswalk');
   forged=edited();forged.items['40004032'][0]='';
   assert.throws(()=>verifyPublicQuestRewardItemLabels(forged,rewards,overrides),/PUBLISHED_ITEM/);
   assert.throws(()=>verifyPublicQuestRewardItemLabels(raw,{schema:'forged'},overrides),/ORIGINAL_SOURCE_REQUIRED/);
