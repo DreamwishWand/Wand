@@ -499,6 +499,7 @@
              sourceAreaLink.originalAnchorX!==match.sourceAnchorX||
              sourceAreaLink.originalAnchorY!==match.sourceAnchorY||
              sourceAreaLink.originalOrientationCode===null||
+             sourceAreaLink.originalGridTessellationFactor===null||
              sourceAreaLink.originalGridTessellationFactor!==grid.tessellationFactor){
             globalFindMessage='原本GridObjectとItem定義の対応を確認できません。';
             return;
@@ -569,6 +570,7 @@
              sourceAreaLink.originalAnchorX!==found.sourceAnchorX||
              sourceAreaLink.originalAnchorY!==found.sourceAnchorY||
              sourceAreaLink.originalOrientationCode===null||
+             sourceAreaLink.originalGridTessellationFactor===null||
              sourceAreaLink.originalGridTessellationFactor!==chosen.tessellationFactor){
             anchorFindMessage='原本GridObjectとItem定義の対応を確認できません。';
             return;
