@@ -6,8 +6,9 @@ import {
 } from '../src/lib/guide/public-event-friendship-rewards.ts';
 import {
   DB03_EVENT_REWARD_NAVIGATION_SCHEMA,
-  guideEventRewardItemHref,
-  resolveEventRewardItemDestination
+  guideEventRewardItemHref,guideEventRewardOccurrenceHref,
+  resolveEventRewardItemDestination,resolveEventRewardOccurrenceDestination,
+  relatedEventRewardIds
 } from '../src/lib/guide/event-reward-navigation.ts';
 
 const raw=JSON.parse(await readFile(
@@ -68,4 +69,55 @@ test('Pages deployment contract is preserved by Svelte route title without chang
   assert.match(page,/<h1>イベント・友情報酬<\/h1>/);
   assert.match(page,/resolveEventRewardItemDestination\(read,params.get\('item'\)\)/);
   assert.match(page,/<span class="label">報酬候補 \{selectedRewards.length\}/);
+});
+
+test('source-exact event+Item permalinks retain historic edition and filter only genuine matches',()=>{
+  const shared='40004651';
+  assert.deepEqual(relatedEventRewardIds(guide,shared),
+    ['HauntedFloatingFestival','HauntedFloatingFestival2026']);
+  const href=guideEventRewardOccurrenceHref(
+    guide,'HauntedFloatingFestival2026',shared,'/Wand');
+  assert.equal(href,'/Wand/guide/events/?event=HauntedFloatingFestival2026&item=40004651');
+  assert.deepEqual(resolveEventRewardOccurrenceDestination(
+    guide,new URL(href,'https://example.invalid').search),{
+      eventId:'HauntedFloatingFestival2026',
+      eventFamily:'floating_festival',itemId:shared,
+      sourceConfigurationOnly:true,currentAvailabilityVerified:false
+  });
+  assert.equal(resolveEventRewardOccurrenceDestination(guide,
+    '?event=HauntedFloatingFestival&item=40004651')?.eventId,'HauntedFloatingFestival');
+  assert.equal(guideEventRewardOccurrenceHref(
+    guide,'HauntedFloatingFestival2026','40006319'),'\/guide/events/?event=HauntedFloatingFestival2026&item=40006319');
+  assert.equal(relatedEventRewardIds(guide,'40006319').length,1);
+});
+test('cross-event Item links are counted from source records and exclude TestEv',()=>{
+  const all=new Set(guide.events.flatMap(e=>e.rewards.map(r=>r.itemId)));
+  const multi=[...all].filter(itemId=>relatedEventRewardIds(guide,itemId).length>1);
+  assert.equal(multi.length,57);
+  for(const e of guide.events.filter(e=>e.id!=='TestEv'))
+    for(const r of e.rewards){
+      const url=guideEventRewardOccurrenceHref(guide,e.id,r.itemId);
+      assert(url?.includes('?event='));
+      assert.equal(resolveEventRewardOccurrenceDestination(guide,url.slice(url.indexOf('?')))?.eventId,e.id);
+    }
+  assert.equal(guideEventRewardOccurrenceHref(guide,'TestEv','40002421'),null);
+});
+test('malformed, forged, mismatched and ambiguous event-reward pairs cannot create links',()=>{
+  for(const search of [
+    '?event=HauntedFloatingFestival2026&item=40002421',
+    '?event=HauntedFloatingFestival2026&item=00040004651',
+    '?event=HauntedFloatingFestival2026&item=40004651&item=40006319',
+    '?event=HauntedFloatingFestival2026&event=HauntedFloatingFestival&item=40004651',
+    '?event=HauntedFloatingFestival2026&item=40004651&quest=20700001',
+    '?event=TestEv&item=40002421',
+    '?event=NotAnEvent&item=40004651',
+    '?event=HauntedFloatingFestival2026',
+    '?item=40004651',
+    '?event=HauntedFloatingFestival2026&item=40004651&'+('x'.repeat(2050))
+  ])assert.equal(resolveEventRewardOccurrenceDestination(guide,search),null,search);
+  for(const bad of ['../secret','//bad.site','https://bad.site','/Wand?x=1'])
+    assert.throws(()=>guideEventRewardOccurrenceHref(
+      guide,'HauntedFloatingFestival2026','40004651',bad),/BASE/);
+  assert.equal(guideEventRewardOccurrenceHref(guide,'HauntedFloatingFestival2026','40002421'),null);
+  assert.throws(()=>relatedEventRewardIds({...guide,coverage:{...guide.coverage,sourceNativeEvents:1}},'40004651'),/SOURCE_REQUIRED/);
 });
