@@ -30,7 +30,7 @@ test('official 2024 event establishes nine historic codes; each exact reward map
     assert.equal(OFFICIAL_CAMPAIGNS.includes(campaign),true);
     assert.equal(campaign.kind,'redeem_code');
     assert.equal(campaign.window.start,'2024-07-16');
-    assert.equal(campaign.window.endExclusive,'2024-08-16');
+    assert.equal(campaign.window.endExclusive,null);
     assert.equal(campaign.source.kind,'official_publication');
     assert.equal(campaign.source.sourceUrl,OFFICIAL);
     assert.equal(campaign.source.sha256,null);
