@@ -1185,3 +1185,16 @@ exports; no new JS code. These native machine-code paths stay pinned
 to verified **Steam v1.26.1** (future versions fail closed). Neither
 raw GridLayers nor native default X/Y are occupied Save cells or
 placement/collision permission.
+
+
+## Typed production World catalog
+
+\`src/lib/world/catalog.ts\` is the canonical typed read-only API.
+\`native-catalog-core.ts\` validates original entity IDs, default object
+composite identity, source Grid-area footprints and builds source-only
+indexes. \`native-layout-viewport.ts\` composes explicitly linked initial
+grid views. \`native-footprint-hypothesis.ts\` preserves explicitly
+unverified visual-only candidate assumptions and denies claims of legal
+placement. The Rust/WASM archive loader now imports \`catalog.ts\`
+directly. The old \`catalog.mjs\` has no product logic and exists only
+as a two-line re-export shim for legacy Collection clients/tests.
