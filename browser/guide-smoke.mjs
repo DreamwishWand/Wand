@@ -345,6 +345,9 @@ try {
     'calendar must select the year-specific native Festival instead of the earlier 5-reward edition');
   await hub.goBack({waitUntil:'domcontentloaded'});
   await hub.locator('.events-list .schedule-card').first().waitFor({timeout:20000});
+  // Month selection is page-local state: browser navigation restores current month.
+  await hub.getByRole('button',{name:'前の月'}).click();
+  assert.match(await hub.locator('.calendar-nav').innerText(),/2026年10月/);
   const seafaringCalendarHref='/Wand/guide/star-path/?season=Seafaring2026';
   const seafaringGuideLink=hub.locator('.schedule-card')
     .filter({hasText:'Seafaring Star Path'}).locator('.event-actions a').first();
