@@ -87,22 +87,10 @@
   $: workspace=state.workspaces.find(x=>x.id===state.active)??state.workspaces[0];
   $: entries=workspace?.entries??{};
   $: selectionLabel=facets.find(x=>x.id===selected)?.label??'';
+  // Render each Rust/WASM query result in its original order. Grouping all
+  // visible rows by category would move existing cards when another page is
+  // appended, producing scroll jumps and misleading partial group counts.
   $: visibleItems=filtered;
-  // The Rust engine owns category identity and ordering. Group visible
-  // records in one pass rather than repeatedly scanning every item once per
-  // category on each infinite-scroll append.
-  function groupVisibleItems(items:readonly CollectionItem[],categories:readonly CollectionFacet[]){
-    const groups=new Map<string,CollectionItem[]>();
-    for(const category of categories)groups.set(category.id,[]);
-    for(const item of items){
-      const matching=groups.get(item.family);
-      if(matching)matching.push(item);
-      else groups.set(item.family,[item]);
-    }
-    return [...groups].filter(([,records])=>records.length>0)
-      .map(([id,records])=>({id,items:records}));
-  }
-  $: groupedItems=groupVisibleItems(visibleItems,facets);
   $: selectedItem=selectedItemId!==null && runtime?runtime.item(selectedItemId,locale):null;
   $: selectedEntry=selectedItem?entries[String(selectedItem.itemId)]??{}:{};
   $: selectedGridRefs=selectedItem?savedGridByItem[String(selectedItem.itemId)]??null:null;
@@ -681,13 +669,9 @@
                 <button type="button" class="subtle-button" on:click={clearScope}>条件を解除</button>
               </div>
             {:else}
-              {#each groupedItems as group (group.id)}
-                {#if !selected || search.trim()}
-                  <h3 class="result-group-title">{categoryLabel(locale,group.id)} <span>{group.items.length}</span></h3>
-                {/if}
-                <div class="items-grid">
-                  {#each group.items as item (item.itemId)}
-                    <div class="item-card" class:current={selectedItemId===item.itemId} class:bulk-selected={selectedIds.includes(item.itemId)}>
+              <div class="items-grid">
+                  {#each visibleItems as item (item.itemId)}
+                    <div class="item-card" data-item-id={item.itemId} class:current={selectedItemId===item.itemId} class:bulk-selected={selectedIds.includes(item.itemId)}>
                       <button type="button" class="item-card-body"
                         on:click={(event)=>selectionMode?toggleSelected(item.itemId):void showItem(item.itemId,event)}
                         aria-pressed={selectionMode?selectedIds.includes(item.itemId):selectedItemId===item.itemId}
@@ -704,8 +688,7 @@
                       </button>
                     </div>
                   {/each}
-                </div>
-              {/each}
+              </div>
               {#if visible<totalMatches}
                 <div class="more-button" use:observeMore aria-label="スクロールで続きを自動読み込み" role="status"><WandIcon name="sparkles" size={18}/></div>
               {/if}
