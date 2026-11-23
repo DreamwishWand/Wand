@@ -5,6 +5,7 @@
   import NativeTerrainGridOverview from '$lib/world/NativeTerrainGridOverview.svelte';
   import NativeTerrainFloorMatchPanel from '$lib/world/NativeTerrainFloorMatchPanel.svelte';
   import type {OriginalFloorItem,NativeFloorMatchResult} from '$lib/world/native-floor-match.ts';
+  import type {NativeFloorWindowResult} from '$lib/world/native-floor-rectangle-window.ts';
   import NativeTerrainRegionAtlas from '$lib/world/NativeTerrainRegionAtlas.svelte';
   import type {SourceRegionAtlasPage} from '$lib/world/native-region-grid-atlas.ts';
   import type {OriginalItemAnchorFindResult, GlobalOriginalItemAnchorResult}
@@ -124,6 +125,8 @@
   let floorItemMatches:OriginalFloorItem[]=[];
   let selectedFloorItem:OriginalFloorItem|null=null;
   let floorMatchResult:NativeFloorMatchResult|null=null;
+  let floorWindowResult:NativeFloorWindowResult|null=null;
+  let floorOrientationCode=8;
   let floorMatchRequestId=-1;
   let floorMatchLoading=false;
   let floorMatchError='';
@@ -385,6 +388,7 @@
     floorItemMatches=[];
     selectedFloorItem=null;
     floorMatchResult=null;
+    floorWindowResult=null;
     floorMatchRequestId=-1;
     floorMatchLoading=false;
     floorMatchError='';
@@ -523,14 +527,21 @@
     selectedFloorItem=item;
     requestFloorMatch();
   }
+  function changeFloorOrientation(code:number){
+    if(!Number.isSafeInteger(code)||code<0||code>15)return;
+    floorOrientationCode=code;
+    requestFloorMatch();
+  }
   function clearFloorItem(){
     selectedFloorItem=null;
     floorMatchResult=null;
+    floorWindowResult=null;
     floorMatchLoading=false;
     floorMatchRequestId=-1;
     floorMatchError='';
   }
   function requestFloorMatch(){
+    floorWindowResult=null;
     floorMatchResult=null;
     floorMatchLoading=false;
     floorMatchError='';
@@ -542,7 +553,8 @@
     floorMatchRequestId=++requestId;
     worker.postMessage({command:'floor-match',requestId:floorMatchRequestId,
       regionKey:selectedRegion,viewKey:selectedViewKey,
-      gridIdNative:grid.gridIdNative,itemId:item.itemId});
+      gridIdNative:grid.gridIdNative,itemId:item.itemId,
+      orientationCode:floorOrientationCode});
   }
   function requestRegionAtlas(reset=true){
     if(reset){
@@ -757,6 +769,7 @@
         floorMatchLoading=false;
         if(result.kind==='error'){
           floorMatchResult=null;
+          floorWindowResult=null;
           floorMatchError=String(result.message??'原本地形の条件を照合できません。');
           return;
         }
@@ -767,7 +780,21 @@
           matched?.regionKey!==selectedRegion||
           matched?.gridDataPath!==grid?.gridDataPath||
           matched?.item?.itemId!==selectedFloorItem?.itemId)return;
+        const bounds=result.windowResult as NativeFloorWindowResult;
+        if(bounds?.contract!=='wand.db04.original-full-rectangle-floor-window@1'||
+           bounds?.regionKey!==selectedRegion||
+           bounds?.viewKey!==selectedViewKey||
+           bounds?.gridIdNative!==grid?.gridIdNative||
+           bounds?.gridDataPath!==grid?.gridDataPath||
+           bounds?.itemId!==selectedFloorItem?.itemId||
+           bounds?.orientationCode!==floorOrientationCode){
+          floorMatchResult=null;
+          floorWindowResult=null;
+          floorMatchError='原本座標または家具の選択が一致しません。';
+          return;
+        }
         floorMatchResult=matched;
+        floorWindowResult=bounds;
         floorMatchError='';
         return;
       }
@@ -1257,7 +1284,10 @@
         {/if}
         <NativeTerrainFloorMatchPanel
           matches={floorItemMatches} selected={selectedFloorItem}
-          result={floorMatchResult} searching={floorSearchLoading}
+          result={floorMatchResult} windowResult={floorWindowResult}
+          orientationCode={floorOrientationCode}
+          onOrientationChange={changeFloorOrientation}
+          searching={floorSearchLoading}
           loading={floorMatchLoading} errorMessage={floorMatchError}
           onSearch={searchFloorItems} onPick={chooseFloorItem}
           onClear={clearFloorItem}/>

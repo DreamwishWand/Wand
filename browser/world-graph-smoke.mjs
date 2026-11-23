@@ -25,7 +25,7 @@ const UNLINKED_EMPTY=UNLINKED_EMPTY_LAYOUT+'#grid=0';
 const GRAPH_URL='http://127.0.0.1:4178/Wand/world/preview/';
 
 /** Entirely synthetic original-world ZIP, created in this test only. */
-function syntheticTerrainZip(){
+function syntheticTerrainZip(decodedFloor=false){
   const gridPaths=['GridData/Village04/Beach.json',
     'GridData/OffGridBuildings/Detached.json'];
   const layouts=[
@@ -42,7 +42,18 @@ function syntheticTerrainZip(){
           acceptedFloorTypesFlag:'6.4'}
       }},{itemId:200,nativeType:'Building',footprint:null}],
     scenes:[],worlds:[],areas:[],
-    grids:gridPaths.map(gridId=>({
+    grids:gridPaths.map(gridId=>decodedFloor?({
+      gridId,sizeX:16,sizeY:16,
+      nativeSourceFormat:'original_json_direct_floor_values',
+      nativeFloorTypes:Array.from({length:256},(_,i)=>i===85?0:4),
+      nativeFloorTypePalette:[],compactedFloorTypesBase64:null,
+      terrainDecoding:{
+        decoded:true,status:'source_correlated_original_json_direct_floor_values',
+        packing:'x_major_direct_floor_values',
+        cellIndexFormula:'x*sizeY+y',sourceGameVersion:'1.26.2',
+        nativeCodeBodyVerified:false,placementLegalityVerified:false
+      }
+    }):({
       gridId,sizeX:16,sizeY:16,
       terrainDecoding:{decoded:false,
         status:'native_packing_not_verified_for_game_version'}
@@ -731,6 +742,40 @@ try{
   await panel.getByRole('button',{name:'原本参照グラフを破棄'}).click();
   assert.equal(await panel.locator('.graph-result-head').count(),0);
   assert.equal(await panel.locator('.graph-controls').count(),0);
+
+  // User-visible oriented full-rectangle floor match: intentionally generated
+  // Steam 1.26.2 floor data with one incompatible cell (5,5).
+  // No private game assets or actual Save editing are involved.
+  const originalFloorZip=syntheticTerrainZip(true);
+  await page.locator('.world-toolbar input[type=file]').setInputFiles({
+    name:'synthetic-verified-floor-masks.zip',mimeType:'application/zip',
+    buffer:originalFloorZip.archive
+  });
+  const terrainViewer=page.locator('.world-panel')
+    .filter({has:page.locator('.floor-evidence')});
+  await terrainViewer.locator('.floor-evidence').waitFor({timeout:20000});
+  const floorPanel=terrainViewer.locator('.floor-evidence');
+  await floorPanel.getByRole('searchbox',{name:'家具名で検索'})
+    .fill('SyntheticSource');
+  const sourceChair=floorPanel.getByRole('button',{
+    name:/SyntheticSourceObject/
+  });
+  await sourceChair.waitFor({timeout:20000});
+  await sourceChair.click();
+  await floorPanel.getByText(/221地点/).first().waitFor({timeout:20000});
+  assert.match(await floorPanel.innerText(),/設置可能マス数ではありません/);
+  assert.equal(await floorPanel.locator('canvas').count(),1);
+  const beforeDimensions=await floorPanel.locator('canvas').evaluate(
+    canvas=>({width:canvas.width,height:canvas.height})
+  );
+  assert.deepEqual(beforeDimensions,{width:16,height:16});
+  assert.match(await floorPanel.innerText(),/原本初期配置のアンカーを表示/);
+  await floorPanel.getByLabel('家具の向き').selectOption('4');
+  await floorPanel.getByText(/221地点/).first().waitFor({timeout:20000});
+  await floorPanel.getByRole('button',{name:'床属性だけ'}).click();
+  assert.equal(await floorPanel.locator('canvas').count(),1);
+  await floorPanel.getByRole('button',{name:'矩形全体の条件'}).click();
+  assert.equal(await floorPanel.locator('canvas').count(),1);
 
   // Reject a wrong original game version without showing previously loaded
   // source records. The test fixture is entirely synthetic and local.

@@ -10,6 +10,10 @@ import { WorldSourceLoadEpoch } from './world-source-load-epoch.ts';
 import { getNativeTerrainWindow,getNativeTerrainRaster } from './native-terrain-preview.ts';
 import {getNativeRegionGridAtlasPage} from './native-region-grid-atlas.ts';
 import {searchNativeFloorItems,getNativeFloorMatchResult} from './native-floor-match.ts';
+import {
+  getNativeFloorWindowResult,type FloorWindowMapper
+} from './native-floor-rectangle-window.ts';
+import {WasmSourceFloorRectangle} from './wasm/pkg/wand_world_core.js';
 import { findOriginalItemAnchor, findOriginalItemAnchorAcrossGrids } from './native-item-anchor-finder.ts';
 import { getOriginalGridAreaEvidence } from './native-gridarea-evidence.ts';
 import { getOriginalGridAreaLocalWindow } from './native-gridarea-local-window.ts';
@@ -33,7 +37,7 @@ type Request =
   | { command:'load'; requestId:number; file:Blob }
   | { command:'floor-items'; requestId:number; query:string }
   | { command:'floor-match';requestId:number;regionKey:string;
-      viewKey:string;gridIdNative:number;itemId:number }
+      viewKey:string;gridIdNative:number;itemId:number;orientationCode:number }
   | { command:'terrain-raster'; requestId:number; viewKey:string; gridIdNative:number }
   | { command:'region-atlas'; requestId:number; regionKey:string;offset:number }
   | { command:'view'; requestId:number; viewKey:string;
@@ -56,6 +60,19 @@ interface WorkerScope {
   postMessage: (message: unknown) => void;
 }
 const worker = self as unknown as WorkerScope;
+
+/**
+ * Invoked only after the same Worker initialized its World ZIP Rust/WASM
+ * module. All O(GridData cells) rectangle scanning runs in Rust.
+ */
+const wasmFloorWindow:FloorWindowMapper=(grid,accepted,bx,by)=>{
+  const solver=new WasmSourceFloorRectangle(
+    grid.nativeFloorValues,grid.sizeX,grid.sizeY,accepted,bx,by);
+  try{
+    return {originBitmap:solver.origin_bitmap(),
+      originCount:solver.origin_count()};
+  }finally{solver.free();}
+};
 const object = (x:unknown): x is Record<string,unknown> =>
   x!==null && typeof x==='object' && !Array.isArray(x);
 const nonnegative = (x:unknown): x is number =>
@@ -129,10 +146,12 @@ function parseRequest(data:unknown): Request {
     typeof data.viewKey==='string'&&data.viewKey.length>0&&
     data.viewKey.length<=2048&&
     nonnegative(data.gridIdNative)&&data.gridIdNative<=0xffffffff&&
-    positive(data.itemId)&&data.itemId<=0xffffffff)
+    positive(data.itemId)&&data.itemId<=0xffffffff&&
+    nonnegative(data.orientationCode)&&data.orientationCode<=15)
     return {command:'floor-match',requestId,
       regionKey:data.regionKey,viewKey:data.viewKey,
-      gridIdNative:data.gridIdNative,itemId:data.itemId};
+      gridIdNative:data.gridIdNative,itemId:data.itemId,
+      orientationCode:data.orientationCode};
   if(data.command==='region-atlas'&&
     typeof data.regionKey==='string'&&data.regionKey.length>0&&
     data.regionKey.length<=256&&nonnegative(data.offset)&&
@@ -247,7 +266,11 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
       const result=getNativeFloorMatchResult(catalog,views,
         message.regionKey,message.viewKey,
         message.gridIdNative,message.itemId);
-      worker.postMessage({kind:'floor-match',requestId,result});
+      const windowResult=getNativeFloorWindowResult(catalog,views,
+        message.regionKey,message.viewKey,
+        message.gridIdNative,message.itemId,message.orientationCode,
+        wasmFloorWindow);
+      worker.postMessage({kind:'floor-match',requestId,result,windowResult});
       return;
     }
     if(message.command==='region-atlas'){
