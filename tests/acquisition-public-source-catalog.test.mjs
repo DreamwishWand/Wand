@@ -538,3 +538,43 @@ test('original stall slot candidates enrich Item lookup lazily without claiming 
   assert.equal(catalog.itemSources.getKindItemIds('twitch_drop').length,0);
   assert(Object.isFrozen(expanded)&&Object.isFrozen(expanded.nativeStallCandidates));
 });
+
+test('public original object-LootTable bridge is lazy and does not promote static candidates into 1255 confirmed origins',async()=>{
+  const {seen,fetcher}=publicFetcher();
+  const catalog=await loadPublicSourceCatalog('/Wand',fetcher);
+  const count=seen.length;
+  const baseline=catalog.lookup('31700017');
+  assert.equal(catalog.coverage.combinedSourceRoutes,1255);
+  assert.equal(seen.some(u=>u.endsWith('/native-loot-candidates-1.26.2.json')),false);
+  const load1=catalog.loadNativeObjectLootSources();
+  const load2=catalog.loadNativeObjectLootSources();
+  assert.equal(load1,load2,'native object+loot bridge must reuse one promise');
+  const index=await load1;
+  assert.equal(index.coverage.directObjectTableReferences,375);
+  assert.equal(index.coverage.expandedStaticCandidateRelations,698);
+  assert.equal(index.coverage.distinctCandidateItemIds,356);
+  assert.equal(index.coverage.actualDropVerified,false);
+  assert.equal(seen.length,count+1,'only existing SHA-pinned LootTable is fetched');
+  assert.equal(seen.filter(u=>u.endsWith('/native-loot-candidates-1.26.2.json')).length,1);
+  const row=await catalog.lookupWithNativeObjectLootCandidates('31700017');
+  assert.equal(seen.length,count+1,'lookup reuses source cache');
+  assert.equal(row.itemId,baseline.itemId);
+  assert.deepEqual(row.origins,baseline.origins);
+  assert.deepEqual(row.onlineNameCandidates,baseline.onlineNameCandidates);
+  assert.equal(row.nativeObjectLootSourceLoaded,true);
+  assert.equal(row.objectTableReferenceVerified,true);
+  assert.equal(row.actualObjectDropVerified,false);
+  assert(row.nativeObjectLootCandidates.some(x=>
+    x.sourceObjectItemId==='31300003'&&
+    x.lootTableId==='2090000003'));
+  assert(row.nativeObjectLootCandidates.every(x=>
+    x.routeStatus==='static_candidate_only'&&
+    x.actualDropVerified===false&&
+    x.currentAvailabilityVerified===false));
+  assert.equal(catalog.coverage.combinedSourceRoutes,1255);
+  assert.equal(catalog.itemSources.getKindItemIds('loot').length,0);
+  assert.equal(catalog.itemSources.getKindItemIds('redeem_code').length,0);
+  assert.equal(catalog.itemSources.getKindItemIds('twitch_drop').length,0);
+  assert(Object.isFrozen(row));
+  assert(Object.isFrozen(row.nativeObjectLootCandidates));
+});
