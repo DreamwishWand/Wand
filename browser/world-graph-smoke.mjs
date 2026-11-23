@@ -421,6 +421,11 @@ try{
     /GridObject 1 · 向き 4 · Grid倍率 ×1 · 原本アンカー \(5, 5\)/);
   assert.equal(await page.getByRole('combobox',{name:'原本GridAreaの向き'})
     .inputValue(),'4');
+  const defaultLayers=page.getByLabel('原本既定GridLayers照会');
+  await defaultLayers.waitFor();
+  assert.match(await defaultLayers.innerText(),/Item既定レイヤー OR：\s*0x00000044/);
+  assert.match(await defaultLayers.innerText(),/参照1件/);
+  assert.match(await defaultLayers.innerText(),/0でも空きマスとは判定できません/);
   await nativeItemQuery.fill('999');
   await page.getByRole('button',{name:'原本初期配置を探す'}).click();
   await page.getByRole('status')
@@ -446,6 +451,10 @@ try{
     /GridObject 1 · 向き 8 · Grid倍率 ×1 · 原本アンカー \(4, 5\)/);
   assert.equal(await gridareaPanel.getByRole('combobox',{name:'原本GridAreaの向き'})
     .inputValue(),'8');
+  await page.waitForFunction(()=>document.querySelector(
+    '[aria-label="原本既定GridLayers照会"]')?.textContent
+    ?.includes('0x00000000'));
+  assert.match(await defaultLayers.innerText(),/参照1件/);
   assert.match(await gridareaPanel.innerText(),
     /原本既定GridAreaの外接枠：\s*\(4,\s*5\) ·\s*2 ×\s*2/);
   const originalDefaultOutline=page.getByLabel('原本Item既定GridArea外接枠');
@@ -500,6 +509,9 @@ try{
   await page.getByRole('button',{name:'次の候補'}).click();
   await page.getByRole('status')
     .filter({hasText:'原本初期配置 2 / 2件'}).waitFor();
+  await page.waitForFunction(()=>document.querySelector(
+    '[aria-label="原本既定GridLayers照会"]')?.textContent
+    ?.includes('0x00000044'));
   assert.match(await gridareaPanel.getByLabel('原本初期配置のItem参照').innerText(),
     /GridObject 1 · 向き 4 · Grid倍率 ×1 · 原本アンカー \(5, 5\)/);
   assert.equal(await gridareaPanel.getByRole('combobox',{name:'原本GridAreaの向き'})
@@ -517,6 +529,14 @@ try{
   await page.getByRole('status')
     .filter({hasText:'原本初期配置 1 / 2件'}).waitFor();
   assert.equal(await terrainSelectors.nth(2).inputValue(),'1');
+  // A query returning zero from ORIGINAL default Item masks does not imply
+  // that the real player grid or runtime cell is empty.
+  await page.getByRole('button',{name:'座標0,0：アンカー0件'}).click();
+  await page.waitForFunction(()=>document.querySelector(
+    '[aria-label="原本既定GridLayers照会"]')?.textContent
+    ?.includes('0x00000000'));
+  assert.match(await defaultLayers.innerText(),/参照0件/);
+  assert.match(await defaultLayers.innerText(),/0でも空きマスとは判定できません/);
   await globalItemQuery.fill('999');
   await globalItemQuery.press('Enter');
   await page.waitForFunction(()=>!document.querySelector(
