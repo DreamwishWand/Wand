@@ -8,7 +8,7 @@
   import {loadStarpathWeeklyLocales,starpathWeeklyDescription} from '$lib/guide/public-starpath-locales.ts';
   import type {StarpathDailyParts,StarpathLocalizedPart} from '$lib/guide/starpath-locale-contract.ts';
   import {loadStarpathDailyLocales,starpathDailyDescription} from '$lib/guide/public-starpath-daily.ts';
-  import {starpathRewardDisplayName,loadStarpathRewardExtras} from '$lib/guide/starpath-reward-extras.mjs';
+  import {starpathRewardDisplayName,loadStarpathRewardExtras,type StarpathRewardExtras} from '$lib/guide/starpath-reward-extras.ts';
   import {createGuideRewardIndex,type GuideRewardIndex} from '$lib/guide/reward-relations.ts';
   import {createGuideStarpathHistory,type GuideStarpathHistory} from '$lib/guide/starpath-history.ts';
   import {loadStarpathNativeRevisionEvidence,STARPATH_NATIVE_REVISION_FILE,
@@ -22,7 +22,8 @@
   import type {GuideRewardOccurrence} from '$lib/guide/reward-relations.ts';
   import {loadPublicStarpathGoals,starpathGoalLabel,starpathGoalHeading,starpathGoalSourceNote} from '$lib/guide/public-starpath-goals.mjs';
 
-  let catalog:any=null, rewardExtras:any=null, publicMedia:any=null, goalAmounts:any=null, goalWarning='', error='', loading=true;
+  let catalog:any=null, publicMedia:any=null, goalAmounts:any=null, goalWarning='', error='', loading=true;
+  let rewardExtras:StarpathRewardExtras|null=null;
   let weeklyLocales:StarpathLocalizedPart|null=null;
   let dailyLocales:StarpathDailyParts|null=null;
   let sharedRewardIndex:GuideRewardIndex|null=null;

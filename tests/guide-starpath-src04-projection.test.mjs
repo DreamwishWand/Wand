@@ -4,7 +4,7 @@ import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
-import {VERIFIED_STARPATH_REWARD_NAMES} from '../src/lib/guide/starpath-reward-names.mjs';
+import {VERIFIED_STARPATH_REWARD_NAMES} from '../src/lib/guide/starpath-reward-names.ts';
 import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.mjs';
 import {
   verifyPromotionPlan,verifyMediaCandidate,createRewardSubset,

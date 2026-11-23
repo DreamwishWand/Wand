@@ -5,7 +5,7 @@
  * image sources. This explicit source-controlled release pin is inert until
  * the media publisher provides a separately verified public release.
  */
-import {VERIFIED_STARPATH_REWARD_NAMES} from './starpath-reward-names.mjs';
+import {VERIFIED_STARPATH_REWARD_NAMES} from './starpath-reward-names.ts';
 
 export const STARPATH_MEDIA_ACTIVATION = Object.freeze({
   state: 'unpublished',

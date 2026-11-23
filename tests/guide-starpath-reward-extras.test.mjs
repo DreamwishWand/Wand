@@ -6,8 +6,9 @@ import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.mjs';
 import {
   STARPATH_EXTRA_RELEASE,STARPATH_EXTRA_CATEGORIES,
   verifyStarpathRewardExtras,loadStarpathRewardExtras,starpathRewardDisplayName
-} from '../src/lib/guide/starpath-reward-extras.mjs';
-import {VERIFIED_STARPATH_REWARD_NAMES} from '../src/lib/guide/starpath-reward-names.mjs';
+} from '../src/lib/guide/starpath-reward-extras.ts';
+import {VERIFIED_STARPATH_REWARD_NAMES,STARPATH_REWARD_NAME_CENSUS,
+  verifyStarpathRewardNameCensus} from '../src/lib/guide/starpath-reward-names.ts';
 const pub=new URL('../static/guide/public/',import.meta.url);
 const read=async name=>readFile(new URL(name,pub));
 const hash=buf=>createHash('sha256').update(buf).digest('hex');
@@ -56,4 +57,26 @@ test('browser may only use digest-verified reward crosswalk',async()=>{
   const altered=Buffer.from(raw);altered[55]^=1;
   await assert.rejects(()=>loadStarpathRewardExtras('unused',season,async()=>({ok:true,arrayBuffer:async()=>fromBuffer(altered)})),/fingerprint mismatch/);
   await assert.rejects(()=>loadStarpathRewardExtras('unused',season,async()=>({ok:false})),/fetch failed/);
+});
+
+
+test('typed reward names retain exact 43 public original names, 17 outside-category IDs, and no player-state claims',()=>{
+  const audit=verifyStarpathRewardNameCensus();
+  assert.deepEqual(audit,STARPATH_REWARD_NAME_CENSUS);
+  assert.equal(audit.verifiedNames,43);
+  assert.equal(audit.unresolved,17);
+  assert.equal(audit.sourceCandidates,60);
+  assert.equal(audit.playerOwnershipVerified,false);
+  assert.equal(audit.currentAvailabilityVerified,false);
+  assert(Object.isFrozen(audit));
+});
+test('reward extras loader rejects an apparently complete but unverified 2-season catalogue',async()=>{
+  const snapshot=verifyPublicStarpath(JSON.parse(await read('starpath-cache-2026-11-22.json')));
+  const data=JSON.parse(await read(STARPATH_EXTRA_RELEASE.file));
+  const fake=structuredClone(snapshot);
+  fake.source.fileSha256='0'.repeat(64);
+  assert.throws(()=>verifyStarpathRewardExtras(data,fake),/provenance/);
+  assert.equal(starpathRewardDisplayName('100000778','not-a-language',data),null);
+  assert.equal(starpathRewardDisplayName('20500163','ja',null),null);
+  assert.equal(starpathRewardDisplayName('__proto__','ja',data),null);
 });
