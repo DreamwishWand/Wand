@@ -324,7 +324,7 @@ export function guideArchiveTitle(event:GuideCalendarEvent,language:string):stri
 const DAYS:readonly (readonly [string,string,string,string|null,string|null])[]=[
  ['Festive2022','2022-12-06','2023-02-03','2023-01-27',null], // FestiveStart / FestiveDone
  ['D1002022','2023-02-16','2023-03-29',null,null], // D100Start
- ['Parks2022','2023-04-05','2023-05-24',null,'https://disneydreamlightvalley.com/news/Pride-of-the-Valley-Content-Update'], // official launch; native ParksDone
+ ['Parks2022','2023-04-05','2023-05-24','2023-05-17',null], // ParksStart / ParksDone
  ['PixarFest2023','2023-06-07','2023-08-14','2023-08-07',null], // SP05Start / PixarFest2023Done
  ['Halloween2023','2023-09-13','2023-11-08','2023-11-01',null], // SP06Start / SP06Done
  ['Princesses2023','2023-12-05','2024-01-31','2024-01-24',null], // Princesses2023Start / Done
