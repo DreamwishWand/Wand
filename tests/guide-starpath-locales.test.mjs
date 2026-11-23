@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.mjs';
-import {verifyStarpathWeeklyLocales,starpathWeeklyDescription,loadStarpathWeeklyLocales,STARPATH_LOCALES_SHA,STARPATH_LOCALES_BYTES} from '../src/lib/guide/public-starpath-locales.mjs';
+import {verifyStarpathWeeklyLocales,starpathWeeklyDescription,loadStarpathWeeklyLocales,STARPATH_LOCALES_SHA,STARPATH_LOCALES_BYTES} from '../src/lib/guide/public-starpath-locales.ts';
 import {STARPATH_REWARD_NAME_INDEX_SHA,VERIFIED_STARPATH_REWARD_NAMES,STARPATH_UNRESOLVED_REWARD_IDS,starpathRewardName} from '../src/lib/guide/starpath-reward-names.mjs';
 const root=new URL('../static/',import.meta.url);
 const hex=raw=>createHash('sha256').update(raw).digest('hex');
