@@ -334,6 +334,20 @@ try {
   assert.equal(await hub.locator('.day[aria-label="2026-11-01"] .limited').count(),0);
   assert.equal(await hub.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),true,
     'mobile event calendar overflow');
+  const festivalCalendarHref='/Wand/guide/events/?event=HauntedFloatingFestival2026';
+  const festivalGuideLink=hub.locator('.schedule-card')
+    .filter({hasText:'The Haunted Floating Festival'}).locator('.event-actions a').first();
+  assert.equal(await festivalGuideLink.getAttribute('href'),festivalCalendarHref);
+  assert.equal(await hub.locator('.day[aria-label="2026-10-07"] a.limited[href="'+festivalCalendarHref+'"]').count(),1);
+  await festivalGuideLink.click();
+  await hub.locator('.reward-detail .native-id').filter({hasText:'HauntedFloatingFestival2026'}).waitFor({timeout:20000});
+  assert.equal(await hub.locator('.reward-detail .reward-row').count(),9,
+    'calendar must select the year-specific native Festival instead of the earlier 5-reward edition');
+  await hub.goBack({waitUntil:'domcontentloaded'});
+  await hub.locator('.events-list .schedule-card').first().waitFor({timeout:20000});
+  // Month selection is page-local state: browser navigation restores current month.
+  await hub.getByRole('button',{name:'前の月'}).click();
+  assert.match(await hub.locator('.calendar-nav').innerText(),/2026年10月/);
   const seafaringCalendarHref='/Wand/guide/star-path/?season=Seafaring2026';
   const seafaringGuideLink=hub.locator('.schedule-card')
     .filter({hasText:'Seafaring Star Path'}).locator('.event-actions a').first();

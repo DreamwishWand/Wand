@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.ts';
+import {verifyPublicEventFriendshipRewards} from '../src/lib/guide/public-event-friendship-rewards.ts';
 import {verifyPublicQuestIndex,publicQuestSection,filterPublicQuests} from '../src/lib/guide/public-guide.ts';
 import {
   GUIDE_EVENT_CALENDAR_CONTRACT,GUIDE_EVENT_CALENDAR_AS_OF,GUIDE_EVENT_CALENDAR_SOURCES,
@@ -29,6 +30,16 @@ test('Guide event calendar distinguishes owner-cache UTC schedule from unverifie
   assert.equal(events[2].precision,'date-only');
   assert.equal(events[2].startDay,'2026-10-07');
   assert.equal(events[2].endDayInclusive,'2026-10-31');
+  // The official 2026 date-only announcement links to the DISTINCT original
+  // 2026 native Festival definition, not the similarly named old definition.
+  assert.equal(events[2].href,'/guide/events/?event=HauntedFloatingFestival2026');
+  const native=verifyPublicEventFriendshipRewards(JSON.parse(
+    await readFile(new URL('event-friendship-rewards-1.26.2.json',sourceDir),'utf8')));
+  const requested=new URL(events[2].href,'https://example.invalid').searchParams.get('event');
+  assert.equal(requested,'HauntedFloatingFestival2026');
+  assert.equal(native.getEvent('floating_festival',requested)?.rewards.length,9);
+  assert.equal(native.getEvent('floating_festival','HauntedFloatingFestival')?.rewards.length,5);
+
   assert(!('startUtc' in events[2]),'do not invent a festival starting hour');
   assert(!('endUtcExclusive' in events[2]),'do not invent a festival deadline hour');
   assert.match(localGuideDateTime(events[1].taskEndUtcExclusive),/2026\/12\/01 23:00 JST/);
