@@ -66,8 +66,10 @@ async function syntheticRelease() {
     schema:'wand.item-master.versions@1',
     current:NEW,
     releases:[
-      {gameVersion:OLD,release:manifest.version,count:manifest.count},
-      {gameVersion:NEW,release:newIndex.version,count:newIndex.count}
+      {gameVersion:OLD,release:manifest.version,count:manifest.count,
+        archiveSha256:'3c80a42139014211100eb556665636088af45d1d0b54ebd2933a4aeab2a405c6'},
+      {gameVersion:NEW,release:newIndex.version,count:newIndex.count,
+        archiveSha256:'0'.repeat(64)}
     ],
   };
   return {newIndex,files,catalog};
