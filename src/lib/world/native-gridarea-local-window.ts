@@ -12,6 +12,10 @@ import {
   getOriginalGridAreaEvidence,
   type OriginalGridAreaStatus
 } from './native-gridarea-evidence.ts';
+import {
+  GRIDAREA_ROT_COS, GRIDAREA_ROT_SIN,
+  nativeObliqueSourceLocalPosition
+} from './native-oblique.ts';
 
 export const DB04_SOURCE_LOCAL_GRIDAREA_WINDOW=
   'wand.db04.original-gridarea-local-window@1' as const;
@@ -51,10 +55,8 @@ const obj=(v:unknown):v is RecordValue=>
 const int=(v:unknown):v is number=>
   typeof v==='number'&&Number.isSafeInteger(v);
 const CARDINAL=new Set([0,4,8,12]);
-// Original signed int32 rotation tables, 16 entries each. Verified from
-// source-hashed field-default blobs in BOTH IL2CPP metadata v31 originals.
-const COS=[-100,-92,-71,-38,0,38,71,92,100,92,71,38,0,-38,-71,-92] as const;
-const SIN=[0,38,71,92,100,92,71,38,0,-38,-71,-92,-100,-92,-71,-38] as const;
+// Rotation coefficients and noncardinal source mapping are shared with
+// the original legacy catalog through native-oblique.ts; do not fork math.
 
 function result(
   status:SourceLocalGridAreaStatus,itemId:number,orientationCode:number,
@@ -92,7 +94,7 @@ function result(
 function originalOrientedBaseSize(sx:number,sy:number,orientation:number){
   if(orientation===0||orientation===8)return {x:sx,y:sy};
   if(orientation===4||orientation===12)return {x:sy,y:sx};
-  const c=Math.abs(COS[orientation]),s=Math.abs(SIN[orientation]);
+  const c=Math.abs(GRIDAREA_ROT_COS[orientation]),s=Math.abs(GRIDAREA_ROT_SIN[orientation]);
   return {
     x:Math.trunc((Math.imul(c,sx)+Math.imul(s,sy))/100),
     y:Math.trunc((Math.imul(c,sy)+Math.imul(s,sx))/100)
@@ -114,7 +116,7 @@ export function getOriginalGridAreaDisplayDimensions(
   });
 }
 function originalLayerCoordinates(
-  sx:number,sy:number,nx:number,ny:number,
+  sx:number,sy:number,
   x:number,y:number,orientation:number
 ):Readonly<{x:number;y:number}>|null {
   if(CARDINAL.has(orientation)){
@@ -126,22 +128,12 @@ function originalLayerCoordinates(
       orientation===12?x:y;
     return lx<0||ly<0||lx>=sx||ly>=sy?null:{x:lx,y:ly};
   }
-  // Native MoreRotationGetGridLocalPosition source coordinates in
-  // hundredths: cell centres, inverse integer rotation, then floor /100.
-  // Math.imul and |0 preserve original signed 32-bit product wrapping;
-  // division of each product is truncation toward zero, NOT Math.round().
-  const cx=(Math.imul(x,100)+50-Math.imul(nx,50))|0;
-  const cy=(Math.imul(y,100)+50-Math.imul(ny,50))|0;
-  const cos=COS[orientation],sin=SIN[orientation];
-  const rx=(
-    Math.trunc(Math.imul(cx,cos)/100)+
-    Math.trunc(Math.imul(cy,sin)/100)+Math.imul(sx,50))|0;
-  const ry=(
-    Math.trunc(Math.imul(cy,cos)/100)-
-    Math.trunc(Math.imul(cx,sin)/100)+Math.imul(sy,50))|0;
-  if(rx<0||ry<0)return null;
-  const lx=Math.trunc(rx/100),ly=Math.trunc(ry/100);
-  return lx>=sx||ly>=sy?null:{x:lx,y:ly};
+  // Original ratio=1 local cell math lives in a single source-pinned
+  // TypeScript implementation. The outer caller handles explicit grid
+  // tessellation by sampling floor(x/factor), floor(y/factor).
+  const mapped=nativeObliqueSourceLocalPosition(sx,sy,x,y,orientation);
+  return mapped.inside
+    ?{x:mapped.originalLocalX,y:mapped.originalLocalY}:null;
 }
 
 /** Max 16×16 literal raw source values, never a physical occupancy map. */
@@ -177,7 +169,7 @@ export function getOriginalGridAreaLocalWindow(
   for(let iy=y;iy<y+height;iy++){
     const row:(number|null)[]=[];
     for(let ix=x;ix<x+width;ix++){
-      const local=originalLayerCoordinates(sx,sy,base.x,base.y,
+      const local=originalLayerCoordinates(sx,sy,
         Math.floor(ix/callerGridFactor),Math.floor(iy/callerGridFactor),
         orientationCode);
       if(!local){

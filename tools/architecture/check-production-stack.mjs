@@ -84,7 +84,6 @@ const knownLegacy=new Set([
   "src/lib/ui/collect-window.mjs",
   "src/lib/world/catalog.mjs",
   "src/lib/world/local-snapshot.mjs",
-  "src/lib/world/oblique.mjs",
   "src/lib/world/world-preview.worker.mjs"
 ]);
 async function visit(dir) {
