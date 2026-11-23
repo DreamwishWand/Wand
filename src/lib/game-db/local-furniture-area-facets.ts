@@ -236,6 +236,7 @@ export function createDb00LocalFurnitureAreaFacetReader(
       (all?source.total===6746:true) &&
       Array.isArray(source.itemIds) &&
       source.itemIds.length<=limit &&
+      (source.total<=offset||source.itemIds.length>0) &&
       source.itemIds.length<=Math.max(0,source.total-offset) &&
       source.itemIds.every(id=>Number.isSafeInteger(id)&&id>0) &&
       source.itemIds.every((id,i)=>i===0||source.itemIds[i-1]<id) &&
