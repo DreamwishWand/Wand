@@ -60,7 +60,7 @@ export function getNativeFootprintObliqueOrientedWindow(
   if (!footprint) return null;
   const probe = getNativeFootprintObliqueOrientedLayerAt(
     catalog, itemId, 0, 0, orientationCode);
-  if (probe.nativeNoncardinalPositionTransformVerified !== true) return probe;
+  if (!probe || probe.nativeNoncardinalPositionTransformVerified !== true) return probe;
   if (!isRecord(rect)) throw new TypeError('Missing original oblique GridArea window');
   const {x,y,width,height}=rect as OriginalGridAreaRect;
   if (!('orientedSizeX' in probe) || !('orientedSizeY' in probe) ||
@@ -210,7 +210,7 @@ export function getNativeFootprintTessellatedOrientedWindow(
   if (!isRecord(rect)) throw new TypeError('Missing original tessellated GridArea viewport');
   const probe = getNativeFootprintTessellatedOrientedLayerAt(
     catalog, itemId, 0, 0, orientationCode, callerGridFactor);
-  if (probe.nativeTessellationCoordinateConversionVerified !== true) return probe;
+  if (!probe || probe.nativeTessellationCoordinateConversionVerified !== true) return probe;
   const {x,y,width,height}=rect as OriginalGridAreaRect;
   if (!('orientedSizeX' in probe) || !('orientedSizeY' in probe) ||
       typeof probe.orientedSizeX !== 'number' ||
@@ -229,7 +229,9 @@ export function getNativeFootprintTessellatedOrientedWindow(
     for (let xx = x; xx < x + width; xx++) {
       const cell = getNativeFootprintTessellatedOrientedLayerAt(
         catalog, itemId, xx, yy, orientationCode, callerGridFactor);
-      if (cell && 'inside' in cell && cell.inside === true) row.push(cell.nativeValue);
+      if (cell && 'inside' in cell && cell.inside === true &&
+          'nativeValue' in cell && typeof cell.nativeValue === 'number')
+        row.push(cell.nativeValue);
       else {row.push(null); unmappedOutputCellCount++;}
     }
     rows.push(row);
