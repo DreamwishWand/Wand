@@ -8,7 +8,7 @@ import {
 import {
   GUIDE_CONDITION_INDEX_V2_SHA,GUIDE_CONDITION_INDEX_V2_BYTES,
   GUIDE_CONDITION_SOURCE_SHA
-} from '../src/lib/guide/current-conditions.mjs';
+} from '../src/lib/guide/current-conditions.ts';
 
 const SHA='9'.repeat(64);
 const A='2130006145',B='2130007038',C='2130000148',D='2130000413',E='2130000999';

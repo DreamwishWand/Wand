@@ -1,46 +1,114 @@
+/** Steam v1.26.2 private Condition source reader.
+ * Validates exact original SHA-256 and renders only source-defined Mission
+ * mentions, never evaluated prerequisites, runtime truth or player progress.
+ */
+export type NativeConditionOperator='AND'|'OR'|'NOT';
+export interface CurrentConditionMention{
+  readonly conditionId:string;
+  readonly sourceName:string;
+  readonly conditionWireSha256:string;
+  readonly sourcePath:string;
+  readonly operator:NativeConditionOperator;
+  readonly kind:string;
+  readonly stepId?:number;
+  readonly subStepId?:number;
+  readonly objectiveId?:number;
+  readonly inversed?:boolean;
+  readonly missionStateCode?:number;
+  readonly missionState?:string;
+  readonly comparisonOperatorCode?:number;
+  readonly comparisonOperator?:string;
+  readonly statusCode?:number;
+  readonly status?:string;
+  readonly omittedSourceFields?:readonly string[];
+  readonly sourceStepIndex?:number;
+  readonly sourceStepName?:string|null;
+  readonly localizedStepDescription?:string;
+  readonly localizedStepDescriptionLanguage?:string|null;
+}
+export interface ConditionSourceCensus{
+  readonly definitionCount:number;
+  readonly kindTotal:number;
+  readonly sourceKinds:Readonly<Record<string,number>>;
+  readonly missionStepStatusExplicitScalarLeaves:number;
+  readonly commonConditionPointerLeaves:number;
+  readonly distinctMissionIdsInExplicitStepReferences:number;
+  readonly missionReferenceLeaves?:number;
+  readonly nonStepMissionReferenceLeaves?:number;
+  readonly missionReferencesByKind?:Readonly<Record<string,number>>;
+}
+export interface IndexedConditionMentions{
+  readonly byMission:Map<string,CurrentConditionMention[]>;
+  readonly census:ConditionSourceCensus;
+}
+export interface CurrentGuideConditions{
+  readonly byMission:Map<string,CurrentConditionMention[]>;
+  readonly count:number;
+  readonly missionReferenceCount:number;
+  readonly formatVersion:1|2;
+  readonly targetVersion:'1.26.2';
+  readonly sourceSha256:string;
+  readonly indexSha256:string;
+  readonly evaluation:'static_native_definitions_only';
+}
+export interface CurrentConditionMentionsWindow{
+  readonly total:number;
+  readonly rows:readonly CurrentConditionMention[];
+}
+export interface CurrentConditionStepDisplay{
+  readonly id:string;
+  readonly text:string;
+  readonly textSource?:string|null;
+}
+export interface GuideSourceFile{
+  readonly name:string;
+  readonly size:number;
+  arrayBuffer():Promise<ArrayBuffer>;
+}
+type Raw=Record<string,any>;
 /** Owner-selected Steam 1.26.2 static Condition references for the local Guide.
  * Nothing is fetched, uploaded, published, or evaluated against player state.
  */
-export const GUIDE_CONDITION_SCHEMA = 'wand.db03.condition-native-index@1';
-export const GUIDE_CONDITION_MANIFEST_SCHEMA = 'wand.db03.condition-native-index-manifest@1';
-export const GUIDE_CONDITION_SOURCE_SHA = '9eb5e7800a2485b1dfb3e148a7bcff5d6c6b6ed72797ed2331a902ab44188f4c';
-export const GUIDE_CONDITION_INDEX_SHA = 'd1b43f2f62746c2b8aa9a0d4f8a8a7d35467e498e8b27bf815ea0659d71e7b69';
-export const GUIDE_CONDITION_PROBE_SHA = '07fd8ebb1c528f852a0e00ce54cf4964f93931b9155bc9e2aab1bd857986d00a';
-export const GUIDE_CONDITION_INDEX_BYTES = 3888435;
-export const GUIDE_CONDITION_V2_SCHEMA = 'wand.db03.condition-native-index@2';
-export const GUIDE_CONDITION_V2_MANIFEST_SCHEMA = 'wand.db03.condition-native-index-manifest@2';
-export const GUIDE_CONDITION_INDEX_V2_SHA = 'aa04c61c973874881443a370a50009f5ad6156d9e1b83ec4553045561c41b08f';
-export const GUIDE_CONDITION_INDEX_V2_BYTES = 4093730;
-export const GUIDE_CONDITION_V2_MISSION_REFERENCES = 4960;
-const MISSION_REFERENCE_TAGS = Object.freeze({
+export const GUIDE_CONDITION_SCHEMA = 'wand.db03.condition-native-index@1' as const;
+export const GUIDE_CONDITION_MANIFEST_SCHEMA = 'wand.db03.condition-native-index-manifest@1' as const;
+export const GUIDE_CONDITION_SOURCE_SHA = '9eb5e7800a2485b1dfb3e148a7bcff5d6c6b6ed72797ed2331a902ab44188f4c' as const;
+export const GUIDE_CONDITION_INDEX_SHA = 'd1b43f2f62746c2b8aa9a0d4f8a8a7d35467e498e8b27bf815ea0659d71e7b69' as const;
+export const GUIDE_CONDITION_PROBE_SHA = '07fd8ebb1c528f852a0e00ce54cf4964f93931b9155bc9e2aab1bd857986d00a' as const;
+export const GUIDE_CONDITION_INDEX_BYTES = 3888435 as const;
+export const GUIDE_CONDITION_V2_SCHEMA = 'wand.db03.condition-native-index@2' as const;
+export const GUIDE_CONDITION_V2_MANIFEST_SCHEMA = 'wand.db03.condition-native-index-manifest@2' as const;
+export const GUIDE_CONDITION_INDEX_V2_SHA = 'aa04c61c973874881443a370a50009f5ad6156d9e1b83ec4553045561c41b08f' as const;
+export const GUIDE_CONDITION_INDEX_V2_BYTES = 4093730 as const;
+export const GUIDE_CONDITION_V2_MISSION_REFERENCES = 4960 as const;
+const MISSION_REFERENCE_TAGS:Readonly<Record<string,number>> = Object.freeze({
   MissionAvailable:250, MissionCompleted:255, MissionOngoing:260, MissionStatus:270,
   MissionStepCompleted:280, MissionStepStatus:285, MissionObjectiveCompleted:290,
   MissionObjectiveStatus:295, MissionObjectiveSkipped:297, MissionObjectiveProgression:300
 });
-const STEP_REFERENCE_KINDS = new Set([
+const STEP_REFERENCE_KINDS:ReadonlySet<string> = new Set([
   'MissionStepCompleted','MissionStepStatus','MissionObjectiveCompleted',
   'MissionObjectiveStatus','MissionObjectiveSkipped','MissionObjectiveProgression'
 ]);
-export const GUIDE_CONDITION_SOURCE_BYTES = 571341;
-export const GUIDE_CONDITION_NATIVE_COUNT = 5440;
+export const GUIDE_CONDITION_SOURCE_BYTES = 571341 as const;
+export const GUIDE_CONDITION_NATIVE_COUNT = 5440 as const;
 export const GUIDE_CONDITION_MAX_FILE_BYTES = 6 * 1024 * 1024;
 const MISSION_SOURCE_SHA = 'f13958b52234f4cda92f0dd0bfff50be8a7f6625c8478785e2a077a5c7933d24';
 const BASE_SEARCH_SHA = '26c29bc0df15161602d75578c9842c5b7cca56caee0d6dd1031180949cceb30d';
 const CONDITION_FILE = 'ddv_Data/StreamingAssets/itemlist/Condition.json';
 const ID = /^[1-9][0-9]{0,15}$/;
 const HASH = /^[a-f0-9]{64}$/;
-const OWN = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
-const isObject = x => x !== null && typeof x === 'object' && !Array.isArray(x);
-function requireValid(value, code) {
+const OWN=(object:Raw,key:string):boolean=>Object.prototype.hasOwnProperty.call(object,key);
+const isObject=(x:unknown):x is Raw=>x!==null&&typeof x==='object'&&!Array.isArray(x);
+function requireValid(value:unknown,code:string):asserts value{
   if (!value) throw new TypeError('Guide Condition: ' + code);
 }
-function provenance(source) {
+function provenance(source:unknown):boolean{
   return isObject(source) && source.file === CONDITION_FILE &&
     source.sha256 === GUIDE_CONDITION_SOURCE_SHA &&
     source.bytes === GUIDE_CONDITION_SOURCE_BYTES &&
     source.formatProbeSha256 === GUIDE_CONDITION_PROBE_SHA;
 }
-function target(value) {
+function target(value:unknown):boolean{
   return isObject(value) && value.gameVersion === '1.26.2' && value.platform === 'Steam';
 }
 
@@ -49,22 +117,22 @@ function target(value) {
  * The standalone function is testable with synthetic records; full provenance
  * is enforced by importCurrentGuideConditions before any result is displayed.
  */
-export function indexStaticConditionMentions(records, {extended = false} = {}) {
+export function indexStaticConditionMentions(records:unknown,{extended=false}:{extended?:boolean}={}):IndexedConditionMentions{
   requireValid(Array.isArray(records) && records.length > 0 && records.length <= 10000,
     'invalid Condition source census');
-  const seen = new Set();
-  const byMission = new Map();
-  const kindCounts = new Map();
+  const seen=new Set<string>();
+  const byMission=new Map<string,CurrentConditionMention[]>();
+  const kindCounts=new Map<string,number>();
   let total = 0, explicitStepLeaves = 0, commonPointers = 0;
   let missionReferenceLeaves = 0, nonStepMissionReferenceLeaves = 0;
-  const missionReferencesByKind = new Map();
-  const referencedMissions = new Set();
-  const pushMention = (missionId, row) => {
+  const missionReferencesByKind=new Map<string,number>();
+  const referencedMissions=new Set<string>();
+  const pushMention=(missionId:string,row:CurrentConditionMention):void=>{
     if (!byMission.has(missionId)) byMission.set(missionId, []);
-    byMission.get(missionId).push(row);
+    byMission.get(missionId)!.push(row);
     // Only original MissionStepStatus references participate in the v1 census.
   };
-  const walk = (tree, original, path, depth) => {
+  const walk=(tree:Raw,original:Raw,path:string,depth:number):void=>{
     requireValid(depth <= 16 && isObject(tree) &&
       ['AND', 'OR', 'NOT'].includes(tree.operator) && typeof tree.operatorExplicit === 'boolean' &&
       HASH.test(tree.sourceTreeWireSha256) && Array.isArray(tree.children) &&
@@ -192,7 +260,7 @@ export function indexStaticConditionMentions(records, {extended = false} = {}) {
 }
 
 /** File names are exact, to avoid accidentally pairing unrelated JSON files. */
-async function readSelectedJson(file, expectedName, maxSize) {
+async function readSelectedJson(file:GuideSourceFile,expectedName:string,maxSize:number):Promise<{sha:string;json:Raw}>{
   requireValid(file?.name === expectedName && Number.isSafeInteger(file.size) &&
     file.size > 0 && file.size <= maxSize && typeof file.arrayBuffer === 'function',
     `invalid selected ${expectedName}`);
@@ -208,7 +276,7 @@ async function readSelectedJson(file, expectedName, maxSize) {
 /** Accept only the already source-hash-pinned 1.26.1 Mission/locale bridge.
  * Independent Condition data is never relabelled as old Mission information.
  */
-export function assertGuideConditionBridge(bridge) {
+export function assertGuideConditionBridge(bridge:unknown):void{
   requireValid(isObject(bridge) && bridge.baselineVersion === '1.26.1' &&
     bridge.targetVersion === '1.26.2' &&
     bridge.originalSearchIndexSha256 === BASE_SEARCH_SHA &&
@@ -219,7 +287,7 @@ export function assertGuideConditionBridge(bridge) {
     'current Condition registry requires the exact verified Mission/locale bridge');
 }
 
-export async function importCurrentGuideConditions(indexFile, manifestFile, verifiedBridge) {
+export async function importCurrentGuideConditions(indexFile:GuideSourceFile,manifestFile:GuideSourceFile,verifiedBridge:unknown):Promise<CurrentGuideConditions>{
   assertGuideConditionBridge(verifiedBridge);
   const isV2 = indexFile?.name === 'condition-native-index-v2.json';
   const indexName = isV2 ? 'condition-native-index-v2.json' : 'condition-native-index.json';
@@ -274,7 +342,7 @@ export async function importCurrentGuideConditions(indexFile, manifestFile, veri
   if (isV2) requireValid(
     lookup.census.missionReferenceLeaves === GUIDE_CONDITION_V2_MISSION_REFERENCES &&
     lookup.census.nonStepMissionReferenceLeaves === 1858 &&
-    Object.keys(lookup.census.missionReferencesByKind).length === 9,
+    Object.keys(lookup.census.missionReferencesByKind??{}).length === 9,
     'unexpected current mission reference census');
   requireValid(lookup.census.definitionCount === GUIDE_CONDITION_NATIVE_COUNT &&
     lookup.census.kindTotal === 9861 &&
@@ -283,15 +351,15 @@ export async function importCurrentGuideConditions(indexFile, manifestFile, veri
     lookup.census.distinctMissionIdsInExplicitStepReferences === 421,
     'unexpected current Condition source definition census');
   return {byMission: lookup.byMission, count: lookup.census.definitionCount,
-    missionReferenceCount:isV2 ? lookup.census.missionReferenceLeaves :
+    missionReferenceCount:isV2 ? lookup.census.missionReferenceLeaves! :
       lookup.census.missionStepStatusExplicitScalarLeaves,
     formatVersion:isV2 ? 2 : 1,
-    targetVersion: data.target.gameVersion, sourceSha256: data.source.sha256,
+    targetVersion:'1.26.2',sourceSha256:GUIDE_CONDITION_SOURCE_SHA,
     indexSha256: indexRaw.sha, evaluation: 'static_native_definitions_only'};
 }
 
 /** Bound return size for interactive UI; never fill absent source step/status. */
-export function currentConditionMentionsForQuest(conditions, questId, limit = 40) {
+export function currentConditionMentionsForQuest(conditions:Pick<CurrentGuideConditions,'evaluation'|'byMission'>|null|undefined,questId:string,limit:number=40):CurrentConditionMentionsWindow{
   requireValid(conditions?.evaluation === 'static_native_definitions_only' &&
     typeof questId === 'string' && ID.test(questId) &&
     Number.isSafeInteger(limit) && limit > 0 && limit <= 100,
@@ -304,7 +372,7 @@ export function currentConditionMentionsForQuest(conditions, questId, limit = 40
  * detail record. Never treat an array index or fabricated fallback as a native
  * step ID. Duplicate native step IDs are ambiguous and not linked.
  */
-export function withVerifiedConditionStepDetails(detail, stepRows, mentions, questId) {
+export function withVerifiedConditionStepDetails(detail:unknown,stepRows:readonly CurrentConditionStepDisplay[],mentions:readonly CurrentConditionMention[],questId:string):readonly CurrentConditionMention[]{
   requireValid(Array.isArray(mentions) && mentions.length <= 100 &&
     typeof questId === 'string' && ID.test(questId), 'invalid Condition step lookup');
   if (!isObject(detail) || detail.id !== questId || detail.recordKind !== 'mission' ||
@@ -314,8 +382,8 @@ export function withVerifiedConditionStepDetails(detail, stepRows, mentions, que
       !Array.isArray(stepRows) || stepRows.length !== detail.structured.stepsDetailed.length) {
     return mentions;
   }
-  const stepIndex = new Map();
-  const ambiguous = new Set();
+  const stepIndex=new Map<number,Pick<CurrentConditionMention,'sourceStepIndex'|'sourceStepName'|'localizedStepDescription'|'localizedStepDescriptionLanguage'>>();
+  const ambiguous=new Set<number>();
   for (const [i, original] of detail.structured.stepsDetailed.entries()) {
     const id = original?.stepId;
     if (!Number.isSafeInteger(id) || id < 0 || stepRows[i]?.id !== String(id)) continue;

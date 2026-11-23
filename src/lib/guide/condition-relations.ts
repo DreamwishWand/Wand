@@ -11,7 +11,7 @@ import {
   importCurrentGuideConditions,
   GUIDE_CONDITION_SOURCE_SHA,GUIDE_CONDITION_INDEX_V2_SHA,
   GUIDE_CONDITION_V2_MISSION_REFERENCES,GUIDE_CONDITION_NATIVE_COUNT
-} from './current-conditions.mjs';
+} from './current-conditions.ts';
 
 export const DB03_CONDITION_RELATION_SCHEMA='wand.db03.condition-mission-references@1' as const;
 export type NativeMissionConditionKind=
@@ -148,7 +148,7 @@ function validateMention(x:RawCurrentConditionMention){
 }
 
 /**
- * Structural adapter for an already verified current-conditions.mjs result.
+ * Structural adapter for an already verified current-conditions.ts result.
  * Unlike loadVerifiedGuideConditionRelations, it does not attest byte hashes.
  * Suitable for a registry returned by the existing Guide UI import path.
  */

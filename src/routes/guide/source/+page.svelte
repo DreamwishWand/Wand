@@ -6,7 +6,8 @@
     GUIDE_LOCALES, importGuideSearch, importGuideFolder, importGuideDetail, searchGuide,
     detailStepRows, guideStaticFacts, guideMissionReferences, guideVerifiedSourceBridge, MAX_SHARD_BYTES
   } from '$lib/guide/client.mjs';
-  import {importCurrentGuideConditions, currentConditionMentionsForQuest, withVerifiedConditionStepDetails} from '$lib/guide/current-conditions.mjs';
+  import {importCurrentGuideConditions, currentConditionMentionsForQuest, withVerifiedConditionStepDetails,
+    type CurrentConditionMention,type CurrentGuideConditions} from '$lib/guide/current-conditions.ts';
   import {createStructuralGuideConditionRelations,type GuideConditionRelationIndex} from '$lib/guide/condition-relations.ts';
   import {createQuestConditionCrossrefs} from '$lib/guide/quest-condition-crossrefs.ts';
   import {loadPinnedCommonConditionGraph,type NativeCommonConditionGraph,
@@ -42,7 +43,8 @@
   let loadEpoch = 0;
   let detailEpoch = 0;
   let conditionEpoch = 0;
-  let conditionRegistry: any = null;
+  let conditionRegistry:CurrentGuideConditions|null=null;
+  let conditionDisplayRows:readonly CurrentConditionMention[]=[];
   let conditionRelations: GuideConditionRelationIndex|null = null;
   let conditionCommonGraph: NativeCommonConditionGraph|null = null;
   let indirectConditionMentions: Map<string,readonly NativeIndirectMissionMention[]> = new Map();

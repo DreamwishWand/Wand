@@ -5,7 +5,7 @@ import {
   indexStaticConditionMentions, currentConditionMentionsForQuest, withVerifiedConditionStepDetails,
   assertGuideConditionBridge, importCurrentGuideConditions,
   GUIDE_CONDITION_INDEX_SHA, GUIDE_CONDITION_MAX_FILE_BYTES
-} from '../src/lib/guide/current-conditions.mjs';
+} from '../src/lib/guide/current-conditions.ts';
 const H='0'.repeat(64);
 const bridge = {baselineVersion:'1.26.1',targetVersion:'1.26.2',
   originalSearchIndexSha256:'26c29bc0df15161602d75578c9842c5b7cca56caee0d6dd1031180949cceb30d',

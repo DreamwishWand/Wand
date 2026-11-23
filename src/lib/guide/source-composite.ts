@@ -12,7 +12,7 @@ import {ORIGINAL_GUIDE_SHARD_AUDIT_SHA,ORIGINAL_GUIDE_SHARD_TOTAL_BYTES}
 import {
   GUIDE_CONDITION_INDEX_V2_SHA,GUIDE_CONDITION_SOURCE_SHA,
   GUIDE_CONDITION_PROBE_SHA,GUIDE_CONDITION_V2_MISSION_REFERENCES
-} from './current-conditions.mjs';
+} from './current-conditions.ts';
 
 export const GUIDE_SOURCE_COMPOSITE_SCHEMA='wand.db03.guide-source-composite@1' as const;
 export const GUIDE_SOURCE_COMPOSITE_SHA='c38c436bddc0bab2f1d6237fd5536e14c778bf39159e55e3c081c74182fe2d38' as const;
