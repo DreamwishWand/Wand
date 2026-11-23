@@ -103,13 +103,6 @@
   function label(names:PublicGuideNames|null|undefined,fallback='',language='ja') {return formatPublicGuideText(names?.[language as keyof PublicGuideNames]||names?.en||Object.values(names||{})[0]||fallback);}
   function questName(row:PublicQuestIndexRow,language:string) {return label(row.names,row.internalName||row.id,language);}
   function characterName(id:string|undefined,language:string) {return label(catalog?.characters?.[id||''],id||'',language);}
-  function rewardItemName(itemId:string,fallback:string):string{
-    return rewardLabels?.getDisplayName(itemId,locale)??
-      itemTargetName(targetIndex,itemId,locale)??fallback;
-  }
-  function rewardCollectionHref(itemId:string):string|null{
-    return rewardLabels?.getCollectionHref(itemId,base)??null;
-  }
   function relatedEventName(eventId:string):string{
     const event=relatedEventSource?.getEvent('mini_event',eventId);
     return event?.names?.[locale]||event?.names?.en||eventId;
@@ -418,11 +411,11 @@
                     <ul>
                       {#each questRewardInfo.currencies as reward}
                         <li class:reward-item-match={rewardItemFocus===reward.itemId}>
-                          {rewardItemName(reward.itemId,'通貨')} · {reward.amountMin===reward.amountMax?reward.amountMin:`${reward.amountMin}～${reward.amountMax}`}（ID {reward.itemId}）
-                          {#if rewardCollectionHref(reward.itemId)}
-                            <a class="reward-collection-link" href={rewardCollectionHref(reward.itemId)}
+                          {rewardLabels?.getDisplayName(reward.itemId,locale)??itemTargetName(targetIndex,reward.itemId,locale)??'通貨'} · {reward.amountMin===reward.amountMax?reward.amountMin:`${reward.amountMin}～${reward.amountMax}`}（ID {reward.itemId}）
+                          {#if rewardLabels?.getCollectionHref(reward.itemId,base)}
+                            <a class="reward-collection-link" href={rewardLabels?.getCollectionHref(reward.itemId,base)}
                               title="Collectionで開く"
-                              aria-label={`Collectionで開く：${rewardItemName(reward.itemId,'通貨')}`}>
+                              aria-label={`Collectionで開く：${rewardLabels?.getDisplayName(reward.itemId,locale)??itemTargetName(targetIndex,reward.itemId,locale)??'通貨'}`}>
                               <WandIcon name="collection" size={15}/>
                             </a>
                           {/if}
@@ -437,11 +430,11 @@
                     <div class="quest-reward-chips">
                       {#each questRewardInfo.lootCandidates as reward}
                         <span class:reward-item-match={rewardItemFocus===reward.itemId} title={`Item ID ${reward.itemId} · Loot Table ${reward.tableIndex+1}`}>
-                          {rewardItemName(reward.itemId,'アイテム')}（ID {reward.itemId}）
-                          {#if rewardCollectionHref(reward.itemId)}
-                            <a class="reward-collection-link" href={rewardCollectionHref(reward.itemId)}
+                          {rewardLabels?.getDisplayName(reward.itemId,locale)??itemTargetName(targetIndex,reward.itemId,locale)??'アイテム'}（ID {reward.itemId}）
+                          {#if rewardLabels?.getCollectionHref(reward.itemId,base)}
+                            <a class="reward-collection-link" href={rewardLabels?.getCollectionHref(reward.itemId,base)}
                               title="Collectionで開く"
-                              aria-label={`Collectionで開く：${rewardItemName(reward.itemId,'アイテム')}`}>
+                              aria-label={`Collectionで開く：${rewardLabels?.getDisplayName(reward.itemId,locale)??itemTargetName(targetIndex,reward.itemId,locale)??'アイテム'}`}>
                               <WandIcon name="collection" size={15}/>
                             </a>
                           {/if}
@@ -456,11 +449,11 @@
                     <div class="quest-reward-chips">
                       <span class:reward-item-match={rewardItemFocus===questOverrideInfo.itemId}
                         title={`Item ID ${questOverrideInfo.itemId} · Loot Table ${questOverrideInfo.lootTableId}`}>
-                        {rewardItemName(questOverrideInfo.itemId,'アイテム')}（ID {questOverrideInfo.itemId}）
-                        {#if rewardCollectionHref(questOverrideInfo.itemId)}
-                          <a class="reward-collection-link" href={rewardCollectionHref(questOverrideInfo.itemId)}
+                        {rewardLabels?.getDisplayName(questOverrideInfo.itemId,locale)??itemTargetName(targetIndex,questOverrideInfo.itemId,locale)??'アイテム'}（ID {questOverrideInfo.itemId}）
+                        {#if rewardLabels?.getCollectionHref(questOverrideInfo.itemId,base)}
+                          <a class="reward-collection-link" href={rewardLabels?.getCollectionHref(questOverrideInfo.itemId,base)}
                             title="Collectionで開く"
-                            aria-label={`Collectionで開く：${rewardItemName(questOverrideInfo.itemId,'アイテム')}`}>
+                            aria-label={`Collectionで開く：${rewardLabels?.getDisplayName(questOverrideInfo.itemId,locale)??itemTargetName(targetIndex,questOverrideInfo.itemId,locale)??'アイテム'}`}>
                             <WandIcon name="collection" size={15}/>
                           </a>
                         {/if}
