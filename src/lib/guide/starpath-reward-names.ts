@@ -16,7 +16,7 @@ const GAME_LANGUAGES=new Set<string>([
 export const STARPATH_REWARD_NAME_CENSUS=Object.freeze({
   verifiedNames:43,unresolved:17,sourceCandidates:60,
   playerOwnershipVerified:false,currentAvailabilityVerified:false
-});
+} as const);
 export interface VerifiedRewardNameAudit{
   readonly verifiedNames:43;
   readonly unresolved:17;
