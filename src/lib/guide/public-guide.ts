@@ -247,6 +247,17 @@ export function publicQuestNativeOrder(row:Pick<PublicQuestIndexRow,'internalNam
   const name=row.internalName;
   const mrqs=/^Story!MRQS([0-9]{3})([A-Z]?)(?:_|!|$)/.exec(name);
   if(mrqs)return Number(mrqs[1])*100+(mrqs[2]?mrqs[2].charCodeAt(0)-64:0);
+  // Expansion/Mini story lines carry their main-quest sequence in MRQS_E01_010,
+  // MRQS_M01_020, etc. Item IDs follow source publication order, which can
+  // differ from the narrative numbering when later updates insert quests.
+  const arcMrqs=/^Story!(Expansion0[1-4]|Mini01)!MRQS_([EM][0-9]{2})_([0-9]{3})([A-Z]?)(?:_|!|$)/.exec(name);
+  if(arcMrqs){
+    const expected=(arcMrqs[1].startsWith('Expansion')?'E':'M')+
+      arcMrqs[1].slice(-2);
+    if(arcMrqs[2]===expected)
+      return Number(arcMrqs[3])*100+
+        (arcMrqs[4]?arcMrqs[4].charCodeAt(0)-64:0);
+  }
   const suffix=/(?:_|!)([0-9]{3})(?:_|!|$)/g;
   let last:RegExpExecArray|null=null,m:RegExpExecArray|null;
   while((m=suffix.exec(name))!==null)last=m;
