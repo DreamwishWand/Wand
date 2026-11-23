@@ -372,6 +372,15 @@ try{
     'Collection must expose the 20 source-original menu categories, not inventory classes');
   assert.match(await page.locator('.collection-original-category-grid .facet-card').first().innerText(),
     /思い出|Memories/);
+  // The Item-ID master is accessible in full without choosing a tentative
+  // original CollectionSubMenu category or an inventory-specific class.
+  const browseAll=page.locator('.collection-categories-heading button');
+  assert.match(await browseAll.innerText(),/13,202/);
+  await browseAll.click();
+  await page.locator('.item-card').first().waitFor({timeout:12000});
+  assert.match(await page.locator('.result-count').innerText(),/13,202/);
+  await page.locator('.breadcrumbs').getByRole('button',{name:'カテゴリ'}).click();
+  await page.locator('.collection-original-category-grid .facet-card').first().waitFor();
   assert.match(await page.locator('.collection-original-category-grid .facet-card').filter({
     hasText:/家具|Furniture/
   }).first().innerText(),/[0-9][0-9,]* \/ [0-9][0-9,]*/);
