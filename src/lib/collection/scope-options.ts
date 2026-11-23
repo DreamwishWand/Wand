@@ -15,10 +15,18 @@ const LOCALES=['en','fr','it','de','es-ES','ja','zh-CN','pt-BR'] as const;
 // Presentation order follows the original CollectionArea sequence (Honeywood
 // is a special 4097 enum). This list NEVER assigns membership; the verified
 // runtime facet + explicit proof still decide which tabs can exist.
-const NATIVE_WORLD_ORDER=[
-  'IsDreamlightValley','IsEternityIsle','IsStorybookVale',
-  'IsWishBlossomMountains','isSeaOfSecrets','isHoneywood',
+/** Static navigation labels are native English world identifiers only.
+ * They provide disabled navigation chrome until independently reviewed
+ * CollectionArea-to-Item membership is published; never infer a scope. */
+export const COLLECTION_WORLD_NAVIGATION=[
+  {id:'IsDreamlightValley',label:'Dreamlight Valley'},
+  {id:'IsEternityIsle',label:'Eternity Isle'},
+  {id:'IsStorybookVale',label:'Storybook Vale'},
+  {id:'IsWishBlossomMountains',label:'Wishblossom Mountains'},
+  {id:'isSeaOfSecrets',label:'The Keepsake Sea'},
+  {id:'isHoneywood',label:'Honeyglow Woods'},
 ] as const;
+const NATIVE_WORLD_ORDER=COLLECTION_WORLD_NAVIGATION.map(world=>world.id);
 const VERIFIED_WORLD='verified_game_collection_area_item_membership';
 const VERIFIED_UNIVERSE='verified_game_collection_universe_item_membership';
 
