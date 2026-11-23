@@ -616,3 +616,58 @@ test('original LootTable name key lookup loads only when requested and never inv
   assert.equal(catalog.itemSources.getKindItemIds('loot').length,0);
   assert(Object.isFrozen(row)&&Object.isFrozen(row.nativeNamedLootCandidates));
 });
+
+test('on-demand original Companion identities include native 120000191/120000249 but do not become granted campaign rewards',async()=>{
+  const {seen,fetcher}=publicFetcher();
+  const catalog=await loadPublicSourceCatalog('/Wand',fetcher);
+  const before=seen.length;
+  assert.equal(catalog.coverage.combinedSourceRoutes,1255);
+  assert(!seen.some(x=>x.endsWith('/native-companion-identities-1.26.2.json')));
+  const one=catalog.loadNativeCompanionIdentities();
+  assert.equal(one,catalog.loadNativeCompanionIdentities());
+  const index=await one;
+  assert.equal(index.coverage.originalCompanionDefinitions,394);
+  assert.equal(index.getByNativeNameKey('Expansion02!BabyDragon!SakuraDragon')?.itemId,
+    '120000191');
+  assert.equal(index.getByNativeNameKey('Crocodile!PirateCrocodile')?.itemId,
+    '120000249');
+  assert.equal(seen.length,before+1);
+  const joinPromise=catalog.loadOfficialCompanionNameCandidates();
+  assert.equal(joinPromise,catalog.loadOfficialCompanionNameCandidates());
+  const joined=await joinPromise;
+  assert.equal(seen.length,before+1,'reuse original Companion identity cache');
+  assert.equal(joined.coverage.semanticCandidateRelations,3);
+  assert.equal(joined.coverage.distinctNativeCandidateItemIds,2);
+  assert.equal(joined.coverage.officialNumericItemIdLinksVerified,0);
+  for(const id of ['120000191','120000249']){
+    const baseline=catalog.lookup(id);
+    const row=await catalog.lookupWithNativeCompanionNameCandidates(id);
+    assert.equal(row.itemId,id);
+    assert.equal(row.catalogItem,null);
+    assert.equal(row.catalogClassification,'outside_published_db00_item_scope');
+    assert.deepEqual(row.origins,baseline.origins);
+    assert.equal(row.nativeCompanionIdentity?.itemId,id);
+    assert.equal(row.nativeCompanionIdentitiesLoaded,true);
+    assert.equal(row.nativeCompanionDefinitionVerified,true);
+    assert.equal(row.numericCampaignRewardLinkVerified,false);
+    assert.equal(row.actualCompanionGrantVerified,false);
+    assert.deepEqual(row.companionOfficialNameCandidates,
+      joined.getItemCandidates(id));
+    assert(row.companionOfficialNameCandidates.every(c=>
+      c.evidence==='native_key_semantic_name_candidate_only'&&
+      c.officialCampaignNumericItemIdLinkVerified===false&&
+      c.campaignGrantVerified===false&&
+      c.currentAvailabilityVerified===false));
+    assert(Object.isFrozen(row));
+  }
+  assert.deepEqual((await catalog.lookupWithNativeCompanionNameCandidates(
+    '99999999')).companionOfficialNameCandidates,[]);
+  assert.equal(seen.length,before+1);
+  assert.equal(catalog.coverage.combinedSourceRoutes,1255);
+  assert.equal(catalog.nameCandidates.getCampaignCandidates(
+    'code:COMMUNITYCOMPANIONDRAGON2025').length,0);
+  assert.equal(catalog.origins.getItem('120000191').origins.length,
+    catalog.lookup('120000191').origins.length);
+  assert.equal(catalog.origins.getItem('120000249').origins.length,
+    catalog.lookup('120000249').origins.length);
+});
