@@ -6,7 +6,7 @@
  * claims of cooking eligibility, inventory, recipe unlocks or Collection UI.
  */
 import {canonicalId} from './model.ts';
-import type {DbLocale,SharedGameDatabase} from './integrated.ts';
+import type {SharedGameDatabase} from './integrated.ts';
 import type {Db00SourceJoinedReader,Db00SourceJoinedItem} from './source-join.ts';
 import {
   hasPinnedNativeRecipeEvidence,
@@ -221,7 +221,8 @@ export function createDb00CookingIngredientReader(
   }
   function getItemRecipeUses(id:string|number):readonly Db00CookingItemUse[]{
     const itemId=canonicalId(id);
-    const uses=resolved.getItemRecipeUses(itemId);
+    const uses=resolved.getItemRecipeUses(itemId).filter(use=>
+      recipes.getRecipe(use.recipeId)?.kind==='cooking');
     return Object.freeze(uses.map(use=>{
       const recipe=recipes.getRecipe(use.recipeId);
       check(recipe!==null&&recipe.resultItemId===use.resultItemId &&
