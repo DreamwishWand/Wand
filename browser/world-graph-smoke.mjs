@@ -438,7 +438,7 @@ try{
   assert.match(await gridareaPanel.innerText(),/非ゼロ 3値/);
   assert.match(await gridareaPanel.innerText(),/68 × 2 · 0 × 1 · 76 × 1/);
   assert.match(await gridareaPanel.innerText(),/占有セル数ではありません/);
-  assert.match(await gridareaPanel.innerText(),/原本内の2D値参照と90度単位のローカル向き変換は検証済み/);
+  assert.match(await gridareaPanel.innerText(),/全16方向の原本ローカル値を参照できます/);
   const rawAreaButton=gridareaPanel.getByRole('button',{name:'原本レイヤー値を表示'});
   await rawAreaButton.click();
   const rawGridArea=gridareaPanel.getByLabel('原本GridAreaセル一覧');
