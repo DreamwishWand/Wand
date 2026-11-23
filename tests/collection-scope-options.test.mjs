@@ -36,6 +36,12 @@ test('verified per-Item world scopes show only existing positive matched members
   assert.deepEqual(collectionScopeOptions(meta({world:WORLD}), 'world',facets,'en').map(x=>x.label),
     ['Dreamlight Valley','Honeyglow Woods']);
 });
+test('original world-tab order is stable even if source index loads out of order',()=>{
+  const reversed={...meta({world:WORLD}),worlds:['isHoneywood','IsDreamlightValley'],
+    worldLabels:[names('Honeyglow Woods','ハニーグローの森'),names('Dreamlight Valley','ドリームライトバレー')]};
+  assert.deepEqual(collectionScopeOptions(reversed,'world',facets,'ja').map(x=>x.id),
+    ['IsDreamlightValley','isHoneywood']);
+});
 test('universe scope is independently gated and omits zero-membership options',()=>{
   const options=collectionScopeOptions(meta({universe:UNIVERSE}), 'universe',facets,'ja');
   assert.deepEqual(options.map(x=>[x.id,x.total]),[['Mickey',9]]);
