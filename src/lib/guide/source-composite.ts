@@ -6,7 +6,7 @@
  * Condition v2 is independently re-extracted from Steam 1.26.2. Do not
  * infer the player's unlock state, live events, entitlement or dependencies.
  */
-import {guideVerifiedSourceBridge} from './client.mjs';
+import {guideVerifiedSourceBridge} from './client.ts';
 import {ORIGINAL_GUIDE_SHARD_AUDIT_SHA,ORIGINAL_GUIDE_SHARD_TOTAL_BYTES}
   from './shard-fingerprints.ts';
 import {
