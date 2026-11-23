@@ -1608,6 +1608,7 @@
             </ul>
             <GridObjectPositionMap
               rows={gridInstances}
+              itemName={(id:string)=>dbMap.get(id)?.name??''}
               selectedOrdinal={coordinateSelection?.localOrdinal??null}
               draftX={coordinateSelection?coordinateNumber(coordinateX):null}
               draftY={coordinateSelection?coordinateNumber(coordinateY):null}
