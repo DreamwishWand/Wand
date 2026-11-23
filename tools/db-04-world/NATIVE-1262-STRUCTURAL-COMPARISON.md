@@ -309,3 +309,21 @@ The original PE64 `.pdata` boundaries and existing 1.26.1 source-pinned method r
 The normal successful `GridArea.get_Item(x,y)` read path uses original `x*SizeY+y` indexing, not assumed Y-major indexing or an inferred occupancy mask. The 1.26.2 cardinal `TryGetGridLocalPosition` has the matching source-local algorithmic instruction structure at orientations 0, 4, 8 and 12. The **bounded, read-only, intrinsic 1:1 GridArea-local** preview can therefore show original fixed32 `GridLayers` in its own local frame for these cardinal cases. The preview remains separate from original `GridObject` anchors and from save coordinates.
 
 **Limitations:** a structural instruction comparison alone does not prove downstream native calls, dynamically initialized globals, runtime GridArea-to-Grid tessellation ratios, object anchor transformations, noncardinal rotations, physical occupancy, collisions or placement legality. The 1:1 transform is **a local-frame specialization**, not proof that an actual placed object uses 1:1. Only the source-local read preview is enabled; actual World Editor placement validation and writes remain disabled. No original game binary or disassembly bytes are added to the public repository.
+
+
+## Steam 1.26.2 intrinsic 16-direction GridArea source-local extension (2026-11-23)
+
+The same privately pinned original 1.26.1/1.26.2 IL2CPP v31 metadata and executable pair was used to resolve additional native methods by exact metadata token, module pointer table and PE64 function boundary. Comparison of bounded x86-64 instruction sequences found **no non-relative instruction-byte changes** in the listed methods:
+
+| Original GridArea method | Method token | 1.26.1 RVA | 1.26.2 RVA | Instructions | PC-relative-only changes |
+| --- | --- | --- | --- | ---: | ---: |
+| `GridAreaData.GetGridArea` | `0x0600309F` | `0x38FA210` | `0x38F9F10` | 78 | 10 |
+| `GridArea.MoreRotationGetGridLocalPosition` | `0x0600344B` | `0x3923D80` | `0x3923A80` | 171 | 18 |
+| `GridArea.GetAlignedRotatedCorners` | `0x06003449` | `0x39239A0` | `0x39236A0` | 145 | 16 |
+| `GridArea.Cos` | `0x06003458` | `0x3924B10` | `0x3924810` | 29 | 9 |
+| `GridArea.Sin` | `0x06003459` | `0x3924B90` | `0x3924890` | 29 | 9 |
+| `GridArea..cctor` | `0x0600345E` | `0x3924F80` | `0x3924C80` | 80 | 25 |
+
+The raw metadata v31 **field-default arrays** for the original 16 fixed-integer COS/SIN coefficients were independently located in *both* versions by their SHA-256 field names (`33E08F575894...` and `5B6E0D7F4186...`). All 32 signed int32 entries and both field-default blob hashes match. The 1.26.2 `GridAreaData.GetGridArea` source method sets the returned intrinsic GridArea tessellation factor to 1. These facts corroborate the original **local** 16-direction, centred integer-vector lookup, including null output cells when a rotated destination sample has no original source cell.
+
+Source `SceneLayouts` grid entries in the private partial 1.26.2 ZIP declare native `TessellationFactor` values 1 and 2. The local preview exposes a **manually specified** caller-grid factor 1/2 to inspect how the native intrinsic lookup scales. An exact *per-placed-GridObject* factory call, runtime GridArea-to-Grid coordinate system, rotation pivot, occupied cell predicate, blocking or legal placement **is not established** by this comparison. Those operations remain unavailable. No private original method bytes, source arrays or saves are publicly committed.

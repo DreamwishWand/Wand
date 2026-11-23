@@ -6,7 +6,8 @@
     from '$lib/world/native-item-anchor-finder.ts';
   import type {OriginalGridAreaEvidence}
     from '$lib/world/native-gridarea-evidence.ts';
-  import type {SourceLocalGridAreaWindow}
+  import {getOriginalGridAreaDisplayDimensions,
+    type SourceLocalGridAreaWindow}
     from '$lib/world/native-gridarea-local-window.ts';
   import {matchSourceGridToLocalTerrain,
     type SourceGridNavigationRequest}
@@ -94,6 +95,8 @@
   let itemGridArea:OriginalGridAreaEvidence|null=null;
   let areaWindow:SourceLocalGridAreaWindow|null=null;
   let areaOrientation=8;
+  let areaFactor:1|2=1;
+  const areaOrientations=[8,9,10,11,12,13,14,15,0,1,2,3,4,5,6,7];
   let areaX=0;
   let areaY=0;
   let areaWindowError='';
@@ -152,10 +155,9 @@
     if(!worker||!shape||shape.status!=='source_raw_gridarea_available'||
        !shape.rawSizeX||!shape.rawSizeY||viewing||findingGlobal||findingAnchor)
       return;
-    const sx=(areaOrientation===4||areaOrientation===12)
-      ?shape.rawSizeY:shape.rawSizeX;
-    const sy=(areaOrientation===4||areaOrientation===12)
-      ?shape.rawSizeX:shape.rawSizeY;
+    const dims=getOriginalGridAreaDisplayDimensions(
+      shape.rawSizeX,shape.rawSizeY,areaOrientation,areaFactor);
+    const sx=dims.width,sy=dims.height;
     if(!Number.isSafeInteger(areaX)||!Number.isSafeInteger(areaY)||
        areaX<0||areaY<0||areaX>=sx||areaY>=sy){
       areaWindow=null;
@@ -167,6 +169,7 @@
     const id=++requestId;
     worker.postMessage({command:'gridarea-window',requestId:id,
       itemId:shape.itemId,orientationCode:areaOrientation,
+      callerGridFactor:areaFactor,
       rect:{x:areaX,y:areaY,
         width:Math.min(16,sx-areaX),height:Math.min(16,sy-areaY)}});
   }
@@ -435,7 +438,8 @@
         const raw=result.result as SourceLocalGridAreaWindow;
         if(raw?.contract!=='wand.db04.original-gridarea-local-window@1'||
            raw.itemId!==itemGridArea?.itemId||
-           raw.orientationCode!==areaOrientation){
+           raw.orientationCode!==areaOrientation||
+           raw.callerGridFactor!==areaFactor){
           areaWindow=null;
           areaWindowError='原本GridAreaの応答が現在のItemと一致しません。';
           return;
@@ -481,6 +485,9 @@
           selectedRegion=view.regionKey;
           selectedViewKey=view.viewKey;
           selectedGridId=String(grid.gridIdNative);
+          // Source GridEntry.factor is an exact ORIGINAL reference, not a Save transform.
+          areaFactor=grid.tessellationFactor===2?2:1;
+          resetAreaWindow();
           resetAnchorFind();
           const cx=match.sourceAnchorX,cy=match.sourceAnchorY;
           x=Math.max(0,Math.min(grid.anchorSizeX-1,cx-Math.floor(width/2)));
@@ -529,6 +536,8 @@
           const chosen=layouts.find(row=>row.viewKey===selectedViewKey)
             ?.grids.find(row=>String(row.gridIdNative)===selectedGridId);
           if(!chosen||!chosen.anchorSizeX||!chosen.anchorSizeY)return;
+          areaFactor=chosen.tessellationFactor===2?2:1;
+          resetAreaWindow();
           const cx=found.sourceAnchorX,cy=found.sourceAnchorY;
           x=Math.max(0,Math.min(chosen.anchorSizeX-1,
             cx-Math.floor(width/2)));
@@ -771,17 +780,23 @@
             {itemGridArea.mostFrequentRawValues.map(row=>
               `${row.value} × ${row.count}`).join(' · ')}
           </p>
-          <p class="note">配列の非ゼロ値は占有セル数ではありません。
-            原本内の2D値参照と90度単位のローカル向き変換は検証済みです。
+          <p class="note">全16方向の原本ローカル値を参照できます。
+            配列の非ゼロ値は占有セル数ではありません。
             実際のGridへの座標変換・衝突判定・配置可否は未検証です。</p>
           <div class="coord-row">
             <label>原本GridAreaの向き
               <select bind:value={areaOrientation}
                 on:change={()=>{areaX=0;areaY=0;resetAreaWindow();}}>
-                <option value={8}>8 · 元の向き</option>
-                <option value={0}>0 · 180°</option>
-                <option value={4}>4 · 90°</option>
-                <option value={12}>12 · 270°</option>
+                {#each areaOrientations as code}
+                  <option value={code}>{code===8?'8 · 元の向き':code+' · '+((8-code+16)%16*22.5)+'°'}</option>
+                {/each}
+              </select>
+            </label>
+            <label>原本Grid参照倍率
+              <select bind:value={areaFactor}
+                on:change={()=>{areaX=0;areaY=0;resetAreaWindow();}}>
+                <option value={1}>×1</option>
+                <option value={2}>×2</option>
               </select>
             </label>
             <label>ローカルX
@@ -801,17 +816,26 @@
             <p class="note" role="status">{areaWindowError}</p>
           {/if}
           {#if areaWindow?.status==='source_native_local_layers'&&areaWindow.rect&&areaWindow.rows}
-            <p class="note">原本GridArea単体のローカル値（最大16×16）。
-              GridObjectの設置位置や占有セルではありません。</p>
+            <p class="note">原本GridArea単体のローカル値（最大16×16）・
+              入力倍率 ×{areaWindow.callerGridFactor}。
+              {#if areaWindow.unmappedOriginalLocalCellCount>0}
+                対応先なし {areaWindow.unmappedOriginalLocalCellCount}セル（空きマスではありません）。
+              {/if}
+              GridObjectの設置位置や占有セルではありません。
+              {#if selectedGrid?.tessellationFactor===2}
+                現在選択中の原本Grid記録のTessellationFactorは2です。
+                このItemへの適用は未検証です。
+              {/if}
+            </p>
             <div class="map-scroll" aria-label="原本GridAreaセル一覧">
               <div class="gridarea-raw-matrix"
                 style={'grid-template-columns:repeat(' + areaWindow.rect.width + ',minmax(42px,auto))'}>
                 {#each areaWindow.rows as row,iy}
                   {#each row as value,ix}
                     <span class="gridarea-raw-cell"
-                      title={`ローカル (${areaWindow.rect.x+ix},${areaWindow.rect.y+iy}) · 原本レイヤー値 ${value}`}
-                      aria-label={`原本セル${areaWindow.rect.x+ix},${areaWindow.rect.y+iy}：${value}`}>
-                      {value}
+                      title={`ローカル (${areaWindow.rect.x+ix},${areaWindow.rect.y+iy}) · ${value===null?'原本セル対応先なし':'原本レイヤー値 '+value}`}
+                      aria-label={`原本セル${areaWindow.rect.x+ix},${areaWindow.rect.y+iy}：${value===null?'対応先なし':value}`}>
+                      {value===null?'—':value}
                     </span>
                   {/each}
                 {/each}

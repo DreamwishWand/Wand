@@ -438,7 +438,7 @@ try{
   assert.match(await gridareaPanel.innerText(),/非ゼロ 3値/);
   assert.match(await gridareaPanel.innerText(),/68 × 2 · 0 × 1 · 76 × 1/);
   assert.match(await gridareaPanel.innerText(),/占有セル数ではありません/);
-  assert.match(await gridareaPanel.innerText(),/原本内の2D値参照と90度単位のローカル向き変換は検証済み/);
+  assert.match(await gridareaPanel.innerText(),/全16方向の原本ローカル値を参照できます/);
   const rawAreaButton=gridareaPanel.getByRole('button',{name:'原本レイヤー値を表示'});
   await rawAreaButton.click();
   const rawGridArea=gridareaPanel.getByLabel('原本GridAreaセル一覧');
@@ -454,6 +454,24 @@ try{
       el=>el.textContent?.trim()).join(',')==='68,0,76,68');
   assert.deepEqual(await rawGridArea.locator('.gridarea-raw-cell').allTextContents(),
     ['68','0','76','68']);
+  const orientationControl=gridareaPanel.getByRole('combobox',{
+    name:'原本GridAreaの向き'
+  });
+  assert.equal(await orientationControl.locator('option').count(),16);
+  await orientationControl.selectOption('2');
+  await rawAreaButton.click();
+  await page.waitForFunction(()=>document.querySelector(
+    '[aria-label="原本GridAreaセル一覧"]')?.querySelectorAll(
+      '.gridarea-raw-cell').length===4);
+  assert.equal(await rawGridArea.locator('.gridarea-raw-cell').count(),4);
+  await gridareaPanel.getByRole('combobox',{name:'原本Grid参照倍率'})
+    .selectOption('2');
+  await rawAreaButton.click();
+  await page.waitForFunction(()=>document.querySelector(
+    '[aria-label="原本GridAreaセル一覧"]')?.querySelectorAll(
+      '.gridarea-raw-cell').length===16);
+  assert.match(await gridareaPanel.innerText(),/入力倍率 ×2/);
+  assert.match(await gridareaPanel.innerText(),/GridObjectの設置位置や占有セルではありません/);
   assert.doesNotMatch(await gridareaPanel.innerText(),/編集可能/);
   assert.match(await terrainSelectors.nth(1).locator('option:checked').innerText(),
     /Village04\/Beach.json/);
