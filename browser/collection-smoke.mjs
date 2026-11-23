@@ -125,7 +125,7 @@ try{
   page.on('response',response=>{
     if(response.url().includes('ddv_p1g_codec_bg')&&response.url().endsWith('.wasm'))
       saveWasmAssets.push({url:response.url(),status:response.status()});
-    if(/(?:recipe-results|activity-result-paths|native-loot-candidates|native-stall-slots)-1\\.26\\.2\\.json/.test(response.url()))
+    if(/(?:recipe-results|activity-result-paths|native-loot-candidates|native-stall-slots)-1\.26\.2\.json/.test(response.url()))
       acquisitionAssets.push({url:response.url(),status:response.status()});
   });
   page.on('pageerror',error=>browserErrors.push(String(error)));
