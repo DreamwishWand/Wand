@@ -208,10 +208,24 @@ def join_source(
         rows=families[family]
         stats=Counter()
         for _,_,ff in rows:
+            stats["items"]+=1
+            # The top-level Furniture itemlist mixes subtype wire schemas.
+            # 395 original rows use field 9 for non-Tag message bytes
+            # (e.g. Road/Brick), while another 525 omit field 9.
+            # Do NOT call either group FurnitureItemData.Tags.
+            # Only complete, nonempty Tag-ID frames prove that wire field 9
+            # was the exact IHasTags.Tags field for this source record.
+            if family=="Furniture":
+                candidates=[raw for f,w,raw in ff
+                            if f==tag_field and w==2]
+                if len(candidates)!=1 or not _wire.packed_tags(
+                        bytes(candidates[0]),set(tags)):
+                    stats["sourceSubtypeNotProven"]+=1
+                    continue
             direct=set(exactly_one_packed(ff,tag_field,set(tags)))
             source_set=one_set_reference(ff,set_field)
             linked=definition.get(source_set,set())
-            stats["items"]+=1
+            stats["hasTagSourceRowsVerified"]+=1
             stats["directTagItems"]+=bool(direct)
             stats["withSetItemReference"]+=source_set is not None
             stats["resolvedSetItemReference"]+=source_set in definition
@@ -226,6 +240,11 @@ def join_source(
             all(c["setInheritedCollectionAreaTag"]==0
                 for c in by_family.values()),
             "UNEXPECTED_WORLD_SET_TAG_INHERITANCE")
+    require(by_family["Furniture"]["sourceSubtypeNotProven"]==920 and
+            by_family["Furniture"]["hasTagSourceRowsVerified"]==5826 and
+            by_family["Clothing"]["hasTagSourceRowsVerified"]==2041 and
+            by_family["Trimming"]["hasTagSourceRowsVerified"]==365,
+            "SOURCE_SUBTYPE_COVERAGE_DRIFT")
     result["sourceFamilyCounts"]=by_family
     return result
 
