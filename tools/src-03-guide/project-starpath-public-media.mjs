@@ -13,7 +13,7 @@ import {readFile,writeFile,mkdir,readdir} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {createHash} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
-import {VERIFIED_STARPATH_REWARD_NAMES} from '../../src/lib/guide/starpath-reward-names.mjs';
+import {VERIFIED_STARPATH_REWARD_NAMES} from '../../src/lib/guide/starpath-reward-names.ts';
 import {verifyPublicStarpath} from '../../src/lib/guide/public-starpath.mjs';
 import {verifyStarpathMediaManifest} from '../../src/lib/guide/starpath-public-media.mjs';
 
