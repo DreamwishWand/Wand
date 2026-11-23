@@ -5,6 +5,7 @@ import {join} from 'node:path';
 import {
   COLLECTION_DB01_FACETS_SCHEMA,COLLECTION_DB01_ARCHIVE_SHA,
   parseCollectionDb01Facets,collectionDb01Groups,collectionDb01Matches,
+  COLLECTION_DB01_SUBMENUS,collectionDb01InCategory,
   collectionDb01FacetLabel
 } from '../src/lib/collection/db01-native-facets.ts';
 
@@ -21,6 +22,17 @@ test('DB-01 source native filtering is a narrow projection, not a second Item ma
   assert.equal(Object.hasOwn(raw,'collectionSourceCandidates'),false);
   const index=parseCollectionDb01Facets(raw);
   assert.equal(index.taggedItems,raw.taggedItems);
+  assert.equal(COLLECTION_DB01_SUBMENUS.length,20);
+  assert.ok(raw.categoryItemCount>8000);
+  assert.ok(index.itemsByCategory.get(3).length>5000,
+    'the original FurnitureSets browse path must have real Item IDs');
+  assert.ok(index.itemsByCategory.get(4).length>1900,
+    'the original ClothingSets browse path must have real Item IDs');
+  assert.ok(index.itemsByCategory.get(1).length>50,
+    'source Fish Item IDs are a real Collection category');
+  assert.equal(collectionDb01InCategory(index,40005160,3),true,
+    'the source Furniture category resolves by exact Item ID');
+  assert.equal(collectionDb01InCategory(index,40005160,1),false);
   const shoe=index.byItem.get(40005160);
   assert.ok(shoe,'Glass Shoe must have native filter tags');
   assert.ok(shoe.some(([facet,key])=>facet==='color'&&key==='White'));

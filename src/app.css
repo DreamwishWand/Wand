@@ -805,3 +805,17 @@ a.portal-card:focus-visible{outline:3px solid #f5d6ff;outline-offset:-5px;z-inde
 :root:is([data-wand-theme='light'],[data-wand-theme='dawn'],[data-wand-theme='coral'])
   .collection-native-tag-panel select{color:#35233f;background:white;
     border-color:#c5acd5}
+
+/* Original CollectionSubMenu browse categories: native 20-category hierarchy.
+   Source candidates are explicitly NOT verified in-game completion counts. */
+.collection-original-category-grid .facet-card{min-height:122px}
+.collection-original-category-grid .facet-card:disabled{opacity:.38;cursor:not-allowed}
+.collection-original-category-grid .facet-card strong{line-height:1.25}
+.collection-source-category-footer{display:flex;align-items:center;justify-content:space-between;
+  gap:10px;flex-wrap:wrap;margin:10px 0 20px;color:#a99ab8;font-size:11px}
+.collection-source-category-footer .subtle-button{display:inline-flex;align-items:center;gap:6px}
+.collection-source-category-footer .subtle-button svg{transform:rotate(0deg)}
+@media(max-width:550px){
+  .collection-original-category-grid{grid-template-columns:repeat(auto-fill,minmax(112px,1fr))}
+  .collection-original-category-grid .facet-card{min-height:108px}
+}
