@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import {
   SAVE_COLLECTION_DISCOVERY_CONTRACT,
   SAVE_COLLECTION_DISCOVERY_IMPORT_SCHEMA,
-  projectSavedCollectionDiscovery,
   sanitizeSavedCollectionDiscovery
-} from '../src/lib/collection/saved-collection-discovery.mjs';
+} from '../src/lib/collection/saved-collection-discovery.ts';
+import {projectSavedCollectionDiscovery}
+  from './helpers/rust-collection-discovery.mjs';
 
 const save=(groups,version=643)=>({
   GameInfo:{Version:version},
@@ -19,13 +20,13 @@ const save=(groups,version=643)=>({
   World:{playerSecrets:'never copy'}
 });
 
-test('native CollectionSet booleans preserve true and false as discovery, not owned or unlocked',()=>{
+test('native CollectionSet booleans preserve true and false as discovery, not owned or unlocked',async()=>{
   const root=save([
     {'101':true,'102':false,'103':true},
     {'101':true,'104':false}
   ]);
   const before=structuredClone(root);
-  const result=projectSavedCollectionDiscovery(root);
+  const result=await projectSavedCollectionDiscovery(root);
   assert.deepEqual(root,before);
   assert.equal(result.contract,SAVE_COLLECTION_DISCOVERY_CONTRACT);
   assert.equal(result.importSchema,SAVE_COLLECTION_DISCOVERY_IMPORT_SCHEMA);
@@ -49,9 +50,9 @@ test('native CollectionSet booleans preserve true and false as discovery, not ow
   assert.ok(!serialized.includes('GroupIndex'));
 });
 
-test('cross-category contradictory discovery booleans never overwrite manual state',()=>{
+test('cross-category contradictory discovery booleans never overwrite manual state',async()=>{
   // Historical native v1.24.13 profile includes exactly such disagreement.
-  const result=projectSavedCollectionDiscovery(save([
+  const result=await projectSavedCollectionDiscovery(save([
     {'40003256':true,'40006110':false},
     {'40003256':false,'40006110':false},
     {'40003256':true,'40005160':true}
@@ -65,8 +66,8 @@ test('cross-category contradictory discovery booleans never overwrite manual sta
   assert.deepEqual(sanitizeSavedCollectionDiscovery(result),result);
 });
 
-test('non-boolean values and malformed keys never produce a known discovery value',()=>{
-  const result=projectSavedCollectionDiscovery(save([
+test('non-boolean values and malformed keys never produce a known discovery value',async()=>{
+  const result=await projectSavedCollectionDiscovery(save([
     {'101':false,'102':null,'103':1,'0104':true},
     {'102':true,'103':false,'105':'true','106':{private:'no'}}
   ]));
@@ -77,25 +78,25 @@ test('non-boolean values and malformed keys never produce a known discovery valu
   assert.equal(sanitizeSavedCollectionDiscovery(result).status,'partial_inconclusive');
 });
 
-test('missing, empty or unrecognized save schema never resets manual records',()=>{
-  const empty=projectSavedCollectionDiscovery(save([]));
+test('missing, empty or unrecognized save schema never resets manual records',async()=>{
+  const empty=await projectSavedCollectionDiscovery(save([]));
   assert.equal(empty.status,'observed_empty');
   assert.deepEqual(empty.entries,[]);
-  const missing=projectSavedCollectionDiscovery({GameInfo:{Version:643},Player:{},World:{}});
+  const missing=await projectSavedCollectionDiscovery({GameInfo:{Version:643},Player:{},World:{}});
   assert.equal(missing.status,'not_observed');
   assert.deepEqual(missing.entries,[]);
-  const newer=projectSavedCollectionDiscovery(save([{'101':true}],644));
+  const newer=await projectSavedCollectionDiscovery(save([{'101':true}],644));
   assert.equal(newer.status,'unsupported_schema');
   assert.deepEqual(newer.entries,[]);
-  const legacy=projectSavedCollectionDiscovery(save([{'101':false}],624));
+  const legacy=await projectSavedCollectionDiscovery(save([{'101':false}],624));
   assert.equal(legacy.status,'observed_boolean_discovery');
   assert.deepEqual(legacy.entries,[{itemId:101,discovered:false}]);
   for(const result of [empty,missing,newer,legacy])
     assert.deepEqual(sanitizeSavedCollectionDiscovery(result),result);
 });
 
-test('Worker projection sanitizer rejects ambiguous, forged or private rows',()=>{
-  const good=structuredClone(projectSavedCollectionDiscovery(save([{'101':true,'102':false}])));
+test('Worker projection sanitizer rejects ambiguous, forged or private rows',async()=>{
+  const good=structuredClone(await projectSavedCollectionDiscovery(save([{'101':true,'102':false}])));
   good.sensitive='private';
   const clean=sanitizeSavedCollectionDiscovery(good);
   assert.ok(!Object.hasOwn(clean,'sensitive'));
@@ -117,4 +118,34 @@ test('Worker projection sanitizer rejects ambiguous, forged or private rows',()=
   const wrongCount=structuredClone(good);
   wrongCount.observedReferences=1;
   assert.throws(()=>sanitizeSavedCollectionDiscovery(wrongCount),/PROJECTION_INVALID/);
+});
+
+test('new Rust 305-CollectionSet coverage exceeds the old 128-set truncation',async()=>{
+  const sets=Array.from({length:305},(_,i)=>({
+    CollectionDefinitionID:2120000000+i,
+    GroupData:[{GroupsCollectionItems:{[String(10000000+i)]:i%2===0}}]
+  }));
+  const result=await projectSavedCollectionDiscovery({
+    GameInfo:{Version:643},Player:{CollectionSets:sets}
+  });
+  assert.equal(result.status,'observed_boolean_discovery');
+  assert.equal(result.observedGroups,305);
+  assert.equal(result.entries.length,305);
+  assert.equal(result.sampled,false);
+  assert.deepEqual(sanitizeSavedCollectionDiscovery(result),result);
+});
+
+test('Rust result cannot launder crafted local-only or private fields through the TS boundary',async()=>{
+  const original=await projectSavedCollectionDiscovery(save([{'101':true}]));
+  const samples=[
+    {...original,ownershipVerified:true},
+    {...original,currentSteamNativeEquivalentProven:true},
+    {...original,entries:[{itemId:101,discovered:'owned'}]},
+    {...original,entries:[{itemId:101,discovered:true,privateSave:'secret'}]},
+    {...original,entries:[{itemId:101,discovered:true}],ambiguousItemIds:1},
+    {...original,entries:[],status:'observed_boolean_discovery'},
+    {...original,observedReferences:0}
+  ];
+  for(const forged of samples)assert.throws(()=>
+    sanitizeSavedCollectionDiscovery(forged),/PROJECTION_INVALID/);
 });
