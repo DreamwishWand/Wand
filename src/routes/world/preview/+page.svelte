@@ -10,6 +10,8 @@
     from '$lib/world/native-gridobject-item-area-link.ts';
   import type {OriginalDefaultGridLayersCell}
     from '$lib/world/native-default-gridlayers-cell.ts';
+  import type {OriginalDefaultGridLayersWindow}
+    from '$lib/world/native-default-gridlayers-window.ts';
   import {getOriginalGridAreaDisplayDimensions,
     type SourceLocalGridAreaWindow}
     from '$lib/world/native-gridarea-local-window.ts';
@@ -67,6 +69,7 @@
   type ViewResult = {
     page: PageResult; markers: Array<{x:number;y:number;count:number}>;
     terrainStatus: string | null; terrainRows?: number[][] | null;
+    defaultLayersWindow?:OriginalDefaultGridLayersWindow|null;
   };
 
   let worker: Worker | null = null;
@@ -89,6 +92,7 @@
   let viewing = false;
   let viewport: ViewResult | null = null;
   let selectedCell: {x:number;y:number} | null = null;
+  let showSourceDefaultLayerOverlay=false;
   let selectedCellLayers:OriginalDefaultGridLayersCell|null=null;
   let loadingCellLayers=false;
   let fileInput: HTMLInputElement | null = null;
@@ -122,6 +126,16 @@
   $: selectedGrid = gridOptions.find(a => String(a.gridIdNative) === selectedGridId);
   $: visibleSourceDefaultBounds = clippedDefaultSourceBounds(
     itemAreaLink,viewport?.page??null,selectedLayout?.layoutId,selectedGrid);
+  $: activeLayerWindow = showSourceDefaultLayerOverlay&&
+    viewport?.defaultLayersWindow?.status==='source_item_default_layer_window'&&
+    viewport.page?.rect?.x===viewport.defaultLayersWindow.rect.x&&
+    viewport.page?.rect?.y===viewport.defaultLayersWindow.rect.y&&
+    viewport.page?.rect?.width===viewport.defaultLayersWindow.rect.width&&
+    viewport.page?.rect?.height===viewport.defaultLayersWindow.rect.height&&
+    viewport.defaultLayersWindow.sourceLayoutId===selectedLayout?.layoutId&&
+    viewport.defaultLayersWindow.nativeGridId===selectedGrid?.gridIdNative&&
+    viewport.defaultLayersWindow.gridDataPath===selectedGrid?.gridDataPath
+    ?viewport.defaultLayersWindow:null;
   $: markersByCell = new Map((viewport?.markers ?? []).map(a => [`${a.x}:${a.y}`, a.count]));
   $: cells = viewport?.page?.rect && viewport.page.status === 'source_native_default_layout_anchors_only'
     ? Array.from({length:viewport.page.rect.width * viewport.page.rect.height}, (_, index) => {
@@ -129,8 +143,12 @@
         const cx = rect.x + index % rect.width;
         const cy = rect.y + Math.floor(index / rect.width);
         const value = viewport?.terrainRows?.[Math.floor(index / rect.width)]?.[index % rect.width];
+        const iy=Math.floor(index/rect.width),ix=index%rect.width;
+        const originalDefaultLayer=activeLayerWindow?.rawLayerOrRows?.[iy]?.[ix]??null;
+        const possibleUnknown=activeLayerWindow
+          ?.potentiallyUnresolvedContributorCountRows?.[iy]?.[ix]??0;
         return {x:cx,y:cy,count:markersByCell.get(`${cx}:${cy}`) ?? 0,
-          nativeFloorValue:value};
+          nativeFloorValue:value,originalDefaultLayer,possibleUnknown};
       }) : [];
   $: selectedPointCount = selectedCell
     ? markersByCell.get(`${selectedCell.x}:${selectedCell.y}`) ?? 0 : 0;
@@ -336,6 +354,7 @@
     selectedCell = null;
     selectedCellLayers=null;
     loadingCellLayers=false;
+    showSourceDefaultLayerOverlay=false;
     integrity = '';
     manifestFilesVerified = 0;
     errorMessage = '';
@@ -380,6 +399,7 @@
       command:'view', requestId:id,
       viewKey:selectedViewKey, gridIdNative:chosen.gridIdNative,
       rect:{x,y,width,height}, offset,
+      includeDefaultLayers:showSourceDefaultLayerOverlay
     });
   }
   async function navigateToOriginalTerrain(selection:SourceGridNavigationRequest){
@@ -687,6 +707,7 @@
         viewport = {
           page:result.page, markers:result.markers,
           terrainStatus:result.terrainStatus, terrainRows:result.terrainRows,
+          defaultLayersWindow:result.defaultLayersWindow??null
         };
         const point=selectedCell;
         const rect=result.page?.rect as {x:number;y:number;width:number;height:number}|undefined;
@@ -1022,15 +1043,28 @@
             点線は原本Item既定GridAreaの外接枠です（占有セル・衝突判定ではありません）。
           {/if}
         </p>
+        <label class="source-grid-layers-toggle">
+          <input type="checkbox" bind:checked={showSourceDefaultLayerOverlay}
+            on:change={()=>requestWindow()}/>
+          原本Itemの既定レイヤー
+        </label>
+        {#if activeLayerWindow}
+          <p class="note" aria-label="原本既定レイヤー凡例">
+            小点＝既定レイヤーの非0値、破線＝原本定義がないItemの影響可能性。
+            空きマスや配置許可を示しません。
+          </p>
+        {/if}
         <div class="map-scroll">
           <div class="grid-source-bounds-canvas">
             <div class="grid-view" style={'grid-template-columns: repeat(' + width + ', 24px)'}>
               {#each cells as cell (`${cell.x}:${cell.y}`)}
               <button type="button" class:has-anchor={cell.count > 0}
+                class:has-source-default-layer={cell.originalDefaultLayer!==null&&cell.originalDefaultLayer!==0}
+                class:source-default-possibly-unknown={cell.possibleUnknown>0}
                 class:current={selectedCell?.x === cell.x && selectedCell?.y === cell.y}
                 style:background-color={floorTint(cell.nativeFloorValue)}
                 on:click={() => selectGridCell(cell.x,cell.y)}
-                title={`Grid local (${cell.x},${cell.y}); source anchors: ${cell.count}; native floor mask: ${cell.nativeFloorValue ?? 'unverified'}`}
+                title={`Grid local (${cell.x},${cell.y}); source anchors: ${cell.count}; native floor mask: ${cell.nativeFloorValue ?? 'unverified'}; source Item DEFAULT GridLayers: ${cell.originalDefaultLayer===null?'not calculated':'0x'+cell.originalDefaultLayer.toString(16)}; possible unresolved: ${cell.possibleUnknown}; not occupancy`}
                 aria-label={`座標${cell.x},${cell.y}：アンカー${cell.count}件`}>
                 {cell.count > 0 ? Math.min(cell.count, 99) : ''}
               </button>
@@ -1148,6 +1182,9 @@
   .grid-view button {height:24px;width:24px;padding:0;border:1px solid #ffffff10;border-radius:2px;background:#2d2837;color:#e8dafa;font-size:9px;line-height:1;}
   .grid-view button.has-anchor {color:white;border:2px solid #ecd1ff;box-shadow:inset 0 0 0 1px #2a2134;font-weight:700;}
   .grid-view button.current {outline:2px solid #fff;outline-offset:1px;}
+  .grid-view button.has-source-default-layer {background-image:radial-gradient(circle at 75% 75%, #e0b163 0 3px, transparent 3.2px);}
+  .grid-view button.source-default-possibly-unknown {border-style:dashed;border-color:#a2a2a2;}
+  .source-grid-layers-toggle {display:inline-flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;}
   .gridarea-raw-matrix {display:grid;width:max-content;gap:2px;background:#16121f;padding:4px;}
   .gridarea-raw-cell {min-width:42px;padding:9px 5px;text-align:center;font-size:11px;background:#34303f;color:#e8dafa;}
   .record-list {display:grid;gap:6px;margin-top:14px;}
