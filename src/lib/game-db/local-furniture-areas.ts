@@ -103,6 +103,7 @@ export function joinLocalFurnitureCollectionAreaSources(
           definition.count
     ) &&
     typeof furnitureSource.getItem==='function' &&
+    typeof furnitureSource.getItems==='function' &&
     typeof furnitureSource.hasTag==='function',
     'PINNED_ORIGINAL_FURNITURE_SOURCE_REQUIRED');
   const positive=areas.orderedAreas.filter(a=>a.original.gameplayTagId>0);
@@ -115,11 +116,11 @@ export function joinLocalFurnitureCollectionAreaSources(
       a.original.gameplayTagId===0),
     'EXACT_POSITIVE_AREA_TAG_CONFIGS_REQUIRED');
 
-  async function getItem(id:number|string):
-    Promise<Db00LocalFurnitureItemAreaEvidence>{
-    const itemId=canonicalId(id);
+  function joinOriginal(
+    itemId:string,
+    original:Readonly<Db01OriginalFurnitureHasTagItem>|null,
+  ):Db00LocalFurnitureItemAreaEvidence{
     const shared=publicData.getItem(itemId);
-    const original=await furnitureSource.getItem(Number(itemId));
     const positiveSourceTagMatches:Db00LocalFurnitureAreaTag[]=[];
     if(original!==null){
       const row=original.original,input=original.input;
@@ -187,6 +188,11 @@ export function joinLocalFurnitureCollectionAreaSources(
       playerOwnershipVerified:false as const
     });
   }
+  async function getItem(id:number|string):
+    Promise<Db00LocalFurnitureItemAreaEvidence>{
+    const itemId=canonicalId(id);
+    return joinOriginal(itemId,await furnitureSource.getItem(Number(itemId)));
+  }
   return Object.freeze({
     contract:DB00_LOCAL_FURNITURE_AREAS,
     snapshotId:publicData.snapshotId,
@@ -198,7 +204,14 @@ export function joinLocalFurnitureCollectionAreaSources(
     getItem,
     async getItems(ids:readonly (number|string)[]){
       ensure(Array.isArray(ids)&&ids.length<=256,'INVALID_ID_BATCH');
-      return Object.freeze(await Promise.all(ids.map(getItem)));
+      const itemIds=ids.map(canonicalId);
+      // DB-01 verifies source shards and catalog identities in one bounded
+      // batch, instead of issuing hundreds of per-ID catalog lookups.
+      const native=await furnitureSource.getItems(itemIds.map(Number));
+      ensure(native.length===itemIds.length,
+        'ORIGINAL_FURNITURE_BATCH_SIZE_MISMATCH');
+      return Object.freeze(itemIds.map((itemId,index)=>
+        joinOriginal(itemId,native[index])));
     },
   });
 }
