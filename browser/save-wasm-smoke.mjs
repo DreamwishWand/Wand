@@ -449,6 +449,43 @@ try{
   await coordinates.getByRole('button',{name:'座標編集に追加'}).click();
   const batchCoords=objects.getByLabel('一括座標編集');
   await batchCoords.getByText('2 / 16件').waitFor();
+  // Revise a queued DiffGrid destination IN PLACE, without deleting and
+  // restaging either original target. The row button must also navigate the
+  // numeric map to that row's local Grid, even after manual Grid switching.
+  const batchGridSelect=objects.getByRole('region',{
+    name:'セーブ内Grid配置マップ'
+  }).getByLabel('表示するセーブGrid');
+  await batchCoords.getByRole('button',{
+    name:'座標編集 #3 を修正'
+  }).click();
+  assert.equal(await batchGridSelect.inputValue(),'2');
+  assert.equal(await coordinates.getByLabel('新しいX').inputValue(),'130');
+  assert.equal(await coordinates.getByLabel('新しいY').inputValue(),'14');
+  await coordinates.getByLabel('新しいX').fill('2147483648');
+  await coordinates.getByRole('button',{
+    name:'登録済みの座標を更新'
+  }).click();
+  assert.match(await batchCoords.innerText(),/X -12→130/);
+  assert.match(await batchCoords.innerText(),/Y 8→14/);
+  await coordinates.getByLabel('新しいX').fill('141');
+  await coordinates.getByLabel('新しいY').fill('15');
+  await coordinates.getByRole('button',{
+    name:'登録済みの座標を更新'
+  }).click();
+  assert.match(await batchCoords.innerText(),/X -12→141/);
+  assert.match(await batchCoords.innerText(),/Y 8→15/);
+  assert.match(await batchCoords.innerText(),/X 45→-80/);
+  assert.equal(await batchCoords.getByRole('button',{
+    name:'座標編集 #3 を修正'
+  }).count(),1);
+  await objects.getByRole('button',{name:'配置 #1 の座標を編集'}).click();
+  assert.equal(await batchGridSelect.inputValue(),'1');
+  await batchGridSelect.selectOption('2');
+  assert.equal(await batchGridSelect.inputValue(),'2');
+  // Selecting the same list row again still navigates correctly; manual
+  // Grid switching alone should never snap back to the old selection.
+  await objects.getByRole('button',{name:'配置 #1 の座標を編集'}).click();
+  assert.equal(await batchGridSelect.inputValue(),'1');
   await batchCoords.getByRole('button',{name:'一括座標変更を検証'}).click();
   await coordinates.getByRole('status').filter({
     hasText:'2件の座標変更をRust/WASMで検証しました'
@@ -468,8 +505,8 @@ try{
   const diffObject=gridBatch.World.GridCollection.DiffGrids['102'].ModifiedObjects['6'];
   assert.equal(fullObject.X,-80);
   assert.equal(fullObject.Y,25);
-  assert.equal(diffObject.X,130);
-  assert.equal(diffObject.Y,14);
+  assert.equal(diffObject.X,141);
+  assert.equal(diffObject.Y,15);
   assert.equal(fullObject.Orientation,'GridOrientation_Up');
   assert.equal(diffObject.Orientation,'GridOrientation_Left');
   assert.equal(fullObject.PrivateState,'do-not-export');
