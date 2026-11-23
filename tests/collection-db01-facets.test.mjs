@@ -55,6 +55,8 @@ test('DB-01 source native filtering is a narrow projection, not a second Item ma
   assert.equal(raw.activityTypeItemCount,4050);
   assert.equal(index.activityTypesByItem.size,4050);
   assert.equal(index.itemsByActivityType.size,15);
+  console.log('DB01_SOURCE_ACTIVITY_ENUMS',JSON.stringify(
+    [...index.activityTypeNames.entries()].sort((a,b)=>a[0]-b[0])));
   const expected=new Map([
     [0,34],[2,165],[3,618],[4,171],[8,129],[10,103],
     [11,201],[12,1559],[13,193],[14,168],[15,481],
