@@ -52,6 +52,9 @@ import {
 import {
   createDb00NativeOnlineReader,type Db00NativeOnlineReader
 } from './native-online-categories.ts';
+import {
+  createDb00NativeRecipeReader,type Db00NativeRecipeReader
+} from './native-recipes.ts';
 import {loadPublicStarpath} from '../guide/public-starpath.mjs';
 import {
   loadStarpathRewardExtras,STARPATH_EXTRA_RELEASE
@@ -97,6 +100,8 @@ export interface PublicSharedGameSources{
   loadNativeCompanionSources():Promise<Db00NativeCompanionReader>;
   /** Optional SHA-pinned 9-family original OnlineCategory source classification. */
   loadNativeOnlineCategories():Promise<Db00NativeOnlineReader>;
+  /** SHA-pinned original cooking/crafting results, loaded only on demand. */
+  loadNativeRecipeSources():Promise<Db00NativeRecipeReader>;
   /** Optional verified 60-reward name/category crosswalk, including unnamed motifs. */
   loadStarpathRewardCrosswalk():Promise<Db00StarpathRewardReader>;
   queryItems(filters?:readonly SharedDbFilter[],
@@ -207,6 +212,11 @@ export async function openPublicSharedGameSources(
     nativeOnline??=acquisition.loadNativeOnlineCategories().then(source=>
       createDb00NativeOnlineReader(database,joined,source)
     );
+  let nativeRecipes:Promise<Db00NativeRecipeReader>|null=null;
+  const loadNativeRecipeSources=():Promise<Db00NativeRecipeReader>=>
+    nativeRecipes??=acquisition.loadNativeRecipeResults().then(source=>
+      createDb00NativeRecipeReader(database,joined,source)
+    );
   let starpathCrosswalk:Promise<Db00StarpathRewardReader>|null=null;
   const loadStarpathRewardCrosswalk=():Promise<Db00StarpathRewardReader>=>
     starpathCrosswalk??=(async()=>{
@@ -266,7 +276,8 @@ export async function openPublicSharedGameSources(
     getItems:(ids:readonly (string|number)[])=>joined.getItems(ids),
     searchItems:search.searchItems,
     searchOutsideSourceItems,loadNativeCompanionSources,
-    loadNativeOnlineCategories,loadStarpathRewardCrosswalk,
+    loadNativeOnlineCategories,loadNativeRecipeSources,
+    loadStarpathRewardCrosswalk,
     queryItems:(filters:readonly SharedDbFilter[]=[],
       page:Readonly<{offset?:number;limit?:number}>={})=>
       database.queryItems(filters,page),
