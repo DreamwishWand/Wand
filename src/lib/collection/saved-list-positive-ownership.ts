@@ -52,7 +52,7 @@ function count(value:unknown,max:number):number{
 }
 export function sanitizePositiveListInventoryOwnership(input:unknown):
   PositiveListInventoryProjection{
-  if(!record(input))fail();
+  if(!record(input))throw new TypeError('SAVED_LIST_OWNERSHIP_INVALID_WORKER_REPLY');
   if(input.contract!==SAVED_LIST_OWNERSHIP_CONTRACT||
     !STATUS.has(input.status as PositiveOwnershipStatus)||
     input.semantic!=='explicit_positive_list_amount_only'||
@@ -78,7 +78,7 @@ export function sanitizePositiveListInventoryOwnership(input:unknown):
     (input.status!=='unsupported_schema'&&!SUPPORTED.has(schema as number)))fail();
   let last=0;
   const entries=Object.freeze((input.entries as unknown[]).map(row=>{
-    if(!record(row))fail();
+    if(!record(row))throw new TypeError('SAVED_LIST_OWNERSHIP_INVALID_WORKER_REPLY');
     if(Object.keys(row).length!==2||
       typeof row.itemId!=='number'||!Number.isSafeInteger(row.itemId)||
       row.itemId<=last||!Object.hasOwn(ROLE_ITEM_TYPE,String(row.role)))fail();
