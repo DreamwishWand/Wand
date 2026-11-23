@@ -150,6 +150,13 @@ export type PublicSourceItemStallCandidateLookup=PublicSourceItemLookup&{
   readonly liveStallPriceVerified:false;
   readonly purchasingEligibleVerified:false;
 };
+export type PublicSourceItemObjectLootLookup=PublicSourceItemLookup&{
+  /** Native objects reference a table with this Item: still only a candidate. */
+  readonly nativeObjectLootCandidates:readonly import('./public-native-loot-objects.ts').NativeObjectLootCandidate[];
+  readonly nativeObjectLootSourceLoaded:true;
+  readonly objectTableReferenceVerified:true;
+  readonly actualObjectDropVerified:false;
+};
 export interface PublicSourceCatalog{
   readonly schema:typeof DB02_PUBLIC_SOURCE_CATALOG_SCHEMA;
   readonly gameVersion:'1.26.2';
@@ -185,6 +192,12 @@ export interface PublicSourceCatalog{
   loadCookingRecipeResolver():Promise<NativeCookingRecipeResolver>;
   /** Original 3804 LootTable candidates, with no verified gameplay context. */
   loadNativeLootCandidates():Promise<NativeLootCandidateIndex>;
+  /** Original 375 object -> table refs with 698 static candidate Item entries. */
+  loadNativeObjectLootSources():Promise<import('./public-native-loot-objects.ts').PublicNativeObjectLootIndex>;
+  /** Item-ID reverse lookup of original Furniture/ActivityItem table referrers. */
+  lookupWithNativeObjectLootCandidates(
+    itemId:string|number
+  ):Promise<PublicSourceItemObjectLootLookup>;
   lookupWithNativeLootCandidates(
     itemId:string|number
   ):Promise<PublicSourceItemLootCandidateLookup>;
@@ -365,6 +378,7 @@ export async function loadPublicSourceCatalog(
   let nativeCookingMembersPromise:Promise<NativeCookingMemberIndex>|null=null;
   let cookingRecipeResolverPromise:Promise<NativeCookingRecipeResolver>|null=null;
   let nativeLootPromise:Promise<NativeLootCandidateIndex>|null=null;
+  let nativeObjectLootPromise:Promise<import('./public-native-loot-objects.ts').PublicNativeObjectLootIndex>|null=null;
   let nativeStallSlotsPromise:Promise<NativeStallSlotIndex>|null=null;
   let nativeStallSourcesPromise:Promise<NativeStallSourceIndex>|null=null;
   const loadRecipes=()=>nativeRecipePromise??=
@@ -379,6 +393,11 @@ export async function loadPublicSourceCatalog(
     );
   const loadLoot=()=>nativeLootPromise??=
     loadPinnedNativeLootCandidates(basePath,fetcher);
+  const loadObjectLoot=()=>nativeObjectLootPromise??=
+    Promise.all([
+      loadLoot(),
+      import('./public-native-loot-objects.ts')
+    ]).then(([loot,module])=>module.joinPinnedNativeObjectLoot(loot));
   const loadStallSlots=()=>nativeStallSlotsPromise??=
     loadPinnedNativeStallSlots(basePath,fetcher);
   const loadStallSources=()=>nativeStallSourcesPromise??=
@@ -420,6 +439,19 @@ export async function loadPublicSourceCatalog(
     loadNativeCookingMembers(){return loadCookingMembers();},
     loadCookingRecipeResolver(){return loadCookingRecipeResolver();},
     loadNativeLootCandidates(){return loadLoot();},
+    loadNativeObjectLootSources(){return loadObjectLoot();},
+    async lookupWithNativeObjectLootCandidates(itemId:string|number){
+      const row=lookupCurrent(itemId);
+      const objectLoot=await loadObjectLoot();
+      return Object.freeze({
+        ...row,
+        nativeObjectLootCandidates:
+          objectLoot.getItemObjectCandidates(row.itemId),
+        nativeObjectLootSourceLoaded:true as const,
+        objectTableReferenceVerified:true as const,
+        actualObjectDropVerified:false as const
+      });
+    },
     loadNativeStallSlots(){return loadStallSlots();},
     loadNativeStallSources(){return loadStallSources();},
     async lookupWithNativeStallCandidates(itemId:string|number){
