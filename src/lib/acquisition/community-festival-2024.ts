@@ -53,9 +53,10 @@ export const FESTIVAL_2024_COMMUNITY_REDEMPTION_CAMPAIGNS:
     campaignId:'code:'+code,kind:'redeem_code',
     name:'Festival of Foolishness 2024 — '+code,
     code,productId:null,
-    // Official page gives the expiration DATE (August 16) but no precise
-    // timestamp. Date-only end boundary must not be construed as a UTC instant.
-    window:Object.freeze({start:'2024-07-16',endExclusive:'2024-08-16'}),
+    // The official article reports expiration on August 16, but not the
+    // cutoff time. Keep the exclusive boundary UNKNOWN instead of encoding
+    // midnight before or after that day. Retain the date in provenance.
+    window:Object.freeze({start:'2024-07-16',endExclusive:null}),
     communityArchiveEvidence:Object.freeze({
       evidence:'community_code_and_reward_mapping_for_official_event' as const,
       archiveKind:'community_wiki' as const,
