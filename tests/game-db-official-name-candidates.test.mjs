@@ -13,7 +13,8 @@ const reader=async url=>{
 let source;
 const open=()=>source??=openPublicSharedGameSources('/Wand',reader);
 const publishedOfficial=app=>app.acquisition.nameCandidates
-  .listCampaignRewardResolutions();
+  .listCampaignRewardResolutions()
+  .filter(c=>c.rewardMappingEvidence==='official_article_reward_text');
 
 test('official name equality remains distinct from verified Item origins and community shop appearances',async()=>{
   const app=await open(),index=app.acquisition.nameCandidates;
