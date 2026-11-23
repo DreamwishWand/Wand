@@ -421,6 +421,43 @@ try {
   const eventQuest=await browser.newPage({viewport:{width:390,height:844}});
   const eventQuestErrors=[];
   eventQuest.on('pageerror',e=>eventQuestErrors.push(String(e)));
+  // Deep links are accepted only after the original ID graph and public
+  // Quest catalogue (where required) are verified, never by URL alone.
+  await eventQuest.goto('http://127.0.0.1:4177/Wand/guide/events/?quest=2070001248',
+    {waitUntil:'domcontentloaded'});
+  await eventQuest.waitForFunction(()=>
+    document.querySelector('input[type="search"]')?.value==='2070001248',
+    {timeout:25000});
+  assert.equal(await eventQuest.locator('.event-list .event-option').count(),2);
+  assert.equal(await eventQuest.locator('.reward-detail .native-id').innerText(),
+    'DreamlightParkFest');
+  await eventQuest.getByRole('searchbox',{name:'イベントや報酬を検索'})
+    .fill('2070001059');
+  await eventQuest.locator('.event-list .event-option').first().waitFor({timeout:25000});
+  assert.equal(await eventQuest.locator('.event-list .event-option').count(),1);
+  assert.equal(new URL(eventQuest.url()).searchParams.has('quest'),false,
+    'manual search clears a stale Quest reverse-link focus');
+
+  await eventQuest.goto('http://127.0.0.1:4177/Wand/guide/events/?duty=2110100289',
+    {waitUntil:'domcontentloaded'});
+  await eventQuest.waitForFunction(()=>
+    document.querySelector('input[type="search"]')?.value==='2110100289',
+    {timeout:25000});
+  assert.equal(await eventQuest.locator('.event-list .event-option').count(),2);
+  assert.equal(await eventQuest.locator('.reward-detail .native-id').innerText(),
+    'LuckyYou_UI_2026');
+  await eventQuest.goto('http://127.0.0.1:4177/Wand/guide/events/?duty=999999999',
+    {waitUntil:'domcontentloaded'});
+  await eventQuest.locator('.event-list .event-option').first().waitFor({timeout:25000});
+  assert.equal(await eventQuest.locator('.event-list .event-option').count(),23);
+  assert.equal(await eventQuest.getByRole('searchbox',{name:'イベントや報酬を検索'}).inputValue(),'',
+    'unrecognized Duty must not masquerade as a verified Event source link');
+  await eventQuest.goto('http://127.0.0.1:4177/Wand/guide/events/?duty=2110100289&scene=1540000195',
+    {waitUntil:'domcontentloaded'});
+  await eventQuest.locator('.event-list .event-option').first().waitFor({timeout:25000});
+  assert.equal(await eventQuest.getByRole('searchbox',{name:'イベントや報酬を検索'}).inputValue(),'',
+    'conflicting original-ID links must never choose an arbitrary relation');
+
   await eventQuest.goto('http://127.0.0.1:4177/Wand/guide/events/?event=DreamlightParkFest_UI_2026',
     {waitUntil:'domcontentloaded'});
   const relatedEventQuests=eventQuest.locator('.event-quests');

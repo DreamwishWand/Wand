@@ -152,3 +152,20 @@ export async function loadPublicEventDutyLinks(
   return verifyPublicEventDutyLinks(
     JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)),eventSource);
 }
+
+
+/** Exact public-native Duty ID permalink; only source-linked Mini Events qualify.
+ * A link never asserts the Duty was unlocked, completed, or active.
+ */
+export function guideEventDutyHref(
+  index:PublicEventDutyIndex,raw:unknown,base=''
+):string|null{
+  check(index?.schema===DB03_EVENT_DUTY_SCHEMA&&
+    typeof index.getDutyEvents==='function','INDEX_REQUIRED');
+  const id=normalizeId(raw);
+  if(!id||index.getDutyEvents(id).length===0)return null;
+  check(typeof base==='string'&&
+    /^\/?(?:[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*)?$/.test(base),'BASE');
+  const root=base===''?'':('/'+base.replace(/^\/+|\/+$/g,''));
+  return root+'/guide/events/?duty='+id;
+}

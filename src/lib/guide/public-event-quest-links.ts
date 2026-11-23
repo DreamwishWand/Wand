@@ -137,3 +137,22 @@ export async function loadPublicEventQuestLinks(
   const raw=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
   return verifyPublicEventQuestLinks(raw,rewards,questCatalogue);
 }
+
+
+/** Exact public-native Quest ID permalink to source-linked Mini Events.
+ * This static association is not a quest prerequisite, availability or progress check.
+ */
+export function guideEventQuestHref(
+  index:PublicEventQuestIndex,raw:unknown,base=''
+):string|null{
+  check(index?.schema===DB03_EVENT_QUEST_SCHEMA&&
+    typeof index.getQuestEvents==='function','INDEX_REQUIRED');
+  const value=typeof raw==='number'&&Number.isSafeInteger(raw)?String(raw):raw;
+  const id=typeof value==='string'&&ID.test(value)&&
+    Number.isSafeInteger(Number(value))?value:null;
+  if(!id||index.getQuestEvents(id).length===0)return null;
+  check(typeof base==='string'&&
+    /^\/?(?:[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*)?$/.test(base),'BASE');
+  const root=base===''?'':('/'+base.replace(/^\/+|\/+$/g,''));
+  return root+'/guide/events/?quest='+id;
+}

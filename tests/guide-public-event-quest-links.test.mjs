@@ -6,7 +6,7 @@ import {verifyPublicQuestIndex} from '../src/lib/guide/public-guide.mjs';
 import {verifyPublicEventFriendshipRewards} from '../src/lib/guide/public-event-friendship-rewards.ts';
 import {
   verifyPublicEventQuestLinks,loadPublicEventQuestLinks,
-  DB03_EVENT_QUEST_BYTES,DB03_EVENT_QUEST_SHA,DB03_EVENT_QUEST_FILE
+  DB03_EVENT_QUEST_BYTES,DB03_EVENT_QUEST_SHA,DB03_EVENT_QUEST_FILE,guideEventQuestHref
 } from '../src/lib/guide/public-event-quest-links.ts';
 
 const root=new URL('../static/guide/public/',import.meta.url);
@@ -104,4 +104,22 @@ test('the public Guide and Quest routes link by actual ID without enabling priva
   assert.match(quests,/relatedEventSource=events;relatedEventIndex=links/);
   assert.match(quests,/guide\/events\/\?event=/);
   assert.match(quests,/関連イベント（/);
+});
+
+test('native Quest reverse permalink requires a published Event relation, never a guessed prerequisite',async()=>{
+  const {quests,events,raw}=await loadSources();
+  const graph=verifyPublicEventQuestLinks(raw,events,quests);
+  assert.equal(guideEventQuestHref(graph,'2070001248','/Wand'),
+    '/Wand/guide/events/?quest=2070001248');
+  assert.deepEqual(graph.getQuestEvents('2070001248').map(x=>x.eventId),
+    ['DreamlightParkFest','DreamlightParkFest_UI_2026']);
+  assert.equal(guideEventQuestHref(graph,2070001248),
+    '/guide/events/?quest=2070001248');
+  for(const id of ['0','02070001248','2070001248x','2070000653',Number.MAX_SAFE_INTEGER+1,null]){
+    assert.equal(guideEventQuestHref(graph,id,'/Wand'),null);
+  }
+  assert.throws(()=>guideEventQuestHref(graph,'2070001248','/../private'),
+    /DB03_EVENT_QUEST_BASE/);
+  assert.throws(()=>guideEventQuestHref(null,'2070001248'),
+    /DB03_EVENT_QUEST_INDEX_REQUIRED/);
 });
