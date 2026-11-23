@@ -92,6 +92,7 @@
   let sourceLoad:Promise<void>|null=null;
   let sourceLoadError=false;
   let sourceUniverseOptions:{key:string;count:number}[]=[];
+  let sourceWorldOptions:{key:string;count:number}[]=[];
   let acquisitionIndex:Db01ItemAcquisitionIndex|null=null;
   let acquisitionLoad:Promise<void>|null=null;
   let acquisitionLoadError=false;
@@ -360,6 +361,7 @@
     sourceLoad=null;
     sourceLoadError=false;
     sourceUniverseOptions=[];
+    sourceWorldOptions=[];
     acquisitionIndex=null;
     acquisitionLoad=null;
     acquisitionLoadError=false;
@@ -377,8 +379,11 @@
     const task=loadCollectionDb01Facets(base).then(index=>{
       if(generation!==sourceGeneration||!canUseDb01SourceFacets())return;
       sourceIndex=index;sourceGroupsCacheKey='';
-      sourceUniverseOptions=collectionDb01Groups(index,[...index.byItem.keys()])
+      const sourceGroups=collectionDb01Groups(index,[...index.byItem.keys()]);
+      sourceUniverseOptions=sourceGroups
         .find(group=>group.facet==='disneyUniverse')?.options.map(x=>({...x}))??[];
+      sourceWorldOptions=sourceGroups
+        .find(group=>group.facet==='worldContextTag')?.options.map(x=>({...x}))??[];
       // Source-native category cards become visible on the initial overview.
       // Refresh does not change saved user progress.
       refresh();
@@ -628,8 +633,11 @@
     nameStatus='all';expansion='';resetView();
   }
   function chooseWorld(id:string):void{
-    worldFilter=id;selected='';sourceCategory=null;universeFilter='';bypassCategoryGroups=false;
-    sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
+    selected='';sourceCategory=null;universeFilter='';bypassCategoryGroups=false;
+    const fromSource=sourceIndex&&sourceWorldOptions.some(option=>option.key===id);
+    worldFilter=fromSource?'':id;
+    sourceChoices=fromSource?{worldContextTag:id}:{};
+    sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
   }
   function chooseUniverse(id:string):void{
     selected='';sourceCategory=null;bypassCategoryGroups=false;
@@ -981,12 +989,21 @@
         {#if viewAxis==='world'}
           <div class="collection-world-switcher" role="group" aria-label={copy.world}>
             <div class="collection-scope-scroll">
-              <button type="button" class:chosen={!worldFilter} aria-pressed={!worldFilter}
+              <button type="button" class:chosen={!worldFilter&&!sourceChoices.worldContextTag}
+                aria-pressed={!worldFilter&&!sourceChoices.worldContextTag}
                 on:click={()=>chooseWorld('')}>{copy.all}</button>
               {#each COLLECTION_WORLD_NAVIGATION as world (world.id)}
-                {#if worldScopeOptions.some(option=>option.id===world.id)}
-                  <button type="button" class:chosen={worldFilter===world.id}
-                    aria-pressed={worldFilter===world.id} on:click={()=>chooseWorld(world.id)}>
+                {#if worldScopeOptions.some(option=>option.id===world.id)||
+                  sourceWorldOptions.some(option=>option.key===world.id)}
+                  <button type="button"
+                    class:chosen={worldFilter===world.id||sourceChoices.worldContextTag===world.id}
+                    aria-pressed={worldFilter===world.id||sourceChoices.worldContextTag===world.id}
+                    title={sourceWorldOptions.some(option=>option.key===world.id)
+                      ?(locale==='ja'
+                        ?'原本のワールド関連タグで検索。コレクション所属や入手場所は未検証です。'
+                        :'Original world-context tag only; Collection membership and acquisition area are unverified.')
+                      :undefined}
+                    on:click={()=>chooseWorld(world.id)}>
                     {worldScopeOptions.find(option=>option.id===world.id)?.label??world.label}
                   </button>
                 {:else}
