@@ -240,6 +240,46 @@ try {
   assert.deepEqual(overrideErrors,[],overrideErrors.join('\\n'));
   await override.close();
 
+  // Verified published DB-00 names locate source Quest rewards directly,
+  // including the 1.26.2 override Loot Table and English name fallback.
+  const namedReward=await browser.newPage({viewport:{width:390,height:844}});
+  const namedRewardErrors=[];
+  namedReward.on('pageerror',err=>namedRewardErrors.push(String(err)));
+  await namedReward.goto(url,{waitUntil:'domcontentloaded'});
+  const rewardNameInput=namedReward.getByRole('textbox',{name:'クエスト名・IDを検索'});
+  await rewardNameInput.fill('リンゴ');
+  await namedReward.locator('.reward-focus').filter({
+    hasText:'報酬名に一致するクエスト：1件'
+  }).waitFor({timeout:30000});
+  assert.equal(await namedReward.locator('.quest-row').count(),1);
+  await namedReward.locator('.quest-row').first().click();
+  await namedReward.locator('.quest-rewards .reward-item-match')
+    .filter({hasText:'30200002'}).first().waitFor({timeout:25000});
+  assert.equal(await namedReward.locator('.quest-rewards').getAttribute('open'),'',
+    'a name-filtered Quest opens the relevant static reward evidence');
+  await rewardNameInput.fill('Mine Cart Popcorn');
+  await namedReward.locator('.reward-focus').filter({
+    hasText:'報酬名に一致するクエスト：1件'
+  }).waitFor({timeout:25000});
+  assert.equal(await namedReward.locator('.quest-row').count(),1);
+  await namedReward.locator('.quest-row').first().click();
+  await namedReward.locator('.quest-rewards .reward-item-match')
+    .filter({hasText:'40004032'}).first().waitFor({timeout:25000});
+  assert.equal(await namedReward.locator('.quest-rewards').getAttribute('open'),'');
+  await rewardNameInput.fill('ポップコーンバケット');
+  await namedReward.locator('.reward-focus').filter({
+    hasText:'報酬名に一致するクエスト：3件'
+  }).waitFor({timeout:25000});
+  assert.equal(await namedReward.locator('.quest-row').count(),3);
+  await rewardNameInput.fill('80000000');
+  await namedReward.waitForFunction(()=>!
+    document.querySelector('.reward-focus')?.textContent?.includes('報酬名に一致する'));
+  await rewardNameInput.fill('');
+  await namedReward.waitForFunction(()=>
+    document.querySelector('.count')?.textContent?.includes('733件'));
+  assert.deepEqual(namedRewardErrors,[],namedRewardErrors.join('\\n'));
+  await namedReward.close();
+
   const stepLink=await browser.newPage();
   await stepLink.goto(url+'?quest=2070000620&step=4',{waitUntil:'domcontentloaded'});
   await stepLink.locator('.detail .step').first().waitFor({timeout:20000});
