@@ -21,7 +21,14 @@ const QUEST_OVERRIDE_SHA='032f8dbeb462d13984de7adba7022500a45eedfbc901a17e215d3e
 const LOCALES=['ja','en','fr','it','de','es-ES','zh-CN','pt-BR'] as const;
 export type QuestRewardLocale=typeof LOCALES[number];
 const ITEM=/^[1-9][0-9]{0,15}$/;
-const EMPTY=Object.freeze([]) as readonly string[];
+/** Exact 15 native Quest reward IDs not present in this pinned published ItemList.
+ * These are negative source facts, NOT assertions about other game versions.
+ */
+const UNPUBLISHED_SOURCE_ITEMS=new Set([
+  '80000000','80300000','100000166','120000051','80000003',
+  '150100035','170000029','80000010','120000159','110800052',
+  '120000192','210600006','110800057','120000203','2050301460'
+]);
 type LocalNames=Readonly<Record<QuestRewardLocale,string>>;
 
 export interface PublicQuestRewardItemLabels {
@@ -122,6 +129,10 @@ export function verifyPublicQuestRewardItemLabels(
     byId.set(key,names);
   }
   ensure(byId.size===281&&sourceIds.size-byId.size===15,'RECOMPUTED_CENSUS');
+  ensure(UNPUBLISHED_SOURCE_ITEMS.size===15&&
+    [...sourceIds].every(sourceId=>
+      UNPUBLISHED_SOURCE_ITEMS.has(sourceId)===!byId.has(sourceId)),
+    'PUBLISHED_MEMBERSHIP');
   const publishedItemIds=Object.freeze([...byId.keys()]);
   return Object.freeze({
     schema:DB03_QUEST_REWARD_LABEL_SCHEMA,gameVersion:'1.26.2' as const,
