@@ -1144,3 +1144,17 @@ re-exports but no longer executes terrain decoding.
 
 This move never derives world-space positions, cell occupancy, grid runtime
 state, collision rules, or permission to edit Saves.
+
+
+## Indexed source-default anchors: typed boundary
+
+\`src/lib/world/native-source-anchor-index.ts\` owns the private
+\`WeakMap\` spatial index of source-native GridObject anchors, exact
+Grid.ID bucket lookup, stable source insertion order, pagination,
+source-linked Village AreaType routing and default Grid/Area selection.
+The validated \`createWorldCatalog\` constructs and registers this index
+once; read-only World Preview views now call the typed module directly.
+\`catalog.mjs\` retains API-compatible re-exports for legacy consumers.
+
+The source-local anchor coordinate is NOT a Save coordinate, an occupied
+cell mask, GridCells runtime state, or permission to move any object.
