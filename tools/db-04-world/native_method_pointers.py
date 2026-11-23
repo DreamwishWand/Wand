@@ -202,9 +202,10 @@ def resolve_native_grid_methods(game_assembly, metadata_path, *,
                 any(not isinstance(x, tuple) or len(x) != 2 or
                     not isinstance(x[0], str) or not x[0] or
                     len(x[0]) > 256 or type(x[1]) is not int or
-                    not 0 <= x[1] <= 64 for x in requested_methods) or
-                len(set(requested_methods)) != len(requested_methods)):
+                    not 0 <= x[1] <= 64 for x in requested_methods)):
             raise ValueError("invalid explicit original native method signatures")
+        if len(set(requested_methods)) != len(requested_methods):
+            raise ValueError("duplicate explicit original native method signature")
         names = list(requested_methods)
     dll = _mapped_source(game_assembly, DLL_MAX)
     metadata_path = _mapped_source(metadata_path, METADATA_MAX)
