@@ -809,6 +809,51 @@ try{
     'DB04_INSPECT_FLOOR_320PX_OVERFLOW');
   await page.setViewportSize({width:1280,height:800});
 
+  // Source/GridData path match with a generated local Save remains a
+  // SEPARATE numeric plot; it is never painted as original terrain occupancy.
+  const syntheticSave={GameInfo:{Version:1262},Player:{},World:{GridCollection:{Grids:{
+    "777":{ID:777,GridDefaultLayoutPath:LAYOUT,
+      GridDataPath:'GridData/Village04/Beach.json',
+      Objects:{
+        "1":{ID:1,ItemID:100,X:4,Y:5,Orientation:'GridOrientation_Up'},
+        "2":{ID:2,ItemID:100,X:17,Y:3,Orientation:'GridOrientation_Right'},
+      }},
+  },DiffGrids:{}}}};
+  const saveChooser=page.locator(
+    'input[type=file][aria-hidden="true"][accept*=".profile"]');
+  await saveChooser.setInputFiles({
+    name:'synthetic-world-save.json',mimeType:'application/json',
+    buffer:Buffer.from(JSON.stringify(syntheticSave)),
+  });
+  const candidates=terrainViewer.locator('.saved-candidate-view');
+  await candidates.getByRole('button',{name:'選択Gridと照合'})
+    .click({timeout:20000});
+  try{
+    await candidates.locator('canvas').waitFor({timeout:12000});
+  }catch(error){
+    console.error('DB04_SAVE_SOURCE_DIAGNOSTIC',JSON.stringify({
+      candidateText:await candidates.innerText(),
+      pageErrors,pageUrl:page.url(),
+      sourceSelection:await terrainViewer.locator('.world-toolbar').innerText().catch(()=>'no-toolbar')
+    }));
+    throw error;
+  }
+  assert.match(await candidates.innerText(),/原本参照パス一致候補/);
+  assert.match(await candidates.innerText(),/2件/);
+  assert.match(await candidates.innerText(),/原本数値範囲外/);
+  assert.match(await candidates.innerText(),/原本地形の座標には投影していません/);
+  assert.match(await candidates.innerText(),/設置許可は/);
+  // The header's single local Save selection invalidates earlier Save
+  // coordinates. A replacement never leaves stale plotted player data.
+  await saveChooser.setInputFiles({
+    name:'replacement-save.json',mimeType:'application/json',
+    buffer:Buffer.from(JSON.stringify({
+      GameInfo:{Version:1262},Player:{},
+      World:{GridCollection:{Grids:{},DiffGrids:{}}}
+    })),
+  });
+  await candidates.locator('canvas').waitFor({state:'detached',timeout:20000});
+
   // Reject a wrong original game version without showing previously loaded
   // source records. The test fixture is entirely synthetic and local.
   await pick.setInputFiles({

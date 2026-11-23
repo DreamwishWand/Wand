@@ -1,9 +1,14 @@
 <script lang="ts">
   import { onDestroy,tick } from 'svelte';
+  import {localSaveSession} from '$lib/ui/local-save-session';
   import {autoAppend} from '$lib/ui/auto-append';
   import NativeGraphExplorer from '$lib/world/NativeGraphExplorer.svelte';
   import NativeTerrainGridOverview from '$lib/world/NativeTerrainGridOverview.svelte';
   import NativeTerrainFloorMatchPanel from '$lib/world/NativeTerrainFloorMatchPanel.svelte';
+  import SavedGridSourceCandidates from '$lib/world/SavedGridSourceCandidates.svelte';
+  import type {
+    SourceGridQuery,SavedGridSourceCandidates as SaveCandidateResult
+  } from '$lib/world/saved-grid-source-candidates.ts';
   import type {OriginalFloorItem,NativeFloorMatchResult} from '$lib/world/native-floor-match.ts';
   import type {NativeFloorWindowResult} from '$lib/world/native-floor-rectangle-window.ts';
   import type {SourceLayerInspection} from '$lib/world/native-source-layer-inspection.ts';
@@ -135,6 +140,13 @@
   let floorLayerInspectionRequestId=-1;
   let floorLayerInspecting=false;
   let floorLayerInspectionError='';
+  let savedSourceCandidates:SaveCandidateResult|null=null;
+  let saveComparisonWorker:Worker|null=null;
+  let saveComparisonLoading=false;
+  let saveComparisonError='';
+  let saveComparisonRequest=0;
+  let saveComparisonRevision=-1;
+  let selectedSaveRevision=-1;
   let selectedCell: {x:number;y:number} | null = null;
   let showSourceDefaultLayerOverlay=false;
   let selectedCellLayers:OriginalDefaultGridLayersCell|null=null;
@@ -377,8 +389,91 @@
     selectedCell={x,y};
     requestSelectedCellLayers(x,y);
   }
+  function clearSavedSourceComparison(){
+    saveComparisonWorker?.terminate();
+    saveComparisonWorker=null;
+    savedSourceCandidates=null;
+    saveComparisonLoading=false;
+    saveComparisonError='';
+    saveComparisonRevision=-1;
+    saveComparisonRequest++;
+  }
+  // A new/closed Save invalidates every previously projected local ordinal.
+  $: if($localSaveSession.revision!==selectedSaveRevision){
+    selectedSaveRevision=$localSaveSession.revision;
+    clearSavedSourceComparison();
+  }
+  function compareSelectedSaveToGrid(){
+    clearSavedSourceComparison();
+    const file=$localSaveSession.file;
+    const selection=layouts.find(v=>v.viewKey===selectedViewKey);
+    const grid=selection?.grids.find(
+      g=>String(g.gridIdNative)===selectedGridId);
+    if(!file||!selection||!grid||!grid.knownGridData||
+       version!=='1.26.2'||platform!=='Steam'||file.size<1||
+       file.size>32*1024*1024){
+      saveComparisonError='この原本Gridまたはセーブは照合できません。';
+      return;
+    }
+    const refs=new Map<number,SourceGridQuery['sourceRefs'][number]>();
+    for(const view of layouts){
+      if(view.layoutId!==selection.layoutId)continue;
+      for(const ref of view.grids){
+        if(ref.gridDataPath!==grid.gridDataPath)continue;
+        if(!refs.has(ref.gridIdNative)){
+          refs.set(ref.gridIdNative,{
+            layoutId:selection.layoutId,
+            gridDataPath:ref.gridDataPath,
+            nativeGridId:ref.gridIdNative,
+            nativeSizeX:ref.sizeX,nativeSizeY:ref.sizeY,
+            tessellationFactor:ref.tessellationFactor,
+          });
+        }
+      }
+    }
+    if(refs.size<1||refs.size>2048)return;
+    const query:SourceGridQuery={
+      viewKey:selectedViewKey,nativeGridId:grid.gridIdNative,
+      sourceRefs:[...refs.values()],
+    };
+    const own=new Worker(new URL(
+      '../../../lib/world/world-save-candidates.worker.ts',import.meta.url
+    ),{type:'module'});
+    saveComparisonWorker=own;
+    saveComparisonLoading=true;
+    const req=++saveComparisonRequest;
+    const revision=$localSaveSession.revision;
+    saveComparisonRevision=revision;
+    function done(value:unknown){
+      if(own!==saveComparisonWorker||req!==saveComparisonRequest||
+         revision!==$localSaveSession.revision)return;
+      own.terminate();saveComparisonWorker=null;
+      saveComparisonLoading=false;
+      const result=value as {kind?:string;requestId?:number;
+        receipt?:SaveCandidateResult;message?:string};
+      const receipt=result?.receipt;
+      if(result?.kind!=='saved-source-candidates'||
+         result.requestId!==req||
+         receipt?.contract!=='wand.db04.saved-source-numeric-candidates@1'||
+         receipt.viewKey!==selectedViewKey||
+         receipt.nativeGridId!==Number(selectedGridId)||
+         receipt.savedAndSourceCoordinatesEquivalent!==false||
+         receipt.legalPlacementVerified!==false||
+         !Array.isArray(receipt.points)){
+        saveComparisonError='セーブの原本参照を照合できませんでした。';
+        return;
+      }
+      savedSourceCandidates=receipt;
+    }
+    own.onmessage=event=>done(event.data);
+    own.onerror=event=>{event.preventDefault();done({kind:'error'});};
+    own.onmessageerror=()=>done({kind:'error'});
+    own.postMessage({command:'compare-source-grid',requestId:req,
+      file,filename:file.name,query});
+  }
   function stop() {
     requestId++;
+    clearSavedSourceComparison();
     terrainRasterRequestId=-1;
     terrainRasterEnvelope=null;
     terrainRasterLoading=false;
@@ -619,6 +714,7 @@
     requestWindow();
   }
   function requestTerrainRaster(){
+    clearSavedSourceComparison();
     terrainRasterEnvelope=null;
     terrainRasterStatus='';
     terrainRasterLoading=false;
@@ -1336,6 +1432,17 @@
         {:else if terrainRasterStatus}
           <p class="note">原本地形全体図：{terrainRasterStatus}</p>
         {/if}
+        <SavedGridSourceCandidates
+          receipt={savedSourceCandidates?.viewKey===selectedViewKey&&
+            savedSourceCandidates.nativeGridId===Number(selectedGridId)&&
+            saveComparisonRevision===$localSaveSession.revision
+              ?savedSourceCandidates:null}
+          available={Boolean($localSaveSession.file)&&
+            platform==='Steam'&&version==='1.26.2'&&
+            Boolean(selectedGrid.knownGridData)}
+          working={saveComparisonLoading}
+          errorMessage={saveComparisonError}
+          onCompare={compareSelectedSaveToGrid}/>
         <NativeTerrainFloorMatchPanel
           matches={floorItemMatches} selected={selectedFloorItem}
           result={floorMatchResult} windowResult={floorWindowResult}
