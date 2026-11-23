@@ -99,3 +99,48 @@ test('image activation requires explicitly reviewed HTTPS content origin and pin
   assert.throws(()=>validateStarpathMediaActivation({...activation,manifestPath:'guide/public/starpath-media-000000000000.json'}),/pinned fingerprint/);
   assert.equal(validateStarpathMediaActivation(activation).publicOrigin,'https://media.dreamwishwand.com');
 });
+
+test('typed media gate rejects forged reward catalog even when an Item ID appears to match',async()=>{
+  const catalog=await snapshot();
+  const counterfeit=structuredClone(catalog);
+  counterfeit.seasons[0].id='HauntingElegance2025';
+  assert.throws(()=>verifyStarpathMediaManifest(manifest(),counterfeit),
+    /Public Star Path: season identity/);
+  const substituted=structuredClone(catalog);
+  substituted.source.fileSha256='0'.repeat(64);
+  assert.throws(()=>verifyStarpathMediaManifest(manifest(),substituted),
+    /Public Star Path: provenance/);
+  const missing=structuredClone(catalog);
+  missing.seasons[0].rewardPages[0].rewards.pop();
+  assert.throws(()=>verifyStarpathMediaManifest(manifest(),missing),
+    /Public Star Path: source reward census/);
+  const modified=structuredClone(catalog);
+  modified.seasons[0].tasks[0].id='Task999';
+  assert.throws(()=>verifyStarpathMediaManifest(manifest(),modified),
+    /Public Star Path: task source identity|Public Star Path: duplicate task/);
+});
+test('typed gate refuses unapproved origins, malformed releases, non-source media and network on inactive state',async()=>{
+  const catalog=await snapshot();
+  for(const invalid of [null,[],{},'published',42,{state:'unpublished',
+    manifestPath:null,manifestSha256:null,manifestBytes:1,publicOrigin:null}]){
+    assert.throws(()=>validateStarpathMediaActivation(invalid),
+      /activation record|unpublished release/);
+  }
+  const candidate=manifest();
+  candidate.release.sourceCandidateSha256='xyz';
+  assert.throws(()=>verifyStarpathMediaManifest(candidate,catalog),
+    /unverified media publication/);
+  const duplicated=manifest();
+  duplicated.items['50800175'].thumbnail.key=duplicated.items['50800175'].original.key;
+  assert.throws(()=>verifyStarpathMediaManifest(duplicated,catalog),
+    /non-content-addressed public path/);
+  const {activation,bytes}=pinFor(manifest());
+  await assert.rejects(()=>loadStarpathMedia('/Wand/../',catalog,{
+    activation,fetcher:async()=>({ok:true,arrayBuffer:async()=>wire(bytes)})
+  }),/invalid application base/);
+  assert.equal(starpathMediaThumbnail({manifest:manifest(),
+    origin:'https://media.dreamwishwand.com.evil.example'},'50800175'),null);
+  assert.equal(starpathMediaThumbnail({manifest:manifest(),
+    origin:'https://cdn.dreamwishwand.com/'},'50800175'),
+  'https://cdn.dreamwishwand.com/'+thumbnail.key);
+});
