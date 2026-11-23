@@ -9,7 +9,7 @@ import {
   assertStarpathLocalization,isStarpathLanguage,isStarpathRecord,
   verifyStarpathLocaleSnapshot,
   type StarpathLocalizedPart,type StarpathBinaryFetcher
-} from './starpath-locale-contract';
+} from './starpath-locale-contract.ts';
 
 export const STARPATH_LOCALES_SHA=
   '6efa52893a3b3a475e00987940e50b0815f39904350e1e76731aac823ca71507';
