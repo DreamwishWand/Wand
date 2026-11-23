@@ -1489,8 +1489,8 @@ try{
   await unifiedSave.getByRole('button',{
     name:'すべての変更を検証'
   }).click();
-  await unifiedSave.getByRole('status',{
-    name:'Rust/WASM検証済み'
+  await unifiedSave.getByRole('status').filter({
+    hasText:'Rust/WASM検証済み'
   }).waitFor({timeout:30000});
   page.once('dialog',dialog=>dialog.accept());
   await unifiedSave.getByRole('button',{
