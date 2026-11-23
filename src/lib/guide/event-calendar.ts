@@ -50,13 +50,18 @@ export interface GuideDateOnlyCalendarEvent extends GuideCalendarDateWindow{
   readonly category:'floating'|'other';
   readonly title:string;
   readonly sourceUrl:string;
-  readonly evidence:'official-announcement';
+  readonly evidence:'official-announcement'|'verified-game-original';
   readonly liveVerified:false;
   readonly checkedDate:typeof GUIDE_EVENT_CALENDAR_AS_OF;
-  readonly href:
-    '/guide/events/?event=HauntedFloatingFestival2026'|
-    '/guide/events/?event=HauntedFloatingFestival'|null;
+  readonly href:string|null;
   readonly participation:'game-clock'|'not-verified';
+  /** Verified native ProtoDB UTC timestamps, kept separate from announcement days.
+   * Do not assume these confirm that changing the device clock will replay it. */
+  readonly nativeEventId?:string;
+  readonly nativeNames?:Readonly<Record<string,string>>;
+  readonly sourceTeasingUtc?:string;
+  readonly sourceStartUtc?:string;
+  readonly sourceEndUtcInclusive?:string;
 }
 export interface GuideHistoricalStarpathCalendarEvent extends GuideCalendarDateWindow{
   readonly kind:'starpath-history';
@@ -221,6 +226,13 @@ export function eventScheduleState(
     check(start<taskEnd&&taskEnd<end,'event time bounds');
     return time<start?'upcoming':time<taskEnd?'task-window':
       time<end?'exchange-only':'ended';
+  }
+  if('sourceStartUtc' in event&&'sourceEndUtcInclusive' in event&&
+    event.sourceStartUtc&&event.sourceEndUtcInclusive){
+    const start=utcMillis(event.sourceStartUtc);
+    const end=utcMillis(event.sourceEndUtcInclusive);
+    check(start<=end,'native event bounds');
+    return time<start?'upcoming':time<=end?'date-window':'ended';
   }
   check(event.precision==='date-only'&&YEAR_DAY.test(event.startDay)&&
     YEAR_DAY.test(event.endDayInclusive)&&
