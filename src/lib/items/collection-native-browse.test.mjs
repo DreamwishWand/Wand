@@ -18,7 +18,7 @@ const CATEGORIES=DB01_ORIGINAL_COLLECTION_SUBMENUS;
 const LIVE=CATEGORIES.filter(x=>x.code!==17&&x.code!==19);
 function fixture(){
   const calls={
-    originalIndex:0,originalSubmenus:0,areas:[],categories:[],sets:[],query:[],publicQueries:[],
+    originalIndex:0,originalSubmenus:0,areas:[],categories:[],sets:[],groups:[],query:[],publicQueries:[],
   };
   const menus=Array.from({length:305},(_,i)=>{
     const category=LIVE[i%LIVE.length];
@@ -113,6 +113,19 @@ function fixture(){
     source:{gameVersion:'1.26.2',sourceItemsSha256:SHA},
     async getSubmenus(){calls.originalSubmenus++;return indexSubmenus;},
     async getCollectionSets(){calls.originalIndex++;return indexSets;},
+    async getSourceGroups(setId){
+      calls.groups.push(setId);
+      const menu=menus.find(x=>x.setId===setId);
+      if(!menu)throw new Error('Unexpected unknown Set');
+      return Array.from({length:menu.groupCount},(_,groupIndex)=>({
+        collectionSetId:setId,groupIndex,
+        originalSetKey:menu.setKey,submenu:menu.submenu,
+        distinctCandidateItemIds:groupIndex===0?5:0,
+        directListedItemIds:groupIndex===0?menu.directListedItemCount:0,
+        staticPredicateItemIds:groupIndex===0?4:0,
+        gameRuntimeMembershipVerified:false,
+      }));
+    },
   };
   const results={
     contract:DB01_DB00_COLLECTION_RESULTS_CONTRACT,
@@ -316,6 +329,72 @@ test('category Set list resolves exact source labels, order and original evidenc
   await browse.getSets('ja',3);
   assert.deepEqual(f.calls.sets,[['ja',3]]);
   assert.equal(f.calls.originalIndex,1);
+});
+test('source-native Groups include empty records, preserve evidence and filter one exact Set',async()=>{
+  const f=fixture();
+  const set=f.menus.find(x=>x.submenuCode===3);
+  set.groupCount=2;
+  const browse=createDb01CollectionNativeBrowseClient(
+    f.axes,f.source,f.results,f.publicData);
+  const groups=await browse.getGroups('ja',3,set.setId);
+  assert.deepEqual(groups.map(g=>g.original.groupIndex),[0,1]);
+  assert.equal(groups[0].sourceSet.currentExactSetName,'ja '+set.setKey);
+  assert.equal(groups[0].original.distinctCandidateItemIds,5);
+  assert.equal(groups[1].original.distinctCandidateItemIds,0);
+  assert.equal(groups[1].gameRuntimeGroupVisibleVerified,false);
+  assert.equal(Object.isFrozen(groups),true);
+  await browse.getGroups('ja',3,set.setId);
+  assert.deepEqual(f.calls.groups,[set.setId]);
+  const response=await browse.search({
+    locale:'ja',submenuCode:3,setId:set.setId,groupIndex:1,
+    listingEvidence:'predicate',
+  },{limit:24});
+  assert.equal(response.collectionScope,'original_source_set_candidates');
+  assert.deepEqual(f.calls.query[0].query,{
+    locale:'ja',submenuCodes:[3],collectionSetIds:[set.setId],
+    sourceGroups:[{collectionSetId:set.setId,groupIndex:1}],
+    listingEvidence:'predicate',
+  });
+  assert.equal(f.calls.publicQueries.length,0);
+});
+test('Group selector rejects missing Set, wrong category and out-of-range Group',async()=>{
+  const f=fixture();
+  const browse=createDb01CollectionNativeBrowseClient(
+    f.axes,f.source,f.results,f.publicData);
+  const set=f.menus.find(x=>x.submenuCode===3);
+  await assert.rejects(browse.search({locale:'en',groupIndex:0}),
+    /GROUP_REQUIRES_SOURCE_SET/);
+  await assert.rejects(browse.search({locale:'en',submenuCode:3,
+    groupIndex:-1,setId:set.setId}),/GROUP_REQUIRES_SOURCE_SET/);
+  await assert.rejects(browse.getGroups('en',2,set.setId),
+    /SET_NOT_IN_SELECTED_CATEGORY/);
+  await assert.rejects(browse.search({locale:'en',submenuCode:2,
+    setId:set.setId,groupIndex:0}),/SET_NOT_IN_SELECTED_CATEGORY/);
+  await assert.rejects(browse.search({locale:'en',submenuCode:3,
+    setId:set.setId,groupIndex:99}),/UNKNOWN_ORIGINAL_SOURCE_GROUP/);
+  assert.equal(f.calls.query.length,0);
+  assert.equal(f.calls.publicQueries.length,0);
+});
+test('forged or duplicate source Group indexes and counts fail closed',async()=>{
+  const f=fixture();
+  const set=f.menus.find(x=>x.submenuCode===3);
+  set.groupCount=2;
+  const faulty={
+    ...f.source,
+    async getSourceGroups(setId){
+      const original=await f.source.getSourceGroups(setId);
+      return setId===set.setId?original.map((r,i)=>i===1?
+        {...r,groupIndex:0,distinctCandidateItemIds:6}:r):original;
+    },
+  };
+  const browse=createDb01CollectionNativeBrowseClient(
+    f.axes,faulty,f.results,f.publicData);
+  await assert.rejects(browse.getGroups('ja',3,set.setId),
+    /ORIGINAL_GROUP_IDENTITY_OR_EVIDENCE/);
+  await assert.rejects(browse.search({
+    locale:'ja',submenuCode:3,setId:set.setId,groupIndex:1,
+  }),/ORIGINAL_GROUP_IDENTITY_OR_EVIDENCE/);
+  assert.equal(f.calls.query.length,0);
 });
 test('native category and Set Item searches reuse joined DB-00/02/03 evidence and original names',async()=>{
   const f=fixture();
