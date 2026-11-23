@@ -8,7 +8,7 @@ import {
 import {
   GUIDE_CONDITION_SOURCE_SHA,GUIDE_CONDITION_INDEX_V2_SHA,
   GUIDE_CONDITION_V2_MISSION_REFERENCES
-} from '../src/lib/guide/current-conditions.mjs';
+} from '../src/lib/guide/current-conditions.ts';
 
 const ONE='2070000651',TWO='2070001661',THREE='2070001731';
 const WIRE='9'.repeat(64);
