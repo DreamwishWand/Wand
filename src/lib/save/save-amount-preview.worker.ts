@@ -658,6 +658,16 @@ interface BatchPreviewReceipt {
   writerAuthorized: false;
   exportAuthorized: false;
 }
+interface GridQuantityPreviewReceipt {
+  contract:'wand.db05.grid-quantity-preview@1';
+  gridChangedCount:number;
+  amountChangedCount:number;
+  lexicalBytesPreserved:true;
+  reopenVerified:true;
+  writerAuthorized:false;
+  exportAuthorized:false;
+  placementLegalityVerified:false;
+}
 interface CopyReceipt {
   contract: 'wand.db05.experimental-copy@1';
   copyBytes: number;
@@ -671,7 +681,7 @@ type Reply =
   | { kind: 'result'; receipt: PreviewReceipt | BatchPreviewReceipt |
       GridCoordinatePreviewReceipt | GridCoordinateBatchReceipt |
       GridOrientationPreviewReceipt | GridTransformPreviewReceipt |
-      GridMixedPreviewReceipt }
+      GridMixedPreviewReceipt | GridQuantityPreviewReceipt }
   | { kind: 'copy'; bytes: Uint8Array; receipt: CopyReceipt }
   | { kind: 'slots'; rows: SaveEditableSlot[];
       grid:SaveGridReferenceReport;
@@ -925,7 +935,8 @@ isolated.onmessage = async ({ data }: MessageEvent<unknown>): Promise<void> => {
          receipt.exportAuthorized!==false||
          receipt.placementLegalityVerified!==false)
         throw new TypeError('DB05_GRID_QUANTITY_RECEIPT_INVALID');
-      response={kind:'result',receipt};
+      response={kind:'result',
+        receipt:receipt as unknown as GridQuantityPreviewReceipt};
     }else if(gridMixedPreview){
       const selected=validateGridMixedEdits(input.edits);
       const receipt:unknown=JSON.parse(
