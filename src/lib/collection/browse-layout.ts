@@ -1,11 +1,15 @@
 /** Collection presentation based solely on source-backed Item ID relations.
  * Never interprets an original Tag as a game UI membership or DLC entitlement.
  */
-import type {CollectionDb01Index} from './db01-native-facets.ts';
+import {COLLECTION_UNIVERSE_UNTAGGED,type CollectionDb01Index} from './db01-native-facets.ts';
 import {COLLECTION_UNIVERSE_TAG_BY_ID,COLLECTION_UNIVERSE_TAG_NAMES}
   from './universe-tag-names.ts';
 import type {CollectionItem} from './runtime.ts';
-export const COLLECTION_UNIVERSE_UNTAGGED='__no_universe_tag__' as const;
+export {COLLECTION_UNIVERSE_UNTAGGED};
+export function collectionUntaggedUniverseLabel(locale:string):string{
+  const labels:Readonly<Record<string,string>>={en:'Universe not specified',ja:'ユニバース未設定',fr:'Univers non renseigné',it:'Universo non specificato',de:'Universum nicht angegeben','es-ES':'Universo sin especificar','zh-CN':'未指定作品系列','pt-BR':'Universo não especificado'};
+  return labels[locale]??labels.en;
+}
 export interface CollectionUniverseBrowseOption{
   readonly id:string;
   readonly label:string;
@@ -30,6 +34,7 @@ export function isOtherUniverse(key:string):boolean{
 /** UI presentation only. Neither source Tag counts nor membership depend on
  * these labels; unverified names continue to use their native keys. */
 export function collectionUniverseDisplayLabel(locale:string,key:string):string{
+  if(key===COLLECTION_UNIVERSE_UNTAGGED)return collectionUntaggedUniverseLabel(locale);
   const original=COLLECTION_UNIVERSE_TAG_BY_ID.get(Number(key));
   if(original){
     const localized=original.names as Readonly<Record<string,string>>;
@@ -51,15 +56,26 @@ export function sortedCollectionUniverseOptions(
   index:CollectionDb01Index,locale:string,display:(key:string)=>string,
   untaggedLabel:string,
 ):readonly CollectionUniverseBrowseOption[]{
-  const canonical=(index.itemsByUniverseTagId?.size??0)>0;
+  const complete=(index.universeBrowseKeysByItem?.size??0)===index.sourceItemCount;
+  const canonical=complete||(index.itemsByUniverseTagId?.size??0)>0;
   const options=canonical
     ?COLLECTION_UNIVERSE_TAG_NAMES.map(row=>({
       id:String(row.id),label:display(String(row.id)),
-      total:index.itemsByUniverseTagId.get(row.id)?.length??0
+      total:complete?(index.itemsByUniverseBrowseKey.get(String(row.id))?.length??0):
+        (index.itemsByUniverseTagId.get(row.id)?.length??0)
     }))
     :[...index.itemsByUniverse].map(([id,ids])=>({
       id,label:display(id),total:ids.length
     }));
+  if(complete){
+    // Preserve name-only source references even when an original numeric
+    // tag is unavailable; do not count these items as untagged.
+    for(const [id,ids] of index.itemsByUniverseBrowseKey){
+      if(id!==COLLECTION_UNIVERSE_UNTAGGED&&!COLLECTION_UNIVERSE_TAG_BY_ID.has(Number(id))){
+        options.push({id,label:display(id),total:ids.length});
+      }
+    }
+  }
   // For Japanese, sort by curated phonetic readings; Unicode/Intl ordering
   // of kanji franchise titles is NOT gojuon ordering.
   const sortLabel=(option:CollectionUniverseBrowseOption):string=>
@@ -77,8 +93,8 @@ export function sortedCollectionUniverseOptions(
   // items are distinct from that Tag and cannot be called "Other" without
   // evidence. Put the original Other + Dreamlight front, and untagged last.
   const noTag={id:COLLECTION_UNIVERSE_UNTAGGED,label:untaggedLabel,
-    total:index.sourceItemCount-(canonical
-      ?index.universeTagIdsByItem.size:index.universesByItem.size)};
+    total:complete?(index.itemsByUniverseBrowseKey.get(COLLECTION_UNIVERSE_UNTAGGED)?.length??0):
+      index.sourceItemCount-(canonical?index.universeTagIdsByItem.size:index.universesByItem.size)};
   return Object.freeze(generic.length
     ?[...generic,...home,...others,noTag]
     :[noTag,...home,...others]);
