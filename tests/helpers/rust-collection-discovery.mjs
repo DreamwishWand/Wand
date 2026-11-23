@@ -17,7 +17,8 @@ async function ready(){
 }
 export async function projectSavedCollectionDiscovery(root){
   await ready();
-  return JSON.parse(probe_collection_discovery_json(JSON.stringify(root)));
+  return sanitizeSavedCollectionDiscovery(
+    JSON.parse(probe_collection_discovery_json(JSON.stringify(root))));
 }
 export async function projectRustDiscoveryText(decodedJson){
   await ready();
