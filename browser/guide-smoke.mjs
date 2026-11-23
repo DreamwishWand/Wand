@@ -496,8 +496,11 @@ try {
   assert.equal(await hub.locator('.timeline-bar.exchange').count(),2);
   const eventLegend=await hub.locator('.timeline-key').innerText();
   assert.match(eventLegend,/スターパス/);
-  assert.match(eventLegend,/猶予期間/);
-  assert.doesNotMatch(eventLegend,/スターパス\s*[・·]\s*タスク|交換/);
+  assert.match(eventLegend,/フローティングフェスティバル/);
+  assert.match(eventLegend,/その他のイベント/);
+  assert.doesNotMatch(eventLegend,/スターパス\s*[・·]\s*タスク|交換|猶予期間/);
+  assert.equal((eventLegend.match(/スターパス/g)||[]).length,1,
+    'the stripe remains within Star Path, with no separate named calendar category');
   const barStyles=await hub.locator('.timeline-bar.task,.timeline-bar.exchange')
     .evaluateAll(items=>items.map(item=>({
       phase:item.classList.contains('exchange')?'grace':'regular',
@@ -513,7 +516,9 @@ try {
   assert(barStyles.filter(x=>x.phase==='regular')
     .every(x=>!x.background.includes('repeating-linear-gradient')),
     'the regular Star Path is not striped');
-  assert.match(await hub.locator('.timeline-bar.exchange').first().getAttribute('aria-label'),/猶予期間/);
+  assert.match(await hub.locator('.timeline-bar.exchange').first().getAttribute('aria-label'),/報酬交換のみ/);
+  assert.equal(await hub.locator('.timeline-bar span').count(),0,
+    'short timeline strips convey the phase visually without redundant text');
 
   assert.equal(await hub.locator('.timeline-bar.limited').count(),0);
   assert.equal(await hub.locator('.events-list,.schedule-card,.day').count(),0,
@@ -529,8 +534,11 @@ try {
   await hub.getByRole('button',{name:'前の期間'}).click();
   assert.match(await hub.locator('.calendar-nav').innerText(),/10月14日.*11月17日/);
   assert.equal(await hub.locator('.timeline-bar.limited').count(),1);
+  assert.equal(await hub.locator('.timeline-bar.floating').count(),1);
+  assert.equal(await hub.locator('.timeline-bar.other').count(),0);
+
   const festival=hub.locator('.timeline-row')
-    .filter({hasText:'The Haunted Floating Festival'});
+    .filter({hasText:'ホーンテッドフローティングフェスティバル'});
   await festival.locator('.event-label').click();
   assert.match(await hub.locator('.event-inspector').innerText(),/2026年10月7日/);
   assert.match(await hub.locator('.event-inspector').innerText(),/2026年10月31日/);
