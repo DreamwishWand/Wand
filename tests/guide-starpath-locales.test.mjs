@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.mjs';
 import {verifyStarpathWeeklyLocales,starpathWeeklyDescription,loadStarpathWeeklyLocales,STARPATH_LOCALES_SHA,STARPATH_LOCALES_BYTES} from '../src/lib/guide/public-starpath-locales.ts';
-import {STARPATH_REWARD_NAME_INDEX_SHA,VERIFIED_STARPATH_REWARD_NAMES,STARPATH_UNRESOLVED_REWARD_IDS,starpathRewardName} from '../src/lib/guide/starpath-reward-names.ts';
+import {STARPATH_REWARD_NAME_INDEX_SHA,VERIFIED_STARPATH_REWARD_NAMES,STARPATH_UNRESOLVED_REWARD_IDS,starpathRewardName,verifyStarpathRewardNameCensus} from '../src/lib/guide/starpath-reward-names.ts';
 const root=new URL('../static/',import.meta.url);
 const hex=raw=>createHash('sha256').update(raw).digest('hex');
 const file=async path=>readFile(new URL(path,root));
@@ -86,4 +86,14 @@ test('typed source locale bridge rejects unverified snapshots and preserves orig
   assert.equal(starpathWeeklyDescription(original,key,'__proto__'),null);
   assert.equal(starpathWeeklyDescription(original,'Liveops.__proto___Description'),null);
   assert.equal(starpathWeeklyDescription(Object.create(null),key),null);
+});
+
+
+test('typed Star Path reward names close the 43/17 original Item ID census without inventing missing names',()=>{
+  const result=verifyStarpathRewardNameCensus();
+  assert.equal(result.verifiedNames+result.unresolved,60);
+  for(const id of STARPATH_UNRESOLVED_REWARD_IDS)
+    assert.equal(starpathRewardName(id,'en'),null,'missing DB-01 name remains unresolved');
+  assert.equal(starpathRewardName('00031400173','en'),null);
+  assert.equal(starpathRewardName('31400173','nope'),null);
 });
