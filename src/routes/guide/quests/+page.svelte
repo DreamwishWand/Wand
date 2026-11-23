@@ -466,8 +466,8 @@
           <button class:active={selectedRow?.id===row.id} class="quest-row" title={'クエストID '+row.id} on:click={()=>openQuest(row)}>
             <strong>{questName(row,locale)}</strong>
             <small>
-              {#if section==='story' && publicQuestNativeOrder(row)!==null && row.internalName.startsWith('Story!MRQS')}
-                メインクエストライン ·
+              {#if publicQuestSection(row)==='story'}
+                {publicQuestNativeOrder(row)===null?'関連クエスト':'メインクエストライン'} ·
               {/if}
               {characterName(row.characterId,locale)}
             </small>
