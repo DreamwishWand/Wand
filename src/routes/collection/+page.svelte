@@ -24,7 +24,11 @@
     Crafting:'hammer',Meals:'cooking',Ingredients:'plant',Foraging:'plant',
     Fish:'fish',Gems:'gem',Timebending:'sparkles',Memories:'book',
     'Board Game':'puzzle',Snippets:'puzzle','Lorekeeper Tales':'book',
-    'Quest Puzzles':'puzzle',Exhibition:'gallery','Source Activity Items':'hammer'
+    'Quest Puzzles':'puzzle',Exhibition:'gallery','Source Activity Items':'hammer',
+    'Source Seed':'plant','Source Crop':'plant','Source Meal':'cooking',
+    'Source Flower':'plant','Source Fish':'fish','Source Ingredient':'plant',
+    'Source Consumable':'sparkles','Source Mineral':'gem',
+    'Source Crafting Material':'hammer'
   };
   const terminology:Record<string,string> = {
     OWNERSHIP_AND_DISCOVERY:'所有・発見',
@@ -104,14 +108,14 @@
   // generic "unclassified" Activity bucket; this does not assert CollectionSet
   // membership, world availability or player entitlement.
   const nativeActivityLabels:Record<string,Record<string,string>>={
-    ja:{'Source Crop':'作物','Source Meal':'料理','Source Flower':'花','Source Fish':'魚','Source Ingredient':'食材','Source Consumable':'消耗品','Source Mineral':'鉱物','Source Crafting Material':'クラフト素材'},
-    en:{'Source Crop':'Crops','Source Meal':'Meals','Source Flower':'Flowers','Source Fish':'Fish','Source Ingredient':'Ingredients','Source Consumable':'Consumables','Source Mineral':'Minerals','Source Crafting Material':'Crafting Materials'},
-    fr:{'Source Crop':'Cultures','Source Meal':'Plats','Source Flower':'Fleurs','Source Fish':'Poissons','Source Ingredient':'Ingrédients','Source Consumable':'Consommables','Source Mineral':'Minéraux','Source Crafting Material':'Matériaux de fabrication'},
-    it:{'Source Crop':'Colture','Source Meal':'Piatti','Source Flower':'Fiori','Source Fish':'Pesci','Source Ingredient':'Ingredienti','Source Consumable':'Consumabili','Source Mineral':'Minerali','Source Crafting Material':'Materiali da creazione'},
-    de:{'Source Crop':'Feldfrüchte','Source Meal':'Gerichte','Source Flower':'Blumen','Source Fish':'Fische','Source Ingredient':'Zutaten','Source Consumable':'Verbrauchsgegenstände','Source Mineral':'Mineralien','Source Crafting Material':'Herstellungsmaterialien'},
-    'es-ES':{'Source Crop':'Cultivos','Source Meal':'Platos','Source Flower':'Flores','Source Fish':'Peces','Source Ingredient':'Ingredientes','Source Consumable':'Consumibles','Source Mineral':'Minerales','Source Crafting Material':'Materiales de fabricación'},
-    'zh-CN':{'Source Crop':'农作物','Source Meal':'餐食','Source Flower':'花卉','Source Fish':'鱼类','Source Ingredient':'食材','Source Consumable':'消耗品','Source Mineral':'矿物','Source Crafting Material':'制作材料'},
-    'pt-BR':{'Source Crop':'Plantações','Source Meal':'Refeições','Source Flower':'Flores','Source Fish':'Peixes','Source Ingredient':'Ingredientes','Source Consumable':'Consumíveis','Source Mineral':'Minerais','Source Crafting Material':'Materiais de criação'}
+    ja:{'Source Crop':'作物','Source Meal':'料理','Source Seed':'種','Source Flower':'花','Source Fish':'魚','Source Ingredient':'食材','Source Consumable':'消耗品','Source Mineral':'鉱物','Source Crafting Material':'クラフト素材'},
+    en:{'Source Crop':'Crops','Source Meal':'Meals','Source Seed':'Seeds','Source Flower':'Flowers','Source Fish':'Fish','Source Ingredient':'Ingredients','Source Consumable':'Consumables','Source Mineral':'Minerals','Source Crafting Material':'Crafting Materials'},
+    fr:{'Source Crop':'Cultures','Source Meal':'Plats','Source Seed':'Graines','Source Flower':'Fleurs','Source Fish':'Poissons','Source Ingredient':'Ingrédients','Source Consumable':'Consommables','Source Mineral':'Minéraux','Source Crafting Material':'Matériaux de fabrication'},
+    it:{'Source Crop':'Colture','Source Meal':'Piatti','Source Seed':'Semi','Source Flower':'Fiori','Source Fish':'Pesci','Source Ingredient':'Ingredienti','Source Consumable':'Consumabili','Source Mineral':'Minerali','Source Crafting Material':'Materiali da creazione'},
+    de:{'Source Crop':'Feldfrüchte','Source Meal':'Gerichte','Source Seed':'Saatgut','Source Flower':'Blumen','Source Fish':'Fische','Source Ingredient':'Zutaten','Source Consumable':'Verbrauchsgegenstände','Source Mineral':'Mineralien','Source Crafting Material':'Herstellungsmaterialien'},
+    'es-ES':{'Source Crop':'Cultivos','Source Meal':'Platos','Source Seed':'Semillas','Source Flower':'Flores','Source Fish':'Peces','Source Ingredient':'Ingredientes','Source Consumable':'Consumibles','Source Mineral':'Minerales','Source Crafting Material':'Materiales de fabricación'},
+    'zh-CN':{'Source Crop':'农作物','Source Meal':'餐食','Source Seed':'种子','Source Flower':'花卉','Source Fish':'鱼类','Source Ingredient':'食材','Source Consumable':'消耗品','Source Mineral':'矿物','Source Crafting Material':'制作材料'},
+    'pt-BR':{'Source Crop':'Plantações','Source Meal':'Refeições','Source Seed':'Sementes','Source Flower':'Flores','Source Fish':'Peixes','Source Ingredient':'Ingredientes','Source Consumable':'Consumíveis','Source Mineral':'Minerais','Source Crafting Material':'Materiais de criação'}
   };
   function categoryLabel(lang:string,id:string):string {
     const special:Record<string,Record<string,string>>={
