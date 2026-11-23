@@ -9,7 +9,7 @@ import {
   isStarpathSeasonId,
   type SourceStarpathSeason,type StarpathDailyParts,type StarpathSeasonId,
   type StarpathLocalizedPart,type StarpathBinaryFetcher
-} from './starpath-locale-contract';
+} from './starpath-locale-contract.ts';
 
 interface DailyRelease{
   readonly file:string;readonly count:number;readonly bytes:number;readonly sha256:string;
