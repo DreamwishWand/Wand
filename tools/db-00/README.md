@@ -381,3 +381,34 @@ an event is currently active, a quest is mandatory/unlocked/completed, a
 Duty is fulfilled, a Scene belongs to a verified World/accessible location,
 or an expansion is owned. This API neither edits saves nor publishes private
 game originals.
+
+
+### Public source-linked Item IDs outside the published ItemList
+
+The verified Steam 1.26.2 DB-00 ItemList has **13,202 published definitions**.
+DB-02 acquisition references and DB-03 Star Path / Mission targets can
+identify original numeric Item IDs **outside** that published scope. These
+are NOT invented Collection items; the original full owner-local DB-01
+39,067-definition catalogue is never uploaded or exposed here.
+
+Call \`openPublicSharedGameSources(...).searchOutsideSourceItems(request)\`
+to discover these otherwise hidden **positive-source-linked ID references**
+separately from the published \`searchItems\` API. Results carry
+\`scope:'source_linked_outside_published_itemlist'\`,
+\`item.catalogStatus:'outside_published_item_scope'\`, explicit
+\`evidenceFamilies\`, stable numeric ID pagination and the exact source-joined
+Item reference. Filter by \`idPrefix\`, any
+\`evidenceFamilies:['acquisition_origin'|'static_container_template'|
+'default_inventory_template'|'starpath_relation'|'quest_target_reference']\`,
+\`originKinds\` and \`questTargetQuestId\`.
+
+The index is built lazily **only from the already independently verified
+DB-00/02/03 public readers**. It enumerates all 733 source Quest IDs to recover
+4,897 source objective links rather than omitting Quest-only Item IDs. It adds
+zero network requests and does not contaminate the published Collection
+search. Absence from these indexed sources is **unknown coverage**, not
+"does not exist" or "unobtainable"; a native source reference does not prove
+game UI membership, ownership, actual Quest requirements, event availability,
+or a confirmed grant. Every result explicitly sets
+\`collectionUiMembershipVerified:false\`, \`playerOwnershipVerified:false\` and
+\`sourceCoverageComplete:false\`.
