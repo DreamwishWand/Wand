@@ -202,6 +202,7 @@ test('Official campaign reward browser retains every unresolved name and never t
   ]);
   const onlyCodes=index.listCampaignRewardResolutions('redeem_code');
   assert.deepEqual(onlyCodes,[code]);
+  assert.deepEqual(index.listCampaignRewardResolutions('gift'),[]);
   assert(all.every(c=>c.rewards.every(r=>
     r.match==='source_supplied_id_unverified' ||
     r.match==='unique_name_candidate' ||
