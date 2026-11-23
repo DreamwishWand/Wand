@@ -73,6 +73,8 @@ export interface Db00PublicEventSources {
   getQuestEvents(questId:string|number):readonly Db00PublicEvent[];
   /** A source Duty ID does not imply player progress or unlock state. */
   getDutyEvents(dutyId:string|number):readonly Db00PublicEvent[];
+  /** This is an expansion source ID, not an ownership or world guarantee. */
+  getExpansionScene(expansionId:string):ExpansionSceneSourceLink|null;
   /** Festival source scenes and expansion village scene refs remain separate. */
   getSceneReferences(sceneId:string|number):Db00SceneReferences|null;
 }
@@ -215,6 +217,9 @@ export function createDb00PublicEventSources(
     },
     getDutyEvents(id:string|number){
       return byDuty.get(nativeId(id)??'')??EMPTY_EVENTS;
+    },
+    getExpansionScene(id:string){
+      return scene.getExpansionScene(id);
     },
     getSceneReferences(raw:string|number):Db00SceneReferences|null{
       const sceneId=nativeId(raw);
