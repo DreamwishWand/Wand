@@ -60,6 +60,35 @@ const COLLECTION_FACETS=new Set([
   'clothingSlot','disneyUniverse','ingredientKind','mealKind'
 ]);
 const collectionRows=[];
+const collectionCategoryRows=[];
+// Exact Steam 1.26.2 original CollectionSubMenu enum codes. Original source
+// predicates are browse *candidates*, not proven game runtime membership.
+const ORIGINAL_SUBMENU_CODES=new Set([
+  0,1,2,3,4,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20
+]);
+function originalCategoryCodes(row){
+  const codes=new Set();
+  for(const candidate of row.collectionSourceCandidates){
+    if(Number.isInteger(candidate.submenuCode)&&
+      ORIGINAL_SUBMENU_CODES.has(candidate.submenuCode))
+      codes.add(candidate.submenuCode);
+  }
+  // Source ItemType/ActivityItemType is separately verified for these
+  // original records. This is reference browsing, NOT native CollectionSet
+  // membership; do not use it as a completed-Collection denominator.
+  if(row.nativeCategory==='Furniture'||
+     row.nativeCategory==='WallpaperAndFlooring')codes.add(3);
+  if(row.nativeCategory==='Clothing')codes.add(4);
+  if(row.nativeCategory==='ActivityItem'){
+    const code=row.itemType?.subtypeCode;
+    const mapped=new Map([
+      [2,0],[4,0],[11,0],  // crop, seed, ingredient
+      [10,1],[3,2],[8,8],[16,9],[17,10],
+    ]).get(code);
+    if(mapped!==undefined)codes.add(mapped);
+  }
+  return [...codes].sort((a,b)=>a-b);
+}
 let found=0,tagRefs=0,candidates=0;
 const seen=new Set();
 for(let bucket=0;bucket<256;bucket++){
@@ -82,6 +111,8 @@ for(let bucket=0;bucket<256;bucket++){
       typeof t.key==='string'&&t.key.length>0&&t.key.length<=128)
       .map(t=>[t.facet,t.key]);
     if(browseTags.length)collectionRows.push([row.itemId,browseTags]);
+    const sourceCategories=originalCategoryCodes(row);
+    if(sourceCategories.length)collectionCategoryRows.push([row.itemId,sourceCategories]);
     tagRefs+=row.tags.length;
     candidates+=row.collectionSourceCandidates.length;
   }
@@ -110,12 +141,17 @@ try{
 const collectionDestination=join(project,'static/ddv/collection/db01-facets-1262.json');
 mkdirSync(dirname(collectionDestination),{recursive:true});
 collectionRows.sort((a,b)=>a[0]-b[0]);
+collectionCategoryRows.sort((a,b)=>a[0]-b[0]);
 writeFileSync(collectionDestination,JSON.stringify({
   schema:'wand.collection.db01-native-facets@1',
   release:'steam-1.26.2-item-id-master-v1',
   sourceArchiveSha256:RELEASE_SHA,
   sourceItemCount:found,
   taggedItems:collectionRows.length,
+  categoryItemCount:collectionCategoryRows.length,
+  categoryItems:collectionCategoryRows,
+  categoryEvidence:'original_collectionset_source_candidate_or_verified_native_item_type',
+  gameRuntimeMembershipVerified:false,
   items:collectionRows
 })+'\n');
 console.log('DB-01 Collection browse subset:',collectionRows.length,'tagged Item IDs');
