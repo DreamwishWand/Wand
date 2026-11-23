@@ -51,7 +51,7 @@ export function sortedCollectionUniverseOptions(
   index:CollectionDb01Index,locale:string,display:(key:string)=>string,
   untaggedLabel:string,
 ):readonly CollectionUniverseBrowseOption[]{
-  const canonical=index.itemsByUniverseTagId.size>0;
+  const canonical=(index.itemsByUniverseTagId?.size??0)>0;
   const options=canonical
     ?COLLECTION_UNIVERSE_TAG_NAMES.map(row=>({
       id:String(row.id),label:display(String(row.id)),
