@@ -2,7 +2,8 @@
   import {onDestroy} from 'svelte';
   import {base} from '$app/paths';
   import type {
-    CollectionAcquisitionKind,CollectionAcquisitionSummary
+    CollectionAcquisitionKind,CollectionAcquisitionCandidate,
+    CollectionAcquisitionSummary
   } from './acquisition-summary.ts';
 
   export let itemId:number;
@@ -17,7 +18,16 @@
   const cache=new Map<number,CollectionAcquisitionSummary>();
   const names:Record<CollectionAcquisitionKind,string>={
     crafting:'クラフト',cooking:'料理',fishing:'釣り',mining:'採掘',
-    timebending:'タイムベンディング',farming:'栽培',starpath:'スターパス'
+    timebending:'タイムベンディング',farming:'栽培',foraging:'採集',
+    game_shop:'ゲーム内ショップ',quest_reward:'クエスト報酬',
+    event_reward:'イベント報酬',friendship_reward:'友情報酬',
+    starpath:'スターパス',twitch_drop:'Twitch Drops',
+    redeem_code:'交換コード',premium_shop:'プレミアムショップ',
+    official_campaign:'公式キャンペーン',purchase_bonus:'購入特典',
+    gift:'配布'
+  };
+  const candidateNames:Record<CollectionAcquisitionCandidate,string>={
+    loot_table:'抽選テーブル',stall_slot:'店舗の陳列候補'
   };
   type Reply=
     | {requestId:number;itemId:number;ok:true;summary:CollectionAcquisitionSummary}
@@ -88,13 +98,23 @@
       <p class="evidence-status" role="alert">情報を読み込めませんでした。</p>
       <button type="button" class="retry" on:click={retry}>再試行</button>
     {:else if summary && summary.itemId===itemId}
-      {#if summary.kinds.length}
-        <ul class="evidence-kinds" aria-label="原本に登録された入手元">
-          {#each summary.kinds as kind (kind)}
-            <li>{names[kind]}</li>
-          {/each}
-        </ul>
-        <p class="evidence-status">原本上の経路です。現在の入手可否とは異なります。</p>
+      {#if summary.kinds.length || summary.candidates.length}
+        {#if summary.kinds.length}
+          <ul class="evidence-kinds" aria-label="原本に登録された入手元">
+            {#each summary.kinds as kind (kind)}
+              <li>{names[kind]}</li>
+            {/each}
+          </ul>
+        {/if}
+        {#if summary.candidates.length}
+          <p class="evidence-candidate-title">原本上の候補</p>
+          <ul class="evidence-kinds" aria-label="入手を保証しない原本上の候補">
+            {#each summary.candidates as candidate (candidate)}
+              <li>{candidateNames[candidate]}</li>
+            {/each}
+          </ul>
+        {/if}
+        <p class="evidence-status">原本上の経路・候補です。現在の販売・入手可否は確認していません。</p>
       {:else}
         <p class="evidence-status">登録済みの入手元情報はありません。</p>
       {/if}
@@ -105,6 +125,7 @@
 <style>
   .collection-acquisition {margin:8px 0 12px}
   .evidence-kinds {display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;padding:0;list-style:none}
+  .evidence-candidate-title {margin:10px 0 4px;font-size:11px;opacity:.75}
   .evidence-kinds li {border:1px solid #ffffff30;border-radius:8px;padding:6px 9px;color:inherit}
   .evidence-status {font-size:11px;line-height:1.5;color:inherit;opacity:.75;margin:8px 0}
   .retry {border:1px solid #ffffff35;background:transparent;color:inherit;border-radius:8px;padding:5px 10px;cursor:pointer}

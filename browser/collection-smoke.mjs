@@ -121,9 +121,12 @@ try{
   const page=await context.newPage();
   const browserErrors=[];
   const saveWasmAssets=[];
+  const acquisitionAssets=[];
   page.on('response',response=>{
     if(response.url().includes('ddv_p1g_codec_bg')&&response.url().endsWith('.wasm'))
       saveWasmAssets.push({url:response.url(),status:response.status()});
+    if(/(?:recipe-results|activity-result-paths|native-loot-candidates|native-stall-slots)-1\.26\.2\.json/.test(response.url()))
+      acquisitionAssets.push({url:response.url(),status:response.status()});
   });
   page.on('pageerror',error=>browserErrors.push(String(error)));
   // The landing screen is a visual portal, with unavailable services clearly
@@ -402,11 +405,21 @@ try{
   // TypeScript Worker. Opening one published Item must never claim live stock.
   const acquisitionPanel=page.locator('.collection-acquisition');
   assert.equal(await acquisitionPanel.count(),1);
+  assert.equal(acquisitionAssets.length,0,
+    'source-only acquisition files must remain lazy until the panel opens');
   await acquisitionPanel.locator('summary').click();
   await acquisitionPanel.locator('.evidence-status').filter({
-    hasText:/原本上の経路です|登録済みの入手元情報はありません/
+    hasText:/原本上の経路・候補です|登録済みの入手元情報はありません/
   }).waitFor({timeout:60000});
   assert.equal(await acquisitionPanel.getByRole('alert').count(),0);
+  for(const file of [
+    'recipe-results-1.26.2.json','activity-result-paths-1.26.2.json',
+    'native-loot-candidates-1.26.2.json','native-stall-slots-1.26.2.json'
+  ]){
+    const loaded=acquisitionAssets.filter(entry=>entry.url.endsWith('/'+file));
+    assert.equal(loaded.length,1,file+' must be loaded only on demand');
+    assert.equal(loaded[0].status,200,'source asset must be published');
+  }
   await page.getByRole('checkbox',{name:'お気に入り'}).uncheck();
   await waitForLocalState(page,{item:'40005160',status:'owned',favorite:false});
   await page.locator('.empty-panel').waitFor();
