@@ -8,6 +8,7 @@
   import SavedStorePreview from '$lib/collection/SavedStorePreview.svelte';
   import { CollectionRuntime, type CollectionState, type CollectionItem, type CollectionFacet, type CollectionProgress, type CollectionFilter } from '$lib/collection/runtime';
   import { collectionFamilyLabel } from '$lib/collection/copy';
+  import {collectionScopeOptions,type CollectionScopeOption} from '$lib/collection/scope-options';
 
   const categoryPictogram:Record<string,string>={
     Furniture:'chair',Landscaping:'plant','Roads & Fences':'mountain',
@@ -37,6 +38,8 @@
   let detachHistory:()=>void=()=>{};
   let state:CollectionState=defaultState;
   let facets:CollectionFacet[]=[];
+  let worldScopeOptions:readonly CollectionScopeOption[]=[];
+  let universeScopeOptions:readonly CollectionScopeOption[]=[];
   let filtered:CollectionItem[]=[];
   let totalMatches=0;
   let overall:CollectionProgress={owned:0,missing:0,unknown:0,discovered:0,total:0};
@@ -124,6 +127,16 @@
     if(!runtime)return;
     try{
       facets=runtime.facets('category',locale);
+      // Source Tag associations are not CollectionArea membership. The
+      // runtime only exposes these options when the catalog explicitly carries
+      // reviewed, source-validated per-item scope evidence.
+      const provenance=runtime.metadata.verifiedScopeMembership;
+      worldScopeOptions=collectionScopeOptions(runtime.metadata,'world',
+        provenance?.world?runtime.facets('world',locale):[],locale);
+      universeScopeOptions=collectionScopeOptions(runtime.metadata,'universe',
+        provenance?.universe?runtime.facets('universe',locale):[],locale);
+      if(worldFilter&&!worldScopeOptions.some(x=>x.id===worldFilter))worldFilter='';
+      if(universeFilter&&!universeScopeOptions.some(x=>x.id===universeFilter))universeFilter='';
       const collected:CollectionItem[]=[];
       let next=0;
       let total=0;
@@ -539,20 +552,38 @@
           <button type="button" class="subtle-button" aria-expanded={filtersOpen} on:click={()=>filtersOpen=!filtersOpen}>フィルター {filtersOpen?'▴':'▾'}</button>
         </div>
       </div>
+      {#if worldScopeOptions.length||universeScopeOptions.length}
+        <div class="collection-scope-toolbar" role="group" aria-label="コレクションの表示範囲">
+          {#if worldScopeOptions.length}
+            <div class="collection-world-switcher" role="group" aria-label="ワールド">
+              <span class="scope-axis-label" aria-hidden="true">ワールド</span>
+              <div class="collection-scope-scroll">
+                <button type="button" class:chosen={!worldFilter} aria-pressed={!worldFilter}
+                  on:click={()=>{worldFilter='';resetView();}}>すべて</button>
+                {#each worldScopeOptions as option (option.id)}
+                  <button type="button" class:chosen={worldFilter===option.id}
+                    aria-pressed={worldFilter===option.id}
+                    on:click={()=>{worldFilter=option.id;resetView();}}>{option.label}</button>
+                {/each}
+              </div>
+            </div>
+          {/if}
+          {#if universeScopeOptions.length}
+            <label class="collection-universe-switcher">
+              <span>ユニバース</span>
+              <select aria-label="ユニバースで絞り込み" value={universeFilter}
+                on:change={(event)=>{universeFilter=(event.currentTarget as HTMLSelectElement).value;resetView();}}>
+                <option value="">すべて</option>
+                {#each universeScopeOptions as option (option.id)}
+                  <option value={option.id}>{option.label}</option>
+                {/each}
+              </select>
+            </label>
+          {/if}
+        </div>
+      {/if}
       {#if filtersOpen}
         <div class="filter-panel">
-          <label class="filter-label">ワールド
-            <select aria-label="ワールドで絞り込み" bind:value={worldFilter} on:change={resetView}>
-              <option value="">すべて</option>
-              {#each runtime?.metadata.worlds??[] as id}<option value={id}>{labelWorld(id)}</option>{/each}
-            </select>
-          </label>
-          <label class="filter-label">ユニバース
-            <select aria-label="ユニバースで絞り込み" bind:value={universeFilter} on:change={resetView}>
-              <option value="">すべて</option>
-              {#each runtime?.metadata.universes??[] as id}<option value={id}>{labelUniverse(id)}</option>{/each}
-            </select>
-          </label>
           <fieldset><legend>収集状況（手動記録）</legend>
             {#each [{id:'all',name:'すべて'},{id:'owned',name:'所持 / 解放'},{id:'missing',name:'未所持'}] as option}
               <button type="button" class:chosen={status===option.id} aria-pressed={status===option.id} on:click={()=>{status=option.id as typeof status;resetView();}}>{option.name}</button>
