@@ -98,6 +98,29 @@ class NativeVisibilityAuditTests(unittest.TestCase):
                             not r["gameCollectionAreaMembershipVerified"]
                             for r in rows))
 
+    def test_character_skin_original_visibility_case_is_included(self):
+        rows, count = audit.collect_cases(
+            [], [], [], set(),
+            [row(170000107, "Winnie!Winnie!RaincoatWinnieDreamStyle",
+                 (24, 2, b"\x0a\x00"))]
+        )
+        self.assertEqual(count["sourceFamilies"]["Skin"], 1)
+        self.assertEqual(count["cases"]["WhenUnlocked"], 1)
+        self.assertEqual(rows[0]["sourceFamily"], "Skin")
+        self.assertEqual(rows[0]["itemId"], 170000107)
+        self.assertFalse(rows[0]["runtimeVisibilityBehaviorVerified"])
+
+    def test_new_native_visibility_class_requires_explicit_auditor_support(self):
+        extra = (
+            "public sealed class NewItemData : IHasCollectionVisibility\n{\n"
+            "  public const int CollectionVisibilityFieldNumber = 99;\n"
+            "\t// Properties\n}\n"
+        )
+        with self.assertRaisesRegex(
+            ValueError, "UNRECOGNIZED_COLLECTION_VISIBILITY_CLASS"
+        ):
+            audit.verify_il2cpp(toy_dump() + extra)
+
     def test_unknown_activity_field_31_fails_closed(self):
         fake_tag = audit._wire._src01.encode_varint(2001200999)
         with self.assertRaisesRegex(ValueError,
