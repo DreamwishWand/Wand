@@ -42,7 +42,7 @@
   let query='';
   let locale='ja';
   let character='';
-  let section:PublicQuestSection='all';
+  let section:PublicQuestSection='story';
   let storyArc:PublicQuestStoryArc='valley';
   const arcs:readonly {id:PublicQuestStoryArc;name:string}[]=[
     {id:'valley',name:'ドリームライトバレー'},
@@ -148,6 +148,10 @@
     selectionTicket++;
     selectedRow=null;selected=null;detailError='';detailLoading=false;
     targetLookup={};targetLoading=false;targetError='';
+    const url=new URL(window.location.href);
+    url.searchParams.delete('quest');
+    url.searchParams.delete('step');
+    window.history.replaceState(window.history.state,'',url);
   }
   function selectSection(next:PublicQuestSection){
     if(section===next)return;
