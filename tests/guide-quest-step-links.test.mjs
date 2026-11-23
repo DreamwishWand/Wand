@@ -48,3 +48,19 @@ test('step navigation is a compact opt-in view, preserving the full verified sou
   assert.match(page,/window\.history\.pushState/);
   assert.doesNotMatch(page,/localStorage|sessionStorage/);
 });
+
+test('typed step navigation round-trips the exact permitted display boundary without inventing progress',()=>{
+  const quest='2070000620';
+  assert.equal(publicQuestStepQuery(quest,9999,10000),
+    '?quest=2070000620&step=10000');
+  assert.equal(publicQuestStepIndex('?quest=2070000620&step=10000',quest,10000),9999);
+  assert.equal(publicQuestStepIndex('?quest=2070000620&step=10001',quest,10000),0);
+  assert.equal(publicQuestStepIndex('?quest=2070000620&step=10000',quest,9999),0);
+  assert.equal(publicQuestStepIndex('?quest=2070000620&step=10000',quest,10001),0);
+  assert.equal(publicQuestStepIndex('?quest=9007199254740992&step=1',
+    '9007199254740992',4),0);
+  assert.throws(()=>publicQuestStepQuery('9007199254740992',0,1),
+    /invalid selection/);
+  const route=publicQuestStepQuery(quest,4,5);
+  assert.equal(publicQuestStepIndex(route,quest,5),4);
+});
