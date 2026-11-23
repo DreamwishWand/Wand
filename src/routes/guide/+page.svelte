@@ -134,46 +134,47 @@
 
 <main class="guide-app" aria-label="Guide">
   <nav class="guide-sections" aria-label="ガイドの機能">
-    <span class="pending" aria-disabled="true" title="準備中"><WandIcon name="grid" size={20}/><span>システム</span></span>
-    <a href={`${base}/guide/quests/`}><WandIcon name="guide" size={20}/><span>クエスト</span></a>
-    <a href={`${base}/guide/star-path/`}><WandIcon name="star" size={20}/><span>スターパス</span></a>
-    <a href={`${base}/guide/events/`}><WandIcon name="world" size={20}/><span>イベント</span></a>
+    <a href={`${base}/guide/systems/`}><WandIcon name="settings" size={20}/><span>{copy.systems}</span></a>
+    <a href={`${base}/guide/quests/`}><WandIcon name="guide" size={20}/><span>{copy.quests}</span></a>
+    <a href={`${base}/guide/star-path/`}><WandIcon name="star" size={20}/><span>{copy.starPaths}</span></a>
+    <a href={`${base}/guide/events/`}><WandIcon name="world" size={20}/><span>{copy.events}</span></a>
   </nav>
 
   <section class="timeline-panel" aria-label="イベント開催期間">
     <div class="timeline-toolbar">
       <div class="timeline-title">
         <WandIcon name="grid" size={19}/>
-        <strong>イベント</strong>
-        <span class="zone" title="タイムラインの日付軸は日本時間。選択したイベントの日時は閲覧者の現地時間">JST軸</span>
+        <strong>{copy.timeline}</strong>
+        <span class="zone" title={viewerZone}>{zoneLabel}</span>
         <details class="source-info">
           <summary aria-label="日程の出典と注意"><WandIcon name="info" size={17}/></summary>
-          <p>公式発表とSteam v1.26.2の保存済みデータ（確認日：{GUIDE_EVENT_CALENDAR_AS_OF}）。ゲームサーバーの開催状況をリアルタイム確認したものではありません。時刻未確認のイベントは日付単位で表示します。</p>
+          <p>{copy.sourceNote} · Steam v1.26.2 · {GUIDE_EVENT_CALENDAR_AS_OF}</p>
         </details>
       </div>
       <div class="calendar-nav">
         <div class="zoom" role="group" aria-label="表示する期間">
-          <button class:active={weeks===5} aria-pressed={weeks===5} on:click={()=>changeZoom(5)}>5週</button>
-          <button class:active={weeks===9} aria-pressed={weeks===9} on:click={()=>changeZoom(9)}>9週</button>
+          <button class:active={weeks===5} aria-pressed={weeks===5} on:click={()=>changeZoom(5)}>5 {copy.weeks}</button>
+          <button class:active={weeks===9} aria-pressed={weeks===9} on:click={()=>changeZoom(9)}>9 {copy.weeks}</button>
         </div>
-        <button class="nav-arrow previous" aria-label="前の期間" title="前の期間"
+        <button class="nav-arrow previous" aria-label={copy.previous} title={copy.previous}
           on:click={()=>navigate(-1)}><WandIcon name="chevron" size={17}/></button>
         <strong class="range" aria-live="polite">{rangeText}</strong>
-        <button class="nav-arrow next" aria-label="次の期間" title="次の期間"
+        <button class="nav-arrow next" aria-label={copy.next} title={copy.next}
           on:click={()=>navigate(1)}><WandIcon name="chevron" size={17}/></button>
-        <button class="today-button" on:click={goToday}>今日</button>
+        <button class="today-button" on:click={goToday}>{copy.today}</button>
       </div>
     </div>
 
     <div class="timeline-key" aria-label="表示記号">
-      <span><i class="sample task"></i>タスク</span>
-      <span><i class="sample exchange"></i>交換</span>
-      <span><i class="sample limited"></i>イベント</span>
-      <span class="reset-key"><WandIcon name="restore" size={14}/>水曜リセット</span>
+      <span><i class="sample task"></i>{copy.starPaths} · {copy.task}</span>
+      <span><i class="sample exchange"></i>{copy.exchange}</span>
+      <span><i class="sample floating"></i>{copy.floating}</span>
+      <span><i class="sample valley"></i>{copy.valley}</span>
+      <span class="reset-key"><i class="sample reset-sample"></i>{copy.reset}</span>
     </div>
 
     {#if loading}
-      <div class="message" role="status">読み込み中…</div>
+      <div class="message" role="status">{copy.loading}…</div>
     {:else if loadError}
       <div class="message error" role="alert">日程を読み込めませんでした
         <button on:click={load}>再読み込み</button>
@@ -183,21 +184,21 @@
         aria-label="開催期間タイムライン（横スクロールで日付を移動）">
         <div class="timeline-content" style={`--day-count:${windowRange.days.length};min-width:${205+windowRange.days.length*30}px`}>
           <div class="timeline-heading">
-            <div class="date-label">イベント</div>
+            <div class="date-label">{copy.events}</div>
             <div class="dates-grid">
               {#each windowRange.days as day (day.day)}
                 <div class="date-slot" class:reset={day.reset} class:today={day.today}
-                  title={day.day+(day.reset?' · 水曜リセット':'')}>
-                  <span class="weekday">{weekdays[day.weekday]}</span>
+                  title={longDay(day.day)+(day.reset?' · '+copy.reset:'')}>
+                  <span class="weekday">{weekdayLabel(day.day)}</span>
                   <span class="date-number">{day.dayNumber}</span>
-                  {#if day.weekday===0}<span class="month-label">{day.month}月</span>{/if}
+                  {#if day.dayNumber===1}<span class="month-label">{shortDay(day.day)}</span>{/if}
                   {#if day.reset}<span class="reset-symbol"><WandIcon name="restore" size={12}/></span>{/if}
                 </div>
               {/each}
             </div>
           </div>
           {#each visibleRows as row (row.event.id)}
-            <div class="timeline-row" class:selected={selectedId===row.event.id}>
+            <div class="timeline-row" class:selected={selectedId===row.event.id} data-category={displayCategory(row.event)}>
               <button class="event-label" on:click={()=>showEvent(row.event.id)}
                 aria-pressed={selectedId===row.event.id} title={row.event.title}>
                 <span class="event-symbol"><WandIcon name={eventIcon(row.event)} size={17}/></span>
@@ -215,6 +216,8 @@
                     class:task={segment.phase==='task'}
                     class:exchange={segment.phase==='exchange'}
                     class:limited={segment.phase==='limited'}
+                    class:floating={segment.phase==='limited'&&displayCategory(row.event)==='floating'}
+                    class:valley={segment.phase==='limited'&&displayCategory(row.event)==='valley'}
                     class:clipped-start={segment.clippedStart}
                     class:clipped-end={segment.clippedEnd}
                     class:selected={selectedId===row.event.id}
@@ -237,7 +240,7 @@
           {#if visibleRows.length===0}
             <div class="timeline-row empty-row">
               <div class="event-label blank"></div>
-              <div class="empty-events">この期間に登録されたイベントはありません</div>
+              <div class="empty-events">{copy.empty}</div>
             </div>
           {/if}
         </div>
@@ -247,26 +250,26 @@
         <div class="event-inspector" aria-label="選択したイベントの詳細">
           <div class="event-inspector-heading">
             <WandIcon name={eventIcon(selected)} size={22}/>
-            <div><strong>{selected.title}</strong><small>{stateName(selected)} · {selected.precision==='utc-instant'?viewerZone:'日付のみ'}</small></div>
+            <div><strong>{selected.title}</strong><small>{stateName(selected)} · {selected.precision==='utc-instant'?viewerZone:copy.dateOnly}</small></div>
             <button class="close" aria-label="詳細を閉じる" on:click={()=>selectedId=null}>
               <WandIcon name="close" size={18}/>
             </button>
           </div>
           <div class="date-facts">
             {#if selected.precision==='date-only'}
-              <div><small>開始日</small><strong>{selected.startDay}</strong></div>
-              <div><small>終了日</small><strong>{selected.endDayInclusive}</strong></div>
-              <span class="uncertain"><WandIcon name="info" size={15}/>開始・終了時刻は未確認</span>
+              <div><small>{copy.start}</small><strong>{longDay(selected.startDay)}</strong></div>
+              <div><small>{copy.end}</small><strong>{longDay(selected.endDayInclusive)}</strong></div>
+              <span class="uncertain"><WandIcon name="info" size={15}/>{copy.dateUnknown}</span>
             {:else}
-              <div><small>開始</small><strong>{formatLocal(selected.startUtc)}</strong></div>
-              <div><small>タスク終了</small><strong>{formatLocal(selected.taskEndUtcExclusive)}</strong></div>
-              <div><small>交換終了</small><strong>{formatLocal(selected.endUtcExclusive)}</strong></div>
+              <div><small>{copy.start}</small><strong>{formatLocal(selected.startUtc)}</strong></div>
+              <div><small>{copy.taskEnd}</small><strong>{formatLocal(selected.taskEndUtcExclusive)}</strong></div>
+              <div><small>{copy.exchangeEnd}</small><strong>{formatLocal(selected.endUtcExclusive)}</strong></div>
             {/if}
           </div>
           <div class="inspector-actions">
-            <a class="primary" href={eventHref(selected)}>攻略を見る <WandIcon name="arrow" size={16}/></a>
+            <a class="primary" href={eventHref(selected)}>{copy.guideLink} <WandIcon name="arrow" size={16}/></a>
             <a href={selected.sourceUrl} target="_blank" rel="noopener noreferrer">
-              公式情報 <WandIcon name="link" size={14}/>
+              {copy.official} <WandIcon name="link" size={14}/>
             </a>
           </div>
         </div>
