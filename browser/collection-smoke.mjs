@@ -398,6 +398,15 @@ try{
   await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
   assert.match(await page.locator('.item-card-copy strong').first().innerText(),/ガラスの靴/);
   await page.locator('.item-card-body').first().click();
+  // DB-00 native acquisition evidence is opt-in, SHA-verified and read in a
+  // TypeScript Worker. Opening one published Item must never claim live stock.
+  const acquisitionPanel=page.locator('.collection-acquisition');
+  assert.equal(await acquisitionPanel.count(),1);
+  await acquisitionPanel.locator('summary').click();
+  await acquisitionPanel.locator('.evidence-status').filter({
+    hasText:/原本上の経路です|登録済みの入手元情報はありません/
+  }).waitFor({timeout:60000});
+  assert.equal(await acquisitionPanel.getByRole('alert').count(),0);
   await page.getByRole('checkbox',{name:'お気に入り'}).uncheck();
   await waitForLocalState(page,{item:'40005160',status:'owned',favorite:false});
   await page.locator('.empty-panel').waitFor();
