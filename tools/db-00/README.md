@@ -439,3 +439,30 @@ reader rather than receiving invented Item IDs. Community Premium Shop
 observations, prices, sale dates and weekly histories are **not**
 projected into the DB-00 item candidate field or search index.
 No additional network requests or private original data are involved.
+
+
+### On-demand native Companion source categories
+
+DB-02 now provides a 2-KB, SHA-256-pinned public projection of the
+Steam 1.26.2 original \`PetItemData.Source\` enum field. DB-00 exposes it
+via \`await openPublicSharedGameSources(...).loadNativeCompanionSources()\`.
+Loading the ordinary DB-00 Item search still performs **no** extra request;
+the native companion projection is fetched once only when this optional API
+is called, and is shared with DB-02's own lazy reader.
+
+The returned typed reader searches **134 companion Item IDs** by six native
+source categories: \`quest\` (8), \`timebending\` (1), \`event\` (9),
+\`star_path\` (7), \`premium_shop\` (95), and \`exclusive_promotion\`
+(14). Use \`reader.search({category:'premium_shop',locale:'ja',text:'',
+publishedOnly:true,offset:0,limit:100})\` to intersect those static
+classifications with the **published** DB-00 ItemList. Omit
+\`publishedOnly\` to retain native source IDs outside the 13,202 published
+definitions. \`reader.getItem(id)\` returns both DB-02 classification and
+the existing DB-00 source-joined Item record, without mutating either.
+
+**Do not treat PetItemData.Source as a particular shop offer, Twitch
+Drops campaign, redeem code, live availability, player acquisition, DLC
+entitlement or Collection UI membership.** An unclassified source ID is
+not a verified negative. No source classification is added to the DB-02
+\`origins\` ledger. The owner-local original Companion.json, private
+saves, shop sale dates and prices are never published by this integration.
