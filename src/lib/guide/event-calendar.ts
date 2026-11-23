@@ -173,15 +173,17 @@ export function guideCalendarEvents(raw:unknown):GuideCalendarEvent[]{
     check(source.startDay>=GUIDE_EARLY_ACCESS_FIRST_DAY&&
       source.endDayInclusive>=source.startDay,'historical boundaries');
     if(source.kind==='starpath-history'){
-      if(source.officialEndUtc!==undefined)
-        check(utcMillis(source.officialEndUtc)>Date.parse(source.startDay+'T00:00:00Z'),
+      const officialEndUtc='officialEndUtc' in source
+        ?source.officialEndUtc:null;
+      if(officialEndUtc)
+        check(utcMillis(officialEndUtc)>Date.parse(source.startDay+'T00:00:00Z'),
           'historical published end');
       events.push({
         id:source.id,kind:'starpath-history',title:source.title,
         sourceUrl:source.sourceUrl,evidence:'official-announcement',
         precision:'date-only',startDay:source.startDay,
         endDayInclusive:source.endDayInclusive,
-        officialEndUtc:source.officialEndUtc??null,
+        officialEndUtc,
         liveVerified:false,checkedDate:GUIDE_EVENT_CALENDAR_AS_OF,href:null
       });
     }else{
