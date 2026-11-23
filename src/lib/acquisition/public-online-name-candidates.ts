@@ -25,6 +25,11 @@ const RELEASE='steam-1.26.2-native-itemlist-v1';
 const SOURCE_SHA='496782625e68fb53e018659bbabf0d8bb8bdc55f12037f4c568a7d32321f515b';
 const ID=/^[1-9][0-9]{0,15}$/;
 const EMPTY=Object.freeze([]) as readonly PublicOnlineNameCandidate[];
+const EMPTY_IDS=Object.freeze([]) as readonly string[];
+const CAMPAIGN_KINDS:ReadonlySet<OfficialCampaign['kind']>=new Set([
+  'twitch_drop','redeem_code','premium_shop','official_campaign',
+  'purchase_bonus','gift','event_reward'
+]);
 const NONDISPLAY=/^\s*\{(?:Placeholder|LegacyPlaceholder|DoNotTranslate)\}/i;
 
 interface CandidateCommon {
@@ -61,6 +66,33 @@ export interface PublicShopNameCandidate extends CandidateCommon {
 export type PublicOnlineNameCandidate=
   PublicCampaignNameCandidate|PublicShopNameCandidate;
 
+/**
+ * Every published campaign reward, including names with no matching Item.
+ * A name match is only a discovery candidate; the original official record
+ * does not establish a native Item ID relation or an actual grant.
+ */
+export type PublicRewardNameMatch=
+  'unique_name_candidate'|'ambiguous_name_candidates'|
+  'not_found_in_published_db00'|'source_supplied_id_unverified';
+export interface PublicCampaignRewardResolution {
+  readonly name:string;
+  readonly quantity:number|null;
+  readonly cumulativeWatchMinutes:number|null;
+  readonly sourceSuppliedItemId:string|null;
+  readonly nameCandidateItemIds:readonly string[];
+  readonly match:PublicRewardNameMatch;
+  readonly acquisitionLinkVerified:false;
+  readonly claimedByPlayerVerified:false;
+}
+export interface PublicCampaignRewardResolutionIndex {
+  readonly campaignId:string;
+  readonly campaignKind:OfficialCampaign['kind'];
+  readonly name:string;
+  readonly officialSourceUrl:string;
+  readonly rewards:readonly PublicCampaignRewardResolution[];
+  readonly acquisitionLinksVerified:false;
+}
+
 export interface PublicOnlineNameCandidateCoverage {
   readonly publishedItemDefinitions:13202;
   readonly distinctNamedEnglishLabels:number;
@@ -85,6 +117,12 @@ export interface PublicOnlineNameCandidateIndex {
   readonly coverage:PublicOnlineNameCandidateCoverage;
   getItemCandidates(itemId:number|string):readonly PublicOnlineNameCandidate[];
   getCampaignCandidates(campaignId:string):readonly PublicCampaignNameCandidate[];
+  /** Includes unmatched and ambiguous names; never a verified Item origin. */
+  getCampaignRewardResolution(campaignId:string):PublicCampaignRewardResolutionIndex|null;
+  /** All official campaign rewards, optionally by source type, without sale history. */
+  listCampaignRewardResolutions(
+    kind?:OfficialCampaign['kind']
+  ):readonly PublicCampaignRewardResolutionIndex[];
   getShopAppearanceCandidates(appearanceId:string):readonly PublicShopNameCandidate[];
   getShopProductCandidates(productName:string):readonly PublicShopNameCandidate[];
 }
@@ -144,6 +182,8 @@ export function indexPublicOnlineNameCandidates(
     'ORIGIN_LEDGER_REQUIRED');
   const byItem=new Map<string,PublicOnlineNameCandidate[]>();
   const byCampaign=new Map<string,PublicCampaignNameCandidate[]>();
+  const campaignResolutions:PublicCampaignRewardResolutionIndex[]=[];
+  const resolutionByCampaign=new Map<string,PublicCampaignRewardResolutionIndex>();
   const byAppearance=new Map<string,PublicShopNameCandidate[]>();
   const byProduct=new Map<string,PublicShopNameCandidate[]>();
   let official=0,officialMatched=0,officialAmbiguous=0,officialMissing=0;
@@ -152,9 +192,29 @@ export function indexPublicOnlineNameCandidates(
     requireValue(campaign&&typeof campaign.campaignId==='string'&&
       Array.isArray(campaign.rewards),'INVALID_CAMPAIGN');
     if(campaign.source?.kind!=='official_publication')continue;
+    requireValue(typeof campaign.name==='string'&&
+      typeof campaign.source.sourceUrl==='string'&&
+      !resolutionByCampaign.has(campaign.campaignId),'INVALID_CAMPAIGN_IDENTITY');
+    const rewardResolutions:PublicCampaignRewardResolution[]=[];
     for(const reward of campaign.rewards){
-      if(reward.itemId!==null)continue;
       requireValue(typeof reward.name==='string','INVALID_REWARD_NAME');
+      if(reward.itemId!==null)itemId(reward.itemId);
+      const candidateIds=reward.itemId===null?
+        Object.freeze([...(names.get(reward.name)??[])].sort((a,b)=>Number(a)-Number(b))):
+        EMPTY_IDS;
+      const match:PublicRewardNameMatch=reward.itemId!==null?
+        'source_supplied_id_unverified':candidateIds.length===1?
+        'unique_name_candidate':candidateIds.length>1?
+        'ambiguous_name_candidates':'not_found_in_published_db00';
+      rewardResolutions.push(Object.freeze({
+        name:reward.name,quantity:reward.quantity,
+        cumulativeWatchMinutes:reward.cumulativeWatchMinutes,
+        sourceSuppliedItemId:reward.itemId,
+        nameCandidateItemIds:candidateIds,match,
+        acquisitionLinkVerified:false as const,
+        claimedByPlayerVerified:false as const
+      }));
+      if(reward.itemId!==null)continue;
       official++;
       const ids=names.get(reward.name)??[];
       if(ids.length>1){officialAmbiguous++;continue;}
@@ -175,6 +235,22 @@ export function indexPublicOnlineNameCandidates(
       add(byItem,candidate.itemId,candidate);
       add(byCampaign,campaign.campaignId,candidate);
     }
+    const resolved:PublicCampaignRewardResolutionIndex=Object.freeze({
+      campaignId:campaign.campaignId,campaignKind:campaign.kind,
+      name:campaign.name,officialSourceUrl:campaign.source.sourceUrl,
+      rewards:Object.freeze(rewardResolutions),
+      acquisitionLinksVerified:false as const
+    });
+    campaignResolutions.push(resolved);
+    resolutionByCampaign.set(campaign.campaignId,resolved);
+  }
+  const allCampaignResolutions=Object.freeze(campaignResolutions);
+  const byKind=new Map<OfficialCampaign['kind'],readonly PublicCampaignRewardResolutionIndex[]>();
+  for(const campaign of allCampaignResolutions){
+    if(byKind.has(campaign.campaignKind))continue;
+    byKind.set(campaign.campaignKind,Object.freeze(
+      allCampaignResolutions.filter(row=>row.campaignKind===campaign.campaignKind)
+    ));
   }
   for(const appearance of appearances){
     requireValue(appearance&&typeof appearance.appearanceId==='string'&&
@@ -240,6 +316,18 @@ export function indexPublicOnlineNameCandidates(
       requireValue(typeof campaignId==='string'&&campaignId.length>0&&
         campaignId.length<=128,'INVALID_CAMPAIGN_ID');
       return byCampaign.get(campaignId)??EMPTY as readonly PublicCampaignNameCandidate[];
+    },
+    getCampaignRewardResolution(campaignId:string){
+      requireValue(typeof campaignId==='string'&&
+        /^[A-Za-z0-9][A-Za-z0-9:._/-]{0,127}$/.test(campaignId),
+        'INVALID_CAMPAIGN_ID');
+      return resolutionByCampaign.get(campaignId)??null;
+    },
+    listCampaignRewardResolutions(kind?:OfficialCampaign['kind']){
+      if(kind===undefined)return allCampaignResolutions;
+      requireValue(typeof kind==='string'&&CAMPAIGN_KINDS.has(kind),
+        'INVALID_CAMPAIGN_KIND');
+      return byKind.get(kind)??Object.freeze([]);
     },
     getShopAppearanceCandidates(appearanceId:string){
       requireValue(typeof appearanceId==='string'&&appearanceId.length>0&&
