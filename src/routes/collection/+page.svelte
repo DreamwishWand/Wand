@@ -8,7 +8,7 @@
   import SavedStorePreview from '$lib/collection/SavedStorePreview.svelte';
   import { CollectionRuntime, type CollectionState, type CollectionItem, type CollectionFacet, type CollectionProgress, type CollectionFilter } from '$lib/collection/runtime';
   import { collectionFamilyLabel } from '$lib/collection/copy';
-  import {collectionScopeOptions,type CollectionScopeOption} from '$lib/collection/scope-options';
+  import {collectionScopeOptions,collectionItemScopeLabels,type CollectionScopeOption} from '$lib/collection/scope-options';
 
   const categoryPictogram:Record<string,string>={
     Furniture:'chair',Landscaping:'plant','Roads & Fences':'mountain',
@@ -92,6 +92,7 @@
   // appended, producing scroll jumps and misleading partial group counts.
   $: visibleItems=filtered;
   $: selectedItem=selectedItemId!==null && runtime?runtime.item(selectedItemId,locale):null;
+  $: selectedScopeLabels=collectionItemScopeLabels(selectedItem,worldScopeOptions,universeScopeOptions);
   $: selectedEntry=selectedItem?entries[String(selectedItem.itemId)]??{}:{};
   $: selectedGridRefs=selectedItem?savedGridByItem[String(selectedItem.itemId)]??null:null;
   $: selectedDb04Refs=selectedItem?savedDb04ByItem[String(selectedItem.itemId)]??null:null;
@@ -110,17 +111,6 @@
     };
     return special[lang]?.[id]??collectionFamilyLabel(lang,id)??id;
   }
-  function labelFacet(kind:'world'|'universe',id:string):string {
-    if(!runtime)return id;
-    const meta=runtime.metadata;
-    const list=kind==='world'?meta.worlds:meta.universes;
-    const labels=kind==='world'?meta.worldLabels:meta.universeLabels;
-    const i=list.indexOf(id);
-    const lang=['en','fr','it','de','es-ES','ja','zh-CN','pt-BR'].indexOf(locale);
-    return i<0?id:labels[i]?.[lang<0?0:lang]??labels[i]?.[0]??id;
-  }
-  function labelWorld(id:string):string{return labelFacet('world',id);}
-  function labelUniverse(id:string):string{return labelFacet('universe',id);}
   function currentFilter(offset:number,limit:number):CollectionFilter {
     return {
       locale,search,category:selected,
@@ -718,14 +708,19 @@
             <div class="inspector-art"><ItemArtwork itemId={selectedItem.itemId} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large /></div>
             <h2>{selectedItem.label}</h2>
             <p class="inspector-meta">{categoryLabel(locale,selectedItem.family)}</p>
-            <details class="inspector-details">
-              <summary>詳細情報</summary>
-              <dl>
-                <dt>ワールド</dt><dd>{selectedItem.worlds.map(labelWorld).join('、')||'—'}</dd>
-                <dt>ユニバース</dt><dd>{selectedItem.universes.map(labelUniverse).join('、')||'—'}</dd>
-                <dt>追加コンテンツ</dt><dd>{selectedItem.expansions.join(', ')||'—'}</dd>
-              </dl>
-            </details>
+            {#if selectedScopeLabels.worlds.length || selectedScopeLabels.universes.length}
+              <details class="inspector-details">
+                <summary>詳細情報</summary>
+                <dl>
+                  {#if selectedScopeLabels.worlds.length}
+                    <dt>ワールド</dt><dd>{selectedScopeLabels.worlds.join('、')}</dd>
+                  {/if}
+                  {#if selectedScopeLabels.universes.length}
+                    <dt>ユニバース</dt><dd>{selectedScopeLabels.universes.join('、')}</dd>
+                  {/if}
+                </dl>
+              </details>
+            {/if}
             <div class="inspector-section">
               <h3>Collection記録</h3>
               <div class="ownership-actions">
