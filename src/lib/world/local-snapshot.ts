@@ -1,12 +1,12 @@
 /**
  * DB-04 browser-local World snapshot loader.
  * Binary ZIP parsing, raw deflate and SHA-256 verification execute in Rust/WASM
- * inside the TypeScript World Worker. Legacy catalog construction is a
- * separate migration debt; this module never uploads the source or writes Saves.
+ * inside the TypeScript World Worker. Typed source catalog construction
+ * follows local verification; this module never uploads or writes Saves.
  */
 import init,{WasmWorldZipReader} from './wasm/pkg/wand_world_core.js';
 import wasmUrl from './wasm/pkg/wand_world_core_bg.wasm?url';
-import {createWorldCatalog,WORLD_SCHEMA} from './catalog.mjs';
+import {createWorldCatalog,WORLD_SCHEMA} from './catalog.ts';
 
 const MAX_ZIP_BYTES=96*1024*1024;
 const CHUNK_BYTES=1024*1024;
