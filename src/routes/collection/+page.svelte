@@ -744,6 +744,14 @@
     sourceFacetGroups=[];sourceGroupsCacheKey='';
     resetView();
   }
+  function browseCurrentScopeItems():void{
+    if(viewAxis!=='world'||(!worldFilter&&!sourceChoices.worldContextTag)){
+      browseEveryItem();return;
+    }
+    browsingAllItems=true;selected='';sourceActivityType=null;
+    search='';status='all';favoriteOnly=false;nameStatus='all';expansion='';
+    sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
+  }
   function chooseActivityType(code:number):void{
     if(!sourceIndex?.itemsByActivityType.has(code))return;
     sourceActivityType=code;
@@ -1396,8 +1404,10 @@
           {:else}
             <div class="section-lead collection-categories-heading">
               <h2>{copy.categories}</h2>
-              <button type="button" class="subtle-button" on:click={browseEveryItem}>
-                {copy.showAllItems} ({overall.total.toLocaleString(locale)})
+              <button type="button" class="subtle-button" on:click={browseCurrentScopeItems}>
+                {copy.showAllItems} ({(sourceChoices.worldContextTag||worldFilter
+                  ?scopedCategoryFacets.reduce((sum,facet)=>sum+facet.total,0)
+                  :overall.total).toLocaleString(locale)})
               </button>
             </div>
             {#if sourceLoadError}
