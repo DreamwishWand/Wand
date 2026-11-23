@@ -117,7 +117,7 @@ export function matchSourceGridToLocalTerrain(
   if(!zip||typeof zip!=='object'||!Array.isArray(zip.layouts))
     throw new TypeError('DB04_TERRAIN_NAV_INVALID_LOCAL_ZIP');
   if(zip.gameVersion===null||zip.platform===null)
-    return response('zip_not_loaded',null,null);
+    return result('zip_not_loaded',null,null);
   const manifestEvidence=zip.manifestRawSha256===undefined?null:{
     graph:request.sourceWorldManifestSha256,
     zip:typeof zip.manifestRawSha256==='string'&&
