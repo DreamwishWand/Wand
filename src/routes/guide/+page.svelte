@@ -3,6 +3,7 @@
   import {base} from '$app/paths';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {loadPublicStarpath} from '$lib/guide/public-starpath.ts';
+  import {starpathSeasonHref} from '$lib/guide/starpath-duty-link.ts';
   import {
     guideCalendarEvents,guideCalendarMonth,guideCalendarEventsInMonth,eventScheduleState,
     localGuideDateTime,GUIDE_EVENT_CALENDAR_AS_OF
@@ -115,7 +116,7 @@
           <div class:outside={!cell.isCurrent} class="day" aria-label={cell.day}>
             <span class="date">{cell.dayOfMonth}</span>
             {#each cell.events as event (event.id)}
-              <a href={`${base}${event.href}`}
+              <a href={event.kind==='starpath'?starpathSeasonHref(base,event.sourceSeasonId):`${base}${event.href}`}
                 class:starpath={event.kind==='starpath'}
                 class:exchange={event.kind==='starpath'&&!event.taskPeriod}
                 class:limited={event.kind==='limited-event'}
@@ -145,7 +146,7 @@
               <p>報酬交換期限：{localGuideDateTime(event.endUtcExclusive)}（未満）</p>
             {/if}
             <div class="event-actions">
-              <a href={`${base}${event.href}`}>ガイドを見る</a>
+              <a href={event.kind==='starpath'?starpathSeasonHref(base,event.sourceSeasonId):`${base}${event.href}`}>ガイドを見る</a>
               <a href={event.sourceUrl} target="_blank" rel="noopener noreferrer">公式発表</a>
             </div>
           </article>

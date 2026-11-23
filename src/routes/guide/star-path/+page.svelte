@@ -17,7 +17,7 @@
   import {guideCalendarEvents,eventScheduleState} from '$lib/guide/event-calendar.ts';
   import {starpathTaskDisplay} from '$lib/guide/starpath-task-guidance.ts';
   import {filterStarpathTasks} from '$lib/guide/starpath-search.ts';
-  import {resolveStarpathDutyLink,starpathDutyHref,type StarpathDutySelection} from '$lib/guide/starpath-duty-link.ts';
+  import {resolveStarpathDutyLink,resolveStarpathSeasonLink,starpathDutyHref,type StarpathDutySelection} from '$lib/guide/starpath-duty-link.ts';
   import {resolveStarpathRewardLink,starpathRewardHref,type StarpathRewardSelection} from '$lib/guide/starpath-reward-link.ts';
   import type {GuideRewardOccurrence} from '$lib/guide/reward-relations.ts';
   import {loadPublicStarpathGoals,starpathGoalLabel,starpathGoalHeading,starpathGoalSourceNote,
@@ -173,6 +173,10 @@
       const selected=resolveStarpathDutyLink(window.location.search,catalog);
       if(reward)await displayRewardLink(reward);
       else if(selected)await displayDutyLink(selected);
+      else{
+        const linkedSeason=resolveStarpathSeasonLink(window.location.search,catalog);
+        if(linkedSeason)selectedId=linkedSeason;
+      }
     }
   }
   onMount(()=>{
@@ -185,7 +189,10 @@
       const restored=resolveStarpathDutyLink(window.location.search,catalog);
       if(reward)void displayRewardLink(reward);
       else if(restored)void displayDutyLink(restored);
-      else{highlightedTaskId='';highlightedRewardId='';}
+      else{
+        highlightedTaskId='';highlightedRewardId='';
+        selectedId=resolveStarpathSeasonLink(window.location.search,catalog)??catalog.seasons[0].id;
+      }
     };
     window.addEventListener('popstate',restoreLink);
     void load();
