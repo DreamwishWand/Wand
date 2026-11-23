@@ -96,7 +96,7 @@ export function openPrivateDb01Zip(bytes:Uint8Array):Db01PrivateZipReader{
       if(typeof path!=='string'||!PATH.test(path))
         fail('UNAPPROVED_PATH');
       const info=entries.get(path);
-      if(!info)fail('MISSING_SHARD');
+      if(!info)throw new TypeError('DB01_PRIVATE_ZIP_MISSING_SHARD');
       if(info.uncompressed>MAX_ENTRY)fail('ENTRY_TOO_LARGE');
       const compressed=bytes.subarray(info.begin,info.begin+info.compressed);
       let decoded:Uint8Array<ArrayBuffer>;
