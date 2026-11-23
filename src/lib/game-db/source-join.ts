@@ -13,6 +13,9 @@ import {
 } from '../acquisition/public-default-inventories.ts';
 import type {SharedGameDatabase,SharedDbItem} from './integrated.ts';
 import type {OriginDatabase,ItemOrigin} from '../acquisition/origins.ts';
+import type {
+  PublicOnlineNameCandidateIndex,PublicCampaignNameCandidate
+} from '../acquisition/public-online-name-candidates.ts';
 import {
   hasPinnedStaticContainerEvidence,
   type PinnedStaticContainerContents
@@ -40,6 +43,8 @@ export interface Db00SourceJoinOptions{
   readonly staticContainers?:PinnedStaticContainerContents;
   /** Original default-inventory definitions; not player inventory or grants. */
   readonly defaultInventories?:PinnedDefaultInventorySource;
+  /** DB-02 official-publication names; NOT native Item ID acquisition links. */
+  readonly officialNameCandidates?:PublicOnlineNameCandidateIndex;
   /** Already SHA-validated DB-03 reward index. Does not prove redemption. */
   readonly rewards?:GuideRewardIndex;
   /** Already SHA-pinned DB-03 original Quest objective Item candidates. */
@@ -73,6 +78,10 @@ export interface Db00SourceJoinedItem{
   readonly configuredDefaultInventoryCandidates:readonly ItemOrigin[]|null;
   readonly configuredDefaultInventoryPlayerOwnershipVerified:false;
   readonly configuredDefaultInventoryNewPlayerGrantVerified:false;
+  /** null = name reader not supplied; [] = no unique official English-name candidate.
+   * Does NOT include community Premium Shop price/rotation observations. */
+  readonly officialCampaignNameCandidates:readonly PublicCampaignNameCandidate[]|null;
+  readonly officialCampaignAcquisitionLinkVerified:false;
   /** null means no verified reward source supplied, not "no rewards". */
   readonly starpathRelations:readonly GuideItemRelation[]|null;
   readonly starpathRewardsOnlyConfigured:true;
@@ -123,7 +132,8 @@ export function joinCurrentGameSources(
     db.target.platform==='Steam'&&db.target.gameVersion==='1.26.2'&&
     db.target.buildId===null&&db.target.sourceSha256===CURRENT_SOURCE_SHA,
     'CURRENT_STEAM_ITEMLIST_REQUIRED');
-  const {origins,staticContainers,defaultInventories,rewards,questTargets,nativeScope,nativeScopePins}=options;
+  const {origins,staticContainers,defaultInventories,officialNameCandidates,
+    rewards,questTargets,nativeScope,nativeScopePins}=options;
   if(origins)check(origins.schema==='wand.db02.item-origins@1' &&
     origins.originCoverageComplete===false,'DB02_READER_INVALID');
   if(staticContainers)check(
@@ -151,6 +161,16 @@ export function joinCurrentGameSources(
     defaultInventories.coverage.onlineOwnershipVerified===false &&
     defaultInventories.coverage.privateSaveIncluded===false,
     'DB02_PINNED_DEFAULT_INVENTORY_SOURCE_REQUIRED');
+  if(officialNameCandidates)check(
+    officialNameCandidates.schema==='wand.db02.published-online-name-candidates@1' &&
+    officialNameCandidates.evidence==='name_only_no_grant_or_sale_proof' &&
+    officialNameCandidates.coverage.publishedItemDefinitions===13202 &&
+    officialNameCandidates.coverage.verifiedOnlineAcquisitionLinks===0 &&
+    officialNameCandidates.coverage.verifiedNativeShopOfferIds===0 &&
+    officialNameCandidates.coverage.completeOnlineHistory===false &&
+    typeof officialNameCandidates.getItemCandidates==='function' &&
+    typeof officialNameCandidates.getCampaignRewardResolution==='function',
+    'DB02_NAME_ONLY_SOURCE_REQUIRED');
   if(rewards)check(rewards.contract==='wand.db03.reward-relations@1' &&
     rewards.evidence.platform==='Steam'&&rewards.evidence.gameVersion==='1.26.2'&&
     rewards.evidence.integrity==='pinned_public_sha256'&&
@@ -231,6 +251,23 @@ export function joinCurrentGameSources(
         row.quantity!==null && Number.isSafeInteger(row.quantity) &&
         row.quantity>0),
       'DB02_DEFAULT_INVENTORY_ITEM_OR_STATUS_MISMATCH');
+    const nameCandidates=officialNameCandidates?.getItemCandidates(itemId)
+      .filter((row):row is PublicCampaignNameCandidate=>
+        row.kind==='official_campaign_name_candidate');
+    check(!nameCandidates || Array.isArray(nameCandidates) &&
+      nameCandidates.every(row=>
+        catalog!==null && row.itemId===itemId &&
+        row.sourceName===catalog.names.en &&
+        row.evidence==='exact_published_db00_en_name_only' &&
+        row.gameVersion==='1.26.2' &&
+        row.acquisitionLinkVerified===false &&
+        row.actualRewardGrantedVerified===false &&
+        row.nativeOfferIdVerified===false &&
+        row.currentAvailabilityVerified===false &&
+        row.accountOwnershipVerified===false &&
+        typeof row.officialSourceUrl==='string' &&
+        row.officialSourceUrl.startsWith('https://')),
+      'DB02_OFFICIAL_NAME_CANDIDATE_INVALID');
     const relations=rewards?.getItemRelations(itemId);
     check(!relations||Array.isArray(relations) && relations.every(relation=>
       relation.itemId===itemId && relation.configuredRewardOnly===true &&
@@ -257,6 +294,9 @@ export function joinCurrentGameSources(
         Object.freeze([...defaultEntries]):null,
       configuredDefaultInventoryPlayerOwnershipVerified:false as const,
       configuredDefaultInventoryNewPlayerGrantVerified:false as const,
+      officialCampaignNameCandidates:nameCandidates?
+        Object.freeze([...nameCandidates]):null,
+      officialCampaignAcquisitionLinkVerified:false as const,
       starpathRelations:relations?Object.freeze([...relations]):null,
       starpathRewardsOnlyConfigured:true as const,
       questTargetCandidates:objectives?Object.freeze([...objectives]):null,
