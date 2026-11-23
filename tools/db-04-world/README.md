@@ -1198,3 +1198,23 @@ unverified visual-only candidate assumptions and denies claims of legal
 placement. The Rust/WASM archive loader now imports \`catalog.ts\`
 directly. The old \`catalog.mjs\` has no product logic and exists only
 as a two-line re-export shim for legacy Collection clients/tests.
+
+
+## DB-04 → DB-05 FULL Grid exact-path candidate contract
+
+\`src/lib/world/native-save-grid-path-candidates.ts\` exposes a typed,
+read-only query against a constructor-verified \`WorldReferenceIndex\`.
+For an already-decoded FULL Save Grid, an independently checked version,
+\`GridDefaultLayoutPath\` and \`GridDataPath\` reduce the original
+source reference candidates without assuming a Save numeric Grid ID.
+The API distinguishes absent/partial source files, a path not referenced
+by the specified layout, reused source files and multiple source
+native Grid IDs; candidates always retain original source metadata.
+
+The original game's DiffGrid uses **five native identity fields**,
+including \`DefaultGridHashCode\` and \`DefaultGridDataHashCode\`;
+the present source snapshots lack validated native method-correlated
+hashes. The FULL Grid candidate contract does not estimate or synthesize
+either value and NEVER certifies Save Grid identity, player placement,
+collision or edits. DB-05 can consume this source-only candidate API
+without taking ownership of DB-04 source data.

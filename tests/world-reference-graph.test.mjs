@@ -1,3 +1,5 @@
+import {findOriginalGridCandidatesForSaveFullGrid,
+  DB04_SAVE_FULL_GRID_PATH_CANDIDATES} from '../src/lib/world/native-save-grid-path-candidates.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {WorldReferenceIndex, DB04_REFERENCE_SCHEMA,
@@ -467,4 +469,123 @@ test('original layout-only GridDataPath is not misreported as an indexed source 
   assert.equal(evidence.sourceGridReferences[0].gridRefId,grid);
   assert.equal(evidence.savedGridIdentityVerified,false);
   assert.equal(evidence.sourceCoverageComplete,false);
+});
+
+
+test('DB-04 full Save Grid source path candidates use both literal source paths, not numeric Save grid IDs',()=>{
+  const index=new WorldReferenceIndex(fixture());
+  const found=findOriginalGridCandidatesForSaveFullGrid(index,{
+    declaredVersion:'1.26.2',gridDefaultLayoutPath:layout,gridDataPath:path
+  });
+  assert.equal(found.contract,DB04_SAVE_FULL_GRID_PATH_CANDIDATES);
+  assert.equal(found.status,'one_source_candidate');
+  assert.equal(found.sourceGridReferenceCount,1);
+  assert.deepEqual(found.originalCandidateGrids.map(x=>x.gridRefId),[grid]);
+  assert.equal(found.sourceWorldManifestSha256,'f'.repeat(64));
+  assert.equal(found.originalGridDataFilePresent,true);
+  assert.equal(found.exactSourcePathPairCompared,true);
+  for(const proof of ['sourceCoverageComplete','saveVersionAuthenticated',
+    'numericSavedGridIdUsedAsNativeKey','nativeDiffGridHashCodeVerified',
+    'nativeDiffGridDataHashCodeVerified','savedGridIdentityVerified',
+    'savedObjectPlacementVerified','worldCoordinatesVerified',
+    'gameplayPlacementLegalityVerified','saveWritingAuthorized']){
+    assert.equal(found[proof],false,proof);
+  }
+  assert.throws(()=>{found.originalCandidateGrids[0].gridRefId='forged';},
+    TypeError);
+  assert.throws(()=>{found.originalCandidateGrids.push({});},TypeError);
+});
+
+test('an exact grid data path reused by another layout is not confused with a full Save grid',()=>{
+  const f=fixture();
+  const reused='SceneLayouts/Village04/Reused.json';
+  f.layouts.push({...f.layouts[1],layoutId:reused,nativeDefaultObjectCount:0});
+  f.gridRefs.push({...f.gridRefs[0],
+    layoutId:reused,gridRefId:reused+'#grid=8',nativeGridId:8,
+    originalDefaultObjectCount:0});
+  f.coverage.gridReferencesInSubset=2;
+  const index=new WorldReferenceIndex(f);
+  const first=findOriginalGridCandidatesForSaveFullGrid(index,{
+    declaredVersion:'1.26.2',gridDefaultLayoutPath:layout,gridDataPath:path
+  });
+  const second=findOriginalGridCandidatesForSaveFullGrid(index,{
+    declaredVersion:'1.26.2',gridDefaultLayoutPath:reused,gridDataPath:path
+  });
+  assert.equal(first.status,'one_source_candidate');
+  assert.equal(second.status,'one_source_candidate');
+  assert.equal(first.originalCandidateGrids[0].nativeGridId,7);
+  assert.equal(second.originalCandidateGrids[0].nativeGridId,8);
+  assert.equal(first.savedGridIdentityVerified,false);
+  assert.equal(second.savedGridIdentityVerified,false);
+});
+
+test('same layout + source file may still have multiple native Grid IDs',()=>{
+  const f=fixture();
+  f.gridRefs.push({...f.gridRefs[0],
+    gridRefId:layout+'#grid=9',nativeGridId:9,
+    originalDefaultObjectCount:0});
+  f.coverage.gridReferencesInSubset=2;
+  const result=findOriginalGridCandidatesForSaveFullGrid(
+    new WorldReferenceIndex(f),{
+      declaredVersion:'1.26.2',gridDefaultLayoutPath:layout,gridDataPath:path
+    });
+  assert.equal(result.status,'multiple_source_candidates');
+  assert.equal(result.sourceGridReferenceCount,2);
+  assert.deepEqual(result.originalCandidateGrids.map(g=>g.nativeGridId),
+    [7,9]);
+  assert.equal(result.savedGridIdentityVerified,false);
+});
+
+test('missing source paths, uncollected GridData and version drift fail closed',()=>{
+  const index=new WorldReferenceIndex(fixture());
+  const observation={declaredVersion:'1.26.2',
+    gridDefaultLayoutPath:layout,gridDataPath:path};
+  const result=(changes={})=>findOriginalGridCandidatesForSaveFullGrid(
+    index,{...observation,...changes});
+  assert.equal(result({declaredVersion:'1.26.1'}).status,
+    'source_version_mismatch');
+  assert.equal(result({
+    gridDefaultLayoutPath:'SceneLayouts/Village04/Unknown.json'
+  }).status,'layout_not_in_partial_source');
+  assert.equal(result({gridDataPath:'GridData/Village04/Missing.json'})
+    .status,'griddata_not_in_partial_source');
+  const reusedFile='GridData/Village04/Unused.json';
+  const f=fixture();
+  f.gridData.push({...f.gridData[0],gridDataPath:reusedFile});
+  const notLinked=findOriginalGridCandidatesForSaveFullGrid(
+    new WorldReferenceIndex(f),{
+      ...observation,gridDataPath:reusedFile});
+  assert.equal(notLinked.status,'source_layout_does_not_reference_griddata');
+
+  const absent=fixture();
+  absent.gridData=[];
+  absent.gridRefs[0].gridDataPresent=false;
+  const unresolved=findOriginalGridCandidatesForSaveFullGrid(
+    new WorldReferenceIndex(absent),observation);
+  assert.equal(unresolved.status,
+    'source_layout_reference_missing_griddata_file');
+  assert.equal(unresolved.originalGridDataFilePresent,false);
+  assert.equal(unresolved.originalCandidateGrids.length,1);
+  assert.equal(unresolved.savedGridIdentityVerified,false);
+});
+
+test('full Save source-path candidate API refuses synthetic keys and unknown properties',()=>{
+  const index=new WorldReferenceIndex(fixture());
+  const observation={declaredVersion:'1.26.2',
+    gridDefaultLayoutPath:layout,gridDataPath:path};
+  for(const changes of [
+    {gridDefaultLayoutPath:'7'},
+    {gridDefaultLayoutPath:'SceneLayouts/../Secret.json'},
+    {gridDataPath:'GridData/../Secret.json'},
+    {gridDataPath:'griddata/Village04/Beach.json'},
+    {gridDataPath:'GridData/Village04/Beach.JSON'},
+    {declaredVersion:'v1.26.2'},
+    {declaredVersion:'2026'},
+    {saveNumericGridId:7}
+  ]){
+    assert.throws(()=>findOriginalGridCandidatesForSaveFullGrid(
+      index,{...observation,...changes}),/DB04_SAVE_FULL_GRID_SOURCE_PATHS_INVALID/);
+  }
+  assert.throws(()=>findOriginalGridCandidatesForSaveFullGrid(index,null),
+    /DB04_SAVE_FULL_GRID_SOURCE_PATHS_INVALID/);
 });
