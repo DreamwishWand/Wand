@@ -148,6 +148,7 @@
       edits:GridMixedPlan[];amounts:BatchEdit[];signature:string}
     |null=null;
   let coordinateCopyUrl:string|null=null;
+  let coordinateCopyBlob:Blob|null=null;
   let coordinateCopyName='';
   $: queuedExportVerified=queuedExportMode==='quantity'
     ?result==='changed'&&snapshot?.mode==='batch'&&
@@ -295,18 +296,20 @@
   $: visibleWorldRefs=matchedWorldRefs.slice(0,worldVisibleLimit);
   let snapshot:PreviewSnapshot|null=null;
   let downloadUrl:string|null=null;
+  let downloadBlob:Blob|null=null;
   let downloadName='';
   let exportReady=false;
   const MAX_BYTES=128*1024*1024;
   function discardDownload(){
     if(downloadUrl)URL.revokeObjectURL(downloadUrl);
     downloadUrl=null;
+    downloadBlob=null;
     downloadName='';
     exportReady=false;
   }
   function discardCoordinateCopy(){
     if(coordinateCopyUrl)URL.revokeObjectURL(coordinateCopyUrl);
-    coordinateCopyUrl=null;coordinateCopyName='';
+    coordinateCopyUrl=null;coordinateCopyBlob=null;coordinateCopyName='';
   }
   function invalidateCoordinateEdit(){
     coordinateSnapshot=null;coordinateState='idle';
@@ -626,12 +629,29 @@
     if(queuedExportMode==='quantity')void makeExperimentalCopy();
     else void exportCoordinateCopy();
   }
+  function openExportedCopyForEditing():void{
+    if(developmentMode||processing||!queuedExportVerified||!queuedExportCopyUrl)return;
+    const copy=queuedExportMode==='quantity'
+      ?{blob:downloadBlob,name:downloadName}
+      :{blob:coordinateCopyBlob,name:coordinateCopyName};
+    if(!copy.blob||copy.blob.size<1||copy.blob.size>MAX_BYTES||
+       !copy.name||!/^.+\.(?:profile|dat|bin|json)$/i.test(copy.name))return;
+    if(!window.confirm(
+      '作成したコピーを新しい編集対象として読み込みます。現在の変更予約と出力リンクはクリアされます。元のファイルは変更されません。続けますか？'
+    ))return;
+    // File owns the Blob bytes even after the old object URL is revoked.
+    // The shared session resets drafts, then reopens via Rust/WASM.
+    selectLocalSaveFile(new File([copy.blob],copy.name,{
+      type:'application/octet-stream'
+    }));
+  }
   function copiedName(name:string):string{
     const safe=name.replace(/[\\/\u0000-\u001f]/g,'_');
     const dot=safe.lastIndexOf('.');
-    return dot>0
-      ? safe.slice(0,dot)+'.wand-edited'+safe.slice(dot)
-      : safe+'.wand-edited.profile';
+    const stem=dot>0?safe.slice(0,dot):safe;
+    const extension=dot>0?safe.slice(dot):'.profile';
+    // Re-editing an already edited copy must not repeat the suffix.
+    return (stem.endsWith('.wand-edited')?stem:stem+'.wand-edited')+extension;
   }
 
   function cancel(){
@@ -1172,8 +1192,9 @@
         }
         const payload=r.bytes as Uint8Array;
         try{
-          coordinateCopyUrl=URL.createObjectURL(new Blob(
-            [payload.buffer as ArrayBuffer],{type:'application/octet-stream'}));
+          coordinateCopyBlob=new Blob(
+            [payload.buffer as ArrayBuffer],{type:'application/octet-stream'});
+          coordinateCopyUrl=URL.createObjectURL(coordinateCopyBlob);
           payload.fill(0);
           coordinateCopyName=copiedName(saved.file.name);
           coordinateState='validated';
@@ -1631,9 +1652,9 @@
         }
         const payload=r.bytes as Uint8Array;
         try{
-          downloadUrl=URL.createObjectURL(
-            new Blob([payload.buffer as ArrayBuffer],{type:'application/octet-stream'})
-          );
+          downloadBlob=new Blob(
+            [payload.buffer as ArrayBuffer],{type:'application/octet-stream'});
+          downloadUrl=URL.createObjectURL(downloadBlob);
           payload.fill(0);
           downloadName=copiedName(selected.file.name);
           exportReady=true;
@@ -1732,6 +1753,8 @@
               download={queuedExportMode==='quantity'
                 ?downloadName:coordinateCopyName}
               class="download-link">編集済みコピーをダウンロード</a>
+            <button type="button" class="secondary" disabled={processing}
+              on:click={openExportedCopyForEditing}>このコピーを続けて編集</button>
           {/if}
           {#if result==='error'||coordinateState==='error'}
             <p role="alert">編集を検証できませんでした。変更内容と元データを確認してください。</p>
