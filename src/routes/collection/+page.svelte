@@ -1465,7 +1465,7 @@
             <div class="results-heading">
               <div class="breadcrumbs">
                 <button type="button" on:click={returnToCategory}>{viewAxis==='universe'?copy.universeList:copy.categories}</button>
-                {#if selected||sourceActivityType!==null}<span> / {selectionLabel}</span>{/if}
+                {#if selected||sourceActivityType!==null||sourceNativeSubtype!==null}<span> / {selectionLabel}</span>{/if}
                 {#if viewAxis==='universe'&&sourceUniverseSelection!==null}
                   <span> / {sourceUniverseSelection===COLLECTION_UNIVERSE_UNTAGGED
                     ?(locale==='ja'?'ユニバース未設定':'No source universe tag')
@@ -1547,17 +1547,34 @@
             {/if}
             <div class="facet-grid collection-detail-category-grid"
               aria-label={locale==='ja'?'アイテムの詳細カテゴリー':'Detailed item categories'}>
-              {#each scopedCategoryFacets.filter(facet=>
-                !(sourceActivityTypeCards.length&&sourceActivityLegacyFamilies.has(facet.id))) as facet (facet.id)}
-                <button type="button" class="facet-card" disabled={facet.total===0}
-                  on:click={()=>chooseFacet(facet.id)}>
-                  <span class="facet-flourish" aria-hidden="true">
-                    <WandIcon name={categoryPictogram[facet.id]??'collection'} size={22}/>
-                  </span>
-                  <strong>{categoryLabel(locale,facet.id)}</strong>
-                  <span>{facet.owned.toLocaleString(locale)} / {facet.total.toLocaleString(locale)}</span>
-                </button>
-              {/each}
+              {#if sourceIndex?.nativeSubtypeByItem.size===13202}
+                {#each sourceNativeSubtypeCards as type (type.key)}
+                  <button type="button" class="facet-card collection-native-subtype"
+                    data-native-subtype={type.key}
+                    on:click={()=>chooseNativeSubtype(type.key)}>
+                    <span class="facet-flourish" aria-hidden="true">
+                      <WandIcon name={categoryPictogram[
+                        type.nativeType==='Trimming'?'Wallpaper & Flooring':type.nativeType
+                      ]??'collection'} size={22}/>
+                    </span>
+                    <strong>{nativeSubtypeLabel(locale,type.key,type.nativeName)}</strong>
+                    <span>{type.owned.toLocaleString(locale)} / {type.total.toLocaleString(locale)}</span>
+                  </button>
+                {/each}
+              {:else}
+                {#each scopedCategoryFacets.filter(facet=>
+                  facet.total>0&&!(sourceActivityTypeCards.length&&
+                    sourceActivityLegacyFamilies.has(facet.id))) as facet (facet.id)}
+                  <button type="button" class="facet-card"
+                    on:click={()=>chooseFacet(facet.id)}>
+                    <span class="facet-flourish" aria-hidden="true">
+                      <WandIcon name={categoryPictogram[facet.id]??'collection'} size={22}/>
+                    </span>
+                    <strong>{categoryLabel(locale,facet.id)}</strong>
+                    <span>{facet.owned.toLocaleString(locale)} / {facet.total.toLocaleString(locale)}</span>
+                  </button>
+                {/each}
+              {/if}
               {#each sourceActivityTypeCards as type (type.code)}
                 <button type="button" class="facet-card collection-native-activity"
                   data-source-type={type.code}
