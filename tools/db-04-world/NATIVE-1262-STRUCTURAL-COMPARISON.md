@@ -317,7 +317,7 @@ The same privately pinned original 1.26.1/1.26.2 IL2CPP v31 metadata and executa
 
 | Original GridArea method | Method token | 1.26.1 RVA | 1.26.2 RVA | Instructions | PC-relative-only changes |
 | --- | --- | --- | --- | ---: | ---: |
-| `GridAreaData.GetGridArea` | `0x060030BF` | `0x38FA210` | `0x38F9F10` | 78 | 10 |
+| `GridAreaData.GetGridArea` | `0x0600309F` | `0x38FA210` | `0x38F9F10` | 78 | 10 |
 | `GridArea.MoreRotationGetGridLocalPosition` | `0x0600344B` | `0x3923D80` | `0x3923A80` | 171 | 18 |
 | `GridArea.GetAlignedRotatedCorners` | `0x06003449` | `0x39239A0` | `0x39236A0` | 145 | 16 |
 | `GridArea.Cos` | `0x06003458` | `0x3924B10` | `0x3924810` | 29 | 9 |
