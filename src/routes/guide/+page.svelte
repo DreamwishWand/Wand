@@ -11,52 +11,68 @@
   import {guideTimelineWindow,guideTimelineRows,
     type GuideTimelinePhase
   } from '$lib/guide/event-timeline.ts';
+  import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences.ts';
+  import {guideTimelineCopy,GUIDE_LOCALES} from '$lib/guide/timeline-copy.ts';
 
   let events:GuideCalendarEvent[]=[];
   let loading=true;
   let loadError='';
   let now=Date.now();
   let viewerZone='UTC';
-  let viewerLocale='ja-JP';
-  $: formatLocal=(utc:string)=>viewerEventDateTime(utc,viewerZone,viewerLocale);
+  let language:WandLanguage='ja';
   let weeks:5|9=5;
   let offsetWeeks=0;
   let selectedId:string|null=null;
   let timelineScroller:HTMLDivElement|null=null;
-
-  $: windowRange=guideTimelineWindow(now,weeks,offsetWeeks);
+  $: viewerLocale=GUIDE_LOCALES[language];
+  $: copy=guideTimelineCopy(language);
+  $: formatLocal=(utc:string)=>viewerEventDateTime(utc,viewerZone,viewerLocale);
+  $: windowRange=guideTimelineWindow(now,weeks,offsetWeeks,viewerZone);
   $: visibleRows=guideTimelineRows(events,windowRange);
   $: selected=events.find(event=>event.id===selectedId)??null;
-  $: rangeText=shortDay(windowRange.firstDay)+' – '+shortDay(windowRange.lastDay);
-  const weekdays=['日','月','火','水','木','金','土'];
+  $: rangeText=shortDay(windowRange.firstDay,viewerLocale)+' – '+shortDay(windowRange.lastDay,viewerLocale);
+  $: zoneLabel=new Intl.DateTimeFormat(viewerLocale,{timeZone:viewerZone,timeZoneName:'short'})
+    .formatToParts(new Date(now)).find(p=>p.type==='timeZoneName')?.value??viewerZone;
 
-  function shortDay(day:string):string{
-    const parts=day.split('-');
-    return Number(parts[1])+'/'+Number(parts[2]);
+  function shortDay(day:string,locale=viewerLocale):string{
+    return new Intl.DateTimeFormat(locale,{timeZone:'UTC',month:'short',day:'numeric'})
+      .format(new Date(day+'T12:00:00Z'));
+  }
+  function longDay(day:string):string{
+    return new Intl.DateTimeFormat(viewerLocale,{
+      timeZone:'UTC',year:'numeric',month:'short',day:'numeric'
+    }).format(new Date(day+'T12:00:00Z'));
+  }
+  function weekdayLabel(day:string):string{
+    return new Intl.DateTimeFormat(viewerLocale,{timeZone:'UTC',weekday:'narrow'})
+      .format(new Date(day+'T12:00:00Z'));
+  }
+  function displayCategory(event:GuideCalendarEvent):'starpath'|'floating'|'valley'{
+    return event.kind==='starpath'?'starpath':event.category;
   }
   function eventHref(event:GuideCalendarEvent):string{
     return event.kind==='starpath'
       ?starpathSeasonHref(base,event.sourceSeasonId):`${base}${event.href}`;
   }
   function eventIcon(event:GuideCalendarEvent):string{
-    return event.kind==='starpath'?'star':'world';
+    return event.kind==='starpath'?'star':event.category==='floating'?'world':'plant';
   }
   function phaseName(phase:GuideTimelinePhase):string{
-    return phase==='task'?'タスク期間':phase==='exchange'?'交換期間':'開催日';
+    return phase==='task'?copy.task:phase==='exchange'?copy.exchange:copy.events;
   }
   function stateName(event:GuideCalendarEvent):string{
     switch(eventScheduleState(event,now)){
-      case 'task-window':return 'タスク期間内';
-      case 'exchange-only':return '交換期間内';
-      case 'date-window':return '開催日';
-      case 'upcoming':return '開始前';
-      default:return '終了';
+      case 'task-window':return copy.task;
+      case 'exchange-only':return copy.exchange;
+      case 'date-window':return copy.active;
+      case 'upcoming':return copy.upcoming;
+      default:return copy.ended;
     }
   }
   function eventBoundary(event:GuideCalendarEvent):string{
     if(event.precision==='date-only')
-      return `${event.startDay} ～ ${event.endDayInclusive}（時刻未確認）`;
-    return `${formatLocal(event.startUtc)} ～ ${formatLocal(event.endUtcExclusive)}`;
+      return `${longDay(event.startDay)} – ${longDay(event.endDayInclusive)} (${copy.dateUnknown})`;
+    return `${formatLocal(event.startUtc)} – ${formatLocal(event.endUtcExclusive)}`;
   }
   function showEvent(id:string){selectedId=selectedId===id?null:id;}
   function navigate(direction:-1|1){
@@ -68,23 +84,26 @@
   function changeZoom(value:5|9){
     if(weeks===value)return;
     weeks=value;offsetWeeks=0;selectedId=null;
-    void centreToday();
+    void positionToday();
   }
-  async function centreToday(){
+  async function positionToday(){
     await tick();
     const scroller=timelineScroller;
     const today=scroller?.querySelector('.date-slot.today') as HTMLElement|null;
-    if(!scroller||!today)return;
-    // Use viewport-relative rectangles: offsetLeft depends on layout/offsetParent.
-    // The outer page never scrolls; only the event timeline moves.
-    const scrollerBox=scroller.getBoundingClientRect();
-    const dayBox=today.getBoundingClientRect();
-    scroller.scrollLeft+=dayBox.left+dayBox.width/2-
-      (scrollerBox.left+scrollerBox.width/2);
+    const line=scroller?.querySelector('.today-line') as HTMLElement|null;
+    const sidebar=scroller?.querySelector('.date-label') as HTMLElement|null;
+    if(!scroller||!today||!sidebar)return;
+    const box=scroller.getBoundingClientRect();
+    const side=sidebar.getBoundingClientRect().width;
+    const marker=line?line.getBoundingClientRect().left:
+      today.getBoundingClientRect().left+today.getBoundingClientRect().width/2;
+    // Show a little context before now; reserve most of the view for upcoming.
+    const target=box.left+side+(box.width-side)*0.13;
+    scroller.scrollLeft=Math.max(0,scroller.scrollLeft+marker-target);
   }
   function goToday(){
     offsetWeeks=0;selectedId=null;
-    void centreToday();
+    void positionToday();
   }
   async function load(){
     loading=true;loadError='';
@@ -95,16 +114,16 @@
       loadError=error instanceof Error?error.message:String(error);
     }finally{
       loading=false;
-      if(!loadError)void centreToday();
+      if(!loadError)void positionToday();
     }
   }
   onMount(()=>{
     viewerZone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';
-    viewerLocale=navigator.language||'ja-JP';
+    const unwatch=watchWandLanguage(value=>{language=value;});
     now=Date.now();
     const timer=setInterval(()=>{now=Date.now();},60000);
     void load();
-    return ()=>clearInterval(timer);
+    return ()=>{clearInterval(timer);unwatch();};
   });
 </script>
 
