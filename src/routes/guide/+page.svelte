@@ -206,7 +206,7 @@
         <button class="nav-arrow next" aria-label={copy.next} title={copy.next}
           on:click={()=>navigate(1)}><WandIcon name="chevron" size={17}/></button>
         <button class="today-button" on:click={goToday}>{copy.today}</button>
-        <select class="calendar-year" aria-label={copy.launch}
+        <select class="calendar-year" aria-label={copy.year}
           value={selectedYear} on:change={event=>goYear(Number(event.currentTarget.value))}>
           {#each yearOptions as year (year)}
             <option value={year}>{year}</option>
