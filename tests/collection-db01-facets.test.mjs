@@ -81,18 +81,29 @@ test('DB-01 source native filtering is a narrow projection, not a second Item ma
   assert.equal(byClass.get('Trimming'),365);
   assert.equal(counts.length,50);
   const explicitKeys=COLLECTION_TOP_CATEGORIES.flatMap(group=>group.keys);
-  assert.equal(explicitKeys.length,50);
-  assert.equal(new Set(explicitKeys).size,50);
-  assert.deepEqual(new Set(explicitKeys),new Set(counts.map(row=>row.key)));
+  assert.equal(new Set(explicitKeys).size,explicitKeys.length);
+  assert.ok(explicitKeys.every(key=>index.itemsByNativeSubtype.has(key)));
   const parents=collectionTopCategoryCards(counts.map(row=>({
     key:row.key,total:row.count,owned:0
   })));
-  assert.equal(parents.length,10);
-  assert.equal(parents.reduce((sum,row)=>sum+row.total,0),13202);
+  assert.deepEqual(parents.map(row=>row.id),[
+    'furniture','landscaping','roads-fences','interior','buildings','environment',
+    'clothing','appearance','touch-of-magic','photo-mode','tools','upgrades',
+    'characters','companions','critters','mounts','crafting','meals','ingredients',
+    'foraging','fish','gems','timebending','memories','board-game','snippets',
+    'lorekeeper-tales','quest-puzzles','exhibition'
+  ]);
+  const boundTotal=counts.filter(row=>collectionTopCategory(row.key)!==null)
+    .reduce((sum,row)=>sum+row.count,0);
+  assert.equal(parents.reduce((sum,row)=>sum+row.total,0),boundTotal);
+  assert.ok(boundTotal>0&&boundTotal<13202);
   for(const key of ['Clothing:5','Clothing:16','Clothing:17','Clothing:18'])
     assert.equal(collectionTopCategory(key),'appearance');
-  assert.equal(collectionTopCategory('Furniture:7'),'outdoor');
+  assert.equal(collectionTopCategory('Furniture:7'),'roads-fences');
   assert.equal(collectionTopCategory('Trimming:0'),'interior');
+  for(const key of ['ActivityItem:12','ActivityItem:13','Furniture:5','Furniture:6'])
+    assert.equal(collectionTopCategory(key),null);
+
   for(const group of parents)for(const locale of ['en','ja','fr','it','de','es-ES','zh-CN','pt-BR'])
     assert.ok(collectionTopCategoryLabel(locale,group.id).length>0);
 
