@@ -366,6 +366,15 @@ try{
   const firstCategory=await page.locator('.facet-card').first().boundingBox();
   assert.ok(firstCategory&&firstCategory.y<240,'categories must begin in the first viewport');
   assert.ok(await page.locator('.facet-card').count()>10);
+  await page.locator('.collection-original-category-grid .facet-card').first()
+    .waitFor({timeout:30000});
+  assert.equal(await page.locator('.collection-original-category-grid .facet-card').count(),20,
+    'Collection must expose the 20 source-original menu categories, not inventory classes');
+  assert.match(await page.locator('.collection-original-category-grid .facet-card').first().innerText(),
+    /食材|Ingredients/);
+  assert.match(await page.locator('.collection-original-category-grid .facet-card').filter({
+    hasText:/家具|Furniture/
+  }).first().innerText(),/[0-9][0-9,]* \/ [0-9][0-9,]*/);
   // World is the default; Universe is optional and must not fabricate
   // membership/icon choices before DB-00 publishes reviewed membership.
   assert.equal(await page.getByRole('button',{name:'ワールド表示'}).getAttribute('aria-pressed'),'true');
@@ -660,7 +669,7 @@ try{
   // CollectionArea/Universe membership. Never expose dead-end filters or
   // incorrectly treat source Tag associations as game-screen membership.
   await page.locator('.facet-card').first().waitFor();
-  assert.match(await page.locator('.facet-card').first().innerText(),/家具|Furniture/);
+  assert.match(await page.locator('.facet-card').first().innerText(),/食材|Ingredients/);
   assert.equal(await page.locator('.mode-tabs').count(),0);
   assert.equal(await page.locator('.collection-scope-toolbar').count(),1);
   assert.equal(await page.locator('.collection-scope-scroll button:disabled').count(),6);
