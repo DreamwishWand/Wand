@@ -3,7 +3,7 @@
  * This never contains private objective filters, player progress, UUIDs,
  * or claims about live online availability.
  */
-import {verifyPublicStarpath,STARPATH_SOURCE_SHA} from './public-starpath.mjs';
+import {verifyPublicStarpath,STARPATH_SOURCE_SHA} from './public-starpath.ts';
 
 export const STARPATH_GOALS_SCHEMA='wand.db03.starpath-goals@1';
 export const STARPATH_GOALS_SHA='3d6a81699f2d3e45e2604e8248ac4a202e49a630ac0269da90fef510cccdd0a3';
