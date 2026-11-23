@@ -14,8 +14,16 @@ import type {
   SourceKind,AccessTier
 } from './origins.ts';
 import {ORIGIN_SCHEMA} from './origins.ts';
+import {
+  hasPinnedNativeRecipeEvidence,type NativeRecipeIndex
+} from './public-native-recipes.ts';
+import {
+  hasPinnedNativeActivityEvidence,type NativeActivityResultIndex
+} from './public-native-activities.ts';
 
 export const DB02_ITEM_SOURCE_BROWSER_SCHEMA='wand.db02.item-source-browser@1' as const;
+export const DB02_NATIVE_EXPANDED_SOURCE_BROWSER_SCHEMA=
+  'wand.db02.native-expanded-item-source-browser@1' as const;
 const ID=/^[1-9][0-9]{0,15}$/;
 const SAFE_KEY=/^[a-zA-Z0-9][a-zA-Z0-9:._\/-]{0,127}$/;
 const KINDS:readonly OriginKind[]=Object.freeze([
@@ -89,6 +97,21 @@ export interface ItemSourceBrowser {
   getKindItemIds(kind:OriginKind,status?:RouteStatus):readonly string[];
 }
 
+export interface ExpandedNativeItemSourceBrowser extends ItemSourceBrowser {
+  readonly nativeExpansionSchema:typeof DB02_NATIVE_EXPANDED_SOURCE_BROWSER_SCHEMA;
+  readonly gameVersion:'1.26.2';
+  readonly coverage:Readonly<{
+    baselineLedgerSourceRoutes:1255;
+    originalRecipeDefinitionRoutes:1943;
+    originalActivityResultRoutes:763;
+    combinedSourceRoutes:3961;
+    distinctLinkedItemIds:number;
+    playerRecipeUnlockVerified:false;
+    actualLootOrHarvestVerified:false;
+    currentAvailabilityVerified:false;
+    originalSourceCoverageComplete:false;
+  }>;
+}
 function assert(ok:unknown,why:string):asserts ok{
   if(!ok)throw new TypeError('DB02_ITEM_SOURCE_BROWSER_'+why);
 }
@@ -158,35 +181,26 @@ function checkPage(page:Readonly<{offset?:number;limit?:number}>):{
 }
 
 /**
- * Build once from the already authenticated/scope-checked OriginDatabase
- * supplied by DB-02. We reuse each original ItemOrigin by reference; do not
- * reconstruct a route or turn a candidate into a confirmed acquisition.
+ * Reused for the original 1,255-relationship index and its opt-in native
+ * 3,961-relationship expansion. Query predicates and pagination semantics
+ * cannot drift between the two views.
  */
-export function indexItemSourceBrowser(ledger:OriginDatabase):ItemSourceBrowser{
-  assert(ledger?.schema===ORIGIN_SCHEMA&&
-    ledger.originCoverageComplete===false&&
-    typeof ledger.listLinkedItemIds==='function'&&
-    typeof ledger.getItem==='function'&&
-    typeof ledger.getCoverage==='function','ORIGIN_LEDGER_REQUIRED');
-  const ids=ledger.listLinkedItemIds();
-  const coverage=ledger.getCoverage();
-  assert(Array.isArray(ids)&&ids.length===coverage.linkedItemIds,
-    'ORIGIN_ID_CENSUS');
+function indexSourceRows(
+  input:readonly Readonly<{itemId:string;origins:readonly ItemOrigin[]}>[],
+  expectedRelationCount:number
+):ItemSourceBrowser{
   const byId=new Map<string,ItemSourceBrowserRow>();
   const perKind=new Map<OriginKind,{ids:Set<string>;count:number;confirmed:number;candidate:number}>();
   for(const kind of KINDS)perKind.set(kind,{
     ids:new Set(),count:0,confirmed:0,candidate:0
   });
   let relationCount=0,last=0;
-  for(const raw of ids){
-    const id=normalizeId(raw);
+  for(const row of input){
+    const id=normalizeId(row.itemId);
     assert(!byId.has(id)&&Number(id)>last,'SORTED_UNIQUE_IDS');
+    assert(Array.isArray(row.origins)&&row.origins.length>0,'ORIGIN_LEDGER_ROW');
     last=Number(id);
-    const source=ledger.getItem(id);
-    assert(source.itemId===id&&source.originCoverageComplete===false&&
-      Array.isArray(source.origins)&&source.origins.length>0,
-      'ORIGIN_LEDGER_ROW');
-    for(const relation of source.origins){
+    for(const relation of row.origins){
       assert(relation.itemId===id&&relation.availability==='not_live_verified'&&
         STATUSES.includes(relation.routeStatus)&&KINDS.includes(relation.kind),
         'ORIGIN_LEDGER_RELATION');
@@ -195,10 +209,10 @@ export function indexItemSourceBrowser(ledger:OriginDatabase):ItemSourceBrowser{
       if(relation.routeStatus==='confirmed_source_link')kind.confirmed++;
       else kind.candidate++;
     }
-    relationCount+=source.origins.length;
-    byId.set(id,makeRow(id,source.origins));
+    relationCount+=row.origins.length;
+    byId.set(id,makeRow(id,row.origins));
   }
-  assert(relationCount===coverage.linkedRoutes,'ORIGIN_ROUTE_CENSUS');
+  assert(relationCount===expectedRelationCount,'ORIGIN_ROUTE_CENSUS');
   const counts=Object.freeze(KINDS.map(kind=>{
     const row=perKind.get(kind)!;
     return Object.freeze({
@@ -208,7 +222,7 @@ export function indexItemSourceBrowser(ledger:OriginDatabase):ItemSourceBrowser{
       staticCandidateRelations:row.candidate
     });
   }));
-  const knownLinkedItemIds=Object.freeze([...ids]);
+  const knownLinkedItemIds=Object.freeze(input.map(row=>row.itemId));
   const itemKindCache=new Map<string,readonly string[]>();
   return Object.freeze({
     schema:DB02_ITEM_SOURCE_BROWSER_SCHEMA,
@@ -257,5 +271,103 @@ export function indexItemSourceBrowser(ledger:OriginDatabase):ItemSourceBrowser{
         sourceEvidenceOnly:true as const
       });
     }
+  });
+}
+function validateLedger(ledger:OriginDatabase){
+  assert(ledger?.schema===ORIGIN_SCHEMA&&
+    ledger.originCoverageComplete===false&&
+    typeof ledger.listLinkedItemIds==='function'&&
+    typeof ledger.getItem==='function'&&
+    typeof ledger.getCoverage==='function','ORIGIN_LEDGER_REQUIRED');
+  const ids=ledger.listLinkedItemIds();
+  const coverage=ledger.getCoverage();
+  assert(Array.isArray(ids)&&ids.length===coverage.linkedItemIds,
+    'ORIGIN_ID_CENSUS');
+  const rows=ids.map(id=>{
+    const row=ledger.getItem(id);
+    assert(row.itemId===id&&row.originCoverageComplete===false,
+      'ORIGIN_LEDGER_ROW');
+    return {itemId:id,origins:row.origins};
+  });
+  return {rows,coverage};
+}
+
+/** Original source ledger only: never silently imports optional native routes. */
+export function indexItemSourceBrowser(ledger:OriginDatabase):ItemSourceBrowser{
+  const {rows,coverage}=validateLedger(ledger);
+  return indexSourceRows(rows,coverage.linkedRoutes);
+}
+
+/**
+ * Extend the existing source browse using ORIGINAL recipe-result and
+ * activity-result ItemOrigin relations only, never LootTable or Stall
+ * candidates. Both inputs must have passed public SHA/original-file checks.
+ * This is a separate immutable view, leaving DB-00 and the original index
+ * unchanged. A configured recipe result is not a verified player unlock.
+ */
+export function indexExpandedNativeItemSourceBrowser(
+  ledger:OriginDatabase,
+  recipes:NativeRecipeIndex,
+  activities:NativeActivityResultIndex
+):ExpandedNativeItemSourceBrowser{
+  const {rows:baseRows,coverage:baseCoverage}=validateLedger(ledger);
+  assert(baseCoverage.linkedRoutes===1255&&
+    hasPinnedNativeRecipeEvidence(recipes)&&
+    recipes.coverage.recipeDefinitions===1943&&
+    recipes.origins.length===1943&&
+    hasPinnedNativeActivityEvidence(activities)&&
+    activities.coverage.nativeResultPaths===763&&
+    activities.origins.length===763,'PINNED_NATIVE_SOURCE_REQUIRED');
+
+  const rows=new Map<string,ItemOrigin[]>();
+  const seenOrigins=new Set<string>();
+  const append=(row:ItemOrigin)=>{
+    const id=normalizeId(row.itemId);
+    assert(typeof row.originId==='string'&&!seenOrigins.has(row.originId),
+      'DUPLICATE_SOURCE_ORIGIN');
+    seenOrigins.add(row.originId);
+    const previous=rows.get(id);
+    if(previous)previous.push(row);else rows.set(id,[row]);
+  };
+  for(const item of baseRows)for(const origin of item.origins)append(origin);
+  for(const origin of recipes.origins){
+    assert((origin.kind==='cooking'||origin.kind==='crafting')&&
+      origin.routeStatus==='confirmed_source_link'&&
+      origin.source.kind==='verified_game_native'&&
+      origin.source.gameVersion==='1.26.2'&&
+      origin.originId.startsWith('native:recipe:'),
+      'NATIVE_RECIPE_SOURCE_SEMANTICS');
+    append(origin);
+  }
+  for(const origin of activities.origins){
+    assert((origin.kind==='fishing'||origin.kind==='mining'||
+      origin.kind==='timebending'||origin.kind==='farming')&&
+      origin.routeStatus==='confirmed_source_link'&&
+      origin.source.kind==='verified_game_native'&&
+      origin.source.gameVersion==='1.26.2'&&
+      origin.originId.startsWith('native:path:'),
+      'NATIVE_ACTIVITY_SOURCE_SEMANTICS');
+    append(origin);
+  }
+  assert(seenOrigins.size===3961,'EXPANDED_SOURCE_CENSUS');
+  const sorted=Object.freeze([...rows.entries()].sort(
+    ([a],[b])=>Number(a)-Number(b)
+  ).map(([itemId,origins])=>({itemId,origins})));
+  const browser=indexSourceRows(sorted,3961);
+  return Object.freeze({
+    ...browser,
+    nativeExpansionSchema:DB02_NATIVE_EXPANDED_SOURCE_BROWSER_SCHEMA,
+    gameVersion:'1.26.2' as const,
+    coverage:Object.freeze({
+      baselineLedgerSourceRoutes:1255 as const,
+      originalRecipeDefinitionRoutes:1943 as const,
+      originalActivityResultRoutes:763 as const,
+      combinedSourceRoutes:3961 as const,
+      distinctLinkedItemIds:browser.knownLinkedItemIds.length,
+      playerRecipeUnlockVerified:false as const,
+      actualLootOrHarvestVerified:false as const,
+      currentAvailabilityVerified:false as const,
+      originalSourceCoverageComplete:false as const
+    })
   });
 }
