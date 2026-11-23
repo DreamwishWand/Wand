@@ -2,6 +2,7 @@
   import { onMount, tick } from 'svelte';
   import { base } from '$app/paths';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
+  import ItemMasterDetails from '$lib/collection/ItemMasterDetails.svelte';
   import AcquisitionEvidence from '$lib/collection/AcquisitionEvidence.svelte';
   import RelatedQuests from '$lib/collection/RelatedQuests.svelte';
   import WandIcon from '$lib/ui/WandIcon.svelte';
@@ -964,6 +965,11 @@
             <div class="inspector-art"><ItemArtwork itemId={selectedItem.itemId} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large /></div>
             <h2>{selectedItem.label}</h2>
             <p class="inspector-meta">{categoryLabel(locale,selectedItem.family)}</p>
+            {#if runtime?.metadata.snapshot==='steam-1.26.2-native-itemlist-v1' && !runtime.isOwnerLocal}
+              {#key selectedItem.itemId}
+                <ItemMasterDetails itemId={selectedItem.itemId} {locale}/>
+              {/key}
+            {/if}
             {#if selectedScopeLabels.worlds.length || selectedScopeLabels.universes.length}
               <details class="inspector-details">
                 <summary>{copy.details}</summary>
