@@ -3,6 +3,7 @@
   import {localSaveSession} from '$lib/ui/local-save-session';
   import {autoAppend} from '$lib/ui/auto-append';
   import NativeGraphExplorer from '$lib/world/NativeGraphExplorer.svelte';
+  import MediaMapGridOverlay from '$lib/world/MediaMapGridOverlay.svelte';
   import NativeTerrainGridOverview from '$lib/world/NativeTerrainGridOverview.svelte';
   import NativeTerrainFloorMatchPanel from '$lib/world/NativeTerrainFloorMatchPanel.svelte';
   import SavedGridSourceCandidates from '$lib/world/SavedGridSourceCandidates.svelte';
@@ -120,6 +121,7 @@
   let terrainRasterEnvelope:TerrainRasterEnvelope|null=null;
   let terrainRasterRequestId=-1;
   let terrainRasterLoading=false;
+  let mediaMapActive=false;
   let terrainRasterStatus='';
   let regionAtlas:SourceRegionAtlasPage|null=null;
   let regionAtlasRequestId=-1;
@@ -1423,7 +1425,15 @@
           ワールド座標への変換は行いません。</p>
       {/if}
       {#if selectedGrid}
-        {#if activeTerrainRaster}
+        <MediaMapGridOverlay
+          selection={selectedLayout&&selectedGrid.sizeX!==null&&selectedGrid.sizeY!==null
+            ?{platform,gameVersion:version,regionKey:selectedRegion,viewKey:selectedViewKey,
+              layoutId:selectedLayout.layoutId,nativeGridId:selectedGrid.gridIdNative,
+              gridDataPath:selectedGrid.gridDataPath,sizeX:selectedGrid.sizeX,sizeY:selectedGrid.sizeY}:null}
+          raster={activeTerrainRaster} candidates={floorWindowResult}
+          bind:active={mediaMapActive} canNavigate={canNavigateTerrainRaster}
+          onNavigate={jumpToTerrainRasterCell} onInspect={inspectFloorLayerAt}/>
+        {#if activeTerrainRaster&&!mediaMapActive}
           <NativeTerrainGridOverview raster={activeTerrainRaster}
             canNavigate={canNavigateTerrainRaster}
             onNavigate={jumpToTerrainRasterCell}/>
@@ -1445,7 +1455,7 @@
           onCompare={compareSelectedSaveToGrid}/>
         <NativeTerrainFloorMatchPanel
           matches={floorItemMatches} selected={selectedFloorItem}
-          result={floorMatchResult} windowResult={floorWindowResult}
+          result={floorMatchResult} windowResult={floorWindowResult} externalMap={mediaMapActive}
           orientationCode={floorOrientationCode}
           onOrientationChange={changeFloorOrientation}
           onInspect={inspectFloorLayerAt}

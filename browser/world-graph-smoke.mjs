@@ -809,6 +809,35 @@ try{
     'DB04_INSPECT_FLOOR_320PX_OVERFLOW');
   await page.setViewportSize({width:1280,height:800});
 
+  // Original-size synthetic WebP plus explicit source-cell/image registration.
+  const webpData=await page.evaluate(()=>{
+    const canvas=document.createElement('canvas');canvas.width=96;canvas.height=80;
+    const ctx=canvas.getContext('2d');ctx.fillStyle='#598ab1';ctx.fillRect(0,0,96,80);
+    return canvas.toDataURL('image/webp');
+  });
+  assert.match(webpData,/^data:image\/webp;base64,/);
+  const mapBytes=Buffer.from(webpData.split(',')[1],'base64');
+  const mapCalibration={schema:'wand.db04.media-map-calibration@1',platform:'Steam',
+    gameVersion:'1.26.2',regionKey:'Village04',
+    image:{filename:'synthetic-map.webp',width:96,height:80,
+      sha256:createHash('sha256').update(mapBytes).digest('hex')},
+    grids:[{layoutId:LAYOUT,nativeGridId:1,gridDataPath:'GridData/Village04/Beach.json',
+      sizeX:16,sizeY:16,gridToImage:[3,0,0,-3,10,60]}]};
+  const mapPanel=terrainViewer.locator('.media-map-overlay');
+  await mapPanel.getByLabel('MEDIAマップと座標対応JSON').setInputFiles([
+    {name:'synthetic-map.webp',mimeType:'image/webp',buffer:mapBytes},
+    {name:'synthetic-map.json',mimeType:'application/json',
+      buffer:Buffer.from(JSON.stringify(mapCalibration))}
+  ]);
+  await mapPanel.locator('svg .cell-mask').waitFor({timeout:20000});
+  assert.equal(await mapPanel.locator('svg .cell-mask').getAttribute('transform'),
+    'matrix(3 0 0 -3 10 60)');
+  assert.match(await mapPanel.innerText(),/家具形状と床属性の一致候補/);
+  await mapPanel.getByLabel('マス表示').uncheck();
+  await mapPanel.locator('svg .cell-mask').waitFor({state:'detached'});
+  await mapPanel.getByRole('button',{name:'解除'}).click();
+  await mapPanel.locator('svg').waitFor({state:'detached'});
+
   // Source/GridData path match with a generated local Save remains a
   // SEPARATE numeric plot; it is never painted as original terrain occupancy.
   const syntheticSave={GameInfo:{Version:1262},Player:{},World:{GridCollection:{Grids:{

@@ -10,6 +10,7 @@
   export let result:NativeFloorMatchResult|null=null;
   export let windowResult:NativeFloorWindowResult|null=null;
   export let orientationCode=8;
+  export let externalMap=false;
   export let onOrientationChange:(orientation:number)=>void;
   export let onInspect:(x:number,y:number)=>void;
   export let inspection:SourceLayerInspection|null=null;
@@ -195,6 +196,7 @@
         </div>
       </div>
     {/if}
+    {#if !externalMap}
     <div class="map-mode" role="group" aria-label="地形図の表示内容">
       <button type="button" class:chosen={mapMode==='windows'}
         on:click={()=>mapMode='windows'}>矩形全体の条件</button>
@@ -241,6 +243,15 @@
       </div>
       <p class="legend"><span class="yes"></span>床マスクが一致
         <span class="no"></span>一致しない</p>
+    {/if}
+    {:else}
+      {#if inspecting}
+        <p class="hint" role="status">原本の初期配置レイヤーを確認しています…</p>
+      {:else if inspection}
+        <NativeSourceLayerInspection {inspection}/>
+      {:else if inspectionError}
+        <p class="hint" role="alert">{inspectionError}</p>
+      {/if}
     {/if}
     {#if windowResult?.status==='source_rectangle_floor_windows_only'}
       <details class="area-breakdown">
