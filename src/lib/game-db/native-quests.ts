@@ -197,12 +197,14 @@ export function createDb00QuestReader(
         });
       })
     );
-    const rewardItemCandidates=Object.freeze([
+    const rewardItemIds=new Set([
       ...(originalRewards?.currencies??[]).map(x=>x.itemId),
       ...(originalRewards?.lootCandidates??[]).map(x=>x.itemId)
-    ].flatMap(id=>rewards.getItemCandidates(id).filter(
-      relation=>relation.questId===questId
-    )).map(ref=>{
+    ]);
+    const rewardItemCandidates=Object.freeze([...rewardItemIds].flatMap(id=>
+      rewards.getItemCandidates(id).filter(
+        relation=>relation.questId===questId
+      )).map(ref=>{
       const item=joined.getItem(ref.itemId);
       assert(ref.questId===questId && item.itemId===ref.itemId &&
         ref.configuredOnly===true && ref.guaranteedGrant===false &&
