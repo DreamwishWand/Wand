@@ -30,6 +30,7 @@
     'Photo Mode':'camera',Tools:'hammer',Upgrades:'hammer',Characters:'character',
     Companions:'butterfly',Critters:'butterfly',Mounts:'world',
     Crafting:'hammer',Meals:'cooking',Ingredients:'plant',Foraging:'plant',
+    'Photo Gallery':'camera','Adventure Companions':'butterfly',
     Fish:'fish',Gems:'gem',Timebending:'sparkles',Memories:'book',
     'Board Game':'puzzle',Snippets:'puzzle','Lorekeeper Tales':'book',
     'Quest Puzzles':'puzzle',Exhibition:'gallery','Source Activity Items':'hammer',
