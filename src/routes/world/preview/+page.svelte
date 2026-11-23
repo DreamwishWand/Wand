@@ -2,6 +2,7 @@
   import { onDestroy,tick } from 'svelte';
   import {autoAppend} from '$lib/ui/auto-append';
   import NativeGraphExplorer from '$lib/world/NativeGraphExplorer.svelte';
+  import NativeTerrainGridOverview from '$lib/world/NativeTerrainGridOverview.svelte';
   import type {OriginalItemAnchorFindResult, GlobalOriginalItemAnchorResult}
     from '$lib/world/native-item-anchor-finder.ts';
   import type {OriginalGridAreaEvidence}
@@ -68,6 +69,17 @@
     hasNextPage?: boolean; nextOffset?: number | null; pageOffset?: number;
     gridDataPath?: string;
   };
+  type TerrainRaster = {
+    status:'source_corroborated_grid_local_raster';
+    sizeX:number;sizeY:number;totalCells:number;
+    nativeFloorValues:Uint32Array;
+    maskCounts:Array<{nativeFloorValue:number;cellCount:number}>;
+    worldCoordinatesVerified:false;placementLegalityVerified:false;
+  };
+  type TerrainRasterEnvelope = {
+    viewKey:string;gridIdNative:number;gridDataPath:string;
+    raster:TerrainRaster;
+  };
   type ViewResult = {
     page: PageResult; markers: Array<{x:number;y:number;count:number}>;
     terrainStatus: string | null; terrainRows?: number[][] | null;
@@ -94,6 +106,10 @@
   let displayedAnchors: Anchor[] = [];
   let viewing = false;
   let viewport: ViewResult | null = null;
+  let terrainRasterEnvelope:TerrainRasterEnvelope|null=null;
+  let terrainRasterRequestId=-1;
+  let terrainRasterLoading=false;
+  let terrainRasterStatus='';
   let selectedCell: {x:number;y:number} | null = null;
   let showSourceDefaultLayerOverlay=false;
   let selectedCellLayers:OriginalDefaultGridLayersCell|null=null;
@@ -134,6 +150,15 @@
   $: selectedLayout = layouts.find(a => a.viewKey === selectedViewKey);
   $: gridOptions = selectedLayout?.grids ?? [];
   $: selectedGrid = gridOptions.find(a => String(a.gridIdNative) === selectedGridId);
+  $: activeTerrainRaster=terrainRasterEnvelope?.viewKey===selectedViewKey&&
+    terrainRasterEnvelope?.gridIdNative===selectedGrid?.gridIdNative&&
+    terrainRasterEnvelope?.gridDataPath===selectedGrid?.gridDataPath
+    ?terrainRasterEnvelope.raster:null;
+  $: canNavigateTerrainRaster=activeTerrainRaster!==null&&
+    selectedGrid?.tessellationFactor===1&&
+    selectedGrid?.anchorDomainStatus==='raw_grid_dimensions_only'&&
+    selectedGrid?.anchorSizeX===activeTerrainRaster.sizeX&&
+    selectedGrid?.anchorSizeY===activeTerrainRaster.sizeY;
   $: visibleSourceDefaultBounds = clippedDefaultSourceBounds(
     itemAreaLink,viewport?.page??null,selectedLayout?.layoutId,selectedGrid);
   $: visibleCandidateBounds=clippedCandidateSourceBounds(
@@ -328,6 +353,10 @@
   }
   function stop() {
     requestId++;
+    terrainRasterRequestId=-1;
+    terrainRasterEnvelope=null;
+    terrainRasterLoading=false;
+    terrainRasterStatus='';
     worker?.terminate();
     worker = null;
     loading = false;
@@ -450,6 +479,25 @@
   }
   onDestroy(stop);
 
+  function requestTerrainRaster(){
+    terrainRasterEnvelope=null;
+    terrainRasterStatus='';
+    terrainRasterLoading=false;
+    const selection=layouts.find(row=>row.viewKey===selectedViewKey);
+    const grid=selection?.grids.find(row=>String(row.gridIdNative)===selectedGridId);
+    if(!worker||!selection||!grid||!grid.knownGridData)return;
+    terrainRasterLoading=true;
+    terrainRasterRequestId=++requestId;
+    worker.postMessage({command:'terrain-raster',requestId:terrainRasterRequestId,
+      viewKey:selection.viewKey,gridIdNative:grid.gridIdNative});
+  }
+  function jumpToTerrainRasterCell(cx:number,cy:number){
+    if(!canNavigateTerrainRaster||!activeTerrainRaster)return;
+    x=Math.max(0,Math.min(cx-Math.floor(width/2),activeTerrainRaster.sizeX-1));
+    y=Math.max(0,Math.min(cy-Math.floor(height/2),activeTerrainRaster.sizeY-1));
+    requestWindow();
+    selectedCell={x:cx,y:cy};
+  }
   function requestWindow(reset = true,preserveSelectedCell = false) {
     // Resolve against current selections synchronously: Svelte's reactive
     // derived variables may not update until after an event handler returns.
@@ -523,6 +571,7 @@
     resetAnchorFind();
     x=0;y=0;width=16;height=16;
     viewport=null;
+    requestTerrainRaster();
     requestWindow();
     await tick();
     terrainPanel?.scrollIntoView({behavior:'smooth',block:'start'});
@@ -539,6 +588,7 @@
     selectedGridId = grids.length ? String(grids[0].gridIdNative) : '';
     x = 0; y = 0; width = 16; height = 16;
     viewport = null;
+    requestTerrainRaster();
     requestWindow();
   }
   function changeGrid() {
@@ -547,6 +597,7 @@
     itemGridArea=null;
     x = 0; y = 0; width = 16; height = 16;
     viewport = null;
+    requestTerrainRaster();
     requestWindow();
   }
   function appendNextPage() {
@@ -585,8 +636,36 @@
       { type:'module' });
     worker = owned;
     owned.onmessage = (message:MessageEvent) => {
-      if (owned !== worker || message.data?.requestId !== requestId) return;
+      if (owned !== worker) return;
       const result = message.data;
+      if (result?.kind==='terrain-raster'||
+          (result?.kind==='error'&&result?.requestId===terrainRasterRequestId)) {
+        if(result?.requestId!==terrainRasterRequestId)return;
+        terrainRasterLoading=false;
+        if(result.kind==='error'){
+          terrainRasterEnvelope=null;
+          terrainRasterStatus=String(result.message??'原本地形の取得に失敗しました。');
+          return;
+        }
+        const selected=layouts.find(row=>row.viewKey===selectedViewKey);
+        const grid=selected?.grids.find(row=>String(row.gridIdNative)===selectedGridId);
+        if(!selected||!grid||result.viewKey!==selected.viewKey||
+          result.gridIdNative!==grid.gridIdNative||
+          result.gridDataPath!==grid.gridDataPath)return;
+        const raster=result.result as TerrainRaster|{status:string};
+        if(raster?.status==='source_corroborated_grid_local_raster'&&
+           (raster as TerrainRaster).nativeFloorValues instanceof Uint32Array) {
+          terrainRasterEnvelope={viewKey:selected.viewKey,
+            gridIdNative:grid.gridIdNative,gridDataPath:grid.gridDataPath,
+            raster:raster as TerrainRaster};
+          terrainRasterStatus='';
+        }else{
+          terrainRasterEnvelope=null;
+          terrainRasterStatus=String(raster?.status??'原本地形を表示できません。');
+        }
+        return;
+      }
+      if (result?.requestId !== requestId) return;
       if (result.kind === 'error') {
         errorMessage = String(result.message || 'Worldデータの読込に失敗しました。');
         loading = false;
@@ -614,7 +693,10 @@
         selectedGridId = layouts[0]?.grids[0] ?
           String(layouts[0].grids[0].gridIdNative) : '';
         infoMessage = 'ローカルZIP内のマニフェスト整合性を確認しました。原本の真正性までは証明していません。';
-        if (selectedGridId) requestWindow();
+        if (selectedGridId){
+          requestTerrainRaster();
+          requestWindow();
+        }
         return;
       }
       if(result.kind==='candidate-probe'){
@@ -738,6 +820,7 @@
           x=Math.max(0,Math.min(grid.anchorSizeX-1,cx-Math.floor(width/2)));
           y=Math.max(0,Math.min(grid.anchorSizeY-1,cy-Math.floor(height/2)));
           viewport=null;
+          requestTerrainRaster();
           globalFindMessage='原本初期配置 '+String(match.matchedIndex!+1)+
             ' / '+String(match.matchingOriginalDefaultObjectCount)+
             '件 · GridObject '+String(match.gridObjectIdNative)+
@@ -990,6 +1073,15 @@
           ワールド座標への変換は行いません。</p>
       {/if}
       {#if selectedGrid}
+        {#if activeTerrainRaster}
+          <NativeTerrainGridOverview raster={activeTerrainRaster}
+            canNavigate={canNavigateTerrainRaster}
+            onNavigate={jumpToTerrainRasterCell}/>
+        {:else if terrainRasterLoading}
+          <p class="note" role="status">原本Grid全体の地形を読み込んでいます…</p>
+        {:else if terrainRasterStatus}
+          <p class="note">原本地形全体図：{terrainRasterStatus}</p>
+        {/if}
         <p class="note">選択Grid内の初期配置記録：{selectedGrid.defaultObjectCount ?? '不明'}件。
           地形データ：{selectedGrid.knownGridData ? '原本レコードあり' : '参照先未収録'}。
           地形GridDataの寸法：{selectedGrid.sizeX ?? '?'} × {selectedGrid.sizeY ?? '?'}。
@@ -1338,7 +1430,7 @@
   .world-preview { width:min(1180px,100%); margin:0 auto; padding:48px clamp(18px,4vw,56px) 76px; }
   header h1 {font-size:clamp(30px,5vw,50px);letter-spacing:-.05em;margin:10px 0;}
   header p:not(.eyebrow) {max-width:820px;color:#aea0c0;line-height:1.8;font-size:14px;}
-  .world-panel {margin:20px 0;padding:22px;background:#1c1728;border:1px solid #ffffff22;border-radius:15px;}
+  .world-panel {margin:20px 0;padding:22px;background:#1c1728;border:1px solid #ffffff22;border-radius:15px;min-width:0;max-width:100%;overflow-x:clip;}
   .world-toolbar,.selector-row,.coord-row,.anchor-find-row,.view-head,.paging {display:flex;align-items:end;gap:14px;flex-wrap:wrap;}
   .anchor-find-row {margin-top:14px;}
   .anchor-find-row label {flex:1 1 220px;min-width:0;}
@@ -1363,7 +1455,7 @@
   .view-head {align-items:center;justify-content:space-between;}
   .view-head h2 {font-size:17px;margin:0;}
   .view-head span {font-size:12px;color:#a99bb8;}
-  .map-scroll {overflow:auto;max-width:100%;margin-top:20px;padding-bottom:10px;}
+  .map-scroll {overflow:auto;width:100%;min-width:0;max-width:100%;margin-top:20px;padding-bottom:10px;}
   .grid-source-bounds-canvas {position:relative;width:max-content;}
   .grid-source-default-outline {position:absolute;border:2px dashed #d6a55f;
     border-radius:3px;pointer-events:none;box-sizing:border-box;}
