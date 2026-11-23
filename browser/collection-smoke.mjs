@@ -676,6 +676,22 @@ try{
     throw error;
   }
   await page.locator('.item-card').first().waitFor();
+  // DB-01 source-only filters must affect the complete Rust Collection
+  // category, not only the first visible page; Tags do not enable unverified
+  // game-world scope or change the user's saved collection state.
+  await page.getByRole('button',{name:/フィルター/}).click();
+  const nativeTags=page.getByRole('group',{name:'ゲーム原本のタグ'});
+  await nativeTags.waitFor({timeout:30000});
+  const colorTags=nativeTags.locator('fieldset').filter({has:nativeTags.locator('legend').filter({hasText:/^色$/})});
+  await colorTags.getByRole('button',{name:'白',exact:true}).click();
+  assert.match(await page.locator('.result-count').innerText(),/件/);
+  await search.fill('40005160');
+  await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
+  assert.match(await page.locator('.item-card').innerText(),/ガラスの靴/);
+  await search.fill('');
+  await colorTags.getByRole('button',{name:'すべて'}).click();
+  await page.getByRole('button',{name:/フィルター/}).click();
+  await page.locator('.item-card').first().waitFor();
   const before=await page.locator('.item-card').count();
   assert.equal(before,72);
   const firstCardText=await page.locator('.item-card-body').first().innerText();
