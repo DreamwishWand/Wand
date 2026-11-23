@@ -466,6 +466,38 @@ try{
   assert.match(await gridareaPanel.innerText(),/68 × 2 · 0 × 1 · 76 × 1/);
   assert.match(await gridareaPanel.innerText(),/占有セル数ではありません/);
   assert.match(await gridareaPanel.innerText(),/全16方向の原本ローカル値を参照できます/);
+  // A source-default candidate pose excludes its own original GridObject.
+  // Raw common bits are not native collision or Save-edit authorization.
+  const candidatePanel=gridareaPanel.locator('details.candidate-probe');
+  await candidatePanel.locator('summary').click();
+  assert.equal(await candidatePanel.getByRole('spinbutton',{name:'候補 X'}).inputValue(),'4');
+  assert.equal(await candidatePanel.getByRole('spinbutton',{name:'候補 Y'}).inputValue(),'5');
+  const probeButton=candidatePanel.getByRole('button',{
+    name:'原本レイヤーの重なりを確認'
+  });
+  await probeButton.click();
+  const candidateReceipt=gridareaPanel.getByLabel('原本候補レイヤー照合結果');
+  await candidateReceipt.waitFor();
+  assert.match(await candidateReceipt.innerText(),/原本レイヤー共通ビット 0セル/);
+  assert.match(await candidateReceipt.innerText(),/元のGridObject自身は比較対象から除外/);
+  assert.match(await candidatePanel.innerText(),/セーブファイルを変更しません/);
+  const candidateBounds=page.getByLabel('仮置きの原本既定GridArea外接枠');
+  await candidateBounds.waitFor();
+  assert.equal(await candidateBounds.evaluate(el=>getComputedStyle(el).width),'50px');
+  assert.match(await page.getByRole('button',{name:'座標4,6：アンカー0件'})
+    .getAttribute('title'),/candidate raw shared bits: 0x0/);
+  await candidatePanel.getByRole('spinbutton',{name:'候補 X'}).fill('999');
+  await probeButton.click();
+  await candidatePanel.getByRole('status')
+    .filter({hasText:'原本Grid範囲外'}).waitFor();
+  assert.equal(await candidateBounds.count(),0);
+  await candidatePanel.getByRole('spinbutton',{name:'候補 X'}).fill('4');
+  await candidatePanel.getByRole('combobox',{name:'候補の向き'}).selectOption('4');
+  await probeButton.click();
+  await candidateReceipt.waitFor();
+  await candidateBounds.waitFor();
+  assert.equal(await candidateBounds.evaluate(el=>getComputedStyle(el).width),'50px');
+
   // The optional 16×16 source-default GridLayers overlay never overwrites
   // anchor counts, terrain source values or placement-permission semantics.
   const layerToggle=page.getByRole('checkbox',{name:'原本Itemの既定レイヤー'});
@@ -521,6 +553,8 @@ try{
     '.grid-view button.current')?.getAttribute('aria-label')
       ==='座標4,5：アンカー1件');
   await page.getByRole('button',{name:'次の候補'}).click();
+  // A different exact original GridObject must invalidate the old candidate.
+  assert.equal(await page.getByLabel('仮置きの原本既定GridArea外接枠').count(),0);
   await page.getByRole('status')
     .filter({hasText:'原本初期配置 2 / 2件'}).waitFor();
   await page.waitForFunction(()=>document.querySelector(
