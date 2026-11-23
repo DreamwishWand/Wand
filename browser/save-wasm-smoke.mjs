@@ -1515,6 +1515,53 @@ try{
     name:'編集済みセーブの出力'
   });
   assert.match(await unifiedSave.innerText(),/数量1件・配置0件/);
+  // Header close/replace, Save Editor picker and service navigation must not
+  // silently discard staged changes. All use one shared session guard.
+  const unchangedSource=regular.locator('.active-save-file');
+  const headerSave=page.getByRole('button',{name:'セーブファイル管理'});
+  await headerSave.click();
+  page.once('dialog',dialog=>{
+    assert.match(dialog.message(),/未出力/);
+    void dialog.dismiss();
+  });
+  await page.getByRole('group',{name:'セーブファイル管理'})
+    .getByRole('button',{name:'ファイルを閉じる'}).click();
+  assert.equal(await unchangedSource.innerText(),'user-save-editor.profile');
+  assert.equal(await userQueue.count(),1);
+  const rejectedSave={
+    name:'not-selected.profile',mimeType:'application/octet-stream',
+    buffer:syntheticEncryptedP1g(quantityProfile)
+  };
+  page.once('dialog',dialog=>{
+    assert.match(dialog.message(),/別のセーブ/);
+    void dialog.dismiss();
+  });
+  await page.locator('input[aria-hidden="true"][accept*=".profile"]')
+    .setInputFiles(rejectedSave);
+  assert.equal(await unchangedSource.innerText(),'user-save-editor.profile');
+  assert.match(await unifiedSave.innerText(),/数量1件・配置0件/);
+  page.once('dialog',dialog=>{
+    assert.match(dialog.message(),/別のセーブ/);
+    void dialog.dismiss();
+  });
+  await regular.getByLabel('セーブファイルを選択').setInputFiles(rejectedSave);
+  assert.equal(await unchangedSource.innerText(),'user-save-editor.profile');
+  assert.equal(await userSlot.count(),1);
+  page.once('dialog',dialog=>{
+    assert.match(dialog.message(),/移動/);
+    void dialog.dismiss();
+  });
+  await page.locator('a.header-home-button').click();
+  assert.match(page.url(),/\/save\/$/);
+  assert.match(await unifiedSave.innerText(),/数量1件・配置0件/);
+  // Normal Save Editor close is now guarded by the same shared session hook.
+  page.once('dialog',dialog=>{
+    assert.match(dialog.message(),/セーブを閉じますか/);
+    void dialog.dismiss();
+  });
+  await regular.getByRole('button',{name:'セーブを閉じる'}).click();
+  assert.equal(await unchangedSource.innerText(),'user-save-editor.profile');
+  assert.equal(await userQueue.count(),1);
   assert.equal(await regular.getByRole('button',{
     name:'変更を検証',exact:true
   }).count(),0,'normal editor has no separate single-item export');
