@@ -60,6 +60,10 @@ import {
   createDb00NativeActivityReader,
   type Db00NativeActivityReader,type Db00NativeActivityItem
 } from './native-activities.ts';
+import {
+  createDb00NativeLootReader,
+  type Db00NativeLootReader,type Db00NativeLootItem
+} from './native-loot.ts';
 import {loadPublicStarpath} from '../guide/public-starpath.ts';
 import {
   loadStarpathRewardExtras,STARPATH_EXTRA_RELEASE
@@ -92,6 +96,13 @@ export interface Db00NativeAcquisitionEvidence {
   readonly playerOwnershipVerified:false;
   readonly collectionUiMembershipVerified:false;
 }
+/** Three mutually distinct native-source evidence families, no live Item grants. */
+export interface Db00AllNativeAcquisitionEvidence extends Db00NativeAcquisitionEvidence {
+  readonly loot:Db00NativeLootItem;
+  readonly staticLootCandidateCount:number;
+  readonly actualLootContextVerified:false;
+  readonly guaranteedLootDropVerified:false;
+}
 export interface PublicSharedGameSources{
   readonly schema:typeof DB00_PUBLIC_SOURCES_SCHEMA;
   readonly snapshotId:string;
@@ -122,10 +133,16 @@ export interface PublicSharedGameSources{
   loadNativeRecipeSources():Promise<Db00NativeRecipeReader>;
   /** Optional original fishing/mining/timebending/growing source paths. */
   loadNativeActivitySources():Promise<Db00NativeActivityReader>;
+  /** SHA-pinned 3,804 original LootTable entries; static candidates, NOT drops. */
+  loadNativeLootCandidateSources():Promise<Db00NativeLootReader>;
   /** One cross-service Item lookup, with both optional sources loaded lazily. */
   getNativeAcquisitionEvidence(
     itemId:string|number
   ):Promise<Db00NativeAcquisitionEvidence>;
+  /** Recipes + activities + isolated static LootTable candidates. */
+  getAllNativeAcquisitionEvidence(
+    itemId:string|number
+  ):Promise<Db00AllNativeAcquisitionEvidence>;
   /** Optional verified 60-reward name/category crosswalk, including unnamed motifs. */
   loadStarpathRewardCrosswalk():Promise<Db00StarpathRewardReader>;
   queryItems(filters?:readonly SharedDbFilter[],
@@ -276,6 +293,35 @@ export async function openPublicSharedGameSources(
       collectionUiMembershipVerified:false as const
     });
   };
+  let nativeLoot:Promise<Db00NativeLootReader>|null=null;
+  const loadNativeLootCandidateSources=():Promise<Db00NativeLootReader>=>
+    nativeLoot??=acquisition.loadNativeLootCandidates().then(source=>
+      createDb00NativeLootReader(database,joined,source)
+    );
+  const getAllNativeAcquisitionEvidence=async(
+    itemId:string|number
+  ):Promise<Db00AllNativeAcquisitionEvidence>=>{
+    // Validate before requesting any optional source file.
+    const item=joined.getItem(itemId);
+    const [existing,lootReader]=await Promise.all([
+      getNativeAcquisitionEvidence(item.itemId),
+      loadNativeLootCandidateSources()
+    ]);
+    const loot=lootReader.getItem(item.itemId);
+    assert(existing.itemId===item.itemId &&
+      loot.itemId===item.itemId &&
+      loot.item.itemId===item.itemId &&
+      loot.candidates.length===loot.staticCandidateOrigins.length &&
+      loot.sourceCandidateOnly===true &&
+      loot.guaranteedDropVerified===false &&
+      loot.actualGameplayContextVerified===false,
+      'NATIVE_LOOT_CROSS_SOURCE_MISMATCH');
+    return Object.freeze({
+      ...existing,loot,staticLootCandidateCount:loot.candidates.length,
+      actualLootContextVerified:false as const,
+      guaranteedLootDropVerified:false as const
+    });
+  };
   let starpathCrosswalk:Promise<Db00StarpathRewardReader>|null=null;
   const loadStarpathRewardCrosswalk=():Promise<Db00StarpathRewardReader>=>
     starpathCrosswalk??=(async()=>{
@@ -337,6 +383,7 @@ export async function openPublicSharedGameSources(
     searchOutsideSourceItems,loadNativeCompanionSources,
     loadNativeOnlineCategories,loadNativeRecipeSources,
     loadNativeActivitySources,getNativeAcquisitionEvidence,
+    loadNativeLootCandidateSources,getAllNativeAcquisitionEvidence,
     loadStarpathRewardCrosswalk,
     queryItems:(filters:readonly SharedDbFilter[]=[],
       page:Readonly<{offset?:number;limit?:number}>={})=>
