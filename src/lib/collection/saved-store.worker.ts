@@ -1,5 +1,7 @@
 /** One-shot typed local Save Worker: Rust/WASM plaintext or P1G. Never issues network requests. */
 import { inspectLocalSavedStore } from './saved-store-worker-core.ts';
+import {projectCollectionDiscoveryRust}
+  from './rust-collection-discovery.ts';
 import { decodePlainProfileRust } from '../save/plain-profile-read';
 import { decodeP1gRustFirst } from '../save/p1g-read.ts';
 
@@ -14,7 +16,8 @@ self.onmessage = async ({ data }: MessageEvent<{command:string;bytes:Uint8Array}
         !(bytes instanceof Uint8Array) ||
         Object.keys(data).sort().join(',') !== 'bytes,command')
       throw new TypeError('LOCAL_P1G_INVALID_WORKER_COMMAND');
-    const result = await inspectLocalSavedStore(bytes, decodeP1gRustFirst, decodePlainProfileRust);
+    const result = await inspectLocalSavedStore(bytes, decodeP1gRustFirst,
+      decodePlainProfileRust, projectCollectionDiscoveryRust);
     response = { kind: 'result', result };
   } catch {
     // Do not reveal source fields, file names or private decoder diagnostics.
