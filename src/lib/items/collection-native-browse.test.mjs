@@ -12,13 +12,14 @@ import {
 } from './collection-ui-axes.ts';
 import {DB01_SOURCE_MENU_INDEX_SCHEMA} from './collection-source-index.ts';
 import {DB01_DB00_COLLECTION_RESULTS_CONTRACT} from './db00-source-results.ts';
+import {DB01_PUBLISHED_NATIVE_FACETS} from './db00-native-facet-results.ts';
 
 const SHA='a'.repeat(64);
 const CATEGORIES=DB01_ORIGINAL_COLLECTION_SUBMENUS;
 const LIVE=CATEGORIES.filter(x=>x.code!==17&&x.code!==19);
 function fixture(){
   const calls={
-    originalIndex:0,originalSubmenus:0,areas:[],categories:[],sets:[],groups:[],query:[],publicQueries:[],
+    originalIndex:0,originalSubmenus:0,areas:[],categories:[],sets:[],groups:[],query:[],publicQueries:[],nativePublishedQueries:[],
   };
   const menus=Array.from({length:305},(_,i)=>{
     const category=LIVE[i%LIVE.length];
@@ -187,7 +188,49 @@ function fixture(){
       });
     },
   };
-  return {axes,source,results,publicData,calls,menus};
+  const nativePublished={
+    contract:DB01_PUBLISHED_NATIVE_FACETS,
+    snapshotId:results.target.snapshotId,
+    publicationAuthorized:false,
+    async search(selection,page={}){
+      calls.nativePublishedQueries.push({selection,page});
+      // The 201 ID intentionally has no CollectionSet candidate.
+      const ids=[100,201,301];
+      const found=ids.slice(page.offset??0,
+        (page.offset??0)+(page.limit??72));
+      return {
+        scope:'original_native_item_candidates',
+        items:found.map(itemId=>({
+          itemId,locale:selection.locale,
+          currentExactName:selection.locale==='ja'?'正確 '+itemId:'Exact '+itemId,
+          joined:{
+            itemId:String(itemId),catalogStatus:'current_published_item',
+            catalog:{id:String(itemId),nativeCategory:'Furniture',
+              names:{en:'Exact '+itemId,ja:'正確 '+itemId}},
+            currentlyAvailableVerified:false,playerOwnershipVerified:false,
+            origins:[{routeStatus:'confirmed_source_link'}],
+            starpathRelations:[],
+          },
+          originalNativeFacetMatched:true,
+          gameUiCollectionMembershipVerified:false,
+          worldAvailabilityVerified:false,
+          dlcEntitlementVerified:false,playerOwnershipVerified:false,
+        })),
+        totalPublishedMatches:3,totalOriginalNativeMatches:3,
+        outsidePublishedItemCount:0,
+        offset:page.offset??0,
+        nextOffset:(page.offset??0)+found.length<3?
+          (page.offset??0)+found.length:null,
+        hasMore:(page.offset??0)+found.length<3,
+        snapshotId:results.target.snapshotId,locale:selection.locale,
+        publicationAuthorized:false,
+        gameUiCollectionMembershipVerified:false,
+        worldAvailabilityVerified:false,
+        dlcEntitlementVerified:false,playerOwnershipVerified:false,
+      };
+    },
+  };
+  return {axes,source,results,publicData,nativePublished,calls,menus};
 }
 
 test('All uses the COMPLETE published 13,202 Items, not only original CollectionSet candidates',async()=>{
@@ -213,6 +256,77 @@ test('All uses the COMPLETE published 13,202 Items, not only original Collection
   assert.equal(last.total,13202);
   assert.equal(f.calls.query.length,0);
   assert.equal(f.calls.originalIndex,0);
+});
+test('native-only World/Universe Tag search spans ALL published native Items without CollectionSet omissions',async()=>{
+  const f=fixture(),browse=createDb01CollectionNativeBrowseClient(
+    f.axes,f.source,f.results,f.publicData,f.nativePublished);
+  const selection={locale:'ja',native:{
+    facets:{worldContextTag:[2001200001],disneyUniverse:[2000500001]}
+  }};
+  const first=await browse.search(selection,{offset:0,limit:2});
+  assert.equal(first.collectionScope,'original_native_item_candidates');
+  assert.equal(first.scope,'original_native_item_candidates');
+  assert.equal(first.totalOriginalNativeMatches,3);
+  assert.equal(first.totalPublishedMatches,3);
+  assert.deepEqual(first.items.map(x=>x.itemId),[100,201]);
+  assert.equal(first.items[1].joined.catalog.names.ja,'正確 201');
+  assert.equal(first.items[1].gameUiCollectionMembershipVerified,false);
+  assert.equal(first.worldAvailabilityVerified,false);
+  assert.equal(first.playerOwnershipVerified,false);
+  assert.equal(first.publicationAuthorized,false);
+  assert.equal(first.nextOffset,2);
+  const last=await browse.search(selection,{offset:2,limit:2});
+  assert.deepEqual(last.items.map(x=>x.itemId),[301]);
+  assert.equal(last.nextOffset,null);
+  assert.deepEqual(f.calls.nativePublishedQueries[0],{
+    selection,page:{offset:0,limit:2}
+  });
+  assert.equal(f.calls.query.length,0);
+  assert.equal(f.calls.publicQueries.length,0);
+  assert.equal(f.calls.originalIndex,0);
+});
+test('native-only without complete reader is rejected, never silently limited to original Sets',async()=>{
+  const f=fixture(),browse=createDb01CollectionNativeBrowseClient(
+    f.axes,f.source,f.results,f.publicData);
+  await assert.rejects(browse.search({
+    locale:'ja',native:{facets:{worldContextTag:[2001200001]}}
+  }),/PINNED_NATIVE_PUBLISHED_READER_REQUIRED/);
+  assert.equal(f.calls.query.length,0);
+  assert.equal(f.calls.publicQueries.length,0);
+});
+test('original Set selection keeps original source evidence when also filtering by native Tag',async()=>{
+  const f=fixture(),browse=createDb01CollectionNativeBrowseClient(
+    f.axes,f.source,f.results,f.publicData,f.nativePublished);
+  const set=f.menus.find(x=>x.submenuCode===3);
+  const result=await browse.search({
+    locale:'ja',submenuCode:3,setId:set.setId,
+    native:{facets:{worldContextTag:[2001200001]}},
+  });
+  assert.equal(result.collectionScope,'original_source_set_candidates');
+  assert.deepEqual(f.calls.query[0].query.native,{
+    facets:{worldContextTag:[2001200001]}
+  });
+  assert.equal(f.calls.nativePublishedQueries.length,0);
+});
+test('forged native-only result or mismatched pinned reader fails before exposing scope',async()=>{
+  const f=fixture();
+  assert.throws(()=>createDb01CollectionNativeBrowseClient(
+    f.axes,f.source,f.results,f.publicData,
+    {...f.nativePublished,snapshotId:'old-snapshot'}),
+  /CURRENT_VERIFIED_SOURCE_COMPOSITION_REQUIRED/);
+  const forged=createDb01CollectionNativeBrowseClient(
+    f.axes,f.source,f.results,f.publicData,{
+      ...f.nativePublished,
+      async search(selection,page){
+        const response=await f.nativePublished.search(selection,page);
+        return {...response,items:response.items.map((x,i)=>i===0?
+          {...x,worldAvailabilityVerified:true}:x)};
+      },
+    });
+  await assert.rejects(forged.search({
+    locale:'ja',native:{facets:{worldContextTag:[2001200001]}}
+  }),/PUBLISHED_NATIVE_SCOPE_CONFLICT/);
+  assert.equal(f.calls.query.length,0);
 });
 test('All source uses exact current public names and ID search, without original source fallback',async()=>{
   const f=fixture(),browse=createDb01CollectionNativeBrowseClient(

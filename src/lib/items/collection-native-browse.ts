@@ -32,6 +32,10 @@ import {
   type Db01Db00CollectionResultsReader,
   type Db01Db00CollectionResultsPage,
 } from './db00-source-results.ts';
+import {
+  DB01_PUBLISHED_NATIVE_FACETS,
+  type Db01PublishedNativeFacetReader,type Db01PublishedNativePage,
+} from './db00-native-facet-results.ts';
 import type {PublicSharedGameSources} from '../game-db/public-sources.ts';
 import type {Db00PublicItemSearchResult} from '../game-db/public-search.ts';
 
@@ -81,6 +85,10 @@ export interface Db01CollectionBrowseSelection{
   readonly searchText?:string;
   readonly listingEvidence?:Db01OriginalSourceMenuQuery['listingEvidence'];
   readonly nativeCategories?:Db01OriginalSourceMenuQuery['nativeCategories'];
+  /** Without a source category/Set/evidence restriction, native-only
+   * ItemType/Tag filtering spans ALL published native Items; never silently
+   * narrow to original CollectionSet candidates. Native Tag ≠ game UI scope.
+   */
   readonly native?:Db01OriginalSourceMenuQuery['native'];
 }
 /** Distinct search scopes prevent mistaking original source-Set absence for
@@ -94,6 +102,9 @@ export type Db01CollectionBrowseSearchPage =
     }>
   | Readonly<Db01Db00CollectionResultsPage & {
       collectionScope:'original_source_set_candidates';
+    }>
+  | Readonly<Db01PublishedNativePage & {
+      collectionScope:'original_native_item_candidates';
     }>;
 
 export interface Db01CollectionNativeBrowseClient{
@@ -109,9 +120,9 @@ export interface Db01CollectionNativeBrowseClient{
   /** Original Group indexes and evidence counts, including empty Groups. */
   getGroups(locale:Db01Locale,submenuCode:number,setId:number):
     Promise<readonly Db01CollectionBrowseGroup[]>;
-  /** All = complete published DB-00 current items. Selected original
-   * Set/category = only verified source-predicate candidates intersected with
-   * published Items. Never infer game Collection UI membership from either.
+  /** All = complete published DB-00 current Items; native-only facets
+   * use the full native Item index. Original Set/category/evidence selectors
+   * retain original CollectionSet candidates (not game UI membership).
    */
   search(selection:Db01CollectionBrowseSelection,
     page?:Readonly<{offset?:number;limit?:number}>):
@@ -141,6 +152,10 @@ export function createDb01CollectionNativeBrowseClient(
   index:Db01OriginalSourceMenuQueryClient,
   results:Db01Db00CollectionResultsReader,
   publicData:PublicSharedGameSources,
+  /** Optional until the independently SHA-pinned native facet reader is loaded.
+   * Native-only queries fail closed if omitted; never return partial Set hits.
+   */
+  nativePublished?:Db01PublishedNativeFacetReader,
 ):Db01CollectionNativeBrowseClient{
   const meta=axes?.source,origin=index?.source,joined=results?.target;
   check(axes?.contract===DB01_COLLECTION_UI_AXES&&
@@ -177,7 +192,13 @@ export function createDb01CollectionNativeBrowseClient(
     typeof index.getSubmenus==='function'&&
     typeof index.getCollectionSets==='function'&&
     typeof index.getSourceGroups==='function'&&
-    typeof results.search==='function','CURRENT_VERIFIED_SOURCE_COMPOSITION_REQUIRED');
+    typeof results.search==='function'&&
+    (nativePublished===undefined||
+      nativePublished.contract===DB01_PUBLISHED_NATIVE_FACETS&&
+      nativePublished.snapshotId===joined.snapshotId&&
+      nativePublished.publicationAuthorized===false&&
+      typeof nativePublished.search==='function'),
+    'CURRENT_VERIFIED_SOURCE_COMPOSITION_REQUIRED');
 
   type SourceIndex=Readonly<{
     byCode:ReadonlyMap<number,Db01OriginalSourceSubmenuOption>;
@@ -422,6 +443,60 @@ export function createDb01CollectionNativeBrowseClient(
       'nativeCategories','native',
     ].includes(k));
     check(unknown.length===0,'UNSUPPORTED_FILTER_DIMENSION');
+    if(code===undefined&&setId===undefined&&
+      selection.listingEvidence===undefined&&
+      selection.nativeCategories===undefined&&
+      selection.native!==undefined){
+      // A source-native World/Universe Tag does not depend on a
+      // CollectionSet. Search all published native Items instead of
+      // silently losing valid Items outside original source Sets.
+      check(nativePublished!==undefined,
+        'PINNED_NATIVE_PUBLISHED_READER_REQUIRED');
+      const result=await nativePublished.search({
+        locale:selection.locale,native:selection.native,
+        ...(selection.searchText===undefined?{}:{
+          searchText:selection.searchText,
+        }),
+      },page);
+      const offset=page.offset??0,limit=page.limit??72;
+      check(result.scope==='original_native_item_candidates'&&
+        result.snapshotId===joined.snapshotId&&
+        result.locale===selection.locale&&result.offset===offset&&
+        Number.isSafeInteger(result.totalPublishedMatches)&&
+        result.totalPublishedMatches>=0&&
+        result.totalPublishedMatches<=13202&&
+        Number.isSafeInteger(result.totalOriginalNativeMatches)&&
+        result.totalOriginalNativeMatches>=
+          result.totalPublishedMatches&&
+        result.totalOriginalNativeMatches<=13202&&
+        Number.isSafeInteger(result.outsidePublishedItemCount)&&
+        result.outsidePublishedItemCount>=0&&
+        result.outsidePublishedItemCount<=result.totalOriginalNativeMatches&&
+        Array.isArray(result.items)&&result.items.length<=limit&&
+        result.publicationAuthorized===false&&
+        result.gameUiCollectionMembershipVerified===false&&
+        result.worldAvailabilityVerified===false&&
+        result.dlcEntitlementVerified===false&&
+        result.playerOwnershipVerified===false&&
+        result.items.every(row=>
+          validId(row.itemId)&&row.locale===selection.locale&&
+          row.originalNativeFacetMatched===true&&
+          row.gameUiCollectionMembershipVerified===false&&
+          row.worldAvailabilityVerified===false&&
+          row.dlcEntitlementVerified===false&&
+          row.playerOwnershipVerified===false&&
+          row.joined?.itemId===String(row.itemId)&&
+          row.joined?.catalogStatus==='current_published_item'&&
+          row.joined.catalog?.id===row.joined.itemId&&
+          row.currentExactName===
+            (row.joined.catalog?.names[selection.locale]??null)&&
+          row.joined.currentlyAvailableVerified===false&&
+          row.joined.playerOwnershipVerified===false),
+        'PUBLISHED_NATIVE_SCOPE_CONFLICT');
+      return Object.freeze({
+        ...result,collectionScope:'original_native_item_candidates' as const,
+      });
+    }
     if(code===undefined&&setId===undefined&&
       selection.listingEvidence===undefined&&
       selection.nativeCategories===undefined&&
