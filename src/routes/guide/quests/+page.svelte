@@ -93,7 +93,7 @@
     ?catalog.quests.filter((row:any)=>row.groupId===selectedRow.groupId&&row.id!==selectedRow.id):[];
   $: objectives=catalog?[...new Set(catalog.quests.flatMap((x:any)=>x.objectiveKinds))].sort() as string[]:[];
 
-  function label(names:PublicGuideNames|null|undefined,fallback='',language='ja') {return formatPublicGuideText(names?.[language]||names?.en||Object.values(names||{})[0]||fallback);}
+  function label(names:PublicGuideNames|null|undefined,fallback='',language='ja') {return formatPublicGuideText(names?.[language as keyof PublicGuideNames]||names?.en||Object.values(names||{})[0]||fallback);}
   function questName(row:PublicQuestIndexRow,language:string) {return label(row.names,row.internalName||row.id,language);}
   function characterName(id:string|undefined,language:string) {return label(catalog?.characters?.[id||''],id||'',language);}
   function relatedEventName(eventId:string):string{
