@@ -35,42 +35,42 @@ const GUIDE_DETAILS:Record<WandLanguage,{
   source:readonly [string,string,string];
 }>={
   ja:{
-    hub:['クエスト・スターパス・イベントのガイドへ移動できます。','タイムラインでイベントの開催期間を比較できます。','期間移動・5週／9週の切り替えができます。'],
+    hub:['システム・クエストのガイドへ移動できます。','タイムラインで開催期間を比較し、イベント名から攻略へ移動できます。','期間移動・5週／9週の切り替えができます。'],
     events:['イベント名や報酬アイテム名から検索できます。','報酬の区分で表示対象を絞り込めます。','イベントを選ぶと設定されている報酬候補を確認できます。'],
     source:['必要に応じて原本から抽出したローカルデータを読み込めます。','名称やIDで収録クエストを検索できます。','検索結果を選択すると原本由来の詳細を確認できます。']
   },
   en:{
-    hub:['Open the quest, Star Path, or event guide.','Compare event periods on the timeline.','Move between periods or switch between 5 and 9 weeks.'],
+    hub:['Open the Systems or Quests guide.','Compare event periods on the timeline and select an event name to open its guide.','Move between periods or switch between 5 and 9 weeks.'],
     events:['Search by event name or reward item.','Narrow the results by reward category.','Select an event to inspect its configured reward candidates.'],
     source:['Optionally load locally extracted source data.','Search indexed quests by name or ID.','Select a result to inspect source-backed details.']
   },
   fr:{
-    hub:['Ouvrez les guides de quêtes, Pass étoiles et événements.','Comparez les périodes des événements sur la frise.','Parcourez les périodes et choisissez 5 ou 9 semaines.'],
+    hub:['Ouvrez les guides des systèmes ou des quêtes.','Comparez les périodes sur la frise et ouvrez un guide en sélectionnant un événement.','Parcourez les périodes et choisissez 5 ou 9 semaines.'],
     events:['Recherchez un événement ou un objet de récompense.','Filtrez les résultats par catégorie.','Choisissez un événement pour voir les récompenses configurées.'],
     source:['Chargez si nécessaire les données source locales.','Recherchez les quêtes par nom ou identifiant.','Sélectionnez un résultat pour afficher les détails de la source.']
   },
   it:{
-    hub:['Apri le guide a missioni, Star Path ed eventi.','Confronta i periodi degli eventi sulla timeline.','Naviga tra i periodi e scegli 5 o 9 settimane.'],
+    hub:['Apri le guide ai sistemi o alle missioni.','Confronta i periodi sulla timeline e seleziona un evento per aprire la guida.','Naviga tra i periodi e scegli 5 o 9 settimane.'],
     events:['Cerca eventi o oggetti premio.','Filtra i risultati per categoria.','Seleziona un evento per vedere i premi configurati.'],
     source:['Carica facoltativamente i dati locali estratti dal gioco.','Cerca missioni per nome o ID.','Seleziona un risultato per vedere i dettagli originali.']
   },
   de:{
-    hub:['Öffne die Guides für Quests, Sternenpfade und Events.','Vergleiche Event-Zeiträume auf der Zeitleiste.','Wechsle den Zeitraum oder wähle 5 bzw. 9 Wochen.'],
+    hub:['Öffne die Guides für Systeme oder Quests.','Vergleiche Event-Zeiträume und öffne einen Guide über den Eventnamen.','Wechsle den Zeitraum oder wähle 5 bzw. 9 Wochen.'],
     events:['Suche nach Eventnamen oder Belohnungen.','Filtere nach Belohnungskategorie.','Wähle ein Event, um konfigurierte Belohnungen anzusehen.'],
     source:['Lade bei Bedarf lokal extrahierte Quelldaten.','Suche Quests nach Namen oder ID.','Wähle ein Ergebnis für Details aus den Quelldaten.']
   },
   'es-ES':{
-    hub:['Abre las guías de misiones, caminos de estrellas y eventos.','Compara los períodos de eventos en la cronología.','Cambia de período o elige 5 o 9 semanas.'],
+    hub:['Abre las guías de sistemas o misiones.','Compara los períodos en la cronología y selecciona un evento para abrir su guía.','Cambia de período o elige 5 o 9 semanas.'],
     events:['Busca eventos u objetos de recompensa.','Filtra los resultados por categoría.','Selecciona un evento para consultar las recompensas configuradas.'],
     source:['Carga opcionalmente datos originales extraídos en local.','Busca misiones por nombre o ID.','Elige un resultado para ver los detalles originales.']
   },
   'zh-CN':{
-    hub:['打开任务、星光之路和活动指南。','在时间轴中比较活动举办时间。','切换时间段或选择显示 5 周／9 周。'],
+    hub:['打开系统或任务指南。','在时间轴中比较活动时间，选择活动名称打开攻略。','切换时间段或选择显示 5 周／9 周。'],
     events:['按活动名称或奖励物品搜索。','按奖励类别筛选结果。','选择活动可查看其配置的奖励项目。'],
     source:['可按需载入本地提取的游戏原始数据。','按名称或 ID 搜索任务。','选择结果以查看原始数据中的详情。']
   },
   'pt-BR':{
-    hub:['Acesse os guias de missões, Star Path e eventos.','Compare os períodos de eventos na linha do tempo.','Navegue entre períodos ou escolha 5 ou 9 semanas.'],
+    hub:['Acesse os guias de sistemas ou missões.','Compare os períodos na linha do tempo e selecione um evento para abrir o guia.','Navegue entre períodos ou escolha 5 ou 9 semanas.'],
     events:['Pesquise eventos ou itens de recompensa.','Filtre os resultados por categoria.','Selecione um evento para consultar as recompensas configuradas.'],
     source:['Se desejar, carregue dados originais extraídos localmente.','Pesquise missões por nome ou ID.','Selecione um resultado para ver os detalhes da fonte.']
   }
@@ -140,9 +140,9 @@ export function contextualTour(route:string,copy:ShellCopy,locale:WandLanguage):
   if(path.startsWith('/guide'))return{
     title:navigation.guide.title,
     steps:[
-      entry(GUIDE_DETAILS[locale].hub[0],'.guide-app .guide-sections'),
       entry(GUIDE_DETAILS[locale].hub[1],'.guide-app .timeline-panel'),
-      entry(GUIDE_DETAILS[locale].hub[2],'.guide-app .calendar-nav')
+      entry(GUIDE_DETAILS[locale].hub[2],'.guide-app .calendar-nav'),
+      entry(GUIDE_DETAILS[locale].hub[0],'.guide-app .guide-sections')
     ]
   };
   if(path.startsWith('/world'))return{
