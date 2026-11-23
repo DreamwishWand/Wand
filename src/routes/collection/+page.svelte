@@ -1167,13 +1167,16 @@
               {/each}
             </div>
           </div>
-        {:else if universeFilter||sourceChoices.disneyUniverse}
+        {:else if universeFilter||sourceUniverseSelection!==null}
           <button type="button" class="collection-back-axis" on:click={()=>chooseUniverse('')}>
             <WandIcon name="chevron-left" size={16}/>{copy.universeList}
           </button>
           <span class="collection-axis-selected">
-            {sourceChoices.disneyUniverse
-              ?collectionDb01TagLabel(locale,sourceChoices.disneyUniverse)
+            {sourceUniverseSelection!==null
+              ?sortedCollectionUniverseOptions(sourceIndex!,locale,
+                key=>collectionDb01TagLabel(locale,key),
+                locale==='ja'?'ユニバース未設定':'No source universe tag')
+                  .find(option=>option.id===sourceUniverseSelection)?.label??''
               :universeScopeOptions.find(x=>x.id===universeFilter)?.label??''}
           </span>
         {/if}
@@ -1284,42 +1287,22 @@
             {:else}
               <p class="collection-axis-notice">{copy.universeDataUnavailable}</p>
             {/if}
-          {:else if landingSubgroup}
-            <div class="results-heading">
-              <div class="breadcrumbs">
-                <button type="button" on:click={returnToCategory}>{copy.categories}</button>
-                <span> / {selectionLabel}</span>
-              </div>
-            </div>
-            <div class="section-lead"><h2>{copy.universeList}</h2></div>
-            <div class="facet-grid">
-              <button type="button" class="facet-card" on:click={openCategoryItems}>
-                <span class="facet-flourish" aria-hidden="true"><WandIcon name={categoryPictogram[selected]??'collection'} size={22}/></span>
-                <strong>{copy.all}</strong>
-                <span>{scopedCategoryFacets.find(x=>x.id===selected)?.total.toLocaleString(locale)??''} {copy.countUnit}</span>
-              </button>
-              {#each categoryUniverseFacets as facet (facet.id)}
-                <button type="button" class="facet-card" on:click={()=>{universeFilter=facet.id;resetView();}}>
-                  <span class="facet-flourish" aria-hidden="true"><WandIcon name="gallery" size={22}/></span>
-                  <strong>{facet.label}</strong>
-                  <span>{facet.owned.toLocaleString(locale)} / {facet.total.toLocaleString(locale)}</span>
-                </button>
-              {/each}
-            </div>
           {:else if universeSectionView}
             <div class="results-heading">
               <div class="breadcrumbs"><button type="button" on:click={()=>chooseUniverse('')}>{copy.universeList}</button>
-                <span> / {universeScopeOptions.find(x=>x.id===universeFilter)?.label??''}</span>
+                <span> / {sourceUniverseSelection!==null
+                  ?sortedCollectionUniverseOptions(sourceIndex!,locale,
+                    key=>collectionDb01TagLabel(locale,key),
+                    locale==='ja'?'ユニバース未設定':'No source universe tag')
+                    .find(option=>option.id===sourceUniverseSelection)?.label??''
+                  :universeScopeOptions.find(x=>x.id===universeFilter)?.label??''}</span>
               </div>
             </div>
             {#each universeSections as section (section.facet.id)}
               <section class="collection-universe-section">
                 <div class="collection-universe-section-head">
-                  <h2>{categoryLabel(locale,section.facet.id)}</h2>
-                  <button type="button" on:click={()=>chooseFacet(section.facet.id)}>
-                    {copy.showAllItems} ({section.facet.total.toLocaleString(locale)})
-                    <WandIcon name="chevron-right" size={16}/>
-                  </button>
+                  <h2>{section.facet.label}</h2>
+                  <span>{section.facet.total.toLocaleString(locale)} {copy.countUnit}</span>
                 </div>
                 <div class="items-grid">
                   {#each section.items as item (item.itemId)}
@@ -1343,13 +1326,19 @@
                 </div>
               </section>
             {/each}
-          {:else if isBrowsing}
+            {#if sourceUniverseSelection!==null&&visible<totalMatches}
+              <div class="more-button" use:observeMore aria-label={copy.loadMore}
+                role="status"><WandIcon name="sparkles" size={18}/></div>
+            {/if}
+          {:else if isBrowsing&&!landingWorld}
             <div class="results-heading">
               <div class="breadcrumbs">
                 <button type="button" on:click={returnToCategory}>{viewAxis==='universe'?copy.universeList:copy.categories}</button>
-                {#if selected||sourceCategory!==null||sourceActivityType!==null}<span> / {selectionLabel}</span>{/if}
-                {#if viewAxis==='universe'&&sourceChoices.disneyUniverse}
-                  <span> / {collectionDb01TagLabel(locale,sourceChoices.disneyUniverse)}</span>
+                {#if selected||sourceActivityType!==null}<span> / {selectionLabel}</span>{/if}
+                {#if viewAxis==='universe'&&sourceUniverseSelection!==null}
+                  <span> / {sourceUniverseSelection===COLLECTION_UNIVERSE_UNTAGGED
+                    ?(locale==='ja'?'ユニバース未設定':'No source universe tag')
+                    :collectionDb01TagLabel(locale,sourceUniverseSelection)}</span>
                 {/if}
                 {#if selected&&universeFilter&&viewAxis==='world'}
                   <button type="button" on:click={returnToSubgroups}>{copy.universeList}</button>
