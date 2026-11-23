@@ -9,7 +9,8 @@
     type CollectionDb01Index,type CollectionDb01Facet,type CollectionDb01Group
   } from '$lib/collection/db01-native-facets';
   import {COLLECTION_UNIVERSE_UNTAGGED,sortedCollectionUniverseOptions,
-    groupCollectionUniverseItems} from '$lib/collection/browse-layout.ts';
+    groupCollectionUniverseItems,collectionUniverseDisplayLabel}
+    from '$lib/collection/browse-layout.ts';
   import AcquisitionEvidence from '$lib/collection/AcquisitionEvidence.svelte';
   import {loadDb01ItemAcquisitionHandoff,type Db01ItemAcquisitionIndex}
     from '$lib/acquisition/db01-item-acquisition.ts';
@@ -152,7 +153,7 @@
   $: selectedDb04Refs=selectedItem?savedDb04ByItem[String(selectedItem.itemId)]??null:null;
   $: universeChoices=(sourceIndex
     ?sortedCollectionUniverseOptions(sourceIndex,locale,
-        key=>collectionDb01TagLabel(locale,key),
+        key=>collectionUniverseDisplayLabel(locale,key),
         locale==='ja'?'ユニバース未設定':'No source universe tag')
     :universeScopeOptions).filter(option=>
       option.label.toLocaleLowerCase(locale).includes(universeSearch.trim().toLocaleLowerCase(locale)));
@@ -1180,7 +1181,7 @@
           <span class="collection-axis-selected">
             {sourceUniverseSelection!==null
               ?sortedCollectionUniverseOptions(sourceIndex!,locale,
-                key=>collectionDb01TagLabel(locale,key),
+                key=>collectionUniverseDisplayLabel(locale,key),
                 locale==='ja'?'ユニバース未設定':'No source universe tag')
                   .find(option=>option.id===sourceUniverseSelection)?.label??''
               :universeScopeOptions.find(x=>x.id===universeFilter)?.label??''}
@@ -1298,7 +1299,7 @@
               <div class="breadcrumbs"><button type="button" on:click={()=>chooseUniverse('')}>{copy.universeList}</button>
                 <span> / {sourceUniverseSelection!==null
                   ?sortedCollectionUniverseOptions(sourceIndex!,locale,
-                    key=>collectionDb01TagLabel(locale,key),
+                    key=>collectionUniverseDisplayLabel(locale,key),
                     locale==='ja'?'ユニバース未設定':'No source universe tag')
                     .find(option=>option.id===sourceUniverseSelection)?.label??''
                   :universeScopeOptions.find(x=>x.id===universeFilter)?.label??''}</span>
@@ -1344,7 +1345,7 @@
                 {#if viewAxis==='universe'&&sourceUniverseSelection!==null}
                   <span> / {sourceUniverseSelection===COLLECTION_UNIVERSE_UNTAGGED
                     ?(locale==='ja'?'ユニバース未設定':'No source universe tag')
-                    :collectionDb01TagLabel(locale,sourceUniverseSelection)}</span>
+                    :collectionUniverseDisplayLabel(locale,sourceUniverseSelection)}</span>
                 {/if}
                 {#if selected&&universeFilter&&viewAxis==='world'}
                   <button type="button" on:click={returnToSubgroups}>{copy.universeList}</button>
