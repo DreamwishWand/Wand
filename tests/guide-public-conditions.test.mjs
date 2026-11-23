@@ -7,7 +7,7 @@ import {
   PUBLIC_QUEST_CONDITIONS_FILE,decodePublicQuestConditions,
   loadPublicQuestConditions,publicConditionText,publicConditionDisplay
 } from '../src/lib/guide/public-quest-conditions.ts';
-import {verifyPublicQuestIndex} from '../src/lib/guide/public-guide.mjs';
+import {verifyPublicQuestIndex} from '../src/lib/guide/public-guide.ts';
 
 async function source(){
   const [encoded,index]=await Promise.all([
