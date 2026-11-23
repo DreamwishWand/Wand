@@ -122,11 +122,14 @@ try{
   const browserErrors=[];
   const saveWasmAssets=[];
   const acquisitionAssets=[];
+  const questAssets=[];
   page.on('response',response=>{
     if(response.url().includes('ddv_p1g_codec_bg')&&response.url().endsWith('.wasm'))
       saveWasmAssets.push({url:response.url(),status:response.status()});
     if(/(?:recipe-results|activity-result-paths|native-loot-candidates|native-stall-slots)-1\.26\.2\.json/.test(response.url()))
       acquisitionAssets.push({url:response.url(),status:response.status()});
+    if(response.url().endsWith('/quest-conditions-1.26.2-v2.json.gz.b64'))
+      questAssets.push({url:response.url(),status:response.status()});
   });
   page.on('pageerror',error=>browserErrors.push(String(error)));
   // The landing screen is a visual portal, with unavailable services clearly
@@ -422,24 +425,47 @@ try{
   }
   // Source classification lives in the Worker and must remain stable while
   // the eight localized panel labels update without another download.
+  const relatedQuests=page.locator('.collection-related-quests');
+  assert.equal(await relatedQuests.count(),1);
+  assert.equal(questAssets.length,0,
+    'Quest evidence must not fetch optional conditions before opening');
+  await relatedQuests.locator('summary').click();
+  await relatedQuests.locator('.quest-evidence-status').filter({
+    hasText:/原本の静的な参照です|原本に関連クエストの記録はありません/
+  }).waitFor({timeout:60000});
+  assert.equal(await relatedQuests.getByRole('alert').count(),0);
+  assert.equal(questAssets.length,1);
+  assert.equal(questAssets[0].status,200);
+  for(const anchor of await relatedQuests.locator('.quest-evidence-section a').all()){
+    const href=await anchor.getAttribute('href');
+    assert(/^\/Wand\/guide\/quests\/\?quest=[1-9][0-9]*&(target|item)=40005160$/.test(href),
+      'only exact native Quest IDs and the selected Item ID may be linked');
+  }
   const acquisitionFetchCount=acquisitionAssets.length;
-  for(const {language,title} of [
-    {language:'English',title:'How to obtain'},
-    {language:'Français',title:'Comment obtenir'},
-    {language:'Italiano',title:'Come ottenerlo'},
-    {language:'Deutsch',title:'Bezugsquellen'},
-    {language:'Español',title:'Cómo conseguirlo'},
-    {language:'简体中文',title:'获取方式'},
-    {language:'Português',title:'Como obter'},
-    {language:'日本語',title:'入手元'}
+  const questFetchCount=questAssets.length;
+  for(const {language,title,questTitle} of [
+    {language:'English',title:'How to obtain',questTitle:'Related quests'},
+    {language:'Français',title:'Comment obtenir',questTitle:'Quêtes associées'},
+    {language:'Italiano',title:'Come ottenerlo',questTitle:'Missioni collegate'},
+    {language:'Deutsch',title:'Bezugsquellen',questTitle:'Zugehörige Quests'},
+    {language:'Español',title:'Cómo conseguirlo',questTitle:'Misiones relacionadas'},
+    {language:'简体中文',title:'获取方式',questTitle:'相关任务'},
+    {language:'Português',title:'Como obter',questTitle:'Missões relacionadas'},
+    {language:'日本語',title:'入手元',questTitle:'関連クエスト'}
   ]){
     await setItemLanguage(language);
     await page.waitForFunction(expected=>
       document.querySelector('.collection-acquisition summary')?.textContent?.trim()===expected,title);
+    await page.waitForFunction(expected=>
+      document.querySelector('.collection-related-quests summary')?.textContent?.trim()===expected,questTitle);
     assert.equal(await acquisitionPanel.getAttribute('open'),'',
       'locale switch must not close the acquisition panel');
+    assert.equal(await relatedQuests.getAttribute('open'),'',
+      'locale switch must not close the related Quest panel');
     assert.equal(acquisitionAssets.length,acquisitionFetchCount,
-      'locale change must never refetch immutable source evidence');
+      'locale change must never refetch immutable acquisition evidence');
+    assert.equal(questAssets.length,questFetchCount,
+      'locale change must never refetch immutable Quest evidence');
   }
   await page.getByRole('checkbox',{name:'お気に入り'}).uncheck();
   await waitForLocalState(page,{item:'40005160',status:'owned',favorite:false});
