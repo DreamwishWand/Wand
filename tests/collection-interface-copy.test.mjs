@@ -18,7 +18,11 @@ test('Collection control labels cover all eight current Wand languages',()=>{
       locale+' must neither omit nor invent visible UI controls');
     for(const key of keys){
       assert.equal(typeof copy[key],'string',locale+' '+key);
-      assert.equal(copy[key].trim(),copy[key],locale+' '+key+' stray spaces');
+      // Item aria-label suffixes intentionally begin with a separator after
+      // the exact localized Item name; all other copy has no edge whitespace.
+      const appended=new Set(['itemSelect','itemDetails','markMissing','markOwned']);
+      assert.equal(appended.has(key)?copy[key].trimEnd():copy[key].trim(),
+        copy[key],locale+' '+key+' stray spaces');
       assert.ok(copy[key].length>0&&copy[key].length<=160,locale+' '+key);
       assert.ok(!/[\x00-\x1f]/.test(copy[key]),locale+' '+key+' control chars');
       assert.ok(!/[<>]/.test(copy[key]),locale+' '+key+' markup injection');
