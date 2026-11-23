@@ -12,7 +12,7 @@ async function catalog(){
 }
 test('all 733 native Quests are accounted for without Story/Realm conflation',async()=>{
   const data=await catalog();
-  const counts={story:166,realm:61,friendship:341,repeatable:75,other:90};
+  const counts={story:166,realm:61,friendship:341,event:66,daily:9,special:70,premium:19,tutorial:1,other:0};
   for(const [kind,count] of Object.entries(counts)){
     assert.equal(filterPublicQuests(data,{section:kind}).total,count,kind);
   }
@@ -21,9 +21,12 @@ test('all 733 native Quests are accounted for without Story/Realm conflation',as
   assert.equal(publicQuestSection({internalName:'Story!MRQS010_Welcome'}),'story');
   assert.equal(publicQuestSection({internalName:'Realm!WallE!WallE!RLM_WallEIP_Wall_010'}),'realm');
   assert.equal(publicQuestSection({internalName:'Village!Mickey!Goofy!VLG_Goof_010'}),'friendship');
-  assert.equal(publicQuestSection({internalName:'Repeatable!Event!Park'}),'repeatable');
-  assert.equal(publicQuestSection({internalName:'Secret!Mickey!Goofy'}),'other');
-  assert.equal(publicQuestSection({internalName:'Premium!LilMermaid!Ursula'}),'other');
+  assert.equal(publicQuestSection({internalName:'Repeatable!Event!Park'}),'event');
+  assert.equal(publicQuestSection({internalName:'Repeatable!Ratatouille!Remy'}),'daily');
+  assert.equal(publicQuestSection({internalName:'Secret!Mickey!Goofy'}),'special');
+  assert.equal(publicQuestSection({internalName:'Premium!LilMermaid!Ursula'}),'premium');
+  assert.equal(publicQuestSection({internalName:'FTUE!FTUE_Merl_StarPath_010'}),'tutorial');
+  assert.equal(publicQuestSection({internalName:'Unknown!foo'}),'other');
 });
 
 test('166 original Story Quests split into source-named Valley, expansion and adventure arcs',async()=>{
@@ -83,4 +86,17 @@ test('unpublished Quest names never become internal Mission identifiers presente
   assert.match(page,/selectArc\(arc.id\)/);
   assert.match(page,/class:with-character-rail/);
   assert.match(page,/arc:section==='story'&&!query.trim\(\)\?storyArc:'all'/);
+});
+
+test('source Special quests must not be called 70 hidden Quests or 341 complete character quest lines',async()=>{
+ const data=await catalog();
+ const extra=filterPublicQuests(data,{section:'special',limit:100});
+ assert.equal(extra.total,70);
+ assert(extra.rows.some(q=>q.internalName.startsWith('Secret!Mickey!Donald!')),
+   'original character follow-ups are included in Secret and cannot all be called hidden');
+ const premium=filterPublicQuests(data,{section:'premium'});
+ assert.equal(premium.total,19);
+ assert(premium.rows.every(q=>q.internalName.startsWith('Premium!')));
+ assert.equal(filterPublicQuests(data,{section:'tutorial'}).total,1);
+ assert.equal(filterPublicQuests(data,{section:'other'}).total,0);
 });
