@@ -12,6 +12,8 @@
 import {
   ORIGIN_SCHEMA,type OriginDatabase,type ItemOrigin
 } from './origins.ts';
+import {hasPinnedPublicIapEvidence,type PublicIapSourceIndex}
+  from './public-static-iap.ts';
 import {STARPATH_PUBLIC_SHA} from '../guide/public-starpath.ts';
 import {
   hasPinnedPublicEventFriendshipEvidence,
@@ -33,13 +35,14 @@ import {
 export const DB02_GAME_NATIVE_ITEM_CATEGORIES_SCHEMA=
   'wand.db02.game-native-item-categories@1' as const;
 const CATEGORIES=Object.freeze([
-  'premium_shop','star_path','in_game_limited_event','real_time_limited_event'
+  'premium_shop','star_path','in_game_limited_event','real_time_limited_event',
+  'iap_package_reward'
 ] as const);
 export type GameNativeItemCategory=typeof CATEGORIES[number];
 export type GameNativeCategoryEvidenceBasis=
   'original_shop_offer_item_id'|'original_star_path_reward_item_id'|
-  'original_game_event_reward_item_id'|'original_pet_source_enum';
-const ORDER=Object.freeze(['premium','time_limited'] as const);
+  'original_game_event_reward_item_id'|'original_pet_source_enum'|
+  'original_iap_package_reward_item_id';
 const ID=/^[1-9][0-9]{0,15}$/;
 const EMPTY=Object.freeze([]) as readonly GameNativeCategoryEvidence[];
 const EMPTY_CATEGORIES=Object.freeze([]) as readonly GameNativeItemCategory[];
@@ -77,6 +80,7 @@ export interface GameNativeItemCategoryIndex {
     originalShopItemOccurrences:284;
     nativeStarPathRewardOccurrences:67;
     nativeGameEventRewardOccurrences:202;
+    originalIapPackageRewardOccurrences:291;
     nativePetPremiumShopRows:95;
     nativePetStarPathRows:7;
     nativePetGameEventRows:9;
@@ -88,6 +92,7 @@ export interface GameNativeItemCategoryIndex {
     starPathItemIds:number;
     inGameLimitedEventItemIds:number;
     realTimeLimitedEventItemIds:number;
+    iapPackageRewardItemIds:number;
     explicitlyMappedTwitchDropItemIds:0;
     explicitlyMappedCampaignCodeItemIds:0;
     dateOrPriceEvidenceUsed:false;
@@ -149,6 +154,7 @@ export function indexGameNativeItemCategories(
   origins:OriginDatabase,
   currentShop:PinnedPublicNativeShopIndex,
   archivedShop:PinnedPublicNativeShopIndex,
+  iap:PublicIapSourceIndex,
   rewards:PublicEventFriendshipAcquisitionIndex,
   pets:NativePetSourceIndex,
   online:NativeOnlineCategoryIndex
@@ -162,6 +168,10 @@ export function indexGameNativeItemCategories(
     currentShop.origins.length===156&&archivedShop.origins.length===128&&
     currentShop.coverage.currentAvailabilityVerified===false&&
     archivedShop.coverage.currentAvailabilityVerified===false&&
+    hasPinnedPublicIapEvidence(iap)&&
+    iap.coverage.nativePackages===53&&
+    iap.coverage.combinedRewardReferences===291&&
+    iap.coverage.currentAvailabilityVerified===false&&
     hasPinnedPublicEventFriendshipEvidence(rewards)&&
     rewards.coverage.eventRewardCandidates===202&&
     rewards.coverage.guaranteedGrantsVerified===false&&
@@ -203,6 +213,19 @@ export function indexGameNativeItemCategories(
         origin.originId,false);
     }
   }
+  let iapCount=0;
+  for(const origin of iap.origins){
+    check(origin.kind==='purchase_bonus'&&
+      origin.routeStatus==='confirmed_source_link'&&
+      origin.source.kind==='verified_game_native'&&
+      origin.source.sha256!==null&&
+      iap.getItemOrigins(origin.itemId).includes(origin),
+      'INVALID_IAP_SOURCE_ORIGIN');
+    add(origin.itemId,'iap_package_reward',
+      'original_iap_package_reward_item_id',origin.originId,false);
+    iapCount++;
+  }
+  check(iapCount===291,'IAP_SOURCE_CENSUS');
   let starpathCount=0;
   for(const id of origins.listLinkedItemIds()){
     for(const origin of origins.getItem(id).origins){
@@ -278,6 +301,7 @@ export function indexGameNativeItemCategories(
     originalShopItemOccurrences:284 as const,
     nativeStarPathRewardOccurrences:67 as const,
     nativeGameEventRewardOccurrences:202 as const,
+    originalIapPackageRewardOccurrences:291 as const,
     nativePetPremiumShopRows:95 as const,
     nativePetStarPathRows:7 as const,
     nativePetGameEventRows:9 as const,
@@ -289,6 +313,7 @@ export function indexGameNativeItemCategories(
     starPathItemIds:sortedByCategory.get('star_path')!.length,
     inGameLimitedEventItemIds:sortedByCategory.get('in_game_limited_event')!.length,
     realTimeLimitedEventItemIds:sortedByCategory.get('real_time_limited_event')!.length,
+    iapPackageRewardItemIds:sortedByCategory.get('iap_package_reward')!.length,
     explicitlyMappedTwitchDropItemIds:0 as const,
     explicitlyMappedCampaignCodeItemIds:0 as const,
     dateOrPriceEvidenceUsed:false as const,
