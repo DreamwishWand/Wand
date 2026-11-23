@@ -34,6 +34,9 @@ test('Japanese and English reward name searches resolve the exact original Quest
     assert(Object.isFrozen(hit.itemIds));
     assert(Object.isFrozen(hit.questIds));
   }
+  // Steam native ItemList also contains single-kanji Japanese reward names.
+  assert(search('土')?.itemIds.includes('31700015'));
+  assert(search('苔')?.itemIds.includes('31700121'));
   const mine=search('Mine Cart Popcorn');
   assert.deepEqual(mine?.itemIds,['40004032']);
   assert.deepEqual(mine?.questIds,['2070001245']);
@@ -69,7 +72,7 @@ test('all localized name hits are validated through the original 399 reward rela
 test('reject invalid, numeric-only and unverified names without fabricated Quest rewards',async()=>{
   const {rewards,overrides,labels}=await fixture();
   const search=(q)=>resolveQuestRewardNameMatches(rewards,overrides,labels,q,'ja');
-  for(const q of ['',' ','a','卵','80000000','40004032','00040004032',
+  for(const q of ['',' ','a','80000000','40004032','00040004032',
     'unpublished fake item name','\u0000',null,{},'A'.repeat(121)]){
     assert.equal(search(q),null,String(q));
   }
