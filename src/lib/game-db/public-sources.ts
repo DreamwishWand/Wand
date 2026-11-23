@@ -64,6 +64,13 @@ import {
   type Db00DistributionSearchPage
 } from './distribution-sources.ts';
 import {
+  createDb00AllOriginalSourceReader,
+  type Db00AllOriginalSourceReader,
+  type Db00AllOriginalSourceItem,
+  type Db00AllOriginalSearchRequest,
+  type Db00AllOriginalSearchPage
+} from './all-original-source-search.ts';
+import {
   createDb00NativeRecipeReader,
   type Db00NativeRecipeReader,type Db00NativeRecipeResult
 } from './native-recipes.ts';
@@ -204,6 +211,16 @@ export interface PublicSharedGameSources{
   searchDistributionSources(
     request?:Db00DistributionSearchRequest
   ):Promise<Db00DistributionSearchPage>;
+  /** Exact original definitions vs UNVERIFIED LootTable, container and
+   * default-inventory candidates, with native source-kind filters.
+   * On demand only; publication of original source shards not required. */
+  loadAllOriginalSourceSearch():Promise<Db00AllOriginalSourceReader>;
+  getAllOriginalItemSourceEvidence(
+    itemId:string|number
+  ):Promise<Db00AllOriginalSourceItem>;
+  searchAllOriginalItemSources(
+    request?:Db00AllOriginalSearchRequest
+  ):Promise<Db00AllOriginalSearchPage>;
   /** SHA-pinned original cooking/crafting results, loaded only on demand. */
   loadNativeRecipeSources():Promise<Db00NativeRecipeReader>;
   /** Optional original fishing/mining/timebending/growing source paths. */
@@ -400,6 +417,28 @@ export async function openPublicSharedGameSources(
     // Query validation lives with the bounded, source-backed reader.
     return (await loadDistributionSourceSearch()).search(request);
   };
+  let allOriginalSourceSearch:Promise<Db00AllOriginalSourceReader>|null=null;
+  const loadAllOriginalSourceSearch=():Promise<Db00AllOriginalSourceReader>=>
+    allOriginalSourceSearch??=acquisition.loadAllOriginalItemSources()
+      .then(source=>createDb00AllOriginalSourceReader(database,joined,source));
+  const getAllOriginalItemSourceEvidence=async(itemId:string|number):
+    Promise<Db00AllOriginalSourceItem>=>{
+    // Refuse invalid IDs before fetching optional SHA-pinned native assets.
+    const shared=joined.getItem(itemId);
+    const row=(await loadAllOriginalSourceSearch()).getItem(shared.itemId);
+    assert(row.itemId===shared.itemId&&
+      row.shared.itemId===shared.itemId&&
+      row.completeAcquisitionCoverage===false&&
+      row.guaranteedDropVerified===false&&
+      row.playerGrantVerified===false&&
+      row.currentAvailabilityVerified===false,
+      'ORIGINAL_SOURCE_ITEM_JOIN_MISMATCH');
+    return row;
+  };
+  const searchAllOriginalItemSources=async(
+    request:Db00AllOriginalSearchRequest={}
+  ):Promise<Db00AllOriginalSearchPage>=>
+    (await loadAllOriginalSourceSearch()).search(request);
   let nativeRecipes:Promise<Db00NativeRecipeReader>|null=null;
   const loadNativeRecipeSources=():Promise<Db00NativeRecipeReader>=>
     nativeRecipes??=acquisition.loadNativeRecipeResults().then(source=>
@@ -617,7 +656,9 @@ export async function openPublicSharedGameSources(
     loadNativeCompanionIdentitySources,getNativeCompanionIdentityEvidence,
     loadNativeOnlineCategories,
     loadDistributionSourceSearch,getItemDistributionEvidence,
-    searchDistributionSources,loadNativeRecipeSources,
+    searchDistributionSources,
+    loadAllOriginalSourceSearch,getAllOriginalItemSourceEvidence,
+    searchAllOriginalItemSources,loadNativeRecipeSources,
     loadNativeActivitySources,getNativeAcquisitionEvidence,
     loadNativeLootCandidateSources,getAllNativeAcquisitionEvidence,
     loadNativeLootContextSources,getNativeLootContextEvidence,
