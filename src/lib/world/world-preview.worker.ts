@@ -8,6 +8,7 @@
 import { openLocalWorldZip } from './local-snapshot.ts';
 import { WorldSourceLoadEpoch } from './world-source-load-epoch.ts';
 import { getNativeTerrainWindow,getNativeTerrainRaster } from './native-terrain-preview.ts';
+import {getNativeRegionGridAtlasPage} from './native-region-grid-atlas.ts';
 import { findOriginalItemAnchor, findOriginalItemAnchorAcrossGrids } from './native-item-anchor-finder.ts';
 import { getOriginalGridAreaEvidence } from './native-gridarea-evidence.ts';
 import { getOriginalGridAreaLocalWindow } from './native-gridarea-local-window.ts';
@@ -30,6 +31,7 @@ type Request =
   | { command:'clear'; requestId:number }
   | { command:'load'; requestId:number; file:Blob }
   | { command:'terrain-raster'; requestId:number; viewKey:string; gridIdNative:number }
+  | { command:'region-atlas'; requestId:number; regionKey:string;offset:number }
   | { command:'view'; requestId:number; viewKey:string;
       gridIdNative:number; rect:Rect; offset:number;
       includeDefaultLayers:boolean }
@@ -114,6 +116,12 @@ function parseRequest(data:unknown): Request {
     return {command:'find-anchor',requestId,
       viewKey:data.viewKey,gridIdNative:data.gridIdNative,
       itemId:data.itemId,matchIndex:data.matchIndex};
+  if(data.command==='region-atlas'&&
+    typeof data.regionKey==='string'&&data.regionKey.length>0&&
+    data.regionKey.length<=256&&nonnegative(data.offset)&&
+    data.offset<=65536)
+    return {command:'region-atlas',requestId,
+      regionKey:data.regionKey,offset:data.offset};
   if(data.command==='terrain-raster'&&
       typeof data.viewKey==='string'&&data.viewKey.length>0&&
       data.viewKey.length<=2048&&
@@ -210,6 +218,12 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
         message.itemId,message.orientationCode,x,y,width,height,
         message.callerGridFactor);
       worker.postMessage({kind:'gridarea-window',requestId,result:window});
+      return;
+    }
+    if(message.command==='region-atlas'){
+      const result=getNativeRegionGridAtlasPage(
+        catalog,views,message.regionKey,message.offset);
+      worker.postMessage({kind:'region-atlas',requestId,result});
       return;
     }
     const sourceView=views.find(view=>view.viewKey===message.viewKey);
