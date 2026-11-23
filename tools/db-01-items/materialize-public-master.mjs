@@ -51,6 +51,15 @@ check(release.schema==='wand.item-master.release@1'&&
   release.target.gameVersion==='1.26.2'&&
   release.count===13202&&release.bucketCount===256&&
   Object.keys(release.shards).length===256,'RELEASE_SCHEMA');
+// A minimal Collection-only projection: Item ID + browseable source Tags.
+ // No names, GUIDs, raw source definitions, CollectionSet predicates, or
+ // player data are copied. Source Tag associations are NOT verified visible
+ // Collection/world memberships.
+const COLLECTION_FACETS=new Set([
+  'color','furnitureStyle','clothingStyle','furnitureKind',
+  'clothingSlot','disneyUniverse','ingredientKind','mealKind'
+]);
+const collectionRows=[];
 let found=0,tagRefs=0,candidates=0;
 const seen=new Set();
 for(let bucket=0;bucket<256;bucket++){
@@ -69,6 +78,10 @@ for(let bucket=0;bucket<256;bucket++){
       row.worldMembershipVerified===false&&
       row.availabilityVerified===false,'BAD_ITEM_ROW_'+row.itemId);
     seen.add(row.itemId);found++;
+    const browseTags=row.tags.filter(t=>COLLECTION_FACETS.has(t.facet)&&
+      typeof t.key==='string'&&t.key.length>0&&t.key.length<=128)
+      .map(t=>[t.facet,t.key]);
+    if(browseTags.length)collectionRows.push([row.itemId,browseTags]);
     tagRefs+=row.tags.length;
     candidates+=row.collectionSourceCandidates.length;
   }
@@ -91,4 +104,19 @@ try{
   rmSync(staging,{recursive:true,force:true});
   throw error;
 }
+// Generated from the SHA-pinned archive by the existing build-only tool.
+// Collection consumes this small filter index only on demand, and continues
+// to use DB-01 getItem() for the complete per-ID detail on inspection.
+const collectionDestination=join(project,'static/ddv/collection/db01-facets-1262.json');
+mkdirSync(dirname(collectionDestination),{recursive:true});
+collectionRows.sort((a,b)=>a[0]-b[0]);
+writeFileSync(collectionDestination,JSON.stringify({
+  schema:'wand.collection.db01-native-facets@1',
+  release:'steam-1.26.2-item-id-master-v1',
+  sourceArchiveSha256:RELEASE_SHA,
+  sourceItemCount:found,
+  taggedItems:collectionRows.length,
+  items:collectionRows
+})+'\n');
+console.log('DB-01 Collection browse subset:',collectionRows.length,'tagged Item IDs');
 console.log('DB-01 public Item master:',found,'items,',tagRefs,'tags,',candidates,'Collection source candidates');
