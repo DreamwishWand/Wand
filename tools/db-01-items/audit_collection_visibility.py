@@ -38,12 +38,15 @@ SOURCE_SHA = {
     "Furniture": "cde1b6e4dd37085e829c2e4548b89091bbf8d543cee92e6031b2f5bddc794196",
     "ActivityItem": "4f4d3393887aececfcef16569cebc8dd7df08d03ba7b7c89083fe15bb7309dc2",
     "Companion": "62008c61bf0b407c40d0adf417db043ab058f4ec0ca2764355e176a3532c2219",
+    "Skin": "c557b76c8a762afb3d6cdd66e9c6ced22e7d863ff3dc7426f8f9aff3939e6371",
     "Tag": "bc537ad3278483cb6b64a344fa70f73dca7e66ff146b1e0d032e2f209ba813a4",
 }
-EXPECTED_ROWS = {"Furniture": 6746, "ActivityItem": 4050, "Companion": 394, "Tag": 409}
+EXPECTED_ROWS = {"Furniture": 6746, "ActivityItem": 4050, "Companion": 394,
+                 "Skin": 163, "Tag": 409}
 VISIBILITY_FIELDS = {
     "FurnitureItemData": 46, "CropItemData": 31,
     "MealItemData": 20, "PetItemData": 20,
+    "CharacterSkinItemData": 24,
 }
 CASES = {1: "WhenUnlocked", 2: "When", 5: "WhenUnloked"}
 SEED_TAG_FIELD = 31
@@ -95,6 +98,9 @@ def verify_il2cpp(text: str) -> dict[str, int]:
                 r"\.VisibilityOneofCase " + name + r" = " +
                 str(code) + r";", match.group(1)),
                 "NATIVE_VISIBILITY_CASE_DRIFT_" + name)
+    require(len(re.findall(
+        r"public const int CollectionVisibilityFieldNumber = \d+;", text,
+    )) == len(VISIBILITY_FIELDS), "UNRECOGNIZED_COLLECTION_VISIBILITY_CLASS")
     return field_numbers
 
 
@@ -165,6 +171,7 @@ def collect_cases(
     activities: list[tuple[int, str, list]],
     companions: list[tuple[int, str, list]],
     tags: set[int],
+    skins: list[tuple[int, str, list]] | None = None,
 ) -> tuple[list[dict], dict]:
     """Exact source visibility cases and ambiguous seed Tag 31 disambiguation."""
     results: list[dict] = []
@@ -195,6 +202,7 @@ def collect_cases(
 
     scan("Furniture", furniture, VISIBILITY_FIELDS["FurnitureItemData"])
     scan("Companion", companions, VISIBILITY_FIELDS["PetItemData"])
+    scan("Skin", skins or [], VISIBILITY_FIELDS["CharacterSkinItemData"])
     scan("ActivityMeal", activities, VISIBILITY_FIELDS["MealItemData"])
     for item_id, native_name, ff in activities:
         selected = [raw for f, wire, raw in ff
@@ -220,7 +228,7 @@ def collect_cases(
         "visibilityRecords": len(results),
         "cases": {name: counts[name] for name in CASES.values()},
         "sourceFamilies": {name: families[name] for name in
-                           ("Furniture", "ActivityCrop", "ActivityMeal", "Companion")},
+                           ("Furniture", "ActivityCrop", "ActivityMeal", "Companion", "Skin")},
         "activityField31RecognizedSeedTagReferences": seeds,
         "requiresRuntimeConditionEvaluator": counts["When"] > 0,
     }
@@ -234,6 +242,7 @@ def audit(itemlist: Path, dump: Path) -> dict:
     require(len(tag_ids) == 409, "TAG_SOURCE_COVERAGE")
     rows, census = collect_cases(
         data["Furniture"], data["ActivityItem"], data["Companion"], tag_ids,
+        data["Skin"],
     )
     return {
         "schema": SCHEMA, "platform": "Steam", "gameVersion": GAME_VERSION,
