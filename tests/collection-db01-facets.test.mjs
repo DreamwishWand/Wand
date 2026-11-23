@@ -120,6 +120,40 @@ test('DB-01 source native filtering is a narrow projection, not a second Item ma
   assert.ok(index.itemsByUniverseTagId.has(2000500023));
   for(const [id,items] of index.itemsByUniverseTagId)
     assert.ok(items.every(itemId=>index.universeTagIdsByItem.get(itemId)?.includes(id)));
+  // Every original Item ID has a detailed category and at least one universe
+  // browse assignment, even if the source provides no universe tag.
+  assert.equal(index.universeBrowseKeysByItem.size,index.nativeSubtypeByItem.size);
+  const untagged=index.itemsByUniverseBrowseKey.get('__no_universe_tag__')??[];
+  const seen=new Set();
+  for(const [key,ids] of index.itemsByUniverseBrowseKey){
+    assert.equal(new Set(ids).size,ids.length);
+    for(const id of ids){
+      assert.ok(index.nativeSubtypeByItem.has(id));
+      assert.ok(index.universeBrowseKeysByItem.get(id)?.includes(key));
+      seen.add(id);
+    }
+  }
+  assert.equal(seen.size,13202);
+  for(const id of index.nativeSubtypeByItem.keys()){
+    const numeric=index.universeTagIdsByItem.get(id);
+    const named=index.universesByItem.get(id);
+    const expected=numeric?.length?numeric.map(String):
+      named?.length?named:['__no_universe_tag__'];
+    assert.deepEqual(index.universeBrowseKeysByItem.get(id),expected);
+  }
+  assert.equal(untagged.length,[...index.nativeSubtypeByItem.keys()].filter(id=>
+    !index.universeTagIdsByItem.has(id)&&!index.universesByItem.has(id)).length);
+  assert.ok(untagged.every(id=>!index.itemsByUniverseTagId.get(2000500017)?.includes(id)));
+  assert.throws(()=>parseCollectionDb01Facets({...raw,
+    universeSourceItems:[[1,['NonIP']],...raw.universeSourceItems],
+    universeSourceItemCount:raw.universeSourceItemCount+1
+  }),/UNIVERSE_UNKNOWN_ITEM/);
+  const distribution=[...index.itemsByNativeSubtype].map(([category,ids])=>({
+    category,total:ids.length,tagged:ids.filter(id=>
+      !index.universeBrowseKeysByItem.get(id).includes('__no_universe_tag__')).length
+  }));
+  console.log('Universe coverage by original category:',JSON.stringify(distribution));
+  console.log('Universe assignments:',13202-untagged.length,'source-linked,',untagged.length,'no source universe');
   assert.equal(index.itemsByActivityType.size,15);
   assert.deepEqual([...index.activityTypeNames.entries()].sort((a,b)=>a[0]-b[0]),[
     [0,'Default'],[2,'Crop'],[3,'Meal'],[4,'Seed'],[8,'Flower'],
