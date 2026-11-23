@@ -255,7 +255,11 @@ test('Official campaign reward browser retains every unresolved name and never t
     ['50400102'],['40001607'],['40001609'],['50700124']
   ]);
   const onlyCodes=index.listCampaignRewardResolutions('redeem_code');
-  assert.deepEqual(onlyCodes,[code]);
+  assert.equal(onlyCodes.length,17);
+  assert(onlyCodes.includes(code));
+  assert.equal(onlyCodes.filter(x=>x.campaignId.startsWith('code:PRIDE2023')).length,8);
+  assert.equal(onlyCodes.filter(x=>/^code:PRIDE[A-Z]+24$/.test(x.campaignId)).length,8);
+  assert(onlyCodes.every(x=>x.acquisitionLinksVerified===false));
   assert.deepEqual(index.listCampaignRewardResolutions('gift'),[]);
   assert(all.every(c=>c.rewards.every(r=>
     r.match==='source_supplied_id_unverified' ||
