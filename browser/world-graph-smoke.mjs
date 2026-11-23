@@ -386,8 +386,18 @@ try{
   if(!localZipPanel.includes('ローカルZIP内のマニフェスト整合性を確認しました'))
     console.error('DB04_SYNTHETIC_ZIP_LOAD_DIAGNOSTICS '+localZipPanel.slice(0,1200));
   assert.match(localZipPanel,/ローカルZIP内のマニフェスト整合性を確認しました/);
+  // This intentionally synthetic graph declares 2 original instances,
+  // while the separately constructed terrain ZIP contains only 1.
+  // The exact source path matches, but auto-navigation MUST fail closed.
   await openTerrain.click();
+  await page.getByRole('status').filter({
+    hasText:'初期GridObject件数が一致しません'
+  }).waitFor();
+  // Manual independent source browsing remains available after a rejected
+  // cross-archive shortcut; it does not assert the archives are identical.
   const terrainSelectors=page.locator('.world-panel .selector-row select');
+  await terrainSelectors.nth(0).selectOption('OffGridBuildings');
+  await terrainSelectors.nth(1).selectOption(JSON.stringify(['grid',LOOSE]));
   await page.waitForFunction(({layout,grid})=>{
     const selects=[...document.querySelectorAll('.world-panel .selector-row select')];
     return selects.length===3&&selects[1].selectedOptions[0]?.textContent
