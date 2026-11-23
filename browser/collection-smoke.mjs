@@ -774,14 +774,20 @@ try{
   const worldChoices=page.getByRole('group',{name:'ワールド',exact:true});
   await worldChoices.getByRole('button',{name:'ドリームライトバレー'}).click();
   await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
-  await page.getByRole('combobox',{name:'ユニバースで絞り込み'}).selectOption('Cinderella');
-  await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
   assert.equal(await worldChoices.getByRole('button',{name:'ドリームライトバレー'}).getAttribute('aria-pressed'),'true');
-  assert.equal(await page.getByRole('combobox',{name:'ユニバースで絞り込み'}).inputValue(),'Cinderella');
-  await worldChoices.getByRole('button',{name:'すべて'}).click();
-  assert.equal(await page.getByRole('combobox',{name:'ユニバースで絞り込み'}).inputValue(),'Cinderella',
-    'world All must not clear the independent universe selection');
-  await page.getByRole('combobox',{name:'ユニバースで絞り込み'}).selectOption('');
+  // World and Universe are separate browse modes: the selected universe
+  // presents item previews grouped by category, not another nested picker.
+  await page.getByRole('button',{name:'ユニバース表示'}).click();
+  assert.equal(await page.locator('.collection-universe-card').count(),1);
+  await page.locator('.collection-universe-card').first().click();
+  await page.locator('.collection-universe-section .item-card').first().waitFor();
+  assert.match(await page.locator('.collection-universe-section').innerText(),/検証済みの靴/);
+  await page.locator('.collection-universe-section-head button').first().click();
+  await page.locator('.item-card').first().waitFor();
+  assert.equal(await page.locator('.item-card').count(),1);
+  await page.getByRole('button',{name:'ワールド表示'}).click();
+  await page.locator('.facet-card').first().waitFor();
+  assert.equal(await page.getByRole('button',{name:'ワールド表示'}).getAttribute('aria-pressed'),'true');
   const releaseBackupPromise=page.waitForEvent('download');
   await page.getByRole('button',{name:'バックアップ出力'}).click();
   const releaseBackup=JSON.parse(await readFile(await (await releaseBackupPromise).path(),'utf8'));
