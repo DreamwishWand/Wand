@@ -157,6 +157,34 @@ class NativeTagClassificationTest(unittest.TestCase):
         )
         self.assertFalse(any(r['tagId']==3 for r in refs))
 
+    def test_original_furniture_blocker_field14_is_a_real_source_tag(self):
+        # Steam 1.26.2 FurnitureBlockerItemData.TagsFieldNumber=14.
+        # The older overlay omitted 19 real field-14 tags. The unrelated
+        # tool/blocker nested messages at fields 7/8 are NOT Tag arrays.
+        dictionary={
+            2000500006:'ToyStory',2000500023:'DreamlightValley',
+            2001200070:'IsCraftable',2001200028:'IsDreamlightValley',
+        }
+        refs=tags.tag_refs('Furniture',[
+            (7,2,b'\\x08\\x01'),
+            (14,2,var(2000500023)),
+        ], dictionary)
+        self.assertEqual(refs,[{
+            'tagId':2000500023,'tagKey':'DreamlightValley',
+            'wireField':14,'facet':'disneyUniverse',
+        }])
+        self.assertEqual(tags.tag_refs('Furniture',[
+            (14,2,var(2001200070)),
+        ], dictionary),[{
+            'tagId':2001200070,'tagKey':'IsCraftable',
+            'wireField':14,'facet':'otherTag',
+        }])
+        # Incomplete protobuf, arbitrary IDs or a nested message must never
+        # be interpreted as source-native IHasTags membership.
+        self.assertEqual(tags.tag_refs('Furniture',[
+            (14,2,b'\\x80'),(14,2,var(999999999)),
+        ],dictionary),[])
+
     def test_wire_decoder_rejects_duplicate_ids_and_truncation(self):
         with self.assertRaisesRegex(ValueError,'DUPLICATE_OR_BROKEN_FRAME'):
             list(tags.source_frames(self.item_data+self.item_data))

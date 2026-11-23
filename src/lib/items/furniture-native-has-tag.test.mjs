@@ -76,6 +76,9 @@ const makeFixture=()=>{
         catalogDomain:'item',nativeKey:r.nativeKey,
         sourceSha256:DB01_ORIGINAL_FURNITURE_SOURCE_SHA256};
     },
+    async getItems(ids){
+      return Promise.all(ids.map(id=>this.getItem(id)));
+    },
   };
   return {rows,buckets,blobs,manifest,catalog};
 };
@@ -136,6 +139,23 @@ test('all seven source classes return exact tags with no cross-class Set inherit
     offset+=count;
   }
   assert.equal(offset,6746);
+});
+
+test('bounded batched furniture reads share verified buckets and preserve order',async()=>{
+  const c=createDb01OriginalFurnitureHasTagClient(
+    fx.manifest,loader,fx.catalog);
+  const id0=fx.rows[0].itemId;
+  const id1=fx.rows[12].itemId;
+  const r=await c.getItems([id1,id0,49999999,id1]);
+  assert.deepEqual(r.map(x=>x?.original.itemId??null),
+    [id1,id0,null,id1]);
+  assert.equal(r[0].sourceShardHashVerified,true);
+  assert.equal(Object.isFrozen(r),true);
+  assert.deepEqual(await c.getItems([]),[]);
+  await assert.rejects(c.getItems([0]),
+    /DB01_FURNITURE_SUBTYPE_INVALID_ITEM_BATCH/);
+  await assert.rejects(c.getItems(new Array(4097).fill(id0)),
+    /DB01_FURNITURE_SUBTYPE_INVALID_ITEM_BATCH/);
 });
 
 test('private source reader validates item identity against DB-01 catalog',async()=>{
