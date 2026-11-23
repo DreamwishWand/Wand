@@ -81,7 +81,7 @@ check(release.schema==='wand.item-master.release@1'&&
  // Collection/world memberships.
 const COLLECTION_FACETS=new Set([
   'color','furnitureStyle','clothingStyle','furnitureKind',
-  'clothingSlot','disneyUniverse','ingredientKind','mealKind'
+  'clothingSlot','disneyUniverse','worldContextTag','ingredientKind','mealKind'
 ]);
 const collectionRows=[];
 const collectionCategoryRows=[];
