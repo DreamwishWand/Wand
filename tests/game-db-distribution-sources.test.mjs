@@ -49,11 +49,13 @@ test('distribution source search is lazy and shares both SHA-authenticated DB-02
   assert.equal(reader.nativeOnlineCategoryRows,2198);
   assert.equal(reader.nativePetSourceRows,134);
   assert.equal(reader.configuredOriginRoutes,1255);
+  assert.equal(reader.indexedOriginalSourceRoutes,3961);
   assert.equal(reader.sourceCoverageComplete,false);
   assert.equal(reader.exclusiveTimeLimitedItemVerified,false);
   assert.equal(reader.currentAvailabilityVerified,false);
   assert.equal(reader.playerOwnershipVerified,false);
-  assert.equal(calls.length,initial+2);
+  assert.equal(calls.length,initial+4,
+    'classification loads 2 original metadata and 2 original recipe/activity assets');
   assert.equal(calls.filter(x=>x.endsWith('/'+ONLINE)).length,1);
   assert.equal(calls.filter(x=>x.endsWith('/'+PET)).length,1);
   const source=await pub.acquisition.loadDistributionScopes();
@@ -65,7 +67,8 @@ test('distribution source search is lazy and shares both SHA-authenticated DB-02
     source.coverage.distinctItemsWithSourceEvidence);
   assert.equal(reader.nameOnlyCandidateRelations,
     source.coverage.nameOnlyCandidateRelations);
-  assert.equal(calls.length,initial+2);
+  assert.equal(calls.length,initial+4,
+    'all native DB-02 readers reuse the previously authenticated projections');
   assert(Object.isFrozen(reader));
 });
 
@@ -110,7 +113,8 @@ test('every DB-02 source-evidence Item ID is joined to exact public DB-00 Item I
   assert.equal(published+outside,ids.length);
   assert.equal(evidenceCounts.native_online_category,2198);
   assert.equal(evidenceCounts.native_pet_source_category,134);
-  assert.equal(evidenceCounts.configured_item_origin,1255);
+  assert.equal(evidenceCounts.configured_item_origin,3961);
+  assert.equal(r.indexedOriginalSourceRoutes,3961);
   assert.equal(evidenceCounts.campaign_or_shop_name_candidate,
     source.coverage.nameOnlyCandidateRelations);
   assert(simultaneous>=0);

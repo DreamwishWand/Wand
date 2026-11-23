@@ -24,6 +24,7 @@ import {
 export const DB02_ITEM_SOURCE_BROWSER_SCHEMA='wand.db02.item-source-browser@1' as const;
 export const DB02_NATIVE_EXPANDED_SOURCE_BROWSER_SCHEMA=
   'wand.db02.native-expanded-item-source-browser@1' as const;
+const PINNED_EXPANDED_BROWSER=new WeakSet<object>();
 const ID=/^[1-9][0-9]{0,15}$/;
 const SAFE_KEY=/^[a-zA-Z0-9][a-zA-Z0-9:._\/-]{0,127}$/;
 const KINDS:readonly OriginKind[]=Object.freeze([
@@ -354,7 +355,7 @@ export function indexExpandedNativeItemSourceBrowser(
     ([a],[b])=>Number(a)-Number(b)
   ).map(([itemId,origins])=>({itemId,origins})));
   const browser=indexSourceRows(sorted,3961);
-  return Object.freeze({
+  const expanded:ExpandedNativeItemSourceBrowser=Object.freeze({
     ...browser,
     nativeExpansionSchema:DB02_NATIVE_EXPANDED_SOURCE_BROWSER_SCHEMA,
     gameVersion:'1.26.2' as const,
@@ -370,4 +371,14 @@ export function indexExpandedNativeItemSourceBrowser(
       originalSourceCoverageComplete:false as const
     })
   });
+  PINNED_EXPANDED_BROWSER.add(expanded);
+  return expanded;
+}
+
+/** Admit expanded source joins only from the SHA-checked native index builder. */
+export function hasPinnedExpandedNativeItemSourceEvidence(
+  value:unknown
+):value is ExpandedNativeItemSourceBrowser{
+  return value!==null&&typeof value==='object'&&
+    PINNED_EXPANDED_BROWSER.has(value);
 }

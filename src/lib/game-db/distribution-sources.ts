@@ -78,7 +78,10 @@ export interface Db00DistributionSourceReader{
   readonly coveredSourceItemCount:number;
   readonly nativeOnlineCategoryRows:2198;
   readonly nativePetSourceRows:134;
+  /** Unmodified original published DB-02 ledger routes. */
   readonly configuredOriginRoutes:1255;
+  /** Full original source relations including 1943 recipes and 763 paths. */
+  readonly indexedOriginalSourceRoutes:3961;
   readonly nameOnlyCandidateRelations:number;
   readonly sourceCoverageComplete:false;
   readonly exclusiveTimeLimitedItemVerified:false;
@@ -106,6 +109,10 @@ export function createDb00DistributionSourceReader(
     source.coverage?.nativeOnlineCategoryRows===2198 &&
     source.coverage.nativePetSourceRows===134 &&
     source.coverage.existingSourceOriginRoutes===1255 &&
+    source.coverage.nativeRecipeDefinitionRoutes===1943 &&
+    source.coverage.nativeActivityResultRoutes===763 &&
+    source.coverage.indexedOriginalSourceRoutes===3961 &&
+    source.coverage.expandedNativeSourceEvidenceLoaded===true &&
     source.coverage.currentAvailabilityVerified===false &&
     source.coverage.exclusiveTimeLimitedItemVerified===false &&
     source.coverage.playerOwnershipVerified===false &&
@@ -165,7 +172,7 @@ export function createDb00DistributionSourceReader(
   }
   check(evidenceTotals.get('native_online_category')===2198 &&
     evidenceTotals.get('native_pet_source_category')===134 &&
-    evidenceTotals.get('configured_item_origin')===1255 &&
+    evidenceTotals.get('configured_item_origin')===3961 &&
     evidenceTotals.get('campaign_or_shop_name_candidate')===
       source.coverage.nameOnlyCandidateRelations &&
     scopesById.size===ids.length,
@@ -280,6 +287,7 @@ export function createDb00DistributionSourceReader(
     nativeOnlineCategoryRows:2198 as const,
     nativePetSourceRows:134 as const,
     configuredOriginRoutes:1255 as const,
+    indexedOriginalSourceRoutes:3961 as const,
     nameOnlyCandidateRelations:
       source.coverage.nameOnlyCandidateRelations,
     sourceCoverageComplete:false as const,
