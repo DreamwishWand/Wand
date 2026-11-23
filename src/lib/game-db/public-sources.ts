@@ -107,17 +107,20 @@ export async function openPublicSharedGameSources(
   const joined=joinCurrentGameSources(database,{
     origins:acquisition.origins,rewards:guide,
     staticContainers:acquisition.staticContainerSource,
+    defaultInventories:acquisition.defaultInventorySource,
     questTargets:guideQuestTargets
   });
   const search=createDb00PublicItemSearch(
     database,joined,acquisition.origins,guide,acquisition.staticContainerSource,
-    guideQuestTargets
+    guideQuestTargets,acquisition.defaultInventorySource
   );
   assert(acquisition.gameVersion==='1.26.2' &&
     acquisition.coverage.publishedItemDefinitions===database.itemCount &&
     acquisition.coverage.combinedSourceRoutes===1255 &&
     acquisition.coverage.staticContainerCandidateRoutes===146 &&
     acquisition.coverage.staticContainerCandidateItemIds===115 &&
+    acquisition.coverage.configuredDefaultInventoryEntries===289 &&
+    acquisition.coverage.configuredDefaultInventoryItemIds===288 &&
     acquisition.coverage.requiresPrivateGameArchive===false &&
     acquisition.coverage.sourceCoverageComplete===false &&
     acquisition.coverage.liveOfferAvailabilityVerified===false &&

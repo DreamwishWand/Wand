@@ -17,6 +17,10 @@ import type {
   OriginDatabase,OriginKind,RouteStatus
 } from '../acquisition/origins.ts';
 import type {GuideRewardIndex} from '../guide/reward-relations.ts';
+import {
+  hasPinnedDefaultInventoryEvidence,
+  type PinnedDefaultInventorySource
+} from '../acquisition/public-default-inventories.ts';
 import type {
   PublicQuestTargetReverseReader,QuestTargetItemReference,
   QuestTargetItemRole
@@ -41,6 +45,10 @@ export interface Db00PublicItemSearchRequest {
   readonly starPathSeasonId?:string;
   /** Static original container slot candidate only; NOT live storage/loot/ownership. */
   readonly staticContainerCandidate?:true;
+  /** Source-native configured defaults only: not inventory ownership/grants. */
+  readonly configuredDefaultInventoryCandidate?:true;
+  /** Original native group name, e.g. Wardrobe or HomeStorage. */
+  readonly configuredDefaultInventoryGroup?:string;
   /** Source-native Quest objective reference only, not an actual requirement. */
   readonly questTargetCandidate?:true;
   readonly questTargetQuestId?:string;
@@ -77,6 +85,7 @@ interface SearchEntry {
   readonly originStatuses:ReadonlyMap<OriginKind,ReadonlySet<RouteStatus>>;
   readonly seasonIds:ReadonlySet<string>;
   readonly hasStaticContainerCandidate:boolean;
+  readonly configuredDefaultInventoryGroups:ReadonlySet<string>;
   readonly questTargetCandidates:readonly QuestTargetItemReference[];
 }
 function assert(ok:unknown,code:string):asserts ok {
@@ -95,7 +104,8 @@ export function createDb00PublicItemSearch(
   origins:OriginDatabase,
   guide:GuideRewardIndex,
   staticContainers?:PinnedStaticContainerContents,
-  questTargets?:PublicQuestTargetReverseReader
+  questTargets?:PublicQuestTargetReverseReader,
+  defaultInventories?:PinnedDefaultInventorySource
 ):Db00PublicItemSearch {
   assert(database?.contract==='wand.game-db.shared@1' &&
     database.itemCount===13202 &&
@@ -125,6 +135,17 @@ export function createDb00PublicItemSearch(
     questTargets.coverage.mandatoryRequirementVerified===false &&
     questTargets.coverage.playerProgressVerified===false,
     'QUEST_TARGET_SOURCE_REQUIRED');
+  if(defaultInventories)assert(
+    hasPinnedDefaultInventoryEvidence(defaultInventories) &&
+    defaultInventories.schema==='wand.db02.static-default-inventories@1' &&
+    defaultInventories.coverage.groups===15 &&
+    defaultInventories.coverage.configuredEntries===289 &&
+    defaultInventories.coverage.distinctItemIds===288 &&
+    defaultInventories.coverage.playerInventoryVerified===false &&
+    defaultInventories.coverage.newPlayerGrantVerified===false &&
+    defaultInventories.coverage.onlineOwnershipVerified===false &&
+    defaultInventories.coverage.privateSaveIncluded===false,
+    'PINNED_DEFAULT_INVENTORY_REQUIRED');
   let index:readonly SearchEntry[]|null=null;
   const prepare=():readonly SearchEntry[]=>{
     if(index)return index;
@@ -163,6 +184,20 @@ export function createDb00PublicItemSearch(
           row.kind==='loot'&&row.routeStatus==='static_candidate_only'&&
           row.availability==='not_live_verified'),
           'UNVERIFIED_CONTAINER_TEMPLATE');
+        const configuredDefaults=defaultInventories?.getItemCandidates(item.id)??[];
+        assert(configuredDefaults.every(row=>row.itemId===item.id &&
+          row.kind==='other' && row.routeStatus==='static_candidate_only' &&
+          row.availability==='not_live_verified' &&
+          row.source.sourceId==='db02:static:default-inventories:steam-1262'),
+          'UNVERIFIED_DEFAULT_INVENTORY');
+        const defaultGroups=defaultInventories?.getItemGroupNames(item.id)??[];
+        assert(defaultGroups.every(group=>typeof group==='string'&&
+          defaultInventories?.getGroup(group)!==null),
+          'INVALID_DEFAULT_INVENTORY_GROUP');
+        assert(defaultGroups.length===new Set(defaultGroups).size &&
+          defaultGroups.length===new Set(configuredDefaults.map(row=>
+            row.originId.split(':')[2])).size,
+          'DEFAULT_INVENTORY_GROUP_COUNT');
         const targets=questTargets?.getItemCandidates(item.id)??[];
         assert(targets.every(row=>row.itemId===item.id &&
           row.sourceCandidateOnly===true &&
@@ -177,6 +212,7 @@ export function createDb00PublicItemSearch(
           originStatuses:statuses,
           seasonIds:seasons,
           hasStaticContainerCandidate:templates.length>0,
+          configuredDefaultInventoryGroups:new Set(defaultGroups),
           questTargetCandidates:Object.freeze([...targets])
         }));
       }
@@ -221,6 +257,16 @@ export function createDb00PublicItemSearch(
       'INVALID_QUEST_TARGET_ROLE');
     assert(!(request.questTargetCandidate||questId||role)||
       questTargets!==undefined,'QUEST_TARGET_SOURCE_NOT_LOADED');
+    assert(request.configuredDefaultInventoryCandidate===undefined ||
+      request.configuredDefaultInventoryCandidate===true,
+      'INVALID_DEFAULT_INVENTORY_FILTER');
+    const group=request.configuredDefaultInventoryGroup;
+    assert(group===undefined ||
+      typeof group==='string'&&
+      /^[A-Za-z][A-Za-z0-9]{0,63}$/.test(group),
+      'INVALID_DEFAULT_INVENTORY_GROUP');
+    assert(!(request.configuredDefaultInventoryCandidate||group)||
+      defaultInventories!==undefined,'DEFAULT_INVENTORY_SOURCE_NOT_LOADED');
     const offset=request.offset??0,limit=request.limit??100;
     assert(Number.isSafeInteger(offset)&&offset>=0 &&
       Number.isSafeInteger(limit)&&limit>0&&limit<=500,'INVALID_SEARCH_PAGE');
@@ -236,6 +282,9 @@ export function createDb00PublicItemSearch(
         if(season && !item.seasonIds.has(season))continue;
         if(request.staticContainerCandidate===true &&
           !item.hasStaticContainerCandidate)continue;
+        if(request.configuredDefaultInventoryCandidate===true &&
+          item.configuredDefaultInventoryGroups.size===0)continue;
+        if(group && !item.configuredDefaultInventoryGroups.has(group))continue;
         if((request.questTargetCandidate||questId||role) &&
           !item.questTargetCandidates.some(row=>
             (!questId||row.questId===questId)&&(!role||row.role===role)))continue;

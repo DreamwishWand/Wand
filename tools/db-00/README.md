@@ -334,3 +334,26 @@ currently accessible, collected, consumed or completed by a player. These
 relations never alter the verified DB-00 category, World, DLC or acquisition
 facts. Out-of-ItemList source IDs are not fabricated into Collection membership;
 they can still be read through direct \`getItem\` by their Item ID.
+
+
+### Pinned native default-inventory templates
+
+DB-00 now includes DB-02's SHA-256-verified \`Meta.DefaultInventories\`
+source as distinct \`getItem(id).configuredDefaultInventoryCandidates\`:
+**289 entries / 288 Item IDs / 15 original inventory groups**, including
+Backpack, HomeStorage, Wardrobe, Decals and others. The source is included
+in public and owner-local joins without loading private saves.
+
+\`searchItems({configuredDefaultInventoryCandidate:true})\` filters the
+published 13,202-Item subset. For native group-level queries, use
+\`searchItems({configuredDefaultInventoryGroup:'Wardrobe'})\` (also combine
+with names, quest targets or source origin filters). As with other readers,
+\`null\` means the source was not supplied and \`[]\` means no recorded
+entry. Outside-published-scope IDs remain queryable through direct
+\`getItem(id)\`.
+
+Configured default records do **not** prove initial grants, actual storage
+contents, player ownership, DLC entitlements or any runtime quantity.
+Configured amounts are preserved, never treated as owned stacks. They are
+**not merged** into the existing DB-02 acquisition \`origins\` ledger or
+into verified DB-00 Collection facts.
