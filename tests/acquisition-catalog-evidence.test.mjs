@@ -5,7 +5,7 @@ import { mkdtemp, writeFile, rm, readFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { auditFiles } from '../tools/src-02-acquisition/audit_catalog.mjs';
-import { createAcquisitionCatalogEvidence } from '../src/lib/acquisition/catalog-evidence.mjs';
+import { createAcquisitionCatalogEvidence } from '../src/lib/acquisition/catalog-evidence.ts';
 
 const hash=x=>createHash('sha256').update(x).digest('hex');
 const json=x=>Buffer.from(JSON.stringify(x)+'\n');
@@ -125,5 +125,62 @@ test('symlinked private input is rejected before parsing',async()=>{
 test('audit never overwrites a private source file',async()=>{
   await run(buildFixture(),async p=>{
     await assert.rejects(auditFiles({...p,out:p.db01Manifest}),/OUTPUT_OVERWRITES_INPUT/);
+  });
+});
+
+test('typed catalog projection retains only vetted fields and immutable evidence',async()=>{
+  await run(buildFixture(),async p=>{
+    const audit=await auditFiles(p);
+    const pins={src02ManifestSha256:hash(await readFile(p.src02Manifest)),
+      db01ManifestSha256:hash(await readFile(p.db01Manifest))};
+    const result=createAcquisitionCatalogEvidence(audit,pins);
+    assert(Object.isFrozen(result));
+    assert(Object.isFrozen(result.counts));
+    assert(Object.isFrozen(result.target));
+    const row=result.lookupUnindexedItem('22');
+    assert(Object.isFrozen(row));
+    assert.deepEqual(Object.keys(row).sort(),[
+      'acquirableVerified','classification','id','itemId','nativeCategory',
+      'sourceFile','sourceSha256'
+    ]);
+    audit.supplementalDefinitions[0].nativeCategory='Tampered';
+    audit.counts.additionalNativeDefinitions=999;
+    assert.equal(row.nativeCategory,'Currency');
+    assert.equal(result.counts.additionalNativeDefinitions,1);
+    assert.equal(result.lookupUnindexedItem(33).acquirableVerified,false);
+    assert.equal(result.lookupUnindexedItem(11),null);
+  });
+});
+
+test('typed catalog rejects unsafe source paths, malformed category and ownership claims',async()=>{
+  await run(buildFixture(),async p=>{
+    const audit=await auditFiles(p);
+    const pins={src02ManifestSha256:hash(await readFile(p.src02Manifest)),
+      db01ManifestSha256:hash(await readFile(p.db01Manifest))};
+    const rewrap=(patch)=>({...audit,...patch});
+    assert.throws(()=>createAcquisitionCatalogEvidence(rewrap({
+      limits:{...audit.limits,ownershipVerified:true}
+    }),pins),/UNSAFE_AUDIT/);
+    assert.throws(()=>createAcquisitionCatalogEvidence(rewrap({
+      limits:{...audit.limits,questRewardVerified:true}
+    }),pins),/UNSAFE_AUDIT/);
+    assert.throws(()=>createAcquisitionCatalogEvidence(rewrap({
+      supplementalDefinitions:audit.supplementalDefinitions.map(row=>
+        row.classification==='native_definition_only_unclassified'?
+          {...row,sourceFile:'../private/save.json'}:row)
+    }),pins),/INVALID_SOURCE/);
+    assert.throws(()=>createAcquisitionCatalogEvidence(rewrap({
+      supplementalDefinitions:audit.supplementalDefinitions.map(row=>
+        row.classification==='native_definition_only_unclassified'?
+          {...row,nativeCategory:'../Currency'}:row)
+    }),pins),/INVALID_SOURCE/);
+    assert.throws(()=>createAcquisitionCatalogEvidence(rewrap({
+      supplementalDefinitions:audit.supplementalDefinitions.map(row=>
+        row.classification==='unresolved_in_partial_native_index'?
+          {...row,sourceSha256:'a'.repeat(64)}:row)
+    }),pins),/UNSAFE_UNRESOLVED/);
+    assert.throws(()=>createAcquisitionCatalogEvidence(rewrap({
+      counts:{...audit.counts,nativeDb01Definitions:-1}
+    }),pins),/INVALID_COUNTS/);
   });
 });
