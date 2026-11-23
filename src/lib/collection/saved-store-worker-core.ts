@@ -20,18 +20,10 @@ const MAX_ENCRYPTED_BYTES = 32 * 1024 * 1024;
 export type SaveDiscoveryProjector=
   (decodedJson:string)=>Promise<SavedCollectionDiscoveryProjection>;
 
-/** Runtime always executes the real Rust/WASM parser; the injected projector
- * only supports deterministic Node integration tests with the same WASM. */
-const rustDiscovery:SaveDiscoveryProjector=async decodedJson=>{
-  const {projectCollectionDiscoveryRust}=
-    await import('./rust-collection-discovery.ts');
-  return projectCollectionDiscoveryRust(decodedJson);
-};
-
 export async function inspectEncryptedSavedStore(
   ciphertext: Uint8Array,
-  decoder: (encrypted: Uint8Array) => Promise<{jsonText:string}> = decodeP1gPackagedProfile,
-  discovery:SaveDiscoveryProjector=rustDiscovery
+  discovery:SaveDiscoveryProjector,
+  decoder: (encrypted: Uint8Array) => Promise<{jsonText:string}> = decodeP1gPackagedProfile
 ) {
   if (!(ciphertext instanceof Uint8Array) || ciphertext.byteLength < 16 ||
       ciphertext.byteLength > MAX_ENCRYPTED_BYTES || (ciphertext.byteLength % 16) !== 0)
@@ -72,7 +64,7 @@ export async function inspectLocalSavedStore(
   source:Uint8Array,
   decodeEncrypted:(source:Uint8Array)=>Promise<{jsonText:string}>,
   decodePlain:(source:Uint8Array)=>Promise<{jsonText:string}>,
-  discovery:SaveDiscoveryProjector=rustDiscovery
+  discovery:SaveDiscoveryProjector
 ){
   if(!(source instanceof Uint8Array)||source.byteLength===0||
       source.byteLength>128*1024*1024)
@@ -89,5 +81,5 @@ export async function inspectLocalSavedStore(
     );
   }
   // P1G size and padding gates remain in the existing encrypted wrapper.
-  return inspectEncryptedSavedStore(source,decodeEncrypted,discovery);
+  return inspectEncryptedSavedStore(source,discovery,decodeEncrypted);
 }
