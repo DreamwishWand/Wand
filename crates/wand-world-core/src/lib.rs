@@ -308,6 +308,100 @@ impl WasmSourceFloorRectangle {
     pub fn origin_count(&self) -> u32 { self.count }
 }
 
+
+/** Source-local mapped GridArea geometry, not a runtime occupancy mask.
+ * Unmapped cells impose no floor-mask condition, but the entire bounding
+ * box remains inside the source grid. Raw mapped zero layers are retained.
+ */
+fn source_floor_shape_origins(
+    floor: &[u32], sx: u32, sy: u32, accepted: u32,
+    bx: u32, by: u32, shape: &[u8],
+) -> Result<(Vec<u8>, u32), String> {
+    let invalid = || "DB04_FLOOR_SHAPE_INVALID_SOURCE".to_owned();
+    let (w,h,bw,bh) = (sx as usize,sy as usize,bx as usize,by as usize);
+    let n = w.checked_mul(h).ok_or_else(invalid)?;
+    let shape_n = bw.checked_mul(bh).ok_or_else(invalid)?;
+    if w == 0 || h == 0 || n > 250_000 || floor.len() != n ||
+        bw == 0 || bh == 0 || bw > 512 || bh > 512 ||
+        shape.len() != shape_n || shape.iter().any(|&v|v>1) ||
+        !shape.contains(&1) {
+        return Err(invalid());
+    }
+    if shape.iter().all(|&v|v==1) {
+        return source_floor_rectangle_origins(floor,sx,sy,accepted,bx,by);
+    }
+    let mut bits = vec![0u8;n];
+    if bw>w || bh>h { return Ok((bits,0)); }
+    // Merge vertically adjacent equal row spans into rectangles. This
+    // reuses summed-area queries and avoids testing every shape cell
+    // for every possible origin. Fully mapped areas use the fast path.
+    let mut rectangles: Vec<(usize,usize,usize,usize)> = Vec::new();
+    let mut active = std::collections::BTreeMap::new();
+    for y in 0..bh {
+        let mut next = std::collections::BTreeMap::new();
+        let mut x = 0;
+        while x<bw {
+            if shape[y*bw+x]==0 { x+=1; continue; }
+            let start=x;
+            while x<bw && shape[y*bw+x]==1 { x+=1; }
+            let key=(start,x);
+            let index=if let Some(index)=active.remove(&key) {
+                let index:usize=index;
+                rectangles[index].3=y+1;
+                index
+            } else {
+                rectangles.push((start,y,x,y+1));
+                rectangles.len()-1
+            };
+            next.insert(key,index);
+        }
+        active=next;
+    }
+    let origins=(w-bw+1)*(h-bh+1);
+    if origins.saturating_mul(rectangles.len())>64_000_000 {
+        return Err("DB04_FLOOR_SHAPE_WORK_LIMIT".to_owned());
+    }
+    let pitch=w+1;
+    let mut missing=vec![0u32;(h+1)*pitch];
+    for y in 0..h {
+        let mut row=0u32;
+        for x in 0..w {
+            if floor[y*w+x]&accepted==0 { row+=1; }
+            missing[(y+1)*pitch+x+1]=missing[y*pitch+x+1]+row;
+        }
+    }
+    let mut count=0u32;
+    for y in 0..=h-bh {
+        for x in 0..=w-bw {
+            let good=rectangles.iter().all(|&(x0,y0,x1,y1)| {
+                let a=(y+y0)*pitch;
+                let b=(y+y1)*pitch;
+                missing[b+x+x1] as i64-missing[a+x+x1] as i64
+                    -missing[b+x+x0] as i64+missing[a+x+x0] as i64==0
+            });
+            if good { bits[y*w+x]=1; count+=1; }
+        }
+    }
+    Ok((bits,count))
+}
+
+#[wasm_bindgen]
+pub struct WasmSourceFloorShape { map: Vec<u8>, count:u32 }
+
+#[wasm_bindgen]
+impl WasmSourceFloorShape {
+    #[wasm_bindgen(constructor)]
+    pub fn new(floor:&[u32],sx:u32,sy:u32,accepted:u32,
+        bx:u32,by:u32,shape:&[u8]) -> Result<WasmSourceFloorShape,JsValue> {
+        let (map,count)=source_floor_shape_origins(
+            floor,sx,sy,accepted,bx,by,shape
+        ).map_err(|err|JsValue::from_str(&err))?;
+        Ok(Self {map,count})
+    }
+    pub fn origin_bitmap(&self)->Vec<u8> { self.map.clone() }
+    pub fn origin_count(&self)->u32 { self.count }
+}
+
 /// Incremental binary accumulation only; no unverified file members or
 /// decoded contents cross into Svelte. The Worker receives source IDs/counts.
 #[wasm_bindgen]
@@ -364,6 +458,36 @@ mod tests {
         assert!(source_floor_rectangle_origins(&[],2,2,4,1,1).is_err());
         assert!(source_floor_rectangle_origins(&[4],1,1,4,0,1).is_err());
         assert!(source_floor_rectangle_origins(&[4],1,1,4,1,513).is_err());
+    }
+    #[test]
+    fn mapped_shape_ignores_only_unmapped_corners() {
+        let floor=[0,4,4,4, 4,4,4,4, 4,4,4,4];
+        let (map,count)=source_floor_shape_origins(&floor,4,3,4,2,2,&[0,1,1,1]).unwrap();
+        assert_eq!(map,[1,1,1,0, 1,1,1,0, 0,0,0,0]);
+        assert_eq!(count,6);
+        let (map,count)=source_floor_shape_origins(&floor,4,3,4,2,2,&[1,1,1,0]).unwrap();
+        assert_eq!(map,[0,1,1,0, 1,1,1,0, 0,0,0,0]);
+        assert_eq!(count,5);
+        assert_eq!(source_floor_shape_origins(&floor,4,3,4,2,2,&[1,1,1,1]).unwrap(),
+            source_floor_rectangle_origins(&floor,4,3,4,2,2).unwrap());
+        assert!(source_floor_shape_origins(&floor,4,3,4,2,2,&[0,0,0,0]).is_err());
+        assert!(source_floor_shape_origins(&floor,4,3,4,2,2,&[1,1,1,2]).is_err());
+        assert!(source_floor_shape_origins(&floor,4,3,4,2,2,&[1,1,1]).is_err());
+    }
+    #[test]
+    fn mapped_shape_matches_naive_oracle_for_irregular_rows() {
+        let floor:Vec<u32>=(0..42).map(|i|if i%7==2||i%5==0 {0}else{4}).collect();
+        let shape=[0,1,0,1,1,1,1,0,1];
+        let (actual,count)=source_floor_shape_origins(&floor,7,6,4,3,3,&shape).unwrap();
+        let mut expected=vec![0u8;42];
+        for y in 0..4 { for x in 0..5 {
+            if (0..3).all(|dy|(0..3).all(|dx|
+                shape[dy*3+dx]==0||floor[(y+dy)*7+x+dx]&4!=0)) {
+                expected[y*7+x]=1;
+            }
+        }}
+        assert_eq!(actual,expected);
+        assert_eq!(count,expected.iter().map(|&v|v as u32).sum::<u32>());
     }
     use flate2::{write::DeflateEncoder, Compression};
     use std::io::Write;

@@ -1,19 +1,12 @@
 /**
- * DB-04: item-dependent source-local floor-window maps, not placements.
- *
- * Each marked pixel denotes a floor-local TOP-LEFT origin where the full
- * rotated original GridArea bounding RECTANGLE fits wholly within ONE
- * GridData and where EVERY covered original floor mask shares >=1 bit
- * with the item's original AcceptedFloorTypesFlag.
- *
- * This is a strict geometric+bitwise diagnostic, not the native
- * placement predicate: sparse/raw GridLayers do not identify occupied
- * cells, source-default anchors are not runtime obstacles, and native
- * Grid.TessellationFactor / current Save transforms are NOT applied.
- * Actual furniture placeability must NEVER be inferred from these pixels.
+ * DB-04 source-local floor-window maps for the original rotated GridArea.
+ * Only intrinsically mapped local cells must overlap AcceptedFloorTypesFlag;
+ * raw mapped zero-valued layers still participate. The full bounding box
+ * must fit. This is not native occupancy, actual Grid tessellation or
+ * placement permission. Explicit factor one is a source-local comparison.
  */
 import {getOriginalGridAreaEvidence} from './native-gridarea-evidence.ts';
-import {getOriginalGridAreaDisplayDimensions} from './native-gridarea-local-window.ts';
+import {getOriginalGridAreaDisplayDimensions,getOriginalGridAreaLocalWindow} from './native-gridarea-local-window.ts';
 import {getNativeTerrainRaster} from './native-terrain-preview.ts';
 import {nativeFloorOverlap} from './native-floor-match.ts';
 import {regionGridRefs} from './native-region-grid-atlas.ts';
@@ -24,7 +17,7 @@ import {
 } from './preview-views.ts';
 
 export const NATIVE_FLOOR_WINDOW_CONTRACT=
-  'wand.db04.original-full-rectangle-floor-window@1' as const;
+  'wand.db04.original-mapped-gridarea-floor-window@2' as const;
 const validUint=(value:unknown):value is number=>
   typeof value==='number'&&Number.isSafeInteger(value)&&
   value>=0&&value<=0xffffffff;
@@ -41,7 +34,7 @@ export interface NativeFloorWindowGrid {
 }
 export interface NativeFloorWindowResult {
   readonly contract:typeof NATIVE_FLOOR_WINDOW_CONTRACT;
-  readonly status:'source_rectangle_floor_windows_only'|
+  readonly status:'source_mapped_gridarea_floor_windows_only'|
     'source_item_gridarea_unverified'|
     'source_game_version_unverified';
   readonly regionKey:string;
@@ -58,7 +51,7 @@ export interface NativeFloorWindowResult {
   readonly verifiedGridCount:number;
   readonly unresolvedGridCount:number;
   readonly grids:readonly NativeFloorWindowGrid[];
-  /** Exact source-local Y-major bitmap, 1 = source floor RECT fits. */
+  /** Exact source-local Y-major bitmap, 1 = mapped shape floor overlap. */
   readonly originBitmap:Uint8Array|null;
   readonly bitmapWidth:number|null;
   readonly bitmapHeight:number|null;
@@ -66,7 +59,9 @@ export interface NativeFloorWindowResult {
   readonly originalDefaultAnchorCounts:Uint16Array|null;
   readonly originalDefaultAnchorStatus:
     'factor_one_source_anchors'|'anchor_coordinates_not_compatible'|'source_default_objects_unavailable';
-  readonly sourceFloorRectangleOnly:true;
+  readonly sourceMappedGridAreaOnly:true;
+  readonly mappedShapeCellCount:number|null;
+  readonly intrinsicGridFactor:1;
   readonly nativeGridLayersOccupancyVerified:false;
   readonly defaultObjectFootprintsVerified:false;
   readonly actualGamePlacementVerified:false;
@@ -89,13 +84,13 @@ function requireRaster(raw:ReturnType<typeof getNativeTerrainRaster>):Raster|nul
 }
 
 /**
- * Worker supplies the Rust/WASM rectangular mask calculator. Node unit
+ * Worker supplies the Rust/WASM mapped shape mask calculator. Node unit
  * tests may inject a small synthetic oracle, but production has no TS
  * high-load fallback. Every returned map is independently size-checked.
  */
 export type FloorWindowMapper=(
   source:Raster,acceptedFloorTypesFlag:number,
-  boundsX:number,boundsY:number
+  boundsX:number,boundsY:number,mappedShape:Uint8Array
 )=>{originBitmap:Uint8Array;originCount:number};
 
 function sourceDefaultAnchorCounts(
@@ -165,9 +160,29 @@ export function getNativeFloorWindowResult(
   const bounds=valid?getOriginalGridAreaDisplayDimensions(
     evidence.rawSizeX!,evidence.rawSizeY!,orientationCode,1):null;
   const status:NativeFloorWindowResult['status']=valid
-    ?'source_rectangle_floor_windows_only'
+    ?'source_mapped_gridarea_floor_windows_only'
     :evidence.status==='source_version_not_verified'
     ?'source_game_version_unverified':'source_item_gridarea_unverified';
+  // Reuse the original source-local orientation mapping, not a second
+  // rotation implementation. Build the small mask once per item/rotation.
+  let shape:Uint8Array|null=null;
+  if(bounds){
+    shape=new Uint8Array(bounds.width*bounds.height);
+    for(let y=0;y<bounds.height;y+=16){
+      for(let x=0;x<bounds.width;x+=16){
+        const width=Math.min(16,bounds.width-x);
+        const height=Math.min(16,bounds.height-y);
+        const local=getOriginalGridAreaLocalWindow(catalog,itemId,
+          orientationCode,x,y,width,height,1);
+        if(local.status!=='source_native_local_layers'||!local.rows)
+          throw new TypeError('DB04_FLOOR_SHAPE_SOURCE_MAPPING_INVALID');
+        for(let dy=0;dy<height;dy++)for(let dx=0;dx<width;dx++)
+          if(local.rows[dy][dx]!==null)
+            shape[(y+dy)*bounds.width+x+dx]=1;
+      }
+    }
+    if(!shape.includes(1))shape=null;
+  }
   const refs=regionGridRefs(views,regionKey);
   const grids:NativeFloorWindowGrid[]=[];
   let verifiedGridCount=0,unresolvedGridCount=0;
@@ -183,14 +198,14 @@ export function getNativeFloorWindowResult(
   for(const ref of refs){
     const raw=valid?getNativeTerrainRaster(catalog,ref.gridDataPath):null;
     const raster=raw?requireRaster(raw):null;
-    if(!raster||!bounds){
+    if(!raster||!bounds||!shape){
       unresolvedGridCount++;
       grids.push({...ref,status:'source_floor_grid_unverified',
         sourceFloorCellCount:null,matchedWindowOriginCount:null});
       continue;
     }
     const {originBitmap:map,originCount}=solve(
-      raster,evidence.acceptedFloorTypesFlag!,bounds.width,bounds.height);
+      raster,evidence.acceptedFloorTypesFlag!,bounds.width,bounds.height,shape);
     if(!(map instanceof Uint8Array)||map.length!==raster.sizeX*raster.sizeY||
       !Number.isSafeInteger(originCount)||originCount<0||
       originCount>map.length)
@@ -222,7 +237,9 @@ export function getNativeFloorWindowResult(
     sourceFloorCellCount,verifiedGridCount,unresolvedGridCount,grids,
     originBitmap,bitmapWidth,bitmapHeight,originalDefaultAnchorCounts,
     originalDefaultAnchorStatus,
-    sourceFloorRectangleOnly:true,
+    sourceMappedGridAreaOnly:true,
+    mappedShapeCellCount:shape?shape.reduce((a,b)=>a+b,0):null,
+    intrinsicGridFactor:1,
     nativeGridLayersOccupancyVerified:false,
     defaultObjectFootprintsVerified:false,
     actualGamePlacementVerified:false,

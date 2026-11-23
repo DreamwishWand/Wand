@@ -774,7 +774,7 @@ try{
   await floorPanel.getByText(/221地点/).first().waitFor({timeout:20000});
   await floorPanel.getByRole('button',{name:'床属性だけ'}).click();
   assert.equal(await floorPanel.locator('canvas').count(),1);
-  await floorPanel.getByRole('button',{name:'矩形全体の条件'}).click();
+  await floorPanel.getByRole('button',{name:'回転形状の条件'}).click();
   assert.equal(await floorPanel.locator('canvas').count(),1);
   // The floor map now supports source-local inspection of original default
   // object raw GridLayers; these bits NEVER represent valid placement.
@@ -801,7 +801,7 @@ try{
   const areaSummary=floorPanel.locator('.area-breakdown');
   await areaSummary.locator('summary').click();
   assert.match(await areaSummary.innerText(),/原本エリア/);
-  assert.match(await areaSummary.innerText(),/矩形一致地点/);
+  assert.match(await areaSummary.innerText(),/形状一致地点/);
   // All World source components must stay within a 320px phone viewport.
   await page.setViewportSize({width:320,height:720});
   assert.equal(await page.evaluate(()=>
