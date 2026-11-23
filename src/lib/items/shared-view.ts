@@ -294,43 +294,42 @@ export function createDb01SharedItemClient(inputs:Db01EvidenceSources):Db01Share
       }
     }
     const ids=[...chosen.keys()];
-    let next=0;
-    async function worker():Promise<void>{
-      while(next<ids.length){
-        const id=ids[next++];
-        const row=await nativeAreas!.getItem(id);
-        const item=chosen.get(id)!;
-        assert(row?.originalSourceVerified===true&&
-          row.itemId===id&&row.nativeCategory===item.nativeCategory&&
-          row.nativeAllAreasDefaultVerified===false&&
-          row.gameCollectionUiMembershipVerified===false&&
-          row.worldAvailabilityVerified===false&&
-          row.playerOwnershipVerified===false&&
-          row.dlcEntitlementVerified===false&&
-          row.runtimeSkinClassIndependentlyVerified===false&&
-          row.runtimeCritterSceneResolved===false&&
-          (row.companionKind==='critter'?
-            row.nativeCategory==='Companion'&&
-            row.sourceAreaEvidence==='requires_profile_world_scene'&&
-            row.positiveAreaCodes===null&&
-            (row.critterLocationOneofFieldNumber===6||
-              row.critterLocationOneofFieldNumber===7):
-            row.sourceAreaEvidence!=='requires_profile_world_scene')&&
-          (row.positiveAreaCodes===null?
-            (row.sourceAreaEvidence==='requires_profile_world_scene'&&
-              row.nativeCategory==='Companion')||
-            (row.sourceAreaEvidence==='original_interface_absent'&&
-              row.nativeCategory==='Skin'):
-            Array.isArray(row.positiveAreaCodes)&&
-            row.positiveAreaCodes.length<=1&&
-            row.sourceAreaEvidence===(row.positiveAreaCodes.length?
-              'native_positive_tag':'native_ihastags_without_positive_tag')),
-          'NATIVE_AREA_CANONICAL_IDENTITY_OR_PROOF');
-        found.set(id,row);
-      }
+    if(!ids.length)return found;
+    // The six-domain source reader deduplicates IDs and batches Skin shards.
+    // Preserve all source proof checks at the shared Item API boundary.
+    const rows=await nativeAreas.getItems(ids);
+    assert(Array.isArray(rows)&&rows.length===ids.length,
+      'NATIVE_AREA_BATCH_LENGTH');
+    for(let i=0;i<ids.length;i++){
+      const id=ids[i],row=rows[i],item=chosen.get(id)!;
+      assert(row?.originalSourceVerified===true&&
+        row.itemId===id&&row.nativeCategory===item.nativeCategory&&
+        row.nativeAllAreasDefaultVerified===false&&
+        row.gameCollectionUiMembershipVerified===false&&
+        row.worldAvailabilityVerified===false&&
+        row.playerOwnershipVerified===false&&
+        row.dlcEntitlementVerified===false&&
+        row.runtimeSkinClassIndependentlyVerified===false&&
+        row.runtimeCritterSceneResolved===false&&
+        (row.companionKind==='critter'?
+          row.nativeCategory==='Companion'&&
+          row.sourceAreaEvidence==='requires_profile_world_scene'&&
+          row.positiveAreaCodes===null&&
+          (row.critterLocationOneofFieldNumber===6||
+            row.critterLocationOneofFieldNumber===7):
+          row.sourceAreaEvidence!=='requires_profile_world_scene')&&
+        (row.positiveAreaCodes===null?
+          (row.sourceAreaEvidence==='requires_profile_world_scene'&&
+            row.nativeCategory==='Companion')||
+          (row.sourceAreaEvidence==='original_interface_absent'&&
+            row.nativeCategory==='Skin'):
+          Array.isArray(row.positiveAreaCodes)&&
+          row.positiveAreaCodes.length<=1&&
+          row.sourceAreaEvidence===(row.positiveAreaCodes.length?
+            'native_positive_tag':'native_ihastags_without_positive_tag')),
+        'NATIVE_AREA_CANONICAL_IDENTITY_OR_PROOF');
+      found.set(id,row);
     }
-    await Promise.all(Array.from(
-      {length:Math.min(ids.length,16)},()=>worker()));
     return found;
   }
 
