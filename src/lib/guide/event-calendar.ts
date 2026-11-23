@@ -42,8 +42,10 @@ export interface GuideStarpathCalendarEvent extends GuideCalendarUtcWindow{
 }
 export interface GuideDateOnlyCalendarEvent extends GuideCalendarDateWindow{
   readonly kind:'limited-event';
-  /** Visual type (not a claim of UTC time precision). */
-  readonly category:'floating'|'valley';
+  /** Exclusive visual bucket; 'other' means non-Floating native Mini Events.
+   * Official 'Valley Events' is an umbrella including Floating Festivals.
+   */
+  readonly category:'floating'|'other';
   readonly title:string;
   readonly sourceUrl:string;
   readonly evidence:'official-announcement';
