@@ -19,9 +19,10 @@ test('Guide event calendar distinguishes owner-cache UTC schedule from unverifie
   const events=guideCalendarEvents(await snapshot());
   assert.equal(GUIDE_EVENT_CALENDAR_CONTRACT,'wand.db03.event-calendar-schedule@1');
   assert.equal(GUIDE_EVENT_CALENDAR_AS_OF,'2026-11-22');
-  assert.equal(events.length,3);
+  assert.equal(events.length,9);
   assert.equal(events.filter(e=>e.kind==='starpath').length,2);
-  assert.equal(events.filter(e=>e.kind==='limited-event').length,1);
+  assert.equal(events.filter(e=>e.kind==='limited-event').length,6);
+  assert.equal(events.filter(e=>e.kind==='starpath-history').length,1);
   assert(events.every(e=>e.liveVerified===false));
   assert(events.every(e=>e.sourceUrl.startsWith('https://disneydreamlightvalley.com/')));
   assert.equal(events[0].taskEndUtcExclusive,'2026-12-08T14:00:00Z');
@@ -210,7 +211,7 @@ test('reviewed actionable riddle solutions bind to native season+Task IDs, rejec
 test('Guide month event list uses JST days and exact exclusive UTC end, matching calendar cells',async()=>{
   const real=guideCalendarEvents(await snapshot());
   assert.deepEqual(guideCalendarEventsInMonth(real,'2026-10').map(e=>e.id),
-    ['haunting-elegance-2026','seafaring-2026','haunted-floating-festival-2026']);
+    ['haunting-elegance-2026','seafaring-2026','haunted-floating-festival-2026','trick-or-treat-2026']);
   assert.deepEqual(guideCalendarEventsInMonth(real,'2026-11').map(e=>e.id),
     ['haunting-elegance-2026','seafaring-2026']);
   const afterUtcMonth={
@@ -252,7 +253,7 @@ test('typed event windows reject forged source and forbid invented UTC clock tim
   assert.throws(()=>guideCalendarEvents(altered),/provenance/);
   const entries=guideCalendarEvents(verified);
   assert.deepEqual(entries.map(row=>row.precision),
-    ['utc-instant','utc-instant','date-only']);
+    ['utc-instant','utc-instant',...Array(7).fill('date-only')]);
   assert(entries.every(row=>row.liveVerified===false));
   const festival=entries[2];
   assert.equal(festival.startDay,'2026-10-07');
