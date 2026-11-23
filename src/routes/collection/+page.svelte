@@ -11,6 +11,8 @@
   import {COLLECTION_UNIVERSE_UNTAGGED,sortedCollectionUniverseOptions,
     groupCollectionUniverseItems,collectionUniverseDisplayLabel}
     from '$lib/collection/browse-layout.ts';
+  import {COLLECTION_UNIVERSE_TAG_BY_ID,COLLECTION_UNIVERSE_TAG_NAMES}
+    from '$lib/collection/universe-tag-names.ts';
   import AcquisitionEvidence from '$lib/collection/AcquisitionEvidence.svelte';
   import {loadDb01ItemAcquisitionHandoff,type Db01ItemAcquisitionIndex}
     from '$lib/acquisition/db01-item-acquisition.ts';
@@ -375,7 +377,8 @@
         // For multilingual text search, retain the existing Rust predicate.
         const universeIds=sourceUniverseSelection&&
           sourceUniverseSelection!==COLLECTION_UNIVERSE_UNTAGGED
-          ?sourceIndex?.itemsByUniverse.get(sourceUniverseSelection)??[]:null;
+          ?(sourceIndex?.itemsByUniverseTagId.get(Number(sourceUniverseSelection))??
+            sourceIndex?.itemsByUniverse.get(sourceUniverseSelection)??[]):null;
         const acquisitionIds=acquisitionFilter&&acquisitionIndex
           ?acquisitionIndex.listItemIds(acquisitionFilter).map(Number):null;
         const activityIds=sourceActivityType===null?null:
@@ -392,10 +395,16 @@
           }):queryAllCollectionRows(currentFilter(0,200)));
         sourceAllMatching=candidates.filter(item=>
           (sourceUniverseSelection!==COLLECTION_UNIVERSE_UNTAGGED||
-            !sourceIndex?.universesByItem.has(item.itemId))&&
+            !(sourceIndex?.universeTagIdsByItem.size
+              ?sourceIndex.universeTagIdsByItem.has(item.itemId)
+              :sourceIndex?.universesByItem.has(item.itemId)))&&
           (sourceUniverseSelection===null||
             sourceUniverseSelection===COLLECTION_UNIVERSE_UNTAGGED||
-            sourceIndex?.universesByItem.get(item.itemId)?.includes(sourceUniverseSelection)===true)&&
+            (COLLECTION_UNIVERSE_TAG_BY_ID.has(Number(sourceUniverseSelection))
+              ?sourceIndex?.universeTagIdsByItem.get(item.itemId)
+                ?.includes(Number(sourceUniverseSelection))===true
+              :sourceIndex?.universesByItem.get(item.itemId)
+                ?.includes(sourceUniverseSelection)===true))&&
           (sourceActivityType===null||
             sourceIndex?.activityTypesByItem.get(item.itemId)?.code===sourceActivityType)&&
           (!acquisitionFilter||
@@ -503,8 +512,9 @@
       if(generation!==sourceGeneration||!canUseDb01SourceFacets())return;
       sourceIndex=index;sourceGroupsCacheKey='';
       const sourceGroups=collectionDb01Groups(index,[...index.byItem.keys()]);
-      sourceUniverseOptions=[...index.itemsByUniverse].map(([key,ids])=>({
-        key,count:ids.length
+      sourceUniverseOptions=COLLECTION_UNIVERSE_TAG_NAMES.map(row=>({
+        key:String(row.id),
+        count:index.itemsByUniverseTagId.get(row.id)?.length??0
       }));
       sourceWorldOptions=sourceGroups
         .find(group=>group.facet==='worldContextTag')?.options.map(x=>({...x}))??[];
@@ -777,6 +787,7 @@
       ?{worldContextTag:sourceChoices.worldContextTag}:
       viewAxis==='universe'&&sourceUniverseSelection&&
         sourceUniverseSelection!==COLLECTION_UNIVERSE_UNTAGGED
+        &&!COLLECTION_UNIVERSE_TAG_BY_ID.has(Number(sourceUniverseSelection))
         ?{disneyUniverse:sourceUniverseSelection}:{};
     sourceFacetGroups=[];sourceGroupsCacheKey='';
     resetView();ensureSourceIndex();
@@ -803,7 +814,8 @@
     worldFilter='';
     sourceUniverseSelection=sourceIndex&&id?id:null;
     universeFilter=sourceIndex?'':id;
-    sourceChoices=sourceIndex&&id&&id!==COLLECTION_UNIVERSE_UNTAGGED
+    sourceChoices=sourceIndex&&id&&id!==COLLECTION_UNIVERSE_UNTAGGED&&
+      !COLLECTION_UNIVERSE_TAG_BY_ID.has(Number(id))
       ?{disneyUniverse:id}:{};
     sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
   }
@@ -813,6 +825,7 @@
       ?{worldContextTag:sourceChoices.worldContextTag}:
       viewAxis==='universe'&&sourceUniverseSelection&&
         sourceUniverseSelection!==COLLECTION_UNIVERSE_UNTAGGED
+        &&!COLLECTION_UNIVERSE_TAG_BY_ID.has(Number(sourceUniverseSelection))
         ?{disneyUniverse:sourceUniverseSelection}:{};
     sourceFacetGroups=[];sourceGroupsCacheKey='';
     bypassCategoryGroups=false;search='';status='all';favoriteOnly=false;
@@ -1312,6 +1325,9 @@
                   :universeScopeOptions.find(x=>x.id===universeFilter)?.label??''}</span>
               </div>
             </div>
+            {#if !totalMatches}
+              <div class="empty-panel" role="status"><p>{copy.noItems}</p></div>
+            {/if}
             {#each universeSections as section (section.facet.id)}
               <section class="collection-universe-section">
                 <div class="collection-universe-section-head">

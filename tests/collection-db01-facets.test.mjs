@@ -63,6 +63,19 @@ test('DB-01 source native filtering is a narrow projection, not a second Item ma
   assert.ok(index.itemsByUniverse.has('DreamlightValley'));
   for(const [key,ids] of index.itemsByUniverse)
     assert.ok(ids.every(id=>index.universesByItem.get(id)?.includes(key)));
+  assert.equal(raw.universeSourceTagEvidence,
+    'original_tag_id_or_collection_predicate_tag_id');
+  assert.equal(raw.universeSourceTagGameUiMembershipVerified,false);
+  assert.ok(raw.universeSourceTagCount>0);
+  assert.equal(index.universeTagIdsByItem.size,raw.universeSourceTagCount);
+  assert.equal(index.itemsByUniverseTagId.size,66,
+    '66 original Tag IDs have item links; 67th (Raya) is a zero-item definition');
+  assert.equal(index.itemsByUniverseTagId.has(2000500069),false,
+    'do not invent Raya Item ID membership');
+  assert.ok(index.itemsByUniverseTagId.has(2000500017));
+  assert.ok(index.itemsByUniverseTagId.has(2000500023));
+  for(const [id,items] of index.itemsByUniverseTagId)
+    assert.ok(items.every(itemId=>index.universeTagIdsByItem.get(itemId)?.includes(id)));
   assert.equal(index.itemsByActivityType.size,15);
   assert.deepEqual([...index.activityTypeNames.entries()].sort((a,b)=>a[0]-b[0]),[
     [0,'Default'],[2,'Crop'],[3,'Meal'],[4,'Seed'],[8,'Flower'],

@@ -430,11 +430,22 @@ try{
   await page.getByRole('button',{name:'ユニバース表示'}).click();
   assert.equal(await page.getByRole('button',{name:'ユニバース表示'}).getAttribute('aria-pressed'),'true');
   await page.locator('.collection-universe-card').first().waitFor({timeout:18000});
-  assert.ok(await page.locator('.collection-universe-card').count()>0,
-    'source-backed universe tags must be browseable without Collection membership claims');
+  assert.equal(await page.locator('.collection-universe-card').count(),68,
+    'all 67 original universe definitions plus untagged must be visible');
   assert.match(await page.locator('.collection-axis-notice').innerText(),/原本の作品タグ/);
-  assert.match(await page.locator('.collection-universe-card').first().innerText(),
-    /その他|Other|ユニバース未設定/);
+  assert.match(await page.locator('.collection-universe-card').first().innerText(),/その他/);
+  assert.match(await page.locator('.collection-universe-card').nth(1).innerText(),
+    /ドリームライトバレー/);
+  // A source-defined universe with no linked published Item IDs is a real
+  // empty category, not a missing tag nor a fabricated Item relationship.
+  const rayaCard=page.locator('.collection-universe-card').filter({
+    hasText:'ラーヤと龍の王国'
+  });
+  assert.equal(await rayaCard.count(),1);
+  await rayaCard.click();
+  await page.locator('.empty-panel').first().waitFor({timeout:15000});
+  assert.equal(await page.locator('.collection-universe-section .item-card').count(),0);
+  await page.getByRole('button',{name:'ユニバース一覧'}).first().click();
   await page.locator('.collection-universe-card').nth(1).click();
   await page.locator('.collection-universe-section .item-card').first().waitFor({timeout:15000});
   assert.ok(await page.locator('.collection-universe-section').count()>0,

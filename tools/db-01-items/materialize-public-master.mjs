@@ -93,6 +93,7 @@ const activityTypeRows=[];
 // Collection selector candidates. This is an extra browse relation, never
 // runtime Collection membership, world location or entitlement.
 const universeSourceRows=[];
+const universeSourceTagRows=[];
 // Exact Steam 1.26.2 original CollectionSubMenu enum codes. Original source
 // predicates are browse *candidates*, not proven game runtime membership.
 const ORIGINAL_SUBMENU_CODES=new Set([
@@ -152,6 +153,20 @@ for(let bucket=0;bucket<256;bucket++){
     }
     if(universeKeys.size)universeSourceRows.push([row.itemId,
       [...universeKeys].sort()]);
+    // Canonical original Tag IDs avoid fragile cross-locale native key/name
+    // joins and also permit real zero-linked universe categories.
+    const universeTagIds=new Set(row.tags.filter(t=>
+      t.facet==='disneyUniverse'&&Number.isSafeInteger(t.id)&&
+      t.id>=2000500000&&t.id<2000600000).map(t=>t.id));
+    for(const candidate of row.collectionSourceCandidates){
+      if(Number.isSafeInteger(candidate.universeTagId)&&
+        candidate.universeTagId>=2000500000&&
+        candidate.universeTagId<2000600000)
+        universeTagIds.add(candidate.universeTagId);
+    }
+    if(universeTagIds.size)universeSourceTagRows.push([
+      row.itemId,[...universeTagIds].sort((a,b)=>a-b)
+    ]);
     const sourceCategories=originalCategoryCodes(row);
     if(sourceCategories.length)collectionCategoryRows.push([row.itemId,sourceCategories]);
     if(row.nativeCategory==='ActivityItem'){
@@ -200,6 +215,7 @@ collectionRows.sort((a,b)=>a[0]-b[0]);
 collectionCategoryRows.sort((a,b)=>a[0]-b[0]);
 activityTypeRows.sort((a,b)=>a[0]-b[0]);
 universeSourceRows.sort((a,b)=>a[0]-b[0]);
+universeSourceTagRows.sort((a,b)=>a[0]-b[0]);
 writeFileSync(collectionDestination,JSON.stringify({
   schema:'wand.collection.db01-native-facets@1',
   release:entry.release,
@@ -214,6 +230,10 @@ writeFileSync(collectionDestination,JSON.stringify({
   universeSourceItems:universeSourceRows,
   universeSourceEvidence:'original_tag_or_collection_predicate_tag',
   universeSourceGameUiMembershipVerified:false,
+  universeSourceTagCount:universeSourceTagRows.length,
+  universeSourceTagItems:universeSourceTagRows,
+  universeSourceTagEvidence:'original_tag_id_or_collection_predicate_tag_id',
+  universeSourceTagGameUiMembershipVerified:false,
   activityTypeEvidence:'original_il2cpp_activity_item_type',
   activityTypeGameUiMembershipVerified:false,
   categoryEvidence:'original_collectionset_source_candidate_or_verified_native_item_type',

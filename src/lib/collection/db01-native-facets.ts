@@ -6,6 +6,7 @@
  * Source Tag membership is not game Collection membership, world availability,
  * DLC ownership, or an acquired-item status. Do not promote it to those axes.
  */
+import {COLLECTION_UNIVERSE_TAG_BY_ID} from './universe-tag-names.ts';
 export const COLLECTION_DB01_FACETS_SCHEMA='wand.collection.db01-native-facets@1' as const;
 export const COLLECTION_DB01_ARCHIVE_SHA=
   '3c80a42139014211100eb556665636088af45d1d0b54ebd2933a4aeab2a405c6' as const;
@@ -63,6 +64,8 @@ export interface CollectionDb01Index{
   readonly activityTypeNames:ReadonlyMap<number,string|null>;
   readonly universesByItem:ReadonlyMap<number,readonly string[]>;
   readonly itemsByUniverse:ReadonlyMap<string,readonly number[]>;
+  readonly universeTagIdsByItem:ReadonlyMap<number,readonly number[]>;
+  readonly itemsByUniverseTagId:ReadonlyMap<number,readonly number[]>;
 }
 export interface CollectionDb01Option {
   readonly key:string;
@@ -183,6 +186,34 @@ export function parseCollectionDb01Facets(payload:unknown):CollectionDb01Index{
       }
     }
   }
+  // The original universe Tag ID is the canonical browse key. A universe
+  // with no matching published Item IDs is retained by the UI taxonomy.
+  const universeTagIdsByItem=new Map<number,readonly number[]>();
+  const itemsByUniverseTagId=new Map<number,number[]>();
+  if(payload.universeSourceTagItems!==undefined){
+    assert(payload.universeSourceTagEvidence===
+      'original_tag_id_or_collection_predicate_tag_id'&&
+      payload.universeSourceTagGameUiMembershipVerified===false&&
+      Array.isArray(payload.universeSourceTagItems)&&
+      payload.universeSourceTagCount===payload.universeSourceTagItems.length&&
+      payload.universeSourceTagCount<=13202,'UNIVERSE_TAG_MANIFEST');
+    let last=0;
+    for(const raw of payload.universeSourceTagItems){
+      assert(Array.isArray(raw)&&raw.length===2&&validId(raw[0])&&
+        raw[0]>last&&Array.isArray(raw[1])&&raw[1].length>0&&
+        raw[1].every((id:unknown)=>typeof id==='number'&&
+          Number.isSafeInteger(id)&&COLLECTION_UNIVERSE_TAG_BY_ID.has(id))&&
+        new Set(raw[1]).size===raw[1].length,'UNIVERSE_TAG_ITEM');
+      const [itemId,tags]=raw as [number,number[]];
+      last=itemId;
+      universeTagIdsByItem.set(itemId,Object.freeze([...tags]));
+      for(const id of tags){
+        const list=itemsByUniverseTagId.get(id)??[];
+        list.push(itemId);
+        itemsByUniverseTagId.set(id,list);
+      }
+    }
+  }
   const byItem=new Map<number,readonly CollectionDb01Pair[]>();
   let prev=0;
   for(const entry of payload.items){
@@ -205,7 +236,9 @@ export function parseCollectionDb01Facets(payload:unknown):CollectionDb01Index{
     itemsByActivityType,
     activityTypeNames,
     universesByItem,
-    itemsByUniverse
+    itemsByUniverse,
+    universeTagIdsByItem,
+    itemsByUniverseTagId
   });
 }
 export async function loadCollectionDb01Facets(
