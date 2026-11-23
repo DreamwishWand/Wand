@@ -41,7 +41,7 @@ export interface PublicStarpathReward{
 }
 export interface PublicStarpathRewardPage{
   readonly page:number;
-  readonly layout:string;
+  readonly layout?:string;
   readonly rewards:readonly PublicStarpathReward[];
   readonly minPurchasedFromPreviousPage?:number;
   readonly currencyConversionPage?:boolean;
@@ -136,8 +136,9 @@ function rewardPages(value:unknown,section:'normal'|'bonus'):number{
   let total=0;
   for(const page of value){
     check(record(page)&&positive(page.page)&&
-      typeof page.layout==='string'&&page.layout.length>0&&
-      page.layout.length<=100&&Array.isArray(page.rewards),'reward page');
+      (page.layout===undefined||(typeof page.layout==='string'&&
+        page.layout.length>0&&page.layout.length<=100))&&
+      Array.isArray(page.rewards),'reward page');
     if(page.minPurchasedFromPreviousPage!==undefined)
       check(nonnegative(page.minPurchasedFromPreviousPage),'previous page threshold');
     if(page.currencyConversionPage!==undefined)
