@@ -85,10 +85,12 @@
     try{
       const snapshot=await loadPublicStarpath(`${base}/guide/public/starpath-cache-2026-11-22.json`);
       events=guideCalendarEvents(snapshot);
-      await centreToday();
     }catch(error){
       loadError=error instanceof Error?error.message:String(error);
-    }finally{loading=false;}
+    }finally{
+      loading=false;
+      if(!loadError)void centreToday();
+    }
   }
   onMount(()=>{
     now=Date.now();
@@ -172,7 +174,7 @@
                 aria-pressed={selectedId===row.event.id} title={row.event.title}>
                 <span class="event-symbol"><WandIcon name={eventIcon(row.event)} size={17}/></span>
                 <span class="event-name">{row.event.title}</span>
-                <WandIcon name="chevron" size={15}/>
+                <span class="row-chevron"><WandIcon name="chevron" size={15}/></span>
               </button>
               <div class="event-track">
                 <div class="track-grid" aria-hidden="true">
@@ -297,7 +299,8 @@
   .event-label{position:sticky;left:0;z-index:5;display:flex;align-items:center;gap:9px;width:100%;min-width:0;box-sizing:border-box;padding:10px 12px;background:#211829;color:#eee3f4;text-align:left;border:0;border-right:1px solid #52415e;cursor:pointer}
   .timeline-row.selected .event-label{background:#382847}
   .event-label:hover{background:#34243f}
-  .event-label :global(svg:last-child){flex-shrink:0;transform:rotate(-90deg);color:#9581aa}
+  .row-chevron{display:flex;flex-shrink:0;margin-left:auto}
+  .row-chevron :global(svg){transform:rotate(-90deg);color:#9581aa}
   .event-symbol{color:#ca9bf2;flex-shrink:0}
   .event-name{min-width:0;font-size:12px;font-weight:600;line-height:1.3;overflow-wrap:anywhere}
   .event-track{position:relative;min-width:0;height:100%;display:flex;align-items:center}
