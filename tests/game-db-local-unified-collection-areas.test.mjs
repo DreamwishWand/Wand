@@ -104,6 +104,9 @@ const reader=()=>joinedPromise??=(async()=>joinDb00LocalUnifiedCollectionAreas(
 ))();
 
 test('DB-00 merges original 6746 Furniture + 2475 Wardrobe into exact 9221 read-only native area census',async()=>{
+  // Public DB-00 initializes its existing sources once; owner-local area
+  // browsing must add zero requests AFTER that existing initialization.
+  await publicData();
   const before=requestCount;
   const joined=await reader();
   const c=await joined.getCoverage();
