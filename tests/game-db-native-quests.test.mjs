@@ -41,8 +41,10 @@ test('DB-00 733-Quest reader loads two optional SHA-pinned files and reuses alre
   const start=f.requests.length;
   assert(start>0);
   assert.equal(f.requests.filter(x=>x.endsWith('/'+INDEX)).length,1);
-  assert(!f.requests.some(x=>x.endsWith('/'+PUBLIC_QUEST_CONDITIONS_FILE)||
-    x.endsWith('/'+DB03_QUEST_REWARDS_FILE)));
+  // Existing Guide initialization already loads Quest conditions. New API
+  // shares those bytes and only adds the SHA-pinned Quest reward asset.
+  assert.equal(f.requests.filter(x=>x.endsWith('/'+PUBLIC_QUEST_CONDITIONS_FILE)).length,1);
+  assert.equal(f.requests.filter(x=>x.endsWith('/'+DB03_QUEST_REWARDS_FILE)).length,0);
   const quests=await pub.loadNativeQuestSources();
   assert.equal(quests,await pub.loadNativeQuestSources());
   assert.equal(quests.contract,DB00_NATIVE_QUEST_CONTRACT);
@@ -57,7 +59,7 @@ test('DB-00 733-Quest reader loads two optional SHA-pinned files and reuses alre
   assert.equal(quests.playerProgressVerified,false);
   assert.equal(quests.runtimePrerequisitesVerified,false);
   assert.equal(quests.guaranteedRewardVerified,false);
-  assert.equal(f.requests.length,start+2);
+  assert.equal(f.requests.length,start+1);
   assert.equal(f.requests.filter(x=>x.endsWith('/'+INDEX)).length,1);
   assert.equal(f.requests.filter(x=>x.endsWith('/'+PUBLIC_QUEST_CONDITIONS_FILE)).length,1);
   assert.equal(f.requests.filter(x=>x.endsWith('/'+DB03_QUEST_REWARDS_FILE)).length,1);
@@ -131,11 +133,18 @@ test('Item ID backlinks distinguish Quest targets, alternative Items, configured
   assert(target.targetQuestIds.every(id=>reader.getQuest(id)!==null));
   const currency=reader.getItem('80000000');
   assert(currency.rewardQuestReferences.length>0);
-  assert(currency.rewardQuestReferences.every(row=>
-    row.reference.kind==='currency_configuration'&&
-    row.reference.currency!==null&&
+  // One currency Item ID can ALSO appear as an additional loot candidate.
+  // Keep each native reward relation's original type, never erase either.
+  const currencySettings=currency.rewardQuestReferences.filter(row=>
+    row.reference.kind==='currency_configuration');
+  assert(currencySettings.length>0);
+  assert(currencySettings.every(row=>
+    row.reference.currency!==null &&
     row.reference.configuredOnly===true &&
     row.guaranteedGrant===false));
+  assert(currency.rewardQuestReferences.every(row=>
+    row.reference.kind==='currency_configuration' ||
+    row.reference.kind==='additional_loot_candidate'));
   const missing=reader.getItem(99999999);
   assert.deepEqual(missing.targetQuestReferences,[]);
   assert.deepEqual(missing.rewardQuestReferences,[]);
@@ -182,9 +191,9 @@ test('per-Item shared Quest evidence is cached, invalid IDs fail early, corrupte
   assert.equal(linked.staticSourceOnly,true);
   assert.equal(linked.guaranteedRewardVerified,false);
   assert.equal(linked.playerOwnershipVerified,false);
-  assert.equal(f.requests.length,count+2);
+  assert.equal(f.requests.length,count+1);
   await pub.getNativeQuestItemEvidence(80000000);
-  assert.equal(f.requests.length,count+2);
+  assert.equal(f.requests.length,count+1);
   const index=verifyPublicQuestIndex(JSON.parse(readFileSync(
     new URL('guide/public/'+INDEX,ROOT),'utf-8')));
   const originalConditions=await loadPublicQuestConditions(
