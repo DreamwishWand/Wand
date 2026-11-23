@@ -162,12 +162,31 @@
     }catch(error){storeError=error instanceof Error?error.message:String(error);}
   }
   function resetView():void{visible=72;selectedIds=[];selectedItemId=null;refresh();}
+  /** Scroll only requests the next page from Rust. Re-querying 0..visible
+   * after every intersection creates quadratic decoding and DOM churn for
+   * the 13k+ item catalog. Edits/filter changes still use full refresh().
+   */
+  function appendNextPage():void {
+    if(!runtime||busy||loading||storeError||filtered.length>=totalMatches)return;
+    try{
+      const offset=filtered.length;
+      const page=runtime.query(currentFilter(offset,72));
+      if(page.total!==totalMatches){
+        // The source filter changed outside the observer: rebuild its current
+        // view rather than stitching together incompatible result sets.
+        refresh();
+        return;
+      }
+      if(page.items.length===0)throw new Error('COLLECTION_PAGINATION_EMPTY_PAGE');
+      filtered=[...filtered,...page.items];
+      visible=filtered.length;
+    }catch(error){storeError=error instanceof Error?error.message:String(error);}
+  }
   function observeMore(node:HTMLElement) {
     if(typeof IntersectionObserver==='undefined')return {destroy:()=>{}};
     const observer=new IntersectionObserver(entries=>{
-      if(entries.some(x=>x.isIntersecting)&&visible<totalMatches&&!busy){
-        visible+=72;refresh();
-      }
+      if(entries.some(x=>x.isIntersecting)&&visible<totalMatches&&!busy)
+        appendNextPage();
     },{rootMargin:'400px'});
     observer.observe(node);
     return {destroy:()=>observer.disconnect()};
