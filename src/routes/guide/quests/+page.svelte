@@ -6,7 +6,7 @@
   import {collectWindow} from '$lib/ui/collect-window.mjs';
   import {verifyPublicQuestIndex,filterPublicQuests,publicQuestSection,findPublicQuestByLink,loadPublicQuestPart,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
   import {loadPublicQuestTargetsIndex,loadPublicQuestTargetsPart,itemTargetName,originalTargetLookup} from '$lib/guide/public-targets.mjs';
-  import {publicQuestStepIndex,publicQuestStepQuery} from '$lib/guide/public-quest-steps.mjs';
+  import {publicQuestStepIndex,publicQuestStepQuery} from '$lib/guide/public-quest-steps.ts';
   import {loadPublicQuestConditions,publicConditionText,PUBLIC_QUEST_CONDITIONS_FILE,
     type PublicQuestConditionReader} from '$lib/guide/public-quest-conditions.ts';
   import {loadPublicQuestRewards,DB03_QUEST_REWARDS_FILE,
