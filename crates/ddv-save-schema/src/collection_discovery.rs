@@ -231,16 +231,18 @@ mod tests {
 
     #[test]
     fn finite_bound_handles_more_than_legacy_128_source_sets() {
-        let sets:Vec<_>=(1..=305).map(|id|json!({
-            "GroupData":[{"GroupsCollectionItems":{format!("{id}"):true}}]
-        })).collect();
+        let sets:Vec<_>=(1..=305).map(|id|{
+            let mut items=serde_json::Map::new();
+            items.insert(id.to_string(),Value::Bool(true));
+            json!({"GroupData":[{"GroupsCollectionItems":Value::Object(items)}]})
+        }).collect();
         let root=json!({"GameInfo":{"Version":643},"Player":{"CollectionSets":sets}});
         let p=inspect_collection_discovery(&root);
         assert_eq!(p.status,"observed_boolean_discovery");
         assert_eq!(p.observed_groups,305);
         assert_eq!(p.entries.len(),305);
         assert!(!p.sampled);
-        let sets=(0..=MAX_SETS).map(|_|json!({"GroupData":[]})).collect();
+        let sets:Vec<_>=(0..=MAX_SETS).map(|_|json!({"GroupData":[]})).collect();
         let root=json!({"GameInfo":{"Version":643},"Player":{"CollectionSets":sets}});
         let bounded=inspect_collection_discovery(&root);
         assert_eq!(bounded.status,"partial_inconclusive");
