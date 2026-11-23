@@ -52,7 +52,7 @@ import {
 import {
   createDb00NativeOnlineReader,type Db00NativeOnlineReader
 } from './native-online-categories.ts';
-import {loadPublicStarpath} from '../guide/public-starpath.mjs';
+import {loadPublicStarpath} from '../guide/public-starpath.ts';
 import {
   loadStarpathRewardExtras,STARPATH_EXTRA_RELEASE
 } from '../guide/starpath-reward-extras.ts';
