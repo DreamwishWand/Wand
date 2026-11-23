@@ -198,8 +198,8 @@ function previewFloorValue(grid:PreparedGrid,x:number,y:number):number {
  * Return a source-corroborated grid-local floor value. Neither this API nor
  * floor masks establish placement permission or world-space origin.
  */
-export function getNativeTerrainTile(source:unknown,gridId:string|number,x:number,y:number) {
-  const catalog=requireTerrainCatalog(source);
+export function getNativeTerrainTile(sourceCatalog:unknown,gridId:string|number,x:number,y:number) {
+  const catalog=requireTerrainCatalog(sourceCatalog);
   const grid = packedGridForPreview(catalog, gridId);
   if (grid.status) return { status: grid.status };
   if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y) ||
@@ -214,8 +214,8 @@ export function getNativeTerrainTile(source:unknown,gridId:string|number,x:numbe
 }
 
 /** 2D Y-row-major presentation; bytes themselves are native X-major packed. */
-export function getNativeTerrainWindow(source:unknown,gridId:string|number,rect:unknown) {
-  const catalog=requireTerrainCatalog(source);
+export function getNativeTerrainWindow(sourceCatalog:unknown,gridId:string|number,rect:unknown) {
+  const catalog=requireTerrainCatalog(sourceCatalog);
   const grid = packedGridForPreview(catalog, gridId);
   if (grid.status) return { status: grid.status };
   if (!isRecord(rect)) throw new TypeError('Native grid preview rectangle required');
@@ -243,8 +243,8 @@ export function getNativeTerrainWindow(source:unknown,gridId:string|number,rect:
  * The histogram comes from source-packed bytes checked by verify_bundle.py;
  * it is a visual/analytical legend, never placement permission.
  */
-export function getNativeTerrainDistribution(source:unknown,gridId:string|number) {
-  const catalog=requireTerrainCatalog(source);
+export function getNativeTerrainDistribution(sourceCatalog:unknown,gridId:string|number) {
+  const catalog=requireTerrainCatalog(sourceCatalog);
   const grid = catalog.grids.get(String(gridId));
   if (!grid) return { status: 'unknown_grid' };
   // Match tile/window provenance gate. Unsupported future builds and
