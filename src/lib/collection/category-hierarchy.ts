@@ -1,34 +1,45 @@
-/** Wand's presentation hierarchy. Native type/subtype and Item IDs remain
- * unchanged; these groups are not game Collection membership. */
+/** Owner-approved 2026-10-04 Collection contract COL-UX-02/17,
+ * reinstated 2026-11-24. The keys are presentation mappings, not proof of
+ * native Collection membership. Unbound source types never become invented
+ * root categories. Unbound roots remain disabled until item evidence exists. */
 export const COLLECTION_TOP_CATEGORIES=[
-  {id:'furniture',icon:'chair',keys:['Furniture:0','Furniture:3','Furniture:8','Furniture:9'],
-    names:['家具','Furniture','Meubles','Mobili','Möbel','Muebles','家具','Móveis']},
-  {id:'outdoor',icon:'plant',keys:['Furniture:1','Furniture:2','Furniture:6','Furniture:7'],
-    names:['景観・屋外','Landscaping & outdoors','Paysage et extérieur','Paesaggio ed esterni','Landschaft & Außenbereich','Paisaje y exteriores','景观与户外','Paisagem e exterior']},
-  {id:'interior',icon:'home',keys:['Trimming:0','Trimming:1'],
-    names:['壁紙・床材','Wallpaper & flooring','Papiers peints et sols','Pareti e pavimenti','Tapeten & Böden','Papel pintado y suelos','壁纸与地板','Papéis de parede e pisos']},
-  {id:'clothing',icon:'shirt',keys:[0,1,2,3,4,6,7,8,9,10,11,12,13,14,15].map(code=>'Clothing:'+code),
-    names:['衣装','Clothing','Vêtements','Abbigliamento','Kleidung','Ropa','服装','Roupas']},
-  {id:'appearance',icon:'character',keys:[5,16,17,18,19,20,21,22,23].map(code=>'Clothing:'+code),
-    names:['外見','Appearance','Apparence','Aspetto','Aussehen','Apariencia','外观','Aparência']},
-  {id:'food',icon:'cooking',keys:['ActivityItem:2','ActivityItem:11','ActivityItem:3'],
-    names:['食材・料理','Ingredients & meals','Ingrédients et plats','Ingredienti e piatti','Zutaten & Gerichte','Ingredientes y platos','食材与料理','Ingredientes e refeições']},
-  {id:'materials',icon:'plant',keys:['ActivityItem:4','ActivityItem:8','ActivityItem:10','ActivityItem:16','ActivityItem:17'],
-    names:['採集・素材','Gathering & materials','Collecte et matériaux','Raccolta e materiali','Sammeln & Materialien','Recolección y materiales','采集与材料','Coleta e materiais']},
-  {id:'consumables',icon:'sparkles',keys:['ActivityItem:15','ActivityItem:18'],
-    names:['消耗品','Consumables','Consommables','Consumabili','Verbrauchsgegenstände','Consumibles','消耗品','Consumíveis']},
-  {id:'quests',icon:'puzzle',keys:['ActivityItem:12','Furniture:5'],
-    names:['クエスト関連','Quest items','Objets de quête','Oggetti di missione','Questgegenstände','Objetos de misión','任务物品','Itens de missão']},
-  {id:'other',icon:'collection',keys:['ActivityItem:0','ActivityItem:13','ActivityItem:14','ActivityItem:19'],
-    names:['その他','Other','Autres','Altro','Sonstige','Otros','其他','Outros']}
+  {id:"furniture",icon:"chair",keys:["Furniture:0","Furniture:3","Furniture:8","Furniture:9"],names:["家具","Furniture","Meubles","Mobili","Möbel","Muebles","家具","Móveis"]},
+  {id:"landscaping",icon:"plant",keys:["Furniture:2"],names:["景観","Landscaping","Aménagement paysager","Paesaggistica","Landschaftsgestaltung","Paisajismo","景观","Paisagismo"]},
+  {id:"roads-fences",icon:"plant",keys:["Furniture:1","Furniture:7"],names:["道・フェンス","Roads & Fences","Routes et clôtures","Strade e recinzioni","Wege & Zäune","Caminos y vallas","道路与围栏","Caminhos e cercas"]},
+  {id:"interior",icon:"home",keys:["Trimming:0","Trimming:1"],names:["壁紙・床材","Wallpaper & Flooring","Papiers peints et sols","Pareti e pavimenti","Tapeten & Böden","Papel pintado y suelos","壁纸与地板","Papéis de parede e pisos"]},
+  {id:"buildings",icon:"home",keys:[],names:["建物","Buildings","Bâtiments","Edifici","Gebäude","Edificios","建筑","Construções"]},
+  {id:"environment",icon:"sparkles",keys:[],names:["環境エフェクト","Environment Effects","Effets environnementaux","Effetti ambientali","Umgebungseffekte","Efectos ambientales","环境效果","Efeitos ambientais"]},
+  {id:"clothing",icon:"shirt",keys:["Clothing:0","Clothing:1","Clothing:2","Clothing:3","Clothing:4","Clothing:7","Clothing:8","Clothing:9","Clothing:10","Clothing:11","Clothing:12","Clothing:13","Clothing:14","Clothing:15"],names:["衣装","Clothing","Vêtements","Abbigliamento","Kleidung","Ropa","服装","Roupas"]},
+  {id:"appearance",icon:"character",keys:["Clothing:5","Clothing:16","Clothing:17","Clothing:18","Clothing:19","Clothing:20","Clothing:21","Clothing:22","Clothing:23"],names:["外見","Appearance","Apparence","Aspetto","Aussehen","Apariencia","外观","Aparência"]},
+  {id:"touch-of-magic",icon:"sparkles",keys:[],names:["タッチ・オブ・マジック","Touch of Magic","Touche de magie","Tocco di magia","Hauch von Magie","Toque de magia","魔法触碰","Toque de magia"]},
+  {id:"photo-mode",icon:"gallery",keys:[],names:["フォトモード","Photo Mode","Mode photo","Modalità foto","Fotomodus","Modo foto","拍照模式","Modo foto"]},
+  {id:"tools",icon:"tool",keys:["Clothing:6"],names:["道具","Tools","Outils","Strumenti","Werkzeuge","Herramientas","工具","Ferramentas"]},
+  {id:"upgrades",icon:"sparkles",keys:[],names:["アップグレード","Upgrades","Améliorations","Potenziamenti","Verbesserungen","Mejoras","升级","Melhorias"]},
+  {id:"characters",icon:"character",keys:[],names:["キャラクター","Characters","Personnages","Personaggi","Charaktere","Personajes","角色","Personagens"]},
+  {id:"companions",icon:"paw",keys:[],names:["コンパニオン","Companions","Compagnons","Compagni","Begleiter","Compañeros","伙伴","Companheiros"]},
+  {id:"critters",icon:"paw",keys:[],names:["動物","Critters","Bestioles","Animaletti","Tierchen","Animalitos","小动物","Criaturinhas"]},
+  {id:"mounts",icon:"paw",keys:[],names:["マウント","Mounts","Montures","Cavalcature","Reittiere","Monturas","坐骑","Montarias"]},
+  {id:"crafting",icon:"tool",keys:[],names:["クラフト","Crafting","Fabrication","Creazione","Herstellung","Fabricación","制作","Fabricação"]},
+  {id:"meals",icon:"cooking",keys:["ActivityItem:3"],names:["料理","Meals","Plats","Piatti","Gerichte","Platos","餐食","Refeições"]},
+  {id:"ingredients",icon:"plant",keys:["ActivityItem:2","ActivityItem:11"],names:["食材","Ingredients","Ingrédients","Ingredienti","Zutaten","Ingredientes","食材","Ingredientes"]},
+  {id:"foraging",icon:"plant",keys:["ActivityItem:8"],names:["採集","Foraging","Cueillette","Raccolta","Sammeln","Recolección","采集","Coleta"]},
+  {id:"fish",icon:"fish",keys:["ActivityItem:10"],names:["魚","Fish","Poissons","Pesci","Fische","Peces","鱼类","Peixes"]},
+  {id:"gems",icon:"gem",keys:[],names:["宝石","Gems","Gemmes","Gemme","Edelsteine","Gemas","宝石","Gemas"]},
+  {id:"timebending",icon:"sparkles",keys:[],names:["時間操作","Timebending","Courbure du temps","Manipolazione del tempo","Zeitbändigen","Control del tiempo","时间弯曲","Dobra do tempo"]},
+  {id:"memories",icon:"gallery",keys:[],names:["メモリー","Memories","Souvenirs","Ricordi","Erinnerungen","Recuerdos","回忆","Memórias"]},
+  {id:"board-game",icon:"collection",keys:[],names:["ボードゲーム","Board Game","Jeu de société","Gioco da tavolo","Brettspiel","Juego de mesa","桌游","Jogo de tabuleiro"]},
+  {id:"snippets",icon:"sparkles",keys:[],names:["スニペット","Snippets","Fragments","Frammenti","Schnipsel","Fragmentos","碎片","Fragmentos"]},
+  {id:"lorekeeper-tales",icon:"guide",keys:[],names:["ロアキーパーの物語","Lorekeeper Tales","Contes du gardien","Racconti del custode","Geschichten des Hüters","Cuentos del guardián","故事","Contos do guardião"]},
+  {id:"quest-puzzles",icon:"puzzle",keys:[],names:["クエストパズル","Quest Puzzles","Énigmes de quête","Enigmi delle missioni","Quest-Rätsel","Puzles de misiones","任务谜题","Quebra-cabeças de missões"]},
+  {id:"exhibition",icon:"gallery",keys:[],names:["展示","Exhibition","Exposition","Esposizione","Ausstellung","Exposición","展览","Exposição"]}
 ] as const;
 export type CollectionTopCategory=typeof COLLECTION_TOP_CATEGORIES[number]['id'];
 const locales=['ja','en','fr','it','de','es-ES','zh-CN','pt-BR'];
 const byKey=new Map<string,CollectionTopCategory>();
 for(const group of COLLECTION_TOP_CATEGORIES)
   for(const key of group.keys)byKey.set(key,group.id);
-export function collectionTopCategory(key:string):CollectionTopCategory{
-  return byKey.get(key)??'other';
+export function collectionTopCategory(key:string):CollectionTopCategory|null{
+  return byKey.get(key)??null;
 }
 export function collectionTopCategoryLabel(locale:string,id:CollectionTopCategory):string{
   const group=COLLECTION_TOP_CATEGORIES.find(row=>row.id===id)!;
@@ -43,11 +54,11 @@ export function collectionTopCategoryCards(
   const counts=new Map<CollectionTopCategory,{total:number;owned:number}>();
   for(const row of rows){
     const id=collectionTopCategory(row.key);
+    if(id===null)continue;
     const count=counts.get(id)??{total:0,owned:0};
     count.total+=row.total;count.owned+=row.owned;counts.set(id,count);
   }
-  return COLLECTION_TOP_CATEGORIES.flatMap(({id,icon})=>{
-    const count=counts.get(id);
-    return count?.total?[{id,icon,...count}]:[];
-  });
+  return COLLECTION_TOP_CATEGORIES.map(({id,icon})=>({
+    id,icon,...(counts.get(id)??{total:0,owned:0})
+  }));
 }
