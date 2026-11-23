@@ -61,6 +61,9 @@ export interface NativeFloorWindowResult {
     'factor_one_source_anchors'|'anchor_coordinates_not_compatible'|'source_default_objects_unavailable';
   readonly sourceMappedGridAreaOnly:true;
   readonly mappedShapeCellCount:number|null;
+  /** Y-major mapped source cells, not a verified occupancy footprint. */
+  readonly mappedShape:Uint8Array|null;
+  readonly acceptedFloorTypesFlag:number|null;
   readonly intrinsicGridFactor:1;
   readonly nativeGridLayersOccupancyVerified:false;
   readonly defaultObjectFootprintsVerified:false;
@@ -239,6 +242,7 @@ export function getNativeFloorWindowResult(
     originalDefaultAnchorStatus,
     sourceMappedGridAreaOnly:true,
     mappedShapeCellCount:shape?shape.reduce((a,b)=>a+b,0):null,
+    mappedShape:shape,acceptedFloorTypesFlag:valid?evidence.acceptedFloorTypesFlag!:null,
     intrinsicGridFactor:1,
     nativeGridLayersOccupancyVerified:false,
     defaultObjectFootprintsVerified:false,
