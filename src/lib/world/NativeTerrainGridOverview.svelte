@@ -92,10 +92,10 @@
 </div>
 
 <style>
-  .overview {display:grid;gap:10px;min-width:0;margin:14px 0;padding:16px;background:#15121f;border:1px solid #ffffff24;border-radius:12px}
+  .overview {display:grid;gap:10px;min-width:0;max-width:100%;overflow:hidden;margin:14px 0;padding:16px;background:#15121f;border:1px solid #ffffff24;border-radius:12px}
   .overview-head {display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;color:#eee7f6;font-size:14px}
   .overview-head span {color:#b9abc7;font-size:12px}
-  .terrain-map {padding:0;border:1px solid #ffffff35;border-radius:6px;background:#221d2b;overflow:hidden;width:min(100%,740px);margin:0 auto;display:block;line-height:0}
+  .terrain-map {padding:0;border:1px solid #ffffff35;border-radius:6px;background:#221d2b;overflow:hidden;width:100%;max-width:740px;min-width:0;box-sizing:border-box;margin:0 auto;display:block;line-height:0}
   .terrain-map:not([aria-disabled='true']) {cursor:crosshair}
   .terrain-map[aria-disabled='true'] {cursor:default;opacity:1}
   .terrain-map:focus-visible {outline:2px solid white;outline-offset:3px}
