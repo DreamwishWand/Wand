@@ -34,6 +34,9 @@ test('Guide event calendar distinguishes owner-cache UTC schedule from unverifie
   // The official 2026 date-only announcement links to the DISTINCT original
   // 2026 native Festival definition, not the similarly named old definition.
   assert.equal(events[2].href,'/guide/events/?event=HauntedFloatingFestival2026');
+  assert.equal(events.find(e=>e.id==='haunted-floating-festival-2025')?.href,
+    '/guide/events/?event=HauntedFloatingFestival',
+    '2025 Festival must not silently link to the separate 2026 definition');
   const native=verifyPublicEventFriendshipRewards(JSON.parse(
     await readFile(new URL('event-friendship-rewards-1.26.2.json',sourceDir),'utf8')));
   const requested=new URL(events[2].href,'https://example.invalid').searchParams.get('event');
