@@ -73,6 +73,60 @@ test('Public Steam 1.26.2 DB-00 reveals concrete Twitch Drops and code reward na
   assert(Object.isFrozen(result.getCampaignCandidates('twitch:2023-launch')));
   assert(OFFICIAL_CAMPAIGNS.every(c=>c.rewards.every(r=>r.itemId===null)));
 });
+test('Official 2023/2024 Pride codes resolve 40 distinct public native Item ID name candidates, not verified code grants',()=>{
+  const indexed=indexPublicOnlineNameCandidates(
+    actualPublishedDb00(),OFFICIAL_CAMPAIGNS,[]
+  );
+  const rows=[
+    ['Gleam','PRIDE20231','PRIDEGLEAM24','50000381','40002842','40002951','50400170','40002856'],
+    ['Illuminate','PRIDE20232','PRIDEILLUMINATE24','50000379','40002948','40002949','50400172','40002950'],
+    ['Shine','PRIDE20233','PRIDESHINE24','50000384','40002868','40002881','50400175','40002857'],
+    ['Shimmer','PRIDE20234','PRIDESHIMMER24','50000378','40002869','40002879','50400174','40002855'],
+    ['Glow','PRIDE20235','PRIDEGLOW24','50000380','40002870','40002880','50400171','40002865'],
+    ['Radiate','PRIDE20236','PRIDERADIATE24','50000382','40002843','40002878','50400173','40002854'],
+    ['Bright','PRIDE20237','PRIDEBRIGHT24','50000385','40002841','40002877','50400168','40002867'],
+    ['Dazzle','PRIDE20238','PRIDEDAZZLE24','50000383','40002947','40002876','50400169','40002866']
+  ];
+  const itemIds=[];
+  for(const [shade,oldCode,newCode,tee,arch,bouquet,ears,bucket] of rows){
+    const old=indexed.getCampaignRewardResolution('code:'+oldCode);
+    const newer=indexed.getCampaignRewardResolution('code:'+newCode);
+    assert(old&&newer);
+    assert.equal(old.campaignKind,'redeem_code');
+    assert.equal(newer.campaignKind,'redeem_code');
+    assert.equal(old.officialSourceUrl,'https://disneydreamlightvalley.com/news/Pride-2023');
+    assert.equal(newer.officialSourceUrl,'https://disneydreamlightvalley.com/news/Pride-2024');
+    assert.deepEqual(old.rewards.map(r=>r.name),['Pride — '+shade+' Tee']);
+    assert.deepEqual(newer.rewards.map(r=>r.name),[
+      shade+' Balloon Arch',shade+' Balloon Bouquet',
+      shade+' Ears Headband',shade+' Popcorn Bucket'
+    ]);
+    assert.deepEqual(old.rewards.map(r=>r.nameCandidateItemIds),[[tee]]);
+    assert.deepEqual(newer.rewards.map(r=>r.nameCandidateItemIds),
+      [[arch],[bouquet],[ears],[bucket]]);
+    const candidates=[
+      ...indexed.getCampaignCandidates('code:'+oldCode),
+      ...indexed.getCampaignCandidates('code:'+newCode)
+    ];
+    assert.equal(candidates.length,5);
+    assert.deepEqual(candidates.map(r=>r.itemId),[tee,arch,bouquet,ears,bucket]);
+    assert(candidates.every(c=>c.evidence==='exact_published_db00_en_name_only'&&
+      c.acquisitionLinkVerified===false&&c.actualRewardGrantedVerified===false&&
+      c.currentAvailabilityVerified===false&&c.accountOwnershipVerified===false));
+    assert(old.rewards.every(r=>r.acquisitionLinkVerified===false&&
+      r.claimedByPlayerVerified===false));
+    assert(newer.rewards.every(r=>r.acquisitionLinkVerified===false&&
+      r.claimedByPlayerVerified===false));
+    itemIds.push(tee,arch,bouquet,ears,bucket);
+  }
+  assert.equal(itemIds.length,40);
+  assert.equal(new Set(itemIds).size,40);
+  assert.equal(OFFICIAL_CAMPAIGNS.filter(x=>x.campaignId.startsWith('code:PRIDE2023')).length,8);
+  assert.equal(OFFICIAL_CAMPAIGNS.filter(x=>/^code:PRIDE[A-Z]+24$/.test(x.campaignId)).length,8);
+  assert(OFFICIAL_CAMPAIGNS.filter(x=>x.campaignId.startsWith('code:PRIDE'))
+    .every(x=>x.rewards.every(r=>r.itemId===null)));
+});
+
 test('Community Premium Shop name matches retain week, price and uncertainty without inventing native offers',()=>{
   const result=indexPublicOnlineNameCandidates(
     actualPublishedDb00(),OFFICIAL_CAMPAIGNS,historicalPremiumShop.offers
@@ -201,7 +255,11 @@ test('Official campaign reward browser retains every unresolved name and never t
     ['50400102'],['40001607'],['40001609'],['50700124']
   ]);
   const onlyCodes=index.listCampaignRewardResolutions('redeem_code');
-  assert.deepEqual(onlyCodes,[code]);
+  assert.equal(onlyCodes.length,17);
+  assert(onlyCodes.includes(code));
+  assert.equal(onlyCodes.filter(x=>x.campaignId.startsWith('code:PRIDE2023')).length,8);
+  assert.equal(onlyCodes.filter(x=>/^code:PRIDE[A-Z]+24$/.test(x.campaignId)).length,8);
+  assert(onlyCodes.every(x=>x.acquisitionLinksVerified===false));
   assert.deepEqual(index.listCampaignRewardResolutions('gift'),[]);
   assert(all.every(c=>c.rewards.every(r=>
     r.match==='source_supplied_id_unverified' ||
