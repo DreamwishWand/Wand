@@ -47,7 +47,7 @@ export interface GuideDateOnlyCalendarEvent extends GuideCalendarDateWindow{
   readonly evidence:'official-announcement';
   readonly liveVerified:false;
   readonly checkedDate:typeof GUIDE_EVENT_CALENDAR_AS_OF;
-  readonly href:'/guide/events/';
+  readonly href:'/guide/events/?event=HauntedFloatingFestival2026';
 }
 export type GuideCalendarEvent=GuideStarpathCalendarEvent|GuideDateOnlyCalendarEvent;
 export type GuideEventScheduleState=
@@ -142,7 +142,8 @@ export function guideCalendarEvents(raw:unknown):GuideCalendarEvent[]{
     evidence:'official-announcement',
     precision:'date-only',startDay:'2026-10-07',endDayInclusive:'2026-10-31',
     liveVerified:false,checkedDate:GUIDE_EVENT_CALENDAR_AS_OF,
-    href:'/guide/events/'
+    // Exact 2026 native FloatingFestival identifier, not the earlier similarly named definition.
+    href:'/guide/events/?event=HauntedFloatingFestival2026'
   });
   check(events.length===3,'event census');
   return events;
