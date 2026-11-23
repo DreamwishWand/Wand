@@ -291,7 +291,7 @@
   async function chooseShards(event: Event) {
     const selected = (event.currentTarget as HTMLInputElement).files;
     if (!selected?.length || !searchIndex) return;
-    const next: Record<string, File> = {...shardFiles};
+    const next:Record<string,LocalGuideFile>={...shardFiles};
     let added = 0;
     for (const file of Array.from(selected)) {
       if (!/^part-(?:0\d|[12]\d|3[01])\.json$/.test(file.name)) {
