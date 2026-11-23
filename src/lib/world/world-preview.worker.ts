@@ -10,6 +10,7 @@ import { findOriginalItemAnchor, findOriginalItemAnchorAcrossGrids } from './nat
 import { getOriginalGridAreaEvidence } from './native-gridarea-evidence.ts';
 import { getOriginalGridAreaLocalWindow } from './native-gridarea-local-window.ts';
 import { getOriginalGridObjectItemAreaLink } from './native-gridobject-item-area-link.ts';
+import {getOriginalDefaultGridLayersAtCell} from './native-default-gridlayers-cell.ts';
 import { getSourceAnchorDomain, getTessellatedSourceAnchorWindow } from './native-anchor-domain';
 import {
   listWorldPreviewViews,
@@ -43,7 +44,9 @@ type Request =
   | { command:'find-global-anchor'; requestId:number;
       itemId:number; matchIndex:number }
   | { command:'gridarea-window'; requestId:number;
-      itemId:number; orientationCode:number; callerGridFactor:1|2; rect:Rect };
+      itemId:number; orientationCode:number; callerGridFactor:1|2; rect:Rect }
+  | { command:'grid-cell-layers'; requestId:number; viewKey:string;
+      gridIdNative:number; x:number; y:number };
 
 interface WorkerScope {
   onmessage: ((event: MessageEvent<unknown>) => Promise<void>) | null;
@@ -78,6 +81,15 @@ function parseRequest(data:unknown): Request {
     return {command:'gridarea-window',requestId,
       itemId:data.itemId,orientationCode:data.orientationCode,
       callerGridFactor:data.callerGridFactor,rect:data.rect};
+  if(data.command==='grid-cell-layers'&&
+     typeof data.viewKey==='string'&&data.viewKey.length>0&&
+     data.viewKey.length<=2048&&
+     nonnegative(data.gridIdNative)&&data.gridIdNative<=0xffffffff&&
+     nonnegative(data.x)&&nonnegative(data.y)&&
+     data.x<=0xffffffff&&data.y<=0xffffffff)
+    return {command:'grid-cell-layers',requestId,
+      viewKey:data.viewKey,gridIdNative:data.gridIdNative,
+      x:data.x,y:data.y};
   if(data.command==='find-global-anchor'&&positive(data.itemId)&&
      nonnegative(data.matchIndex)&&data.matchIndex<=1_000_000)
     return {command:'find-global-anchor',requestId,
@@ -177,6 +189,15 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
     const sourceView=views.find(view=>view.viewKey===message.viewKey);
     if (!sourceView)
       throw new TypeError('Unknown local World view');
+    if(message.command==='grid-cell-layers'){
+      if(!sourceView.grids.some(g=>g.gridIdNative===message.gridIdNative))
+        throw new TypeError('Unknown original source Grid ID');
+      const result=getOriginalDefaultGridLayersAtCell(
+        catalog,sourceView.layoutId,message.gridIdNative,
+        message.x,message.y);
+      worker.postMessage({kind:'grid-cell-layers',requestId,result});
+      return;
+    }
     if(message.command==='find-anchor'){
       if(!sourceView.grids.some(grid=>grid.gridIdNative===message.gridIdNative))
         throw new TypeError('Unknown original source Grid ID');

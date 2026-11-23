@@ -418,3 +418,38 @@ within the original Grid's factor-scaled bounds; otherwise it exposes
 an explicit failure without drawing a rectangle. The World preview
 draws a **dashed rectangle border only**, never filled occupied cells.
 These results do **not** authorize editing, collisions or placement.
+
+## Original GridCells default Item-layer projection (Steam v1.26.2)
+
+Source-pinned native IL2CPP `Meta.Grids.GridCells.GetLayersForPosition`
+(token `0x0600F373`; old RVA `0x042EA530`, new RVA
+`0x042EA5E0`, 788-byte unwind-bounded function, v1.26.2 SHA-256
+`94d8b4501ad5860d1f6a41a4089c95eec68b09752ab5a7d84a99e79bc6dddba5`)
+contains 176 aligned native instructions in both owner-private
+Steam 1.26.1/1.26.2 versions. The 1.26.2 instructions are byte-identical
+in 141 cases, differ in PC-relative displacement in 35, and differ in
+**no other instruction byte**.
+
+The actual 1.26.2 call path iterates GridObjects retrieved from the
+native GridCells index; calls `GridObject.GetGridArea` (cached override
+or original Item default fallback, token `0x0600F005`); reads the native
+GridObject position from its original signed X/Y fields; subtracts that
+X/Y from the *queried Grid position*; takes the object's original
+orientation and the Grid's own tessellation factor into the
+source-matched `GridArea.TryGetGridLocalPosition`
+(token `0x0600344A`); reads the fixed32 GridLayers array at the
+resolved local index; and uses the original integer **bitwise OR** to
+accumulate per-cell layers.
+
+The typed `getOriginalDefaultGridLayersAtCell` in
+`src/lib/world/native-default-gridlayers-cell.ts` implements only the
+verified **source Item default GridArea** specialization, for an exact
+original `(SceneLayout, Grid.ID, source Grid cell X/Y)` and factor 1/2.
+It returns a bounded set of original per-object contributors and a
+uint32 OR receipt, separately counting missing Item definitions and
+items without a source GridArea. Original **oblique unmapped corners**
+do not become zero-valued occupied cells. Zero OR and zero contributors
+are **not** a permission, free-cell verdict, or proof of an empty
+live Grid. A runtime GridArea override, dynamic Save object, native
+GridCells index membership, collision and all placement rules remain
+unverified; no Save writes or private original arrays are published.
