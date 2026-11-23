@@ -1,5 +1,10 @@
-/** Shared localized calendar controls. Game event names are kept separately in their authoritative source. */
-import type {WandLanguage} from '$lib/ui/preferences.ts';
+/** Guide calendar labels. Floating Festival words follow original localized
+ * Festival names in Steam v1.26.2 + official localized announcements.
+ * "Other Events" is a Wand-only exclusive bucket for native mini_events,
+ * because official "Valley Events" ALSO includes Floating Festivals.
+ * A Star Path striped segment is still the same Star Path; the description
+ * "Rewards only" appears on hover/selection, not as an extra event row.
+ */import type {WandLanguage} from '$lib/ui/preferences.ts';
 const DICTIONARY={
   "ja": {
     "systems": "システム",
@@ -8,15 +13,14 @@ const DICTIONARY={
     "events": "イベント",
     "timeline": "開催期間",
     "task": "タスク",
-    "exchange": "猶予期間",
-    "floating": "フローティングイベント",
-    "valley": "バレーイベント",
+    "exchange": "報酬交換のみ",
+    "floating": "フローティングフェスティバル",
     "reset": "水曜リセット",
     "today": "今日",
     "weeks": "週",
     "start": "開始",
     "taskEnd": "タスク終了",
-    "exchangeEnd": "猶予期間終了",
+    "exchangeEnd": "報酬交換終了",
     "end": "終了",
     "dateUnknown": "時刻未確認",
     "guideLink": "攻略を見る",
@@ -29,7 +33,8 @@ const DICTIONARY={
     "active": "期間内",
     "upcoming": "開始前",
     "ended": "終了後",
-    "dateOnly": "日付のみ"
+    "dateOnly": "日付のみ",
+    "other": "その他のイベント"
   },
   "en": {
     "systems": "Systems",
@@ -38,15 +43,14 @@ const DICTIONARY={
     "events": "Events",
     "timeline": "Event timeline",
     "task": "Duties",
-    "exchange": "Grace period",
-    "floating": "Floating events",
-    "valley": "Valley events",
+    "exchange": "Rewards only",
+    "floating": "Floating Festival",
     "reset": "Wednesday reset",
     "today": "Today",
     "weeks": "weeks",
     "start": "Starts",
     "taskEnd": "Duties end",
-    "exchangeEnd": "Grace period ends",
+    "exchangeEnd": "Reward redemption ends",
     "end": "Ends",
     "dateUnknown": "Time unconfirmed",
     "guideLink": "View guide",
@@ -59,7 +63,8 @@ const DICTIONARY={
     "active": "Scheduled",
     "upcoming": "Upcoming",
     "ended": "Ended",
-    "dateOnly": "Dates only"
+    "dateOnly": "Dates only",
+    "other": "Other Events"
   },
   "fr": {
     "systems": "Systèmes",
@@ -68,15 +73,14 @@ const DICTIONARY={
     "events": "Événements",
     "timeline": "Calendrier des événements",
     "task": "Missions",
-    "exchange": "Période de grâce",
-    "floating": "Événements flottants",
-    "valley": "Événements de la vallée",
+    "exchange": "Récompenses uniquement",
+    "floating": "Festival volant",
     "reset": "Réinitialisation mercredi",
     "today": "Aujourd’hui",
     "weeks": "semaines",
     "start": "Début",
     "taskEnd": "Fin des missions",
-    "exchangeEnd": "Fin de la période de grâce",
+    "exchangeEnd": "Fin de l'échange des récompenses",
     "end": "Fin",
     "dateUnknown": "Heure non confirmée",
     "guideLink": "Voir le guide",
@@ -89,7 +93,8 @@ const DICTIONARY={
     "active": "Programmé",
     "upcoming": "À venir",
     "ended": "Terminé",
-    "dateOnly": "Dates seules"
+    "dateOnly": "Dates seules",
+    "other": "Autres événements"
   },
   "it": {
     "systems": "Sistemi",
@@ -98,15 +103,14 @@ const DICTIONARY={
     "events": "Eventi",
     "timeline": "Calendario eventi",
     "task": "Incarichi",
-    "exchange": "Periodo di tolleranza",
-    "floating": "Eventi fluttuanti",
-    "valley": "Eventi della valle",
+    "exchange": "Solo premi",
+    "floating": "Festival volante",
     "reset": "Reset del mercoledì",
     "today": "Oggi",
     "weeks": "settimane",
     "start": "Inizio",
     "taskEnd": "Fine incarichi",
-    "exchangeEnd": "Fine del periodo di tolleranza",
+    "exchangeEnd": "Fine del riscatto dei premi",
     "end": "Fine",
     "dateUnknown": "Orario non confermato",
     "guideLink": "Apri la guida",
@@ -119,7 +123,8 @@ const DICTIONARY={
     "active": "Previsto",
     "upcoming": "In arrivo",
     "ended": "Terminato",
-    "dateOnly": "Solo date"
+    "dateOnly": "Solo date",
+    "other": "Altri eventi"
   },
   "de": {
     "systems": "Systeme",
@@ -128,15 +133,14 @@ const DICTIONARY={
     "events": "Events",
     "timeline": "Event-Zeitleiste",
     "task": "Aufgaben",
-    "exchange": "Nachfrist",
-    "floating": "Schwebe-Events",
-    "valley": "Tal-Events",
+    "exchange": "Nur Belohnungen",
+    "floating": "Schwebendes Fest",
     "reset": "Mittwochs-Reset",
     "today": "Heute",
     "weeks": "Wochen",
     "start": "Beginn",
     "taskEnd": "Aufgabenende",
-    "exchangeEnd": "Ende der Nachfrist",
+    "exchangeEnd": "Ende des Belohnungstauschs",
     "end": "Ende",
     "dateUnknown": "Uhrzeit unbestätigt",
     "guideLink": "Guide öffnen",
@@ -149,7 +153,8 @@ const DICTIONARY={
     "active": "Geplant",
     "upcoming": "Bevorstehend",
     "ended": "Beendet",
-    "dateOnly": "Nur Datumsangaben"
+    "dateOnly": "Nur Datumsangaben",
+    "other": "Weitere Events"
   },
   "es-ES": {
     "systems": "Sistemas",
@@ -158,15 +163,14 @@ const DICTIONARY={
     "events": "Eventos",
     "timeline": "Cronología de eventos",
     "task": "Tareas",
-    "exchange": "Período de gracia",
-    "floating": "Eventos flotantes",
-    "valley": "Eventos del valle",
+    "exchange": "Solo recompensas",
+    "floating": "Festival Flotante",
     "reset": "Reinicio del miércoles",
     "today": "Hoy",
     "weeks": "semanas",
     "start": "Inicio",
     "taskEnd": "Fin de tareas",
-    "exchangeEnd": "Fin del período de gracia",
+    "exchangeEnd": "Fin del canje de recompensas",
     "end": "Fin",
     "dateUnknown": "Hora sin confirmar",
     "guideLink": "Ver guía",
@@ -179,7 +183,8 @@ const DICTIONARY={
     "active": "Programado",
     "upcoming": "Próximo",
     "ended": "Finalizado",
-    "dateOnly": "Solo fechas"
+    "dateOnly": "Solo fechas",
+    "other": "Otros eventos"
   },
   "zh-CN": {
     "systems": "系统",
@@ -188,15 +193,14 @@ const DICTIONARY={
     "events": "活动",
     "timeline": "活动时间线",
     "task": "任务期",
-    "exchange": "兑换宽限期",
-    "floating": "浮岛活动",
-    "valley": "山谷活动",
+    "exchange": "仅可兑换奖励",
+    "floating": "浮空节",
     "reset": "周三重置",
     "today": "今天",
     "weeks": "周",
     "start": "开始",
     "taskEnd": "任务结束",
-    "exchangeEnd": "宽限期结束",
+    "exchangeEnd": "奖励兑换结束",
     "end": "结束",
     "dateUnknown": "时间未确认",
     "guideLink": "查看攻略",
@@ -209,7 +213,8 @@ const DICTIONARY={
     "active": "活动期间",
     "upcoming": "即将开始",
     "ended": "已结束",
-    "dateOnly": "仅日期"
+    "dateOnly": "仅日期",
+    "other": "其他活动"
   },
   "pt-BR": {
     "systems": "Sistemas",
@@ -218,15 +223,14 @@ const DICTIONARY={
     "events": "Eventos",
     "timeline": "Linha do tempo",
     "task": "Tarefas",
-    "exchange": "Período de tolerância",
-    "floating": "Eventos flutuantes",
-    "valley": "Eventos do vale",
+    "exchange": "Apenas recompensas",
+    "floating": "Festival Flutuante",
     "reset": "Reinício de quarta",
     "today": "Hoje",
     "weeks": "semanas",
     "start": "Início",
     "taskEnd": "Fim das tarefas",
-    "exchangeEnd": "Fim do período de tolerância",
+    "exchangeEnd": "Fim do resgate das recompensas",
     "end": "Fim",
     "dateUnknown": "Horário não confirmado",
     "guideLink": "Ver guia",
@@ -239,7 +243,8 @@ const DICTIONARY={
     "active": "Programado",
     "upcoming": "Em breve",
     "ended": "Encerrado",
-    "dateOnly": "Somente datas"
+    "dateOnly": "Somente datas",
+    "other": "Outros eventos"
   }
 } as const;
 export function guideTimelineCopy(language:WandLanguage){return DICTIONARY[language]??DICTIONARY.en;}
