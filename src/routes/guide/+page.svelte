@@ -15,9 +15,11 @@
   } from '$lib/guide/event-timeline.ts';
   import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences.ts';
   import {guideTimelineCopy,GUIDE_LOCALES} from '$lib/guide/timeline-copy.ts';
+  import {GUIDE_EARLY_ACCESS_FIRST_DAY} from '$lib/guide/official-event-history.ts';
 
   let events:GuideCalendarEvent[]=[];
   let nativeFestivalNames:Readonly<Record<string,string>>|null=null;
+  let earlierFestivalNames:Readonly<Record<string,string>>|null=null;
   let loading=true;
   let loadError='';
   let now=Date.now();
@@ -33,6 +35,11 @@
   $: windowRange=guideTimelineWindow(now,weeks,offsetWeeks,viewerZone);
   $: visibleRows=guideTimelineRows(events,windowRange);
   $: selected=events.find(event=>event.id===selectedId)??null;
+  $: selectedHref=selected?eventHref(selected):null;
+  $: previousOffset=offsetWeeks-weeks;
+  $: atFirstRelease=previousOffset< -520||
+    guideTimelineWindow(now,weeks,Math.max(-520,previousOffset),viewerZone)
+      .lastDay<GUIDE_EARLY_ACCESS_FIRST_DAY;
   $: rangeText=shortDay(windowRange.firstDay,viewerLocale)+' – '+shortDay(windowRange.lastDay,viewerLocale);
   $: zoneLabel=new Intl.DateTimeFormat(viewerLocale,{timeZone:viewerZone,timeZoneName:'short'})
     .formatToParts(new Date(now)).find(p=>p.type==='timeZoneName')?.value??viewerZone;
@@ -51,23 +58,26 @@
       .format(new Date(day+'T12:00:00Z'));
   }
   function displayCategory(event:GuideCalendarEvent):'starpath'|'floating'|'other'{
-    return event.kind==='starpath'?'starpath':event.category;
+    return event.kind!=='limited-event'?'starpath':event.category;
   }
   function eventTitle(event:GuideCalendarEvent):string{
-    // Original game-data localization; never fabricate translated event names.
-    return event.kind==='limited-event'
-      ?(nativeFestivalNames?.[language]||nativeFestivalNames?.en||event.title)
-      :event.title;
+    // Only the source-matched Festival definition may use its native title.
+    // Other event titles remain the exact language supplied by official news.
+    const names=event.id==='haunted-floating-festival-2026'?nativeFestivalNames:
+      event.id==='haunted-floating-festival-2025'?earlierFestivalNames:null;
+    return names?.[language]||names?.en||event.title;
   }
-  function eventHref(event:GuideCalendarEvent):string{
-    return event.kind==='starpath'
-      ?starpathSeasonHref(base,event.sourceSeasonId):`${base}${event.href}`;
+  function eventHref(event:GuideCalendarEvent):string|null{
+    if(event.kind==='starpath')return starpathSeasonHref(base,event.sourceSeasonId);
+    return event.href?`${base}${event.href}`:null;
   }
   function eventIcon(event:GuideCalendarEvent):string{
-    return event.kind==='starpath'?'star':event.category==='floating'?'world':'plant';
+    return event.kind!=='limited-event'?'star':
+      event.category==='floating'?'world':'plant';
   }
   function phaseName(phase:GuideTimelinePhase):string{
-    return phase==='task'?copy.starPaths:phase==='exchange'?copy.exchange:copy.events;
+    return phase==='task'||phase==='historic'?copy.starPaths:
+      phase==='exchange'?copy.exchange:copy.events;
   }
   function stateName(event:GuideCalendarEvent):string{
     switch(eventScheduleState(event,now)){
@@ -79,14 +89,19 @@
     }
   }
   function eventBoundary(event:GuideCalendarEvent):string{
-    if(event.precision==='date-only')
-      return `${longDay(event.startDay)} – ${longDay(event.endDayInclusive)} (${copy.dateUnknown})`;
+    if(event.precision==='date-only'){
+      const end=event.kind==='starpath-history'
+        ?formatLocal(event.officialEndUtc):longDay(event.endDayInclusive);
+      return `${longDay(event.startDay)} – ${end}`;
+    }
     return `${formatLocal(event.startUtc)} – ${formatLocal(event.endUtcExclusive)}`;
   }
   function showEvent(id:string){selectedId=selectedId===id?null:id;}
   function navigate(direction:-1|1){
     const next=offsetWeeks+direction*weeks;
-    if(next< -104||next>104)return;
+    if(next< -520||next>520)return;
+    const proposed=guideTimelineWindow(now,weeks,next,viewerZone);
+    if(proposed.lastDay<GUIDE_EARLY_ACCESS_FIRST_DAY)return;
     offsetWeeks=next;selectedId=null;
     if(timelineScroller)timelineScroller.scrollLeft=0;
   }
@@ -112,6 +127,14 @@
     offsetWeeks=0;selectedId=null;
     void positionToday();
   }
+  function goLaunch(){
+    // A single click must reach the Early Access date, not 40+ range clicks.
+    const delta=(Date.parse(GUIDE_EARLY_ACCESS_FIRST_DAY+'T00:00:00Z')-
+      Date.parse(windowRange.todayDay+'T00:00:00Z'))/86_400_000;
+    offsetWeeks=Math.max(-520,Math.min(0,Math.floor((delta+4)/7)));
+    selectedId=null;
+    if(timelineScroller)timelineScroller.scrollLeft=0;
+  }
   async function load(){
     loading=true;loadError='';
     try{
@@ -122,6 +145,7 @@
       ]);
       events=guideCalendarEvents(snapshot);
       nativeFestivalNames=native?.getEvent('floating_festival','HauntedFloatingFestival2026')?.names??null;
+      earlierFestivalNames=native?.getEvent('floating_festival','HauntedFloatingFestival')?.names??null;
     }catch(error){
       loadError=error instanceof Error?error.message:String(error);
     }finally{
@@ -169,11 +193,13 @@
           <button class:active={weeks===9} aria-pressed={weeks===9} on:click={()=>changeZoom(9)}>9 {copy.weeks}</button>
         </div>
         <button class="nav-arrow previous" aria-label={copy.previous} title={copy.previous}
-          on:click={()=>navigate(-1)}><WandIcon name="chevron" size={17}/></button>
+          disabled={atFirstRelease} on:click={()=>navigate(-1)}><WandIcon name="chevron" size={17}/></button>
         <strong class="range" aria-live="polite">{rangeText}</strong>
         <button class="nav-arrow next" aria-label={copy.next} title={copy.next}
           on:click={()=>navigate(1)}><WandIcon name="chevron" size={17}/></button>
         <button class="today-button" on:click={goToday}>{copy.today}</button>
+        <button class="launch-button" title={copy.launch} aria-label={copy.launch}
+          on:click={goLaunch}>2022</button>
       </div>
     </div>
 
@@ -224,7 +250,7 @@
                 </div>
                 {#each row.segments as segment, i (`${row.event.id}-${i}`)}
                   <button class="timeline-bar"
-                    class:task={segment.phase==='task'}
+                    class:task={segment.phase==='task'||segment.phase==='historic'}
                     class:exchange={segment.phase==='exchange'}
                     class:limited={segment.phase==='limited'}
                     class:floating={segment.phase==='limited'&&displayCategory(row.event)==='floating'}
@@ -263,8 +289,11 @@
           <div class="date-facts">
             {#if selected.precision==='date-only'}
               <div><small>{copy.start}</small><strong>{longDay(selected.startDay)}</strong></div>
-              <div><small>{copy.end}</small><strong>{longDay(selected.endDayInclusive)}</strong></div>
-              <span class="uncertain"><WandIcon name="info" size={15}/>{copy.dateUnknown}</span>
+              <div><small>{copy.end}</small>
+                <strong>{selected.kind==='starpath-history'
+                  ?formatLocal(selected.officialEndUtc)
+                  :longDay(selected.endDayInclusive)}</strong></div>
+              <span class="uncertain"><WandIcon name="info" size={15}/>{copy.startTimeUnknown}</span>
             {:else}
               <div><small>{copy.start}</small><strong>{formatLocal(selected.startUtc)}</strong></div>
               <div><small>{copy.taskEnd}</small><strong>{formatLocal(selected.taskEndUtcExclusive)}</strong></div>
@@ -272,7 +301,14 @@
             {/if}
           </div>
           <div class="inspector-actions">
-            <a class="primary" href={eventHref(selected)}>{copy.guideLink} <WandIcon name="arrow" size={16}/></a>
+            {#if selected.kind==='starpath-history'}
+              <span class="historic-status">{copy.onlineHistory}</span>
+            {:else if selected.kind==='limited-event'&&selected.participation==='game-clock'}
+              <span class="historic-status">{copy.gameClock}</span>
+            {/if}
+            {#if selectedHref}
+              <a class="primary" href={selectedHref}>{copy.guideLink} <WandIcon name="arrow" size={16}/></a>
+            {/if}
             <a href={selected.sourceUrl} target="_blank" rel="noopener noreferrer">
               {copy.official} <WandIcon name="link" size={14}/>
             </a>
@@ -312,6 +348,10 @@
   .nav-arrow.previous :global(svg){transform:rotate(90deg)}
   .nav-arrow.next :global(svg){transform:rotate(-90deg)}
   .calendar-nav .today-button{background:#4c365e}
+  .calendar-nav .launch-button{background:#29243f;border-color:#65537a;color:#d0c2de}
+  .calendar-nav button:disabled{opacity:.35;cursor:not-allowed}
+  .historic-status{font-size:11px;color:#d4bbeb;white-space:nowrap}
+
   .timeline-key{display:flex;align-items:center;flex-wrap:wrap;gap:15px;padding:7px 15px;font-size:11px;color:#b6a4c1}
   .timeline-key span{display:flex;align-items:center;gap:6px}
   .sample{display:inline-block;width:17px;height:6px;border-radius:8px}
