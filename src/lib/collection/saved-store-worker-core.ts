@@ -12,17 +12,20 @@ import { inspectDecodedWorldStores } from '../acquisition/world-store-save.mjs';
 import { createSavedStorePreview } from './saved-store-preview.mjs';
 import { createSavedCollectionPresence } from './saved-collection-presence.mjs';
 import type {SavedCollectionDiscoveryProjection} from './saved-collection-discovery.ts';
-import { projectPositiveListInventoryOwnership } from './saved-list-positive-ownership.mjs';
+import type {PositiveListInventoryProjection} from './saved-list-positive-ownership.ts';
 import { projectSavedGridFurnitureReferences } from './saved-grid-furniture-references.mjs';
 
 const staticStallUnavailable = Object.freeze({ getStallStaticCatalog: () => null });
 const MAX_ENCRYPTED_BYTES = 32 * 1024 * 1024;
 export type SaveDiscoveryProjector=
   (decodedJson:string)=>Promise<SavedCollectionDiscoveryProjection>;
+export type SaveOwnershipProjector=
+  (decodedJson:string)=>Promise<PositiveListInventoryProjection>;
 
 export async function inspectEncryptedSavedStore(
   ciphertext: Uint8Array,
   discovery:SaveDiscoveryProjector,
+  ownership:SaveOwnershipProjector,
   decoder: (encrypted: Uint8Array) => Promise<{jsonText:string}> = decodeP1gPackagedProfile
 ) {
   if (!(ciphertext instanceof Uint8Array) || ciphertext.byteLength < 16 ||
@@ -34,14 +37,17 @@ export async function inspectEncryptedSavedStore(
   // in the dedicated Worker, which is terminated after its single response.
   const decoded = await decoder(ciphertext);
   const root = parseSafeJson(decoded.jsonText);
-  return projectSavedRoot(root,decoded.jsonText,discovery);
+  return projectSavedRoot(root,decoded.jsonText,discovery,ownership);
 }
 
 async function projectSavedRoot(
-  root:any,decodedJson:string,discovery:SaveDiscoveryProjector
+  root:any,decodedJson:string,discovery:SaveDiscoveryProjector,
+  ownership:SaveOwnershipProjector
 ) {
   const evidence = inspectDecodedWorldStores(staticStallUnavailable, root);
-  const projectedDiscovery=await discovery(decodedJson);
+  const [projectedDiscovery,projectedOwnership]=await Promise.all([
+    discovery(decodedJson),ownership(decodedJson)
+  ]);
   return Object.freeze({
     kind: 'saved-store-summary',
     saveSchema: Number.isSafeInteger(root.GameInfo?.Version)
@@ -49,7 +55,7 @@ async function projectSavedRoot(
     summary: createSavedStorePreview(evidence, []),
     collection: createSavedCollectionPresence(root),
     discovery: projectedDiscovery,
-    positiveOwnership: projectPositiveListInventoryOwnership(root),
+    positiveOwnership: projectedOwnership,
     gridFurniture: projectSavedGridFurnitureReferences(root)
   });
 }
@@ -64,7 +70,8 @@ export async function inspectLocalSavedStore(
   source:Uint8Array,
   decodeEncrypted:(source:Uint8Array)=>Promise<{jsonText:string}>,
   decodePlain:(source:Uint8Array)=>Promise<{jsonText:string}>,
-  discovery:SaveDiscoveryProjector
+  discovery:SaveDiscoveryProjector,
+  ownership:SaveOwnershipProjector
 ){
   if(!(source instanceof Uint8Array)||source.byteLength===0||
       source.byteLength>128*1024*1024)
@@ -77,9 +84,9 @@ export async function inspectLocalSavedStore(
     // The Rust validator rejects malformed/plaintext duplicate-key JSON.
     const decoded=await decodePlain(source);
     return projectSavedRoot(
-      parseSafeJson(decoded.jsonText),decoded.jsonText,discovery
+      parseSafeJson(decoded.jsonText),decoded.jsonText,discovery,ownership
     );
   }
   // P1G size and padding gates remain in the existing encrypted wrapper.
-  return inspectEncryptedSavedStore(source,discovery,decodeEncrypted);
+  return inspectEncryptedSavedStore(source,discovery,ownership,decodeEncrypted);
 }
