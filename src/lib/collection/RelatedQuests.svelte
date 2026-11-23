@@ -4,7 +4,8 @@
   import {collectionQuestCopy} from './quest-copy.ts';
   import type {CollectionQuestSummary,CollectionRelatedQuest}
     from './quest-evidence.ts';
-  import type {PublicGuideNames} from '../guide/public-guide.ts';
+  import {formatPublicGuideText,type PublicGuideNames}
+    from '../guide/public-guide.ts';
 
   export let itemId:number;
   export let locale:string='ja';
@@ -27,7 +28,8 @@
     const names:PublicGuideNames=quest.names;
     const value=names[locale as keyof PublicGuideNames]??names.en??
       names.ja??quest.internalName;
-    return value?.trim()||quest.questId;
+    // Match the verified Guide's original UI-marker text formatting.
+    return formatPublicGuideText(value)||quest.questId;
   }
   function questHref(id:string,role:'target'|'item'):string{
     // Both IDs come only from the SHA-verified native Quest adapter.
