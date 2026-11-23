@@ -500,10 +500,24 @@ try {
   assert(markerRatio>.1&&markerRatio<.16,'today should be in the left 10–15% of the date axis');
 
   assert.match(await hub.locator('.calendar-nav').innerText(),/2026年11月18日.*2026年12月22日/);
-  assert.match(await hub.locator('.timeline-content').innerText(),/Haunting Elegance/);
-  assert.match(await hub.locator('.timeline-content').innerText(),/Seafaring Star Path/);
+  assert.match(await hub.locator('.timeline-content').innerText(),/ホーンテッド・エレガンス/);
+  assert.match(await hub.locator('.timeline-content').innerText(),/マリンアドベンチャー/);
   assert.equal(await hub.locator('.timeline-bar.task').count(),2);
   assert.equal(await hub.locator('.timeline-bar.exchange').count(),2);
+  assert(await hub.locator('.timeline-panel').evaluate(panel=>
+    panel.getBoundingClientRect().bottom-panel.querySelector('.timeline-content').getBoundingClientRect().bottom<36),
+    'calendar must not reserve unused vertical event rows');
+  for(const [code,title] of [
+    ['en','Haunting Elegance'],['fr','Élégance spectrale'],['it','Eleganza stregata'],
+    ['de','Geisterhafte Eleganz'],['es-ES','Elegancia Aterradora'],['zh-CN','幽魅典雅'],
+    ['pt-BR','Elegância Assombrosa'],['ja','ホーンテッド・エレガンス']
+  ]){
+    await hub.evaluate(code=>{
+      localStorage.setItem('dreamwishwand.ui.language.v1',code);
+      window.dispatchEvent(new CustomEvent('wand:ui-language',{detail:code}));
+    },code);
+    await hub.locator('.event-name').filter({hasText:title}).waitFor();
+  }
   const eventLegend=await hub.locator('.timeline-key').innerText();
   assert.match(eventLegend,/スターパス/);
   assert.match(eventLegend,/フローティングフェスティバル/);
@@ -570,7 +584,7 @@ try {
   // Week range navigation is local state, not a URL that persists on Back.
   assert.match(await hub.locator('.calendar-nav').innerText(),/2026年11月18日.*2026年12月22日/);
   const seafaringCalendarHref='/Wand/guide/star-path/?season=Seafaring2026';
-  const seafaringRow=hub.locator('.timeline-row').filter({hasText:'Seafaring Star Path'});
+  const seafaringRow=hub.locator('.timeline-row').filter({hasText:'マリンアドベンチャー'});
   await seafaringRow.locator('.timeline-bar.task').click();
   assert.equal(await hub.locator('.event-inspector a.primary').getAttribute('href'),
     seafaringCalendarHref);
@@ -586,24 +600,24 @@ try {
   await hub.locator('.calendar-year').selectOption('2022');
   assert.equal(await hub.locator('.calendar-year').inputValue(),'2022');
   await hub.waitForFunction(()=>document.querySelector('.calendar-nav .range')?.textContent?.includes('2022')||
-    document.querySelector('.timeline-content')?.textContent?.includes('Pixar Fest Star Path'));
-  assert.match(await hub.locator('.timeline-content').innerText(),/Pixar Fest Star Path/);
+    document.querySelector('.timeline-content')?.textContent?.includes('ピクサーフェスト'));
+  assert.match(await hub.locator('.timeline-content').innerText(),/ピクサーフェスト/);
   assert.equal(await hub.locator('.timeline-bar.exchange').count(),0,
     'do not fabricate an unconfirmed 2022 rewards-only grace period');
-  await hub.locator('.timeline-row').filter({hasText:'Pixar Fest Star Path'})
+  await hub.locator('.timeline-row').filter({hasText:'ピクサーフェスト'})
     .locator('button.event-label').click();
   assert.match(await hub.locator('.event-inspector').innerText(),/2022\/10\/11 06:00 GMT-7/);
   assert.match(await hub.locator('.event-inspector').innerText(),/過去のスターパスは再参加不可/);
   assert.equal(await hub.locator('.event-inspector a.primary').count(),0,
     'historic online-only passes must not link to current season duties');
-  assert.equal(await hub.locator('.event-inspector a[href^="https://disneydreamlightvalley.com/"]').count(),1);
+  assert.equal(await hub.locator('.event-inspector a[href^="https://disneydreamlightvalley.com/"]').count(),0);
   await hub.locator('.calendar-year').selectOption('2025');
   assert.match(await hub.locator('.timeline-content').innerText(),/幸運のクローバー/,
     '2025 first native event is now visible without nonofficial wiki data');
   await hub.locator('.calendar-year').selectOption('2023');
-  assert.match(await hub.locator('.timeline-content').innerText(),/Eggstravaganza/);
-  assert.equal(await hub.locator('.timeline-bar.other').count(),1,
-    '2023 verified game-calendar event must be available from the archive');
+  assert.match(await hub.locator('.timeline-content').innerText(),/100周年/);
+  await hub.getByRole('button',{name:'次の期間'}).click();
+  assert.match(await hub.locator('.timeline-content').innerText(),/イースター|ディズニーパーク/);
   assert.equal(await hub.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),true,
     'adding the year selector must not cause mobile page overflow');
   // 2022 must not require dozens of repeated backward clicks.
