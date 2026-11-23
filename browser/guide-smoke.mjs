@@ -533,9 +533,10 @@ try {
   await hub.locator('.source-info summary').click();
   await hub.getByRole('button',{name:'前の期間'}).click();
   assert.match(await hub.locator('.calendar-nav').innerText(),/10月14日.*11月17日/);
-  assert.equal(await hub.locator('.timeline-bar.limited').count(),1);
+  assert.equal(await hub.locator('.timeline-bar.limited').count(),2);
   assert.equal(await hub.locator('.timeline-bar.floating').count(),1);
-  assert.equal(await hub.locator('.timeline-bar.other').count(),0);
+  assert.equal(await hub.locator('.timeline-bar.other').count(),1,
+    'official 2026 Trick or Treat dates are now part of historical calendar');
 
   const festival=hub.locator('.timeline-row')
     .filter({hasText:'ホーンテッドフローティングフェスティバル'});
@@ -566,6 +567,22 @@ try {
   await hub.locator('.seasons button.selected')
     .filter({hasText:'Seafaring Star Path'}).waitFor({timeout:20000});
   assert.match(await hub.locator('.seasons button.selected').innerText(),/Seafaring Star Path/);
+  await hub.goto('http://127.0.0.1:4177/Wand/guide/',{waitUntil:'domcontentloaded'});
+  await hub.locator('.timeline-row').first().waitFor({timeout:20000});
+  await hub.getByRole('button',{name:'発売当初へ'}).click();
+  await hub.waitForFunction(()=>document.querySelector('.calendar-nav .range')?.textContent?.includes('2022')||
+    document.querySelector('.timeline-content')?.textContent?.includes('Pixar Fest Star Path'));
+  assert.match(await hub.locator('.timeline-content').innerText(),/Pixar Fest Star Path/);
+  assert.equal(await hub.locator('.timeline-bar.exchange').count(),0,
+    'do not fabricate an unconfirmed 2022 rewards-only grace period');
+  await hub.locator('.timeline-row').filter({hasText:'Pixar Fest Star Path'})
+    .locator('.event-label').click();
+  assert.match(await hub.locator('.event-inspector').innerText(),/2022\/10\/11 06:00 GMT-7/);
+  assert.match(await hub.locator('.event-inspector').innerText(),/過去のスターパスは再参加不可/);
+  assert.equal(await hub.locator('.event-inspector a.primary').count(),0,
+    'historic online-only passes must not link to current season duties');
+  assert.equal(await hub.locator('.event-inspector a[href^="https://disneydreamlightvalley.com/"]').count(),1);
+  // 2022 must not require dozens of repeated backward clicks.
   await hub.goto('http://127.0.0.1:4177/Wand/guide/systems/',{waitUntil:'domcontentloaded'});
   await hub.locator('.system-categories button').first().waitFor({timeout:20000});
   assert.equal(await hub.locator('.system-categories button').count(),7);
