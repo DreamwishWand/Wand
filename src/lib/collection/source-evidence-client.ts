@@ -1,7 +1,6 @@
 /** One lazily created Collection Worker shared by both inspector panels.
  * This is UI transport/cache only; exact game-source verification stays in
  * the Worker and the independently validated DB-00/02/03 readers. */
-import type {CollectionAcquisitionSummary} from './acquisition-summary.ts';
 import type {CollectionQuestSummary} from './quest-evidence.ts';
 import type {CollectionAcquisitionWithDistribution}
   from './distribution-evidence.ts';
