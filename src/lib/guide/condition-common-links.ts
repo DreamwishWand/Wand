@@ -11,7 +11,7 @@ import {
   GUIDE_CONDITION_V2_SCHEMA,GUIDE_CONDITION_INDEX_V2_SHA,
   GUIDE_CONDITION_INDEX_V2_BYTES,GUIDE_CONDITION_SOURCE_SHA,
   GUIDE_CONDITION_NATIVE_COUNT
-} from './current-conditions.mjs';
+} from './current-conditions.ts';
 import {
   DB03_CONDITION_RELATION_SCHEMA,
   type GuideConditionRelationIndex,type GuideConditionMention,
