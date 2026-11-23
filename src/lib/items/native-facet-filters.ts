@@ -89,6 +89,10 @@ export interface Db01NativeFilterCoverage{
   readonly byOriginalTagFacet:Readonly<Record<Db01TagFacet,number>>;
   readonly namedSourceSubtypes:number;
   readonly completeSourceNativeItemScan:true;
+  /** Original FurnitureBlocker field-14 native Tag overlay included.
+   * Older v1.26.2 private releases remain readable, but are incomplete.
+   */ 
+  readonly furnitureBlockerField14TagsIncluded:boolean;
   readonly gameUiFilterVerified:false;
   readonly worldAvailabilityVerified:false;
   readonly dlcEntitlementVerified:false;
@@ -183,16 +187,23 @@ export function createDb01NativeFacetFilterClient(
     tagSource.sourceSqliteSha256===typeSource.sourceSqliteSha256,
     'SOURCE_VERSION_OR_SQLITE_IDENTITY');
 
-  // Original Furniture field-7 packed Tag IDs were added by the
-  // corrected full v1.26.2 Tag release. The first original-source Tag
-  // archive lacks 112 world-context and 31 universe associations despite
-  // sharing the same catalog Items SHA: a base-source hash alone cannot
-  // distinguish the two derived Tag releases. Fail closed on that known
-  // retired release rather than silently mis-filtering furniture.
+  // Three Steam v1.26.2 Tag release levels exist, despite the same
+  // source Items SHA: early field-7-incomplete, field-7-complete, and
+  // field-7 + FurnitureBlocker field-14-complete. Preserve read access to
+  // the previous verified 14,973-item private release; expose its known
+  // 19-field-14 deficit explicitly instead of falsely calling it complete.
+  // Still reject the original, older missing 112 world/31 universe tags.
+  const furnitureBlockerField14TagsIncluded=
+    base.gameVersion==='1.26.2'&&base.definitions===39067&&
+    tagSource.taggedDefinitions===14992&&
+    tagSource.facetCoverage?.worldContextTag===11275&&
+    tagSource.facetCoverage?.disneyUniverse===2015;
   if(base.gameVersion==='1.26.2'&&base.definitions===39067){
-    require(tagSource.taggedDefinitions===14973&&
+    const previousVerified=
+      tagSource.taggedDefinitions===14973&&
       tagSource.facetCoverage?.worldContextTag===11275&&
-      tagSource.facetCoverage?.disneyUniverse===1997,
+      tagSource.facetCoverage?.disneyUniverse===1997;
+    require(previousVerified||furnitureBlockerField14TagsIncluded,
       'RETIRED_INCOMPLETE_TAG_OVERLAY');
   }
   const source=Object.freeze({
@@ -316,6 +327,7 @@ export function createDb01NativeFacetFilterClient(
       byOriginalTagFacet:Object.freeze(byFacet),
       namedSourceSubtypes:namedSubtypes,
       completeSourceNativeItemScan:true as const,
+      furnitureBlockerField14TagsIncluded,
       gameUiFilterVerified:false as const,
       worldAvailabilityVerified:false as const,
       dlcEntitlementVerified:false as const,
