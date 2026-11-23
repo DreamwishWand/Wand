@@ -119,12 +119,15 @@ export function createDb00OriginalCollectionAreaReader():
   check(seenCodes.size===7&&seenTags.size===6 &&
     [...worldTags].every(tag=>seenTags.has(tag)),
     'DB01_DB04_WORLD_TAG_COVERAGE_MISMATCH');
-  const codeMap=new Map(areas.map(area=>[area.areaCode,area]));
+  const codeMap=new Map<number,Db00OriginalCollectionArea>(
+    areas.map(area=>[area.areaCode,area])
+  );
   const tagMap=new Map(areas.filter(area=>area.worldTag!==null)
     .map(area=>[area.worldTag!,area]));
-  const nativeIdMap=new Map(areas.filter(area=>
-    area.original.gameplayTagId>0).map(area=>
-      [area.original.gameplayTagId,area]));
+  const nativeIdMap=new Map<number,Db00OriginalCollectionArea>(
+    areas.filter(area=>area.original.gameplayTagId>0)
+      .map(area=>[area.original.gameplayTagId,area])
+  );
   const exceptions=new Set<string>(
     snapshot.originalItemLocationExceptionIds.map(id=>canonicalId(id))
   );
