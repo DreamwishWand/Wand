@@ -7,7 +7,7 @@
  * search/shard identity verifier. The 1.26.2 Condition index must come from
  * the existing private current-conditions importer and typed relation reader.
  */
-import {guideMissionReferences,guideVerifiedSourceBridge} from './client.mjs';
+import {guideMissionReferences,guideVerifiedSourceBridge} from './client.ts';
 import {
   DB03_CONDITION_RELATION_SCHEMA,type GuideConditionRelationIndex,
   type GuideConditionMention,type NativeConditionBooleanOperator
