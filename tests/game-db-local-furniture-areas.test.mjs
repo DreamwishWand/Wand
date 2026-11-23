@@ -83,6 +83,7 @@ function localFurniture(){
     schema:DB01_ORIGINAL_FURNITURE_SUBTYPES_SCHEMA,
     source:HASHES,
     getItem:async id=>records.get(id)??null,
+    getItems:async ids=>Object.freeze(ids.map(id=>records.get(id)??null)),
     hasTag:async()=>null
   });
 }
