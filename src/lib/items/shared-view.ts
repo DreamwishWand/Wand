@@ -21,6 +21,15 @@ import type {
   Db01RemainingClient,Db01RemainingPositive,Db01RemainingNegative,
   Db01RemainingResult,
 } from './collection-remaining.ts';
+import {
+  DB01_SIX_CATEGORY_NATIVE_AREA_SCHEMA,
+  DB01_SIX_CATEGORY_TOTAL,
+  DB01_SIX_CATEGORY_POSITIVE,
+  DB01_SIX_CATEGORY_HAS_TAGS_NO_POSITIVE,
+  DB01_SIX_CATEGORY_NO_IHAS_TAGS,
+  DB01_SIX_CATEGORY_CRITTER_SCENE_UNKNOWN,
+  type Db01SixSourceClient,type Db01SixSourceItem,
+} from './native-positive-area-six-categories.ts';
 
 export interface Db01EvidenceSources{
   readonly catalog:Db01CatalogClient;
@@ -30,6 +39,8 @@ export interface Db01EvidenceSources{
   readonly universePredicates?:Db01UniversePredicateClient;
   readonly specialPredicates?:Db01SpecialClient;
   readonly activityCrafting?:Db01RemainingClient;
+  /** Optional verified six-domain original CollectionArea reader (Steam 1.26.2). */
+  readonly nativeAreas?:Db01SixSourceClient;
 }
 export type Db01StaticPredicate=
   |ReadOnlyUniverse
@@ -90,6 +101,11 @@ export interface Db01SharedItem{
   readonly originalItemType:Readonly<Db01ItemType>|null;
   /** Null means source Tag release not connected, not 'no tags'. */
   readonly originalTags:Readonly<Db01Classification>|null;
+  /** Null if not connected OR outside the six confirmed original domains. */
+  readonly originalNativeAreas:Readonly<Db01SixSourceItem>|null;
+  /** Source lookup status; outside domains does NOT imply lack of world tags. */
+  readonly nativeAreaSourceStatus:
+    'reader_not_connected'|'outside_six_verified_domains'|'original_source_record';
   readonly collection:Readonly<Db01CollectionEvidence>;
   readonly screenCategory:null;
   readonly screenSubcategory:null;
@@ -152,12 +168,20 @@ function sameSource(item:Readonly<Db01Item>,supplement:{
 
 export function createDb01SharedItemClient(inputs:Db01EvidenceSources):Db01SharedItemClient{
   const {catalog,itemTypes,tags,directMenus,universePredicates,
-    specialPredicates,activityCrafting}=inputs;
+    specialPredicates,activityCrafting,nativeAreas}=inputs;
   assert(catalog?.source?.privateOnly===true&&
     catalog.source.platform==='Steam'&&
     typeof catalog.getItems==='function'&&typeof catalog.getItem==='function',
     'PRIVATE_CATALOG_REQUIRED');
   const base=catalog.source;
+  if(nativeAreas){
+    assert(nativeAreas.schema===DB01_SIX_CATEGORY_NATIVE_AREA_SCHEMA&&
+      nativeAreas.gameVersion===base.gameVersion&&
+      typeof nativeAreas.getItem==='function'&&
+      typeof nativeAreas.getCoverage==='function'&&
+      typeof nativeAreas.search==='function',
+      'NATIVE_AREA_VERSION_OR_CONTRACT');
+  }
   const overlays=[
     itemTypes&&{name:'ITEM_TYPES',version:itemTypes.source.gameVersion,
       sha:itemTypes.source.sourceItemsSha256,count:itemTypes.source.definitionCount,
@@ -233,6 +257,83 @@ export function createDb01SharedItemClient(inputs:Db01EvidenceSources):Db01Share
     definitions:base.definitions,
   });
 
+  const nativeAreaDomains=new Set<string>([
+    'Furniture','Clothing','Trimming','Makeup','Companion','Skin',
+  ]);
+  let nativeAreaCoverageTask:Promise<void>|null=null;
+  function checkNativeAreaCoverage():Promise<void> {
+    if(!nativeAreas)return Promise.resolve();
+    if(nativeAreaCoverageTask)return nativeAreaCoverageTask;
+    nativeAreaCoverageTask=(async()=>{
+      const c=await nativeAreas.getCoverage();
+      assert(c.gameVersion===base.gameVersion&&
+        c.sourceDefinitions===DB01_SIX_CATEGORY_TOTAL&&
+        c.sourcePositiveAreaItems===DB01_SIX_CATEGORY_POSITIVE&&
+        c.sourceIHasTagsWithoutPositiveArea===
+          DB01_SIX_CATEGORY_HAS_TAGS_NO_POSITIVE&&
+        c.sourceWithoutIHasTags===DB01_SIX_CATEGORY_NO_IHAS_TAGS&&
+        c.critterSceneUnresolved===DB01_SIX_CATEGORY_CRITTER_SCENE_UNKNOWN&&
+        c.nativeAllAreasDefaultVerified===false&&
+        c.gameCollectionUiMembershipVerified===false&&
+        c.runtimeSkinClassIndependentlyVerified===false&&
+        c.runtimeCritterSceneResolved===false,
+        'NATIVE_AREA_SOURCE_COVERAGE');
+    })().catch(error=>{nativeAreaCoverageTask=null;throw error;});
+    return nativeAreaCoverageTask;
+  }
+  async function lookupNativeAreas(
+    items:readonly (Readonly<Db01Item>|null)[],
+  ):Promise<ReadonlyMap<number,Readonly<Db01SixSourceItem>>> {
+    const found=new Map<number,Readonly<Db01SixSourceItem>>();
+    if(!nativeAreas)return found;
+    await checkNativeAreaCoverage();
+    const chosen=new Map<number,Readonly<Db01Item>>();
+    for(const item of items){
+      if(item&&nativeAreaDomains.has(item.nativeCategory)){
+        chosen.set(item.itemId,item);
+      }
+    }
+    const ids=[...chosen.keys()];
+    let next=0;
+    async function worker():Promise<void>{
+      while(next<ids.length){
+        const id=ids[next++];
+        const row=await nativeAreas!.getItem(id);
+        const item=chosen.get(id)!;
+        assert(row?.originalSourceVerified===true&&
+          row.itemId===id&&row.nativeCategory===item.nativeCategory&&
+          row.nativeAllAreasDefaultVerified===false&&
+          row.gameCollectionUiMembershipVerified===false&&
+          row.worldAvailabilityVerified===false&&
+          row.playerOwnershipVerified===false&&
+          row.dlcEntitlementVerified===false&&
+          row.runtimeSkinClassIndependentlyVerified===false&&
+          row.runtimeCritterSceneResolved===false&&
+          (row.companionKind==='critter'?
+            row.nativeCategory==='Companion'&&
+            row.sourceAreaEvidence==='requires_profile_world_scene'&&
+            row.positiveAreaCodes===null&&
+            (row.critterLocationOneofFieldNumber===6||
+              row.critterLocationOneofFieldNumber===7):
+            row.sourceAreaEvidence!=='requires_profile_world_scene')&&
+          (row.positiveAreaCodes===null?
+            (row.sourceAreaEvidence==='requires_profile_world_scene'&&
+              row.nativeCategory==='Companion')||
+            (row.sourceAreaEvidence==='original_interface_absent'&&
+              row.nativeCategory==='Skin'):
+            Array.isArray(row.positiveAreaCodes)&&
+            row.positiveAreaCodes.length<=1&&
+            row.sourceAreaEvidence===(row.positiveAreaCodes.length?
+              'native_positive_tag':'native_ihastags_without_positive_tag')),
+          'NATIVE_AREA_CANONICAL_IDENTITY_OR_PROOF');
+        found.set(id,row);
+      }
+    }
+    await Promise.all(Array.from(
+      {length:Math.min(ids.length,16)},()=>worker()));
+    return found;
+  }
+
   async function getItems(ids:readonly number[]):Promise<
     readonly (Readonly<Db01SharedItem>|null)[]
   >{
@@ -243,7 +344,7 @@ export function createDb01SharedItemClient(inputs:Db01EvidenceSources):Db01Share
     // Independent SHA-pinned private buckets can load concurrently. Existing
     // underlying clients deduplicate repeated ID-bucket reads.
     const [originalTypes,tagRecords,directRecords,
-      universeRecords,specialRecords,remainingRecords,sourceMenus]=await Promise.all([
+      universeRecords,specialRecords,remainingRecords,sourceMenus,nativeAreaRecords]=await Promise.all([
       itemTypes?itemTypes.getItems(ids):Promise.resolve(null),
       tags?tags.getItems(ids):Promise.resolve(null),
       directMenus?directMenus.getDirectListingsBatch(ids):Promise.resolve(null),
@@ -251,6 +352,7 @@ export function createDb01SharedItemClient(inputs:Db01EvidenceSources):Db01Share
       specialPredicates?specialPredicates.getItems(ids):Promise.resolve(null),
       activityCrafting?activityCrafting.getItems(ids):Promise.resolve(null),
       directMenus?directMenus.getMenus():Promise.resolve(null),
+      nativeAreas?lookupNativeAreas(items):Promise.resolve(null),
     ]);
     const menus=new Map<number,Readonly<Db01OriginalCollectionMenu>>();
     if(sourceMenus){
@@ -279,6 +381,11 @@ export function createDb01SharedItemClient(inputs:Db01EvidenceSources):Db01Share
       const originalType=originalTypes?.[index]??null;
       const originalTags=tagRecords?.[index]??null;
       const crafting=remainingRecords?.[index]??null;
+      const originalNativeAreas=nativeAreaRecords?.get(item.itemId)??null;
+      const nativeAreaSourceStatus=!nativeAreas?'reader_not_connected' as const:
+        !nativeAreaDomains.has(item.nativeCategory)?
+          'outside_six_verified_domains' as const:
+          'original_source_record' as const;
       if(originalTypes)assert(originalType,'MISSING_ORIGINAL_TYPE');
       if(tagRecords)assert(originalTags,'MISSING_TAG_SOURCE');
       if(originalType)sameSource(item,originalType,'ITEM_TYPE_IDENTITY');
@@ -340,6 +447,7 @@ export function createDb01SharedItemClient(inputs:Db01EvidenceSources):Db01Share
         itemId:item.itemId,gameVersion:base.gameVersion,
         nativeCategory:item.nativeCategory,item,
         originalItemType:originalType,originalTags,
+        originalNativeAreas,nativeAreaSourceStatus,
         collection,
         screenCategory:null,screenSubcategory:null,
         availableWorlds:null,dlcEntitlements:null,contentIds:null,
