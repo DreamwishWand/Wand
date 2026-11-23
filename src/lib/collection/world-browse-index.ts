@@ -2,16 +2,18 @@ import type {CollectionDb01Index} from './db01-native-facets.ts';
 
 export interface WorldBrowseScope {
   readonly itemIds:readonly number[];
+  readonly itemIdSet:ReadonlySet<number>;
   readonly nativeCounts:ReadonlyMap<string,number>;
   readonly activityCounts:ReadonlyMap<number,number>;
 }
 interface MutableScope {
   itemIds:number[];
+  itemIdSet:Set<number>;
   nativeCounts:Map<string,number>;
   activityCounts:Map<number,number>;
 }
 function makeScope():MutableScope{
-  return {itemIds:[],nativeCounts:new Map(),activityCounts:new Map()};
+  return {itemIds:[],itemIdSet:new Set(),nativeCounts:new Map(),activityCounts:new Map()};
 }
 /** A catalog's world-context membership is immutable. Build once per source
  * projection, not per click. This is not CollectionArea/availability proof. */
@@ -20,7 +22,7 @@ export function buildWorldBrowseIndex(source:CollectionDb01Index):ReadonlyMap<st
   const all=makeScope();
   scopes.set('',all);
   function add(scope:MutableScope,id:number):void{
-    scope.itemIds.push(id);
+    scope.itemIds.push(id);scope.itemIdSet.add(id);
     const native=source.nativeSubtypeByItem.get(id);
     if(native){
       const key=native.nativeType+':'+native.code;
@@ -50,7 +52,7 @@ export function countOwnedInWorldScope(
   entries:Readonly<Record<string,{status?:string}>>
 ):{native:Map<string,number>;activity:Map<number,number>}{
   const native=new Map<string,number>(),activity=new Map<number,number>();
-  const ids=new Set(scope.itemIds);
+  const ids=scope.itemIdSet;
   for(const [key,entry] of Object.entries(entries)){
     if(entry.status!=='owned')continue;
     const id=Number(key);
