@@ -384,6 +384,23 @@ try{
   assert.match(await page.locator('.collection-original-category-grid .facet-card').filter({
     hasText:/家具|Furniture/
   }).first().innerText(),/[0-9][0-9,]* \/ [0-9][0-9,]*/);
+  // DB-01 ItemType classifications replace the one generic 1,972-item
+  // "unclassified" Activity bucket, without changing native Collection menus.
+  await page.getByRole('button',{name:'アイテムの種類から探す'}).click();
+  const sourceTypes=page.locator('.collection-native-activity');
+  assert.equal(await sourceTypes.count(),15,
+    'every source-native ActivityItem subtype must have a browse card');
+  assert.equal(await page.locator('.facet-grid .facet-card').filter({
+    hasText:/詳細分類未確認|未分類/
+  }).count(),0,'no 1,972-item generic unclassified card may remain');
+  await page.locator('.collection-native-activity[data-source-type="12"]').click();
+  await page.locator('.item-card').first().waitFor({timeout:12000});
+  assert.match(await page.locator('.result-count').innerText(),/1,559/);
+  const groupItemId=Number(await page.locator('.item-card').first().getAttribute('data-item-id'));
+  assert.equal(Math.floor((groupItemId%10000000)/100000),12);
+  assert.doesNotMatch(await page.locator('.item-card').first().innerText(),/未分類/);
+  await page.locator('.breadcrumbs').getByRole('button',{name:'カテゴリ'}).click();
+  await page.locator('.collection-original-category-grid .facet-card').first().waitFor();
   // A missing category projection must not leave a permanent loading message,
   // and retry must restore the game-source navigation without losing access
   // to the existing item-type categories.
