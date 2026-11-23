@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {verifyPublicQuestIndex,filterPublicQuests,findPublicQuestByLink,verifyPublicQuestPart,loadPublicQuestPart,formatPublicGuideText} from '../src/lib/guide/public-guide.mjs';
+import {verifyPublicQuestIndex,filterPublicQuests,findPublicQuestByLink,verifyPublicQuestPart,loadPublicQuestPart,formatPublicGuideText} from '../src/lib/guide/public-guide.ts';
 import {readFile} from 'node:fs/promises';
 const fixture=new URL('../static/guide/public/', import.meta.url);
 const local=name=>new URL(name,fixture);
