@@ -825,9 +825,21 @@ try{
   await page.locator('.collection-detail-category-grid .facet-card').first().waitFor({timeout:15000});
   assert.equal(await page.locator('.item-card').count(),0,
     'world tabs open scoped category cards, not an immediate flat item grid');
+  const scopedCards=await page.locator('.collection-detail-category-grid .facet-card')
+    .evaluateAll(cards=>cards.map(card=>({
+      key:card.getAttribute('data-native-subtype'),
+      name:card.querySelector('strong')?.textContent?.normalize('NFKC').trim(),
+      total:Number(card.getAttribute('data-category-total'))
+    })));
+  assert.equal(new Set(scopedCards.map(card=>card.key)).size,scopedCards.length);
+  assert.equal(new Set(scopedCards.map(card=>card.name)).size,scopedCards.length);
+  assert.ok(scopedCards.every(card=>card.key&&card.total>0));
   const scopedFamily=page.locator('.collection-detail-category-grid .facet-card').first();
+  const scopedTotal=Number(await scopedFamily.getAttribute('data-category-total'));
   await scopedFamily.click();
   await page.locator('.item-card').first().waitFor({timeout:15000});
+  assert.equal(Number((await page.locator('.result-count').innerText()).replace(/[^0-9]/g,'')),scopedTotal,
+    'world category count must match actual selectable Item IDs');
   await page.locator('.breadcrumbs').getByRole('button',{name:'カテゴリ'}).click();
   await page.locator('.collection-detail-category-grid .facet-card').first().waitFor();
   assert.equal(await nativeWorld.getAttribute('aria-pressed'),'true',
