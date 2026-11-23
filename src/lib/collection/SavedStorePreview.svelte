@@ -4,7 +4,7 @@
   import {autoAppend} from '$lib/ui/auto-append';
   import {localSaveSession,selectLocalSaveFile,needsCollectionRead,updateCollectionRead,isCurrentLocalSaveSelection} from '$lib/ui/local-save-session';
   import { attachHistoricalStoreLabels } from './saved-store-preview.mjs';
-  import { attachDb01PrivateNames } from './private-db01-names-view.mjs';
+  import { attachDb01PrivateNames } from './private-db01-names-view.ts';
   import { sanitizeSavedCollectionPresence } from './saved-collection-presence.mjs';
   import { sanitizeSavedCollectionDiscovery } from './saved-collection-discovery.mjs';
   import { sanitizePositiveListInventoryOwnership } from './saved-list-positive-ownership.mjs';
@@ -283,7 +283,7 @@
       if(file.size<22||file.size>40*1024*1024)throw new Error('PRIVATE_DB01_ZIP_SIZE');
       archive=new Uint8Array(await file.arrayBuffer());
       if(request!==nameSequence)return;
-      worker=new Worker(new URL('./private-db01-names.worker.mjs',import.meta.url),{type:'module'});
+      worker=new Worker(new URL('./private-db01-names.worker.ts',import.meta.url),{type:'module'});
       activeNameWorker=worker;
       const w=worker;
       const finish=(result:any)=>{
