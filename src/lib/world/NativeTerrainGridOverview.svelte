@@ -49,7 +49,7 @@
   function position(event:MouseEvent):{x:number;y:number}|null{
     const target=event.currentTarget as HTMLButtonElement;
     const canvas=target.querySelector('canvas');
-    if(!canvas||event.detail===0)return null;
+    if(!canvas||(event.type==='click'&&event.detail===0))return null;
     const bounds=canvas.getBoundingClientRect();
     if(!bounds.width||!bounds.height)return null;
     const nx=(event.clientX-bounds.left)/bounds.width;
@@ -73,7 +73,7 @@
     <strong>原本地形全体</strong>
     <span>{raster.sizeX} × {raster.sizeY} ／ {integer(raster.totalCells)}マス</span>
   </div>
-  <button type="button" class="terrain-map" disabled={!canNavigate}
+  <button type="button" class="terrain-map" aria-disabled={!canNavigate}
     aria-label="原本Grid地形の全体図。座標を選択して拡大表示"
     on:mousemove={move} on:mouseleave={()=>hovered=null} on:click={navigate}>
     <canvas use:paint={raster} aria-hidden="true"></canvas>
@@ -96,8 +96,8 @@
   .overview-head {display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;color:#eee7f6;font-size:14px}
   .overview-head span {color:#b9abc7;font-size:12px}
   .terrain-map {padding:0;border:1px solid #ffffff35;border-radius:6px;background:#221d2b;overflow:hidden;width:min(100%,740px);margin:0 auto;display:block;line-height:0}
-  .terrain-map:not(:disabled) {cursor:crosshair}
-  .terrain-map:disabled {cursor:default;opacity:1}
+  .terrain-map:not([aria-disabled='true']) {cursor:crosshair}
+  .terrain-map[aria-disabled='true'] {cursor:default;opacity:1}
   .terrain-map:focus-visible {outline:2px solid white;outline-offset:3px}
   canvas {display:block;width:100%;height:auto;image-rendering:pixelated}
   .counts {display:flex;gap:7px 15px;flex-wrap:wrap;color:#cfbeda;font-size:11px;max-height:92px;overflow:auto}
