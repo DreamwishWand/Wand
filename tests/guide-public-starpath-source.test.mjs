@@ -42,6 +42,12 @@ test('typed source cache exactly authenticates two Steam 1.26.2 seasons and sour
     s.weeklyTasks.flat().length,0);
   assert.equal(rewardSlots,67);
   assert.equal(tasks,185);
+  assert.equal(data.seasons[0].bonusPages[2].layout,undefined,
+    'original bonus page 3 has no native layout');
+  assert.equal(data.seasons[0].bonusPages[3].layout,undefined,
+    'original currency-conversion page has no native layout');
+  assert.equal(data.seasons[1].bonusPages[0].layout,undefined,
+    'Seafaring conversion page has no native layout');
   assert(data.seasons.every(s=>Date.parse(s.startUtc)<Date.parse(s.finishUtcExclusive)&&
     Date.parse(s.finishUtcExclusive)<Date.parse(s.endUtcExclusive)));
   assert.equal(data.seasons[0].finishUtcExclusive,'2026-12-08T14:00:00Z');
