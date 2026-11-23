@@ -310,7 +310,7 @@ export function createDb01SixSourceClient(
         a.sourcePositiveNativeAreaItems===8955&&
         a.sourceIHasTagsWithoutPositiveArea===535&&
         a.sourceCritterNeedsProfileWorldScene===125&&
-        a.originalAllAreasNativeDefaultVerified===false&&
+        a.nativeAllAreasDefaultVerified===false&&
         a.runtimeCritterSceneResolved===false&&
         a.gameCollectionUiMembershipVerified===false&&
         b.originalSourceDefinitions===163&&
