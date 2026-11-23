@@ -10,7 +10,8 @@
     loadEventRewardItemLabels,DB03_EVENT_ITEM_LABELS_FILE,
     type EventRewardItemLabelIndex,type GuideRewardLocale,
   } from '$lib/guide/event-reward-item-labels.ts';
-  import {resolveEventRewardItemDestination}
+  import {resolveEventRewardItemDestination,resolveEventRewardOccurrenceDestination,
+    guideEventRewardOccurrenceHref,relatedEventRewardIds}
     from '$lib/guide/event-reward-navigation.ts';
   import {loadNewPublishedEventRewardNames,
     type PublicEventRewardNameRefresh}
@@ -115,10 +116,12 @@
     }
   }
   function choose(event:NativeEventDefinition){
-    clearItemFocus();
+    const retainItem=Boolean(highlightItem)&&event.rewards.some(reward=>reward.itemId===highlightItem);
+    if(!retainItem)clearItemFocus();
     selectedKey=event.id;
     const url=new URL(window.location.href);
     url.searchParams.set('event',event.id);
+    if(retainItem)url.searchParams.set('item',highlightItem);
     window.history.replaceState(window.history.state,'',url);
   }
   async function loadEventQuestSources(eventSource:PublicEventFriendshipRewards){
@@ -206,8 +209,17 @@
       void loadEventDuties(read);
       void loadEventScenes(read);
       const params=new URLSearchParams(window.location.search);
-      const focused=resolveEventRewardItemDestination(read,params.get('item'));
-      if(focused){
+      const exact=resolveEventRewardOccurrenceDestination(read,window.location.search);
+      const pairRequested=params.has('event')&&params.has('item');
+      const focused=pairRequested?null:resolveEventRewardItemDestination(read,params.get('item'));
+      if(exact){
+        // Both IDs must refer to this SAME original event reward; do not
+        // silently fall back to another event sharing the same Item ID.
+        highlightItem=exact.itemId;
+        category='all';
+        query=exact.itemId;
+        selectedKey=exact.eventId;
+      }else if(focused){
         highlightItem=focused.itemId;
         if(focused.section==='default_friendship'){
           category='default_friendship';
@@ -216,7 +228,7 @@
           query=focused.itemId;
           selectedKey=focused.eventId??'';
         }
-      }else if(!selectedKey){
+      }else if(!pairRequested&&!selectedKey){
         const fromUrl=params.get('event');
         if(fromUrl&&read.events.some(event=>event.id===fromUrl&&event.id!=='TestEv'))
           selectedKey=fromUrl;
@@ -316,6 +328,11 @@
                   <div class="reward-text">
                     <strong>{itemName(reward.itemId)}</strong>
                     <span class="meta">ID {reward.itemId}{#if itemCategory(reward.itemId)} · {itemCategory(reward.itemId)}{/if}</span>
+                    {#if source && relatedEventRewardIds(source,reward.itemId).length>1}
+                      <a class="related-item-events"
+                        href={guideEventRewardOccurrenceHref(source,selected.id,reward.itemId,base)}
+                        title="同じアイテムが登場する他の原本イベント定義を表示">他のイベントを表示</a>
+                    {/if}
                   </div>
                   {#if reward.configuredAmount!==null}<span class="amount">×{reward.configuredAmount}</span>{/if}
                 </div>
@@ -401,6 +418,8 @@
   .reward-text{min-width:0;display:flex;flex-direction:column;gap:3px;flex:1}
   .reward-text strong{font-size:12px;font-weight:650;overflow-wrap:anywhere}
   .reward-text .meta{font-size:10px;color:#b3a1c0;overflow-wrap:anywhere}
+  .related-item-events{align-self:flex-start;font-size:11px;color:#dec6ff;text-underline-offset:3px}
+  .related-item-events:hover,.related-item-events:focus-visible{color:white}
   .amount{font-size:13px;color:#e3cfef;white-space:nowrap}
   .all-rewards{color:#e5d0fa;background:transparent;border:0;text-decoration:underline;cursor:pointer;padding:2px 4px;font-size:11px}
   .friendship{grid-column:1/-1}
