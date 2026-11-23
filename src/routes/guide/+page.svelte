@@ -92,7 +92,7 @@
   }
   function eventBoundary(event:GuideCalendarEvent):string{
     if(event.precision==='date-only'){
-      const end=event.kind==='starpath-history'
+      const end=event.kind==='starpath-history'&&event.officialEndUtc
         ?formatLocal(event.officialEndUtc):longDay(event.endDayInclusive);
       return `${longDay(event.startDay)} – ${end}`;
     }
@@ -302,10 +302,10 @@
             {#if selected.precision==='date-only'}
               <div><small>{copy.start}</small><strong>{longDay(selected.startDay)}</strong></div>
               <div><small>{copy.end}</small>
-                <strong>{selected.kind==='starpath-history'
+                <strong>{selected.kind==='starpath-history'&&selected.officialEndUtc
                   ?formatLocal(selected.officialEndUtc)
                   :longDay(selected.endDayInclusive)}</strong></div>
-              <span class="uncertain"><WandIcon name="info" size={15}/>{selected.kind==='starpath-history'?copy.startTimeUnknown:copy.dateUnknown}</span>
+              <span class="uncertain"><WandIcon name="info" size={15}/>{selected.kind==='starpath-history'&&selected.officialEndUtc?copy.startTimeUnknown:copy.dateUnknown}</span>
             {:else}
               <div><small>{copy.start}</small><strong>{formatLocal(selected.startUtc)}</strong></div>
               <div><small>{copy.taskEnd}</small><strong>{formatLocal(selected.taskEndUtcExclusive)}</strong></div>
