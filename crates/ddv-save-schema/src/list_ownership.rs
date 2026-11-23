@@ -215,7 +215,7 @@ mod tests {
         for secret in ["private-identity","secret-marker","Inventory","100000731"] {
             assert!(!result.contains(secret),"private field: {secret}");
         }
-        assert!(!result.contains("\\"Amount\\":"));
+        assert!(!result.contains(r#""Amount":"#));
         assert!(!projected.missing_status_inferred &&
             !projected.current_steam_native_equivalent_proven);
     }
