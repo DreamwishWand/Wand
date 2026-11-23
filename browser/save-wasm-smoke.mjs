@@ -1716,7 +1716,11 @@ try{
   await largeItems.getByRole('button',{
     name:'所持アイテム 800149 を選択'
   }).click();
-  assert.equal(await regular.getByLabel('Item ID').inputValue(),'800149');
+  assert.equal(await regular.getByLabel('Item ID').count(),0,
+    'a saved row beyond the first 120 remains identity-locked');
+  assert.match(await regular.getByLabel('選択中のアイテム').innerText(),/800149/);
+  assert.equal(await regular.getByLabel('現在の数量').inputValue(),'13');
+  assert.equal(await regular.getByLabel('現在の数量').isEditable(),false);
   await largeItems.getByLabel('所持アイテム検索').fill('800149');
   assert.equal(await itemRows.locator('li').count(),1);
   await largeItems.getByLabel('所持アイテム検索').fill('');
