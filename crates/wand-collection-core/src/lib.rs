@@ -734,7 +734,13 @@ impl CollectionEngine {
                 if self.status(item.id) == "owned" { owned[id] += 1; }
             }
         }
-        let result: Vec<Value> = names.iter().enumerate().map(|(i,id)| {
+        // CATEGORY_ORDER is only a stable sort preference. Do not expose
+        // scaffolding families with zero source Item IDs as editable cards:
+        // the complete Steam 1.26.2 ItemList has four raw source families,
+        // further split by its verified IL2CPP native subtypes.
+        let result: Vec<Value> = names.iter().enumerate()
+            .filter(|(i,_)| mode!="category" || totals[*i]>0)
+            .map(|(i,id)| {
             let label = match mode {
                 "world" => index.world_labels.get(i).and_then(|n| n.get(loc)).cloned().unwrap_or(id.clone()),
                 "universe" => index.universe_labels.get(i).and_then(|n| n.get(loc)).cloned().unwrap_or(id.clone()),
@@ -1224,6 +1230,35 @@ mod tests {
         previous.load_owner_local_db00_index_impl(&index.to_string()).unwrap();
         assert_eq!(previous.append_db00_shard_impl(&payload),
             Err("COLLECTION_LOCAL_DB01_NAMES_REQUIRED".into()));
+    }
+    #[test]
+    fn collection_facets_never_expose_zero_item_scaffold_categories() {
+        let make = |id: &str, category: &str| json!({
+            "id":id,"names":{"en":"Original","ja":"原本"},"nameStatus":"verified",
+            "category":category,"sourceRefs":["public-source"],"releaseIds":[],"relations":[]
+        });
+        let shard=json!({"schema":DB00_SNAPSHOT_SCHEMA,"offset":0,"count":2,"items":[
+            make("101","Source Meal"),make("102","Source Ingredient")
+        ]}).to_string();
+        let index=json!({
+            "schema":DB00_RELEASE_SCHEMA,"id":"native-nonempty-facets","count":2,
+            "target":{"platform":"Steam","gameVersion":"1.26.2","buildId":null},
+            "sources":[{"id":"public-source","visibility":"public_reference"}],
+            "releases":[],"shards":[{"file":"items-000.json","offset":0,"count":2,
+                "bytes":shard.len(),"sha256":"a".repeat(64)}]
+        }).to_string();
+        let mut engine=CollectionEngine::default();
+        engine.load_db00_index_impl(&index).unwrap();
+        engine.append_db00_shard_impl(&shard).unwrap();
+        engine.finish_db00_impl().unwrap();
+        let categories:Value=serde_json::from_str(
+            &engine.facets_impl("category","ja").unwrap()).unwrap();
+        let rows=categories.as_array().unwrap();
+        assert_eq!(rows.len(),2);
+        assert!(rows.iter().all(|row|row["total"].as_u64().unwrap()>0));
+        assert!(rows.iter().any(|row|row["id"]=="Source Meal"&&row["total"]==1));
+        assert!(rows.iter().any(|row|row["id"]=="Source Ingredient"&&row["total"]==1));
+        assert!(!rows.iter().any(|row|row["id"]=="Meals"||row["id"]=="Ingredients"));
     }
     #[test]
     fn filtered_bulk_changes_all_matching_rows_beyond_visible_page() {
