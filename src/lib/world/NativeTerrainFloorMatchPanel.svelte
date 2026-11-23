@@ -40,6 +40,14 @@
     return[...areas.values()].sort((a,b)=>a.name.localeCompare(b.name,'ja'));
   }
   $: areaSummary=windowResult?areaRows(windowResult.grids):[];
+  // The canvas source is one pixel per original floor cell. Scale the
+  // visible bitmap to a usable size without distorting X/Y coordinates.
+  function scaledMapWidth(sx:number|null,sy:number|null):number{
+    if(!sx||!sy)return 320;
+    return Math.max(1,Math.round(sx*Math.min(520/sx,420/sy)));
+  }
+  $: mapWidth=scaledMapWidth(
+    windowResult?.bitmapWidth??null,windowResult?.bitmapHeight??null);
   function openLayerAt(event:MouseEvent){
     if(!windowResult?.originBitmap||!windowResult.bitmapWidth||
        !windowResult.bitmapHeight)return;
@@ -197,6 +205,7 @@
       windowResult.bitmapWidth!==null&&windowResult.bitmapHeight!==null}
       <div class="raster">
         <button type="button" class="inspect-map" on:click={openLayerAt}
+          style:width={mapWidth+'px'}
           aria-label="地形マップから原本初期配置のマスを調べる">
           <canvas use:paintWindow={{
             result:windowResult,showAnchors:showDefaultAnchors,
@@ -266,6 +275,7 @@
   .clear{background:transparent;color:#d8c2eb;border:1px solid #ffffff40;border-radius:7px;padding:7px 11px;font:inherit;font-size:11px}
   .search{display:grid;gap:6px;font-size:12px;color:#d1bfdf}
   .inspect-map{display:block;max-width:100%;min-width:0;padding:0;margin:0;border:0;background:transparent;cursor:crosshair;line-height:0}
+  .inspect-map canvas{width:100%;height:auto;max-height:none;max-width:100%}
   .inspect-map:focus-visible{outline:2px solid #e0bdff;outline-offset:4px}
   .area-breakdown{border:1px solid #ffffff23;border-radius:9px;padding:9px 11px;color:#d6c6e4;font-size:11px}
   .area-breakdown summary{cursor:pointer;font-size:12px}
