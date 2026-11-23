@@ -256,15 +256,15 @@
   .guide-sections a:hover,.guide-sections a:focus-visible{background:#403052;border-color:#b18bd7}
   .guide-sections :global(svg){color:#dcb8ff}
   .timeline-panel{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0;background:#181321;border:1px solid #493952;border-radius:15px;overflow:hidden}
-  .timeline-toolbar{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;padding:12px 15px;border-bottom:1px solid #48374f;background:#211a2c}
+  .timeline-toolbar{position:relative;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;padding:12px 15px;border-bottom:1px solid #48374f;background:#211a2c}
   .timeline-title{display:flex;align-items:center;gap:9px;min-width:0}
   .timeline-title>strong{font-size:17px;font-weight:700}
   .timeline-title :global(svg){color:#d1a8ed}
   .zone{font-size:10px;border:1px solid #51435d;color:#ac9bb9;padding:2px 5px;border-radius:4px}
-  .source-info{position:relative;font-size:12px}
+  .source-info{position:static;font-size:12px}
   .source-info summary{display:flex;align-items:center;cursor:pointer;list-style:none;padding:5px;color:#c1afcc}
   .source-info summary::-webkit-details-marker{display:none}
-  .source-info p{position:absolute;z-index:15;top:20px;left:0;width:min(360px,70vw);padding:13px;margin:0;background:#352844;border:1px solid #8869a2;border-radius:9px;color:#ded1e9;box-shadow:0 8px 25px #0007;line-height:1.6}
+  .source-info p{position:absolute;z-index:15;top:100%;right:12px;width:min(360px,calc(100% - 24px));box-sizing:border-box;padding:13px;margin:0;background:#352844;border:1px solid #8869a2;border-radius:9px;color:#ded1e9;box-shadow:0 8px 25px #0007;line-height:1.6}
   .calendar-nav{display:flex;align-items:center;gap:7px;min-width:0}
   .calendar-nav button{border:1px solid #624b75;background:#2e233b;color:#ede2f5;border-radius:8px;padding:7px 10px;font:inherit;font-size:12px;cursor:pointer;white-space:nowrap}
   .calendar-nav button:hover,.calendar-nav button:focus-visible{background:#4c3765;border-color:#aa88d0}
