@@ -12,7 +12,7 @@ export const COLLECTION_DB01_ARCHIVE_SHA=
 
 export const COLLECTION_DB01_FACETS=[
   'color','furnitureStyle','clothingStyle','furnitureKind',
-  'clothingSlot','disneyUniverse','ingredientKind','mealKind',
+  'clothingSlot','disneyUniverse','worldContextTag','ingredientKind','mealKind',
 ] as const;
 export type CollectionDb01Facet=typeof COLLECTION_DB01_FACETS[number];
 export type CollectionDb01Pair=readonly [facet:CollectionDb01Facet,key:string];
@@ -192,28 +192,28 @@ export function collectionDb01Matches(
 
 const headings:Record<string,Partial<Record<CollectionDb01Facet,string>>>={
   ja:{color:'色',furnitureStyle:'家具のスタイル',clothingStyle:'衣装のスタイル',
-    furnitureKind:'家具の種類',clothingSlot:'衣装の種類',disneyUniverse:'ユニバース',
+    furnitureKind:'家具の種類',clothingSlot:'衣装の種類',disneyUniverse:'ユニバース',worldContextTag:'ワールドの原本タグ',
     ingredientKind:'食材の種類',mealKind:'料理の種類'},
   en:{color:'Color',furnitureStyle:'Furniture style',clothingStyle:'Clothing style',
-    furnitureKind:'Furniture type',clothingSlot:'Clothing type',disneyUniverse:'Universe',
+    furnitureKind:'Furniture type',clothingSlot:'Clothing type',disneyUniverse:'Universe',worldContextTag:'World source tag',
     ingredientKind:'Ingredient type',mealKind:'Meal type'},
   fr:{color:'Couleur',furnitureStyle:'Style de meubles',clothingStyle:'Style de vêtements',
-    furnitureKind:'Type de meubles',clothingSlot:'Type de vêtement',disneyUniverse:'Univers',
+    furnitureKind:'Type de meubles',clothingSlot:'Type de vêtement',disneyUniverse:'Univers',worldContextTag:'Tag du monde',
     ingredientKind:"Type d'ingrédient",mealKind:'Type de plat'},
   it:{color:'Colore',furnitureStyle:'Stile mobili',clothingStyle:'Stile abiti',
-    furnitureKind:'Tipo di mobili',clothingSlot:'Tipo di abiti',disneyUniverse:'Universo',
+    furnitureKind:'Tipo di mobili',clothingSlot:'Tipo di abiti',disneyUniverse:'Universo',worldContextTag:'Tag del mondo',
     ingredientKind:'Tipo ingrediente',mealKind:'Tipo di piatto'},
   de:{color:'Farbe',furnitureStyle:'Möbelstil',clothingStyle:'Kleidungsstil',
-    furnitureKind:'Möbelart',clothingSlot:'Kleidungstyp',disneyUniverse:'Universum',
+    furnitureKind:'Möbelart',clothingSlot:'Kleidungstyp',disneyUniverse:'Universum',worldContextTag:'Weltquelltag',
     ingredientKind:'Zutatenart',mealKind:'Gerichtart'},
   'es-ES':{color:'Color',furnitureStyle:'Estilo de muebles',clothingStyle:'Estilo de ropa',
-    furnitureKind:'Tipo de mueble',clothingSlot:'Tipo de ropa',disneyUniverse:'Universo',
+    furnitureKind:'Tipo de mueble',clothingSlot:'Tipo de ropa',disneyUniverse:'Universo',worldContextTag:'Etiqueta de mundo',
     ingredientKind:'Tipo de ingrediente',mealKind:'Tipo de plato'},
   'zh-CN':{color:'颜色',furnitureStyle:'家具风格',clothingStyle:'服装风格',
-    furnitureKind:'家具类型',clothingSlot:'服装类型',disneyUniverse:'作品系列',
+    furnitureKind:'家具类型',clothingSlot:'服装类型',disneyUniverse:'作品系列',worldContextTag:'世界原始标签',
     ingredientKind:'食材类型',mealKind:'餐点类型'},
   'pt-BR':{color:'Cor',furnitureStyle:'Estilo de móveis',clothingStyle:'Estilo de roupas',
-    furnitureKind:'Tipo de móvel',clothingSlot:'Tipo de roupa',disneyUniverse:'Universo',
+    furnitureKind:'Tipo de móvel',clothingSlot:'Tipo de roupa',disneyUniverse:'Universo',worldContextTag:'Tag de mundo',
     ingredientKind:'Tipo de ingrediente',mealKind:'Tipo de refeição'}
 };
 export function collectionDb01FacetLabel(locale:string,facet:CollectionDb01Facet):string{

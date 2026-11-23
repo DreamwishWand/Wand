@@ -11,6 +11,12 @@
     type CollectionDb01SubmenuCode
   } from '$lib/collection/db01-native-facets';
   import AcquisitionEvidence from '$lib/collection/AcquisitionEvidence.svelte';
+  import {loadDb01ItemAcquisitionHandoff,type Db01ItemAcquisitionIndex}
+    from '$lib/acquisition/db01-item-acquisition.ts';
+  import {DB02_ACQUISITION_CATEGORY_ORDER,type GameNativeItemCategory}
+    from '$lib/acquisition/game-native-item-categories.ts';
+  import {collectionDb01AcquisitionLabel,collectionDb01AcquisitionHeading}
+    from '$lib/collection/db01-browse-labels.ts';
   import RelatedQuests from '$lib/collection/RelatedQuests.svelte';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {watchWandLanguage} from '$lib/ui/preferences';
@@ -85,6 +91,12 @@
   let sourceIndex:CollectionDb01Index|null=null;
   let sourceLoad:Promise<void>|null=null;
   let sourceLoadError=false;
+  let sourceUniverseOptions:{key:string;count:number}[]=[];
+  let sourceWorldOptions:{key:string;count:number}[]=[];
+  let acquisitionIndex:Db01ItemAcquisitionIndex|null=null;
+  let acquisitionLoad:Promise<void>|null=null;
+  let acquisitionLoadError=false;
+  let acquisitionFilter:GameNativeItemCategory|''='';
   let sourceGeneration=0;
   let sourceFacetGroups:readonly CollectionDb01Group[]=[];
   let sourceChoices:Partial<Record<CollectionDb01Facet,string>>={};
@@ -134,20 +146,27 @@
   $: selectedEntry=selectedItem?entries[String(selectedItem.itemId)]??{}:{};
   $: selectedGridRefs=selectedItem?savedGridByItem[String(selectedItem.itemId)]??null:null;
   $: selectedDb04Refs=selectedItem?savedDb04ByItem[String(selectedItem.itemId)]??null:null;
-  $: universeChoices=universeScopeOptions.filter(option=>
-    option.label.toLocaleLowerCase(locale).includes(universeSearch.trim().toLocaleLowerCase(locale)));
-  $: landingUniverse=viewAxis==='universe'&&!universeFilter&&!selected&&sourceCategory===null&&!search.trim()&&
-    status==='all'&&!favoriteOnly&&!expansion;
+  $: universeChoices=(sourceIndex&&sourceUniverseOptions.length
+    ?sourceUniverseOptions.map(option=>({
+        id:option.key,label:collectionDb01TagLabel(locale,option.key),total:option.count
+      }))
+    :universeScopeOptions).filter(option=>
+      option.label.toLocaleLowerCase(locale).includes(universeSearch.trim().toLocaleLowerCase(locale)));
+  $: landingUniverse=viewAxis==='universe'&&!universeFilter&&
+    !sourceChoices.disneyUniverse&&!selected&&sourceCategory===null&&!search.trim()&&
+    status==='all'&&!favoriteOnly&&!expansion&&!acquisitionFilter;
   // Each category may use a different proven subgroup axis. Only Furniture
   // and Clothing currently have a verified Universe-based browse path.
   // Biome/subtype families go directly to items until exact source groups land.
   $: landingSubgroup=viewAxis==='world'&&Boolean(selected)&&
     !bypassCategoryGroups&&!universeFilter&&!search.trim()&&
-    status==='all'&&!favoriteOnly&&!expansion&&categoryUniverseFacets.length>0;
+    status==='all'&&!favoriteOnly&&!expansion&&!acquisitionFilter&&
+    !Object.keys(sourceChoices).length&&categoryUniverseFacets.length>0;
   $: universeSectionView=viewAxis==='universe'&&Boolean(universeFilter)&&
-    !selected&&!search.trim()&&status==='all'&&!favoriteOnly&&!expansion;
+    !sourceIndex&&!selected&&!search.trim()&&status==='all'&&!favoriteOnly&&!expansion;
   $: isBrowsing=Boolean(selected||sourceCategory!==null||search.trim()||status!=='all'||favoriteOnly||
-    nameStatus!=='all'||expansion||worldFilter||universeFilter||viewAxis==='universe');
+    nameStatus!=='all'||expansion||worldFilter||universeFilter||
+    Object.keys(sourceChoices).length||acquisitionFilter||viewAxis==='universe');
 
   // Display the original Steam ActivityItemType subtype rather than the
   // generic "unclassified" Activity bucket; this does not assert CollectionSet
@@ -243,38 +262,46 @@
             facet,items:runtime!.query({...scopeFilter,category:facet.id,limit:8}).items
           }))
         : [];
-      if(sourceIndex&&(selected||sourceCategory!==null)&&filtersOpen){
-        const key=(sourceCategory===null?selected:'original-'+sourceCategory)+'|'+worldFilter+'|'+universeFilter;
+      if(sourceIndex&&filtersOpen){
+        const key=(sourceCategory===null?selected||'all':'original-'+sourceCategory)+
+          '|'+worldFilter+'|'+universeFilter;
         if(key!==sourceGroupsCacheKey){
           const ids=sourceCategory!==null
             ?sourceIndex.itemsByCategory.get(sourceCategory)??[]
-            :queryAllCollectionRows({
+            :selected?queryAllCollectionRows({
                 ...currentFilter(0,200),status:'all',search:'',
                 favoriteOnly:false,nameStatus:'all',expansion:''
-              }).map(row=>row.itemId);
+              }).map(row=>row.itemId):[...sourceIndex.byItem.keys()];
           sourceFacetGroups=collectionDb01Groups(sourceIndex,ids);
           sourceGroupsCacheKey=key;
         }
-      }else if(!selected&&sourceCategory===null){
+      }else if(!filtersOpen){
         sourceFacetGroups=[];sourceGroupsCacheKey='';
       }
-      if((sourceCategory!==null||Object.keys(sourceChoices).length)&&sourceIndex){
+      if((sourceCategory!==null||Object.keys(sourceChoices).length||acquisitionFilter)&&
+         (sourceIndex||acquisitionIndex)){
         // An original submenu can contain 6k+ Item IDs. Repeating the
         // general 13k-row sorted Rust query 67 times blocks UI clicks.
         // Resolve source-linked IDs through Rust's O(1) Item-ID lookup.
         // For multilingual text search, retain the existing Rust predicate.
-        const candidateIds=sourceCategory===null?null:
-          sourceIndex.itemsByCategory.get(sourceCategory)??[];
+        const categoryIds=sourceCategory===null?null:
+          sourceIndex?.itemsByCategory.get(sourceCategory)??[];
+        const acquisitionIds=acquisitionFilter&&acquisitionIndex
+          ?acquisitionIndex.listItemIds(acquisitionFilter).map(Number):null;
+        const candidateIds=categoryIds&&acquisitionIds
+          ?(categoryIds.length<=acquisitionIds.length?categoryIds:acquisitionIds)
+          :categoryIds??acquisitionIds;
         const searchRows=search.trim()
           ?queryAllCollectionRows(currentFilter(0,200)):null;
-        const candidates=sourceCategory===null
-          ?queryAllCollectionRows(currentFilter(0,200))
-          :searchRows??candidateIds!.flatMap(id=>{
+        const candidates=searchRows??
+          (candidateIds?candidateIds.flatMap(id=>{
             try{return [runtime!.item(id,locale)];}catch{return [];}
-          });
+          }):queryAllCollectionRows(currentFilter(0,200)));
         sourceAllMatching=candidates.filter(item=>
           (sourceCategory===null||
-            collectionDb01InCategory(sourceIndex!,item.itemId,sourceCategory))&&
+            sourceIndex!==null&&collectionDb01InCategory(sourceIndex,item.itemId,sourceCategory))&&
+          (!acquisitionFilter||
+            (acquisitionIndex?.getItem(item.itemId).categories.includes(acquisitionFilter)??false))&&
           (selected===''||item.family===selected)&&
           (status==='all'||item.status===status)&&
           (!favoriteOnly||item.favorite===true)&&
@@ -283,7 +310,8 @@
           (!worldFilter||item.worlds.includes(worldFilter))&&
           (!universeFilter||item.universes.includes(universeFilter))&&
           Object.entries(sourceChoices).every(([facet,key])=>
-            collectionDb01Matches(sourceIndex!,item.itemId,facet as CollectionDb01Facet,key)))
+            sourceIndex!==null&&collectionDb01Matches(
+              sourceIndex,item.itemId,facet as CollectionDb01Facet,key)))
           .sort((a,b)=>Number(b.nameVerified)-Number(a.nameVerified)||
             a.label.localeCompare(b.label,locale)||a.itemId-b.itemId);
         filtered=sourceAllMatching.slice(0,visible);
@@ -332,6 +360,12 @@
     sourceIndex=null;
     sourceLoad=null;
     sourceLoadError=false;
+    sourceUniverseOptions=[];
+    sourceWorldOptions=[];
+    acquisitionIndex=null;
+    acquisitionLoad=null;
+    acquisitionLoadError=false;
+    acquisitionFilter='';
     sourceFacetGroups=[];
     sourceGroupsCacheKey='';
     sourceChoices={};
@@ -345,6 +379,11 @@
     const task=loadCollectionDb01Facets(base).then(index=>{
       if(generation!==sourceGeneration||!canUseDb01SourceFacets())return;
       sourceIndex=index;sourceGroupsCacheKey='';
+      const sourceGroups=collectionDb01Groups(index,[...index.byItem.keys()]);
+      sourceUniverseOptions=sourceGroups
+        .find(group=>group.facet==='disneyUniverse')?.options.map(x=>({...x}))??[];
+      sourceWorldOptions=sourceGroups
+        .find(group=>group.facet==='worldContextTag')?.options.map(x=>({...x}))??[];
       // Source-native category cards become visible on the initial overview.
       // Refresh does not change saved user progress.
       refresh();
@@ -354,6 +393,24 @@
       sourceLoadError=canUseDb01SourceFacets();
     }).finally(()=>{if(sourceLoad===task)sourceLoad=null;});
     sourceLoad=task;
+  }
+  function ensureAcquisitionIndex():void{
+    if(!canUseDb01SourceFacets()||acquisitionIndex||acquisitionLoad)return;
+    acquisitionLoadError=false;
+    const generation=sourceGeneration;
+    const task=loadDb01ItemAcquisitionHandoff(base).then(index=>{
+      if(generation!==sourceGeneration||!canUseDb01SourceFacets())return;
+      acquisitionIndex=index;refresh();
+    }).catch(()=>{
+      if(generation===sourceGeneration)acquisitionLoadError=canUseDb01SourceFacets();
+    }).finally(()=>{if(acquisitionLoad===task)acquisitionLoad=null;});
+    acquisitionLoad=task;
+  }
+  function selectAcquisition(value:string):void{
+    if(!acquisitionIndex)return;
+    if(value!==''&&!DB02_ACQUISITION_CATEGORY_ORDER.some(x=>x===value))return;
+    acquisitionFilter=value as GameNativeItemCategory|'';
+    resetView();
   }
   function selectSourceTag(facet:CollectionDb01Facet,key:string):void{
     const next={...sourceChoices};
@@ -405,7 +462,8 @@
    */
   function appendNextPage():void {
     if(!runtime||busy||loading||storeError||filtered.length>=totalMatches)return;
-    if((sourceCategory!==null||Object.keys(sourceChoices).length)&&sourceIndex){
+    if((sourceCategory!==null||Object.keys(sourceChoices).length||acquisitionFilter)&&
+         (sourceIndex||acquisitionIndex)){
       const next=Math.min(sourceAllMatching.length,filtered.length+72);
       filtered=sourceAllMatching.slice(0,next);
       visible=next;
@@ -542,7 +600,8 @@
     if(!window.confirm(`現在の条件に一致する全${count.toLocaleString(locale)}件を「${label}」に変更します。画面に未表示のアイテムも対象です。実行しますか？`))return;
     const filter=currentFilter(0,1);
     void commit(async()=>{
-      if((sourceCategory!==null||Object.keys(sourceChoices).length)&&sourceIndex){
+      if((sourceCategory!==null||Object.keys(sourceChoices).length||acquisitionFilter)&&
+         (sourceIndex||acquisitionIndex)){
         // Rust's bulk_matching predicate does not know DB-01 menu candidates or Tags.
         // Applying it would silently edit items outside the chosen Tag.
         await runtime!.setBulk(sourceAllMatching.map(item=>item.itemId),next);
@@ -574,12 +633,18 @@
     nameStatus='all';expansion='';resetView();
   }
   function chooseWorld(id:string):void{
-    worldFilter=id;selected='';sourceCategory=null;universeFilter='';bypassCategoryGroups=false;
-    sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
+    selected='';sourceCategory=null;universeFilter='';bypassCategoryGroups=false;
+    const fromSource=sourceIndex&&sourceWorldOptions.some(option=>option.key===id);
+    worldFilter=fromSource?'':id;
+    sourceChoices=fromSource?{worldContextTag:id}:{};
+    sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
   }
   function chooseUniverse(id:string):void{
-    universeFilter=id;selected='';sourceCategory=null;bypassCategoryGroups=false;
-    sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
+    selected='';sourceCategory=null;bypassCategoryGroups=false;
+    universeFilter=sourceIndex&&sourceUniverseOptions.length?'':id;
+    sourceChoices=sourceIndex&&sourceUniverseOptions.length&&id
+      ?{disneyUniverse:id}:{};
+    sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
   }
   function openCategoryItems():void{
     bypassCategoryGroups=true;universeFilter='';resetView();
@@ -596,7 +661,7 @@
   function clearScope():void{
     selected='';sourceCategory=null;search='';status='all';favoriteOnly=false;nameStatus='all';
     expansion='';worldFilter='';universeFilter='';universeSearch='';
-    bypassCategoryGroups=false;sourceChoices={};
+    bypassCategoryGroups=false;sourceChoices={};acquisitionFilter='';
     sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
   }
   function changeWorkspace(id:string):void{
@@ -694,7 +759,7 @@
   onMount(()=>{
     const toggleHeaderFilters=()=>{
       filtersOpen=!filtersOpen;
-      if(filtersOpen){ensureSourceIndex();refresh();}
+      if(filtersOpen){ensureSourceIndex();ensureAcquisitionIndex();refresh();}
     };
     window.addEventListener('wand:collection-filters',toggleHeaderFilters);
     const handleHeaderBackup=()=>downloadBackup();
@@ -909,7 +974,7 @@
             <WandIcon name="star" size={19}/>
           </button>
           <button type="button" class="subtle-button" aria-expanded={filtersOpen}
-            on:click={()=>{filtersOpen=!filtersOpen;if(filtersOpen){ensureSourceIndex();refresh();}}}>
+            on:click={()=>{filtersOpen=!filtersOpen;if(filtersOpen){ensureSourceIndex();ensureAcquisitionIndex();refresh();}}}>
             {copy.filters} {filtersOpen?'▴':'▾'}
           </button>
         </div>
@@ -924,12 +989,21 @@
         {#if viewAxis==='world'}
           <div class="collection-world-switcher" role="group" aria-label={copy.world}>
             <div class="collection-scope-scroll">
-              <button type="button" class:chosen={!worldFilter} aria-pressed={!worldFilter}
+              <button type="button" class:chosen={!worldFilter&&!sourceChoices.worldContextTag}
+                aria-pressed={!worldFilter&&!sourceChoices.worldContextTag}
                 on:click={()=>chooseWorld('')}>{copy.all}</button>
               {#each COLLECTION_WORLD_NAVIGATION as world (world.id)}
-                {#if worldScopeOptions.some(option=>option.id===world.id)}
-                  <button type="button" class:chosen={worldFilter===world.id}
-                    aria-pressed={worldFilter===world.id} on:click={()=>chooseWorld(world.id)}>
+                {#if worldScopeOptions.some(option=>option.id===world.id)||
+                  sourceWorldOptions.some(option=>option.key===world.id)}
+                  <button type="button"
+                    class:chosen={worldFilter===world.id||sourceChoices.worldContextTag===world.id}
+                    aria-pressed={worldFilter===world.id||sourceChoices.worldContextTag===world.id}
+                    title={sourceWorldOptions.some(option=>option.key===world.id)
+                      ?(locale==='ja'
+                        ?'原本のワールド関連タグで検索。コレクション所属や入手場所は未検証です。'
+                        :'Original world-context tag only; Collection membership and acquisition area are unverified.')
+                      :undefined}
+                    on:click={()=>chooseWorld(world.id)}>
                     {worldScopeOptions.find(option=>option.id===world.id)?.label??world.label}
                   </button>
                 {:else}
@@ -942,11 +1016,15 @@
               {/each}
             </div>
           </div>
-        {:else if universeFilter}
+        {:else if universeFilter||sourceChoices.disneyUniverse}
           <button type="button" class="collection-back-axis" on:click={()=>chooseUniverse('')}>
             <WandIcon name="chevron-left" size={16}/>{copy.universeList}
           </button>
-          <span class="collection-axis-selected">{universeScopeOptions.find(x=>x.id===universeFilter)?.label??''}</span>
+          <span class="collection-axis-selected">
+            {sourceChoices.disneyUniverse
+              ?collectionDb01TagLabel(locale,sourceChoices.disneyUniverse)
+              :universeScopeOptions.find(x=>x.id===universeFilter)?.label??''}
+          </span>
         {/if}
       </div>
       {#if filtersOpen}
@@ -962,7 +1040,7 @@
               {#each runtime?.metadata.expansions??[] as id}<option value={id}>{id}</option>{/each}
             </select>
           </label>
-          {#if (selected||sourceCategory!==null)&&sourceFacetGroups.length}
+          {#if sourceFacetGroups.length}
             <div class="collection-native-tag-panel" role="group"
               aria-label={locale==='ja'?'ゲーム原本のタグ':'Source tags'}
               title={locale==='ja'?'元のゲームのタグ。Collection所属やワールドでの入手可能性を確定する情報ではありません。':'Original source tags, not verified Collection membership or availability.'}>
@@ -1000,6 +1078,27 @@
               {/each}
             </div>
           {/if}
+          {#if canUseDb01SourceFacets()}
+            <fieldset class="collection-db01-acquisition">
+              <legend>{collectionDb01AcquisitionHeading(locale)}</legend>
+              {#if acquisitionIndex}
+                <select aria-label={collectionDb01AcquisitionHeading(locale)}
+                  value={acquisitionFilter}
+                  on:change={(event)=>selectAcquisition((event.currentTarget as HTMLSelectElement).value)}>
+                  <option value="">{copy.all}</option>
+                  {#each DB02_ACQUISITION_CATEGORY_ORDER as category}
+                    <option value={category}>{collectionDb01AcquisitionLabel(locale,category)}</option>
+                  {/each}
+                </select>
+              {:else if acquisitionLoadError}
+                <button type="button" class="subtle-button" on:click={ensureAcquisitionIndex}>
+                  {locale==='ja'?'再試行':'Retry'}
+                </button>
+              {:else}
+                <span>{copy.loading}</span>
+              {/if}
+            </fieldset>
+          {/if}
           <button type="button" class="subtle-button" on:click={clearScope}>{copy.clear}</button>
         </div>
       {/if}
@@ -1007,7 +1106,7 @@
         <div class="collection-results">
           {#if landingUniverse}
             <div class="section-lead"><h2>{copy.universeList}</h2></div>
-            {#if universeScopeOptions.length}
+            {#if universeScopeOptions.length||sourceUniverseOptions.length}
               <label class="collection-universe-search">
                 <WandIcon name="search" size={17}/>
                 <input type="search" bind:value={universeSearch}
@@ -1021,7 +1120,16 @@
                   </button>
                 {/each}
               </div>
+              {#if sourceUniverseOptions.length}
+                <p class="collection-axis-notice">
+                  {locale==='ja'
+                    ?'ゲーム原本の作品タグによる検索です。コレクション所属や入手可能なワールドを示すものではありません。'
+                    :'Source Disney universe tags: not Collection membership or acquisition worlds.'}
+                </p>
+              {/if}
               {#if universeChoices.length===0}<p class="collection-axis-notice">{copy.noItems}</p>{/if}
+            {:else if sourceLoad}
+              <p class="collection-axis-notice" role="status">{copy.loading}</p>
             {:else}
               <p class="collection-axis-notice">{copy.universeDataUnavailable}</p>
             {/if}
@@ -1089,6 +1197,9 @@
               <div class="breadcrumbs">
                 <button type="button" on:click={returnToCategory}>{viewAxis==='universe'?copy.universeList:copy.categories}</button>
                 {#if selected||sourceCategory!==null}<span> / {selectionLabel}</span>{/if}
+                {#if viewAxis==='universe'&&sourceChoices.disneyUniverse}
+                  <span> / {collectionDb01TagLabel(locale,sourceChoices.disneyUniverse)}</span>
+                {/if}
                 {#if selected&&universeFilter&&viewAxis==='world'}
                   <button type="button" on:click={returnToSubgroups}>{copy.universeList}</button>
                 {/if}

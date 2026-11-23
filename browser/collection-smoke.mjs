@@ -400,14 +400,42 @@ try{
     .waitFor({timeout:30000});
   assert.equal(await retryPage.locator('.collection-original-category-grid .facet-card').count(),20);
   await retryContext.close();
-  // World is the default; Universe is optional and must not fabricate
-  // membership/icon choices before DB-00 publishes reviewed membership.
+  // DB-01's original Disney universe tags are now a working, cross-category
+  // browser axis; they remain distinct from unverified Collection membership.
   assert.equal(await page.getByRole('button',{name:'ワールド表示'}).getAttribute('aria-pressed'),'true');
   await page.getByRole('button',{name:'ユニバース表示'}).click();
   assert.equal(await page.getByRole('button',{name:'ユニバース表示'}).getAttribute('aria-pressed'),'true');
-  assert.equal(await page.locator('.collection-universe-card').count(),0);
-  assert.match(await page.locator('.collection-axis-notice').innerText(),/所属データ/);
+  await page.locator('.collection-universe-card').first().waitFor({timeout:18000});
+  assert.ok(await page.locator('.collection-universe-card').count()>0,
+    'source-backed universe tags must be browseable without Collection membership claims');
+  assert.match(await page.locator('.collection-axis-notice').innerText(),/原本の作品タグ/);
+  await page.locator('.collection-universe-card').first().click();
+  await page.locator('.item-card').first().waitFor({timeout:15000});
+  assert.ok(await page.locator('.result-count').count()>0,
+    'selecting a universe source tag must display matching Items');
   await page.getByRole('button',{name:'ワールド表示'}).click();
+  // DB-02's six original acquisition categories are connected to the same
+  // complete Item-ID result set, not just the first infinite-scroll page.
+  await page.getByRole('button',{name:/フィルター/}).click();
+  const acquisitionFilter=page.getByRole('combobox',{name:'入手元'});
+  await acquisitionFilter.waitFor({timeout:15000});
+  await acquisitionFilter.selectOption('star_path');
+  await page.locator('.item-card').first().waitFor({timeout:12000});
+  const starPathIds=await page.evaluate(async()=>{
+    const response=await fetch('/Wand/acquisition/public/db01-item-acquisition-1.26.2.json');
+    if(!response.ok)throw Error('DB01_ACQUISITION_FETCH_FAILED');
+    const doc=await response.json();
+    return doc.items.filter(row=>row[1].some(group=>group[0]==='star_path'))
+      .map(row=>String(row[0]));
+  });
+  const starPathSet=new Set(starPathIds);
+  const displayedIds=await page.locator('.item-card').evaluateAll(cards=>
+    cards.map(card=>card.getAttribute('data-item-id')));
+  assert.ok(displayedIds.length>0,'source-linked Star Path must return Item IDs');
+  assert.ok(displayedIds.every(id=>starPathSet.has(id)),
+    'acquisition filtering must use exact DB-02 → DB-01 Item ID crosswalk');
+  await acquisitionFilter.selectOption('');
+  await page.getByRole('button',{name:/フィルター/}).click();
   assert.ok(await page.locator('.facet-card').count()>10);
   await page.getByRole('button',{name:/フィルター/}).click();
   assert.equal(await page.getByRole('group',{name:'正式名称の確認状況'}).count(),0);
@@ -697,7 +725,13 @@ try{
   assert.match(await page.locator('.facet-card').first().innerText(),/思い出|Memories/);
   assert.equal(await page.locator('.mode-tabs').count(),0);
   assert.equal(await page.locator('.collection-scope-toolbar').count(),1);
-  assert.equal(await page.locator('.collection-scope-scroll button:disabled').count(),6);
+  const nativeWorld=page.locator('.collection-scope-scroll button').filter({hasText:'Dreamlight Valley'});
+  assert.equal(await nativeWorld.isDisabled(),false,
+    'DB-01 original World-context tag must enable world source browsing');
+  await nativeWorld.click();
+  await page.locator('.item-card').first().waitFor({timeout:15000});
+  assert.ok(await page.locator('.item-card').count()>0);
+  await page.locator('.collection-scope-scroll').getByRole('button',{name:'すべて'}).click();
   await page.getByRole('button',{name:/フィルター/}).click();
   assert.equal(await page.getByRole('combobox',{name:'ワールドで絞り込み'}).count(),0);
   assert.equal(await page.getByRole('combobox',{name:'ユニバースで絞り込み'}).count(),0);
