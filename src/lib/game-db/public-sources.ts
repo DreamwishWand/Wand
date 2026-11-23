@@ -155,6 +155,7 @@ export async function openPublicSharedGameSources(
     origins:acquisition.origins,rewards:guide,
     staticContainers:acquisition.staticContainerSource,
     defaultInventories:acquisition.defaultInventorySource,
+    officialNameCandidates:acquisition.nameCandidates,
     questTargets:guideQuestTargets
   });
   let outsideSearch:Db00OutsideSourceSearch|null=null;
@@ -172,7 +173,8 @@ export async function openPublicSharedGameSources(
   };
   const search=createDb00PublicItemSearch(
     database,joined,acquisition.origins,guide,acquisition.staticContainerSource,
-    guideQuestTargets,acquisition.defaultInventorySource
+    guideQuestTargets,acquisition.defaultInventorySource,
+    acquisition.nameCandidates
   );
   assert(acquisition.gameVersion==='1.26.2' &&
     acquisition.coverage.publishedItemDefinitions===database.itemCount &&
@@ -185,6 +187,8 @@ export async function openPublicSharedGameSources(
     acquisition.coverage.sourceCoverageComplete===false &&
     acquisition.coverage.liveOfferAvailabilityVerified===false &&
     acquisition.coverage.verifiedOnlineNameAcquisitionLinks===0 &&
+    acquisition.nameCandidates.evidence==='name_only_no_grant_or_sale_proof' &&
+    acquisition.nameCandidates.coverage.verifiedOnlineAcquisitionLinks===0 &&
     guide.evidence.integrity==='pinned_public_sha256' &&
     guide.coverage.currentAvailabilityVerified===false &&
     guideQuestTargets.schema==='wand.db03.public-quest-target-reverse@1' &&

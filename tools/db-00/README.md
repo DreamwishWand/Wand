@@ -412,3 +412,30 @@ game UI membership, ownership, actual Quest requirements, event availability,
 or a confirmed grant. Every result explicitly sets
 \`collectionUiMembershipVerified:false\`, \`playerOwnershipVerified:false\` and
 \`sourceCoverageComplete:false\`.
+
+
+### Official campaign reward names are *unverified* Item candidates
+
+DB-02 already retains original official campaign publications and their
+English reward names, including Twitch Drops and redeem codes. DB-00 now
+attaches **unique exact published English-name matches** to
+\`getItem(id).officialCampaignNameCandidates\`, with explicit
+\`officialCampaignAcquisitionLinkVerified:false\`. The source is optional:
+\`null\` means not loaded; \`[]\` means no uniquely matched official name.
+
+\`searchItems({officialCampaignNameCandidate:true})\` locates the
+published ItemList subset with source-name-only matches. Further narrow
+by \`officialCampaignKind:'twitch_drop'|'redeem_code'|...\` or
+\`officialCampaignId:'twitch:...'\`, with existing Item name, paging
+and *independent* verified \`originKinds\` filters.
+
+**Crucially, an exact English name is not a native Item-ID acquisition
+link.** These candidates never enter DB-02 \`origins\` or
+\`originKinds\`, or acquire an inferred grant, redeemed code, active
+Twitch campaign, Premium Shop offer or player ownership status.
+Unmatched/ambiguous official reward names stay available in the existing
+DB-02 \`acquisition.nameCandidates.getCampaignRewardResolution(id)\`
+reader rather than receiving invented Item IDs. Community Premium Shop
+observations, prices, sale dates and weekly histories are **not**
+projected into the DB-00 item candidate field or search index.
+No additional network requests or private original data are involved.
