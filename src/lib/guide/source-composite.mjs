@@ -4,7 +4,7 @@
  * No game data is sent, altered or relabelled.
  */
 import {guideVerifiedSourceBridge} from './client.mjs';
-import {ORIGINAL_GUIDE_SHARD_AUDIT_SHA, ORIGINAL_GUIDE_SHARD_TOTAL_BYTES} from './shard-fingerprints.mjs';
+import {ORIGINAL_GUIDE_SHARD_AUDIT_SHA, ORIGINAL_GUIDE_SHARD_TOTAL_BYTES} from './shard-fingerprints.ts';
 import {
   GUIDE_CONDITION_INDEX_V2_SHA, GUIDE_CONDITION_SOURCE_SHA,
   GUIDE_CONDITION_PROBE_SHA, GUIDE_CONDITION_V2_MISSION_REFERENCES
