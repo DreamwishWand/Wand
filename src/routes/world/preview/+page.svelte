@@ -337,6 +337,7 @@
     findingGlobal=false;
     itemGridArea=null;
     itemAreaLink=null;
+    resetCandidateProbe();
     resetAreaWindow();
   }
   function resetGlobalFind(clearInput=true){
@@ -345,12 +346,14 @@
     findingGlobal=false;
     itemGridArea=null;
     itemAreaLink=null;
+    resetCandidateProbe();
     resetAreaWindow();
     if(clearInput)globalItemSearch='';
   }
   function findGlobalOriginalItem(matchIndex=0){
     itemGridArea=null;
     itemAreaLink=null;
+    resetCandidateProbe();
     resetAreaWindow();
     const input=globalItemSearch.trim();
     if(!/^[1-9][0-9]{0,15}$/.test(input)||
@@ -386,6 +389,7 @@
   function findNativeItemAnchor(matchIndex=0){
     itemGridArea=null;
     itemAreaLink=null;
+    resetCandidateProbe();
     resetAreaWindow();
     const selected=layouts.find(row=>row.viewKey===selectedViewKey);
     const grid=selected?.grids.find(row=>
@@ -579,6 +583,7 @@
         findingGlobal=false;
         loadingAreaWindow=false;
         loadingCellLayers=false;
+        probingCandidate=false;
         return;
       }
       if (result.kind === 'loaded') {
@@ -596,6 +601,30 @@
           String(layouts[0].grids[0].gridIdNative) : '';
         infoMessage = 'ローカルZIP内のマニフェスト整合性を確認しました。原本の真正性までは証明していません。';
         if (selectedGridId) requestWindow();
+        return;
+      }
+      if(result.kind==='candidate-probe'){
+        probingCandidate=false;
+        const raw=result.result as SourceDefaultCandidateLayerProbe;
+        const link=itemAreaLink;
+        const selected=layouts.find(row=>row.viewKey===selectedViewKey);
+        const grid=selected?.grids.find(row=>String(row.gridIdNative)===selectedGridId);
+        if(raw?.contract!=='wand.db04.source-default-candidate-layer-probe@1'||
+           raw.sourceLayoutId!==selected?.layoutId||
+           raw.nativeGridId!==grid?.gridIdNative||
+           raw.sourceGridDataPath!==grid?.gridDataPath||
+           raw.originalGridObjectId!==link?.nativeGridObjectId||
+           raw.itemId!==link?.itemId||
+           raw.candidateAnchorX!==candidateX||
+           raw.candidateAnchorY!==candidateY||
+           raw.candidateOrientationCode!==candidateOrientation){
+          candidateProbe=null;
+          candidateProbeError='原本候補と現在の選択が一致しません。';
+          return;
+        }
+        candidateProbe=raw;
+        candidateProbeError=raw.status==='original_source_not_available'
+          ?'この原本Itemの既定形状を確認できません。':'';
         return;
       }
       if(result.kind==='grid-cell-layers'){
@@ -688,6 +717,9 @@
           resetAreaWindow();
           resetAnchorFind();
           itemAreaLink=sourceAreaLink;
+          candidateX=sourceAreaLink.originalAnchorX!;
+          candidateY=sourceAreaLink.originalAnchorY!;
+          candidateOrientation=sourceAreaLink.originalOrientationCode!;
           const cx=match.sourceAnchorX,cy=match.sourceAnchorY;
           x=Math.max(0,Math.min(grid.anchorSizeX-1,cx-Math.floor(width/2)));
           y=Math.max(0,Math.min(grid.anchorSizeY-1,cy-Math.floor(height/2)));
@@ -754,6 +786,9 @@
           areaFactor=sourceAreaLink.originalGridTessellationFactor;
           resetAreaWindow();
           itemAreaLink=sourceAreaLink;
+          candidateX=sourceAreaLink.originalAnchorX!;
+          candidateY=sourceAreaLink.originalAnchorY!;
+          candidateOrientation=sourceAreaLink.originalOrientationCode!;
           const cx=found.sourceAnchorX,cy=found.sourceAnchorY;
           x=Math.max(0,Math.min(chosen.anchorSizeX-1,
             cx-Math.floor(width/2)));
