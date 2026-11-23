@@ -98,6 +98,21 @@ function originalOrientedBaseSize(sx:number,sy:number,orientation:number){
     y:Math.trunc((Math.imul(c,sy)+Math.imul(s,sx))/100)
   };
 }
+/** Native intrinsic bounding dimensions, not an object occupancy or world extent. */
+export function getOriginalGridAreaDisplayDimensions(
+  sizeX:number,sizeY:number,orientationCode:number,callerGridFactor:1|2=1
+):Readonly<{width:number;height:number}> {
+  if(!int(sizeX)||!int(sizeY)||sizeX<1||sizeY<1||
+     sizeX>256||sizeY>256||sizeX*sizeY>16384||
+     !int(orientationCode)||orientationCode<0||orientationCode>15||
+     (callerGridFactor!==1&&callerGridFactor!==2))
+    throw new TypeError('DB04_GRIDAREA_INTRINSIC_DIMENSIONS_INVALID');
+  const base=originalOrientedBaseSize(sizeX,sizeY,orientationCode);
+  return Object.freeze({
+    width:base.x*callerGridFactor,
+    height:base.y*callerGridFactor
+  });
+}
 function originalLayerCoordinates(
   sx:number,sy:number,nx:number,ny:number,
   x:number,y:number,orientation:number
