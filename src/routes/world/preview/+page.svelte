@@ -500,6 +500,10 @@
         ? '原本参照グラフと地形ZIPのバージョンが一致しません。'
         : resolved.status==='ambiguous_terrain_view'
         ? '一致する原本地形ビューが複数あるため、自動選択できません。'
+        : resolved.status==='source_default_count_mismatch'
+        ? '原本参照グラフと地形ZIPの初期GridObject件数が一致しません。別の原本データが混在していないか確認してください。'
+        : resolved.status==='source_default_count_unavailable'
+        ? '初期GridObject件数を両方の原本データで確認できないため、自動選択できません。'
         : 'この部分的な地形ZIPには該当するGridが収録されていません。';
       return;
     }
