@@ -109,6 +109,7 @@
   let worldFilter='';
   let universeFilter='';
   let selected='';
+  let browsingAllItems=false;
   let search='';
   let status:'all'|'owned'|'missing'|'unknown'='all';
   let favoriteOnly=false;
@@ -164,7 +165,7 @@
     !Object.keys(sourceChoices).length&&categoryUniverseFacets.length>0;
   $: universeSectionView=viewAxis==='universe'&&Boolean(universeFilter)&&
     !sourceIndex&&!selected&&!search.trim()&&status==='all'&&!favoriteOnly&&!expansion;
-  $: isBrowsing=Boolean(selected||sourceCategory!==null||search.trim()||status!=='all'||favoriteOnly||
+  $: isBrowsing=Boolean(browsingAllItems||selected||sourceCategory!==null||search.trim()||status!=='all'||favoriteOnly||
     nameStatus!=='all'||expansion||worldFilter||universeFilter||
     Object.keys(sourceChoices).length||acquisitionFilter||viewAxis==='universe');
 
@@ -612,35 +613,44 @@
       selectionMode=false;
     },{title:`条件に一致する${count}件`,change:`所持状態 → ${label}`});
   }
+  function browseEveryItem():void{
+    browsingAllItems=true;
+    viewAxis='world';
+    selected='';sourceCategory=null;worldFilter='';universeFilter='';
+    search='';status='all';favoriteOnly=false;nameStatus='all';expansion='';
+    sourceChoices={};acquisitionFilter='';bypassCategoryGroups=true;
+    sourceFacetGroups=[];sourceGroupsCacheKey='';
+    resetView();
+  }
   function chooseOriginalCategory(code:CollectionDb01SubmenuCode):void{
     if(!sourceIndex||!(sourceIndex.itemsByCategory.get(code)?.length))return;
-    sourceCategory=code;selected='';originalClassesOpen=false;
+    sourceCategory=code;selected='';originalClassesOpen=false;browsingAllItems=false;
     sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';
     bypassCategoryGroups=true;resetView();
   }
   function chooseFacet(id:string):void{
     sourceCategory=null;
-    selected=id;bypassCategoryGroups=false;
+    selected=id;bypassCategoryGroups=false;browsingAllItems=false;
     sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';
     resetView();ensureSourceIndex();
   }
   function changeViewAxis(axis:CollectionViewAxis):void{
     if(viewAxis===axis)return;
-    viewAxis=axis;selected='';sourceCategory=null;
+    viewAxis=axis;selected='';sourceCategory=null;browsingAllItems=false;
     worldFilter='';universeFilter='';universeSearch='';
     sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';
     bypassCategoryGroups=false;search='';status='all';favoriteOnly=false;
     nameStatus='all';expansion='';resetView();
   }
   function chooseWorld(id:string):void{
-    selected='';sourceCategory=null;universeFilter='';bypassCategoryGroups=false;
+    selected='';sourceCategory=null;universeFilter='';bypassCategoryGroups=false;browsingAllItems=false;
     const fromSource=sourceIndex&&sourceWorldOptions.some(option=>option.key===id);
     worldFilter=fromSource?'':id;
     sourceChoices=fromSource?{worldContextTag:id}:{};
     sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
   }
   function chooseUniverse(id:string):void{
-    selected='';sourceCategory=null;bypassCategoryGroups=false;
+    selected='';sourceCategory=null;bypassCategoryGroups=false;browsingAllItems=false;
     universeFilter=sourceIndex&&sourceUniverseOptions.length?'':id;
     sourceChoices=sourceIndex&&sourceUniverseOptions.length&&id
       ?{disneyUniverse:id}:{};
@@ -650,7 +660,7 @@
     bypassCategoryGroups=true;universeFilter='';resetView();
   }
   function returnToCategory():void{
-    selected='';sourceCategory=null;universeFilter=viewAxis==='universe'?universeFilter:'';
+    browsingAllItems=false;selected='';sourceCategory=null;universeFilter=viewAxis==='universe'?universeFilter:'';
     sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';
     bypassCategoryGroups=false;search='';status='all';favoriteOnly=false;
     nameStatus='all';expansion='';resetView();
@@ -659,7 +669,7 @@
     universeFilter='';bypassCategoryGroups=false;resetView();
   }
   function clearScope():void{
-    selected='';sourceCategory=null;search='';status='all';favoriteOnly=false;nameStatus='all';
+    browsingAllItems=false;selected='';sourceCategory=null;search='';status='all';favoriteOnly=false;nameStatus='all';
     expansion='';worldFilter='';universeFilter='';universeSearch='';
     bypassCategoryGroups=false;sourceChoices={};acquisitionFilter='';
     sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
@@ -1256,7 +1266,12 @@
               {/if}
             {/if}
           {:else}
-            <div class="section-lead"><h2>{copy.categories}</h2></div>
+            <div class="section-lead collection-categories-heading">
+              <h2>{copy.categories}</h2>
+              <button type="button" class="subtle-button" on:click={browseEveryItem}>
+                {copy.showAllItems} ({overall.total.toLocaleString(locale)})
+              </button>
+            </div>
             {#if sourceIndex&&originalCategoryCards.length}
               <div class="facet-grid collection-original-category-grid"
                 aria-label={locale==='ja'?'ゲーム原本のコレクションカテゴリー':'Original Collection categories'}>
