@@ -1103,3 +1103,14 @@ python tools/db-04-world/reference_graph_diff.py --previous /private/old.json --
 
 With source subsets, `candidateAdded` and `oldOnlyUnverified` are *not*
 release additions or removals. Game-derived graph/diff files remain private.
+
+
+## Shared native oblique local geometry (TypeScript)
+
+`src/lib/world/native-oblique.ts` is the source-pinned 1:1 local coordinate
+algorithm consumed by both the pre-existing read-only catalog API and
+`native-gridarea-local-window.ts`. The 16 coefficient entries are single-source,
+while cardinal transforms, explicit factor 1/2 tiling, and bounded source
+windows retain their own verified code paths. It is not a Save coordinate
+converter, native runtime GridCells membership, collision test, or placement
+permission solver.

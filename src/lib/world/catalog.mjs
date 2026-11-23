@@ -1,4 +1,4 @@
-import { GRIDAREA_ROT_COS, GRIDAREA_ROT_SIN, nativeObliqueSourceLocalPosition } from './oblique.mjs';
+import { GRIDAREA_ROT_COS, GRIDAREA_ROT_SIN, nativeObliqueSourceLocalPosition } from './native-oblique.ts';
 
 // Read-only DB-04 adapter for World Editor, Decorate, Presets and Collection.
 // This API never invents 2D coordinates, path/fence connectivity or permissions.
