@@ -563,6 +563,246 @@ export const COLLECTION_NATIVE_SUBTYPE_UI = [
       "zh-CN": "地板",
       "pt-BR": "Pisos"
     }
+  },
+  {
+    "key": "ActivityItem:0",
+    "native": "ActivityItem",
+    "code": 0,
+    "source": "Default",
+    "labels": {
+      "ja": "デフォルト",
+      "en": "Default",
+      "fr": "Par défaut",
+      "it": "Predefiniti",
+      "de": "Standard",
+      "es-ES": "Predeterminados",
+      "zh-CN": "默认",
+      "pt-BR": "Padrão"
+    }
+  },
+  {
+    "key": "ActivityItem:2",
+    "native": "ActivityItem",
+    "code": 2,
+    "source": "Crop",
+    "labels": {
+      "ja": "作物",
+      "en": "Crops",
+      "fr": "Cultures",
+      "it": "Colture",
+      "de": "Feldfrüchte",
+      "es-ES": "Cultivos",
+      "zh-CN": "农作物",
+      "pt-BR": "Plantações"
+    }
+  },
+  {
+    "key": "ActivityItem:3",
+    "native": "ActivityItem",
+    "code": 3,
+    "source": "Meal",
+    "labels": {
+      "ja": "料理",
+      "en": "Meals",
+      "fr": "Plats",
+      "it": "Piatti",
+      "de": "Gerichte",
+      "es-ES": "Platos",
+      "zh-CN": "餐食",
+      "pt-BR": "Refeições"
+    }
+  },
+  {
+    "key": "ActivityItem:4",
+    "native": "ActivityItem",
+    "code": 4,
+    "source": "Seed",
+    "labels": {
+      "ja": "種",
+      "en": "Seeds",
+      "fr": "Graines",
+      "it": "Semi",
+      "de": "Saatgut",
+      "es-ES": "Semillas",
+      "zh-CN": "种子",
+      "pt-BR": "Sementes"
+    }
+  },
+  {
+    "key": "ActivityItem:8",
+    "native": "ActivityItem",
+    "code": 8,
+    "source": "Flower",
+    "labels": {
+      "ja": "花",
+      "en": "Flowers",
+      "fr": "Fleurs",
+      "it": "Fiori",
+      "de": "Blumen",
+      "es-ES": "Flores",
+      "zh-CN": "花卉",
+      "pt-BR": "Flores"
+    }
+  },
+  {
+    "key": "ActivityItem:10",
+    "native": "ActivityItem",
+    "code": 10,
+    "source": "Fish",
+    "labels": {
+      "ja": "魚",
+      "en": "Fish",
+      "fr": "Poissons",
+      "it": "Pesci",
+      "de": "Fische",
+      "es-ES": "Peces",
+      "zh-CN": "鱼类",
+      "pt-BR": "Peixes"
+    }
+  },
+  {
+    "key": "ActivityItem:11",
+    "native": "ActivityItem",
+    "code": 11,
+    "source": "Ingredient",
+    "labels": {
+      "ja": "食材",
+      "en": "Ingredients",
+      "fr": "Ingrédients",
+      "it": "Ingredienti",
+      "de": "Zutaten",
+      "es-ES": "Ingredientes",
+      "zh-CN": "食材",
+      "pt-BR": "Ingredientes"
+    }
+  },
+  {
+    "key": "ActivityItem:12",
+    "native": "ActivityItem",
+    "code": 12,
+    "source": "RequestItem",
+    "labels": {
+      "ja": "依頼アイテム",
+      "en": "Request items",
+      "fr": "Objets de requête",
+      "it": "Oggetti delle richieste",
+      "de": "Auftragsgegenstände",
+      "es-ES": "Objetos de solicitud",
+      "zh-CN": "委托物品",
+      "pt-BR": "Itens de pedido"
+    }
+  },
+  {
+    "key": "ActivityItem:13",
+    "native": "ActivityItem",
+    "code": 13,
+    "source": "Ephemeral",
+    "labels": {
+      "ja": "一時オブジェクト",
+      "en": "Ephemeral objects",
+      "fr": "Objets temporaires",
+      "it": "Oggetti temporanei",
+      "de": "Temporäre Objekte",
+      "es-ES": "Objetos temporales",
+      "zh-CN": "临时物件",
+      "pt-BR": "Objetos temporários"
+    }
+  },
+  {
+    "key": "ActivityItem:14",
+    "native": "ActivityItem",
+    "code": 14,
+    "source": "LootPresent",
+    "labels": {
+      "ja": "報酬プレゼント",
+      "en": "Loot presents",
+      "fr": "Cadeaux de butin",
+      "it": "Regali premio",
+      "de": "Beutegeschenke",
+      "es-ES": "Regalos de botín",
+      "zh-CN": "奖励礼物",
+      "pt-BR": "Presentes de recompensa"
+    }
+  },
+  {
+    "key": "ActivityItem:15",
+    "native": "ActivityItem",
+    "code": 15,
+    "source": "Consummable",
+    "labels": {
+      "ja": "消耗品",
+      "en": "Consumables",
+      "fr": "Consommables",
+      "it": "Consumabili",
+      "de": "Verbrauchsgegenstände",
+      "es-ES": "Consumibles",
+      "zh-CN": "消耗品",
+      "pt-BR": "Consumíveis"
+    }
+  },
+  {
+    "key": "ActivityItem:16",
+    "native": "ActivityItem",
+    "code": 16,
+    "source": "Mineral",
+    "labels": {
+      "ja": "鉱物",
+      "en": "Minerals",
+      "fr": "Minéraux",
+      "it": "Minerali",
+      "de": "Mineralien",
+      "es-ES": "Minerales",
+      "zh-CN": "矿物",
+      "pt-BR": "Minerais"
+    }
+  },
+  {
+    "key": "ActivityItem:17",
+    "native": "ActivityItem",
+    "code": 17,
+    "source": "CraftingMaterial",
+    "labels": {
+      "ja": "クラフト素材",
+      "en": "Crafting Materials",
+      "fr": "Matériaux de fabrication",
+      "it": "Materiali da creazione",
+      "de": "Herstellungsmaterialien",
+      "es-ES": "Materiales de fabricación",
+      "zh-CN": "制作材料",
+      "pt-BR": "Materiais de criação"
+    }
+  },
+  {
+    "key": "ActivityItem:18",
+    "native": "ActivityItem",
+    "code": 18,
+    "source": "BuffElixir",
+    "labels": {
+      "ja": "強化エリクサー",
+      "en": "Buff elixirs",
+      "fr": "Élixirs de renforcement",
+      "it": "Elisir potenzianti",
+      "de": "Stärkungselixiere",
+      "es-ES": "Elixires de mejora",
+      "zh-CN": "强化药剂",
+      "pt-BR": "Elixires de fortalecimento"
+    }
+  },
+  {
+    "key": "ActivityItem:19",
+    "native": "ActivityItem",
+    "code": 19,
+    "source": "Manual",
+    "labels": {
+      "ja": "マニュアル",
+      "en": "Manuals",
+      "fr": "Manuels",
+      "it": "Manuali",
+      "de": "Handbücher",
+      "es-ES": "Manuales",
+      "zh-CN": "手册",
+      "pt-BR": "Manuais"
+    }
   }
 ] as const;
 export type CollectionNativeSubtypeUi=typeof COLLECTION_NATIVE_SUBTYPE_UI[number];
