@@ -1284,6 +1284,103 @@ try{
   assert.equal(manyObjects[String(original300.ID)].X,x300);
   assert.equal(manyObjects[String(original305.ID)].Y,y305);
 
+  // One atomic experimental P1G with BOTH owned amount and saved Grid edits.
+  // Both sub-batches must be optimistic-checked against the original file;
+  // the regenerated encrypted output is independently reopened by Rust.
+  await page.getByLabel('検証用セーブファイル').setInputFiles({
+    name:'quantity-plus-grid.profile',
+    mimeType:'application/octet-stream',
+    buffer:syntheticEncryptedP1g(quantityProfile)
+  });
+  await page.getByLabel('対象の種類').selectOption('inventory');
+  await page.getByLabel('Inventory ID').fill('100');
+  await page.getByLabel('Item ID').fill('777');
+  await page.getByLabel('現在の数量').fill('1');
+  await page.getByLabel('変更後の数量').fill('250');
+  await page.getByRole('button',{name:'複数編集に追加'}).click();
+  await page.getByLabel('対象の種類').selectOption('chest');
+  await page.getByLabel('Container ID').fill('202');
+  await page.getByLabel('Slot index').fill('1');
+  await page.getByLabel('Chest Item ID').fill('440');
+  await page.getByLabel('現在の数量').fill('2');
+  await page.getByLabel('変更後の数量').fill('333');
+  await page.getByRole('button',{name:'複数編集に追加'}).click();
+  await page.getByRole('button',{name:'所持アイテムを表示'}).click();
+  await page.getByRole('region',{name:'セーブ内アイテム'})
+    .getByRole('status').filter({hasText:'件'}).waitFor({timeout:30000});
+  await objects.getByRole('button',{name:'配置オブジェクトを表示'}).click();
+  await objects.getByRole('status').filter({hasText:'3件'})
+    .waitFor({timeout:30000});
+  await objects.getByRole('button',{name:'配置 #1 の座標を編集'}).click();
+  const unionCoords=objects.getByLabel('座標編集',{exact:true});
+  await unionCoords.getByLabel('新しいX').fill('63');
+  await unionCoords.getByLabel('新しいY').fill('17');
+  await unionCoords.getByLabel('座標と同時変更する向き')
+    .selectOption('GridOrientation_Down');
+  await unionCoords.getByRole('button',{name:'一括配置変更に追加'}).click();
+  await objects.getByRole('button',{name:'配置 #3 の座標を編集'}).click();
+  await unionCoords.getByLabel('新しいX').fill('-31');
+  await unionCoords.getByLabel('新しいY').fill('29');
+  await unionCoords.getByRole('button',{name:'座標編集に追加'}).click();
+  const jointPanel=page.getByRole('region',{
+    name:'所持品と配置の統合編集'
+  });
+  const jointVerify=jointPanel.getByRole('button',{
+    name:/数量と配置をまとめて検証/
+  });
+  assert.equal(await jointVerify.isEnabled(),true);
+  assert.match(await jointVerify.innerText(),/数量2件・配置2件/);
+  await jointVerify.click();
+  await jointPanel.getByRole('status').filter({
+    hasText:'数量2件・配置2件をRust/WASMで検証しました'
+  }).waitFor({timeout:30000});
+  assert.equal(await jointPanel.getByRole('link',{
+    name:'統合コピーをダウンロード'
+  }).count(),0,'preview must never make a downloadable Save copy');
+  page.once('dialog',dialog=>dialog.accept());
+  await jointPanel.getByRole('button',{name:'統合コピーを生成'}).click();
+  const jointLink=jointPanel.getByRole('link',{
+    name:'統合コピーをダウンロード'
+  });
+  await jointLink.waitFor({timeout:30000});
+  const jointDl=page.waitForEvent('download');
+  await jointLink.click();
+  const jointCopy=readSyntheticEncryptedP1g(
+    await readFile(await (await jointDl).path())
+  );
+  assert.equal(jointCopy.Player.ListInventories['100']
+    .Inventory['777'].Amount,250);
+  assert.equal(jointCopy.Player.ContainerInventories['202']
+    .Inventory[1].Amount,333);
+  assert.equal(jointCopy.Player.ContainerInventories['202']
+    .Inventory[1].ItemID,440);
+  assert.equal(jointCopy.Player.ListInventories['100']
+    .Inventory['777'].ExclusiveDecor,true);
+  assert.deepEqual([
+    jointCopy.World.GridCollection.Grids['101'].Objects['1'].X,
+    jointCopy.World.GridCollection.Grids['101'].Objects['1'].Y,
+    jointCopy.World.GridCollection.Grids['101'].Objects['1'].Orientation
+  ],[63,17,'GridOrientation_Down']);
+  assert.deepEqual([
+    jointCopy.World.GridCollection.DiffGrids['102'].ModifiedObjects['6'].X,
+    jointCopy.World.GridCollection.DiffGrids['102'].ModifiedObjects['6'].Y,
+    jointCopy.World.GridCollection.DiffGrids['102'].ModifiedObjects['6'].Orientation
+  ],[-31,29,'GridOrientation_Left']);
+  assert.equal(jointCopy.World.GridCollection.Grids['101']
+    .Objects['1'].PrivateState,'do-not-export');
+  assert.equal(jointCopy.World.GridCollection.DiffGrids['102']
+    .RemovedObjects[0],5);
+  assert.equal(jointCopy.World.MissionSlots['synthetic-private-group']
+    .Slots[0].PrivateProgress,'do-not-export');
+  assert.equal(quantityProfile.Player.ListInventories['100']
+    .Inventory['777'].Amount,1);
+  assert.equal(quantityProfile.Player.ContainerInventories['202']
+    .Inventory[1].Amount,2);
+  assert.equal(quantityProfile.World.GridCollection.Grids['101']
+    .Objects['1'].X,45);
+  assert.equal(quantityProfile.World.GridCollection.DiffGrids['102']
+    .ModifiedObjects['6'].X,-12);
+
   assert.deepEqual(errors,[],errors.join('\n'));
   await page.close();
   console.log('DB-05 browser: explicit JSON/P1G edited-copy downloads, native reopen, stale rejection, original preservation PASS');
