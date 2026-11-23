@@ -24,6 +24,28 @@ const UNKNOWN_NAME_LABELS: [&str;8] = [
 
 const DB00_RELEASE_SCHEMA: &str = "wand.game-db.release@1";
 const DB00_SNAPSHOT_SCHEMA: &str = "wand.game-db.snapshot@1";
+// Current Steam 1.26.2 source IL2CPP ActivityItemType enum identities.
+/// These are native Item subtypes, not CollectionSet/CollectionArea claims.
+/// Only retag the matching public native ItemList's overly broad Activity
+/// group. Do not alter user-local, historical or independently published data.
+fn public_activity_subtype_family(item_id:u64, category:String)->String {
+    if category!="Source Activity Items" || !(30_000_000..40_000_000).contains(&item_id) {
+        return category;
+    }
+    let verified = match (item_id % 10_000_000)/100_000 {
+        2 => Some("Source Crop"),
+        3 => Some("Source Meal"),
+        8 => Some("Source Flower"),
+        10 => Some("Source Fish"),
+        11 => Some("Source Ingredient"),
+        15 => Some("Source Consumable"),
+        16 => Some("Source Mineral"),
+        17 => Some("Source Crafting Material"),
+        _ => None,
+    };
+    verified.unwrap_or("Source Activity Items").to_string()
+}
+
 fn intern(dictionary: &mut Vec<String>, value: String) -> usize {
     if let Some(index) = dictionary.iter().position(|entry| entry == &value) { index }
     else { let index = dictionary.len(); dictionary.push(value); index }
@@ -517,7 +539,13 @@ impl CollectionEngine {
                 if !valid_item_id(&related) {return Err("COLLECTION_DB00_RELATION_ID".into());}
                 staged_relations.push((id,related.parse::<u64>().map_err(|_|"COLLECTION_DB00_RELATION_ID")?));
             }
-            let family=intern(&mut staged_index.families,row.category.unwrap_or_else(||"Unclassified".into()));
+            let published_category=row.category.unwrap_or_else(||"Unclassified".into());
+            let display_category=if self.public_native_itemlist {
+                public_activity_subtype_family(id,published_category)
+            } else {
+                published_category
+            };
+            let family=intern(&mut staged_index.families,display_category);
             let semantic=intern(&mut staged_index.semantics,row.state_semantic.unwrap_or_else(||"UNLOCK_OR_AVAILABILITY".into()));
             intern(&mut staged_index.state_classes,row.state_class.unwrap_or_else(||"READ_ONLY".into()));
             let world:Vec<usize>=row.worlds.into_iter().map(|v|intern(&mut staged_index.worlds,v)).collect();
@@ -1374,6 +1402,26 @@ mod tests {
             assert!(core.apply_mapped_save_discovery_impl(&raw.to_string()).is_err());
             assert!(core.state == before);
         }
+    }
+    #[test]
+    fn source_native_activity_subtypes_are_visible_without_touching_other_releases() {
+        let cases=[
+            (30_200_000,"Source Crop"),
+            (30_300_000,"Source Meal"),
+            (30_800_000,"Source Flower"),
+            (31_000_000,"Source Fish"),
+            (31_100_000,"Source Ingredient"),
+            (31_500_000,"Source Consumable"),
+            (31_600_000,"Source Mineral"),
+            (31_700_000,"Source Crafting Material"),
+            (31_200_000,"Source Activity Items"),
+        ];
+        for (id,expected) in cases {
+            assert_eq!(public_activity_subtype_family(id,"Source Activity Items".into()),expected);
+            assert_eq!(public_activity_subtype_family(id,"Other".into()),"Other");
+        }
+        assert_eq!(public_activity_subtype_family(40_200_000,"Source Activity Items".into()),
+            "Source Activity Items");
     }
     #[test]
     fn canonical_categories_preserve_all_29_entries() {
