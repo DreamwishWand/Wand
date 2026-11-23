@@ -51,7 +51,10 @@ export function resolveQuestRewardNameMatches(
 
   if(typeof rawQuery!=='string'||rawQuery.length>120)return null;
   const query=normalize(rawQuery);
-  if(query.length<2||query.length>120||/^\d+$/.test(query))return null;
+  // One-kanji official names (e.g. 土 / 苔) remain searchable without
+  // making single-character Latin queries match hundreds of reward names.
+  if(query.length>120||/^\d+$/.test(query)||
+    (query.length<2&&!/^[\u3400-\u9fff\uf900-\ufaff]$/u.test(query)))return null;
   const lang=LANGUAGES.has(locale)?locale:'en';
   const languages=lang==='en'?['en']:[lang,'en'];
   const matchedItems:string[]=[];
