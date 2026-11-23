@@ -90,6 +90,7 @@ export interface PublicQuestSearch {
   readonly character?:string;
   readonly objective?:string;
   readonly section?:PublicQuestSection;
+  readonly arc?:PublicQuestStoryArc|'all';
   readonly offset?:number;
   readonly limit?:number;
 }
@@ -277,22 +278,39 @@ export function comparePublicQuestBrowseOrder(
   if(na===null&&nb!==null)return 1;
   return Number(a.id)-Number(b.id);
 }
+/** Only characters who actually own source-native Village Quest definitions.
+ * The group is based on the authoritative Quest characterId, not name matching.
+ */
+export function publicFriendshipCharacters(index:PublicQuestIndex,locale='ja'){
+  verifyPublicQuestIndex(index);
+  const lang=LOCALES.has(locale)?locale:'en';
+  const count=new Map<string,number>();
+  for(const row of index.quests){
+    if(publicQuestSection(row)==='friendship')
+      count.set(row.characterId,(count.get(row.characterId)??0)+1);
+  }
+  return [...count].map(([id,quests])=>({
+    id,quests,name:index.characters[id]?.[lang as PublicGuideLocale]||
+      index.characters[id]?.en||id
+  })).sort((a,b)=>a.name.localeCompare(b.name,lang)||Number(a.id)-Number(b.id));
+}
 /** Search the verified native Quest names, characters and objective classes.
  * Empty localized Quest names remain unresolved, not guessed. */
 export function filterPublicQuests(
   index:PublicQuestIndex,
-  {query='',locale='ja',character='',objective='',section='all',offset=0,limit=40}:
+  {query='',locale='ja',character='',objective='',section='all',arc='all',offset=0,limit=40}:
     PublicQuestSearch={}
 ):PublicQuestResults{
   verifyPublicQuestIndex(index);
   check(LOCALES.has(locale)&&typeof query==='string'&&query.length<=120&&
     typeof character==='string'&&typeof objective==='string'&&
-    SECTION.has(section)&&position(offset)&&
+    SECTION.has(section)&&(arc==='all'||STORY_ARCS.includes(arc))&&position(offset)&&
     Number.isInteger(limit)&&limit>0&&limit<=100,'invalid search');
   const words=query.normalize('NFKC').toLowerCase().trim()
     .split(/\s+/).filter(Boolean);
   const matched=index.quests.filter(row=>{
     if(section!=='all'&&publicQuestSection(row)!==section)return false;
+    if(section==='story'&&arc!=='all'&&publicQuestStoryArc(row)!==arc)return false;
     if(character&&row.characterId!==character)return false;
     if(objective&&!row.objectiveKinds.includes(objective))return false;
     if(words.length===0)return true;
