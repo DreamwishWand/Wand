@@ -1434,6 +1434,16 @@ try{
   await regular.getByRole('region',{name:'セーブ内アイテム'})
     .getByRole('status').filter({hasText:'4件'})
     .waitFor({timeout:30000});
+  // A real Save must never show the developer's fabricated Item IDs,
+  // quantity and replacement as actionable edit inputs by default.
+  assert.equal(await regular.getByLabel('Inventory ID').count(),0);
+  assert.equal(await regular.getByLabel('Item ID').count(),0);
+  await regular.getByText('一覧からアイテムを選択してください。').waitFor();
+  await regular.getByRole('button',{name:'IDで指定'}).click();
+  assert.equal(await regular.getByLabel('Inventory ID').inputValue(),'');
+  assert.equal(await regular.getByLabel('Item ID').inputValue(),'');
+  assert.equal(await regular.getByLabel('現在の数量').inputValue(),'');
+  assert.equal(await regular.getByLabel('変更後の数量').inputValue(),'');
   // The user workspace should use its available desktop width rather than
   // retaining the diagnostic page's narrow centered, single-column layout.
   const listPane=regular.getByRole('region',{name:'セーブ内アイテム'});
@@ -1460,7 +1470,10 @@ try{
     name:'所持アイテム 777 を選択'
   });
   await userSlot.click();
+  assert.equal(await regular.getByLabel('Item ID').inputValue(),'777');
   assert.equal(await regular.getByLabel('現在の数量').inputValue(),'1');
+  assert.equal(await regular.getByLabel('変更後の数量').inputValue(),'',
+    'the regular editor requires a user-specified replacement, not +1');
   await regular.getByLabel('変更後の数量').fill('250');
   await regular.getByRole('button',{name:'複数編集に追加'}).click();
   const tabs=regular.getByRole('navigation',{
