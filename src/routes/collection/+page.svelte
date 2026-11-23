@@ -366,20 +366,21 @@
       }else if(!filtersOpen){
         sourceFacetGroups=[];sourceGroupsCacheKey='';
       }
-      if((sourceCategory!==null||sourceActivityType!==null||
+      if((sourceActivityType!==null||sourceUniverseSelection!==null||
           Object.keys(sourceChoices).length||acquisitionFilter)&&
          (sourceIndex||acquisitionIndex)){
         // An original submenu can contain 6k+ Item IDs. Repeating the
         // general 13k-row sorted Rust query 67 times blocks UI clicks.
         // Resolve source-linked IDs through Rust's O(1) Item-ID lookup.
         // For multilingual text search, retain the existing Rust predicate.
-        const categoryIds=sourceCategory===null?null:
-          sourceIndex?.itemsByCategory.get(sourceCategory)??[];
+        const universeIds=sourceUniverseSelection&&
+          sourceUniverseSelection!==COLLECTION_UNIVERSE_UNTAGGED
+          ?sourceIndex?.itemsByUniverse.get(sourceUniverseSelection)??[]:null;
         const acquisitionIds=acquisitionFilter&&acquisitionIndex
           ?acquisitionIndex.listItemIds(acquisitionFilter).map(Number):null;
         const activityIds=sourceActivityType===null?null:
           sourceIndex?.itemsByActivityType.get(sourceActivityType)??[];
-        const candidateIds=[categoryIds,acquisitionIds,activityIds]
+        const candidateIds=[universeIds,acquisitionIds,activityIds]
           .reduce<readonly number[]|null>((shortest,ids)=>
             ids===null?shortest:
             shortest===null||ids.length<shortest.length?ids:shortest,null);
@@ -390,8 +391,11 @@
             try{return [runtime!.item(id,locale)];}catch{return [];}
           }):queryAllCollectionRows(currentFilter(0,200)));
         sourceAllMatching=candidates.filter(item=>
-          (sourceCategory===null||
-            sourceIndex!==null&&collectionDb01InCategory(sourceIndex,item.itemId,sourceCategory))&&
+          (sourceUniverseSelection!==COLLECTION_UNIVERSE_UNTAGGED||
+            !sourceIndex?.universesByItem.has(item.itemId))&&
+          (sourceUniverseSelection===null||
+            sourceUniverseSelection===COLLECTION_UNIVERSE_UNTAGGED||
+            sourceIndex?.universesByItem.get(item.itemId)?.includes(sourceUniverseSelection)===true)&&
           (sourceActivityType===null||
             sourceIndex?.activityTypesByItem.get(item.itemId)?.code===sourceActivityType)&&
           (!acquisitionFilter||
@@ -404,10 +408,29 @@
           (!worldFilter||item.worlds.includes(worldFilter))&&
           (!universeFilter||item.universes.includes(universeFilter))&&
           Object.entries(sourceChoices).every(([facet,key])=>
-            sourceIndex!==null&&collectionDb01Matches(
-              sourceIndex,item.itemId,facet as CollectionDb01Facet,key)))
-          .sort((a,b)=>Number(b.nameVerified)-Number(a.nameVerified)||
-            a.label.localeCompare(b.label,locale)||a.itemId-b.itemId);
+            sourceIndex!==null&&(facet==='disneyUniverse'
+              ?sourceIndex.universesByItem.get(item.itemId)?.includes(key)===true
+              :collectionDb01Matches(
+                sourceIndex,item.itemId,facet as CollectionDb01Facet,key))))
+          .sort((a,b)=>sourceUniverseSelection!==null
+            ?a.itemId-b.itemId:
+            Number(b.nameVerified)-Number(a.nameVerified)||
+              a.label.localeCompare(b.label,locale)||a.itemId-b.itemId);
+        if(universeSectionView){
+          const groups=groupCollectionUniverseItems(sourceAllMatching,item=>{
+            const activity=sourceIndex?.activityTypesByItem.get(item.itemId);
+            const id=activity?'activity-'+activity.code:item.family;
+            return {id,
+              label:activity?sourceActivityTypeLabel(locale,activity.code,activity.nativeName):
+                categoryLabel(locale,item.family),
+              rank:activity?100+activity.code:Math.max(0,facets.findIndex(f=>f.id===item.family))
+            };
+          },visible);
+          universeSections=groups.map(section=>({
+            facet:{id:section.id,label:section.label,total:section.total,owned:0},
+            items:[...section.items]
+          }));
+        }
         filtered=sourceAllMatching.slice(0,visible);
         totalMatches=sourceAllMatching.length;
         overall=runtime.progress;state=runtime.state;
@@ -558,7 +581,7 @@
    */
   function appendNextPage():void {
     if(!runtime||busy||loading||storeError||filtered.length>=totalMatches)return;
-    if((sourceCategory!==null||sourceActivityType!==null||
+    if((sourceActivityType!==null||sourceUniverseSelection!==null||
           Object.keys(sourceChoices).length||acquisitionFilter)&&
          (sourceIndex||acquisitionIndex)){
       const next=Math.min(sourceAllMatching.length,filtered.length+72);
@@ -697,7 +720,7 @@
     if(!window.confirm(`現在の条件に一致する全${count.toLocaleString(locale)}件を「${label}」に変更します。画面に未表示のアイテムも対象です。実行しますか？`))return;
     const filter=currentFilter(0,1);
     void commit(async()=>{
-      if((sourceCategory!==null||sourceActivityType!==null||
+      if((sourceActivityType!==null||sourceUniverseSelection!==null||
           Object.keys(sourceChoices).length||acquisitionFilter)&&
          (sourceIndex||acquisitionIndex)){
         // Rust's bulk_matching predicate does not know DB-01 menu candidates or Tags.
