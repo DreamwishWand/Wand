@@ -54,6 +54,30 @@ test('DB-01 source native filtering is a narrow projection, not a second Item ma
   // unclassified bucket must resolve to six distinct native type groups.
   assert.equal(raw.activityTypeItemCount,4050);
   assert.equal(index.activityTypesByItem.size,4050);
+  assert.equal(raw.nativeSubtypeItemCount,13202);
+  assert.equal(raw.nativeSubtypeGameUiMembershipVerified,false);
+  assert.equal(index.nativeSubtypeByItem.size,13202);
+  const counts=[...index.itemsByNativeSubtype.entries()].map(([key,ids])=>({
+    key,count:ids.length,original:index.nativeSubtypeNames.get(key)
+  }));
+  assert.equal(counts.reduce((sum,x)=>sum+x.count,0),13202);
+  const byClass=new Map();
+  for(const group of counts){
+    const type=group.key.split(':')[0];
+    byClass.set(type,(byClass.get(type)??0)+group.count);
+    assert.ok(group.count>0);
+    assert.ok(index.itemsByNativeSubtype.get(group.key)?.every(id=>{
+      const native=index.nativeSubtypeByItem.get(id);
+      return native&&native.nativeType+':'+native.code===group.key;
+    }));
+  }
+  assert.equal(byClass.get('ActivityItem'),4050);
+  assert.equal(byClass.get('Furniture'),6746);
+  assert.equal(byClass.get('Clothing'),2041);
+  assert.equal(byClass.get('Trimming'),365);
+  assert.equal(counts.length,50);
+  console.log('DB01_SOURCE_NATIVE_DETAIL_GROUPS',
+    JSON.stringify(counts.sort((a,b)=>a.key.localeCompare(b.key))));
   assert.ok(raw.universeSourceItemCount>0);
   assert.equal(index.universesByItem.size,raw.universeSourceItemCount);
   assert.ok(index.itemsByUniverse.size>0&&index.itemsByUniverse.size<=67);
