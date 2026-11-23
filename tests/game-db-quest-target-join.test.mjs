@@ -36,8 +36,8 @@ test('DB-00 reuses Quest index response and attaches 4897 pinned Quest target ca
   assert.equal(db.guideQuestTargets.coverage.alternativeOccurrences,256);
   assert.equal(db.guideQuestTargets.coverage.mandatoryRequirementVerified,false);
   assert.equal(db.guideQuestTargets.coverage.playerProgressVerified,false);
-  assert.equal(calls.length,30);
-  assert.equal(new Set(calls).size,30);
+  assert.equal(calls.length,31);
+  assert.equal(new Set(calls).size,31);
   assert.equal(calls.filter(x=>x.endsWith('/quest-index.json')).length,1);
   assert.equal(calls.filter(x=>x.endsWith('/quest-target-reverse-1.26.2.json')).length,1);
   assert.equal(calls.filter(x=>x.endsWith('/active.json')).length,1);
