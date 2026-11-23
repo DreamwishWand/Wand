@@ -835,6 +835,7 @@ try{
   assert.match(await mapPanel.innerText(),/家具形状と床属性の一致候補/);
   assert.equal(await mapPanel.locator('.grid-lines').count(),1);
   const clickCell=async(x,y)=>{
+    await mapPanel.locator('svg').scrollIntoViewIfNeeded();
     const p=await mapPanel.locator('svg').evaluate((svg,[x,y])=>{
       const point=new DOMPoint(10+3*(x+.5),60-3*(y+.5)).matrixTransform(svg.getScreenCTM());
       return {x:point.x,y:point.y};
