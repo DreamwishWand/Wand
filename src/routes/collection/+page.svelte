@@ -1122,7 +1122,7 @@
                 <button type="button" class="subtle-button" aria-expanded={originalClassesOpen}
                   on:click={()=>originalClassesOpen=!originalClassesOpen}>
                   {locale==='ja'?'アイテムの種類から探す':'Browse by item type'}
-                  <WandIcon name={originalClassesOpen?'chevron-up':'chevron-down'} size={15}/>
+                  <WandIcon name="chevron" size={15}/>
                 </button>
               </div>
             {:else}
