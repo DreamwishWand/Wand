@@ -15,9 +15,9 @@ export const STARPATH_LOCALES_SHA=
   '6efa52893a3b3a475e00987940e50b0815f39904350e1e76731aac823ca71507';
 export const STARPATH_LOCALES_BYTES=15252;
 const KEY=/^Liveops\.[A-Za-z0-9_]+_Description$/;
-const check=(value:unknown,message:string):asserts value=>{
+function check(value:unknown,message:string):asserts value{
   assertStarpathLocalization(value,'weekly '+message);
-};
+}
 
 export function verifyStarpathWeeklyLocales(
   doc:unknown,starpath:unknown
