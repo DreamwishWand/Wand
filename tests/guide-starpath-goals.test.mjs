@@ -7,7 +7,7 @@ import {
   STARPATH_GOALS_SCHEMA,STARPATH_GOALS_SHA,STARPATH_GOALS_BYTES,
   verifyPublicStarpathGoals,loadPublicStarpathGoals,starpathGoalLabel,
   starpathGoalHeading,starpathGoalSourceNote,STARPATH_GOAL_LOCALES
-} from '../src/lib/guide/public-starpath-goals.mjs';
+} from '../src/lib/guide/public-starpath-goals.ts';
 
 const cacheFile=new URL('../static/guide/public/starpath-cache-2026-11-22.json',import.meta.url);
 const overlayFile=new URL('../static/guide/public/starpath-goals-2026-11-22.json',import.meta.url);

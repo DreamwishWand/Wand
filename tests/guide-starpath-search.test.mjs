@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.ts';
 import {verifyStarpathDailyPart,starpathDailyDescription} from '../src/lib/guide/public-starpath-daily.ts';
 import {verifyStarpathWeeklyLocales,starpathWeeklyDescription} from '../src/lib/guide/public-starpath-locales.ts';
-import {verifyPublicStarpathGoals,starpathGoalLabel} from '../src/lib/guide/public-starpath-goals.mjs';
+import {verifyPublicStarpathGoals,starpathGoalLabel} from '../src/lib/guide/public-starpath-goals.ts';
 import {filterStarpathTasks} from '../src/lib/guide/starpath-search.ts';
 
 const dir=new URL('../static/guide/public/',import.meta.url);
