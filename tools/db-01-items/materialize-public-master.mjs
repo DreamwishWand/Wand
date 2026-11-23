@@ -85,6 +85,10 @@ const COLLECTION_FACETS=new Set([
 ]);
 const collectionRows=[];
 const collectionCategoryRows=[];
+// Narrow per-ID original ActivityItemType projection. The public Item master
+// already contains each verified IL2CPP subtype; do not guess from display
+// names or expand the game's Collection menu.
+const activityTypeRows=[];
 // Exact Steam 1.26.2 original CollectionSubMenu enum codes. Original source
 // predicates are browse *candidates*, not proven game runtime membership.
 const ORIGINAL_SUBMENU_CODES=new Set([
@@ -137,11 +141,25 @@ for(let bucket=0;bucket<256;bucket++){
     if(browseTags.length)collectionRows.push([row.itemId,browseTags]);
     const sourceCategories=originalCategoryCodes(row);
     if(sourceCategories.length)collectionCategoryRows.push([row.itemId,sourceCategories]);
+    if(row.nativeCategory==='ActivityItem'){
+      const nativeType=row.itemType;
+      check(nativeType?.code===3&&nativeType.name==='ActivityItem'&&
+        Number.isSafeInteger(nativeType.subtypeCode)&&
+        nativeType.subtypeCode>=0&&nativeType.subtypeCode<=999&&
+        Math.floor((row.itemId%10000000)/100000)===nativeType.subtypeCode&&
+        typeof nativeType.subtypeNameVerified==='boolean'&&
+        (!nativeType.subtypeNameVerified||
+          (typeof nativeType.subtypeName==='string'&&
+            nativeType.subtypeName.length>0&&nativeType.subtypeName.length<=128)),
+        'ACTIVITY_ORIGINAL_SUBTYPE_'+row.itemId);
+      activityTypeRows.push([row.itemId,nativeType.subtypeCode,
+        nativeType.subtypeNameVerified?nativeType.subtypeName:null]);
+    }
     tagRefs+=row.tags.length;
     candidates+=row.collectionSourceCandidates.length;
   }
 }
-check(found===release.count&&
+check(found===release.count&&activityTypeRows.length===4050&&
   tagRefs===release.coverage.sourceTagReferences&&
   candidates===release.coverage.sourceCollectionCandidateReferences,
   'COVERAGE_MISMATCH');
@@ -167,6 +185,7 @@ const collectionDestination=join(project,'static/ddv/collection',
 mkdirSync(dirname(collectionDestination),{recursive:true});
 collectionRows.sort((a,b)=>a[0]-b[0]);
 collectionCategoryRows.sort((a,b)=>a[0]-b[0]);
+activityTypeRows.sort((a,b)=>a[0]-b[0]);
 writeFileSync(collectionDestination,JSON.stringify({
   schema:'wand.collection.db01-native-facets@1',
   release:entry.release,
@@ -175,11 +194,16 @@ writeFileSync(collectionDestination,JSON.stringify({
   taggedItems:collectionRows.length,
   categoryItemCount:collectionCategoryRows.length,
   categoryItems:collectionCategoryRows,
+  activityTypeItemCount:activityTypeRows.length,
+  activityTypeItems:activityTypeRows,
+  activityTypeEvidence:'original_il2cpp_activity_item_type',
+  activityTypeGameUiMembershipVerified:false,
   categoryEvidence:'original_collectionset_source_candidate_or_verified_native_item_type',
   gameRuntimeMembershipVerified:false,
   items:collectionRows
 })+'\n');
-console.log('DB-01 Collection browse subset:',collectionRows.length,'tagged Item IDs');
+console.log('DB-01 Collection browse subset:',collectionRows.length,'tagged Item IDs,',
+  activityTypeRows.length,'source-native ActivityItem subtypes');
 console.log('DB-01 public Item master:',gameVersion,found,'items,',tagRefs,'tags,',candidates,'Collection source candidates');
 }
 
