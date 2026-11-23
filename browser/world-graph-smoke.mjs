@@ -781,7 +781,17 @@ try{
   const inspectMap=floorPanel.getByRole('button',{
     name:'地形マップから原本初期配置のマスを調べる'
   });
-  await inspectMap.click({position:{x:24,y:24}});
+  const mapGeometry=await inspectMap.evaluate(button=>{
+    const rect=button.getBoundingClientRect();
+    const canvas=button.querySelector('canvas')?.getBoundingClientRect();
+    return {width:rect.width,height:rect.height,
+      canvasWidth:canvas?.width??0,canvasHeight:canvas?.height??0};
+  });
+  assert.equal(mapGeometry.width>=150,true,
+    'DB04_MAP_INTERACTIVE_WIDTH '+JSON.stringify(mapGeometry));
+  assert.equal(mapGeometry.height>=150,true,
+    'DB04_MAP_INTERACTIVE_HEIGHT '+JSON.stringify(mapGeometry));
+  await inspectMap.click();
   const originalLayers=floorPanel.locator('.local-inspection');
   await originalLayers.waitFor({timeout:20000});
   assert.match(await originalLayers.innerText(),/原本の初期オブジェクト/);
