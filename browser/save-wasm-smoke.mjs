@@ -1503,6 +1503,10 @@ try{
   assert.equal(await regular.getByLabel('現在の数量').isEditable(),false);
   await regular.getByLabel('変更後の数量').fill('250');
   await regular.getByRole('button',{name:'複数編集に追加'}).click();
+  const userQueue=regular.getByRole('region',{name:'一括数量変更'});
+  assert.match(await userQueue.innerText(),/Inventory 100/);
+  assert.match(await userQueue.innerText(),/×1\s*→\s*×250/,
+    'queued change must use a readable original-to-replacement summary');
   assert.match(await userSlot.innerText(),/×1\s*→\s*×250/,
     'queued amount must be visible on the exact owned slot');
   assert.doesNotMatch(await chestSlot.innerText(),/→/,
