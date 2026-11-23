@@ -65,6 +65,12 @@ test('Public Steam 1.26.2 DB-00 reveals concrete Twitch Drops and code reward na
   assert.equal(result.getCampaignCandidates('twitch:2023-launch').length,4);
   assert.equal(result.getCampaignCandidates('code:DDVPRIDE2026').length,2);
   assert(result.coverage.uniquelyMatchedOfficialRewards>=6);
+  assert(Object.isFrozen(result.listCandidateItemIds()));
+  assert.equal(result.listCandidateItemIds().length,
+    result.coverage.distinctCandidateItemIds);
+  assert(result.listCandidateItemIds().every((id,i,ids)=>
+    i===0||Number(ids[i-1])<Number(id)));
+  assert(result.listCandidateItemIds().includes('50400102'));
   assert.equal(result.coverage.examinedOfficialRewardNames,
     OFFICIAL_CAMPAIGNS.filter(c=>!c.communityArchiveEvidence)
       .reduce((count,c)=>count+c.rewards.filter(r=>r.itemId===null).length,0));

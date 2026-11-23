@@ -4,7 +4,8 @@ import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {
   DB02_ONLINE_CATEGORY_FILE,DB02_ONLINE_CATEGORY_BYTES,
-  DB02_ONLINE_CATEGORY_SHA256,loadPinnedNativeOnlineCategories
+  DB02_ONLINE_CATEGORY_SHA256,loadPinnedNativeOnlineCategories,
+  hasPinnedNativeOnlineCategoryEvidence
 } from '../src/lib/acquisition/public-online-categories.ts';
 
 const path=new URL('../static/acquisition/public/'+DB02_ONLINE_CATEGORY_FILE,import.meta.url);
@@ -37,6 +38,8 @@ test('9 native families provide exactly 2198 source categories, no shop or campa
   assert.equal(data.coverage.sourceDefinitionRecords,10109);
   const index=await loadPinnedNativeOnlineCategories('/Wand',fetcher().fetcher);
   assert.equal(index.schema,'wand.db02.native-online-category@1');
+  assert(hasPinnedNativeOnlineCategoryEvidence(index));
+  assert(!hasPinnedNativeOnlineCategoryEvidence({...index}));
   assert.equal(index.nativeEnum,'Definitions.Items.OnlineCategory');
   assert.equal(index.coverage.sourceFamilies,9);
   assert.equal(index.coverage.explicitNonzeroCategoryRows,2198);
