@@ -6,10 +6,13 @@
 import type {OfficialCampaign} from './origins.ts';
 import {OFFICIAL_PRIDE_REDEMPTION_CAMPAIGNS} from './official-pride-redemption.ts';
 import {ADDITIONAL_REDEMPTION_CAMPAIGNS} from './official-additional-redemption.ts';
+import {FESTIVAL_2024_COMMUNITY_REDEMPTION_CAMPAIGNS}
+  from './community-festival-2024.ts';
 
 export const OFFICIAL_CAMPAIGNS: readonly OfficialCampaign[] = Object.freeze([
   ...OFFICIAL_PRIDE_REDEMPTION_CAMPAIGNS,
   ...ADDITIONAL_REDEMPTION_CAMPAIGNS,
+  ...FESTIVAL_2024_COMMUNITY_REDEMPTION_CAMPAIGNS,
   {
     campaignId:'twitch:2026-october-showcase',
     kind:'twitch_drop',

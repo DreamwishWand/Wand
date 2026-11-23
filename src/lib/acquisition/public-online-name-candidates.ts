@@ -44,7 +44,9 @@ interface CandidateCommon {
   readonly accountOwnershipVerified:false;
 }
 export interface PublicCampaignNameCandidate extends CandidateCommon {
-  readonly kind:'official_campaign_name_candidate';
+  readonly kind:'official_campaign_name_candidate'|'community_campaign_name_candidate';
+  readonly rewardMappingEvidence:'official_article_reward_text'|'community_archive_report_only';
+  readonly rewardSourceUrl:string;
   readonly campaignId:string;
   readonly campaignKind:OfficialCampaign['kind'];
   readonly rewardName:string;
@@ -89,6 +91,8 @@ export interface PublicCampaignRewardResolutionIndex {
   readonly campaignKind:OfficialCampaign['kind'];
   readonly name:string;
   readonly officialSourceUrl:string;
+  readonly rewardMappingEvidence:'official_article_reward_text'|'community_archive_report_only';
+  readonly rewardSourceUrl:string;
   readonly rewards:readonly PublicCampaignRewardResolution[];
   readonly acquisitionLinksVerified:false;
 }
@@ -101,6 +105,10 @@ export interface PublicOnlineNameCandidateCoverage {
   readonly uniquelyMatchedOfficialRewards:number;
   readonly ambiguousOfficialRewards:number;
   readonly unmatchedOfficialRewards:number;
+  readonly examinedCommunityCampaignRewardNames:number;
+  readonly uniquelyMatchedCommunityCampaignRewards:number;
+  readonly ambiguousCommunityCampaignRewards:number;
+  readonly unmatchedCommunityCampaignRewards:number;
   readonly examinedCommunityShopComponentRows:number;
   readonly uniquelyMatchedCommunityShopComponents:number;
   readonly ambiguousCommunityShopComponents:number;
@@ -119,7 +127,7 @@ export interface PublicOnlineNameCandidateIndex {
   getCampaignCandidates(campaignId:string):readonly PublicCampaignNameCandidate[];
   /** Includes unmatched and ambiguous names; never a verified Item origin. */
   getCampaignRewardResolution(campaignId:string):PublicCampaignRewardResolutionIndex|null;
-  /** All official campaign rewards, optionally by source type, without sale history. */
+  /** Official and explicitly community-attributed records, without sale inference. */
   listCampaignRewardResolutions(
     kind?:OfficialCampaign['kind']
   ):readonly PublicCampaignRewardResolutionIndex[];
@@ -187,6 +195,7 @@ export function indexPublicOnlineNameCandidates(
   const byAppearance=new Map<string,PublicShopNameCandidate[]>();
   const byProduct=new Map<string,PublicShopNameCandidate[]>();
   let official=0,officialMatched=0,officialAmbiguous=0,officialMissing=0;
+  let community=0,communityMatched=0,communityAmbiguous=0,communityMissing=0;
   let shop=0,shopMatched=0,shopAmbiguous=0,shopMissing=0;
   for(const campaign of campaigns) {
     requireValue(campaign&&typeof campaign.campaignId==='string'&&
@@ -195,6 +204,28 @@ export function indexPublicOnlineNameCandidates(
     requireValue(typeof campaign.name==='string'&&
       typeof campaign.source.sourceUrl==='string'&&
       !resolutionByCampaign.has(campaign.campaignId),'INVALID_CAMPAIGN_IDENTITY');
+    const communityEvidence=campaign.communityArchiveEvidence;
+    if(communityEvidence!==undefined){
+      requireValue(campaign.kind==='redeem_code'&&
+        communityEvidence.evidence==='community_code_and_reward_mapping_for_official_event'&&
+        communityEvidence.archiveKind==='community_wiki'&&
+        communityEvidence.archiveUrl===
+          'https://dreamlightvalleywiki.com/Festival_of_Foolishness_(2024)'&&
+        communityEvidence.officialArticleProvidesCodeTokens===false&&
+        communityEvidence.officialArticleProvidesRewardNames===false&&
+        communityEvidence.nativeRewardItemIdVerified===false&&
+        communityEvidence.actualRewardGrantedVerified===false&&
+        campaign.rewards.length>0&&
+        campaign.rewards.every((r:OfficialCampaign['rewards'][number])=>
+          r.itemId===null)&&
+        campaign.source.sourceUrl===
+          'https://disneydreamlightvalley.com/news/FestivalofFoolishness2024',
+        'COMMUNITY_REWARD_PROVENANCE');
+    }
+    const rewardMappingEvidence=communityEvidence===undefined?
+      'official_article_reward_text' as const:
+      'community_archive_report_only' as const;
+    const rewardSourceUrl=communityEvidence?.archiveUrl??campaign.source.sourceUrl;
     const rewardResolutions:PublicCampaignRewardResolution[]=[];
     for(const reward of campaign.rewards){
       requireValue(typeof reward.name==='string','INVALID_REWARD_NAME');
@@ -215,13 +246,21 @@ export function indexPublicOnlineNameCandidates(
         claimedByPlayerVerified:false as const
       }));
       if(reward.itemId!==null)continue;
-      official++;
+      if(communityEvidence===undefined)official++;else community++;
       const ids=names.get(reward.name)??[];
-      if(ids.length>1){officialAmbiguous++;continue;}
-      if(ids.length===0){officialMissing++;continue;}
-      officialMatched++;
+      if(ids.length>1){
+        if(communityEvidence===undefined)officialAmbiguous++;else communityAmbiguous++;
+        continue;
+      }
+      if(ids.length===0){
+        if(communityEvidence===undefined)officialMissing++;else communityMissing++;
+        continue;
+      }
+      if(communityEvidence===undefined)officialMatched++;else communityMatched++;
       const candidate:PublicCampaignNameCandidate=Object.freeze({
-        kind:'official_campaign_name_candidate',
+        kind:communityEvidence===undefined?
+          'official_campaign_name_candidate':'community_campaign_name_candidate',
+        rewardMappingEvidence,rewardSourceUrl,
         itemId:ids[0],sourceName:reward.name,
         evidence:'exact_published_db00_en_name_only',
         gameVersion:'1.26.2',campaignId:campaign.campaignId,
@@ -238,6 +277,7 @@ export function indexPublicOnlineNameCandidates(
     const resolved:PublicCampaignRewardResolutionIndex=Object.freeze({
       campaignId:campaign.campaignId,campaignKind:campaign.kind,
       name:campaign.name,officialSourceUrl:campaign.source.sourceUrl,
+      rewardMappingEvidence,rewardSourceUrl,
       rewards:Object.freeze(rewardResolutions),
       acquisitionLinksVerified:false as const
     });
@@ -296,12 +336,16 @@ export function indexPublicOnlineNameCandidates(
     uniquelyMatchedOfficialRewards:officialMatched,
     ambiguousOfficialRewards:officialAmbiguous,
     unmatchedOfficialRewards:officialMissing,
+    examinedCommunityCampaignRewardNames:community,
+    uniquelyMatchedCommunityCampaignRewards:communityMatched,
+    ambiguousCommunityCampaignRewards:communityAmbiguous,
+    unmatchedCommunityCampaignRewards:communityMissing,
     examinedCommunityShopComponentRows:shop,
     uniquelyMatchedCommunityShopComponents:shopMatched,
     ambiguousCommunityShopComponents:shopAmbiguous,
     unmatchedCommunityShopComponents:shopMissing,
     distinctCandidateItemIds:byItem.size,
-    totalCandidateRelations:officialMatched+shopMatched,
+    totalCandidateRelations:officialMatched+communityMatched+shopMatched,
     verifiedOnlineAcquisitionLinks:0,
     verifiedNativeShopOfferIds:0,
     completeOnlineHistory:false

@@ -66,7 +66,8 @@ test('Public Steam 1.26.2 DB-00 reveals concrete Twitch Drops and code reward na
   assert.equal(result.getCampaignCandidates('code:DDVPRIDE2026').length,2);
   assert(result.coverage.uniquelyMatchedOfficialRewards>=6);
   assert.equal(result.coverage.examinedOfficialRewardNames,
-    OFFICIAL_CAMPAIGNS.reduce((count,c)=>count+c.rewards.filter(r=>r.itemId===null).length,0));
+    OFFICIAL_CAMPAIGNS.filter(c=>!c.communityArchiveEvidence)
+      .reduce((count,c)=>count+c.rewards.filter(r=>r.itemId===null).length,0));
   assert.equal(result.coverage.examinedOfficialRewardNames,
     result.coverage.uniquelyMatchedOfficialRewards+
     result.coverage.ambiguousOfficialRewards+result.coverage.unmatchedOfficialRewards);
@@ -163,7 +164,8 @@ test('Community Premium Shop name matches retain week, price and uncertainty wit
     .some(c=>c.itemId==='50900411'&&c.componentName==='Ballerina Dress'));
   assert.equal(result.coverage.totalCandidateRelations,
     result.coverage.uniquelyMatchedCommunityShopComponents+
-    result.coverage.uniquelyMatchedOfficialRewards);
+    result.coverage.uniquelyMatchedOfficialRewards+
+    result.coverage.uniquelyMatchedCommunityCampaignRewards);
   assert.equal(result.coverage.distinctCandidateItemIds,
     new Set([
       ...result.getCampaignCandidates('twitch:2023-launch').map(r=>r.itemId),
@@ -255,7 +257,7 @@ test('Official campaign reward browser retains every unresolved name and never t
     ['50400102'],['40001607'],['40001609'],['50700124']
   ]);
   const onlyCodes=index.listCampaignRewardResolutions('redeem_code');
-  assert.equal(onlyCodes.length,20);
+  assert.equal(onlyCodes.length,29);
   assert(onlyCodes.includes(code));
   assert.equal(onlyCodes.filter(x=>x.campaignId.startsWith('code:PRIDE2023')).length,8);
   assert.equal(onlyCodes.filter(x=>/^code:PRIDE[A-Z]+24$/.test(x.campaignId)).length,8);
@@ -293,4 +295,60 @@ test('Ambiguous English names preserve multiple candidate Item IDs in reward res
   assert.equal(chair.acquisitionLinkVerified,false);
   assert.equal(index.getCampaignCandidates('twitch:2023-launch')
     .some(r=>r.rewardName==='Gamer Chair'),false);
+});
+
+
+test('2024 community-archived festival rewards are name candidates only, never official numeric grants',()=>{
+  const index=indexPublicOnlineNameCandidates(
+    actualPublishedDb00(),OFFICIAL_CAMPAIGNS,[]
+  );
+  assert.equal(index.coverage.examinedOfficialRewardNames,70);
+  assert.equal(index.coverage.examinedCommunityCampaignRewardNames,20);
+  assert.equal(
+    index.coverage.examinedCommunityCampaignRewardNames,
+    index.coverage.uniquelyMatchedCommunityCampaignRewards+
+    index.coverage.ambiguousCommunityCampaignRewards+
+    index.coverage.unmatchedCommunityCampaignRewards
+  );
+  const festival=index.listCampaignRewardResolutions('redeem_code').filter(
+    c=>c.campaignId.startsWith('code:FOF')
+  );
+  assert.equal(festival.length,9);
+  assert.equal(festival.reduce((n,c)=>n+c.rewards.length,0),20);
+  const byCode=index.getCampaignRewardResolution('code:FOFGEMS24');
+  assert(byCode);
+  assert.equal(byCode.rewardMappingEvidence,'community_archive_report_only');
+  assert.equal(byCode.officialSourceUrl,
+    'https://disneydreamlightvalley.com/news/FestivalofFoolishness2024');
+  assert.equal(byCode.rewardSourceUrl,
+    'https://dreamlightvalleywiki.com/Festival_of_Foolishness_(2024)');
+  assert.deepEqual(byCode.rewards.map(x=>x.name),['Diamond','Ruby','Sapphire']);
+  assert(byCode.rewards.every(x=>x.sourceSuppliedItemId===null&&
+    x.acquisitionLinkVerified===false&&x.claimedByPlayerVerified===false));
+  const matched=index.getCampaignCandidates('code:FOFGEMS24');
+  assert(matched.length>0);
+  assert(matched.every(x=>
+    x.kind==='community_campaign_name_candidate'&&
+    x.rewardMappingEvidence==='community_archive_report_only'&&
+    x.rewardSourceUrl===byCode.rewardSourceUrl&&
+    x.officialSourceUrl===byCode.officialSourceUrl&&
+    x.evidence==='exact_published_db00_en_name_only'&&
+    x.acquisitionLinkVerified===false&&
+    x.actualRewardGrantedVerified===false&&
+    x.accountOwnershipVerified===false));
+  const official=index.getCampaignCandidates('code:DDVPRIDE2026');
+  assert(official.length>0);
+  assert(official.every(x=>x.kind==='official_campaign_name_candidate'&&
+    x.rewardMappingEvidence==='official_article_reward_text'&&
+    x.rewardSourceUrl===x.officialSourceUrl));
+  const forged=OFFICIAL_CAMPAIGNS.map(c=>c.campaignId!=='code:FOFGEMS24'?c:{
+    ...c,communityArchiveEvidence:{
+      ...c.communityArchiveEvidence,
+      officialArticleProvidesRewardNames:true
+    }
+  });
+  assert.throws(
+    ()=>indexPublicOnlineNameCandidates(actualPublishedDb00(),forged,[]),
+    /DB02_PUBLIC_NAME_COMMUNITY_REWARD_PROVENANCE/
+  );
 });

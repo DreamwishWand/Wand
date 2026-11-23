@@ -82,9 +82,9 @@ test('two original official codes and one explicitly community-corroborated code
     c.kind==='redeem_code'&&c.availability==='not_live_verified'&&
     c.rewards.every(r=>r.itemId===null&&r.quantity===1)&&
     Object.isFrozen(c)&&Object.isFrozen(c.rewards)&&Object.isFrozen(c.source)));
-  assert.equal(OFFICIAL_CAMPAIGNS.filter(c=>c.kind==='redeem_code').length,20);
+  assert.equal(OFFICIAL_CAMPAIGNS.filter(c=>c.kind==='redeem_code').length,29);
   const ledger=createAcquisitionOriginDatabase([],OFFICIAL_CAMPAIGNS);
-  assert.equal(ledger.getCoverage().rewardNamesAwaitingItemId,70);
+  assert.equal(ledger.getCoverage().rewardNamesAwaitingItemId,90);
   assert.equal(ledger.getCampaign('code:DDV2024OOOOO')?.code,boo.code);
   assert.equal(ledger.getCampaign('code:COMMUNITYCOMPANIONDRAGON2025')?.code,
     dragon.code);
