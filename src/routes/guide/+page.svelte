@@ -126,7 +126,7 @@
       <div class="timeline-title">
         <WandIcon name="grid" size={19}/>
         <strong>イベント</strong>
-        <span class="zone">JST</span>
+        <span class="zone" title="タイムラインの日付軸は日本時間。選択したイベントの日時は閲覧者の現地時間">JST軸</span>
         <details class="source-info">
           <summary aria-label="日程の出典と注意"><WandIcon name="info" size={17}/></summary>
           <p>公式発表とSteam v1.26.2の保存済みデータ（確認日：{GUIDE_EVENT_CALENDAR_AS_OF}）。ゲームサーバーの開催状況をリアルタイム確認したものではありません。時刻未確認のイベントは日付単位で表示します。</p>
@@ -228,7 +228,7 @@
         <div class="event-inspector" aria-label="選択したイベントの詳細">
           <div class="event-inspector-heading">
             <WandIcon name={eventIcon(selected)} size={22}/>
-            <div><strong>{selected.title}</strong><small>{stateName(selected)} · 日程情報</small></div>
+            <div><strong>{selected.title}</strong><small>{stateName(selected)} · {selected.precision==='utc-instant'?viewerZone:'日付のみ'}</small></div>
             <button class="close" aria-label="詳細を閉じる" on:click={()=>selectedId=null}>
               <WandIcon name="close" size={18}/>
             </button>
