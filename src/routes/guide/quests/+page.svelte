@@ -5,7 +5,9 @@
   import {autoAppend} from '$lib/ui/auto-append';
   import {collectWindow} from '$lib/ui/collect-window.mjs';
   import {verifyPublicQuestIndex,filterPublicQuests,publicQuestSection,findPublicQuestByLink,loadPublicQuestPart,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
-  import {loadPublicQuestTargetsIndex,loadPublicQuestTargetsPart,itemTargetName,originalTargetLookup} from '$lib/guide/public-targets.mjs';
+  import {loadPublicQuestTargetsIndex,loadPublicQuestTargetsPart,itemTargetName,originalTargetLookup,
+    type PublicQuestTargetIndex,type PublicQuestTargetPart,type PublicQuestTargetEntry
+  } from '$lib/guide/public-targets.ts';
   import {publicQuestStepIndex,publicQuestStepQuery} from '$lib/guide/public-quest-steps.ts';
   import {loadPublicQuestConditions,publicConditionText,PUBLIC_QUEST_CONDITIONS_FILE,
     type PublicQuestConditionReader} from '$lib/guide/public-quest-conditions.ts';
@@ -41,7 +43,7 @@
   $: visibleSteps=selected?.steps?
     (showAllSteps?selected.steps:selected.steps.slice(activeStep,activeStep+1)):[];
   const cached=new Map<number,any>();
-  const cachedTargets=new Map<number,any>();
+  const cachedTargets=new Map<number,PublicQuestTargetPart>();
   let conditionIndex:PublicQuestConditionReader|null=null;
   let rewardIndex:PublicQuestRewardsReader|null=null;
   let overrideIndex:QuestOverrideLootIndex|null=null;
@@ -50,11 +52,11 @@
   let rewardItemFocus:string|null=null;
   let rewardError='';
   let conditionError='';
-  let targetIndex:any=null;
+  let targetIndex:PublicQuestTargetIndex|null=null;
   let targetReverseIndex:PublicQuestTargetReverseReader|null=null;
   let targetItemFocus:string|null=null;
   let targetReverseError=false;
-  let targetLookup:Record<string,any[]>={};
+  let targetLookup:Record<string,readonly PublicQuestTargetEntry[]>={};
   let targetLoading=false;
   let targetError='';
   const prefix=`${base}/guide/public/`;
@@ -129,7 +131,7 @@
     url.searchParams.set('step',chosen.get('step')||'1');
     window.history.pushState(window.history.state,'',url);
   }
-  function objectiveText(goal:any,target:any,language:string){
+  function objectiveText(goal:any,target:PublicQuestTargetEntry|undefined,language:string){
     let value=label(goal.text,goal.type,language);
     if(!target)return value;
     if(target.amount?.kind==='value' && Number.isSafeInteger(target.amount.value)){
