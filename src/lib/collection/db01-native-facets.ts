@@ -18,11 +18,41 @@ export type CollectionDb01Facet=typeof COLLECTION_DB01_FACETS[number];
 export type CollectionDb01Pair=readonly [facet:CollectionDb01Facet,key:string];
 export type CollectionDb01Row=readonly [itemId:number,tags:readonly CollectionDb01Pair[]];
 
+// Native CollectionSubMenu definitions from the verified Steam v1.26.2
+// IL2CPP enum, kept independent of user-facing progress/visibility evidence.
+export const COLLECTION_DB01_SUBMENUS=Object.freeze([
+  {code:0,family:'Ingredients',native:'Crop'},
+  {code:1,family:'Fish',native:'Fish'},
+  {code:2,family:'Meals',native:'Meals'},
+  {code:3,family:'Furniture',native:'FurnitureSets'},
+  {code:4,family:'Clothing',native:'ClothingSets'},
+  {code:6,family:'Memories',native:'Memories'},
+  {code:7,family:'Characters',native:'Characters'},
+  {code:8,family:'Foraging',native:'Foraging'},
+  {code:9,family:'Gems',native:'Minerals'},
+  {code:10,family:'Crafting',native:'Crafting'},
+  {code:11,family:'Timebending',native:'TimeBending'},
+  {code:12,family:'Board Game',native:'BoardGame'},
+  {code:13,family:'Snippets',native:'Snippets'},
+  {code:14,family:'Lorekeeper Tales',native:'Stories'},
+  {code:15,family:'Companions',native:'Companions'},
+  {code:16,family:'Mounts',native:'Mounts'},
+  {code:17,family:'Photo Gallery',native:'PhotoGallery'},
+  {code:18,family:'Quest Puzzles',native:'QuestPuzzles'},
+  {code:19,family:'Exhibition',native:'Exhibition'},
+  {code:20,family:'Adventure Companions',native:'Sidekicks'},
+] as const);
+export type CollectionDb01SubmenuCode=typeof COLLECTION_DB01_SUBMENUS[number]['code'];
+const nativeCodeSet=new Set<number>(COLLECTION_DB01_SUBMENUS.map(x=>x.code));
+
 export interface CollectionDb01Index{
   readonly release:'steam-1.26.2-item-id-master-v1';
   readonly sourceItemCount:13202;
   readonly taggedItems:number;
   readonly byItem:ReadonlyMap<number,readonly CollectionDb01Pair[]>;
+  /** The original menu candidate index is separate from tag filtering. */
+  readonly categoriesByItem:ReadonlyMap<number,readonly CollectionDb01SubmenuCode[]>;
+  readonly itemsByCategory:ReadonlyMap<CollectionDb01SubmenuCode,readonly number[]>;
 }
 export interface CollectionDb01Option {
   readonly key:string;
@@ -57,6 +87,35 @@ export function parseCollectionDb01Facets(payload:unknown):CollectionDb01Index{
     Number.isInteger(payload.taggedItems)&&
     payload.taggedItems===payload.items.length&&
     payload.taggedItems<=payload.sourceItemCount,'INVALID_MANIFEST');
+  // A missing category projection is accepted for synthetic and legacy tag
+  // tests but the shipped public index must carry it for visible categories.
+  const categoriesByItem=new Map<number,readonly CollectionDb01SubmenuCode[]>();
+  const itemsByCategory=new Map<CollectionDb01SubmenuCode,number[]>();
+  if(payload.categoryItems!==undefined){
+    assert(payload.categoryEvidence===
+      'original_collectionset_source_candidate_or_verified_native_item_type'&&
+      payload.gameRuntimeMembershipVerified===false&&
+      Array.isArray(payload.categoryItems)&&
+      payload.categoryItemCount===payload.categoryItems.length&&
+      payload.categoryItemCount<=13202,'CATEGORY_MANIFEST');
+    let last=0;
+    for(const value of payload.categoryItems){
+      assert(Array.isArray(value)&&value.length===2&&validId(value[0])&&
+        value[0]>last&&Array.isArray(value[1])&&
+        value[1].length>0&&value[1].every((code:unknown)=>
+          Number.isInteger(code)&&nativeCodeSet.has(code as number))&&
+        new Set(value[1]).size===value[1].length,
+        'CATEGORY_ITEM');
+      last=value[0] as number;
+      const codes=Object.freeze([...(value[1] as CollectionDb01SubmenuCode[])]);
+      categoriesByItem.set(last,codes);
+      for(const code of codes){
+        const list=itemsByCategory.get(code)??[];
+        list.push(last);
+        itemsByCategory.set(code,list);
+      }
+    }
+  }
   const byItem=new Map<number,readonly CollectionDb01Pair[]>();
   let prev=0;
   for(const entry of payload.items){
@@ -72,7 +131,9 @@ export function parseCollectionDb01Facets(payload:unknown):CollectionDb01Index{
     release:'steam-1.26.2-item-id-master-v1' as const,
     sourceItemCount:13202 as const,
     taggedItems:byItem.size,
-    byItem
+    byItem,
+    categoriesByItem,
+    itemsByCategory
   });
 }
 export async function loadCollectionDb01Facets(
@@ -115,6 +176,11 @@ export function collectionDb01Groups(
       .sort((a,b)=>b.count-a.count||a.key.localeCompare(b.key,'en'));
     return [{facet,options}];
   });
+}
+export function collectionDb01InCategory(
+  index:CollectionDb01Index,itemId:number,code:CollectionDb01SubmenuCode
+):boolean{
+  return index.categoriesByItem.get(itemId)?.includes(code)??false;
 }
 export function collectionDb01Matches(
   index:CollectionDb01Index,itemId:number,facet:CollectionDb01Facet,key:string
