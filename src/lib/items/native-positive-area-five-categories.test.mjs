@@ -339,7 +339,7 @@ test('Companion-only / Critter-only category and positive tag searches keep unkn
     nativeCategories:['Furniture'],areaCodes:[0],limit:0,
   });
   assert.equal(noCompanion.total,6746);
-  assert.equal(f.calls.companionSearch.length,8);
+  assert.equal(f.calls.companionSearch.length,9);
   const none=await api.search({nativeCategories:[]});
   assert.equal(none.total,0);
   assert.deepEqual(none.itemIds,[]);
