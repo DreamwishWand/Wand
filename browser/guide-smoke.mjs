@@ -204,12 +204,36 @@ try {
     /別定義のLoot Table候補/);
   assert.doesNotMatch(await override.locator('.detail .quest-rewards').innerText(),
     /参照先未解決の追加報酬設定/);
+  // The current verified public DB-00 release exposes a native, localized
+  // Mine Cart Popcorn Bucket definition for this original Quest Loot candidate.
+  const rewardLink=override.getByRole('link',
+    {name:'Collectionで開く：ポップコーンバケット（荷車）'});
+  await rewardLink.waitFor({timeout:25000});
+  assert.equal(await rewardLink.getAttribute('href'),'/Wand/collection/?item=40004032');
+  await rewardLink.click();
+  await override.locator('.item-inspector h2').waitFor({timeout:30000});
+  assert.match(await override.locator('.item-inspector h2').innerText(),
+    /ポップコーンバケット（荷車）|Mine Cart Popcorn Bucket/);
+  await override.goBack({waitUntil:'domcontentloaded'});
+  await override.locator('.detail .quest-rewards .reward-item-match')
+    .filter({hasText:'40004032'}).first().waitFor({timeout:25000});
   await override.goto(url+'?item=30200002&quest=2070001383',
     {waitUntil:'domcontentloaded'});
   await override.locator('.detail .quest-rewards .reward-item-match')
     .filter({hasText:'30200002'}).first().waitFor({timeout:25000});
   assert.match(await override.locator('.detail .quest-rewards').innerText(),
     /原本の抽選回数欄は最大値の特殊値/);
+  const appleLink=override.getByRole('link',{name:'Collectionで開く：リンゴ'});
+  await appleLink.waitFor({timeout:25000});
+  assert.equal(await appleLink.getAttribute('href'),'/Wand/collection/?item=30200002');
+  // Source currency IDs not present in the published native ItemList remain
+  // visible in the Guide but must never acquire invented Collection links.
+  await override.goto(url+'?item=80000000&quest=2070000672',
+    {waitUntil:'domcontentloaded'});
+  const unknownCurrency=override.locator('.quest-reward-block li.reward-item-match')
+    .filter({hasText:'80000000'}).first();
+  await unknownCurrency.waitFor({timeout:25000});
+  assert.equal(await unknownCurrency.locator('.reward-collection-link').count(),0);
   assert.equal(await override.evaluate(()=>
     document.documentElement.scrollWidth<=innerWidth+2),true);
   assert.deepEqual(overrideErrors,[],overrideErrors.join('\\n'));
