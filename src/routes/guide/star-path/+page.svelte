@@ -5,8 +5,8 @@
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {autoAppend} from '$lib/ui/auto-append';
   import {loadPublicStarpath} from '$lib/guide/public-starpath.mjs';
-  import {loadStarpathWeeklyLocales,starpathWeeklyDescription} from '$lib/guide/public-starpath-locales.mjs';
-  import {loadStarpathDailyLocales,starpathDailyDescription} from '$lib/guide/public-starpath-daily.mjs';
+  import {loadStarpathWeeklyLocales,starpathWeeklyDescription} from '$lib/guide/public-starpath-locales.ts';
+  import {loadStarpathDailyLocales,starpathDailyDescription} from '$lib/guide/public-starpath-daily.ts';
   import {starpathRewardDisplayName,loadStarpathRewardExtras} from '$lib/guide/starpath-reward-extras.mjs';
   import {createGuideRewardIndex,type GuideRewardIndex} from '$lib/guide/reward-relations.ts';
   import {createGuideStarpathHistory,type GuideStarpathHistory} from '$lib/guide/starpath-history.ts';
