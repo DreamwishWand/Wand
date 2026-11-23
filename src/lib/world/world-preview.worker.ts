@@ -7,7 +7,7 @@
  */
 import { openLocalWorldZip } from './local-snapshot.ts';
 import { WorldSourceLoadEpoch } from './world-source-load-epoch.ts';
-import { getNativeTerrainWindow } from './native-terrain-preview.ts';
+import { getNativeTerrainWindow,getNativeTerrainRaster } from './native-terrain-preview.ts';
 import { findOriginalItemAnchor, findOriginalItemAnchorAcrossGrids } from './native-item-anchor-finder.ts';
 import { getOriginalGridAreaEvidence } from './native-gridarea-evidence.ts';
 import { getOriginalGridAreaLocalWindow } from './native-gridarea-local-window.ts';
@@ -29,6 +29,7 @@ type Rect = Readonly<{x:number; y:number; width:number; height:number}>;
 type Request =
   | { command:'clear'; requestId:number }
   | { command:'load'; requestId:number; file:Blob }
+  | { command:'terrain-raster'; requestId:number; viewKey:string; gridIdNative:number }
   | { command:'view'; requestId:number; viewKey:string;
       gridIdNative:number; rect:Rect; offset:number;
       includeDefaultLayers:boolean }
@@ -113,6 +114,12 @@ function parseRequest(data:unknown): Request {
     return {command:'find-anchor',requestId,
       viewKey:data.viewKey,gridIdNative:data.gridIdNative,
       itemId:data.itemId,matchIndex:data.matchIndex};
+  if(data.command==='terrain-raster'&&
+      typeof data.viewKey==='string'&&data.viewKey.length>0&&
+      data.viewKey.length<=2048&&
+      nonnegative(data.gridIdNative)&&data.gridIdNative<=0xffffffff)
+    return {command:'terrain-raster',requestId,
+      viewKey:data.viewKey,gridIdNative:data.gridIdNative};
   if (data.command==='view' &&
       typeof data.viewKey==='string' && data.viewKey.length>0 &&
       nonnegative(data.gridIdNative) && validRect(data.rect) &&
@@ -208,6 +215,18 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
     const sourceView=views.find(view=>view.viewKey===message.viewKey);
     if (!sourceView)
       throw new TypeError('Unknown local World view');
+    if(message.command==='terrain-raster'){
+      const grid=sourceView.grids.find(
+        item=>item.gridIdNative===message.gridIdNative);
+      if(!grid)throw new TypeError('Unknown original source Grid ID');
+      const result=getNativeTerrainRaster(catalog,grid.gridDataPath);
+      worker.postMessage({
+        kind:'terrain-raster',requestId,viewKey:sourceView.viewKey,
+        gridIdNative:message.gridIdNative,gridDataPath:grid.gridDataPath,
+        result
+      });
+      return;
+    }
     if(message.command==='candidate-probe'){
       if(!sourceView.grids.some(g=>g.gridIdNative===message.gridIdNative))
         throw new TypeError('Unknown original source Grid ID');
