@@ -46,11 +46,11 @@
   let storyArc:PublicQuestStoryArc='valley';
   const arcs:readonly {id:PublicQuestStoryArc;name:string}[]=[
     {id:'valley',name:'ドリームライトバレー'},
-    {id:'rift',name:'リフト・イン・タイム'},
-    {id:'storybook',name:'ストーリーブック・ヴェール'},
-    {id:'ranch',name:'ウィッシュブロッサム・ランチ'},
-    {id:'honeyglow',name:'ハニーグロウ・ウッズ'},
-    {id:'keepsake',name:'The Keepsake Sea'}
+    {id:'rift',name:'時間の裂け目'},
+    {id:'storybook',name:'物語の谷'},
+    {id:'ranch',name:'願い咲く牧場'},
+    {id:'honeyglow',name:'ハニーグローの森'},
+    {id:'keepsake',name:'思い出の海'}
   ];
   let objective='';
   let limit=40;
