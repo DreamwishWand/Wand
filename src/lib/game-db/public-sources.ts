@@ -26,6 +26,21 @@ import {
   type PublicQuestTargetReverseReader
 } from '../guide/public-quest-target-reverse.ts';
 import {
+  loadPublicEventFriendshipRewards,DB03_EVENT_FRIENDSHIP_REWARD_FILE
+} from '../guide/public-event-friendship-rewards.ts';
+import {
+  loadPublicEventQuestLinks,DB03_EVENT_QUEST_FILE
+} from '../guide/public-event-quest-links.ts';
+import {
+  loadPublicEventDutyLinks,DB03_EVENT_DUTY_FILE
+} from '../guide/public-event-duty-links.ts';
+import {
+  loadPublicEventSceneLinks,DB03_EVENT_SCENE_FILE
+} from '../guide/public-event-scene-links.ts';
+import {
+  createDb00PublicEventSources,type Db00PublicEventSources
+} from './event-relations.ts';
+import {
   createDb00PublicItemSearch,
   type Db00PublicItemSearchRequest,type Db00PublicItemSearchResult
 } from './public-search.ts';
@@ -41,6 +56,7 @@ export interface PublicSharedGameSources{
   readonly acquisition:PublicSourceCatalog;
   readonly guide:GuideRewardIndex;
   readonly guideQuestTargets:PublicQuestTargetReverseReader;
+  readonly guideEvents:Db00PublicEventSources;
   readonly hasPrivateGameSource:false;
   readonly currentAvailabilityVerified:false;
   readonly playerOwnershipVerified:false;
@@ -90,19 +106,40 @@ export async function openPublicSharedGameSources(
   // Quest catalogue is already requested by DB-02. Share the exact HTTP
   // response bytes with its verified loader, then let DB-03 independently
   // validate the quest catalogue and SHA-pinned target reverse index.
-  const questTargetTask=(async()=>{
+  const questCatalogueTask=(async()=>{
     const res=await once(basePath+'/guide/public/quest-index.json');
     assert(res.ok,'QUEST_INDEX_DOWNLOAD_FAILED');
-    return loadPublicQuestTargetReverse(
-      await res.json(),
-      basePath+'/guide/public/'+DB03_QUEST_TARGET_REVERSE_FILE,once
-    );
+    return res.json();
   })();
-  const [database,acquisition,guide,guideQuestTargets]=await Promise.all([
+  const questTargetTask=questCatalogueTask.then(catalogue=>
+    loadPublicQuestTargetReverse(
+      catalogue,
+      basePath+'/guide/public/'+DB03_QUEST_TARGET_REVERSE_FILE,once
+    )
+  );
+  const eventSourceTask=loadPublicEventFriendshipRewards(
+    basePath+'/guide/public/'+DB03_EVENT_FRIENDSHIP_REWARD_FILE,once
+  );
+  const eventTask=Promise.all([questCatalogueTask,eventSourceTask])
+    .then(async ([catalogue,events])=>{
+      const [quest,duty,scene]=await Promise.all([
+        loadPublicEventQuestLinks(
+          events,catalogue,basePath+'/guide/public/'+DB03_EVENT_QUEST_FILE,once
+        ),
+        loadPublicEventDutyLinks(
+          events,basePath+'/guide/public/'+DB03_EVENT_DUTY_FILE,once
+        ),
+        loadPublicEventSceneLinks(
+          events,basePath+'/guide/public/'+DB03_EVENT_SCENE_FILE,once
+        )
+      ]);
+      return createDb00PublicEventSources(events,quest,duty,scene);
+    });
+  const [database,acquisition,guide,guideQuestTargets,guideEvents]=await Promise.all([
     openSharedGameDatabase(basePath,once),
     loadPublicSourceCatalog(basePath,once),
     loadGuideRewardIndex(basePath+'/guide/public/starpath-cache-2026-11-22.json',once),
-    questTargetTask
+    questTargetTask,eventTask
   ]);
   const joined=joinCurrentGameSources(database,{
     origins:acquisition.origins,rewards:guide,
@@ -131,11 +168,20 @@ export async function openPublicSharedGameSources(
     guideQuestTargets.coverage.sourceCandidateOccurrences===4897 &&
     guideQuestTargets.coverage.mandatoryRequirementVerified===false &&
     guideQuestTargets.coverage.playerProgressVerified===false &&
+    guideEvents.gameVersion==='1.26.2' &&
+    guideEvents.counts.publicEvents===23 &&
+    guideEvents.counts.eventQuestReferences===62 &&
+    guideEvents.counts.eventDutyReferences===79 &&
+    guideEvents.counts.festivalSceneReferences===17 &&
+    guideEvents.counts.expansionVillageSceneReferences===6 &&
+    guideEvents.sourceConfigurationOnly===true &&
+    guideEvents.currentAvailabilityVerified===false &&
+    guideEvents.playerProgressVerified===false &&
     joined.snapshotId===database.snapshotId,'CROSS_SOURCE_MISMATCH');
   return Object.freeze({
     schema:DB00_PUBLIC_SOURCES_SCHEMA,
     snapshotId:database.snapshotId,database,joined,acquisition,guide,
-    guideQuestTargets,
+    guideQuestTargets,guideEvents,
     hasPrivateGameSource:false as const,
     currentAvailabilityVerified:false as const,
     playerOwnershipVerified:false as const,
