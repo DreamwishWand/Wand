@@ -196,6 +196,9 @@
     10:'Source Fish',11:'Source Ingredient',15:'Source Consumable',
     16:'Source Mineral',17:'Source Crafting Material'
   };
+  const sourceActivityLegacyFamilies=new Set([
+    'Source Activity Items',...Object.values(sourceActivityLegacyNames)
+  ]);
   /** Source-exact IL2CPP ItemType is a browse axis, never an invented
    * CollectionSet category. Use the original enum when no localized UI label
    * was independently established. */
@@ -1384,7 +1387,7 @@
             {#if originalClassesOpen||!sourceIndex}
               <div class="facet-grid">
                 {#each scopedCategoryFacets.filter(facet=>
-                  !(facet.id==='Source Activity Items'&&sourceActivityTypeCards.length)) as facet (facet.id)}
+                  !(sourceActivityTypeCards.length&&sourceActivityLegacyFamilies.has(facet.id))) as facet (facet.id)}
                   <button type="button" class="facet-card" disabled={facet.total===0}
                     on:click={()=>chooseFacet(facet.id)}>
                     <span class="facet-flourish" aria-hidden="true">
