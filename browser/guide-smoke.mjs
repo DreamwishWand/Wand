@@ -583,7 +583,7 @@ try {
     'historic online-only passes must not link to current season duties');
   assert.equal(await hub.locator('.event-inspector a[href^="https://disneydreamlightvalley.com/"]').count(),1);
   await hub.locator('.calendar-year').selectOption('2023');
-  assert.match(await hub.locator('.timeline-content').innerText(),/Trick or Treat/);
+  assert.match(await hub.locator('.timeline-content').innerText(),/Eggstravaganza/);
   assert.equal(await hub.locator('.timeline-bar.other').count(),1,
     '2023 verified game-calendar event must be available from the archive');
   assert.equal(await hub.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),true,
