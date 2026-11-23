@@ -138,7 +138,10 @@ test('Quest Svelte view displays published names only after source verification 
   const page=await readFile(new URL('../src/routes/guide/quests/+page.svelte',import.meta.url),'utf8');
   assert.match(page,/loadPublicQuestRewardItemLabels\(data,verified/);
   assert.match(page,/rewardLabels=labels/);
-  assert.match(page,/rewardItemName\(reward.itemId,'アイテム'\)/);
-  assert.match(page,/rewardCollectionHref\(reward.itemId\)/);
-  assert.match(page,/rewardItemName\(questOverrideInfo.itemId,'アイテム'\)/);
+  assert.match(page,/rewardLabels\?\.getDisplayName\(reward.itemId,locale\)/);
+  assert.match(page,/rewardLabels\?\.getCollectionHref\(reward.itemId,base\)/);
+  assert.match(page,/rewardLabels\?\.getDisplayName\(questOverrideInfo.itemId,locale\)/);
+  assert.match(page,/rewardLabels\?\.getCollectionHref\(questOverrideInfo.itemId,base\)/);
+  assert.doesNotMatch(page,/function rewardCollectionHref/,
+    'async label updates must be explicit in markup dependency expressions');
 });
