@@ -81,7 +81,8 @@ export function sanitizePositiveListInventoryOwnership(input:unknown):
     if(!record(row))throw new TypeError('SAVED_LIST_OWNERSHIP_INVALID_WORKER_REPLY');
     if(Object.keys(row).length!==2||
       typeof row.itemId!=='number'||!Number.isSafeInteger(row.itemId)||
-      row.itemId<=last||!Object.hasOwn(ROLE_ITEM_TYPE,String(row.role)))fail();
+      row.itemId<=last||!Object.hasOwn(ROLE_ITEM_TYPE,String(row.role)))
+      throw new TypeError('SAVED_LIST_OWNERSHIP_INVALID_WORKER_REPLY');
     const role=row.role as PositiveOwnershipRole;
     if(Math.trunc(row.itemId/10_000_000)!==ROLE_ITEM_TYPE[role])fail();
     last=row.itemId;
