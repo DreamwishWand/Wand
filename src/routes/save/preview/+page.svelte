@@ -427,16 +427,16 @@
     cancel();result=null;
     mixedQueue=[...mixedQueue,edit];
   }
-  function queueMixedFromCoordinates(){
+  function draftMixedFromCoordinates():GridMixedPlan|null{
     const row=coordinateSelection;
-    if(!row||!row.coordinatesObserved||row.x===null||row.y===null){
-      enqueueMixedEdit(null);return;
-    }
+    if(!row||!row.coordinatesObserved||row.x===null||row.y===null)
+      return null;
     const coord=selectedCoordinatePlan();
     const old=isCardinal(row.orientation)?row.orientation:null;
     const rotated=old!==null&&isCardinal(coordinateOrientationValue)&&
       old!==coordinateOrientationValue;
-    enqueueMixedEdit(coord||rotated?{
+    if(!coord&&!rotated)return null;
+    return {
       localOrdinal:row.localOrdinal,itemId:row.itemId,
       recordKind:row.recordKind,expectedX:row.x,expectedY:row.y,
       replacementX:coord?.replacementX??null,
@@ -444,7 +444,50 @@
       expectedOrientation:rotated?old:null,
       replacementOrientation:rotated
         ?coordinateOrientationValue as CardinalOrientation:null
-    }:null);
+    };
+  }
+  function queueMixedFromCoordinates(){
+    enqueueMixedEdit(draftMixedFromCoordinates());
+  }
+  function beginQueuedMixedRevision(edit:GridMixedPlan){
+    if(processing||!savedSlotsFile||savedSlotsFile!==activeFile)return;
+    const row=gridInstances[edit.localOrdinal-1];
+    if(!row||row.localOrdinal!==edit.localOrdinal||
+       !row.coordinatesObserved||row.x!==edit.expectedX||
+       row.y!==edit.expectedY||row.itemId!==edit.itemId||
+       row.recordKind!==edit.recordKind||
+       (edit.expectedOrientation!==null&&
+        row.orientation!==edit.expectedOrientation))return;
+    // Use one editor for orientation-only, coordinate-only, and combined
+    // drafts. The original source is unchanged, even for group rotations.
+    selectGridInstance(row);
+    coordinateX=String(edit.replacementX??row.x);
+    coordinateY=String(edit.replacementY??row.y);
+    coordinateOrientationValue=edit.replacementOrientation??
+      (isCardinal(row.orientation)?row.orientation:'');
+  }
+  function updateQueuedMixed(){
+    const candidate=draftMixedFromCoordinates();
+    const existing=candidate&&mixedQueue.find(edit=>
+      edit.localOrdinal===candidate.localOrdinal);
+    if(!candidate||!existing||!savedSlotsFile||
+       savedSlotsFile!==activeFile||
+       candidate.itemId!==existing.itemId||
+       candidate.recordKind!==existing.recordKind||
+       candidate.expectedX!==existing.expectedX||
+       candidate.expectedY!==existing.expectedY||
+       (existing.expectedOrientation!==null&&
+        existing.expectedOrientation!==
+          (isCardinal(coordinateSelection?.orientation??null)
+            ?coordinateSelection?.orientation:null))){
+      invalidateCoordinateEdit();coordinateState='error';return;
+    }
+    // Replace only the user's selected draft. Rust/WASM will re-resolve
+    // the local ordinal and verify original identity/position/orientation
+    // for the entire atomic batch before exporting another P1G copy.
+    cancel();result=null;
+    mixedQueue=mixedQueue.map(edit=>
+      edit.localOrdinal===candidate.localOrdinal?candidate:edit);
   }
   function queueMixedFromOrientation(){
     const p=selectedOrientationPlan();
@@ -1715,6 +1758,14 @@
                   on:click={queueMixedFromCoordinates}>
                   一括配置変更に追加
                 </button>
+                {#if mixedQueue.some(p=>
+                  p.localOrdinal===coordinateSelection?.localOrdinal)}
+                  <button type="button" class="secondary"
+                    disabled={processing}
+                    on:click={updateQueuedMixed}>
+                    登録済みの配置変更を更新
+                  </button>
+                {/if}
                 <button type="button" class="secondary"
                   disabled={processing||coordinateQueue.length>=16||
                     coordinateQueue.some(p=>
@@ -1851,6 +1902,9 @@
                           →{edit.replacementOrientation.replace('GridOrientation_','')}
                         {/if}
                       </span>
+                      <button type="button" class="secondary" disabled={processing}
+                        aria-label={`配置編集 #${edit.localOrdinal} を修正`}
+                        on:click={()=>beginQueuedMixedRevision(edit)}>修正</button>
                       <button type="button" class="secondary" disabled={processing}
                         aria-label={`配置編集 #${edit.localOrdinal} を削除`}
                         on:click={()=>removeMixedEdit(edit.localOrdinal)}>削除</button>
