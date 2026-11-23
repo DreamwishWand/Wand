@@ -1771,6 +1771,9 @@ try{
   assert.equal(await unifiedSave.count(),0);
   assert.equal(await ownedPanel.getByRole('status').filter({hasText:'4件'}).count(),1,
     'clearing new edits keeps the currently reopened edited copy');
+  assert.equal(await regular.getByLabel('現在の数量').count(),0,
+    'clearing drafts closes the amount editor, not the active copied Save');
+  await copiedSlot.click();
   assert.equal(await regular.getByLabel('現在の数量').inputValue(),'252');
   // A large, synthetic local Save must not trap user-editable records
   // behind the old first-120-row cap in either workspace tab.
