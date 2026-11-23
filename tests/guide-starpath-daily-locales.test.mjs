@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.mjs';
-import {STARPATH_DAILY_RELEASE,verifyStarpathDailyPart,loadStarpathDailyPart,loadStarpathDailyLocales,starpathDailyDescription} from '../src/lib/guide/public-starpath-daily.mjs';
+import {STARPATH_DAILY_RELEASE,verifyStarpathDailyPart,loadStarpathDailyPart,loadStarpathDailyLocales,starpathDailyDescription} from '../src/lib/guide/public-starpath-daily.ts';
 const root=new URL('../static/guide/public/',import.meta.url);
 const read=async file=>readFile(new URL(file,root));
 const sha=data=>createHash('sha256').update(data).digest('hex');
@@ -49,4 +49,23 @@ test('public daily text resolves exact original language and fails closed on unk
   assert.equal(starpathDailyDescription(all,'__proto__','Task02','en'),null);
   assert.equal(starpathDailyDescription(all,'Seafaring2026','__proto__','en'),null);
   await assert.rejects(()=>loadStarpathDailyLocales('local/',[seasons[0],seasons[0]],fetcher),/season census/);
+});
+
+
+test('typed daily source contract rejects forged snapshot and preserves exact local-language closure',async()=>{
+  const catalog=await snapshot();
+  const source=catalog.seasons[0];
+  const original=JSON.parse(await read('starpath-daily-haunting-2026-11-22.json'));
+  const accepted=verifyStarpathDailyPart(original,source);
+  assert.equal(starpathDailyDescription({[source.id]:accepted},source.id,'Task01','es-ES'),
+    accepted[`${source.id}_Task01_Description`].es);
+  assert.equal(starpathDailyDescription({[source.id]:accepted},source.id,'Task01','__proto__'),null);
+  assert.equal(starpathDailyDescription(Object.create(null),source.id,'Task01'),null);
+  assert.equal(starpathDailyDescription({[source.id]:accepted},source.id,'Task001','ja'),null);
+  const forged=structuredClone(source);
+  forged.tasks[0].description='changed cached English';
+  assert.throws(()=>verifyStarpathDailyPart(original,forged),/English source mismatch/);
+  const unknown=structuredClone(source);
+  unknown.id='Unknown2026';
+  assert.throws(()=>verifyStarpathDailyPart(original,unknown),/season identity/);
 });

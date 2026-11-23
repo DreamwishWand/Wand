@@ -1,12 +1,13 @@
 <script lang="ts">
   import {onMount,tick} from 'svelte';
   import {base} from '$app/paths';
-  import {watchWandLanguage} from '$lib/ui/preferences';
+  import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {autoAppend} from '$lib/ui/auto-append';
   import {loadPublicStarpath} from '$lib/guide/public-starpath.mjs';
-  import {loadStarpathWeeklyLocales,starpathWeeklyDescription} from '$lib/guide/public-starpath-locales.mjs';
-  import {loadStarpathDailyLocales,starpathDailyDescription} from '$lib/guide/public-starpath-daily.mjs';
+  import {loadStarpathWeeklyLocales,starpathWeeklyDescription} from '$lib/guide/public-starpath-locales.ts';
+  import type {StarpathDailyParts,StarpathLocalizedPart} from '$lib/guide/starpath-locale-contract.ts';
+  import {loadStarpathDailyLocales,starpathDailyDescription} from '$lib/guide/public-starpath-daily.ts';
   import {starpathRewardDisplayName,loadStarpathRewardExtras} from '$lib/guide/starpath-reward-extras.mjs';
   import {createGuideRewardIndex,type GuideRewardIndex} from '$lib/guide/reward-relations.ts';
   import {createGuideStarpathHistory,type GuideStarpathHistory} from '$lib/guide/starpath-history.ts';
@@ -21,11 +22,13 @@
   import type {GuideRewardOccurrence} from '$lib/guide/reward-relations.ts';
   import {loadPublicStarpathGoals,starpathGoalLabel,starpathGoalHeading,starpathGoalSourceNote} from '$lib/guide/public-starpath-goals.mjs';
 
-  let catalog:any=null, weeklyLocales:any=null, dailyLocales:any=null, rewardExtras:any=null, publicMedia:any=null, goalAmounts:any=null, goalWarning='', error='', loading=true;
+  let catalog:any=null, rewardExtras:any=null, publicMedia:any=null, goalAmounts:any=null, goalWarning='', error='', loading=true;
+  let weeklyLocales:StarpathLocalizedPart|null=null;
+  let dailyLocales:StarpathDailyParts|null=null;
   let sharedRewardIndex:GuideRewardIndex|null=null;
   let officialHistory:GuideStarpathHistory|null=null;
   let nativeRevisionEvidence:StarpathNativeRevisionEvidence|null=null;
-  let locale='ja';
+  let locale:WandLanguage='ja';
   let selectedId='HauntingElegance2026';
   let now=Date.now();
   let tab:'tasks'|'weekly'|'rewards'='tasks';
