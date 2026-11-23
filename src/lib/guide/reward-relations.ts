@@ -8,7 +8,7 @@
  */
 import {loadPublicStarpath,verifyPublicStarpath,STARPATH_SOURCE_SHA,STARPATH_PUBLIC_SHA}
   from './public-starpath.mjs';
-import {guideCalendarEvents} from './event-calendar.mjs';
+import {guideCalendarEvents} from './event-calendar.ts';
 import type {Db01CatalogClient,Db01Item} from '../items/index';
 
 export const DB03_REWARD_RELATION_CONTRACT='wand.db03.reward-relations@1' as const;
