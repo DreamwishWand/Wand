@@ -35,6 +35,7 @@ fn public_activity_subtype_family(item_id:u64, category:String)->String {
     let verified = match (item_id % 10_000_000)/100_000 {
         2 => Some("Source Crop"),
         3 => Some("Source Meal"),
+        4 => Some("Source Seed"),
         8 => Some("Source Flower"),
         10 => Some("Source Fish"),
         11 => Some("Source Ingredient"),
@@ -1408,6 +1409,7 @@ mod tests {
         let cases=[
             (30_200_000,"Source Crop"),
             (30_300_000,"Source Meal"),
+            (30_400_000,"Source Seed"),
             (30_800_000,"Source Flower"),
             (31_000_000,"Source Fish"),
             (31_100_000,"Source Ingredient"),
