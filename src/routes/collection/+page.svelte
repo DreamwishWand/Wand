@@ -213,44 +213,13 @@
   const sourceActivityLegacyFamilies=new Set([
     'Source Activity Items',...Object.values(sourceActivityLegacyNames)
   ]);
-  // Exact original Steam v1.26.2 ActivityItemType values, independently
-  // recovered from DB-01's SHA-pinned Item-ID master. These are Wand UI
-  // translations of source types, NOT claims about native Collection menus.
-  const sourceActivityVerifiedNames:Readonly<Record<number,string>>={
-    0:'Default',12:'RequestItem',13:'Ephemeral',14:'LootPresent',
-    18:'BuffElixir',19:'Manual'
-  };
-  const sourceActivityNewLabels:Record<string,Record<number,string>>={
-    ja:{0:'デフォルト',12:'依頼アイテム',13:'一時オブジェクト',
-      14:'報酬プレゼント',18:'強化エリクサー',19:'マニュアル'},
-    en:{0:'Default',12:'Request items',13:'Ephemeral objects',
-      14:'Loot presents',18:'Buff elixirs',19:'Manuals'},
-    fr:{0:'Par défaut',12:'Objets de requête',13:'Objets temporaires',
-      14:'Cadeaux de butin',18:'Élixirs de renforcement',19:'Manuels'},
-    it:{0:'Predefiniti',12:'Oggetti delle richieste',13:'Oggetti temporanei',
-      14:'Regali premio',18:'Elisir potenzianti',19:'Manuali'},
-    de:{0:'Standard',12:'Auftragsgegenstände',13:'Temporäre Objekte',
-      14:'Beutegeschenke',18:'Stärkungselixiere',19:'Handbücher'},
-    'es-ES':{0:'Predeterminados',12:'Objetos de solicitud',13:'Objetos temporales',
-      14:'Regalos de botín',18:'Elixires de mejora',19:'Manuales'},
-    'zh-CN':{0:'默认',12:'委托物品',13:'临时物件',
-      14:'奖励礼物',18:'强化药剂',19:'手册'},
-    'pt-BR':{0:'Padrão',12:'Itens de pedido',13:'Objetos temporários',
-      14:'Presentes de recompensa',18:'Elixires de fortalecimento',19:'Manuais'}
-  };
-  /** Source-exact IL2CPP ItemType is an independent browse axis, never an
-   * invented CollectionSet category. Preserve the original enum fallback. */
+  // The complete source index has one canonical localized category identity
+  // per Item ID, regardless of native class. Legacy labels are only for
+  // catalog fallback when the detailed index cannot be loaded.
   function sourceActivityTypeLabel(lang:string,code:number,native:string|null):string{
-    const legacy=sourceActivityLegacyNames[code];
-    if(legacy)return nativeActivityLabels[lang]?.[legacy]??nativeActivityLabels.en[legacy];
-    if(native&&sourceActivityVerifiedNames[code]===native)
-      return (sourceActivityNewLabels[lang]??sourceActivityNewLabels.en)[code];
-    return native?.replace(/([a-z])([A-Z])/g,'$1 $2') ??
-      (lang==='ja'?'その他のアクティビティアイテム':'Other activity items');
+    return collectionNativeSubtypeLabel(lang,'ActivityItem:'+code,native);
   }
   function nativeSubtypeLabel(lang:string,key:string,nativeName:string|null):string{
-    if(key.startsWith('ActivityItem:'))
-      return sourceActivityTypeLabel(lang,Number(key.split(':')[1]),nativeName);
     return collectionNativeSubtypeLabel(lang,key,nativeName);
   }
   function displayItemCategory(item:CollectionItem):string {
@@ -329,7 +298,10 @@
       // These tags are not game CollectionArea or availability evidence.
       const tag=viewAxis==='world'?sourceChoices.worldContextTag:'';
       const worldIds=tag&&sourceIndex?[...sourceIndex.byItem.keys()].filter(id=>
-        collectionDb01Matches(sourceIndex!,id,'worldContextTag',tag)):null;
+        collectionDb01Matches(sourceIndex!,id,'worldContextTag',tag))
+        :viewAxis==='world'&&worldFilter
+          ?queryAllCollectionRows({...scopeFilter,limit:200}).map(item=>item.itemId)
+          :null;
       const familyCounts=new Map<string,{total:number;owned:number}>();
       const typeCounts=new Map<number,{total:number;owned:number}>();
       const nativeCounts=new Map<string,{total:number;owned:number}>();
@@ -339,12 +311,12 @@
           const owned=entries[String(id)]?.status==='owned'?1:0;
           const family=familyCounts.get(item.family)??{total:0,owned:0};
           family.total++;family.owned+=owned;familyCounts.set(item.family,family);
-          const activity=sourceIndex!.activityTypesByItem.get(id);
+          const activity=sourceIndex?.activityTypesByItem.get(id);
           if(activity){
             const counts=typeCounts.get(activity.code)??{total:0,owned:0};
             counts.total++;counts.owned+=owned;typeCounts.set(activity.code,counts);
           }
-          const native=sourceIndex!.nativeSubtypeByItem.get(id);
+          const native=sourceIndex?.nativeSubtypeByItem.get(id);
           if(native){
             const key=native.nativeType+':'+native.code;
             const counts=nativeCounts.get(key)??{total:0,owned:0};
@@ -356,7 +328,12 @@
           return found?[{...facet,...found}]:[];
         });
       }
-      sourceActivityTypeCards=sourceIndex
+      const completeNativeIndex=sourceIndex!==null&&
+        sourceIndex.nativeSubtypeByItem.size===sourceIndex.sourceItemCount&&
+        sourceIndex.sourceItemCount>0;
+      // The older Activity-only projection must never render alongside
+      // the complete native partition. It is strictly a legacy fallback.
+      sourceActivityTypeCards=sourceIndex&&!completeNativeIndex
         ?[...sourceIndex.itemsByActivityType.entries()].sort((a,b)=>a[0]-b[0])
           .flatMap(([code,ids])=>{
             const counts=worldIds?typeCounts.get(code):{
@@ -368,10 +345,9 @@
             }]:[];
           })
         :[];
-      const nativeOrder=['Furniture','Clothing','Trimming'];
-      sourceNativeSubtypeCards=sourceIndex?.nativeSubtypeByItem.size===13202
+      const nativeOrder=['Furniture','Clothing','Trimming','ActivityItem'];
+      sourceNativeSubtypeCards=sourceIndex&&completeNativeIndex
         ?[...sourceIndex.itemsByNativeSubtype.entries()]
-          .filter(([key])=>!key.startsWith('ActivityItem:'))
           .sort((a,b)=>{
             const [typeA,codeA]=a[0].split(':'),[typeB,codeB]=b[0].split(':');
             return nativeOrder.indexOf(typeA)-nativeOrder.indexOf(typeB)||
@@ -483,7 +459,8 @@
             Number(b.nameVerified)-Number(a.nameVerified)||
               a.label.localeCompare(b.label,locale)||a.itemId-b.itemId);
         if(viewAxis==='universe'&&sourceUniverseSelection!==null&&!selected&&
-          sourceActivityType===null&&!search.trim()&&status==='all'&&
+          sourceActivityType===null&&sourceNativeSubtype===null&&
+          !search.trim()&&status==='all'&&
           !favoriteOnly&&!expansion&&!acquisitionFilter){
           rebuildSourceUniverseSections();
         }
@@ -672,7 +649,8 @@
       filtered=sourceAllMatching.slice(0,next);
       visible=next;
       if(viewAxis==='universe'&&sourceUniverseSelection!==null&&!selected&&
-        sourceActivityType===null&&!search.trim()&&status==='all'&&
+        sourceActivityType===null&&sourceNativeSubtype===null&&
+        !search.trim()&&status==='all'&&
         !favoriteOnly&&!expansion&&!acquisitionFilter)
         rebuildSourceUniverseSections();
       return;
@@ -1528,14 +1506,21 @@
             {/if}
             <div class="facet-grid collection-detail-category-grid"
               aria-label={locale==='ja'?'アイテムの詳細カテゴリー':'Detailed item categories'}>
-              {#if sourceIndex?.nativeSubtypeByItem.size===13202}
+              {#if sourceIndex&&sourceIndex.sourceItemCount>0&&
+                sourceIndex.nativeSubtypeByItem.size===sourceIndex.sourceItemCount}
                 {#each sourceNativeSubtypeCards as type (type.key)}
-                  <button type="button" class="facet-card collection-native-subtype"
+                  <button type="button" class="facet-card"
+                    class:collection-native-subtype={type.nativeType!=='ActivityItem'}
+                    class:collection-native-activity={type.nativeType==='ActivityItem'}
                     data-native-subtype={type.key}
+                    data-source-type={type.nativeType==='ActivityItem'?type.code:undefined}
+                    data-category-total={type.total}
                     on:click={()=>chooseNativeSubtype(type.key)}>
                     <span class="facet-flourish" aria-hidden="true">
                       <WandIcon name={categoryPictogram[
-                        type.nativeType==='Trimming'?'Wallpaper & Flooring':type.nativeType
+                        type.nativeType==='ActivityItem'
+                          ?sourceActivityLegacyNames[type.code]??'Source Activity Items'
+                          :type.nativeType==='Trimming'?'Wallpaper & Flooring':type.nativeType
                       ]??'collection'} size={22}/>
                     </span>
                     <strong>{nativeSubtypeLabel(locale,type.key,type.nativeName)}</strong>
@@ -1547,6 +1532,7 @@
                   facet.total>0&&!(sourceActivityTypeCards.length&&
                     sourceActivityLegacyFamilies.has(facet.id))) as facet (facet.id)}
                   <button type="button" class="facet-card"
+                    data-category-total={facet.total}
                     on:click={()=>chooseFacet(facet.id)}>
                     <span class="facet-flourish" aria-hidden="true">
                       <WandIcon name={categoryPictogram[facet.id]??'collection'} size={22}/>
@@ -1555,10 +1541,9 @@
                     <span>{facet.total.toLocaleString(locale)} {copy.countUnit}</span>
                   </button>
                 {/each}
-              {/if}
-              {#each sourceActivityTypeCards as type (type.code)}
+                {#each sourceActivityTypeCards as type (type.code)}
                 <button type="button" class="facet-card collection-native-activity"
-                  data-source-type={type.code}
+                  data-source-type={type.code} data-category-total={type.total}
                   on:click={()=>chooseActivityType(type.code)}>
                   <span class="facet-flourish" aria-hidden="true">
                     <WandIcon name={categoryPictogram[sourceActivityLegacyNames[type.code]??'']??'collection'} size={22}/>
@@ -1566,7 +1551,8 @@
                   <strong>{sourceActivityTypeLabel(locale,type.code,type.nativeName)}</strong>
                   <span>{type.total.toLocaleString(locale)} {copy.countUnit}</span>
                 </button>
-              {/each}
+                {/each}
+              {/if}
             </div>
           {/if}
         </div>

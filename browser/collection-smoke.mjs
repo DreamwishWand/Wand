@@ -395,6 +395,19 @@ try{
   const countsNonzero=await page.locator('.collection-detail-category-grid .facet-card')
     .evaluateAll(cards=>cards.every(card=>/[1-9][\d,]*\s*件\s*$/.test(card.textContent??'')));
   assert.equal(countsNonzero,true,'all 50 visible categories must have real nonzero Item counts');
+  const detailCards=await page.locator('.collection-detail-category-grid .facet-card')
+    .evaluateAll(cards=>cards.map(card=>({
+      key:card.getAttribute('data-native-subtype'),
+      name:card.querySelector('strong')?.textContent?.normalize('NFKC').trim(),
+      count:Number(card.getAttribute('data-category-total'))
+    })));
+  assert.equal(new Set(detailCards.map(card=>card.key)).size,50,
+    'no duplicate source category cards');
+  assert.equal(new Set(detailCards.map(card=>card.name)).size,50,
+    'no duplicate displayed category labels');
+  assert.ok(detailCards.every(card=>card.key&&card.name&&card.count>0));
+  assert.equal(detailCards.reduce((sum,card)=>sum+card.count,0),13202,
+    'the detail cards partition the entire public Item ID catalog');
   for(const [code,label,count] of [
     [3,'料理','618'],[11,'食材','201'],[10,'魚','103']
   ]){
@@ -487,6 +500,12 @@ try{
   const sourceUniverseIds=await page.locator('.collection-universe-section .item-card').evaluateAll(cards=>
     cards.map(card=>Number(card.getAttribute('data-item-id'))));
   assert.ok(sourceUniverseIds.every(Number.isSafeInteger));
+  assert.equal(new Set(sourceUniverseIds).size,sourceUniverseIds.length,
+    'a selected universe must never display an Item twice');
+  const sectionNames=await page.locator('.collection-universe-section-head h2')
+    .evaluateAll(headings=>headings.map(heading=>heading.textContent?.normalize('NFKC').trim()));
+  assert.equal(new Set(sectionNames).size,sectionNames.length,
+    'a selected universe must never display the same detail category twice');
   await page.getByRole('button',{name:'ワールド表示'}).click();
   // DB-02's six original acquisition categories are connected to the same
   // complete Item-ID result set, not just the first infinite-scroll page.
@@ -806,9 +825,21 @@ try{
   await page.locator('.collection-detail-category-grid .facet-card').first().waitFor({timeout:15000});
   assert.equal(await page.locator('.item-card').count(),0,
     'world tabs open scoped category cards, not an immediate flat item grid');
+  const scopedCards=await page.locator('.collection-detail-category-grid .facet-card')
+    .evaluateAll(cards=>cards.map(card=>({
+      key:card.getAttribute('data-native-subtype'),
+      name:card.querySelector('strong')?.textContent?.normalize('NFKC').trim(),
+      total:Number(card.getAttribute('data-category-total'))
+    })));
+  assert.equal(new Set(scopedCards.map(card=>card.key)).size,scopedCards.length);
+  assert.equal(new Set(scopedCards.map(card=>card.name)).size,scopedCards.length);
+  assert.ok(scopedCards.every(card=>card.key&&card.total>0));
   const scopedFamily=page.locator('.collection-detail-category-grid .facet-card').first();
+  const scopedTotal=Number(await scopedFamily.getAttribute('data-category-total'));
   await scopedFamily.click();
   await page.locator('.item-card').first().waitFor({timeout:15000});
+  assert.equal(Number((await page.locator('.result-count').innerText()).replace(/[^0-9]/g,'')),scopedTotal,
+    'world category count must match actual selectable Item IDs');
   await page.locator('.breadcrumbs').getByRole('button',{name:'カテゴリ'}).click();
   await page.locator('.collection-detail-category-grid .facet-card').first().waitFor();
   assert.equal(await nativeWorld.getAttribute('aria-pressed'),'true',

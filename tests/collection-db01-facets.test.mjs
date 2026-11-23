@@ -78,8 +78,23 @@ test('DB-01 source native filtering is a narrow projection, not a second Item ma
   assert.equal(byClass.get('Clothing'),2041);
   assert.equal(byClass.get('Trimming'),365);
   assert.equal(counts.length,50);
-  assert.equal(COLLECTION_NATIVE_SUBTYPE_UI.length,35);
+  assert.equal(COLLECTION_NATIVE_SUBTYPE_UI.length,50);
   const languages=['en','fr','it','de','es-ES','ja','zh-CN','pt-BR'];
+  const categoryKeys=COLLECTION_NATIVE_SUBTYPE_UI.map(row=>row.key);
+  assert.equal(new Set(categoryKeys).size,50);
+  assert.deepEqual([...categoryKeys].sort(),[...index.itemsByNativeSubtype.keys()].sort(),
+    'every displayed category corresponds to exactly one original source group');
+  const allIds=[...index.itemsByNativeSubtype.values()].flat();
+  assert.equal(new Set(allIds).size,13202,'no Item ID counted in two detailed categories');
+  for(const lang of languages){
+    const labels=COLLECTION_NATIVE_SUBTYPE_UI.map(spec=>
+      collectionNativeSubtypeLabel(lang,spec.key,spec.source)
+        .normalize('NFKC').trim().toLocaleLowerCase(lang));
+    assert.equal(new Set(labels).size,50,
+      'no duplicate user-facing category labels in '+lang);
+  }
+  assert.equal(collectionNativeSubtypeLabel('ja','ActivityItem:3','Meal'),'料理');
+  assert.equal(collectionNativeSubtypeLabel('ja','ActivityItem:11','Ingredient'),'食材');
   for(const spec of COLLECTION_NATIVE_SUBTYPE_UI){
     assert.equal(index.nativeSubtypeNames.get(spec.key),spec.source,
       'UI subtype labels require the exact original IL2CPP subtype name');
