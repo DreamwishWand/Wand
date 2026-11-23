@@ -110,6 +110,11 @@ export interface CollectionRuntimeMetadata {
   universes: readonly string[];
   worldLabels: readonly string[][];
   universeLabels: readonly string[][];
+  /** Explicit reviewed Item membership evidence; raw source tags are insufficient. */
+  verifiedScopeMembership?: Readonly<{
+    world?: 'verified_game_collection_area_item_membership';
+    universe?: 'verified_game_collection_universe_item_membership';
+  }>;
 }
 interface PublicLegacyIndex {
   s: string;
@@ -128,6 +133,12 @@ interface PublicDb00Index {
   id: string;
   count: number;
   target: { platform: string; gameVersion: string|null; buildId: string|null };
+  /** Only a separately reviewed item-to-Collection-scope release may assert these. */
+  collectionScopeEvidence?: {
+    schema:'wand.collection.scope-membership@1';
+    world?: 'verified_game_collection_area_item_membership';
+    universe?: 'verified_game_collection_universe_item_membership';
+  };
   shards: { file: string; offset: number; count: number; bytes: number; sha256: string }[];
 }
 interface OwnerLocalDb01Bundle {
@@ -262,7 +273,11 @@ export class CollectionRuntime {
         metadata = {
           snapshot: active.snapshot, platform: manifest.t.platform, version: manifest.t.gameVersion,
           expansions:manifest.e, worlds:manifest.w, universes:manifest.u,
-          worldLabels:manifest.wl, universeLabels:manifest.ul
+          worldLabels:manifest.wl, universeLabels:manifest.ul,
+          verifiedScopeMembership:{
+            world:'verified_game_collection_area_item_membership',
+            universe:'verified_game_collection_universe_item_membership'
+          }
         };
       } else if (active.kind === 'db_snapshot') {
         if (active.publication !== 'validated_public_snapshot'
@@ -302,7 +317,17 @@ export class CollectionRuntime {
         engine.finish_db00();
         const catalog=JSON.parse(engine.metadata_json()) as Omit<CollectionRuntimeMetadata,'snapshot'>;
         const coverage = manifest.coverage;
+        // Original DB-01 Tag references are context associations, not proven
+        // CollectionArea membership. Unreviewed future snapshot fields cannot
+        // enable end-user filters, even when they supply names/IDs.
+        const scope=manifest.collectionScopeEvidence;
+        if(scope!==undefined&&(
+          scope.schema!=='wand.collection.scope-membership@1'||
+          (scope.world!==undefined&&scope.world!=='verified_game_collection_area_item_membership')||
+          (scope.universe!==undefined&&scope.universe!=='verified_game_collection_universe_item_membership')))
+          throw new Error('COLLECTION_SCOPE_EVIDENCE_INVALID');
         metadata={...catalog,snapshot:active.snapshot,
+          ...(scope?{verifiedScopeMembership:{world:scope.world,universe:scope.universe}}:{}),
           nameCoverage:coverage?.scope==='steam-v1.26.2-native-itemlist'
             ? {itemDefinitions:coverage.itemDefinitions!,nameVerified:coverage.nameVerified!,nameUnverified:coverage.nameUnverified!}
             : null
