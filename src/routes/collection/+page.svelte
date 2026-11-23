@@ -1268,7 +1268,7 @@
             <div class="results-heading">
               <div class="breadcrumbs">
                 <button type="button" on:click={returnToCategory}>{viewAxis==='universe'?copy.universeList:copy.categories}</button>
-                {#if selected||sourceCategory!==null}<span> / {selectionLabel}</span>{/if}
+                {#if selected||sourceCategory!==null||sourceActivityType!==null}<span> / {selectionLabel}</span>{/if}
                 {#if viewAxis==='universe'&&sourceChoices.disneyUniverse}
                   <span> / {collectionDb01TagLabel(locale,sourceChoices.disneyUniverse)}</span>
                 {/if}
@@ -1311,7 +1311,7 @@
                         aria-pressed={selectionMode?selectedIds.includes(item.itemId):selectedItemId===item.itemId}
                         aria-label={selectionMode?`${item.label}${copy.itemSelect}`:`${item.label}${copy.itemDetails}`}>
                         <span class="item-icon" aria-hidden="true">{#if selectionMode}{selectedIds.includes(item.itemId)?'☑':'☐'}{:else}<ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null} />{/if}</span>
-                        <span class="item-card-copy"><strong>{item.label}</strong><span>{categoryLabel(locale,item.family)}</span></span>
+                        <span class="item-card-copy"><strong>{item.label}</strong><span>{displayItemCategory(item)}</span></span>
                       </button>
                       <button type="button" class="item-state-toggle" disabled={Boolean(storeError)||selectionMode}
                         class:owned={entries[String(item.itemId)]?.status==='owned'}
@@ -1383,7 +1383,8 @@
             {/if}
             {#if originalClassesOpen||!sourceIndex}
               <div class="facet-grid">
-                {#each scopedCategoryFacets as facet (facet.id)}
+                {#each scopedCategoryFacets.filter(facet=>
+                  !(facet.id==='Source Activity Items'&&sourceActivityTypeCards.length)) as facet (facet.id)}
                   <button type="button" class="facet-card" disabled={facet.total===0}
                     on:click={()=>chooseFacet(facet.id)}>
                     <span class="facet-flourish" aria-hidden="true">
@@ -1391,6 +1392,17 @@
                     </span>
                     <strong>{categoryLabel(locale,facet.id)}</strong>
                     <span>{facet.owned.toLocaleString(locale)} / {facet.total.toLocaleString(locale)}</span>
+                  </button>
+                {/each}
+                {#each sourceActivityTypeCards as type (type.code)}
+                  <button type="button" class="facet-card collection-native-activity"
+                    data-source-type={type.code}
+                    on:click={()=>chooseActivityType(type.code)}>
+                    <span class="facet-flourish" aria-hidden="true">
+                      <WandIcon name={categoryPictogram[sourceActivityLegacyNames[type.code]??'']??'collection'} size={22}/>
+                    </span>
+                    <strong>{sourceActivityTypeLabel(locale,type.code,type.nativeName)}</strong>
+                    <span>{type.owned.toLocaleString(locale)} / {type.total.toLocaleString(locale)}</span>
                   </button>
                 {/each}
               </div>
@@ -1412,7 +1424,7 @@
             </div>
             <div class="inspector-art"><ItemArtwork itemId={selectedItem.itemId} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large /></div>
             <h2>{selectedItem.label}</h2>
-            <p class="inspector-meta">{categoryLabel(locale,selectedItem.family)}</p>
+            <p class="inspector-meta">{displayItemCategory(selectedItem)}</p>
             {#if runtime?.metadata.snapshot==='steam-1.26.2-native-itemlist-v1' && !runtime.isOwnerLocal}
               {#key selectedItem.itemId}
                 <ItemMasterDetails itemId={selectedItem.itemId} {locale}/>
