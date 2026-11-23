@@ -53,7 +53,9 @@ export interface GuideDateOnlyCalendarEvent extends GuideCalendarDateWindow{
   readonly evidence:'official-announcement';
   readonly liveVerified:false;
   readonly checkedDate:typeof GUIDE_EVENT_CALENDAR_AS_OF;
-  readonly href:'/guide/events/?event=HauntedFloatingFestival2026'|null;
+  readonly href:
+    '/guide/events/?event=HauntedFloatingFestival2026'|
+    '/guide/events/?event=HauntedFloatingFestival'|null;
   readonly participation:'game-clock'|'not-verified';
 }
 export interface GuideHistoricalStarpathCalendarEvent extends GuideCalendarDateWindow{
@@ -189,7 +191,11 @@ export function guideCalendarEvents(raw:unknown):GuideCalendarEvent[]{
         evidence:'official-announcement',precision:'date-only',
         startDay:source.startDay,endDayInclusive:source.endDayInclusive,
         participation:source.participation,
-        liveVerified:false,checkedDate:GUIDE_EVENT_CALENDAR_AS_OF,href:null
+        liveVerified:false,checkedDate:GUIDE_EVENT_CALENDAR_AS_OF,
+        // The 2025 source definition is a distinct, older native event with
+        // five configured rewards, not 2026's nine-reward definition.
+        href:source.id==='haunted-floating-festival-2025'
+          ?'/guide/events/?event=HauntedFloatingFestival':null
       });
     }
   }
