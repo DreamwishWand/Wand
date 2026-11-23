@@ -104,7 +104,7 @@ export interface Db01FiveCategorySourcePage {
   readonly itemIds:readonly number[];
   readonly total:number;
   readonly hasMore:boolean;
-  readonly sourceNativePositiveTagOnly:true;
+  readonly originalSourceAreaSearchOnly:true;
   readonly allAreasMeansUnfilteredOriginalSource:boolean;
   /** True when a positive-area query selected Critters, whose scene-based
    * matches have not been evaluated; omission does NOT prove non-membership.
@@ -422,7 +422,7 @@ export function createDb01FiveCategorySourceClient(
       Object.freeze({
         itemIds:Object.freeze([...items]),total,
         hasMore:total>q.offset+items.length,
-        sourceNativePositiveTagOnly:true as const,
+        originalSourceAreaSearchOnly:true as const,
         allAreasMeansUnfilteredOriginalSource:q.areas[0]===0,
         selectedCritterSceneCandidatesUnresolved:sceneUnknown,
         runtimeCritterProfileSceneVerified:false as const,
