@@ -26,6 +26,10 @@ const SOURCE_SHA='496782625e68fb53e018659bbabf0d8bb8bdc55f12037f4c568a7d32321f51
 const ID=/^[1-9][0-9]{0,15}$/;
 const EMPTY=Object.freeze([]) as readonly PublicOnlineNameCandidate[];
 const EMPTY_IDS=Object.freeze([]) as readonly string[];
+const CAMPAIGN_KINDS:ReadonlySet<OfficialCampaign['kind']>=new Set([
+  'twitch_drop','redeem_code','premium_shop','official_campaign',
+  'purchase_bonus','gift','event_reward'
+]);
 const NONDISPLAY=/^\s*\{(?:Placeholder|LegacyPlaceholder|DoNotTranslate)\}/i;
 
 interface CandidateCommon {
@@ -321,8 +325,7 @@ export function indexPublicOnlineNameCandidates(
     },
     listCampaignRewardResolutions(kind?:OfficialCampaign['kind']){
       if(kind===undefined)return allCampaignResolutions;
-      requireValue(typeof kind==='string'&&
-        allCampaignResolutions.some(row=>row.campaignKind===kind),
+      requireValue(typeof kind==='string'&&CAMPAIGN_KINDS.has(kind),
         'INVALID_CAMPAIGN_KIND');
       return byKind.get(kind)??Object.freeze([]);
     },
