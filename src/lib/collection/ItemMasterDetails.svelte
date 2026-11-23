@@ -46,7 +46,7 @@
   $: shortTags=(record?.tags??[]).filter(tag=>!/^is[A-Z]|^Is[A-Z]/.test(tag.key));
   $: previewTags=shortTags.slice(0,6);
   $: otherNames=record?locales.filter(lang=>
-    lang!==locale&&typeof record?.names[lang]==='string'&&record.names[lang]!==record.names[locale]):[];
+    lang!==locale&&typeof record?.names[lang]==='string'&&record.names[lang]!==record.names[locale as ItemMasterLocale]):[];
   async function load(id:number):Promise<void>{
     const current=++requestSequence;
     record=null;error=false;
@@ -71,7 +71,7 @@
     {/if}
     {#if previewTags.length}
       <div class="master-chips" aria-label={copy.tags}>
-        {#each previewTags as tag (tag.id)}
+        {#each previewTags as tag,index (index)}
           <span title={tag.key+' · '+tag.facet}>{tag.key}</span>
         {/each}
       </div>
@@ -114,7 +114,6 @@
   .master-more summary{display:flex;align-items:center;gap:5px;cursor:pointer;
     color:inherit;list-style:none;padding:3px 0}
   .master-more summary::-webkit-details-marker{display:none}
-  .master-more[open] summary svg{transform:rotate(90deg)}
   .master-note{line-height:1.5;color:#a698b0;font-size:10px;margin:7px 0}
   .master-names{margin-top:12px}
   .master-names dl{display:grid;grid-template-columns:50px 1fr;gap:6px 9px;
