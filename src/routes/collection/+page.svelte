@@ -419,19 +419,7 @@
         if(viewAxis==='universe'&&sourceUniverseSelection!==null&&!selected&&
           sourceActivityType===null&&!search.trim()&&status==='all'&&
           !favoriteOnly&&!expansion&&!acquisitionFilter){
-          const groups=groupCollectionUniverseItems(sourceAllMatching,item=>{
-            const activity=sourceIndex?.activityTypesByItem.get(item.itemId);
-            const id=activity?'activity-'+activity.code:item.family;
-            return {id,
-              label:activity?sourceActivityTypeLabel(locale,activity.code,activity.nativeName):
-                categoryLabel(locale,item.family),
-              rank:activity?100+activity.code:Math.max(0,facets.findIndex(f=>f.id===item.family))
-            };
-          },visible);
-          universeSections=groups.map(section=>({
-            facet:{id:section.id,label:section.label,total:section.total,owned:0},
-            items:[...section.items]
-          }));
+          rebuildSourceUniverseSections();
         }
         filtered=sourceAllMatching.slice(0,visible);
         totalMatches=sourceAllMatching.length;
@@ -454,6 +442,21 @@
       overall=runtime.progress;
       state=runtime.state;
     }catch(error){storeError=error instanceof Error?error.message:String(error);}
+  }
+  function rebuildSourceUniverseSections():void{
+    const groups=groupCollectionUniverseItems(sourceAllMatching,item=>{
+      const activity=sourceIndex?.activityTypesByItem.get(item.itemId);
+      const id=activity?'activity-'+activity.code:item.family;
+      return {id,
+        label:activity?sourceActivityTypeLabel(locale,activity.code,activity.nativeName):
+          categoryLabel(locale,item.family),
+        rank:activity?100+activity.code:Math.max(0,facets.findIndex(f=>f.id===item.family))
+      };
+    },visible);
+    universeSections=groups.map(section=>({
+      facet:{id:section.id,label:section.label,total:section.total,owned:0},
+      items:[...section.items]
+    }));
   }
   function queryAllCollectionRows(filter:CollectionFilter):CollectionItem[]{
     if(!runtime)return [];
@@ -589,6 +592,10 @@
       const next=Math.min(sourceAllMatching.length,filtered.length+72);
       filtered=sourceAllMatching.slice(0,next);
       visible=next;
+      if(viewAxis==='universe'&&sourceUniverseSelection!==null&&!selected&&
+        sourceActivityType===null&&!search.trim()&&status==='all'&&
+        !favoriteOnly&&!expansion&&!acquisitionFilter)
+        rebuildSourceUniverseSections();
       return;
     }
     try{
