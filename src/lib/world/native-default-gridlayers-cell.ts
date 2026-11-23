@@ -35,8 +35,8 @@ export interface OriginalDefaultLayerContributor {
   readonly originalAnchorX:number;
   readonly originalAnchorY:number;
   readonly originalOrientationCode:number;
-  readonly originalItemLocalX:number;
-  readonly originalItemLocalY:number;
+  readonly callerGridLocalX:number;
+  readonly callerGridLocalY:number;
   readonly rawGridLayerValue:number;
 }
 
@@ -187,8 +187,8 @@ export function getOriginalDefaultGridLayersAtCell(
         itemId,nativeGridObjectId:row.gridObjectIdNative as number,
         originalAnchorX:row.x as number,originalAnchorY:row.y as number,
         originalOrientationCode:row.orientationCode as number,
-        originalItemLocalX:Math.floor(localX/factor),
-        originalItemLocalY:Math.floor(localY/factor),
+        callerGridLocalX:localX,
+        callerGridLocalY:localY,
         rawGridLayerValue:raw
       }));
   }
