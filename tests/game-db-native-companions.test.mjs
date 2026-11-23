@@ -130,7 +130,7 @@ test('search supports source category, original Item ID prefix, verified locale 
   assert.throws(()=>reader.search({locale:'invalid'}),/INVALID_LOCALE/);
   assert.throws(()=>reader.search({text:'bad\ntext'}),/INVALID_TEXT/);
   assert.throws(()=>reader.search({limit:501}),/INVALID_PAGE/);
-  assert.throws(()=>reader.getItem('00120000043'),/INVALID_ITEM_ID/);
+  assert.throws(()=>reader.getItem('00120000043'),/invalid numeric Item ID/);
 });
 
 test('source-native premium_shop category cannot become an offer, origin or actual Twitch/code campaign',async()=>{
