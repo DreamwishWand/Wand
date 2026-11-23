@@ -12,7 +12,7 @@
   import {loadPinnedCommonConditionGraph,type NativeCommonConditionGraph,
     type NativeCommonConditionPath,type NativeIndirectMissionMention}
     from '$lib/guide/condition-common-links.ts';
-  import {guideVerifiedStaticComposite} from '$lib/guide/source-composite.mjs';
+  import {guideVerifiedStaticComposite} from '$lib/guide/source-composite.ts';
   import {loadVerifiedLocalGuideRewards} from '$lib/guide/local-reward-files';
   import type {CurrentCompatibleRewardReader} from '$lib/guide/reward-source-equivalence';
 
