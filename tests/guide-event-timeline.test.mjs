@@ -121,6 +121,7 @@ test('dated archived in-game events are visible independently of the liveops cac
   const cases=[
     ['2023-10-25','trick-or-treat-2023'],
     ['2024-10-24','trick-or-treat-2024'],
+    ['2024-10-20','the-night-show-star-path-2024'],
     ['2024-12-20','gift-of-giving-2024'],
     ['2025-10-23','haunted-floating-festival-2025'],
     ['2026-10-20','trick-or-treat-2026']
@@ -131,6 +132,6 @@ test('dated archived in-game events are visible independently of the liveops cac
     const rows=guideTimelineRows(all,range);
     assert(rows.some(row=>row.event.id===id),id);
   }
-  assert.equal(all.filter(e=>e.kind==='starpath-history').length,1);
+  assert.equal(all.filter(e=>e.kind==='starpath-history').length,2);
   assert.equal(all.filter(e=>e.kind==='starpath').length,2);
 });
