@@ -142,11 +142,12 @@ export function guideTimelineRows(
     }else{
       // First-party Mini Event/Festival timestamps are exact archived instants;
       // official article-only intervals remain civil days with no fake hour.
-      const native=event.kind==='limited-event'&&event.sourceStartUtc&&
-        event.sourceEndUtcInclusive;
+      const sourceStart=event.kind==='limited-event'?event.sourceStartUtc:null;
+      const sourceEnd=event.kind==='limited-event'?event.sourceEndUtcInclusive:null;
       const limited=clip('limited',
-        native?exactUtc(event.sourceStartUtc!):localDayStart(event.startDay,range.timeZone),
-        native?exactUtc(event.sourceEndUtcInclusive!)+1:
+        sourceStart&&sourceEnd?exactUtc(sourceStart):
+          localDayStart(event.startDay,range.timeZone),
+        sourceStart&&sourceEnd?exactUtc(sourceEnd)+1:
           localDayStart(nextCivil(event.endDayInclusive),range.timeZone),range);
       if(limited)segments.push({...limited,
         phase:event.kind==='starpath-history'?'historic':'limited'});
