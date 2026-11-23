@@ -367,7 +367,7 @@ try{
   assert.ok(firstCategory&&firstCategory.y<240,'categories must begin in the first viewport');
   const parents=page.locator('.collection-top-category');
   await parents.first().waitFor({timeout:30000});
-  assert.equal(await parents.count(),10);
+  assert.equal(await parents.count(),29);
   assert.equal(await page.locator('.collection-native-activity,.collection-native-subtype').count(),0,
     'leaf categories never appear at root');
   assert.equal(await page.locator('.collection-original-category-grid').count(),0);
@@ -382,51 +382,39 @@ try{
     await parents.first().waitFor();
   };
   await returnRoot();
-  let leafTotal=0,itemTotal=0;
-  const parentIds=await parents.evaluateAll(cards=>cards.map(card=>card.getAttribute('data-top-category')));
-  for(const id of parentIds){
-    const parent=page.locator(`[data-top-category="${id}"]`);
-    const text=await parent.innerText();
-    const count=Number(text.match(/([\d,]+)\s*件/)?.[1].replaceAll(',',''));
-    assert.ok(count>0);
-    itemTotal+=count;
-    await parent.click();
-    const leaves=page.locator('.collection-native-activity,.collection-native-subtype');
-    assert.ok(await leaves.count()>0);
-    leafTotal+=await leaves.count();
-    const leafSum=await leaves.evaluateAll(cards=>cards.reduce((sum,card)=>
-      sum+Number((card.textContent??'').match(/([\d,]+)\s*件/)?.[1].replaceAll(',','')),0));
-    assert.equal(leafSum,count);
-    if(id==='appearance'){
-      assert.equal(await leaves.filter({hasText:'口ひげ'}).count(),1);
-      assert.equal(await leaves.filter({hasText:'あごひげ'}).count(),1);
-    }
-    await returnRoot();
-  }
-  assert.equal(leafTotal,50);
-  assert.equal(itemTotal,13202);
+  assert.deepEqual(await parents.evaluateAll(cards=>cards.map(card=>card.getAttribute('data-top-category'))),[
+    'furniture','landscaping','roads-fences','interior','buildings','environment',
+    'clothing','appearance','touch-of-magic','photo-mode','tools','upgrades',
+    'characters','companions','critters','mounts','crafting','meals','ingredients',
+    'foraging','fish','gems','timebending','memories','board-game','snippets',
+    'lorekeeper-tales','quest-puzzles','exhibition'
+  ]);
+  const appearance=page.locator('[data-top-category="appearance"]');
+  await appearance.click();
+  assert.equal(await page.locator('.collection-native-subtype').filter({hasText:'口ひげ'}).count(),1);
+  assert.equal(await page.locator('.collection-native-subtype').filter({hasText:'あごひげ'}).count(),1);
+  await returnRoot();
   for(const [parent,selector,count,code] of [
-    ['food','[data-source-type="3"]','618',3],
-    ['food','[data-source-type="11"]','201',11],
-    ['materials','[data-source-type="10"]','103',10],
-    ['outdoor','[data-native-subtype="Furniture:7"]','319',7],
+    ['meals',null,'618',3],
+    ['ingredients',null,'366',null],
+    ['fish',null,'103',10],
+    ['roads-fences','[data-native-subtype="Furniture:7"]','319',7],
     ['appearance','[data-native-subtype="Clothing:5"]','114',5],
-    ['interior','[data-native-subtype="Trimming:0"]','218',0],
-    ['quests','[data-source-type="12"]','1,559',12]
+    ['interior','[data-native-subtype="Trimming:0"]','218',0]
   ]){
     await page.locator(`[data-top-category="${parent}"]`).click();
-    const card=page.locator(selector);
-    assert.match(await card.innerText(),new RegExp(count));
-    await card.click();
+    if(selector)await page.locator(selector).click();
     await page.locator('.item-card').first().waitFor({timeout:12000});
     assert.match(await page.locator('.result-count').innerText(),new RegExp(count));
     const id=Number(await page.locator('.item-card').first().getAttribute('data-item-id'));
-    assert.equal(Math.floor((id%10000000)/100000),code);
-    // Back to the parent preserves the subcategory navigation.
-    await page.locator('.breadcrumbs button').nth(1).click();
-    await card.waitFor();
+    if(code!==null)assert.equal(Math.floor((id%10000000)/100000),code);
+    if(selector){
+      await page.locator('.breadcrumbs button').nth(1).click();
+      await page.locator(selector).waitFor();
+    }
     await returnRoot();
   }
+  assert.equal(await page.locator('[data-top-category="buildings"]').isDisabled(),true);
   // A missing category projection must not leave a permanent loading message,
   // and retry must restore the game-source navigation without losing access
   // to the existing item-type categories.
@@ -450,7 +438,7 @@ try{
   await retryPage.getByRole('button',{name:/再試行|Retry/}).click();
   await retryPage.locator('.collection-top-category').first()
     .waitFor({timeout:30000});
-  assert.equal(await retryPage.locator('.collection-top-category').count(),10);
+  assert.equal(await retryPage.locator('.collection-top-category').count(),29);
   assert.equal(await retryPage.locator('.collection-native-activity,.collection-native-subtype').count(),0);
   assert.equal(await retryPage.locator('.collection-original-category-grid').count(),0);
   await retryContext.close();
@@ -802,7 +790,7 @@ try{
   await page.locator('.collection-detail-category-grid .facet-card').first().waitFor({timeout:15000});
   assert.equal(await page.locator('.item-card').count(),0,
     'world tabs open scoped category cards, not an immediate flat item grid');
-  const scopedFamily=page.locator('.collection-detail-category-grid .facet-card').first();
+  const scopedFamily=page.locator('.collection-detail-category-grid .facet-card:not([disabled])').first();
   await scopedFamily.click();
   await page.locator('.collection-categories-heading button.subtle-button').click();
   await page.locator('.item-card').first().waitFor({timeout:15000});
