@@ -199,12 +199,38 @@
   const sourceActivityLegacyFamilies=new Set([
     'Source Activity Items',...Object.values(sourceActivityLegacyNames)
   ]);
-  /** Source-exact IL2CPP ItemType is a browse axis, never an invented
-   * CollectionSet category. Use the original enum when no localized UI label
-   * was independently established. */
+  // Exact original Steam v1.26.2 ActivityItemType values, independently
+  // recovered from DB-01's SHA-pinned Item-ID master. These are Wand UI
+  // translations of source types, NOT claims about native Collection menus.
+  const sourceActivityVerifiedNames:Readonly<Record<number,string>>={
+    0:'Default',12:'RequestItem',13:'Ephemeral',14:'LootPresent',
+    18:'BuffElixir',19:'Manual'
+  };
+  const sourceActivityNewLabels:Record<string,Record<number,string>>={
+    ja:{0:'デフォルト',12:'依頼アイテム',13:'一時オブジェクト',
+      14:'報酬プレゼント',18:'強化エリクサー',19:'マニュアル'},
+    en:{0:'Default',12:'Request items',13:'Ephemeral objects',
+      14:'Loot presents',18:'Buff elixirs',19:'Manuals'},
+    fr:{0:'Par défaut',12:'Objets de requête',13:'Objets temporaires',
+      14:'Cadeaux de butin',18:'Élixirs de renforcement',19:'Manuels'},
+    it:{0:'Predefiniti',12:'Oggetti delle richieste',13:'Oggetti temporanei',
+      14:'Regali premio',18:'Elisir potenzianti',19:'Manuali'},
+    de:{0:'Standard',12:'Auftragsgegenstände',13:'Temporäre Objekte',
+      14:'Beutegeschenke',18:'Stärkungselixiere',19:'Handbücher'},
+    'es-ES':{0:'Predeterminados',12:'Objetos de solicitud',13:'Objetos temporales',
+      14:'Regalos de botín',18:'Elixires de mejora',19:'Manuales'},
+    'zh-CN':{0:'默认',12:'委托物品',13:'临时物件',
+      14:'奖励礼物',18:'强化药剂',19:'手册'},
+    'pt-BR':{0:'Padrão',12:'Itens de pedido',13:'Objetos temporários',
+      14:'Presentes de recompensa',18:'Elixires de fortalecimento',19:'Manuais'}
+  };
+  /** Source-exact IL2CPP ItemType is an independent browse axis, never an
+   * invented CollectionSet category. Preserve the original enum fallback. */
   function sourceActivityTypeLabel(lang:string,code:number,native:string|null):string{
     const legacy=sourceActivityLegacyNames[code];
     if(legacy)return nativeActivityLabels[lang]?.[legacy]??nativeActivityLabels.en[legacy];
+    if(native&&sourceActivityVerifiedNames[code]===native)
+      return (sourceActivityNewLabels[lang]??sourceActivityNewLabels.en)[code];
     return native?.replace(/([a-z])([A-Z])/g,'$1 $2') ??
       (lang==='ja'?'その他のアクティビティアイテム':'Other activity items');
   }
