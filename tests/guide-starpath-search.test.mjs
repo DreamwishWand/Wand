@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.mjs';
-import {verifyStarpathDailyPart,starpathDailyDescription} from '../src/lib/guide/public-starpath-daily.mjs';
-import {verifyStarpathWeeklyLocales,starpathWeeklyDescription} from '../src/lib/guide/public-starpath-locales.mjs';
+import {verifyStarpathDailyPart,starpathDailyDescription} from '../src/lib/guide/public-starpath-daily.ts';
+import {verifyStarpathWeeklyLocales,starpathWeeklyDescription} from '../src/lib/guide/public-starpath-locales.ts';
 import {verifyPublicStarpathGoals,starpathGoalLabel} from '../src/lib/guide/public-starpath-goals.mjs';
 import {filterStarpathTasks} from '../src/lib/guide/starpath-search.ts';
 
