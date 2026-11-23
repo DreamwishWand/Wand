@@ -398,6 +398,15 @@ try{
   await deep.goto(url+'?item=40005160');
   await deep.locator('.item-inspector h2').waitFor({timeout:30000});
   assert.match(await deep.locator('.item-inspector h2').innerText(),/ガラスの靴|Glass Shoe/);
+  // Source-native DB-01 Item master is joined only when an item is opened.
+  // The pinned 1.26.2 master resolves exact original Tags and 8-language
+  // names by Item ID without treating source Tags as Collection membership.
+  const db01Details=deep.locator('.collection-item-master[data-item-id="40005160"]');
+  await db01Details.waitFor({timeout:30000});
+  assert.match(await db01Details.innerText(),/White/);
+  await db01Details.locator('summary').click();
+  assert.match(await db01Details.innerText(),/Bedroom/);
+  assert.match(await db01Details.innerText(),/Glass Shoe/);
   assert.equal(await deep.getByRole('searchbox',{name:/8言語/}).inputValue(),'40005160');
   assert.equal(await deep.getByRole('button',{name:'アイテムへのリンクをコピー'}).count(),1);
   assert.equal(new URL(deep.url()).searchParams.get('item'),'40005160');
