@@ -146,6 +146,24 @@ export interface OfficialCampaign {
     officialArticleContainsReadableCode:false;
     nativeRewardItemIdVerified:false;
   }>;
+  /**
+   * The official page verifies an event and its total of nine codes, but
+   * individual code tokens, reward names and quantities are transcribed from
+   * a separately attributed community archive. No numeric grant is verified.
+   */
+  readonly communityArchiveEvidence?: Readonly<{
+    evidence:'community_code_and_reward_mapping_for_official_event';
+    archiveKind:'community_wiki';
+    archiveUrl:string;
+    checkedOn:string;
+    officialArticleCodeCount:9;
+    officialArticleProvidesCodeTokens:false;
+    officialArticleProvidesRewardNames:false;
+    officialExpirationDate:'2024-08-16';
+    exactExpiryInstantVerified:false;
+    nativeRewardItemIdVerified:false;
+    actualRewardGrantedVerified:false;
+  }>;
   readonly productId: string | null;
   readonly window: OriginWindow;
   /** Preserve contradictory official windows without silently overwriting. */
@@ -252,6 +270,30 @@ function validateCampaign(c: OfficialCampaign): void {
       ev.nativeRewardItemIdVerified===false&&
       c.source.kind==='official_publication',
       'CAMPAIGN_CODE_PROVENANCE');
+  }
+  if(c.communityArchiveEvidence!==undefined){
+    const ev=c.communityArchiveEvidence;
+    assert(ev && c.codeEvidence===undefined &&
+      c.kind==='redeem_code'&&c.code!==null&&
+      /^FOF[A-Z]+24$/.test(c.code)&&c.campaignId==='code:'+c.code&&
+      c.source.kind==='official_publication'&&
+      c.source.sourceUrl===
+        'https://disneydreamlightvalley.com/news/FestivalofFoolishness2024'&&
+      c.window.start==='2024-07-16'&&c.window.endExclusive==='2024-08-16'&&
+      ev.evidence==='community_code_and_reward_mapping_for_official_event'&&
+      ev.archiveKind==='community_wiki'&&
+      ev.archiveUrl==='https://dreamlightvalleywiki.com/Festival_of_Foolishness_(2024)'&&
+      DATE.test(ev.checkedOn)&&
+      ev.officialArticleCodeCount===9&&
+      ev.officialArticleProvidesCodeTokens===false&&
+      ev.officialArticleProvidesRewardNames===false&&
+      ev.officialExpirationDate==='2024-08-16'&&
+      ev.exactExpiryInstantVerified===false&&
+      ev.nativeRewardItemIdVerified===false&&
+      ev.actualRewardGrantedVerified===false&&
+      c.rewards.length>0&&c.rewards.every(r=>
+        r.itemId===null&&r.quantity!==null&&r.cumulativeWatchMinutes===null),
+      'CAMPAIGN_COMMUNITY_REWARD_PROVENANCE');
   }
   if(c.windowEvidence!==undefined){
     assert(Array.isArray(c.windowEvidence)&&c.windowEvidence.length>0,'CAMPAIGN_WINDOW_EVIDENCE');
