@@ -42,7 +42,9 @@ export async function openLocalWorldZip(blob:Blob){
   if(!obj(parsed)||!obj(parsed.manifest)||
     parsed.manifest.schema!==WORLD_SCHEMA||
     parsed.manifest.status!=='partial_game_native_evidence'||
-    !Number.isSafeInteger(parsed.manifestFilesVerified))
+    !Number.isSafeInteger(parsed.manifestFilesVerified)||
+    typeof parsed.manifestRawSha256!=='string'||
+    !/^[a-f0-9]{64}$/.test(parsed.manifestRawSha256))
     throw new TypeError('DB04_LOCAL_WORLD_ZIP: verified reader returned invalid data');
   const manifest=parsed.manifest;
   const catalog=createWorldCatalog({
@@ -61,6 +63,7 @@ export async function openLocalWorldZip(blob:Blob){
     platform:typeof manifest.platform==='string'?manifest.platform:'unknown',
     sourceScopeVerified:manifest.sourceScopeVerified===true,
     manifestFilesVerified:parsed.manifestFilesVerified as number,
+    manifestRawSha256:parsed.manifestRawSha256,
     integrity:'manifest_sha256_self_consistent_not_original_source_authenticated',
     originalSourceAuthenticated:false,
     privateDataUploaded:false

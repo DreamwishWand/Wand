@@ -166,6 +166,7 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
         integrity:source.integrity,
         originalSourceAuthenticated:false,privateDataUploaded:false,
         manifestFilesVerified:source.manifestFilesVerified,
+        manifestRawSha256:source.manifestRawSha256,
         sourceScopeVerified:source.sourceScopeVerified,
         regionCoverage:summarizeWorldPreviewSourceCoverage(catalog),
         layouts:views

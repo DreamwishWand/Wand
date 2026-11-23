@@ -175,7 +175,11 @@ fn decode_zip(bytes: &[u8]) -> DecodeResult<String> {
     if manifest_entry.uncompressed > MAX_MANIFEST {
         return Err(bad("oversized DB-04 manifest"));
     }
-    let manifest = decode_json(&unpack(bytes, manifest_entry)?, "manifest.json")?;
+    // Raw uncompressed bytes match reference_graph.py's source manifest hash.
+    // This is snapshot consistency, NOT publisher or installation authenticity.
+    let manifest_bytes = unpack(bytes, manifest_entry)?;
+    let manifest_raw_sha256 = format!("{:x}", Sha256::digest(&manifest_bytes));
+    let manifest = decode_json(&manifest_bytes, "manifest.json")?;
     let root = manifest.as_object().ok_or_else(|| bad("invalid DB-04 manifest"))?;
     if root.get("schema").and_then(Value::as_str) != Some("wand.db04.world@1")
         || root.get("status").and_then(Value::as_str) != Some("partial_game_native_evidence")
@@ -209,6 +213,7 @@ fn decode_zip(bytes: &[u8]) -> DecodeResult<String> {
     let mut output = Map::new();
     output.insert("manifest".into(), manifest.clone());
     output.insert("manifestFilesVerified".into(), Value::from(register.len()));
+    output.insert("manifestRawSha256".into(), Value::from(manifest_raw_sha256));
     let family_names: BTreeMap<String, &str> = FAMILIES.iter()
         .map(|name| (format!("{name}.json"), *name)).collect();
     for (name, expected) in register {
@@ -338,6 +343,12 @@ mod tests {
             let result: Value = serde_json::from_str(&text).unwrap();
             assert_eq!(result["manifest"]["gameVersion"],"1.26.2");
             assert_eq!(result["manifestFilesVerified"],8);
+            // Stored/deflate ZIPs must expose the SAME manifest byte digest.
+            let archive_bytes = archive(method,None);
+            let entries = parse_members(&archive_bytes).unwrap();
+            let original = unpack(&archive_bytes, entries.get("manifest.json").unwrap()).unwrap();
+            assert_eq!(result["manifestRawSha256"],
+                format!("{:x}",Sha256::digest(&original)));
             assert_eq!(result["objects"],serde_json::json!([]));
             assert_eq!(result["layoutObjects"],serde_json::json!([]));
         }
