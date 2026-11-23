@@ -305,10 +305,11 @@ function sourceCardinalGridAreaPosition(catalog:SourceGridAreaCatalog,footprint:
     throw new TypeError('Invalid original GridArea position/orientation');
   }
   const common = {
-    orientationCode, gridToAreaTessellationRatioAssumed: '1:1',
-    fullNativeTessellationScalingApplied: false,
-    gridObjectAnchorVerified: false,
-    occupancyPredicateVerified: false, placementLegalityVerified: false,
+    orientationCode, gridToAreaTessellationRatioAssumed: '1:1' as const,
+    fullNativeTessellationScalingApplied: false as const,
+    gridObjectAnchorVerified: false as const,
+    occupancyPredicateVerified: false as const,
+    placementLegalityVerified: false as const,
   };
   if (catalog.manifest.gameVersion !== '1.26.1') {
     return {
