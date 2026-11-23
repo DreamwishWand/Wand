@@ -61,7 +61,6 @@ const knownLegacy=new Set([
   "src/lib/guide/event-calendar.mjs",
   "src/lib/guide/public-characters.mjs",
   "src/lib/guide/public-guide.mjs",
-  "src/lib/guide/public-quest-steps.mjs",
   "src/lib/guide/public-starpath-daily.mjs",
   "src/lib/guide/public-starpath-goals.mjs",
   "src/lib/guide/public-starpath-locales.mjs",
