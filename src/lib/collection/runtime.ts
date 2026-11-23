@@ -573,7 +573,10 @@ export class CollectionRuntime {
       const publicFamilies:Record<string,readonly string[]>={
         Furniture:['Furniture','Landscaping','Roads & Fences'],
         Clothing:['Clothing'],
-        ActivityItem:['ActivityItem','Source Activity Items'],
+        ActivityItem:['ActivityItem','Source Activity Items',
+          'Source Crop','Source Meal','Source Seed','Source Flower','Source Fish',
+          'Source Ingredient','Source Consumable','Source Mineral',
+          'Source Crafting Material'],
         Makeup:['Makeup','Appearance'],
         Trimming:['Trimming','Wallpaper & Flooring'],
         Building:['Building','Buildings'],
