@@ -3,7 +3,7 @@
  * This module only enables filters backed by explicit, reviewed per-Item scope
  * membership in the currently loaded catalog.
  */
-import type {CollectionFacet,CollectionRuntimeMetadata} from './runtime.ts';
+import type {CollectionFacet,CollectionItem,CollectionRuntimeMetadata} from './runtime.ts';
 
 export interface CollectionScopeOption {
   readonly id:string;
@@ -63,4 +63,25 @@ export function collectionScopeOptions(
     options.sort((a,b)=>rank(a.id)-rank(b.id));
   }
   return Object.freeze(options);
+}
+
+/** Only show per-item worlds/universes represented by reviewed Collection
+ * membership options. Raw source Tag associations and unknown IDs are
+ * deliberately not displayed as confirmed in-game Collection membership. */
+export function collectionItemScopeLabels(
+  item:Readonly<Pick<CollectionItem,'worlds'|'universes'>>|null,
+  worlds:readonly CollectionScopeOption[],
+  universes:readonly CollectionScopeOption[],
+):Readonly<{worlds:readonly string[];universes:readonly string[]}>{
+  const labelsFor=(ids:readonly string[],options:readonly CollectionScopeOption[])=>{
+    const verified=new Map(options.map(option=>[option.id,option.label]));
+    return Object.freeze([...new Set(ids)].flatMap(id=>{
+      const label=verified.get(id);
+      return label?[label]:[];
+    }));
+  };
+  return Object.freeze({
+    worlds:labelsFor(item?.worlds??[],worlds),
+    universes:labelsFor(item?.universes??[],universes),
+  });
 }
