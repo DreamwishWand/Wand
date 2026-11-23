@@ -70,7 +70,11 @@ export async function matchOfficialCampaignRewardNames(
   const byCampaign = new Map<string, OfficialNameCandidate[]>();
   let examined = 0, matched = 0, ambiguous = 0, unmatched = 0;
   for (const campaign of campaigns) {
-    if (campaign.source.kind !== 'official_publication') continue;
+    // An official article establishing an event period is not evidence that
+    // a separately archived code/reward name appeared in that publication.
+    // Mixed-source records have their own community-only public reader.
+    if (campaign.source.kind !== 'official_publication' ||
+        campaign.communityArchiveEvidence !== undefined) continue;
     for (const reward of campaign.rewards) {
       if (reward.itemId !== null) continue; // already explicitly linked elsewhere
       examined++;
