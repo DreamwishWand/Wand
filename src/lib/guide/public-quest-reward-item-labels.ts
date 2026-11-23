@@ -76,7 +76,8 @@ function originalRewardIds(
   let count=0;
   for(const questId of reader.questIdsWithEvidence){
     const reward=reader.getQuest(questId);
-    ensure(reward?.questId===questId&&reward.staticSourceOnly===true&&
+    ensure(reward!==null,'ORIGINAL_REWARD_MISSING');
+    ensure(reward.questId===questId&&reward.staticSourceOnly===true&&
       reward.guaranteedGrant===false,'ORIGINAL_REWARD_ROW');
     for(const currency of reward.currencies){
       ensure(id(currency.itemId)===currency.itemId,'ORIGINAL_CURRENCY_ID');
