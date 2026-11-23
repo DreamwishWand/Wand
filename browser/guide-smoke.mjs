@@ -230,6 +230,7 @@ try {
   assert.equal(await targetDeep.locator('.quest-row').count(),16,
     'source Item-ID reverse search groups duplicate objective references per Quest');
   await targetSearch.fill('');
+  await targetDeep.getByRole('button',{name:'すべて',exact:true}).first().click();
   await targetDeep.waitForFunction(()=>
     document.querySelector('.count')?.textContent?.includes('733件'));
   assert.equal(await targetDeep.locator('.reward-focus').count(),0,
@@ -325,6 +326,7 @@ try {
   await namedReward.waitForFunction(()=>!
     document.querySelector('.reward-focus')?.textContent?.includes('報酬名に一致する'));
   await rewardNameInput.fill('');
+  await namedReward.getByRole('button',{name:'すべて',exact:true}).first().click();
   await namedReward.waitForFunction(()=>
     document.querySelector('.count')?.textContent?.includes('733件'));
   assert.deepEqual(namedRewardErrors,[],namedRewardErrors.join('\\n'));
