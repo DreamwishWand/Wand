@@ -115,7 +115,7 @@ test('typed media gate rejects forged reward catalog even when an Item ID appear
   assert.throws(()=>verifyStarpathMediaManifest(manifest(),missing),
     /Public Star Path: source reward census/);
   const modified=structuredClone(catalog);
-  modified.seasons[0].tasks[0].id='Task999';
+  modified.seasons[0].tasks[0].id=modified.seasons[0].tasks[1].id;
   assert.throws(()=>verifyStarpathMediaManifest(manifest(),modified),
     /Public Star Path: task source identity|Public Star Path: duplicate task/);
 });
@@ -124,7 +124,7 @@ test('typed gate refuses unapproved origins, malformed releases, non-source medi
   for(const invalid of [null,[],{},'published',42,{state:'unpublished',
     manifestPath:null,manifestSha256:null,manifestBytes:1,publicOrigin:null}]){
     assert.throws(()=>validateStarpathMediaActivation(invalid),
-      /activation record|unpublished release/);
+      /activation record|unpublished release|unapproved manifest pin/);
   }
   const candidate=manifest();
   candidate.release.sourceCandidateSha256='xyz';
