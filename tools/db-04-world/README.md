@@ -1259,3 +1259,21 @@ Pointer correlation does **not** derive either DefaultGridHashCode or
 DefaultGridDataHashCode, establish the algorithm, verify its output against
 any Save, authorize default-object reconstruction or edits. Those remain
 blocked until source-native behavior has been validated independently.
+
+
+## Steam v1.26.2 original DiffGrid hash writer source verification
+
+\`native_diffgrid_hash_writer_audit.py\` correlates the exact
+\`Meta.Grids.DiffGrid.Create\` method token with the original PE64
+method pointer, examines its original native function window, checks
+both \`DiffGrid\` hash-property getter/setter leaf code bodies, and
+confirms two distinct virtual-call results written to the corresponding
+stored signed-int32 hash fields. It uses only locally supplied Steam
+v1.26.2 original \`FullVersion.txt\`, IL2CPP v31 \`global-metadata.dat\`
+and \`GameAssembly.dll\`, and publishes **no original game bytes**.
+
+This establishes the source *writer* and storage mechanism, not the
+concrete virtual method targets, hash code algorithm, hash value parity
+with a legitimate save or DiffGrid reconstruction. DB-05 must continue
+to refuse hash-unverified DiffGrids. For each new game build, both
+byte-level patterns and the actual native logic must be re-examined.
