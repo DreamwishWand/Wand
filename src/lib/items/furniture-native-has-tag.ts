@@ -127,10 +127,10 @@ export function validateDb01OriginalFurnitureHasTagManifest(
     raw.nativeCollectionUiMembershipVerified===false&&
     raw.dlcEntitlementVerified===false&&raw.playerOwnershipVerified===false,
     'ORIGINAL_SOURCE_CONTRACT');
-  require(obj(raw.originalNativeClassCounts)&&
-    Object.keys(raw.originalNativeClassCounts).length===known.size&&
-    [...known].every(name=>
-      raw.originalNativeClassCounts?.[name]===specs[name].count),
+  const classCounts=raw.originalNativeClassCounts;
+  require(obj(classCounts)&&
+    Object.keys(classCounts).length===known.size&&
+    [...known].every(name=>classCounts[name]===specs[name].count),
     'SOURCE_CLASS_CENSUS');
   require(obj(raw.files)&&Object.keys(raw.files).length===256,
     'SOURCE_SHARD_LEDGER');
