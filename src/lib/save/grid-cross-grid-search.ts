@@ -22,8 +22,9 @@ export interface LocalGridSearchHit {
 }
 function matches(
   row:LocalGridSearchRow,query:string,
-  itemName:(id:string)=>string
+  itemName:(id:string)=>string,ordinalOnly:boolean
 ):boolean{
+  if(ordinalOnly)return String(row.localOrdinal).includes(query);
   return String(row.localOrdinal).includes(query)||
     row.itemId.toLocaleLowerCase().includes(query)||
     itemName(row.itemId).toLocaleLowerCase().includes(query);
@@ -39,7 +40,9 @@ export function searchLocalGridPositions(
   query:string,
   itemName:(id:string)=>string=()=>'',limit=20
 ):LocalGridSearchHit[]{
-  const needle=query.trim().toLocaleLowerCase().replace(/^#/,'');
+  const normalized=query.trim().toLocaleLowerCase();
+  const ordinalOnly=normalized.startsWith('#');
+  const needle=ordinalOnly?normalized.slice(1):normalized;
   if(!needle||!Number.isSafeInteger(limit)||limit<1||limit>100)return [];
   const markers=new Map<string,{
     localGridOrdinal:number;
@@ -58,7 +61,8 @@ export function searchLocalGridPositions(
       markers.set(key,marker);
     }
     marker.ordinals.push(row.localOrdinal);
-    if(marker.matchedItemId===null&&matches(row,needle,itemName)){
+    if(marker.matchedItemId===null&&
+       matches(row,needle,itemName,ordinalOnly)){
       marker.matchedItemId=row.itemId;
     }
   }
