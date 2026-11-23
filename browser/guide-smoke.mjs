@@ -75,6 +75,11 @@ try {
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),true,
     'mobile full quest list with long untranslated/native names must wrap without horizontal overflow');
   await chooseLanguage(page,'ja');
+  // The new Story-first home intentionally does not blend Village/Realm
+  // quests into the main narrative. Generic original-ID search uses All.
+  await page.getByRole('button',{name:'すべて',exact:true}).first().click();
+  await page.waitForFunction(()=>
+    document.querySelector('.count')?.textContent?.includes('733件'));
 
   // Original-native selector ID 30000031 resolves through the published,
   // exact current Steam 1.26.2 names, without requiring an owner source archive.
@@ -106,6 +111,51 @@ try {
   assert.equal(await page.locator('.detail .step').count(), 0, 'corrupted content must never render');
   assert.deepEqual(errors, [], errors.join('\n'));
   await page.close();
+
+  // Foundational Quest UX: source-native story arcs, separate Realm, and a
+  // character-first Friendship browser, rather than a 733-row flat list.
+  const browse=await browser.newPage({viewport:{width:1280,height:820}});
+  const browseErrors=[];
+  browse.on('pageerror',err=>browseErrors.push(String(err)));
+  await browse.goto(url,{waitUntil:'domcontentloaded'});
+  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('43件'));
+  assert.match(await browse.locator('.quest-row').first().innerText(),
+    /ドリームライトバレーへようこそ/,
+    'the first screen must follow the source-numbered original Valley story');
+  assert.equal(await browse.locator('.story-arcs button').count(),6);
+  await browse.getByRole('button',{name:'リフト・イン・タイム',exact:true}).click();
+  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('30件'));
+  await browse.getByRole('button',{name:'The Keepsake Sea',exact:true}).click();
+  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('25件'));
+  await browse.getByRole('button',{name:'王国',exact:true}).click();
+  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('61件'));
+  assert.equal(await browse.locator('.story-arcs').count(),0,
+    'Realm quests must not be mixed into Story arcs');
+  await browse.getByRole('button',{name:'フレンドシップ',exact:true}).click();
+  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('341件'));
+  assert.equal(await browse.locator('.character-rail button').count(),78,
+    'exactly 77 source-native Village quest characters plus All');
+  await browse.locator('.character-rail button').filter({hasText:'グーフィー'}).first().click();
+  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('5件'));
+  assert.match(await browse.locator('.quest-row').first().innerText(),/温かい歓迎/,
+    'friendship Quests must follow the source-native Goofy 010/030/040/050/070 series');
+  await browse.setViewportSize({width:390,height:844});
+  assert.equal(await browse.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),true,
+    'character roster remains within the mobile viewport');
+  await browse.getByRole('button',{name:'イベント・繰り返し',exact:true}).click();
+  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('75件'));
+  await browse.getByRole('button',{name:'その他',exact:true}).click();
+  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('90件'));
+  await browse.getByRole('button',{name:'すべて',exact:true}).first().click();
+  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('733件'));
+  await browse.getByRole('textbox',{name:'クエスト名・IDを検索'}).fill('2070000793');
+  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('1件'));
+  assert.match(await browse.locator('.quest-row').first().innerText(),
+    /名称未確認（ID 2070000793）/,
+    'missing source translations cannot be replaced with internal Mission symbols');
+  assert.doesNotMatch(await browse.locator('.quest-row').first().innerText(),/SEC_Goof_010/);
+  assert.deepEqual(browseErrors,[],browseErrors.join('\\n'));
+  await browse.close();
 
   // Direct links from Collection/DB-02 resolve only from the verified index.
   // Clicking another quest updates the URL, and back restores the original.
