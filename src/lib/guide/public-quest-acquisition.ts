@@ -7,7 +7,7 @@
  * This module owns only the cross-service projection. The DB-02 ledger keeps
  * its existing source, validation, deduplication and query semantics.
  */
-import {verifyPublicQuestIndex} from './public-guide.mjs';
+import {verifyPublicQuestIndex} from './public-guide.ts';
 import {
   loadPublicQuestRewards,DB03_QUEST_REWARDS_FILE,DB03_QUEST_REWARDS_SHA,
   type PublicQuestRewardsReader,type QuestItemRewardRelation
