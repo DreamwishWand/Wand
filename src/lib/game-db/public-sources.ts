@@ -50,6 +50,10 @@ import {
   createDb00NativeCompanionReader,type Db00NativeCompanionReader
 } from './native-companions.ts';
 import {
+  createDb00CompanionIdentityReader,
+  type Db00CompanionIdentityReader,type Db00CompanionIdentityItem
+} from './native-companion-identities.ts';
+import {
   createDb00NativeOnlineReader,type Db00NativeOnlineReader
 } from './native-online-categories.ts';
 import {
@@ -162,6 +166,12 @@ export interface PublicSharedGameSources{
   ):Db00OutsideSearchResult;
   /** Optional 2-KB SHA-pinned native Companion source index, fetched on demand. */
   loadNativeCompanionSources():Promise<Db00NativeCompanionReader>;
+  /** Original 394 Companion definitions + 134 Pet.Source enums, if requested. */
+  loadNativeCompanionIdentitySources():Promise<Db00CompanionIdentityReader>;
+  /** One Item ID -> original Companion identity and unverified official names. */
+  getNativeCompanionIdentityEvidence(
+    itemId:string|number
+  ):Promise<Db00CompanionIdentityItem|null>;
   /** Optional SHA-pinned 9-family original OnlineCategory source classification. */
   loadNativeOnlineCategories():Promise<Db00NativeOnlineReader>;
   /** SHA-pinned original cooking/crafting results, loaded only on demand. */
@@ -303,6 +313,32 @@ export async function openPublicSharedGameSources(
     companions??=acquisition.loadNativePetSources().then(pets=>
       createDb00NativeCompanionReader(database,joined,pets)
     );
+  let companionIdentity:Promise<Db00CompanionIdentityReader>|null=null;
+  const loadNativeCompanionIdentitySources=():Promise<Db00CompanionIdentityReader>=>
+    companionIdentity??=Promise.all([
+      loadNativeCompanionSources(),
+      acquisition.loadNativeCompanionIdentities(),
+      acquisition.loadOfficialCompanionNameCandidates()
+    ]).then(([petSource,identities,officialNames])=>
+      createDb00CompanionIdentityReader(
+        database,joined,petSource,identities,officialNames
+      ));
+  const getNativeCompanionIdentityEvidence=async(
+    itemId:string|number
+  ):Promise<Db00CompanionIdentityItem|null>=>{
+    // Validate the Item ID before fetching any optional projection.
+    const shared=joined.getItem(itemId);
+    const row=(await loadNativeCompanionIdentitySources()).getItem(shared.itemId);
+    assert(row===null||
+      (row.itemId===shared.itemId&&
+        row.shared.itemId===shared.itemId&&
+        row.originalIdentityVerified===true&&
+        row.numericCampaignRewardLinkVerified===false&&
+        row.campaignGrantVerified===false&&
+        row.playerOwnershipVerified===false),
+      'NATIVE_COMPANION_IDENTITY_JOIN_MISMATCH');
+    return row;
+  };
   let nativeOnline:Promise<Db00NativeOnlineReader>|null=null;
   const loadNativeOnlineCategories=():Promise<Db00NativeOnlineReader>=>
     nativeOnline??=acquisition.loadNativeOnlineCategories().then(source=>
@@ -520,6 +556,7 @@ export async function openPublicSharedGameSources(
     getItems:(ids:readonly (string|number)[])=>joined.getItems(ids),
     searchItems:search.searchItems,
     searchOutsideSourceItems,loadNativeCompanionSources,
+    loadNativeCompanionIdentitySources,getNativeCompanionIdentityEvidence,
     loadNativeOnlineCategories,loadNativeRecipeSources,
     loadNativeActivitySources,getNativeAcquisitionEvidence,
     loadNativeLootCandidateSources,getAllNativeAcquisitionEvidence,
