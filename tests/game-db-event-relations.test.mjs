@@ -40,8 +40,8 @@ test('DB-00 loads source-verified 23 user-facing Events with 62 Quest, 79 Duty a
   assert.equal(graph.currentAvailabilityVerified,false);
   assert.equal(graph.playerProgressVerified,false);
   assert.equal(graph.sourceConfigurationOnly,true);
-  assert.equal(calls.length,30,'three new pinned reference assets, no duplicate base or event bytes');
-  assert.equal(new Set(calls).size,30);
+  assert.equal(calls.length,31,'event links plus the DB-02 native pet classification source; no duplicate bytes');
+  assert.equal(new Set(calls).size,31);
   assert.equal(calls.filter(x=>x.endsWith('/quest-index.json')).length,1);
   assert.equal(calls.filter(x=>x.endsWith('/event-friendship-rewards-1.26.2.json')).length,1);
   for(const file of [
