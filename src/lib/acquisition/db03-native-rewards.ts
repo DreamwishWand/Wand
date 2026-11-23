@@ -18,7 +18,7 @@ import {
   type CurrentCompatibleGuideReward
 } from '../guide/reward-source-equivalence.ts';
 import type {ItemOrigin,OriginKind,OriginProvenance} from './origins.ts';
-import {GUIDE_FRIENDSHIP_ORIGINAL_SHA} from '../guide/source-composite.mjs';
+import {GUIDE_FRIENDSHIP_ORIGINAL_SHA} from '../guide/source-composite.ts';
 
 export const DB02_DB03_NATIVE_REWARD_SCHEMA='wand.db02.db03-source-reward-candidates@1' as const;
 export interface LocalVerifiedRewardFiles{
