@@ -21,6 +21,10 @@
     'Board Game':'puzzle',Snippets:'puzzle','Lorekeeper Tales':'book',
     'Quest Puzzles':'puzzle',Exhibition:'gallery','Source Activity Items':'hammer'
   };
+  const categoryNavLabels:Readonly<Record<string,string>>={
+    ja:'カテゴリ',en:'Categories',fr:'Catégories',it:'Categorie',
+    de:'Kategorien','es-ES':'Categorías','zh-CN':'类别','pt-BR':'Categorias'
+  };
   const terminology:Record<string,string> = {
     OWNERSHIP_AND_DISCOVERY:'所有・発見',
     OWNERSHIP_STOCK_AND_DISCOVERY:'所有・所持数・発見',
@@ -622,7 +626,7 @@
       {#if filtersOpen}
         <div class="filter-panel">
           <fieldset><legend>収集状況（手動記録）</legend>
-            {#each [{id:'all',name:'すべて'},{id:'owned',name:'所持 / 解放'},{id:'missing',name:'未所持'}] as option}
+            {#each [{id:'all',name:'すべて'},{id:'owned',name:'所持 / 解放'},{id:'missing',name:'未所持'},{id:'unknown',name:'未記録'}] as option}
               <button type="button" class:chosen={status===option.id} aria-pressed={status===option.id} on:click={()=>{status=option.id as typeof status;resetView();}}>{option.name}</button>
             {/each}
           </fieldset>
@@ -640,11 +644,11 @@
           {#if isBrowsing}
             <div class="results-heading">
               <div class="breadcrumbs">
-                <button type="button" on:click={clearScope}>Categories</button>
+                <button type="button" on:click={clearScope}>{categoryNavLabels[locale]??categoryNavLabels.en}</button>
                 {#if selected}<span> / {selectionLabel}</span>{/if}
               </div>
               <div class="result-actions">
-                <span class="result-count">{totalMatches.toLocaleString(locale)} 件{#if selected} · 所持記録 {(facets.find((facet:any)=>facet.id===selected)?.owned??0).toLocaleString(locale)} / {(facets.find((facet:any)=>facet.id===selected)?.total??0).toLocaleString(locale)}{/if}</span>
+                <span class="result-count">{totalMatches.toLocaleString(locale)} 件</span>
                 <button type="button" class="subtle-button" disabled={Boolean(storeError)} aria-pressed={selectionMode}
                   on:click={()=>{selectionMode=!selectionMode;selectedIds=[];selectedItemId=null;}}>{selectionMode?'選択を終了':'複数選択'}</button>
               </div>
@@ -665,7 +669,10 @@
               </div>
             {/if}
             {#if !totalMatches}
-              <div class="empty-panel">条件に一致するアイテムはありません。未記録のアイテムは「未所持」として扱いません。</div>
+              <div class="empty-panel" role="status">
+                <p>該当するアイテムはありません</p>
+                <button type="button" class="subtle-button" on:click={clearScope}>条件を解除</button>
+              </div>
             {:else}
               {#each groupedItems as group (group.id)}
                 {#if !selected || search.trim()}
@@ -717,7 +724,7 @@
         </div>
         {#if selectedItem}
           <aside class="item-inspector" role={mobileInspector?"dialog":undefined} aria-modal={mobileInspector?"true":undefined} aria-label="アイテム情報">
-            <div class="inspector-heading"><span>ITEM DETAILS</span><button type="button" bind:this={inspectorClose} on:click={closeItem} aria-label="詳細を閉じる">×</button></div>
+            <div class="inspector-heading"><span class="visually-hidden">アイテム情報</span><button type="button" bind:this={inspectorClose} on:click={closeItem} aria-label="詳細を閉じる">×</button></div>
             <div class="inspector-art"><ItemArtwork itemId={selectedItem.itemId} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large /></div>
             <h2>{selectedItem.label}</h2>
             <p class="inspector-meta">{categoryLabel(locale,selectedItem.family)}</p>

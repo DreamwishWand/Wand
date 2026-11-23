@@ -419,6 +419,25 @@ try{
   assert.equal(backup.workspaces[0].entries['99999999'].discovered,true);
   assert.equal(backup.workspaces[0].entries['40005160'].quantity,7);
   assert.equal(backup.workspaces[0].entries['40005160'].status,'missing');
+  // Unknown/unrecorded must be distinct from an explicitly marked missing item.
+  // Clear directly from an empty search result, with no technical explanation.
+  await page.getByRole('button',{name:/フィルター/}).click();
+  const statusControls=page.getByRole('group',{name:'収集状況（手動記録）'});
+  await statusControls.getByRole('button',{name:'未記録'}).click();
+  await search.fill('40005160');
+  await page.locator('.empty-panel').waitFor();
+  assert.match(await page.locator('.empty-panel').innerText(),/該当するアイテムはありません/);
+  assert.doesNotMatch(await page.locator('.empty-panel').innerText(),/未記録のアイテムは/);
+  assert.equal(await statusControls.getByRole('button',{name:'未記録'}).getAttribute('aria-pressed'),'true');
+  await page.locator('.empty-panel').getByRole('button',{name:'条件を解除'}).click();
+  await page.locator('.facet-card').first().waitFor();
+  await search.fill('40005160');
+  await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
+  assert.equal(await page.locator('.breadcrumbs').getByRole('button',{name:'カテゴリ'}).count(),1);
+  assert.doesNotMatch(await page.locator('.result-count').innerText(),/所持記録/);
+  await page.locator('.breadcrumbs').getByRole('button',{name:'カテゴリ'}).click();
+  await page.locator('.facet-card').first().waitFor();
+  await page.getByRole('button',{name:/フィルター/}).click();
   await search.fill('');
   // The current published 1.26.2 snapshot lacks reviewed per-item
   // CollectionArea/Universe membership. Never expose dead-end filters or
