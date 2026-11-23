@@ -451,13 +451,16 @@ try {
   // Guide is an app-width event timeline; Wednesday resets are visually
   // central in each Sun-Sat row. Original UTC boundaries and date-only
   // festival source remain separate, never fabricated live server state.
-  const hub=await browser.newPage({viewport:{width:390,height:844}});
+  const hub=await browser.newPage({viewport:{width:390,height:844},timezoneId:'America/Los_Angeles'});
   const hubErrors=[];
   hub.on('pageerror',e=>hubErrors.push(String(e)));
   await hub.addInitScript(()=>{Date.now=()=>Date.parse('2026-11-22T12:00:00Z');});
   await hub.goto('http://127.0.0.1:4177/Wand/guide/',{waitUntil:'domcontentloaded'});
   await hub.locator('.timeline-row').first().waitFor({timeout:20000});
   assert.equal(await hub.locator('.guide-sections a').count(),3);
+  assert.equal(await hub.locator('.guide-sections .pending[aria-disabled="true"]').count(),1,
+    'the original Systems root remains visible but does not navigate before content exists');
+  assert.match(await hub.locator('.guide-sections .pending').innerText(),/システム/);
   assert.equal(await hub.locator('.timeline-row').count(),2,
     'only scheduled events overlapping the visible five-week range appear');
   assert.equal(await hub.locator('.timeline-heading .date-slot').count(),35);
@@ -505,7 +508,8 @@ try {
     .filter({hasText:'Seafaring Star Path'}).locator('.event-label').click();
   assert.equal(await hub.locator('.event-inspector a.primary').getAttribute('href'),
     seafaringCalendarHref);
-  assert.match(await hub.locator('.event-inspector').innerText(),/2026\/12\/01 23:00 JST/);
+  assert.match(await hub.locator('.event-inspector').innerText(),/2026\/12\/01 06:00 GMT-8/,
+    'the player sees exact source deadline in the browser-local timezone');
   await hub.locator('.event-inspector a.primary').click();
   await hub.locator('.seasons button.selected')
     .filter({hasText:'Seafaring Star Path'}).waitFor({timeout:20000});
