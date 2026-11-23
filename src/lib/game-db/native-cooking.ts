@@ -23,7 +23,6 @@ import {
 
 export const DB00_COOKING_INGREDIENT_CONTRACT=
   'wand.game-db.cooking-ingredient-candidates@1' as const;
-const LOCALES=new Set<string>(['en','fr','it','de','es-ES','ja','zh-CN','pt-BR']);
 function check(ok:unknown,reason:string):asserts ok{
   if(!ok)throw new TypeError('DB00_COOKING_'+reason);
 }
