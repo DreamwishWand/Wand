@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createWorldCatalog,WORLD_SCHEMA} from '../src/lib/world/catalog.mjs';
 import {listWorldPreviewViews} from '../src/lib/world/preview-views.ts';
+import {inspectSourceDefaultGridLayers,DB04_SOURCE_LAYER_INSPECTION}
+  from '../src/lib/world/native-source-layer-inspection.ts';
 import {
   getNativeFloorWindowResult,
   NATIVE_FLOOR_WINDOW_CONTRACT,
@@ -206,4 +208,60 @@ test('invalid area, orientation, dimensions and source identities fail closed',(
     assert.throws(()=>referenceFloorWindow(invalid,4,0,2),
       /DB04_FLOOR_RECT_SOURCE_INVALID/);
   }
+});
+
+test('clicking an original factor-one floor cell retrieves the full exact source GridLayers window',()=>{
+  const catalog=fixture(),views=listWorldPreviewViews(catalog);
+  const view=views.find(v=>v.kind==='villageArea');
+  assert.ok(view);
+  const inspected=inspectSourceDefaultGridLayers(
+    catalog,views,view.viewKey,1,1,2);
+  assert.equal(inspected.contract,DB04_SOURCE_LAYER_INSPECTION);
+  assert.equal(inspected.status,'source_default_layer_window_observed');
+  assert.equal(inspected.gridDataPath,FLOOR);
+  assert.deepEqual(inspected.rect,{x:0,y:0,width:4,height:3});
+  assert.equal(inspected.selectedX,1);
+  assert.equal(inspected.selectedY,2);
+  assert.equal(inspected.window.status,'source_item_default_layer_window');
+  assert.equal(inspected.window.sourceGridTessellationFactor,1);
+  assert.equal(inspected.knownContributorCells,2);
+  assert.equal(inspected.rawNonzeroLayerCells,2);
+  assert.equal(inspected.possiblyUnresolvedCells,0);
+  assert.equal(inspected.window.rawLayerOrRows[2][1],16);
+  assert.equal(inspected.window.rawLayerOrRows[2][2],16);
+  assert.equal(inspected.window.rawLayerOrRows[0][0],0);
+  for(const key of [
+    'nativeGridCellsIndexVerified','nativeCollisionRulesVerified',
+    'savedWorldPlacementVerified','placementLegalityVerified'
+  ])assert.equal(inspected[key],false,key);
+  assert.equal(inspected.sourceDefaultLayersOnly,true);
+});
+
+test('factor-two and unsupported source versions never project originals onto raw floor',()=>{
+  const t2=fixture({scale:2,anchorX:5,anchorY:4});
+  const t2view=listWorldPreviewViews(t2).find(v=>v.kind==='villageArea');
+  const factor=inspectSourceDefaultGridLayers(t2,[t2view],
+    t2view.viewKey,1,1,2);
+  assert.equal(factor.status,'source_grid_tessellation_not_compatible');
+  assert.equal(factor.window,null);
+  assert.equal(factor.knownContributorCells,null);
+  const other=fixture({version:'1.27.0'});
+  const otherView=listWorldPreviewViews(other)[0];
+  const unknown=inspectSourceDefaultGridLayers(
+    other,[otherView],otherView.viewKey,1,1,2);
+  assert.equal(unknown.status,'source_game_version_not_verified');
+  assert.equal(unknown.window,null);
+});
+
+test('source layer inspection never joins a grid from a different view or invalid cell',()=>{
+  const catalog=fixture(),views=listWorldPreviewViews(catalog);
+  assert.throws(()=>inspectSourceDefaultGridLayers(
+    catalog,views,views[0].viewKey,99,1,2),
+    /DB04_SOURCE_LAYER_INSPECTION_GRID_NOT_FOUND/);
+  assert.throws(()=>inspectSourceDefaultGridLayers(
+    catalog,views,views[0].viewKey,1,4,2),
+    /DB04_SOURCE_LAYER_INSPECTION_COORDINATE_OUTSIDE_GRID/);
+  assert.throws(()=>inspectSourceDefaultGridLayers(
+    catalog,views,views[0].viewKey,1,-1,0),
+    /DB04_SOURCE_LAYER_INSPECTION_INVALID_REQUEST/);
 });

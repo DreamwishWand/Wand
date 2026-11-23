@@ -20,6 +20,7 @@ import { getOriginalGridAreaLocalWindow } from './native-gridarea-local-window.t
 import { getOriginalGridObjectItemAreaLink } from './native-gridobject-item-area-link.ts';
 import {getOriginalDefaultGridLayersAtCell} from './native-default-gridlayers-cell.ts';
 import {getOriginalDefaultGridLayersWindow} from './native-default-gridlayers-window.ts';
+import {inspectSourceDefaultGridLayers} from './native-source-layer-inspection.ts';
 import {probeOriginalSourceDefaultCandidate} from './native-default-candidate-probe.ts';
 import { getSourceAnchorDomain, getTessellatedSourceAnchorWindow } from './native-anchor-domain';
 import {
@@ -38,6 +39,8 @@ type Request =
   | { command:'floor-items'; requestId:number; query:string }
   | { command:'floor-match';requestId:number;regionKey:string;
       viewKey:string;gridIdNative:number;itemId:number;orientationCode:number }
+  | { command:'floor-layer-inspect';requestId:number;viewKey:string;
+      gridIdNative:number;x:number;y:number }
   | { command:'terrain-raster'; requestId:number; viewKey:string; gridIdNative:number }
   | { command:'region-atlas'; requestId:number; regionKey:string;offset:number }
   | { command:'view'; requestId:number; viewKey:string;
@@ -137,6 +140,15 @@ function parseRequest(data:unknown): Request {
     return {command:'find-anchor',requestId,
       viewKey:data.viewKey,gridIdNative:data.gridIdNative,
       itemId:data.itemId,matchIndex:data.matchIndex};
+  if(data.command==='floor-layer-inspect'&&
+    typeof data.viewKey==='string'&&data.viewKey.length>0&&
+    data.viewKey.length<=2048&&nonnegative(data.gridIdNative)&&
+    data.gridIdNative<=0xffffffff&&
+    nonnegative(data.x)&&data.x<=0xffffffff&&
+    nonnegative(data.y)&&data.y<=0xffffffff)
+    return {command:'floor-layer-inspect',requestId,
+      viewKey:data.viewKey,gridIdNative:data.gridIdNative,
+      x:data.x,y:data.y};
   if(data.command==='floor-items'&&
     typeof data.query==='string'&&data.query.length<=100)
     return {command:'floor-items',requestId,query:data.query};
@@ -282,6 +294,13 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
     const sourceView=views.find(view=>view.viewKey===message.viewKey);
     if (!sourceView)
       throw new TypeError('Unknown local World view');
+    if(message.command==='floor-layer-inspect'){
+      const result=inspectSourceDefaultGridLayers(
+        catalog,views,sourceView.viewKey,message.gridIdNative,
+        message.x,message.y);
+      worker.postMessage({kind:'floor-layer-inspect',requestId,result});
+      return;
+    }
     if(message.command==='terrain-raster'){
       const grid=sourceView.grids.find(
         item=>item.gridIdNative===message.gridIdNative);

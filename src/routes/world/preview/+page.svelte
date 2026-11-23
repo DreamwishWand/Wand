@@ -6,6 +6,7 @@
   import NativeTerrainFloorMatchPanel from '$lib/world/NativeTerrainFloorMatchPanel.svelte';
   import type {OriginalFloorItem,NativeFloorMatchResult} from '$lib/world/native-floor-match.ts';
   import type {NativeFloorWindowResult} from '$lib/world/native-floor-rectangle-window.ts';
+  import type {SourceLayerInspection} from '$lib/world/native-source-layer-inspection.ts';
   import NativeTerrainRegionAtlas from '$lib/world/NativeTerrainRegionAtlas.svelte';
   import type {SourceRegionAtlasPage} from '$lib/world/native-region-grid-atlas.ts';
   import type {OriginalItemAnchorFindResult, GlobalOriginalItemAnchorResult}
@@ -130,6 +131,10 @@
   let floorMatchRequestId=-1;
   let floorMatchLoading=false;
   let floorMatchError='';
+  let floorLayerInspection:SourceLayerInspection|null=null;
+  let floorLayerInspectionRequestId=-1;
+  let floorLayerInspecting=false;
+  let floorLayerInspectionError='';
   let selectedCell: {x:number;y:number} | null = null;
   let showSourceDefaultLayerOverlay=false;
   let selectedCellLayers:OriginalDefaultGridLayersCell|null=null;
@@ -392,6 +397,7 @@
     floorMatchRequestId=-1;
     floorMatchLoading=false;
     floorMatchError='';
+    resetFloorLayerInspection();
     worker?.terminate();
     worker = null;
     loading = false;
@@ -532,8 +538,32 @@
     floorOrientationCode=code;
     requestFloorMatch();
   }
+  function resetFloorLayerInspection(){
+    floorLayerInspection=null;
+    floorLayerInspectionRequestId=-1;
+    floorLayerInspecting=false;
+    floorLayerInspectionError='';
+  }
+  function inspectFloorLayerAt(cellX:number,cellY:number){
+    resetFloorLayerInspection();
+    const bounds=floorWindowResult;
+    const view=layouts.find(row=>row.viewKey===selectedViewKey);
+    const grid=view?.grids.find(row=>String(row.gridIdNative)===selectedGridId);
+    if(!worker||!view||!grid||!bounds?.originBitmap||
+       bounds.bitmapWidth===null||bounds.bitmapHeight===null||
+       !Number.isSafeInteger(cellX)||!Number.isSafeInteger(cellY)||
+       cellX<0||cellY<0||
+       cellX>=bounds.bitmapWidth||cellY>=bounds.bitmapHeight)return;
+    floorLayerInspectionRequestId=++requestId;
+    floorLayerInspecting=true;
+    worker.postMessage({command:'floor-layer-inspect',
+      requestId:floorLayerInspectionRequestId,
+      viewKey:selectedViewKey,gridIdNative:grid.gridIdNative,
+      x:cellX,y:cellY});
+  }
   function clearFloorItem(){
     selectedFloorItem=null;
+    resetFloorLayerInspection();
     floorMatchResult=null;
     floorWindowResult=null;
     floorMatchLoading=false;
@@ -541,6 +571,7 @@
     floorMatchError='';
   }
   function requestFloorMatch(){
+    resetFloorLayerInspection();
     floorWindowResult=null;
     floorMatchResult=null;
     floorMatchLoading=false;
@@ -753,6 +784,29 @@
     owned.onmessage = (message:MessageEvent) => {
       if (owned !== worker) return;
       const result = message.data;
+      if(result?.kind==='floor-layer-inspect'||
+         (result?.kind==='error'&&
+          result.requestId===floorLayerInspectionRequestId)){
+        if(result.requestId!==floorLayerInspectionRequestId)return;
+        floorLayerInspecting=false;
+        if(result.kind==='error'){
+          floorLayerInspectionError='原本レイヤーを確認できませんでした。';
+          floorLayerInspection=null;
+          return;
+        }
+        const inspected=result.result as SourceLayerInspection;
+        const selected=layouts.find(row=>row.viewKey===selectedViewKey);
+        const grid=selected?.grids.find(
+          row=>String(row.gridIdNative)===selectedGridId);
+        if(inspected?.contract!=='wand.db04.source-layer-local-inspection@1'||
+           inspected.viewKey!==selectedViewKey||
+           inspected.gridIdNative!==grid?.gridIdNative||
+           inspected.gridDataPath!==grid?.gridDataPath||
+           inspected.placementLegalityVerified!==false)return;
+        floorLayerInspection=inspected;
+        floorLayerInspectionError='';
+        return;
+      }
       if(result?.kind==='floor-items'||
         (result?.kind==='error'&&result.requestId===floorSearchRequestId)){
         if(result.requestId!==floorSearchRequestId)return;
@@ -1287,6 +1341,9 @@
           result={floorMatchResult} windowResult={floorWindowResult}
           orientationCode={floorOrientationCode}
           onOrientationChange={changeFloorOrientation}
+          onInspect={inspectFloorLayerAt}
+          inspection={floorLayerInspection} inspecting={floorLayerInspecting}
+          inspectionError={floorLayerInspectionError}
           searching={floorSearchLoading}
           loading={floorMatchLoading} errorMessage={floorMatchError}
           onSearch={searchFloorItems} onPick={chooseFloorItem}
