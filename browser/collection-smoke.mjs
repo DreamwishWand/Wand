@@ -366,12 +366,11 @@ try{
   const firstCategory=await page.locator('.facet-card').first().boundingBox();
   assert.ok(firstCategory&&firstCategory.y<240,'categories must begin in the first viewport');
   assert.ok(await page.locator('.facet-card').count()>10);
-  await page.locator('.collection-original-category-grid .facet-card').first()
-    .waitFor({timeout:30000});
-  assert.equal(await page.locator('.collection-original-category-grid .facet-card').count(),20,
-    'Collection must expose the 20 source-original menu categories, not inventory classes');
-  assert.match(await page.locator('.collection-original-category-grid .facet-card').first().innerText(),
-    /思い出|Memories/);
+  await page.locator('.collection-native-activity').first().waitFor({timeout:30000});
+  assert.equal(await page.locator('.collection-original-category-grid').count(),0,
+    'game-original 20-category navigation must not be shown');
+  assert.ok(await page.locator('.collection-detail-category-grid .facet-card').count()>20,
+    'Wand should display the detailed item types by default');
   // The Item-ID master is accessible in full without choosing a tentative
   // original CollectionSubMenu category or an inventory-specific class.
   const browseAll=page.locator('.collection-categories-heading button');
@@ -380,13 +379,11 @@ try{
   await page.locator('.item-card').first().waitFor({timeout:12000});
   assert.match(await page.locator('.result-count').innerText(),/13,202/);
   await page.locator('.breadcrumbs').getByRole('button',{name:'カテゴリ'}).click();
-  await page.locator('.collection-original-category-grid .facet-card').first().waitFor();
-  assert.match(await page.locator('.collection-original-category-grid .facet-card').filter({
+  await page.locator('.collection-detail-category-grid .facet-card').first().waitFor();
+  assert.match(await page.locator('.collection-detail-category-grid .facet-card').filter({
     hasText:/家具|Furniture/
   }).first().innerText(),/[0-9][0-9,]* \/ [0-9][0-9,]*/);
-  // DB-01 ItemType classifications replace the one generic 1,972-item
-  // "unclassified" Activity bucket, without changing native Collection menus.
-  await page.getByRole('button',{name:'アイテムの種類から探す'}).click();
+  // Native detail classification is the normal browse view (no expand button).
   const sourceTypes=page.locator('.collection-native-activity');
   assert.equal(await sourceTypes.count(),15,
     'every source-native ActivityItem subtype must have a browse card');
@@ -400,7 +397,7 @@ try{
   assert.equal(Math.floor((groupItemId%10000000)/100000),12);
   assert.doesNotMatch(await page.locator('.item-card').first().innerText(),/未分類/);
   await page.locator('.breadcrumbs').getByRole('button',{name:'カテゴリ'}).click();
-  await page.locator('.collection-original-category-grid .facet-card').first().waitFor();
+  await page.locator('.collection-detail-category-grid .facet-card').first().waitFor();
   // A missing category projection must not leave a permanent loading message,
   // and retry must restore the game-source navigation without losing access
   // to the existing item-type categories.
@@ -416,15 +413,16 @@ try{
   });
   await retryPage.goto(url);
   await retryPage.getByRole('alert').filter({
-    hasText:/カテゴリーを読み込めませんでした|Categories could not be loaded/
+    hasText:/詳細分類を読み込めませんでした|Detailed categories could not be loaded/
   }).waitFor({timeout:30000});
   assert.equal(failedCategoryFetch,true);
   assert.ok(await retryPage.locator('.facet-card').count()>10,
     'item-type categories must remain browseable if source navigation fails');
   await retryPage.getByRole('button',{name:/再試行|Retry/}).click();
-  await retryPage.locator('.collection-original-category-grid .facet-card').first()
+  await retryPage.locator('.collection-native-activity').first()
     .waitFor({timeout:30000});
-  assert.equal(await retryPage.locator('.collection-original-category-grid .facet-card').count(),20);
+  assert.equal(await retryPage.locator('.collection-native-activity').count(),15);
+  assert.equal(await retryPage.locator('.collection-original-category-grid').count(),0);
   await retryContext.close();
   // DB-01's original Disney universe tags are now a working, cross-category
   // browser axis; they remain distinct from unverified Collection membership.
@@ -435,10 +433,15 @@ try{
   assert.ok(await page.locator('.collection-universe-card').count()>0,
     'source-backed universe tags must be browseable without Collection membership claims');
   assert.match(await page.locator('.collection-axis-notice').innerText(),/原本の作品タグ/);
-  await page.locator('.collection-universe-card').first().click();
-  await page.locator('.item-card').first().waitFor({timeout:15000});
-  assert.ok(await page.locator('.result-count').count()>0,
-    'selecting a universe source tag must display matching Items');
+  assert.match(await page.locator('.collection-universe-card').first().innerText(),
+    /ユニバース未設定/);
+  await page.locator('.collection-universe-card').nth(1).click();
+  await page.locator('.collection-universe-section .item-card').first().waitFor({timeout:15000});
+  assert.ok(await page.locator('.collection-universe-section').count()>0,
+    'choosing a universe must directly display category-grouped items');
+  const sourceUniverseIds=await page.locator('.collection-universe-section .item-card').evaluateAll(cards=>
+    cards.map(card=>Number(card.getAttribute('data-item-id'))));
+  assert.ok(sourceUniverseIds.every(Number.isSafeInteger));
   await page.getByRole('button',{name:'ワールド表示'}).click();
   // DB-02's six original acquisition categories are connected to the same
   // complete Item-ID result set, not just the first infinite-scroll page.
@@ -748,15 +751,23 @@ try{
   // CollectionArea/Universe membership. Never expose dead-end filters or
   // incorrectly treat source Tag associations as game-screen membership.
   await page.locator('.facet-card').first().waitFor();
-  assert.match(await page.locator('.facet-card').first().innerText(),/思い出|Memories/);
+  assert.ok(await page.locator('.collection-detail-category-grid .facet-card').count()>10);
   assert.equal(await page.locator('.mode-tabs').count(),0);
   assert.equal(await page.locator('.collection-scope-toolbar').count(),1);
   const nativeWorld=page.locator('.collection-scope-scroll button').filter({hasText:'Dreamlight Valley'});
   assert.equal(await nativeWorld.isDisabled(),false,
     'DB-01 original World-context tag must enable world source browsing');
   await nativeWorld.click();
+  await page.locator('.collection-detail-category-grid .facet-card').first().waitFor({timeout:15000});
+  assert.equal(await page.locator('.item-card').count(),0,
+    'world tabs open scoped category cards, not an immediate flat item grid');
+  const scopedFamily=page.locator('.collection-detail-category-grid .facet-card').first();
+  await scopedFamily.click();
   await page.locator('.item-card').first().waitFor({timeout:15000});
-  assert.ok(await page.locator('.item-card').count()>0);
+  await page.locator('.breadcrumbs').getByRole('button',{name:'カテゴリ'}).click();
+  await page.locator('.collection-detail-category-grid .facet-card').first().waitFor();
+  assert.equal(await nativeWorld.getAttribute('aria-pressed'),'true',
+    'return to category navigation preserves selected world');
   await page.locator('.collection-scope-scroll').getByRole('button',{name:'すべて'}).click();
   await page.getByRole('button',{name:/フィルター/}).click();
   assert.equal(await page.getByRole('combobox',{name:'ワールドで絞り込み'}).count(),0);
@@ -925,9 +936,8 @@ try{
   await page.locator('.collection-universe-card').first().click();
   await page.locator('.collection-universe-section .item-card').first().waitFor();
   assert.match(await page.locator('.collection-universe-section').innerText(),/検証済みの靴/);
-  await page.locator('.collection-universe-section-head button').first().click();
-  await page.locator('.item-card').first().waitFor();
-  assert.equal(await page.locator('.item-card').count(),1);
+  assert.equal(await page.locator('.collection-universe-section-head button').count(),0,
+    'universe view displays Items directly under category headings');
   await page.getByRole('button',{name:'ワールド表示'}).click();
   await page.locator('.facet-card').first().waitFor();
   assert.equal(await page.getByRole('button',{name:'ワールド表示'}).getAttribute('aria-pressed'),'true');
