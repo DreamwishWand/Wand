@@ -178,13 +178,38 @@ class PE64Image:
         return matches[0]
 
 
-def resolve_native_grid_methods(game_assembly, metadata_path):
+def resolve_native_grid_methods(game_assembly, metadata_path, *,
+                                namespace="Definitions.Grid",
+                                type_name="GridData",
+                                requested_methods=None):
+    """Resolve only exact metadata-selected signatures via ORIGINAL PE pointers.
+
+    The default four GridData methods and their existing behavior are
+    preserved. An explicit hash candidate may be selected by discovery
+    using (namespace,type,method,param_count) but the returned pointer is
+    NOT evidence for either DiffGrid hash algorithm or its return value.
+    """
+    if requested_methods is None:
+        if namespace != "Definitions.Grid" or type_name != "GridData":
+            raise ValueError("custom native type needs exact requested methods")
+        names = [(n, p) for ns, typ, n, p in TARGETS
+                 if ns == namespace and typ == type_name]
+    else:
+        if (not isinstance(namespace, str) or not namespace or
+                not isinstance(type_name, str) or not type_name or
+                not isinstance(requested_methods, (list, tuple)) or
+                not 1 <= len(requested_methods) <= 16 or
+                any(not isinstance(x, tuple) or len(x) != 2 or
+                    not isinstance(x[0], str) or not x[0] or
+                    len(x[0]) > 256 or type(x[1]) is not int or
+                    not 0 <= x[1] <= 64 for x in requested_methods) or
+                len(set(requested_methods)) != len(requested_methods)):
+            raise ValueError("invalid explicit original native method signatures")
+        names = list(requested_methods)
     dll = _mapped_source(game_assembly, DLL_MAX)
     metadata_path = _mapped_source(metadata_path, METADATA_MAX)
     metadata = Metadata31(metadata_path.read_bytes())
-    names = [(n, p) for namespace, typ, n, p in TARGETS
-             if namespace == "Definitions.Grid" and typ == "GridData"]
-    module, methods = metadata.type_methods("Definitions.Grid", "GridData", names)
+    module, methods = metadata.type_methods(namespace, type_name, names)
     runtime, start_rvas, pdata_sha = read_pe_runtime_functions(dll)
     # The native method pointer table must be found in the source binary
     # through the original metadata IMAGE name, not by a hard-coded RVA.
