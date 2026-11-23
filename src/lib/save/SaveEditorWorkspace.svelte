@@ -24,10 +24,12 @@
   export let developmentMode=false;
   let activeEditorPane:'items'|'world'='items';
   let amountEditorReady=false;
+  let amountSource:'saved'|'manual'='saved';
   function startManualAmountEntry():void{
     if(processing)return;
     cancel();result=null;
     amountRevisionIndex=null;
+    amountSource='manual';
     kind='inventory';
     inventoryId='';itemId='';containerId='';
     slotIndex='';chestItemId='';
@@ -264,6 +266,10 @@
   let slotFilter:'all'|'inventory'|'chest'='all';
   let slotCategoryFilter='all';
   let dbMap=new Map<string,Db00ItemContext>();
+  $: selectedAmountItemId=kind==='inventory'?itemId:chestItemId;
+  $: selectedAmountMetadata=dbMap.get(selectedAmountItemId);
+  $: selectedAmountLocation=kind==='inventory'
+    ?'Inventory '+inventoryId:'Chest '+containerId+' / Slot '+slotIndex;
   let dbStatus:'idle'|'loading'|'ready'|'unavailable'='idle';
   let dbWorker:Worker|null=null;
   let catalogRevision=0;
@@ -574,7 +580,7 @@
     if(!window.confirm('登録した数量・配置の変更をすべて破棄しますか？元のセーブは変更されません。'))return;
     cancel();result=null;
     queuedEdits=[];coordinateQueue=[];mixedQueue=[];
-    amountRevisionIndex=null;amountEditorReady=false;
+    amountRevisionIndex=null;amountEditorReady=false;amountSource='saved';
     coordinateSelection=null;orientationSelection=null;
   }
   function closeSelectedSave():void{
@@ -646,7 +652,7 @@
   function adoptSharedSave(file:File|null):void{
     if(fileSelected)queuedEdits=[];
     amountRevisionIndex=null;
-    amountEditorReady=false;
+    amountEditorReady=false;amountSource='saved';
     fileSelected=file!==null;
     activeFile=file;
     // Do not leave an obsolete native filename visible when the shared
@@ -705,6 +711,13 @@
     cancel();result=null;
     amountEditorReady=true;
     amountRevisionIndex=index;
+    amountSource=savedSlots.some(slot=>
+      slot.amount===edit.expected&&sameAmountTarget(
+        slot.kind==='inventory'
+          ?{kind:'inventory',inventoryId:slot.inventoryId,itemId:slot.itemId}
+          :{kind:'chest',containerId:slot.containerId,
+            slotIndex:slot.slotIndex,itemId:slot.itemId},edit.target))
+      ?'saved':'manual';
     kind=edit.target.kind;
     if(edit.target.kind==='inventory'){
       inventoryId=edit.target.inventoryId;itemId=edit.target.itemId;
@@ -736,6 +749,7 @@
     cancel();result=null;
     amountEditorReady=true;
     amountRevisionIndex=null;
+    amountSource='saved';
     kind=slot.kind;
     if(slot.kind==='inventory'){
       inventoryId=slot.inventoryId;itemId=slot.itemId;
@@ -1742,22 +1756,42 @@
       <p class="active-save-file" title={activeFile.name}>{activeFile.name}</p>
     {/if}
     {#if developmentMode||amountEditorReady}
-    <label>対象
-      <select bind:value={kind} aria-label="対象の種類" disabled={processing}>
-        <option value="inventory">Inventory</option>
-        <option value="chest">Chest</option>
-      </select>
-    </label>
-    {#if kind==='inventory'}
-      <label>Inventory ID <input bind:value={inventoryId} aria-label="Inventory ID" disabled={processing}/></label>
-      <label>Item ID <input bind:value={itemId} aria-label="Item ID" disabled={processing}/></label>
+    {#if developmentMode||amountSource==='manual'}
+      <label>対象
+        <select bind:value={kind} aria-label="対象の種類" disabled={processing}>
+          <option value="inventory">Inventory</option>
+          <option value="chest">Chest</option>
+        </select>
+      </label>
+      {#if kind==='inventory'}
+        <label>Inventory ID <input bind:value={inventoryId} aria-label="Inventory ID" disabled={processing}/></label>
+        <label>Item ID <input bind:value={itemId} aria-label="Item ID" disabled={processing}/></label>
+      {:else}
+        <label>Container ID <input bind:value={containerId} aria-label="Container ID" disabled={processing}/></label>
+        <label>Slot index <input bind:value={slotIndex} aria-label="Slot index" disabled={processing}/></label>
+        <label>Item ID <input bind:value={chestItemId} aria-label="Chest Item ID" disabled={processing}/></label>
+      {/if}
     {:else}
-      <label>Container ID <input bind:value={containerId} aria-label="Container ID" disabled={processing}/></label>
-      <label>Slot index <input bind:value={slotIndex} aria-label="Slot index" disabled={processing}/></label>
-      <label>Item ID <input bind:value={chestItemId} aria-label="Chest Item ID" disabled={processing}/></label>
+      <div class="selected-amount-item" aria-label="選択中のアイテム">
+        {#if selectedAmountMetadata?.media}
+          <VerifiedSaveItemIcon media={selectedAmountMetadata.media} basePath={base}/>
+        {/if}
+        <span class="selected-amount-description">
+          <strong>{selectedAmountMetadata?.name??selectedAmountItemId}</strong>
+          <small>{selectedAmountLocation}</small>
+        </span>
+        <button type="button" class="secondary" disabled={processing}
+          on:click={startManualAmountEntry}>IDで指定</button>
+      </div>
     {/if}
-    <label>現在の数量 <input bind:value={expected} aria-label="現在の数量" disabled={processing}/></label>
-    <label>変更後の数量 <input bind:value={replacement} aria-label="変更後の数量" disabled={processing}/></label>
+    <label>現在の数量
+      <input bind:value={expected} aria-label="現在の数量" disabled={processing}
+        readonly={!developmentMode&&amountSource==='saved'}/>
+    </label>
+    <label>変更後の数量
+      <input bind:value={replacement} aria-label="変更後の数量"
+        inputmode="numeric" autocomplete="off" disabled={processing}/>
+    </label>
     {#if developmentMode}
       <button type="button" on:click={()=>preview(false)} disabled={processing}>
         {processing?'Rust/WASMで確認中…':'変更を検証'}
@@ -2374,11 +2408,22 @@
       <p>一括変更 · {queuedEdits.length}件（最大16件）</p>
       <ol>
         {#each queuedEdits as edit,i}
+          {@const pendingItemId=String(edit.target.itemId)}
           <li>
-            {edit.target.kind==='inventory'
-              ? `Inventory ${edit.target.inventoryId} / ${edit.target.itemId}`
-              : `Chest ${edit.target.containerId} / ${edit.target.slotIndex} / ${edit.target.itemId}`}
-            ：{edit.expected} → {edit.replacement}
+            {#if developmentMode}
+              {edit.target.kind==='inventory'
+                ? `Inventory ${edit.target.inventoryId} / ${edit.target.itemId}`
+                : `Chest ${edit.target.containerId} / ${edit.target.slotIndex} / ${edit.target.itemId}`}
+              ：{edit.expected} → {edit.replacement}
+            {:else}
+              <span class="queued-amount-summary">
+                <strong>{dbMap.get(pendingItemId)?.name??pendingItemId}</strong>
+                <small>{edit.target.kind==='inventory'
+                  ? `Inventory ${edit.target.inventoryId}`
+                  : `Chest ${edit.target.containerId} / Slot ${edit.target.slotIndex}`}</small>
+                <span>×{edit.expected} → ×{edit.replacement}</span>
+              </span>
+            {/if}
             <button type="button" class="secondary" disabled={processing}
               aria-label={`数量変更${i+1}を修正`}
               on:click={()=>beginQueuedAmountRevision(i)}>修正</button>
@@ -2504,6 +2549,14 @@
   .editor-amount-empty{display:flex;align-items:center;flex-wrap:wrap;
     gap:12px;min-height:90px;}
   .editor-amount-empty p{margin:0;font-size:13px;}
+  .selected-amount-item{display:flex;gap:10px;align-items:center;
+    width:100%;min-width:0;}
+  .selected-amount-description{min-width:0;flex:1;display:flex;
+    flex-direction:column;gap:4px;}
+  .selected-amount-description strong{font-size:16px;overflow-wrap:anywhere;}
+  .selected-amount-description small{font-size:12px;color:#d4c2df;}
+  .selected-amount-item button{padding:8px 12px;font-size:12px;flex-shrink:0;}
+  input[readonly]{background:#332640;color:#eadcf4;cursor:default;}
   .active-save-file{flex:1 1 100%;margin:0;padding:6px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:#e5d5f1;}
   .eyebrow{font-size:11px;letter-spacing:.17em;color:#d4b0ee;}
   h1{font-size:clamp(26px,4vw,42px);margin:12px 0;}
@@ -2519,6 +2572,10 @@
   .batch-edits{display:block}
   .batch-edits ol{margin:8px 0 16px;padding-left:24px}
   .batch-edits li{margin:7px 0;font-size:13px}
+  .queued-amount-summary{display:inline-flex;align-items:baseline;
+    flex-wrap:wrap;column-gap:12px;row-gap:2px;}
+  .queued-amount-summary strong{font-size:14px;}
+  .queued-amount-summary small{font-size:12px;color:#d4c2df;}
   .batch-edits li button{margin-left:12px;padding:5px 10px}
   .saved-slots{display:block;}
   .slot-actions{display:flex;align-items:center;gap:15px;}
