@@ -9,6 +9,8 @@
   // native World positions and DB-04 layout IDs must never enter this view.
   export let rows:readonly LocalGridInstance[]=[];
   export let selectedOrdinal:number|null=null;
+  /** Incremented on explicit parent-row selection, even for the same row. */
+  export let focusRevision=0;
   export let disabled=false;
   export let onPick:(localOrdinal:number)=>void;
   /** Public item names are display/search aids only, never Save identities. */
@@ -45,6 +47,7 @@
   type Point=LocalGridInstance&{x:number;y:number};
   type Marker={x:number;y:number;ordinals:number[]};
   let selectedGrid=0;
+  let lastFocusRevision=-1;
 
   function hasCoordinates(row:LocalGridInstance):row is Point{
     return row.coordinatesObserved&&row.x!==null&&row.y!==null;
@@ -239,6 +242,18 @@
   $: grids=summarize(rows);
   $: if(!grids.some(g=>g.id===selectedGrid))
     selectedGrid=grids[0]?.id??0;
+  // Explicit parent list/queue selections navigate the map to their local
+  // Grid. Manual Grid changes do not immediately snap back to an old row.
+  $: if(focusRevision!==lastFocusRevision){
+    lastFocusRevision=focusRevision;
+    const selected=rows.find(row=>row.localOrdinal===selectedOrdinal);
+    if(selected&&selected.localGridOrdinal!==selectedGrid){
+      selectedGrid=selected.localGridOrdinal;
+      placing=false;groupMode=false;groupPlacing=false;
+      rotationDirection=null;rotationPivotOrdinal=null;
+      groupOrdinals=[];groupIssue='';
+    }
+  }
   $: currentRows=rows.filter(row=>row.localGridOrdinal===selectedGrid);
   $: points=currentRows.filter(hasCoordinates);
   $: allMarkers=aggregate(points);
