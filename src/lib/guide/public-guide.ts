@@ -85,7 +85,7 @@ export interface PublicQuestPart extends PublicGuideSourceHeader {
 }
 export interface PublicQuestSearch {
   readonly query?:string;
-  readonly locale?:PublicGuideLocale;
+  readonly locale?:string;
   readonly character?:string;
   readonly objective?:string;
   readonly section?:PublicQuestSection;
@@ -239,8 +239,8 @@ export function filterPublicQuests(
     return words.every(word=>labels.includes(word));
   });
   matched.sort((a,b)=>
-    (a.names[locale]||a.names.en||a.id)
-      .localeCompare(b.names[locale]||b.names.en||b.id,
+    (a.names[locale as PublicGuideLocale]||a.names.en||a.id)
+      .localeCompare(b.names[locale as PublicGuideLocale]||b.names.en||b.id,
         locale==='ja'?'ja':'en')||
     a.id.localeCompare(b.id));
   return {total:matched.length,rows:matched.slice(offset,offset+limit)};
