@@ -97,7 +97,12 @@ test('Item ID -> concrete Quest/Star Path/Recipe IDs and reverse lookup preserve
     assert(row.sourceRelations.identifiedSourceLinks);
     assert.deepEqual(row.sourceRelations.categories,row.acquisition.categories);
   }
-  assert(enriched.some(row=>row?.sourceRelations.links.length>0));
+  // This published Item is actually linked; unlike some original source IDs,
+  // it is confirmed present in the 13,202-definition public Item Master.
+  const known=await db.getItemWithSources(40006110);
+  assert.equal(known.definition.names.en,'Decorative Picnic Basket');
+  assert.equal(known.sourceRelations.identifiedSourceLinks,true);
+  assert(known.sourceRelations.links.length>0);
   assert.equal(enriched[0],enriched[21], 'batch preserves duplicate Item identity');
 });
 
