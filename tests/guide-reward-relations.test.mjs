@@ -5,7 +5,7 @@ import {createHash} from 'node:crypto';
 import {
   DB03_REWARD_RELATION_CONTRACT,createGuideRewardIndex,loadGuideRewardIndex,joinGuideRewardsToDb01
 } from '../src/lib/guide/reward-relations.ts';
-import {guideCalendarEvents} from '../src/lib/guide/event-calendar.mjs';
+import {guideCalendarEvents} from '../src/lib/guide/event-calendar.ts';
 import {STARPATH_PUBLIC_SHA} from '../src/lib/guide/public-starpath.mjs';
 
 const original=new URL('../static/guide/public/starpath-cache-2026-11-22.json',import.meta.url);
