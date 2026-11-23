@@ -95,7 +95,7 @@ export function parseDb01ItemAcquisition(raw:unknown):Db01ItemAcquisitionIndex{
     coverage.unclassifiedWithOriginalOnlineHints===1628&&
     coverage.recordsIncludingUnresolvedHints===4875&&
     record(coverage.itemIdsByCategory)&&
-    CATEGORIES.every(c=>coverage.itemIdsByCategory[c]===expectedCount[c])&&
+    CATEGORIES.every(c=>(coverage.itemIdsByCategory as Record<string,unknown>)[c]===expectedCount[c])&&
     record(coverage.sourceRelationOccurrences)&&
     raw.items.length===4875,'COVERAGE');
   const byItem=new Map<string,Db01ItemAcquisition>();
@@ -107,7 +107,7 @@ export function parseDb01ItemAcquisition(raw:unknown):Db01ItemAcquisitionIndex{
     const details=raw.details[category];
     check(Array.isArray(details)&&details.length>0&&
       details.every((d:unknown)=>typeof d==='string'&&
-        d.length>0&&typeof raw.detailEvidenceLevel[d]==='string')&&
+        d.length>0&&typeof (raw.detailEvidenceLevel as Record<string,unknown>)[d]==='string')&&
       new Set(details).size===details.length,'DETAIL_CATALOG');
     detailsCatalog.set(category,details);
   }
