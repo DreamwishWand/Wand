@@ -79,14 +79,10 @@ class NativeAreaBinaryAuditTests(unittest.TestCase):
         self.assertEqual(rows["GetAreaConfigs"], 0x70D01C0)
         self.assertEqual(rows["TagPredicate"], 0x70D0A20)
         self.assertEqual(rows["HasTag"], 0x41088E0)
-        for wrong, expected in [
-            (fake_dump().replace("Location = 6", "Location = 7"),
-             "NATIVE_FIELDS_OR_CRITTER_DRIFT"),
-            (fake_dump().replace("GamePlayTag", "GamePlayTag"),
-             ""),  # unchanged fixture sanity
-        ][:1]:
-            with self.assertRaisesRegex(ValueError, expected):
-                audit.audit_dump(wrong)
+        with self.assertRaisesRegex(ValueError,
+                                    "NATIVE_FIELDS_OR_CRITTER_DRIFT"):
+            audit.audit_dump(fake_dump().replace(
+                "Location = 6", "Location = 7"))
         with self.assertRaisesRegex(ValueError,
                                     "IL2CPP_SIGNATURE_DRIFT_GetAreaTags"):
             audit.audit_dump(fake_dump().replace(
