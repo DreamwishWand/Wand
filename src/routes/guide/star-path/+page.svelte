@@ -20,9 +20,11 @@
   import {resolveStarpathDutyLink,starpathDutyHref,type StarpathDutySelection} from '$lib/guide/starpath-duty-link.ts';
   import {resolveStarpathRewardLink,starpathRewardHref,type StarpathRewardSelection} from '$lib/guide/starpath-reward-link.ts';
   import type {GuideRewardOccurrence} from '$lib/guide/reward-relations.ts';
-  import {loadPublicStarpathGoals,starpathGoalLabel,starpathGoalHeading,starpathGoalSourceNote} from '$lib/guide/public-starpath-goals.mjs';
+  import {loadPublicStarpathGoals,starpathGoalLabel,starpathGoalHeading,starpathGoalSourceNote,
+    type PublicStarpathGoals} from '$lib/guide/public-starpath-goals.ts';
 
-  let catalog:any=null, publicMedia:any=null, goalAmounts:any=null, goalWarning='', error='', loading=true;
+  let catalog:any=null, publicMedia:any=null, goalWarning='', error='', loading=true;
+  let goalAmounts:PublicStarpathGoals|null=null;
   let rewardExtras:StarpathRewardExtras|null=null;
   let weeklyLocales:StarpathLocalizedPart|null=null;
   let dailyLocales:StarpathDailyParts|null=null;
