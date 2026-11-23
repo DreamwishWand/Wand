@@ -213,12 +213,12 @@ export function searchGuide(index:OriginalGuideSearch,{ query = '', locale = 'ja
       else {
         const labels:Array<[string,string|undefined,number]>=[[locale,row.names[locale],0]];
         if (allLocales) labels.push(...Object.entries(row.names).filter(([key]) => key !== locale)
-          .map(([lang,value]) => [lang, value, 0]));
+          .map(([lang,value]):[string,string,number] => [lang,value,0]));
         else if (locale !== 'en') labels.push(['en', row.names.en, 0]);
-        const charLabels = characterNames[row.characterId] ?? {};
+        const charLabels = characterNames[row.characterId??''] ?? {};
         if (charLabels[locale]) labels.push(['character:' + locale, charLabels[locale], 4]);
         if (locale !== 'en' && charLabels.en) labels.push(['character:en', charLabels.en, 4]);
-        const groupRecord = groupInfo[row.groupId];
+        const groupRecord = groupInfo[row.groupId??''];
         if (groupRecord?.rawName) labels.push(['sourceGroup', groupRecord.rawName, 7]);
         if (groupRecord?.names?.[locale]) labels.push(['group:' + locale, groupRecord.names[locale], 7]);
         if (locale !== 'en' && groupRecord?.names?.en) labels.push(['group:en', groupRecord.names.en, 7]);
@@ -338,7 +338,7 @@ export function guideCharacterLabels(payload:unknown,index:OriginalGuideSearch):
  */
 export function guideGroupInfo(payload:unknown,index:OriginalGuideSearch):Record<string,OriginalGuideGroup>{
   validateGuideSearch(index);
-  const counts = payload?.counts;
+  const counts = isObj(payload)?payload.counts:undefined;
   assert(isObj(payload) && payload.schema === 'wand.db03.quest-catalogue@1' &&
     sameTarget(payload.target, index.target) && isObj(payload.source) &&
     payload.source.file === index.source.file && payload.source.sha256 === index.source.sha256 &&
@@ -548,7 +548,7 @@ export function guideItemTargets(targets:unknown):OriginalGuideItemTarget{
 /** Render the original boolean AST without evaluating it or promoting it to a prerequisite DAG. */
 export function formatGuideConditionTree(tree:unknown):string|null{
   if (!isObj(tree) || !Array.isArray(tree.conditions)) return null;
-  const lines = [];
+  const lines:string[]=[];
   function visit(node:unknown,depth:number):void{
     assert(depth <= 24 && isObj(node) && Array.isArray(node.conditions),
       'invalid source condition tree');
@@ -730,7 +730,7 @@ export function detailStepRows(record:OriginalGuideMission|null|undefined,locale
         objectives.push({
           kind:String(objective.type ?? 'unknown'), id:String(objective.objectiveId ?? ''),
           text:inherited.text, textSource:inherited.locale,
-          descriptionLevel:source.text ? 'objective' : inherited.text ? 'subStep' : null,
+          descriptionLevel:(source.text ? 'objective' : inherited.text ? 'subStep' : null) as 'objective'|'subStep'|null,
           subStepIndex:subIndex,
           ...guideItemTargets(objective.itemTargets)
         });
