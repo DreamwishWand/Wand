@@ -6,7 +6,7 @@
   import {autoAppend} from '$lib/ui/auto-append';
   import {collectWindow} from '$lib/ui/collect-window.mjs';
   import {verifyPublicQuestIndex,filterPublicQuests,publicQuestSection,publicQuestStoryArc,
-    publicQuestNativeOrder,publicFriendshipCharacters,findPublicQuestByLink,loadPublicQuestPart,formatPublicGuideText,
+    publicQuestNativeOrder,publicFriendshipCharacters,publicSpecialCharacters,findPublicQuestByLink,loadPublicQuestPart,formatPublicGuideText,
     type PublicQuestIndex,type PublicQuestPart,type PublicQuestIndexRow,type PublicQuestDetailRow,
     type PublicQuestObjective,type PublicGuideNames,type PublicQuestSection,type PublicQuestStoryArc
   } from '$lib/guide/public-guide.ts';
@@ -111,6 +111,9 @@
       arc:section==='story'&&!query.trim()?storyArc:'all',offset,limit:batch
     }),limit,'rows')):{total:0,rows:[]};
   $: friendshipCharacters=catalog?publicFriendshipCharacters(catalog,locale):[];
+  $: specialCharacters=catalog?publicSpecialCharacters(catalog,locale):[];
+  $: selectedSpecialCount=section==='friendship'&&character
+    ?(specialCharacters.find(member=>member.id===character)?.quests??0):0;
   // Native Mission group association, not an unlock prerequisite or chronological link.
   $: questConditions=selectedRow&&conditionIndex?conditionIndex.getQuest(selectedRow.id):null;
   $: linkedEventRefs=selectedRow&&relatedEventIndex
@@ -167,6 +170,11 @@
   function selectCharacter(next:string){
     if(character===next)return;
     character=next;limit=40;resetBrowsedSelection();
+  }
+  function showRelatedSpecial(characterId:string){
+    selectSection('special');
+    unclassifiedOpen=true;
+    selectCharacter(characterId);
   }
   function targetStep(questId:string,numberOfSteps:number):number{
     const step=publicQuestStepIndex(window.location.search,questId,numberOfSteps);
@@ -446,13 +454,20 @@
     {:else if targetReverseError}
       <small class="condition-warning">目標アイテムの逆引きデータは読み込めませんでした。</small>
     {/if}
-    <div class="workspace" class:with-character-rail={section==='friendship'}>
-      {#if section==='friendship'}
-        <nav class="character-rail" aria-label="フレンドシップクエストのキャラクター">
+    <div class="workspace" class:with-character-rail={section==='friendship'||section==='special'}>
+      {#if section==='friendship'||section==='special'}
+        <nav class="character-rail" aria-label={section==='friendship'?'友情クエストのキャラクター':'分類確認中クエストの原本キャラクター'}>
           <button class:chosen={character===''} aria-pressed={character===''}
             on:click={()=>selectCharacter('')}>すべてのキャラクター
-            <small>341</small></button>
-          {#each friendshipCharacters as member (member.id)}
+            <small>{section==='friendship'?'341':'70'}</small></button>
+          {#if section==='friendship'&&character&&selectedSpecialCount>0}
+            <button type="button" class="related-special"
+              on:click={()=>showRelatedSpecial(character)}>
+              <span>このキャラクターの分類確認中クエスト</span>
+              <small>{selectedSpecialCount}</small>
+            </button>
+          {/if}
+          {#each (section==='friendship'?friendshipCharacters:specialCharacters) as member (member.id)}
             <button class:chosen={character===member.id} aria-pressed={character===member.id}
               on:click={()=>selectCharacter(member.id)}>
               <span>{member.name}</span><small>{member.quests}</small>
