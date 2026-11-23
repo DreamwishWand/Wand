@@ -531,7 +531,9 @@
       const native=sourceIndex?.nativeSubtypeByItem.get(item.itemId);
       if(native){
         const id=collectionTopCategory(native.nativeType+':'+native.code);
-        return {id,label:collectionTopCategoryLabel(locale,id),rank:collectionTopCategoryRank(id)};
+        return id===null
+          ?{id:'unresolved',label:locale==='ja'?'分類未確定':'Unclassified',rank:999}
+          :{id,label:collectionTopCategoryLabel(locale,id),rank:collectionTopCategoryRank(id)};
       }
       const activity=sourceIndex?.activityTypesByItem.get(item.itemId);
       const id=activity?'activity-'+activity.code:item.family;
@@ -859,8 +861,10 @@
     sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
   }
   function chooseTopCategory(id:CollectionTopCategory):void{
+    if(!topCategoryCards.some(card=>card.id===id&&card.total>0))return;
     sourceTopCategory=id;sourceActivityType=null;sourceNativeSubtype=null;
-    selected='';browsingAllItems=false;search='';status='all';favoriteOnly=false;
+    const hasSubcategories=['furniture','clothing','appearance','roads-fences','interior','tools'].includes(id);
+    selected='';browsingAllItems=!hasSubcategories;search='';status='all';favoriteOnly=false;
     nameStatus='all';expansion='';acquisitionFilter='';
     sourceChoices=sourceChoices.worldContextTag?{worldContextTag:sourceChoices.worldContextTag}:{};
     sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
@@ -1571,10 +1575,11 @@
               {#if sourceIndex?.nativeSubtypeByItem.size===13202&&sourceTopCategory===null}
                 {#each topCategoryCards as group (group.id)}
                   <button type="button" class="facet-card collection-top-category"
-                    data-top-category={group.id} on:click={()=>chooseTopCategory(group.id)}>
+                    data-top-category={group.id} disabled={group.total===0}
+                    on:click={()=>chooseTopCategory(group.id)}>
                     <span class="facet-flourish" aria-hidden="true"><WandIcon name={group.icon} size={22}/></span>
                     <strong>{collectionTopCategoryLabel(locale,group.id)}</strong>
-                    <span>{group.total.toLocaleString(locale)} {copy.countUnit}</span>
+                    <span>{group.total?group.total.toLocaleString(locale)+' '+copy.countUnit:'—'}</span>
                   </button>
                 {/each}
               {:else if sourceIndex?.nativeSubtypeByItem.size===13202}
