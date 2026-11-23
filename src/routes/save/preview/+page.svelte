@@ -82,6 +82,7 @@
     replacementX:number;replacementY:number;
   };
   let coordinateSelection:LocalGridInstance|null=null;
+  let coordinateFocusRevision=0;
   let coordinateX='';let coordinateY='';
   let coordinateOrientationValue='';
   let coordinateState:'idle'|'checking'|'validated'|'exporting'|'error'='idle';
@@ -310,6 +311,36 @@
     cancel();result=null;
     coordinateQueue=[...coordinateQueue,plan];
   }
+  function beginQueuedCoordinateRevision(edit:GridCoordinatePlan){
+    // Ephemeral local ordinals must still match the original staged source.
+    if(processing||!savedSlotsFile||savedSlotsFile!==activeFile)return;
+    const row=gridInstances[edit.localOrdinal-1];
+    if(!row||row.localOrdinal!==edit.localOrdinal||
+       !row.coordinatesObserved||row.x!==edit.expectedX||
+       row.y!==edit.expectedY||row.itemId!==edit.itemId||
+       row.recordKind!==edit.recordKind)return;
+    selectGridInstance(row);
+    coordinateX=String(edit.replacementX);
+    coordinateY=String(edit.replacementY);
+  }
+  function updateQueuedCoordinate(){
+    const candidate=selectedCoordinatePlan();
+    const existing=candidate&&coordinateQueue.find(
+      edit=>edit.localOrdinal===candidate.localOrdinal);
+    if(!candidate||!existing||!savedSlotsFile||
+       savedSlotsFile!==activeFile||
+       existing.itemId!==candidate.itemId||
+       existing.recordKind!==candidate.recordKind||
+       existing.expectedX!==candidate.expectedX||
+       existing.expectedY!==candidate.expectedY){
+      invalidateCoordinateEdit();coordinateState='error';return;
+    }
+    // Replacing a draft never writes a Save. Invalidate any old receipt and
+    // require Rust/WASM to re-resolve original identities before export.
+    cancel();result=null;
+    coordinateQueue=coordinateQueue.map(edit=>
+      edit.localOrdinal===candidate.localOrdinal?candidate:edit);
+  }
   function removeCoordinateEdit(ordinal:number){
     cancel();result=null;
     coordinateQueue=coordinateQueue.filter(p=>p.localOrdinal!==ordinal);
@@ -434,6 +465,7 @@
     cancel();result=null;
     coordinateSelection={...row};coordinateX=String(row.x);
     coordinateY=String(row.y);
+    coordinateFocusRevision++;
     coordinateOrientationValue=isCardinal(row.orientation)
       ?row.orientation:'';
   }
@@ -1610,6 +1642,7 @@
               rows={gridInstances}
               itemName={(id:string)=>dbMap.get(id)?.name??''}
               selectedOrdinal={coordinateSelection?.localOrdinal??null}
+              focusRevision={coordinateFocusRevision}
               draftX={coordinateSelection?coordinateNumber(coordinateX):null}
               draftY={coordinateSelection?coordinateNumber(coordinateY):null}
               disabled={processing}
@@ -1687,6 +1720,14 @@
                     coordinateQueue.some(p=>
                       p.localOrdinal===coordinateSelection?.localOrdinal)}
                   on:click={queueCoordinateEdit}>座標編集に追加</button>
+                {#if coordinateQueue.some(p=>
+                  p.localOrdinal===coordinateSelection?.localOrdinal)}
+                  <button type="button" class="secondary"
+                    disabled={processing}
+                    on:click={updateQueuedCoordinate}>
+                    登録済みの座標を更新
+                  </button>
+                {/if}
                 <button type="button" disabled={processing}
                   on:click={()=>validateCoordinateEdit(false)}>
                   {coordinateState==='checking'?'座標を検証中…':'座標変更を検証'}
@@ -1775,6 +1816,9 @@
                         dbMap.get(edit.itemId)?.name??edit.itemId}</span>
                       <span class="slot-amount">X {edit.expectedX}→{edit.replacementX}
                         / Y {edit.expectedY}→{edit.replacementY}</span>
+                      <button type="button" class="secondary" disabled={processing}
+                        on:click={()=>beginQueuedCoordinateRevision(edit)}
+                        aria-label={`座標編集 #${edit.localOrdinal} を修正`}>修正</button>
                       <button type="button" class="secondary" disabled={processing}
                         on:click={()=>removeCoordinateEdit(edit.localOrdinal)}
                         aria-label={`座標編集 #${edit.localOrdinal} を削除`}>削除</button>
