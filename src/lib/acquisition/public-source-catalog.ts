@@ -49,6 +49,10 @@ import {loadPinnedNativeRecipeResults,
 import {loadPinnedNativeActivityResults,
   type NativeActivityResultIndex,type NativeActivityResultPath}
   from './public-native-activities.ts';
+import {
+  loadPinnedNativeCookingMembers,joinNativeRecipeCookingMembers,
+  type NativeCookingMemberIndex,type NativeCookingRecipeResolver
+} from './public-cooking-members.ts';
 import {indexPublicOnlineNameCandidates,
   type PublicOnlineNameCandidateIndex,
   type PublicOnlineNameCandidate} from './public-online-name-candidates.ts';
@@ -150,6 +154,10 @@ export interface PublicSourceCatalog{
   loadNativeRecipeResults():Promise<NativeRecipeIndex>;
   /** Optional SHA-pinned fishing/mining/timebending/growing source routes. */
   loadNativeActivityResults():Promise<NativeActivityResultIndex>;
+  /** Native 469 cooking member Item IDs, 13 recipe-used ingredient selectors. */
+  loadNativeCookingMembers():Promise<NativeCookingMemberIndex>;
+  /** Resolver joins original cooking recipes to source-native observed candidates. */
+  loadCookingRecipeResolver():Promise<NativeCookingRecipeResolver>;
   /** Item-ID lookup with optional source-pinned recipe routes (one new fetch). */
   lookupWithNativeRecipes(itemId:string|number):Promise<PublicSourceItemRecipeLookup>;
   /** Enrich one Item ID with both recipe and original activity paths on demand. */
@@ -317,10 +325,18 @@ export async function loadPublicSourceCatalog(
   let nativeOnlineCategoryPromise:Promise<NativeOnlineCategoryIndex>|null=null;
   let nativeRecipePromise:Promise<NativeRecipeIndex>|null=null;
   let nativeActivityPromise:Promise<NativeActivityResultIndex>|null=null;
+  let nativeCookingMembersPromise:Promise<NativeCookingMemberIndex>|null=null;
+  let cookingRecipeResolverPromise:Promise<NativeCookingRecipeResolver>|null=null;
   const loadRecipes=()=>nativeRecipePromise??=
     loadPinnedNativeRecipeResults(basePath,fetcher);
   const loadActivities=()=>nativeActivityPromise??=
     loadPinnedNativeActivityResults(basePath,fetcher);
+  const loadCookingMembers=()=>nativeCookingMembersPromise??=
+    loadPinnedNativeCookingMembers(basePath,fetcher);
+  const loadCookingRecipeResolver=()=>cookingRecipeResolverPromise??=
+    Promise.all([loadRecipes(),loadCookingMembers()]).then(
+      ([recipes,members])=>joinNativeRecipeCookingMembers(recipes,members)
+    );
   const lookupCurrent=(itemId:string|number):PublicSourceItemLookup=>{
     // db00.lookup validates IDs and keeps extra-ItemList Quest/Currency IDs.
     const row=db00.lookup(itemId);
@@ -353,6 +369,8 @@ export async function loadPublicSourceCatalog(
     },
     loadNativeRecipeResults(){return loadRecipes();},
     loadNativeActivityResults(){return loadActivities();},
+    loadNativeCookingMembers(){return loadCookingMembers();},
+    loadCookingRecipeResolver(){return loadCookingRecipeResolver();},
     lookup(itemId:string|number){return lookupCurrent(itemId);},
     async lookupWithNativeRecipes(itemId:string|number){
       const row=lookupCurrent(itemId);
