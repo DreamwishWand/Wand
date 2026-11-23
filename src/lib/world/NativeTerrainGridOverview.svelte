@@ -1,6 +1,6 @@
 <script lang="ts">
   type Count = {nativeFloorValue:number;cellCount:number};
-  export type TerrainRaster = {
+  type TerrainRaster = {
     status:'source_corroborated_grid_local_raster';
     sizeX:number;sizeY:number;totalCells:number;
     nativeFloorValues:Uint32Array;
