@@ -1,5 +1,6 @@
 <script lang="ts">
   import {onMount} from 'svelte';
+  import WandIcon from '$lib/ui/WandIcon.svelte';
   import {base} from '$app/paths';
   import {watchWandLanguage} from '$lib/ui/preferences';
   import {autoAppend} from '$lib/ui/auto-append';
@@ -9,6 +10,7 @@
     type PublicQuestObjective,type PublicGuideNames
   } from '$lib/guide/public-guide.ts';
   import {loadPublicQuestTargetsIndex,loadPublicQuestTargetsPart,itemTargetName,originalTargetLookup,
+    guideQuestTargetCollectionHref,
     type PublicQuestTargetIndex,type PublicQuestTargetPart,type PublicQuestTargetEntry
   } from '$lib/guide/public-targets.ts';
   import {publicQuestStepIndex,publicQuestStepQuery} from '$lib/guide/public-quest-steps.ts';
@@ -503,6 +505,13 @@
                                  {#each selector.candidates as candidate}
                                    <span class="target-chip" title={'アイテムID '+candidate.id+(candidate.role==='alternative'?' · 代替候補':'')}>
                                      {itemTargetName(targetIndex,candidate.id,locale)||'名称未確認'}
+                                     {#if guideQuestTargetCollectionHref(targetIndex,candidate.id,base)}
+                                       <a class="target-collection-link" href={guideQuestTargetCollectionHref(targetIndex,candidate.id,base)}
+                                         title="Collectionで開く"
+                                         aria-label={`Collectionで開く：${itemTargetName(targetIndex,candidate.id,locale)}`}>
+                                         <WandIcon name="collection" size={15}/>
+                                       </a>
+                                     {/if}
                                    </span>
                                  {/each}
                                </div>
@@ -625,6 +634,8 @@
   .target-warning{color:#e6bf8d;font-size:12px}.target-candidates{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0}
   .target-chip{display:inline-flex;align-items:baseline;gap:6px;flex-wrap:wrap;border:1px solid #55416a;background:#322340;border-radius:7px;padding:5px 8px;font-size:12px}
   .target-chip small{font-size:10px!important;color:#bdabd0!important;margin:0!important}
+  .target-collection-link{display:inline-grid;place-items:center;align-self:center;flex:0 0 24px;width:24px;height:24px;border-radius:5px;color:#e2c9ff;text-decoration:none}
+  .target-collection-link:hover,.target-collection-link:focus-visible{background:#594070;color:#fff}
   .error{color:#ffb5bc}.status{color:#d0b4e7}footer{margin-top:28px;color:#a99db6;font-size:12px}footer a{color:#c8a4f6}
   @media(max-width:850px){.searchbar{grid-template-columns:1fr 1fr}.workspace{grid-template-columns:1fr}.detail{position:static;max-height:none}}
   @media(max-width:520px){.related-quests ul{grid-template-columns:1fr}}

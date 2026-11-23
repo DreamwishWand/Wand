@@ -2,6 +2,8 @@
  * Source data describes static candidates, never a mandatory player inventory
  * requirement, ownership, completed objective, or guaranteed reward.
  */
+import {collectionItemHref} from '../collection/item-permalink.ts';
+
 export const GUIDE_TARGET_INDEX_SCHEMA='wand.db03.public-quest-targets@1' as const;
 export const GUIDE_TARGET_PART_SCHEMA='wand.db03.public-quest-targets-part@1' as const;
 const SOURCE_SHA='f13958b52234f4cda92f0dd0bfff50be8a7f6625c8478785e2a077a5c7933d24';
@@ -238,4 +240,29 @@ export function originalTargetLookup(
   for(const row of part.quests[questId]??[])
     result[row.step+':'+row.sub+':'+row.objective]=[row];
   return result;
+}
+
+/** Open a source-confirmed DB-00 public Item directly in Collection.
+ * Original target candidates alone never establish that an Item exists in
+ * the published Item catalogue. Target names are linked only if verified
+ * against the exact Steam 1.26.2 release index, never a guessed name.
+ */
+export function guideQuestTargetCollectionHref(
+  index:PublicQuestTargetIndex|null|undefined,rawItemId:unknown,base=''
+):string|null{
+  if(!index)return null;
+  check(index.schema===GUIDE_TARGET_INDEX_SCHEMA&&
+    index.target?.platform==='Steam'&&index.target.gameVersion==='1.26.2'&&
+    index.counts?.uniqueCandidateIds===2551&&
+    index.counts?.verifiedPublicItemNames===2059&&
+    index.counts?.unresolvedPublicItemNames===492&&
+    index.itemNamesSource?.release==='steam-1.26.2-native-itemlist-v1'&&
+    index.itemNamesSource.releaseIndexSha256===PUBLIC_ITEM_INDEX_SHA&&
+    index.itemNamesSource.verifiedNamesOnly===true&&
+    record(index.itemNames),'Collection link requires source-verified DB-00 Item names');
+  const itemId=typeof rawItemId==='number'&&Number.isSafeInteger(rawItemId)?
+    String(rawItemId):rawItemId;
+  if(!canonicalId(itemId)||!Object.hasOwn(index.itemNames,itemId)||
+    !itemTargetName(index,itemId,'en'))return null;
+  return collectionItemHref(base,Number(itemId));
 }

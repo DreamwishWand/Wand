@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {verifyPublicQuestIndex,verifyPublicQuestPart} from '../src/lib/guide/public-guide.ts';
 import {createHash} from 'node:crypto';
 import {verifyPublicQuestTargetReverse,DB03_QUEST_TARGET_REVERSE_SHA} from '../src/lib/guide/public-quest-target-reverse.ts';
-import {verifyPublicQuestTargetsIndex,verifyPublicQuestTargetsPart,loadPublicQuestTargetsPart,itemTargetName,originalTargetLookup} from '../src/lib/guide/public-targets.ts';
+import {verifyPublicQuestTargetsIndex,verifyPublicQuestTargetsPart,loadPublicQuestTargetsPart,itemTargetName,originalTargetLookup,guideQuestTargetCollectionHref} from '../src/lib/guide/public-targets.ts';
 
 const root=new URL('../static/guide/public/',import.meta.url);
 const local=name=>new URL(name,root);
@@ -123,4 +123,26 @@ test('typed Quest target loader rejects forged source indexes, selectors and dup
   const lookup=originalTargetLookup(verifyPublicQuestTargetsPart(index,part,0,details),'__proto__');
   assert.equal(Object.getPrototypeOf(lookup),null);
   assert.deepEqual(Object.keys(lookup),[]);
+});
+
+test('exactly 2059 source-verified Quest objective candidates can open Collection',async()=>{
+  const index=verifyPublicQuestTargetsIndex(await read('quest-targets-index.json'));
+  assert.equal(Object.keys(index.itemNames).length,2059);
+  const href=guideQuestTargetCollectionHref(index,'30000031','/Wand');
+  assert.equal(href,'/Wand/collection/?item=30000031');
+  assert.equal(guideQuestTargetCollectionHref(index,30000031),'/collection/?item=30000031');
+  assert.equal(guideQuestTargetCollectionHref(index,'120000000','/Wand'),null,
+    'an unresolved original target Item ID must not create a dead Collection link');
+  assert.equal(guideQuestTargetCollectionHref(null,'30000031','/Wand'),null);
+  for(const bad of ['30000031&admin=1','030000031','0001','__proto__',null,
+    -1,1.5,Number.MAX_SAFE_INTEGER+1,'999999999999999']){
+    assert.equal(guideQuestTargetCollectionHref(index,bad),null,String(bad));
+  }
+  for(const bad of ['//evil','/Wand/../x','https://evil.example']){
+    assert.throws(()=>guideQuestTargetCollectionHref(index,'30000031',bad),
+      /COLLECTION_INVALID_ITEM_LINK/);
+  }
+  assert.throws(()=>guideQuestTargetCollectionHref({
+    ...index,itemNamesSource:{...index.itemNamesSource,releaseIndexSha256:'forged'}
+  },'30000031','/Wand'),/source-verified DB-00/);
 });
