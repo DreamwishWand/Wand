@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {verifyPublicQuestIndex,verifyPublicQuestPart} from '../src/lib/guide/public-guide.mjs';
-import {verifyPublicQuestTargetsIndex,verifyPublicQuestTargetsPart,loadPublicQuestTargetsPart,itemTargetName,originalTargetLookup} from '../src/lib/guide/public-targets.mjs';
+import {verifyPublicQuestTargetsIndex,verifyPublicQuestTargetsPart,loadPublicQuestTargetsPart,itemTargetName,originalTargetLookup} from '../src/lib/guide/public-targets.ts';
 
 const root=new URL('../static/guide/public/',import.meta.url);
 const local=name=>new URL(name,root);
