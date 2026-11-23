@@ -64,10 +64,17 @@ test('all 2,198 original OnlineCategory rows from 9 families stay separate from 
     assert.equal(total,expected.length);
     for(const family of FAMILIES){
       const familyIds=source.getFamilyCategoryItemIds(family,category);
-      const got=reader.search({category,family,limit:500});
-      assert.equal(got.total,familyIds.length);
-      assert.deepEqual(got.items.map(x=>x.itemId),familyIds);
-      for(const row of got.items){
+      const items=[];
+      for(let offset=0;;){
+        const got=reader.search({category,family,offset,limit:500});
+        assert.equal(got.total,familyIds.length);
+        items.push(...got.items);
+        if(got.nextOffset===null)break;
+        assert(got.nextOffset>offset);
+        offset=got.nextOffset;
+      }
+      assert.deepEqual(items.map(x=>x.itemId),familyIds);
+      for(const row of items){
         assert(!seen.has(row.itemId));
         seen.add(row.itemId);
         assert.equal(row.classifications.length,1);
