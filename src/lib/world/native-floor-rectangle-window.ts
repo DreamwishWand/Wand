@@ -89,45 +89,14 @@ function requireRaster(raw:ReturnType<typeof getNativeTerrainRaster>):Raster|nul
 }
 
 /**
- * O(sx*sy) integral bad-floor table: EVERY cell of the bounding rectangle
- * must match. Exact counts of floor-window origins; never "placeable".
- * Bitmap uses Y-major row order so it aligns with the terrain preview.
+ * Worker supplies the Rust/WASM rectangular mask calculator. Node unit
+ * tests may inject a small synthetic oracle, but production has no TS
+ * high-load fallback. Every returned map is independently size-checked.
  */
-export function fullRectangleFloorWindowMap(
-  source:Raster,acceptedFloorTypesFlag:number,boundsX:number,boundsY:number
-):{originBitmap:Uint8Array;originCount:number}{
-  const {sizeX:sx,sizeY:sy,nativeFloorValues:floor}=source;
-  if(!uintCheck(acceptedFloorTypesFlag)||
-     !Number.isSafeInteger(sx)||!Number.isSafeInteger(sy)||
-     sx<1||sy<1||sx*sy>250_000||
-     !Number.isSafeInteger(boundsX)||!Number.isSafeInteger(boundsY)||
-     boundsX<1||boundsY<1||boundsX>512||boundsY>512||
-     !(floor instanceof Uint32Array)||floor.length!==sx*sy)
-    throw new TypeError('DB04_FLOOR_RECT_SOURCE_INVALID');
-  const originBitmap=new Uint8Array(sx*sy);
-  if(boundsX>sx||boundsY>sy)return{originBitmap,originCount:0};
-  // Summed-area table of floor cells whose raw bit masks DO NOT overlap.
-  const pitch=sx+1,integral=new Uint32Array((sy+1)*pitch);
-  for(let y=0;y<sy;y++){
-    let runningBad=0;
-    for(let x=0;x<sx;x++){
-      const value=floor[y*sx+x];
-      if(!nativeFloorOverlap(value,acceptedFloorTypesFlag))runningBad++;
-      integral[(y+1)*pitch+x+1]=integral[y*pitch+x+1]+runningBad;
-    }
-  }
-  let originCount=0;
-  for(let y=0;y<=sy-boundsY;y++){
-    const bottom=(y+boundsY)*pitch,top=y*pitch;
-    for(let x=0;x<=sx-boundsX;x++){
-      const right=x+boundsX;
-      const bad=integral[bottom+right]-integral[top+right]-
-        integral[bottom+x]+integral[top+x];
-      if(bad===0){originBitmap[y*sx+x]=1;originCount++;}
-    }
-  }
-  return{originBitmap,originCount};
-}
+export type FloorWindowMapper=(
+  source:Raster,acceptedFloorTypesFlag:number,
+  boundsX:number,boundsY:number
+)=>{originBitmap:Uint8Array;originCount:number};
 
 function sourceDefaultAnchorCounts(
   catalog:unknown,layoutId:string,gridIdNative:number,
@@ -177,13 +146,15 @@ export function getNativeFloorWindowResult(
   sourceCatalog:unknown,views:readonly WorldPreviewView[],
   regionKey:string,viewKey:string,gridIdNative:number,
   itemId:number,orientationCode:number,
+  solve:FloorWindowMapper,
 ):NativeFloorWindowResult {
   const catalog=requireWorldPreviewCatalog(sourceCatalog);
   if(typeof regionKey!=='string'||regionKey.length<1||regionKey.length>256||
     typeof viewKey!=='string'||viewKey.length<1||viewKey.length>2048||
     !uintCheck(gridIdNative)||!uintCheck(itemId)||itemId===0||
     !Number.isSafeInteger(orientationCode)||
-    orientationCode<0||orientationCode>15||!Array.isArray(views))
+    orientationCode<0||orientationCode>15||!Array.isArray(views)||
+    typeof solve!=='function')
     throw new TypeError('DB04_FLOOR_RECT_REQUEST_INVALID');
   const view=views.find(row=>row.regionKey===regionKey&&row.viewKey===viewKey);
   const selected=view?.grids.find(g=>g.gridIdNative===gridIdNative);
@@ -217,8 +188,12 @@ export function getNativeFloorWindowResult(
         sourceFloorCellCount:null,matchedWindowOriginCount:null});
       continue;
     }
-    const {originBitmap:map,originCount}=fullRectangleFloorWindowMap(
+    const {originBitmap:map,originCount}=solve(
       raster,evidence.acceptedFloorTypesFlag!,bounds.width,bounds.height);
+    if(!(map instanceof Uint8Array)||map.length!==raster.sizeX*raster.sizeY||
+      !Number.isSafeInteger(originCount)||originCount<0||
+      originCount>map.length)
+      throw new TypeError('DB04_FLOOR_RECT_WASM_RESULT_INVALID');
     verifiedGridCount++;
     regionOrigins+=originCount;
     sourceFloorCellCount+=raster.sizeX*raster.sizeY;
