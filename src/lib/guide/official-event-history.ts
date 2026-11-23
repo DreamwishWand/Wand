@@ -23,7 +23,7 @@ interface OfficialHistoricStarpath extends OfficialHistoryBase{
   readonly kind:'starpath-history';
   /** Exact end explicitly stated by the 2022-09-06 official article:
    * October 11, 2022, 09:00 ET (EDT, UTC-4). Start CLOCK unconfirmed. */
-  readonly officialEndUtc:'2022-10-11T13:00:00Z';
+  readonly officialEndUtc?:string;
 }
 interface OfficialHistoricGameEvent extends OfficialHistoryBase{
   readonly kind:'limited-event';
@@ -49,6 +49,13 @@ export const GUIDE_OFFICIAL_HISTORICAL_EVENTS=[
     startDay:'2023-10-24',endDayInclusive:'2023-11-01',
     participation:'game-clock',
     sourceUrl:'https://disneydreamlightvalley.com/news/EnchantedAdventure_Update'
+  },
+  {
+    id:'the-night-show-star-path-2024',kind:'starpath-history',
+    title:'The Night Show Star Path',
+    startDay:'2024-10-09',endDayInclusive:'2024-11-27',
+    // Official article says ends November 27 without publishing a clock hour.
+    sourceUrl:'https://disneydreamlightvalley.com/pt-BR/news/JungleGetawayUpdate'
   },
   {
     id:'trick-or-treat-2024',kind:'limited-event',category:'other',
