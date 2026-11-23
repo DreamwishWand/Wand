@@ -19,6 +19,7 @@
   import {loadPublicQuestRewards,DB03_QUEST_REWARDS_FILE,
     type PublicQuestRewardsReader} from '$lib/guide/public-quest-rewards.ts';
   import {resolveQuestRewardItemDestination} from '$lib/guide/quest-reward-navigation.ts';
+  import {resolveQuestRewardNameMatches} from '$lib/guide/quest-reward-name-search.ts';
   import {loadPublicQuestRewardItemLabels,DB03_QUEST_REWARD_LABEL_FILE,
     type PublicQuestRewardItemLabels} from '$lib/guide/public-quest-reward-item-labels.ts';
   import {loadPublicQuestOverrideLoot,DB03_QUEST_OVERRIDE_LOOT_FILE,
@@ -77,6 +78,9 @@
   $: targetMatches=targetReverseIndex&&targetFocusId
     ?targetReverseIndex.getItemCandidates(targetFocusId):[];
   $: targetQuestIds=[...new Set(targetMatches.map(row=>row.questId))];
+  $: matchedRewardNames=!rewardItemFocus&&!targetItemFocus&&rewardIndex&&
+    overrideIndex&&rewardLabels
+    ?resolveQuestRewardNameMatches(rewardIndex,overrideIndex,rewardLabels,query,locale):null;
   $: selectedQuestId=selectedRow?.id??null;
   $: selectedGroupId=selectedRow?.groupId??null;
   $: selectedTargetRefs=selectedQuestId
@@ -87,7 +91,10 @@
     :targetMatches.length
       ?{total:targetQuestIds.length,
         rows:catalog.quests.filter((row:any)=>targetQuestIds.includes(row.id))}
-      :collectWindow((offset:number,batch:number)=>filterPublicQuests(catalog!,{query:query.slice(0,120),locale,character,objective,section,offset,limit:batch}),limit,'rows')):{total:0,rows:[]};
+      :matchedRewardNames
+        ?{total:matchedRewardNames.questIds.length,
+          rows:catalog.quests.filter((row:any)=>matchedRewardNames?.questIds.includes(row.id))}
+        :collectWindow((offset:number,batch:number)=>filterPublicQuests(catalog!,{query:query.slice(0,120),locale,character,objective,section,offset,limit:batch}),limit,'rows')):{total:0,rows:[]};
   $: characters=catalog?[...new Set(catalog.quests.map((x:any)=>x.characterId).filter(Boolean))].sort() as string[]:[];
   // Native Mission group association, not an unlock prerequisite or chronological link.
   $: questConditions=selectedRow&&conditionIndex?conditionIndex.getQuest(selectedRow.id):null;
@@ -349,7 +356,7 @@
       {/each}
     </nav>
     <div class="searchbar">
-      <label>クエストを検索<input aria-label="クエスト名・IDを検索" placeholder="クエスト名・キャラクター名・目標アイテムID" bind:value={query} on:input={setSearch}/></label>
+      <label>クエストを検索<input aria-label="クエスト名・IDを検索" placeholder="クエスト名・報酬名・目標アイテムID" bind:value={query} on:input={setSearch}/></label>
       <label>キャラクター<select aria-label="キャラクターで絞り込み" bind:value={character} on:change={setSearch}><option value="">すべて</option>{#each characters as id}<option value={id}>{characterName(id,locale)}</option>{/each}</select></label>
       <label>目標の種類<select aria-label="目標で絞り込み" bind:value={objective} on:change={setSearch}><option value="">すべて</option>{#each objectives as kind}<option value={kind}>{kind}</option>{/each}</select></label>
     </div>
@@ -362,6 +369,10 @@
       <div class="reward-focus" role="status">
         <span>目標アイテムの候補に関連するクエスト：{targetQuestIds.length}件（Item ID {targetFocusId}）</span>
         {#if targetItemFocus}<button type="button" on:click={clearTargetItemFocus}>すべて表示</button>{/if}
+      </div>
+    {:else if matchedRewardNames}
+      <div class="reward-focus" role="status">
+        <span>報酬名に一致するクエスト：{matchedRewardNames.questIds.length}件</span>
       </div>
     {:else if targetReverseError}
       <small class="condition-warning">目標アイテムの逆引きデータは読み込めませんでした。</small>
@@ -403,14 +414,17 @@
               </details>
             {/if}
             {#if questRewardInfo}
-              <details class="quest-rewards" aria-label="クエストの静的報酬候補" open={!!rewardFocus&&rewardFocus.questIds.includes(selectedRow.id)}>
+              <details class="quest-rewards" aria-label="クエストの静的報酬候補"
+                open={(!!rewardFocus&&rewardFocus.questIds.includes(selectedRow.id))||
+                  (!!matchedRewardNames&&matchedRewardNames.questIds.includes(selectedRow.id))}>
                 <summary>報酬候補（{questRewardInfo.currencies.length+questRewardInfo.lootCandidates.length+(questOverrideInfo?1:0)}件）</summary>
                 {#if questRewardInfo.currencies.length}
                   <div class="quest-reward-block">
                     <strong>通貨報酬の設定</strong>
                     <ul>
                       {#each questRewardInfo.currencies as reward}
-                        <li class:reward-item-match={rewardItemFocus===reward.itemId}>
+                        <li class:reward-item-match={rewardItemFocus===reward.itemId||
+                          (matchedRewardNames?.itemIds.includes(reward.itemId)??false)}>
                           {rewardLabels?.getDisplayName(reward.itemId,locale)??itemTargetName(targetIndex,reward.itemId,locale)??'通貨'} · {reward.amountMin===reward.amountMax?reward.amountMin:`${reward.amountMin}～${reward.amountMax}`}（ID {reward.itemId}）
                           {#if rewardLabels?.getCollectionHref(reward.itemId,base)}
                             <a class="reward-collection-link" href={rewardLabels?.getCollectionHref(reward.itemId,base)}
@@ -429,7 +443,8 @@
                     <strong>追加報酬のアイテム候補</strong>
                     <div class="quest-reward-chips">
                       {#each questRewardInfo.lootCandidates as reward}
-                        <span class:reward-item-match={rewardItemFocus===reward.itemId} title={`Item ID ${reward.itemId} · Loot Table ${reward.tableIndex+1}`}>
+                        <span class:reward-item-match={rewardItemFocus===reward.itemId||
+                          (matchedRewardNames?.itemIds.includes(reward.itemId)??false)} title={`Item ID ${reward.itemId} · Loot Table ${reward.tableIndex+1}`}>
                           {rewardLabels?.getDisplayName(reward.itemId,locale)??itemTargetName(targetIndex,reward.itemId,locale)??'アイテム'}（ID {reward.itemId}）
                           {#if rewardLabels?.getCollectionHref(reward.itemId,base)}
                             <a class="reward-collection-link" href={rewardLabels?.getCollectionHref(reward.itemId,base)}
@@ -447,7 +462,8 @@
                   <div class="quest-reward-block">
                     <strong>別定義のLoot Table候補</strong>
                     <div class="quest-reward-chips">
-                      <span class:reward-item-match={rewardItemFocus===questOverrideInfo.itemId}
+                      <span class:reward-item-match={rewardItemFocus===questOverrideInfo.itemId||
+                          (matchedRewardNames?.itemIds.includes(questOverrideInfo.itemId)??false)}
                         title={`Item ID ${questOverrideInfo.itemId} · Loot Table ${questOverrideInfo.lootTableId}`}>
                         {rewardLabels?.getDisplayName(questOverrideInfo.itemId,locale)??itemTargetName(targetIndex,questOverrideInfo.itemId,locale)??'アイテム'}（ID {questOverrideInfo.itemId}）
                         {#if rewardLabels?.getCollectionHref(questOverrideInfo.itemId,base)}
