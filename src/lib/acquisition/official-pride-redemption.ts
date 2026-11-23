@@ -91,8 +91,8 @@ export const OFFICIAL_PRIDE_REDEMPTION_CAMPAIGNS:readonly OfficialCampaign[]=
   ]);
 export const DB02_PRIDE_REDEMPTION_COVERAGE=Object.freeze({
   authoritativeOfficialArticles:2 as const,
-  2023TeeCodes:8 as const,
-  2024ColorwayCodes:8 as const,
+  teeCodes2023:8 as const,
+  colorwayCodes2024:8 as const,
   totalCodes:16 as const,
   sourceDescribedRewardRows:40 as const,
   directOfficialNumericItemIdLinks:0 as const,
