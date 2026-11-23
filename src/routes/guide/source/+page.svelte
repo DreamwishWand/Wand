@@ -5,7 +5,8 @@
   import {
     GUIDE_LOCALES, importGuideSearch, importGuideFolder, importGuideDetail, searchGuide,
     detailStepRows, guideStaticFacts, guideMissionReferences, guideVerifiedSourceBridge, MAX_SHARD_BYTES
-  } from '$lib/guide/client.mjs';
+  } from '$lib/guide/client.ts';
+  import type {LocalGuideFile,OriginalGuideGroup} from '$lib/guide/client.ts';
   import {importCurrentGuideConditions, currentConditionMentionsForQuest, withVerifiedConditionStepDetails,
     type CurrentConditionMention,type CurrentGuideConditions} from '$lib/guide/current-conditions.ts';
   import {createStructuralGuideConditionRelations,type GuideConditionRelationIndex} from '$lib/guide/condition-relations.ts';
@@ -37,9 +38,9 @@
   let loadingIndex = false;
   let importError = '';
   let info = '';
-  let shardFiles: Record<string, File> = {};
+  let shardFiles:Record<string,LocalGuideFile>={};
   let characterNames: Record<string, Record<string,string>> = {};
-  let groupInfo: Record<string, {id:string,rawName:string,names:Record<string,string>,missionIds:string[]}> = {};
+  let groupInfo:Record<string,OriginalGuideGroup>={};
   let loadEpoch = 0;
   let detailEpoch = 0;
   let conditionEpoch = 0;
@@ -290,7 +291,7 @@
   async function chooseShards(event: Event) {
     const selected = (event.currentTarget as HTMLInputElement).files;
     if (!selected?.length || !searchIndex) return;
-    const next: Record<string, File> = {...shardFiles};
+    const next:Record<string,LocalGuideFile>={...shardFiles};
     let added = 0;
     for (const file of Array.from(selected)) {
       if (!/^part-(?:0\d|[12]\d|3[01])\.json$/.test(file.name)) {

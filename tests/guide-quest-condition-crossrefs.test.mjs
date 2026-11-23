@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {canonicalQuestRecord,GUIDE_SEARCH_SCHEMA,guideMissionReferences}
-  from '../src/lib/guide/client.mjs';
+  from '../src/lib/guide/client.ts';
 import {createQuestConditionCrossrefs,DB03_QUEST_CONDITION_CROSSREF_SCHEMA}
   from '../src/lib/guide/quest-condition-crossrefs.ts';
 

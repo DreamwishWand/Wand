@@ -56,7 +56,6 @@ const knownLegacy=new Set([
   "src/lib/collection/saved-world-db04-join.worker.mjs",
   "src/lib/game-db/client.mjs",
   "src/lib/game-db/model.mjs",
-  "src/lib/guide/client.mjs",
   "src/lib/save/achievement-links.mjs",
   "src/lib/save/achievement-progress.mjs",
   "src/lib/save/catalog-links.mjs",

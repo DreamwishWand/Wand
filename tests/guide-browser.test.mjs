@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { createHash } from 'node:crypto';
 import { GUIDE_SEARCH_SCHEMA, GUIDE_DETAIL_SCHEMA, validateGuideSearch, searchGuide,
-  canonicalQuestRecord, importGuideSearch, importGuideDetail, detailStepRows, guideItemTargets, guideSourceText, guideCharacterLabels, guideGroupInfo, guideStaticFacts, formatGuideConditionTree, guideMissionReferences, guideVerifiedSourceBridge } from '../src/lib/guide/client.mjs';
+  canonicalQuestRecord, importGuideSearch, importGuideDetail, detailStepRows, guideItemTargets, guideSourceText, guideCharacterLabels, guideGroupInfo, guideStaticFacts, formatGuideConditionTree, guideMissionReferences, guideVerifiedSourceBridge } from '../src/lib/guide/client.ts';
 
 const SHA='a'.repeat(64), WIRE='b'.repeat(64);
 const target={gameVersion:'1.26.1', platform:'Steam'};
@@ -74,7 +74,7 @@ test('canonical record serialization sorted recursively',()=>{
 });
 
 // Browser directory import: the folder's unrelated original data must never be read.
-import { importGuideFolder } from '../src/lib/guide/client.mjs';
+import { importGuideFolder } from '../src/lib/guide/client.ts';
 function localFile(path, contents, counter = {reads:0}) {
   const data = new TextEncoder().encode(contents);
   return {

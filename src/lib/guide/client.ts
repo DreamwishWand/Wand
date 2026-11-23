@@ -1,9 +1,124 @@
+/** DB-03 source-only local Guide file reader.
+ * The original 1.26.1 search and Quest shards retain their source identity;
+ * a SHA-pinned original may match Steam 1.26.2 without relabelling it.
+ * No Save, server, current unlock, game text or private file is uploaded.
+ */
+export type GuideLanguage='ja'|'en'|'fr'|'it'|'de'|'es-ES'|'zh-CN'|'pt-BR';
+export interface LocalGuideFile{
+  readonly name:string;
+  readonly size:number;
+  readonly webkitRelativePath?:string;
+  arrayBuffer():Promise<ArrayBuffer>;
+}
+export interface OriginalGuideQuestRow{
+  readonly id:string;
+  readonly names:Readonly<Record<string,string>>;
+  readonly internalName:string|null;
+  readonly characterId:string|null;
+  readonly groupId:string|null;
+  readonly sourceUpdateGroup:string|null;
+  readonly objectiveKinds:readonly string[];
+  readonly sourceScopeTokens:readonly string[];
+  readonly detail:Readonly<{file:string;recordSha256:string;nativeWireSha256:string}>;
+}
+export interface OriginalGuideSearch{
+  readonly schema:'wand.db03.quest-search@1';
+  readonly target:Readonly<{gameVersion:string;platform:string}>;
+  readonly source:Readonly<{file:string;sha256:string}>;
+  readonly counts:Readonly<{missions:number;sourceNativeRecords:number;excludedQuestGroups:number;excludedUnclassified:number}>;
+  readonly records:readonly OriginalGuideQuestRow[];
+}
+export interface OriginalGuideGroup{
+  readonly id:string;
+  readonly rawName:string;
+  readonly names:Readonly<Record<string,string>>;
+  readonly missionIds:readonly string[];
+}
+export interface OriginalGuideSearchOptions{
+  readonly query?:string;
+  readonly locale?:string;
+  readonly character?:string;
+  readonly group?:string;
+  readonly update?:string;
+  readonly objective?:string;
+  readonly scopeToken?:string;
+  readonly allLocales?:boolean;
+  readonly characterNames?:Readonly<Record<string,Readonly<Record<string,string>>>>;
+  readonly groupInfo?:Readonly<Record<string,OriginalGuideGroup>>;
+  readonly offset?:number;
+  readonly limit?:number;
+}
+export interface OriginalGuideSearchRow extends OriginalGuideQuestRow{
+  readonly displayName:string;
+  readonly displayNameSource:string;
+  readonly matchedLocale:string|null;
+}
+export interface OriginalGuideSearchResult{
+  readonly total:number;
+  readonly results:readonly OriginalGuideSearchRow[];
+  readonly nextOffset:number|null;
+}
+export interface OriginalGuideSourceBridge{
+  readonly baselineVersion:'1.26.1';
+  readonly targetVersion:'1.26.2';
+  readonly compatibleFamilies:readonly string[];
+  readonly localePayloadsEqual:8;
+  readonly changedConditionRecords:1;
+  readonly addedConditionRecords:1;
+  readonly conditionDefinitionsEquivalent:false;
+  readonly originalSearchIndexSha256:string;
+}
+export interface OriginalGuideFolder{
+  readonly index:OriginalGuideSearch;
+  readonly shardFiles:Readonly<Record<string,LocalGuideFile>>;
+  readonly characterNames:Readonly<Record<string,Readonly<Record<string,string>>>>;
+  readonly groupInfo:Readonly<Record<string,OriginalGuideGroup>>;
+  readonly currentConditionFiles:Readonly<{indexFile:LocalGuideFile;manifestFile:LocalGuideFile}>|null;
+  readonly matchedShards:number;
+  readonly requiredShards:number;
+}
+export interface OriginalGuideMission{
+  readonly id:string;
+  readonly recordKind:'mission';
+  readonly nativeWireSha256:string;
+  readonly source:Readonly<{file:string;sha256:string}>;
+  readonly structured?:Record<string,any>;
+  readonly [key:string]:any;
+}
+export interface OriginalGuideItemTarget{
+  readonly configuredQuantity:number|null;
+  readonly candidates:readonly {id:string;role:'direct'|'alternative'}[];
+  readonly totalCandidates:number;
+}
+export interface OriginalGuideStep{
+  readonly id:string;
+  readonly title:string;
+  readonly text:string;
+  readonly textSource:string|null;
+  readonly storyText:string;
+  readonly storyTextSource:string|null;
+  readonly objectives:readonly (OriginalGuideItemTarget&{
+    kind:string;id:string;text:string;textSource:string|null;
+    descriptionLevel:'objective'|'subStep'|null;subStepIndex:number;
+  })[];
+}
+export interface OriginalGuideMissionReference{
+  readonly id:string;
+  readonly predicate:string;
+  readonly section:string;
+  readonly sourcePath:string;
+  readonly targetInSearchIndex:boolean;
+  readonly targetName:string|null;
+  readonly targetNameSource:string|null;
+  readonly targetRow:OriginalGuideQuestRow|null;
+}
+type Raw=Record<string,any>;
 import {expectedOriginalGuideShardSha} from './shard-fingerprints.ts';
 
 /** DB-03 browser-only Guide reader. No remote uploads or account calls. */
-export const GUIDE_SEARCH_SCHEMA = 'wand.db03.quest-search@1';
-export const GUIDE_DETAIL_SCHEMA = 'wand.db03.quest-detail-shards@1';
-export const GUIDE_LOCALES = Object.freeze(['ja', 'en', 'fr', 'it', 'de', 'es-ES', 'zh-CN', 'pt-BR']);
+export const GUIDE_SEARCH_SCHEMA = 'wand.db03.quest-search@1' as const;
+export const GUIDE_DETAIL_SCHEMA = 'wand.db03.quest-detail-shards@1' as const;
+export const GUIDE_LOCALES:readonly string[]=Object.freeze(['ja', 'en', 'fr', 'it', 'de', 'es-ES', 'zh-CN', 'pt-BR']);
 export const MAX_SEARCH_BYTES = 16 * 1024 * 1024;
 export const MAX_SHARD_BYTES = 16 * 1024 * 1024;
 const HASH = /^[a-f0-9]{64}$/;
@@ -14,7 +129,7 @@ const SOURCE_FILE = 'ddv_Data/StreamingAssets/itemlist/Mission.json';
 /** Private original search-index bytes are hashed at import and tracked out-of-band.
  * Callers cannot provide this provenance through a JSON field or UI property.
  */
-const GUIDE_SEARCH_FINGERPRINTS = new WeakMap();
+const GUIDE_SEARCH_FINGERPRINTS=new WeakMap<object,string>();
 const VERIFIED_1262_BRIDGE = Object.freeze({
   baselineVersion:'1.26.1',
   targetVersion:'1.26.2',
@@ -27,18 +142,18 @@ const VERIFIED_1262_BRIDGE = Object.freeze({
   conditionDefinitionsEquivalent:false
 });
 
-function assert(ok, message) { if (!ok) throw new TypeError('Guide: ' + message); }
-function clean(value) { return String(value ?? '').normalize('NFKC').toLowerCase().trim(); }
-function isObj(value) { return value !== null && typeof value === 'object' && !Array.isArray(value); }
-function isId(value) { return typeof value === 'string' && NATIVE_ID.test(value); }
-function isHash(value) { return typeof value === 'string' && HASH.test(value); }
-function sameTarget(a, b) {
+function assert(ok:unknown,message:string):asserts ok{ if (!ok) throw new TypeError('Guide: ' + message); }
+function clean(value:unknown):string{ return String(value ?? '').normalize('NFKC').toLowerCase().trim(); }
+function isObj(value:unknown):value is Raw{ return value !== null && typeof value === 'object' && !Array.isArray(value); }
+function isId(value:unknown):value is string{ return typeof value === 'string' && NATIVE_ID.test(value); }
+function isHash(value:unknown):value is string{ return typeof value === 'string' && HASH.test(value); }
+function sameTarget(a:unknown,b:unknown):boolean{
   return isObj(a) && isObj(b) && typeof a.gameVersion === 'string' && a.gameVersion.length > 0 &&
     typeof a.platform === 'string' && a.platform.length > 0 && a.gameVersion === b.gameVersion && a.platform === b.platform;
 }
 
 /** Structure is checked before the UI accepts user-selected data. No 1.26.1-only count assumptions. */
-export function validateGuideSearch(index) {
+export function validateGuideSearch(index:unknown):OriginalGuideSearch{
   assert(isObj(index) && index.schema === GUIDE_SEARCH_SCHEMA, 'unsupported search index schema');
   assert(isObj(index.target) && typeof index.target.gameVersion === 'string' && index.target.gameVersion.length > 0 &&
     typeof index.target.platform === 'string' && index.target.platform.length > 0, 'source version/platform missing');
@@ -50,7 +165,7 @@ export function validateGuideSearch(index) {
     Number.isSafeInteger(c.excludedUnclassified) && c.excludedUnclassified >= 0 &&
     c.missions + c.excludedQuestGroups + c.excludedUnclassified === c.sourceNativeRecords &&
     Array.isArray(index.records) && index.records.length === c.missions, 'incomplete source-record census');
-  const seen = new Set();
+  const seen=new Set<string>();
   for (const row of index.records) {
     assert(isObj(row) && isId(row.id) && !seen.has(row.id), 'invalid or duplicate quest ID');
     seen.add(row.id);
@@ -66,18 +181,18 @@ export function validateGuideSearch(index) {
     const m = isObj(locator) && typeof locator.file === 'string' ? SHARD.exec(locator.file) : null;
     assert(m && +m[1] < 32 && isHash(locator.recordSha256) && isHash(locator.nativeWireSha256), 'invalid private shard locator');
   }
-  return index;
+  return index as unknown as OriginalGuideSearch;
 }
 
-function labelFor(row, locale) {
+function labelFor(row:OriginalGuideQuestRow,locale:string):{text:string;source:string}{
   if (row.names[locale]) return { text: row.names[locale], source: locale };
   if (row.names.en) return { text: row.names.en, source: 'en' };
   return { text: row.internalName || row.id, source: 'internalName' };
 }
 
 /** Client-side deterministic search, no network dependency. */
-export function searchGuide(index, { query = '', locale = 'ja', character = '', group = '', update = '',
-  objective = '', scopeToken = '', allLocales = false, characterNames = {}, groupInfo = {}, offset = 0, limit = 40 } = {}) {
+export function searchGuide(index:OriginalGuideSearch,{ query = '', locale = 'ja', character = '', group = '', update = '',
+  objective = '', scopeToken = '', allLocales = false, characterNames = {}, groupInfo = {}, offset = 0, limit = 40 }:OriginalGuideSearchOptions = {}):OriginalGuideSearchResult{
   validateGuideSearch(index);
   assert(GUIDE_LOCALES.includes(locale), 'unsupported locale');
   assert(typeof query === 'string' && query.length <= 128, 'invalid query');
@@ -85,7 +200,8 @@ export function searchGuide(index, { query = '', locale = 'ja', character = '', 
   assert([update, objective, scopeToken].every(v => typeof v === 'string' && v.length <= 256), 'invalid filter string');
   assert(typeof allLocales === 'boolean' && Number.isInteger(offset) && offset >= 0 &&
     Number.isInteger(limit) && limit > 0 && limit <= 100, 'invalid pagination/options');
-  const q = clean(query), words = q.split(/\s+/).filter(Boolean), found = [];
+  const q=clean(query),words=q.split(/\s+/).filter(Boolean);
+  const found:Array<OriginalGuideSearchRow & {_rank:number}>=[];
   for (const row of index.records) {
     if ((character && row.characterId !== character) || (group && row.groupId !== group) ||
         (update && row.sourceUpdateGroup !== update) || (objective && !row.objectiveKinds.includes(objective)) ||
@@ -95,14 +211,14 @@ export function searchGuide(index, { query = '', locale = 'ja', character = '', 
     if (words.length) {
       if (q === row.id) { rank = -1; matched = 'nativeId'; }
       else {
-        const labels = [[locale, row.names[locale], 0]];
+        const labels:Array<[string,string|undefined,number]>=[[locale,row.names[locale],0]];
         if (allLocales) labels.push(...Object.entries(row.names).filter(([key]) => key !== locale)
-          .map(([lang,value]) => [lang, value, 0]));
+          .map(([lang,value]):[string,string,number] => [lang,value,0]));
         else if (locale !== 'en') labels.push(['en', row.names.en, 0]);
-        const charLabels = characterNames[row.characterId] ?? {};
+        const charLabels = characterNames[row.characterId??''] ?? {};
         if (charLabels[locale]) labels.push(['character:' + locale, charLabels[locale], 4]);
         if (locale !== 'en' && charLabels.en) labels.push(['character:en', charLabels.en, 4]);
-        const groupRecord = groupInfo[row.groupId];
+        const groupRecord = groupInfo[row.groupId??''];
         if (groupRecord?.rawName) labels.push(['sourceGroup', groupRecord.rawName, 7]);
         if (groupRecord?.names?.[locale]) labels.push(['group:' + locale, groupRecord.names[locale], 7]);
         if (locale !== 'en' && groupRecord?.names?.en) labels.push(['group:en', groupRecord.names.en, 7]);
@@ -121,21 +237,21 @@ export function searchGuide(index, { query = '', locale = 'ja', character = '', 
 }
 
 /** Python's json.dumps(..., sort_keys=True, ensure_ascii=False, separators=(',', ':')) for source record JSON. */
-export function canonicalQuestRecord(value) {
+export function canonicalQuestRecord(value:unknown):string{
   if (Array.isArray(value)) return '[' + value.map(canonicalQuestRecord).join(',') + ']';
   if (isObj(value)) return '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + canonicalQuestRecord(value[key])).join(',') + '}';
   if (value === null || typeof value === 'string' || typeof value === 'boolean' ||
-      (typeof value === 'number' && Number.isFinite(value))) return JSON.stringify(value);
+      (typeof value === 'number' && Number.isFinite(value))) return JSON.stringify(value)!;
   throw new TypeError('Guide: unsupported source record value');
 }
 
-async function digestBytes(bytes) {
+async function digestBytes(bytes:BufferSource):Promise<string>{
   assert(!!globalThis.crypto?.subtle, 'SHA-256 unavailable in this browser');
   const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
   return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function digestText(value) {
+async function digestText(value:string):Promise<string>{
   return digestBytes(new TextEncoder().encode(value));
 }
 
@@ -143,17 +259,17 @@ async function digestText(value) {
  * original private 1.26.1 search-index bytes. Do not relabel the dataset to 1.26.2.
  * The verified target Condition definitions differ and remain unevaluated.
  */
-export function guideVerifiedSourceBridge(index) {
-  validateGuideSearch(index);
-  const pin = VERIFIED_1262_BRIDGE;
-  if (GUIDE_SEARCH_FINGERPRINTS.get(index) !== pin.originalSearchSha256 ||
-      index.target.platform !== pin.platform ||
-      index.target.gameVersion !== pin.baselineVersion ||
-      index.source.sha256 !== pin.missionSourceSha256 ||
-      index.counts.missions !== pin.searchableMissions ||
-      index.counts.excludedQuestGroups !== pin.questGroups ||
-      index.counts.excludedUnclassified !== pin.unclassifiedRecords ||
-      index.counts.sourceNativeRecords !== 1030) return null;
+export function guideVerifiedSourceBridge(index:unknown):OriginalGuideSourceBridge|null{
+  const verified=validateGuideSearch(index);
+  const pin=VERIFIED_1262_BRIDGE;
+  if (GUIDE_SEARCH_FINGERPRINTS.get(verified) !== pin.originalSearchSha256 ||
+      verified.target.platform !== pin.platform ||
+      verified.target.gameVersion !== pin.baselineVersion ||
+      verified.source.sha256 !== pin.missionSourceSha256 ||
+      verified.counts.missions !== pin.searchableMissions ||
+      verified.counts.excludedQuestGroups !== pin.questGroups ||
+      verified.counts.excludedUnclassified !== pin.unclassifiedRecords ||
+      verified.counts.sourceNativeRecords !== 1030) return null;
   return {
     baselineVersion:pin.baselineVersion,
     targetVersion:pin.targetVersion,
@@ -168,7 +284,7 @@ export function guideVerifiedSourceBridge(index) {
 
 
 
-async function jsonFile(file, maxSize, withSourceDigest = false, expectedFullFileSha256 = null) {
+async function jsonFile(file:LocalGuideFile,maxSize:number,withSourceDigest=false,expectedFullFileSha256:string|null=null):Promise<unknown>{
   assert(file && typeof file.arrayBuffer === 'function' && Number.isSafeInteger(file.size) &&
     file.size > 0 && file.size <= maxSize, 'file missing or too large');
   const bytes = await file.arrayBuffer();
@@ -184,22 +300,21 @@ async function jsonFile(file, maxSize, withSourceDigest = false, expectedFullFil
   return parsed;
 }
 
-export async function importGuideSearch(file) {
+export async function importGuideSearch(file:LocalGuideFile):Promise<OriginalGuideSearch>{
   return validateGuideSearch(await jsonFile(file, MAX_SEARCH_BYTES, true));
 }
 
 /** Optional same-target character labels from native extracted character definitions.
  * They enrich a local filter only; never change mission IDs or search coverage.
  */
-export function guideCharacterLabels(payload, index) {
+export function guideCharacterLabels(payload:unknown,index:OriginalGuideSearch):Record<string,Record<string,string>>{
   validateGuideSearch(index);
   assert(isObj(payload) && payload.schema === 'wand.db03.native-guide@1' &&
     payload.family === 'characters' && sameTarget(payload.target, index.target) &&
     Array.isArray(payload.records) && payload.records.length > 0 && payload.records.length <= 10000,
     'character labels require a same-version native character source');
   const referenced = new Set(index.records.map(row => row.characterId).filter(Boolean));
-  /** @type {Record<string, Record<string, string>>} */
-  const labels = {};
+  const labels:Record<string,Record<string,string>>={};
   const seen = new Set();
   let sourceSha = null;
   for (const row of payload.records) {
@@ -221,9 +336,9 @@ export function guideCharacterLabels(payload, index) {
 /** Join an optional same-source quest catalogue to the compact verified index.
  * Group membership is an original listing relation, not a prerequisite or play order.
  */
-export function guideGroupInfo(payload, index) {
+export function guideGroupInfo(payload:unknown,index:OriginalGuideSearch):Record<string,OriginalGuideGroup>{
   validateGuideSearch(index);
-  const counts = payload?.counts;
+  const counts = isObj(payload)?payload.counts:undefined;
   assert(isObj(payload) && payload.schema === 'wand.db03.quest-catalogue@1' &&
     sameTarget(payload.target, index.target) && isObj(payload.source) &&
     payload.source.file === index.source.file && payload.source.sha256 === index.source.sha256 &&
@@ -242,8 +357,7 @@ export function guideGroupInfo(payload, index) {
       mission.groupId === row.groupId, 'quest catalogue mission identity/group mismatch');
     foundMissions.add(mission.id);
   }
-  /** @type {Record<string, {id:string,rawName:string,names:Record<string,string>,missionIds:string[]}>} */
-  const groups = {};
+  const groups:Record<string,OriginalGuideGroup>={};
   const referenced = new Set();
   for (const group of payload.questGroups) {
     assert(isObj(group) && isId(group.id) && !Object.hasOwn(groups,group.id) &&
@@ -279,10 +393,10 @@ export function guideGroupInfo(payload, index) {
  * parent prefix. No unrelated original files are read, and shard bytes stay
  * unread until the user opens an individual quest.
  */
-export async function importGuideFolder(files) {
+export async function importGuideFolder(files:LocalGuideFile[]):Promise<OriginalGuideFolder>{
   assert(Array.isArray(files) && files.length > 0 && files.length <= 10000,
     'Guide folder must contain between 1 and 10000 files');
-  const candidates = [];
+  const candidates:Array<{path:string;file:LocalGuideFile}>=[];
   for (const file of files) {
     assert(file && typeof file.name === 'string' && typeof file.arrayBuffer === 'function' &&
       Number.isSafeInteger(file.size) && file.size >= 0, 'invalid Guide folder file');
@@ -302,18 +416,15 @@ export async function importGuideFolder(files) {
   const characterPath = prefix + 'guide/characters.json';
   const characterFiles = files.filter(file => (file.webkitRelativePath || file.name) === characterPath);
   assert(characterFiles.length <= 1, 'duplicate native character data file');
-  /** @type {Record<string, Record<string, string>>} */
   const characterNames = characterFiles.length
     ? guideCharacterLabels(await jsonFile(characterFiles[0], MAX_SEARCH_BYTES), index) : {};
   const cataloguePath = prefix + 'guide/quest-catalogue.json';
   const catalogues = files.filter(file => (file.webkitRelativePath || file.name) === cataloguePath);
   assert(catalogues.length <= 1, 'duplicate quest catalogue file');
-  /** @type {Record<string, {id:string,rawName:string,names:Record<string,string>,missionIds:string[]}>} */
   const groupInfo = catalogues.length
     ? guideGroupInfo(await jsonFile(catalogues[0], MAX_SEARCH_BYTES), index) : {};
   const needed = new Set(index.records.map(row => row.detail.file.split('/').at(-1)));
-  /** @type {Record<string, File>} */
-  const shardFiles = {};
+  const shardFiles:Record<string,LocalGuideFile>={};
   for (const file of files) {
     const path = typeof file.webkitRelativePath === 'string' && file.webkitRelativePath
       ? file.webkitRelativePath : file.name;
@@ -332,7 +443,7 @@ export async function importGuideFolder(files) {
   // files beside guide/. Do not read or trust them here: the caller must
   // authenticate both raw files through importCurrentGuideConditions.
   // Only exact sibling paths under this verified quest-search root qualify.
-  const sidecars = new Map();
+  const sidecars=new Map<string,LocalGuideFile>();
   for (const file of files) {
     const path = typeof file.webkitRelativePath === 'string' && file.webkitRelativePath
       ? file.webkitRelativePath : file.name;
@@ -353,13 +464,13 @@ export async function importGuideFolder(files) {
   }
   const preferred = pairs.find(([first]) => sidecars.has(first));
   const currentConditionFiles = preferred
-    ? {indexFile:sidecars.get(preferred[0]), manifestFile:sidecars.get(preferred[1])} : null;
+    ? {indexFile:sidecars.get(preferred[0])!, manifestFile:sidecars.get(preferred[1])!} : null;
   return {index, shardFiles, characterNames, groupInfo, currentConditionFiles,
     matchedShards: Object.keys(shardFiles).length, requiredShards: needed.size};
 }
 
 /** Verify chosen file, native identity and full 64-digit record content digest. */
-export async function importGuideDetail(index, id, file) {
+export async function importGuideDetail(index:OriginalGuideSearch,id:string,file:LocalGuideFile):Promise<OriginalGuideMission>{
   validateGuideSearch(index);
   assert(isId(id), 'invalid quest selection');
   const row = index.records.find(x => x.id === id);
@@ -390,11 +501,11 @@ export async function importGuideDetail(index, id, file) {
     'native source fingerprint mismatch');
   assert(await digestText(canonicalQuestRecord(record)) === row.detail.recordSha256,
     'quest detail SHA-256 mismatch');
-  return record;
+  return record as OriginalGuideMission;
 }
 
 /** Resolve only source-localized descriptions, never fabricate quest instructions. */
-export function guideSourceText(definition, locale = 'ja') {
+export function guideSourceText(definition:unknown,locale:string='ja'):{text:string;locale:string|null}{
   assert(GUIDE_LOCALES.includes(locale), 'unsupported detail locale');
   if (!isObj(definition) || !isObj(definition.plainText)) return {text:'', locale:null};
   const sourceLocale = typeof definition.plainText[locale] === 'string' && definition.plainText[locale].trim()
@@ -412,15 +523,15 @@ export function guideSourceText(definition, locale = 'ja') {
 }
 
 /** Show *source-defined candidates*, never interpret alternative items as all required. */
-export function guideItemTargets(targets) {
+export function guideItemTargets(targets:unknown):OriginalGuideItemTarget{
   if (!isObj(targets) || targets.schema !== 'wand.db03.mission-items@1') {
     return {configuredQuantity:null, candidates:[], totalCandidates:0};
   }
   const amount = targets.amount;
   const configuredQuantity = isObj(amount) && amount.kind === 'value' &&
     Number.isSafeInteger(amount.value) && amount.value >= 0 ? amount.value : null;
-  const candidates = [];
-  const seen = new Set();
+  const candidates:Array<{id:string;role:'direct'|'alternative'}>=[];
+  const seen=new Set<string>();
   for (const selector of Array.isArray(targets.selectors) ? targets.selectors : []) {
     for (const item of Array.isArray(selector?.itemCandidates) ? selector.itemCandidates : []) {
       if (!isId(item?.id)) continue;
@@ -435,10 +546,10 @@ export function guideItemTargets(targets) {
 }
 
 /** Render the original boolean AST without evaluating it or promoting it to a prerequisite DAG. */
-export function formatGuideConditionTree(tree) {
+export function formatGuideConditionTree(tree:unknown):string|null{
   if (!isObj(tree) || !Array.isArray(tree.conditions)) return null;
-  const lines = [];
-  function visit(node, depth) {
+  const lines:string[]=[];
+  function visit(node:unknown,depth:number):void{
     assert(depth <= 24 && isObj(node) && Array.isArray(node.conditions),
       'invalid source condition tree');
     const indent = '  '.repeat(depth);
@@ -471,10 +582,12 @@ export function formatGuideConditionTree(tree) {
 }
 
 /** Static quest metadata only: no player progress, unlock evaluation or granted rewards. */
-export function guideStaticFacts(record, locale = 'ja') {
+export function guideStaticFacts(record:OriginalGuideMission|null|undefined,locale:string='ja'):{conditions:Array<{label:string;expression:string}>;policies:Array<{label:string;note:string;expression:string|null}>;rewards:Array<{label:string;min:number|null;max:number|null}>}{
   assert(GUIDE_LOCALES.includes(locale), 'unsupported detail locale');
   const typed = isObj(record?.structured) ? record.structured : {};
-  const conditions = [], policies = [], rewards = [];
+  const conditions:Array<{label:string;expression:string}>=[];
+  const policies:Array<{label:string;note:string;expression:string|null}>=[];
+  const rewards:Array<{label:string;min:number|null;max:number|null}>=[];
   const sourceConditions = isObj(typed.conditions) ? typed.conditions : {};
   for (const [key, label] of [
     ['availableConditions', '原本の利用条件'], ['unlockConditions', '原本の解放条件']
@@ -537,24 +650,25 @@ export function guideStaticFacts(record, locale = 'ja') {
  * An edge is a *mention in a condition branch*, not proof of a required prerequisite.
  * This runs only after importGuideDetail has verified the original record hash.
  */
-export function guideMissionReferences(record, index, locale = 'ja') {
+export function guideMissionReferences(record:unknown,index:OriginalGuideSearch,locale:string='ja'):OriginalGuideMissionReference[]{
   validateGuideSearch(index);
   assert(GUIDE_LOCALES.includes(locale), 'unsupported reference locale');
-  const sourceRow = isObj(record) && index.records.find(row => row.id === record.id);
-  assert(sourceRow && record.recordKind === 'mission' &&
-    record.nativeWireSha256 === sourceRow.detail.nativeWireSha256 &&
-    record.source?.file === index.source.file &&
-    record.source?.sha256 === index.source.sha256,
+  const doc=isObj(record)?record:null;
+  const sourceRow=doc&&index.records.find(row=>row.id===doc.id);
+  assert(sourceRow&&doc&&doc.recordKind==='mission'&&
+    doc.nativeWireSha256===sourceRow.detail.nativeWireSha256&&
+    doc.source?.file===index.source.file&&
+    doc.source?.sha256===index.source.sha256,
     'mission reference source mismatch');
-  const typed = isObj(record.structured) ? record.structured : {};
+  const typed = isObj(doc.structured) ? doc.structured : {};
   const byId = new Map(index.records.map(row => [row.id, row]));
-  const allowed = new Set([
+  const allowed:ReadonlySet<string> = new Set([
     'MissionAvailable', 'MissionCompleted', 'MissionOngoing', 'MissionStatus',
     'MissionStepCompleted', 'MissionStepStatus', 'MissionObjectiveCompleted',
     'MissionObjectiveStatus', 'MissionObjectiveSkipped', 'MissionObjectiveProgression'
   ]);
-  const references = [];
-  function walk(tree, section, path, depth) {
+  const references:OriginalGuideMissionReference[]=[];
+  function walk(tree:unknown,section:string,path:string,depth:number):void{
     if (!isObj(tree) || !Array.isArray(tree.conditions)) return;
     assert(depth <= 24, 'source reference tree too deep');
     for (const [i, condition] of tree.conditions.entries()) {
@@ -595,7 +709,7 @@ export function guideMissionReferences(record, index, locale = 'ja') {
 }
 
 /** Faithful, human-readable steps with individual original objective descriptions. */
-export function detailStepRows(record, locale = 'ja') {
+export function detailStepRows(record:OriginalGuideMission|null|undefined,locale:string='ja'):OriginalGuideStep[]{
   assert(GUIDE_LOCALES.includes(locale), 'unsupported detail locale');
   const steps = record?.structured?.stepsDetailed;
   if (!Array.isArray(steps)) return [];
@@ -616,7 +730,7 @@ export function detailStepRows(record, locale = 'ja') {
         objectives.push({
           kind:String(objective.type ?? 'unknown'), id:String(objective.objectiveId ?? ''),
           text:inherited.text, textSource:inherited.locale,
-          descriptionLevel:source.text ? 'objective' : inherited.text ? 'subStep' : null,
+          descriptionLevel:(source.text ? 'objective' : inherited.text ? 'subStep' : null) as 'objective'|'subStep'|null,
           subStepIndex:subIndex,
           ...guideItemTargets(objective.itemTargets)
         });

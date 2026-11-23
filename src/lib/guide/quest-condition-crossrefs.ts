@@ -7,7 +7,7 @@
  * search/shard identity verifier. The 1.26.2 Condition index must come from
  * the existing private current-conditions importer and typed relation reader.
  */
-import {guideMissionReferences,guideVerifiedSourceBridge} from './client.mjs';
+import {guideMissionReferences,guideVerifiedSourceBridge,validateGuideSearch} from './client.ts';
 import {
   DB03_CONDITION_RELATION_SCHEMA,type GuideConditionRelationIndex,
   type GuideConditionMention,type NativeConditionBooleanOperator
@@ -76,7 +76,7 @@ export function createQuestConditionCrossrefs(
   check((questSearch as {target?:{platform?:unknown;gameVersion?:unknown}})?.target?.platform==='Steam'&&
     (questSearch as {target?:{platform?:unknown;gameVersion?:unknown}}).target?.gameVersion==='1.26.1',
     'ARCHIVED_MISSION_SOURCE_REQUIRED');
-  const direct=guideMissionReferences(record,questSearch,'en');
+  const direct=guideMissionReferences(record,validateGuideSearch(questSearch),'en');
   const questId=record?.id;
   check(nativeId(questId),'INVALID_QUEST_ID');
   check(conditions?.schema===DB03_CONDITION_RELATION_SCHEMA&&
