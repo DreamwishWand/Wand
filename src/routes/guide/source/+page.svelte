@@ -5,7 +5,7 @@
   import {
     GUIDE_LOCALES, importGuideSearch, importGuideFolder, importGuideDetail, searchGuide,
     detailStepRows, guideStaticFacts, guideMissionReferences, guideVerifiedSourceBridge, MAX_SHARD_BYTES
-  } from '$lib/guide/client.mjs';
+  } from '$lib/guide/client.ts';
   import {importCurrentGuideConditions, currentConditionMentionsForQuest, withVerifiedConditionStepDetails,
     type CurrentConditionMention,type CurrentGuideConditions} from '$lib/guide/current-conditions.ts';
   import {createStructuralGuideConditionRelations,type GuideConditionRelationIndex} from '$lib/guide/condition-relations.ts';
