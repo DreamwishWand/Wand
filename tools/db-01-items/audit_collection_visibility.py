@@ -109,9 +109,11 @@ def read_originals(itemlist: Path, dump: Path) -> tuple[dict[str, bytes], str]:
         require(0 < len(value) <= 32 * 1024 * 1024 and sha(value) == expected,
                 "SOURCE_SHA_MISMATCH_" + family)
         data[family] = value
-    require(dump.is_file() and not dump.is_symlink() and
-            hashlib.file_digest(dump.open("rb"), "sha256").hexdigest() == IL2CPP_SHA,
-            "IL2CPP_SOURCE_SHA_MISMATCH")
+    require(dump.is_file() and not dump.is_symlink(),
+            "IL2CPP_SOURCE_MISSING")
+    with dump.open("rb") as stream:
+        require(hashlib.file_digest(stream, "sha256").hexdigest() == IL2CPP_SHA,
+                "IL2CPP_SOURCE_SHA_MISMATCH")
     return data, dump.read_text(encoding="utf-8")
 
 
