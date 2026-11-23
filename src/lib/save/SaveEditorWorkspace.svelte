@@ -11,6 +11,9 @@
     from './queued-save-export';
   import {nextSaveListWindowLimit,SAVE_LIST_WINDOW_SIZE}
     from './save-list-scroll';
+  import {filterOwnedSlots,ownedCategoryOptions,ownedSlotLocation,
+    pendingOwnedAmount} from './owned-slot-view';
+  import type {OwnedSlot} from './owned-slot-view';
   import {draftGridGroupQuarterTurn}
     from './grid-group-quarter-turn';
   import type {GridQuarterTurnDirection}
@@ -65,9 +68,7 @@
   // A pending batch belongs to one selected Save. Edits may be staged before
   // the first file is chosen, but must never carry over to another file.
   let fileSelected=false;
-  type EditableSlot =
-    | {kind:'inventory';inventoryId:string;itemId:string;amount:number}
-    | {kind:'chest';containerId:string;slotIndex:number;itemId:number;amount:number};
+  type EditableSlot=OwnedSlot;
   let savedSlots:EditableSlot[]=[];
   let savedSlotsFile:File|null=null;
   let worldRefs:SavedGridItemReference[]=[];
@@ -260,18 +261,14 @@
   let slotQuery='';
   let slotVisibleLimit=SAVE_LIST_WINDOW_SIZE;
   let slotFilter:'all'|'inventory'|'chest'='all';
+  let slotCategoryFilter='all';
   let dbMap=new Map<string,Db00ItemContext>();
   let dbStatus:'idle'|'loading'|'ready'|'unavailable'='idle';
   let dbWorker:Worker|null=null;
   let catalogRevision=0;
-  $: matchedSlots=savedSlots.filter(slot=>{
-    if(slotFilter!=='all' && slot.kind!==slotFilter)return false;
-    const id=String(slot.itemId);
-    const meta=dbMap.get(id);
-    const query=slotQuery.trim().toLocaleLowerCase();
-    return !query || id.includes(query) ||
-      (meta?.name??'').toLocaleLowerCase().includes(query) ||
-      (meta?.category??'').toLocaleLowerCase().includes(query);
+  $: slotCategories=ownedCategoryOptions(savedSlots,dbMap);
+  $: matchedSlots=filterOwnedSlots(savedSlots,dbMap,{
+    location:slotFilter,category:slotCategoryFilter,query:slotQuery
   });
   $: visibleSlots=matchedSlots.slice(0,slotVisibleLimit);
   $: matchedGridInstances=gridInstances.filter(row=>{
@@ -659,6 +656,7 @@
     dbWorker?.terminate();dbWorker=null;catalogRevision++;
     savedSlots=[];savedSlotsFile=null;slotState='idle';
     worldRefs=[];worldStatus='not_observed';worldQuery='';
+    slotFilter='all';slotCategoryFilter='all';slotQuery='';
     slotVisibleLimit=SAVE_LIST_WINDOW_SIZE;
     gridVisibleLimit=SAVE_LIST_WINDOW_SIZE;
     worldVisibleLimit=SAVE_LIST_WINDOW_SIZE;
@@ -1344,6 +1342,7 @@
       /\.(profile|dat|bin)$/.test(name)?'auto':null;
     if(!format){slotState='error';return;}
     slotState='loading';
+    slotCategoryFilter='all';
     slotVisibleLimit=SAVE_LIST_WINDOW_SIZE;
     worldVisibleLimit=SAVE_LIST_WINDOW_SIZE;
     savedSlots=[];savedSlotsFile=null;
@@ -1807,24 +1806,41 @@
           <option value="inventory">Inventory</option>
           <option value="chest">Chest</option>
         </select>
+        {#if dbStatus==='ready'}
+          <select bind:value={slotCategoryFilter} aria-label="共通DB分類"
+            on:change={()=>slotVisibleLimit=SAVE_LIST_WINDOW_SIZE}>
+            <option value="all">全分類</option>
+            {#each slotCategories as category}
+              <option value={category.value}>{category.label}（{category.count}）</option>
+            {/each}
+          </select>
+        {/if}
       </div>
       <ul class="slot-list" on:scroll={(event)=>{
         slotVisibleLimit=nextSaveListWindowLimit(
           slotVisibleLimit,matchedSlots.length,event.currentTarget);
       }}>
-        {#each visibleSlots as slot,i}
+        {#each visibleSlots as slot}
+          {@const pending=pendingOwnedAmount(slot,queuedEdits)}
+          {@const meta=dbMap.get(String(slot.itemId))}
           <li>
-            <button type="button" class="slot-select" disabled={processing}
-              aria-label={`所持アイテム ${String(slot.itemId)} を選択`}
+            <button type="button" class="slot-select" class:queued={pending!==null}
+              disabled={processing}
+              aria-label={`所持アイテム ${String(slot.itemId)} を選択 · ${ownedSlotLocation(slot)}`}
               on:click={()=>selectSavedSlot(slot)}>
               <span>
-                <strong>{dbMap.get(String(slot.itemId))?.name??String(slot.itemId)}</strong>
-                <small>{dbMap.get(String(slot.itemId))?.category??
-                  dbMap.get(String(slot.itemId))?.nativeCategory??
-                  (slot.kind==='inventory'?'Inventory':'Chest')}
-                </small>
+                <strong>{meta?.name??String(slot.itemId)}</strong>
+                <small>{ownedSlotLocation(slot)} · {
+                  meta?.category??meta?.nativeCategory??'分類未確認'}</small>
               </span>
-              <span class="slot-amount">×{slot.amount}</span>
+              <span class="slot-amount">
+                {#if pending!==null}
+                  <small class="slot-prior">×{slot.amount} →</small>
+                  ×{pending}
+                {:else}
+                  ×{slot.amount}
+                {/if}
+              </span>
             </button>
           </li>
         {/each}
@@ -2499,9 +2515,9 @@
   .batch-edits li button{margin-left:12px;padding:5px 10px}
   .saved-slots{display:block;}
   .slot-actions{display:flex;align-items:center;gap:15px;}
-  .slot-search{display:flex;gap:10px;margin:14px 0;}
-  .slot-search input{flex:1;min-width:0;}
-  .slot-search select{max-width:180px;}
+  .slot-search{display:flex;gap:10px;margin:14px 0;flex-wrap:wrap;}
+  .slot-search input{flex:1 1 200px;min-width:0;}
+  .slot-search select{flex:1 1 120px;max-width:190px;min-width:0;}
   .slot-list{list-style:none;margin:8px 0;padding:0;max-height:380px;overflow:auto;}
   .slot-list li{margin:0;border-bottom:1px solid #ffffff22;}
   .world-reference-row{display:flex;align-items:center;justify-content:space-between;
@@ -2512,6 +2528,8 @@
     display:flex;align-items:center;justify-content:space-between;gap:12px;
     min-height:54px;padding:10px 12px;}
   .slot-select:hover{background:#443452;}
+  .slot-select.queued{box-shadow:inset 3px 0 0 #d8b9f0;}
+  .slot-prior{display:block;font-size:12px;color:#d4c2df;}
   .slot-select strong{font-size:15px;display:block;}
   .slot-select small,.slot-note{font-size:12px;color:#d4c2df;display:block;}
   .slot-amount{font-size:17px;white-space:nowrap;}

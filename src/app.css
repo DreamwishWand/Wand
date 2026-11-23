@@ -568,7 +568,10 @@ a.portal-card:focus-visible{outline:3px solid #f5d6ff;outline-offset:-5px;z-inde
   position:fixed;bottom:16px;right:16px;z-index:36;
   width:min(560px,calc(100vw - 32px));margin:0;
   box-shadow:0 14px 50px #0008;
+  /* A passive notification must not block Collection/inspector controls. */
+  pointer-events:none;
 }
+.collection-page>.info-banner>button{pointer-events:auto}
 .workspace-body{flex:1 1 auto;display:grid;min-height:calc(100dvh - 124px);grid-template-columns:minmax(0,1fr)}
 .workspace-body.has-inspector{grid-template-columns:minmax(0,1fr) minmax(280px,350px)}
 .collection-results{padding:clamp(16px,2vw,32px);min-width:0}

@@ -42,7 +42,7 @@ test('Official announcements preserve code, named rewards and absent Item IDs', 
   assert.deepEqual(sea.rewards.map(r => r.cumulativeWatchMinutes), [60,90,120]);
   assert(sea.rewards.every(r => r.itemId === null));
   const db = createAcquisitionOriginDatabase([], OFFICIAL_CAMPAIGNS);
-  assert.equal(db.getCoverage().rewardNamesAwaitingItemId, 24);
+  assert.equal(db.getCoverage().rewardNamesAwaitingItemId, 70);
   assert.equal(db.getCoverage().linkedItemIds, 0);
   assert.equal(db.getCampaign('code:DDVPRIDE2026')?.code, 'DDVPRIDE2026');
   assert.equal(db.getItem(40000000).origins.length, 0);

@@ -6,6 +6,8 @@ export const WORLD_SCHEMA = 'wand.db04.world@1';
 
 import {describeNativeLayerMask,describeNativeFloorMask} from './native-mask.ts';
 import {getNativeTerrainWindow} from './native-terrain-preview.ts';
+import {registerSourceAnchorIndex} from './native-source-anchor-index.ts';
+export {getDefaultLayoutObjects,getDefaultVillageAreaLayoutRefs,getDefaultLayoutGridEntries,getNativeDefaultLayoutAnchorWindow,getNativeVillageAreaAnchorWindow} from './native-source-anchor-index.ts';
 export {GRID_LAYER_FLAGS,GRID_FLOOR_FLAGS,describeNativeLayerMask,describeNativeFloorMask} from './native-mask.ts';
 export {getNativeTerrainTile,getNativeTerrainWindow,getNativeTerrainDistribution} from './native-terrain-preview.ts';
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -52,11 +54,6 @@ function validateFootprint(footprint) {
   }
 }
 
-// 32x32 grid-local source-anchor buckets. This indexes recorded GridObject X/Y
-// anchors, not occupied cells or user-save positions. Internal to each catalog.
-const SOURCE_ANCHOR_BUCKET_SIDE = 32;
-const sourceAnchorBuckets = new WeakMap();
-
 export function createWorldCatalog(bundle) {
   if (!isRecord(bundle) || !isRecord(bundle.manifest) || bundle.manifest.schema !== WORLD_SCHEMA ||
       bundle.manifest.status !== 'partial_game_native_evidence') {
@@ -73,7 +70,6 @@ export function createWorldCatalog(bundle) {
   // Reuse exact native Grid.ID buckets across viewport and anchor queries.
   // A large original GridCollection may contain many unrelated grids.
   const layoutObjectsByGrid = new Map();
-  const spatialBuckets = new Map();
   for (const object of layoutObjects.values()) {
     if (!layouts.has(object.layoutId)) {
       throw new TypeError('DB-04 default object references an absent native layout');
@@ -101,22 +97,13 @@ export function createWorldCatalog(bundle) {
     gridRows.push(object);
     buckets.set(object.gridIdNative, gridRows);
     layoutObjectsByGrid.set(object.layoutId, buckets);
-    const layoutBins = spatialBuckets.get(object.layoutId) ?? new Map();
-    const gridBins = layoutBins.get(object.gridIdNative) ?? new Map();
-    const bucketKey = `${Math.floor(object.x / SOURCE_ANCHOR_BUCKET_SIDE)}:${Math.floor(object.y / SOURCE_ANCHOR_BUCKET_SIDE)}`;
-    const entries = gridBins.get(bucketKey) ?? [];
-    // Store source-grid ordinal so multi-bucket results retain the exact
-    // original snapshot record order used by existing pagination.
-    entries.push({record: object, sourceOrdinal: gridRows.length - 1});
-    gridBins.set(bucketKey, entries);
-    layoutBins.set(object.gridIdNative, gridBins);
-    spatialBuckets.set(object.layoutId, layoutBins);
+
   }
   for (const item of objects.values()) validateFootprint(item.footprint);
   const catalog = { manifest: bundle.manifest, objects, scenes, grids, layouts, worlds, areas,
     layoutObjects, layoutObjectsByLayout, layoutObjectsByGrid,
     unresolved: isRecord(bundle.unresolved) ? bundle.unresolved : null };
-  sourceAnchorBuckets.set(catalog, spatialBuckets);
+  registerSourceAnchorIndex(catalog);
   return catalog;
 }
 
@@ -518,50 +505,6 @@ export function getNativeAreasForScene(catalog, sceneId) {
   return [...catalog.areas.values()].filter(area => String(area.parentSceneId) === id);
 }
 
-// A default layout is an original-game starting arrangement; whether a
-// particular object is permanent or movable must be checked separately.
-export function getDefaultLayoutObjects(catalog, layoutId, nativeGridId = null) {
-  const id = String(layoutId);
-  const rows = nativeGridId === null
-    ? (catalog.layoutObjectsByLayout.get(id) ?? [])
-    : (catalog.layoutObjectsByGrid.get(id)?.get(nativeGridId) ?? []);
-  return rows.map(row => ({
-    layoutObjectId: row.layoutObjectId,
-    gridObjectIdNative: row.gridObjectIdNative,
-    gridIdNative: row.gridIdNative,
-    itemId: row.itemId,
-    x: row.x, y: row.y,
-    orientationCode: row.orientationCode,
-    orientationName: row.orientationName,
-    positionBasis: 'nativeGridLocal',
-    worldCoordinatesVerified: false,
-    fixedImmovableVerified: false,
-  }));
-}
-
-export function getDefaultVillageAreaLayoutRefs(catalog, layoutId) {
-  const layout = catalog.layouts.get(String(layoutId));
-  if (!layout || layout.layoutKind !== 'nativeDefaultVillageData') return [];
-  return (layout.areaLayoutReferences ?? []).map(ref => ({
-    nativeAreaTypeCode: ref.nativeAreaTypeCode,
-    nativeAreaTypeName: ref.nativeAreaTypeName ?? null,
-    gridLayoutPath: ref.gridLayoutPath,
-    knownLayout: catalog.layouts.has(ref.gridLayoutPath),
-  }));
-}
-
-export function getDefaultLayoutGridEntries(catalog, layoutId) {
-  const layout = catalog.layouts.get(String(layoutId));
-  if (!layout || layout.layoutKind !== 'nativeGridCollection') return [];
-  return (layout.nativeGridEntries ?? []).map(entry => ({
-    gridIdNative: entry.gridIdNative,
-    gridDataPath: entry.gridDataPath,
-    tessellationFactor: entry.tessellationFactor,
-    defaultObjectCount: entry.defaultObjectCount,
-    knownGridData: catalog.grids.has(entry.gridDataPath),
-  }));
-}
-
 export function getNativeScene(catalog, sceneId) {
   return catalog.scenes.get(idText(sceneId)) ?? null;
 }
@@ -580,187 +523,6 @@ export function getLayoutGridReferences(catalog, layoutId) {
     path: ref.path, wireField: ref.wireField,
     knownGrid: catalog.grids.has(ref.path),
   }));
-}
-
-/**
- * Read-only source-record anchor viewport for an original DEFAULT GridCollection.
- *
- * The GridData dimensions and GridObject X/Y fields are raw source data. This
- * preview intentionally requires NO packed-terrain decoder, native floor mask
- * interpretation, footprint occupancy or GridArea rotation. On new game
- * versions the anchors remain inspectable while native terrain code is gated.
- * Its filter means "recorded anchor lies in this rectangle", NOT "all cells
- * of the object outside the rectangle are unoccupied".
- */
-export function getNativeDefaultLayoutAnchorWindow(
-    catalog, layoutId, nativeGridId, rect, page = null) {
-  // Optional bounded paging avoids materializing enormous anchor lists in the
-  // editor. Omitting it preserves the original legacy window result contract.
-  if (page !== null && (!isRecord(page) ||
-      !Number.isSafeInteger(page.offset) || page.offset < 0 ||
-      page.offset > 1000000 ||
-      !Number.isSafeInteger(page.limit) || page.limit < 1 ||
-      page.limit > 512)) {
-    throw new TypeError('Invalid native anchor pagination offset/limit');
-  }
-  const id = String(layoutId);
-  const layout = catalog.layouts.get(id);
-  if (!layout) return { status: 'unknown_native_layout' };
-  if (layout.layoutKind !== 'nativeGridCollection') {
-    return { status: 'not_native_grid_collection' };
-  }
-  if (!Number.isSafeInteger(nativeGridId) || nativeGridId < 0 ||
-      nativeGridId > 0xffffffff) {
-    throw new TypeError('Native Grid.ID must be an unsigned 32-bit integer');
-  }
-  if (!Array.isArray(layout.nativeGridEntries)) {
-    throw new TypeError('Malformed native grid collection');
-  }
-  const matches = layout.nativeGridEntries.filter(
-    entry => entry.gridIdNative === nativeGridId);
-  if (matches.length === 0) return { status: 'unknown_native_grid_in_layout' };
-  if (matches.length !== 1) throw new TypeError('Ambiguous duplicate native Grid.ID');
-  const entry = matches[0];
-  if (typeof entry.gridDataPath !== 'string' || !entry.gridDataPath) {
-    throw new TypeError('Missing explicit native GridDataPath');
-  }
-  const grid = catalog.grids.get(entry.gridDataPath);
-  if (!grid) return {
-    status: 'missing_referenced_grid_in_source_subset',
-    sourceLayoutId: id, gridIdNative: nativeGridId, gridDataPath: entry.gridDataPath,
-  };
-  const sx = grid.sizeX, sy = grid.sizeY;
-  if (!Number.isSafeInteger(sx) || !Number.isSafeInteger(sy) ||
-      sx <= 0 || sy <= 0 || sx * sy > 16777216) {
-    return {
-      status: 'native_grid_dimensions_unavailable',
-      sourceLayoutId: id, gridIdNative: nativeGridId, gridDataPath: entry.gridDataPath,
-    };
-  }
-  if (!isRecord(rect)) throw new TypeError('Native anchor viewport rectangle required');
-  const { x, y, width, height } = rect;
-  if (![x, y, width, height].every(Number.isSafeInteger) ||
-      x < 0 || y < 0 || width < 1 || height < 1 ||
-      width > 256 || height > 256 || x + width > sx || y + height > sy) {
-    return {
-      status: 'outside_native_grid_or_preview_limit',
-      sourceLayoutId: id, gridIdNative: nativeGridId, gridDataPath: entry.gridDataPath,
-    };
-  }
-  const native = catalog.layoutObjectsByGrid.get(id)?.get(nativeGridId) ?? [];
-  if (!Number.isSafeInteger(entry.defaultObjectCount) ||
-      entry.defaultObjectCount < 0 ||
-      entry.defaultObjectCount !== native.length) {
-    return {
-      status: 'incomplete_native_default_object_source',
-      sourceLayoutId: id, gridIdNative: nativeGridId,
-    };
-  }
-  // Query only the source-anchor buckets intersecting this grid-local
-  // viewport. Out-of-grid, missing, negative and nonmatching native records
-  // still count toward the original GridCollection cardinality above.
-  const index = sourceAnchorBuckets.get(catalog);
-  if (!index) throw new TypeError('DB-04 anchor viewport requires an indexed catalog');
-  const gridBins = index.get(id)?.get(nativeGridId);
-  const selected = [];
-  const minBX = Math.floor(x / SOURCE_ANCHOR_BUCKET_SIDE);
-  const maxBX = Math.floor((x + width - 1) / SOURCE_ANCHOR_BUCKET_SIDE);
-  const minBY = Math.floor(y / SOURCE_ANCHOR_BUCKET_SIDE);
-  const maxBY = Math.floor((y + height - 1) / SOURCE_ANCHOR_BUCKET_SIDE);
-  for (let bx = minBX; bx <= maxBX; bx++) {
-    for (let by = minBY; by <= maxBY; by++) {
-      for (const entry of gridBins?.get(`${bx}:${by}`) ?? []) {
-        const { record } = entry;
-        if (record.x >= x && record.x < x + width &&
-            record.y >= y && record.y < y + height) selected.push(entry);
-      }
-    }
-  }
-  // Native GridObject IDs are not necessarily sorted or consecutive. Use
-  // original source record order, never ID order or bucket traversal order.
-  selected.sort((a, b) => a.sourceOrdinal - b.sourceOrdinal);
-  const matchingAnchorCount = selected.length;
-  const pageRecords = page === null ? selected
-    : selected.slice(page.offset, page.offset + page.limit);
-  const anchors = pageRecords.map(({record}) => ({
-    layoutObjectId: record.layoutObjectId,
-    gridObjectIdNative: record.gridObjectIdNative,
-    itemId: record.itemId,
-    x: record.x, y: record.y,
-    orientationCode: record.orientationCode,
-    orientationName: record.orientationName ?? null,
-    positionBasis: 'nativeGridLocalSourceRecord',
-    fullFootprintVerified: false,
-    fixedImmovableVerified: false,
-  }));
-  return {
-    status: 'source_native_default_layout_anchors_only',
-    sourceLayoutId: id, gridIdNative: nativeGridId,
-    gridDataPath: entry.gridDataPath,
-    nativeGridSizeX: sx, nativeGridSizeY: sy,
-    rect: { x, y, width, height },
-    defaultObjectAnchors: anchors,
-    totalNativeDefaultObjectAnchors: native.length,
-    viewAnchorCount: anchors.length,
-    ...(page === null ? {} : {
-      matchingNativeDefaultAnchorCount: matchingAnchorCount,
-      pageOffset: page.offset, pageLimit: page.limit,
-      hasNextPage: page.offset + anchors.length < matchingAnchorCount,
-      nextOffset: page.offset + anchors.length < matchingAnchorCount
-        ? page.offset + anchors.length : null,
-    }),
-    terrainDecoded: false,
-    nativeGridLocalCoordinatesOnly: true,
-    worldCoordinatesVerified: false,
-    gridObjectAnchorConventionVerified: false,
-    fullFootprintOccupancyVerified: false,
-    currentSaveObjectVerified: false,
-    placementLegalityVerified: false,
-    nativeCodeBodyVerified: false,
-    sourceScopeVerified: catalog.manifest.sourceScopeVerified === true,
-  };
-}
-
-/**
- * Resolve the source-defined DEFAULT village area path, then show raw anchors
- * without requiring the v1.26.1-only native packed-terrain interpretation.
- */
-export function getNativeVillageAreaAnchorWindow(
-    catalog, villageLayoutId, nativeAreaTypeCode, nativeGridId, rect, page = null) {
-  const id = String(villageLayoutId);
-  const village = catalog.layouts.get(id);
-  if (!village) return { status: 'unknown_native_village_layout' };
-  if (village.layoutKind !== 'nativeDefaultVillageData') {
-    return { status: 'not_native_default_village_data' };
-  }
-  if (!Number.isSafeInteger(nativeAreaTypeCode)) {
-    throw new TypeError('Native village area code must be an integer');
-  }
-  if (!Array.isArray(village.areaLayoutReferences)) {
-    throw new TypeError('Malformed native village area reference map');
-  }
-  const matches = village.areaLayoutReferences.filter(
-    area => area.nativeAreaTypeCode === nativeAreaTypeCode);
-  if (matches.length === 0) return { status: 'unknown_native_village_area' };
-  if (matches.length !== 1) throw new TypeError('Duplicate native area type code');
-  const area = matches[0];
-  if (typeof area.gridLayoutPath !== 'string' || !area.gridLayoutPath) {
-    throw new TypeError('Missing native village area GridLayoutPath');
-  }
-  if (!catalog.layouts.has(area.gridLayoutPath)) {
-    return {
-      status: 'missing_referenced_area_layout_in_source_subset',
-      villageLayoutId: id, nativeAreaTypeCode,
-      expectedGridLayoutPath: area.gridLayoutPath,
-    };
-  }
-  const anchors = getNativeDefaultLayoutAnchorWindow(
-    catalog, area.gridLayoutPath, nativeGridId, rect, page);
-  return {
-    ...anchors, villageLayoutId: id, nativeAreaTypeCode,
-    nativeAreaTypeName: area.nativeAreaTypeName ?? null,
-    gridLayoutPath: area.gridLayoutPath,
-  };
 }
 
 /**

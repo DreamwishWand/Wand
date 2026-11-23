@@ -1469,6 +1469,15 @@ try{
   const userSlot=regular.getByRole('button',{
     name:'所持アイテム 777 を選択'
   });
+  const chestSlot=regular.getByRole('button',{
+    name:'所持アイテム 440 を選択'
+  });
+  assert.match(await chestSlot.innerText(),/Chest 202 \/ Slot 1/,
+    'same-item chests must disclose their exact source location');
+  await regular.getByLabel('所持アイテム分類').selectOption('chest');
+  assert.equal(await userSlot.count(),0);
+  assert.equal(await chestSlot.count(),1);
+  await regular.getByLabel('所持アイテム分類').selectOption('all');
   await userSlot.click();
   assert.equal(await regular.getByLabel('Item ID').inputValue(),'777');
   assert.equal(await regular.getByLabel('現在の数量').inputValue(),'1');
@@ -1476,6 +1485,10 @@ try{
     'the regular editor requires a user-specified replacement, not +1');
   await regular.getByLabel('変更後の数量').fill('250');
   await regular.getByRole('button',{name:'複数編集に追加'}).click();
+  assert.match(await userSlot.innerText(),/×1\s*→\s*×250/,
+    'queued amount must be visible on the exact owned slot');
+  assert.doesNotMatch(await chestSlot.innerText(),/→/,
+    'unrelated saved slots must not display an edited quantity');
   const unifiedSave=regular.getByRole('region',{
     name:'編集済みセーブの出力'
   });
@@ -1573,6 +1586,7 @@ try{
   assert.equal(await regular.getByLabel('変更後の数量').inputValue(),'250');
   await regular.getByLabel('変更後の数量').fill('251');
   await regular.getByRole('button',{name:'登録済みの数量を更新'}).click();
+  assert.match(await userSlot.innerText(),/×1\s*→\s*×251/);
   assert.equal(await unifiedSave.getByRole('status').filter({
     hasText:'Rust/WASM検証済み'
   }).count(),0,'old combined Rust validation cannot authorize revised quantities');
