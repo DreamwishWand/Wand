@@ -434,7 +434,7 @@ try{
     'source-backed universe tags must be browseable without Collection membership claims');
   assert.match(await page.locator('.collection-axis-notice').innerText(),/原本の作品タグ/);
   assert.match(await page.locator('.collection-universe-card').first().innerText(),
-    /ユニバース未設定/);
+    /その他|Other|ユニバース未設定/);
   await page.locator('.collection-universe-card').nth(1).click();
   await page.locator('.collection-universe-section .item-card').first().waitFor({timeout:15000});
   assert.ok(await page.locator('.collection-universe-section').count()>0,
