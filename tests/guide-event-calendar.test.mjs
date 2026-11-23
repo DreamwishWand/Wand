@@ -226,3 +226,25 @@ test('Guide month event list uses JST days and exact exclusive UTC end, matching
   }
   assert.throws(()=>guideCalendarEventsInMonth(fixtures,'2026-13'),/month range/);
 });
+
+
+test('typed event windows reject forged source and forbid invented UTC clock time on date-only events',async()=>{
+  const verified=await snapshot();
+  const altered=structuredClone(verified);
+  altered.source.fileSha256='0'.repeat(64);
+  assert.throws(()=>guideCalendarEvents(altered),/provenance/);
+  const entries=guideCalendarEvents(verified);
+  assert.deepEqual(entries.map(row=>row.precision),
+    ['utc-instant','utc-instant','date-only']);
+  assert(entries.every(row=>row.liveVerified===false));
+  const festival=entries[2];
+  assert.equal(festival.startDay,'2026-10-07');
+  assert.equal(Object.hasOwn(festival,'startUtc'),false);
+  assert.equal(Object.hasOwn(festival,'taskEndUtcExclusive'),false);
+  assert.equal(Object.hasOwn(festival,'endUtcExclusive'),false);
+  assert.throws(()=>eventScheduleState({...entries[0],taskEndUtcExclusive:
+    entries[0].startUtc}),/event time bounds/);
+  const end=at('2026-12-09T14:00:00Z');
+  assert.equal(eventScheduleState(entries[0],end),'ended',
+    'exclusive task and exchange deadlines remain strict');
+});
