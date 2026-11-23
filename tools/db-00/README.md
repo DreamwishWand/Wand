@@ -357,3 +357,27 @@ contents, player ownership, DLC entitlements or any runtime quantity.
 Configured amounts are preserved, never treated as owned stacks. They are
 **not merged** into the existing DB-02 acquisition \`origins\` ledger or
 into verified DB-00 Collection facts.
+
+
+### Source-authenticated Event ↔ Quest / Duty / Scene navigation
+
+\`openPublicSharedGameSources('/Wand').guideEvents\` combines four existing
+SHA-pinned DB-03 Steam v1.26.2 public readers into one version-compatible
+cross-service reference view. It exposes 23 user-facing Mini Events/Floating
+Festivals (excluding internal \`TestEv\`), 62 static Event–Quest refs, 79
+Event–Duty refs, 17 Festival scene/subscene refs and six expansion village-scene
+refs. The already requested Quest catalogue and Event reward bytes are fetched
+only once; this integration requires three additional public SHA-pinned files.
+
+\`guideEvents.getEvent('mini_event', id)\` returns source metadata plus its
+Quest, Duty and Scene links. Reverse lookups
+\`getQuestEvents(questId)\`, \`getDutyEvents(dutyId)\` and
+\`getSceneReferences(sceneId)\` let Save, Guide and World consumers navigate
+the same native IDs. \`getExpansionScene(expansionId)\` provides source
+expansion-to-scene evidence without inferring DLC ownership.
+
+Every result is **static original configuration**. No reference establishes
+an event is currently active, a quest is mandatory/unlocked/completed, a
+Duty is fulfilled, a Scene belongs to a verified World/accessible location,
+or an expansion is owned. This API neither edits saves nor publishes private
+game originals.
