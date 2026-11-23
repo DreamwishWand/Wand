@@ -679,7 +679,9 @@ try{
   // DB-01 source-only filters must affect the complete Rust Collection
   // category, not only the first visible page; Tags do not enable unverified
   // game-world scope or change the user's saved collection state.
-  await page.getByRole('button',{name:/フィルター/}).click();
+  const nativeFilterButton=page.getByRole('button',{name:/フィルター/});
+  if(await nativeFilterButton.getAttribute('aria-expanded')==='false')
+    await nativeFilterButton.click();
   const nativeTags=page.getByRole('group',{name:'ゲーム原本のタグ'});
   await nativeTags.waitFor({timeout:30000});
   const colorTags=nativeTags.locator('fieldset').filter({has:nativeTags.locator('legend').filter({hasText:/^色$/})});
