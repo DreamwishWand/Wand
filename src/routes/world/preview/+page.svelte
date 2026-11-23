@@ -485,6 +485,9 @@
           selectedRegion=view.regionKey;
           selectedViewKey=view.viewKey;
           selectedGridId=String(grid.gridIdNative);
+          // Source GridEntry.factor is an exact ORIGINAL reference, not a Save transform.
+          areaFactor=grid.tessellationFactor===2?2:1;
+          resetAreaWindow();
           resetAnchorFind();
           const cx=match.sourceAnchorX,cy=match.sourceAnchorY;
           x=Math.max(0,Math.min(grid.anchorSizeX-1,cx-Math.floor(width/2)));
@@ -533,6 +536,8 @@
           const chosen=layouts.find(row=>row.viewKey===selectedViewKey)
             ?.grids.find(row=>String(row.gridIdNative)===selectedGridId);
           if(!chosen||!chosen.anchorSizeX||!chosen.anchorSizeY)return;
+          areaFactor=chosen.tessellationFactor===2?2:1;
+          resetAreaWindow();
           const cx=found.sourceAnchorX,cy=found.sourceAnchorY;
           x=Math.max(0,Math.min(chosen.anchorSizeX-1,
             cx-Math.floor(width/2)));
