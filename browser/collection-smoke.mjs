@@ -375,6 +375,31 @@ try{
   assert.match(await page.locator('.collection-original-category-grid .facet-card').filter({
     hasText:/家具|Furniture/
   }).first().innerText(),/[0-9][0-9,]* \/ [0-9][0-9,]*/);
+  // A missing category projection must not leave a permanent loading message,
+  // and retry must restore the game-source navigation without losing access
+  // to the existing item-type categories.
+  const retryContext=await browser.newContext();
+  const retryPage=await retryContext.newPage();
+  let failedCategoryFetch=false;
+  await retryPage.route('**/ddv/collection/db01-facets-1262.json',route=>{
+    if(!failedCategoryFetch){
+      failedCategoryFetch=true;
+      return route.abort('failed');
+    }
+    return route.continue();
+  });
+  await retryPage.goto(url);
+  await retryPage.getByRole('alert').filter({
+    hasText:/カテゴリーを読み込めませんでした|Categories could not be loaded/
+  }).waitFor({timeout:30000});
+  assert.equal(failedCategoryFetch,true);
+  assert.ok(await retryPage.locator('.facet-card').count()>10,
+    'item-type categories must remain browseable if source navigation fails');
+  await retryPage.getByRole('button',{name:/再試行|Retry/}).click();
+  await retryPage.locator('.collection-original-category-grid .facet-card').first()
+    .waitFor({timeout:30000});
+  assert.equal(await retryPage.locator('.collection-original-category-grid .facet-card').count(),20);
+  await retryContext.close();
   // World is the default; Universe is optional and must not fabricate
   // membership/icon choices before DB-00 publishes reviewed membership.
   assert.equal(await page.getByRole('button',{name:'ワールド表示'}).getAttribute('aria-pressed'),'true');
