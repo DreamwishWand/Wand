@@ -159,6 +159,25 @@ class NativeMethodPointerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsupported original"):
             resolve_native_grid_methods(self.dll, self.metadata)
 
+    def test_explicit_metadata_signature_resolver_reuses_source_pdata(self):
+        single = resolve_native_grid_methods(
+            self.dll, self.metadata, namespace="Definitions.Grid",
+            type_name="GridData",
+            requested_methods=[("GetNumberOfBitsPerPosition", 0)])
+        self.assertEqual(single["methods"][0]["rva"], 0x10e0)
+        self.assertEqual(len(single["methods"]), 1)
+        self.assertFalse(single["nativeMethodIdentityVerified"])
+        self.assertFalse(single["nativeCodeBodyVerified"])
+        with self.assertRaisesRegex(ValueError, "missing/overloaded"):
+            resolve_native_grid_methods(
+                self.dll, self.metadata, namespace="Definitions.Grid",
+                type_name="GridData",
+                requested_methods=[("GetHashCode", 0)])
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            resolve_native_grid_methods(
+                self.dll, self.metadata,
+                requested_methods=[("get_Item", 2), ("get_Item", 2)])
+
     @unittest.skipUnless(capstone is not None, "optional Capstone not installed")
     def test_metadata_token_captured_windows_can_be_disassembled(self):
         result = capture_native_pe(

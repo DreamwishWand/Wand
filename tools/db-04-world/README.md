@@ -1237,3 +1237,25 @@ it is not a game publisher signature, authentic original-game content,
 a proof that graph records are faithful, a Save Grid identity, or either
 of the native DiffGrid \`DefaultGridHashCode\` and
 \`DefaultGridDataHashCode\` values. No upload or Save writing.
+
+
+## DiffGrid hashes: original IL2CPP method discovery, private only
+
+`native_diffgrid_hash_discovery.py` reads original Steam
+`global-metadata.dat` v31 and `FullVersion.txt` offline, enumerates
+Grid-related hash-named method declarations (method token, signature, exact
+module and metadata SHA-256), and can correlate an explicitly selected
+candidate token to the original `GameAssembly.dll` PE unwind start via
+`native_method_pointers.py`. No binaries or extracted data are committed.
+
+```powershell
+python tools/db-04-world/native_diffgrid_hash_discovery.py --metadata <private-global-metadata.dat> --version <private-FullVersion.txt> > <private-candidates.json>
+python tools/db-04-world/native_diffgrid_hash_discovery.py --metadata <private-global-metadata.dat> --version <private-FullVersion.txt> --dll <private-GameAssembly.dll> --candidate-token 0x06000001 > <private-pointer.json>
+```
+
+The token in the second example **must** be replaced with a token actually
+reported from the same original source; it is not a known hash method.
+Pointer correlation does **not** derive either DefaultGridHashCode or
+DefaultGridDataHashCode, establish the algorithm, verify its output against
+any Save, authorize default-object reconstruction or edits. Those remain
+blocked until source-native behavior has been validated independently.
