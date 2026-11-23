@@ -3,7 +3,7 @@ import {base} from '$app/paths';
 import type {CollectionRuntime,CollectionState} from '$lib/collection/runtime';
 
 /** In-memory, per-tool edit timeline; only Collection writes are currently supported. */
-export type HistoryArea='collection'|'world';
+export type HistoryArea='collection'|'world'|'save';
 export interface HistoryDescription{title:string;change:string}
 export interface HistoryEntry extends HistoryDescription{id:number;timestamp:number}
 export type HistoryError='stale'|'failed'|null;

@@ -1193,6 +1193,35 @@ try{
   await page.keyboard.press('Escape');
   await page.locator('.wand-tour-layer').waitFor({state:'detached'});
 
+  // A fresh tab has no incidental warning. Rejected save selection produces
+  // a single incident in the Save Editor tab, not an Undo/Redo operation.
+  const incidentPage=await context.newPage();
+  await incidentPage.goto(url);
+  await incidentPage.locator('.collection-workspace').waitFor();
+  assert.equal(await incidentPage.locator('.shell-issue-button').count(),0);
+  await incidentPage.getByRole('button',{name:'編集履歴'}).click();
+  const historyRect=await incidentPage.locator('.shell-history-panel').boundingBox();
+  const viewport=incidentPage.viewportSize();
+  assert.ok(historyRect&&viewport);
+  assert.ok(Math.abs(historyRect.x+historyRect.width/2-viewport.width/2)<4,
+    'history dialog must be centered, not docked at the trigger');
+  assert.equal(await incidentPage.locator('.shell-history-tabs button.active').innerText(),'Collection');
+  await incidentPage.locator('.shell-history-head button').click();
+  await incidentPage.locator('input[aria-hidden="true"][accept*=".profile"]').setInputFiles({
+    name:'empty.profile',mimeType:'application/octet-stream',buffer:Buffer.alloc(0)
+  });
+  await incidentPage.locator('.shell-issue-button').waitFor();
+  await incidentPage.getByRole('button',{name:'エラーを確認'}).click();
+  assert.equal(await incidentPage.locator('.shell-history-tabs button.active').innerText(),'Save Editor');
+  assert.match(await incidentPage.locator('.shell-history-issue').innerText(),/セーブファイルを選択できませんでした/);
+  assert.equal(await incidentPage.locator('.shell-history-timeline .shell-history-entry').count(),0,
+    'diagnostic incidents must never become editable history entries');
+  await incidentPage.getByRole('button',{name:'確認済みにする'}).click();
+  await incidentPage.locator('.shell-issue-button').waitFor({state:'detached'});
+  assert.match(await incidentPage.locator('.shell-history-issue').innerText(),/確認済み/);
+  await incidentPage.locator('.shell-history-head button').click();
+  await incidentPage.close();
+
   await context.close();
   console.log('Collection browser WASM/IndexedDB/migration/search/paging/history/shared-save smoke passed');
 } finally {
