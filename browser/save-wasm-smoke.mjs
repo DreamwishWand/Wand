@@ -897,6 +897,128 @@ try{
   assert.equal(rotatedOriginal.World.GridCollection.Grids['101'].Objects['1']
     .Orientation,'GridOrientation_Up');
   assert.equal(rotatedOriginal.World.GridCollection.Grids['101'].Objects['2'].X,150);
+
+  // Both independently staged Grid queues can now be exported as ONE
+  // Rust-validated, independently reopened P1G when their targets do not
+  // conflict. One full-grid coordinate and one DiffGrid rotation change.
+  const joinedOriginal=structuredClone(quantityProfile);
+  joinedOriginal.World.GridCollection.DiffGrids['102']
+    .ModifiedObjects['6'].ExtraFutureField='preserve';
+  await page.getByLabel('検証用セーブファイル').setInputFiles({
+    name:'combined-independent.profile',mimeType:'application/octet-stream',
+    buffer:syntheticEncryptedP1g(joinedOriginal)
+  });
+  await page.getByRole('button',{name:'所持アイテムを表示'}).click();
+  await page.getByRole('region',{name:'セーブ内アイテム'})
+    .getByRole('status').filter({hasText:'件'})
+    .waitFor({timeout:30000});
+  await objects.getByRole('button',{name:'配置オブジェクトを表示'}).click();
+  await objects.getByRole('status').filter({hasText:'3件'})
+    .waitFor({timeout:30000});
+  await objects.getByRole('button',{name:'配置 #1 の座標を編集'}).click();
+  const joinedCoordinates=objects.getByLabel('座標編集',{exact:true});
+  await joinedCoordinates.getByLabel('新しいX').fill('60');
+  await joinedCoordinates.getByLabel('新しいY').fill('20');
+  await joinedCoordinates.getByRole('button',{name:'座標編集に追加'}).click();
+  await objects.getByRole('button',{name:'配置 #3 の向きを編集'}).click();
+  const joinedDirection=objects.getByLabel('向き編集',{exact:true});
+  await joinedDirection.getByLabel('新しい向き')
+    .selectOption('GridOrientation_Right');
+  await joinedDirection.getByRole('button',{
+    name:'向きを一括配置変更に追加'
+  }).click();
+  const unified=objects.getByLabel('座標と配置の統合編集');
+  const unifiedVerify=unified.getByRole('button',{
+    name:/両キューをまとめて検証/
+  });
+  assert.equal(await unifiedVerify.isEnabled(),true);
+  assert.match(await unifiedVerify.innerText(),/2件/);
+  await unifiedVerify.click();
+  await joinedCoordinates.getByRole('status').filter({
+    hasText:'2件の座標・向き変更をRust/WASMで検証しました。'
+  }).waitFor({timeout:30000});
+  page.once('dialog',dialog=>dialog.accept());
+  await joinedCoordinates.getByRole('button',{
+    name:'座標変更コピーを生成'
+  }).click();
+  const unifiedLink=joinedCoordinates.getByRole('link',{
+    name:'座標コピーをダウンロード'
+  });
+  await unifiedLink.waitFor({timeout:30000});
+  const unifiedDownload=page.waitForEvent('download');
+  await unifiedLink.click();
+  const unifiedCopy=readSyntheticEncryptedP1g(
+    await readFile(await (await unifiedDownload).path())
+  );
+  const unifiedFull=unifiedCopy.World.GridCollection.Grids['101'].Objects['1'];
+  const unifiedDiff=unifiedCopy.World.GridCollection.DiffGrids['102']
+    .ModifiedObjects['6'];
+  assert.deepEqual([unifiedFull.X,unifiedFull.Y,unifiedFull.Orientation],
+    [60,20,'GridOrientation_Up']);
+  assert.deepEqual([unifiedDiff.X,unifiedDiff.Y,unifiedDiff.Orientation],
+    [-12,8,'GridOrientation_Right']);
+  assert.equal(unifiedFull.PrivateState,'do-not-export');
+  assert.equal(unifiedDiff.ExtraFutureField,'preserve');
+  assert.equal(unifiedCopy.Player.ListInventories['100'].Inventory['550'].Amount,7);
+  assert.equal(joinedOriginal.World.GridCollection.Grids['101'].Objects['1'].X,45);
+  assert.equal(joinedOriginal.World.GridCollection.DiffGrids['102']
+    .ModifiedObjects['6'].Orientation,'GridOrientation_Left');
+
+  // An orientation-only draft for the SAME ordinal can be folded into its
+  // coordinate change safely. This is still a single Rust mixed target.
+  await page.getByLabel('検証用セーブファイル').setInputFiles({
+    name:'combined-overlap.profile',mimeType:'application/octet-stream',
+    buffer:syntheticEncryptedP1g(quantityProfile)
+  });
+  await page.getByRole('button',{name:'所持アイテムを表示'}).click();
+  await page.getByRole('region',{name:'セーブ内アイテム'})
+    .getByRole('status').filter({hasText:'件'})
+    .waitFor({timeout:30000});
+  await objects.getByRole('button',{name:'配置オブジェクトを表示'}).click();
+  await objects.getByRole('status').filter({hasText:'3件'})
+    .waitFor({timeout:30000});
+  await objects.getByRole('button',{name:'配置 #1 の座標を編集'}).click();
+  await joinedCoordinates.getByLabel('新しいX').fill('71');
+  await joinedCoordinates.getByLabel('新しいY').fill('-18');
+  await joinedCoordinates.getByRole('button',{name:'座標編集に追加'}).click();
+  await objects.getByRole('button',{name:'配置 #1 の向きを編集'}).click();
+  await joinedDirection.getByLabel('新しい向き')
+    .selectOption('GridOrientation_Down');
+  await joinedDirection.getByRole('button',{
+    name:'向きを一括配置変更に追加'
+  }).click();
+  const overlap=objects.getByLabel('座標と配置の統合編集');
+  const overlapVerify=overlap.getByRole('button',{
+    name:/両キューをまとめて検証/
+  });
+  assert.equal(await overlapVerify.isEnabled(),true);
+  assert.match(await overlapVerify.innerText(),/1件/);
+  await overlapVerify.click();
+  await joinedCoordinates.getByRole('status').filter({
+    hasText:'1件の座標・向き変更をRust/WASMで検証しました。'
+  }).waitFor({timeout:30000});
+  page.once('dialog',dialog=>dialog.accept());
+  await joinedCoordinates.getByRole('button',{
+    name:'座標変更コピーを生成'
+  }).click();
+  const overlapLink=joinedCoordinates.getByRole('link',{
+    name:'座標コピーをダウンロード'
+  });
+  await overlapLink.waitFor({timeout:30000});
+  const overlapDownload=page.waitForEvent('download');
+  await overlapLink.click();
+  const overlapCopy=readSyntheticEncryptedP1g(
+    await readFile(await (await overlapDownload).path())
+  );
+  const overlapFull=overlapCopy.World.GridCollection.Grids['101'].Objects['1'];
+  assert.deepEqual([overlapFull.X,overlapFull.Y,overlapFull.Orientation],
+    [71,-18,'GridOrientation_Down']);
+  assert.equal(overlapFull.PrivateState,'do-not-export');
+  assert.equal(overlapCopy.World.GridCollection.DiffGrids['102']
+    .ModifiedObjects['6'].Orientation,'GridOrientation_Left');
+  assert.equal(quantityProfile.World.GridCollection.Grids['101']
+    .Objects['1'].Orientation,'GridOrientation_Up');
+
   assert.deepEqual(errors,[],errors.join('\n'));
   await page.close();
   console.log('DB-05 browser: explicit JSON/P1G edited-copy downloads, native reopen, stale rejection, original preservation PASS');
