@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.mjs';
+import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.ts';
 import {createGuideRewardIndex} from '../src/lib/guide/reward-relations.ts';
 import {resolveStarpathRewardLink,starpathRewardHref}
   from '../src/lib/guide/starpath-reward-link.ts';
