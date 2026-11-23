@@ -6,7 +6,7 @@ import {verifyPublicQuestIndex,publicQuestSection,filterPublicQuests} from '../s
 import {
   GUIDE_EVENT_CALENDAR_CONTRACT,GUIDE_EVENT_CALENDAR_AS_OF,GUIDE_EVENT_CALENDAR_SOURCES,
   guideCalendarEvents,eventScheduleState,activeScheduleStarpaths,guideCalendarMonth,guideCalendarEventsInMonth,localGuideDateTime
-} from '../src/lib/guide/event-calendar.mjs';
+} from '../src/lib/guide/event-calendar.ts';
 import {
   actionableStarpathTask,STARPATH_REVIEWED_DAILY_COUNT,STARPATH_REVIEWED_WEEKLY_COUNT
 } from '../src/lib/guide/starpath-task-guidance.ts';
