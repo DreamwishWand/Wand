@@ -139,7 +139,8 @@
       sourceWorldManifestSha256:catalog.sourceWorldManifestSha256,
       layoutId:activeOption.layoutId,
       nativeGridId:activeOption.nativeGridId,
-      gridDataPath:activeOption.gridDataPath
+      gridDataPath:activeOption.gridDataPath,
+      sourceDefaultObjectCount:activeOption.sourceDefaultInstances??undefined
     });
   }
   // Drill down only through an exact GridRef ID already present in the

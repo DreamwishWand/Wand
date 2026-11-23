@@ -91,3 +91,68 @@ test('reject forged numeric Save IDs, traversal, missing SHA and malformed nativ
   assert.throws(()=>matchSourceGridToLocalTerrain(source,null),
     /DB04_TERRAIN_NAV_INVALID_LOCAL_ZIP/);
 });
+
+
+test('exact source GridObject cardinality agrees across independent original archives',()=>{
+  const counted={...source,sourceDefaultObjectCount:3};
+  const withThree={...direct,grids:[
+    {...direct.grids[0],defaultObjectCount:3}]};
+  const withThreeVillage={...village,grids:[
+    {...village.grids[0],defaultObjectCount:3}]};
+  const equal=matchSourceGridToLocalTerrain(counted,{
+    ...zip,layouts:[withThree,withThreeVillage]
+  });
+  assert.equal(equal.status,'ready');
+  assert.equal(equal.sourceDefaultCountCompared,true);
+  assert.equal(equal.sourceDefaultCountEqual,true);
+  assert.equal(equal.graphSourceDefaultObjectCount,3);
+  assert.equal(equal.terrainSourceDefaultObjectCount,3);
+  assert.equal(equal.independentOriginalArchiveBinaryIdentityVerified,false);
+  assert.equal(equal.savedGridIdentityVerified,false);
+
+  const mismatched=matchSourceGridToLocalTerrain(counted,{
+    ...zip,layouts:[{...withThree,grids:[
+      {...withThree.grids[0],defaultObjectCount:2}]}]
+  });
+  assert.equal(mismatched.status,'source_default_count_mismatch');
+  assert.equal(mismatched.viewKey,null);
+  assert.equal(mismatched.sourceLayoutAndGridDataPathExactMatched,true);
+  assert.equal(mismatched.sourceDefaultCountCompared,true);
+  assert.equal(mismatched.sourceDefaultCountEqual,false);
+  assert.equal(mismatched.graphSourceDefaultObjectCount,3);
+  assert.equal(mismatched.terrainSourceDefaultObjectCount,2);
+  assert.equal(mismatched.saveWritingAuthorized,false);
+
+  const absent=matchSourceGridToLocalTerrain(counted,zip);
+  assert.equal(absent.status,'source_default_count_unavailable');
+  assert.equal(absent.sourceDefaultCountCompared,false);
+  assert.equal(absent.viewKey,null);
+  // Older source-link callers without the optional count still navigate by
+  // the exact triple, but cannot report the count as corroborated.
+  const legacy=matchSourceGridToLocalTerrain(source,zip);
+  assert.equal(legacy.status,'ready');
+  assert.equal(legacy.sourceDefaultCountEqual,false);
+});
+test('zero original objects are valid; contradictory aliases and malformed counts are not',()=>{
+  const emptyGraph={...source,sourceDefaultObjectCount:0};
+  const empty={...direct,grids:[
+    {...direct.grids[0],defaultObjectCount:0}]};
+  assert.equal(matchSourceGridToLocalTerrain(emptyGraph,{
+    ...zip,layouts:[empty]
+  }).sourceDefaultCountEqual,true);
+  assert.equal(matchSourceGridToLocalTerrain(emptyGraph,{
+    ...zip,layouts:[empty,{...village,grids:[
+      {...village.grids[0],defaultObjectCount:1}]}]
+  }).status,'source_default_count_mismatch');
+  for(const bad of [-1,1.5,10000001,'3',null,NaN]){
+    assert.throws(()=>matchSourceGridToLocalTerrain({
+      ...source,sourceDefaultObjectCount:bad
+    },zip),/INVALID_ORIGINAL_GRID_REFERENCE/);
+  }
+  assert.equal(matchSourceGridToLocalTerrain({
+    ...source,sourceDefaultObjectCount:3
+  },{
+    ...zip,layouts:[{...direct,grids:[
+      {...direct.grids[0],defaultObjectCount:null}]}]
+  }).status,'source_default_count_unavailable');
+});
