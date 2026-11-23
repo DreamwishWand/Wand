@@ -13,7 +13,7 @@ Published artifacts under `static/guide/public/`:
 
 ## Browser integration
 
-`src/lib/guide/public-targets.mjs` checks the source scope, expected exact counts, name provenance and **each lazily fetched partition's raw-byte SHA-256** before checking every selector against the corresponding already-validated public objective index/type. The public page loads item target metadata only after opening a quest. Existing quest details remain available even if this optional overlay cannot be validated, with a visible warning. No Save files or private import needed.
+`src/lib/guide/public-targets.ts` checks the source scope, expected exact counts, name provenance and **each lazily fetched partition's raw-byte SHA-256** before checking every selector against the corresponding already-validated public objective index/type. The public page loads item target metadata only after opening a quest. Existing quest details remain available even if this optional overlay cannot be validated, with a visible warning. No Save files or private import needed.
 
 One fixed `mode=item` selector with one `direct` candidate **and a separately verified current item name** can replace the UI placeholder `{ItemName}`/ `{itemName}`. A statically sourced numeric amount can replace `{TargetAmount}`. Weighted alternatives and dynamic filters must **never** be converted into guaranteed required items; they remain explicit candidates or unresolved. The target chips always show original candidate item IDs and mark alternative candidates.
 
