@@ -3,7 +3,7 @@
  * Guide index, except anonymous counts, crosses this reporting boundary.
  */
 import rules from '../../../data/ddv/save/guide-link-rules.v1.json' with { type: 'json' };
-import { validateGuideSearch } from '../guide/client.mjs';
+import { validateGuideSearch } from '../guide/client.ts';
 import { inspectDecodedSave } from './registry.mjs';
 
 export const SAVE_GUIDE_JOIN_CONTRACT = 'wand.db05.db03-quest-slot-candidates@1';
