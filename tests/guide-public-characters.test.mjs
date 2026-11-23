@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {verifyPublicQuestIndex} from '../src/lib/guide/public-guide.mjs';
+import {verifyPublicQuestIndex} from '../src/lib/guide/public-guide.ts';
 import {
   GUIDE_CHARACTER_LABEL_CENSUS,derivePublicGuideCharacters,
   sourceCharacterName,filterPublicGuideCharacters,findPublicCharacterByLink
