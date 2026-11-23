@@ -124,6 +124,8 @@ export interface PublicOnlineNameCandidateIndex {
   readonly evidence:'name_only_no_grant_or_sale_proof';
   readonly coverage:PublicOnlineNameCandidateCoverage;
   getItemCandidates(itemId:number|string):readonly PublicOnlineNameCandidate[];
+  /** Sorted Item IDs with any unverified online name match; not source routes. */
+  listCandidateItemIds():readonly string[];
   getCampaignCandidates(campaignId:string):readonly PublicCampaignNameCandidate[];
   /** Includes unmatched and ambiguous names; never a verified Item origin. */
   getCampaignRewardResolution(campaignId:string):PublicCampaignRewardResolutionIndex|null;
@@ -328,6 +330,9 @@ export function indexPublicOnlineNameCandidates(
     }
   }
   freezeRows(byItem);freezeRows(byCampaign);freezeRows(byAppearance);freezeRows(byProduct);
+  const candidateIds=Object.freeze([...byItem.keys()].sort(
+    (a,b)=>Number(a)-Number(b)
+  ));
   const coverage:PublicOnlineNameCandidateCoverage=Object.freeze({
     publishedItemDefinitions:13202,
     distinctNamedEnglishLabels:names.size,
@@ -356,6 +361,7 @@ export function indexPublicOnlineNameCandidates(
     getItemCandidates(raw:string|number){
       return byItem.get(itemId(raw))??EMPTY;
     },
+    listCandidateItemIds(){return candidateIds;},
     getCampaignCandidates(campaignId:string){
       requireValue(typeof campaignId==='string'&&campaignId.length>0&&
         campaignId.length<=128,'INVALID_CAMPAIGN_ID');
