@@ -302,20 +302,41 @@
       scopedCategoryFacets=(worldFilter||universeFilter)
         ? facets.flatMap(facet=>{const scoped=countCategory(facet.id);return scoped?[scoped]:[];})
         : facets;
-      // Original CollectionSubMenu candidates and verified ItemTypes are
-      // browse references, not proof of in-game membership or completion.
-      originalCategoryCards=sourceIndex?COLLECTION_DB01_SUBMENUS.map(c=>{
-        const ids=sourceIndex!.itemsByCategory.get(c.code)??[];
-        return {code:c.code,family:c.family,total:ids.length,
-          owned:ids.filter(id=>entries[String(id)]?.status==='owned').length};
-      }):[];
+      // Show the original item-type cards scoped by exact DB-01 world tags.
+      // These tags are not game CollectionArea or availability evidence.
+      const tag=viewAxis==='world'?sourceChoices.worldContextTag:'';
+      const worldIds=tag&&sourceIndex?[...sourceIndex.byItem.keys()].filter(id=>
+        collectionDb01Matches(sourceIndex!,id,'worldContextTag',tag)):null;
+      const familyCounts=new Map<string,{total:number;owned:number}>();
+      const typeCounts=new Map<number,{total:number;owned:number}>();
+      if(worldIds){
+        for(const id of worldIds){
+          const item=runtime!.item(id,locale);
+          const owned=entries[String(id)]?.status==='owned'?1:0;
+          const family=familyCounts.get(item.family)??{total:0,owned:0};
+          family.total++;family.owned+=owned;familyCounts.set(item.family,family);
+          const activity=sourceIndex!.activityTypesByItem.get(id);
+          if(activity){
+            const counts=typeCounts.get(activity.code)??{total:0,owned:0};
+            counts.total++;counts.owned+=owned;typeCounts.set(activity.code,counts);
+          }
+        }
+        scopedCategoryFacets=facets.flatMap(facet=>{
+          const found=familyCounts.get(facet.id);
+          return found?[{...facet,...found}]:[];
+        });
+      }
       sourceActivityTypeCards=sourceIndex
         ?[...sourceIndex.itemsByActivityType.entries()].sort((a,b)=>a[0]-b[0])
-          .map(([code,ids])=>({
-            code,nativeName:sourceIndex!.activityTypeNames.get(code)??null,
-            total:ids.length,
-            owned:ids.filter(id=>entries[String(id)]?.status==='owned').length
-          }))
+          .flatMap(([code,ids])=>{
+            const counts=worldIds?typeCounts.get(code):{
+              total:ids.length,
+              owned:ids.filter(id=>entries[String(id)]?.status==='owned').length
+            };
+            return counts?.total?[{
+              code,nativeName:sourceIndex!.activityTypeNames.get(code)??null,...counts
+            }]:[];
+          })
         :[];
       const universeCategoryIds=new Set(['Furniture','Clothing']);
       categoryUniverseFacets=viewAxis==='world'&&universeCategoryIds.has(selected)
@@ -324,21 +345,18 @@
             return subgroup?[{...subgroup,id:option.id,label:option.label}]:[];
           })
         : [];
-      universeSections=viewAxis==='universe'&&universeFilter&&!selected
-        ? scopedCategoryFacets.map(facet=>({
+      universeSections=viewAxis==='universe'&&universeFilter&&!selected&&!sourceIndex
+        ?scopedCategoryFacets.map(facet=>({
             facet,items:runtime!.query({...scopeFilter,category:facet.id,limit:8}).items
-          }))
-        : [];
+          })):[];
       if(sourceIndex&&filtersOpen){
         const key=(sourceActivityType!==null?'activity-'+sourceActivityType:
-          sourceCategory===null?selected||'all':'original-'+sourceCategory)+
-          '|'+worldFilter+'|'+universeFilter;
+          selected||'all')+'|'+worldFilter+'|'+universeFilter+
+          '|'+(sourceChoices.worldContextTag??'')+'|'+(sourceUniverseSelection??'');
         if(key!==sourceGroupsCacheKey){
           const ids=sourceActivityType!==null
             ?sourceIndex.itemsByActivityType.get(sourceActivityType)??[]
-            :sourceCategory!==null
-              ?sourceIndex.itemsByCategory.get(sourceCategory)??[]
-              :selected?queryAllCollectionRows({
+            :selected?queryAllCollectionRows({
                 ...currentFilter(0,200),status:'all',search:'',
                 favoriteOnly:false,nameStatus:'all',expansion:''
               }).map(row=>row.itemId):[...sourceIndex.byItem.keys()];
