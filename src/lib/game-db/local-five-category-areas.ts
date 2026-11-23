@@ -332,7 +332,7 @@ export function joinDb00LocalFiveCategoryCollectionAreas(
       page.gameCollectionUiMembershipVerified===false&&
       page.playerOwnershipVerified===false&&
       page.dlcEntitlementVerified===false&&
-      (!q.nativeCategories.length||page.total===0)&&
+      (q.nativeCategories.length!==0||page.total===0)&&
       (!all||q.nativeCategories.length!==5||
         q.companionKinds.length!==3||page.total===9615),
       'ORIGINAL_SOURCE_PAGE_CONTRACT_MISMATCH');
