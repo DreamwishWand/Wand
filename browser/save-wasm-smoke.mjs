@@ -1019,6 +1019,123 @@ try{
   assert.equal(quantityProfile.World.GridCollection.Grids['101']
     .Objects['1'].Orientation,'GridOrientation_Up');
 
+  // A real Save can have far more than 256 distinct observed Grid positions.
+  // Search must reach those later records without drawing all markers by
+  // default. The selected positions remain visible and the existing Rust
+  // optimistic batch writer still verifies the original immutable P1G.
+  const manyOriginal=structuredClone(quantityProfile);
+  const manyObjects=manyOriginal.World.GridCollection.Grids['101'].Objects;
+  for(let i=3;i<=305;i++){
+    manyObjects[String(i)]={
+      ID:i,ItemID:i===305?30000031:40000001,
+      X:45+i,Y:9+i,Orientation:'GridOrientation_Up',
+      UnknownMarker:'preserve-'+i
+    };
+  }
+  await page.getByLabel('検証用セーブファイル').setInputFiles({
+    name:'grid-search-over-256.profile',mimeType:'application/octet-stream',
+    buffer:syntheticEncryptedP1g(manyOriginal)
+  });
+  await page.getByRole('button',{name:'所持アイテムを表示'}).click();
+  await page.getByRole('region',{name:'セーブ内アイテム'})
+    .getByRole('status').filter({hasText:'件'}).waitFor({timeout:30000});
+  await objects.getByRole('button',{name:'配置オブジェクトを表示'}).click();
+  await objects.getByRole('status').filter({hasText:'306件'})
+    .waitFor({timeout:30000});
+  const manyMap=objects.getByRole('region',{name:'セーブ内Grid配置マップ'});
+  const search= manyMap.getByRole('searchbox',{
+    name:'マップ内の配置を検索'
+  });
+  assert.equal(await manyMap.locator('.marker').count(),256,
+    'the default DOM must remain capped at 256 coordinate markers');
+  await search.fill('#300');
+  await manyMap.getByRole('group',{name:'マップ配置検索結果'})
+    .getByRole('button',{
+      name:'検索結果: 配置 #300 を選択'
+    }).click();
+  assert.equal(await manyMap.locator('.marker').count(),257);
+  assert.equal(await manyMap.locator(
+    '.marker[aria-label="配置 #300 をマップから選択"]'
+  ).count(),1);
+  const lateEditor=objects.getByLabel('座標編集',{exact:true});
+  const x300=Number(await lateEditor.getByLabel('新しいX').inputValue());
+  const y300=Number(await lateEditor.getByLabel('新しいY').inputValue());
+  const original300=Object.values(manyObjects).find(value=>
+    value.X===x300&&value.Y===y300);
+  assert.ok(original300,
+    'the returned ephemeral ordinal must resolve to an original object');
+  // Local ordinals are never Save-native object IDs. Discover ordinal #305
+  // from the browser projection, not by assuming object key "305".
+  await search.fill('#305');
+  await manyMap.getByRole('group',{name:'マップ配置検索結果'})
+    .getByRole('button',{
+      name:'検索結果: 配置 #305 を選択'
+    }).click();
+  const x305=Number(await lateEditor.getByLabel('新しいX').inputValue());
+  const y305=Number(await lateEditor.getByLabel('新しいY').inputValue());
+  const original305=Object.values(manyObjects).find(value=>
+    value.X===x305&&value.Y===y305);
+  assert.ok(original305&&original305.ID!==original300.ID);
+  assert.equal(await manyMap.locator('.marker').count(),257);
+
+  await manyMap.getByRole('button',{name:'複数配置を一括移動'}).click();
+  await search.fill('#300');
+  await manyMap.getByRole('group',{name:'マップ配置検索結果'})
+    .getByRole('button',{
+      name:'検索結果: 配置 #300 をグループに追加または除外'
+    }).click();
+  await search.fill('#305');
+  await manyMap.getByRole('group',{name:'マップ配置検索結果'})
+    .getByRole('button',{
+      name:'検索結果: 配置 #305 をグループに追加または除外'
+    }).click();
+  assert.equal(await manyMap.locator('.marker').count(),258,
+    'both late search results must remain visible as selected markers');
+  assert.match(await manyMap.getByRole('group',{
+    name:'グループ座標移動'
+  }).innerText(),/選択 2 \/ 16件/);
+  await manyMap.getByLabel('グループ移動X').fill('7');
+  await manyMap.getByLabel('グループ移動Y').fill('-4');
+  await manyMap.getByRole('button',{
+    name:'選択した2件を座標編集に追加'
+  }).click();
+  const lateBatch=objects.getByLabel('一括座標編集');
+  await lateBatch.getByText('2 / 16件').waitFor();
+  assert.equal(await manyMap.locator('.queued-ghost').count(),2);
+  await lateBatch.getByRole('button',{
+    name:'一括座標変更を検証'
+  }).click();
+  await lateEditor.getByRole('status').filter({
+    hasText:'2件の座標変更をRust/WASMで検証しました'
+  }).waitFor({timeout:30000});
+  page.once('dialog',dialog=>dialog.accept());
+  await lateEditor.getByRole('button',{
+    name:'座標変更コピーを生成'
+  }).click();
+  const lateLink=lateEditor.getByRole('link',{
+    name:'座標コピーをダウンロード'
+  });
+  await lateLink.waitFor({timeout:30000});
+  const lateDownload=page.waitForEvent('download');
+  await lateLink.click();
+  const lateCopy=readSyntheticEncryptedP1g(
+    await readFile(await (await lateDownload).path())
+  );
+  const lateObjects=lateCopy.World.GridCollection.Grids['101'].Objects;
+  const changed300=lateObjects[String(original300.ID)];
+  const changed305=lateObjects[String(original305.ID)];
+  assert.deepEqual([changed300.X,changed300.Y],[x300+7,y300-4]);
+  assert.deepEqual([changed305.X,changed305.Y],[x305+7,y305-4]);
+  assert.equal(changed300.UnknownMarker,'preserve-'+original300.ID);
+  assert.equal(changed305.UnknownMarker,'preserve-'+original305.ID);
+  assert.equal(lateObjects['303'].UnknownMarker,'preserve-303');
+  assert.equal(lateObjects['303'].X,348);
+  assert.equal(lateCopy.World.GridCollection.DiffGrids['102']
+    .ModifiedObjects['6'].X,-12);
+  assert.equal(lateCopy.Player.ListInventories['100'].Inventory['550'].Amount,7);
+  assert.equal(manyObjects[String(original300.ID)].X,x300);
+  assert.equal(manyObjects[String(original305.ID)].Y,y305);
+
   assert.deepEqual(errors,[],errors.join('\n'));
   await page.close();
   console.log('DB-05 browser: explicit JSON/P1G edited-copy downloads, native reopen, stale rejection, original preservation PASS');
