@@ -109,6 +109,16 @@ export interface Db01FurniturePositiveAreaSourceClient{
     Promise<Readonly<Db01FurniturePositiveAreaSearchResult>>;
 }
 
+/** Recounted from the original 6,746-frame Furniture.json, 727-frame
+ * Set.json and 409-frame Tag.json, with all seven original protobuf class
+ * layouts and native IHasSet semantics. Six native positive area codes are
+ * pairwise disjoint for Steam 1.26.2 Furniture source records.
+ */
+export const DB01_FURNITURE_ORIGINAL_POSITIVE_AREA_CENSUS=Object.freeze({
+  1:4315,2:434,3:422,4:431,5:478,4097:223,
+} as const);
+export const DB01_FURNITURE_ORIGINAL_UNASSIGNED_POSITIVE_AREA_COUNT=443 as const;
+
 const positiveConfigs=Object.freeze(
   DB01_COLLECTION_AREA_SOURCE_CONFIGS.filter(c=>c.gameplayTagId>0));
 const areaConfigByCode=new Map<number,Db01OriginalCollectionAreaSourceConfig>(
@@ -221,8 +231,15 @@ export function createDb01FurniturePositiveAreaSourceClient(
       });
       check(all.originalNativeHasTagSourceOnly===true&&
         all.gameCollectionAreaMembershipVerified===false&&
-        nonnegative(all.total)&&all.total<=6746,
-        'INCOMPLETE_POSITIVE_AREA_UNION');
+        all.total===6303&&
+        areas.reduce((sum,x)=>sum+x.total,0)===all.total&&
+        positiveConfigs.every((c,i)=>
+          areas[i].total===
+            DB01_FURNITURE_ORIGINAL_POSITIVE_AREA_CENSUS[
+              c.areaCode as Db01SourcePositiveCollectionAreaCode])&&
+        6746-all.total===
+          DB01_FURNITURE_ORIGINAL_UNASSIGNED_POSITIVE_AREA_COUNT,
+        'ORIGINAL_SOURCE_POSITIVE_AREA_CENSUS_DRIFT');
       return Object.freeze({
         gameVersion:'1.26.2',
         originalFurnitureCount:6746,
