@@ -3,6 +3,8 @@
   import {autoAppend} from '$lib/ui/auto-append';
   import NativeGraphExplorer from '$lib/world/NativeGraphExplorer.svelte';
   import NativeTerrainGridOverview from '$lib/world/NativeTerrainGridOverview.svelte';
+  import NativeTerrainRegionAtlas from '$lib/world/NativeTerrainRegionAtlas.svelte';
+  import type {SourceRegionAtlasPage} from '$lib/world/native-region-grid-atlas.ts';
   import type {OriginalItemAnchorFindResult, GlobalOriginalItemAnchorResult}
     from '$lib/world/native-item-anchor-finder.ts';
   import type {OriginalGridAreaEvidence}
@@ -110,6 +112,10 @@
   let terrainRasterRequestId=-1;
   let terrainRasterLoading=false;
   let terrainRasterStatus='';
+  let regionAtlas:SourceRegionAtlasPage|null=null;
+  let regionAtlasRequestId=-1;
+  let regionAtlasLoading=false;
+  let regionAtlasError='';
   let selectedCell: {x:number;y:number} | null = null;
   let showSourceDefaultLayerOverlay=false;
   let selectedCellLayers:OriginalDefaultGridLayersCell|null=null;
@@ -147,6 +153,7 @@
   $: filteredLayouts = selectedRegion
     ? layouts.filter(a => a.regionKey === selectedRegion) : layouts;
   $: selectedRegionCoverage = regions.find(a => a.regionKey === selectedRegion);
+  $: visibleRegionAtlas=regionAtlas?.regionKey===selectedRegion?regionAtlas:null;
   $: selectedLayout = layouts.find(a => a.viewKey === selectedViewKey);
   $: gridOptions = selectedLayout?.grids ?? [];
   $: selectedGrid = gridOptions.find(a => String(a.gridIdNative) === selectedGridId);
@@ -357,6 +364,10 @@
     terrainRasterEnvelope=null;
     terrainRasterLoading=false;
     terrainRasterStatus='';
+    regionAtlas=null;
+    regionAtlasRequestId=-1;
+    regionAtlasLoading=false;
+    regionAtlasError='';
     worker?.terminate();
     worker = null;
     loading = false;
@@ -479,6 +490,36 @@
   }
   onDestroy(stop);
 
+  function requestRegionAtlas(reset=true){
+    if(reset){
+      regionAtlas=null;
+      regionAtlasError='';
+    }
+    if(!worker||!selectedRegion){
+      regionAtlasLoading=false;
+      return;
+    }
+    const offset=reset?0:regionAtlas?.nextOffset;
+    if(offset===null||offset===undefined)return;
+    regionAtlasLoading=true;
+    regionAtlasRequestId=++requestId;
+    worker.postMessage({command:'region-atlas',
+      requestId:regionAtlasRequestId,regionKey:selectedRegion,offset});
+  }
+  function chooseAtlasGrid(viewKey:string,gridIdNative:number){
+    const view=layouts.find(row=>row.viewKey===viewKey&&
+      row.regionKey===selectedRegion);
+    if(!view||!view.grids.some(grid=>grid.gridIdNative===gridIdNative))return;
+    selectedViewKey=viewKey;
+    selectedGridId=String(gridIdNative);
+    resetAnchorFind();
+    resetGlobalFind();
+    itemGridArea=null;
+    x=0;y=0;width=16;height=16;
+    viewport=null;
+    requestTerrainRaster();
+    requestWindow();
+  }
   function requestTerrainRaster(){
     terrainRasterEnvelope=null;
     terrainRasterStatus='';
@@ -571,15 +612,19 @@
     resetAnchorFind();
     x=0;y=0;width=16;height=16;
     viewport=null;
+    requestRegionAtlas();
     requestTerrainRaster();
     requestWindow();
     await tick();
     terrainPanel?.scrollIntoView({behavior:'smooth',block:'start'});
   }
   function changeRegion() {
-    const first = layouts.find(a => !selectedRegion || a.regionKey === selectedRegion);
-    selectedViewKey = first?.viewKey ?? '';
+    const first=layouts.find(a=>a.regionKey===selectedRegion&&
+      a.kind==='villageArea'&&a.grids.length) ??
+      layouts.find(a=>a.regionKey===selectedRegion);
+    selectedViewKey=first?.viewKey??'';
     changeLayout();
+    requestRegionAtlas();
   }
   function changeLayout() {
     resetAnchorFind();
@@ -638,6 +683,28 @@
     owned.onmessage = (message:MessageEvent) => {
       if (owned !== worker) return;
       const result = message.data;
+      if(result?.kind==='region-atlas'||
+         (result?.kind==='error'&&
+          result?.requestId===regionAtlasRequestId)){
+        if(result.requestId!==regionAtlasRequestId)return;
+        regionAtlasLoading=false;
+        if(result.kind==='error'){
+          regionAtlasError=String(result.message??'地域地形の表示に失敗しました。');
+          return;
+        }
+        const next=result.result as SourceRegionAtlasPage;
+        if(next?.status!=='source_region_grid_atlas'||
+          next.regionKey!==selectedRegion)return;
+        if(next.offset===0){
+          regionAtlas=next;
+        }else if(regionAtlas?.regionKey===next.regionKey&&
+          regionAtlas.nextOffset===next.offset){
+          regionAtlas={...next,offset:0,
+            tiles:[...regionAtlas.tiles,...next.tiles]};
+        }
+        regionAtlasError='';
+        return;
+      }
       if (result?.kind==='terrain-raster'||
           (result?.kind==='error'&&result?.requestId===terrainRasterRequestId)) {
         if(result?.requestId!==terrainRasterRequestId)return;
@@ -688,11 +755,16 @@
         layouts = result.layouts as LayoutOption[];
         regions = Array.isArray(result.regionCoverage)
           ? result.regionCoverage as RegionCoverage[] : [];
-        selectedRegion = '';
-        selectedViewKey = layouts[0]?.viewKey ?? '';
-        selectedGridId = layouts[0]?.grids[0] ?
-          String(layouts[0].grids[0].gridIdNative) : '';
+        selectedRegion=layouts.some(a=>a.regionKey==='Village04')
+          ?'Village04':(layouts[0]?.regionKey??'');
+        const defaultView=layouts.find(a=>a.regionKey===selectedRegion&&
+          a.kind==='villageArea'&&a.grids.length) ??
+          layouts.find(a=>a.regionKey===selectedRegion&&a.grids.length);
+        selectedViewKey=defaultView?.viewKey??'';
+        selectedGridId=defaultView?.grids[0]
+          ?String(defaultView.grids[0].gridIdNative):'';
         infoMessage = 'ローカルZIP内のマニフェスト整合性を確認しました。原本の真正性までは証明していません。';
+        if(selectedRegion)requestRegionAtlas();
         if (selectedGridId){
           requestTerrainRaster();
           requestWindow();
@@ -1047,6 +1119,16 @@
           </select>
         </label>
       </div>
+      {#if visibleRegionAtlas}
+        <NativeTerrainRegionAtlas atlas={visibleRegionAtlas}
+          selectedViewKey={selectedViewKey} selectedGridId={selectedGridId}
+          loadingMore={regionAtlasLoading} onPick={chooseAtlasGrid}
+          onMore={()=>requestRegionAtlas(false)}/>
+      {:else if regionAtlasLoading}
+        <p class="note" role="status">地域の地形全体図を読み込んでいます…</p>
+      {:else if regionAtlasError}
+        <p class="note">{regionAtlasError}</p>
+      {/if}
       {#if selectedRegionCoverage}
         <p class="note">このZIPに含まれる原本参照：
           {#if selectedRegionCoverage.realmLayoutCount > 0}
