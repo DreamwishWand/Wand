@@ -15,7 +15,7 @@
   import {loadNewPublishedEventRewardNames,
     type PublicEventRewardNameRefresh}
     from '$lib/guide/public-event-reward-db00-refresh.ts';
-  import {verifyPublicQuestIndex,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
+  import {verifyPublicQuestIndex,formatPublicGuideText} from '$lib/guide/public-guide.ts';
   import {loadPublicEventQuestLinks,DB03_EVENT_QUEST_FILE,
     type PublicEventQuestIndex} from '$lib/guide/public-event-quest-links.ts';
   import {createEventQuestNameSearch,
