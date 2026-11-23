@@ -1114,3 +1114,18 @@ while cardinal transforms, explicit factor 1/2 tiling, and bounded source
 windows retain their own verified code paths. It is not a Save coordinate
 converter, native runtime GridCells membership, collision test, or placement
 permission solver.
+
+## World Preview Rust/WASM local ZIP path
+
+World Preview's TypeScript Worker loads `local-snapshot.ts` and executes
+`wand-world-core` Rust/WASM for ZIP central-directory checks, bounded
+stored/raw-deflate decode, original member SHA-256 verification, family
+extraction and strict fail-closed manifest validation. The manifest still
+only establishes self-consistency, **not original-game authenticity**.
+The Worker keeps source data local, and continues to expose only bounded
+read-only source projections. This path does not validate native runtime
+placement or write a Save.
+
+The former `local-snapshot.mjs` continues to serve the independent legacy
+Collection bridge; it is *not* the World Preview reader. Do not remove or
+extend that legacy path without the owning Collection stream migration.

@@ -5,6 +5,8 @@ on:
     paths:
       - 'tools/db-04-world/**'
       - 'src/lib/world/**'
+      - 'crates/wand-world-core/**'
+      - 'crates/wand-world-core/**'
       - 'src/routes/world/preview/**'
       - 'tests/world.test.mjs'
       - 'tests/world-local-snapshot.test.mjs'
@@ -87,6 +89,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test Rust World archive verifier
+        run: cargo test --manifest-path crates/wand-world-core/Cargo.toml
       - name: Install pinned native disassembler for synthetic CI fixtures
         run: python -m pip install --disable-pip-version-check -r tools/db-04-world/requirements-native-disassembly.txt
       - name: Test native world evidence extraction

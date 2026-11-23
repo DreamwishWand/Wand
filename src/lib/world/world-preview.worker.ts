@@ -1,10 +1,11 @@
 /**
  * DB-04 World preview Module Worker. TypeScript owns typed requests, lifecycle,
  * local file boundaries and viewport projections. This is READ-ONLY.
- * The legacy JavaScript catalog adapter is an explicit pending migration; it
+ * Rust/WASM handles local World archive bytes; the legacy catalog adapter is
+ * an explicit pending migration. This Worker has no network upload path.
  * is not a World Editor, collision solver, placement Writer or save Codec.
  */
-import { openLocalWorldZip } from './local-snapshot.mjs';
+import { openLocalWorldZip } from './local-snapshot.ts';
 import { getNativeTerrainWindow } from './catalog.mjs';
 import { findOriginalItemAnchor, findOriginalItemAnchorAcrossGrids } from './native-item-anchor-finder.ts';
 import { getOriginalGridAreaEvidence } from './native-gridarea-evidence.ts';

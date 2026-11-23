@@ -1,0 +1,16 @@
+[package]
+name = "wand-world-core"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "UNLICENSED"
+description = "Local-only, read-only original World ZIP verifier"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+flate2 = { version = "=1.1.5", default-features = false, features = ["rust_backend"] }
+serde_json = "=1.0.145"
+sha2 = "=0.10.8"
+wasm-bindgen = "=0.2.105"
