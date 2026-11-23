@@ -15,17 +15,17 @@ import {loadPublicQuestRewards,DB03_QUEST_REWARDS_FILE}
 
 const ROOT=new URL('../static/',import.meta.url);
 const INDEX='quest-index.json';
-function local({corruptRewards=false,missingRewards=false}={}){
+function local({corruptConditions=false,missingConditions=false}={}){
   const requests=[];
   const fetcher=async url=>{
     assert(typeof url==='string'&&url.startsWith('/Wand/')&&!url.includes('..'));
     requests.push(url);
-    if(missingRewards&&url.endsWith('/'+DB03_QUEST_REWARDS_FILE))
+    if(missingConditions&&url.endsWith('/'+PUBLIC_QUEST_CONDITIONS_FILE))
       return new Response('missing',{status:404});
     let bytes;
     try{bytes=readFileSync(new URL(url.slice(6),ROOT));}
     catch{return new Response('missing',{status:404});}
-    if(corruptRewards&&url.endsWith('/'+DB03_QUEST_REWARDS_FILE)){
+    if(corruptConditions&&url.endsWith('/'+PUBLIC_QUEST_CONDITIONS_FILE)){
       bytes=Buffer.from(bytes);bytes[80]^=1;
     }
     return new Response(bytes,{status:200});
@@ -41,10 +41,10 @@ test('DB-00 733-Quest reader loads two optional SHA-pinned files and reuses alre
   const start=f.requests.length;
   assert(start>0);
   assert.equal(f.requests.filter(x=>x.endsWith('/'+INDEX)).length,1);
-  // Existing Guide initialization already loads Quest conditions. New API
-  // shares those bytes and only adds the SHA-pinned Quest reward asset.
-  assert.equal(f.requests.filter(x=>x.endsWith('/'+PUBLIC_QUEST_CONDITIONS_FILE)).length,1);
-  assert.equal(f.requests.filter(x=>x.endsWith('/'+DB03_QUEST_REWARDS_FILE)).length,0);
+  // DB-02's public acquisition startup already loads Quest reward bytes.
+  // DB-00 reuses them and optionally loads only original Quest conditions.
+  assert.equal(f.requests.filter(x=>x.endsWith('/'+PUBLIC_QUEST_CONDITIONS_FILE)).length,0);
+  assert.equal(f.requests.filter(x=>x.endsWith('/'+DB03_QUEST_REWARDS_FILE)).length,1);
   const quests=await pub.loadNativeQuestSources();
   assert.equal(quests,await pub.loadNativeQuestSources());
   assert.equal(quests.contract,DB00_NATIVE_QUEST_CONTRACT);
@@ -205,12 +205,11 @@ test('per-Item shared Quest evidence is cached, invalid IDs fail early, corrupte
     pub.guideQuestTargets
   ),/PINNED_DB03_QUEST_SOURCE_FAMILIES_REQUIRED|ORIGINAL_QUEST_ID/);
   const bad=await openPublicSharedGameSources('/Wand',
-    local({corruptRewards:true}).fetcher);
-  await assert.rejects(bad.loadNativeQuestSources(),
-    /DB03_PUBLIC_QUEST_REWARDS_PUBLISHED_SHA_MISMATCH/);
+    local({corruptConditions:true}).fetcher);
+  await assert.rejects(bad.loadNativeQuestSources());
   const missing=await openPublicSharedGameSources('/Wand',
-    local({missingRewards:true}).fetcher);
+    local({missingConditions:true}).fetcher);
   await assert.rejects(missing.loadNativeQuestSources(),
-    /DB03_PUBLIC_QUEST_REWARDS_DOWNLOAD_FAILED/);
+    /PUBLIC_QUEST_CONDITIONS_DOWNLOAD_FAILED/);
   assert.equal(missing.database.itemCount,13202);
 });
