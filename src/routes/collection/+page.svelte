@@ -320,7 +320,8 @@
       }else if(!filtersOpen){
         sourceFacetGroups=[];sourceGroupsCacheKey='';
       }
-      if((sourceCategory!==null||Object.keys(sourceChoices).length||acquisitionFilter)&&
+      if((sourceCategory!==null||sourceActivityType!==null||
+          Object.keys(sourceChoices).length||acquisitionFilter)&&
          (sourceIndex||acquisitionIndex)){
         // An original submenu can contain 6k+ Item IDs. Repeating the
         // general 13k-row sorted Rust query 67 times blocks UI clicks.
@@ -330,9 +331,12 @@
           sourceIndex?.itemsByCategory.get(sourceCategory)??[];
         const acquisitionIds=acquisitionFilter&&acquisitionIndex
           ?acquisitionIndex.listItemIds(acquisitionFilter).map(Number):null;
-        const candidateIds=categoryIds&&acquisitionIds
-          ?(categoryIds.length<=acquisitionIds.length?categoryIds:acquisitionIds)
-          :categoryIds??acquisitionIds;
+        const activityIds=sourceActivityType===null?null:
+          sourceIndex?.itemsByActivityType.get(sourceActivityType)??[];
+        const candidateIds=[categoryIds,acquisitionIds,activityIds]
+          .reduce<readonly number[]|null>((shortest,ids)=>
+            ids===null?shortest:
+            shortest===null||ids.length<shortest.length?ids:shortest,null);
         const searchRows=search.trim()
           ?queryAllCollectionRows(currentFilter(0,200)):null;
         const candidates=searchRows??
@@ -342,6 +346,8 @@
         sourceAllMatching=candidates.filter(item=>
           (sourceCategory===null||
             sourceIndex!==null&&collectionDb01InCategory(sourceIndex,item.itemId,sourceCategory))&&
+          (sourceActivityType===null||
+            sourceIndex?.activityTypesByItem.get(item.itemId)?.code===sourceActivityType)&&
           (!acquisitionFilter||
             (acquisitionIndex?.getItem(item.itemId).categories.includes(acquisitionFilter)??false))&&
           (selected===''||item.family===selected)&&
@@ -506,7 +512,8 @@
    */
   function appendNextPage():void {
     if(!runtime||busy||loading||storeError||filtered.length>=totalMatches)return;
-    if((sourceCategory!==null||Object.keys(sourceChoices).length||acquisitionFilter)&&
+    if((sourceCategory!==null||sourceActivityType!==null||
+          Object.keys(sourceChoices).length||acquisitionFilter)&&
          (sourceIndex||acquisitionIndex)){
       const next=Math.min(sourceAllMatching.length,filtered.length+72);
       filtered=sourceAllMatching.slice(0,next);
@@ -644,7 +651,8 @@
     if(!window.confirm(`現在の条件に一致する全${count.toLocaleString(locale)}件を「${label}」に変更します。画面に未表示のアイテムも対象です。実行しますか？`))return;
     const filter=currentFilter(0,1);
     void commit(async()=>{
-      if((sourceCategory!==null||Object.keys(sourceChoices).length||acquisitionFilter)&&
+      if((sourceCategory!==null||sourceActivityType!==null||
+          Object.keys(sourceChoices).length||acquisitionFilter)&&
          (sourceIndex||acquisitionIndex)){
         // Rust's bulk_matching predicate does not know DB-01 menu candidates or Tags.
         // Applying it would silently edit items outside the chosen Tag.
@@ -659,41 +667,50 @@
   function browseEveryItem():void{
     browsingAllItems=true;
     viewAxis='world';
-    selected='';sourceCategory=null;worldFilter='';universeFilter='';
+    selected='';sourceCategory=null;sourceActivityType=null;worldFilter='';universeFilter='';
     search='';status='all';favoriteOnly=false;nameStatus='all';expansion='';
     sourceChoices={};acquisitionFilter='';bypassCategoryGroups=true;
     sourceFacetGroups=[];sourceGroupsCacheKey='';
     resetView();
   }
+  function chooseActivityType(code:number):void{
+    if(!sourceIndex?.itemsByActivityType.has(code))return;
+    sourceActivityType=code;
+    sourceCategory=null;selected='';browsingAllItems=false;
+    sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';
+    bypassCategoryGroups=true;
+    resetView();
+  }
   function chooseOriginalCategory(code:CollectionDb01SubmenuCode):void{
     if(!sourceIndex||!(sourceIndex.itemsByCategory.get(code)?.length))return;
+    sourceActivityType=null;
     sourceCategory=code;selected='';originalClassesOpen=false;browsingAllItems=false;
     sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';
     bypassCategoryGroups=true;resetView();
   }
   function chooseFacet(id:string):void{
-    sourceCategory=null;
+    sourceCategory=null;sourceActivityType=null;
     selected=id;bypassCategoryGroups=false;browsingAllItems=false;
     sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';
     resetView();ensureSourceIndex();
   }
   function changeViewAxis(axis:CollectionViewAxis):void{
     if(viewAxis===axis)return;
-    viewAxis=axis;selected='';sourceCategory=null;browsingAllItems=false;
+    viewAxis=axis;selected='';sourceCategory=null;sourceActivityType=null;browsingAllItems=false;
     worldFilter='';universeFilter='';universeSearch='';
     sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';
     bypassCategoryGroups=false;search='';status='all';favoriteOnly=false;
     nameStatus='all';expansion='';resetView();
   }
   function chooseWorld(id:string):void{
-    selected='';sourceCategory=null;universeFilter='';bypassCategoryGroups=false;browsingAllItems=false;
+    selected='';sourceCategory=null;sourceActivityType=null;universeFilter='';bypassCategoryGroups=false;browsingAllItems=false;
     const fromSource=sourceIndex&&sourceWorldOptions.some(option=>option.key===id);
     worldFilter=fromSource?'':id;
     sourceChoices=fromSource?{worldContextTag:id}:{};
     sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
   }
   function chooseUniverse(id:string):void{
-    selected='';sourceCategory=null;bypassCategoryGroups=false;browsingAllItems=false;
+    selected='';sourceCategory=null;sourceActivityType=null;bypassCategoryGroups=false;browsingAllItems=false;
     universeFilter=sourceIndex&&sourceUniverseOptions.length?'':id;
     sourceChoices=sourceIndex&&sourceUniverseOptions.length&&id
       ?{disneyUniverse:id}:{};
@@ -703,7 +720,8 @@
     bypassCategoryGroups=true;universeFilter='';resetView();
   }
   function returnToCategory():void{
-    browsingAllItems=false;selected='';sourceCategory=null;universeFilter=viewAxis==='universe'?universeFilter:'';
+    browsingAllItems=false;selected='';sourceCategory=null;sourceActivityType=null;
+    universeFilter=viewAxis==='universe'?universeFilter:'';
     sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';
     bypassCategoryGroups=false;search='';status='all';favoriteOnly=false;
     nameStatus='all';expansion='';resetView();
@@ -712,7 +730,8 @@
     universeFilter='';bypassCategoryGroups=false;resetView();
   }
   function clearScope():void{
-    browsingAllItems=false;selected='';sourceCategory=null;search='';status='all';favoriteOnly=false;nameStatus='all';
+    browsingAllItems=false;selected='';sourceCategory=null;sourceActivityType=null;
+    search='';status='all';favoriteOnly=false;nameStatus='all';
     expansion='';worldFilter='';universeFilter='';universeSearch='';
     bypassCategoryGroups=false;sourceChoices={};acquisitionFilter='';
     sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
