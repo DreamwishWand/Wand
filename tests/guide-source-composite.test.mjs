@@ -5,7 +5,7 @@ import {
   GUIDE_SOURCE_COMPOSITE_SHA, GUIDE_SOURCE_COMPOSITE_BYTES,
   GUIDE_SOURCE_COMPOSITE_V2_SCHEMA, GUIDE_SOURCE_COMPOSITE_V2_SHA, GUIDE_SOURCE_COMPOSITE_V2_BYTES,
   GUIDE_FRIENDSHIP_ORIGINAL_SHA
-} from '../src/lib/guide/source-composite.mjs';
+} from '../src/lib/guide/source-composite.ts';
 
 const bridge={baselineVersion:'1.26.1',targetVersion:'1.26.2',
   originalSearchIndexSha256:'26c29bc0df15161602d75578c9842c5b7cca56caee0d6dd1031180949cceb30d',
