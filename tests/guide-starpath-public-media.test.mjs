@@ -6,7 +6,7 @@ import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.ts';
 import {
   STARPATH_MEDIA_ACTIVATION,validateStarpathMediaActivation,
   verifyStarpathMediaManifest,loadStarpathMedia,starpathMediaThumbnail
-} from '../src/lib/guide/starpath-public-media.mjs';
+} from '../src/lib/guide/starpath-public-media.ts';
 
 const snapshot=async()=>verifyPublicStarpath(JSON.parse(await readFile(
   new URL('../static/guide/public/starpath-cache-2026-11-22.json',import.meta.url))));
