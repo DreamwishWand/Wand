@@ -235,7 +235,9 @@ export function joinOfficialNativeCompanionNameCandidates(
     Array.isArray(campaigns),'PINNED_ORIGINALS_REQUIRED');
   const byItem=new Map<string,CompanionOfficialNameCandidate[]>();
   const byCampaign=new Map<string,CompanionOfficialNameCandidate[]>();
-  const campaignsById=new Map(campaigns.map(c=>[c.campaignId,c]));
+  const campaignsById=new Map<string,OfficialCampaign>(
+    campaigns.map((c:OfficialCampaign)=>[c.campaignId,c] as const)
+  );
   const foundIds=new Set<string>();
   let count=0;
   for(const expected of PROPOSED){
@@ -245,7 +247,8 @@ export function joinOfficialNativeCompanionNameCandidates(
       campaign.source.kind==='official_publication'&&
       typeof campaign.source.sourceUrl==='string'&&
       campaign.source.sourceUrl.startsWith('https://disneydreamlightvalley.com/')&&
-      campaign.rewards.some(r=>r.name===expected.rewardName&&r.itemId===null)&&
+      campaign.rewards.some((r:OfficialCampaign['rewards'][number])=>
+        r.name===expected.rewardName&&r.itemId===null)&&
       companion?.sourceNameKeyVerified===true&&
       companion.specificCampaignLinkVerified===false,
       'OFFICIAL_NAME_EVIDENCE_REQUIRED');
