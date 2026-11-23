@@ -2408,8 +2408,8 @@
       <p>一括変更 · {queuedEdits.length}件（最大16件）</p>
       <ol>
         {#each queuedEdits as edit,i}
+          {@const pendingItemId=String(edit.target.itemId)}
           <li>
-            {@const pendingItemId=String(edit.target.itemId)}
             {#if developmentMode}
               {edit.target.kind==='inventory'
                 ? `Inventory ${edit.target.inventoryId} / ${edit.target.itemId}`
