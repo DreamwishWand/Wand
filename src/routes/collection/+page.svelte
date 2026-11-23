@@ -83,11 +83,21 @@
   $: entries=workspace?.entries??{};
   $: selectionLabel=facets.find(x=>x.id===selected)?.label??'';
   $: visibleItems=filtered;
-  // The Rust engine owns category identity and ordering, including future
-  // DB-00 additions. Do not maintain a second Svelte category registry.
-  $: groupedItems=[...new Set([...facets.map(x=>x.id),...visibleItems.map(x=>x.family)])]
-    .map(id=>({id,items:visibleItems.filter(x=>x.family===id)}))
-    .filter(group=>group.items.length);
+  // The Rust engine owns category identity and ordering. Group visible
+  // records in one pass rather than repeatedly scanning every item once per
+  // category on each infinite-scroll append.
+  function groupVisibleItems(items:readonly CollectionItem[],categories:readonly CollectionFacet[]){
+    const groups=new Map<string,CollectionItem[]>();
+    for(const category of categories)groups.set(category.id,[]);
+    for(const item of items){
+      const matching=groups.get(item.family);
+      if(matching)matching.push(item);
+      else groups.set(item.family,[item]);
+    }
+    return [...groups].filter(([,records])=>records.length>0)
+      .map(([id,records])=>({id,items:records}));
+  }
+  $: groupedItems=groupVisibleItems(visibleItems,facets);
   $: selectedItem=selectedItemId!==null && runtime?runtime.item(selectedItemId,locale):null;
   $: selectedEntry=selectedItem?entries[String(selectedItem.itemId)]??{}:{};
   $: selectedGridRefs=selectedItem?savedGridByItem[String(selectedItem.itemId)]??null:null;
