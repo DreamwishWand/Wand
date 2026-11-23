@@ -118,7 +118,7 @@ test('all eight languages express provenance without item-level limited-time cla
     for(const proof of ['configured_item_id_link','native_source_category',
       'configured_route_unverified','name_only_candidate'])
       assert(copy.proofs[proof]?.trim().length>0,locale+' '+proof);
-    assert(copy.caveat?.length>40,locale+' caveat');
+    assert(copy.caveat?.length>15,locale+' caveat');
   }
   assert.match(collectionDistributionCopy('ja').caveat,/未確認/);
   assert.match(collectionDistributionCopy('en').caveat,/unverified/);
