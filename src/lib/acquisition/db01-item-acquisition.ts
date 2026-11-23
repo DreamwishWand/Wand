@@ -112,7 +112,7 @@ export function parseDb01ItemAcquisition(raw:unknown):Db01ItemAcquisitionIndex{
     detailsCatalog.set(category,details);
   }
   // Every row is a compact tuple: [Item ID, [[category, [details]]], [hints]].
-  let previous=0,classified=0,withHints=0,withoutCategory=0;
+  let previous=0,classified=0,withoutCategory=0;
   for(const tuple of raw.items){
     check(Array.isArray(tuple)&&tuple.length===3&&
       Array.isArray(tuple[1])&&Array.isArray(tuple[2]),'ROW');
@@ -130,8 +130,8 @@ export function parseDb01ItemAcquisition(raw:unknown):Db01ItemAcquisitionIndex{
       const allowable=detailsCatalog.get(category)!;
       const methods=group[1] as unknown[];
       check(methods.every(m=>typeof m==='string'&&allowable.includes(m))&&
-        methods.every((m,i)=>allowable.indexOf(m as string)===i||
-          (i>0&&allowable.indexOf(m as string)>allowable.indexOf(methods[i-1] as string)))&&
+        methods.every((m,i)=>i===0||
+          allowable.indexOf(m as string)>allowable.indexOf(methods[i-1] as string))&&
         new Set(methods).size===methods.length,'DETAIL');
       details[category]=Object.freeze([...methods] as string[]);
       categories.push(category);
@@ -145,7 +145,6 @@ export function parseDb01ItemAcquisition(raw:unknown):Db01ItemAcquisitionIndex{
       JSON.stringify(hints)===JSON.stringify(HINTS.filter(h=>hints.includes(h)))&&
       (categories.length>0||hints.length>0),'ONLINE_HINT');
     if(categories.length)classified++;else withoutCategory++;
-    if(hints.length)withHints++;
     byItem.set(key,Object.freeze({
       itemId:key,categories:Object.freeze(categories),
       details:Object.freeze(details),
