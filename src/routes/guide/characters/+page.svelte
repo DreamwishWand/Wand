@@ -1,34 +1,35 @@
 <script lang="ts">
   import {onMount} from 'svelte';
   import {base} from '$app/paths';
-  import {watchWandLanguage} from '$lib/ui/preferences';
+  import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences';
   import {autoAppend} from '$lib/ui/auto-append';
   import {collectWindow} from '$lib/ui/collect-window.mjs';
   import {verifyPublicQuestIndex,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
   import {
     derivePublicGuideCharacters,sourceCharacterName,filterPublicGuideCharacters,
-    findPublicCharacterByLink
-  } from '$lib/guide/public-characters.mjs';
+    findPublicCharacterByLink,
+    type PublicCharacterDirectory,type PublicCharacterEntry,type PublicCharacterQuest
+  } from '$lib/guide/public-characters.ts';
 
-  let directory:any=null;
-  let selected:any=null;
+  let directory:PublicCharacterDirectory|null=null;
+  let selected:PublicCharacterEntry|null=null;
   let loading=true;
   let error='';
-  let locale='ja';
+  let locale:WandLanguage='ja';
   let query='';
   let mode:'all'|'withQuests'|'withoutQuests'='all';
   let limit=48;
-  $: filtered=directory?collectWindow((offset:number,batch:number)=>filterPublicGuideCharacters(directory,{
+  $: filtered=directory?collectWindow((offset:number,batch:number)=>filterPublicGuideCharacters(directory!,{
     query:query.slice(0,120),locale,mode,offset,limit:batch
   }),limit,'rows'):{total:0,rows:[]};
-  $: linkedQuests=selected?[...selected.quests].sort((a:any,b:any)=>
+  $: linkedQuests=selected?[...selected.quests].sort((a:PublicCharacterQuest,b:PublicCharacterQuest)=>
     (a.names?.[locale]||a.names?.en||a.id).localeCompare(
       b.names?.[locale]||b.names?.en||b.id,locale==='ja'?'ja':'en')):[];
 
-  function questName(quest:any){
+  function questName(quest:PublicCharacterQuest){
     return formatPublicGuideText(quest.names?.[locale]||quest.names?.en||quest.id);
   }
-  function selectCharacter(row:any,updateAddress=true){
+  function selectCharacter(row:PublicCharacterEntry,updateAddress=true){
     selected=row;
     if(updateAddress){
       const url=new URL(window.location.href);
