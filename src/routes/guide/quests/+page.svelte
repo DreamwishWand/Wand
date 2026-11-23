@@ -105,8 +105,9 @@
         ?{total:matchedRewardNames.questIds.length,
           rows:catalog.quests.filter((row:any)=>matchedRewardNames?.questIds.includes(row.id))}
         :collectWindow((offset:number,batch:number)=>filterPublicQuests(catalog!,{
-      query:query.slice(0,120),locale,character,objective,section,
-      arc:section==='story'?storyArc:'all',offset,limit:batch
+      query:query.slice(0,120),locale,character,objective,
+      section:query.trim()?'all':section,
+      arc:section==='story'&&!query.trim()?storyArc:'all',offset,limit:batch
     }),limit,'rows')):{total:0,rows:[]};
   $: friendshipCharacters=catalog?publicFriendshipCharacters(catalog,locale):[];
   // Native Mission group association, not an unlock prerequisite or chronological link.
