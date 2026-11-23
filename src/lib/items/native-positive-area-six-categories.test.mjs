@@ -87,7 +87,7 @@ function fake(){
     async getItem(id){
       const item=byFive.get(id);
       return item?{
-        ...item,
+        ...item,itemId:id,
         originalSourceVerified:true,
         critterRuntimeProfileSceneResolved:false,
         nativeAllAreasDefaultVerified:false,
