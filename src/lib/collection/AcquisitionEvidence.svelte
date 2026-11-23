@@ -1,12 +1,12 @@
 <script lang="ts">
   import {onDestroy} from 'svelte';
   import {base} from '$app/paths';
-  import type {
-    CollectionAcquisitionKind,CollectionAcquisitionCandidate,
-    CollectionAcquisitionSummary
-  } from './acquisition-summary.ts';
+  import type {CollectionAcquisitionSummary} from './acquisition-summary.ts';
+  import {collectionAcquisitionCopy} from './acquisition-copy.ts';
 
   export let itemId:number;
+  export let locale:string='ja';
+  $: copy=collectionAcquisitionCopy(locale);
   let expanded=false;
   let worker:Worker|null=null;
   let requestCounter=0;
@@ -16,19 +16,6 @@
   let failed=false;
   let summary:CollectionAcquisitionSummary|null=null;
   const cache=new Map<number,CollectionAcquisitionSummary>();
-  const names:Record<CollectionAcquisitionKind,string>={
-    crafting:'クラフト',cooking:'料理',fishing:'釣り',mining:'採掘',
-    timebending:'タイムベンディング',farming:'栽培',foraging:'採集',
-    game_shop:'ゲーム内ショップ',quest_reward:'クエスト報酬',
-    event_reward:'イベント報酬',friendship_reward:'友情報酬',
-    starpath:'スターパス',twitch_drop:'Twitch Drops',
-    redeem_code:'交換コード',premium_shop:'プレミアムショップ',
-    official_campaign:'公式キャンペーン',purchase_bonus:'購入特典',
-    gift:'配布'
-  };
-  const candidateNames:Record<CollectionAcquisitionCandidate,string>={
-    loot_table:'抽選テーブル',stall_slot:'店舗の陳列候補'
-  };
   type Reply=
     | {requestId:number;itemId:number;ok:true;summary:CollectionAcquisitionSummary}
     | {requestId:number;itemId:number;ok:false};
@@ -90,33 +77,33 @@
     expanded=(event.currentTarget as HTMLDetailsElement).open;
     if(expanded&&requestedItemId!==itemId)load(itemId);
   }}>
-  <summary>入手元</summary>
+  <summary>{copy.title}</summary>
   {#if expanded}
     {#if loading}
-      <p class="evidence-status" role="status">読み込み中…</p>
+      <p class="evidence-status" role="status">{copy.loading}</p>
     {:else if failed}
-      <p class="evidence-status" role="alert">情報を読み込めませんでした。</p>
-      <button type="button" class="retry" on:click={retry}>再試行</button>
+      <p class="evidence-status" role="alert">{copy.error}</p>
+      <button type="button" class="retry" on:click={retry}>{copy.retry}</button>
     {:else if summary && summary.itemId===itemId}
       {#if summary.kinds.length || summary.candidates.length}
         {#if summary.kinds.length}
-          <ul class="evidence-kinds" aria-label="原本に登録された入手元">
+          <ul class="evidence-kinds" aria-label={copy.sourcesLabel}>
             {#each summary.kinds as kind (kind)}
-              <li>{names[kind]}</li>
+              <li>{copy.kinds[kind]}</li>
             {/each}
           </ul>
         {/if}
         {#if summary.candidates.length}
-          <p class="evidence-candidate-title">原本上の候補</p>
-          <ul class="evidence-kinds" aria-label="入手を保証しない原本上の候補">
+          <p class="evidence-candidate-title">{copy.candidatesTitle}</p>
+          <ul class="evidence-kinds" aria-label={copy.candidatesLabel}>
             {#each summary.candidates as candidate (candidate)}
-              <li>{candidateNames[candidate]}</li>
+              <li>{copy.candidates[candidate]}</li>
             {/each}
           </ul>
         {/if}
-        <p class="evidence-status">原本上の経路・候補です。現在の販売・入手可否は確認していません。</p>
+        <p class="evidence-status">{copy.caveat}</p>
       {:else}
-        <p class="evidence-status">登録済みの入手元情報はありません。</p>
+        <p class="evidence-status">{copy.empty}</p>
       {/if}
     {/if}
   {/if}
