@@ -206,11 +206,11 @@ try {
     /参照先未解決の追加報酬設定/);
   // The current verified public DB-00 release exposes a native, localized
   // Mine Cart Popcorn Bucket definition for this original Quest Loot candidate.
-  const rewardLink=override.getByRole('link',
+  const overrideCollectionLink=override.getByRole('link',
     {name:'Collectionで開く：ポップコーンバケット（荷車）'});
-  await rewardLink.waitFor({timeout:25000});
-  assert.equal(await rewardLink.getAttribute('href'),'/Wand/collection/?item=40004032');
-  await rewardLink.click();
+  await overrideCollectionLink.waitFor({timeout:25000});
+  assert.equal(await overrideCollectionLink.getAttribute('href'),'/Wand/collection/?item=40004032');
+  await overrideCollectionLink.click();
   await override.locator('.item-inspector h2').waitFor({timeout:30000});
   assert.match(await override.locator('.item-inspector h2').innerText(),
     /ポップコーンバケット（荷車）|Mine Cart Popcorn Bucket/);
