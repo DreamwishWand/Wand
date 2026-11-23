@@ -1478,11 +1478,29 @@ try{
   assert.equal(await userSlot.count(),0);
   assert.equal(await chestSlot.count(),1);
   await regular.getByLabel('所持アイテム分類').selectOption('all');
+  // A regular user should never need to edit IDs for a saved row.
+  await chestSlot.click();
+  const selectedInfo=regular.getByLabel('選択中のアイテム');
+  assert.match(await selectedInfo.innerText(),/Chest 202 \/ Slot 1/);
+  assert.equal(await regular.getByLabel('現在の数量').inputValue(),'2');
+  assert.equal(await regular.getByLabel('Item ID').count(),0);
+  assert.equal(await regular.getByLabel('Container ID').count(),0);
   await userSlot.click();
-  assert.equal(await regular.getByLabel('Item ID').inputValue(),'777');
+  assert.match(await selectedInfo.innerText(),/Inventory 100/);
   assert.equal(await regular.getByLabel('現在の数量').inputValue(),'1');
+  assert.equal(await regular.getByLabel('現在の数量').isEditable(),false,
+    'saved original Amount is immutable in the normal editor');
+  assert.equal(await regular.getByLabel('Item ID').count(),0);
+  assert.equal(await regular.getByLabel('対象の種類').count(),0);
   assert.equal(await regular.getByLabel('変更後の数量').inputValue(),'',
     'the regular editor requires a user-specified replacement, not +1');
+  // Explicit manual entry remains available without inheriting a selected target.
+  await selectedInfo.getByRole('button',{name:'IDで指定'}).click();
+  assert.equal(await regular.getByLabel('Item ID').inputValue(),'');
+  assert.equal(await regular.getByLabel('現在の数量').isEditable(),true);
+  await userSlot.click();
+  assert.equal(await regular.getByLabel('Item ID').count(),0);
+  assert.equal(await regular.getByLabel('現在の数量').isEditable(),false);
   await regular.getByLabel('変更後の数量').fill('250');
   await regular.getByRole('button',{name:'複数編集に追加'}).click();
   assert.match(await userSlot.innerText(),/×1\s*→\s*×250/,
@@ -1586,6 +1604,9 @@ try{
   assert.equal(await regular.getByLabel('変更後の数量').inputValue(),'250');
   await regular.getByLabel('変更後の数量').fill('251');
   await regular.getByRole('button',{name:'登録済みの数量を更新'}).click();
+  assert.equal(await regular.getByLabel('Item ID').count(),0,
+    'revising a saved draft must also keep its source identity read-only');
+  assert.equal(await regular.getByLabel('現在の数量').isEditable(),false);
   assert.match(await userSlot.innerText(),/×1\s*→\s*×251/);
   assert.equal(await unifiedSave.getByRole('status').filter({
     hasText:'Rust/WASM検証済み'
