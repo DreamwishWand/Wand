@@ -6,6 +6,8 @@
  */
 import {verifyPublicStarpath} from './public-starpath.ts';
 import {isStarpathSeasonId,type StarpathSeasonId} from './starpath-locale-contract.ts';
+import {GUIDE_OFFICIAL_HISTORICAL_EVENTS,GUIDE_EARLY_ACCESS_FIRST_DAY}
+  from './official-event-history.ts';
 
 export const GUIDE_EVENT_CALENDAR_CONTRACT=
   'wand.db03.event-calendar-schedule@1' as const;
@@ -51,9 +53,21 @@ export interface GuideDateOnlyCalendarEvent extends GuideCalendarDateWindow{
   readonly evidence:'official-announcement';
   readonly liveVerified:false;
   readonly checkedDate:typeof GUIDE_EVENT_CALENDAR_AS_OF;
-  readonly href:'/guide/events/?event=HauntedFloatingFestival2026';
+  readonly href:'/guide/events/?event=HauntedFloatingFestival2026'|null;
+  readonly participation:'game-clock'|'not-verified';
 }
-export type GuideCalendarEvent=GuideStarpathCalendarEvent|GuideDateOnlyCalendarEvent;
+export interface GuideHistoricalStarpathCalendarEvent extends GuideCalendarDateWindow{
+  readonly kind:'starpath-history';
+  readonly title:string;
+  readonly sourceUrl:string;
+  readonly evidence:'official-announcement';
+  readonly officialEndUtc:string;
+  readonly liveVerified:false;
+  readonly checkedDate:typeof GUIDE_EVENT_CALENDAR_AS_OF;
+  readonly href:null;
+}
+export type GuideCalendarEvent=
+  GuideStarpathCalendarEvent|GuideDateOnlyCalendarEvent|GuideHistoricalStarpathCalendarEvent;
 export type GuideEventScheduleState=
   'upcoming'|'task-window'|'exchange-only'|'date-window'|'ended';
 export type GuideMonthEvent<T extends GuideCalendarWindow>=T&{
@@ -146,10 +160,40 @@ export function guideCalendarEvents(raw:unknown):GuideCalendarEvent[]{
     evidence:'official-announcement',
     precision:'date-only',startDay:'2026-10-07',endDayInclusive:'2026-10-31',
     liveVerified:false,checkedDate:GUIDE_EVENT_CALENDAR_AS_OF,
+    participation:'not-verified',
     // Exact 2026 native FloatingFestival identifier, not the earlier similarly named definition.
     href:'/guide/events/?event=HauntedFloatingFestival2026'
   });
-  check(events.length===3,'event census');
+  // Preserve historic announcements independently from the two cached liveops
+  // seasons. No article's publication timestamp is fabricated into a start
+  // instant. Event clocks and Star Path online participation are distinct.
+  for(const source of GUIDE_OFFICIAL_HISTORICAL_EVENTS){
+    check(source.startDay>=GUIDE_EARLY_ACCESS_FIRST_DAY&&
+      source.endDayInclusive>=source.startDay,'historical boundaries');
+    if(source.kind==='starpath-history'){
+      check(utcMillis(source.officialEndUtc)>Date.parse(source.startDay+'T00:00:00Z'),
+        'historical published end');
+      events.push({
+        id:source.id,kind:'starpath-history',title:source.title,
+        sourceUrl:source.sourceUrl,evidence:'official-announcement',
+        precision:'date-only',startDay:source.startDay,
+        endDayInclusive:source.endDayInclusive,
+        officialEndUtc:source.officialEndUtc,
+        liveVerified:false,checkedDate:GUIDE_EVENT_CALENDAR_AS_OF,href:null
+      });
+    }else{
+      events.push({
+        id:source.id,kind:'limited-event',category:source.category,
+        title:source.title,sourceUrl:source.sourceUrl,
+        evidence:'official-announcement',precision:'date-only',
+        startDay:source.startDay,endDayInclusive:source.endDayInclusive,
+        participation:source.participation,
+        liveVerified:false,checkedDate:GUIDE_EVENT_CALENDAR_AS_OF,href:null
+      });
+    }
+  }
+  check(events.length===3+GUIDE_OFFICIAL_HISTORICAL_EVENTS.length&&
+    new Set(events.map(event=>event.id)).size===events.length,'event census');
   return events;
 }
 
