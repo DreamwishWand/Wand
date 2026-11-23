@@ -43,7 +43,7 @@ test('one public shared DB-00 API joins all 1255 published source routes, with 2
   assert.equal(app.currentAvailabilityVerified,false);
   assert.equal(app.playerOwnershipVerified,false);
   assert.equal(calls.length,26);
-  assert.equal(new Set(calls).size,25);
+  assert.equal(new Set(calls).size,26);
   assert.equal(calls.filter(x=>x.endsWith('/active.json')).length,1);
   assert.equal(calls.filter(x=>x.endsWith('/starpath-cache-2026-11-22.json')).length,1);
   assert.equal(calls.filter(x=>x.endsWith('/items-013.json')).length,1);
@@ -82,7 +82,7 @@ test('one public shared DB-00 API joins all 1255 published source routes, with 2
 test('fresh calls do not share stale asset bytes; existing source SHA checks remain required',async()=>{
   const {fetcher,calls}=publicFetcher();
   await openPublicSharedGameSources('/Wand',fetcher);
-  assert.equal(calls.length,25);
+  assert.equal(calls.length,26);
   await openPublicSharedGameSources('/Wand',fetcher);
   assert.equal(calls.length,52,'fetch deduplication is per call, not a persistent stale cache');
   await assert.rejects(
