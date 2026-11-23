@@ -156,8 +156,11 @@ def read_sources(root: Path) -> dict:
                     "STAR_PATH_VERSION")
         else:
             target = row.get("target", {})
+            # July archived store source has no independently verified full
+            # game build. Its target is null, NOT invented as Steam 1.26.2.
+            required_version = None if key == "shop_archive" else "1.26.2"
             require(target.get("platform") == "Steam" and
-                    target.get("gameVersion") == "1.26.2",
+                    target.get("gameVersion") == required_version,
                     "SOURCE_TARGET_" + key)
         loaded[key] = row
     return loaded
