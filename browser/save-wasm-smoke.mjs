@@ -1476,6 +1476,40 @@ try{
     'the regular editor requires a user-specified replacement, not +1');
   await regular.getByLabel('変更後の数量').fill('250');
   await regular.getByRole('button',{name:'複数編集に追加'}).click();
+  const unifiedSave=regular.getByRole('region',{
+    name:'編集済みセーブの出力'
+  });
+  assert.match(await unifiedSave.innerText(),/数量1件・配置0件/);
+  assert.equal(await regular.getByRole('button',{
+    name:'変更を検証',exact:true
+  }).count(),0,'normal editor has no separate single-item export');
+  assert.equal(await regular.getByRole('button',{
+    name:'一括変更を検証',exact:true
+  }).count(),0,'normal editor never exposes a partial batch export');
+  await unifiedSave.getByRole('button',{
+    name:'すべての変更を検証'
+  }).click();
+  await unifiedSave.getByRole('status',{
+    name:'Rust/WASM検証済み'
+  }).waitFor({timeout:30000});
+  page.once('dialog',dialog=>dialog.accept());
+  await unifiedSave.getByRole('button',{
+    name:'すべての変更をコピーに出力'
+  }).click();
+  const amountOnlyLink=unifiedSave.getByRole('link',{
+    name:'編集済みコピーをダウンロード'
+  });
+  await amountOnlyLink.waitFor({timeout:30000});
+  const amountOnlyDl=page.waitForEvent('download');
+  await amountOnlyLink.click();
+  const amountOnlyCopy=readSyntheticEncryptedP1g(
+    await readFile(await (await amountOnlyDl).path())
+  );
+  assert.equal(amountOnlyCopy.Player.ListInventories['100']
+    .Inventory['777'].Amount,250);
+  assert.equal(amountOnlyCopy.World.GridCollection.Grids['101']
+    .Objects['1'].X,45,
+    'no Grid movement was staged when quantity-only copy was created');
   const tabs=regular.getByRole('navigation',{
     name:'Save Editorの編集対象'
   });
@@ -1497,18 +1531,26 @@ try{
   await standardCoordinate.getByRole('button',{
     name:'座標編集に追加'
   }).click();
+  assert.match(await unifiedSave.innerText(),/数量1件・配置1件/);
+  assert.equal(await unifiedSave.getByRole('link',{
+    name:'編集済みコピーをダウンロード'
+  }).count(),0,
+    'old amount-only copy must be revoked after staging the Grid edit');
+  assert.equal(await regular.getByRole('button',{
+    name:'座標変更を検証',exact:true
+  }).count(),0,'normal mode cannot export only one queued Grid position');
   await tabs.getByRole('button',{name:'Inventory / Chest'}).click();
   assert.equal(await regular.getByRole('region',{
     name:'一括数量変更'
   }).count(),1,'the queued item change survives tab switching');
-  const regularJoint=regular.getByRole('region',{
+  assert.equal(await regular.getByRole('region',{
     name:'所持品と配置の統合編集'
-  });
-  await regularJoint.getByRole('button',{
-    name:/数量と配置をまとめて検証/
+  }).count(),0,'partial export controls stay diagnostic-only');
+  await unifiedSave.getByRole('button',{
+    name:'すべての変更を検証'
   }).click();
-  await regularJoint.getByRole('status').filter({
-    hasText:'数量1件・配置1件をRust/WASMで検証しました'
+  await unifiedSave.getByRole('status').filter({
+    hasText:'Rust/WASM検証済み'
   }).waitFor({timeout:30000});
   // An already validated combined batch becomes stale on an in-place
   // inventory quantity revision, and must be rechecked by Rust/WASM.
@@ -1517,11 +1559,14 @@ try{
   assert.equal(await regular.getByLabel('変更後の数量').inputValue(),'250');
   await regular.getByLabel('変更後の数量').fill('251');
   await regular.getByRole('button',{name:'登録済みの数量を更新'}).click();
-  assert.equal(await regularJoint.getByRole('status').filter({
-    hasText:'数量1件・配置1件をRust/WASMで検証しました'
+  assert.equal(await unifiedSave.getByRole('status').filter({
+    hasText:'Rust/WASM検証済み'
   }).count(),0,'old combined Rust validation cannot authorize revised quantities');
-  assert.equal(await regularJoint.getByRole('link',{
-    name:'統合コピーをダウンロード'
+  assert.equal(await unifiedSave.getByRole('button',{
+    name:'すべての変更をコピーに出力'
+  }).count(),0,'revised amount requires a new complete Rust preview');
+  assert.equal(await unifiedSave.getByRole('link',{
+    name:'編集済みコピーをダウンロード'
   }).count(),0);
   // Selecting a queued slot from the owned list returns its proposed
   // amount, rather than silently suggesting a second conflicting edit.
@@ -1530,16 +1575,18 @@ try{
   assert.equal(await regular.getByRole('button',{
     name:'登録済みの数量を更新'
   }).isVisible(),true);
-  await regularJoint.getByRole('button',{
-    name:/数量と配置をまとめて検証/
+  await unifiedSave.getByRole('button',{
+    name:'すべての変更を検証'
   }).click();
-  await regularJoint.getByRole('status').filter({
-    hasText:'数量1件・配置1件をRust/WASMで検証しました'
+  await unifiedSave.getByRole('status').filter({
+    hasText:'Rust/WASM検証済み'
   }).waitFor({timeout:30000});
   page.once('dialog',dialog=>dialog.accept());
-  await regularJoint.getByRole('button',{name:'統合コピーを生成'}).click();
-  const regularLink=regularJoint.getByRole('link',{
-    name:'統合コピーをダウンロード'
+  await unifiedSave.getByRole('button',{
+    name:'すべての変更をコピーに出力'
+  }).click();
+  const regularLink=unifiedSave.getByRole('link',{
+    name:'編集済みコピーをダウンロード'
   });
   await regularLink.waitFor({timeout:30000});
   const regularEvent=page.waitForEvent('download');
