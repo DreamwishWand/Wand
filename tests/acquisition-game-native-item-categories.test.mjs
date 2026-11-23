@@ -44,6 +44,7 @@ test('4 game-native Item categories are lazy, unique and include only original s
   assert.equal(c.originalShopItemOccurrences,284);
   assert.equal(c.nativeStarPathRewardOccurrences,67);
   assert.equal(c.nativeGameEventRewardOccurrences,202);
+  assert.equal(c.originalIapPackageRewardOccurrences,291);
   assert.equal(c.nativePetPremiumShopRows,95);
   assert.equal(c.nativePetStarPathRows,7);
   assert.equal(c.nativePetGameEventRows,9);
@@ -57,7 +58,8 @@ test('4 game-native Item categories are lazy, unique and include only original s
   assert.equal(c.gameSourceCoverageComplete,false);
   assert.equal(c.currentAvailabilityVerified,false);
   const types=[
-    'premium_shop','star_path','in_game_limited_event','real_time_limited_event'
+    'premium_shop','star_path','in_game_limited_event',
+    'real_time_limited_event','iap_package_reward'
   ];
   for(const kind of types){
     const ids=index.listItemIds(kind);
@@ -78,11 +80,13 @@ test('4 game-native Item categories are lazy, unique and include only original s
   assert.equal(index.listItemIds('star_path').length,c.starPathItemIds);
   assert.equal(index.listItemIds('in_game_limited_event').length,c.inGameLimitedEventItemIds);
   assert.equal(index.listItemIds('real_time_limited_event').length,c.realTimeLimitedEventItemIds);
+  assert.equal(index.listItemIds('iap_package_reward').length,c.iapPackageRewardItemIds);
   assert.equal(index.listItemIds().length,c.distinctClassifiedItemIds);
   assert(index.listItemIds('premium_shop').length>=186);
   assert(index.listItemIds('star_path').length>=7);
   assert(index.listItemIds('in_game_limited_event').length>=9);
   assert(index.listItemIds('real_time_limited_event').length>=14);
+  assert(index.listItemIds('iap_package_reward').length>=158);
   assert(Object.isFrozen(index));
   assert(Object.isFrozen(index.coverage));
   assert(Object.isFrozen(index.listItemIds()));
@@ -113,7 +117,7 @@ test('all 284 original store item occurrences map to premium_shop without dates 
   }
 });
 
-test('game-native event, original Star Path and native Pet.Source map to four categories, not named campaigns',async()=>{
+test('game-native event, original Star Path and native Pet.Source map to source categories, not named campaigns',async()=>{
   const {catalog}=await sourceIndex();
   const index=await catalog.loadGameNativeItemCategories();
   const pets=await catalog.loadNativePetSources();
@@ -144,6 +148,12 @@ test('game-native event, original Star Path and native Pet.Source map to four ca
     }
   }
   assert.equal(starPaths,67);
+  for(const origin of catalog.nativeIapSource.origins){
+    assert(index.getItem(origin.itemId).categories.includes('iap_package_reward'));
+    assert(index.getItem(origin.itemId).evidence.some(e=>
+      e.category==='iap_package_reward'&&
+      e.basis==='original_iap_package_reward_item_id'));
+  }
 });
 
 test('generic OnlineCategory Premium/TimeLimited never promotes an item into a shop or named external reward',async()=>{
@@ -176,10 +186,10 @@ test('branded game-file-only source inputs are required; consumers share lazy me
   const [online,pets]=await Promise.all([
     catalog.loadNativeOnlineCategories(),catalog.loadNativePetSources()
   ]);
-  const build=(a,b,c,d,e,f)=>indexGameNativeItemCategories(a,b,c,d,e,f);
+  const build=(a,b,c,d,e,f,g)=>indexGameNativeItemCategories(a,b,c,d,e,f,g);
   const args=[
     catalog.origins,catalog.nativeShopSource,catalog.historicalNativeShopSource,
-    catalog.eventFriendshipSource,pets,online
+    catalog.nativeIapSource,catalog.eventFriendshipSource,pets,online
   ];
   assert.throws(()=>build(...args.slice(0,1),{...args[1]},...args.slice(2)),
     /ORIGINAL_SOURCE_REQUIRED/);
@@ -189,7 +199,11 @@ test('branded game-file-only source inputs are required; consumers share lazy me
     /ORIGINAL_SOURCE_REQUIRED/);
   assert.throws(()=>build(...args.slice(0,4),{...args[4]},...args.slice(5)),
     /ORIGINAL_SOURCE_REQUIRED/);
-  assert.throws(()=>build(...args.slice(0,5),{...args[5]}),
+  assert.throws(()=>build(...args.slice(0,4),{...args[4]},...args.slice(5)),
+    /ORIGINAL_SOURCE_REQUIRED/);
+  assert.throws(()=>build(...args.slice(0,5),{...args[5]},...args.slice(6)),
+    /ORIGINAL_SOURCE_REQUIRED/);
+  assert.throws(()=>build(...args.slice(0,6),{...args[6]}),
     /ORIGINAL_SOURCE_REQUIRED/);
   const idx=build(...args);
   assert(hasGameNativeItemCategoryEvidence(idx));
