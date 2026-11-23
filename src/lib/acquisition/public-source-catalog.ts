@@ -43,6 +43,12 @@ import {loadPinnedNativePetSourceCategories,type NativePetSourceIndex}
   from './public-pet-source-categories.ts';
 import {loadPinnedNativeOnlineCategories,type NativeOnlineCategoryIndex}
   from './public-online-categories.ts';
+import {loadPinnedNativeRecipeResults,
+  type NativeRecipeIndex,type NativeRecipe}
+  from './public-native-recipes.ts';
+import {loadPinnedNativeActivityResults,
+  type NativeActivityResultIndex,type NativeActivityResultPath}
+  from './public-native-activities.ts';
 import {indexPublicOnlineNameCandidates,
   type PublicOnlineNameCandidateIndex,
   type PublicOnlineNameCandidate} from './public-online-name-candidates.ts';
@@ -102,6 +108,19 @@ export type PublicSourceItemLookup=ReturnType<Db00OriginJoin['lookup']>&{
   readonly configuredDefaultInventoryCandidates:readonly ItemOrigin[];
   readonly originCoverageComplete:false;
 };
+export type PublicSourceItemRecipeLookup=PublicSourceItemLookup&{
+  readonly nativeRecipes:readonly NativeRecipe[];
+  /** Exact original recipe-result links, separate from the original 1255 routes. */
+  readonly nativeRecipeOrigins:readonly ItemOrigin[];
+  readonly nativeRecipeDefinitionsLoaded:true;
+  readonly recipeUnlockVerified:false;
+};
+export type PublicSourceItemNativeAcquisitionLookup=PublicSourceItemRecipeLookup&{
+  readonly nativeActivityPaths:readonly NativeActivityResultPath[];
+  readonly nativeActivityOrigins:readonly ItemOrigin[];
+  readonly nativeActivityDefinitionsLoaded:true;
+  readonly contextAvailabilityVerified:false;
+};
 export interface PublicSourceCatalog{
   readonly schema:typeof DB02_PUBLIC_SOURCE_CATALOG_SCHEMA;
   readonly gameVersion:'1.26.2';
@@ -127,6 +146,16 @@ export interface PublicSourceCatalog{
   loadNativePetSources():Promise<NativePetSourceIndex>;
   /** Native OnlineCategory enum: Premium/TimeLimited, not a specific sale. */
   loadNativeOnlineCategories():Promise<NativeOnlineCategoryIndex>;
+  /** Optional original 1943 cooking/crafting result links and ingredient rules. */
+  loadNativeRecipeResults():Promise<NativeRecipeIndex>;
+  /** Optional SHA-pinned fishing/mining/timebending/growing source routes. */
+  loadNativeActivityResults():Promise<NativeActivityResultIndex>;
+  /** Item-ID lookup with optional source-pinned recipe routes (one new fetch). */
+  lookupWithNativeRecipes(itemId:string|number):Promise<PublicSourceItemRecipeLookup>;
+  /** Enrich one Item ID with both recipe and original activity paths on demand. */
+  lookupWithNativeAcquisition(
+    itemId:string|number
+  ):Promise<PublicSourceItemNativeAcquisitionLookup>;
   readonly coverage:PublicSourceCatalogCoverage;
   lookup(itemId:string|number):PublicSourceItemLookup;
   getSourceOrigin(originId:string):readonly ItemOrigin[];
@@ -286,6 +315,24 @@ export async function loadPublicSourceCatalog(
   // asset requests; the 2 KB source is fetched only when explicitly requested.
   let nativePetSourcePromise:Promise<NativePetSourceIndex>|null=null;
   let nativeOnlineCategoryPromise:Promise<NativeOnlineCategoryIndex>|null=null;
+  let nativeRecipePromise:Promise<NativeRecipeIndex>|null=null;
+  let nativeActivityPromise:Promise<NativeActivityResultIndex>|null=null;
+  const loadRecipes=()=>nativeRecipePromise??=
+    loadPinnedNativeRecipeResults(basePath,fetcher);
+  const loadActivities=()=>nativeActivityPromise??=
+    loadPinnedNativeActivityResults(basePath,fetcher);
+  const lookupCurrent=(itemId:string|number):PublicSourceItemLookup=>{
+    // db00.lookup validates IDs and keeps extra-ItemList Quest/Currency IDs.
+    const row=db00.lookup(itemId);
+    return Object.freeze({
+      ...row,
+      onlineNameCandidates:nameCandidates.getItemCandidates(row.itemId),
+      staticContainerCandidates:staticContainerSource.getItemCandidates(row.itemId),
+      configuredDefaultInventoryCandidates:
+        defaultInventorySource.getItemCandidates(row.itemId),
+      originCoverageComplete:false as const
+    });
+  };
   return Object.freeze({
     schema:DB02_PUBLIC_SOURCE_CATALOG_SCHEMA,
     gameVersion:'1.26.2' as const,
@@ -304,16 +351,35 @@ export async function loadPublicSourceCatalog(
         basePath,fetcher
       );
     },
-    lookup(itemId:string|number){
-      // db00.lookup validates IDs and keeps extra-ItemList Quest/Currency IDs.
-      const row=db00.lookup(itemId);
+    loadNativeRecipeResults(){return loadRecipes();},
+    loadNativeActivityResults(){return loadActivities();},
+    lookup(itemId:string|number){return lookupCurrent(itemId);},
+    async lookupWithNativeRecipes(itemId:string|number){
+      const row=lookupCurrent(itemId);
+      const source=await loadRecipes();
       return Object.freeze({
         ...row,
-        onlineNameCandidates:nameCandidates.getItemCandidates(row.itemId),
-        staticContainerCandidates:staticContainerSource.getItemCandidates(row.itemId),
-        configuredDefaultInventoryCandidates:
-          defaultInventorySource.getItemCandidates(row.itemId),
-        originCoverageComplete:false as const
+        nativeRecipes:source.getResultRecipes(row.itemId),
+        nativeRecipeOrigins:source.getResultOrigins(row.itemId),
+        nativeRecipeDefinitionsLoaded:true as const,
+        recipeUnlockVerified:false as const
+      });
+    },
+    async lookupWithNativeAcquisition(itemId:string|number){
+      const row=lookupCurrent(itemId);
+      const [recipes,activities]=await Promise.all([
+        loadRecipes(),loadActivities()
+      ]);
+      return Object.freeze({
+        ...row,
+        nativeRecipes:recipes.getResultRecipes(row.itemId),
+        nativeRecipeOrigins:recipes.getResultOrigins(row.itemId),
+        nativeRecipeDefinitionsLoaded:true as const,
+        recipeUnlockVerified:false as const,
+        nativeActivityPaths:activities.getItemPaths(row.itemId),
+        nativeActivityOrigins:activities.getItemOrigins(row.itemId),
+        nativeActivityDefinitionsLoaded:true as const,
+        contextAvailabilityVerified:false as const
       });
     },
     getSourceOrigin(originId:string){

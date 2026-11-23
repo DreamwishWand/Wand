@@ -523,3 +523,42 @@ Neither reward name/metadata nor any configured Star Path occurrence
 asserts a guaranteed grant, premium access, live season availability,
 ownership, Collection UI membership, or an exact game image. Private
 SQLite/ZIP records are never published by DB-00.
+
+
+### Original seven Collection-area configurations and native World Tag crosswalk
+
+DB-01 recovered the **ordered Steam 1.26.2 original
+\`CollectionsUIConfig._collectionAreaConfigs\`** from an independently
+SHA-pinned UnityFS bundle, including the original \`GameplayTagID\`,
+\`VillageItemID\`, icon subobject reference and five original
+\`ItemLocationException\` IDs.
+
+DB-00 now exposes this immutable, zero-additional-fetch source through
+\`openPublicSharedGameSources(...).originalCollectionAreas\`:
+
+- \`orderedAreas\` contains the six source world records and \`AllAreas\`
+  in original config order: DreamlightValley, EternityIsle,
+  StorybookVale, WishblossomRanch, SeaOfSecrets, Honeywood,
+  and AllAreas (\`areaCode:0\`). **Honeywood is code 4097**, not 6.
+- \`getArea(code)\`, \`getAreaByNativeTagId(tagId)\` and
+  \`getAreaByNativeWorldTag(tag)\` preserve the source ID -> DB-04
+  original native World Tag mapping, with no guessed area labels.
+- \`isOriginalLocationException(itemId)\` flags the **five** original
+  exception IDs without interpreting the unverified runtime behavior.
+
+For owner-local, independently SHA-verified DB-04 native Item Tags,
+\`joinLocalGameSources(...).byOriginalCollectionAreaTag(areaCode,page)\`
+returns the original config and direct per-Item Tag candidates. **The
+DB-01 Unity config's original Tag.json SHA must match DB-04's original
+Tag.json SHA**; divergent sources fail closed. The result flags original
+location exception Item IDs, and all Item memberships remain
+\`gameUiCollectionMembershipVerified:false\`. The AllAreas entry has
+no native world Tag: use \`queryPublishedItems\` instead, rather than
+misclassifying every Item as a world Tag candidate.
+
+Native GetAreaConfigs also uses Critter runtime location, scene/world
+state, first-match precedence and item-location exceptions. Accordingly,
+this source mapping must **not** be promoted into a verified game-screen
+Collection world filter, DLC ownership, unlocked location, actual
+acquisition location or player-owned Items. Original bundle and Save
+contents are not exposed.
