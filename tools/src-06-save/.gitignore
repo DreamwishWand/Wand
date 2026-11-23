@@ -1,0 +1,13 @@
+private-reports/
+reports/
+output/
+__pycache__/
+*.pyc
+*.sav
+*.save
+*.dat
+*.p1g
+*.json
+*.jsonl
+INCOMPLETE
+fixture-private*/
