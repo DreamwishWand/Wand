@@ -1854,10 +1854,8 @@
           </li>
         {/each}
       </ul>
-      {#if dbStatus==='loading'}
-        <p class="slot-note">共通DBを読み込み中…</p>
-      {:else if dbStatus==='unavailable'}
-        <p class="slot-note">共通DBを参照できません。Item IDで編集できます。</p>
+      {#if dbStatus==='unavailable'}
+        <p class="slot-note">名称を取得できなかったアイテムはItem IDで表示しています。</p>
       {/if}
     {/if}
   </section>
