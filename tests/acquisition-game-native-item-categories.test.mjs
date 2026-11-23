@@ -199,8 +199,6 @@ test('branded game-file-only source inputs are required; consumers share lazy me
     /ORIGINAL_SOURCE_REQUIRED/);
   assert.throws(()=>build(...args.slice(0,4),{...args[4]},...args.slice(5)),
     /ORIGINAL_SOURCE_REQUIRED/);
-  assert.throws(()=>build(...args.slice(0,4),{...args[4]},...args.slice(5)),
-    /ORIGINAL_SOURCE_REQUIRED/);
   assert.throws(()=>build(...args.slice(0,5),{...args[5]},...args.slice(6)),
     /ORIGINAL_SOURCE_REQUIRED/);
   assert.throws(()=>build(...args.slice(0,6),{...args[6]}),
