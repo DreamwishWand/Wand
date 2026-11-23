@@ -12,6 +12,7 @@ import { getOriginalGridAreaLocalWindow } from './native-gridarea-local-window.t
 import { getOriginalGridObjectItemAreaLink } from './native-gridobject-item-area-link.ts';
 import {getOriginalDefaultGridLayersAtCell} from './native-default-gridlayers-cell.ts';
 import {getOriginalDefaultGridLayersWindow} from './native-default-gridlayers-window.ts';
+import {probeOriginalSourceDefaultCandidate} from './native-default-candidate-probe.ts';
 import { getSourceAnchorDomain, getTessellatedSourceAnchorWindow } from './native-anchor-domain';
 import {
   listWorldPreviewViews,
@@ -48,7 +49,10 @@ type Request =
   | { command:'gridarea-window'; requestId:number;
       itemId:number; orientationCode:number; callerGridFactor:1|2; rect:Rect }
   | { command:'grid-cell-layers'; requestId:number; viewKey:string;
-      gridIdNative:number; x:number; y:number };
+      gridIdNative:number; x:number; y:number }
+  | { command:'candidate-probe'; requestId:number; viewKey:string;
+      gridIdNative:number; gridObjectIdNative:number;itemId:number;
+      candidateX:number;candidateY:number;orientationCode:number };
 
 interface WorkerScope {
   onmessage: ((event: MessageEvent<unknown>) => Promise<void>) | null;
@@ -83,6 +87,20 @@ function parseRequest(data:unknown): Request {
     return {command:'gridarea-window',requestId,
       itemId:data.itemId,orientationCode:data.orientationCode,
       callerGridFactor:data.callerGridFactor,rect:data.rect};
+  if(data.command==='candidate-probe'&&
+     typeof data.viewKey==='string'&&data.viewKey.length>0&&
+     data.viewKey.length<=2048&&
+     nonnegative(data.gridIdNative)&&data.gridIdNative<=0xffffffff&&
+     nonnegative(data.gridObjectIdNative)&&data.gridObjectIdNative<=0xffffffff&&
+     positive(data.itemId)&&data.itemId<=0xffffffff&&
+     nonnegative(data.candidateX)&&data.candidateX<=0xffffffff&&
+     nonnegative(data.candidateY)&&data.candidateY<=0xffffffff&&
+     nonnegative(data.orientationCode)&&data.orientationCode<=15)
+    return {command:'candidate-probe',requestId,
+      viewKey:data.viewKey,gridIdNative:data.gridIdNative,
+      gridObjectIdNative:data.gridObjectIdNative,itemId:data.itemId,
+      candidateX:data.candidateX,candidateY:data.candidateY,
+      orientationCode:data.orientationCode};
   if(data.command==='grid-cell-layers'&&
      typeof data.viewKey==='string'&&data.viewKey.length>0&&
      data.viewKey.length<=2048&&
@@ -192,6 +210,16 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
     const sourceView=views.find(view=>view.viewKey===message.viewKey);
     if (!sourceView)
       throw new TypeError('Unknown local World view');
+    if(message.command==='candidate-probe'){
+      if(!sourceView.grids.some(g=>g.gridIdNative===message.gridIdNative))
+        throw new TypeError('Unknown original source Grid ID');
+      const result=probeOriginalSourceDefaultCandidate(
+        catalog,sourceView.layoutId,message.gridIdNative,
+        message.gridObjectIdNative,message.itemId,
+        message.candidateX,message.candidateY,message.orientationCode);
+      worker.postMessage({kind:'candidate-probe',requestId,result});
+      return;
+    }
     if(message.command==='grid-cell-layers'){
       if(!sourceView.grids.some(g=>g.gridIdNative===message.gridIdNative))
         throw new TypeError('Unknown original source Grid ID');
