@@ -98,6 +98,16 @@ export function requireWorldPreviewCatalog(source:unknown):WorldPreviewCatalog {
     throw new TypeError('DB04_WORLD_PREVIEW_CATALOG_INVALID');
   return source as unknown as WorldPreviewCatalog;
 }
+// Legacy JS infers its optional page argument as null-only. Isolate its
+// true source-compatible paging contract here, then validate every receipt.
+const readLegacyVillageAnchors=getNativeVillageAreaAnchorWindow as unknown as (
+  source:WorldPreviewCatalog,villageLayoutId:string,areaType:number,
+  nativeGridId:number,rect:WorldPreviewRect,page:WorldPreviewPage|null
+)=>unknown;
+const readLegacyGridAnchors=getNativeDefaultLayoutAnchorWindow as unknown as (
+  source:WorldPreviewCatalog,layoutId:string,nativeGridId:number,
+  rect:WorldPreviewRect,page:WorldPreviewPage|null
+)=>unknown;
 function asNativeAnchorWindow(source:unknown):WorldPreviewAnchorWindow {
   if(!isRecord(source)||typeof source.status!=='string'||
     (source.gridDataPath!==undefined&&typeof source.gridDataPath!=='string')||
@@ -311,11 +321,11 @@ export function getWorldPreviewAnchorWindow(
 ):WorldPreviewAnchorWindow {
   if (!view) return {status: 'unknown_world_preview_source'};
   if (view.kind === 'villageArea') {
-    return asNativeAnchorWindow(getNativeVillageAreaAnchorWindow(
+    return asNativeAnchorWindow(readLegacyVillageAnchors(
       catalog,view.villageLayoutId,view.nativeAreaTypeCode,nativeGridId,rect,page));
   }
   if (view.kind === 'gridCollection') {
-    return asNativeAnchorWindow(getNativeDefaultLayoutAnchorWindow(
+    return asNativeAnchorWindow(readLegacyGridAnchors(
       catalog,view.layoutId,nativeGridId,rect,page));
   }
   return {status: 'unknown_world_preview_source'};
