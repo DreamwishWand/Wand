@@ -427,6 +427,19 @@ try {
   assert.equal(await crossEvent.locator('.event-list .event-option').count(),2);
   assert.equal(await crossEvent.locator('.reward-detail .native-id').innerText(),'HauntedFloatingFestival2026');
   assert.equal(await crossEvent.locator('.reward-detail .reward-row').count(),1);
+  await crossEvent.goBack();
+  await crossEvent.locator('.reward-detail .reward-row').first().waitFor();
+  assert.equal(await crossEvent.locator('.reward-detail .reward-row').count(),9,
+    'browser back restores the original full-event reward view');
+  await crossEvent.goForward();
+  await crossEvent.locator('.reward-detail .reward-row').first().waitFor();
+  assert.equal(await crossEvent.locator('.reward-detail .reward-row').count(),1,
+    'browser forward restores the exact event+Item source link');
+  await crossEvent.reload({waitUntil:'domcontentloaded'});
+  await crossEvent.locator('.reward-detail .reward-row').first().waitFor({timeout:20000});
+  assert.equal(await crossEvent.locator('.reward-detail .native-id').innerText(),'HauntedFloatingFestival2026');
+  assert.equal(await crossEvent.locator('.reward-detail .reward-row').count(),1,
+    'event+Item permalink must also survive a hard reload');
   await crossEvent.locator('.event-option').filter({hasText:'ホーンテッドフローティングフェスティバル'}).first().click();
   assert.equal(await crossEvent.locator('.reward-detail .native-id').innerText(),'HauntedFloatingFestival');
   assert.equal(await crossEvent.locator('.reward-detail .reward-row').count(),1);
