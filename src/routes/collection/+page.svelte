@@ -13,6 +13,8 @@
     from '$lib/collection/browse-layout.ts';
   import {COLLECTION_UNIVERSE_TAG_BY_ID,COLLECTION_UNIVERSE_TAG_NAMES}
     from '$lib/collection/universe-tag-names.ts';
+  import {collectionTopCategory,collectionTopCategoryLabel,collectionTopCategoryRank,
+    collectionTopCategoryCards,type CollectionTopCategory} from '$lib/collection/category-hierarchy.ts';
   import {collectionNativeSubtypeLabel}
     from '$lib/collection/native-subtype-labels.ts';
   import AcquisitionEvidence from '$lib/collection/AcquisitionEvidence.svelte';
@@ -106,6 +108,7 @@
   let sourceFacetGroups:readonly CollectionDb01Group[]=[];
   let sourceChoices:Partial<Record<CollectionDb01Facet,string>>={};
   let sourceAllMatching:CollectionItem[]=[];
+  let sourceTopCategory:CollectionTopCategory|null=null;
   let sourceActivityType:number|null=null;
   let sourceNativeSubtype:string|null=null;
   let sourceUniverseSelection:string|null=null;
@@ -145,6 +148,10 @@
   let inspectorClose:HTMLButtonElement;
   let inspectorTrigger:HTMLElement|null=null;
 
+  $: topCategoryCards=collectionTopCategoryCards([
+    ...sourceNativeSubtypeCards,
+    ...sourceActivityTypeCards.map(row=>({...row,key:'ActivityItem:'+row.code}))
+  ]);
   $: workspace=state.workspaces.find(x=>x.id===state.active)??state.workspaces[0];
   $: entries=workspace?.entries??{};
   $: selectionLabel=sourceNativeSubtype!==null
@@ -153,7 +160,7 @@
     :sourceActivityType!==null
       ?sourceActivityTypeLabel(locale,sourceActivityType,
           sourceIndex?.activityTypeNames.get(sourceActivityType)??null)
-      :facets.find(x=>x.id===selected)?.label??'';
+      :sourceTopCategory!==null?collectionTopCategoryLabel(locale,sourceTopCategory):facets.find(x=>x.id===selected)?.label??'';
   // Render each Rust/WASM query result in its original order. Grouping all
   // visible rows by category would move existing cards when another page is
   // appended, producing scroll jumps and misleading partial group counts.
@@ -187,7 +194,7 @@
     !search.trim()&&status==='all'&&
     !favoriteOnly&&!expansion&&!acquisitionFilter;
   $: isBrowsing=Boolean(browsingAllItems||selected||sourceUniverseSelection!==null||
-    sourceActivityType!==null||sourceNativeSubtype!==null||
+    sourceActivityType!==null||sourceNativeSubtype!==null||sourceTopCategory!==null||
     search.trim()||status!=='all'||favoriteOnly||
     nameStatus!=='all'||expansion||worldFilter||universeFilter||
     Object.keys(sourceChoices).length||acquisitionFilter||viewAxis==='universe');
@@ -402,7 +409,7 @@
       if(sourceIndex&&filtersOpen){
         const key=(sourceNativeSubtype!==null?'native-'+sourceNativeSubtype:
           sourceActivityType!==null?'activity-'+sourceActivityType:
-          selected||'all')+'|'+worldFilter+'|'+universeFilter+
+          selected||sourceTopCategory||'all')+'|'+worldFilter+'|'+universeFilter+
           '|'+(sourceChoices.worldContextTag??'')+'|'+(sourceUniverseSelection??'');
         if(key!==sourceGroupsCacheKey){
           const ids=sourceNativeSubtype!==null
@@ -412,14 +419,17 @@
               :selected?queryAllCollectionRows({
                 ...currentFilter(0,200),status:'all',search:'',
                 favoriteOnly:false,nameStatus:'all',expansion:''
-              }).map(row=>row.itemId):[...sourceIndex.byItem.keys()];
+              }).map(row=>row.itemId):sourceTopCategory!==null
+                ?[...sourceIndex.itemsByNativeSubtype].flatMap(([key,ids])=>
+                  collectionTopCategory(key)===sourceTopCategory?[...ids]:[])
+                :[...sourceIndex.byItem.keys()];
           sourceFacetGroups=collectionDb01Groups(sourceIndex,ids);
           sourceGroupsCacheKey=key;
         }
       }else if(!filtersOpen){
         sourceFacetGroups=[];sourceGroupsCacheKey='';
       }
-      if((sourceActivityType!==null||sourceNativeSubtype!==null||
+      if((sourceTopCategory!==null||sourceActivityType!==null||sourceNativeSubtype!==null||
           sourceUniverseSelection!==null||
           Object.keys(sourceChoices).length||acquisitionFilter)&&
          (sourceIndex||acquisitionIndex)){
@@ -437,7 +447,10 @@
           sourceIndex?.itemsByActivityType.get(sourceActivityType)??[];
         const nativeIds=sourceNativeSubtype===null?null:
           sourceIndex?.itemsByNativeSubtype.get(sourceNativeSubtype)??[];
-        const candidateIds=[universeIds,acquisitionIds,activityIds,nativeIds]
+        const topIds=sourceTopCategory===null?null:
+          [...(sourceIndex?.itemsByNativeSubtype??[])].flatMap(([key,ids])=>
+            collectionTopCategory(key)===sourceTopCategory?[...ids]:[]);
+        const candidateIds=[universeIds,acquisitionIds,activityIds,nativeIds,topIds]
           .reduce<readonly number[]|null>((shortest,ids)=>
             ids===null?shortest:
             shortest===null||ids.length<shortest.length?ids:shortest,null);
@@ -448,6 +461,10 @@
             try{return [runtime!.item(id,locale)];}catch{return [];}
           }):queryAllCollectionRows(currentFilter(0,200)));
         sourceAllMatching=candidates.filter(item=>
+          (sourceTopCategory===null||(()=>{
+            const native=sourceIndex?.nativeSubtypeByItem.get(item.itemId);
+            return !!native&&collectionTopCategory(native.nativeType+':'+native.code)===sourceTopCategory;
+          })())&&
           (sourceUniverseSelection!==COLLECTION_UNIVERSE_UNTAGGED||
             !(sourceIndex?.universeTagIdsByItem.size
               ?sourceIndex.universeTagIdsByItem.has(item.itemId)
@@ -513,13 +530,10 @@
     const groups=groupCollectionUniverseItems(sourceAllMatching,item=>{
       const native=sourceIndex?.nativeSubtypeByItem.get(item.itemId);
       if(native){
-        const key=native.nativeType+':'+native.code;
-        const ranks:Readonly<Record<string,number>>={
-          Furniture:0,Clothing:100,Trimming:200,ActivityItem:300
-        };
-        return {id:key,
-          label:nativeSubtypeLabel(locale,key,native.nativeName),
-          rank:(ranks[native.nativeType]??400)+native.code};
+        const id=collectionTopCategory(native.nativeType+':'+native.code);
+        return id===null
+          ?{id:'unresolved',label:locale==='ja'?'分類未確定':'Unclassified',rank:999}
+          :{id,label:collectionTopCategoryLabel(locale,id),rank:collectionTopCategoryRank(id)};
       }
       const activity=sourceIndex?.activityTypesByItem.get(item.itemId);
       const id=activity?'activity-'+activity.code:item.family;
@@ -567,7 +581,7 @@
     sourceFacetGroups=[];
     sourceGroupsCacheKey='';
     sourceChoices={};
-    sourceActivityType=null;sourceNativeSubtype=null;
+    sourceTopCategory=null;sourceActivityType=null;sourceNativeSubtype=null;
     sourceUniverseSelection=null;
     sourceActivityTypeCards=[];
     sourceNativeSubtypeCards=[];
@@ -664,7 +678,7 @@
    */
   function appendNextPage():void {
     if(!runtime||busy||loading||storeError||filtered.length>=totalMatches)return;
-    if((sourceActivityType!==null||sourceNativeSubtype!==null||
+    if((sourceTopCategory!==null||sourceActivityType!==null||sourceNativeSubtype!==null||
           sourceUniverseSelection!==null||
           Object.keys(sourceChoices).length||acquisitionFilter)&&
          (sourceIndex||acquisitionIndex)){
@@ -808,7 +822,7 @@
     if(!window.confirm(`現在の条件に一致する全${count.toLocaleString(locale)}件を「${label}」に変更します。画面に未表示のアイテムも対象です。実行しますか？`))return;
     const filter=currentFilter(0,1);
     void commit(async()=>{
-      if((sourceActivityType!==null||sourceNativeSubtype!==null||
+      if((sourceTopCategory!==null||sourceActivityType!==null||sourceNativeSubtype!==null||
           sourceUniverseSelection!==null||
           Object.keys(sourceChoices).length||acquisitionFilter)&&
          (sourceIndex||acquisitionIndex)){
@@ -823,6 +837,7 @@
     },{title:`条件に一致する${count}件`,change:`所持状態 → ${label}`});
   }
   function browseEveryItem():void{
+    sourceTopCategory=null;
     browsingAllItems=true;
     viewAxis='world';
     selected='';sourceActivityType=null;sourceNativeSubtype=null;sourceUniverseSelection=null;
@@ -833,11 +848,25 @@
     resetView();
   }
   function browseCurrentScopeItems():void{
+    if(sourceTopCategory!==null){
+      browsingAllItems=true;sourceActivityType=null;sourceNativeSubtype=null;
+      selected='';search='';status='all';favoriteOnly=false;nameStatus='all';expansion='';
+      sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();return;
+    }
     if(viewAxis!=='world'||(!worldFilter&&!sourceChoices.worldContextTag)){
       browseEveryItem();return;
     }
     browsingAllItems=true;selected='';sourceActivityType=null;sourceNativeSubtype=null;
     search='';status='all';favoriteOnly=false;nameStatus='all';expansion='';
+    sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
+  }
+  function chooseTopCategory(id:CollectionTopCategory):void{
+    if(!topCategoryCards.some(card=>card.id===id&&card.total>0))return;
+    sourceTopCategory=id;sourceActivityType=null;sourceNativeSubtype=null;
+    const hasSubcategories=['furniture','clothing','appearance','roads-fences','interior','tools'].includes(id);
+    selected='';browsingAllItems=!hasSubcategories;search='';status='all';favoriteOnly=false;
+    nameStatus='all';expansion='';acquisitionFilter='';
+    sourceChoices=sourceChoices.worldContextTag?{worldContextTag:sourceChoices.worldContextTag}:{};
     sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
   }
   function chooseActivityType(code:number):void{
@@ -863,6 +892,7 @@
     resetView();
   }
   function chooseFacet(id:string):void{
+    sourceTopCategory=null;
     sourceActivityType=null;sourceNativeSubtype=null;
     selected=id;bypassCategoryGroups=true;browsingAllItems=false;
     sourceChoices=viewAxis==='world'&&sourceChoices.worldContextTag
@@ -876,6 +906,7 @@
   }
   function changeViewAxis(axis:CollectionViewAxis):void{
     if(viewAxis===axis)return;
+    sourceTopCategory=null;
     viewAxis=axis;selected='';sourceActivityType=null;sourceNativeSubtype=null;
     sourceUniverseSelection=null;browsingAllItems=false;
     worldFilter='';universeFilter='';universeSearch='';
@@ -884,6 +915,7 @@
     nameStatus='all';expansion='';resetView();
   }
   function chooseWorld(id:string):void{
+    sourceTopCategory=null;
     selected='';sourceActivityType=null;sourceNativeSubtype=null;sourceUniverseSelection=null;
     universeFilter='';bypassCategoryGroups=false;browsingAllItems=false;
     const fromSource=sourceIndex&&sourceWorldOptions.some(option=>option.key===id);
@@ -892,6 +924,7 @@
     sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
   }
   function chooseUniverse(id:string):void{
+    sourceTopCategory=null;
     selected='';sourceActivityType=null;sourceNativeSubtype=null;bypassCategoryGroups=false;browsingAllItems=false;
     worldFilter='';
     sourceUniverseSelection=sourceIndex&&id?id:null;
@@ -902,6 +935,7 @@
     sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
   }
   function returnToCategory():void{
+    sourceTopCategory=null;
     browsingAllItems=false;selected='';sourceActivityType=null;sourceNativeSubtype=null;
     sourceChoices=viewAxis==='world'&&sourceChoices.worldContextTag
       ?{worldContextTag:sourceChoices.worldContextTag}:
@@ -917,6 +951,7 @@
     universeFilter='';bypassCategoryGroups=false;resetView();
   }
   function clearScope():void{
+    sourceTopCategory=null;
     browsingAllItems=false;selected='';sourceActivityType=null;sourceNativeSubtype=null;
     sourceUniverseSelection=null;
     search='';status='all';favoriteOnly=false;nameStatus='all';
@@ -1133,6 +1168,7 @@
   }
   function lookupSavedCollectionId(itemId:number):void {
     if(!Number.isSafeInteger(itemId)||itemId<=0||!runtime)return;
+    sourceTopCategory=null;sourceActivityType=null;sourceNativeSubtype=null;sourceUniverseSelection=null;
     selected='';worldFilter='';universeFilter='';expansion='';
     status='all';nameStatus='all';search=String(itemId);
     filtersOpen=false;resetView();
@@ -1446,7 +1482,10 @@
             <div class="results-heading">
               <div class="breadcrumbs">
                 <button type="button" on:click={returnToCategory}>{viewAxis==='universe'?copy.universeList:copy.categories}</button>
-                {#if selected||sourceActivityType!==null||sourceNativeSubtype!==null}<span> / {selectionLabel}</span>{/if}
+                {#if sourceTopCategory!==null}
+                   <span> / </span><button type="button" on:click={()=>chooseTopCategory(sourceTopCategory!)}>{collectionTopCategoryLabel(locale,sourceTopCategory)}</button>
+                 {/if}
+                 {#if selected||sourceActivityType!==null||sourceNativeSubtype!==null}<span> / {selectionLabel}</span>{/if}
                 {#if viewAxis==='universe'&&sourceUniverseSelection!==null}
                   <span> / {sourceUniverseSelection===COLLECTION_UNIVERSE_UNTAGGED
                     ?(locale==='ja'?'ユニバース未設定':'No source universe tag')
@@ -1509,11 +1548,16 @@
             {/if}
           {:else}
             <div class="section-lead collection-categories-heading">
-              <h2>{copy.categories}</h2>
+              {#if sourceTopCategory!==null}
+                <div class="breadcrumbs"><button type="button" on:click={returnToCategory}>{copy.categories}</button>
+                  <span> / {collectionTopCategoryLabel(locale,sourceTopCategory)}</span></div>
+              {:else}<h2>{copy.categories}</h2>{/if}
               <button type="button" class="subtle-button" on:click={browseCurrentScopeItems}>
-                {copy.showAllItems} ({(sourceChoices.worldContextTag||worldFilter
-                  ?scopedCategoryFacets.reduce((sum,facet)=>sum+facet.total,0)
-                  :overall.total).toLocaleString(locale)})
+                {copy.showAllItems} ({(sourceTopCategory!==null
+                  ?topCategoryCards.find(card=>card.id===sourceTopCategory)?.total??0
+                  :sourceChoices.worldContextTag||worldFilter
+                    ?scopedCategoryFacets.reduce((sum,facet)=>sum+facet.total,0)
+                    :overall.total).toLocaleString(locale)})
               </button>
             </div>
             {#if sourceLoadError}
@@ -1528,8 +1572,18 @@
             {/if}
             <div class="facet-grid collection-detail-category-grid"
               aria-label={locale==='ja'?'アイテムの詳細カテゴリー':'Detailed item categories'}>
-              {#if sourceIndex?.nativeSubtypeByItem.size===13202}
-                {#each sourceNativeSubtypeCards as type (type.key)}
+              {#if sourceIndex?.nativeSubtypeByItem.size===13202&&sourceTopCategory===null}
+                {#each topCategoryCards as group (group.id)}
+                  <button type="button" class="facet-card collection-top-category"
+                    data-top-category={group.id} disabled={group.total===0}
+                    on:click={()=>chooseTopCategory(group.id)}>
+                    <span class="facet-flourish" aria-hidden="true"><WandIcon name={group.icon} size={22}/></span>
+                    <strong>{collectionTopCategoryLabel(locale,group.id)}</strong>
+                    <span>{group.total?group.total.toLocaleString(locale)+' '+copy.countUnit:'—'}</span>
+                  </button>
+                {/each}
+              {:else if sourceIndex?.nativeSubtypeByItem.size===13202}
+                {#each sourceNativeSubtypeCards.filter(type=>collectionTopCategory(type.key)===sourceTopCategory) as type (type.key)}
                   <button type="button" class="facet-card collection-native-subtype"
                     data-native-subtype={type.key}
                     on:click={()=>chooseNativeSubtype(type.key)}>
@@ -1556,7 +1610,8 @@
                   </button>
                 {/each}
               {/if}
-              {#each sourceActivityTypeCards as type (type.code)}
+              {#each sourceActivityTypeCards.filter(type=>sourceIndex?.nativeSubtypeByItem.size!==13202||
+                (sourceTopCategory!==null&&collectionTopCategory('ActivityItem:'+type.code)===sourceTopCategory)) as type (type.code)}
                 <button type="button" class="facet-card collection-native-activity"
                   data-source-type={type.code}
                   on:click={()=>chooseActivityType(type.code)}>

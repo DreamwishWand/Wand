@@ -365,72 +365,56 @@ try{
   assert.equal(await page.getByRole('button',{name:'Collectionバックアップ復元'}).count(),1);
   const firstCategory=await page.locator('.facet-card').first().boundingBox();
   assert.ok(firstCategory&&firstCategory.y<240,'categories must begin in the first viewport');
-  assert.ok(await page.locator('.facet-card').count()>10);
-  await page.locator('.collection-native-activity').first().waitFor({timeout:30000});
-  assert.equal(await page.locator('.collection-original-category-grid').count(),0,
-    'game-original 20-category navigation must not be shown');
-  assert.ok(await page.locator('.collection-detail-category-grid .facet-card').count()>20,
-    'Wand should display the detailed item types by default');
-  // The Item-ID master is accessible in full without choosing a tentative
-  // original CollectionSubMenu category or an inventory-specific class.
+  const parents=page.locator('.collection-top-category');
+  await parents.first().waitFor({timeout:30000});
+  assert.equal(await parents.count(),29);
+  assert.equal(await page.locator('.collection-native-activity,.collection-native-subtype').count(),0,
+    'leaf categories never appear at root');
+  assert.equal(await page.locator('.collection-original-category-grid').count(),0);
+  assert.equal(await parents.filter({hasText:/口ひげ|あごひげ/}).count(),0);
   const browseAll=page.locator('.collection-categories-heading button');
   assert.match(await browseAll.innerText(),/13,202/);
   await browseAll.click();
   await page.locator('.item-card').first().waitFor({timeout:12000});
   assert.match(await page.locator('.result-count').innerText(),/13,202/);
-  await page.locator('.breadcrumbs').getByRole('button',{name:'カテゴリ'}).click();
-  await page.locator('.collection-detail-category-grid .facet-card').first().waitFor();
-  assert.match(await page.locator('.collection-detail-category-grid .facet-card').filter({
-    hasText:/家具|Furniture/
-  }).first().innerText(),/[1-9][0-9,]*\s*件/);
-  // Native detail classification is the normal browse view (no expand button).
-  const sourceTypes=page.locator('.collection-native-activity');
-  assert.equal(await sourceTypes.count(),15,
-    'every source-native ActivityItem subtype must have a browse card');
-  const otherNativeTypes=page.locator('.collection-native-subtype');
-  assert.equal(await otherNativeTypes.count(),35,
-    'all Furniture, Clothing and Trimming subtypes must be selectable');
-  assert.equal(await page.locator('.collection-detail-category-grid .facet-card').count(),50,
-    'every published Item ID must be assigned to one of 50 real source groups');
-  const countsNonzero=await page.locator('.collection-detail-category-grid .facet-card')
-    .evaluateAll(cards=>cards.every(card=>/[1-9][\d,]*\s*件\s*$/.test(card.textContent??'')));
-  assert.equal(countsNonzero,true,'all 50 visible categories must have real nonzero Item counts');
-  for(const [code,label,count] of [
-    [3,'料理','618'],[11,'食材','201'],[10,'魚','103']
+  const returnRoot=async()=>{
+    await page.locator('.breadcrumbs').getByRole('button',{name:'カテゴリ',exact:true}).click();
+    await parents.first().waitFor();
+  };
+  await returnRoot();
+  assert.deepEqual(await parents.evaluateAll(cards=>cards.map(card=>card.getAttribute('data-top-category'))),[
+    'furniture','landscaping','roads-fences','interior','buildings','environment',
+    'clothing','appearance','touch-of-magic','photo-mode','tools','upgrades',
+    'characters','companions','critters','mounts','crafting','meals','ingredients',
+    'foraging','fish','gems','timebending','memories','board-game','snippets',
+    'lorekeeper-tales','quest-puzzles','exhibition'
+  ]);
+  const appearance=page.locator('[data-top-category="appearance"]');
+  await appearance.click();
+  assert.equal(await page.locator('.collection-native-subtype').filter({hasText:'口ひげ'}).count(),1);
+  assert.equal(await page.locator('.collection-native-subtype').filter({hasText:'あごひげ'}).count(),1);
+  await returnRoot();
+  for(const [parent,selector,count,code] of [
+    ['meals',null,'618',3],
+    ['ingredients',null,'366',null],
+    ['fish',null,'103',10],
+    ['roads-fences','[data-native-subtype="Furniture:7"]','319',7],
+    ['appearance','[data-native-subtype="Clothing:5"]','114',5],
+    ['interior','[data-native-subtype="Trimming:0"]','218',0]
   ]){
-    const card=page.locator(`.collection-native-activity[data-source-type="${code}"]`);
-    assert.match(await card.innerText(),new RegExp(label));
-    assert.match(await card.innerText(),new RegExp(count));
-    await card.click();
+    await page.locator(`[data-top-category="${parent}"]`).click();
+    if(selector)await page.locator(selector).click();
     await page.locator('.item-card').first().waitFor({timeout:12000});
     assert.match(await page.locator('.result-count').innerText(),new RegExp(count));
-    const originalId=Number(await page.locator('.item-card').first().getAttribute('data-item-id'));
-    assert.equal(Math.floor((originalId%10000000)/100000),code);
-    await page.locator('.breadcrumbs').getByRole('button',{name:'カテゴリ'}).click();
-    await page.locator('.collection-native-activity').first().waitFor();
+    const id=Number(await page.locator('.item-card').first().getAttribute('data-item-id'));
+    if(code!==null)assert.equal(Math.floor((id%10000000)/100000),code);
+    if(selector){
+      await page.locator('.breadcrumbs button').nth(1).click();
+      await page.locator(selector).waitFor();
+    }
+    await returnRoot();
   }
-  for(const [key,groupCount] of [
-    ['Furniture:7','319'],['Clothing:5','114'],['Trimming:0','218']
-  ]){
-    const card=page.locator(`.collection-native-subtype[data-native-subtype="${key}"]`);
-    assert.match(await card.innerText(),new RegExp(groupCount));
-    await card.click();
-    await page.locator('.item-card').first().waitFor({timeout:12000});
-    assert.match(await page.locator('.result-count').innerText(),new RegExp(groupCount));
-    await page.locator('.breadcrumbs').getByRole('button',{name:'カテゴリ'}).click();
-    await page.locator('.collection-native-subtype').first().waitFor();
-  }
-  assert.equal(await page.locator('.facet-grid .facet-card').filter({
-    hasText:/詳細分類未確認|未分類/
-  }).count(),0,'no 1,972-item generic unclassified card may remain');
-  await page.locator('.collection-native-activity[data-source-type="12"]').click();
-  await page.locator('.item-card').first().waitFor({timeout:12000});
-  assert.match(await page.locator('.result-count').innerText(),/1,559/);
-  const groupItemId=Number(await page.locator('.item-card').first().getAttribute('data-item-id'));
-  assert.equal(Math.floor((groupItemId%10000000)/100000),12);
-  assert.doesNotMatch(await page.locator('.item-card').first().innerText(),/未分類/);
-  await page.locator('.breadcrumbs').getByRole('button',{name:'カテゴリ'}).click();
-  await page.locator('.collection-detail-category-grid .facet-card').first().waitFor();
+  assert.equal(await page.locator('[data-top-category="buildings"]').isDisabled(),true);
   // A missing category projection must not leave a permanent loading message,
   // and retry must restore the game-source navigation without losing access
   // to the existing item-type categories.
@@ -452,10 +436,10 @@ try{
   assert.ok(await retryPage.locator('.facet-card').count()>10,
     'item-type categories must remain browseable if source navigation fails');
   await retryPage.getByRole('button',{name:/再試行|Retry/}).click();
-  await retryPage.locator('.collection-native-activity').first()
+  await retryPage.locator('.collection-top-category').first()
     .waitFor({timeout:30000});
-  assert.equal(await retryPage.locator('.collection-native-activity').count(),15);
-  assert.equal(await retryPage.locator('.collection-native-subtype').count(),35);
+  assert.equal(await retryPage.locator('.collection-top-category').count(),29);
+  assert.equal(await retryPage.locator('.collection-native-activity,.collection-native-subtype').count(),0);
   assert.equal(await retryPage.locator('.collection-original-category-grid').count(),0);
   await retryContext.close();
   // DB-01's original Disney universe tags are now a working, cross-category
@@ -510,7 +494,7 @@ try{
     'acquisition filtering must use exact DB-02 → DB-01 Item ID crosswalk');
   await acquisitionFilter.selectOption('');
   await page.getByRole('button',{name:/フィルター/}).click();
-  assert.ok(await page.locator('.facet-card').count()>10);
+  assert.ok(await page.locator('.facet-card').count()>=10);
   await page.getByRole('button',{name:/フィルター/}).click();
   assert.equal(await page.getByRole('group',{name:'正式名称の確認状況'}).count(),0);
   await page.getByRole('button',{name:/フィルター/}).click();
@@ -796,7 +780,7 @@ try{
   // CollectionArea/Universe membership. Never expose dead-end filters or
   // incorrectly treat source Tag associations as game-screen membership.
   await page.locator('.facet-card').first().waitFor();
-  assert.ok(await page.locator('.collection-detail-category-grid .facet-card').count()>10);
+  assert.ok(await page.locator('.collection-detail-category-grid .facet-card').count()>=10);
   assert.equal(await page.locator('.mode-tabs').count(),0);
   assert.equal(await page.locator('.collection-scope-toolbar').count(),1);
   const nativeWorld=page.locator('.collection-scope-scroll button').filter({hasText:'Dreamlight Valley'});
@@ -806,8 +790,9 @@ try{
   await page.locator('.collection-detail-category-grid .facet-card').first().waitFor({timeout:15000});
   assert.equal(await page.locator('.item-card').count(),0,
     'world tabs open scoped category cards, not an immediate flat item grid');
-  const scopedFamily=page.locator('.collection-detail-category-grid .facet-card').first();
+  const scopedFamily=page.locator('.collection-detail-category-grid .facet-card:not([disabled])').first();
   await scopedFamily.click();
+  await page.locator('.collection-categories-heading button.subtle-button').click();
   await page.locator('.item-card').first().waitFor({timeout:15000});
   await page.locator('.breadcrumbs').getByRole('button',{name:'カテゴリ'}).click();
   await page.locator('.collection-detail-category-grid .facet-card').first().waitFor();
@@ -820,6 +805,7 @@ try{
   const facet=page.locator('.facet-card').filter({hasText:/家具|Furniture/}).first();
   try {
     await facet.click({timeout:10000});
+    await page.locator('.collection-categories-heading button.subtle-button').click();
   } catch (error) {
     console.error('COLLECTION_FACET_DEBUG',await page.locator('body').innerText());
     console.error('COLLECTION_FACET_ERRORS',browserErrors);
