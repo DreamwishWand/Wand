@@ -389,16 +389,32 @@
     <p class="error" role="alert">公開クエストデータを読み込めませんでした：{loadError}</p>
     <button on:click={loadCatalog}>再読み込み</button>
   {:else if catalog}
-    <nav class="quest-sections" aria-label="クエストの大分類">
+    <!-- The Japanese labels below are exact questlog_* values from Steam
+         1.26.2 StreamingAssets/Localization/LocDB_ja.zip/menu.locbin.
+         Source menu.locbin SHA-256: c334dd9d1b6f896ac784c33b28d1103b8de8cf5cdfd0b5f8ce4ebd7b917ff5bb.
+         Prefix-based category membership is separate from the UI label source. -->
+    <nav class="quest-sections" aria-label="ゲーム内のクエスト分類">
       {#each [
-        ['story','ストーリー'],['realm','レルム'],['friendship','フレンドシップ'],
-        ['event','イベント'],['daily','デイリー'],['special','追加・特殊'],
-        ['premium','ドリームバンドル'],['tutorial','チュートリアル'],['all','すべて']
+        ['story','ストーリークエスト'],['realm','世界クエスト'],
+        ['friendship','友情クエスト'],['event','イベントクエスト'],
+        ['daily','デイリークエスト'],['premium','ドリームパッククエスト'],
+        ['all','すべて']
       ] as [key,name]}
         <button class:chosen={section===key} on:click={()=>selectSection(key as PublicQuestSection)}
           aria-pressed={section===key}>{name}</button>
       {/each}
     </nav>
+    <!-- Secret and FTUE are Mission source categories, not verified Japanese
+         in-game Quest Log categories. Keep them accessible but distinct. -->
+    <details class="quest-unclassified" open={section==='special'||section==='tutorial'}>
+      <summary>分類確認中のクエスト</summary>
+      <nav class="quest-sections" aria-label="原本内の分類確認中クエスト">
+        <button class:chosen={section==='special'} on:click={()=>selectSection('special')}
+          aria-pressed={section==='special'}>追加クエスト</button>
+        <button class:chosen={section==='tutorial'} on:click={()=>selectSection('tutorial')}
+          aria-pressed={section==='tutorial'}>導入用</button>
+      </nav>
+    </details>
     {#if section==='story'}
       <nav class="story-arcs" aria-label="ストーリーの舞台">
         {#each arcs as arc}
@@ -694,6 +710,9 @@
   .quest-sections{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 9px}
   .quest-sections button{padding:10px 14px;border:1px solid #665077;border-radius:9px;background:#261c33;color:#e3d0f0;font-size:12px}
   .quest-sections button.chosen{border-color:#ba91ee;background:#543672;color:white}
+  .quest-unclassified{margin:0 0 8px;font-size:12px;color:#bba9cf}
+  .quest-unclassified summary{cursor:pointer;display:list-item;width:max-content}
+  .quest-unclassified .quest-sections{margin:6px 0}
   .story-arcs{display:flex;gap:6px;overflow-x:auto;scrollbar-width:thin;padding:0 0 8px;margin-bottom:6px}
   .story-arcs button{flex:0 0 auto;border:1px solid #554367;border-radius:8px;padding:9px 12px;
     background:#271e35;color:#d7c5e7;font-size:12px}
