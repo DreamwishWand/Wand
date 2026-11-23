@@ -63,6 +63,7 @@
   let selected='';
   let search='';
   let status:'all'|'owned'|'missing'|'unknown'='all';
+  let favoriteOnly=false;
   let nameStatus:'all'|'verified'|'unverified'='all';
   let expansion='';
   let filtersOpen=false;
@@ -106,7 +107,7 @@
   $: selectedEntry=selectedItem?entries[String(selectedItem.itemId)]??{}:{};
   $: selectedGridRefs=selectedItem?savedGridByItem[String(selectedItem.itemId)]??null:null;
   $: selectedDb04Refs=selectedItem?savedDb04ByItem[String(selectedItem.itemId)]??null:null;
-  $: isBrowsing=Boolean(selected||search.trim()||status!=='all'||nameStatus!=='all'||expansion||worldFilter||universeFilter);
+  $: isBrowsing=Boolean(selected||search.trim()||status!=='all'||favoriteOnly||nameStatus!=='all'||expansion||worldFilter||universeFilter);
 
   function categoryLabel(lang:string,id:string):string {
     const special:Record<string,Record<string,string>>={
@@ -136,7 +137,7 @@
     return {
       locale,search,category:selected,
       world:worldFilter,universe:universeFilter,
-      expansion,status,nameStatus,offset,limit
+      expansion,status,favoriteOnly,nameStatus,offset,limit
     };
   }
   function refresh():void {
@@ -297,7 +298,7 @@
     },{title:`条件に一致する${count}件`,change:`所持状態 → ${label}`});
   }
   function chooseFacet(id:string):void{selected=id;resetView();}
-  function clearScope():void{selected='';search='';status='all';nameStatus='all';expansion='';worldFilter='';universeFilter='';resetView();}
+  function clearScope():void{selected='';search='';status='all';favoriteOnly=false;nameStatus='all';expansion='';worldFilter='';universeFilter='';resetView();}
   function changeWorkspace(id:string):void{
     if(!runtime||busy||saveReadInProgress)return;
     const target=state.workspaces.find(x=>x.id===id)?.name??id;
@@ -590,6 +591,12 @@
             <span aria-hidden="true"><WandIcon name="search" size={19}/></span>
             <input type="search" aria-label="8言語のアイテム名で検索" bind:value={search} on:input={resetView} placeholder="アイテム名を検索"/>
           </label>
+          <button type="button" class="collection-favorites-filter" class:active={favoriteOnly}
+            aria-label="お気に入りのみ表示" title="お気に入りのみ表示"
+            aria-pressed={favoriteOnly} disabled={Boolean(storeError)||busy}
+            on:click={()=>{favoriteOnly=!favoriteOnly;resetView();}}>
+            <WandIcon name="star" size={19}/>
+          </button>
           <button type="button" class="subtle-button" aria-expanded={filtersOpen} on:click={()=>filtersOpen=!filtersOpen}>フィルター {filtersOpen?'▴':'▾'}</button>
         </div>
       </div>

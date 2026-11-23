@@ -79,6 +79,7 @@ async function waitForLocalState(page,expected){
     const work=snapshot.workspaces.find(x=>x.id===(expected.workspace??snapshot.active));
     if(!work||expected.active&&snapshot.active!==expected.active)return false;
     if(expected.item&&(work.entries[expected.item]?.status??null)!==(expected.status??null))return false;
+    if(expected.item&&expected.favorite!==undefined&&work.entries[expected.item]?.favorite!==expected.favorite)return false;
     if(expected.missing!==undefined&&
       Object.values(work.entries).filter(x=>x.status==='missing').length!==expected.missing)return false;
     if(expected.owned!==undefined&&
@@ -382,6 +383,27 @@ try{
   await setItemLanguage('日本語');
   await page.waitForFunction(()=>document.querySelector('.item-card-copy strong')?.textContent?.trim()==='ガラスの靴');
   assert.match(await page.locator('.item-card').first().innerText(),/家具|Furniture/);
+  // A local favorite must be searchable independently of ownership and persist
+  // through Rust/WASM -> IndexedDB. Unstarring the only match removes it.
+  const starFilter=page.getByRole('button',{name:'お気に入りのみ表示'});
+  assert.equal(await starFilter.getAttribute('aria-pressed'),'false');
+  await starFilter.click();
+  assert.equal(await starFilter.getAttribute('aria-pressed'),'true');
+  await search.fill('');
+  await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
+  assert.match(await page.locator('.item-card-copy strong').first().innerText(),/ガラスの靴/);
+  await page.locator('.item-card-body').first().click();
+  await page.getByRole('checkbox',{name:'お気に入り'}).uncheck();
+  await waitForLocalState(page,{item:'40005160',status:'owned',favorite:false});
+  await page.locator('.empty-panel').waitFor();
+  assert.equal(await starFilter.getAttribute('aria-pressed'),'true');
+  await starFilter.click();
+  assert.equal(await starFilter.getAttribute('aria-pressed'),'false');
+  await search.fill('40005160');
+  await page.locator('.item-card-body').first().click();
+  await page.getByRole('checkbox',{name:'お気に入り'}).check();
+  await waitForLocalState(page,{item:'40005160',status:'owned',favorite:true});
+  await page.getByRole('button',{name:'詳細を閉じる'}).click();
   // Both tabs opened the same IndexedDB version. A stale writer must fail closed.
   const staleTab=await context.newPage();
   await staleTab.goto(url);
