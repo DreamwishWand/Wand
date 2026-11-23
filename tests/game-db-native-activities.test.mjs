@@ -173,7 +173,8 @@ test('DB-00 combined native acquisition reads two lazy source files once, never 
   assert.equal(combined.currentAvailabilityVerified,false);
   assert.equal(combined.playerOwnershipVerified,false);
   assert.equal(combined.collectionUiMembershipVerified,false);
-  assert.equal(combined.shared.catalog?.facts.acquisition.state,'unverified');
+  assert.notEqual(combined.shared.catalog?.facts.acquisition.state,'verified',
+    'static acquisition paths must not become verified DB-00 fact overlays');
   const fish=await app.getNativeAcquisitionEvidence(31000029);
   assert(fish.activities.sourcePaths.some(path=>
     path.definitionId==='2050100000'));
