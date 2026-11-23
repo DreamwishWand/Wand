@@ -451,7 +451,7 @@ try {
   // Guide is an app-width event timeline; Wednesday resets are visually
   // central in each Sun-Sat row. Original UTC boundaries and date-only
   // festival source remain separate, never fabricated live server state.
-  const hub=await browser.newPage({viewport:{width:390,height:844},timezoneId:'America/Los_Angeles'});
+  const hub=await browser.newPage({viewport:{width:390,height:844},timezoneId:'America/Los_Angeles',locale:'ja-JP'});
   const hubErrors=[];
   hub.on('pageerror',e=>hubErrors.push(String(e)));
   await hub.addInitScript(()=>{Date.now=()=>Date.parse('2026-11-22T12:00:00Z');});
