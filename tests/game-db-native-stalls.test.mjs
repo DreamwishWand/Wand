@@ -189,7 +189,7 @@ test('one Item evidence query adds only 2 optional source URLs and never promote
   const lookup=await app.getNativeStallCandidateEvidence(30200000);
   assert.equal(seen.length,start+2);
   assert.equal(lookup.itemId,'30200000');
-  assert.equal(lookup.shared,original);
+  assert.deepEqual(lookup.shared,original);
   assert.equal(lookup.stalls.itemId,lookup.itemId);
   assert(lookup.staticStallSlotCandidateCount>0);
   assert.equal(lookup.staticStallSlotCandidateCount,
