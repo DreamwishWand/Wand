@@ -5,6 +5,9 @@
 import type {
   PublicEventFriendshipRewards,NativeEventFriendshipItemRelation
 } from './public-event-friendship-rewards.ts';
+import type {EventRewardItemLabelIndex} from './event-reward-item-labels.ts';
+import type {PublicEventRewardNameRefresh} from './public-event-reward-db00-refresh.ts';
+import {collectionItemHref} from '../collection/item-permalink.ts';
 export const DB03_EVENT_REWARD_NAVIGATION_SCHEMA='wand.db03.event-reward-navigation@1' as const;
 const ITEM_ID=/^[1-9][0-9]{0,15}$/;
 export interface EventRewardItemDestination{
@@ -127,4 +130,42 @@ export function relatedEventRewardIds(
     ids.add(relation.event.id);
   }
   return Object.freeze([...ids]);
+}
+
+/** Source-confirmed public DB-00 membership -> native Collection inspector.
+ * A name from an external site, a reward occurrence alone, or an unknown
+ * Item ID must never imply that this Item exists in the published catalogue.
+ */
+export function guideEventRewardCollectionHref(
+  source:PublicEventFriendshipRewards,
+  labels:EventRewardItemLabelIndex|null,
+  updated:PublicEventRewardNameRefresh|null,
+  rawItemId:unknown,base=''
+):string|null{
+  if(source?.schema!=='wand.db03.public-event-friendship-rewards@1'||
+    source.coverage?.distinctAllItemIds!==141||
+    typeof source.getItemCandidates!=='function')
+    throw new TypeError('DB03_EVENT_COLLECTION_SOURCE_REQUIRED');
+  const itemId=id(rawItemId);
+  if(!itemId||!labels||!source.getItemCandidates(itemId).length)return null;
+  if(labels.schema!=='wand.db03.event-reward-item-labels@1'||
+    labels.gameVersion!=='1.26.2'||
+    labels.coverage?.rewardItemIds!==141||
+    labels.coverage?.verifiedNames!==109||
+    typeof labels.getItem!=='function')
+    throw new TypeError('DB03_EVENT_COLLECTION_LABELS_REQUIRED');
+  const row=labels.getItem(itemId);
+  if(row?.itemId!==itemId)return null;
+  let verified=row.status==='verified'&&row.names!==null;
+  if(!verified&&updated){
+    if(updated.schema!=='wand.db03.public-reward-name-refresh@1'||
+      updated.currentVersionOnly!==true||
+      updated.privateSourceUsed!==false||
+      updated.playerOwnershipVerified!==false||
+      !Array.isArray(updated.newVerifiedItemIds))
+      throw new TypeError('DB03_EVENT_COLLECTION_REFRESH_REQUIRED');
+    verified=updated.newVerifiedItemIds.includes(itemId)&&
+      typeof updated.getDisplayName(itemId,'ja')==='string';
+  }
+  return verified?collectionItemHref(base,Number(itemId)):null;
 }
