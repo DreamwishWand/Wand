@@ -187,6 +187,7 @@ export async function openPublicItemMaster(
         typeof entry.release === 'string' &&
         RELEASE_VERSION.test(entry.release) &&
         entry.release.startsWith('steam-'+entry.gameVersion+'-') &&
+        typeof entry.count === 'number' &&
         Number.isSafeInteger(entry.count) && entry.count>0 &&
         entry.count<=MAX_DEFINITIONS &&
         typeof entry.archiveSha256 === 'string' &&
@@ -206,6 +207,7 @@ export async function openPublicItemMaster(
     typeof release.version === 'string' &&
     RELEASE_VERSION.test(release.version) &&
     release.version.startsWith('steam-'+gameVersion+'-') &&
+    typeof release.count === 'number' &&
     Number.isSafeInteger(release.count) &&
     release.count>0 && release.count<=MAX_DEFINITIONS &&
     release.bucketCount === 256 &&
@@ -223,6 +225,7 @@ export async function openPublicItemMaster(
   const meta = (path:string): Readonly<{count:number;bytes:number;sha256:string}> => {
     const raw = m.shards[path];
     assert(isObject(raw) && Number.isSafeInteger(raw.count) && raw.count>=0 &&
+      typeof raw.bytes === 'number' &&
       Number.isSafeInteger(raw.bytes) && raw.bytes>0 &&
       raw.bytes<=MAX_SHARD_BYTES &&
       typeof raw.sha256 === 'string' && SHA.test(raw.sha256),
