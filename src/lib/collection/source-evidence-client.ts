@@ -13,7 +13,7 @@ export interface CollectionEvidenceRequest {
 }
 type Summary=CollectionAcquisitionSummary|CollectionQuestSummary;
 export type CollectionEvidenceReply=
-  | Readonly<CollectionEvidenceRequest & {
+  | Readonly<Omit<CollectionEvidenceRequest,'basePath'> & {
       ok:true;summary:CollectionAcquisitionSummary|CollectionQuestSummary;
     }>
   | Readonly<Omit<CollectionEvidenceRequest,'basePath'> & {ok:false}>;
