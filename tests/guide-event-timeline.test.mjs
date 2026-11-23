@@ -99,5 +99,37 @@ test('phase transitions stay contiguous and invalid source times fail closed',()
     endUtcExclusive:'2026-10-03T00:00:00Z'
   }],range).length,0);
   assert.throws(()=>guideTimelineWindow(NaN),/invalid range/);
-  assert.throws(()=>guideTimelineWindow(Date.now(),5,200),/invalid range/);
+  assert.throws(()=>guideTimelineWindow(Date.now(),5,521),/invalid range/);
+});
+
+test('archive reaches 2022 launch without inventing a playable historic Star Path season',async()=>{
+  const range=guideTimelineWindow(at('2026-11-22T12:00:00Z'),5,-220);
+  assert(range.days.some(d=>d.day==='2022-09-06'));
+  const rows=guideTimelineRows(await events(),range);
+  assert.equal(rows.length,1);
+  assert.equal(rows[0].event.id,'pixar-fest-star-path-2022');
+  assert.deepEqual(rows[0].segments.map(s=>s.phase),['historic']);
+  assert.equal(rows[0].event.precision,'date-only');
+  assert.equal(rows[0].event.kind,'starpath-history');
+  assert.equal(rows[0].event.officialEndUtc,'2022-10-11T13:00:00Z');
+  assert.equal(Object.hasOwn(rows[0].event,'taskEndUtcExclusive'),false,
+    '2022 task and grace boundaries must not be fabricated');
+});
+
+test('dated archived in-game events are visible independently of the liveops cache',async()=>{
+  const all=await events();
+  const cases=[
+    ['2023-10-25','trick-or-treat-2023'],
+    ['2024-10-24','trick-or-treat-2024'],
+    ['2025-10-23','haunted-floating-festival-2025'],
+    ['2026-10-20','trick-or-treat-2026']
+  ];
+  for(const [day,id] of cases){
+    const now=at(day+'T12:00:00Z');
+    const range=guideTimelineWindow(now,5,0,'UTC');
+    const rows=guideTimelineRows(all,range);
+    assert(rows.some(row=>row.event.id===id),id);
+  }
+  assert.equal(all.filter(e=>e.kind==='starpath-history').length,1);
+  assert.equal(all.filter(e=>e.kind==='starpath').length,2);
 });
