@@ -3,6 +3,11 @@
   import { base } from '$app/paths';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
   import ItemMasterDetails from '$lib/collection/ItemMasterDetails.svelte';
+  import {
+    loadCollectionDb01Facets,collectionDb01Groups,collectionDb01Matches,
+    collectionDb01FacetLabel,collectionDb01TagLabel,COLLECTION_DB01_COLOR_SWATCHES,
+    type CollectionDb01Index,type CollectionDb01Facet,type CollectionDb01Group
+  } from '$lib/collection/db01-native-facets';
   import AcquisitionEvidence from '$lib/collection/AcquisitionEvidence.svelte';
   import RelatedQuests from '$lib/collection/RelatedQuests.svelte';
   import WandIcon from '$lib/ui/WandIcon.svelte';
@@ -71,6 +76,15 @@
   let bypassCategoryGroups=false;
   let scopedCategoryFacets:CollectionFacet[]=[];
   let categoryUniverseFacets:CollectionFacet[]=[];
+  // DB-01 only supplies native source Tags for optional searching. World,
+  // Collection and ownership axes continue to use the independent DB-00/Save
+  // evidence and are never inferred from these Tags.
+  let sourceIndex:CollectionDb01Index|null=null;
+  let sourceLoad:Promise<void>|null=null;
+  let sourceFacetGroups:readonly CollectionDb01Group[]=[];
+  let sourceChoices:Partial<Record<CollectionDb01Facet,string>>={};
+  let sourceAllMatching:CollectionItem[]=[];
+  let sourceGroupsCacheKey='';
   let universeSections:{facet:CollectionFacet;items:CollectionItem[]}[]=[];
   let worldFilter='';
   let universeFilter='';
@@ -208,6 +222,31 @@
             facet,items:runtime!.query({...scopeFilter,category:facet.id,limit:8}).items
           }))
         : [];
+      if(sourceIndex&&selected&&filtersOpen){
+        const key=selected+'|'+worldFilter+'|'+universeFilter;
+        if(key!==sourceGroupsCacheKey){
+          const categoryRows=queryAllCollectionRows({
+            ...currentFilter(0,200),status:'all',search:'',
+            favoriteOnly:false,nameStatus:'all',expansion:''
+          });
+          sourceFacetGroups=collectionDb01Groups(sourceIndex,
+            categoryRows.map(row=>row.itemId));
+          sourceGroupsCacheKey=key;
+        }
+      }else if(!selected){
+        sourceFacetGroups=[];sourceGroupsCacheKey='';
+      }
+      if(Object.keys(sourceChoices).length&&sourceIndex){
+        const candidates=queryAllCollectionRows(currentFilter(0,200));
+        sourceAllMatching=candidates.filter(item=>
+          Object.entries(sourceChoices).every(([facet,key])=>
+            collectionDb01Matches(sourceIndex!,item.itemId,facet as CollectionDb01Facet,key)));
+        filtered=sourceAllMatching.slice(0,visible);
+        totalMatches=sourceAllMatching.length;
+        overall=runtime.progress;state=runtime.state;
+        return;
+      }
+      sourceAllMatching=[];
       const collected:CollectionItem[]=[];
       let next=0;
       let total=0;
@@ -223,6 +262,42 @@
       overall=runtime.progress;
       state=runtime.state;
     }catch(error){storeError=error instanceof Error?error.message:String(error);}
+  }
+  function queryAllCollectionRows(filter:CollectionFilter):CollectionItem[]{
+    if(!runtime)return [];
+    const result:CollectionItem[]=[];
+    let offset=0;
+    for(;;){
+      const next=runtime.query({...filter,offset,limit:200});
+      result.push(...next.items);
+      offset+=next.items.length;
+      if(offset>=next.total||next.items.length===0)break;
+    }
+    return result;
+  }
+  function canUseDb01SourceFacets():boolean{
+    return Boolean(runtime&&!runtime.isOwnerLocal&&
+      runtime.metadata.snapshot==='steam-1.26.2-native-itemlist-v1');
+  }
+  function ensureSourceIndex():void{
+    if(!canUseDb01SourceFacets()||sourceIndex||sourceLoad)return;
+    const task=loadCollectionDb01Facets(base).then(index=>{
+      if(!canUseDb01SourceFacets())return;
+      sourceIndex=index;sourceGroupsCacheKey='';
+      // Do not discard or re-query the user's current 72-item scroll page
+      // when an optional Tag index finishes loading in the background.
+      if(filtersOpen&&selected)refresh();
+    }).catch(()=>{ // Optional browse facets never block Collection startup.
+      sourceIndex=null;
+    }).finally(()=>{if(sourceLoad===task)sourceLoad=null;});
+    sourceLoad=task;
+  }
+  function selectSourceTag(facet:CollectionDb01Facet,key:string):void{
+    const next={...sourceChoices};
+    if(key)next[facet]=key;
+    else delete next[facet];
+    sourceChoices=next;
+    resetView();
   }
   function updateItemAddress(id:number|null,mode:'push'|'replace'):void{
     const url=new URL(window.location.href);
@@ -267,6 +342,12 @@
    */
   function appendNextPage():void {
     if(!runtime||busy||loading||storeError||filtered.length>=totalMatches)return;
+    if(Object.keys(sourceChoices).length&&sourceIndex){
+      const next=Math.min(sourceAllMatching.length,filtered.length+72);
+      filtered=sourceAllMatching.slice(0,next);
+      visible=next;
+      return;
+    }
     try{
       const offset=filtered.length;
       const page=runtime.query(currentFilter(offset,72));
@@ -398,31 +479,43 @@
     if(!window.confirm(`現在の条件に一致する全${count.toLocaleString(locale)}件を「${label}」に変更します。画面に未表示のアイテムも対象です。実行しますか？`))return;
     const filter=currentFilter(0,1);
     void commit(async()=>{
-      await runtime!.setBulkMatching(filter,next);
+      if(Object.keys(sourceChoices).length&&sourceIndex){
+        // Rust's bulk_matching predicate does not know DB-01 source Tags.
+        // Applying it would silently edit items outside the chosen Tag.
+        await runtime!.setBulk(sourceAllMatching.map(item=>item.itemId),next);
+      }else{
+        await runtime!.setBulkMatching(filter,next);
+      }
       selectedIds=[];
       selectionMode=false;
     },{title:`条件に一致する${count}件`,change:`所持状態 → ${label}`});
   }
   function chooseFacet(id:string):void{
-    selected=id;bypassCategoryGroups=false;resetView();
+    selected=id;bypassCategoryGroups=false;
+    sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';
+    resetView();ensureSourceIndex();
   }
   function changeViewAxis(axis:CollectionViewAxis):void{
     if(viewAxis===axis)return;
     viewAxis=axis;selected='';worldFilter='';universeFilter='';universeSearch='';
+    sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';
     bypassCategoryGroups=false;search='';status='all';favoriteOnly=false;
     nameStatus='all';expansion='';resetView();
   }
   function chooseWorld(id:string):void{
-    worldFilter=id;selected='';universeFilter='';bypassCategoryGroups=false;resetView();
+    worldFilter=id;selected='';universeFilter='';bypassCategoryGroups=false;
+    sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
   }
   function chooseUniverse(id:string):void{
-    universeFilter=id;selected='';bypassCategoryGroups=false;resetView();
+    universeFilter=id;selected='';bypassCategoryGroups=false;
+    sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
   }
   function openCategoryItems():void{
     bypassCategoryGroups=true;universeFilter='';resetView();
   }
   function returnToCategory():void{
     selected='';universeFilter=viewAxis==='universe'?universeFilter:'';
+    sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';
     bypassCategoryGroups=false;search='';status='all';favoriteOnly=false;
     nameStatus='all';expansion='';resetView();
   }
@@ -432,7 +525,8 @@
   function clearScope():void{
     selected='';search='';status='all';favoriteOnly=false;nameStatus='all';
     expansion='';worldFilter='';universeFilter='';universeSearch='';
-    bypassCategoryGroups=false;resetView();
+    bypassCategoryGroups=false;sourceChoices={};
+    sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
   }
   function changeWorkspace(id:string):void{
     if(!runtime||busy||saveReadInProgress)return;
@@ -735,7 +829,10 @@
             on:click={()=>{favoriteOnly=!favoriteOnly;resetView();}}>
             <WandIcon name="star" size={19}/>
           </button>
-          <button type="button" class="subtle-button" aria-expanded={filtersOpen} on:click={()=>filtersOpen=!filtersOpen}>{copy.filters} {filtersOpen?'▴':'▾'}</button>
+          <button type="button" class="subtle-button" aria-expanded={filtersOpen}
+            on:click={()=>{filtersOpen=!filtersOpen;if(filtersOpen){ensureSourceIndex();refresh();}}}>
+            {copy.filters} {filtersOpen?'▴':'▾'}
+          </button>
         </div>
       </div>
       <div class="collection-scope-toolbar" role="group" aria-label={copy.scope}>
@@ -786,6 +883,44 @@
               {#each runtime?.metadata.expansions??[] as id}<option value={id}>{id}</option>{/each}
             </select>
           </label>
+          {#if selected&&sourceFacetGroups.length}
+            <div class="collection-native-tag-panel" role="group"
+              aria-label={locale==='ja'?'ゲーム原本のタグ':'Source tags'}
+              title={locale==='ja'?'元のゲームのタグ。Collection所属やワールドでの入手可能性を確定する情報ではありません。':'Original source tags, not verified Collection membership or availability.'}>
+              {#each sourceFacetGroups as group (group.facet)}
+                <fieldset>
+                  <legend>{collectionDb01FacetLabel(locale,group.facet)}</legend>
+                  {#if group.options.length>22}
+                    <select aria-label={collectionDb01FacetLabel(locale,group.facet)}
+                      value={sourceChoices[group.facet]??''}
+                      on:change={(e)=>selectSourceTag(group.facet,(e.currentTarget as HTMLSelectElement).value)}>
+                      <option value="">{copy.all}</option>
+                      {#each group.options as option (option.key)}
+                        <option value={option.key}>{collectionDb01TagLabel(locale,option.key)} ({option.count})</option>
+                      {/each}
+                    </select>
+                  {:else}
+                    <div class="collection-native-tag-options">
+                      <button type="button" class:chosen={!sourceChoices[group.facet]}
+                        on:click={()=>selectSourceTag(group.facet,'')}>{copy.all}</button>
+                      {#each group.options as option (option.key)}
+                        <button type="button"
+                          class:chosen={sourceChoices[group.facet]===option.key}
+                          aria-pressed={sourceChoices[group.facet]===option.key}
+                          on:click={()=>selectSourceTag(group.facet,option.key)}>
+                          {#if group.facet==='color'&&COLLECTION_DB01_COLOR_SWATCHES[option.key]}
+                            <span class="collection-native-color" aria-hidden="true"
+                              style:background={COLLECTION_DB01_COLOR_SWATCHES[option.key]}></span>
+                          {/if}
+                          {collectionDb01TagLabel(locale,option.key)}
+                        </button>
+                      {/each}
+                    </div>
+                  {/if}
+                </fieldset>
+              {/each}
+            </div>
+          {/if}
           <button type="button" class="subtle-button" on:click={clearScope}>{copy.clear}</button>
         </div>
       {/if}

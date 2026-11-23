@@ -676,6 +676,46 @@ try{
     throw error;
   }
   await page.locator('.item-card').first().waitFor();
+  // DB-01 source-only filters must affect the complete Rust Collection
+  // category, not only the first visible page; Tags do not enable unverified
+  // game-world scope or change the user's saved collection state.
+  const nativeFilterButton=page.getByRole('button',{name:/フィルター/});
+  if(await nativeFilterButton.getAttribute('aria-expanded')==='false')
+    await nativeFilterButton.click();
+  const nativeTags=page.getByRole('group',{name:'ゲーム原本のタグ'});
+  try{await nativeTags.waitFor({timeout:8000});}
+  catch(error){
+    const probe=await page.evaluate(async()=>{
+      const r=await fetch('/Wand/ddv/collection/db01-facets-1262.json');
+      const t=await r.text();
+      return {status:r.status,length:t.length,head:t.slice(0,160)};
+    });
+    console.error('COLLECTION_NATIVE_TAG_DEBUG',JSON.stringify({
+      probe,filterExpanded:await nativeFilterButton.getAttribute('aria-expanded'),
+      panelCount:await page.locator('.filter-panel').count(),
+      tagPanels:await page.locator('.collection-native-tag-panel').count(),
+      body:(await page.locator('body').innerText()).slice(0,3000),
+      browserErrors
+    }));
+    throw error;
+  }
+  const colorTags=nativeTags.locator('fieldset').filter({hasText:'色'}).first();
+  assert.equal(await colorTags.count(),1,'native Color facet must be present');
+  if(await colorTags.getByRole('button',{name:'白',exact:true}).count()){
+    await colorTags.getByRole('button',{name:'白',exact:true}).click();
+  }else{
+    await colorTags.getByRole('combobox',{name:'色'}).selectOption('White');
+  }
+  assert.match(await page.locator('.result-count').innerText(),/件/);
+  await search.fill('40005160');
+  await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
+  assert.match(await page.locator('.item-card').innerText(),/ガラスの靴/);
+  await search.fill('');
+  if(await colorTags.getByRole('button',{name:'すべて'}).count())
+    await colorTags.getByRole('button',{name:'すべて'}).click();
+  else await colorTags.getByRole('combobox',{name:'色'}).selectOption('');
+  await page.getByRole('button',{name:/フィルター/}).click();
+  await page.locator('.item-card').first().waitFor();
   const before=await page.locator('.item-card').count();
   assert.equal(before,72);
   const firstCardText=await page.locator('.item-card-body').first().innerText();
