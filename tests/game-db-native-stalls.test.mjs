@@ -75,7 +75,11 @@ test('exact original meadow stall duplicates, slot order and reverse Item refere
   ]);
   assert.equal(meadow.slots[0].entries.length,1);
   assert.equal(meadow.slots[0].entries[0].item.itemId,'30400064');
+  // Slot entries preserve original LootTable order, NOT sorted Item IDs.
   assert.deepEqual(meadow.slots[1].entries.map(e=>e.item.itemId),
+    ['30200009','30200004','30200000','30200002','30200048']);
+  // The source slot's candidateItemIds set is separately sorted for filtering.
+  assert.deepEqual(meadow.slots[1].sourceSlot.candidateItemIds,
     ['30200000','30200002','30200004','30200009','30200048']);
   assert.deepEqual(meadow.slots[1].entries.map(e=>e.item.itemId),
     meadow.slots[3].entries.map(e=>e.item.itemId));
