@@ -466,3 +466,32 @@ entitlement or Collection UI membership.** An unclassified source ID is
 not a verified negative. No source classification is added to the DB-02
 \`origins\` ledger. The owner-local original Companion.json, private
 saves, shop sale dates and prices are never published by this integration.
+
+
+### On-demand native Item OnlineCategory, nine source families
+
+DB-02's SHA-pinned Steam 1.26.2 \`ItemData.OnlineCategory\` projection
+is now available through
+\`await openPublicSharedGameSources(...).loadNativeOnlineCategories()\`.
+The original nine JSON source files and owner-private data are **not**
+published. The **22,925-byte** projection is requested only if consumers
+explicitly load this index, with DB-02's byte-verified loader reused and
+cached; ordinary public DB-00 calls retain their existing request count.
+
+The typed reader indexes **2,198 original category rows** across Furniture,
+Clothing, Trimming, MountGear, Makeup, Tool, Character, Companion and Skin:
+\`premium\` (1,830) and \`time_limited\` (368). Call
+\`reader.search({family:'Furniture',category:'premium',locale:'ja',
+publishedOnly:true,offset:0,limit:100})\` for source/native filters
+intersected with the published DB-00 localized name and ItemList.
+By default the native source Item IDs outside the 13,202 public ItemList
+remain visible; these do **not** become verified Collection items.
+\`reader.getItem(itemId)\` returns the DB-02 category and the existing
+DB-00 Item join. An ID with no explicit classification has no evidence
+in this projection, not proof of a never-online / nonpremium item.
+
+**Native \`premium\` does not prove a specific Premium Shop sale;
+\`time_limited\` does not prove Twitch Drops, campaign codes, expiry
+dates or current availability.** These source categories never become
+\`ItemOrigin\` entries, published world/DLC facts, player acquisitions,
+shop offer identifiers, pricing or sale histories.
