@@ -4,6 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {COLLECTION_NATIVE_SUBTYPE_UI,collectionNativeSubtypeLabel}
   from '../src/lib/collection/native-subtype-labels.ts';
 import {join} from 'node:path';
+import {buildWorldBrowseIndex,countOwnedInWorldScope} from '../src/lib/collection/world-browse-index.ts';
 import {COLLECTION_TOP_CATEGORIES,collectionTopCategory,collectionTopCategoryCards,collectionTopCategoryLabel}
   from '../src/lib/collection/category-hierarchy.ts';
 import {
@@ -196,4 +197,28 @@ test('source browse index refuses invented availability, reordered IDs and unrev
     /INVALID_MANIFEST|INVALID_ROW/);
   assert.throws(()=>parseCollectionDb01Facets({...fixture,sourceItemCount:200}),
     /INVALID_MANIFEST/);
+});
+test('world browse index matches source tags and subtype counts without querying the runtime',async()=>{
+  const raw=JSON.parse(await readFile(join(process.cwd(),'static/ddv/collection/db01-facets-1262.json'),'utf8'));
+  const source=parseCollectionDb01Facets(raw);
+  const worlds=buildWorldBrowseIndex(source);
+  const all=worlds.get('');
+  assert.equal(all.itemIds.length,source.sourceItemCount);
+  assert.equal(new Set(all.itemIds).size,all.itemIds.length);
+  assert.ok(worlds.size>1);
+  for(const [world,scope] of worlds){
+    const expected=[...source.nativeSubtypeByItem.keys()].filter(id=>
+      !world||collectionDb01Matches(source,id,'worldContextTag',world));
+    assert.deepEqual(new Set(scope.itemIds),new Set(expected));
+    assert.equal(scope.itemIds.length,new Set(expected).size);
+    assert.equal([...scope.nativeCounts.values()].reduce((a,b)=>a+b,0),scope.itemIds.length);
+    for(const [key,count] of scope.nativeCounts){
+      const matching=new Set(source.itemsByNativeSubtype.get(key));
+      assert.equal(count,expected.filter(id=>matching.has(id)).length);
+    }
+    const records=Object.fromEntries(expected.slice(0,17).map(id=>[String(id),{status:'owned'}]));
+    const owned=countOwnedInWorldScope(source,scope,records);
+    assert.equal([...owned.native.values()].reduce((a,b)=>a+b,0),Math.min(expected.length,17));
+    assert.equal(countOwnedInWorldScope(source,scope,{}).native.size,0);
+  }
 });
