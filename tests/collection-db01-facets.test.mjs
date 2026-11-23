@@ -42,6 +42,13 @@ test('DB-01 source native filtering is a narrow projection, not a second Item ma
   assert.equal(groups.find(x=>x.facet==='color').options.find(x=>x.key==='White').count,1,
     'repeated category Item IDs must be deduplicated before count');
   assert.equal(collectionDb01FacetLabel('ja','color'),'色');
+  const allGroups=collectionDb01Groups(index,[...index.byItem.keys()]);
+  assert.ok(allGroups.find(group=>group.facet==='worldContextTag')?.options
+    .some(option=>option.key==='IsDreamlightValley'),
+    'original World-context tags must be available as source browse filters');
+  assert.ok((allGroups.find(group=>group.facet==='disneyUniverse')?.options.length??0)>0,
+    'original Disney universe tags must be available for cross-category browsing');
+  assert.equal(collectionDb01FacetLabel('ja','worldContextTag'),'ワールドの原本タグ');
 });
 
 test('source browse index refuses invented availability, reordered IDs and unreviewed tags',()=>{
