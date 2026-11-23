@@ -169,12 +169,15 @@ function validRecord(raw:unknown, bucket:string): raw is ItemMasterRecord {
       raw.collectionMembershipVerified !== false ||
       raw.worldMembershipVerified !== false ||
       raw.availabilityVerified !== false) return false;
-  if(raw.artwork!==undefined && (!isObject(raw.artwork) ||
-      raw.artwork.iconGuid!==raw.iconGuid ||
-      !['imageGuid','maskGuid'].every(key=>raw.artwork===undefined||
-        (isObject(raw.artwork)&&(raw.artwork[key]===undefined||
-        raw.artwork[key]===null||
-        typeof raw.artwork[key]==='string'&&GUID.test(raw.artwork[key]))))))return false;
+  const artwork=raw.artwork;
+  if(artwork!==undefined){
+    if(!isObject(artwork)||artwork.iconGuid!==raw.iconGuid)return false;
+    for(const key of ['imageGuid','maskGuid']){
+      const value=artwork[key];
+      if(value!==undefined&&value!==null&&
+        (typeof value!=='string'||!GUID.test(value)))return false;
+    }
+  }
   if(raw.universeTagIds!==undefined && (!Array.isArray(raw.universeTagIds)||
       !raw.universeTagIds.every((id:unknown)=>ID(id)&&id>=2000500000&&id<2000600000)||
       new Set(raw.universeTagIds).size!==raw.universeTagIds.length))return false;
