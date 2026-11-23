@@ -45,7 +45,6 @@ const knownLegacy=new Set([
   "src/lib/collection/safe-profile-json.mjs",
   "src/lib/collection/saved-collection-presence.mjs",
   "src/lib/collection/saved-grid-furniture-references.mjs",
-  "src/lib/collection/saved-list-positive-ownership.mjs",
   "src/lib/collection/saved-store-preview.mjs",
   "src/lib/collection/saved-store-worker-core.mjs",
   "src/lib/collection/saved-store.worker.mjs",

@@ -2,9 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   SAVED_LIST_OWNERSHIP_CONTRACT,
-  projectPositiveListInventoryOwnership,
   sanitizePositiveListInventoryOwnership
-} from '../src/lib/collection/saved-list-positive-ownership.mjs';
+} from '../src/lib/collection/saved-list-positive-ownership.ts';
+import {projectSavedPositiveListInventory as projectPositiveListInventoryOwnership}
+  from './helpers/rust-collection-discovery.mjs';
 
 const role=(id,type,Inventory)=>({ID:id,CompatibleItemType:type,Inventory});
 const save=(ListInventories,Version=643)=>({
@@ -13,7 +14,7 @@ const save=(ListInventories,Version=643)=>({
   World:{privateFields:'not-forwarded'}
 });
 
-test('only explicitly positive ListInventory Amount imports as owned candidate, never missing',()=>{
+test('only explicitly positive ListInventory Amount imports as owned candidate, never missing',async()=>{
   const root=save({
     '0':role(0,'Furniture',{
       '40005160':{Amount:2,Marker:'Favorite'},
@@ -26,7 +27,7 @@ test('only explicitly positive ListInventory Amount imports as owned candidate, 
     '7':role(7,'Skin',{'170000001':{Amount:100}})
   });
   const original=structuredClone(root);
-  const got=projectPositiveListInventoryOwnership(root);
+  const got=await projectPositiveListInventoryOwnership(root);
   assert.deepEqual(root,original);
   assert.equal(got.contract,SAVED_LIST_OWNERSHIP_CONTRACT);
   assert.equal(got.status,'positive_stock_observed');
@@ -54,7 +55,7 @@ test('only explicitly positive ListInventory Amount imports as owned candidate, 
   assert.deepEqual(sanitizePositiveListInventoryOwnership(structuredClone(got)),got);
 });
 
-test('12 native ListInventory roles are recognized with compatible type and canonical ID',()=>{
+test('12 native ListInventory roles are recognized with compatible type and canonical ID',async()=>{
   const cases=[
     [0,'Furniture',4,40005160],
     [1,'Clothing',5,50000001],
@@ -79,7 +80,7 @@ test('12 native ListInventory roles are recognized with compatible type and cano
   // definitions under the same ItemType 10; without concrete type evidence
   // it is explicitly excluded from automatic ownership inference.
   map['6']=role(6,'TouchOfMagic',{'100000731':{Amount:8}});
-  const got=projectPositiveListInventoryOwnership(save(map));
+  const got=await projectPositiveListInventoryOwnership(save(map));
   assert.equal(got.status,'positive_stock_observed');
   assert.equal(got.inspectedRoles,12);
   assert.equal(got.matchedRoles,12);
@@ -91,8 +92,8 @@ test('12 native ListInventory roles are recognized with compatible type and cano
   assert.deepEqual(sanitizePositiveListInventoryOwnership(got),got);
 });
 
-test('role-mismatched native amount, even positive, must not become owned',()=>{
-  const actual=projectPositiveListInventoryOwnership(save({
+test('role-mismatched native amount, even positive, must not become owned',async()=>{
+  const actual=await projectPositiveListInventoryOwnership(save({
     '3':role(3,'Makeup',{'140000001':{Amount:0},'140000002':{Amount:4}}),
     '9':role(9,'AvatarFeature',{'70000001':{Amount:-1}}),
     '11':role(11,'MountGear',{'190000023':{Amount:1}})
@@ -104,8 +105,8 @@ test('role-mismatched native amount, even positive, must not become owned',()=>{
   assert.deepEqual(sanitizePositiveListInventoryOwnership(actual),actual);
 });
 
-test('zero, missing and untrusted amounts leave manual status untouched',()=>{
-  const got=projectPositiveListInventoryOwnership(save({
+test('zero, missing and untrusted amounts leave manual status untouched',async()=>{
+  const got=await projectPositiveListInventoryOwnership(save({
     '0':role(0,'Furniture',{
       '40005160':{Amount:0},
       '40005161':{Marker:'Hidden'},
@@ -124,8 +125,8 @@ test('zero, missing and untrusted amounts leave manual status untouched',()=>{
   assert.deepEqual(sanitizePositiveListInventoryOwnership(got),got);
 });
 
-test('role descriptors are required, and unknown/changed inventories are not claimed owned',()=>{
-  const got=projectPositiveListInventoryOwnership(save({
+test('role descriptors are required, and unknown/changed inventories are not claimed owned',async()=>{
+  const got=await projectPositiveListInventoryOwnership(save({
     '0':role(0,'Clothing',{'40005160':{Amount:1}}),
     '1':role(99,'Clothing',{'50000001':{Amount:1}}),
     '2':{ID:2,Inventory:{'30200221':{Amount:1}}},
@@ -137,7 +138,7 @@ test('role descriptors are required, and unknown/changed inventories are not cla
   assert.deepEqual(sanitizePositiveListInventoryOwnership(got),got);
 });
 
-test('unsupported schema, absent inventory and empty observed inventory never fabricate missing',()=>{
+test('unsupported schema, absent inventory and empty observed inventory never fabricate missing',async()=>{
   const cases=[
     [save({'0':role(0,'Furniture',{'40005160':{Amount:1}})},999),'unsupported_schema'],
     [{GameInfo:{Version:643},Player:{},World:{}},'not_observed'],
@@ -146,15 +147,15 @@ test('unsupported schema, absent inventory and empty observed inventory never fa
     [save({'1':role(1,'Clothing',{'50000001':{Amount:2}})},624),'positive_stock_observed']
   ];
   for(const [source,status] of cases) {
-    const got=projectPositiveListInventoryOwnership(source);
+    const got=await projectPositiveListInventoryOwnership(source);
     assert.equal(got.status,status);
     assert.equal(got.missingStatusInferred,false);
     assert.deepEqual(sanitizePositiveListInventoryOwnership(got),got);
   }
 });
 
-test('strict worker sanitizer strips private fields and rejects forged ownership signals',()=>{
-  const base=projectPositiveListInventoryOwnership(save({
+test('strict worker sanitizer strips private fields and rejects forged ownership signals',async()=>{
+  const base=await projectPositiveListInventoryOwnership(save({
     '0':role(0,'Furniture',{'40005160':{Amount:2}})
   }));
   const annotated=structuredClone(base);
