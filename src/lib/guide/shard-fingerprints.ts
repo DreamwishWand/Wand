@@ -3,10 +3,10 @@
  * matched their canonical per-record SHA-256. No game text is distributed.
  * Original Mission source is full-byte SHA-equivalent to Steam v1.26.2.
  */
-export const ORIGINAL_GUIDE_SHARD_SOURCE_VERSION = '1.26.1';
-export const ORIGINAL_GUIDE_SHARD_AUDIT_SHA = '99a539aad1884c92cc92337f52c6651879dc2f27493a9185dec36ff05863c4bf';
-export const ORIGINAL_GUIDE_SHARD_TOTAL_BYTES = 98001716;
-export const ORIGINAL_GUIDE_SHARD_FILE_SHA = Object.freeze({
+export const ORIGINAL_GUIDE_SHARD_SOURCE_VERSION = '1.26.1' as const;
+export const ORIGINAL_GUIDE_SHARD_AUDIT_SHA = '99a539aad1884c92cc92337f52c6651879dc2f27493a9185dec36ff05863c4bf' as const;
+export const ORIGINAL_GUIDE_SHARD_TOTAL_BYTES = 98001716 as const;
+export const ORIGINAL_GUIDE_SHARD_FILE_SHA:Readonly<Record<string,string>> = Object.freeze({
   'part-00.json': '32af2babef912a63a1a153a498fc7bc39fcf0b0e21b347e11363cefc5e7fb084',
   'part-01.json': '7b6aea72092c6d5f91895831394cbc973048d0c2a3940cede551ae212de4b4e1',
   'part-02.json': 'e80a7685d781df1521e9cac0dde853c3daa320ed4013dbcf7aed4375f77d3367',
@@ -41,9 +41,29 @@ export const ORIGINAL_GUIDE_SHARD_FILE_SHA = Object.freeze({
   'part-31.json': 'a2aceb5bb5cc06c80b8888efa1cfa2ecf14bc3594e01d2afd2168b7aa7fcd62e',
 });
 
-export function expectedOriginalGuideShardSha(fileName) {
-  if (typeof fileName !== 'string' || !Object.hasOwn(ORIGINAL_GUIDE_SHARD_FILE_SHA, fileName)) {
+/** Exact 32-record source ledger: canonical names, not current public
+ * 8-shard Quest projections. No private source records are distributed.
+ */
+const ORIGINAL_SHARD_FILE=/^part-(?:0[0-9]|[12][0-9]|3[01])\.json$/;
+const SHA256=/^[a-f0-9]{64}$/;
+export const ORIGINAL_GUIDE_SHARD_FILE_NAMES:readonly string[]=Object.freeze(
+  Object.keys(ORIGINAL_GUIDE_SHARD_FILE_SHA).sort()
+);
+if(ORIGINAL_GUIDE_SHARD_FILE_NAMES.length!==32||
+  ORIGINAL_GUIDE_SHARD_FILE_NAMES.some((name,index)=>
+    name!=='part-'+String(index).padStart(2,'0')+'.json'||
+    !ORIGINAL_SHARD_FILE.test(name)||
+    !SHA256.test(ORIGINAL_GUIDE_SHARD_FILE_SHA[name])))
+  throw new TypeError('Guide: incomplete original 32-part source ledger');
+
+/** Only returns a known SHA-256 for the exact owner-original shard.
+ * Unknown paths, __proto__, traversal, duplicate extension and invalid
+ * part indices are all rejected before any source file can be read.
+ */
+export function expectedOriginalGuideShardSha(fileName:unknown):string{
+  if(typeof fileName!=='string'||!ORIGINAL_SHARD_FILE.test(fileName)||
+    !Object.hasOwn(ORIGINAL_GUIDE_SHARD_FILE_SHA,fileName))
     throw new TypeError('Guide: unknown owner-original shard name');
-  }
   return ORIGINAL_GUIDE_SHARD_FILE_SHA[fileName];
 }
+

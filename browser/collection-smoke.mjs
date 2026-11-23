@@ -745,13 +745,26 @@ try{
   assert.deepEqual(afterBrowse.workspaces.find(x=>x.id==='local-1').entries,stateAfter);
   // Steam v643 can store the same source as raw UTF-8 JSON in a .profile.
   // Rust/WASM must accept both formats without treating the filename as P1G.
+  // The header Save chooser can be enabled while Collection is still
+  // parsing and committing this new local profile. Backup correctly refuses
+  // to export during either phase: wait for the actual Collection lock.
+  await page.evaluate(()=>{
+    window.__plainCollectionReadStarted=false;
+    const onBusy=event=>{
+      if(event.detail!==true)return;
+      window.__plainCollectionReadStarted=true;
+      window.removeEventListener('wand:collection-busy',onBusy);
+    };
+    window.addEventListener('wand:collection-busy',onBusy);
+  });
   await page.locator('input[aria-label="DDVのセーブファイルを選択"]')
     .setInputFiles({name:'steam-plaintext.profile',
       mimeType:'application/octet-stream',
       buffer:Buffer.from(JSON.stringify(saveRoot),'utf8')});
-  await page.waitForFunction(()=>
-    !document.querySelector('button[aria-label="セーブファイルを読み込む"]')?.disabled,
-    null,{timeout:30000});
+  await page.waitForFunction(()=>{
+    const select=document.querySelector('select[aria-label="ローカル記録を選択"]');
+    return window.__plainCollectionReadStarted&&select&&select.disabled===false;
+  },null,{timeout:60000});
   const plainBackupDownload=page.waitForEvent('download');
   await page.getByRole('button',{name:'Collectionバックアップ出力'}).click();
   const plainBackup=JSON.parse(await readFile(await (await plainBackupDownload).path(),'utf8'));
