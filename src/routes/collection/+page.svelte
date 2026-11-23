@@ -258,12 +258,33 @@
         sourceFacetGroups=[];sourceGroupsCacheKey='';
       }
       if((sourceCategory!==null||Object.keys(sourceChoices).length)&&sourceIndex){
-        const candidates=queryAllCollectionRows(currentFilter(0,200));
+        // An original submenu can contain 6k+ Item IDs. Repeating the
+        // general 13k-row sorted Rust query 67 times blocks UI clicks.
+        // Resolve source-linked IDs through Rust's O(1) Item-ID lookup.
+        // For multilingual text search, retain the existing Rust predicate.
+        const candidateIds=sourceCategory===null?null:
+          sourceIndex.itemsByCategory.get(sourceCategory)??[];
+        const searchRows=search.trim()
+          ?queryAllCollectionRows(currentFilter(0,200)):null;
+        const candidates=sourceCategory===null
+          ?queryAllCollectionRows(currentFilter(0,200))
+          :searchRows??candidateIds!.flatMap(id=>{
+            try{return [runtime!.item(id,locale)];}catch{return [];}
+          });
         sourceAllMatching=candidates.filter(item=>
           (sourceCategory===null||
             collectionDb01InCategory(sourceIndex!,item.itemId,sourceCategory))&&
+          (selected===''||item.family===selected)&&
+          (status==='all'||item.status===status)&&
+          (!favoriteOnly||item.favorite===true)&&
+          (nameStatus==='all'||(nameStatus==='verified')===item.nameVerified)&&
+          (!expansion||item.expansions.includes(expansion))&&
+          (!worldFilter||item.worlds.includes(worldFilter))&&
+          (!universeFilter||item.universes.includes(universeFilter))&&
           Object.entries(sourceChoices).every(([facet,key])=>
-            collectionDb01Matches(sourceIndex!,item.itemId,facet as CollectionDb01Facet,key)));
+            collectionDb01Matches(sourceIndex!,item.itemId,facet as CollectionDb01Facet,key)))
+          .sort((a,b)=>Number(b.nameVerified)-Number(a.nameVerified)||
+            a.label.localeCompare(b.label,locale)||a.itemId-b.itemId);
         filtered=sourceAllMatching.slice(0,visible);
         totalMatches=sourceAllMatching.length;
         overall=runtime.progress;state=runtime.state;
