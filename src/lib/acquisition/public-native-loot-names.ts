@@ -26,7 +26,6 @@ const FAMILY=/^[A-Za-z][A-Za-z0-9_-]{0,79}$/;
 const PINNED=new WeakSet<object>();
 const EMPTY_NAMES=Object.freeze([]) as readonly NativeLootNameEntry[];
 const EMPTY_CANDIDATES=Object.freeze([]) as readonly NamedNativeLootCandidate[];
-const EMPTY_IDS=Object.freeze([]) as readonly string[];
 
 export interface NativeLootNameEntry {
   readonly tableId:string;
