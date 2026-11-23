@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {
   verifyPublicQuestIndex,filterPublicQuests,publicQuestSection,
-  publicQuestStoryArc,publicQuestNativeOrder,publicFriendshipCharacters
+  publicQuestStoryArc,publicQuestNativeOrder,publicFriendshipCharacters,publicSpecialCharacters
 } from '../src/lib/guide/public-guide.ts';
 
 const dataUrl=new URL('../static/guide/public/quest-index.json',import.meta.url);
@@ -73,6 +73,32 @@ test('341 native Village Quests are grouped by exactly 77 original-character IDs
   assert.equal(roster.find(x=>x.id===goofy.characterId).quests,5);
   assert.equal(filterPublicQuests(data,{section:'friendship',character:'invalid'}).total,0,
     'an unknown character never gains a fabricated original Quest');
+});
+
+test('all 70 source-only Secret Quests are discoverable by their original linked character',async()=>{
+  const data=await catalog();
+  const entries=publicSpecialCharacters(data,'ja');
+  assert.equal(entries.length,27);
+  assert.equal(entries.reduce((sum,entry)=>sum+entry.quests,0),70);
+  assert.equal(new Set(entries.map(entry=>entry.id)).size,27);
+  assert.equal(entries.find(entry=>entry.id==='10000011')?.quests,3,
+    'Donald Duck has three source-only linked quests');
+  assert.equal(entries.find(entry=>entry.id==='10000035')?.quests,11,
+    'Merlin has eleven source-only linked quests');
+  for(const member of entries){
+    const quests=filterPublicQuests(data,{
+      section:'special',character:member.id,limit:100
+    });
+    assert.equal(quests.total,member.quests,member.id);
+    assert(quests.rows.every(q=>q.characterId===member.id&&
+      publicQuestSection(q)==='special'));
+  }
+  assert.equal(filterPublicQuests(data,{section:'friendship'}).total,341,
+    'Secret must not be misrepresented as verified Friendship Quests');
+  const page=await readFile(new URL('../src/routes/guide/quests/+page.svelte',import.meta.url),'utf8');
+  assert.match(page,/publicSpecialCharacters\(catalog,locale\)/);
+  assert.match(page,/showRelatedSpecial\(character\)/);
+  assert.match(page,/分類確認中クエストの原本キャラクター/);
 });
 
 test('unpublished Quest names never become internal Mission identifiers presented as names',async()=>{
