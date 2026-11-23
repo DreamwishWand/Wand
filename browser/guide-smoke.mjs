@@ -334,6 +334,15 @@ try {
   assert.equal(await hub.locator('.day[aria-label="2026-11-01"] .limited').count(),0);
   assert.equal(await hub.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),true,
     'mobile event calendar overflow');
+  const seafaringCalendarHref='/Wand/guide/star-path/?season=Seafaring2026';
+  const seafaringGuideLink=hub.locator('.schedule-card')
+    .filter({hasText:'Seafaring Star Path'}).locator('.event-actions a').first();
+  assert.equal(await seafaringGuideLink.getAttribute('href'),seafaringCalendarHref);
+  assert.equal(await hub.locator('.day[aria-label="2026-10-20"] a.starpath[href="'+seafaringCalendarHref+'"]').count(),1);
+  await seafaringGuideLink.click();
+  await hub.locator('.seasons button.selected').waitFor({timeout:20000});
+  assert.match(await hub.locator('.seasons button.selected').innerText(),/Seafaring Star Path/,
+    'calendar must open the clicked season, not the default Haunting season');
   assert.deepEqual(hubErrors,[],hubErrors.join('\\n'));
   await hub.close();
 
