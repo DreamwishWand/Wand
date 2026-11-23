@@ -110,6 +110,11 @@ export interface CollectionRuntimeMetadata {
   universes: readonly string[];
   worldLabels: readonly string[][];
   universeLabels: readonly string[][];
+  /** Explicit reviewed Item membership evidence; raw source tags are insufficient. */
+  verifiedScopeMembership?: Readonly<{
+    world?: 'verified_game_collection_area_item_membership';
+    universe?: 'verified_game_collection_universe_item_membership';
+  }>;
 }
 interface PublicLegacyIndex {
   s: string;
@@ -128,6 +133,15 @@ interface PublicDb00Index {
   id: string;
   count: number;
   target: { platform: string; gameVersion: string|null; buildId: string|null };
+  /** Only a separately reviewed item-to-Collection-scope release may assert these. */
+  collectionScopeEvidence?: {
+    schema:'wand.collection.scope-membership@1';
+    world?: 'verified_game_collection_area_item_membership';
+    universe?: 'verified_game_collection_universe_item_membership';
+    /** Exact, current-game 8-locale display names keyed by verified Item-axis IDs. */
+    worldLabels?: Record<string,string[]>;
+    universeLabels?: Record<string,string[]>;
+  };
   shards: { file: string; offset: number; count: number; bytes: number; sha256: string }[];
 }
 interface OwnerLocalDb01Bundle {
@@ -170,6 +184,28 @@ async function download(url: string, expectedBytes: number | null = null, expect
   }
   return new TextDecoder('utf-8',{fatal:true}).decode(bytes);
 }
+/** DB-00's Rust metadata uses original Tag keys as the default labels.
+ * A reviewed Collection UI release MUST provide current source names instead
+ * of letting technical Item/Tag identifiers leak into the interface.
+ */
+function reviewedScopeNames(
+  ids:readonly string[],
+  supplied:Readonly<Record<string,readonly string[]>>|undefined,
+):readonly string[][]{
+  if(!supplied||Object.keys(supplied).length!==ids.length)
+    throw new Error('COLLECTION_SCOPE_LABELS_MISSING');
+  const unique=new Set(ids);
+  if(unique.size!==ids.length)throw new Error('COLLECTION_SCOPE_IDS_DUPLICATE');
+  return ids.map(id=>{
+    const row=supplied[id];
+    if(!Array.isArray(row)||row.length!==8||row.some(v=>
+      typeof v!=='string'||v.trim()!==v||v.length<1||v.length>160||
+      /[\u0000-\u001f]/.test(v)||/[<>]/.test(v)||/^\{(?:Placeholder|DoNotTranslate)/.test(v)))
+      throw new Error('COLLECTION_SCOPE_LABELS_INVALID');
+    return [...row];
+  });
+}
+
 function openIdb(): Promise<IDBDatabase> {
   return new Promise((resolve,reject) => {
     const request = indexedDB.open(DB_NAME,1);
@@ -263,6 +299,9 @@ export class CollectionRuntime {
           snapshot: active.snapshot, platform: manifest.t.platform, version: manifest.t.gameVersion,
           expansions:manifest.e, worlds:manifest.w, universes:manifest.u,
           worldLabels:manifest.wl, universeLabels:manifest.ul
+          // The historical Switch reference contains world/universe Tag
+          // associations, not source-reviewed game CollectionArea membership.
+          // Do NOT automatically certify these legacy axes.
         };
       } else if (active.kind === 'db_snapshot') {
         if (active.publication !== 'validated_public_snapshot'
@@ -302,7 +341,27 @@ export class CollectionRuntime {
         engine.finish_db00();
         const catalog=JSON.parse(engine.metadata_json()) as Omit<CollectionRuntimeMetadata,'snapshot'>;
         const coverage = manifest.coverage;
+        // Original DB-01 Tag references are context associations, not proven
+        // CollectionArea membership. Unreviewed future snapshot fields cannot
+        // enable end-user filters, even when they supply names/IDs.
+        const scope=manifest.collectionScopeEvidence;
+        if(scope!==undefined&&(
+          scope.schema!=='wand.collection.scope-membership@1'||
+          (scope.world!==undefined&&scope.world!=='verified_game_collection_area_item_membership')||
+          (scope.universe!==undefined&&scope.universe!=='verified_game_collection_universe_item_membership')))
+          throw new Error('COLLECTION_SCOPE_EVIDENCE_INVALID');
+        const verifiedScopeMembership=scope?{
+          world:scope.world,universe:scope.universe
+        }:undefined;
+        const worldLabels=scope?.world
+          ? reviewedScopeNames(catalog.worlds,scope.worldLabels)
+          : catalog.worldLabels;
+        const universeLabels=scope?.universe
+          ? reviewedScopeNames(catalog.universes,scope.universeLabels)
+          : catalog.universeLabels;
         metadata={...catalog,snapshot:active.snapshot,
+          worldLabels,universeLabels,
+          ...(verifiedScopeMembership?{verifiedScopeMembership}:{}),
           nameCoverage:coverage?.scope==='steam-v1.26.2-native-itemlist'
             ? {itemDefinitions:coverage.itemDefinitions!,nameVerified:coverage.nameVerified!,nameUnverified:coverage.nameUnverified!}
             : null

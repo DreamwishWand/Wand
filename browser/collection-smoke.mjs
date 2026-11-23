@@ -420,13 +420,16 @@ try{
   assert.equal(backup.workspaces[0].entries['40005160'].quantity,7);
   assert.equal(backup.workspaces[0].entries['40005160'].status,'missing');
   await search.fill('');
-  // Category is the only root navigation. World/Universe are semantic filters.
+  // The current published 1.26.2 snapshot lacks reviewed per-item
+  // CollectionArea/Universe membership. Never expose dead-end filters or
+  // incorrectly treat source Tag associations as game-screen membership.
   await page.locator('.facet-card').first().waitFor();
   assert.match(await page.locator('.facet-card').first().innerText(),/家具|Furniture/);
   assert.equal(await page.locator('.mode-tabs').count(),0);
+  assert.equal(await page.locator('.collection-scope-toolbar').count(),0);
   await page.getByRole('button',{name:/フィルター/}).click();
-  assert.equal(await page.getByRole('combobox',{name:'ワールドで絞り込み'}).count(),1);
-  assert.equal(await page.getByRole('combobox',{name:'ユニバースで絞り込み'}).count(),1);
+  assert.equal(await page.getByRole('combobox',{name:'ワールドで絞り込み'}).count(),0);
+  assert.equal(await page.getByRole('combobox',{name:'ユニバースで絞り込み'}).count(),0);
   const facet=page.locator('.facet-card').filter({hasText:/家具|Furniture/}).first();
   try {
     await facet.click({timeout:10000});
@@ -500,6 +503,14 @@ try{
     schema:'wand.game-db.release@1',id:'approved-fixture',
     count:1,target:{platform:'Steam',gameVersion:'1.26.2',buildId:null,sourceSha256:'a'.repeat(64)},
     coverage:{scope:'fixture',complete:true,categories:['Furniture']},
+    // Exact verified per-Item membership in this synthetic 1-item release.
+    collectionScopeEvidence:{schema:'wand.collection.scope-membership@1',
+      world:'verified_game_collection_area_item_membership',
+      universe:'verified_game_collection_universe_item_membership',
+      worldLabels:{IsDreamlightValley:['Dreamlight Valley','Dreamlight Valley','Dreamlight Valley',
+        'Dreamlight Valley','Dreamlight Valley','ドリームライトバレー','Dreamlight Valley','Dreamlight Valley']},
+      universeLabels:{Cinderella:['Cinderella','Cinderella','Cinderella','Cinderella',
+        'Cinderella','シンデレラ','Cinderella','Cinderella']}},
     sources:[{id:'public-source',sha256:'b'.repeat(64),visibility:'public_reference'}],
     releases:[],search:[],
     shards:[{file:'items-000.json',offset:0,count:1,bytes:Buffer.byteLength(shardText),sha256:sha(shardText)}]
@@ -527,6 +538,17 @@ try{
   await releaseSearch.fill('検証済みの靴');
   await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
   assert.match(await page.locator('.item-card').first().innerText(),/検証済みの靴/);
+  const worldChoices=page.getByRole('group',{name:'ワールド',exact:true});
+  await worldChoices.getByRole('button',{name:'ドリームライトバレー'}).click();
+  await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
+  await page.getByRole('combobox',{name:'ユニバースで絞り込み'}).selectOption('Cinderella');
+  await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
+  assert.equal(await worldChoices.getByRole('button',{name:'ドリームライトバレー'}).getAttribute('aria-pressed'),'true');
+  assert.equal(await page.getByRole('combobox',{name:'ユニバースで絞り込み'}).inputValue(),'Cinderella');
+  await worldChoices.getByRole('button',{name:'すべて'}).click();
+  assert.equal(await page.getByRole('combobox',{name:'ユニバースで絞り込み'}).inputValue(),'Cinderella',
+    'world All must not clear the independent universe selection');
+  await page.getByRole('combobox',{name:'ユニバースで絞り込み'}).selectOption('');
   const releaseBackupPromise=page.waitForEvent('download');
   await page.getByRole('button',{name:'バックアップ出力'}).click();
   const releaseBackup=JSON.parse(await readFile(await (await releaseBackupPromise).path(),'utf8'));
