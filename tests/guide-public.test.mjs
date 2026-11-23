@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {verifyPublicQuestIndex,filterPublicQuests,findPublicQuestByLink,verifyPublicQuestPart,loadPublicQuestPart,formatPublicGuideText} from '../src/lib/guide/public-guide.mjs';
+import {verifyPublicQuestIndex,filterPublicQuests,findPublicQuestByLink,verifyPublicQuestPart,loadPublicQuestPart,formatPublicGuideText} from '../src/lib/guide/public-guide.ts';
 import {readFile} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
 const fixture=new URL('../static/guide/public/', import.meta.url);
 const local=name=>new URL(name,fixture);
 let index;
@@ -55,4 +56,62 @@ test('source objective formatting stays readable without injecting HTML or inven
   assert.equal(formatPublicGuideText('{ItemName}を{TargetAmount}個'),'{ItemName}を{TargetAmount}個');
   assert.equal(formatPublicGuideText('<nobr>日本語</nobr>\u200b<smallcaps>表記</smallcaps>'),'日本語表記');
   assert.equal(formatPublicGuideText(null),'');
+});
+
+test('all eight published Quest details match their source-pinned SHA-256 and native 733/7878/11782 census',async()=>{
+  const catalog=verifyPublicQuestIndex(JSON.parse(await readFile(local('quest-index.json'))));
+  let quests=0,steps=0,objectives=0;
+  for(let part=0;part<8;part++){
+    const filename='quest-details-'+String(part).padStart(2,'0')+'.json';
+    const bytes=await readFile(local(filename));
+    assert.equal(bytes.byteLength,catalog.detailFiles[filename].bytes);
+    assert.equal(createHash('sha256').update(bytes).digest('hex'),
+      catalog.detailFiles[filename].sha256);
+    const response=()=>({ok:true,arrayBuffer:async()=>bytes.buffer.slice(
+      bytes.byteOffset,bytes.byteOffset+bytes.byteLength)});
+    const decoded=await loadPublicQuestPart(catalog,part,filename,async()=>response());
+    quests+=decoded.quests.length;
+    for(const row of decoded.quests){
+      steps+=row.steps.length;
+      objectives+=row.objectiveCount;
+    }
+  }
+  assert.deepEqual({quests,steps,objectives},
+    {quests:733,steps:7878,objectives:11782});
+});
+test('source-only typed Quest index rejects counterfeit groups, characters, names and manifest digests',async()=>{
+  const source=verifyPublicQuestIndex(JSON.parse(await readFile(local('quest-index.json'))));
+  const changed=edit=>{const v=structuredClone(source);edit(v);return v;};
+  const invalid=[
+    [v=>{v.quests[0].id='__proto__'},/bad or duplicate quest/],
+    [v=>{v.quests[0].characterId='100000000000'},/foreign source character\/group/],
+    [v=>{v.quests[0].groupId='100000000000'},/foreign source character\/group/],
+    [v=>{v.quests[1].id=v.quests[0].id},/bad or duplicate quest/],
+    [v=>{v.quests[0].names.ru='unverified'},/bad or duplicate quest/],
+    [v=>{v.quests[0].detailPart=8},/bad or duplicate quest/],
+    [v=>{v.detailFiles['quest-details-01.json'].sha256='0'.repeat(63)},/invalid detail SHA manifest/],
+    [v=>{v.provenance.sourceIsStaticNotPlayerProgress=false},/unsupported original-source quest catalogue/]
+  ];
+  for(const [edit,expected] of invalid)
+    assert.throws(()=>verifyPublicQuestIndex(changed(edit)),expected);
+  assert.equal(source.quests.filter(row=>Object.keys(row.names).length===0).length,26,
+    'unresolved native display names must not be fabricated');
+  assert.equal(filterPublicQuests(source,{section:'all',offset:733,limit:40}).rows.length,0);
+  assert.throws(()=>filterPublicQuests(source,{limit:101}),/invalid search/);
+  assert.equal(findPublicQuestByLink(source,'?quest=2070000620&quest=2070000620'),null);
+});
+test('verified public Quest shard rejects same-size tampering before decoding and invalid source positions',async()=>{
+  const catalog=verifyPublicQuestIndex(JSON.parse(await readFile(local('quest-index.json'))));
+  const raw=await readFile(local('quest-details-00.json'));
+  const changed=Buffer.from(raw);changed[58]^=1;
+  const fetcher=bytes=>async()=>({ok:true,arrayBuffer:async()=>bytes.buffer.slice(
+    bytes.byteOffset,bytes.byteOffset+bytes.byteLength)});
+  await assert.rejects(()=>loadPublicQuestPart(catalog,0,'test',fetcher(changed)),
+    /detail fingerprint mismatch/);
+  assert.throws(()=>verifyPublicQuestPart(catalog,
+    {...JSON.parse(raw),part:8},0),/wrong quest part/);
+  const parsed=JSON.parse(raw);
+  const mutated=structuredClone(parsed);
+  mutated.quests[0].steps[0].subSteps[0].objectives[0].text={ja:'ok',unsafe:'X'};
+  assert.throws(()=>verifyPublicQuestPart(catalog,mutated,0),/invalid objective text/);
 });

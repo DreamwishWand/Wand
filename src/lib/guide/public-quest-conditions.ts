@@ -4,7 +4,7 @@
  * shipped. The static AND/OR/NOT structure is preserved, never evaluated
  * against a player's save, location, DLC ownership or online availability.
  */
-import {verifyPublicQuestIndex} from './public-guide.mjs';
+import {verifyPublicQuestIndex} from './public-guide.ts';
 
 export const PUBLIC_QUEST_CONDITIONS_SCHEMA='wand.db03.public-quest-conditions@2' as const;
 export const PUBLIC_QUEST_CONDITIONS_FILE='quest-conditions-1.26.2-v2.json.gz.b64';

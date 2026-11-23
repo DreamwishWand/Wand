@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {verifyPublicQuestIndex} from '../src/lib/guide/public-guide.mjs';
+import {verifyPublicQuestIndex} from '../src/lib/guide/public-guide.ts';
 import {
   GUIDE_CHARACTER_LABEL_CENSUS,derivePublicGuideCharacters,
   sourceCharacterName,filterPublicGuideCharacters,findPublicCharacterByLink
@@ -58,13 +58,13 @@ test('deep links only resolve one exact source label ID; malformed or duplicate 
 test('source label or quest-link tampering fails closed before a directory is displayed',async()=>{
   const index=await read();
   const missing=structuredClone(index);delete missing.characters['10000049'];
-  assert.throws(()=>derivePublicGuideCharacters(missing),/source label census/);
+  assert.throws(()=>derivePublicGuideCharacters(missing),/source label census|missing source labels/);
   const bogus=structuredClone(index);bogus.characters['10000049'].ja='';
-  assert.throws(()=>derivePublicGuideCharacters(bogus),/malformed source label/);
+  assert.throws(()=>derivePublicGuideCharacters(bogus),/malformed source label|invalid source character label/);
   const missingLang=structuredClone(index);delete missingLang.characters['10000049'].fr;
   assert.throws(()=>derivePublicGuideCharacters(missingLang),/malformed source label/);
   const forged=structuredClone(index);forged.quests[0].characterId='9999999';
-  assert.throws(()=>derivePublicGuideCharacters(forged),/unknown source label/);
+  assert.throws(()=>derivePublicGuideCharacters(forged),/unknown source label|foreign source character\/group/);
   assert.equal(sourceCharacterName(null,'ja'),'');
   assert.equal(sourceCharacterName({names:{ja:'A'}},'unknown'),'');
 });

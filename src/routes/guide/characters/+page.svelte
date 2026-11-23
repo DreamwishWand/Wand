@@ -4,7 +4,7 @@
   import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences';
   import {autoAppend} from '$lib/ui/auto-append';
   import {collectWindow} from '$lib/ui/collect-window.mjs';
-  import {verifyPublicQuestIndex,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
+  import {verifyPublicQuestIndex,formatPublicGuideText} from '$lib/guide/public-guide.ts';
   import {
     derivePublicGuideCharacters,sourceCharacterName,filterPublicGuideCharacters,
     findPublicCharacterByLink,

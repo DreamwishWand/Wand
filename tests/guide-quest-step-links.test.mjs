@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {verifyPublicQuestIndex,findPublicQuestByLink} from '../src/lib/guide/public-guide.mjs';
+import {verifyPublicQuestIndex,findPublicQuestByLink} from '../src/lib/guide/public-guide.ts';
 import {publicQuestStepIndex,publicQuestStepQuery} from '../src/lib/guide/public-quest-steps.ts';
 
 const indexPath=new URL('../static/guide/public/quest-index.json',import.meta.url);

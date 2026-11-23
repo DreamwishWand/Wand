@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {verifyPublicQuestIndex} from '../src/lib/guide/public-guide.mjs';
+import {verifyPublicQuestIndex} from '../src/lib/guide/public-guide.ts';
 
 test('Quest Guide related links preserve exact original Mission-group membership, not unlock prerequisites',async()=>{
   const index=verifyPublicQuestIndex(JSON.parse(await readFile(

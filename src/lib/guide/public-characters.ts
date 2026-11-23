@@ -7,7 +7,7 @@
  */
 import {
   PUBLIC_GUIDE_LOCALES,verifyPublicQuestIndex,formatPublicGuideText
-} from './public-guide.mjs';
+} from './public-guide.ts';
 
 export type PublicCharacterLocale =
   'ja'|'en'|'fr'|'it'|'de'|'es-ES'|'zh-CN'|'pt-BR';

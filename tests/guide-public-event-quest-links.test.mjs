@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
-import {verifyPublicQuestIndex} from '../src/lib/guide/public-guide.mjs';
+import {verifyPublicQuestIndex} from '../src/lib/guide/public-guide.ts';
 import {verifyPublicEventFriendshipRewards} from '../src/lib/guide/public-event-friendship-rewards.ts';
 import {
   verifyPublicEventQuestLinks,loadPublicEventQuestLinks,

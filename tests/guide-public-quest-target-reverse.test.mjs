@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
-import {verifyPublicQuestIndex} from '../src/lib/guide/public-guide.mjs';
+import {verifyPublicQuestIndex} from '../src/lib/guide/public-guide.ts';
 import {
   verifyPublicQuestTargetReverse,loadPublicQuestTargetReverse,
   guideQuestTargetItemHref,DB03_QUEST_TARGET_REVERSE_FILE,

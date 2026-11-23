@@ -5,7 +5,7 @@
  * counts are table draws, not quantities. The four opaque override lookups are
  * explicitly unresolved and excluded from Item-ID backlinks. No save access.
  */
-import {verifyPublicQuestIndex} from './public-guide.mjs';
+import {verifyPublicQuestIndex} from './public-guide.ts';
 
 export const DB03_QUEST_REWARDS_SCHEMA='wand.db03.public-quest-rewards@1' as const;
 export const DB03_QUEST_REWARDS_FILE='quest-rewards-1.26.2.json' as const;

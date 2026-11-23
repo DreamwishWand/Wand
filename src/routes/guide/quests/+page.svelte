@@ -4,7 +4,10 @@
   import {watchWandLanguage} from '$lib/ui/preferences';
   import {autoAppend} from '$lib/ui/auto-append';
   import {collectWindow} from '$lib/ui/collect-window.mjs';
-  import {verifyPublicQuestIndex,filterPublicQuests,publicQuestSection,findPublicQuestByLink,loadPublicQuestPart,formatPublicGuideText} from '$lib/guide/public-guide.mjs';
+  import {verifyPublicQuestIndex,filterPublicQuests,publicQuestSection,findPublicQuestByLink,loadPublicQuestPart,formatPublicGuideText,
+    type PublicQuestIndex,type PublicQuestPart,type PublicQuestIndexRow,type PublicQuestDetailRow,
+    type PublicQuestObjective,type PublicGuideNames
+  } from '$lib/guide/public-guide.ts';
   import {loadPublicQuestTargetsIndex,loadPublicQuestTargetsPart,itemTargetName,originalTargetLookup,
     type PublicQuestTargetIndex,type PublicQuestTargetPart,type PublicQuestTargetEntry
   } from '$lib/guide/public-targets.ts';
@@ -23,11 +26,11 @@
   import {loadPublicEventQuestLinks,DB03_EVENT_QUEST_FILE,
     type PublicEventQuestIndex} from '$lib/guide/public-event-quest-links.ts';
 
-  let catalog:any=null;
+  let catalog:PublicQuestIndex|null=null;
   let loadError='';
   let loading=true;
-  let selected:any=null;
-  let selectedRow:any=null;
+  let selected:PublicQuestDetailRow|null=null;
+  let selectedRow:PublicQuestIndexRow|null=null;
   let detailLoading=false;
   let detailError='';
   let query='';
@@ -42,7 +45,7 @@
   let showAllSteps=false;
   $: visibleSteps=selected?.steps?
     (showAllSteps?selected.steps:selected.steps.slice(activeStep,activeStep+1)):[];
-  const cached=new Map<number,any>();
+  const cached=new Map<number,PublicQuestPart>();
   const cachedTargets=new Map<number,PublicQuestTargetPart>();
   let conditionIndex:PublicQuestConditionReader|null=null;
   let rewardIndex:PublicQuestRewardsReader|null=null;
@@ -69,15 +72,17 @@
   $: targetMatches=targetReverseIndex&&targetFocusId
     ?targetReverseIndex.getItemCandidates(targetFocusId):[];
   $: targetQuestIds=[...new Set(targetMatches.map(row=>row.questId))];
-  $: selectedTargetRefs=selectedRow
-    ?targetMatches.filter(row=>row.questId===selectedRow.id):[];
+  $: selectedQuestId=selectedRow?.id??null;
+  $: selectedGroupId=selectedRow?.groupId??null;
+  $: selectedTargetRefs=selectedQuestId
+    ?targetMatches.filter(row=>row.questId===selectedQuestId):[];
   $: filtered=catalog?(rewardFocus
     ?{total:rewardFocus.questIds.length,
       rows:catalog.quests.filter((row:any)=>rewardFocus.questIds.includes(row.id))}
     :targetMatches.length
       ?{total:targetQuestIds.length,
         rows:catalog.quests.filter((row:any)=>targetQuestIds.includes(row.id))}
-      :collectWindow((offset:number,batch:number)=>filterPublicQuests(catalog,{query:query.slice(0,120),locale,character,objective,section,offset,limit:batch}),limit,'rows')):{total:0,rows:[]};
+      :collectWindow((offset:number,batch:number)=>filterPublicQuests(catalog!,{query:query.slice(0,120),locale,character,objective,section,offset,limit:batch}),limit,'rows')):{total:0,rows:[]};
   $: characters=catalog?[...new Set(catalog.quests.map((x:any)=>x.characterId).filter(Boolean))].sort() as string[]:[];
   // Native Mission group association, not an unlock prerequisite or chronological link.
   $: questConditions=selectedRow&&conditionIndex?conditionIndex.getQuest(selectedRow.id):null;
@@ -85,13 +90,13 @@
     ?relatedEventIndex.getQuestEvents(selectedRow.id):[];
   $: questRewardInfo=selectedRow&&rewardIndex?rewardIndex.getQuest(selectedRow.id):null;
   $: questOverrideInfo=selectedRow&&overrideIndex?overrideIndex.getQuest(selectedRow.id):null;
-  $: relatedQuests=catalog&&selectedRow&&typeof selectedRow.groupId==='string'&&
-    catalog.groups&&Object.hasOwn(catalog.groups,selectedRow.groupId)
-    ?catalog.quests.filter((row:any)=>row.groupId===selectedRow.groupId&&row.id!==selectedRow.id):[];
+  $: relatedQuests=catalog&&selectedGroupId&&
+    catalog.groups&&Object.hasOwn(catalog.groups,selectedGroupId)
+    ?catalog.quests.filter(row=>row.groupId===selectedGroupId&&row.id!==selectedQuestId):[];
   $: objectives=catalog?[...new Set(catalog.quests.flatMap((x:any)=>x.objectiveKinds))].sort() as string[]:[];
 
-  function label(names:Record<string,string>|null|undefined,fallback='',language='ja') {return formatPublicGuideText(names?.[language]||names?.en||Object.values(names||{})[0]||fallback);}
-  function questName(row:any,language:string) {return label(row.names,row.internalName||row.id,language);}
+  function label(names:PublicGuideNames|null|undefined,fallback='',language='ja') {return formatPublicGuideText(names?.[language as keyof PublicGuideNames]||names?.en||Object.values(names||{})[0]||fallback);}
+  function questName(row:PublicQuestIndexRow,language:string) {return label(row.names,row.internalName||row.id,language);}
   function characterName(id:string|undefined,language:string) {return label(catalog?.characters?.[id||''],id||'',language);}
   function relatedEventName(eventId:string):string{
     const event=relatedEventSource?.getEvent('mini_event',eventId);
@@ -131,7 +136,7 @@
     url.searchParams.set('step',chosen.get('step')||'1');
     window.history.pushState(window.history.state,'',url);
   }
-  function objectiveText(goal:any,target:PublicQuestTargetEntry|undefined,language:string){
+  function objectiveText(goal:PublicQuestObjective,target:PublicQuestTargetEntry|undefined,language:string){
     let value=label(goal.text,goal.type,language);
     if(!target)return value;
     if(target.amount?.kind==='value' && Number.isSafeInteger(target.amount.value)){
@@ -149,7 +154,7 @@
     }
     return value;
   }
-  async function loadQuestTargets(row:any,details:any,ticket:number){
+  async function loadQuestTargets(row:PublicQuestIndexRow,details:PublicQuestPart,ticket:number){
     targetLoading=true;targetError='';
     try{
       if(!targetIndex)targetIndex=await loadPublicQuestTargetsIndex(`${prefix}quest-targets-index.json`);
@@ -201,7 +206,7 @@
       targetLookup={};targetError='';targetLoading=false;
     }
   }
-  async function loadRelatedEventLinks(index:any){
+  async function loadRelatedEventLinks(index:PublicQuestIndex){
     try{
       const events=await loadPublicEventFriendshipRewards(
         `${prefix}${DB03_EVENT_FRIENDSHIP_REWARD_FILE}`);
@@ -212,7 +217,7 @@
       // The Quest Guide stays available if optional event navigation is absent.
     }
   }
-  async function loadTargetReverse(index:any){
+  async function loadTargetReverse(index:PublicQuestIndex){
     try{
       const data=await loadPublicQuestTargetReverse(index,
         `${prefix}${DB03_QUEST_TARGET_REVERSE_FILE}`);
@@ -221,7 +226,7 @@
       if(catalog===index)targetReverseError=true;
     }
   }
-  async function loadConditions(index:any){
+  async function loadConditions(index:PublicQuestIndex){
     try{
       const loaded=await loadPublicQuestConditions(index,`${prefix}${PUBLIC_QUEST_CONDITIONS_FILE}`);
       if(catalog===index)conditionIndex=loaded;
@@ -229,7 +234,7 @@
       if(catalog===index)conditionError=error instanceof Error?error.message:String(error);
     }
   }
-  async function loadRewards(index:any){
+  async function loadRewards(index:PublicQuestIndex){
     try{
       const data=await loadPublicQuestRewards(index,`${prefix}${DB03_QUEST_REWARDS_FILE}`);
       if(catalog===index){rewardIndex=data;restoreAddressSelection();}
@@ -270,7 +275,9 @@
     return ()=>{unwatch();window.removeEventListener('popstate',restoreAddressSelection);};
   });
 
-  async function openQuest(row:any,updateAddress=true) {
+  async function openQuest(row:PublicQuestIndexRow,updateAddress=true) {
+    const currentCatalog=catalog;
+    if(!currentCatalog)return;
     if(rewardFocus&&!rewardFocus.questIds.includes(row.id))clearRewardItemFocus();
     if(targetItemFocus&&targetReverseIndex&&
       !targetReverseIndex.getItemQuestIds(targetItemFocus).includes(row.id))clearTargetItemFocus();
@@ -289,7 +296,7 @@
     try {
       let part=cached.get(row.detailPart);
       if(!part){
-        part=await loadPublicQuestPart(catalog,row.detailPart,`${prefix}quest-details-${String(row.detailPart).padStart(2,'0')}.json`);
+        part=await loadPublicQuestPart(currentCatalog,row.detailPart,`${prefix}quest-details-${String(row.detailPart).padStart(2,'0')}.json`);
         cached.set(row.detailPart,part);
       }
       const match=part.quests.find((x:any)=>x.id===row.id);
@@ -483,7 +490,7 @@
                       <li class:target-item-match={selectedTargetRefs.some(ref=>
                             ref.step===step.index&&ref.subStep===sub.index&&ref.objectiveIndex===i)}>
                          <span>{objectiveText(goal,targetLookup[`${step.index}:${sub.index}:${i}`]?.[0],locale)}</span>
-                         <details class="source-id"><summary>条件の識別情報</summary><small>{goal.type}{goal.objectiveId?' · ID '+goal.objectiveId:''}</small></details>
+                         <details class="source-id"><summary>条件の識別情報</summary><small>{goal.type}</small></details>
                          {#each targetLookup[`${step.index}:${sub.index}:${i}`]||[] as target}
                            {#if target.amount?.kind==='value'}
                              <small class="source-amount">必要数 {target.amount.value}</small>
