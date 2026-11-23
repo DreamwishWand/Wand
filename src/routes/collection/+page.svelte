@@ -1402,79 +1402,41 @@
                 {copy.showAllItems} ({overall.total.toLocaleString(locale)})
               </button>
             </div>
-            {#if sourceIndex&&originalCategoryCards.length}
-              <div class="facet-grid collection-original-category-grid"
-                aria-label={locale==='ja'?'ゲーム原本のコレクションカテゴリー':'Original Collection categories'}>
-                {#each originalCategoryCards as category (category.code)}
-                  <button type="button" class="facet-card collection-original-category"
-                    disabled={!category.total}
-                    title={category.total?
-                      (locale==='ja'?'原本に対応付けられたアイテム。ゲーム内での所属・完成率は未検証':'Source-linked items; in-game membership and completion are unverified'):
-                      (locale==='ja'?'対応する公開データは未収録':'No linked public item data yet')}
-                    on:click={()=>chooseOriginalCategory(category.code)}>
-                    <span class="facet-flourish" aria-hidden="true">
-                      <WandIcon name={categoryPictogram[category.family]??'collection'} size={23}/>
-                    </span>
-                    <strong>{categoryLabel(locale,category.family)}</strong>
-                    <span>{category.total?
-                      `${category.owned.toLocaleString(locale)} / ${category.total.toLocaleString(locale)}`:'—'}</span>
-                  </button>
-                {/each}
-              </div>
-              <div class="collection-source-category-footer">
-                <span>{locale==='ja'?'原本の分類候補・記録済み / 公開データ件数':'Source-based groups · recorded / published items'}</span>
-                <button type="button" class="subtle-button" aria-expanded={originalClassesOpen}
-                  on:click={()=>originalClassesOpen=!originalClassesOpen}>
-                  {locale==='ja'?'アイテムの種類から探す':'Browse by item type'}
-                  <WandIcon name="chevron" size={15}/>
-                </button>
-              </div>
-            {:else if sourceLoadError}
+            {#if sourceLoadError}
               <div class="collection-source-category-footer" role="alert">
                 <span>{locale==='ja'
-                  ?'カテゴリーを読み込めませんでした。アイテムの種類から閲覧できます。'
-                  :'Categories could not be loaded. You can still browse by item type.'}</span>
+                  ?'詳細分類を読み込めませんでした。既存の分類で閲覧できます。'
+                  :'Detailed categories could not be loaded. Default categories are available.'}</span>
                 <button type="button" class="subtle-button" on:click={ensureSourceIndex}>
                   {locale==='ja'?'再試行':'Retry'}
                 </button>
               </div>
-            {:else if canUseDb01SourceFacets() && sourceLoad}
-              <p class="collection-source-category-footer" role="status">
-                {locale==='ja'?'カテゴリーを読み込み中':'Loading categories'}
-              </p>
-            {:else}
-              <p class="collection-source-category-footer" role="status">
-                {locale==='ja'
-                  ?'このカタログのカテゴリー対応表はありません。アイテムの種類から閲覧できます。'
-                  :'No category mapping is available for this catalog. Browse by item type.'}
-              </p>
             {/if}
-            {#if originalClassesOpen||!sourceIndex}
-              <div class="facet-grid">
-                {#each scopedCategoryFacets.filter(facet=>
-                  !(sourceActivityTypeCards.length&&sourceActivityLegacyFamilies.has(facet.id))) as facet (facet.id)}
-                  <button type="button" class="facet-card" disabled={facet.total===0}
-                    on:click={()=>chooseFacet(facet.id)}>
-                    <span class="facet-flourish" aria-hidden="true">
-                      <WandIcon name={categoryPictogram[facet.id]??'collection'} size={22}/>
-                    </span>
-                    <strong>{categoryLabel(locale,facet.id)}</strong>
-                    <span>{facet.owned.toLocaleString(locale)} / {facet.total.toLocaleString(locale)}</span>
-                  </button>
-                {/each}
-                {#each sourceActivityTypeCards as type (type.code)}
-                  <button type="button" class="facet-card collection-native-activity"
-                    data-source-type={type.code}
-                    on:click={()=>chooseActivityType(type.code)}>
-                    <span class="facet-flourish" aria-hidden="true">
-                      <WandIcon name={categoryPictogram[sourceActivityLegacyNames[type.code]??'']??'collection'} size={22}/>
-                    </span>
-                    <strong>{sourceActivityTypeLabel(locale,type.code,type.nativeName)}</strong>
-                    <span>{type.owned.toLocaleString(locale)} / {type.total.toLocaleString(locale)}</span>
-                  </button>
-                {/each}
-              </div>
-            {/if}
+            <div class="facet-grid collection-detail-category-grid"
+              aria-label={locale==='ja'?'アイテムの詳細カテゴリー':'Detailed item categories'}>
+              {#each scopedCategoryFacets.filter(facet=>
+                !(sourceActivityTypeCards.length&&sourceActivityLegacyFamilies.has(facet.id))) as facet (facet.id)}
+                <button type="button" class="facet-card" disabled={facet.total===0}
+                  on:click={()=>chooseFacet(facet.id)}>
+                  <span class="facet-flourish" aria-hidden="true">
+                    <WandIcon name={categoryPictogram[facet.id]??'collection'} size={22}/>
+                  </span>
+                  <strong>{categoryLabel(locale,facet.id)}</strong>
+                  <span>{facet.owned.toLocaleString(locale)} / {facet.total.toLocaleString(locale)}</span>
+                </button>
+              {/each}
+              {#each sourceActivityTypeCards as type (type.code)}
+                <button type="button" class="facet-card collection-native-activity"
+                  data-source-type={type.code}
+                  on:click={()=>chooseActivityType(type.code)}>
+                  <span class="facet-flourish" aria-hidden="true">
+                    <WandIcon name={categoryPictogram[sourceActivityLegacyNames[type.code]??'']??'collection'} size={22}/>
+                  </span>
+                  <strong>{sourceActivityTypeLabel(locale,type.code,type.nativeName)}</strong>
+                  <span>{type.owned.toLocaleString(locale)} / {type.total.toLocaleString(locale)}</span>
+                </button>
+              {/each}
+            </div>
           {/if}
         </div>
         {#if selectedItem}
