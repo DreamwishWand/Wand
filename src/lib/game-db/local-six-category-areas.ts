@@ -233,6 +233,10 @@ export function joinDb00SixOriginalCollectionAreas(
         row.critterLocationOneofFieldNumber===null&&
         row.positiveAreaCodes===null)||
       ((noPositive||positive)&&
+        // The source-layout contract proves MountSkin and BoatSkin never
+        // implement IHasTags; a forged [] is NOT an evaluated empty Tag list.
+        (row.nativeCategory!=='Skin'||!NO_TAG_SKIN.some(
+          cls=>cls===row.sourceProtobufClass))&&
         Array.isArray(row.positiveAreaCodes)&&
         row.positiveAreaCodes.length===(positive?1:0)&&
         row.positiveAreaCodes.every(code=>byCode.has(code))&&
