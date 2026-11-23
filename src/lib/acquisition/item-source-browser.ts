@@ -20,11 +20,25 @@ import {
 import {
   hasPinnedNativeActivityEvidence,type NativeActivityResultIndex
 } from './public-native-activities.ts';
+import {
+  hasPinnedNativeLootCandidateEvidence,type NativeLootCandidateIndex
+} from './public-native-loot.ts';
+import {
+  hasPinnedStaticContainerEvidence,type PinnedStaticContainerContents
+} from './public-static-container.ts';
+import {
+  hasPinnedDefaultInventoryEvidence,type PinnedDefaultInventorySource
+} from './public-default-inventories.ts';
 
 export const DB02_ITEM_SOURCE_BROWSER_SCHEMA='wand.db02.item-source-browser@1' as const;
 export const DB02_NATIVE_EXPANDED_SOURCE_BROWSER_SCHEMA=
   'wand.db02.native-expanded-item-source-browser@1' as const;
+export const DB02_STATIC_CANDIDATE_SOURCE_BROWSER_SCHEMA=
+  'wand.db02.static-candidate-item-source-browser@1' as const;
+export const DB02_ALL_ORIGINAL_SOURCE_BROWSER_SCHEMA=
+  'wand.db02.all-original-item-source-browser@1' as const;
 const PINNED_EXPANDED_BROWSER=new WeakSet<object>();
+const PINNED_STATIC_BROWSER=new WeakSet<object>();
 const ID=/^[1-9][0-9]{0,15}$/;
 const SAFE_KEY=/^[a-zA-Z0-9][a-zA-Z0-9:._\/-]{0,127}$/;
 const KINDS:readonly OriginKind[]=Object.freeze([
@@ -111,6 +125,41 @@ export interface ExpandedNativeItemSourceBrowser extends ItemSourceBrowser {
     actualLootOrHarvestVerified:false;
     currentAvailabilityVerified:false;
     originalSourceCoverageComplete:false;
+  }>;
+}
+/** Source-verified *candidate occurrences*, never source-verified grants. */
+export interface StaticCandidateItemSourceBrowser extends ItemSourceBrowser {
+  readonly candidateSchema:typeof DB02_STATIC_CANDIDATE_SOURCE_BROWSER_SCHEMA;
+  readonly gameVersion:'1.26.2';
+  readonly staticCandidatesOnly:true;
+  readonly actualAcquisitionVerified:false;
+  readonly gameplayContextVerified:false;
+  readonly playerOwnershipVerified:false;
+  readonly coverage:Readonly<{
+    lootTableCandidateRows:3804;
+    staticContainerTemplateRows:146;
+    defaultInventoryDefinitionRows:289;
+    totalCandidateRelations:4239;
+    distinctCandidateItemIds:number;
+    guaranteedDropsVerified:0;
+    currentAvailabilityVerified:false;
+    scopeOrExclusivityVerified:false;
+  }>;
+}
+export interface AllOriginalItemSourceBrowser extends ItemSourceBrowser {
+  readonly combinedSchema:typeof DB02_ALL_ORIGINAL_SOURCE_BROWSER_SCHEMA;
+  readonly gameVersion:'1.26.2';
+  readonly coverage:Readonly<{
+    baselinePublishedRoutes:1255;
+    nativeRecipeAndActivityRoutes:2706;
+    originalSourceRelations:3961;
+    staticCandidateRelations:4239;
+    combinedSourceRelations:8200;
+    distinctReferencedItemIds:number;
+    actualLootGrantedVerified:false;
+    completeAcquisitionCoverage:false;
+    currentAvailabilityVerified:false;
+    playerOwnershipVerified:false;
   }>;
 }
 function assert(ok:unknown,why:string):asserts ok{
@@ -381,4 +430,146 @@ export function hasPinnedExpandedNativeItemSourceEvidence(
 ):value is ExpandedNativeItemSourceBrowser{
   return value!==null&&typeof value==='object'&&
     PINNED_EXPANDED_BROWSER.has(value);
+}
+
+
+/**
+ * Cross-index original LootTable candidate entries, fixed initial container
+ * slots, and configured *default* inventory entries. None of these source
+ * records establishes a player grant or even a real-world availability scope.
+ * Keep this separate from the 3,961 source-definition route index.
+ */
+export function indexStaticCandidateItemSources(
+  loot:NativeLootCandidateIndex,
+  containers:PinnedStaticContainerContents,
+  defaults:PinnedDefaultInventorySource
+):StaticCandidateItemSourceBrowser{
+  assert(hasPinnedNativeLootCandidateEvidence(loot)&&
+    loot.coverage.candidateRelations===3804&&
+    loot.coverage.actualAcquisitionContextsVerified===0&&
+    loot.coverage.guaranteedDropsVerified===0&&
+    hasPinnedStaticContainerEvidence(containers)&&
+    containers.coverage.populatedSourceSlots===146&&
+    containers.coverage.containerSpawnVerified===false&&
+    containers.coverage.guaranteedLootVerified===false&&
+    hasPinnedDefaultInventoryEvidence(defaults)&&
+    defaults.coverage.configuredEntries===289&&
+    defaults.coverage.newPlayerGrantVerified===false&&
+    defaults.coverage.privateSaveIncluded===false,
+    'PINNED_CANDIDATE_SOURCE_REQUIRED');
+
+  const byItem=new Map<string,ItemOrigin[]>();
+  const identities=new Set<string>();
+  const append=(row:ItemOrigin,family:'loot'|'container'|'default')=>{
+    const id=normalizeId(row.itemId);
+    assert(row.routeStatus==='static_candidate_only'&&
+      row.availability==='not_live_verified'&&
+      row.source.kind==='verified_game_native'&&
+      row.source.gameVersion==='1.26.2'&&
+      row.campaignId===null&&
+      typeof row.originId==='string'&&!identities.has(row.originId),
+      'CANDIDATE_ORIGIN_SEMANTICS');
+    assert(family==='loot'?
+      row.kind==='loot'&&row.originId.startsWith('native:path:loot:')&&
+        loot.getItemStaticOrigins(id).includes(row):
+      family==='container'?
+        row.kind==='loot'&&row.originId.startsWith('db02:container:')&&
+          containers.getItemCandidates(id).includes(row):
+        row.kind==='other'&&row.originId.startsWith('db02:default-inventory:')&&
+          defaults.getItemCandidates(id).includes(row),
+      'ORIGINAL_CANDIDATE_SOURCE_IDENTITY');
+    identities.add(row.originId);
+    const previous=byItem.get(id);
+    if(previous)previous.push(row);else byItem.set(id,[row]);
+  };
+  for(const origin of loot.staticCandidateOrigins)append(origin,'loot');
+  for(const origin of containers.origins)append(origin,'container');
+  for(const origin of defaults.origins)append(origin,'default');
+  assert(loot.staticCandidateOrigins.length===3804&&
+    containers.origins.length===146&&
+    defaults.origins.length===289&&identities.size===4239,
+    'STATIC_CANDIDATE_CENSUS');
+
+  const ordered=[...byItem].sort(([a],[b])=>Number(a)-Number(b))
+    .map(([itemId,origins])=>({itemId,origins}));
+  const browser=indexSourceRows(ordered,4239);
+  assert(browser.query().totalOriginRelations===4239&&
+    browser.query({routeStatuses:['confirmed_source_link']}).totalOriginRelations===0,
+    'UNVERIFIED_CANDIDATE_PROMOTION');
+  const index:StaticCandidateItemSourceBrowser=Object.freeze({
+    ...browser,
+    candidateSchema:DB02_STATIC_CANDIDATE_SOURCE_BROWSER_SCHEMA,
+    gameVersion:'1.26.2' as const,
+    staticCandidatesOnly:true as const,
+    actualAcquisitionVerified:false as const,
+    gameplayContextVerified:false as const,
+    playerOwnershipVerified:false as const,
+    coverage:Object.freeze({
+      lootTableCandidateRows:3804 as const,
+      staticContainerTemplateRows:146 as const,
+      defaultInventoryDefinitionRows:289 as const,
+      totalCandidateRelations:4239 as const,
+      distinctCandidateItemIds:browser.knownLinkedItemIds.length,
+      guaranteedDropsVerified:0 as const,
+      currentAvailabilityVerified:false as const,
+      scopeOrExclusivityVerified:false as const
+    })
+  });
+  PINNED_STATIC_BROWSER.add(index);
+  return index;
+}
+export function hasPinnedStaticCandidateItemSourceEvidence(
+  value:unknown
+):value is StaticCandidateItemSourceBrowser {
+  return value!==null&&typeof value==='object'&&
+    PINNED_STATIC_BROWSER.has(value);
+}
+
+/**
+ * Optional single-source search across the 3,961 original result references
+ * and 4,239 *unverified* static candidates. Native record identity and route
+ * status are reused directly; search filters are unchanged.
+ */
+export function indexAllOriginalItemSources(
+  original:ExpandedNativeItemSourceBrowser,
+  candidates:StaticCandidateItemSourceBrowser
+):AllOriginalItemSourceBrowser{
+  assert(hasPinnedExpandedNativeItemSourceEvidence(original)&&
+    original.coverage.combinedSourceRoutes===3961&&
+    hasPinnedStaticCandidateItemSourceEvidence(candidates)&&
+    candidates.coverage.totalCandidateRelations===4239,
+    'PINNED_COMBINED_SOURCE_REQUIRED');
+  const byItem=new Map<string,ItemOrigin[]>();
+  const originIds=new Set<string>();
+  const append=(row:ItemOrigin)=>{
+    assert(!originIds.has(row.originId),'COMBINED_ORIGIN_ID_COLLISION');
+    originIds.add(row.originId);
+    const old=byItem.get(row.itemId);
+    if(old)old.push(row);else byItem.set(row.itemId,[row]);
+  };
+  for(const id of original.knownLinkedItemIds)
+    for(const row of original.getItem(id).origins)append(row);
+  for(const id of candidates.knownLinkedItemIds)
+    for(const row of candidates.getItem(id).origins)append(row);
+  assert(originIds.size===8200,'COMBINED_ORIGINAL_SOURCE_CENSUS');
+  const rows=[...byItem].sort(([a],[b])=>Number(a)-Number(b))
+    .map(([itemId,origins])=>({itemId,origins}));
+  const browser=indexSourceRows(rows,8200);
+  return Object.freeze({
+    ...browser,
+    combinedSchema:DB02_ALL_ORIGINAL_SOURCE_BROWSER_SCHEMA,
+    gameVersion:'1.26.2' as const,
+    coverage:Object.freeze({
+      baselinePublishedRoutes:1255 as const,
+      nativeRecipeAndActivityRoutes:2706 as const,
+      originalSourceRelations:3961 as const,
+      staticCandidateRelations:4239 as const,
+      combinedSourceRelations:8200 as const,
+      distinctReferencedItemIds:browser.knownLinkedItemIds.length,
+      actualLootGrantedVerified:false as const,
+      completeAcquisitionCoverage:false as const,
+      currentAvailabilityVerified:false as const,
+      playerOwnershipVerified:false as const
+    })
+  });
 }

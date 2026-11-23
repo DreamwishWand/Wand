@@ -35,7 +35,10 @@ import {loadPinnedIapPackReferences,type PinnedIapPackReferenceIndex}
   from './public-iap-pack-references.ts';
 import {
   indexItemSourceBrowser,indexExpandedNativeItemSourceBrowser,
-  type ItemSourceBrowser,type ExpandedNativeItemSourceBrowser
+  indexStaticCandidateItemSources,indexAllOriginalItemSources,
+  type ItemSourceBrowser,type ExpandedNativeItemSourceBrowser,
+  type StaticCandidateItemSourceBrowser,type AllOriginalItemSourceBrowser,
+  type ItemSourceBrowserRow
 } from './item-source-browser.ts';
 import {loadPinnedStaticContainerContents,type PinnedStaticContainerContents}
   from './public-static-container.ts';
@@ -142,6 +145,10 @@ export type PublicSourceItemLookup=ReturnType<Db00OriginJoin['lookup']>&{
   readonly configuredDefaultInventoryCandidates:readonly ItemOrigin[];
   readonly originCoverageComplete:false;
 };
+export type PublicSourceItemOriginalEvidenceLookup=PublicSourceItemLookup&{
+  readonly originalSourceEvidence:ItemSourceBrowserRow;
+  readonly originalSourceEvidenceLoaded:true;
+};
 export type PublicSourceItemDistributionScopeLookup=PublicSourceItemLookup&{
   readonly distributionScope:DistributionScopeItem;
   readonly distributionScopeEvidenceLoaded:true;
@@ -210,6 +217,15 @@ export interface PublicSourceCatalog{
   /** Full 1,255+1,943+763 exact static Item-origin paths on demand.
    * Recipe unlock, live supply and actual catches are NOT verified. */
   loadExpandedNativeItemSources():Promise<ExpandedNativeItemSourceBrowser>;
+  /** Original LootTable, fixed container and default-inventory *candidates*.
+   * No live context or player grant is verified. */
+  loadStaticCandidateItemSources():Promise<StaticCandidateItemSourceBrowser>;
+  /** Union search over 3961 definition references and 4239 static candidates.
+   * Each relation retains original provenance and candidate/confirmed status. */
+  loadAllOriginalItemSources():Promise<AllOriginalItemSourceBrowser>;
+  lookupWithOriginalSourceEvidence(
+    itemId:string|number
+  ):Promise<PublicSourceItemOriginalEvidenceLookup>;
   readonly db00:Db00OriginJoin;
   readonly nameCandidates:PublicOnlineNameCandidateIndex;
   readonly questSource:PublicQuestAcquisitionIndex;
@@ -446,6 +462,8 @@ export async function loadPublicSourceCatalog(
   let nativeRecipePromise:Promise<NativeRecipeIndex>|null=null;
   let nativeActivityPromise:Promise<NativeActivityResultIndex>|null=null;
   let expandedNativeBrowserPromise:Promise<ExpandedNativeItemSourceBrowser>|null=null;
+  let staticCandidateBrowserPromise:Promise<StaticCandidateItemSourceBrowser>|null=null;
+  let allOriginalBrowserPromise:Promise<AllOriginalItemSourceBrowser>|null=null;
   let nativeCookingMembersPromise:Promise<NativeCookingMemberIndex>|null=null;
   let cookingRecipeResolverPromise:Promise<NativeCookingRecipeResolver>|null=null;
   let nativeLootPromise:Promise<NativeLootCandidateIndex>|null=null;
@@ -476,6 +494,15 @@ export async function loadPublicSourceCatalog(
     );
   const loadLoot=()=>nativeLootPromise??=
     loadPinnedNativeLootCandidates(basePath,fetcher);
+  const loadStaticCandidateBrowser=()=>staticCandidateBrowserPromise??=
+    loadLoot().then(loot=>
+      indexStaticCandidateItemSources(loot,staticContainerSource,
+        defaultInventorySource)
+    );
+  const loadAllOriginalBrowser=()=>allOriginalBrowserPromise??=
+    Promise.all([loadExpandedNativeBrowser(),loadStaticCandidateBrowser()]).then(
+      ([original,candidates])=>indexAllOriginalItemSources(original,candidates)
+    );
   const loadLootNames=()=>nativeLootNamesPromise??=
     loadPinnedNativeLootNames(basePath,fetcher);
   const loadNamedLoot=()=>namedLootSourcePromise??=
@@ -548,6 +575,17 @@ export async function loadPublicSourceCatalog(
     loadNativeRecipeResults(){return loadRecipes();},
     loadNativeActivityResults(){return loadActivities();},
     loadExpandedNativeItemSources(){return loadExpandedNativeBrowser();},
+    loadStaticCandidateItemSources(){return loadStaticCandidateBrowser();},
+    loadAllOriginalItemSources(){return loadAllOriginalBrowser();},
+    async lookupWithOriginalSourceEvidence(itemId:string|number){
+      const current=lookupCurrent(itemId);
+      const browser=await loadAllOriginalBrowser();
+      return Object.freeze({
+        ...current,
+        originalSourceEvidence:browser.getItem(current.itemId),
+        originalSourceEvidenceLoaded:true as const
+      });
+    },
     loadNativeCookingMembers(){return loadCookingMembers();},
     loadCookingRecipeResolver(){return loadCookingRecipeResolver();},
     loadNativeLootCandidates(){return loadLoot();},
