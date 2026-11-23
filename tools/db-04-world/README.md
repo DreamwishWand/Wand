@@ -1171,3 +1171,17 @@ orientation/tessellation projections. These native machine-code
 calculations are verified **only for Steam v1.26.1**. The source
 remains RAW evidence: this migration never infers occupied cells,
 anchor conventions, placement permission or valid Save transforms.
+
+
+## Source GridArea all-orientation & exact default GridObject source join
+
+\`native-gridarea-oriented.ts\` owns 16-direction raw source-local
+GridArea lookup, 12 oblique windows, caller-supplied tessellation and
+bounded source-layer matrices. \`native-gridarea-default-object.ts\`
+owns the original GridObject ID → GridCollection/Grid.ID → caller-grid
+tessellation association, local raw layer reads and source-nullable
+GetStrideFor evidence. The old \`catalog.mjs\` has compatibility-only
+exports; no new JS code. These native machine-code paths stay pinned
+to verified **Steam v1.26.1** (future versions fail closed). Neither
+raw GridLayers nor native default X/Y are occupied Save cells or
+placement/collision permission.
