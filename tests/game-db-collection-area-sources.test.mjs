@@ -171,7 +171,9 @@ test('owner-local DB-04 direct native Tags cross-reference static DB-01 Collecti
   const other=await local.byOriginalCollectionAreaTag(4097);
   assert.equal(other.area.worldTag,'isHoneywood');
   assert.equal(other.items.length,0);
-  const published=await local.queryPublishedItems([],{limit:3});
+  // The owner-local stub covers exactly one source Item; the all-area query
+  // is the public catalog, not a native Tag lookup requiring every local row.
+  const published=app.database.queryItems([],{limit:3});
   assert.equal(published.total,13202,'AllAreas is a catalog query, not a Tag');
   await assert.rejects(local.byOriginalCollectionAreaTag(0),
     /ALL_AREAS_HAS_NO_NATIVE_SOURCE_TAG/);
