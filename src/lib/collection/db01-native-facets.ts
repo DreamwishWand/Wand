@@ -92,7 +92,10 @@ export function collectionDb01Groups(
   index:CollectionDb01Index,categoryItemIds:readonly number[]
 ):readonly CollectionDb01Group[]{
   const counters=new Map<CollectionDb01Facet,Map<string,number>>();
+  const visitedIds=new Set<number>();
   for(const id of categoryItemIds){
+    if(visitedIds.has(id))continue;
+    visitedIds.add(id);
     const tags=index.byItem.get(id);
     if(!tags)continue;
     const seen=new Set<string>();
