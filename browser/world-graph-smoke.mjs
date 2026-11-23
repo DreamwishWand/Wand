@@ -828,7 +828,16 @@ try{
   const candidates=terrainViewer.locator('.saved-candidate-view');
   await candidates.getByRole('button',{name:'選択Gridと照合'})
     .click({timeout:20000});
-  await candidates.locator('canvas').waitFor({timeout:20000});
+  try{
+    await candidates.locator('canvas').waitFor({timeout:12000});
+  }catch(error){
+    console.error('DB04_SAVE_SOURCE_DIAGNOSTIC',JSON.stringify({
+      candidateText:await candidates.innerText(),
+      pageErrors,pageUrl:page.url(),
+      sourceSelection:await terrainViewer.locator('.world-toolbar').innerText().catch(()=>'no-toolbar')
+    }));
+    throw error;
+  }
   assert.match(await candidates.innerText(),/原本参照パス一致候補/);
   assert.match(await candidates.innerText(),/2件/);
   assert.match(await candidates.innerText(),/原本数値範囲外/);
