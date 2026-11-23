@@ -89,6 +89,10 @@ const collectionCategoryRows=[];
 // already contains each verified IL2CPP subtype; do not guess from display
 // names or expand the game's Collection menu.
 const activityTypeRows=[];
+// Exact native IL2CPP subtype per published Item ID, not invented Collection
+// menu membership. This includes Furniture, Clothing and Trimming records
+// previously obscured by the 29 empty scaffold categories.
+const nativeSubtypeRows=[];
 // Exact Item-ID universe references from original Tags AND already-verified
 // Collection selector candidates. This is an extra browse relation, never
 // runtime Collection membership, world location or entitlement.
@@ -169,8 +173,24 @@ for(let bucket=0;bucket<256;bucket++){
     ]);
     const sourceCategories=originalCategoryCodes(row);
     if(sourceCategories.length)collectionCategoryRows.push([row.itemId,sourceCategories]);
+    const nativeType=row.itemType;
+    check(Number.isSafeInteger(nativeType?.code)&&nativeType.code>=0&&
+      nativeType.code<=100&&
+      Math.floor(row.itemId/10000000)===nativeType.code&&
+      typeof nativeType.name==='string'&&
+      /^[A-Za-z][A-Za-z0-9]{0,63}$/.test(nativeType.name)&&
+      Number.isSafeInteger(nativeType.subtypeCode)&&
+      nativeType.subtypeCode>=0&&nativeType.subtypeCode<=99&&
+      Math.floor((row.itemId%10000000)/100000)===nativeType.subtypeCode&&
+      typeof nativeType.subtypeNameVerified==='boolean'&&
+      (!nativeType.subtypeNameVerified||
+        (typeof nativeType.subtypeName==='string'&&
+          /^[A-Za-z][A-Za-z0-9_]{0,127}$/.test(nativeType.subtypeName))),
+      'NATIVE_ORIGINAL_SUBTYPE_'+row.itemId);
+    nativeSubtypeRows.push([row.itemId,nativeType.name,
+      nativeType.subtypeCode,
+      nativeType.subtypeNameVerified?nativeType.subtypeName:null]);
     if(row.nativeCategory==='ActivityItem'){
-      const nativeType=row.itemType;
       check(nativeType?.code===3&&nativeType.name==='ActivityItem'&&
         Number.isSafeInteger(nativeType.subtypeCode)&&
         nativeType.subtypeCode>=0&&nativeType.subtypeCode<=999&&
@@ -187,7 +207,8 @@ for(let bucket=0;bucket<256;bucket++){
     candidates+=row.collectionSourceCandidates.length;
   }
 }
-check(found===release.count&&activityTypeRows.length===4050&&
+check(found===release.count&&nativeSubtypeRows.length===release.count&&
+  activityTypeRows.length===4050&&
   tagRefs===release.coverage.sourceTagReferences&&
   candidates===release.coverage.sourceCollectionCandidateReferences,
   'COVERAGE_MISMATCH');
@@ -214,6 +235,7 @@ mkdirSync(dirname(collectionDestination),{recursive:true});
 collectionRows.sort((a,b)=>a[0]-b[0]);
 collectionCategoryRows.sort((a,b)=>a[0]-b[0]);
 activityTypeRows.sort((a,b)=>a[0]-b[0]);
+nativeSubtypeRows.sort((a,b)=>a[0]-b[0]);
 universeSourceRows.sort((a,b)=>a[0]-b[0]);
 universeSourceTagRows.sort((a,b)=>a[0]-b[0]);
 writeFileSync(collectionDestination,JSON.stringify({
@@ -226,6 +248,10 @@ writeFileSync(collectionDestination,JSON.stringify({
   categoryItems:collectionCategoryRows,
   activityTypeItemCount:activityTypeRows.length,
   activityTypeItems:activityTypeRows,
+  nativeSubtypeItemCount:nativeSubtypeRows.length,
+  nativeSubtypeItems:nativeSubtypeRows,
+  nativeSubtypeEvidence:'original_il2cpp_item_type_and_subtype',
+  nativeSubtypeGameUiMembershipVerified:false,
   universeSourceItemCount:universeSourceRows.length,
   universeSourceItems:universeSourceRows,
   universeSourceEvidence:'original_tag_or_collection_predicate_tag',
@@ -241,7 +267,8 @@ writeFileSync(collectionDestination,JSON.stringify({
   items:collectionRows
 })+'\n');
 console.log('DB-01 Collection browse subset:',collectionRows.length,'tagged Item IDs,',
-  activityTypeRows.length,'source-native ActivityItem subtypes');
+  activityTypeRows.length,'source-native ActivityItem subtypes,',
+  nativeSubtypeRows.length,'native Item Type IDs');
 console.log('DB-01 public Item master:',gameVersion,found,'items,',tagRefs,'tags,',candidates,'Collection source candidates');
 }
 
