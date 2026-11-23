@@ -16,6 +16,8 @@ test('conflicting/uncomposable queue cannot silently export a subset',()=>{
   assert.equal(queuedSaveExportMode(1,2,1,null,null),'conflict');
   assert.equal(queuedSaveExportMode(0,2,1,null,null),'conflict');
   assert.equal(queuedSaveExportMode(1,1,0,null,null),'conflict');
+  assert.equal(queuedSaveExportMode(0,2,0,null,null),'conflict');
+  assert.equal(queuedSaveExportMode(0,0,2,null,null),'conflict');
   assert.equal(queuedSaveExportMode(1,0,1,null,17),'conflict');
   assert.equal(queuedSaveExportMode(0,16,16,17,null),'conflict');
   assert.equal(queuedSaveExportMode(17,0,0,null,null),'conflict');
