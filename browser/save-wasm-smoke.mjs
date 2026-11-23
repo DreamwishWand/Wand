@@ -1040,7 +1040,7 @@ try{
   await page.getByRole('region',{name:'セーブ内アイテム'})
     .getByRole('status').filter({hasText:'件'}).waitFor({timeout:30000});
   await objects.getByRole('button',{name:'配置オブジェクトを表示'}).click();
-  await objects.getByRole('status').filter({hasText:'307件'})
+  await objects.getByRole('status').filter({hasText:'306件'})
     .waitFor({timeout:30000});
   const manyMap=objects.getByRole('region',{name:'セーブ内Grid配置マップ'});
   const search= manyMap.getByRole('searchbox',{
@@ -1058,8 +1058,25 @@ try{
     '.marker[aria-label="配置 #300 をマップから選択"]'
   ).count(),1);
   const lateEditor=objects.getByLabel('座標編集',{exact:true});
-  assert.equal(await lateEditor.getByLabel('新しいX').inputValue(),'345');
-  assert.equal(await lateEditor.getByLabel('新しいY').inputValue(),'309');
+  const x300=Number(await lateEditor.getByLabel('新しいX').inputValue());
+  const y300=Number(await lateEditor.getByLabel('新しいY').inputValue());
+  const original300=Object.values(manyObjects).find(value=>
+    value.X===x300&&value.Y===y300);
+  assert.ok(original300,
+    'the returned ephemeral ordinal must resolve to an original object');
+  // Local ordinals are never Save-native object IDs. Discover ordinal #305
+  // from the browser projection, not by assuming object key "305".
+  await search.fill('#305');
+  await manyMap.getByRole('group',{name:'マップ配置検索結果'})
+    .getByRole('button',{
+      name:'検索結果: 配置 #305 を選択'
+    }).click();
+  const x305=Number(await lateEditor.getByLabel('新しいX').inputValue());
+  const y305=Number(await lateEditor.getByLabel('新しいY').inputValue());
+  const original305=Object.values(manyObjects).find(value=>
+    value.X===x305&&value.Y===y305);
+  assert.ok(original305&&original305.ID!==original300.ID);
+  assert.equal(await manyMap.locator('.marker').count(),257);
 
   await manyMap.getByRole('button',{name:'複数配置を一括移動'}).click();
   await search.fill('#300');
@@ -1105,17 +1122,19 @@ try{
     await readFile(await (await lateDownload).path())
   );
   const lateObjects=lateCopy.World.GridCollection.Grids['101'].Objects;
-  assert.deepEqual([lateObjects['300'].X,lateObjects['300'].Y],[352,305]);
-  assert.deepEqual([lateObjects['305'].X,lateObjects['305'].Y],[357,310]);
-  assert.equal(lateObjects['300'].UnknownMarker,'preserve-300');
-  assert.equal(lateObjects['305'].UnknownMarker,'preserve-305');
+  const changed300=lateObjects[String(original300.ID)];
+  const changed305=lateObjects[String(original305.ID)];
+  assert.deepEqual([changed300.X,changed300.Y],[x300+7,y300-4]);
+  assert.deepEqual([changed305.X,changed305.Y],[x305+7,y305-4]);
+  assert.equal(changed300.UnknownMarker,'preserve-'+original300.ID);
+  assert.equal(changed305.UnknownMarker,'preserve-'+original305.ID);
   assert.equal(lateObjects['303'].UnknownMarker,'preserve-303');
   assert.equal(lateObjects['303'].X,348);
   assert.equal(lateCopy.World.GridCollection.DiffGrids['102']
     .ModifiedObjects['6'].X,-12);
   assert.equal(lateCopy.Player.ListInventories['100'].Inventory['550'].Amount,7);
-  assert.equal(manyOriginal.World.GridCollection.Grids['101'].Objects['300'].X,345);
-  assert.equal(manyOriginal.World.GridCollection.Grids['101'].Objects['305'].Y,314);
+  assert.equal(manyObjects[String(original300.ID)].X,x300);
+  assert.equal(manyObjects[String(original305.ID)].Y,y305);
 
   assert.deepEqual(errors,[],errors.join('\n'));
   await page.close();
