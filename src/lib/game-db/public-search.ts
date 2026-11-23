@@ -14,8 +14,11 @@ import type {
   Db00SourceJoinedReader,Db00SourceJoinedItem
 } from './source-join.ts';
 import type {
-  OriginDatabase,OriginKind,RouteStatus
+  OriginDatabase,OriginKind,RouteStatus,OfficialCampaign
 } from '../acquisition/origins.ts';
+import type {
+  PublicOnlineNameCandidateIndex,PublicCampaignNameCandidate
+} from '../acquisition/public-online-name-candidates.ts';
 import type {GuideRewardIndex} from '../guide/reward-relations.ts';
 import {
   hasPinnedDefaultInventoryEvidence,
@@ -53,6 +56,12 @@ export interface Db00PublicItemSearchRequest {
   readonly questTargetCandidate?:true;
   readonly questTargetQuestId?:string;
   readonly questTargetRole?:QuestTargetItemRole;
+  /** Source official English-name equality ONLY; not an exact acquisition link. */
+  readonly officialCampaignNameCandidate?:true;
+  /** Kind of published official campaign, not a native ItemOrigin kind. */
+  readonly officialCampaignKind?:OfficialCampaign['kind'];
+  /** Campaign name-match candidate ID; unverified, never proof of a grant. */
+  readonly officialCampaignId?:string;
   readonly offset?:number;
   readonly limit?:number;
 }
@@ -78,6 +87,11 @@ const LOCALES=new Set<string>([
 const SHA=/^[1-9][0-9]{0,15}$/;
 const ROUTES=new Set<string>(['confirmed_source_link','static_candidate_only']);
 const ORIGIN_NAME=/^[a-z][a-z_]{1,31}$/;
+const OFFICIAL_KINDS:ReadonlySet<string>=new Set([
+  'twitch_drop','redeem_code','premium_shop','official_campaign',
+  'purchase_bonus','gift','event_reward'
+]);
+const CAMPAIGN_ID=/^[A-Za-z0-9][A-Za-z0-9:._/-]{0,127}$/;
 interface SearchEntry {
   readonly itemId:string;
   readonly names:Readonly<Partial<Record<DbLocale,string>>>;
@@ -87,6 +101,7 @@ interface SearchEntry {
   readonly hasStaticContainerCandidate:boolean;
   readonly configuredDefaultInventoryGroups:ReadonlySet<string>;
   readonly questTargetCandidates:readonly QuestTargetItemReference[];
+  readonly officialCampaignNames:readonly PublicCampaignNameCandidate[];
 }
 function assert(ok:unknown,code:string):asserts ok {
   if(!ok)throw new TypeError('DB00_PUBLIC_SEARCH_'+code);
@@ -105,7 +120,8 @@ export function createDb00PublicItemSearch(
   guide:GuideRewardIndex,
   staticContainers?:PinnedStaticContainerContents,
   questTargets?:PublicQuestTargetReverseReader,
-  defaultInventories?:PinnedDefaultInventorySource
+  defaultInventories?:PinnedDefaultInventorySource,
+  officialNameCandidates?:PublicOnlineNameCandidateIndex
 ):Db00PublicItemSearch {
   assert(database?.contract==='wand.game-db.shared@1' &&
     database.itemCount===13202 &&
@@ -146,6 +162,14 @@ export function createDb00PublicItemSearch(
     defaultInventories.coverage.onlineOwnershipVerified===false &&
     defaultInventories.coverage.privateSaveIncluded===false,
     'PINNED_DEFAULT_INVENTORY_REQUIRED');
+  if(officialNameCandidates)assert(
+    officialNameCandidates.schema==='wand.db02.published-online-name-candidates@1' &&
+    officialNameCandidates.evidence==='name_only_no_grant_or_sale_proof' &&
+    officialNameCandidates.coverage.publishedItemDefinitions===13202 &&
+    officialNameCandidates.coverage.verifiedOnlineAcquisitionLinks===0 &&
+    officialNameCandidates.coverage.verifiedNativeShopOfferIds===0 &&
+    officialNameCandidates.coverage.completeOnlineHistory===false,
+    'OFFICIAL_NAME_ONLY_SOURCE_REQUIRED');
   let index:readonly SearchEntry[]|null=null;
   const prepare=():readonly SearchEntry[]=>{
     if(index)return index;
@@ -205,6 +229,19 @@ export function createDb00PublicItemSearch(
           row.playerProgressVerified===false &&
           (row.role==='direct'||row.role==='alternative')),
           'UNVERIFIED_QUEST_TARGET');
+        const officialNames=(officialNameCandidates?.getItemCandidates(item.id)??[])
+          .filter((row):row is PublicCampaignNameCandidate=>
+            row.kind==='official_campaign_name_candidate');
+        assert(officialNames.every(row=>row.itemId===item.id &&
+          row.sourceName===item.names.en &&
+          row.evidence==='exact_published_db00_en_name_only' &&
+          row.gameVersion==='1.26.2' &&
+          row.acquisitionLinkVerified===false &&
+          row.actualRewardGrantedVerified===false &&
+          row.nativeOfferIdVerified===false &&
+          row.currentAvailabilityVerified===false &&
+          row.accountOwnershipVerified===false),
+          'UNVERIFIED_OFFICIAL_CAMPAIGN_NAME');
         entries.push(Object.freeze({
           itemId:item.id,
           names:Object.freeze({...item.names}),
@@ -213,7 +250,8 @@ export function createDb00PublicItemSearch(
           seasonIds:seasons,
           hasStaticContainerCandidate:templates.length>0,
           configuredDefaultInventoryGroups:new Set(defaultGroups),
-          questTargetCandidates:Object.freeze([...targets])
+          questTargetCandidates:Object.freeze([...targets]),
+          officialCampaignNames:Object.freeze(officialNames)
         }));
       }
     }
@@ -267,6 +305,20 @@ export function createDb00PublicItemSearch(
       'INVALID_DEFAULT_INVENTORY_GROUP');
     assert(!(request.configuredDefaultInventoryCandidate||group)||
       defaultInventories!==undefined,'DEFAULT_INVENTORY_SOURCE_NOT_LOADED');
+    assert(request.officialCampaignNameCandidate===undefined ||
+      request.officialCampaignNameCandidate===true,
+      'INVALID_OFFICIAL_CAMPAIGN_FILTER');
+    const campaignKind=request.officialCampaignKind;
+    assert(campaignKind===undefined ||
+      typeof campaignKind==='string'&&OFFICIAL_KINDS.has(campaignKind),
+      'INVALID_OFFICIAL_CAMPAIGN_KIND');
+    const campaignId=request.officialCampaignId;
+    assert(campaignId===undefined ||
+      typeof campaignId==='string'&&CAMPAIGN_ID.test(campaignId),
+      'INVALID_OFFICIAL_CAMPAIGN_ID');
+    assert(!(request.officialCampaignNameCandidate||campaignKind||campaignId) ||
+      officialNameCandidates!==undefined,
+      'OFFICIAL_CAMPAIGN_NAME_SOURCE_NOT_LOADED');
     const offset=request.offset??0,limit=request.limit??100;
     assert(Number.isSafeInteger(offset)&&offset>=0 &&
       Number.isSafeInteger(limit)&&limit>0&&limit<=500,'INVALID_SEARCH_PAGE');
@@ -288,6 +340,10 @@ export function createDb00PublicItemSearch(
         if((request.questTargetCandidate||questId||role) &&
           !item.questTargetCandidates.some(row=>
             (!questId||row.questId===questId)&&(!role||row.role===role)))continue;
+        if((request.officialCampaignNameCandidate||campaignKind||campaignId) &&
+          !item.officialCampaignNames.some(row=>
+            (!campaignKind||row.campaignKind===campaignKind)&&
+            (!campaignId||row.campaignId===campaignId)))continue;
         if(kinds){
           if(!kinds.some(kind=>
             status?item.originStatuses.get(kind)?.has(status):
