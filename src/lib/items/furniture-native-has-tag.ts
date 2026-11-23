@@ -84,6 +84,11 @@ export interface Db01OriginalFurnitureHasTagClient{
     'gameVersion'|'sourceFurnitureSha256'|'sourceSetSha256'|
     'sourceTagSha256'|'sourceIl2cppDumpSha256'|'originalNativeClassCounts'>>;
   getItem(id:number):Promise<Readonly<Db01OriginalFurnitureHasTagItem>|null>;
+  /** Source-sorted or arbitrary Item IDs, up to 4096 per batch.
+   * Shards are verified once and catalog identity is checked in one call.
+   */ 
+  getItems(ids:readonly number[]):
+    Promise<readonly (Readonly<Db01OriginalFurnitureHasTagItem>|null)[]>;
   hasTag(id:number,tagId:number):Promise<Readonly<Db01OriginalHasTagResult>|null>;
 }
 
@@ -204,7 +209,8 @@ export function createDb01OriginalFurnitureHasTagClient(
     catalog.source.platform==='Steam'&&
     catalog.source.gameVersion==='1.26.2'&&
     catalog.source.fullCorpusParsed===true&&
-    typeof catalog.getItem==='function',
+    typeof catalog.getItem==='function'&&
+    typeof catalog.getItems==='function',
     'ORIGINAL_CATALOG_SOURCE_REQUIRED');
   const m=raw;
   const fileLedger=m.files;
@@ -266,6 +272,45 @@ export function createDb01OriginalFurnitureHasTagClient(
       gameUiCollectionMembershipVerified:false,
     });
   }
+  async function getItems(ids:readonly number[]):
+    Promise<readonly (Readonly<Db01OriginalFurnitureHasTagItem>|null)[]>{
+    require(Array.isArray(ids)&&ids.length<=4096&&ids.every(positive),
+      'INVALID_ITEM_BATCH');
+    if(!ids.length)return Object.freeze([]);
+    const paths=[...new Set(ids.map(bucket))];
+    const found=new Map<number,Readonly<Db01OriginalFurnitureHasTagRow>>();
+    let cursor=0;
+    async function readWorker():Promise<void>{
+      while(cursor<paths.length){
+        const path=paths[cursor++];
+        for(const row of await readBucket(path))found.set(row.itemId,row);
+      }
+    }
+    await Promise.all(Array.from(
+      {length:Math.min(8,paths.length)},()=>readWorker()));
+    const originals=ids.map(id=>found.get(id)??null);
+    const catalogRows=await catalog.getItems(ids);
+    require(catalogRows.length===originals.length,'CATALOG_BATCH_SIZE');
+    return Object.freeze(originals.map((source,index)=>{
+      if(!source)return null;
+      const catalogRow=catalogRows[index];
+      require(catalogRow?.catalogDomain==='item'&&
+        catalogRow.nativeCategory==='Furniture'&&
+        catalogRow.itemId===source.itemId&&
+        catalogRow.nativeKey===source.nativeKey&&
+        catalogRow.sourceSha256===DB01_ORIGINAL_FURNITURE_SOURCE_SHA256,
+        'ORIGINAL_CATALOG_ITEM_MISMATCH');
+      const input=Object.freeze({
+        itemId:source.itemId,gameVersion:'1.26.2' as const,
+        nativeTags:source.nativeTags,setLookup:source.setLookup,
+      });
+      return Object.freeze({
+        original:source,gameVersion:'1.26.2' as const,
+        input,sourceShardHashVerified:true as const,
+        gameUiCollectionMembershipVerified:false as const,
+      });
+    }));
+  }
   async function hasTag(id:number,tagId:number):
     Promise<Readonly<Db01OriginalHasTagResult>|null>{
     require(nonnegative(tagId),'INVALID_TAG_ID');
@@ -282,6 +327,6 @@ export function createDb01OriginalFurnitureHasTagClient(
       sourceIl2cppDumpSha256:m.sourceIl2cppDumpSha256,
       originalNativeClassCounts:Object.freeze({...m.originalNativeClassCounts}),
     }),
-    getItem,hasTag,
+    getItem,getItems,hasTag,
   });
 }
