@@ -127,7 +127,7 @@ try {
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('30件'));
   await browse.getByRole('button',{name:'思い出の海',exact:true}).click();
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('25件'));
-  await browse.getByRole('button',{name:'王国',exact:true}).click();
+  await browse.getByRole('button',{name:'レルム',exact:true}).click();
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('61件'));
   assert.equal(await browse.locator('.story-arcs').count(),0,
     'Realm quests must not be mixed into Story arcs');
@@ -142,10 +142,16 @@ try {
   await browse.setViewportSize({width:390,height:844});
   assert.equal(await browse.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),true,
     'character roster remains within the mobile viewport');
-  await browse.getByRole('button',{name:'イベント・繰り返し',exact:true}).click();
-  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('75件'));
-  await browse.getByRole('button',{name:'その他',exact:true}).click();
-  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('90件'));
+  await browse.getByRole('button',{name:'イベント',exact:true}).click();
+  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('66件'));
+  await browse.getByRole('button',{name:'デイリー',exact:true}).click();
+  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('9件'));
+  await browse.getByRole('button',{name:'追加・特殊',exact:true}).click();
+  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('70件'));
+  await browse.getByRole('button',{name:'ドリームバンドル',exact:true}).click();
+  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('19件'));
+  await browse.getByRole('button',{name:'チュートリアル',exact:true}).click();
+  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('1件'));
   await browse.getByRole('button',{name:'すべて',exact:true}).first().click();
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('733件'));
   await browse.getByRole('textbox',{name:'クエスト名・IDを検索'}).fill('2070000793');
