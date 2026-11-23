@@ -310,6 +310,8 @@ struct Query {
     universe: String,
     expansion: String,
     status: String,
+    #[serde(rename="favoriteOnly")]
+    favorite_only: bool,
     offset: usize,
     limit: usize,
     #[serde(rename="nameStatus")]
@@ -650,6 +652,7 @@ impl CollectionEngine {
             && one_of(&query.universe,&index.universes,&r.universe)
             && one_of(&query.expansion,&index.expansions,&r.expansion)
             && (query.status.is_empty() || query.status == "all" || self.status(r.id) == query.status)
+            && (!query.favorite_only || self.entry(r.id).is_some_and(|e| e.favorite == Some(true)))
             && (query.name_status.is_empty() || query.name_status=="all"
                 || (query.name_status=="verified" && r.name_verified)
                 || (query.name_status=="unverified" && !r.name_verified))
@@ -1234,6 +1237,20 @@ mod tests {
         assert!(!entries.contains_key("104"));
         let before=engine.state.clone();
         assert_eq!(engine.bulk_matching_impl(matching,"owned").unwrap(),0);
+        // Favorites are a separate local annotation, never inferred from
+        // owned status. Paging and bulk operations share this same Rust filter.
+        let favorites=r#"{"locale":"en","favoriteOnly":true,"limit":10}"#;
+        let favorite_page:Value=serde_json::from_str(&engine.query_impl(favorites).unwrap()).unwrap();
+        assert_eq!(favorite_page["total"],1);
+        assert_eq!(favorite_page["items"][0]["itemId"],101);
+        let favorite_paged:Value=serde_json::from_str(
+            &engine.query_impl(r#"{"locale":"en","favoriteOnly":true,"offset":1,"limit":10}"#).unwrap()).unwrap();
+        assert_eq!(favorite_paged["total"],1);
+        assert_eq!(favorite_paged["items"].as_array().unwrap().len(),0);
+        assert_eq!(engine.bulk_matching_impl(favorites,"missing").unwrap(),1);
+        assert_eq!(engine.state.workspaces[0].entries["101"].status.as_deref(),Some("missing"));
+        assert_eq!(engine.state.workspaces[0].entries["101"].favorite,Some(true));
+        assert_eq!(engine.state.workspaces[0].entries["102"].status.as_deref(),Some("owned"));
         assert!(engine.bulk_matching_impl(matching,"invalid").is_err());
         assert!(engine.bulk_matching_impl(r#"{"status":"invalid"}"#,"missing").is_err());
         assert!(engine.state==before);
