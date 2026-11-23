@@ -130,15 +130,15 @@ def extract_rows(
             }
             inherited = set_tags.get(set_id, ())
             effective = set(direct) | set(inherited)
+            require(not any(
+                tag in inherited and tag not in direct
+                for tag in POSITIVE_AREA_TAGS.values()),
+                "SET_AREA_INHERITANCE_DRIFT_" + family)
             codes = [code for code, tag in POSITIVE_AREA_TAGS.items()
                      if tag in effective]
             require(len(codes) <= 1,
                     "MULTIPLE_POSITIVE_AREA_TAGS_" + family)
             area[family].update(codes)
-            require(not any(
-                tag in inherited and tag not in direct
-                for tag in POSITIVE_AREA_TAGS.values()),
-                "SET_AREA_INHERITANCE_DRIFT_" + family)
             observed[family] += 1
             direct_tagged[family] += bool(direct)
             inherited_novel[family] += bool(set(inherited) - set(direct))
