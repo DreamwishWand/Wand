@@ -199,7 +199,7 @@ test('mutated source rows are rejected, and public loader requires exact pinned 
     'the pinned original Star Path validator may reject an invalid ID first');
   const reduced=await read();
   reduced.seasons[0].rewardPages[0].rewards.pop();
-  assert.throws(()=>createGuideRewardIndex(reduced),/SOURCE_REWARD_CENSUS/);
+  assert.throws(()=>createGuideRewardIndex(reduced),/SOURCE_REWARD_CENSUS|Public Star Path: source reward census/);
   const badAlternative=await read();
   badAlternative.seasons[0].vaultRewards[0].alternateItemId='10000000'; // structurally valid but a previously unseen ID
   assert.throws(()=>createGuideRewardIndex(badAlternative),/SOURCE_REWARD_CENSUS/);
