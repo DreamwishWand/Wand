@@ -11,7 +11,7 @@
   import { CollectionRuntime, type CollectionState, type CollectionItem, type CollectionFacet, type CollectionProgress, type CollectionFilter } from '$lib/collection/runtime';
   import { collectionFamilyLabel } from '$lib/collection/copy';
   import {collectionInterfaceCopy} from '$lib/collection/interface-copy.ts';
-  import {collectionScopeOptions,collectionItemScopeLabels,type CollectionScopeOption} from '$lib/collection/scope-options';
+  import {collectionScopeOptions,collectionItemScopeLabels,COLLECTION_WORLD_NAVIGATION,type CollectionScopeOption} from '$lib/collection/scope-options';
   import {collectionItemHref,collectionItemFromLink}
     from '$lib/collection/item-permalink.ts';
 
@@ -749,7 +749,17 @@
             <div class="collection-scope-scroll">
               <button type="button" class:chosen={!worldFilter} aria-pressed={!worldFilter}
                 on:click={()=>chooseWorld('')}>{copy.all}</button>
-              {#each worldScopeOptions as option (option.id)}
+              {#each COLLECTION_WORLD_NAVIGATION as world (world.id)}
+                {#if worldScopeOptions.some(option=>option.id===world.id)}
+                  <button type="button" class:chosen={worldFilter===world.id}
+                    aria-pressed={worldFilter===world.id} on:click={()=>chooseWorld(world.id)}>
+                    {worldScopeOptions.find(option=>option.id===world.id)?.label??world.label}
+                  </button>
+                {:else}
+                  <button type="button" disabled title={copy.worldScopeUnavailable}>{world.label}</button>
+                {/if}
+              {/each}
+              {#each worldScopeOptions.filter(option=>!COLLECTION_WORLD_NAVIGATION.some(world=>world.id===option.id)) as option (option.id)}
                 <button type="button" class:chosen={worldFilter===option.id}
                   aria-pressed={worldFilter===option.id} on:click={()=>chooseWorld(option.id)}>{option.label}</button>
               {/each}
