@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {STARPATH_SOURCE_SHA,STARPATH_PUBLIC_SHA} from '../guide/public-starpath.mjs';
+import {STARPATH_SOURCE_SHA,STARPATH_PUBLIC_SHA} from '../guide/public-starpath.ts';
 import {
   createDb01StarpathOriginClient,DB01_STARPATH_ORIGIN_QUERY,
 } from './starpath-origin-filters.ts';
