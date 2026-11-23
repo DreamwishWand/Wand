@@ -12,6 +12,13 @@ export interface CollectionScopeOption {
 }
 export type CollectionScopeAxis='world'|'universe';
 const LOCALES=['en','fr','it','de','es-ES','ja','zh-CN','pt-BR'] as const;
+// Presentation order follows the original CollectionArea sequence (Honeywood
+// is a special 4097 enum). This list NEVER assigns membership; the verified
+// runtime facet + explicit proof still decide which tabs can exist.
+const NATIVE_WORLD_ORDER=[
+  'IsDreamlightValley','IsEternityIsle','IsStorybookVale',
+  'IsWishBlossomMountains','isSeaOfSecrets','isHoneywood',
+] as const;
 const VERIFIED_WORLD='verified_game_collection_area_item_membership';
 const VERIFIED_UNIVERSE='verified_game_collection_universe_item_membership';
 
@@ -47,6 +54,13 @@ export function collectionScopeOptions(
     if(!id||seen.has(id)||!facet||typeof text!=='string'||!text.trim())continue;
     seen.add(id);
     options.push(Object.freeze({id,label:text.trim(),total:facet.total}));
+  }
+  if(axis==='world'){
+    const rank=(id:string)=>{
+      const pos=NATIVE_WORLD_ORDER.indexOf(id as typeof NATIVE_WORLD_ORDER[number]);
+      return pos<0?NATIVE_WORLD_ORDER.length:pos;
+    };
+    options.sort((a,b)=>rank(a.id)-rank(b.id));
   }
   return Object.freeze(options);
 }
