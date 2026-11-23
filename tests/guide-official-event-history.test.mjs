@@ -7,7 +7,7 @@ import {viewerEventDateTime} from '../src/lib/guide/viewer-event-time.ts';
 
 test('historical calendar is bounded by the 2022 Early Access launch, not 2023 full release',()=>{
   assert.equal(GUIDE_EARLY_ACCESS_FIRST_DAY,'2022-09-06');
-  assert.equal(GUIDE_OFFICIAL_HISTORICAL_EVENTS.length,8);
+  assert.equal(GUIDE_OFFICIAL_HISTORICAL_EVENTS.length,18);
   const first=GUIDE_OFFICIAL_HISTORICAL_EVENTS[0];
   assert.equal(first.id,'pixar-fest-star-path-2022');
   assert.equal(first.sourceUrl,GUIDE_EARLY_ACCESS_SOURCE);
