@@ -270,6 +270,8 @@ export function createDb01SixSourceClient(
       ((b.positiveNativeAreaCodes===null&&
         b.sourceNativeTagState==='not_ihas_tags')||
        (Array.isArray(b.positiveNativeAreaCodes)&&
+        (b.sourceNativeTagState==='positive_native_tag'||
+         b.sourceNativeTagState==='no_positive_native_tag')&&
         (b.sourceNativeTagState==='positive_native_tag')===
           (b.positiveNativeAreaCodes.length>0))),
       'SKIN_SOURCE_PROOF_MISSING');
