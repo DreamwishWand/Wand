@@ -100,6 +100,7 @@ test('calendar season links open the correct Star Path and reject forged links',
   ])assert.throws(()=>starpathSeasonHref(base,id),/invalid link/);
   const hub=await readFile(new URL('../src/routes/guide/+page.svelte',import.meta.url),'utf8');
   const route=await readFile(new URL('../src/routes/guide/star-path/+page.svelte',import.meta.url),'utf8');
-  assert.equal((hub.match(/starpathSeasonHref\(base,event\.sourceSeasonId\)/g)||[]).length,1,\n    'Guide uses a single typed eventHref resolver for calendar and detail navigation');
+  assert.equal((hub.match(/starpathSeasonHref\(base,event\.sourceSeasonId\)/g)||[]).length,1,
+    'Guide uses a single typed eventHref resolver for calendar and detail navigation');
   assert.match(route,/resolveStarpathSeasonLink\(window\.location\.search,catalog\)/);
 });
