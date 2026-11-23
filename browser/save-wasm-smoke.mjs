@@ -170,7 +170,7 @@ try{
     buffer:Buffer.from(JSON.stringify(quantityProfile))
   });
   await page.getByRole('button',{name:'セーブファイル管理'}).click();
-  await page.getByRole('button',{name:'編集プレビューを開く（開発用）'}).click();
+  await page.getByRole('button',{name:'Save Editor（テスト版）'}).click();
   await page.waitForURL('**/save/preview/');
   await page.locator('.active-save-file').getByText('shared-preview.profile').waitFor();
   const sharedSlotCount=page.locator('.slot-actions [role="status"]').filter({hasText:'件'}).first();
@@ -1393,7 +1393,7 @@ try{
     });
   await page.getByRole('button',{name:'セーブファイル管理'}).click();
   await page.getByRole('button',{
-    name:'編集プレビューを開く（開発用）'
+    name:'Save Editor（テスト版）'
   }).click();
   await page.waitForURL('**/save/');
   const regular=page.locator('main.editor-workspace');
