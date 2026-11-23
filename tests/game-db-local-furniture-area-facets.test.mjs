@@ -85,6 +85,7 @@ const originalClient=Object.freeze({
   schema:DB01_ORIGINAL_FURNITURE_SUBTYPES_SCHEMA,
   source:originalHashes,
   getItem:async id=>ORIGINALS.get(id)??null,
+  getItems:async ids=>Object.freeze(ids.map(id=>ORIGINALS.get(id)??null)),
   hasTag:async()=>null
 });
 const BY_ID=new Map([
