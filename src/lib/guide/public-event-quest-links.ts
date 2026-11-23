@@ -2,7 +2,7 @@
  * Public projection retains only ID relationships, not the private source,
  * player progress, event availability, unlock order or prerequisites.
  */
-import {verifyPublicQuestIndex} from './public-guide.mjs';
+import {verifyPublicQuestIndex} from './public-guide.ts';
 import type {PublicEventFriendshipRewards} from './public-event-friendship-rewards.ts';
 
 export const DB03_EVENT_QUEST_SCHEMA='wand.db03.public-event-quest-links@1' as const;
