@@ -330,3 +330,45 @@ test('native online categories remain an opt-in public source with no shared-sta
   assert.equal(catalog.itemSources.getKindItemIds('redeem_code').length,0);
   assert.equal(catalog.coverage.combinedSourceRoutes,1255);
 });
+
+test('source-native recipe results load once on demand and augment a single Item ID without changing startup or existing origins',async()=>{
+  const {seen,fetcher}=publicFetcher();
+  const catalog=await loadPublicSourceCatalog('/Wand',fetcher);
+  const baseRequests=seen.length;
+  const original=catalog.lookup('40001082');
+  assert.equal(original.originCoverageComplete,false);
+  assert.equal(seen.some(url=>url.endsWith('/recipe-results-1.26.2.json')),false);
+  assert.equal(catalog.coverage.combinedSourceRoutes,1255);
+  const first=catalog.loadNativeRecipeResults();
+  const second=catalog.loadNativeRecipeResults();
+  assert.equal(first,second);
+  const native=await first;
+  assert.equal(seen.length,baseRequests+1);
+  assert.equal(seen.filter(url=>url.endsWith('/recipe-results-1.26.2.json')).length,1);
+  assert.equal(native.coverage.recipeDefinitions,1943);
+  assert.equal(native.listResultItemIds().length,1912);
+  const enriched=await catalog.lookupWithNativeRecipes('40001082');
+  assert.equal(seen.length,baseRequests+1);
+  assert.equal(enriched.itemId,original.itemId);
+  assert.deepEqual(enriched.origins,original.origins);
+  assert.deepEqual(enriched.onlineNameCandidates,original.onlineNameCandidates);
+  assert.equal(enriched.nativeRecipeDefinitionsLoaded,true);
+  assert.equal(enriched.recipeUnlockVerified,false);
+  assert.equal(enriched.originCoverageComplete,false);
+  assert.equal(enriched.nativeRecipes.length,1);
+  assert.equal(enriched.nativeRecipes[0].recipeId,'2050300000');
+  assert.equal(enriched.nativeRecipeOrigins.length,1);
+  assert.equal(enriched.nativeRecipeOrigins[0].routeStatus,'confirmed_source_link');
+  assert.equal(enriched.nativeRecipeOrigins[0].kind,'crafting');
+  assert.equal(enriched.nativeRecipeOrigins[0].availability,'not_live_verified');
+  assert(Object.isFrozen(enriched));
+  assert.equal(catalog.coverage.combinedSourceRoutes,1255);
+  assert.equal(catalog.itemSources.getKindItemIds('crafting').length,0);
+  assert.equal(catalog.itemSources.getKindItemIds('cooking').length,0);
+  assert.equal(catalog.itemSources.getKindItemIds('twitch_drop').length,0);
+  assert.equal(catalog.itemSources.getKindItemIds('redeem_code').length,0);
+  const unknown=await catalog.lookupWithNativeRecipes('40000152');
+  assert.equal(unknown.nativeRecipeDefinitionsLoaded,true);
+  assert.equal(unknown.nativeRecipeOrigins.length,
+    native.getResultOrigins('40000152').length);
+});
