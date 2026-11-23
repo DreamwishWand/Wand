@@ -45,6 +45,8 @@ export interface OriginalDefaultGridLayersWindow {
   readonly potentiallyUnresolvedContributorCountRows:
     readonly (readonly number[])[]|null;
   readonly sourceDefaultGridObjectCount:number;
+  /** Original source object excluded only from the default Item layer aggregation. */
+  readonly excludedOriginalGridObjectId:number|null;
   readonly missingItemDefinitionCount:number;
   readonly sourceItemWithoutGridAreaCount:number;
   readonly invalidDefaultAreaExtentCount:number;
@@ -73,7 +75,8 @@ function reply(
   layoutId:string,gridId:number,rect:Rect,
   gridDataPath:string|null=null,factor:1|2|null=null,
   layers:number[][]|null=null,counts:number[][]|null=null,
-  unknown:number[][]|null=null,objectCount=0,missing=0,noArea=0,outside=0
+  unknown:number[][]|null=null,objectCount=0,missing=0,noArea=0,outside=0,
+  excludedOriginalGridObjectId:number|null=null
 ):OriginalDefaultGridLayersWindow {
   const freezeRows=(rows:number[][]|null)=>
     rows===null?null:Object.freeze(rows.map(row=>Object.freeze(row)));
@@ -86,6 +89,7 @@ function reply(
     knownDefaultContributorCountRows:freezeRows(counts),
     potentiallyUnresolvedContributorCountRows:freezeRows(unknown),
     sourceDefaultGridObjectCount:objectCount,
+    excludedOriginalGridObjectId,
     missingItemDefinitionCount:missing,
     sourceItemWithoutGridAreaCount:noArea,
     invalidDefaultAreaExtentCount:outside,
@@ -107,14 +111,16 @@ function reply(
 /** Max 32×32 output; scans each original source GridObject once, not
  * 1,024 times. Private source arrays never leave the Worker. */
 export function getOriginalDefaultGridLayersWindow(
-  source:unknown,layoutId:string,nativeGridId:number,rect:Rect
+  source:unknown,layoutId:string,nativeGridId:number,rect:Rect,
+  excludeOriginalGridObjectId:number|null=null
 ):OriginalDefaultGridLayersWindow {
   if(typeof layoutId!=='string'||!layoutPattern.test(layoutId)||
      layoutId.split('/').includes('..')||
      !uint(nativeGridId)||!record(rect)||
      !uint(rect.x)||!uint(rect.y)||
      !uint(rect.width)||!uint(rect.height)||
-     rect.width<1||rect.height<1||rect.width>32||rect.height>32)
+     rect.width<1||rect.height<1||rect.width>32||rect.height>32||
+     (excludeOriginalGridObjectId!==null&&!uint(excludeOriginalGridObjectId)))
     throw new TypeError('DB04_GRID_LAYERS_WINDOW_INVALID_QUERY');
   if(!record(source)||!record(source.manifest)||
      !(source.layoutObjectsByGrid instanceof Map)||
@@ -137,6 +143,10 @@ export function getOriginalDefaultGridLayersWindow(
   if(!Array.isArray(objects)||objects.length!==domain.defaultObjectCount||
      objects.length>1_000_000)
     throw new TypeError('DB04_GRID_LAYERS_WINDOW_COUNT_MISMATCH');
+  if(excludeOriginalGridObjectId!==null&&
+     objects.filter(row=>record(row)&&
+       row.gridObjectIdNative===excludeOriginalGridObjectId).length!==1)
+    throw new TypeError('DB04_GRID_LAYERS_WINDOW_EXCLUSION_NOT_IN_ORIGINAL_GRID');
   const blank=()=>Array.from({length:rect.height},
     ()=>Array<number>(rect.width).fill(0));
   const layers=blank(),counts=blank(),unknown=blank();
@@ -163,6 +173,7 @@ export function getOriginalDefaultGridLayersWindow(
        entry.x>=domain.anchorSizeX||entry.y>=domain.anchorSizeY||
        !uint(entry.orientationCode)||entry.orientationCode>15)
       throw new TypeError('DB04_GRID_LAYERS_WINDOW_ORIGINAL_OBJECT_INVALID');
+    if(entry.gridObjectIdNative===excludeOriginalGridObjectId)continue;
     const itemId=entry.itemId as number;
     const ox=entry.x as number,oy=entry.y as number;
     let evidence=cache.get(itemId);
@@ -214,5 +225,5 @@ export function getOriginalDefaultGridLayersWindow(
   }
   return reply('source_item_default_layer_window',layoutId,nativeGridId,rect,
     domain.gridDataPath,factor,layers,counts,unknown,
-    objects.length,missing,noArea,outside);
+    objects.length,missing,noArea,outside,excludeOriginalGridObjectId);
 }
