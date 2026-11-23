@@ -41,6 +41,13 @@ import {loadPinnedDefaultInventorySource,type PinnedDefaultInventorySource}
   from './public-default-inventories.ts';
 import {loadPinnedNativePetSourceCategories,type NativePetSourceIndex}
   from './public-pet-source-categories.ts';
+import {
+  loadPinnedNativeCompanionIdentities,
+  joinOfficialNativeCompanionNameCandidates,
+  type PinnedNativeCompanionIdentityIndex,
+  type CompanionOfficialNameCandidateIndex,
+  type NativeCompanionIdentity,type CompanionOfficialNameCandidate
+} from './public-native-companion-identities.ts';
 import {loadPinnedNativeOnlineCategories,type NativeOnlineCategoryIndex}
   from './public-online-categories.ts';
 import {loadPinnedNativeRecipeResults,
@@ -174,6 +181,16 @@ export type PublicSourceItemNamedLootLookup=PublicSourceItemLookup&{
   readonly actualDropVerified:false;
   readonly localizedNameVerified:false;
 };
+export type PublicSourceItemCompanionNameLookup=PublicSourceItemLookup&{
+  /** Original Companion definition outside the main ItemList DB-00 scope. */
+  readonly nativeCompanionIdentity:NativeCompanionIdentity|null;
+  /** Human-to-native name association: NOT an official numeric reward link. */
+  readonly companionOfficialNameCandidates:readonly CompanionOfficialNameCandidate[];
+  readonly nativeCompanionIdentitiesLoaded:true;
+  readonly nativeCompanionDefinitionVerified:true;
+  readonly numericCampaignRewardLinkVerified:false;
+  readonly actualCompanionGrantVerified:false;
+};
 export interface PublicSourceCatalog{
   readonly schema:typeof DB02_PUBLIC_SOURCE_CATALOG_SCHEMA;
   readonly gameVersion:'1.26.2';
@@ -197,6 +214,13 @@ export interface PublicSourceCatalog{
   readonly defaultInventorySource:PinnedDefaultInventorySource;
   /** Optional, source-pinned native PetItemData.Source categories. No eager fetch. */
   loadNativePetSources():Promise<NativePetSourceIndex>;
+  /** All 394 original Companion Item IDs and exact internal keys. */
+  loadNativeCompanionIdentities():Promise<PinnedNativeCompanionIdentityIndex>;
+  /** Two Item IDs / three name-semantic official campaign candidates only. */
+  loadOfficialCompanionNameCandidates():Promise<CompanionOfficialNameCandidateIndex>;
+  lookupWithNativeCompanionNameCandidates(
+    itemId:string|number
+  ):Promise<PublicSourceItemCompanionNameLookup>;
   /** Native OnlineCategory enum: Premium/TimeLimited, not a specific sale. */
   loadNativeOnlineCategories():Promise<NativeOnlineCategoryIndex>;
   /** Optional original 1943 cooking/crafting result links and ingredient rules. */
@@ -396,6 +420,8 @@ export async function loadPublicSourceCatalog(
   // Existing DB-00 and every current public consumer retain their original
   // asset requests; the 2 KB source is fetched only when explicitly requested.
   let nativePetSourcePromise:Promise<NativePetSourceIndex>|null=null;
+  let nativeCompanionIdentityPromise:Promise<PinnedNativeCompanionIdentityIndex>|null=null;
+  let officialCompanionNamePromise:Promise<CompanionOfficialNameCandidateIndex>|null=null;
   let nativeOnlineCategoryPromise:Promise<NativeOnlineCategoryIndex>|null=null;
   let nativeRecipePromise:Promise<NativeRecipeIndex>|null=null;
   let nativeActivityPromise:Promise<NativeActivityResultIndex>|null=null;
@@ -407,6 +433,12 @@ export async function loadPublicSourceCatalog(
   let nativeObjectLootPromise:Promise<PublicNativeObjectLootIndex>|null=null;
   let nativeStallSlotsPromise:Promise<NativeStallSlotIndex>|null=null;
   let nativeStallSourcesPromise:Promise<NativeStallSourceIndex>|null=null;
+  const loadCompanionIdentities=()=>nativeCompanionIdentityPromise??=
+    loadPinnedNativeCompanionIdentities(basePath,fetcher);
+  const loadCompanionNames=()=>officialCompanionNamePromise??=
+    loadCompanionIdentities().then(native=>
+      joinOfficialNativeCompanionNameCandidates(native,origins.listCampaigns())
+    );
   const loadRecipes=()=>nativeRecipePromise??=
     loadPinnedNativeRecipeResults(basePath,fetcher);
   const loadActivities=()=>nativeActivityPromise??=
@@ -457,6 +489,21 @@ export async function loadPublicSourceCatalog(
       return nativePetSourcePromise??=loadPinnedNativePetSourceCategories(
         basePath,fetcher
       );
+    },
+    loadNativeCompanionIdentities(){return loadCompanionIdentities();},
+    loadOfficialCompanionNameCandidates(){return loadCompanionNames();},
+    async lookupWithNativeCompanionNameCandidates(itemId:string|number){
+      const row=lookupCurrent(itemId);
+      const source=await loadCompanionNames();
+      return Object.freeze({
+        ...row,
+        nativeCompanionIdentity:source.native.getItem(row.itemId),
+        companionOfficialNameCandidates:source.getItemCandidates(row.itemId),
+        nativeCompanionIdentitiesLoaded:true as const,
+        nativeCompanionDefinitionVerified:true as const,
+        numericCampaignRewardLinkVerified:false as const,
+        actualCompanionGrantVerified:false as const
+      });
     },
     loadNativeOnlineCategories(){
       return nativeOnlineCategoryPromise??=loadPinnedNativeOnlineCategories(
