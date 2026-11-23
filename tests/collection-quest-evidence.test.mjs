@@ -141,7 +141,7 @@ test('real Steam v1.26.2 Quest Item backlinks link to verified original Quest ID
   const shared=await openPublicSharedGameSources('/Wand',fetcher);
   assert.equal(shared.database.target.gameVersion,'1.26.2');
   const before=seen.length;
-  assert(!seen.some(url=>url.endsWith('quest-conditions-1.26.2.json')),
+  assert(!seen.some(url=>url.endsWith('quest-conditions-1.26.2-v2.json.gz.b64')),
     'native Quest condition data must stay lazy');
   const quests=await shared.loadNativeQuestSources();
   assert.equal(quests.originalQuests,733);
