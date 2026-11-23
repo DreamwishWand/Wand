@@ -541,9 +541,11 @@ try {
   const festival=hub.locator('.timeline-row')
     .filter({hasText:'ホーンテッドフローティングフェスティバル'});
   await festival.locator('.event-label').click();
-  assert.match(await hub.locator('.event-inspector').innerText(),/2026年10月7日/);
-  assert.match(await hub.locator('.event-inspector').innerText(),/2026年10月31日/);
-  assert.match(await hub.locator('.event-inspector').innerText(),/時刻未確認/);
+  assert.match(await hub.locator('.event-inspector').innerText(),/2026\/10\/06 17:00 GMT-7/,
+    'native Festival opening UTC instant must convert to Los Angeles local time');
+  assert.match(await hub.locator('.event-inspector').innerText(),/2026\/10\/31 16:59 GMT-7/);
+  assert.doesNotMatch(await hub.locator('.event-inspector').innerText(),/時刻未確認/,
+    'source-native timestamps are present and must not be presented as date-only');
   const festivalCalendarHref='/Wand/guide/events/?event=HauntedFloatingFestival2026';
   assert.equal(await hub.locator('.event-inspector a.primary').getAttribute('href'),
     festivalCalendarHref);
@@ -582,6 +584,9 @@ try {
   assert.equal(await hub.locator('.event-inspector a.primary').count(),0,
     'historic online-only passes must not link to current season duties');
   assert.equal(await hub.locator('.event-inspector a[href^="https://disneydreamlightvalley.com/"]').count(),1);
+  await hub.locator('.calendar-year').selectOption('2025');
+  assert.match(await hub.locator('.timeline-content').innerText(),/幸運のクローバー/,
+    '2025 first native event is now visible without nonofficial wiki data');
   await hub.locator('.calendar-year').selectOption('2023');
   assert.match(await hub.locator('.timeline-content').innerText(),/Eggstravaganza/);
   assert.equal(await hub.locator('.timeline-bar.other').count(),1,

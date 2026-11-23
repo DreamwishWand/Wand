@@ -16,6 +16,7 @@
   import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences.ts';
   import {guideTimelineCopy,GUIDE_LOCALES} from '$lib/guide/timeline-copy.ts';
   import {GUIDE_EARLY_ACCESS_FIRST_DAY} from '$lib/guide/official-event-history.ts';
+  import {mergeGuideNativeEvents} from '$lib/guide/native-event-calendar.ts';
 
   let events:GuideCalendarEvent[]=[];
   let nativeFestivalNames:Readonly<Record<string,string>>|null=null;
@@ -67,7 +68,9 @@
     // Other event titles remain the exact language supplied by official news.
     const names=event.id==='haunted-floating-festival-2026'?nativeFestivalNames:
       event.id==='haunted-floating-festival-2025'?earlierFestivalNames:null;
-    return names?.[language]||names?.en||event.title;
+    return (event.kind==='limited-event'
+      ?(event.nativeNames?.[language]||event.nativeNames?.en):undefined)
+      ||names?.[language]||names?.en||event.title;
   }
   function eventHref(event:GuideCalendarEvent):string|null{
     if(event.kind==='starpath')return starpathSeasonHref(base,event.sourceSeasonId);
@@ -92,6 +95,8 @@
   }
   function eventBoundary(event:GuideCalendarEvent):string{
     if(event.precision==='date-only'){
+      if(event.kind==='limited-event'&&event.sourceStartUtc&&event.sourceEndUtcInclusive)
+        return `${formatLocal(event.sourceStartUtc)} – ${formatLocal(event.sourceEndUtcInclusive)}`;
       const end=event.kind==='starpath-history'&&event.officialEndUtc
         ?formatLocal(event.officialEndUtc):longDay(event.endDayInclusive);
       return `${longDay(event.startDay)} – ${end}`;
@@ -151,7 +156,8 @@
         loadPublicEventFriendshipRewards(`${base}/guide/public/${DB03_EVENT_FRIENDSHIP_REWARD_FILE}`)
           .catch(()=>null)
       ]);
-      events=guideCalendarEvents(snapshot);
+      const articleEvents=guideCalendarEvents(snapshot);
+      events=native?mergeGuideNativeEvents(articleEvents,native):articleEvents;
       nativeFestivalNames=native?.getEvent('floating_festival','HauntedFloatingFestival2026')?.names??null;
       earlierFestivalNames=native?.getEvent('floating_festival','HauntedFloatingFestival')?.names??null;
     }catch(error){
@@ -299,7 +305,10 @@
             </button>
           </div>
           <div class="date-facts">
-            {#if selected.precision==='date-only'}
+            {#if selected.kind==='limited-event'&&selected.sourceStartUtc&&selected.sourceEndUtcInclusive}
+              <div><small>{copy.start}</small><strong>{formatLocal(selected.sourceStartUtc)}</strong></div>
+              <div><small>{copy.end}</small><strong>{formatLocal(selected.sourceEndUtcInclusive)}</strong></div>
+            {:else if selected.precision==='date-only'}
               <div><small>{copy.start}</small><strong>{longDay(selected.startDay)}</strong></div>
               <div><small>{copy.end}</small>
                 <strong>{selected.kind==='starpath-history'&&selected.officialEndUtc
@@ -321,9 +330,11 @@
             {#if selectedHref}
               <a class="primary" href={selectedHref}>{copy.guideLink} <WandIcon name="arrow" size={16}/></a>
             {/if}
-            <a href={selected.sourceUrl} target="_blank" rel="noopener noreferrer">
-              {copy.official} <WandIcon name="link" size={14}/>
-            </a>
+            {#if selected.sourceUrl}
+              <a href={selected.sourceUrl} target="_blank" rel="noopener noreferrer">
+                {copy.official} <WandIcon name="link" size={14}/>
+              </a>
+            {/if}
           </div>
         </div>
       {/if}

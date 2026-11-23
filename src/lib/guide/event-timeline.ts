@@ -140,10 +140,15 @@ export function guideTimelineRows(
       if(task)segments.push(task);
       if(exchange)segments.push(exchange);
     }else{
-      // Published day membership is not a confirmed universal UTC timestamp.
+      // First-party Mini Event/Festival timestamps are exact archived instants;
+      // official article-only intervals remain civil days with no fake hour.
+      const sourceStart=event.kind==='limited-event'?event.sourceStartUtc:null;
+      const sourceEnd=event.kind==='limited-event'?event.sourceEndUtcInclusive:null;
       const limited=clip('limited',
-        localDayStart(event.startDay,range.timeZone),
-        localDayStart(nextCivil(event.endDayInclusive),range.timeZone),range);
+        sourceStart&&sourceEnd?exactUtc(sourceStart):
+          localDayStart(event.startDay,range.timeZone),
+        sourceStart&&sourceEnd?exactUtc(sourceEnd)+1:
+          localDayStart(nextCivil(event.endDayInclusive),range.timeZone),range);
       if(limited)segments.push({...limited,
         phase:event.kind==='starpath-history'?'historic':'limited'});
     }
