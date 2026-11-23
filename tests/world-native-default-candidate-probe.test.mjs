@@ -154,8 +154,8 @@ test('strict original tuple, dimensions and candidate requests fail closed',()=>
     L,3,5,101,4,2,8),/INCONSISTENT_ORIGINAL/);
   assert.throws(()=>probeOriginalSourceDefaultCandidate(f,
     'SceneLayouts/../Bad.json',3,5,100,4,2,8),/QUERY_INVALID/);
-  assert.throws(()=>probeOriginalSourceDefaultCandidate(f,
-    L,4,5,100,4,2,8),/^(?!$)/); // unknown original Grid never authorized
+  assert.equal(probeOriginalSourceDefaultCandidate(f,
+    L,4,5,100,4,2,8).status,'original_source_not_available');
   for(const q of [[-1,2,8],[3,-1,8],[2,2,16],
     [1.3,1,8],[0,0,-1]]){
     assert.throws(()=>probe(f,...q),/QUERY_INVALID/);
