@@ -295,6 +295,7 @@
           </div>
         </div>
       {/if}
+      {#if !historyOpen}
       <div class="shell-undo-redo" role="group" aria-label={copy.history}>
         <button type="button" class="header-icon-button" aria-label={copy.historyUndo}
           title={copy.historyUndo} disabled={service!=='collection'||$historyView.busy||$historyView.cursor===0}
@@ -303,6 +304,7 @@
           title={copy.historyRedo} disabled={service!=='collection'||$historyView.busy||$historyView.cursor===$historyView.entries.length}
           on:click={()=>void editHistory.redo()}><WandIcon name="redo" size={20}/></button>
       </div>
+      {/if}
       <button class="header-icon-button shell-history-button" bind:this={historyButton}
         type="button" aria-label={copy.history} title={copy.history} aria-expanded={historyOpen}
         on:click={()=>{void openHistory();}}>
