@@ -717,7 +717,7 @@
   onMount(()=>{
     const unregister=developmentMode?()=>{}:registerLocalSaveChangeGuard(
       (previous,next)=>{
-        if(next===approvedReopenFile)return true;
+        if(approvedReopenFile!==null&&next===approvedReopenFile)return true;
         if(previous!==activeFile||!hasQueuedChanges())return true;
         return window.confirm(next===null
           ?'未出力の数量・配置の変更が消えます。セーブを閉じますか？'
