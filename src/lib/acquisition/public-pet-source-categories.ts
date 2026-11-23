@@ -72,9 +72,10 @@ function decode(raw:unknown):NativePetSourceIndex{
     source.enumType==='Definitions.Items.MetaLocation'&&
     source.sourceFieldNumber===9&&
     source.onlyExplicitNonWorldSourceValues===true,'SOURCE_PIN');
+  const groupSizes=census.groupSizes;
   check(census.sourcePinnedPetRows===134&&
-    Array.isArray(census.groupSizes)&&census.groupSizes.length===6&&
-    COUNTS.every((n,i)=>census.groupSizes[i]===n)&&
+    Array.isArray(groupSizes)&&groupSizes.length===6&&
+    COUNTS.every((n,i)=>groupSizes[i]===n)&&
     census.individualCampaignLinksVerified===false&&
     census.playerAcquisitionVerified===false&&
     census.allItemTypesCovered===false,'SOURCE_CENSUS');
