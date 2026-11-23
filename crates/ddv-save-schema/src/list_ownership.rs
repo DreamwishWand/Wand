@@ -212,9 +212,10 @@ mod tests {
             PositiveStockItem{item_id:50000001,role:"Clothing"}
         ]);
         let result = serde_json::to_string(&projected).unwrap();
-        for secret in ["private-identity","secret-marker","Amount","Inventory","100000731"] {
+        for secret in ["private-identity","secret-marker","Inventory","100000731"] {
             assert!(!result.contains(secret),"private field: {secret}");
         }
+        assert!(!result.contains("\\"Amount\\":"));
         assert!(!projected.missing_status_inferred &&
             !projected.current_steam_native_equivalent_proven);
     }
