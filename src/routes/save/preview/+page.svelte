@@ -429,8 +429,9 @@
   }
   function draftMixedFromCoordinates():GridMixedPlan|null{
     const row=coordinateSelection;
-    if(!row||!row.coordinatesObserved||row.x===null||row.y===null)
-      return null;
+    if(!row||!row.coordinatesObserved||row.x===null||row.y===null||
+       coordinateNumber(coordinateX)===null||
+       coordinateNumber(coordinateY)===null)return null;
     const coord=selectedCoordinatePlan();
     const old=isCardinal(row.orientation)?row.orientation:null;
     const rotated=old!==null&&isCardinal(coordinateOrientationValue)&&
