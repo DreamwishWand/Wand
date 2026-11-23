@@ -323,3 +323,40 @@ export function getNativeTerrainDistribution(sourceCatalog:unknown,gridId:string
   };
 }
 
+
+
+/**
+ * Exact source GridData raster in display row order (y*sizeX+x).
+ * Designed for a whole-grid pixel overview: unlike a 32x32 anchor viewport,
+ * this preserves each original source-local terrain cell. No inferred
+ * placement permission, global location, object occupancy or Save state.
+ */
+export function getNativeTerrainRaster(sourceCatalog:unknown,gridId:string|number) {
+  const catalog=requireTerrainCatalog(sourceCatalog);
+  const grid=packedGridForPreview(catalog,gridId);
+  if(!hasPreparedGrid(grid))return {status:grid.status};
+  const {sizeX,sizeY}=grid;
+  const totalCells=sizeX*sizeY;
+  // Actual original Steam source GridData observed up to 140,000 cells.
+  // Keep transfer to the UI bounded; never allocate an untrusted huge map.
+  if(totalCells>250_000)
+    return {status:'native_terrain_raster_too_large'};
+  const nativeFloorValues=new Uint32Array(totalCells);
+  const counts=new Map<number,number>();
+  for(let y=0;y<sizeY;y++) {
+    for(let x=0;x<sizeX;x++) {
+      const value=previewFloorValue(grid,x,y);
+      nativeFloorValues[y*sizeX+x]=value;
+      counts.set(value,(counts.get(value)??0)+1);
+    }
+  }
+  return {
+    status:'source_corroborated_grid_local_raster' as const,
+    sizeX,sizeY,totalCells,nativeFloorValues,
+    maskCounts:[...counts].sort(([a],[b])=>a-b).map(
+      ([nativeFloorValue,cellCount])=>({nativeFloorValue,cellCount})),
+    worldCoordinatesVerified:false as const,
+    placementLegalityVerified:false as const,
+    fullWorldCoverageVerified:false as const,
+  };
+}
