@@ -151,7 +151,8 @@ export function getNativeFloorMatchResult(
     throw new TypeError('DB04_NATIVE_FLOOR_MATCH_REQUEST_INVALID');
   const current=views.find(view=>view.viewKey===viewKey&&
     view.regionKey===regionKey);
-  const selected=current?.grids.find(grid=>grid.gridIdNative===gridIdNative);
+  const selected=current?.grids.find(
+    (grid:{readonly gridIdNative:number})=>grid.gridIdNative===gridIdNative);
   if(!selected)throw new TypeError('DB04_NATIVE_FLOOR_MATCH_VIEW_INVALID');
   const refs=regionGridRefs(views,regionKey);
   const item=versionVerified(catalog)?acceptedItem(catalog,itemId):null;
