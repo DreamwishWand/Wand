@@ -1406,6 +1406,28 @@ try{
   await regular.getByRole('region',{name:'セーブ内アイテム'})
     .getByRole('status').filter({hasText:'4件'})
     .waitFor({timeout:30000});
+  // The user workspace should use its available desktop width rather than
+  // retaining the diagnostic page's narrow centered, single-column layout.
+  const listPane=regular.getByRole('region',{name:'セーブ内アイテム'});
+  const amountPane=regular.getByRole('region',{name:'数量変更の検証'});
+  const desktopBounds=await Promise.all([
+    listPane.boundingBox(),amountPane.boundingBox()
+  ]);
+  assert.ok(desktopBounds[0]&&desktopBounds[1]);
+  assert.ok(desktopBounds[0].x+desktopBounds[0].width<=
+    desktopBounds[1].x+8,'owned item list is left of numeric editor');
+  assert.ok(Math.abs(desktopBounds[0].y-desktopBounds[1].y)<12,
+    'desktop owned list and edit panel align horizontally');
+  await page.setViewportSize({width:390,height:844});
+  const mobileBounds=await Promise.all([
+    listPane.boundingBox(),amountPane.boundingBox()
+  ]);
+  assert.ok(mobileBounds[0]&&mobileBounds[1]);
+  assert.ok(mobileBounds[0].y+mobileBounds[0].height<=
+    mobileBounds[1].y+8,'mobile stack places inventory list before editor');
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>
+    window.innerWidth+1),false,'no mobile horizontal document overflow');
+  await page.setViewportSize({width:1100,height:850});
   const userSlot=regular.getByRole('button',{
     name:'所持アイテム 777 を選択'
   });
