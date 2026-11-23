@@ -17,6 +17,8 @@
   import {filterOwnedSlots,ownedCategoryOptions,ownedSlotLocation,
     pendingOwnedAmount} from './owned-slot-view';
   import type {OwnedSlot} from './owned-slot-view';
+  import {MAX_OWNED_AMOUNT_BATCH,planFilteredOwnedAmounts}
+    from './bulk-owned-amounts';
   import {draftGridGroupQuarterTurn}
     from './grid-group-quarter-turn';
   import type {GridQuarterTurnDirection}
@@ -269,6 +271,10 @@
   let slotVisibleLimit=SAVE_LIST_WINDOW_SIZE;
   let slotFilter:'all'|'inventory'|'chest'='all';
   let slotCategoryFilter='all';
+  let bulkAmountOpen=false;
+  let bulkAmountValue='';
+  let bulkAmountError='';
+  let bulkAmountStatus='';
   let dbMap=new Map<string,Db00ItemContext>();
   $: selectedAmountItemId=kind==='inventory'?itemId:chestItemId;
   $: selectedAmountMetadata=dbMap.get(selectedAmountItemId);
@@ -586,6 +592,7 @@
     if(!window.confirm('登録した数量・配置の変更をすべて破棄しますか？元のセーブは変更されません。'))return;
     cancel();result=null;
     queuedEdits=[];coordinateQueue=[];mixedQueue=[];
+    bulkAmountError='';bulkAmountStatus='';
     amountRevisionIndex=null;amountEditorReady=false;amountSource='saved';
     coordinateSelection=null;orientationSelection=null;
   }
@@ -688,6 +695,8 @@
     savedSlots=[];savedSlotsFile=null;slotState='idle';
     worldRefs=[];worldStatus='not_observed';worldQuery='';
     slotFilter='all';slotCategoryFilter='all';slotQuery='';
+    bulkAmountOpen=false;bulkAmountValue='';
+    bulkAmountError='';bulkAmountStatus='';
     slotVisibleLimit=SAVE_LIST_WINDOW_SIZE;
     gridVisibleLimit=SAVE_LIST_WINDOW_SIZE;
     worldVisibleLimit=SAVE_LIST_WINDOW_SIZE;
@@ -1483,6 +1492,35 @@
   function identity(x:string):boolean{
     return /^[0-9]{1,20}$/.test(x)&&BigInt(x)>0n&&BigInt(x)<=BigInt('18446744073709551615');
   }
+  function queueFilteredAmountChanges():void{
+    if(developmentMode||processing||!activeFile||savedSlotsFile!==activeFile||
+       slotState!=='ready')return;
+    const plan=planFilteredOwnedAmounts(matchedSlots,queuedEdits,bulkAmountValue);
+    bulkAmountStatus='';bulkAmountError='';
+    if(plan.status!=='ready'){
+      bulkAmountError=plan.status==='invalid-quantity'
+        ?'数量は1～4294967295の整数で指定してください。'
+        :plan.status==='too-many'
+        ?`対象が多すぎます（追加${plan.eligible}件・空き${plan.remaining}件）。検索や分類で絞り込んでください。`
+        :plan.status==='stale'||plan.status==='duplicate'
+        ?'対象の元データが一致しません。セーブを再読み込みしてください。'
+        :'新たに変更するアイテムがありません。';
+      return;
+    }
+    if(!window.confirm(
+      `検索結果${matchedSlots.length}件のうち、${plan.added.length}件を×${bulkAmountValue}に変更予約します。元のセーブは変更されません。続けますか？`
+    ))return;
+    // Never stage a truncated first page, replace queued edits or exceed
+    // the native Rust batch limit. Export remains independently validated.
+    cancel();result=null;
+    queuedEdits=[...queuedEdits,...plan.added.map(edit=>({
+      target:{...edit.target},expected:edit.expected,
+      replacement:edit.replacement
+    }))];
+    amountRevisionIndex=null;amountEditorReady=false;amountSource='saved';
+    bulkAmountStatus=`${plan.added.length}件を変更予約しました。`+
+      (plan.alreadyQueued>0?` 登録済み${plan.alreadyQueued}件は維持しました。`:'');
+  }
   function queueCurrentEdit(){
     cancel();result=null;
     const old=uint32(expected),next=uint32(replacement);
@@ -1871,6 +1909,14 @@
       </button>
       {#if slotState==='ready'}
         <span role="status">{savedSlots.length}件</span>
+        {#if !developmentMode}
+          <button type="button" class="secondary"
+            disabled={processing} aria-expanded={bulkAmountOpen}
+            on:click={()=>{
+              bulkAmountOpen=!bulkAmountOpen;
+              bulkAmountError='';bulkAmountStatus='';
+            }}>まとめて数量変更</button>
+        {/if}
       {:else if slotState==='error'}
         <span role="alert">所持アイテムを読み込めませんでした。</span>
       {/if}
@@ -1878,17 +1924,26 @@
     {#if slotState==='ready'}
       <div class="slot-search">
         <input bind:value={slotQuery} aria-label="所持アイテム検索"
-          on:input={()=>slotVisibleLimit=SAVE_LIST_WINDOW_SIZE}
+          on:input={()=>{
+            slotVisibleLimit=SAVE_LIST_WINDOW_SIZE;
+            bulkAmountError='';bulkAmountStatus='';
+          }}
           placeholder="アイテム名・Item IDを検索" />
         <select bind:value={slotFilter} aria-label="所持アイテム分類"
-          on:change={()=>slotVisibleLimit=SAVE_LIST_WINDOW_SIZE}>
+          on:change={()=>{
+            slotVisibleLimit=SAVE_LIST_WINDOW_SIZE;
+            bulkAmountError='';bulkAmountStatus='';
+          }}>
           <option value="all">すべて</option>
           <option value="inventory">Inventory</option>
           <option value="chest">Chest</option>
         </select>
         {#if dbStatus==='ready'}
           <select bind:value={slotCategoryFilter} aria-label="共通DB分類"
-            on:change={()=>slotVisibleLimit=SAVE_LIST_WINDOW_SIZE}>
+            on:change={()=>{
+            slotVisibleLimit=SAVE_LIST_WINDOW_SIZE;
+            bulkAmountError='';bulkAmountStatus='';
+          }}>
             <option value="all">全分類</option>
             {#each slotCategories as category}
               <option value={category.value}>{category.label}（{category.count}）</option>
@@ -1896,6 +1951,25 @@
           </select>
         {/if}
       </div>
+      {#if !developmentMode&&bulkAmountOpen}
+        <div class="slot-bulk-editor" role="group" aria-label="検索結果の数量変更">
+          <label>一括設定する数量
+            <input bind:value={bulkAmountValue}
+              aria-label="一括設定する数量" inputmode="numeric"
+              autocomplete="off" disabled={processing}/>
+          </label>
+          <button type="button"
+            disabled={processing||matchedSlots.length===0}
+            on:click={queueFilteredAmountChanges}>検索結果を変更予約</button>
+          <small>対象{matchedSlots.length}件 · 登録済み{queuedEdits.length}件 / 最大{
+            MAX_OWNED_AMOUNT_BATCH}件</small>
+          {#if bulkAmountError}
+            <p role="alert">{bulkAmountError}</p>
+          {:else if bulkAmountStatus}
+            <p role="status">{bulkAmountStatus}</p>
+          {/if}
+        </div>
+      {/if}
       <ul class="slot-list" on:scroll={(event)=>{
         slotVisibleLimit=nextSaveListWindowLimit(
           slotVisibleLimit,matchedSlots.length,event.currentTarget);
@@ -2624,6 +2698,12 @@
   .slot-search{display:flex;gap:10px;margin:14px 0;flex-wrap:wrap;}
   .slot-search input{flex:1 1 200px;min-width:0;}
   .slot-search select{flex:1 1 120px;max-width:190px;min-width:0;}
+  .slot-bulk-editor{display:flex;align-items:end;gap:10px;flex-wrap:wrap;
+    padding:10px;border:1px solid #ffffff22;border-radius:9px;margin:8px 0;}
+  .slot-bulk-editor label{flex:0 1 210px;margin:0;}
+  .slot-bulk-editor small{font-size:12px;color:#d4c2df;}
+  .slot-bulk-editor [role=alert],.slot-bulk-editor [role=status]{
+    flex-basis:100%;margin:0;}
   .slot-list{list-style:none;margin:8px 0;padding:0;max-height:380px;overflow:auto;}
   .slot-list li{margin:0;border-bottom:1px solid #ffffff22;}
   .world-reference-row{display:flex;align-items:center;justify-content:space-between;

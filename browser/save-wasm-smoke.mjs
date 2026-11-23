@@ -1478,6 +1478,74 @@ try{
   assert.equal(await userSlot.count(),0);
   assert.equal(await chestSlot.count(),1);
   await regular.getByLabel('所持アイテム分類').selectOption('all');
+  // Bulk-staging uses the exact currently matched Inventory/Chest slots,
+  // preserving already queued edits and never applying a partial first page.
+  await regular.getByRole('button',{name:'まとめて数量変更'}).click();
+  const bulk=regular.getByRole('group',{name:'検索結果の数量変更'});
+  const bulkQuantity=bulk.getByLabel('一括設定する数量');
+  await regular.getByLabel('所持アイテム分類').selectOption('chest');
+  assert.match(await bulk.innerText(),/対象1件/);
+  await bulkQuantity.fill('4294967295');
+  page.once('dialog',dialog=>dialog.dismiss());
+  await bulk.getByRole('button',{name:'検索結果を変更予約'}).click();
+  assert.equal(await regular.getByRole('region',{name:'一括数量変更'}).count(),0,
+    'cancelled filtered bulk staging must be a full no-op');
+  page.once('dialog',dialog=>dialog.accept());
+  await bulk.getByRole('button',{name:'検索結果を変更予約'}).click();
+  const bulkQueue=regular.getByRole('region',{name:'一括数量変更'});
+  assert.match(await bulkQueue.innerText(),/4294967295/,
+    'save-structural uint32 is valid even beyond normal in-game stack caps');
+  assert.match(await chestSlot.innerText(),/×2\s*→\s*×4294967295/);
+  await regular.getByLabel('所持アイテム分類').selectOption('all');
+  assert.match(await bulk.innerText(),/対象4件/);
+  await bulkQuantity.fill('888');
+  page.once('dialog',dialog=>dialog.accept());
+  await bulk.getByRole('button',{name:'検索結果を変更予約'}).click();
+  assert.match(await bulkQueue.innerText(),/一括変更 · 4件/,
+    'three inventory records plus previously staged chest must be complete');
+  assert.match(await bulkQueue.innerText(),/4294967295/,
+    'bulk stage must not overwrite an existing chest draft');
+  assert.match(await bulkQueue.innerText(),/×1\s*→\s*×888/);
+  const bulkToolbar=regular.getByRole('region',{name:'編集済みセーブの出力'});
+  assert.match(await bulkToolbar.innerText(),/数量4件・配置0件/);
+  await bulkToolbar.getByRole('button',{name:'すべての変更を検証'}).click();
+  await bulkToolbar.getByRole('status').filter({
+    hasText:'Rust/WASM検証済み'
+  }).waitFor({timeout:30000});
+  page.once('dialog',dialog=>dialog.accept());
+  await bulkToolbar.getByRole('button',{
+    name:'すべての変更をコピーに出力'
+  }).click();
+  const bulkLink=bulkToolbar.getByRole('link',{
+    name:'編集済みコピーをダウンロード'
+  });
+  await bulkLink.waitFor({timeout:30000});
+  const bulkEvent=page.waitForEvent('download');
+  await bulkLink.click();
+  const bulkCopy=readSyntheticEncryptedP1g(
+    await readFile(await (await bulkEvent).path())
+  );
+  assert.equal(bulkCopy.Player.ListInventories['100']
+    .Inventory['550'].Amount,888);
+  assert.equal(bulkCopy.Player.ListInventories['100']
+    .Inventory['777'].Amount,888);
+  assert.equal(bulkCopy.Player.ListInventories['100']
+    .Inventory['30000031'].Amount,888);
+  assert.equal(bulkCopy.Player.ContainerInventories['202']
+    .Inventory[1].Amount,4294967295);
+  assert.equal(bulkCopy.Player.ListInventories['100']
+    .Inventory['777'].ExclusiveDecor,true);
+  assert.equal(bulkCopy.World.GridCollection.Grids['101']
+    .Objects['1'].X,45);
+  assert.equal(quantityProfile.Player.ListInventories['100']
+    .Inventory['777'].Amount,1);
+  page.once('dialog',dialog=>dialog.accept());
+  await bulkToolbar.getByRole('button',{name:'変更をすべて破棄'}).click();
+  assert.equal(await bulkToolbar.count(),0);
+  assert.equal(await bulkLink.count(),0,
+    'discarding filtered bulk drafts also revokes their old download');
+  assert.match(await chestSlot.innerText(),/×2/);
+  await regular.getByRole('button',{name:'まとめて数量変更'}).click();
   // A regular user should never need to edit IDs for a saved row.
   await chestSlot.click();
   const selectedInfo=regular.getByLabel('選択中のアイテム');
