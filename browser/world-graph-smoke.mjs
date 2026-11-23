@@ -466,6 +466,20 @@ try{
   assert.match(await gridareaPanel.innerText(),/68 × 2 · 0 × 1 · 76 × 1/);
   assert.match(await gridareaPanel.innerText(),/占有セル数ではありません/);
   assert.match(await gridareaPanel.innerText(),/全16方向の原本ローカル値を参照できます/);
+  // The optional 16×16 source-default GridLayers overlay never overwrites
+  // anchor counts, terrain source values or placement-permission semantics.
+  const layerToggle=page.getByRole('checkbox',{name:'原本Itemの既定レイヤー'});
+  await layerToggle.check();
+  await page.getByLabel('原本既定レイヤー凡例').waitFor();
+  const layerNonzero=page.getByRole('button',{name:'座標4,6：アンカー0件'});
+  await page.waitForFunction(()=>document.querySelector(
+    '[aria-label="座標4,6：アンカー0件"]')
+    ?.classList.contains('has-source-default-layer'));
+  assert.match(await layerNonzero.getAttribute('title'),/source Item DEFAULT GridLayers: 0x44/);
+  assert.equal(await page.getByRole('button',{name:'座標4,5：アンカー1件'})
+    .evaluate(el=>el.classList.contains('has-source-default-layer')),false);
+  assert.match(await page.getByLabel('原本既定レイヤー凡例').innerText(),
+    /空きマスや配置許可を示しません/);
   const rawAreaButton=gridareaPanel.getByRole('button',{name:'原本レイヤー値を表示'});
   await rawAreaButton.click();
   const rawGridArea=gridareaPanel.getByLabel('原本GridAreaセル一覧');
@@ -510,6 +524,13 @@ try{
   await page.getByRole('status')
     .filter({hasText:'原本初期配置 2 / 2件'}).waitFor();
   await page.waitForFunction(()=>document.querySelector(
+    '[aria-label="座標5,5：アンカー1件"]')
+    ?.classList.contains('has-source-default-layer'));
+  assert.match(await page.getByRole('button',{name:'座標5,5：アンカー1件'})
+    .getAttribute('title'),/source Item DEFAULT GridLayers: 0x44/);
+  assert.equal(await page.getByRole('button',{name:'座標6,5：アンカー0件'})
+    .evaluate(el=>el.classList.contains('has-source-default-layer')),false);
+  await page.waitForFunction(()=>document.querySelector(
     '[aria-label="原本既定GridLayers照会"]')?.textContent
     ?.includes('0x00000044'));
   assert.match(await gridareaPanel.getByLabel('原本初期配置のItem参照').innerText(),
@@ -528,6 +549,14 @@ try{
   await page.getByRole('button',{name:'前の候補'}).click();
   await page.getByRole('status')
     .filter({hasText:'原本初期配置 1 / 2件'}).waitFor();
+  await page.waitForFunction(()=>document.querySelector(
+    '[aria-label="座標4,6：アンカー0件"]')
+    ?.classList.contains('has-source-default-layer'));
+  await layerToggle.uncheck();
+  await page.waitForFunction(()=>!document.querySelector(
+    '[aria-label="座標4,6：アンカー0件"]')
+    ?.classList.contains('has-source-default-layer'));
+  assert.equal(await page.getByLabel('原本既定レイヤー凡例').count(),0);
   assert.equal(await terrainSelectors.nth(2).inputValue(),'1');
   // A query returning zero from ORIGINAL default Item masks does not imply
   // that the real player grid or runtime cell is empty.
