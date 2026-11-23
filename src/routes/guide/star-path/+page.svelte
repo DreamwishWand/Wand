@@ -4,7 +4,7 @@
   import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {autoAppend} from '$lib/ui/auto-append';
-  import {loadPublicStarpath} from '$lib/guide/public-starpath.mjs';
+  import {loadPublicStarpath} from '$lib/guide/public-starpath.ts';
   import {loadStarpathWeeklyLocales,starpathWeeklyDescription} from '$lib/guide/public-starpath-locales.ts';
   import type {StarpathDailyParts,StarpathLocalizedPart} from '$lib/guide/starpath-locale-contract.ts';
   import {loadStarpathDailyLocales,starpathDailyDescription} from '$lib/guide/public-starpath-daily.ts';

@@ -3,7 +3,7 @@ import {
   createGuideRewardIndex, loadGuideRewardIndex, DB03_REWARD_RELATION_CONTRACT,
   type GuideRewardIndex, type GuideRewardOccurrence
 } from '../guide/reward-relations.ts';
-import {STARPATH_PUBLIC_SHA} from '../guide/public-starpath.mjs';
+import {STARPATH_PUBLIC_SHA} from '../guide/public-starpath.ts';
 import {createGuideStarpathHistory} from '../guide/starpath-history.ts';
 import {hasPinnedPublicQuestAcquisitionEvidence,
   type PublicQuestAcquisitionIndex} from '../guide/public-quest-acquisition.ts';

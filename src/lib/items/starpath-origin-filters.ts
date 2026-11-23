@@ -5,7 +5,7 @@
  * including Premium Shop reissues. These are distinct source relationships:
  * never overwrite either, invent a purchase, or treat a season as completed.
  */
-import {STARPATH_SOURCE_SHA,STARPATH_PUBLIC_SHA} from '../guide/public-starpath.mjs';
+import {STARPATH_SOURCE_SHA,STARPATH_PUBLIC_SHA} from '../guide/public-starpath.ts';
 import type {
   GuideRewardIndex,GuideStarpathSeason,GuideItemRelation,
 } from '../guide/reward-relations.ts';

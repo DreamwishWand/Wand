@@ -2,7 +2,7 @@
   import {onMount} from 'svelte';
   import {base} from '$app/paths';
   import WandIcon from '$lib/ui/WandIcon.svelte';
-  import {loadPublicStarpath} from '$lib/guide/public-starpath.mjs';
+  import {loadPublicStarpath} from '$lib/guide/public-starpath.ts';
   import {
     guideCalendarEvents,guideCalendarMonth,guideCalendarEventsInMonth,eventScheduleState,
     localGuideDateTime,GUIDE_EVENT_CALENDAR_AS_OF

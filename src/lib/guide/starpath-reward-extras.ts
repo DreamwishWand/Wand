@@ -2,7 +2,7 @@
  * Nine extra verified display names; eight Touch-of-Magic motifs have NO
  * native name. Never infer a player reward, event availability, or ownership.
  */
-import {verifyPublicStarpath} from './public-starpath.mjs';
+import {verifyPublicStarpath} from './public-starpath.ts';
 import {
   starpathRewardName,VERIFIED_STARPATH_REWARD_NAMES,
   STARPATH_UNRESOLVED_REWARD_IDS,verifyStarpathRewardNameCensus

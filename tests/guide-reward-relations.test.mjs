@@ -6,7 +6,7 @@ import {
   DB03_REWARD_RELATION_CONTRACT,createGuideRewardIndex,loadGuideRewardIndex,joinGuideRewardsToDb01
 } from '../src/lib/guide/reward-relations.ts';
 import {guideCalendarEvents} from '../src/lib/guide/event-calendar.ts';
-import {STARPATH_PUBLIC_SHA} from '../src/lib/guide/public-starpath.mjs';
+import {STARPATH_PUBLIC_SHA} from '../src/lib/guide/public-starpath.ts';
 
 const original=new URL('../static/guide/public/starpath-cache-2026-11-22.json',import.meta.url);
 const bytes=()=>readFile(original);
@@ -192,14 +192,14 @@ test('mutated source rows are rejected, and public loader requires exact pinned 
   })),/fingerprint mismatch/);
   const edit=await read();
   edit.seasons[1].rewardPages[0].rewards[0].price=-1;
-  assert.throws(()=>createGuideRewardIndex(edit),/INVALID_PRICE/);
+  assert.throws(()=>createGuideRewardIndex(edit),/INVALID_PRICE|Public Star Path: reward price/);
   edit.seasons[1].rewardPages[0].rewards[0].price=100;
   edit.seasons[1].rewardPages[0].rewards[0].itemId='__proto__';
   assert.throws(()=>createGuideRewardIndex(edit),/(?:Public Star Path: reward|INVALID_ITEM_ID)/,
     'the pinned original Star Path validator may reject an invalid ID first');
   const reduced=await read();
   reduced.seasons[0].rewardPages[0].rewards.pop();
-  assert.throws(()=>createGuideRewardIndex(reduced),/SOURCE_REWARD_CENSUS/);
+  assert.throws(()=>createGuideRewardIndex(reduced),/SOURCE_REWARD_CENSUS|Public Star Path: source reward census/);
   const badAlternative=await read();
   badAlternative.seasons[0].vaultRewards[0].alternateItemId='10000000'; // structurally valid but a previously unseen ID
   assert.throws(()=>createGuideRewardIndex(badAlternative),/SOURCE_REWARD_CENSUS/);

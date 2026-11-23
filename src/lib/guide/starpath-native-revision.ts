@@ -8,7 +8,7 @@
  * (original bytes SHA-256 verified) and by the browser (published SHA-256).
  * Raw owner caches and other private source bytes are never downloaded here.
  */
-import {verifyPublicStarpath} from './public-starpath.mjs';
+import {verifyPublicStarpath} from './public-starpath.ts';
 
 export const STARPATH_NATIVE_REVISION_CONTRACT='wand.db03.starpath-native-revision-evidence@1' as const;
 export const STARPATH_NATIVE_REVISION_FILE='starpath-native-revision-evidence-1.25.0-1.26.2.json' as const;

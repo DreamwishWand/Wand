@@ -55,7 +55,7 @@ import {
 import {
   createDb00NativeRecipeReader,type Db00NativeRecipeReader
 } from './native-recipes.ts';
-import {loadPublicStarpath} from '../guide/public-starpath.mjs';
+import {loadPublicStarpath} from '../guide/public-starpath.ts';
 import {
   loadStarpathRewardExtras,STARPATH_EXTRA_RELEASE
 } from '../guide/starpath-reward-extras.ts';

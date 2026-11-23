@@ -4,7 +4,7 @@
  * these overlays is a STATIC original-description string; it never indicates
  * live season availability or individual completion.
  */
-import {verifyPublicStarpath} from './public-starpath.mjs';
+import {verifyPublicStarpath} from './public-starpath.ts';
 import type {WandLanguage} from '../ui/preferences';
 
 export type StarpathSeasonId='HauntingElegance2026'|'Seafaring2026';

@@ -7,7 +7,7 @@ import {
   STARPATH_NATIVE_REVISION_PUBLIC_SHA,STARPATH_NATIVE_REVISION_PUBLIC_BYTES,
   loadStarpathNativeRevisionEvidence,verifyStarpathNativeRevisionEvidence
 } from '../src/lib/guide/starpath-native-revision.ts';
-import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.mjs';
+import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.ts';
 import {createGuideRewardIndex} from '../src/lib/guide/reward-relations.ts';
 import {createGuideStarpathHistory} from '../src/lib/guide/starpath-history.ts';
 
