@@ -86,5 +86,7 @@ test('Guide event search combines Quest source titles without a new technical UI
   assert.match(route,/createEventQuestNameSearch\(eventSource,catalog,links\)/);
   assert.match(route,/questSearch\?\.getEventSearchTerms\(event.id,language\)/);
   assert.match(route,/イベント・クエスト・アイテムを検索/);
-  assert.match(route,/if\(source===eventSource\)\{questCatalogue=catalog;eventQuestLinks=links;questNameSearch=names;\}/);
+  assert.match(route,/if\\(source===eventSource\\)\\s*\\{/);
+  assert.match(route,/questCatalogue=catalog;eventQuestLinks=links;questNameSearch=names;/);
+  assert.match(route,/const matches=links\\.getQuestEvents\\(requested\\[0\\]\\)/);
 });
