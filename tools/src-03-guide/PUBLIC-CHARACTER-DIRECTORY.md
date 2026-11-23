@@ -31,7 +31,7 @@ The three source-internal markers are `10000100`, `10000102` (Placeholder/Legacy
 
 ## Source contract and validation
 
-`src/lib/guide/public-characters.mjs` requires the already published `verifyPublicQuestIndex` contract (Steam 1.26.2, source static-projection version 1.26.1 with verified original byte parity), independently checks 142 × 8 complete dictionary entries, all 733 source quest references, exact 86/56/3 source-scoped counts, and numeric ID safety. The browser creates no new network request except the publicly available existing Quest index. Sorting respects the selected locale.
+`src/lib/guide/public-characters.ts` requires the already published `verifyPublicQuestIndex` contract (Steam 1.26.2, source static-projection version 1.26.1 with verified original byte parity), independently checks 142 × 8 complete dictionary entries, all 733 source quest references, exact 86/56/3 source-scoped counts, and numeric ID safety. The browser creates no new network request except the publicly available existing Quest index. Sorting respects the selected locale.
 
 ```sh
 node --test tests/guide-public-characters.test.mjs
