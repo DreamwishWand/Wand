@@ -57,6 +57,13 @@ import {
   createDb00NativeOnlineReader,type Db00NativeOnlineReader
 } from './native-online-categories.ts';
 import {
+  createDb00DistributionSourceReader,
+  type Db00DistributionSourceReader,
+  type Db00DistributionSourceItem,
+  type Db00DistributionSearchRequest,
+  type Db00DistributionSearchPage
+} from './distribution-sources.ts';
+import {
   createDb00NativeRecipeReader,
   type Db00NativeRecipeReader,type Db00NativeRecipeResult
 } from './native-recipes.ts';
@@ -174,6 +181,16 @@ export interface PublicSharedGameSources{
   ):Promise<Db00CompanionIdentityItem|null>;
   /** Optional SHA-pinned 9-family original OnlineCategory source classification. */
   loadNativeOnlineCategories():Promise<Db00NativeOnlineReader>;
+  /** Three non-exclusive Item acquisition/availability source groups from DB-02. */
+  loadDistributionSourceSearch():Promise<Db00DistributionSourceReader>;
+  /** Item ID lookup with all source/evidence statuses, including no known evidence. */
+  getItemDistributionEvidence(
+    itemId:string|number
+  ):Promise<Db00DistributionSourceItem>;
+  /** Source-backed search, including original Item IDs absent from ItemList. */
+  searchDistributionSources(
+    request?:Db00DistributionSearchRequest
+  ):Promise<Db00DistributionSearchPage>;
   /** SHA-pinned original cooking/crafting results, loaded only on demand. */
   loadNativeRecipeSources():Promise<Db00NativeRecipeReader>;
   /** Optional original fishing/mining/timebending/growing source paths. */
@@ -344,6 +361,32 @@ export async function openPublicSharedGameSources(
     nativeOnline??=acquisition.loadNativeOnlineCategories().then(source=>
       createDb00NativeOnlineReader(database,joined,source)
     );
+  let distributionSearch:Promise<Db00DistributionSourceReader>|null=null;
+  const loadDistributionSourceSearch=():Promise<Db00DistributionSourceReader>=>
+    distributionSearch??=acquisition.loadDistributionScopes().then(source=>
+      createDb00DistributionSourceReader(database,joined,source)
+    );
+  const getItemDistributionEvidence=async(
+    itemId:string|number
+  ):Promise<Db00DistributionSourceItem>=>{
+    // Validate Item ID before the optional source projections download.
+    const shared=joined.getItem(itemId);
+    const row=(await loadDistributionSourceSearch()).getItem(shared.itemId);
+    assert(row.itemId===shared.itemId&&
+      row.shared.itemId===shared.itemId&&
+      row.sourceCoverageComplete===false&&
+      row.exclusiveTimeLimitedItemVerified===false&&
+      row.currentAvailabilityVerified===false&&
+      row.playerOwnershipVerified===false,
+      'DISTRIBUTION_ITEM_ID_OR_PROOF_DRIFT');
+    return row;
+  };
+  const searchDistributionSources=async(
+    request:Db00DistributionSearchRequest={}
+  ):Promise<Db00DistributionSearchPage>=>{
+    // Query validation lives with the bounded, source-backed reader.
+    return (await loadDistributionSourceSearch()).search(request);
+  };
   let nativeRecipes:Promise<Db00NativeRecipeReader>|null=null;
   const loadNativeRecipeSources=():Promise<Db00NativeRecipeReader>=>
     nativeRecipes??=acquisition.loadNativeRecipeResults().then(source=>
@@ -557,7 +600,9 @@ export async function openPublicSharedGameSources(
     searchItems:search.searchItems,
     searchOutsideSourceItems,loadNativeCompanionSources,
     loadNativeCompanionIdentitySources,getNativeCompanionIdentityEvidence,
-    loadNativeOnlineCategories,loadNativeRecipeSources,
+    loadNativeOnlineCategories,
+    loadDistributionSourceSearch,getItemDistributionEvidence,
+    searchDistributionSources,loadNativeRecipeSources,
     loadNativeActivitySources,getNativeAcquisitionEvidence,
     loadNativeLootCandidateSources,getAllNativeAcquisitionEvidence,
     loadNativeLootContextSources,getNativeLootContextEvidence,
