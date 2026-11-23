@@ -66,15 +66,25 @@ export interface GuideDateOnlyCalendarEvent extends GuideCalendarDateWindow{
 export interface GuideHistoricalStarpathCalendarEvent extends GuideCalendarDateWindow{
   readonly kind:'starpath-history';
   readonly title:string;
-  readonly sourceUrl:string;
-  readonly evidence:'official-announcement';
+  readonly sourceUrl:string|null;
+  readonly evidence:'official-announcement'|'verified-game-original';
+  readonly taskEndDayInclusive?:string;
   readonly officialEndUtc:string|null;
   readonly liveVerified:false;
   readonly checkedDate:typeof GUIDE_EVENT_CALENDAR_AS_OF;
   readonly href:null;
 }
+export interface GuideArchivedNativeStarpathCalendarEvent extends GuideCalendarUtcWindow{
+  readonly kind:'starpath-archive';
+  readonly title:string;
+  readonly sourceUrl:null;
+  readonly evidence:'verified-game-original';
+  readonly liveVerified:false;
+  readonly checkedDate:typeof GUIDE_EVENT_CALENDAR_AS_OF;
+  readonly href:null;
+}
 export type GuideCalendarEvent=
-  GuideStarpathCalendarEvent|GuideDateOnlyCalendarEvent|GuideHistoricalStarpathCalendarEvent;
+  GuideStarpathCalendarEvent|GuideDateOnlyCalendarEvent|GuideHistoricalStarpathCalendarEvent|GuideArchivedNativeStarpathCalendarEvent;
 export type GuideEventScheduleState=
   'upcoming'|'task-window'|'exchange-only'|'date-window'|'ended';
 export type GuideMonthEvent<T extends GuideCalendarWindow>=T&{
