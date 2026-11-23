@@ -12,7 +12,7 @@
 import {
   GUIDE_SOURCE_COMPOSITE_V2_SHA,GUIDE_SOURCE_COMPOSITE_V2_BYTES,
   GUIDE_FRIENDSHIP_ORIGINAL_SHA
-} from './source-composite.mjs';
+} from './source-composite.ts';
 import type {PrivateGuideRewardIndex,PrivateGuideRewardCandidate} from './private-reward-evidence';
 
 export const DB03_REWARD_SOURCE_EQUIVALENCE_SCHEMA='wand.db03.reward-source-equivalence@1' as const;
