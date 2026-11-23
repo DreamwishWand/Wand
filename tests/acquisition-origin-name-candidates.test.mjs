@@ -26,6 +26,10 @@ test('Source-exact native DB-01 names may propose candidates but cannot verify c
     ['Round Rainbow Garden']);
   assert.equal(result.getCandidatesForItem(40001607).length,1);
   assert.equal(result.getCandidatesForItem(40000385).length,0);
+  // The official FAQ gives the festival's calendar and total nine codes,
+  // NOT the individual community-reported code/reward mappings.
+  assert.equal(result.getCandidatesForCampaign('code:FOFGEMS24').length,0);
+  assert.equal(result.getCandidatesForCampaign('code:FOFSOUFFLE24').length,0);
   assert(result.getCandidatesForItem(50400271).every(r=>r.verifiedAcquisitionLink===false));
   assert.equal(result.verifiedAcquisitionLinks,0);
 });
