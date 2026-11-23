@@ -1277,3 +1277,10 @@ concrete virtual method targets, hash code algorithm, hash value parity
 with a legitimate save or DiffGrid reconstruction. DB-05 must continue
 to refuse hash-unverified DiffGrids. For each new game build, both
 byte-level patterns and the actual native logic must be re-examined.
+
+The same private audit now also enumerates the original IL2CPP v31
+*declared* virtual method slots 0–7 for `Meta.Grids.Grid` and
+`Definitions.Grid.GridData`. A declared slot is **not** a resolved runtime
+`Il2CppClass` vtable entry: inherited implementations, the actual method
+pointer, hash algorithm, and Save value parity remain unverified. The audit
+retains explicit false flags; it does not enable World/Save edits.

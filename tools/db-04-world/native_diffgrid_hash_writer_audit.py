@@ -88,6 +88,95 @@ def verify_leaf_getter_or_setter(binary,pe,pointer,expected):
     return True
 
 
+
+# An IL2CPP v31 MethodDefinition's slot is a METADATA declaration, not a
+# resolved Il2CppClass vtable entry in a running game. Compare this evidence
+# with the native writer's two virtual calls without equating them.
+SOURCE_GRID_TYPES=(("Meta.Grids","Grid"),("Definitions.Grid","GridData"))
+SOURCE_SLOT_WINDOW=8
+METHOD_ATTRIBUTE_VIRTUAL=0x0040
+
+
+def inspect_declared_grid_virtual_slots(raw):
+    """List bounded declared slots on exact native Grid and GridData types.
+
+    Slot zero may be inherited rather than declared here; a declaration is
+    NOT proof of a concrete runtime target, GetHashCode semantics or parity.
+    """
+    meta=Metadata31(raw)
+    found=[]
+    for namespace,name in SOURCE_GRID_TYPES:
+        matches=[]
+        for index in range(meta.types_len):
+            offset=meta.types+index*88
+            class_idx,namespace_idx=struct.unpack_from("<II",raw,offset)
+            if meta.text(class_idx)==name and meta.text(namespace_idx)==namespace:
+                matches.append(index)
+        require(len(matches)==1,"MISSING_OR_AMBIGUOUS_GRID_SOURCE_TYPE")
+        type_index=matches[0]
+        offset=meta.types+type_index*88
+        start=struct.unpack_from("<I",raw,offset+36)[0]
+        count=struct.unpack_from("<H",raw,offset+64)[0]
+        require(count<=512 and start<=meta.methods_len and
+                count<=meta.methods_len-start,"INVALID_GRID_SOURCE_METHOD_RANGE")
+        modules=[]
+        for i in range(meta.images_len):
+            img=meta.images+i*40
+            module_idx,_,first,number=struct.unpack_from("<IIII",raw,img)
+            if first<=type_index<first+number:
+                modules.append(meta.text(module_idx))
+        require(len(modules)==1,"AMBIGUOUS_GRID_SOURCE_MODULE")
+        declared=[]
+        tokens=set()
+        for i in range(start,start+count):
+            method=meta.methods+i*36
+            method_name_idx,declaring=struct.unpack_from("<II",raw,method)
+            require(declaring==type_index,"GRID_METHOD_DECLARING_TYPE_MISMATCH")
+            flags=struct.unpack_from("<H",raw,method+28)[0]
+            slot,param_count=struct.unpack_from("<HH",raw,method+32)
+            if slot==0xffff or slot>=SOURCE_SLOT_WINDOW:
+                continue
+            token=struct.unpack_from("<I",raw,method+24)[0]
+            require(flags&METHOD_ATTRIBUTE_VIRTUAL and
+                    token>>24==6 and token&0xffffff and
+                    token not in tokens and param_count<=64,
+                    "INVALID_GRID_VIRTUAL_SLOT_DECLARATION")
+            tokens.add(token)
+            declared.append({
+                "declaredMethodName":meta.text(method_name_idx),
+                "declaredVirtualSlot":slot,
+                "declaredMethodToken":f"0x{token:08x}",
+                "parameterCount":param_count,
+                "sourceMethodIsVirtual":True,
+                "runtimeVirtualTargetVerified":False,
+            })
+        declared.sort(key=lambda m:(m["declaredVirtualSlot"],
+                                    m["declaredMethodToken"]))
+        slot_zero=[m for m in declared if m["declaredVirtualSlot"]==0]
+        found.append({
+            "namespace":namespace,"className":name,
+            "sourceMetadataModule":modules[0],
+            "declaredMethodsInSourceType":count,
+            "declaredVirtualMethodsInFirstEightSlots":declared,
+            "declaredSlotZeroStatus":(
+                "no_source_declaration_in_type_inheritance_unresolved"
+                if not slot_zero else
+                "multiple_source_declarations_runtime_target_unresolved"
+                if len(slot_zero)>1 else
+                "one_source_declaration_runtime_target_unresolved"),
+            "runtimeVtableClassResolved":False,
+            "runtimeVtableSlotZeroResolved":False,
+        })
+    return {
+        "status":"original_il2cpp_v31_virtual_slot_declarations_only",
+        "sourceTypes":found,
+        "nativeCallVirtualEntryByteOffset":0x158,
+        "sourceMethodSlotsBoundToNativeCallOffset":False,
+        "runtimeVirtualTargetsVerified":False,
+        "nativeHashAlgorithmVerified":False,
+        "saveHashValueParityVerified":False,
+    }
+
 def audit_native_diffgrid_hash_writer(metadata_path,version_file,dll_path):
     inventory=discover_native_diffgrid_hash_methods(
         metadata_path,version_file)
@@ -96,7 +185,9 @@ def audit_native_diffgrid_hash_writer(metadata_path,version_file,dll_path):
     dll=_mapped_source(dll_path,DLL_MAX)
     # A named virtual method is not a verified computed hash. We corroborate
     # the exact original Create body and getter/setter storage offsets only.
-    _,methods=Metadata31(Path(metadata_path).read_bytes()).type_methods(
+    source_metadata=Path(metadata_path).read_bytes()
+    virtual_source=inspect_declared_grid_virtual_slots(source_metadata)
+    _,methods=Metadata31(source_metadata).type_methods(
         NAMESPACE,TYPE,
         [("Create",2), *[(name,param) for name,(param,_) in FIELD_LAYOUT.items()]])
     method_map={(m["symbol"].rsplit(".",1)[-1],m["parameterCount"]):m
@@ -164,6 +255,7 @@ def audit_native_diffgrid_hash_writer(metadata_path,version_file,dll_path):
         "sourceWriterRva":begin,
         "sourceWriterCodeWindowSha256":hashlib.sha256(code).hexdigest(),
         "sourceFieldLeafGetterSetterCorroborated":True,
+        "originalDeclaredGridVirtualSlots":virtual_source,
         **writer,
         "nativeDefaultGridHashCodeCalculated":False,
         "nativeDefaultGridDataHashCodeCalculated":False,
