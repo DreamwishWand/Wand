@@ -503,6 +503,10 @@ try{
     schema:'wand.game-db.release@1',id:'approved-fixture',
     count:1,target:{platform:'Steam',gameVersion:'1.26.2',buildId:null,sourceSha256:'a'.repeat(64)},
     coverage:{scope:'fixture',complete:true,categories:['Furniture']},
+    // Exact verified per-Item membership in this synthetic 1-item release.
+    collectionScopeEvidence:{schema:'wand.collection.scope-membership@1',
+      world:'verified_game_collection_area_item_membership',
+      universe:'verified_game_collection_universe_item_membership'},
     sources:[{id:'public-source',sha256:'b'.repeat(64),visibility:'public_reference'}],
     releases:[],search:[],
     shards:[{file:'items-000.json',offset:0,count:1,bytes:Buffer.byteLength(shardText),sha256:sha(shardText)}]
@@ -530,6 +534,16 @@ try{
   await releaseSearch.fill('検証済みの靴');
   await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
   assert.match(await page.locator('.item-card').first().innerText(),/検証済みの靴/);
+  const worldChoices=page.getByRole('group',{name:'ワールド',exact:true});
+  await worldChoices.getByRole('button',{name:'IsDreamlightValley'}).click();
+  await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
+  await page.getByRole('combobox',{name:'ユニバースで絞り込み'}).selectOption('Cinderella');
+  await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
+  assert.equal(await worldChoices.getByRole('button',{name:'IsDreamlightValley'}).getAttribute('aria-pressed'),'true');
+  await worldChoices.getByRole('button',{name:'すべて'}).click();
+  assert.equal(await page.getByRole('combobox',{name:'ユニバースで絞り込み'}).inputValue(),'Cinderella',
+    'world All must not clear the independent universe selection');
+  await page.getByRole('combobox',{name:'ユニバースで絞り込み'}).selectOption('');
   const releaseBackupPromise=page.waitForEvent('download');
   await page.getByRole('button',{name:'バックアップ出力'}).click();
   const releaseBackup=JSON.parse(await readFile(await (await releaseBackupPromise).path(),'utf8'));
