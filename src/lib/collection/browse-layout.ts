@@ -89,8 +89,9 @@ export function groupCollectionUniverseItems(
   // per-category cap rather than hiding all later headings behind a huge
   // early category such as furniture.
   const perGroup=Math.max(12,Math.ceil(visible/Math.max(1,sorted.length)));
+  const allVisible=visible>=items.length;
   return sorted.map(section=>({
     id:section.id,label:section.label,total:section.total,
-    items:section.items.slice(0,perGroup)
+    items:allVisible?section.items:section.items.slice(0,perGroup)
   }));
 }
