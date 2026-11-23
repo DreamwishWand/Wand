@@ -123,6 +123,7 @@ try{
   const saveWasmAssets=[];
   const acquisitionAssets=[];
   const questAssets=[];
+  const sharedCatalogAssets=[];
   page.on('response',response=>{
     if(response.url().includes('ddv_p1g_codec_bg')&&response.url().endsWith('.wasm'))
       saveWasmAssets.push({url:response.url(),status:response.status()});
@@ -130,6 +131,9 @@ try{
       acquisitionAssets.push({url:response.url(),status:response.status()});
     if(response.url().endsWith('/quest-conditions-1.26.2-v2.json.gz.b64'))
       questAssets.push({url:response.url(),status:response.status()});
+    if(/\/ddv\/game-db\/releases\//.test(response.url()) &&
+       /\/(?:index|items-\d+)\.json$/.test(response.url()))
+      sharedCatalogAssets.push({url:response.url(),status:response.status()});
   });
   page.on('pageerror',error=>browserErrors.push(String(error)));
   // The landing screen is a visual portal, with unavailable services clearly
@@ -423,6 +427,11 @@ try{
     assert.equal(loaded.length,1,file+' must be loaded only on demand');
     assert.equal(loaded[0].status,200,'source asset must be published');
   }
+  // Acquisition initializes a single SHA-verified public DB-00 reader.
+  // The Quest accordion must reuse that Worker, not re-download 13k Items.
+  const sharedCatalogAfterAcquisition=sharedCatalogAssets.length;
+  assert(sharedCatalogAfterAcquisition>0,
+    'the public DB-00 source is actually loaded during Collection browsing');
   // Source classification lives in the Worker and must remain stable while
   // the eight localized panel labels update without another download.
   const relatedQuests=page.locator('.collection-related-quests');
@@ -436,6 +445,8 @@ try{
   assert.equal(await relatedQuests.getByRole('alert').count(),0);
   assert.equal(questAssets.length,1);
   assert.equal(questAssets[0].status,200);
+  assert.equal(sharedCatalogAssets.length,sharedCatalogAfterAcquisition,
+    'related Quests must reuse the existing DB-00 source Worker and Item shards');
   for(const anchor of await relatedQuests.locator('.quest-evidence-section a').all()){
     const href=await anchor.getAttribute('href');
     assert(/^\/Wand\/guide\/quests\/\?quest=[1-9][0-9]*&(target|item)=40005160$/.test(href),
