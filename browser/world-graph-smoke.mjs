@@ -446,6 +446,14 @@ try{
     /GridObject 1 · 向き 8 · Grid倍率 ×1 · 原本アンカー \(4, 5\)/);
   assert.equal(await gridareaPanel.getByRole('combobox',{name:'原本GridAreaの向き'})
     .inputValue(),'8');
+  assert.match(await gridareaPanel.innerText(),
+    /原本既定GridAreaの外接枠：\s*\(4,\s*5\) ·\s*2 ×\s*2/);
+  const originalDefaultOutline=page.getByLabel('原本Item既定GridArea外接枠');
+  await originalDefaultOutline.waitFor();
+  assert.equal(await originalDefaultOutline.evaluate(el=>getComputedStyle(el).width),
+    '50px');
+  assert.match(await page.getByText(/点線は原本Item既定GridAreaの外接枠/).innerText(),
+    /占有セル・衝突判定ではありません/);
   assert.match(await gridareaPanel.innerText(),/68 × 2 · 0 × 1 · 76 × 1/);
   assert.match(await gridareaPanel.innerText(),/占有セル数ではありません/);
   assert.match(await gridareaPanel.innerText(),/全16方向の原本ローカル値を参照できます/);
@@ -496,6 +504,9 @@ try{
     /GridObject 1 · 向き 4 · Grid倍率 ×1 · 原本アンカー \(5, 5\)/);
   assert.equal(await gridareaPanel.getByRole('combobox',{name:'原本GridAreaの向き'})
     .inputValue(),'4');
+  assert.match(await gridareaPanel.innerText(),
+    /原本既定GridAreaの外接枠：\s*\(5,\s*5\) ·\s*2 ×\s*2/);
+  await originalDefaultOutline.waitFor();
   assert.match(await terrainSelectors.nth(1).locator('option:checked').innerText(),
     /OffGridBuildings\/Detached.json/);
   assert.equal(await terrainSelectors.nth(2).inputValue(),'0');
@@ -508,6 +519,8 @@ try{
   assert.equal(await terrainSelectors.nth(2).inputValue(),'1');
   await globalItemQuery.fill('999');
   await globalItemQuery.press('Enter');
+  await page.waitForFunction(()=>!document.querySelector(
+    '[aria-label="原本Item既定GridArea外接枠"]'));
   await page.getByRole('status')
     .filter({hasText:'この部分的な原本ZIPに指定Item IDの初期配置はありません'}).waitFor();
   assert.equal(await page.getByRole('button',{name:'次の候補'}).count(),0);
