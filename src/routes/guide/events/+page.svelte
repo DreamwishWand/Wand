@@ -28,6 +28,10 @@
   import {loadPublicEventSceneLinks,DB03_EVENT_SCENE_FILE,
     type PublicEventSceneIndex} from '$lib/guide/public-event-scene-links.ts';
 
+  import {GUIDE_NATIVE_EVENT_WINDOWS} from '$lib/guide/native-event-windows.ts';
+  import {viewerEventDateTime} from '$lib/guide/viewer-event-time.ts';
+  import {GUIDE_LOCALES,guideTimelineCopy} from '$lib/guide/timeline-copy.ts';
+
   type Filter='all'|'mini_event'|'floating_festival'|'default_friendship';
   let source:PublicEventFriendshipRewards|null=null;
   let labels:EventRewardItemLabelIndex|null=null;
@@ -44,6 +48,21 @@
   let category:Filter='all';
   let locale:GuideRewardLocale='ja';
   let selectedKey='';
+  let viewerZone='UTC';
+  $: calendarCopy=guideTimelineCopy(locale);
+  function eventWindow(event:NativeEventDefinition){
+    const kind=event.kind==='floating_festival'?'festival':event.kind==='mini_event'?'mini':null;
+    return GUIDE_NATIVE_EVENT_WINDOWS.find(row=>row[0]===kind&&row[1]===event.id);
+  }
+  function eventDateRange(event:NativeEventDefinition,language:GuideRewardLocale,zone:string):string{
+    const window=eventWindow(event);
+    if(!window)return '';
+    const formatter=new Intl.DateTimeFormat(GUIDE_LOCALES[language],{
+      timeZone:zone,year:'numeric',month:'short',day:'numeric'
+    });
+    return formatter.format(new Date(window[3]))+' – '+formatter.format(new Date(window[4]));
+  }
+  $: selectedWindow=selected?eventWindow(selected):undefined;
   let highlightItem='';
   const root=`${base}/guide/public/`;
   const filterOptions:readonly {id:Filter;text:string}[]=[
@@ -298,6 +317,7 @@
     }finally{loading=false;}
   }
   onMount(()=>{
+    viewerZone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';
     const unwatch=watchWandLanguage(lang=>{locale=lang as GuideRewardLocale;});
     const restore=()=>restoreRewardLocation();
     window.addEventListener('popstate',restore);
@@ -342,7 +362,9 @@
             <button type="button" class="event-option" class:active={selected?.id===event.id} aria-pressed={selected?.id===event.id} on:click={()=>choose(event)}>
               <span class="event-title">{eventName(event)}</span>
               <span class="event-type">{event.kind==='floating_festival'?'フローティングフェスティバル':'イベント'} · {event.rewards.length}件</span>
-              {#if event.id.includes('2026')}<span class="edition">2026年の定義</span>{/if}
+              {#if eventWindow(event)}
+                <span class="edition event-date-range">{eventDateRange(event,locale,viewerZone)}</span>
+              {/if}
             </button>
           {:else}
             <p class="empty">該当するイベントはありません。</p>
@@ -359,6 +381,12 @@
                 {#if highlightItem}<button type="button" class="all-rewards" on:click={clearItemFocus}>すべて表示</button>{/if}
               </span>
             </div>
+            {#if selectedWindow}
+              <dl class="event-schedule" aria-label={calendarCopy.timeline}>
+                <div><dt>{calendarCopy.start}</dt><dd><time datetime={selectedWindow[3]}>{viewerEventDateTime(selectedWindow[3],viewerZone,GUIDE_LOCALES[locale])}</time></dd></div>
+                <div><dt>{calendarCopy.end}</dt><dd><time datetime={selectedWindow[4]}>{viewerEventDateTime(selectedWindow[4],viewerZone,GUIDE_LOCALES[locale])}</time></dd></div>
+              </dl>
+            {/if}
             {#if eventQuests.length}
               <details class="event-quests" aria-label="原本に関連付けられたクエスト">
                 <summary>関連クエスト（{eventQuests.length}）</summary>
@@ -466,6 +494,10 @@
   h2{font-size:clamp(18px,2vw,23px);margin:0 0 5px}
   .native-id{font-size:11px;color:#aa99ba;overflow-wrap:anywhere}
   .label{font-size:12px;color:#d3b8ed;white-space:nowrap}
+  .event-schedule{display:flex;flex-wrap:wrap;gap:8px 24px;margin:0 0 15px;padding:10px 12px;border:1px solid #514160;border-radius:9px;font-size:12px}
+  .event-schedule div{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px}
+  .event-schedule dt{color:#b5a4c3}
+  .event-schedule dd{margin:0;color:#e5ccf5;font-variant-numeric:tabular-nums}
   .event-quests{margin:0 0 13px;border:1px solid #514160;border-radius:9px;padding:9px 11px;font-size:12px}
   .event-quests summary{cursor:pointer;font-weight:650;color:#e5ccf5}
   .event-quest-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:10px 0}

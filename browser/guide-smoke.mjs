@@ -733,6 +733,13 @@ try {
   assert.equal(await crossEvent.locator('.reward-detail .reward-row').count(),1);
   assert.equal(new URL(crossEvent.url()).searchParams.get('item'),itemId);
   assert.equal(new URL(crossEvent.url()).searchParams.get('event'),'HauntedFloatingFestival');
+  // The exact original window follows the selected event, even when both
+  // editions have the same localized name and share a reward.
+  const previousWindow=crossEvent.locator('.event-schedule time');
+  assert.deepEqual(await previousWindow.evaluateAll(nodes=>nodes.map(n=>n.getAttribute('datetime'))),
+    ['2025-10-22T00:00:00Z','2025-11-11T23:59:00Z']);
+  assert.equal(await crossEvent.locator('.event-list .event-date-range').count(),2);
+  assert.match(await previousWindow.first().innerText(),/2025/);
   await crossEvent.close();
 
   // Steam 1.26.2 original Scene references locate only source-linked
