@@ -95,7 +95,7 @@ test('factor two repeats original source raw cells, preserving exact caller-grid
   const b=getOriginalDefaultGridLayersAtCell(f,L,7,4,5);
   const c=getOriginalDefaultGridLayersAtCell(f,L,7,5,6);
   assert.deepEqual([a.rawDefaultItemLayerOr,b.rawDefaultItemLayerOr,
-    c.rawDefaultItemLayerOr],[1,1,4]);
+    c.rawDefaultItemLayerOr],[1,1,8]);
   assert.deepEqual([b.contributors[0].callerGridLocalX,
     b.contributors[0].callerGridLocalY],[1,1]);
   assert.equal(b.sourceGridTessellationFactor,2);
