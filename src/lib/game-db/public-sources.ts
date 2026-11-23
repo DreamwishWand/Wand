@@ -41,6 +41,12 @@ import {
   createDb00PublicEventSources,type Db00PublicEventSources
 } from './event-relations.ts';
 import {
+  createDb00OutsideSourceSearch,
+  type Db00OutsideSourceSearch,
+  type Db00OutsideSearchRequest,
+  type Db00OutsideSearchResult
+} from './outside-item-search.ts';
+import {
   createDb00PublicItemSearch,
   type Db00PublicItemSearchRequest,type Db00PublicItemSearchResult
 } from './public-search.ts';
@@ -64,6 +70,10 @@ export interface PublicSharedGameSources{
   getItems(itemIds:readonly (string|number)[]):readonly Db00SourceJoinedItem[];
   /** Search exact public names / Item IDs and source-qualified acquisition links. */
   searchItems(request?:Db00PublicItemSearchRequest):Db00PublicItemSearchResult;
+  /** Separately discover native source links omitted from the 13,202 ItemList. */
+  searchOutsideSourceItems(
+    request?:Db00OutsideSearchRequest
+  ):Db00OutsideSearchResult;
   queryItems(filters?:readonly SharedDbFilter[],
     page?:Readonly<{offset?:number;limit?:number}>):SharedDbQueryResult;
   summarizeFacet(request:SharedDbFacetRequest,
@@ -135,11 +145,11 @@ export async function openPublicSharedGameSources(
       ]);
       return createDb00PublicEventSources(events,quest,duty,scene);
     });
-  const [database,acquisition,guide,guideQuestTargets,guideEvents]=await Promise.all([
+  const [database,acquisition,guide,guideQuestTargets,guideEvents,questCatalogue]=await Promise.all([
     openSharedGameDatabase(basePath,once),
     loadPublicSourceCatalog(basePath,once),
     loadGuideRewardIndex(basePath+'/guide/public/starpath-cache-2026-11-22.json',once),
-    questTargetTask,eventTask
+    questTargetTask,eventTask,questCatalogueTask
   ]);
   const joined=joinCurrentGameSources(database,{
     origins:acquisition.origins,rewards:guide,
@@ -147,6 +157,19 @@ export async function openPublicSharedGameSources(
     defaultInventories:acquisition.defaultInventorySource,
     questTargets:guideQuestTargets
   });
+  let outsideSearch:Db00OutsideSourceSearch|null=null;
+  const searchOutsideSourceItems=(request:Db00OutsideSearchRequest={}):
+    Db00OutsideSearchResult=>{
+    if(!outsideSearch){
+      // DB-03's SHA-pinned target reader has already verified this exact
+      // public Quest index. Never enumerate IDs from private Mission archives.
+      outsideSearch=createDb00OutsideSourceSearch(
+        database,joined,acquisition,guide,guideQuestTargets,
+        questCatalogue.quests.map((row:{id:string})=>row.id)
+      );
+    }
+    return outsideSearch.search(request);
+  };
   const search=createDb00PublicItemSearch(
     database,joined,acquisition.origins,guide,acquisition.staticContainerSource,
     guideQuestTargets,acquisition.defaultInventorySource
@@ -188,6 +211,7 @@ export async function openPublicSharedGameSources(
     getItem:(id:string|number)=>joined.getItem(id),
     getItems:(ids:readonly (string|number)[])=>joined.getItems(ids),
     searchItems:search.searchItems,
+    searchOutsideSourceItems,
     queryItems:(filters:readonly SharedDbFilter[]=[],
       page:Readonly<{offset?:number;limit?:number}>={})=>
       database.queryItems(filters,page),
