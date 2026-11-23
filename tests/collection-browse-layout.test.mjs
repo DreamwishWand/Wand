@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {COLLECTION_UNIVERSE_UNTAGGED,isDreamlightUniverse,
+import {COLLECTION_UNIVERSE_UNTAGGED,isDreamlightUniverse,isOtherUniverse,
+  collectionUniverseDisplayLabel,
   sortedCollectionUniverseOptions,groupCollectionUniverseItems}
   from '../src/lib/collection/browse-layout.ts';
 
@@ -23,6 +24,19 @@ test('universe order keeps no-tag then Dreamlight before locale-collated source 
     COLLECTION_UNIVERSE_UNTAGGED,'DreamlightValley','Alice','Elsa'
   ]);
   assert.equal(isDreamlightUniverse('Disney_Dreamlight_Valley'),true);
+  assert.equal(isOtherUniverse('NonIP'),true);
+  assert.equal(collectionUniverseDisplayLabel('ja','NonIP'),'その他');
+  assert.equal(collectionUniverseDisplayLabel('ja','DreamlightValley'),'ドリームライトバレー');
+  const withOriginalOther={
+    ...index,universesByItem:new Map([...index.universesByItem,[4,['NonIP']]]),
+    itemsByUniverse:new Map([...index.itemsByUniverse,['NonIP',[4]]])
+  };
+  const original=sortedCollectionUniverseOptions(withOriginalOther,'ja',
+    key=>collectionUniverseDisplayLabel('ja',key),'ユニバース未設定');
+  assert.deepEqual(original.map(x=>x.id),[
+    'NonIP','DreamlightValley','Alice','Elsa',COLLECTION_UNIVERSE_UNTAGGED
+  ]);
+  assert.equal(original.at(-1)?.total,16);
 });
 test('selected universe groups source-native Item IDs, keeps all headings on first page',()=>{
   const rows=[
