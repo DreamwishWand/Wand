@@ -61,11 +61,12 @@ test('original intrinsic cardinal raw layers are not a placed-object footprint',
   assert.deepEqual(rect.rows,[[68,0],[0,68]]);
   assert.deepEqual(rect.rect,{x:1,y:0,width:2,height:2});
 });
-test('noncardinal orientations and unknown originals are source-only unsupported',()=>{
-  const unsupported=getOriginalGridAreaLocalWindow(fixture(),100,3,0,0,2,3);
-  assert.equal(unsupported.status,'unsupported_intrinsic_orientation');
-  assert.equal(unsupported.rows,null);
-  assert.equal(unsupported.steam1262CardinalIntrinsicMappingCorroborated,false);
+test('noncardinal local lookup is supported while missing original items are distinguished',()=>{
+  const oblique=getOriginalGridAreaLocalWindow(fixture(),100,3,0,0,3,2);
+  assert.equal(oblique.status,'source_native_local_layers');
+  assert.equal(oblique.rows.length,2);
+  assert.equal(oblique.steam1262ObliqueIntrinsicMappingCorroborated,true);
+  assert.equal(oblique.steam1262CardinalIntrinsicMappingCorroborated,false);
   assert.equal(getOriginalGridAreaLocalWindow(fixture(),999,8,0,0,1,1).status,
     'item_not_in_partial_original_source');
   assert.equal(getOriginalGridAreaLocalWindow(fixture(),200,8,0,0,1,1).status,
@@ -173,6 +174,6 @@ test('intrinsic orientation size protects UI controls from out-of-bounds or ambi
     /INVALID/);
   assert.throws(()=>getOriginalGridAreaDisplayDimensions(257,3,8,1),
     /INVALID/);
-  assert.throws(()=>getOriginalGridAreaLocalWindow(f,100,8,3,0,1,1,2),
+  assert.throws(()=>getOriginalGridAreaLocalWindow(f,100,8,4,0,1,1,2),
     /OUT_OF_RANGE/);
 });
