@@ -226,7 +226,7 @@
         const key=selected+'|'+worldFilter+'|'+universeFilter;
         if(key!==sourceGroupsCacheKey){
           const categoryRows=queryAllCollectionRows({
-            ...currentFilter(0,512),status:'all',search:'',
+            ...currentFilter(0,200),status:'all',search:'',
             favoriteOnly:false,nameStatus:'all',expansion:''
           });
           sourceFacetGroups=collectionDb01Groups(sourceIndex,
@@ -237,7 +237,7 @@
         sourceFacetGroups=[];sourceGroupsCacheKey='';
       }
       if(Object.keys(sourceChoices).length&&sourceIndex){
-        const candidates=queryAllCollectionRows(currentFilter(0,512));
+        const candidates=queryAllCollectionRows(currentFilter(0,200));
         sourceAllMatching=candidates.filter(item=>
           Object.entries(sourceChoices).every(([facet,key])=>
             collectionDb01Matches(sourceIndex!,item.itemId,facet as CollectionDb01Facet,key)));
@@ -268,7 +268,7 @@
     const result:CollectionItem[]=[];
     let offset=0;
     for(;;){
-      const next=runtime.query({...filter,offset,limit:512});
+      const next=runtime.query({...filter,offset,limit:200});
       result.push(...next.items);
       offset+=next.items.length;
       if(offset>=next.total||next.items.length===0)break;
