@@ -89,6 +89,10 @@ const collectionCategoryRows=[];
 // already contains each verified IL2CPP subtype; do not guess from display
 // names or expand the game's Collection menu.
 const activityTypeRows=[];
+// Exact Item-ID universe references from original Tags AND already-verified
+// Collection selector candidates. This is an extra browse relation, never
+// runtime Collection membership, world location or entitlement.
+const universeSourceRows=[];
 // Exact Steam 1.26.2 original CollectionSubMenu enum codes. Original source
 // predicates are browse *candidates*, not proven game runtime membership.
 const ORIGINAL_SUBMENU_CODES=new Set([
@@ -139,6 +143,15 @@ for(let bucket=0;bucket<256;bucket++){
       typeof t.key==='string'&&t.key.length>0&&t.key.length<=128)
       .map(t=>[t.facet,t.key]);
     if(browseTags.length)collectionRows.push([row.itemId,browseTags]);
+    const universeKeys=new Set(browseTags.filter(t=>t[0]==='disneyUniverse')
+      .map(t=>t[1]));
+    for(const candidate of row.collectionSourceCandidates){
+      if(typeof candidate.universeTagKey==='string'&&
+        /^[A-Za-z][A-Za-z0-9_]{0,127}$/.test(candidate.universeTagKey))
+        universeKeys.add(candidate.universeTagKey);
+    }
+    if(universeKeys.size)universeSourceRows.push([row.itemId,
+      [...universeKeys].sort()]);
     const sourceCategories=originalCategoryCodes(row);
     if(sourceCategories.length)collectionCategoryRows.push([row.itemId,sourceCategories]);
     if(row.nativeCategory==='ActivityItem'){
@@ -186,6 +199,7 @@ mkdirSync(dirname(collectionDestination),{recursive:true});
 collectionRows.sort((a,b)=>a[0]-b[0]);
 collectionCategoryRows.sort((a,b)=>a[0]-b[0]);
 activityTypeRows.sort((a,b)=>a[0]-b[0]);
+universeSourceRows.sort((a,b)=>a[0]-b[0]);
 writeFileSync(collectionDestination,JSON.stringify({
   schema:'wand.collection.db01-native-facets@1',
   release:entry.release,
@@ -196,6 +210,10 @@ writeFileSync(collectionDestination,JSON.stringify({
   categoryItems:collectionCategoryRows,
   activityTypeItemCount:activityTypeRows.length,
   activityTypeItems:activityTypeRows,
+  universeSourceItemCount:universeSourceRows.length,
+  universeSourceItems:universeSourceRows,
+  universeSourceEvidence:'original_tag_or_collection_predicate_tag',
+  universeSourceGameUiMembershipVerified:false,
   activityTypeEvidence:'original_il2cpp_activity_item_type',
   activityTypeGameUiMembershipVerified:false,
   categoryEvidence:'original_collectionset_source_candidate_or_verified_native_item_type',

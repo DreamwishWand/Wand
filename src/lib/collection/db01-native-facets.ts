@@ -61,6 +61,8 @@ export interface CollectionDb01Index{
   readonly activityTypesByItem:ReadonlyMap<number,Readonly<CollectionDb01ActivityType>>;
   readonly itemsByActivityType:ReadonlyMap<number,readonly number[]>;
   readonly activityTypeNames:ReadonlyMap<number,string|null>;
+  readonly universesByItem:ReadonlyMap<number,readonly string[]>;
+  readonly itemsByUniverse:ReadonlyMap<string,readonly number[]>;
 }
 export interface CollectionDb01Option {
   readonly key:string;
@@ -156,6 +158,31 @@ export function parseCollectionDb01Facets(payload:unknown):CollectionDb01Index{
       itemsByActivityType.set(code,ids);
     }
   }
+  const universesByItem=new Map<number,readonly string[]>();
+  const itemsByUniverse=new Map<string,number[]>();
+  if(payload.universeSourceItems!==undefined){
+    assert(payload.universeSourceEvidence==='original_tag_or_collection_predicate_tag'&&
+      payload.universeSourceGameUiMembershipVerified===false&&
+      Array.isArray(payload.universeSourceItems)&&
+      payload.universeSourceItemCount===payload.universeSourceItems.length&&
+      payload.universeSourceItemCount<=13202,'UNIVERSE_MANIFEST');
+    let last=0;
+    for(const value of payload.universeSourceItems){
+      assert(Array.isArray(value)&&value.length===2&&validId(value[0])&&
+        value[0]>last&&Array.isArray(value[1])&&value[1].length>0&&
+        value[1].every((key:unknown)=>typeof key==='string'&&
+          /^[A-Za-z][A-Za-z0-9_]{0,127}$/.test(key))&&
+        new Set(value[1]).size===value[1].length,'UNIVERSE_ITEM');
+      last=value[0] as number;
+      const keys=Object.freeze([...(value[1] as string[])]);
+      universesByItem.set(last,keys);
+      for(const key of keys){
+        const ids=itemsByUniverse.get(key)??[];
+        ids.push(last);
+        itemsByUniverse.set(key,ids);
+      }
+    }
+  }
   const byItem=new Map<number,readonly CollectionDb01Pair[]>();
   let prev=0;
   for(const entry of payload.items){
@@ -176,7 +203,9 @@ export function parseCollectionDb01Facets(payload:unknown):CollectionDb01Index{
     itemsByCategory,
     activityTypesByItem,
     itemsByActivityType,
-    activityTypeNames
+    activityTypeNames,
+    universesByItem,
+    itemsByUniverse
   });
 }
 export async function loadCollectionDb01Facets(

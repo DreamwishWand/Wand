@@ -6,10 +6,11 @@
   import {
     loadCollectionDb01Facets,collectionDb01Groups,collectionDb01Matches,
     collectionDb01FacetLabel,collectionDb01TagLabel,COLLECTION_DB01_COLOR_SWATCHES,
-    COLLECTION_DB01_SUBMENUS,collectionDb01InCategory,
-    type CollectionDb01Index,type CollectionDb01Facet,type CollectionDb01Group,
-    type CollectionDb01SubmenuCode
+    type CollectionDb01Index,type CollectionDb01Facet,type CollectionDb01Group
   } from '$lib/collection/db01-native-facets';
+  import {COLLECTION_UNIVERSE_UNTAGGED,sortedCollectionUniverseOptions,
+    groupCollectionUniverseItems,collectionUniverseDisplayLabel}
+    from '$lib/collection/browse-layout.ts';
   import AcquisitionEvidence from '$lib/collection/AcquisitionEvidence.svelte';
   import {loadDb01ItemAcquisitionHandoff,type Db01ItemAcquisitionIndex}
     from '$lib/acquisition/db01-item-acquisition.ts';
@@ -101,13 +102,11 @@
   let sourceFacetGroups:readonly CollectionDb01Group[]=[];
   let sourceChoices:Partial<Record<CollectionDb01Facet,string>>={};
   let sourceAllMatching:CollectionItem[]=[];
-  let sourceCategory:CollectionDb01SubmenuCode|null=null;
   let sourceActivityType:number|null=null;
+  let sourceUniverseSelection:string|null=null;
   let sourceActivityTypeCards:{
     code:number;nativeName:string|null;total:number;owned:number
   }[]=[];
-  let originalCategoryCards:{code:CollectionDb01SubmenuCode;family:string;total:number;owned:number}[]=[];
-  let originalClassesOpen=false;
   let sourceGroupsCacheKey='';
   let universeSections:{facet:CollectionFacet;items:CollectionItem[]}[]=[];
   let worldFilter='';
@@ -140,11 +139,9 @@
   $: workspace=state.workspaces.find(x=>x.id===state.active)??state.workspaces[0];
   $: entries=workspace?.entries??{};
   $: selectionLabel=sourceActivityType!==null
-    ? sourceActivityTypeLabel(locale,sourceActivityType,
+    ?sourceActivityTypeLabel(locale,sourceActivityType,
         sourceIndex?.activityTypeNames.get(sourceActivityType)??null)
-    : sourceCategory!==null
-      ?categoryLabel(locale,COLLECTION_DB01_SUBMENUS.find(c=>c.code===sourceCategory)?.family??'')
-      :facets.find(x=>x.id===selected)?.label??'';
+    :facets.find(x=>x.id===selected)?.label??'';
   // Render each Rust/WASM query result in its original order. Grouping all
   // visible rows by category would move existing cards when another page is
   // appended, producing scroll jumps and misleading partial group counts.
@@ -154,26 +151,28 @@
   $: selectedEntry=selectedItem?entries[String(selectedItem.itemId)]??{}:{};
   $: selectedGridRefs=selectedItem?savedGridByItem[String(selectedItem.itemId)]??null:null;
   $: selectedDb04Refs=selectedItem?savedDb04ByItem[String(selectedItem.itemId)]??null:null;
-  $: universeChoices=(sourceIndex&&sourceUniverseOptions.length
-    ?sourceUniverseOptions.map(option=>({
-        id:option.key,label:collectionDb01TagLabel(locale,option.key),total:option.count
-      }))
+  $: universeChoices=(sourceIndex
+    ?sortedCollectionUniverseOptions(sourceIndex,locale,
+        key=>collectionUniverseDisplayLabel(locale,key),
+        locale==='ja'?'ユニバース未設定':'No source universe tag')
     :universeScopeOptions).filter(option=>
       option.label.toLocaleLowerCase(locale).includes(universeSearch.trim().toLocaleLowerCase(locale)));
   $: landingUniverse=viewAxis==='universe'&&!universeFilter&&
-    !sourceChoices.disneyUniverse&&!selected&&sourceCategory===null&&
-    sourceActivityType===null&&!search.trim()&&
+    sourceUniverseSelection===null&&!sourceChoices.disneyUniverse&&
+    !selected&&sourceActivityType===null&&!search.trim()&&
     status==='all'&&!favoriteOnly&&!expansion&&!acquisitionFilter;
+  $: landingWorld=viewAxis==='world'&&!selected&&sourceActivityType===null&&
+    !browsingAllItems&&!search.trim()&&status==='all'&&!favoriteOnly&&
+    nameStatus==='all'&&!expansion&&!acquisitionFilter&&
+    Object.keys(sourceChoices).every(key=>key==='worldContextTag');
   // Each category may use a different proven subgroup axis. Only Furniture
   // and Clothing currently have a verified Universe-based browse path.
   // Biome/subtype families go directly to items until exact source groups land.
-  $: landingSubgroup=viewAxis==='world'&&Boolean(selected)&&
-    !bypassCategoryGroups&&!universeFilter&&!search.trim()&&
-    status==='all'&&!favoriteOnly&&!expansion&&!acquisitionFilter&&
-    !Object.keys(sourceChoices).length&&categoryUniverseFacets.length>0;
-  $: universeSectionView=viewAxis==='universe'&&Boolean(universeFilter)&&
-    !sourceIndex&&!selected&&!search.trim()&&status==='all'&&!favoriteOnly&&!expansion;
-  $: isBrowsing=Boolean(browsingAllItems||selected||sourceCategory!==null||
+  $: universeSectionView=viewAxis==='universe'&&Boolean(
+    sourceUniverseSelection!==null||universeFilter)&&!selected&&
+    sourceActivityType===null&&!search.trim()&&status==='all'&&
+    !favoriteOnly&&!expansion&&!acquisitionFilter;
+  $: isBrowsing=Boolean(browsingAllItems||selected||sourceUniverseSelection!==null||
     sourceActivityType!==null||search.trim()||status!=='all'||favoriteOnly||
     nameStatus!=='all'||expansion||worldFilter||universeFilter||
     Object.keys(sourceChoices).length||acquisitionFilter||viewAxis==='universe');
@@ -303,20 +302,41 @@
       scopedCategoryFacets=(worldFilter||universeFilter)
         ? facets.flatMap(facet=>{const scoped=countCategory(facet.id);return scoped?[scoped]:[];})
         : facets;
-      // Original CollectionSubMenu candidates and verified ItemTypes are
-      // browse references, not proof of in-game membership or completion.
-      originalCategoryCards=sourceIndex?COLLECTION_DB01_SUBMENUS.map(c=>{
-        const ids=sourceIndex!.itemsByCategory.get(c.code)??[];
-        return {code:c.code,family:c.family,total:ids.length,
-          owned:ids.filter(id=>entries[String(id)]?.status==='owned').length};
-      }):[];
+      // Show the original item-type cards scoped by exact DB-01 world tags.
+      // These tags are not game CollectionArea or availability evidence.
+      const tag=viewAxis==='world'?sourceChoices.worldContextTag:'';
+      const worldIds=tag&&sourceIndex?[...sourceIndex.byItem.keys()].filter(id=>
+        collectionDb01Matches(sourceIndex!,id,'worldContextTag',tag)):null;
+      const familyCounts=new Map<string,{total:number;owned:number}>();
+      const typeCounts=new Map<number,{total:number;owned:number}>();
+      if(worldIds){
+        for(const id of worldIds){
+          const item=runtime!.item(id,locale);
+          const owned=entries[String(id)]?.status==='owned'?1:0;
+          const family=familyCounts.get(item.family)??{total:0,owned:0};
+          family.total++;family.owned+=owned;familyCounts.set(item.family,family);
+          const activity=sourceIndex!.activityTypesByItem.get(id);
+          if(activity){
+            const counts=typeCounts.get(activity.code)??{total:0,owned:0};
+            counts.total++;counts.owned+=owned;typeCounts.set(activity.code,counts);
+          }
+        }
+        scopedCategoryFacets=facets.flatMap(facet=>{
+          const found=familyCounts.get(facet.id);
+          return found?[{...facet,...found}]:[];
+        });
+      }
       sourceActivityTypeCards=sourceIndex
         ?[...sourceIndex.itemsByActivityType.entries()].sort((a,b)=>a[0]-b[0])
-          .map(([code,ids])=>({
-            code,nativeName:sourceIndex!.activityTypeNames.get(code)??null,
-            total:ids.length,
-            owned:ids.filter(id=>entries[String(id)]?.status==='owned').length
-          }))
+          .flatMap(([code,ids])=>{
+            const counts=worldIds?typeCounts.get(code):{
+              total:ids.length,
+              owned:ids.filter(id=>entries[String(id)]?.status==='owned').length
+            };
+            return counts?.total?[{
+              code,nativeName:sourceIndex!.activityTypeNames.get(code)??null,...counts
+            }]:[];
+          })
         :[];
       const universeCategoryIds=new Set(['Furniture','Clothing']);
       categoryUniverseFacets=viewAxis==='world'&&universeCategoryIds.has(selected)
@@ -325,21 +345,18 @@
             return subgroup?[{...subgroup,id:option.id,label:option.label}]:[];
           })
         : [];
-      universeSections=viewAxis==='universe'&&universeFilter&&!selected
-        ? scopedCategoryFacets.map(facet=>({
+      universeSections=viewAxis==='universe'&&universeFilter&&!selected&&!sourceIndex
+        ?scopedCategoryFacets.map(facet=>({
             facet,items:runtime!.query({...scopeFilter,category:facet.id,limit:8}).items
-          }))
-        : [];
+          })):[];
       if(sourceIndex&&filtersOpen){
         const key=(sourceActivityType!==null?'activity-'+sourceActivityType:
-          sourceCategory===null?selected||'all':'original-'+sourceCategory)+
-          '|'+worldFilter+'|'+universeFilter;
+          selected||'all')+'|'+worldFilter+'|'+universeFilter+
+          '|'+(sourceChoices.worldContextTag??'')+'|'+(sourceUniverseSelection??'');
         if(key!==sourceGroupsCacheKey){
           const ids=sourceActivityType!==null
             ?sourceIndex.itemsByActivityType.get(sourceActivityType)??[]
-            :sourceCategory!==null
-              ?sourceIndex.itemsByCategory.get(sourceCategory)??[]
-              :selected?queryAllCollectionRows({
+            :selected?queryAllCollectionRows({
                 ...currentFilter(0,200),status:'all',search:'',
                 favoriteOnly:false,nameStatus:'all',expansion:''
               }).map(row=>row.itemId):[...sourceIndex.byItem.keys()];
@@ -349,20 +366,21 @@
       }else if(!filtersOpen){
         sourceFacetGroups=[];sourceGroupsCacheKey='';
       }
-      if((sourceCategory!==null||sourceActivityType!==null||
+      if((sourceActivityType!==null||sourceUniverseSelection!==null||
           Object.keys(sourceChoices).length||acquisitionFilter)&&
          (sourceIndex||acquisitionIndex)){
         // An original submenu can contain 6k+ Item IDs. Repeating the
         // general 13k-row sorted Rust query 67 times blocks UI clicks.
         // Resolve source-linked IDs through Rust's O(1) Item-ID lookup.
         // For multilingual text search, retain the existing Rust predicate.
-        const categoryIds=sourceCategory===null?null:
-          sourceIndex?.itemsByCategory.get(sourceCategory)??[];
+        const universeIds=sourceUniverseSelection&&
+          sourceUniverseSelection!==COLLECTION_UNIVERSE_UNTAGGED
+          ?sourceIndex?.itemsByUniverse.get(sourceUniverseSelection)??[]:null;
         const acquisitionIds=acquisitionFilter&&acquisitionIndex
           ?acquisitionIndex.listItemIds(acquisitionFilter).map(Number):null;
         const activityIds=sourceActivityType===null?null:
           sourceIndex?.itemsByActivityType.get(sourceActivityType)??[];
-        const candidateIds=[categoryIds,acquisitionIds,activityIds]
+        const candidateIds=[universeIds,acquisitionIds,activityIds]
           .reduce<readonly number[]|null>((shortest,ids)=>
             ids===null?shortest:
             shortest===null||ids.length<shortest.length?ids:shortest,null);
@@ -373,8 +391,11 @@
             try{return [runtime!.item(id,locale)];}catch{return [];}
           }):queryAllCollectionRows(currentFilter(0,200)));
         sourceAllMatching=candidates.filter(item=>
-          (sourceCategory===null||
-            sourceIndex!==null&&collectionDb01InCategory(sourceIndex,item.itemId,sourceCategory))&&
+          (sourceUniverseSelection!==COLLECTION_UNIVERSE_UNTAGGED||
+            !sourceIndex?.universesByItem.has(item.itemId))&&
+          (sourceUniverseSelection===null||
+            sourceUniverseSelection===COLLECTION_UNIVERSE_UNTAGGED||
+            sourceIndex?.universesByItem.get(item.itemId)?.includes(sourceUniverseSelection)===true)&&
           (sourceActivityType===null||
             sourceIndex?.activityTypesByItem.get(item.itemId)?.code===sourceActivityType)&&
           (!acquisitionFilter||
@@ -387,10 +408,19 @@
           (!worldFilter||item.worlds.includes(worldFilter))&&
           (!universeFilter||item.universes.includes(universeFilter))&&
           Object.entries(sourceChoices).every(([facet,key])=>
-            sourceIndex!==null&&collectionDb01Matches(
-              sourceIndex,item.itemId,facet as CollectionDb01Facet,key)))
-          .sort((a,b)=>Number(b.nameVerified)-Number(a.nameVerified)||
-            a.label.localeCompare(b.label,locale)||a.itemId-b.itemId);
+            sourceIndex!==null&&(facet==='disneyUniverse'
+              ?sourceIndex.universesByItem.get(item.itemId)?.includes(key)===true
+              :collectionDb01Matches(
+                sourceIndex,item.itemId,facet as CollectionDb01Facet,key))))
+          .sort((a,b)=>sourceUniverseSelection!==null
+            ?a.itemId-b.itemId:
+            Number(b.nameVerified)-Number(a.nameVerified)||
+              a.label.localeCompare(b.label,locale)||a.itemId-b.itemId);
+        if(viewAxis==='universe'&&sourceUniverseSelection!==null&&!selected&&
+          sourceActivityType===null&&!search.trim()&&status==='all'&&
+          !favoriteOnly&&!expansion&&!acquisitionFilter){
+          rebuildSourceUniverseSections();
+        }
         filtered=sourceAllMatching.slice(0,visible);
         totalMatches=sourceAllMatching.length;
         overall=runtime.progress;state=runtime.state;
@@ -412,6 +442,21 @@
       overall=runtime.progress;
       state=runtime.state;
     }catch(error){storeError=error instanceof Error?error.message:String(error);}
+  }
+  function rebuildSourceUniverseSections():void{
+    const groups=groupCollectionUniverseItems(sourceAllMatching,item=>{
+      const activity=sourceIndex?.activityTypesByItem.get(item.itemId);
+      const id=activity?'activity-'+activity.code:item.family;
+      return {id,
+        label:activity?sourceActivityTypeLabel(locale,activity.code,activity.nativeName):
+          categoryLabel(locale,item.family),
+        rank:activity?100+activity.code:Math.max(0,facets.findIndex(f=>f.id===item.family))
+      };
+    },visible);
+    universeSections=groups.map(section=>({
+      facet:{id:section.id,label:section.label,total:section.total,owned:0},
+      items:[...section.items]
+    }));
   }
   function queryAllCollectionRows(filter:CollectionFilter):CollectionItem[]{
     if(!runtime)return [];
@@ -446,10 +491,9 @@
     sourceFacetGroups=[];
     sourceGroupsCacheKey='';
     sourceChoices={};
-    sourceCategory=null;
     sourceActivityType=null;
+    sourceUniverseSelection=null;
     sourceActivityTypeCards=[];
-    originalCategoryCards=[];
   }
   function ensureSourceIndex():void{
     if(!canUseDb01SourceFacets()||sourceIndex||sourceLoad)return;
@@ -459,8 +503,9 @@
       if(generation!==sourceGeneration||!canUseDb01SourceFacets())return;
       sourceIndex=index;sourceGroupsCacheKey='';
       const sourceGroups=collectionDb01Groups(index,[...index.byItem.keys()]);
-      sourceUniverseOptions=sourceGroups
-        .find(group=>group.facet==='disneyUniverse')?.options.map(x=>({...x}))??[];
+      sourceUniverseOptions=[...index.itemsByUniverse].map(([key,ids])=>({
+        key,count:ids.length
+      }));
       sourceWorldOptions=sourceGroups
         .find(group=>group.facet==='worldContextTag')?.options.map(x=>({...x}))??[];
       // Source-native category cards become visible on the initial overview.
@@ -541,12 +586,16 @@
    */
   function appendNextPage():void {
     if(!runtime||busy||loading||storeError||filtered.length>=totalMatches)return;
-    if((sourceCategory!==null||sourceActivityType!==null||
+    if((sourceActivityType!==null||sourceUniverseSelection!==null||
           Object.keys(sourceChoices).length||acquisitionFilter)&&
          (sourceIndex||acquisitionIndex)){
       const next=Math.min(sourceAllMatching.length,filtered.length+72);
       filtered=sourceAllMatching.slice(0,next);
       visible=next;
+      if(viewAxis==='universe'&&sourceUniverseSelection!==null&&!selected&&
+        sourceActivityType===null&&!search.trim()&&status==='all'&&
+        !favoriteOnly&&!expansion&&!acquisitionFilter)
+        rebuildSourceUniverseSections();
       return;
     }
     try{
@@ -680,7 +729,7 @@
     if(!window.confirm(`現在の条件に一致する全${count.toLocaleString(locale)}件を「${label}」に変更します。画面に未表示のアイテムも対象です。実行しますか？`))return;
     const filter=currentFilter(0,1);
     void commit(async()=>{
-      if((sourceCategory!==null||sourceActivityType!==null||
+      if((sourceActivityType!==null||sourceUniverseSelection!==null||
           Object.keys(sourceChoices).length||acquisitionFilter)&&
          (sourceIndex||acquisitionIndex)){
         // Rust's bulk_matching predicate does not know DB-01 menu candidates or Tags.
@@ -696,62 +745,76 @@
   function browseEveryItem():void{
     browsingAllItems=true;
     viewAxis='world';
-    selected='';sourceCategory=null;sourceActivityType=null;worldFilter='';universeFilter='';
+    selected='';sourceActivityType=null;sourceUniverseSelection=null;
+    worldFilter='';universeFilter='';
     search='';status='all';favoriteOnly=false;nameStatus='all';expansion='';
     sourceChoices={};acquisitionFilter='';bypassCategoryGroups=true;
     sourceFacetGroups=[];sourceGroupsCacheKey='';
     resetView();
   }
+  function browseCurrentScopeItems():void{
+    if(viewAxis!=='world'||(!worldFilter&&!sourceChoices.worldContextTag)){
+      browseEveryItem();return;
+    }
+    browsingAllItems=true;selected='';sourceActivityType=null;
+    search='';status='all';favoriteOnly=false;nameStatus='all';expansion='';
+    sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
+  }
   function chooseActivityType(code:number):void{
     if(!sourceIndex?.itemsByActivityType.has(code))return;
     sourceActivityType=code;
-    sourceCategory=null;selected='';browsingAllItems=false;
-    sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';
+    selected='';browsingAllItems=false;
+    sourceChoices=viewAxis==='world'&&sourceChoices.worldContextTag
+      ?{worldContextTag:sourceChoices.worldContextTag}:{};
+    sourceFacetGroups=[];sourceGroupsCacheKey='';
     bypassCategoryGroups=true;
     resetView();
   }
-  function chooseOriginalCategory(code:CollectionDb01SubmenuCode):void{
-    if(!sourceIndex||!(sourceIndex.itemsByCategory.get(code)?.length))return;
-    sourceActivityType=null;
-    sourceCategory=code;selected='';originalClassesOpen=false;browsingAllItems=false;
-    sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';
-    bypassCategoryGroups=true;resetView();
-  }
   function chooseFacet(id:string):void{
-    sourceCategory=null;sourceActivityType=null;
-    selected=id;bypassCategoryGroups=false;browsingAllItems=false;
-    sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';
+    sourceActivityType=null;
+    selected=id;bypassCategoryGroups=true;browsingAllItems=false;
+    sourceChoices=viewAxis==='world'&&sourceChoices.worldContextTag
+      ?{worldContextTag:sourceChoices.worldContextTag}:
+      viewAxis==='universe'&&sourceUniverseSelection&&
+        sourceUniverseSelection!==COLLECTION_UNIVERSE_UNTAGGED
+        ?{disneyUniverse:sourceUniverseSelection}:{};
+    sourceFacetGroups=[];sourceGroupsCacheKey='';
     resetView();ensureSourceIndex();
   }
   function changeViewAxis(axis:CollectionViewAxis):void{
     if(viewAxis===axis)return;
-    viewAxis=axis;selected='';sourceCategory=null;sourceActivityType=null;browsingAllItems=false;
+    viewAxis=axis;selected='';sourceActivityType=null;
+    sourceUniverseSelection=null;browsingAllItems=false;
     worldFilter='';universeFilter='';universeSearch='';
     sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';
     bypassCategoryGroups=false;search='';status='all';favoriteOnly=false;
     nameStatus='all';expansion='';resetView();
   }
   function chooseWorld(id:string):void{
-    selected='';sourceCategory=null;sourceActivityType=null;universeFilter='';bypassCategoryGroups=false;browsingAllItems=false;
+    selected='';sourceActivityType=null;sourceUniverseSelection=null;
+    universeFilter='';bypassCategoryGroups=false;browsingAllItems=false;
     const fromSource=sourceIndex&&sourceWorldOptions.some(option=>option.key===id);
     worldFilter=fromSource?'':id;
     sourceChoices=fromSource?{worldContextTag:id}:{};
     sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
   }
   function chooseUniverse(id:string):void{
-    selected='';sourceCategory=null;sourceActivityType=null;bypassCategoryGroups=false;browsingAllItems=false;
-    universeFilter=sourceIndex&&sourceUniverseOptions.length?'':id;
-    sourceChoices=sourceIndex&&sourceUniverseOptions.length&&id
+    selected='';sourceActivityType=null;bypassCategoryGroups=false;browsingAllItems=false;
+    worldFilter='';
+    sourceUniverseSelection=sourceIndex&&id?id:null;
+    universeFilter=sourceIndex?'':id;
+    sourceChoices=sourceIndex&&id&&id!==COLLECTION_UNIVERSE_UNTAGGED
       ?{disneyUniverse:id}:{};
     sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
   }
-  function openCategoryItems():void{
-    bypassCategoryGroups=true;universeFilter='';resetView();
-  }
   function returnToCategory():void{
-    browsingAllItems=false;selected='';sourceCategory=null;sourceActivityType=null;
-    universeFilter=viewAxis==='universe'?universeFilter:'';
-    sourceChoices={};sourceFacetGroups=[];sourceGroupsCacheKey='';
+    browsingAllItems=false;selected='';sourceActivityType=null;
+    sourceChoices=viewAxis==='world'&&sourceChoices.worldContextTag
+      ?{worldContextTag:sourceChoices.worldContextTag}:
+      viewAxis==='universe'&&sourceUniverseSelection&&
+        sourceUniverseSelection!==COLLECTION_UNIVERSE_UNTAGGED
+        ?{disneyUniverse:sourceUniverseSelection}:{};
+    sourceFacetGroups=[];sourceGroupsCacheKey='';
     bypassCategoryGroups=false;search='';status='all';favoriteOnly=false;
     nameStatus='all';expansion='';resetView();
   }
@@ -759,7 +822,8 @@
     universeFilter='';bypassCategoryGroups=false;resetView();
   }
   function clearScope():void{
-    browsingAllItems=false;selected='';sourceCategory=null;sourceActivityType=null;
+    browsingAllItems=false;selected='';sourceActivityType=null;
+    sourceUniverseSelection=null;
     search='';status='all';favoriteOnly=false;nameStatus='all';
     expansion='';worldFilter='';universeFilter='';universeSearch='';
     bypassCategoryGroups=false;sourceChoices={};acquisitionFilter='';
@@ -1117,13 +1181,16 @@
               {/each}
             </div>
           </div>
-        {:else if universeFilter||sourceChoices.disneyUniverse}
+        {:else if universeFilter||sourceUniverseSelection!==null}
           <button type="button" class="collection-back-axis" on:click={()=>chooseUniverse('')}>
             <WandIcon name="chevron-left" size={16}/>{copy.universeList}
           </button>
           <span class="collection-axis-selected">
-            {sourceChoices.disneyUniverse
-              ?collectionDb01TagLabel(locale,sourceChoices.disneyUniverse)
+            {sourceUniverseSelection!==null
+              ?sortedCollectionUniverseOptions(sourceIndex!,locale,
+                key=>collectionUniverseDisplayLabel(locale,key),
+                locale==='ja'?'ユニバース未設定':'No source universe tag')
+                  .find(option=>option.id===sourceUniverseSelection)?.label??''
               :universeScopeOptions.find(x=>x.id===universeFilter)?.label??''}
           </span>
         {/if}
@@ -1234,42 +1301,22 @@
             {:else}
               <p class="collection-axis-notice">{copy.universeDataUnavailable}</p>
             {/if}
-          {:else if landingSubgroup}
-            <div class="results-heading">
-              <div class="breadcrumbs">
-                <button type="button" on:click={returnToCategory}>{copy.categories}</button>
-                <span> / {selectionLabel}</span>
-              </div>
-            </div>
-            <div class="section-lead"><h2>{copy.universeList}</h2></div>
-            <div class="facet-grid">
-              <button type="button" class="facet-card" on:click={openCategoryItems}>
-                <span class="facet-flourish" aria-hidden="true"><WandIcon name={categoryPictogram[selected]??'collection'} size={22}/></span>
-                <strong>{copy.all}</strong>
-                <span>{scopedCategoryFacets.find(x=>x.id===selected)?.total.toLocaleString(locale)??''} {copy.countUnit}</span>
-              </button>
-              {#each categoryUniverseFacets as facet (facet.id)}
-                <button type="button" class="facet-card" on:click={()=>{universeFilter=facet.id;resetView();}}>
-                  <span class="facet-flourish" aria-hidden="true"><WandIcon name="gallery" size={22}/></span>
-                  <strong>{facet.label}</strong>
-                  <span>{facet.owned.toLocaleString(locale)} / {facet.total.toLocaleString(locale)}</span>
-                </button>
-              {/each}
-            </div>
           {:else if universeSectionView}
             <div class="results-heading">
               <div class="breadcrumbs"><button type="button" on:click={()=>chooseUniverse('')}>{copy.universeList}</button>
-                <span> / {universeScopeOptions.find(x=>x.id===universeFilter)?.label??''}</span>
+                <span> / {sourceUniverseSelection!==null
+                  ?sortedCollectionUniverseOptions(sourceIndex!,locale,
+                    key=>collectionUniverseDisplayLabel(locale,key),
+                    locale==='ja'?'ユニバース未設定':'No source universe tag')
+                    .find(option=>option.id===sourceUniverseSelection)?.label??''
+                  :universeScopeOptions.find(x=>x.id===universeFilter)?.label??''}</span>
               </div>
             </div>
             {#each universeSections as section (section.facet.id)}
               <section class="collection-universe-section">
                 <div class="collection-universe-section-head">
-                  <h2>{categoryLabel(locale,section.facet.id)}</h2>
-                  <button type="button" on:click={()=>chooseFacet(section.facet.id)}>
-                    {copy.showAllItems} ({section.facet.total.toLocaleString(locale)})
-                    <WandIcon name="chevron-right" size={16}/>
-                  </button>
+                  <h2>{section.facet.label}</h2>
+                  <span>{section.facet.total.toLocaleString(locale)} {copy.countUnit}</span>
                 </div>
                 <div class="items-grid">
                   {#each section.items as item (item.itemId)}
@@ -1293,13 +1340,19 @@
                 </div>
               </section>
             {/each}
-          {:else if isBrowsing}
+            {#if sourceUniverseSelection!==null&&visible<totalMatches}
+              <div class="more-button" use:observeMore aria-label={copy.loadMore}
+                role="status"><WandIcon name="sparkles" size={18}/></div>
+            {/if}
+          {:else if isBrowsing&&!landingWorld}
             <div class="results-heading">
               <div class="breadcrumbs">
                 <button type="button" on:click={returnToCategory}>{viewAxis==='universe'?copy.universeList:copy.categories}</button>
-                {#if selected||sourceCategory!==null||sourceActivityType!==null}<span> / {selectionLabel}</span>{/if}
-                {#if viewAxis==='universe'&&sourceChoices.disneyUniverse}
-                  <span> / {collectionDb01TagLabel(locale,sourceChoices.disneyUniverse)}</span>
+                {#if selected||sourceActivityType!==null}<span> / {selectionLabel}</span>{/if}
+                {#if viewAxis==='universe'&&sourceUniverseSelection!==null}
+                  <span> / {sourceUniverseSelection===COLLECTION_UNIVERSE_UNTAGGED
+                    ?(locale==='ja'?'ユニバース未設定':'No source universe tag')
+                    :collectionUniverseDisplayLabel(locale,sourceUniverseSelection)}</span>
                 {/if}
                 {#if selected&&universeFilter&&viewAxis==='world'}
                   <button type="button" on:click={returnToSubgroups}>{copy.universeList}</button>
@@ -1359,83 +1412,47 @@
           {:else}
             <div class="section-lead collection-categories-heading">
               <h2>{copy.categories}</h2>
-              <button type="button" class="subtle-button" on:click={browseEveryItem}>
-                {copy.showAllItems} ({overall.total.toLocaleString(locale)})
+              <button type="button" class="subtle-button" on:click={browseCurrentScopeItems}>
+                {copy.showAllItems} ({(sourceChoices.worldContextTag||worldFilter
+                  ?scopedCategoryFacets.reduce((sum,facet)=>sum+facet.total,0)
+                  :overall.total).toLocaleString(locale)})
               </button>
             </div>
-            {#if sourceIndex&&originalCategoryCards.length}
-              <div class="facet-grid collection-original-category-grid"
-                aria-label={locale==='ja'?'ゲーム原本のコレクションカテゴリー':'Original Collection categories'}>
-                {#each originalCategoryCards as category (category.code)}
-                  <button type="button" class="facet-card collection-original-category"
-                    disabled={!category.total}
-                    title={category.total?
-                      (locale==='ja'?'原本に対応付けられたアイテム。ゲーム内での所属・完成率は未検証':'Source-linked items; in-game membership and completion are unverified'):
-                      (locale==='ja'?'対応する公開データは未収録':'No linked public item data yet')}
-                    on:click={()=>chooseOriginalCategory(category.code)}>
-                    <span class="facet-flourish" aria-hidden="true">
-                      <WandIcon name={categoryPictogram[category.family]??'collection'} size={23}/>
-                    </span>
-                    <strong>{categoryLabel(locale,category.family)}</strong>
-                    <span>{category.total?
-                      `${category.owned.toLocaleString(locale)} / ${category.total.toLocaleString(locale)}`:'—'}</span>
-                  </button>
-                {/each}
-              </div>
-              <div class="collection-source-category-footer">
-                <span>{locale==='ja'?'原本の分類候補・記録済み / 公開データ件数':'Source-based groups · recorded / published items'}</span>
-                <button type="button" class="subtle-button" aria-expanded={originalClassesOpen}
-                  on:click={()=>originalClassesOpen=!originalClassesOpen}>
-                  {locale==='ja'?'アイテムの種類から探す':'Browse by item type'}
-                  <WandIcon name="chevron" size={15}/>
-                </button>
-              </div>
-            {:else if sourceLoadError}
+            {#if sourceLoadError}
               <div class="collection-source-category-footer" role="alert">
                 <span>{locale==='ja'
-                  ?'カテゴリーを読み込めませんでした。アイテムの種類から閲覧できます。'
-                  :'Categories could not be loaded. You can still browse by item type.'}</span>
+                  ?'詳細分類を読み込めませんでした。既存の分類で閲覧できます。'
+                  :'Detailed categories could not be loaded. Default categories are available.'}</span>
                 <button type="button" class="subtle-button" on:click={ensureSourceIndex}>
                   {locale==='ja'?'再試行':'Retry'}
                 </button>
               </div>
-            {:else if canUseDb01SourceFacets() && sourceLoad}
-              <p class="collection-source-category-footer" role="status">
-                {locale==='ja'?'カテゴリーを読み込み中':'Loading categories'}
-              </p>
-            {:else}
-              <p class="collection-source-category-footer" role="status">
-                {locale==='ja'
-                  ?'このカタログのカテゴリー対応表はありません。アイテムの種類から閲覧できます。'
-                  :'No category mapping is available for this catalog. Browse by item type.'}
-              </p>
             {/if}
-            {#if originalClassesOpen||!sourceIndex}
-              <div class="facet-grid">
-                {#each scopedCategoryFacets.filter(facet=>
-                  !(sourceActivityTypeCards.length&&sourceActivityLegacyFamilies.has(facet.id))) as facet (facet.id)}
-                  <button type="button" class="facet-card" disabled={facet.total===0}
-                    on:click={()=>chooseFacet(facet.id)}>
-                    <span class="facet-flourish" aria-hidden="true">
-                      <WandIcon name={categoryPictogram[facet.id]??'collection'} size={22}/>
-                    </span>
-                    <strong>{categoryLabel(locale,facet.id)}</strong>
-                    <span>{facet.owned.toLocaleString(locale)} / {facet.total.toLocaleString(locale)}</span>
-                  </button>
-                {/each}
-                {#each sourceActivityTypeCards as type (type.code)}
-                  <button type="button" class="facet-card collection-native-activity"
-                    data-source-type={type.code}
-                    on:click={()=>chooseActivityType(type.code)}>
-                    <span class="facet-flourish" aria-hidden="true">
-                      <WandIcon name={categoryPictogram[sourceActivityLegacyNames[type.code]??'']??'collection'} size={22}/>
-                    </span>
-                    <strong>{sourceActivityTypeLabel(locale,type.code,type.nativeName)}</strong>
-                    <span>{type.owned.toLocaleString(locale)} / {type.total.toLocaleString(locale)}</span>
-                  </button>
-                {/each}
-              </div>
-            {/if}
+            <div class="facet-grid collection-detail-category-grid"
+              aria-label={locale==='ja'?'アイテムの詳細カテゴリー':'Detailed item categories'}>
+              {#each scopedCategoryFacets.filter(facet=>
+                !(sourceActivityTypeCards.length&&sourceActivityLegacyFamilies.has(facet.id))) as facet (facet.id)}
+                <button type="button" class="facet-card" disabled={facet.total===0}
+                  on:click={()=>chooseFacet(facet.id)}>
+                  <span class="facet-flourish" aria-hidden="true">
+                    <WandIcon name={categoryPictogram[facet.id]??'collection'} size={22}/>
+                  </span>
+                  <strong>{categoryLabel(locale,facet.id)}</strong>
+                  <span>{facet.owned.toLocaleString(locale)} / {facet.total.toLocaleString(locale)}</span>
+                </button>
+              {/each}
+              {#each sourceActivityTypeCards as type (type.code)}
+                <button type="button" class="facet-card collection-native-activity"
+                  data-source-type={type.code}
+                  on:click={()=>chooseActivityType(type.code)}>
+                  <span class="facet-flourish" aria-hidden="true">
+                    <WandIcon name={categoryPictogram[sourceActivityLegacyNames[type.code]??'']??'collection'} size={22}/>
+                  </span>
+                  <strong>{sourceActivityTypeLabel(locale,type.code,type.nativeName)}</strong>
+                  <span>{type.owned.toLocaleString(locale)} / {type.total.toLocaleString(locale)}</span>
+                </button>
+              {/each}
+            </div>
           {/if}
         </div>
         {#if selectedItem}
