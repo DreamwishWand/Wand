@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  matchSaveItemIdsToDb00,resolveSaveItemStaticEvidence
+  matchSaveItemIdsToDb00,resolveSaveItemStaticEvidence,
+  currentSaveItemMedia
 } from '../src/lib/save/common-db-context.ts';
 
 const snapshot={
@@ -88,4 +89,34 @@ test('mismatched source version is not used as DLC or edit denial',async()=>{
   assert.equal(evidence.db04Footprint,null);
   assert.equal(evidence.saveWritingAuthorized,false);
   await assert.rejects(resolveSaveItemStaticEvidence('0',{}),/ITEM_ID_INVALID/);
+});
+
+test('DB-05 icon metadata is limited to the exact current Steam source version',()=>{
+  const sha='e'.repeat(64);
+  const currentPath='ddv/item-images/steam-1.26.2-lossless/ee/'+sha+'.webp';
+  const oldPath='ddv/item-images/steam-1.25.3-schema626/ee/'+sha+'.webp';
+  const forgedPath='ddv/item-images/steam-1.26.2-lossless/../'+sha+'.webp';
+  const image={path:currentPath,sha256:sha};
+  const item={...snapshot.items[0],media:image};
+  const current={...snapshot,items:[item]};
+  assert.deepEqual(currentSaveItemMedia(item,current),image);
+  assert.deepEqual(matchSaveItemIdsToDb00(['30000031'],current).rows[0].media,image);
+  for(const path of [oldPath,forgedPath,'https://evil.test/x.webp',
+     '/ddv/item-images/steam-1.26.2-lossless/ee/'+sha+'.webp']){
+    const wrong={...item,media:{...image,path}};
+    assert.equal(currentSaveItemMedia(wrong,current),null,path);
+  }
+  assert.equal(currentSaveItemMedia({...item,media:{...image,sha256:'not-a-sha'}},current),null);
+  assert.equal(currentSaveItemMedia(item,{...current,target:{...current.target,gameVersion:'1.27.0'}}),null);
+  assert.equal(currentSaveItemMedia(item,{...current,target:{...current.target,platform:'Switch'}}),null);
+  assert.equal(matchSaveItemIdsToDb00(['9999'],current).rows[0].media,null);
+});
+
+test('unverified DB names never appear as verified saved-item labels',()=>{
+  const item={...snapshot.items[0],names:{ja:'未検証の名称'},nameStatus:'unverified'};
+  const result=matchSaveItemIdsToDb00(['30000031'],{...snapshot,items:[item]}).rows[0];
+  assert.equal(result.name,null);
+  assert.equal(result.nameVerified,false);
+  assert.equal(result.category,'Source Activity Items');
+  assert.equal(result.editingAllowedByCatalog,false);
 });
