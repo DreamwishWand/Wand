@@ -699,7 +699,7 @@ try{
     }));
     throw error;
   }
-  const colorTags=nativeTags.locator('fieldset').filter({hasText:/^色/}).first();
+  const colorTags=nativeTags.locator('fieldset').filter({hasText:'色'}).first();
   assert.equal(await colorTags.count(),1,'native Color facet must be present');
   if(await colorTags.getByRole('button',{name:'白',exact:true}).count()){
     await colorTags.getByRole('button',{name:'白',exact:true}).click();
