@@ -3,64 +3,42 @@
   import {base} from '$app/paths';
   import type {CollectionAcquisitionSummary} from './acquisition-summary.ts';
   import {collectionAcquisitionCopy} from './acquisition-copy.ts';
+  import {acquireCollectionEvidenceClient,type CollectionEvidenceHandle}
+    from './source-evidence-client.ts';
 
   export let itemId:number;
   export let locale:string='ja';
   $: copy=collectionAcquisitionCopy(locale);
   let expanded=false;
-  let worker:Worker|null=null;
   let requestCounter=0;
-  let activeRequestId=0;
   let requestedItemId:number|null=null;
   let loading=false;
   let failed=false;
+  let destroyed=false;
   let summary:CollectionAcquisitionSummary|null=null;
-  const cache=new Map<number,CollectionAcquisitionSummary>();
-  type Reply=
-    | {requestId:number;itemId:number;ok:true;summary:CollectionAcquisitionSummary}
-    | {requestId:number;itemId:number;ok:false};
+  let client:CollectionEvidenceHandle|null=null;
 
   function load(id:number):void{
     if(!Number.isSafeInteger(id)||id<=0)return;
     requestedItemId=id;
-    const cached=cache.get(id);
-    failed=false;
-    if(cached){summary=cached;loading=false;return;}
     summary=null;
+    failed=false;
     loading=true;
+    const ticket=++requestCounter;
     try{
-      if(!worker){
-        worker=new Worker(new URL('./acquisition-evidence.worker.ts',import.meta.url),
-          {type:'module'});
-        worker.onmessage=({data}:MessageEvent<Reply>)=>{
-          if(data.ok&&data.summary.itemId===data.itemId){
-            cache.set(data.itemId,data.summary);
-          }
-          if(data.requestId!==activeRequestId||data.itemId!==itemId)return;
-          loading=false;
-          if(data.ok&&data.summary.itemId===itemId){
-            summary=data.summary;
-            failed=false;
-          }else{
-            summary=null;
-            failed=true;
-          }
-        };
-        worker.onerror=()=>{
-          worker?.terminate();
-          worker=null;
-          if(!expanded)return;
-          loading=false;
-          summary=null;
-          failed=true;
-        };
-      }
-      const requestId=++requestCounter;
-      activeRequestId=requestId;
-      worker.postMessage({requestId,itemId:id,basePath:base});
+      client??=acquireCollectionEvidenceClient();
+      void client.loadAcquisition(id,base).then(result=>{
+        if(destroyed||ticket!==requestCounter||id!==itemId)return;
+        summary=result;
+        loading=false;
+      },()=>{
+        if(destroyed||ticket!==requestCounter||id!==itemId)return;
+        summary=null;
+        loading=false;
+        failed=true;
+      });
     }catch{
       loading=false;
-      summary=null;
       failed=true;
     }
   }
@@ -69,7 +47,10 @@
     load(itemId);
   }
   $: if(expanded&&requestedItemId!==itemId)load(itemId);
-  onDestroy(()=>worker?.terminate());
+  onDestroy(()=>{
+    destroyed=true;
+    client?.release();
+  });
 </script>
 
 <details class="inspector-details collection-acquisition"
