@@ -64,6 +64,13 @@
   let busy=false;
   let locale='ja';
   $: copy=collectionInterfaceCopy(locale);
+  type CollectionViewAxis='world'|'universe';
+  let viewAxis:CollectionViewAxis='world';
+  let universeSearch='';
+  let bypassCategoryGroups=false;
+  let scopedCategoryFacets:CollectionFacet[]=[];
+  let categoryUniverseFacets:CollectionFacet[]=[];
+  let universeSections:{facet:CollectionFacet;items:CollectionItem[]}[]=[];
   let worldFilter='';
   let universeFilter='';
   let selected='';
@@ -102,7 +109,20 @@
   $: selectedEntry=selectedItem?entries[String(selectedItem.itemId)]??{}:{};
   $: selectedGridRefs=selectedItem?savedGridByItem[String(selectedItem.itemId)]??null:null;
   $: selectedDb04Refs=selectedItem?savedDb04ByItem[String(selectedItem.itemId)]??null:null;
-  $: isBrowsing=Boolean(selected||search.trim()||status!=='all'||favoriteOnly||nameStatus!=='all'||expansion||worldFilter||universeFilter);
+  $: universeChoices=universeScopeOptions.filter(option=>
+    option.label.toLocaleLowerCase(locale).includes(universeSearch.trim().toLocaleLowerCase(locale)));
+  $: landingUniverse=viewAxis==='universe'&&!universeFilter&&!selected&&!search.trim()&&
+    status==='all'&&!favoriteOnly&&!expansion;
+  // Each category may use a different proven subgroup axis. Only Furniture
+  // and Clothing currently have a verified Universe-based browse path.
+  // Biome/subtype families go directly to items until exact source groups land.
+  $: landingSubgroup=viewAxis==='world'&&Boolean(selected)&&
+    !bypassCategoryGroups&&!universeFilter&&!search.trim()&&
+    status==='all'&&!favoriteOnly&&!expansion&&categoryUniverseFacets.length>0;
+  $: universeSectionView=viewAxis==='universe'&&Boolean(universeFilter)&&
+    !selected&&!search.trim()&&status==='all'&&!favoriteOnly&&!expansion;
+  $: isBrowsing=Boolean(selected||search.trim()||status!=='all'||favoriteOnly||
+    nameStatus!=='all'||expansion||worldFilter||universeFilter||viewAxis==='universe');
 
   // Display the original Steam ActivityItemType subtype rather than the
   // generic "unclassified" Activity bucket; this does not assert CollectionSet
@@ -157,6 +177,36 @@
       }
       if(worldFilter&&!worldScopeOptions.some(x=>x.id===worldFilter))worldFilter='';
       if(universeFilter&&!universeScopeOptions.some(x=>x.id===universeFilter))universeFilter='';
+      // Source-authenticated scope facets drive category cards. Do not reuse
+      // unfiltered A/B when a world or universe was selected.
+      const scopeFilter:CollectionFilter={
+        ...currentFilter(0,1),category:'',search:'',status:'all',
+        nameStatus:'all',favoriteOnly:false,expansion:'',
+        world:viewAxis==='world'?worldFilter:'',
+        universe:viewAxis==='universe'?universeFilter:'',
+      };
+      const countCategory=(id:string,universe=scopeFilter.universe):CollectionFacet|null=>{
+        const filter={...scopeFilter,category:id,universe};
+        const total=runtime!.query(filter).total;
+        if(!total)return null;
+        const owned=runtime!.query({...filter,status:'owned'}).total;
+        return {id,label:facets.find(x=>x.id===id)?.label??id,total,owned};
+      };
+      scopedCategoryFacets=(worldFilter||universeFilter)
+        ? facets.flatMap(facet=>{const scoped=countCategory(facet.id);return scoped?[scoped]:[];})
+        : facets;
+      const universeCategoryIds=new Set(['Furniture','Clothing']);
+      categoryUniverseFacets=viewAxis==='world'&&universeCategoryIds.has(selected)
+        ? universeScopeOptions.flatMap(option=>{
+            const subgroup=countCategory(selected,option.id);
+            return subgroup?[{...subgroup,id:option.id,label:option.label}]:[];
+          })
+        : [];
+      universeSections=viewAxis==='universe'&&universeFilter&&!selected
+        ? scopedCategoryFacets.map(facet=>({
+            facet,items:runtime!.query({...scopeFilter,category:facet.id,limit:8}).items
+          }))
+        : [];
       const collected:CollectionItem[]=[];
       let next=0;
       let total=0;
@@ -352,8 +402,37 @@
       selectionMode=false;
     },{title:`条件に一致する${count}件`,change:`所持状態 → ${label}`});
   }
-  function chooseFacet(id:string):void{selected=id;resetView();}
-  function clearScope():void{selected='';search='';status='all';favoriteOnly=false;nameStatus='all';expansion='';worldFilter='';universeFilter='';resetView();}
+  function chooseFacet(id:string):void{
+    selected=id;bypassCategoryGroups=false;resetView();
+  }
+  function changeViewAxis(axis:CollectionViewAxis):void{
+    if(viewAxis===axis)return;
+    viewAxis=axis;selected='';worldFilter='';universeFilter='';universeSearch='';
+    bypassCategoryGroups=false;search='';status='all';favoriteOnly=false;
+    nameStatus='all';expansion='';resetView();
+  }
+  function chooseWorld(id:string):void{
+    worldFilter=id;selected='';universeFilter='';bypassCategoryGroups=false;resetView();
+  }
+  function chooseUniverse(id:string):void{
+    universeFilter=id;selected='';bypassCategoryGroups=false;resetView();
+  }
+  function openCategoryItems():void{
+    bypassCategoryGroups=true;universeFilter='';resetView();
+  }
+  function returnToCategory():void{
+    selected='';universeFilter=viewAxis==='universe'?universeFilter:'';
+    bypassCategoryGroups=false;search='';status='all';favoriteOnly=false;
+    nameStatus='all';expansion='';resetView();
+  }
+  function returnToSubgroups():void{
+    universeFilter='';bypassCategoryGroups=false;resetView();
+  }
+  function clearScope():void{
+    selected='';search='';status='all';favoriteOnly=false;nameStatus='all';
+    expansion='';worldFilter='';universeFilter='';universeSearch='';
+    bypassCategoryGroups=false;resetView();
+  }
   function changeWorkspace(id:string):void{
     if(!runtime||busy||saveReadInProgress)return;
     const target=state.workspaces.find(x=>x.id===id)?.name??id;
@@ -658,36 +737,31 @@
           <button type="button" class="subtle-button" aria-expanded={filtersOpen} on:click={()=>filtersOpen=!filtersOpen}>{copy.filters} {filtersOpen?'▴':'▾'}</button>
         </div>
       </div>
-      {#if worldScopeOptions.length||universeScopeOptions.length}
-        <div class="collection-scope-toolbar" role="group" aria-label={copy.scope}>
-          {#if worldScopeOptions.length}
-            <div class="collection-world-switcher" role="group" aria-label={copy.world}>
-              <span class="scope-axis-label" aria-hidden="true">{copy.world}</span>
-              <div class="collection-scope-scroll">
-                <button type="button" class:chosen={!worldFilter} aria-pressed={!worldFilter}
-                  on:click={()=>{worldFilter='';resetView();}}>{copy.all}</button>
-                {#each worldScopeOptions as option (option.id)}
-                  <button type="button" class:chosen={worldFilter===option.id}
-                    aria-pressed={worldFilter===option.id}
-                    on:click={()=>{worldFilter=option.id;resetView();}}>{option.label}</button>
-                {/each}
-              </div>
-            </div>
-          {/if}
-          {#if universeScopeOptions.length}
-            <label class="collection-universe-switcher">
-              <span>{copy.universe}</span>
-              <select aria-label={copy.universeFilter} value={universeFilter}
-                on:change={(event)=>{universeFilter=(event.currentTarget as HTMLSelectElement).value;resetView();}}>
-                <option value="">{copy.all}</option>
-                {#each universeScopeOptions as option (option.id)}
-                  <option value={option.id}>{option.label}</option>
-                {/each}
-              </select>
-            </label>
-          {/if}
+      <div class="collection-scope-toolbar" role="group" aria-label={copy.scope}>
+        <div class="collection-axis-switch" role="group" aria-label={copy.scope}>
+          <button type="button" class:chosen={viewAxis==='world'}
+            aria-pressed={viewAxis==='world'} on:click={()=>changeViewAxis('world')}>{copy.worldView}</button>
+          <button type="button" class:chosen={viewAxis==='universe'}
+            aria-pressed={viewAxis==='universe'} on:click={()=>changeViewAxis('universe')}>{copy.universeView}</button>
         </div>
-      {/if}
+        {#if viewAxis==='world'}
+          <div class="collection-world-switcher" role="group" aria-label={copy.world}>
+            <div class="collection-scope-scroll">
+              <button type="button" class:chosen={!worldFilter} aria-pressed={!worldFilter}
+                on:click={()=>chooseWorld('')}>{copy.all}</button>
+              {#each worldScopeOptions as option (option.id)}
+                <button type="button" class:chosen={worldFilter===option.id}
+                  aria-pressed={worldFilter===option.id} on:click={()=>chooseWorld(option.id)}>{option.label}</button>
+              {/each}
+            </div>
+          </div>
+        {:else if universeFilter}
+          <button type="button" class="collection-back-axis" on:click={()=>chooseUniverse('')}>
+            <WandIcon name="chevron-left" size={16}/>{copy.universeList}
+          </button>
+          <span class="collection-axis-selected">{universeScopeOptions.find(x=>x.id===universeFilter)?.label??''}</span>
+        {/if}
+      </div>
       {#if filtersOpen}
         <div class="filter-panel">
           <fieldset><legend>{copy.manualStatus}</legend>
@@ -706,11 +780,93 @@
       {/if}
       <div class="workspace-body" class:has-inspector={Boolean(selectedItem)}>
         <div class="collection-results">
-          {#if isBrowsing}
+          {#if landingUniverse}
+            <div class="section-lead"><h2>{copy.universeList}</h2></div>
+            {#if universeScopeOptions.length}
+              <label class="collection-universe-search">
+                <WandIcon name="search" size={17}/>
+                <input type="search" bind:value={universeSearch}
+                  aria-label={copy.universeSearch} placeholder={copy.universeSearch}/>
+              </label>
+              <div class="collection-universe-grid">
+                {#each universeChoices as option (option.id)}
+                  <button type="button" class="collection-universe-card" on:click={()=>chooseUniverse(option.id)}>
+                    <span class="collection-universe-art" aria-hidden="true"><WandIcon name="gallery" size={29}/></span>
+                    <strong>{option.label}</strong>
+                  </button>
+                {/each}
+              </div>
+              {#if universeChoices.length===0}<p class="collection-axis-notice">{copy.noItems}</p>{/if}
+            {:else}
+              <p class="collection-axis-notice">{copy.universeDataUnavailable}</p>
+            {/if}
+          {:else if landingSubgroup}
             <div class="results-heading">
               <div class="breadcrumbs">
-                <button type="button" on:click={clearScope}>{copy.categories}</button>
+                <button type="button" on:click={returnToCategory}>{copy.categories}</button>
+                <span> / {selectionLabel}</span>
+              </div>
+            </div>
+            <div class="section-lead"><h2>{copy.universeList}</h2></div>
+            <div class="facet-grid">
+              <button type="button" class="facet-card" on:click={openCategoryItems}>
+                <span class="facet-flourish" aria-hidden="true"><WandIcon name={categoryPictogram[selected]??'collection'} size={22}/></span>
+                <strong>{copy.all}</strong>
+                <span>{scopedCategoryFacets.find(x=>x.id===selected)?.total.toLocaleString(locale)??''} {copy.countUnit}</span>
+              </button>
+              {#each categoryUniverseFacets as facet (facet.id)}
+                <button type="button" class="facet-card" on:click={()=>{universeFilter=facet.id;resetView();}}>
+                  <span class="facet-flourish" aria-hidden="true"><WandIcon name="gallery" size={22}/></span>
+                  <strong>{facet.label}</strong>
+                  <span>{facet.owned.toLocaleString(locale)} / {facet.total.toLocaleString(locale)}</span>
+                </button>
+              {/each}
+            </div>
+          {:else if universeSectionView}
+            <div class="results-heading">
+              <div class="breadcrumbs"><button type="button" on:click={()=>chooseUniverse('')}>{copy.universeList}</button>
+                <span> / {universeScopeOptions.find(x=>x.id===universeFilter)?.label??''}</span>
+              </div>
+            </div>
+            {#each universeSections as section (section.facet.id)}
+              <section class="collection-universe-section">
+                <div class="collection-universe-section-head">
+                  <h2>{categoryLabel(locale,section.facet.id)}</h2>
+                  <button type="button" on:click={()=>chooseFacet(section.facet.id)}>
+                    {copy.showAllItems} ({section.facet.total.toLocaleString(locale)})
+                    <WandIcon name="chevron-right" size={16}/>
+                  </button>
+                </div>
+                <div class="items-grid">
+                  {#each section.items as item (item.itemId)}
+                    <div class="item-card" data-item-id={item.itemId}>
+                      <button type="button" class="item-card-body" on:click={(event)=>void showItem(item.itemId,event)}
+                        aria-label={`${item.label}${copy.itemDetails}`}>
+                        <span class="item-icon" aria-hidden="true">
+                          <ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null}/>
+                        </span>
+                        <span class="item-card-copy"><strong>{item.label}</strong></span>
+                      </button>
+                      <button type="button" class="item-state-toggle"
+                        disabled={Boolean(storeError)} class:owned={entries[String(item.itemId)]?.status==='owned'}
+                        on:click={()=>toggleItemStatus(item.itemId)}
+                        aria-label={entries[String(item.itemId)]?.status==='owned'?
+                          `${item.label}${copy.markMissing}`:`${item.label}${copy.markOwned}`}>
+                        <WandIcon name={entries[String(item.itemId)]?.status==='owned'?'check':'plus'} size={20}/>
+                      </button>
+                    </div>
+                  {/each}
+                </div>
+              </section>
+            {/each}
+          {:else if isBrowsing}
+            <div class="results-heading">
+              <div class="breadcrumbs">
+                <button type="button" on:click={returnToCategory}>{viewAxis==='universe'?copy.universeList:copy.categories}</button>
                 {#if selected}<span> / {selectionLabel}</span>{/if}
+                {#if selected&&universeFilter&&viewAxis==='world'}
+                  <button type="button" on:click={returnToSubgroups}>{copy.universeList}</button>
+                {/if}
               </div>
               <div class="result-actions">
                 <span class="result-count">{totalMatches.toLocaleString(locale)} {copy.countUnit}</span>
@@ -768,7 +924,7 @@
               <h2>{copy.categories}</h2>
             </div>
             <div class="facet-grid">
-              {#each facets as facet (facet.id)}
+              {#each scopedCategoryFacets as facet (facet.id)}
                 <button type="button" class="facet-card" disabled={facet.total===0} on:click={()=>chooseFacet(facet.id)}>
                   <span class="facet-flourish" aria-hidden="true"><WandIcon name={categoryPictogram[facet.id]??'collection'} size={22}/></span>
                   <strong>{categoryLabel(locale,facet.id)}</strong>
