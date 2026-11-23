@@ -327,3 +327,54 @@ The same privately pinned original 1.26.1/1.26.2 IL2CPP v31 metadata and executa
 The raw metadata v31 **field-default arrays** for the original 16 fixed-integer COS/SIN coefficients were independently located in *both* versions by their SHA-256 field names (`33E08F575894...` and `5B6E0D7F4186...`). All 32 signed int32 entries and both field-default blob hashes match. The 1.26.2 `GridAreaData.GetGridArea` source method sets the returned intrinsic GridArea tessellation factor to 1. These facts corroborate the original **local** 16-direction, centred integer-vector lookup, including null output cells when a rotated destination sample has no original source cell.
 
 Source `SceneLayouts` grid entries in the private partial 1.26.2 ZIP declare native `TessellationFactor` values 1 and 2. The local preview exposes a **manually specified** caller-grid factor 1/2 to inspect how the native intrinsic lookup scales. An exact *per-placed-GridObject* factory call, runtime GridArea-to-Grid coordinate system, rotation pivot, occupied cell predicate, blocking or legal placement **is not established** by this comparison. Those operations remain unavailable. No private original method bytes, source arrays or saves are publicly committed.
+
+
+## Original GridObject → Item GridArea default-read path (Steam v1.26.2)
+
+Owner-private source-only code inspection, independent of the native
+`GridArea` local-cell implementation above:
+
+- IL2CPP `Meta.Grids.GridObject.GetGridArea()`, token
+  `0x0600F005`, resolves via `Meta.dll` method pointer table to
+  **Steam 1.26.1 RVA `0x042AD560`**, `0x042AD560..0x042AD71E`
+  (446 bytes, SHA-256
+  `bdd66b1f4856fe8b4c6ad043d3d04b5ccab3679d15db1cedd1b2ca93e2b1a0d7`)
+  and **Steam 1.26.2 RVA `0x042AD610`**, `0x042AD610..0x042AD7CE`
+  (446 bytes, SHA-256
+  `90d26c435b77873d2c3ecd1304d2d7e6d8fd321e80c9f917e2bdd209642b7625`).
+- The two bounded x86-64 methods contain **100 aligned instructions**
+  with 70 byte-identical and 30 PC-relative-only instruction changes;
+  no non-relative instruction change. In the 1.26.2 method, the fallback
+  path reads the GridObject Item ID, retrieves the associated original
+  Item definition and invokes source-pinned
+  `Definitions.Grid.GridAreaData.GetGridArea`
+  (`0x0600309F`, RVA `0x038F9F10`). A previously cached runtime
+  GridArea can instead be returned. Therefore this is a *default Item
+  GridArea read path*, **not** proof of a particular runtime object's
+  effective or overridden footprint.
+- `Meta.Grids.GridObject.get_Position()` (token `0x0600F001`,
+  1.26.2 RVA `0x042AD4B0`) reads the source GridObject X/Y
+  properties. `Meta.Grids.Grid` source `TessellationFactor` remains
+  a separate property. These facts prove the three relevant native
+  source fields exist, but do **not** establish how a rotated footprint
+  is positioned relative to the X/Y anchor.
+- From the selected private Steam 1.26.2 **260-layout, 891-terrain,
+  30,334 original GridObject** snapshot, exact source
+  `(SceneLayout path, Grid.ID, GridObject.ID)` to Item lookup has
+  **25,674** initial-object occurrences with available original
+  `Item.GridAreaData`; **4,660** reference Item IDs absent from this
+  **partial** Item archive. None of the 30,334 source Grid references
+  are missing. Absence of an Item in this archive is not evidence that
+  its GridArea does not exist.
+
+The typed `getOriginalGridObjectItemAreaLink` API uses an **exact**
+layout-scoped source key, returns original X/Y/Orientation and Grid
+factor, and independently retrieves the source Item's intrinsic GridArea
+dimensions. It is read-only and explicitly leaves
+`runtimeAreaOverrideExcluded`,
+`actualPlacedGridAreaVerified`,
+`nativeAnchorToAreaPivotVerified`,
+`occupancyPredicateVerified`, `collisionRulesVerified`,
+`placementLegalityVerified`, `savedGridIdentityVerified` and
+`saveWritingAuthorized` as **false**. No original game binaries, Save
+records or raw Item GridLayers are committed to public Git.

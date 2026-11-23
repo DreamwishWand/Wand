@@ -6,6 +6,8 @@
     from '$lib/world/native-item-anchor-finder.ts';
   import type {OriginalGridAreaEvidence}
     from '$lib/world/native-gridarea-evidence.ts';
+  import type {OriginalGridObjectAreaLink}
+    from '$lib/world/native-gridobject-item-area-link.ts';
   import {getOriginalGridAreaDisplayDimensions,
     type SourceLocalGridAreaWindow}
     from '$lib/world/native-gridarea-local-window.ts';
@@ -93,6 +95,7 @@
   let anchorFindMessage='';
   let findingAnchor=false;
   let itemGridArea:OriginalGridAreaEvidence|null=null;
+  let itemAreaLink:OriginalGridObjectAreaLink|null=null;
   let areaWindow:SourceLocalGridAreaWindow|null=null;
   let areaOrientation=8;
   let areaFactor:1|2=1;
@@ -182,6 +185,7 @@
     findingAnchor=false;
     findingGlobal=false;
     itemGridArea=null;
+    itemAreaLink=null;
     resetAreaWindow();
   }
   function resetGlobalFind(clearInput=true){
@@ -189,11 +193,13 @@
     globalFindMessage='';
     findingGlobal=false;
     itemGridArea=null;
+    itemAreaLink=null;
     resetAreaWindow();
     if(clearInput)globalItemSearch='';
   }
   function findGlobalOriginalItem(matchIndex=0){
     itemGridArea=null;
+    itemAreaLink=null;
     resetAreaWindow();
     const input=globalItemSearch.trim();
     if(!/^[1-9][0-9]{0,15}$/.test(input)||
@@ -228,6 +234,7 @@
   }
   function findNativeItemAnchor(matchIndex=0){
     itemGridArea=null;
+    itemAreaLink=null;
     resetAreaWindow();
     const selected=layouts.find(row=>row.viewKey===selectedViewKey);
     const grid=selected?.grids.find(row=>
@@ -459,6 +466,7 @@
           return;
         }
         globalFindResult=match;
+        const sourceAreaLink=result.areaLink as OriginalGridObjectAreaLink|null;
         const evidence=result.itemEvidence as OriginalGridAreaEvidence|undefined;
         itemGridArea=evidence?.contract==='wand.db04.original-gridarea-raw-evidence@1'&&
           evidence.itemId===match.itemId?evidence:null;
@@ -482,13 +490,29 @@
             globalFindMessage='この原本Gridの座標範囲は未検証です。';
             return;
           }
+          if(!sourceAreaLink||
+             sourceAreaLink.contract!=='wand.db04.original-gridobject-item-area-link@1'||
+             sourceAreaLink.sourceLayoutId!==match.sourceLayoutId||
+             sourceAreaLink.nativeGridId!==match.nativeGridId||
+             sourceAreaLink.nativeGridObjectId!==match.gridObjectIdNative||
+             sourceAreaLink.itemId!==match.itemId||
+             sourceAreaLink.originalAnchorX!==match.sourceAnchorX||
+             sourceAreaLink.originalAnchorY!==match.sourceAnchorY||
+             sourceAreaLink.originalOrientationCode===null||
+             sourceAreaLink.originalGridTessellationFactor===null||
+             sourceAreaLink.originalGridTessellationFactor!==grid.tessellationFactor){
+            globalFindMessage='原本GridObjectとItem定義の対応を確認できません。';
+            return;
+          }
           selectedRegion=view.regionKey;
           selectedViewKey=view.viewKey;
           selectedGridId=String(grid.gridIdNative);
-          // Source GridEntry.factor is an exact ORIGINAL reference, not a Save transform.
-          areaFactor=grid.tessellationFactor===2?2:1;
+          // Native orientation and Grid factor belong to this exact original GridObject.
+          areaOrientation=sourceAreaLink.originalOrientationCode;
+          areaFactor=sourceAreaLink.originalGridTessellationFactor;
           resetAreaWindow();
           resetAnchorFind();
+          itemAreaLink=sourceAreaLink;
           const cx=match.sourceAnchorX,cy=match.sourceAnchorY;
           x=Math.max(0,Math.min(grid.anchorSizeX-1,cx-Math.floor(width/2)));
           y=Math.max(0,Math.min(grid.anchorSizeY-1,cy-Math.floor(height/2)));
@@ -527,6 +551,7 @@
           return;
         }
         anchorFindResult=found;
+        const sourceAreaLink=result.areaLink as OriginalGridObjectAreaLink|null;
         const evidence=result.itemEvidence as OriginalGridAreaEvidence|undefined;
         itemGridArea=evidence?.contract==='wand.db04.original-gridarea-raw-evidence@1'&&
           evidence.itemId===found.itemId?evidence:null;
@@ -536,8 +561,24 @@
           const chosen=layouts.find(row=>row.viewKey===selectedViewKey)
             ?.grids.find(row=>String(row.gridIdNative)===selectedGridId);
           if(!chosen||!chosen.anchorSizeX||!chosen.anchorSizeY)return;
-          areaFactor=chosen.tessellationFactor===2?2:1;
+          if(!sourceAreaLink||
+             sourceAreaLink.contract!=='wand.db04.original-gridobject-item-area-link@1'||
+             sourceAreaLink.sourceLayoutId!==found.sourceLayoutId||
+             sourceAreaLink.nativeGridId!==found.nativeGridId||
+             sourceAreaLink.nativeGridObjectId!==found.gridObjectIdNative||
+             sourceAreaLink.itemId!==found.itemId||
+             sourceAreaLink.originalAnchorX!==found.sourceAnchorX||
+             sourceAreaLink.originalAnchorY!==found.sourceAnchorY||
+             sourceAreaLink.originalOrientationCode===null||
+             sourceAreaLink.originalGridTessellationFactor===null||
+             sourceAreaLink.originalGridTessellationFactor!==chosen.tessellationFactor){
+            anchorFindMessage='原本GridObjectとItem定義の対応を確認できません。';
+            return;
+          }
+          areaOrientation=sourceAreaLink.originalOrientationCode;
+          areaFactor=sourceAreaLink.originalGridTessellationFactor;
           resetAreaWindow();
+          itemAreaLink=sourceAreaLink;
           const cx=found.sourceAnchorX,cy=found.sourceAnchorY;
           x=Math.max(0,Math.min(chosen.anchorSizeX-1,
             cx-Math.floor(width/2)));
@@ -765,6 +806,20 @@
           <h2>Item {itemGridArea.itemId} · 原本GridArea</h2>
           <span>{itemGridArea.nativeType??'定義未確認'}</span>
         </div>
+        {#if itemAreaLink&&itemAreaLink.itemId===itemGridArea.itemId}
+          <p class="note" aria-label="原本初期配置のItem参照">
+            原本初期配置 GridObject {itemAreaLink.nativeGridObjectId} ·
+            向き {itemAreaLink.originalOrientationCode} ·
+            Grid倍率 ×{itemAreaLink.originalGridTessellationFactor} ·
+            原本アンカー ({itemAreaLink.originalAnchorX}, {itemAreaLink.originalAnchorY})。
+            {#if itemAreaLink.status==='original_item_default_gridarea_linked'}
+              Item定義からのGridArea参照を確認しました。
+              表示するサイズ・原値はローカルであり、アンカーからの占有範囲ではありません。
+            {:else}
+              Itemの形状定義はこの部分的な原本データでは特定できません。
+            {/if}
+          </p>
+        {/if}
         {#if itemGridArea.status==='source_raw_gridarea_available'}
           <p class="note">原本GridAreaのサイズ：
             {itemGridArea.rawSizeX} × {itemGridArea.rawSizeY}。

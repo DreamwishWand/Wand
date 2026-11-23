@@ -9,6 +9,7 @@ import { getNativeTerrainWindow } from './catalog.mjs';
 import { findOriginalItemAnchor, findOriginalItemAnchorAcrossGrids } from './native-item-anchor-finder.ts';
 import { getOriginalGridAreaEvidence } from './native-gridarea-evidence.ts';
 import { getOriginalGridAreaLocalWindow } from './native-gridarea-local-window.ts';
+import { getOriginalGridObjectItemAreaLink } from './native-gridobject-item-area-link.ts';
 import { getSourceAnchorDomain, getTessellatedSourceAnchorWindow } from './native-anchor-domain';
 import {
   listWorldPreviewViews,
@@ -154,7 +155,14 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
     if(message.command==='find-global-anchor'){
       const found=findOriginalItemAnchorAcrossGrids(
         catalog,message.itemId,message.matchIndex);
+      const areaLink=found.status==='found'&&
+        found.sourceLayoutId!==null&&
+        found.nativeGridId!==null&&found.gridObjectIdNative!==null
+        ?getOriginalGridObjectItemAreaLink(catalog,
+          found.sourceLayoutId,found.nativeGridId,
+          found.gridObjectIdNative,message.itemId):null;
       worker.postMessage({kind:'global-anchor-found',requestId,result:found,
+        areaLink,
         itemEvidence:getOriginalGridAreaEvidence(catalog,message.itemId)});
       return;
     }
@@ -174,7 +182,11 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
         throw new TypeError('Unknown original source Grid ID');
       const found=findOriginalItemAnchor(catalog,sourceView.layoutId,
         message.gridIdNative,message.itemId,message.matchIndex);
+      const areaLink=found.status==='found'&&found.gridObjectIdNative!==null
+        ?getOriginalGridObjectItemAreaLink(catalog,sourceView.layoutId,
+          message.gridIdNative,found.gridObjectIdNative,message.itemId):null;
       worker.postMessage({kind:'anchor-found',requestId,result:found,
+        areaLink,
         itemEvidence:getOriginalGridAreaEvidence(catalog,message.itemId)});
       return;
     }
