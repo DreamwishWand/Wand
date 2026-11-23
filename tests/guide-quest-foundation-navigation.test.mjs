@@ -54,6 +54,39 @@ test('166 original Story Quests split into source-named Valley, expansion and ad
   ],'original MRQS 010/015/020/025/030/035 series order must not be alphabetical');
 });
 
+test('all six Story arcs use source-native main-quest sequence, not Item ID publication order',async()=>{
+  const data=await catalog();
+  const mainCounts={valley:31,rift:29,storybook:29,ranch:19,honeyglow:19,keepsake:24};
+  for(const [arc,count] of Object.entries(mainCounts)){
+    const rows=filterPublicQuests(data,{section:'story',arc,limit:100}).rows;
+    const mains=rows.filter(q=>publicQuestNativeOrder(q)!==null);
+    assert.equal(mains.length,count,arc+' original MRQS count');
+    const numbers=mains.map(publicQuestNativeOrder);
+    assert.deepEqual(numbers,[...numbers].sort((a,b)=>a-b),
+      arc+' must sort native MRQS sequence before optional ORQS lines');
+    assert(rows.slice(count).every(q=>publicQuestNativeOrder(q)===null),
+      arc+' additional ORQS lines stay visibly separate from sequenced main quests');
+  }
+  // Each pair is source-authenticated. Their Item ID/publication order differs
+  // from their original MRQS sequence, which carries the intended browse order.
+  for(const [arc,first,second] of [
+    ['rift','2070000995','2070000990'],            // E01_100 before E01_110
+    ['storybook','2070001164','2070001141'],       // E02_030 before E02_031
+    ['ranch','2070001351','2070001363'],           // E03_036 before E03_040
+    ['honeyglow','2070001617','2070001474'],       // M01_012 before M01_020
+    ['keepsake','2070001610','2070001507']         // E04_000 before E04_010
+  ]){
+    const ids=filterPublicQuests(data,{section:'story',arc,limit:100})
+      .rows.map(q=>q.id);
+    assert(ids.indexOf(first)!==-1&&ids.indexOf(second)!==-1,arc);
+    assert(ids.indexOf(first)<ids.indexOf(second),
+      arc+' original main storyline must not be ordered by numeric Item ID');
+  }
+  assert.equal(publicQuestNativeOrder({
+    id:'2070001507',internalName:'Story!Expansion02!MRQS_E04_010_WrongArc'
+  }),null,'a mismatched expansion and mission sequence must not invent an order');
+});
+
 test('341 native Village Quests are grouped by exactly 77 original-character IDs',async()=>{
   const data=await catalog();
   const roster=publicFriendshipCharacters(data,'ja');
