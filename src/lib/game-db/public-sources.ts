@@ -22,6 +22,10 @@ import {
 import {loadGuideRewardIndex,type GuideRewardIndex}
   from '../guide/reward-relations.ts';
 import {
+  loadPublicQuestTargetReverse,DB03_QUEST_TARGET_REVERSE_FILE,
+  type PublicQuestTargetReverseReader
+} from '../guide/public-quest-target-reverse.ts';
+import {
   createDb00PublicItemSearch,
   type Db00PublicItemSearchRequest,type Db00PublicItemSearchResult
 } from './public-search.ts';
@@ -36,6 +40,7 @@ export interface PublicSharedGameSources{
   readonly joined:Db00SourceJoinedReader;
   readonly acquisition:PublicSourceCatalog;
   readonly guide:GuideRewardIndex;
+  readonly guideQuestTargets:PublicQuestTargetReverseReader;
   readonly hasPrivateGameSource:false;
   readonly currentAvailabilityVerified:false;
   readonly playerOwnershipVerified:false;
@@ -82,17 +87,31 @@ export async function openPublicSharedGameSources(
       return response.clone();
     });
   };
-  const [database,acquisition,guide]=await Promise.all([
+  // Quest catalogue is already requested by DB-02. Share the exact HTTP
+  // response bytes with its verified loader, then let DB-03 independently
+  // validate the quest catalogue and SHA-pinned target reverse index.
+  const questTargetTask=(async()=>{
+    const res=await once(basePath+'/guide/public/quest-index.json');
+    assert(res.ok,'QUEST_INDEX_DOWNLOAD_FAILED');
+    return loadPublicQuestTargetReverse(
+      await res.json(),
+      basePath+'/guide/public/'+DB03_QUEST_TARGET_REVERSE_FILE,once
+    );
+  })();
+  const [database,acquisition,guide,guideQuestTargets]=await Promise.all([
     openSharedGameDatabase(basePath,once),
     loadPublicSourceCatalog(basePath,once),
-    loadGuideRewardIndex(basePath+'/guide/public/starpath-cache-2026-11-22.json',once)
+    loadGuideRewardIndex(basePath+'/guide/public/starpath-cache-2026-11-22.json',once),
+    questTargetTask
   ]);
   const joined=joinCurrentGameSources(database,{
     origins:acquisition.origins,rewards:guide,
-    staticContainers:acquisition.staticContainerSource
+    staticContainers:acquisition.staticContainerSource,
+    questTargets:guideQuestTargets
   });
   const search=createDb00PublicItemSearch(
-    database,joined,acquisition.origins,guide,acquisition.staticContainerSource
+    database,joined,acquisition.origins,guide,acquisition.staticContainerSource,
+    guideQuestTargets
   );
   assert(acquisition.gameVersion==='1.26.2' &&
     acquisition.coverage.publishedItemDefinitions===database.itemCount &&
@@ -105,10 +124,15 @@ export async function openPublicSharedGameSources(
     acquisition.coverage.verifiedOnlineNameAcquisitionLinks===0 &&
     guide.evidence.integrity==='pinned_public_sha256' &&
     guide.coverage.currentAvailabilityVerified===false &&
+    guideQuestTargets.schema==='wand.db03.public-quest-target-reverse@1' &&
+    guideQuestTargets.coverage.sourceCandidateOccurrences===4897 &&
+    guideQuestTargets.coverage.mandatoryRequirementVerified===false &&
+    guideQuestTargets.coverage.playerProgressVerified===false &&
     joined.snapshotId===database.snapshotId,'CROSS_SOURCE_MISMATCH');
   return Object.freeze({
     schema:DB00_PUBLIC_SOURCES_SCHEMA,
     snapshotId:database.snapshotId,database,joined,acquisition,guide,
+    guideQuestTargets,
     hasPrivateGameSource:false as const,
     currentAvailabilityVerified:false as const,
     playerOwnershipVerified:false as const,

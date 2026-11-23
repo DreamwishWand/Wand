@@ -15,6 +15,9 @@ import {
 } from '../acquisition/public-static-container.ts';
 import type {GuideRewardIndex,GuideItemRelation} from '../guide/reward-relations.ts';
 import type {
+  PublicQuestTargetReverseReader,QuestTargetItemReference
+} from '../guide/public-quest-target-reverse.ts';
+import type {
   Db04NativeItemScopeClient,Db04NativeItemScopeRow,
   Db04WorldTag,Db04NativeScopePage
 } from '../world/native-item-scope.ts';
@@ -33,6 +36,8 @@ export interface Db00SourceJoinOptions{
   readonly staticContainers?:PinnedStaticContainerContents;
   /** Already SHA-validated DB-03 reward index. Does not prove redemption. */
   readonly rewards?:GuideRewardIndex;
+  /** Already SHA-pinned DB-03 original Quest objective Item candidates. */
+  readonly questTargets?:PublicQuestTargetReverseReader;
   /** DB-04's locally SHA-validated PRIVATE source reader. */
   readonly nativeScope?:Db04NativeItemScopeClient;
   /** Independently trusted, owner-local audit+rows digests; both mandatory for nativeScope. */
@@ -61,6 +66,10 @@ export interface Db00SourceJoinedItem{
   /** null means no verified reward source supplied, not "no rewards". */
   readonly starpathRelations:readonly GuideItemRelation[]|null;
   readonly starpathRewardsOnlyConfigured:true;
+  /** null = not supplied, [] = no static target reference. Never a required quest item. */
+  readonly questTargetCandidates:readonly QuestTargetItemReference[]|null;
+  readonly questTargetRequirementsVerified:false;
+  readonly questTargetPlayerProgressVerified:false;
   readonly nativeTags:Db00NativeTagEvidence;
   readonly currentlyAvailableVerified:false;
   readonly playerOwnershipVerified:false;
@@ -104,7 +113,7 @@ export function joinCurrentGameSources(
     db.target.platform==='Steam'&&db.target.gameVersion==='1.26.2'&&
     db.target.buildId===null&&db.target.sourceSha256===CURRENT_SOURCE_SHA,
     'CURRENT_STEAM_ITEMLIST_REQUIRED');
-  const {origins,staticContainers,rewards,nativeScope,nativeScopePins}=options;
+  const {origins,staticContainers,rewards,questTargets,nativeScope,nativeScopePins}=options;
   if(origins)check(origins.schema==='wand.db02.item-origins@1' &&
     origins.originCoverageComplete===false,'DB02_READER_INVALID');
   if(staticContainers)check(
@@ -123,6 +132,17 @@ export function joinCurrentGameSources(
     rewards.evidence.integrity==='pinned_public_sha256'&&
     rewards.coverage.currentAvailabilityVerified===false &&
     rewards.coverage.playerProgressIncluded===false,'DB03_SOURCE_NOT_PINNED');
+  if(questTargets)check(
+    questTargets.schema==='wand.db03.public-quest-target-reverse@1' &&
+    questTargets.coverage.knownQuests===733 &&
+    questTargets.coverage.sourceCandidateOccurrences===4897 &&
+    questTargets.coverage.distinctItemIds===2551 &&
+    questTargets.coverage.directOccurrences===4641 &&
+    questTargets.coverage.alternativeOccurrences===256 &&
+    questTargets.coverage.mandatoryRequirementVerified===false &&
+    questTargets.coverage.playerProgressVerified===false &&
+    typeof questTargets.getItemCandidates==='function',
+    'DB03_QUEST_TARGET_SOURCE_REQUIRED');
   if(nativeScope){
     check(nativeScope.contract==='wand.db04.native-item-scope@1' &&
       nativeScope.source.platform==='Steam' &&
@@ -182,6 +202,14 @@ export function joinCurrentGameSources(
       relation.itemId===itemId && relation.configuredRewardOnly===true &&
       relation.currentAvailabilityVerified===false &&
       relation.playerOwnershipVerified===false),'DB03_ITEM_ID_OR_STATUS_MISMATCH');
+    const objectives=questTargets?.getItemCandidates(itemId);
+    check(!objectives || Array.isArray(objectives)&&objectives.every(ref=>
+      ref.itemId===itemId&&
+      (ref.role==='direct'||ref.role==='alternative') &&
+      ref.sourceCandidateOnly===true &&
+      ref.mandatoryRequirementVerified===false &&
+      ref.playerProgressVerified===false),
+      'DB03_QUEST_TARGET_ID_OR_STATUS_MISMATCH');
     return Object.freeze({
       itemId,catalog,
       catalogStatus:catalog?'current_published_item' as const:
@@ -193,6 +221,9 @@ export function joinCurrentGameSources(
       staticContainerLiveContentsVerified:false as const,
       starpathRelations:relations?Object.freeze([...relations]):null,
       starpathRewardsOnlyConfigured:true as const,
+      questTargetCandidates:objectives?Object.freeze([...objectives]):null,
+      questTargetRequirementsVerified:false as const,
+      questTargetPlayerProgressVerified:false as const,
       nativeTags,
       currentlyAvailableVerified:false as const,
       playerOwnershipVerified:false as const

@@ -17,6 +17,10 @@ import type {
   OriginDatabase,OriginKind,RouteStatus
 } from '../acquisition/origins.ts';
 import type {GuideRewardIndex} from '../guide/reward-relations.ts';
+import type {
+  PublicQuestTargetReverseReader,QuestTargetItemReference,
+  QuestTargetItemRole
+} from '../guide/public-quest-target-reverse.ts';
 import {
   hasPinnedStaticContainerEvidence,
   type PinnedStaticContainerContents
@@ -37,6 +41,10 @@ export interface Db00PublicItemSearchRequest {
   readonly starPathSeasonId?:string;
   /** Static original container slot candidate only; NOT live storage/loot/ownership. */
   readonly staticContainerCandidate?:true;
+  /** Source-native Quest objective reference only, not an actual requirement. */
+  readonly questTargetCandidate?:true;
+  readonly questTargetQuestId?:string;
+  readonly questTargetRole?:QuestTargetItemRole;
   readonly offset?:number;
   readonly limit?:number;
 }
@@ -69,6 +77,7 @@ interface SearchEntry {
   readonly originStatuses:ReadonlyMap<OriginKind,ReadonlySet<RouteStatus>>;
   readonly seasonIds:ReadonlySet<string>;
   readonly hasStaticContainerCandidate:boolean;
+  readonly questTargetCandidates:readonly QuestTargetItemReference[];
 }
 function assert(ok:unknown,code:string):asserts ok {
   if(!ok)throw new TypeError('DB00_PUBLIC_SEARCH_'+code);
@@ -85,7 +94,8 @@ export function createDb00PublicItemSearch(
   joined:Db00SourceJoinedReader,
   origins:OriginDatabase,
   guide:GuideRewardIndex,
-  staticContainers?:PinnedStaticContainerContents
+  staticContainers?:PinnedStaticContainerContents,
+  questTargets?:PublicQuestTargetReverseReader
 ):Db00PublicItemSearch {
   assert(database?.contract==='wand.game-db.shared@1' &&
     database.itemCount===13202 &&
@@ -107,6 +117,14 @@ export function createDb00PublicItemSearch(
     staticContainers.coverage.guaranteedLootVerified===false &&
     staticContainers.coverage.personalSaveContentsIncluded===false,
     'PINNED_STATIC_CONTAINER_REQUIRED');
+  if(questTargets)assert(
+    questTargets.schema==='wand.db03.public-quest-target-reverse@1' &&
+    questTargets.coverage.knownQuests===733 &&
+    questTargets.coverage.sourceCandidateOccurrences===4897 &&
+    questTargets.coverage.distinctItemIds===2551 &&
+    questTargets.coverage.mandatoryRequirementVerified===false &&
+    questTargets.coverage.playerProgressVerified===false,
+    'QUEST_TARGET_SOURCE_REQUIRED');
   let index:readonly SearchEntry[]|null=null;
   const prepare=():readonly SearchEntry[]=>{
     if(index)return index;
@@ -145,13 +163,21 @@ export function createDb00PublicItemSearch(
           row.kind==='loot'&&row.routeStatus==='static_candidate_only'&&
           row.availability==='not_live_verified'),
           'UNVERIFIED_CONTAINER_TEMPLATE');
+        const targets=questTargets?.getItemCandidates(item.id)??[];
+        assert(targets.every(row=>row.itemId===item.id &&
+          row.sourceCandidateOnly===true &&
+          row.mandatoryRequirementVerified===false &&
+          row.playerProgressVerified===false &&
+          (row.role==='direct'||row.role==='alternative')),
+          'UNVERIFIED_QUEST_TARGET');
         entries.push(Object.freeze({
           itemId:item.id,
           names:Object.freeze({...item.names}),
           originKinds:new Set(statuses.keys()),
           originStatuses:statuses,
           seasonIds:seasons,
-          hasStaticContainerCandidate:templates.length>0
+          hasStaticContainerCandidate:templates.length>0,
+          questTargetCandidates:Object.freeze([...targets])
         }));
       }
     }
@@ -184,6 +210,17 @@ export function createDb00PublicItemSearch(
       'INVALID_CONTAINER_TEMPLATE_FILTER');
     assert(request.staticContainerCandidate!==true || staticContainers!==undefined,
       'CONTAINER_TEMPLATE_SOURCE_NOT_LOADED');
+    assert(request.questTargetCandidate===undefined ||
+      request.questTargetCandidate===true,'INVALID_QUEST_TARGET_FILTER');
+    const questId=request.questTargetQuestId;
+    assert(questId===undefined||
+      typeof questId==='string'&&SHA.test(questId),
+      'INVALID_QUEST_TARGET_QUEST_ID');
+    const role=request.questTargetRole;
+    assert(role===undefined||role==='direct'||role==='alternative',
+      'INVALID_QUEST_TARGET_ROLE');
+    assert(!(request.questTargetCandidate||questId||role)||
+      questTargets!==undefined,'QUEST_TARGET_SOURCE_NOT_LOADED');
     const offset=request.offset??0,limit=request.limit??100;
     assert(Number.isSafeInteger(offset)&&offset>=0 &&
       Number.isSafeInteger(limit)&&limit>0&&limit<=500,'INVALID_SEARCH_PAGE');
@@ -199,6 +236,9 @@ export function createDb00PublicItemSearch(
         if(season && !item.seasonIds.has(season))continue;
         if(request.staticContainerCandidate===true &&
           !item.hasStaticContainerCandidate)continue;
+        if((request.questTargetCandidate||questId||role) &&
+          !item.questTargetCandidates.some(row=>
+            (!questId||row.questId===questId)&&(!role||row.role===role)))continue;
         if(kinds){
           if(!kinds.some(kind=>
             status?item.originStatuses.get(kind)?.has(status):

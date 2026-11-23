@@ -309,3 +309,28 @@ origin ledger.
 The new evidence is not attached to the verified DB-00 \`worlds\`,
 \`universes\`, \`dlc\` or \`acquisition\` fact state. Source-side SHA-256 checking
 must succeed, and fabricated copies of the source reader are rejected.
+
+
+### Source-pinned Quest objective Item references
+
+The public DB-00 loader uses DB-03's existing SHA-pinned 1.26.2
+\`public-quest-target-reverse\` index: **4,897 original target-candidate
+occurrences for 2,551 Item IDs, across 627 source Quests**. The already-loaded
+public Quest catalogue HTTP response is reused by DB-02, so only the target
+projection adds a network asset. The DB-03 reader independently verifies both
+the complete Quest catalogue and the original target projection SHA-256.
+
+\`getItem(id).questTargetCandidates\` retains each original Quest ID, step
+position, and \`direct\` versus \`alternative\` role; null means this optional
+reader was absent and [] means no source record. The same source is retained
+when owner-local DB-01/DB-04 readers are attached. For public ItemList results,
+\`searchItems({questTargetCandidate:true})\`, \`searchItems({questTargetQuestId})\`
+and \`searchItems({questTargetRole:'direct'|'alternative'})\` support
+cross-service lookup with ordinary filters and post-filter pagination.
+
+**Original static objective references are only candidates**. Neither direct
+nor alternative roles establish that an item is a mandatory quest requirement,
+currently accessible, collected, consumed or completed by a player. These
+relations never alter the verified DB-00 category, World, DLC or acquisition
+facts. Out-of-ItemList source IDs are not fabricated into Collection membership;
+they can still be read through direct \`getItem\` by their Item ID.
