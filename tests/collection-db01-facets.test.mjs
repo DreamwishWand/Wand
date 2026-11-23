@@ -90,7 +90,7 @@ test('DB-01 source native filtering is a narrow projection, not a second Item ma
   assert.deepEqual(parents.map(row=>row.id),[
     'furniture','landscaping','roads-fences','interior','buildings','environment',
     'clothing','appearance','touch-of-magic','photo-mode','tools','upgrades',
-    'characters','companions','critters','mounts','crafting','meals','ingredients',
+    'characters','companions','adventure-companions','critters','mounts','crafting','meals','ingredients',
     'foraging','fish','gems','timebending','memories','board-game','snippets',
     'lorekeeper-tales','quest-puzzles','exhibition'
   ]);
