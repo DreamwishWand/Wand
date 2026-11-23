@@ -4,7 +4,7 @@
  * remain distinct. A calendar schedule is not real-time server availability,
  * player eligibility, entitlement, or a progress assertion.
  */
-import {verifyPublicStarpath} from './public-starpath.mjs';
+import {verifyPublicStarpath} from './public-starpath.ts';
 import {isStarpathSeasonId,type StarpathSeasonId} from './starpath-locale-contract.ts';
 
 export const GUIDE_EVENT_CALENDAR_CONTRACT=
