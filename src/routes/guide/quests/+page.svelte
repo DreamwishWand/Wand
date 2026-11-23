@@ -19,6 +19,8 @@
   import {loadPublicQuestRewards,DB03_QUEST_REWARDS_FILE,
     type PublicQuestRewardsReader} from '$lib/guide/public-quest-rewards.ts';
   import {resolveQuestRewardItemDestination} from '$lib/guide/quest-reward-navigation.ts';
+  import {loadPublicQuestRewardItemLabels,DB03_QUEST_REWARD_LABEL_FILE,
+    type PublicQuestRewardItemLabels} from '$lib/guide/public-quest-reward-item-labels.ts';
   import {loadPublicQuestOverrideLoot,DB03_QUEST_OVERRIDE_LOOT_FILE,
     type QuestOverrideLootIndex} from '$lib/guide/public-quest-override-loot.ts';
   import {loadPublicQuestTargetReverse,DB03_QUEST_TARGET_REVERSE_FILE,
@@ -51,6 +53,7 @@
   const cachedTargets=new Map<number,PublicQuestTargetPart>();
   let conditionIndex:PublicQuestConditionReader|null=null;
   let rewardIndex:PublicQuestRewardsReader|null=null;
+  let rewardLabels:PublicQuestRewardItemLabels|null=null;
   let overrideIndex:QuestOverrideLootIndex|null=null;
   let relatedEventSource:PublicEventFriendshipRewards|null=null;
   let relatedEventIndex:PublicEventQuestIndex|null=null;
@@ -244,6 +247,15 @@
         const verified=await loadPublicQuestOverrideLoot(data,
           `${prefix}${DB03_QUEST_OVERRIDE_LOOT_FILE}`);
         if(catalog===index){overrideIndex=verified;restoreAddressSelection();}
+        try{
+          const labels=await loadPublicQuestRewardItemLabels(data,verified,
+            `${prefix}${DB03_QUEST_REWARD_LABEL_FILE}`);
+          if(catalog===index&&rewardIndex===data&&overrideIndex===verified)
+            rewardLabels=labels;
+        }catch{
+          // Existing source-pinned Quest reward IDs remain usable even
+          // if the optional public DB-00 name crosswalk is unavailable.
+        }
       }catch{
         // The SHA-pinned base rewards remain independently usable.
       }
@@ -259,7 +271,7 @@
       const data=await res.json();
       catalog=verifyPublicQuestIndex(data);
       conditionIndex=null;conditionError='';
-      rewardIndex=null;overrideIndex=null;rewardError='';
+      rewardIndex=null;overrideIndex=null;rewardLabels=null;rewardError='';
       relatedEventSource=null;relatedEventIndex=null;
       targetReverseIndex=null;targetReverseError=false;
       void loadConditions(catalog);
@@ -398,7 +410,16 @@
                     <strong>通貨報酬の設定</strong>
                     <ul>
                       {#each questRewardInfo.currencies as reward}
-                        <li class:reward-item-match={rewardItemFocus===reward.itemId}>{itemTargetName(targetIndex,reward.itemId,locale)||'通貨'} · {reward.amountMin===reward.amountMax?reward.amountMin:`${reward.amountMin}～${reward.amountMax}`}（ID {reward.itemId}）</li>
+                        <li class:reward-item-match={rewardItemFocus===reward.itemId}>
+                          {rewardLabels?.getDisplayName(reward.itemId,locale)??itemTargetName(targetIndex,reward.itemId,locale)??'通貨'} · {reward.amountMin===reward.amountMax?reward.amountMin:`${reward.amountMin}～${reward.amountMax}`}（ID {reward.itemId}）
+                          {#if rewardLabels?.getCollectionHref(reward.itemId,base)}
+                            <a class="reward-collection-link" href={rewardLabels?.getCollectionHref(reward.itemId,base)}
+                              title="Collectionで開く"
+                              aria-label={`Collectionで開く：${rewardLabels?.getDisplayName(reward.itemId,locale)??itemTargetName(targetIndex,reward.itemId,locale)??'通貨'}`}>
+                              <WandIcon name="collection" size={15}/>
+                            </a>
+                          {/if}
+                        </li>
                       {/each}
                     </ul>
                   </div>
@@ -409,7 +430,14 @@
                     <div class="quest-reward-chips">
                       {#each questRewardInfo.lootCandidates as reward}
                         <span class:reward-item-match={rewardItemFocus===reward.itemId} title={`Item ID ${reward.itemId} · Loot Table ${reward.tableIndex+1}`}>
-                          {itemTargetName(targetIndex,reward.itemId,locale)||'アイテム'}（ID {reward.itemId}）
+                          {rewardLabels?.getDisplayName(reward.itemId,locale)??itemTargetName(targetIndex,reward.itemId,locale)??'アイテム'}（ID {reward.itemId}）
+                          {#if rewardLabels?.getCollectionHref(reward.itemId,base)}
+                            <a class="reward-collection-link" href={rewardLabels?.getCollectionHref(reward.itemId,base)}
+                              title="Collectionで開く"
+                              aria-label={`Collectionで開く：${rewardLabels?.getDisplayName(reward.itemId,locale)??itemTargetName(targetIndex,reward.itemId,locale)??'アイテム'}`}>
+                              <WandIcon name="collection" size={15}/>
+                            </a>
+                          {/if}
                         </span>
                       {/each}
                     </div>
@@ -421,7 +449,14 @@
                     <div class="quest-reward-chips">
                       <span class:reward-item-match={rewardItemFocus===questOverrideInfo.itemId}
                         title={`Item ID ${questOverrideInfo.itemId} · Loot Table ${questOverrideInfo.lootTableId}`}>
-                        {itemTargetName(targetIndex,questOverrideInfo.itemId,locale)||'アイテム'}（ID {questOverrideInfo.itemId}）
+                        {rewardLabels?.getDisplayName(questOverrideInfo.itemId,locale)??itemTargetName(targetIndex,questOverrideInfo.itemId,locale)??'アイテム'}（ID {questOverrideInfo.itemId}）
+                        {#if rewardLabels?.getCollectionHref(questOverrideInfo.itemId,base)}
+                          <a class="reward-collection-link" href={rewardLabels?.getCollectionHref(questOverrideInfo.itemId,base)}
+                            title="Collectionで開く"
+                            aria-label={`Collectionで開く：${rewardLabels?.getDisplayName(questOverrideInfo.itemId,locale)??itemTargetName(targetIndex,questOverrideInfo.itemId,locale)??'アイテム'}`}>
+                            <WandIcon name="collection" size={15}/>
+                          </a>
+                        {/if}
                       </span>
                     </div>
                     {#if questOverrideInfo.rollCount==='native_unbounded_sentinel'}
@@ -611,6 +646,8 @@
   .quest-reward-chips{display:flex;flex-wrap:wrap;gap:6px}
   .quest-reward-chips span{border:1px solid #5b496b;border-radius:7px;padding:5px 8px;color:#e8d9f2;background:#281e34;overflow-wrap:anywhere}
   .quest-rewards .reward-item-match{background:#493264;border-radius:6px;outline:1px solid #bb91ed;padding:4px 6px}
+  .reward-collection-link{display:inline-grid;place-items:center;vertical-align:middle;width:24px;height:24px;margin-left:4px;border-radius:5px;color:#e2c9ff;text-decoration:none}
+  .reward-collection-link:hover,.reward-collection-link:focus-visible{background:#594070;color:#fff}
   .quest-activation{margin:10px 0;border:1px solid #514260;border-radius:9px;padding:10px 12px;font-size:12px;color:#d6c1e5}
   .quest-activation summary{cursor:pointer;font-weight:650;color:#e9d5f9}
   .quest-activation-block{margin:9px 0}
