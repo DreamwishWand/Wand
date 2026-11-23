@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {verifyPublicQuestIndex} from '../src/lib/guide/public-guide.mjs';
+import {verifyPublicQuestIndex} from '../src/lib/guide/public-guide.ts';
 import {verifyPublicEventFriendshipRewards} from '../src/lib/guide/public-event-friendship-rewards.ts';
 import {verifyPublicEventQuestLinks} from '../src/lib/guide/public-event-quest-links.ts';
 import {createEventQuestNameSearch,DB03_EVENT_QUEST_SEARCH_SCHEMA}
