@@ -45,7 +45,7 @@ test('Japanese and English reward name searches resolve the exact original Quest
   ]));
   assert(bucket?.itemIds.includes('40004032'),
     'the historically distinct override Loot Table candidate remains independently discoverable');
-  assert.deepEqual(search('リンゴ','xx')?.questIds,['2070001383'],
+  assert.deepEqual(search('apple','xx')?.questIds,['2070001383'],
     'unknown locale safely falls back to the published English label');
 });
 test('all localized name hits are validated through the original 399 reward relations',async()=>{
