@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   getNativeTerrainTile,getNativeTerrainWindow,
-  getNativeTerrainDistribution
+  getNativeTerrainDistribution,getNativeTerrainRaster
 } from '../src/lib/world/native-terrain-preview.ts';
 import {
   describeNativeFloorMask,describeNativeLayerMask,GRID_FLOOR_FLAGS
@@ -97,4 +97,36 @@ test('malformed source bounds and compacted indexes fail closed',()=>{
     /palette index is invalid/);
   assert.throws(()=>getNativeTerrainWindow({},item,{x:0,y:0,width:1,height:1}),
     /catalog boundary/);
+});
+
+test('whole-grid raster preserves every source-native mask in Y-major display order',()=>{
+  const result=getNativeTerrainRaster(source(direct()));
+  assert.equal(result.status,'source_corroborated_grid_local_raster');
+  assert.equal(result.sizeX,3);
+  assert.equal(result.sizeY,2);
+  assert.equal(result.totalCells,6);
+  assert.deepEqual([...result.nativeFloorValues],[0,1024,4,262148,4,0]);
+  assert.deepEqual(result.maskCounts,[
+    {nativeFloorValue:0,cellCount:2},
+    {nativeFloorValue:4,cellCount:2},
+    {nativeFloorValue:1024,cellCount:1},
+    {nativeFloorValue:262148,cellCount:1}
+  ]);
+  assert.equal(result.worldCoordinatesVerified,false);
+  assert.equal(result.placementLegalityVerified,false);
+  assert.equal(result.fullWorldCoverageVerified,false);
+});
+test('packed original raster preserves source local X-major ordering and strict version boundary',()=>{
+  const grid=packed();
+  grid.nativePaletteIndexCellCounts=[1,2,1];
+  const result=getNativeTerrainRaster(source(grid));
+  assert.equal(result.status,'source_corroborated_grid_local_raster');
+  assert.deepEqual([...result.nativeFloorValues],[0,1024,4,4]);
+  assert.deepEqual(result.maskCounts,[
+    {nativeFloorValue:0,cellCount:1},
+    {nativeFloorValue:4,cellCount:2},
+    {nativeFloorValue:1024,cellCount:1}
+  ]);
+  assert.equal(getNativeTerrainRaster(source(grid,'1.27.0')).status,
+    'native_terrain_packing_not_verified_for_game_version');
 });
