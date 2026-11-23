@@ -80,3 +80,38 @@ export function combineSavedGridQueues(
   }
   return result.length<=16?result:null;
 }
+
+/**
+ * Compose all staged Grid edits for the separate quantity+Grid transaction.
+ * Unlike combineSavedGridQueues, a single nonempty Grid queue is sufficient
+ * when it is joined with a nonempty quantity batch. No native IDs are used.
+ */
+export function gridEditsForQuantityExport(
+  coordinates:readonly QueuedGridCoordinateEdit[],
+  mixed:readonly QueuedGridMixedEdit[]
+):QueuedGridMixedEdit[]|null{
+  if(!Array.isArray(coordinates)||!Array.isArray(mixed)||
+     coordinates.length>16||mixed.length>16||
+     (!coordinates.length&&!mixed.length))return null;
+  if(coordinates.length&&mixed.length)
+    return combineSavedGridQueues(coordinates,mixed);
+  if(mixed.length){
+    const seen=new Set<number>();
+    for(const edit of mixed){
+      if(!Number.isSafeInteger(edit.localOrdinal)||edit.localOrdinal<1||
+         seen.has(edit.localOrdinal))return null;
+      seen.add(edit.localOrdinal);
+    }
+    return mixed.map(edit=>({...edit}));
+  }
+  const seen=new Set<number>();
+  const result:QueuedGridMixedEdit[]=[];
+  for(const edit of coordinates){
+    if(!Number.isSafeInteger(edit.localOrdinal)||edit.localOrdinal<1||
+       seen.has(edit.localOrdinal))return null;
+    seen.add(edit.localOrdinal);
+    result.push({...edit,expectedOrientation:null,
+      replacementOrientation:null});
+  }
+  return result;
+}
