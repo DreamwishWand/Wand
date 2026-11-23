@@ -415,3 +415,40 @@ test('original 763 native activity paths stay opt-in and enrich single-Item acqu
   assert.equal(seen.length,requests+2);
   assert.equal(again.nativeActivityOrigins.some(x=>x.kind==='fishing'),true);
 });
+
+test('469 source-native cooking members join original recipes only on demand, without changing public baseline origins',async()=>{
+  const {seen,fetcher}=publicFetcher();
+  const catalog=await loadPublicSourceCatalog('/Wand',fetcher);
+  const start=seen.length;
+  assert.equal(catalog.coverage.combinedSourceRoutes,1255);
+  assert.equal(seen.some(u=>u.endsWith('/cooking-members-1.26.2.json')),false);
+  const a=catalog.loadCookingRecipeResolver();
+  const b=catalog.loadCookingRecipeResolver();
+  assert.equal(a,b,'shared catalog must reuse one validated source join');
+  const source=catalog.loadNativeCookingMembers();
+  assert.equal(source,catalog.loadNativeCookingMembers());
+  const [joined,members]=await Promise.all([a,source]);
+  assert.equal(seen.length,start+2,'one source recipe and one membership fetch');
+  assert.equal(seen.filter(u=>u.endsWith('/cooking-members-1.26.2.json')).length,1);
+  assert.equal(seen.filter(u=>u.endsWith('/recipe-results-1.26.2.json')).length,1);
+  assert.equal(members.members.length,469);
+  assert.equal(members.recipeReferencedSelectors.length,13);
+  assert.equal(joined.recipeSelectorUses,238);
+  const options=joined.getRecipeIngredientOptions('2050000009');
+  assert(options);
+  assert.equal(options[0].resolution,'observed_native_selector_candidates');
+  assert.equal(options[0].candidateItemIds.length,55);
+  assert.equal(options[0].materialChoiceRequired,true);
+  assert.equal(options[0].playerChoiceVerified,false);
+  assert(joined.getItemRecipeUses('30200000').some(x=>
+    x.match==='native_selector_candidate'));
+  const original=catalog.lookup('30200000');
+  assert.equal(original.originCoverageComplete,false);
+  assert.equal(catalog.coverage.combinedSourceRoutes,1255);
+  assert.equal(catalog.itemSources.getKindItemIds('cooking').length,0);
+  assert.equal(catalog.itemSources.getKindItemIds('crafting').length,0);
+  assert.equal(catalog.itemSources.getKindItemIds('twitch_drop').length,0);
+  assert.equal(catalog.itemSources.getKindItemIds('redeem_code').length,0);
+  await catalog.loadCookingRecipeResolver();
+  assert.equal(seen.length,start+2,'cached resolver must never refetch');
+});
