@@ -140,6 +140,19 @@ try {
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('5件'));
   assert.match(await browse.locator('.quest-row').first().innerText(),/温かい歓迎/,
     'friendship Quests must follow the source-native Goofy 010/030/040/050/070 series');
+  await browse.getByRole('button',{name:/このキャラクターの分類確認中クエスト/}).click();
+  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('2件'));
+  assert.equal(await browse.locator('.quest-unclassified').evaluate(el=>el.open),true,
+    'source-only Quests remain visibly outside the official friendship category');
+  assert.equal(await browse.locator('.character-rail button').count(),28,
+    '27 native characters own the 70 source-only Secret Quests');
+  assert.match(await browse.locator('.quest-row').last().innerText(),/逃がした魚/,
+    'Goofy source-only follow-up must be visible without calling it a Friendship Quest');
+  await browse.getByRole('button',{name:'友情クエスト',exact:true}).click();
+  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('341件'));
+  await browse.locator('.quest-unclassified summary').click();
+  await browse.locator('.character-rail button').filter({hasText:'グーフィー'}).first().click();
+  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('5件'));
   await browse.setViewportSize({width:390,height:844});
   assert.equal(await browse.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),true,
     'character roster remains within the mobile viewport');
