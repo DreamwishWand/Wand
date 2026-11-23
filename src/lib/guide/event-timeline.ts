@@ -18,7 +18,7 @@ export interface GuideTimelineWindow {
   readonly todayDay:string; readonly todayPosition:number|null;
   readonly timeZone:string;
 }
-export type GuideTimelinePhase='task'|'exchange'|'limited';
+export type GuideTimelinePhase='task'|'exchange'|'limited'|'historic';
 export interface GuideTimelineSegment {
   readonly phase:GuideTimelinePhase; readonly left:number; readonly width:number;
   readonly clippedStart:boolean; readonly clippedEnd:boolean;
@@ -80,7 +80,7 @@ export function guideTimelineWindow(
   now:number,weeks:5|9=5,offsetWeeks=0,timeZone='Asia/Tokyo'
 ):GuideTimelineWindow{
   if(!Number.isFinite(now)||!Number.isInteger(offsetWeeks)||
-    offsetWeeks< -104||offsetWeeks>104||(weeks!==5&&weeks!==9))
+    offsetWeeks< -520||offsetWeeks>520||(weeks!==5&&weeks!==9))
     throw new TypeError('Guide timeline: invalid range');
   const todayDay=zonedDay(now,timeZone);
   const firstDay=nextCivil(todayDay,-4+offsetWeeks*7);
@@ -144,7 +144,8 @@ export function guideTimelineRows(
       const limited=clip('limited',
         localDayStart(event.startDay,range.timeZone),
         localDayStart(nextCivil(event.endDayInclusive),range.timeZone),range);
-      if(limited)segments.push(limited);
+      if(limited)segments.push({...limited,
+        phase:event.kind==='starpath-history'?'historic':'limited'});
     }
     if(segments.length)rows.push({event,segments});
   }
