@@ -58,11 +58,11 @@
     return event.kind==='starpath'?'star':event.category==='floating'?'world':'plant';
   }
   function phaseName(phase:GuideTimelinePhase):string{
-    return phase==='task'?copy.task:phase==='exchange'?copy.exchange:copy.events;
+    return phase==='task'?copy.starPaths:phase==='exchange'?copy.exchange:copy.events;
   }
   function stateName(event:GuideCalendarEvent):string{
     switch(eventScheduleState(event,now)){
-      case 'task-window':return copy.task;
+      case 'task-window':return copy.starPaths;
       case 'exchange-only':return copy.exchange;
       case 'date-window':return copy.active;
       case 'upcoming':return copy.upcoming;
@@ -90,13 +90,11 @@
     await tick();
     const scroller=timelineScroller;
     const today=scroller?.querySelector('.date-slot.today') as HTMLElement|null;
-    const line=scroller?.querySelector('.today-line') as HTMLElement|null;
     const sidebar=scroller?.querySelector('.date-label') as HTMLElement|null;
     if(!scroller||!today||!sidebar)return;
     const box=scroller.getBoundingClientRect();
     const side=sidebar.getBoundingClientRect().width;
-    const marker=line?line.getBoundingClientRect().left:
-      today.getBoundingClientRect().left+today.getBoundingClientRect().width/2;
+    const marker=today.getBoundingClientRect().left+today.getBoundingClientRect().width/2;
     // Show a little context before now; reserve most of the view for upcoming.
     const target=box.left+side+(box.width-side)*0.13;
     scroller.scrollLeft=Math.max(0,scroller.scrollLeft+marker-target);
@@ -166,11 +164,12 @@
     </div>
 
     <div class="timeline-key" aria-label="表示記号">
-      <span><i class="sample task"></i>{copy.starPaths} · {copy.task}</span>
+      <span><i class="sample task"></i>{copy.starPaths}</span>
       <span><i class="sample exchange"></i>{copy.exchange}</span>
       <span><i class="sample floating"></i>{copy.floating}</span>
       <span><i class="sample valley"></i>{copy.valley}</span>
-      <span class="reset-key"><i class="sample reset-sample"></i>{copy.reset}</span>
+      <span><i class="sample today-sample"></i>{copy.today}</span>
+      <span><i class="sample reset-sample"></i>{copy.reset}</span>
     </div>
 
     {#if loading}
@@ -188,17 +187,12 @@
             <div class="dates-grid">
               {#each windowRange.days as day (day.day)}
                 <div class="date-slot" class:reset={day.reset} class:today={day.today}
-                  title={longDay(day.day)+(day.reset?' · '+copy.reset:'')}>
+                  title={longDay(day.day)+(day.today?' · '+copy.today:'')+(day.reset?' · '+copy.reset:'')}>
                   <span class="weekday">{weekdayLabel(day.day)}</span>
                   <span class="date-number">{day.dayNumber}</span>
                   {#if day.dayNumber===1}<span class="month-label">{shortDay(day.day)}</span>{/if}
-                  {#if day.reset}<span class="reset-symbol"><WandIcon name="restore" size={12}/></span>{/if}
                 </div>
               {/each}
-              {#if windowRange.todayPosition!==null}
-                <div class="header-today-line" style={`left:${windowRange.todayPosition}%`}
-                  aria-hidden="true"></div>
-              {/if}
             </div>
           </div>
           {#each visibleRows as row (row.event.id)}
@@ -235,15 +229,6 @@
                     {/if}
                   </button>
                 {/each}
-                {#each windowRange.days as day,i (day.day)}
-                  {#if day.reset}
-                    <div class="reset-line" style={`left:${100*(i+0.5)/windowRange.days.length}%`}
-                      aria-hidden="true"></div>
-                  {/if}
-                {/each}
-                {#if windowRange.todayPosition!==null}
-                  <div class="today-line" style={`left:${windowRange.todayPosition}%`} aria-hidden="true"></div>
-                {/if}
               </div>
             </div>
           {/each}
@@ -320,10 +305,11 @@
   .timeline-key{display:flex;align-items:center;flex-wrap:wrap;gap:15px;padding:7px 15px;font-size:11px;color:#b6a4c1}
   .timeline-key span{display:flex;align-items:center;gap:6px}
   .sample{display:inline-block;width:17px;height:6px;border-radius:8px}
-  .sample.task{background:#9c6dd2}.sample.exchange{background:repeating-linear-gradient(90deg,#c0a5db 0 4px,#705283 4px 7px)}
+  .sample.task{background:linear-gradient(180deg,#8055ac,#9d68d2)}
+  .sample.exchange{background:repeating-linear-gradient(135deg,transparent 0 5px,#ffffff38 5px 8px),linear-gradient(180deg,#8055ac,#9d68d2)}
   .sample.floating{background:#30a6ab}.sample.valley{background:#d39747}
-  .sample.reset-sample{width:2px;height:16px;background:#60cfff;border-radius:1px}
-  .reset-key :global(svg){color:#c3a4e2}
+  .sample.today-sample{width:12px;height:12px;background:#674158;border:1px solid #e8a1c8;border-radius:3px}
+  .sample.reset-sample{width:12px;height:12px;background:#224758;border:1px solid #74cde6;border-radius:3px}
   .timeline-scroll{min-width:0;max-width:100%;overflow-x:auto;overflow-y:hidden;flex:1;scrollbar-color:#705b84 #21172d;scrollbar-width:thin}
   .timeline-content{--sidebar-width:205px;width:100%}
   .timeline-heading,.timeline-row{display:grid;grid-template-columns:var(--sidebar-width) minmax(0,1fr);min-width:0}
@@ -334,12 +320,12 @@
   .date-slot{position:relative;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border-right:1px solid #352a3f;font-variant-numeric:tabular-nums;font-size:11px;color:#a99ab9}
   .date-slot .weekday{font-size:10px;color:#83758f}
   .date-number{font-size:13px;color:#d1c5dc}
-  .date-slot.reset::before{content:'';position:absolute;left:50%;top:0;bottom:0;width:2px;background:#60cfff;opacity:.8;pointer-events:none}
-  .date-slot.reset .weekday,.date-slot.reset .date-number{color:#bfeeff;font-weight:700}
-  .date-slot.today .date-number{color:#ffc5dd;font-weight:750}
-  .header-today-line{position:absolute;z-index:4;top:0;bottom:0;width:2px;background:#ffb4d8;pointer-events:none;box-shadow:0 0 5px #ffb4d87a}
+  .date-slot.reset{background:#244153;box-shadow:inset 0 -2px #69bedc}
+  .date-slot.reset .weekday,.date-slot.reset .date-number{color:#c4efff;font-weight:700}
+  .date-slot.today{background:#56394f;box-shadow:inset 0 -2px #e6a4c7}
+  .date-slot.today .weekday,.date-slot.today .date-number{color:#ffd3e6;font-weight:750}
+  .date-slot.today.reset{background:linear-gradient(135deg,#56394f 0 50%,#244153 50%);box-shadow:inset 0 -2px #c2b2e6}
   .month-label{position:absolute;top:1px;font-size:9px;color:#b4a1c9}
-  .reset-symbol{position:absolute;bottom:0;left:50%;transform:translateX(-50%);color:#81d9fd;background:#241c2f}
   .timeline-row{height:71px;border-bottom:1px solid #35293f}
   .timeline-row.selected{background:#2a2037}
   .event-label{position:sticky;left:0;z-index:5;display:flex;align-items:center;gap:9px;width:100%;min-width:0;box-sizing:border-box;padding:10px 12px;background:#211829;color:#eee3f4;text-align:left;border:0;border-right:1px solid #52415e;cursor:pointer}
@@ -356,14 +342,14 @@
   .timeline-bar{position:absolute;z-index:2;top:50%;transform:translateY(-50%);height:30px;min-width:0;box-sizing:border-box;border:1px solid #c9a5f44d;border-radius:5px;background:#8d5cbc;color:#fff;cursor:pointer;overflow:hidden;padding:0 4px}
   .timeline-bar span{display:block;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;font-size:10px;line-height:1.2}
   .timeline-bar.task{background:linear-gradient(180deg,#8055ac,#9d68d2)}
-  .timeline-bar.exchange{background:linear-gradient(180deg,#6d6078,#8c7c94);border-color:#b4a7c2}
+  .timeline-bar.exchange{background:repeating-linear-gradient(135deg,transparent 0 8px,#ffffff38 8px 13px),linear-gradient(180deg,#8055ac,#9d68d2);border-color:#c9a5f44d}
+  .timeline-bar.task:not(.clipped-end){border-top-right-radius:0;border-bottom-right-radius:0}
+  .timeline-bar.exchange:not(.clipped-start){border-top-left-radius:0;border-bottom-left-radius:0}
   .timeline-bar.floating{background:linear-gradient(180deg,#227d85,#37a9b2);border-color:#8cd9e1}
   .timeline-bar.valley{background:linear-gradient(180deg,#996528,#d39b4d);border-color:#f4ce91}
   .timeline-bar.clipped-start{border-top-left-radius:0;border-bottom-left-radius:0;border-left:2px dashed #ddc6ed}
   .timeline-bar.clipped-end{border-top-right-radius:0;border-bottom-right-radius:0;border-right:2px dashed #ddc6ed}
   .timeline-bar:hover,.timeline-bar.selected{filter:brightness(1.2);box-shadow:0 0 0 2px #dab6ff90}
-  .reset-line{position:absolute;top:0;bottom:0;width:2px;z-index:3;pointer-events:none;background:#60cfff;opacity:.86;box-shadow:0 0 4px #60cfff70}
-  .today-line{position:absolute;top:0;bottom:0;width:2px;z-index:4;pointer-events:none;background:#ffb4d8;box-shadow:0 0 7px #ffb4d8}
   .empty-row .event-label{cursor:default}
   .empty-events{align-self:center;color:#ab99b5;text-align:center;font-size:12px}
   .message{padding:40px 16px;text-align:center;color:#cbb5de}

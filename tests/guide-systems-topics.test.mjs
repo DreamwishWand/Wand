@@ -34,3 +34,14 @@ test('calendar controls and localized date patterns cover all eight supported la
     }
   }
 });
+
+test('Star Path grace period is named independently of rewards exchange in every locale',()=>{
+  const ja=guideTimelineCopy('ja');
+  assert.equal(ja.exchange,'猶予期間');
+  assert.equal(ja.exchangeEnd,'猶予期間終了');
+  for(const code of Object.keys(GUIDE_LOCALES)){
+    const copy=guideTimelineCopy(code);
+    assert.notEqual(copy.exchange,copy.task);
+    assert(copy.exchange.length>0&&copy.exchangeEnd.length>0);
+  }
+});

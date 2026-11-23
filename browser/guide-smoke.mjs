@@ -465,8 +465,20 @@ try {
   assert.equal(await hub.locator('.timeline-heading .date-slot').count(),35);
   assert.equal(await hub.locator('.date-slot.reset').count(),5);
   assert.equal(await hub.locator('.date-slot.today').count(),1);
-  assert.equal(await hub.locator('.timeline-row .reset-line').count(),10);
-  assert.equal(await hub.locator('.timeline-row .today-line').count(),2);
+  assert.equal(await hub.locator('.reset-line,.today-line,.header-today-line').count(),0,
+    'today and resets should be highlighted day cells without overlaid vertical bars');
+  const dateTints=await hub.locator('.dates-grid').evaluate(grid=>{
+    const style=selector=>getComputedStyle(grid.querySelector(selector)).backgroundColor;
+    return {
+      today:style('.date-slot.today'),
+      reset:style('.date-slot.reset'),
+      other:style('.date-slot:not(.today):not(.reset)')
+    };
+  });
+  assert.notEqual(dateTints.today,dateTints.reset,
+    'today and reset dates have different subtle fills');
+  assert.notEqual(dateTints.today,dateTints.other);
+  assert.notEqual(dateTints.reset,dateTints.other);
   assert.equal(await hub.locator('.timeline-row[data-category="starpath"]').count(),2);
   const markerRatio=await hub.locator('.date-slot.today').evaluate(el=>{
     const scroll=el.closest('.timeline-scroll');
@@ -482,6 +494,27 @@ try {
   assert.match(await hub.locator('.timeline-content').innerText(),/Seafaring Star Path/);
   assert.equal(await hub.locator('.timeline-bar.task').count(),2);
   assert.equal(await hub.locator('.timeline-bar.exchange').count(),2);
+  const eventLegend=await hub.locator('.timeline-key').innerText();
+  assert.match(eventLegend,/スターパス/);
+  assert.match(eventLegend,/猶予期間/);
+  assert.doesNotMatch(eventLegend,/スターパス\s*[・·]\s*タスク|交換/);
+  const barStyles=await hub.locator('.timeline-bar.task,.timeline-bar.exchange')
+    .evaluateAll(items=>items.map(item=>({
+      phase:item.classList.contains('exchange')?'grace':'regular',
+      background:getComputedStyle(item).backgroundImage
+    })));
+  assert.equal(barStyles.filter(x=>x.phase==='regular').length,2);
+  assert.equal(barStyles.filter(x=>x.phase==='grace').length,2);
+  assert(barStyles.every(x=>x.background.includes('linear-gradient')),
+    'both task and grace periods retain the same purple gradient');
+  assert(barStyles.filter(x=>x.phase==='grace')
+    .every(x=>x.background.includes('repeating-linear-gradient')),
+    'grace-only phase is identifiable by a stripe overlay');
+  assert(barStyles.filter(x=>x.phase==='regular')
+    .every(x=>!x.background.includes('repeating-linear-gradient')),
+    'the regular Star Path is not striped');
+  assert.match(await hub.locator('.timeline-bar.exchange').first().getAttribute('aria-label'),/猶予期間/);
+
   assert.equal(await hub.locator('.timeline-bar.limited').count(),0);
   assert.equal(await hub.locator('.events-list,.schedule-card,.day').count(),0,
     'do not duplicate daily events into a second text-heavy schedule');
