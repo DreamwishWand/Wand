@@ -39,6 +39,9 @@ import {loadPinnedStaticContainerContents,type PinnedStaticContainerContents}
   from './public-static-container.ts';
 import {loadPinnedDefaultInventorySource,type PinnedDefaultInventorySource}
   from './public-default-inventories.ts';
+import {loadPinnedNativePetSourceCategories,
+  type NativePetSourceIndex,type NativePetSourceClassification
+} from './public-pet-source-categories.ts';
 import {indexPublicOnlineNameCandidates,
   type PublicOnlineNameCandidateIndex,
   type PublicOnlineNameCandidate} from './public-online-name-candidates.ts';
@@ -80,6 +83,10 @@ export interface PublicSourceCatalogCoverage {
   readonly configuredDefaultInventoryGroups:15;
   readonly configuredDefaultInventoryEntries:289;
   readonly configuredDefaultInventoryItemIds:288;
+  /** Original PetItemData.Source categorical metadata; NOT confirmed acquisition. */
+  readonly nativePetSourceCategoryRows:134;
+  readonly nativePetPremiumStoreCategoryIds:95;
+  readonly nativePetExclusivePromotionCategoryIds:14;
   readonly totalPublishedOriginAndContainerCandidateRoutes:1401;
   /** All exact configured source relations: does not assert actual acquisition. */
   readonly totalPublishedSourceAndStaticCandidateRelations:1690;
@@ -96,6 +103,8 @@ export type PublicSourceItemLookup=ReturnType<Db00OriginJoin['lookup']>&{
   readonly staticContainerCandidates:readonly ItemOrigin[];
   /** Native configured defaults: never proof the user's save owns them. */
   readonly configuredDefaultInventoryCandidates:readonly ItemOrigin[];
+  /** Original source category only; does not identify specific campaign/store. */
+  readonly nativePetSourceCategories:readonly NativePetSourceClassification[];
   readonly originCoverageComplete:false;
 };
 export interface PublicSourceCatalog{
@@ -119,6 +128,7 @@ export interface PublicSourceCatalog{
   /** Source-native configured container template slots, never live contents. */
   readonly staticContainerSource:PinnedStaticContainerContents;
   readonly defaultInventorySource:PinnedDefaultInventorySource;
+  readonly nativePetSources:NativePetSourceIndex;
   readonly coverage:PublicSourceCatalogCoverage;
   lookup(itemId:string|number):PublicSourceItemLookup;
   getSourceOrigin(originId:string):readonly ItemOrigin[];
@@ -140,7 +150,8 @@ export async function loadPublicSourceCatalog(
     'INVALID_BASE_PATH');
   const [
     rawDb00,questSource,eventFriendshipSource,nativeShopSource,nativeIapSource,
-    historicalNativeShopSource,staticContainerSource,defaultInventorySource
+    historicalNativeShopSource,staticContainerSource,defaultInventorySource,
+    nativePetSources
   ]=await Promise.all([
     loadCurrentGameDatabase(basePath,fetcher),
     loadPinnedPublicQuestAcquisition(basePath,fetcher),
@@ -149,7 +160,8 @@ export async function loadPublicSourceCatalog(
     loadPinnedPublicIapSource(basePath,fetcher),
     loadPinnedHistoricalNativeShopSnapshot(basePath,fetcher),
     loadPinnedStaticContainerContents(basePath,fetcher),
-    loadPinnedDefaultInventorySource(basePath,fetcher)
+    loadPinnedDefaultInventorySource(basePath,fetcher),
+    loadPinnedNativePetSourceCategories(basePath,fetcher)
   ]);
   ensure(rawDb00.kind==='db_snapshot'&&rawDb00.items.length===13202,
     'CURRENT_DB00_REQUIRED');
@@ -201,6 +213,11 @@ export async function loadPublicSourceCatalog(
     defaultInventorySource.coverage.playerInventoryVerified===false&&
     defaultInventorySource.coverage.newPlayerGrantVerified===false&&
     defaultInventorySource.coverage.privateSaveIncluded===false&&
+    nativePetSources.coverage.explicitSourceRows===134&&
+    nativePetSources.coverage.nativePremiumStorePetIds===95&&
+    nativePetSources.coverage.nativeExclusivePromotionPetIds===14&&
+    nativePetSources.coverage.specificOnlineCampaignLinksVerified===0&&
+    nativePetSources.coverage.playerAcquisitionVerified===false&&
     staticContainerSource.coverage.definitionRecords===88&&
     staticContainerSource.coverage.populatedDefinitions===84&&
     staticContainerSource.coverage.populatedSourceSlots===146&&
@@ -265,6 +282,9 @@ export async function loadPublicSourceCatalog(
     configuredDefaultInventoryGroups:15 as const,
     configuredDefaultInventoryEntries:289 as const,
     configuredDefaultInventoryItemIds:288 as const,
+    nativePetSourceCategoryRows:134 as const,
+    nativePetPremiumStoreCategoryIds:95 as const,
+    nativePetExclusivePromotionCategoryIds:14 as const,
     totalPublishedOriginAndContainerCandidateRoutes:1401 as const,
     totalPublishedSourceAndStaticCandidateRelations:1690 as const,
     publicNameOnlyCandidateRelations:nameCandidates.coverage.totalCandidateRelations,
@@ -281,6 +301,7 @@ export async function loadPublicSourceCatalog(
     origins,db00,nameCandidates,questSource,eventFriendshipSource,
     nativeShopSource,nativeIapSource,historicalNativeShopSource,
     nativeIapPackReferences,staticContainerSource,defaultInventorySource,
+    nativePetSources,
     shopHistory,itemSources,coverage,
     lookup(itemId:string|number){
       // db00.lookup validates IDs and keeps extra-ItemList Quest/Currency IDs.
@@ -291,6 +312,8 @@ export async function loadPublicSourceCatalog(
         staticContainerCandidates:staticContainerSource.getItemCandidates(row.itemId),
         configuredDefaultInventoryCandidates:
           defaultInventorySource.getItemCandidates(row.itemId),
+        nativePetSourceCategories:
+          nativePetSources.getItemClassifications(row.itemId),
         originCoverageComplete:false as const
       });
     },
