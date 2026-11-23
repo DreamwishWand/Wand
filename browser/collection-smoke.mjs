@@ -366,6 +366,15 @@ try{
   const firstCategory=await page.locator('.facet-card').first().boundingBox();
   assert.ok(firstCategory&&firstCategory.y<240,'categories must begin in the first viewport');
   assert.ok(await page.locator('.facet-card').count()>10);
+  // World is the default; Universe is optional and must not fabricate
+  // membership/icon choices before DB-00 publishes reviewed membership.
+  assert.equal(await page.getByRole('button',{name:'ワールド表示'}).getAttribute('aria-pressed'),'true');
+  await page.getByRole('button',{name:'ユニバース表示'}).click();
+  assert.equal(await page.getByRole('button',{name:'ユニバース表示'}).getAttribute('aria-pressed'),'true');
+  assert.equal(await page.locator('.collection-universe-card').count(),0);
+  assert.match(await page.locator('.collection-axis-notice').innerText(),/所属データ/);
+  await page.getByRole('button',{name:'ワールド表示'}).click();
+  assert.ok(await page.locator('.facet-card').count()>10);
   await page.getByRole('button',{name:/フィルター/}).click();
   assert.equal(await page.getByRole('group',{name:'正式名称の確認状況'}).count(),0);
   await page.getByRole('button',{name:/フィルター/}).click();
