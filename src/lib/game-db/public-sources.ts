@@ -52,6 +52,9 @@ import {
 import {
   createDb00NativeOnlineReader,type Db00NativeOnlineReader
 } from './native-online-categories.ts';
+import {
+  createDb00NativeRecipeReader,type Db00NativeRecipeReader
+} from './native-recipes.ts';
 import {loadPublicStarpath} from '../guide/public-starpath.ts';
 import {
   loadStarpathRewardExtras,STARPATH_EXTRA_RELEASE
@@ -59,6 +62,10 @@ import {
 import {
   createDb00StarpathRewardReader,type Db00StarpathRewardReader
 } from './starpath-reward-crosswalk.ts';
+import {
+  createDb00OriginalCollectionAreaReader,
+  type Db00OriginalCollectionAreaReader
+} from './collection-area-sources.ts';
 import {
   createDb00PublicItemSearch,
   type Db00PublicItemSearchRequest,type Db00PublicItemSearchResult
@@ -76,6 +83,8 @@ export interface PublicSharedGameSources{
   readonly guide:GuideRewardIndex;
   readonly guideQuestTargets:PublicQuestTargetReverseReader;
   readonly guideEvents:Db00PublicEventSources;
+  /** Seven verified original Collection-area config records (not Item membership). */
+  readonly originalCollectionAreas:Db00OriginalCollectionAreaReader;
   readonly hasPrivateGameSource:false;
   readonly currentAvailabilityVerified:false;
   readonly playerOwnershipVerified:false;
@@ -91,6 +100,8 @@ export interface PublicSharedGameSources{
   loadNativeCompanionSources():Promise<Db00NativeCompanionReader>;
   /** Optional SHA-pinned 9-family original OnlineCategory source classification. */
   loadNativeOnlineCategories():Promise<Db00NativeOnlineReader>;
+  /** SHA-pinned original cooking/crafting results, loaded only on demand. */
+  loadNativeRecipeSources():Promise<Db00NativeRecipeReader>;
   /** Optional verified 60-reward name/category crosswalk, including unnamed motifs. */
   loadStarpathRewardCrosswalk():Promise<Db00StarpathRewardReader>;
   queryItems(filters?:readonly SharedDbFilter[],
@@ -170,6 +181,7 @@ export async function openPublicSharedGameSources(
     loadGuideRewardIndex(basePath+'/guide/public/starpath-cache-2026-11-22.json',once),
     questTargetTask,eventTask,questCatalogueTask
   ]);
+  const originalCollectionAreas=createDb00OriginalCollectionAreaReader();
   const joined=joinCurrentGameSources(database,{
     origins:acquisition.origins,rewards:guide,
     staticContainers:acquisition.staticContainerSource,
@@ -199,6 +211,11 @@ export async function openPublicSharedGameSources(
   const loadNativeOnlineCategories=():Promise<Db00NativeOnlineReader>=>
     nativeOnline??=acquisition.loadNativeOnlineCategories().then(source=>
       createDb00NativeOnlineReader(database,joined,source)
+    );
+  let nativeRecipes:Promise<Db00NativeRecipeReader>|null=null;
+  const loadNativeRecipeSources=():Promise<Db00NativeRecipeReader>=>
+    nativeRecipes??=acquisition.loadNativeRecipeResults().then(source=>
+      createDb00NativeRecipeReader(database,joined,source)
     );
   let starpathCrosswalk:Promise<Db00StarpathRewardReader>|null=null;
   const loadStarpathRewardCrosswalk=():Promise<Db00StarpathRewardReader>=>
@@ -251,7 +268,7 @@ export async function openPublicSharedGameSources(
   return Object.freeze({
     schema:DB00_PUBLIC_SOURCES_SCHEMA,
     snapshotId:database.snapshotId,database,joined,acquisition,guide,
-    guideQuestTargets,guideEvents,
+    guideQuestTargets,guideEvents,originalCollectionAreas,
     hasPrivateGameSource:false as const,
     currentAvailabilityVerified:false as const,
     playerOwnershipVerified:false as const,
@@ -259,7 +276,8 @@ export async function openPublicSharedGameSources(
     getItems:(ids:readonly (string|number)[])=>joined.getItems(ids),
     searchItems:search.searchItems,
     searchOutsideSourceItems,loadNativeCompanionSources,
-    loadNativeOnlineCategories,loadStarpathRewardCrosswalk,
+    loadNativeOnlineCategories,loadNativeRecipeSources,
+    loadStarpathRewardCrosswalk,
     queryItems:(filters:readonly SharedDbFilter[]=[],
       page:Readonly<{offset?:number;limit?:number}>={})=>
       database.queryItems(filters,page),
