@@ -100,7 +100,7 @@ test('malformed source bounds and compacted indexes fail closed',()=>{
 });
 
 test('whole-grid raster preserves every source-native mask in Y-major display order',()=>{
-  const result=getNativeTerrainRaster(source(direct()));
+  const result=getNativeTerrainRaster(source(direct()),item);
   assert.equal(result.status,'source_corroborated_grid_local_raster');
   assert.equal(result.sizeX,3);
   assert.equal(result.sizeY,2);
@@ -119,7 +119,7 @@ test('whole-grid raster preserves every source-native mask in Y-major display or
 test('packed original raster preserves source local X-major ordering and strict version boundary',()=>{
   const grid=packed();
   grid.nativePaletteIndexCellCounts=[1,2,1];
-  const result=getNativeTerrainRaster(source(grid));
+  const result=getNativeTerrainRaster(source(grid),item);
   assert.equal(result.status,'source_corroborated_grid_local_raster');
   assert.deepEqual([...result.nativeFloorValues],[0,1024,4,4]);
   assert.deepEqual(result.maskCounts,[
@@ -127,6 +127,6 @@ test('packed original raster preserves source local X-major ordering and strict 
     {nativeFloorValue:4,cellCount:2},
     {nativeFloorValue:1024,cellCount:1}
   ]);
-  assert.equal(getNativeTerrainRaster(source(grid,'1.27.0')).status,
+  assert.equal(getNativeTerrainRaster(source(grid,'1.27.0'),item).status,
     'native_terrain_packing_not_verified_for_game_version');
 });
