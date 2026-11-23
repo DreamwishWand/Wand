@@ -95,6 +95,8 @@ export interface CollectionFilter {
   universe: string;
   expansion: string;
   status: string;
+  /** Local favorite annotation; only items explicitly starred by the user. */
+  favoriteOnly?: boolean;
   nameStatus?: 'all'|'verified'|'unverified';
   offset: number;
   limit: number;
