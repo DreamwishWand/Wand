@@ -82,5 +82,5 @@ test('unpublished Quest names never become internal Mission identifiers presente
   assert.match(page,/publicFriendshipCharacters\(catalog,locale\)/);
   assert.match(page,/selectArc\(arc.id\)/);
   assert.match(page,/class:with-character-rail/);
-  assert.match(page,/section==='story'\?storyArc:'all'/);
+  assert.match(page,/arc:section==='story'&&!query.trim\(\)\?storyArc:'all'/);
 });
