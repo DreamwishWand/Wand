@@ -27,9 +27,9 @@ export const STARPATH_DAILY_RELEASE:Readonly<Record<StarpathSeasonId,DailyReleas
   });
 const TASK=/^Task[0-9]{2,3}$/;
 const normalize=(value:string):string=>value.replace(/\u00a0/g,' ').trim();
-const check=(value:unknown,message:string):asserts value=>{
+function check(value:unknown,message:string):asserts value{
   assertStarpathLocalization(value,'daily '+message);
-};
+}
 
 export function verifyStarpathDailyPart(
   part:unknown,season:SourceStarpathSeason
