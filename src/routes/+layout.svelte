@@ -6,7 +6,12 @@
   import {page} from '$app/stores';
   import {onMount} from 'svelte';
   import {dialogFocus} from '$lib/ui/dialog-focus';
-  import {editHistory,historyView,type HistoryArea} from '$lib/ui/edit-history';
+  import {editHistory,historyView,type HistoryArea,type HistoryEntry,type HistoryView} from '$lib/ui/edit-history';
+  import {
+    operationIssueView,reportOperationIssue,resolveOperationIssue,acknowledgeOperationIssue,
+    type OperationIssue,type OperationIssueView
+  } from '$lib/ui/operation-issues';
+  import {historyExtraCopy,issueStateLabel} from '$lib/ui/history-extra-copy';
   import {localSaveSession,selectLocalSaveFile,closeLocalSaveFile} from '$lib/ui/local-save-session';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {shellCopy} from '$lib/ui/shell-copy';
@@ -23,6 +28,21 @@
   let historyOpen=false;
   let historyArea:HistoryArea='collection';
   let historyButton:HTMLButtonElement|null=null;
+  let issuesButton:HTMLButtonElement|null=null;
+  type HistoryRow=
+    |{key:string;kind:'edit';entry:HistoryEntry;position:number;timestamp:number}
+    |{key:string;kind:'issue';issue:OperationIssue;timestamp:number};
+  function historyRows(area:HistoryArea,view:HistoryView,issues:OperationIssueView):HistoryRow[]{
+    const issueRows:HistoryRow[]=issues.entries.filter(issue=>issue.area===area).map(issue=>({
+      kind:'issue',key:'issue-'+issue.id,issue,timestamp:issue.timestamp
+    }));
+    if(area!=='collection')return issueRows.reverse();
+    const edits:HistoryRow[]=view.entries.map((entry,index)=>({
+      kind:'edit',key:'edit-'+entry.id,entry,position:index+1,timestamp:entry.timestamp
+    }));
+    return [...edits,...issueRows].sort((a,b)=>b.timestamp-a.timestamp||
+      (a.kind==='issue'?-1:1));
+  }
   let collectionBusy=false;
   let languageOpen=false;
   let saveMenuOpen=false;
@@ -74,9 +94,12 @@
     const filename=file.name.toLowerCase();
     if(!/\.(profile|dat|bin|json)$/.test(filename)||file.size<1){
       saveError=copy.saveInvalid;
+      reportOperationIssue('save','save-file-rejected');
       return;
     }
-    selectLocalSaveFile(file);saveError='';saveMenuOpen=false;
+    if(!selectLocalSaveFile(file))return;
+    resolveOperationIssue('save','save-file-rejected');
+    saveError='';saveMenuOpen=false;
   }
   function globalSavePicked(event:Event):void{
     const input=event.currentTarget as HTMLInputElement;
@@ -113,7 +136,17 @@
     event.preventDefault();dragDepth=0;draggingFile=false;
     setSelectedSave(event.dataTransfer.files[0]);
   }
-  function openHistory():void{closeMenus();historyOpen=true;historyArea='collection';}
+  function defaultHistoryArea():HistoryArea{
+    return service==='collection'?'collection':service==='world'?'world':
+      service==='save'?'save':'collection';
+  }
+  function openHistory(area:HistoryArea=defaultHistoryArea()):void{
+    closeMenus();historyArea=area;historyOpen=true;
+  }
+  function openIssueHistory():void{
+    const newest=[...$operationIssueView.entries].reverse().find(issue=>issue.state==='open');
+    openHistory(newest?.area??defaultHistoryArea());
+  }
   function closeHistory():void{historyOpen=false;}
   function openAccount(){closeMenus();accountOpen=true;}
   function closeAccount(){accountOpen=false;}
@@ -129,6 +162,29 @@
     const update=(event:Event)=>collectionBusy=Boolean((event as CustomEvent<boolean>).detail);
     window.addEventListener('wand:collection-busy',update);
     const unwatch=watchWandLanguage(value=>uiLocale=value);
+    // Errors are explicit, fixed-code events; a replaced/closed save resolves
+    // the old source's alert without erasing its historical incident.
+    let priorRevision=-1;
+    const unwatchSave=localSaveSession.subscribe(session=>{
+      if(session.revision!==priorRevision){
+        priorRevision=session.revision;
+        resolveOperationIssue('save','save-read-invalid');
+      }
+      if(session.file&&session.collectionStatus==='invalid')
+        reportOperationIssue('save','save-read-invalid');
+      else if(session.collectionStatus==='parsed')
+        resolveOperationIssue('save','save-read-invalid');
+    });
+    const unwatchHistory=historyView.subscribe(view=>{
+      if(view.error==='stale')
+        reportOperationIssue('collection','collection-history-stale');
+      else if(view.error==='failed')
+        reportOperationIssue('collection','collection-history-failed');
+      else{
+        resolveOperationIssue('collection','collection-history-stale');
+        resolveOperationIssue('collection','collection-history-failed');
+      }
+    });
     // Apply the stored preferences to the DOM before any user action.
     setWandLanguage(readWandLanguage());
     uiTheme=readWandTheme();
@@ -141,6 +197,8 @@
       window.removeEventListener('dragover',onGlobalDragOver);
       window.removeEventListener('drop',onGlobalDrop);
       unwatch();
+      unwatchSave();
+      unwatchHistory();
     };
   });
   $: route=$page.url.pathname.replace(/\/+$/,'')||'/';
@@ -151,6 +209,8 @@
     route.includes('/world')?'world':
     route.includes('/save')?'save':'home';
   $: copy=shellCopy(uiLocale);
+  $: historyExtra=historyExtraCopy(uiLocale);
+  $: visibleHistory=historyRows(historyArea,$historyView,$operationIssueView);
   $: tourRoute=base&&route.startsWith(base)?route.slice(base.length)||'/':route;
   $: tutorial=contextualTour(tourRoute,copy,uiLocale);
   function focusContextSearch():boolean{
@@ -235,11 +295,26 @@
           </div>
         </div>
       {/if}
+      <div class="shell-undo-redo" role="group" aria-label={copy.history}>
+        <button type="button" class="header-icon-button" aria-label={copy.historyUndo}
+          title={copy.historyUndo} disabled={service!=='collection'||$historyView.busy||$historyView.cursor===0}
+          on:click={()=>void editHistory.undo()}><WandIcon name="undo" size={20}/></button>
+        <button type="button" class="header-icon-button" aria-label={copy.historyRedo}
+          title={copy.historyRedo} disabled={service!=='collection'||$historyView.busy||$historyView.cursor===$historyView.entries.length}
+          on:click={()=>void editHistory.redo()}><WandIcon name="redo" size={20}/></button>
+      </div>
       <button class="header-icon-button shell-history-button" bind:this={historyButton}
         type="button" aria-label={copy.history} title={copy.history} aria-expanded={historyOpen}
         on:click={()=>{void openHistory();}}>
         <WandIcon name="history" size={21}/>
       </button>
+      {#if $operationIssueView.hasOpen}
+        <button type="button" class="header-icon-button shell-issue-button"
+          bind:this={issuesButton} on:click={openIssueHistory}
+          aria-label={historyExtra.issuesButton} title={historyExtra.issuesButton}>
+          <WandIcon name="alert" size={21}/>
+        </button>
+      {/if}
       <div class="header-save-root" bind:this={saveRoot}>
         <button class="header-icon-button shell-save-button" bind:this={saveButton} type="button"
           aria-label={selectedSave?copy.saveManager:copy.readSave}
@@ -284,6 +359,14 @@
             <button type="button" class="shell-more-history" on:click={()=>{void openHistory();}}>
               <WandIcon name="history" size={18}/>{copy.history}
             </button>
+            {#if service==='collection'}
+              <button type="button" disabled={$historyView.busy||$historyView.cursor===0}
+                on:click={()=>{moreOpen=false;void editHistory.undo();}}>
+                <WandIcon name="undo" size={18}/>{copy.historyUndo}</button>
+              <button type="button" disabled={$historyView.busy||$historyView.cursor===$historyView.entries.length}
+                on:click={()=>{moreOpen=false;void editHistory.redo();}}>
+                <WandIcon name="redo" size={18}/>{copy.historyRedo}</button>
+            {/if}
             <button type="button" on:click={startTutorial}><WandIcon name="help" size={18}/>{copy.help}</button>
             <button type="button" on:click={openAccount}><WandIcon name="character" size={18}/>{copy.account}</button>
             {#if service==='collection'}
@@ -337,11 +420,11 @@
   <div class="shell-history-overlay">
     <button class="shell-history-shade" type="button" on:click={closeHistory} aria-label={copy.close}></button>
     <div class="shell-history-panel" role="dialog" aria-modal="true" aria-label={copy.history}
-      use:dialogFocus={{fallback:()=>historyButton?.getClientRects().length?historyButton:moreButton}}>
+      use:dialogFocus={{fallback:()=>historyButton?.getClientRects().length?historyButton:issuesButton?.getClientRects().length?issuesButton:moreButton}}>
       <header class="shell-history-head">
         <div><WandIcon name="history" size={21}/><strong>{copy.history}</strong></div>
-        <button class="header-icon-button" type="button"
-          on:click={closeHistory} aria-label={copy.close}><WandIcon name="close" size={21}/></button>
+        <button class="header-icon-button" type="button" on:click={closeHistory}
+          aria-label={copy.close}><WandIcon name="close" size={21}/></button>
       </header>
       <div class="shell-history-tabs" role="group" aria-label={copy.history}>
         <button type="button" class:active={historyArea==='collection'}
@@ -350,6 +433,9 @@
         <button type="button" class:active={historyArea==='world'}
           aria-pressed={historyArea==='world'}
           on:click={()=>historyArea='world'}>{copy.historyWorld}</button>
+        <button type="button" class:active={historyArea==='save'}
+          aria-pressed={historyArea==='save'}
+          on:click={()=>historyArea='save'}>{historyExtra.saveTab}</button>
       </div>
       {#if historyArea==='collection'}
         <div class="shell-history-actions">
@@ -362,39 +448,53 @@
             <WandIcon name="redo" size={20}/><span>{copy.historyRedo}</span>
           </button>
         </div>
-        {#if $historyView.error}
-          <p class="shell-history-error" role="alert">{$historyView.error==='stale'?copy.historyStale:copy.historyFailed}</p>
-        {/if}
-        {#if $historyView.busy}
-          <p class="shell-history-working" role="status">{copy.historyWorking}</p>
-        {/if}
-        <div class="shell-history-timeline">
-          {#if $historyView.entries.length===0}
-            <p class="shell-history-empty">{copy.historyEmpty}</p>
-          {:else}
-            {#each [...$historyView.entries].reverse() as entry,i (entry.id)}
-              <button type="button" class="shell-history-entry"
-                class:active={$historyView.cursor===$historyView.entries.length-i}
-                class:undone={$historyView.cursor<$historyView.entries.length-i}
-                aria-current={$historyView.cursor===$historyView.entries.length-i?'step':undefined}
-                disabled={$historyView.busy}
-                on:click={()=>void editHistory.travelCollection($historyView.entries.length-i)}>
-                <span class="shell-history-entry-top">
-                  <strong>{entry.title}</strong>
-                  <time>{new Date(entry.timestamp).toLocaleTimeString(uiLocale,{hour:'2-digit',minute:'2-digit'})}</time>
-                </span>
-                <span class="shell-history-change">{entry.change}</span>
-              </button>
-            {/each}
-            <button class="shell-history-entry" type="button" class:active={$historyView.cursor===0}
-              aria-current={$historyView.cursor===0?'step':undefined}
-              disabled={$historyView.busy}
-              on:click={()=>void editHistory.travelCollection(0)}>{copy.historyInitial}</button>
-          {/if}
-        </div>
-      {:else}
-        <p class="shell-history-empty">{copy.historyUnavailable}</p>
       {/if}
+      {#if historyArea==='collection'&&$historyView.busy}
+        <p class="shell-history-working" role="status">{copy.historyWorking}</p>
+      {/if}
+      <div class="shell-history-timeline">
+        {#if visibleHistory.length===0}
+          <p class="shell-history-empty">{historyArea==='collection'?copy.historyEmpty:copy.historyUnavailable}</p>
+        {:else}
+          {#each visibleHistory as row (row.key)}
+            {#if row.kind==='edit'}
+              <button type="button" class="shell-history-entry"
+                class:active={$historyView.cursor===row.position}
+                class:undone={$historyView.cursor<row.position}
+                aria-current={$historyView.cursor===row.position?'step':undefined}
+                disabled={$historyView.busy}
+                on:click={()=>void editHistory.travelCollection(row.position)}>
+                <span class="shell-history-entry-top">
+                  <strong>{row.entry.title}</strong>
+                  <time>{new Date(row.entry.timestamp).toLocaleTimeString(uiLocale,{hour:'2-digit',minute:'2-digit'})}</time>
+                </span>
+                <span class="shell-history-change">{row.entry.change}</span>
+              </button>
+            {:else}
+              <article class="shell-history-issue" aria-label={historyExtra.issueTitle[row.issue.code]}>
+                <div class="shell-history-entry-top">
+                  <div class="shell-history-issue-label"><WandIcon name="alert" size={17}/>
+                    <strong>{historyExtra.issueTitle[row.issue.code]}</strong></div>
+                  <time>{new Date(row.issue.timestamp).toLocaleTimeString(uiLocale,{hour:'2-digit',minute:'2-digit'})}</time>
+                </div>
+                <p>{historyExtra.issueDetail[row.issue.code]}</p>
+                {#if row.issue.state==='open'}
+                  <button type="button" on:click={()=>acknowledgeOperationIssue(row.issue.id)}>
+                    {historyExtra.acknowledge}</button>
+                {:else}
+                  <span class="shell-history-issue-state">{issueStateLabel(historyExtra,row.issue.state)}</span>
+                {/if}
+              </article>
+            {/if}
+          {/each}
+        {/if}
+        {#if historyArea==='collection'&&$historyView.entries.length>0}
+          <button class="shell-history-entry" type="button" class:active={$historyView.cursor===0}
+            aria-current={$historyView.cursor===0?'step':undefined}
+            disabled={$historyView.busy}
+            on:click={()=>void editHistory.travelCollection(0)}>{copy.historyInitial}</button>
+        {/if}
+      </div>
     </div>
   </div>
 {/if}
