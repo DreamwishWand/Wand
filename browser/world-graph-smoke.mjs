@@ -56,7 +56,7 @@ function syntheticTerrainZip(){
       layoutObjectId:layoutId+'#grid='+gridIdNative+'#object=1',
       layoutId,gridIdNative,gridObjectIdNative:1,
       itemId:100,x:4+i,y:5,
-      orientationCode:0,worldCoordinatesVerified:false,
+      orientationCode:i===0?8:4,worldCoordinatesVerified:false,
       fixedImmovableVerified:false
     }))
   };
@@ -415,6 +415,12 @@ try{
   assert.match(await page.getByRole('status')
     .filter({hasText:'原本初期配置 1 / 1件'}).innerText(),
     /セーブの座標・配置可否を意味しません/);
+  const localLink=page.getByLabel('原本初期配置のItem参照');
+  await localLink.waitFor();
+  assert.match(await localLink.innerText(),
+    /GridObject 1 · 向き 4 · Grid倍率 ×1 · 原本アンカー \(5, 5\)/);
+  assert.equal(await page.getByRole('combobox',{name:'原本GridAreaの向き'})
+    .inputValue(),'4');
   await nativeItemQuery.fill('999');
   await page.getByRole('button',{name:'原本初期配置を探す'}).click();
   await page.getByRole('status')
@@ -436,6 +442,10 @@ try{
   assert.match(await gridareaPanel.innerText(),/Item 100 · 原本GridArea/);
   assert.match(await gridareaPanel.innerText(),/原本GridAreaのサイズ：\s*2 × 2/);
   assert.match(await gridareaPanel.innerText(),/非ゼロ 3値/);
+  assert.match(await gridareaPanel.getByLabel('原本初期配置のItem参照').innerText(),
+    /GridObject 1 · 向き 8 · Grid倍率 ×1 · 原本アンカー \(4, 5\)/);
+  assert.equal(await gridareaPanel.getByRole('combobox',{name:'原本GridAreaの向き'})
+    .inputValue(),'8');
   assert.match(await gridareaPanel.innerText(),/68 × 2 · 0 × 1 · 76 × 1/);
   assert.match(await gridareaPanel.innerText(),/占有セル数ではありません/);
   assert.match(await gridareaPanel.innerText(),/全16方向の原本ローカル値を参照できます/);
@@ -482,6 +492,10 @@ try{
   await page.getByRole('button',{name:'次の候補'}).click();
   await page.getByRole('status')
     .filter({hasText:'原本初期配置 2 / 2件'}).waitFor();
+  assert.match(await gridareaPanel.getByLabel('原本初期配置のItem参照').innerText(),
+    /GridObject 1 · 向き 4 · Grid倍率 ×1 · 原本アンカー \(5, 5\)/);
+  assert.equal(await gridareaPanel.getByRole('combobox',{name:'原本GridAreaの向き'})
+    .inputValue(),'4');
   assert.match(await terrainSelectors.nth(1).locator('option:checked').innerText(),
     /OffGridBuildings\/Detached.json/);
   assert.equal(await terrainSelectors.nth(2).inputValue(),'0');
