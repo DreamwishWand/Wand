@@ -392,9 +392,9 @@ try{
     'all Furniture, Clothing and Trimming subtypes must be selectable');
   assert.equal(await page.locator('.collection-detail-category-grid .facet-card').count(),50,
     'every published Item ID must be assigned to one of 50 real source groups');
-  assert.equal(await page.locator('.collection-detail-category-grid .facet-card').filter({
-    hasText:/\\s0\\s*$/u
-  }).count(),0,'source category overview must not expose empty categories');
+  const countsNonzero=await page.locator('.collection-detail-category-grid .facet-card')
+    .evaluateAll(cards=>cards.every(card=>/\/\s*[1-9][\d,]*\s*$/.test(card.textContent??'')));
+  assert.equal(countsNonzero,true,'all 50 visible categories must have real nonzero Item counts');
   for(const [code,label,count] of [
     [3,'料理','618'],[11,'食材','201'],[10,'魚','103']
   ]){
