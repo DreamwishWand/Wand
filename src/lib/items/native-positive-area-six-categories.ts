@@ -10,7 +10,6 @@ import {
   DB01_FIVE_CATEGORY_POSITIVE_AREA_COUNTS,
   type Db01FiveCategorySourceClient,
   type Db01FiveCategoryNativeCategory,
-  type Db01FiveCategorySourceItem,
   type Db01SourceAreaEvidence,
 } from './native-positive-area-five-categories.ts';
 import {
@@ -131,7 +130,7 @@ check(CATEGORIES.length===6&&AREAS.length===6&&
       DB01_ORIGINAL_SKIN_POSITIVE_AREA_COUNTS[code])&&
   SKINS.length===7,'PINNED_CENSUS');
 
-function selected<T extends string>(
+function selected<T extends string|number>(
   raw:readonly T[]|undefined,allowed:readonly T[],reason:string,
 ):readonly T[] {
   const values=raw??allowed;
