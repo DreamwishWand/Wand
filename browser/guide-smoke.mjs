@@ -223,7 +223,8 @@ try {
     .filter({hasText:'30200002'}).first().waitFor({timeout:25000});
   assert.match(await override.locator('.detail .quest-rewards').innerText(),
     /原本の抽選回数欄は最大値の特殊値/);
-  const appleLink=override.getByRole('link',{name:'Collectionで開く：リンゴ'});
+  const appleLink=override.locator(
+    '.detail .quest-rewards a.reward-collection-link[href="/Wand/collection/?item=30200002"]').first();
   await appleLink.waitFor({timeout:25000});
   assert.equal(await appleLink.getAttribute('href'),'/Wand/collection/?item=30200002');
   // Source currency IDs not present in the published native ItemList remain
