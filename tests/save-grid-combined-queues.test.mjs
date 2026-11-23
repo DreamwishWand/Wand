@@ -60,7 +60,10 @@ test('strict unique-target limit and duplicate local ordinals',()=>{
   const sixteen=[coordinate,...Array.from({length:15},(_,index)=>({
     ...coordinate,localOrdinal:index+2
   }))];
-  assert.equal(combineSavedGridQueues(sixteen,[rotate])?.length,16,
+  const matchingOrientation={
+    ...rotate,recordKind:'full',expectedX:45,expectedY:9
+  };
+  assert.equal(combineSavedGridQueues(sixteen,[matchingOrientation])?.length,16,
     'a same-ordinal orientation update is a single target');
   assert.equal(combineSavedGridQueues(sixteen,[{...rotate,localOrdinal:17}]),null);
 });
