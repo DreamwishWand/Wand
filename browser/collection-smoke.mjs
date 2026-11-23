@@ -1109,13 +1109,13 @@ try{
   await page.setViewportSize({width:1280,height:800});
 
   await page.goto('http://127.0.0.1:4173/Wand/guide/');
-  await page.locator('.guide-hub .guide-sections').waitFor();
+  await page.locator('.guide-app .guide-sections').waitFor();
   assert.equal(await page.locator('.wand-tour-layer').count(),0,'tour must not auto-start on navigation');
   await page.getByRole('button',{name:'このページのチュートリアル'}).click();
   await page.locator('.wand-tour-spotlight').waitFor();
   assert.match(await page.locator('.wand-tour-description').innerText(),/クエスト|スターパス/);
   await page.locator('.wand-tour-primary').click();
-  assert.match(await page.locator('.wand-tour-description').innerText(),/カレンダー/);
+  assert.match(await page.locator('.wand-tour-description').innerText(),/タイムライン/);
   await page.keyboard.press('Escape');
   await page.locator('.wand-tour-layer').waitFor({state:'detached'});
 
