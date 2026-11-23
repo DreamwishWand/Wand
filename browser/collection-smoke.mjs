@@ -367,7 +367,7 @@ try{
   assert.ok(firstCategory&&firstCategory.y<240,'categories must begin in the first viewport');
   const parents=page.locator('.collection-top-category');
   await parents.first().waitFor({timeout:30000});
-  assert.equal(await parents.count(),29);
+  assert.equal(await parents.count(),30);
   assert.equal(await page.locator('.collection-native-activity,.collection-native-subtype').count(),0,
     'leaf categories never appear at root');
   assert.equal(await page.locator('.collection-original-category-grid').count(),0);
@@ -385,7 +385,7 @@ try{
   assert.deepEqual(await parents.evaluateAll(cards=>cards.map(card=>card.getAttribute('data-top-category'))),[
     'furniture','landscaping','roads-fences','interior','buildings','environment',
     'clothing','appearance','touch-of-magic','photo-mode','tools','upgrades',
-    'characters','companions','critters','mounts','crafting','meals','ingredients',
+    'characters','companions','adventure-companions','critters','mounts','crafting','meals','ingredients',
     'foraging','fish','gems','timebending','memories','board-game','snippets',
     'lorekeeper-tales','quest-puzzles','exhibition'
   ]);
@@ -438,7 +438,7 @@ try{
   await retryPage.getByRole('button',{name:/再試行|Retry/}).click();
   await retryPage.locator('.collection-top-category').first()
     .waitFor({timeout:30000});
-  assert.equal(await retryPage.locator('.collection-top-category').count(),29);
+  assert.equal(await retryPage.locator('.collection-top-category').count(),30);
   assert.equal(await retryPage.locator('.collection-native-activity,.collection-native-subtype').count(),0);
   assert.equal(await retryPage.locator('.collection-original-category-grid').count(),0);
   await retryContext.close();
@@ -783,6 +783,28 @@ try{
   assert.ok(await page.locator('.collection-detail-category-grid .facet-card').count()>=10);
   assert.equal(await page.locator('.mode-tabs').count(),0);
   assert.equal(await page.locator('.collection-scope-toolbar').count(),1);
+  // Measure the actual click-to-frame path after the index has loaded.
+  // This is a diagnostic, not a hardware-dependent timing assertion.
+  const worldSwitchSamples=await page.evaluate(async()=>{
+    const buttons=[...document.querySelectorAll('.collection-scope-scroll button:not([disabled])')];
+    const frame=()=>new Promise(resolve=>requestAnimationFrame(resolve));
+    const samples=[];
+    for(const button of [...buttons.slice(1),buttons[0]]){
+      const start=performance.now();
+      button.click();
+      const handlerMs=performance.now()-start;
+      await frame();await frame();
+      samples.push({world:button.textContent?.trim(),handlerMs,
+        frameMs:performance.now()-start,
+        categories:document.querySelectorAll('.collection-top-category').length,
+        items:document.querySelectorAll('.item-card').length});
+    }
+    return samples;
+  });
+  console.log('COLLECTION_WORLD_SWITCH_MS',JSON.stringify(worldSwitchSamples));
+  assert.ok(worldSwitchSamples.length>1);
+  assert.ok(worldSwitchSamples.every(row=>row.categories===30&&row.items===0),
+    'every enabled world changes category cards without rendering hidden item results');
   const nativeWorld=page.locator('.collection-scope-scroll button').filter({hasText:'Dreamlight Valley'});
   assert.equal(await nativeWorld.isDisabled(),false,
     'DB-01 original World-context tag must enable world source browsing');
