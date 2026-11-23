@@ -4,6 +4,7 @@ import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {
   ORIGINAL_GUIDE_SHARD_FILE_SHA,
+  ORIGINAL_GUIDE_SHARD_FILE_NAMES,
   ORIGINAL_GUIDE_SHARD_SOURCE_VERSION,
   ORIGINAL_GUIDE_SHARD_AUDIT_SHA,
   ORIGINAL_GUIDE_SHARD_TOTAL_BYTES,
@@ -40,4 +41,20 @@ test('actual owner-original shard files have exact full bytes if private fixture
     assert.equal(createHash('sha256').update(bytes).digest('hex'),expectedOriginalGuideShardSha(name));
   }
   assert.equal(total,ORIGINAL_GUIDE_SHARD_TOTAL_BYTES);
+});
+
+test('typed 32-source ledger exports frozen canonical filenames and rejects unsafe aliases',()=>{
+  const expected=Array.from({length:32},(_,i)=>'part-'+String(i).padStart(2,'0')+'.json');
+  assert.deepEqual(ORIGINAL_GUIDE_SHARD_FILE_NAMES,expected);
+  assert(Object.isFrozen(ORIGINAL_GUIDE_SHARD_FILE_NAMES));
+  assert(Object.isFrozen(ORIGINAL_GUIDE_SHARD_FILE_SHA));
+  for(const name of expected){
+    assert.equal(expectedOriginalGuideShardSha(name),ORIGINAL_GUIDE_SHARD_FILE_SHA[name]);
+  }
+  for(const unknown of ['__proto__','constructor','part-00.JSON','part-0.json',
+    'part-033.json','part-00.json?download=1','part-00.json/..','/part-00.json',
+    'part-31.json\0',42,undefined,{}]){
+    assert.throws(()=>expectedOriginalGuideShardSha(unknown),
+      /unknown owner-original shard/);
+  }
 });
