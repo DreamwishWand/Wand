@@ -6,10 +6,10 @@
   import {
     loadCollectionDb01Facets,collectionDb01Groups,collectionDb01Matches,
     collectionDb01FacetLabel,collectionDb01TagLabel,COLLECTION_DB01_COLOR_SWATCHES,
-    COLLECTION_DB01_SUBMENUS,collectionDb01InCategory,
-    type CollectionDb01Index,type CollectionDb01Facet,type CollectionDb01Group,
-    type CollectionDb01SubmenuCode
+    type CollectionDb01Index,type CollectionDb01Facet,type CollectionDb01Group
   } from '$lib/collection/db01-native-facets';
+  import {COLLECTION_UNIVERSE_UNTAGGED,sortedCollectionUniverseOptions,
+    groupCollectionUniverseItems} from '$lib/collection/browse-layout.ts';
   import AcquisitionEvidence from '$lib/collection/AcquisitionEvidence.svelte';
   import {loadDb01ItemAcquisitionHandoff,type Db01ItemAcquisitionIndex}
     from '$lib/acquisition/db01-item-acquisition.ts';
@@ -101,13 +101,12 @@
   let sourceFacetGroups:readonly CollectionDb01Group[]=[];
   let sourceChoices:Partial<Record<CollectionDb01Facet,string>>={};
   let sourceAllMatching:CollectionItem[]=[];
-  let sourceCategory:CollectionDb01SubmenuCode|null=null;
   let sourceActivityType:number|null=null;
+  let sourceUniverseSelection:string|null=null;
   let sourceActivityTypeCards:{
     code:number;nativeName:string|null;total:number;owned:number
   }[]=[];
-  let originalCategoryCards:{code:CollectionDb01SubmenuCode;family:string;total:number;owned:number}[]=[];
-  let originalClassesOpen=false;
+  let sourceCategoryCardsVisible=true;
   let sourceGroupsCacheKey='';
   let universeSections:{facet:CollectionFacet;items:CollectionItem[]}[]=[];
   let worldFilter='';
@@ -140,11 +139,9 @@
   $: workspace=state.workspaces.find(x=>x.id===state.active)??state.workspaces[0];
   $: entries=workspace?.entries??{};
   $: selectionLabel=sourceActivityType!==null
-    ? sourceActivityTypeLabel(locale,sourceActivityType,
+    ?sourceActivityTypeLabel(locale,sourceActivityType,
         sourceIndex?.activityTypeNames.get(sourceActivityType)??null)
-    : sourceCategory!==null
-      ?categoryLabel(locale,COLLECTION_DB01_SUBMENUS.find(c=>c.code===sourceCategory)?.family??'')
-      :facets.find(x=>x.id===selected)?.label??'';
+    :facets.find(x=>x.id===selected)?.label??'';
   // Render each Rust/WASM query result in its original order. Grouping all
   // visible rows by category would move existing cards when another page is
   // appended, producing scroll jumps and misleading partial group counts.
@@ -154,26 +151,28 @@
   $: selectedEntry=selectedItem?entries[String(selectedItem.itemId)]??{}:{};
   $: selectedGridRefs=selectedItem?savedGridByItem[String(selectedItem.itemId)]??null:null;
   $: selectedDb04Refs=selectedItem?savedDb04ByItem[String(selectedItem.itemId)]??null:null;
-  $: universeChoices=(sourceIndex&&sourceUniverseOptions.length
-    ?sourceUniverseOptions.map(option=>({
-        id:option.key,label:collectionDb01TagLabel(locale,option.key),total:option.count
-      }))
+  $: universeChoices=(sourceIndex
+    ?sortedCollectionUniverseOptions(sourceIndex,locale,
+        key=>collectionDb01TagLabel(locale,key),
+        locale==='ja'?'ユニバース未設定':'No source universe tag')
     :universeScopeOptions).filter(option=>
       option.label.toLocaleLowerCase(locale).includes(universeSearch.trim().toLocaleLowerCase(locale)));
   $: landingUniverse=viewAxis==='universe'&&!universeFilter&&
-    !sourceChoices.disneyUniverse&&!selected&&sourceCategory===null&&
-    sourceActivityType===null&&!search.trim()&&
+    sourceUniverseSelection===null&&!selected&&sourceActivityType===null&&!search.trim()&&
     status==='all'&&!favoriteOnly&&!expansion&&!acquisitionFilter;
+  $: landingWorld=viewAxis==='world'&&!selected&&sourceActivityType===null&&
+    !browsingAllItems&&!search.trim()&&status==='all'&&!favoriteOnly&&
+    nameStatus==='all'&&!expansion&&!acquisitionFilter&&
+    Object.keys(sourceChoices).every(key=>key==='worldContextTag');
   // Each category may use a different proven subgroup axis. Only Furniture
   // and Clothing currently have a verified Universe-based browse path.
   // Biome/subtype families go directly to items until exact source groups land.
-  $: landingSubgroup=viewAxis==='world'&&Boolean(selected)&&
-    !bypassCategoryGroups&&!universeFilter&&!search.trim()&&
-    status==='all'&&!favoriteOnly&&!expansion&&!acquisitionFilter&&
-    !Object.keys(sourceChoices).length&&categoryUniverseFacets.length>0;
-  $: universeSectionView=viewAxis==='universe'&&Boolean(universeFilter)&&
-    !sourceIndex&&!selected&&!search.trim()&&status==='all'&&!favoriteOnly&&!expansion;
-  $: isBrowsing=Boolean(browsingAllItems||selected||sourceCategory!==null||
+  $: landingSubgroup=false;
+  $: universeSectionView=viewAxis==='universe'&&Boolean(
+    sourceUniverseSelection!==null||universeFilter)&&!selected&&
+    sourceActivityType===null&&!search.trim()&&status==='all'&&
+    !favoriteOnly&&!expansion&&!acquisitionFilter;
+  $: isBrowsing=Boolean(browsingAllItems||selected||sourceUniverseSelection!==null||
     sourceActivityType!==null||search.trim()||status!=='all'||favoriteOnly||
     nameStatus!=='all'||expansion||worldFilter||universeFilter||
     Object.keys(sourceChoices).length||acquisitionFilter||viewAxis==='universe');
