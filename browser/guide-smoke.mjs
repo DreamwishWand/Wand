@@ -36,7 +36,8 @@ try {
     if (response.url().includes('/guide/public/')) downloaded.push(response.url());
   });
   await page.goto(url, {waitUntil: 'domcontentloaded'});
-  await page.locator('.quest-sections').waitFor({timeout: 30000});
+  await page.getByRole('navigation',{name:'ゲーム内のクエスト分類'})
+    .waitFor({timeout:30000});
   assert.equal(await page.locator('.catalog-meta').evaluate(el=>el.open),false,
     'static source counters and source details should not bury the quest list');
   assert.match(await page.locator('.numbers').textContent(), /733[\s\S]*7,878[\s\S]*11,782/);
