@@ -210,7 +210,7 @@ test('all 394 original Companion IDs match SHA-pinned DB-02 names and keep Critt
   assert.deepEqual(all.map(row=>row.itemId),ids);
   for(const item of all){
     seen++;
-    assert.equal(item.publicIdentity,identity.getItem(item.itemId));
+    assert.deepEqual(item.publicIdentity,identity.getItem(item.itemId));
     assert.equal(item.original.source.itemId,Number(item.itemId));
     assert.equal(item.original.source.nativeKey,item.publicIdentity.native.nativeNameKey);
     assert.equal(item.originalNativeNameKeyVerified,true);
