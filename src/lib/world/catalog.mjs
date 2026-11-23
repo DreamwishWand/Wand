@@ -1,7 +1,7 @@
-import { GRIDAREA_ROT_COS, GRIDAREA_ROT_SIN, nativeObliqueSourceLocalPosition } from './native-oblique.ts';
+import {GRIDAREA_ROT_COS,GRIDAREA_ROT_SIN,nativeObliqueSourceLocalPosition} from './native-oblique.ts';
 
 // Read-only DB-04 adapter for World Editor, Decorate, Presets and Collection.
-// This API never invents 2D coordinates, path/fence connectivity or permissions.
+// No invented 2D coordinates, path/fence connectivity or permissions.
 export const WORLD_SCHEMA = 'wand.db04.world@1';
 
 // Source-pinned Steam GridData.get_Item and bit-width native read paths.
