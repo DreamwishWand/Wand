@@ -171,7 +171,8 @@ try{
   });
   await page.getByRole('button',{name:'セーブファイル管理'}).click();
   await page.getByRole('button',{name:'Save Editor（テスト版）'}).click();
-  await page.waitForURL('**/save/preview/');
+  await page.waitForURL('**/save/');
+  await page.locator('main.editor-workspace').getByRole('heading',{name:'Save Editor'}).waitFor();
   await page.locator('.active-save-file').getByText('shared-preview.profile').waitFor();
   const sharedSlotCount=page.locator('.slot-actions [role="status"]').filter({hasText:'件'}).first();
   await sharedSlotCount.waitFor({timeout:30000});
