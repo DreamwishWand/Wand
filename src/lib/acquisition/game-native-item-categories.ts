@@ -1,5 +1,6 @@
 /**
- * DB-02 four acquisition categories, sourced ONLY from original DDV game files.
+ * DB-02 six Owner-approved acquisition-source groups, sourced ONLY from
+ * original DDV game files. These group names are the shared DB contract.
  *
  * This is a many-to-many Item ID classification, not a historical shop calendar.
  * No offer dates/prices, code tokens, Twitch campaigns, websites, server queries
@@ -12,6 +13,16 @@
 import {
   ORIGIN_SCHEMA,type OriginDatabase,type ItemOrigin
 } from './origins.ts';
+import {
+  hasPinnedNativeRecipeEvidence,type NativeRecipeIndex
+} from './public-native-recipes.ts';
+import {
+  hasPinnedNativeActivityEvidence,type NativeActivityResultIndex
+} from './public-native-activities.ts';
+import {
+  hasPinnedPublicQuestAcquisitionEvidence,
+  type PublicQuestAcquisitionIndex
+} from '../guide/public-quest-acquisition.ts';
 import {hasPinnedPublicIapEvidence,type PublicIapSourceIndex}
   from './public-static-iap.ts';
 import {STARPATH_PUBLIC_SHA} from '../guide/public-starpath.ts';
@@ -34,15 +45,18 @@ import {
 
 export const DB02_GAME_NATIVE_ITEM_CATEGORIES_SCHEMA=
   'wand.db02.game-native-item-categories@1' as const;
-const CATEGORIES=Object.freeze([
-  'premium_shop','star_path','in_game_limited_event','real_time_limited_event',
-  'iap_package_reward'
+export const DB02_ACQUISITION_CATEGORY_ORDER=Object.freeze([
+  'ordinary_gameplay','premium_shop','star_path','in_game_limited_event',
+  'real_time_limited_event','iap_package_reward'
 ] as const);
+const CATEGORIES=DB02_ACQUISITION_CATEGORY_ORDER;
 export type GameNativeItemCategory=typeof CATEGORIES[number];
 export type GameNativeCategoryEvidenceBasis=
   'original_shop_offer_item_id'|'original_star_path_reward_item_id'|
   'original_game_event_reward_item_id'|'original_pet_source_enum'|
-  'original_iap_package_reward_item_id';
+  'original_iap_package_reward_item_id'|
+  'original_recipe_result_item_id'|'original_activity_result_item_id'|
+  'original_quest_reward_item_id'|'original_friendship_reward_item_id';
 const ID=/^[1-9][0-9]{0,15}$/;
 const EMPTY=Object.freeze([]) as readonly GameNativeCategoryEvidence[];
 const EMPTY_CATEGORIES=Object.freeze([]) as readonly GameNativeItemCategory[];
@@ -81,6 +95,11 @@ export interface GameNativeItemCategoryIndex {
     nativeStarPathRewardOccurrences:67;
     nativeGameEventRewardOccurrences:202;
     originalIapPackageRewardOccurrences:291;
+    originalRecipeResultOccurrences:1943;
+    originalActivityResultOccurrences:763;
+    originalQuestRewardOccurrences:395;
+    originalFriendshipRewardOccurrences:16;
+    nativePetOrdinaryRows:9;
     nativePetPremiumShopRows:95;
     nativePetStarPathRows:7;
     nativePetGameEventRows:9;
@@ -88,6 +107,7 @@ export interface GameNativeItemCategoryIndex {
     unresolvedOriginalPremiumRows:1830;
     unresolvedOriginalTimeLimitedRows:368;
     distinctClassifiedItemIds:number;
+    ordinaryGameplayItemIds:number;
     premiumShopItemIds:number;
     starPathItemIds:number;
     inGameLimitedEventItemIds:number;
@@ -142,7 +162,7 @@ function nativePetCategory(category:NativePetSourceCategory):GameNativeItemCateg
     case 'star_path':return 'star_path';
     case 'event':return 'in_game_limited_event';
     case 'exclusive_promotion':return 'real_time_limited_event';
-    case 'quest':case 'timebending':return null;
+    case 'quest':case 'timebending':return 'ordinary_gameplay';
   }
 }
 /**
@@ -157,7 +177,10 @@ export function indexGameNativeItemCategories(
   iap:PublicIapSourceIndex,
   rewards:PublicEventFriendshipAcquisitionIndex,
   pets:NativePetSourceIndex,
-  online:NativeOnlineCategoryIndex
+  online:NativeOnlineCategoryIndex,
+  recipes:NativeRecipeIndex,
+  activities:NativeActivityResultIndex,
+  quest:PublicQuestAcquisitionIndex
 ):GameNativeItemCategoryIndex{
   check(origins?.schema===ORIGIN_SCHEMA&&
     origins.getCoverage().linkedRoutes===1255&&
@@ -182,7 +205,16 @@ export function indexGameNativeItemCategories(
     hasPinnedNativeOnlineCategoryEvidence(online)&&
     online.coverage.premiumCategoryRows===1830&&
     online.coverage.timeLimitedCategoryRows===368&&
-    online.coverage.singleOfferOrCampaignLinkVerified===false,
+    online.coverage.singleOfferOrCampaignLinkVerified===false&&
+    hasPinnedNativeRecipeEvidence(recipes)&&
+    recipes.coverage.recipeDefinitions===1943&&
+    recipes.origins.length===1943&&
+    hasPinnedNativeActivityEvidence(activities)&&
+    activities.coverage.nativeResultPaths===763&&
+    activities.origins.length===763&&
+    hasPinnedPublicQuestAcquisitionEvidence(quest)&&
+    quest.coverage.totalItemOriginCandidates===395&&
+    quest.origins.length===395,
     'ORIGINAL_SOURCE_REQUIRED');
 
   const byItem=new Map<string,GameNativeCategoryEvidence[]>();
@@ -213,6 +245,48 @@ export function indexGameNativeItemCategories(
         origin.originId,false);
     }
   }
+  // Ordinary gameplay describes the configured method, NOT unconditional
+  // availability. This includes game actions/recipes and quest/friendship
+  // reward references; individual quests may have unlock/event conditions.
+  let recipeCount=0;
+  for(const origin of recipes.origins){
+    check((origin.kind==='cooking'||origin.kind==='crafting')&&
+      origin.routeStatus==='confirmed_source_link'&&
+      origin.source.kind==='verified_game_native'&&
+      origin.originId.startsWith('native:recipe:')&&
+      recipes.getResultOrigins(origin.itemId).includes(origin),
+      'INVALID_RECIPE_ORIGIN');
+    add(origin.itemId,'ordinary_gameplay','original_recipe_result_item_id',
+      origin.originId,false);
+    recipeCount++;
+  }
+  check(recipeCount===1943,'RECIPE_CENSUS');
+  let activityCount=0;
+  for(const origin of activities.origins){
+    check(['fishing','mining','timebending','farming'].includes(origin.kind)&&
+      origin.routeStatus==='confirmed_source_link'&&
+      origin.source.kind==='verified_game_native'&&
+      origin.originId.startsWith('native:path:')&&
+      activities.getItemOrigins(origin.itemId).includes(origin),
+      'INVALID_ACTIVITY_ORIGIN');
+    add(origin.itemId,'ordinary_gameplay','original_activity_result_item_id',
+      origin.originId,false);
+    activityCount++;
+  }
+  check(activityCount===763,'ACTIVITY_CENSUS');
+  let questCount=0;
+  for(const origin of quest.origins){
+    check(origin.kind==='quest_reward'&&
+      origin.routeStatus==='static_candidate_only'&&
+      origin.source.kind==='verified_game_native'&&
+      origin.originId.startsWith('db03:public:quest:')&&
+      quest.getItemCandidates(origin.itemId).includes(origin),
+      'INVALID_QUEST_ORIGIN');
+    add(origin.itemId,'ordinary_gameplay','original_quest_reward_item_id',
+      origin.originId,false);
+    questCount++;
+  }
+  check(questCount===395,'QUEST_CENSUS');
   let iapCount=0;
   for(const origin of iap.origins){
     check(origin.kind==='purchase_bonus'&&
@@ -249,6 +323,19 @@ export function indexGameNativeItemCategories(
     eventCount++;
   }
   check(eventCount===202,'NATIVE_EVENT_CENSUS');
+  let friendshipCount=0;
+  for(const origin of rewards.origins){
+    if(origin.kind!=='friendship_reward')continue;
+    check(origin.routeStatus==='static_candidate_only'&&
+      origin.source.kind==='verified_game_native'&&
+      origin.originId.startsWith('db03:source:friendship:')&&
+      rewards.getItemCandidates(origin.itemId).includes(origin),
+      'INVALID_FRIENDSHIP_ORIGIN');
+    add(origin.itemId,'ordinary_gameplay','original_friendship_reward_item_id',
+      origin.originId,false);
+    friendshipCount++;
+  }
+  check(friendshipCount===16,'FRIENDSHIP_CENSUS');
   let petClassified=0;
   for(const row of pets.classifications){
     const category=nativePetCategory(row.category);
@@ -261,7 +348,7 @@ export function indexGameNativeItemCategories(
       row.itemId+':'+row.category,true);
     petClassified++;
   }
-  check(petClassified===125,'PET_SOURCE_CENSUS');
+  check(petClassified===134,'PET_SOURCE_CENSUS');
 
   const byCategory=new Map<GameNativeItemCategory,Set<string>>(
     CATEGORIES.map(c=>[c,new Set()])
@@ -302,6 +389,11 @@ export function indexGameNativeItemCategories(
     nativeStarPathRewardOccurrences:67 as const,
     nativeGameEventRewardOccurrences:202 as const,
     originalIapPackageRewardOccurrences:291 as const,
+    originalRecipeResultOccurrences:1943 as const,
+    originalActivityResultOccurrences:763 as const,
+    originalQuestRewardOccurrences:395 as const,
+    originalFriendshipRewardOccurrences:16 as const,
+    nativePetOrdinaryRows:9 as const,
     nativePetPremiumShopRows:95 as const,
     nativePetStarPathRows:7 as const,
     nativePetGameEventRows:9 as const,
@@ -309,6 +401,7 @@ export function indexGameNativeItemCategories(
     unresolvedOriginalPremiumRows:1830 as const,
     unresolvedOriginalTimeLimitedRows:368 as const,
     distinctClassifiedItemIds:known.length,
+    ordinaryGameplayItemIds:sortedByCategory.get('ordinary_gameplay')!.length,
     premiumShopItemIds:sortedByCategory.get('premium_shop')!.length,
     starPathItemIds:sortedByCategory.get('star_path')!.length,
     inGameLimitedEventItemIds:sortedByCategory.get('in_game_limited_event')!.length,

@@ -275,7 +275,7 @@ export interface PublicSourceCatalog{
   ):Promise<PublicSourceItemCompanionNameLookup>;
   /** Native OnlineCategory enum: Premium/TimeLimited, not a specific sale. */
   loadNativeOnlineCategories():Promise<NativeOnlineCategoryIndex>;
-  /** Original Steam game files only: 4 Item-ID categories with overlaps.
+  /** Six Owner-approved original-game Item-ID acquisition groups with overlaps.
    * No shop history schedule/price, code text, web claims or live status. */
   loadGameNativeItemCategories():Promise<GameNativeItemCategoryIndex>;
   lookupWithGameNativeItemCategories(
@@ -560,10 +560,11 @@ export async function loadPublicSourceCatalog(
   const loadOnline=()=>nativeOnlineCategoryPromise??=
     loadPinnedNativeOnlineCategories(basePath,fetcher);
   const loadGameNativeCategories=()=>gameNativeCategoriesPromise??=
-    Promise.all([loadOnline(),loadPets()]).then(([online,pets])=>
-      indexGameNativeItemCategories(
+    Promise.all([loadOnline(),loadPets(),loadRecipes(),loadActivities()]).then(
+      ([online,pets,recipes,activities])=>indexGameNativeItemCategories(
         origins,nativeShopSource,historicalNativeShopSource,
-        nativeIapSource,eventFriendshipSource,pets,online
+        nativeIapSource,eventFriendshipSource,pets,online,
+        recipes,activities,questSource
       )
     );
   const loadDistribution=()=>distributionScopePromise??=
