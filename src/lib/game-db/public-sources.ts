@@ -76,6 +76,17 @@ import {
   createDb00NativeLootContextReader,
   type Db00NativeLootContextReader,type Db00NativeLootContextItem
 } from './native-loot-context.ts';
+import {
+  createDb00QuestReader,
+  type Db00QuestReader,type Db00QuestItemEvidence
+} from './native-quests.ts';
+import {verifyPublicQuestIndex} from '../guide/public-guide.ts';
+import {
+  loadPublicQuestConditions,PUBLIC_QUEST_CONDITIONS_FILE
+} from '../guide/public-quest-conditions.ts';
+import {
+  loadPublicQuestRewards,DB03_QUEST_REWARDS_FILE
+} from '../guide/public-quest-rewards.ts';
 import {loadPublicStarpath} from '../guide/public-starpath.ts';
 import {
   loadStarpathRewardExtras,STARPATH_EXTRA_RELEASE
@@ -161,6 +172,12 @@ export interface PublicSharedGameSources{
   loadNativeLootCandidateSources():Promise<Db00NativeLootReader>;
   /** Native LootTable names + original Furniture/ActivityItem references. */
   loadNativeLootContextSources():Promise<Db00NativeLootContextReader>;
+  /** Static Quest conditions, Item objectives and reward candidates. */
+  loadNativeQuestSources():Promise<Db00QuestReader>;
+  /** A shared Item ID -> original Quest targets and reward candidates. */
+  getNativeQuestItemEvidence(
+    itemId:string|number
+  ):Promise<Db00QuestItemEvidence>;
   /** One Item ID -> named static LootTable / original referring objects. */
   getNativeLootContextEvidence(
     itemId:string|number
@@ -360,6 +377,34 @@ export async function openPublicSharedGameSources(
       guaranteedLootDropVerified:false as const
     });
   };
+  let nativeQuestSources:Promise<Db00QuestReader>|null=null;
+  const loadNativeQuestSources=():Promise<Db00QuestReader>=>
+    nativeQuestSources??=(async()=>{
+      const index=verifyPublicQuestIndex(questCatalogue);
+      const [conditions,rewards]=await Promise.all([
+        loadPublicQuestConditions(index,
+          basePath+'/guide/public/'+PUBLIC_QUEST_CONDITIONS_FILE,once),
+        loadPublicQuestRewards(index,
+          basePath+'/guide/public/'+DB03_QUEST_REWARDS_FILE,once)
+      ]);
+      return createDb00QuestReader(
+        database,joined,index,conditions,rewards,guideQuestTargets
+      );
+    })();
+  const getNativeQuestItemEvidence=async(itemId:string|number):
+    Promise<Db00QuestItemEvidence>=>{
+    // Validate before fetching optional Quest conditions/reward projections.
+    const shared=joined.getItem(itemId);
+    const item=(await loadNativeQuestSources()).getItem(shared.itemId);
+    assert(item.itemId===shared.itemId &&
+      item.shared.itemId===shared.itemId &&
+      item.staticSourceOnly===true &&
+      item.mandatoryRequirementVerified===false &&
+      item.guaranteedRewardVerified===false &&
+      item.playerOwnershipVerified===false,
+      'NATIVE_QUEST_ITEM_ID_OR_STATUS_MISMATCH');
+    return item;
+  };
   let nativeLootContext:Promise<Db00NativeLootContextReader>|null=null;
   const loadNativeLootContextSources=():Promise<Db00NativeLootContextReader>=>
     nativeLootContext??=Promise.all([
@@ -479,6 +524,7 @@ export async function openPublicSharedGameSources(
     loadNativeActivitySources,getNativeAcquisitionEvidence,
     loadNativeLootCandidateSources,getAllNativeAcquisitionEvidence,
     loadNativeLootContextSources,getNativeLootContextEvidence,
+    loadNativeQuestSources,getNativeQuestItemEvidence,
     loadNativeCookingIngredientSources,
     loadNativeStallPoolSources,getNativeStallCandidateEvidence,
     loadStarpathRewardCrosswalk,
