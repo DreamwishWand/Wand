@@ -66,7 +66,8 @@ test('Public Steam 1.26.2 DB-00 reveals concrete Twitch Drops and code reward na
   assert.equal(result.getCampaignCandidates('code:DDVPRIDE2026').length,2);
   assert(result.coverage.uniquelyMatchedOfficialRewards>=6);
   assert.equal(result.coverage.examinedOfficialRewardNames,
-    OFFICIAL_CAMPAIGNS.reduce((count,c)=>count+c.rewards.filter(r=>r.itemId===null).length,0));
+    OFFICIAL_CAMPAIGNS.filter(c=>!c.communityArchiveEvidence)
+      .reduce((count,c)=>count+c.rewards.filter(r=>r.itemId===null).length,0));
   assert.equal(result.coverage.examinedOfficialRewardNames,
     result.coverage.uniquelyMatchedOfficialRewards+
     result.coverage.ambiguousOfficialRewards+result.coverage.unmatchedOfficialRewards);
@@ -163,7 +164,8 @@ test('Community Premium Shop name matches retain week, price and uncertainty wit
     .some(c=>c.itemId==='50900411'&&c.componentName==='Ballerina Dress'));
   assert.equal(result.coverage.totalCandidateRelations,
     result.coverage.uniquelyMatchedCommunityShopComponents+
-    result.coverage.uniquelyMatchedOfficialRewards);
+    result.coverage.uniquelyMatchedOfficialRewards+
+    result.coverage.uniquelyMatchedCommunityCampaignRewards);
   assert.equal(result.coverage.distinctCandidateItemIds,
     new Set([
       ...result.getCampaignCandidates('twitch:2023-launch').map(r=>r.itemId),
@@ -255,7 +257,7 @@ test('Official campaign reward browser retains every unresolved name and never t
     ['50400102'],['40001607'],['40001609'],['50700124']
   ]);
   const onlyCodes=index.listCampaignRewardResolutions('redeem_code');
-  assert.equal(onlyCodes.length,20);
+  assert.equal(onlyCodes.length,29);
   assert(onlyCodes.includes(code));
   assert.equal(onlyCodes.filter(x=>x.campaignId.startsWith('code:PRIDE2023')).length,8);
   assert.equal(onlyCodes.filter(x=>/^code:PRIDE[A-Z]+24$/.test(x.campaignId)).length,8);
