@@ -7,7 +7,7 @@
  * guaranteed grant, currently open event, or purchased premium pass.
  */
 import {loadPublicStarpath,verifyPublicStarpath,STARPATH_SOURCE_SHA,STARPATH_PUBLIC_SHA}
-  from './public-starpath.mjs';
+  from './public-starpath.ts';
 import {guideCalendarEvents} from './event-calendar.ts';
 import type {Db01CatalogClient,Db01Item} from '../items/index';
 
