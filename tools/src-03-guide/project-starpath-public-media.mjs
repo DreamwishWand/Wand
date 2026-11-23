@@ -15,7 +15,7 @@ import {createHash} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 import {VERIFIED_STARPATH_REWARD_NAMES} from '../../src/lib/guide/starpath-reward-names.ts';
 import {verifyPublicStarpath} from '../../src/lib/guide/public-starpath.ts';
-import {verifyStarpathMediaManifest} from '../../src/lib/guide/starpath-public-media.mjs';
+import {verifyStarpathMediaManifest} from '../../src/lib/guide/starpath-public-media.ts';
 
 const RELEASE='steam-v1.26.2';
 const SOURCE_HASH='fd2d07d541293a19ac7b845e996ccf4e3af41270c79daaa56b2ff74316a45e9f';
