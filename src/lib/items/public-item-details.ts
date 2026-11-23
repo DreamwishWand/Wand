@@ -18,6 +18,12 @@ import {
 } from '../acquisition/db01-item-acquisition.ts';
 import type {GameNativeItemCategory} from
   '../acquisition/game-native-item-categories.ts';
+import {
+  loadDb01ItemSourceRelations,
+  type Db01ItemSourceRecord,
+  type Db01ItemSourceRelations,
+  type Db01SourceKind,
+} from '../acquisition/db01-item-source-relations.ts';
 
 export const PUBLIC_ITEM_DETAILS_CONTRACT =
   'wand.db01.public-item-details@1' as const;
@@ -31,6 +37,10 @@ export interface PublicItemDetails {
   /** Neither group membership nor native Premium/TimeLimited implies availability. */
   readonly currentAvailabilityVerified: false;
 }
+/** Opt-in full native source-ID links, including non-acquisition roles. */
+export interface PublicItemDetailsWithSources extends PublicItemDetails {
+  readonly sourceRelations: Readonly<Db01ItemSourceRecord>;
+}
 export interface PublicItemDetailsClient {
   readonly contract: typeof PUBLIC_ITEM_DETAILS_CONTRACT;
   readonly release: ItemMasterRelease;
@@ -41,6 +51,21 @@ export interface PublicItemDetailsClient {
     category?: GameNativeItemCategory
   ): Promise<readonly number[]>;
   getAcquisitionCoverage(): Promise<Readonly<Db01ItemAcquisitionCoverage>>;
+  /**
+   * Full native IDs, roles and occurrence positions are available on demand;
+   * normal UI must resolve names/images rather than render technical IDs.
+   * The original getItem/getItems remain lightweight for existing consumers.
+   */
+  getItemWithSources(itemId: number):
+    Promise<Readonly<PublicItemDetailsWithSources> | null>;
+  getItemsWithSources(itemIds: readonly number[]):
+    Promise<readonly (Readonly<PublicItemDetailsWithSources> | null)[]>;
+  /** Exposes source-only IDs even when missing from the current Item master. */
+  getSourceRelations(itemId: number): Promise<Readonly<Db01ItemSourceRecord>>;
+  /** Reverse original Quest/Recipe/Star Path/etc. IDs to Item IDs. */
+  getSourceItemIds(kind: Db01SourceKind, sourceId: string):
+    Promise<readonly number[]>;
+  listItemIdsWithSources(): Promise<readonly number[]>;
 }
 
 function assert(ok: unknown, code: string): asserts ok {
@@ -57,7 +82,10 @@ export async function openPublicItemDetails(
   const publicBase = basePath && !basePath.startsWith('/')
     ? '/' + basePath : basePath;
   let sidecarTask: Promise<Db01ItemAcquisitionIndex> | null = null;
+  let sourcesTask: Promise<Db01ItemSourceRelations> | null = null;
+  let allSourceItemIds: readonly number[] | null = null;
   const combined = new Map<number, Readonly<PublicItemDetails>>();
+  const combinedWithSources = new Map<number, Readonly<PublicItemDetailsWithSources>>();
   const idLists = new Map<GameNativeItemCategory | undefined, readonly number[]>();
 
   function sidecar(): Promise<Db01ItemAcquisitionIndex> {
@@ -74,6 +102,38 @@ export async function openPublicItemDetails(
       if (sidecarTask === task) sidecarTask = null;
     });
     return task;
+  }
+  function sources(): Promise<Db01ItemSourceRelations> {
+    if (sourcesTask) return sourcesTask;
+    const task = loadDb01ItemSourceRelations(publicBase, fetcher)
+      .then(index => {
+        assert(index.gameVersion === master.release.target.gameVersion,
+          'SOURCE_LINK_VERSION_MISMATCH');
+        return index;
+      });
+    sourcesTask = task;
+    void task.catch(() => {
+      if (sourcesTask === task) sourcesTask = null;
+    });
+    return task;
+  }
+  function combineWithSourceLinks(
+    detail: Readonly<PublicItemDetails>,
+    index: Db01ItemSourceRelations
+  ): Readonly<PublicItemDetailsWithSources> {
+    const cached = combinedWithSources.get(detail.itemId);
+    if (cached) return cached;
+    const sourceRelations = index.getItem(detail.itemId);
+    const categories = detail.acquisition.categories;
+    assert(sourceRelations.categories.length === categories.length &&
+      sourceRelations.categories.every((value, i) => value === categories[i]),
+      'ACQUISITION_SOURCE_CATEGORY_MISMATCH');
+    const enriched: Readonly<PublicItemDetailsWithSources> = Object.freeze({
+      ...detail,
+      sourceRelations,
+    });
+    combinedWithSources.set(detail.itemId, enriched);
+    return enriched;
   }
   function combine(
     definition: ItemMasterRecord,
@@ -118,6 +178,33 @@ export async function openPublicItemDetails(
     },
     async getAcquisitionCoverage() {
       return (await sidecar()).coverage;
+    },
+    async getItemWithSources(itemId: number) {
+      const definition = await master.getItem(itemId);
+      if (!definition) return null;
+      const [acquisition, sourceIndex] = await Promise.all([sidecar(), sources()]);
+      return combineWithSourceLinks(combine(definition, acquisition), sourceIndex);
+    },
+    async getItemsWithSources(itemIds: readonly number[]) {
+      const definitions = await master.getItems(itemIds);
+      if (!definitions.some(Boolean)) return definitions.map(() => null);
+      const [acquisition, sourceIndex] = await Promise.all([sidecar(), sources()]);
+      return definitions.map(definition =>
+        definition ? combineWithSourceLinks(combine(definition, acquisition), sourceIndex) : null);
+    },
+    async getSourceRelations(itemId: number) {
+      return (await sources()).getItem(itemId);
+    },
+    async getSourceItemIds(kind: Db01SourceKind, sourceId: string) {
+      const ids = (await sources()).getSourceItemIds(kind, sourceId);
+      return Object.freeze(ids.map(id => Number(id)));
+    },
+    async listItemIdsWithSources() {
+      if (allSourceItemIds) return allSourceItemIds;
+      const ids = Object.freeze((await sources()).listItemIds()
+        .map(id => Number(id)));
+      allSourceItemIds = ids;
+      return ids;
     },
   });
 }
