@@ -38,7 +38,7 @@ The former manual import of the two Condition JSON files remains available for a
 
 ## Browser import security
 
-`src/lib/guide/client.mjs` detects current Condition pairs only **at the exact sibling root** of the discovered `guide/quest-search.json`; it does not scan arbitrary unrelated folders or infer data provenance from filenames. The two files must both be present and of the same format. A partial pair, duplicate or mixed pair fails closed. If full v1 and v2 pairs coexist, v2 is preferred; neither is interpreted before the separate, byte-pinned `importCurrentGuideConditions` gate.
+`src/lib/guide/client.ts` detects current Condition pairs only **at the exact sibling root** of the discovered `guide/quest-search.json`; it does not scan arbitrary unrelated folders or infer data provenance from filenames. The two files must both be present and of the same format. A partial pair, duplicate or mixed pair fails closed. If full v1 and v2 pairs coexist, v2 is preferred; neither is interpreted before the separate, byte-pinned `importCurrentGuideConditions` gate.
 
 `src/routes/guide/+page.svelte` does not expose a partially imported folder if Condition authentication fails: it first validates the quest index, current Condition pair and bridge and then atomically installs them into the UI state. A Guide-only folder continues to import without Condition sidecars. Selecting a new folder invalidates prior source and in-progress imports.
 
