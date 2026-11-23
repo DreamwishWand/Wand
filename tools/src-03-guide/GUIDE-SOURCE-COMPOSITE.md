@@ -69,7 +69,7 @@ The generated owner-private output was uploaded to
 
 ## Browser consumption (no additional file selection)
 
-`src/lib/guide/source-composite.mjs` exposes a read-only, bounded claim when and **only when** the local browser already holds:
+`src/lib/guide/source-composite.ts` exposes a read-only, bounded claim when and **only when** the local browser already holds:
 
 1. The exact original Steam v1.26.1 `quest-search.json` read through `importGuideSearch` (an out-of-band raw-file SHA-256 gate), and
 2. The independently verified Steam v1.26.2 Condition **v2** index and manifest imported through `importCurrentGuideConditions` (raw index SHA-256, count, native original-source and manifest gates).
