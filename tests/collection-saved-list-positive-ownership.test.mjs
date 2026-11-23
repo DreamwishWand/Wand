@@ -14,7 +14,7 @@ const save=(ListInventories,Version=643)=>({
   World:{privateFields:'not-forwarded'}
 });
 
-test('only explicitly positive ListInventory Amount imports as owned candidate, never missing',()=>{
+test('only explicitly positive ListInventory Amount imports as owned candidate, never missing',async()=>{
   const root=save({
     '0':role(0,'Furniture',{
       '40005160':{Amount:2,Marker:'Favorite'},
@@ -92,7 +92,7 @@ test('12 native ListInventory roles are recognized with compatible type and cano
   assert.deepEqual(sanitizePositiveListInventoryOwnership(got),got);
 });
 
-test('role-mismatched native amount, even positive, must not become owned',()=>{
+test('role-mismatched native amount, even positive, must not become owned',async()=>{
   const actual=await projectPositiveListInventoryOwnership(save({
     '3':role(3,'Makeup',{'140000001':{Amount:0},'140000002':{Amount:4}}),
     '9':role(9,'AvatarFeature',{'70000001':{Amount:-1}}),
@@ -105,7 +105,7 @@ test('role-mismatched native amount, even positive, must not become owned',()=>{
   assert.deepEqual(sanitizePositiveListInventoryOwnership(actual),actual);
 });
 
-test('zero, missing and untrusted amounts leave manual status untouched',()=>{
+test('zero, missing and untrusted amounts leave manual status untouched',async()=>{
   const got=await projectPositiveListInventoryOwnership(save({
     '0':role(0,'Furniture',{
       '40005160':{Amount:0},
@@ -125,7 +125,7 @@ test('zero, missing and untrusted amounts leave manual status untouched',()=>{
   assert.deepEqual(sanitizePositiveListInventoryOwnership(got),got);
 });
 
-test('role descriptors are required, and unknown/changed inventories are not claimed owned',()=>{
+test('role descriptors are required, and unknown/changed inventories are not claimed owned',async()=>{
   const got=await projectPositiveListInventoryOwnership(save({
     '0':role(0,'Clothing',{'40005160':{Amount:1}}),
     '1':role(99,'Clothing',{'50000001':{Amount:1}}),
@@ -138,7 +138,7 @@ test('role descriptors are required, and unknown/changed inventories are not cla
   assert.deepEqual(sanitizePositiveListInventoryOwnership(got),got);
 });
 
-test('unsupported schema, absent inventory and empty observed inventory never fabricate missing',()=>{
+test('unsupported schema, absent inventory and empty observed inventory never fabricate missing',async()=>{
   const cases=[
     [save({'0':role(0,'Furniture',{'40005160':{Amount:1}})},999),'unsupported_schema'],
     [{GameInfo:{Version:643},Player:{},World:{}},'not_observed'],
