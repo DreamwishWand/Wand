@@ -9,7 +9,7 @@ export type CollectionInterfaceLocale=typeof COLLECTION_INTERFACE_LANGUAGES[numb
 const COPY={
   ja:{
     categories:'カテゴリ',record:'ローカル記録',selectRecord:'ローカル記録を選択',
-    manageRecord:'記録の管理',newRecord:'新規',renameRecord:'名前変更',deleteRecord:'削除',
+    manageRecord:'ローカル記録の管理',newRecord:'新規',renameRecord:'名前変更',deleteRecord:'削除',
     publicData:'公開データに戻す',openCatalog:'カタログファイルを開く',
     searchLabel:'8言語のアイテム名で検索',searchPlaceholder:'アイテム名を検索',
     favoritesOnly:'お気に入りのみ表示',filters:'フィルター',world:'ワールド',
