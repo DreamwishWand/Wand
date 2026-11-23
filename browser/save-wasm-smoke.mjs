@@ -1032,6 +1032,15 @@ try{
       UnknownMarker:'preserve-'+i
     };
   }
+  // A separate Full Grid intentionally repeats X/Y already used by other
+  // local Grids. The UI must never infer a shared world coordinate system.
+  manyOriginal.World.GridCollection.Grids['105']={
+    ID:105,Objects:{
+      '1':{ID:1,ItemID:600066777,X:-40,Y:70,
+        Orientation:'GridOrientation_Right',
+        UnknownMarker:'keep-cross-grid'}
+    }
+  };
   await page.getByLabel('検証用セーブファイル').setInputFiles({
     name:'grid-search-over-256.profile',mimeType:'application/octet-stream',
     buffer:syntheticEncryptedP1g(manyOriginal)
@@ -1040,7 +1049,7 @@ try{
   await page.getByRole('region',{name:'セーブ内アイテム'})
     .getByRole('status').filter({hasText:'件'}).waitFor({timeout:30000});
   await objects.getByRole('button',{name:'配置オブジェクトを表示'}).click();
-  await objects.getByRole('status').filter({hasText:'306件'})
+  await objects.getByRole('status').filter({hasText:'307件'})
     .waitFor({timeout:30000});
   const manyMap=objects.getByRole('region',{name:'セーブ内Grid配置マップ'});
   const search= manyMap.getByRole('searchbox',{
@@ -1077,7 +1086,47 @@ try{
     value.X===x305&&value.Y===y305);
   assert.ok(original305&&original305.ID!==original300.ID);
   assert.equal(await manyMap.locator('.marker').count(),257);
+  // Cross-Grid search does not require choosing its local Grid first.
+  // The result must include the type and local Grid ordinal, then jump.
+  await search.fill('600066777');
+  const crossHit=manyMap.getByRole('group',{
+    name:'マップ配置検索結果'
+  }).getByRole('button',{
+    name:'検索結果: 配置 #306 を選択'
+  });
+  assert.match(await crossHit.innerText(),/通常Grid/);
+  assert.match(await crossHit.innerText(),/ローカル #2/);
+  await crossHit.click();
+  assert.equal(await manyMap.getByLabel('表示するセーブGrid')
+    .inputValue(),'2');
+  assert.equal(await manyMap.locator('.marker').count(),1);
+  assert.equal(await lateEditor.getByLabel('新しいX').inputValue(),'-40');
+  assert.equal(await lateEditor.getByLabel('新しいY').inputValue(),'70');
 
+  // Switching across Grids during group selection must discard all previous
+  // members; a combined group may NEVER mix saved local Grids.
+  await manyMap.getByLabel('表示するセーブGrid').selectOption('1');
+  await manyMap.getByRole('button',{name:'複数配置を一括移動'}).click();
+  await search.fill('#300');
+  await manyMap.getByRole('group',{name:'マップ配置検索結果'})
+    .getByRole('button',{
+      name:'検索結果: 配置 #300 をグループに追加または除外'
+    }).click();
+  await search.fill('#306');
+  await manyMap.getByRole('group',{name:'マップ配置検索結果'})
+    .getByRole('button',{
+      name:'検索結果: 配置 #306 をグループに追加または除外'
+    }).click();
+  assert.equal(await manyMap.getByLabel('表示するセーブGrid')
+    .inputValue(),'2');
+  assert.match(await manyMap.getByRole('group',{
+    name:'グループ座標移動'
+  }).innerText(),/選択 1 \/ 16件/);
+  assert.equal(await manyMap.locator('.marker.selected').count(),1);
+  assert.equal(await manyMap.getByRole('button',{
+    name:'選択した1件を座標編集に追加'
+  }).isDisabled(),true);
+  await manyMap.getByLabel('表示するセーブGrid').selectOption('1');
   await manyMap.getByRole('button',{name:'複数配置を一括移動'}).click();
   await search.fill('#300');
   await manyMap.getByRole('group',{name:'マップ配置検索結果'})
@@ -1132,6 +1181,12 @@ try{
   assert.equal(lateObjects['303'].X,348);
   assert.equal(lateCopy.World.GridCollection.DiffGrids['102']
     .ModifiedObjects['6'].X,-12);
+  assert.equal(lateCopy.World.GridCollection.Grids['105']
+    .Objects['1'].UnknownMarker,'keep-cross-grid');
+  assert.deepEqual([
+    lateCopy.World.GridCollection.Grids['105'].Objects['1'].X,
+    lateCopy.World.GridCollection.Grids['105'].Objects['1'].Y
+  ],[-40,70]);
   assert.equal(lateCopy.Player.ListInventories['100'].Inventory['550'].Amount,7);
   assert.equal(manyObjects[String(original300.ID)].X,x300);
   assert.equal(manyObjects[String(original305.ID)].Y,y305);
