@@ -157,7 +157,8 @@ export function getNativeFloorWindowResult(
     typeof solve!=='function')
     throw new TypeError('DB04_FLOOR_RECT_REQUEST_INVALID');
   const view=views.find(row=>row.regionKey===regionKey&&row.viewKey===viewKey);
-  const selected=view?.grids.find(g=>g.gridIdNative===gridIdNative);
+  const selected=view?.grids.find(
+    (grid:{readonly gridIdNative:number})=>grid.gridIdNative===gridIdNative);
   if(!selected)throw new TypeError('DB04_FLOOR_RECT_GRID_NOT_IN_REGION');
   const evidence=getOriginalGridAreaEvidence(catalog,itemId);
   const valid=evidence.status==='source_raw_gridarea_available';
