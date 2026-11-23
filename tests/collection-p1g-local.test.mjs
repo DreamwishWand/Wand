@@ -8,7 +8,7 @@ import {inspectEncryptedSavedStore as inspectEncryptedSavedStoreCore}
   from '../src/lib/collection/saved-store-worker-core.mjs';
 import {projectRustDiscoveryText} from './helpers/rust-collection-discovery.mjs';
 const inspectEncryptedSavedStore=(source,decoder=decodeP1gPackagedProfile)=>
-  inspectEncryptedSavedStoreCore(source,decoder,projectRustDiscoveryText);
+  inspectEncryptedSavedStoreCore(source,projectRustDiscoveryText,decoder);
 import {inspectLocalDb04SaveJoin} from '../src/lib/collection/saved-world-db04-join-worker-core.mjs';
 import {
   makeCollectionDb04ZipFixture,TEST_DB04_LAYOUT,TEST_DB04_GRID
