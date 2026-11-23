@@ -29,19 +29,19 @@ const EMPTY_CANDIDATES=Object.freeze([]) as readonly CompanionOfficialNameCandid
 const PROPOSED=Object.freeze([
   Object.freeze({
     campaignId:'code:COMMUNITYCOMPANIONDRAGON2025',
-    campaignKind:'redeem_code',
+    campaignKind:'redeem_code' as const,
     rewardName:'Sakura Blossom Dragon Companion',
     nativeKey:'Expansion02!BabyDragon!SakuraDragon'
   }),
   Object.freeze({
     campaignId:'twitch:2026-october-showcase',
-    campaignKind:'twitch_drop',
+    campaignKind:'twitch_drop' as const,
     rewardName:'Pirate Crocodile Companion',
     nativeKey:'Crocodile!PirateCrocodile'
   }),
   Object.freeze({
     campaignId:'twitch:2026-keepsake-sea',
-    campaignKind:'twitch_drop',
+    campaignKind:'twitch_drop' as const,
     rewardName:'Pirate Crocodile Companion',
     nativeKey:'Crocodile!PirateCrocodile'
   })
@@ -287,7 +287,7 @@ export function joinOfficialNativeCompanionNameCandidates(
     },
     getCampaignCandidates(campaignId:string){
       ensure(typeof campaignId==='string'&&
-        /^[a-zA-Z0-9][a-zA-Z0-9:._/-]{0,127}$/.test(campaignId),
+        /^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,127}$/.test(campaignId),
         'INVALID_CAMPAIGN_ID');
       return byCampaign.get(campaignId)??EMPTY_CANDIDATES;
     }
