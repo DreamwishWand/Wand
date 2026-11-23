@@ -309,6 +309,13 @@ export function createDb01SharedItemClient(inputs:Db01EvidenceSources):Db01Share
           row.dlcEntitlementVerified===false&&
           row.runtimeSkinClassIndependentlyVerified===false&&
           row.runtimeCritterSceneResolved===false&&
+          (row.companionKind==='critter'?
+            row.nativeCategory==='Companion'&&
+            row.sourceAreaEvidence==='requires_profile_world_scene'&&
+            row.positiveAreaCodes===null&&
+            (row.critterLocationOneofFieldNumber===6||
+              row.critterLocationOneofFieldNumber===7):
+            row.sourceAreaEvidence!=='requires_profile_world_scene')&&
           (row.positiveAreaCodes===null?
             (row.sourceAreaEvidence==='requires_profile_world_scene'&&
               row.nativeCategory==='Companion')||
