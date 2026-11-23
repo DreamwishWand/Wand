@@ -74,7 +74,8 @@ test('native recipe, fish, mining, timebending and seed output are indexed with 
   const cooking=browser.query({kinds:['cooking']},{limit:500});
   assert.equal(crafting.totalOriginRelations,1318);
   assert.equal(cooking.totalOriginRelations,625);
-  assert.equal(browser.getKindItemIds('crafting').length,1318);
+  assert.equal(browser.getKindItemIds('crafting').length,1294,
+    '1,318 recipe rows include 24 repeated result Item IDs');
   assert.equal(browser.getKindItemIds('cooking').length>0,true);
   assert(crafting.items.every(item=>item.origins.every(origin=>
     origin.kind==='crafting'&&origin.routeStatus==='confirmed_source_link'&&
