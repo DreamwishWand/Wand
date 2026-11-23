@@ -100,3 +100,25 @@ test('source Special quests must not be called 70 hidden Quests or 341 complete 
  assert.equal(filterPublicQuests(data,{section:'tutorial'}).total,1);
  assert.equal(filterPublicQuests(data,{section:'other'}).total,0);
 });
+
+test('Steam 1.26.2 Quest Log Japanese labels are exact native localization strings',async()=>{
+  const page=await readFile(new URL('../src/routes/guide/quests/+page.svelte',import.meta.url),'utf8');
+  const official=page.split('<nav class="quest-sections" aria-label="ゲーム内のクエスト分類">')[1]
+    ?.split('</nav>')[0];
+  assert(official,'localized Quest Log category navigation must exist');
+  // Verified from raw Steam v1.26.2 LocDB_ja.zip/menu.locbin:
+  // SHA-256 c334dd9d1b6f896ac784c33b28d1103b8de8cf5cdfd0b5f8ce4ebd7b917ff5bb
+  const nativeLabels={
+    story:'ストーリークエスト',realm:'世界クエスト',
+    friendship:'友情クエスト',event:'イベントクエスト',
+    daily:'デイリークエスト',premium:'ドリームパッククエスト'
+  };
+  for(const [kind,name] of Object.entries(nativeLabels))
+    assert(official.includes("['"+kind+"','"+name+"']"),kind+': expected exact original Japanese label');
+  for(const wrong of ['王国','レルム','フレンドシップ','ドリームバンドル'])
+    assert(!official.includes("'"+wrong+"'"),wrong+' is not the raw in-game Japanese Quest Log category');
+  assert(!official.includes("['special'")&&!official.includes("['tutorial'"),
+    'Secret/FTUE must not be represented as an original in-game Quest Log category');
+  assert(page.includes('<summary>分類確認中のクエスト</summary>'),
+    'unverified source-native groups remain accessible and clearly marked');
+});
