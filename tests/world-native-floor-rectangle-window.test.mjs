@@ -3,10 +3,35 @@ import assert from 'node:assert/strict';
 import {createWorldCatalog,WORLD_SCHEMA} from '../src/lib/world/catalog.mjs';
 import {listWorldPreviewViews} from '../src/lib/world/preview-views.ts';
 import {
-  fullRectangleFloorWindowMap,getNativeFloorWindowResult,
+  getNativeFloorWindowResult,
   NATIVE_FLOOR_WINDOW_CONTRACT,
 } from '../src/lib/world/native-floor-rectangle-window.ts';
 
+// Small synthetic reference oracle ONLY in tests; browser production uses
+// Rust/WASM. Independent nested loops verify its native prefix-sum output.
+function referenceFloorWindow(
+  source,accepted,boundsX,boundsY
+){
+  const {sizeX:sx,sizeY:sy,nativeFloorValues:floor}=source;
+  if(!Number.isSafeInteger(sx)||!Number.isSafeInteger(sy)||
+    !(floor instanceof Uint32Array)||floor.length!==sx*sy||
+    boundsX<1||boundsY<1)
+    throw new TypeError('DB04_FLOOR_RECT_SOURCE_INVALID');
+  const out=new Uint8Array(sx*sy);
+  let originCount=0;
+  for(let y=0;y+ boundsY<=sy;y++){
+    for(let x=0;x+boundsX<=sx;x++){
+      let match=true;
+      for(let dy=0;dy<boundsY;dy++){
+        for(let dx=0;dx<boundsX;dx++){
+          if((floor[(y+dy)*sx+x+dx]&accepted)===0)match=false;
+        }
+      }
+      if(match){out[y*sx+x]=1;originCount++;}
+    }
+  }
+  return{originBitmap:out,originCount};
+}
 const LAYOUT='SceneLayouts/Village04/Meadow.json';
 const DEFAULT='SceneLayouts/Village04/Default.json';
 const FLOOR='GridData/Village04/Meadow-GridData.json';
@@ -72,7 +97,7 @@ const resolve=(catalog,orientation=8,gridId=1)=>{
   const view=views.find(row=>row.kind==='villageArea');
   assert.ok(view);
   return getNativeFloorWindowResult(catalog,views,'Village04',
-    view.viewKey,gridId,42,orientation);
+    view.viewKey,gridId,42,orientation,referenceFloorWindow);
 };
 
 test('one mismatch in the rectangular floor makes 4 overlapping starts unavailable',()=>{
@@ -81,7 +106,7 @@ test('one mismatch in the rectangular floor makes 4 overlapping starts unavailab
     4,4,0,4,
     4,4,4,4,
   ]);
-  const out=fullRectangleFloorWindowMap(
+  const out=referenceFloorWindow(
     {sizeX:4,sizeY:3,nativeFloorValues:floor},4,2,2);
   assert.equal(out.originCount,2);
   assert.deepEqual([...out.originBitmap],[
@@ -89,13 +114,13 @@ test('one mismatch in the rectangular floor makes 4 overlapping starts unavailab
     1,0,0,0,
     0,0,0,0,
   ]);
-  assert.deepEqual(fullRectangleFloorWindowMap(
+  assert.deepEqual(referenceFloorWindow(
     {sizeX:4,sizeY:3,nativeFloorValues:floor},4,2,1).originCount,7);
-  assert.deepEqual(fullRectangleFloorWindowMap(
+  assert.deepEqual(referenceFloorWindow(
     {sizeX:4,sizeY:3,nativeFloorValues:floor},4,1,2).originCount,6);
-  assert.equal(fullRectangleFloorWindowMap(
+  assert.equal(referenceFloorWindow(
     {sizeX:4,sizeY:3,nativeFloorValues:floor},4,5,2).originCount,0);
-  assert.deepEqual(fullRectangleFloorWindowMap(
+  assert.deepEqual(referenceFloorWindow(
     {sizeX:1,sizeY:1,nativeFloorValues:new Uint32Array([4])},4,1,1),
     {originBitmap:new Uint8Array([1]),originCount:1});
 });
@@ -160,7 +185,7 @@ test('unknown item or newer game version never produce a false possible-placemen
   assert.equal(unsupported.unresolvedGridCount,2);
   const v=fixture(),views=listWorldPreviewViews(v);
   const unknown=getNativeFloorWindowResult(v,views,'Village04',
-    views[0].viewKey,1,123456,8);
+    views[0].viewKey,1,123456,8,referenceFloorWindow);
   assert.equal(unknown.status,'source_item_gridarea_unverified');
   assert.equal(unknown.regionOriginCount,null);
   assert.equal(unknown.originBitmap,null);
@@ -170,15 +195,15 @@ test('invalid area, orientation, dimensions and source identities fail closed',(
   const sample=fixture(),views=listWorldPreviewViews(sample);
   for(const o of [-1,16,1.5]){
     assert.throws(()=>getNativeFloorWindowResult(sample,views,'Village04',
-      views[0].viewKey,1,42,o),/DB04_FLOOR_RECT_REQUEST_INVALID/);
+      views[0].viewKey,1,42,o,referenceFloorWindow),/DB04_FLOOR_RECT_REQUEST_INVALID/);
   }
   assert.throws(()=>getNativeFloorWindowResult(sample,views,'Other',
-    views[0].viewKey,1,42,8),/DB04_FLOOR_RECT_GRID_NOT_IN_REGION/);
+    views[0].viewKey,1,42,8,referenceFloorWindow),/DB04_FLOOR_RECT_GRID_NOT_IN_REGION/);
   for(const invalid of [
     {sizeX:4,sizeY:3,nativeFloorValues:new Uint32Array(11)},
     {sizeX:4,sizeY:3,nativeFloorValues:new Uint32Array(12)},
   ]){
-    assert.throws(()=>fullRectangleFloorWindowMap(invalid,4,0,2),
+    assert.throws(()=>referenceFloorWindow(invalid,4,0,2),
       /DB04_FLOOR_RECT_SOURCE_INVALID/);
   }
 });
