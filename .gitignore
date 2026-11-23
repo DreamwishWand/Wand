@@ -33,3 +33,6 @@ src/lib/save/wasm/p1g-pkg/
 
 # DB-01 public Item master: generated from the pinned sanitized release ZIP.
 static/ddv/item-master/
+
+# Generated Item-ID master shards; the version-pinned ZIP lives under data/ddv.
+static/ddv/item-master/
