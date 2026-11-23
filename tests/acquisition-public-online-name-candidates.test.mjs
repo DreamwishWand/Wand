@@ -165,3 +165,73 @@ test('Public-only browser entrypoint independently hashes the active DB-00 relea
   assert.equal(index.getShopProductCandidates('Enchanted Ice Fountain').length,2);
   assert.equal(index.coverage.verifiedOnlineAcquisitionLinks,0);
 });
+
+test('Official campaign reward browser retains every unresolved name and never turns exact matches into confirmed acquisition',()=>{
+  const index=indexPublicOnlineNameCandidates(
+    actualPublishedDb00(),OFFICIAL_CAMPAIGNS,historicalPremiumShop.offers
+  );
+  const all=index.listCampaignRewardResolutions();
+  assert.equal(all.length,OFFICIAL_CAMPAIGNS.length);
+  assert(Object.isFrozen(all));
+  assert(all.every(c=>c.acquisitionLinksVerified===false&&
+    Object.isFrozen(c)&&Object.isFrozen(c.rewards)));
+  const code=index.getCampaignRewardResolution('code:DDVPRIDE2026');
+  assert(code);
+  assert.equal(code.campaignKind,'redeem_code');
+  assert.equal(code.rewards.length,2);
+  assert.deepEqual(code.rewards.map(r=>r.nameCandidateItemIds),[
+    ['40005840'],['50400271']
+  ]);
+  assert(code.rewards.every(r=>
+    r.match==='unique_name_candidate'&&
+    r.sourceSuppliedItemId===null&&
+    r.acquisitionLinkVerified===false&&
+    r.claimedByPlayerVerified===false&&
+    Object.isFrozen(r)&&Object.isFrozen(r.nameCandidateItemIds)
+  ));
+  assert.equal(index.getCampaignRewardResolution(code.campaignId),code);
+  assert.equal(index.getCampaignRewardResolution('missing:campaign'),null);
+  const twitch=index.listCampaignRewardResolutions('twitch_drop');
+  assert.equal(twitch.length,3);
+  assert(Object.isFrozen(twitch));
+  const first=twitch.find(c=>c.campaignId==='twitch:2023-launch');
+  assert(first);
+  assert.equal(first.rewards.length,4);
+  assert.deepEqual(first.rewards.map(r=>r.nameCandidateItemIds),[
+    ['50400102'],['40001607'],['40001609'],['50700124']
+  ]);
+  const onlyCodes=index.listCampaignRewardResolutions('redeem_code');
+  assert.deepEqual(onlyCodes,[code]);
+  assert(all.every(c=>c.rewards.every(r=>
+    r.match==='source_supplied_id_unverified' ||
+    r.match==='unique_name_candidate' ||
+    r.match==='ambiguous_name_candidates' ||
+    r.match==='not_found_in_published_db00'
+  )));
+  assert.throws(()=>index.listCampaignRewardResolutions('not_a_kind'),
+    /INVALID_CAMPAIGN_KIND/);
+  assert.throws(()=>index.getCampaignRewardResolution('../private'),
+    /INVALID_CAMPAIGN_ID/);
+});
+
+test('Ambiguous English names preserve multiple candidate Item IDs in reward resolution without verifying a source link',()=>{
+  const snapshot=actualPublishedDb00();
+  const last=snapshot.items.at(-1);
+  const ambiguous={...snapshot,items:[
+    ...snapshot.items.slice(0,-1),
+    {...last,names:{...last.names,en:'Gamer Chair'}}
+  ]};
+  const index=indexPublicOnlineNameCandidates(
+    ambiguous,OFFICIAL_CAMPAIGNS,[]
+  );
+  const resolution=index.getCampaignRewardResolution('twitch:2023-launch');
+  const chair=resolution?.rewards.find(r=>r.name==='Gamer Chair');
+  assert(chair);
+  assert.equal(chair.match,'ambiguous_name_candidates');
+  assert.equal(chair.nameCandidateItemIds.length,2);
+  assert(chair.nameCandidateItemIds.includes('40001607'));
+  assert(chair.nameCandidateItemIds.includes(String(last.id)));
+  assert.equal(chair.acquisitionLinkVerified,false);
+  assert.equal(index.getCampaignCandidates('twitch:2023-launch')
+    .some(r=>r.rewardName==='Gamer Chair'),false);
+});
