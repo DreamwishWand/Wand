@@ -495,3 +495,31 @@ in this projection, not proof of a never-online / nonpremium item.
 dates or current availability.** These source categories never become
 \`ItemOrigin\` entries, published world/DLC facts, player acquisitions,
 shop offer identifiers, pricing or sale histories.
+
+
+### Star Path reward/currency names — verified originals, unknown motifs retained
+
+DB-03's source-pinned two-season Steam 1.26.2 Star Path snapshot contains
+**60 distinct reward/alternate/currency Item IDs**. They split into:
+**43** Item IDs with current public original ItemList names in all eight
+locales, **9** Item IDs with separately verified original localized names,
+and **8** Touch-of-Magic motif IDs whose original display names are
+**unavailable**. Do not render invented names for motifs.
+
+\`await openPublicSharedGameSources(...).loadStarpathRewardCrosswalk()\`
+lazily loads the source-pinned **4,075-byte** DB-03 reward extra projection.
+The Star Path cache has already been loaded and is reused through the
+DB-00 per-call SHA-checked response clones; no additional download of the
+season cache. The reader exposes \`getItem(itemId,locale?)\` and
+\`search({locale,text,seasonId,nameState,extraNativeCategory,
+publishedOnly,offset,limit})\` for all 60 source IDs, including Item IDs
+outside the published 13,202 ItemList. Exact original display names are
+provided for **52** IDs. The remaining eight have
+\`nameState:'no_native_motif_name'\`,
+\`exactOriginalDisplayName:null\`, and their original
+\`extraNativeCategory:'TouchOfMagic'\`.
+
+Neither reward name/metadata nor any configured Star Path occurrence
+asserts a guaranteed grant, premium access, live season availability,
+ownership, Collection UI membership, or an exact game image. Private
+SQLite/ZIP records are never published by DB-00.
