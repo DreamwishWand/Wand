@@ -452,3 +452,38 @@ test('469 source-native cooking members join original recipes only on demand, wi
   await catalog.loadCookingRecipeResolver();
   assert.equal(seen.length,start+2,'cached resolver must never refetch');
 });
+
+test('source-native LootTable candidates are loaded on demand but never promoted to confirmed Item acquisition',async()=>{
+  const {seen,fetcher}=publicFetcher();
+  const catalog=await loadPublicSourceCatalog('/Wand',fetcher);
+  const count=seen.length;
+  assert.equal(catalog.coverage.combinedSourceRoutes,1255);
+  assert.equal(seen.some(url=>url.endsWith('/native-loot-candidates-1.26.2.json')),false);
+  const before=catalog.lookup('30200086');
+  const a=catalog.loadNativeLootCandidates();
+  const b=catalog.loadNativeLootCandidates();
+  assert.equal(a,b,'one SHA-validated source request per catalog');
+  const loot=await a;
+  assert.equal(loot.coverage.candidateRelations,3804);
+  assert.equal(loot.coverage.distinctCandidateItemIds,1100);
+  assert.equal(loot.coverage.actualAcquisitionContextsVerified,0);
+  assert.equal(seen.length,count+1);
+  assert.equal(seen.filter(url=>url.endsWith('/native-loot-candidates-1.26.2.json')).length,1);
+  const item=await catalog.lookupWithNativeLootCandidates('30200086');
+  assert.equal(seen.length,count+1);
+  assert.equal(item.itemId,before.itemId);
+  assert.deepEqual(item.origins,before.origins);
+  assert.deepEqual(item.onlineNameCandidates,before.onlineNameCandidates);
+  assert.equal(item.nativeLootSourceLoaded,true);
+  assert.equal(item.actualLootContextVerified,false);
+  assert.equal(item.nativeLootCandidates.length,3);
+  assert.equal(item.nativeLootStaticOrigins.length,3);
+  assert(item.nativeLootCandidates.every(x=>x.routeStatus==='static_candidate_only'));
+  assert(item.nativeLootStaticOrigins.every(x=>x.routeStatus==='static_candidate_only'&&
+    x.availability==='not_live_verified'));
+  assert.equal(catalog.coverage.combinedSourceRoutes,1255);
+  assert.equal(catalog.itemSources.getKindItemIds('loot').length,0);
+  assert.equal(catalog.itemSources.getKindItemIds('twitch_drop').length,0);
+  assert.equal(catalog.itemSources.getKindItemIds('redeem_code').length,0);
+  assert(Object.isFrozen(item)&&Object.isFrozen(item.nativeLootCandidates));
+});
