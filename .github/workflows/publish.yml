@@ -29,6 +29,7 @@ jobs:
       - run: wasm-pack build crates/ddv-save-schema --release --target web --out-dir ../../src/lib/save/wasm/pkg --features wasm
       - run: wasm-pack build crates/ddv-p1g-codec --release --target web --out-dir ../../src/lib/save/wasm/p1g-pkg --features wasm
       - run: wasm-pack build crates/wand-acquisition-core --release --target web --out-dir ../../src/lib/acquisition/wasm/pkg --features wasm
+      - run: wasm-pack build crates/wand-world-core --release --target web --out-dir ../../src/lib/world/wasm/pkg
       - run: npm install --no-audit --no-fund
       - run: python3 scripts/build-collection-images.py
       - run: npm test
