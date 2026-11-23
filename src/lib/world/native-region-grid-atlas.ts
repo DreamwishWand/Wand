@@ -156,6 +156,13 @@ export function getNativeRegionGridAtlasPage(
         worldCoordinatesVerified:false,placementLegalityVerified:false});
       continue;
     }
+    if(!(raster.nativeFloorValues instanceof Uint32Array)||
+       !Array.isArray(raster.maskCounts)||
+       typeof raster.sizeX!=='number'||typeof raster.sizeY!=='number'||
+       typeof raster.totalCells!=='number'||raster.sizeX<1||raster.sizeY<1||
+       raster.totalCells!==raster.sizeX*raster.sizeY||
+       raster.nativeFloorValues.length!==raster.totalCells)
+      throw new TypeError('DB04_ATLAS_INVALID_NATIVE_RASTER');
     const zeros=raster.maskCounts.find(x=>x.nativeFloorValue===0)?.cellCount??0;
     const tilePreview=nativePreview(
       raster.nativeFloorValues,raster.sizeX,raster.sizeY);
