@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
-import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.mjs';
+import {verifyPublicStarpath} from '../src/lib/guide/public-starpath.ts';
 import {verifyStarpathWeeklyLocales,starpathWeeklyDescription,loadStarpathWeeklyLocales,STARPATH_LOCALES_SHA,STARPATH_LOCALES_BYTES} from '../src/lib/guide/public-starpath-locales.ts';
 import {STARPATH_REWARD_NAME_INDEX_SHA,VERIFIED_STARPATH_REWARD_NAMES,STARPATH_UNRESOLVED_REWARD_IDS,starpathRewardName,verifyStarpathRewardNameCensus} from '../src/lib/guide/starpath-reward-names.ts';
 const root=new URL('../static/',import.meta.url);
