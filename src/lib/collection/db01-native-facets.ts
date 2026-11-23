@@ -7,6 +7,7 @@
  * DLC ownership, or an acquired-item status. Do not promote it to those axes.
  */
 import {COLLECTION_UNIVERSE_TAG_BY_ID} from './universe-tag-names.ts';
+export const COLLECTION_UNIVERSE_UNTAGGED='__no_universe_tag__' as const;
 export const COLLECTION_DB01_FACETS_SCHEMA='wand.collection.db01-native-facets@1' as const;
 export const COLLECTION_DB01_ARCHIVE_SHA=
   '3c80a42139014211100eb556665636088af45d1d0b54ebd2933a4aeab2a405c6' as const;
@@ -78,6 +79,10 @@ export interface CollectionDb01Index{
   readonly itemsByUniverse:ReadonlyMap<string,readonly number[]>;
   readonly universeTagIdsByItem:ReadonlyMap<number,readonly number[]>;
   readonly itemsByUniverseTagId:ReadonlyMap<number,readonly number[]>;
+  /** Total browse relation over the exact native subtype Item ID set.
+   * An explicit no-tag assignment is not the original NonIP tag. */
+  readonly universeBrowseKeysByItem:ReadonlyMap<number,readonly string[]>;
+  readonly itemsByUniverseBrowseKey:ReadonlyMap<string,readonly number[]>;
 }
 export interface CollectionDb01Option {
   readonly key:string;
@@ -270,6 +275,28 @@ export function parseCollectionDb01Facets(payload:unknown):CollectionDb01Index{
     byItem.set(id,(entry[1] as CollectionDb01Pair[]).map(tag=>
       Object.freeze([tag[0],tag[1]] as const)));
   }
+  const universeBrowseKeysByItem=new Map<number,readonly string[]>();
+  const itemsByUniverseBrowseKey=new Map<string,number[]>();
+  if(nativeSubtypeByItem.size){
+    // Reject dangling references rather than inflate counts or silently drop rows.
+    for(const id of universesByItem.keys())assert(nativeSubtypeByItem.has(id),'UNIVERSE_UNKNOWN_ITEM');
+    for(const id of universeTagIdsByItem.keys())assert(nativeSubtypeByItem.has(id),'UNIVERSE_TAG_UNKNOWN_ITEM');
+    // Absence is meaningful only when both original relation projections exist.
+    if(payload.universeSourceItems!==undefined&&payload.universeSourceTagItems!==undefined){
+      for(const id of nativeSubtypeByItem.keys()){
+        const numeric=universeTagIdsByItem.get(id);
+        const named=universesByItem.get(id);
+        const keys=Object.freeze(numeric?.length?numeric.map(String):
+          named?.length?[...named]:[COLLECTION_UNIVERSE_UNTAGGED]);
+        universeBrowseKeysByItem.set(id,keys);
+        for(const key of keys){
+          const ids=itemsByUniverseBrowseKey.get(key)??[];
+          ids.push(id);
+          itemsByUniverseBrowseKey.set(key,ids);
+        }
+      }
+    }
+  }
   return Object.freeze({
     release:'steam-1.26.2-item-id-master-v1' as const,
     sourceItemCount:13202 as const,
@@ -286,7 +313,9 @@ export function parseCollectionDb01Facets(payload:unknown):CollectionDb01Index{
     universesByItem,
     itemsByUniverse,
     universeTagIdsByItem,
-    itemsByUniverseTagId
+    itemsByUniverseTagId,
+    universeBrowseKeysByItem,
+    itemsByUniverseBrowseKey
   });
 }
 export async function loadCollectionDb01Facets(
@@ -298,7 +327,10 @@ export async function loadCollectionDb01Facets(
     {credentials:'same-origin',redirect:'error'});
   assert(response.ok&&!response.redirected,'UNAVAILABLE');
   const payload:unknown=await response.json();
-  return parseCollectionDb01Facets(payload);
+  const index=parseCollectionDb01Facets(payload);
+  assert(index.nativeSubtypeByItem.size===index.sourceItemCount&&
+    index.universeBrowseKeysByItem.size===index.sourceItemCount,'INCOMPLETE_BROWSE_INDEX');
+  return index;
 }
 /** Options are computed only from Items actually in the selected Collection
  * category. A DB-01 Tag can never add a missing Item to the Collection. */

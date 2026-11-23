@@ -9,7 +9,7 @@
     type CollectionDb01Index,type CollectionDb01Facet,type CollectionDb01Group
   } from '$lib/collection/db01-native-facets';
   import {COLLECTION_UNIVERSE_UNTAGGED,sortedCollectionUniverseOptions,
-    groupCollectionUniverseItems,collectionUniverseDisplayLabel}
+    groupCollectionUniverseItems,collectionUniverseDisplayLabel,collectionUntaggedUniverseLabel}
     from '$lib/collection/browse-layout.ts';
   import {COLLECTION_UNIVERSE_TAG_BY_ID,COLLECTION_UNIVERSE_TAG_NAMES}
     from '$lib/collection/universe-tag-names.ts';
@@ -160,13 +160,17 @@
   $: visibleItems=filtered;
   $: selectedItem=selectedItemId!==null && runtime?runtime.item(selectedItemId,locale):null;
   $: selectedScopeLabels=collectionItemScopeLabels(selectedItem,worldScopeOptions,universeScopeOptions);
+  $: selectedUniverseLabels=selectedItem&&sourceIndex?.universeBrowseKeysByItem.has(selectedItem.itemId)
+    ?(sourceIndex.universeBrowseKeysByItem.get(selectedItem.itemId)??[])
+      .map(key=>collectionUniverseDisplayLabel(locale,key))
+    :selectedScopeLabels.universes;
   $: selectedEntry=selectedItem?entries[String(selectedItem.itemId)]??{}:{};
   $: selectedGridRefs=selectedItem?savedGridByItem[String(selectedItem.itemId)]??null:null;
   $: selectedDb04Refs=selectedItem?savedDb04ByItem[String(selectedItem.itemId)]??null:null;
   $: universeChoices=(sourceIndex
     ?sortedCollectionUniverseOptions(sourceIndex,locale,
         key=>collectionUniverseDisplayLabel(locale,key),
-        locale==='ja'?'ユニバース未設定':'No source universe tag')
+        collectionUntaggedUniverseLabel(locale))
     :universeScopeOptions).filter(option=>
       option.label.toLocaleLowerCase(locale).includes(universeSearch.trim().toLocaleLowerCase(locale)));
   $: landingUniverse=viewAxis==='universe'&&!universeFilter&&
@@ -427,10 +431,8 @@
         // general 13k-row sorted Rust query 67 times blocks UI clicks.
         // Resolve source-linked IDs through Rust's O(1) Item-ID lookup.
         // For multilingual text search, retain the existing Rust predicate.
-        const universeIds=sourceUniverseSelection&&
-          sourceUniverseSelection!==COLLECTION_UNIVERSE_UNTAGGED
-          ?(sourceIndex?.itemsByUniverseTagId.get(Number(sourceUniverseSelection))??
-            sourceIndex?.itemsByUniverse.get(sourceUniverseSelection)??[]):null;
+        const universeIds=sourceUniverseSelection!==null
+          ?sourceIndex?.itemsByUniverseBrowseKey.get(sourceUniverseSelection)??[]:null;
         const acquisitionIds=acquisitionFilter&&acquisitionIndex
           ?acquisitionIndex.listItemIds(acquisitionFilter).map(Number):null;
         const activityIds=sourceActivityType===null?null:
@@ -448,17 +450,9 @@
             try{return [runtime!.item(id,locale)];}catch{return [];}
           }):queryAllCollectionRows(currentFilter(0,200)));
         sourceAllMatching=candidates.filter(item=>
-          (sourceUniverseSelection!==COLLECTION_UNIVERSE_UNTAGGED||
-            !(sourceIndex?.universeTagIdsByItem.size
-              ?sourceIndex.universeTagIdsByItem.has(item.itemId)
-              :sourceIndex?.universesByItem.has(item.itemId)))&&
           (sourceUniverseSelection===null||
-            sourceUniverseSelection===COLLECTION_UNIVERSE_UNTAGGED||
-            (COLLECTION_UNIVERSE_TAG_BY_ID.has(Number(sourceUniverseSelection))
-              ?sourceIndex?.universeTagIdsByItem.get(item.itemId)
-                ?.includes(Number(sourceUniverseSelection))===true
-              :sourceIndex?.universesByItem.get(item.itemId)
-                ?.includes(sourceUniverseSelection)===true))&&
+            sourceIndex?.universeBrowseKeysByItem.get(item.itemId)
+              ?.includes(sourceUniverseSelection)===true)&&
           (sourceActivityType===null||
             sourceIndex?.activityTypesByItem.get(item.itemId)?.code===sourceActivityType)&&
           (sourceNativeSubtype===null||
@@ -1284,7 +1278,7 @@
             {sourceUniverseSelection!==null
               ?sortedCollectionUniverseOptions(sourceIndex!,locale,
                 key=>collectionUniverseDisplayLabel(locale,key),
-                locale==='ja'?'ユニバース未設定':'No source universe tag')
+                collectionUntaggedUniverseLabel(locale))
                   .find(option=>option.id===sourceUniverseSelection)?.label??''
               :universeScopeOptions.find(x=>x.id===universeFilter)?.label??''}
           </span>
@@ -1380,6 +1374,7 @@
                   <button type="button" class="collection-universe-card" on:click={()=>chooseUniverse(option.id)}>
                     <span class="collection-universe-art" aria-hidden="true"><WandIcon name="gallery" size={29}/></span>
                     <strong>{option.label}</strong>
+                    {#if sourceIndex}<span>{('total' in option?option.total:0).toLocaleString(locale)}</span>{/if}
                   </button>
                 {/each}
               </div>
@@ -1402,7 +1397,7 @@
                 <span> / {sourceUniverseSelection!==null
                   ?sortedCollectionUniverseOptions(sourceIndex!,locale,
                     key=>collectionUniverseDisplayLabel(locale,key),
-                    locale==='ja'?'ユニバース未設定':'No source universe tag')
+                    collectionUntaggedUniverseLabel(locale))
                     .find(option=>option.id===sourceUniverseSelection)?.label??''
                   :universeScopeOptions.find(x=>x.id===universeFilter)?.label??''}</span>
               </div>
@@ -1449,7 +1444,7 @@
                 {#if selected||sourceActivityType!==null||sourceNativeSubtype!==null}<span> / {selectionLabel}</span>{/if}
                 {#if viewAxis==='universe'&&sourceUniverseSelection!==null}
                   <span> / {sourceUniverseSelection===COLLECTION_UNIVERSE_UNTAGGED
-                    ?(locale==='ja'?'ユニバース未設定':'No source universe tag')
+                    ?(collectionUntaggedUniverseLabel(locale))
                     :collectionUniverseDisplayLabel(locale,sourceUniverseSelection)}</span>
                 {/if}
                 {#if selected&&universeFilter&&viewAxis==='world'}
@@ -1591,15 +1586,15 @@
                 <ItemMasterDetails itemId={selectedItem.itemId} {locale}/>
               {/key}
             {/if}
-            {#if selectedScopeLabels.worlds.length || selectedScopeLabels.universes.length}
+            {#if selectedScopeLabels.worlds.length || selectedUniverseLabels.length}
               <details class="inspector-details">
                 <summary>{copy.details}</summary>
                 <dl>
                   {#if selectedScopeLabels.worlds.length}
                     <dt>{copy.world}</dt><dd>{selectedScopeLabels.worlds.join('、')}</dd>
                   {/if}
-                  {#if selectedScopeLabels.universes.length}
-                    <dt>{copy.universe}</dt><dd>{selectedScopeLabels.universes.join('、')}</dd>
+                  {#if selectedUniverseLabels.length}
+                    <dt>{copy.universe}</dt><dd>{selectedUniverseLabels.join('、')}</dd>
                   {/if}
                 </dl>
               </details>
