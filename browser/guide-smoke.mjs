@@ -127,11 +127,11 @@ try {
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('30件'));
   await browse.getByRole('button',{name:'思い出の海',exact:true}).click();
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('25件'));
-  await browse.getByRole('button',{name:'レルム',exact:true}).click();
+  await browse.getByRole('button',{name:'世界クエスト',exact:true}).click();
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('61件'));
   assert.equal(await browse.locator('.story-arcs').count(),0,
     'Realm quests must not be mixed into Story arcs');
-  await browse.getByRole('button',{name:'フレンドシップ',exact:true}).click();
+  await browse.getByRole('button',{name:'友情クエスト',exact:true}).click();
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('341件'));
   assert.equal(await browse.locator('.character-rail button').count(),78,
     'exactly 77 source-native Village quest characters plus All');
@@ -142,15 +142,16 @@ try {
   await browse.setViewportSize({width:390,height:844});
   assert.equal(await browse.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),true,
     'character roster remains within the mobile viewport');
-  await browse.getByRole('button',{name:'イベント',exact:true}).click();
+  await browse.getByRole('button',{name:'イベントクエスト',exact:true}).click();
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('66件'));
-  await browse.getByRole('button',{name:'デイリー',exact:true}).click();
+  await browse.getByRole('button',{name:'デイリークエスト',exact:true}).click();
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('9件'));
-  await browse.getByRole('button',{name:'追加・特殊',exact:true}).click();
+  await browse.locator('.quest-unclassified summary').click();
+  await browse.getByRole('button',{name:'追加クエスト',exact:true}).click();
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('70件'));
-  await browse.getByRole('button',{name:'ドリームバンドル',exact:true}).click();
+  await browse.getByRole('button',{name:'ドリームパッククエスト',exact:true}).click();
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('19件'));
-  await browse.getByRole('button',{name:'チュートリアル',exact:true}).click();
+  await browse.getByRole('button',{name:'導入用',exact:true}).click();
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('1件'));
   await browse.getByRole('button',{name:'すべて',exact:true}).first().click();
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('733件'));
