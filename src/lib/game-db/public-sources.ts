@@ -60,6 +60,10 @@ import {
   createDb00StarpathRewardReader,type Db00StarpathRewardReader
 } from './starpath-reward-crosswalk.ts';
 import {
+  createDb00OriginalCollectionAreaReader,
+  type Db00OriginalCollectionAreaReader
+} from './collection-area-sources.ts';
+import {
   createDb00PublicItemSearch,
   type Db00PublicItemSearchRequest,type Db00PublicItemSearchResult
 } from './public-search.ts';
@@ -76,6 +80,8 @@ export interface PublicSharedGameSources{
   readonly guide:GuideRewardIndex;
   readonly guideQuestTargets:PublicQuestTargetReverseReader;
   readonly guideEvents:Db00PublicEventSources;
+  /** Seven verified original Collection-area config records (not Item membership). */
+  readonly originalCollectionAreas:Db00OriginalCollectionAreaReader;
   readonly hasPrivateGameSource:false;
   readonly currentAvailabilityVerified:false;
   readonly playerOwnershipVerified:false;
@@ -170,6 +176,7 @@ export async function openPublicSharedGameSources(
     loadGuideRewardIndex(basePath+'/guide/public/starpath-cache-2026-11-22.json',once),
     questTargetTask,eventTask,questCatalogueTask
   ]);
+  const originalCollectionAreas=createDb00OriginalCollectionAreaReader();
   const joined=joinCurrentGameSources(database,{
     origins:acquisition.origins,rewards:guide,
     staticContainers:acquisition.staticContainerSource,
@@ -251,7 +258,7 @@ export async function openPublicSharedGameSources(
   return Object.freeze({
     schema:DB00_PUBLIC_SOURCES_SCHEMA,
     snapshotId:database.snapshotId,database,joined,acquisition,guide,
-    guideQuestTargets,guideEvents,
+    guideQuestTargets,guideEvents,originalCollectionAreas,
     hasPrivateGameSource:false as const,
     currentAvailabilityVerified:false as const,
     playerOwnershipVerified:false as const,
