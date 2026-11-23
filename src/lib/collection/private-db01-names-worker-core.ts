@@ -61,12 +61,14 @@ export async function inspectPrivateDb01Names(
   const manifestBytes=await zip.readShard('private-shards/manifest.json');
   const digest=hex(new Uint8Array(await crypto.subtle.digest('SHA-256',manifestBytes)));
   if(digest!==trusted.manifestSha256)fail('MANIFEST_PIN_MISMATCH');
-  let manifest:Db01ShardManifest;
-  try{
-    manifest=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(manifestBytes)) as Db01ShardManifest;
-  }catch{
-    fail('MANIFEST_INVALID');
-  }
+  const manifest:Db01ShardManifest=(()=>{
+    try{
+      return JSON.parse(new TextDecoder('utf-8',{fatal:true})
+        .decode(manifestBytes)) as Db01ShardManifest;
+    }catch{
+      throw new TypeError('DB01_PRIVATE_NAMES_MANIFEST_INVALID');
+    }
+  })();
   if(manifest.platform!==trusted.platform||
     manifest.gameVersion!==trusted.gameVersion||
     manifest.nativeSourceManifestSha256!==trusted.nativeSourceManifestSha256||
