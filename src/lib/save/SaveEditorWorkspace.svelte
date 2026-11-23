@@ -568,6 +568,24 @@
     cancel();result=null;
     mixedQueue=mixedQueue.filter(p=>p.localOrdinal!==ordinal);
   }
+  function hasQueuedChanges():boolean{
+    return queuedEdits.length>0||coordinateQueue.length>0||mixedQueue.length>0;
+  }
+  function discardAllQueuedChanges():void{
+    if(processing||!hasQueuedChanges())return;
+    if(!window.confirm('登録した数量・配置の変更をすべて破棄しますか？元のセーブは変更されません。'))return;
+    cancel();result=null;
+    queuedEdits=[];coordinateQueue=[];mixedQueue=[];
+    amountRevisionIndex=null;amountEditorReady=false;
+    coordinateSelection=null;orientationSelection=null;
+  }
+  function closeSelectedSave():void{
+    if(processing)return;
+    if(!developmentMode&&hasQueuedChanges()&&
+       !window.confirm('未出力の数量・配置の変更が消えます。セーブを閉じますか？'))return;
+    closeLocalSaveFile();
+    if(fileInput)fileInput.value='';
+  }
   function selectGridInstance(row:LocalGridInstance){
     if(!row.coordinatesObserved||row.x===null||row.y===null)return;
     cancel();result=null;
@@ -901,8 +919,9 @@
   }
 
   async function loadGridInstances(){
+    // Reinspect the same immutable File without silently dropping drafts.
+    // Rust rechecks every local ordinal/identity against source at export.
     cancel();result=null;coordinateSelection=null;
-    coordinateQueue=[];mixedQueue=[];
     orientationSelection=null;
     gridInstances=[];instanceStatus='not_observed';instanceSampled=false;
     instanceState='idle';
@@ -1330,7 +1349,9 @@
     savedSlots=[];savedSlotsFile=null;
     gridInstances=[];instanceState='idle';instanceQuery='';
     gridVisibleLimit=SAVE_LIST_WINDOW_SIZE;
-    coordinateSelection=null;coordinateQueue=[];orientationSelection=null;
+    // Only selecting/closing a different File clears queues (adoptSharedSave).
+    // Refreshing a list must not discard already staged Grid coordinates.
+    coordinateSelection=null;orientationSelection=null;
     let bytes:Uint8Array|null=null;
     let worker:Worker|null=null;
     const request=revision;
@@ -1653,7 +1674,11 @@
             const input=event.currentTarget as HTMLInputElement;
             const file=input.files?.[0];
             input.value='';
-            if(file)selectLocalSaveFile(file);
+            if(file){
+              if(hasQueuedChanges()&&
+                 !window.confirm('未出力の変更が消えます。別のセーブを選択しますか？'))return;
+              selectLocalSaveFile(file);
+            }
           }} />
       </label>
     </div>
@@ -1669,6 +1694,8 @@
       <section class="editor-commit-toolbar"
         aria-label="編集済みセーブの出力">
         <strong>編集内容：数量{queuedEdits.length}件・配置{queuedGridCount}件</strong>
+        <button type="button" class="secondary" disabled={processing}
+          on:click={discardAllQueuedChanges}>変更をすべて破棄</button>
         {#if queuedExportMode==='conflict'}
           <p role="alert">編集が重複または16件を超えています。登録済みの変更を確認してください。</p>
         {:else}
@@ -1744,10 +1771,9 @@
     {#if !developmentMode&&result==='error'}
       <p role="alert">数量を登録できませんでした。入力値を確認してください。</p>
     {/if}
-    <button type="button" class="secondary" on:click={()=>{
-      closeLocalSaveFile();if(fileInput)fileInput.value='';
-    }}>
-      破棄
+    <button type="button" class="secondary" disabled={processing}
+      on:click={closeSelectedSave}>
+      {developmentMode?'破棄':'セーブを閉じる'}
     </button>
     {:else}
       <div class="editor-amount-empty">
@@ -1761,7 +1787,8 @@
   <section class="saved-slots editor-owned-panel" aria-label="セーブ内アイテム">
     <div class="slot-actions">
       <button type="button" on:click={loadSavedSlots} disabled={processing}>
-        {slotState==='loading'?'読み込み中…':'所持アイテムを表示'}
+        {slotState==='loading'?'読み込み中…':slotState==='ready'
+          ?'再読み込み':'所持アイテムを表示'}
       </button>
       {#if slotState==='ready'}
         <span role="status">{savedSlots.length}件</span>
@@ -1895,7 +1922,8 @@
       <section class="grid-instance-preview" aria-label="配置オブジェクト">
         <div class="slot-actions">
           <button type="button" on:click={loadGridInstances} disabled={processing}>
-            {instanceState==='reading'?'配置を読み込み中…':'配置オブジェクトを表示'}
+            {instanceState==='reading'?'配置を読み込み中…':
+              instanceState==='ready'?'再読み込み':'配置オブジェクトを表示'}
           </button>
           {#if instanceState==='ready'}
             <span role="status">{gridInstances.length}件</span>

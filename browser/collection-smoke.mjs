@@ -420,6 +420,27 @@ try{
     assert.equal(loaded.length,1,file+' must be loaded only on demand');
     assert.equal(loaded[0].status,200,'source asset must be published');
   }
+  // Source classification lives in the Worker and must remain stable while
+  // the eight localized panel labels update without another download.
+  const acquisitionFetchCount=acquisitionAssets.length;
+  for(const {language,title} of [
+    {language:'English',title:'How to obtain'},
+    {language:'Français',title:'Comment obtenir'},
+    {language:'Italiano',title:'Come ottenerlo'},
+    {language:'Deutsch',title:'Bezugsquellen'},
+    {language:'Español',title:'Cómo conseguirlo'},
+    {language:'简体中文',title:'获取方式'},
+    {language:'Português',title:'Como obter'},
+    {language:'日本語',title:'入手元'}
+  ]){
+    await setItemLanguage(language);
+    await page.waitForFunction(expected=>
+      document.querySelector('.collection-acquisition summary')?.textContent?.trim()===expected,title);
+    assert.equal(await acquisitionPanel.getAttribute('open'),'',
+      'locale switch must not close the acquisition panel');
+    assert.equal(acquisitionAssets.length,acquisitionFetchCount,
+      'locale change must never refetch immutable source evidence');
+  }
   await page.getByRole('checkbox',{name:'お気に入り'}).uncheck();
   await waitForLocalState(page,{item:'40005160',status:'owned',favorite:false});
   await page.locator('.empty-panel').waitFor();

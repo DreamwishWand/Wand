@@ -72,6 +72,10 @@ import {
   createDb00NativeStallReader,
   type Db00NativeStallReader,type Db00NativeStallItem
 } from './native-stalls.ts';
+import {
+  createDb00NativeLootContextReader,
+  type Db00NativeLootContextReader,type Db00NativeLootContextItem
+} from './native-loot-context.ts';
 import {loadPublicStarpath} from '../guide/public-starpath.ts';
 import {
   loadStarpathRewardExtras,STARPATH_EXTRA_RELEASE
@@ -155,6 +159,12 @@ export interface PublicSharedGameSources{
   loadNativeActivitySources():Promise<Db00NativeActivityReader>;
   /** SHA-pinned 3,804 original LootTable entries; static candidates, NOT drops. */
   loadNativeLootCandidateSources():Promise<Db00NativeLootReader>;
+  /** Native LootTable names + original Furniture/ActivityItem references. */
+  loadNativeLootContextSources():Promise<Db00NativeLootContextReader>;
+  /** One Item ID -> named static LootTable / original referring objects. */
+  getNativeLootContextEvidence(
+    itemId:string|number
+  ):Promise<Db00NativeLootContextItem>;
   /** Original 469 cooking members and 238 ingredient selector uses. */
   loadNativeCookingIngredientSources():Promise<Db00CookingIngredientReader>;
   /** SHA-pinned 65 original stalls and 335 pool slots, loaded on demand. */
@@ -350,6 +360,26 @@ export async function openPublicSharedGameSources(
       guaranteedLootDropVerified:false as const
     });
   };
+  let nativeLootContext:Promise<Db00NativeLootContextReader>|null=null;
+  const loadNativeLootContextSources=():Promise<Db00NativeLootContextReader>=>
+    nativeLootContext??=Promise.all([
+      acquisition.loadNamedNativeLootSources(),
+      acquisition.loadNativeObjectLootSources()
+    ]).then(([named,objects])=>
+      createDb00NativeLootContextReader(database,joined,named,objects));
+  const getNativeLootContextEvidence=async(itemId:string|number):
+    Promise<Db00NativeLootContextItem>=>{
+    // Canonicalise through DB-00 prior to optional source downloads.
+    const shared=joined.getItem(itemId);
+    const item=(await loadNativeLootContextSources()).getItem(shared.itemId);
+    assert(item.itemId===shared.itemId &&
+      item.shared.itemId===shared.itemId &&
+      item.originalSourceCandidatesOnly===true &&
+      item.actualGameplayDropVerified===false &&
+      item.liveAvailabilityVerified===false,
+      'NATIVE_LOOT_CONTEXT_ITEM_ID_MISMATCH');
+    return item;
+  };
   let nativeCooking:Promise<Db00CookingIngredientReader>|null=null;
   const loadNativeCookingIngredientSources=():
     Promise<Db00CookingIngredientReader>=>
@@ -448,6 +478,7 @@ export async function openPublicSharedGameSources(
     loadNativeOnlineCategories,loadNativeRecipeSources,
     loadNativeActivitySources,getNativeAcquisitionEvidence,
     loadNativeLootCandidateSources,getAllNativeAcquisitionEvidence,
+    loadNativeLootContextSources,getNativeLootContextEvidence,
     loadNativeCookingIngredientSources,
     loadNativeStallPoolSources,getNativeStallCandidateEvidence,
     loadStarpathRewardCrosswalk,

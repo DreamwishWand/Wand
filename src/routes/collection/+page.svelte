@@ -723,7 +723,7 @@
               </details>
             {/if}
             {#if runtime?.metadata.snapshot==='steam-1.26.2-native-itemlist-v1' && !runtime.isOwnerLocal}
-              <AcquisitionEvidence itemId={selectedItem.itemId}/>
+              <AcquisitionEvidence itemId={selectedItem.itemId} {locale}/>
             {/if}
             <div class="inspector-section">
               <h3>Collection記録</h3>

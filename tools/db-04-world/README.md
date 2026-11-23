@@ -1129,3 +1129,18 @@ placement or write a Save.
 The former `local-snapshot.mjs` continues to serve the independent legacy
 Collection bridge; it is *not* the World Preview reader. Do not remove or
 extend that legacy path without the owning Collection stream migration.
+
+
+## Typed native terrain source reader (DB-04)
+
+\`src/lib/world/native-terrain-preview.ts\` now owns the read-only,
+source-version-gated terrain codec: x-major MSB-first 1/2/4-bit packed
+GridData, original JSON direct uint32 FloorTypes, bounded terrain windows,
+tile lookup, exact packed-byte histogram cross-check, and source-only
+read provenance. \`native-mask.ts\` owns the native enum/uint32 floor and
+layer mask definitions. Both are TypeScript and imported directly by the
+World Preview Worker. The legacy \`catalog.mjs\` retains API-compatible
+re-exports but no longer executes terrain decoding.
+
+This move never derives world-space positions, cell occupancy, grid runtime
+state, collision rules, or permission to edit Saves.
