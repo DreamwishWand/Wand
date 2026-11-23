@@ -390,12 +390,12 @@ try{
   });
   await retryPage.goto(url);
   await retryPage.getByRole('alert').filter({
-    hasText:'カテゴリーを読み込めませんでした'
+    hasText:/カテゴリーを読み込めませんでした|Categories could not be loaded/
   }).waitFor({timeout:30000});
   assert.equal(failedCategoryFetch,true);
   assert.ok(await retryPage.locator('.facet-card').count()>10,
     'item-type categories must remain browseable if source navigation fails');
-  await retryPage.getByRole('button',{name:'再試行'}).click();
+  await retryPage.getByRole('button',{name:/再試行|Retry/}).click();
   await retryPage.locator('.collection-original-category-grid .facet-card').first()
     .waitFor({timeout:30000});
   assert.equal(await retryPage.locator('.collection-original-category-grid .facet-card').count(),20);
