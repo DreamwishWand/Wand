@@ -264,9 +264,9 @@ test('contradictory index ID, area membership, census and ambiguous AllAreas sel
   assert.throws(()=>createDb00LocalFurnitureAreaFacetReader({
     contract:'invalid',snapshotId:'steam-1.26.2-native-itemlist-v1'
   },positiveClient),/EXACT_DB00_PRIVATE_FURNITURE_READER_REQUIRED/);
-  assert.throws(()=>createDb00LocalFurnitureAreaFacetReader({
-    ...(await (async()=>{const pub=await app();
-      return joinLocalFurnitureCollectionAreaSources(pub,originalClient);})())
-  },{...positiveClient,gameVersion:'1.25.0'}),
-  /EXACT_DB01_ORIGINAL_POSITIVE_AREA_INDEX_REQUIRED/);
+  const pub=await app();
+  const native=joinLocalFurnitureCollectionAreaSources(pub,originalClient);
+  assert.throws(()=>createDb00LocalFurnitureAreaFacetReader(
+    native,{...positiveClient,gameVersion:'1.25.0'}),
+    /EXACT_DB01_ORIGINAL_POSITIVE_AREA_INDEX_REQUIRED/);
 });
