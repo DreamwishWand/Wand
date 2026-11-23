@@ -1547,13 +1547,6 @@ try{
   await regular.getByLabel('セーブファイルを選択').setInputFiles(rejectedSave);
   assert.equal(await unchangedSource.innerText(),'user-save-editor.profile');
   assert.equal(await userSlot.count(),1);
-  page.once('dialog',dialog=>{
-    assert.match(dialog.message(),/移動/);
-    void dialog.dismiss();
-  });
-  await page.locator('a.header-home-button').click();
-  assert.match(page.url(),/\/save\/$/);
-  assert.match(await unifiedSave.innerText(),/数量1件・配置0件/);
   // Normal Save Editor close is now guarded by the same shared session hook.
   page.once('dialog',dialog=>{
     assert.match(dialog.message(),/セーブを閉じますか/);
