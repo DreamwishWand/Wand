@@ -1089,7 +1089,7 @@
         <div class="collection-results">
           {#if landingUniverse}
             <div class="section-lead"><h2>{copy.universeList}</h2></div>
-            {#if universeScopeOptions.length}
+            {#if universeScopeOptions.length||sourceUniverseOptions.length}
               <label class="collection-universe-search">
                 <WandIcon name="search" size={17}/>
                 <input type="search" bind:value={universeSearch}
