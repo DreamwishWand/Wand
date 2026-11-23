@@ -163,8 +163,9 @@
           coordinateSnapshot.signature===JSON.stringify(combinedGridEdits)
         :false);
   $: queuedExportCopyUrl=queuedExportVerified
-    ?queuedExportMode==='quantity'&&exportReady
-      ?downloadUrl:coordinateCopyUrl
+    ?queuedExportMode==='quantity'
+      ?exportReady?downloadUrl:null
+      :coordinateCopyUrl
     :null;
   type CardinalOrientation='GridOrientation_Up'|'GridOrientation_Right'|
     'GridOrientation_Down'|'GridOrientation_Left';
