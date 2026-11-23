@@ -86,6 +86,10 @@ import {joinPinnedNativeObjectLoot,
   type PublicNativeObjectLootIndex,
   type NativeObjectLootCandidate
 } from './public-native-loot-objects.ts';
+import {
+  indexNativeLootContexts,
+  type NativeLootContextIndex,type NativeLootContextItem
+} from './native-loot-context-search.ts';
 import {indexPublicOnlineNameCandidates,
   type PublicOnlineNameCandidateIndex,
   type PublicOnlineNameCandidate} from './public-online-name-candidates.ts';
@@ -148,6 +152,12 @@ export type PublicSourceItemLookup=ReturnType<Db00OriginJoin['lookup']>&{
 export type PublicSourceItemOriginalEvidenceLookup=PublicSourceItemLookup&{
   readonly originalSourceEvidence:ItemSourceBrowserRow;
   readonly originalSourceEvidenceLoaded:true;
+};
+export type PublicSourceItemNativeLootContextsLookup=PublicSourceItemLookup&{
+  readonly nativeLootContexts:NativeLootContextItem;
+  readonly nativeLootContextsLoaded:true;
+  readonly actualDropVerified:false;
+  readonly liveStallStockVerified:false;
 };
 export type PublicSourceItemDistributionScopeLookup=PublicSourceItemLookup&{
   readonly distributionScope:DistributionScopeItem;
@@ -223,6 +233,12 @@ export interface PublicSourceCatalog{
   /** Union search over 3961 definition references and 4239 static candidates.
    * Each relation retains original provenance and candidate/confirmed status. */
   loadAllOriginalItemSources():Promise<AllOriginalItemSourceBrowser>;
+  /** Per original LootTable candidate: exact object/stall referrers and
+   * internal native source name. Neither context is a verified actual drop. */
+  loadNativeLootContexts():Promise<NativeLootContextIndex>;
+  lookupWithNativeLootContexts(
+    itemId:string|number
+  ):Promise<PublicSourceItemNativeLootContextsLookup>;
   lookupWithOriginalSourceEvidence(
     itemId:string|number
   ):Promise<PublicSourceItemOriginalEvidenceLookup>;
@@ -464,6 +480,7 @@ export async function loadPublicSourceCatalog(
   let expandedNativeBrowserPromise:Promise<ExpandedNativeItemSourceBrowser>|null=null;
   let staticCandidateBrowserPromise:Promise<StaticCandidateItemSourceBrowser>|null=null;
   let allOriginalBrowserPromise:Promise<AllOriginalItemSourceBrowser>|null=null;
+  let nativeLootContextPromise:Promise<NativeLootContextIndex>|null=null;
   let nativeCookingMembersPromise:Promise<NativeCookingMemberIndex>|null=null;
   let cookingRecipeResolverPromise:Promise<NativeCookingRecipeResolver>|null=null;
   let nativeLootPromise:Promise<NativeLootCandidateIndex>|null=null;
@@ -516,6 +533,12 @@ export async function loadPublicSourceCatalog(
   const loadStallSources=()=>nativeStallSourcesPromise??=
     Promise.all([loadStallSlots(),loadLoot()]).then(
       ([stalls,loot])=>joinPinnedNativeStallLoot(stalls,loot)
+    );
+  const loadLootContexts=()=>nativeLootContextPromise??=
+    Promise.all([
+      loadAllOriginalBrowser(),loadLoot(),loadLootNames(),loadStallSlots()
+    ]).then(([all,loot,names,stalls])=>
+      indexNativeLootContexts(all,loot,names,stalls)
     );
   const loadPets=()=>nativePetSourcePromise??=
     loadPinnedNativePetSourceCategories(basePath,fetcher);
@@ -577,6 +600,18 @@ export async function loadPublicSourceCatalog(
     loadExpandedNativeItemSources(){return loadExpandedNativeBrowser();},
     loadStaticCandidateItemSources(){return loadStaticCandidateBrowser();},
     loadAllOriginalItemSources(){return loadAllOriginalBrowser();},
+    loadNativeLootContexts(){return loadLootContexts();},
+    async lookupWithNativeLootContexts(itemId:string|number){
+      const row=lookupCurrent(itemId);
+      const contexts=await loadLootContexts();
+      return Object.freeze({
+        ...row,
+        nativeLootContexts:contexts.getItem(row.itemId),
+        nativeLootContextsLoaded:true as const,
+        actualDropVerified:false as const,
+        liveStallStockVerified:false as const
+      });
+    },
     async lookupWithOriginalSourceEvidence(itemId:string|number){
       const current=lookupCurrent(itemId);
       const browser=await loadAllOriginalBrowser();
