@@ -128,7 +128,7 @@ function mock(){
         byOriginalNativeCategory:DB01_FIVE_CATEGORY_SOURCE_COUNTS,
         sourcePositiveByOriginalArea:
           DB01_FIVE_CATEGORY_POSITIVE_AREA_COUNTS,
-        originalAllAreasNativeDefaultVerified:false,
+        nativeAllAreasDefaultVerified:false,
         runtimeCritterSceneResolved:false,
         gameCollectionUiMembershipVerified:false,
       };
