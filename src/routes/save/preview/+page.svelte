@@ -5,7 +5,8 @@
   import type {Db00ItemContext} from '../../../lib/save/common-db-context';
   import type {SavedGridItemReference} from '../../../lib/save/save-world-db04-context';
   import GridObjectPositionMap from '../../../lib/save/GridObjectPositionMap.svelte';
-  import {combineSavedGridQueues} from '../../../lib/save/grid-combined-queues';
+  import {combineSavedGridQueues,gridEditsForQuantityExport}
+    from '../../../lib/save/grid-combined-queues';
   import {draftGridGroupQuarterTurn}
     from '../../../lib/save/grid-group-quarter-turn';
   import type {GridQuarterTurnDirection}
@@ -97,6 +98,7 @@
   };
   let mixedQueue:GridMixedPlan[]=[];
   $: combinedGridEdits=combineSavedGridQueues(coordinateQueue,mixedQueue);
+  $: quantityGridEdits=gridEditsForQuantityExport(coordinateQueue,mixedQueue);
   let coordinateSnapshot:
     |{mode:'single';file:File;format:'json'|'auto';
       plan:GridCoordinatePlan;signature:string}
@@ -108,6 +110,8 @@
       edits:GridMixedPlan[];signature:string}
     |{mode:'combined';file:File;format:'json'|'auto';
       edits:GridMixedPlan[];signature:string}
+    |{mode:'quantity-grid';file:File;format:'json'|'auto';
+      edits:GridMixedPlan[];amounts:BatchEdit[];signature:string}
     |null=null;
   let coordinateCopyUrl:string|null=null;
   let coordinateCopyName='';
@@ -830,7 +834,8 @@
 
   async function validateCoordinateEdit(
     batchMode:boolean=false,transformMode:boolean=false,
-    mixedMode:boolean=false,combinedMode:boolean=false
+    mixedMode:boolean=false,combinedMode:boolean=false,
+    quantityMode:boolean=false
   ){
     cancel();result=null;
     const file=savedSlotsFile;
@@ -838,17 +843,24 @@
       ?selectedTransformPlan():selectedCoordinatePlan();
     const edits=batchMode
       ?coordinateQueue.map(p=>({...p}))
+      :quantityMode?gridEditsForQuantityExport(coordinateQueue,mixedQueue)
       :combinedMode?combineSavedGridQueues(coordinateQueue,mixedQueue)
       :mixedMode?mixedQueue.map(p=>({...p})):null;
+    const amountEdits=quantityMode
+      ?queuedEdits.map(p=>({...p,target:{...p.target}})):null;
     if(!file||activeFile!==file||
-       (batchMode||mixedMode||combinedMode
-          ?(!edits||!edits.length||edits.length>16):!plan)||
+       (batchMode||mixedMode||combinedMode||quantityMode
+          ?(!edits||!edits.length||edits.length>16||
+            (quantityMode&&(!amountEdits||!amountEdits.length||
+              amountEdits.length>16))):!plan)||
        file.size<1||file.size>MAX_BYTES){
       coordinateState='error';return;
     }
     const format:'json'|'auto'=file.name.toLowerCase().endsWith('.json')
       ?'json':'auto';
-    const signature=JSON.stringify(batchMode||mixedMode||combinedMode?edits:plan),
+    const signature=quantityMode
+      ?JSON.stringify({gridEdits:edits,quantityEdits:amountEdits})
+      :JSON.stringify(batchMode||mixedMode||combinedMode?edits:plan),
       request=revision;
     coordinateState='checking';processing=true;
     let bytes:Uint8Array|null=null;
@@ -866,7 +878,12 @@
         own.terminate();active=null;processing=false;
         const r=message as {kind?:string;receipt?:Record<string,unknown>};
         if(r?.kind!=='result'||
-           (batchMode
+           (quantityMode
+             ? r.receipt?.contract!=='wand.db05.grid-quantity-preview@1'||
+               r.receipt.gridChangedCount!==edits?.length||
+               r.receipt.amountChangedCount!==amountEdits?.length||
+               r.receipt.placementLegalityVerified!==false
+             :batchMode
              ? r.receipt?.contract!=='wand.db05.grid-coordinate-batch-preview@1'||
                r.receipt.changedCount!==edits?.length
              : mixedMode||combinedMode
@@ -885,7 +902,11 @@
            r.receipt?.exportAuthorized!==false){
           coordinateState='error';return;
         }
-        coordinateSnapshot=batchMode
+        coordinateSnapshot=quantityMode
+          ? {mode:'quantity-grid',file,format,
+             edits:edits as GridMixedPlan[],
+             amounts:amountEdits as BatchEdit[],signature}
+          :batchMode
           ? {mode:'batch',file,format,
              edits:edits as GridCoordinatePlan[],signature}
           : combinedMode
@@ -904,7 +925,10 @@
       worker.onmessage=event=>finish(event.data);
       worker.onerror=event=>{event.preventDefault();finish({kind:'error'});};
       worker.onmessageerror=()=>finish({kind:'error'});
-      worker.postMessage(batchMode
+      worker.postMessage(quantityMode
+        ?{command:'preview-grid-and-quantity-batch',format,bytes,
+          gridEdits:edits,quantityEdits:amountEdits}
+        :batchMode
         ?{command:'preview-grid-coordinate-batch',format,bytes,edits}
         :mixedMode||combinedMode
         ?{command:'preview-grid-mixed-batch',format,bytes,edits}
@@ -929,7 +953,12 @@
     const saved=coordinateSnapshot;
     const plan=saved.mode==='transform'
       ?selectedTransformPlan():selectedCoordinatePlan();
-    if((saved.mode==='batch'
+    if((saved.mode==='quantity-grid'
+        ?JSON.stringify({
+          gridEdits:gridEditsForQuantityExport(coordinateQueue,mixedQueue),
+          quantityEdits:queuedEdits
+        })!==saved.signature
+        :saved.mode==='batch'
         ?JSON.stringify(coordinateQueue)!==saved.signature
         :saved.mode==='combined'
         ?JSON.stringify(combineSavedGridQueues(coordinateQueue,mixedQueue))!==
@@ -991,7 +1020,11 @@
       worker.onmessage=event=>finish(event.data);
       worker.onerror=event=>{event.preventDefault();finish({kind:'error'});};
       worker.onmessageerror=()=>finish({kind:'error'});
-      worker.postMessage(saved.mode==='batch'
+      worker.postMessage(saved.mode==='quantity-grid'
+        ?{command:'export-grid-and-quantity-batch-copy',
+          format:saved.format,allowExperimentalCopy:true,
+          bytes,gridEdits:saved.edits,quantityEdits:saved.amounts}
+        :saved.mode==='batch'
         ?{command:'export-grid-coordinate-batch-copy',
           format:saved.format,allowExperimentalCopy:true,
           bytes,edits:saved.edits}
