@@ -1,4 +1,4 @@
-import {expectedOriginalGuideShardSha} from './shard-fingerprints.mjs';
+import {expectedOriginalGuideShardSha} from './shard-fingerprints.ts';
 
 /** DB-03 browser-only Guide reader. No remote uploads or account calls. */
 export const GUIDE_SEARCH_SCHEMA = 'wand.db03.quest-search@1';
