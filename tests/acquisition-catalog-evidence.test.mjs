@@ -145,6 +145,8 @@ test('typed catalog projection retains only vetted fields and immutable evidence
     ]);
     audit.supplementalDefinitions[0].nativeCategory='Tampered';
     audit.counts.additionalNativeDefinitions=999;
+    assert.equal(row.id,22); // Preserve source audit numeric ID.
+    assert.equal(row.itemId,'22'); // Stable DB-00 ID string.
     assert.equal(row.nativeCategory,'Currency');
     assert.equal(result.counts.additionalNativeDefinitions,1);
     assert.equal(result.lookupUnindexedItem(33).acquirableVerified,false);
