@@ -378,7 +378,7 @@
           }}>
           <span>#{marker.ordinals.join(', #')} · {
             itemName(pointByOrdinal.get(marker.ordinals[0])?.itemId??'')||
-            pointByOrdinal.get(marker.ordinals[0])?.itemId??''
+            (pointByOrdinal.get(marker.ordinals[0])?.itemId??'')
           }</span>
           <small>X {marker.x} / Y {marker.y}</small>
         </button>
