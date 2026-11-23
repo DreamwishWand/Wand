@@ -233,6 +233,81 @@ fn decode_zip(bytes: &[u8]) -> DecodeResult<String> {
         .map_err(|_| bad("World snapshot serialization failed"))
 }
 
+/// Per-GridData, source-LOCAL full-rectangle floor-mask overlap map.
+/// Nothing here is a game placement validator. Raw original mask values,
+/// not GridObjects or runtime Save cells, are the only input.
+fn source_floor_rectangle_origins(
+    floor: &[u32], sx: u32, sy: u32, accepted: u32, bx: u32, by: u32
+) -> Result<(Vec<u8>, u32), String> {
+    let invalid = || "DB04_FLOOR_RECT_INVALID_SOURCE".to_owned();
+    let width = sx as usize;
+    let height = sy as usize;
+    let footprint_width = bx as usize;
+    let footprint_height = by as usize;
+    let n = width.checked_mul(height).ok_or_else(invalid)?;
+    if width == 0 || height == 0 || n > 250_000 ||
+       floor.len() != n || footprint_width == 0 || footprint_height == 0 ||
+       footprint_width > 512 || footprint_height > 512 {
+        return Err(invalid());
+    }
+    let mut bits = vec![0u8; n];
+    if footprint_width > width || footprint_height > height {
+        return Ok((bits, 0));
+    }
+    let pitch = width + 1;
+    let mut missing = vec![0u32; (height + 1) * pitch];
+    for y in 0..height {
+        let mut row_missing = 0u32;
+        for x in 0..width {
+            if floor[y * width + x] & accepted == 0 { row_missing += 1; }
+            missing[(y + 1) * pitch + x + 1] =
+                missing[y * pitch + x + 1] + row_missing;
+        }
+    }
+    let mut count = 0u32;
+    for y in 0..=height - footprint_height {
+        let bottom = (y + footprint_height) * pitch;
+        let top = y * pitch;
+        for x in 0..=width - footprint_width {
+            let right = x + footprint_width;
+            let uncovered = missing[bottom + right] as i64
+                - missing[top + right] as i64
+                - missing[bottom + x] as i64
+                + missing[top + x] as i64;
+            if uncovered == 0 {
+                bits[y * width + x] = 1;
+                count += 1;
+            }
+        }
+    }
+    Ok((bits, count))
+}
+
+/// WASM-computed source-grid candidate origins for a hypothetical footprint
+/// outer rectangle; zero source permission or Save-writing claims.
+#[wasm_bindgen]
+pub struct WasmSourceFloorRectangle {
+    map: Vec<u8>,
+    count: u32,
+}
+
+#[wasm_bindgen]
+impl WasmSourceFloorRectangle {
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        floor: &[u32], size_x: u32, size_y: u32,
+        accepted_floor_mask: u32, rectangle_width: u32, rectangle_height: u32
+    ) -> Result<WasmSourceFloorRectangle, JsValue> {
+        let (map, count) = source_floor_rectangle_origins(
+            floor, size_x, size_y, accepted_floor_mask,
+            rectangle_width, rectangle_height
+        ).map_err(|err| JsValue::from_str(&err))?;
+        Ok(Self { map, count })
+    }
+    pub fn origin_bitmap(&self) -> Vec<u8> { self.map.clone() }
+    pub fn origin_count(&self) -> u32 { self.count }
+}
+
 /// Incremental binary accumulation only; no unverified file members or
 /// decoded contents cross into Svelte. The Worker receives source IDs/counts.
 #[wasm_bindgen]
@@ -263,6 +338,33 @@ impl Default for WasmWorldZipReader {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn original_floor_rectangle_holes_and_rotation_are_exact() {
+        // Y-major 4x3 floor; a single incompatible hole at (2,1).
+        let floor = [4,4,4,4, 4,4,0,4, 4,4,4,4];
+        let (map,count)=source_floor_rectangle_origins(&floor,4,3,4,2,2).unwrap();
+        assert_eq!(count,2);
+        assert_eq!(map,[1,0,0,0, 1,0,0,0, 0,0,0,0]);
+        let (_,count)=source_floor_rectangle_origins(&floor,4,3,4,2,1).unwrap();
+        assert_eq!(count,7);
+        let (_,count)=source_floor_rectangle_origins(&floor,4,3,4,1,2).unwrap();
+        assert_eq!(count,6);
+        let (map,count)=source_floor_rectangle_origins(&floor,4,3,4,5,2).unwrap();
+        assert_eq!(count,0);
+        assert_eq!(map.len(),12);
+    }
+    #[test]
+    fn original_floor_rectangle_high_unsigned_bits_and_bad_inputs() {
+        let (map,count)=source_floor_rectangle_origins(
+            &[0x8000_0000,0xffff_ffff,0],3,1,0x8000_0000,1,1
+        ).unwrap();
+        assert_eq!(map,[1,1,0]);
+        assert_eq!(count,2);
+        assert!(source_floor_rectangle_origins(&[],2,2,4,1,1).is_err());
+        assert!(source_floor_rectangle_origins(&[4],1,1,4,0,1).is_err());
+        assert!(source_floor_rectangle_origins(&[4],1,1,4,1,513).is_err());
+    }
     use flate2::{write::DeflateEncoder, Compression};
     use std::io::Write;
 
