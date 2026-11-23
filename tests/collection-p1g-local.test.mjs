@@ -5,10 +5,12 @@ import {deflateRawSync} from 'node:zlib';
 import {decodeP1gPackagedProfile,p1gPackagedProfileCodec} from '../src/lib/collection/private-p1g-codec.js';
 import {createSavedStorePreview, attachHistoricalStoreLabels} from '../src/lib/collection/saved-store-preview.mjs';
 import {inspectEncryptedSavedStore as inspectEncryptedSavedStoreCore}
-  from '../src/lib/collection/saved-store-worker-core.mjs';
-import {projectRustDiscoveryText} from './helpers/rust-collection-discovery.mjs';
+  from '../src/lib/collection/saved-store-worker-core.ts';
+import {projectRustDiscoveryText,projectRustPositiveStockText}
+  from './helpers/rust-collection-discovery.mjs';
 const inspectEncryptedSavedStore=(source,decoder=decodeP1gPackagedProfile)=>
-  inspectEncryptedSavedStoreCore(source,projectRustDiscoveryText,decoder);
+  inspectEncryptedSavedStoreCore(source,projectRustDiscoveryText,
+    projectRustPositiveStockText,decoder);
 import {inspectLocalDb04SaveJoin} from '../src/lib/collection/saved-world-db04-join-worker-core.mjs';
 import {
   makeCollectionDb04ZipFixture,TEST_DB04_LAYOUT,TEST_DB04_GRID
@@ -148,7 +150,7 @@ test('encrypted synthetic P1G exposes positive-stock ownership only without raw 
  ]);
  assert.equal(actual.positiveOwnership.zeroReferences,1);
  assert.equal(actual.positiveOwnership.missingStatusInferred,false);
- const {sanitizePositiveListInventoryOwnership}=await import('../src/lib/collection/saved-list-positive-ownership.mjs');
+ const {sanitizePositiveListInventoryOwnership}=await import('../src/lib/collection/saved-list-positive-ownership.ts');
  assert.deepEqual(sanitizePositiveListInventoryOwnership(
   structuredClone(actual.positiveOwnership)),actual.positiveOwnership);
  const json=JSON.stringify(actual);
