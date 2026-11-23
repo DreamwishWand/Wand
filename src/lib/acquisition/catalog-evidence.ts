@@ -15,7 +15,7 @@ const NATIVE_SOURCE=/^ddv_Data\/StreamingAssets\/itemlist\/[A-Za-z0-9_-]+\.json$
 const CATEGORY=/^[A-Za-z][A-Za-z0-9_]{0,79}$/;
 
 export interface SupplementalCatalogDefinition {
-  readonly id:string;
+  readonly id:number;
   readonly itemId:string;
   readonly classification:'native_definition_only_unclassified'|
     'unresolved_in_partial_native_index';
@@ -80,7 +80,8 @@ export function createAcquisitionCatalogEvidence(
   const target=raw.target;
   const limits=raw.limits;
   const guide=raw.guideIntegration;
-  assert(record(target)&&target.platform==='Steam'&&
+  assert(record(target)&&typeof target.platform==='string'&&
+    /^[A-Za-z][A-Za-z0-9 ._-]{1,63}$/.test(target.platform)&&
     typeof target.gameVersion==='string'&&VERSION.test(target.gameVersion)&&
     record(limits)&&limits.catalogMembershipOnly===true&&
     limits.liveStockVerified===false&&limits.ownershipVerified===false&&
@@ -118,7 +119,7 @@ export function createAcquisitionCatalogEvidence(
         typeof rawRow.sourceSha256==='string'&&SHA.test(rawRow.sourceSha256),
         'INVALID_SOURCE');
       row=Object.freeze({
-        id:itemId,itemId,
+        id:Number(itemId),itemId,
         classification:'native_definition_only_unclassified',
         nativeCategory:rawRow.nativeCategory,
         sourceFile:rawRow.sourceFile,
@@ -130,7 +131,7 @@ export function createAcquisitionCatalogEvidence(
       assert(rawRow.nativeCategory===null&&rawRow.sourceFile===null&&
         rawRow.sourceSha256===null,'UNSAFE_UNRESOLVED');
       row=Object.freeze({
-        id:itemId,itemId,
+        id:Number(itemId),itemId,
         classification:'unresolved_in_partial_native_index',
         nativeCategory:null,sourceFile:null,sourceSha256:null,
         acquirableVerified:false
