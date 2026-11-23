@@ -1896,11 +1896,16 @@ try{
     await dialog.dismiss();
   };
   page.on('dialog',declineExit);
-  await page.locator('a.header-home-button').click({noWaitAfter:true});
+  const declinedDialog=page.waitForEvent('dialog',{timeout:15000});
+  const cancelledClick=page.locator('a.header-home-button')
+    .click({noWaitAfter:true});
+  await declinedDialog;
+  await cancelledClick;
   await page.waitForFunction(()=>
     window.location.pathname.endsWith('/save/')&&
     document.querySelector('[aria-label="編集済みセーブの出力"]')!==null
   );
+  await page.waitForTimeout(80);
   assert.equal(exitDialogs.length,1,
     'one route-leave attempt must not display stacked confirmation dialogs');
   assert.match(exitDialogs[0].message,/未出力の数量・配置/);
@@ -1919,7 +1924,11 @@ try{
     await dialog.accept();
   };
   page.on('dialog',acceptExit);
-  await page.locator('a.header-home-button').click({noWaitAfter:true});
+  const acceptedDialog=page.waitForEvent('dialog',{timeout:15000});
+  const acceptedClick=page.locator('a.header-home-button')
+    .click({noWaitAfter:true});
+  await acceptedDialog;
+  await acceptedClick;
   await page.waitForURL('**/Wand/',{timeout:30000});
   page.off('dialog',acceptExit);
   assert.equal(acceptedDialogs.length,1,
