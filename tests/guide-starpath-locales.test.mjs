@@ -65,3 +65,25 @@ test('43 verified reward names exactly match SHA-pinned public DB-01 rows and 17
   assert.equal(starpathRewardName(STARPATH_UNRESOLVED_REWARD_IDS[0]),null);
   assert.equal(starpathRewardName('__proto__'),null);
 });
+
+
+test('typed source locale bridge rejects unverified snapshots and preserves original-language differences',async()=>{
+  const {isStarpathSeasonId,isStarpathLanguage,verifyStarpathLocaleSnapshot}=
+    await import('../src/lib/guide/starpath-locale-contract.ts');
+  const snapshot=verifyPublicStarpath(JSON.parse(await file(seasonPath)));
+  assert.equal(verifyStarpathLocaleSnapshot(snapshot).seasons.length,2);
+  assert.equal(isStarpathSeasonId('HauntingElegance2026'),true);
+  assert.equal(isStarpathSeasonId('__proto__'),false);
+  assert.equal(isStarpathLanguage('zh-CN'),true);
+  assert.equal(isStarpathLanguage('en-US'),false);
+  const forged=structuredClone(snapshot);
+  forged.source.fileSha256='0'.repeat(64);
+  assert.throws(()=>verifyStarpathLocaleSnapshot(forged),/provenance/);
+  const original=verifyStarpathWeeklyLocales(JSON.parse(await file(localePath)),snapshot);
+  const key='Liveops.Seafaring2026_Week03Task01_Description';
+  assert.equal(starpathWeeklyDescription(original,key,'de'),'Fange 20 Fische am schillernden Strand.');
+  assert.equal(starpathWeeklyDescription(original,key,'ja'),'輝きの浜辺で魚を25匹釣る');
+  assert.equal(starpathWeeklyDescription(original,key,'__proto__'),null);
+  assert.equal(starpathWeeklyDescription(original,'Liveops.__proto___Description'),null);
+  assert.equal(starpathWeeklyDescription(Object.create(null),key),null);
+});
