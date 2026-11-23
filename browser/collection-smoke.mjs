@@ -387,6 +387,39 @@ try{
   const sourceTypes=page.locator('.collection-native-activity');
   assert.equal(await sourceTypes.count(),15,
     'every source-native ActivityItem subtype must have a browse card');
+  const otherNativeTypes=page.locator('.collection-native-subtype');
+  assert.equal(await otherNativeTypes.count(),35,
+    'all Furniture, Clothing and Trimming subtypes must be selectable');
+  assert.equal(await page.locator('.collection-detail-category-grid .facet-card').count(),50,
+    'every published Item ID must be assigned to one of 50 real source groups');
+  assert.equal(await page.locator('.collection-detail-category-grid .facet-card').filter({
+    hasText:/\\s0\\s*$/u
+  }).count(),0,'source category overview must not expose empty categories');
+  for(const [code,label,count] of [
+    [3,'料理','618'],[11,'食材','201'],[10,'魚','103']
+  ]){
+    const card=page.locator(`.collection-native-activity[data-source-type="${code}"]`);
+    assert.match(await card.innerText(),new RegExp(label));
+    assert.match(await card.innerText(),new RegExp(count));
+    await card.click();
+    await page.locator('.item-card').first().waitFor({timeout:12000});
+    assert.match(await page.locator('.result-count').innerText(),new RegExp(count));
+    const originalId=Number(await page.locator('.item-card').first().getAttribute('data-item-id'));
+    assert.equal(Math.floor((originalId%10000000)/100000),code);
+    await page.locator('.breadcrumbs').getByRole('button',{name:'カテゴリ'}).click();
+    await page.locator('.collection-native-activity').first().waitFor();
+  }
+  for(const [key,groupCount] of [
+    ['Furniture:7','319'],['Clothing:5','114'],['Trimming:0','218']
+  ]){
+    const card=page.locator(`.collection-native-subtype[data-native-subtype="${key}"]`);
+    assert.match(await card.innerText(),new RegExp(groupCount));
+    await card.click();
+    await page.locator('.item-card').first().waitFor({timeout:12000});
+    assert.match(await page.locator('.result-count').innerText(),new RegExp(groupCount));
+    await page.locator('.breadcrumbs').getByRole('button',{name:'カテゴリ'}).click();
+    await page.locator('.collection-native-subtype').first().waitFor();
+  }
   assert.equal(await page.locator('.facet-grid .facet-card').filter({
     hasText:/詳細分類未確認|未分類/
   }).count(),0,'no 1,972-item generic unclassified card may remain');
@@ -422,6 +455,7 @@ try{
   await retryPage.locator('.collection-native-activity').first()
     .waitFor({timeout:30000});
   assert.equal(await retryPage.locator('.collection-native-activity').count(),15);
+  assert.equal(await retryPage.locator('.collection-native-subtype').count(),35);
   assert.equal(await retryPage.locator('.collection-original-category-grid').count(),0);
   await retryContext.close();
   // DB-01's original Disney universe tags are now a working, cross-category
