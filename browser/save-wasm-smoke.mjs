@@ -1539,6 +1539,15 @@ try{
   assert.equal(await regular.getByRole('button',{
     name:'座標変更を検証',exact:true
   }).count(),0,'normal mode cannot export only one queued Grid position');
+  // Refreshing the same Grid must not silently wipe staged placements.
+  const regularGrid=regular.getByRole('region',{name:'配置オブジェクト'});
+  await regularGrid.getByRole('button',{name:'再読み込み'}).click();
+  await regularGrid.getByRole('button',{name:'配置 #1 の座標を編集'})
+    .waitFor({timeout:30000});
+  assert.match(await unifiedSave.innerText(),/数量1件・配置1件/);
+  assert.equal(await regular.getByRole('region',{
+    name:'一括座標編集'
+  }).getByRole('button',{name:'座標編集 #1 を修正'}).count(),1);
   await tabs.getByRole('button',{name:'Inventory / Chest'}).click();
   assert.equal(await regular.getByRole('region',{
     name:'一括数量変更'
@@ -1546,6 +1555,12 @@ try{
   assert.equal(await regular.getByRole('region',{
     name:'所持品と配置の統合編集'
   }).count(),0,'partial export controls stay diagnostic-only');
+  // The owned-row refresh must also preserve every already queued Grid edit.
+  const ownedPanel=regular.getByRole('region',{name:'セーブ内アイテム'});
+  await ownedPanel.getByRole('button',{name:'再読み込み'}).click();
+  await ownedPanel.getByRole('status').filter({hasText:'4件'})
+    .waitFor({timeout:30000});
+  assert.match(await unifiedSave.innerText(),/数量1件・配置1件/);
   await unifiedSave.getByRole('button',{
     name:'すべての変更を検証'
   }).click();
@@ -1606,6 +1621,28 @@ try{
     .Inventory['777'].Amount,1);
   assert.equal(quantityProfile.World.GridCollection.Grids['101']
     .Objects['1'].X,45);
+  // Leaving a queued edit, including an already exported copy, cannot
+  // silently discard drafts: both file close and clear-all require consent.
+  page.once('dialog',dialog=>dialog.dismiss());
+  await regular.getByRole('button',{name:'セーブを閉じる'}).click();
+  assert.match(await unifiedSave.innerText(),/数量1件・配置1件/);
+  assert.equal(await regular.getByLabel('変更後の数量').inputValue(),'251');
+  page.once('dialog',dialog=>dialog.dismiss());
+  await unifiedSave.getByRole('button',{name:'変更をすべて破棄'}).click();
+  assert.match(await unifiedSave.innerText(),/数量1件・配置1件/);
+  assert.equal(await unifiedSave.getByRole('link',{
+    name:'編集済みコピーをダウンロード'
+  }).count(),1);
+  page.once('dialog',dialog=>dialog.accept());
+  await unifiedSave.getByRole('button',{name:'変更をすべて破棄'}).click();
+  assert.equal(await regular.getByRole('region',{
+    name:'編集済みセーブの出力'
+  }).count(),0);
+  assert.equal(await regular.getByRole('region',{
+    name:'一括数量変更'
+  }).count(),0);
+  assert.equal(await ownedPanel.getByRole('status').filter({hasText:'4件'}).count(),1,
+    'clearing queued edits must keep the currently opened local Save');
   // A large, synthetic local Save must not trap user-editable records
   // behind the old first-120-row cap in either workspace tab.
   const largeSave=structuredClone(quantityProfile);
