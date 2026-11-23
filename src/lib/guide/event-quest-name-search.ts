@@ -4,7 +4,7 @@
  * native Event↔Quest projection. Never turns a static source relationship into
  * a prerequisite, active event, task ordering, or personal progress.
  */
-import {verifyPublicQuestIndex,formatPublicGuideText} from './public-guide.mjs';
+import {verifyPublicQuestIndex,formatPublicGuideText} from './public-guide.ts';
 import type {PublicEventQuestIndex} from './public-event-quest-links.ts';
 import type {PublicEventFriendshipRewards} from './public-event-friendship-rewards.ts';
 
