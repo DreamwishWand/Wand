@@ -100,6 +100,19 @@
   $: selectedDb04Refs=selectedItem?savedDb04ByItem[String(selectedItem.itemId)]??null:null;
   $: isBrowsing=Boolean(selected||search.trim()||status!=='all'||favoriteOnly||nameStatus!=='all'||expansion||worldFilter||universeFilter);
 
+  // Display the original Steam ActivityItemType subtype rather than the
+  // generic "unclassified" Activity bucket; this does not assert CollectionSet
+  // membership, world availability or player entitlement.
+  const nativeActivityLabels:Record<string,Record<string,string>>={
+    ja:{'Source Crop':'作物','Source Meal':'料理','Source Flower':'花','Source Fish':'魚','Source Ingredient':'食材','Source Consumable':'消耗品','Source Mineral':'鉱物','Source Crafting Material':'クラフト素材'},
+    en:{'Source Crop':'Crops','Source Meal':'Meals','Source Flower':'Flowers','Source Fish':'Fish','Source Ingredient':'Ingredients','Source Consumable':'Consumables','Source Mineral':'Minerals','Source Crafting Material':'Crafting Materials'},
+    fr:{'Source Crop':'Cultures','Source Meal':'Plats','Source Flower':'Fleurs','Source Fish':'Poissons','Source Ingredient':'Ingrédients','Source Consumable':'Consommables','Source Mineral':'Minéraux','Source Crafting Material':'Matériaux de fabrication'},
+    it:{'Source Crop':'Colture','Source Meal':'Piatti','Source Flower':'Fiori','Source Fish':'Pesci','Source Ingredient':'Ingredienti','Source Consumable':'Consumabili','Source Mineral':'Minerali','Source Crafting Material':'Materiali da creazione'},
+    de:{'Source Crop':'Feldfrüchte','Source Meal':'Gerichte','Source Flower':'Blumen','Source Fish':'Fische','Source Ingredient':'Zutaten','Source Consumable':'Verbrauchsgegenstände','Source Mineral':'Mineralien','Source Crafting Material':'Herstellungsmaterialien'},
+    'es-ES':{'Source Crop':'Cultivos','Source Meal':'Platos','Source Flower':'Flores','Source Fish':'Peces','Source Ingredient':'Ingredientes','Source Consumable':'Consumibles','Source Mineral':'Minerales','Source Crafting Material':'Materiales de fabricación'},
+    'zh-CN':{'Source Crop':'农作物','Source Meal':'餐食','Source Flower':'花卉','Source Fish':'鱼类','Source Ingredient':'食材','Source Consumable':'消耗品','Source Mineral':'矿物','Source Crafting Material':'制作材料'},
+    'pt-BR':{'Source Crop':'Plantações','Source Meal':'Refeições','Source Flower':'Flores','Source Fish':'Peixes','Source Ingredient':'Ingredientes','Source Consumable':'Consumíveis','Source Mineral':'Minerais','Source Crafting Material':'Materiais de criação'}
+  };
   function categoryLabel(lang:string,id:string):string {
     const special:Record<string,Record<string,string>>={
       ja:{Memories:'思い出','Quest Puzzles':'クエストのパズル',Exhibition:'展示','Source Activity Items':'その他のアイテム（詳細分類未確認）'},
@@ -111,7 +124,7 @@
       'zh-CN':{Memories:'回忆','Quest Puzzles':'任务谜题',Exhibition:'展览','Source Activity Items':'其他物品（未分类）'},
       'pt-BR':{Memories:'Memórias','Quest Puzzles':'Quebra-cabeças de missões',Exhibition:'Exposição','Source Activity Items':'Outros itens (sem classificação)'}
     };
-    return special[lang]?.[id]??collectionFamilyLabel(lang,id)??id;
+    return nativeActivityLabels[lang]?.[id]??special[lang]?.[id]??collectionFamilyLabel(lang,id)??id;
   }
   function currentFilter(offset:number,limit:number):CollectionFilter {
     return {
