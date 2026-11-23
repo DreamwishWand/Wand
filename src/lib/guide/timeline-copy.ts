@@ -39,7 +39,17 @@ const DICTIONARY={
     "startTimeUnknown": "開始時刻未確認",
     "onlineHistory": "過去のスターパスは再参加不可",
     "gameClock": "ゲーム内時間イベント",
-    "year": "開催年"
+    "year": "開催年",
+    "dateInfo": "日程について",
+    "visiblePeriod": "表示期間",
+    "legend": "凡例",
+    "scrollTimeline": "開催期間（横スクロール）",
+    "loadFailed": "日程を読み込めませんでした",
+    "retry": "再読み込み",
+    "eventDetails": "イベント詳細",
+    "close": "閉じる",
+    "guide": "Guide",
+    "timelineRegion": "開催期間"
   },
   "en": {
     "systems": "Systems",
@@ -74,7 +84,17 @@ const DICTIONARY={
     "startTimeUnknown": "Start time unconfirmed",
     "onlineHistory": "Past Star Paths cannot be replayed",
     "gameClock": "In-game time event",
-    "year": "Event year"
+    "year": "Event year",
+    "dateInfo": "About dates",
+    "visiblePeriod": "Visible period",
+    "legend": "Legend",
+    "scrollTimeline": "Event timeline (scroll horizontally)",
+    "loadFailed": "Unable to load dates",
+    "retry": "Retry",
+    "eventDetails": "Event details",
+    "close": "Close",
+    "guide": "Guide",
+    "timelineRegion": "Event timeline"
   },
   "fr": {
     "systems": "Systèmes",
@@ -109,7 +129,17 @@ const DICTIONARY={
     "startTimeUnknown": "Heure de début inconnue",
     "onlineHistory": "Les anciennes Voies des étoiles ne sont plus accessibles",
     "gameClock": "Événement selon l'heure du jeu",
-    "year": "Année de l'événement"
+    "year": "Année de l'événement",
+    "dateInfo": "À propos des dates",
+    "visiblePeriod": "Période affichée",
+    "legend": "Légende",
+    "scrollTimeline": "Calendrier (défilement horizontal)",
+    "loadFailed": "Impossible de charger les dates",
+    "retry": "Réessayer",
+    "eventDetails": "Détails de l’événement",
+    "close": "Fermer",
+    "guide": "Guide",
+    "timelineRegion": "Calendrier"
   },
   "it": {
     "systems": "Sistemi",
@@ -144,7 +174,17 @@ const DICTIONARY={
     "startTimeUnknown": "Ora di inizio non confermata",
     "onlineHistory": "I Percorsi stellari passati non sono ripetibili",
     "gameClock": "Evento basato sull'ora di gioco",
-    "year": "Anno dell'evento"
+    "year": "Anno dell'evento",
+    "dateInfo": "Informazioni sulle date",
+    "visiblePeriod": "Periodo visualizzato",
+    "legend": "Legenda",
+    "scrollTimeline": "Calendario (scorrimento orizzontale)",
+    "loadFailed": "Impossibile caricare le date",
+    "retry": "Riprova",
+    "eventDetails": "Dettagli evento",
+    "close": "Chiudi",
+    "guide": "Guida",
+    "timelineRegion": "Calendario"
   },
   "de": {
     "systems": "Systeme",
@@ -179,7 +219,17 @@ const DICTIONARY={
     "startTimeUnknown": "Startzeit nicht bestätigt",
     "onlineHistory": "Vergangene Sternenpfade sind nicht erneut spielbar",
     "gameClock": "Event nach Spielzeit",
-    "year": "Eventjahr"
+    "year": "Eventjahr",
+    "dateInfo": "Termininformationen",
+    "visiblePeriod": "Anzeigezeitraum",
+    "legend": "Legende",
+    "scrollTimeline": "Zeitleiste (horizontal scrollen)",
+    "loadFailed": "Termine konnten nicht geladen werden",
+    "retry": "Erneut versuchen",
+    "eventDetails": "Eventdetails",
+    "close": "Schließen",
+    "guide": "Guide",
+    "timelineRegion": "Event-Zeitleiste"
   },
   "es-ES": {
     "systems": "Sistemas",
@@ -214,7 +264,17 @@ const DICTIONARY={
     "startTimeUnknown": "Hora de inicio sin confirmar",
     "onlineHistory": "Los Caminos de estrellas anteriores no pueden repetirse",
     "gameClock": "Evento basado en la hora del juego",
-    "year": "Año del evento"
+    "year": "Año del evento",
+    "dateInfo": "Información de fechas",
+    "visiblePeriod": "Período visible",
+    "legend": "Leyenda",
+    "scrollTimeline": "Cronología (desplazamiento horizontal)",
+    "loadFailed": "No se pudieron cargar las fechas",
+    "retry": "Reintentar",
+    "eventDetails": "Detalles del evento",
+    "close": "Cerrar",
+    "guide": "Guía",
+    "timelineRegion": "Cronología"
   },
   "zh-CN": {
     "systems": "系统",
@@ -249,7 +309,17 @@ const DICTIONARY={
     "startTimeUnknown": "开始时间未确认",
     "onlineHistory": "无法重玩往期星光之路",
     "gameClock": "游戏时间活动",
-    "year": "活动年份"
+    "year": "活动年份",
+    "dateInfo": "日期说明",
+    "visiblePeriod": "显示时段",
+    "legend": "图例",
+    "scrollTimeline": "活动时间线（横向滚动）",
+    "loadFailed": "无法加载活动日期",
+    "retry": "重试",
+    "eventDetails": "活动详情",
+    "close": "关闭",
+    "guide": "指南",
+    "timelineRegion": "活动时间线"
   },
   "pt-BR": {
     "systems": "Sistemas",
@@ -284,7 +354,17 @@ const DICTIONARY={
     "startTimeUnknown": "Hora de início não confirmada",
     "onlineHistory": "Caminhos Estelares passados não podem ser repetidos",
     "gameClock": "Evento do horário do jogo",
-    "year": "Ano do evento"
+    "year": "Ano do evento",
+    "dateInfo": "Sobre as datas",
+    "visiblePeriod": "Período exibido",
+    "legend": "Legenda",
+    "scrollTimeline": "Linha do tempo (rolagem horizontal)",
+    "loadFailed": "Não foi possível carregar as datas",
+    "retry": "Tentar novamente",
+    "eventDetails": "Detalhes do evento",
+    "close": "Fechar",
+    "guide": "Guia",
+    "timelineRegion": "Linha do tempo"
   }
 } as const;
 export function guideTimelineCopy(language:WandLanguage){return DICTIONARY[language]??DICTIONARY.en;}

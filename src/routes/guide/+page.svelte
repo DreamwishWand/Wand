@@ -17,10 +17,10 @@
   import {guideTimelineCopy,GUIDE_LOCALES} from '$lib/guide/timeline-copy.ts';
   import {GUIDE_EARLY_ACCESS_FIRST_DAY} from '$lib/guide/official-event-history.ts';
   import {mergeGuideNativeEvents} from '$lib/guide/native-event-calendar.ts';
+  import {guideArchiveTitle,mergeGuideArchivedStarpaths} from '$lib/guide/starpath-calendar-archive.ts';
 
   let events:GuideCalendarEvent[]=[];
-  let nativeFestivalNames:Readonly<Record<string,string>>|null=null;
-  let earlierFestivalNames:Readonly<Record<string,string>>|null=null;
+  let historyNames:Readonly<Record<string,Readonly<Record<string,string>>>>={};
   let loading=true;
   let loadError='';
   let now=Date.now();
@@ -52,26 +52,21 @@
     return new Intl.DateTimeFormat(locale,{timeZone:'UTC',month:'short'})
       .format(new Date(day+'T12:00:00Z'));
   }
-  function longDay(day:string,locale=viewerLocale):string{
+  function longDay(day:string,locale:string):string{
     return new Intl.DateTimeFormat(locale,{
       timeZone:'UTC',year:'numeric',month:'short',day:'numeric'
     }).format(new Date(day+'T12:00:00Z'));
   }
-  function weekdayLabel(day:string):string{
-    return new Intl.DateTimeFormat(viewerLocale,{timeZone:'UTC',weekday:'narrow'})
+  function weekdayLabel(day:string,locale:string):string{
+    return new Intl.DateTimeFormat(locale,{timeZone:'UTC',weekday:'narrow'})
       .format(new Date(day+'T12:00:00Z'));
   }
   function displayCategory(event:GuideCalendarEvent):'starpath'|'floating'|'other'{
     return event.kind!=='limited-event'?'starpath':event.category;
   }
-  function eventTitle(event:GuideCalendarEvent):string{
-    // Only the source-matched Festival definition may use its native title.
-    // Other event titles remain the exact language supplied by official news.
-    const names=event.id==='haunted-floating-festival-2026'?nativeFestivalNames:
-      event.id==='haunted-floating-festival-2025'?earlierFestivalNames:null;
-    return (event.kind==='limited-event'
-      ?(event.nativeNames?.[language]||event.nativeNames?.en):undefined)
-      ||names?.[language]||names?.en||event.title;
+  function eventTitle(event:GuideCalendarEvent,lang:WandLanguage,names:typeof historyNames):string{
+    return (event.kind==='limited-event'?event.nativeNames?.[lang]:undefined)
+      ||guideArchiveTitle(event,lang)||names[event.id]?.[lang]||event.title;
   }
   function eventHref(event:GuideCalendarEvent):string|null{
     if(event.kind==='starpath')return starpathSeasonHref(base,event.sourceSeasonId);
@@ -81,11 +76,11 @@
     return event.kind!=='limited-event'?'star':
       event.category==='floating'?'world':'plant';
   }
-  function phaseName(phase:GuideTimelinePhase):string{
+  function phaseName(phase:GuideTimelinePhase,copy:ReturnType<typeof guideTimelineCopy>):string{
     return phase==='task'||phase==='historic'?copy.starPaths:
       phase==='exchange'?copy.exchange:copy.events;
   }
-  function stateName(event:GuideCalendarEvent):string{
+  function stateName(event:GuideCalendarEvent,copy:ReturnType<typeof guideTimelineCopy>,now:number):string{
     switch(eventScheduleState(event,now)){
       case 'task-window':return copy.starPaths;
       case 'exchange-only':return copy.exchange;
@@ -94,13 +89,13 @@
       default:return copy.ended;
     }
   }
-  function eventBoundary(event:GuideCalendarEvent):string{
+  function eventBoundary(event:GuideCalendarEvent,formatLocal:(utc:string)=>string,locale:string):string{
     if(event.precision==='date-only'){
       if(event.kind==='limited-event'&&event.sourceStartUtc&&event.sourceEndUtcInclusive)
         return `${formatLocal(event.sourceStartUtc)} – ${formatLocal(event.sourceEndUtcInclusive)}`;
       const end=event.kind==='starpath-history'&&event.officialEndUtc
-        ?formatLocal(event.officialEndUtc):longDay(event.endDayInclusive);
-      return `${longDay(event.startDay)} – ${end}`;
+        ?formatLocal(event.officialEndUtc):longDay(event.endDayInclusive,locale);
+      return `${longDay(event.startDay,locale)} – ${end}`;
     }
     return `${formatLocal(event.startUtc)} – ${formatLocal(event.endUtcExclusive)}`;
   }
@@ -157,10 +152,15 @@
         loadPublicEventFriendshipRewards(`${base}/guide/public/${DB03_EVENT_FRIENDSHIP_REWARD_FILE}`)
           .catch(()=>null)
       ]);
-      const articleEvents=guideCalendarEvents(snapshot);
+      const articleEvents=mergeGuideArchivedStarpaths(guideCalendarEvents(snapshot));
       events=native?mergeGuideNativeEvents(articleEvents,native):articleEvents;
-      nativeFestivalNames=native?.getEvent('floating_festival','HauntedFloatingFestival2026')?.names??null;
-      earlierFestivalNames=native?.getEvent('floating_festival','HauntedFloatingFestival')?.names??null;
+      historyNames={
+        'haunted-floating-festival-2026':native?.getEvent('floating_festival','HauntedFloatingFestival2026')?.names??{},
+        'haunted-floating-festival-2025':native?.getEvent('floating_festival','HauntedFloatingFestival')?.names??{},
+        'trick-or-treat-2023':native?.getEvent('mini_event','TrickOrTreat')?.names??{},
+        'trick-or-treat-2024':native?.getEvent('mini_event','TrickOrTreat')?.names??{},
+        'dreamlight-parks-fest-2024':native?.getEvent('mini_event','DreamlightParkFest')?.names??{}
+      };
     }catch(error){
       loadError=error instanceof Error?error.message:String(error);
     }finally{
@@ -179,26 +179,26 @@
 </script>
 
 <svelte:head>
-  <title>Guide | Dreamwish Wand</title>
-  <meta name="description" content="クエスト、スターパス、期間限定イベントの開催期間と攻略を確認できるDreamwish Wandガイド。" />
+  <title>{copy.guide} | Dreamwish Wand</title>
+  <meta name="description" content={`${copy.systems} · ${copy.quests} · ${copy.timeline}`} />
 </svelte:head>
 
-<main class="guide-app" aria-label="Guide">
+<main class="guide-app" aria-label={copy.guide}>
 
 
-  <section class="timeline-panel" aria-label="イベント開催期間">
+  <section class="timeline-panel" aria-label={copy.timelineRegion}>
     <div class="timeline-toolbar">
       <div class="timeline-title">
         <WandIcon name="grid" size={19}/>
         <strong>{copy.timeline}</strong>
         <span class="zone" title={viewerZone}>{zoneLabel}</span>
         <details class="source-info">
-          <summary aria-label="日程の出典と注意"><WandIcon name="info" size={17}/></summary>
+          <summary aria-label={copy.dateInfo}><WandIcon name="info" size={17}/></summary>
           <p>{copy.sourceNote} · Steam v1.26.2 · {GUIDE_EVENT_CALENDAR_AS_OF}</p>
         </details>
       </div>
       <div class="calendar-nav">
-        <div class="zoom" role="group" aria-label="表示する期間">
+        <div class="zoom" role="group" aria-label={copy.visiblePeriod}>
           <button class:active={weeks===5} aria-pressed={weeks===5} on:click={()=>changeZoom(5)}>5 {copy.weeks}</button>
           <button class:active={weeks===9} aria-pressed={weeks===9} on:click={()=>changeZoom(9)}>9 {copy.weeks}</button>
         </div>
@@ -219,7 +219,7 @@
       </div>
     </div>
 
-    <div class="timeline-key" aria-label="表示記号">
+    <div class="timeline-key" aria-label={copy.legend}>
       <span title={copy.exchange}><i class="sample task"></i>{copy.starPaths}</span>
       <span><i class="sample floating"></i>{copy.floating}</span>
       <span><i class="sample other"></i>{copy.other}</span>
@@ -230,20 +230,20 @@
     {#if loading}
       <div class="message" role="status">{copy.loading}…</div>
     {:else if loadError}
-      <div class="message error" role="alert">日程を読み込めませんでした
-        <button on:click={load}>再読み込み</button>
+      <div class="message error" role="alert">{copy.loadFailed}
+        <button on:click={load}>{copy.retry}</button>
       </div>
     {:else}
       <div class="timeline-scroll" bind:this={timelineScroller} role="region" tabindex="0"
-        aria-label="開催期間タイムライン（横スクロールで日付を移動）">
+        aria-label={copy.scrollTimeline}>
         <div class="timeline-content" style={`--day-count:${windowRange.days.length};min-width:${205+windowRange.days.length*30}px`}>
           <div class="timeline-heading">
             <div class="date-label">{copy.events}</div>
             <div class="dates-grid">
               {#each windowRange.days as day (day.day)}
                 <div class="date-slot" class:reset={day.reset} class:today={day.today}
-                  title={longDay(day.day)+(day.today?' · '+copy.today:'')+(day.reset?' · '+copy.reset:'')}>
-                  <span class="weekday">{weekdayLabel(day.day)}</span>
+                  title={longDay(day.day,viewerLocale)+(day.today?' · '+copy.today:'')+(day.reset?' · '+copy.reset:'')}>
+                  <span class="weekday">{weekdayLabel(day.day,viewerLocale)}</span>
                   <span class="date-number">{day.dayNumber}</span>
                   {#if day.dayNumber===1}<span class="month-label">{monthLabel(day.day,viewerLocale)}</span>{/if}
                 </div>
@@ -253,16 +253,16 @@
           {#each visibleRows as row (row.event.id)}
             <div class="timeline-row" class:selected={selectedId===row.event.id} data-category={displayCategory(row.event)}>
               {#if eventHref(row.event)}
-                <a class="event-label" href={eventHref(row.event)??undefined} title={eventTitle(row.event)}>
+                <a class="event-label" href={eventHref(row.event)??undefined} title={eventTitle(row.event,language,historyNames)}>
                 <span class="event-symbol"><WandIcon name={eventIcon(row.event)} size={17}/></span>
-                <span class="event-name">{eventTitle(row.event)}</span>
+                <span class="event-name">{eventTitle(row.event,language,historyNames)}</span>
                 <span class="row-chevron"><WandIcon name="chevron" size={15}/></span>
                 </a>
               {:else}
               <button class="event-label" on:click={()=>showEvent(row.event.id)}
-                aria-pressed={selectedId===row.event.id} title={eventTitle(row.event)}>
+                aria-pressed={selectedId===row.event.id} title={eventTitle(row.event,language,historyNames)}>
                 <span class="event-symbol"><WandIcon name={eventIcon(row.event)} size={17}/></span>
-                <span class="event-name">{eventTitle(row.event)}</span>
+                <span class="event-name">{eventTitle(row.event,language,historyNames)}</span>
                 <span class="row-chevron"><WandIcon name="chevron" size={15}/></span>
               </button>
               {/if}
@@ -283,8 +283,8 @@
                     class:clipped-end={segment.clippedEnd}
                     class:selected={selectedId===row.event.id}
                     style={`left:${segment.left}%;width:${segment.width}%`}
-                    title={`${eventTitle(row.event)} · ${phaseName(segment.phase)} · ${eventBoundary(row.event)}`}
-                    aria-label={`${eventTitle(row.event)} · ${phaseName(segment.phase)}`}
+                    title={`${eventTitle(row.event,language,historyNames)} · ${phaseName(segment.phase,copy)} · ${eventBoundary(row.event,formatLocal,viewerLocale)}`}
+                    aria-label={`${eventTitle(row.event,language,historyNames)} · ${phaseName(segment.phase,copy)}`}
                     aria-pressed={selectedId===row.event.id}
                     on:click={()=>showEvent(row.event.id)}>
                   </button>
@@ -302,11 +302,11 @@
       </div>
 
       {#if selected}
-        <div class="event-inspector" aria-label="選択したイベントの詳細">
+        <div class="event-inspector" aria-label={copy.eventDetails}>
           <div class="event-inspector-heading">
             <WandIcon name={eventIcon(selected)} size={22}/>
-            <div><strong>{eventTitle(selected)}</strong><small>{stateName(selected)} · {selected.precision==='utc-instant'?viewerZone:copy.dateOnly}</small></div>
-            <button class="close" aria-label="詳細を閉じる" on:click={()=>selectedId=null}>
+            <div><strong>{eventTitle(selected,language,historyNames)}</strong><small>{stateName(selected,copy,now)} · {(selected.precision==='utc-instant'||(selected.kind==='limited-event'&&selected.sourceStartUtc&&selected.sourceEndUtcInclusive))?viewerZone:copy.dateOnly}</small></div>
+            <button class="close" aria-label={copy.close} on:click={()=>selectedId=null}>
               <WandIcon name="close" size={18}/>
             </button>
           </div>
@@ -315,11 +315,14 @@
               <div><small>{copy.start}</small><strong>{formatLocal(selected.sourceStartUtc)}</strong></div>
               <div><small>{copy.end}</small><strong>{formatLocal(selected.sourceEndUtcInclusive)}</strong></div>
             {:else if selected.precision==='date-only'}
-              <div><small>{copy.start}</small><strong>{longDay(selected.startDay)}</strong></div>
-              <div><small>{copy.end}</small>
+              <div><small>{copy.start}</small><strong>{longDay(selected.startDay,viewerLocale)}</strong></div>
+              {#if selected.kind==='starpath-history'&&selected.taskEndDayInclusive}
+                <div><small>{copy.taskEnd}</small><strong>{longDay(selected.taskEndDayInclusive,viewerLocale)}</strong></div>
+              {/if}
+              <div><small>{selected.kind==='starpath-history'&&selected.taskEndDayInclusive?copy.exchangeEnd:copy.end}</small>
                 <strong>{selected.kind==='starpath-history'&&selected.officialEndUtc
                   ?formatLocal(selected.officialEndUtc)
-                  :longDay(selected.endDayInclusive)}</strong></div>
+                  :longDay(selected.endDayInclusive,viewerLocale)}</strong></div>
               <span class="uncertain"><WandIcon name="info" size={15}/>{selected.kind==='starpath-history'&&selected.officialEndUtc?copy.startTimeUnknown:copy.dateUnknown}</span>
             {:else}
               <div><small>{copy.start}</small><strong>{formatLocal(selected.startUtc)}</strong></div>
@@ -328,7 +331,7 @@
             {/if}
           </div>
           <div class="inspector-actions">
-            {#if selected.kind==='starpath-history'}
+            {#if selected.kind==='starpath-history'||selected.kind==='starpath-archive'}
               <span class="historic-status">{copy.onlineHistory}</span>
             {:else if selected.kind==='limited-event'&&selected.participation==='game-clock'}
               <span class="historic-status">{copy.gameClock}</span>
@@ -336,18 +339,13 @@
             {#if selectedHref}
               <a class="primary" href={selectedHref}>{copy.guideLink} <WandIcon name="arrow" size={16}/></a>
             {/if}
-            {#if selected.sourceUrl}
-              <a href={selected.sourceUrl} target="_blank" rel="noopener noreferrer">
-                {copy.official} <WandIcon name="link" size={14}/>
-              </a>
-            {/if}
           </div>
         </div>
       {/if}
     {/if}
   </section>
 
-  <nav class="guide-sections" aria-label="Guide">
+  <nav class="guide-sections" aria-label={copy.guide}>
     <a class="service-card systems-card" href={`${base}/guide/systems/`}>
       <span class="service-icon"><WandIcon name="settings" size={46}/></span>
       <span class="service-name">{copy.systems}</span>
@@ -364,7 +362,7 @@
 <style>
   .guide-app{box-sizing:border-box;width:100%;max-width:none;min-width:0;margin:0;padding:12px clamp(8px,1.4vw,22px) 14px;min-height:calc(100dvh - 64px);display:flex;flex-direction:column;gap:10px;color:#eee9f6}
   .guide-sections{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;flex:0 0 auto}
-  .service-card{position:relative;display:flex;align-items:center;gap:clamp(16px,2.5vw,36px);min-width:0;min-height:clamp(122px,22vh,218px);box-sizing:border-box;padding:clamp(16px,3vw,38px);border:1px solid #66517e;border-radius:15px;color:#f4ecff;text-decoration:none;overflow:hidden;isolation:isolate;background:linear-gradient(125deg,#332747,#242037)}
+  .service-card{position:relative;display:flex;align-items:center;gap:clamp(16px,2.5vw,36px);min-width:0;min-height:clamp(122px,18vh,180px);box-sizing:border-box;padding:clamp(16px,3vw,38px);border:1px solid #66517e;border-radius:15px;color:#f4ecff;text-decoration:none;overflow:hidden;isolation:isolate;background:linear-gradient(125deg,#332747,#242037)}
   .quests-card{background:linear-gradient(125deg,#273c57,#252940);border-color:#526b8c}
   .service-card:hover,.service-card:focus-visible{border-color:#c8a6ef;box-shadow:inset 0 0 0 1px #c8a6ef;background:linear-gradient(125deg,#473460,#302542)}
   .quests-card:hover,.quests-card:focus-visible{border-color:#9abdeb;box-shadow:inset 0 0 0 1px #9abdeb;background:linear-gradient(125deg,#324e71,#303650)}
@@ -373,7 +371,7 @@
   .service-name{font-size:clamp(18px,2vw,30px);font-weight:700;overflow-wrap:anywhere}
   .service-chevron{margin-left:auto;flex-shrink:0;color:#bfb1d5}
   .service-chevron :global(svg){transform:rotate(-90deg)}
-   .timeline-panel{display:flex;flex-direction:column;flex:1 0 auto;min-height:260px;min-width:0;background:#181321;border:1px solid #493952;border-radius:15px;overflow:hidden}
+   .timeline-panel{display:flex;flex-direction:column;flex:0 0 auto;min-height:0;min-width:0;background:#181321;border:1px solid #493952;border-radius:15px;overflow:hidden}
   .timeline-toolbar{position:relative;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;padding:12px 15px;border-bottom:1px solid #48374f;background:#211a2c}
   .timeline-title{display:flex;align-items:center;gap:9px;min-width:0}
   .timeline-title>strong{font-size:17px;font-weight:700}
@@ -409,7 +407,7 @@
   .sample.floating{background:#30a6ab}.sample.other{background:#d39747}
   .sample.today-sample{width:12px;height:12px;background:#674158;border:1px solid #e8a1c8;border-radius:3px}
   .sample.reset-sample{width:12px;height:12px;background:#224758;border:1px solid #74cde6;border-radius:3px}
-  .timeline-scroll{min-width:0;max-width:100%;overflow-x:auto;overflow-y:hidden;flex:1;scrollbar-color:#705b84 #21172d;scrollbar-width:thin}
+  .timeline-scroll{min-width:0;max-width:100%;overflow-x:auto;overflow-y:hidden;flex:0 0 auto;scrollbar-color:#705b84 #21172d;scrollbar-width:thin}
   .timeline-content{--sidebar-width:205px;width:100%}
   .timeline-heading,.timeline-row{display:grid;grid-template-columns:var(--sidebar-width) minmax(0,1fr);min-width:0}
   .timeline-heading{min-height:64px;border-top:1px solid #4a3953;border-bottom:1px solid #52415e;background:#221a2b}

@@ -139,6 +139,12 @@ export function guideTimelineRows(
         exactUtc(event.endUtcExclusive),range);
       if(task)segments.push(task);
       if(exchange)segments.push(exchange);
+    }else if(event.kind==='starpath-history'&&event.taskEndDayInclusive){
+      const transition=localDayStart(nextCivil(event.taskEndDayInclusive),range.timeZone);
+      const task=clip('historic',localDayStart(event.startDay,range.timeZone),transition,range);
+      const exchange=clip('exchange',transition,localDayStart(nextCivil(event.endDayInclusive),range.timeZone),range);
+      if(task)segments.push(task);
+      if(exchange)segments.push(exchange);
     }else{
       // First-party Mini Event/Festival timestamps are exact archived instants;
       // official article-only intervals remain civil days with no fake hour.
@@ -148,6 +154,7 @@ export function guideTimelineRows(
         sourceStart&&sourceEnd?exactUtc(sourceStart):
           localDayStart(event.startDay,range.timeZone),
         sourceStart&&sourceEnd?exactUtc(sourceEnd)+1:
+          event.kind==='starpath-history'&&event.officialEndUtc?exactUtc(event.officialEndUtc):
           localDayStart(nextCivil(event.endDayInclusive),range.timeZone),range);
       if(limited)segments.push({...limited,
         phase:event.kind==='starpath-history'?'historic':'limited'});
