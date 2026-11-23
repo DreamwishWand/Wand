@@ -1521,8 +1521,8 @@
       <p class="editor-empty" role="status">セーブファイルを選択してください。</p>
     {/if}
   {/if}
-  {#if developmentMode||activeEditorPane==='items'}
-  <section aria-label="数量変更の検証">
+  {#if developmentMode||(activeEditorPane==='items'&&activeFile)}
+  <section class="editor-amount-panel" aria-label="数量変更の検証">
     {#if developmentMode}
       <label>セーブファイル
         <input bind:this={fileInput} type="file" accept=".profile,.dat,.bin,.json"
@@ -1560,7 +1560,7 @@
       破棄
     </button>
   </section>
-  <section class="saved-slots" aria-label="セーブ内アイテム">
+  <section class="saved-slots editor-owned-panel" aria-label="セーブ内アイテム">
     <div class="slot-actions">
       <button type="button" on:click={loadSavedSlots} disabled={processing}>
         {slotState==='loading'?'読み込み中…':'所持アイテムを表示'}
@@ -2179,8 +2179,26 @@
 <style>
   .dev-preview{max-width:1100px;margin:0 auto;padding:clamp(24px,5vw,60px);color:#f5ebfb;}
   .editor-workspace{max-width:none;width:100%;box-sizing:border-box;
-    margin:0;padding:14px clamp(12px,2vw,30px) 28px;}
-  .editor-workspace section{margin:12px 0;padding:14px;
+    margin:0;padding:14px clamp(12px,2vw,30px) 28px;
+    display:grid;grid-template-columns:minmax(0,1.2fr) minmax(320px,.8fr);
+    gap:12px;align-items:start;align-content:start;}
+  .editor-workspace>.editor-topbar,.editor-workspace>.editor-tabs,
+  .editor-workspace>.editor-empty,.editor-workspace>p,
+  .editor-workspace>.export-controls{grid-column:1/-1;}
+  .editor-workspace>.editor-owned-panel{grid-column:1;grid-row:3;}
+  .editor-workspace>.editor-amount-panel{grid-column:2;grid-row:3;}
+  .editor-workspace>section:not(.editor-amount-panel):not(.editor-owned-panel){
+    grid-column:1/-1;}
+  @media(max-width:860px){
+    .editor-workspace{grid-template-columns:minmax(0,1fr);}
+    .editor-workspace>.editor-owned-panel{grid-column:1;grid-row:3;}
+    .editor-workspace>.editor-amount-panel{grid-column:1;grid-row:4;}
+    .editor-workspace>.editor-topbar,.editor-workspace>.editor-tabs,
+    .editor-workspace>section:not(.editor-amount-panel):not(.editor-owned-panel),
+    .editor-workspace>.editor-empty,.editor-workspace>p,
+    .editor-workspace>.export-controls{grid-column:1;}
+  }
+  .editor-workspace section{margin:0;padding:14px;
     border:1px solid #ffffff15;}
   .editor-workspace .slot-list{max-height:min(55dvh,680px);}
   .editor-topbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
