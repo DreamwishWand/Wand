@@ -351,6 +351,7 @@
         collectionDb01Matches(sourceIndex!,id,'worldContextTag',tag)):null;
       const familyCounts=new Map<string,{total:number;owned:number}>();
       const typeCounts=new Map<number,{total:number;owned:number}>();
+      const nativeCounts=new Map<string,{total:number;owned:number}>();
       if(worldIds){
         for(const id of worldIds){
           const item=runtime!.item(id,locale);
@@ -361,6 +362,12 @@
           if(activity){
             const counts=typeCounts.get(activity.code)??{total:0,owned:0};
             counts.total++;counts.owned+=owned;typeCounts.set(activity.code,counts);
+          }
+          const native=sourceIndex!.nativeSubtypeByItem.get(id);
+          if(native){
+            const key=native.nativeType+':'+native.code;
+            const counts=nativeCounts.get(key)??{total:0,owned:0};
+            counts.total++;counts.owned+=owned;nativeCounts.set(key,counts);
           }
         }
         scopedCategoryFacets=facets.flatMap(facet=>{
@@ -378,6 +385,26 @@
             return counts?.total?[{
               code,nativeName:sourceIndex!.activityTypeNames.get(code)??null,...counts
             }]:[];
+          })
+        :[];
+      const nativeOrder=['Furniture','Clothing','Trimming'];
+      sourceNativeSubtypeCards=sourceIndex?.nativeSubtypeByItem.size===13202
+        ?[...sourceIndex.itemsByNativeSubtype.entries()]
+          .filter(([key])=>!key.startsWith('ActivityItem:'))
+          .sort((a,b)=>{
+            const [typeA,codeA]=a[0].split(':'),[typeB,codeB]=b[0].split(':');
+            return nativeOrder.indexOf(typeA)-nativeOrder.indexOf(typeB)||
+              Number(codeA)-Number(codeB);
+          })
+          .flatMap(([key,ids])=>{
+            const counts=worldIds?nativeCounts.get(key):{
+              total:ids.length,
+              owned:ids.filter(id=>entries[String(id)]?.status==='owned').length
+            };
+            if(!counts?.total)return [];
+            const [nativeType,codeText]=key.split(':');
+            return [{key,nativeType,code:Number(codeText),
+              nativeName:sourceIndex!.nativeSubtypeNames.get(key)??null,...counts}];
           })
         :[];
       const universeCategoryIds=new Set(['Furniture','Clothing']);
