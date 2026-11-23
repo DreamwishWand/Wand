@@ -47,15 +47,17 @@ test('all eight languages include history issue labels without using raw file co
 test('header only shows error trigger when open and history opens at route-specific tab',()=>{
   const layout=readFileSync(new URL('../src/routes/+layout.svelte',import.meta.url),'utf8');
   const css=readFileSync(new URL('../src/lib/ui/themes.css',import.meta.url),'utf8');
-  assert.match(layout,/\\{#if \\$operationIssueView.hasOpen\\}/);
-  assert.match(layout,/on:click=\\{openIssueHistory\\}/);
-  assert.match(layout,/function defaultHistoryArea\\(\\):HistoryArea/);
-  assert.match(layout,/service==='collection'\\?'collection':service==='world'\\?'world'/);
-  assert.match(layout,/service==='save'\\?'save':'collection'/);
-  assert.match(layout,/historyArea='save'/);
-  assert.match(layout,/historyExtra.issueTitle\\[row.issue.code\\]/);
-  assert.match(layout,/acknowledgeOperationIssue\\(row.issue.id\\)/);
-  assert.match(layout,/disabled=\\{service!=='collection'\\|\\|\\$historyView.busy/);
-  assert.match(css,/left:50%;top:50%;transform:translate\\(-50%,-50%\\)/);
-  assert.match(css,/@media\\(max-width:640px\\)/);
+  for(const snippet of [
+    '{#if $operationIssueView.hasOpen}',
+    'on:click={openIssueHistory}',
+    'function defaultHistoryArea():HistoryArea',
+    "service==='collection'?'collection':service==='world'?'world'",
+    "service==='save'?'save':'collection'",
+    "historyArea='save'",
+    'historyExtra.issueTitle[row.issue.code]',
+    'acknowledgeOperationIssue(row.issue.id)',
+    "disabled={service!=='collection'||$historyView.busy"
+  ])assert.ok(layout.includes(snippet),snippet);
+  assert.ok(css.includes('left:50%;top:50%;transform:translate(-50%,-50%)'));
+  assert.ok(css.includes('@media(max-width:640px)'));
 });
