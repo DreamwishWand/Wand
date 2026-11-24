@@ -7,7 +7,7 @@ import { chromium } from 'playwright';
 import {loadCompleteCollection} from '../src/lib/collection/db01-complete-catalog.ts';
 import {COLLECTION_TOP_CATEGORIES} from '../src/lib/collection/category-hierarchy.ts';
 import {parseCollectionDb01Facets} from '../src/lib/collection/db01-native-facets.ts';
-import {buildWorldBrowseIndex} from '../src/lib/collection/world-browse-index.ts';
+import {buildWorldBrowseIndex,countOwnedInWorldScope} from '../src/lib/collection/world-browse-index.ts';
 import {collectionTopCategoryCards} from '../src/lib/collection/category-hierarchy.ts';
 import {COLLECTION_WORLD_NAVIGATION} from '../src/lib/collection/scope-options.ts';
 import {collectionInterfaceCopy} from '../src/lib/collection/interface-copy.ts';
@@ -468,11 +468,12 @@ try{
     'lorekeeper-tales','quest-puzzles','exhibition'
   ]);
   const allScope=buildWorldBrowseIndex(completeIndex).get('');
+  const initialOwned=countOwnedInWorldScope(completeIndex,allScope,seed.workspaces[0].entries).root;
   for(const parent of ['furniture','clothing','appearance','meals','ingredients','fish','roads-fences','interior','mounts','characters','crafting']){
     const root=page.locator(`[data-top-category="${parent}"]`);
     const progress=root.locator('.collection-category-progress');
     assert.equal(Number(await progress.getAttribute('data-progress-total')),allScope.progressTotals.get(parent));
-    assert.equal(Number(await progress.getAttribute('data-progress-owned')),0);
+    assert.equal(Number(await progress.getAttribute('data-progress-owned')),initialOwned.get(parent)??0,parent+' seeded collection progress');
     await root.click();
     await page.locator('.item-card').first().waitFor({timeout:12000});
     assert.equal(await page.locator('.collection-native-subtype').count(),0,'one click opens actual items');
@@ -485,17 +486,27 @@ try{
     if(parent==='meals')assert.equal(await page.locator('.collection-item-world-heading').count(),0,'world sorting must not introduce headings or grid breaks');
     await returnRoot();
   }
+  // Toggle the existing seeded owned item and restore it, preserving the
+  // fixture for subsequent save-import and history checks.
   const furnitureCard=page.locator('[data-top-category="furniture"]');
+  const initialFurniture=initialOwned.get('furniture')??0;
+  const testProgressSearch=page.getByRole('searchbox',{name:/8言語/});
+  const seedToggle=page.locator('.item-card[data-item-id="40005160"] .item-state-toggle');
   await furnitureCard.click();
-  await page.locator('.item-state-toggle').first().click();
-  await page.waitForFunction(()=>document.querySelector('.item-state-toggle')?.classList.contains('owned'));
+  await testProgressSearch.fill('40005160');
+  await seedToggle.waitFor();
+  await seedToggle.click();
+  await page.waitForFunction(()=>!document.querySelector('.item-card[data-item-id="40005160"] .item-state-toggle')?.classList.contains('owned'));
+  await waitForLocalState(page,{item:'40005160',status:'missing'});
   await returnRoot();
-  assert.equal(await furnitureCard.locator('.collection-category-progress').getAttribute('data-progress-owned'),'1');
+  assert.equal(Number(await furnitureCard.locator('.collection-category-progress').getAttribute('data-progress-owned')),initialFurniture-1);
   await furnitureCard.click();
-  await page.locator('.item-state-toggle').first().click();
-  await page.waitForFunction(()=>!document.querySelector('.item-state-toggle')?.classList.contains('owned'));
+  await testProgressSearch.fill('40005160');
+  await seedToggle.waitFor();
+  await seedToggle.click();
+  await waitForLocalState(page,{item:'40005160',status:'owned'});
   await returnRoot();
-  assert.equal(await furnitureCard.locator('.collection-category-progress').getAttribute('data-progress-owned'),'0');
+  assert.equal(Number(await furnitureCard.locator('.collection-category-progress').getAttribute('data-progress-owned')),initialFurniture);
   assert.equal(await page.locator('[data-top-category="buildings"]').isDisabled(),
     !(completeIndex.itemsByRoot.get('buildings')?.length));
   // A failed v3 source asset must fail closed; reloading retries verified data.
