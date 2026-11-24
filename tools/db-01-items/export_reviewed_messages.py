@@ -124,6 +124,13 @@ def build(dbpath,root,selected=None):
         while pos<len(wirevalue):x,pos=varint(wirevalue,pos);xs.append(x)
         require([str(x) if x>2**53-1 else x for x in xs]==json.loads(v),'packed mismatch')
         parts.extend(scalar(t[14:-1],0,x) for x in xs)
+       elif status=='fixed32_grid_layers':
+        require(re.sub(r'\[\d+\]','',p)=='GridAreaData.Layers' and t=='RepeatedField<uint>' and wire==2 and len(wirevalue)%4==0,'grid layer envelope')
+        xs=[v[0] for v in struct.iter_unpack('<I',wirevalue)];require(xs==json.loads(v),'grid layer mismatch');parts.extend(xs)
+       elif status=='nullable_int_wrapper':
+        require(re.sub(r'\[\d+\]','',p)=='GridAreaData.StrideOverride' and t=='Nullable<int>' and wire==2,'nullable declaration')
+        wrapped=list(fields(wirevalue));require(not wrapped or len(wrapped)==1 and wrapped[0][:2]==(1,0),'nullable envelope')
+        x=scalar('int',0,wrapped[0][2]) if wrapped else 0;require(-2**31<=x<2**31 and x==json.loads(v),'nullable value mismatch');parts.append(x)
        elif status=='declared_utf8':
         normalized=re.sub(r'\[\d+\]','',p)
         require(wire==2 and (t[14:-1] if rep else t)=='string','unreviewed string')
@@ -131,7 +138,7 @@ def build(dbpath,root,selected=None):
        else:raise ValueError('unreviewed status '+status+' '+p)
       require(rep or len(parts)==1,'singular repetition');result[name]=parts if rep else parts[0]
      return result
-    value=group('',frame,True)[key];data.append([i,value]);occurrences+=len(children['']);leaves+=sum(len(json.loads(n[6])) if n[5]=='packed_varint_wire_values' else n[5] not in ('declared_message','declared_map_entry') for n in nodes.values())
+    value=group('',frame,True)[key];data.append([i,value]);occurrences+=len(children['']);leaves+=sum(len(json.loads(n[6])) if n[5] in ('packed_varint_wire_values','fixed32_grid_layers') else n[5] not in ('declared_message','declared_map_entry') for n in nodes.values())
    if not data:continue
    prev=0;rows=[]
    for i,v in data:rows.append([i-prev,v]);prev=i
