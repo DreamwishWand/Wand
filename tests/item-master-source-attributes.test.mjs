@@ -456,6 +456,9 @@ test('native acquisition candidates expose original reward and output occurrence
   const field='acquisition.nativeCandidates';
   const ids=[30000031,51300032,120000073,80300000,30400064,31200032,99999999];
   const rows=await db.getItemFields(ids,[field]);
+  const typed=await db.getNativeAcquisitionCandidates(ids);
+  assert.deepEqual(typed,rows.map(row=>row===null?null:row.values[field]??[]));
+  assert(Object.isFrozen(typed)&&Object.isFrozen(typed[0]));
   const has=(row,sourceId,role,path)=>(row.values[field]??[]).some(
     ([source,r,p])=>source===sourceId&&r===role&&p===path);
   assert(has(rows[0],2050300095,'activity_result','source.Result.ItemID'));
