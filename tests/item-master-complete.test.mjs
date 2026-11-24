@@ -391,8 +391,48 @@ test('stall character associations are source-backed and only named families sup
   assert.deepEqual(rows[9].values['building.stallEmployeeItemIds'],[0]);
   assert.deepEqual(rows[10].values['building.stallEmployeeItemIds'],[]);
   assert.equal(rows[10].values['building.stallUnlockWithItemId'],null);
-  const all=await master.getFieldRows('browse.universeAssociation');
+  const all=(await master.getFieldRows('browse.universeAssociation')).filter(([,a])=>a.kind==='named_stall_character_association');
   assert.equal(all.length,20);
   for(const [id,association] of all)assert.equal(byId.get(id).universeAssociation?.universeTagId,
     association.applied?association.universeTagId:undefined);
+});
+
+
+test('building skins retain exact target selectors separately from browse design associations',async()=>{
+  const {fetcher}=site();
+  const master=await openCurrentItemDatabase('/Wand',fetcher);
+  const selectors=await master.getFieldRows('building.skinTargetSelectors');
+  assert.equal(selectors.length,59);
+  const [lion,defaultStall,toy,well,defaultWell,beast,minnie,restaurant]=await master.getItemFields(
+    [170100006,170100009,170100021,170200010,170200005,170600003,170600005,170200015],
+    ['building.skinTargetSelectors','building.skinTargetUniverseTagIds','universeTagIds','browse.universeTagIds','browse.universeAssociation']);
+  assert.deepEqual(lion.values['building.skinTargetSelectors'],{targetBuildingItemIds:[],allStallsWithEmployeeItems:true,employeeCharacterItemIds:[10000004]});
+  assert.equal(lion.values['browse.universeAssociation'].universeTagId,2000500010);
+  assert.equal(lion.values['browse.universeAssociation'].kind,'reviewed_skin_design_motif');
+  assert.equal(defaultStall.values['browse.universeAssociation'],undefined);
+  assert.equal(toy.values['building.skinTargetSelectors'].targetBuildingItemIds.length,14);
+  assert.equal(toy.values['browse.universeAssociation'].universeTagId,2000500006);
+  assert.deepEqual(well.values['building.skinTargetSelectors'],{targetBuildingItemIds:[],allWellsItemsExcept:true,excludedBuildingItemIds:[]});
+  assert.equal(well.values['browse.universeAssociation'].universeTagId,2000500048);
+  assert.equal(defaultWell.values['browse.universeAssociation'],undefined);
+  for(const [row,parent,universe] of [[beast,20000016,2000500002],[minnie,20000046,2000500001]]){
+    assert.deepEqual(row.values['building.skinTargetSelectors'],{targetBuildingItemIds:[parent]});
+    assert.deepEqual(row.values['building.skinTargetUniverseTagIds'],[universe]);
+    assert.equal(row.values['browse.universeAssociation'].kind,'house_skin_base_building_association');
+    assert.equal(row.values['browse.universeAssociation'].buildingItemId,parent);
+    assert.equal(row.values['browse.universeAssociation'].universeTagId,universe);
+  }
+  assert.equal(restaurant.values['building.skinTargetSelectors'].targetBuildingItemIds.length,5);
+  assert.equal(restaurant.values['browse.universeAssociation'],undefined);
+  const all=(await master.getFieldRows('browse.universeAssociation')).filter(([,a])=>a.kind!=='named_stall_character_association');
+  assert.equal(all.length,27);
+  const catalog=JSON.parse(await readFile(join(root,'explore.json'),'utf8'));
+  const byId=new Map(catalog.items.map(i=>[i.itemId,i]));
+  for(const [id,association] of all){
+    const row=await master.getItem(id);
+    const expected=row.universeTagIds.length?row.universeTagIds:[association.universeTagId];
+    assert.deepEqual(byId.get(id).universes,expected);
+    assert.equal(association.applied,row.universeTagIds.length===0);
+    assert.equal(byId.get(id).universeAssociation?.universeTagId,association.applied?association.universeTagId:undefined);
+  }
 });
