@@ -25,7 +25,7 @@ export function parsePublicTerrainBundle(value:unknown):PublicTerrainBundle{
       typeof g.gridDataPath!=='string'||!g.gridDataPath.startsWith('GridData/')||!g.gridDataPath.endsWith('.json')||g.gridDataPath.includes('..')||
       !u32(g.gridIdNative)||!u32(g.sizeX)||!u32(g.sizeY)||g.sizeX<1||g.sizeY<1||g.sizeX*g.sizeY>250000||
       (g.factor!==1&&g.factor!==2)||!Array.isArray(g.palette)||!g.palette.length||g.palette.length>256||
-      !g.palette.every((v,i)=>u32(v)&&(i===0||v>g.palette[i-1]))||!Array.isArray(g.counts)||g.counts.length!==g.palette.length||
+      !g.palette.every((v,i)=>u32(v)&&(i===0||v>(g.palette as number[])[i-1]))||!Array.isArray(g.counts)||g.counts.length!==g.palette.length||
       !g.counts.every(u32)||g.counts.reduce((a,b)=>a+b,0)!==g.sizeX*g.sizeY||!sha(g.sha256)||
       typeof g.data!=='string'||g.data.length>1_400_000||!/^[A-Za-z0-9+/]+={0,2}$/.test(g.data))
       throw new TypeError('DB04_PUBLIC_TERRAIN_GRID_INVALID');
