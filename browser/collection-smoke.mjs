@@ -512,6 +512,9 @@ try{
   assert.ok(displayedIds.length>0,'source-linked Star Path must return Item IDs');
   assert.ok(displayedIds.every(id=>starPathSet.has(id)),
     'acquisition filtering must use exact DB-02 → DB-01 Item ID crosswalk');
+  assert.ok(await page.locator('.item-card .collection-source-mark[data-source-category="star_path"]').count()>0,
+    'item list exposes source classes through compact marks');
+  assert.ok(await page.locator('.item-card .collection-source-mark[data-source-category="star_path"]').first().getAttribute('title'));
   await acquisitionFilter.selectOption('');
   await page.getByRole('button',{name:/フィルター/}).click();
   assert.ok(await page.locator('.facet-card').count()>=10);
