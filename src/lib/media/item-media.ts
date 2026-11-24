@@ -58,7 +58,7 @@ function parseShard(doc:unknown,bucket:string,pin:ShardPin,origin:string):Readon
       check(record(v)&&Object.keys(v).sort().join(',')==='height,key,width'&&positive(v.width)&&positive(v.height)&&
         v.width<=16384&&v.height<=16384&&(variant!=='thumbnail'||(v.width<=128&&v.height<=128)),'image dimensions');
       const ref=parsePublicImageKey(v.key);
-      check(ref&&ref.variant===variant,'image key');
+      check(ref,'image key');
       images[variant]=Object.freeze({url:publicImageUrl(origin,variant,ref.sha256),sha256:ref.sha256,width:v.width,height:v.height});
     }
     rows.set(row.id,Object.freeze(images));

@@ -89,9 +89,14 @@ function originalPublicOrigin(input:unknown):string{
   try{return publicMediaOrigin(input);}catch{throw new TypeError('Star Path public media: unapproved media origin');}
 }
 // Only the exact historical Steam prefix is retained for pinned legacy manifests.
-function starpathImageKey(path:string){
+function starpathImageKey(path:string, variant:'thumbnail'|'original'){
+  const canonical=parsePublicImageKey(path);
+  if(canonical)return canonical;
+  // Previously pinned public manifests may retain the exact historical keys.
   const prefix='media/steam-v1.26.2/';
-  return parsePublicImageKey(path.startsWith(prefix)?path.slice(prefix.length):path);
+  const legacy=path.startsWith(prefix)?path.slice(prefix.length):path;
+  if(!legacy.startsWith(variant+'/'))return null;
+  return parsePublicImageKey('images/'+legacy.slice(variant.length+1));
 }
 /** Explicitly reviewed publisher-controlled release; never infer publication. */
 export function validateStarpathMediaActivation(
@@ -179,8 +184,8 @@ export function verifyStarpathMediaManifest(
         positive(source.width)&&positive(source.height)&&
         source.width<=8192&&source.height<=8192,
         'invalid media record');
-      const matched=starpathImageKey(source.key);
-      check(matched&&matched.variant===variant&&matched.sha256===source.sha256&&SHA.test(source.sha256),
+      const matched=starpathImageKey(source.key,variant);
+      check(matched&&matched.sha256===source.sha256&&SHA.test(source.sha256),
         'non-content-addressed public path');
       if(variant==='thumbnail')
         check(source.width<=128&&source.height<=128,'oversized thumbnail');
@@ -230,7 +235,7 @@ export function starpathMediaThumbnail(
   const row=Object.hasOwn(media.manifest?.items??{},key)
     ?media.manifest.items[key]:null;
   const path=row?.thumbnail?.key;
-  if(!path||starpathImageKey(path)?.variant!=='thumbnail')return null;
+  if(!path||!starpathImageKey(path,'thumbnail'))return null;
   if(typeof media.origin!=='string')return null;
   try{return originalPublicOrigin(media.origin)+'/'+path;}
   catch{return null;}
