@@ -462,6 +462,11 @@ impl CollectionEngine {
             && published.count==13_202
             && published.sources.len()==1
             && published.sources[0].id=="public-steam-1262-normalized";
+        let public_complete_collection=visibility=="public_reference"
+            && published.id.starts_with("steam-") && published.id.ends_with("-collection-source-v3")
+            && published.target.platform=="Steam"
+            && published.sources.len()==1
+            && published.sources[0].id=="db01-complete-source";
         self.index = Some(Index {
             schema: DB00_RELEASE_SCHEMA.into(),
             target: ManifestTarget {
@@ -481,7 +486,7 @@ impl CollectionEngine {
         self.db00_mode=true;
         self.owner_local_complete=visibility=="private"
             && published.id=="db01-steam-1-26-2-owner-local-complete";
-        self.public_native_itemlist=public_native_itemlist;
+        self.public_native_itemlist=public_native_itemlist||public_complete_collection;
         self.db00_sources=sources;
         self.db00_releases=releases;
         self.db00_relations.clear();
