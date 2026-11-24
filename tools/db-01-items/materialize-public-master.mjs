@@ -86,6 +86,7 @@ const COLLECTION_FACETS=new Set([
   'clothingSlot','disneyUniverse','worldContextTag','ingredientKind','mealKind'
 ]);
 const collectionRows=[];
+const exploreRows=[];
 const collectionCategoryRows=[];
 // Narrow per-ID original ActivityItemType projection. The public Item master
 // already contains each verified IL2CPP subtype; do not guess from display
@@ -205,6 +206,14 @@ for(let bucket=0;bucket<256;bucket++){
       activityTypeRows.push([row.itemId,nativeType.subtypeCode,
         nativeType.subtypeNameVerified?nativeType.subtypeName:null]);
     }
+    // Decorate reference browse: only known decorating furniture families.
+    // No placement/ownership/availability claim is made by this projection.
+    if((row.nativeCategory==='Furniture'&&[0,1,2,3,7,8,9].includes(nativeType.subtypeCode))||
+       (row.nativeCategory==='Trimming'&&[0,1].includes(nativeType.subtypeCode)))
+      exploreRows.push({itemId:row.itemId,names:row.names,nativeCategory:row.nativeCategory,
+        subtype:nativeType.subtypeCode,
+        tags:browseTags.filter(t=>['color','furnitureStyle','furnitureKind'].includes(t[0])),
+        universes:[...universeTagIds].sort((a,b)=>a-b)});
     tagRefs+=row.tags.length;
     candidates+=row.collectionSourceCandidates.length;
   }
@@ -222,6 +231,10 @@ try{
     mkdirSync(dirname(output),{recursive:true});
     writeFileSync(output,data);
   }
+  exploreRows.sort((a,b)=>a.itemId-b.itemId);
+  writeFileSync(join(staging,'explore.json'),JSON.stringify({
+    schema:'wand.explore.catalog@1',release:entry.release,items:exploreRows
+  })+'\n');
   rmSync(destination,{recursive:true,force:true});
   renameSync(staging,destination);
 }catch(error){
