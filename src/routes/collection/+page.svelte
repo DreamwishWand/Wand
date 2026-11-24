@@ -13,6 +13,8 @@
     from '$lib/collection/browse-layout.ts';
   import {COLLECTION_UNIVERSE_TAG_BY_ID,COLLECTION_UNIVERSE_TAG_NAMES}
     from '$lib/collection/universe-tag-names.ts';
+  import {loadCompleteCollection} from '$lib/collection/db01-complete-catalog.ts';
+  import {COLLECTION_TOP_CATEGORIES} from '$lib/collection/category-hierarchy.ts';
   import {buildWorldBrowseIndex,countOwnedInWorldScope,type WorldBrowseScope} from '$lib/collection/world-browse-index.ts';
   import {collectionTopCategory,collectionTopCategoryLabel,collectionTopCategoryRank,
     collectionTopCategoryCards,type CollectionTopCategory} from '$lib/collection/category-hierarchy.ts';
@@ -99,6 +101,7 @@
   let sourceIndex:CollectionDb01Index|null=null;
   let worldBrowseIndex:ReadonlyMap<string,WorldBrowseScope>=new Map();
   let worldScopedItemCount:number|null=null;
+  let rootCounts:ReadonlyMap<CollectionTopCategory,number>=new Map();
   let sourceLoad:Promise<void>|null=null;
   let sourceLoadError=false;
   let sourceUniverseOptions:{key:string;count:number}[]=[];
@@ -151,10 +154,12 @@
   let inspectorClose:HTMLButtonElement;
   let inspectorTrigger:HTMLElement|null=null;
 
-  $: topCategoryCards=collectionTopCategoryCards([
-    ...sourceNativeSubtypeCards,
-    ...sourceActivityTypeCards.map(row=>({...row,key:'ActivityItem:'+row.code}))
-  ]);
+  $: topCategoryCards=sourceIndex?.rootsByItem
+    ?COLLECTION_TOP_CATEGORIES.map(({id,icon})=>({id,icon,total:rootCounts.get(id)??0,owned:0}))
+    :collectionTopCategoryCards([
+      ...sourceNativeSubtypeCards,
+      ...sourceActivityTypeCards.map(row=>({...row,key:'ActivityItem:'+row.code}))
+    ]);
   $: workspace=state.workspaces.find(x=>x.id===state.active)??state.workspaces[0];
   $: entries=workspace?.entries??{};
   $: selectionLabel=sourceNativeSubtype!==null
@@ -346,6 +351,7 @@
       const worldScope=sourceIndex?worldBrowseIndex.get(tag??''):undefined;
       const worldIds=tag?worldScope?.itemIds??[]:null;
       worldScopedItemCount=worldIds?.length??null;
+      rootCounts=worldScope?.rootCounts??new Map();
       const completeNative=sourceIndex?.nativeSubtypeByItem.size===sourceIndex?.sourceItemCount;
       // The category-only path needs no individual runtime.item() calls.
       // Native membership and totals were built once from the exact source index.
@@ -451,6 +457,7 @@
         const nativeIds=sourceNativeSubtype===null?null:
           sourceIndex?.itemsByNativeSubtype.get(sourceNativeSubtype)??[];
         const topIds=sourceTopCategory===null?null:
+          sourceIndex?.itemsByRoot?.get(sourceTopCategory)??
           [...(sourceIndex?.itemsByNativeSubtype??[])].flatMap(([key,ids])=>
             collectionTopCategory(key)===sourceTopCategory?[...ids]:[]);
         const candidateIds=[universeIds,acquisitionIds,activityIds,nativeIds,topIds,worldIds]
@@ -466,7 +473,9 @@
         sourceAllMatching=candidates.filter(item=>
           (sourceTopCategory===null||(()=>{
             const native=sourceIndex?.nativeSubtypeByItem.get(item.itemId);
-            return !!native&&collectionTopCategory(native.nativeType+':'+native.code)===sourceTopCategory;
+            return sourceIndex?.rootsByItem
+              ?sourceIndex.rootsByItem.get(item.itemId)===sourceTopCategory
+              :!!native&&collectionTopCategory(native.nativeType+':'+native.code)===sourceTopCategory;
           })())&&
           (sourceUniverseSelection!==COLLECTION_UNIVERSE_UNTAGGED||
             !(sourceIndex?.universeTagIdsByItem.size
@@ -533,7 +542,7 @@
     const groups=groupCollectionUniverseItems(sourceAllMatching,item=>{
       const native=sourceIndex?.nativeSubtypeByItem.get(item.itemId);
       if(native){
-        const id=collectionTopCategory(native.nativeType+':'+native.code);
+        const id=sourceIndex?.rootsByItem?.get(item.itemId)??collectionTopCategory(native.nativeType+':'+native.code);
         return id===null
           ?{id:'unresolved',label:locale==='ja'?'分類未確定':'Unclassified',rank:999}
           :{id,label:collectionTopCategoryLabel(locale,id),rank:collectionTopCategoryRank(id)};
@@ -565,7 +574,7 @@
   }
   function canUseDb01SourceFacets():boolean{
     return Boolean(runtime&&!runtime.isOwnerLocal&&
-      runtime.metadata.snapshot==='steam-1.26.2-native-itemlist-v1');
+      (runtime.metadata.snapshot==='steam-1.26.2-native-itemlist-v1'||runtime.metadata.snapshot.endsWith('-collection-source-v3')));
   }
   /** A catalog swap must invalidate pending source index requests. In
    * particular, never show public category candidates in an owner-local
@@ -573,7 +582,7 @@
   function discardSourceIndex():void{
     sourceGeneration++;
     sourceIndex=null;
-    worldBrowseIndex=new Map();worldScopedItemCount=null;
+    worldBrowseIndex=new Map();worldScopedItemCount=null;rootCounts=new Map();
     sourceLoad=null;
     sourceLoadError=false;
     sourceUniverseOptions=[];
@@ -594,7 +603,8 @@
     if(!canUseDb01SourceFacets()||sourceIndex||sourceLoad)return;
     sourceLoadError=false;
     const generation=sourceGeneration;
-    const task=loadCollectionDb01Facets(base).then(index=>{
+    const task=(runtime?.metadata.snapshot.endsWith('-collection-source-v3')
+      ?loadCompleteCollection(base).then(catalog=>catalog.index):loadCollectionDb01Facets(base)).then(index=>{
       if(generation!==sourceGeneration||!canUseDb01SourceFacets())return;
       sourceIndex=index;worldBrowseIndex=buildWorldBrowseIndex(index);sourceGroupsCacheKey='';
       const sourceGroups=collectionDb01Groups(index,[...index.byItem.keys()]);
@@ -867,7 +877,7 @@
   function chooseTopCategory(id:CollectionTopCategory):void{
     if(!topCategoryCards.some(card=>card.id===id&&card.total>0))return;
     sourceTopCategory=id;sourceActivityType=null;sourceNativeSubtype=null;
-    const hasSubcategories=['furniture','clothing','appearance','roads-fences','interior','tools'].includes(id);
+    const hasSubcategories=['furniture','clothing','appearance','roads-fences','interior'].includes(id);
     selected='';browsingAllItems=!hasSubcategories;search='';status='all';favoriteOnly=false;
     nameStatus='all';expansion='';acquisitionFilter='';
     sourceChoices=sourceChoices.worldContextTag?{worldContextTag:sourceChoices.worldContextTag}:{};
@@ -1253,7 +1263,7 @@
                 on:click={()=>{workspaceOptions.open=false;deleteWorkspace();}}>
                 <WandIcon name="trash" size={16}/>{copy.deleteRecord}
               </button>
-              {#if runtime?.isOwnerLocal || (runtime && runtime.metadata.snapshot!=='steam-1.26.2-native-itemlist-v1')}
+              {#if runtime?.isOwnerLocal || (runtime && !canUseDb01SourceFacets())}
                 <button type="button" disabled={busy||loading||saveReadInProgress}
                   on:click={()=>{workspaceOptions.open=false;runtime?.isOwnerLocal?void usePublicCatalog():localCatalogInput.click();}}>
                   <WandIcon name="folder" size={16}/>{runtime?.isOwnerLocal?copy.publicData:copy.openCatalog}
@@ -1576,7 +1586,7 @@
             {/if}
             <div class="facet-grid collection-detail-category-grid"
               aria-label={locale==='ja'?'アイテムの詳細カテゴリー':'Detailed item categories'}>
-              {#if sourceIndex?.nativeSubtypeByItem.size===13202&&sourceTopCategory===null}
+              {#if sourceIndex&&sourceIndex.nativeSubtypeByItem.size===sourceIndex.sourceItemCount&&sourceTopCategory===null}
                 {#each topCategoryCards.filter(group=>!(worldFilter||sourceChoices.worldContextTag)||group.total>0) as group (group.id)}
                   <button type="button" class="facet-card collection-top-category"
                     data-top-category={group.id} disabled={group.total===0}
@@ -1586,8 +1596,10 @@
                     <span>{group.total?group.total.toLocaleString(locale)+' '+copy.countUnit:'—'}</span>
                   </button>
                 {/each}
-              {:else if sourceIndex?.nativeSubtypeByItem.size===13202}
-                {#each sourceNativeSubtypeCards.filter(type=>collectionTopCategory(type.key)===sourceTopCategory) as type (type.key)}
+              {:else if sourceIndex&&sourceIndex.nativeSubtypeByItem.size===sourceIndex.sourceItemCount}
+                {#each sourceNativeSubtypeCards.filter(type=>sourceIndex?.rootsByItem
+                  ?(sourceIndex.itemsByNativeSubtype.get(type.key)??[]).some(id=>sourceIndex?.rootsByItem?.get(id)===sourceTopCategory)
+                  :collectionTopCategory(type.key)===sourceTopCategory) as type (type.key)}
                   <button type="button" class="facet-card collection-native-subtype"
                     data-native-subtype={type.key}
                     on:click={()=>chooseNativeSubtype(type.key)}>
@@ -1614,7 +1626,7 @@
                   </button>
                 {/each}
               {/if}
-              {#each sourceActivityTypeCards.filter(type=>sourceIndex?.nativeSubtypeByItem.size!==13202||
+              {#each sourceActivityTypeCards.filter(type=>(!sourceIndex||sourceIndex.nativeSubtypeByItem.size!==sourceIndex.sourceItemCount)||
                 (sourceTopCategory!==null&&collectionTopCategory('ActivityItem:'+type.code)===sourceTopCategory)) as type (type.code)}
                 <button type="button" class="facet-card collection-native-activity"
                   data-source-type={type.code}
@@ -1645,7 +1657,7 @@
             <div class="inspector-art"><ItemArtwork itemId={selectedItem.itemId} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large /></div>
             <h2>{selectedItem.label}</h2>
             <p class="inspector-meta">{displayItemCategory(selectedItem)}</p>
-            {#if runtime?.metadata.snapshot==='steam-1.26.2-native-itemlist-v1' && !runtime.isOwnerLocal}
+            {#if canUseDb01SourceFacets()}
               {#key selectedItem.itemId}
                 <ItemMasterDetails itemId={selectedItem.itemId} {locale}/>
               {/key}
@@ -1663,7 +1675,7 @@
                 </dl>
               </details>
             {/if}
-            {#if runtime?.metadata.snapshot==='steam-1.26.2-native-itemlist-v1' && !runtime.isOwnerLocal}
+            {#if canUseDb01SourceFacets()}
               <AcquisitionEvidence itemId={selectedItem.itemId} {locale}/>
               <RelatedQuests itemId={selectedItem.itemId} {locale}/>
             {/if}
