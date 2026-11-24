@@ -492,6 +492,13 @@ function buildReferenceColumns(rows){
         const targets=REVIEWED_CONDITION_REFERENCE_TARGETS[path.split('.').slice(-2).join('.')];
         check(targets.includes(categories.get(value)),'CONDITION_REFERENCE_TARGET');
         emit(value,path);
+      }else if((row.nativeCategory==='Mission'&&/^source\.(?:Steps|AutoAccept)\[/.test(path)||row.nativeCategory==='Character'&&/^source\.OverrideSchedules\[/.test(path))&&
+        /\.(?:MissionStepStatus|MissionStatus|MissionObjectiveStatus)\.Mission$/.test(path)){
+        check(categories.get(value)==='Mission','STRUCTURE_MISSION_REFERENCE');emit(value,path);
+      }else if(row.nativeCategory==='Mission'&&/^source\.(?:Steps|AutoAccept)\[/.test(path)&&/\.Inventory\.Item$/.test(path)){
+        check(['ActivityItem','Upgrade','Companion','Furniture'].includes(categories.get(value)),'STRUCTURE_INVENTORY_REFERENCE');emit(value,path);
+      }else if(row.nativeCategory==='Furniture'&&/^source\.ToolBreakable\.(?:Tool|Upgrade)$/.test(path)){
+        check(categories.get(value)===name,'STRUCTURE_TOOL_REFERENCE');emit(value,path);
       }else if(/ItemIds?$/i.test(name))emit(value,path);
       else if(row.nativeCategory==='DutyAch'&&/^source\.Milestones\[\d+\]\.RewardItem$/.test(path)){
         check(ID(value)&&ids.has(value),'MILESTONE_REWARD_TARGET');emit(value,path);
