@@ -3,6 +3,8 @@
  import type {WandLanguage} from '../ui/preferences.ts';
  export let locale:WandLanguage='ja';
  export let tool:RoadTool='brush';
+ export let fence=false;
+ const fenceLabel={ja:'フェンスの描画',en:'Draw fences',fr:'Tracer des clôtures',it:'Disegna recinzioni',de:'Zäune zeichnen','es-ES':'Dibujar vallas','zh-CN':'绘制围栏','pt-BR':'Desenhar cercas'} as const;
  export let valid=true;
  export let added=0;
  export let removed=0;
@@ -21,9 +23,9 @@
  const icons=['M3 17l5-9 5 8 7-10','M4 20 20 4','M4 4h16v16H4z','M4 4h16v16H4zM4 8h16M4 12h16M4 16h16','m3 14 10-10 8 8-8 8H9zM8 9l8 8M13 20h9'];
  $: words=copy[locale]??copy.en;
 </script>
-<div class="road-design-controls" role="group" aria-label={words[0]}>
+<div class="road-design-controls" role="group" aria-label={fence?fenceLabel[locale]:words[0]}>
  {#each tools as mode,i}
- <button type="button" title={words[i+1]} aria-label={words[i+1]} aria-pressed={tool===mode} on:click={()=>onChange(mode)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons[i]}/></svg></button>
+ {#if !fence||mode!=='fill'}<button type="button" title={words[i+1]} aria-label={words[i+1]} aria-pressed={tool===mode} on:click={()=>onChange(mode)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons[i]}/></svg></button>{/if}
  {/each}
  {#if added||removed}<small>{words[6]} {added} / {words[7]} {removed}</small>{/if}
  {#if !valid}<small role="status">{words[8]}</small>{/if}

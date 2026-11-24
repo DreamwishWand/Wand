@@ -1,4 +1,5 @@
 import {createSourceGeometryCache} from './source-object-map.ts';
+import {fenceBaseDefinition} from './fence-design.ts';
 import {sourceMapLayer} from './source-map-layers.ts';
 import {sourceEditRestrictions,nativeActionBlocked} from './native-edit-restrictions.ts';
 import {DESIGN_LIMIT,type DesignCatalogItem,type DesignItemGeometry} from './design-layout.ts';
@@ -78,7 +79,7 @@ scope.onmessage=async({data})=>{
         const itemId=Number(key),footprint=d.footprint as {acceptedFloorTypesFlag?:number}|null;
         if(d.nativeType!=='Furniture'||!footprint||nativeActionBlocked(sourceEditRestrictions(d),'select'))continue;
         const layer=sourceMapLayer('Furniture',itemId,footprint.acceptedFloorTypesFlag??null);
-        if(layer==='other')continue;
+        if(layer==='other'||layer==='fence'&&!fenceBaseDefinition(itemId,d))continue;
         items.push({itemId,name:localized.get(itemId)??String(d.nativeName??'Item '+itemId),layer});
       }
       items.sort((a,b)=>a.name.localeCompare(b.name,locale)||a.itemId-b.itemId);

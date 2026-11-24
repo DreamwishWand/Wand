@@ -434,3 +434,44 @@ test('cardinal road strokes use source-matched pitch and atomic design history',
  assert.equal(planRoadDesign(next,g,[{x:40,y:40}],2,40,40),null);
  const other={...g,itemId:40100069,shapes:{'40100069:8':shape}};assert.equal(planRoadDesign(next,other,[{x:4,y:4}],2,40,40),null);
 });
+
+import {fenceBaseIdentity,fenceBaseDefinition,fencePitch,fenceDesignEdges,fenceComponent} from '../src/lib/world/fence-design.ts';
+import {planFenceDesign,commitFenceDesign} from '../src/lib/world/design-layout.ts';
+test('fence design uses current source-matched Base identities and connected cardinal logical units',()=>{
+ const shape={width:2,height:2,runs:[0,1].map(y=>({x:0,y,width:2})),cellCount:4,path:'M0 0h2v2h-2Z'};
+ const g={itemId:40700000,name:'Fence_IronBricks_Base',layer:'fence',surfaceCapable:false,shapes:{'40700000:8':shape}};
+ const h={...g,itemId:40700007,name:'Fence_BambooFence01_Base',shapes:{'40700007:8':shape}};
+ assert.equal(fenceBaseIdentity(40700000,g.name),true);
+ assert.equal(fenceBaseIdentity(40700057,'Fence_IronBricks_Ext1'),false);
+ assert.equal(fenceBaseDefinition(g.itemId,{nativeType:'Furniture',nativeName:g.name,footprint:{sizeX:1,sizeY:1}}),true);
+ assert.equal(fencePitch(g,2),2);assert.equal(fencePitch(g,1),null);
+ const defs=new Map([[g.itemId,g],[h.itemId,h]]);
+ const points=roadStroke([{x:4,y:4},{x:8,y:8}],'outline',2);
+ const start=emptyDesign(),next=commitFenceDesign(start,g,points,2,30,30);
+ assert.equal(currentDesign(next).length,8);assert.equal(fenceDesignEdges(currentDesign(next),defs,2).length,8);
+ assert.equal(fenceComponent(currentDesign(next),defs,2,1).length,8);
+ const mixed=commitFenceDesign(next,h,[{x:10,y:4}],2,30,30);
+ assert.equal(fenceDesignEdges(currentDesign(mixed),defs,2).length,8);
+ const erased=commitFenceDesign(next,g,[{x:4,y:4}],2,30,30,true);
+ assert.equal(currentDesign(erased).length,7);assert.equal(fenceDesignEdges(currentDesign(erased),defs,2).length,6);
+ assert.equal(currentDesign(travelDesign(erased,-1)).length,8);
+ assert.equal(planFenceDesign(next,h,[{x:4,y:4}],2,30,30),null);
+ assert.equal(planFenceDesign(next,g,[{x:1,y:0}],2,30,30),null);
+});
+
+import {roadComponent} from '../src/lib/world/road-design.ts';
+import {replaceDesignNetwork} from '../src/lib/world/design-layout.ts';
+test('connected road style replacement keeps exact cell positions and is one history entry',()=>{
+ const shape={width:2,height:2,runs:[{x:0,y:0,width:2},{x:0,y:1,width:2}],cellCount:4,path:'M0 0h2v2h-2Z'};
+ const a={itemId:40100068,name:'Path_MainStreet',layer:'ground',surfaceCapable:false,shapes:{'40100068:8':shape}};
+ const b={...a,itemId:40100035,name:'Path_Brick',shapes:{'40100035:8':shape}};
+ const defs=new Map([[a.itemId,a],[b.itemId,b]]);
+ const base=commitRoadDesign(emptyDesign(),a,[{x:0,y:0},{x:2,y:0},{x:4,y:0},{x:12,y:12}],1,30,30);
+ assert.deepEqual(roadComponent(currentDesign(base),defs,1,1),[1,2,3]);
+ const next=replaceDesignNetwork(base,1,b,defs,1,30,30);
+ assert.deepEqual(currentDesign(next).map(p=>[p.id,p.itemId,p.x,p.y]),[[1,b.itemId,0,0],[2,b.itemId,2,0],[3,b.itemId,4,0],[4,a.itemId,12,12]]);
+ assert.deepEqual(currentDesign(travelDesign(next,-1)),currentDesign(base));
+ const adjacent=commitRoadDesign(base,b,[{x:6,y:0}],1,30,30);
+ assert.equal(replaceDesignNetwork(adjacent,1,b,defs,1,30,30),null);
+ assert.equal(replaceDesignNetwork(base,1,a,defs,1,30,30),null);
+});

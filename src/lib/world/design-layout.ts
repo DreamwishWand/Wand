@@ -1,6 +1,7 @@
 /** Independent local design state. IDs are synthetic and never sent to a save writer. */
 import type {SavedShapeMap,SavedShapeObject} from './saved-shape-map.ts';
-import {roadPitch,type RoadPoint} from './road-design.ts';
+import {fencePitch,knownFenceBaseId,fenceComponent} from './fence-design.ts';
+import {roadPitch,roadComponent,type RoadPoint} from './road-design.ts';
 import {alignmentTargets,type MapAlignment} from './map-alignment.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
 import {CARDINAL_ORIENTATIONS,exclusiveAnchorClass} from './saved-map-transform.ts';
@@ -195,16 +196,17 @@ export function alignDesign(t:DesignTimeline,map:SavedShapeMap,ids:readonly numb
 
 /** Atomic local design edits, never a Save topology serializer. */
 export interface RoadDesignPlan {readonly add:readonly DesignPlacement[];readonly remove:readonly number[]}
-export function planRoadDesign(t:DesignTimeline,g:DesignItemGeometry,points:readonly RoadPoint[],factor:number,width:number,height:number,erase=false):RoadDesignPlan|null{
- const pitch=roadPitch(g,factor),old=currentDesign(t);
+function planNetworkDesign(t:DesignTimeline,g:DesignItemGeometry,points:readonly RoadPoint[],factor:number,width:number,height:number,erase:boolean,kind:'ground'|'fence'):RoadDesignPlan|null{
+ const pitch=kind==='ground'?roadPitch(g,factor):fencePitch(g,factor),old=currentDesign(t);
  if(!pitch||!points.length||points.length>DESIGN_LIMIT||!points.every(p=>Number.isSafeInteger(p.x)&&Number.isSafeInteger(p.y)&&p.x%pitch===0&&p.y%pitch===0&&p.x>=0&&p.y>=0&&p.x+pitch<=width&&p.y+pitch<=height))return null;
  const ground=new Map<string,DesignPlacement[]>();
  const blocked=new Set<string>();
- for(const p of old)if(exclusiveAnchorClass(String(p.itemId))==='ground'){
+ for(const p of old)if(exclusiveAnchorClass(String(p.itemId))===kind){
   const k=p.x+':'+p.y,row=ground.get(k);if(row)row.push(p);else ground.set(k,[p]);
   // Reject intersections with off-lattice legacy anchor locations.
   for(let y=Math.floor(p.y/pitch)*pitch;y<p.y+pitch;y+=pitch)for(let x=Math.floor(p.x/pitch)*pitch;x<p.x+pitch;x+=pitch)blocked.add(x+':'+y);
  }
+ if(kind==='fence'&&old.some(p=>exclusiveAnchorClass(String(p.itemId))==='fence'&&(!knownFenceBaseId(p.itemId)||p.orientation!==2||p.x%pitch!==0||p.y%pitch!==0)))return null;
  const cells=new Set<string>(),add:DesignPlacement[]=[],remove:number[]=[];
  for(const p of points){
   const k=p.x+':'+p.y;if(cells.has(k))continue;cells.add(k);
@@ -219,9 +221,39 @@ export function planRoadDesign(t:DesignTimeline,g:DesignItemGeometry,points:read
  if(old.length+add.length-remove.length>DESIGN_LIMIT||!Number.isSafeInteger(t.nextId+add.length))return null;
  return {add,remove};
 }
-export function commitRoadDesign(t:DesignTimeline,g:DesignItemGeometry,points:readonly RoadPoint[],factor:number,width:number,height:number,erase=false):DesignTimeline|null{
- const plan=planRoadDesign(t,g,points,factor,width,height,erase);if(!plan)return null;
+export function planRoadDesign(t:DesignTimeline,g:DesignItemGeometry,points:readonly RoadPoint[],factor:number,width:number,height:number,erase=false){return planNetworkDesign(t,g,points,factor,width,height,erase,'ground');}
+export function planFenceDesign(t:DesignTimeline,g:DesignItemGeometry,points:readonly RoadPoint[],factor:number,width:number,height:number,erase=false){return planNetworkDesign(t,g,points,factor,width,height,erase,'fence');}
+function commitNetworkDesign(t:DesignTimeline,plan:RoadDesignPlan|null):DesignTimeline|null{
+ if(!plan)return null;
  if(!plan.add.length&&!plan.remove.length)return t;
  const removed=new Set(plan.remove);
  return commit(t,[...currentDesign(t).filter(o=>!removed.has(o.id)),...plan.add],t.nextId+plan.add.length);
+}
+
+export function commitRoadDesign(t:DesignTimeline,g:DesignItemGeometry,points:readonly RoadPoint[],factor:number,width:number,height:number,erase=false):DesignTimeline|null{return commitNetworkDesign(t,planRoadDesign(t,g,points,factor,width,height,erase));}
+export function commitFenceDesign(t:DesignTimeline,g:DesignItemGeometry,points:readonly RoadPoint[],factor:number,width:number,height:number,erase=false):DesignTimeline|null{return commitNetworkDesign(t,planFenceDesign(t,g,points,factor,width,height,erase));}
+
+/** Full component style replacement preserves every cell and connection.
+ * Refuse a replacement that would merge with a neighboring target family,
+ * or any unknown/off-lattice representation in the affected layer. */
+export function replaceDesignNetwork(t:DesignTimeline,seed:number,target:DesignItemGeometry,defs:ReadonlyMap<number,DesignItemGeometry>,factor:number,width:number,height:number):DesignTimeline|null{
+ const old=currentDesign(t),root=old.find(p=>p.id===seed),source=root?defs.get(root.itemId):null;
+ if(!root||!source||target.itemId===root.itemId||source.layer!==target.layer||nativeActionBlocked(source.editRestrictions,'remove'))return null;
+ const kind=source.layer;if(kind!=='ground'&&kind!=='fence')return null;
+ const getPitch=kind==='ground'?roadPitch:fencePitch,pitch=getPitch(source,factor);
+ if(!pitch||getPitch(target,factor)!==pitch)return null;
+ const ids=new Set((kind==='ground'?roadComponent:fenceComponent)(old,defs,factor,seed));
+ if(!ids.size)return null;
+ const chosen=old.filter(p=>ids.has(p.id)),rest=old.filter(p=>!ids.has(p.id));
+ const targetAnchors=new Set(rest.filter(p=>p.itemId===target.itemId).map(p=>p.x+':'+p.y));
+ const occupied=new Set<string>();
+ for(const p of old)if(exclusiveAnchorClass(String(p.itemId))===kind){
+  if(getPitch(defs.get(p.itemId),factor)!==pitch||p.orientation!==2||p.x%pitch!==0||p.y%pitch!==0)return null;
+  const key=p.x+':'+p.y;if(occupied.has(key))return null;occupied.add(key);
+ }
+ for(const p of chosen){
+  if([[0,0],[pitch,0],[-pitch,0],[0,pitch],[0,-pitch]].some(([dx,dy])=>targetAnchors.has((p.x+dx)+':'+(p.y+dy))))return null;
+  if(!designCandidateValid([], {...p,itemId:target.itemId},target,width,height))return null;
+ }
+ return commit(t,old.map(p=>ids.has(p.id)?{...p,itemId:target.itemId}:p));
 }

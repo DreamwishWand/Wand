@@ -7,7 +7,7 @@ export type RoadTool='brush'|'line'|'outline'|'fill'|'erase';
 export type RoadPoint={readonly x:number;readonly y:number};
 export const ROAD_STROKE_LIMIT=5000;
 export function roadPitch(g:DesignItemGeometry|null|undefined,factor:number):number|null{
- if(!g||exclusiveAnchorClass(String(g.itemId))!=='ground'||g.layer!=='ground'||nativeActionBlocked(g.editRestrictions,'select')||!/^Path_/i.test(g.name??'')||!(factor===1||factor===2))return null;
+ if(!g||exclusiveAnchorClass(String(g.itemId))!=='ground'||g.layer!=='ground'||nativeActionBlocked(g.editRestrictions,'select')||!/^(?:Path|Road)_/i.test(g.name??'')||!(factor===1||factor===2))return null;
  const pitch=2*factor,s=g.shapes[g.itemId+':8'];
  return s&&s.width===pitch&&s.height===pitch&&s.cellCount===pitch*pitch&&s.runs.length===pitch&&s.runs.every((r,i)=>r.x===0&&r.y===i&&r.width===pitch)?pitch:null;
 }
@@ -34,4 +34,20 @@ export function roadStroke(points:readonly RoadPoint[],tool:RoadTool,pitch:numbe
   for(let i=1;i<points.length;i++)if(!cardinal(points[i-1],points[i]))return null;
  }
  return [...result.values()];
+}
+
+/** Local cardinal design roads only. The source Save's diagonal state is not
+ * represented here, so only cardinal same-family neighbors are traversed. */
+export function roadComponent(placements:readonly import('./design-layout.ts').DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>,factor:number,seed:number):number[]{
+ const root=placements.find(p=>p.id===seed),pitch=root?roadPitch(defs.get(root.itemId),factor):null;
+ if(!root||!pitch||root.orientation!==2||root.x%pitch||root.y%pitch)return [];
+ const nodes=new Map<string,typeof root>();
+ for(const p of placements)if(p.itemId===root.itemId&&p.orientation===2&&p.x%pitch===0&&p.y%pitch===0){
+  const key=p.x+':'+p.y;if(nodes.has(key))return [];nodes.set(key,p);
+ }
+ const seen=new Set([seed]),queue=[root];
+ for(let i=0;i<queue.length;i++){const p=queue[i];for(const [dx,dy] of [[pitch,0],[-pitch,0],[0,pitch],[0,-pitch]]){
+  const n=nodes.get((p.x+dx)+':'+(p.y+dy));if(n&&!seen.has(n.id)){seen.add(n.id);queue.push(n);}
+ }}
+ return [...seen];
 }
