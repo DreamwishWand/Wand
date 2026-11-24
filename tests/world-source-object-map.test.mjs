@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {sourceMapLayer,sourceSurfaceCapable,matchesSelectionLayer,mapPainterOrder,prioritizeMapHits} from '../src/lib/world/source-map-layers.ts';
+import {emptyWorldTimeline,currentWorldEdits,projectWorldEdits,stageWorldEdit,travelWorldTimeline} from '../src/lib/world/saved-map-batch.ts';
 import {savedDraftOverlap} from '../src/lib/world/saved-draft-overlap.ts';
 import {draftSavedMapTransform,worldTransformEligible,exclusiveAnchorClass,exclusiveAnchorConflict} from '../src/lib/world/saved-map-transform.ts';
 import {buildSavedShapeMap,savedGridObjects,savedShapesAt} from '../src/lib/world/saved-shape-map.ts';
@@ -141,4 +142,23 @@ test('exclusive anchor feedback matches type arithmetic even for unrenderable pe
   assert.equal(exclusiveAnchorConflict(map,road,5,1),false);
   assert.equal(exclusiveAnchorConflict(map,furniture,2,1),false);
   assert.equal(exclusiveAnchorConflict(map,road,0,0),false);
+});
+
+test('stage multiple moves, re-edit original expected values, undo and redo with warning',()=>{
+  const p=(localOrdinal,x,y)=>({localOrdinal,localGridOrdinal:1,x,y,orientation:'GridOrientation_Down',itemId:'100'});
+  const m=buildSavedShapeMap(fixture(),L,7,[p(1,0,0),p(2,8,8)]);
+  const t1=stageWorldEdit(m,emptyWorldTimeline(),1,1,2,'GridOrientation_Down','景観');
+  assert.equal(currentWorldEdits(t1)[0].warning,'景観');
+  const t2=stageWorldEdit(m,t1,2,3,4,'GridOrientation_Right','');
+  assert.equal(currentWorldEdits(t2).length,2);
+  assert.deepEqual(projectWorldEdits(m,currentWorldEdits(t2)).objects.map(o=>[o.x,o.y]),[[1,2],[3,4]]);
+  const t3=stageWorldEdit(m,t2,1,5,6,'GridOrientation_Down','重なり');
+  assert.equal(currentWorldEdits(t3).length,2);
+  const p3=currentWorldEdits(t3).find(e=>e.plan.localOrdinal===1).plan;
+  assert.deepEqual([p3.expectedX,p3.expectedY,p3.replacementX,p3.replacementY],[0,0,5,6]);
+  assert.equal(currentWorldEdits(travelWorldTimeline(t3,-1))[0].warning,'景観');
+  assert.equal(currentWorldEdits(travelWorldTimeline(travelWorldTimeline(t3,-1),1)).find(e=>e.plan.localOrdinal===1).warning,'重なり');
+  const reverted=stageWorldEdit(m,t3,1,0,0,'GridOrientation_Down','');
+  assert.equal(currentWorldEdits(reverted).length,1);
+  assert.equal(m.objects[0].x,0);
 });

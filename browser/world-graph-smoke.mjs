@@ -919,6 +919,21 @@ try{
     await savedPlot.getByRole('button',{name:'変更を検証'}).click();
     await savedPlot.getByRole('button',{name:'実験的な編集コピーを作成'}).click({timeout:20000});
     await savedPlot.getByRole('link',{name:'編集済みコピーを保存'}).waitFor({timeout:20000});
+    await savedPlot.getByRole('button',{name:'配置変更を追加'}).click();
+    await savedPlot.locator('.staged-edit').waitFor();
+    assert.equal(await savedPlot.locator('.saved-object[data-local-ordinal="1"]').getAttribute('transform'),'translate(6 5)');
+    await savedPlot.getByRole('button',{name:'配置変更を取り消す'}).click();
+    assert.equal(await savedPlot.locator('.saved-object[data-local-ordinal="1"]').getAttribute('transform'),'translate(4 5)');
+    await savedPlot.getByRole('button',{name:'配置変更をやり直す'}).click();
+    assert.equal(await savedPlot.locator('.saved-object[data-local-ordinal="1"]').getAttribute('transform'),'translate(6 5)');
+    const second=await savedPlot.locator('svg').evaluate(svg=>{const p=new DOMPoint(17.5,3.5).matrixTransform(svg.getScreenCTM());return {x:p.x,y:p.y};});
+    await page.mouse.click(second.x,second.y);
+    await savedPlot.getByLabel('移動先X').fill('14');
+    await savedPlot.getByRole('button',{name:'配置変更を追加'}).click();
+    assert.equal(await savedPlot.locator('.staged-edit').count(),2);
+    await savedPlot.getByRole('button',{name:'一括変更を検証'}).click();
+    await savedPlot.getByRole('button',{name:'実験的な編集コピーを作成'}).click({timeout:20000});
+    await savedPlot.getByRole('link',{name:'編集済みコピーを保存'}).waitFor({timeout:20000});
   }catch(error){
     console.error('DB04_SAVE_SOURCE_DIAGNOSTIC',JSON.stringify({
       candidateText:await candidates.innerText(),
