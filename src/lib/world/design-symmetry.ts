@@ -13,7 +13,7 @@ function runSignature(shape:SourceObjectShape,flipX:boolean,flipY:boolean){
 }
 export function reflectedDesignItem(p:SymmetryItem,g:DesignItemGeometry,s:DesignSymmetry):SymmetryItem|null{
  if(!['vertical','horizontal','point'].includes(s.mode)||![s.x2,s.y2,p.x,p.y,p.orientation].every(Number.isSafeInteger)||p.orientation<0||p.orientation>3||p.itemId!==g.itemId||
-  exclusiveAnchorClass(String(p.itemId))||!['furniture','landscape'].includes(g.layer)||g.surfaceCapable&&g.layer==='surface'||nativeActionBlocked(g.editRestrictions,'select'))return null;
+  exclusiveAnchorClass(String(p.itemId))||!['furniture','landscape'].includes(g.layer)||nativeActionBlocked(g.editRestrictions,'select'))return null;
  const a=g.shapes[p.itemId+':'+p.orientation*4];if(!a?.runs.length)return null;
  const fx=s.mode!=='horizontal',fy=s.mode!=='vertical';
  const orientation=s.mode==='point'?(p.orientation+2)%4:s.mode==='vertical'?(4-p.orientation)%4:(6-p.orientation)%4;
