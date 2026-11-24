@@ -2,8 +2,8 @@
    Game art and data-encoded map/legend colors are deliberately not theme tokens. */
 :root {
   --wand-surface:var(--wand-menu);
-  --wand-surface-raised:color-mix(in srgb,var(--wand-menu) 80%,var(--wand-header-text) 8%,var(--wand-header) 12%);
-  --wand-control:color-mix(in srgb,var(--wand-menu) 85%,var(--wand-header-text) 10%,var(--wand-header) 5%);
+  --wand-surface-raised:#10285d;
+  --wand-control:#152e62;
   --wand-control-hover:color-mix(in srgb,var(--wand-menu) 73%,var(--wand-accent) 27%);
   --wand-selected:color-mix(in srgb,var(--wand-menu) 65%,var(--wand-accent) 35%);
   --wand-link:var(--wand-accent);
@@ -13,6 +13,12 @@
   --wand-danger:#ffbec5;--wand-danger-surface:#43243c;--wand-danger-line:#dd7d93;
   --wand-warning:#f4d49b;--wand-warning-surface:#453829;--wand-warning-line:#d2a75b;
   --wand-primary:#2856a4;--wand-on-primary:#fff;
+}
+:root[data-wand-theme='dawn']{
+  --wand-surface-raised:#f0eaf9;--wand-control:#eee8f7;
+}
+:root[data-wand-theme='coral']{
+  --wand-surface-raised:#e7f7fa;--wand-control:#e8f5f7;
 }
 :root:is([data-wand-theme='dawn'],[data-wand-theme='coral']){
   --wand-link:var(--wand-accent-strong);
