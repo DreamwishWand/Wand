@@ -40,9 +40,10 @@ export function collectionUsesSubcategories(root:CollectionTopCategory,groups:re
   return GROUPED_ROOTS.has(root)&&groups.length>1;
 }
 const UNSET:Readonly<Record<string,string>>={ja:'種類未設定',en:'Type not specified',fr:'Type non spécifié',it:'Tipo non specificato',de:'Typ nicht angegeben','es-ES':'Tipo sin especificar','zh-CN':'未指定类型','pt-BR':'Tipo não especificado'};
-export function collectionFurnitureKindLabel(locale:string,key:string):string|null{
+export function collectionFurnitureKindLabel(locale:string,key:string,source?:CollectionDb01Index|null):string|null{
   if(!key.startsWith('furniture-kind:'))return null;
   const tag=key.slice('furniture-kind:'.length);
   if(tag==='__unset__')return UNSET[locale]??UNSET.en;
-  return tag.replace(/^(?:F_|C_)/,'').replace(/([a-z])([A-Z])/g,'$1 $2');
+  const names=source?.furnitureKindLabels?.get(tag);
+  return names?.[locale]??names?.en??tag.replace(/^(?:F_|C_)/,'').replace(/([a-z])([A-Z])/g,'$1 $2');
 }
