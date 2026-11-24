@@ -496,3 +496,14 @@ test('canonical introduction attributes distinguish proven earlier presence from
   assert.deepEqual(await db.findItemIdsByField('history.introducedVersion',{kind:'equals',value:'1.26.2'}),[]);
   assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
 });
+
+
+test('content attribution is independent of observed source version and release context',async()=>{
+  const db=await openPublicItemMaster('',fetcher,{scope:'complete'});
+  const fields=['history.sourceReleaseId','history.sourceReleaseKind','history.contentReleaseId',
+    'history.contentReleaseKind','history.contentDlcType'];
+  const rows=await db.getItemFields([40005160,2130000001],fields);
+  for(const row of rows)for(const field of fields)assert.equal(row.values[field],null);
+  for(const value of ['dlc.the-keepsake-sea','version.26'])
+    assert.deepEqual(await db.findItemIdsByField('history.contentReleaseId',{kind:'equals',value}),[]);
+});
