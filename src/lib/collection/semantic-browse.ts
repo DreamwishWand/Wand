@@ -31,7 +31,8 @@ export interface CollectionBrowseOrder {
   universeKey:(id:number)=>string;
   universeLabel:(key:string)=>string;
   group:(id:number,root:CollectionTopCategory|null)=>{key:string;label:string}|null;
-  subgroup:(id:number,root:CollectionTopCategory|null)=>{key:string;label:string}|null;
+  /** Secondary sorting key only; never a separate visual section. */
+  mealWorldSortKey:(id:number)=>string;
 }
 const styleKeys=(source:CollectionDb01Index,id:number)=>[...new Set((source.byItem.get(id)??[])
   .filter(([facet])=>facet==='furnitureStyle'||facet==='clothingStyle').map(([,key])=>key))].sort().join('|');
@@ -112,10 +113,7 @@ export function makeCollectionBrowseOrder(source:CollectionDb01Index,locale:stri
       if(root&&UNIVERSE_ROOTS.has(root)&&!universeSelected){const u=key(id).universe;return {key:u,label:labels.get(u)??collectionUniverseDisplayLabel(locale,u)};}
       return null;
     },
-    subgroup(id,root){
-      if(root!=='meals'||selectedWorld)return null;
-      const world=key(id).world;return {key:world,label:worldLabel(world)};
-    }
+    mealWorldSortKey:id=>key(id).world
   };
 }
 export function collectionUniverseRootSection(source:CollectionDb01Index,id:number):
