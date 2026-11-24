@@ -70,8 +70,12 @@ export function collectionTopCategoryCards(
  * Source menu selectors are evidence, not verified runtime membership.
  * Prefer semantic native classes over broad Furniture/Clothing menu fallback. */
 export function collectionSourceRoot(
-  type:string,subtype:number,menus:readonly number[]
+  type:string,subtype:number,menus:readonly number[],recipeResult=false
 ):CollectionTopCategory|null{
+  // Exhibition and quest puzzles are explicit source collection groups.
+  // A native consumable/quest family must not mask an exact special-group link.
+  if(menus.includes(19))return 'exhibition';
+  if(menus.includes(18))return 'quest-puzzles';
   if(type==='Character')return menus.includes(20)?'adventure-companions':'characters';
   if(type==='Companion')return (['companions','critters','snippets','mounts'] as const)[subtype]??null;
   if(type==='Skin')return (['characters','buildings','buildings','environment','mounts','buildings','buildings'] as const)[subtype]??null;
@@ -88,8 +92,17 @@ export function collectionSourceRoot(
   if(type==='BoardGame')return 'board-game';
   const direct=collectionTopCategory(type+':'+subtype);
   if(type==='Furniture'||type==='Clothing'||type==='Trimming')return direct;
+  // Native activity types are stronger classification evidence than an
+  // incidental recipe or reward association. Keep crops, fish and meals in
+  // their native categories even when also used by another collection group.
+  if(type==='ActivityItem'){
+    if(subtype===4)return 'ingredients';
+    if(subtype===16)return 'gems';
+    if(subtype===17)return menus.includes(11)?'timebending':'crafting';
+    if(direct)return direct;
+  }
   const sourceMenus:readonly (readonly [number,CollectionTopCategory])[]=[
-    [20,'adventure-companions'],[19,'exhibition'],[18,'quest-puzzles'],[14,'lorekeeper-tales'],
+    [20,'adventure-companions'],[14,'lorekeeper-tales'],
     [13,'snippets'],[12,'board-game'],[11,'timebending'],[9,'gems'],[8,'foraging'],
     [6,'memories'],[7,'characters'],[15,'companions'],[16,'mounts'],[17,'photo-mode'],
     [1,'fish'],[2,'meals'],[0,'ingredients'],[10,'crafting']
@@ -97,6 +110,8 @@ export function collectionSourceRoot(
   // Quest-specific/internal types must have explicit positive source membership.
   const menu=sourceMenus.find(([code])=>menus.includes(code));
   if(menu)return menu[1];
-  if(type==='ActivityItem'&&subtype===16)return 'gems';
+  // The result relation identifies the crafted ITEM, not the recipe record.
+  // Preserve existing semantic roots and never promote transient quest items.
+  if(type==='ActivityItem'&&recipeResult&&[0,15,18,19].includes(subtype))return 'crafting';
   return direct;
 }
