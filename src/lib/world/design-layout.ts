@@ -1,5 +1,6 @@
 /** Independent local design state. IDs are synthetic and never sent to a save writer. */
 import type {SavedShapeMap,SavedShapeObject} from './saved-shape-map.ts';
+import {roadPitch,type RoadPoint} from './road-design.ts';
 import {alignmentTargets,type MapAlignment} from './map-alignment.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
 import {CARDINAL_ORIENTATIONS,exclusiveAnchorClass} from './saved-map-transform.ts';
@@ -190,4 +191,37 @@ export function alignDesign(t:DesignTimeline,map:SavedShapeMap,ids:readonly numb
   updated.set(p.id,candidate);
  }
  return commit(t,old.map(p=>updated.get(p.id)??p));
+}
+
+/** Atomic local design edits, never a Save topology serializer. */
+export interface RoadDesignPlan {readonly add:readonly DesignPlacement[];readonly remove:readonly number[]}
+export function planRoadDesign(t:DesignTimeline,g:DesignItemGeometry,points:readonly RoadPoint[],factor:number,width:number,height:number,erase=false):RoadDesignPlan|null{
+ const pitch=roadPitch(g,factor),old=currentDesign(t);
+ if(!pitch||!points.length||points.length>DESIGN_LIMIT||!points.every(p=>Number.isSafeInteger(p.x)&&Number.isSafeInteger(p.y)&&p.x%pitch===0&&p.y%pitch===0&&p.x>=0&&p.y>=0&&p.x+pitch<=width&&p.y+pitch<=height))return null;
+ const ground=new Map<string,DesignPlacement[]>();
+ const blocked=new Set<string>();
+ for(const p of old)if(exclusiveAnchorClass(String(p.itemId))==='ground'){
+  const k=p.x+':'+p.y,row=ground.get(k);if(row)row.push(p);else ground.set(k,[p]);
+  // Reject intersections with off-lattice legacy anchor locations.
+  for(let y=Math.floor(p.y/pitch)*pitch;y<p.y+pitch;y+=pitch)for(let x=Math.floor(p.x/pitch)*pitch;x<p.x+pitch;x+=pitch)blocked.add(x+':'+y);
+ }
+ const cells=new Set<string>(),add:DesignPlacement[]=[],remove:number[]=[];
+ for(const p of points){
+  const k=p.x+':'+p.y;if(cells.has(k))continue;cells.add(k);
+  const present=ground.get(k)??[];if(present.length>1)return null;const match=present[0];
+  if(erase){if(match?.itemId===g.itemId&&match.orientation===2){if(nativeActionBlocked(g.editRestrictions,'remove'))return null;remove.push(match.id);}continue;}
+  if(match){if(match.itemId!==g.itemId||match.orientation!==2)return null;continue;}
+  if(blocked.has(k))return null;
+  const candidate={id:t.nextId+add.length,itemId:g.itemId,x:p.x,y:p.y,orientation:2};
+  if(!Number.isSafeInteger(candidate.id)||!designCandidateValid([],candidate,g,width,height))return null;
+  add.push(candidate);
+ }
+ if(old.length+add.length-remove.length>DESIGN_LIMIT||!Number.isSafeInteger(t.nextId+add.length))return null;
+ return {add,remove};
+}
+export function commitRoadDesign(t:DesignTimeline,g:DesignItemGeometry,points:readonly RoadPoint[],factor:number,width:number,height:number,erase=false):DesignTimeline|null{
+ const plan=planRoadDesign(t,g,points,factor,width,height,erase);if(!plan)return null;
+ if(!plan.add.length&&!plan.remove.length)return t;
+ const removed=new Set(plan.remove);
+ return commit(t,[...currentDesign(t).filter(o=>!removed.has(o.id)),...plan.add],t.nextId+plan.add.length);
 }

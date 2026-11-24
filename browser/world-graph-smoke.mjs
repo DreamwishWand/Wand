@@ -1120,6 +1120,16 @@ try{
   assert.equal(await design.locator('.design-object').count(),1);
   await design.getByRole('button',{name:'ロック解除 家具',exact:true}).click();
   await design.getByRole('button',{name:'レイヤー',exact:true}).click();
+  await design.getByRole('button',{name:'対称編集',exact:true}).click();
+  await design.getByRole('button',{name:'垂直軸',exact:true}).click();
+  assert.equal(await design.locator('.symmetry-axis').count(),1);
+  await design.getByRole('button',{name:'水平軸',exact:true}).click();
+  assert.equal(await design.locator('.symmetry-axis').count(),1);
+  await design.getByRole('button',{name:'点対称',exact:true}).click();
+  assert.equal(await design.locator('.symmetry-center').count(),1);
+  await design.getByRole('button',{name:'無効',exact:true}).click();
+  assert.equal(await design.locator('.symmetry-center').count(),0);
+  await design.getByRole('button',{name:'対称編集',exact:true}).click();
   await publicWorld.getByLabel('エリア',{exact:true}).selectOption({label:'Plaza'});
   await design.locator('.design-plot').waitFor({timeout:20000});
   assert.equal(await design.locator('.design-object').count(),0);
