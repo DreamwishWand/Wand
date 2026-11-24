@@ -64,15 +64,16 @@ export function terrainWarnings(binding:TerrainBinding,shape:SourceObjectShape,x
   if(!int(x)||!int(y)||shape.cellCount>65536)return runs;
   for(const run of shape.runs){
     const yy=y+run.y;
-    let active:TerrainWarningRun|null=null;
+    let activeIndex=-1;
     for(let xx=x+run.x;xx<x+run.x+run.width;xx++){
       const floor=terrainFloorAt(binding,xx,yy);
       const reason=floor===null?'outside':shape.acceptedFloorTypesFlag!==undefined&&
         (floor&shape.acceptedFloorTypesFlag)===0?'floor-mismatch':null;
-      if(reason&&active?.reason===reason&&active.x+active.width===xx){
-        active={...active,width:active.width+1};runs[runs.length-1]=active;
-      }else if(reason){active={x:xx,y:yy,width:1,reason};runs.push(active);}
-      else active=null;
+      const active=activeIndex>=0?runs[activeIndex]:undefined;
+      if(reason&&active&&active.reason===reason&&active.x+active.width===xx){
+        runs[activeIndex]={...active,width:active.width+1};
+      }else if(reason){activeIndex=runs.length;runs.push({x:xx,y:yy,width:1,reason});}
+      else activeIndex=-1;
     }
   }
   return runs;

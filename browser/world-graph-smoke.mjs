@@ -1060,6 +1060,11 @@ try{
   assert.equal(await publicWorld.locator('.saved-terrain-background').count(),0);
   await publicWorld.getByRole('button',{name:'Peaceful Meadow',exact:true}).click();
   await publicWorld.locator('.saved-terrain-background').waitFor({timeout:20000});
+  await publicWorld.getByLabel('ワールド',{exact:true}).selectOption('VillageExpansion01');
+  await publicWorld.locator('.media-map-overlay .cell-mask').waitFor({timeout:20000});
+  await publicWorld.getByLabel('ワールド',{exact:true}).selectOption('Village04');
+  await publicWorld.getByRole('button',{name:'Peaceful Meadow',exact:true}).click();
+  await publicWorld.locator('.saved-terrain-background').waitFor({timeout:20000});
 
   assert.deepEqual(pageErrors,[],pageErrors.join('\n'));
   assert.deepEqual(unexpectedWrites,[],unexpectedWrites.join('\n'));

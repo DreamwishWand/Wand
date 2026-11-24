@@ -1,10 +1,29 @@
 import init,{decode_public_terrain} from './wasm/pkg/wand_world_core.js';
 import wasmUrl from './wasm/pkg/wand_world_core_bg.wasm?url';
 import {openPublicItemMaster} from '../items/public-item-master.ts';
-import {parsePublicTerrainBundle,PUBLIC_TERRAIN_PATH,publicShapeDefinitions,publicShapeSource,type PublicTerrainBundle} from './public-terrain-projection.ts';
+import {parsePublicTerrainBundle,parsePublicTerrainRelease,sameTerrainGrid,PUBLIC_TERRAIN_ROOT,publicShapeDefinitions,publicShapeSource,type PublicTerrainBundle,type PublicTerrainRelease,type PublicTerrainRegion} from './public-terrain-projection.ts';
 import {buildSavedShapeMap,parseSavedShapePoints} from './saved-shape-map.ts';
 const scope=self as unknown as {onmessage:((e:MessageEvent)=>void)|null;postMessage:(data:unknown,transfer?:Transferable[])=>void};
-let bundle:PublicTerrainBundle|null=null;
+let release:PublicTerrainRelease|null=null;
+const bundles=new Map<string,Promise<PublicTerrainBundle>>();
+let wasmReady:Promise<unknown>|null=null;
+async function loadBundle(region:PublicTerrainRegion){
+ let pending=bundles.get(region.scope);
+ if(!pending){
+  pending=(async()=>{
+   const response=await fetch(basePath+'/'+PUBLIC_TERRAIN_ROOT+'/'+region.path);
+   if(!response.ok)throw Error('region');
+   const raw=await response.arrayBuffer();
+   const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',raw)),b=>b.toString(16).padStart(2,'0')).join('');
+   if(hash!==region.sha256)throw Error('region digest');
+   const result=parsePublicTerrainBundle(JSON.parse(new TextDecoder().decode(raw)));
+   if(result.grids.length!==region.grids.length||!result.grids.every((g,i)=>sameTerrainGrid(g,region.grids[i])))throw Error('region index mismatch');
+   return result;
+  })().catch(e=>{bundles.delete(region.scope);throw e;});
+  bundles.set(region.scope,pending);
+ }
+ return pending;
+}
 let basePath='';
 let geometry:Promise<ReturnType<typeof publicShapeDefinitions>>|null=null;
 async function loadGeometry(){
@@ -22,18 +41,22 @@ scope.onmessage=async({data})=>{
     if(data.command==='open'){
       if(typeof data.base!=='string'||!/^\/?(?:[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*)?$/.test(data.base))throw Error('base');
       basePath=data.base;
-      const response=await fetch(basePath+'/'+PUBLIC_TERRAIN_PATH);
+      const response=await fetch(basePath+'/'+PUBLIC_TERRAIN_ROOT+'/index.json');
       if(!response.ok)throw Error('source');
-      bundle=parsePublicTerrainBundle(await response.json());
-      scope.postMessage({kind:'index',requestId:id,grids:bundle.grids.map(({data,palette,counts,sha256,...g})=>g)});
+      release=parsePublicTerrainRelease(await response.json());
+      scope.postMessage({kind:'index',requestId:id,grids:release.entries.flatMap(region=>region.grids.map(g=>({...g,scope:region.scope}))) });
       return;
     }
-    const grid=bundle?.grids.find(g=>g.key===data.key);
-    if(!grid)throw Error('grid');
+    const region=release?.entries.find(r=>r.grids.some(g=>g.key===data.key));
+    const grid=region?.grids.find(g=>g.key===data.key);
+    if(!grid||!region)throw Error('grid');
     if(data.command==='terrain'){
-      await init(wasmUrl);
-      const bytes=Uint8Array.from(atob(grid.data),c=>c.charCodeAt(0));
-      const values=decode_public_terrain(bytes,Uint32Array.from(grid.palette),Uint32Array.from(grid.counts),grid.sizeX,grid.sizeY,grid.sha256);
+      wasmReady??=init(wasmUrl).catch(e=>{wasmReady=null;throw e;});
+      const [bundle]=await Promise.all([loadBundle(region),wasmReady]);
+      const full=bundle.grids.find(g=>g.key===grid.key);
+      if(!full)throw Error('grid payload');
+      const bytes=Uint8Array.from(atob(full.data),c=>c.charCodeAt(0));
+      const values=decode_public_terrain(bytes,Uint32Array.from(full.palette),Uint32Array.from(full.counts),grid.sizeX,grid.sizeY,full.sha256);
       scope.postMessage({kind:'terrain',requestId:id,key:grid.key,sizeX:grid.sizeX,sizeY:grid.sizeY,nativeFloorValues:values},[values.buffer]);
       return;
     }
