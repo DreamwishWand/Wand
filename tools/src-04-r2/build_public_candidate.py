@@ -12,6 +12,7 @@ import argparse
 import hashlib
 import json
 import re
+from plan_public_upload import image_key
 import shutil
 import tempfile
 from collections import Counter
@@ -120,7 +121,7 @@ def prepare(root, verified_images, public_root, promotion_root):
                             expected_bytes == v["bytes"] and
                             (width, height) == (v["width"], v["height"]),
                             "IMAGE_NOT_VERIFIED")
-                    public_key = f"{kind}/{content_sha[:2]}/{content_sha}.webp"
+                    public_key = image_key(content_sha)
                     clean[kind] = {"key": public_key, "width": width, "height": height}
                     mapping = {"source": SOURCE_PREFIX + "/" + src,
                                "target": public_key, "sha256": content_sha,

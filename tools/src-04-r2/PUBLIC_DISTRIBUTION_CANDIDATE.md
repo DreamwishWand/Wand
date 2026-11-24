@@ -17,8 +17,8 @@ Outputs:
 - \`src04-distribution-candidate-report.json\`: candidate counts/hashes, no image bytes/credentials
 
 Object keys for future public delivery are **encoded WebP SHA-256 keyed**, not Unity GUID or decoded-source hashed. Example:
-\`thumbnail/<sha[0:2]>/<encoded-webp-sha>.webp\`.
-Identical encoded WebP assets deduplicate across game versions within the same variant. Original and thumbnail are separate namespaces. The game version remains in manifests and private source staging paths, never in newly generated public image keys. Preserve existing published keys; copy existing R2 bytes server-side to canonical keys only when missing, verify SHA and size, and do not delete old objects.
+\`images/<encoded-webp-sha>.webp\`.
+Identical encoded WebP assets deduplicate across game versions, services and variants. Original and thumbnail are logical references, not physical namespaces. The game version remains in manifests and private source staging paths, never in newly generated public image keys. Preserve existing published keys; copy existing R2 bytes server-side to canonical keys only when missing, verify SHA and size, and do not delete old objects.
 
 Candidate manifests have \`releaseState=candidate_unpublished\` and **must not be treated as production public metadata until a separate release/rights approval and publication step**. The source v2 manifest itself retains \`publicationAuthorized=false\` by design. This tool neither changes it nor turns it into a release flag.
 

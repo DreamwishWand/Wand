@@ -22,7 +22,7 @@ def fixture(root: Path):
         variants[kind] = {
             "path": f"images-v2/{kind}/bb/{decoded}.webp",
             "sha256": binary_sha, "bytes": 100,
-            "width": 128 if kind == "thumbnail" else 200,
+            "width": 128,
             "height": 120
         }
     image = {
@@ -61,7 +61,7 @@ class CandidateTests(unittest.TestCase):
                 report=builder.prepare(root,verified,root/"public",
                                        root/"private-promotion-plan.json")
             self.assertEqual(report["publicItems"],1)
-            self.assertEqual(report["uniquePublicObjects"],2)
+            self.assertEqual(report["uniquePublicObjects"],1)
             self.assertFalse(report["uploadedToPublic"])
             files=list((root/"public").rglob("*.json"))
             self.assertEqual(len(files),257)
@@ -70,9 +70,9 @@ class CandidateTests(unittest.TestCase):
                 self.assertNotIn(private,all_bytes)
             plan=json.loads((root/"private-promotion-plan.json").read_text())
             self.assertFalse(plan["publicationAuthorized"])
-            self.assertEqual(len(plan["objects"]),2)
+            self.assertEqual(len(plan["objects"]),1)
             self.assertEqual({o["target"] for o in plan["objects"]},
-                             {f"{kind}/cc/{'c' * 64}.webp" for kind in ("thumbnail", "original")})
+                             {f"images/{'c' * 64}.webp"})
             self.assertTrue(all(o["source"].startswith(builder.SOURCE_PREFIX + "/") for o in plan["objects"]))
     def test_fails_closed_when_byte_hash_is_wrong(self):
         with tempfile.TemporaryDirectory() as tmp:
