@@ -39,6 +39,7 @@ export interface ItemMasterCompleteRelease {
   readonly reviewedRootArraysSha256?: string;
   readonly reviewedMessagesSha256?: string;
   readonly reviewedMessageGroupsSha256?: string;
+  readonly reviewedStructure?: Readonly<Record<'reviewed-structure'|'reviewed-quest-steps',string>>;
   readonly localization?: Readonly<{parts:number;sha256:string}>;
 }
 export interface ItemMasterExpandedRelease {
@@ -274,6 +275,8 @@ export interface ItemMasterRelease {
   readonly reviewedMessageCoverage?: Readonly<{fields:Readonly<Record<string,Readonly<{itemCount:number;occurrences:number;leafCount:number;category:string;declaredType:string}>>>;runtimeSemanticsVerified:false}>;
   readonly reviewedMessageGroupsSha256?: string;
   readonly reviewedMessageGroupCoverage?: Readonly<{fields:Readonly<Record<string,Readonly<{itemCount:number;occurrences:number;leafCount:number;category:string;declaredType:string}>>>;runtimeSemanticsVerified:false}>;
+  readonly reviewedStructure?: Readonly<Record<'reviewed-structure'|'reviewed-quest-steps',string>>;
+  readonly reviewedStructureCoverage?: Readonly<{fields:Readonly<Record<string,Readonly<{itemCount:number;occurrences:number;leafCount:number;category:string;declaredType:string}>>>;runtimeSemanticsVerified:false}>;
   readonly localizationSha256?: string;
   readonly localizationCoverage?: ItemLocalizationCoverage;
   readonly sourceFilesVerified?: number;
@@ -523,6 +526,8 @@ export async function openPublicItemMaster(
           typeof c.reviewedMessagesSha256==='string'&&SHA.test(c.reviewedMessagesSha256),'INVALID_MESSAGE_DIGEST');
         assert(c.reviewedMessageGroupsSha256===undefined||
           typeof c.reviewedMessageGroupsSha256==='string'&&SHA.test(c.reviewedMessageGroupsSha256),'INVALID_MESSAGE_GROUP_DIGEST');
+        assert(c.reviewedStructure===undefined||isObject(c.reviewedStructure)&&Object.keys(c.reviewedStructure).length===2&&
+          ['reviewed-structure','reviewed-quest-steps'].every(k=>typeof (c.reviewedStructure as Record<string,unknown>)[k]==='string'&&SHA.test(String((c.reviewedStructure as Record<string,unknown>)[k]))),'INVALID_STRUCTURE_DIGESTS');
         if(c.localization!==undefined){
           const l=c.localization;
           assert(isObject(l)&&typeof l.parts==='number'&&Number.isSafeInteger(l.parts)&&l.parts>0&&l.parts<=100&&
@@ -626,6 +631,16 @@ export async function openPublicItemMaster(
           typeof f.leafCount==='number'&&Number.isSafeInteger(f.leafCount)&&f.leafCount>=0&&
           typeof f.category==='string'&&typeof f.declaredType==='string')&&
         release.reviewedMessageGroupCoverage.runtimeSemanticsVerified===false),'INVALID_MESSAGE_GROUP_RELEASE');
+    assert((!selected||JSON.stringify(release.reviewedStructure)===JSON.stringify(selected.complete?.reviewedStructure))&&
+      (release.reviewedStructure===undefined||isObject(release.reviewedStructure)&&Object.keys(release.reviewedStructure).length===2&&
+        ['reviewed-structure','reviewed-quest-steps'].every(k=>typeof (release.reviewedStructure as Record<string,unknown>)[k]==='string'&&SHA.test(String((release.reviewedStructure as Record<string,unknown>)[k])))&&
+        isObject(release.reviewedStructureCoverage)&&isObject(release.reviewedStructureCoverage.fields)&&
+        Object.values(release.reviewedStructureCoverage.fields).every(f=>isObject(f)&&
+          typeof f.itemCount==='number'&&Number.isSafeInteger(f.itemCount)&&f.itemCount>0&&f.itemCount<=Number(release.count)&&
+          typeof f.occurrences==='number'&&Number.isSafeInteger(f.occurrences)&&f.occurrences>=f.itemCount&&
+          typeof f.leafCount==='number'&&Number.isSafeInteger(f.leafCount)&&f.leafCount>=0&&
+          typeof f.category==='string'&&typeof f.declaredType==='string')&&
+        release.reviewedStructureCoverage.runtimeSemanticsVerified===false),'INVALID_STRUCTURE_RELEASE');
     assert((!selected||release.localizationSha256===selected.complete?.localization?.sha256)&&
       (release.localizationSha256===undefined||
         typeof release.localizationSha256==='string'&&SHA.test(release.localizationSha256)&&
