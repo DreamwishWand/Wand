@@ -105,19 +105,19 @@
 {/if}
 
 <style>
-  .collection-item-master{margin:8px 0 12px;font-size:11px;color:#c4b1d2}
+  .collection-item-master{margin:8px 0 12px;font-size:11px;color:var(--wand-text)}
   .master-type{display:flex;align-items:center;gap:5px;margin:0 0 7px}
   .master-chips{display:flex;flex-wrap:wrap;gap:5px}
   .master-chips span{max-width:100%;overflow-wrap:anywhere;padding:5px 7px;
-    border-radius:7px;border:1px solid #ffffff23;background:#ffffff09}
+    border-radius:7px;border:1px solid var(--wand-subtle-line);background:var(--wand-surface-raised)}
   .master-more{margin-top:9px}
   .master-more summary{display:flex;align-items:center;gap:5px;cursor:pointer;
     color:inherit;list-style:none;padding:3px 0}
   .master-more summary::-webkit-details-marker{display:none}
-  .master-note{line-height:1.5;color:#a698b0;font-size:10px;margin:7px 0}
+  .master-note{line-height:1.5;color:var(--wand-muted);font-size:10px;margin:7px 0}
   .master-names{margin-top:12px}
   .master-names dl{display:grid;grid-template-columns:50px 1fr;gap:6px 9px;
     margin:7px 0}
-  .master-names dt{color:#9e8bad}
+  .master-names dt{color:var(--wand-muted)}
   .master-names dd{margin:0;overflow-wrap:anywhere}
 </style>
