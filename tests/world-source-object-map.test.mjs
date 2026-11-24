@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {sourceMapLayer,sourceSurfaceCapable,matchesSelectionLayer,mapPainterOrder,prioritizeMapHits} from '../src/lib/world/source-map-layers.ts';
+import {draftSavedMapTransform,worldTransformEligible} from '../src/lib/world/saved-map-transform.ts';
 import {buildSavedShapeMap,savedGridObjects,savedShapesAt} from '../src/lib/world/saved-shape-map.ts';
 import {buildSourceObjectMap,sourceObjectsAt,sourceOrientationAngle,sourceShapeIntersections} from '../src/lib/world/source-object-map.ts';
 const L='SceneLayouts/Village04/Fixture.json',P='GridData/Village04/Fixture.json';
@@ -87,4 +88,15 @@ test('saved shape candidates use saved anchors and exact cardinal strings, never
   assert.deepEqual(savedShapesAt(map,2,-2,3).map(o=>o.localOrdinal),[3]);
   assert.equal(map.savedSourceCoordinateEquivalenceVerified,false);
   assert.equal(map.actualOccupancyVerified,false);
+});
+
+test('map transform creates existing Rust mixed plan; road and fence remain disabled',()=>{
+  const o={localOrdinal:3,localGridOrdinal:1,itemId:'40000001',x:2,y:3,orientation:'GridOrientation_Up',shapeKey:'40000001:0',layer:'furniture',surfaceCapable:false};
+  assert.deepEqual(draftSavedMapTransform(o,-4,8,'GridOrientation_Right'),{localOrdinal:3,itemId:'40000001',recordKind:'full',expectedX:2,expectedY:3,replacementX:-4,replacementY:8,expectedOrientation:'GridOrientation_Up',replacementOrientation:'GridOrientation_Right'});
+  assert.equal(draftSavedMapTransform(o,2,3,o.orientation),null);
+  assert.equal(draftSavedMapTransform(o,2147483648,3,o.orientation),null);
+  assert.equal(draftSavedMapTransform(o,2,3,'West'),null);
+  assert.equal(worldTransformEligible({...o,layer:'ground'}),false);
+  assert.equal(worldTransformEligible({...o,layer:'fence'}),false);
+  assert.equal(worldTransformEligible({...o,shapeKey:null}),false);
 });

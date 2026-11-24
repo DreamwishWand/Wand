@@ -902,6 +902,17 @@ try{
     await candidates.locator('.saved-object-shape').first().waitFor({timeout:20000});
     assert.equal(await candidates.locator('.saved-object-shape').count(),2);
     assert.equal(await candidates.locator('.saved-object').first().getAttribute('transform'),'translate(4 5)');
+    const savedPlot=candidates.locator('.saved-shape-plot');
+    await savedPlot.locator('svg').scrollIntoViewIfNeeded();
+    const position=await savedPlot.locator('svg').evaluate(svg=>{
+      const p=new DOMPoint(4.5,5.5).matrixTransform(svg.getScreenCTM());return {x:p.x,y:p.y};});
+    await page.mouse.click(position.x,position.y);
+    await savedPlot.getByLabel('移動先X').fill('6');
+    await savedPlot.getByLabel('編集後の向き').selectOption('GridOrientation_Right');
+    await savedPlot.locator('.saved-draft-shape').waitFor();
+    await savedPlot.getByRole('button',{name:'変更を検証'}).click();
+    await savedPlot.getByRole('button',{name:'実験的な編集コピーを作成'}).click({timeout:20000});
+    await savedPlot.getByRole('link',{name:'編集済みコピーを保存'}).waitFor({timeout:20000});
   }catch(error){
     console.error('DB04_SAVE_SOURCE_DIAGNOSTIC',JSON.stringify({
       candidateText:await candidates.innerText(),

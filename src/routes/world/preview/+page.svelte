@@ -1470,7 +1470,7 @@
         {:else if terrainRasterStatus}
           <p class="note">原本地形全体図：{terrainRasterStatus}</p>
         {/if}
-        <SavedGridSourceCandidates shapeMap={savedShapeMap}
+        <SavedGridSourceCandidates shapeMap={savedShapeMap} file={$localSaveSession.file}
           receipt={savedSourceCandidates?.viewKey===selectedViewKey&&
             savedSourceCandidates.nativeGridId===Number(selectedGridId)&&
             saveComparisonRevision===$localSaveSession.revision

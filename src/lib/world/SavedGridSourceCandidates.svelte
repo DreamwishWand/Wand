@@ -4,6 +4,7 @@
   import type {SavedGridSourceCandidates} from './saved-grid-source-candidates.ts';
   export let receipt:SavedGridSourceCandidates|null=null;
   export let shapeMap:SavedShapeMap|null=null;
+  export let file:File|null=null;
   export let available=false;
   export let working=false;
   export let errorMessage='';
@@ -81,7 +82,7 @@
       {/if}
     </div>
     {#if receipt.points.length>0}
-      {#if shapeMap}<SavedShapePlot map={shapeMap}/>
+      {#if shapeMap}<SavedShapePlot map={shapeMap} {file}/>
       {:else if new Set(receipt.points.map(p=>p.localGridOrdinal)).size===1}<div class="numeric-map">
         <canvas use:draw={receipt}
           aria-label="セーブ内の参照パス一致候補のX/Y数値座標図。地形図ではありません"></canvas>
