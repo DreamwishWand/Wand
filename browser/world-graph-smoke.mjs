@@ -25,7 +25,7 @@ const UNLINKED_EMPTY=UNLINKED_EMPTY_LAYOUT+'#grid=0';
 const GRAPH_URL='http://127.0.0.1:4178/Wand/world/preview/';
 
 /** Entirely synthetic original-world ZIP, created in this test only. */
-function syntheticTerrainZip(decodedFloor=false,factor=1){
+function syntheticTerrainZip(decodedFloor=false,factor=1,exclusive=false){
   const gridPaths=['GridData/Village04/Beach.json',
     'GridData/OffGridBuildings/Detached.json'];
   const layouts=[
@@ -71,6 +71,7 @@ function syntheticTerrainZip(decodedFloor=false,factor=1){
       fixedImmovableVerified:false
     }))
   };
+  if(exclusive)sources.objects.push({itemId:40100001,nativeType:'Furniture',nativeName:'SyntheticRoad',footprint:{...sources.objects[0].footprint}});
   const entries=new Map(Object.entries(sources).map(([key,value])=>
     [key+'.json',Buffer.from(JSON.stringify(value))]));
   entries.set('report.json',Buffer.from(
@@ -872,6 +873,17 @@ try{
   assert.notEqual(await mapPanel.locator('svg').getAttribute('viewBox'),originalViewBox);
   await mapPanel.getByRole('button',{name:'全体',exact:true}).click();
   assert.equal(await mapPanel.locator('svg').getAttribute('viewBox'),originalViewBox);
+  await mapPanel.locator('svg').scrollIntoViewIfNeeded();
+  await mapPanel.locator('svg').hover();
+  await page.mouse.wheel(0,-120);
+  await page.waitForFunction(({initial})=>document.querySelector('.media-map-overlay svg')?.getAttribute('viewBox')!==initial,{initial:originalViewBox});
+  const beforePan=await mapPanel.locator('svg').getAttribute('viewBox');
+  const rect=await mapPanel.locator('svg').boundingBox();
+  await page.mouse.move(rect.x+rect.width/2,rect.y+rect.height/2);
+  await page.mouse.down();await page.mouse.move(rect.x+rect.width/2+20,rect.y+rect.height/2,{steps:4});await page.mouse.up();
+  assert.notEqual(await mapPanel.locator('svg').getAttribute('viewBox'),beforePan);
+  assert.match(await mapPanel.locator('.selected-object').innerText(),/SyntheticSourceObject/);
+  await mapPanel.getByRole('button',{name:'全体',exact:true}).click();
   await mapPanel.getByRole('button',{name:'解除'}).click();
   await mapPanel.locator('svg').waitFor({state:'detached'});
   await mapPanel.getByRole('button',{name:'簡略マップ',exact:true}).click();
@@ -902,9 +914,51 @@ try{
     await candidates.locator('.saved-object-shape').first().waitFor({timeout:20000});
     assert.equal(await candidates.locator('.saved-object-shape').count(),2);
     assert.equal(await candidates.locator('.saved-object').first().getAttribute('transform'),'translate(4 5)');
+    const savedPlot=candidates.locator('.saved-shape-plot');
+    await savedPlot.getByLabel('配置済み家具を検索').fill('SyntheticSourceObject');
+    await savedPlot.locator('.object-results button').first().click();
+    await savedPlot.locator('.selected-saved-object').waitFor();
+    await savedPlot.getByLabel('検索を解除').click();
+    await savedPlot.getByRole('button',{name:'閉じる',exact:true}).click();
+    await savedPlot.getByRole('button',{name:'全体',exact:true}).click();
+    await savedPlot.locator('svg').scrollIntoViewIfNeeded();
+    const position=await savedPlot.locator('svg').evaluate(svg=>{
+      const p=new DOMPoint(4.5,5.5).matrixTransform(svg.getScreenCTM());return {x:p.x,y:p.y};});
+    await page.mouse.click(position.x,position.y);
+    await savedPlot.getByLabel('移動先X').fill('17');
+    await savedPlot.getByLabel('移動先Y').fill('3');
+    await savedPlot.locator('.saved-overlap-cell[data-evidence="shape-overlap"]').first().waitFor();
+    await savedPlot.getByLabel('移動先Y').fill('5');
+    await savedPlot.getByLabel('移動先X').fill('6');
+    await savedPlot.locator('.saved-overlap-cell').first().waitFor({state:'detached'});
+    await savedPlot.getByLabel('編集後の向き').selectOption('GridOrientation_Right');
+    await savedPlot.locator('.saved-draft-shape').waitFor();
+    await savedPlot.getByRole('button',{name:'変更を検証'}).click();
+    await savedPlot.getByRole('button',{name:'実験的な編集コピーを作成'}).click({timeout:20000});
+    await savedPlot.getByRole('link',{name:'編集済みコピーを保存'}).waitFor({timeout:20000});
+    await savedPlot.getByRole('button',{name:'配置変更を追加'}).click();
+    await savedPlot.locator('.staged-edit').waitFor();
+    assert.equal(await savedPlot.locator('.saved-object[data-local-ordinal="1"]').getAttribute('transform'),'translate(6 5)');
+    await savedPlot.getByRole('button',{name:'配置変更を取り消す'}).click();
+    assert.equal(await savedPlot.locator('.saved-object[data-local-ordinal="1"]').getAttribute('transform'),'translate(4 5)');
+    await savedPlot.getByRole('button',{name:'配置変更をやり直す'}).click();
+    assert.equal(await savedPlot.locator('.saved-object[data-local-ordinal="1"]').getAttribute('transform'),'translate(6 5)');
+    // Undo/redo buttons may scroll the map out of view. Select the second
+    // object through the new placed-object picker instead of stale screen coordinates.
+    await savedPlot.getByLabel('配置済み家具を検索').fill('SyntheticSourceObject');
+    await savedPlot.locator('.object-results button').filter({hasText:'17, 3'}).click();
+    await savedPlot.locator('.selected-saved-object').filter({hasText:'(17, 3)'}).waitFor();
+    await savedPlot.getByLabel('移動先X').fill('14');
+    await savedPlot.getByRole('button',{name:'配置変更を追加'}).click();
+    assert.equal(await savedPlot.locator('.staged-edit').count(),2);
+    await savedPlot.getByRole('button',{name:'一括変更を検証'}).click();
+    await savedPlot.getByRole('button',{name:'実験的な編集コピーを作成'}).click({timeout:20000});
+    await savedPlot.getByRole('link',{name:'編集済みコピーを保存'}).waitFor({timeout:20000});
   }catch(error){
     console.error('DB04_SAVE_SOURCE_DIAGNOSTIC',JSON.stringify({
       candidateText:await candidates.innerText(),
+      plottedObjects:await candidates.locator('.saved-object').count(),
+      shapePaths:await candidates.locator('.saved-object-shape').count(),
       pageErrors,pageUrl:page.url(),
       sourceSelection:await terrainViewer.locator('.world-toolbar').innerText().catch(()=>'no-toolbar')
     }));
@@ -925,6 +979,35 @@ try{
     })),
   });
   await candidates.locator('.saved-shape-plot').waitFor({state:'detached',timeout:20000});
+
+  // Road anchor duplication is visible and blocked; a distinct coordinate
+  // still reaches the Rust-backed copy path.
+  await page.locator('.world-toolbar input[type=file]').setInputFiles({
+    name:'synthetic-exclusive.zip',mimeType:'application/zip',
+    buffer:syntheticTerrainZip(true,1,true).archive
+  });
+  const roadSave=structuredClone(syntheticSave);
+  roadSave.World.GridCollection.Grids['777'].Objects={
+    '1':{ID:1,ItemID:40100001,X:4,Y:5,Orientation:'GridOrientation_Up'},
+    '2':{ID:2,ItemID:40100001,X:8,Y:5,Orientation:'GridOrientation_Up'}
+  };
+  await saveChooser.setInputFiles({name:'synthetic-road-save.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(roadSave))});
+  await candidates.getByRole('button',{name:'選択Gridと照合'}).click({timeout:20000});
+  const roadPlot=candidates.locator('.saved-shape-plot');
+  await roadPlot.locator('.saved-object').first().waitFor({timeout:20000});
+  await roadPlot.locator('svg').scrollIntoViewIfNeeded();
+  const roadPosition=await roadPlot.locator('svg').evaluate(svg=>{
+    const p=new DOMPoint(4.5,5.5).matrixTransform(svg.getScreenCTM());return {x:p.x,y:p.y};});
+  await page.mouse.click(roadPosition.x,roadPosition.y);
+  await roadPlot.getByLabel('移動先X').fill('8');
+  await roadPlot.locator('.exclusive-anchor-conflict').waitFor();
+  assert.equal(await roadPlot.getByRole('button',{name:'変更を検証'}).isDisabled(),true);
+  assert.equal(await roadPlot.getByLabel('編集後の向き').count(),0);
+  await roadPlot.getByLabel('移動先X').fill('6');
+  await roadPlot.locator('.exclusive-anchor-conflict').waitFor({state:'detached'});
+  await roadPlot.getByRole('button',{name:'変更を検証'}).click();
+  await roadPlot.getByRole('button',{name:'実験的な編集コピーを作成'}).click({timeout:20000});
+  await roadPlot.getByRole('link',{name:'編集済みコピーを保存'}).waitFor({timeout:20000});
 
   // Factor two source anchors are visible at their own integer coordinates,
   // without a fabricated terrain projection or placement preview.

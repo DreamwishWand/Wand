@@ -50,6 +50,10 @@ export function buildSavedShapeMap(source:unknown,layoutId:string,gridIdNative:n
       {shapeKey:null,name:null,layer:'other' as const,surfaceCapable:false};
     return {...p,...resolved,orientationCode};
   });
+  // Precompute alternative cardinal shapes using the same bounded Worker cache.
+  if(geometry)for(const o of objects){
+    if(o.shapeKey&&o.orientationCode!==null)for(const code of [0,4,8,12])geometry.resolve(Number(o.itemId),code);
+  }
   return {layoutId,gridIdNative,gridDataPath:domain.gridDataPath,sourceGridFactor:factor,
     objects,shapes:geometry?.shapes??{},actualOccupancyVerified:false,savedSourceCoordinateEquivalenceVerified:false};
 }
