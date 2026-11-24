@@ -300,6 +300,9 @@
             {#if o.orientationCode!==null}<path d="M0 -.32L.19 .13L0 .04L-.19 .13Z" transform={'translate(.5 .5) rotate('+sourceOrientationAngle(o.orientationCode)+')'} fill="#fff"/>{/if}
           {:else}<circle class="unknown-shape" cx=".5" cy=".5" r=".24" fill="#ddd" stroke="#fff" stroke-width="1" vector-effect="non-scaling-stroke"/>{/if}
           {#if o.surfaceCapable}<circle cx=".78" cy=".22" r=".13" fill="#dbc2f6"/>{/if}
+          {#if o.subgrid}<g class="saved-subgrid-marker" transform="translate(.5 .5)" fill="none" stroke="#f0d494" stroke-width=".09">
+            <rect x="-.30" y="-.30" width=".60" height=".60" rx=".08"/><rect x="-.16" y="-.16" width=".32" height=".32" rx=".04"/>
+          </g>{/if}
         </g>
       {/each}
       {#if showDraft}
@@ -320,6 +323,7 @@
     {/each}
   </div>{/if}
   {#if chosen}<p class="selected-saved-object">{worldObjectName(chosen,names)} ／ ({chosen.x}, {chosen.y}) ／ {chosen.orientation??'向き不明'}</p>{/if}
+  {#if chosen?.subgrid}<p class="subgrid-status" role="status">{chosen.subgrid.status==='resolved_full'?`子Grid内の配置 ${chosen.subgrid.objectCount}件`:'子Gridの参照先未確認'}。親家具の単独移動・回転は未対応。</p>{/if}
   {#if chosen&&file&&worldTransformEligible(chosen)}
     <div class="transform-controls">
       <div class="controls">
@@ -347,7 +351,7 @@
       {#if editPlan}<button type="button" disabled={busy||placing||committedConflict} on:click={stageCurrent}>配置変更を追加</button>{/if}
       {#if stageError}<p role="alert">{stageError}</p>{/if}
     </div>
-  {:else if chosen&&file}<p>この種類または形状未確認のオブジェクトは現在の編集対象外です。</p>{/if}
+  {:else if chosen&&file&&!chosen.subgrid}<p>この種類または形状未確認のオブジェクトは現在の編集対象外です。</p>{/if}
   {#if staged.length||timeline.snapshots.length>1}
     <div class="world-edit-history">
       <div class="controls">
@@ -381,6 +385,8 @@
   .origin-tools small{color:var(--wand-muted);font-size:11px}
   .origin-swatch{display:inline-block;background:#4bddcd;width:.8em;height:.8em;border-radius:2px;vertical-align:baseline}
   .placement-origin-overlay{pointer-events:none}
+  .subgrid-status{color:var(--wand-text);border-inline-start:3px solid #d8b96b;padding-inline-start:6px}
+  .saved-subgrid-marker{pointer-events:none}
   .overlap-key{display:flex;flex-wrap:wrap;gap:8px;font-size:12px}
   .saved-overlap-cell,.exclusive-anchor-conflict{pointer-events:none}
   .exclusive-warning{color:var(--wand-text);font-weight:650;border-inline-start:3px solid #ef5350;padding-inline-start:6px}
