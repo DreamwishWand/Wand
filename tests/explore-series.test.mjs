@@ -18,3 +18,27 @@ test('variant grouping needs shared source prefab and different verified colors,
  assert.deepEqual(designTiles([a,b,c]).map(t=>t.items.map(i=>i.itemId)),[[1,2],[3]]);
  assert.equal(designTiles([{...a,prefabGuid:null},{...b,prefabGuid:null}]).length,2);
 });
+
+test('current DB-01 projection preserves all special-universe IDs through series and variants',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const {loadPinnedPublicNativeShopSnapshot,loadPinnedHistoricalNativeShopSnapshot}=await import('../src/lib/acquisition/public-native-shop.ts');
+ const {loadPublicStarpath}=await import('../src/lib/guide/public-starpath.ts');
+ const read=p=>readFileSync(new URL('../static/'+p,import.meta.url));
+ const versions=JSON.parse(read('ddv/item-master-releases.json'));
+ const entry=versions.releases.find(e=>e.gameVersion===versions.current);
+ const catalog=JSON.parse(read('ddv/item-master/steam-'+versions.current+(entry.complete?'-complete':'')+'/explore.json'));
+ const fetcher=async url=>new Response(read(String(url).replace(/^\/Wand\//,'')));
+ const [current,archive,starpath]=await Promise.all([loadPinnedPublicNativeShopSnapshot('/Wand',fetcher),loadPinnedHistoricalNativeShopSnapshot('/Wand',fetcher),loadPublicStarpath('/Wand/guide/public/starpath-cache-2026-11-22.json',fetcher)]);
+ const releases=[...current.offers,...archive.offers].filter(o=>o.title).map(o=>({key:'shop:'+o.nativeOfferId+':'+o.components.map(c=>c.itemId).join(','),label:o.title,kind:'shop',ids:o.components.map(c=>Number(c.itemId))}));
+ for(const season of starpath.seasons)releases.push({key:'season:'+season.id,label:season.title,kind:'season',ids:[...season.rewardPages,...season.bonusPages].flatMap(p=>p.rewards.map(r=>Number(r.itemId)))});
+ for(const universe of [2000500023,2000500017]){
+  const rows=catalog.items.filter(i=>i.universes.includes(universe));
+  const groups=seriesShelves(rows,releases);
+  const ids=groups.flatMap(g=>designTiles(g.items).flatMap(t=>t.items.map(i=>i.itemId)));
+  assert.deepEqual(ids.sort((a,b)=>a-b),rows.map(i=>i.itemId).sort((a,b)=>a-b));
+  assert.ok(groups.length>1);
+  const byKind={};for(const g of groups)byKind[g.kind]=(byKind[g.kind]??0)+g.items.length;
+  const variants=groups.flatMap(g=>designTiles(g.items)).filter(t=>t.items.length>1);
+  console.log('EXPLORE_SERIES_CENSUS '+JSON.stringify({universe,total:rows.length,shelves:groups.length,byKind,variantGroups:variants.length,variantItems:variants.reduce((n,t)=>n+t.items.length,0)}));
+ }
+});
