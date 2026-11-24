@@ -115,7 +115,7 @@
 
 <style>
   .saved-candidate-view{margin:15px 0;display:grid;gap:11px;padding:13px;min-width:0;max-width:100%;background:var(--wand-card);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:10px}
-  .saved-candidate-view.compact{margin:0;padding:0;background:none;border:0;border-radius:0;gap:6px}
+  .saved-candidate-view.compact{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;overflow:hidden;margin:0;padding:0;background:none;border:0;border-radius:0;gap:6px}
   .actions{display:flex;justify-content:space-between;align-items:center;gap:9px;flex-wrap:wrap}
   h2{font-size:14px;margin:0;color:var(--wand-text)}
   .actions button{border:1px solid var(--wand-line);background:var(--wand-menu);color:var(--wand-text);padding:8px 11px;border-radius:8px;font:inherit;font-size:12px}
