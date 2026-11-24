@@ -457,6 +457,40 @@ try {
   await hub.addInitScript(()=>{Date.now=()=>Date.parse('2026-11-22T12:00:00Z');});
   await hub.goto('http://127.0.0.1:4177/Wand/guide/',{waitUntil:'domcontentloaded'});
   await hub.locator('.timeline-row').first().waitFor({timeout:20000});
+  // Repeated clicks at the original pointer coordinates must keep working
+  // across month/year transitions and different date text lengths.
+  for(const width of [1280,800,390,320]){
+    await hub.setViewportSize({width,height:844});
+    await hub.locator('.today-button').click();
+    const previous=hub.locator('.nav-arrow.previous');
+    const next=hub.locator('.nav-arrow.next');
+    const before=await previous.boundingBox();
+    const after=await next.boundingBox();
+    assert(before&&after);
+    const checkPosition=async()=>{
+      for(const [locator,expected] of [[previous,before],[next,after]]){
+        const current=await locator.boundingBox();
+        assert(current&&Math.abs(current.x-expected.x)<=1&&Math.abs(current.y-expected.y)<=1,
+          'calendar arrow shifted at viewport '+width);
+      }
+    };
+    const initial=await hub.locator('.range').innerText();
+    for(let i=0;i<4;i++){
+      const prior=await hub.locator('.range').innerText();
+      await hub.mouse.click(before.x+before.width/2,before.y+before.height/2);
+      await hub.waitForFunction(old=>document.querySelector('.range')?.textContent?.trim()!==old,prior);
+      await checkPosition();
+    }
+    for(let i=0;i<4;i++){
+      const prior=await hub.locator('.range').innerText();
+      await hub.mouse.click(after.x+after.width/2,after.y+after.height/2);
+      await hub.waitForFunction(old=>document.querySelector('.range')?.textContent?.trim()!==old,prior);
+      await checkPosition();
+    }
+    assert.equal(await hub.locator('.range').innerText(),initial);
+  }
+  await hub.setViewportSize({width:390,height:844});
+  await hub.locator('.today-button').click();
   assert.equal(await hub.locator('.guide-sections a.service-card').count(),2);
   assert.equal(await hub.locator('.guide-sections a[href="/Wand/guide/quests/"]').count(),1);
   assert.equal(await hub.locator('.guide-sections a[href="/Wand/guide/star-path/"],.guide-sections a[href="/Wand/guide/events/"]').count(),0);
