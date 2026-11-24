@@ -124,3 +124,30 @@ test('reviewed root arrays preserve all source values, order and repeats in the 
   assert((await db.getItemReferences(31200032,'incoming')).some(([id,path])=>id===2070000628&&path==='source.ItemsToDeleteAfterMission[0]'));
   assert((await db.getItemReferences(1510000002,'outgoing')).some(([id,path])=>id===1510100005&&path==='source.Slots[1]'));
 });
+
+
+test('reviewed message trees retain presence, ordered rewards and nested source fields',async()=>{
+  const requests=[];
+  const db=await openPublicItemMaster('',async url=>{requests.push(url);return fetcher(url)},{scope:'complete'});
+  const fields=db.release.reviewedMessageCoverage.fields;
+  assert.equal(Object.keys(fields).length,10);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.itemCount,0),3286);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.occurrences,0),4567);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.leafCount,0),9832);
+  const [crop,empty,nanos,village,mission,ach,event,request]=await db.getItemFields([
+    30400010,30400120,30400128,40200003,2070000672,2110100001,2010000003,31500016
+  ],['source.GrowthPeriod','source.ProductionPeriod.Nanos','source.VillageArea',
+     'source.RewardsXP.Currency','source.Milestones','source.IntervalData','source.ItemList','source.DefaultItem']);
+  assert.deepEqual(crop.values['source.GrowthPeriod'],{Seconds:900});
+  assert.deepEqual(empty.values['source.GrowthPeriod'],{});
+  assert.equal(nanos.values['source.ProductionPeriod.Nanos'],1000000);
+  assert.deepEqual(village.values['source.VillageArea'],{UseField:true,VillageArea:0});
+  assert.deepEqual(mission.values['source.RewardsXP.Currency'],[{Amount:{Max:500,Min:500},CurrencyId:80000000}]);
+  assert.deepEqual(ach.values['source.Milestones'].map(x=>x.Milestone),[25,400,1100,2000,4500]);
+  assert.deepEqual(event.values['source.IntervalData'],{TimeOfDay:{TimeOfDay:[{Hour:5}]}});
+  assert.deepEqual(event.values['source.ItemList'].Items.map(x=>x.Weight),[2,2,2,1]);
+  assert.deepEqual(request.values['source.DefaultItem'],{Amount:1,ItemID:130000079,State:{MemoryShardIndex:0}});
+  assert((await db.getItemReferences(2110100001,'outgoing')).some(([id,p])=>id===80300000&&p==='source.Milestones[4].RewardItem'));
+  assert((await db.getItemReferences(80000000,'incoming')).some(([id,p])=>id===2070000672&&p==='source.RewardsXP.Currency[0].CurrencyId'));
+  assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
+});
