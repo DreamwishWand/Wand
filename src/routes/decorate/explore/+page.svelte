@@ -50,8 +50,9 @@
   const allGroups=$derived(groupItems(items));
   const universeOptions=$derived([...new Set([...universeNames.keys(),...allGroups.keys()])].sort(sortUniverse));
   const scopedItems=$derived(items.filter(i=>matchesScope(i,scope)));
-  const scopedUniverses=$derived(new Set(groupItems(scopedItems).keys()));
-  const categoryOptions=$derived(CATEGORY_KEYS.filter(key=>scopedItems.some(i=>categoriesOf(i).includes(key))||filters.categories?.includes(key)));
+  const scopedUniverses=$derived(new Set(scopedItems.flatMap(i=>i.universes.length?i.universes.map(String):[i.universeStatus==='unresolved_source'?'unknown':'none'])));
+  const scopeCategories=$derived(new Set(scopedItems.flatMap(categoriesOf)));
+  const categoryOptions=$derived(CATEGORY_KEYS.filter(key=>scopeCategories.has(key)||filters.categories?.includes(key)));
   const worldOptions=$derived(sourceWorlds.map(w=>({key:w.key,label:w.names[locale]??w.names.en??w.key})));
   const worldName=(key:string)=>worldOptions.find(w=>w.key===key)?.label??key;
   const facetOptions=$derived.by(()=>{
@@ -126,8 +127,10 @@
     const unwatch=watchWandLanguage(v=>locale=v);
     const unregister=registerServiceToolbar(exploreToolbar);
     try{scope=readDecorationScope(localStorage.getItem(DECORATION_SCOPE_KEY));}catch{}
-    let ownershipAbort:AbortController|undefined;
+    let ownershipAbort:AbortController|undefined,ownershipRevision=-1;
     const unsubscribeSave=localSaveSession.subscribe(session=>{
+      if(session.revision===ownershipRevision)return;
+      ownershipRevision=session.revision;
       ownershipAbort?.abort();const controller=new AbortController();ownershipAbort=controller;
       ownershipAvailable=false;ownedOnly=false;ownedIds=new Set();
       const task=session.file?readSelectedOwnership(session.file,controller.signal):readRecordedOwnership();
@@ -305,7 +308,8 @@
   .chips .no-match:not([aria-pressed=true]){opacity:.45}
   .active-filters{position:sticky;top:var(--shell-height,60px);z-index:12;display:flex;flex-wrap:wrap;gap:4px;padding:3px 0;background:var(--wand-bg)}
   .active-filters button{font-size:.75rem;display:flex;align-items:center;gap:3px;padding:3px 6px}
-  @media(max-width:1500px){.scope-switch span,.explore-service-toolbar .active-name{display:none}}
+  @media(max-width:1500px){.scope-switch span{display:none}.explore-service-toolbar .active-name{max-width:75px}}
+  @media(max-width:1250px){.explore-service-toolbar .active-name{display:none}}
   @media(max-width:600px){.explore-service-toolbar .back{display:none}.explore-service-toolbar .icon-button{min-width:29px;padding:3px}.scope-switch button{padding:4px}.explore-service-toolbar{gap:2px}}
   .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.chips button{display:inline-flex;align-items:center;gap:5px;font-size:.78rem}.chips button[aria-pressed=true]{background:var(--wand-accent-strong);color:var(--wand-accent-contrast)}
   .swatch{width:16px;height:16px;border-radius:50%;border:1px solid var(--wand-line)}
