@@ -2,6 +2,7 @@
  * Private extraction metadata and candidates are never accepted as releases.
  * A publisher must pin the verified, publicly readable group indexes.
  */
+import {publicImageUrl,publicMediaOrigin} from './public-image-key.ts';
 export type SharedMediaGroup = 'ui' | 'maps' | 'memories';
 export type SharedMediaKind = 'Sprite' | 'Texture2D';
 export interface SharedMediaImage {
@@ -34,12 +35,7 @@ const GROUPS=['ui','maps','memories'] as const;
 const record=(x:unknown):x is Record<string,unknown>=>x!==null&&typeof x==='object'&&!Array.isArray(x);
 const positive=(x:unknown):x is number=>typeof x==='number'&&Number.isSafeInteger(x)&&x>0;
 function assert(x:unknown,message:string):asserts x { if(!x)throw new TypeError('Shared media: '+message); }
-function publicOrigin(input:string):string {
-  const u=new URL(input);
-  assert(u.protocol==='https:'&&['media.dreamwishwand.com','cdn.dreamwishwand.com'].includes(u.hostname)&&
-    !u.username&&!u.password&&!u.port&&u.pathname==='/'&&!u.search&&!u.hash,'unapproved origin');
-  return u.origin;
-}
+
 function validImage(value:unknown):value is SharedMediaImage {
   return record(value)&&Object.keys(value).sort().join(',')==='bytes,height,kind,sha256,width'&&
     (value.kind==='Sprite'||value.kind==='Texture2D')&&typeof value.sha256==='string'&&SHA.test(value.sha256)&&
@@ -47,7 +43,7 @@ function validImage(value:unknown):value is SharedMediaImage {
 }
 export function sharedMediaUrl(origin:string,image:SharedMediaImage):string {
   assert(validImage(image),'invalid image');
-  return publicOrigin(origin)+'/original/'+image.sha256.slice(0,2)+'/'+image.sha256+'.webp';
+  return publicImageUrl(origin,'original',image.sha256);
 }
 export function parseSharedMediaIndex(doc:unknown,group:SharedMediaGroup,version:string,count:number):ReadonlyMap<string,readonly SharedMediaImage[]> {
   assert(record(doc)&&Object.keys(doc).sort().join(',')==='entries,gameVersion,group,schema'&&
@@ -69,7 +65,7 @@ export function createSharedMediaClient(activation:SharedMediaActivation=SHARED_
   let origin:string|null=null;
   if(activation.state==='published'){
     assert(activation.publicationAuthorized===true&&activation.publicReadbackVerified===true&&VERSION.test(activation.gameVersion),'unverified publication');
-    origin=publicOrigin(activation.origin);
+    origin=publicMediaOrigin(activation.origin);
     for(const [g,pin] of Object.entries(activation.groups)){
       assert(GROUPS.includes(g as SharedMediaGroup)&&pin&&SHA.test(pin.sha256)&&
         pin.file===g+'-'+pin.sha256.slice(0,16)+'.json'&&positive(pin.bytes)&&pin.bytes<=16*1024*1024&&positive(pin.nameCount),'invalid index pin');

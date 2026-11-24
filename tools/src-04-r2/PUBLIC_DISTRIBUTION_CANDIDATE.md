@@ -26,3 +26,7 @@ At release time, the future promotion tool must copy only vetted objects to an e
 
 Code tests:
 \`python -m unittest discover -s tools/src-04-r2 -p 'test_*.py' -v\`
+
+## Shared application lookup
+
+Use `itemMedia.getItemImage(itemId, 'thumbnail' | 'original')` from `src/lib/media/item-media.ts` for all game item views. A verified public release publishes a `wand.media.distribution@1` manifest with `releaseState: published` and the existing sanitized shard format under `index/items/<gameVersion>/<manifest-sha256>/manifest.json` and `id/xx.json`. Pin the manifest bytes and SHA in the application only after public image readback. The private candidate is not accepted. Lookups download only the requested Item ID shard and share the result between services. UI/map/memory assets use the existing shared media client. Image keys are independent of this index path.
