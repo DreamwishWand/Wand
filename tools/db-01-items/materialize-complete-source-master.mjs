@@ -545,8 +545,8 @@ function buildReferenceColumns(rows){
         const target=Number(value);
         // Only ID-bearing fields, not numeric enum keys or literal amounts.
         if(/^Tags\//.test(table?.FieldName??'')){check(categories.get(target)==='Tag','FORMULA_TAG_REFERENCE');emit(target,path);}
-        else if(table?.FieldName==='Building'){check(categories.get(target)==='Building','FORMULA_BUILDING_REFERENCE');emit(target,path);}
-        else if(['Item','TargetItem.Item','TargetMealItem'].includes(table?.FieldName)){if(ids.has(target))emit(target,path);}
+        else if(table?.FieldName==='Building'){if(ids.has(target)){check(categories.get(target)==='Building','FORMULA_BUILDING_REFERENCE');emit(target,path);}}
+        else if(['Item','TargetItem.Item','TargetMealItem'].includes(table?.FieldName)){if(ids.has(target)){check(categories.get(target)==='ActivityItem','FORMULA_ITEM_REFERENCE');emit(target,path);}}
       }else if(/ItemIds?$/i.test(name))emit(value,path);
       else if(row.nativeCategory==='DutyAch'&&/^source\.Milestones\[\d+\]\.RewardItem$/.test(path)){
         check(ID(value)&&ids.has(value),'MILESTONE_REWARD_TARGET');emit(value,path);
