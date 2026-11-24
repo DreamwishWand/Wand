@@ -15,6 +15,7 @@ import {
   type PublicCompleteItemMaster,
   type ItemMasterLocale,
   type ItemLocalizedTextRecord,
+  type ItemFieldProjection,
 } from './public-item-master.ts';
 import {
   loadDb01ItemAcquisitionHandoff,
@@ -29,6 +30,8 @@ import {
   type Db01ItemSourceRecord,
   type Db01ItemSourceRelations,
   type Db01SourceKind,
+  type Db01SourceRole,
+  DB02_SOURCE_ROLES,
 } from '../acquisition/db01-item-source-relations.ts';
 
 export const PUBLIC_ITEM_DETAILS_CONTRACT =
@@ -58,6 +61,16 @@ export interface PublicLocalizedCompleteItemDetails extends PublicCompleteItemDe
   readonly locale: ItemMasterLocale;
   readonly localizedText: ItemLocalizedTextRecord;
 }
+/** Opt-in sparse join; omitted sides are never downloaded. */
+export interface PublicItemSelectionOptions {
+  readonly acquisition?: boolean;
+  readonly sourceRelations?: boolean;
+}
+export interface PublicSelectedItem extends ItemFieldProjection {
+  readonly acquisition?: Readonly<Db01ItemAcquisition>;
+  readonly sourceRelations?: Readonly<Db01ItemSourceRecord>;
+  readonly currentAvailabilityVerified: false;
+}
 export interface PublicItemDetailsClient {
   readonly contract: typeof PUBLIC_ITEM_DETAILS_CONTRACT;
   readonly release: ItemMasterRelease;
@@ -68,6 +81,9 @@ export interface PublicItemDetailsClient {
     category?: GameNativeItemCategory
   ): Promise<readonly number[]>;
   getAcquisitionCoverage(): Promise<Readonly<Db01ItemAcquisitionCoverage>>;
+  /** Select only needed canonical fields and optional existing DB-02 links. */
+  getSelectedItems(itemIds:readonly number[],fields:readonly string[],
+    options?:PublicItemSelectionOptions):Promise<readonly (Readonly<PublicSelectedItem>|null)[]>;
   /**
    * Full native IDs, roles and occurrence positions are available on demand;
    * normal UI must resolve names/images rather than render technical IDs.
@@ -87,7 +103,7 @@ export interface PublicItemDetailsClient {
   /** Exposes source-only IDs even when missing from the current Item master. */
   getSourceRelations(itemId: number): Promise<Readonly<Db01ItemSourceRecord>>;
   /** Reverse original Quest/Recipe/Star Path/etc. IDs to Item IDs. */
-  getSourceItemIds(kind: Db01SourceKind, sourceId: string):
+  getSourceItemIds(kind: Db01SourceKind, sourceId: string, role?:Db01SourceRole):
     Promise<readonly number[]>;
   listItemIdsWithSources(): Promise<readonly number[]>;
 }
@@ -244,6 +260,26 @@ export async function openPublicItemDetails(
     async getAcquisitionCoverage() {
       return (await sidecar()).coverage;
     },
+    async getSelectedItems(itemIds:readonly number[],fields:readonly string[],selection:PublicItemSelectionOptions={}){
+      const reader=await complete();
+      const projected=await reader.getItemFields(itemIds,fields);
+      if(!projected.some(Boolean))return Object.freeze(projected.map(()=>null));
+      const [origins,index]=await Promise.all([
+        selection.acquisition?sidecar():null,
+        selection.sourceRelations?sources():null
+      ]);
+      return Object.freeze(projected.map(row=>{
+        if(!row)return null;
+        const acquisition=origins?.getItem(row.itemId);
+        const sourceRelations=index?.getItem(row.itemId);
+        if(acquisition&&sourceRelations)assert(
+          acquisition.categories.length===sourceRelations.categories.length&&
+          sourceRelations.categories.every((value,i)=>value===acquisition.categories[i]),
+          'ACQUISITION_SOURCE_CATEGORY_MISMATCH');
+        return Object.freeze({...row,...(acquisition?{acquisition}:{}),
+          ...(sourceRelations?{sourceRelations}:{}),currentAvailabilityVerified:false as const});
+      }));
+    },
     async getCompleteItem(itemId:number){
       const definition=await (await complete()).getItem(itemId);
       if(!definition)return null;
@@ -276,9 +312,13 @@ export async function openPublicItemDetails(
     async getSourceRelations(itemId: number) {
       return (await sources()).getItem(itemId);
     },
-    async getSourceItemIds(kind: Db01SourceKind, sourceId: string) {
-      const ids = (await sources()).getSourceItemIds(kind, sourceId);
-      return Object.freeze(ids.map(id => Number(id)));
+    async getSourceItemIds(kind: Db01SourceKind, sourceId: string, role?:Db01SourceRole) {
+      assert(role===undefined||DB02_SOURCE_ROLES.includes(role),'INVALID_SOURCE_ROLE');
+      const index=await sources();
+      const ids=index.getSourceItemIds(kind,sourceId);
+      const matches=role===undefined?ids:ids.filter(id=>index.getItem(id).links.some(
+        link=>link.kind===kind&&link.sourceId===sourceId&&link.role===role));
+      return Object.freeze(matches.map(id=>Number(id)));
     },
     async listItemIdsWithSources() {
       if (allSourceItemIds) return allSourceItemIds;
