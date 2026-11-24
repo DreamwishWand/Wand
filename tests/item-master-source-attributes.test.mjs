@@ -415,3 +415,36 @@ test('explicit source relations link quest owners, price currencies and Collecti
   await assert.rejects(db.getItemsReferences([40000047],'both'),/INVALID_REFERENCE_DIRECTION/);
   assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
 });
+
+
+test('nested source references connect actual quest conditions, event selectors, costs and rewards',async()=>{
+  const requests=[];
+  const db=await openPublicItemMaster('',async url=>{requests.push(url);return fetcher(url)},{scope:'complete'});
+  const examples=[
+    [1520000001,31200032,'source.Spawn.QuestItem.Item.Item.Item'],
+    [1520000038,20100002,'source.Spawn.SpawnLocationSource.Building.Building'],
+    [1520000067,1540000000,'source.Spawn.SpawnLocationSource.AnywhereInScene.Scene'],
+    [1520000088,30400131,'source.Spawn.GardenItem.Seed'],
+    [2070000620,2090000173,'source.OverrideRewards.Rewards[0]'],
+    [2070001662,10000219,'source.OwnerOverrides[0].Character'],
+    [20000078,80000000,'source.SpecificUnlockCost.Id'],
+    [2010000003,2090000003,'source.WeedOverrides.WeedLootTable'],
+    [2110100005,30200058,'source.GardeningHarvest.TargetItem.Item.Item.Item'],
+    [2110100104,20500000,'source.Upgrade.BuildingID'],
+    [2110300018,10000194,'source.Objective.Friend.CharacterID']
+  ];
+  const outgoing=await db.getItemsReferences(examples.map(x=>x[0]),'outgoing');
+  const incoming=await db.getItemsReferences(examples.map(x=>x[1]),'incoming');
+  for(const [i,[origin,target,path]] of examples.entries()){
+    // The source retains original array indices; an owner override may appear
+    // after another entry, so normalize only that index in this fixture.
+    const match=p=>p===path||path==='source.OwnerOverrides[0].Character'&&/^source\.OwnerOverrides\[\d+\]\.Character$/.test(p);
+    assert(outgoing[i].some(([id,p])=>id===target&&match(p)),origin+' '+path);
+    assert(incoming[i].some(([id,p])=>id===origin&&match(p)),target+' '+path);
+  }
+  const placement=await db.getItemReferences(20000011,'outgoing');
+  assert(placement.some(([id,p])=>id===2070000982&&/^source\.GridEditRestriction\.CanMove\.Conditions\.Conditions\[\d+\]\.MissionStatus\.Mission$/.test(p)));
+  const tag=await db.getItemReferences(2110100001,'outgoing');
+  assert(tag.some(([id,p])=>id===2001200014&&/^source\.GardeningHarvest\.TargetItem\.FilterGenerator\.Tags\[\d+\]\.Tags\[\d+\]$/.test(p)));
+  assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
+});
