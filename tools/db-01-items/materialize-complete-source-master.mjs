@@ -88,6 +88,71 @@ function attachNativeSupplement(project,e,version,source,byId){
   check(seen.size===expected.size,'STRIDE_CENSUS');
   return {strideOverrideCount:seen.size,runtimeSemanticsVerified:false};
 }
+const REFERENCE_ATTRIBUTE_TYPES={
+  AdditionalRewardItemIDs:['BoardGame','Furniture'],
+  CharacterInteractionSceneRestrictionsItemID:['Mission','Scene'],
+  EmployeeItemIDs:['Building','Character']
+};
+function attachReferenceAttributes(project,e,version,source,byId){
+  if(e.referenceAttributesSha256===undefined)return undefined;
+  check(SHA.test(e.referenceAttributesSha256),'REFERENCE_ATTRIBUTE_DIGEST');
+  const bytes=readFileSync(join(project,'data/ddv/item-master','reference-attributes-steam-'+version+'.json'));
+  check(hash(bytes)===e.referenceAttributesSha256,'REFERENCE_ATTRIBUTE_SHA');
+  const a=JSON.parse(bytes.toString('utf8'));
+  check(a.schema==='wand.item-master.reference-attributes@1'&&a.gameVersion===version&&
+    a.sourceItemsSha256===source.sourceItemsSha256&&a.sourceIl2cppDumpSha256===source.sourceIl2cppDumpSha256&&
+    a.fields&&Object.keys(a.fields).length===Object.keys(REFERENCE_ATTRIBUTE_TYPES).length,'REFERENCE_ATTRIBUTE_RELEASE');
+  const fields={};
+  for(const [key,entries] of Object.entries(a.fields)){
+    check(Object.hasOwn(REFERENCE_ATTRIBUTE_TYPES,key)&&Array.isArray(entries),'REFERENCE_ATTRIBUTE_FIELD');
+    const [owner,target]=REFERENCE_ATTRIBUTE_TYPES[key];let last=0;
+    for(const [id,values] of entries){
+      const row=byId.get(id);
+      check(ID(id)&&id>last&&row?.nativeCategory===owner&&Array.isArray(values)&&values.length>0&&
+        values.every(v=>key==='EmployeeItemIDs'&&v===0||ID(v)&&byId.get(v)?.nativeCategory===target),
+        'REFERENCE_ATTRIBUTE_ROW');
+      last=id;
+      check(!Object.hasOwn(row.nativeProperties,key),'REFERENCE_ATTRIBUTE_SCALAR');
+      const props=row.sourceAttributes??(row.sourceAttributes={});
+      check(!Object.hasOwn(props,key)||JSON.stringify(props[key])===JSON.stringify(values),'REFERENCE_ATTRIBUTE_CONFLICT');
+      props[key]=values;
+    }
+    fields[key]=entries.length;
+  }
+  return {fields,runtimeSemanticsVerified:false};
+}
+// Source-declared ItemID-named numeric fields only. Membership in the same
+// release is required. Do not infer a reference from an arbitrary integer.
+function buildReferenceColumns(rows){
+  const ids=new Set(rows.map(r=>r.itemId));
+  const incoming=new Map(),outgoing=new Map();
+  const add=(map,id,edge)=>{
+    let list=map.get(id);if(!list){list=[];map.set(id,list);}list.push(edge);
+  };
+  for(const row of rows){
+    const origin=row.itemId;
+    const emit=(target,path)=>{
+      if(!ID(target)||!ids.has(target))return;
+      add(outgoing,origin,[target,path]);add(incoming,target,[origin,path]);
+    };
+    const walk=(value,path,name)=>{
+      if(Array.isArray(value)){value.forEach((part,i)=>walk(part,path+'['+i+']',name));return;}
+      if(value!==null&&typeof value==='object'){
+        for(const [key,part] of Object.entries(value))walk(part,path+'.'+key,key);
+        return;
+      }
+      if(/ItemIds?$/i.test(name))emit(value,path);
+    };
+    for(const props of [row.nativeProperties,row.sourceAttributes??{}]){
+      for(const [key,value] of Object.entries(props))walk(value,'source.'+key,key);
+    }
+    // Already verified native tag fields and Set references are separate
+    // canonical evidence. Do not relabel these as acquisition or ownership.
+    for(const [i,tag] of row.tags.entries())emit(tag.id,'tags['+i+'].id');
+    if(row.sourceSetItemId!==null)emit(row.sourceSetItemId,'sourceSetItemId');
+  }
+  return {incoming,outgoing};
+}
 const LOCALIZED_FIELDS=['Description','DescriptionText','EvolvingDescription','PluralDisplayName'];
 function loadLocalizations(project,e,version,source,byId){
   if(e.localization===undefined)return undefined;
@@ -164,6 +229,13 @@ function writeFieldColumns(rows,release,write,assets){
       }
     }
   }
+  const refs=buildReferenceColumns(rows);
+  for(const row of rows){
+    for(const direction of ['incoming','outgoing']){
+      const values=refs[direction].get(row.itemId);
+      if(values?.length)add('references.'+direction,row.itemId,values);
+    }
+  }
   const fields=[];
   for(const [field,entries] of [...columns].sort(([a],[b])=>a<b?-1:a>b?1:0)){
     const blocks=[];
@@ -225,6 +297,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
   check(byId.size===e.count&&rows.every((r,i)=>i===0||rows[i-1].itemId<r.itemId),'ID_CENSUS');
   const sourceAttributeCoverage=attachAttributes(project,e,version,source,byId);
   const nativeSupplementCoverage=attachNativeSupplement(project,e,version,source,byId);
+  const referenceAttributeCoverage=attachReferenceAttributes(project,e,version,source,byId);
   const localizations=loadLocalizations(project,e,version,source,byId);
   // Verify no existing public definition is lost or silently replaced.
   for(const [path,raw] of baseFiles){
@@ -342,6 +415,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
       acquisitionCoverageComplete:false,publishedR2ImageUrlAvailable:false},
     ...(sourceAttributeCoverage?{attributesSha256:e.attributesSha256,sourceAttributeCoverage}:{}),
     ...(nativeSupplementCoverage?{nativeSupplementSha256:e.nativeSupplementSha256,nativeSupplementCoverage}:{}),
+    ...(referenceAttributeCoverage?{referenceAttributesSha256:e.referenceAttributesSha256,referenceAttributeCoverage}:{}),
     ...(localizations?{localizationSha256:e.localization.sha256,localizationCoverage:localizations.coverage}:{}),
     shards:{},assets:{}};
   const root=join(project,'static/ddv/item-master');
