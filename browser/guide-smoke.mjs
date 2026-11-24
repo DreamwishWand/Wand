@@ -121,6 +121,16 @@ try {
     /ドリームライトバレーへようこそ/,
     'the first screen must follow the source-numbered original Valley story');
   assert.equal(await browse.locator('.story-arcs button').count(),6);
+  assert.equal(await browse.locator('.quest-row').count(),43);
+  assert.equal(await browse.locator('.flow-list:not(.related-flow) .quest-row').count(),31);
+  assert.equal(await browse.locator('.related-flow .quest-row').count(),12);
+  assert.equal(await browse.locator('.auto-sentinel').count(),0);
+  await browse.locator('.story-quest-row').first().click();
+  await browse.getByRole('button',{name:'一覧順で次のクエスト'}).click();
+  await browse.waitForFunction(()=>document.querySelector('.story-neighbor-position')?.textContent?.includes('2 / 31'));
+  assert.match(await browse.locator('.quest-row.active').innerText(),/王家のツール/);
+  await browse.getByRole('button',{name:'一覧順で前のクエスト'}).click();
+  assert.match(await browse.locator('.quest-row.active').innerText(),/ドリームライトバレーへようこそ/);
   await browse.getByRole('button',{name:'時間の裂け目',exact:true}).click();
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('30件'));
   await browse.getByRole('button',{name:'思い出の海',exact:true}).click();
@@ -155,7 +165,7 @@ try {
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('70件'));
   await browse.getByRole('button',{name:'ドリームパッククエスト',exact:true}).click();
   await browse.locator('.group-rail button').first().waitFor();
-  assert.equal(await browse.locator('.group-rail button').count(),3);
+  assert.equal(await browse.locator('.group-rail button').count(),7);
   await browse.getByRole('button',{name:'導入用',exact:true}).click();
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('1件'));
   assert.equal(await browse.locator('.quest-sections button').filter({hasText:/^すべて$/}).count(),0);

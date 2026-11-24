@@ -5,7 +5,7 @@ import {verifyPublicQuestIndex} from '../src/lib/guide/public-guide.ts';
 import {questBrowseGroups,questBrowseGroupId} from '../src/lib/guide/quest-browse-groups.ts';
 const catalog=verifyPublicQuestIndex(JSON.parse(readFileSync(new URL('../static/guide/public/quest-index.json',import.meta.url),'utf8')));
 test('grouped browse covers all native quest categories without a flat All group',()=>{
- for(const [section,count,groups] of [['realm',61,14],['friendship',341,77],['event',66,10],['premium',19,3]]){
+ for(const [section,count,groups] of [['realm',61,14],['friendship',341,77],['event',66,10],['premium',19,7]]){
   const result=questBrowseGroups(catalog,section,'ja');
   assert.equal(result.length,groups);
   assert.equal(result.flatMap(x=>x.rows).length,count);

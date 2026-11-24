@@ -115,7 +115,7 @@ test('unpublished Quest names never become internal Mission identifiers presente
   const page=await readFile(new URL('../src/routes/guide/quests/+page.svelte',import.meta.url),'utf8');
   assert.match(page,/名称未確認（ID/);
   assert.doesNotMatch(page,/label\(row.names,row.internalName/);
-  assert.match(page,/publicFriendshipCharacters\(catalog,locale\)/);
+  assert.match(page,/questBrowseGroups\(catalog,section,locale,relatedEventSource\)/);
   assert.match(page,/selectArc\(arc.id\)/);
   assert.match(page,/class:with-character-rail/);
   assert.match(page,/arc:section==='story'&&!query.trim\(\)\?storyArc:'all'/);

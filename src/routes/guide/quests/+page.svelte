@@ -1,6 +1,7 @@
 <script lang="ts">
   import GuideCommunityHelp from '$lib/guide/GuideCommunityHelp.svelte';
-  import {onMount} from 'svelte';
+  import {onMount,tick} from 'svelte';
+  import {questStoryFlow,storyCompletionReferences} from '$lib/guide/quest-story-flow.ts';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import QuestGiverIcon from '$lib/guide/QuestGiverIcon.svelte';
   import {isQuestGroupSection,questBrowseGroupId,questBrowseGroups} from '$lib/guide/quest-browse-groups.ts';
@@ -103,6 +104,15 @@
   $: browseGroups=catalog&&isQuestGroupSection(section)?questBrowseGroups(catalog,section,locale,relatedEventSource):[];
   $: activeGroup=browseGroups.find(group=>group.id===browseGroup)??browseGroups[0]??null;
   $: groupedBrowse=!!activeGroup&&!query.trim()&&!rewardFocus&&!targetMatches.length&&!matchedRewardNames;
+  $: storyBrowse=section==='story'&&!query.trim()&&!rewardFocus&&!targetMatches.length&&!matchedRewardNames;
+  $: storyFlow=catalog?questStoryFlow(catalog,storyArc,locale):{main:[],related:[]};
+  $: storyRows=[...storyFlow.main,...storyFlow.related];
+  $: selectedStoryFlow=catalog&&selectedRow&&publicQuestStoryArc(selectedRow)?questStoryFlow(catalog,publicQuestStoryArc(selectedRow)!,locale):null;
+  $: selectedStoryLine=selectedStoryFlow&&selectedRow?(publicQuestNativeOrder(selectedRow)!==null?selectedStoryFlow.main:selectedStoryFlow.related):[];
+  $: storyPosition=selectedStoryLine.findIndex(row=>row.id===selectedRow?.id);
+  $: storyPrevious=storyPosition>0?selectedStoryLine[storyPosition-1]:null;
+  $: storyNext=storyPosition>=0?selectedStoryLine[storyPosition+1]??null:null;
+  $: storyPrerequisites=catalog&&selectedRow&&selectedStoryFlow?storyCompletionReferences(catalog,selectedRow,conditionIndex):[];
   $: filtered=catalog?(rewardFocus
     ?{total:rewardFocus.questIds.length,
       rows:catalog.quests.filter((row:any)=>rewardFocus.questIds.includes(row.id))}
@@ -112,6 +122,7 @@
       :matchedRewardNames
         ?{total:matchedRewardNames.questIds.length,
           rows:catalog.quests.filter((row:any)=>matchedRewardNames?.questIds.includes(row.id))}
+        :storyBrowse?{total:storyRows.length,rows:storyRows}
         :groupedBrowse&&activeGroup?{total:activeGroup.rows.length,rows:activeGroup.rows.slice(0,limit)}
         :collectWindow((offset:number,batch:number)=>filterPublicQuests(catalog!,{
       query:query.slice(0,120),locale,character:query.trim()?'':character,objective,
@@ -163,17 +174,27 @@
     window.history.replaceState(window.history.state,'',url);
   }
   function selectSection(next:PublicQuestSection){
-    if(section===next)return;
+    if(section===next&&!query.trim()&&!rewardFocus&&!targetItemFocus)return;
     section=next;character='';browseGroup='';storyArc='valley';objective='';query='';
     setSearch();resetBrowsedSelection();
   }
   function selectArc(next:PublicQuestStoryArc){
-    if(storyArc===next)return;
-    storyArc=next;limit=40;resetBrowsedSelection();
+    if(storyArc===next&&!query.trim()&&!rewardFocus&&!targetItemFocus)return;
+    storyArc=next;query='';setSearch();resetBrowsedSelection();
   }
   function selectBrowseGroup(next:string){
     if(activeGroup?.id===next&&!query.trim()&&!rewardFocus&&!targetMatches.length)return;
     browseGroup=next;character='';query='';setSearch();resetBrowsedSelection();
+  }
+  async function selectStoryNeighbor(row:PublicQuestIndexRow){
+    const arc=publicQuestStoryArc(row);
+    if(!arc)return;
+    section='story';storyArc=arc;query='';setSearch();
+    void openQuest(row);
+    await tick();
+    if(window.matchMedia('(min-width:851px)').matches){
+      document.querySelector('.quest-row.active')?.scrollIntoView({block:'nearest',inline:'nearest'});
+    }
   }
   function targetStep(questId:string,numberOfSteps:number):number{
     const step=publicQuestStepIndex(window.location.search,questId,numberOfSteps);
@@ -423,7 +444,7 @@
           aria-pressed={section==='tutorial'}>導入用</button>
       </nav>
     </details>
-    {#if section==='story'}
+    {#if storyBrowse}
       <nav class="story-arcs" aria-label="ストーリーの舞台">
         {#each arcs as arc}
           <button class:chosen={storyArc===arc.id} on:click={()=>selectArc(arc.id)}
@@ -452,7 +473,7 @@
     {:else if targetReverseError}
       <small class="condition-warning">目標アイテムの逆引きデータは読み込めませんでした。</small>
     {/if}
-    <div class="workspace" class:with-character-rail={isQuestGroupSection(section)&&!query.trim()&&!rewardFocus&&!targetMatches.length&&!matchedRewardNames}>
+    <div class="workspace" class:story-workspace={storyBrowse} class:with-character-rail={isQuestGroupSection(section)&&!query.trim()&&!rewardFocus&&!targetMatches.length&&!matchedRewardNames}>
       {#if isQuestGroupSection(section)&&!query.trim()&&!rewardFocus&&!targetMatches.length&&!matchedRewardNames}
         <nav class="character-rail" class:group-rail={section!=='friendship'} aria-label={section==='friendship'?'フレンドシップクエストのキャラクター':section==='realm'?'世界':section==='event'?'イベント':'ドリームパック'}>
           {#each browseGroups as group (group.id)}
@@ -466,19 +487,42 @@
       {/if}
       <section class="results" aria-label="クエスト一覧">
         <p class="count">{filtered.total.toLocaleString()}件のクエスト</p>
-        {#each filtered.rows as row (row.id)}
-          <button class:active={selectedRow?.id===row.id} class="quest-row" title={'クエストID '+row.id} on:click={()=>openQuest(row)}>
-            <span class="quest-avatar" aria-hidden="true"><QuestGiverIcon characterId={row.characterId} name={characterName(row.characterId,locale)}/></span>
-            <span class="quest-row-text"><strong>{questName(row,locale)}</strong>
-            <small>
-              {#if publicQuestSection(row)==='story'}
-                {publicQuestNativeOrder(row)===null?'関連クエスト':'メインクエストライン'} ·
-              {/if}
-              {characterName(row.characterId,locale)}
-            </small></span>
-          </button>
-        {/each}
-        {#if filtered.total>limit}<div class="auto-sentinel" use:autoAppend={{hasMore:()=>filtered.total>limit,load:()=>limit+=40}} role="status" aria-label="スクロールでクエストを追加表示"></div>{/if}
+        {#if storyBrowse}
+          <div class="story-flow">
+            <h3 class="flow-heading">メインストーリー</h3>
+            <ol class="flow-list">
+              {#each storyFlow.main as row,i (row.id)}
+                <li>
+                  <button class:active={selectedRow?.id===row.id} class="quest-row story-quest-row" aria-current={selectedRow?.id===row.id?'true':undefined} on:click={()=>openQuest(row)}>
+                    <span class="quest-avatar" aria-hidden="true"><QuestGiverIcon characterId={row.characterId} name={characterName(row.characterId,locale)}/></span>
+                    <span class="quest-row-text"><strong>{questName(row,locale)}</strong><small>{characterName(row.characterId,locale)}</small></span>
+                    <span class="flow-order">{i+1}</span>
+                  </button>
+                </li>
+              {/each}
+            </ol>
+            {#if storyFlow.related.length}
+              <h3 class="flow-heading related-heading">関連クエスト</h3>
+              <ul class="flow-list related-flow">
+                {#each storyFlow.related as row (row.id)}
+                  <li><button class:active={selectedRow?.id===row.id} class="quest-row story-quest-row" aria-current={selectedRow?.id===row.id?'true':undefined} on:click={()=>openQuest(row)}>
+                    <span class="quest-avatar" aria-hidden="true"><QuestGiverIcon characterId={row.characterId} name={characterName(row.characterId,locale)}/></span>
+                    <span class="quest-row-text"><strong>{questName(row,locale)}</strong><small>{characterName(row.characterId,locale)}</small></span>
+                  </button></li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
+        {:else}
+          {#each filtered.rows as row (row.id)}
+            <button class:active={selectedRow?.id===row.id} class="quest-row" aria-current={selectedRow?.id===row.id?'true':undefined} on:click={()=>openQuest(row)}>
+              <span class="quest-avatar" aria-hidden="true"><QuestGiverIcon characterId={row.characterId} name={characterName(row.characterId,locale)}/></span>
+              <span class="quest-row-text"><strong>{questName(row,locale)}</strong>
+              <small>{characterName(row.characterId,locale)}{#if query.trim()&&publicQuestStoryArc(row)} · {arcs.find(arc=>arc.id===publicQuestStoryArc(row))?.name}{/if}</small></span>
+            </button>
+          {/each}
+          {#if filtered.total>limit}<div class="auto-sentinel" use:autoAppend={{hasMore:()=>filtered.total>limit,load:()=>limit+=40}} role="status" aria-label="スクロールでクエストを追加表示"></div>{/if}
+        {/if}
         {#if filtered.total===0}<p class="empty">該当するクエストはありません。</p>{/if}
       </section>
       <section class="detail" aria-label="クエスト詳細" bind:this={detailPanel}>
@@ -491,6 +535,25 @@
             <a class="quest-permalink" href={`${base}/guide/quests/?quest=${selectedRow.id}`}>このクエストへのリンク</a>
             <details class="source-id"><summary>クエストID</summary><code>{selectedRow.id}</code></details>
           </div>
+          {#if selectedStoryFlow&&storyPosition>=0}
+            <nav class="story-neighbors" aria-label="ストーリー一覧順の移動">
+              <div class="story-neighbor-position">{arcs.find(arc=>arc.id===publicQuestStoryArc(selectedRow))?.name} · {publicQuestNativeOrder(selectedRow)!==null?'メインストーリー':'関連クエスト'} · {storyPosition+1} / {selectedStoryLine.length}</div>
+              <button disabled={!storyPrevious} on:click={()=>storyPrevious&&selectStoryNeighbor(storyPrevious)} aria-label="一覧順で前のクエスト">
+                <span aria-hidden="true">‹</span><span>{storyPrevious?questName(storyPrevious,locale):'—'}</span>
+              </button>
+              <button disabled={!storyNext} on:click={()=>storyNext&&selectStoryNeighbor(storyNext)} aria-label="一覧順で次のクエスト">
+                <span>{storyNext?questName(storyNext,locale):'—'}</span><span aria-hidden="true">›</span>
+              </button>
+            </nav>
+            {#if storyPrerequisites.length}
+              <div class="story-prerequisites">
+                <strong>完了条件に含まれるクエスト</strong>
+                {#each storyPrerequisites as prerequisite (prerequisite.id)}
+                  <a href={`${base}/guide/quests/?quest=${prerequisite.id}`}>{questName(prerequisite,locale)}</a>
+                {/each}
+              </div>
+            {/if}
+          {/if}
           {#if detailLoading}<p class="status">目標データを検証しています…</p>{/if}
           {#if detailError}<p class="error" role="alert">{detailError}</p>{/if}
           {#if selected}
@@ -749,6 +812,24 @@
   .group-name,.quest-row-text{flex:1;min-width:0;overflow-wrap:anywhere}
   .quest-row-text{display:grid;gap:3px}
   .quest-sections button.secondary:not(.chosen){background:transparent;color:var(--wand-muted);border-color:var(--wand-line)}
+  .story-workspace{grid-template-columns:minmax(300px,1fr) minmax(0,1.35fr)}
+  .story-workspace .results{padding:8px;max-height:calc(100vh - 150px);overflow-y:auto;scrollbar-width:thin}
+  .flow-heading{font-size:12px;font-weight:650;color:var(--wand-muted);margin:8px 5px 4px}
+  .related-heading{border-top:1px solid var(--wand-line);padding-top:10px;margin-top:10px}
+  .flow-list{list-style:none;padding:0;margin:0}
+  .story-quest-row{gap:8px;padding:4px 6px;min-height:40px;border-radius:6px}
+  .story-quest-row .quest-avatar{flex-basis:30px;width:30px;height:30px}
+  .story-quest-row .quest-row-text{gap:1px}
+  .story-quest-row strong{font-size:13px}
+  .flow-order{color:var(--wand-muted);font-size:11px;font-variant-numeric:tabular-nums;min-width:2ch;text-align:right;flex-shrink:0}
+  .story-neighbors{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin:0 0 12px}
+  .story-neighbor-position{grid-column:1/-1;color:var(--wand-muted);font-size:12px;text-align:center}
+  .story-neighbors button{display:flex;align-items:center;justify-content:space-between;gap:6px;min-width:0;background:var(--wand-pill-bg);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:6px;padding:7px;font-size:12px;text-align:left;overflow-wrap:anywhere}
+  .story-neighbors button:disabled{opacity:.35;cursor:default}
+  .story-neighbors button span:first-child:not(:last-child){min-width:0}
+  .story-prerequisites{display:grid;gap:4px;margin:0 0 12px;font-size:12px;color:var(--wand-muted)}
+  .story-prerequisites a{color:var(--wand-accent);overflow-wrap:anywhere}
+  @media(max-width:850px){.story-workspace .results{max-height:none;overflow:visible}}
   .quest-row:hover,.quest-row.active{background:#302440;border-color:#654b85}
   .quest-row strong,.quest-row small{display:block;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;white-space:normal}
   .quest-row strong{font-size:14px}.quest-row small{color:#aa9cb7;font-size:11px}
