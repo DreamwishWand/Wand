@@ -7,7 +7,7 @@
   let sharedMaster:Promise<PublicItemMaster>|null=null;
   function getItemMaster(base:string):Promise<PublicItemMaster> {
     if(sharedMaster)return sharedMaster;
-    const request=openPublicItemMaster(base);
+    const request=openPublicItemMaster(base,fetch,{scope:'complete'});
     sharedMaster=request;
     void request.catch(()=>{if(sharedMaster===request)sharedMaster=null;});
     return request;
