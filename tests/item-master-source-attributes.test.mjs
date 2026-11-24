@@ -230,10 +230,10 @@ test('large reviewed structures retain mission order, source identities and byte
   const requests=[];
   const db=await openPublicItemMaster('',async url=>{requests.push(url);return fetcher(url)},{scope:'complete'});
   const fields=db.release.reviewedStructureCoverage.fields;
-  assert.equal(Object.keys(fields).length,157);
-  assert.equal(Object.values(fields).reduce((s,f)=>s+f.itemCount,0),12734);
-  assert.equal(Object.values(fields).reduce((s,f)=>s+f.occurrences,0),25857);
-  assert.equal(Object.values(fields).reduce((s,f)=>s+f.leafCount,0),303415);
+  assert.equal(Object.keys(fields).length,180);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.itemCount,0),43758);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.occurrences,0),56948);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.leafCount,0),707588);
   assert.equal(fields['Mission.Steps'].occurrences,7878);
   const catalog=await db.getFieldCatalog();
   const column=catalog.find(f=>f.field==='source.Steps');
@@ -358,4 +358,33 @@ test('full root scalar source census preserves signed values, explicit presence,
   assert.deepEqual(furniture.values['source.Tags'],[2000300000,2000300003,2000700008,2000200001,2000200000,2000400003,2000400006,2000700000,2001200028]);
   assert.equal(clothes.values['source.MaleIconAddress'],'guid:e3509f066e496c64f8a846856c181020');
   assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
+});
+
+
+test('complete original root message census preserves legacy grid, catalog and collection structures',async()=>{
+  const db=await openPublicItemMaster('',fetcher,{scope:'complete'});
+  const unique=new Map();
+  for(const coverage of [db.release.reviewedMessageCoverage,db.release.reviewedMessageGroupCoverage,db.release.reviewedStructureCoverage]){
+    for(const [label,g] of Object.entries(coverage.fields)){
+      const field=label.split('@')[0].split('.').at(-1);
+      const key=g.category+'.'+field+'@'+g.declaredType;
+      if(unique.has(key))assert.deepEqual(unique.get(key),g);
+      unique.set(key,g);
+    }
+  }
+  assert.equal(unique.size,226);
+  assert.equal([...unique.values()].reduce((n,g)=>n+g.occurrences,0),81457);
+  const [furniture,stride,currency,recipe,clothes,building,group,empty]=await db.getItemFields(
+    [40000047,40002300,80000000,2050301241,50000440,20100048,2120000015,40001786],
+    ['source.GridAreaData','source.AppearWhen','source.CatalogVisibilityConditions','source.GridEditRestriction','source.Groups','source.ItemList']);
+  assert.deepEqual(furniture.values['source.GridAreaData'],{AcceptedFloorTypesFlag:1070327039,Layers:[332,332,332,332,332,332],SizeX:3,SizeY:2});
+  assert.equal(stride.values['source.GridAreaData'].StrideOverride,2);
+  assert(!Object.hasOwn(stride.values['source.GridAreaData'],'_unresolvedFields'));
+  assert.deepEqual(currency.values['source.GridAreaData'],{AcceptedFloorTypesFlag:1070331135,Layers:[4],SizeX:1,SizeY:1});
+  assert.deepEqual(recipe.values['source.AppearWhen'],{Conditions:{Conditions:[{KeyholeStatus:{Keyhole:'b54f1892-1cae-46a1-a5af-479b643e0753',Status:4}}]},ConditionsMeet:true});
+  assert.deepEqual(clothes.values['source.CatalogVisibilityConditions'],{UnlockedByDesignChallenge:'DreamSnap154_ExplosionsOfColor'});
+  assert.equal(building.values['source.GridEditRestriction'].CanPlace.CustomRestrictions[0].Reason,'menu.unlock_all_biomes');
+  assert.deepEqual(group.values['source.Groups'],[{CollectionsByItem:[{Ignore:true,ItemList:[30200018,30200120,30200191]}],CollectionsByType:[{ActivityItem:{ByGameplayTag:2001200013}}]}]);
+  assert.deepEqual(empty.values['source.ItemList'],{});
+  assert((await db.getItemReferences(30200018,'incoming')).some(([id,p])=>id===2120000015&&p==='source.Groups[0].CollectionsByItem[0].ItemList[0]'));
 });
