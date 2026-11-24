@@ -6,20 +6,22 @@
   import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences';
   import {openPublicItemMaster,type PublicCompleteItemMaster} from '$lib/items/public-item-master';
   import {searchSavedObjects,worldObjectName,objectFocus,type WorldNames} from './world-object-search.ts';
-  import {defaultMapCamera,maxMapZoom,zoomMapCamera,panMapCamera,mapCameraViewBox,wheelMapCamera,createMapPanGesture} from './map-camera.ts';
+  import {defaultMapCamera,maxMapZoom,zoomMapCamera,panMapCamera,mapCameraViewBox,mapViewportBounds,wheelMapCamera,createMapPanGesture} from './map-camera.ts';
 
   import {emptyWorldTimeline,currentWorldEdits,travelWorldTimeline,projectWorldEdits,stageWorldEdit,WORLD_BATCH_LIMIT} from './saved-map-batch.ts';
   import {savedDraftOverlap,OVERLAP_COLORS} from './saved-draft-overlap.ts';
   import {CARDINAL_ORIENTATIONS,isCardinal,worldTransformEligible,draftSavedMapTransform,exclusiveAnchorClass,exclusiveAnchorConflict} from './saved-map-transform.ts';
-  import {savedGridObjects,savedShapesAt,type SavedShapeMap,type SavedShapeObject} from './saved-shape-map.ts';
+  import {savedGridObjects,savedShapesAt,visibleSavedObjects,type SavedShapeMap,type SavedShapeObject} from './saved-shape-map.ts';
   import {MAP_LAYER_COLORS,MAP_LAYER_LABELS,mapPainterOrder,matchesSelectionLayer,type MapSelectionLayer} from './source-map-layers.ts';
   import {sourceOrientationAngle} from './source-object-map.ts';
   export let map:SavedShapeMap;
   export let file:File|null=null;
   export let terrain:TerrainBinding|null=null;
   export let compact=false;
+  export let terrainDisplayed=false;
   $: activeTerrain=terrain&&terrain.verifiedGridOrdinals.includes(activeOrdinal)?terrain:null;
   $: terrainUrl=activeTerrain?terrainImage(activeTerrain):'';
+  $: terrainDisplayed=Boolean(activeTerrain&&terrainUrl);
   function terrainImage(binding:TerrainBinding){
     const raster=binding.raster,canvas=document.createElement('canvas');canvas.width=raster.sizeX;canvas.height=raster.sizeY;
     const ctx=canvas.getContext('2d');if(!ctx)return '';const data=ctx.createImageData(canvas.width,canvas.height);
@@ -172,6 +174,7 @@
   $: extent=bounds(objects,map,activeTerrain);
   $: maxZoom=maxMapZoom(Math.max(extent.w,extent.h));
   $: viewBox=mapCameraViewBox(cameraState,extent);
+  $: visibleObjects=visibleSavedObjects(objects,map.shapes,mapViewportBounds(cameraState,extent),selected);
   function changeZoom(n:number){cameraState=zoomMapCamera(cameraState,n,maxZoom);}
   function pan(dx:number,dy:number){cameraState=panMapCamera(cameraState,dx/zoom,dy/zoom);}
   function wheel(event:WheelEvent){cameraState=wheelMapCamera(event,svg,extent,cameraState,maxZoom);}
@@ -243,11 +246,11 @@
       <rect x={extent.x} y={extent.y} width={extent.w} height={extent.h} fill="#27313a"/>
       {#if activeTerrain&&terrainUrl}<image class="saved-terrain-background" href={terrainUrl} x="0" y="0" width={activeTerrain.raster.sizeX*activeTerrain.factor} height={activeTerrain.raster.sizeY*activeTerrain.factor} preserveAspectRatio="none" style="image-rendering:pixelated"/>{/if}
       {#if extent.w/zoom<160&&extent.h/zoom<160}<rect x={extent.x} y={extent.y} width={extent.w} height={extent.h} fill="url(#saved-shape-cells)"/>{/if}
-      {#each objects as o (o.localOrdinal)}
+      {#each visibleObjects as o (o.localOrdinal)}
         {@const shape=o.shapeKey?map.shapes[o.shapeKey]:null}
-        <g class="saved-object" class:staged-object={stagedOrdinals.has(o.localOrdinal)} class:search-dim={Boolean(query.trim())&&!matchIds.has(o.localOrdinal)&&selected!==o.localOrdinal} data-local-ordinal={o.localOrdinal} transform={'translate('+o.x+' '+o.y+')'}>
+        <g class="saved-object" class:staged-object={stagedOrdinals.has(o.localOrdinal)} class:search-dim={Boolean(query.trim())&&!matchIds.has(o.localOrdinal)&&selected!==o.localOrdinal&&o.layer!=='ground'&&o.layer!=='fence'} data-local-ordinal={o.localOrdinal} transform={'translate('+o.x+' '+o.y+')'}>
           {#if shape}
-            <path class="saved-object-shape" d={shape.path} fill={MAP_LAYER_COLORS[o.layer]} fill-opacity={selected===o.localOrdinal?.85:matchesSelectionLayer(o,layer)?.48:.24}
+            <path class="saved-object-shape" d={shape.path} fill={MAP_LAYER_COLORS[o.layer]} fill-opacity={selected===o.localOrdinal?.85:(matchesSelectionLayer(o,layer)||o.layer==='ground'||o.layer==='fence')?.48:.24}
               stroke={selected===o.localOrdinal?'#fff':MAP_LAYER_COLORS[o.layer]} stroke-width="1" vector-effect="non-scaling-stroke"/>
             {#if o.orientationCode!==null}<path d="M0 -.32L.19 .13L0 .04L-.19 .13Z" transform={'translate(.5 .5) rotate('+sourceOrientationAngle(o.orientationCode)+')'} fill="#fff"/>{/if}
           {:else}<circle class="unknown-shape" cx=".5" cy=".5" r=".24" fill="#ddd" stroke="#fff" stroke-width="1" vector-effect="non-scaling-stroke"/>{/if}
@@ -332,8 +335,8 @@
   .controls{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
   .overlap-key{display:flex;flex-wrap:wrap;gap:8px;font-size:12px}
   .saved-overlap-cell,.exclusive-anchor-conflict{pointer-events:none}
-  .exclusive-warning{color:#ef5350}
-  .world-edit-history{display:grid;gap:5px;border:1px solid #ffffff35;border-radius:5px;padding:8px}
+  .exclusive-warning{color:var(--wand-text);font-weight:650;border-inline-start:3px solid #ef5350;padding-inline-start:6px}
+  .world-edit-history{display:grid;gap:5px;border:1px solid var(--wand-line);background:var(--wand-card);border-radius:5px;padding:8px}
   .staged-list{display:grid;gap:4px;max-height:180px;overflow:auto;min-width:0}
   .object-search{display:flex;gap:5px;flex-wrap:wrap}
   .object-search input{flex:1;width:auto;min-width:120px}
@@ -341,12 +344,14 @@
   .object-results button{display:flex;justify-content:space-between;gap:8px;text-align:left}
   .object-results small{opacity:.65;font-variant-numeric:tabular-nums;white-space:nowrap}
   .search-dim{opacity:.22}
-  .staged-warning{color:#efc23e}
+  .staged-warning{color:var(--wand-accent-strong);font-weight:600}
   .staged-object{opacity:.9}
-  .transform-controls{display:grid;gap:8px;padding:8px;border:1px solid #ffffff35;border-radius:5px}
-  input{width:90px;max-width:100%;font:inherit;color:inherit;background:transparent;border:1px solid #ffffff35;padding:4px;border-radius:4px}
-  button,select{font:inherit;color:inherit;background:transparent;border:1px solid #ffffff35;border-radius:5px;padding:5px;font-size:12px}
-  button[aria-pressed=true]{border-color:#a7cfed;background:#a7cfed33}
+  .transform-controls{display:grid;gap:8px;padding:8px;border:1px solid var(--wand-line);background:var(--wand-card);border-radius:5px}
+  input{width:90px;max-width:100%;font:inherit;color:inherit;background:var(--wand-menu);border:1px solid var(--wand-line);padding:4px;border-radius:4px}
+  button,select{font:inherit;color:inherit;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:5px;padding:5px;font-size:12px}
+  button[aria-pressed=true]{border-color:var(--wand-accent-strong);background:var(--wand-accent-strong);color:var(--wand-accent-contrast)}
+  button:not(:disabled):not(.plot):not([aria-pressed=true]):hover{background:var(--wand-header-hover)}
+  button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--wand-focus);outline-offset:2px}
   button:disabled{opacity:.4}
   .plot{padding:0;overflow:hidden;width:100%;background:#10121d;line-height:0;cursor:crosshair}
   .plot.zoomed{touch-action:none}
