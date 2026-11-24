@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
+import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync,existsSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {createProjectionWriter,installProjectionStage} from '../tools/db-01-items/reuse-public-projections.mjs';
 import {join} from 'node:path';
 import {
   openPublicItemMaster, ITEM_MASTER_DEFAULT_GAME_VERSION
@@ -179,4 +182,39 @@ test('batch Item reads cap shard requests at eight and maintain caller order',as
   assert(peakTracker.peak>1,'batch performs parallel reads');
   assert(peakTracker.peak<=8,'bulk lookups cannot issue 256 simultaneous shard requests');
   assert.equal(peakTracker.active,0);
+});
+
+
+test('complete projection rebuild reuses exact bytes, repairs changes and keeps independent prior releases',()=>{
+  const root=mkdtempSync(join(tmpdir(),'wand-db01-reuse-'));
+  try{
+    const previous=join(root,'steam-1.26.2-complete'),destination=join(root,'steam-1.26.3-complete');
+    const stage=join(root,'.stage');
+    mkdirSync(previous);mkdirSync(destination);mkdirSync(stage);
+    const same={items:[1,2]},changed={items:[2,3]};
+    const bytes=value=>Buffer.from(JSON.stringify(value)+'\n');
+    writeFileSync(join(destination,'same.json'),bytes(same));
+    writeFileSync(join(destination,'changed.json'),bytes(same));
+    writeFileSync(join(destination,'obsolete.json'),bytes(same));
+    writeFileSync(join(previous,'historical.json'),bytes(same));
+    const writer=createProjectionWriter(root,stage,destination);
+    const m=writer.write('same.json',same,2);
+    assert.equal(m.sha256,digest(bytes(same)));
+    assert.equal(writer.stats.reusedSameRelease+writer.stats.written,1);
+    writer.write('changed.json',changed,2);
+    writer.write('historical.json',same,2);
+    assert.equal(writer.stats.written+writer.stats.reusedSameRelease+writer.stats.reusedOtherRelease,3);
+    assert.throws(()=>writer.write('../unsafe.json',same,2),/PROJECTION_PATH/);
+    installProjectionStage(stage,destination);
+    assert.deepEqual(readFileSync(join(destination,'same.json')),bytes(same));
+    assert.deepEqual(readFileSync(join(destination,'changed.json')),bytes(changed));
+    assert(!existsSync(join(destination,'obsolete.json')));
+    assert.deepEqual(readFileSync(join(previous,'historical.json')),bytes(same));
+    // Retained versions are not hardlinked to one another.
+    writeFileSync(join(destination,'historical.json'),bytes(changed));
+    assert.deepEqual(readFileSync(join(previous,'historical.json')),bytes(same));
+    // A missing stage must not destroy the already usable release.
+    assert.throws(()=>installProjectionStage(join(root,'.missing'),destination));
+    assert.deepEqual(readFileSync(join(destination,'changed.json')),bytes(changed));
+  }finally{rmSync(root,{recursive:true,force:true});}
 });
