@@ -1,4 +1,5 @@
 /** Public game-only terrain projection, version matched. */
+import {projectNativeEditRestrictions} from './native-edit-restrictions.ts';
 import type {ItemFieldRow} from '../items/item-field-reader.ts';
 const record=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const u32=(n:unknown):n is number=>typeof n==='number'&&Number.isSafeInteger(n)&&n>=0&&n<=0xffffffff;
@@ -79,7 +80,7 @@ export function parsePublicTerrainBundle(value:unknown):PublicTerrainBundle{
 /** Adapt only canonical DB-01 GridAreaData fields. No inferred dimensions,
  * absent floor flags or reconstructed state. All network reads are the same
  * public columns, independent of which objects occur in a local Save. */
-export function publicShapeDefinitions(geometry:readonly ItemFieldRow[],categories:readonly ItemFieldRow[],names:readonly ItemFieldRow[]){
+export function publicShapeDefinitions(geometry:readonly ItemFieldRow[],categories:readonly ItemFieldRow[],names:readonly ItemFieldRow[],restrictions:readonly ItemFieldRow[]=[]){
   const types=new Map(categories),labels=new Map(names),objects=new Map<string,Record<string,unknown>>();
   for(const [id,g] of geometry){
     const kind=types.get(id);
@@ -99,6 +100,7 @@ export function publicShapeDefinitions(geometry:readonly ItemFieldRow[],categori
   // Definition-only items may still be classified without a fabricated footprint.
   for(const [id,kind] of categories)if((kind==='Furniture'||kind==='Building')&&!objects.has(String(id)))
     objects.set(String(id),{itemId:id,nativeType:kind,nativeName:typeof labels.get(id)==='string'?labels.get(id):null,footprint:null});
+  for(const [id,rule] of restrictions){const definition=objects.get(String(id));if(definition)definition.editRestrictions=projectNativeEditRestrictions(rule);}
   return objects;
 }
 export function publicShapeSource(grid:PublicTerrainGridRef,objects:Map<string,Record<string,unknown>>){
