@@ -833,8 +833,30 @@ try{
   assert.equal(await mapPanel.locator('svg .cell-mask').getAttribute('transform'),
     'matrix(3 0 0 -3 10 60)');
   assert.match(await mapPanel.innerText(),/家具形状と床属性の一致候補/);
+  assert.equal(await mapPanel.locator('.grid-lines').count(),1);
+  const clickCell=async(x,y)=>{
+    await mapPanel.locator('svg').scrollIntoViewIfNeeded();
+    const p=await mapPanel.locator('svg').evaluate((svg,[x,y])=>{
+      const point=new DOMPoint(10+3*(x+.5),60-3*(y+.5)).matrixTransform(svg.getScreenCTM());
+      return {x:point.x,y:point.y};
+    },[x,y]);
+    await page.mouse.move(p.x,p.y);
+    await page.mouse.click(p.x,p.y);
+  };
+  await clickCell(4,4);
+  await mapPanel.locator('.placement-cell').first().waitFor();
+  assert.equal(await mapPanel.locator('.placement-cell[data-evidence="floor-mismatch"]').count(),1);
+  assert.equal(await mapPanel.locator('.placement-cell[data-evidence="unknown"]').count(),3);
+  await clickCell(15,15);
+  assert.equal(await mapPanel.locator('.placement-cell[data-evidence="outside-source-grid"]').count(),3);
+  assert.equal(await mapPanel.locator('.placement-cell[data-evidence="unknown"]').count(),1);
+  await floorPanel.getByLabel('家具の向き').selectOption('8');
+  await mapPanel.locator('.placement-cell').first().waitFor();
+  assert.equal(await mapPanel.locator('.placement-cell[data-evidence="outside-source-grid"]').count(),3);
   await mapPanel.getByLabel('マス表示').uncheck();
   await mapPanel.locator('svg .cell-mask').waitFor({state:'detached'});
+  assert.equal(await mapPanel.locator('.grid-lines').count(),1);
+  assert.equal(await mapPanel.locator('.placement-cell').count(),4);
   await mapPanel.getByRole('button',{name:'解除'}).click();
   await mapPanel.locator('svg').waitFor({state:'detached'});
 

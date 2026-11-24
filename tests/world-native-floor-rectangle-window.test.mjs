@@ -135,6 +135,8 @@ test('reliable source floor-rectangle candidates shift with original cardinal ro
   assert.equal(unrotated.boundingWidth,2);
   assert.equal(unrotated.boundingHeight,1);
   assert.equal(unrotated.mappedShapeCellCount,2);
+  assert.deepEqual([...unrotated.mappedShape],[1,1]);
+  assert.equal(unrotated.acceptedFloorTypesFlag,4);
   assert.equal(unrotated.intrinsicGridFactor,1);
   assert.equal(unrotated.selectedGridOriginCount,7);
   // The second GridData (2x3, all matching) contributes 3 starts.
@@ -193,6 +195,7 @@ test('unknown item or newer game version never produce a false possible-placemen
   assert.equal(unknown.status,'source_item_gridarea_unverified');
   assert.equal(unknown.regionOriginCount,null);
   assert.equal(unknown.originBitmap,null);
+  assert.equal(unknown.mappedShape,null);
 });
 
 test('invalid area, orientation, dimensions and source identities fail closed',()=>{
