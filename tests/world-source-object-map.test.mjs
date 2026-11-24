@@ -337,3 +337,24 @@ test('marquee selects occupied runs even if the anchor is outside and excludes h
  assert.deepEqual(savedShapesInRect(map,1,{x:6,y:6},{x:6,y:6}).map(o=>o.localOrdinal),[1]);
  assert.deepEqual(savedShapesInRect(map,1,{x:4,y:6},{x:5,y:6}),[]);
 });
+
+import {createWorldArtworkLookup,mapCellPixels,showWorldArtwork,visibleWorldArtworkIds} from '../src/lib/world/world-artwork.ts';
+test('world map artwork reuses public image identity and existing historical collection mapping; no guessed URLs',async()=>{
+ let reads=0,lookups=0;
+ const path='ddv/game-thumbnails/r39/ab/'+'ab'.repeat(32)+'.webp';
+ const lookup=createWorldArtworkLookup('/Wand',async url=>{reads++;assert.equal(url,'/Wand/ddv/collection/item-images-r39.json');return new Response(JSON.stringify({schema:'wand.collection.item-images.r39@1',items:{'40000002':path,'40000003':'https://example.com/unverified.webp'}}));},async id=>{lookups++;return id===40000001?{url:'https://images.example.test/verified.webp'}:null;});
+ assert.equal(await lookup(40000001),'https://images.example.test/verified.webp');
+ assert.match(await lookup(40005160),/461f6484256c69e5a528adc3af7054301841fc324c237d8bc0d4534830345bec\.webp$/);
+ assert.equal(reads,0);
+ assert.deepEqual(await Promise.all([lookup(40000002),lookup(40000002),lookup(40000003)]),['/Wand/'+path,'/Wand/'+path,null]);
+ assert.equal(reads,1);assert.equal(lookups,4);
+ assert.equal(await lookup(-1),null);
+});
+test('world thumbnails depend on on-screen footprint size and do not hide infrastructure',()=>{
+ const shape={width:2,height:3},o={layer:'furniture',shapeKey:'a',itemId:'40000001'};
+ assert.equal(mapCellPixels({x:0,y:0,w:100,h:50},800,300),6);
+ assert.equal(showWorldArtwork(o,shape,6),false);assert.equal(showWorldArtwork(o,shape,7),true);
+ assert.equal(showWorldArtwork({...o,layer:'ground'},shape,100),false);
+ assert.equal(showWorldArtwork({...o,layer:'fence'},shape,100),false);
+ assert.deepEqual(visibleWorldArtworkIds([o,o,{...o,itemId:'40000002',layer:'fence'}],{a:shape},7),[40000001]);
+});

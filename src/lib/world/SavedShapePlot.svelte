@@ -6,6 +6,8 @@
   import {terrainWarnings,type TerrainBinding} from './terrain-binding.ts';
   import {nativeSourceFloorTint} from './native-terrain-canvas.ts';
   import {base} from '$app/paths';
+  import {worldArtwork,mapCellPixels,showWorldArtwork,visibleWorldArtworkIds} from './world-artwork.ts';
+  import WorldObjectArtwork from './WorldObjectArtwork.svelte';
   import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences';
   import {openPublicItemMaster,type PublicCompleteItemMaster} from '$lib/items/public-item-master';
   import {searchSavedObjects,worldObjectName,objectFocus,type WorldNames} from './world-object-search.ts';
@@ -24,6 +26,12 @@
   export let compact=false;
   let toolsOpen=true,inspectorOpen=true;
   let root:HTMLDivElement;
+  let mapWidth=0,mapHeight=0;
+  let artwork=new Map<number,string>(),artworkPending=new Set<number>();
+  function loadArtwork(ids:readonly number[]){
+    for(const id of ids){if(artworkPending.has(id))continue;artworkPending.add(id);
+      void worldArtwork(base,id).then(url=>{if(url)artwork=new Map(artwork).set(id,url);}).catch(()=>{artworkPending.delete(id);});}
+  }
   export let terrainDisplayed=false;
   $: activeTerrain=terrain&&terrain.verifiedGridOrdinals.includes(activeOrdinal)?terrain:null;
   $: terrainUrl=activeTerrain?terrainImage(activeTerrain):'';
@@ -281,7 +289,11 @@
   $: extent=bounds(objects,map,activeTerrain);
   $: maxZoom=maxMapZoom(Math.max(extent.w,extent.h));
   $: viewBox=mapCameraViewBox(cameraState,extent);
-  $: visibleObjects=visibleSavedObjects(objects,map.shapes,mapViewportBounds(cameraState,extent),selected);
+  $: viewport=mapViewportBounds(cameraState,extent);
+  $: visibleObjects=visibleSavedObjects(objects,map.shapes,viewport,selected);
+  $: cellPixels=mapCellPixels(viewport,mapWidth,mapHeight);
+  $: if(mapWidth&&mapHeight)loadArtwork(visibleWorldArtworkIds(visibleObjects,map.shapes,cellPixels));
+  $: if(searchOpen)loadArtwork(matches.slice(0,visibleResults).map(o=>Number(o.itemId)).filter(id=>Number.isSafeInteger(id)&&id>0));
   function changeZoom(n:number){cameraState=zoomMapCamera(cameraState,n,maxZoom);}
   function pan(dx:number,dy:number){cameraState=panMapCamera(cameraState,dx/zoom,dy/zoom);}
   function wheel(event:WheelEvent){cameraState=wheelMapCamera(event,svg,extent,cameraState,maxZoom);}
@@ -354,7 +366,7 @@
       <div class="object-results">
         {#each matches.slice(0,visibleResults) as o (o.localOrdinal)}
           <button type="button" aria-pressed={groupMode?groupSet.has(o.localOrdinal):selected===o.localOrdinal} disabled={groupMode&&!worldMoveEligible(o)} on:click={()=>selectFromSearch(o)}>
-            <span>{worldObjectName(o,names)}</span><small>{o.x}, {o.y}</small>
+            {#if artwork.has(Number(o.itemId))}<img class="search-artwork" src={artwork.get(Number(o.itemId))} alt="" loading="lazy"/>{/if}<span>{worldObjectName(o,names)}</span><small>{o.x}, {o.y}</small>
           </button>
         {/each}
         {#if !matches.length}<p>該当する配置なし</p>{/if}
@@ -363,7 +375,7 @@
     {/if}
   </div>
   </div>
-  <div class="saved-map-frame"><button type="button" class="plot" class:zoomed={zoom>1} aria-label="セーブ内の形状候補を選択"
+  <div class="saved-map-frame"><button type="button" class="plot" class:zoomed={zoom>1} aria-label="セーブ内の形状候補を選択" bind:clientWidth={mapWidth} bind:clientHeight={mapHeight}
     on:click={pick} on:wheel|nonpassive={wheel} on:pointerdown={startPan} on:pointermove={follow}
     on:pointerup={finishPan} on:pointercancel={finishPan} on:pointerleave={()=>{gesture.leave();hoverPoint=null;}} on:keydown={e=>{if(!compact)keyMap(e);}}>
     <svg bind:this={svg} {viewBox} aria-hidden="true">
@@ -380,6 +392,7 @@
           {#if shape}
             <path class="saved-object-shape" d={shape.path} fill={MAP_LAYER_COLORS[o.layer]} fill-opacity={(selected===o.localOrdinal||groupSet.has(o.localOrdinal))?.85:(matchesSelectionLayer(o,layer)||o.layer==='ground'||o.layer==='fence')?.48:.24}
               stroke={selected===o.localOrdinal||groupSet.has(o.localOrdinal)?'#fff':MAP_LAYER_COLORS[o.layer]} stroke-width="1" vector-effect="non-scaling-stroke"/>
+            {#if showWorldArtwork(o,shape,cellPixels)&&artwork.has(Number(o.itemId))}<WorldObjectArtwork href={artwork.get(Number(o.itemId))!} width={shape.width} height={shape.height}/>{/if}
             {#if o.orientationCode!==null}<path d="M0 -.32L.19 .13L0 .04L-.19 .13Z" transform={'translate(.5 .5) rotate('+sourceOrientationAngle(o.orientationCode)+')'} fill="#fff"/>{/if}
           {:else}<circle class="unknown-shape" cx=".5" cy=".5" r=".24" fill="#ddd" stroke="#fff" stroke-width="1" vector-effect="non-scaling-stroke"/>{/if}
           {#if o.surfaceCapable}<circle cx=".78" cy=".22" r=".13" fill="#dbc2f6"/>{/if}
@@ -519,6 +532,7 @@
   .subgrid-status{color:var(--wand-text);border-inline-start:3px solid #d8b96b;padding-inline-start:6px}
   .structure-remove-ghost,.group-draft-shape,.group-draft-anchor,.range-box{pointer-events:none}
   .group-controls{border-block:1px solid var(--wand-border);padding-block:5px}
+  .search-artwork{width:30px;height:30px;object-fit:contain;flex:none}
   .group-selected .unknown-shape{stroke:#fff;stroke-width:3}
   .saved-subgrid-marker,.saved-restricted-marker{pointer-events:none}
   .overlap-key{display:flex;flex-wrap:wrap;gap:8px;font-size:12px}
