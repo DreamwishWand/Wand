@@ -1,3 +1,4 @@
+<svelte:options namespace="svg"/>
 <script lang="ts">
  export let href:string;
  export let x=0;
