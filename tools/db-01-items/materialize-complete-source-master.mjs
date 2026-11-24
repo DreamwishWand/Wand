@@ -637,15 +637,7 @@ function buildReferenceColumns(rows){
       const nestedTargets=NESTED_DIRECT_REFERENCE_TARGETS[normalizedPath];
       const conditionTargets=/\.Conditions\[\d+\]\.[A-Za-z]+\.[A-Za-z]+$/.test(path)
         ? REVIEWED_CONDITION_REFERENCE_TARGETS[path.split('.').slice(-2).join('.')]:undefined;
-      if(nestedTargets){
-        if(nestedTargets.includes(categories.get(value)))emit(value,path);
-      }else if(conditionTargets&&['Mission','Building','Furniture','ActivityItem','Clothing','Character','Companion','DutyAch','LootTable','ConditionalEvent','Condition','Scene','Skin','Tool','Trimming','Set','ActivityData','RecurringEvent','Upgrade','Display','MemoryShard','Currency','Preference','Story'].includes(row.nativeCategory)){
-        if(conditionTargets.includes(categories.get(value)))emit(value,path);
-      }else if(SELECTOR_REFERENCE_OWNERS.has(row.nativeCategory)&&/\.(?:Item\.(?:Item|ItemIngredient)\.Item|ItemList\.(?:Item|ItemIngredient)\.ItemList\.List\[\d+\]\.Item)$/.test(path)){
-        if(SELECTOR_ITEM_TARGETS.has(categories.get(value)))emit(value,path);
-      }else if(row.nativeCategory==='DutyAch'&&/\.(?:FilterGenerator|ItemGenerator)\.Tags\[\d+\]\.Tags\[\d+\]$|\.FilterGenerator\.IngredientsType\[\d+\]$|\.AnyCompanion\.HasTag$/.test(path)){
-        if(categories.get(value)==='Tag')emit(value,path);
-      }else if(rootTargets){
+      if(rootTargets){
         if(rootTargets.includes(categories.get(value)))emit(value,path);
       }else if(PRICE_REFERENCE_OWNERS.has(row.nativeCategory)&&path==='source.PriceOverride.Price.Id'){
         if(categories.get(value)==='Currency')emit(value,path);
@@ -703,6 +695,15 @@ function buildReferenceColumns(rows){
         else if(['Item','TargetItem.Item','TargetMealItem'].includes(table?.FieldName)){if(ids.has(target)){check(categories.get(target)==='ActivityItem','FORMULA_ITEM_REFERENCE');emit(target,path);}}
       }else if(row.nativeCategory==='CollectionSet'&&/^source\.Groups\[\d+\]\.CollectionsByItem\[\d+\]\.ItemList\[\d+\]$/.test(path)){
         emit(value,path); // Includes explicit exclusions; path retains original polarity context.
+      }else if(nestedTargets){
+        if(nestedTargets.includes(categories.get(value)))emit(value,path);
+      }else if(conditionTargets&&['Mission','Building','Furniture','ActivityItem','Clothing','Character','Companion','DutyAch','LootTable','ConditionalEvent','Condition','Scene','Skin','Tool','Trimming','Set','ActivityData','RecurringEvent','Upgrade','Display','MemoryShard','Currency','Preference','Story'].includes(row.nativeCategory)){
+        if(conditionTargets.includes(categories.get(value)))emit(value,path);
+      }else if(SELECTOR_REFERENCE_OWNERS.has(row.nativeCategory)&&/\.(?:Item\.(?:Item|ItemIngredient)\.Item|ItemList\.(?:Item|ItemIngredient)\.ItemList\.List\[\d+\]\.Item)$/.test(path)){
+        if(SELECTOR_ITEM_TARGETS.has(categories.get(value)))emit(value,path);
+      }else if(row.nativeCategory==='DutyAch'&&/\.(?:FilterGenerator|ItemGenerator)\.Tags\[\d+\]\.Tags\[\d+\]$|\.FilterGenerator\.IngredientsType\[\d+\]$|\.AnyCompanion\.HasTag$/.test(path)){
+        if(categories.get(value)==='Tag')emit(value,path);
+
       }else if(/ItemIds?$/i.test(name))emit(value,path);
       else if(row.nativeCategory==='DutyAch'&&/^source\.Milestones\[\d+\]\.RewardItem$/.test(path)){
         check(ID(value)&&ids.has(value),'MILESTONE_REWARD_TARGET');emit(value,path);
