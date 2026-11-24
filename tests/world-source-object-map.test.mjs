@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {sourceMapLayer,sourceSurfaceCapable,matchesSelectionLayer,mapPainterOrder,prioritizeMapHits} from '../src/lib/world/source-map-layers.ts';
 import {buildSourceObjectMap,sourceObjectsAt,sourceOrientationAngle} from '../src/lib/world/source-object-map.ts';
 const L='SceneLayouts/Village04/Fixture.json',P='GridData/Village04/Fixture.json';
 const row=(id,itemId,x,y,orientationCode)=>({layoutId:L,gridIdNative:7,gridObjectIdNative:id,itemId,x,y,orientationCode});
@@ -33,4 +34,22 @@ test('deduplicate shapes by item and direction, keep all overlapping instance id
 test('do not map incompatible factor or newer unverified version onto raw terrain',()=>{
   assert.equal(buildSourceObjectMap(fixture(2),L,7).status,'incompatible_grid_factor');
   assert.equal(buildSourceObjectMap(fixture(1,'1.27.0'),L,7).status,'unavailable');
+});
+
+test('source-native layers preserve all objects and surface capability is not actual parentage',()=>{
+  const objects=[
+    {id:1,layer:sourceMapLayer('Furniture',40100001,4),surfaceCapable:false},
+    {id:2,layer:sourceMapLayer('Furniture',40700001,4),surfaceCapable:false},
+    {id:3,layer:sourceMapLayer('Furniture',40200001,4),surfaceCapable:false},
+    {id:4,layer:sourceMapLayer('Furniture',40000001,4096),surfaceCapable:true},
+    {id:5,layer:sourceMapLayer('Furniture',40000002,4100),surfaceCapable:sourceSurfaceCapable(4100)}
+  ];
+  assert.deepEqual(objects.map(o=>o.layer),['ground','fence','landscape','surface','furniture']);
+  assert.equal(matchesSelectionLayer(objects[4],'surface'),true);
+  assert.equal(matchesSelectionLayer(objects[0],'furniture'),false);
+  assert.deepEqual(mapPainterOrder(objects).map(o=>o.id),[1,3,5,2,4]);
+  assert.deepEqual(prioritizeMapHits(objects,'fence').map(o=>o.id),[2,1,3,4,5]);
+  assert.equal(sourceMapLayer(null,40700001,4096),'other');
+  assert.equal(sourceMapLayer('Furniture',40000001,null),'furniture');
+  assert.equal(buildSourceObjectMap(fixture(),L,7).supportRelationsVerified,false);
 });

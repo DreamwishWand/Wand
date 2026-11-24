@@ -28,6 +28,7 @@ on:
       - 'src/lib/world/media-map-calibration.ts'
       - 'src/lib/world/source-placement-preview.ts'
       - 'src/lib/world/source-object-map.ts'
+      - 'src/lib/world/source-map-layers.ts'
       - 'tests/world-source-object-map.test.mjs'
       - 'tests/world-source-placement-preview.test.mjs'
       - 'src/lib/world/MediaMapGridOverlay.svelte'

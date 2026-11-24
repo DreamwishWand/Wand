@@ -2,6 +2,7 @@
  * supported objects, runtime overrides, collision or placement legality.
  * Built once per selected Grid in the World worker; shared shapes are
  * deduplicated per Item ID and orientation. Row runs preserve holes. */
+import {sourceMapLayer,sourceSurfaceCapable,type MapObjectLayer} from './source-map-layers.ts';
 import {getSourceAnchorDomain} from './native-anchor-domain.ts';
 import {getOriginalGridAreaEvidence} from './native-gridarea-evidence.ts';
 import {getOriginalGridAreaDisplayDimensions,getOriginalGridAreaLocalWindow}
@@ -18,6 +19,7 @@ export interface SourceMapObject {
   readonly id:number;readonly itemId:number;readonly name:string|null;
   readonly x:number;readonly y:number;readonly orientationCode:number;
   readonly orientationName:string|null;readonly shapeKey:string|null;
+  readonly layer:MapObjectLayer;readonly surfaceCapable:boolean;
 }
 export interface SourceObjectMap {
   readonly status:'source_default_geometry'|'unavailable'|'incompatible_grid_factor';
@@ -43,6 +45,7 @@ export function buildSourceObjectMap(source:unknown,layoutId:string,gridIdNative
     throw new TypeError('DB04_OBJECT_MAP_COUNT_INVALID');
   const shapes:Record<string,SourceObjectShape>={};
   const cache=new Map<string,SourceObjectShape|null>();
+  const itemEvidence=new Map<number,ReturnType<typeof getOriginalGridAreaEvidence>>();
   const objects:SourceMapObject[]=[];
   const seen=new Set<number>();
   let unresolvedCount=0,work=0;
@@ -55,9 +58,10 @@ export function buildSourceObjectMap(source:unknown,layoutId:string,gridIdNative
     const key=row.itemId+':'+row.orientationCode;
     let shape=cache.get(key);
     const definition=source.objects.get(String(row.itemId));
+    let e=itemEvidence.get(row.itemId);
+    if(!e){e=getOriginalGridAreaEvidence(source,row.itemId);itemEvidence.set(row.itemId,e);}
     if(shape===undefined){
       shape=null;
-      const e=getOriginalGridAreaEvidence(source,row.itemId);
       if(e.status==='source_raw_gridarea_available'&&e.rawSizeX&&e.rawSizeY){
         const {width,height}=getOriginalGridAreaDisplayDimensions(e.rawSizeX,e.rawSizeY,row.orientationCode,1);
         if(width>0&&height>0&&work+width*height<=1_000_000){
@@ -90,7 +94,8 @@ export function buildSourceObjectMap(source:unknown,layoutId:string,gridIdNative
     objects.push({id:row.gridObjectIdNative,itemId:row.itemId,x:row.x,y:row.y,
       orientationCode:row.orientationCode,orientationName:typeof row.orientationName==='string'?row.orientationName:null,
       name:record(definition)&&typeof definition.nativeName==='string'?definition.nativeName:null,
-      shapeKey:shape?key:null});
+      shapeKey:shape?key:null,layer:sourceMapLayer(e.nativeType,row.itemId,e.acceptedFloorTypesFlag),
+      surfaceCapable:sourceSurfaceCapable(e.acceptedFloorTypesFlag)});
   }
   return {status:'source_default_geometry',layoutId,gridIdNative,gridDataPath:domain.gridDataPath,
     objects,shapes,totalCount:rows.length,unresolvedCount,omittedCount:rows.length-objects.length,
