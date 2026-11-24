@@ -1090,6 +1090,24 @@ try{
   await publicPlot.getByRole('button',{name:'一括変更を検証',exact:true}).click();
   await publicPlot.getByRole('button',{name:'実験的な編集コピーを作成'}).waitFor({timeout:20000});
   await publicPlot.getByRole('button',{name:'全変更を取り消す'}).click();
+  await publicPlot.getByRole('button',{name:'グループ右回転',exact:true}).click();
+  await publicPlot.locator('.group-draft-shape').first().waitFor();
+  assert.equal(await publicPlot.locator('.group-draft-shape').count(),2);
+  await publicPlot.getByRole('button',{name:'一括移動を追加',exact:true}).click();
+  assert.equal(await publicPlot.locator('.staged-edit').count(),2);
+  await publicPlot.getByRole('button',{name:'一括変更を検証',exact:true}).click();
+  await publicPlot.getByRole('button',{name:'実験的な編集コピーを作成'}).waitFor({timeout:20000});
+  await publicPlot.getByRole('button',{name:'全変更を取り消す'}).click();
+  await publicPlot.getByRole('button',{name:'選択解除',exact:true}).click();
+  await publicPlot.getByRole('button',{name:'範囲選択',exact:true}).click();
+  const plotSvg=publicPlot.locator('svg');
+  async function groupClick(x,y){
+    const p=await plotSvg.evaluate((svg,xy)=>{const pt=new DOMPoint(xy[0],xy[1]).matrixTransform(svg.getScreenCTM());return {x:pt.x,y:pt.y};},[x,y]);
+    await page.mouse.click(p.x,p.y);
+  }
+  await groupClick(3.5,4.5);
+  await groupClick(10.5,6.5);
+  assert.equal(await publicPlot.locator('.group-selected').count(),2);
   await publicPlot.getByRole('button',{name:'複数選択',exact:true}).click();
   await publicPlot.getByRole('button',{name:'閉じる',exact:true}).click();
   // All three root themes recolor service chrome without recoloring the map.
