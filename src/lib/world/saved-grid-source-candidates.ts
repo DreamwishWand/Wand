@@ -23,6 +23,16 @@ export interface SourceGridQuery {
   readonly nativeGridId:number;
   readonly sourceRefs:readonly SourceGridWitness[];
 }
+export type SavedSubgridSummary={readonly status:'resolved_full';readonly objectCount:number}|{readonly status:'unresolved';readonly objectCount:null};
+export function parseSavedSubgridSummary(value:unknown):SavedSubgridSummary|null{
+  if(value===undefined||value===null)return null;
+  if(typeof value!=='object'||Array.isArray(value))throw Error('DB04_SUBGRID_INVALID');
+  const row=value as Record<string,unknown>;
+  if(row.status==='unresolved'&&row.objectCount===null)return {status:'unresolved',objectCount:null};
+  if(row.status==='resolved_full'&&typeof row.objectCount==='number'&&Number.isSafeInteger(row.objectCount)&&row.objectCount>=0&&row.objectCount<=100000)
+    return {status:'resolved_full',objectCount:row.objectCount};
+  throw Error('DB04_SUBGRID_INVALID');
+}
 export interface SavedNumericPoint {
   readonly localOrdinal:number;
   readonly localGridOrdinal:number;
@@ -30,6 +40,7 @@ export interface SavedNumericPoint {
   readonly x:number;
   readonly y:number;
   readonly orientation:string|null;
+  readonly subgrid?:SavedSubgridSummary|null;
 }
 export interface SavedGridSourceCandidates {
   readonly contract:typeof DB04_SAVED_SOURCE_CANDIDATE_CONTRACT;
