@@ -71,6 +71,9 @@ class CandidateTests(unittest.TestCase):
             plan=json.loads((root/"private-promotion-plan.json").read_text())
             self.assertFalse(plan["publicationAuthorized"])
             self.assertEqual(len(plan["objects"]),2)
+            self.assertEqual({o["target"] for o in plan["objects"]},
+                             {f"{kind}/cc/{'c' * 64}.webp" for kind in ("thumbnail", "original")})
+            self.assertTrue(all(o["source"].startswith(builder.SOURCE_PREFIX + "/") for o in plan["objects"]))
     def test_fails_closed_when_byte_hash_is_wrong(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)

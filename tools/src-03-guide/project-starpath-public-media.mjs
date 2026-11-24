@@ -21,7 +21,7 @@ const RELEASE='steam-v1.26.2';
 const SOURCE_HASH='fd2d07d541293a19ac7b845e996ccf4e3af41270c79daaa56b2ff74316a45e9f';
 const PRIVATE_PREFIX='private/staging/src04/steam-v1.26.2/'+SOURCE_HASH.slice(0,16)+'/';
 const SHA=/^[a-f0-9]{64}$/;
-const CONTENT_KEY=/^media\/steam-v1\.26\.2\/(thumbnail|original)\/([0-9a-f]{2})\/([a-f0-9]{64})\.webp$/;
+const CONTENT_KEY=/^(thumbnail|original)\/([0-9a-f]{2})\/([a-f0-9]{64})\.webp$/;
 const fail=code=>{throw new Error('DB03_SRC04_PROMOTION_'+code)};
 const assert=(ok,code)=>{if(!ok)fail(code)};
 const isRecord=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
