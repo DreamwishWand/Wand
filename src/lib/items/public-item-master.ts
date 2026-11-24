@@ -38,6 +38,7 @@ export interface ItemMasterCompleteRelease {
   readonly referenceAttributesSha256?: string;
   readonly reviewedRootArraysSha256?: string;
   readonly reviewedMessagesSha256?: string;
+  readonly reviewedMessageGroupsSha256?: string;
   readonly localization?: Readonly<{parts:number;sha256:string}>;
 }
 export interface ItemMasterExpandedRelease {
@@ -271,6 +272,8 @@ export interface ItemMasterRelease {
   readonly reviewedRootArrayCoverage?: Readonly<{fields:Readonly<Record<string,Readonly<{itemCount:number;valueCount:number;category:string;elementType:string}>>>;runtimeSemanticsVerified:false}>;
   readonly reviewedMessagesSha256?: string;
   readonly reviewedMessageCoverage?: Readonly<{fields:Readonly<Record<string,Readonly<{itemCount:number;occurrences:number;leafCount:number;category:string;declaredType:string}>>>;runtimeSemanticsVerified:false}>;
+  readonly reviewedMessageGroupsSha256?: string;
+  readonly reviewedMessageGroupCoverage?: Readonly<{fields:Readonly<Record<string,Readonly<{itemCount:number;occurrences:number;leafCount:number;category:string;declaredType:string}>>>;runtimeSemanticsVerified:false}>;
   readonly localizationSha256?: string;
   readonly localizationCoverage?: ItemLocalizationCoverage;
   readonly sourceFilesVerified?: number;
@@ -518,6 +521,8 @@ export async function openPublicItemMaster(
           typeof c.reviewedRootArraysSha256==='string'&&SHA.test(c.reviewedRootArraysSha256),'INVALID_ROOT_ARRAY_DIGEST');
         assert(c.reviewedMessagesSha256===undefined||
           typeof c.reviewedMessagesSha256==='string'&&SHA.test(c.reviewedMessagesSha256),'INVALID_MESSAGE_DIGEST');
+        assert(c.reviewedMessageGroupsSha256===undefined||
+          typeof c.reviewedMessageGroupsSha256==='string'&&SHA.test(c.reviewedMessageGroupsSha256),'INVALID_MESSAGE_GROUP_DIGEST');
         if(c.localization!==undefined){
           const l=c.localization;
           assert(isObject(l)&&typeof l.parts==='number'&&Number.isSafeInteger(l.parts)&&l.parts>0&&l.parts<=100&&
@@ -611,6 +616,16 @@ export async function openPublicItemMaster(
           typeof f.leafCount==='number'&&Number.isSafeInteger(f.leafCount)&&f.leafCount>=0&&
           typeof f.category==='string'&&typeof f.declaredType==='string')&&
         release.reviewedMessageCoverage.runtimeSemanticsVerified===false),'INVALID_MESSAGE_RELEASE');
+    assert((!selected||release.reviewedMessageGroupsSha256===selected.complete?.reviewedMessageGroupsSha256)&&
+      (release.reviewedMessageGroupsSha256===undefined||typeof release.reviewedMessageGroupsSha256==='string'&&
+        SHA.test(release.reviewedMessageGroupsSha256)&&isObject(release.reviewedMessageGroupCoverage)&&
+        isObject(release.reviewedMessageGroupCoverage.fields)&&
+        Object.values(release.reviewedMessageGroupCoverage.fields).every(f=>isObject(f)&&
+          typeof f.itemCount==='number'&&Number.isSafeInteger(f.itemCount)&&f.itemCount>0&&f.itemCount<=Number(release.count)&&
+          typeof f.occurrences==='number'&&Number.isSafeInteger(f.occurrences)&&f.occurrences>=f.itemCount&&
+          typeof f.leafCount==='number'&&Number.isSafeInteger(f.leafCount)&&f.leafCount>=0&&
+          typeof f.category==='string'&&typeof f.declaredType==='string')&&
+        release.reviewedMessageGroupCoverage.runtimeSemanticsVerified===false),'INVALID_MESSAGE_GROUP_RELEASE');
     assert((!selected||release.localizationSha256===selected.complete?.localization?.sha256)&&
       (release.localizationSha256===undefined||
         typeof release.localizationSha256==='string'&&SHA.test(release.localizationSha256)&&
