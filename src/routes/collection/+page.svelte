@@ -1629,7 +1629,6 @@
                       {denominator?group.owned.toLocaleString(locale)+' / '+denominator.toLocaleString(locale):'—'}
                       {#if denominator}<span class="collection-category-percent">{Math.floor(group.owned*100/denominator)}%</span>{/if}
                     </span>
-                    {#if denominator}<span class="collection-category-progress-track" aria-hidden="true"><span style:width={Math.min(100,group.owned*100/denominator)+'%'}></span></span>{/if}
                   </button>
                 {/each}
               {:else if sourceIndex?.rootsByItem}
@@ -1768,8 +1767,6 @@
   .item-card.current,.item-card.bulk-selected{border-color:var(--wand-accent)}
   .collection-category-progress{display:flex;align-items:center;justify-content:space-between;gap:5px;width:100%;font-variant-numeric:tabular-nums}
   .collection-category-percent{color:var(--wand-text);font-weight:600}
-  .collection-category-progress-track{height:3px;width:100%;background:var(--wand-control);border-radius:3px;overflow:hidden;display:block}
-  .collection-category-progress-track>span{display:block;height:100%;background:var(--wand-success);border-radius:3px}
   .collection-item-universe-heading{grid-column:1/-1;font-size:12px;font-weight:600;margin:8px 0 0;line-height:1.3;color:inherit}
   .collection-universe-section-head{margin-bottom:5px}
   @media(max-width:540px){.items-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,94px),1fr));gap:4px}.item-icon{height:64px}.item-card{padding:4px}.item-card-copy strong{font-size:10px}.item-state-toggle{width:22px;height:22px}}
