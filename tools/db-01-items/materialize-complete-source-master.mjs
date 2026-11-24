@@ -552,6 +552,24 @@ const REVIEWED_CONDITION_REFERENCE_TARGETS={
     "DutyAch"
   ]
 };
+// Explicit source declarations whose native field names do not end in ItemID.
+// Match only a canonical definition of the reviewed target category; zero,
+// unresolved or differently typed values remain in the original source column.
+const ROOT_DIRECT_REFERENCE_TARGETS={
+  'ActivityItem.TreasureLootTable':['LootTable'],
+  'ActivityData.RecipeType':['Tag'],
+  'Building.Scene':['Scene'],
+  'Building.SkinToBeAddedOnMaxUpgrade':['Skin'],
+  'Clothing.IncompatibleWithItem':['Clothing'],
+  'Companion.DefaultUpgrade':['Upgrade'],
+  'Companion.Scene':['Scene'],
+  'Dialogue.NearBuildingID':['Building'],
+  'Formula.ForCurrency':['Currency'],
+  'Mission.OwnerCharacter':['Character'],
+  'Tool.DefaultUpgrade':['Upgrade']
+};
+const PRICE_REFERENCE_OWNERS=new Set(['Furniture','Clothing']);
+const COLLECTION_TAG_REFERENCE_PATH=/^source\.Groups\[\d+\]\.CollectionsByType\[\d+\]\.[A-Za-z]+\.ByGameplayTag$/;
 function buildReferenceColumns(rows){
   const categories=new Map(rows.map(r=>[r.itemId,r.nativeCategory]));
   const ids=new Set(categories.keys());
@@ -571,7 +589,15 @@ function buildReferenceColumns(rows){
         for(const [key,part] of Object.entries(value))walk(part,path+'.'+key,key);
         return;
       }
-      if(row.nativeCategory==='Companion'&&/^(?:source\.(?:FavoriteItem|LikeItem))\.(?:Item\.(?:Item|ItemIngredient)\.Item|ItemList\.(?:Item|ItemIngredient)\.ItemList\.List\[\d+\]\.Item)$/.test(path)){
+      const rootField=path.match(/^source\.([A-Za-z][A-Za-z0-9_]*)(?:\[\d+\])?$/)?.[1];
+      const rootTargets=rootField&&ROOT_DIRECT_REFERENCE_TARGETS[row.nativeCategory+'.'+rootField];
+      if(rootTargets){
+        if(rootTargets.includes(categories.get(value)))emit(value,path);
+      }else if(PRICE_REFERENCE_OWNERS.has(row.nativeCategory)&&path==='source.PriceOverride.Price.Id'){
+        if(categories.get(value)==='Currency')emit(value,path);
+      }else if(row.nativeCategory==='CollectionSet'&&COLLECTION_TAG_REFERENCE_PATH.test(path)){
+        if(categories.get(value)==='Tag')emit(value,path);
+      }else if(row.nativeCategory==='Companion'&&/^(?:source\.(?:FavoriteItem|LikeItem))\.(?:Item\.(?:Item|ItemIngredient)\.Item|ItemList\.(?:Item|ItemIngredient)\.ItemList\.List\[\d+\]\.Item)$/.test(path)){
         if(value!==0){
           check(categories.get(value)==='ActivityItem','COMPANION_SELECTOR_TARGET');emit(value,path);
         }
