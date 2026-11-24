@@ -12,23 +12,16 @@ test('Decorate keeps two surfaces; moodboard management is inside Explore',()=>{
   assert.doesNotMatch(explore,/mode===|mode='boards'/);
 });
 
-test('all catalog views use one viewport-windowed wrapping grid without independent scrolling',()=>{
-  assert.match(explore,/\{#each shelves as \[key,list\] \(key\)\}/);
-  assert.match(explore,/<SeriesBlockGrid \{groups\} block=\{seriesBlock\}/);
-  assert.equal((explore.match(/<VirtualCatalogGrid /g)??[]).length,3);
-  assert.doesNotMatch(explore,/scrollShelf|stepShelf|shelfLimits|seriesLimits|groupLimit|grid-auto-flow:column|overflow-x:auto|use:more/);
+test('all universes use one shared incremental frontier and identical wrapping grids',()=>{
+  assert.match(explore,/\{#each visibleSections as \[key,designs\] \(key\)\}/);
+  assert.match(explore,/catalogPrefix\(sections,frontier\)/);
+  assert.match(explore,/use:observeCatalogFrontier=\{advanceFrontier\}/);
+  assert.equal((explore.match(/<VirtualCatalogGrid /g)??[]).length,1);
+  assert.match(explore,/orderedSeriesDesigns\(visibleSeries.get\(key\)/);
+  assert.doesNotMatch(explore,/SeriesBlockGrid|seriesRow|seriesList|scrollShelf|stepShelf|grid-auto-flow:column|overflow-x:auto/);
   const grid=readFileSync(new URL('../src/lib/explore/VirtualCatalogGrid.svelte',import.meta.url),'utf8');
   const chunk=readFileSync(new URL('../src/lib/explore/CatalogWindowChunk.svelte',import.meta.url),'utf8');
   assert.match(grid,/layout.chunks as chunk/);
   assert.match(chunk,/\{#if visible\|\|focusWithin\}/);
   assert.match(chunk,/items.slice\(chunk.start,chunk.end\)/);
-});
-
-test('DDV and Non IP series occupy wrapping blocks instead of full-width independent shelves',()=>{
-  const blocks=readFileSync(new URL('../src/lib/explore/SeriesBlockGrid.svelte',import.meta.url),'utf8');
-  assert.match(blocks,/seriesBlockSpan\(designs.length,columns\)/);
-  assert.match(blocks,/style:grid-column=\{'span '\+span\}/);
-  assert.match(blocks,/\.series-block-grid\{display:grid/);
-  assert.match(explore,/columns=\{span\}/);
-  assert.doesNotMatch(blocks,/overflow-x|grid-auto-flow:column/);
 });
