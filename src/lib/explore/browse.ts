@@ -41,3 +41,18 @@ export function groupItems(items:readonly ExploreItem[],universes:readonly strin
   for(const list of out.values())list.sort(compareItems);
   return out;
 }
+
+/** Explicit game-original and NonIP tags are not missing-universe states. */
+export const DREAMLIGHT_UNIVERSE='2000500023';
+export const NON_IP_UNIVERSE='2000500017';
+export function isLargeUniverse(key:string):boolean{
+  return key===DREAMLIGHT_UNIVERSE||key===NON_IP_UNIVERSE;
+}
+export function universeRank(key:string):number{
+  return key===NON_IP_UNIVERSE?4:key===DREAMLIGHT_UNIVERSE?3:key==='unknown'?2:key==='none'?1:0;
+}
+export function categoryShelves(items:readonly ExploreItem[]):[Family,ExploreItem[]][]{
+  const groups=new Map<Family,ExploreItem[]>();
+  for(const item of items){const key=familyOf(item);const list=groups.get(key)??[];list.push(item);groups.set(key,list);}
+  return FAMILIES.flatMap(key=>{const list=groups.get(key);return list?[[key,list.sort(compareItems)] as [Family,ExploreItem[]]]:[];});
+}
