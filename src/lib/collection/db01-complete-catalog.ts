@@ -111,7 +111,7 @@ export function loadCompleteCollection(base:string):Promise<CollectionCompleteCa
     for(const [id,root] of index.rootsByItem!){
       const labels=names.get(id)??{};
       const verified=ITEM_MASTER_LOCALES.every(l=>Boolean(labels[l]));
-      rows.push({id:String(id),names:verified?labels:{},nameStatus:verified?'verified':'unverified',
+      rows.push({id:String(id),names:labels,nameStatus:verified?'verified':'unverified',
         category:rootFamily[root]??root,stateSemantic:stock.has(root)?'QUANTITY_STOCK':
           ['furniture','landscaping','roads-fences','interior'].includes(root)?'OWNERSHIP_STOCK_AND_DISCOVERY':
           ['clothing','appearance'].includes(root)?'OWNERSHIP_AND_DISCOVERY':'UNLOCKED_LOCKED',
