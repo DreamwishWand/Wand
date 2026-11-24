@@ -20,6 +20,17 @@ export interface ItemMasterOpenOptions {
   /** Expanded view adds original collectibles without replacing the base snapshot. */
   readonly scope?: 'base' | 'expanded';
 }
+/** Complete source definitions include non-collectible and non-icon records. */
+export interface CompleteItemMasterOpenOptions {
+  readonly gameVersion?: string;
+  readonly scope: 'complete';
+}
+export interface ItemMasterCompleteRelease {
+  readonly release: string;
+  readonly count: number;
+  readonly archiveSha256: string;
+  readonly parts: number;
+}
 export interface ItemMasterExpandedRelease {
   readonly release: string;
   readonly count: number;
@@ -36,6 +47,7 @@ export interface ItemMasterVersions {
     count: number;
     archiveSha256: string;
     expanded?: Readonly<ItemMasterExpandedRelease>;
+    complete?: Readonly<ItemMasterCompleteRelease>;
   }>[];
 }
 export const ITEM_MASTER_LOCALES =
@@ -71,6 +83,8 @@ export interface ItemMasterCollectionCandidate {
   readonly sourceRule?: string | null;
   readonly sourceField?: string | null;
   readonly tagKey?: string | null;
+  readonly selectorIndex?: number;
+  readonly sourceRecipeItemId?: number | null;
 }
 export interface ItemMasterRecord {
   readonly itemId: number;
@@ -96,12 +110,92 @@ export interface ItemMasterRecord {
   readonly worldMembershipVerified: false;
   readonly availabilityVerified: false;
 }
+export type ItemDefinitionScope = 'source_candidate' | 'item_definition' | 'other_definition';
+/** Canonical source record, not necessarily an obtainable item. A null icon
+ * or name is valid and does not prevent resolving the native source ID. */
+export interface CompleteItemMasterRecord extends Omit<ItemMasterRecord,
+  'iconGuid'|'artwork'|'universeTagIds'|'universeSourceStatus'> {
+  readonly iconGuid: string | null;
+  readonly artwork: Readonly<Partial<Record<
+    'iconGuid'|'prefabGuid'|'imageGuid'|'maskGuid'|'maskDataGuid'|
+    'blurredIconGuid'|'alternativeIconGuid',string>>>;
+  readonly universeTagIds: readonly number[];
+  readonly universeDirectTagIds: readonly number[];
+  readonly universeSetTagIds: readonly number[];
+  readonly universePredicateTagIds: readonly number[];
+  readonly universeSourceStatus: ItemMasterUniverseStatus;
+  readonly worldTagIds: readonly number[];
+  readonly sourceSetItemId: number | null;
+  readonly craftingRecipeItemIds: readonly number[];
+  readonly collectionPositiveSourceLinks: readonly Readonly<ItemMasterCollectionCandidate>[];
+  readonly collectionExclusions: readonly Readonly<ItemMasterCollectionCandidate>[];
+  readonly definitionScope: ItemDefinitionScope;
+  /** Selected native declaration. It is not a verified runtime dispatch table. */
+  readonly sourceClass: string | null;
+  /** Original file payload offset and byte length, for offline source lookup. */
+  readonly sourceFrame: readonly [number,number];
+  /** Observed field number, wire type and occurrence count, including unknown fields. */
+  readonly observedFields: readonly (readonly [number,number,number])[];
+  readonly nativeProperties: Readonly<Record<string,number|boolean>>;
+}
+export interface ItemMasterAsset {
+  readonly count: number;
+  readonly bytes: number;
+  readonly sha256: string;
+}
+export interface ItemMasterTagLabel {
+  readonly tagId: number;
+  readonly key: string;
+  readonly names: Readonly<Record<ItemMasterLocale,string|null>>;
+}
+export interface CompleteItemMasterFacets {
+  readonly schema: 'wand.collection.db01-complete-source-facets@1';
+  readonly release: string;
+  readonly sourceItemCount: number;
+  readonly nativeSubtypeItems: readonly (readonly [number,string,number,string|null])[];
+  readonly definitionScopeItems: readonly (readonly [number,ItemDefinitionScope])[];
+  readonly browseItems: readonly (readonly [number,string,number,string|null,ItemDefinitionScope])[];
+  readonly items: readonly (readonly [number,readonly (readonly [string,string])[]])[];
+  readonly categoryItems: readonly (readonly [number,readonly number[]])[];
+  readonly activityTypeItems: readonly (readonly [number,number,string|null])[];
+  readonly universeSourceItems: readonly (readonly [number,readonly string[]])[];
+  readonly universeSourceTagItems: readonly (readonly [number,readonly number[]])[];
+  readonly universeSourceStatusItems: readonly (readonly [number,ItemMasterUniverseStatus])[];
+  readonly worldSourceTagItems: readonly (readonly [number,readonly number[]])[];
+  readonly sourceSetItems: readonly (readonly [number,number])[];
+  readonly craftingRecipeResultItems: readonly (readonly [number,readonly number[]])[];
+  readonly universeTags: readonly ItemMasterTagLabel[];
+  readonly worldTags: readonly ItemMasterTagLabel[];
+  readonly gameRuntimeMembershipVerified: false;
+}
+export interface CompleteItemMasterRelations {
+  readonly schema: 'wand.item-master.complete-source-relations@1';
+  readonly release: string;
+  readonly collectionMenus: readonly Readonly<{
+    setId:number; setKey:string; submenuCode:number; submenu:string;
+    collectionLabelKey:string|null; sortPriority:number; groupCount:number;
+    directListedItemCount:number;
+  }>[];
+  /** Original selectors retain family-specific native criteria and polarity. */
+  readonly collectionSelectors: readonly Readonly<Record<string,unknown>>[];
+  readonly ignoredSentinels: readonly (readonly [number,number])[];
+  readonly universeTags: readonly ItemMasterTagLabel[];
+  readonly worldTags: readonly ItemMasterTagLabel[];
+  readonly sourceFieldDeclarations: Readonly<Record<string,Readonly<Record<string,number>>>>;
+  readonly gameRuntimeMembershipVerified: false;
+}
 export interface ItemMasterRelease {
   readonly schema: 'wand.item-master.release@1';
   readonly version: string;
   readonly target: Readonly<{platform:'Steam';gameVersion:string}>;
   readonly count: number;
-  readonly scope?: 'expanded';
+  readonly scope?: 'expanded'|'complete';
+  readonly archiveSha256?: string;
+  readonly sourceFilesVerified?: number;
+  readonly sourceFilesSha256?: Readonly<Record<string,string>>;
+  readonly sourceItemsSha256?: string;
+  readonly sourceIl2cppDumpSha256?: string;
+  readonly assets?: Readonly<Record<string,ItemMasterAsset>>;
   readonly baseRelease?: string;
   readonly baseCount?: number;
   readonly extensionCount?: number;
@@ -119,15 +213,31 @@ export interface ItemMasterRelease {
     collectionMembershipVerified: false;
     acquisitionCoverageComplete: false;
     publishedR2ImageUrlAvailable: false;
+    definitionCount?: number;
+    nativeCategoryCount?: number;
+    sourceSelectorCount?: number;
+    positiveSourceLinks?: number;
+    negativeSourceLinks?: number;
+    worldTagItemIds?: number;
+    recipeResultItemIds?: number;
+    recipeResultLinks?: number;
+    scalarProperties?: number;
+    allOriginalFieldSemanticsVerified?: false;
   }>;
   readonly shards: Readonly<Record<string, Readonly<{
     count:number; bytes?:number; sha256?:string;
   }> | number>>;
 }
-export interface PublicItemMaster {
+export interface PublicItemMaster<T extends ItemMasterRecord|CompleteItemMasterRecord = ItemMasterRecord> {
   readonly release: ItemMasterRelease;
-  getItem(itemId: number): Promise<ItemMasterRecord | null>;
-  getItems(itemIds: readonly number[]): Promise<(ItemMasterRecord | null)[]>;
+  getItem(itemId: number): Promise<T | null>;
+  getItems(itemIds: readonly number[]): Promise<(T | null)[]>;
+}
+export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemMasterRecord> {
+  /** Collection-only projection; fetch neither all shards nor all languages. */
+  getCollectionFacets(): Promise<CompleteItemMasterFacets>;
+  getBrowseNames(locale: ItemMasterLocale): Promise<readonly (readonly [number,string])[]>;
+  getSourceRelations(): Promise<CompleteItemMasterRelations>;
 }
 const SHA = /^[0-9a-f]{64}$/;
 const GAME_VERSION = /^[0-9]+\.[0-9]+\.[0-9]+$/;
@@ -147,7 +257,8 @@ function isObject(x:unknown): x is Record<string,unknown> {
   return !!x && typeof x === 'object' && !Array.isArray(x);
 }
 /** Freeze the shared per-shard Item objects so one consumer cannot corrupt others. */
-function freezeItemRecord(item:ItemMasterRecord):ItemMasterRecord {
+function freezeItemRecord<T extends ItemMasterRecord|CompleteItemMasterRecord>(item:T):T {
+  if('observedFields' in item)return deepFreeze(item);
   Object.freeze(item.names);
   Object.freeze(item.itemType);
   if(item.artwork)Object.freeze(item.artwork);
@@ -158,11 +269,18 @@ function freezeItemRecord(item:ItemMasterRecord):ItemMasterRecord {
   Object.freeze(item.collectionSourceCandidates);
   return Object.freeze(item);
 }
-function validRecord(raw:unknown, bucket:string): raw is ItemMasterRecord {
+function deepFreeze<T>(value:T):T {
+  if(value!==null&&typeof value==='object'&&!Object.isFrozen(value)){
+    for(const child of Object.values(value))deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value;
+}
+function validRecord(raw:unknown, bucket:string, complete:boolean): raw is ItemMasterRecord|CompleteItemMasterRecord {
   if (!isObject(raw) || !ID(raw.itemId) || pathFor(raw.itemId) !== bucket ||
       typeof raw.nativeCategory !== 'string' ||
       typeof raw.nativeKey !== 'string' ||
-      typeof raw.iconGuid !== 'string' || !GUID.test(raw.iconGuid) ||
+      !(complete&&raw.iconGuid===null || typeof raw.iconGuid === 'string'&&GUID.test(raw.iconGuid)) ||
       !isObject(raw.itemType) || !isObject(raw.names) ||
       !Array.isArray(raw.tags) ||
       !Array.isArray(raw.collectionSourceCandidates) ||
@@ -171,7 +289,7 @@ function validRecord(raw:unknown, bucket:string): raw is ItemMasterRecord {
       raw.availabilityVerified !== false) return false;
   const artwork=raw.artwork;
   if(artwork!==undefined){
-    if(!isObject(artwork)||artwork.iconGuid!==raw.iconGuid)return false;
+    if(!isObject(artwork)||(artwork.iconGuid??null)!==raw.iconGuid)return false;
     for(const key of ['imageGuid','maskGuid']){
       const value=artwork[key];
       if(value!==undefined&&value!==null&&
@@ -192,9 +310,27 @@ function validRecord(raw:unknown, bucket:string): raw is ItemMasterRecord {
   if (raw.tags.some((v:unknown) => !isObject(v) || !ID(v.id) ||
     typeof v.key !== 'string' || typeof v.facet !== 'string' ||
     !Number.isInteger(v.sourceField))) return false;
-  return !raw.collectionSourceCandidates.some((v:unknown) =>
-    !isObject(v) || !ID(v.setId) || !Number.isInteger(v.groupIndex) ||
-    typeof v.evidence !== 'string');
+  const links=(rows:unknown)=>Array.isArray(rows)&&rows.every((v:unknown)=>
+    isObject(v)&&ID(v.setId)&&Number.isInteger(v.groupIndex)&&typeof v.evidence==='string');
+  if(!links(raw.collectionSourceCandidates))return false;
+  if(!complete)return true;
+  const validIds=(v:unknown)=>Array.isArray(v)&&v.every(ID)&&new Set(v).size===v.length;
+  if(!isObject(artwork)||!Object.values(artwork).every(v=>typeof v==='string'&&GUID.test(v))||
+    !validIds(raw.universeTagIds)||!validIds(raw.universeDirectTagIds)||
+    !validIds(raw.universeSetTagIds)||!validIds(raw.universePredicateTagIds)||
+    !validIds(raw.worldTagIds)||!validIds(raw.craftingRecipeItemIds)||
+    !links(raw.collectionPositiveSourceLinks)||!links(raw.collectionExclusions)||
+    !['source_candidate','item_definition','other_definition'].includes(String(raw.definitionScope))||
+    !['source_linked','unresolved_source','no_universe_in_verified_tag_fields'].includes(String(raw.universeSourceStatus))||
+    !(raw.sourceSetItemId===null||ID(raw.sourceSetItemId))||
+    !(raw.sourceClass===null||typeof raw.sourceClass==='string')||
+    !Array.isArray(raw.sourceFrame)||raw.sourceFrame.length!==2||
+    !raw.sourceFrame.every(Number.isSafeInteger)||raw.sourceFrame[0]<0||raw.sourceFrame[1]<=0||
+    !Array.isArray(raw.observedFields)||!raw.observedFields.every(v=>Array.isArray(v)&&v.length===3&&
+      v.every(Number.isSafeInteger)&&v[0]>0&&v[2]>0&&[0,1,2,5].includes(v[1]))||
+    !isObject(raw.nativeProperties)||!Object.values(raw.nativeProperties).every(v=>
+      typeof v==='boolean'||typeof v==='number'&&Number.isFinite(v)))return false;
+  return true;
 }
 async function checkedJson(url:string, meta?:Readonly<{bytes?:number;sha256?:string}>,
   fetcher:typeof fetch = fetch): Promise<unknown> {
@@ -213,17 +349,24 @@ async function checkedJson(url:string, meta?:Readonly<{bytes?:number;sha256?:str
   }
   return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
 }
+export function openPublicItemMaster(
+  basePath: string|undefined, fetcher: typeof fetch|undefined,
+  options: CompleteItemMasterOpenOptions
+): Promise<PublicCompleteItemMaster>;
+export function openPublicItemMaster(
+  basePath?:string, fetcher?:typeof fetch, options?:ItemMasterOpenOptions
+): Promise<PublicItemMaster>;
 export async function openPublicItemMaster(
   basePath: string = '',
   fetcher: typeof fetch = fetch,
-  options: ItemMasterOpenOptions = {},
-):Promise<PublicItemMaster> {
+  options: ItemMasterOpenOptions|CompleteItemMasterOpenOptions = {},
+):Promise<PublicItemMaster<ItemMasterRecord|CompleteItemMasterRecord>> {
   assert(typeof basePath === 'string' &&
     /^\/?(?:[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*)?$/.test(basePath),
     'INVALID_BASE_PATH');
   const base = basePath ? '/' + basePath.replace(/^\/+|\/+$/g,'') : '';
   const scope=options.scope??'base';
-  assert(scope==='base'||scope==='expanded','INVALID_SCOPE');
+  assert(scope==='base'||scope==='expanded'||scope==='complete','INVALID_SCOPE');
   let gameVersion = options.gameVersion ?? ITEM_MASTER_DEFAULT_GAME_VERSION;
   let selected: Readonly<ItemMasterVersions['releases'][number]> | undefined;
   assert(typeof gameVersion === 'string', 'INVALID_GAME_VERSION');
@@ -255,6 +398,16 @@ export async function openPublicItemMaster(
           expanded.count<=MAX_DEFINITIONS&&typeof expanded.extensionSha256==='string'&&
           SHA.test(expanded.extensionSha256),'INVALID_EXPANDED_RELEASE');
       }
+      if(entry.complete!==undefined){
+        const c=entry.complete;
+        assert(isObject(c)&&typeof c.release==='string'&&
+          RELEASE_VERSION.test(c.release)&&c.release.startsWith('steam-'+entry.gameVersion+'-')&&
+          c.release!==entry.release&&typeof c.count==='number'&&
+          Number.isSafeInteger(c.count)&&c.count>=entry.count&&c.count<=MAX_DEFINITIONS&&
+          typeof c.archiveSha256==='string'&&SHA.test(c.archiveSha256)&&
+          typeof c.parts==='number'&&Number.isSafeInteger(c.parts)&&c.parts>0&&c.parts<=100,
+          'INVALID_COMPLETE_RELEASE');
+      }
       unique.add(entry.gameVersion);
     }
     gameVersion = raw.current;
@@ -264,9 +417,10 @@ export async function openPublicItemMaster(
   }
   assert(GAME_VERSION.test(gameVersion), 'INVALID_GAME_VERSION');
   if(scope==='expanded'&&selected)assert(selected.expanded,'EXPANDED_RELEASE_NOT_PUBLISHED');
-  const selectedView=scope==='expanded'?selected?.expanded:selected;
+  if(scope==='complete'&&selected)assert(selected.complete,'COMPLETE_RELEASE_NOT_PUBLISHED');
+  const selectedView=scope==='complete'?selected?.complete:scope==='expanded'?selected?.expanded:selected;
   const root = base + '/ddv/item-master/steam-' + gameVersion +
-    (scope==='expanded'?'-expanded':'');
+    (scope==='base'?'':'-'+scope);
   const release = await checkedJson(root+'/index.json',undefined,fetcher);
   assert(isObject(release) &&
     release.schema === 'wand.item-master.release@1' &&
@@ -295,11 +449,19 @@ export async function openPublicItemMaster(
       (!selected||(release.baseRelease===selected.release&&release.baseCount===selected.count&&
         release.extensionSha256===selected.expanded?.extensionSha256)),
       'INVALID_EXPANDED_RELEASE');
+  }else if(scope==='complete'){
+    assert(release.scope==='complete'&&typeof release.archiveSha256==='string'&&
+      SHA.test(release.archiveSha256)&&(!selected||release.archiveSha256===selected.complete?.archiveSha256)&&
+      isObject(release.assets)&&isObject(release.sourceFilesSha256)&&
+      typeof release.sourceFilesVerified==='number'&&Number.isSafeInteger(release.sourceFilesVerified)&&
+      release.sourceFilesVerified===Object.keys(release.sourceFilesSha256).length&&
+      Object.values(release.sourceFilesSha256).every(v=>typeof v==='string'&&SHA.test(v)),
+      'INVALID_COMPLETE_RELEASE');
   }else assert(release.scope===undefined,'UNEXPECTED_EXPANDED_RELEASE');
   const source = release as unknown as ItemMasterRelease;
   // The caller may share this reader with Collection, Explorer and Save.
   // Snapshot all mutable release metadata before any lazy asynchronous read.
-  const m:ItemMasterRelease = Object.freeze({
+  const m:ItemMasterRelease = deepFreeze({
     ...source,
     target:Object.freeze({...source.target}),
     coverage:Object.freeze({...source.coverage}),
@@ -327,8 +489,8 @@ export async function openPublicItemMaster(
     expected.reduce((n,p)=>n+meta(p).count,0) === m.count,
     'RELEASE_COUNT_MISMATCH');
 
-  const cache = new Map<string,Promise<ReadonlyMap<number,ItemMasterRecord>>>();
-  async function bucket(path:string):Promise<ReadonlyMap<number,ItemMasterRecord>> {
+  const cache = new Map<string,Promise<ReadonlyMap<number,ItemMasterRecord|CompleteItemMasterRecord>>>();
+  async function bucket(path:string):Promise<ReadonlyMap<number,ItemMasterRecord|CompleteItemMasterRecord>> {
     const previous = cache.get(path);
     if (previous) return previous;
     const task = (async()=>{
@@ -336,9 +498,9 @@ export async function openPublicItemMaster(
       assert(isObject(raw) && raw.schema === 'wand.item-master.shard@1' &&
         raw.bucket === path.slice(3,5) && Array.isArray(raw.items) &&
         raw.items.length === meta(path).count,'INVALID_SHARD');
-      const result = new Map<number,ItemMasterRecord>();
+      const result = new Map<number,ItemMasterRecord|CompleteItemMasterRecord>();
       for (const value of raw.items) {
-        assert(validRecord(value,path) && !result.has(value.itemId),
+        assert(validRecord(value,path,scope==='complete') && !result.has(value.itemId),
           'INVALID_ITEM_ROW');
         result.set(value.itemId,freezeItemRecord(value));
       }
@@ -347,7 +509,22 @@ export async function openPublicItemMaster(
     cache.set(path,task);
     try{return await task;}catch(e){cache.delete(path);throw e;}
   }
-  return Object.freeze({
+  const assetCache=new Map<string,Promise<unknown>>();
+  async function asset(path:string):Promise<unknown>{
+    assert(scope==='complete','COMPLETE_SCOPE_REQUIRED');
+    const previous=assetCache.get(path);
+    if(previous)return previous;
+    const meta=m.assets?.[path];
+    assert(meta&&Number.isSafeInteger(meta.bytes)&&meta.bytes>0&&meta.bytes<=MAX_SHARD_BYTES&&
+      SHA.test(meta.sha256)&&Number.isSafeInteger(meta.count)&&meta.count>=0,'INVALID_ASSET_METADATA');
+    const task=checkedJson(root+'/'+path,meta,fetcher).then(value=>{
+      assert(isObject(value)&&value.release===m.version,'ASSET_RELEASE_MISMATCH');
+      return deepFreeze(value);
+    });
+    assetCache.set(path,task);
+    try{return await task;}catch(e){assetCache.delete(path);throw e;}
+  }
+  const common = {
     release:m,
     async getItem(id:number){
       assert(ID(id),'INVALID_ITEM_ID');
@@ -357,7 +534,7 @@ export async function openPublicItemMaster(
       assert(Array.isArray(ids) && ids.length <= 10000 &&
         ids.every(ID),'INVALID_ITEM_BATCH');
       const groups = [...new Set(ids.map(pathFor))];
-      const found = new Map<number,ItemMasterRecord>();
+      const found = new Map<number,ItemMasterRecord|CompleteItemMasterRecord>();
       let next = 0;
       // Bound I/O to eight shards, even when 10,000 IDs span all 256 buckets.
       async function worker(): Promise<void> {
@@ -371,6 +548,34 @@ export async function openPublicItemMaster(
         {length:Math.min(8,groups.length)},()=>worker()
       ));
       return ids.map(id => found.get(id) ?? null);
+    }
+  };
+  if(scope!=='complete')return Object.freeze(common);
+  return Object.freeze({
+    ...common,
+    async getCollectionFacets():Promise<CompleteItemMasterFacets>{
+      const value=await asset('collection-facets.json');
+      assert(isObject(value)&&value.schema==='wand.collection.db01-complete-source-facets@1'&&
+        value.sourceItemCount===m.count&&Array.isArray(value.nativeSubtypeItems)&&
+        value.nativeSubtypeItems.length===m.count&&value.gameRuntimeMembershipVerified===false,
+        'INVALID_COMPLETE_FACETS');
+      return value as unknown as CompleteItemMasterFacets;
+    },
+    async getBrowseNames(locale:ItemMasterLocale):Promise<readonly (readonly [number,string])[]>{
+      assert(ITEM_MASTER_LOCALES.includes(locale),'INVALID_LOCALE');
+      const path='locale/'+locale+'.json',value=await asset(path);
+      assert(isObject(value)&&value.schema==='wand.item-master.complete-browse-names@1'&&
+        value.locale===locale&&Array.isArray(value.items)&&value.items.length===m.assets?.[path]?.count&&
+        value.items.every(r=>Array.isArray(r)&&r.length===2&&ID(r[0])&&typeof r[1]==='string'),
+        'INVALID_BROWSE_NAMES');
+      return value.items as (readonly [number,string])[];
+    },
+    async getSourceRelations():Promise<CompleteItemMasterRelations>{
+      const value=await asset('source-relations.json');
+      assert(isObject(value)&&value.schema==='wand.item-master.complete-source-relations@1'&&
+        Array.isArray(value.collectionSelectors)&&value.collectionSelectors.length===m.coverage.sourceSelectorCount&&
+        value.gameRuntimeMembershipVerified===false,'INVALID_SOURCE_RELATIONS');
+      return value as unknown as CompleteItemMasterRelations;
     }
   });
 }

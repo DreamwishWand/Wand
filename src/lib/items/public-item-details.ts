@@ -11,6 +11,8 @@ import {
   type ItemMasterRecord,
   type ItemMasterRelease,
   type ItemMasterOpenOptions,
+  type CompleteItemMasterRecord,
+  type PublicCompleteItemMaster,
 } from './public-item-master.ts';
 import {
   loadDb01ItemAcquisitionHandoff,
@@ -45,6 +47,10 @@ export interface PublicItemDetails {
 export interface PublicItemDetailsWithSources extends PublicItemDetails {
   readonly sourceRelations: Readonly<Db01ItemSourceRecord>;
 }
+/** Full native source definition and all currently published acquisition links. */
+export interface PublicCompleteItemDetails extends Omit<PublicItemDetailsWithSources,'definition'> {
+  readonly definition: Readonly<CompleteItemMasterRecord>;
+}
 export interface PublicItemDetailsClient {
   readonly contract: typeof PUBLIC_ITEM_DETAILS_CONTRACT;
   readonly release: ItemMasterRelease;
@@ -60,6 +66,10 @@ export interface PublicItemDetailsClient {
    * normal UI must resolve names/images rather than render technical IDs.
    * The original getItem/getItems remain lightweight for existing consumers.
    */
+  /** All source IDs, including definitions that do not have an icon or
+   * player-facing name. Existing v1/v2 readers are compatibility views. */
+  getCompleteItem(itemId:number):Promise<Readonly<PublicCompleteItemDetails>|null>;
+  getCompleteItems(itemIds:readonly number[]):Promise<readonly (Readonly<PublicCompleteItemDetails>|null)[]>;
   getItemWithSources(itemId: number):
     Promise<Readonly<PublicItemDetailsWithSources> | null>;
   getItemsWithSources(itemIds: readonly number[]):
@@ -91,10 +101,32 @@ export async function openPublicItemDetails(
   let sidecarTask: Promise<Db01ItemAcquisitionIndex> | null = null;
   let sourcesTask: Promise<Db01ItemSourceRelations> | null = null;
   let allSourceItemIds: readonly number[] | null = null;
+  let completeTask: Promise<PublicCompleteItemMaster>|null=null;
   const combined = new Map<number, Readonly<PublicItemDetails>>();
   const combinedWithSources = new Map<number, Readonly<PublicItemDetailsWithSources>>();
   const idLists = new Map<GameNativeItemCategory | undefined, readonly number[]>();
 
+  function complete():Promise<PublicCompleteItemMaster>{
+    if(completeTask)return completeTask;
+    const task=openPublicItemMaster(basePath,fetcher,{
+      scope:'complete',gameVersion:master.release.target.gameVersion
+    });
+    completeTask=task;
+    void task.catch(()=>{if(completeTask===task)completeTask=null;});
+    return task;
+  }
+  function combineComplete(definition:CompleteItemMasterRecord,
+    origins:Db01ItemAcquisitionIndex,index:Db01ItemSourceRelations):Readonly<PublicCompleteItemDetails>{
+    const acquisition=origins.getItem(definition.itemId);
+    const sourceRelations=index.getItem(definition.itemId);
+    assert(Number(acquisition.itemId)===definition.itemId&&
+      Number(sourceRelations.itemId)===definition.itemId,'ITEM_ID_MISMATCH');
+    assert(sourceRelations.categories.length===acquisition.categories.length&&
+      sourceRelations.categories.every((value,i)=>value===acquisition.categories[i]),
+      'ACQUISITION_SOURCE_CATEGORY_MISMATCH');
+    return Object.freeze({itemId:definition.itemId,definition,acquisition,sourceRelations,
+      currentAvailabilityVerified:false as const});
+  }
   function sidecar(): Promise<Db01ItemAcquisitionIndex> {
     if (sidecarTask) return sidecarTask;
     const task = loadDb01ItemAcquisitionHandoff(publicBase, fetcher)
@@ -185,6 +217,18 @@ export async function openPublicItemDetails(
     },
     async getAcquisitionCoverage() {
       return (await sidecar()).coverage;
+    },
+    async getCompleteItem(itemId:number){
+      const definition=await (await complete()).getItem(itemId);
+      if(!definition)return null;
+      const [origins,index]=await Promise.all([sidecar(),sources()]);
+      return combineComplete(definition,origins,index);
+    },
+    async getCompleteItems(itemIds:readonly number[]){
+      const definitions=await (await complete()).getItems(itemIds);
+      if(!definitions.some(Boolean))return definitions.map(()=>null);
+      const [origins,index]=await Promise.all([sidecar(),sources()]);
+      return definitions.map(definition=>definition?combineComplete(definition,origins,index):null);
     },
     async getItemWithSources(itemId: number) {
       const definition = await master.getItem(itemId);
