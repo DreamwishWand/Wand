@@ -276,3 +276,29 @@ test('independent decoration design retains unique local IDs and reversible chan
  const r=placeDesign(emptyDesign(),road,0,0,2,10,10);
  assert.equal(placeDesign(r,road,0,0,2,10,10),null);
 });
+
+import {serializeDesign,parseDesign,restoreDesign,designItemCounts} from '../src/lib/world/design-layout.ts';
+test('local design file round trip, exact grid identity, current geometry, atomic undo and item counts',()=>{
+ const grid={key:'Meadow',layoutId:'L',gridDataPath:'D',gridIdNative:1,sizeX:10,sizeY:10,factor:1};
+ const shape={width:2,height:1,runs:[{x:0,y:0,width:2}],cellCount:2,path:'M0 0h2v1h-2Z'};
+ const g={itemId:40000001,name:'Furniture',layer:'furniture',surfaceCapable:false,shapes:{'40000001:8':shape}};
+ const defs=new Map([[g.itemId,g]]);
+ let original=placeDesign(emptyDesign(),g,1,2,2,10,10);
+ original=placeDesign(original,g,4,2,2,10,10);
+ const doc=serializeDesign(original,grid);
+ const parsed=parseDesign(doc,grid);
+ assert.deepEqual(parsed,currentDesign(original));
+ assert.deepEqual([...designItemCounts(parsed)],[[40000001,2]]);
+ assert.throws(()=>parseDesign(doc,{...grid,factor:2}),/MISMATCH/);
+ assert.throws(()=>parseDesign(doc,{...grid,key:'Other'}),/MISMATCH/);
+ assert.throws(()=>parseDesign(JSON.stringify({...JSON.parse(doc),placements:[parsed[0],parsed[0]]}),grid),/INVALID/);
+ assert.equal(restoreDesign(emptyDesign(),parsed,new Map(),10,10),null);
+ assert.equal(restoreDesign(emptyDesign(),[{...parsed[0],x:9}],defs,10,10),null);
+ const previous=placeDesign(emptyDesign(),g,0,0,2,10,10);
+ const restored=restoreDesign(previous,parsed,defs,10,10);
+ assert.deepEqual(currentDesign(restored),parsed);
+ assert.deepEqual(currentDesign(travelDesign(restored,-1)),currentDesign(previous));
+ assert.equal(currentDesign(placeDesign(restored,g,6,2,2,10,10)).at(-1).id,3);
+ const road={...g,itemId:40100001,layer:'ground',shapes:{'40100001:8':shape}};
+ assert.equal(restoreDesign(emptyDesign(),parsed.map(p=>({...p,itemId:road.itemId,x:0,y:0})),new Map([[road.itemId,road]]),10,10),null);
+});

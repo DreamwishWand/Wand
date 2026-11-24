@@ -1,7 +1,7 @@
 import {createSourceGeometryCache} from './source-object-map.ts';
 import {sourceMapLayer} from './source-map-layers.ts';
 import {sourceEditRestrictions,nativeActionBlocked} from './native-edit-restrictions.ts';
-import type {DesignCatalogItem,DesignItemGeometry} from './design-layout.ts';
+import {DESIGN_LIMIT,type DesignCatalogItem,type DesignItemGeometry} from './design-layout.ts';
 import type {PublicCompleteItemMaster} from '../items/public-item-master.ts';
 import type {WandLanguage} from '../ui/preferences.ts';
 import init,{decode_public_terrain} from './wasm/pkg/wand_world_core.js';
@@ -84,16 +84,23 @@ scope.onmessage=async({data})=>{
       items.sort((a,b)=>a.name.localeCompare(b.name,locale)||a.itemId-b.itemId);
       scope.postMessage({kind:'design-catalog',requestId:id,key:grid.key,items});return;
     }
-    if(data.command==='design-shape'){
-      if(!Number.isSafeInteger(data.itemId)||data.itemId<1)throw Error('item');
-      const definitions=await loadGeometry(),definition=definitions.get(String(data.itemId));
-      if(definition?.nativeType!=='Furniture')throw Error('item type');
-      const source=publicShapeSource(grid,definitions),cache=createSourceGeometryCache(source,grid.factor);
-      const item=cache.resolve(data.itemId,8);
-      if(!item.shapeKey||item.layer==='other'||nativeActionBlocked(item.editRestrictions,'select'))throw Error('shape');
-      for(const code of [0,4,12])cache.resolve(data.itemId,code);
-      const result:DesignItemGeometry={itemId:data.itemId,name:item.name,layer:item.layer,surfaceCapable:item.surfaceCapable,editRestrictions:item.editRestrictions,shapes:cache.shapes};
-      scope.postMessage({kind:'design-shape',requestId:id,key:grid.key,result});return;
+    if(data.command==='design-shape'||data.command==='design-shapes'){
+      const batch=data.command==='design-shapes';
+      const ids:unknown=batch?data.itemIds:[data.itemId];
+      if(!Array.isArray(ids)||ids.length>DESIGN_LIMIT||new Set(ids).size!==ids.length||!ids.every(id=>Number.isSafeInteger(id)&&id>=1&&id<=0xffffffff))throw Error('items');
+      const definitions=await loadGeometry(),source=publicShapeSource(grid,definitions);
+      const results:DesignItemGeometry[]=[];
+      let runs=0;
+      for(const itemId of ids as number[]){
+        if(definitions.get(String(itemId))?.nativeType!=='Furniture')throw Error('item type');
+        const cache=createSourceGeometryCache(source,grid.factor),item=cache.resolve(itemId,8);
+        if(!item.shapeKey||item.layer==='other'||nativeActionBlocked(item.editRestrictions,'select'))throw Error('shape');
+        for(const code of [0,4,12])cache.resolve(itemId,code);
+        runs+=Object.values(cache.shapes).reduce((n,shape)=>n+shape.runs.length,0);
+        if(runs>1_000_000)throw Error('geometry limit');
+        results.push({itemId,name:item.name,layer:item.layer,surfaceCapable:item.surfaceCapable,editRestrictions:item.editRestrictions,shapes:cache.shapes});
+      }
+      scope.postMessage({kind:batch?'design-shapes':'design-shape',requestId:id,key:grid.key,result:batch?results:results[0]});return;
     }
     if(data.command==='shapes'){
       const points=parseSavedShapePoints(data.points);
