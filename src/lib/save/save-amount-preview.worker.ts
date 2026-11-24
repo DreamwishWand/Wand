@@ -14,6 +14,8 @@ import {
   MAX_LOCAL_JSON_BYTES
 } from './save-diagnostics-worker-core.mjs';
 
+import {MAX_GRID_MIXED_EDITS} from './grid-edit-limits.ts';
+
 const CHUNK = 1024 * 1024;
 const MAX_COPY_BYTES = 32 * 1024 * 1024;
 type InputFormat = 'auto' | 'json' | 'p1g';
@@ -565,7 +567,7 @@ interface GridMixedPlan {
   replacementOrientation:CardinalOrientation|null;
 }
 function validateGridMixedEdits(raw:unknown):GridMixedPlan[]{
-  if(!Array.isArray(raw)||raw.length<1||raw.length>16)
+  if(!Array.isArray(raw)||raw.length<1||raw.length>MAX_GRID_MIXED_EDITS)
     throw new TypeError('DB05_GRID_MIXED_COUNT_INVALID');
   const seen=new Set<number>();
   return raw.map((value:unknown)=>{
