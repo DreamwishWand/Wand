@@ -2,6 +2,7 @@
   import { onMount, tick } from 'svelte';
   import { base } from '$app/paths';
   import {collectionHasRecordedProgress,collectionOverwriteMessage,collectionHasQuantity,collectionQuantityPatch} from '$lib/collection/manual-record.ts';
+  import CollectionSourceMarks from '$lib/collection/CollectionSourceMarks.svelte';
   import QuickCollectionRecord from '$lib/collection/QuickCollectionRecord.svelte';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
   import ItemMasterDetails from '$lib/collection/ItemMasterDetails.svelte';
@@ -599,6 +600,7 @@
     const task=loadCollectionDb01Facets(base).then(index=>{
       if(generation!==sourceGeneration||!canUseDb01SourceFacets())return;
       sourceIndex=index;worldBrowseIndex=buildWorldBrowseIndex(index);sourceGroupsCacheKey='';
+      ensureAcquisitionIndex();
       const sourceGroups=collectionDb01Groups(index,[...index.byItem.keys()]);
       sourceUniverseOptions=COLLECTION_UNIVERSE_TAG_NAMES.map(row=>({
         key:String(row.id),
@@ -622,7 +624,8 @@
     const generation=sourceGeneration;
     const task=loadDb01ItemAcquisitionHandoff(base).then(index=>{
       if(generation!==sourceGeneration||!canUseDb01SourceFacets())return;
-      acquisitionIndex=index;refresh();
+      acquisitionIndex=index;
+      if(acquisitionFilter)refresh();
     }).catch(()=>{
       if(generation===sourceGeneration)acquisitionLoadError=canUseDb01SourceFacets();
     }).finally(()=>{if(acquisitionLoad===task)acquisitionLoad=null;});
@@ -739,7 +742,7 @@
       editHistory.recordCollection(before,runtime.state,description);
       storeError='';
       if(changedId!==undefined)refreshEditedItem(changedId);else refresh();
-      infoMessage='ブラウザ内のCollection記録を更新しました。DDVセーブファイルは変更していません。';
+      if(changedId!==undefined)infoMessage='';
     }catch(error){storeError=error instanceof Error?error.message:String(error);}
     finally{busy=false;editHistory.endCollectionEdit();}
   }
@@ -793,11 +796,6 @@
     if(!runtime||busy||saveReadInProgress)return;
     const patch=collectionQuantityPatch(value);
     if(!patch||entries[String(id)]?.quantity===patch.quantity)return;
-    void commit(()=>runtime!.setEntry(id,patch),describeEntry(id,patch),false,id);
-  }
-  function toggleItemDiscovery(id:number):void{
-    if(!runtime||busy||saveReadInProgress)return;
-    const patch={discovered:entries[String(id)]?.discovered!==true};
     void commit(()=>runtime!.setEntry(id,patch),describeEntry(id,patch),false,id);
   }
   async function showItem(id:number,event:MouseEvent):Promise<void>{
@@ -1165,7 +1163,7 @@
       });
       storeError='';
       refresh();
-      infoMessage=`セーブの発見履歴 ${applied.discovery.toLocaleString(locale)}件、正の数量で確認した所持 ${applied.ownership.toLocaleString(locale)}件をローカル記録へ反映しました。数量0・未収録ID・矛盾するIDは手動記録を維持します。元のセーブには書き込みません。`;
+      infoMessage=locale==='ja'?'セーブの情報を反映しました。':'Save data applied.';
     }catch(error){
       storeError=error instanceof Error?error.message:String(error);
       infoMessage='セーブの状態は反映されませんでした。既存の手動記録は維持しています。';
@@ -1488,12 +1486,13 @@
                         <span class="item-icon" aria-hidden="true">
                           <ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null}/>
                         </span>
-                        <span class="item-card-copy"><strong>{item.label}</strong></span>
+                        <span class="item-card-copy"><strong title={item.label}>{item.label}</strong>
+                          <CollectionSourceMarks index={acquisitionIndex} itemId={item.itemId} {locale}/>
+                        </span>
                       </button>
                       <QuickCollectionRecord {item} entry={entries[String(item.itemId)]??{}} {copy}
                         disabled={Boolean(storeError)||busy||saveReadInProgress||selectionMode}
                         onToggle={()=>toggleItemStatus(item.itemId)}
-                        onDiscovery={()=>toggleItemDiscovery(item.itemId)}
                         onQuantity={value=>changeItemQuantity(item.itemId,value)}/>
                     </div>
                   {/each}
@@ -1554,12 +1553,13 @@
                         aria-pressed={selectionMode?selectedIds.includes(item.itemId):selectedItemId===item.itemId}
                         aria-label={selectionMode?`${item.label}${copy.itemSelect}`:`${item.label}${copy.itemDetails}`}>
                         <span class="item-icon" aria-hidden="true">{#if selectionMode}{selectedIds.includes(item.itemId)?'☑':'☐'}{:else}<ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null} />{/if}</span>
-                        <span class="item-card-copy"><strong>{item.label}</strong><span>{displayItemCategory(item)}</span></span>
+                        <span class="item-card-copy"><strong title={item.label}>{item.label}</strong>
+                          {#if !selectionMode}<CollectionSourceMarks index={acquisitionIndex} itemId={item.itemId} {locale}/>{/if}
+                        </span>
                       </button>
                       <QuickCollectionRecord {item} entry={entries[String(item.itemId)]??{}} {copy}
                         disabled={Boolean(storeError)||busy||saveReadInProgress||selectionMode}
                         onToggle={()=>toggleItemStatus(item.itemId)}
-                        onDiscovery={()=>toggleItemDiscovery(item.itemId)}
                         onQuantity={value=>changeItemQuantity(item.itemId,value)}/>
                     </div>
                   {/each}
@@ -1714,3 +1714,13 @@
     </div>
   {/if}
 </section>
+
+<style>
+  .items-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),1fr));gap:6px}
+  .item-card{padding:5px 6px;gap:4px;min-height:48px}
+  .item-card-body{gap:6px;min-height:40px}
+  .item-card-copy{gap:3px}
+  .item-card-copy strong{font-size:12px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;white-space:normal;overflow:hidden}
+  .item-icon{width:40px;height:40px}
+  @media(max-width:470px){.items-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}.item-card{flex-wrap:wrap;padding:4px}.item-card-body{flex-basis:100%}.item-card :global(.quick-record){margin-left:auto}.item-card-copy strong{font-size:11px}}
+</style>
