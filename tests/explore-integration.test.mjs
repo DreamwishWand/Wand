@@ -25,3 +25,11 @@ test('all universes use one shared incremental frontier and identical wrapping g
   assert.match(chunk,/\{#if visible\|\|focusWithin\}/);
   assert.match(chunk,/items.slice\(chunk.start,chunk.end\)/);
 });
+
+test('Explore uses the shared toolbar, flat filters, and noninteractive headings',()=>{
+ assert.match(explore,/registerServiceToolbar\(exploreToolbar\)/);
+ assert.match(explore,/readSelectedOwnership/);
+ assert.match(explore,/matchesScope\(i,scope\)/);
+ assert.match(explore,/<h2 class="universe-heading">/);
+ assert.doesNotMatch(explore,/<details|showUniverse|searchOpen|allGrid/);
+});

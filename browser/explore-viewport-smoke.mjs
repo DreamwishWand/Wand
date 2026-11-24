@@ -11,6 +11,10 @@ try{
  const page=await browser.newPage({viewport:{width:1280,height:720}});
  const errors=[];page.on('pageerror',e=>errors.push(String(e)));
  await page.goto(url);
+ await page.locator('.site-header .explore-service-toolbar').waitFor();
+ assert.equal(await page.locator('[data-scope="outdoor"]').getAttribute('aria-pressed'),'true');
+ assert.ok(await page.getByRole('searchbox').isVisible());
+ assert.ok(await page.getByRole('button',{name:/所有済みのみ|Owned only/}).isDisabled());
  const cards=page.locator('.catalog-tile'),catalog=page.locator('.catalog');
  await cards.first().waitFor({timeout:30000});
  await page.waitForFunction(()=>{const e=document.querySelector('.catalog');return Number(e?.getAttribute('data-explore-revealed'))>=24;});
@@ -41,11 +45,12 @@ try{
  await page.getByRole('button',{name:/ムードボード|Moodboards/,exact:true}).click();
  await page.waitForFunction(n=>Number(document.querySelector('[data-explore-grid]')?.getAttribute('data-columns'))<n,firstColumns);
  await page.getByRole('button',{name:/閉じる|Close/,exact:true}).last().click();
+ await page.locator('[data-scope="all"]').click();
  // Both special universes use the same one-grid layout as ordinary universes.
  for(const id of ['2000500023','2000500017']){
   await page.getByRole('button',{name:/フィルター|Filters/,exact:true}).click();
   const filter=page.locator('[data-universe-filter="'+id+'"]');
-  if(!await filter.isVisible())await page.locator('.filter-panel details').nth(1).locator('summary').click();
+  assert.ok(await filter.isVisible());
   await page.locator('.filter-panel').getByRole('button',{name:/クリア|Clear/,exact:true}).click();
   await filter.click();
   await page.locator('.filter-panel').getByRole('button',{name:/閉じる|Close/,exact:true}).click();
@@ -53,11 +58,16 @@ try{
   await section.waitFor();
   assert.equal(await section.locator('[data-explore-grid]').count(),1);
   assert.equal(await section.locator('[data-series-block],[data-series-block-grid],.shelf-row').count(),0);
-  await page.setViewportSize({width:390,height:844});
+  assert.equal(await section.locator('h2.universe-heading').count(),1);
+ await page.setViewportSize({width:390,height:844});
   await page.waitForFunction(()=>Number(document.querySelector('[data-explore-grid]')?.getAttribute('data-columns'))<=5);
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2));
   await page.setViewportSize({width:1280,height:720});
  }
+ await page.locator('[data-scope="indoor"]').click();
+ await page.reload();
+ await page.locator('.site-header .explore-service-toolbar').waitFor();
+ assert.equal(await page.locator('[data-scope="indoor"]').getAttribute('aria-pressed'),'true');
  assert.deepEqual(errors,[]);
  console.log('EXPLORE_PROGRESSIVE '+JSON.stringify({total,initial,initialCards,initialHeight,after,desktopColumns:firstColumns}));
 }finally{await browser?.close();server.kill();}
