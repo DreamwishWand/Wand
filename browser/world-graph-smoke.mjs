@@ -1037,6 +1037,35 @@ try{
     /PRIVATE_STEAM1262_SOURCE_REQUIRED/);
   assert.equal(await panel.locator('.graph-result-head').count(),0);
 
+  // Public editor uses the actual published mainland terrain, no private ZIP.
+  await page.goto('http://127.0.0.1:4178/Wand/world/');
+  const publicWorld=page.locator('.world-workspace');
+  await publicWorld.getByRole('button',{name:'Peaceful Meadow',exact:true}).waitFor({timeout:20000});
+  await publicWorld.locator('.media-map-overlay .cell-mask').waitFor({timeout:20000});
+  const worldSave={GameInfo:{Version:1262},Player:{},World:{GridCollection:{Grids:{
+    "101":{ID:101,GridDefaultLayoutPath:'SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json',
+      GridDataPath:'GridData/Villages/Village04-MeadowLevel-GridData.json',
+      Objects:{"1":{ID:1,ItemID:40005160,X:4,Y:5,Orientation:'GridOrientation_Down'}}},
+    "102":{ID:102,GridDefaultLayoutPath:'SceneLayouts/Village04/DefaultVillageLayout01-UrbanGrids.json',
+      GridDataPath:'GridData/Villages/Village04-UrbanLevel-GridData.json',TessellationFactor:2,
+      Objects:{"2":{ID:2,ItemID:40005160,X:7,Y:6,Orientation:'GridOrientation_Down'}}}
+  },DiffGrids:{}}}};
+  await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({
+    name:'synthetic-public-world.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(worldSave))});
+  await publicWorld.locator('.saved-terrain-background').waitFor({timeout:30000});
+  await publicWorld.locator('.saved-object').first().waitFor({timeout:30000});
+  assert.equal(await publicWorld.locator('.saved-object').first().getAttribute('transform'),'translate(4 5)');
+  await publicWorld.getByRole('button',{name:'Plaza',exact:true}).click();
+  await publicWorld.locator('.saved-object').first().waitFor({timeout:20000});
+  assert.equal(await publicWorld.locator('.saved-terrain-background').count(),0);
+  await publicWorld.getByRole('button',{name:'Peaceful Meadow',exact:true}).click();
+  await publicWorld.locator('.saved-terrain-background').waitFor({timeout:20000});
+  await publicWorld.getByLabel('ワールド',{exact:true}).selectOption('VillageExpansion01');
+  await publicWorld.locator('.media-map-overlay .cell-mask').waitFor({timeout:20000});
+  await publicWorld.getByLabel('ワールド',{exact:true}).selectOption('Village04');
+  await publicWorld.getByRole('button',{name:'Peaceful Meadow',exact:true}).click();
+  await publicWorld.locator('.saved-terrain-background').waitFor({timeout:20000});
+
   assert.deepEqual(pageErrors,[],pageErrors.join('\n'));
   assert.deepEqual(unexpectedWrites,[],unexpectedWrites.join('\n'));
   await page.close();

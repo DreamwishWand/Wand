@@ -1289,6 +1289,15 @@ mod browser_amount_preview {
         /// Read-only DB-04 source file dimensions and possible original Grid
         /// references for each ephemeral saved object ordinal. This is NOT
         /// identity proof, source/save coordinate conversion or Writer grant.
+        pub fn match_db04_terrain_session(&self,witness:&str)->Result<String,JsValue>{
+            if !self.ready||self.closed{return Err(fail("DB05_GRID_OBJECT_SOURCE_SESSION_NOT_OPEN"));}
+            let profile=match self.kind{
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_GRID_OBJECT_SOURCE_SESSION_NOT_OPEN"))?.profile.as_slice()
+            };
+            grid_instance_preview::saved_db04_terrain_session_json(profile,witness)
+                .map_err(|_|fail("DB05_GRID_TERRAIN_SESSION_INVALID"))
+        }
         pub fn match_db04_grid_object_sources(
             &self,witness:&str
         )->Result<String,JsValue>{

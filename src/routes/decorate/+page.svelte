@@ -11,7 +11,7 @@
   <h1>Decorate</h1>
   <div class="choices">
     <a href={base+'/decorate/explore/'}><WandIcon name="palette" size={48}/><strong>Explore</strong><span>{locale==='ja'?'アイテムを探し、アイデアをまとめる':'Discover the pieces, gather your vision'}</span></a>
-    <div class="disabled" aria-disabled="true"><WandIcon name="world" size={48}/><strong>World Editor</strong><span>{locale==='ja'?'準備中':'Coming soon'}</span></div>
+    <a href={base+'/world/'}><WandIcon name="world" size={48}/><strong>World Editor <small>β</small></strong><span>{locale==='ja'?'ワールドの配置を編集':'Edit your world layout'}</span></a>
   </div>
 </section>
 <style>

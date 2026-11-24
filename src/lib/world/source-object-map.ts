@@ -14,6 +14,7 @@ export interface SourceShapeRun {readonly x:number;readonly y:number;readonly wi
 export interface SourceObjectShape {
   readonly width:number;readonly height:number;readonly runs:readonly SourceShapeRun[];
   readonly cellCount:number;readonly path:string;
+  readonly acceptedFloorTypesFlag?:number;
 }
 export interface SourceMapObject {
   readonly id:number;readonly itemId:number;readonly name:string|null;
@@ -70,7 +71,7 @@ export function createSourceGeometryCache(source:unknown,factor:1|2){
             runs.push({x:start,y,width:x-start});cellCount+=x-start;
           }
           if(cellCount){
-            shape={width,height,runs,cellCount,path:runs.map(run=>
+            shape={width,height,runs,cellCount,acceptedFloorTypesFlag:e.acceptedFloorTypesFlag??undefined,path:runs.map(run=>
               'M'+run.x+' '+run.y+'h'+run.width+'v1h-'+run.width+'Z').join('')};
             shapes[key]=shape;
           }

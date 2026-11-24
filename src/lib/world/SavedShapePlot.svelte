@@ -1,5 +1,7 @@
 <script lang="ts">
   import {onMount,onDestroy} from 'svelte';
+  import {terrainWarnings,type TerrainBinding} from './terrain-binding.ts';
+  import {nativeSourceFloorTint} from './native-terrain-canvas.ts';
   import {base} from '$app/paths';
   import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences';
   import {openPublicItemMaster,type PublicCompleteItemMaster} from '$lib/items/public-item-master';
@@ -14,6 +16,19 @@
   import {sourceOrientationAngle} from './source-object-map.ts';
   export let map:SavedShapeMap;
   export let file:File|null=null;
+  export let terrain:TerrainBinding|null=null;
+  export let compact=false;
+  $: activeTerrain=terrain&&terrain.verifiedGridOrdinals.includes(activeOrdinal)?terrain:null;
+  $: terrainUrl=activeTerrain?terrainImage(activeTerrain):'';
+  function terrainImage(binding:TerrainBinding){
+    const raster=binding.raster,canvas=document.createElement('canvas');canvas.width=raster.sizeX;canvas.height=raster.sizeY;
+    const ctx=canvas.getContext('2d');if(!ctx)return '';const data=ctx.createImageData(canvas.width,canvas.height);
+    const cache=new Map<number,readonly [number,number,number]>();
+    for(let i=0;i<raster.nativeFloorValues.length;i++){
+      const value=raster.nativeFloorValues[i];let rgb=cache.get(value);if(!rgb){rgb=nativeSourceFloorTint(value);cache.set(value,rgb);}
+      data.data.set([rgb[0],rgb[1],rgb[2],255],i*4);
+    }ctx.putImageData(data,0,0);return canvas.toDataURL('image/png');
+  }
   let locale:WandLanguage='ja';
   let names:WorldNames=new Map();
   let master:Promise<PublicCompleteItemMaster>|null=null;
@@ -68,10 +83,12 @@
   $: pendingDraft=staged.length>0&&editPlan!==null;
   function stageCurrent(){
     if(!chosen||busy||placing||!editPlan||committedConflict)return;
-    const warning=overlap?[overlap.counts['shape-overlap']?'重なり候補 '+overlap.counts['shape-overlap']+'マス':'',
+    const overlapWarning=overlap?[overlap.counts['shape-overlap']?'重なり候補 '+overlap.counts['shape-overlap']+'マス':'',
       overlap.counts['landscape-overlap']?'景観との重なり '+overlap.counts['landscape-overlap']+'マス':'',
       overlap.counts['support-unknown']?'上下関係不明 '+overlap.counts['support-unknown']+'マス':'',
       overlap.unresolvedObjects||overlap.truncated?'一部未評価':''].filter(Boolean).join('・'):'';
+    const floorCount=floorWarnings.reduce((n,r)=>n+r.width,0);
+    const warning=[overlapWarning,floorCount?'地形範囲外・属性不一致候補 '+floorCount+'マス':''].filter(Boolean).join('・');
     const next=stageWorldEdit(map,timeline,chosen.localOrdinal,draftX,draftY,draftOrientation,warning);
     if(!next){stageError='編集を追加できません。最大'+WORLD_BATCH_LIMIT+'件です。';return;}
     cancelEdit();timeline=next;stageError='';
@@ -88,6 +105,7 @@
   $: anchorConflict=showDraft&&exclusiveAnchorConflict(effectiveMap,chosen,previewX,previewY);
   $: committedConflict=exclusiveAnchorConflict(effectiveMap,chosen,draftX,draftY);
   $: overlap=showDraft&&chosen&&draftShape&&previewX!==undefined&&previewY!==undefined? savedDraftOverlap(effectiveMap,chosen,draftShape,previewX,previewY):null;
+  $: floorWarnings=showDraft&&activeTerrain&&draftShape&&previewX!==undefined&&previewY!==undefined?terrainWarnings(activeTerrain,draftShape,previewX,previewY):[];
   $: if(!file)cancelEdit();
   async function runEdit(exporting:boolean){
     const source=file,plans=exportPlans,signature=draftSignature;
@@ -144,14 +162,14 @@
   $: layers=(Object.keys(MAP_LAYER_LABELS) as MapSelectionLayer[]).filter(l=>l==='all'||objects.some(o=>matchesSelectionLayer(o,l)));
   $: chosen=objects.find(o=>o.localOrdinal===selected)??null;
   $: stagedOrdinals=new Set(staged.map(e=>e.plan.localOrdinal));
-  function bounds(list:SavedShapeObject[],m:SavedShapeMap){
-    if(!list.length)return {x:0,y:0,w:1,h:1};
-    let x=Infinity,y=Infinity,right=-Infinity,bottom=-Infinity;
+  function bounds(list:SavedShapeObject[],m:SavedShapeMap,t:TerrainBinding|null){
+    if(!list.length&&!t)return {x:0,y:0,w:1,h:1};
+    let x=t?0:Infinity,y=t?0:Infinity,right=t?t.raster.sizeX*t.factor:-Infinity,bottom=t?t.raster.sizeY*t.factor:-Infinity;
     for(const o of list){const s=o.shapeKey?m.shapes[o.shapeKey]:null;
       x=Math.min(x,o.x);y=Math.min(y,o.y);right=Math.max(right,o.x+(s?.width??1));bottom=Math.max(bottom,o.y+(s?.height??1));}
     return {x:x-1,y:y-1,w:right-x+2,h:bottom-y+2};
   }
-  $: extent=bounds(objects,map);
+  $: extent=bounds(objects,map,activeTerrain);
   $: maxZoom=maxMapZoom(Math.max(extent.w,extent.h));
   $: viewBox=mapCameraViewBox(cameraState,extent);
   function changeZoom(n:number){cameraState=zoomMapCamera(cameraState,n,maxZoom);}
@@ -223,6 +241,7 @@
         <path d="M1 0H0V1" fill="none" stroke="#8f9aa8" stroke-opacity=".35" stroke-width=".04"/>
       </pattern></defs>
       <rect x={extent.x} y={extent.y} width={extent.w} height={extent.h} fill="#27313a"/>
+      {#if activeTerrain&&terrainUrl}<image class="saved-terrain-background" href={terrainUrl} x="0" y="0" width={activeTerrain.raster.sizeX*activeTerrain.factor} height={activeTerrain.raster.sizeY*activeTerrain.factor} preserveAspectRatio="none" style="image-rendering:pixelated"/>{/if}
       {#if extent.w/zoom<160&&extent.h/zoom<160}<rect x={extent.x} y={extent.y} width={extent.w} height={extent.h} fill="url(#saved-shape-cells)"/>{/if}
       {#each objects as o (o.localOrdinal)}
         {@const shape=o.shapeKey?map.shapes[o.shapeKey]:null}
@@ -242,6 +261,7 @@
           <rect class="saved-overlap-cell" data-evidence={run.evidence} x={run.x} y={run.y} width={run.width} height="1"
             fill={OVERLAP_COLORS[run.evidence]} fill-opacity=".8" stroke={OVERLAP_COLORS[run.evidence]} stroke-width="1" vector-effect="non-scaling-stroke"/>
         {/each}{/if}
+        {#each floorWarnings as run (run.x+','+run.y)}<rect class="saved-terrain-warning" data-reason={run.reason} x={run.x} y={run.y} width={run.width} height="1" fill="#ef5350" fill-opacity=".85" stroke="#ef5350" stroke-width="1" vector-effect="non-scaling-stroke"/>{/each}
         {#if anchorConflict}<rect class="exclusive-anchor-conflict" x={previewX} y={previewY} width="1" height="1" fill="#ef5350" fill-opacity=".9" stroke="#fff" stroke-width="2" vector-effect="non-scaling-stroke"/>{/if}
       {/if}
     </svg>
@@ -274,7 +294,8 @@
         </div>
         {#if overlap.unresolvedObjects||overlap.truncated}<p>形状不明・未評価のオブジェクトがあります。</p>{/if}
       {/if}
-      <p>色は原本形状による重なり候補です。配置許可とは別で、他の家具・小物・景観は削除・自動移動しません。</p>
+      {#if floorWarnings.length}<p style:color="#ef5350">地形範囲外・属性不一致候補 {floorWarnings.reduce((n,r)=>n+r.width,0)}マス</p>{/if}
+      {#if !compact}<p>色は原本形状による重なり候補です。配置許可とは別で、他の家具・小物・景観は削除・自動移動しません。</p>{/if}
       {#if editPlan}<button type="button" disabled={busy||placing||committedConflict} on:click={stageCurrent}>配置変更を追加</button>{/if}
       {#if stageError}<p role="alert">{stageError}</p>{/if}
     </div>
@@ -304,7 +325,7 @@
   {#if busy}<p role="status">ローカル処理中…</p>{/if}
   {#if editError}<p role="alert">{editError}</p>{/if}
   {#if copyUrl}<a href={copyUrl} download={copyName}>編集済みコピーを保存</a>{/if}
-  <p>原本定義による形状候補（原本Grid倍率 {map.sourceGridFactor??'不明'}）。丸印は形状不明。実際の占有・上下関係は未確認。</p>
+  {#if !compact}<p>原本定義による形状候補（原本Grid倍率 {map.sourceGridFactor??'不明'}）。丸印は形状不明。実際の占有・上下関係は未確認。</p>{:else}<p>{activeTerrain?'原本地形と配置を同じローカル座標で表示。':'地形との座標対応未確認。'}形状・重複は候補、ゲーム内ロード未確認。</p>{/if}
 </div>
 <style>
   .saved-shape-plot{display:grid;gap:6px;min-width:0}

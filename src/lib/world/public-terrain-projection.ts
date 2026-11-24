@@ -3,9 +3,12 @@ import type {ItemFieldRow} from '../items/item-field-reader.ts';
 const record=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const u32=(n:unknown):n is number=>typeof n==='number'&&Number.isSafeInteger(n)&&n>=0&&n<=0xffffffff;
 const sha=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v);
-export interface PublicTerrainGrid{
+export interface PublicTerrainGridRef{
   readonly key:string;readonly layoutId:string;readonly gridDataPath:string;readonly gridIdNative:number;
-  readonly sizeX:number;readonly sizeY:number;readonly factor:1|2;readonly palette:readonly number[];
+  readonly sizeX:number;readonly sizeY:number;readonly factor:1|2;
+}
+export interface PublicTerrainGrid extends PublicTerrainGridRef{
+  readonly palette:readonly number[];
   readonly counts:readonly number[];readonly sha256:string;readonly data:string;
 }
 export interface PublicTerrainBundle{
@@ -13,6 +16,44 @@ export interface PublicTerrainBundle{
   readonly grids:readonly PublicTerrainGrid[];
 }
 export const PUBLIC_TERRAIN_PATH='ddv/world/steam-1.26.2/village04.json';
+export const PUBLIC_TERRAIN_ROOT='ddv/world/steam-1.26.2';
+export interface PublicTerrainRegion{
+ readonly scope:string;readonly path:string;readonly sha256:string;
+ readonly gridCount:number;readonly cellCount:number;readonly grids:readonly PublicTerrainGridRef[];
+}
+export interface PublicTerrainRelease{
+ readonly schema:'wand.db04.terrain-release@1';readonly platform:'Steam';readonly gameVersion:'1.26.2';
+ readonly completeWorldCoverage:false;readonly entries:readonly PublicTerrainRegion[];
+}
+function validGridRef(g:unknown):g is PublicTerrainGridRef{
+ return record(g)&&typeof g.key==='string'&&g.key.length>0&&g.key.length<=512&&
+  typeof g.layoutId==='string'&&g.layoutId.startsWith('SceneLayouts/')&&g.layoutId.endsWith('.json')&&!g.layoutId.includes('..')&&!g.layoutId.includes('\\')&&
+  typeof g.gridDataPath==='string'&&g.gridDataPath.startsWith('GridData/')&&g.gridDataPath.endsWith('.json')&&!g.gridDataPath.includes('..')&&!g.gridDataPath.includes('\\')&&
+  u32(g.gridIdNative)&&u32(g.sizeX)&&u32(g.sizeY)&&g.sizeX>0&&g.sizeY>0&&g.sizeX*g.sizeY<=250000&&(g.factor===1||g.factor===2);
+}
+export function parsePublicTerrainRelease(value:unknown):PublicTerrainRelease{
+ if(!record(value)||value.schema!=='wand.db04.terrain-release@1'||value.platform!=='Steam'||value.gameVersion!=='1.26.2'||value.completeWorldCoverage!==false||
+   !Array.isArray(value.entries)||!value.entries.length||value.entries.length>128)throw Error('DB04_TERRAIN_RELEASE_INVALID');
+ const scopes=new Set<string>(),keys=new Set<string>(),pairs=new Set<string>(),ids=new Set<string>();
+ for(const entry of value.entries){
+   if(!record(entry)||typeof entry.scope!=='string'||!/^[A-Za-z][A-Za-z0-9]{0,127}$/.test(entry.scope)||scopes.has(entry.scope)||
+     entry.path!==entry.scope.toLowerCase()+'.json'||!sha(entry.sha256)||!u32(entry.gridCount)||entry.gridCount<1||
+     !u32(entry.cellCount)||!Array.isArray(entry.grids)||entry.grids.length!==entry.gridCount||entry.gridCount>2048)throw Error('DB04_TERRAIN_REGION_INVALID');
+   scopes.add(entry.scope);let cells=0;
+   for(const g of entry.grids){
+     if(!validGridRef(g)||keys.has(g.key)||!g.layoutId.startsWith('SceneLayouts/'+entry.scope+'/'))throw Error('DB04_TERRAIN_REF_INVALID');
+     const pair=g.layoutId+'\0'+g.gridDataPath,id=g.layoutId+'\0'+g.gridIdNative;
+     if(pairs.has(pair)||ids.has(id))throw Error('DB04_TERRAIN_REF_AMBIGUOUS');
+     pairs.add(pair);ids.add(id);keys.add(g.key);cells+=g.sizeX*g.sizeY;
+   }
+   if(cells!==entry.cellCount)throw Error('DB04_TERRAIN_REGION_COUNT');
+ }
+ if(keys.size>2048)throw Error('DB04_TERRAIN_RELEASE_LIMIT');
+ return value as unknown as PublicTerrainRelease;
+}
+export function sameTerrainGrid(a:PublicTerrainGridRef,b:PublicTerrainGridRef):boolean{
+ return a.key===b.key&&a.layoutId===b.layoutId&&a.gridDataPath===b.gridDataPath&&a.gridIdNative===b.gridIdNative&&a.sizeX===b.sizeX&&a.sizeY===b.sizeY&&a.factor===b.factor;
+}
 export function parsePublicTerrainBundle(value:unknown):PublicTerrainBundle{
   if(!record(value)||value.schema!=='wand.db04.terrain-projection@1'||value.platform!=='Steam'||value.gameVersion!=='1.26.2'||
     value.coordinateBasis!=='source_grid_local_y_major'||value.completeWorldCoverage!==false||value.placementLegalityVerified!==false||
@@ -60,7 +101,7 @@ export function publicShapeDefinitions(geometry:readonly ItemFieldRow[],categori
     objects.set(String(id),{itemId:id,nativeType:kind,nativeName:typeof labels.get(id)==='string'?labels.get(id):null,footprint:null});
   return objects;
 }
-export function publicShapeSource(grid:PublicTerrainGrid,objects:Map<string,Record<string,unknown>>){
+export function publicShapeSource(grid:PublicTerrainGridRef,objects:Map<string,Record<string,unknown>>){
   return {manifest:{platform:'Steam',gameVersion:'1.26.2'},objects,
     layouts:new Map([[grid.layoutId,{layoutKind:'nativeGridCollection',
       nativeGridEntries:[{gridIdNative:grid.gridIdNative,gridDataPath:grid.gridDataPath,tessellationFactor:grid.factor,defaultObjectCount:0}]}]]),
