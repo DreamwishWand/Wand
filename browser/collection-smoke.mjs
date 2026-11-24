@@ -502,6 +502,15 @@ try{
   assert.ok(await furnitureKinds.count()>5,'furniture uses source-backed detailed categories');
   assert.equal(await page.locator('[data-native-subtype="Furniture:0"]').count(),0);
   await returnRoot();
+  await page.locator('[data-top-category="mounts"]').click();
+  assert.ok(await page.locator('[data-native-subtype="mount:base"]').count());
+  assert.ok(await page.locator('[data-native-subtype="mount:skin"]').count());
+  assert.ok(await page.locator('[data-native-subtype="mount:gear"]').count());
+  await returnRoot();
+  await page.locator('[data-top-category="characters"]').click();
+  await page.locator('.item-card').first().waitFor();
+  assert.equal(await page.locator('.collection-native-subtype').count(),0);
+  await returnRoot();
   assert.equal(await page.locator('[data-top-category="buildings"]').isDisabled(),
     !(completeIndex.itemsByRoot.get('buildings')?.length));
   // A failed v3 source asset must fail closed; reloading retries verified data.
@@ -679,7 +688,7 @@ try{
   await page.waitForFunction(()=>document.querySelector('.item-card-copy strong')?.textContent?.trim()==='Glass Shoe');
   await setItemLanguage('日本語');
   await page.waitForFunction(()=>document.querySelector('.item-card-copy strong')?.textContent?.trim()==='ガラスの靴');
-  assert.match(await page.locator('.item-card').first().innerText(),/家具|Furniture/);
+  assert.equal(await page.locator('.item-card-copy strong').first().innerText(),'ガラスの靴');
   // A local favorite must be searchable independently of ownership and persist
   // through Rust/WASM -> IndexedDB. Unstarring the only match removes it.
   const starFilter=page.getByRole('button',{name:'お気に入りのみ表示'});
