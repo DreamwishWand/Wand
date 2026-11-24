@@ -104,6 +104,44 @@ function loadLocalizations(project,e,version,source,byId){
   return {translations:l.translations,coverage:{itemCount:l.count,keyCount:l.keyCount,
     allLocalesKeyCount:all,fieldCounts:l.fieldCounts,localeCounts:l.localeCounts,evidence:l.evidence}};
 }
+// Service-neutral, sparse columns compiled from the canonical complete rows.
+ // The source namespace combines decoded native scalar and structured fields.
+ // Explicit null/false/zero/empty values are retained; absent fields are omitted.
+function writeFieldColumns(rows,release,write,assets){
+  const columns=new Map();
+  const split=new Set(['names','artwork','itemType','nativeProperties','sourceAttributes']);
+  const add=(field,id,value)=>{
+    check(/^[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)?$/.test(field),'COLUMN_NAME');
+    check(value!==undefined,'COLUMN_UNDEFINED');
+    let entries=columns.get(field);
+    if(!entries){entries=[];columns.set(field,entries);}
+    check(!entries.length||entries[entries.length-1][0]<id,'COLUMN_DUPLICATE');
+    entries.push([id,value]);
+  };
+  for(const row of rows){
+    for(const [key,value] of Object.entries(row)){
+      if(!split.has(key)){add(key,row.itemId,value);continue;}
+      const prefix=key==='nativeProperties'||key==='sourceAttributes'?'source':key;
+      for(const [name,part] of Object.entries(value))add(prefix+'.'+name,row.itemId,part);
+    }
+  }
+  const fields=[];
+  for(const [field,entries] of [...columns].sort(([a],[b])=>a<b?-1:a>b?1:0)){
+    const blocks=[];
+    for(let start=0;start<entries.length;start+=4096){
+      const items=entries.slice(start,start+4096);
+      const path='fields/'+field+'/'+blocks.length+'.json';
+      const meta=write(path,{schema:'wand.item-master.field-block@1',release,field,items},items.length);
+      check(meta.bytes<=16*1024*1024,'COLUMN_BLOCK_TOO_LARGE');
+      assets[path]=meta;
+      blocks.push({path,firstId:items[0][0],lastId:items[items.length-1][0],count:items.length});
+    }
+    fields.push({field,count:entries.length,blocks});
+  }
+  assets['fields/index.json']=write('fields/index.json',{
+    schema:'wand.item-master.fields@1',release,definitionCount:rows.length,fields
+  },fields.length);
+}
 function sourceCodes(row){
   const codes=new Set(row.collectionSourceCandidates.map(c=>c.submenuCode).filter(c=>SUBMENUS.has(c)));
   // Native item-type browse fallback is not evidence of game Collection membership.
@@ -292,6 +330,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
       const path='text/'+locale+'.json';
       index.assets[path]=write(path,{schema:'wand.item-master.localized-text@1',release:e.release,locale,items:entries},entries.length);
     }
+    writeFieldColumns(rows,e.release,write,index.assets);
     writeFileSync(join(stage,'index.json'),json(index));
     const destination=join(root,'steam-'+version+'-complete');
     rmSync(destination,{recursive:true,force:true});renameSync(stage,destination);

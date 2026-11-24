@@ -8,6 +8,9 @@
  * Original tags are facts; Collection source candidates are NOT proof of
  * visible game-screen membership or availability.
  */
+import {createItemFieldReader,type ItemFieldReader} from './item-field-reader.ts';
+export type {ItemFieldValue,ItemFieldScalar,ItemFieldInfo,ItemFieldProjection,ItemFieldMatch} from './item-field-reader.ts';
+
 export const ITEM_MASTER_RELEASE = 'steam-1.26.2-item-id-master-v1' as const;
 export const ITEM_MASTER_INDEX_PATH =
   'ddv/item-master/steam-1.26.2/index.json' as const;
@@ -300,7 +303,7 @@ export interface PublicItemMaster<T extends ItemMasterRecord|CompleteItemMasterR
   getItem(itemId: number): Promise<T | null>;
   getItems(itemIds: readonly number[]): Promise<(T | null)[]>;
 }
-export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemMasterRecord> {
+export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemMasterRecord>, ItemFieldReader {
   /** Collection-only projection; fetch neither all shards nor all languages. */
   getCollectionFacets(): Promise<CompleteItemMasterFacets>;
   getBrowseNames(locale: ItemMasterLocale): Promise<readonly (readonly [number,string])[]>;
@@ -672,14 +675,28 @@ export async function openPublicItemMaster(
     localeCache.set(locale,task);
     try{return await task;}catch(err){localeCache.delete(locale);throw err;}
   }
+  const fieldReader=createItemFieldReader(m.count,m.assets,asset);
   async function localizedItems(ids:readonly number[],locale:ItemMasterLocale):Promise<readonly (ItemLocalizedTextRecord|null)[]>{
     assert(ITEM_MASTER_LOCALES.includes(locale),'INVALID_LOCALE');
-    const records=await common.getItems(ids) as (CompleteItemMasterRecord|null)[];
-    const keys=records.map(record=>record===null?null:
-      record.nativeCategory==='Dialogue'?[]:ITEM_LOCALIZED_TEXT_FIELDS.flatMap(field=>{
-        const key=record.sourceAttributes?.[field];
-        return typeof key==='string'?[[field,key] as const]:[];
-      }));
+    // Resolve only original text keys and category, not unrelated definitions.
+    let keys: readonly (readonly (readonly [ItemLocalizedTextField,string])[]|null)[];
+    if(m.assets?.['fields/index.json']){
+      const fields=new Set((await fieldReader.getFieldCatalog()).map(x=>x.field));
+      const selected=ITEM_LOCALIZED_TEXT_FIELDS.filter(field=>fields.has('source.'+field));
+      const records=await fieldReader.getItemFields(ids,['nativeCategory',...selected.map(field=>'source.'+field)]);
+      keys=records.map(record=>record===null?null:
+        record.values.nativeCategory==='Dialogue'?[]:selected.flatMap(field=>{
+          const key=record.values['source.'+field];
+          return typeof key==='string'?[[field,key] as const]:[];
+        }));
+    }else{
+      const records=await common.getItems(ids) as (CompleteItemMasterRecord|null)[];
+      keys=records.map(record=>record===null?null:
+        record.nativeCategory==='Dialogue'?[]:ITEM_LOCALIZED_TEXT_FIELDS.flatMap(field=>{
+          const key=record.sourceAttributes?.[field];
+          return typeof key==='string'?[[field,key] as const]:[];
+        }));
+    }
     const table=keys.some(row=>row!==null&&row.length>0)?await localizedTable(locale):null;
     return Object.freeze(keys.map(row=>row===null?null:deepFreeze(Object.fromEntries(
       row.map(([field,key])=>[field,{key,text:table?.get(key)??null}])
@@ -687,6 +704,7 @@ export async function openPublicItemMaster(
   }
   return Object.freeze({
     ...common,
+    ...fieldReader,
     async getCollectionFacets():Promise<CompleteItemMasterFacets>{
       const value=await asset('collection-facets.json');
       assert(isObject(value)&&value.schema==='wand.collection.db01-complete-source-facets@1'&&
