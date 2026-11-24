@@ -5,6 +5,7 @@
  * sources. The default is deliberately unpublished and performs no network
  * request. Static rewards are not current server availability or ownership.
  */
+import {parsePublicImageKey,publicMediaOrigin} from '../media/public-image-key.ts';
 import {VERIFIED_STARPATH_REWARD_NAMES} from './starpath-reward-names.ts';
 import {verifyPublicStarpath,type PublicStarpathSnapshot} from './public-starpath.ts';
 
@@ -69,11 +70,9 @@ export interface StarpathMediaRelease{
 type ByteResponse=Pick<Response,'ok'|'arrayBuffer'>;
 const ID=/^[1-9][0-9]{0,15}$/;
 const SHA=/^[a-f0-9]{64}$/;
-const KEY=/^(?:media\/steam-v1\.26\.2\/)?(thumbnail|original)\/([a-f0-9]{2})\/([a-f0-9]{64})\.webp$/;
 const RELEASE_SCHEMA='wand.db03.starpath-public-media@1' as const;
 const DB01_RELEASE='steam-1.26.2-native-itemlist-v1' as const;
 const MEDIA_VERSION='steam-v1.26.2' as const;
-const MEDIA_DOMAIN=/^(?:media|cdn)\.dreamwishwand\.com$/i;
 const VARIANTS=['thumbnail','original'] as const;
 
 function check(condition:unknown,message:string):asserts condition{
@@ -87,14 +86,12 @@ function positive(value:unknown):value is number{
 }
 function originalPublicOrigin(input:unknown):string{
   check(typeof input==='string'&&input.length<200,'missing public origin');
-  let url:URL;
-  try{url=new URL(input);}catch{
-    throw new TypeError('Star Path public media: invalid public origin');
-  }
-  check(url.protocol==='https:'&&MEDIA_DOMAIN.test(url.hostname)&&
-    url.username===''&&url.password===''&&url.search===''&&url.hash===''&&
-    url.pathname==='/'&&url.port==='','unapproved media origin');
-  return url.origin;
+  try{return publicMediaOrigin(input);}catch{throw new TypeError('Star Path public media: unapproved media origin');}
+}
+// Only the exact historical Steam prefix is retained for pinned legacy manifests.
+function starpathImageKey(path:string){
+  const prefix='media/steam-v1.26.2/';
+  return parsePublicImageKey(path.startsWith(prefix)?path.slice(prefix.length):path);
 }
 /** Explicitly reviewed publisher-controlled release; never infer publication. */
 export function validateStarpathMediaActivation(
@@ -182,10 +179,8 @@ export function verifyStarpathMediaManifest(
         positive(source.width)&&positive(source.height)&&
         source.width<=8192&&source.height<=8192,
         'invalid media record');
-      const matched=KEY.exec(source.key);
-      check(matched&&matched[1]===variant&&
-        matched[2]===source.sha256.slice(0,2)&&
-        matched[3]===source.sha256&&SHA.test(source.sha256),
+      const matched=starpathImageKey(source.key);
+      check(matched&&matched.variant===variant&&matched.sha256===source.sha256&&SHA.test(source.sha256),
         'non-content-addressed public path');
       if(variant==='thumbnail')
         check(source.width<=128&&source.height<=128,'oversized thumbnail');
@@ -235,7 +230,7 @@ export function starpathMediaThumbnail(
   const row=Object.hasOwn(media.manifest?.items??{},key)
     ?media.manifest.items[key]:null;
   const path=row?.thumbnail?.key;
-  if(!path||!KEY.test(path))return null;
+  if(!path||starpathImageKey(path)?.variant!=='thumbnail')return null;
   if(typeof media.origin!=='string')return null;
   try{return originalPublicOrigin(media.origin)+'/'+path;}
   catch{return null;}
