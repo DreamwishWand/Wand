@@ -9,6 +9,7 @@ import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {inflateRawSync} from 'node:zlib';
 import {materializeExpandedMaster} from './materialize-expanded-master.mjs';
+import {materializeCompleteSourceMaster} from './materialize-complete-source-master.mjs';
 
 const project=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
 const targetRoot=join(project,'static/ddv/item-master');
@@ -272,5 +273,6 @@ console.log('DB-01 Collection browse subset:',collectionRows.length,'tagged Item
   nativeSubtypeRows.length,'native Item Type IDs');
 console.log('DB-01 public Item master:',gameVersion,found,'items,',tagRefs,'tags,',candidates,'Collection source candidates');
 materializeExpandedMaster(project,entry,release,files,collectionDestination);
+materializeCompleteSourceMaster(project,entry,release,files);
 }
 
