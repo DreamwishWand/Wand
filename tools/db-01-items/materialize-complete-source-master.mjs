@@ -1015,7 +1015,7 @@ function introductionHistory(project,e,version,source,rows){
     }];
   }));
 }
-function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts){
+function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule){
   const columns=new Map();
   const split=new Set(['names','artwork','itemType','nativeProperties','sourceAttributes']);
   const add=(field,id,value)=>{
@@ -1035,6 +1035,12 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     }
   };
   for(const row of rows){
+    // Exact native StoreInfo furniture-type helper, NOT final shop
+    // eligibility (other display filters, state, ownership still apply).
+    if(furnitureDisplayRule&&row.nativeCategory==='Furniture'){
+      check(row.itemType.code===4&&row.itemType.subtypeNameVerified,'STORE_FURNITURE_NATIVE_TYPE');
+      add('acquisition.furnitureDisplayTypeGate',row.itemId,[0,3].includes(row.itemType.subtypeCode));
+    }
     const catalog=catalogFacts.facts.get(row.itemId);
     if(catalog){
       add('acquisition.catalogFacts',row.itemId,catalog);
@@ -1363,6 +1369,12 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
   const acquisition=loadAcquisitionColumns(project,version,e.acquisitionProjection,rows);
   const protoAcquisition=loadProtoDbAcquisition(project,source,byId);
   const catalogFacts=buildCatalogFacts(source,rows);
+  const furnitureDisplayRule=source.target.platform==='Steam'&&version==='1.26.2'&&
+    source.sourceIl2cppDumpSha256==='0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08'&&
+    source.sourceFilesSha256.Furniture==='cde1b6e4dd37085e829c2e4548b89091bbf8d543cee92e6031b2f5bddc794196';
+  if(furnitureDisplayRule)check(rows.filter(r=>r.nativeCategory==='Furniture').length===6188&&
+    rows.filter(r=>r.nativeCategory==='Furniture'&&[0,3].includes(r.itemType.subtypeCode)).length===5288,
+    'STORE_FURNITURE_ORIGINAL_CENSUS');
   console.log('DB01_FRIENDSHIP_NEW_CLASSIFICATION '+JSON.stringify({
     additionalOrdinaryGameplay:[...protoAcquisition.byItem].filter(([id,links])=>links.some(l=>l.amount!==null)&&!acquisition?.summary.get(id)?.categories.includes('ordinary_gameplay')).length,
     previouslyUnclassified:[...protoAcquisition.byItem].filter(([id,links])=>links.some(l=>l.amount!==null)&&!acquisition?.summary.get(id)?.classified).length}));
@@ -1426,7 +1438,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
         check(index.assets[path].bytes<=16*1024*1024,'LINKED_TEXT_BLOCK_TOO_LARGE');
       }
     }
-    writeFieldColumns(rows,e.release,write,index.assets,attachHistoricalContentOrigin(project,source,introductionHistory(project,e,version,source,rows)),acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts);
+    writeFieldColumns(rows,e.release,write,index.assets,attachHistoricalContentOrigin(project,source,introductionHistory(project,e,version,source,rows)),acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts,furnitureDisplayRule);
     write('index.json',index,index.count);
     installProjectionStage(stage,destination);
     console.log('DB-01 projection reuse:',JSON.stringify(stats));
