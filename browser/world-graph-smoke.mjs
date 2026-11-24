@@ -836,6 +836,10 @@ try{
   assert.equal(await mapPanel.locator('.grid-lines').count(),1);
   assert.equal(await mapPanel.locator('.source-map-object').count(),1);
   assert.equal(await mapPanel.locator('.source-map-object .object-shape').count(),1);
+  await mapPanel.getByRole('group',{name:'選択対象レイヤー'}).getByRole('button',{name:'家具',exact:true}).click();
+  assert.equal(await mapPanel.locator('.source-map-object').count(),1);
+  assert.equal(await mapPanel.locator('.source-map-object').getAttribute('data-layer'),'furniture');
+  await mapPanel.getByRole('group',{name:'選択対象レイヤー'}).getByRole('button',{name:'すべて',exact:true}).click();
   const clickCell=async(x,y)=>{
     await mapPanel.locator('svg').scrollIntoViewIfNeeded();
     const p=await mapPanel.locator('svg').evaluate((svg,[x,y])=>{
