@@ -398,44 +398,44 @@
 </section>
 
 <style>
-  .graph-panel{margin:14px 0;padding:16px;background:#1c1728;border:1px solid #ffffff24;border-radius:12px}
+  .graph-panel{margin:14px 0;padding:16px;background:var(--wand-surface);border:1px solid var(--wand-subtle-line);border-radius:12px}
   .graph-top,.graph-file,.graph-controls,.graph-result-head,.graph-paging{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   .graph-top,.graph-result-head{justify-content:space-between}
   h2{margin:0;font-size:16px}
   .graph-file{margin-left:auto}
   .graph-pick{display:flex;gap:7px;align-items:center;position:relative;overflow:hidden;cursor:pointer}
   .graph-pick input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
-  button,.graph-pick{background:#403254;border:1px solid #ffffff2a;border-radius:8px;padding:8px 11px;color:#eee2f7;font:inherit;font-size:12px}
+  button,.graph-pick{background:var(--wand-control);border:1px solid var(--wand-subtle-line);border-radius:8px;padding:8px 11px;color:var(--wand-text);font:inherit;font-size:12px}
   button{display:inline-flex;align-items:center;justify-content:center;gap:6px;cursor:pointer}
   button:disabled{opacity:.55;cursor:default}
-  .graph-note{color:#b9aac9;font-size:12px;line-height:1.6;margin:10px 0 0}
-  .graph-error{font-size:12px;color:#ffb9b9}
+  .graph-note{color:var(--wand-muted);font-size:12px;line-height:1.6;margin:10px 0 0}
+  .graph-error{font-size:12px;color:var(--wand-danger)}
   .graph-controls{align-items:end;margin-top:16px}
-  .graph-controls label{display:grid;gap:5px;min-width:118px;max-width:100%;font-size:12px;color:#e0d5e8}
+  .graph-controls label{display:grid;gap:5px;min-width:118px;max-width:100%;font-size:12px;color:var(--wand-text)}
   .graph-controls .graph-select{flex:1;min-width:190px}
-  select,input[type=search]{box-sizing:border-box;min-width:0;max-width:100%;width:100%;padding:8px;background:#292039;color:#eee7f6;border:1px solid #ffffff32;border-radius:8px;font:inherit}
+  select,input[type=search]{box-sizing:border-box;min-width:0;max-width:100%;width:100%;padding:8px;background:var(--wand-control);color:var(--wand-text);border:1px solid var(--wand-subtle-line);border-radius:8px;font:inherit}
   .source-link{overflow-wrap:anywhere}
   .graph-search{min-height:36px}
   .graph-open-terrain{margin-top:10px}
   .graph-related-grids{display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-top:10px}
   .graph-related-grids label{display:grid;gap:5px;min-width:0;
-    flex:1 1 260px;color:#e0d5e8;font-size:12px}
+    flex:1 1 260px;color:var(--wand-text);font-size:12px}
   .graph-related-grids select{width:100%;min-width:0}
-  .graph-result-head{margin-top:16px;font-size:12px;color:#d9cce6}
-  .graph-result-head span{color:#b9aac9}
+  .graph-result-head{margin-top:16px;font-size:12px;color:var(--wand-text)}
+  .graph-result-head span{color:var(--wand-muted)}
   .graph-table-wrap{overflow:auto;margin-top:9px;max-height:440px}
   table{border-collapse:collapse;width:100%;font-size:12px}
-  th,td{text-align:left;vertical-align:top;padding:9px 10px;border-bottom:1px solid #ffffff19}
-  th{position:sticky;top:0;background:#292039;color:#ded0e9}
+  th,td{text-align:left;vertical-align:top;padding:9px 10px;border-bottom:1px solid var(--wand-subtle-line)}
+  th{position:sticky;top:0;background:var(--wand-surface-raised);color:var(--wand-text)}
   td:first-child{white-space:nowrap;font-weight:600}
-  .graph-path{max-width:340px;overflow-wrap:anywhere;color:#c4b3d2}
+  .graph-path{max-width:340px;overflow-wrap:anywhere;color:var(--wand-text)}
   .graph-grid-link{padding:0;background:transparent;border:0;max-width:100%;
     display:inline-flex;gap:5px;align-items:center;text-align:left;
-    white-space:normal;overflow-wrap:anywhere;color:#d2c3ea;font-size:12px}
+    white-space:normal;overflow-wrap:anywhere;color:var(--wand-link);font-size:12px}
   .graph-grid-link:hover{text-decoration:underline}
-  small{display:block;color:#a995c0;font-size:11px}
+  small{display:block;color:var(--wand-muted);font-size:11px}
   .graph-paging{justify-content:flex-end;margin-top:10px;font-size:12px}
-  .graph-paging span{margin-right:auto;color:#b7a9c5}
+  .graph-paging span{margin-right:auto;color:var(--wand-muted)}
   @media(max-width:680px){
     .graph-controls label{flex:1 1 100%}
     .graph-top{align-items:start}
