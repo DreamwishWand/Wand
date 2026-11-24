@@ -173,6 +173,13 @@ try {
   await direct.goto(url+'?quest=2070000620',{waitUntil:'domcontentloaded'});
   await direct.locator('.detail .step').first().waitFor({timeout:20000});
   assert.match(await direct.locator('.detail-header').innerText(),/ドリームライトバレーへようこそ/);
+  const questHelp=direct.locator('.guide-community');
+  assert.equal(await questHelp.getAttribute('data-subject-kind'),'quest');
+  assert.equal(await questHelp.getAttribute('data-subject-id'),'2070000620');
+  assert.equal(await questHelp.locator('button:disabled').count(),3);
+  assert.equal(await questHelp.locator('a').count(),0);
+  assert.match(await questHelp.innerText(),/準備中/);
+
   assert.equal(await direct.locator('.quest-permalink').getAttribute('href'),'/Wand/guide/quests/?quest=2070000620');
   assert.equal(await direct.locator('.detail .step').count(),1,'one step initially visible to avoid wall of text');
   assert.match(await direct.locator('.detail .step h3').innerText(),/ステップ 1/);
@@ -998,7 +1005,7 @@ try {
   assert.match(await star.locator('.reward-entry .reward-name').innerText(),/Lieutenant Monkey/);
   await rewardTier.selectOption('free');
   assert.equal(await star.locator('.reward-entry').count(),0,'free tier excludes premium monkey');
-  assert.match(await star.getByRole('status').innerText(),/一致する報酬はありません/);
+  assert.match(await star.getByRole('status').filter({hasText:'一致する報酬はありません。'}).innerText(),/一致する報酬はありません/);
   await rewardTier.selectOption('premium');
   assert.equal(await star.locator('.reward-entry').count(),1,'premium tier shows premium monkey');
   await rewardSearch.fill('80100000');

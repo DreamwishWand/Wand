@@ -1,4 +1,5 @@
 <script lang="ts">
+  import GuideCommunityHelp from '$lib/guide/GuideCommunityHelp.svelte';
   import {onMount,tick} from 'svelte';
   import {base} from '$app/paths';
   import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences';
@@ -371,6 +372,7 @@
           <p role="status">一致する報酬はありません。</p>
         {/if}
       {/if}
+      <GuideCommunityHelp kind="star-path" id={season.id}/>
     {/if}
   {/if}
   <footer>
