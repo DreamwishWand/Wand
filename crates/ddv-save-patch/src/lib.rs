@@ -770,7 +770,7 @@ pub fn preview_plain_grid_structure(
             let next=source[cr.clone()].parse::<u32>().map_err(|_|PatchError::NonIntegerTarget)?;
             // Do not repair a stale counter or guess whether old IDs can be
             // reused. Require an explicit value above every observed ID.
-            if next==0||objects.keys().any(|key|key.parse::<u32>().ok().is_none_or(|n|n.to_string()!=*key||n>=next)){
+            if next==0||objects.keys().any(|key|key.parse::<u32>().ok().is_none_or(|n|n.to_string()!=key.as_str()||n>=next)){
                 return Err(PatchError::AmbiguousTarget);
             }
             let following=next.checked_add(1).ok_or(PatchError::InvalidTarget)?;
@@ -1429,7 +1429,7 @@ mod tests {
 mod structural_tests{
  use super::*;
  fn target()->GridCoordinateTarget{GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"10".into(),object_id:"2".into(),item_id:40000001}}
- const SOURCE:&str=r#"{"Player":{"unknown":1e2},"World":{"GridCollection":{"Grids":{"10":{"ID":10,"NextGridObjectID":8,"Objects":{"2":{"ID":2,"ItemID":40000001,"X":1,"Y":2,"Orientation":"GridOrientation_Down"}, "7": { "ID":7,"ItemID":40000002,"State":{"Storage":{}}}}}}}}}}"#;
+ const SOURCE:&str=r#"{"Player":{"unknown":1e2},"World":{"GridCollection":{"Grids":{"10":{"ID":10,"NextGridObjectID":8,"Objects":{"2":{"ID":2,"ItemID":40000001,"X":1,"Y":2,"Orientation":"GridOrientation_Down"}, "7": { "ID":7,"ItemID":40000002,"State":{"Storage":{}}}}}}}}}"#;
  #[test]
  fn structural_duplicate_and_add_preserve_other_bytes(){
   let d=preview_plain_grid_structure(SOURCE,&target(),(1,2),PlainGridStructureAction::Duplicate{x:5,y:6}).unwrap();
