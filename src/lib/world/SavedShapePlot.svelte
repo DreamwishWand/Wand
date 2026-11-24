@@ -13,7 +13,7 @@
   import {CARDINAL_ORIENTATIONS,isCardinal,worldTransformEligible,draftSavedMapTransform,exclusiveAnchorClass,exclusiveAnchorConflict} from './saved-map-transform.ts';
   import {savedGridObjects,savedShapesAt,visibleSavedObjects,type SavedShapeMap,type SavedShapeObject} from './saved-shape-map.ts';
   import {MAP_LAYER_COLORS,MAP_LAYER_LABELS,mapPainterOrder,matchesSelectionLayer,type MapSelectionLayer} from './source-map-layers.ts';
-  import {sourceOrientationAngle} from './source-object-map.ts';
+  import {sourceOrientationAngle,type SourceObjectShape} from './source-object-map.ts';
   export let map:SavedShapeMap;
   export let file:File|null=null;
   export let terrain:TerrainBinding|null=null;
@@ -31,6 +31,40 @@
       data.data.set([rgb[0],rgb[1],rgb[2],255],i*4);
     }ctx.putImageData(data,0,0);return canvas.toDataURL('image/png');
   }
+  // Recompute only on selection/rotation/Grid changes, not pointer movement.
+  // No Save ID, file, or coordinates are sent to a server.
+  let showOrigins=false,originUrl='',originStatus:'idle'|'working'|'ready'|'error'='idle';
+  let originWorker:Worker|null=null;
+  function cancelOrigins(){
+    originWorker?.terminate();originWorker=null;originUrl='';originStatus='idle';
+  }
+  function computeOrigins(enabled:boolean,binding:TerrainBinding|null,shape:SourceObjectShape|null|undefined){
+    cancelOrigins();
+    if(!enabled||!binding||!shape||shape.acceptedFloorTypesFlag===undefined)return;
+    originStatus='working';
+    const own=new Worker(new URL('./placement-origin.worker.ts',import.meta.url),{type:'module'});
+    originWorker=own;
+    own.onmessage=({data})=>{
+      if(originWorker!==own)return;
+      own.terminate();originWorker=null;
+      const width=binding.raster.sizeX*binding.factor,height=binding.raster.sizeY*binding.factor;
+      if(data?.kind!=='origins'||data.width!==width||data.height!==height||
+        !(data.bitmap instanceof Uint8Array)||data.bitmap.length!==width*height){originStatus='error';return;}
+      const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+      const ctx=canvas.getContext('2d');if(!ctx){originStatus='error';return;}
+      const image=ctx.createImageData(width,height);
+      for(let i=0;i<data.bitmap.length;i++){
+        if(data.bitmap[i]!==1)continue;
+        const at=i*4;image.data[at]=75;image.data[at+1]=221;image.data[at+2]=205;image.data[at+3]=150;
+      }
+      ctx.putImageData(image,0,0);originUrl=canvas.toDataURL('image/png');originStatus='ready';
+    };
+    own.onerror=()=>{if(originWorker===own){own.terminate();originWorker=null;originStatus='error';}};
+    own.postMessage({raster:binding.raster,factor:binding.factor,shape});
+  }
+  onDestroy(cancelOrigins);
+  $: originAvailable=Boolean(activeTerrain&&draftShape&&draftShape.acceptedFloorTypesFlag!==undefined);
+  $: computeOrigins(showOrigins&&originAvailable,activeTerrain,draftShape);
   let locale:WandLanguage='ja';
   let names:WorldNames=new Map();
   let master:Promise<PublicCompleteItemMaster>|null=null;
@@ -220,6 +254,16 @@
   <div class="controls" role="group" aria-label="セーブ図の選択レイヤー">
     {#each layers as l}<button type="button" aria-pressed={layer===l} on:click={()=>chooseLayer(l)}>{MAP_LAYER_LABELS[l]}</button>{/each}
   </div>
+  {#if originAvailable}
+    <div class="controls origin-tools">
+      <button type="button" aria-pressed={showOrigins} on:click={()=>showOrigins=!showOrigins}>配置候補マス</button>
+      {#if showOrigins}
+        {#if originStatus==='working'}<small role="status">計算中…</small>
+        {:else if originStatus==='error'}<small role="alert">候補を計算できませんでした。</small>
+        {:else if originStatus==='ready'}<small><span class="origin-swatch"></span> 地形条件に一致する基準マス（衝突・上下関係は未判定）</small>{/if}
+      {/if}
+    </div>
+  {/if}
   <div class="object-search">
     <input type="search" aria-label="配置済み家具を検索" placeholder="配置済み家具を検索" value={query} on:input={e=>setSearch(e.currentTarget.value)} on:focus={()=>searchOpen=true}/>
     <button type="button" aria-expanded={searchOpen} on:click={()=>searchOpen=!searchOpen}>{searchOpen?'閉じる':'一覧'}</button>
@@ -245,6 +289,7 @@
       </pattern></defs>
       <rect x={extent.x} y={extent.y} width={extent.w} height={extent.h} fill="#27313a"/>
       {#if activeTerrain&&terrainUrl}<image class="saved-terrain-background" href={terrainUrl} x="0" y="0" width={activeTerrain.raster.sizeX*activeTerrain.factor} height={activeTerrain.raster.sizeY*activeTerrain.factor} preserveAspectRatio="none" style="image-rendering:pixelated"/>{/if}
+      {#if activeTerrain&&originUrl}<image class="placement-origin-overlay" href={originUrl} x="0" y="0" width={activeTerrain.raster.sizeX*activeTerrain.factor} height={activeTerrain.raster.sizeY*activeTerrain.factor} preserveAspectRatio="none" style="image-rendering:pixelated"/>{/if}
       {#if extent.w/zoom<160&&extent.h/zoom<160}<rect x={extent.x} y={extent.y} width={extent.w} height={extent.h} fill="url(#saved-shape-cells)"/>{/if}
       {#each visibleObjects as o (o.localOrdinal)}
         {@const shape=o.shapeKey?map.shapes[o.shapeKey]:null}
@@ -333,6 +378,9 @@
 <style>
   .saved-shape-plot{display:grid;gap:6px;min-width:0}
   .controls{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+  .origin-tools small{color:var(--wand-muted);font-size:11px}
+  .origin-swatch{display:inline-block;background:#4bddcd;width:.8em;height:.8em;border-radius:2px;vertical-align:baseline}
+  .placement-origin-overlay{pointer-events:none}
   .overlap-key{display:flex;flex-wrap:wrap;gap:8px;font-size:12px}
   .saved-overlap-cell,.exclusive-anchor-conflict{pointer-events:none}
   .exclusive-warning{color:var(--wand-text);font-weight:650;border-inline-start:3px solid #ef5350;padding-inline-start:6px}

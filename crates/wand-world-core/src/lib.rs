@@ -245,7 +245,7 @@ fn source_floor_rectangle_origins(
     let footprint_width = bx as usize;
     let footprint_height = by as usize;
     let n = width.checked_mul(height).ok_or_else(invalid)?;
-    if width == 0 || height == 0 || n > 250_000 ||
+    if width == 0 || height == 0 || n > 1_000_000 ||
        floor.len() != n || footprint_width == 0 || footprint_height == 0 ||
        footprint_width > 512 || footprint_height > 512 {
         return Err(invalid());
@@ -321,7 +321,7 @@ fn source_floor_shape_origins(
     let (w,h,bw,bh) = (sx as usize,sy as usize,bx as usize,by as usize);
     let n = w.checked_mul(h).ok_or_else(invalid)?;
     let shape_n = bw.checked_mul(bh).ok_or_else(invalid)?;
-    if w == 0 || h == 0 || n > 250_000 || floor.len() != n ||
+    if w == 0 || h == 0 || n > 1_000_000 || floor.len() != n ||
         bw == 0 || bh == 0 || bw > 512 || bh > 512 ||
         shape.len() != shape_n || shape.iter().any(|&v|v>1) ||
         !shape.contains(&1) {
@@ -400,6 +400,64 @@ impl WasmSourceFloorShape {
     }
     pub fn origin_bitmap(&self)->Vec<u8> { self.map.clone() }
     pub fn origin_count(&self)->u32 { self.count }
+}
+
+/** Evaluate source-floor compatibility in serialized local anchor units.
+ * The original raster is bounded to 250,000 cells. A factor-two Grid
+ * has four anchor cells per source cell; odd anchor coordinates are valid.
+ * Output is a floor-mask comparison only, not collision/placement permission.
+ */
+fn local_anchor_floor_origins(
+    floor:&[u32], sx:u32, sy:u32, factor:u32, accepted:u32,
+    bx:u32, by:u32, shape:&[u8],
+)->Result<(Vec<u8>,u32),String>{
+    let invalid=||"DB04_LOCAL_ANCHOR_FLOOR_INVALID".to_owned();
+    let n=(sx as usize).checked_mul(sy as usize).ok_or_else(invalid)?;
+    if sx==0||sy==0||n>250_000||floor.len()!=n||!matches!(factor,1|2){
+        return Err(invalid());
+    }
+    if factor==1{return source_floor_shape_origins(floor,sx,sy,accepted,bx,by,shape);}
+    let w=sx as usize*2;let h=sy as usize*2;
+    let mut expanded=vec![0u32;w*h];
+    for y in 0..h{for x in 0..w{
+        expanded[y*w+x]=floor[(y/2)*sx as usize+x/2];
+    }}
+    source_floor_shape_origins(&expanded,sx*2,sy*2,accepted,bx,by,shape)
+}
+#[wasm_bindgen]
+pub fn local_anchor_floor_bitmap(
+    floor:&[u32],sx:u32,sy:u32,factor:u32,accepted:u32,
+    bx:u32,by:u32,shape:&[u8],
+)->Result<Vec<u8>,JsValue>{
+    local_anchor_floor_origins(floor,sx,sy,factor,accepted,bx,by,shape)
+        .map(|(bitmap,_)|bitmap).map_err(|e|JsValue::from_str(&e))
+}
+
+#[cfg(test)]
+mod local_anchor_floor_tests{
+    use super::*;
+    #[test]
+    fn factor_two_preserves_odd_anchors_and_rotated_holes(){
+        let floor=[4,0,4,4];
+        let (map,count)=local_anchor_floor_origins(&floor,2,2,2,4,2,1,&[1,1]).unwrap();
+        assert_eq!(map,vec![1,0,0,0,1,0,0,0,1,1,1,0,1,1,1,0]);
+        assert_eq!(count,8);
+        let shape=[1,0,1,1];
+        let (map,_)=local_anchor_floor_origins(&floor,2,2,2,4,2,2,&shape).unwrap();
+        assert_eq!(map[1],0);
+        assert_eq!(map[5],1);
+        assert_eq!(map[15],0);
+        assert!(local_anchor_floor_origins(&floor,2,2,3,4,1,1,&[1]).is_err());
+        assert!(local_anchor_floor_origins(&floor,3,2,2,4,1,1,&[1]).is_err());
+        assert!(local_anchor_floor_origins(&floor,2,2,2,4,2,2,&[0,0,0,0]).is_err());
+    }
+    #[test]
+    fn large_factor_two_original_raster_stays_within_expanded_limit(){
+        let floor=vec![4;200_000];
+        let (map,count)=local_anchor_floor_origins(&floor,500,400,2,4,2,2,&[1,1,1,1]).unwrap();
+        assert_eq!(map.len(),800_000);
+        assert_eq!(count,999*799);
+    }
 }
 
 /// Incremental binary accumulation only; no unverified file members or

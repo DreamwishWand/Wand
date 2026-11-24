@@ -1056,6 +1056,21 @@ try{
   await publicWorld.locator('.saved-object').first().waitFor({timeout:30000});
   assert.equal(await publicWorld.locator('.saved-object').first().getAttribute('transform'),'translate(4 5)');
   await publicWorld.locator('.media-map-overlay').waitFor({state:'detached'});
+  // Choose a source-backed furniture record through the normal picker and
+  // compute the full terrain-origin raster with the real WASM Worker.
+  const publicPlot=publicWorld.locator('.saved-shape-plot');
+  await publicPlot.getByLabel('配置済み家具を検索').focus();
+  await publicPlot.locator('.object-results button').first().click();
+  await publicPlot.getByRole('button',{name:'配置候補マス',exact:true}).click();
+  const originOverlay=publicPlot.locator('.placement-origin-overlay');
+  await originOverlay.waitFor({timeout:30000});
+  assert.equal(await originOverlay.getAttribute('width'),'196');
+  assert.equal(await originOverlay.getAttribute('height'),'100');
+  assert.ok((await originOverlay.getAttribute('href')).startsWith('data:image/png;base64,'));
+  await publicPlot.getByRole('button',{name:'右回転',exact:true}).click();
+  await publicPlot.locator('.placement-origin-overlay').waitFor({timeout:30000});
+  await publicPlot.getByRole('button',{name:'配置候補マス',exact:true}).click();
+  await originOverlay.waitFor({state:'detached'});
   // All three root themes recolor service chrome without recoloring the map.
   const themeResults=await page.evaluate(()=>{
     const root=document.documentElement,original=root.getAttribute('data-wand-theme');
