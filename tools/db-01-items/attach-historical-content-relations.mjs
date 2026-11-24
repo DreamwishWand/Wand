@@ -42,7 +42,7 @@ const localActivity=p=>p?.[1]===0
   ?Array.isArray(p[4][0])&&p[4][0].length>0&&p[4][0].every(inDlcArea)
   :p?.[1]===1&&inDlcArea(p[4][0])&&(p[4][1]===null||p[4][1]===1540000209);
 
-export function attachHistoricalContentRelations(project,source,history,fresh,add,verifiedPackages){
+export function attachHistoricalContentRelations(project,source,history,fresh,add,verifiedPackages,packageEvidenceSha){
   const bytes=readFileSync(join(project,'data/ddv/item-master/historical-content-relations-steam-1261.json'));
   const d=JSON.parse(bytes);
   check(d.schema==='wand.db01.historical-content-relations@1'&&d.platform==='Steam'&&
@@ -136,7 +136,7 @@ export function attachHistoricalContentRelations(project,source,history,fresh,ad
   for(const i of memory)if(fresh(history.get(i)))verified.set(i,'verified_dlc_condition');
   for(const i of verifiedPackages)if(fresh(history.get(i)))verified.set(i,'verified_dlc_package');
   if(current)check(verified.size===29,'VERIFIED_CENSUS');
-  const assignmentSha=sha(Buffer.from(JSON.stringify([...verified].sort((a,b)=>a[0]-b[0]))));
+  check(/^[a-f0-9]{64}$/.test(packageEvidenceSha),'IAP_EVIDENCE_PIN');
   for(const [i,kind] of verified){
     const h=history.get(i);
     h.contentAttributionEvidenceKind=kind;
@@ -149,8 +149,12 @@ export function attachHistoricalContentRelations(project,source,history,fresh,ad
       h.contentReleaseId=cohort;
       h.contentReleaseKind='paid_dlc';
       h.contentDlcType='expansion';
-      h.contentReleaseEvidenceSha256=sha(bytes);
-      h.contentAssignmentSha256=assignmentSha;
+      const evidenceSha=kind==='verified_dlc_package'?packageEvidenceSha:sha(bytes);
+      h.contentReleaseEvidenceSha256=evidenceSha;
+      // The per-ID digest is stable across later source revisions, even
+      // if unrelated items disappear from the current database.
+      h.contentAssignmentSha256=sha(Buffer.from(JSON.stringify([
+        i,cohort,kind,d.introducedSourceCorpusSha256,evidenceSha])));
     }
   }
   return {evidenceIds,verified};
