@@ -101,6 +101,14 @@ body{background:var(--wand-halo),var(--wand-bg);color:var(--wand-text)}
   width:40px;min-width:40px;height:40px;min-height:40px;
   position:relative;border-radius:8px;transition:background .12s,box-shadow .12s
 }
+/* Inactive icons match Midnight: no individual frame or filled tile.
+   Override the legacy light-theme header button border, including hover. */
+:root .site-shell .shell-theme-options .shell-theme-option[aria-pressed='false']{
+  background:transparent;border-color:transparent;box-shadow:none
+}
+:root .site-shell .shell-theme-options .shell-theme-option[aria-pressed='false']:hover:not(:disabled){
+  background:var(--wand-header-hover);border-color:transparent;box-shadow:none
+}
 :root .site-shell .shell-theme-option.active,
 :root .site-shell .shell-theme-option.active:hover:not(:disabled){
   background:var(--wand-menu);border-color:var(--wand-accent);
