@@ -358,7 +358,23 @@ export type NativeAcquisitionRole=(typeof NATIVE_ACQUISITION_ROLES)[number];
 /** Original source definition and occurrence only; not a confirmed grant or availability. */
 export type NativeAcquisitionCandidate=readonly [sourceItemId:number,role:NativeAcquisitionRole,sourcePath:string];
 
+/** Original item price override, not a shop quote or a sell calculation.
+ * Distinguish absence, an explicit empty message, currency-only and amount.
+ * A currency in Price is kept independent of the outer Currency override.
+ */
+export interface ConfiguredItemPriceOverride {
+  readonly itemId:number;
+  readonly status:'not_recorded'|'empty'|'currency_only'|'amount_configured'|'incomplete';
+  readonly overrideCurrencyItemId:number|null;
+  readonly priceCurrencyItemId:number|null;
+  readonly amount:number|null;
+  readonly sourceField:'source.PriceOverride';
+  readonly currentPurchasePriceVerified:false;
+  readonly currentRepurchasePriceVerified:false;
+  readonly currentSellPriceVerified:false;
+}
 export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemMasterRecord>, ItemFieldReader {
+  getConfiguredPriceOverrides(itemIds:readonly number[]):Promise<readonly (Readonly<ConfiguredItemPriceOverride>|null)[]>;
   /** Collection-only projection; fetch neither all shards nor all languages. */
   getCollectionFacets(): Promise<CompleteItemMasterFacets>;
   getBrowseNames(locale: ItemMasterLocale): Promise<readonly (readonly [number,string])[]>;
@@ -948,6 +964,38 @@ export async function openPublicItemMaster(
       return (await itemReferences([id],direction))[0];
     },
     getItemsReferences:itemReferences,
+    async getConfiguredPriceOverrides(ids:readonly number[]){
+      const field='source.PriceOverride' as const;
+      const catalog=await fieldReader.getFieldCatalog();
+      const rows=await fieldReader.getItemFields(ids,catalog.some(x=>x.field===field)?[field]:['itemId']);
+      return Object.freeze(rows.map(row=>{
+        if(row===null)return null;
+        const raw=row.values[field];
+        const exists=raw!==undefined;
+        assert(!exists||isObject(raw),'INVALID_PRICE_OVERRIDE');
+        const override=isObject(raw)?raw:{};
+        const price=override.Price;
+        assert(price===undefined||isObject(price),'INVALID_PRICE_OVERRIDE_COST');
+        const cost=isObject(price)?price:{};
+        const currency=override.Currency,priceCurrency=cost.Id,amount=cost.Amount;
+        assert(currency===undefined||ID(currency),'INVALID_OVERRIDE_CURRENCY');
+        assert(priceCurrency===undefined||ID(priceCurrency),'INVALID_PRICE_CURRENCY');
+        assert(amount===undefined||typeof amount==='number'&&Number.isSafeInteger(amount)&&amount>=0,
+          'INVALID_OVERRIDE_AMOUNT');
+        const unexpected=Object.keys(override).some(k=>k!=='Currency'&&k!=='Price')||
+          Object.keys(cost).some(k=>k!=='Id'&&k!=='Amount');
+        const status:ConfiguredItemPriceOverride['status']=!exists?'not_recorded':
+          unexpected?'incomplete':price!==undefined
+            ?(priceCurrency!==undefined&&amount!==undefined?'amount_configured':'incomplete')
+            :currency!==undefined?'currency_only':'empty';
+        return Object.freeze({
+          itemId:row.itemId,status,overrideCurrencyItemId:currency??null,
+          priceCurrencyItemId:priceCurrency??null,amount:amount??null,
+          sourceField:field,currentPurchasePriceVerified:false as const,
+          currentRepurchasePriceVerified:false as const,currentSellPriceVerified:false as const
+        });
+      }));
+    },
     async getNativeAcquisitionCandidates(ids:readonly number[]){
       const field='acquisition.nativeCandidates';
       const rows=await fieldReader.getItemFields(ids,[field]);
