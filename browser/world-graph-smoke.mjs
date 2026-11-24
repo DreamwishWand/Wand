@@ -899,7 +899,9 @@ try{
   await candidates.getByRole('button',{name:'選択Gridと照合'})
     .click({timeout:20000});
   try{
-    await candidates.locator('canvas').waitFor({timeout:12000});
+    await candidates.locator('.saved-object-shape').first().waitFor({timeout:20000});
+    assert.equal(await candidates.locator('.saved-object-shape').count(),2);
+    assert.equal(await candidates.locator('.saved-object').first().getAttribute('transform'),'translate(4 5)');
   }catch(error){
     console.error('DB04_SAVE_SOURCE_DIAGNOSTIC',JSON.stringify({
       candidateText:await candidates.innerText(),
@@ -922,7 +924,7 @@ try{
       World:{GridCollection:{Grids:{},DiffGrids:{}}}
     })),
   });
-  await candidates.locator('canvas').waitFor({state:'detached',timeout:20000});
+  await candidates.locator('.saved-shape-plot').waitFor({state:'detached',timeout:20000});
 
   // Factor two source anchors are visible at their own integer coordinates,
   // without a fabricated terrain projection or placement preview.

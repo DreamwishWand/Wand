@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {sourceMapLayer,sourceSurfaceCapable,matchesSelectionLayer,mapPainterOrder,prioritizeMapHits} from '../src/lib/world/source-map-layers.ts';
+import {buildSavedShapeMap,savedGridObjects,savedShapesAt} from '../src/lib/world/saved-shape-map.ts';
 import {buildSourceObjectMap,sourceObjectsAt,sourceOrientationAngle,sourceShapeIntersections} from '../src/lib/world/source-object-map.ts';
 const L='SceneLayouts/Village04/Fixture.json',P='GridData/Village04/Fixture.json';
 const row=(id,itemId,x,y,orientationCode)=>({layoutId:L,gridIdNative:7,gridObjectIdNative:id,itemId,x,y,orientationCode});
@@ -68,4 +69,22 @@ test('intersection counts retain overlapping instance identity and exclude unmap
     assert.deepEqual(overlaps.map(x=>[x.object.id,x.cells]),[[1,2*factor*factor]]);
     assert.deepEqual(sourceShapeIntersections(map,map.objects[3]),[]);
   }
+});
+
+test('saved shape candidates use saved anchors and exact cardinal strings, never merge grid ordinals',()=>{
+  const point=(localOrdinal,localGridOrdinal,x,y,orientation,itemId='100')=>({localOrdinal,localGridOrdinal,x,y,orientation,itemId});
+  const map=buildSavedShapeMap(fixture(),L,7,[
+    point(1,1,-2,3,'GridOrientation_Down'),point(2,1,-2,3,'GridOrientation_Right'),
+    point(3,2,-2,3,'GridOrientation_Down'),point(4,1,10,10,'West'),
+    point(5,1,3,4,'GridOrientation_Down','99999999999999999999')]);
+  assert.equal(map.objects.length,5);
+  assert.equal(map.objects[0].shapeKey,'100:8');
+  assert.equal(map.objects[1].shapeKey,'100:4');
+  assert.equal(map.objects[3].shapeKey,null);
+  assert.equal(map.objects[4].shapeKey,null);
+  assert.deepEqual(savedGridObjects(map,1).map(o=>o.localOrdinal),[1,2,4,5]);
+  assert.deepEqual(savedShapesAt(map,1,-2,3).map(o=>o.localOrdinal),[1,2]);
+  assert.deepEqual(savedShapesAt(map,2,-2,3).map(o=>o.localOrdinal),[3]);
+  assert.equal(map.savedSourceCoordinateEquivalenceVerified,false);
+  assert.equal(map.actualOccupancyVerified,false);
 });
