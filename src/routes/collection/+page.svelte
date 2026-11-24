@@ -1619,12 +1619,12 @@
               aria-label={locale==='ja'?'アイテムの詳細カテゴリー':'Detailed item categories'}>
               {#if sourceIndex&&sourceIndex.nativeSubtypeByItem.size===sourceIndex.sourceItemCount&&sourceTopCategory===null}
                 {#each topCategoryCards.filter(group=>!(worldFilter||sourceChoices.worldContextTag)||group.total>0) as group (group.id)}
+                  {@const denominator=sourceIndex?.rootsByItem?(rootProgressTotals.get(group.id)??0):group.total}
                   <button type="button" class="facet-card collection-top-category"
                     data-top-category={group.id} disabled={group.total===0}
                     on:click={()=>chooseTopCategory(group.id)}>
                     <span class="facet-flourish" aria-hidden="true"><WandIcon name={group.icon} size={22}/></span>
                     <strong>{collectionTopCategoryLabel(locale,group.id)}</strong>
-                    {@const denominator=sourceIndex?.rootsByItem?(rootProgressTotals.get(group.id)??0):group.total}
                     <span class="collection-category-progress" data-progress-owned={group.owned} data-progress-total={denominator}>
                       {denominator?group.owned.toLocaleString(locale)+' / '+denominator.toLocaleString(locale):'—'}
                       {#if denominator}<span class="collection-category-percent">{Math.floor(group.owned*100/denominator)}%</span>{/if}
