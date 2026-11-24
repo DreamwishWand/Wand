@@ -4,6 +4,10 @@ import { readFile } from 'node:fs/promises';
 import { createHash, createCipheriv } from 'node:crypto';
 import { deflateRawSync } from 'node:zlib';
 import { chromium } from 'playwright';
+import {parseCollectionDb01Facets} from '../src/lib/collection/db01-native-facets.ts';
+import {buildWorldBrowseIndex} from '../src/lib/collection/world-browse-index.ts';
+import {collectionTopCategoryCards} from '../src/lib/collection/category-hierarchy.ts';
+import {COLLECTION_WORLD_NAVIGATION} from '../src/lib/collection/scope-options.ts';
 import {collectionInterfaceCopy} from '../src/lib/collection/interface-copy.ts';
 import {TEST_DB04_LAYOUT} from '../tests/helpers/collection-db04-zip-fixture.mjs';
 
@@ -823,22 +827,40 @@ try{
     const buttons=[...document.querySelectorAll('.collection-scope-scroll button:not([disabled])')];
     const frame=()=>new Promise(resolve=>requestAnimationFrame(resolve));
     const samples=[];
-    for(const button of [...buttons.slice(1),buttons[0]]){
+    for(const button of [...buttons.slice(1),buttons[0],buttons[1],buttons[0]]){
       const start=performance.now();
       button.click();
       const handlerMs=performance.now()-start;
       await frame();await frame();
       samples.push({world:button.textContent?.trim(),handlerMs,
         frameMs:performance.now()-start,
-        categories:document.querySelectorAll('.collection-top-category').length,
+        categories:[...document.querySelectorAll('.collection-top-category')].map(card=>card.getAttribute('data-top-category')),
+        disabled:document.querySelectorAll('.collection-top-category[disabled]').length,
         items:document.querySelectorAll('.item-card').length});
     }
     return samples;
   });
   console.log('COLLECTION_WORLD_SWITCH_MS',JSON.stringify(worldSwitchSamples));
   assert.ok(worldSwitchSamples.length>1);
-  assert.ok(worldSwitchSamples.every(row=>row.categories===30&&row.items===0),
-    'every enabled world changes category cards without rendering hidden item results');
+  const source=parseCollectionDb01Facets(JSON.parse(await readFile(
+    'static/ddv/collection/db01-facets-1262.json','utf8')));
+  const scopes=buildWorldBrowseIndex(source);
+  for(const sample of worldSwitchSamples){
+    assert.equal(sample.items,0,'world navigation must not render hidden item results');
+    const world=COLLECTION_WORLD_NAVIGATION.find(row=>row.label===sample.world);
+    if(!world){
+      assert.equal(sample.categories.length,30,'All retains the canonical category list');
+      continue;
+    }
+    const scope=scopes.get(world.id);
+    assert.ok(scope,'enabled world has a source scope');
+    const expected=collectionTopCategoryCards([...scope.nativeCounts].map(([key,total])=>({key,total,owned:0})))
+      .filter(card=>card.total>0).map(card=>card.id);
+    assert.deepEqual(sample.categories,expected,'world displays exactly the nonempty categories in canonical order');
+    assert.equal(sample.disabled,0,'no unavailable category cards in a selected world');
+  }
+  assert.deepEqual(worldSwitchSamples[0].categories,worldSwitchSamples.at(-2).categories,
+    'returning to Dreamlight Valley preserves the same nonempty categories');
   const nativeWorld=page.locator('.collection-scope-scroll button').filter({hasText:'Dreamlight Valley'});
   assert.equal(await nativeWorld.isDisabled(),false,
     'DB-01 original World-context tag must enable world source browsing');
