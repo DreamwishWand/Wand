@@ -3,6 +3,7 @@
  * ephemeral Save Grid ordinal, never merge distinct Save Grids. */
 import {createSourceGeometryCache,type SourceObjectShape} from './source-object-map.ts';
 import {getSourceAnchorDomain} from './native-anchor-domain.ts';
+import type {NativeEditRestrictions} from './native-edit-restrictions.ts';
 import type {MapObjectLayer} from './source-map-layers.ts';
 import {parseSavedSubgridSummary,type SavedNumericPoint} from './saved-grid-source-candidates.ts';
 const record=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
@@ -12,7 +13,7 @@ const CARDINAL:Readonly<Record<string,number>>=Object.freeze({
   GridOrientation_Up:0,GridOrientation_Right:4,GridOrientation_Down:8,GridOrientation_Left:12});
 export interface SavedShapeObject extends SavedNumericPoint{
   readonly shapeKey:string|null;readonly name:string|null;
-  readonly layer:MapObjectLayer;readonly surfaceCapable:boolean;
+  readonly layer:MapObjectLayer;readonly surfaceCapable:boolean;readonly editRestrictions?:NativeEditRestrictions;
   readonly orientationCode:number|null;
 }
 export interface SavedShapeMap {
