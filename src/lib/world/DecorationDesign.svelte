@@ -1,4 +1,6 @@
 <script lang="ts">
+ import MapCameraControls from './MapCameraControls.svelte';
+
  import {onDestroy} from 'svelte';
  import type {PublicTerrainGridRef} from './public-terrain-projection.ts';
  import type {TerrainRaster,TerrainBinding} from './terrain-binding.ts';
@@ -28,6 +30,7 @@
  let camera=defaultMapCamera(),svg:SVGSVGElement;
  const gesture=createMapPanGesture();
  let subscribed:Worker|null=null,lastGrid='';
+ let paletteOpen=true;
  let importInput:HTMLInputElement,showCounts=false,reading=false,importEpoch=0;
  let pendingImport:{id:number;key:string;placements:DesignPlacement[];timeline:DesignTimeline}|null=null;
  const labels={
@@ -200,8 +203,8 @@
  function more(e:Event){const el=e.currentTarget as HTMLElement;if(el.scrollTop+el.clientHeight>=el.scrollHeight-160)limit=Math.min(filtered.length,limit+80);}
 </script>
 {#if active&&grid&&raster}
- <div class="design-workspace">
-  <aside aria-label="配置する家具">
+ <div class="design-workspace" class:paletteClosed={!paletteOpen}>
+  <aside aria-label="配置する家具" hidden={!paletteOpen}>
    <input type="search" aria-label="家具を検索" placeholder="家具を検索" bind:value={query} on:input={()=>limit=80}/>
    <select aria-label="配置カテゴリ" bind:value={layer} on:change={()=>limit=80}>
     {#each ['all','furniture','surface','landscape','ground','fence'] as l}<option value={l}>{MAP_LAYER_LABELS[l as MapSelectionLayer]}</option>{/each}
@@ -219,13 +222,11 @@
   </aside>
   <div class="design-map-side">
    <div class="design-controls">
+    <button type="button" aria-label="家具パレット" title="家具パレット" aria-pressed={paletteOpen} on:click={()=>paletteOpen=!paletteOpen}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v16H3zM9 4v16"/></svg></button>
     <input class="file-input" type="file" accept=".json,application/json" bind:this={importInput} on:change={importFile}/>
     <button type="button" disabled={busyImport} on:click={exportFile}>{words[0]}</button>
     <button type="button" disabled={busyImport||!worker} on:click={()=>importInput.click()}>{words[1]}</button>
     <button type="button" aria-pressed={showCounts} on:click={()=>showCounts=!showCounts}>{words[2]}</button>
-    <button type="button" aria-label="設計を拡大" disabled={camera.zoom>=maxZoom} on:click={()=>camera=zoomMapCamera(camera,camera.zoom*2,maxZoom)}>＋</button>
-    <button type="button" aria-label="設計を縮小" disabled={camera.zoom===1} on:click={()=>camera=zoomMapCamera(camera,camera.zoom/2,maxZoom)}>−</button>
-    <button type="button" on:click={()=>camera=defaultMapCamera()}>全体</button>
     <button type="button" aria-label="設計を取り消す" disabled={busyImport||timeline.cursor===0} on:click={()=>travel(-1)}>↶</button>
     <button type="button" aria-label="設計をやり直す" disabled={busyImport||timeline.cursor===timeline.snapshots.length-1} on:click={()=>travel(1)}>↷</button>
     <button type="button" aria-label="設計の左回転" disabled={busyImport||!placing&&!chosenGeometry} on:click={()=>rotate(1)}>⟲</button>
@@ -238,7 +239,7 @@
    {#if busyImport}<p role="status">{words[5]}</p>{/if}
    {#if loadingShape}<p role="status">形状を読み込み中…</p>{/if}
    {#if error}<p role="alert">{error}</p>{/if}
-   <button class="design-plot" type="button" aria-label="装飾設計マップ" on:click={pick} on:keydown={keys}
+   <div class="design-map-frame"><button class="design-plot" type="button" aria-label="装飾設計マップ" on:click={pick} on:keydown={keys}
     on:wheel|nonpassive={e=>camera=wheelMapCamera(e,svg,extent,camera,maxZoom)}
     on:pointerdown={e=>gesture.begin(e,camera.zoom>1&&(!placing&&!moveMode||e.shiftKey||e.button===1))}
     on:pointermove={follow} on:pointerup={e=>gesture.end(e)} on:pointercancel={e=>gesture.end(e)} on:pointerleave={()=>{gesture.leave();hover=null;}}>
@@ -254,7 +255,7 @@
      {#if hover&&ghostShape}<path class="design-ghost" d={ghostShape.path} transform={'translate('+hover.x+' '+hover.y+')'} fill={ghostValid?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}
      {#each warnings as run}<rect x={run.x} y={run.y} width={run.width} height="1" fill="#ef5350" fill-opacity=".6"/>{/each}
     </svg>
-   </button>
+   </button><MapCameraControls zoom={camera.zoom} {maxZoom} onZoom={value=>camera=zoomMapCamera(camera,value,maxZoom)} onFit={()=>camera=defaultMapCamera()} onPan={(dx,dy)=>camera=panMapCamera(camera,dx/camera.zoom,dy/camera.zoom)}/></div>
    <div class="design-status">
     <span>{placements.length}件</span>
     {#if placing}<strong>{catalog.find(o=>o.itemId===placing?.itemId)?.name??placing.name} · 配置先を選択</strong>
@@ -268,7 +269,7 @@
      {/each}
     </div>
    {/if}
-   <small>セーブ未使用の独立した設計。地形・形状はゲーム原本に基づく候補。ゲーム内の配置可否は未確認です。</small>
+   <small title="地形・形状はゲーム原本に基づく候補。">ゲーム内の配置可否は未確認</small>
   </div>
  </div>
 {/if}
@@ -277,17 +278,17 @@
  .design-counts{max-height:24vh;overflow:auto;display:grid;gap:3px}
  .count-row{display:flex;align-items:center;gap:6px;background:var(--wand-card);padding:4px 8px;border-radius:4px}
  .count-row img{width:32px;height:32px;object-fit:contain}.count-row span{flex:1;overflow-wrap:anywhere}
- .design-workspace{display:grid;grid-template-columns:minmax(170px,240px) minmax(0,1fr);gap:8px;min-width:0}
- aside,.design-map-side{display:grid;gap:6px;min-width:0;align-content:start}
+ .design-workspace{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:clamp(170px,19vw,300px) minmax(0,1fr);gap:4px;min-width:0;overflow:hidden}.design-workspace.paletteClosed{grid-template-columns:minmax(0,1fr)}aside[hidden]{display:none}
+ aside,.design-map-side{display:flex;flex-direction:column;gap:4px;min-width:0;min-height:0;overflow:hidden}aside{padding:4px;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:5px}
  input,select,button{font:inherit;background:var(--wand-menu);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:5px;padding:5px}
  button[aria-pressed=true]{border-color:var(--wand-accent);background:var(--wand-header-hover)}
  button:disabled{opacity:.45}
- .design-catalog{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:4px;overflow:auto;max-height:65vh;align-content:start}
+ .design-catalog{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:4px;overflow:auto;flex:1 1 auto;min-height:0;align-content:start}
  .design-item{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:44px;font-size:12px;overflow-wrap:anywhere}
  .design-item img{width:56px;height:56px;object-fit:contain}
  .design-controls,.design-status{display:flex;align-items:center;flex-wrap:wrap;gap:5px}
- .design-plot{padding:0;overflow:hidden;display:block;cursor:crosshair;touch-action:none;width:100%;background:#27313a}
- svg{display:block;width:100%;height:min(65vh,700px)}
+ .design-map-frame{flex:1 1 auto;min-height:0;min-width:0;position:relative;overflow:hidden;border-radius:5px}.design-plot{padding:0;overflow:hidden;display:block;cursor:crosshair;touch-action:none;width:100%;height:100%;background:#27313a}.tool-icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;vertical-align:middle}
+ .design-plot svg{display:block;width:100%;height:100%}
  small,.design-status{font-size:12px;color:var(--wand-muted)}
- @media(max-width:700px){.design-workspace{grid-template-columns:1fr}.design-catalog{max-height:24vh}.design-plot svg{height:48vh}}
+ @media(max-width:700px){.design-workspace{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(0,2fr)}.design-workspace.paletteClosed{grid-template-rows:minmax(0,1fr)}.design-item img{width:44px;height:44px}}
 </style>
