@@ -55,6 +55,15 @@ class MigrationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"MIGRATION_PRIVATE_SCOPE"):
             apply_plan(f,p,FILES,Budget(50,50,1000))
         self.assertEqual(f.copies,[])
+    def test_world_maps_and_no_private_list_if_public_covers_items(self):
+        f=Fake()
+        f.objects[(PUBLIC_BUCKET,"media/steam-v1.26.2/original/aa/"+A+".webp")]=f.obj(A,100)
+        f.objects[(PUBLIC_BUCKET,"media/world-maps/original/bb/"+B+".webp")]=f.obj(B,200)
+        p=build_plan(f,FILES,Budget(50,50,1000))
+        self.assertEqual(p["privateCopies"],0)
+        self.assertFalse(p["privateInventoryRead"])
+        self.assertEqual(p["uniqueImages"],3)
+        self.assertEqual(canonical_sha("media/world-maps/original/bb/"+B+".webp"),B)
     def test_prefix_mismatch(self):
         self.assertIsNone(canonical_sha("media/shared/original/aa/"+B+".webp"))
 if __name__=="__main__":

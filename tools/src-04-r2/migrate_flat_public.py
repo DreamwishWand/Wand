@@ -10,6 +10,8 @@ import hashlib
 import json
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 from pathlib import Path
 
 from build_public_candidate import approved_local_stage, SOURCE_PREFIX, PRIVATE_BUCKET
@@ -19,7 +21,7 @@ from stage_media_v2 import DEFAULT_OUT, require, save_report
 PUBLIC_BUCKET = "dreamwishwand-media"
 SHA = r"[0-9a-f]{64}"
 CANONICAL = re.compile(r"images/("+SHA+r")\.webp$")
-LEGACY = re.compile(r"(?:media/(?:steam-v1\.26\.2/(?:thumbnail|original)|shared/original)|(?:thumbnail|original)|images)/([0-9a-f]{2})/("+SHA+r")\.webp$")
+LEGACY = re.compile(r"(?:media/(?:steam-v1\.26\.2/(?:thumbnail|original)|shared/original|world-maps/original)|(?:thumbnail|original)|images)/([0-9a-f]{2})/("+SHA+r")\.webp$")
 SCHEMA = "wand.media.flat-migration-plan@1"
 
 
@@ -38,13 +40,15 @@ class Budget:
         require(all(type(n) is int and n >= 0 for n in (a,b,size)), "MIGRATION_BUDGET")
         self.max_a, self.max_b, self.max_bytes = a,b,size
         self.a = self.b = self.bytes = 0
+        self.lock = Lock()
 
     def take(self, a=0,b=0,size=0):
-        require(self.a+a <= self.max_a and self.b+b <= self.max_b and
-                self.bytes+size <= self.max_bytes, "MIGRATION_BUDGET_EXCEEDED")
-        self.a += a
-        self.b += b
-        self.bytes += size
+        with self.lock:
+            require(self.a+a <= self.max_a and self.b+b <= self.max_b and
+                    self.bytes+size <= self.max_bytes, "MIGRATION_BUDGET_EXCEEDED")
+            self.a += a
+            self.b += b
+            self.bytes += size
 
     def summary(self):
         return {"classARequests":self.a,"classBRequests":self.b,"addedBytes":self.bytes}
@@ -56,7 +60,7 @@ def client(account):
     import boto3
     from botocore.config import Config
     s3=boto3.client("s3",region_name="auto",endpoint_url=f"https://{account}.r2.cloudflarestorage.com",
-                    config=Config(retries={"total_max_attempts":1},connect_timeout=15,read_timeout=60))
+                    config=Config(retries={"total_max_attempts":1},connect_timeout=10,read_timeout=30,max_pool_connections=16))
     # R2 extension, not the standard source-side CopySourceIfNoneMatch.
     # Inject before signing so the destination condition is authenticated.
     def no_overwrite(request, **kwargs):
@@ -68,6 +72,8 @@ def client(account):
 def inventory(s3,bucket,budget,prefix=""):
     objects={}
     token=None
+    pages=0
+    print(f'Listing {bucket} ...',flush=True)
     while True:
         budget.take(a=1)
         args={"Bucket":bucket,"Prefix":prefix,"MaxKeys":1000}
@@ -77,6 +83,8 @@ def inventory(s3,bucket,budget,prefix=""):
         for item in page.get("Contents",[]):
             require(item["Key"] not in objects,"MIGRATION_LIST_DUPLICATE")
             objects[item["Key"]]=item
+        pages+=1
+        print(f"  page {pages}: {len(objects):,} objects; LIST {budget.a}/{budget.max_a}",flush=True)
         if not page.get("IsTruncated"):
             return objects
         token=page.get("NextContinuationToken")
@@ -110,7 +118,7 @@ def item_sources(files):
 def build_plan(s3,files,budget):
     known=item_sources(files)
     public=inventory(s3,PUBLIC_BUCKET,budget)
-    private=inventory(s3,PRIVATE_BUCKET,budget,SOURCE_PREFIX+"/")
+    private={}
     # Only recognize exact known public image namespaces. Never copy arbitrary
     # other public objects or anything outside the approved private item map.
     public_sources={}
@@ -128,13 +136,19 @@ def build_plan(s3,files,budget):
         else:
             known[target]={"sha256":sha,"bytes":size,"sourceKey":None}
         public_sources.setdefault(target,[]).append(key)
-    rows=[]
-    for key,v in sorted(known.items()):
+    missing=[k for k in known if k not in public_sources]
+    if missing:
+        print(f"{len(missing):,} item hashes not in public; checking private source inventory.",flush=True)
+        private=inventory(s3,PRIVATE_BUCKET,budget,SOURCE_PREFIX+"/")
+    else:
+        print("All verified local item hashes have public filename candidates. Private LIST skipped.",flush=True)
+    require(budget.b+len(known)<=budget.max_b,"MIGRATION_BUDGET_EXCEEDED")
+    def inspect(entry):
+        key,v=entry
         sha,size=v["sha256"],v["bytes"]
         if key in public:
             verified_head(s3,PUBLIC_BUCKET,key,sha,size,budget,canonical=True)
-            rows.append({"target":key,"sha256":sha,"bytes":size,"action":"reuse"})
-            continue
+            return {"target":key,"sha256":sha,"bytes":size,"action":"reuse"}
         if key in public_sources:
             src=public_sources[key][0]
             bucket=PUBLIC_BUCKET
@@ -143,13 +157,26 @@ def build_plan(s3,files,budget):
             bucket=PRIVATE_BUCKET
             require(src in private and private[src]["Size"]==size,"MIGRATION_PRIVATE_MISSING")
         etag=verified_head(s3,bucket,src,sha,size,budget)
-        rows.append({"target":key,"sha256":sha,"bytes":size,"action":"copy",
-                     "sourceBucket":bucket,"sourceKey":src,"sourceETag":etag})
+        return {"target":key,"sha256":sha,"bytes":size,"action":"copy",
+                     "sourceBucket":bucket,"sourceKey":src,"sourceETag":etag}
+    rows=[]
+    entries=sorted(known.items())
+    total=len(entries)
+    print(f"Checking {total:,} distinct source candidates; 12 concurrent metadata requests.",flush=True)
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        for start in range(0,total,120):
+            futures=[pool.submit(inspect,x) for x in entries[start:start+120]]
+            for future in as_completed(futures):
+                rows.append(future.result())
+                if len(rows)%100==0 or len(rows)==total:
+                    print(f"  HEAD {len(rows):,}/{total:,} ({100*len(rows)/max(total,1):.1f}%)",flush=True)
+    rows.sort(key=lambda r:r["target"])
     pending=[r for r in rows if r["action"]=="copy"]
     projected={"classARequests":len(pending)+max(1,(len(public)+999)//1000)+1,
-               "classBRequests":len(pending)+len(rows),"addedBytes":sum(r["bytes"] for r in pending)}
+               "classBRequests":len(rows),"addedBytes":sum(r["bytes"] for r in pending)}
     return {"schema":SCHEMA,"publicBucket":PUBLIC_BUCKET,"privateBucket":PRIVATE_BUCKET,
-            "status":"planned_no_writes","publicObjects":len(public),"privateSourceObjects":len(private),
+            "status":"planned_no_writes","publicObjects":len(public),"privateSourceObjects":len(private),"privateInventoryRead":bool(missing),
+            "privateCopies":sum(r["sourceBucket"]==PRIVATE_BUCKET for r in pending),
             "unclassifiedPublicObjects":unknown,"uniqueImages":len(rows),"copyCount":len(pending),
             "reuseCount":len(rows)-len(pending),"planUsage":budget.summary(),"applyUpperEstimate":projected,
             "objects":rows}
@@ -183,7 +210,7 @@ def apply_plan(s3,plan,files,budget):
     present=inventory(s3,PUBLIC_BUCKET,budget,"images/")
     needed=[r for r in rows if r["target"] not in present]
     require(all(r["action"]=="copy" for r in needed),"MIGRATION_REUSED_TARGET_MISSING")
-    require(budget.a+len(needed)<=budget.max_a and budget.b+len(rows)+len(needed)<=budget.max_b
+    require(budget.a+len(needed)<=budget.max_a and budget.b+len(rows)<=budget.max_b
             and sum(r["bytes"] for r in needed)<=budget.max_bytes,"MIGRATION_BUDGET_EXCEEDED")
     # Preflight existing destinations, including already copied rows from a prior run.
     receipt={}
@@ -192,11 +219,11 @@ def apply_plan(s3,plan,files,budget):
         if key in present:
             verified_head(s3,PUBLIC_BUCKET,key,sha,size,budget,canonical=True)
             receipt[key]=size
-    # One source HEAD and one destination HEAD for each new copy.
+    # Source ETag is already verified in the pinned plan. R2 enforces it atomically.
+    # Avoid a second full source HEAD sweep.
     for row in needed:
         key,sha,size=row["target"],row["sha256"],row["bytes"]
-        source_etag=verified_head(s3,row["sourceBucket"],row["sourceKey"],sha,size,budget)
-        require(source_etag==row["sourceETag"],"MIGRATION_SOURCE_CHANGED")
+        source_etag=row["sourceETag"]
         budget.take(a=1,size=size)
         s3.copy_object(Bucket=PUBLIC_BUCKET,Key=key,
                        CopySource={"Bucket":row["sourceBucket"],"Key":row["sourceKey"]},
@@ -224,7 +251,9 @@ def main():
     p.add_argument("--max-bytes",type=int,required=True)
     a=p.parse_args()
     budget=Budget(a.max_a,a.max_b,a.max_bytes)
+    print('Reading and checking local verified item index ...',flush=True)
     files=approved_local_stage(a.root.resolve())
+    print(f'Local item image references: {len(files):,}',flush=True)
     if a.mode=="plan":
         require(not a.plan.exists(),"MIGRATION_PLAN_EXISTS")
         plan=build_plan(client(a.account_id),files,budget)
