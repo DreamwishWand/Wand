@@ -245,7 +245,7 @@ function numericTree(value,depth=0,guidPath=null,condition=false,structure=null)
   check(depth<=(structure?64:16),'MESSAGE_DEPTH');
   if(typeof value==='string'){
     const suffix=guidPath?.split('.').slice(-2).join('.');
-    check(structure?Object.hasOwn(structure.paths,guidPath)&&new RegExp('^(?:'+structure.patterns[structure.paths[guidPath]]+')
+    check(structure?Object.hasOwn(structure.paths,guidPath)&&new RegExp('^(?:'+structure.patterns[structure.paths[guidPath]]+')$').test(value):condition?(
       REVIEWED_CONDITION_UUIDS.has(suffix)&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value)||
       REVIEWED_CONDITION_KEYS.has(suffix)&&/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(value)
     ):REVIEWED_GUID_PATHS.has(guidPath)&&/^guid:[0-9a-f]{32}$/.test(value),'MESSAGE_STRING');
