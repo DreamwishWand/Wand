@@ -5,6 +5,7 @@ export interface WorldBrowseScope {
   readonly itemIds:readonly number[];
   readonly itemIdSet:ReadonlySet<number>;
   readonly rootCounts:ReadonlyMap<CollectionTopCategory,number>;
+  readonly progressTotals:ReadonlyMap<CollectionTopCategory,number>;
   readonly nativeCounts:ReadonlyMap<string,number>;
   readonly activityCounts:ReadonlyMap<number,number>;
 }
@@ -12,11 +13,20 @@ interface MutableScope {
   itemIds:number[];
   itemIdSet:Set<number>;
   rootCounts:Map<CollectionTopCategory,number>;
+  progressTotals:Map<CollectionTopCategory,number>;
   nativeCounts:Map<string,number>;
   activityCounts:Map<number,number>;
 }
 function makeScope():MutableScope{
-  return {itemIds:[],itemIdSet:new Set(),rootCounts:new Map(),nativeCounts:new Map(),activityCounts:new Map()};
+  return {itemIds:[],itemIdSet:new Set(),rootCounts:new Map(),progressTotals:new Map(),nativeCounts:new Map(),activityCounts:new Map()};
+}
+/** Base character/mount completion is distinct from cosmetic collection.
+ * Other roots use manual checklist records, not inferred game save flags. */
+export function collectionProgressMember(source:CollectionDb01Index,id:number):boolean{
+  const root=source.rootsByItem?.get(id),native=source.nativeSubtypeByItem.get(id);
+  if(root==='characters'||root==='adventure-companions')return native?.nativeType==='Character';
+  if(root==='mounts')return native?.nativeType==='Companion'&&native.code===3;
+  return root!==undefined;
 }
 /** A catalog's world-context membership is immutable. Build once per source
  * projection, not per click. This is not CollectionArea/availability proof. */
@@ -27,7 +37,10 @@ export function buildWorldBrowseIndex(source:CollectionDb01Index):ReadonlyMap<st
   function add(scope:MutableScope,id:number):void{
     scope.itemIds.push(id);scope.itemIdSet.add(id);
     const root=source.rootsByItem?.get(id);
-    if(root)scope.rootCounts.set(root,(scope.rootCounts.get(root)??0)+1);
+    if(root){
+      scope.rootCounts.set(root,(scope.rootCounts.get(root)??0)+1);
+      if(collectionProgressMember(source,id))scope.progressTotals.set(root,(scope.progressTotals.get(root)??0)+1);
+    }
     const native=source.nativeSubtypeByItem.get(id);
     if(native){
       const key=native.nativeType+':'+native.code;
@@ -55,13 +68,16 @@ export function buildWorldBrowseIndex(source:CollectionDb01Index):ReadonlyMap<st
 export function countOwnedInWorldScope(
   source:CollectionDb01Index,scope:WorldBrowseScope,
   entries:Readonly<Record<string,{status?:string}>>
-):{native:Map<string,number>;activity:Map<number,number>}{
+):{native:Map<string,number>;activity:Map<number,number>;root:Map<CollectionTopCategory,number>}{
   const native=new Map<string,number>(),activity=new Map<number,number>();
+  const root=new Map<CollectionTopCategory,number>();
   const ids=scope.itemIdSet;
   for(const [key,entry] of Object.entries(entries)){
     if(entry.status!=='owned')continue;
     const id=Number(key);
     if(!ids.has(id))continue;
+    const top=source.rootsByItem?.get(id);
+    if(top&&collectionProgressMember(source,id))root.set(top,(root.get(top)??0)+1);
     const row=source.nativeSubtypeByItem.get(id);
     if(row){
       const k=row.nativeType+':'+row.code;
@@ -70,5 +86,5 @@ export function countOwnedInWorldScope(
     const a=source.activityTypesByItem.get(id);
     if(a)activity.set(a.code,(activity.get(a.code)??0)+1);
   }
-  return {native,activity};
+  return {native,activity,root};
 }
