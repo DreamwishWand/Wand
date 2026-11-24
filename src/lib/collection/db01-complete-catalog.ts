@@ -123,6 +123,7 @@ export function projectCompleteCollection(source:CompleteItemMasterFacets,supple
     categoriesByItem,itemsByCategory,activityTypesByItem,itemsByActivityType,activityTypeNames,
     nativeSubtypeByItem,itemsByNativeSubtype,nativeSubtypeNames,universesByItem,itemsByUniverse,
     universeTagIdsByItem,itemsByUniverseTagId,rootsByItem,itemsByRoot,universeSourceStatusByItem,iconGuidByItem,
+    worldLabelsByKey:new Map(source.worldTags.map(row=>[row.key,row.names])),
     sourceSetByItem:new Map(source.sourceSetItems.filter(([id])=>known(id)))};
 }
 /** Original FurnitureFunctionTagItemData identities, not guessed localized
