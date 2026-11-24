@@ -21,6 +21,45 @@ const SUBMENUS=new Set([0,1,2,3,4,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]);
 const json=b=>Buffer.from(JSON.stringify(b)+'\n');
 const uniq=a=>[...new Set(a)].sort((a,b)=>a-b);
 function check(v,c){if(!v)throw Error('DB01_COMPLETE_MASTER_'+c)}
+function validAttribute(value,depth=0){
+  if(depth>16)return false;
+  if(typeof value==='boolean'||typeof value==='string'||typeof value==='number'&&Number.isFinite(value))return true;
+  if(Array.isArray(value))return value.every(v=>validAttribute(v,depth+1));
+  return value!==null&&typeof value==='object'&&Object.entries(value).every(([k,v])=>
+    /^[A-Za-z_][A-Za-z0-9_]*$/.test(k)&&!['__proto__','constructor','prototype'].includes(k)&&
+    validAttribute(v,depth+1));
+}
+function attachAttributes(project,e,version,source,byId){
+  if(e.attributesSha256===undefined)return undefined;
+  check(SHA.test(e.attributesSha256),'ATTRIBUTE_SHA_FORMAT');
+  const bytes=readFileSync(join(project,'data/ddv/item-master','source-attributes-steam-'+version+'.json.gz'));
+  check(hash(bytes)===e.attributesSha256,'ATTRIBUTE_SHA');
+  const a=JSON.parse(gunzipSync(bytes,{maxOutputLength:128*1024*1024}).toString('utf8'));
+  check(a.schema==='wand.item-master.source-attributes@1'&&a.release===e.release&&
+    a.gameVersion===version&&a.sourceItemsSha256===source.sourceItemsSha256&&
+    a.masterArchiveSha256===e.archiveSha256&&a.definitionCount===e.count&&
+    a.allOriginalFieldSemanticsVerified===false&&a.gridLayerOccupancyVerified===false&&
+    a.runtimePriceVerified===false&&Array.isArray(a.items)&&a.items.length===a.count,
+    'ATTRIBUTE_RELEASE');
+  const seen=new Set(),coverage=new Map();
+  for(const pair of a.items){
+    check(Array.isArray(pair)&&pair.length===2&&ID(pair[0])&&byId.has(pair[0])&&
+      !seen.has(pair[0])&&pair[1]&&typeof pair[1]==='object'&&!Array.isArray(pair[1])&&
+      Object.keys(pair[1]).length>0&&validAttribute(pair[1]),'ATTRIBUTE_ROW');
+    const [id,props]=pair;seen.add(id);
+    const r=byId.get(id);
+    check(r.sourceClass!==null&&Object.keys(props).every(k=>!Object.hasOwn(r.nativeProperties,k)),
+      'ATTRIBUTE_SCALAR_DUPLICATION');
+    r.sourceAttributes=props;
+    for(const k of Object.keys(props))coverage.set(k,(coverage.get(k)??0)+1);
+  }
+  check(Object.keys(a.coverage).length===coverage.size&&
+    [...coverage].every(([k,n])=>a.coverage[k]===n),'ATTRIBUTE_CENSUS');
+  return {itemCount:seen.size,fieldCount:coverage.size,
+    fieldOccurrences:[...coverage.values()].reduce((a,b)=>a+b,0),
+    fields:a.coverage,unmappedSourceClassCount:a.unmappedSourceClassCount,
+    allOriginalFieldSemanticsVerified:false,gridLayerOccupancyVerified:false,runtimePriceVerified:false};
+}
 function sourceCodes(row){
   const codes=new Set(row.collectionSourceCandidates.map(c=>c.submenuCode).filter(c=>SUBMENUS.has(c)));
   // Native item-type browse fallback is not evidence of game Collection membership.
@@ -63,6 +102,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
   const rows=source.items;
   const byId=new Map(rows.map(r=>[r.itemId,r]));
   check(byId.size===e.count&&rows.every((r,i)=>i===0||rows[i-1].itemId<r.itemId),'ID_CENSUS');
+  const sourceAttributeCoverage=attachAttributes(project,e,version,source,byId);
   // Verify no existing public definition is lost or silently replaced.
   for(const [path,raw] of baseFiles){
     if(!path.startsWith('id/'))continue;
@@ -177,6 +217,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
       itemsWithSourceCollectionCandidates:source.coverage.collectionCandidateItemIds,
       worldMembershipVerified:false,collectionMembershipVerified:false,
       acquisitionCoverageComplete:false,publishedR2ImageUrlAvailable:false},
+    ...(sourceAttributeCoverage?{attributesSha256:e.attributesSha256,sourceAttributeCoverage}:{}),
     shards:{},assets:{}};
   const root=join(project,'static/ddv/item-master');
   mkdirSync(root,{recursive:true});
