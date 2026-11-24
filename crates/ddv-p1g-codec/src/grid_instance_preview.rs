@@ -5,7 +5,7 @@
 use super::CodecError;
 use ddv_save_patch::{GridCoordinateTarget,GridObjectKind};
 use serde_json::{Value,Map};
-use std::collections::HashSet;
+use std::collections::{HashMap,HashSet};
 
 const MAX_GRIDS:usize=2048;
 const MAX_SCANNED_OBJECTS:usize=100_000;
@@ -206,32 +206,43 @@ fn exclusive_anchor_class(item_id:u64)->Option<u64>{
 pub(super) fn validate_exclusive_grid_moves(
     profile:&[u8],moves:&[(&GridCoordinateTarget,(i32,i32))]
 )->Result<(),CodecError>{
-    let exclusive=moves.iter().filter(|(target,_)|
-        exclusive_anchor_class(target.item_id).is_some()
+    let exclusive=moves.iter().filter_map(|(target,xy)|
+        exclusive_anchor_class(target.item_id).map(|class|(*target,*xy,class))
     ).collect::<Vec<_>>();
     if exclusive.is_empty(){return Ok(());}
-    // A DiffGrid's effective objects include unseen original defaults.
-    // Do not authorize moving an exclusive record until that base is joined.
-    if exclusive.iter().any(|(target,_)|target.kind!=GridObjectKind::Full){
+    // DiffGrids can have unseen original defaults.
+    if exclusive.iter().any(|(target,_,_)|target.kind!=GridObjectKind::Full){
         return Err(CodecError::Json);
     }
     let (scan,_)=scan_grid_instances(profile)?;
     if scan.sampled||scan.invalid>0{return Err(CodecError::Json);}
-    for (target,destination) in exclusive{
-        let class=exclusive_anchor_class(target.item_id);
-        for (other,original) in &scan.private_targets{
-            if other.kind!=target.kind||other.grid_id!=target.grid_id||
-                other.object_id==target.object_id||
-                exclusive_anchor_class(other.item_id)!=class{continue;}
-            let final_xy=moves.iter().find(|(m,_)|m.kind==other.kind&&
-                m.grid_id==other.grid_id&&m.object_id==other.object_id)
-                .map(|(_,xy)|*xy).or(*original);
-            // An incomplete same-class coordinate cannot prove uniqueness.
-            if final_xy.is_none()||final_xy==Some(*destination){
-                return Err(CodecError::Json);
-            }
+    // Only affected Grid/class pairs and destinations are tracked. Unrelated
+    // preexisting duplicates do not block ordinary edits or other grids.
+    let mut changed=HashMap::with_capacity(exclusive.len());
+    let mut scopes=HashSet::new();
+    let mut destinations=HashMap::with_capacity(exclusive.len());
+    for (target,xy,class) in exclusive{
+        let scope=(target.kind,target.grid_id.as_str(),class);
+        scopes.insert(scope);
+        if changed.insert((target.kind,target.grid_id.as_str(),target.object_id.as_str()),xy).is_some()||
+            destinations.insert((scope,xy),0usize).is_some(){
+            return Err(CodecError::Json);
         }
     }
+    // One pass across all saved instances, rather than per-target scans.
+    for (other,original) in &scan.private_targets{
+        let Some(class)=exclusive_anchor_class(other.item_id) else{continue;};
+        let scope=(other.kind,other.grid_id.as_str(),class);
+        if !scopes.contains(&scope){continue;}
+        let final_xy=changed.get(&(other.kind,other.grid_id.as_str(),other.object_id.as_str()))
+            .copied().or(*original).ok_or(CodecError::Json)?;
+        if let Some(count)=destinations.get_mut(&(scope,final_xy)){
+            *count+=1;
+            if *count>1{return Err(CodecError::Json);}
+        }
+    }
+    if destinations.values().any(|count|*count!=1){return Err(CodecError::Json);}
+
     Ok(())
 }
 
@@ -293,13 +304,13 @@ pub(super) fn resolve_grid_coordinate_targets(
     Ok(targets)
 }
 
-/// Resolve mixed 1..=16 Grid edits against the same immutable opened Save
+/// Resolve a bounded mixed Grid batch against the same immutable opened Save
 /// with ONE native GridObject scan. Private native map IDs stay in WASM.
 pub(super) fn resolve_grid_mixed_targets(
     profile:&[u8],
     selections:&[(usize,u64,(i32,i32),String,Option<String>)]
 )->Result<Vec<GridCoordinateTarget>,CodecError>{
-    if selections.is_empty()||selections.len()>16{
+    if selections.is_empty()||selections.len()>ddv_save_patch::MAX_GRID_MIXED_EDITS{
         return Err(CodecError::Bounds);
     }
     let (scan,_status)=scan_grid_instances(profile)?;

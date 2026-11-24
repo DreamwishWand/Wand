@@ -1,10 +1,12 @@
 <script lang="ts">
+  import {emptyWorldTimeline,currentWorldEdits} from './saved-map-batch.ts';
   import SavedShapePlot from './SavedShapePlot.svelte';
   import type {SavedShapeMap} from './saved-shape-map.ts';
   import type {SavedGridSourceCandidates} from './saved-grid-source-candidates.ts';
   export let receipt:SavedGridSourceCandidates|null=null;
   export let shapeMap:SavedShapeMap|null=null;
   export let file:File|null=null;
+  export let timeline=emptyWorldTimeline();
   export let available=false;
   export let working=false;
   export let errorMessage='';
@@ -67,6 +69,9 @@
       {working?'照合中…':'選択Gridと照合'}
     </button>
   </div>
+  {#if !shapeMap&&currentWorldEdits(timeline).length}
+    <p class="note">セーブ全体の配置変更 {currentWorldEdits(timeline).length}件を保持しています。</p>
+  {/if}
   {#if !available}
     <p class="note">共通ヘッダーでセーブファイルを開くと、選択中の原本Gridとの参照パスを照合できます。</p>
   {:else if working}
@@ -82,7 +87,7 @@
       {/if}
     </div>
     {#if receipt.points.length>0}
-      {#if shapeMap}<SavedShapePlot map={shapeMap} {file}/>
+      {#if shapeMap}<SavedShapePlot map={shapeMap} {file} bind:timeline/>
       {:else if new Set(receipt.points.map(p=>p.localGridOrdinal)).size===1}<div class="numeric-map">
         <canvas use:draw={receipt}
           aria-label="セーブ内の参照パス一致候補のX/Y数値座標図。地形図ではありません"></canvas>

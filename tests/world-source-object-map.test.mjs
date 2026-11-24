@@ -162,3 +162,19 @@ test('stage multiple moves, re-edit original expected values, undo and redo with
   assert.equal(currentWorldEdits(reverted).length,1);
   assert.equal(m.objects[0].x,0);
 });
+
+test('one Save timeline spans multiple Grid receipts, rejects stale local identity, exceeds previous cap',()=>{
+  const point=(localOrdinal,localGridOrdinal,x)=>({localOrdinal,localGridOrdinal,x,y:0,orientation:'GridOrientation_Down',itemId:'100'});
+  const first=buildSavedShapeMap(fixture(),L,7,Array.from({length:20},(_,i)=>point(i+1,1,i*4)));
+  const second=buildSavedShapeMap(fixture(),L,7,[point(21,2,3)]);
+  let t=emptyWorldTimeline();
+  for(const o of first.objects){t=stageWorldEdit(first,t,o.localOrdinal,o.x+1,0,o.orientation,'');assert.ok(t);}
+  t=stageWorldEdit(second,t,21,4,0,'GridOrientation_Down','景観');
+  assert.equal(currentWorldEdits(t).length,21);
+  assert.equal(projectWorldEdits(first,currentWorldEdits(t)).objects[19].x,77);
+  assert.equal(projectWorldEdits(second,currentWorldEdits(t)).objects[0].x,4);
+  const stale={...second,objects:[{...second.objects[0],x:99}]};
+  assert.equal(projectWorldEdits(stale,currentWorldEdits(t)).objects[0].x,99);
+  assert.equal(stageWorldEdit(stale,t,21,100,0,'GridOrientation_Down',''),null);
+  assert.equal(currentWorldEdits(travelWorldTimeline(t,-1)).length,20);
+});

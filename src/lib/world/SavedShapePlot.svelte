@@ -13,13 +13,13 @@
   let busy=false,editError='',copyUrl='',copyName='',checkedSignature='';
   let draftX:number|undefined=0,draftY:number|undefined=0,draftOrientation:string|null=null,placing=false;
   let hoverPoint:{x:number;y:number}|null=null;
-  let timeline=emptyWorldTimeline();
+  export let timeline=emptyWorldTimeline();
   let stageError='';
   $: staged=currentWorldEdits(timeline);
   $: effectiveMap=projectWorldEdits(map,staged);
   function clearTimeline(){timeline=emptyWorldTimeline();stageError='';}
   let previousFile:File|null=null;
-  function checkFile(value:File|null){if(previousFile!==value){previousFile=value;cancelEdit();clearTimeline();placing=false;hoverPoint=null;}}
+  function checkFile(value:File|null){if(previousFile!==value){previousFile=value;cancelEdit();stageError='';placing=false;hoverPoint=null;}}
   $: checkFile(file);
   let draftTarget:SavedShapeObject|null=null;
   function cancelEdit(){editEpoch++;editWorker?.terminate();editWorker=null;busy=false;checkedSignature='';editError='';if(copyUrl)URL.revokeObjectURL(copyUrl);copyUrl='';}
@@ -80,7 +80,7 @@
         if(exporting&&r?.kind==='copy'&&r.bytes instanceof Uint8Array&&r.bytes.byteLength>0&&r.bytes.byteLength<=32*1024*1024&&
           receipt?.contract==='wand.db05.experimental-copy@1'&&receipt.copyBytes===r.bytes.byteLength&&receipt.originalUnchanged===true&&
           receipt.independentReopenVerified===true&&receipt.experimentalCopyOnly===true&&receipt.productionWriterAuthorized===false){
-          try{copyUrl=URL.createObjectURL(new Blob([r.bytes.buffer as ArrayBuffer],{type:'application/octet-stream'}));
+          try{copyUrl=URL.createObjectURL(new Blob([r.bytes.slice().buffer as ArrayBuffer],{type:'application/octet-stream'}));
             const dot=sourceName.lastIndexOf('.');copyName=dot>0?sourceName.slice(0,dot)+'-world-edited'+sourceName.slice(dot):sourceName+'-world-edited';}
           catch{editError='コピーを生成できませんでした。';}finally{r.bytes.fill(0);}return;
         }
@@ -101,13 +101,14 @@
   function resetCamera(){zoom=1;cx=.5;cy=.5;}
   function chooseGrid(n:number){ordinal=n;selected=null;hits=[];layer='all';resetCamera();}
   $: if(map!==previous){
-    previous=map;cancelEdit();timeline=emptyWorldTimeline();stageError='';
+    previous=map;cancelEdit();stageError='';
     ordinal=map.objects[0]?.localGridOrdinal??0;selected=null;hits=[];layer='all';zoom=1;cx=.5;cy=.5;
   }
   $: activeOrdinal=ordinals.includes(ordinal)?ordinal:ordinals[0]??0;
   $: objects=mapPainterOrder(savedGridObjects(effectiveMap,activeOrdinal));
   $: layers=(Object.keys(MAP_LAYER_LABELS) as MapSelectionLayer[]).filter(l=>l==='all'||objects.some(o=>matchesSelectionLayer(o,l)));
   $: chosen=objects.find(o=>o.localOrdinal===selected)??null;
+  $: stagedOrdinals=new Set(staged.map(e=>e.plan.localOrdinal));
   function bounds(list:SavedShapeObject[],m:SavedShapeMap){
     if(!list.length)return {x:0,y:0,w:1,h:1};
     let x=Infinity,y=Infinity,right=-Infinity,bottom=-Infinity;
@@ -166,7 +167,7 @@
       {#if extent.w/zoom<160&&extent.h/zoom<160}<rect x={extent.x} y={extent.y} width={extent.w} height={extent.h} fill="url(#saved-shape-cells)"/>{/if}
       {#each objects as o (o.localOrdinal)}
         {@const shape=o.shapeKey?map.shapes[o.shapeKey]:null}
-        <g class="saved-object" class:staged-object={staged.some(e=>e.plan.localOrdinal===o.localOrdinal)} data-local-ordinal={o.localOrdinal} transform={'translate('+o.x+' '+o.y+')'}>
+        <g class="saved-object" class:staged-object={stagedOrdinals.has(o.localOrdinal)} data-local-ordinal={o.localOrdinal} transform={'translate('+o.x+' '+o.y+')'}>
           {#if shape}
             <path class="saved-object-shape" d={shape.path} fill={MAP_LAYER_COLORS[o.layer]} fill-opacity={selected===o.localOrdinal?.85:matchesSelectionLayer(o,layer)?.48:.24}
               stroke={selected===o.localOrdinal?'#fff':MAP_LAYER_COLORS[o.layer]} stroke-width="1" vector-effect="non-scaling-stroke"/>
@@ -223,14 +224,17 @@
     <div class="world-edit-history">
       <div class="controls">
         <strong>配置変更 {staged.length}/{WORLD_BATCH_LIMIT}</strong>
+        <span>セーブ全体</span>
         <button type="button" aria-label="配置変更を取り消す" disabled={busy||timeline.cursor===0} on:click={()=>travel(-1)}>↶</button>
         <button type="button" aria-label="配置変更をやり直す" disabled={busy||timeline.cursor===timeline.snapshots.length-1} on:click={()=>travel(1)}>↷</button>
         <button type="button" disabled={busy} on:click={resetStaged}>全変更を取り消す</button>
       </div>
+      <div class="staged-list" aria-label="配置変更一覧">
       {#each staged as e (e.plan.localOrdinal)}
-        <p class="staged-edit">{e.name} · ({e.plan.expectedX}, {e.plan.expectedY}) → ({e.plan.replacementX??e.plan.expectedX}, {e.plan.replacementY??e.plan.expectedY}){e.plan.replacementOrientation?' · 回転':''}
+        <p class="staged-edit">{e.name} · Grid {e.gridOrdinal} · ({e.plan.expectedX}, {e.plan.expectedY}) → ({e.plan.replacementX??e.plan.expectedX}, {e.plan.replacementY??e.plan.expectedY}){e.plan.replacementOrientation?' · 回転':''}
           {#if e.warning}<span class="staged-warning">　{e.warning}</span>{/if}</p>
       {/each}
+      </div>
       {#if pendingDraft}<p>現在の変更を追加するか、元に戻してから一括出力できます。</p>{/if}
     </div>
   {/if}
@@ -250,6 +254,7 @@
   .saved-overlap-cell,.exclusive-anchor-conflict{pointer-events:none}
   .exclusive-warning{color:#ef5350}
   .world-edit-history{display:grid;gap:5px;border:1px solid #ffffff35;border-radius:5px;padding:8px}
+  .staged-list{display:grid;gap:4px;max-height:180px;overflow:auto;min-width:0}
   .staged-warning{color:#efc23e}
   .staged-object{opacity:.9}
   .transform-controls{display:grid;gap:8px;padding:8px;border:1px solid #ffffff35;border-radius:5px}
