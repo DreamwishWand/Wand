@@ -35,6 +35,7 @@ export interface ItemMasterCompleteRelease {
   readonly parts: number;
   readonly attributesSha256?: string;
   readonly nativeSupplementSha256?: string;
+  readonly referenceAttributesSha256?: string;
   readonly localization?: Readonly<{parts:number;sha256:string}>;
 }
 export interface ItemMasterExpandedRelease {
@@ -262,6 +263,8 @@ export interface ItemMasterRelease {
   readonly sourceAttributeCoverage?: NativeSourceAttributeCoverage;
   readonly nativeSupplementSha256?: string;
   readonly nativeSupplementCoverage?: Readonly<{strideOverrideCount:number;runtimeSemanticsVerified:false}>;
+  readonly referenceAttributesSha256?: string;
+  readonly referenceAttributeCoverage?: Readonly<{fields:Readonly<Record<string,number>>;runtimeSemanticsVerified:false}>;
   readonly localizationSha256?: string;
   readonly localizationCoverage?: ItemLocalizationCoverage;
   readonly sourceFilesVerified?: number;
@@ -306,6 +309,9 @@ export interface PublicItemMaster<T extends ItemMasterRecord|CompleteItemMasterR
   getItem(itemId: number): Promise<T | null>;
   getItems(itemIds: readonly number[]): Promise<(T | null)[]>;
 }
+/** The other ItemID and the original occurrence path on the source definition. */
+export type ItemReferenceOccurrence=readonly [otherItemId:number,sourcePath:string];
+export type ItemReferenceDirection='incoming'|'outgoing';
 export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemMasterRecord>, ItemFieldReader {
   /** Collection-only projection; fetch neither all shards nor all languages. */
   getCollectionFacets(): Promise<CompleteItemMasterFacets>;
@@ -315,6 +321,8 @@ export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemM
   getLocalizedItemText(itemId:number,locale:ItemMasterLocale):Promise<ItemLocalizedTextRecord|null>;
   getLocalizedItemsText(itemIds:readonly number[],locale:ItemMasterLocale):Promise<readonly (ItemLocalizedTextRecord|null)[]>;
   getSourceRelations(): Promise<CompleteItemMasterRelations>;
+  /** Source-declared links in published canonical fields, not a proof of acquisition. */
+  getItemReferences(itemId:number,direction:ItemReferenceDirection):Promise<readonly ItemReferenceOccurrence[]|null>;
 }
 const SHA = /^[0-9a-f]{64}$/;
 const GAME_VERSION = /^[0-9]+\.[0-9]+\.[0-9]+$/;
@@ -498,6 +506,8 @@ export async function openPublicItemMaster(
           typeof c.attributesSha256==='string'&&SHA.test(c.attributesSha256),'INVALID_ATTRIBUTE_DIGEST');
         assert(c.nativeSupplementSha256===undefined||
           typeof c.nativeSupplementSha256==='string'&&SHA.test(c.nativeSupplementSha256),'INVALID_NATIVE_SUPPLEMENT_DIGEST');
+        assert(c.referenceAttributesSha256===undefined||
+          typeof c.referenceAttributesSha256==='string'&&SHA.test(c.referenceAttributesSha256),'INVALID_REFERENCE_ATTRIBUTE_DIGEST');
         if(c.localization!==undefined){
           const l=c.localization;
           assert(isObject(l)&&typeof l.parts==='number'&&Number.isSafeInteger(l.parts)&&l.parts>0&&l.parts<=100&&
@@ -566,6 +576,12 @@ export async function openPublicItemMaster(
         Number.isSafeInteger(release.nativeSupplementCoverage.strideOverrideCount)&&
         release.nativeSupplementCoverage.strideOverrideCount>=0&&release.nativeSupplementCoverage.strideOverrideCount<=release.count&&
         release.nativeSupplementCoverage.runtimeSemanticsVerified===false),'INVALID_NATIVE_SUPPLEMENT_RELEASE');
+    assert((!selected||release.referenceAttributesSha256===selected.complete?.referenceAttributesSha256)&&
+      (release.referenceAttributesSha256===undefined||typeof release.referenceAttributesSha256==='string'&&
+        SHA.test(release.referenceAttributesSha256)&&isObject(release.referenceAttributeCoverage)&&
+        isObject(release.referenceAttributeCoverage.fields)&&
+        Object.values(release.referenceAttributeCoverage.fields).every(n=>typeof n==='number'&&Number.isSafeInteger(n)&&n>=0&&n<=Number(release.count))&&
+        release.referenceAttributeCoverage.runtimeSemanticsVerified===false),'INVALID_REFERENCE_ATTRIBUTE_RELEASE');
     assert((!selected||release.localizationSha256===selected.complete?.localization?.sha256)&&
       (release.localizationSha256===undefined||
         typeof release.localizationSha256==='string'&&SHA.test(release.localizationSha256)&&
@@ -717,6 +733,16 @@ export async function openPublicItemMaster(
   return Object.freeze({
     ...common,
     ...fieldReader,
+    async getItemReferences(id:number,direction:ItemReferenceDirection):Promise<readonly ItemReferenceOccurrence[]|null>{
+      assert(direction==='incoming'||direction==='outgoing','INVALID_REFERENCE_DIRECTION');
+      const field='references.'+direction;
+      const result=(await fieldReader.getItemFields([id],[field]))[0];
+      if(result===null)return null;
+      const value=result.values[field]??[];
+      assert(Array.isArray(value)&&value.every(v=>Array.isArray(v)&&v.length===2&&ID(v[0])&&
+        typeof v[1]==='string'&&v[1].length>0),'INVALID_REFERENCE_OCCURRENCE');
+      return deepFreeze(value as unknown as readonly ItemReferenceOccurrence[]);
+    },
     async getCollectionFacets():Promise<CompleteItemMasterFacets>{
       const value=await asset('collection-facets.json');
       assert(isObject(value)&&value.schema==='wand.collection.db01-complete-source-facets@1'&&

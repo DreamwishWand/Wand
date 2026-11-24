@@ -58,3 +58,36 @@ test('native supplement preserves original nullable stride values and offers nes
   assert.equal(grid[0].values['source.GridAreaData.SizeX'],1);
   assert.deepEqual(grid[0].values['source.GridAreaData.Layers'],[68]);
 });
+
+
+test('reviewed original reference arrays preserve order and sentinel values',async()=>{
+  const db=await openPublicItemMaster('',fetcher,{scope:'complete',gameVersion:'current'});
+  assert.deepEqual(db.release.referenceAttributeCoverage.fields,{
+    AdditionalRewardItemIDs:35,CharacterInteractionSceneRestrictionsItemID:3,EmployeeItemIDs:82
+  });
+  const rows=await db.getItemFields([180000000,20100000,20100013,2070000921],[
+    'source.AdditionalRewardItemIDs','source.EmployeeItemIDs','source.CharacterInteractionSceneRestrictionsItemID'
+  ]);
+  assert.deepEqual(rows[0].values['source.AdditionalRewardItemIDs'],[40002309,40002310]);
+  assert.deepEqual(rows[1].values['source.EmployeeItemIDs'],[10000004]);
+  assert.deepEqual(rows[2].values['source.EmployeeItemIDs'],[0]);
+  assert.deepEqual(rows[3].values['source.CharacterInteractionSceneRestrictionsItemID'],[1540000095,1540000096]);
+});
+
+test('source ItemID references are bidirectional and lazy, with paths and valid targets',async()=>{
+  const requests=[];
+  const db=await openPublicItemMaster('',async url=>{requests.push(url);return fetcher(url)},{scope:'complete'});
+  const outgoing=await db.getItemReferences(2050300095,'outgoing');
+  assert(outgoing.some(([id,path])=>id===30000031&&path==='source.Result.ItemID'));
+  assert(outgoing.some(([id,path])=>id===31700021&&path==='source.Ingredients[0].ItemID'));
+  const incoming=await db.getItemReferences(30000031,'incoming');
+  assert(incoming.some(([id,path])=>id===2050300095&&path==='source.Result.ItemID'));
+  const reward=await db.getItemReferences(180000000,'outgoing');
+  assert(reward.some(([id,path])=>id===40002309&&path==='source.AdditionalRewardItemIDs[0]'));
+  assert((await db.getItemReferences(40002309,'incoming')).some(([id,path])=>id===180000000&&path==='source.AdditionalRewardItemIDs[0]'));
+  assert(!(await db.getItemReferences(20100013,'outgoing')).some(([id])=>id===0));
+  assert.equal(await db.getItemReferences(99999999,'incoming'),null);
+  assert(Object.isFrozen(incoming)&&Object.isFrozen(incoming[0]));
+  assert(!requests.some(url=>url.includes('/id/')||url.includes('/text/')||url.includes('/locale/')));
+  await assert.rejects(db.getItemReferences(30000031,'other'),/INVALID_REFERENCE_DIRECTION/);
+});
