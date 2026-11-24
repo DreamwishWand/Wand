@@ -842,8 +842,8 @@ try{
   assert.equal(await mapPanel.locator('.source-map-object').getAttribute('data-layer'),'furniture');
   await mapPanel.getByRole('group',{name:'選択対象レイヤー'}).getByRole('button',{name:'すべて',exact:true}).click();
   const clickCell=async(x,y)=>{
-    await mapPanel.locator('svg').scrollIntoViewIfNeeded();
-    const p=await mapPanel.locator('svg').evaluate((svg,[x,y])=>{
+    await mapPanel.locator('.map > svg').scrollIntoViewIfNeeded();
+    const p=await mapPanel.locator('.map > svg').evaluate((svg,[x,y])=>{
       const point=new DOMPoint(10+3*(x+.5),60-3*(y+.5)).matrixTransform(svg.getScreenCTM());
       return {x:point.x,y:point.y};
     },[x,y]);
@@ -868,24 +868,24 @@ try{
   await clickCell(4,5);
   await mapPanel.locator('.selected-object').waitFor();
   assert.match(await mapPanel.locator('.selected-object').innerText(),/SyntheticSourceObject/);
-  const originalViewBox=await mapPanel.locator('svg').getAttribute('viewBox');
+  const originalViewBox=await mapPanel.locator('.map > svg').getAttribute('viewBox');
   await mapPanel.getByRole('button',{name:'拡大',exact:true}).click();
-  assert.notEqual(await mapPanel.locator('svg').getAttribute('viewBox'),originalViewBox);
-  await mapPanel.getByRole('button',{name:'全体',exact:true}).click();
-  assert.equal(await mapPanel.locator('svg').getAttribute('viewBox'),originalViewBox);
-  await mapPanel.locator('svg').scrollIntoViewIfNeeded();
-  await mapPanel.locator('svg').hover();
+  assert.notEqual(await mapPanel.locator('.map > svg').getAttribute('viewBox'),originalViewBox);
+  await mapPanel.getByRole('button',{name:'全体表示',exact:true}).click();
+  assert.equal(await mapPanel.locator('.map > svg').getAttribute('viewBox'),originalViewBox);
+  await mapPanel.locator('.map > svg').scrollIntoViewIfNeeded();
+  await mapPanel.locator('.map > svg').hover();
   await page.mouse.wheel(0,-120);
   await page.waitForFunction(({initial})=>document.querySelector('.media-map-overlay svg')?.getAttribute('viewBox')!==initial,{initial:originalViewBox});
-  const beforePan=await mapPanel.locator('svg').getAttribute('viewBox');
-  const rect=await mapPanel.locator('svg').boundingBox();
+  const beforePan=await mapPanel.locator('.map > svg').getAttribute('viewBox');
+  const rect=await mapPanel.locator('.map > svg').boundingBox();
   await page.mouse.move(rect.x+rect.width/2,rect.y+rect.height/2);
   await page.mouse.down();await page.mouse.move(rect.x+rect.width/2+20,rect.y+rect.height/2,{steps:4});await page.mouse.up();
-  assert.notEqual(await mapPanel.locator('svg').getAttribute('viewBox'),beforePan);
+  assert.notEqual(await mapPanel.locator('.map > svg').getAttribute('viewBox'),beforePan);
   assert.match(await mapPanel.locator('.selected-object').innerText(),/SyntheticSourceObject/);
-  await mapPanel.getByRole('button',{name:'全体',exact:true}).click();
+  await mapPanel.getByRole('button',{name:'全体表示',exact:true}).click();
   await mapPanel.getByRole('button',{name:'解除'}).click();
-  await mapPanel.locator('svg').waitFor({state:'detached'});
+  await mapPanel.locator('.map > svg').waitFor({state:'detached'});
   await mapPanel.getByRole('button',{name:'簡略マップ',exact:true}).click();
   await mapPanel.locator('.source-map-object').waitFor();
   assert.match(await mapPanel.innerText(),/原本Gridの簡略図/);
@@ -920,9 +920,9 @@ try{
     await savedPlot.locator('.selected-saved-object').waitFor();
     await savedPlot.getByLabel('検索を解除').click();
     await savedPlot.getByRole('button',{name:'閉じる',exact:true}).click();
-    await savedPlot.getByRole('button',{name:'全体',exact:true}).click();
-    await savedPlot.locator('svg').scrollIntoViewIfNeeded();
-    const position=await savedPlot.locator('svg').evaluate(svg=>{
+    await savedPlot.getByRole('button',{name:'全体表示',exact:true}).click();
+    await savedPlot.locator('.plot > svg').scrollIntoViewIfNeeded();
+    const position=await savedPlot.locator('.plot > svg').evaluate(svg=>{
       const p=new DOMPoint(4.5,5.5).matrixTransform(svg.getScreenCTM());return {x:p.x,y:p.y};});
     await page.mouse.click(position.x,position.y);
     await savedPlot.getByLabel('移動先X').fill('17');
@@ -995,8 +995,8 @@ try{
   await candidates.getByRole('button',{name:'選択Gridと照合'}).click({timeout:20000});
   const roadPlot=candidates.locator('.saved-shape-plot');
   await roadPlot.locator('.saved-object').first().waitFor({timeout:20000});
-  await roadPlot.locator('svg').scrollIntoViewIfNeeded();
-  const roadPosition=await roadPlot.locator('svg').evaluate(svg=>{
+  await roadPlot.locator('.plot > svg').scrollIntoViewIfNeeded();
+  const roadPosition=await roadPlot.locator('.plot > svg').evaluate(svg=>{
     const p=new DOMPoint(4.5,5.5).matrixTransform(svg.getScreenCTM());return {x:p.x,y:p.y};});
   await page.mouse.click(roadPosition.x,roadPosition.y);
   await roadPlot.getByLabel('移動先X').fill('8');
@@ -1018,7 +1018,7 @@ try{
   await mapPanel.getByRole('button',{name:'簡略マップ',exact:true}).click({timeout:20000});
   await mapPanel.locator('.source-map-object').waitFor({timeout:20000});
   assert.match(await mapPanel.innerText(),/原本の配置座標専用図/);
-  assert.equal(await mapPanel.locator('svg').getAttribute('viewBox'),'0 0 32 32');
+  assert.equal(await mapPanel.locator('.map > svg').getAttribute('viewBox'),'0 0 32 32');
   assert.equal(await mapPanel.locator('.source-map-object').getAttribute('transform'),'translate(18 5)');
   assert.equal(await mapPanel.locator('.cell-mask').count(),0);
   assert.equal(await mapPanel.locator('.placement-cell').count(),0);
@@ -1040,12 +1040,108 @@ try{
   // Public editor uses the actual published mainland terrain, no private ZIP.
   await page.goto('http://127.0.0.1:4178/Wand/world/');
   const publicWorld=page.locator('.world-workspace');
-  await publicWorld.getByRole('button',{name:'Peaceful Meadow',exact:true}).waitFor({timeout:20000});
+  await publicWorld.getByLabel('エリア',{exact:true}).waitFor({timeout:20000});
+  await publicWorld.locator('.media-map-overlay .cell-mask').waitFor({timeout:20000});
+  // No Save is needed to create a source-shaped design and retain it when
+  // switching areas or returning to the Save editor.
+  await publicWorld.getByRole('button',{name:'装飾設計',exact:true}).click();
+  const design=publicWorld.locator('.design-workspace');
+  await design.locator('.design-item').first().waitFor({timeout:30000});
+  const frame=design.locator('.design-map-frame');
+  const frameBox=await frame.boundingBox(),workspaceBox=await publicWorld.boundingBox();
+  assert.ok(Math.abs(frameBox.height-workspaceBox.height)<2,'map must fill workspace height');
+  assert.ok(Math.abs(frameBox.width-workspaceBox.width)<2,'map must fill workspace width');
+  const initialView=await design.locator('.design-plot > svg').getAttribute('viewBox');
+  await frame.getByRole('button',{name:'拡大',exact:true}).click();
+  assert.notEqual(await design.locator('.design-plot > svg').getAttribute('viewBox'),initialView);
+  await frame.getByRole('button',{name:'全体表示',exact:true}).click();
+  assert.equal(await design.locator('.design-plot > svg').getAttribute('viewBox'),initialView);
+  await design.getByRole('button',{name:'家具パレット'}).click();
+  assert.equal((await frame.boundingBox()).width,frameBox.width);
+  assert.equal(await design.locator('aside').isVisible(),false);
+  await design.getByRole('button',{name:'家具パレット'}).click();
+  await design.getByLabel('配置カテゴリ').selectOption('furniture');
+  await design.locator('.design-item').first().click();
+  await design.getByRole('button',{name:'配置終了'}).waitFor({timeout:30000});
+  await design.getByRole('button',{name:'家具パレット'}).click();
+  const designSvg=design.locator('.design-plot > svg');
+  async function designClick(x,y){
+    const p=await designSvg.evaluate((svg,xy)=>{const pt=new DOMPoint(xy[0],xy[1]).matrixTransform(svg.getScreenCTM());return {x:pt.x,y:pt.y};},[x,y]);
+    await page.mouse.click(p.x,p.y);
+  }
+  await designClick(10.5,10.5);
+  await design.locator('.design-object').first().waitFor();
+  await design.getByRole('button',{name:'配置終了'}).click();
+  await design.getByLabel('設計を取り消す').click();
+  assert.equal(await design.locator('.design-object').count(),0);
+  await design.getByLabel('設計をやり直す').click();
+  assert.equal(await design.locator('.design-object').count(),1);
+  await designClick(10.5,10.5);
+  await page.keyboard.press('Control+c');
+  await page.keyboard.press('Meta+v');
+  await designClick(20.5,20.5);
+  assert.equal(await design.locator('.design-object').count(),2);
+  await page.keyboard.press('Meta+z');
+  assert.equal(await design.locator('.design-object').count(),1);
+  await page.keyboard.press('Control+y');
+  assert.equal(await design.locator('.design-object').count(),2);
+  await page.keyboard.press('Control+a');
+  await design.getByRole('button',{name:'整列・均等配置',exact:true}).click();
+  await design.getByRole('button',{name:'左揃え',exact:true}).click();
+  assert.equal(await design.locator('.alignment-ghost').count(),2);
+  await design.getByRole('button',{name:'確定',exact:true}).click();
+  assert.deepEqual(await design.locator('.design-object').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('transform')).sort()),['translate(10 10)','translate(10 20)']);
+  await design.getByLabel('設計を取り消す').click();
+  assert.deepEqual(await design.locator('.design-object').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('transform')).sort()),['translate(10 10)','translate(20 20)']);
+  await page.keyboard.press('Control+a');
+  await page.keyboard.press('Meta+x');
+  assert.equal(await design.locator('.design-object').count(),0);
+  await page.keyboard.press('Meta+z');
+  assert.equal(await design.locator('.design-object').count(),2);
+  await page.keyboard.press('Control+Shift+z');
+  assert.equal(await design.locator('.design-object').count(),0);
+  await page.keyboard.press('Meta+z');
+  assert.equal(await design.locator('.design-object').count(),2);
+  await page.keyboard.press('Control+z');
+  assert.equal(await design.locator('.design-object').count(),1);
+  const designScreen=async(x,y)=>designSvg.evaluate((svg,xy)=>{const p=new DOMPoint(...xy).matrixTransform(svg.getScreenCTM());return {x:p.x,y:p.y};},[x,y]);
+  const from=await designScreen(10.5,10.5),to=await designScreen(14.5,13.5);
+  await page.mouse.move(from.x,from.y);await page.mouse.down();await page.mouse.move(to.x,to.y,{steps:5});await page.mouse.up();
+  assert.equal(await design.locator('.design-object').first().getAttribute('transform'),'translate(14 13)');
+  await page.keyboard.press('Control+z');
+  assert.equal(await design.locator('.design-object').first().getAttribute('transform'),'translate(10 10)');
+  await design.getByRole('button',{name:'レイヤー',exact:true}).click();
+  await design.getByRole('button',{name:'ロック 家具',exact:true}).click();
+  await page.keyboard.press('Control+a');await page.keyboard.press('Delete');
+  assert.equal(await design.locator('.design-object').count(),1);
+  await design.getByRole('button',{name:'非表示 家具',exact:true}).click();
+  assert.equal(await design.locator('.design-object').count(),0);
+  await design.getByRole('button',{name:'表示 家具',exact:true}).click();
+  assert.equal(await design.locator('.design-object').count(),1);
+  await design.getByRole('button',{name:'ロック解除 家具',exact:true}).click();
+  await design.getByRole('button',{name:'レイヤー',exact:true}).click();
+  await design.getByRole('button',{name:'対称編集',exact:true}).click();
+  await design.getByRole('button',{name:'垂直軸',exact:true}).click();
+  assert.equal(await design.locator('.symmetry-axis').count(),1);
+  await design.getByRole('button',{name:'水平軸',exact:true}).click();
+  assert.equal(await design.locator('.symmetry-axis').count(),1);
+  await design.getByRole('button',{name:'点対称',exact:true}).click();
+  assert.equal(await design.locator('.symmetry-center').count(),1);
+  await design.getByRole('button',{name:'無効',exact:true}).click();
+  assert.equal(await design.locator('.symmetry-center').count(),0);
+  await design.getByRole('button',{name:'対称編集',exact:true}).click();
+  await publicWorld.getByLabel('エリア',{exact:true}).selectOption({label:'Plaza'});
+  await design.locator('.design-plot').waitFor({timeout:20000});
+  assert.equal(await design.locator('.design-object').count(),0);
+  await publicWorld.getByLabel('エリア',{exact:true}).selectOption({label:'Peaceful Meadow'});
+  await design.locator('.design-object').first().waitFor({timeout:20000});
+  await publicWorld.getByRole('button',{name:'セーブ編集',exact:true}).click();
   await publicWorld.locator('.media-map-overlay .cell-mask').waitFor({timeout:20000});
   const worldSave={GameInfo:{Version:1262},Player:{},World:{GridCollection:{Grids:{
     "101":{ID:101,GridDefaultLayoutPath:'SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json',
-      GridDataPath:'GridData/Villages/Village04-MeadowLevel-GridData.json',
-      Objects:{"1":{ID:1,ItemID:40005160,X:4,Y:5,Orientation:'GridOrientation_Down'}}},
+      GridDataPath:'GridData/Villages/Village04-MeadowLevel-GridData.json',NextGridObjectID:10,
+      Objects:{"1":{ID:1,ItemID:40005160,X:4,Y:5,Orientation:'GridOrientation_Down'},
+        "4":{ID:4,ItemID:40005160,X:9,Y:5,Orientation:'GridOrientation_Down'}}},
     "102":{ID:102,GridDefaultLayoutPath:'SceneLayouts/Village04/DefaultVillageLayout01-UrbanGrids.json',
       GridDataPath:'GridData/Villages/Village04-UrbanLevel-GridData.json',TessellationFactor:2,
       Objects:{"2":{ID:2,ItemID:40005160,X:7,Y:6,Orientation:'GridOrientation_Down'}}}
@@ -1062,6 +1158,10 @@ try{
   await publicPlot.getByLabel('配置済み家具を検索').focus();
   await publicPlot.locator('.object-results button').first().click();
   await publicPlot.getByRole('button',{name:'配置候補マス',exact:true}).click();
+  const worldThumb=publicPlot.locator('.world-object-artwork').first();
+  await worldThumb.waitFor({timeout:20000});
+  assert.match(await worldThumb.getAttribute('href'),/461f6484256c69e5a528adc3af7054301841fc324c237d8bc0d4534830345bec\.webp$/);
+  assert.equal((await page.request.get(new URL(await worldThumb.getAttribute('href'),page.url()).href)).ok(),true);
   const originOverlay=publicPlot.locator('.placement-origin-overlay');
   await originOverlay.waitFor({timeout:30000});
   assert.equal(await originOverlay.getAttribute('width'),'196');
@@ -1071,6 +1171,71 @@ try{
   await publicPlot.locator('.placement-origin-overlay').waitFor({timeout:30000});
   await publicPlot.getByRole('button',{name:'配置候補マス',exact:true}).click();
   await originOverlay.waitFor({state:'detached'});
+  // Real public map: select two objects, translate both, undo/redo as one
+  // transaction and validate the batch through the existing Rust writer.
+  await publicPlot.getByRole('button',{name:'複数選択',exact:true}).click();
+  await publicPlot.getByLabel('配置済み家具を検索').focus();
+  await publicPlot.locator('.object-results button').nth(0).click();
+  await publicPlot.locator('.object-results button').nth(1).click();
+  assert.equal(await publicPlot.locator('.group-selected').count(),2);
+  await publicPlot.getByLabel('一括移動X').fill('2');
+  await publicPlot.locator('.group-draft-shape').first().waitFor();
+  assert.equal(await publicPlot.locator('.group-draft-shape').count(),2);
+  await publicPlot.getByRole('button',{name:'一括移動を追加',exact:true}).click();
+  assert.deepEqual(await publicPlot.locator('.group-selected').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('transform')).sort()),['translate(11 5)','translate(6 5)']);
+  await publicPlot.getByLabel('配置変更を取り消す').click();
+  assert.deepEqual(await publicPlot.locator('.group-selected').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('transform')).sort()),['translate(4 5)','translate(9 5)']);
+  await publicPlot.getByLabel('配置変更をやり直す').click();
+  await publicPlot.getByRole('button',{name:'一括変更を検証',exact:true}).click();
+  await publicPlot.getByRole('button',{name:'実験的な編集コピーを作成'}).waitFor({timeout:20000});
+  await publicPlot.getByRole('button',{name:'全変更を取り消す'}).click();
+  await publicPlot.getByRole('button',{name:'グループ右回転',exact:true}).click();
+  await publicPlot.locator('.group-draft-shape').first().waitFor();
+  assert.equal(await publicPlot.locator('.group-draft-shape').count(),2);
+  await publicPlot.getByRole('button',{name:'一括移動を追加',exact:true}).click();
+  assert.equal(await publicPlot.locator('.staged-edit').count(),2);
+  await publicPlot.getByRole('button',{name:'一括変更を検証',exact:true}).click();
+  await publicPlot.getByRole('button',{name:'実験的な編集コピーを作成'}).waitFor({timeout:20000});
+  await publicPlot.getByRole('button',{name:'全変更を取り消す'}).click();
+  await publicPlot.getByRole('button',{name:'選択解除',exact:true}).click();
+  await publicPlot.getByRole('button',{name:'範囲選択',exact:true}).click();
+  const plotSvg=publicPlot.locator('.plot > svg');
+  async function groupClick(x,y){
+    const p=await plotSvg.evaluate((svg,xy)=>{const pt=new DOMPoint(xy[0],xy[1]).matrixTransform(svg.getScreenCTM());return {x:pt.x,y:pt.y};},[x,y]);
+    assert.ok(await plotSvg.evaluate((svg,p)=>svg.parentElement.contains(document.elementFromPoint(p.x,p.y)),p),'range selection point must be reachable on map');
+    await page.mouse.click(p.x,p.y);
+  }
+  await publicPlot.getByRole('button',{name:'検索・レイヤー'}).click();
+  await publicPlot.getByRole('button',{name:'編集パネル'}).click();
+  await publicWorld.getByRole('button',{name:'ワールド選択',exact:true}).click();
+  await publicPlot.getByRole('button',{name:'全体表示',exact:true}).click();
+  await publicPlot.getByRole('button',{name:'拡大',exact:true}).click();
+  await publicPlot.getByRole('button',{name:'拡大',exact:true}).click();
+  for(let i=0;i<4;i++){await publicPlot.getByRole('button',{name:'左へ移動',exact:true}).click();await publicPlot.getByRole('button',{name:'上へ移動',exact:true}).click();}
+  await groupClick(3.5,4.5);
+  await groupClick(10.5,6.5);
+  await publicWorld.getByRole('button',{name:'ワールド選択',exact:true}).click();
+  await publicPlot.getByRole('button',{name:'検索・レイヤー'}).click();
+  await publicPlot.getByRole('button',{name:'編集パネル'}).click();
+  assert.equal(await publicPlot.locator('.group-selected').count(),2);
+  await publicPlot.getByRole('button',{name:'複数選択',exact:true}).click();
+  await publicPlot.getByRole('button',{name:'閉じる',exact:true}).click();
+  // Structural rehearsal must validate the local candidate without making
+  // any downloadable Save or modifying the current placement.
+  await publicPlot.getByLabel('配置済み家具を検索').focus();
+  await publicPlot.locator('.object-results button').first().click();
+  await publicPlot.getByLabel('移動先X').fill('12');
+  await publicPlot.getByRole('button',{name:'複製を検証',exact:true}).click();
+  await publicPlot.locator('.structure-result').waitFor({timeout:20000});
+  assert.match(await publicPlot.locator('.structure-result').innerText(),/複製の構造検証に成功/);
+  assert.equal(await publicPlot.getByRole('link',{name:'編集済みコピーを保存'}).count(),0);
+  assert.equal(await publicPlot.getByRole('button',{name:'変更を検証',exact:true}).isDisabled(),true);
+  await publicPlot.getByRole('button',{name:'プレビュー解除'}).click();
+  await publicPlot.getByRole('button',{name:'元に戻す'}).click();
+  await publicPlot.getByRole('button',{name:'削除を検証',exact:true}).click();
+  await publicPlot.locator('.structure-remove-ghost').waitFor({timeout:20000});
+  assert.equal(await publicPlot.locator('.saved-object').count(),2);
+  await publicPlot.getByRole('button',{name:'プレビュー解除'}).click();
   // All three root themes recolor service chrome without recoloring the map.
   const themeResults=await page.evaluate(()=>{
     const root=document.documentElement,original=root.getAttribute('data-wand-theme');
@@ -1088,16 +1253,17 @@ try{
   });
   assert.equal(new Set(themeResults.map(r=>r.expected)).size,3);
   for(const r of themeResults){assert.equal(r.area,r.expected);assert.equal(r.layer,r.expected);assert.equal(r.rasterUnchanged,true);}
-  await publicWorld.getByRole('button',{name:'Plaza',exact:true}).click();
+  await publicWorld.getByLabel('エリア',{exact:true}).selectOption({label:'Plaza'});
   await publicWorld.locator('.saved-object').first().waitFor({timeout:20000});
   assert.equal(await publicWorld.locator('.saved-terrain-background').count(),0);
+  await publicWorld.getByRole('button',{name:'地形図',exact:true}).click();
   await publicWorld.locator('.media-map-overlay .cell-mask').waitFor({timeout:20000});
-  await publicWorld.getByRole('button',{name:'Peaceful Meadow',exact:true}).click();
+  await publicWorld.getByLabel('エリア',{exact:true}).selectOption({label:'Peaceful Meadow'});
   await publicWorld.locator('.saved-terrain-background').waitFor({timeout:20000});
   await publicWorld.getByLabel('ワールド',{exact:true}).selectOption('VillageExpansion01');
   await publicWorld.locator('.media-map-overlay .cell-mask').waitFor({timeout:20000});
   await publicWorld.getByLabel('ワールド',{exact:true}).selectOption('Village04');
-  await publicWorld.getByRole('button',{name:'Peaceful Meadow',exact:true}).click();
+  await publicWorld.getByLabel('エリア',{exact:true}).selectOption({label:'Peaceful Meadow'});
   await publicWorld.locator('.saved-terrain-background').waitFor({timeout:20000});
 
   // A matched source path may occur in more than one saved Grid. A factor
@@ -1114,7 +1280,9 @@ try{
   await gridSelect.selectOption({index:1});
   assert.notEqual(await gridSelect.inputValue(),firstGrid);
   await publicWorld.locator('.saved-terrain-background').waitFor({state:'detached'});
+  await publicWorld.getByRole('button',{name:'地形図',exact:true}).click();
   await publicWorld.locator('.media-map-overlay .cell-mask').waitFor({timeout:20000});
+  await publicWorld.getByRole('button',{name:'配置図',exact:true}).click();
   await gridSelect.selectOption(firstGrid);
   await publicWorld.locator('.saved-terrain-background').waitFor({timeout:20000});
   await publicWorld.locator('.media-map-overlay').waitFor({state:'detached'});

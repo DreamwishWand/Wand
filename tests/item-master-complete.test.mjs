@@ -3,8 +3,12 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
-import {openPublicItemMaster} from '../src/lib/items/public-item-master.ts';
-import {openPublicItemDetails} from '../src/lib/items/public-item-details.ts';
+import {openPublicItemMaster,openCurrentItemDatabase} from '../src/lib/items/public-item-master.ts';
+import {openPublicItemDetails,openCurrentItemDetails} from '../src/lib/items/public-item-details.ts';
+import {parseDb01ItemAcquisition} from '../src/lib/acquisition/db01-item-acquisition.ts';
+import {parseDb01ItemSourceRelations} from '../src/lib/acquisition/db01-item-source-relations.ts';
+import {createPublicItemMediaReader} from '../src/lib/items/public-item-media.ts';
+import {publicImageKey} from '../src/lib/media/public-image-key.ts';
 
 const root='static/ddv/item-master/steam-1.26.2-complete';
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -181,4 +185,313 @@ test('field column integrity failure rejects and retries without falling back to
   await assert.rejects(m.getItemFields([40005160],['names.ja']),/SHA_MISMATCH/);
   assert.equal((await m.getItemFields([40005160],['names.ja']))[0].values['names.ja'],'ガラスの靴');
   assert(!requests.some(x=>x.includes('/id/')));
+});
+
+
+test('selective DB-01 fields and DB-02 links are independently lazy and preserve missing definitions',async()=>{
+  const {fetcher,requests}=site();
+  const db=await openPublicItemDetails('/Wand',fetcher);
+  const ids=[40005160,2130000001,99999999,40005160];
+  const fields=['names.ja','iconGuid','nativeCategory'];
+  const initial=await db.getSelectedItems(ids,fields);
+  assert.equal(initial[0].values['names.ja'],'ガラスの靴');
+  assert.equal(initial[1].values.nativeCategory,'Condition');
+  assert.equal(initial[1].values.iconGuid,null);
+  assert.equal(initial[2],null);
+  assert.deepEqual(initial[0],initial[3]);
+  assert(!Object.hasOwn(initial[0],'acquisition'));
+  assert(!Object.hasOwn(initial[0],'sourceRelations'));
+  assert(!requests.some(url=>url.includes('/acquisition/')));
+  const onlySources=await db.getSelectedItems(ids,fields,{sourceRelations:true});
+  assert.equal(onlySources[0].sourceRelations.itemId,'40005160');
+  assert(!Object.hasOwn(onlySources[0],'acquisition'));
+  assert(!requests.some(url=>url.includes('db01-item-acquisition-')));
+  const onlyAcquisition=await db.getSelectedItems(ids,fields,{acquisition:true});
+  assert.equal(onlyAcquisition[0].acquisition.itemId,'40005160');
+  assert(!Object.hasOwn(onlyAcquisition[0],'sourceRelations'));
+  const both=await db.getSelectedItems(ids,fields,{sourceRelations:true,acquisition:true});
+  assert.deepEqual(both[0].sourceRelations.categories,both[0].acquisition.categories);
+  assert.equal(both[0].currentAvailabilityVerified,false);
+  assert.equal(both[2],null);
+  assert(Object.isFrozen(both)&&Object.isFrozen(both[0])&&Object.isFrozen(both[0].values));
+  assert.equal(requests.filter(url=>url.includes('db01-item-acquisition-')).length,1);
+  assert.equal(requests.filter(url=>url.includes('db01-item-source-relations-')).length,1);
+  assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')||url.includes('/fields/names.en/')));
+  const fresh=site();
+  const freshDb=await openPublicItemDetails('/Wand',fresh.fetcher);
+  assert.deepEqual(await freshDb.getSelectedItems([99999999],fields,{sourceRelations:true,acquisition:true}),[null]);
+  assert(!fresh.requests.some(url=>url.includes('/acquisition/')));
+});
+
+
+test('DB-01 media join is version isolated and uses only SRC-04 published Item ID mapping',async()=>{
+  const local=site(),master=await openPublicItemMaster('/Wand',local.fetcher,{scope:'complete'});
+  const before=local.requests.length;
+  const fail=async()=>{throw Error('unexpected media request')};
+  const unpublished=createPublicItemMediaReader(master,undefined,fail);
+  assert.equal(unpublished.status,'unpublished');
+  assert.deepEqual(await unpublished.getItemImages([40005160,99999999]),[null,null]);
+  const origin='https://media.dreamwishwand.com',sha='a'.repeat(64);
+  const pack=value=>{const bytes=Buffer.from(JSON.stringify(value));return {bytes,pin:{sha256:digest(bytes),bytes:bytes.length}}};
+  const files={},data=new Map();
+  const itemId=40005160;
+  const bucket=(itemId%256).toString(16).padStart(2,'0');
+  for(let i=0;i<256;i++){
+    const key=i.toString(16).padStart(2,'0'),path='id/'+key+'.json';
+    const items=key===bucket?[{id:itemId,original:{key:publicImageKey('original',sha),width:256,height:128},
+      thumbnail:{key:publicImageKey('thumbnail',sha),width:128,height:64}}]:[];
+    const p=pack({schema:'wand.media.distribution-shard@1',bucket:key,items});
+    files[path]={...p.pin,count:items.length};data.set(path,p.bytes);
+  }
+  const manifest=pack({schema:'wand.media.distribution@1',gameVersion:'steam-1.26.2',releaseState:'published',
+    bucketCount:256,totalItems:1,files,cachePolicy:'immutable_content_addressed_media'});
+  data.set('manifest.json',manifest.bytes);
+  const config={state:'published',publicationAuthorized:true,publicReadbackVerified:true,
+    origin,gameVersion:'steam-1.26.2',manifest:manifest.pin};
+  const mismatch=createPublicItemMediaReader(master,{...config,gameVersion:'steam-1.26.3'},fail);
+  assert.equal(mismatch.status,'version_mismatch');
+  assert.deepEqual(await mismatch.getItemImages([itemId]),[null]);
+  assert.equal(local.requests.length,before,'inactive media must not load DB fields');
+  const root=origin+'/index/items/'+config.gameVersion+'/'+config.manifest.sha256+'/';
+  const calls=[];
+  const media=createPublicItemMediaReader(master,config,async url=>{
+    calls.push(url);assert(url.startsWith(root));return new Response(data.get(url.slice(root.length)));
+  });
+  assert.equal(media.status,'published');
+  const rows=await media.getItemImages([itemId,2130000001,99999999,itemId]);
+  assert.equal(rows[0].sha256,sha);
+  assert.equal(rows[1],null);assert.equal(rows[2],null);assert.equal(rows[3],rows[0]);
+  assert.equal((await media.getItemImage(itemId,'original')).width,256);
+  assert.equal(calls.length,2);
+  assert(Object.isFrozen(rows));
+  assert(!local.requests.some(url=>url.includes('/id/')||url.includes('/locale/')));
+  await assert.rejects(media.getItemImages([0]),/INVALID_IDS/);
+});
+
+
+test('normal product reads the complete current database without a game version argument',async()=>{
+  const {fetcher,requests}=site();
+  const current=await openCurrentItemDatabase('/Wand',fetcher);
+  assert.equal(current.release.count,39067);
+  assert.equal(current.release.scope,'complete');
+  assert(requests[0].endsWith('/item-master-releases.json'));
+  assert(requests[1].endsWith('/item-master/current/index.json'));
+  const rows=await current.getItemFields([40005160,2130000001],['nativeCategory','names.en']);
+  assert.equal(rows[0].values['names.en'],'Glass Shoe');
+  assert.equal(rows[1].values.nativeCategory,'Condition');
+  assert(requests.slice(2).every(url=>/\/item-master\/objects\/[a-f0-9]{64}\.json$/.test(url)));
+  assert.equal((await current.getItem(40005160)).names.en,'Glass Shoe');
+  assert(requests.slice(2).every(url=>/\/item-master\/objects\/[a-f0-9]{64}\.json$/.test(url)));
+  assert(!requests.some(url=>url.includes('/id/')));
+});
+
+
+test('canonical acquisition projections reproduce all admitted source records and preserve source-only coverage',async()=>{
+  const {fetcher,requests}=site();
+  const master=await openCurrentItemDatabase('/Wand',fetcher);
+  const a=await readFile('static/acquisition/public/db01-item-acquisition-1.26.2.json');
+  const b=await readFile('static/acquisition/public/db01-item-source-relations-1.26.2.json');
+  const original=parseDb01ItemAcquisition(JSON.parse(a));
+  const links=parseDb01ItemSourceRelations(JSON.parse(b));
+  const meta=master.release.acquisitionProjection;
+  assert.equal(meta.sourceGameVersion,master.release.target.gameVersion);
+  assert.equal(meta.summarySha256,digest(a));
+  assert.equal(meta.relationsSha256,digest(b));
+  assert.equal(meta.coverageComplete,false);
+  const ids=new Set((await master.getFieldRows('itemId')).map(x=>x[0]));
+  const sourceSummaries=original.listItemIds().map(Number);
+  const sourceLinks=links.listItemIds().map(Number);
+  const summaries=await master.getFieldRows('acquisition.summary');
+  const relations=await master.getFieldRows('acquisition.sourceRelations');
+  assert.deepEqual(summaries.map(x=>x[0]),sourceSummaries.filter(i=>ids.has(i)));
+  assert.deepEqual(relations.map(x=>x[0]),sourceLinks.filter(i=>ids.has(i)));
+  assert.equal(meta.summaryCount,summaries.length);
+  assert.equal(meta.relationCount,relations.length);
+  assert.equal(meta.sourceOnlySummaryCount,sourceSummaries.length-summaries.length);
+  assert.equal(meta.sourceOnlyRelationCount,sourceLinks.length-relations.length);
+  assert.equal(meta.sourceLinks,15444);
+  for(const [i,v] of summaries)assert.deepEqual(v,original.getItem(i));
+  for(const [i,v] of relations)assert.deepEqual(v,links.getItem(i));
+  for(const category of original.categoryOrder){
+    const expected=original.listItemIds(category).map(Number).filter(i=>ids.has(i));
+    assert.deepEqual(await master.findItemIdsByField('acquisition.categories',{kind:'contains',value:category}),expected);
+  }
+  assert(!requests.some(url=>url.includes('/acquisition/public/')));
+});
+
+test('current selected details use narrow same-revision acquisition columns, not whole legacy handoffs',async()=>{
+  const {fetcher,requests}=site();
+  const db=await openCurrentItemDetails('/Wand',fetcher);
+  const manifest=JSON.parse(await readFile('static/ddv/item-master/current/index.json'));
+  const object=path=>'/Wand/ddv/item-master/objects/'+manifest.assets[path].sha256+'.json';
+  const fieldObjects=field=>Object.keys(manifest.assets)
+    .filter(p=>p.startsWith('fields/'+field+'/')).map(object);
+  const summaryObjects=fieldObjects('acquisition.summary');
+  const relationObjects=fieldObjects('acquisition.sourceRelations');
+  assert(summaryObjects.length>1&&relationObjects.length>1);
+  const ids=[30000031,31700021,99999999,30000031];
+  const fields=['nativeCategory'];
+  const initial=await db.getSelectedItems(ids,fields);
+  assert.equal(initial[0].values.nativeCategory,'ActivityItem');
+  assert(!requests.some(u=>summaryObjects.includes(u)||relationObjects.includes(u)));
+  const only=await db.getSelectedItems([ids[0]],fields,{acquisition:true});
+  assert.equal(only[0].acquisition.itemId,String(ids[0]));
+  assert(only[0].acquisition.categories.includes('ordinary_gameplay'));
+  assert.equal(only[0].acquisitionStatus,'current');
+  assert(!requests.some(u=>relationObjects.includes(u)));
+  assert(requests.filter(u=>summaryObjects.includes(u)).length<summaryObjects.length);
+  const both=await db.getSelectedItems(ids,fields,{acquisition:true,sourceRelations:true});
+  assert(both[0].sourceRelations.links.some(l=>l.sourceId==='2050300095'&&l.role==='crafting_result'));
+  assert(both[1].sourceRelations.links.some(l=>l.sourceId==='2050300095'&&l.role==='recipe_ingredient_item'));
+  assert.equal(both[2],null);
+  assert.deepEqual(both[0],both[3]);
+  assert.deepEqual(both[0].sourceRelations.categories,both[0].acquisition.categories);
+  assert(!requests.some(u=>u.includes('/acquisition/public/')));
+  assert(requests.filter(u=>relationObjects.includes(u)).length<relationObjects.length);
+});
+
+
+test('stall character associations are source-backed and only named families supply browse universe fallbacks',async()=>{
+  const {fetcher}=site();
+  const master=await openCurrentItemDatabase('/Wand',fetcher);
+  const staff=await master.getFieldRows('building.stallEmployeeItemIds');
+  const unlock=await master.getFieldRows('building.stallUnlockWithItemId');
+  const related=await master.getFieldRows('building.characterAssociations');
+  assert.equal(staff.length,90);
+  assert.equal(staff.filter(([,v])=>v.some(i=>i>0)).length,56);
+  assert.equal(unlock.filter(([,v])=>v!==null).length,5);
+  assert.equal(related.length,58);
+  const ids=[20100031,20100056,20100057,20100069,20100075,20100103];
+  const fields=['universeTagIds','browse.universeTagIds','browse.universeAssociation',
+    'building.stallEmployeeItemIds','building.stallUnlockWithItemId','building.characterAssociations'];
+  const rows=await master.getItemFields([...ids,20100000,20100045,20100086,20100013,20100003],fields);
+  const catalog=JSON.parse(await readFile(join(root,'explore.json'),'utf8'));
+  const byId=new Map(catalog.items.map(i=>[i.itemId,i]));
+  for(const row of rows.slice(0,6)){
+    assert.deepEqual(row.values['building.stallEmployeeItemIds'],[10000115]);
+    assert.deepEqual(row.values['building.characterAssociations'],[{characterItemId:10000115,
+      employee:true,unlockCondition:false,universeTagIds:[2000500061]}]);
+    const original=row.values.universeTagIds;
+    const candidate=row.values['browse.universeAssociation'];
+    assert.equal(candidate.kind,'named_stall_character_association');
+    assert.equal(candidate.universeTagId,2000500061);
+    assert.equal(candidate.applied,original.length===0);
+    const effective=original.length?original:[2000500061];
+    assert.deepEqual(row.values['browse.universeTagIds'],effective);
+    assert.deepEqual(byId.get(row.itemId).universes,effective);
+    assert.deepEqual((await master.getItem(row.itemId)).universeTagIds,original);
+  }
+  for(const row of rows.slice(6)){
+    assert.equal(row.values['browse.universeAssociation'],undefined);
+    assert.deepEqual(byId.get(row.itemId).universes,row.values.universeTagIds);
+  }
+  assert.deepEqual(rows[6].values['building.stallEmployeeItemIds'],[10000004]);
+  assert.deepEqual(rows[7].values['building.characterAssociations'],[{characterItemId:10000130,
+    employee:false,unlockCondition:true,universeTagIds:[2000500048]}]);
+  assert.deepEqual(rows[9].values['building.stallEmployeeItemIds'],[0]);
+  assert.deepEqual(rows[10].values['building.stallEmployeeItemIds'],[]);
+  assert.equal(rows[10].values['building.stallUnlockWithItemId'],null);
+  const all=(await master.getFieldRows('browse.universeAssociation')).filter(([,a])=>a.kind==='named_stall_character_association');
+  assert.equal(all.length,20);
+  for(const [id,association] of all)assert.equal(byId.get(id).universeAssociation?.universeTagId,
+    association.applied?association.universeTagId:undefined);
+});
+
+
+test('building skins retain exact target selectors separately from browse design associations',async()=>{
+  const {fetcher}=site();
+  const master=await openCurrentItemDatabase('/Wand',fetcher);
+  const selectors=await master.getFieldRows('building.skinTargetSelectors');
+  assert.equal(selectors.length,59);
+  const [lion,defaultStall,toy,well,defaultWell,beast,minnie,restaurant]=await master.getItemFields(
+    [170100006,170100009,170100021,170200010,170200005,170600003,170600005,170200015],
+    ['building.skinTargetSelectors','building.skinTargetUniverseTagIds','universeTagIds','browse.universeTagIds','browse.universeAssociation']);
+  assert.deepEqual(lion.values['building.skinTargetSelectors'],{targetBuildingItemIds:[],allStallsWithEmployeeItems:true,employeeCharacterItemIds:[10000004]});
+  assert.equal(lion.values['browse.universeAssociation'].universeTagId,2000500010);
+  assert.equal(lion.values['browse.universeAssociation'].kind,'reviewed_skin_design_motif');
+  assert.equal(defaultStall.values['browse.universeAssociation'],undefined);
+  assert.equal(toy.values['building.skinTargetSelectors'].targetBuildingItemIds.length,14);
+  assert.equal(toy.values['browse.universeAssociation'].universeTagId,2000500006);
+  assert.deepEqual(well.values['building.skinTargetSelectors'],{targetBuildingItemIds:[],allWellsItemsExcept:true,excludedBuildingItemIds:[]});
+  assert.equal(well.values['browse.universeAssociation'].universeTagId,2000500048);
+  assert.equal(defaultWell.values['browse.universeAssociation'],undefined);
+  for(const [row,parent,universe] of [[beast,20000016,2000500002],[minnie,20000046,2000500001]]){
+    assert.deepEqual(row.values['building.skinTargetSelectors'],{targetBuildingItemIds:[parent]});
+    assert.deepEqual(row.values['building.skinTargetUniverseTagIds'],[universe]);
+    assert.equal(row.values['browse.universeAssociation'].kind,'house_skin_base_building_association');
+    assert.equal(row.values['browse.universeAssociation'].buildingItemId,parent);
+    assert.equal(row.values['browse.universeAssociation'].universeTagId,universe);
+  }
+  assert.equal(restaurant.values['building.skinTargetSelectors'].targetBuildingItemIds.length,5);
+  assert.equal(restaurant.values['browse.universeAssociation'],undefined);
+  const all=(await master.getFieldRows('browse.universeAssociation')).filter(([,a])=>a.kind!=='named_stall_character_association');
+  assert.equal(all.length,27);
+  const catalog=JSON.parse(await readFile(join(root,'explore.json'),'utf8'));
+  const byId=new Map(catalog.items.map(i=>[i.itemId,i]));
+  for(const [id,association] of all){
+    const row=await master.getItem(id);
+    const expected=row.universeTagIds.length?row.universeTagIds:[association.universeTagId];
+    assert.deepEqual(byId.get(id).universes,expected);
+    assert.equal(association.applied,row.universeTagIds.length===0);
+    assert.equal(byId.get(id).universeAssociation?.universeTagId,association.applied?association.universeTagId:undefined);
+  }
+});
+
+
+test('original ProtoDB individual friendship rewards and configured store facts are selectable by Item ID',async()=>{
+  const {fetcher,requests}=site();
+  const master=await openCurrentItemDatabase('/Wand',fetcher);
+  const byItem=await master.getFieldRows('acquisition.additionalSources');
+  const byOwner=await master.getFieldRows('acquisition.individualFriendshipRewards');
+  assert.equal(byItem.length,867);
+  assert.equal(byOwner.length,323);
+  const counts={};let missingAmount=0;
+  const tuples=new Set();
+  for(const [id,links] of byItem)for(const l of links){
+    counts[l.kind]=(counts[l.kind]??0)+1;
+    assert.equal(l.currentAvailabilityVerified,false);
+    assert.match(l.sourceProtoDbSha256,/^[a-f0-9]{64}$/);
+    if(l.kind==='character_friendship_reward'||l.kind==='pet_friendship_reward'){
+      if(l.amount===null)missingAmount++;
+      const key=JSON.stringify([id,l.sourceId,l.level,l.amount,l.kind]);
+      assert(!tuples.has(key));tuples.add(key);
+    }
+  }
+  assert.deepEqual(counts,{character_friendship_reward:720,pet_friendship_reward:482,
+    configured_store_display:141,pre_dlc_store_list_member:76,design_challenge_catalog_unlock:31});
+  assert.equal(missingAmount,1);
+  assert.equal(tuples.size,1202);
+  for(const [owner,links] of byOwner)for(const l of links){
+    assert.equal(l.sourceId,owner);
+    assert(tuples.delete(JSON.stringify([l.itemId,owner,l.level,l.amount,l.kind])));
+  }
+  assert.equal(tuples.size,0);
+  const facts=new Map(byItem);
+  assert(facts.get(40001995).some(l=>l.kind==='character_friendship_reward'&&l.sourceId===10000007&&l.level===2&&l.amount===1));
+  assert(facts.get(40004121).some(l=>l.kind==='pet_friendship_reward'&&l.sourceId===120000148&&l.level===5&&l.amount===1));
+  assert(facts.get(40000628).some(l=>l.kind==='configured_store_display'&&l.sourcePosition===0&&l.sourceField==='FurnituresToDisplay'));
+  assert(facts.get(40000365).some(l=>l.kind==='pre_dlc_store_list_member'&&l.sourcePosition===0));
+  assert(facts.get(40005517).some(l=>l.kind==='design_challenge_catalog_unlock'&&l.sourceId==='DreamSnap150_LegendaryMoments'));
+  const previous=new Map(await master.getFieldRows('acquisition.categories'));
+  const effective=new Map(await master.getFieldRows('acquisition.effectiveCategories'));
+  const rewardIds=new Set(byItem.filter(([,links])=>links.some(l=>
+    (l.kind==='character_friendship_reward'||l.kind==='pet_friendship_reward')&&l.amount!==null)).map(([id])=>id));
+  assert.equal(rewardIds.size,620);
+  const expected=new Set([...previous.keys(),...rewardIds]);
+  assert.deepEqual([...effective.keys()], [...expected].sort((a,b)=>a-b));
+  for(const id of expected){
+    const old=previous.get(id)??[];
+    const want=rewardIds.has(id)&&!old.includes('ordinary_gameplay')?['ordinary_gameplay',...old]:old;
+    assert.deepEqual(effective.get(id),want);
+  }
+  const newlyClassified=[...rewardIds].filter(id=>!previous.get(id)?.length);
+  assert(newlyClassified.length>0);
+  const db=await openCurrentItemDetails('/Wand',fetcher);
+  const [selected]=await db.getSelectedItems([newlyClassified[0]],['nativeCategory'],{acquisition:true,sourceRelations:true});
+  assert(selected.effectiveCategories.includes('ordinary_gameplay'));
+  assert(selected.additionalSources.some(l=>l.kind.endsWith('friendship_reward')));
+  const filtered=await db.listItemIdsByAcquisition('ordinary_gameplay');
+  assert(filtered.includes(newlyClassified[0]));
+  assert.deepEqual(filtered,[...effective].filter(([,cats])=>cats.includes('ordinary_gameplay')).map(([id])=>id));
+  assert(!requests.some(u=>u.includes('/acquisition/public/')));
 });

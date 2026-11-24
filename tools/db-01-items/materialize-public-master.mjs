@@ -10,6 +10,7 @@ import {createHash} from 'node:crypto';
 import {inflateRawSync} from 'node:zlib';
 import {materializeExpandedMaster} from './materialize-expanded-master.mjs';
 import {materializeCompleteSourceMaster} from './materialize-complete-source-master.mjs';
+import {publishCurrentProjections} from './publish-current-projections.mjs';
 
 const project=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
 const targetRoot=join(project,'static/ddv/item-master');
@@ -289,3 +290,7 @@ materializeExpandedMaster(project,entry,release,files,collectionDestination);
 materializeCompleteSourceMaster(project,entry,release,files);
 }
 
+
+const currentEntry=catalog.releases.find(entry=>entry.gameVersion===catalog.current);
+check(currentEntry?.complete,'CURRENT_COMPLETE_REQUIRED');
+publishCurrentProjections(targetRoot,currentEntry);

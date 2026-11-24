@@ -1531,6 +1531,41 @@ mod browser_amount_preview {
             self.prepare_copy_from_patched(draft.patched_json,true)
         }
 
+        /// Local structural rehearsal only. Never prepare or return copy bytes.
+        pub fn preview_plain_grid_structure(&self,plan:&str)->Result<String,JsValue>{
+            if !self.ready||self.closed||self.copy_prepared||plan.len()>4096{
+                return Err(fail("DB05_GRID_STRUCTURE_SESSION_INVALID"));
+            }
+            let invalid=||fail("DB05_GRID_STRUCTURE_PLAN_INVALID");
+            let value:serde_json::Value=serde_json::from_str(plan).map_err(|_|invalid())?;
+            let o=value.as_object().ok_or_else(invalid)?;
+            if o.len()!=7||o.keys().any(|k|!matches!(k.as_str(),"localOrdinal"|"itemId"|"expectedX"|"expectedY"|"action"|"x"|"y")){
+                return Err(invalid());
+            }
+            let ordinal=o.get("localOrdinal").and_then(|v|v.as_u64()).and_then(|v|usize::try_from(v).ok()).ok_or_else(invalid)?;
+            let item=o.get("itemId").and_then(|v|v.as_str()).and_then(|v|v.parse::<u64>().ok()).ok_or_else(invalid)?;
+            let int=|key:&str|o.get(key).and_then(|v|v.as_i64()).and_then(|v|i32::try_from(v).ok()).ok_or_else(invalid);
+            let expected=(int("expectedX")?,int("expectedY")?);
+            let action=match o.get("action").and_then(|v|v.as_str()){
+                Some("duplicate")=>ddv_save_patch::PlainGridStructureAction::Duplicate{x:int("x")?,y:int("y")?},
+                Some("remove") if o.get("x").is_some_and(|v|v.is_null())&&o.get("y").is_some_and(|v|v.is_null())=>ddv_save_patch::PlainGridStructureAction::Remove,
+                _=>return Err(invalid())
+            };
+            let original=match self.kind{
+                InputKind::PlainJson=>self.pending.as_slice(),
+                InputKind::EncryptedP1g=>self.p1g.as_ref().ok_or(fail("DB05_GRID_STRUCTURE_SESSION_INVALID"))?.profile.as_slice()
+            };
+            let target=grid_instance_preview::resolve_grid_mixed_targets(original,&[(ordinal,item,expected,"full".to_owned(),None)])
+                .map_err(|_|fail("DB05_GRID_STRUCTURE_STALE"))?.pop().ok_or_else(invalid)?;
+            let json=std::str::from_utf8(original).map_err(|_|invalid())?;
+            let mut draft=ddv_save_patch::preview_plain_grid_structure(json,&target,expected,action)
+                .map_err(|_|fail("DB05_GRID_STRUCTURE_UNSUPPORTED"))?;
+            let valid=validate_profile(draft.patched_json.as_bytes()).is_ok()&&draft.changed&&draft.untouched_bytes_preserved&&!draft.writer_authorized&&!draft.export_authorized;
+            draft.patched_json.zeroize();
+            if !valid{return Err(fail("DB05_GRID_STRUCTURE_INVALID_DRAFT"));}
+            Ok(r#"{"contract":"wand.db05.grid-structure-preview@1","changed":true,"lexicalBytesPreserved":true,"structureValidated":true,"exportAuthorized":false,"runtimeReferencesVerified":false}"#.to_owned())
+        }
+
         /// Experimental 1..=16 mixed Grid edits. The same independent
         /// P1G reopen is required for validation and explicit copy export.
         pub fn preview_grid_mixed_batch(&mut self,plan:&str)

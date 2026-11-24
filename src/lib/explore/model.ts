@@ -8,6 +8,9 @@ export interface ExploreItem {
   universes:readonly number[];
   universeStatus?:'source_linked'|'unresolved_source'|'no_universe_in_verified_tag_fields';
   iconGuid?:string|null;
+  worlds?:readonly string[];
+  /** Optional validated shared placement projection. Unknown is not excluded. */
+  placementScope?:'indoor'|'outdoor'|'both'|'unknown';
   sourceSetItemId?:number|null;
   sourceSetNames?:Readonly<Record<string,string|null>>;
   prefabGuid?:string|null;

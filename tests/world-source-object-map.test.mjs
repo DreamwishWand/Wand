@@ -216,3 +216,221 @@ test('saved viewport retains partially visible footprints, overscan and selectio
   assert.equal(searchSavedObjects(m.objects,new Map(),'','all').length,5);
   assert.equal(savedShapesAt(m,1,35,35)[0].localOrdinal,3);
 });
+
+import {stageWorldGroupMove} from '../src/lib/world/saved-map-batch.ts';
+test('group translation applies final exclusive anchors atomically and one undo restores every member',()=>{
+ const p=(id,x,grid=1)=>({localOrdinal:id,localGridOrdinal:grid,x,y:0,itemId:'40100001',orientation:null,shapeKey:null,layer:'ground',surfaceCapable:false,name:'Road'});
+ const map={objects:[p(1,0),p(2,1),p(3,4),p(4,2,2)],shapes:{}};
+ const t=emptyWorldTimeline(),a=stageWorldGroupMove(map,t,[1,2],1,0,'');
+ assert.ok(a);
+ assert.equal(a.snapshots.length,2);
+ assert.deepEqual(projectWorldEdits(map,currentWorldEdits(a)).objects.map(o=>o.x),[1,2,4,2]);
+ assert.equal(currentWorldEdits(travelWorldTimeline(a,-1)).length,0);
+ assert.equal(stageWorldGroupMove(map,a,[1,2],2,0,''),null);
+ assert.equal(stageWorldGroupMove(map,t,[1,4],1,0,''),null);
+ assert.equal(stageWorldGroupMove(map,t,[1,1],1,0,''),null);
+ assert.equal(stageWorldGroupMove(map,t,[1,2],2147483648,0,''),null);
+ const locked={...map,objects:map.objects.map(o=>o.localOrdinal===2?{...o,editRestrictions:{move:'denied'}}:o)};
+ assert.equal(stageWorldGroupMove(locked,t,[1,2],1,0,''),null);
+ const back=stageWorldGroupMove(map,a,[1,2],-1,0,'');
+ assert.ok(back);assert.equal(currentWorldEdits(back).length,0);
+});
+
+import {groupTargets} from '../src/lib/world/saved-map-batch.ts';
+test('group rotation uses native cardinal direction and rotated bounding dimensions, preserves atomic undo',()=>{
+ const p=(localOrdinal,x,y)=>({localOrdinal,localGridOrdinal:1,x,y,orientation:'GridOrientation_Down',itemId:'100'});
+ const m=buildSavedShapeMap(fixture(),L,7,[p(1,2,3),p(2,8,6)]);
+ const a=m.objects[0],b=m.objects[1],s=m.shapes[a.shapeKey];
+ const targets=groupTargets(m,[a,b],0,0,1);
+ assert.ok(targets);
+ assert.deepEqual(targets.map(o=>o.orientation),['GridOrientation_Right','GridOrientation_Right']);
+ assert.deepEqual(targets.map(o=>[o.x,o.y]),[[5,3],[2,9]]);
+ assert.equal(m.shapes[targets[0].shapeKey].width,s.height);
+ const t=stageWorldGroupMove(m,emptyWorldTimeline(),[1,2],0,0,'',1);
+ assert.ok(t);assert.equal(currentWorldEdits(t).length,2);
+ assert.equal(currentWorldEdits(travelWorldTimeline(t,-1)).length,0);
+ const rotated=projectWorldEdits(m,currentWorldEdits(t));
+ const back=groupTargets(rotated,rotated.objects,0,0,3);
+ assert.deepEqual(back.map(o=>[o.x,o.y,o.orientation]),[[2,3,'GridOrientation_Down'],[8,6,'GridOrientation_Down']]);
+ assert.equal(groupTargets(m,[a,{...b,editRestrictions:{rotate:'denied'}}],0,0,1),null);
+});
+
+import {emptyDesign,currentDesign,placeDesign,transformDesign,removeDesign,travelDesign,designShapeMap} from '../src/lib/world/design-layout.ts';
+test('independent decoration design retains unique local IDs and reversible changes',()=>{
+ const shape={width:2,height:1,runs:[{x:0,y:0,width:2}],cellCount:2,path:'M0 0h2v1h-2Z'};
+ const g={itemId:40000001,name:'Furniture',layer:'furniture',surfaceCapable:false,shapes:{'40000001:8':shape,'40000001:4':{...shape,width:1,height:2}}};
+ let t=emptyDesign();
+ t=placeDesign(t,g,1,2,2,10,10);assert.ok(t);
+ t=placeDesign(t,g,4,2,2,10,10);assert.ok(t);
+ assert.deepEqual(currentDesign(t).map(o=>o.id),[1,2]);
+ const moved=transformDesign(t,1,g,3,3,1,10,10);assert.ok(moved);
+ assert.deepEqual(currentDesign(moved)[0],{id:1,itemId:40000001,x:3,y:3,orientation:1});
+ assert.deepEqual(currentDesign(travelDesign(moved,-1)),currentDesign(t));
+ const removed=removeDesign(moved,1,g);assert.equal(currentDesign(removed).length,1);
+ const again=placeDesign(removed,g,2,2,2,10,10);assert.equal(currentDesign(again).at(-1).id,3);
+ assert.equal(placeDesign(t,g,9,0,2,10,10),null);
+ assert.equal(transformDesign(t,1,{...g,editRestrictions:{move:'denied'}},2,3,2,10,10),null);
+ const map=designShapeMap(currentDesign(t),new Map([[g.itemId,g]]),{layoutId:'L',gridIdNative:1,gridDataPath:'D',factor:1});
+ assert.equal(map.objects.length,2);assert.equal(map.objects[0].shapeKey,'40000001:8');
+ const road={...g,itemId:40100001,layer:'ground',shapes:{'40100001:8':shape}};
+ const r=placeDesign(emptyDesign(),road,0,0,2,10,10);
+ assert.equal(placeDesign(r,road,0,0,2,10,10),null);
+});
+
+import {serializeDesign,parseDesign,restoreDesign,designItemCounts} from '../src/lib/world/design-layout.ts';
+test('local design file round trip, exact grid identity, current geometry, atomic undo and item counts',()=>{
+ const grid={key:'Meadow',layoutId:'L',gridDataPath:'D',gridIdNative:1,sizeX:10,sizeY:10,factor:1};
+ const shape={width:2,height:1,runs:[{x:0,y:0,width:2}],cellCount:2,path:'M0 0h2v1h-2Z'};
+ const g={itemId:40000001,name:'Furniture',layer:'furniture',surfaceCapable:false,shapes:{'40000001:8':shape}};
+ const defs=new Map([[g.itemId,g]]);
+ let original=placeDesign(emptyDesign(),g,1,2,2,10,10);
+ original=placeDesign(original,g,4,2,2,10,10);
+ const doc=serializeDesign(original,grid);
+ const parsed=parseDesign(doc,grid);
+ assert.deepEqual(parsed,currentDesign(original));
+ assert.deepEqual([...designItemCounts(parsed)],[[40000001,2]]);
+ assert.throws(()=>parseDesign(doc,{...grid,factor:2}),/MISMATCH/);
+ assert.throws(()=>parseDesign(doc,{...grid,key:'Other'}),/MISMATCH/);
+ assert.throws(()=>parseDesign(JSON.stringify({...JSON.parse(doc),placements:[parsed[0],parsed[0]]}),grid),/INVALID/);
+ assert.equal(restoreDesign(emptyDesign(),parsed,new Map(),10,10),null);
+ assert.equal(restoreDesign(emptyDesign(),[{...parsed[0],x:9}],defs,10,10),null);
+ const previous=placeDesign(emptyDesign(),g,0,0,2,10,10);
+ const restored=restoreDesign(previous,parsed,defs,10,10);
+ assert.deepEqual(currentDesign(restored),parsed);
+ assert.deepEqual(currentDesign(travelDesign(restored,-1)),currentDesign(previous));
+ assert.equal(currentDesign(placeDesign(restored,g,6,2,2,10,10)).at(-1).id,3);
+ const road={...g,itemId:40100001,layer:'ground',shapes:{'40100001:8':shape}};
+ assert.equal(restoreDesign(emptyDesign(),parsed.map(p=>({...p,itemId:road.itemId,x:0,y:0})),new Map([[road.itemId,road]]),10,10),null);
+});
+
+import {designClipboard,pasteDesign,removeDesignGroup,transformDesignGroup} from '../src/lib/world/design-layout.ts';
+import {worldShortcut} from '../src/lib/world/world-shortcuts.ts';
+test('desktop shortcut mapping accepts Control and Command without swallowing unrelated modifiers or IME',()=>{
+ const key=(key,more={})=>worldShortcut({key,ctrlKey:false,metaKey:false,shiftKey:false,altKey:false,isComposing:false,repeat:false,...more});
+ for(const modifier of ['ctrlKey','metaKey']){
+  for(const [k,a] of [['c','copy'],['x','cut'],['v','paste'],['d','duplicate'],['a','select-all'],['z','undo'],['y','redo']])assert.equal(key(k,{[modifier]:true}),a);
+  assert.equal(key('Z',{[modifier]:true,shiftKey:true}),'redo');
+ }
+ assert.equal(key('Backspace'),'delete');assert.equal(key('ArrowLeft'),'left');assert.equal(key('+',{shiftKey:true}),'zoom-in');
+ assert.equal(key('c',{ctrlKey:true,isComposing:true}),null);assert.equal(key('c',{ctrlKey:true,altKey:true}),null);assert.equal(key('w',{metaKey:true}),null);
+ assert.equal(key('z',{ctrlKey:true,repeat:true}),null);assert.equal(key('r',{ctrlKey:true}),null);
+});
+test('copy/paste and cut preserve relative coordinates and orientations with atomic group history',()=>{
+ const shape={width:2,height:1,runs:[{x:0,y:0,width:2}],cellCount:2,path:'M0 0h2v1h-2Z'};
+ const g={itemId:40000001,name:'Furniture',layer:'furniture',surfaceCapable:false,shapes:{'40000001:8':shape,'40000001:4':{...shape,width:1,height:2}}};
+ const defs=new Map([[g.itemId,g]]);let t=placeDesign(emptyDesign(),g,1,2,2,20,20);t=placeDesign(t,g,4,3,1,20,20);
+ const clip=designClipboard(t,[1,2]);assert.deepEqual(clip.map(p=>[p.dx,p.dy,p.orientation]),[[0,0,2],[3,1,1]]);
+ const pasted=pasteDesign(t,clip,defs,10,10,20,20);assert.ok(pasted);
+ assert.deepEqual(currentDesign(pasted).slice(2).map(p=>[p.id,p.x,p.y,p.orientation]),[[3,10,10,2],[4,13,11,1]]);
+ assert.deepEqual(currentDesign(travelDesign(pasted,-1)),currentDesign(t));assert.equal(pasteDesign(t,clip,defs,19,19,20,20),null);
+ const cut=removeDesignGroup(pasted,[3,4],defs);assert.deepEqual(currentDesign(cut),currentDesign(t));
+ assert.equal(removeDesignGroup(t,[1,2],new Map([[g.itemId,{...g,editRestrictions:{remove:'denied'}}]])),null);
+ const moved=transformDesignGroup(t,[1,2],defs,1,1,0,20,20);assert.deepEqual(currentDesign(moved).map(p=>[p.x,p.y]),[[2,3],[5,4]]);
+ assert.deepEqual(currentDesign(travelDesign(moved,-1)),currentDesign(t));
+});
+
+import {savedShapesInRect} from '../src/lib/world/saved-shape-map.ts';
+test('marquee selects occupied runs even if the anchor is outside and excludes holes',()=>{
+ const shape={runs:[{x:0,y:0,width:2},{x:2,y:1,width:1}],width:3,height:2};
+ const o={localOrdinal:1,localGridOrdinal:1,x:4,y:5,shapeKey:'s'};
+ const map={objects:[o,{...o,localOrdinal:2,localGridOrdinal:2}],shapes:{s:shape}};
+ assert.deepEqual(savedShapesInRect(map,1,{x:6,y:6},{x:6,y:6}).map(o=>o.localOrdinal),[1]);
+ assert.deepEqual(savedShapesInRect(map,1,{x:4,y:6},{x:5,y:6}),[]);
+});
+
+import {createWorldArtworkLookup,mapCellPixels,showWorldArtwork,visibleWorldArtworkIds} from '../src/lib/world/world-artwork.ts';
+test('world map artwork reuses public image identity and existing historical collection mapping; no guessed URLs',async()=>{
+ let reads=0,lookups=0;
+ const path='ddv/game-thumbnails/r39/ab/'+'ab'.repeat(32)+'.webp';
+ const lookup=createWorldArtworkLookup('/Wand',async url=>{reads++;assert.equal(url,'/Wand/ddv/collection/item-images-r39.json');return new Response(JSON.stringify({schema:'wand.collection.item-images.r39@1',items:{'40000002':path,'40000003':'https://example.com/unverified.webp'}}));},async id=>{lookups++;return id===40000001?{url:'https://images.example.test/verified.webp'}:null;});
+ assert.equal(await lookup(40000001),'https://images.example.test/verified.webp');
+ assert.match(await lookup(40005160),/461f6484256c69e5a528adc3af7054301841fc324c237d8bc0d4534830345bec\.webp$/);
+ assert.equal(reads,0);
+ assert.deepEqual(await Promise.all([lookup(40000002),lookup(40000002),lookup(40000003)]),['/Wand/'+path,'/Wand/'+path,null]);
+ assert.equal(reads,1);assert.equal(lookups,4);
+ assert.equal(await lookup(-1),null);
+});
+test('world thumbnails depend on on-screen footprint size and do not hide infrastructure',()=>{
+ const shape={width:2,height:3},o={layer:'furniture',shapeKey:'a',itemId:'40000001'};
+ assert.equal(mapCellPixels({x:0,y:0,w:100,h:50},800,300),6);
+ assert.equal(showWorldArtwork(o,shape,6),false);assert.equal(showWorldArtwork(o,shape,7),true);
+ assert.equal(showWorldArtwork({...o,layer:'ground'},shape,100),false);
+ assert.equal(showWorldArtwork({...o,layer:'fence'},shape,100),false);
+ assert.deepEqual(visibleWorldArtworkIds([o,o,{...o,itemId:'40000002',layer:'fence'}],{a:shape},7),[40000001]);
+});
+
+import {alignmentTargets} from '../src/lib/world/map-alignment.ts';
+import {alignDesign} from '../src/lib/world/design-layout.ts';
+import {stageWorldAlignment} from '../src/lib/world/saved-map-batch.ts';
+test('alignment/distribution uses occupied-cell edges, preserves orientations and commits atomically',()=>{
+ const narrow={width:3,height:2,runs:[{x:1,y:0,width:1},{x:1,y:1,width:2}],cellCount:3,path:'M1 0h1v1h-1ZM1 1h2v1h-2Z'};
+ const wide={width:4,height:2,runs:[{x:0,y:0,width:4},{x:0,y:1,width:4}],cellCount:8,path:'M0 0h4v2h-4Z'};
+ const a={itemId:40000001,name:'A',layer:'furniture',surfaceCapable:false,shapes:{'40000001:8':narrow}};
+ const b={itemId:40000002,name:'B',layer:'furniture',surfaceCapable:false,shapes:{'40000002:8':wide}};
+ const defs=new Map([[a.itemId,a],[b.itemId,b]]);
+ let t=placeDesign(emptyDesign(),a,1,1,2,40,40);t=placeDesign(t,b,8,6,2,40,40);t=placeDesign(t,a,17,10,2,40,40);
+ const m=designShapeMap(currentDesign(t),defs,{layoutId:'L',gridIdNative:1,gridDataPath:'D',factor:1});
+ const left=alignmentTargets(m,m.objects,'left');assert.deepEqual(left.map(o=>o.x),[1,2,1]);
+ const next=alignDesign(t,m,[1,2,3],defs,'left',40,40);assert.ok(next);assert.deepEqual(currentDesign(next).map(p=>p.x),[1,2,1]);
+ assert.deepEqual(currentDesign(travelDesign(next,-1)),currentDesign(t));
+ // First occupied edge is 2, last right edge 20, total width 8; gap 5.
+ const even=alignmentTargets(m,m.objects,'distribute-x');assert.deepEqual(even.map(o=>o.x),[1,9,17]);
+ const staged=stageWorldAlignment(m,emptyWorldTimeline(),[1,2,3],'left','');assert.ok(staged);
+ assert.equal(currentWorldEdits(staged).length,2);
+ assert.deepEqual(projectWorldEdits(m,currentWorldEdits(staged)).objects.map(o=>o.x),[1,2,1]);
+ assert.equal(currentWorldEdits(travelWorldTimeline(staged,-1)).length,0);
+ assert.equal(alignmentTargets(m,[m.objects[0],{...m.objects[1],subgrid:{}}],'left'),null);
+ assert.equal(alignmentTargets(m,[m.objects[0],{...m.objects[1],localGridOrdinal:2}],'left'),null);
+ assert.equal(alignmentTargets(m,m.objects.slice(0,2),'distribute-x'),null);
+ const odd={...m,objects:m.objects.map(o=>o.localOrdinal===3?{...o,x:o.x+1}:o)};
+ assert.equal(alignmentTargets(odd,odd.objects,'distribute-x'),null);
+});
+
+import {defaultWorldLayers,toggleWorldLayer,worldLayer,layerVisible,layerSelectable} from '../src/lib/world/world-layer-state.ts';
+test('map layer visibility and edit lock remain independent and buildings use native identity',()=>{
+ const road={layer:'ground'},furniture={layer:'furniture'},building={layer:'other',nativeType:'Building'},fixed={layer:'furniture',editRestrictions:{select:'denied'}};
+ let state=toggleWorldLayer(defaultWorldLayers(),'ground','locked');
+ assert.equal(layerVisible(state,road),true);assert.equal(layerSelectable(state,road),false);
+ state=toggleWorldLayer(state,'ground','hidden');assert.equal(layerVisible(state,road),false);
+ state=toggleWorldLayer(state,'ground','hidden');assert.equal(layerVisible(state,road),true);assert.equal(layerSelectable(state,road),false);
+ assert.equal(layerSelectable(state,furniture),true);assert.equal(worldLayer(building),'building');assert.equal(worldLayer(fixed),'fixed');
+ assert.equal(worldLayer({layer:'other'}),'other');
+});
+
+import {reflectedDesignItem,symmetricDesignItems,symmetryPlan,commitSymmetry} from '../src/lib/world/design-symmetry.ts';
+test('exact line and point symmetry reflects source row runs and direction; no fabricated chiral orientation',()=>{
+ const rect={width:2,height:1,runs:[{x:0,y:0,width:2}],cellCount:2,path:'M0 0h2v1h-2Z'};
+ const g={itemId:40000001,name:'A',layer:'furniture',surfaceCapable:false,shapes:{'40000001:0':rect,'40000001:8':rect}};
+ const p={itemId:g.itemId,x:3,y:4,orientation:0},v={mode:'vertical',x2:20,y2:20};
+ assert.deepEqual(reflectedDesignItem(p,g,v),{...p,x:15});
+ assert.deepEqual(reflectedDesignItem(p,g,{...v,mode:'horizontal'}),{...p,y:15,orientation:2});
+ assert.deepEqual(reflectedDesignItem(p,g,{...v,mode:'point'}),{...p,x:15,y:15,orientation:2});
+ assert.deepEqual(reflectedDesignItem({...p,x:9},g,v),{...p,x:9});
+ const defs=new Map([[g.itemId,g]]);
+ assert.equal(symmetricDesignItems([{...p,x:9}],defs,v,true).length,1);
+ assert.equal(symmetricDesignItems([{...p,x:9}],defs,v,false,[{...p,x:9}]).length,0);
+ const t=emptyDesign(),plan=symmetryPlan(t,[p],defs,v,true,20,20);assert.equal(plan.length,2);
+ const next=commitSymmetry(t,plan,defs,20,20);assert.equal(currentDesign(next).length,2);
+ assert.deepEqual(currentDesign(travelDesign(next,-1)),[]);
+ assert.equal(symmetryPlan(t,[p],defs,{...v,x2:1},true,20,20),null);
+ const asymmetric={...rect,width:3,height:2,cellCount:3,runs:[{x:0,y:0,width:2},{x:0,y:1,width:1}]};
+ assert.equal(reflectedDesignItem(p,{...g,shapes:{'40000001:0':asymmetric}},v),null);
+ const road={...g,itemId:40100001,layer:'ground'};assert.equal(reflectedDesignItem({...p,itemId:road.itemId},road,v),null);
+});
+
+import {roadPitch,roadStroke,snapRoadPoint} from '../src/lib/world/road-design.ts';
+import {planRoadDesign,commitRoadDesign} from '../src/lib/world/design-layout.ts';
+test('cardinal road strokes use source-matched pitch and atomic design history',()=>{
+ const shape={width:4,height:4,runs:[0,1,2,3].map(y=>({x:0,y,width:4})),cellCount:16,path:'M0 0h4v4h-4Z'};
+ const g={itemId:40100068,name:'Path_MainStreet',layer:'ground',surfaceCapable:false,shapes:{'40100068:8':shape}};
+ assert.equal(roadPitch(g,2),4);assert.equal(roadPitch(g,1),null);assert.equal(roadPitch({...g,name:'Unknown'},2),null);
+ assert.deepEqual(snapRoadPoint({x:7,y:11},4),{x:4,y:8});
+ const points=[{x:4,y:4},{x:12,y:12}];
+ assert.equal(roadStroke(points,'line',4).length,3);assert.equal(roadStroke(points,'outline',4).length,8);assert.equal(roadStroke(points,'fill',4).length,9);assert.equal(roadStroke(points,'brush',4).length,5);
+ assert.equal(roadStroke([{x:0,y:0},{x:400,y:400}],'fill',4),null);
+ const start=emptyDesign(),cells=roadStroke(points,'fill',4),next=commitRoadDesign(start,g,cells,2,40,40);
+ assert.equal(currentDesign(next).length,9);assert.deepEqual(currentDesign(travelDesign(next,-1)),[]);assert.equal(commitRoadDesign(next,g,cells,2,40,40),next);
+ const erased=commitRoadDesign(next,g,[{x:4,y:4}],2,40,40,true);assert.equal(currentDesign(erased).length,8);assert.equal(currentDesign(travelDesign(erased,-1)).length,9);
+ assert.equal(planRoadDesign(next,g,[{x:40,y:40}],2,40,40),null);
+ const other={...g,itemId:40100069,shapes:{'40100069:8':shape}};assert.equal(planRoadDesign(next,other,[{x:4,y:4}],2,40,40),null);
+});

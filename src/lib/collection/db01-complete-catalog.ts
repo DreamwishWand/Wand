@@ -1,4 +1,4 @@
-import {openPublicItemMaster,ITEM_MASTER_LOCALES,type CompleteItemMasterFacets,type ItemMasterUniverseStatus,type PublicCompleteItemMaster} from '../items/public-item-master.ts';
+import {openCurrentItemDatabase,ITEM_MASTER_LOCALES,type CompleteItemMasterFacets,type ItemMasterUniverseStatus,type PublicCompleteItemMaster} from '../items/public-item-master.ts';
 import {collectionSourceRoot,type CollectionTopCategory} from './category-hierarchy.ts';
 import {COLLECTION_DB01_FACETS,COLLECTION_DB01_SUBMENUS,type CollectionDb01Index,type CollectionDb01Pair,type CollectionDb01SubmenuCode,type CollectionDb01NativeSubtype,type CollectionDb01ActivityType} from './db01-native-facets.ts';
 
@@ -175,7 +175,7 @@ export function loadCompleteCollection(base:string,fetcher:typeof fetch=fetch):P
   const useCache=fetcher===fetch;
   const existing=useCache?cached.get(base):undefined;if(existing)return existing;
   const task=(async()=>{
-    const master=await openPublicItemMaster(base,fetcher,{scope:'complete',gameVersion:'current'});
+    const master=await openCurrentItemDatabase(base,fetcher);
     const source=await master.getCollectionFacets();
     const [supplement,furnitureKindLabels]=await Promise.all([
       loadCollectionSupplement(master,source),loadFurnitureKindLabels(master,source)

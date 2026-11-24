@@ -513,7 +513,9 @@ try{
   const retryContext=await browser.newContext();
   const retryPage=await retryContext.newPage();
   let failedCategoryFetch=false;
-  await retryPage.route('**/ddv/item-master/steam-1.26.2-complete/collection-facets.json',route=>{
+  const currentDbIndex=JSON.parse(await readFile('static/ddv/item-master/current/index.json','utf8'));
+  const facetsHash=currentDbIndex.assets['collection-facets.json'].sha256;
+  await retryPage.route('**/ddv/item-master/objects/'+facetsHash+'.json',route=>{
     if(!failedCategoryFetch){failedCategoryFetch=true;return route.abort('failed');}
     return route.continue();
   });

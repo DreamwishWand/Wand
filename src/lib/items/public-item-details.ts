@@ -8,6 +8,7 @@
  */
 import {
   openPublicItemMaster,
+  openCurrentItemDatabase,
   type ItemMasterRecord,
   type ItemMasterRelease,
   type ItemMasterOpenOptions,
@@ -15,6 +16,7 @@ import {
   type PublicCompleteItemMaster,
   type ItemMasterLocale,
   type ItemLocalizedTextRecord,
+  type ItemFieldProjection,
 } from './public-item-master.ts';
 import {
   loadDb01ItemAcquisitionHandoff,
@@ -29,6 +31,8 @@ import {
   type Db01ItemSourceRecord,
   type Db01ItemSourceRelations,
   type Db01SourceKind,
+  type Db01SourceRole,
+  DB02_SOURCE_ROLES,
 } from '../acquisition/db01-item-source-relations.ts';
 
 export const PUBLIC_ITEM_DETAILS_CONTRACT =
@@ -58,9 +62,48 @@ export interface PublicLocalizedCompleteItemDetails extends PublicCompleteItemDe
   readonly locale: ItemMasterLocale;
   readonly localizedText: ItemLocalizedTextRecord;
 }
+/** Opt-in sparse join; omitted sides are never downloaded. */
+export interface PublicItemSelectionOptions {
+  readonly acquisition?: boolean;
+  readonly sourceRelations?: boolean;
+}
+/** Exact configured source facts, not proof of a current grant or stock.
+ * Source-specific friendship rewards are distinct from default rewards. */
+export type AdditionalItemSource = Readonly<{
+  kind:'character_friendship_reward'|'pet_friendship_reward';
+  sourceId:number;
+  level:number;
+  rewardStage:'Tier1Reward';
+  amount:number|null;
+  sourceRecord:'Friendship'|'PetFriendship';
+  sourceRecordIndex:number;
+  sourceProtoDbSha256:string;
+  currentAvailabilityVerified:false;
+}> | Readonly<{
+  kind:'configured_store_display'|'pre_dlc_store_list_member'|'design_challenge_catalog_unlock';
+  sourceId:string;
+  sourceRecordIndex:number;
+  sourceField:string;
+  sourcePosition?:number;
+  sourceProtoDbSha256:string;
+  currentAvailabilityVerified:false;
+}>;
+export interface PublicSelectedItem extends ItemFieldProjection {
+  /** Current source-derived categories including individual friendship rewards.
+   * Legacy acquisition.categories retains its independently pinned census. */
+  readonly effectiveCategories?:readonly GameNativeItemCategory[];
+  /** New exact source facts when sourceRelations is requested. */
+  readonly additionalSources?:readonly AdditionalItemSource[];
+  readonly acquisition?: Readonly<Db01ItemAcquisition>;
+  readonly sourceRelations?: Readonly<Db01ItemSourceRecord>;
+  readonly acquisitionStatus: 'current'|'pending_update';
+  readonly currentAvailabilityVerified: false;
+}
 export interface PublicItemDetailsClient {
   readonly contract: typeof PUBLIC_ITEM_DETAILS_CONTRACT;
   readonly release: ItemMasterRelease;
+  /** A lagging acquisition projection never blocks access to current canonical fields. */
+  readonly acquisitionStatus: 'current'|'pending_update';
   getItem(itemId: number): Promise<Readonly<PublicItemDetails> | null>;
   getItems(itemIds: readonly number[]): Promise<readonly (Readonly<PublicItemDetails> | null)[]>;
   /** Sparse Item IDs; an absent ID is unclassified, not unobtainable. */
@@ -68,6 +111,9 @@ export interface PublicItemDetailsClient {
     category?: GameNativeItemCategory
   ): Promise<readonly number[]>;
   getAcquisitionCoverage(): Promise<Readonly<Db01ItemAcquisitionCoverage>>;
+  /** Select only needed canonical fields and optional existing DB-02 links. */
+  getSelectedItems(itemIds:readonly number[],fields:readonly string[],
+    options?:PublicItemSelectionOptions):Promise<readonly (Readonly<PublicSelectedItem>|null)[]>;
   /**
    * Full native IDs, roles and occurrence positions are available on demand;
    * normal UI must resolve names/images rather than render technical IDs.
@@ -87,7 +133,7 @@ export interface PublicItemDetailsClient {
   /** Exposes source-only IDs even when missing from the current Item master. */
   getSourceRelations(itemId: number): Promise<Readonly<Db01ItemSourceRecord>>;
   /** Reverse original Quest/Recipe/Star Path/etc. IDs to Item IDs. */
-  getSourceItemIds(kind: Db01SourceKind, sourceId: string):
+  getSourceItemIds(kind: Db01SourceKind, sourceId: string, role?:Db01SourceRole):
     Promise<readonly number[]>;
   listItemIdsWithSources(): Promise<readonly number[]>;
 }
@@ -101,10 +147,13 @@ export async function openPublicItemDetails(
   fetcher: typeof fetch = fetch,
   options: ItemMasterOpenOptions = {},
 ): Promise<PublicItemDetailsClient> {
-  // Do not join a newer Item Master to historic v1.26.2 DB-02 data.
-  // Definition-only readers should use openPublicItemMaster instead.
   const master = await openPublicItemMaster(basePath, fetcher, options);
-  assert(master.release.target.gameVersion === PUBLIC_ITEM_DETAILS_SOURCE_VERSION,
+  const acquisitionStatus=master.release.target.gameVersion===PUBLIC_ITEM_DETAILS_SOURCE_VERSION
+    ?'current' as const:'pending_update' as const;
+  // Compatibility-only explicit historical reads retain their strict contract.
+  // Current product reads may still use the canonical attributes during a
+  // lagging acquisition update, but must not join old acquisition facts.
+  if(options.gameVersion!=='current')assert(acquisitionStatus==='current',
     'SOURCE_HANDOFF_VERSION_NOT_PUBLISHED');
   const publicBase = basePath && !basePath.startsWith('/')
     ? '/' + basePath : basePath;
@@ -118,9 +167,14 @@ export async function openPublicItemDetails(
 
   function complete():Promise<PublicCompleteItemMaster>{
     if(completeTask)return completeTask;
-    const task=openPublicItemMaster(basePath,fetcher,{
-      scope:'complete',gameVersion:master.release.target.gameVersion
-    });
+    const task=options.gameVersion==='current'
+      ?openCurrentItemDatabase(basePath,fetcher).then(reader=>{
+        assert(reader.release.target.gameVersion===master.release.target.gameVersion,
+          'CURRENT_REVISION_CHANGED');return reader;
+      })
+      :openPublicItemMaster(basePath,fetcher,{
+        scope:'complete',gameVersion:master.release.target.gameVersion
+      });
     completeTask=task;
     void task.catch(()=>{if(completeTask===task)completeTask=null;});
     return task;
@@ -154,6 +208,7 @@ export async function openPublicItemDetails(
     }));
   }
   function sidecar(): Promise<Db01ItemAcquisitionIndex> {
+    if(acquisitionStatus!=='current')return Promise.reject(new TypeError('DB01_PUBLIC_DETAILS_SOURCE_HANDOFF_VERSION_NOT_PUBLISHED'));
     if (sidecarTask) return sidecarTask;
     const task = loadDb01ItemAcquisitionHandoff(publicBase, fetcher)
       .then(index => {
@@ -169,6 +224,7 @@ export async function openPublicItemDetails(
     return task;
   }
   function sources(): Promise<Db01ItemSourceRelations> {
+    if(acquisitionStatus!=='current')return Promise.reject(new TypeError('DB01_PUBLIC_DETAILS_SOURCE_HANDOFF_VERSION_NOT_PUBLISHED'));
     if (sourcesTask) return sourcesTask;
     const task = loadDb01ItemSourceRelations(publicBase, fetcher)
       .then(index => {
@@ -221,6 +277,7 @@ export async function openPublicItemDetails(
   return Object.freeze({
     contract: PUBLIC_ITEM_DETAILS_CONTRACT,
     release: master.release,
+    acquisitionStatus,
     async getItem(itemId: number) {
       const definition = await master.getItem(itemId);
       if (!definition) return null;
@@ -236,13 +293,92 @@ export async function openPublicItemDetails(
     async listItemIdsByAcquisition(category?: GameNativeItemCategory) {
       const existing = idLists.get(category);
       if (existing) return existing;
-      const ids = Object.freeze((await sidecar()).listItemIds(category)
-        .map(id => Number(id)));
+      // Normal current service filtering uses the complete canonical source
+      // projection (including individual friendship rewards). Explicit old
+      // snapshot callers retain the original compatibility index.
+      const reader=options.gameVersion==='current'?await complete():null;
+      const available=reader&&(await reader.getFieldCatalog()).some(f=>f.field==='acquisition.effectiveCategories');
+      const ids=available&&reader
+        ?Object.freeze(category
+          ?[...await reader.findItemIdsByField('acquisition.effectiveCategories',{kind:'contains',value:category})]
+          :(await reader.getFieldRows('acquisition.effectiveCategories')).map(([id])=>id))
+        :Object.freeze((await sidecar()).listItemIds(category).map(id=>Number(id)));
       idLists.set(category, ids);
       return ids;
     },
     async getAcquisitionCoverage() {
       return (await sidecar()).coverage;
+    },
+    async getSelectedItems(itemIds:readonly number[],fields:readonly string[],selection:PublicItemSelectionOptions={}){
+      const reader=await complete();
+      const projected=await reader.getItemFields(itemIds,fields);
+      if(!projected.some(Boolean))return Object.freeze(projected.map(()=>null));
+      // Current services use the same canonical content-addressed revision
+      // for Item fields and acquisition. No whole acquisition sidecar is
+      // fetched, even when both source relations and summary are requested.
+      if(options.gameVersion==='current'){
+        const publication=reader.release.acquisitionProjection;
+        const status=publication?'current' as const:'pending_update' as const;
+        const selectedFields:string[]=[];
+        if(selection.acquisition&&publication?.summaryCount)selectedFields.push('acquisition.summary');
+        if(selection.sourceRelations&&publication?.relationCount)selectedFields.push('acquisition.sourceRelations');
+        if(selection.acquisition||selection.sourceRelations){
+          const catalog=new Set((await reader.getFieldCatalog()).map(f=>f.field));
+          if(selection.acquisition&&catalog.has('acquisition.effectiveCategories'))selectedFields.push('acquisition.effectiveCategories');
+          if(selection.sourceRelations&&catalog.has('acquisition.additionalSources'))selectedFields.push('acquisition.additionalSources');
+        }
+        const knownIds=[...new Set(projected.flatMap(row=>row?[row.itemId]:[]))];
+        const metadata=selectedFields.length
+          ?await reader.getItemFields(knownIds,selectedFields):[];
+        const byId=new Map(metadata.flatMap(row=>row?[[row.itemId,row.values] as const]:[]));
+        return Object.freeze(projected.map(row=>{
+          if(!row)return null;
+          const values=byId.get(row.itemId);
+          const itemId=String(row.itemId);
+          // Missing sparse row means no known route in this projection,
+          // NOT unobtainable. A missing entire projection is pending_update.
+          const acquisition=publication&&selection.acquisition
+            ?(values?.['acquisition.summary'] as unknown as Readonly<Db01ItemAcquisition>|undefined)
+              ??Object.freeze({itemId,categories:Object.freeze([]),details:Object.freeze({}),
+                unresolvedOnlineHints:Object.freeze([]),classified:false as const,currentAvailabilityVerified:false as const})
+            :undefined;
+          const sourceRelations=publication&&selection.sourceRelations
+            ?(values?.['acquisition.sourceRelations'] as unknown as Readonly<Db01ItemSourceRecord>|undefined)
+              ??Object.freeze({itemId,categories:Object.freeze([]),links:Object.freeze([]),
+                identifiedSourceLinks:false as const,sourceCoverageComplete:false as const})
+            :undefined;
+          assert(!acquisition||acquisition.itemId===itemId,'ITEM_ID_MISMATCH');
+          assert(!sourceRelations||sourceRelations.itemId===itemId,'SOURCE_ITEM_ID_MISMATCH');
+          if(acquisition&&sourceRelations)assert(
+            acquisition.categories.length===sourceRelations.categories.length&&
+            acquisition.categories.every((value,i)=>value===sourceRelations.categories[i]),
+            'ACQUISITION_SOURCE_CATEGORY_MISMATCH');
+          const effectiveCategories=selection.acquisition&&selectedFields.includes('acquisition.effectiveCategories')
+            ?(values?.['acquisition.effectiveCategories'] as unknown as readonly GameNativeItemCategory[]|undefined)??Object.freeze([])
+            :undefined;
+          const additionalSources=selection.sourceRelations&&selectedFields.includes('acquisition.additionalSources')
+            ?(values?.['acquisition.additionalSources'] as unknown as readonly AdditionalItemSource[]|undefined)??Object.freeze([])
+            :undefined;
+          return Object.freeze({...row,...(acquisition?{acquisition}:{}),
+            ...(sourceRelations?{sourceRelations}:{}),...(effectiveCategories?{effectiveCategories}:{}),
+            ...(additionalSources?{additionalSources}:{}),acquisitionStatus:status,currentAvailabilityVerified:false as const});
+        }));
+      }
+      const [origins,index]=await Promise.all([
+        selection.acquisition&&acquisitionStatus==='current'?sidecar():null,
+        selection.sourceRelations&&acquisitionStatus==='current'?sources():null
+      ]);
+      return Object.freeze(projected.map(row=>{
+        if(!row)return null;
+        const acquisition=origins?.getItem(row.itemId);
+        const sourceRelations=index?.getItem(row.itemId);
+        if(acquisition&&sourceRelations)assert(
+          acquisition.categories.length===sourceRelations.categories.length&&
+          sourceRelations.categories.every((value,i)=>value===acquisition.categories[i]),
+          'ACQUISITION_SOURCE_CATEGORY_MISMATCH');
+        return Object.freeze({...row,...(acquisition?{acquisition}:{}),
+          ...(sourceRelations?{sourceRelations}:{}),acquisitionStatus,currentAvailabilityVerified:false as const});
+      }));
     },
     async getCompleteItem(itemId:number){
       const definition=await (await complete()).getItem(itemId);
@@ -276,9 +412,13 @@ export async function openPublicItemDetails(
     async getSourceRelations(itemId: number) {
       return (await sources()).getItem(itemId);
     },
-    async getSourceItemIds(kind: Db01SourceKind, sourceId: string) {
-      const ids = (await sources()).getSourceItemIds(kind, sourceId);
-      return Object.freeze(ids.map(id => Number(id)));
+    async getSourceItemIds(kind: Db01SourceKind, sourceId: string, role?:Db01SourceRole) {
+      assert(role===undefined||DB02_SOURCE_ROLES.includes(role),'INVALID_SOURCE_ROLE');
+      const index=await sources();
+      const ids=index.getSourceItemIds(kind,sourceId);
+      const matches=role===undefined?ids:ids.filter(id=>index.getItem(id).links.some(
+        link=>link.kind===kind&&link.sourceId===sourceId&&link.role===role));
+      return Object.freeze(matches.map(id=>Number(id)));
     },
     async listItemIdsWithSources() {
       if (allSourceItemIds) return allSourceItemIds;
@@ -288,4 +428,11 @@ export async function openPublicItemDetails(
       return ids;
     },
   });
+}
+
+/** Normal product entry point. Version selection is internal; use getSelectedItems
+ * for current canonical fields and acquisition projections. Other methods are
+ * legacy compatibility reads and retain the historical sidecar gate. */
+export function openCurrentItemDetails(basePath:string='',fetcher:typeof fetch=fetch){
+  return openPublicItemDetails(basePath,fetcher,{gameVersion:'current'});
 }

@@ -1,4 +1,6 @@
 <script lang="ts">
+ import MapCameraControls from './MapCameraControls.svelte';
+
   import {onDestroy} from 'svelte';
   import {defaultMapCamera,maxMapZoom,zoomMapCamera,panMapCamera,mapCameraViewBox,wheelMapCamera,createMapPanGesture} from './map-camera.ts';
 
@@ -208,7 +210,7 @@
   }
 </script>
 
-<div class="media-map-overlay">
+<div class="media-map-overlay" class:compact>
   <div class="map-tools">
     {#if !compact}<label class="file-label">マップ画像と座標対応JSON
       <input type="file" multiple accept=".webp,.json" on:change={load} aria-label="MEDIAマップと座標対応JSON"/>
@@ -225,17 +227,6 @@
   {#if loading}<p role="status">マップ読み込み中…</p>
   {:else if error}<p role="alert">{error}</p>
   {:else if active&&binding}
-    <div class="camera-tools" role="group" aria-label="マップ拡大・移動">
-      <button type="button" aria-label="縮小" disabled={zoom===1} on:click={()=>setZoom(zoom/2)}>−</button>
-      <button type="button" aria-label="拡大" disabled={zoom>=maxZoom} on:click={()=>setZoom(zoom*2)}>＋</button>
-      <button type="button" on:click={resetCamera}>全体</button>
-      {#if zoom>1}
-        <button type="button" aria-label="左へ移動" on:click={()=>pan(-.4,0)}>←</button>
-        <button type="button" aria-label="上へ移動" on:click={()=>pan(0,-.4)}>↑</button>
-        <button type="button" aria-label="下へ移動" on:click={()=>pan(0,.4)}>↓</button>
-        <button type="button" aria-label="右へ移動" on:click={()=>pan(.4,0)}>→</button>
-      {/if}
-    </div>
     {#if showObjects&&activeObjects}
       <div class="layer-tools" role="group" aria-label="選択対象レイヤー">
         {#each availableLayers as layer}
@@ -244,7 +235,7 @@
         {/each}
       </div>
     {/if}
-    <button type="button" class="map" class:zoomed={zoom>1} on:click={clickMap}
+    <div class="terrain-map-frame"><button type="button" class="map" class:zoomed={zoom>1} on:click={clickMap}
       on:wheel|nonpassive={wheel} on:pointerdown={startPan} on:pointermove={moveMap}
       on:pointerup={finishPan} on:pointercancel={finishPan} on:pointerleave={()=>gesture.leave()}
       on:keydown={keyboardMap} aria-label="MEDIAマップ上の原本Grid座標を選択">
@@ -287,7 +278,7 @@
           {/each}
         </g>
       </svg>
-    </button>
+    </button><MapCameraControls {zoom} {maxZoom} onZoom={setZoom} onFit={resetCamera} onPan={pan}/></div>
     {#if anchorSpace}<p>原本の配置座標専用図（地形・MEDIA座標とは未照合）。</p>
     {:else if schematic&&!compact}<p>原本Gridの簡略図（ワールド上の位置・地形画像は未対応）。</p>{/if}
     {#if showObjects&&activeObjects}
@@ -342,6 +333,7 @@
   {/if}
 </div>
 <style>
+  .terrain-map-frame{position:relative;min-width:0;min-height:0}.media-map-overlay.compact{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}.compact .terrain-map-frame{flex:1 1 auto;overflow:hidden}.compact .map,.compact .map svg{height:100%;max-height:none}
   .media-map-overlay{display:grid;gap:8px;min-width:0;max-width:100%;margin:12px 0}
   .map-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px}
   .file-label{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;max-width:100%}
@@ -361,4 +353,5 @@
   .preview-tools{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:12px}
   .preview-tools button{font:inherit;color:inherit;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:5px;padding:5px}
   p{font-size:11px;color:var(--wand-muted);margin:0}
+ .media-map-overlay.compact{position:absolute;inset:0;margin:0;display:block}.compact .terrain-map-frame{position:absolute;inset:0}.compact .map,.compact .map svg{border:0;border-radius:0}.compact .map-tools,.compact .layer-tools{position:absolute;z-index:5;top:52px;left:6px;background:var(--wand-card);padding:5px;border-radius:5px}.compact .layer-tools{top:90px}
 </style>

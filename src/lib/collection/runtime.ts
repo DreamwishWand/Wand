@@ -257,6 +257,28 @@ function writeIdb(db: IDBDatabase, payload: string, expected: string | null): Pr
       : (transaction.error ?? Error('COLLECTION_INDEXEDDB_ABORTED')));
   });
 }
+/** Shared read-only ownership projection. No catalog load or database write. */
+export async function readCollectionOwnership():Promise<{available:boolean;ids:ReadonlySet<number>}>{
+  const db=await openIdb();
+  try{
+    const raw=await readIdb(db)??localStorage.getItem(LEGACY_STORAGE_KEY);
+    if(!raw)return {available:false,ids:new Set()};
+    const data=JSON.parse(raw) as CollectionState;
+    if(data.schema!=='wand.collection.local@1'||!Array.isArray(data.workspaces))return {available:false,ids:new Set()};
+    const workspace=data.workspaces.find(row=>row.id===data.active);
+    if(!workspace?.entries||typeof workspace.entries!=='object')return {available:false,ids:new Set()};
+    const rows=Object.entries(workspace.entries);
+    const ids=new Set<number>();
+    let available=false;
+    for(const [key,entry] of rows){
+      const id=Number(key);
+      if(!Number.isSafeInteger(id)||id<=0||!entry)continue;
+      if(entry.status==='owned'||entry.status==='missing')available=true;
+      if(entry.status==='owned')ids.add(id);
+    }
+    return {available,ids};
+  }finally{db.close();}
+}
 export class CollectionRuntime {
   readonly metadata: CollectionRuntimeMetadata;
   readonly isOwnerLocal: boolean;

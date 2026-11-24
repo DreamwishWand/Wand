@@ -1,17 +1,26 @@
 <script lang="ts">
+ import MapCameraControls from './MapCameraControls.svelte';
+ import {worldShortcut,worldShortcutTarget} from './world-shortcuts.ts';
+
   import {onMount,onDestroy} from 'svelte';
   import {terrainWarnings,type TerrainBinding} from './terrain-binding.ts';
   import {nativeSourceFloorTint} from './native-terrain-canvas.ts';
   import {base} from '$app/paths';
+  import {worldArtwork,mapCellPixels,showWorldArtwork,visibleWorldArtworkIds} from './world-artwork.ts';
+  import WorldLayerControls from './WorldLayerControls.svelte';
+  import {defaultWorldLayers,layerVisible,layerSelectable,type WorldLayerState} from './world-layer-state.ts';
+  import WorldObjectArtwork from './WorldObjectArtwork.svelte';
+  import WorldAlignmentControls from './WorldAlignmentControls.svelte';
+  import {alignmentTargets,type MapAlignment} from './map-alignment.ts';
   import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences';
   import {openPublicItemMaster,type PublicCompleteItemMaster} from '$lib/items/public-item-master';
   import {searchSavedObjects,worldObjectName,objectFocus,type WorldNames} from './world-object-search.ts';
   import {defaultMapCamera,maxMapZoom,zoomMapCamera,panMapCamera,mapCameraViewBox,mapViewportBounds,wheelMapCamera,createMapPanGesture} from './map-camera.ts';
 
-  import {emptyWorldTimeline,currentWorldEdits,travelWorldTimeline,projectWorldEdits,stageWorldEdit,WORLD_BATCH_LIMIT} from './saved-map-batch.ts';
+  import {emptyWorldTimeline,currentWorldEdits,travelWorldTimeline,projectWorldEdits,stageWorldEdit,stageWorldGroupMove,stageWorldAlignment,groupTargets,WORLD_BATCH_LIMIT} from './saved-map-batch.ts';
   import {savedDraftOverlap,OVERLAP_COLORS} from './saved-draft-overlap.ts';
   import {CARDINAL_ORIENTATIONS,isCardinal,worldTransformEligible,worldMoveEligible,worldRotateEligible,draftSavedMapTransform,exclusiveAnchorClass,exclusiveAnchorConflict} from './saved-map-transform.ts';
-  import {savedGridObjects,savedShapesAt,visibleSavedObjects,type SavedShapeMap,type SavedShapeObject} from './saved-shape-map.ts';
+  import {savedGridObjects,savedShapesAt,savedShapesInRect,visibleSavedObjects,type SavedShapeMap,type SavedShapeObject} from './saved-shape-map.ts';
   import {MAP_LAYER_COLORS,MAP_LAYER_LABELS,mapPainterOrder,matchesSelectionLayer,type MapSelectionLayer} from './source-map-layers.ts';
   import {nativeActionBlocked} from './native-edit-restrictions.ts';
   import {sourceOrientationAngle,type SourceObjectShape} from './source-object-map.ts';
@@ -19,6 +28,19 @@
   export let file:File|null=null;
   export let terrain:TerrainBinding|null=null;
   export let compact=false;
+  export let layerState:WorldLayerState=defaultWorldLayers();
+  let layersOpen=false;
+  let seenLayers=layerState;
+  function applyLayers(next:WorldLayerState){if(busy)return;layerState=next;}
+  $: if(layerState!==seenLayers){seenLayers=layerState;cancelEdit();clearStructure();clearGroup();selected=null;hits=[];resetDraft(null);}
+  let toolsOpen=true,inspectorOpen=true;
+  let root:HTMLDivElement;
+  let mapWidth=0,mapHeight=0;
+  let artwork=new Map<number,string>(),artworkPending=new Set<number>();
+  function loadArtwork(ids:readonly number[]){
+    for(const id of ids){if(artworkPending.has(id))continue;artworkPending.add(id);
+      void worldArtwork(base,id).then(url=>{if(url)artwork=new Map(artwork).set(id,url);}).catch(()=>{artworkPending.delete(id);});}
+  }
   export let terrainDisplayed=false;
   $: activeTerrain=terrain&&terrain.verifiedGridOrdinals.includes(activeOrdinal)?terrain:null;
   $: terrainUrl=activeTerrain?terrainImage(activeTerrain):'';
@@ -79,13 +101,48 @@
     }catch{if(epoch===nameEpoch){names=new Map();master=null;}}
   }
   onMount(()=>{const unwatch=watchWandLanguage(next=>{locale=next;void loadNames(next);});return()=>{nameEpoch++;unwatch();};});
-  $: matches=searchSavedObjects(objects,names,query,layer);
+  $: matches=searchSavedObjects(objects.filter(o=>layerSelectable(layerState,o)),names,query,layer);
   $: matchIds=new Set(matches.map(o=>o.localOrdinal));
   function setSearch(value:string){query=value;visibleResults=60;searchOpen=true;}
-  function selectFromSearch(o:SavedShapeObject){if(busy)return;selected=o.localOrdinal;hits=[o];cameraState=objectFocus(map,o,extent,maxZoom);searchOpen=false;}
+  function selectFromSearch(o:SavedShapeObject){if(busy)return;if(groupMode){toggleGroup(o);return;}selected=o.localOrdinal;hits=[o];cameraState=objectFocus(map,o,extent,maxZoom);searchOpen=false;}
+  let groupMode=false,groupIds:number[]=[],groupDX:number|undefined=0,groupDY:number|undefined=0,groupTurns=0;
+  let alignmentOpen=false,alignmentAction:MapAlignment|null=null;
+  let rangeMode=false,rangeStart:{x:number;y:number}|null=null,rangeEnd:{x:number;y:number}|null=null;
+  $: groupCanRotate=groupObjects.length>=2&&groupObjects.every(o=>worldRotateEligible(o)&&o.shapeKey&&[0,4,8,12].every(code=>map.shapes[o.itemId+':'+code]));
+  $: groupPreview=groupMode&&groupObjects.length>=2?(alignmentAction?alignmentTargets(effectiveMap,groupObjects,alignmentAction):groupTargets(map,groupObjects,placing&&hoverPoint?hoverPoint.x-groupObjects[0].x:groupDX??0,placing&&hoverPoint?hoverPoint.y-groupObjects[0].y:groupDY??0,groupTurns)):null;
+  $: groupSet=new Set(groupIds);
+  $: groupObjects=objects.filter(o=>groupSet.has(o.localOrdinal));
+  $: groupPlan=groupMode?(alignmentAction?stageWorldAlignment(map,timeline,groupIds,alignmentAction,'整列：衝突・上下関係は未判定'):groupDX!==undefined&&groupDY!==undefined?stageWorldGroupMove(map,timeline,groupIds,groupDX,groupDY,'一括変形：衝突・上下関係は未判定',groupTurns):null):null;
+  function chooseAlignment(mode:MapAlignment){if(busy)return;cancelEdit();groupDX=0;groupDY=0;groupTurns=0;placing=false;rangeMode=false;hoverPoint=null;alignmentAction=mode;}
+  $: if(groupIds.length<2){alignmentAction=null;alignmentOpen=false;}
+  function clearGroup(){alignmentAction=null;alignmentOpen=false;groupIds=[];groupDX=0;groupDY=0;groupTurns=0;placing=false;hoverPoint=null;rangeMode=false;rangeStart=null;rangeEnd=null;}
+  function toggleGroupMode(){if(busy)return;cancelEdit();clearGroup();groupMode=!groupMode;selected=null;hits=[];if(groupMode)resetCamera();}
+  function toggleGroup(o:SavedShapeObject){
+    if(!layerSelectable(layerState,o)||!worldMoveEligible(o)||o.localGridOrdinal!==activeOrdinal)return;
+    if(groupIds.includes(o.localOrdinal))groupIds=groupIds.filter(id=>id!==o.localOrdinal);
+    else if(groupIds.length<WORLD_BATCH_LIMIT)groupIds=[...groupIds,o.localOrdinal];
+    alignmentAction=null;groupDX=0;groupDY=0;groupTurns=0;placing=false;hoverPoint=null;cancelEdit();
+  }
+  function stageGroup(){
+    if(busy||!groupPlan||placing)return;
+    cancelEdit();timeline=groupPlan;alignmentAction=null;groupDX=0;groupDY=0;groupTurns=0;stageError='';
+  }
   function rotateDraft(delta:number){if(busy||!worldRotateEligible(chosen)||!isCardinal(draftOrientation))return;draftOrientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(draftOrientation)+delta+4)%4];}
   function keyMap(event:KeyboardEvent){
-    if(busy)return;
+    if(busy||!worldShortcutTarget(event,root))return;
+    const action=worldShortcut(event);if(!action)return;
+    if(action==='undo'||action==='redo'){event.preventDefault();if(action==='undo'&&(placing||editPlan||pendingDraft)){if(groupMode){alignmentAction=null;groupDX=0;groupDY=0;groupTurns=0;placing=false;hoverPoint=null;}else resetDraft(chosen);}else travel(action==='undo'?-1:1);return;}
+    if(action==='select-all'&&file){event.preventDefault();const ids=objects.filter(o=>layerSelectable(layerState,o)&&worldMoveEligible(o)&&matchesSelectionLayer(o,layer)&&(!query.trim()||matchIds.has(o.localOrdinal))).map(o=>o.localOrdinal);if(ids.length>WORLD_BATCH_LIMIT){stageError='選択上限 '+WORLD_BATCH_LIMIT+'件';return;}cancelEdit();clearGroup();groupMode=true;selected=null;hits=[];groupIds=ids;return;}
+    if(action==='zoom-in'||action==='zoom-out'||action==='fit'){event.preventDefault();if(action==='fit')resetCamera();else changeZoom(zoom*(action==='zoom-in'?2:.5));return;}
+    if(event.ctrlKey||event.metaKey||event.altKey)return;
+    if(action==='confirm'&&event.target instanceof HTMLElement&&event.target.closest('button:not(.plot)'))return;
+    if(groupMode){
+      if(event.key==='Escape'){if(alignmentAction)alignmentAction=null;else clearGroup();return;}
+      if(event.key==='Enter'){event.preventDefault();stageGroup();return;}
+      if(event.key.toLowerCase()==='r'&&groupCanRotate){event.preventDefault();alignmentAction=null;groupTurns=(groupTurns+(event.shiftKey?3:1))%4;return;}
+      const d:Record<string,[number,number]>={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]};
+      const step=d[event.key];if(step&&groupIds.length>=2){event.preventDefault();alignmentAction=null;groupDX=(groupDX??0)+step[0];groupDY=(groupDY??0)+step[1];}return;
+    }
     if(event.key==='Escape'){resetDraft(chosen);return;}
     if(!chosen||!file||!worldTransformEligible(chosen))return;
     if(event.key.toLowerCase()==='r'){event.preventDefault();rotateDraft(event.shiftKey?-1:1);return;}
@@ -100,11 +157,45 @@
   let hoverPoint:{x:number;y:number}|null=null;
   export let timeline=emptyWorldTimeline();
   let stageError='';
+  let structureWorker:Worker|null=null,structureStatus:'idle'|'working'|'valid'|'error'='idle';
+  let structureAction:'duplicate'|'remove'|null=null;
+  let structureSignature='';
+  $: structureEligible=Boolean(file&&chosen&&!groupMode&&!staged.length&&
+    !chosen.subgrid&&chosen.shapeKey&&chosen.layer==='furniture'&&isCardinal(chosen.orientation)&&
+    !nativeActionBlocked(chosen.editRestrictions,'select'));
+  $: structureDuplicateEligible=structureEligible&&worldMoveEligible(chosen)&&
+    Number.isInteger(draftX)&&Number.isInteger(draftY)&&
+    (draftX!==chosen?.x||draftY!==chosen?.y)&&draftOrientation===chosen?.orientation;
+  $: structureRemoveEligible=structureEligible&&!nativeActionBlocked(chosen?.editRestrictions,'remove');
+  $: structureInputKey=JSON.stringify([chosen?.localOrdinal,chosen?.x,chosen?.y,draftX,draftY,draftOrientation,staged.length,groupMode]);
+  $: if(structureSignature&&structureSignature!==structureInputKey)clearStructure();
+  function clearStructure(){
+    structureWorker?.terminate();structureWorker=null;structureStatus='idle';structureAction=null;structureSignature='';
+  }
+  onDestroy(clearStructure);
+  function rehearseStructure(action:'duplicate'|'remove'){
+    if(!file||!chosen||busy||placing||structureStatus==='working'||
+      !(action==='duplicate'?structureDuplicateEligible:structureRemoveEligible))return;
+    clearStructure();
+    structureStatus='working';structureAction=action;structureSignature=structureInputKey;
+    const own=new Worker(new URL('./structure-preview.worker.ts',import.meta.url),{type:'module'});
+    structureWorker=own;
+    function done(valid:boolean){
+      if(structureWorker!==own)return;
+      own.terminate();structureWorker=null;structureStatus=valid?'valid':'error';
+    }
+    own.onmessage=({data})=>done(data?.kind==='structure-preview'&&data.validated===true);
+    own.onerror=()=>done(false);
+    own.postMessage({command:'structure-preview',file,plan:{
+      localOrdinal:chosen.localOrdinal,itemId:chosen.itemId,expectedX:chosen.x,expectedY:chosen.y,
+      action,x:action==='duplicate'?draftX:null,y:action==='duplicate'?draftY:null
+    }});
+  }
   $: staged=currentWorldEdits(timeline);
   $: effectiveMap=projectWorldEdits(map,staged);
   function clearTimeline(){timeline=emptyWorldTimeline();stageError='';}
   let previousFile:File|null=null;
-  function checkFile(value:File|null){if(previousFile!==value){previousFile=value;cancelEdit();stageError='';placing=false;hoverPoint=null;}}
+  function checkFile(value:File|null){if(previousFile!==value){previousFile=value;clearStructure();cancelEdit();stageError='';clearGroup();groupMode=false;}}
   $: checkFile(file);
   let draftTarget:SavedShapeObject|null=null;
   function cancelEdit(){editEpoch++;editWorker?.terminate();editWorker=null;busy=false;checkedSignature='';editError='';if(copyUrl)URL.revokeObjectURL(copyUrl);copyUrl='';}
@@ -117,7 +208,7 @@
   $: editPlan=draftSavedMapTransform(chosen,draftX,draftY,draftOrientation);
   $: exportPlans=staged.length?staged.map(e=>e.plan):editPlan?[editPlan]:[];
   $: draftSignature=exportPlans.length?JSON.stringify(exportPlans):'';
-  $: pendingDraft=staged.length>0&&editPlan!==null;
+  $: pendingDraft=groupMode?Boolean(alignmentAction||(groupDX??0)||(groupDY??0)||groupTurns):staged.length>0&&editPlan!==null;
   function stageCurrent(){
     if(!chosen||busy||placing||!editPlan||committedConflict)return;
     const overlapWarning=overlap?[overlap.counts['shape-overlap']?'重なり候補 '+overlap.counts['shape-overlap']+'マス':'',
@@ -130,7 +221,7 @@
     if(!next){stageError='編集を追加できません。最大'+WORLD_BATCH_LIMIT+'件です。';return;}
     cancelEdit();timeline=next;stageError='';
   }
-  function travel(delta:-1|1){if(busy)return;cancelEdit();timeline=travelWorldTimeline(timeline,delta);stageError='';}
+  function travel(delta:-1|1){if(busy)return;alignmentAction=null;cancelEdit();timeline=travelWorldTimeline(timeline,delta);groupDX=0;groupDY=0;groupTurns=0;stageError='';}
   function resetStaged(){if(busy)return;cancelEdit();clearTimeline();}
   $: if(checkedSignature&&checkedSignature!==draftSignature)cancelEdit();
   $: draftCode=isCardinal(draftOrientation)?CARDINAL_ORIENTATIONS.indexOf(draftOrientation)*4:null;
@@ -146,7 +237,7 @@
   $: if(!file)cancelEdit();
   async function runEdit(exporting:boolean){
     const source=file,plans=exportPlans,signature=draftSignature;
-    if(!source||!plans.length||busy||pendingDraft||placing||committedConflict||source.size<1||source.size>32*1024*1024||
+    if(!source||!plans.length||busy||structureStatus!=='idle'||pendingDraft||placing||committedConflict||source.size<1||source.size>32*1024*1024||
       (exporting&&checkedSignature!==signature))return;
     const sourceName=source.name;
     const epoch=++editEpoch;busy=true;editError='';
@@ -189,9 +280,9 @@
   let previous:SavedShapeMap|null=null;
   $: ordinals=[...new Set(map.objects.map(o=>o.localGridOrdinal))];
   function resetCamera(){cameraState=defaultMapCamera();}
-  function chooseGrid(n:number){ordinal=n;selected=null;hits=[];layer='all';resetCamera();}
+  function chooseGrid(n:number){clearGroup();groupMode=false;ordinal=n;selected=null;hits=[];layer='all';resetCamera();}
   $: if(map!==previous){
-    previous=map;cancelEdit();stageError='';
+    previous=map;clearStructure();cancelEdit();stageError='';clearGroup();groupMode=false;
     ordinal=map.objects[0]?.localGridOrdinal??0;selected=null;hits=[];layer='all';cameraState=defaultMapCamera();
   }
   $: activeOrdinal=ordinals.includes(ordinal)?ordinal:ordinals[0]??0;
@@ -209,13 +300,17 @@
   $: extent=bounds(objects,map,activeTerrain);
   $: maxZoom=maxMapZoom(Math.max(extent.w,extent.h));
   $: viewBox=mapCameraViewBox(cameraState,extent);
-  $: visibleObjects=visibleSavedObjects(objects,map.shapes,mapViewportBounds(cameraState,extent),selected);
+  $: viewport=mapViewportBounds(cameraState,extent);
+  $: visibleObjects=visibleSavedObjects(objects.filter(o=>layerVisible(layerState,o)),map.shapes,viewport,selected);
+  $: cellPixels=mapCellPixels(viewport,mapWidth,mapHeight);
+  $: if(mapWidth&&mapHeight)loadArtwork(visibleWorldArtworkIds(visibleObjects,map.shapes,cellPixels));
+  $: if(searchOpen)loadArtwork(matches.slice(0,visibleResults).map(o=>Number(o.itemId)).filter(id=>Number.isSafeInteger(id)&&id>0));
   function changeZoom(n:number){cameraState=zoomMapCamera(cameraState,n,maxZoom);}
   function pan(dx:number,dy:number){cameraState=panMapCamera(cameraState,dx/zoom,dy/zoom);}
   function wheel(event:WheelEvent){cameraState=wheelMapCamera(event,svg,extent,cameraState,maxZoom);}
   function startPan(event:PointerEvent){gesture.begin(event,zoom>1&&(!placing||event.shiftKey||event.button===1||event.pointerType==='touch'));}
   function finishPan(event:PointerEvent){gesture.end(event);}
-  function chooseLayer(l:MapSelectionLayer){layer=l;selected=hits.find(o=>matchesSelectionLayer(o,l))?.localOrdinal??null;}
+  function chooseLayer(l:MapSelectionLayer){layer=l;if(groupMode){clearGroup();cancelEdit();}else selected=hits.find(o=>layerSelectable(layerState,o)&&matchesSelectionLayer(o,l))?.localOrdinal??null;}
   function pointerCell(event:MouseEvent){
     const matrix=svg?.getScreenCTM();if(!matrix)return null;
     const p=new DOMPoint(event.clientX,event.clientY).matrixTransform(matrix.inverse());
@@ -224,37 +319,48 @@
   }
   function follow(event:PointerEvent){
     const moved=gesture.move(event,svg,extent,cameraState);if(moved){cameraState=moved;return;}
+    if(rangeMode&&rangeStart&&!busy){rangeEnd=pointerCell(event);return;}
     if(!placing||busy||event.pointerType==='touch')return;
     const p=pointerCell(event);if(p&&(p.x!==hoverPoint?.x||p.y!==hoverPoint?.y))hoverPoint=p;
   }
   function pick(event:MouseEvent){
     if(gesture.consumeClick())return;
     const point=pointerCell(event);if(!point||event.detail===0||busy)return;
+    if(groupMode){
+      if(rangeMode){
+        if(!rangeStart){rangeStart=point;rangeEnd=point;return;}
+        const ids=savedShapesInRect(effectiveMap,activeOrdinal,rangeStart,point).filter(o=>layerSelectable(layerState,o)&&worldMoveEligible(o)&&matchesSelectionLayer(o,layer)).map(o=>o.localOrdinal);
+        const merged=[...new Set([...groupIds,...ids])];
+        if(merged.length>WORLD_BATCH_LIMIT){stageError='選択上限 '+WORLD_BATCH_LIMIT+'件';}else{groupIds=merged;stageError='';}
+        alignmentAction=null;groupDX=0;groupDY=0;groupTurns=0;rangeMode=false;rangeStart=null;rangeEnd=null;cancelEdit();return;
+      }
+      if(placing&&groupObjects.length>=2){const anchor=groupObjects[0];groupDX=point.x-anchor.x;groupDY=point.y-anchor.y;placing=false;hoverPoint=null;return;}
+      hits=savedShapesAt(effectiveMap,activeOrdinal,point.x,point.y).filter(o=>layerSelectable(layerState,o));
+      const hit=hits.find(o=>layerSelectable(layerState,o)&&matchesSelectionLayer(o,layer)&&worldMoveEligible(o));if(hit)toggleGroup(hit);return;
+    }
+    if(!placing&&(event.metaKey||event.ctrlKey||event.shiftKey)&&file){const hit=savedShapesAt(effectiveMap,activeOrdinal,point.x,point.y).find(o=>layerSelectable(layerState,o)&&matchesSelectionLayer(o,layer)&&worldMoveEligible(o));if(hit){const prev=chosen;clearGroup();groupMode=true;selected=null;if(prev&&worldMoveEligible(prev)&&prev.localOrdinal!==hit.localOrdinal)groupIds=[prev.localOrdinal];toggleGroup(hit);return;}}
     if(placing&&chosen&&worldMoveEligible(chosen)){draftX=point.x;draftY=point.y;placing=false;hoverPoint=null;cancelEdit();return;}
-    hits=savedShapesAt(effectiveMap,activeOrdinal,point.x,point.y);
+    hits=savedShapesAt(effectiveMap,activeOrdinal,point.x,point.y).filter(o=>layerSelectable(layerState,o));
     selected=hits.find(o=>matchesSelectionLayer(o,layer))?.localOrdinal??null;
   }
 </script>
-<div class="saved-shape-plot">
-  <div class="controls">
+<svelte:window on:keydown={e=>{if(compact)keyMap(e);}}/>
+<div class="saved-shape-plot" class:compact bind:this={root}>
+  {#if compact}<button type="button" class="saved-tools-toggle" aria-expanded={toolsOpen} aria-label="検索・レイヤー" title="検索・レイヤー" on:click={()=>toolsOpen=!toolsOpen}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18M8 3v6M16 9v6M10 15v6"/></svg></button>{/if}
+  <div class="saved-tools" hidden={compact&&!toolsOpen}>
+  <div class="controls grid-controls">
     {#if ordinals.length>1}
       <label>セーブ内Grid <select value={activeOrdinal} on:change={e=>chooseGrid(Number(e.currentTarget.value))}>
         {#each ordinals as id}<option value={id}>Grid {id}</option>{/each}
       </select></label>
     {/if}
-    <button type="button" aria-label="セーブ図を拡大" on:click={()=>changeZoom(zoom*2)} disabled={zoom>=maxZoom}>＋</button>
-    <button type="button" aria-label="セーブ図を縮小" on:click={()=>changeZoom(zoom/2)} disabled={zoom===1}>−</button>
-    <button type="button" on:click={resetCamera}>全体</button>
-    {#if zoom>1}
-      <button type="button" aria-label="左へ移動" on:click={()=>pan(-.4,0)}>←</button>
-      <button type="button" aria-label="右へ移動" on:click={()=>pan(.4,0)}>→</button>
-      <button type="button" aria-label="上へ移動" on:click={()=>pan(0,-.4)}>↑</button>
-      <button type="button" aria-label="下へ移動" on:click={()=>pan(0,.4)}>↓</button>
-    {/if}
   </div>
   <div class="controls" role="group" aria-label="セーブ図の選択レイヤー">
+    <button type="button" aria-label={locale==='ja'?'レイヤー':'Layers'} aria-pressed={layersOpen} on:click={()=>layersOpen=!layersOpen}>{locale==='ja'?'レイヤー':'Layers'}</button>
     {#each layers as l}<button type="button" aria-pressed={layer===l} on:click={()=>chooseLayer(l)}>{MAP_LAYER_LABELS[l]}</button>{/each}
+    {#if file}<button type="button" aria-pressed={groupMode} disabled={busy} on:click={toggleGroupMode}>複数選択</button>{/if}
   </div>
+  {#if layersOpen}<WorldLayerControls {locale} state={layerState} disabled={busy} onChange={applyLayers}/>{/if}
   {#if originAvailable}
     <div class="controls origin-tools">
       <button type="button" aria-pressed={showOrigins} on:click={()=>showOrigins=!showOrigins}>配置候補マス</button>
@@ -272,8 +378,8 @@
     {#if searchOpen}
       <div class="object-results">
         {#each matches.slice(0,visibleResults) as o (o.localOrdinal)}
-          <button type="button" aria-pressed={selected===o.localOrdinal} on:click={()=>selectFromSearch(o)}>
-            <span>{worldObjectName(o,names)}</span><small>{o.x}, {o.y}</small>
+          <button type="button" aria-pressed={groupMode?groupSet.has(o.localOrdinal):selected===o.localOrdinal} disabled={groupMode&&!worldMoveEligible(o)} on:click={()=>selectFromSearch(o)}>
+            {#if artwork.has(Number(o.itemId))}<img class="search-artwork" src={artwork.get(Number(o.itemId))} alt="" loading="lazy"/>{/if}<span>{worldObjectName(o,names)}</span><small>{o.x}, {o.y}</small>
           </button>
         {/each}
         {#if !matches.length}<p>該当する配置なし</p>{/if}
@@ -281,9 +387,10 @@
       </div>
     {/if}
   </div>
-  <button type="button" class="plot" class:zoomed={zoom>1} aria-label="セーブ内の形状候補を選択"
+  </div>
+  <div class="saved-map-frame"><button type="button" class="plot" class:zoomed={zoom>1} aria-label="セーブ内の形状候補を選択" bind:clientWidth={mapWidth} bind:clientHeight={mapHeight}
     on:click={pick} on:wheel|nonpassive={wheel} on:pointerdown={startPan} on:pointermove={follow}
-    on:pointerup={finishPan} on:pointercancel={finishPan} on:pointerleave={()=>{gesture.leave();hoverPoint=null;}} on:keydown={keyMap}>
+    on:pointerup={finishPan} on:pointercancel={finishPan} on:pointerleave={()=>{gesture.leave();hoverPoint=null;}} on:keydown={e=>{if(!compact)keyMap(e);}}>
     <svg bind:this={svg} {viewBox} aria-hidden="true">
       <defs><pattern id="saved-shape-cells" width="1" height="1" patternUnits="userSpaceOnUse">
         <path d="M1 0H0V1" fill="none" stroke="#8f9aa8" stroke-opacity=".35" stroke-width=".04"/>
@@ -294,10 +401,11 @@
       {#if extent.w/zoom<160&&extent.h/zoom<160}<rect x={extent.x} y={extent.y} width={extent.w} height={extent.h} fill="url(#saved-shape-cells)"/>{/if}
       {#each visibleObjects as o (o.localOrdinal)}
         {@const shape=o.shapeKey?map.shapes[o.shapeKey]:null}
-        <g class="saved-object" class:staged-object={stagedOrdinals.has(o.localOrdinal)} class:search-dim={Boolean(query.trim())&&!matchIds.has(o.localOrdinal)&&selected!==o.localOrdinal&&o.layer!=='ground'&&o.layer!=='fence'} data-local-ordinal={o.localOrdinal} transform={'translate('+o.x+' '+o.y+')'}>
+        <g class="saved-object" class:staged-object={stagedOrdinals.has(o.localOrdinal)} class:group-selected={groupSet.has(o.localOrdinal)} class:search-dim={Boolean(query.trim())&&!matchIds.has(o.localOrdinal)&&selected!==o.localOrdinal&&!groupSet.has(o.localOrdinal)&&o.layer!=='ground'&&o.layer!=='fence'} data-local-ordinal={o.localOrdinal} transform={'translate('+o.x+' '+o.y+')'}>
           {#if shape}
-            <path class="saved-object-shape" d={shape.path} fill={MAP_LAYER_COLORS[o.layer]} fill-opacity={selected===o.localOrdinal?.85:(matchesSelectionLayer(o,layer)||o.layer==='ground'||o.layer==='fence')?.48:.24}
-              stroke={selected===o.localOrdinal?'#fff':MAP_LAYER_COLORS[o.layer]} stroke-width="1" vector-effect="non-scaling-stroke"/>
+            <path class="saved-object-shape" d={shape.path} fill={MAP_LAYER_COLORS[o.layer]} fill-opacity={(selected===o.localOrdinal||groupSet.has(o.localOrdinal))?.85:(matchesSelectionLayer(o,layer)||o.layer==='ground'||o.layer==='fence')?.48:.24}
+              stroke={selected===o.localOrdinal||groupSet.has(o.localOrdinal)?'#fff':MAP_LAYER_COLORS[o.layer]} stroke-width="1" vector-effect="non-scaling-stroke"/>
+            {#if showWorldArtwork(o,shape,cellPixels)&&artwork.has(Number(o.itemId))}<WorldObjectArtwork href={artwork.get(Number(o.itemId))!} width={shape.width} height={shape.height}/>{/if}
             {#if o.orientationCode!==null}<path d="M0 -.32L.19 .13L0 .04L-.19 .13Z" transform={'translate(.5 .5) rotate('+sourceOrientationAngle(o.orientationCode)+')'} fill="#fff"/>{/if}
           {:else}<circle class="unknown-shape" cx=".5" cy=".5" r=".24" fill="#ddd" stroke="#fff" stroke-width="1" vector-effect="non-scaling-stroke"/>{/if}
           {#if o.surfaceCapable}<circle cx=".78" cy=".22" r=".13" fill="#dbc2f6"/>{/if}
@@ -307,6 +415,17 @@
           </g>{/if}
         </g>
       {/each}
+      {#if rangeMode&&rangeStart&&rangeEnd}<rect class="range-box" x={Math.min(rangeStart.x,rangeEnd.x)} y={Math.min(rangeStart.y,rangeEnd.y)} width={Math.abs(rangeEnd.x-rangeStart.x)+1} height={Math.abs(rangeEnd.y-rangeStart.y)+1} fill="#4bddcd" fill-opacity=".16" stroke="#4bddcd" vector-effect="non-scaling-stroke"/>{/if}
+      {#if groupMode&&groupPreview&&(alignmentAction||placing||groupDX||groupDY||groupTurns)}
+        {#each groupPreview as o (o.ordinal)}
+          {@const shape=o.shapeKey?map.shapes[o.shapeKey]:null}
+          {#if shape}<path class="group-draft-shape" d={shape.path} transform={'translate('+o.x+' '+o.y+')'} fill="#a7b1bf" fill-opacity=".55" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>
+          {:else}<circle class="group-draft-anchor" cx={o.x+.5} cy={o.y+.5} r=".3" fill="#a7b1bf" stroke="#fff" vector-effect="non-scaling-stroke"/>{/if}
+        {/each}
+      {/if}
+      {#if structureStatus==='valid'&&structureAction==='remove'&&chosen?.shapeKey}
+        <path class="structure-remove-ghost" d={map.shapes[chosen.shapeKey]?.path??''} transform={'translate('+chosen.x+' '+chosen.y+')'} fill="#ef5350" fill-opacity=".72" stroke="#fff" stroke-width="2" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>
+      {/if}
       {#if showDraft}
         {#if draftShape}<path class="saved-draft-shape" d={draftShape.path} transform={'translate('+previewX+' '+previewY+')'} fill="#a7b1bf" fill-opacity=".62" stroke="#fff" stroke-width="1.5" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>
         {:else}<circle class="saved-draft-anchor" cx={Number(previewX)+.5} cy={Number(previewY)+.5} r=".3" fill="#a7b1bf" stroke="#fff" stroke-width="1.5" vector-effect="non-scaling-stroke"/>{/if}
@@ -318,12 +437,30 @@
         {#if anchorConflict}<rect class="exclusive-anchor-conflict" x={previewX} y={previewY} width="1" height="1" fill="#ef5350" fill-opacity=".9" stroke="#fff" stroke-width="2" vector-effect="non-scaling-stroke"/>{/if}
       {/if}
     </svg>
-  </button>
+  </button><MapCameraControls {zoom} {maxZoom} onZoom={changeZoom} onFit={resetCamera} onPan={pan}/></div>
+  {#if compact}<button type="button" class="saved-inspector-toggle" aria-label="編集パネル" title="編集パネル" aria-expanded={inspectorOpen} on:click={()=>inspectorOpen=!inspectorOpen}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v16H3zM3 15h18M8 8h8M8 11h5"/></svg></button>{/if}
+  <div class="saved-inspector" hidden={compact&&!inspectorOpen}>
   {#if hits.length}<div class="controls" role="group" aria-label="重なるセーブ内オブジェクト">
     {#each hits as hit (hit.localOrdinal)}
-      <button type="button" aria-pressed={selected===hit.localOrdinal} on:click={()=>selected=hit.localOrdinal}>{worldObjectName(hit,names)}</button>
+      <button type="button" aria-pressed={groupMode?groupSet.has(hit.localOrdinal):selected===hit.localOrdinal} disabled={groupMode&&!worldMoveEligible(hit)} on:click={()=>{if(groupMode)toggleGroup(hit);else selected=hit.localOrdinal;}}>{worldObjectName(hit,names)}</button>
     {/each}
   </div>{/if}
+  {#if groupMode}
+    <div class="controls group-controls" role="group" aria-label="一括移動">
+      <strong>{groupIds.length}件選択</strong>
+      <button type="button" aria-pressed={alignmentOpen} disabled={busy||groupIds.length<2} on:click={()=>{alignmentOpen=!alignmentOpen;alignmentAction=null;}}>{locale==='ja'?'整列・均等配置':'Align and distribute'}</button>
+      <button type="button" aria-pressed={rangeMode} disabled={busy} on:click={()=>{alignmentAction=null;rangeMode=!rangeMode;rangeStart=null;rangeEnd=null;placing=false;hoverPoint=null;}}>{rangeMode?(rangeStart?'対角を選択':'始点を選択'):'範囲選択'}</button>
+      <button type="button" aria-label="グループ左回転" disabled={busy||!groupCanRotate} on:click={()=>{alignmentAction=null;groupTurns=(groupTurns+3)%4;}}>↶</button><button type="button" aria-label="グループ右回転" disabled={busy||!groupCanRotate} on:click={()=>{alignmentAction=null;groupTurns=(groupTurns+1)%4;}}>↷</button>
+      <button type="button" disabled={busy||!groupIds.length} on:click={clearGroup}>選択解除</button>
+      <button type="button" aria-pressed={placing} disabled={busy||groupIds.length<2} on:click={()=>{alignmentAction=null;placing=!placing;rangeMode=false;rangeStart=null;rangeEnd=null;hoverPoint=null;}}>{placing?'一括移動先を選択中':'一括移動先を選択'}</button>
+      <label>ΔX <input type="number" aria-label="一括移動X" bind:value={groupDX} step="1" disabled={busy||groupIds.length<2||Boolean(alignmentAction)}/></label>
+      <label>ΔY <input type="number" aria-label="一括移動Y" bind:value={groupDY} step="1" disabled={busy||groupIds.length<2||Boolean(alignmentAction)}/></label>
+      <button type="button" disabled={busy||placing||!groupPlan||Boolean(alignmentAction)} on:click={stageGroup}>一括移動を追加</button>
+    </div>
+    {#if alignmentOpen&&groupIds.length>=2}<WorldAlignmentControls {locale} count={groupIds.length} selected={alignmentAction} valid={Boolean(groupPlan)} {busy} onPick={chooseAlignment} onCommit={stageGroup} onCancel={()=>alignmentAction=null}/>{/if}
+    {#if stageError}<p role="alert">{stageError}</p>{/if}
+    {#if (groupDX||groupDY||groupTurns)&&!groupPlan}<p role="status">移動先・編集制限・最大件数を確認してください。</p>{/if}
+  {/if}
   {#if chosen}<p class="selected-saved-object">{worldObjectName(chosen,names)} ／ ({chosen.x}, {chosen.y}) ／ {chosen.orientation??'向き不明'}</p>{/if}
   {#if chosen?.subgrid}<p class="subgrid-status" role="status">{chosen.subgrid.status==='resolved_full'?`子Grid内の配置 ${chosen.subgrid.objectCount}件`:'子Gridの参照先未確認'}。親家具の単独移動・回転は未対応。</p>{/if}
   {#if chosen&&!chosen.subgrid&&(nativeActionBlocked(chosen.editRestrictions,'select')||nativeActionBlocked(chosen.editRestrictions,'move')||nativeActionBlocked(chosen.editRestrictions,'rotate'))}
@@ -360,6 +497,17 @@
       {#if stageError}<p role="alert">{stageError}</p>{/if}
     </div>
   {:else if chosen&&file&&!chosen.subgrid}<p>この種類または形状未確認のオブジェクトは現在の編集対象外です。</p>{/if}
+  {#if structureEligible}
+    <div class="controls structure-controls" role="group" aria-label="家具の構造変更プレビュー">
+      <button type="button" disabled={busy||placing||structureStatus==='working'||!structureDuplicateEligible} on:click={()=>rehearseStructure('duplicate')}>複製を検証</button>
+      <button type="button" disabled={busy||placing||structureStatus==='working'||!structureRemoveEligible} on:click={()=>rehearseStructure('remove')}>削除を検証</button>
+      {#if structureStatus!=='idle'}<button type="button" on:click={clearStructure}>プレビュー解除</button>{/if}
+    </div>
+    {#if structureStatus==='working'}<p role="status">ローカル処理中…</p>
+    {:else if structureStatus==='valid'}<p class="structure-result" role="status">{structureAction==='duplicate'?'複製':'削除'}の構造検証に成功しました。セーブには反映されません。</p>
+    {:else if structureStatus==='error'}<p role="alert">状態データ・ID・セーブ構造が未対応、または検証できませんでした。</p>{/if}
+    <small>構造検証のみ。追加・削除のセーブ出力は未対応。</small>
+  {/if}
   {#if staged.length||timeline.snapshots.length>1}
     <div class="world-edit-history">
       <div class="controls">
@@ -379,21 +527,28 @@
     </div>
   {/if}
   {#if file&&exportPlans.length}<div class="controls batch-export">
-    <button type="button" disabled={busy||placing||committedConflict||pendingDraft} on:click={()=>runEdit(false)}>{staged.length?'一括変更を検証':'変更を検証'}</button>
-    {#if checkedSignature===draftSignature}<button type="button" disabled={busy||placing||committedConflict||pendingDraft} on:click={()=>runEdit(true)}>実験的な編集コピーを作成</button>{/if}
+    <button type="button" disabled={busy||structureStatus!=='idle'||placing||committedConflict||pendingDraft} on:click={()=>runEdit(false)}>{staged.length?'一括変更を検証':'変更を検証'}</button>
+    {#if checkedSignature===draftSignature}<button type="button" disabled={busy||structureStatus!=='idle'||placing||committedConflict||pendingDraft} on:click={()=>runEdit(true)}>実験的な編集コピーを作成</button>{/if}
   </div>{/if}
   {#if busy}<p role="status">ローカル処理中…</p>{/if}
   {#if editError}<p role="alert">{editError}</p>{/if}
   {#if copyUrl}<a href={copyUrl} download={copyName}>編集済みコピーを保存</a>{/if}
-  {#if !compact}<p>原本定義による形状候補（原本Grid倍率 {map.sourceGridFactor??'不明'}）。丸印は形状不明。実際の占有・上下関係は未確認。</p>{:else}<p>{activeTerrain?'原本地形と配置を同じローカル座標で表示。':'地形との座標対応未確認。'}形状・重複は候補、ゲーム内ロード未確認。</p>{/if}
+  {#if !compact}<p>原本定義による形状候補（原本Grid倍率 {map.sourceGridFactor??'不明'}）。丸印は形状不明。実際の占有・上下関係は未確認。</p>{/if}
+  </div>
+  {#if compact}<p class="map-safety-status">{activeTerrain?'':'地形との座標対応未確認。'}形状・重複は候補、ゲーム内ロード未確認。</p>{/if}
 </div>
 <style>
+  .saved-map-frame{position:relative;min-height:0;min-width:0}.grid-controls:empty{display:none}.saved-inspector{display:grid;gap:5px;align-content:start;min-width:0}.compact.saved-shape-plot{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;position:relative;overflow:hidden}.compact .saved-map-frame{flex:1 1 auto;overflow:hidden}.compact .plot,.compact .plot svg{height:100%;max-height:none}.compact .saved-inspector{flex:0 1 auto;max-height:30%;overflow:auto;padding:3px}.compact .object-results{max-height:22dvh}
   .saved-shape-plot{display:grid;gap:6px;min-width:0}
   .controls{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
   .origin-tools small{color:var(--wand-muted);font-size:11px}
   .origin-swatch{display:inline-block;background:#4bddcd;width:.8em;height:.8em;border-radius:2px;vertical-align:baseline}
   .placement-origin-overlay{pointer-events:none}
   .subgrid-status{color:var(--wand-text);border-inline-start:3px solid #d8b96b;padding-inline-start:6px}
+  .structure-remove-ghost,.group-draft-shape,.group-draft-anchor,.range-box{pointer-events:none}
+  .group-controls{border-block:1px solid var(--wand-border);padding-block:5px}
+  .search-artwork{width:30px;height:30px;object-fit:contain;flex:none}
+  .group-selected .unknown-shape{stroke:#fff;stroke-width:3}
   .saved-subgrid-marker,.saved-restricted-marker{pointer-events:none}
   .overlap-key{display:flex;flex-wrap:wrap;gap:8px;font-size:12px}
   .saved-overlap-cell,.exclusive-anchor-conflict{pointer-events:none}
@@ -419,4 +574,10 @@
   .plot.zoomed{touch-action:none}
   svg{display:block;width:100%;height: min(75vh, 720px)}
   p{margin:0;font-size:11px;overflow-wrap:anywhere}
+ .saved-tools{display:grid;gap:5px;min-width:0}.saved-inspector[hidden],.saved-tools[hidden]{display:none}
+ .compact.saved-shape-plot{display:block}.compact .saved-map-frame{position:absolute;inset:0}.compact .plot,.compact .plot svg{border:0;border-radius:0}
+ .compact .saved-tools,.compact .saved-inspector{position:absolute;z-index:5;padding:5px;overflow:auto;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;box-shadow:0 2px 8px #0003}
+ .compact .saved-tools{top:52px;left:48px;width:min(560px,calc(100% - 60px));max-height:40%}.compact .saved-inspector{bottom:36px;left:48px;width:min(560px,calc(100% - 110px));max-height:38%}.compact .saved-inspector:empty{display:none}.compact .object-results{max-height:20dvh}
+ .saved-tools-toggle,.saved-inspector-toggle{position:absolute;left:6px;z-index:6;width:38px;height:38px;display:grid;place-items:center}.saved-tools-toggle{top:52px}.saved-inspector-toggle{bottom:36px}.saved-tools-toggle svg,.saved-inspector-toggle svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+ .map-safety-status{position:absolute;z-index:5;bottom:6px;left:6px;max-width:calc(100% - 65px);padding:4px 6px;background:var(--wand-card);border-radius:5px}
 </style>

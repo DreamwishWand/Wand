@@ -116,3 +116,30 @@ test('source-ID sidecar failure is retryable without inventing missing source li
   assert.equal(recovered.itemId,'40005160');
   assert.equal(requests.filter(url=>url===relations).length,2);
 });
+
+
+test('reverse acquisition lookup distinguishes result, ingredient and reward roles',async()=>{
+  const {fetcher,requests}=siteFiles();
+  const db=await openPublicItemDetails('/Wand',fetcher);
+  const recipe='2050300095';
+  const all=await db.getSourceItemIds('recipe',recipe);
+  const results=await db.getSourceItemIds('recipe',recipe,'crafting_result');
+  const ingredients=await db.getSourceItemIds('recipe',recipe,'recipe_ingredient_item');
+  assert(results.includes(30000031));
+  assert(ingredients.includes(31700021)&&ingredients.includes(31700022));
+  assert(!ingredients.includes(30000031));
+  for(const [role,ids] of [['crafting_result',results],['recipe_ingredient_item',ingredients]]){
+    assert(Object.isFrozen(ids));
+    const expected=[];
+    for(const id of all){
+      const record=await db.getSourceRelations(id);
+      if(record.links.some(l=>l.kind==='recipe'&&l.sourceId===recipe&&l.role===role))expected.push(id);
+    }
+    assert.deepEqual(ids,expected);
+  }
+  assert.deepEqual(await db.getSourceItemIds('recipe',recipe,'star_path_free_reward'),[]);
+  await assert.rejects(db.getSourceItemIds('recipe',recipe,'unknown_role'),/INVALID_SOURCE_ROLE/);
+  assert.equal(requests.filter(url=>url===relations).length,1);
+  assert.equal(requests.filter(url=>url===acq).length,0);
+  assert(!requests.some(url=>url.includes('/id/')));
+});

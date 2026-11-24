@@ -1,15 +1,20 @@
 <script lang="ts">
-  import {onMount,tick} from 'svelte';
+  import {onMount,tick,untrack} from 'svelte';
+  import {registerServiceToolbar} from '$lib/ui/service-toolbar';
+  import {localSaveSession} from '$lib/ui/local-save-session';
+  import {readRecordedOwnership,readSelectedOwnership} from '$lib/explore/ownership';
+  import {CATEGORY_KEYS,categoriesOf,matchesScope,readDecorationScope,DECORATION_SCOPE_KEY,type DecorationScope,type ExploreCategory} from '$lib/explore/scope';
+  import {exploreLabel,CATEGORY_ICONS} from '$lib/explore/copy';
+  import type {ItemMasterTagLabel} from '$lib/items/public-item-master';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {base} from '$app/paths';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
   import VirtualCatalogGrid from '$lib/explore/VirtualCatalogGrid.svelte';
-  import {catalogGridLayout,catalogPrefix,observeCatalogFrontier,WINDOW_ROWS} from '$lib/explore/viewport-grid';
+  import {captureCatalogAnchor,restoreCatalogAnchor} from '$lib/explore/viewport-anchor';
   import {COLLECTION_UNIVERSE_TAG_NAMES} from '$lib/collection/universe-tag-names';
-  import {FAMILIES,FACETS,emptyFilters,groupItems,matches,compareItems,isLargeUniverse,universeRank,type ExploreFilters,type Facet,type Family} from '$lib/explore/browse';
+  import {FACETS,emptyFilters,groupItems,matches,isLargeUniverse,universeRank,type ExploreFilters,type Facet} from '$lib/explore/browse';
   import {seriesShelves,orderedSeriesDesigns,type SeriesShelf,type DesignTile,type ReleaseGroup} from '$lib/explore/series';
   import {collectionDb01FacetLabel,collectionDb01TagLabel,COLLECTION_DB01_COLOR_SWATCHES} from '$lib/collection/db01-native-facets';
-  import {collectionTopCategoryLabel} from '$lib/collection/category-hierarchy';
   import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences';
   import {emptyBoards,readBoards,createBoard,editBoard,toggleItem,deleteBoard,toggleFavorite,STORAGE_KEY,type ExploreItem,type BoardState} from '$lib/explore/model';
   let locale=$state<WandLanguage>('ja');
@@ -18,15 +23,20 @@
   let boards=$state.raw<BoardState>(emptyBoards());
   let storageRaw:string|null=null;
   let ready=$state(false),loading=$state(true),failed=$state(false),storageFailed=$state(false);
-  let boardsOpen=$state(false),searchOpen=$state(false),searchInput=$state<HTMLInputElement>(),search=$state(''),favorites=$state(false);
+  let boardsOpen=$state(false),search=$state(''),favorites=$state(false),ownedOnly=$state(false),ownershipAvailable=$state(false);
+  let ownedIds=$state.raw<ReadonlySet<number>>(new Set());
+  let scope=$state<DecorationScope>('outdoor');
+  const label=(key:string)=>exploreLabel(locale,key);
   let newName=$state(''),rename=$state(''),groupName=$state(''),selected=$state<ExploreItem|null>(null);
   const t=(ja:string,en:string)=>locale==='ja'?ja:en;
-  const facets=FACETS;
-  let filters=$state<ExploreFilters>(emptyFilters()),filtersOpen=$state(false),focused=$state<string|null>(null),allGrid=$state(false);
+  const facets=FACETS.filter(k=>k!=='furnitureKind');
+  let filters=$state<ExploreFilters>(emptyFilters()),filtersOpen=$state(false);
   let releases=$state.raw<ReleaseGroup[]>([]);
   let variantChoices=$state<Record<string,number>>({}),variantReview=$state<ExploreItem[]>([]),reviewDesign=$state<DesignTile|null>(null);
-  let catalogWidth=$state(0),revealed=$state(0);
+  let catalogWidth=$state(0),catalogNode=$state<HTMLDivElement>();
+  let previousWidth=0,layoutEpoch=0;
   let sourceUniverses=$state.raw<{tagId:number;key:string;names:Record<string,string|null>}[]>([]);
+  let sourceWorlds=$state.raw<readonly ItemMasterTagLabel[]>([]);
   let selectionMode=$state(false),selectedIds=$state<number[]>([]);
   const nameOf=(i:ExploreItem)=>i.names[locale]??i.names.en??t('名称未確認','Unnamed item');
   const byId=$derived(new Map(items.map(i=>[i.itemId,i])));
@@ -39,7 +49,13 @@
     return universeRank(a)-universeRank(b)||(universeNames.get(a)?.sort??a).localeCompare(universeNames.get(b)?.sort??b,locale);
   }
   const allGroups=$derived(groupItems(items));
-  const universeOptions=$derived([...allGroups.keys()].sort(sortUniverse));
+  const universeOptions=$derived([...new Set([...universeNames.keys(),...allGroups.keys()])].sort(sortUniverse));
+  const scopedItems=$derived(items.filter(i=>matchesScope(i,scope)));
+  const scopedUniverses=$derived(new Set(scopedItems.flatMap(i=>i.universes.length?i.universes.map(String):[i.universeStatus==='unresolved_source'?'unknown':'none'])));
+  const scopeCategories=$derived(new Set(scopedItems.flatMap(categoriesOf)));
+  const categoryOptions=$derived(CATEGORY_KEYS.filter(key=>scopeCategories.has(key)||filters.categories?.includes(key)));
+  const worldOptions=$derived(sourceWorlds.map(w=>({key:w.key,label:w.names[locale]??w.names.en??w.key})));
+  const worldName=(key:string)=>worldOptions.find(w=>w.key===key)?.label??key;
   const facetOptions=$derived.by(()=>{
     const sets:Record<Facet,Set<string>>={furnitureKind:new Set(),color:new Set(),furnitureStyle:new Set()};
     for(const item of items)for(const [key,value] of item.tags)sets[key]?.add(value);
@@ -47,7 +63,7 @@
   });
   const filtered=$derived.by(()=>{
     const q=search.trim().toLocaleLowerCase();
-    return items.filter(i=>matches(i,filters)&&(!favorites||favoriteIds.has(i.itemId))&&(!q||nameOf(i).toLocaleLowerCase().includes(q)));
+    return scopedItems.filter(i=>matches(i,filters)&&(!favorites||favoriteIds.has(i.itemId))&&(!ownedOnly||ownedIds.has(i.itemId))&&(!q||nameOf(i).toLocaleLowerCase().includes(q)));
   });
   const grouped=$derived(groupItems(filtered,filters.universes));
   const shelves=$derived([...grouped.entries()].sort(([a],[b])=>sortUniverse(a,b)));
@@ -67,33 +83,43 @@
     return isLargeUniverse(key)?orderedSeriesDesigns(visibleSeries.get(key)??[]):ordinaryDesigns(list);
   }
   const sections=$derived.by(():[string,DesignTile[]][]=>{
-    if(focused!==null)return [[focused,universeDesigns(focused,grouped.get(focused)??[])]];
-    if(allGrid)return [['all',ordinaryDesigns([...filtered].sort(compareItems))]];
     return shelves.map(([key,list])=>[key,universeDesigns(key,list)]);
   });
   const total=$derived(sections.reduce((n,[,list])=>n+list.length,0));
-  const batch=$derived(catalogGridLayout(catalogWidth,0,catalogWidth<600?78:94).columns*WINDOW_ROWS);
-  const frontier=$derived(Math.min(total,Math.max(revealed,batch)));
-  const visibleSections=$derived(catalogPrefix(sections,frontier));
-  function advanceFrontier(){revealed=Math.min(total,frontier+batch);}
-  function resetFrontier(){revealed=0;}
+  // Keep the scroll extent stable; all section geometry is computed from
+  // a single measured catalog width, independently of card mounting.
+  $effect.pre(()=>{
+    const width=catalogWidth;
+    const before=previousWidth;
+    previousWidth=width;
+    if(!width||!before||width===before)return;
+    untrack(()=>{
+      const node=catalogNode;
+      const anchor=node?captureCatalogAnchor(node):null;
+      const epoch=++layoutEpoch;
+      if(anchor&&node)void tick().then(()=>{
+        if(epoch===layoutEpoch&&node.isConnected)restoreCatalogAnchor(node,anchor);
+      });
+    });
+  });
   function displayed(d:DesignTile){return d.items.find(i=>i.itemId===variantChoices[d.key])??d.items[0];}
   function showReview(i:ExploreItem,design?:DesignTile){selected=i;reviewDesign=design??null;variantReview=design?.items??[i];}
   function pickVariant(d:DesignTile,i:ExploreItem){variantChoices={...variantChoices,[d.key]:i.itemId};showReview(i,d);}
 
-  const filterCount=$derived(filters.families.length+filters.universes.length+facets.reduce((n,k)=>n+filters.tags[k].length,0));
-  function resetBrowse(){focused=null;resetFrontier();}
-  function toggleFamily(key:Family){filters.families=filters.families.includes(key)?filters.families.filter(x=>x!==key):[...filters.families,key];resetBrowse();}
+  const filterCount=$derived((filters.categories?.length??0)+(filters.worlds?.length??0)+filters.universes.length+facets.reduce((n,k)=>n+filters.tags[k].length,0));
+  function resetBrowse(){layoutEpoch++;window.scrollTo({top:0,behavior:'instant'});}
+  function setScope(next:DecorationScope){scope=next;try{localStorage.setItem(DECORATION_SCOPE_KEY,next);}catch{}resetBrowse();}
+  function toggleCategory(key:ExploreCategory){const list=filters.categories??[];filters.categories=list.includes(key)?list.filter(x=>x!==key):[...list,key];resetBrowse();}
+  function toggleWorld(key:string){const list=filters.worlds??[];filters.worlds=list.includes(key)?list.filter(x=>x!==key):[...list,key];resetBrowse();}
+  function clearFilters(){filters=emptyFilters();resetBrowse();}
+  function toggleSelection(){selectionMode=!selectionMode;selectedIds=[];}
   function toggleUniverse(key:string){filters.universes=filters.universes.includes(key)?filters.universes.filter(x=>x!==key):[...filters.universes,key];resetBrowse();}
   function toggleFacet(key:Facet,value:string){const list=filters.tags[key];filters.tags[key]=list.includes(value)?list.filter(x=>x!==value):[...list,value];resetBrowse();}
-  function showUniverse(key:string){focused=key;allGrid=false;resetFrontier();}
-  function goBack(){focused=null;allGrid=false;resetFrontier();}
   function chooseItem(id:number){if(active)toggle(id);else boardsOpen=true;}
   function save(next:BoardState){if(!ready||storageFailed)return;try{
     if(localStorage.getItem(STORAGE_KEY)!==storageRaw)throw Error('CONFLICT');
     const raw=JSON.stringify(next);localStorage.setItem(STORAGE_KEY,raw);storageRaw=raw;boards=next;
   }catch{storageFailed=true;}}
-  async function toggleSearch(){searchOpen=!searchOpen;if(searchOpen){await tick();searchInput?.focus();}else{search='';resetBrowse();}}
   function selectItem(id:number){selectedIds=selectedIds.includes(id)?selectedIds.filter(v=>v!==id):[...selectedIds,id];}
   function bulkAdd(){if(!active)return;const ids=new Set(active.entries.map(e=>e.itemId));save(editBoard(boards,active.id,b=>({...b,entries:[...b.entries,...selectedIds.filter(id=>!ids.has(id)).map(itemId=>({itemId,groupId:null}))]})));selectedIds=[];selectionMode=false;}
   function reorderItem(id:number,step:number){if(!active)return;save(editBoard(boards,active.id,b=>{
@@ -111,61 +137,80 @@
   function toggle(id:number){if(active)save(toggleItem(boards,active.id,id));}
   onMount(()=>{
     const unwatch=watchWandLanguage(v=>locale=v);
+    const unregister=registerServiceToolbar(exploreToolbar);
+    try{scope=readDecorationScope(localStorage.getItem(DECORATION_SCOPE_KEY));}catch{}
+    let ownershipAbort:AbortController|undefined,ownershipRevision=-1;
+    const unsubscribeSave=localSaveSession.subscribe(session=>{
+      if(session.revision===ownershipRevision)return;
+      ownershipRevision=session.revision;
+      ownershipAbort?.abort();const controller=new AbortController();ownershipAbort=controller;
+      ownershipAvailable=false;ownedOnly=false;ownedIds=new Set();
+      const task=session.file?readSelectedOwnership(session.file,controller.signal):readRecordedOwnership();
+      void task.then(result=>{if(!controller.signal.aborted){ownershipAvailable=result.available;ownedIds=result.ids;}}).catch(()=>{});
+    });
     try{storageRaw=localStorage.getItem(STORAGE_KEY);boards=readBoards(storageRaw);ready=true;}catch{storageFailed=true;}
     const w=new Worker(new URL('../../../lib/explore/catalog.worker.ts',import.meta.url),{type:'module'});
-    w.onmessage=(e:MessageEvent<{items?:ExploreItem[];universeTags?:typeof sourceUniverses;releases?:ReleaseGroup[];error?:boolean}>)=>{if(e.data.items){items=e.data.items;sourceUniverses=e.data.universeTags??[];releases=e.data.releases??[];}else failed=true;loading=false;};
+    w.onmessage=(e:MessageEvent<{items?:ExploreItem[];universeTags?:typeof sourceUniverses;releases?:ReleaseGroup[];worldTags?:readonly ItemMasterTagLabel[];error?:boolean}>)=>{if(e.data.items){items=e.data.items;sourceUniverses=e.data.universeTags??[];sourceWorlds=e.data.worldTags??[];releases=e.data.releases??[];}else failed=true;loading=false;};
     w.onerror=()=>{failed=true;loading=false;};
     w.postMessage({base});
     void fetch(base+'/ddv/collection/item-images-r39.json').then(r=>r.ok?r.json():null).then(d=>{if(d?.schema==='wand.collection.item-images.r39@1'&&d.items)images=d.items;}).catch(()=>{});
     const storageListener=(e:StorageEvent)=>{if(e.key===STORAGE_KEY){try{storageRaw=e.newValue;boards=readBoards(storageRaw);}catch{storageFailed=true;}}};
     window.addEventListener('storage',storageListener);
-    return()=>{w.terminate();unwatch();window.removeEventListener('storage',storageListener);};
+    return()=>{w.terminate();unwatch();unregister();unsubscribeSave();ownershipAbort?.abort();window.removeEventListener('storage',storageListener);};
   });
 </script>
+{#snippet exploreToolbar()}
+  <div class="explore-service-toolbar" aria-label="Explore">
+    <a class="icon-button back" href={base+'/decorate/'} aria-label="Decorate" title="Decorate"><WandIcon name="arrow" size={17}/></a>
+    <div class="scope-switch" role="group" aria-label={label('category')}>
+      {#each ['outdoor','indoor','all'] as choice}
+        <button data-scope={choice} aria-label={label(choice)} title={label(choice)} aria-pressed={scope===choice} onclick={()=>setScope(choice as DecorationScope)}><WandIcon name={choice==='outdoor'?'plant':choice==='indoor'?'home':'grid'} size={17}/><span>{label(choice)}</span></button>
+      {/each}
+    </div>
+    <input class="search" type="search" placeholder={label('search')} aria-label={label('search')} bind:value={search} oninput={resetBrowse}/>
+    <button class="icon-button" aria-label={label('filters')} title={label('filters')} aria-expanded={filtersOpen} class:activeTab={filterCount>0} onclick={()=>filtersOpen=!filtersOpen}><WandIcon name="filter" size={20}/>{#if filterCount}<small>{filterCount}</small>{/if}</button>
+    <button class="icon-button" aria-label={label('owned')} title={ownershipAvailable?label('owned'):label('noOwnership')} aria-pressed={ownedOnly} disabled={!ownershipAvailable} onclick={()=>{ownedOnly=!ownedOnly;resetBrowse();}}><WandIcon name="owned" size={20}/></button>
+    <button class="icon-button" aria-label={label('favorites')} title={label('favorites')} aria-pressed={favorites} onclick={()=>{favorites=!favorites;resetBrowse();}}><WandIcon name="star" size={20}/></button>
+    <button class="icon-button" aria-label={label('boards')} title={active?.name??label('boards')} aria-expanded={boardsOpen} class:activeTab={boardsOpen} onclick={()=>boardsOpen=!boardsOpen}><WandIcon name="collection" size={20}/>{#if active}<span class="active-name">{active.name}</span>{/if}</button>
+    {#if selectionMode}<button class="icon-button" aria-label={t('選択を追加','Add selected')} disabled={!active||!selectedIds.length||storageFailed} onclick={bulkAdd}><WandIcon name="plus" size={16}/>{selectedIds.length}</button><button class="icon-button" aria-label={label('close')} onclick={toggleSelection}><WandIcon name="close" size={16}/></button>{/if}
+    {#if filtersOpen}
+      <section class="filter-panel" aria-label={label('filters')}>
+        <div class="bar filter-heading"><strong>{label('filters')}</strong><span class="spacer"></span><button onclick={clearFilters}>{label('clear')}</button><button class="icon-button" aria-label={label('close')} onclick={()=>filtersOpen=false}><WandIcon name="close"/></button></div>
+        <h3>{label('category')}</h3>
+        <div class="category-chips">{#each categoryOptions as key}<button class="category-chip" aria-pressed={filters.categories?.includes(key)??false} onclick={()=>toggleCategory(key)}><WandIcon name={CATEGORY_ICONS[key]} size={24}/><span>{label(key)}</span></button>{/each}</div>
+        <h3>{label('universe')}</h3>
+        <div class="chips universe-chips">{#each universeOptions as key}<button data-universe-filter={key} title={universeName(key)} aria-pressed={filters.universes.includes(key)} class:no-match={!scopedUniverses.has(key)} onclick={()=>toggleUniverse(key)}>{universeName(key)}</button>{/each}</div>
+        {#each facets as facet}
+          {#if facetOptions[facet].length}<h3>{collectionDb01FacetLabel(locale,facet)}</h3><div class="chips">{#each facetOptions[facet] as key}
+            <button aria-pressed={filters.tags[facet].includes(key)} title={collectionDb01TagLabel(locale,key)} aria-label={collectionDb01TagLabel(locale,key)} onclick={()=>toggleFacet(facet,key)}>{#if facet==='color'&&COLLECTION_DB01_COLOR_SWATCHES[key.replace(/^(?:F_|C_)/,'')]}<span class="swatch" style:background={COLLECTION_DB01_COLOR_SWATCHES[key.replace(/^(?:F_|C_)/,'')]}></span>{:else}{collectionDb01TagLabel(locale,key)}{/if}</button>
+          {/each}</div>{/if}
+        {/each}
+        {#if worldOptions.length}<h3>{label('world')}</h3><div class="chips">{#each worldOptions as world}<button data-world-filter={world.key} aria-pressed={filters.worlds?.includes(world.key)??false} onclick={()=>toggleWorld(world.key)}><WandIcon name="world" size={18}/>{world.label}</button>{/each}</div>{/if}
+      </section>
+    {/if}
+  </div>
+{/snippet}
 <svelte:head><title>Explore · Dreamwish Wand</title></svelte:head>
 <section class="decorate">
-  <header class="bar toolbar">
-    <a class="back icon-button" href={base+'/decorate/'} aria-label="Decorate" title="Decorate"><WandIcon name="arrow" size={18}/></a>
-    <h1>Explore</h1>
-    <span class="spacer"></span>
-    <button class="icon-button" aria-label={t('検索','Search')} title={t('検索','Search')} aria-expanded={searchOpen} onclick={toggleSearch}><WandIcon name="search" size={20}/></button>
-    <button class="icon-button" aria-label={t('フィルター','Filters')} title={t('フィルター','Filters')} aria-expanded={filtersOpen} class:activeTab={filterCount>0} onclick={()=>filtersOpen=!filtersOpen}><WandIcon name="filter" size={20}/>{#if filterCount}<small>{filterCount}</small>{/if}</button>
-    <button class="icon-button" aria-label={t('お気に入り','Favorites')} title={t('お気に入り','Favorites')} aria-pressed={favorites} onclick={()=>{favorites=!favorites;resetBrowse();}}><WandIcon name="star" size={20}/></button>
-    <button class="icon-button" aria-label={t('全件表示','All items')} title={t('全件表示','All items')} aria-pressed={allGrid} onclick={()=>{allGrid=!allGrid;focused=null;resetFrontier();}}><WandIcon name="grid" size={20}/></button>
-    <button class="icon-button" aria-label={t('ムードボード','Moodboards')} title={active?.name??'Moodboards'} aria-expanded={boardsOpen} class:activeTab={boardsOpen} onclick={()=>boardsOpen=!boardsOpen}><WandIcon name="collection" size={20}/>{#if active}<span class="active-name">{active.name}</span>{/if}</button>
-  </header>
-  {#if searchOpen}<input class="search" bind:this={searchInput} type="search" placeholder={t('家具を検索','Search decorations')} aria-label={t('家具を検索','Search decorations')} bind:value={search} oninput={resetBrowse}/>{/if}
   {#if storageFailed}<p role="alert">{t('保存できません。再読み込みしてください。','Storage unavailable. Reload before editing.')}</p>{/if}
   <div class="workspace" class:withBoards={boardsOpen}>
-  <div class="catalog" bind:clientWidth={catalogWidth} data-explore-total={total} data-explore-revealed={frontier}>
-    {#if filtersOpen}
-    <section class="filter-panel" aria-label={t('フィルター','Filters')}>
-      <div class="bar"><strong>{t('フィルター','Filters')}</strong><span class="spacer"></span><button onclick={()=>{filters=emptyFilters();resetBrowse();}}>{t('クリア','Clear')}</button><button class="icon-button" aria-label={t('閉じる','Close')} onclick={()=>filtersOpen=false}><WandIcon name="close"/></button></div>
-      <details open><summary>{t('カテゴリー','Category')}</summary><div class="chips">{#each FAMILIES as key}<button aria-pressed={filters.families.includes(key)} onclick={()=>toggleFamily(key)}>{collectionTopCategoryLabel(locale,key)}</button>{/each}</div></details>
-      <details><summary>{t('ユニバース','Universe')}</summary><div class="chips">{#each universeOptions as key}<button data-universe-filter={key} aria-pressed={filters.universes.includes(key)} onclick={()=>toggleUniverse(key)}>{universeName(key)}</button>{/each}</div></details>
-      {#each facets as facet}
-        {#if facetOptions[facet].length}<details open={facet==='color'}><summary>{collectionDb01FacetLabel(locale,facet)}</summary><div class="chips">{#each facetOptions[facet] as key}
-          <button aria-pressed={filters.tags[facet].includes(key)} onclick={()=>toggleFacet(facet,key)}>{#if facet==='color'&&COLLECTION_DB01_COLOR_SWATCHES[key.replace(/^(?:F_|C_)/,'')]}<span class="swatch" style:background={COLLECTION_DB01_COLOR_SWATCHES[key.replace(/^(?:F_|C_)/,'')]}></span>{/if}{collectionDb01TagLabel(locale,key)}</button>
-        {/each}</div></details>{/if}
-      {/each}
-    </section>
+  <div class="catalog" bind:this={catalogNode} bind:clientWidth={catalogWidth} data-explore-total={total}>
+    {#if filterCount}
+      <div class="active-filters">
+        {#each filters.categories??[] as key}<button onclick={()=>toggleCategory(key)}>{label(key)} <WandIcon name="close" size={12}/></button>{/each}
+        {#each filters.universes as key}<button onclick={()=>toggleUniverse(key)}>{universeName(key)} <WandIcon name="close" size={12}/></button>{/each}
+        {#each facets as facet}{#each filters.tags[facet] as key}<button onclick={()=>toggleFacet(facet,key)}>{collectionDb01TagLabel(locale,key)} <WandIcon name="close" size={12}/></button>{/each}{/each}
+        {#each filters.worlds??[] as key}<button onclick={()=>toggleWorld(key)}>{worldName(key)} <WandIcon name="close" size={12}/></button>{/each}
+        <button aria-label={label('clear')} onclick={clearFilters}><WandIcon name="close" size={15}/></button>
+      </div>
     {/if}
-    {#if selectionMode}<div class="bar"><button disabled={!active||!selectedIds.length||storageFailed} onclick={bulkAdd}>{t('選択を追加','Add selected')} ({selectedIds.length})</button><button onclick={()=>{selectionMode=false;selectedIds=[];}}>{t('解除','Cancel')}</button></div>{/if}
     {#if loading}<p>{t('読み込み中…','Loading…')}</p>{:else if failed}<p role="alert">{t('家具データを読み込めません。','Decoration catalog could not be loaded.')}</p>{:else}
-      {#if focused!==null||allGrid}
-        <div class="shelf-heading"><button class="icon-button back" aria-label={t('戻る','Back')} onclick={goBack}><WandIcon name="arrow"/></button><h2>{focused!==null?universeName(focused):t('すべて','All items')}</h2><span class="spacer"></span><button class="icon-button" aria-label={t('複数選択','Multi-select')} aria-pressed={selectionMode} onclick={()=>{selectionMode=!selectionMode;selectedIds=[];}}><WandIcon name="check"/></button></div>
-      {/if}
-      {#each visibleSections as [key,designs] (key)}
+      {#each sections as [key,designs] (key)}
         <section class="shelf" data-explore-universe={key}>
-          {#if focused===null&&!allGrid}
-            <div class="shelf-heading"><button class="universe-heading" onclick={()=>showUniverse(key)}>{universeName(key)} <span aria-hidden="true">›</span></button></div>
-          {/if}
-          <VirtualCatalogGrid items={designs} tile={designTile}/>
+          <h2 class="universe-heading">{universeName(key)}</h2>
+          <VirtualCatalogGrid items={designs} tile={designTile} width={catalogWidth}/>
         </section>
       {/each}
-      {#if frontier<total}
-        {#key frontier}<div class="catalog-frontier" data-explore-frontier use:observeCatalogFrontier={advanceFrontier}></div>{/key}
-      {/if}
       {#if filtered.length===0}<p>{t('該当するアイテムがありません','No matching items')}</p>{/if}
     {/if}
   </div>
@@ -182,6 +227,7 @@
       {/each}
     </div>
     {#if active}
+      <div class="bar"><button aria-pressed={selectionMode} onclick={toggleSelection}><WandIcon name="check" size={16}/> {label('select')}</button></div>
       <div class="bar"><h2>{active.name}</h2><input bind:value={rename} aria-label={t('新しい名前','New name')} placeholder={t('新しい名前','New name')}/><button disabled={!rename.trim()||storageFailed} onclick={changeName}>{t('名前変更','Rename')}</button><button disabled={storageFailed} onclick={removeBoard}>{t('削除','Delete')}</button></div>
       {#key active.id}<label class="note">{t('メモ','Notes')}<textarea value={active.note} disabled={storageFailed} onchange={e=>{if(active)save(editBoard(boards,active.id,b=>({...b,note:e.currentTarget.value})));}}></textarea></label>{/key}
       <div class="bar"><input bind:value={groupName} aria-label={t('グループ名','Group name')} placeholder={t('グループ名','Group name')}/><button disabled={!groupName.trim()||storageFailed} onclick={addGroup}>{t('グループ作成','Add group')}</button></div>
@@ -208,7 +254,7 @@
     {@render itemTile(item,design)}
   {/snippet}
   {#snippet itemTile(item:ExploreItem,design?:DesignTile)}
-    <article class="catalog-tile" class:inBoard={activeIds.has(item.itemId)}>
+    <article class="catalog-tile" data-item-id={item.itemId} class:inBoard={activeIds.has(item.itemId)}>
       <button class="item" aria-label={nameOf(item)} title={nameOf(item)} aria-pressed={selectionMode?selectedIds.includes(item.itemId):undefined} onclick={()=>selectionMode?selectItem(item.itemId):showReview(item,design)}><span class="art"><ItemArtwork itemId={item.itemId} sourcePath={images[String(item.itemId)]??null}/></span><span class="visually-hidden">{nameOf(item)}</span></button>
       <button class="tile-favorite" aria-label={t('お気に入り','Favorite')} aria-pressed={favoriteIds.has(item.itemId)} disabled={!ready||storageFailed} onclick={()=>save(toggleFavorite(boards,item.itemId))}><WandIcon name="star" size={16}/></button>
       {#if design&&design.items.length>1}
@@ -231,19 +277,17 @@
   .decorate{padding:12px 16px;min-width:0;position:relative}
   .workspace{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:start}
   .workspace.withBoards{grid-template-columns:minmax(0,1fr) minmax(300px,35%)}
-  .catalog{min-width:0}
+  .catalog{min-width:0;overflow-anchor:none}
   .boards{min-width:0;position:sticky;top:calc(var(--shell-height,60px) + 12px);max-height:calc(100dvh - var(--shell-height,60px) - 24px);overflow:auto;border-left:1px solid var(--wand-line);padding-left:12px}
   .boards .tiles{grid-template-columns:repeat(auto-fill,minmax(100px,1fr))}
   .board-header{justify-content:space-between}
   .back{font-size:12px;text-decoration:none}
-  header button{display:inline-flex;align-items:center;gap:6px}
   @media(max-width:780px){.workspace.withBoards{grid-template-columns:minmax(0,1fr)}.boards{position:fixed;z-index:42;right:0;top:var(--shell-height,60px);bottom:0;width:min(420px,100vw);max-height:none;background:var(--wand-menu);padding:12px;box-shadow:0 0 24px #0008}}
 
   .bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
   h1,h2,h3{font-size:1rem;margin:0 8px 0 0}
   button,input,select,textarea{background:var(--wand-menu);color:inherit;border:1px solid var(--wand-line);border-radius:7px;padding:7px 9px;min-width:0}
   .activeTab,button[aria-pressed=true]{border-color:var(--wand-accent)} .item[aria-pressed=true]{outline:2px solid var(--wand-accent);outline-offset:-2px}
-  .filters input[type=search]{flex:1;min-width:140px}
   .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(114px,1fr));gap:8px}
   .tile{display:flex;flex-direction:column;gap:4px;border:1px solid var(--wand-line);border-radius:9px;padding:5px;min-width:0;font-size:12px;overflow-wrap:anywhere}
   .item{padding:0;border:0;background:transparent;display:grid;gap:4px;text-align:center;width:100%;flex:1}
@@ -253,20 +297,33 @@
   .cover span{min-height:0}.note{display:grid;gap:4px;margin:10px 0}.note textarea{min-height:70px;resize:vertical}
   .review{position:fixed;right:12px;bottom:12px;z-index:40;padding:12px;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:12px;max-width:min(310px,95vw);box-shadow:0 8px 30px #0008}
   .large{height:170px}
-  .toolbar{gap:4px;border-bottom:1px solid var(--wand-line);padding-bottom:8px;margin-bottom:10px}
   .spacer{flex:1}.icon-button{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-width:36px;min-height:36px;padding:5px;border:0;background:transparent;color:var(--wand-text);text-decoration:none;cursor:pointer}
   .icon-button:hover,.icon-button[aria-pressed=true],.icon-button[aria-expanded=true],.icon-button.activeTab{background:var(--wand-pill-bg);color:var(--wand-accent-strong)}
   .back :global(svg){transform:rotate(180deg)}
   .active-name{max-width:110px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.78rem}
-  .search{width:100%;box-sizing:border-box;margin-bottom:10px}
-  .filter-panel{background:var(--wand-menu);border:1px solid var(--wand-line);padding:12px;border-radius:10px;margin-bottom:12px;max-height:55vh;overflow:auto}
-  .filter-panel details{border-top:1px solid var(--wand-line);padding:8px 0}.filter-panel summary{cursor:pointer;font-size:.85rem}
+  .search{flex:1;min-width:54px;width:100%;box-sizing:border-box;height:35px;margin:0}
+  .explore-service-toolbar{display:flex;align-items:center;gap:3px;width:100%;min-width:0;color:var(--wand-text)}
+  .scope-switch{display:flex;gap:2px;flex:none}
+  .scope-switch button{display:flex;align-items:center;justify-content:center;gap:3px;padding:5px;height:35px;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:7px;color:var(--wand-text)}
+  .scope-switch button[aria-pressed=true]{background:var(--wand-accent-strong);color:var(--wand-accent-contrast)}
+  .scope-switch span{font-size:12px;white-space:nowrap}
+  .explore-service-toolbar .icon-button:disabled{opacity:.35;cursor:not-allowed}
+  .filter-panel{position:fixed;top:var(--shell-height,60px);left:8px;z-index:75;width:min(720px,calc(100vw - 16px));box-sizing:border-box;background:var(--wand-menu);color:var(--wand-text);border:1px solid var(--wand-line);padding:12px;border-radius:10px;max-height:calc(100dvh - var(--shell-height,60px) - 16px);overflow:auto;box-shadow:0 12px 35px #0005}
+  .filter-panel h3{margin:9px 0 3px;font-size:.85rem;border-top:1px solid var(--wand-line);padding-top:8px}
+  .filter-heading{margin-bottom:4px}
+  .category-chips{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:5px}
+  .category-chip{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;padding:6px 2px}
+  .category-chip[aria-pressed=true]{background:var(--wand-accent-strong);color:var(--wand-accent-contrast)}
+  .chips .no-match:not([aria-pressed=true]){opacity:.45}
+  .active-filters{position:sticky;top:var(--shell-height,60px);z-index:12;display:flex;flex-wrap:wrap;gap:4px;padding:3px 0;background:var(--wand-bg)}
+  .active-filters button{font-size:.75rem;display:flex;align-items:center;gap:3px;padding:3px 6px}
+  @media(max-width:1500px){.scope-switch span{display:none}.explore-service-toolbar .active-name{max-width:75px}}
+  @media(max-width:1250px){.explore-service-toolbar .active-name{display:none}}
+  @media(max-width:600px){.explore-service-toolbar .back{display:none}.explore-service-toolbar .icon-button{min-width:29px;padding:3px}.scope-switch button{padding:4px}.explore-service-toolbar{gap:2px}}
   .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.chips button{display:inline-flex;align-items:center;gap:5px;font-size:.78rem}.chips button[aria-pressed=true]{background:var(--wand-accent-strong);color:var(--wand-accent-contrast)}
   .swatch{width:16px;height:16px;border-radius:50%;border:1px solid var(--wand-line)}
-  .shelf{margin:0 0 14px;min-width:0}.shelf-heading{display:flex;align-items:center;gap:5px;margin-bottom:4px}
-  .universe-heading{background:none;border:0;padding:4px 0;font-size:1rem;font-weight:650;cursor:pointer;text-align:left}
-  .universe-heading span{color:var(--wand-muted);margin-left:4px}
-  .catalog-frontier{height:2px;min-width:0}
+  .shelf{margin:0 0 14px;min-width:0}
+  .universe-heading{margin:0 0 4px;padding:4px 0;font-size:1rem;font-weight:650}
   .catalog-tile{box-sizing:border-box;height:100%;position:relative;min-width:0;aspect-ratio:1;border:1px solid var(--wand-line);border-radius:8px;background:var(--wand-visual-bg);overflow:hidden}
   .catalog-tile.inBoard{border-color:var(--wand-accent);box-shadow:inset 0 0 0 1px var(--wand-accent)}
   .catalog-tile .item{width:100%;height:100%;padding:6px}.catalog-tile .art{height:100%;min-height:0}
@@ -279,5 +336,5 @@
   .visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
   @media(pointer:coarse){.tile-favorite{opacity:1}}
   @media(max-width:780px){.boards{top:auto;bottom:0;left:0;right:0;width:100%;box-sizing:border-box;max-height:58dvh;border-left:0;border-top:1px solid var(--wand-line);border-radius:12px 12px 0 0}.workspace.withBoards{padding-bottom:58dvh}.active-name{display:none}}
-  @media(max-width:600px){.decorate{padding:8px}.tiles{grid-template-columns:repeat(auto-fill,minmax(90px,1fr))}.art{height:70px}.toolbar h1{margin:0}.toolbar .icon-button{min-width:32px}}
+  @media(max-width:600px){.decorate{padding:8px}.tiles{grid-template-columns:repeat(auto-fill,minmax(90px,1fr))}.art{height:70px}}
 </style>

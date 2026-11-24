@@ -1,4 +1,5 @@
 import type {ExploreItem} from './model.ts';
+import {categoriesOf,type ExploreCategory} from './scope.ts';
 export const FAMILIES=['furniture','landscaping','roads-fences','interior','buildings','environment'] as const;
 export type Family=typeof FAMILIES[number];
 export const FACETS=['furnitureKind','color','furnitureStyle'] as const;
@@ -6,9 +7,11 @@ export type Facet=typeof FACETS[number];
 export interface ExploreFilters {
   families:readonly Family[];
   universes:readonly string[];
+  categories?:readonly ExploreCategory[];
+  worlds?:readonly string[];
   tags:Record<Facet,readonly string[]>;
 }
-export function emptyFilters():ExploreFilters{return {families:[],universes:[],tags:{furnitureKind:[],color:[],furnitureStyle:[]}}}
+export function emptyFilters():ExploreFilters{return {families:[],universes:[],categories:[],worlds:[],tags:{furnitureKind:[],color:[],furnitureStyle:[]}}}
 export function familyOf(i:ExploreItem):Family {
   if(i.nativeCategory==='Building'||i.nativeCategory==='Skin'&&i.subtype!==3)return 'buildings';
   if(i.nativeCategory==='Environment'||i.nativeCategory==='Skin'&&i.subtype===3)return 'environment';
@@ -22,6 +25,8 @@ export function universeKeys(i:ExploreItem):string[]{
 }
 export function matches(i:ExploreItem,f:ExploreFilters):boolean {
   return (!f.families.length||f.families.includes(familyOf(i)))&&
+    (!f.categories?.length||categoriesOf(i).some(key=>f.categories?.includes(key)))&&
+    (!f.worlds?.length||(i.worlds??[]).some(key=>f.worlds?.includes(key)))&&
     (!f.universes.length||universeKeys(i).some(key=>f.universes.includes(key)))&&
     FACETS.every(facet=>!f.tags[facet].length||i.tags.some(([k,v])=>k===facet&&f.tags[facet].includes(v)));
 }

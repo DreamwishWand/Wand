@@ -21,7 +21,7 @@ export interface SourceMapObject {
   readonly id:number;readonly itemId:number;readonly name:string|null;
   readonly x:number;readonly y:number;readonly orientationCode:number;
   readonly orientationName:string|null;readonly shapeKey:string|null;
-  readonly layer:MapObjectLayer;readonly surfaceCapable:boolean;readonly editRestrictions?:NativeEditRestrictions;
+  readonly layer:MapObjectLayer;readonly surfaceCapable:boolean;readonly editRestrictions?:NativeEditRestrictions;readonly nativeType?:'Building';
 }
 export interface SourceObjectMap {
   readonly status:'source_default_geometry'|'unavailable'|'incompatible_grid_factor';
@@ -46,7 +46,7 @@ export function createSourceGeometryCache(source:unknown,factor:1|2){
     const definition=definitions.get(String(itemId));
     const restrictions=sourceEditRestrictions(definition);
     const identity={name:record(definition)&&typeof definition.nativeName==='string'?definition.nativeName:null,
-      layer:sourceMapLayer(e.nativeType,itemId,e.acceptedFloorTypesFlag),
+      layer:sourceMapLayer(e.nativeType,itemId,e.acceptedFloorTypesFlag),...(e.nativeType==='Building'?{nativeType:'Building' as const}:{}),
       surfaceCapable:sourceSurfaceCapable(e.acceptedFloorTypesFlag),...(Object.keys(restrictions).length?{editRestrictions:restrictions}:{})};
     if(orientationCode===null)return {...identity,shapeKey:null};
     const key=itemId+':'+orientationCode;

@@ -1,9 +1,9 @@
 /**
  * Read-only public item master for Collection, Explore and World Editor.
- * Item ID is the only join key. Every source release is version-isolated and
- * independent of player saves. The selected release index is the only eager
- * request for explicit versions; "current" first resolves a small version
- * catalog. Exact-ID reads fetch one verified shard; batch reads are bounded.
+ * Item ID is the persistent identity, independent of source version or saves.
+ * Normal consumers openCurrentItemDatabase(); internally a manifest selects
+ * the current verified projection. Historical snapshot reads are compatibility
+ * tools. Exact-ID reads fetch one verified shard; batch reads are bounded.
  *
  * Original tags are facts; Collection source candidates are NOT proof of
  * visible game-screen membership or availability.
@@ -27,12 +27,30 @@ export interface ItemMasterOpenOptions {
 export interface CompleteItemMasterOpenOptions {
   readonly gameVersion?: string;
   readonly scope: 'complete';
+  /** Internal current product storage, not a game-version choice. */
+  readonly contentAddressed?: true;
+}
+export interface ItemMasterAcquisitionPins {
+  readonly summarySha256:string;
+  readonly relationsSha256:string;
+}
+export interface ItemMasterAcquisitionProjection extends ItemMasterAcquisitionPins {
+  readonly sourceGameVersion:string;
+  readonly summaryCount:number;
+  readonly relationCount:number;
+  readonly sourceOnlySummaryCount:number;
+  readonly sourceOnlyRelationCount:number;
+  readonly sourceLinks:number;
+  readonly currentAvailabilityVerified:false;
+  readonly coverageComplete:false;
 }
 export interface ItemMasterCompleteRelease {
+  readonly acquisitionProjection?:Readonly<ItemMasterAcquisitionPins>;
   readonly release: string;
   readonly count: number;
   readonly archiveSha256: string;
   readonly parts: number;
+  readonly introductionHistorySha256?: string;
   readonly attributesSha256?: string;
   readonly nativeSupplementSha256?: string;
   readonly referenceAttributesSha256?: string;
@@ -259,12 +277,14 @@ export interface CompleteItemMasterRelations {
   readonly gameRuntimeMembershipVerified: false;
 }
 export interface ItemMasterRelease {
+  readonly acquisitionProjection?:Readonly<ItemMasterAcquisitionProjection>;
   readonly schema: 'wand.item-master.release@1';
   readonly version: string;
   readonly target: Readonly<{platform:'Steam';gameVersion:string}>;
   readonly count: number;
   readonly scope?: 'expanded'|'complete';
   readonly archiveSha256?: string;
+  readonly introductionHistorySha256?: string;
   readonly attributesSha256?: string;
   readonly sourceAttributeCoverage?: NativeSourceAttributeCoverage;
   readonly nativeSupplementSha256?: string;
@@ -330,6 +350,14 @@ export interface PublicItemMaster<T extends ItemMasterRecord|CompleteItemMasterR
 /** The other ItemID and the original occurrence path on the source definition. */
 export type ItemReferenceOccurrence=readonly [otherItemId:number,sourcePath:string];
 export type ItemReferenceDirection='incoming'|'outgoing';
+export const NATIVE_ACQUISITION_ROLES = [
+  'activity_result','produced_item','story_reward','board_game_reward','duty_reward',
+  'conditional_grant','quest_currency_reward','quest_additional_loot_candidate','loot_table_candidate'
+] as const;
+export type NativeAcquisitionRole=(typeof NATIVE_ACQUISITION_ROLES)[number];
+/** Original source definition and occurrence only; not a confirmed grant or availability. */
+export type NativeAcquisitionCandidate=readonly [sourceItemId:number,role:NativeAcquisitionRole,sourcePath:string];
+
 export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemMasterRecord>, ItemFieldReader {
   /** Collection-only projection; fetch neither all shards nor all languages. */
   getCollectionFacets(): Promise<CompleteItemMasterFacets>;
@@ -345,6 +373,7 @@ export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemM
   getItemReferences(itemId:number,direction:ItemReferenceDirection):Promise<readonly ItemReferenceOccurrence[]|null>;
   /** Ordered batch lookup, preserving duplicates, unknown IDs and empty edge lists. */
   getItemsReferences(itemIds:readonly number[],direction:ItemReferenceDirection):Promise<readonly (readonly ItemReferenceOccurrence[]|null)[]>;
+  getNativeAcquisitionCandidates(itemIds:readonly number[]):Promise<readonly (readonly NativeAcquisitionCandidate[]|null)[]>;
 }
 const SHA = /^[0-9a-f]{64}$/;
 const GAME_VERSION = /^[0-9]+\.[0-9]+\.[0-9]+$/;
@@ -466,6 +495,17 @@ async function checkedJson(url:string, meta?:Readonly<{bytes?:number;sha256?:str
   }
   return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
 }
+/**
+ * Normal product entry point: one current canonical database, all native IDs.
+ * Game version is provenance selected internally, not a consumer argument.
+ * Explicit version/scope reads below are retained only for compatibility.
+ */
+export function openCurrentItemDatabase(
+  basePath:string='',fetcher:typeof fetch=fetch
+):Promise<PublicCompleteItemMaster>{
+  return openPublicItemMaster(basePath,fetcher,{scope:'complete',gameVersion:'current',contentAddressed:true});
+}
+
 export function openPublicItemMaster(
   basePath: string|undefined, fetcher: typeof fetch|undefined,
   options: CompleteItemMasterOpenOptions
@@ -524,6 +564,12 @@ export async function openPublicItemMaster(
           typeof c.archiveSha256==='string'&&SHA.test(c.archiveSha256)&&
           typeof c.parts==='number'&&Number.isSafeInteger(c.parts)&&c.parts>0&&c.parts<=100,
           'INVALID_COMPLETE_RELEASE');
+        assert(c.acquisitionProjection===undefined||isObject(c.acquisitionProjection)&&
+          Object.keys(c.acquisitionProjection).length===2&&
+          typeof c.acquisitionProjection.summarySha256==='string'&&SHA.test(c.acquisitionProjection.summarySha256)&&
+          typeof c.acquisitionProjection.relationsSha256==='string'&&SHA.test(c.acquisitionProjection.relationsSha256),
+          'INVALID_ACQUISITION_PINS');
+        assert(c.introductionHistorySha256===undefined||typeof c.introductionHistorySha256==='string'&&SHA.test(c.introductionHistorySha256),'INVALID_INTRODUCTION_HISTORY_DIGEST');
         assert(c.attributesSha256===undefined||
           typeof c.attributesSha256==='string'&&SHA.test(c.attributesSha256),'INVALID_ATTRIBUTE_DIGEST');
         assert(c.nativeSupplementSha256===undefined||
@@ -558,9 +604,14 @@ export async function openPublicItemMaster(
   if(scope==='expanded'&&selected)assert(selected.expanded,'EXPANDED_RELEASE_NOT_PUBLISHED');
   if(scope==='complete'&&selected)assert(selected.complete,'COMPLETE_RELEASE_NOT_PUBLISHED');
   const selectedView=scope==='complete'?selected?.complete:scope==='expanded'?selected?.expanded:selected;
-  const root = base + '/ddv/item-master/steam-' + gameVersion +
-    (scope==='base'?'':'-'+scope);
+  const contentAddressed='contentAddressed' in options&&options.contentAddressed===true;
+  assert(!contentAddressed||scope==='complete'&&options.gameVersion==='current','INVALID_CURRENT_STORAGE');
+  const root = base + '/ddv/item-master/' + (contentAddressed?'current':'steam-'+gameVersion+
+    (scope==='base'?'':'-'+scope));
   const release = await checkedJson(root+'/index.json',undefined,fetcher);
+  assert(!contentAddressed||isObject(release)&&release.storage==='content-addressed-current@1','INVALID_CURRENT_STORAGE');
+  const objectUrl=(path:string,pin:Readonly<{sha256:string}>)=>contentAddressed
+    ?base+'/ddv/item-master/objects/'+pin.sha256+'.json':root+'/'+path;
   assert(isObject(release) &&
     release.schema === 'wand.item-master.release@1' &&
     typeof release.version === 'string' &&
@@ -596,6 +647,21 @@ export async function openPublicItemMaster(
       release.sourceFilesVerified===Object.keys(release.sourceFilesSha256).length&&
       Object.values(release.sourceFilesSha256).every(v=>typeof v==='string'&&SHA.test(v)),
       'INVALID_COMPLETE_RELEASE');
+    const ap=release.acquisitionProjection;
+    const pins=selected?.complete?.acquisitionProjection;
+    assert((!selected||Boolean(ap)===Boolean(pins))&&
+      (ap===undefined||isObject(ap)&&ap.sourceGameVersion===gameVersion&&
+        typeof ap.summarySha256==='string'&&SHA.test(ap.summarySha256)&&
+        typeof ap.relationsSha256==='string'&&SHA.test(ap.relationsSha256)&&
+        (!pins||ap.summarySha256===pins.summarySha256&&ap.relationsSha256===pins.relationsSha256)&&
+        [ap.summaryCount,ap.relationCount,ap.sourceOnlySummaryCount,ap.sourceOnlyRelationCount,ap.sourceLinks].every(
+          v=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=0)&&
+        typeof ap.summaryCount==='number'&&ap.summaryCount<=release.count&&
+        typeof ap.relationCount==='number'&&ap.relationCount<=release.count&&
+        ap.currentAvailabilityVerified===false&&ap.coverageComplete===false),
+      'INVALID_ACQUISITION_PROJECTION');
+    assert((!selected||release.introductionHistorySha256===selected.complete?.introductionHistorySha256)&&
+      (release.introductionHistorySha256===undefined||typeof release.introductionHistorySha256==='string'&&SHA.test(release.introductionHistorySha256)), 'INVALID_INTRODUCTION_HISTORY_RELEASE');
     assert((!selected||release.attributesSha256===selected.complete?.attributesSha256)&&
       (release.attributesSha256===undefined||typeof release.attributesSha256==='string'&&
         SHA.test(release.attributesSha256)&&isObject(release.sourceAttributeCoverage)&&
@@ -715,7 +781,7 @@ export async function openPublicItemMaster(
     const previous = cache.get(path);
     if (previous) return previous;
     const task = (async()=>{
-      const raw = await checkedJson(root+'/'+path,meta(path),fetcher);
+      const raw = await checkedJson(objectUrl(path,meta(path)),meta(path),fetcher);
       assert(isObject(raw) && raw.schema === 'wand.item-master.shard@1' &&
         raw.bucket === path.slice(3,5) && Array.isArray(raw.items) &&
         raw.items.length === meta(path).count,'INVALID_SHARD');
@@ -738,9 +804,9 @@ export async function openPublicItemMaster(
     const meta=m.assets?.[path];
     assert(meta&&Number.isSafeInteger(meta.bytes)&&meta.bytes>0&&meta.bytes<=MAX_SHARD_BYTES&&
       SHA.test(meta.sha256)&&Number.isSafeInteger(meta.count)&&meta.count>=0,'INVALID_ASSET_METADATA');
-    const task=checkedJson(root+'/'+path,meta,fetcher).then(value=>{
-      assert(isObject(value)&&value.release===m.version,'ASSET_RELEASE_MISMATCH');
-      return deepFreeze(value);
+    const task=checkedJson(objectUrl(path,meta),meta,fetcher).then(value=>{
+      assert(isObject(value)&&value.release===(contentAddressed?'wand.item-master.current':m.version),'ASSET_RELEASE_MISMATCH');
+      return deepFreeze(contentAddressed?{...value,release:m.version}:value);
     });
     assetCache.set(path,task);
     try{return await task;}catch(e){assetCache.delete(path);throw e;}
@@ -882,6 +948,18 @@ export async function openPublicItemMaster(
       return (await itemReferences([id],direction))[0];
     },
     getItemsReferences:itemReferences,
+    async getNativeAcquisitionCandidates(ids:readonly number[]){
+      const field='acquisition.nativeCandidates';
+      const rows=await fieldReader.getItemFields(ids,[field]);
+      return Object.freeze(rows.map(row=>{
+        if(row===null)return null;
+        const value=row.values[field]??[];
+        assert(Array.isArray(value)&&value.every(v=>Array.isArray(v)&&v.length===3&&ID(v[0])&&
+          NATIVE_ACQUISITION_ROLES.includes(v[1] as NativeAcquisitionRole)&&
+          typeof v[2]==='string'&&v[2].startsWith('source.')),'INVALID_NATIVE_ACQUISITION_CANDIDATE');
+        return deepFreeze(value as unknown as readonly NativeAcquisitionCandidate[]);
+      }));
+    },
     async getCollectionFacets():Promise<CompleteItemMasterFacets>{
       const value=await asset('collection-facets.json');
       assert(isObject(value)&&value.schema==='wand.collection.db01-complete-source-facets@1'&&

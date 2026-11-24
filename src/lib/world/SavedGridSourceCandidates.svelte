@@ -1,5 +1,6 @@
 <script lang="ts">
   import {emptyWorldTimeline,currentWorldEdits} from './saved-map-batch.ts';
+  import {defaultWorldLayers,type WorldLayerState} from './world-layer-state.ts';
   import SavedShapePlot from './SavedShapePlot.svelte';
   import type {TerrainBinding} from './terrain-binding.ts';
   import type {SavedShapeMap} from './saved-shape-map.ts';
@@ -10,6 +11,7 @@
   export let timeline=emptyWorldTimeline();
   export let terrain:TerrainBinding|null=null;
   export let compact=false;
+  export let layerState:WorldLayerState=defaultWorldLayers();
   export let terrainDisplayed=false;
   export let available=false;
   export let working=false;
@@ -91,7 +93,7 @@
       {/if}
     </div>{/if}
     {#if receipt.points.length>0}
-      {#if shapeMap}<SavedShapePlot map={shapeMap} {file} {terrain} {compact} bind:timeline bind:terrainDisplayed/>
+      {#if shapeMap}<SavedShapePlot map={shapeMap} {file} {terrain} {compact} bind:timeline bind:terrainDisplayed bind:layerState/>
       {:else if new Set(receipt.points.map(p=>p.localGridOrdinal)).size===1}<div class="numeric-map">
         <canvas use:draw={receipt}
           aria-label="セーブ内の参照パス一致候補のX/Y数値座標図。地形図ではありません"></canvas>
@@ -115,7 +117,7 @@
 
 <style>
   .saved-candidate-view{margin:15px 0;display:grid;gap:11px;padding:13px;min-width:0;max-width:100%;background:var(--wand-card);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:10px}
-  .saved-candidate-view.compact{margin:0;padding:0;background:none;border:0;border-radius:0;gap:6px}
+  .saved-candidate-view.compact{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;overflow:hidden;margin:0;padding:0;background:none;border:0;border-radius:0;gap:6px}
   .actions{display:flex;justify-content:space-between;align-items:center;gap:9px;flex-wrap:wrap}
   h2{font-size:14px;margin:0;color:var(--wand-text)}
   .actions button{border:1px solid var(--wand-line);background:var(--wand-menu);color:var(--wand-text);padding:8px 11px;border-radius:8px;font:inherit;font-size:12px}
@@ -129,4 +131,5 @@
   .numeric-map canvas{display:block;max-width:100%;height:auto;width:520px;image-rendering:auto}
   .axis,.note,.warning{font-size:11px;line-height:1.6;color:var(--wand-muted);margin:0;overflow-wrap:anywhere}
   .warning{color:var(--wand-text)}
+ .saved-candidate-view.compact{position:relative}.compact:has(.saved-shape-plot)>.note{position:absolute;z-index:6;right:60px;bottom:6px;max-width:45%;padding:4px;background:var(--wand-card);border-radius:5px}
 </style>
