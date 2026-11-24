@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { createHash, createCipheriv } from 'node:crypto';
 import { deflateRawSync } from 'node:zlib';
 import { chromium } from 'playwright';
-import {projectCompleteCollection} from '../src/lib/collection/db01-complete-catalog.ts';
+import {loadCompleteCollection} from '../src/lib/collection/db01-complete-catalog.ts';
 import {COLLECTION_TOP_CATEGORIES} from '../src/lib/collection/category-hierarchy.ts';
 import {parseCollectionDb01Facets} from '../src/lib/collection/db01-native-facets.ts';
 import {buildWorldBrowseIndex} from '../src/lib/collection/world-browse-index.ts';
@@ -412,8 +412,8 @@ try{
     'leaf categories never appear at root');
   assert.equal(await page.locator('.collection-original-category-grid').count(),0);
   assert.equal(await parents.filter({hasText:/口ひげ|あごひげ/}).count(),0);
-  const completeIndex=projectCompleteCollection(JSON.parse(await readFile(
-    'static/ddv/item-master/steam-1.26.2-complete/collection-facets.json','utf8')));
+  const completeIndex=(await loadCompleteCollection('/Wand',async url=>
+    new Response(await readFile('static/'+url.replace(/^\/Wand\//,'')),{status:200}))).index;
   const totalText=completeIndex.sourceItemCount.toLocaleString('ja');
   const browseAll=page.locator('.collection-categories-heading button');
   assert.ok((await browseAll.innerText()).includes(totalText));
@@ -462,6 +462,11 @@ try{
     }
     await returnRoot();
   }
+  await page.locator('[data-top-category="furniture"]').click();
+  const furnitureKinds=page.locator('[data-native-subtype^="furniture-kind:"]');
+  assert.ok(await furnitureKinds.count()>5,'furniture uses source-backed detailed categories');
+  assert.equal(await page.locator('[data-native-subtype="Furniture:0"]').count(),0);
+  await returnRoot();
   assert.equal(await page.locator('[data-top-category="buildings"]').isDisabled(),
     !(completeIndex.itemsByRoot.get('buildings')?.length));
   // A failed v3 source asset must fail closed; reloading retries verified data.
