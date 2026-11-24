@@ -6,6 +6,8 @@
  * Source Tag membership is not game Collection membership, world availability,
  * DLC ownership, or an acquired-item status. Do not promote it to those axes.
  */
+import type {CollectionTopCategory} from './category-hierarchy.ts';
+import type {ItemMasterUniverseStatus} from '../items/public-item-master.ts';
 import {COLLECTION_UNIVERSE_TAG_BY_ID} from './universe-tag-names.ts';
 export const COLLECTION_DB01_FACETS_SCHEMA='wand.collection.db01-native-facets@1' as const;
 export const COLLECTION_DB01_ARCHIVE_SHA=
@@ -61,8 +63,12 @@ export type CollectionDb01SubmenuCode=typeof COLLECTION_DB01_SUBMENUS[number]['c
 const nativeCodeSet=new Set<number>(COLLECTION_DB01_SUBMENUS.map(x=>x.code));
 
 export interface CollectionDb01Index{
-  readonly release:'steam-1.26.2-item-id-master-v1';
-  readonly sourceItemCount:13202;
+  readonly release:string;
+  readonly sourceItemCount:number;
+  readonly rootsByItem?:ReadonlyMap<number,CollectionTopCategory>;
+  readonly itemsByRoot?:ReadonlyMap<CollectionTopCategory,readonly number[]>;
+  readonly universeSourceStatusByItem?:ReadonlyMap<number,ItemMasterUniverseStatus>;
+  readonly iconGuidByItem?:ReadonlyMap<number,string>;
   readonly taggedItems:number;
   readonly byItem:ReadonlyMap<number,readonly CollectionDb01Pair[]>;
   /** The original menu candidate index is separate from tag filtering. */

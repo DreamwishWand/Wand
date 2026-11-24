@@ -1,13 +1,13 @@
 <script lang="ts" context="module">
-  import {openPublicItemMaster,type PublicItemMaster} from '$lib/items/public-item-master';
+  import {openPublicItemMaster,type PublicCompleteItemMaster} from '$lib/items/public-item-master';
 
   // DB-01 owns these version-pinned, SHA-verified source shards. One index
   // and one exact-ID bucket are fetched lazily; Collection never duplicates
   // the Item ID database or fetches all 13,202 records for an inspector.
-  let sharedMaster:Promise<PublicItemMaster>|null=null;
-  function getItemMaster(base:string):Promise<PublicItemMaster> {
+  let sharedMaster:Promise<PublicCompleteItemMaster>|null=null;
+  function getItemMaster(base:string):Promise<PublicCompleteItemMaster> {
     if(sharedMaster)return sharedMaster;
-    const request=openPublicItemMaster(base);
+    const request=openPublicItemMaster(base,fetch,{scope:'complete'});
     sharedMaster=request;
     void request.catch(()=>{if(sharedMaster===request)sharedMaster=null;});
     return request;
@@ -17,13 +17,13 @@
 <script lang="ts">
   import {base} from '$app/paths';
   import {onDestroy} from 'svelte';
-  import type {ItemMasterLocale,ItemMasterRecord} from '$lib/items/public-item-master';
+  import type {ItemMasterLocale,CompleteItemMasterRecord} from '$lib/items/public-item-master';
   import WandIcon from '$lib/ui/WandIcon.svelte';
 
   export let itemId:number;
   export let locale:string;
 
-  let record:ItemMasterRecord|null=null;
+  let record:CompleteItemMasterRecord|null=null;
   let requestSequence=0;
   let error=false;
   const locales=['en','fr','it','de','es-ES','ja','zh-CN','pt-BR'] as const;

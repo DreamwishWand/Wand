@@ -1,3 +1,4 @@
+import {loadCompleteCollection} from './db01-complete-catalog.ts';
 import init, { CollectionEngine } from './wasm/pkg/wand_collection_core.js';
 import wasmUrl from './wasm/pkg/wand_collection_core_bg.wasm?url';
 import type { Db01Item } from '$lib/items/index';
@@ -371,6 +372,32 @@ export class CollectionRuntime {
       } else {
         throw new Error('COLLECTION_DB00_POINTER_KIND');
       }
+      if(metadata.snapshot==='steam-1.26.2-native-itemlist-v1'){
+        // Keep the existing active-pointer verification; consume the new
+        // source projection only after its versioned DB-01 assets verify.
+        const complete=await loadCompleteCollection(base);
+        const id='steam-'+metadata.version+'-collection-source-v3';
+        const shards:{file:string;offset:number;count:number;bytes:number;sha256:string}[]=[];
+        const payloads:string[]=[];
+        for(let offset=0;offset<complete.rows.length;offset+=1000){
+          const items=complete.rows.slice(offset,offset+1000);
+          const payload=JSON.stringify({schema:'wand.game-db.snapshot@1',offset,count:items.length,items});
+          const bytes=new TextEncoder().encode(payload);
+          shards.push({file:'items-'+String(shards.length).padStart(3,'0')+'.json',offset,
+            count:items.length,bytes:bytes.byteLength,sha256:await digestSha256(bytes.buffer)});
+          payloads.push(payload);
+        }
+        engine.load_db00_index(JSON.stringify({schema:'wand.game-db.release@1',id,
+          target:{platform:'Steam',gameVersion:metadata.version,buildId:null},
+          sources:[{id:'db01-complete-source',visibility:'public_reference'}],releases:[],
+          count:complete.rows.length,shards}));
+        for(const payload of payloads)engine.append_db00_shard(payload);
+        engine.finish_db00();
+        const catalog=JSON.parse(engine.metadata_json()) as Omit<CollectionRuntimeMetadata,'snapshot'>;
+        const verified=complete.rows.filter(row=>row.nameStatus==='verified').length;
+        metadata={...catalog,snapshot:id,nameCoverage:{itemDefinitions:complete.rows.length,
+          nameVerified:verified,nameUnverified:complete.rows.length-verified}};
+      }
       const runtime = new CollectionRuntime(engine,metadata);
       await runtime.loadStorage();
       return runtime;
@@ -572,17 +599,17 @@ export class CollectionRuntime {
       // by the local Worker; only known native-to-public family aliases pass.
       const publicFamilies:Record<string,readonly string[]>={
         Furniture:['Furniture','Landscaping','Roads & Fences'],
-        Clothing:['Clothing'],
+        Clothing:['Clothing','Appearance','Tools'],
         ActivityItem:['ActivityItem','Source Activity Items',
           'Source Crop','Source Meal','Source Seed','Source Flower','Source Fish',
           'Source Ingredient','Source Consumable','Source Mineral',
-          'Source Crafting Material'],
+          'Source Crafting Material','Ingredients','Meals','Foraging','Fish','Gems','Timebending','Crafting','Snippets'],
         Makeup:['Makeup','Appearance'],
         Trimming:['Trimming','Wallpaper & Flooring'],
         Building:['Building','Buildings'],
-        Skin:['Skin','Appearance'],
+        Skin:['Skin','Appearance','Buildings','Environment Effects','Characters','Mounts'],
         BoardGame:['BoardGame','Board Game'],
-        AvatarFeature:['AvatarFeature','Appearance'],
+        AvatarFeature:['AvatarFeature','Appearance','Environment Effects','Photo Mode'],
         PhotoMode:['PhotoMode','Photo Mode'],
         MountGear:['MountGear','Mounts'],
         Environment:['Environment','Environment Effects']

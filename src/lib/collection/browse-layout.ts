@@ -6,6 +6,19 @@ import {COLLECTION_UNIVERSE_TAG_BY_ID,COLLECTION_UNIVERSE_TAG_NAMES}
   from './universe-tag-names.ts';
 import type {CollectionItem} from './runtime.ts';
 export const COLLECTION_UNIVERSE_UNTAGGED='__no_universe_tag__' as const;
+export const COLLECTION_UNIVERSE_UNRESOLVED='__unresolved_universe__' as const;
+export function collectionUniverseIds(index:CollectionDb01Index,key:string):readonly number[]{
+  if(key===COLLECTION_UNIVERSE_UNTAGGED||key===COLLECTION_UNIVERSE_UNRESOLVED){
+    if(index.universeSourceStatusByItem){
+      const state=key===COLLECTION_UNIVERSE_UNTAGGED?'no_universe_in_verified_tag_fields':'unresolved_source';
+      return [...index.universeSourceStatusByItem].filter(([,v])=>v===state).map(([id])=>id);
+    }
+    if(key===COLLECTION_UNIVERSE_UNRESOLVED)return [];
+    return [...index.nativeSubtypeByItem.keys()].filter(id=>!(index.universeTagIdsByItem.size
+      ?index.universeTagIdsByItem.has(id):index.universesByItem.has(id)));
+  }
+  return index.itemsByUniverseTagId.get(Number(key))??index.itemsByUniverse.get(key)??[];
+}
 export interface CollectionUniverseBrowseOption{
   readonly id:string;
   readonly label:string;
@@ -77,11 +90,16 @@ export function sortedCollectionUniverseOptions(
   // items are distinct from that Tag and cannot be called "Other" without
   // evidence. Put the original Other + Dreamlight front, and untagged last.
   const noTag={id:COLLECTION_UNIVERSE_UNTAGGED,label:untaggedLabel,
-    total:index.sourceItemCount-(canonical
-      ?index.universeTagIdsByItem.size:index.universesByItem.size)};
+    total:index.universeSourceStatusByItem?collectionUniverseIds(index,COLLECTION_UNIVERSE_UNTAGGED).length:
+      index.sourceItemCount-(canonical?index.universeTagIdsByItem.size:index.universesByItem.size)};
+  const unresolved=index.universeSourceStatusByItem?[{
+    id:COLLECTION_UNIVERSE_UNRESOLVED,
+    label:({ja:'分類未確定',en:'Unresolved',fr:'Non déterminé',it:'Non determinato',de:'Ungeklärt','es-ES':'Sin determinar','zh-CN':'待确认','pt-BR':'Não determinado'} as Record<string,string>)[locale]??'Unresolved',
+    total:collectionUniverseIds(index,COLLECTION_UNIVERSE_UNRESOLVED).length
+  }]:[];
   return Object.freeze(generic.length
-    ?[...generic,...home,...others,noTag]
-    :[noTag,...home,...others]);
+    ?[...generic,...home,...others,noTag,...unresolved]
+    :[noTag,...home,...others,...unresolved]);
 }
 /** Native order is stable across languages: source Item IDs, not translated
  * alphabetical names. Group names may be localized for the current screen.
