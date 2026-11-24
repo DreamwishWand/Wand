@@ -9,7 +9,9 @@
  export let added=0;
  export let removed=0;
  export let onChange:(value:RoadTool)=>void;
- const tools:RoadTool[]=['brush','line','outline','fill','erase'];
+ const tools:RoadTool[]=['brush','line','outline','fill','erase','flood','erase-line','erase-rect'];
+ const extra={ja:['領域塗りつぶし','直線消去','矩形消去'],en:['Fill connected region','Erase line','Erase rectangle'],fr:['Remplir la zone connectée','Effacer une ligne','Effacer un rectangle'],it:['Riempi area connessa','Cancella linea','Cancella rettangolo'],de:['Verbundene Fläche füllen','Linie löschen','Rechteck löschen'],'es-ES':['Rellenar región conectada','Borrar línea','Borrar rectángulo'],'zh-CN':['填充连通区域','直线擦除','矩形擦除'],'pt-BR':['Preencher região conectada','Apagar linha','Apagar retângulo']} as const;
+ $: toolLabels=[...words.slice(1,6),...extra[locale]];
  const copy={
  ja:['道の描画','自由描画','直線','矩形枠','塗りつぶし','消しゴム','追加','削除','配置範囲・別の道との重複を確認'],
  en:['Draw paths','Freehand','Line','Rectangle outline','Fill rectangle','Erase','Add','Remove','Check boundaries and other paths'],
@@ -20,12 +22,12 @@
  'zh-CN':['绘制道路','自由绘制','直线','矩形边框','矩形填充','橡皮擦','添加','移除','检查边界和其他道路'],
  'pt-BR':['Desenhar caminhos','Traço livre','Linha','Contorno retangular','Preencher retângulo','Apagar','Adicionar','Remover','Verifique limites e outros caminhos']
  } as const;
- const icons=['M3 17l5-9 5 8 7-10','M4 20 20 4','M4 4h16v16H4z','M4 4h16v16H4zM4 8h16M4 12h16M4 16h16','m3 14 10-10 8 8-8 8H9zM8 9l8 8M13 20h9'];
+ const icons=['M3 17l5-9 5 8 7-10','M4 20 20 4','M4 4h16v16H4z','M4 4h16v16H4zM4 8h16M4 12h16M4 16h16','m3 14 10-10 8 8-8 8H9zM8 9l8 8M13 20h9','M4 5h10v5h6v10H4zM8 9v7h8','M4 20 20 4M4 4l16 16','M4 4h16v16H4zM4 4l16 16M20 4 4 20'];
  $: words=copy[locale]??copy.en;
 </script>
 <div class="road-design-controls" role="group" aria-label={fence?fenceLabel[locale]:words[0]}>
  {#each tools as mode,i}
- {#if !fence||mode!=='fill'}<button type="button" title={words[i+1]} aria-label={words[i+1]} aria-pressed={tool===mode} on:click={()=>onChange(mode)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons[i]}/></svg></button>{/if}
+ {#if !fence||!['fill','flood'].includes(mode)}<button type="button" title={toolLabels[i]} aria-label={toolLabels[i]} aria-pressed={tool===mode} on:click={()=>onChange(mode)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={icons[i]}/></svg></button>{/if}
  {/each}
  {#if added||removed}<small>{words[6]} {added} / {words[7]} {removed}</small>{/if}
  {#if !valid}<small role="status">{words[8]}</small>{/if}

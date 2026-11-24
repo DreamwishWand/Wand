@@ -475,3 +475,21 @@ test('connected road style replacement keeps exact cell positions and is one his
  assert.equal(replaceDesignNetwork(adjacent,1,b,defs,1,30,30),null);
  assert.equal(replaceDesignNetwork(base,1,a,defs,1,30,30),null);
 });
+
+import {floodRoadRegion,roadErase} from '../src/lib/world/road-design.ts';
+test('region fill stops at original terrain boundaries and existing paths; oversized regions fail atomically',()=>{
+ const shape={width:2,height:2,runs:[{x:0,y:0,width:2},{x:0,y:1,width:2}],cellCount:4,path:'M0 0h2v2h-2Z',acceptedFloorTypesFlag:3};
+ const g={itemId:40100068,name:'Path_MainStreet',layer:'ground',surfaceCapable:false,shapes:{'40100068:8':shape}};
+ const values=new Uint32Array(8*6).fill(1);
+ for(let y=0;y<6;y++)for(let x=4;x<8;x++)values[y*8+x]=2;
+ const binding={raster:{sizeX:8,sizeY:6,nativeFloorValues:values},factor:1,verifiedGridOrdinals:[]};
+ const old=[{id:1,itemId:g.itemId,x:2,y:2,orientation:2}];
+ const result=floodRoadRegion({x:0,y:0},g,binding,old);
+ assert.equal(result.length,5);assert(result.every(p=>p.x<4&&!(p.x===2&&p.y===2)));
+ assert.equal(floodRoadRegion({x:2,y:2},g,binding,old),null);
+ const huge={raster:{sizeX:144,sizeY:144,nativeFloorValues:new Uint32Array(144*144).fill(1)},factor:1,verifiedGridOrdinals:[]};
+ assert.equal(floodRoadRegion({x:0,y:0},g,huge,[]),null);
+ assert.equal(roadErase('erase-line'),true);assert.equal(roadErase('erase-rect'),true);
+ assert.equal(roadStroke([{x:0,y:0},{x:4,y:4}],'erase-line',2).length,3);
+ assert.equal(roadStroke([{x:0,y:0},{x:4,y:4}],'erase-rect',2).length,9);
+});

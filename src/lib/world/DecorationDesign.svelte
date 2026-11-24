@@ -1,7 +1,7 @@
 <script lang="ts">
  import NetworkStyleControls from './NetworkStyleControls.svelte';
  import RoadDesignControls from './RoadDesignControls.svelte';
- import {roadComponent,roadPitch,roadStroke,snapRoadPoint,ROAD_STROKE_LIMIT,type RoadTool,type RoadPoint} from './road-design.ts';
+ import {roadComponent,roadPitch,roadStroke,snapRoadPoint,roadErase,roadFreehand,floodRoadRegion,ROAD_STROKE_LIMIT,type RoadTool,type RoadPoint} from './road-design.ts';
  import {fencePitch,fenceDesignEdges,fenceComponent} from './fence-design.ts';
  import {planRoadDesign,commitRoadDesign,planFenceDesign,commitFenceDesign,replaceDesignNetwork} from './design-layout.ts';
  import MapCameraControls from './MapCameraControls.svelte';
@@ -61,10 +61,15 @@
  $: fenceDrawing=Boolean(fencePitch(placing,grid?.factor??0));
  $: pitch=roadPitch(placing,grid?.factor??0)??fencePitch(placing,grid?.factor??0);
  $: roadEnabled=Boolean(pitch&&!symmetry);
- $: if(fenceDrawing&&roadTool==='fill')roadTool='brush';
- $: roadPreview=roadEnabled&&pitch&&roadDrag&&!roadDrag.overflow?roadStroke(roadDrag.points,roadTool,pitch):null;
+ $: if(fenceDrawing&&(roadTool==='fill'||roadTool==='flood'))roadTool='brush';
+ $: roadPreview=roadEnabled&&pitch&&roadDrag&&!roadDrag.overflow&&placing?networkStroke(roadDrag.points,roadTool,pitch,placing,binding,placements,definitions):null;
+ function networkStroke(points:readonly RoadPoint[],tool:RoadTool,step:number,g:DesignItemGeometry,terrain:TerrainBinding|null,old:readonly DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>){
+  if(tool!=='flood')return roadStroke(points,tool,step);
+  if(!terrain||old.some(p=>exclusiveAnchorClass(String(p.itemId))==='ground'&&roadPitch(defs.get(p.itemId),terrain.factor)!==step))return null;
+  return floodRoadRegion(points[0],g,terrain,old);
+ }
  $: legacyFence=placements.some(p=>exclusiveAnchorClass(String(p.itemId))==='fence'&&!fencePitch(definitions.get(p.itemId),grid?.factor??0));
- $: roadPlan=roadPreview&&placing&&grid&&!(fenceDrawing&&legacyFence)?(fenceDrawing?planFenceDesign:planRoadDesign)(timeline,placing,roadPreview,grid.factor,width,height,roadTool==='erase'):null;
+ $: roadPlan=roadPreview&&placing&&grid&&!(fenceDrawing&&legacyFence)?(fenceDrawing?planFenceDesign:planRoadDesign)(timeline,placing,roadPreview,grid.factor,width,height,roadErase(roadTool)):null;
  $: fenceEdges=grid&&layerVisible(layerState,{layer:'fence'})?fenceDesignEdges(placements,definitions,grid.factor):[];
  $: previewFenceEdges=fenceDrawing&&roadPlan&&grid?previewEdges(placements,roadPlan,definitions,grid.factor):null;
  function previewEdges(old:readonly DesignPlacement[],plan:NonNullable<typeof roadPlan>,defs:ReadonlyMap<number,DesignItemGeometry>,factor:number){const remove=new Set(plan.remove);return fenceDesignEdges([...old.filter(p=>!remove.has(p.id)),...plan.add],defs,factor);}
@@ -72,7 +77,7 @@
  $: originalFenceEdgeKeys=new Set(fenceEdges.map(e=>e.key));
  $: previewFenceEdgeKeys=new Set(previewFenceEdges?.map(e=>e.key)??[]);
  $: removedFenceEdges=previewFenceEdges?fenceEdges.filter(e=>!previewFenceEdgeKeys.has(e.key)):[];
- function commitNetwork(points:readonly RoadPoint[]){if(!placing||!grid||fenceDrawing&&legacyFence){save(null);return;}save((fenceDrawing?commitFenceDesign:commitRoadDesign)(timeline,placing,points,grid.factor,width,height,roadTool==='erase'));}
+ function commitNetwork(points:readonly RoadPoint[]){if(!placing||!grid||fenceDrawing&&legacyFence){save(null);return;}save((fenceDrawing?commitFenceDesign:commitRoadDesign)(timeline,placing,points,grid.factor,width,height,roadErase(roadTool)));}
  let networkSeed:number|null=null,networkTarget=0,networkRequest=0,networkLoading=false;
  $: networkRoot=networkSeed===null?null:placements.find(p=>p.id===networkSeed)??null;
  $: networkSource=networkRoot?definitions.get(networkRoot.itemId):null;
@@ -87,8 +92,8 @@
  function sampleNetwork(){const id=chosen?.itemId;if(id===undefined)return;cancel();chooseItem(id);}
  function setRoadTool(tool:RoadTool){roadDrag=null;roadTool=tool;}
  function startRoad(e:PointerEvent){if(!pitch)return;const p=cell(e);if(!p)return;roadDrag={id:e.pointerId,points:[snapRoadPoint(p,pitch)],overflow:false};try{(e.currentTarget as Element).setPointerCapture(e.pointerId);}catch{/* no capture */}e.preventDefault();}
- function followRoad(e:PointerEvent){if(!roadDrag||!pitch||roadDrag.overflow)return;const p=cell(e);if(!p)return;const point=snapRoadPoint(p,pitch),last=roadDrag.points[roadDrag.points.length-1];if(last?.x===point.x&&last.y===point.y)return;const points=roadTool==='brush'||roadTool==='erase'?[...roadDrag.points,point]:[roadDrag.points[0],point];roadDrag={...roadDrag,points,overflow:points.length>ROAD_STROKE_LIMIT};}
- function finishRoad(e:PointerEvent,confirm:boolean){if(roadDrag?.id!==e.pointerId)return false;followRoad(e);const drag=roadDrag;roadDrag=null;suppressDirectClick=true;if(confirm&&cell(e)&&placing&&grid&&pitch&&!drag.overflow){const points=roadStroke(drag.points,roadTool,pitch);if(points)commitNetwork(points);else save(null);}return true;}
+ function followRoad(e:PointerEvent){if(!roadDrag||!pitch||roadDrag.overflow||roadTool==='flood')return;const p=cell(e);if(!p)return;const point=snapRoadPoint(p,pitch),last=roadDrag.points[roadDrag.points.length-1];if(last?.x===point.x&&last.y===point.y)return;const points=roadFreehand(roadTool)?[...roadDrag.points,point]:[roadDrag.points[0],point];roadDrag={...roadDrag,points,overflow:points.length>ROAD_STROKE_LIMIT};}
+ function finishRoad(e:PointerEvent,confirm:boolean){if(roadDrag?.id!==e.pointerId)return false;followRoad(e);const drag=roadDrag;roadDrag=null;suppressDirectClick=true;if(confirm&&cell(e)&&placing&&grid&&pitch&&!drag.overflow){const points=networkStroke(drag.points,roadTool,pitch,placing,binding,placements,definitions);if(points)commitNetwork(points);else save(null);}return true;}
  $: dragPlan=direct?.moved&&direct.kind==='move'?transformDesignGroup(timeline,direct.ids,definitions,direct.end.x-direct.start.x,direct.end.y-direct.start.y,0,width,height):null;
  let symmetryOpen=false,symmetry:DesignSymmetry|null=null,symmetryPicking=false;
  let alignmentOpen=false,alignmentAction:MapAlignment|null=null;
@@ -306,7 +311,7 @@
  function placeAt(x:number,y:number){
   if(!placing)return;
   if(placing.layer==='fence'&&!roadEnabled){save(null);return;}
-  if(roadEnabled&&pitch&&grid){commitNetwork([snapRoadPoint({x,y},pitch)]);return;}
+  if(roadEnabled&&pitch&&grid){const points=networkStroke([snapRoadPoint({x,y},pitch)],roadTool,pitch,placing,binding,placements,definitions);if(points)commitNetwork(points);else save(null);return;}
   if(!placeWithSymmetry(x,y,[{itemId:placing.itemId,x,y,orientation}]))save(placeDesign(timeline,placing,x,y,orientation,width,height));
  }
 
@@ -499,7 +504,7 @@
       {/each}
      {/if}
      {#if hover&&pasting.length}{#each pasting as p,i}{@const shape=definitions.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4]}{#if shape}<path class="design-paste-ghost" d={shape.path} transform={'translate('+(hover.x+p.dx)+' '+(hover.y+p.dy)+')'} fill={(symmetry?Boolean(symmetricPlacementPlan):pasteValid)?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}{/each}{/if}
-     {#if roadDrag&&roadPreview&&pitch}{#each roadPreview as p (p.x+':'+p.y)}<rect class="road-stroke-ghost" x={p.x} y={p.y} width={pitch} height={pitch} fill={roadPlan&&roadTool!=='erase'?'#4bddcd':'#ef5350'} fill-opacity=".55" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/each}{/if}
+     {#if roadDrag&&roadPreview&&pitch}{#each roadPreview as p (p.x+':'+p.y)}<rect class="road-stroke-ghost" x={p.x} y={p.y} width={pitch} height={pitch} fill={roadPlan&&!roadErase(roadTool)?'#4bddcd':'#ef5350'} fill-opacity=".55" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/each}{/if}
      {#if hover&&ghostShape&&!roadEnabled}<path class="design-ghost" d={ghostShape.path} transform={'translate('+hover.x+' '+hover.y+')'} fill={(symmetry&&placing?Boolean(symmetricPlacementPlan):ghostValid)?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>
       {#if ghostGeometry&&showWorldArtwork({layer:ghostGeometry.layer,shapeKey:null},ghostShape,cellPixels)&&images.has(ghostGeometry.itemId)}<WorldObjectArtwork href={images.get(ghostGeometry.itemId)!} x={hover.x} y={hover.y} width={ghostShape.width} height={ghostShape.height} opacity={.55}/>{/if}
       {#if cellPixels>=5}<path d="M0 -.32L.19 .13L0 .04L-.19 .13Z" transform={'translate('+(hover.x+.5)+' '+(hover.y+.5)+') rotate('+sourceOrientationAngle(ghostOrientation*4)+')'} fill="#fff" pointer-events="none"/>{/if}
