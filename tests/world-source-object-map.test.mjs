@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {sourceMapLayer,sourceSurfaceCapable,matchesSelectionLayer,mapPainterOrder,prioritizeMapHits} from '../src/lib/world/source-map-layers.ts';
+import {worldObjectName,searchSavedObjects,objectFocus} from '../src/lib/world/world-object-search.ts';
 import {defaultMapCamera,maxMapZoom,zoomMapCamera,panMapCamera,mapCameraViewBox} from '../src/lib/world/map-camera.ts';
 import {emptyWorldTimeline,currentWorldEdits,projectWorldEdits,stageWorldEdit,travelWorldTimeline} from '../src/lib/world/saved-map-batch.ts';
 import {savedDraftOverlap} from '../src/lib/world/saved-draft-overlap.ts';
@@ -190,4 +191,17 @@ test('map camera zooms about cursor, clamps pan, and supports large Grid magnifi
   assert.deepEqual(zoomMapCamera(c,1,64),full);
   assert.equal(maxMapZoom(8192),1024);
   assert.equal(maxMapZoom(16),64);
+});
+
+test('placed-object search uses exact localized names with source fallback and focuses geometry',()=>{
+  const p=(localOrdinal,x,y,itemId='100')=>({localOrdinal,localGridOrdinal:1,x,y,orientation:'GridOrientation_Down',itemId});
+  const map=buildSavedShapeMap(fixture(),L,7,[p(1,10,20),p(2,30,40,'999')]);
+  const names=new Map([[100,'テーブル']]);
+  assert.equal(worldObjectName(map.objects[0],names),'テーブル');
+  assert.deepEqual(searchSavedObjects(map.objects,names,'ﾃｰﾌﾞﾙ','all').map(o=>o.localOrdinal),[1]);
+  assert.deepEqual(searchSavedObjects(map.objects,names,'999','all').map(o=>o.localOrdinal),[2]);
+  assert.equal(searchSavedObjects(map.objects,names,'テーブル','fence').length,0);
+  const c=objectFocus(map,map.objects[0],{x:0,y:0,w:100,h:100},64);
+  assert.equal(c.zoom,12.5);
+  assert.equal(c.x,.11);assert.equal(c.y,.205);
 });

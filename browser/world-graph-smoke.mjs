@@ -915,6 +915,12 @@ try{
     assert.equal(await candidates.locator('.saved-object-shape').count(),2);
     assert.equal(await candidates.locator('.saved-object').first().getAttribute('transform'),'translate(4 5)');
     const savedPlot=candidates.locator('.saved-shape-plot');
+    await savedPlot.getByLabel('配置済み家具を検索').fill('SyntheticSourceObject');
+    await savedPlot.locator('.object-results button').first().click();
+    await savedPlot.locator('.selected-saved-object').waitFor();
+    await savedPlot.getByLabel('検索を解除').click();
+    await savedPlot.getByRole('button',{name:'閉じる',exact:true}).click();
+    await savedPlot.getByRole('button',{name:'全体',exact:true}).click();
     await savedPlot.locator('svg').scrollIntoViewIfNeeded();
     const position=await savedPlot.locator('svg').evaluate(svg=>{
       const p=new DOMPoint(4.5,5.5).matrixTransform(svg.getScreenCTM());return {x:p.x,y:p.y};});
