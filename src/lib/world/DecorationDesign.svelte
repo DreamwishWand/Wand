@@ -1,5 +1,5 @@
 <script lang="ts">
- import {mainlandItemsValid,validatedMainlandPlan,serializeMainlandDesign,parseMainlandDesign,type MainlandDesignFrame} from './mainland-design-frame.ts';
+ import {mainlandItemsValid,validatedMainlandPlan,serializeMainlandDesign,parseMainlandDesign,mainlandImportMatches,type MainlandDesignFrame} from './mainland-design-frame.ts';
  import NetworkStyleControls from './NetworkStyleControls.svelte';
  import RoadDesignControls from './RoadDesignControls.svelte';
  import {roadComponent,roadPitch,roadStroke,snapRoadPoint,roadErase,roadFreehand,floodRoadRegion,ROAD_STROKE_LIMIT,type RoadTool,type RoadPoint} from './road-design.ts';
@@ -109,7 +109,7 @@
  let groupIds:number[]=[],clipboard:DesignClipItem[]=[],pasting:DesignClipItem[]=[],pasteRequest=0,pastePending:DesignClipItem[]=[],lastPoint:{x:number;y:number}|null=null;
  $: selectedIds=new Set(groupIds.length?groupIds:selected===null?[]:[selected]);
  let importInput:HTMLInputElement,showCounts=false,reading=false,importEpoch=0;
- let pendingImport:{id:number;key:string;placements:DesignPlacement[];timeline:DesignTimeline}|null=null;
+ let pendingImport:{id:number;key:string;placements:DesignPlacement[];timeline:DesignTimeline;sourceAreas?:ReadonlyMap<number,string>}|null=null;
  const labels={
   ja:['保存','読み込み','必要な家具','設計を読み込めませんでした。対象エリアと家具の形状を確認してください。','現在のエリアの設計を置き換えますか？','読み込み中…'],
   en:['Save design','Open design','Required items','Unable to open design. Check the area and item geometry.','Replace the current area design?','Opening…'],
@@ -139,12 +139,12 @@
   reading=true;error='';
   try{
    if(file.size>DESIGN_FILE_LIMIT)throw Error('size');
-   const content=await file.text(),incoming=sourceFrame?parseMainlandDesign(content,sourceFrame):parseDesign(content,target);
+   const content=await file.text(),sourceAreas=sourceFrame?new Map<number,string>():undefined,incoming=sourceFrame?parseMainlandDesign(content,sourceFrame,sourceAreas):parseDesign(content,target);
    if(epoch!==importEpoch||worldFrame!==sourceFrame||grid?.key!==target.key||timeline!==original||worker!==own||!active)return;
    if(currentDesign(original).length&&!window.confirm(words[4]))return;
    cancel();
    const id=nextRequest();
-   pendingImport={id,key:target.key,placements:incoming,timeline:original};
+   pendingImport={id,key:target.key,placements:incoming,timeline:original,sourceAreas};
    own.postMessage({command:'design-shapes',requestId:id,key:target.key,itemIds:[...new Set(incoming.map(p=>p.itemId))]});
   }catch{if(epoch===importEpoch){pendingImport=null;error=words[3];}}
   finally{if(epoch===importEpoch)reading=false;}
@@ -189,6 +189,7 @@
      if(!grid||!active||grid.key!==pending.key||timeline!==pending.timeline)return;
      if(d.kind!=='design-shapes'||d.key!==grid.key||!Array.isArray(d.result)){error=words[3];return;}
      const incoming=new Map<number,DesignItemGeometry>((d.result as DesignItemGeometry[]).map(g=>[g.itemId,g]));
+     if(worldFrame&&(!pending.sourceAreas||!mainlandImportMatches(worldFrame,pending.placements,incoming,pending.sourceAreas))){error=words[3];return;}
      const next=validatedMainlandPlan(worldFrame,timeline,restoreDesign(timeline,pending.placements,incoming,width,height),incoming);
      if(!next){error=words[3];return;}
      const factor=String(grid.factor);

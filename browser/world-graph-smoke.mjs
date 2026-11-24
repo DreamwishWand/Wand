@@ -1061,8 +1061,55 @@ try{
   assert.notEqual(await mainland.locator('.design-plot > svg').getAttribute('viewBox'),mainlandView);
   await mainland.getByRole('button',{name:'全体表示',exact:true}).click();
   assert.equal(await mainland.locator('.design-plot > svg').getAttribute('viewBox'),mainlandView);
+  // Use rendered original terrain to choose two unambiguous floor patches,
+  // in the source-projected Plaza and Meadow interiors. The editor itself
+  // must resolve each click and keep both objects in one Undo timeline.
+  await mainland.getByLabel('配置カテゴリ').selectOption('furniture');
+  await mainland.locator('.design-item').first().waitFor({timeout:30000});
+  await mainland.locator('.design-item').first().click();
+  await mainland.getByRole('button',{name:'配置終了'}).waitFor({timeout:30000});
+  await mainland.getByRole('button',{name:'家具パレット'}).click();
+  const spots=await mainland.locator('.design-coordinate-space').evaluate(async group=>{
+    const image=group.querySelector(':scope > image'),bitmap=new Image();
+    bitmap.src=image.getAttribute('href');await bitmap.decode();
+    const canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;
+    const ctx=canvas.getContext('2d');ctx.drawImage(bitmap,0,0);const {data}=ctx.getImageData(0,0,canvas.width,canvas.height);
+    const ok=(x,y)=>{const i=(y*canvas.width+x)*4;return data[i]!==47||data[i+1]!==45||data[i+2]!==55;};
+    const regions=[[272,316,396,416],[228,220,396,290]],out=[];
+    for(const [x1,y1,x2,y2] of regions){
+      const candidates=[];
+      for(let y=y1;y<y2-12;y+=4)for(let x=x1;x<x2-12;x+=4){
+        let good=true;for(let dy=0;dy<12&&good;dy++)for(let dx=0;dx<12;dx++)if(!ok(x+dx,y+dy)){good=false;break;}
+        if(!good)continue;
+        const p=new DOMPoint(x+2.5,y+2.5).matrixTransform(group.getScreenCTM());
+        if(document.elementFromPoint(p.x,p.y)?.closest('.design-plot'))candidates.push({x:p.x,y:p.y});
+      }
+      out.push(candidates.slice(0,30));
+    }
+    return out;
+  });
+  for(const choices of spots){
+    let placed=false;
+    for(const point of choices){
+      await page.mouse.move(point.x,point.y);
+      if(await mainland.locator('.design-ghost').getAttribute('fill')!=='#b9c7d6')continue;
+      const before=await mainland.locator('.design-object').count();
+      await page.mouse.click(point.x,point.y);
+      if(await mainland.locator('.design-object').count()===before+1){placed=true;break;}
+    }
+    assert.ok(placed,'source-resolved placement in each mainland area');
+  }
+  await mainland.getByRole('button',{name:'配置終了'}).click();
+  assert.equal(await mainland.locator('.design-object').count(),2);
+  await mainland.getByLabel('設計を取り消す').click();assert.equal(await mainland.locator('.design-object').count(),1);
+  await mainland.getByLabel('設計をやり直す').click();assert.equal(await mainland.locator('.design-object').count(),2);
+  // Keep the world design when temporarily returning to local-area tools.
+  await publicWorld.getByRole('button',{name:'本島全体編集',exact:true}).click();
+  await publicWorld.getByRole('button',{name:'本島全体編集',exact:true}).click();
+  assert.equal(await mainland.locator('.design-object').count(),2);
   await publicWorld.getByRole('button',{name:'本島全体編集',exact:true}).click();
   const design=publicWorld.locator('.design-workspace');
+  await design.getByRole('button',{name:'家具パレット'}).click();
   await design.locator('.design-item').first().waitFor({timeout:30000});
   const frame=design.locator('.design-map-frame');
   const frameBox=await frame.boundingBox(),workspaceBox=await publicWorld.boundingBox();

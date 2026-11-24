@@ -113,7 +113,7 @@ test('all eight original mainland GridScript paths resolve exact source origins 
  assert.deepEqual(mainlandTerrainHits([meadow],new Map([[meadow.key,raster]]),-116.75,91.75),[]);
 });
 
-import {composeMainlandDesignFrame,mainlandFrameOffset,resolveMainlandDesign,mainlandItemsValid,validatedMainlandPlan,serializeMainlandDesign,parseMainlandDesign} from '../src/lib/world/mainland-design-frame.ts';
+import {composeMainlandDesignFrame,mainlandFrameOffset,resolveMainlandDesign,mainlandItemsValid,validatedMainlandPlan,serializeMainlandDesign,parseMainlandDesign,mainlandImportMatches} from '../src/lib/world/mainland-design-frame.ts';
 import {emptyDesign,placeDesign,transformDesign,currentDesign,travelDesign} from '../src/lib/world/design-layout.ts';
 test('actual mainland terrain resolves two distinct native areas in one local design history and portable file',()=>{
  const bundle=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(path,'utf8')));
@@ -131,7 +131,9 @@ test('actual mainland terrain resolves two distinct native areas in one local de
  assert(moved);assert.equal(resolveMainlandDesign(f,currentDesign(moved)[0].x,currentDesign(moved)[0].y,shape).grid.key,'Meadow');
  assert.deepEqual(currentDesign(travelDesign(moved,-1)),currentDesign(one));
  const two=validatedMainlandPlan(f,moved,placeDesign(moved,g,a.x,a.y,2,w,h),defs);assert(two);
- assert.deepEqual(parseMainlandDesign(serializeMainlandDesign(f,two,defs),f).sort((a,b)=>a.id-b.id),currentDesign(two));
+ const sourceAreas=new Map(),imported=parseMainlandDesign(serializeMainlandDesign(f,two,defs),f,sourceAreas).sort((a,b)=>a.id-b.id);
+ assert.deepEqual(imported,currentDesign(two));assert.equal(mainlandImportMatches(f,imported,defs,sourceAreas),true);
+ sourceAreas.set(1,'Urban');assert.equal(mainlandImportMatches(f,imported,defs,sourceAreas),false);
  assert.equal(validatedMainlandPlan(f,two,placeDesign(two,g,blank%w,Math.floor(blank/w),2,w,h),defs),null);
  const offset=mainlandFrameOffset(f,a.grid);assert.equal(resolveMainlandDesign(f,a.x,a.y,shape).x,a.x-offset.x);
  const boundaryShape={width:2,height:1,cellCount:2,runs:[{x:0,y:0,width:2}],path:'M0 0h2v1H0Z'};

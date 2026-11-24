@@ -76,7 +76,7 @@ export function serializeMainlandDesign(f:MainlandDesignFrame,t:DesignTimeline,d
  const text=JSON.stringify({schema:'wand.mainland-design@1',platform:'Steam',gameVersion:'1.26.2',areas:f.grids.map(g=>JSON.parse(serializeDesign({...emptyDesign(),snapshots:[groups.get(g.key)!]},g)))});
  if(text.length>DESIGN_FILE_LIMIT)throw Error('DESIGN_FILE_LIMIT');return text;
 }
-export function parseMainlandDesign(text:string,f:MainlandDesignFrame):DesignPlacement[]{
+export function parseMainlandDesign(text:string,f:MainlandDesignFrame,sourceAreas?:Map<number,string>):DesignPlacement[]{
  if(text.length>DESIGN_FILE_LIMIT)throw Error('DESIGN_FILE_LIMIT');
  const doc=JSON.parse(text);
  if(doc?.schema!=='wand.mainland-design@1'||doc.platform!=='Steam'||doc.gameVersion!=='1.26.2'||!Array.isArray(doc.areas)||doc.areas.length!==f.grids.length)throw Error('MAINLAND_DESIGN_INVALID');
@@ -87,8 +87,13 @@ export function parseMainlandDesign(text:string,f:MainlandDesignFrame):DesignPla
   const offset=mainlandFrameOffset(f,g);
   for(const p of parseDesign(JSON.stringify(matches[0]),g)){
    if(ids.has(p.id)||result.length>=DESIGN_LIMIT)throw Error('MAINLAND_DESIGN_LIMIT');
-   ids.add(p.id);result.push({...p,x:p.x+offset.x,y:p.y+offset.y});
+   ids.add(p.id);sourceAreas?.set(p.id,g.key);result.push({...p,x:p.x+offset.x,y:p.y+offset.y});
   }
  }
  return result;
+}
+
+export function mainlandImportMatches(f:MainlandDesignFrame,placements:readonly DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>,sourceAreas:ReadonlyMap<number,string>):boolean{
+ if(placements.length!==sourceAreas.size||!mainlandItemsValid(f,placements,defs))return false;
+ return placements.every(p=>{const shape=defs.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4];return !!shape&&resolveMainlandDesign(f,p.x,p.y,shape)?.grid.key===sourceAreas.get(p.id);});
 }

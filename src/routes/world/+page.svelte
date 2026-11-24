@@ -112,7 +112,7 @@
         if(value.requestId===shapeRequest){comparing=false;compareError='アイテム形状DBを読み込めませんでした。';}
       }
     };
-    worker.onerror=()=>{loading=false;comparing=false;error='ワールド処理を開始できませんでした。';};
+    worker.onerror=()=>{if(mainlandRequest){mainlandRequest=0;mainlandError=true;}loading=false;comparing=false;error='ワールド処理を開始できませんでした。';};
     indexRequest=++request;worker.postMessage({command:'open',requestId:indexRequest,base});
     return unwatch;
   });
