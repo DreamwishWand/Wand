@@ -328,3 +328,12 @@ test('copy/paste and cut preserve relative coordinates and orientations with ato
  const moved=transformDesignGroup(t,[1,2],defs,1,1,0,20,20);assert.deepEqual(currentDesign(moved).map(p=>[p.x,p.y]),[[2,3],[5,4]]);
  assert.deepEqual(currentDesign(travelDesign(moved,-1)),currentDesign(t));
 });
+
+import {savedShapesInRect} from '../src/lib/world/saved-shape-map.ts';
+test('marquee selects occupied runs even if the anchor is outside and excludes holes',()=>{
+ const shape={runs:[{x:0,y:0,width:2},{x:2,y:1,width:1}],width:3,height:2};
+ const o={localOrdinal:1,localGridOrdinal:1,x:4,y:5,shapeKey:'s'};
+ const map={objects:[o,{...o,localOrdinal:2,localGridOrdinal:2}],shapes:{s:shape}};
+ assert.deepEqual(savedShapesInRect(map,1,{x:6,y:6},{x:6,y:6}).map(o=>o.localOrdinal),[1]);
+ assert.deepEqual(savedShapesInRect(map,1,{x:4,y:6},{x:5,y:6}),[]);
+});

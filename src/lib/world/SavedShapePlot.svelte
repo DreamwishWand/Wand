@@ -14,7 +14,7 @@
   import {emptyWorldTimeline,currentWorldEdits,travelWorldTimeline,projectWorldEdits,stageWorldEdit,stageWorldGroupMove,groupTargets,WORLD_BATCH_LIMIT} from './saved-map-batch.ts';
   import {savedDraftOverlap,OVERLAP_COLORS} from './saved-draft-overlap.ts';
   import {CARDINAL_ORIENTATIONS,isCardinal,worldTransformEligible,worldMoveEligible,worldRotateEligible,draftSavedMapTransform,exclusiveAnchorClass,exclusiveAnchorConflict} from './saved-map-transform.ts';
-  import {savedGridObjects,savedShapesAt,visibleSavedObjects,type SavedShapeMap,type SavedShapeObject} from './saved-shape-map.ts';
+  import {savedGridObjects,savedShapesAt,savedShapesInRect,visibleSavedObjects,type SavedShapeMap,type SavedShapeObject} from './saved-shape-map.ts';
   import {MAP_LAYER_COLORS,MAP_LAYER_LABELS,mapPainterOrder,matchesSelectionLayer,type MapSelectionLayer} from './source-map-layers.ts';
   import {nativeActionBlocked} from './native-edit-restrictions.ts';
   import {sourceOrientationAngle,type SourceObjectShape} from './source-object-map.ts';
@@ -113,7 +113,7 @@
     if(busy||!worldShortcutTarget(event,root))return;
     const action=worldShortcut(event);if(!action)return;
     if(action==='undo'||action==='redo'){event.preventDefault();if(action==='undo'&&(placing||editPlan||pendingDraft)){if(groupMode){groupDX=0;groupDY=0;groupTurns=0;placing=false;hoverPoint=null;}else resetDraft(chosen);}else travel(action==='undo'?-1:1);return;}
-    if(action==='select-all'&&file){event.preventDefault();const ids=objects.filter(o=>worldMoveEligible(o)&&matchesSelectionLayer(o,layer)).map(o=>o.localOrdinal);if(ids.length>WORLD_BATCH_LIMIT){stageError='選択上限 '+WORLD_BATCH_LIMIT+'件';return;}cancelEdit();clearGroup();groupMode=true;selected=null;hits=[];groupIds=ids;return;}
+    if(action==='select-all'&&file){event.preventDefault();const ids=objects.filter(o=>worldMoveEligible(o)&&matchesSelectionLayer(o,layer)&&(!query.trim()||matchIds.has(o.localOrdinal))).map(o=>o.localOrdinal);if(ids.length>WORLD_BATCH_LIMIT){stageError='選択上限 '+WORLD_BATCH_LIMIT+'件';return;}cancelEdit();clearGroup();groupMode=true;selected=null;hits=[];groupIds=ids;return;}
     if(action==='zoom-in'||action==='zoom-out'||action==='fit'){event.preventDefault();if(action==='fit')resetCamera();else changeZoom(zoom*(action==='zoom-in'?2:.5));return;}
     if(event.ctrlKey||event.metaKey||event.altKey)return;
     if(action==='confirm'&&event.target instanceof HTMLElement&&event.target.closest('button:not(.plot)'))return;
@@ -306,8 +306,7 @@
     if(groupMode){
       if(rangeMode){
         if(!rangeStart){rangeStart=point;rangeEnd=point;return;}
-        const x=Math.min(rangeStart.x,point.x),y=Math.min(rangeStart.y,point.y),right=Math.max(rangeStart.x,point.x),bottom=Math.max(rangeStart.y,point.y);
-        const ids=objects.filter(o=>worldMoveEligible(o)&&matchesSelectionLayer(o,layer)&&o.x>=x&&o.x<=right&&o.y>=y&&o.y<=bottom).map(o=>o.localOrdinal);
+        const ids=savedShapesInRect(effectiveMap,activeOrdinal,rangeStart,point).filter(o=>worldMoveEligible(o)&&matchesSelectionLayer(o,layer)).map(o=>o.localOrdinal);
         const merged=[...new Set([...groupIds,...ids])];
         if(merged.length>WORLD_BATCH_LIMIT){stageError='選択上限 '+WORLD_BATCH_LIMIT+'件';}else{groupIds=merged;stageError='';}
         groupDX=0;groupDY=0;groupTurns=0;rangeMode=false;rangeStart=null;rangeEnd=null;cancelEdit();return;

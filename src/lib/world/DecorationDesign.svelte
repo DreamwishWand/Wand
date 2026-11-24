@@ -13,7 +13,7 @@
  import {emptyDesign,currentDesign,travelDesign,placeDesign,transformDesign,designCandidateValid,designShapeMap,serializeDesign,parseDesign,restoreDesign,designItemCounts,DESIGN_FILE_LIMIT,type DesignPlacement,type DesignCatalogItem,type DesignItemGeometry,type DesignTimeline} from './design-layout.ts';
  import {defaultMapCamera,maxMapZoom,zoomMapCamera,panMapCamera,mapCameraViewBox,mapViewportBounds,wheelMapCamera,createMapPanGesture} from './map-camera.ts';
  import {mapPainterOrder,MAP_LAYER_COLORS,MAP_LAYER_LABELS,matchesSelectionLayer,type MapSelectionLayer} from './source-map-layers.ts';
- import {savedShapesAt,visibleSavedObjects} from './saved-shape-map.ts';
+ import {savedShapesAt,savedShapesInRect,visibleSavedObjects} from './saved-shape-map.ts';
  import {nativeActionBlocked} from './native-edit-restrictions.ts';
  import {exclusiveAnchorClass} from './saved-map-transform.ts';
  export let active=false;
@@ -33,6 +33,10 @@
  const gesture=createMapPanGesture();
  let subscribed:Worker|null=null,lastGrid='';
  let paletteOpen=true,root:HTMLDivElement;
+ type Cell={x:number;y:number};
+ type DirectDrag={id:number;start:Cell;end:Cell;clientX:number;clientY:number;ids:number[];add:boolean;kind:'move'|'marquee';moved:boolean};
+ let direct:DirectDrag|null=null,suppressDirectClick=false,spacePan=false;
+ $: dragPlan=direct?.moved&&direct.kind==='move'?transformDesignGroup(timeline,direct.ids,definitions,direct.end.x-direct.start.x,direct.end.y-direct.start.y,0,width,height):null;
  let groupIds:number[]=[],clipboard:DesignClipItem[]=[],pasting:DesignClipItem[]=[],pasteRequest=0,pastePending:DesignClipItem[]=[],lastPoint:{x:number;y:number}|null=null;
  $: selectedIds=new Set(groupIds.length?groupIds:selected===null?[]:[selected]);
  let importInput:HTMLInputElement,showCounts=false,reading=false,importEpoch=0;
@@ -92,7 +96,7 @@
  }
  onDestroy(()=>subscribed?.removeEventListener('message',receive));
  $: if(grid?.key!==lastGrid){
-   lastGrid=grid?.key??'';groupIds=[];pasting=[];pastePending=[];pasteRequest=0;lastPoint=null;importEpoch++;reading=false;pendingImport=null;selected=null;placing=null;hover=null;moveMode=false;loadingShape=false;shapeId=0;error='';camera=defaultMapCamera();
+   lastGrid=grid?.key??'';direct=null;spacePan=false;groupIds=[];pasting=[];pastePending=[];pasteRequest=0;lastPoint=null;importEpoch++;reading=false;pendingImport=null;selected=null;placing=null;hover=null;moveMode=false;loadingShape=false;shapeId=0;error='';camera=defaultMapCamera();
  }
  $: if(active&&grid&&worker&&locale!==catalogLocale)requestCatalog(grid,locale,worker);
  function requestCatalog(g:PublicTerrainGridRef,language:WandLanguage,w:Worker){
@@ -174,7 +178,7 @@
    if(!grid||!next){error='配置範囲・編集制限・同種の道やフェンスの重複を確認してください。';return;}
    layouts={...layouts,[grid.key]:next};error='';
  }
- function cancel(){placing=null;moveMode=false;hover=null;shapeId=0;loadingShape=false;error='';pasting=[];pastePending=[];pasteRequest=0;}
+ function cancel(){direct=null;placing=null;moveMode=false;hover=null;shapeId=0;loadingShape=false;error='';pasting=[];pastePending=[];pasteRequest=0;}
  function travel(delta:-1|1){cancel();selected=null;groupIds=[];save(travelDesign(timeline,delta));}
  function rotate(delta:number){
    if(pasting.length)return;
@@ -206,6 +210,7 @@
    return x>=0&&y>=0&&x<width&&y<height?{x,y}:null;
  }
  function pick(e:MouseEvent){
+   if(suppressDirectClick){suppressDirectClick=false;return;}
    if(busyImport||gesture.consumeClick()||e.detail===0)return;
    const p=cell(e);if(!p)return;lastPoint=p;
    if(pasting.length){commitPaste(p.x,p.y);return;}
@@ -216,18 +221,53 @@
    }
    const hits=map?savedShapesAt(map,1,p.x,p.y):[];
    const ordered=mapPainterOrder(hits).reverse();
-   const id=ordered.find(o=>matchesSelectionLayer(o,layer))?.localOrdinal??ordered[0]?.localOrdinal??null;
+   const id=ordered.find(o=>matchesSelectionLayer(o,layer))?.localOrdinal??null;
    if((e.ctrlKey||e.metaKey||e.shiftKey)&&id!==null){
      const ids=new Set(selectedIds);if(ids.has(id))ids.delete(id);else ids.add(id);
      groupIds=[...ids];selected=null;
    }else{groupIds=[];selected=id;}
  }
+ function hitAt(p:Cell){
+   return map?mapPainterOrder(savedShapesAt(map,1,p.x,p.y)).reverse().find(o=>matchesSelectionLayer(o,layer)):undefined;
+ }
+ function startDirect(e:PointerEvent){
+   suppressDirectClick=false;
+   if(busyImport)return;
+   if(e.button===1||spacePan||e.pointerType==='touch'){gesture.begin(e,camera.zoom>1);return;}
+   if(e.button!==0||placing||moveMode||pasting.length||pasteRequest)return;
+   const p=cell(e);if(!p)return;
+   const hit=hitAt(p),add=e.ctrlKey||e.metaKey||e.shiftKey;
+   direct={id:e.pointerId,start:p,end:p,clientX:e.clientX,clientY:e.clientY,ids:hit?(selectedIds.has(hit.localOrdinal)?[...selectedIds]:[hit.localOrdinal]):[],kind:hit?'move':'marquee',add,moved:false};
+   if(add&&hit)direct=null; // modifier-click keeps its toggle behavior
+ }
  function follow(e:PointerEvent){
    const p=gesture.move(e,svg,extent,camera);if(p){camera=p;return;}
-   lastPoint=cell(e);if(placing||moveMode||pasting.length)hover=lastPoint;
+   lastPoint=cell(e);
+   if(direct?.id===e.pointerId){
+     if(!direct.moved&&Math.hypot(e.clientX-direct.clientX,e.clientY-direct.clientY)<5)return;
+     if(!direct.moved){try{(e.currentTarget as Element).setPointerCapture(e.pointerId);}catch{/* pointer ended */}}
+     if(lastPoint){direct={...direct,end:lastPoint,moved:true};e.preventDefault();}
+     return;
+   }
+   if(placing||moveMode||pasting.length)hover=lastPoint;
  }
+ function endDirect(e:PointerEvent,commit:boolean){
+   gesture.end(e);if(direct?.id!==e.pointerId)return;
+   const drag=direct;direct=null;
+   if(!drag.moved)return;suppressDirectClick=true;
+   if(!commit||!cell(e))return;
+   if(drag.kind==='marquee'){
+     const ids=map?savedShapesInRect(map,1,drag.start,drag.end).filter(o=>matchesSelectionLayer(o,layer)&&!nativeActionBlocked(o.editRestrictions,'select')).map(o=>o.localOrdinal):[];
+     groupIds=[...new Set([...(drag.add?[...selectedIds]:[]),...ids])];selected=null;return;
+   }
+   const dx=drag.end.x-drag.start.x,dy=drag.end.y-drag.start.y;
+   if(dx||dy){const next=transformDesignGroup(timeline,drag.ids,definitions,dx,dy,0,width,height);if(next){save(next);groupIds=drag.ids.length>1?drag.ids:[];selected=drag.ids.length===1?drag.ids[0]:null;}else save(null);}
+ }
+ function endSpace(e:KeyboardEvent){if(e.code==='Space')spacePan=false;}
+
  function keys(e:KeyboardEvent){
    if(!active||busyImport||!worldShortcutTarget(e,root))return;
+   if(e.code==='Space'&&e.target instanceof HTMLElement&&e.target.closest('.design-plot')){e.preventDefault();spacePan=true;return;}
    const action=worldShortcut(e);if(!action)return;
    if(action==='undo'||action==='redo'){e.preventDefault();travel(action==='undo'?-1:1);return;}
    if(action==='copy'||action==='cut'){
@@ -236,7 +276,7 @@
    }
    if(action==='paste'){if(clipboard.length){e.preventDefault();beginPaste(clipboard);}return;}
    if(action==='duplicate'){if(selectedIds.size){e.preventDefault();duplicate();}return;}
-   if(action==='select-all'){e.preventDefault();cancel();selected=null;groupIds=placements.filter(p=>!nativeActionBlocked(definitions.get(p.itemId)?.editRestrictions,'select')).map(p=>p.id);return;}
+   if(action==='select-all'){e.preventDefault();cancel();selected=null;groupIds=objects.filter(o=>matchesSelectionLayer(o,layer)&&!nativeActionBlocked(o.editRestrictions,'select')).map(o=>o.localOrdinal);return;}
    if(action==='cancel'){e.preventDefault();cancel();selected=null;groupIds=[];return;}
    if(action==='confirm'){if(e.target instanceof HTMLElement&&e.target.closest('button:not(.design-plot)'))return;if(pasting.length&&hover){e.preventDefault();commitPaste(hover.x,hover.y);}else if(placing&&hover){e.preventDefault();save(placeDesign(timeline,placing,hover.x,hover.y,orientation,width,height));}return;}
    if(action==='zoom-in'||action==='zoom-out'||action==='fit'){e.preventDefault();camera=action==='fit'?defaultMapCamera():zoomMapCamera(camera,camera.zoom*(action==='zoom-in'?2:.5),maxZoom);return;}
@@ -246,12 +286,12 @@
  }
  function more(e:Event){const el=e.currentTarget as HTMLElement;if(el.scrollTop+el.clientHeight>=el.scrollHeight-160)limit=Math.min(filtered.length,limit+80);}
 </script>
-<svelte:window on:keydown={keys}/>
+<svelte:window on:keydown={keys} on:keyup={endSpace} on:blur={()=>{spacePan=false;direct=null;}}/>
 {#if active&&grid&&raster}
  <div class="design-workspace" bind:this={root}>
   <aside aria-label="配置する家具" hidden={!paletteOpen}>
    <input type="search" aria-label="家具を検索" placeholder="家具を検索" bind:value={query} on:input={()=>limit=80}/>
-   <select aria-label="配置カテゴリ" bind:value={layer} on:change={()=>limit=80}>
+   <select aria-label="配置カテゴリ" bind:value={layer} on:change={()=>{limit=80;selected=null;groupIds=[];}}>
     {#each ['all','furniture','surface','landscape','ground','fence'] as l}<option value={l}>{MAP_LAYER_LABELS[l as MapSelectionLayer]}</option>{/each}
    </select>
    {#if catalogLoading}<p role="status">家具を読み込み中…</p>{:else if catalogError}<p role="alert">{catalogError}</p><button type="button" on:click={()=>worker&&grid&&requestCatalog(grid,locale,worker)}>再読み込み</button>{/if}
@@ -286,8 +326,8 @@
    {#if error}<p role="alert">{error}</p>{/if}</div>
    <div class="design-map-frame"><button class="design-plot" type="button" aria-label="装飾設計マップ" on:click={pick}
     on:wheel|nonpassive={e=>camera=wheelMapCamera(e,svg,extent,camera,maxZoom)}
-    on:pointerdown={e=>gesture.begin(e,camera.zoom>1&&(!placing&&!moveMode&&!pasting.length||e.shiftKey||e.button===1))}
-    on:pointermove={follow} on:pointerup={e=>gesture.end(e)} on:pointercancel={e=>gesture.end(e)} on:pointerleave={()=>{gesture.leave();hover=null;}}>
+    on:pointerdown={startDirect}
+    on:pointermove={follow} on:pointerup={e=>endDirect(e,true)} on:pointercancel={e=>endDirect(e,false)} on:pointerleave={()=>{gesture.leave();hover=null;if(direct&&!direct.moved)direct=null;}}>
     <svg bind:this={svg} {viewBox} aria-hidden="true">
      <defs><pattern id="design-grid" width="1" height="1" patternUnits="userSpaceOnUse"><path d="M1 0H0V1" stroke="#9da9b4" stroke-opacity=".38" stroke-width=".05" fill="none"/></pattern></defs>
      <rect width={width} height={height} fill="#27313a"/>
@@ -297,6 +337,14 @@
       {@const shape=o.shapeKey?map?.shapes[o.shapeKey]:null}
       {#if shape}<path class="design-object" data-design-id={o.localOrdinal} transform={'translate('+o.x+' '+o.y+')'} d={shape.path} fill={MAP_LAYER_COLORS[o.layer]} fill-opacity={selectedIds.has(o.localOrdinal)?.86:.65} stroke={selectedIds.has(o.localOrdinal)?'#fff':MAP_LAYER_COLORS[o.layer]} stroke-width="1" vector-effect="non-scaling-stroke"/>{/if}
      {/each}
+     {#if direct?.moved&&direct.kind==='marquee'}
+      <rect class="design-marquee" x={Math.min(direct.start.x,direct.end.x)} y={Math.min(direct.start.y,direct.end.y)} width={Math.abs(direct.end.x-direct.start.x)+1} height={Math.abs(direct.end.y-direct.start.y)+1} fill="#4bddcd" fill-opacity=".16" stroke="#4bddcd" vector-effect="non-scaling-stroke"/>
+     {:else if direct?.moved&&direct.kind==='move'}
+      {#each objects.filter(o=>direct?.ids.includes(o.localOrdinal)) as o (o.localOrdinal)}
+       {@const shape=o.shapeKey?map?.shapes[o.shapeKey]:null}
+       {#if shape}<path class="design-drag-ghost" d={shape.path} transform={'translate('+(o.x+direct.end.x-direct.start.x)+' '+(o.y+direct.end.y-direct.start.y)+')'} fill={dragPlan?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}
+      {/each}
+     {/if}
      {#if hover&&pasting.length}{#each pasting as p,i}{@const shape=definitions.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4]}{#if shape}<path class="design-paste-ghost" d={shape.path} transform={'translate('+(hover.x+p.dx)+' '+(hover.y+p.dy)+')'} fill={pasteValid?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}{/each}{/if}
      {#if hover&&ghostShape}<path class="design-ghost" d={ghostShape.path} transform={'translate('+hover.x+' '+hover.y+')'} fill={ghostValid?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}
      {#each warnings as run}<rect x={run.x} y={run.y} width={run.width} height="1" fill="#ef5350" fill-opacity=".6"/>{/each}
@@ -335,7 +383,7 @@
  .design-item img{width:56px;height:56px;object-fit:contain}
  .design-controls,.design-status{display:flex;align-items:center;flex-wrap:wrap;gap:5px}
  .design-map-frame{flex:1 1 auto;min-height:0;min-width:0;position:relative;overflow:hidden;border-radius:5px}.design-plot{padding:0;overflow:hidden;display:block;cursor:crosshair;touch-action:none;width:100%;height:100%;background:#27313a}.tool-icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;vertical-align:middle}
- .design-plot svg{display:block;width:100%;height:100%}
+ .design-plot svg{display:block;width:100%;height:100%}.design-marquee,.design-drag-ghost{pointer-events:none}
  small,.design-status{font-size:12px;color:var(--wand-muted)}
  @media(max-width:700px){.design-workspace{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(0,2fr)}.design-item img{width:44px;height:44px}}
  .design-workspace,.design-map-side,.design-map-frame{position:absolute;inset:0;display:block;min-height:0;min-width:0;overflow:hidden;border-radius:0}.design-workspace{isolation:isolate}

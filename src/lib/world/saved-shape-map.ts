@@ -81,3 +81,12 @@ export function visibleSavedObjects(objects:readonly SavedShapeObject[],shapes:S
     return o.x<right&&o.y<bottom&&o.x+(shape?.width??1)>left&&o.y+(shape?.height??1)>top;
   });
 }
+
+/** Select by intersection with real occupied cells, not only the anchor. */
+export function savedShapesInRect(map:SavedShapeMap,ordinal:number,a:{x:number;y:number},b:{x:number;y:number}):SavedShapeObject[]{
+ const left=Math.min(a.x,b.x),right=Math.max(a.x,b.x),top=Math.min(a.y,b.y),bottom=Math.max(a.y,b.y);
+ return savedGridObjects(map,ordinal).filter(o=>{
+  const shape=o.shapeKey?map.shapes[o.shapeKey]:null;
+  return shape?shape.runs.some(r=>o.y+r.y>=top&&o.y+r.y<=bottom&&o.x+r.x<=right&&o.x+r.x+r.width-1>=left):o.x>=left&&o.x<=right&&o.y>=top&&o.y<=bottom;
+ });
+}

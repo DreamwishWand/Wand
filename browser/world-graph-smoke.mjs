@@ -1091,8 +1091,17 @@ try{
   await page.keyboard.press('Meta+z');
   assert.equal(await design.locator('.design-object').count(),2);
   await page.keyboard.press('Control+Shift+z');
+  assert.equal(await design.locator('.design-object').count(),0);
   await page.keyboard.press('Meta+z');
+  assert.equal(await design.locator('.design-object').count(),2);
+  await page.keyboard.press('Control+z');
   assert.equal(await design.locator('.design-object').count(),1);
+  const designScreen=async(x,y)=>designSvg.evaluate((svg,xy)=>{const p=new DOMPoint(...xy).matrixTransform(svg.getScreenCTM());return {x:p.x,y:p.y};},[x,y]);
+  const from=await designScreen(10.5,10.5),to=await designScreen(14.5,13.5);
+  await page.mouse.move(from.x,from.y);await page.mouse.down();await page.mouse.move(to.x,to.y,{steps:5});await page.mouse.up();
+  assert.equal(await design.locator('.design-object').first().getAttribute('transform'),'translate(14 13)');
+  await page.keyboard.press('Control+z');
+  assert.equal(await design.locator('.design-object').first().getAttribute('transform'),'translate(10 10)');
   await publicWorld.getByLabel('エリア',{exact:true}).selectOption({label:'Plaza'});
   await design.locator('.design-plot').waitFor({timeout:20000});
   assert.equal(await design.locator('.design-object').count(),0);
@@ -1161,12 +1170,19 @@ try{
   const plotSvg=publicPlot.locator('.plot > svg');
   async function groupClick(x,y){
     const p=await plotSvg.evaluate((svg,xy)=>{const pt=new DOMPoint(xy[0],xy[1]).matrixTransform(svg.getScreenCTM());return {x:pt.x,y:pt.y};},[x,y]);
+    assert.ok(await plotSvg.evaluate((svg,p)=>svg.parentElement.contains(document.elementFromPoint(p.x,p.y)),p),'range selection point must be reachable on map');
     await page.mouse.click(p.x,p.y);
   }
   await publicPlot.getByRole('button',{name:'検索・レイヤー'}).click();
   await publicPlot.getByRole('button',{name:'編集パネル'}).click();
+  await publicWorld.getByRole('button',{name:'ワールド選択',exact:true}).click();
+  await publicPlot.getByRole('button',{name:'全体表示',exact:true}).click();
+  await publicPlot.getByRole('button',{name:'拡大',exact:true}).click();
+  await publicPlot.getByRole('button',{name:'拡大',exact:true}).click();
+  for(let i=0;i<4;i++){await publicPlot.getByRole('button',{name:'左へ移動',exact:true}).click();await publicPlot.getByRole('button',{name:'上へ移動',exact:true}).click();}
   await groupClick(3.5,4.5);
   await groupClick(10.5,6.5);
+  await publicWorld.getByRole('button',{name:'ワールド選択',exact:true}).click();
   await publicPlot.getByRole('button',{name:'検索・レイヤー'}).click();
   await publicPlot.getByRole('button',{name:'編集パネル'}).click();
   assert.equal(await publicPlot.locator('.group-selected').count(),2);
