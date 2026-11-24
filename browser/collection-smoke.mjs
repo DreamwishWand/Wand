@@ -467,50 +467,34 @@ try{
     'foraging','fish','gems','timebending','memories','board-game','snippets',
     'lorekeeper-tales','quest-puzzles','exhibition'
   ]);
-  const appearance=page.locator('[data-top-category="appearance"]');
-  await appearance.click();
-  assert.equal(await page.locator('.collection-native-subtype').filter({hasText:'口ひげ'}).count(),1);
-  assert.equal(await page.locator('.collection-native-subtype').filter({hasText:'あごひげ'}).count(),1);
-  await returnRoot();
-  for(const [parent,selector,count,code] of [
-    ['meals',null,'618',3],
-    ['ingredients',null,'366',null],
-    ['fish',null,'103',10],
-    ['roads-fences','[data-native-subtype="Furniture:7"]','319',7],
-    ['appearance','[data-native-subtype="Clothing:5"]','114',5],
-    ['interior','[data-native-subtype="Trimming:0"]','218',0]
-  ]){
-    await page.locator(`[data-top-category="${parent}"]`).click();
-    if(selector)await page.locator(selector).click();
+  const allScope=buildWorldBrowseIndex(completeIndex).get('');
+  for(const parent of ['furniture','clothing','appearance','meals','ingredients','fish','roads-fences','interior','mounts','characters','crafting']){
+    const root=page.locator(`[data-top-category="${parent}"]`);
+    const progress=root.locator('.collection-category-progress');
+    assert.equal(Number(await progress.getAttribute('data-progress-total')),allScope.progressTotals.get(parent));
+    assert.equal(Number(await progress.getAttribute('data-progress-owned')),0);
+    await root.click();
     await page.locator('.item-card').first().waitFor({timeout:12000});
+    assert.equal(await page.locator('.collection-native-subtype').count(),0,'one click opens actual items');
     const rootIds=completeIndex.itemsByRoot.get(parent)??[];
-    const expectedIds=selector?rootIds.filter(id=>{
-      const native=completeIndex.nativeSubtypeByItem.get(id);
-      return native&&native.nativeType+':'+native.code===selector.split('"')[1];
-    }):rootIds;
-    assert.ok((await page.locator('.result-count').innerText()).includes(expectedIds.length.toLocaleString('ja')));
+    assert.ok((await page.locator('.result-count').innerText()).includes(rootIds.length.toLocaleString('ja')));
     const id=Number(await page.locator('.item-card').first().getAttribute('data-item-id'));
-    assert.ok(expectedIds.includes(id));
-    if(selector){
-      await page.locator('.breadcrumbs button').nth(1).click();
-      await page.locator(selector).waitFor();
-    }
+    assert.ok(rootIds.includes(id));
+    if(['furniture','clothing','ingredients','crafting','mounts'].includes(parent))
+      assert.ok(await page.locator('.collection-item-universe-heading').count()>0,'inline category-specific group headings');
     await returnRoot();
   }
-  await page.locator('[data-top-category="furniture"]').click();
-  const furnitureKinds=page.locator('[data-native-subtype^="furniture-kind:"]');
-  assert.ok(await furnitureKinds.count()>5,'furniture uses source-backed detailed categories');
-  assert.equal(await page.locator('[data-native-subtype="Furniture:0"]').count(),0);
+  const furnitureCard=page.locator('[data-top-category="furniture"]');
+  await furnitureCard.click();
+  await page.locator('.item-state-toggle').first().click();
+  await page.waitForFunction(()=>document.querySelector('.item-state-toggle')?.classList.contains('owned'));
   await returnRoot();
-  await page.locator('[data-top-category="mounts"]').click();
-  assert.ok(await page.locator('[data-native-subtype="mount:base"]').count());
-  assert.ok(await page.locator('[data-native-subtype="mount:skin"]').count());
-  assert.ok(await page.locator('[data-native-subtype="mount:gear"]').count());
+  assert.equal(await furnitureCard.locator('.collection-category-progress').getAttribute('data-progress-owned'),'1');
+  await furnitureCard.click();
+  await page.locator('.item-state-toggle').first().click();
+  await page.waitForFunction(()=>!document.querySelector('.item-state-toggle')?.classList.contains('owned'));
   await returnRoot();
-  await page.locator('[data-top-category="characters"]').click();
-  await page.locator('.item-card').first().waitFor();
-  assert.equal(await page.locator('.collection-native-subtype').count(),0);
-  await returnRoot();
+  assert.equal(await furnitureCard.locator('.collection-category-progress').getAttribute('data-progress-owned'),'0');
   assert.equal(await page.locator('[data-top-category="buildings"]').isDisabled(),
     !(completeIndex.itemsByRoot.get('buildings')?.length));
   // A failed v3 source asset must fail closed; reloading retries verified data.
