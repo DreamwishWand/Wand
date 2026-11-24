@@ -107,3 +107,78 @@ test('complete source shard and browse asset digest mismatches fail closed',asyn
   await assert.rejects(m.getCollectionFacets(),/SHA_MISMATCH/);
   await assert.rejects(m.getItem(2130000001),/SHA_MISMATCH/);
 });
+
+
+test('canonical fields support selective access, sparse values and reverse lookup without row shards',async()=>{
+  const {fetcher,requests}=site();
+  const m=await openPublicItemMaster('/Wand',fetcher,{scope:'complete'});
+  const catalog=await m.getFieldCatalog();
+  assert(catalog.some(x=>x.field==='source.GridAreaData'));
+  assert(catalog.some(x=>x.field==='source.Ingredients'));
+  assert(catalog.some(x=>x.field==='source.Description'));
+  assert.equal(catalog.find(x=>x.field==='itemId').count,m.release.count);
+  const fields=['names.ja','iconGuid','source.GridAreaData'];
+  const values=await m.getItemFields([40005160,2130000001,99999999,40005160],fields);
+  assert.equal(values[0].values['names.ja'],'ガラスの靴');
+  assert.equal(values[0].values.iconGuid,'ee85e95b0e61be642af03833a4942ae7');
+  assert.equal(values[0].values['source.GridAreaData'].SizeX,1);
+  assert.equal(values[1].values.iconGuid,null);
+  assert(!Object.hasOwn(values[1].values,'source.GridAreaData'));
+  assert.equal(values[2],null);
+  assert.equal(values[3],values[0]);
+  assert(Object.isFrozen(values[0].values));
+  assert(Object.isFrozen(values[0].values['source.GridAreaData']));
+  assert(!requests.some(x=>x.includes('/id/')||x.includes('/names.en/')||
+    x.includes('/source.Ingredients/')||x.includes('/text/')));
+  const grids=await m.findItemIdsByField('source.GridAreaData',{kind:'present'});
+  assert.equal(grids.length,11325);
+  const furniture=await m.findItemIdsByField('nativeCategory',{kind:'equals',value:'Furniture'});
+  assert(furniture.includes(40005160));
+  const universe=await m.findItemIdsByField('universeTagIds',{kind:'contains',value:2000500017});
+  assert(universe.includes(20300002));
+  const missing=await m.getItemFields([2130000001],[]);
+  assert.equal(missing[0].itemId,2130000001);
+  assert.deepEqual(Object.keys(missing[0].values),[]);
+  await assert.rejects(m.getFieldRows('unknownField'),/UNKNOWN_FIELD/);
+  await assert.rejects(m.getFieldRows('../index'),/INVALID_NAME/);
+  assert(!requests.some(x=>x.includes('/id/')));
+});
+
+test('field columns equal canonical values for source fields, localized names and IDs',async()=>{
+  const {fetcher}=site();
+  const m=await openPublicItemMaster('/Wand',fetcher,{scope:'complete'});
+  const all=await m.getFieldRows('itemId');
+  assert.equal(all.length,m.release.count);
+  const ids=[2050300095,40005160,30000031,130000387,2130000001];
+  const rows=await m.getItems(ids);
+  const fields=['names.en','nativeCategory','artwork.maskGuid','source.Ingredients',
+    'source.Description','source.GridAreaData','universeTagIds','sourceFrame','observedFields'];
+  const projections=await m.getItemFields(ids,fields);
+  for(let i=0;i<ids.length;i++){
+    const expected=rows[i],values=projections[i].values;
+    for(const field of fields){
+      const [group,key]=field.split('.');
+      const value=group==='source'?(expected.sourceAttributes?.[key]??expected.nativeProperties[key]):
+        key?expected[group]?.[key]:expected[group];
+      assert.equal(Object.hasOwn(values,field),value!==undefined,field);
+      if(value!==undefined)assert.deepEqual(values[field],value,field);
+    }
+  }
+});
+
+test('field column integrity failure rejects and retries without falling back to full rows',async()=>{
+  const {fetcher,requests}=site();
+  let failed=false;
+  const tamper=async url=>{
+    const response=await fetcher(url);
+    if(failed||!url.includes('/fields/names.ja/'))return response;
+    failed=true;
+    const bytes=new Uint8Array(await response.arrayBuffer());
+    bytes[0]^=1;
+    return new Response(bytes);
+  };
+  const m=await openPublicItemMaster('/Wand',tamper,{scope:'complete'});
+  await assert.rejects(m.getItemFields([40005160],['names.ja']),/SHA_MISMATCH/);
+  assert.equal((await m.getItemFields([40005160],['names.ja']))[0].values['names.ja'],'ガラスの靴');
+  assert(!requests.some(x=>x.includes('/id/')));
+});

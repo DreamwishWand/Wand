@@ -1431,6 +1431,7 @@
               layoutId:selectedLayout.layoutId,nativeGridId:selectedGrid.gridIdNative,
               gridDataPath:selectedGrid.gridDataPath,sizeX:selectedGrid.sizeX,sizeY:selectedGrid.sizeY}:null}
           raster={activeTerrainRaster} candidates={floorWindowResult}
+          selectedItemId={selectedFloorItem?.itemId??null} orientationCode={floorOrientationCode}
           bind:active={mediaMapActive} canNavigate={canNavigateTerrainRaster}
           onNavigate={jumpToTerrainRasterCell} onInspect={inspectFloorLayerAt}/>
         {#if activeTerrainRaster&&!mediaMapActive}

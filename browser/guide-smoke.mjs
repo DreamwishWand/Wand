@@ -173,6 +173,13 @@ try {
   await direct.goto(url+'?quest=2070000620',{waitUntil:'domcontentloaded'});
   await direct.locator('.detail .step').first().waitFor({timeout:20000});
   assert.match(await direct.locator('.detail-header').innerText(),/ドリームライトバレーへようこそ/);
+  const questHelp=direct.locator('.guide-community');
+  assert.equal(await questHelp.getAttribute('data-subject-kind'),'quest');
+  assert.equal(await questHelp.getAttribute('data-subject-id'),'2070000620');
+  assert.equal(await questHelp.locator('button:disabled').count(),3);
+  assert.equal(await questHelp.locator('a').count(),0);
+  assert.match(await questHelp.innerText(),/準備中/);
+
   assert.equal(await direct.locator('.quest-permalink').getAttribute('href'),'/Wand/guide/quests/?quest=2070000620');
   assert.equal(await direct.locator('.detail .step').count(),1,'one step initially visible to avoid wall of text');
   assert.match(await direct.locator('.detail .step h3').innerText(),/ステップ 1/);
@@ -457,6 +464,40 @@ try {
   await hub.addInitScript(()=>{Date.now=()=>Date.parse('2026-11-22T12:00:00Z');});
   await hub.goto('http://127.0.0.1:4177/Wand/guide/',{waitUntil:'domcontentloaded'});
   await hub.locator('.timeline-row').first().waitFor({timeout:20000});
+  // Repeated clicks at the original pointer coordinates must keep working
+  // across month/year transitions and different date text lengths.
+  for(const width of [1280,800,390,320]){
+    await hub.setViewportSize({width,height:844});
+    await hub.locator('.today-button').click();
+    const previous=hub.locator('.nav-arrow.previous');
+    const next=hub.locator('.nav-arrow.next');
+    const before=await previous.boundingBox();
+    const after=await next.boundingBox();
+    assert(before&&after);
+    const checkPosition=async()=>{
+      for(const [locator,expected] of [[previous,before],[next,after]]){
+        const current=await locator.boundingBox();
+        assert(current&&Math.abs(current.x-expected.x)<=1&&Math.abs(current.y-expected.y)<=1,
+          'calendar arrow shifted at viewport '+width);
+      }
+    };
+    const initial=await hub.locator('.range').innerText();
+    for(let i=0;i<4;i++){
+      const prior=await hub.locator('.range').innerText();
+      await hub.mouse.click(before.x+before.width/2,before.y+before.height/2);
+      await hub.waitForFunction(old=>document.querySelector('.range')?.textContent?.trim()!==old,prior);
+      await checkPosition();
+    }
+    for(let i=0;i<4;i++){
+      const prior=await hub.locator('.range').innerText();
+      await hub.mouse.click(after.x+after.width/2,after.y+after.height/2);
+      await hub.waitForFunction(old=>document.querySelector('.range')?.textContent?.trim()!==old,prior);
+      await checkPosition();
+    }
+    assert.equal(await hub.locator('.range').innerText(),initial);
+  }
+  await hub.setViewportSize({width:390,height:844});
+  await hub.locator('.today-button').click();
   const news=hub.locator('.guide-announcements');
   assert.match(await news.innerText(),/最新情報/);
   assert.match(await news.innerText(),/準備中/);
@@ -982,7 +1023,7 @@ try {
   assert.match(await star.locator('.reward-entry .reward-name').innerText(),/Lieutenant Monkey/);
   await rewardTier.selectOption('free');
   assert.equal(await star.locator('.reward-entry').count(),0,'free tier excludes premium monkey');
-  assert.match(await star.getByRole('status').innerText(),/一致する報酬はありません/);
+  assert.match(await star.getByRole('status').filter({hasText:'一致する報酬はありません。'}).innerText(),/一致する報酬はありません/);
   await rewardTier.selectOption('premium');
   assert.equal(await star.locator('.reward-entry').count(),1,'premium tier shows premium monkey');
   await rewardSearch.fill('80100000');

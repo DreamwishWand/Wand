@@ -13,6 +13,8 @@ import {
   type ItemMasterOpenOptions,
   type CompleteItemMasterRecord,
   type PublicCompleteItemMaster,
+  type ItemMasterLocale,
+  type ItemLocalizedTextRecord,
 } from './public-item-master.ts';
 import {
   loadDb01ItemAcquisitionHandoff,
@@ -51,6 +53,11 @@ export interface PublicItemDetailsWithSources extends PublicItemDetails {
 export interface PublicCompleteItemDetails extends Omit<PublicItemDetailsWithSources,'definition'> {
   readonly definition: Readonly<CompleteItemMasterRecord>;
 }
+/** Locale-specific original text, resolved without loading other languages. */
+export interface PublicLocalizedCompleteItemDetails extends PublicCompleteItemDetails {
+  readonly locale: ItemMasterLocale;
+  readonly localizedText: ItemLocalizedTextRecord;
+}
 export interface PublicItemDetailsClient {
   readonly contract: typeof PUBLIC_ITEM_DETAILS_CONTRACT;
   readonly release: ItemMasterRelease;
@@ -70,6 +77,9 @@ export interface PublicItemDetailsClient {
    * player-facing name. Existing v1/v2 readers are compatibility views. */
   getCompleteItem(itemId:number):Promise<Readonly<PublicCompleteItemDetails>|null>;
   getCompleteItems(itemIds:readonly number[]):Promise<readonly (Readonly<PublicCompleteItemDetails>|null)[]>;
+  /** Opt-in source text for detail panels; null text values retain their original keys. */
+  getLocalizedCompleteItem(itemId:number,locale:ItemMasterLocale):Promise<Readonly<PublicLocalizedCompleteItemDetails>|null>;
+  getLocalizedCompleteItems(itemIds:readonly number[],locale:ItemMasterLocale):Promise<readonly (Readonly<PublicLocalizedCompleteItemDetails>|null)[]>;
   getItemWithSources(itemId: number):
     Promise<Readonly<PublicItemDetailsWithSources> | null>;
   getItemsWithSources(itemIds: readonly number[]):
@@ -126,6 +136,22 @@ export async function openPublicItemDetails(
       'ACQUISITION_SOURCE_CATEGORY_MISMATCH');
     return Object.freeze({itemId:definition.itemId,definition,acquisition,sourceRelations,
       currentAvailabilityVerified:false as const});
+  }
+  async function localizedCompleteItems(itemIds:readonly number[],locale:ItemMasterLocale):
+    Promise<readonly (Readonly<PublicLocalizedCompleteItemDetails>|null)[]> {
+    const reader=await complete();
+    const [definitions,texts]=await Promise.all([
+      reader.getItems(itemIds),reader.getLocalizedItemsText(itemIds,locale)
+    ]);
+    assert(definitions.length===texts.length,'LOCALIZED_ITEM_COUNT_MISMATCH');
+    if(!definitions.some(Boolean))return Object.freeze(definitions.map(()=>null));
+    const [origins,index]=await Promise.all([sidecar(),sources()]);
+    return Object.freeze(definitions.map((definition,i)=>{
+      const localizedText=texts[i];
+      assert((definition===null)===(localizedText===null),'LOCALIZED_ITEM_MISMATCH');
+      if(!definition||!localizedText)return null;
+      return Object.freeze({...combineComplete(definition,origins,index),locale,localizedText});
+    }));
   }
   function sidecar(): Promise<Db01ItemAcquisitionIndex> {
     if (sidecarTask) return sidecarTask;
@@ -230,6 +256,10 @@ export async function openPublicItemDetails(
       const [origins,index]=await Promise.all([sidecar(),sources()]);
       return definitions.map(definition=>definition?combineComplete(definition,origins,index):null);
     },
+    async getLocalizedCompleteItem(itemId:number,locale:ItemMasterLocale) {
+      return (await localizedCompleteItems([itemId],locale))[0]??null;
+    },
+    getLocalizedCompleteItems:localizedCompleteItems,
     async getItemWithSources(itemId: number) {
       const definition = await master.getItem(itemId);
       if (!definition) return null;

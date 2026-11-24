@@ -8,6 +8,9 @@
  * Original tags are facts; Collection source candidates are NOT proof of
  * visible game-screen membership or availability.
  */
+import {createItemFieldReader,type ItemFieldReader} from './item-field-reader.ts';
+export type {ItemFieldValue,ItemFieldScalar,ItemFieldInfo,ItemFieldProjection,ItemFieldMatch} from './item-field-reader.ts';
+
 export const ITEM_MASTER_RELEASE = 'steam-1.26.2-item-id-master-v1' as const;
 export const ITEM_MASTER_INDEX_PATH =
   'ddv/item-master/steam-1.26.2/index.json' as const;
@@ -30,6 +33,8 @@ export interface ItemMasterCompleteRelease {
   readonly count: number;
   readonly archiveSha256: string;
   readonly parts: number;
+  readonly attributesSha256?: string;
+  readonly localization?: Readonly<{parts:number;sha256:string}>;
 }
 export interface ItemMasterExpandedRelease {
   readonly release: string;
@@ -113,6 +118,63 @@ export interface ItemMasterRecord {
 export type ItemDefinitionScope = 'source_candidate' | 'item_definition' | 'other_definition';
 /** Canonical source record, not necessarily an obtainable item. A null icon
  * or name is valid and does not prevent resolving the native source ID. */
+export type NativeSourceValue = number|boolean|string|readonly NativeSourceValue[]|NativeSourceObject;
+export interface NativeSourceObject {readonly [key:string]:NativeSourceValue|undefined}
+export interface NativeSourceAttributes extends NativeSourceObject {
+  readonly GridAreaData?: Readonly<{
+    SizeX?:number; SizeY?:number; Layers?:readonly number[];
+    AcceptedFloorTypesFlag?:number; StrideOverride?:number;
+    _unresolvedFields?:readonly number[];
+  }>;
+  readonly PriceOverride?: Readonly<{
+    Currency?:number; Price?:Readonly<{Id?:number;Amount?:number}>;
+    _unresolvedFields?:readonly number[];
+  }>;
+  readonly Result?: Readonly<{ItemID?:number;Amount?:number;_unresolvedFields?:readonly number[]}>;
+  readonly ResultItemID?: number;
+  readonly Ingredients?: readonly Readonly<{
+    ItemID?:number; Amount?:number; Any?:number;
+    ValidItemsList?:Readonly<{List?:readonly number[]}>;
+    TagsList?:Readonly<{List?:readonly number[]}>;
+    _unresolvedFields?:readonly number[];
+  }>[];
+  readonly Description?:string;
+  readonly DescriptionText?:string;
+  readonly DisplayName?:string;
+  readonly ManaRecovered?:number;
+  readonly CatalogVisibilityConditions?:NativeSourceObject;
+  readonly GridEditRestriction?:NativeSourceObject;
+  readonly AppearWhen?:NativeSourceObject;
+}
+export const ITEM_LOCALIZED_TEXT_FIELDS =
+  ['Description','DescriptionText','EvolvingDescription','PluralDisplayName'] as const;
+export type ItemLocalizedTextField = (typeof ITEM_LOCALIZED_TEXT_FIELDS)[number];
+export interface ItemLocalizedText {
+  readonly key: string;
+  /** Original text in the requested language. Missing keys are never guessed. */
+  readonly text: string|null;
+}
+export type ItemLocalizedTextRecord = Readonly<Partial<Record<ItemLocalizedTextField,Readonly<ItemLocalizedText>>>>;
+export interface ItemLocalizationCoverage {
+  readonly itemCount:number;
+  readonly keyCount:number;
+  readonly allLocalesKeyCount:number;
+  readonly fieldCounts:Readonly<Partial<Record<ItemLocalizedTextField,number>>>;
+  readonly localeCounts:Readonly<Record<ItemMasterLocale,number>>;
+  readonly evidence:Readonly<Record<ItemMasterLocale,Readonly<{
+    archiveSha256:string; members:Readonly<Record<string,string>>
+  }>>>;
+}
+export interface NativeSourceAttributeCoverage {
+  readonly itemCount:number;
+  readonly fieldCount:number;
+  readonly fieldOccurrences:number;
+  readonly fields:Readonly<Record<string,number>>;
+  readonly unmappedSourceClassCount:Readonly<Record<string,number>>;
+  readonly allOriginalFieldSemanticsVerified:false;
+  readonly gridLayerOccupancyVerified:false;
+  readonly runtimePriceVerified:false;
+}
 export interface CompleteItemMasterRecord extends Omit<ItemMasterRecord,
   'iconGuid'|'artwork'|'universeTagIds'|'universeSourceStatus'> {
   readonly iconGuid: string | null;
@@ -137,6 +199,10 @@ export interface CompleteItemMasterRecord extends Omit<ItemMasterRecord,
   /** Observed field number, wire type and occurrence count, including unknown fields. */
   readonly observedFields: readonly (readonly [number,number,number])[];
   readonly nativeProperties: Readonly<Record<string,number|boolean>>;
+  /** Additional explicitly present original fields; absence is not a default.
+   * Grid layer values do not establish occupancy, PriceOverride is not live pricing.
+   * _unresolvedFields lists nested field numbers not decoded. */
+  readonly sourceAttributes?: NativeSourceAttributes;
 }
 export interface ItemMasterAsset {
   readonly count: number;
@@ -191,6 +257,10 @@ export interface ItemMasterRelease {
   readonly count: number;
   readonly scope?: 'expanded'|'complete';
   readonly archiveSha256?: string;
+  readonly attributesSha256?: string;
+  readonly sourceAttributeCoverage?: NativeSourceAttributeCoverage;
+  readonly localizationSha256?: string;
+  readonly localizationCoverage?: ItemLocalizationCoverage;
   readonly sourceFilesVerified?: number;
   readonly sourceFilesSha256?: Readonly<Record<string,string>>;
   readonly sourceItemsSha256?: string;
@@ -233,10 +303,14 @@ export interface PublicItemMaster<T extends ItemMasterRecord|CompleteItemMasterR
   getItem(itemId: number): Promise<T | null>;
   getItems(itemIds: readonly number[]): Promise<(T | null)[]>;
 }
-export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemMasterRecord> {
+export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemMasterRecord>, ItemFieldReader {
   /** Collection-only projection; fetch neither all shards nor all languages. */
   getCollectionFacets(): Promise<CompleteItemMasterFacets>;
   getBrowseNames(locale: ItemMasterLocale): Promise<readonly (readonly [number,string])[]>;
+  /** Resolve description and other original text fields for one ItemID.
+   * Loads only the requested language, never the full eight-language corpus. */
+  getLocalizedItemText(itemId:number,locale:ItemMasterLocale):Promise<ItemLocalizedTextRecord|null>;
+  getLocalizedItemsText(itemIds:readonly number[],locale:ItemMasterLocale):Promise<readonly (ItemLocalizedTextRecord|null)[]>;
   getSourceRelations(): Promise<CompleteItemMasterRelations>;
 }
 const SHA = /^[0-9a-f]{64}$/;
@@ -276,6 +350,14 @@ function deepFreeze<T>(value:T):T {
   }
   return value;
 }
+function validSourceValue(v:unknown,depth=0):boolean{
+  if(depth>16)return false;
+  if(typeof v==='boolean'||typeof v==='string'||typeof v==='number'&&Number.isFinite(v))return true;
+  if(Array.isArray(v))return v.every(x=>validSourceValue(x,depth+1));
+  return isObject(v)&&Object.entries(v).every(([k,x])=>
+    /^[A-Za-z_][A-Za-z0-9_]*$/.test(k)&&!['__proto__','constructor','prototype'].includes(k)&&
+    validSourceValue(x,depth+1));
+}
 function validRecord(raw:unknown, bucket:string, complete:boolean): raw is ItemMasterRecord|CompleteItemMasterRecord {
   if (!isObject(raw) || !ID(raw.itemId) || pathFor(raw.itemId) !== bucket ||
       typeof raw.nativeCategory !== 'string' ||
@@ -314,6 +396,8 @@ function validRecord(raw:unknown, bucket:string, complete:boolean): raw is ItemM
     isObject(v)&&ID(v.setId)&&Number.isInteger(v.groupIndex)&&typeof v.evidence==='string');
   if(!links(raw.collectionSourceCandidates))return false;
   if(!complete)return true;
+  if(raw.sourceAttributes!==undefined&&(!isObject(raw.sourceAttributes)||
+    !validSourceValue(raw.sourceAttributes)))return false;
   const validIds=(v:unknown)=>Array.isArray(v)&&v.every(ID)&&new Set(v).size===v.length;
   if(!isObject(artwork)||!Object.values(artwork).every(v=>typeof v==='string'&&GUID.test(v))||
     !validIds(raw.universeTagIds)||!validIds(raw.universeDirectTagIds)||
@@ -407,6 +491,13 @@ export async function openPublicItemMaster(
           typeof c.archiveSha256==='string'&&SHA.test(c.archiveSha256)&&
           typeof c.parts==='number'&&Number.isSafeInteger(c.parts)&&c.parts>0&&c.parts<=100,
           'INVALID_COMPLETE_RELEASE');
+        assert(c.attributesSha256===undefined||
+          typeof c.attributesSha256==='string'&&SHA.test(c.attributesSha256),'INVALID_ATTRIBUTE_DIGEST');
+        if(c.localization!==undefined){
+          const l=c.localization;
+          assert(isObject(l)&&typeof l.parts==='number'&&Number.isSafeInteger(l.parts)&&l.parts>0&&l.parts<=100&&
+            typeof l.sha256==='string'&&SHA.test(l.sha256),'INVALID_LOCALIZATION_METADATA');
+        }
       }
       unique.add(entry.gameVersion);
     }
@@ -457,6 +548,17 @@ export async function openPublicItemMaster(
       release.sourceFilesVerified===Object.keys(release.sourceFilesSha256).length&&
       Object.values(release.sourceFilesSha256).every(v=>typeof v==='string'&&SHA.test(v)),
       'INVALID_COMPLETE_RELEASE');
+    assert((!selected||release.attributesSha256===selected.complete?.attributesSha256)&&
+      (release.attributesSha256===undefined||typeof release.attributesSha256==='string'&&
+        SHA.test(release.attributesSha256)&&isObject(release.sourceAttributeCoverage)&&
+        release.sourceAttributeCoverage.allOriginalFieldSemanticsVerified===false&&
+        release.sourceAttributeCoverage.gridLayerOccupancyVerified===false&&
+        release.sourceAttributeCoverage.runtimePriceVerified===false),'INVALID_ATTRIBUTE_RELEASE');
+    assert((!selected||release.localizationSha256===selected.complete?.localization?.sha256)&&
+      (release.localizationSha256===undefined||
+        typeof release.localizationSha256==='string'&&SHA.test(release.localizationSha256)&&
+        isObject(release.localizationCoverage)&&isObject(release.localizationCoverage.localeCounts)),
+      'INVALID_LOCALIZATION_RELEASE');
   }else assert(release.scope===undefined,'UNEXPECTED_EXPANDED_RELEASE');
   const source = release as unknown as ItemMasterRelease;
   // The caller may share this reader with Collection, Explorer and Save.
@@ -551,8 +653,58 @@ export async function openPublicItemMaster(
     }
   };
   if(scope!=='complete')return Object.freeze(common);
+  const localeCache=new Map<ItemMasterLocale,Promise<ReadonlyMap<string,string>>>();
+  async function localizedTable(locale:ItemMasterLocale):Promise<ReadonlyMap<string,string>>{
+    const cached=localeCache.get(locale);
+    if(cached)return cached;
+    const path='text/'+locale+'.json';
+    const task=(async()=>{
+      const v=await asset(path);
+      assert(isObject(v)&&v.schema==='wand.item-master.localized-text@1'&&v.locale===locale&&
+        Array.isArray(v.items)&&v.items.length===m.assets?.[path]?.count&&
+        v.items.length===m.localizationCoverage?.localeCounts[locale],'INVALID_LOCALIZED_TEXT');
+      const table=new Map<string,string>();
+      for(const pair of v.items){
+        assert(Array.isArray(pair)&&pair.length===2&&typeof pair[0]==='string'&&pair[0].length>0&&
+          typeof pair[1]==='string'&&pair[1].trim().length>0&&pair[1].length<=8192&&
+          !table.has(pair[0]),'INVALID_LOCALIZED_TEXT_ROW');
+        table.set(pair[0],pair[1]);
+      }
+      return table as ReadonlyMap<string,string>;
+    })();
+    localeCache.set(locale,task);
+    try{return await task;}catch(err){localeCache.delete(locale);throw err;}
+  }
+  const fieldReader=createItemFieldReader(m.count,m.assets,asset);
+  async function localizedItems(ids:readonly number[],locale:ItemMasterLocale):Promise<readonly (ItemLocalizedTextRecord|null)[]>{
+    assert(ITEM_MASTER_LOCALES.includes(locale),'INVALID_LOCALE');
+    // Resolve only original text keys and category, not unrelated definitions.
+    let keys: readonly (readonly (readonly [ItemLocalizedTextField,string])[]|null)[];
+    if(m.assets?.['fields/index.json']){
+      const fields=new Set((await fieldReader.getFieldCatalog()).map(x=>x.field));
+      const selected=ITEM_LOCALIZED_TEXT_FIELDS.filter(field=>fields.has('source.'+field));
+      const records=await fieldReader.getItemFields(ids,['nativeCategory',...selected.map(field=>'source.'+field)]);
+      keys=records.map(record=>record===null?null:
+        record.values.nativeCategory==='Dialogue'?[]:selected.flatMap(field=>{
+          const key=record.values['source.'+field];
+          return typeof key==='string'?[[field,key] as const]:[];
+        }));
+    }else{
+      const records=await common.getItems(ids) as (CompleteItemMasterRecord|null)[];
+      keys=records.map(record=>record===null?null:
+        record.nativeCategory==='Dialogue'?[]:ITEM_LOCALIZED_TEXT_FIELDS.flatMap(field=>{
+          const key=record.sourceAttributes?.[field];
+          return typeof key==='string'?[[field,key] as const]:[];
+        }));
+    }
+    const table=keys.some(row=>row!==null&&row.length>0)?await localizedTable(locale):null;
+    return Object.freeze(keys.map(row=>row===null?null:deepFreeze(Object.fromEntries(
+      row.map(([field,key])=>[field,{key,text:table?.get(key)??null}])
+    ))));
+  }
   return Object.freeze({
     ...common,
+    ...fieldReader,
     async getCollectionFacets():Promise<CompleteItemMasterFacets>{
       const value=await asset('collection-facets.json');
       assert(isObject(value)&&value.schema==='wand.collection.db01-complete-source-facets@1'&&
@@ -570,6 +722,10 @@ export async function openPublicItemMaster(
         'INVALID_BROWSE_NAMES');
       return value.items as (readonly [number,string])[];
     },
+    async getLocalizedItemText(id:number,locale:ItemMasterLocale):Promise<ItemLocalizedTextRecord|null>{
+      return (await localizedItems([id],locale))[0]??null;
+    },
+    getLocalizedItemsText:localizedItems,
     async getSourceRelations():Promise<CompleteItemMasterRelations>{
       const value=await asset('source-relations.json');
       assert(isObject(value)&&value.schema==='wand.item-master.complete-source-relations@1'&&

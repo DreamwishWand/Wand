@@ -33,15 +33,19 @@ const fail=()=>new TypeError('DB04_MEDIA_MAP_CALIBRATION_INVALID');
 export function projectGridEdge(m:Affine,x:number,y:number){
   return {x:m[0]*x+m[2]*y+m[4],y:m[1]*x+m[3]*y+m[5]};
 }
-export function imagePixelToGridCell(binding:GridMapBinding,px:number,py:number){
+/** Unclipped inverse for previews extending beyond the selected source Grid. */
+export function imagePixelToUnboundedGridCell(binding:GridMapBinding,px:number,py:number){
   if(!Number.isFinite(px)||!Number.isFinite(py))return null;
   const [a,b,c,d,e,f]=binding.gridToImage;
   const det=a*d-b*c;
   const x=(d*(px-e)-c*(py-f))/det;
   const y=(-b*(px-e)+a*(py-f))/det;
-  if(!Number.isFinite(x)||!Number.isFinite(y)||
-     x<0||y<0||x>=binding.sizeX||y>=binding.sizeY)return null;
+  if(!Number.isFinite(x)||!Number.isFinite(y)||Math.abs(x)>1e6||Math.abs(y)>1e6)return null;
   return {x:Math.floor(x),y:Math.floor(y)};
+}
+export function imagePixelToGridCell(binding:GridMapBinding,px:number,py:number){
+  const cell=imagePixelToUnboundedGridCell(binding,px,py);
+  return cell&&cell.x>=0&&cell.y>=0&&cell.x<binding.sizeX&&cell.y<binding.sizeY?cell:null;
 }
 export function parseMapCalibration(input:unknown):MapCalibration{
   if(!record(input)||input.schema!==MAP_CALIBRATION_SCHEMA||

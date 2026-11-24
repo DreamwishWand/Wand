@@ -21,6 +21,127 @@ const SUBMENUS=new Set([0,1,2,3,4,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]);
 const json=b=>Buffer.from(JSON.stringify(b)+'\n');
 const uniq=a=>[...new Set(a)].sort((a,b)=>a-b);
 function check(v,c){if(!v)throw Error('DB01_COMPLETE_MASTER_'+c)}
+function validAttribute(value,depth=0){
+  if(depth>16)return false;
+  if(typeof value==='boolean'||typeof value==='string'||typeof value==='number'&&Number.isFinite(value))return true;
+  if(Array.isArray(value))return value.every(v=>validAttribute(v,depth+1));
+  return value!==null&&typeof value==='object'&&Object.entries(value).every(([k,v])=>
+    /^[A-Za-z_][A-Za-z0-9_]*$/.test(k)&&!['__proto__','constructor','prototype'].includes(k)&&
+    validAttribute(v,depth+1));
+}
+function attachAttributes(project,e,version,source,byId){
+  if(e.attributesSha256===undefined)return undefined;
+  check(SHA.test(e.attributesSha256),'ATTRIBUTE_SHA_FORMAT');
+  const bytes=readFileSync(join(project,'data/ddv/item-master','source-attributes-steam-'+version+'.json.gz'));
+  check(hash(bytes)===e.attributesSha256,'ATTRIBUTE_SHA');
+  const a=JSON.parse(gunzipSync(bytes,{maxOutputLength:128*1024*1024}).toString('utf8'));
+  check(a.schema==='wand.item-master.source-attributes@1'&&a.release===e.release&&
+    a.gameVersion===version&&a.sourceItemsSha256===source.sourceItemsSha256&&
+    a.masterArchiveSha256===e.archiveSha256&&a.definitionCount===e.count&&
+    a.allOriginalFieldSemanticsVerified===false&&a.gridLayerOccupancyVerified===false&&
+    a.runtimePriceVerified===false&&Array.isArray(a.items)&&a.items.length===a.count,
+    'ATTRIBUTE_RELEASE');
+  const seen=new Set(),coverage=new Map();
+  for(const pair of a.items){
+    check(Array.isArray(pair)&&pair.length===2&&ID(pair[0])&&byId.has(pair[0])&&
+      !seen.has(pair[0])&&pair[1]&&typeof pair[1]==='object'&&!Array.isArray(pair[1])&&
+      Object.keys(pair[1]).length>0&&validAttribute(pair[1]),'ATTRIBUTE_ROW');
+    const [id,props]=pair;seen.add(id);
+    const r=byId.get(id);
+    check(r.sourceClass!==null&&Object.keys(props).every(k=>!Object.hasOwn(r.nativeProperties,k)),
+      'ATTRIBUTE_SCALAR_DUPLICATION');
+    r.sourceAttributes=props;
+    for(const k of Object.keys(props))coverage.set(k,(coverage.get(k)??0)+1);
+  }
+  check(Object.keys(a.coverage).length===coverage.size&&
+    [...coverage].every(([k,n])=>a.coverage[k]===n),'ATTRIBUTE_CENSUS');
+  return {itemCount:seen.size,fieldCount:coverage.size,
+    fieldOccurrences:[...coverage.values()].reduce((a,b)=>a+b,0),
+    fields:a.coverage,unmappedSourceClassCount:a.unmappedSourceClassCount,
+    allOriginalFieldSemanticsVerified:false,gridLayerOccupancyVerified:false,runtimePriceVerified:false};
+}
+const LOCALIZED_FIELDS=['Description','DescriptionText','EvolvingDescription','PluralDisplayName'];
+function loadLocalizations(project,e,version,source,byId){
+  if(e.localization===undefined)return undefined;
+  const config=e.localization;
+  check(SHA.test(config.sha256)&&Number.isSafeInteger(config.parts)&&config.parts>0&&config.parts<=100,'LOCALIZATION_METADATA');
+  const packed=Buffer.concat(Array.from({length:config.parts},(_,i)=>
+    readFileSync(join(project,'data/ddv/item-master','item-localizations-steam-'+version+'.json.gz.part'+i))));
+  check(hash(packed)===config.sha256,'LOCALIZATION_SHA');
+  const l=JSON.parse(gunzipSync(packed,{maxOutputLength:128*1024*1024}).toString('utf8'));
+  check(l.schema==='wand.item-master.localized-source@1'&&l.release===e.release&&
+    l.gameVersion===version&&l.sourceItemsSha256===source.sourceItemsSha256&&
+    l.masterArchiveSha256===e.archiveSha256&&l.attributesSha256===e.attributesSha256&&
+    Array.isArray(l.items)&&l.items.length===l.count,'LOCALIZATION_RELEASE');
+  const expected=new Map();
+  for(const row of byId.values()){
+    if(row.nativeCategory==='Dialogue')continue;
+    const fields=Object.fromEntries(LOCALIZED_FIELDS.filter(k=>typeof row.sourceAttributes?.[k]==='string')
+      .map(k=>[k,row.sourceAttributes[k]]));
+    if(Object.keys(fields).length)expected.set(row.itemId,fields);
+  }
+  const keys=new Set(),seen=new Set(),fieldCounts={};
+  for(const [id,fields] of l.items){
+    const actual=expected.get(id);
+    check(actual&&!seen.has(id)&&Object.keys(actual).length===Object.keys(fields).length&&
+      Object.entries(fields).every(([k,v])=>actual[k]===v),'LOCALIZATION_ITEM_LINK');
+    seen.add(id);
+    for(const [k,v] of Object.entries(fields)){keys.add(v);fieldCounts[k]=(fieldCounts[k]??0)+1;}
+  }
+  check(seen.size===expected.size&&keys.size===l.keyCount&&
+    Object.keys(fieldCounts).length===Object.keys(l.fieldCounts).length&&
+    Object.entries(fieldCounts).every(([k,v])=>l.fieldCounts[k]===v),'LOCALIZATION_LINK_CENSUS');
+  check(Object.keys(l.translations).length===LOCALES.length&&Object.keys(l.evidence).length===LOCALES.length,'LOCALIZATION_LOCALES');
+  for(const locale of LOCALES){
+    const values=l.translations[locale],ev=l.evidence[locale];
+    check(values&&ev&&SHA.test(ev.archiveSha256)&&Object.values(ev.members).every(v=>SHA.test(v))&&
+      Object.keys(values).length===l.localeCounts[locale]&&
+      Object.entries(values).every(([k,v])=>keys.has(k)&&typeof v==='string'&&v.trim().length>0&&v.length<=8192),
+      'LOCALIZATION_VALUE_'+locale);
+  }
+  const all=[...keys].filter(k=>LOCALES.every(locale=>Object.hasOwn(l.translations[locale],k))).length;
+  check(all===l.allLocalesKeyCount,'LOCALIZATION_ALL_LOCALES');
+  return {translations:l.translations,coverage:{itemCount:l.count,keyCount:l.keyCount,
+    allLocalesKeyCount:all,fieldCounts:l.fieldCounts,localeCounts:l.localeCounts,evidence:l.evidence}};
+}
+// Service-neutral, sparse columns compiled from the canonical complete rows.
+ // The source namespace combines decoded native scalar and structured fields.
+ // Explicit null/false/zero/empty values are retained; absent fields are omitted.
+function writeFieldColumns(rows,release,write,assets){
+  const columns=new Map();
+  const split=new Set(['names','artwork','itemType','nativeProperties','sourceAttributes']);
+  const add=(field,id,value)=>{
+    check(/^[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)?$/.test(field),'COLUMN_NAME');
+    check(value!==undefined,'COLUMN_UNDEFINED');
+    let entries=columns.get(field);
+    if(!entries){entries=[];columns.set(field,entries);}
+    check(!entries.length||entries[entries.length-1][0]<id,'COLUMN_DUPLICATE');
+    entries.push([id,value]);
+  };
+  for(const row of rows){
+    for(const [key,value] of Object.entries(row)){
+      if(!split.has(key)){add(key,row.itemId,value);continue;}
+      const prefix=key==='nativeProperties'||key==='sourceAttributes'?'source':key;
+      for(const [name,part] of Object.entries(value))add(prefix+'.'+name,row.itemId,part);
+    }
+  }
+  const fields=[];
+  for(const [field,entries] of [...columns].sort(([a],[b])=>a<b?-1:a>b?1:0)){
+    const blocks=[];
+    for(let start=0;start<entries.length;start+=4096){
+      const items=entries.slice(start,start+4096);
+      const path='fields/'+field+'/'+blocks.length+'.json';
+      const meta=write(path,{schema:'wand.item-master.field-block@1',release,field,items},items.length);
+      check(meta.bytes<=16*1024*1024,'COLUMN_BLOCK_TOO_LARGE');
+      assets[path]=meta;
+      blocks.push({path,firstId:items[0][0],lastId:items[items.length-1][0],count:items.length});
+    }
+    fields.push({field,count:entries.length,blocks});
+  }
+  assets['fields/index.json']=write('fields/index.json',{
+    schema:'wand.item-master.fields@1',release,definitionCount:rows.length,fields
+  },fields.length);
+}
 function sourceCodes(row){
   const codes=new Set(row.collectionSourceCandidates.map(c=>c.submenuCode).filter(c=>SUBMENUS.has(c)));
   // Native item-type browse fallback is not evidence of game Collection membership.
@@ -63,6 +184,8 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
   const rows=source.items;
   const byId=new Map(rows.map(r=>[r.itemId,r]));
   check(byId.size===e.count&&rows.every((r,i)=>i===0||rows[i-1].itemId<r.itemId),'ID_CENSUS');
+  const sourceAttributeCoverage=attachAttributes(project,e,version,source,byId);
+  const localizations=loadLocalizations(project,e,version,source,byId);
   // Verify no existing public definition is lost or silently replaced.
   for(const [path,raw] of baseFiles){
     if(!path.startsWith('id/'))continue;
@@ -177,6 +300,8 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
       itemsWithSourceCollectionCandidates:source.coverage.collectionCandidateItemIds,
       worldMembershipVerified:false,collectionMembershipVerified:false,
       acquisitionCoverageComplete:false,publishedR2ImageUrlAvailable:false},
+    ...(sourceAttributeCoverage?{attributesSha256:e.attributesSha256,sourceAttributeCoverage}:{}),
+    ...(localizations?{localizationSha256:e.localization.sha256,localizationCoverage:localizations.coverage}:{}),
     shards:{},assets:{}};
   const root=join(project,'static/ddv/item-master');
   mkdirSync(root,{recursive:true});
@@ -200,6 +325,12 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
       ignoredSentinels:source.ignoredSentinels,universeTags:source.universeTags,worldTags:source.worldTags,
       sourceFieldDeclarations:source.sourceFieldDeclarations,gameRuntimeMembershipVerified:false
     },source.collectionSelectors.length);
+    if(localizations)for(const locale of LOCALES){
+      const entries=Object.entries(localizations.translations[locale]);
+      const path='text/'+locale+'.json';
+      index.assets[path]=write(path,{schema:'wand.item-master.localized-text@1',release:e.release,locale,items:entries},entries.length);
+    }
+    writeFieldColumns(rows,e.release,write,index.assets);
     writeFileSync(join(stage,'index.json'),json(index));
     const destination=join(root,'steam-'+version+'-complete');
     rmSync(destination,{recursive:true,force:true});renameSync(stage,destination);

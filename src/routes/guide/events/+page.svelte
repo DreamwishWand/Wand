@@ -1,4 +1,5 @@
 <script lang="ts">
+  import GuideCommunityHelp from '$lib/guide/GuideCommunityHelp.svelte';
   import {onMount} from 'svelte';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {base} from '$app/paths';
@@ -424,6 +425,7 @@
             {#if selected.id==='HauntedFloatingFestival2026'}
               <a class="source-link" href="https://disneydreamlightvalley.com/news/update-sep-23-2026" target="_blank" rel="noopener noreferrer">2026年の公式イベント発表</a>
             {/if}
+            <GuideCommunityHelp kind={selected.kind==='floating_festival'?'floating-festival':'event'} id={selected.id}/>
           </article>
         {/if}
       {:else}

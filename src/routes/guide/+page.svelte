@@ -430,12 +430,15 @@
   .source-info summary{display:flex;align-items:center;cursor:pointer;list-style:none;padding:5px;color:#c1afcc}
   .source-info summary::-webkit-details-marker{display:none}
   .source-info p{position:absolute;z-index:15;top:100%;right:12px;width:min(360px,calc(100% - 24px));box-sizing:border-box;padding:13px;margin:0;background:#352844;border:1px solid #8869a2;border-radius:9px;color:#ded1e9;box-shadow:0 8px 25px #0007;line-height:1.6}
-  .calendar-nav{display:flex;align-items:center;gap:7px;min-width:0;flex-wrap:wrap}
-  .range-controls{display:flex;align-items:center;gap:7px;min-width:0}
-  .range-controls .nav-arrow{flex:0 0 auto}
+  /* Keep the navigation geometry independent of changing localized dates.
+     Reserve scrollbar space as the number of visible timeline rows changes. */
+  :global(html:has(.guide-app)){scrollbar-gutter:stable}
+  .calendar-nav{display:flex;align-items:center;gap:7px;min-width:0;max-width:100%;flex-wrap:wrap}
+  .range-controls{display:grid;grid-template-columns:32px minmax(0,1fr) 32px;align-items:center;gap:7px;min-width:0;width:clamp(270px,32vw,360px);max-width:100%;flex:0 0 auto}
+  .range-controls .nav-arrow{box-sizing:border-box;flex:none}
   .calendar-nav button{border:1px solid #624b75;background:#2e233b;color:#ede2f5;border-radius:8px;padding:7px 10px;font:inherit;font-size:12px;cursor:pointer;white-space:nowrap}
   .calendar-nav button:hover,.calendar-nav button:focus-visible{background:#4c3765;border-color:#aa88d0}
-  .calendar-nav .range{min-width:0;font-size:13px;text-align:center;font-variant-numeric:tabular-nums;color:#f0e8f9}
+  .calendar-nav .range{display:flex;align-items:center;justify-content:center;min-width:0;height:2.7em;line-height:1.35;font-size:13px;text-align:center;font-variant-numeric:tabular-nums;color:#f0e8f9;overflow-wrap:anywhere}
   .calendar-nav .zoom{display:flex;border:1px solid #624b75;border-radius:8px;overflow:hidden;margin-right:8px}
   .zoom button{border:0;border-radius:0;padding:7px 10px}
   .zoom button+button{border-left:1px solid #624b75}
@@ -542,9 +545,9 @@
     .timeline-toolbar{padding:9px;gap:8px}
     .timeline-title>strong{font-size:15px}
     .calendar-nav{width:100%;justify-content:space-between;gap:5px}
-    .range-controls{flex:1 1 100%;justify-content:space-between;order:-1}
+    .range-controls{flex:0 0 100%;width:100%;order:-1}
     .calendar-nav .zoom{margin-right:auto}
-    .calendar-nav .range{min-width:0;flex:1;font-size:12px;overflow-wrap:anywhere}
+    .calendar-nav .range{font-size:12px;height:4.05em}
     .calendar-nav button{padding:6px 8px}
     .timeline-key{padding:7px 9px;gap:10px;font-size:10px}
     .timeline-content{--sidebar-width:139px}
