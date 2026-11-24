@@ -60,7 +60,12 @@ GROUPS={
 GUID_PATHS={'UpgradeInfo.PrefabAddress','UpgradeInfo.Store.InteriorPrefabAddress','UpgradeInfo.UpgradeDialogueAddress'}
 CONDITION_UUIDS={'KeyholeStatus.Keyhole','KeyholeItemStatus.Keyhole','LeverStatus.Lever','Timestamp.Timestamp'}
 CONDITION_KEYS={'EventTime.Event','Weather.Weather','Expansion.ExpansionName','EventTimeSegment.Event','EventTimeSegment.Segment','FloatingFestivalTime.Event','FloatingFestivalPuzzleTime.Event','FloatingFestivalPuzzleCompleted.Event','MinigameInProgress.Minigame'}
+STRUCTURE_POLICY=json.loads(Path(__file__).with_name('reviewed-structure-policy.json').read_text())
+STRUCTURE_GROUPS=STRUCTURE_POLICY['groups']
 def reviewed_string(label,typ,path,x):
+ if label in STRUCTURE_GROUPS:
+  kind=STRUCTURE_POLICY['stringPaths'][label].get(path)
+  return kind is not None and re.fullmatch(STRUCTURE_POLICY['patterns'][kind],x)
  if label=='Building.UpgradeInfo':
   return path in GUID_PATHS and re.fullmatch(r'guid:[0-9a-f]{32}',x)
  if typ=='ConditionsList':
@@ -83,7 +88,10 @@ def build(dbpath,root,selected=None):
  with sqlite3.connect(Path(dbpath).resolve().as_uri()+'?mode=ro',uri=True) as db:
   m=json.loads(db.execute("select value from metadata where key='manifest'").fetchone()[0]);require(m['schema']=='wand.db01.native-fields.private@1' and m['platform']=='Steam','manifest');out={}
   originals={}
-  reviews=[(label,*GROUPS[label]) for label in selected] if selected is not None else [(key,category,key,typ) for key,(category,typ) in REVIEWED.items()]
+  structural=selected is not None and any(k in STRUCTURE_GROUPS for k in selected)
+  require(not structural or all(k in STRUCTURE_GROUPS for k in selected),'do not mix structure and legacy groups')
+  groups=STRUCTURE_GROUPS if structural else GROUPS
+  reviews=[(label,*groups[label]) for label in selected] if selected is not None else [(key,category,key,typ) for key,(category,typ) in REVIEWED.items()]
   for label,category,key,typ in reviews:
    if category not in originals:
     b=(root/(category+'.json')).read_bytes();shas={r[0] for r in db.execute('select distinct source_sha256 from item where category=?',(category,))};require(shas=={hashlib.sha256(b).hexdigest()},'original SHA');originals[category]=b
@@ -118,7 +126,7 @@ def build(dbpath,root,selected=None):
         parts.extend(scalar(t[14:-1],0,x) for x in xs)
        elif status=='declared_utf8':
         normalized=re.sub(r'\[\d+\]','',p)
-        require(wire==2 and t=='string','unreviewed string')
+        require(wire==2 and (t[14:-1] if rep else t)=='string','unreviewed string')
         x=wirevalue.decode('utf8');require(x==json.loads(v) and reviewed_string(label,typ,normalized,x),'unreviewed identity');parts.append(x)
        else:raise ValueError('unreviewed status '+status+' '+p)
       require(rep or len(parts)==1,'singular repetition');result[name]=parts if rep else parts[0]
@@ -129,6 +137,6 @@ def build(dbpath,root,selected=None):
    for i,v in data:rows.append([i-prev,v]);prev=i
    packed=base64.b64encode(zlib.compress(json.dumps(rows,separators=(',',':'),sort_keys=True).encode(),9)).decode()
    out[label]={'category':category,**({'field':key} if selected is not None else {}),'declaredType':typ,'count':len(rows),'occurrences':occurrences,'leafCount':leaves,'packed':packed}
-  return {'schema':'wand.item-master.reviewed-message-groups@1' if selected is not None else 'wand.item-master.reviewed-messages@1','gameVersion':m['gameVersion'],'sourceItemsSha256':m['sourceItemsSha256'],'sourceIl2cppDumpSha256':m['sourceIl2cppDumpSha256'],'fields':out}
+  return {'schema':'wand.item-master.reviewed-structure-groups@1' if structural else 'wand.item-master.reviewed-message-groups@1' if selected is not None else 'wand.item-master.reviewed-messages@1','gameVersion':m['gameVersion'],'sourceItemsSha256':m['sourceItemsSha256'],'sourceIl2cppDumpSha256':m['sourceIl2cppDumpSha256'],'fields':out}
 if __name__=='__main__':
- p=argparse.ArgumentParser();p.add_argument('--database',type=Path,required=True);p.add_argument('--input',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--fields',nargs='+',choices=GROUPS);a=p.parse_args();d=build(a.database,a.input,a.fields);b=(json.dumps(d,separators=(',',':'))+'\n').encode();a.output.write_bytes(b);print(hashlib.sha256(b).hexdigest(),len(b))
+ p=argparse.ArgumentParser();p.add_argument('--database',type=Path,required=True);p.add_argument('--input',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--fields',nargs='+',choices=[*GROUPS,*STRUCTURE_GROUPS]);a=p.parse_args();d=build(a.database,a.input,a.fields);b=(json.dumps(d,separators=(',',':'))+'\n').encode();a.output.write_bytes(b);print(hashlib.sha256(b).hexdigest(),len(b))

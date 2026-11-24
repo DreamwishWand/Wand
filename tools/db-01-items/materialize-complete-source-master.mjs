@@ -241,40 +241,42 @@ const REVIEWED_GUID_PATHS=new Set(['UpgradeInfo.PrefabAddress','UpgradeInfo.Stor
 // Strings are only original, reviewed identity fields, not arbitrary source text.
 const REVIEWED_CONDITION_UUIDS=new Set(['KeyholeStatus.Keyhole','KeyholeItemStatus.Keyhole','LeverStatus.Lever','Timestamp.Timestamp']);
 const REVIEWED_CONDITION_KEYS=new Set(['EventTime.Event','Weather.Weather','Expansion.ExpansionName','EventTimeSegment.Event','EventTimeSegment.Segment','FloatingFestivalTime.Event','FloatingFestivalPuzzleTime.Event','FloatingFestivalPuzzleCompleted.Event','MinigameInProgress.Minigame']);
-function numericTree(value,depth=0,guidPath=null,condition=false){
-  check(depth<=16,'MESSAGE_DEPTH');
+function numericTree(value,depth=0,guidPath=null,condition=false,structure=null){
+  check(depth<=(structure?64:16),'MESSAGE_DEPTH');
   if(typeof value==='string'){
     const suffix=guidPath?.split('.').slice(-2).join('.');
-    check(condition?(
+    check(structure?Object.hasOwn(structure.paths,guidPath)&&new RegExp('^(?:'+structure.patterns[structure.paths[guidPath]]+')$').test(value):condition?(
       REVIEWED_CONDITION_UUIDS.has(suffix)&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value)||
       REVIEWED_CONDITION_KEYS.has(suffix)&&/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(value)
     ):REVIEWED_GUID_PATHS.has(guidPath)&&/^guid:[0-9a-f]{32}$/.test(value),'MESSAGE_STRING');
     return 1;
   }
   if(typeof value==='boolean'||typeof value==='number'&&Number.isFinite(value)&&Math.abs(value)<2**53)return 1;
-  if(Array.isArray(value))return value.reduce((n,v)=>n+numericTree(v,depth+1,guidPath,condition),0);
+  if(Array.isArray(value))return value.reduce((n,v)=>n+numericTree(v,depth+1,guidPath,condition,structure),0);
   check(value!==null&&typeof value==='object','MESSAGE_VALUE');
   let n=0;
   for(const [k,v] of Object.entries(value)){
     check(/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)&&!['__proto__','constructor','prototype'].includes(k),'MESSAGE_KEY');
-    n+=numericTree(v,depth+1,guidPath===null?null:guidPath+'.'+k,condition);
+    n+=numericTree(v,depth+1,guidPath===null?null:guidPath+'.'+k,condition,structure);
   }
   return n;
 }
-function attachReviewedMessages(project,e,version,source,byId,grouped=false){
-  const digest=grouped?e.reviewedMessageGroupsSha256:e.reviewedMessagesSha256;
-  const base=grouped?'reviewed-message-groups':'reviewed-messages';
+function attachReviewedMessages(project,e,version,source,byId,grouped=false,structureBase=null){
+  const structural=structureBase!==null;
+  const digest=structural?e.reviewedStructure?.[structureBase]:grouped?e.reviewedMessageGroupsSha256:e.reviewedMessagesSha256;
+  const base=structureBase??(grouped?'reviewed-message-groups':'reviewed-messages');
   if(digest===undefined)return undefined;
   check(SHA.test(digest),'MESSAGE_DIGEST');
   const bytes=readFileSync(join(project,'data/ddv/item-master',base+'-steam-'+version+'.json'));
   check(hash(bytes)===digest,'MESSAGE_SHA');
   const a=JSON.parse(bytes.toString('utf8'));
-  check(a.schema==='wand.item-master.'+base+'@1'&&a.gameVersion===version&&
+  const policy=structural?JSON.parse(readFileSync(join(project,'tools/db-01-items/reviewed-structure-policy.json'),'utf8')):null;
+  check(a.schema==='wand.item-master.'+(structural?'reviewed-structure-groups':base)+'@1'&&a.gameVersion===version&&
     a.sourceItemsSha256===source.sourceItemsSha256&&a.sourceIl2cppDumpSha256===source.sourceIl2cppDumpSha256&&
     a.fields&&typeof a.fields==='object'&&!Array.isArray(a.fields),'MESSAGE_RELEASE');
   const fields={};
   for(const [label,entry] of Object.entries(a.fields)){
-    const reviews=grouped?REVIEWED_MESSAGE_GROUPS:REVIEWED_MESSAGES;
+    const reviews=structural?policy.groups:grouped?REVIEWED_MESSAGE_GROUPS:REVIEWED_MESSAGES;
     const review=Object.hasOwn(reviews,label)?reviews[label]:null;
     const key=grouped?review?.[1]:label;
     check(review&&entry&&entry.category===review[0]&&entry.declaredType===review[grouped?2:1]&&
@@ -292,7 +294,7 @@ function attachReviewedMessages(project,e,version,source,byId,grouped=false){
       id+=pair[0];const row=byId.get(id),value=pair[1];
       check(ID(id)&&row?.nativeCategory===entry.category&&!Object.hasOwn(row.nativeProperties,key)&&
         (repeated?Array.isArray(value)&&value.length>0&&value.every(message):message(value)),'MESSAGE_OWNER');
-      occurrences+=repeated?value.length:1;leafCount+=numericTree(value,0,key,entry.declaredType==='ConditionsList');
+      occurrences+=repeated?value.length:1;leafCount+=numericTree(value,0,key,entry.declaredType==='ConditionsList',structural?{paths:policy.stringPaths[label],patterns:policy.patterns}:null);
       const props=row.sourceAttributes??(row.sourceAttributes={});
       check(!Object.hasOwn(props,key)||JSON.stringify(props[key])===JSON.stringify(value),'MESSAGE_CONFLICT');
       props[key]=value;
@@ -490,6 +492,26 @@ function buildReferenceColumns(rows){
         const targets=REVIEWED_CONDITION_REFERENCE_TARGETS[path.split('.').slice(-2).join('.')];
         check(targets.includes(categories.get(value)),'CONDITION_REFERENCE_TARGET');
         emit(value,path);
+      }else if((row.nativeCategory==='Mission'&&/^source\.(?:Steps|AutoAccept)\[/.test(path)||row.nativeCategory==='Character'&&/^source\.OverrideSchedules\[/.test(path))&&
+        /\.(?:MissionStepStatus|MissionStatus|MissionObjectiveStatus)\.Mission$/.test(path)){
+        check(categories.get(value)==='Mission','STRUCTURE_MISSION_REFERENCE');emit(value,path);
+      }else if(row.nativeCategory==='Mission'&&/^source\.(?:Steps|AutoAccept)\[/.test(path)&&/\.Inventory\.Item$/.test(path)){
+        check(['ActivityItem','Upgrade','Companion','Furniture'].includes(categories.get(value)),'STRUCTURE_INVENTORY_REFERENCE');emit(value,path);
+      }else if(row.nativeCategory==='Furniture'&&/^source\.ToolBreakable\.(?:Tool|Upgrade)$/.test(path)){
+        check(categories.get(value)===name,'STRUCTURE_TOOL_REFERENCE');emit(value,path);
+      }else if(row.nativeCategory==='Preference'&&/^source\.Favorite(?:CraftingMaterials|Flowers|Ingredients|Meals|Minerals)\.(?:Inclusions\.Custom|Exclusions)\.(?:SpecificItems|DominantColor|IngredientType|IngredientTags|ContainsIngredients|MealType)\[\d+\]$/.test(path)){
+        const target=name==='SpecificItems'?'ActivityItem':'Tag';
+        check(categories.get(value)===target,'PREFERENCE_REFERENCE_TARGET');emit(value,path);
+      }else if(row.nativeCategory==='Furniture'&&/^source\.(?:CraftingStation|TimeBendingStation)\.CraftingRecipeTypes\[\d+\]$/.test(path)){
+        check(categories.get(value)==='Tag','CRAFTING_STATION_REFERENCE');emit(value,path);
+      }else if(row.nativeCategory==='Furniture'&&/^source\.(?:AutoCooker|Gardener)\.ActionCost\.Id$/.test(path)){
+        check(categories.get(value)==='Currency','MACHINE_COST_REFERENCE');emit(value,path);
+      }else if(row.nativeCategory==='DutyAch'&&/^source\.StepDifficultyLayers\[\d+\]\.Rewards\[\d+\]\.Id$/.test(path)){
+        check(categories.get(value)==='Currency','DUTY_REWARD_REFERENCE');emit(value,path);
+      }else if(row.nativeCategory==='ActivityData'&&/^source\.(?:Location|Locations\[\d+\])\.Scene$/.test(path)){
+        check(categories.get(value)==='Scene','ACTIVITY_SCENE_REFERENCE');emit(value,path);
+      }else if(row.nativeCategory==='ConditionalEvent'&&/^source\.SetDialogueFlag\.Flag$/.test(path)){
+        check(categories.get(value)==='Dialogue','DIALOGUE_FLAG_REFERENCE');emit(value,path);
       }else if(/ItemIds?$/i.test(name))emit(value,path);
       else if(row.nativeCategory==='DutyAch'&&/^source\.Milestones\[\d+\]\.RewardItem$/.test(path)){
         check(ID(value)&&ids.has(value),'MILESTONE_REWARD_TARGET');emit(value,path);
@@ -604,8 +626,16 @@ function writeFieldColumns(rows,release,write,assets){
   const fields=[];
   for(const [field,entries] of [...columns].sort(([a],[b])=>a<b?-1:a>b?1:0)){
     const blocks=[];
-    for(let start=0;start<entries.length;start+=4096){
-      const items=entries.slice(start,start+4096);
+    // Bound bytes as well as row count; large mission step arrays stay atomic.
+    for(let start=0;start<entries.length;){
+      let end=start,bytes=256;
+      while(end<entries.length&&end-start<4096){
+        const size=Buffer.byteLength(JSON.stringify(entries[end]))+1;
+        if(end>start&&bytes+size>1024*1024)break;
+        bytes+=size;end++;
+      }
+      const items=entries.slice(start,end);
+      start=end;
       const path='fields/'+field+'/'+blocks.length+'.json';
       const meta=write(path,{schema:'wand.item-master.field-block@1',release,field,items},items.length);
       check(meta.bytes<=16*1024*1024,'COLUMN_BLOCK_TOO_LARGE');
@@ -700,6 +730,14 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
   const reviewedRootArrayCoverage=attachReviewedRootArrays(project,e,version,source,byId);
   const reviewedMessageCoverage=attachReviewedMessages(project,e,version,source,byId);
   const reviewedMessageGroupCoverage=attachReviewedMessages(project,e,version,source,byId,true);
+  let reviewedStructureCoverage;
+  if(e.reviewedStructure!==undefined){
+    check(Object.keys(e.reviewedStructure).length===2&&SHA.test(e.reviewedStructure['reviewed-structure'])&&SHA.test(e.reviewedStructure['reviewed-quest-steps']),'STRUCTURE_DIGESTS');
+    const other=attachReviewedMessages(project,e,version,source,byId,true,'reviewed-structure');
+    const quest=attachReviewedMessages(project,e,version,source,byId,true,'reviewed-quest-steps');
+    check(!Object.keys(other.fields).some(key=>Object.hasOwn(quest.fields,key)),'STRUCTURE_DUPLICATE');
+    reviewedStructureCoverage={fields:{...other.fields,...quest.fields},runtimeSemanticsVerified:false};
+  }
   const localizations=loadLocalizations(project,e,version,source,byId);
   // Verify no existing public definition is lost or silently replaced.
   for(const [path,raw] of baseFiles){
@@ -844,6 +882,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
     ...(reviewedRootArrayCoverage?{reviewedRootArraysSha256:e.reviewedRootArraysSha256,reviewedRootArrayCoverage}:{}),
     ...(reviewedMessageCoverage?{reviewedMessagesSha256:e.reviewedMessagesSha256,reviewedMessageCoverage}:{}),
     ...(reviewedMessageGroupCoverage?{reviewedMessageGroupsSha256:e.reviewedMessageGroupsSha256,reviewedMessageGroupCoverage}:{}),
+    ...(reviewedStructureCoverage?{reviewedStructure:e.reviewedStructure,reviewedStructureCoverage}:{}),
     ...(localizations?{localizationSha256:e.localization.sha256,localizationCoverage:localizations.coverage}:{}),
     shards:{},assets:{}};
   const root=join(project,'static/ddv/item-master');
