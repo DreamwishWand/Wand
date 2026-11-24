@@ -1067,12 +1067,16 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition){
   const fields=[];
   for(const [field,entries] of [...columns].sort(([a],[b])=>a<b?-1:a>b?1:0)){
     const blocks=[];
+    // Frequently inspected acquisition details use smaller blocks; category
+    // columns retain the compact bulk-filter layout.
+    const narrow=field==='acquisition.summary'||field==='acquisition.sourceRelations';
+    const rowLimit=narrow?256:4096,byteLimit=narrow?128*1024:1024*1024;
     // Bound bytes as well as row count; large mission step arrays stay atomic.
     for(let start=0;start<entries.length;){
       let end=start,bytes=256;
-      while(end<entries.length&&end-start<4096){
+      while(end<entries.length&&end-start<rowLimit){
         const size=Buffer.byteLength(JSON.stringify(entries[end]))+1;
-        if(end>start&&bytes+size>1024*1024)break;
+        if(end>start&&bytes+size>byteLimit)break;
         bytes+=size;end++;
       }
       const items=entries.slice(start,end);
