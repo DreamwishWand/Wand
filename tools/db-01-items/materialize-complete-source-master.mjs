@@ -844,11 +844,78 @@ function nativeAcquisitionRole(category,path){
 // Earlier source-presence evidence: the audited 1.26.1 -> 1.26.2
 // recovery proved all 38 non-Condition source files byte identical.
 // Bound the inference to the exact full current archive and known census.
+// Actual historical census from the archived Steam 1.25.3 and 1.26.1
+// itemlists (39/39 each), plus the independently verified 1.26.2 source
+// equality evidence and directly decoded changed Condition.json.
+// Hashes below identify complete sorted file-SHA ledgers, NOT SRC-00 scans.
+function historicalSourceDelta(project,source,rows){
+  const h=JSON.parse(readFileSync(join(project,'data/ddv/item-master','historical-source-delta-steam-1253-1262.json'),'utf8'));
+  const digestJson=value=>hash(Buffer.from(JSON.stringify(value)));
+  const corpus=digestJson(Object.fromEntries(Object.entries(source.sourceFilesSha256).sort(([a],[b])=>a<b?-1:a>b?1:0)));
+  const [before,expansion,hotfix]=h.snapshots;
+  check(h.schema==='wand.db01.historical-source-delta@1'&&h.platform==='Steam'&&h.sourceCensus===39&&
+    before.version==='1.25.3'&&expansion.version==='1.26.1'&&hotfix.version==='1.26.2'&&
+    hotfix.sourceCorpusSha256===corpus&&corpus==='1f336ebb22061b588008d004e725bb7d56bd5cd6da1765520efd2aad4c115744',
+    'HISTORICAL_DELTA_SOURCE');
+  const current=rows.map(r=>r.itemId).sort((a,b)=>a-b), known=new Set(current);
+  check(current.length===hotfix.definitionCount&&digestJson(current)===hotfix.itemIdsSha256,'HISTORICAL_CURRENT_CENSUS');
+  const d=h.delta1253to1261,fix=h.delta1261to1262;
+  const runs=JSON.parse(inflateSync(Buffer.from(d.newIdRuns,'base64'),{maxOutputLength:100000}));
+  check(Array.isArray(runs)&&runs.length%2===0&&runs.length<=10000,'HISTORICAL_RUNS');
+  const newIds=[];let last=0;
+  for(let i=0;i<runs.length;i+=2){
+    const [gap,n]=[runs[i],runs[i+1]];
+    check(ID(gap)&&ID(n)&&newIds.length+n<=d.newCount,'HISTORICAL_RUN');
+    const start=last+gap;for(let j=0;j<n;j++)newIds.push(start+j);
+    last=start+n-1;
+  }
+  check(newIds.length===3254&&d.newCount===3254&&digestJson(newIds)===d.newIdsSha256&&
+    d.newIdsSha256==='ec995d4f8253312dc6990f38c1e5ba8ccbbf42e3c7b0d14fb4e5ac76868ba7c3'&&
+    newIds.every(id=>known.has(id)),'HISTORICAL_NEW_IDS');
+  check(fix.newIds.length===1&&fix.newIds[0]===2130007038&&known.has(fix.newIds[0])&&
+    !newIds.includes(fix.newIds[0])&&fix.absentIds.length===0&&fix.sameSourceFiles===38&&
+    source.sourceFilesSha256.Condition===fix.conditionAfterSha256,'HISTORICAL_HOTFIX');
+  const added=new Set(newIds),hot=new Set(fix.newIds);
+  const at1261=current.filter(id=>!hot.has(id));
+  const at1253=[...at1261.filter(id=>!added.has(id)),...d.absentIds].sort((a,b)=>a-b);
+  check(at1261.length===expansion.definitionCount&&digestJson(at1261)===expansion.itemIdsSha256&&
+    at1253.length===before.definitionCount&&new Set(at1253).size===at1253.length&&
+    digestJson(at1253)===before.itemIdsSha256,'HISTORICAL_PREVIOUS_CENSUS');
+  // Existing DB-02 shop evidence is an independent acquisition link, not
+  // entitlement or proof that an item belongs to the free-update cohort.
+  const shop=h.shopObservation;
+  const shopBytes=readFileSync(join(project,shop.sourcePath));
+  check(shop.sourcePath==='static/acquisition/public/shop-cache-2026-11-22.json'&&
+    hash(shopBytes)===shop.sourceSha256&&shop.availabilityVerified===false&&
+    shop.dlcEntitlementVerified===false,'HISTORICAL_SHOP_PIN');
+  const offers=JSON.parse(shopBytes);
+  const offerIds=new Set(offers.offers.flatMap(o=>o[5].map(x=>Number(x[0]))));
+  const observed=newIds.filter(id=>offerIds.has(id));
+  check(offers.source.snapshotKey===shop.snapshotKey&&observed.length===13&&
+    JSON.stringify(observed)===JSON.stringify(shop.newItemIds),'HISTORICAL_SHOP_CENSUS');
+  const shopIds=new Set(observed);
+  return new Map(rows.map(row=>{
+    const id=row.itemId,isHot=hot.has(id),isNew=added.has(id),isAdded=isNew||isHot;
+    const first=isHot?hotfix.version:isNew?expansion.version:before.version;
+    return [id,{
+      firstObservedVersion:first,introducedVersion:isAdded?first:null,
+      introducedAfterVersion:isHot?expansion.version:isNew?before.version:null,
+      introducedAfterSourceCorpusSha256:isHot?expansion.sourceCorpusSha256:isNew?before.sourceCorpusSha256:null,
+      introducedSourceCorpusSha256:isHot?hotfix.sourceCorpusSha256:isNew?expansion.sourceCorpusSha256:null,
+      sourceReleaseId:isHot?'hotfix.1.26.2':isNew?'dlc.the-keepsake-sea':null,
+      sourceReleaseKind:isHot?'hotfix':isNew?'paid_dlc':null,
+      observationEvidence:'verified_original_source_comparison',
+      nativeContentMarker:isNew?(/expansion04/i.test(row.nativeKey)?'expansion04':/update26/i.test(row.nativeKey)?'update26':null):null,
+      introductionShopSnapshot:shopIds.has(id)?shop.snapshotKey:null
+    }];
+  }));
+}
 function introductionHistory(project,e,version,source,rows){
   const sameArchive=e.archiveSha256==='b659cfc12b3a1363395e595bc5bb6be76ef1da63b6003c3a785556adc3a6831d'&&
     version==='1.26.2'&&source.sourceFilesVerified===39&&
     rows.filter(r=>r.nativeCategory!=='Condition').length===33627;
   check(sameArchive||e.introductionHistorySha256!==undefined,'INTRODUCTION_HISTORY_REQUIRED');
+  const historicalDelta=sameArchive?historicalSourceDelta(project,source,rows):new Map();
   let prior=new Map();
   if(e.introductionHistorySha256!==undefined){
     check(SHA.test(e.introductionHistorySha256),'INTRODUCTION_HISTORY_PIN');
@@ -862,13 +929,21 @@ function introductionHistory(project,e,version,source,rows){
     const ver=v=>typeof v==='string'&&/^\d+\.\d+\.\d+$/.test(v);
     const order=(x,y)=>{const a=x.split('.').map(Number),b=y.split('.').map(Number);return a[0]-b[0]||a[1]-b[1]||a[2]-b[2];};
     for(const [id,v] of h.items){
+      const hashPair=(x,y)=>typeof x==='string'&&typeof y==='string'&&SHA.test(x)&&SHA.test(y)&&x!==y;
+      const scanPair=hashPair(v?.introducedAfterSourceScanSha256,v?.introducedSourceScanSha256);
+      const corpusPair=hashPair(v?.introducedAfterSourceCorpusSha256,v?.introducedSourceCorpusSha256);
+      check(v&&((v.introducedAfterSourceScanSha256==null&&v.introducedSourceScanSha256==null)||scanPair)&&
+        ((v.introducedAfterSourceCorpusSha256==null&&v.introducedSourceCorpusSha256==null)||corpusPair)&&
+        (v.nativeContentMarker==null||['expansion04','update26'].includes(v.nativeContentMarker))&&
+        (v.introductionShopSnapshot==null||v.introductionShopSnapshot==='Shop20261118'&&
+          v.introducedVersion==='1.26.1'),'INTRODUCTION_COMPARISON_EVIDENCE');
       check(ID(id)&&!prior.has(id)&&v&&ver(v.firstObservedVersion)&&order(v.firstObservedVersion,version)<=0&&
         (v.introducedVersion===null&&v.introducedAfterVersion===null&&
-          v.introducedAfterSourceScanSha256===null&&v.introducedSourceScanSha256===null&&v.contentReleaseId===null||
+          v.introducedAfterSourceScanSha256===null&&v.introducedSourceScanSha256===null&&
+          !corpusPair&&v.contentReleaseId===null||
          ver(v.introducedVersion)&&v.introducedVersion===v.firstObservedVersion&&ver(v.introducedAfterVersion)&&
           order(v.introducedAfterVersion,v.introducedVersion)<=0&&
-          SHA.test(v.introducedAfterSourceScanSha256)&&SHA.test(v.introducedSourceScanSha256)&&
-          v.introducedAfterSourceScanSha256!==v.introducedSourceScanSha256&&
+          (scanPair||corpusPair)&&
           (v.contentReleaseId===null||typeof v.contentReleaseId==='string'&&/^[A-Za-z0-9_.-]{1,128}$/.test(v.contentReleaseId))),
         'INTRODUCTION_HISTORY_ROW');
       const releaseId=x=>typeof x==='string'&&/^[A-Za-z0-9_.-]{1,128}$/.test(x);
@@ -894,7 +969,17 @@ function introductionHistory(project,e,version,source,rows){
     check(rows.every(r=>prior.has(r.itemId)),'INTRODUCTION_HISTORY_ID_CENSUS');
   }
   return new Map(rows.map(row=>{
-    const old=prior.get(row.itemId);
+    const verified=historicalDelta.get(row.itemId);
+    const supplied=prior.get(row.itemId);
+    // The verified three-snapshot census supersedes the older 1.26.1-only
+    // bootstrap. Preserve any compatible, separately reviewed attribution.
+    const old=verified?{...supplied,...verified,
+      contentReleaseId:supplied?.introducedVersion===verified.introducedVersion?supplied?.contentReleaseId:null,
+      contentReleaseKind:supplied?.introducedVersion===verified.introducedVersion?supplied?.contentReleaseKind:null,
+      contentDlcType:supplied?.introducedVersion===verified.introducedVersion?supplied?.contentDlcType:null,
+      contentReleaseEvidenceSha256:supplied?.introducedVersion===verified.introducedVersion?supplied?.contentReleaseEvidenceSha256:null,
+      contentAssignmentSha256:supplied?.introducedVersion===verified.introducedVersion?supplied?.contentAssignmentSha256:null
+    }:supplied;
     const historical=sameArchive&&row.nativeCategory!=='Condition';
     const defaultVersion=historical?'1.26.1':version;
     let observed=old?.firstObservedVersion??defaultVersion;
@@ -908,6 +993,10 @@ function introductionHistory(project,e,version,source,rows){
       introducedAfterVersion:intro?.introducedAfterVersion??null,
       introducedAfterSourceScanSha256:intro?.introducedAfterSourceScanSha256??null,
       introducedSourceScanSha256:intro?.introducedSourceScanSha256??null,
+      introducedAfterSourceCorpusSha256:intro?.introducedAfterSourceCorpusSha256??null,
+      introducedSourceCorpusSha256:intro?.introducedSourceCorpusSha256??null,
+      nativeContentMarker:old?.nativeContentMarker??null,
+      introductionShopSnapshot:old?.introductionShopSnapshot??null,
       sourceReleaseId:intro?.sourceReleaseId??null,
       sourceReleaseKind:intro?.sourceReleaseKind??null,
       contentReleaseId:intro?.contentReleaseId??null,
@@ -915,7 +1004,7 @@ function introductionHistory(project,e,version,source,rows){
       contentDlcType:intro?.contentDlcType??null,
       contentReleaseEvidenceSha256:intro?.contentReleaseEvidenceSha256??null,
       contentAssignmentSha256:intro?.contentAssignmentSha256??null,
-      observationEvidence:historical&&observed==='1.26.1'?'sha_identical_earlier_source':
+      observationEvidence:verified?'verified_original_source_comparison':historical&&observed==='1.26.1'?'sha_identical_earlier_source':
         old&&observed===old.firstObservedVersion?'pinned_native_history':'current_source_only'
     }];
   }));
