@@ -111,10 +111,10 @@
   .distribution-title{font-size:12px;font-weight:600;margin:10px 0 5px}
   .distribution-groups{list-style:none;display:grid;gap:5px;margin:0 0 8px;padding:0}
   .distribution-groups li{display:grid;gap:2px;padding:6px 8px;
-    border:1px solid #ffffff27;border-radius:7px;line-height:1.35;font-size:12px}
+    border:1px solid var(--wand-subtle-line);border-radius:7px;line-height:1.35;font-size:12px}
   .distribution-groups small{font-size:11px;opacity:.7;line-height:1.4}
   .evidence-candidate-title {margin:10px 0 4px;font-size:11px;opacity:.75}
-  .evidence-kinds li {border:1px solid #ffffff30;border-radius:8px;padding:6px 9px;color:inherit}
+  .evidence-kinds li {border:1px solid var(--wand-subtle-line);border-radius:8px;padding:6px 9px;color:inherit}
   .evidence-status {font-size:11px;line-height:1.5;color:inherit;opacity:.75;margin:8px 0}
-  .retry {border:1px solid #ffffff35;background:transparent;color:inherit;border-radius:8px;padding:5px 10px;cursor:pointer}
+  .retry {border:1px solid var(--wand-subtle-line);background:transparent;color:inherit;border-radius:8px;padding:5px 10px;cursor:pointer}
 </style>

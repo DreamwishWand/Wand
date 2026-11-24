@@ -200,13 +200,13 @@
 
 <style>
   .save-grid-audit{min-width:0;margin-top:12px;padding-top:12px;
-    border-top:1px solid #ffffff24}
+    border-top:1px solid var(--wand-subtle-line)}
   .audit-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
   h3{margin:0 auto 0 0;font-size:14px}
   .audit-pick,.audit-head button{display:inline-flex;align-items:center;
     justify-content:center;gap:7px;padding:8px 10px;position:relative;
-    border:1px solid #ffffff30;border-radius:8px;
-    color:#eee7f7;background:#403254;font-size:12px;cursor:pointer}
+    border:1px solid var(--wand-subtle-line);border-radius:8px;
+    color:var(--wand-text);background:var(--wand-control);font-size:12px;cursor:pointer}
   .audit-pick{overflow:hidden}
   .audit-pick input{position:absolute;inset:0;opacity:0;cursor:pointer;
     width:100%;max-width:100%}
@@ -214,9 +214,9 @@
   .audit-result{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));
     gap:8px;margin-top:12px}
   .audit-result div{display:grid;gap:4px;min-width:0;
-    padding:9px;background:#ffffff0c;border-radius:8px}
+    padding:9px;background:var(--wand-surface-raised);border-radius:8px}
   .audit-result strong{font-size:18px;font-variant-numeric:tabular-nums}
-  .audit-result span{color:#c2b1d1;font-size:11px}
-  .audit-note{margin:9px 0 0;color:#b9aac9;line-height:1.5;font-size:12px}
-  .audit-error{font-size:12px;color:#ffbaba}
+  .audit-result span{color:var(--wand-text);font-size:11px}
+  .audit-note{margin:9px 0 0;color:var(--wand-muted);line-height:1.5;font-size:12px}
+  .audit-error{font-size:12px;color:var(--wand-danger)}
 </style>

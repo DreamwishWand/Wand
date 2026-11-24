@@ -281,44 +281,44 @@
 </div>
 
 <style>
-  .floor-evidence{display:grid;gap:10px;margin:18px 0;padding:15px;background:#171323;border:1px solid #ffffff29;border-radius:12px;max-width:100%;min-width:0}
+  .floor-evidence{display:grid;gap:10px;margin:18px 0;padding:15px;background:var(--wand-surface);border:1px solid var(--wand-subtle-line);border-radius:12px;max-width:100%;min-width:0}
   .heading{display:flex;align-items:center;justify-content:space-between;gap:9px}
-  h2{font-size:15px;margin:0;color:#f1e8f9}
-  .clear{background:transparent;color:#d8c2eb;border:1px solid #ffffff40;border-radius:7px;padding:7px 11px;font:inherit;font-size:11px}
-  .search{display:grid;gap:6px;font-size:12px;color:#d1bfdf}
+  h2{font-size:15px;margin:0;color:var(--wand-text)}
+  .clear{background:transparent;color:var(--wand-text);border:1px solid var(--wand-subtle-line);border-radius:7px;padding:7px 11px;font:inherit;font-size:11px}
+  .search{display:grid;gap:6px;font-size:12px;color:var(--wand-text)}
   .inspect-map{display:block;max-width:100%;min-width:0;padding:0;margin:0;border:0;background:transparent;cursor:crosshair;line-height:0}
   .raster .inspect-map canvas{display:block;width:100%;height:auto;max-width:100%;max-height:none}
-  .inspect-map:focus-visible{outline:2px solid #e0bdff;outline-offset:4px}
-  .area-breakdown{border:1px solid #ffffff23;border-radius:9px;padding:9px 11px;color:#d6c6e4;font-size:11px}
+  .inspect-map:focus-visible{outline:2px solid var(--wand-selected-line);outline-offset:4px}
+  .area-breakdown{border:1px solid var(--wand-subtle-line);border-radius:9px;padding:9px 11px;color:var(--wand-text);font-size:11px}
   .area-breakdown summary{cursor:pointer;font-size:12px}
   .area-table-scroll{max-height:230px;overflow:auto;margin-top:8px}
   .area-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
-  .area-table th,.area-table td{padding:6px 8px;border-bottom:1px solid #ffffff1f;text-align:left}
+  .area-table th,.area-table td{padding:6px 8px;border-bottom:1px solid var(--wand-subtle-line);text-align:left}
   .area-table th:nth-child(n+2),.area-table td:nth-child(n+2){text-align:right}
   .area-table td:first-child{overflow-wrap:anywhere}
-  .rotation{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;color:#cfbcdc}
-  .rotation select{border-radius:7px;border:1px solid #65557d;background:#2b223b;color:#eee7f6;padding:6px 9px;font:inherit}
-  .anchor-toggle{display:flex;align-items:center;gap:7px;font-size:11px;color:#c8bad5}
+  .rotation{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--wand-text)}
+  .rotation select{border-radius:7px;border:1px solid var(--wand-line);background:var(--wand-control);color:var(--wand-text);padding:6px 9px;font:inherit}
+  .anchor-toggle{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--wand-text)}
   .map-mode{display:flex;flex-wrap:wrap;gap:7px}
-  .map-mode button{border:1px solid #ffffff40;border-radius:8px;background:#2b2339;color:#d9c5e8;font-size:11px;padding:8px 10px}
-  .map-mode button.chosen{background:#54406b;border-color:#d9b8fb;color:white}
+  .map-mode button{border:1px solid var(--wand-subtle-line);border-radius:8px;background:var(--wand-control);color:var(--wand-text);font-size:11px;padding:8px 10px}
+  .map-mode button.chosen{background:var(--wand-selected);border-color:var(--wand-selected-line);color:var(--wand-text)}
   .original-pin{width:10px;height:10px;display:inline-block;background:rgb(248,148,100);border-radius:2px}
-  .search input{box-sizing:border-box;width:100%;min-width:0;background:#282037;border:1px solid #65557d;color:#fff;border-radius:8px;padding:9px 10px;font:inherit}
+  .search input{box-sizing:border-box;width:100%;min-width:0;background:var(--wand-control);border:1px solid var(--wand-line);color:var(--wand-text);border-radius:8px;padding:9px 10px;font:inherit}
   .results{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,210px),1fr));gap:5px;max-height:170px;overflow:auto}
-  .results button{min-width:0;border-radius:6px;border:1px solid #ffffff2a;color:#e6d9ec;text-align:left;background:#2b223b;padding:7px;display:flex;flex-direction:column;gap:3px;font-size:11px}
-  .results button.chosen{border-color:#b88ae2}
+  .results button{min-width:0;border-radius:6px;border:1px solid var(--wand-subtle-line);color:var(--wand-text);text-align:left;background:var(--wand-control);padding:7px;display:flex;flex-direction:column;gap:3px;font-size:11px}
+  .results button.chosen{border-color:var(--wand-selected-line)}
   .results button span{overflow-wrap:anywhere}
-  .results button small,.selection small{color:#ab9bba}
-  .selection{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;color:#f0ddff;font-size:12px;overflow-wrap:anywhere}
+  .results button small,.selection small{color:var(--wand-muted)}
+  .selection{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;color:var(--wand-text);font-size:12px;overflow-wrap:anywhere}
   .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,142px),1fr));gap:8px}
-  .stats div{background:#241c32;border-radius:8px;padding:10px;display:grid;gap:7px}
-  .stats small{font-size:10px;color:#b3a5c2}
+  .stats div{background:var(--wand-surface);border-radius:8px;padding:10px;display:grid;gap:7px}
+  .stats small{font-size:10px;color:var(--wand-muted)}
   .stats strong{font-size:17px;font-variant-numeric:tabular-nums}
   .raster{min-width:0;max-width:100%;display:grid;place-items:center;background:#101019;border:1px solid #ffffff22;border-radius:7px;padding:8px}
   .raster canvas{display:block;width:auto;max-width:100%;max-height:420px;height:auto;image-rendering:pixelated}
-  .legend{margin:0;display:flex;gap:7px;align-items:center;font-size:11px;color:#c5b8d0}
+  .legend{margin:0;display:flex;gap:7px;align-items:center;font-size:11px;color:var(--wand-muted)}
   .yes,.no{display:inline-block;width:10px;height:10px;border-radius:2px}
   .yes{background:rgb(80,173,118)}.no{background:rgb(49,45,57)}
-  .hint{font-size:11px;color:#b7a8c8;line-height:1.6;margin:0}
-  .error{font-size:12px;color:#ffbbba;margin:0}
+  .hint{font-size:11px;color:var(--wand-muted);line-height:1.6;margin:0}
+  .error{font-size:12px;color:var(--wand-danger);margin:0}
 </style>
