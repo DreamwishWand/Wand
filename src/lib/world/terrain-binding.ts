@@ -6,7 +6,7 @@
  * This is not world/scene transform, actual occupancy, or collision legality.
  */
 import type {SourceObjectShape} from './source-object-map.ts';
-import type {SavedNumericPoint,SourceGridWitness,SavedGridSourceCandidates} from './saved-grid-source-candidates.ts';
+import {parseSavedSubgridSummary,type SavedNumericPoint,type SourceGridWitness,type SavedGridSourceCandidates} from './saved-grid-source-candidates.ts';
 export interface TerrainRaster{readonly sizeX:number;readonly sizeY:number;readonly nativeFloorValues:Uint32Array}
 export interface TerrainBinding{readonly raster:TerrainRaster;readonly factor:1|2;readonly verifiedGridOrdinals:readonly number[]}
 export interface TerrainWarningRun{readonly x:number;readonly y:number;readonly width:number;readonly reason:'outside'|'floor-mismatch'}
@@ -43,7 +43,7 @@ export function projectTerrainSession(value:unknown,scopes:readonly {key:string;
       (row.x<0||row.y<0||row.x>=w.nativeSizeX*factor||row.y>=w.nativeSizeY*factor))outside[i]++;
     // A complete per-scope projection, no silent 1200-row truncation.
     points[i].push({localOrdinal:b.localOrdinal,localGridOrdinal:row.localGridOrdinal,itemId:row.itemId,
-      x:row.x,y:row.y,orientation:row.orientation as string|null});
+      x:row.x,y:row.y,orientation:row.orientation as string|null,subgrid:parseSavedSubgridSummary(b.subgrid)});
   }
   return scopes.map((s,i)=>({verifiedGridOrdinals:[...eligible[i]],receipt:{
     contract:'wand.db04.saved-source-numeric-candidates@1',status:matched[i]?'full_path_pair_numeric_candidates':'no_full_path_pair_candidates',
