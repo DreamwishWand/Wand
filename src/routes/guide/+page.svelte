@@ -1,5 +1,8 @@
 <script lang="ts">
-  import {onMount,tick} from 'svelte';
+  import {onMount,onDestroy,tick} from 'svelte';
+  import GuideAnnouncements from '$lib/guide/GuideAnnouncements.svelte';
+  import {announcementProvider,EMPTY_ANNOUNCEMENTS,isPointAnnouncement,type AnnouncementProvider,type AnnouncementResult,type AnnouncementQuery} from '$lib/guide/community-announcements.ts';
+  import {announcementCopy} from '$lib/guide/community-announcement-copy.ts';
   import {base} from '$app/paths';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {loadPublicStarpath} from '$lib/guide/public-starpath.ts';
@@ -10,7 +13,7 @@
     GUIDE_EVENT_CALENDAR_AS_OF,type GuideCalendarEvent
   } from '$lib/guide/event-calendar.ts';
   import {viewerEventDateTime} from '$lib/guide/viewer-event-time.ts';
-  import {guideTimelineWindow,guideTimelineRows,
+  import {guideTimelineWindow,guideTimelineRows,guideAnnouncementMarker,
     type GuideTimelinePhase
   } from '$lib/guide/event-timeline.ts';
   import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences.ts';
@@ -20,6 +23,32 @@
   import {guideArchiveTitle,mergeGuideArchivedStarpaths} from '$lib/guide/starpath-calendar-archive.ts';
 
   let events:GuideCalendarEvent[]=[];
+  let announcements:AnnouncementResult=EMPTY_ANNOUNCEMENTS;
+  let announcementState:'unavailable'|'loading'|'ready'|'error'='unavailable';
+  let announcementRequest:AbortController|undefined;
+  let showCommunityCalendar=true;
+  let mounted=false;
+  $: newsCopy=announcementCopy(language);
+  $: announcementQuery={firstDay:windowRange.firstDay,lastDay:windowRange.lastDay,timeZone:viewerZone,language};
+  $: if(mounted)void refreshAnnouncements($announcementProvider,announcementQuery);
+  $: announcementRows=showCommunityCalendar?announcements.calendar.flatMap(item=>{
+    const marker=guideAnnouncementMarker(item.schedule,isPointAnnouncement(item.kind),windowRange);
+    return marker?[{item,marker}]:[];
+  }):[];
+  async function refreshAnnouncements(provider:AnnouncementProvider|null,query:AnnouncementQuery){
+    announcementRequest?.abort();
+    if(!provider){announcements=EMPTY_ANNOUNCEMENTS;announcementState='unavailable';return;}
+    const request=new AbortController();announcementRequest=request;
+    announcementState='loading';
+    try{
+      const result=await provider.list(query,request.signal);
+      if(request.signal.aborted)return;
+      announcements=result;announcementState='ready';
+    }catch{
+      if(!request.signal.aborted){announcements=EMPTY_ANNOUNCEMENTS;announcementState='error';}
+    }
+  }
+  onDestroy(()=>announcementRequest?.abort());
   let historyNames:Readonly<Record<string,Readonly<Record<string,string>>>>={};
   let loading=true;
   let loadError='';
@@ -173,8 +202,9 @@
     const unwatch=watchWandLanguage(value=>{language=value;});
     now=Date.now();
     const timer=setInterval(()=>{now=Date.now();},60000);
+    mounted=true;
     void load();
-    return ()=>{clearInterval(timer);unwatch();};
+    return ()=>{mounted=false;clearInterval(timer);unwatch();};
   });
 </script>
 
@@ -292,7 +322,23 @@
               </div>
             </div>
           {/each}
-          {#if visibleRows.length===0}
+          {#if announcementRows.length&&$announcementProvider}
+            <div class="community-calendar-divider">{newsCopy.community}</div>
+            {#each announcementRows as row (row.item.id)}
+              <div class="timeline-row community-calendar-row">
+                <a class="event-label" href={$announcementProvider.threadHref(row.item.id)} title={row.item.title}>
+                  <WandIcon name="community" size={16}/><span class="event-name">{row.item.title}</span>
+                </a>
+                <div class="event-track">
+                  <div class="track-grid" aria-hidden="true">{#each windowRange.days as day (day.day)}<div class="track-day"></div>{/each}</div>
+                  <a class="community-marker" class:point={row.marker.point} style={`left:${row.marker.left}%;width:${row.marker.point?0:row.marker.width}%`}
+                    href={$announcementProvider.threadHref(row.item.id)} title={row.item.title+' · '+row.item.confidenceLabel}
+                    aria-label={row.item.title+' · '+row.item.confidenceLabel}></a>
+                </div>
+              </div>
+            {/each}
+          {/if}
+          {#if visibleRows.length===0&&announcementRows.length===0}
             <div class="timeline-row empty-row">
               <div class="event-label blank"></div>
               <div class="empty-events">{copy.empty}</div>
@@ -345,6 +391,9 @@
     {/if}
   </section>
 
+  <GuideAnnouncements provider={$announcementProvider} data={announcements} {language} state={announcementState}
+    showCalendar={showCommunityCalendar} toggleCalendar={checked=>showCommunityCalendar=checked}
+    refresh={()=>refreshAnnouncements($announcementProvider,announcementQuery)}/>
   <nav class="guide-sections" aria-label={copy.guide}>
     <a class="service-card systems-card" href={`${base}/guide/systems/`}>
       <span class="service-icon"><WandIcon name="settings" size={46}/></span>
@@ -449,6 +498,11 @@
   .timeline-bar.clipped-start{border-top-left-radius:0;border-bottom-left-radius:0;border-left:2px dashed #ddc6ed}
   .timeline-bar.clipped-end{border-top-right-radius:0;border-bottom-right-radius:0;border-right:2px dashed #ddc6ed}
   .timeline-bar:hover,.timeline-bar.selected{filter:brightness(1.2);box-shadow:0 0 0 2px #dab6ff90}
+  .community-calendar-divider{position:sticky;left:0;padding:7px 12px;color:var(--wand-muted);border-top:1px dashed var(--wand-line);font-size:12px;background:var(--wand-menu)}
+  .community-calendar-row{height:48px}
+  .community-marker{position:absolute;top:50%;transform:translateY(-50%);height:20px;min-width:3px;box-sizing:border-box;border:1px solid var(--wand-accent);border-radius:4px;background:var(--wand-pill-bg);z-index:2}
+  .community-marker.point{width:14px!important;height:14px;transform:translate(-50%,-50%) rotate(45deg);background:var(--wand-accent)}
+  .community-marker:focus-visible,.community-marker:hover{outline:2px solid var(--wand-focus);outline-offset:2px}
   .empty-row .event-label{cursor:default}
   .empty-events{align-self:center;color:#ab99b5;text-align:center;font-size:12px}
   .message{padding:40px 16px;text-align:center;color:#cbb5de}
