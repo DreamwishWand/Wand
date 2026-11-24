@@ -61,7 +61,7 @@
    }
    if(d?.requestId===shapeId){
      loadingShape=false;
-     if(d.kind!=='design-shape'||d.key!==grid?.key||!d.result){error='配置形状を取得できませんでした。';return;}
+     if(d.kind!=='design-shape'||!grid||d.key!==grid.key||!d.result){error='配置形状を取得できませんでした。';return;}
      const g=d.result as DesignItemGeometry;
      const key=String(grid.factor);
      cache={...cache,[key]:new Map(cache[key]??[]).set(g.itemId,g)};
