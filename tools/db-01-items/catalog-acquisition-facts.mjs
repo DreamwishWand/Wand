@@ -86,13 +86,29 @@ export function buildCatalogFacts(source,rows){
       emit(gate.CharacterId,'Character','CatalogCharacter','source.CatalogVisibilityConditions.CharacterId',
         {CharacterId:gate.CharacterId,...(Object.hasOwn(gate,'MinFriendship')?{MinFriendship:gate.MinFriendship}:{})},[]);
     walk(gate.Conditions,'source.CatalogVisibilityConditions.Conditions');
+    // A positive single-condition equality is the only case promoted
+    // to a straightforward prerequisite. Keep other trees as original
+    // predicates, never interpret NOT/OR or incomplete source data.
+    const only=gate.Conditions?.Conditions;
+    let prerequisite=null;
+    if(Object.keys(gate).length===1&&Array.isArray(only)&&only.length===1&&
+      (gate.Conditions.Operator===undefined||gate.Conditions.Operator===0)&&
+      Object.keys(only[0]).length===1){
+      const m=only[0].MissionStatus,s=only[0].MissionStepStatus;
+      if(m&&category(m.Mission)==='Mission'&&m.State===8&&(m.Operator===undefined||m.Operator===0)&&
+        Object.keys(m).every(k=>['Mission','State','Operator'].includes(k)))
+        prerequisite={kind:'mission_completed',missionItemId:m.Mission};
+      else if(s&&category(s.Mission)==='Mission'&&s.Status===4&&Number.isSafeInteger(s.StepID)&&
+        Object.keys(s).every(k=>['Mission','StepID','Status'].includes(k)))
+        prerequisite={kind:'mission_step_completed',missionItemId:s.Mission,stepId:s.StepID};
+    }
     const gateStatus=Object.keys(gate).length===0?'empty_source_gate':
       'configured_source_gate';
     const value={generatorExcluded:generator,syncOnline:sync,hidden,onlineCategoryCode:online,
       exclusionFlags,flagsKnown,gateStatus,
       // Predicates are preserved verbatim; links are navigation, not a
       // flattened AND expression or sufficient acquisition condition.
-      catalogVisibilityConditions:gate,relatedConditions:links,
+      catalogVisibilityConditions:gate,relatedConditions:links,prerequisite,
       storeMembershipVerified:false,currentAvailabilityVerified:false};
     facts.set(row.itemId,value);
     totals.items++;
