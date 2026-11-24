@@ -352,7 +352,7 @@
       const worldIds=tag?worldScope?.itemIds??[]:null;
       worldScopedItemCount=worldIds?.length??null;
       rootCounts=worldScope?.rootCounts??new Map();
-      const completeNative=sourceIndex?.nativeSubtypeByItem.size===sourceIndex?.sourceItemCount;
+      const completeNative=!!sourceIndex&&sourceIndex.nativeSubtypeByItem.size===sourceIndex.sourceItemCount;
       // The category-only path needs no individual runtime.item() calls.
       // Native membership and totals were built once from the exact source index.
       if(worldIds&&!completeNative){
@@ -1380,7 +1380,7 @@
               {/each}
             </div>
           {/if}
-          {#if canUseDb01SourceFacets()}
+          {#if runtime&&!runtime.isOwnerLocal&&(runtime.metadata.snapshot==='steam-1.26.2-native-itemlist-v1'||runtime.metadata.snapshot.endsWith('-collection-source-v3'))}
             <fieldset class="collection-db01-acquisition">
               <legend>{collectionDb01AcquisitionHeading(locale)}</legend>
               {#if acquisitionIndex}
@@ -1646,7 +1646,7 @@
             <div class="inspector-art"><ItemArtwork itemId={selectedItem.itemId} alt={selectedItem.label} sourcePath={gameImageMap[String(selectedItem.itemId)]??null} large /></div>
             <h2>{selectedItem.label}</h2>
             <p class="inspector-meta">{displayItemCategory(selectedItem)}</p>
-            {#if canUseDb01SourceFacets()}
+            {#if runtime&&!runtime.isOwnerLocal&&(runtime.metadata.snapshot==='steam-1.26.2-native-itemlist-v1'||runtime.metadata.snapshot.endsWith('-collection-source-v3'))}
               {#key selectedItem.itemId}
                 <ItemMasterDetails itemId={selectedItem.itemId} {locale}/>
               {/key}
@@ -1664,7 +1664,7 @@
                 </dl>
               </details>
             {/if}
-            {#if canUseDb01SourceFacets()}
+            {#if runtime&&!runtime.isOwnerLocal&&(runtime.metadata.snapshot==='steam-1.26.2-native-itemlist-v1'||runtime.metadata.snapshot.endsWith('-collection-source-v3'))}
               <AcquisitionEvidence itemId={selectedItem.itemId} {locale}/>
               <RelatedQuests itemId={selectedItem.itemId} {locale}/>
             {/if}
