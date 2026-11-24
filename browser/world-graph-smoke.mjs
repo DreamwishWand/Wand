@@ -1061,7 +1061,7 @@ try{
     const root=document.documentElement,original=root.getAttribute('data-wand-theme');
     const area=document.querySelector('.world-workspace nav button[aria-pressed=true]');
     const layer=document.querySelector('.saved-shape-plot button[aria-pressed=true]');
-    const probe=document.createElement('div');probe.style.backgroundColor='var(--wand-accent-strong)';document.body.append(probe);
+    const probe=document.createElement('div');probe.style.backgroundColor='var(--wand-header-hover)';document.body.append(probe);
     const results=['dawn','coral','night'].map(theme=>{
       root.setAttribute('data-wand-theme',theme);
       const expected=getComputedStyle(probe).backgroundColor;
