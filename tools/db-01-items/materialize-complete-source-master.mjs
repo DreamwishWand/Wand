@@ -825,8 +825,11 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
     check(!Object.keys(other.fields).some(key=>Object.hasOwn(quest.fields,key)),'STRUCTURE_DUPLICATE');
     reviewedStructureCoverage={fields:{...other.fields,...quest.fields},runtimeSemanticsVerified:false};
   }
-  const reviewedRootScalarCoverage=attachReviewedRootScalars(project,e,version,source,byId);
+  // Legacy localization archive was built from the original attribute projection.
+  // Verify that exact census before adding new source keys, which need their own
+  // localized-text coverage; do not imply every newly exposed key is translated.
   const localizations=loadLocalizations(project,e,version,source,byId);
+  const reviewedRootScalarCoverage=attachReviewedRootScalars(project,e,version,source,byId);
   // Verify no existing public definition is lost or silently replaced.
   for(const [path,raw] of baseFiles){
     if(!path.startsWith('id/'))continue;
