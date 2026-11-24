@@ -323,8 +323,30 @@ function attachReviewedRootScalars(project,e,version,source,byId){
   }
   return {groupCount:groups.size,itemCount:seen.size,fieldPairs:pairs,occurrences,leafCount:leaves,existingPairs:existing,addedPairs:added,identityOccurrences:byId.size*2,runtimeSemanticsVerified:false};
 }
+// Legacy attribute extraction retained known fields and recorded omissions.
+// Permit full source-tree enrichment only for these audited original groups.
+// Never change any previously decoded value, array ordering, or array length.
+const LEGACY_COMPLETE_GROUPS=new Set([
+  'Building.GridAreaData','Building.GridEditRestriction','Building.SpecificUnlockCost','Building.UnlockCost',
+  'ActivityItem.GridAreaData','ActivityItem.CollectionVisibility','ActivityItem.GridEditRestriction',
+  'Furniture.GridAreaData','Furniture.CatalogVisibilityConditions','Furniture.PriceOverride',
+  'Furniture.GridEditRestriction','Furniture.CollectionVisibility','Furniture.ItemList',
+  'Clothing.CatalogVisibilityConditions','Clothing.PriceOverride','Currency.GridAreaData',
+  'Tool.GridAreaData','Trimming.CatalogVisibilityConditions','Skin.CollectionVisibility',
+  'Story.UnlockCost','Set.CatalogVisibilityConditions','ActivityData.AppearWhen','CollectionSet.Groups'
+]);
+function knownSourceFieldsAgree(prior,value){
+  if(prior===value)return true;
+  if(prior===null||value===null||typeof prior!=='object'||typeof value!=='object')return false;
+  if(Array.isArray(prior)||Array.isArray(value))return Array.isArray(prior)&&Array.isArray(value)&&
+    prior.length===value.length&&prior.every((v,i)=>knownSourceFieldsAgree(v,value[i]));
+  return Object.entries(prior).every(([key,v])=>key==='_unresolvedFields'
+    ? Array.isArray(v)&&v.every(n=>Number.isSafeInteger(n)&&n>0)
+    : Object.hasOwn(value,key)&&knownSourceFieldsAgree(v,value[key]));
+}
 function agreesWithPriorMessage(label,prior,value){
   if(equalSourceTree(prior,value))return true;
+  if(LEGACY_COMPLETE_GROUPS.has(label))return knownSourceFieldsAgree(prior,value);
   // The original narrow crafting Result decoder deliberately omitted field 3
   // (ItemState). Only replace that explicitly marked omission, never other data.
   if(label==='ActivityData.Result@CraftingRecipeItemData.Types.ResultInstance'&&
@@ -599,6 +621,8 @@ function buildReferenceColumns(rows){
         if(/^Tags\//.test(table?.FieldName??'')){check(categories.get(target)==='Tag','FORMULA_TAG_REFERENCE');emit(target,path);}
         else if(table?.FieldName==='Building'){if(ids.has(target)){check(categories.get(target)==='Building','FORMULA_BUILDING_REFERENCE');emit(target,path);}}
         else if(['Item','TargetItem.Item','TargetMealItem'].includes(table?.FieldName)){if(ids.has(target)){check(categories.get(target)==='ActivityItem','FORMULA_ITEM_REFERENCE');emit(target,path);}}
+      }else if(row.nativeCategory==='CollectionSet'&&/^source\.Groups\[\d+\]\.CollectionsByItem\[\d+\]\.ItemList\[\d+\]$/.test(path)){
+        emit(value,path); // Includes explicit exclusions; path retains original polarity context.
       }else if(/ItemIds?$/i.test(name))emit(value,path);
       else if(row.nativeCategory==='DutyAch'&&/^source\.Milestones\[\d+\]\.RewardItem$/.test(path)){
         check(ID(value)&&ids.has(value),'MILESTONE_REWARD_TARGET');emit(value,path);
