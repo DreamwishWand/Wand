@@ -530,6 +530,9 @@ try{
   assert.ok(displayedIds.length>0,'source-linked Star Path must return Item IDs');
   assert.ok(displayedIds.every(id=>starPathSet.has(id)),
     'acquisition filtering must use exact DB-02 → DB-01 Item ID crosswalk');
+  assert.ok(await page.locator('.item-card .collection-source-mark[data-source-category="star_path"]').count()>0,
+    'item list exposes source classes through compact marks');
+  assert.ok(await page.locator('.item-card .collection-source-mark[data-source-category="star_path"]').first().getAttribute('title'));
   await acquisitionFilter.selectOption('');
   await page.getByRole('button',{name:/フィルター/}).click();
   assert.ok(await page.locator('.facet-card').count()>=10);
@@ -630,7 +633,7 @@ try{
   await page.waitForFunction(()=>document.querySelector('.item-card-copy strong')?.textContent?.trim()==='Glass Shoe');
   await setItemLanguage('日本語');
   await page.waitForFunction(()=>document.querySelector('.item-card-copy strong')?.textContent?.trim()==='ガラスの靴');
-  assert.match(await page.locator('.item-card').first().innerText(),/家具|Furniture/);
+  assert.equal(await page.locator('.item-card-copy strong').first().innerText(),'ガラスの靴');
   // A local favorite must be searchable independently of ownership and persist
   // through Rust/WASM -> IndexedDB. Unstarring the only match removes it.
   const starFilter=page.getByRole('button',{name:'お気に入りのみ表示'});
@@ -715,7 +718,7 @@ try{
     assert.equal(await page.locator('.item-inspector button[title]').first().getAttribute('title'),
       copy.copyLink,'item permalink action must match the active language');
     assert.deepEqual(await page.locator('.ownership-actions button').allTextContents(),
-      [copy.owned,copy.missing,copy.unrecorded],
+      [copy.owned,copy.missing],
       'manual status actions must preserve their meaning in all 8 languages');
     assert.equal(await page.locator('.toolbar .subtle-button').innerText(),
       copy.filters+' ▾','filter control must update without resetting the Item');
@@ -794,18 +797,27 @@ try{
   assert.equal(backup.workspaces[0].entries['99999999'].discovered,true);
   assert.equal(backup.workspaces[0].entries['40005160'].quantity,7);
   assert.equal(backup.workspaces[0].entries['40005160'].status,'missing');
-  // Unknown/unrecorded must be distinct from an explicitly marked missing item.
-  // Clear directly from an empty search result, with no technical explanation.
+  // Quantity is editable directly on a card, with no detail panel.
+  const quantityControl=page.locator('.item-card[data-item-id="40005160"] .item-quantity-input');
+  await quantityControl.waitFor();
+  await quantityControl.fill('8');await quantityControl.press('Enter');
+  await page.waitForFunction(()=>document.querySelector('.item-quantity-input')?.value==='8'&&!document.querySelector('.item-quantity-input')?.disabled);
+  assert.equal((await readLocalState(page)).workspaces[0].entries['40005160'].quantity,8);
+  await quantityControl.fill('7');await quantityControl.press('Enter');
+  await page.waitForFunction(()=>document.querySelector('.item-quantity-input')?.value==='7'&&!document.querySelector('.item-quantity-input')?.disabled);
+  assert.equal((await readLocalState(page)).workspaces[0].entries['40005160'].quantity,7);
+  // Default missing and explicit missing share the same filter.
   await page.getByRole('button',{name:/フィルター/}).click();
   const statusControls=page.getByRole('group',{name:'収集状況（手動記録）'});
-  await statusControls.getByRole('button',{name:'未記録'}).click();
+  assert.equal(await statusControls.getByRole('button',{name:'未記録'}).count(),0);
+  await statusControls.getByRole('button',{name:'未所持',exact:true}).click();
   await search.fill('40005160');
-  await page.locator('.empty-panel').waitFor();
-  assert.match(await page.locator('.empty-panel').innerText(),/該当するアイテムはありません/);
-  assert.doesNotMatch(await page.locator('.empty-panel').innerText(),/未記録のアイテムは/);
-  assert.equal(await statusControls.getByRole('button',{name:'未記録'}).getAttribute('aria-pressed'),'true');
-  await page.locator('.empty-panel').getByRole('button',{name:'条件を解除'}).click();
-  await page.locator('.facet-card').first().waitFor();
+  await page.locator('.item-card').first().waitFor();
+  assert.equal(await page.locator('.item-state-toggle').first().isChecked(),false);
+  await search.fill('40006110');
+  await page.waitForFunction(()=>document.querySelector('.item-card')?.getAttribute('data-item-id')==='40006110');
+  assert.equal(await page.locator('.item-state-toggle').first().isChecked(),false);
+  await statusControls.getByRole('button',{name:'すべて',exact:true}).click();
   await search.fill('40005160');
   await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
   assert.equal(await page.locator('.breadcrumbs').getByRole('button',{name:'カテゴリ'}).count(),1);
@@ -1074,8 +1086,8 @@ try{
   const ownershipSearch=page.getByRole('searchbox',{name:/8言語/});
   await ownershipSearch.fill('40005160');
   await page.waitForFunction(()=>document.querySelectorAll('.item-card').length===1);
-  await page.getByRole('button',{name:/を未所持にする/}).first().click();
-  await page.getByRole('button',{name:/を所持済みにする/}).first().waitFor();
+  await page.getByRole('checkbox',{name:/を未所持にする/}).first().click();
+  await page.getByRole('checkbox',{name:/を所持済みにする/}).first().waitFor();
   await ownershipSearch.fill('');
   const saveRoot={
     GameInfo:{Version:643},
@@ -1119,10 +1131,24 @@ try{
     }}
   };
   const fixture=makeSyntheticP1g(saveRoot);
+  // Rejecting an overwrite keeps the persisted Collection exactly unchanged.
+  const beforeCancelledImport=await readLocalState(page);
+  let declined=false;
+  page.once('dialog',async dialog=>{
+    assert.match(dialog.message(),/既存の手動入力データを上書き/);
+    declined=true;await dialog.dismiss();
+  });
+  await page.locator('input[aria-label="DDVのセーブファイルを選択"]')
+    .setInputFiles({name:'cancelled.profile',mimeType:'application/octet-stream',buffer:fixture});
+  await page.waitForFunction(()=>!document.querySelector('select[aria-label="ローカル記録を選択"]').disabled,
+    null,{timeout:60000});
+  assert.equal(declined,true);
+  assert.deepEqual(await readLocalState(page),beforeCancelledImport);
+  page.once('dialog',dialog=>void dialog.accept());
   await page.locator('input[aria-label="DDVのセーブファイルを選択"]')
     .setInputFiles({name:'synthetic.profile',
       mimeType:'application/octet-stream',buffer:fixture});
-  await page.getByRole('status').filter({hasText:'セーブの発見履歴'}).first().waitFor({timeout:25000});
+  await page.getByRole('status').filter({hasText:'セーブの情報を反映しました。'}).first().waitFor({timeout:25000});
   assert.ok(saveWasmAssets.some(asset=>asset.status===200),
     'Collection real P1G Worker must load native Rust ddv_p1g_codec WASM');
   const afterSaveDownload=page.waitForEvent('download');
@@ -1145,7 +1171,7 @@ try{
   assert.equal(stateAfter['40003256'],undefined);
   assert.equal(stateAfter['99999999'].discovered,true);
   assert.equal(await page.getByRole('alert').filter({hasText:'do-not-leak'}).count(),0);
-  assert.match(await page.getByRole('status').filter({hasText:'セーブの発見履歴'}).first().innerText(),/所持 5件/);
+  assert.match(await page.getByRole('status').filter({hasText:'セーブの情報を反映しました。'}).first().innerText(),/セーブの情報を反映しました/);
   // Headless reader imports native state without visible diagnostics.
   assert.equal(await page.locator('.saved-store-preview,.empty-inspector').count(),0);
   await ownershipSearch.fill('40005160');
@@ -1176,6 +1202,7 @@ try{
     };
     window.addEventListener('wand:collection-busy',onBusy);
   });
+  page.once('dialog',dialog=>void dialog.accept());
   await page.locator('input[aria-label="DDVのセーブファイルを選択"]')
     .setInputFiles({name:'steam-plaintext.profile',
       mimeType:'application/octet-stream',
@@ -1215,6 +1242,7 @@ try{
   await page.locator('.collection-record-menu summary').click();
   assert.equal(await page.getByRole('group',{name:'ローカル記録の管理'}).getByRole('button',{name:'名前変更'}).isDisabled(),true);
   await page.locator('.collection-record-menu summary').click();
+  page.once('dialog',dialog=>void dialog.accept());
   await page.evaluate(()=>window.__releaseCollectionSaveRead());
   await page.waitForFunction(()=>
     !document.querySelector('select[aria-label="ローカル記録を選択"]').disabled,
@@ -1261,7 +1289,7 @@ try{
   await page.getByRole('button',{name:'セーブファイル管理'}).waitFor();
   await page.locator('.portal-card').filter({hasText:'Collection'}).first().click();
   await waitForLocalState(page,{item:'40005160',status:'owned'});
-  await page.getByRole('status').filter({hasText:'セーブの発見履歴'}).first().waitFor({timeout:30000});
+  await page.getByRole('status').filter({hasText:'セーブの情報を反映しました。'}).first().waitFor({timeout:30000});
   await page.getByRole('button',{name:'セーブファイル管理'}).click();
   await page.locator('.shell-save-status').getByText(/解析済み/).waitFor({timeout:15000});
   await page.getByRole('button',{name:'ファイルを閉じる'}).click();

@@ -640,7 +640,7 @@ impl CollectionEngine {
         self.workspace().entries.get(&id.to_string())
     }
     fn status(&self, id: u64) -> &str {
-        self.entry(id).and_then(|e| e.status.as_deref()).unwrap_or("unknown")
+        self.entry(id).and_then(|e| e.status.as_deref()).unwrap_or("missing")
     }
     fn item_json(&self, index: &Index, item: &Item, loc: usize) -> Value {
         let entry = self.entry(item.id);
@@ -1289,16 +1289,16 @@ mod tests {
         engine.set_entry_impl(103,r#"{"status":"missing"}"#).unwrap();
         let matching=r#"{"locale":"en","search":"Chair","category":"Furniture","status":"missing","offset":1,"limit":1}"#;
         let first_page:Value=serde_json::from_str(&engine.query_impl(matching).unwrap()).unwrap();
-        assert_eq!(first_page["total"],2);
+        assert_eq!(first_page["total"],3);
         assert_eq!(first_page["items"].as_array().unwrap().len(),1);
-        assert_eq!(engine.bulk_matching_impl(matching,"owned").unwrap(),2);
+        assert_eq!(engine.bulk_matching_impl(matching,"owned").unwrap(),3);
         let entries=&engine.state.workspaces[0].entries;
         assert_eq!(entries["101"].status.as_deref(),Some("owned"));
         assert_eq!(entries["101"].favorite,Some(true));
         assert_eq!(entries["102"].status.as_deref(),Some("owned"));
         assert_eq!(entries["102"].quantity,Some(3));
         assert_eq!(entries["103"].status.as_deref(),Some("missing"));
-        assert!(!entries.contains_key("104"));
+        assert_eq!(entries["104"].status.as_deref(),Some("owned"));
         assert_eq!(engine.bulk_matching_impl(matching,"owned").unwrap(),0);
         // Favorites are a separate local annotation, never inferred from
         // owned status. Paging and bulk operations share this same Rust filter.
@@ -1472,6 +1472,19 @@ mod tests {
         let text=output(&state).unwrap();
         assert!(parse_state(&text).unwrap()==state);
         assert!(text.contains("99999999"));
+    }
+    #[test]
+    fn manual_collection_defaults_to_missing_without_materializing_records() {
+        let mut engine=CollectionEngine::default();
+        assert_eq!(engine.status(101),"missing");
+        assert!(engine.workspace().entries.is_empty());
+        engine.set_entry_impl(101,r#"{"status":"owned"}"#).unwrap();
+        assert_eq!(engine.status(101),"owned");
+        engine.set_entry_impl(101,r#"{"status":null}"#).unwrap();
+        assert_eq!(engine.status(101),"missing");
+        assert!(engine.workspace().entries.is_empty());
+        engine.set_entry_impl(102,r#"{"quantity":7}"#).unwrap();
+        assert_eq!(engine.status(102),"missing");
     }
     #[test]
     fn workspace_and_bulk_changes_are_atomic() {
