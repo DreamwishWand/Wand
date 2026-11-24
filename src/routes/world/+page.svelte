@@ -139,7 +139,7 @@
   h1{font-size:18px;margin:0}small,a,.note{font-size:12px;color:var(--wand-muted,#b9abc7)}
   nav{display:flex;flex-wrap:wrap;gap:5px}
   nav button,nav select{font:inherit;padding:6px 10px;color:inherit;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:6px}
-  nav button[aria-pressed=true]{border-color:var(--wand-accent-strong);background:var(--wand-accent-strong);color:var(--wand-accent-contrast)}
+  nav button[aria-pressed=true]{border-color:var(--wand-accent);background:var(--wand-header-hover);color:var(--wand-text);box-shadow:inset 0 0 0 1px var(--wand-accent)}
   nav button:not([aria-pressed=true]):hover{background:var(--wand-header-hover)}
   nav button:focus-visible,nav select:focus-visible{outline:2px solid var(--wand-focus);outline-offset:2px}
   .workspace-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:start}
