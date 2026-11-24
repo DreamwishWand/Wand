@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {openPublicItemMaster} from '../src/lib/items/public-item-master.ts';
+import {openPublicItemDetails} from '../src/lib/items/public-item-details.ts';
 function site(){
   const requests=[];
   return {requests,fetcher:async url=>{
@@ -50,4 +51,37 @@ test('localized asset corruption fails closed',async()=>{
   };
   const m=await openPublicItemMaster('',corrupt,{scope:'complete'});
   await assert.rejects(m.getLocalizedItemText(30000031,'en'),/SHA_MISMATCH/);
+});
+
+test('localized complete details join existing source attributes, acquisition and original text by ItemID',async()=>{
+  const {fetcher,requests}=site();
+  const db=await openPublicItemDetails('',fetcher);
+  assert(!requests.some(x=>x.includes('/text/')));
+  const unknown=await db.getLocalizedCompleteItem(99999999,'en');
+  assert.equal(unknown,null);
+  assert(!requests.some(x=>x.includes('/text/')||x.includes('/acquisition/')));
+  const rows=await db.getLocalizedCompleteItems([30000031,99999999,30200105,30000031],'en');
+  const item=rows[0];
+  assert.equal(item.itemId,30000031);
+  assert.equal(item.locale,'en');
+  assert.equal(item.localizedText.Description.text,'A rare gift for a friend.');
+  assert.equal(item.definition.sourceAttributes.Description,item.localizedText.Description.key);
+  assert(item.definition.craftingRecipeItemIds.includes(2050300095));
+  assert.equal(item.acquisition.itemId,'30000031');
+  assert.equal(Number(item.sourceRelations.itemId),30000031);
+  assert.equal(item.currentAvailabilityVerified,false);
+  assert.equal(rows[1],null);
+  assert.equal(rows[2].localizedText.Description.text,null);
+  assert.deepEqual(rows[3],item);
+  assert(Object.isFrozen(rows));
+  assert(Object.isFrozen(item));
+  assert(Object.isFrozen(item.localizedText.Description));
+  assert.equal(requests.filter(x=>x.endsWith('/text/en.json')).length,1);
+  assert(!requests.some(x=>x.endsWith('/text/ja.json')));
+  const ja=await db.getLocalizedCompleteItem(30000031,'ja');
+  assert.equal(ja.locale,'ja');
+  assert.notEqual(ja.localizedText.Description.text,item.localizedText.Description.text);
+  assert.equal(requests.filter(x=>x.endsWith('/text/ja.json')).length,1);
+  assert.equal(requests.filter(x=>x.endsWith('/text/en.json')).length,1);
+  await assert.rejects(db.getLocalizedCompleteItem(30000031,'../en'),/INVALID_LOCALE/);
 });
