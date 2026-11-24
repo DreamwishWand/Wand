@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
-import {openPublicItemMaster} from '../src/lib/items/public-item-master.ts';
+import {openPublicItemMaster,openCurrentItemDatabase} from '../src/lib/items/public-item-master.ts';
 import {openPublicItemDetails} from '../src/lib/items/public-item-details.ts';
 import {createPublicItemMediaReader} from '../src/lib/items/public-item-media.ts';
 import {publicImageKey} from '../src/lib/media/public-image-key.ts';
@@ -264,4 +264,21 @@ test('DB-01 media join is version isolated and uses only SRC-04 published Item I
   assert(Object.isFrozen(rows));
   assert(!local.requests.some(url=>url.includes('/id/')||url.includes('/locale/')));
   await assert.rejects(media.getItemImages([0]),/INVALID_IDS/);
+});
+
+
+test('normal product reads the complete current database without a game version argument',async()=>{
+  const {fetcher,requests}=site();
+  const current=await openCurrentItemDatabase('/Wand',fetcher);
+  assert.equal(current.release.count,39067);
+  assert.equal(current.release.scope,'complete');
+  assert(requests[0].endsWith('/item-master-releases.json'));
+  assert(requests[1].endsWith('/item-master/current/index.json'));
+  const rows=await current.getItemFields([40005160,2130000001],['nativeCategory','names.en']);
+  assert.equal(rows[0].values['names.en'],'Glass Shoe');
+  assert.equal(rows[1].values.nativeCategory,'Condition');
+  assert(requests.slice(2).every(url=>/\/item-master\/objects\/[a-f0-9]{64}\.json$/.test(url)));
+  assert.equal((await current.getItem(40005160)).names.en,'Glass Shoe');
+  assert(requests.slice(2).every(url=>/\/item-master\/objects\/[a-f0-9]{64}\.json$/.test(url)));
+  assert(!requests.some(url=>url.includes('/id/')));
 });
