@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { base } from '$app/paths';
+  import {collectionHasRecordedProgress,collectionOverwriteMessage,collectionHasQuantity,collectionQuantityPatch} from '$lib/collection/manual-record.ts';
+  import QuickCollectionRecord from '$lib/collection/QuickCollectionRecord.svelte';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
   import ItemMasterDetails from '$lib/collection/ItemMasterDetails.svelte';
   import {
@@ -719,7 +721,7 @@
     return {destroy:()=>observer.disconnect()};
   }
   async function commit(action:()=>Promise<void>,description:HistoryDescription,repair=false):Promise<void>{
-    if(!runtime||busy||editHistory.isTraveling()||(storeError&&!repair))return;
+    if(!runtime||busy||saveReadInProgress||editHistory.isTraveling()||(storeError&&!repair))return;
     const before=runtime.state;
     busy=true;editHistory.beginCollectionEdit();
     try{
@@ -738,7 +740,7 @@
     const oldValue=(previous as Record<string,unknown>)[key];
     const nextValue=patch[key];
     const displayed=(value:unknown):string=>{
-      if(key==='status')return value==='owned'?'所持':value==='missing'?'未所持':'未記録';
+      if(key==='status')return value==='owned'?'所持':'未所持';
       if(key==='discovered'||key==='favorite')return value===true?'あり':'なし';
       return value===undefined||value===null?'—':String(value);
     };
@@ -772,9 +774,20 @@
     }
   }
   function toggleItemStatus(id:number):void{
-    if(!runtime)return;
+    if(!runtime||busy||saveReadInProgress)return;
     const current=entries[String(id)]?.status;
     const patch={status:current==='owned'?'missing' as const:'owned' as const};
+    void commit(()=>runtime!.setEntry(id,patch),describeEntry(id,patch));
+  }
+  function changeItemQuantity(id:number,value:string):void{
+    if(!runtime||busy||saveReadInProgress)return;
+    const patch=collectionQuantityPatch(value);
+    if(!patch||entries[String(id)]?.quantity===patch.quantity)return;
+    void commit(()=>runtime!.setEntry(id,patch),describeEntry(id,patch));
+  }
+  function toggleItemDiscovery(id:number):void{
+    if(!runtime||busy||saveReadInProgress)return;
+    const patch={discovered:entries[String(id)]?.discovered!==true};
     void commit(()=>runtime!.setEntry(id,patch),describeEntry(id,patch));
   }
   async function showItem(id:number,event:MouseEvent):Promise<void>{
@@ -1131,8 +1144,9 @@
     if(!Array.isArray(projection?.discovered)||
        !Array.isArray(projection?.positiveOwned)||
        (!projection.discovered.length&&!projection.positiveOwned.length))return;
-    busy=true;editHistory.beginCollectionEdit();
     const before=runtime.state;
+    if(collectionHasRecordedProgress(before)&&!window.confirm(collectionOverwriteMessage(locale)))return;
+    busy=true;editHistory.beginCollectionEdit();
     try{
       const applied=await runtime.applyMappedSaveProfile(projection);
       editHistory.recordCollection(before,runtime.state,{
@@ -1333,7 +1347,7 @@
       {#if filtersOpen}
         <div class="filter-panel">
           <fieldset><legend>{copy.manualStatus}</legend>
-            {#each [{id:'all',name:copy.all},{id:'owned',name:copy.owned},{id:'missing',name:copy.missing},{id:'unknown',name:copy.unrecorded}] as option}
+            {#each [{id:'all',name:copy.all},{id:'owned',name:copy.owned},{id:'missing',name:copy.missing}] as option}
               <button type="button" class:chosen={status===option.id} aria-pressed={status===option.id} on:click={()=>{status=option.id as typeof status;resetView();}}>{option.name}</button>
             {/each}
           </fieldset>
@@ -1466,13 +1480,11 @@
                         </span>
                         <span class="item-card-copy"><strong>{item.label}</strong></span>
                       </button>
-                      <button type="button" class="item-state-toggle"
-                        disabled={Boolean(storeError)} class:owned={entries[String(item.itemId)]?.status==='owned'}
-                        on:click={()=>toggleItemStatus(item.itemId)}
-                        aria-label={entries[String(item.itemId)]?.status==='owned'?
-                          `${item.label}${copy.markMissing}`:`${item.label}${copy.markOwned}`}>
-                        <WandIcon name={entries[String(item.itemId)]?.status==='owned'?'check':'plus'} size={20}/>
-                      </button>
+                      <QuickCollectionRecord {item} entry={entries[String(item.itemId)]??{}} {copy}
+                        disabled={Boolean(storeError)||busy||saveReadInProgress||selectionMode}
+                        onToggle={()=>toggleItemStatus(item.itemId)}
+                        onDiscovery={()=>toggleItemDiscovery(item.itemId)}
+                        onQuantity={value=>changeItemQuantity(item.itemId,value)}/>
                     </div>
                   {/each}
                 </div>
@@ -1512,12 +1524,10 @@
                 <button type="button" on:click={()=>selectedIds=[]} disabled={!selectedIds.length}>{copy.clearSelected}</button>
                 <button type="button" on:click={()=>applyBulk('owned')} disabled={!selectedIds.length}>{copy.owned}</button>
                 <button type="button" on:click={()=>applyBulk('missing')} disabled={!selectedIds.length}>{copy.missing}</button>
-                <button type="button" on:click={()=>applyBulk(null)} disabled={!selectedIds.length}>{copy.unrecorded}</button>
                 <span class="bulk-all-separator" aria-hidden="true">｜</span>
                 <span>{copy.allMatching} {totalMatches.toLocaleString(locale)} {copy.countUnit}:</span>
                 <button type="button" disabled={busy||Boolean(storeError)} on:click={()=>applyFilteredBulk('owned')}>{copy.allOwned}</button>
                 <button type="button" disabled={busy||Boolean(storeError)} on:click={()=>applyFilteredBulk('missing')}>{copy.allMissing}</button>
-                <button type="button" disabled={busy||Boolean(storeError)} on:click={()=>applyFilteredBulk('unknown')}>{copy.allUnrecorded}</button>
               </div>
             {/if}
             {#if !totalMatches}
@@ -1536,13 +1546,11 @@
                         <span class="item-icon" aria-hidden="true">{#if selectionMode}{selectedIds.includes(item.itemId)?'☑':'☐'}{:else}<ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null} />{/if}</span>
                         <span class="item-card-copy"><strong>{item.label}</strong><span>{displayItemCategory(item)}</span></span>
                       </button>
-                      <button type="button" class="item-state-toggle" disabled={Boolean(storeError)||selectionMode}
-                        class:owned={entries[String(item.itemId)]?.status==='owned'}
-                        on:click={()=>toggleItemStatus(item.itemId)}
-                        aria-label={entries[String(item.itemId)]?.status==='owned'?`${item.label}${copy.markMissing}`:`${item.label}${copy.markOwned}`}
-                        title={entries[String(item.itemId)]?.status==='owned'?copy.ownedTip:copy.missingTip}>
-                        <WandIcon name={entries[String(item.itemId)]?.status==='owned'?'check':'plus'} size={20}/>
-                      </button>
+                      <QuickCollectionRecord {item} entry={entries[String(item.itemId)]??{}} {copy}
+                        disabled={Boolean(storeError)||busy||saveReadInProgress||selectionMode}
+                        onToggle={()=>toggleItemStatus(item.itemId)}
+                        onDiscovery={()=>toggleItemDiscovery(item.itemId)}
+                        onQuantity={value=>changeItemQuantity(item.itemId,value)}/>
                     </div>
                   {/each}
               </div>
@@ -1671,17 +1679,16 @@
               <h3>{copy.collectionRecord}</h3>
               <div class="ownership-actions">
                 <button type="button" disabled={Boolean(storeError)} class:active={selectedEntry.status==='owned'} on:click={()=>changeEntry({status:'owned'})}>{copy.owned}</button>
-                <button type="button" disabled={Boolean(storeError)} class:active={selectedEntry.status==='missing'} on:click={()=>changeEntry({status:'missing'})}>{copy.missing}</button>
-                <button type="button" disabled={Boolean(storeError)} class:active={!selectedEntry.status} on:click={()=>changeEntry({status:null})}>{copy.unrecorded}</button>
+                <button type="button" disabled={Boolean(storeError)} class:active={selectedEntry.status!=='owned'} on:click={()=>changeEntry({status:'missing'})}>{copy.missing}</button>
               </div>
-              {#if ['QUANTITY_STOCK','OWNERSHIP_STOCK_AND_DISCOVERY'].includes(selectedItem.stateSemantic)}
+              {#if collectionHasQuantity(selectedItem)}
                 <label class="numeric-field">{copy.manualQuantity}
-                  <input type="number" min="0" max="999999" step="1" value={selectedEntry.quantity??''}
+                  <input type="number" min="0" max="999999" step="1" value={selectedEntry.quantity??0}
                     disabled={Boolean(storeError)}
                     on:change={(event)=>{
                       const value=(event.currentTarget as HTMLInputElement).value;
-                      changeEntry({quantity:value===''?null:Number(value)});
-                    }} placeholder={copy.unrecorded}/>
+                      changeItemQuantity(selectedItem!.itemId,value);
+                    }}/>
                 </label>
               {/if}
               {#if selectedItem.stateSemantic.includes('DISCOVERY') || selectedEntry.discovered!==undefined}
