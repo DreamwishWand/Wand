@@ -12,10 +12,11 @@ self.onmessage=async(event:MessageEvent<Request>)=>{
     const version=versions.current;
     if(versions.schema!=='wand.item-master.versions@1'||typeof version!=='string'||!/^\d+\.\d+\.\d+$/.test(version))throw Error('INVALID_RELEASE');
     const release=versions.releases.find((v:{gameVersion:string})=>v.gameVersion===version);
-    const data=await read('ddv/item-master/steam-'+version+'/explore.json');
-    if(!release||data.schema!=='wand.explore.catalog@1'||data.release!==release.release||!Array.isArray(data.items))throw Error('INVALID_CATALOG');
+    const complete=release?.complete;
+    const data=await read('ddv/item-master/steam-'+version+(complete?'-complete':'')+'/explore.json');
+    if(!release||data.schema!==(complete?'wand.explore.catalog@2':'wand.explore.catalog@1')||data.release!==(complete?.release??release.release)||!Array.isArray(data.items))throw Error('INVALID_CATALOG');
     const items:ExploreItem[]=data.items;
-    if(items.some(i=>!Number.isSafeInteger(i.itemId)||i.itemId<=0||!i.names||!Array.isArray(i.universes)||!Array.isArray(i.tags)||!(i.nativeCategory==='Furniture'&&[0,1,2,3,7,8,9].includes(i.subtype)||i.nativeCategory==='Trimming'&&[0,1].includes(i.subtype))))throw Error('INVALID_ITEM');
-    self.postMessage({items});
+    if(items.some(i=>!Number.isSafeInteger(i.itemId)||i.itemId<=0||!i.names||!Array.isArray(i.universes)||!Array.isArray(i.tags)||!(i.nativeCategory==='Furniture'&&[0,1,2,3,7,8,9].includes(i.subtype)||i.nativeCategory==='Trimming'&&[0,1].includes(i.subtype)||i.nativeCategory==='Building'&&[0,1,2,3,4,5].includes(i.subtype)||i.nativeCategory==='Skin'&&[1,2,3,6].includes(i.subtype)||i.nativeCategory==='Environment')))throw Error('INVALID_ITEM');
+    self.postMessage({items,universeTags:data.universeTags??[]});
   }catch{self.postMessage({error:true});}
 };
