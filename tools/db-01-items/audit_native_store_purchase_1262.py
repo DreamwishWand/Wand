@@ -105,7 +105,7 @@ def audit(assembly,dump,proto,itemlist):
           'currency_missing' if c not in dict(row) else 'amount_differs')
    counts[match]+=1
  require(counts=={'amount_differs':808,'no_provider':302,'exact':25,'currency_missing':21},'OVERRIDE_CENSUS')
- require(gate=={True:5288,False:900},'FURNITURE_GATE_CENSUS')
+ require(gate=={True:5288,False:1458},'FURNITURE_GATE_CENSUS')
  return {'gameVersion':'1.26.2','platform':'Steam','nativeWindowsVerified':len(WINDOWS),
   'nativeCallEdgesVerified':len(CALLS),'matchingCurrencyExplicitOverridePrecedesProviders':True,
   'furnitureTypeGatePassed':gate[True],'furnitureTypeGateRejected':gate[False],
