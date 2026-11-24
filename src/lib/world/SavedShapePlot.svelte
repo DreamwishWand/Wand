@@ -34,6 +34,7 @@
     const source=file,plan=editPlan,signature=draftSignature;
     if(!source||!plan||busy||source.size<1||source.size>32*1024*1024||
       (exporting&&checkedSignature!==signature))return;
+    const sourceName=source.name;
     const epoch=++editEpoch;busy=true;editError='';
     if(copyUrl)URL.revokeObjectURL(copyUrl);copyUrl='';
     let bytes:Uint8Array|null=null;
@@ -54,7 +55,7 @@
           receipt?.contract==='wand.db05.experimental-copy@1'&&receipt.copyBytes===r.bytes.byteLength&&receipt.originalUnchanged===true&&
           receipt.independentReopenVerified===true&&receipt.experimentalCopyOnly===true&&receipt.productionWriterAuthorized===false){
           try{copyUrl=URL.createObjectURL(new Blob([r.bytes.buffer as ArrayBuffer],{type:'application/octet-stream'}));
-            const dot=source.name.lastIndexOf('.');copyName=dot>0?source.name.slice(0,dot)+'-world-edited'+source.name.slice(dot):source.name+'-world-edited';}
+            const dot=sourceName.lastIndexOf('.');copyName=dot>0?sourceName.slice(0,dot)+'-world-edited'+sourceName.slice(dot):sourceName+'-world-edited';}
           catch{editError='コピーを生成できませんでした。';}finally{r.bytes.fill(0);}return;
         }
         r?.bytes?.fill(0);checkedSignature='';editError='セーブの変更を検証できませんでした。';
