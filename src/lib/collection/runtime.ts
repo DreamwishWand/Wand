@@ -599,17 +599,17 @@ export class CollectionRuntime {
       // by the local Worker; only known native-to-public family aliases pass.
       const publicFamilies:Record<string,readonly string[]>={
         Furniture:['Furniture','Landscaping','Roads & Fences'],
-        Clothing:['Clothing'],
+        Clothing:['Clothing','Appearance','Tools'],
         ActivityItem:['ActivityItem','Source Activity Items',
           'Source Crop','Source Meal','Source Seed','Source Flower','Source Fish',
           'Source Ingredient','Source Consumable','Source Mineral',
-          'Source Crafting Material'],
+          'Source Crafting Material','Ingredients','Meals','Foraging','Fish','Gems','Timebending','Crafting','Snippets'],
         Makeup:['Makeup','Appearance'],
         Trimming:['Trimming','Wallpaper & Flooring'],
         Building:['Building','Buildings'],
-        Skin:['Skin','Appearance'],
+        Skin:['Skin','Appearance','Buildings','Environment Effects','Characters','Mounts'],
         BoardGame:['BoardGame','Board Game'],
-        AvatarFeature:['AvatarFeature','Appearance'],
+        AvatarFeature:['AvatarFeature','Appearance','Environment Effects','Photo Mode'],
         PhotoMode:['PhotoMode','Photo Mode'],
         MountGear:['MountGear','Mounts'],
         Environment:['Environment','Environment Effects']
