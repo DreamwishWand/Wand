@@ -60,10 +60,10 @@ test('configured price overrides preserve all original public rows without claim
 test('native furniture display type gate is a structural filter, not shop membership',async()=>{
   const db=await openCurrentItemDatabase('',async url=>new Response(await readFile('static'+url),{status:200}));
   const gate=await db.getFieldRows('acquisition.furnitureDisplayTypeGate');
-  assert.equal(gate.length,6188);
+  assert.equal(gate.length,6746);
   const passed=gate.filter(([,value])=>value===true);
   assert.equal(passed.length,5288);
-  assert.equal(gate.filter(([,value])=>value===false).length,900);
+  assert.equal(gate.filter(([,value])=>value===false).length,1458);
   const types=new Map(await db.getFieldRows('itemType.subtypeCode'));
   const categories=new Map(await db.getFieldRows('nativeCategory'));
   for(const [id,value] of gate){
