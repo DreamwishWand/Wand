@@ -825,6 +825,21 @@ function loadLinkedLocalizations(project,e,version,source,byId,legacy){
 // Service-neutral, sparse columns compiled from the canonical complete rows.
  // The source namespace combines decoded native scalar and structured fields.
  // Explicit null/false/zero/empty values are retained; absent fields are omitted.
+// Project only explicit result/reward occurrences, never generic condition,
+// ingredient, tag, exclusion or spawn references. Source roles are candidates
+// independent of DB-02's six acquisition categories and runtime availability.
+function nativeAcquisitionRole(category,path){
+  if(category==='ActivityData'&&/^source\.(?:Result\.ItemID|ResultItemID)$/.test(path))return 'activity_result';
+  if(category==='ActivityItem'&&path==='source.ProducedItemID')return 'produced_item';
+  if(category==='Story'&&path==='source.Reward.ItemID')return 'story_reward';
+  if(category==='BoardGame'&&/^source\.AdditionalRewardItemIDs\[\d+\]$/.test(path))return 'board_game_reward';
+  if(category==='DutyAch'&&/^source\.(?:Milestones\[\d+\]\.RewardItem|CompletionRewards\[\d+\]\.Id|StepDifficultyLayers\[\d+\]\.Rewards\[\d+\]\.Id)$/.test(path))return 'duty_reward';
+  if(category==='ConditionalEvent'&&/^source\.GiveItem\.Items\[\d+\]\.ItemID$/.test(path))return 'conditional_grant';
+  if(category==='Mission'&&/^source\.RewardsXP\.Currency\[\d+\]\.CurrencyId$/.test(path))return 'quest_currency_reward';
+  if(category==='Mission'&&/^source\.AdditionnalRewards\.SubLootTables\[\d+\]\.Items\[\d+\]\.ItemID$/.test(path))return 'quest_additional_loot_candidate';
+  if(category==='LootTable'&&/^source\.Rewards\.SubLootTables\[\d+\]\.(?:Items\[\d+\]|ItemsConditional\[\d+\]\.Item)\.ItemID$/.test(path))return 'loot_table_candidate';
+  return null;
+}
 function writeFieldColumns(rows,release,write,assets){
   const columns=new Map();
   const split=new Set(['names','artwork','itemType','nativeProperties','sourceAttributes']);
@@ -855,7 +870,13 @@ function writeFieldColumns(rows,release,write,assets){
     }
   }
   const refs=buildReferenceColumns(rows);
+  const sourceCategories=new Map(rows.map(row=>[row.itemId,row.nativeCategory]));
   for(const row of rows){
+    const candidates=(refs.incoming.get(row.itemId)??[]).flatMap(([sourceId,path])=>{
+      const role=nativeAcquisitionRole(sourceCategories.get(sourceId),path);
+      return role===null?[]:[[sourceId,role,path]];
+    });
+    if(candidates.length)add('acquisition.nativeCandidates',row.itemId,candidates);
     for(const direction of ['incoming','outgoing']){
       const values=refs[direction].get(row.itemId);
       if(values?.length)add('references.'+direction,row.itemId,values);

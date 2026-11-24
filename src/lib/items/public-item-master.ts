@@ -330,6 +330,14 @@ export interface PublicItemMaster<T extends ItemMasterRecord|CompleteItemMasterR
 /** The other ItemID and the original occurrence path on the source definition. */
 export type ItemReferenceOccurrence=readonly [otherItemId:number,sourcePath:string];
 export type ItemReferenceDirection='incoming'|'outgoing';
+export const NATIVE_ACQUISITION_ROLES = [
+  'activity_result','produced_item','story_reward','board_game_reward','duty_reward',
+  'conditional_grant','quest_currency_reward','quest_additional_loot_candidate','loot_table_candidate'
+] as const;
+export type NativeAcquisitionRole=(typeof NATIVE_ACQUISITION_ROLES)[number];
+/** Original source definition and occurrence only; not a confirmed grant or availability. */
+export type NativeAcquisitionCandidate=readonly [sourceItemId:number,role:NativeAcquisitionRole,sourcePath:string];
+
 export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemMasterRecord>, ItemFieldReader {
   /** Collection-only projection; fetch neither all shards nor all languages. */
   getCollectionFacets(): Promise<CompleteItemMasterFacets>;
@@ -345,6 +353,7 @@ export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemM
   getItemReferences(itemId:number,direction:ItemReferenceDirection):Promise<readonly ItemReferenceOccurrence[]|null>;
   /** Ordered batch lookup, preserving duplicates, unknown IDs and empty edge lists. */
   getItemsReferences(itemIds:readonly number[],direction:ItemReferenceDirection):Promise<readonly (readonly ItemReferenceOccurrence[]|null)[]>;
+  getNativeAcquisitionCandidates(itemIds:readonly number[]):Promise<readonly (readonly NativeAcquisitionCandidate[]|null)[]>;
 }
 const SHA = /^[0-9a-f]{64}$/;
 const GAME_VERSION = /^[0-9]+\.[0-9]+\.[0-9]+$/;
@@ -882,6 +891,18 @@ export async function openPublicItemMaster(
       return (await itemReferences([id],direction))[0];
     },
     getItemsReferences:itemReferences,
+    async getNativeAcquisitionCandidates(ids:readonly number[]){
+      const field='acquisition.nativeCandidates';
+      const rows=await fieldReader.getItemFields(ids,[field]);
+      return Object.freeze(rows.map(row=>{
+        if(row===null)return null;
+        const value=row.values[field]??[];
+        assert(Array.isArray(value)&&value.every(v=>Array.isArray(v)&&v.length===3&&ID(v[0])&&
+          NATIVE_ACQUISITION_ROLES.includes(v[1] as NativeAcquisitionRole)&&
+          typeof v[2]==='string'&&v[2].startsWith('source.')),'INVALID_NATIVE_ACQUISITION_CANDIDATE');
+        return deepFreeze(value as unknown as readonly NativeAcquisitionCandidate[]);
+      }));
+    },
     async getCollectionFacets():Promise<CompleteItemMasterFacets>{
       const value=await asset('collection-facets.json');
       assert(isObject(value)&&value.schema==='wand.collection.db01-complete-source-facets@1'&&

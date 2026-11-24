@@ -448,3 +448,31 @@ test('nested source references connect actual quest conditions, event selectors,
   assert(tag.some(([id,p])=>id===2001200014&&/^source\.GardeningHarvest\.TargetItem\.FilterGenerator\.Tags\[\d+\]\.Tags\[\d+\]$/.test(p)));
   assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
 });
+
+
+test('native acquisition candidates expose original reward and output occurrences without ingredient or condition misclassification',async()=>{
+  const requests=[];
+  const db=await openPublicItemMaster('',async url=>{requests.push(url);return fetcher(url)},{scope:'complete'});
+  const field='acquisition.nativeCandidates';
+  const ids=[30000031,51300032,120000073,80300000,30400064,31200032,99999999];
+  const rows=await db.getItemFields(ids,[field]);
+  const typed=await db.getNativeAcquisitionCandidates(ids);
+  assert.deepEqual(typed,rows.map(row=>row===null?null:row.values[field]??[]));
+  assert(Object.isFrozen(typed)&&Object.isFrozen(typed[0]));
+  const has=(row,sourceId,role,path)=>(row.values[field]??[]).some(
+    ([source,r,p])=>source===sourceId&&r===role&&p===path);
+  assert(has(rows[0],2050300095,'activity_result','source.Result.ItemID'));
+  assert(has(rows[1],200000001,'story_reward','source.Reward.ItemID'));
+  assert(has(rows[2],1520000524,'conditional_grant','source.GiveItem.Items[0].ItemID'));
+  assert(has(rows[3],2110100001,'duty_reward','source.Milestones[4].RewardItem'));
+  assert(has(rows[4],2070000628,'quest_additional_loot_candidate','source.AdditionnalRewards.SubLootTables[0].Items[0].ItemID'));
+  assert(!(rows[5].values[field]??[]).some(([id,,p])=>id===1520000001&&p.includes('Spawn')));
+  assert.equal(rows[6],null);
+  const all=await db.getFieldRows(field);
+  assert(all.length>0);
+  for(const [,links] of all)for(const [,role,path] of links){
+    assert(!/Ingredients|Conditions|Spawn|Tags/.test(path));
+    assert(typeof role==='string');
+  }
+  assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
+});
