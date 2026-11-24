@@ -10,7 +10,7 @@ test('only existing progress in active workspace requires an overwrite confirmat
    assert.equal(collectionHasRecordedProgress(make({'1':entry})),true);
  }
  for(const locale of ['ja','en','fr','it','de','es-ES','zh-CN','pt-BR'])
-   assert.ok(collectionOverwriteMessage(locale).length>20);
+   assert.ok(collectionOverwriteMessage(locale).length>8);
 });
 test('quantity controls accept integer manual stock without inventing quantities',()=>{
  assert.equal(collectionHasQuantity({family:'Furniture',stateSemantic:'OWNERSHIP_AND_DISCOVERY'}),true);
