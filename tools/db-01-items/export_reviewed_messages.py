@@ -108,12 +108,12 @@ def build(dbpath,root,selected=None):
      result={};grouped=collections.defaultdict(list)
      for p in paths:grouped[nodes[p][0]].append(p)
      for name,ps in grouped.items():
-      ps.sort(key=lambda p:nodes[p][1]);require([nodes[p][1] for p in ps]==list(range(len(ps))),'occurrence order');ts={nodes[p][4] for p in ps};require(len(ts)==1,'type collision');t=ts.pop();rep=t.startswith('RepeatedField<');parts=[]
+      ps.sort(key=lambda p:nodes[p][1]);require([nodes[p][1] for p in ps]==list(range(len(ps))),'occurrence order');ts={nodes[p][4] for p in ps};require(len(ts)==1,'type collision');t=ts.pop();rep=t.startswith(('RepeatedField<','MapField<'));parts=[]
       number=nodes[ps[0]][2]
       require([r for r in actual if list(fields(r))[0][0]==number]==[nodes[p][-1] for p in ps],'wire occurrence order')
       for p in ps:
        _,_,num,wire,_,status,v,raw=nodes[p];wirevalue=raw_field(raw,num,wire)
-       if status=='declared_message':require(wire==2,'message wire');parts.append(group(p,wirevalue))
+       if status in ('declared_message','declared_map_entry'):require(wire==2,'message wire');parts.append(group(p,wirevalue))
        elif status=='varint_wire_value':
         require(wire==0 and (str(wirevalue) if wirevalue>2**53-1 else wirevalue)==json.loads(v),'varint mismatch')
         parts.append(scalar(t[14:-1] if rep else t,wire,wirevalue))
@@ -131,7 +131,7 @@ def build(dbpath,root,selected=None):
        else:raise ValueError('unreviewed status '+status+' '+p)
       require(rep or len(parts)==1,'singular repetition');result[name]=parts if rep else parts[0]
      return result
-    value=group('',frame,True)[key];data.append([i,value]);occurrences+=len(children['']);leaves+=sum(len(json.loads(n[6])) if n[5]=='packed_varint_wire_values' else n[5]!='declared_message' for n in nodes.values())
+    value=group('',frame,True)[key];data.append([i,value]);occurrences+=len(children['']);leaves+=sum(len(json.loads(n[6])) if n[5]=='packed_varint_wire_values' else n[5] not in ('declared_message','declared_map_entry') for n in nodes.values())
    if not data:continue
    prev=0;rows=[]
    for i,v in data:rows.append([i-prev,v]);prev=i

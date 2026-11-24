@@ -287,7 +287,7 @@ function attachReviewedMessages(project,e,version,source,byId,grouped=false,stru
     const decoded=JSON.parse(inflateSync(Buffer.from(entry.packed,'base64'),{maxOutputLength:32*1024*1024}).toString('utf8'));
     check(Array.isArray(decoded)&&decoded.length===entry.count,'MESSAGE_ROWS');
     let id=0,occurrences=0,leafCount=0;
-    const repeated=entry.declaredType.startsWith('RepeatedField<');
+    const repeated=/^(?:RepeatedField|MapField)</.test(entry.declaredType);
     const message=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
     for(const pair of decoded){
       check(Array.isArray(pair)&&pair.length===2&&ID(pair[0]),'MESSAGE_ROW');
@@ -512,6 +512,10 @@ function buildReferenceColumns(rows){
         check(categories.get(value)==='Scene','ACTIVITY_SCENE_REFERENCE');emit(value,path);
       }else if(row.nativeCategory==='ConditionalEvent'&&/^source\.SetDialogueFlag\.Flag$/.test(path)){
         check(categories.get(value)==='Dialogue','DIALOGUE_FLAG_REFERENCE');emit(value,path);
+      }else if(row.nativeCategory==='Furniture'&&/^source\.Mannequin\.EmptyMannequinClothes\[\d+\]\.Value$/.test(path)){
+        check(categories.get(value)==='Clothing','MANNEQUIN_CLOTHING_REFERENCE');emit(value,path);
+      }else if(row.nativeCategory==='ConditionalEvent'&&path==='source.SendMailbox.Villager'){
+        if(value!==0){check(categories.get(value)==='Character','MAILBOX_VILLAGER_REFERENCE');emit(value,path);}
       }else if(/ItemIds?$/i.test(name))emit(value,path);
       else if(row.nativeCategory==='DutyAch'&&/^source\.Milestones\[\d+\]\.RewardItem$/.test(path)){
         check(ID(value)&&ids.has(value),'MILESTONE_REWARD_TARGET');emit(value,path);
