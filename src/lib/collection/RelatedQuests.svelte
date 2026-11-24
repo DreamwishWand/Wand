@@ -129,6 +129,6 @@
   .quest-evidence-section li{min-width:0;overflow-wrap:anywhere}
   .quest-evidence-more{display:inline-block;margin:8px 0 0}
   .quest-evidence-status{font-size:11px;line-height:1.5;opacity:.75;margin:8px 0}
-  .quest-evidence-retry{border:1px solid #ffffff35;background:transparent;
+  .quest-evidence-retry{border:1px solid var(--wand-subtle-line);background:transparent;
     color:inherit;border-radius:8px;padding:5px 10px;cursor:pointer}
 </style>
