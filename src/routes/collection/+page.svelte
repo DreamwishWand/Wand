@@ -14,8 +14,8 @@
     from '$lib/collection/browse-layout.ts';
   import {COLLECTION_UNIVERSE_TAG_BY_ID,COLLECTION_UNIVERSE_TAG_NAMES}
     from '$lib/collection/universe-tag-names.ts';
-  import {collectionSubcategories,collectionUsesSubcategories,collectionFurnitureKindLabel,type CollectionSubcategory} from '$lib/collection/subcategories.ts';
-  import {makeCollectionBrowseOrder,collectionUniverseRootSection,collectionRootUsesUniverse,type CollectionBrowseOrder} from '$lib/collection/semantic-browse.ts';
+  import {collectionSubcategories,collectionFurnitureKindLabel,type CollectionSubcategory} from '$lib/collection/subcategories.ts';
+  import {makeCollectionBrowseOrder,collectionUniverseRootSection,type CollectionBrowseOrder} from '$lib/collection/semantic-browse.ts';
   import {loadCompleteCollection} from '$lib/collection/db01-complete-catalog.ts';
   import {COLLECTION_TOP_CATEGORIES} from '$lib/collection/category-hierarchy.ts';
   import {buildWorldBrowseIndex,countOwnedInWorldScope,type WorldBrowseScope} from '$lib/collection/world-browse-index.ts';
@@ -105,6 +105,8 @@
   let worldBrowseIndex:ReadonlyMap<string,WorldBrowseScope>=new Map();
   let worldScopedItemCount:number|null=null;
   let rootCounts:ReadonlyMap<CollectionTopCategory,number>=new Map();
+  let rootOwned:ReadonlyMap<CollectionTopCategory,number>=new Map();
+  let rootProgressTotals:ReadonlyMap<CollectionTopCategory,number>=new Map();
   let sourceLoad:Promise<void>|null=null;
   let sourceLoadError=false;
   let sourceUniverseOptions:{key:string;count:number}[]=[];
@@ -162,7 +164,7 @@
   let inspectorTrigger:HTMLElement|null=null;
 
   $: topCategoryCards=sourceIndex?.rootsByItem
-    ?COLLECTION_TOP_CATEGORIES.map(({id,icon})=>({id,icon,total:rootCounts.get(id)??0,owned:0}))
+    ?COLLECTION_TOP_CATEGORIES.map(({id,icon})=>({id,icon,total:rootCounts.get(id)??0,owned:rootOwned.get(id)??0}))
     :collectionTopCategoryCards([
       ...sourceNativeSubtypeCards,
       ...sourceActivityTypeCards.map(row=>({...row,key:'ActivityItem:'+row.code}))
@@ -359,6 +361,7 @@
       const worldIds=tag?worldScope?.itemIds??[]:null;
       worldScopedItemCount=worldIds?.length??null;
       rootCounts=worldScope?.rootCounts??new Map();
+      rootProgressTotals=worldScope?.progressTotals??new Map();
       scopedSubcategories=sourceIndex?.rootsByItem&&sourceTopCategory!==null
         ?collectionSubcategories(sourceIndex,sourceTopCategory,worldScope):[];
       const completeNative=!!sourceIndex&&sourceIndex.nativeSubtypeByItem.size===sourceIndex.sourceItemCount;
@@ -379,6 +382,7 @@
       }
       const ownedCounts=sourceIndex&&worldScope
         ?countOwnedInWorldScope(sourceIndex,worldScope,activeEntries):null;
+      rootOwned=ownedCounts?.root??new Map();
       sourceActivityTypeCards=sourceIndex&&worldScope
         ?[...worldScope.activityCounts].sort((a,b)=>a[0]-b[0]).map(([code,total])=>({
           code,nativeName:sourceIndex!.activityTypeNames.get(code)??null,total,
@@ -480,9 +484,9 @@
           (candidateIds?candidateIds.flatMap(id=>{
             try{return [runtime!.item(id,locale)];}catch{return [];}
           }):queryAllCollectionRows(currentFilter(0,200)));
-        const orderKey=locale+'|'+(sourceUniverseSelection!==null?'universe':'world');
+        const orderKey=locale+'|'+(sourceUniverseSelection!==null?'universe':'world')+'|'+(tag??'');
         if(sourceIndex&&(browseOrderSource!==sourceIndex||browseOrderKey!==orderKey)){
-          browseOrder=makeCollectionBrowseOrder(sourceIndex,locale,sourceUniverseSelection!==null);
+          browseOrder=makeCollectionBrowseOrder(sourceIndex,locale,sourceUniverseSelection!==null,tag??'');
           browseOrderSource=sourceIndex;browseOrderKey=orderKey;
         }
         sourceAllMatching=candidates.filter(item=>
@@ -884,11 +888,7 @@
   function chooseTopCategory(id:CollectionTopCategory):void{
     if(!topCategoryCards.some(card=>card.id===id&&card.total>0))return;
     sourceTopCategory=id;sourceActivityType=null;sourceNativeSubtype=null;
-    const hasSubcategories=sourceIndex?.rootsByItem
-      ?collectionUsesSubcategories(id,collectionSubcategories(sourceIndex,id,
-        worldBrowseIndex.get(sourceChoices.worldContextTag??'')))
-      :['furniture','clothing','appearance','roads-fences','interior'].includes(id);
-    selected='';browsingAllItems=!hasSubcategories;search='';status='all';favoriteOnly=false;
+    selected='';browsingAllItems=true;search='';status='all';favoriteOnly=false;
     nameStatus='all';expansion='';acquisitionFilter='';
     sourceChoices=sourceChoices.worldContextTag?{worldContextTag:sourceChoices.worldContextTag}:{};
     sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
@@ -1357,6 +1357,19 @@
               <button type="button" class:chosen={status===option.id} aria-pressed={status===option.id} on:click={()=>{status=option.id as typeof status;resetView();}}>{option.name}</button>
             {/each}
           </fieldset>
+          {#if sourceTopCategory!==null&&scopedSubcategories.length>1}
+            <label class="filter-label">{locale==='ja'?'種類':collectionDb01FacetLabel(locale,sourceTopCategory==='clothing'?'clothingSlot':'furnitureKind')}
+              <select value={sourceNativeSubtype??''} on:change={event=>{
+                sourceNativeSubtype=event.currentTarget.value||null;
+                sourceGroupsCacheKey='';resetView();
+              }}>
+                <option value="">{copy.all}</option>
+                {#each scopedSubcategories as group (group.key)}
+                  <option value={group.key}>{collectionFurnitureKindLabel(locale,group.key,sourceIndex)??nativeSubtypeLabel(locale,group.key,group.nativeName)}</option>
+                {/each}
+              </select>
+            </label>
+          {/if}
           <label class="filter-label">{copy.expansions}
             <select bind:value={expansion} on:change={resetView}>
               <option value="">{copy.all}</option>
@@ -1550,9 +1563,9 @@
             {:else}
               <div class="items-grid">
                   {#each visibleItems as item,idx (item.itemId)}
-                    {#if viewAxis==='world'&&collectionRootUsesUniverse(sourceTopCategory)&&browseOrder&&
-                      (idx===0||browseOrder.universeKey(item.itemId)!==browseOrder.universeKey(visibleItems[idx-1].itemId))}
-                      <h3 class="collection-item-universe-heading">{browseOrder.universeLabel(browseOrder.universeKey(item.itemId))}</h3>
+                    {@const heading=browseOrder?.group(item.itemId,sourceTopCategory)}
+                    {#if viewAxis==='world'&&heading&&(idx===0||heading.key!==browseOrder?.group(visibleItems[idx-1].itemId,sourceTopCategory)?.key)}
+                      <h3 class="collection-item-universe-heading">{heading.label}</h3>
                     {/if}
                     <div class="item-card" data-item-id={item.itemId} class:current={selectedItemId===item.itemId} class:bulk-selected={selectedIds.includes(item.itemId)}>
                       <button type="button" class="item-card-body"
@@ -1611,7 +1624,12 @@
                     on:click={()=>chooseTopCategory(group.id)}>
                     <span class="facet-flourish" aria-hidden="true"><WandIcon name={group.icon} size={22}/></span>
                     <strong>{collectionTopCategoryLabel(locale,group.id)}</strong>
-                    <span>{group.total?group.total.toLocaleString(locale)+' '+copy.countUnit:'—'}</span>
+                    {@const denominator=sourceIndex?.rootsByItem?(rootProgressTotals.get(group.id)??0):group.total}
+                    <span class="collection-category-progress" data-progress-owned={group.owned} data-progress-total={denominator}>
+                      {denominator?group.owned.toLocaleString(locale)+' / '+denominator.toLocaleString(locale):'—'}
+                      {#if denominator}<span class="collection-category-percent">{Math.floor(group.owned*100/denominator)}%</span>{/if}
+                    </span>
+                    {#if denominator}<span class="collection-category-progress-track" aria-hidden="true"><span style:width={Math.min(100,group.owned*100/denominator)+'%'}></span></span>{/if}
                   </button>
                 {/each}
               {:else if sourceIndex?.rootsByItem}
@@ -1748,6 +1766,10 @@
   .item-state-toggle{position:absolute;right:4px;top:4px;width:24px;height:24px;z-index:1;border-radius:5px;background:var(--wand-menu);color:var(--wand-text);border-color:var(--wand-line)}
   .item-state-toggle.owned{background:var(--wand-accent,#37855d);color:var(--wand-accent-contrast,#fff)}
   .item-card.current,.item-card.bulk-selected{border-color:var(--wand-accent)}
+  .collection-category-progress{display:flex;align-items:center;justify-content:space-between;gap:5px;width:100%;font-variant-numeric:tabular-nums}
+  .collection-category-percent{color:var(--wand-text);font-weight:600}
+  .collection-category-progress-track{height:3px;width:100%;background:var(--wand-control);border-radius:3px;overflow:hidden;display:block}
+  .collection-category-progress-track>span{display:block;height:100%;background:var(--wand-success);border-radius:3px}
   .collection-item-universe-heading{grid-column:1/-1;font-size:12px;font-weight:600;margin:8px 0 0;line-height:1.3;color:inherit}
   .collection-universe-section-head{margin-bottom:5px}
   @media(max-width:540px){.items-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,94px),1fr));gap:4px}.item-icon{height:64px}.item-card{padding:4px}.item-card-copy strong{font-size:10px}.item-state-toggle{width:22px;height:22px}}
