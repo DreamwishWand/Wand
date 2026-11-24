@@ -90,7 +90,7 @@ test('world grouping and progress preserve exact scoped Item IDs',async()=>{
   }
 });
 
-test('meals use one contiguous kind section, then contiguous world sections',async()=>{
+test('meals use one visual section per kind, sorted by world within each kind',async()=>{
   const {index}=await loadCompleteCollection('/Wand',fetcher);
   const ids=index.itemsByRoot.get('meals')??[];
   const order=makeCollectionBrowseOrder(index,'ja',false);
@@ -98,13 +98,13 @@ test('meals use one contiguous kind section, then contiguous world sections',asy
   const groups=new Map();let lastKind='',lastWorld='';
   for(const row of sorted){
     const kind=order.group(row.itemId,'meals').key;
-    const world=order.subgroup(row.itemId,'meals').key;
+    const world=order.mealWorldSortKey(row.itemId);
     if(kind!==lastKind){assert(!groups.has(kind),'meal kinds must not repeat');groups.set(kind,new Set());lastKind=kind;lastWorld='';}
     if(world!==lastWorld){assert(!groups.get(kind).has(world),'world must not repeat within kind');groups.get(kind).add(world);lastWorld=world;}
   }
   assert.equal(new Set(sorted.map(row=>row.itemId)).size,ids.length);
   assert(groups.size>=3,'source must distinguish at least three meal types');
   const scoped=makeCollectionBrowseOrder(index,'ja',false,'IsDreamlightValley');
-  assert(sorted.every(row=>scoped.subgroup(row.itemId,'meals')===null));
+  assert(sorted.every(row=>scoped.group(row.itemId,'meals').key===order.group(row.itemId,'meals').key));
   console.log('COLLECTION_MEAL_GROUPS '+JSON.stringify([...groups].map(([kind,worlds])=>[kind,[...worlds]])));
 });
