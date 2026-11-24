@@ -205,22 +205,59 @@ const REVIEWED_MESSAGE_GROUPS={
   'Companion.DailySchedule':['Companion','DailySchedule','RepeatedField<CritterItemData.Types.DailyScheduleData>'],
   'Companion.FavoriteItem':['Companion','FavoriteItem','ItemSelector'],
   'Companion.LikeItem':['Companion','LikeItem','ItemSelector'],
-  'Building.UpgradeInfo':['Building','UpgradeInfo','RepeatedField<UpgradeData>']
+  'Building.UpgradeInfo':['Building','UpgradeInfo','RepeatedField<UpgradeData>'],
+  'Condition.Conditions':['Condition','Conditions','ConditionsList'],
+  'Dialogue.Conditions':['Dialogue','Conditions','ConditionsList'],
+  'ConditionalEvent.Conditions':['ConditionalEvent','Conditions','ConditionsList'],
+  'Mission.AvailableConditions':['Mission','AvailableConditions','ConditionsList'],
+  'Mission.UnlockConditions':['Mission','UnlockConditions','ConditionsList'],
+  'RecurringEvent.Conditions':['RecurringEvent','Conditions','ConditionsList'],
+  'DutyAch.AvailableWhen':['DutyAch','AvailableWhen','ConditionsList'],
+  'Skin.AvailableWhen':['Skin','AvailableWhen','ConditionsList'],
+  'ActivityData.Conditions':['ActivityData','Conditions','ConditionsList'],
+  'Character.DisableSleepConditions':['Character','DisableSleepConditions','ConditionsList'],
+  'Character.OverrideNameConditions':['Character','OverrideNameConditions','ConditionsList'],
+  'Character.SwitcherUnlockConditions':['Character','SwitcherUnlockConditions','ConditionsList'],
+  'Skin.Conditions':['Skin','Conditions','ConditionsList'],
+  'Companion.AppearanceConditions':['Companion','AppearanceConditions','ConditionsList'],
+  'MemoryShard.Conditions':['MemoryShard','Conditions','ConditionsList'],
+  'Scene.CharacterPresenceConditions':['Scene','CharacterPresenceConditions','ConditionsList'],
+  'Story.UnlockConditions':['Story','UnlockConditions','ConditionsList'],
+  'Story.VisibilityConditions':['Story','VisibilityConditions','ConditionsList'],
+  'Furniture.AvailableWhen':['Furniture','AvailableWhen','ConditionsList'],
+  'Companion.VisibilityConditions':['Companion','VisibilityConditions','ConditionsList'],
+  'DutyAch.DescriptionCompletedWhen':['DutyAch','DescriptionCompletedWhen','ConditionsList'],
+  'DutyAch.DescriptionSucceedWhen':['DutyAch','DescriptionSucceedWhen','ConditionsList'],
+  'Skin.CannotRemoveWhen':['Skin','CannotRemoveWhen','ConditionsList'],
+  'Character.CanHangoutConditions':['Character','CanHangoutConditions','ConditionsList'],
+  'Profession.AvailableConditions':['Profession','AvailableConditions','ConditionsList'],
+  'Character.BlockApplyingSkinWhen':['Character','BlockApplyingSkinWhen','ConditionsList'],
+  'Character.RemoveSkinWhen':['Character','RemoveSkinWhen','ConditionsList'],
+  'Character.UnassignCrewMemberConditions':['Character','UnassignCrewMemberConditions','ConditionsList'],
+  'Tag.ConditionsOrHaveIngredients':['Tag','ConditionsOrHaveIngredients','ConditionsList'],
+  'Upgrade.AvailableConditions':['Upgrade','AvailableConditions','ConditionsList']
 };
 const REVIEWED_GUID_PATHS=new Set(['UpgradeInfo.PrefabAddress','UpgradeInfo.Store.InteriorPrefabAddress','UpgradeInfo.UpgradeDialogueAddress']);
-function numericTree(value,depth=0,guidPath=null){
+// Strings are only original, reviewed identity fields, not arbitrary source text.
+const REVIEWED_CONDITION_UUIDS=new Set(['KeyholeStatus.Keyhole','KeyholeItemStatus.Keyhole','LeverStatus.Lever','Timestamp.Timestamp']);
+const REVIEWED_CONDITION_KEYS=new Set(['EventTime.Event','Weather.Weather','Expansion.ExpansionName','EventTimeSegment.Event','EventTimeSegment.Segment','FloatingFestivalTime.Event','FloatingFestivalPuzzleTime.Event','FloatingFestivalPuzzleCompleted.Event','MinigameInProgress.Minigame']);
+function numericTree(value,depth=0,guidPath=null,condition=false){
+  check(depth<=16,'MESSAGE_DEPTH');
   if(typeof value==='string'){
-    check(REVIEWED_GUID_PATHS.has(guidPath)&&/^guid:[0-9a-f]{32}$/.test(value),'MESSAGE_GUID');
+    const suffix=guidPath?.split('.').slice(-2).join('.');
+    check(condition?(
+      REVIEWED_CONDITION_UUIDS.has(suffix)&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value)||
+      REVIEWED_CONDITION_KEYS.has(suffix)&&/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(value)
+    ):REVIEWED_GUID_PATHS.has(guidPath)&&/^guid:[0-9a-f]{32}$/.test(value),'MESSAGE_STRING');
     return 1;
   }
-  check(depth<=16,'MESSAGE_DEPTH');
   if(typeof value==='boolean'||typeof value==='number'&&Number.isFinite(value)&&Math.abs(value)<2**53)return 1;
-  if(Array.isArray(value))return value.reduce((n,v)=>n+numericTree(v,depth+1,guidPath),0);
+  if(Array.isArray(value))return value.reduce((n,v)=>n+numericTree(v,depth+1,guidPath,condition),0);
   check(value!==null&&typeof value==='object','MESSAGE_VALUE');
   let n=0;
   for(const [k,v] of Object.entries(value)){
     check(/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)&&!['__proto__','constructor','prototype'].includes(k),'MESSAGE_KEY');
-    n+=numericTree(v,depth+1,guidPath===null?null:guidPath+'.'+k);
+    n+=numericTree(v,depth+1,guidPath===null?null:guidPath+'.'+k,condition);
   }
   return n;
 }
@@ -255,7 +292,7 @@ function attachReviewedMessages(project,e,version,source,byId,grouped=false){
       id+=pair[0];const row=byId.get(id),value=pair[1];
       check(ID(id)&&row?.nativeCategory===entry.category&&!Object.hasOwn(row.nativeProperties,key)&&
         (repeated?Array.isArray(value)&&value.length>0&&value.every(message):message(value)),'MESSAGE_OWNER');
-      occurrences+=repeated?value.length:1;leafCount+=numericTree(value,0,label==='Building.UpgradeInfo'?'UpgradeInfo':null);
+      occurrences+=repeated?value.length:1;leafCount+=numericTree(value,0,key,entry.declaredType==='ConditionsList');
       const props=row.sourceAttributes??(row.sourceAttributes={});
       check(!Object.hasOwn(props,key)||JSON.stringify(props[key])===JSON.stringify(value),'MESSAGE_CONFLICT');
       props[key]=value;
@@ -284,6 +321,137 @@ const REVIEWED_ROOT_REFERENCE_TARGETS={
   Slots:['Preference'],
   StallEmployeeItemsIDs:['Character'],
   StallItemsIDs:['Building']
+};
+// Source-audited references in root ConditionsList messages. Not a runtime evaluator.
+const REVIEWED_CONDITION_REFERENCE_TARGETS={
+  "MissionStepStatus.Mission": [
+    "Mission"
+  ],
+  "MissionStatus.Mission": [
+    "Mission"
+  ],
+  "DialogueFlag.Flag": [
+    "Dialogue"
+  ],
+  "CommonConditions.Condition": [
+    "Condition"
+  ],
+  "CurrentScene.Scene": [
+    "Scene"
+  ],
+  "MissionObjectiveStatus.Mission": [
+    "Mission"
+  ],
+  "CharacterUnlocked.Character": [
+    "Character"
+  ],
+  "MissionCompleted.Mission": [
+    "Mission"
+  ],
+  "MissionStepCompleted.Mission": [
+    "Mission"
+  ],
+  "CharacterFriendship.Character": [
+    "Character"
+  ],
+  "Inventory.Item": [
+    "ActivityItem",
+    "Upgrade",
+    "Currency",
+    "Clothing",
+    "Furniture"
+  ],
+  "PetAssigned.Pet": [
+    "Companion"
+  ],
+  "MissionOngoing.Mission": [
+    "Mission"
+  ],
+  "KeyholeItemStatus.Item": [
+    "ActivityItem",
+    "Companion"
+  ],
+  "BuildingUnlocked.Building": [
+    "Building"
+  ],
+  "CurrentVillage.VillageScene": [
+    "Scene"
+  ],
+  "ToolUnlocked.Tool": [
+    "Tool"
+  ],
+  "FTUEEventCompleted.FTUEEvent": [
+    "Ftue"
+  ],
+  "PetUnlocked.Pet": [
+    "Companion"
+  ],
+  "CharacterSkin.Skin": [
+    "Skin"
+  ],
+  "HasEverOwned.Item": [
+    "Furniture"
+  ],
+  "WearingClothes.Clothes": [
+    "Clothing"
+  ],
+  "MissionObjectiveCompleted.Mission": [
+    "Mission"
+  ],
+  "RealmUnlocked.Universe": [
+    "Tag"
+  ],
+  "MountIsUnlocked.Mount": [
+    "Companion"
+  ],
+  "MissionObjectiveProgression.Mission": [
+    "Mission"
+  ],
+  "MountIsRiding.Mount": [
+    "Companion"
+  ],
+  "MemoryShard.Shard": [
+    "MemoryShard"
+  ],
+  "StoryCompleted.Story": [
+    "Story"
+  ],
+  "MissionAvailable.Mission": [
+    "Mission"
+  ],
+  "PetAssignedToCharacter.Pet": [
+    "Companion"
+  ],
+  "StallAvailable.Stall": [
+    "Building"
+  ],
+  "MountHasUpgrade.Upgrade": [
+    "Upgrade"
+  ],
+  "MountBondingLevel.Mount": [
+    "Companion"
+  ],
+  "CookingRecipeVisible.Recipe": [
+    "ActivityData"
+  ],
+  "CookingRecipeKnownWith.Tag": [
+    "Tag"
+  ],
+  "BuildingLevel.Building": [
+    "Building"
+  ],
+  "PetAssignedToCharacter.Character": [
+    "Character"
+  ],
+  "IsHangingOut.Character": [
+    "Character"
+  ],
+  "MissionObjectiveSkipped.Mission": [
+    "Mission"
+  ],
+  "TrialState.Trial": [
+    "DutyAch"
+  ]
 };
 function buildReferenceColumns(rows){
   const categories=new Map(rows.map(r=>[r.itemId,r.nativeCategory]));
@@ -316,6 +484,11 @@ function buildReferenceColumns(rows){
         emit(value,path);
       }else if(row.nativeCategory==='LootTable'&&/^source\.Rewards\.SubLootTables\[\d+\]\.Items\[\d+\]\.State\.MealData\.IngredientsUsed\[\d+\]$/.test(path)){
         check(categories.get(value)==='ActivityItem','LOOT_INGREDIENT_TARGET');
+        emit(value,path);
+      }else if(REVIEWED_MESSAGE_GROUPS[row.nativeCategory+'.'+path.split('.')[1]]?.[2]==='ConditionsList'&&
+        Object.hasOwn(REVIEWED_CONDITION_REFERENCE_TARGETS,path.split('.').slice(-2).join('.'))){
+        const targets=REVIEWED_CONDITION_REFERENCE_TARGETS[path.split('.').slice(-2).join('.')];
+        check(targets.includes(categories.get(value)),'CONDITION_REFERENCE_TARGET');
         emit(value,path);
       }else if(/ItemIds?$/i.test(name))emit(value,path);
       else if(row.nativeCategory==='DutyAch'&&/^source\.Milestones\[\d+\]\.RewardItem$/.test(path)){

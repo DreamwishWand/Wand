@@ -937,6 +937,8 @@ try{
   }catch(error){
     console.error('DB04_SAVE_SOURCE_DIAGNOSTIC',JSON.stringify({
       candidateText:await candidates.innerText(),
+      plottedObjects:await candidates.locator('.saved-object').count(),
+      shapePaths:await candidates.locator('.saved-object-shape').count(),
       pageErrors,pageUrl:page.url(),
       sourceSelection:await terrainViewer.locator('.world-toolbar').innerText().catch(()=>'no-toolbar')
     }));

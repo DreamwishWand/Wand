@@ -25,7 +25,10 @@
   function cancelEdit(){editEpoch++;editWorker?.terminate();editWorker=null;busy=false;checkedSignature='';editError='';if(copyUrl)URL.revokeObjectURL(copyUrl);copyUrl='';}
   onDestroy(cancelEdit);
   function resetDraft(o:SavedShapeObject|null){cancelEdit();draftTarget=o;placing=false;hoverPoint=null;draftX=o?.x??0;draftY=o?.y??0;draftOrientation=o?.orientation??null;}
-  $: if(chosen!==draftTarget)resetDraft(chosen);
+  $: if(chosen!==draftTarget){
+    cancelEdit();draftTarget=chosen;placing=false;hoverPoint=null;
+    draftX=chosen?.x??0;draftY=chosen?.y??0;draftOrientation=chosen?.orientation??null;
+  }
   $: editPlan=draftSavedMapTransform(chosen,draftX,draftY,draftOrientation);
   $: exportPlans=staged.length?staged.map(e=>e.plan):editPlan?[editPlan]:[];
   $: draftSignature=exportPlans.length?JSON.stringify(exportPlans):'';
@@ -97,9 +100,12 @@
   $: ordinals=[...new Set(map.objects.map(o=>o.localGridOrdinal))];
   function resetCamera(){zoom=1;cx=.5;cy=.5;}
   function chooseGrid(n:number){ordinal=n;selected=null;hits=[];layer='all';resetCamera();}
-  function resetMap(value:SavedShapeMap){if(value!==previous){previous=value;cancelEdit();clearTimeline();chooseGrid(value.objects[0]?.localGridOrdinal??0);}}
-  $: resetMap(map);
-  $: objects=mapPainterOrder(savedGridObjects(effectiveMap,ordinal));
+  $: if(map!==previous){
+    previous=map;cancelEdit();timeline=emptyWorldTimeline();stageError='';
+    ordinal=map.objects[0]?.localGridOrdinal??0;selected=null;hits=[];layer='all';zoom=1;cx=.5;cy=.5;
+  }
+  $: activeOrdinal=ordinals.includes(ordinal)?ordinal:ordinals[0]??0;
+  $: objects=mapPainterOrder(savedGridObjects(effectiveMap,activeOrdinal));
   $: layers=(Object.keys(MAP_LAYER_LABELS) as MapSelectionLayer[]).filter(l=>l==='all'||objects.some(o=>matchesSelectionLayer(o,l)));
   $: chosen=objects.find(o=>o.localOrdinal===selected)??null;
   function bounds(list:SavedShapeObject[],m:SavedShapeMap){
@@ -127,14 +133,14 @@
   function pick(event:MouseEvent){
     const point=pointerCell(event);if(!point||event.detail===0||busy)return;
     if(placing&&chosen){draftX=point.x;draftY=point.y;placing=false;hoverPoint=null;cancelEdit();return;}
-    hits=savedShapesAt(effectiveMap,ordinal,point.x,point.y);
+    hits=savedShapesAt(effectiveMap,activeOrdinal,point.x,point.y);
     selected=hits.find(o=>matchesSelectionLayer(o,layer))?.localOrdinal??null;
   }
 </script>
 <div class="saved-shape-plot">
   <div class="controls">
     {#if ordinals.length>1}
-      <label>セーブ内Grid <select value={ordinal} on:change={e=>chooseGrid(Number(e.currentTarget.value))}>
+      <label>セーブ内Grid <select value={activeOrdinal} on:change={e=>chooseGrid(Number(e.currentTarget.value))}>
         {#each ordinals as id}<option value={id}>Grid {id}</option>{/each}
       </select></label>
     {/if}
