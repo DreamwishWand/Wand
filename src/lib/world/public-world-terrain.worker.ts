@@ -29,8 +29,8 @@ let geometry:Promise<ReturnType<typeof publicShapeDefinitions>>|null=null;
 async function loadGeometry(){
   if(!geometry)geometry=(async()=>{
     const db=await openPublicItemMaster(basePath,fetch,{scope:'complete',gameVersion:'1.26.2'});
-    const [area,categories,names]=await Promise.all([db.getFieldRows('source.GridAreaData'),db.getFieldRows('nativeCategory'),db.getFieldRows('nativeKey')]);
-    return publicShapeDefinitions(area,categories,names);
+    const [area,categories,names,restrictions]=await Promise.all([db.getFieldRows('source.GridAreaData'),db.getFieldRows('nativeCategory'),db.getFieldRows('nativeKey'),db.getFieldRows('source.GridEditRestriction')]);
+    return publicShapeDefinitions(area,categories,names,restrictions);
   })().catch(e=>{geometry=null;throw e;});
   return geometry;
 }
