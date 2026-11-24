@@ -478,25 +478,38 @@ test('native acquisition candidates expose original reward and output occurrence
 });
 
 
-test('canonical introduction attributes distinguish proven earlier presence from unknown release',async()=>{
+test('verified historical item introduction from complete 1.25.3, 1.26.1 and hotfix source census',async()=>{
   const requests=[];
   const db=await openPublicItemMaster('',async url=>{requests.push(url);return fetcher(url)},{scope:'complete'});
   const fields=['history.firstObservedVersion','history.introducedVersion','history.introducedAfterVersion',
-    'history.contentReleaseId','history.observationEvidence'];
-  const rows=await db.getItemFields([40005160,2130000001,99999999],fields);
-  assert.equal(rows[0].values['history.firstObservedVersion'],'1.26.1');
-  assert.equal(rows[0].values['history.observationEvidence'],'sha_identical_earlier_source');
-  assert.equal(rows[0].values['history.introducedVersion'],null);
-  assert.equal(rows[1].values['history.firstObservedVersion'],'1.26.2');
-  assert.equal(rows[1].values['history.observationEvidence'],'current_source_only');
-  assert.equal(rows[1].values['history.introducedVersion'],null);
-  assert.equal(rows[2],null);
-  assert.equal((await db.findItemIdsByField('history.firstObservedVersion',{kind:'equals',value:'1.26.1'})).length,33627);
-  assert.equal((await db.findItemIdsByField('history.introducedVersion',{kind:'equals',value:null})).length,39067);
-  assert.deepEqual(await db.findItemIdsByField('history.introducedVersion',{kind:'equals',value:'1.26.2'}),[]);
+    'history.contentReleaseId','history.observationEvidence','history.introducedAfterSourceCorpusSha256',
+    'history.sourceReleaseKind','history.nativeContentMarker','history.introductionShopSnapshot'];
+  const rows=await db.getItemFields([40005160,2130000001,30200232,40006771,2130007038,99999999],fields);
+  for(const row of rows.slice(0,2)){
+    assert.equal(row.values['history.firstObservedVersion'],'1.25.3');
+    assert.equal(row.values['history.observationEvidence'],'verified_original_source_comparison');
+    assert.equal(row.values['history.introducedVersion'],null);
+  }
+  assert.equal(rows[2].values['history.introducedVersion'],'1.26.1');
+  assert.equal(rows[2].values['history.introducedAfterVersion'],'1.25.3');
+  assert.equal(rows[2].values['history.nativeContentMarker'],'expansion04');
+  assert.equal(rows[3].values['history.nativeContentMarker'],'update26');
+  assert.equal(rows[3].values['history.introductionShopSnapshot'],'Shop20261118');
+  assert.equal(rows[3].values['history.contentReleaseId'],null);
+  assert.equal(rows[4].values['history.introducedVersion'],'1.26.2');
+  assert.equal(rows[4].values['history.sourceReleaseKind'],'hotfix');
+  assert.equal(rows[5],null);
+  for(const [field,value,count] of [
+    ['firstObservedVersion','1.25.3',35812],
+    ['introducedVersion',null,35812],
+    ['introducedVersion','1.26.1',3254],
+    ['introducedVersion','1.26.2',1],
+    ['nativeContentMarker','expansion04',1584],
+    ['nativeContentMarker','update26',380],
+    ['introductionShopSnapshot','Shop20261118',13]
+  ])assert.equal((await db.findItemIdsByField('history.'+field,{kind:'equals',value})).length,count,field+': '+value);
   assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
 });
-
 
 test('content attribution is independent of observed source version and release context',async()=>{
   const db=await openPublicItemMaster('',fetcher,{scope:'complete'});
