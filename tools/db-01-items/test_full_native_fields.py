@@ -1,5 +1,5 @@
 import unittest
-from build_full_native_fields import decode, fields, frames
+from build_full_native_fields import decode, fields, frames, declarations, source_class
 
 class NativeFieldsTests(unittest.TestCase):
     def test_repeated_nested_and_unknown(self):
@@ -27,5 +27,31 @@ class NativeFieldsTests(unittest.TestCase):
         self.assertEqual(len(rows),1)
         self.assertEqual(rows[0][6],'unresolved')
         self.assertEqual(rows[0][8],raw)
+
+    def test_nullable_int_wrapper(self):
+        root=('Definitions.Grid.GridAreaData',{5:('StrideOverride','Nullable<int>')})
+        self.assertEqual(list(decode(bytes.fromhex('2a020802'),root,{},{}))[0][6:8],('nullable_int_wrapper','2'))
+        self.assertEqual(list(decode(bytes.fromhex('2a00'),root,{},{}))[0][6:8],('nullable_int_wrapper','0'))
+        self.assertEqual(list(decode(bytes.fromhex('2a021002'),root,{},{}))[0][6],'unresolved')
+
+    def test_map_preserves_entry_order_and_missing_key(self):
+        root=('Example.Root',{1:('Overrides','MapField<uint, int>')})
+        raw=bytes.fromhex('0a0210070a0408011009')
+        rows=list(decode(raw,root,{},{}))
+        self.assertEqual([r[0] for r in rows],['Overrides[0]','Overrides[0].Value[0]','Overrides[1]','Overrides[1].Key[0]','Overrides[1].Value[0]'])
+        self.assertEqual(rows[0][6],'declared_map_entry')
+        self.assertEqual(rows[1][7],'7')
+        self.assertEqual(b''.join(r[-1] for r in rows if '.' not in r[0]),raw)
+
+    def test_empty_message_with_leading_interface(self):
+        dump='// Namespace: Example\npublic sealed class Empty : IOther, IMessage<Empty>, IMessage // TypeDefIndex: 1\n{\n}\n'
+        messages,enums=declarations(dump)
+        self.assertEqual(messages['Empty'],[('Example.Empty',{})])
+        root=('Example.Root',{1:('Empty','Empty')})
+        self.assertEqual(list(decode(bytes.fromhex('0a00'),root,messages,enums))[0][6],'declared_message')
+
+    def test_new_source_layouts(self):
+        for sub in (2,3,4,7):self.assertEqual(source_class('Currency',sub),'CurrencyItemData')
+        for sub in (9,10):self.assertEqual(source_class('Dialogue',sub),'DialogueItemData')
 
 if __name__=='__main__':unittest.main()
