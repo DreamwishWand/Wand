@@ -8,12 +8,14 @@
   import {base} from '$app/paths';
   import {worldArtwork,mapCellPixels,showWorldArtwork,visibleWorldArtworkIds} from './world-artwork.ts';
   import WorldObjectArtwork from './WorldObjectArtwork.svelte';
+  import WorldAlignmentControls from './WorldAlignmentControls.svelte';
+  import {alignmentTargets,type MapAlignment} from './map-alignment.ts';
   import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences';
   import {openPublicItemMaster,type PublicCompleteItemMaster} from '$lib/items/public-item-master';
   import {searchSavedObjects,worldObjectName,objectFocus,type WorldNames} from './world-object-search.ts';
   import {defaultMapCamera,maxMapZoom,zoomMapCamera,panMapCamera,mapCameraViewBox,mapViewportBounds,wheelMapCamera,createMapPanGesture} from './map-camera.ts';
 
-  import {emptyWorldTimeline,currentWorldEdits,travelWorldTimeline,projectWorldEdits,stageWorldEdit,stageWorldGroupMove,groupTargets,WORLD_BATCH_LIMIT} from './saved-map-batch.ts';
+  import {emptyWorldTimeline,currentWorldEdits,travelWorldTimeline,projectWorldEdits,stageWorldEdit,stageWorldGroupMove,stageWorldAlignment,groupTargets,WORLD_BATCH_LIMIT} from './saved-map-batch.ts';
   import {savedDraftOverlap,OVERLAP_COLORS} from './saved-draft-overlap.ts';
   import {CARDINAL_ORIENTATIONS,isCardinal,worldTransformEligible,worldMoveEligible,worldRotateEligible,draftSavedMapTransform,exclusiveAnchorClass,exclusiveAnchorConflict} from './saved-map-transform.ts';
   import {savedGridObjects,savedShapesAt,savedShapesInRect,visibleSavedObjects,type SavedShapeMap,type SavedShapeObject} from './saved-shape-map.ts';
@@ -97,40 +99,42 @@
   function setSearch(value:string){query=value;visibleResults=60;searchOpen=true;}
   function selectFromSearch(o:SavedShapeObject){if(busy)return;if(groupMode){toggleGroup(o);return;}selected=o.localOrdinal;hits=[o];cameraState=objectFocus(map,o,extent,maxZoom);searchOpen=false;}
   let groupMode=false,groupIds:number[]=[],groupDX:number|undefined=0,groupDY:number|undefined=0,groupTurns=0;
+  let alignmentOpen=false,alignmentAction:MapAlignment|null=null;
   let rangeMode=false,rangeStart:{x:number;y:number}|null=null,rangeEnd:{x:number;y:number}|null=null;
   $: groupCanRotate=groupObjects.length>=2&&groupObjects.every(o=>worldRotateEligible(o)&&o.shapeKey&&[0,4,8,12].every(code=>map.shapes[o.itemId+':'+code]));
-  $: groupPreview=groupMode&&groupObjects.length>=2?groupTargets(map,groupObjects,placing&&hoverPoint?hoverPoint.x-groupObjects[0].x:groupDX??0,placing&&hoverPoint?hoverPoint.y-groupObjects[0].y:groupDY??0,groupTurns):null;
+  $: groupPreview=groupMode&&groupObjects.length>=2?(alignmentAction?alignmentTargets(effectiveMap,groupObjects,alignmentAction):groupTargets(map,groupObjects,placing&&hoverPoint?hoverPoint.x-groupObjects[0].x:groupDX??0,placing&&hoverPoint?hoverPoint.y-groupObjects[0].y:groupDY??0,groupTurns)):null;
   $: groupSet=new Set(groupIds);
   $: groupObjects=objects.filter(o=>groupSet.has(o.localOrdinal));
-  $: groupPlan=groupMode&&groupDX!==undefined&&groupDY!==undefined?
-    stageWorldGroupMove(map,timeline,groupIds,groupDX,groupDY,'一括変形：衝突・上下関係は未判定',groupTurns):null;
-  function clearGroup(){groupIds=[];groupDX=0;groupDY=0;groupTurns=0;placing=false;hoverPoint=null;rangeMode=false;rangeStart=null;rangeEnd=null;}
+  $: groupPlan=groupMode?(alignmentAction?stageWorldAlignment(map,timeline,groupIds,alignmentAction,'整列：衝突・上下関係は未判定'):groupDX!==undefined&&groupDY!==undefined?stageWorldGroupMove(map,timeline,groupIds,groupDX,groupDY,'一括変形：衝突・上下関係は未判定',groupTurns):null):null;
+  function chooseAlignment(mode:MapAlignment){if(busy)return;cancelEdit();groupDX=0;groupDY=0;groupTurns=0;placing=false;rangeMode=false;hoverPoint=null;alignmentAction=mode;}
+  $: if(groupIds.length<2){alignmentAction=null;alignmentOpen=false;}
+  function clearGroup(){alignmentAction=null;alignmentOpen=false;groupIds=[];groupDX=0;groupDY=0;groupTurns=0;placing=false;hoverPoint=null;rangeMode=false;rangeStart=null;rangeEnd=null;}
   function toggleGroupMode(){if(busy)return;cancelEdit();clearGroup();groupMode=!groupMode;selected=null;hits=[];if(groupMode)resetCamera();}
   function toggleGroup(o:SavedShapeObject){
     if(!worldMoveEligible(o)||o.localGridOrdinal!==activeOrdinal)return;
     if(groupIds.includes(o.localOrdinal))groupIds=groupIds.filter(id=>id!==o.localOrdinal);
     else if(groupIds.length<WORLD_BATCH_LIMIT)groupIds=[...groupIds,o.localOrdinal];
-    groupDX=0;groupDY=0;groupTurns=0;placing=false;hoverPoint=null;cancelEdit();
+    alignmentAction=null;groupDX=0;groupDY=0;groupTurns=0;placing=false;hoverPoint=null;cancelEdit();
   }
   function stageGroup(){
     if(busy||!groupPlan||placing)return;
-    cancelEdit();timeline=groupPlan;groupDX=0;groupDY=0;groupTurns=0;stageError='';
+    cancelEdit();timeline=groupPlan;alignmentAction=null;groupDX=0;groupDY=0;groupTurns=0;stageError='';
   }
   function rotateDraft(delta:number){if(busy||!worldRotateEligible(chosen)||!isCardinal(draftOrientation))return;draftOrientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(draftOrientation)+delta+4)%4];}
   function keyMap(event:KeyboardEvent){
     if(busy||!worldShortcutTarget(event,root))return;
     const action=worldShortcut(event);if(!action)return;
-    if(action==='undo'||action==='redo'){event.preventDefault();if(action==='undo'&&(placing||editPlan||pendingDraft)){if(groupMode){groupDX=0;groupDY=0;groupTurns=0;placing=false;hoverPoint=null;}else resetDraft(chosen);}else travel(action==='undo'?-1:1);return;}
+    if(action==='undo'||action==='redo'){event.preventDefault();if(action==='undo'&&(placing||editPlan||pendingDraft)){if(groupMode){alignmentAction=null;groupDX=0;groupDY=0;groupTurns=0;placing=false;hoverPoint=null;}else resetDraft(chosen);}else travel(action==='undo'?-1:1);return;}
     if(action==='select-all'&&file){event.preventDefault();const ids=objects.filter(o=>worldMoveEligible(o)&&matchesSelectionLayer(o,layer)&&(!query.trim()||matchIds.has(o.localOrdinal))).map(o=>o.localOrdinal);if(ids.length>WORLD_BATCH_LIMIT){stageError='選択上限 '+WORLD_BATCH_LIMIT+'件';return;}cancelEdit();clearGroup();groupMode=true;selected=null;hits=[];groupIds=ids;return;}
     if(action==='zoom-in'||action==='zoom-out'||action==='fit'){event.preventDefault();if(action==='fit')resetCamera();else changeZoom(zoom*(action==='zoom-in'?2:.5));return;}
     if(event.ctrlKey||event.metaKey||event.altKey)return;
     if(action==='confirm'&&event.target instanceof HTMLElement&&event.target.closest('button:not(.plot)'))return;
     if(groupMode){
-      if(event.key==='Escape'){clearGroup();return;}
+      if(event.key==='Escape'){if(alignmentAction)alignmentAction=null;else clearGroup();return;}
       if(event.key==='Enter'){event.preventDefault();stageGroup();return;}
-      if(event.key.toLowerCase()==='r'&&groupCanRotate){event.preventDefault();groupTurns=(groupTurns+(event.shiftKey?3:1))%4;return;}
+      if(event.key.toLowerCase()==='r'&&groupCanRotate){event.preventDefault();alignmentAction=null;groupTurns=(groupTurns+(event.shiftKey?3:1))%4;return;}
       const d:Record<string,[number,number]>={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]};
-      const step=d[event.key];if(step&&groupIds.length>=2){event.preventDefault();groupDX=(groupDX??0)+step[0];groupDY=(groupDY??0)+step[1];}return;
+      const step=d[event.key];if(step&&groupIds.length>=2){event.preventDefault();alignmentAction=null;groupDX=(groupDX??0)+step[0];groupDY=(groupDY??0)+step[1];}return;
     }
     if(event.key==='Escape'){resetDraft(chosen);return;}
     if(!chosen||!file||!worldTransformEligible(chosen))return;
@@ -197,7 +201,7 @@
   $: editPlan=draftSavedMapTransform(chosen,draftX,draftY,draftOrientation);
   $: exportPlans=staged.length?staged.map(e=>e.plan):editPlan?[editPlan]:[];
   $: draftSignature=exportPlans.length?JSON.stringify(exportPlans):'';
-  $: pendingDraft=groupMode?Boolean((groupDX??0)||(groupDY??0)||groupTurns):staged.length>0&&editPlan!==null;
+  $: pendingDraft=groupMode?Boolean(alignmentAction||(groupDX??0)||(groupDY??0)||groupTurns):staged.length>0&&editPlan!==null;
   function stageCurrent(){
     if(!chosen||busy||placing||!editPlan||committedConflict)return;
     const overlapWarning=overlap?[overlap.counts['shape-overlap']?'重なり候補 '+overlap.counts['shape-overlap']+'マス':'',
@@ -210,7 +214,7 @@
     if(!next){stageError='編集を追加できません。最大'+WORLD_BATCH_LIMIT+'件です。';return;}
     cancelEdit();timeline=next;stageError='';
   }
-  function travel(delta:-1|1){if(busy)return;cancelEdit();timeline=travelWorldTimeline(timeline,delta);groupDX=0;groupDY=0;groupTurns=0;stageError='';}
+  function travel(delta:-1|1){if(busy)return;alignmentAction=null;cancelEdit();timeline=travelWorldTimeline(timeline,delta);groupDX=0;groupDY=0;groupTurns=0;stageError='';}
   function resetStaged(){if(busy)return;cancelEdit();clearTimeline();}
   $: if(checkedSignature&&checkedSignature!==draftSignature)cancelEdit();
   $: draftCode=isCardinal(draftOrientation)?CARDINAL_ORIENTATIONS.indexOf(draftOrientation)*4:null;
@@ -321,7 +325,7 @@
         const ids=savedShapesInRect(effectiveMap,activeOrdinal,rangeStart,point).filter(o=>worldMoveEligible(o)&&matchesSelectionLayer(o,layer)).map(o=>o.localOrdinal);
         const merged=[...new Set([...groupIds,...ids])];
         if(merged.length>WORLD_BATCH_LIMIT){stageError='選択上限 '+WORLD_BATCH_LIMIT+'件';}else{groupIds=merged;stageError='';}
-        groupDX=0;groupDY=0;groupTurns=0;rangeMode=false;rangeStart=null;rangeEnd=null;cancelEdit();return;
+        alignmentAction=null;groupDX=0;groupDY=0;groupTurns=0;rangeMode=false;rangeStart=null;rangeEnd=null;cancelEdit();return;
       }
       if(placing&&groupObjects.length>=2){const anchor=groupObjects[0];groupDX=point.x-anchor.x;groupDY=point.y-anchor.y;placing=false;hoverPoint=null;return;}
       hits=savedShapesAt(effectiveMap,activeOrdinal,point.x,point.y);
@@ -403,7 +407,7 @@
         </g>
       {/each}
       {#if rangeMode&&rangeStart&&rangeEnd}<rect class="range-box" x={Math.min(rangeStart.x,rangeEnd.x)} y={Math.min(rangeStart.y,rangeEnd.y)} width={Math.abs(rangeEnd.x-rangeStart.x)+1} height={Math.abs(rangeEnd.y-rangeStart.y)+1} fill="#4bddcd" fill-opacity=".16" stroke="#4bddcd" vector-effect="non-scaling-stroke"/>{/if}
-      {#if groupMode&&groupPreview&&(placing||groupDX||groupDY||groupTurns)}
+      {#if groupMode&&groupPreview&&(alignmentAction||placing||groupDX||groupDY||groupTurns)}
         {#each groupPreview as o (o.ordinal)}
           {@const shape=o.shapeKey?map.shapes[o.shapeKey]:null}
           {#if shape}<path class="group-draft-shape" d={shape.path} transform={'translate('+o.x+' '+o.y+')'} fill="#a7b1bf" fill-opacity=".55" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>
@@ -435,14 +439,16 @@
   {#if groupMode}
     <div class="controls group-controls" role="group" aria-label="一括移動">
       <strong>{groupIds.length}件選択</strong>
-      <button type="button" aria-pressed={rangeMode} disabled={busy} on:click={()=>{rangeMode=!rangeMode;rangeStart=null;rangeEnd=null;placing=false;hoverPoint=null;}}>{rangeMode?(rangeStart?'対角を選択':'始点を選択'):'範囲選択'}</button>
-      <button type="button" aria-label="グループ左回転" disabled={busy||!groupCanRotate} on:click={()=>groupTurns=(groupTurns+3)%4}>↶</button><button type="button" aria-label="グループ右回転" disabled={busy||!groupCanRotate} on:click={()=>groupTurns=(groupTurns+1)%4}>↷</button>
+      <button type="button" aria-pressed={alignmentOpen} disabled={busy||groupIds.length<2} on:click={()=>{alignmentOpen=!alignmentOpen;alignmentAction=null;}}>{locale==='ja'?'整列・均等配置':'Align and distribute'}</button>
+      <button type="button" aria-pressed={rangeMode} disabled={busy} on:click={()=>{alignmentAction=null;rangeMode=!rangeMode;rangeStart=null;rangeEnd=null;placing=false;hoverPoint=null;}}>{rangeMode?(rangeStart?'対角を選択':'始点を選択'):'範囲選択'}</button>
+      <button type="button" aria-label="グループ左回転" disabled={busy||!groupCanRotate} on:click={()=>{alignmentAction=null;groupTurns=(groupTurns+3)%4;}}>↶</button><button type="button" aria-label="グループ右回転" disabled={busy||!groupCanRotate} on:click={()=>{alignmentAction=null;groupTurns=(groupTurns+1)%4;}}>↷</button>
       <button type="button" disabled={busy||!groupIds.length} on:click={clearGroup}>選択解除</button>
-      <button type="button" aria-pressed={placing} disabled={busy||groupIds.length<2} on:click={()=>{placing=!placing;rangeMode=false;rangeStart=null;rangeEnd=null;hoverPoint=null;}}>{placing?'一括移動先を選択中':'一括移動先を選択'}</button>
-      <label>ΔX <input type="number" aria-label="一括移動X" bind:value={groupDX} step="1" disabled={busy||groupIds.length<2}/></label>
-      <label>ΔY <input type="number" aria-label="一括移動Y" bind:value={groupDY} step="1" disabled={busy||groupIds.length<2}/></label>
-      <button type="button" disabled={busy||placing||!groupPlan} on:click={stageGroup}>一括移動を追加</button>
+      <button type="button" aria-pressed={placing} disabled={busy||groupIds.length<2} on:click={()=>{alignmentAction=null;placing=!placing;rangeMode=false;rangeStart=null;rangeEnd=null;hoverPoint=null;}}>{placing?'一括移動先を選択中':'一括移動先を選択'}</button>
+      <label>ΔX <input type="number" aria-label="一括移動X" bind:value={groupDX} step="1" disabled={busy||groupIds.length<2||Boolean(alignmentAction)}/></label>
+      <label>ΔY <input type="number" aria-label="一括移動Y" bind:value={groupDY} step="1" disabled={busy||groupIds.length<2||Boolean(alignmentAction)}/></label>
+      <button type="button" disabled={busy||placing||!groupPlan||Boolean(alignmentAction)} on:click={stageGroup}>一括移動を追加</button>
     </div>
+    {#if alignmentOpen&&groupIds.length>=2}<WorldAlignmentControls {locale} count={groupIds.length} selected={alignmentAction} valid={Boolean(groupPlan)} {busy} onPick={chooseAlignment} onCommit={stageGroup} onCancel={()=>alignmentAction=null}/>{/if}
     {#if stageError}<p role="alert">{stageError}</p>{/if}
     {#if (groupDX||groupDY||groupTurns)&&!groupPlan}<p role="status">移動先・編集制限・最大件数を確認してください。</p>{/if}
   {/if}

@@ -358,3 +358,30 @@ test('world thumbnails depend on on-screen footprint size and do not hide infras
  assert.equal(showWorldArtwork({...o,layer:'fence'},shape,100),false);
  assert.deepEqual(visibleWorldArtworkIds([o,o,{...o,itemId:'40000002',layer:'fence'}],{a:shape},7),[40000001]);
 });
+
+import {alignmentTargets} from '../src/lib/world/map-alignment.ts';
+import {alignDesign} from '../src/lib/world/design-layout.ts';
+import {stageWorldAlignment} from '../src/lib/world/saved-map-batch.ts';
+test('alignment/distribution uses occupied-cell edges, preserves orientations and commits atomically',()=>{
+ const narrow={width:3,height:2,runs:[{x:1,y:0,width:1},{x:1,y:1,width:2}],cellCount:3,path:'M1 0h1v1h-1ZM1 1h2v1h-2Z'};
+ const wide={width:4,height:2,runs:[{x:0,y:0,width:4},{x:0,y:1,width:4}],cellCount:8,path:'M0 0h4v2h-4Z'};
+ const a={itemId:40000001,name:'A',layer:'furniture',surfaceCapable:false,shapes:{'40000001:8':narrow}};
+ const b={itemId:40000002,name:'B',layer:'furniture',surfaceCapable:false,shapes:{'40000002:8':wide}};
+ const defs=new Map([[a.itemId,a],[b.itemId,b]]);
+ let t=placeDesign(emptyDesign(),a,1,1,2,40,40);t=placeDesign(t,b,8,6,2,40,40);t=placeDesign(t,a,17,10,2,40,40);
+ const m=designShapeMap(currentDesign(t),defs,{layoutId:'L',gridIdNative:1,gridDataPath:'D',factor:1});
+ const left=alignmentTargets(m,m.objects,'left');assert.deepEqual(left.map(o=>o.x),[1,2,1]);
+ const next=alignDesign(t,m,[1,2,3],defs,'left',40,40);assert.ok(next);assert.deepEqual(currentDesign(next).map(p=>p.x),[1,2,1]);
+ assert.deepEqual(currentDesign(travelDesign(next,-1)),currentDesign(t));
+ // First occupied edge is 2, last right edge 20, total width 8; gap 5.
+ const even=alignmentTargets(m,m.objects,'distribute-x');assert.deepEqual(even.map(o=>o.x),[1,9,17]);
+ const staged=stageWorldAlignment(m,emptyWorldTimeline(),[1,2,3],'left','');assert.ok(staged);
+ assert.equal(currentWorldEdits(staged).length,2);
+ assert.deepEqual(projectWorldEdits(m,currentWorldEdits(staged)).objects.map(o=>o.x),[1,2,1]);
+ assert.equal(currentWorldEdits(travelWorldTimeline(staged,-1)).length,0);
+ assert.equal(alignmentTargets(m,[m.objects[0],{...m.objects[1],subgrid:{}}],'left'),null);
+ assert.equal(alignmentTargets(m,[m.objects[0],{...m.objects[1],localGridOrdinal:2}],'left'),null);
+ assert.equal(alignmentTargets(m,m.objects.slice(0,2),'distribute-x'),null);
+ const odd={...m,objects:m.objects.map(o=>o.localOrdinal===3?{...o,x:o.x+1}:o)};
+ assert.equal(alignmentTargets(odd,odd.objects,'distribute-x'),null);
+});

@@ -1086,6 +1086,14 @@ try{
   await page.keyboard.press('Control+y');
   assert.equal(await design.locator('.design-object').count(),2);
   await page.keyboard.press('Control+a');
+  await design.getByRole('button',{name:'整列・均等配置',exact:true}).click();
+  await design.getByRole('button',{name:'左揃え',exact:true}).click();
+  assert.equal(await design.locator('.alignment-ghost').count(),2);
+  await design.getByRole('button',{name:'確定',exact:true}).click();
+  assert.deepEqual(await design.locator('.design-object').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('transform')).sort()),['translate(10 10)','translate(10 20)']);
+  await design.getByLabel('設計を取り消す').click();
+  assert.deepEqual(await design.locator('.design-object').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('transform')).sort()),['translate(10 10)','translate(20 20)']);
+  await page.keyboard.press('Control+a');
   await page.keyboard.press('Meta+x');
   assert.equal(await design.locator('.design-object').count(),0);
   await page.keyboard.press('Meta+z');

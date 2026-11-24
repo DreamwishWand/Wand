@@ -1,5 +1,6 @@
 /** Independent local design state. IDs are synthetic and never sent to a save writer. */
 import type {SavedShapeMap,SavedShapeObject} from './saved-shape-map.ts';
+import {alignmentTargets,type MapAlignment} from './map-alignment.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
 import {CARDINAL_ORIENTATIONS,exclusiveAnchorClass} from './saved-map-transform.ts';
 import {nativeActionBlocked,type NativeEditRestrictions} from './native-edit-restrictions.ts';
@@ -172,6 +173,21 @@ export function transformDesignGroup(t:DesignTimeline,ids:readonly number[],defs
   const next={...p,x,y,orientation:(p.orientation-turn+4)%4},n=shape(next);
   if(!n||n.width!==(turn%2?s.height:s.width)||n.height!==(turn%2?s.width:s.height)||!designCandidateValid([...rest,...updated.values()],next,g,width,height))return null;
   updated.set(p.id,next);
+ }
+ return commit(t,old.map(p=>updated.get(p.id)??p));
+}
+
+export function alignDesign(t:DesignTimeline,map:SavedShapeMap,ids:readonly number[],defs:ReadonlyMap<number,DesignItemGeometry>,mode:MapAlignment,width:number,height:number):DesignTimeline|null{
+ const idSet=new Set(ids),chosen=map.objects.filter(o=>idSet.has(o.localOrdinal));
+ if(chosen.length!==idSet.size)return null;
+ const targets=alignmentTargets(map,chosen,mode);if(!targets)return null;
+ const old=currentDesign(t),byId=new Map(old.map(p=>[p.id,p])),updated=new Map<number,DesignPlacement>(),rest=old.filter(p=>!idSet.has(p.id));
+ for(const target of targets){
+  const p=byId.get(target.ordinal),g=p?defs.get(p.itemId):null;
+  if(!p||!g||nativeActionBlocked(g.editRestrictions,'move'))return null;
+  const candidate={...p,x:target.x,y:target.y};
+  if(!designCandidateValid([...rest,...updated.values()],candidate,g,width,height))return null;
+  updated.set(p.id,candidate);
  }
  return commit(t,old.map(p=>updated.get(p.id)??p));
 }
