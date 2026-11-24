@@ -517,8 +517,8 @@ test('content attribution is independent of observed source version and release 
     'history.contentReleaseKind','history.contentDlcType'];
   const rows=await db.getItemFields([40005160,2130000001],fields);
   for(const row of rows)for(const field of fields)assert.equal(row.values[field],null);
-  for(const value of ['dlc.the-keepsake-sea','version.26'])
-    assert.deepEqual(await db.findItemIdsByField('history.contentReleaseId',{kind:'equals',value}),[]);
+  assert.equal((await db.findItemIdsByField('history.contentReleaseId',{kind:'equals',value:'dlc.the-keepsake-sea'})).length,29);
+  assert.deepEqual(await db.findItemIdsByField('history.contentReleaseId',{kind:'equals',value:'version.26'}),[]);
 });
 
 
@@ -527,7 +527,7 @@ test('historical content evidence keeps source cohort candidates distinct from a
   const field='history.contentCandidateReleaseIds';
   const dlc=await db.findItemIdsByField(field,{kind:'contains',value:'dlc.the-keepsake-sea'});
   const free=await db.findItemIdsByField(field,{kind:'contains',value:'version.26'});
-  assert.equal(dlc.length,719);
+  assert.equal(dlc.length,1058);
   assert.equal(free.length,18);
   assert(!dlc.some(i=>free.includes(i)));
   const evidence='history.contentOriginEvidence';
@@ -548,6 +548,37 @@ test('historical content evidence keeps source cohort candidates distinct from a
   assert.equal(house.values[field],undefined);
   assert.equal(old.values[field],undefined);
   assert.equal(fix.values[field],undefined);
-  for(const row of [bridge,outfit,questReward,flounder,house,old,fix])
+  for(const row of [bridge,outfit,questReward,house,old,fix])
     assert.equal(row.values['history.contentReleaseId'],null);
+  assert.equal(flounder.values['history.contentReleaseId'],'dlc.the-keepsake-sea');
+});
+
+
+test('typed historic source joins distinguish proven DLC association from indirect origin candidates',async()=>{
+  const db=await openPublicItemMaster('',fetcher,{scope:'complete'});
+  const fields=['history.contentReleaseId','history.contentAttributionEvidenceKind',
+    'history.contentCandidateReleaseIds','history.contentOriginEvidence'];
+  const [memory,diary,meal,fish,seed,critter,well,packageReward]=await db.getItemFields(
+    [130000507,130000480,30300732,31000118,30400282,120100112,20300089,10000049],fields);
+  const has=(row,kind,value)=>row.values[fields[3]]?.some(x=>x[0]===kind&&x[1]===value);
+  const confirmed=await db.findItemIdsByField(fields[0],{kind:'equals',value:'dlc.the-keepsake-sea'});
+  assert.equal(confirmed.length,29);
+  assert.equal((await db.findItemIdsByField(fields[1],{kind:'equals',value:'verified_dlc_condition'})).length,25);
+  assert.equal((await db.findItemIdsByField(fields[1],{kind:'equals',value:'verified_dlc_package'})).length,4);
+  assert(has(memory,'memory_expansion_gate',2130004933));
+  assert(has(memory,'memory_world_tag',2001200066));
+  assert.equal(memory.values[fields[0]],'dlc.the-keepsake-sea');
+  assert.equal(memory.values[fields[1]],'verified_dlc_condition');
+  assert.equal(packageReward.values[fields[1]],'verified_dlc_package');
+  assert(has(diary,'memory_world_tag',2001200066));
+  assert(has(meal,'recipe_dlc_result',2050000684));
+  assert(has(meal,'dlc_stall_pool',20100099));
+  assert(has(fish,'activity_dlc_result',2050100254));
+  assert(has(seed,'seed_dlc_crop',30200232));
+  assert(has(critter,'critter_source_area',48));
+  assert(has(well,'building_scene',1540000209));
+  for(const row of [diary,meal,fish,seed,critter,well]){
+    assert.deepEqual(row.values[fields[2]],['dlc.the-keepsake-sea']);
+    assert.equal(row.values[fields[0]],null);
+  }
 });
