@@ -293,13 +293,13 @@ pub(super) fn resolve_grid_coordinate_targets(
     Ok(targets)
 }
 
-/// Resolve mixed 1..=16 Grid edits against the same immutable opened Save
+/// Resolve a bounded mixed Grid batch against the same immutable opened Save
 /// with ONE native GridObject scan. Private native map IDs stay in WASM.
 pub(super) fn resolve_grid_mixed_targets(
     profile:&[u8],
     selections:&[(usize,u64,(i32,i32),String,Option<String>)]
 )->Result<Vec<GridCoordinateTarget>,CodecError>{
-    if selections.is_empty()||selections.len()>16{
+    if selections.is_empty()||selections.len()>ddv_save_patch::MAX_GRID_MIXED_EDITS{
         return Err(CodecError::Bounds);
     }
     let (scan,_status)=scan_grid_instances(profile)?;

@@ -703,7 +703,7 @@ mod browser_amount_preview {
     fn parse_grid_mixed_batch_plan(
         plan:&str
     )->Result<Vec<GridMixedPlan>,JsValue>{
-        if plan.len()>12288||plan.is_empty()||
+        if plan.len()>ddv_save_patch::MAX_GRID_MIXED_EDITS*768+64||plan.is_empty()||
            ddv_save_patch::validate_json_without_edit(plan).is_err(){
             return Err(fail("DB05_GRID_MIXED_BATCH_INVALID"));
         }
@@ -715,7 +715,7 @@ mod browser_amount_preview {
         }
         let rows=map.get("edits").and_then(serde_json::Value::as_array)
             .ok_or(fail("DB05_GRID_MIXED_BATCH_INVALID"))?;
-        if rows.is_empty()||rows.len()>16{
+        if rows.is_empty()||rows.len()>ddv_save_patch::MAX_GRID_MIXED_EDITS{
             return Err(fail("DB05_GRID_MIXED_BATCH_COUNT_INVALID"));
         }
         let mut out=Vec::with_capacity(rows.len());
