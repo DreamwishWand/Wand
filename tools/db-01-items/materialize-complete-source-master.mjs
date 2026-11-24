@@ -183,6 +183,68 @@ function attachReviewedRootArrays(project,e,version,source,byId){
   }
   return {fields,runtimeSemanticsVerified:false};
 }
+// Complete reviewed numeric message trees. Empty objects retain presence;
+// repeated messages keep their order. Never export raw bytes or source text.
+const REVIEWED_MESSAGES={
+  GrowthPeriod:['ActivityItem','Duration'],
+  ProductionPeriod:['ActivityItem','Duration'],
+  VillageArea:['Furniture','OptionalField'],
+  RewardsXP:['Mission','MissionReward'],
+  Milestones:['DutyAch','RepeatedField<AchievementMilestone>'],
+  IntervalData:['RecurringEvent','RecurringEventIntervalData'],
+  Cooldowns:['RecurringEvent','RepeatedField<SnippetSpawningRecurringEventItemData.Types.CooldownData>'],
+  PossibleItems:['RecurringEvent','RepeatedField<WildCropsSpawningInVillageRecurringEventItemData.Types.ItemAndWeight>'],
+  ItemList:['RecurringEvent','ItemSpawningRecurringEventItemData.Types.ItemAndWeightList'],
+  DefaultItem:['ActivityItem','ItemInstance']
+};
+function numericTree(value,depth=0){
+  check(depth<=16,'MESSAGE_DEPTH');
+  if(typeof value==='boolean'||typeof value==='number'&&Number.isFinite(value)&&Math.abs(value)<2**53)return 1;
+  if(Array.isArray(value))return value.reduce((n,v)=>n+numericTree(v,depth+1),0);
+  check(value!==null&&typeof value==='object','MESSAGE_VALUE');
+  let n=0;
+  for(const [k,v] of Object.entries(value)){
+    check(/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)&&!['__proto__','constructor','prototype'].includes(k),'MESSAGE_KEY');
+    n+=numericTree(v,depth+1);
+  }
+  return n;
+}
+function attachReviewedMessages(project,e,version,source,byId){
+  if(e.reviewedMessagesSha256===undefined)return undefined;
+  check(SHA.test(e.reviewedMessagesSha256),'MESSAGE_DIGEST');
+  const bytes=readFileSync(join(project,'data/ddv/item-master','reviewed-messages-steam-'+version+'.json'));
+  check(hash(bytes)===e.reviewedMessagesSha256,'MESSAGE_SHA');
+  const a=JSON.parse(bytes.toString('utf8'));
+  check(a.schema==='wand.item-master.reviewed-messages@1'&&a.gameVersion===version&&
+    a.sourceItemsSha256===source.sourceItemsSha256&&a.sourceIl2cppDumpSha256===source.sourceIl2cppDumpSha256&&
+    a.fields&&typeof a.fields==='object'&&!Array.isArray(a.fields),'MESSAGE_RELEASE');
+  const fields={};
+  for(const [key,entry] of Object.entries(a.fields)){
+    const review=Object.hasOwn(REVIEWED_MESSAGES,key)?REVIEWED_MESSAGES[key]:null;
+    check(review&&entry&&entry.category===review[0]&&entry.declaredType===review[1]&&
+      ID(entry.count)&&entry.count<=byId.size&&Number.isSafeInteger(entry.occurrences)&&entry.occurrences>=entry.count&&
+      Number.isSafeInteger(entry.leafCount)&&entry.leafCount>=0&&typeof entry.packed==='string'&&entry.packed.length<=16*1024*1024,
+      'MESSAGE_FIELD');
+    const decoded=JSON.parse(inflateSync(Buffer.from(entry.packed,'base64'),{maxOutputLength:32*1024*1024}).toString('utf8'));
+    check(Array.isArray(decoded)&&decoded.length===entry.count,'MESSAGE_ROWS');
+    let id=0,occurrences=0,leafCount=0;
+    const repeated=entry.declaredType.startsWith('RepeatedField<');
+    const message=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
+    for(const pair of decoded){
+      check(Array.isArray(pair)&&pair.length===2&&ID(pair[0]),'MESSAGE_ROW');
+      id+=pair[0];const row=byId.get(id),value=pair[1];
+      check(ID(id)&&row?.nativeCategory===entry.category&&!Object.hasOwn(row.nativeProperties,key)&&
+        (repeated?Array.isArray(value)&&value.length>0&&value.every(message):message(value)),'MESSAGE_OWNER');
+      occurrences+=repeated?value.length:1;leafCount+=numericTree(value);
+      const props=row.sourceAttributes??(row.sourceAttributes={});
+      check(!Object.hasOwn(props,key)||JSON.stringify(props[key])===JSON.stringify(value),'MESSAGE_CONFLICT');
+      props[key]=value;
+    }
+    check(occurrences===entry.occurrences&&leafCount===entry.leafCount,'MESSAGE_CENSUS');
+    fields[key]={itemCount:entry.count,occurrences,leafCount,category:entry.category,declaredType:entry.declaredType};
+  }
+  return {fields,runtimeSemanticsVerified:false};
+}
 // Source-declared ItemID-named numeric fields only. Membership in the same
 // release is required. Do not infer a reference from an arbitrary integer.
 // Reviewed root integer arrays whose names do not always end in ItemID.
@@ -223,6 +285,11 @@ function buildReferenceColumns(rows){
         return;
       }
       if(/ItemIds?$/i.test(name))emit(value,path);
+      else if(row.nativeCategory==='DutyAch'&&/^source\.Milestones\[\d+\]\.RewardItem$/.test(path)){
+        check(ID(value)&&ids.has(value),'MILESTONE_REWARD_TARGET');emit(value,path);
+      }else if(row.nativeCategory==='Mission'&&/^source\.RewardsXP\.Currency\[\d+\]\.CurrencyId$/.test(path)){
+        check(categories.get(value)==='Currency','MISSION_CURRENCY_TARGET');emit(value,path);
+      }
     };
     for(const props of [row.nativeProperties,row.sourceAttributes??{}]){
       for(const [key,value] of Object.entries(props)){
@@ -425,6 +492,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
   const nativeSupplementCoverage=attachNativeSupplement(project,e,version,source,byId);
   const referenceAttributeCoverage=attachReferenceAttributes(project,e,version,source,byId);
   const reviewedRootArrayCoverage=attachReviewedRootArrays(project,e,version,source,byId);
+  const reviewedMessageCoverage=attachReviewedMessages(project,e,version,source,byId);
   const localizations=loadLocalizations(project,e,version,source,byId);
   // Verify no existing public definition is lost or silently replaced.
   for(const [path,raw] of baseFiles){
@@ -561,6 +629,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
     ...(nativeSupplementCoverage?{nativeSupplementSha256:e.nativeSupplementSha256,nativeSupplementCoverage}:{}),
     ...(referenceAttributeCoverage?{referenceAttributesSha256:e.referenceAttributesSha256,referenceAttributeCoverage}:{}),
     ...(reviewedRootArrayCoverage?{reviewedRootArraysSha256:e.reviewedRootArraysSha256,reviewedRootArrayCoverage}:{}),
+    ...(reviewedMessageCoverage?{reviewedMessagesSha256:e.reviewedMessagesSha256,reviewedMessageCoverage}:{}),
     ...(localizations?{localizationSha256:e.localization.sha256,localizationCoverage:localizations.coverage}:{}),
     shards:{},assets:{}};
   const root=join(project,'static/ddv/item-master');
