@@ -8,6 +8,22 @@ import {COLLECTION_UNIVERSE_UNTAGGED,COLLECTION_UNIVERSE_UNRESOLVED,
 
 const UNIVERSE_ROOTS=new Set<CollectionTopCategory>(['furniture','clothing','appearance','characters','mounts','buildings','landscaping','roads-fences','interior']);
 const WORLD_ROOTS=new Set<CollectionTopCategory>(['ingredients','crafting','fish','foraging','gems','timebending','snippets','critters']);
+const MEAL_UNKNOWN='__unknown_meal__';
+const MEAL_ORDER=['appetizer','entree','dessert'];
+const MEAL_LABELS:Readonly<Record<string,readonly string[]>>={
+  appetizer:['前菜','Appetizers','Entrées','Antipasti','Vorspeisen','Entrantes','开胃菜','Entradas'],
+  entree:['メインディッシュ','Entrées','Plats principaux','Piatti principali','Hauptgerichte','Platos principales','主菜','Pratos principais'],
+  dessert:['デザート','Desserts','Desserts','Dolci','Nachspeisen','Postres','甜点','Sobremesas'],
+  [MEAL_UNKNOWN]:['種類未分類','Type unspecified','Type non spécifié','Tipo non specificato','Typ nicht angegeben','Tipo sin especificar','未指定类型','Tipo não especificado']
+};
+const MEAL_LOCALES=['ja','en','fr','it','de','es-ES','zh-CN','pt-BR'];
+function mealKey(tag:string):string{
+  const normalized=tag.replace(/[^a-z]/gi,'').toLowerCase();
+  if(['appetizer','appetizers','starter','starters'].includes(normalized))return 'appetizer';
+  if(['entree','entrees','maincourse','maincourses','maindish'].includes(normalized))return 'entree';
+  if(['dessert','desserts'].includes(normalized))return 'dessert';
+  return tag;
+}
 const WORLD_SHARED='__shared_worlds__',WORLD_UNKNOWN='__unknown_world__';
 const WORLD_COPY:Record<string,readonly [string,string]>={ja:['複数ワールド','ワールド未分類'],en:['Multiple worlds','World unspecified'],fr:['Plusieurs mondes','Monde non spécifié'],it:['Più mondi','Mondo non specificato'],de:['Mehrere Welten','Welt nicht angegeben'],'es-ES':['Varios mundos','Mundo sin especificar'],'zh-CN':['多个世界','未指定世界'],'pt-BR':['Vários mundos','Mundo não especificado']};
 export interface CollectionBrowseOrder {
@@ -15,6 +31,7 @@ export interface CollectionBrowseOrder {
   universeKey:(id:number)=>string;
   universeLabel:(key:string)=>string;
   group:(id:number,root:CollectionTopCategory|null)=>{key:string;label:string}|null;
+  subgroup:(id:number,root:CollectionTopCategory|null)=>{key:string;label:string}|null;
 }
 const styleKeys=(source:CollectionDb01Index,id:number)=>[...new Set((source.byItem.get(id)??[])
   .filter(([facet])=>facet==='furnitureStyle'||facet==='clothingStyle').map(([,key])=>key))].sort().join('|');
@@ -44,7 +61,13 @@ export function makeCollectionBrowseOrder(source:CollectionDb01Index,locale:stri
     const worlds=[...new Set((source.byItem.get(id)??[]).filter(([facet])=>facet==='worldContextTag').map(([,key])=>key))];
     return worlds.length>1?WORLD_SHARED:worlds[0]??WORLD_UNKNOWN;
   };
-  const cached=new Map<number,{root:number;universe:string;world:string;w:number;u:number;part:number;entity:number;set:number;style:string;native:number;child:number}>();
+  const mealType=(id:number)=>{
+    const keys=[...new Set((source.byItem.get(id)??[]).filter(([facet])=>facet==='mealKind').map(([,tag])=>mealKey(tag)))];
+    return keys.length===1?keys[0]:MEAL_UNKNOWN;
+  };
+  const mealRank=(key:string)=>{const rank=MEAL_ORDER.indexOf(key);return rank>=0?rank:key===MEAL_UNKNOWN?999:100;};
+  const mealLabel=(key:string)=>MEAL_LABELS[key]?.[MEAL_LOCALES.indexOf(locale)]??MEAL_LABELS[key]?.[1]??key.replace(/([a-z])([A-Z])/g,'$1 $2');
+  const cached=new Map<number,{root:number;universe:string;world:string;meal:string;m:number;w:number;u:number;part:number;entity:number;set:number;style:string;native:number;child:number}>();
   function key(id:number){
     const prior=cached.get(id);if(prior)return prior;
     const root=source.rootsByItem?.get(id);
@@ -61,8 +84,9 @@ export function makeCollectionBrowseOrder(source:CollectionDb01Index,locale:stri
     const usesUniverse=root!==undefined&&UNIVERSE_ROOTS.has(root);
     const set=source.sourceSetByItem?.get(id)??Number.MAX_SAFE_INTEGER;
     const world=primaryWorld(id);
-    const usesWorld=root!==undefined&&WORLD_ROOTS.has(root);
-    const k={root:root===undefined?999:collectionTopCategoryRank(root),universe,world,
+    const usesWorld=root==='meals'||(root!==undefined&&WORLD_ROOTS.has(root));
+    const meal=root==='meals'?mealType(id):'';
+    const k={root:root===undefined?999:collectionTopCategoryRank(root),universe,world,meal,m:meal?mealRank(meal):0,
       w:usesWorld&&!selectedWorld?worldRanks.get(world)??999:0,
       u:!universeSelected&&usesUniverse?ranks.get(universe)??999:0,
       part:mount?collectionMountPart(nativeKey):0,
@@ -72,12 +96,13 @@ export function makeCollectionBrowseOrder(source:CollectionDb01Index,locale:stri
   return {
     compare(a,b){
       const x=key(a.itemId),y=key(b.itemId);
-      return x.root-y.root||x.part-y.part||x.w-y.w||x.u-y.u||x.entity-y.entity||x.child-y.child||
+      return x.root-y.root||x.part-y.part||x.m-y.m||x.meal.localeCompare(y.meal,'en')||x.w-y.w||x.u-y.u||x.entity-y.entity||x.child-y.child||
         x.set-y.set||x.style.localeCompare(y.style,'en')||x.native-y.native||a.itemId-b.itemId;
     },
     universeKey:id=>key(id).universe,
     universeLabel:id=>labels.get(id)??collectionUniverseDisplayLabel(locale,id),
     group(id,root){
+      if(root==='meals'){const meal=key(id).meal;return {key:meal,label:mealLabel(meal)};}
       if(root==='mounts'){
         const n=source.nativeSubtypeByItem.get(id);
         const part=collectionMountSubcategory(n?n.nativeType+':'+n.code:'');
@@ -86,6 +111,10 @@ export function makeCollectionBrowseOrder(source:CollectionDb01Index,locale:stri
       if(root&&WORLD_ROOTS.has(root)&&!selectedWorld){const world=key(id).world;return {key:world,label:worldLabel(world)};}
       if(root&&UNIVERSE_ROOTS.has(root)&&!universeSelected){const u=key(id).universe;return {key:u,label:labels.get(u)??collectionUniverseDisplayLabel(locale,u)};}
       return null;
+    },
+    subgroup(id,root){
+      if(root!=='meals'||selectedWorld)return null;
+      const world=key(id).world;return {key:world,label:worldLabel(world)};
     }
   };
 }
