@@ -4,6 +4,7 @@
   import {base} from '$app/paths';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
   import VirtualCatalogGrid from '$lib/explore/VirtualCatalogGrid.svelte';
+  import SeriesBlockGrid from '$lib/explore/SeriesBlockGrid.svelte';
   import {COLLECTION_UNIVERSE_TAG_NAMES} from '$lib/collection/universe-tag-names';
   import {FAMILIES,FACETS,emptyFilters,groupItems,matches,compareItems,isLargeUniverse,universeRank,type ExploreFilters,type Facet,type Family} from '$lib/explore/browse';
   import {seriesShelves,designTiles,type SeriesShelf,type DesignTile,type ReleaseGroup} from '$lib/explore/series';
@@ -205,18 +206,13 @@
   {/if}
   </div>
   {#snippet seriesList(universe:string,groups:SeriesShelf[])}
-    {#each groups as group (group.key)}
-      {@render seriesRow(universe,group)}
-    {/each}
-  {/snippet}
-  {#snippet seriesRow(universe:string,group:SeriesShelf)}
-    {@const designs=designTiles(group.items)}
-    <section class="shelf-row" data-series-kind={group.kind}>
-      <div class="shelf-heading"><button class="category-heading" onclick={()=>showUniverse(universe,group.key)}>{seriesName(group)} <span aria-hidden="true">›</span></button></div>
-      <div class="shelf-items">
-        <VirtualCatalogGrid items={designs} tile={designTile}/>
-      </div>
-    </section>
+    <SeriesBlockGrid {groups} block={seriesBlock}/>
+    {#snippet seriesBlock(group:SeriesShelf,designs:DesignTile[],span:number)}
+      <section class="shelf-row" data-series-kind={group.kind}>
+        <div class="shelf-heading"><button class="category-heading" onclick={()=>showUniverse(universe,group.key)}>{seriesName(group)} <span aria-hidden="true">›</span></button></div>
+        <VirtualCatalogGrid items={designs} tile={designTile} columns={span}/>
+      </section>
+    {/snippet}
   {/snippet}
   {#snippet designTile(design:DesignTile)}
     {@const item=displayed(design)}
@@ -278,8 +274,8 @@
   .filter-panel details{border-top:1px solid var(--wand-line);padding:8px 0}.filter-panel summary{cursor:pointer;font-size:.85rem}
   .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.chips button{display:inline-flex;align-items:center;gap:5px;font-size:.78rem}.chips button[aria-pressed=true]{background:var(--wand-accent-strong);color:var(--wand-accent-contrast)}
   .swatch{width:16px;height:16px;border-radius:50%;border:1px solid var(--wand-line)}
-  .shelf-row{padding-left:12px;margin:0 0 8px;border-left:2px solid var(--wand-line);min-width:0}
-  .category-heading{background:none;border:0;font-size:.85rem;font-weight:600;padding:3px 0;color:var(--wand-muted);cursor:pointer;text-align:left}
+  .shelf-row{min-width:0}
+  .category-heading{background:none;border:0;font-size:.85rem;font-weight:600;padding:3px 0;color:var(--wand-muted);cursor:pointer;text-align:left;overflow-wrap:anywhere;line-height:1.25}
   .large-universe{border-top:1px solid var(--wand-line);padding-top:10px}
   .shelf{margin:0 0 14px;min-width:0}.shelf-heading{display:flex;align-items:center;gap:5px;margin-bottom:4px}
   .universe-heading{background:none;border:0;padding:4px 0;font-size:1rem;font-weight:650;cursor:pointer;text-align:left}
