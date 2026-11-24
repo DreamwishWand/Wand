@@ -103,7 +103,9 @@ test('meals use one visual section per kind, sorted by world within each kind',a
     if(world!==lastWorld){assert(!groups.get(kind).has(world),'world must not repeat within kind');groups.get(kind).add(world);lastWorld=world;}
   }
   assert.equal(new Set(sorted.map(row=>row.itemId)).size,ids.length);
-  assert(groups.size>=3,'source must distinguish at least three meal types');
+  assert.deepEqual([...groups.keys()].slice(0,3),['appetizer','entree','dessert'],'original Dinner tag belongs in main dishes before desserts');
+  assert(!groups.has('Dinner'),'no raw Dinner heading');
+  assert.equal(order.group(sorted.find(row=>order.group(row.itemId,'meals').key==='entree').itemId,'meals').label,'メインディッシュ');
   const scoped=makeCollectionBrowseOrder(index,'ja',false,'IsDreamlightValley');
   assert(sorted.every(row=>scoped.group(row.itemId,'meals').key===order.group(row.itemId,'meals').key));
   console.log('COLLECTION_MEAL_GROUPS '+JSON.stringify([...groups].map(([kind,worlds])=>[kind,[...worlds]])));
