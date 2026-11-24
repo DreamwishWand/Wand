@@ -1,7 +1,7 @@
 <script lang="ts">
   import '../app.css';
   import '$lib/ui/shell.css';
-  import {serviceToolbar} from '$lib/ui/service-toolbar';
+  import ServiceToolbarHost from '$lib/ui/ServiceToolbarHost.svelte';
   import '$lib/ui/themes.css';
   import {base} from '$app/paths';
   import {page} from '$app/stores';
@@ -259,7 +259,7 @@
     <a class="header-home-button" href="{base}/" aria-label={copy.home} title={copy.home}><WandIcon name="home" size={21}/></a>
     {#if service==='home'}<span class="shell-home-brand">Dreamwish Wand</span>{/if}
     {#if service!=='home'}<span class="shell-current">{service==='explore'?'Explore':service==='collection'?'Collection':service==='starpath'?'Star Path':service==='characters'?'Characters':service==='guide'?'Guide':service==='world'?'World':'Save'}</span>{/if}
-    {#if service==='explore'&&$serviceToolbar}<div class="header-service-toolbar">{@render $serviceToolbar()}</div>{/if}
+    {#if service==='explore'}<ServiceToolbarHost/>{/if}
     <div class="header-spacer"></div>
     <div class="site-actions" aria-label={copy.pageActions}>
       {#if service==='world'}

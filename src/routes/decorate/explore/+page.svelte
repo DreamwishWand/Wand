@@ -1,5 +1,5 @@
 <script lang="ts">
-  import {onMount} from 'svelte';
+  import {onMount,tick,untrack} from 'svelte';
   import {registerServiceToolbar} from '$lib/ui/service-toolbar';
   import {localSaveSession} from '$lib/ui/local-save-session';
   import {readRecordedOwnership,readSelectedOwnership} from '$lib/explore/ownership';
@@ -10,7 +10,7 @@
   import {base} from '$app/paths';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
   import VirtualCatalogGrid from '$lib/explore/VirtualCatalogGrid.svelte';
-  import {catalogGridLayout,catalogPrefix,observeCatalogFrontier,WINDOW_ROWS} from '$lib/explore/viewport-grid';
+  import {captureCatalogAnchor,restoreCatalogAnchor} from '$lib/explore/viewport-anchor';
   import {COLLECTION_UNIVERSE_TAG_NAMES} from '$lib/collection/universe-tag-names';
   import {FACETS,emptyFilters,groupItems,matches,isLargeUniverse,universeRank,type ExploreFilters,type Facet} from '$lib/explore/browse';
   import {seriesShelves,orderedSeriesDesigns,type SeriesShelf,type DesignTile,type ReleaseGroup} from '$lib/explore/series';
@@ -33,7 +33,8 @@
   let filters=$state<ExploreFilters>(emptyFilters()),filtersOpen=$state(false);
   let releases=$state.raw<ReleaseGroup[]>([]);
   let variantChoices=$state<Record<string,number>>({}),variantReview=$state<ExploreItem[]>([]),reviewDesign=$state<DesignTile|null>(null);
-  let catalogWidth=$state(0),revealed=$state(0);
+  let catalogWidth=$state(0),catalogNode=$state<HTMLDivElement>();
+  let previousWidth=0,layoutEpoch=0;
   let sourceUniverses=$state.raw<{tagId:number;key:string;names:Record<string,string|null>}[]>([]);
   let sourceWorlds=$state.raw<readonly ItemMasterTagLabel[]>([]);
   let selectionMode=$state(false),selectedIds=$state<number[]>([]);
@@ -85,17 +86,28 @@
     return shelves.map(([key,list])=>[key,universeDesigns(key,list)]);
   });
   const total=$derived(sections.reduce((n,[,list])=>n+list.length,0));
-  const batch=$derived(catalogGridLayout(catalogWidth,0,catalogWidth<600?78:94).columns*WINDOW_ROWS);
-  const frontier=$derived(Math.min(total,Math.max(revealed,batch)));
-  const visibleSections=$derived(catalogPrefix(sections,frontier));
-  function advanceFrontier(){revealed=Math.min(total,frontier+batch);}
-  function resetFrontier(){revealed=0;}
+  // Keep the scroll extent stable; all section geometry is computed from
+  // a single measured catalog width, independently of card mounting.
+  $effect.pre(()=>{
+    const width=catalogWidth;
+    const before=previousWidth;
+    previousWidth=width;
+    if(!width||!before||width===before)return;
+    untrack(()=>{
+      const node=catalogNode;
+      const anchor=node?captureCatalogAnchor(node):null;
+      const epoch=++layoutEpoch;
+      if(anchor&&node)void tick().then(()=>{
+        if(epoch===layoutEpoch&&node.isConnected)restoreCatalogAnchor(node,anchor);
+      });
+    });
+  });
   function displayed(d:DesignTile){return d.items.find(i=>i.itemId===variantChoices[d.key])??d.items[0];}
   function showReview(i:ExploreItem,design?:DesignTile){selected=i;reviewDesign=design??null;variantReview=design?.items??[i];}
   function pickVariant(d:DesignTile,i:ExploreItem){variantChoices={...variantChoices,[d.key]:i.itemId};showReview(i,d);}
 
   const filterCount=$derived((filters.categories?.length??0)+(filters.worlds?.length??0)+filters.universes.length+facets.reduce((n,k)=>n+filters.tags[k].length,0));
-  function resetBrowse(){resetFrontier();window.scrollTo({top:0});}
+  function resetBrowse(){layoutEpoch++;window.scrollTo({top:0,behavior:'instant'});}
   function setScope(next:DecorationScope){scope=next;try{localStorage.setItem(DECORATION_SCOPE_KEY,next);}catch{}resetBrowse();}
   function toggleCategory(key:ExploreCategory){const list=filters.categories??[];filters.categories=list.includes(key)?list.filter(x=>x!==key):[...list,key];resetBrowse();}
   function toggleWorld(key:string){const list=filters.worlds??[];filters.worlds=list.includes(key)?list.filter(x=>x!==key):[...list,key];resetBrowse();}
@@ -182,7 +194,7 @@
 <section class="decorate">
   {#if storageFailed}<p role="alert">{t('保存できません。再読み込みしてください。','Storage unavailable. Reload before editing.')}</p>{/if}
   <div class="workspace" class:withBoards={boardsOpen}>
-  <div class="catalog" bind:clientWidth={catalogWidth} data-explore-total={total} data-explore-revealed={frontier}>
+  <div class="catalog" bind:this={catalogNode} bind:clientWidth={catalogWidth} data-explore-total={total}>
     {#if filterCount}
       <div class="active-filters">
         {#each filters.categories??[] as key}<button onclick={()=>toggleCategory(key)}>{label(key)} <WandIcon name="close" size={12}/></button>{/each}
@@ -193,15 +205,12 @@
       </div>
     {/if}
     {#if loading}<p>{t('読み込み中…','Loading…')}</p>{:else if failed}<p role="alert">{t('家具データを読み込めません。','Decoration catalog could not be loaded.')}</p>{:else}
-      {#each visibleSections as [key,designs] (key)}
+      {#each sections as [key,designs] (key)}
         <section class="shelf" data-explore-universe={key}>
           <h2 class="universe-heading">{universeName(key)}</h2>
-          <VirtualCatalogGrid items={designs} tile={designTile}/>
+          <VirtualCatalogGrid items={designs} tile={designTile} width={catalogWidth}/>
         </section>
       {/each}
-      {#if frontier<total}
-        {#key frontier}<div class="catalog-frontier" data-explore-frontier use:observeCatalogFrontier={advanceFrontier}></div>{/key}
-      {/if}
       {#if filtered.length===0}<p>{t('該当するアイテムがありません','No matching items')}</p>{/if}
     {/if}
   </div>
@@ -268,7 +277,7 @@
   .decorate{padding:12px 16px;min-width:0;position:relative}
   .workspace{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:start}
   .workspace.withBoards{grid-template-columns:minmax(0,1fr) minmax(300px,35%)}
-  .catalog{min-width:0}
+  .catalog{min-width:0;overflow-anchor:none}
   .boards{min-width:0;position:sticky;top:calc(var(--shell-height,60px) + 12px);max-height:calc(100dvh - var(--shell-height,60px) - 24px);overflow:auto;border-left:1px solid var(--wand-line);padding-left:12px}
   .boards .tiles{grid-template-columns:repeat(auto-fill,minmax(100px,1fr))}
   .board-header{justify-content:space-between}
@@ -315,7 +324,6 @@
   .swatch{width:16px;height:16px;border-radius:50%;border:1px solid var(--wand-line)}
   .shelf{margin:0 0 14px;min-width:0}
   .universe-heading{margin:0 0 4px;padding:4px 0;font-size:1rem;font-weight:650}
-  .catalog-frontier{height:2px;min-width:0}
   .catalog-tile{box-sizing:border-box;height:100%;position:relative;min-width:0;aspect-ratio:1;border:1px solid var(--wand-line);border-radius:8px;background:var(--wand-visual-bg);overflow:hidden}
   .catalog-tile.inBoard{border-color:var(--wand-accent);box-shadow:inset 0 0 0 1px var(--wand-accent)}
   .catalog-tile .item{width:100%;height:100%;padding:6px}.catalog-tile .art{height:100%;min-height:0}

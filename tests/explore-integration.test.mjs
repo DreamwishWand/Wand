@@ -12,10 +12,11 @@ test('Decorate keeps two surfaces; moodboard management is inside Explore',()=>{
   assert.doesNotMatch(explore,/mode===|mode='boards'/);
 });
 
-test('all universes use one shared incremental frontier and identical wrapping grids',()=>{
-  assert.match(explore,/\{#each visibleSections as \[key,designs\] \(key\)\}/);
-  assert.match(explore,/catalogPrefix\(sections,frontier\)/);
-  assert.match(explore,/use:observeCatalogFrontier=\{advanceFrontier\}/);
+test('all universes reserve full geometry but render only intersecting chunks',()=>{
+  assert.match(explore,/\{#each sections as \[key,designs\] \(key\)\}/);
+  assert.doesNotMatch(explore,/catalogPrefix|observeCatalogFrontier|data-explore-frontier|data-explore-revealed/);
+  assert.match(explore,/width=\{catalogWidth\}/);
+  assert.match(explore,/captureCatalogAnchor\(node\)/);
   assert.equal((explore.match(/<VirtualCatalogGrid /g)??[]).length,1);
   assert.match(explore,/orderedSeriesDesigns\(visibleSeries.get\(key\)/);
   assert.doesNotMatch(explore,/SeriesBlockGrid|seriesRow|seriesList|scrollShelf|stepShelf|grid-auto-flow:column|overflow-x:auto/);

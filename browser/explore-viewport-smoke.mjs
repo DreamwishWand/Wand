@@ -17,31 +17,24 @@ try{
  assert.ok(await page.getByRole('button',{name:/所有済みのみ|Owned only/}).isDisabled());
  const cards=page.locator('.catalog-tile'),catalog=page.locator('.catalog');
  await cards.first().waitFor({timeout:30000});
- await page.waitForFunction(()=>{const e=document.querySelector('.catalog');return Number(e?.getAttribute('data-explore-revealed'))>=24;});
- // Wait until the initial viewport has settled, not for the entire catalog.
- await page.waitForTimeout(500);
+ await page.waitForFunction(()=>{const e=document.querySelector('.catalog');const total=Number(e?.getAttribute('data-explore-total'));const slots=[...document.querySelectorAll('[data-explore-chunk]')].reduce((sum,c)=>sum+Number(c.getAttribute('data-chunk-end'))-Number(c.getAttribute('data-explore-chunk')),0);return total>500&&slots===total;});
  const total=Number(await catalog.getAttribute('data-explore-total'));
- const initial=Number(await catalog.getAttribute('data-explore-revealed'));
  const initialCards=await cards.count();
  const ownedId=Number(await cards.first().getAttribute('data-item-id'));
  assert.ok(Number.isSafeInteger(ownedId)&&ownedId>0);
  const initialHeight=await catalog.evaluate(e=>e.getBoundingClientRect().height);
- assert.ok(total>500);
- assert.ok(initial>0&&initial<200,'initial revealed count '+initial+'/'+total);
- assert.ok(initialCards<=initial);
- assert.ok(initialHeight<3*720,'initial catalog height '+initialHeight);
- assert.equal(await page.locator('[data-explore-universe="2000500017"]').count(),0,'Non IP must not mount initially');
- assert.equal(await page.locator('[data-explore-universe="2000500023"]').count(),0,'DDV must not mount initially');
- const displayed=()=>catalog.getAttribute('data-explore-revealed').then(Number);
- for(let i=0;i<5;i++){
-  const before=await displayed();
-  await page.evaluate(()=>document.querySelector('[data-explore-frontier]')?.scrollIntoView({block:'end'}));
-  await page.waitForFunction(n=>Number(document.querySelector('.catalog')?.getAttribute('data-explore-revealed'))>n,before);
- }
- const after=await displayed();
- assert.ok(after>initial&&after<total);
- assert.ok(await cards.count()<300,'old rows unmount');
- await page.locator('[data-explore-chunk]').first().scrollIntoViewIfNeeded();
+ assert.ok(initialCards>0&&initialCards<200,'initial mounted cards '+initialCards+'/'+total);
+ assert.ok(initialHeight>3*720,'full extent reserved before scrolling');
+ const first=page.locator('[data-explore-chunk]').first(),last=page.locator('[data-explore-chunk]').last();
+ assert.equal(await last.getAttribute('data-mounted'),'false');
+ assert.equal(await page.locator('[data-explore-universe="2000500017"] .catalog-tile').count(),0);
+ await last.scrollIntoViewIfNeeded();
+ await page.waitForFunction(()=>{const chunks=document.querySelectorAll('[data-explore-chunk]');return chunks.length>1&&chunks[chunks.length-1].getAttribute('data-mounted')==='true'&&chunks[0].getAttribute('data-mounted')==='false';});
+ const after=await cards.count();
+ assert.ok(after>0&&after<300,'direct jump keeps mounted cards bounded');
+ const endHeight=await catalog.evaluate(e=>e.getBoundingClientRect().height);
+ assert.ok(Math.abs(endHeight-initialHeight)<2,'scroll extent unchanged by card mounting');
+ await first.scrollIntoViewIfNeeded();
  await page.waitForFunction(()=>document.querySelector('[data-explore-chunk]')?.getAttribute('data-mounted')==='true');
  const firstColumns=Number(await page.locator('[data-explore-grid]').first().getAttribute('data-columns'));
  await page.getByRole('button',{name:/ムードボード|Moodboards/,exact:true}).click();
@@ -81,5 +74,5 @@ try{
  await cards.first().waitFor();
  assert.ok((await cards.evaluateAll(es=>es.map(e=>Number(e.dataset.itemId)))).every(id=>id===ownedId),'only positive ownership is shown');
  assert.deepEqual(errors,[]);
- console.log('EXPLORE_PROGRESSIVE '+JSON.stringify({total,initial,initialCards,initialHeight,after,desktopColumns:firstColumns}));
+ console.log('EXPLORE_VIRTUAL '+JSON.stringify({total,initialCards,initialHeight,after,desktopColumns:firstColumns}));
 }finally{await browser?.close();server.kill();}
