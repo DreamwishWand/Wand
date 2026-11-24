@@ -279,6 +279,45 @@ export async function openPublicItemDetails(
       const reader=await complete();
       const projected=await reader.getItemFields(itemIds,fields);
       if(!projected.some(Boolean))return Object.freeze(projected.map(()=>null));
+      // Current services use the same canonical content-addressed revision
+      // for Item fields and acquisition. No whole acquisition sidecar is
+      // fetched, even when both source relations and summary are requested.
+      if(options.gameVersion==='current'){
+        const publication=reader.release.acquisitionProjection;
+        const status=publication?'current' as const:'pending_update' as const;
+        const selectedFields:string[]=[];
+        if(selection.acquisition&&publication?.summaryCount)selectedFields.push('acquisition.summary');
+        if(selection.sourceRelations&&publication?.relationCount)selectedFields.push('acquisition.sourceRelations');
+        const knownIds=[...new Set(projected.flatMap(row=>row?[row.itemId]:[]))];
+        const metadata=selectedFields.length
+          ?await reader.getItemFields(knownIds,selectedFields):[];
+        const byId=new Map(metadata.flatMap(row=>row?[[row.itemId,row.values] as const]:[]));
+        return Object.freeze(projected.map(row=>{
+          if(!row)return null;
+          const values=byId.get(row.itemId);
+          const itemId=String(row.itemId);
+          // Missing sparse row means no known route in this projection,
+          // NOT unobtainable. A missing entire projection is pending_update.
+          const acquisition=publication&&selection.acquisition
+            ?(values?.['acquisition.summary'] as unknown as Readonly<Db01ItemAcquisition>|undefined)
+              ??Object.freeze({itemId,categories:Object.freeze([]),details:Object.freeze({}),
+                unresolvedOnlineHints:Object.freeze([]),classified:false as const,currentAvailabilityVerified:false as const})
+            :undefined;
+          const sourceRelations=publication&&selection.sourceRelations
+            ?(values?.['acquisition.sourceRelations'] as unknown as Readonly<Db01ItemSourceRecord>|undefined)
+              ??Object.freeze({itemId,categories:Object.freeze([]),links:Object.freeze([]),
+                identifiedSourceLinks:false as const,sourceCoverageComplete:false as const})
+            :undefined;
+          assert(!acquisition||acquisition.itemId===itemId,'ITEM_ID_MISMATCH');
+          assert(!sourceRelations||sourceRelations.itemId===itemId,'SOURCE_ITEM_ID_MISMATCH');
+          if(acquisition&&sourceRelations)assert(
+            acquisition.categories.length===sourceRelations.categories.length&&
+            acquisition.categories.every((value,i)=>value===sourceRelations.categories[i]),
+            'ACQUISITION_SOURCE_CATEGORY_MISMATCH');
+          return Object.freeze({...row,...(acquisition?{acquisition}:{}),
+            ...(sourceRelations?{sourceRelations}:{}),acquisitionStatus:status,currentAvailabilityVerified:false as const});
+        }));
+      }
       const [origins,index]=await Promise.all([
         selection.acquisition&&acquisitionStatus==='current'?sidecar():null,
         selection.sourceRelations&&acquisitionStatus==='current'?sources():null
@@ -346,7 +385,8 @@ export async function openPublicItemDetails(
 }
 
 /** Normal product entry point. Version selection is internal; use getSelectedItems
- * for independent current fields and optional acquisition metadata. */
+ * for current canonical fields and acquisition projections. Other methods are
+ * legacy compatibility reads and retain the historical sidecar gate. */
 export function openCurrentItemDetails(basePath:string='',fetcher:typeof fetch=fetch){
   return openPublicItemDetails(basePath,fetcher,{gameVersion:'current'});
 }

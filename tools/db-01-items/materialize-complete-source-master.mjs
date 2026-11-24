@@ -9,6 +9,7 @@ import {createHash} from 'node:crypto';
 import {gunzipSync,inflateSync} from 'node:zlib';
 import {createProjectionWriter,installProjectionStage} from './reuse-public-projections.mjs';
 import {attachHistoricalContentOrigin} from './attach-historical-content-origin.mjs';
+import {loadAcquisitionColumns} from './acquisition-columns.mjs';
 
 const hash=b=>createHash('sha256').update(b).digest('hex');
 const SHA=/^[0-9a-f]{64}$/;
@@ -1010,7 +1011,7 @@ function introductionHistory(project,e,version,source,rows){
     }];
   }));
 }
-function writeFieldColumns(rows,release,write,assets,history){
+function writeFieldColumns(rows,release,write,assets,history,acquisition){
   const columns=new Map();
   const split=new Set(['names','artwork','itemType','nativeProperties','sourceAttributes']);
   const add=(field,id,value)=>{
@@ -1030,6 +1031,16 @@ function writeFieldColumns(rows,release,write,assets,history){
     }
   };
   for(const row of rows){
+    if(acquisition){
+      const summary=acquisition.summary.get(row.itemId);
+      const relations=acquisition.relations.get(row.itemId);
+      if(summary){
+        add('acquisition.summary',row.itemId,summary);
+        if(summary.categories.length)add('acquisition.categories',row.itemId,summary.categories);
+        if(summary.unresolvedOnlineHints.length)add('acquisition.onlineHints',row.itemId,summary.unresolvedOnlineHints);
+      }
+      if(relations)add('acquisition.sourceRelations',row.itemId,relations);
+    }
     for(const [key,value] of Object.entries(history.get(row.itemId)))add('history.'+key,row.itemId,value);
     for(const [key,value] of Object.entries(row)){
       if(!split.has(key)){add(key,row.itemId,value);continue;}
@@ -1056,12 +1067,16 @@ function writeFieldColumns(rows,release,write,assets,history){
   const fields=[];
   for(const [field,entries] of [...columns].sort(([a],[b])=>a<b?-1:a>b?1:0)){
     const blocks=[];
+    // Frequently inspected acquisition details use smaller blocks; category
+    // columns retain the compact bulk-filter layout.
+    const narrow=field==='acquisition.summary'||field==='acquisition.sourceRelations';
+    const rowLimit=narrow?256:4096,byteLimit=narrow?128*1024:1024*1024;
     // Bound bytes as well as row count; large mission step arrays stay atomic.
     for(let start=0;start<entries.length;){
       let end=start,bytes=256;
-      while(end<entries.length&&end-start<4096){
+      while(end<entries.length&&end-start<rowLimit){
         const size=Buffer.byteLength(JSON.stringify(entries[end]))+1;
-        if(end>start&&bytes+size>1024*1024)break;
+        if(end>start&&bytes+size>byteLimit)break;
         bytes+=size;end++;
       }
       const items=entries.slice(start,end);
@@ -1299,7 +1314,9 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
     ['universeSourceStatusItemCount','universeSourceStatusItems'],['worldSourceTagCount','worldSourceTagItems'],
     ['browseItemCount','browseItems']])f[key]=f[count].length;
   exploreThemeCensus(explore,byId);
+  const acquisition=loadAcquisitionColumns(project,version,e.acquisitionProjection,rows);
   const index={schema:'wand.item-master.release@1',scope:'complete',version:e.release,target:source.target,
+    ...(acquisition?{acquisitionProjection:acquisition.metadata}:{}),
     count:e.count,bucketCount:256,archiveSha256:e.archiveSha256,
     ...(e.introductionHistorySha256?{introductionHistorySha256:e.introductionHistorySha256}:{}),
     sourceFilesVerified:source.sourceFilesVerified,sourceFilesSha256:source.sourceFilesSha256,
@@ -1358,7 +1375,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
         check(index.assets[path].bytes<=16*1024*1024,'LINKED_TEXT_BLOCK_TOO_LARGE');
       }
     }
-    writeFieldColumns(rows,e.release,write,index.assets,attachHistoricalContentOrigin(project,source,introductionHistory(project,e,version,source,rows)));
+    writeFieldColumns(rows,e.release,write,index.assets,attachHistoricalContentOrigin(project,source,introductionHistory(project,e,version,source,rows)),acquisition);
     write('index.json',index,index.count);
     installProjectionStage(stage,destination);
     console.log('DB-01 projection reuse:',JSON.stringify(stats));
