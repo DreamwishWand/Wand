@@ -520,3 +520,34 @@ test('content attribution is independent of observed source version and release 
   for(const value of ['dlc.the-keepsake-sea','version.26'])
     assert.deepEqual(await db.findItemIdsByField('history.contentReleaseId',{kind:'equals',value}),[]);
 });
+
+
+test('historical content evidence keeps source cohort candidates distinct from actual release attribution',async()=>{
+  const db=await openPublicItemMaster('',fetcher,{scope:'complete'});
+  const field='history.contentCandidateReleaseIds';
+  const dlc=await db.findItemIdsByField(field,{kind:'contains',value:'dlc.the-keepsake-sea'});
+  const free=await db.findItemIdsByField(field,{kind:'contains',value:'version.26'});
+  assert.equal(dlc.length,719);
+  assert.equal(free.length,18);
+  assert(!dlc.some(i=>free.includes(i)));
+  const evidence='history.contentOriginEvidence';
+  const [bridge,outfit,questReward,flounder,house,old,fix]=await db.getItemFields(
+    [40006771,50900420,40006127,10000049,170600005,40005160,2130007038],
+    [field,evidence,'history.contentReleaseId']);
+  const has=(row,kind,value)=>row.values[evidence]?.some(x=>x[0]===kind&&x[1]===value);
+  assert.deepEqual(bridge.values[field],['dlc.the-keepsake-sea']);
+  assert(has(bridge,'world_tag',2001200066));
+  assert(has(bridge,'native_name_marker','update26'));
+  assert(has(bridge,'premium_shop_snapshot','Shop20261118'));
+  assert.deepEqual(outfit.values[field],['version.26']);
+  assert(has(outfit,'world_tag',2001200028));
+  assert(has(outfit,'premium_shop_snapshot','Shop20261118'));
+  assert(has(questReward,'quest_reward_candidate',2070001659));
+  assert(has(flounder,'iap_direct_expansion_reward','DeluxeEditionExpansion4'));
+  assert(has(house,'premium_shop_snapshot','Shop20261118'));
+  assert.equal(house.values[field],undefined);
+  assert.equal(old.values[field],undefined);
+  assert.equal(fix.values[field],undefined);
+  for(const row of [bridge,outfit,questReward,flounder,house,old,fix])
+    assert.equal(row.values['history.contentReleaseId'],null);
+});

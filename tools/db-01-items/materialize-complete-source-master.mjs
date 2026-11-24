@@ -8,6 +8,7 @@ import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {gunzipSync,inflateSync} from 'node:zlib';
 import {createProjectionWriter,installProjectionStage} from './reuse-public-projections.mjs';
+import {attachHistoricalContentOrigin} from './attach-historical-content-origin.mjs';
 
 const hash=b=>createHash('sha256').update(b).digest('hex');
 const SHA=/^[0-9a-f]{64}$/;
@@ -1357,7 +1358,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
         check(index.assets[path].bytes<=16*1024*1024,'LINKED_TEXT_BLOCK_TOO_LARGE');
       }
     }
-    writeFieldColumns(rows,e.release,write,index.assets,introductionHistory(project,e,version,source,rows));
+    writeFieldColumns(rows,e.release,write,index.assets,attachHistoricalContentOrigin(project,source,introductionHistory(project,e,version,source,rows)));
     write('index.json',index,index.count);
     installProjectionStage(stage,destination);
     console.log('DB-01 projection reuse:',JSON.stringify(stats));
