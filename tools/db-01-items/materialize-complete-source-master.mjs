@@ -60,6 +60,34 @@ function attachAttributes(project,e,version,source,byId){
     fields:a.coverage,unmappedSourceClassCount:a.unmappedSourceClassCount,
     allOriginalFieldSemanticsVerified:false,gridLayerOccupancyVerified:false,runtimePriceVerified:false};
 }
+// Supplement only values recovered from source declarations and the same original corpus.
+function attachNativeSupplement(project,e,version,source,byId){
+  if(e.nativeSupplementSha256===undefined)return undefined;
+  check(SHA.test(e.nativeSupplementSha256),'NATIVE_SUPPLEMENT_SHA_FORMAT');
+  const bytes=readFileSync(join(project,'data/ddv/item-master','native-supplement-steam-'+version+'.json'));
+  check(hash(bytes)===e.nativeSupplementSha256,'NATIVE_SUPPLEMENT_SHA');
+  const a=JSON.parse(bytes.toString('utf8'));
+  check(a.schema==='wand.item-master.native-supplement@1'&&a.gameVersion===version&&
+    a.sourceItemsSha256===source.sourceItemsSha256&&a.sourceIl2cppDumpSha256===source.sourceIl2cppDumpSha256&&
+    a.strideOverride&&typeof a.strideOverride==='object'&&!Array.isArray(a.strideOverride),'NATIVE_SUPPLEMENT_RELEASE');
+  const expected=new Set([...byId.values()].filter(r=>r.sourceAttributes?.GridAreaData?._unresolvedFields?.includes(5)).map(r=>r.itemId));
+  const seen=new Set();
+  for(const [key,ids] of Object.entries(a.strideOverride)){
+    const value=Number(key);
+    check(String(value)===key&&Number.isSafeInteger(value)&&value>=-2147483648&&value<=2147483647&&Array.isArray(ids),'STRIDE_VALUE');
+    for(const id of ids){
+      check(ID(id)&&expected.has(id)&&!seen.has(id),'STRIDE_ITEM');
+      const grid=byId.get(id).sourceAttributes.GridAreaData;
+      check(!Object.hasOwn(grid,'StrideOverride'),'STRIDE_DUPLICATE');
+      grid.StrideOverride=value;
+      const remaining=grid._unresolvedFields.filter(n=>n!==5);
+      if(remaining.length)grid._unresolvedFields=remaining;else delete grid._unresolvedFields;
+      seen.add(id);
+    }
+  }
+  check(seen.size===expected.size,'STRIDE_CENSUS');
+  return {strideOverrideCount:seen.size,runtimeSemanticsVerified:false};
+}
 const LOCALIZED_FIELDS=['Description','DescriptionText','EvolvingDescription','PluralDisplayName'];
 function loadLocalizations(project,e,version,source,byId){
   if(e.localization===undefined)return undefined;
@@ -111,18 +139,29 @@ function writeFieldColumns(rows,release,write,assets){
   const columns=new Map();
   const split=new Set(['names','artwork','itemType','nativeProperties','sourceAttributes']);
   const add=(field,id,value)=>{
-    check(/^[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)?$/.test(field),'COLUMN_NAME');
+    check(/^[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*){0,16}$/.test(field)&&!field.split('.').some(k=>['__proto__','constructor','prototype'].includes(k)),'COLUMN_NAME');
     check(value!==undefined,'COLUMN_UNDEFINED');
     let entries=columns.get(field);
     if(!entries){entries=[];columns.set(field,entries);}
     check(!entries.length||entries[entries.length-1][0]<id,'COLUMN_DUPLICATE');
     entries.push([id,value]);
   };
+  // Preserve complete object columns, and also expose nested object fields.
+  // Arrays are atomic values: never flatten repeated entries and lose pairing.
+  const addSource=(field,id,value,depth=0)=>{
+    add(field,id,value);
+    if(depth<15&&value!==null&&typeof value==='object'&&!Array.isArray(value)){
+      for(const [key,child] of Object.entries(value))addSource(field+'.'+key,id,child,depth+1);
+    }
+  };
   for(const row of rows){
     for(const [key,value] of Object.entries(row)){
       if(!split.has(key)){add(key,row.itemId,value);continue;}
       const prefix=key==='nativeProperties'||key==='sourceAttributes'?'source':key;
-      for(const [name,part] of Object.entries(value))add(prefix+'.'+name,row.itemId,part);
+      for(const [name,part] of Object.entries(value)){
+        if(prefix==='source')addSource(prefix+'.'+name,row.itemId,part);
+        else add(prefix+'.'+name,row.itemId,part);
+      }
     }
   }
   const fields=[];
@@ -185,6 +224,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
   const byId=new Map(rows.map(r=>[r.itemId,r]));
   check(byId.size===e.count&&rows.every((r,i)=>i===0||rows[i-1].itemId<r.itemId),'ID_CENSUS');
   const sourceAttributeCoverage=attachAttributes(project,e,version,source,byId);
+  const nativeSupplementCoverage=attachNativeSupplement(project,e,version,source,byId);
   const localizations=loadLocalizations(project,e,version,source,byId);
   // Verify no existing public definition is lost or silently replaced.
   for(const [path,raw] of baseFiles){
@@ -301,6 +341,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
       worldMembershipVerified:false,collectionMembershipVerified:false,
       acquisitionCoverageComplete:false,publishedR2ImageUrlAvailable:false},
     ...(sourceAttributeCoverage?{attributesSha256:e.attributesSha256,sourceAttributeCoverage}:{}),
+    ...(nativeSupplementCoverage?{nativeSupplementSha256:e.nativeSupplementSha256,nativeSupplementCoverage}:{}),
     ...(localizations?{localizationSha256:e.localization.sha256,localizationCoverage:localizations.coverage}:{}),
     shards:{},assets:{}};
   const root=join(project,'static/ddv/item-master');

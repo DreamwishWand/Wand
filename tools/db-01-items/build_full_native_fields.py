@@ -2,6 +2,14 @@
 import argparse, collections, hashlib, json, math, pathlib, re, sqlite3, struct, zipfile
 from build_complete_source_master import item_class
 
+# These subtypes share the declared source layouts. This is a wire-layout
+# association, not a claim about the game's runtime dispatch.
+EXTRA_CLASSES={('Currency',2):'CurrencyItemData',('Currency',3):'CurrencyItemData',
+    ('Currency',4):'CurrencyItemData',('Currency',7):'CurrencyItemData',
+    ('Dialogue',9):'DialogueItemData',('Dialogue',10):'DialogueItemData'}
+def source_class(cat,sub):
+    return EXTRA_CLASSES.get((cat,sub),item_class(cat,sub))
+
 def sha(b):return hashlib.sha256(b).hexdigest()
 def require(ok,msg):
     if not ok:raise ValueError(msg)
@@ -38,7 +46,7 @@ def declarations(s):
             vals={int(v,0):k for k,v in re.findall(r'public const [\w.]+ (\w+) = (-?(?:0x[0-9a-fA-F]+|\d+));',body)}
             enums[name].append((q,vals));continue
         nums=re.findall(r'public const int (\w+)FieldNumber = (\d+);',body)
-        if not nums and not re.search(r'public sealed class '+re.escape(name)+r' : IMessage<',m[0].split('\n{',1)[0]):continue
+        if not nums and not re.search(r'\bIMessage<'+re.escape(name)+r'>',m[0].split('\n{',1)[0]):continue
         props={k:t.strip() for t,k in re.findall(r'^\s*public ([\w.<> ,]+?) (\w+) \{ get;[^}]*\}',body,re.M)}
         msgs[name].append((q,{int(n):(k,props.get(k)) for k,n in nums}))
     return msgs,enums
@@ -57,10 +65,34 @@ def decode(data,decl,msgs,enums,prefix='',depth=0):
         repeated=inner.startswith('RepeatedField<');inner=inner[14:-1] if repeated else inner
         inner=inner[9:-1] if inner.startswith('Nullable<') else inner
         enum=unique(enums,inner,q);msg=unique(msgs,inner,q)
+        if q=='StoreStage.Types.SequenceEntry' and name=='LayoutType' and inner=='LayoutType':
+            # Nested StoreStage belongs to Definitions.Displays in the dump.
+            enum=unique(enums,inner,'Definitions.Displays.StoreStage')
+        map_types=re.fullmatch(r'MapField<([\w.]+),\s*([\w.]+)>',t or '')
         if w==0 and (inner in ('int','uint','long','ulong','bool') or enum):
             if inner=='bool' and v not in (0,1):pass
             else:
                 value=bool(v) if inner=='bool' else str(v) if v>2**53-1 else v;status='varint_wire_value'
+        elif w==2 and t=='Nullable<int>':
+            # Protobuf nullable int uses a length-delimited wrapper with value field 1.
+            try:
+                wrapped=list(fields(v))
+                if len(wrapped)==1 and wrapped[0][:2]==(1,0):
+                    x=wrapped[0][2]
+                    if x<=0x7fffffff or x>=2**64-2**31:
+                        value=x if x<=0x7fffffff else x-2**64
+                        status='nullable_int_wrapper'
+                elif not wrapped:
+                    value=0;status='nullable_int_wrapper'
+            except ValueError:pass
+        elif w==2 and map_types and depth<32:
+            # A protobuf map entry is a message: key=1, value=2. Keep the
+            # entry occurrence and its children, including omitted defaults.
+            k,vt=map_types.groups()
+            entry=(q+'.'+name+'Entry',{1:('Key',k),2:('Value',vt)})
+            try:
+                child=list(decode(v,entry,msgs,enums,path+'.',depth+1));status='declared_map_entry'
+            except ValueError:child=None
         elif w==2 and inner=='string':
             try:value=v.decode('utf-8');status='declared_utf8'
             except UnicodeDecodeError:pass
@@ -106,7 +138,7 @@ CREATE TABLE field(item_id INTEGER NOT NULL,path TEXT NOT NULL,field_key TEXT NO
         for offset,raw in frames(b):
             ff=list(fields(raw));ids=[v for n,w,v,_ in ff if n==1 and w==0];require(len(ids)==1,'missing ID');i=ids[0]
             r=items[i];t=typed[i];require(i not in seen and r['nativeCategory']==fn[:-5] and t['sourceSha256']==meta['sha256'] and [v.decode('utf-8') for n,w,v,_ in ff if n==2 and w==2]==[r['nativeNameField']],'frame identity mismatch');seen.add(i)
-            cls=item_class(r['nativeCategory'],t['subtypeCode']);decl=unique(msgs,cls or '', 'Definitions.Items.Root');unmapped+=decl is None
+            cls=source_class(r['nativeCategory'],t['subtypeCode']);decl=unique(msgs,cls or '', 'Definitions.Items.Root');unmapped+=decl is None
             if decl:classes.add(decl[0])
             db.execute('INSERT INTO item VALUES(?,?,?,?,?,?,?,?,?)',(i,r['nativeCategory'],r['nativeNameField'],decl[0] if decl else None,offset,meta['sha256'],json.dumps(r,ensure_ascii=False,separators=(',',':')),json.dumps(t,separators=(',',':')),raw))
             batch=list(decode(raw,decl,msgs,enums));db.executemany('INSERT INTO field VALUES(?,?,?,?,?,?,?,?,?,?)',((i,*x) for x in batch))

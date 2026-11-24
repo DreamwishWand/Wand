@@ -32,7 +32,7 @@ export interface ItemFieldReader {
   findItemIdsByField(field:string,match:ItemFieldMatch):Promise<readonly number[]>;
 }
 type AssetInfo=Readonly<{count:number;bytes:number;sha256:string}>;
-const FIELD=/^[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)?$/;
+const FIELD=/^[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*){0,16}$/;
 const ID=(v:unknown):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>0;
 const obj=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 function check(v:unknown,code:string):asserts v{

@@ -34,6 +34,7 @@ export interface ItemMasterCompleteRelease {
   readonly archiveSha256: string;
   readonly parts: number;
   readonly attributesSha256?: string;
+  readonly nativeSupplementSha256?: string;
   readonly localization?: Readonly<{parts:number;sha256:string}>;
 }
 export interface ItemMasterExpandedRelease {
@@ -259,6 +260,8 @@ export interface ItemMasterRelease {
   readonly archiveSha256?: string;
   readonly attributesSha256?: string;
   readonly sourceAttributeCoverage?: NativeSourceAttributeCoverage;
+  readonly nativeSupplementSha256?: string;
+  readonly nativeSupplementCoverage?: Readonly<{strideOverrideCount:number;runtimeSemanticsVerified:false}>;
   readonly localizationSha256?: string;
   readonly localizationCoverage?: ItemLocalizationCoverage;
   readonly sourceFilesVerified?: number;
@@ -493,6 +496,8 @@ export async function openPublicItemMaster(
           'INVALID_COMPLETE_RELEASE');
         assert(c.attributesSha256===undefined||
           typeof c.attributesSha256==='string'&&SHA.test(c.attributesSha256),'INVALID_ATTRIBUTE_DIGEST');
+        assert(c.nativeSupplementSha256===undefined||
+          typeof c.nativeSupplementSha256==='string'&&SHA.test(c.nativeSupplementSha256),'INVALID_NATIVE_SUPPLEMENT_DIGEST');
         if(c.localization!==undefined){
           const l=c.localization;
           assert(isObject(l)&&typeof l.parts==='number'&&Number.isSafeInteger(l.parts)&&l.parts>0&&l.parts<=100&&
@@ -554,6 +559,13 @@ export async function openPublicItemMaster(
         release.sourceAttributeCoverage.allOriginalFieldSemanticsVerified===false&&
         release.sourceAttributeCoverage.gridLayerOccupancyVerified===false&&
         release.sourceAttributeCoverage.runtimePriceVerified===false),'INVALID_ATTRIBUTE_RELEASE');
+    assert((!selected||release.nativeSupplementSha256===selected.complete?.nativeSupplementSha256)&&
+      (release.nativeSupplementSha256===undefined||typeof release.nativeSupplementSha256==='string'&&
+        SHA.test(release.nativeSupplementSha256)&&isObject(release.nativeSupplementCoverage)&&
+        typeof release.nativeSupplementCoverage.strideOverrideCount==='number'&&
+        Number.isSafeInteger(release.nativeSupplementCoverage.strideOverrideCount)&&
+        release.nativeSupplementCoverage.strideOverrideCount>=0&&release.nativeSupplementCoverage.strideOverrideCount<=release.count&&
+        release.nativeSupplementCoverage.runtimeSemanticsVerified===false),'INVALID_NATIVE_SUPPLEMENT_RELEASE');
     assert((!selected||release.localizationSha256===selected.complete?.localization?.sha256)&&
       (release.localizationSha256===undefined||
         typeof release.localizationSha256==='string'&&SHA.test(release.localizationSha256)&&
