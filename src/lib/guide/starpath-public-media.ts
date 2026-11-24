@@ -96,7 +96,8 @@ function starpathImageKey(path:string, variant:'thumbnail'|'original'){
   const prefix='media/steam-v1.26.2/';
   const legacy=path.startsWith(prefix)?path.slice(prefix.length):path;
   if(!legacy.startsWith(variant+'/'))return null;
-  return parsePublicImageKey('images/'+legacy.slice(variant.length+1));
+  const match=/^([0-9a-f]{2})\/([0-9a-f]{64})\.webp$/.exec(legacy.slice(variant.length+1));
+  return match&&match[1]===match[2].slice(0,2)?{sha256:match[2]}:null;
 }
 /** Explicitly reviewed publisher-controlled release; never infer publication. */
 export function validateStarpathMediaActivation(

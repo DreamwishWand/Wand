@@ -23,10 +23,10 @@ function fixture(state='published'){
   return {config,calls,fetcher:async url=>{calls.push(url);assert.ok(url.startsWith(root));return new Response(payloads.get(url.slice(root.length)));}};
 }
 test('common image keys have no version, service or language',()=>{
-  assert.equal(publicImageUrl(origin,'original',sha),origin+'/images/aa/'+sha+'.webp');
+  assert.equal(publicImageUrl(origin,'original',sha),origin+'/images/'+sha+'.webp');
   assert.deepEqual(parsePublicImageKey(publicImageKey('thumbnail',sha)),{sha256:sha});
-  assert.equal(parsePublicImageKey('images/bb/'+sha+'.webp'),null);
-  assert.equal(parsePublicImageKey('steam-v1.26.2/images/aa/'+sha+'.webp'),null);
+  assert.equal(parsePublicImageKey('images/aa/'+sha+'.webp'),null);
+  assert.equal(parsePublicImageKey('steam-v1.26.2/images/'+sha+'.webp'),null);
   assert.throws(()=>publicImageUrl('https://example.com','thumbnail',sha),/origin/);
 });
 test('unpublished client never fetches',async()=>{
@@ -35,8 +35,8 @@ test('unpublished client never fetches',async()=>{
 test('Item ID lookup loads one shard on demand, reuses it for all variants, skips empty shards',async()=>{
   const f=fixture(),c=createItemMediaClient(f.config,f.fetcher);
   const [thumb,original]=await Promise.all([c.getItemImage(257),c.getItemImage(257,'original')]);
-  assert.equal(thumb.url,origin+'/images/aa/'+sha+'.webp');
-  assert.equal(original.url,origin+'/images/aa/'+sha+'.webp');
+  assert.equal(thumb.url,origin+'/images/'+sha+'.webp');
+  assert.equal(original.url,origin+'/images/'+sha+'.webp');
   assert.equal(await c.getItemImage(1),null);
   assert.equal(await c.getItemImage(2),null);
   assert.equal(f.calls.length,2);

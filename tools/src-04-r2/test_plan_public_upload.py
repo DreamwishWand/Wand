@@ -3,6 +3,7 @@ from plan_public_upload import image_key,plan_upload
 class UploadPlanTests(unittest.TestCase):
     def test_reuse_all_versions_and_variants(self):
         a,b,c="a"*64,"b"*64,"c"*64
+        self.assertEqual(image_key(a),"images/"+a+".webp")
         files={"one":(a,100,128,64,"original"),"two":(a,100,128,64,"thumbnail"),
                "three":(b,200,256,128,"original")}
         r=plan_upload(files,{image_key(b):200,image_key(c):50})

@@ -13,7 +13,7 @@ from stage_media_v2 import collect, audit, SHA_RE, require, DEFAULT_OUT, EXPECTE
 
 def image_key(sha):
     require(isinstance(sha,str) and SHA_RE.fullmatch(sha), "PUBLIC_SHA")
-    return f"images/{sha[:2]}/{sha}.webp"
+    return f"images/{sha}.webp"
 
 
 def plan_upload(files, inventory):

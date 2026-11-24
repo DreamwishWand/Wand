@@ -21,7 +21,7 @@ const RELEASE='steam-v1.26.2';
 const SOURCE_HASH='fd2d07d541293a19ac7b845e996ccf4e3af41270c79daaa56b2ff74316a45e9f';
 const PRIVATE_PREFIX='private/staging/src04/steam-v1.26.2/'+SOURCE_HASH.slice(0,16)+'/';
 const SHA=/^[a-f0-9]{64}$/;
-const CONTENT_KEY=/^images\/([0-9a-f]{2})\/([a-f0-9]{64})\.webp$/;
+const CONTENT_KEY=/^images\/([a-f0-9]{64})\.webp$/;
 const fail=code=>{throw new Error('DB03_SRC04_PROMOTION_'+code)};
 const assert=(ok,code)=>{if(!ok)fail(code)};
 const isRecord=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
@@ -38,8 +38,8 @@ function publicOrigin(origin){
 }
 const checkKey=(key,kind)=>{
   const match=typeof key==='string'?CONTENT_KEY.exec(key):null;
-  assert(match&&match[1]===match[2].slice(0,2),'INVALID_KEY');
-  return match[2];
+  assert(match,'INVALID_KEY');
+  return match[1];
 };
 function checkWebp(bytes,width,height){
   assert(bytes.length>=25&&bytes.subarray(0,4).toString('ascii')==='RIFF'&&
@@ -79,7 +79,7 @@ export function verifyPromotionPlan(plan){
       typeof obj.target==='string'&&SHA.test(obj.sha256)&&
       Number.isSafeInteger(obj.bytes)&&obj.bytes>0&&obj.bytes<=16*1024*1024,'PRIVATE_OBJECT');
     const match=CONTENT_KEY.exec(obj.target);
-    assert(match&&match[2]===obj.sha256&&match[1]===obj.sha256.slice(0,2)&&
+    assert(match&&match[1]===obj.sha256&&
       ['thumbnail','original'].some(kind=>obj.source.startsWith(PRIVATE_PREFIX+'images-v2/'+kind+'/')),'PRIVATE_OBJECT_KEY');
     assert(!objects.has(obj.target),'DUPLICATE_OBJECT');
     objects.set(obj.target,{sha256:obj.sha256,bytes:obj.bytes});

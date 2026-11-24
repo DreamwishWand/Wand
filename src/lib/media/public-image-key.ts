@@ -1,17 +1,17 @@
 /** Public game-art paths. Version and semantic identity belong in the manifest. */
 export type ImageVariant = 'original' | 'thumbnail';
 const SHA = /^[0-9a-f]{64}$/;
-const KEY = /^images\/([0-9a-f]{2})\/([0-9a-f]{64})\.webp$/;
+const KEY = /^images\/([0-9a-f]{64})\.webp$/;
 export function publicImageKey(variant: ImageVariant, sha256: string): string {
   if ((variant !== 'original' && variant !== 'thumbnail') || !SHA.test(sha256))
     throw new TypeError('Invalid public image identity');
-  return 'images/' + sha256.slice(0, 2) + '/' + sha256 + '.webp';
+  return 'images/' + sha256 + '.webp';
 }
 export function parsePublicImageKey(key: unknown): {sha256: string} | null {
   if (typeof key !== 'string') return null;
   const m = KEY.exec(key);
-  if (!m || m[1] !== m[2].slice(0, 2)) return null;
-  return {sha256: m[2]};
+  if (!m) return null;
+  return {sha256: m[1]};
 }
 export function publicMediaOrigin(input: string): string {
   const u = new URL(input);

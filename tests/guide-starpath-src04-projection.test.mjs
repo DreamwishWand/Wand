@@ -33,7 +33,7 @@ const imageData={
 };
 const variants=Object.fromEntries(Object.entries(imageData).map(([kind,v])=>{
   const hash=sha(v.bytes);
-  return [kind,{key:`images/${hash.slice(0,2)}/${hash}.webp`,
+  return [kind,{key:`images/${hash}.webp`,
     width:v.width,height:v.height,bytes:v.bytes.length,sha256:hash}];
 }));
 const plan=()=>({

@@ -18,7 +18,7 @@ test('published media loads only the requested group and shares cached index',as
     return new Response(payload);
   });
   assert.equal((await c.unique('maps','bg_map_test')).url,sharedMediaUrl(config.origin,image));
-  assert.equal(sharedMediaUrl(config.origin,image),'https://media.dreamwishwand.com/images/aa/'+image.sha256+'.webp');
+  assert.equal(sharedMediaUrl(config.origin,image),'https://media.dreamwishwand.com/images/'+image.sha256+'.webp');
   assert.deepEqual(await c.names('maps','bg_map'),['bg_map_test']);
   assert.equal(await c.unique('ui','bg_map_test'),null);
   assert.equal(calls,1);

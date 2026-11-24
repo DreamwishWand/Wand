@@ -72,7 +72,7 @@ class CandidateTests(unittest.TestCase):
             self.assertFalse(plan["publicationAuthorized"])
             self.assertEqual(len(plan["objects"]),1)
             self.assertEqual({o["target"] for o in plan["objects"]},
-                             {f"images/cc/{'c' * 64}.webp"})
+                             {f"images/{'c' * 64}.webp"})
             self.assertTrue(all(o["source"].startswith(builder.SOURCE_PREFIX + "/") for o in plan["objects"]))
     def test_fails_closed_when_byte_hash_is_wrong(self):
         with tempfile.TemporaryDirectory() as tmp:
