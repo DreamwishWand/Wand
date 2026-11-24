@@ -34,6 +34,14 @@
   $: regionGrids=grids.filter(g=>g.scope===worldScope);
   let receipt:SaveReceipt|null=null,shapeMap:SavedShapeMap|null=null,timeline=emptyWorldTimeline();
   let sessions:TerrainScopeReceipt[]=[];
+  let mainlandSaveMaps=new Map<string,SavedShapeMap>(),mainlandShapeRequests=new Map<number,string>(),mainlandSaveRequested:TerrainScopeReceipt[]|null=null,mainlandSaveFailed=false;
+  let focusOrdinal:number|null=null;
+  function loadMainlandSave(all:TerrainScopeReceipt[],w:Worker,regions:Grid[]){
+    mainlandSaveRequested=all;mainlandSaveMaps=new Map();mainlandShapeRequests=new Map();mainlandSaveFailed=false;
+    for(const g of regions){const s=all.find(v=>v.receipt.viewKey===g.key);if(!s?.receipt.points.length)continue;const id=++request;mainlandShapeRequests.set(id,g.key);w.postMessage({command:'shapes',requestId:id,key:g.key,points:s.receipt.points});}
+    mainlandShapeRequests=new Map(mainlandShapeRequests);
+  }
+  $: if(overviewOpen&&!designMode&&worldScope==='Village04'&&worker&&sessions!==mainlandSaveRequested)loadMainlandSave(sessions,worker,regionGrids);
   let boundOrdinals:readonly number[]=[];
   let sourceFile:File|null=null;
   let terrainBinding:TerrainBinding|null=null;
@@ -57,7 +65,7 @@
   }
   const scopeNames:Record<string,string>={Village04:'Dreamlight Valley',VillageExpansion01:'Eternity Isle',VillageExpansion02:'Storybook Vale',VillageExpansion03:'Wishblossom Ranch',VillageExpansion04:'Expansion 4',VillageExpansion04UnderwaterAreas:'Underwater areas',VillageWinnieDLC:'Honeywood',FloatingIslands:'Floating Islands'};
   function chooseScope(value:string){worldScope=value;const first=grids.find(g=>g.scope===value);if(first)openGrid(first);}
-  function clearCompare(){terrainDisplayed=false;compare?.terminate();compare=null;compareRequest++;shapeRequest=-1;receipt=null;shapeMap=null;boundOrdinals=[];sessions=[];comparing=false;compareError='';}
+  function clearCompare(){mainlandSaveRequested=null;mainlandSaveMaps=new Map();mainlandShapeRequests=new Map();mainlandSaveFailed=false;focusOrdinal=null;terrainDisplayed=false;compare?.terminate();compare=null;compareRequest++;shapeRequest=-1;receipt=null;shapeMap=null;boundOrdinals=[];sessions=[];comparing=false;compareError='';}
   function selectSaveGrid(grid:Grid|null){
     terrainDisplayed=false;shapeRequest=-1;receipt=null;shapeMap=null;boundOrdinals=[];compareError='';
     if(!grid||!sourceFile){comparing=false;return;}
@@ -87,7 +95,7 @@
       sourceRefs:[{layoutId:grid.layoutId,gridDataPath:grid.gridDataPath,nativeGridId:grid.gridIdNative,nativeSizeX:grid.sizeX,nativeSizeY:grid.sizeY,tessellationFactor:grid.factor}]}))});
   }
   function openGrid(next:Grid){
-    overviewOpen=false;mainlandEditing=false;key=next.key;worldScope=next.scope;showSeparateTerrain=false;raster=null;cell=null;loading=true;error='';
+    overviewOpen=false;mainlandEditing=false;focusOrdinal=null;key=next.key;worldScope=next.scope;showSeparateTerrain=false;raster=null;cell=null;loading=true;error='';
     terrainRequest=++request;
     worker?.postMessage({command:'terrain',requestId:terrainRequest,key:next.key});
     selectSaveGrid(next);
@@ -106,6 +114,8 @@
       if(value.requestId===terrainRequest&&value.kind==='terrain'&&value.key===key){
         raster={sizeX:value.sizeX,sizeY:value.sizeY,nativeFloorValues:value.nativeFloorValues};loading=false;return;
       }
+      const mainlandKey=mainlandShapeRequests.get(value.requestId);
+      if(mainlandKey){mainlandShapeRequests.delete(value.requestId);mainlandShapeRequests=new Map(mainlandShapeRequests);if(value.kind==='shapes'&&value.key===mainlandKey&&value.result)mainlandSaveMaps=new Map(mainlandSaveMaps).set(mainlandKey,value.result);else mainlandSaveFailed=true;return;}
       if(value.requestId===shapeRequest&&value.kind==='shapes'&&value.key===key){shapeMap=value.result;comparing=false;return;}
       if(value.kind==='error'){
         if(value.requestId===indexRequest||value.requestId===terrainRequest){loading=false;error='地形データを読み込めませんでした。';}
@@ -146,15 +156,15 @@
           {raster} canNavigate onNavigate={selectCell} onInspect={selectCell}/>
         <p class="note">原本地形・設置可否未確定。{cell?' ('+cell.x+', '+cell.y+')':''}</p>
       </div>{/if}
-      <div class="save-side" class:inactiveMap={Boolean(shapeMap)&&!terrainDisplayed&&showSeparateTerrain} class:hasShape={Boolean(shapeMap)}><SavedGridSourceCandidates compact shapeMap={shapeMap} terrain={terrainBinding} file={$localSaveSession.file} bind:timeline bind:terrainDisplayed bind:layerState
+      <div class="save-side" class:inactiveMap={Boolean(shapeMap)&&!terrainDisplayed&&showSeparateTerrain} class:hasShape={Boolean(shapeMap)}><SavedGridSourceCandidates compact {focusOrdinal} shapeMap={shapeMap} terrain={terrainBinding} file={$localSaveSession.file} bind:timeline bind:terrainDisplayed bind:layerState
         {receipt} available={Boolean($localSaveSession.file)} working={comparing} errorMessage={compareError}
         onCompare={()=>openSaveSession($localSaveSession.file,grids)}/></div>
     </div>
   {/if}
   {#if designMode&&mainlandEditing&&!mainlandFrame}<p class="workspace-message" role={mainlandError?'alert':'status'}>{mainlandError?(locale==='ja'?'本島の地形を読み込めませんでした。':'Unable to load mainland terrain.'):(locale==='ja'?'本島の地形読み込み中…':'Loading mainland terrain…')}</p>{/if}
-  <DecorationDesign bind:layerState active={designMode&&!overviewOpen&&(!mainlandEditing||Boolean(mainlandFrame))} grid={selected} raster={mainlandEditing?mainlandFrame?.raster??null:raster} worldFrame={mainlandEditing?mainlandFrame:null} {worker} {locale} nextRequest={nextDesignRequest}/>
+  <DecorationDesign bind:layerState active={designMode&&!overviewOpen&&(!mainlandEditing||Boolean(mainlandFrame))} grid={selected} raster={mainlandEditing?mainlandFrame?.raster??null:raster} worldFrame={mainlandEditing?mainlandFrame:null} areaLabel={k=>english[k]??k} {worker} {locale} nextRequest={nextDesignRequest}/>
 
-  {#if overviewOpen&&worldScope==='Village04'}<MainlandOverview grids={regionGrids} {worker} {locale} nextRequest={nextDesignRequest} label={k=>english[k]??k} onChoose={k=>{const g=regionGrids.find(g=>g.key===k);if(g)openGrid(g);}} onClose={()=>overviewOpen=false}/>{/if}
+  {#if overviewOpen&&worldScope==='Village04'}<MainlandOverview grids={regionGrids} {worker} {locale} nextRequest={nextDesignRequest} label={k=>english[k]??k} saveMode={!designMode&&Boolean(sourceFile)} {sessions} saveMaps={mainlandSaveMaps} saveLoading={comparing||mainlandShapeRequests.size>0} saveFailed={mainlandSaveFailed} bind:timeline bind:layerState onChoose={(k,id)=>{const g=regionGrids.find(g=>g.key===k);if(g){openGrid(g);focusOrdinal=id??null;}}} onClose={()=>overviewOpen=false}/>{/if}
 </section>
 <style>
   .world-workspace{height:calc(100dvh - var(--shell-height,60px));min-height:0;min-width:0;padding:4px;display:flex;flex-direction:column;gap:4px;background:var(--wand-bg);color:var(--wand-text);overflow:hidden}

@@ -28,6 +28,8 @@
   export let file:File|null=null;
   export let terrain:TerrainBinding|null=null;
   export let compact=false;
+  export let focusOrdinal:number|null=null;
+  let lastFocus:number|null=null;
   export let layerState:WorldLayerState=defaultWorldLayers();
   let layersOpen=false;
   let seenLayers=layerState;
@@ -286,6 +288,8 @@
     ordinal=map.objects[0]?.localGridOrdinal??0;selected=null;hits=[];layer='all';cameraState=defaultMapCamera();
   }
   $: activeOrdinal=ordinals.includes(ordinal)?ordinal:ordinals[0]??0;
+  $: if(focusOrdinal!==lastFocus&&focusOrdinal!==null&&effectiveMap){const target=effectiveMap.objects.find(o=>o.localOrdinal===focusOrdinal);if(target){lastFocus=focusOrdinal;ordinal=target.localGridOrdinal;selected=target.localOrdinal;hits=[target];const areaBounds=bounds(savedGridObjects(effectiveMap,target.localGridOrdinal),effectiveMap,terrain&&terrain.verifiedGridOrdinals.includes(target.localGridOrdinal)?terrain:null);cameraState=objectFocus(effectiveMap,target,areaBounds,maxMapZoom(Math.max(areaBounds.w,areaBounds.h)));}}
+  $: if(focusOrdinal===null)lastFocus=null;
   $: objects=mapPainterOrder(savedGridObjects(effectiveMap,activeOrdinal));
   $: layers=(Object.keys(MAP_LAYER_LABELS) as MapSelectionLayer[]).filter(l=>l==='all'||objects.some(o=>matchesSelectionLayer(o,l)));
   $: chosen=objects.find(o=>o.localOrdinal===selected)??null;

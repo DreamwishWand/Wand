@@ -7,6 +7,9 @@ export type RoadTool='brush'|'line'|'outline'|'fill'|'erase'|'flood'|'erase-line
 export const roadErase=(tool:RoadTool)=>tool==='erase'||tool==='erase-line'||tool==='erase-rect';
 export const roadFreehand=(tool:RoadTool)=>tool==='brush'||tool==='erase';
 export type RoadPoint={readonly x:number;readonly y:number};
+/** Source area identity, or null for unresolved cells. */
+export type NetworkScope=(p:RoadPoint)=>string|null;
+export const localNetworkScope:NetworkScope=()=>'';
 export const ROAD_STROKE_LIMIT=5000;
 export function roadPitch(g:DesignItemGeometry|null|undefined,factor:number):number|null{
  if(!g||exclusiveAnchorClass(String(g.itemId))!=='ground'||g.layer!=='ground'||nativeActionBlocked(g.editRestrictions,'select')||!/^(?:Path|Road)_/i.test(g.name??'')||!(factor===1||factor===2))return null;
@@ -42,11 +45,12 @@ export function roadStroke(points:readonly RoadPoint[],tool:RoadTool,pitch:numbe
 
 /** Local cardinal design roads only. The source Save's diagonal state is not
  * represented here, so only cardinal same-family neighbors are traversed. */
-export function roadComponent(placements:readonly import('./design-layout.ts').DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>,factor:number,seed:number):number[]{
+export function roadComponent(placements:readonly import('./design-layout.ts').DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>,factor:number,seed:number,scope:NetworkScope=localNetworkScope):number[]{
  const root=placements.find(p=>p.id===seed),pitch=root?roadPitch(defs.get(root.itemId),factor):null;
  if(!root||!pitch||root.orientation!==2||root.x%pitch||root.y%pitch)return [];
+ const area=scope(root);if(area===null)return [];
  const nodes=new Map<string,typeof root>();
- for(const p of placements)if(p.itemId===root.itemId&&p.orientation===2&&p.x%pitch===0&&p.y%pitch===0){
+ for(const p of placements)if(p.itemId===root.itemId&&p.orientation===2&&p.x%pitch===0&&p.y%pitch===0&&scope(p)===area){
   const key=p.x+':'+p.y;if(nodes.has(key))return [];nodes.set(key,p);
  }
  const seen=new Set([seed]),queue=[root];
@@ -63,7 +67,7 @@ import type {DesignPlacement} from './design-layout.ts';
  * incompatible floor values and changed terrain signatures are boundaries.
  * This is a local design tool, not runtime placement authorization.
  * Oversize fills fail closed (no truncated partial fill). */
-export function floodRoadRegion(seed:RoadPoint,g:DesignItemGeometry,terrain:TerrainBinding,placements:readonly DesignPlacement[]):RoadPoint[]|null{
+export function floodRoadRegion(seed:RoadPoint,g:DesignItemGeometry,terrain:TerrainBinding,placements:readonly DesignPlacement[],scope:NetworkScope=localNetworkScope):RoadPoint[]|null{
  const pitch=roadPitch(g,terrain.factor),shape=g.shapes[g.itemId+':8'];
  if(!pitch||!shape||!Number.isSafeInteger(seed.x)||!Number.isSafeInteger(seed.y)||seed.x%pitch||seed.y%pitch)return null;
  const width=terrain.raster.sizeX*terrain.factor,height=terrain.raster.sizeY*terrain.factor;
@@ -73,9 +77,9 @@ export function floodRoadRegion(seed:RoadPoint,g:DesignItemGeometry,terrain:Terr
  for(const p of placements)if(exclusiveAnchorClass(String(p.itemId))==='ground'){
   if(p.orientation!==2||p.x%pitch||p.y%pitch)return null;blocked.add(key(p.x,p.y));
  }
- const step:number=pitch;
+ const step:number=pitch,area=scope(seed);if(area===null)return null;
  function signature(x:number,y:number){
-  if(x<0||y<0||x+step>width||y+step>height||blocked.has(key(x,y)))return null;
+  if(x<0||y<0||x+step>width||y+step>height||blocked.has(key(x,y))||scope({x,y})!==area)return null;
   const result:number[]=[];
   for(let dy=0;dy<step;dy+=terrain.factor)for(let dx=0;dx<step;dx+=terrain.factor){
    const floor=terrainFloorAt(terrain,x+dx,y+dy);

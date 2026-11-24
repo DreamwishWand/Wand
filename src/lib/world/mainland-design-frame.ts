@@ -6,7 +6,9 @@ import {bindMainland,mainlandExtent,type MainlandGrid} from './mainland-world-co
 import type {PublicTerrainGridRef} from './public-terrain-projection.ts';
 import type {TerrainRaster} from './terrain-binding.ts';
 import type {DesignItemGeometry,DesignPlacement,DesignTimeline} from './design-layout.ts';
-import {currentDesign,DESIGN_LIMIT,DESIGN_FILE_LIMIT,parseDesign,serializeDesign,emptyDesign} from './design-layout.ts';
+import {currentDesign,DESIGN_LIMIT,DESIGN_FILE_LIMIT,parseDesign,serializeDesign,emptyDesign,restoreDesign} from './design-layout.ts';
+import {roadPitch,localNetworkScope,type NetworkScope} from './road-design.ts';
+import {fencePitch} from './fence-design.ts';
 import {exclusiveAnchorClass} from './saved-map-transform.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
 export interface MainlandDesignFrame {
@@ -51,18 +53,28 @@ export function resolveMainlandDesign(f:MainlandDesignFrame,x:number,y:number,sh
  const o=mainlandFrameOffset(f,grid),lx=x-o.x,ly=y-o.y;
  return lx>=0&&ly>=0&&lx+shape.width<=grid.sizeX&&ly+shape.height<=grid.sizeY?{grid,x:lx,y:ly}:null;
 }
+export function mainlandNetworkScope(f:MainlandDesignFrame|null):NetworkScope{
+ if(!f)return localNetworkScope;
+ return p=>{const {x,y}=p,w=f.raster.sizeX;if(!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||x<0||y<0||x>=w||y>=f.raster.sizeY)return null;const n=f.owners[y*w+x];return n&&n!==255?f.grids[n-1]?.key??null:null;};
+}
 export function mainlandItemsValid(f:MainlandDesignFrame|null,items:readonly Pick<DesignPlacement,'itemId'|'x'|'y'|'orientation'>[],defs:ReadonlyMap<number,DesignItemGeometry>):boolean{
  if(!f)return true;
  return items.every(p=>{
   const g=defs.get(p.itemId),s=g?.shapes[p.itemId+':'+p.orientation*4];
-  // Network topology and support-parent semantics are not yet world-wide.
-  return !!g&&!!s&&!exclusiveAnchorClass(String(p.itemId))&&g.layer!=='surface'&&!!resolveMainlandDesign(f,p.x,p.y,s);
+  if(!g||!s||g.layer==='surface')return false;
+  const target=resolveMainlandDesign(f,p.x,p.y,s);if(!target)return false;
+  const kind=exclusiveAnchorClass(String(p.itemId));
+  if(kind){const pitch=kind==='ground'?roadPitch(g,target.grid.factor):fencePitch(g,target.grid.factor);return !!pitch&&p.orientation===2&&target.x%pitch===0&&target.y%pitch===0;}
+  return true;
  });
 }
 export function validatedMainlandPlan(f:MainlandDesignFrame|null,old:DesignTimeline,next:DesignTimeline|null,defs:ReadonlyMap<number,DesignItemGeometry>):DesignTimeline|null{
  if(!next||!f)return next;
  const before=new Map(currentDesign(old).map(p=>[p.id,p]));
- return mainlandItemsValid(f,currentDesign(next).filter(p=>before.get(p.id)!==p),defs)?next:null;
+ const changed=currentDesign(next).filter(p=>before.get(p.id)!==p);
+ // Generic translation must not silently reconstruct network topology.
+ if(changed.some(p=>{const o=before.get(p.id);return !!o&&!!exclusiveAnchorClass(String(o.itemId))&&(o.x!==p.x||o.y!==p.y||o.orientation!==p.orientation);}))return null;
+ return mainlandItemsValid(f,changed,defs)?next:null;
 }
 /** Portable world document contains eight real grid documents, never raw
  * Save data. Reuses the existing exact native-grid identity validator. */
@@ -96,4 +108,27 @@ export function parseMainlandDesign(text:string,f:MainlandDesignFrame,sourceArea
 export function mainlandImportMatches(f:MainlandDesignFrame,placements:readonly DesignPlacement[],defs:ReadonlyMap<number,DesignItemGeometry>,sourceAreas:ReadonlyMap<number,string>):boolean{
  if(placements.length!==sourceAreas.size||!mainlandItemsValid(f,placements,defs))return false;
  return placements.every(p=>{const shape=defs.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4];return !!shape&&resolveMainlandDesign(f,p.x,p.y,shape)?.grid.key===sourceAreas.get(p.id);});
+}
+
+/** Explicitly add previous area drafts to the common world design. Do not
+ * mutate the original timelines or guess a source owner. Exact duplicates
+ * are skipped; incompatible or out-of-source records reject the whole copy.
+ * One world transaction, with new synthetic IDs and a single Undo. */
+export function mergeMainlandAreaDrafts(f:MainlandDesignFrame,t:DesignTimeline,areas:Readonly<Record<string,DesignTimeline>>,defs:ReadonlyMap<number,DesignItemGeometry>):DesignTimeline|null{
+ const old=currentDesign(t),added:DesignPlacement[]=[],seen=new Set(old.map(p=>[p.itemId,p.x,p.y,p.orientation].join(':')));
+ let id=t.nextId;
+ for(const g of f.grids){
+  const source=areas[g.key];if(!source)continue;
+  const offset=mainlandFrameOffset(f,g);
+  for(const p of currentDesign(source)){
+   const next={...p,id,x:p.x+offset.x,y:p.y+offset.y};
+   const shape=defs.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4];
+   if(!shape||resolveMainlandDesign(f,next.x,next.y,shape)?.grid.key!==g.key||!mainlandItemsValid(f,[next],defs))return null;
+   const key=[next.itemId,next.x,next.y,next.orientation].join(':');
+   if(seen.has(key))continue;
+   if(old.length+added.length>=DESIGN_LIMIT||!Number.isSafeInteger(id+1))return null;
+   added.push(next);seen.add(key);id++;
+  }
+ }
+ return added.length?restoreDesign(t,[...old,...added],defs,f.raster.sizeX,f.raster.sizeY):t;
 }

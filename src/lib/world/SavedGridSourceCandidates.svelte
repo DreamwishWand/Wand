@@ -8,6 +8,7 @@
   export let receipt:SavedGridSourceCandidates|null=null;
   export let shapeMap:SavedShapeMap|null=null;
   export let file:File|null=null;
+  export let focusOrdinal:number|null=null;
   export let timeline=emptyWorldTimeline();
   export let terrain:TerrainBinding|null=null;
   export let compact=false;
@@ -93,7 +94,7 @@
       {/if}
     </div>{/if}
     {#if receipt.points.length>0}
-      {#if shapeMap}<SavedShapePlot map={shapeMap} {file} {terrain} {compact} bind:timeline bind:terrainDisplayed bind:layerState/>
+      {#if shapeMap}<SavedShapePlot {focusOrdinal} map={shapeMap} {file} {terrain} {compact} bind:timeline bind:terrainDisplayed bind:layerState/>
       {:else if new Set(receipt.points.map(p=>p.localGridOrdinal)).size===1}<div class="numeric-map">
         <canvas use:draw={receipt}
           aria-label="セーブ内の参照パス一致候補のX/Y数値座標図。地形図ではありません"></canvas>
