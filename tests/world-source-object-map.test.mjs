@@ -337,3 +337,62 @@ test('marquee selects occupied runs even if the anchor is outside and excludes h
  assert.deepEqual(savedShapesInRect(map,1,{x:6,y:6},{x:6,y:6}).map(o=>o.localOrdinal),[1]);
  assert.deepEqual(savedShapesInRect(map,1,{x:4,y:6},{x:5,y:6}),[]);
 });
+
+import {createWorldArtworkLookup,mapCellPixels,showWorldArtwork,visibleWorldArtworkIds} from '../src/lib/world/world-artwork.ts';
+test('world map artwork reuses public image identity and existing historical collection mapping; no guessed URLs',async()=>{
+ let reads=0,lookups=0;
+ const path='ddv/game-thumbnails/r39/ab/'+'ab'.repeat(32)+'.webp';
+ const lookup=createWorldArtworkLookup('/Wand',async url=>{reads++;assert.equal(url,'/Wand/ddv/collection/item-images-r39.json');return new Response(JSON.stringify({schema:'wand.collection.item-images.r39@1',items:{'40000002':path,'40000003':'https://example.com/unverified.webp'}}));},async id=>{lookups++;return id===40000001?{url:'https://images.example.test/verified.webp'}:null;});
+ assert.equal(await lookup(40000001),'https://images.example.test/verified.webp');
+ assert.match(await lookup(40005160),/461f6484256c69e5a528adc3af7054301841fc324c237d8bc0d4534830345bec\.webp$/);
+ assert.equal(reads,0);
+ assert.deepEqual(await Promise.all([lookup(40000002),lookup(40000002),lookup(40000003)]),['/Wand/'+path,'/Wand/'+path,null]);
+ assert.equal(reads,1);assert.equal(lookups,4);
+ assert.equal(await lookup(-1),null);
+});
+test('world thumbnails depend on on-screen footprint size and do not hide infrastructure',()=>{
+ const shape={width:2,height:3},o={layer:'furniture',shapeKey:'a',itemId:'40000001'};
+ assert.equal(mapCellPixels({x:0,y:0,w:100,h:50},800,300),6);
+ assert.equal(showWorldArtwork(o,shape,6),false);assert.equal(showWorldArtwork(o,shape,7),true);
+ assert.equal(showWorldArtwork({...o,layer:'ground'},shape,100),false);
+ assert.equal(showWorldArtwork({...o,layer:'fence'},shape,100),false);
+ assert.deepEqual(visibleWorldArtworkIds([o,o,{...o,itemId:'40000002',layer:'fence'}],{a:shape},7),[40000001]);
+});
+
+import {alignmentTargets} from '../src/lib/world/map-alignment.ts';
+import {alignDesign} from '../src/lib/world/design-layout.ts';
+import {stageWorldAlignment} from '../src/lib/world/saved-map-batch.ts';
+test('alignment/distribution uses occupied-cell edges, preserves orientations and commits atomically',()=>{
+ const narrow={width:3,height:2,runs:[{x:1,y:0,width:1},{x:1,y:1,width:2}],cellCount:3,path:'M1 0h1v1h-1ZM1 1h2v1h-2Z'};
+ const wide={width:4,height:2,runs:[{x:0,y:0,width:4},{x:0,y:1,width:4}],cellCount:8,path:'M0 0h4v2h-4Z'};
+ const a={itemId:40000001,name:'A',layer:'furniture',surfaceCapable:false,shapes:{'40000001:8':narrow}};
+ const b={itemId:40000002,name:'B',layer:'furniture',surfaceCapable:false,shapes:{'40000002:8':wide}};
+ const defs=new Map([[a.itemId,a],[b.itemId,b]]);
+ let t=placeDesign(emptyDesign(),a,1,1,2,40,40);t=placeDesign(t,b,8,6,2,40,40);t=placeDesign(t,a,17,10,2,40,40);
+ const m=designShapeMap(currentDesign(t),defs,{layoutId:'L',gridIdNative:1,gridDataPath:'D',factor:1});
+ const left=alignmentTargets(m,m.objects,'left');assert.deepEqual(left.map(o=>o.x),[1,2,1]);
+ const next=alignDesign(t,m,[1,2,3],defs,'left',40,40);assert.ok(next);assert.deepEqual(currentDesign(next).map(p=>p.x),[1,2,1]);
+ assert.deepEqual(currentDesign(travelDesign(next,-1)),currentDesign(t));
+ // First occupied edge is 2, last right edge 20, total width 8; gap 5.
+ const even=alignmentTargets(m,m.objects,'distribute-x');assert.deepEqual(even.map(o=>o.x),[1,9,17]);
+ const staged=stageWorldAlignment(m,emptyWorldTimeline(),[1,2,3],'left','');assert.ok(staged);
+ assert.equal(currentWorldEdits(staged).length,2);
+ assert.deepEqual(projectWorldEdits(m,currentWorldEdits(staged)).objects.map(o=>o.x),[1,2,1]);
+ assert.equal(currentWorldEdits(travelWorldTimeline(staged,-1)).length,0);
+ assert.equal(alignmentTargets(m,[m.objects[0],{...m.objects[1],subgrid:{}}],'left'),null);
+ assert.equal(alignmentTargets(m,[m.objects[0],{...m.objects[1],localGridOrdinal:2}],'left'),null);
+ assert.equal(alignmentTargets(m,m.objects.slice(0,2),'distribute-x'),null);
+ const odd={...m,objects:m.objects.map(o=>o.localOrdinal===3?{...o,x:o.x+1}:o)};
+ assert.equal(alignmentTargets(odd,odd.objects,'distribute-x'),null);
+});
+
+import {defaultWorldLayers,toggleWorldLayer,worldLayer,layerVisible,layerSelectable} from '../src/lib/world/world-layer-state.ts';
+test('map layer visibility and edit lock remain independent and buildings use native identity',()=>{
+ const road={layer:'ground'},furniture={layer:'furniture'},building={layer:'other',nativeType:'Building'},fixed={layer:'furniture',editRestrictions:{select:'denied'}};
+ let state=toggleWorldLayer(defaultWorldLayers(),'ground','locked');
+ assert.equal(layerVisible(state,road),true);assert.equal(layerSelectable(state,road),false);
+ state=toggleWorldLayer(state,'ground','hidden');assert.equal(layerVisible(state,road),false);
+ state=toggleWorldLayer(state,'ground','hidden');assert.equal(layerVisible(state,road),true);assert.equal(layerSelectable(state,road),false);
+ assert.equal(layerSelectable(state,furniture),true);assert.equal(worldLayer(building),'building');assert.equal(worldLayer(fixed),'fixed');
+ assert.equal(worldLayer({layer:'other'}),'other');
+});

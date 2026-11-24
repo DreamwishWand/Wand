@@ -3,6 +3,7 @@
  * The existing Rust mixed transaction remains the write authority.
  */
 import type {SavedShapeMap,SavedShapeObject} from './saved-shape-map.ts';
+import {alignmentTargets,type MapAlignment} from './map-alignment.ts';
 import {draftSavedMapTransform,CARDINAL_ORIENTATIONS,isCardinal,exclusiveAnchorConflict,exclusiveAnchorClass,worldMoveEligible,worldRotateEligible} from './saved-map-transform.ts';
 export type WorldEditPlan=NonNullable<ReturnType<typeof draftSavedMapTransform>>;
 export interface WorldStagedEdit {readonly plan:WorldEditPlan;readonly name:string;readonly warning:string;readonly gridOrdinal:number}
@@ -90,33 +91,50 @@ export function stageWorldGroupMove(map:SavedShapeMap,t:WorldEditTimeline,ordina
     dx:number,dy:number,warning:string,turns=0):WorldEditTimeline|null{
   if(!Number.isSafeInteger(turns)||(!dx&&!dy&&turns%4===0)||
     ordinals.length<2||ordinals.length>WORLD_BATCH_LIMIT)return null;
-  const ids=new Set(ordinals);if(ids.size!==ordinals.length)return null;
+  const effective=projectWorldEdits(map,currentWorldEdits(t));
+  const selected=ordinals.map(id=>effective.objects.find(o=>o.localOrdinal===id));
+  if(selected.some(o=>!o))return null;
+  const targets=groupTargets(effective,selected as SavedShapeObject[],dx,dy,turns);
+  return targets?stageWorldTargets(map,t,targets,warning):null;
+}
+export function stageWorldAlignment(map:SavedShapeMap,t:WorldEditTimeline,ordinals:readonly number[],mode:MapAlignment,warning:string):WorldEditTimeline|null{
+ if(ordinals.length<2||ordinals.length>WORLD_BATCH_LIMIT)return null;
+ const effective=projectWorldEdits(map,currentWorldEdits(t)),ids=new Set(ordinals);
+ const selected=effective.objects.filter(o=>ids.has(o.localOrdinal));
+ if(ids.size!==ordinals.length||selected.length!==ids.size)return null;
+ const targets=alignmentTargets(effective,selected,mode);
+ return targets?stageWorldTargets(map,t,targets,warning):null;
+}
+function stageWorldTargets(map:SavedShapeMap,t:WorldEditTimeline,targets:readonly GroupTarget[],warning:string):WorldEditTimeline|null{
+  if(targets.length<2||targets.length>WORLD_BATCH_LIMIT)return null;
+  const ids=new Set(targets.map(o=>o.ordinal));if(ids.size!==targets.length)return null;
   const previous=currentWorldEdits(t),effectiveMap=projectWorldEdits(map,previous);
   const originalById=new Map(map.objects.map(o=>[o.localOrdinal,o]));
   const effectiveById=new Map(effectiveMap.objects.map(o=>[o.localOrdinal,o]));
   const priorById=new Map(previous.map(e=>[e.plan.localOrdinal,e]));
   const edits=previous.filter(e=>!ids.has(e.plan.localOrdinal));
-  const group=ordinals.map(id=>effectiveById.get(id));
-  if(group.some(o=>!o))return null;
-  const targets=groupTargets(effectiveMap,group as SavedShapeObject[],dx,dy,turns);if(!targets)return null;
-  const destinations=new Set<string>(),grid=group[0]!.localGridOrdinal;
+  const grid=effectiveById.get(targets[0].ordinal)?.localGridOrdinal;
+  if(grid===undefined)return null;
+  const destinations=new Set<string>();let changed=false;
   for(const target of targets){
     const id=target.ordinal,o=originalById.get(id),e=effectiveById.get(id),prior=priorById.get(id);
-    if(!o||!e||(prior&&!matchesOriginal(o,prior)))return null;
-    const {x,y,orientation}=target;
-    if(!draftSavedMapTransform(e,x,y,orientation))return null;
+    if(!o||!e||!worldMoveEligible(e)||e.localGridOrdinal!==grid||(prior&&!matchesOriginal(o,prior)))return null;
+    const {x,y,orientation}=target,modified=x!==e.x||y!==e.y||orientation!==e.orientation;
+    if(modified&&!draftSavedMapTransform(e,x,y,orientation))return null;
+    changed||=modified;
     const plan=draftSavedMapTransform(o,x,y,orientation);
     if(!plan&&(x!==o.x||y!==o.y||orientation!==o.orientation))return null;
     const cls=exclusiveAnchorClass(e.itemId);
     if(cls){const k=cls+':'+x+':'+y;if(destinations.has(k))return null;destinations.add(k);}
     if(plan)edits.push({plan,name:o.name??'Item '+o.itemId,warning,gridOrdinal:o.localGridOrdinal});
   }
+  if(!changed)return null;
   for(const o of effectiveMap.objects){
     if(o.localGridOrdinal!==grid||ids.has(o.localOrdinal))continue;
     const cls=exclusiveAnchorClass(o.itemId);
     if(cls&&destinations.has(cls+':'+o.x+':'+o.y))return null;
   }
   if(edits.length>WORLD_BATCH_LIMIT)return null;
-  const snapshots=[...t.snapshots.slice(0,t.cursor+1),{edits,title:ordinals.length+'件の一括変形',warning}].slice(-(WORLD_HISTORY_LIMIT+1));
+  const snapshots=[...t.snapshots.slice(0,t.cursor+1),{edits,title:targets.length+'件の一括変形',warning}].slice(-(WORLD_HISTORY_LIMIT+1));
   return {snapshots,cursor:snapshots.length-1};
 }
