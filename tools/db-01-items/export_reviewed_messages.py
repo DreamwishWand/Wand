@@ -1,6 +1,6 @@
 """Extract reviewed numeric message trees from SHA-verified itemlist originals.
 Preserve field presence, nested/repeated structure, zero and false. Only reviewed
-GUID address fields may contain strings; no raw source bytes in public output.
+GUID address and condition identity fields may contain strings; no raw source bytes in public output.
 """
 import argparse,base64,collections,hashlib,json,math,re,sqlite3,struct,zlib
 from pathlib import Path
@@ -26,8 +26,47 @@ GROUPS={
  'Companion.FavoriteItem':('Companion','FavoriteItem','ItemSelector'),
  'Companion.LikeItem':('Companion','LikeItem','ItemSelector'),
  'Building.UpgradeInfo':('Building','UpgradeInfo','RepeatedField<UpgradeData>'),
+ 'Condition.Conditions':('Condition','Conditions','ConditionsList'),
+ 'Dialogue.Conditions':('Dialogue','Conditions','ConditionsList'),
+ 'ConditionalEvent.Conditions':('ConditionalEvent','Conditions','ConditionsList'),
+ 'Mission.AvailableConditions':('Mission','AvailableConditions','ConditionsList'),
+ 'Mission.UnlockConditions':('Mission','UnlockConditions','ConditionsList'),
+ 'RecurringEvent.Conditions':('RecurringEvent','Conditions','ConditionsList'),
+ 'DutyAch.AvailableWhen':('DutyAch','AvailableWhen','ConditionsList'),
+ 'Skin.AvailableWhen':('Skin','AvailableWhen','ConditionsList'),
+ 'ActivityData.Conditions':('ActivityData','Conditions','ConditionsList'),
+ 'Character.DisableSleepConditions':('Character','DisableSleepConditions','ConditionsList'),
+ 'Character.OverrideNameConditions':('Character','OverrideNameConditions','ConditionsList'),
+ 'Character.SwitcherUnlockConditions':('Character','SwitcherUnlockConditions','ConditionsList'),
+ 'Skin.Conditions':('Skin','Conditions','ConditionsList'),
+ 'Companion.AppearanceConditions':('Companion','AppearanceConditions','ConditionsList'),
+ 'MemoryShard.Conditions':('MemoryShard','Conditions','ConditionsList'),
+ 'Scene.CharacterPresenceConditions':('Scene','CharacterPresenceConditions','ConditionsList'),
+ 'Story.UnlockConditions':('Story','UnlockConditions','ConditionsList'),
+ 'Story.VisibilityConditions':('Story','VisibilityConditions','ConditionsList'),
+ 'Furniture.AvailableWhen':('Furniture','AvailableWhen','ConditionsList'),
+ 'Companion.VisibilityConditions':('Companion','VisibilityConditions','ConditionsList'),
+ 'DutyAch.DescriptionCompletedWhen':('DutyAch','DescriptionCompletedWhen','ConditionsList'),
+ 'DutyAch.DescriptionSucceedWhen':('DutyAch','DescriptionSucceedWhen','ConditionsList'),
+ 'Skin.CannotRemoveWhen':('Skin','CannotRemoveWhen','ConditionsList'),
+ 'Character.CanHangoutConditions':('Character','CanHangoutConditions','ConditionsList'),
+ 'Profession.AvailableConditions':('Profession','AvailableConditions','ConditionsList'),
+ 'Character.BlockApplyingSkinWhen':('Character','BlockApplyingSkinWhen','ConditionsList'),
+ 'Character.RemoveSkinWhen':('Character','RemoveSkinWhen','ConditionsList'),
+ 'Character.UnassignCrewMemberConditions':('Character','UnassignCrewMemberConditions','ConditionsList'),
+ 'Tag.ConditionsOrHaveIngredients':('Tag','ConditionsOrHaveIngredients','ConditionsList'),
+ 'Upgrade.AvailableConditions':('Upgrade','AvailableConditions','ConditionsList'),
 }
 GUID_PATHS={'UpgradeInfo.PrefabAddress','UpgradeInfo.Store.InteriorPrefabAddress','UpgradeInfo.UpgradeDialogueAddress'}
+CONDITION_UUIDS={'KeyholeStatus.Keyhole','KeyholeItemStatus.Keyhole','LeverStatus.Lever','Timestamp.Timestamp'}
+CONDITION_KEYS={'EventTime.Event','Weather.Weather','Expansion.ExpansionName','EventTimeSegment.Event','EventTimeSegment.Segment','FloatingFestivalTime.Event','FloatingFestivalPuzzleTime.Event','FloatingFestivalPuzzleCompleted.Event','MinigameInProgress.Minigame'}
+def reviewed_string(label,typ,path,x):
+ if label=='Building.UpgradeInfo':
+  return path in GUID_PATHS and re.fullmatch(r'guid:[0-9a-f]{32}',x)
+ if typ=='ConditionsList':
+  suffix='.'.join(path.split('.')[-2:])
+  return (suffix in CONDITION_UUIDS and re.fullmatch(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',x)) or (suffix in CONDITION_KEYS and re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,63}',x))
+ return False
 def require(ok,msg):
  if not ok:raise ValueError(msg)
 def raw_field(raw,num,wire):
@@ -79,8 +118,8 @@ def build(dbpath,root,selected=None):
         parts.extend(scalar(t[14:-1],0,x) for x in xs)
        elif status=='declared_utf8':
         normalized=re.sub(r'\[\d+\]','',p)
-        require(label=='Building.UpgradeInfo' and normalized in GUID_PATHS and wire==2 and t=='string','unreviewed string')
-        x=wirevalue.decode('utf8');require(x==json.loads(v) and re.fullmatch(r'guid:[0-9a-f]{32}',x),'GUID');parts.append(x)
+        require(wire==2 and t=='string','unreviewed string')
+        x=wirevalue.decode('utf8');require(x==json.loads(v) and reviewed_string(label,typ,normalized,x),'unreviewed identity');parts.append(x)
        else:raise ValueError('unreviewed status '+status+' '+p)
       require(rep or len(parts)==1,'singular repetition');result[name]=parts if rep else parts[0]
      return result
