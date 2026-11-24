@@ -230,10 +230,10 @@ test('large reviewed structures retain mission order, source identities and byte
   const requests=[];
   const db=await openPublicItemMaster('',async url=>{requests.push(url);return fetcher(url)},{scope:'complete'});
   const fields=db.release.reviewedStructureCoverage.fields;
-  assert.equal(Object.keys(fields).length,9);
-  assert.equal(Object.values(fields).reduce((s,f)=>s+f.itemCount,0),4417);
-  assert.equal(Object.values(fields).reduce((s,f)=>s+f.occurrences,0),12835);
-  assert.equal(Object.values(fields).reduce((s,f)=>s+f.leafCount,0),269158);
+  assert.equal(Object.keys(fields).length,120);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.itemCount,0),7449);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.occurrences,0),16042);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.leafCount,0),284111);
   assert.equal(fields['Mission.Steps'].occurrences,7878);
   const catalog=await db.getFieldCatalog();
   const column=catalog.find(f=>f.field==='source.Steps');
@@ -257,4 +257,27 @@ test('large reviewed structures retain mission order, source identities and byte
   assert((await db.getItemReferences(110500000,'incoming')).some(([id,p])=>id===40600000&&p==='source.ToolBreakable.Tool'));
   assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
   assert(requests.filter(url=>url.includes('/fields/source.Steps/')).length<column.blocks.length);
+});
+
+
+test('expanded numeric structures preserve source definitions and related IDs',async()=>{
+  const db=await openPublicItemMaster('',fetcher,{scope:'complete'});
+  const f=db.release.reviewedStructureCoverage.fields;
+  assert.equal(f['ActivityData.Location'].itemCount,299);
+  assert.equal(f['Preference.FavoriteIngredients'].itemCount,86);
+  assert.equal(f['Furniture.CraftingStation'].itemCount,23);
+  assert.equal(f['DutyAch.StepDifficultyLayers'].itemCount,160);
+  assert.equal(f['Mission.NoOutro'].itemCount,255);
+  const [activity,pref,station,machine,event,story,mission]=await db.getItemFields(
+    [2050200022,1510100005,40000462,40800001,1520000524,200000001,2070000656],
+    ['source.Location','source.FavoriteIngredients','source.CraftingStation','source.AutoCooker','source.GiveItem','source.Reward','source.NoOutro']);
+  assert.deepEqual(activity.values['source.Location'],{VillageArea:0});
+  assert.deepEqual(pref.values['source.FavoriteIngredients'],{Exclusions:{},Inclusions:{}});
+  assert.deepEqual(station.values['source.CraftingStation'].CraftingRecipeTypes,[2001100001,2001100003,2001100000,2001100002,2001100015,2001100014]);
+  assert.deepEqual(machine.values['source.AutoCooker'],{ActionCost:{Amount:25,Id:80000003},InputSlotMaxCapacity:10,OutputMaxCapacity:10,ProductionCooldown:{Seconds:180}});
+  assert.deepEqual(event.values['source.GiveItem'],{Items:[{Amount:1,ItemID:120000073}]});
+  assert.deepEqual(story.values['source.Reward'],{Amount:1,ItemID:51300032});
+  assert.deepEqual(mission.values['source.NoOutro'],{});
+  assert((await db.getItemReferences(2001100001,'incoming')).some(([id,p])=>id===40000462&&p==='source.CraftingStation.CraftingRecipeTypes[0]'));
+  assert((await db.getItemReferences(40800001,'outgoing')).some(([id,p])=>id===80000003&&p==='source.AutoCooker.ActionCost.Id'));
 });
