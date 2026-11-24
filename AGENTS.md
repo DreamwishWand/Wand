@@ -15,3 +15,10 @@ Applies to every present and future service: Collection, Decorate/Explore/Moodbo
 - Verify actual service rendering and legibility in all three themes. Header-only changes or merely declaring CSS variables do not satisfy this requirement.
 
 Shared palette ownership belongs to UI-00; each service stream owns its component styles. See [Owner instruction #666](https://github.com/DreamwishWand/Wand/issues/666).
+
+## Mandatory product-specification continuity (Owner, 2026-11-24)
+
+- [Wand-Dev](https://github.com/DreamwishWand/Wand-Dev) is the private source of truth for current product specifications. At every new or resumed stream, read its latest main `README.md`, `AGENTS.md`, `specifications/COMMON.md` and the relevant service specification, together with Wand's current implementation. Do not treat chat summaries or incomplete code as the authoritative product specification.
+- Preserve inherited owner-approved product requirements. On an explicit new Owner decision, the responsible stream updates the relevant Wand-Dev specification immediately (do not wait for implementation completion), replacing superseded requirements and keeping proposals/open items separate. Reference the specification path/revision in the corresponding implementation PR where relevant.
+- Keep a single current specification per domain; Git records history. Do not create redundant handoff documents or a separate documentation/approval stream. If access to the private specification is unavailable, report the gap and continue independent safe work without redesigning unverified requirements.
+- Do not copy private specification material, credentials, raw game sources or personal data into this public repository. This section is only the cross-repository reference rule.
