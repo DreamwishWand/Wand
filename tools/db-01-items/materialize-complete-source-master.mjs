@@ -241,11 +241,667 @@ const REVIEWED_GUID_PATHS=new Set(['UpgradeInfo.PrefabAddress','UpgradeInfo.Stor
 // Strings are only original, reviewed identity fields, not arbitrary source text.
 const REVIEWED_CONDITION_UUIDS=new Set(['KeyholeStatus.Keyhole','KeyholeItemStatus.Keyhole','LeverStatus.Lever','Timestamp.Timestamp']);
 const REVIEWED_CONDITION_KEYS=new Set(['EventTime.Event','Weather.Weather','Expansion.ExpansionName','EventTimeSegment.Event','EventTimeSegment.Segment','FloatingFestivalTime.Event','FloatingFestivalPuzzleTime.Event','FloatingFestivalPuzzleCompleted.Event','MinigameInProgress.Minigame']);
-function numericTree(value,depth=0,guidPath=null,condition=false){
-  check(depth<=16,'MESSAGE_DEPTH');
+function numericTree(value,depth=0,guidPath=null,condition=false,structure=null){
+  check(depth<=(structure?64:16),'MESSAGE_DEPTH');
   if(typeof value==='string'){
     const suffix=guidPath?.split('.').slice(-2).join('.');
-    check(condition?(
+    check(structure?Object.hasOwn(structure.paths,guidPath)&&new RegExp('^(?:'+structure.patterns[structure.paths[guidPath]]+')
+      REVIEWED_CONDITION_UUIDS.has(suffix)&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value)||
+      REVIEWED_CONDITION_KEYS.has(suffix)&&/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(value)
+    ):REVIEWED_GUID_PATHS.has(guidPath)&&/^guid:[0-9a-f]{32}$/.test(value),'MESSAGE_STRING');
+    return 1;
+  }
+  if(typeof value==='boolean'||typeof value==='number'&&Number.isFinite(value)&&Math.abs(value)<2**53)return 1;
+  if(Array.isArray(value))return value.reduce((n,v)=>n+numericTree(v,depth+1,guidPath,condition,structure),0);
+  check(value!==null&&typeof value==='object','MESSAGE_VALUE');
+  let n=0;
+  for(const [k,v] of Object.entries(value)){
+    check(/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)&&!['__proto__','constructor','prototype'].includes(k),'MESSAGE_KEY');
+    n+=numericTree(v,depth+1,guidPath===null?null:guidPath+'.'+k,condition,structure);
+  }
+  return n;
+}
+function attachReviewedMessages(project,e,version,source,byId,grouped=false,structureBase=null){
+  const structural=structureBase!==null;
+  const digest=structural?e.reviewedStructure?.[structureBase]:grouped?e.reviewedMessageGroupsSha256:e.reviewedMessagesSha256;
+  const base=structureBase??(grouped?'reviewed-message-groups':'reviewed-messages');
+  if(digest===undefined)return undefined;
+  check(SHA.test(digest),'MESSAGE_DIGEST');
+  const bytes=readFileSync(join(project,'data/ddv/item-master',base+'-steam-'+version+'.json'));
+  check(hash(bytes)===digest,'MESSAGE_SHA');
+  const a=JSON.parse(bytes.toString('utf8'));
+  const policy=structural?JSON.parse(readFileSync(join(project,'tools/db-01-items/reviewed-structure-policy.json'),'utf8')):null;
+  check(a.schema==='wand.item-master.'+(structural?'reviewed-structure-groups':base)+'@1'&&a.gameVersion===version&&
+    a.sourceItemsSha256===source.sourceItemsSha256&&a.sourceIl2cppDumpSha256===source.sourceIl2cppDumpSha256&&
+    a.fields&&typeof a.fields==='object'&&!Array.isArray(a.fields),'MESSAGE_RELEASE');
+  const fields={};
+  for(const [label,entry] of Object.entries(a.fields)){
+    const reviews=structural?policy.groups:grouped?REVIEWED_MESSAGE_GROUPS:REVIEWED_MESSAGES;
+    const review=Object.hasOwn(reviews,label)?reviews[label]:null;
+    const key=grouped?review?.[1]:label;
+    check(review&&entry&&entry.category===review[0]&&entry.declaredType===review[grouped?2:1]&&
+      (!grouped||entry.field===key)&&
+      ID(entry.count)&&entry.count<=byId.size&&Number.isSafeInteger(entry.occurrences)&&entry.occurrences>=entry.count&&
+      Number.isSafeInteger(entry.leafCount)&&entry.leafCount>=0&&typeof entry.packed==='string'&&entry.packed.length<=16*1024*1024,
+      'MESSAGE_FIELD');
+    const decoded=JSON.parse(inflateSync(Buffer.from(entry.packed,'base64'),{maxOutputLength:32*1024*1024}).toString('utf8'));
+    check(Array.isArray(decoded)&&decoded.length===entry.count,'MESSAGE_ROWS');
+    let id=0,occurrences=0,leafCount=0;
+    const repeated=entry.declaredType.startsWith('RepeatedField<');
+    const message=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
+    for(const pair of decoded){
+      check(Array.isArray(pair)&&pair.length===2&&ID(pair[0]),'MESSAGE_ROW');
+      id+=pair[0];const row=byId.get(id),value=pair[1];
+      check(ID(id)&&row?.nativeCategory===entry.category&&!Object.hasOwn(row.nativeProperties,key)&&
+        (repeated?Array.isArray(value)&&value.length>0&&value.every(message):message(value)),'MESSAGE_OWNER');
+      occurrences+=repeated?value.length:1;leafCount+=numericTree(value,0,key,entry.declaredType==='ConditionsList',structural?{paths:policy.stringPaths[label],patterns:policy.patterns}:null);
+      const props=row.sourceAttributes??(row.sourceAttributes={});
+      check(!Object.hasOwn(props,key)||JSON.stringify(props[key])===JSON.stringify(value),'MESSAGE_CONFLICT');
+      props[key]=value;
+    }
+    check(occurrences===entry.occurrences&&leafCount===entry.leafCount,'MESSAGE_CENSUS');
+    fields[label]={itemCount:entry.count,occurrences,leafCount,category:entry.category,declaredType:entry.declaredType};
+  }
+  return {fields,runtimeSemanticsVerified:false};
+}
+// Source-declared ItemID-named numeric fields only. Membership in the same
+// release is required. Do not infer a reference from an arbitrary integer.
+// Reviewed root integer arrays whose names do not always end in ItemID.
+// The owner and target category checks are derived from the same source corpus.
+const REVIEWED_ROOT_REFERENCE_TARGETS={
+  AssignablePets:['Companion','Character'],
+  BoardGameFigurineItemIDs:['BoardGame'],
+  Duties:['DutyAch'],
+  ForbiddenProfessions:['Profession'],
+  ItemsToCheck:['ActivityItem'],
+  ItemsToDeleteAfterMission:['ActivityItem','Furniture'],
+  NecessaryCharactersInVillage:['Character'],
+  OtherItemsIDs:['Building'],
+  PossibleFlowers:['ActivityItem'],
+  SignatureItems:['Clothing','Furniture','Skin','ActivityItem','Tool'],
+  SlotLootTableItemID:['LootTable'],
+  Slots:['Preference'],
+  StallEmployeeItemsIDs:['Character'],
+  StallItemsIDs:['Building']
+};
+// Source-audited references in root ConditionsList messages. Not a runtime evaluator.
+const REVIEWED_CONDITION_REFERENCE_TARGETS={
+  "MissionStepStatus.Mission": [
+    "Mission"
+  ],
+  "MissionStatus.Mission": [
+    "Mission"
+  ],
+  "DialogueFlag.Flag": [
+    "Dialogue"
+  ],
+  "CommonConditions.Condition": [
+    "Condition"
+  ],
+  "CurrentScene.Scene": [
+    "Scene"
+  ],
+  "MissionObjectiveStatus.Mission": [
+    "Mission"
+  ],
+  "CharacterUnlocked.Character": [
+    "Character"
+  ],
+  "MissionCompleted.Mission": [
+    "Mission"
+  ],
+  "MissionStepCompleted.Mission": [
+    "Mission"
+  ],
+  "CharacterFriendship.Character": [
+    "Character"
+  ],
+  "Inventory.Item": [
+    "ActivityItem",
+    "Upgrade",
+    "Currency",
+    "Clothing",
+    "Furniture"
+  ],
+  "PetAssigned.Pet": [
+    "Companion"
+  ],
+  "MissionOngoing.Mission": [
+    "Mission"
+  ],
+  "KeyholeItemStatus.Item": [
+    "ActivityItem",
+    "Companion"
+  ],
+  "BuildingUnlocked.Building": [
+    "Building"
+  ],
+  "CurrentVillage.VillageScene": [
+    "Scene"
+  ],
+  "ToolUnlocked.Tool": [
+    "Tool"
+  ],
+  "FTUEEventCompleted.FTUEEvent": [
+    "Ftue"
+  ],
+  "PetUnlocked.Pet": [
+    "Companion"
+  ],
+  "CharacterSkin.Skin": [
+    "Skin"
+  ],
+  "HasEverOwned.Item": [
+    "Furniture"
+  ],
+  "WearingClothes.Clothes": [
+    "Clothing"
+  ],
+  "MissionObjectiveCompleted.Mission": [
+    "Mission"
+  ],
+  "RealmUnlocked.Universe": [
+    "Tag"
+  ],
+  "MountIsUnlocked.Mount": [
+    "Companion"
+  ],
+  "MissionObjectiveProgression.Mission": [
+    "Mission"
+  ],
+  "MountIsRiding.Mount": [
+    "Companion"
+  ],
+  "MemoryShard.Shard": [
+    "MemoryShard"
+  ],
+  "StoryCompleted.Story": [
+    "Story"
+  ],
+  "MissionAvailable.Mission": [
+    "Mission"
+  ],
+  "PetAssignedToCharacter.Pet": [
+    "Companion"
+  ],
+  "StallAvailable.Stall": [
+    "Building"
+  ],
+  "MountHasUpgrade.Upgrade": [
+    "Upgrade"
+  ],
+  "MountBondingLevel.Mount": [
+    "Companion"
+  ],
+  "CookingRecipeVisible.Recipe": [
+    "ActivityData"
+  ],
+  "CookingRecipeKnownWith.Tag": [
+    "Tag"
+  ],
+  "BuildingLevel.Building": [
+    "Building"
+  ],
+  "PetAssignedToCharacter.Character": [
+    "Character"
+  ],
+  "IsHangingOut.Character": [
+    "Character"
+  ],
+  "MissionObjectiveSkipped.Mission": [
+    "Mission"
+  ],
+  "TrialState.Trial": [
+    "DutyAch"
+  ]
+};
+function buildReferenceColumns(rows){
+  const categories=new Map(rows.map(r=>[r.itemId,r.nativeCategory]));
+  const ids=new Set(categories.keys());
+  const incoming=new Map(),outgoing=new Map();
+  const add=(map,id,edge)=>{
+    let list=map.get(id);if(!list){list=[];map.set(id,list);}list.push(edge);
+  };
+  for(const row of rows){
+    const origin=row.itemId;
+    const emit=(target,path)=>{
+      if(!ID(target)||!ids.has(target))return;
+      add(outgoing,origin,[target,path]);add(incoming,target,[origin,path]);
+    };
+    const walk=(value,path,name)=>{
+      if(Array.isArray(value)){value.forEach((part,i)=>walk(part,path+'['+i+']',name));return;}
+      if(value!==null&&typeof value==='object'){
+        for(const [key,part] of Object.entries(value))walk(part,path+'.'+key,key);
+        return;
+      }
+      if(row.nativeCategory==='Companion'&&/^(?:source\.(?:FavoriteItem|LikeItem))\.(?:Item\.(?:Item|ItemIngredient)\.Item|ItemList\.(?:Item|ItemIngredient)\.ItemList\.List\[\d+\]\.Item)$/.test(path)){
+        if(value!==0){
+          check(categories.get(value)==='ActivityItem','COMPANION_SELECTOR_TARGET');emit(value,path);
+        }
+      }else if(row.nativeCategory==='Building'&&/^source\.UpgradeInfo\[\d+\]\.Cost\.Id$/.test(path)){
+        check(['Currency','ActivityItem'].includes(categories.get(value)),'UPGRADE_COST_TARGET');
+        emit(value,path);
+      }else if(row.nativeCategory==='LootTable'&&/^source\.Rewards\.SubLootTables\[\d+\]\.(?:ItemsConditional\[\d+\]\.Conditions|AvailableWhen)\.Conditions\[\d+\]\.Mission(?:Status|ObjectiveStatus|StepStatus)\.Mission$/.test(path)){
+        check(categories.get(value)==='Mission','LOOT_MISSION_TARGET');
+        emit(value,path);
+      }else if(row.nativeCategory==='LootTable'&&/^source\.Rewards\.SubLootTables\[\d+\]\.Items\[\d+\]\.State\.MealData\.IngredientsUsed\[\d+\]$/.test(path)){
+        check(categories.get(value)==='ActivityItem','LOOT_INGREDIENT_TARGET');
+        emit(value,path);
+      }else if(REVIEWED_MESSAGE_GROUPS[row.nativeCategory+'.'+path.split('.')[1]]?.[2]==='ConditionsList'&&
+        Object.hasOwn(REVIEWED_CONDITION_REFERENCE_TARGETS,path.split('.').slice(-2).join('.'))){
+        const targets=REVIEWED_CONDITION_REFERENCE_TARGETS[path.split('.').slice(-2).join('.')];
+        check(targets.includes(categories.get(value)),'CONDITION_REFERENCE_TARGET');
+        emit(value,path);
+      }else if(/ItemIds?$/i.test(name))emit(value,path);
+      else if(row.nativeCategory==='DutyAch'&&/^source\.Milestones\[\d+\]\.RewardItem$/.test(path)){
+        check(ID(value)&&ids.has(value),'MILESTONE_REWARD_TARGET');emit(value,path);
+      }else if(row.nativeCategory==='Mission'&&/^source\.RewardsXP\.Currency\[\d+\]\.CurrencyId$/.test(path)){
+        check(categories.get(value)==='Currency','MISSION_CURRENCY_TARGET');emit(value,path);
+      }
+    };
+    for(const props of [row.nativeProperties,row.sourceAttributes??{}]){
+      for(const [key,value] of Object.entries(props)){
+        const path='source.'+key;
+        const reviewed=Object.hasOwn(REVIEWED_ROOT_REFERENCE_TARGETS,key)&&
+          REVIEWED_ROOT_ARRAYS[key][0]===row.nativeCategory&&Array.isArray(value)&&value.every(Number.isSafeInteger);
+        if(reviewed){
+          for(const [i,target] of value.entries()){
+            if(target===0)continue;
+            check(REVIEWED_ROOT_REFERENCE_TARGETS[key].includes(categories.get(target)),'REVIEWED_REFERENCE_TARGET');
+            emit(target,path+'['+i+']');
+          }
+        }else walk(value,path,key);
+      }
+    }
+    // Already verified native tag fields and Set references are separate
+    // canonical evidence. Do not relabel these as acquisition or ownership.
+    for(const [i,tag] of row.tags.entries())emit(tag.id,'tags['+i+'].id');
+    if(row.sourceSetItemId!==null)emit(row.sourceSetItemId,'sourceSetItemId');
+  }
+  return {incoming,outgoing};
+}
+const LOCALIZED_FIELDS=['Description','DescriptionText','EvolvingDescription','PluralDisplayName'];
+function loadLocalizations(project,e,version,source,byId){
+  if(e.localization===undefined)return undefined;
+  const config=e.localization;
+  check(SHA.test(config.sha256)&&Number.isSafeInteger(config.parts)&&config.parts>0&&config.parts<=100,'LOCALIZATION_METADATA');
+  const packed=Buffer.concat(Array.from({length:config.parts},(_,i)=>
+    readFileSync(join(project,'data/ddv/item-master','item-localizations-steam-'+version+'.json.gz.part'+i))));
+  check(hash(packed)===config.sha256,'LOCALIZATION_SHA');
+  const l=JSON.parse(gunzipSync(packed,{maxOutputLength:128*1024*1024}).toString('utf8'));
+  check(l.schema==='wand.item-master.localized-source@1'&&l.release===e.release&&
+    l.gameVersion===version&&l.sourceItemsSha256===source.sourceItemsSha256&&
+    l.masterArchiveSha256===e.archiveSha256&&l.attributesSha256===e.attributesSha256&&
+    Array.isArray(l.items)&&l.items.length===l.count,'LOCALIZATION_RELEASE');
+  const expected=new Map();
+  for(const row of byId.values()){
+    if(row.nativeCategory==='Dialogue')continue;
+    const fields=Object.fromEntries(LOCALIZED_FIELDS.filter(k=>typeof row.sourceAttributes?.[k]==='string')
+      .map(k=>[k,row.sourceAttributes[k]]));
+    if(Object.keys(fields).length)expected.set(row.itemId,fields);
+  }
+  const keys=new Set(),seen=new Set(),fieldCounts={};
+  for(const [id,fields] of l.items){
+    const actual=expected.get(id);
+    check(actual&&!seen.has(id)&&Object.keys(actual).length===Object.keys(fields).length&&
+      Object.entries(fields).every(([k,v])=>actual[k]===v),'LOCALIZATION_ITEM_LINK');
+    seen.add(id);
+    for(const [k,v] of Object.entries(fields)){keys.add(v);fieldCounts[k]=(fieldCounts[k]??0)+1;}
+  }
+  check(seen.size===expected.size&&keys.size===l.keyCount&&
+    Object.keys(fieldCounts).length===Object.keys(l.fieldCounts).length&&
+    Object.entries(fieldCounts).every(([k,v])=>l.fieldCounts[k]===v),'LOCALIZATION_LINK_CENSUS');
+  check(Object.keys(l.translations).length===LOCALES.length&&Object.keys(l.evidence).length===LOCALES.length,'LOCALIZATION_LOCALES');
+  for(const locale of LOCALES){
+    const values=l.translations[locale],ev=l.evidence[locale];
+    check(values&&ev&&SHA.test(ev.archiveSha256)&&Object.values(ev.members).every(v=>SHA.test(v))&&
+      Object.keys(values).length===l.localeCounts[locale]&&
+      Object.entries(values).every(([k,v])=>keys.has(k)&&typeof v==='string'&&v.trim().length>0&&v.length<=8192),
+      'LOCALIZATION_VALUE_'+locale);
+  }
+  const all=[...keys].filter(k=>LOCALES.every(locale=>Object.hasOwn(l.translations[locale],k))).length;
+  check(all===l.allLocalesKeyCount,'LOCALIZATION_ALL_LOCALES');
+  return {translations:l.translations,coverage:{itemCount:l.count,keyCount:l.keyCount,
+    allLocalesKeyCount:all,fieldCounts:l.fieldCounts,localeCounts:l.localeCounts,evidence:l.evidence}};
+}
+// Service-neutral, sparse columns compiled from the canonical complete rows.
+ // The source namespace combines decoded native scalar and structured fields.
+ // Explicit null/false/zero/empty values are retained; absent fields are omitted.
+function writeFieldColumns(rows,release,write,assets){
+  const columns=new Map();
+  const split=new Set(['names','artwork','itemType','nativeProperties','sourceAttributes']);
+  const add=(field,id,value)=>{
+    check(/^[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*){0,16}$/.test(field)&&!field.split('.').some(k=>['__proto__','constructor','prototype'].includes(k)),'COLUMN_NAME');
+    check(value!==undefined,'COLUMN_UNDEFINED');
+    let entries=columns.get(field);
+    if(!entries){entries=[];columns.set(field,entries);}
+    check(!entries.length||entries[entries.length-1][0]<id,'COLUMN_DUPLICATE');
+    entries.push([id,value]);
+  };
+  // Preserve complete object columns, and also expose nested object fields.
+  // Arrays are atomic values: never flatten repeated entries and lose pairing.
+  const addSource=(field,id,value,depth=0)=>{
+    add(field,id,value);
+    if(depth<15&&value!==null&&typeof value==='object'&&!Array.isArray(value)){
+      for(const [key,child] of Object.entries(value))addSource(field+'.'+key,id,child,depth+1);
+    }
+  };
+  for(const row of rows){
+    for(const [key,value] of Object.entries(row)){
+      if(!split.has(key)){add(key,row.itemId,value);continue;}
+      const prefix=key==='nativeProperties'||key==='sourceAttributes'?'source':key;
+      for(const [name,part] of Object.entries(value)){
+        if(prefix==='source')addSource(prefix+'.'+name,row.itemId,part);
+        else add(prefix+'.'+name,row.itemId,part);
+      }
+    }
+  }
+  const refs=buildReferenceColumns(rows);
+  for(const row of rows){
+    for(const direction of ['incoming','outgoing']){
+      const values=refs[direction].get(row.itemId);
+      if(values?.length)add('references.'+direction,row.itemId,values);
+    }
+  }
+  const fields=[];
+  for(const [field,entries] of [...columns].sort(([a],[b])=>a<b?-1:a>b?1:0)){
+    const blocks=[];
+    // Bound bytes as well as row count; large mission step arrays stay atomic.
+    for(let start=0;start<entries.length;){
+      let end=start,bytes=256;
+      while(end<entries.length&&end-start<4096){
+        const size=Buffer.byteLength(JSON.stringify(entries[end]))+1;
+        if(end>start&&bytes+size>1024*1024)break;
+        bytes+=size;end++;
+      }
+      const items=entries.slice(start,end);
+      start=end;
+      const path='fields/'+field+'/'+blocks.length+'.json';
+      const meta=write(path,{schema:'wand.item-master.field-block@1',release,field,items},items.length);
+      check(meta.bytes<=16*1024*1024,'COLUMN_BLOCK_TOO_LARGE');
+      assets[path]=meta;
+      blocks.push({path,firstId:items[0][0],lastId:items[items.length-1][0],count:items.length});
+    }
+    fields.push({field,count:entries.length,blocks});
+  }
+  assets['fields/index.json']=write('fields/index.json',{
+    schema:'wand.item-master.fields@1',release,definitionCount:rows.length,fields
+  },fields.length);
+}
+function sourceCodes(row){
+  const codes=new Set(row.collectionSourceCandidates.map(c=>c.submenuCode).filter(c=>SUBMENUS.has(c)));
+  // Native item-type browse fallback is not evidence of game Collection membership.
+  if(row.nativeCategory==='Furniture')codes.add(3);
+  if(row.nativeCategory==='Clothing')codes.add(4);
+  if(row.nativeCategory==='ActivityItem'){
+    const code=new Map([[2,0],[4,0],[11,0],[10,1],[3,2],[8,8],[16,9],[17,10]]).get(row.itemType.subtypeCode);
+    if(code!==undefined)codes.add(code);
+  }
+  return [...codes].sort((a,b)=>a-b);
+}
+function validLinks(links,byId,menus){
+  return Array.isArray(links)&&links.every(c=>ID(c.setId)&&menus.has(c.setId)&&
+    Number.isSafeInteger(c.groupIndex)&&c.groupIndex>=0&&
+    menus.get(c.setId).submenuCode===c.submenuCode&&typeof c.evidence==='string'&&
+    (c.sourceRecipeItemId==null||byId.has(c.sourceRecipeItemId))&&
+    (c.sourceSetItemId==null||byId.has(c.sourceSetItemId)));
+}
+/** Build-time source census; do not infer design similarity from these counts. */
+function exploreThemeCensus(explore,byId){
+  const counts=values=>Object.fromEntries([...values.reduce((m,k)=>m.set(k,(m.get(k)??0)+1),new Map())].sort((a,b)=>b[1]-a[1]||String(a[0]).localeCompare(String(b[0]))));
+  for(const universe of [2000500023,2000500017]){
+    const items=explore.filter(r=>r.universes.includes(universe));
+    const groups=new Map();
+    const styles=new Map();
+    for(const item of items){
+      if(item.sourceSetItemId!==null){
+        const set=groups.get(item.sourceSetItemId)??[];set.push(item);groups.set(item.sourceSetItemId,set);
+      }
+      for(const style of new Set(item.tags.filter(([k])=>k==='furnitureStyle').map(([,v])=>v))){
+        const list=styles.get(style)??[];list.push(item);styles.set(style,list);
+      }
+    }
+    const styleCount=item=>new Set(item.tags.filter(([k])=>k==='furnitureStyle').map(([,v])=>v)).size;
+    const namedSets=[...groups].sort((a,b)=>b[1].length-a[1].length||a[0]-b[0]).slice(0,18).map(([id,list])=>({
+      id,label:byId.get(id)?.names?.en??null,count:list.length,
+      categories:counts(list.map(r=>r.nativeCategory)),
+      sample:list.map(r=>r.names.en).filter(Boolean).slice(0,5)
+    }));
+    const styleSummary=[...styles].sort((a,b)=>b[1].length-a[1].length).map(([style,list])=>({
+      style,count:list.length,sample:list.map(r=>r.names.en).filter(Boolean).slice(0,6)
+    }));
+    console.log('EXPLORE_THEME_CENSUS '+JSON.stringify({universe,total:items.length,
+      byCategory:counts(items.map(r=>r.nativeCategory)),
+      withSet:items.filter(r=>r.sourceSetItemId!==null).length,
+      distinctSets:groups.size,setsWithMultipleItems:[...groups.values()].filter(g=>g.length>1).length,
+      setsWithMultipleNativeCategories:[...groups.values()].filter(g=>new Set(g.map(i=>i.nativeCategory)).size>1).length,
+      styleCoverage:items.filter(r=>styleCount(r)>0).length,
+      multipleStyles:items.filter(r=>styleCount(r)>1).length,styleSummary,namedSets}));
+  }
+}
+
+export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFiles){
+  const e=entry.complete;
+  if(!e)return;
+  const version=entry.gameVersion;
+  check(typeof e.release==='string'&&e.release.startsWith('steam-'+version+'-item-id-master-v')&&
+    e.release!==baseRelease.version&&e.release!==entry.expanded?.release&&
+    Number.isSafeInteger(e.count)&&e.count>=baseRelease.count&&e.count<=1_000_000&&
+    Number.isSafeInteger(e.parts)&&e.parts>=1&&e.parts<=100&&SHA.test(e.archiveSha256),'VERSION_ENTRY');
+  const packed=Buffer.concat(Array.from({length:e.parts},(_,i)=>
+    readFileSync(join(project,'data/ddv/item-master','complete-source-steam-'+version+'.json.gz.part'+i))));
+  check(hash(packed)===e.archiveSha256,'ARCHIVE_SHA');
+  const source=JSON.parse(gunzipSync(packed,{maxOutputLength:128*1024*1024}).toString('utf8'));
+  check(source.schema==='wand.item-master.complete-source@1'&&source.release===e.release&&
+    source.target.platform==='Steam'&&source.target.gameVersion===version&&
+    source.sourceItemsSha256===baseRelease.source.sourceItemsSha256&&
+    SHA.test(source.sourceIl2cppDumpSha256)&&source.count===e.count&&
+    Array.isArray(source.items)&&source.items.length===e.count&&
+    Object.keys(source.sourceFilesSha256).length===source.sourceFilesVerified&&
+    Object.values(source.sourceFilesSha256).every(s=>SHA.test(s))&&
+    source.coverage.definitionCount===e.count&&source.coverage.runtimeCollectionMembershipVerified===false&&
+    source.coverage.allOriginalFieldSemanticsVerified===false,'SCHEMA');
+  const rows=source.items;
+  const byId=new Map(rows.map(r=>[r.itemId,r]));
+  check(byId.size===e.count&&rows.every((r,i)=>i===0||rows[i-1].itemId<r.itemId),'ID_CENSUS');
+  const sourceAttributeCoverage=attachAttributes(project,e,version,source,byId);
+  const nativeSupplementCoverage=attachNativeSupplement(project,e,version,source,byId);
+  const referenceAttributeCoverage=attachReferenceAttributes(project,e,version,source,byId);
+  const reviewedRootArrayCoverage=attachReviewedRootArrays(project,e,version,source,byId);
+  const reviewedMessageCoverage=attachReviewedMessages(project,e,version,source,byId);
+  const reviewedMessageGroupCoverage=attachReviewedMessages(project,e,version,source,byId,true);
+  let reviewedStructureCoverage;
+  if(e.reviewedStructure!==undefined){
+    check(Object.keys(e.reviewedStructure).length===2&&SHA.test(e.reviewedStructure['reviewed-structure'])&&SHA.test(e.reviewedStructure['reviewed-quest-steps']),'STRUCTURE_DIGESTS');
+    const other=attachReviewedMessages(project,e,version,source,byId,true,'reviewed-structure');
+    const quest=attachReviewedMessages(project,e,version,source,byId,true,'reviewed-quest-steps');
+    check(!Object.keys(other.fields).some(key=>Object.hasOwn(quest.fields,key)),'STRUCTURE_DUPLICATE');
+    reviewedStructureCoverage={fields:{...other.fields,...quest.fields},runtimeSemanticsVerified:false};
+  }
+  const localizations=loadLocalizations(project,e,version,source,byId);
+  // Verify no existing public definition is lost or silently replaced.
+  for(const [path,raw] of baseFiles){
+    if(!path.startsWith('id/'))continue;
+    for(const prev of JSON.parse(raw.toString('utf8')).items){
+      const next=byId.get(prev.itemId);
+      check(next&&prev.nativeCategory===next.nativeCategory&&prev.nativeKey===next.nativeKey&&
+        prev.iconGuid===next.iconGuid&&LOCALES.every(l=>prev.names[l]===next.names[l]),
+        'BASE_IDENTITY_'+prev.itemId);
+    }
+  }
+  const menus=new Map(source.collectionMenus.map(r=>[r.setId,r]));
+  const universes=new Map(source.universeTags.map(r=>[r.tagId,r]));
+  const worlds=new Map(source.worldTags.map(r=>[r.tagId,r]));
+  const validLabels=(r)=>ID(r.tagId)&&byId.get(r.tagId)?.nativeCategory==='Tag'&&
+    typeof r.key==='string'&&LOCALES.every(l=>r.names[l]===null||
+      typeof r.names[l]==='string'&&r.names[l].length>0);
+  check(menus.size===source.collectionMenus.length&&
+    [...menus.keys()].every(i=>byId.get(i)?.nativeCategory==='CollectionSet')&&
+    universes.size===source.universeTags.length&&source.universeTags.every(validLabels)&&
+    worlds.size===source.worldTags.length&&source.worldTags.every(validLabels)&&
+    source.collectionSelectors.length===source.coverage.sourceSelectorCount,'RELATION_CENSUS');
+  const buckets=Array.from({length:256},()=>[]);
+  const f={schema:'wand.collection.db01-complete-source-facets@1',release:e.release,
+    sourceArchiveSha256:e.archiveSha256,sourceItemCount:rows.length,
+    nativeSubtypeItems:[],items:[],categoryItems:[],activityTypeItems:[],
+    universeSourceItems:[],universeSourceTagItems:[],universeSourceStatusItems:[],
+    worldSourceTagItems:[],sourceSetItems:[],craftingRecipeResultItems:[],
+    definitionScopeItems:[],browseItems:[],
+    universeTags:source.universeTags,worldTags:source.worldTags,
+    gameRuntimeMembershipVerified:false};
+  const explore=[];
+  const names={};
+  for(const l of LOCALES)names[l]=[];
+  for(const r of rows){
+    const i=r.itemId;
+    check(ID(i)&&typeof r.nativeCategory==='string'&&r.nativeCategory in source.sourceFilesSha256&&
+      typeof r.nativeKey==='string'&&r.nativeKey.length>0&&
+      (r.iconGuid===null||GUID.test(r.iconGuid))&&
+      r.artwork&&Object.values(r.artwork).every(g=>GUID.test(g))&&
+      (r.artwork.iconGuid??null)===r.iconGuid&&
+      r.names&&LOCALES.every(l=>r.names[l]===null||typeof r.names[l]==='string'&&r.names[l].length>0)&&
+      r.nameVerified===LOCALES.every(l=>r.names[l]!==null)&&
+      r.itemType?.name===r.nativeCategory&&Number.isSafeInteger(r.itemType.code)&&
+      Math.floor(i/10000000)===r.itemType.code&&
+      Math.floor((i%10000000)/100000)===r.itemType.subtypeCode&&
+      typeof r.itemType.subtypeNameVerified==='boolean'&&
+      Array.isArray(r.tags)&&r.tags.every(t=>ID(t.id)&&byId.get(t.id)?.nativeCategory==='Tag'&&
+        typeof t.key==='string'&&typeof t.facet==='string'&&Number.isSafeInteger(t.sourceField))&&
+      validLinks(r.collectionPositiveSourceLinks,byId,menus)&&validLinks(r.collectionExclusions,byId,menus)&&
+      validLinks(r.collectionSourceCandidates,byId,menus)&&
+      SCOPES.includes(r.definitionScope)&&STATES.includes(r.universeSourceStatus)&&
+      (r.universeSourceStatus==='source_linked')===(r.universeTagIds.length>0)&&
+      r.universeTagIds.every(t=>universes.has(t))&&
+      JSON.stringify(r.universeTagIds)===JSON.stringify(uniq([
+        ...r.universeDirectTagIds,...r.universeSetTagIds,...r.universePredicateTagIds]))&&
+      r.worldTagIds.every(t=>worlds.has(t))&&
+      (r.sourceSetItemId===null||byId.get(r.sourceSetItemId)?.nativeCategory==='Set')&&
+      r.craftingRecipeItemIds.every(t=>byId.get(t)?.itemType.subtypeName==='CraftingRecipe')&&
+      Array.isArray(r.sourceFrame)&&r.sourceFrame.length===2&&r.sourceFrame.every(Number.isSafeInteger)&&
+      r.sourceFrame[0]>=0&&r.sourceFrame[1]>0&&Array.isArray(r.observedFields)&&
+      r.observedFields.every(v=>Array.isArray(v)&&v.length===3&&v.every(Number.isSafeInteger)&&v[0]>0&&v[2]>0&&[0,1,2,5].includes(v[1]))&&
+      r.nativeProperties&&Object.values(r.nativeProperties).every(v=>typeof v==='boolean'||typeof v==='number'&&Number.isFinite(v))&&
+      r.collectionMembershipVerified===false&&r.worldMembershipVerified===false&&r.availabilityVerified===false,
+      'ROW_'+i);
+    const excluded=new Set(r.collectionExclusions.map(c=>c.setId+':'+c.groupIndex));
+    const actual=r.collectionPositiveSourceLinks.filter(c=>!excluded.has(c.setId+':'+c.groupIndex));
+    check(JSON.stringify(actual)===JSON.stringify(r.collectionSourceCandidates),'POLARITY_'+i);
+    buckets[i&255].push(r);
+    const type=r.itemType;
+    f.nativeSubtypeItems.push([i,type.name,type.subtypeCode,type.subtypeName]);
+    f.definitionScopeItems.push([i,r.definitionScope]);
+    if(type.name==='ActivityItem')f.activityTypeItems.push([i,type.subtypeCode,type.subtypeName]);
+    const tags=r.tags.filter(t=>FACETS.has(t.facet)).map(t=>[t.facet,t.key]);
+    if(tags.length)f.items.push([i,tags]);
+    // Source-complete decorative candidates: never require Collection membership.
+    // Exclude quest requests, blockers and character/mount skins, not a
+    // statement of legal placement or player ownership.
+    if((type.name==='Furniture'&&[0,1,2,3,7,8,9].includes(type.subtypeCode))||
+       (type.name==='Trimming'&&[0,1].includes(type.subtypeCode))||
+       (type.name==='Building'&&[0,1,2,3,4,5].includes(type.subtypeCode))||
+       (type.name==='Skin'&&[1,2,3,6].includes(type.subtypeCode))||
+       (type.name==='Environment'&&(r.iconGuid||Object.values(r.names).some(Boolean)))){
+      explore.push({itemId:i,names:r.names,nativeCategory:type.name,subtype:type.subtypeCode,
+        tags:tags.filter(t=>['color','furnitureStyle','furnitureKind'].includes(t[0])),
+        universes:r.universeTagIds,universeStatus:r.universeSourceStatus,iconGuid:r.iconGuid,
+        sourceSetItemId:r.sourceSetItemId,
+        sourceSetNames:r.sourceSetItemId===null?{}:byId.get(r.sourceSetItemId)?.names??{},
+        prefabGuid:r.artwork.prefabGuid??null,nativeKey:r.nativeKey,
+        footprintSignature:r.sourceAttributes?.GridAreaData&&
+          Number.isSafeInteger(r.sourceAttributes.GridAreaData.SizeX)&&
+          Number.isSafeInteger(r.sourceAttributes.GridAreaData.SizeY)&&
+          Array.isArray(r.sourceAttributes.GridAreaData.Layers)&&
+          !r.sourceAttributes.GridAreaData._unresolvedFields?.length
+          ?hash(json(r.sourceAttributes.GridAreaData)):null});
+    }
+    const codes=sourceCodes(r);if(codes.length)f.categoryItems.push([i,codes]);
+    if(r.universeTagIds.length){
+      f.universeSourceTagItems.push([i,r.universeTagIds]);
+      f.universeSourceItems.push([i,r.universeTagIds.map(t=>universes.get(t).key)]);
+    }
+    f.universeSourceStatusItems.push([i,r.universeSourceStatus]);
+    if(r.worldTagIds.length)f.worldSourceTagItems.push([i,r.worldTagIds]);
+    if(r.sourceSetItemId!==null)f.sourceSetItems.push([i,r.sourceSetItemId]);
+    if(r.craftingRecipeItemIds.length)f.craftingRecipeResultItems.push([i,r.craftingRecipeItemIds]);
+    // Include source-matched definitions and item-like classes as browse
+    // candidates. This does not declare them all visible/owned/collectible.
+    if(r.definitionScope!=='other_definition'){
+      f.browseItems.push([i,r.nativeCategory,type.subtypeCode,r.iconGuid,r.definitionScope]);
+      for(const l of LOCALES)if(r.names[l]!==null)names[l].push([i,r.names[l]]);
+    }
+  }
+  check(f.nativeSubtypeItems.length===e.count&&
+    f.universeSourceStatusItems.length===e.count&&
+    f.craftingRecipeResultItems.length===source.coverage.recipeResultItemIds&&
+    f.craftingRecipeResultItems.reduce((n,r)=>n+r[1].length,0)===source.coverage.recipeResultLinks&&
+    f.worldSourceTagItems.length===source.coverage.worldTagItemIds&&
+    rows.reduce((n,r)=>n+r.collectionPositiveSourceLinks.length,0)===source.coverage.positiveSourceLinks&&
+    rows.reduce((n,r)=>n+r.collectionExclusions.length,0)===source.coverage.negativeSourceLinks,
+    'FACT_CENSUS');
+  for(const [key,count] of [['taggedItems','items'],['categoryItemCount','categoryItems'],
+    ['activityTypeItemCount','activityTypeItems'],['nativeSubtypeItemCount','nativeSubtypeItems'],
+    ['universeSourceItemCount','universeSourceItems'],['universeSourceTagCount','universeSourceTagItems'],
+    ['universeSourceStatusItemCount','universeSourceStatusItems'],['worldSourceTagCount','worldSourceTagItems'],
+    ['browseItemCount','browseItems']])f[key]=f[count].length;
+  exploreThemeCensus(explore,byId);
+  const index={schema:'wand.item-master.release@1',scope:'complete',version:e.release,target:source.target,
+    count:e.count,bucketCount:256,archiveSha256:e.archiveSha256,
+    sourceFilesVerified:source.sourceFilesVerified,sourceFilesSha256:source.sourceFilesSha256,
+    sourceItemsSha256:source.sourceItemsSha256,sourceIl2cppDumpSha256:source.sourceIl2cppDumpSha256,
+    coverage:{...source.coverage,itemNamesVerified:source.coverage.nameVerified,
+      itemNamesUnverified:e.count-source.coverage.nameVerified,itemIconGuid:source.coverage.iconGuid,
+      sourceTagReferences:rows.reduce((n,r)=>n+r.tags.length,0),
+      itemsWithSourceTag:rows.filter(r=>r.tags.length>0).length,
+      sourceCollectionCandidateReferences:rows.reduce((n,r)=>n+r.collectionSourceCandidates.length,0),
+      itemsWithSourceCollectionCandidates:source.coverage.collectionCandidateItemIds,
+      worldMembershipVerified:false,collectionMembershipVerified:false,
+      acquisitionCoverageComplete:false,publishedR2ImageUrlAvailable:false},
+    ...(sourceAttributeCoverage?{attributesSha256:e.attributesSha256,sourceAttributeCoverage}:{}),
+    ...(nativeSupplementCoverage?{nativeSupplementSha256:e.nativeSupplementSha256,nativeSupplementCoverage}:{}),
+    ...(referenceAttributeCoverage?{referenceAttributesSha256:e.referenceAttributesSha256,referenceAttributeCoverage}:{}),
+    ...(reviewedRootArrayCoverage?{reviewedRootArraysSha256:e.reviewedRootArraysSha256,reviewedRootArrayCoverage}:{}),
+    ...(reviewedMessageCoverage?{reviewedMessagesSha256:e.reviewedMessagesSha256,reviewedMessageCoverage}:{}),
+    ...(reviewedMessageGroupCoverage?{reviewedMessageGroupsSha256:e.reviewedMessageGroupsSha256,reviewedMessageGroupCoverage}:{}),
+    ...(reviewedStructureCoverage?{reviewedStructure:e.reviewedStructure,reviewedStructureCoverage}:{}),
+    ...(localizations?{localizationSha256:e.localization.sha256,localizationCoverage:localizations.coverage}:{}),
+    shards:{},assets:{}};
+  const root=join(project,'static/ddv/item-master');
+  mkdirSync(root,{recursive:true});
+  const stage=mkdtempSync(join(root,'.complete-'));
+  try{
+    const write=(path,value,count)=>{
+      const bytes=json(value);mkdirSync(dirname(join(stage,path)),{recursive:true});
+      writeFileSync(join(stage,path),bytes);
+      return {count,bytes:bytes.length,sha256:hash(bytes)};
+    };
+    for(let i=0;i<256;i++){
+      const key=i.toString(16).padStart(2,'0'),path='id/'+key+'.json';
+      index.shards[path]=write(path,{schema:'wand.item-master.shard@1',bucket:key,items:buckets[i]},buckets[i].length);
+    }
+    write('explore.json',{schema:'wand.explore.catalog@2',release:e.release,items:explore,
+      universeTags:source.universeTags},explore.length);
+    index.assets['collection-facets.json']=write('collection-facets.json',f,f.sourceItemCount);
+    for(const l of LOCALES)index.assets['locale/'+l+'.json']=write('locale/'+l+'.json',
+      {schema:'wand.item-master.complete-browse-names@1',release:e.release,locale:l,items:names[l]},names[l].length);
+    index.assets['source-relations.json']=write('source-relations.json',{
+      schema:'wand.item-master.complete-source-relations@1',release:e.release,
+      collectionMenus:source.collectionMenus,collectionSelectors:source.collectionSelectors,
+      ignoredSentinels:source.ignoredSentinels,universeTags:source.universeTags,worldTags:source.worldTags,
+      sourceFieldDeclarations:source.sourceFieldDeclarations,gameRuntimeMembershipVerified:false
+    },source.collectionSelectors.length);
+    if(localizations)for(const locale of LOCALES){
+      const entries=Object.entries(localizations.translations[locale]);
+      const path='text/'+locale+'.json';
+      index.assets[path]=write(path,{schema:'wand.item-master.localized-text@1',release:e.release,locale,items:entries},entries.length);
+    }
+    writeFieldColumns(rows,e.release,write,index.assets);
+    writeFileSync(join(stage,'index.json'),json(index));
+    const destination=join(root,'steam-'+version+'-complete');
+    rmSync(destination,{recursive:true,force:true});renameSync(stage,destination);
+  }catch(err){rmSync(stage,{recursive:true,force:true});throw err;}
+  console.log('DB-01 complete-source master:',rows.length,'definitions,',source.coverage.nativeCategoryCount,'native classes,',source.coverage.sourceSelectorCount,'resolved source selectors');
+}
+).test(value):condition?(
       REVIEWED_CONDITION_UUIDS.has(suffix)&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value)||
       REVIEWED_CONDITION_KEYS.has(suffix)&&/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(value)
     ):REVIEWED_GUID_PATHS.has(guidPath)&&/^guid:[0-9a-f]{32}$/.test(value),'MESSAGE_STRING');
