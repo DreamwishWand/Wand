@@ -73,3 +73,21 @@ test('subgrid summary survives the local terrain receipt and blocks unsupported 
  assert.equal(worldTransformEligible({...map.objects[0],subgrid:null}),true);
  assert.throws(()=>projectTerrainSession({...raw,bindings:[{...raw.bindings[0],subgrid:{status:'resolved_full',objectCount:-1}}]},scopes));
 });
+
+import {projectNativeEditRestrictions} from '../src/lib/world/native-edit-restrictions.ts';
+import {worldMoveEligible,worldRotateEligible} from '../src/lib/world/saved-map-transform.ts';
+test('canonical DB01 restrictions are action-specific and never infer conditional permission',()=>{
+ const grid=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(path,'utf8'))).grids[0];
+ const restrictions={CanMove:{Value:false},CanRotate:{Value:true},CanBeRemoved:{Conditions:{_unresolvedFields:[2]}}};
+ assert.deepEqual(projectNativeEditRestrictions(restrictions),{move:'denied',rotate:'allowedFlag',remove:'conditional'});
+ const definitions=publicShapeDefinitions([[40000001,{SizeX:2,SizeY:1,Layers:[0,16],AcceptedFloorTypesFlag:4}]],[[40000001,'Furniture']],[[40000001,'Table']],[[40000001,restrictions]]);
+ const map=buildSavedShapeMap(publicShapeSource(grid,definitions),grid.layoutId,grid.gridIdNative,[{localOrdinal:1,localGridOrdinal:1,itemId:'40000001',x:1,y:2,orientation:'GridOrientation_Down'}]);
+ const o=map.objects[0];
+ assert.equal(worldMoveEligible(o),false);
+ assert.equal(worldRotateEligible(o),true);
+ assert.equal(draftSavedMapTransform(o,3,4,'GridOrientation_Down'),null);
+ assert.ok(draftSavedMapTransform(o,1,2,'GridOrientation_Left'));
+ assert.equal(worldTransformEligible({...o,editRestrictions:{select:'conditional'}}),false);
+ assert.equal(worldRotateEligible({...o,editRestrictions:{rotate:'denied'}}),false);
+ assert.deepEqual(projectNativeEditRestrictions({CanMove:{},CanRotate:{Value:true,Conditions:{}}}),{rotate:'conditional'});
+});
