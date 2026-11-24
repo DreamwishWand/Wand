@@ -8,6 +8,7 @@
  */
 import {
   openPublicItemMaster,
+  openCurrentItemDatabase,
   type ItemMasterRecord,
   type ItemMasterRelease,
   type ItemMasterOpenOptions,
@@ -69,11 +70,14 @@ export interface PublicItemSelectionOptions {
 export interface PublicSelectedItem extends ItemFieldProjection {
   readonly acquisition?: Readonly<Db01ItemAcquisition>;
   readonly sourceRelations?: Readonly<Db01ItemSourceRecord>;
+  readonly acquisitionStatus: 'current'|'pending_update';
   readonly currentAvailabilityVerified: false;
 }
 export interface PublicItemDetailsClient {
   readonly contract: typeof PUBLIC_ITEM_DETAILS_CONTRACT;
   readonly release: ItemMasterRelease;
+  /** A lagging acquisition projection never blocks access to current canonical fields. */
+  readonly acquisitionStatus: 'current'|'pending_update';
   getItem(itemId: number): Promise<Readonly<PublicItemDetails> | null>;
   getItems(itemIds: readonly number[]): Promise<readonly (Readonly<PublicItemDetails> | null)[]>;
   /** Sparse Item IDs; an absent ID is unclassified, not unobtainable. */
@@ -117,10 +121,13 @@ export async function openPublicItemDetails(
   fetcher: typeof fetch = fetch,
   options: ItemMasterOpenOptions = {},
 ): Promise<PublicItemDetailsClient> {
-  // Do not join a newer Item Master to historic v1.26.2 DB-02 data.
-  // Definition-only readers should use openPublicItemMaster instead.
   const master = await openPublicItemMaster(basePath, fetcher, options);
-  assert(master.release.target.gameVersion === PUBLIC_ITEM_DETAILS_SOURCE_VERSION,
+  const acquisitionStatus=master.release.target.gameVersion===PUBLIC_ITEM_DETAILS_SOURCE_VERSION
+    ?'current' as const:'pending_update' as const;
+  // Compatibility-only explicit historical reads retain their strict contract.
+  // Current product reads may still use the canonical attributes during a
+  // lagging acquisition update, but must not join old acquisition facts.
+  if(options.gameVersion!=='current')assert(acquisitionStatus==='current',
     'SOURCE_HANDOFF_VERSION_NOT_PUBLISHED');
   const publicBase = basePath && !basePath.startsWith('/')
     ? '/' + basePath : basePath;
@@ -134,9 +141,14 @@ export async function openPublicItemDetails(
 
   function complete():Promise<PublicCompleteItemMaster>{
     if(completeTask)return completeTask;
-    const task=openPublicItemMaster(basePath,fetcher,{
-      scope:'complete',gameVersion:master.release.target.gameVersion
-    });
+    const task=options.gameVersion==='current'
+      ?openCurrentItemDatabase(basePath,fetcher).then(reader=>{
+        assert(reader.release.target.gameVersion===master.release.target.gameVersion,
+          'CURRENT_REVISION_CHANGED');return reader;
+      })
+      :openPublicItemMaster(basePath,fetcher,{
+        scope:'complete',gameVersion:master.release.target.gameVersion
+      });
     completeTask=task;
     void task.catch(()=>{if(completeTask===task)completeTask=null;});
     return task;
@@ -170,6 +182,7 @@ export async function openPublicItemDetails(
     }));
   }
   function sidecar(): Promise<Db01ItemAcquisitionIndex> {
+    if(acquisitionStatus!=='current')return Promise.reject(new TypeError('DB01_PUBLIC_DETAILS_SOURCE_HANDOFF_VERSION_NOT_PUBLISHED'));
     if (sidecarTask) return sidecarTask;
     const task = loadDb01ItemAcquisitionHandoff(publicBase, fetcher)
       .then(index => {
@@ -185,6 +198,7 @@ export async function openPublicItemDetails(
     return task;
   }
   function sources(): Promise<Db01ItemSourceRelations> {
+    if(acquisitionStatus!=='current')return Promise.reject(new TypeError('DB01_PUBLIC_DETAILS_SOURCE_HANDOFF_VERSION_NOT_PUBLISHED'));
     if (sourcesTask) return sourcesTask;
     const task = loadDb01ItemSourceRelations(publicBase, fetcher)
       .then(index => {
@@ -237,6 +251,7 @@ export async function openPublicItemDetails(
   return Object.freeze({
     contract: PUBLIC_ITEM_DETAILS_CONTRACT,
     release: master.release,
+    acquisitionStatus,
     async getItem(itemId: number) {
       const definition = await master.getItem(itemId);
       if (!definition) return null;
@@ -265,8 +280,8 @@ export async function openPublicItemDetails(
       const projected=await reader.getItemFields(itemIds,fields);
       if(!projected.some(Boolean))return Object.freeze(projected.map(()=>null));
       const [origins,index]=await Promise.all([
-        selection.acquisition?sidecar():null,
-        selection.sourceRelations?sources():null
+        selection.acquisition&&acquisitionStatus==='current'?sidecar():null,
+        selection.sourceRelations&&acquisitionStatus==='current'?sources():null
       ]);
       return Object.freeze(projected.map(row=>{
         if(!row)return null;
@@ -277,7 +292,7 @@ export async function openPublicItemDetails(
           sourceRelations.categories.every((value,i)=>value===acquisition.categories[i]),
           'ACQUISITION_SOURCE_CATEGORY_MISMATCH');
         return Object.freeze({...row,...(acquisition?{acquisition}:{}),
-          ...(sourceRelations?{sourceRelations}:{}),currentAvailabilityVerified:false as const});
+          ...(sourceRelations?{sourceRelations}:{}),acquisitionStatus,currentAvailabilityVerified:false as const});
       }));
     },
     async getCompleteItem(itemId:number){
@@ -328,4 +343,10 @@ export async function openPublicItemDetails(
       return ids;
     },
   });
+}
+
+/** Normal product entry point. Version selection is internal; use getSelectedItems
+ * for independent current fields and optional acquisition metadata. */
+export function openCurrentItemDetails(basePath:string='',fetcher:typeof fetch=fetch){
+  return openPublicItemDetails(basePath,fetcher,{gameVersion:'current'});
 }
