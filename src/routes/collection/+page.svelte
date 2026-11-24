@@ -8,7 +8,7 @@
     collectionDb01FacetLabel,collectionDb01TagLabel,COLLECTION_DB01_COLOR_SWATCHES,
     type CollectionDb01Index,type CollectionDb01Facet,type CollectionDb01Group
   } from '$lib/collection/db01-native-facets';
-  import {COLLECTION_UNIVERSE_UNTAGGED,sortedCollectionUniverseOptions,
+  import {COLLECTION_UNIVERSE_UNTAGGED,COLLECTION_UNIVERSE_UNRESOLVED,collectionUniverseIds,sortedCollectionUniverseOptions,
     groupCollectionUniverseItems,collectionUniverseDisplayLabel}
     from '$lib/collection/browse-layout.ts';
   import {COLLECTION_UNIVERSE_TAG_BY_ID,COLLECTION_UNIVERSE_TAG_NAMES}
@@ -446,10 +446,9 @@
         // general 13k-row sorted Rust query 67 times blocks UI clicks.
         // Resolve source-linked IDs through Rust's O(1) Item-ID lookup.
         // For multilingual text search, retain the existing Rust predicate.
-        const universeIds=sourceUniverseSelection&&
-          sourceUniverseSelection!==COLLECTION_UNIVERSE_UNTAGGED
-          ?(sourceIndex?.itemsByUniverseTagId.get(Number(sourceUniverseSelection))??
-            sourceIndex?.itemsByUniverse.get(sourceUniverseSelection)??[]):null;
+        const universeIds=sourceUniverseSelection&&sourceIndex
+          ?collectionUniverseIds(sourceIndex,sourceUniverseSelection):null;
+        const universeIdSet=universeIds?new Set(universeIds):null;
         const acquisitionIds=acquisitionFilter&&acquisitionIndex
           ?acquisitionIndex.listItemIds(acquisitionFilter).map(Number):null;
         const activityIds=sourceActivityType===null?null:
@@ -477,17 +476,7 @@
               ?sourceIndex.rootsByItem.get(item.itemId)===sourceTopCategory
               :!!native&&collectionTopCategory(native.nativeType+':'+native.code)===sourceTopCategory;
           })())&&
-          (sourceUniverseSelection!==COLLECTION_UNIVERSE_UNTAGGED||
-            !(sourceIndex?.universeTagIdsByItem.size
-              ?sourceIndex.universeTagIdsByItem.has(item.itemId)
-              :sourceIndex?.universesByItem.has(item.itemId)))&&
-          (sourceUniverseSelection===null||
-            sourceUniverseSelection===COLLECTION_UNIVERSE_UNTAGGED||
-            (COLLECTION_UNIVERSE_TAG_BY_ID.has(Number(sourceUniverseSelection))
-              ?sourceIndex?.universeTagIdsByItem.get(item.itemId)
-                ?.includes(Number(sourceUniverseSelection))===true
-              :sourceIndex?.universesByItem.get(item.itemId)
-                ?.includes(sourceUniverseSelection)===true))&&
+          (!universeIdSet||universeIdSet.has(item.itemId))&&
           (sourceActivityType===null||
             sourceIndex?.activityTypesByItem.get(item.itemId)?.code===sourceActivityType)&&
           (sourceNativeSubtype===null||
@@ -912,7 +901,7 @@
     sourceChoices=viewAxis==='world'&&sourceChoices.worldContextTag
       ?{worldContextTag:sourceChoices.worldContextTag}:
       viewAxis==='universe'&&sourceUniverseSelection&&
-        sourceUniverseSelection!==COLLECTION_UNIVERSE_UNTAGGED
+        sourceUniverseSelection!==COLLECTION_UNIVERSE_UNTAGGED&&sourceUniverseSelection!==COLLECTION_UNIVERSE_UNRESOLVED
         &&!COLLECTION_UNIVERSE_TAG_BY_ID.has(Number(sourceUniverseSelection))
         ?{disneyUniverse:sourceUniverseSelection}:{};
     sourceFacetGroups=[];sourceGroupsCacheKey='';
@@ -954,7 +943,7 @@
     sourceChoices=viewAxis==='world'&&sourceChoices.worldContextTag
       ?{worldContextTag:sourceChoices.worldContextTag}:
       viewAxis==='universe'&&sourceUniverseSelection&&
-        sourceUniverseSelection!==COLLECTION_UNIVERSE_UNTAGGED
+        sourceUniverseSelection!==COLLECTION_UNIVERSE_UNTAGGED&&sourceUniverseSelection!==COLLECTION_UNIVERSE_UNRESOLVED
         &&!COLLECTION_UNIVERSE_TAG_BY_ID.has(Number(sourceUniverseSelection))
         ?{disneyUniverse:sourceUniverseSelection}:{};
     sourceFacetGroups=[];sourceGroupsCacheKey='';
