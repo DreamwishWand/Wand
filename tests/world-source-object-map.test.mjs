@@ -216,3 +216,41 @@ test('saved viewport retains partially visible footprints, overscan and selectio
   assert.equal(searchSavedObjects(m.objects,new Map(),'','all').length,5);
   assert.equal(savedShapesAt(m,1,35,35)[0].localOrdinal,3);
 });
+
+import {stageWorldGroupMove} from '../src/lib/world/saved-map-batch.ts';
+test('group translation applies final exclusive anchors atomically and one undo restores every member',()=>{
+ const p=(id,x,grid=1)=>({localOrdinal:id,localGridOrdinal:grid,x,y:0,itemId:'40100001',orientation:null,shapeKey:null,layer:'ground',surfaceCapable:false,name:'Road'});
+ const map={objects:[p(1,0),p(2,1),p(3,4),p(4,2,2)],shapes:{}};
+ const t=emptyWorldTimeline(),a=stageWorldGroupMove(map,t,[1,2],1,0,'');
+ assert.ok(a);
+ assert.equal(a.snapshots.length,2);
+ assert.deepEqual(projectWorldEdits(map,currentWorldEdits(a)).objects.map(o=>o.x),[1,2,4,2]);
+ assert.equal(currentWorldEdits(travelWorldTimeline(a,-1)).length,0);
+ assert.equal(stageWorldGroupMove(map,a,[1,2],2,0,''),null);
+ assert.equal(stageWorldGroupMove(map,t,[1,4],1,0,''),null);
+ assert.equal(stageWorldGroupMove(map,t,[1,1],1,0,''),null);
+ assert.equal(stageWorldGroupMove(map,t,[1,2],2147483648,0,''),null);
+ const locked={...map,objects:map.objects.map(o=>o.localOrdinal===2?{...o,editRestrictions:{move:'denied'}}:o)};
+ assert.equal(stageWorldGroupMove(locked,t,[1,2],1,0,''),null);
+ const back=stageWorldGroupMove(map,a,[1,2],-1,0,'');
+ assert.ok(back);assert.equal(currentWorldEdits(back).length,0);
+});
+
+import {groupTargets} from '../src/lib/world/saved-map-batch.ts';
+test('group rotation uses native cardinal direction and rotated bounding dimensions, preserves atomic undo',()=>{
+ const p=(localOrdinal,x,y)=>({localOrdinal,localGridOrdinal:1,x,y,orientation:'GridOrientation_Down',itemId:'100'});
+ const m=buildSavedShapeMap(fixture(),L,7,[p(1,2,3),p(2,8,6)]);
+ const a=m.objects[0],b=m.objects[1],s=m.shapes[a.shapeKey];
+ const targets=groupTargets(m,[a,b],0,0,1);
+ assert.ok(targets);
+ assert.deepEqual(targets.map(o=>o.orientation),['GridOrientation_Right','GridOrientation_Right']);
+ assert.deepEqual(targets.map(o=>[o.x,o.y]),[[5,3],[2,9]]);
+ assert.equal(m.shapes[targets[0].shapeKey].width,s.height);
+ const t=stageWorldGroupMove(m,emptyWorldTimeline(),[1,2],0,0,'',1);
+ assert.ok(t);assert.equal(currentWorldEdits(t).length,2);
+ assert.equal(currentWorldEdits(travelWorldTimeline(t,-1)).length,0);
+ const rotated=projectWorldEdits(m,currentWorldEdits(t));
+ const back=groupTargets(rotated,rotated.objects,0,0,3);
+ assert.deepEqual(back.map(o=>[o.x,o.y,o.orientation]),[[2,3,'GridOrientation_Down'],[8,6,'GridOrientation_Down']]);
+ assert.equal(groupTargets(m,[a,{...b,editRestrictions:{rotate:'denied'}}],0,0,1),null);
+});
