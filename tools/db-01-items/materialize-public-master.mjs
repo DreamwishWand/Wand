@@ -206,8 +206,11 @@ for(let bucket=0;bucket<256;bucket++){
     }
     // Decorate reference browse: only known decorating furniture families.
     // No placement/ownership/availability claim is made by this projection.
-    if(row.nativeCategory==='Furniture'&&[0,1,2,3,7,8,9].includes(nativeType.subtypeCode))
-      exploreRows.push({itemId:row.itemId,names:row.names,subtype:nativeType.subtypeCode,
+    if((row.nativeCategory==='Furniture'&&[0,1,2,3,7,8,9].includes(nativeType.subtypeCode))||
+       (row.nativeCategory==='Trimming'&&[0,1].includes(nativeType.subtypeCode)))
+      exploreRows.push({itemId:row.itemId,names:row.names,nativeCategory:row.nativeCategory,
+        subtype:nativeType.subtypeCode,
+        tags:browseTags.filter(t=>['color','furnitureStyle','furnitureKind'].includes(t[0])),
         universes:[...universeTagIds].sort((a,b)=>a-b)});
     tagRefs+=row.tags.length;
     candidates+=row.collectionSourceCandidates.length;

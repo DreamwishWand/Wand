@@ -2,7 +2,9 @@ export const STORAGE_KEY='dreamwishwand.explore.moodboards.v1';
 export interface ExploreItem {
   itemId:number;
   names:Readonly<Record<string,string|null>>;
+  nativeCategory:'Furniture'|'Trimming';
   subtype:number;
+  tags:readonly (readonly ['color'|'furnitureStyle'|'furnitureKind',string])[];
   universes:readonly number[];
 }
 export interface BoardGroup {id:string;name:string}
