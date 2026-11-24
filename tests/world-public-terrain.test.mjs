@@ -91,3 +91,24 @@ test('canonical DB01 restrictions are action-specific and never infer conditiona
  assert.equal(worldRotateEligible({...o,editRestrictions:{rotate:'denied'}}),false);
  assert.deepEqual(projectNativeEditRestrictions({CanMove:{},CanRotate:{Value:true,Conditions:{}}}),{rotate:'conditional'});
 });
+
+import {bindMainland,bindMainlandGrid,mainlandExtent,mainlandMapAnchor,mainlandLocalAnchor,mainlandTerrainHits} from '../src/lib/world/mainland-world-coordinates.ts';
+test('all eight original mainland GridScript paths resolve exact source origins and reversible anchor transforms',()=>{
+ const source=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(path,'utf8'))),grids=bindMainland(source.grids);
+ assert.equal(grids.length,8);const meadow=grids.find(g=>g.key==='Meadow');
+ assert.deepEqual(meadow.origin.position,[-61,6,-49]);
+ assert.deepEqual(mainlandMapAnchor(meadow,4,6),{x:-118,y:92});
+ assert.deepEqual(mainlandLocalAnchor(meadow,-118,92),{x:4,y:6});
+ const doubled=bindMainlandGrid({...meadow,factor:2});
+ assert.deepEqual(mainlandMapAnchor(doubled,9,7),{x:-117.5,y:94.5});
+ assert.deepEqual(mainlandLocalAnchor(doubled,-117.5,94.5),{x:9,y:7});
+ assert.equal(mainlandLocalAnchor(meadow,-117.5,94.5),null);
+ assert.equal(bindMainlandGrid({...meadow,gridDataPath:'GridData/unknown.json'}),null);
+ assert.equal(bindMainland(grids.slice(1)),null);
+ const extent=mainlandExtent(grids);
+ assert(grids.every(g=>g.bounds.x>=extent.x&&g.bounds.y>=extent.y&&g.bounds.x+g.bounds.w<=extent.x+extent.w&&g.bounds.y+g.bounds.h<=extent.y+extent.h));
+ const raster={sizeX:meadow.sizeX,sizeY:meadow.sizeY,nativeFloorValues:new Uint32Array(meadow.sizeX*meadow.sizeY)};
+ raster.nativeFloorValues[6*meadow.sizeX+4]=4;
+ const hit=mainlandTerrainHits([meadow],new Map([[meadow.key,raster]]),-117.75,91.75);assert.equal(hit[0].key,'Meadow');
+ assert.deepEqual(mainlandTerrainHits([meadow],new Map([[meadow.key,raster]]),-116.75,91.75),[]);
+});

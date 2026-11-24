@@ -5,6 +5,7 @@
   import {base} from '$app/paths';
   import {localSaveSession} from '$lib/ui/local-save-session';
   import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences';
+  import MainlandOverview from '$lib/world/MainlandOverview.svelte';
   import DecorationDesign from '$lib/world/DecorationDesign.svelte';
   import MediaMapGridOverlay from '$lib/world/MediaMapGridOverlay.svelte';
   import SavedGridSourceCandidates from '$lib/world/SavedGridSourceCandidates.svelte';
@@ -16,7 +17,8 @@
   type Grid=Omit<PublicTerrainGrid,'data'|'palette'|'counts'|'sha256'>&{scope:string};
   type Raster={sizeX:number;sizeY:number;nativeFloorValues:Uint32Array};
   let worker:Worker|null=null,compare:Worker|null=null;
-  let designMode=false,showSeparateTerrain=false,navigationOpen=true;
+  let designMode=false,showSeparateTerrain=false,navigationOpen=true,overviewOpen=false;
+  const overviewLabels={ja:'本島全体マップ',en:'Mainland map',fr:'Carte de la vallée',it:'Mappa della valle',de:'Karte des Tals','es-ES':'Mapa del valle','zh-CN':'主岛地图','pt-BR':'Mapa do vale'} as const;
   let layerState=defaultWorldLayers();
   function nextDesignRequest(){return ++request;}
   let request=0,indexRequest=0,terrainRequest=0,shapeRequest=0,compareRequest=0;
@@ -78,7 +80,7 @@
       sourceRefs:[{layoutId:grid.layoutId,gridDataPath:grid.gridDataPath,nativeGridId:grid.gridIdNative,nativeSizeX:grid.sizeX,nativeSizeY:grid.sizeY,tessellationFactor:grid.factor}]}))});
   }
   function openGrid(next:Grid){
-    key=next.key;worldScope=next.scope;showSeparateTerrain=false;raster=null;cell=null;loading=true;error='';
+    overviewOpen=false;key=next.key;worldScope=next.scope;showSeparateTerrain=false;raster=null;cell=null;loading=true;error='';
     terrainRequest=++request;
     worker?.postMessage({command:'terrain',requestId:terrainRequest,key:next.key});
     selectSaveGrid(next);
@@ -121,6 +123,7 @@
     <select aria-label="エリア" value={key} on:change={e=>{const next=regionGrids.find(g=>g.key===e.currentTarget.value);if(next)openGrid(next);}}>
       {#each regionGrids as grid (grid.key)}<option value={grid.key}>{label(grid)}</option>{/each}
     </select>
+    {#if worldScope==='Village04'&&regionGrids.length===8}<button type="button" aria-pressed={overviewOpen} aria-label={overviewLabels[locale]} title={overviewLabels[locale]} on:click={()=>overviewOpen=!overviewOpen}>{overviewLabels[locale]}</button>{/if}
     {#if !designMode&&shapeMap&&!terrainDisplayed}<button type="button" aria-pressed={showSeparateTerrain} on:click={()=>showSeparateTerrain=!showSeparateTerrain}>{showSeparateTerrain?'配置図':'地形図'}</button>{/if}
   </nav></div>
   <WorldShortcutHelp {locale} {designMode}/>
@@ -139,8 +142,9 @@
         onCompare={()=>openSaveSession($localSaveSession.file,grids)}/></div>
     </div>
   {/if}
-  <DecorationDesign bind:layerState active={designMode} grid={selected} {raster} {worker} {locale} nextRequest={nextDesignRequest}/>
+  <DecorationDesign bind:layerState active={designMode&&!overviewOpen} grid={selected} {raster} {worker} {locale} nextRequest={nextDesignRequest}/>
 
+  {#if overviewOpen&&worldScope==='Village04'}<MainlandOverview grids={regionGrids} {worker} {locale} nextRequest={nextDesignRequest} label={k=>english[k]??k} onChoose={k=>{const g=regionGrids.find(g=>g.key===k);if(g)openGrid(g);}} onClose={()=>overviewOpen=false}/>{/if}
 </section>
 <style>
   .world-workspace{height:calc(100dvh - var(--shell-height,60px));min-height:0;min-width:0;padding:4px;display:flex;flex-direction:column;gap:4px;background:var(--wand-bg);color:var(--wand-text);overflow:hidden}

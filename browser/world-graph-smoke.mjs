@@ -1045,6 +1045,12 @@ try{
   // No Save is needed to create a source-shaped design and retain it when
   // switching areas or returning to the Save editor.
   await publicWorld.getByRole('button',{name:'装飾設計',exact:true}).click();
+  await publicWorld.getByRole('button',{name:'本島全体マップ',exact:true}).click();
+  const overview=publicWorld.locator('.mainland-overview');
+  await overview.locator('.mainland-terrain').nth(7).waitFor({timeout:30000});
+  assert.equal(await overview.locator('.mainland-terrain').count(),8);
+  assert.equal(await overview.locator('.mainland-terrain[data-area="Meadow"]').getAttribute('transform'),'translate(-122 98) scale(1 -1)');
+  await overview.getByRole('button',{name:'閉じる',exact:true}).click();
   const design=publicWorld.locator('.design-workspace');
   await design.locator('.design-item').first().waitFor({timeout:30000});
   const frame=design.locator('.design-map-frame');
