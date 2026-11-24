@@ -15,6 +15,7 @@ const priorBases=new Map<number,string>([
  [40700246,'Biome2Fence'],[40700257,'BirdFeathersFence'],[40700268,'FairyLightFence'],
  [40700279,'LuxuriousWhiteFence'],[40700295,'ClassicFarmFence01'],[40700306,'HoneyLimestoneFence']
 ]);
+export function knownFenceBaseId(id:number){return priorBases.has(id);}
 const normalize=(s:string)=>s.toLowerCase().replace(/[^a-z0-9]/g,'');
 export function fenceBaseIdentity(id:number,nativeKey:unknown){
  const family=priorBases.get(id);

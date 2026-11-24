@@ -1,6 +1,6 @@
 /** Independent local design state. IDs are synthetic and never sent to a save writer. */
 import type {SavedShapeMap,SavedShapeObject} from './saved-shape-map.ts';
-import {fencePitch} from './fence-design.ts';
+import {fencePitch,knownFenceBaseId} from './fence-design.ts';
 import {roadPitch,type RoadPoint} from './road-design.ts';
 import {alignmentTargets,type MapAlignment} from './map-alignment.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
@@ -206,7 +206,7 @@ function planNetworkDesign(t:DesignTimeline,g:DesignItemGeometry,points:readonly
   // Reject intersections with off-lattice legacy anchor locations.
   for(let y=Math.floor(p.y/pitch)*pitch;y<p.y+pitch;y+=pitch)for(let x=Math.floor(p.x/pitch)*pitch;x<p.x+pitch;x+=pitch)blocked.add(x+':'+y);
  }
- if(kind==='fence'&&old.some(p=>exclusiveAnchorClass(String(p.itemId))==='fence'&&(p.orientation!==2||p.x%pitch!==0||p.y%pitch!==0)))return null;
+ if(kind==='fence'&&old.some(p=>exclusiveAnchorClass(String(p.itemId))==='fence'&&(!knownFenceBaseId(p.itemId)||p.orientation!==2||p.x%pitch!==0||p.y%pitch!==0)))return null;
  const cells=new Set<string>(),add:DesignPlacement[]=[],remove:number[]=[];
  for(const p of points){
   const k=p.x+':'+p.y;if(cells.has(k))continue;cells.add(k);

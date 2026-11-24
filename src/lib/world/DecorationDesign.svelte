@@ -65,8 +65,12 @@
  $: legacyFence=placements.some(p=>exclusiveAnchorClass(String(p.itemId))==='fence'&&!fencePitch(definitions.get(p.itemId),grid?.factor??0));
  $: roadPlan=roadPreview&&placing&&grid&&!(fenceDrawing&&legacyFence)?(fenceDrawing?planFenceDesign:planRoadDesign)(timeline,placing,roadPreview,grid.factor,width,height,roadTool==='erase'):null;
  $: fenceEdges=grid&&layerVisible(layerState,{layer:'fence'})?fenceDesignEdges(placements,definitions,grid.factor):[];
- $: previewFenceEdges=fenceDrawing&&roadPlan&&grid?fenceDesignEdges([...placements.filter(p=>!roadPlan!.remove.includes(p.id)),...roadPlan.add],definitions,grid.factor):null;
+ $: previewFenceEdges=fenceDrawing&&roadPlan&&grid?previewEdges(placements,roadPlan,definitions,grid.factor):null;
+ function previewEdges(old:readonly DesignPlacement[],plan:NonNullable<typeof roadPlan>,defs:ReadonlyMap<number,DesignItemGeometry>,factor:number){const remove=new Set(plan.remove);return fenceDesignEdges([...old.filter(p=>!remove.has(p.id)),...plan.add],defs,factor);}
  $: fenceDrawEdges=previewFenceEdges??fenceEdges;
+ $: originalFenceEdgeKeys=new Set(fenceEdges.map(e=>e.key));
+ $: previewFenceEdgeKeys=new Set(previewFenceEdges?.map(e=>e.key)??[]);
+ $: removedFenceEdges=previewFenceEdges?fenceEdges.filter(e=>!previewFenceEdgeKeys.has(e.key)):[];
  function commitNetwork(points:readonly RoadPoint[]){if(!placing||!grid||fenceDrawing&&legacyFence){save(null);return;}save((fenceDrawing?commitFenceDesign:commitRoadDesign)(timeline,placing,points,grid.factor,width,height,roadTool==='erase'));}
  function selectFenceNetwork(){if(!grid||selected===null)return;const ids=fenceComponent(placements,definitions,grid.factor,selected);if(!ids.length||ids.some(id=>{const p=placements.find(p=>p.id===id);return !p||!layerSelectable(layerState,definitions.get(p.itemId)!);}))return;groupIds=ids;selected=null;}
  function setRoadTool(tool:RoadTool){roadDrag=null;roadTool=tool;}
@@ -390,7 +394,7 @@
    {#if catalogLoading}<p role="status">家具を読み込み中…</p>{:else if catalogError}<p role="alert">{catalogError}</p><button type="button" on:click={()=>worker&&grid&&requestCatalog(grid,locale,worker)}>再読み込み</button>{/if}
    <div class="design-catalog" on:scroll={more}>
     {#each visibleCatalog as item (item.itemId)}
-     <button type="button" class="design-item" aria-pressed={placing?.itemId===item.itemId} on:click={()=>chooseItem(item.itemId)} title={item.name}>
+     <button type="button" class="design-item" data-item-id={item.itemId} aria-pressed={placing?.itemId===item.itemId} on:click={()=>chooseItem(item.itemId)} title={item.name}>
       {#if images.has(item.itemId)}<img src={images.get(item.itemId)} alt="" loading="lazy"/>{/if}
       <span>{item.name}</span>
      </button>
@@ -434,9 +438,6 @@
      <rect width={width} height={height} fill="#27313a"/>
      {#if terrainUrl}<image href={terrainUrl} width={width} height={height} preserveAspectRatio="none" style="image-rendering:pixelated"/>{/if}
      {#if width/camera.zoom<160&&height/camera.zoom<160}<rect width={width} height={height} fill="url(#design-grid)"/>{/if}
-     {#each fenceDrawEdges as edge (edge.key)}
-      {#if Math.max(edge.from.x,edge.to.x)>=viewport.x-1&&Math.min(edge.from.x,edge.to.x)<=viewport.x+viewport.w+1&&Math.max(edge.from.y,edge.to.y)>=viewport.y-1&&Math.min(edge.from.y,edge.to.y)<=viewport.y+viewport.h+1}<path class="design-fence-edge" d={'M'+edge.from.x+' '+edge.from.y+'L'+edge.to.x+' '+edge.to.y} stroke={previewFenceEdges?'#4bddcd':'#c1b3a4'} stroke-width={Math.max(.25,edge.pitch*.28)} stroke-linecap="round" pointer-events="none"/>{/if}
-     {/each}
      {#each visible as o (o.localOrdinal)}
       {@const shape=o.shapeKey?map?.shapes[o.shapeKey]:null}
       {#if shape}
@@ -447,6 +448,10 @@
        </g>
       {/if}
      {/each}
+     {#each fenceDrawEdges as edge (edge.key)}
+      {#if Math.max(edge.from.x,edge.to.x)>=viewport.x-1&&Math.min(edge.from.x,edge.to.x)<=viewport.x+viewport.w+1&&Math.max(edge.from.y,edge.to.y)>=viewport.y-1&&Math.min(edge.from.y,edge.to.y)<=viewport.y+viewport.h+1}<path class="design-fence-edge" d={'M'+edge.from.x+' '+edge.from.y+'L'+edge.to.x+' '+edge.to.y} stroke={previewFenceEdges&&!originalFenceEdgeKeys.has(edge.key)?'#4bddcd':selectedIds.has(edge.a)&&selectedIds.has(edge.b)?'#fff':'#e5d2b1'} stroke-width={Math.max(.25,edge.pitch*.28)} stroke-linecap="round" pointer-events="none"/>{/if}
+     {/each}
+     {#each removedFenceEdges as edge (edge.key)}<path class="design-fence-removed-edge" d={'M'+edge.from.x+' '+edge.from.y+'L'+edge.to.x+' '+edge.to.y} stroke="#ef5350" stroke-width={Math.max(.25,edge.pitch*.28)} stroke-dasharray="3 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/each}
      {#if symmetry}
       {#if symmetry.mode==='vertical'}<path class="symmetry-axis" d={'M'+symmetry.x2/2+' 0V'+height} stroke="#f5cf70" stroke-dasharray="6 4" stroke-width="1.5" vector-effect="non-scaling-stroke" pointer-events="none"/>
       {:else if symmetry.mode==='horizontal'}<path class="symmetry-axis" d={'M0 '+symmetry.y2/2+'H'+width} stroke="#f5cf70" stroke-dasharray="6 4" stroke-width="1.5" vector-effect="non-scaling-stroke" pointer-events="none"/>
