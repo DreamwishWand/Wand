@@ -59,16 +59,16 @@
 </div>
 
 <style>
-  .overview {display:grid;gap:10px;min-width:0;max-width:100%;overflow:hidden;margin:14px 0;padding:16px;background:#15121f;border:1px solid #ffffff24;border-radius:12px}
-  .overview-head {display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;color:#eee7f6;font-size:14px}
-  .overview-head span {color:#b9abc7;font-size:12px}
+  .overview {display:grid;gap:10px;min-width:0;max-width:100%;overflow:hidden;margin:14px 0;padding:16px;background:var(--wand-surface);border:1px solid var(--wand-subtle-line);border-radius:12px}
+  .overview-head {display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;color:var(--wand-text);font-size:14px}
+  .overview-head span {color:var(--wand-muted);font-size:12px}
   .terrain-map {padding:0;border:1px solid #ffffff35;border-radius:6px;background:#221d2b;overflow:hidden;width:100%;max-width:740px;min-width:0;box-sizing:border-box;margin:0 auto;display:block;line-height:0}
   .terrain-map:not([aria-disabled='true']) {cursor:crosshair}
   .terrain-map[aria-disabled='true'] {cursor:default;opacity:1}
   .terrain-map:focus-visible {outline:2px solid white;outline-offset:3px}
   canvas {display:block;width:100%;height:auto;image-rendering:pixelated}
-  .counts {display:flex;gap:7px 15px;flex-wrap:wrap;color:#cfbeda;font-size:11px;max-height:92px;overflow:auto}
-  .counts strong {font-weight:600;color:#fff}
-  .overview-meta {min-height:18px;font-size:12px;color:#d7c7e8;margin:0}
-  .warning {font-size:12px;color:#ac9cbd;line-height:1.5;margin:0}
+  .counts {display:flex;gap:7px 15px;flex-wrap:wrap;color:var(--wand-muted);font-size:11px;max-height:92px;overflow:auto}
+  .counts strong {font-weight:600;color:var(--wand-muted)}
+  .overview-meta {min-height:18px;font-size:12px;color:var(--wand-muted);margin:0}
+  .warning {font-size:12px;color:var(--wand-muted);line-height:1.5;margin:0}
 </style>
