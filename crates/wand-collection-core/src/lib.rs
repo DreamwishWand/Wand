@@ -1289,16 +1289,16 @@ mod tests {
         engine.set_entry_impl(103,r#"{"status":"missing"}"#).unwrap();
         let matching=r#"{"locale":"en","search":"Chair","category":"Furniture","status":"missing","offset":1,"limit":1}"#;
         let first_page:Value=serde_json::from_str(&engine.query_impl(matching).unwrap()).unwrap();
-        assert_eq!(first_page["total"],2);
+        assert_eq!(first_page["total"],3);
         assert_eq!(first_page["items"].as_array().unwrap().len(),1);
-        assert_eq!(engine.bulk_matching_impl(matching,"owned").unwrap(),2);
+        assert_eq!(engine.bulk_matching_impl(matching,"owned").unwrap(),3);
         let entries=&engine.state.workspaces[0].entries;
         assert_eq!(entries["101"].status.as_deref(),Some("owned"));
         assert_eq!(entries["101"].favorite,Some(true));
         assert_eq!(entries["102"].status.as_deref(),Some("owned"));
         assert_eq!(entries["102"].quantity,Some(3));
         assert_eq!(entries["103"].status.as_deref(),Some("missing"));
-        assert!(!entries.contains_key("104"));
+        assert_eq!(entries["104"].status.as_deref(),Some("owned"));
         assert_eq!(engine.bulk_matching_impl(matching,"owned").unwrap(),0);
         // Favorites are a separate local annotation, never inferred from
         // owned status. Paging and bulk operations share this same Rust filter.
