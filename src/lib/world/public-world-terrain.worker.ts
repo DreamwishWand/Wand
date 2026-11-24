@@ -1,3 +1,9 @@
+import {createSourceGeometryCache} from './source-object-map.ts';
+import {sourceMapLayer} from './source-map-layers.ts';
+import {sourceEditRestrictions,nativeActionBlocked} from './native-edit-restrictions.ts';
+import type {DesignCatalogItem,DesignItemGeometry} from './design-layout.ts';
+import type {PublicCompleteItemMaster} from '../items/public-item-master.ts';
+import type {WandLanguage} from '../ui/preferences.ts';
 import init,{decode_public_terrain} from './wasm/pkg/wand_world_core.js';
 import wasmUrl from './wasm/pkg/wand_world_core_bg.wasm?url';
 import {openPublicItemMaster} from '../items/public-item-master.ts';
@@ -25,10 +31,14 @@ async function loadBundle(region:PublicTerrainRegion){
  return pending;
 }
 let basePath='';
+let master:Promise<PublicCompleteItemMaster>|null=null;
+function getMaster(){
+ return master??=(openPublicItemMaster(basePath,fetch,{scope:'complete',gameVersion:'1.26.2'}).catch(e=>{master=null;throw e;}));
+}
 let geometry:Promise<ReturnType<typeof publicShapeDefinitions>>|null=null;
 async function loadGeometry(){
   if(!geometry)geometry=(async()=>{
-    const db=await openPublicItemMaster(basePath,fetch,{scope:'complete',gameVersion:'1.26.2'});
+    const db=await getMaster();
     const [area,categories,names,restrictions]=await Promise.all([db.getFieldRows('source.GridAreaData'),db.getFieldRows('nativeCategory'),db.getFieldRows('nativeKey'),db.getFieldRows('source.GridEditRestriction')]);
     return publicShapeDefinitions(area,categories,names,restrictions);
   })().catch(e=>{geometry=null;throw e;});
@@ -59,6 +69,31 @@ scope.onmessage=async({data})=>{
       const values=decode_public_terrain(bytes,Uint32Array.from(full.palette),Uint32Array.from(full.counts),grid.sizeX,grid.sizeY,full.sha256);
       scope.postMessage({kind:'terrain',requestId:id,key:grid.key,sizeX:grid.sizeX,sizeY:grid.sizeY,nativeFloorValues:values},[values.buffer]);
       return;
+    }
+    if(data.command==='design-catalog'){
+      const locale=data.locale as WandLanguage;
+      const [definitions,names]=await Promise.all([loadGeometry(),(await getMaster()).getBrowseNames(locale)]);
+      const localized=new Map(names),items:DesignCatalogItem[]=[];
+      for(const [key,d] of definitions){
+        const itemId=Number(key),footprint=d.footprint as {acceptedFloorTypesFlag?:number}|null;
+        if(d.nativeType!=='Furniture'||!footprint||nativeActionBlocked(sourceEditRestrictions(d),'select'))continue;
+        const layer=sourceMapLayer('Furniture',itemId,footprint.acceptedFloorTypesFlag??null);
+        if(layer==='other')continue;
+        items.push({itemId,name:localized.get(itemId)??String(d.nativeName??'Item '+itemId),layer});
+      }
+      items.sort((a,b)=>a.name.localeCompare(b.name,locale)||a.itemId-b.itemId);
+      scope.postMessage({kind:'design-catalog',requestId:id,key:grid.key,items});return;
+    }
+    if(data.command==='design-shape'){
+      if(!Number.isSafeInteger(data.itemId)||data.itemId<1)throw Error('item');
+      const definitions=await loadGeometry(),definition=definitions.get(String(data.itemId));
+      if(definition?.nativeType!=='Furniture')throw Error('item type');
+      const source=publicShapeSource(grid,definitions),cache=createSourceGeometryCache(source,grid.factor);
+      const item=cache.resolve(data.itemId,8);
+      if(!item.shapeKey||item.layer==='other'||nativeActionBlocked(item.editRestrictions,'select'))throw Error('shape');
+      for(const code of [0,4,12])cache.resolve(data.itemId,code);
+      const result:DesignItemGeometry={itemId:data.itemId,name:item.name,layer:item.layer,surfaceCapable:item.surfaceCapable,editRestrictions:item.editRestrictions,shapes:cache.shapes};
+      scope.postMessage({kind:'design-shape',requestId:id,key:grid.key,result});return;
     }
     if(data.command==='shapes'){
       const points=parseSavedShapePoints(data.points);
