@@ -1372,7 +1372,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
   const furnitureDisplayRule=source.target.platform==='Steam'&&version==='1.26.2'&&
     source.sourceIl2cppDumpSha256==='0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08'&&
     source.sourceFilesSha256.Furniture==='cde1b6e4dd37085e829c2e4548b89091bbf8d543cee92e6031b2f5bddc794196';
-  if(furnitureDisplayRule)check(rows.filter(r=>r.nativeCategory==='Furniture').length===6188&&
+  if(furnitureDisplayRule)check(rows.filter(r=>r.nativeCategory==='Furniture').length===6746&&
     rows.filter(r=>r.nativeCategory==='Furniture'&&[0,3].includes(r.itemType.subtypeCode)).length===5288,
     'STORE_FURNITURE_ORIGINAL_CENSUS');
   console.log('DB01_FRIENDSHIP_NEW_CLASSIFICATION '+JSON.stringify({
