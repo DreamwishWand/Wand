@@ -403,6 +403,41 @@ try{
   assert.equal(await page.locator('.summary-strip,.source-pill,.collection-head,.personal-bar,.collection-source-details,.saved-store-preview,.empty-inspector').count(),0);
   assert.equal(await page.getByRole('button',{name:'Collectionバックアップ出力'}).count(),1);
   assert.equal(await page.getByRole('button',{name:'Collectionバックアップ復元'}).count(),1);
+  // Verify the *service content*, not merely the root attribute or theme icon.
+  const assertCollectionThemes=async(target,checks)=>{
+    const savedTheme=await target.evaluate(()=>document.documentElement.dataset.wandTheme);
+    const buttons=target.locator('.shell-theme-option');
+    for(const [i,theme] of ['dawn','coral','night'].entries()){
+      await buttons.nth(i).click();
+      await target.waitForFunction(theme=>document.documentElement.dataset.wandTheme===theme,theme);
+      for(const [selector,property,token] of checks){
+        const element=target.locator(selector).first();
+        await element.waitFor({state:'attached'});
+        const colors=await element.evaluate((node,{property,token})=>{
+          const probe=document.createElement('div');
+          probe.style.setProperty(property,'var('+token+')');
+          document.body.append(probe);
+          const expected=getComputedStyle(probe).getPropertyValue(property);
+          const actual=getComputedStyle(node).getPropertyValue(property);
+          probe.remove();
+          return {actual,expected};
+        },{property,token});
+        assert.equal(colors.actual,colors.expected,theme+' '+selector+' '+property+' follows '+token);
+      }
+    }
+    const restore=['dawn','coral','night'].indexOf(savedTheme);
+    if(restore>=0)await buttons.nth(restore).click();
+  };
+  await assertCollectionThemes(page,[
+    ['.collection-workspace','background-color','--wand-bg'],
+    ['.workspace-top','background-color','--wand-header'],
+    ['.collection-scope-toolbar','background-color','--wand-header'],
+    ['.search-box','background-color','--wand-control'],
+    ['.search-box input','color','--wand-text'],
+    ['.facet-card','background-color','--wand-surface'],
+    ['.facet-card strong','color','--wand-text'],
+    ['.collection-axis-switch button.chosen','background-color','--wand-selected'],
+  ]);
   const firstCategory=await page.locator('.facet-card').first().boundingBox();
   assert.ok(firstCategory&&firstCategory.y<240,'categories must begin in the first viewport');
   const parents=page.locator('.collection-top-category');
@@ -565,6 +600,15 @@ try{
   await db01Details.locator('summary').click();
   assert.match(await db01Details.innerText(),/Bedroom/);
   assert.match(await db01Details.innerText(),/Glass Shoe/);
+  await assertCollectionThemes(deep,[
+    ['.item-inspector','background-color','--wand-header'],
+    ['.item-inspector h2','color','--wand-text'],
+    ['.inspector-meta','color','--wand-muted'],
+    ['.ownership-actions button','color','--wand-text'],
+    ['.collection-item-master','color','--wand-text'],
+    ['.inspector-art','background-color','--wand-surface-raised'],
+  ]);
+
   assert.equal(await deep.getByRole('searchbox',{name:/8言語/}).inputValue(),'40005160');
   assert.equal(await deep.getByRole('button',{name:'アイテムへのリンクをコピー'}).count(),1);
   assert.equal(new URL(deep.url()).searchParams.get('item'),'40005160');
