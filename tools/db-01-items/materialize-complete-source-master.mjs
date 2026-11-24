@@ -871,7 +871,25 @@ function introductionHistory(project,e,version,source,rows){
           v.introducedAfterSourceScanSha256!==v.introducedSourceScanSha256&&
           (v.contentReleaseId===null||typeof v.contentReleaseId==='string'&&/^[A-Za-z0-9_.-]{1,128}$/.test(v.contentReleaseId))),
         'INTRODUCTION_HISTORY_ROW');
-      prior.set(id,v);
+      const releaseId=x=>typeof x==='string'&&/^[A-Za-z0-9_.-]{1,128}$/.test(x);
+      check((v.sourceReleaseId==null||releaseId(v.sourceReleaseId))&&
+        (v.sourceReleaseKind==null||v.sourceReleaseId!=null&&['free_update','paid_dlc','hotfix','other'].includes(v.sourceReleaseKind)),
+        'INTRODUCTION_SOURCE_CONTEXT');
+      const hasReviewed=v.contentAssignmentSha256!=null;
+      if(hasReviewed){
+        check(SHA.test(v.contentAssignmentSha256)&&typeof v.contentReleaseEvidenceSha256==='string'&&
+          SHA.test(v.contentReleaseEvidenceSha256)&&releaseId(v.contentReleaseId)&&
+          (v.contentReleaseKind==='free_update'&&/^version\.\d+$/.test(v.contentReleaseId)&&v.contentDlcType===null||
+           v.contentReleaseKind==='paid_dlc'&&v.contentReleaseId.startsWith('dlc.')&&['expansion','adventure_pack'].includes(v.contentDlcType)),
+          'INTRODUCTION_CONTENT_ASSIGNMENT');
+      }else{
+        check(v.contentReleaseKind==null&&v.contentDlcType==null&&v.contentReleaseEvidenceSha256==null,
+          'INTRODUCTION_CONTENT_EVIDENCE_REQUIRED');
+      }
+      // Legacy history files used a transition-wide ID. It cannot be promoted
+      // to a verified per-item DLC or free-update classification.
+      prior.set(id,{...v,sourceReleaseId:v.sourceReleaseId??(!hasReviewed?v.contentReleaseId:null)??null,
+        contentReleaseId:hasReviewed?v.contentReleaseId:null});
     }
     check(rows.every(r=>prior.has(r.itemId)),'INTRODUCTION_HISTORY_ID_CENSUS');
   }
@@ -890,7 +908,13 @@ function introductionHistory(project,e,version,source,rows){
       introducedAfterVersion:intro?.introducedAfterVersion??null,
       introducedAfterSourceScanSha256:intro?.introducedAfterSourceScanSha256??null,
       introducedSourceScanSha256:intro?.introducedSourceScanSha256??null,
+      sourceReleaseId:intro?.sourceReleaseId??null,
+      sourceReleaseKind:intro?.sourceReleaseKind??null,
       contentReleaseId:intro?.contentReleaseId??null,
+      contentReleaseKind:intro?.contentReleaseKind??null,
+      contentDlcType:intro?.contentDlcType??null,
+      contentReleaseEvidenceSha256:intro?.contentReleaseEvidenceSha256??null,
+      contentAssignmentSha256:intro?.contentAssignmentSha256??null,
       observationEvidence:historical&&observed==='1.26.1'?'sha_identical_earlier_source':
         old&&observed===old.firstObservedVersion?'pinned_native_history':'current_source_only'
     }];

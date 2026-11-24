@@ -74,7 +74,53 @@ def decode(raw, category):
         rows.append([item_id, key.decode("utf8"), digest(raw[offset:offset+length]), offset, length])
     return rows
 
-def update(root, scan, scan_sha, previous=None, previous_sha=None, content_release=None, bootstrap_archive=None):
+# Release context describes a source transition, never every item's DLC
+# ownership or release attribution. The two known boundaries are Owner-confirmed.
+RELEASE_CONTEXTS = {
+    ("1.25.3", "1.26.1"): ("dlc.the-keepsake-sea", "paid_dlc"),
+    ("1.26.1", "1.26.2"): ("hotfix.1.26.2", "hotfix"),
+}
+RELEASE_ID = re.compile(r"[A-Za-z0-9_.-]{1,128}\Z")
+def release_context(before, after, explicit_id=None, explicit_kind=None):
+    known=RELEASE_CONTEXTS.get((before,after))
+    if known:
+        check(explicit_id in (None,known[0]) and explicit_kind in (None,known[1]),
+              "RELEASE_CONTEXT_CONFLICT")
+        return known
+    if explicit_id is None and explicit_kind is None:
+        return None,None
+    check(isinstance(explicit_id,str) and RELEASE_ID.fullmatch(explicit_id) and
+          explicit_kind in ("free_update","paid_dlc","hotfix","other"),"RELEASE_CONTEXT")
+    return explicit_id,explicit_kind
+
+def apply_content_assignments(history, active, scan_sha, assignments, assignments_sha):
+    # Owner-reviewed, per-ID evidence. A hash pins the reviewed input; it
+    # does not by itself prove the semantic attribution of a game definition.
+    doc=pinned_json(assignments,assignments_sha)
+    check(doc.get("schema")=="wand.db01.reviewed-content-attribution@1" and
+          doc.get("sourceScanSha256")==scan_sha and isinstance(doc.get("items"),list),
+          "CONTENT_ASSIGNMENT_SOURCE")
+    seen=set()
+    for row in doc["items"]:
+        item_id=row.get("itemId")
+        release_id=row.get("contentReleaseId")
+        kind=row.get("contentReleaseKind")
+        dlc_type=row.get("contentDlcType")
+        evidence=row.get("evidenceSha256")
+        check(type(item_id) is int and item_id in active and item_id not in seen and
+              isinstance(release_id,str) and RELEASE_ID.fullmatch(release_id) and
+              (kind=="free_update" and dlc_type is None and re.fullmatch(r"version\.\d+",release_id)
+               or kind=="paid_dlc" and dlc_type in ("expansion","adventure_pack") and release_id.startswith("dlc.")) and
+              isinstance(evidence,str) and SHA.fullmatch(evidence),"CONTENT_ASSIGNMENT_ROW")
+        entry=history[item_id]
+        check(entry.get("introducedVersion") is not None,"CONTENT_ASSIGNMENT_INTRODUCTION_UNKNOWN")
+        check(entry.get("contentReleaseId") in (None,release_id),"CONTENT_ASSIGNMENT_CONFLICT")
+        entry.update(contentReleaseId=release_id,contentReleaseKind=kind,contentDlcType=dlc_type,
+                     contentReleaseEvidenceSha256=evidence,contentAssignmentSha256=assignments_sha)
+        seen.add(item_id)
+
+def update(root, scan, scan_sha, previous=None, previous_sha=None, content_release=None,
+           bootstrap_archive=None, source_release_kind=None, assignments=None, assignments_sha=None):
     root = Path(root).resolve(strict=True)
     version, version_sha, sources = parse_scan(root, scan, scan_sha)
     old = pinned_json(previous, previous_sha) if previous else None
@@ -97,9 +143,21 @@ def update(root, scan, scan_sha, previous=None, previous_sha=None, content_relea
               "BOOTSTRAP_SOURCE")
         earlier_presence={r["itemId"] for r in master["items"] if r["nativeCategory"]!="Condition"}
         check(len(earlier_presence)==33627,"BOOTSTRAP_CENSUS")
+    check(bool(assignments)==bool(assignments_sha),"CONTENT_ASSIGNMENT_PIN_REQUIRED")
+    source_release_id,source_kind=release_context(old["gameVersion"] if old else None,version,
+                                                 content_release,source_release_kind)
     prior_files = old["sources"] if old else {}
     prior_active = {r[0]: (cat,r) for cat, entry in prior_files.items() for r in entry["frames"]}
     history = {int(k):dict(v) for k,v in (old["history"].items() if old else [])}
+    # Legacy ledgers used a transition-wide ID as an item attribution.
+    # Preserve it as context only, unless a reviewed per-ID proof exists.
+    for entry in history.values():
+        if entry.get("contentReleaseId") and not entry.get("contentAssignmentSha256"):
+            entry.setdefault("sourceReleaseId",entry["contentReleaseId"])
+            entry["contentReleaseId"]=None
+        for field in ("sourceReleaseId","sourceReleaseKind","contentReleaseId","contentReleaseKind",
+                      "contentDlcType","contentReleaseEvidenceSha256","contentAssignmentSha256"):
+            entry.setdefault(field,None)
     current, active = {}, {}
     decoded, reused = [], []
     for category, source in sorted(sources.items()):
@@ -131,7 +189,10 @@ def update(root, scan, scan_sha, previous=None, previous_sha=None, content_relea
                      "introducedAfterVersion":old["gameVersion"] if old else None,
                      "introducedAfterSourceScanSha256":old["sourceScanSha256"] if old else None,
                      "introducedSourceScanSha256":scan_sha if old else None,
-                     "contentReleaseId":content_release if old else None}
+                     "sourceReleaseId":source_release_id if old else None,
+                     "sourceReleaseKind":source_kind if old else None,
+                     "contentReleaseId":None,"contentReleaseKind":None,"contentDlcType":None,
+                     "contentReleaseEvidenceSha256":None,"contentAssignmentSha256":None}
             history[item_id] = entry
             added.append(item_id)
         elif previous_row is None:
@@ -143,7 +204,10 @@ def update(root, scan, scan_sha, previous=None, previous_sha=None, content_relea
     missing = sorted(set(prior_active) - set(active))
     for item_id in set(history)-set(active):
         history[item_id]["presentInCurrentSource"] = False
+    if assignments:
+        apply_content_assignments(history,active,scan_sha,assignments,assignments_sha)
     return {"schema":SCHEMA,"platform":"Steam","complete":True,"gameVersion":version,
+            "sourceReleaseId":source_release_id,"sourceReleaseKind":source_kind,
             "versionFileSha256":version_sha,"sourceScanSha256":scan_sha,
             "previousLedgerSha256":previous_sha if old else None,
             "sourceFilesSha256":{cat:entry["sha256"] for cat,entry in current.items()},
@@ -159,7 +223,9 @@ def public_history(ledger):
             "sourceScanSha256":ledger["sourceScanSha256"],
             "items":[[int(k),{field:v[field] for field in (
                 "firstObservedVersion","introducedVersion","introducedAfterVersion",
-                "introducedAfterSourceScanSha256","introducedSourceScanSha256","contentReleaseId")}]
+                "introducedAfterSourceScanSha256","introducedSourceScanSha256","sourceReleaseId","sourceReleaseKind",
+                "contentReleaseId","contentReleaseKind","contentDlcType","contentReleaseEvidenceSha256",
+                "contentAssignmentSha256")}]
                 for k,v in ledger["history"].items() if v["presentInCurrentSource"]]}
 
 def write_atomic(path, value):
@@ -185,22 +251,28 @@ def main():
     p.add_argument("--scan-sha256",required=True)
     p.add_argument("--previous",type=Path)
     p.add_argument("--previous-sha256")
-    p.add_argument("--content-release-id")
+    p.add_argument("--source-release-id","--content-release-id",dest="source_release_id",
+                   help="Source transition context only; never per-item attribution")
+    p.add_argument("--source-release-kind",choices=("free_update","paid_dlc","hotfix","other"))
+    p.add_argument("--content-assignments",type=Path)
+    p.add_argument("--content-assignments-sha256")
     p.add_argument("--bootstrap-1262-archive",type=Path,help="Concatenated exact verified complete-source .json.gz archive; only initial 1.26.2 inventory")
     p.add_argument("--ledger",type=Path,required=True)
     p.add_argument("--public-history",type=Path,required=True)
     a = p.parse_args()
     check(bool(a.previous)==bool(a.previous_sha256),"PREVIOUS_PIN_REQUIRED")
-    check(not a.content_release_id or (a.previous and re.fullmatch(r"[A-Za-z0-9_.-]{1,128}",a.content_release_id)),
-          "CONTENT_RELEASE_ID")
+    check(not a.source_release_id or a.previous,"RELEASE_CONTEXT_REQUIRES_BASELINE")
+    check(bool(a.content_assignments)==bool(a.content_assignments_sha256),"CONTENT_ASSIGNMENT_PIN_REQUIRED")
     root=a.game.resolve()
     for path in (a.ledger,a.public_history):
         resolved=path.resolve()
         check(not resolved.is_relative_to(root) and resolved!=a.scan.resolve()
               and (not a.previous or resolved!=a.previous.resolve())
-              and (not a.bootstrap_1262_archive or resolved!=a.bootstrap_1262_archive.resolve()),"OUTPUT_OVERLAPS_INPUT")
+              and (not a.bootstrap_1262_archive or resolved!=a.bootstrap_1262_archive.resolve())
+              and (not a.content_assignments or resolved!=a.content_assignments.resolve()),"OUTPUT_OVERLAPS_INPUT")
     check(a.ledger.resolve()!=a.public_history.resolve(),"OUTPUT_COLLISION")
-    ledger=update(a.game,a.scan,a.scan_sha256,a.previous,a.previous_sha256,a.content_release_id,a.bootstrap_1262_archive)
+    ledger=update(a.game,a.scan,a.scan_sha256,a.previous,a.previous_sha256,a.source_release_id,a.bootstrap_1262_archive,a.source_release_kind,
+                  a.content_assignments,a.content_assignments_sha256)
     print(json.dumps({"ledgerSha256":write_atomic(a.ledger,ledger),
                       "publicHistorySha256":write_atomic(a.public_history,public_history(ledger)),
                       "decodedCategories":ledger["delta"]["decodedCategories"],

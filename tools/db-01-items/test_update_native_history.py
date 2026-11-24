@@ -51,7 +51,7 @@ class NativeHistoryTests(unittest.TestCase):
             ledger=root/"old.json";pin=h.write_atomic(ledger,old)
             two=fixture(root/"two","1.24.0","b",frame(0,101,"A",2)+frame(1,103,"D"),frame(0,201,"C"))
             with patch.object(h,"decode",wraps=h.decode) as decode:
-                new=h.update(*two,ledger,pin,"content-example")
+                new=h.update(*two,ledger,pin,"dlc.content-example",source_release_kind="paid_dlc")
                 self.assertEqual(decode.call_count,1)
             self.assertEqual(new["delta"]["newlyObservedIds"],[103])
             self.assertEqual(new["delta"]["changedFrameIds"],[101])
@@ -59,7 +59,8 @@ class NativeHistoryTests(unittest.TestCase):
             self.assertFalse(new["history"]["102"]["presentInCurrentSource"])
             self.assertIsNone(new["history"]["101"]["introducedVersion"])
             self.assertEqual(new["history"]["103"]["introducedVersion"],"1.24.0")
-            self.assertEqual(new["history"]["103"]["contentReleaseId"],"content-example")
+            self.assertEqual(new["history"]["103"]["sourceReleaseId"],"dlc.content-example")
+            self.assertIsNone(new["history"]["103"]["contentReleaseId"])
             self.assertNotEqual(new["history"]["103"]["introducedAfterSourceScanSha256"],
                                 new["history"]["103"]["introducedSourceScanSha256"])
             ledger2=root/"new.json";pin2=h.write_atomic(ledger2,new)
@@ -68,9 +69,50 @@ class NativeHistoryTests(unittest.TestCase):
             self.assertEqual(final["delta"]["reappearedIds"],[102])
             self.assertIsNone(final["history"]["102"]["introducedVersion"])
             self.assertEqual(final["history"]["103"]["introducedVersion"],"1.24.0")
-            self.assertEqual(final["history"]["103"]["contentReleaseId"],"content-example")
+            self.assertEqual(final["history"]["103"]["sourceReleaseId"],"dlc.content-example")
+            self.assertIsNone(final["history"]["103"]["contentReleaseId"])
             self.assertFalse(final["gameWideRemovalVerified"])
             self.assertEqual([r[0] for r in h.public_history(final)["items"]],[101,102,103,201])
+
+    def test_release_boundaries_and_reviewed_mixed_content(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            one=fixture(root/"one","1.25.3","a",frame(0,101,"Old"),b"")
+            ledger=root/"old.json";pin=h.write_atomic(ledger,h.update(*one))
+            two=fixture(root/"two","1.26.1","b",frame(0,101,"Old")+frame(1,102,"DLC")+frame(2,103,"Unknown"),b"")
+            reviewed=root/"assign.json"
+            assignment_pin=h.write_atomic(reviewed,{"schema":"wand.db01.reviewed-content-attribution@1",
+                "sourceScanSha256":two[2],"items":[{"itemId":102,
+                "contentReleaseId":"dlc.the-keepsake-sea","contentReleaseKind":"paid_dlc",
+                "contentDlcType":"expansion","evidenceSha256":"a"*64}]})
+            new=h.update(*two,ledger,pin,assignments=reviewed,assignments_sha=assignment_pin)
+            self.assertEqual(new["history"]["102"]["contentReleaseKind"],"paid_dlc")
+            self.assertEqual(new["history"]["102"]["contentDlcType"],"expansion")
+            self.assertEqual(new["history"]["103"]["sourceReleaseId"],"dlc.the-keepsake-sea")
+            self.assertIsNone(new["history"]["103"]["contentReleaseId"])
+            ledger2=root/"new.json";pin2=h.write_atomic(ledger2,new)
+            three=fixture(root/"three","1.26.2","c",frame(0,101,"Old")+frame(1,102,"DLC")+frame(2,103,"Unknown")+frame(3,104,"Silent"),b"")
+            final=h.update(*three,ledger2,pin2)
+            self.assertEqual(final["delta"]["newlyObservedIds"],[104])
+            self.assertEqual(final["history"]["104"]["sourceReleaseKind"],"hotfix")
+            self.assertIsNone(final["history"]["104"]["contentReleaseId"])
+            self.assertEqual(final["history"]["102"]["contentReleaseId"],"dlc.the-keepsake-sea")
+            with self.assertRaisesRegex(ValueError,"RELEASE_CONTEXT_CONFLICT"):
+                h.update(*three,ledger2,pin2,"version.26",source_release_kind="free_update")
+            with self.assertRaisesRegex(ValueError,"CONTENT_ASSIGNMENT_SOURCE"):
+                h.update(*three,ledger2,pin2,assignments=reviewed,assignments_sha=assignment_pin)
+            ledger3=root/"final.json";pin3=h.write_atomic(ledger3,final)
+            four=fixture(root/"four","1.26.3","d",frame(0,101,"Old")+frame(1,102,"DLC")+frame(2,103,"Unknown")+frame(3,104,"Silent")+frame(4,105,"Free"),b"")
+            free=root/"free.json"
+            freepin=h.write_atomic(free,{"schema":"wand.db01.reviewed-content-attribution@1",
+                "sourceScanSha256":four[2],"items":[{"itemId":105,"contentReleaseId":"version.26",
+                "contentReleaseKind":"free_update","contentDlcType":None,"evidenceSha256":"b"*64}]})
+            result=h.update(*four,ledger3,pin3,"version.26",source_release_kind="free_update",
+                            assignments=free,assignments_sha=freepin)
+            self.assertEqual(result["history"]["105"]["contentReleaseKind"],"free_update")
+            self.assertEqual(result["history"]["102"]["contentReleaseKind"],"paid_dlc")
+            self.assertIsNone(result["history"]["104"]["contentReleaseId"])
+            self.assertEqual(dict(h.public_history(result)["items"])[105]["contentReleaseId"],"version.26")
 
     def test_source_tamper_and_coverage_loss_fail(self):
         with tempfile.TemporaryDirectory() as tmp:
