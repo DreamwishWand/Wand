@@ -16,15 +16,14 @@
   let boards=$state.raw<BoardState>(emptyBoards());
   let storageRaw:string|null=null;
   let ready=$state(false),loading=$state(true),failed=$state(false),storageFailed=$state(false);
-  let boardsOpen=$state(false),searchOpen=$state(false),searchInput=$state<HTMLInputElement>(),search=$state(''),favorites=$state(false),limit=$state(100);
+  let boardsOpen=$state(false),searchOpen=$state(false),searchInput=$state<HTMLInputElement>(),search=$state(''),favorites=$state(false);
   let newName=$state(''),rename=$state(''),groupName=$state(''),selected=$state<ExploreItem|null>(null);
   const t=(ja:string,en:string)=>locale==='ja'?ja:en;
   const facets=FACETS;
-  let filters=$state<ExploreFilters>(emptyFilters()),filtersOpen=$state(false),focused=$state<string|null>(null),focusedSeries=$state<string|null>(null),allGrid=$state(false),groupLimit=$state(8);
+  let filters=$state<ExploreFilters>(emptyFilters()),filtersOpen=$state(false),focused=$state<string|null>(null),focusedSeries=$state<string|null>(null),allGrid=$state(false);
   let releases=$state.raw<ReleaseGroup[]>([]);
   let variantChoices=$state<Record<string,number>>({}),variantReview=$state<ExploreItem[]>([]);
   let sourceUniverses=$state.raw<{tagId:number;key:string;names:Record<string,string|null>}[]>([]);
-  let shelfLimits=$state<Record<string,number>>({}),seriesLimits=$state<Record<string,number>>({});
   let selectionMode=$state(false),selectedIds=$state<number[]>([]);
   const nameOf=(i:ExploreItem)=>i.names[locale]??i.names.en??t('名称未確認','Unnamed item');
   const byId=$derived(new Map(items.map(i=>[i.itemId,i])));
@@ -76,24 +75,12 @@
   function pickVariant(d:DesignTile,i:ExploreItem){variantChoices={...variantChoices,[d.key]:i.itemId};showReview(i,d.items);}
 
   const filterCount=$derived(filters.families.length+filters.universes.length+facets.reduce((n,k)=>n+filters.tags[k].length,0));
-  function resetBrowse(){limit=100;groupLimit=8;shelfLimits={};seriesLimits={};focused=null;focusedSeries=null;}
+  function resetBrowse(){focused=null;focusedSeries=null;}
   function toggleFamily(key:Family){filters.families=filters.families.includes(key)?filters.families.filter(x=>x!==key):[...filters.families,key];resetBrowse();}
   function toggleUniverse(key:string){filters.universes=filters.universes.includes(key)?filters.universes.filter(x=>x!==key):[...filters.universes,key];resetBrowse();}
   function toggleFacet(key:Facet,value:string){const list=filters.tags[key];filters.tags[key]=list.includes(value)?list.filter(x=>x!==value):[...list,value];resetBrowse();}
-  function scrollShelf(e:Event,key:string,total:number){
-    const el=e.currentTarget as HTMLElement;
-    const count=shelfLimits[key]??32;
-    if(count<total&&el.scrollLeft+el.clientWidth>=el.scrollWidth-320)shelfLimits={...shelfLimits,[key]:count+32};
-  }
-  function stepShelf(e:MouseEvent,key:string,total:number){
-    const el=(e.currentTarget as HTMLElement).closest('.shelf-row,.shelf')?.querySelector('.shelf-items');
-    if(!el)return;
-    shelfLimits={...shelfLimits,[key]:Math.min(total,(shelfLimits[key]??32)+32)};
-    el.scrollBy({left:Math.max(180,el.clientWidth*.85),behavior:'smooth'});
-  }
-  function showUniverse(key:string,series:string|null=null){focused=key;focusedSeries=series;allGrid=false;limit=100;}
-  function goBack(){if(focusedSeries!==null){focusedSeries=null;limit=100;}else{focused=null;allGrid=false;}}
-  function moreSeries(node:HTMLElement,key:string){const observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)){seriesLimits={...seriesLimits,[key]:(seriesLimits[key]??12)+12};}},{rootMargin:'350px'});observer.observe(node);return {destroy:()=>observer.disconnect()};}
+  function showUniverse(key:string,series:string|null=null){focused=key;focusedSeries=series;allGrid=false;}
+  function goBack(){if(focusedSeries!==null){focusedSeries=null;}else{focused=null;allGrid=false;}}
   function chooseItem(id:number){if(active)toggle(id);else boardsOpen=true;}
   function save(next:BoardState){if(!ready||storageFailed)return;try{
     if(localStorage.getItem(STORAGE_KEY)!==storageRaw)throw Error('CONFLICT');
@@ -115,7 +102,6 @@
   function removeGroup(id:string){if(active&&confirm(t('グループを削除してアイテムを未分類に戻しますか？','Delete group and move its items to Unsorted?')))save(editBoard(boards,active.id,b=>({...b,groups:b.groups.filter(g=>g.id!==id),entries:b.entries.map(e=>e.groupId===id?{...e,groupId:null}:e)})));}
   function moveItem(id:number,groupId:string){if(active)save(editBoard(boards,active.id,b=>({...b,entries:b.entries.map(e=>e.itemId===id?{...e,groupId:groupId||null}:e)})));}
   function toggle(id:number){if(active)save(toggleItem(boards,active.id,id));}
-  function more(node:HTMLElement,groups=false){const observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)){if(groups)groupLimit+=8;else limit+=100;}},{rootMargin:'300px'});observer.observe(node);return {destroy:()=>observer.disconnect()};}
   onMount(()=>{
     const unwatch=watchWandLanguage(v=>locale=v);
     try{storageRaw=localStorage.getItem(STORAGE_KEY);boards=readBoards(storageRaw);ready=true;}catch{storageFailed=true;}
@@ -138,7 +124,7 @@
     <button class="icon-button" aria-label={t('検索','Search')} title={t('検索','Search')} aria-expanded={searchOpen} onclick={toggleSearch}><WandIcon name="search" size={20}/></button>
     <button class="icon-button" aria-label={t('フィルター','Filters')} title={t('フィルター','Filters')} aria-expanded={filtersOpen} class:activeTab={filterCount>0} onclick={()=>filtersOpen=!filtersOpen}><WandIcon name="filter" size={20}/>{#if filterCount}<small>{filterCount}</small>{/if}</button>
     <button class="icon-button" aria-label={t('お気に入り','Favorites')} title={t('お気に入り','Favorites')} aria-pressed={favorites} onclick={()=>{favorites=!favorites;resetBrowse();}}><WandIcon name="star" size={20}/></button>
-    <button class="icon-button" aria-label={t('全件表示','All items')} title={t('全件表示','All items')} aria-pressed={allGrid} onclick={()=>{allGrid=!allGrid;focused=null;focusedSeries=null;limit=100;}}><WandIcon name="grid" size={20}/></button>
+    <button class="icon-button" aria-label={t('全件表示','All items')} title={t('全件表示','All items')} aria-pressed={allGrid} onclick={()=>{allGrid=!allGrid;focused=null;focusedSeries=null;}}><WandIcon name="grid" size={20}/></button>
     <button class="icon-button" aria-label={t('ムードボード','Moodboards')} title={active?.name??'Moodboards'} aria-expanded={boardsOpen} class:activeTab={boardsOpen} onclick={()=>boardsOpen=!boardsOpen}><WandIcon name="collection" size={20}/>{#if active}<span class="active-name">{active.name}</span>{/if}</button>
   </header>
   {#if searchOpen}<input class="search" bind:this={searchInput} type="search" placeholder={t('家具を検索','Search decorations')} aria-label={t('家具を検索','Search decorations')} bind:value={search} oninput={resetBrowse}/>{/if}
@@ -164,23 +150,21 @@
         {#if focused!==null&&isLargeUniverse(focused)&&focusedSeries===null}
           {@render seriesList(focused,focusedGroups)}
         {:else}
-          <div class="tiles">{#each gridDesigns.slice(0,limit) as design (design.key)}{@render designTile(design)}{/each}</div>
-          {#if gridDesigns.length>limit}<div use:more class="sentinel"></div>{/if}
+          <div class="tiles">{#each gridDesigns as design (design.key)}{@render designTile(design)}{/each}</div>
         {/if}
       {:else}
-        {#each shelves.slice(0,groupLimit) as [key,list] (key)}
+        {#each shelves as [key,list] (key)}
           <section class="shelf" class:large-universe={isLargeUniverse(key)}>
-            <div class="shelf-heading"><button class="universe-heading" onclick={()=>showUniverse(key)}>{universeName(key)} <span aria-hidden="true">›</span></button><span class="spacer"></span>{#if !isLargeUniverse(key)}<button class="icon-button" aria-label={t('次へ','Next')} onclick={e=>stepShelf(e,key,list.length)}><WandIcon name="arrow" size={17}/></button>{/if}</div>
+            <div class="shelf-heading"><button class="universe-heading" onclick={()=>showUniverse(key)}>{universeName(key)} <span aria-hidden="true">›</span></button></div>
             {#if isLargeUniverse(key)}
               {@render seriesList(key,visibleSeries.get(key)??[])}
             {:else}
-              <div class="shelf-items" onscroll={e=>scrollShelf(e,key,list.length)}>
-                {#each list.slice(0,shelfLimits[key]??32) as item (item.itemId)}{@render itemTile(item)}{/each}
+              <div class="tiles shelf-items">
+                {#each list as item (item.itemId)}{@render itemTile(item)}{/each}
               </div>
             {/if}
           </section>
         {/each}
-        {#if shelves.length>groupLimit}<div use:more={true} class="sentinel"></div>{/if}
       {/if}
       {#if filtered.length===0}<p>{t('該当するアイテムがありません','No matching items')}</p>{/if}
     {/if}
@@ -220,20 +204,16 @@
   {/if}
   </div>
   {#snippet seriesList(universe:string,groups:SeriesShelf[])}
-    {#each groups.slice(0,seriesLimits[universe]??12) as group (group.key)}
+    {#each groups as group (group.key)}
       {@render seriesRow(universe,group)}
     {/each}
-    {#if groups.length>(seriesLimits[universe]??12)}
-      {#key seriesLimits[universe]??12}<div use:moreSeries={universe} class="sentinel"></div>{/key}
-    {/if}
   {/snippet}
   {#snippet seriesRow(universe:string,group:SeriesShelf)}
-    {@const shelfKey=universe+':'+group.key}
     {@const designs=designTiles(group.items)}
     <section class="shelf-row" data-series-kind={group.kind}>
-      <div class="shelf-heading"><button class="category-heading" onclick={()=>showUniverse(universe,group.key)}>{seriesName(group)} <span aria-hidden="true">›</span></button><span class="spacer"></span>{#if designs.length>1}<button class="icon-button" aria-label={t('次へ','Next')} onclick={e=>stepShelf(e,shelfKey,designs.length)}><WandIcon name="arrow" size={17}/></button>{/if}</div>
-      <div class="shelf-items" onscroll={e=>scrollShelf(e,shelfKey,designs.length)}>
-        {#each designs.slice(0,shelfLimits[shelfKey]??32) as design (design.key)}{@render designTile(design)}{/each}
+      <div class="shelf-heading"><button class="category-heading" onclick={()=>showUniverse(universe,group.key)}>{seriesName(group)} <span aria-hidden="true">›</span></button></div>
+      <div class="tiles shelf-items">
+        {#each designs as design (design.key)}{@render designTile(design)}{/each}
       </div>
     </section>
   {/snippet}
@@ -286,7 +266,7 @@
   .board-card{display:grid;gap:6px;overflow-wrap:anywhere}.cover{display:grid;grid-template-columns:repeat(2,1fr);min-height:94px;grid-auto-rows:47px}
   .cover span{min-height:0}.note{display:grid;gap:4px;margin:10px 0}.note textarea{min-height:70px;resize:vertical}
   .review{position:fixed;right:12px;bottom:12px;z-index:40;padding:12px;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:12px;max-width:min(310px,95vw);box-shadow:0 8px 30px #0008}
-  .large{height:170px}.sentinel{height:1px}
+  .large{height:170px}
   .toolbar{gap:4px;border-bottom:1px solid var(--wand-line);padding-bottom:8px;margin-bottom:10px}
   .spacer{flex:1}.icon-button{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-width:36px;min-height:36px;padding:5px;border:0;background:transparent;color:var(--wand-text);text-decoration:none;cursor:pointer}
   .icon-button:hover,.icon-button[aria-pressed=true],.icon-button[aria-expanded=true],.icon-button.activeTab{background:var(--wand-pill-bg);color:var(--wand-accent-strong)}
@@ -303,8 +283,11 @@
   .shelf{margin:0 0 14px;min-width:0}.shelf-heading{display:flex;align-items:center;gap:5px;margin-bottom:4px}
   .universe-heading{background:none;border:0;padding:4px 0;font-size:1rem;font-weight:650;cursor:pointer;text-align:left}
   .universe-heading span{color:var(--wand-muted);margin-left:4px}
-  .shelf-items{display:grid;grid-auto-flow:column;grid-auto-columns:clamp(80px,8vw,118px);gap:6px;overflow-x:auto;overscroll-behavior-x:contain;padding:3px 2px 7px;scrollbar-width:thin}
-  .catalog .tiles{grid-template-columns:repeat(auto-fill,minmax(94px,1fr));gap:6px}
+  .shelf-items{padding:3px 0 7px;min-width:0}
+  .catalog .tiles{grid-template-columns:repeat(auto-fill,minmax(min(100%,94px),1fr));gap:6px}
+  /* Off-screen sections keep their place in the single page. No item limits,
+     independent scroll containers, or mandatory expansion clicks. */
+  .shelf-items{content-visibility:auto;contain-intrinsic-size:auto 400px}
   .catalog-tile{position:relative;min-width:0;aspect-ratio:1;border:1px solid var(--wand-line);border-radius:8px;background:var(--wand-visual-bg);overflow:hidden}
   .catalog-tile.inBoard{border-color:var(--wand-accent);box-shadow:inset 0 0 0 1px var(--wand-accent)}
   .catalog-tile .item{width:100%;height:100%;padding:6px}.catalog-tile .art{height:100%;min-height:0}
@@ -317,5 +300,5 @@
   .visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
   @media(pointer:coarse){.tile-favorite{opacity:1}}
   @media(max-width:780px){.boards{top:auto;bottom:0;left:0;right:0;width:100%;box-sizing:border-box;max-height:58dvh;border-left:0;border-top:1px solid var(--wand-line);border-radius:12px 12px 0 0}.workspace.withBoards{padding-bottom:58dvh}.active-name{display:none}}
-  @media(max-width:600px){.decorate{padding:8px}.tiles{grid-template-columns:repeat(auto-fill,minmax(90px,1fr))}.art{height:70px}.shelf-items{grid-auto-columns:86px}.toolbar h1{margin:0}.toolbar .icon-button{min-width:32px}}
+  @media(max-width:600px){.decorate{padding:8px}.tiles{grid-template-columns:repeat(auto-fill,minmax(90px,1fr))}.art{height:70px}.catalog .tiles{grid-template-columns:repeat(auto-fill,minmax(min(100%,78px),1fr))}.toolbar h1{margin:0}.toolbar .icon-button{min-width:32px}}
 </style>
