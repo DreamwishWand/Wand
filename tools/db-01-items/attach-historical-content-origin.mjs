@@ -98,7 +98,7 @@ export function attachHistoricalContentOrigin(project,source,history){
       [...candidates.values()].filter(x=>x.has(free)).length===18&&
       [...candidates.values()].every(x=>x.size===1),'CANDIDATE_CENSUS');
   }
-  const additional=attachHistoricalContentRelations(project,source,history,fresh,add,packageIds);
+  const additional=attachHistoricalContentRelations(project,source,history,fresh,add,packageIds,d.iapProjection.sha256);
   if(current){
     check([...candidates.values()].filter(x=>x.has(cohort)).length===1058&&
       [...candidates.values()].filter(x=>x.has(free)).length===18&&
