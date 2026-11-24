@@ -12,6 +12,7 @@ import {attachHistoricalContentOrigin} from './attach-historical-content-origin.
 import {loadAcquisitionColumns} from './acquisition-columns.mjs';
 import {loadStallCharacterRelations} from './stall-character-relations.mjs';
 import {loadBuildingSkinRelations} from './building-skin-relations.mjs';
+import {loadProtoDbAcquisition} from './protodb-acquisition.mjs';
 
 const hash=b=>createHash('sha256').update(b).digest('hex');
 const SHA=/^[0-9a-f]{64}$/;
@@ -1013,7 +1014,7 @@ function introductionHistory(project,e,version,source,rows){
     }];
   }));
 }
-function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations){
+function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition){
   const columns=new Map();
   const split=new Set(['names','artwork','itemType','nativeProperties','sourceAttributes']);
   const add=(field,id,value)=>{
@@ -1049,6 +1050,15 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     if(association?.candidate)add('browse.universeAssociation',row.itemId,{...association.candidate,applied:association.applied});
     const browseUniverses=association?.applied?[association.candidate.universeTagId]:row.universeTagIds;
     if(browseUniverses.length)add('browse.universeTagIds',row.itemId,browseUniverses);
+    const rewardLinks=protoAcquisition.byItem.get(row.itemId)??[];
+    const ownerRewards=protoAcquisition.byOwner.get(row.itemId);
+    const extraSources=[...rewardLinks,...[protoAcquisition.shopDisplay.get(row.itemId),protoAcquisition.preDlc.get(row.itemId),protoAcquisition.designUnlock.get(row.itemId)].filter(Boolean)];
+    if(extraSources.length)add('acquisition.additionalSources',row.itemId,extraSources);
+    if(ownerRewards?.length)add('acquisition.individualFriendshipRewards',row.itemId,ownerRewards);
+    const effectiveCategories=acquisition?.summary.get(row.itemId)?.categories??[];
+    const friendship=rewardLinks.some(link=>link.amount!==null);
+    const effective=friendship&&!effectiveCategories.includes('ordinary_gameplay')?['ordinary_gameplay',...effectiveCategories]:effectiveCategories;
+    if(effective.length)add('acquisition.effectiveCategories',row.itemId,effective);
     if(acquisition){
       const summary=acquisition.summary.get(row.itemId);
       const relations=acquisition.relations.get(row.itemId);
@@ -1087,7 +1097,7 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     const blocks=[];
     // Frequently inspected acquisition details use smaller blocks; category
     // columns retain the compact bulk-filter layout.
-    const narrow=field==='acquisition.summary'||field==='acquisition.sourceRelations';
+    const narrow=['acquisition.summary','acquisition.sourceRelations','acquisition.additionalSources','acquisition.individualFriendshipRewards'].includes(field);
     const rowLimit=narrow?256:4096,byteLimit=narrow?128*1024:1024*1024;
     // Bound bytes as well as row count; large mission step arrays stay atomic.
     for(let start=0;start<entries.length;){
@@ -1339,6 +1349,10 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
     ['browseItemCount','browseItems']])f[key]=f[count].length;
   exploreThemeCensus(explore,byId);
   const acquisition=loadAcquisitionColumns(project,version,e.acquisitionProjection,rows);
+  const protoAcquisition=loadProtoDbAcquisition(project,source,byId);
+  console.log('DB01_FRIENDSHIP_NEW_CLASSIFICATION '+JSON.stringify({
+    additionalOrdinaryGameplay:[...protoAcquisition.byItem].filter(([id,links])=>links.some(l=>l.amount!==null)&&!acquisition?.summary.get(id)?.categories.includes('ordinary_gameplay')).length,
+    previouslyUnclassified:[...protoAcquisition.byItem].filter(([id,links])=>links.some(l=>l.amount!==null)&&!acquisition?.summary.get(id)?.classified).length}));
   const index={schema:'wand.item-master.release@1',scope:'complete',version:e.release,target:source.target,
     ...(acquisition?{acquisitionProjection:acquisition.metadata}:{}),
     count:e.count,bucketCount:256,archiveSha256:e.archiveSha256,
@@ -1399,7 +1413,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
         check(index.assets[path].bytes<=16*1024*1024,'LINKED_TEXT_BLOCK_TOO_LARGE');
       }
     }
-    writeFieldColumns(rows,e.release,write,index.assets,attachHistoricalContentOrigin(project,source,introductionHistory(project,e,version,source,rows)),acquisition,stallRelations,skinRelations);
+    writeFieldColumns(rows,e.release,write,index.assets,attachHistoricalContentOrigin(project,source,introductionHistory(project,e,version,source,rows)),acquisition,stallRelations,skinRelations,protoAcquisition);
     write('index.json',index,index.count);
     installProjectionStage(stage,destination);
     console.log('DB-01 projection reuse:',JSON.stringify(stats));
