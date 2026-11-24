@@ -580,7 +580,7 @@ export async function openPublicItemMaster(
       (release.referenceAttributesSha256===undefined||typeof release.referenceAttributesSha256==='string'&&
         SHA.test(release.referenceAttributesSha256)&&isObject(release.referenceAttributeCoverage)&&
         isObject(release.referenceAttributeCoverage.fields)&&
-        Object.values(release.referenceAttributeCoverage.fields).every(n=>typeof n==='number'&&Number.isSafeInteger(n)&&n>=0&&n<=release.count)&&
+        Object.values(release.referenceAttributeCoverage.fields).every(n=>typeof n==='number'&&Number.isSafeInteger(n)&&n>=0&&n<=Number(release.count))&&
         release.referenceAttributeCoverage.runtimeSemanticsVerified===false),'INVALID_REFERENCE_ATTRIBUTE_RELEASE');
     assert((!selected||release.localizationSha256===selected.complete?.localization?.sha256)&&
       (release.localizationSha256===undefined||
