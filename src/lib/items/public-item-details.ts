@@ -67,7 +67,33 @@ export interface PublicItemSelectionOptions {
   readonly acquisition?: boolean;
   readonly sourceRelations?: boolean;
 }
+/** Exact configured source facts, not proof of a current grant or stock.
+ * Source-specific friendship rewards are distinct from default rewards. */
+export type AdditionalItemSource = Readonly<{
+  kind:'character_friendship_reward'|'pet_friendship_reward';
+  sourceId:number;
+  level:number;
+  rewardStage:'Tier1Reward';
+  amount:number|null;
+  sourceRecord:'Friendship'|'PetFriendship';
+  sourceRecordIndex:number;
+  sourceProtoDbSha256:string;
+  currentAvailabilityVerified:false;
+}> | Readonly<{
+  kind:'configured_store_display'|'pre_dlc_store_list_member'|'design_challenge_catalog_unlock';
+  sourceId:string;
+  sourceRecordIndex:number;
+  sourceField:string;
+  sourcePosition?:number;
+  sourceProtoDbSha256:string;
+  currentAvailabilityVerified:false;
+}>;
 export interface PublicSelectedItem extends ItemFieldProjection {
+  /** Current source-derived categories including individual friendship rewards.
+   * Legacy acquisition.categories retains its independently pinned census. */
+  readonly effectiveCategories?:readonly GameNativeItemCategory[];
+  /** New exact source facts when sourceRelations is requested. */
+  readonly additionalSources?:readonly AdditionalItemSource[];
   readonly acquisition?: Readonly<Db01ItemAcquisition>;
   readonly sourceRelations?: Readonly<Db01ItemSourceRecord>;
   readonly acquisitionStatus: 'current'|'pending_update';
@@ -267,8 +293,16 @@ export async function openPublicItemDetails(
     async listItemIdsByAcquisition(category?: GameNativeItemCategory) {
       const existing = idLists.get(category);
       if (existing) return existing;
-      const ids = Object.freeze((await sidecar()).listItemIds(category)
-        .map(id => Number(id)));
+      // Normal current service filtering uses the complete canonical source
+      // projection (including individual friendship rewards). Explicit old
+      // snapshot callers retain the original compatibility index.
+      const reader=options.gameVersion==='current'?await complete():null;
+      const available=reader&&(await reader.getFieldCatalog()).some(f=>f.field==='acquisition.effectiveCategories');
+      const ids=available&&reader
+        ?Object.freeze(category
+          ?[...await reader.findItemIdsByField('acquisition.effectiveCategories',{kind:'contains',value:category})]
+          :(await reader.getFieldRows('acquisition.effectiveCategories')).map(([id])=>id))
+        :Object.freeze((await sidecar()).listItemIds(category).map(id=>Number(id)));
       idLists.set(category, ids);
       return ids;
     },
@@ -288,6 +322,11 @@ export async function openPublicItemDetails(
         const selectedFields:string[]=[];
         if(selection.acquisition&&publication?.summaryCount)selectedFields.push('acquisition.summary');
         if(selection.sourceRelations&&publication?.relationCount)selectedFields.push('acquisition.sourceRelations');
+        if(selection.acquisition||selection.sourceRelations){
+          const catalog=new Set((await reader.getFieldCatalog()).map(f=>f.field));
+          if(selection.acquisition&&catalog.has('acquisition.effectiveCategories'))selectedFields.push('acquisition.effectiveCategories');
+          if(selection.sourceRelations&&catalog.has('acquisition.additionalSources'))selectedFields.push('acquisition.additionalSources');
+        }
         const knownIds=[...new Set(projected.flatMap(row=>row?[row.itemId]:[]))];
         const metadata=selectedFields.length
           ?await reader.getItemFields(knownIds,selectedFields):[];
@@ -314,8 +353,15 @@ export async function openPublicItemDetails(
             acquisition.categories.length===sourceRelations.categories.length&&
             acquisition.categories.every((value,i)=>value===sourceRelations.categories[i]),
             'ACQUISITION_SOURCE_CATEGORY_MISMATCH');
+          const effectiveCategories=selection.acquisition&&selectedFields.includes('acquisition.effectiveCategories')
+            ?(values?.['acquisition.effectiveCategories'] as unknown as readonly GameNativeItemCategory[]|undefined)??Object.freeze([])
+            :undefined;
+          const additionalSources=selection.sourceRelations&&selectedFields.includes('acquisition.additionalSources')
+            ?(values?.['acquisition.additionalSources'] as unknown as readonly AdditionalItemSource[]|undefined)??Object.freeze([])
+            :undefined;
           return Object.freeze({...row,...(acquisition?{acquisition}:{}),
-            ...(sourceRelations?{sourceRelations}:{}),acquisitionStatus:status,currentAvailabilityVerified:false as const});
+            ...(sourceRelations?{sourceRelations}:{}),...(effectiveCategories?{effectiveCategories}:{}),
+            ...(additionalSources?{additionalSources}:{}),acquisitionStatus:status,currentAvailabilityVerified:false as const});
         }));
       }
       const [origins,index]=await Promise.all([
