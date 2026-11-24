@@ -11,6 +11,7 @@ import {createProjectionWriter,installProjectionStage} from './reuse-public-proj
 import {attachHistoricalContentOrigin} from './attach-historical-content-origin.mjs';
 import {loadAcquisitionColumns} from './acquisition-columns.mjs';
 import {loadStallCharacterRelations} from './stall-character-relations.mjs';
+import {loadBuildingSkinRelations} from './building-skin-relations.mjs';
 
 const hash=b=>createHash('sha256').update(b).digest('hex');
 const SHA=/^[0-9a-f]{64}$/;
@@ -1012,7 +1013,7 @@ function introductionHistory(project,e,version,source,rows){
     }];
   }));
 }
-function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations){
+function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations){
   const columns=new Map();
   const split=new Set(['names','artwork','itemType','nativeProperties','sourceAttributes']);
   const add=(field,id,value)=>{
@@ -1038,9 +1039,15 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       add('building.stallUnlockWithItemId',row.itemId,stall.unlock);
       if(stall.associations.length)add('building.characterAssociations',row.itemId,stall.associations);
       if(stall.relatedUniverseTagIds.length)add('building.relatedCharacterUniverseTagIds',row.itemId,stall.relatedUniverseTagIds);
-      if(stall.candidate)add('browse.universeAssociation',row.itemId,{...stall.candidate,applied:stall.applied});
     }
-    const browseUniverses=stall?.applied?[stall.candidate.universeTagId]:row.universeTagIds;
+    const skin=skinRelations.get(row.itemId);
+    if(skin){
+      add('building.skinTargetSelectors',row.itemId,skin.relation);
+      if(skin.relatedBuildingUniverseTagIds.length)add('building.skinTargetUniverseTagIds',row.itemId,skin.relatedBuildingUniverseTagIds);
+    }
+    const association=stall??skin;
+    if(association?.candidate)add('browse.universeAssociation',row.itemId,{...association.candidate,applied:association.applied});
+    const browseUniverses=association?.applied?[association.candidate.universeTagId]:row.universeTagIds;
     if(browseUniverses.length)add('browse.universeTagIds',row.itemId,browseUniverses);
     if(acquisition){
       const summary=acquisition.summary.get(row.itemId);
@@ -1232,6 +1239,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
     gameRuntimeMembershipVerified:false};
   const explore=[];
   const stallRelations=loadStallCharacterRelations(project,source,byId);
+  const skinRelations=loadBuildingSkinRelations(project,source,byId);
   const names={};
   for(const l of LOCALES)names[l]=[];
   for(const r of rows){
@@ -1283,11 +1291,12 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
        (type.name==='Building'&&[0,1,2,3,4,5].includes(type.subtypeCode))||
        (type.name==='Skin'&&[1,2,3,6].includes(type.subtypeCode))||
        (type.name==='Environment'&&(r.iconGuid||Object.values(r.names).some(Boolean)))){
+      const association=stallRelations.get(i)??skinRelations.get(i);
       explore.push({itemId:i,names:r.names,nativeCategory:type.name,subtype:type.subtypeCode,
         tags:tags.filter(t=>['color','furnitureStyle','furnitureKind'].includes(t[0])),
-        universes:stallRelations.get(i)?.applied?[stallRelations.get(i).candidate.universeTagId]:r.universeTagIds,
-        universeStatus:stallRelations.get(i)?.applied?'source_linked':r.universeSourceStatus,
-        ...(stallRelations.get(i)?.applied?{universeAssociation:stallRelations.get(i).candidate,
+        universes:association?.applied?[association.candidate.universeTagId]:r.universeTagIds,
+        universeStatus:association?.applied?'source_linked':r.universeSourceStatus,
+        ...(association?.applied?{universeAssociation:association.candidate,
           originalUniverseStatus:r.universeSourceStatus}:{}),iconGuid:r.iconGuid,
         sourceSetItemId:r.sourceSetItemId,
         sourceSetNames:r.sourceSetItemId===null?{}:byId.get(r.sourceSetItemId)?.names??{},
@@ -1390,7 +1399,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
         check(index.assets[path].bytes<=16*1024*1024,'LINKED_TEXT_BLOCK_TOO_LARGE');
       }
     }
-    writeFieldColumns(rows,e.release,write,index.assets,attachHistoricalContentOrigin(project,source,introductionHistory(project,e,version,source,rows)),acquisition,stallRelations);
+    writeFieldColumns(rows,e.release,write,index.assets,attachHistoricalContentOrigin(project,source,introductionHistory(project,e,version,source,rows)),acquisition,stallRelations,skinRelations);
     write('index.json',index,index.count);
     installProjectionStage(stage,destination);
     console.log('DB-01 projection reuse:',JSON.stringify(stats));
