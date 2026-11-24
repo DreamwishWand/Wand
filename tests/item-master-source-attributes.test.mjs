@@ -40,3 +40,21 @@ test('complete details expose the same typed attributes without an extra dataset
   assert(item.definition.craftingRecipeItemIds.includes(2050300095));
   assert.equal(requests.filter(url=>url.includes('source-attributes')).length,0);
 });
+
+test('native supplement preserves original nullable stride values and offers nested field reads',async()=>{
+  const requests=[];
+  const db=await openPublicItemMaster('',async url=>{requests.push(url);return fetcher(url)},{scope:'complete',gameVersion:'current'});
+  assert.equal(db.release.nativeSupplementCoverage.strideOverrideCount,257);
+  assert.equal(db.release.nativeSupplementCoverage.runtimeSemanticsVerified,false);
+  const selected=await db.getItemFields([40004525,40005145,40600142,40600317,40005160],['source.GridAreaData.StrideOverride']);
+  assert.deepEqual(selected.map(r=>r.values['source.GridAreaData.StrideOverride']),[1,2,3,4,undefined]);
+  assert(!requests.some(url=>url.includes('/id/')||url.includes('/fields/source.GridAreaData/')));
+  const ids=await db.findItemIdsByField('source.GridAreaData.StrideOverride',{kind:'present'});
+  assert.equal(ids.length,257);
+  const item=await db.getItem(40005145);
+  assert.equal(item.sourceAttributes.GridAreaData.StrideOverride,2);
+  assert(!item.sourceAttributes.GridAreaData._unresolvedFields?.includes(5));
+  const grid=await db.getItemFields([40005160],['source.GridAreaData.SizeX','source.GridAreaData.Layers']);
+  assert.equal(grid[0].values['source.GridAreaData.SizeX'],1);
+  assert.deepEqual(grid[0].values['source.GridAreaData.Layers'],[68]);
+});
