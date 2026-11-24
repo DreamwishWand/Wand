@@ -1,5 +1,7 @@
 <script lang="ts">
   import {onDestroy} from 'svelte';
+  import {defaultMapCamera,maxMapZoom,zoomMapCamera,panMapCamera,mapCameraViewBox,wheelMapCamera,createMapPanGesture} from './map-camera.ts';
+
   import {parseMapCalibration,findMapBinding,matchesMapImage,imagePixelToGridCell,
     imagePixelToUnboundedGridCell,type MapCalibration,type GridMapBinding,type GridMapIdentity}
     from './media-map-calibration.ts';
@@ -30,13 +32,15 @@
   let selectionLayer:MapSelectionLayer='all';
   let selectedObjectId:number|null=null;
   let hits:SourceMapObject[]=[];
-  let zoom=1,centerX=.5,centerY=.5;
-  function resetCamera(){zoom=1;centerX=.5;centerY=.5;}
-  function setZoom(value:number){zoom=Math.max(1,Math.min(64,value));
-    centerX=Math.max(.5/zoom,Math.min(1-.5/zoom,centerX));
-    centerY=Math.max(.5/zoom,Math.min(1-.5/zoom,centerY));}
-  function pan(dx:number,dy:number){centerX=Math.max(.5/zoom,Math.min(1-.5/zoom,centerX+dx/zoom));
-    centerY=Math.max(.5/zoom,Math.min(1-.5/zoom,centerY+dy/zoom));}
+  let cameraState=defaultMapCamera();
+  const gesture=createMapPanGesture();
+  $: zoom=cameraState.zoom;
+  function resetCamera(){cameraState=defaultMapCamera();}
+  function setZoom(value:number){cameraState=zoomMapCamera(cameraState,value,maxZoom);}
+  function pan(dx:number,dy:number){cameraState=panMapCamera(cameraState,dx/zoom,dy/zoom);}
+  function wheel(event:WheelEvent){cameraState=wheelMapCamera(event,svg,extent,cameraState,maxZoom);}
+  function startPan(event:PointerEvent){gesture.begin(event,zoom>1&&(!shape||event.shiftKey||event.button===1||event.pointerType==='touch'));}
+  function finishPan(event:PointerEvent){gesture.end(event);}
   let previousGrid='';
   function clearSelection(key:string){if(key!==previousGrid){previousGrid=key;hits=[];selectedObjectId=null;selectionLayer='all';resetCamera();}}
   $: clearSelection(JSON.stringify([selection?.gameVersion,selection?.regionKey,selection?.viewKey,selection?.nativeGridId]));
@@ -106,7 +110,11 @@
   $: terrainMapActive=active&&!anchorSpace;
   $: imageWidth=schematic?binding?.sizeX??1:asset?.calibration.image.width??1;
   $: imageHeight=schematic?binding?.sizeY??1:asset?.calibration.image.height??1;
-  $: camera=[(centerX-.5/zoom)*imageWidth,(centerY-.5/zoom)*imageHeight,imageWidth/zoom,imageHeight/zoom].join(' ');
+  $: extent={x:0,y:0,w:imageWidth,h:imageHeight};
+  $: cellPixels=binding?Math.min(Math.hypot(binding.gridToImage[0],binding.gridToImage[1]),
+    Math.hypot(binding.gridToImage[2],binding.gridToImage[3])):1;
+  $: maxZoom=maxMapZoom(Math.max(imageWidth,imageHeight)/Math.max(cellPixels,1e-6));
+  $: camera=mapCameraViewBox(cameraState,extent);
   $: activeObjects=scopedObjects&&(scopedObjects.gridFactor===1||anchorSpace)?scopedObjects:null;
   $: selectedObject=activeObjects?.objects.find(o=>o.id===selectedObjectId)??null;
   $: intersections=activeObjects&&selectedObject?sourceShapeIntersections(activeObjects,selectedObject):[];
@@ -165,12 +173,13 @@
       imagePixelToGridCell(binding,point.x,point.y);
   }
   function moveMap(event:PointerEvent){
+    const moved=gesture.move(event,svg,extent,cameraState);if(moved){cameraState=moved;return;}
     if(!shape||pinned||event.pointerType==='touch')return;
     const next=mapPoint(event,true);
     if(next&&(origin?.x!==next.x||origin?.y!==next.y))origin=next;
   }
   function clickMap(event:MouseEvent){
-    if(event.detail===0)return;
+    if(gesture.consumeClick()||event.detail===0)return;
     if(shape){
       const cell=mapPoint(event,true);
       if(cell){origin=cell;pinned=true;}
@@ -216,7 +225,7 @@
   {:else if active&&binding}
     <div class="camera-tools" role="group" aria-label="マップ拡大・移動">
       <button type="button" aria-label="縮小" disabled={zoom===1} on:click={()=>setZoom(zoom/2)}>−</button>
-      <button type="button" aria-label="拡大" disabled={zoom===64} on:click={()=>setZoom(zoom*2)}>＋</button>
+      <button type="button" aria-label="拡大" disabled={zoom>=maxZoom} on:click={()=>setZoom(zoom*2)}>＋</button>
       <button type="button" on:click={resetCamera}>全体</button>
       {#if zoom>1}
         <button type="button" aria-label="左へ移動" on:click={()=>pan(-.4,0)}>←</button>
@@ -233,7 +242,9 @@
         {/each}
       </div>
     {/if}
-    <button type="button" class="map" on:click={clickMap} on:pointermove={moveMap}
+    <button type="button" class="map" class:zoomed={zoom>1} on:click={clickMap}
+      on:wheel|nonpassive={wheel} on:pointerdown={startPan} on:pointermove={moveMap}
+      on:pointerup={finishPan} on:pointercancel={finishPan} on:pointerleave={()=>gesture.leave()}
       on:keydown={keyboardMap} aria-label="MEDIAマップ上の原本Grid座標を選択">
       <svg bind:this={svg} viewBox={camera} aria-hidden="true">
         {#if schematic}<rect width={imageWidth} height={imageHeight} fill="#303d38"/>
@@ -335,6 +346,7 @@
   input[type=file]{max-width:100%;min-width:0;width:240px;font:inherit}
   .map-tools button{font:inherit;color:inherit;background:#ffffff12;border:1px solid #ffffff30;border-radius:5px;padding:5px}
   .map{padding:0;background:#181620;border:1px solid #ffffff24;border-radius:7px;width:100%;min-width:0;overflow:hidden;line-height:0;cursor:crosshair}
+  .map.zoomed{touch-action:none}
   svg{display:block;width:100%;height:auto;max-height:75vh}
   .cell-mask{image-rendering:pixelated}
   .grid-lines,.placement-cell,.source-map-object{pointer-events:none}
