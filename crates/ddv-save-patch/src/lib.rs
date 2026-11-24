@@ -1424,3 +1424,35 @@ mod tests {
     }
 
 }
+
+#[cfg(test)]
+mod structural_tests{
+ use super::*;
+ fn target()->GridCoordinateTarget{GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"10".into(),object_id:"2".into(),item_id:40000001}}
+ const SOURCE:&str=r#"{"Player":{"unknown":1e2},"World":{"GridCollection":{"Grids":{"10":{"ID":10,"NextGridObjectID":8,"Objects":{"2":{"ID":2,"ItemID":40000001,"X":1,"Y":2,"Orientation":"GridOrientation_Down"}, "7": { "ID":7,"ItemID":40000002,"State":{"Storage":{}}}}}}}}}}"#;
+ #[test]
+ fn structural_duplicate_and_add_preserve_other_bytes(){
+  let d=preview_plain_grid_structure(SOURCE,&target(),(1,2),PlainGridStructureAction::Duplicate{x:5,y:6}).unwrap();
+  assert_eq!(d.patched_json,SOURCE.replace("\"NextGridObjectID\":8","\"NextGridObjectID\":9").replace("\"Storage\":{}}}","\"Storage\":{}}},\"8\":{\"ID\":8,\"ItemID\":40000001,\"X\":5,\"Y\":6,\"Orientation\":\"GridOrientation_Down\"}"));
+  assert!(!d.export_authorized&&!d.writer_authorized);
+  let d=preview_plain_grid_structure(SOURCE,&target(),(1,2),PlainGridStructureAction::Add{item_id:40000005,x:3,y:4,orientation:"GridOrientation_Up".into()}).unwrap();
+  let root:serde_json::Value=serde_json::from_str(&d.patched_json).unwrap();
+  assert_eq!(root["World"]["GridCollection"]["Grids"]["10"]["Objects"]["8"]["ItemID"],40000005);
+ }
+ #[test]
+ fn structural_remove_preserves_stateful_neighbor_and_counter(){
+  let d=preview_plain_grid_structure(SOURCE,&target(),(1,2),PlainGridStructureAction::Remove).unwrap();
+  assert_eq!(d.patched_json,SOURCE.replace("\"2\":{\"ID\":2,\"ItemID\":40000001,\"X\":1,\"Y\":2,\"Orientation\":\"GridOrientation_Down\"},",""));
+  let single=SOURCE.replace(", \"7\": { \"ID\":7,\"ItemID\":40000002,\"State\":{\"Storage\":{}}}","");
+  let d=preview_plain_grid_structure(&single,&target(),(1,2),PlainGridStructureAction::Remove).unwrap();
+  assert!(d.patched_json.contains("\"Objects\":{}"));
+ }
+ #[test]
+ fn structural_drafts_reject_stale_counter_state_and_non_cardinal(){
+  let action=PlainGridStructureAction::Duplicate{x:5,y:6};
+  for source in [SOURCE.replace("NextGridObjectID\":8","NextGridObjectID\":7"),SOURCE.replace("\"Y\":2","\"Y\":2,\"State\":{}"),SOURCE.replace("GridOrientation_Down","unknown")]{
+   assert!(preview_plain_grid_structure(&source,&target(),(1,2),action.clone()).is_err());
+  }
+  assert!(preview_plain_grid_structure(SOURCE,&target(),(3,2),action).is_err());
+ }
+}
