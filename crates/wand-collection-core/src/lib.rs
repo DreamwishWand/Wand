@@ -640,7 +640,7 @@ impl CollectionEngine {
         self.workspace().entries.get(&id.to_string())
     }
     fn status(&self, id: u64) -> &str {
-        self.entry(id).and_then(|e| e.status.as_deref()).unwrap_or("unknown")
+        self.entry(id).and_then(|e| e.status.as_deref()).unwrap_or("missing")
     }
     fn item_json(&self, index: &Index, item: &Item, loc: usize) -> Value {
         let entry = self.entry(item.id);
@@ -1472,6 +1472,19 @@ mod tests {
         let text=output(&state).unwrap();
         assert!(parse_state(&text).unwrap()==state);
         assert!(text.contains("99999999"));
+    }
+    #[test]
+    fn manual_collection_defaults_to_missing_without_materializing_records() {
+        let mut engine=CollectionEngine::default();
+        assert_eq!(engine.status(101),"missing");
+        assert!(engine.workspace().entries.is_empty());
+        engine.set_entry_impl(101,r#"{"status":"owned"}"#).unwrap();
+        assert_eq!(engine.status(101),"owned");
+        engine.set_entry_impl(101,r#"{"status":null}"#).unwrap();
+        assert_eq!(engine.status(101),"missing");
+        assert!(engine.workspace().entries.is_empty());
+        engine.set_entry_impl(102,r#"{"quantity":7}"#).unwrap();
+        assert_eq!(engine.status(102),"missing");
     }
     #[test]
     fn workspace_and_bulk_changes_are_atomic() {
