@@ -1055,9 +1055,28 @@ try{
   await publicWorld.locator('.saved-terrain-background').waitFor({timeout:30000});
   await publicWorld.locator('.saved-object').first().waitFor({timeout:30000});
   assert.equal(await publicWorld.locator('.saved-object').first().getAttribute('transform'),'translate(4 5)');
+  await publicWorld.locator('.media-map-overlay').waitFor({state:'detached'});
+  // All three root themes recolor service chrome without recoloring the map.
+  const themeResults=await page.evaluate(()=>{
+    const root=document.documentElement,original=root.getAttribute('data-wand-theme');
+    const area=document.querySelector('.world-workspace nav button[aria-pressed=true]');
+    const layer=document.querySelector('.saved-shape-plot button[aria-pressed=true]');
+    const probe=document.createElement('div');probe.style.backgroundColor='var(--wand-accent-strong)';document.body.append(probe);
+    const results=['dawn','coral','night'].map(theme=>{
+      root.setAttribute('data-wand-theme',theme);
+      const expected=getComputedStyle(probe).backgroundColor;
+      return {expected,area:getComputedStyle(area).backgroundColor,layer:getComputedStyle(layer).backgroundColor,
+        raster:document.querySelector('.saved-terrain-background').getAttribute('href')};
+    });
+    probe.remove();if(original===null)root.removeAttribute('data-wand-theme');else root.setAttribute('data-wand-theme',original);
+    return results.map(({raster,...r})=>({...r,rasterUnchanged:raster===results[0].raster}));
+  });
+  assert.equal(new Set(themeResults.map(r=>r.expected)).size,3);
+  for(const r of themeResults){assert.equal(r.area,r.expected);assert.equal(r.layer,r.expected);assert.equal(r.rasterUnchanged,true);}
   await publicWorld.getByRole('button',{name:'Plaza',exact:true}).click();
   await publicWorld.locator('.saved-object').first().waitFor({timeout:20000});
   assert.equal(await publicWorld.locator('.saved-terrain-background').count(),0);
+  await publicWorld.locator('.media-map-overlay .cell-mask').waitFor({timeout:20000});
   await publicWorld.getByRole('button',{name:'Peaceful Meadow',exact:true}).click();
   await publicWorld.locator('.saved-terrain-background').waitFor({timeout:20000});
   await publicWorld.getByLabel('ワールド',{exact:true}).selectOption('VillageExpansion01');
@@ -1065,6 +1084,25 @@ try{
   await publicWorld.getByLabel('ワールド',{exact:true}).selectOption('Village04');
   await publicWorld.getByRole('button',{name:'Peaceful Meadow',exact:true}).click();
   await publicWorld.locator('.saved-terrain-background').waitFor({timeout:20000});
+
+  // A matched source path may occur in more than one saved Grid. A factor
+  // mismatch must never hide the standalone original terrain on selection.
+  const mixed=structuredClone(worldSave);
+  mixed.World.GridCollection.Grids['103']={...structuredClone(mixed.World.GridCollection.Grids['101']),ID:103,TessellationFactor:2,
+    Objects:{'3':{ID:3,ItemID:40005160,X:10,Y:12,Orientation:'GridOrientation_Down'}}};
+  await page.locator('input[type=file][aria-hidden="true"][accept*=".profile"]').setInputFiles({
+    name:'synthetic-mixed-factor.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(mixed))});
+  const gridSelect=publicWorld.locator('.saved-shape-plot').getByLabel('セーブ内Grid');
+  await gridSelect.waitFor({timeout:30000});
+  await publicWorld.locator('.saved-terrain-background').waitFor({timeout:20000});
+  const firstGrid=await gridSelect.inputValue();
+  await gridSelect.selectOption({index:1});
+  assert.notEqual(await gridSelect.inputValue(),firstGrid);
+  await publicWorld.locator('.saved-terrain-background').waitFor({state:'detached'});
+  await publicWorld.locator('.media-map-overlay .cell-mask').waitFor({timeout:20000});
+  await gridSelect.selectOption(firstGrid);
+  await publicWorld.locator('.saved-terrain-background').waitFor({timeout:20000});
+  await publicWorld.locator('.media-map-overlay').waitFor({state:'detached'});
 
   assert.deepEqual(pageErrors,[],pageErrors.join('\n'));
   assert.deepEqual(unexpectedWrites,[],unexpectedWrites.join('\n'));
