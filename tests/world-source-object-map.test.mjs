@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {sourceMapLayer,sourceSurfaceCapable,matchesSelectionLayer,mapPainterOrder,prioritizeMapHits} from '../src/lib/world/source-map-layers.ts';
+import {savedDraftOverlap} from '../src/lib/world/saved-draft-overlap.ts';
 import {draftSavedMapTransform,worldTransformEligible} from '../src/lib/world/saved-map-transform.ts';
 import {buildSavedShapeMap,savedGridObjects,savedShapesAt} from '../src/lib/world/saved-shape-map.ts';
 import {buildSourceObjectMap,sourceObjectsAt,sourceOrientationAngle,sourceShapeIntersections} from '../src/lib/world/source-object-map.ts';
@@ -99,4 +100,24 @@ test('map transform creates existing Rust mixed plan; road and fence remain disa
   assert.equal(worldTransformEligible({...o,layer:'ground'}),false);
   assert.equal(worldTransformEligible({...o,layer:'fence'}),false);
   assert.equal(worldTransformEligible({...o,shapeKey:null}),false);
+});
+
+test('saved draft colors only intersecting mapped cells, excludes self and other Grids, preserves nonblocking landscape',()=>{
+  const p=(localOrdinal,localGridOrdinal,x,y,orientation='GridOrientation_Down')=>({localOrdinal,localGridOrdinal,x,y,orientation,itemId:'100'});
+  const m=buildSavedShapeMap(fixture(),L,7,[p(1,1,0,0),p(2,1,1,1),p(3,1,2,1),p(4,2,1,1),p(5,1,20,20,'West')]);
+  const map={...m,objects:m.objects.map(o=>o.localOrdinal===2?{...o,layer:'landscape'}:o.localOrdinal===3?{...o,layer:'ground'}:o)};
+  const shape=map.shapes['100:8'];
+  const result=savedDraftOverlap(map,map.objects[0],shape,0,1);
+  assert.deepEqual(result.runs,[{x:1,y:1,width:1,evidence:'landscape-overlap'}]);
+  assert.equal(result.counts['landscape-overlap'],1);
+  assert.deepEqual(result.relatedOrdinals,[2]);
+  assert.equal(result.unresolvedObjects,1);
+  const other=savedDraftOverlap(map,map.objects[0],shape,2,1);
+  assert.equal(other.counts['landscape-overlap'],1);
+  assert.equal(other.counts['ground-overlap'],1);
+  assert.equal(savedDraftOverlap(map,map.objects[0],shape,0,0).runs.length,0);
+  const surface={...map,objects:map.objects.map(o=>o.localOrdinal===2?{...o,layer:'furniture',surfaceCapable:true}:o)};
+  assert.equal(savedDraftOverlap(surface,surface.objects[0],shape,0,1).counts['support-unknown'],1);
+  const overlap={...map,objects:map.objects.map(o=>o.localOrdinal===2?{...o,layer:'furniture'}:o)};
+  assert.equal(savedDraftOverlap(overlap,overlap.objects[0],shape,0,1).counts['shape-overlap'],1);
 });
