@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {loadCompleteCollection} from '../src/lib/collection/db01-complete-catalog.ts';
 import {collectionSubcategories,collectionFurnitureKinds,collectionUsesSubcategories} from '../src/lib/collection/subcategories.ts';
 import {makeCollectionBrowseOrder,collectionUniverseRootSection} from '../src/lib/collection/semantic-browse.ts';
-import {buildWorldBrowseIndex} from '../src/lib/collection/world-browse-index.ts';
+import {buildWorldBrowseIndex,countOwnedInWorldScope,collectionProgressMember} from '../src/lib/collection/world-browse-index.ts';
 
 const fetcher=async url=>new Response(await readFile('static/'+url.replace(/^\/Wand\//,'')),{status:200});
 test('specific furniture kind takes priority over overlapping general tags',()=>{
@@ -61,4 +61,31 @@ test('exact source ordering, category coverage and entity relationships',async()
     characterParents:[...index.parentEntityByItem].filter(([id])=>index.rootsByItem.get(id)==='characters').length,
     mountParents:[...index.parentEntityByItem].filter(([id])=>index.rootsByItem.get(id)==='mounts').length,
     furniture:furniture.map(g=>[g.key,g.total]),mounts:mounts.map(g=>[g.key,g.total])}));
+});
+
+test('world grouping and progress preserve exact scoped Item IDs',async()=>{
+  const {index}=await loadCompleteCollection('/Wand',fetcher);
+  const order=makeCollectionBrowseOrder(index,'ja',false);
+  const scopes=buildWorldBrowseIndex(index);
+  for(const root of ['ingredients','crafting','fish','foraging','gems']){
+    const rows=(index.itemsByRoot.get(root)??[]).map(itemId=>({itemId})).sort(order.compare);
+    const groups=new Set();let last='';
+    for(const row of rows){
+      const group=order.group(row.itemId,root);
+      assert(group);
+      if(group.key!==last){assert(!groups.has(group.key));groups.add(group.key);last=group.key;}
+    }
+  }
+  const all=scopes.get('');
+  const entries={};
+  for(const id of all.itemIds)entries[id]={status:'owned'};
+  for(const scope of scopes.values()){
+    const counts=countOwnedInWorldScope(index,scope,entries);
+    for(const [root,total] of scope.progressTotals)assert.equal(counts.root.get(root),total);
+  }
+  for(const root of ['characters','mounts']){
+    const ids=index.itemsByRoot.get(root);
+    assert.equal(all.progressTotals.get(root),ids.filter(id=>collectionProgressMember(index,id)).length);
+    assert(all.progressTotals.get(root)<ids.length,'cosmetics do not inflate base entity completion');
+  }
 });
