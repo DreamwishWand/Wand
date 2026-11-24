@@ -127,11 +127,45 @@
   let hoverPoint:{x:number;y:number}|null=null;
   export let timeline=emptyWorldTimeline();
   let stageError='';
+  let structureWorker:Worker|null=null,structureStatus:'idle'|'working'|'valid'|'error'='idle';
+  let structureAction:'duplicate'|'remove'|null=null;
+  let structureSignature='';
+  $: structureEligible=Boolean(file&&chosen&&!groupMode&&!staged.length&&
+    !chosen.subgrid&&chosen.shapeKey&&chosen.layer==='furniture'&&isCardinal(chosen.orientation)&&
+    !nativeActionBlocked(chosen.editRestrictions,'select'));
+  $: structureDuplicateEligible=structureEligible&&worldMoveEligible(chosen)&&
+    Number.isInteger(draftX)&&Number.isInteger(draftY)&&
+    (draftX!==chosen?.x||draftY!==chosen?.y)&&draftOrientation===chosen?.orientation;
+  $: structureRemoveEligible=structureEligible&&!nativeActionBlocked(chosen?.editRestrictions,'remove');
+  $: structureInputKey=JSON.stringify([chosen?.localOrdinal,chosen?.x,chosen?.y,draftX,draftY,draftOrientation,staged.length,groupMode]);
+  $: if(structureSignature&&structureSignature!==structureInputKey)clearStructure();
+  function clearStructure(){
+    structureWorker?.terminate();structureWorker=null;structureStatus='idle';structureAction=null;structureSignature='';
+  }
+  onDestroy(clearStructure);
+  function rehearseStructure(action:'duplicate'|'remove'){
+    if(!file||!chosen||busy||placing||structureStatus==='working'||
+      !(action==='duplicate'?structureDuplicateEligible:structureRemoveEligible))return;
+    clearStructure();
+    structureStatus='working';structureAction=action;structureSignature=structureInputKey;
+    const own=new Worker(new URL('./structure-preview.worker.ts',import.meta.url),{type:'module'});
+    structureWorker=own;
+    function done(valid:boolean){
+      if(structureWorker!==own)return;
+      own.terminate();structureWorker=null;structureStatus=valid?'valid':'error';
+    }
+    own.onmessage=({data})=>done(data?.kind==='structure-preview'&&data.validated===true);
+    own.onerror=()=>done(false);
+    own.postMessage({command:'structure-preview',file,plan:{
+      localOrdinal:chosen.localOrdinal,itemId:chosen.itemId,expectedX:chosen.x,expectedY:chosen.y,
+      action,x:action==='duplicate'?draftX:null,y:action==='duplicate'?draftY:null
+    }});
+  }
   $: staged=currentWorldEdits(timeline);
   $: effectiveMap=projectWorldEdits(map,staged);
   function clearTimeline(){timeline=emptyWorldTimeline();stageError='';}
   let previousFile:File|null=null;
-  function checkFile(value:File|null){if(previousFile!==value){previousFile=value;cancelEdit();stageError='';clearGroup();groupMode=false;}}
+  function checkFile(value:File|null){if(previousFile!==value){previousFile=value;clearStructure();cancelEdit();stageError='';clearGroup();groupMode=false;}}
   $: checkFile(file);
   let draftTarget:SavedShapeObject|null=null;
   function cancelEdit(){editEpoch++;editWorker?.terminate();editWorker=null;busy=false;checkedSignature='';editError='';if(copyUrl)URL.revokeObjectURL(copyUrl);copyUrl='';}
@@ -173,7 +207,7 @@
   $: if(!file)cancelEdit();
   async function runEdit(exporting:boolean){
     const source=file,plans=exportPlans,signature=draftSignature;
-    if(!source||!plans.length||busy||pendingDraft||placing||committedConflict||source.size<1||source.size>32*1024*1024||
+    if(!source||!plans.length||busy||structureStatus!=='idle'||pendingDraft||placing||committedConflict||source.size<1||source.size>32*1024*1024||
       (exporting&&checkedSignature!==signature))return;
     const sourceName=source.name;
     const epoch=++editEpoch;busy=true;editError='';
@@ -218,7 +252,7 @@
   function resetCamera(){cameraState=defaultMapCamera();}
   function chooseGrid(n:number){clearGroup();groupMode=false;ordinal=n;selected=null;hits=[];layer='all';resetCamera();}
   $: if(map!==previous){
-    previous=map;cancelEdit();stageError='';clearGroup();groupMode=false;
+    previous=map;clearStructure();cancelEdit();stageError='';clearGroup();groupMode=false;
     ordinal=map.objects[0]?.localGridOrdinal??0;selected=null;hits=[];layer='all';cameraState=defaultMapCamera();
   }
   $: activeOrdinal=ordinals.includes(ordinal)?ordinal:ordinals[0]??0;
@@ -357,6 +391,9 @@
           {:else}<circle class="group-draft-anchor" cx={o.x+.5} cy={o.y+.5} r=".3" fill="#a7b1bf" stroke="#fff" vector-effect="non-scaling-stroke"/>{/if}
         {/each}
       {/if}
+      {#if structureStatus==='valid'&&structureAction==='remove'&&chosen?.shapeKey}
+        <path class="structure-remove-ghost" d={map.shapes[chosen.shapeKey]?.path??''} transform={'translate('+chosen.x+' '+chosen.y+')'} fill="#ef5350" fill-opacity=".72" stroke="#fff" stroke-width="2" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>
+      {/if}
       {#if showDraft}
         {#if draftShape}<path class="saved-draft-shape" d={draftShape.path} transform={'translate('+previewX+' '+previewY+')'} fill="#a7b1bf" fill-opacity=".62" stroke="#fff" stroke-width="1.5" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>
         {:else}<circle class="saved-draft-anchor" cx={Number(previewX)+.5} cy={Number(previewY)+.5} r=".3" fill="#a7b1bf" stroke="#fff" stroke-width="1.5" vector-effect="non-scaling-stroke"/>{/if}
@@ -424,6 +461,17 @@
       {#if stageError}<p role="alert">{stageError}</p>{/if}
     </div>
   {:else if chosen&&file&&!chosen.subgrid}<p>この種類または形状未確認のオブジェクトは現在の編集対象外です。</p>{/if}
+  {#if structureEligible}
+    <div class="controls structure-controls" role="group" aria-label="家具の構造変更プレビュー">
+      <button type="button" disabled={busy||placing||structureStatus==='working'||!structureDuplicateEligible} on:click={()=>rehearseStructure('duplicate')}>複製を検証</button>
+      <button type="button" disabled={busy||placing||structureStatus==='working'||!structureRemoveEligible} on:click={()=>rehearseStructure('remove')}>削除を検証</button>
+      {#if structureStatus!=='idle'}<button type="button" on:click={clearStructure}>プレビュー解除</button>{/if}
+    </div>
+    {#if structureStatus==='working'}<p role="status">ローカル処理中…</p>
+    {:else if structureStatus==='valid'}<p class="structure-result" role="status">{structureAction==='duplicate'?'複製':'削除'}の構造検証に成功しました。セーブには反映されません。</p>
+    {:else if structureStatus==='error'}<p role="alert">状態データ・ID・セーブ構造が未対応、または検証できませんでした。</p>{/if}
+    <small>構造検証のみ。追加・削除のセーブ出力は未対応。</small>
+  {/if}
   {#if staged.length||timeline.snapshots.length>1}
     <div class="world-edit-history">
       <div class="controls">
@@ -443,8 +491,8 @@
     </div>
   {/if}
   {#if file&&exportPlans.length}<div class="controls batch-export">
-    <button type="button" disabled={busy||placing||committedConflict||pendingDraft} on:click={()=>runEdit(false)}>{staged.length?'一括変更を検証':'変更を検証'}</button>
-    {#if checkedSignature===draftSignature}<button type="button" disabled={busy||placing||committedConflict||pendingDraft} on:click={()=>runEdit(true)}>実験的な編集コピーを作成</button>{/if}
+    <button type="button" disabled={busy||structureStatus!=='idle'||placing||committedConflict||pendingDraft} on:click={()=>runEdit(false)}>{staged.length?'一括変更を検証':'変更を検証'}</button>
+    {#if checkedSignature===draftSignature}<button type="button" disabled={busy||structureStatus!=='idle'||placing||committedConflict||pendingDraft} on:click={()=>runEdit(true)}>実験的な編集コピーを作成</button>{/if}
   </div>{/if}
   {#if busy}<p role="status">ローカル処理中…</p>{/if}
   {#if editError}<p role="alert">{editError}</p>{/if}
@@ -458,7 +506,7 @@
   .origin-swatch{display:inline-block;background:#4bddcd;width:.8em;height:.8em;border-radius:2px;vertical-align:baseline}
   .placement-origin-overlay{pointer-events:none}
   .subgrid-status{color:var(--wand-text);border-inline-start:3px solid #d8b96b;padding-inline-start:6px}
-  .group-draft-shape,.group-draft-anchor,.range-box{pointer-events:none}
+  .structure-remove-ghost,.group-draft-shape,.group-draft-anchor,.range-box{pointer-events:none}
   .group-controls{border-block:1px solid var(--wand-border);padding-block:5px}
   .group-selected .unknown-shape{stroke:#fff;stroke-width:3}
   .saved-subgrid-marker,.saved-restricted-marker{pointer-events:none}
