@@ -1,9 +1,10 @@
 """Extract reviewed numeric message trees from SHA-verified itemlist originals.
-Preserve field presence, nested/repeated structure, zero and false; no strings or raw bytes in public output.
+Preserve field presence, nested/repeated structure, zero and false. Only reviewed
+GUID address fields may contain strings; no raw source bytes in public output.
 """
 import argparse,base64,collections,hashlib,json,math,re,sqlite3,struct,zlib
 from pathlib import Path
-from build_full_native_fields import fields
+from build_full_native_fields import fields, varint
 
 REVIEWED={
  'GrowthPeriod':('ActivityItem','Duration'),
@@ -17,6 +18,16 @@ REVIEWED={
  'ItemList':('RecurringEvent','ItemSpawningRecurringEventItemData.Types.ItemAndWeightList'),
  'DefaultItem':('ActivityItem','ItemInstance'),
 }
+GROUPS={
+ 'LootTable.Rewards':('LootTable','Rewards','LootTable'),
+ 'Mission.AdditionnalRewards':('Mission','AdditionnalRewards','LootTable'),
+ 'Character.DailySchedule':('Character','DailySchedule','RepeatedField<CharacterItemData.Types.DailyScheduleData>'),
+ 'Companion.DailySchedule':('Companion','DailySchedule','RepeatedField<CritterItemData.Types.DailyScheduleData>'),
+ 'Companion.FavoriteItem':('Companion','FavoriteItem','ItemSelector'),
+ 'Companion.LikeItem':('Companion','LikeItem','ItemSelector'),
+ 'Building.UpgradeInfo':('Building','UpgradeInfo','RepeatedField<UpgradeData>'),
+}
+GUID_PATHS={'UpgradeInfo.PrefabAddress','UpgradeInfo.Store.InteriorPrefabAddress','UpgradeInfo.UpgradeDialogueAddress'}
 def require(ok,msg):
  if not ok:raise ValueError(msg)
 def raw_field(raw,num,wire):
@@ -29,11 +40,12 @@ def scalar(typ,wire,v):
   require(type(v) is int and abs(v)<2**53 and (typ in ('long','ulong') or -2**31<=v<=2**32-1),'range');return v
  require((typ,wire) in (('float',5),('double',1)),'scalar wire');x=struct.unpack('<f' if wire==5 else '<d',v)[0];require(math.isfinite(x),'float');return x
 
-def build(dbpath,root):
+def build(dbpath,root,selected=None):
  with sqlite3.connect(Path(dbpath).resolve().as_uri()+'?mode=ro',uri=True) as db:
   m=json.loads(db.execute("select value from metadata where key='manifest'").fetchone()[0]);require(m['schema']=='wand.db01.native-fields.private@1' and m['platform']=='Steam','manifest');out={}
   originals={}
-  for key,(category,typ) in REVIEWED.items():
+  reviews=[(label,*GROUPS[label]) for label in selected] if selected is not None else [(key,category,key,typ) for key,(category,typ) in REVIEWED.items()]
+  for label,category,key,typ in reviews:
    if category not in originals:
     b=(root/(category+'.json')).read_bytes();shas={r[0] for r in db.execute('select distinct source_sha256 from item where category=?',(category,))};require(shas=={hashlib.sha256(b).hexdigest()},'original SHA');originals[category]=b
    b=originals[category];data=[];occurrences=0;leaves=0
@@ -55,17 +67,29 @@ def build(dbpath,root):
       for p in ps:
        _,_,num,wire,_,status,v,raw=nodes[p];wirevalue=raw_field(raw,num,wire)
        if status=='declared_message':require(wire==2,'message wire');parts.append(group(p,wirevalue))
-       elif status in ('varint_wire_value','declared_float'):
+       elif status=='varint_wire_value':
+        require(wire==0 and (str(wirevalue) if wirevalue>2**53-1 else wirevalue)==json.loads(v),'varint mismatch')
+        parts.append(scalar(t[14:-1] if rep else t,wire,wirevalue))
+       elif status=='declared_float':
         value=scalar(t[14:-1] if rep else t,wire,wirevalue);require(value==json.loads(v),'scalar mismatch');parts.append(value)
+       elif status=='packed_varint_wire_values':
+        require(rep and wire==2,'packed type');xs=[];pos=0
+        while pos<len(wirevalue):x,pos=varint(wirevalue,pos);xs.append(x)
+        require([str(x) if x>2**53-1 else x for x in xs]==json.loads(v),'packed mismatch')
+        parts.extend(scalar(t[14:-1],0,x) for x in xs)
+       elif status=='declared_utf8':
+        normalized=re.sub(r'\[\d+\]','',p)
+        require(label=='Building.UpgradeInfo' and normalized in GUID_PATHS and wire==2 and t=='string','unreviewed string')
+        x=wirevalue.decode('utf8');require(x==json.loads(v) and re.fullmatch(r'guid:[0-9a-f]{32}',x),'GUID');parts.append(x)
        else:raise ValueError('unreviewed status '+status+' '+p)
       require(rep or len(parts)==1,'singular repetition');result[name]=parts if rep else parts[0]
      return result
-    value=group('',frame,True)[key];data.append([i,value]);occurrences+=len(children['']);leaves+=sum(n[5]!='declared_message' for n in nodes.values())
+    value=group('',frame,True)[key];data.append([i,value]);occurrences+=len(children['']);leaves+=sum(len(json.loads(n[6])) if n[5]=='packed_varint_wire_values' else n[5]!='declared_message' for n in nodes.values())
    if not data:continue
    prev=0;rows=[]
    for i,v in data:rows.append([i-prev,v]);prev=i
    packed=base64.b64encode(zlib.compress(json.dumps(rows,separators=(',',':'),sort_keys=True).encode(),9)).decode()
-   out[key]={'category':category,'declaredType':typ,'count':len(rows),'occurrences':occurrences,'leafCount':leaves,'packed':packed}
-  return {'schema':'wand.item-master.reviewed-messages@1','gameVersion':m['gameVersion'],'sourceItemsSha256':m['sourceItemsSha256'],'sourceIl2cppDumpSha256':m['sourceIl2cppDumpSha256'],'fields':out}
+   out[label]={'category':category,**({'field':key} if selected is not None else {}),'declaredType':typ,'count':len(rows),'occurrences':occurrences,'leafCount':leaves,'packed':packed}
+  return {'schema':'wand.item-master.reviewed-message-groups@1' if selected is not None else 'wand.item-master.reviewed-messages@1','gameVersion':m['gameVersion'],'sourceItemsSha256':m['sourceItemsSha256'],'sourceIl2cppDumpSha256':m['sourceIl2cppDumpSha256'],'fields':out}
 if __name__=='__main__':
- p=argparse.ArgumentParser();p.add_argument('--database',type=Path,required=True);p.add_argument('--input',type=Path,required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args();d=build(a.database,a.input);b=(json.dumps(d,separators=(',',':'))+'\n').encode();a.output.write_bytes(b);print(hashlib.sha256(b).hexdigest(),len(b))
+ p=argparse.ArgumentParser();p.add_argument('--database',type=Path,required=True);p.add_argument('--input',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--fields',nargs='+',choices=GROUPS);a=p.parse_args();d=build(a.database,a.input,a.fields);b=(json.dumps(d,separators=(',',':'))+'\n').encode();a.output.write_bytes(b);print(hashlib.sha256(b).hexdigest(),len(b))
