@@ -678,6 +678,116 @@ pub fn preview_existing_grid_mixed_batch(
         untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
 }
 
+
+/// Structural edit preview, limited to one plain furniture record in an
+/// explicit full Grid. This is deliberately NOT a save export authority:
+/// runtime allocator and incoming reference closure still need verification.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub enum PlainGridStructureAction {
+    Duplicate { x:i32,y:i32 },
+    Add { item_id:u64,x:i32,y:i32,orientation:String },
+    Remove,
+}
+fn plain_furniture_id(id:u64)->bool {
+    // Ordinary furniture family only; no roads, fences, buildings, or
+    // subtype assumptions for items with saved state.
+    id/10_000_000==4 && !matches!((id%10_000_000)/100_000,1|7)
+}
+pub fn preview_plain_grid_structure(
+    source:&str,target:&GridCoordinateTarget,expected:(i32,i32),
+    action:PlainGridStructureAction
+)->Result<GridCoordinateDraft,PatchError>{
+    if source.is_empty()||source.len()>MAX_PROFILE_BYTES||
+       target.kind!=GridObjectKind::Full||!plain_furniture_id(target.item_id){
+        return Err(PatchError::InvalidTarget);
+    }
+    let mut parser=JsonLocator::grid_axis(source,target,"X")?;
+    parser.signed_path=None;parser.item_path=None;
+    let mut parent=vec![k("World"),k("GridCollection"),k("Grids"),k(&target.grid_id),k("Objects")];
+    let mut selected=parent.clone();selected.push(k(&target.object_id));
+    let mut counter=parent.clone();counter.pop();counter.push(k("NextGridObjectID"));
+    let mut diff=vec![k("World"),k("GridCollection"),k("DiffGrids"),k(&target.grid_id)];
+    parser.capture.insert(parent.clone(),None);
+    parser.capture.insert(selected.clone(),None);
+    parser.capture.insert(counter.clone(),None);
+    parser.capture.insert(std::mem::take(&mut diff),None);
+    parser.walk_complete()?;
+    if parser.capture.get(&vec![k("World"),k("GridCollection"),k("DiffGrids"),k(&target.grid_id)]).is_some_and(|v|v.is_some()){
+        return Err(PatchError::AmbiguousTarget);
+    }
+    let span=|p:&Vec<Segment>|parser.capture.get(p).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget);
+    let object_range=span(&selected)?;
+    let old:serde_json::Value=serde_json::from_str(&source[object_range.clone()]).map_err(|_|PatchError::InvalidDocument)?;
+    let obj=old.as_object().ok_or(PatchError::InvalidTarget)?;
+    let id=target.object_id.parse::<u32>().map_err(|_|PatchError::InvalidTarget)?;
+    if id==0||obj.len()!=5||obj.keys().any(|key|!matches!(key.as_str(),"ID"|"ItemID"|"X"|"Y"|"Orientation"))||
+       old.get("ID").and_then(|v|v.as_u64())!=Some(id as u64)||
+       old.get("ItemID").and_then(|v|v.as_u64())!=Some(target.item_id){
+        return Err(PatchError::InvalidTarget);
+    }
+    if old.get("X").and_then(|v|v.as_i64())!=Some(expected.0 as i64)||
+       old.get("Y").and_then(|v|v.as_i64())!=Some(expected.1 as i64){
+        return Err(PatchError::CoordinateMismatch);
+    }
+    let original_orientation=old.get("Orientation").and_then(|v|v.as_str()).ok_or(PatchError::OrientationMismatch)?;
+    if !OBSERVED_CARDINAL_ORIENTATIONS.contains(&original_orientation){return Err(PatchError::OrientationMismatch);}
+    let map_range=span(&parent)?;
+    let objects:serde_json::Map<String,serde_json::Value>=serde_json::from_str(&source[map_range.clone()]).map_err(|_|PatchError::InvalidDocument)?;
+    if objects.len()>100_000{return Err(PatchError::InvalidTarget);}
+    let mut replacements=Vec::<(Range<usize>,String)>::new();
+    match action{
+        PlainGridStructureAction::Remove=>{
+            // Remove only this member and one adjacent comma. Preserve every
+            // other member byte exactly, even unknown fields and whitespace.
+            let mut locator=JsonLocator::grid_axis(source,target,"X")?;
+            locator.pos=map_range.start;locator.expect(b'{')?;
+            let mut previous_comma=None;
+            loop{
+                locator.space();let start=locator.pos;
+                let key=locator.string()?;locator.expect(b':')?;
+                let mut path=parent.clone();path.push(k(&key));
+                locator.value(&mut path)?;
+                let end=locator.pos;locator.space();
+                if key==target.object_id{
+                    let range=if locator.bytes.get(locator.pos)==Some(&b','){start..locator.pos+1}
+                        else if let Some(comma)=previous_comma{comma..end}else{start..end};
+                    replacements.push((range,String::new()));break;
+                }
+                if locator.bytes.get(locator.pos)!=Some(&b','){return Err(PatchError::MissingTarget);}
+                previous_comma=Some(locator.pos);locator.pos+=1;
+            }
+        },
+        action=>{
+            let (item_id,x,y,orientation)=match action{
+                PlainGridStructureAction::Duplicate{x,y}=>(target.item_id,x,y,original_orientation.to_owned()),
+                PlainGridStructureAction::Add{item_id,x,y,orientation}=>(item_id,x,y,orientation),
+                PlainGridStructureAction::Remove=>unreachable!()
+            };
+            if !plain_furniture_id(item_id)||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation.as_str()){
+                return Err(PatchError::InvalidTarget);
+            }
+            let cr=span(&counter)?;
+            let next=source[cr.clone()].parse::<u32>().map_err(|_|PatchError::NonIntegerTarget)?;
+            // Do not repair a stale counter or guess whether old IDs can be
+            // reused. Require an explicit value above every observed ID.
+            if next==0||objects.keys().any(|key|key.parse::<u32>().ok().is_none_or(|n|n.to_string()!=key.as_str()||n>=next)){
+                return Err(PatchError::AmbiguousTarget);
+            }
+            let following=next.checked_add(1).ok_or(PatchError::InvalidTarget)?;
+            let member=format!(",\"{}\":{{\"ID\":{},\"ItemID\":{},\"X\":{},\"Y\":{},\"Orientation\":\"{}\"}}",
+                next,next,item_id,x,y,orientation);
+            replacements.push((map_range.end-1..map_range.end-1,member));
+            replacements.push((cr,following.to_string()));
+        }
+    }
+    replacements.sort_unstable_by_key(|(r,_)|r.start);
+    let mut candidate=String::new();let mut last=0;
+    for (r,v) in replacements{if r.start<last{return Err(PatchError::AmbiguousTarget);}candidate.push_str(&source[last..r.start]);candidate.push_str(&v);last=r.end;}
+    candidate.push_str(&source[last..]);
+    validate_json_without_edit(&candidate)?;
+    Ok(GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
+}
+
 /// One optimistic-concurrency checked change to an existing GridObject.
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub struct GridCoordinateEdit {
@@ -1313,4 +1423,36 @@ mod tests {
             (0,i32::MIN),(100,9)).err(),Some(PatchError::InvalidTarget));
     }
 
+}
+
+#[cfg(test)]
+mod structural_tests{
+ use super::*;
+ fn target()->GridCoordinateTarget{GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"10".into(),object_id:"2".into(),item_id:40000001}}
+ const SOURCE:&str=r#"{"Player":{"unknown":1e2},"World":{"GridCollection":{"Grids":{"10":{"ID":10,"NextGridObjectID":8,"Objects":{"2":{"ID":2,"ItemID":40000001,"X":1,"Y":2,"Orientation":"GridOrientation_Down"}, "7": { "ID":7,"ItemID":40000002,"State":{"Storage":{}}}}}}}}}"#;
+ #[test]
+ fn structural_duplicate_and_add_preserve_other_bytes(){
+  let d=preview_plain_grid_structure(SOURCE,&target(),(1,2),PlainGridStructureAction::Duplicate{x:5,y:6}).unwrap();
+  assert_eq!(d.patched_json,SOURCE.replace("\"NextGridObjectID\":8","\"NextGridObjectID\":9").replace("\"Storage\":{}}}","\"Storage\":{}}},\"8\":{\"ID\":8,\"ItemID\":40000001,\"X\":5,\"Y\":6,\"Orientation\":\"GridOrientation_Down\"}"));
+  assert!(!d.export_authorized&&!d.writer_authorized);
+  let d=preview_plain_grid_structure(SOURCE,&target(),(1,2),PlainGridStructureAction::Add{item_id:40000005,x:3,y:4,orientation:"GridOrientation_Up".into()}).unwrap();
+  let root:serde_json::Value=serde_json::from_str(&d.patched_json).unwrap();
+  assert_eq!(root["World"]["GridCollection"]["Grids"]["10"]["Objects"]["8"]["ItemID"],40000005);
+ }
+ #[test]
+ fn structural_remove_preserves_stateful_neighbor_and_counter(){
+  let d=preview_plain_grid_structure(SOURCE,&target(),(1,2),PlainGridStructureAction::Remove).unwrap();
+  assert_eq!(d.patched_json,SOURCE.replace("\"2\":{\"ID\":2,\"ItemID\":40000001,\"X\":1,\"Y\":2,\"Orientation\":\"GridOrientation_Down\"},",""));
+  let single=SOURCE.replace(", \"7\": { \"ID\":7,\"ItemID\":40000002,\"State\":{\"Storage\":{}}}","");
+  let d=preview_plain_grid_structure(&single,&target(),(1,2),PlainGridStructureAction::Remove).unwrap();
+  assert!(d.patched_json.contains("\"Objects\":{}"));
+ }
+ #[test]
+ fn structural_drafts_reject_stale_counter_state_and_non_cardinal(){
+  let action=PlainGridStructureAction::Duplicate{x:5,y:6};
+  for source in [SOURCE.replace("NextGridObjectID\":8","NextGridObjectID\":7"),SOURCE.replace("\"Y\":2","\"Y\":2,\"State\":{}"),SOURCE.replace("GridOrientation_Down","unknown")]{
+   assert!(preview_plain_grid_structure(&source,&target(),(1,2),action.clone()).is_err());
+  }
+  assert!(preview_plain_grid_structure(SOURCE,&target(),(3,2),action).is_err());
+ }
 }
