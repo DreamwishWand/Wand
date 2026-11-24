@@ -570,6 +570,48 @@ const ROOT_DIRECT_REFERENCE_TARGETS={
 };
 const PRICE_REFERENCE_OWNERS=new Set(['Furniture','Clothing']);
 const COLLECTION_TAG_REFERENCE_PATH=/^source\.Groups\[\d+\]\.CollectionsByType\[\d+\]\.[A-Za-z]+\.ByGameplayTag$/;
+// Source archive paths inspected directly in reviewed-structure and quest-step
+// projections. Normalize only array positions; retain exact occurrence paths.
+const NESTED_DIRECT_REFERENCE_TARGETS={
+  'ConditionalEvent.Spawn.SpawnLocationSource.Building.Building':['Building'],
+  'ConditionalEvent.Spawn.SpawnLocationSource.AnywhereInScene.Scene':['Scene'],
+  'ConditionalEvent.Spawn.SpawnLocationSourceList[].Building.Building':['Building'],
+  'ConditionalEvent.Spawn.SpawnLocationSourceList[].AnywhereInScene.Scene':['Scene'],
+  'ConditionalEvent.Spawn.SpawnLocationSource.NearUniqueItem.SceneID':['Scene'],
+  'ConditionalEvent.Spawn.SpawnLocationSourceList[].NearUniqueItem.SceneID':['Scene'],
+  'ConditionalEvent.Spawn.SpawnAnimatonData.NearUniqueItem.SceneID':['Scene'],
+  'ConditionalEvent.Spawn.GardenItem.Seed':['ActivityItem'],
+  'ConditionalEvent.Spawn.InboxReward':['ActivityItem'],
+  'ConditionalEvent.EmptyDiffGrid.Building':['Building'],
+  'ConditionalEvent.EmptyDiffGrid.IncludeList[]':['ActivityItem'],
+  'ConditionalEvent.EmptyDiffGrid.ExcludeList[]':['ActivityItem'],
+  'ConditionalEvent.ReplaceFurnitureOnGrid.ItemToReplaceID':['Furniture'],
+  'ConditionalEvent.AddTimeLostTreasure.Location.Scene':['Scene'],
+  'ConditionalEvent.SpawnSnippet.Location.Scene':['Scene'],
+  'RecurringEvent.SpecificLocation.Scene':['Scene'],
+  'RecurringEvent.WeedOverrides.WeedLootTable':['LootTable'],
+  'RecurringEvent.SpawnInScenes.Scenes[]':['Scene'],
+  'RecurringEvent.SpawnAround.TargetScene':['Scene'],
+  'Building.DialogueStall.ItemsToGive[].ItemToGive':['ActivityItem'],
+  'Building.GridEditRestriction.CanPlace.Scene':['Scene'],
+  'Building.SpecificUnlockCost.Id':['Currency'],
+  'Building.UnlockCost[].Id':['Currency'],
+  'Mission.OverrideRewards.Rewards[]':['LootTable'],
+  'Mission.OwnerOverrides[].Character':['Character'],
+  'DutyAch.Upgrade.BuildingID':['Building'],
+  'DutyAch.Upgrade.HourglassUpgradeID':['Upgrade'],
+  'DutyAch.CompletionRewards[].Id':['Clothing','Furniture','ActivityItem','Currency','Companion','Skin','Tool','Upgrade','Trimming','MountGear','AvatarFeature','Makeup'],
+  'DutyAch.Unlock.Area.AnyInVillage':['Scene'],
+  'DutyAch.Unlock.MemoryShard.MemoryShard':['MemoryShard'],
+  'DutyAch.RoyalDuty.VillageRestriction':['Scene'],
+  'DutyAch.PickUp.With.Character':['Character'],
+  'DutyAch.Objective.Friend.CharacterID':['Character'],
+  'DutyAch.Objective.GiftToCharacter.CharacterID':['Character'],
+  'DutyAch.Objective.Friend.Companions.Companions[]':['Companion'],
+  'Display.UniqueTagsFilters[].UniqueTagsPerGroup.Tags[]':['Tag']
+};
+const SELECTOR_REFERENCE_OWNERS=new Set(['ConditionalEvent','DutyAch','Mission']);
+const SELECTOR_ITEM_TARGETS=new Set(['ActivityItem','ActivityData','Furniture','Building','Character','Companion','Currency','Clothing','MemoryShard','Skin','Tool','Upgrade','Scene','Environment','Trimming','BoardGame','MountGear','AvatarFeature','Makeup','Display','Set']);
 function buildReferenceColumns(rows){
   const categories=new Map(rows.map(r=>[r.itemId,r.nativeCategory]));
   const ids=new Set(categories.keys());
@@ -591,7 +633,19 @@ function buildReferenceColumns(rows){
       }
       const rootField=path.match(/^source\.([A-Za-z][A-Za-z0-9_]*)(?:\[\d+\])?$/)?.[1];
       const rootTargets=rootField&&ROOT_DIRECT_REFERENCE_TARGETS[row.nativeCategory+'.'+rootField];
-      if(rootTargets){
+      const normalizedPath=row.nativeCategory+'.'+path.slice('source.'.length).replace(/\[\d+\]/g,'[]');
+      const nestedTargets=NESTED_DIRECT_REFERENCE_TARGETS[normalizedPath];
+      const conditionTargets=/\.Conditions\[\d+\]\.[A-Za-z]+\.[A-Za-z]+$/.test(path)
+        ? REVIEWED_CONDITION_REFERENCE_TARGETS[path.split('.').slice(-2).join('.')]:undefined;
+      if(nestedTargets){
+        if(nestedTargets.includes(categories.get(value)))emit(value,path);
+      }else if(conditionTargets&&['Mission','Building','Furniture','ActivityItem','Clothing','Character','Companion','DutyAch','LootTable','ConditionalEvent','Condition','Scene','Skin','Tool','Trimming','Set','ActivityData','RecurringEvent','Upgrade','Display','MemoryShard','Currency','Preference','Story'].includes(row.nativeCategory)){
+        if(conditionTargets.includes(categories.get(value)))emit(value,path);
+      }else if(SELECTOR_REFERENCE_OWNERS.has(row.nativeCategory)&&/\.(?:Item\.(?:Item|ItemIngredient)\.Item|ItemList\.(?:Item|ItemIngredient)\.ItemList\.List\[\d+\]\.Item)$/.test(path)){
+        if(SELECTOR_ITEM_TARGETS.has(categories.get(value)))emit(value,path);
+      }else if(row.nativeCategory==='DutyAch'&&/\.(?:FilterGenerator|ItemGenerator)\.Tags\[\d+\]\.Tags\[\d+\]$|\.FilterGenerator\.IngredientsType\[\d+\]$|\.AnyCompanion\.HasTag$/.test(path)){
+        if(categories.get(value)==='Tag')emit(value,path);
+      }else if(rootTargets){
         if(rootTargets.includes(categories.get(value)))emit(value,path);
       }else if(PRICE_REFERENCE_OWNERS.has(row.nativeCategory)&&path==='source.PriceOverride.Price.Id'){
         if(categories.get(value)==='Currency')emit(value,path);
