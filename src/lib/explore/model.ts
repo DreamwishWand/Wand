@@ -8,6 +8,7 @@ export interface ExploreItem {
   universes:readonly number[];
   universeStatus?:'source_linked'|'unresolved_source'|'no_universe_in_verified_tag_fields';
   iconGuid?:string|null;
+  sourceSetItemId?:number|null;
 }
 export interface BoardGroup {id:string;name:string}
 export interface BoardEntry {itemId:number;groupId:string|null}
