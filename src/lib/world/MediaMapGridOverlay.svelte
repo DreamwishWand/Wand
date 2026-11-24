@@ -142,9 +142,9 @@
   .map-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px}
   .file-label{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;max-width:100%}
   input[type=file]{max-width:100%;min-width:0;width:240px;font:inherit}
-  .map-tools button{font:inherit;color:inherit;background:#ffffff12;border:1px solid #ffffff30;border-radius:5px;padding:5px}
+  .map-tools button{font:inherit;color:inherit;background:var(--wand-surface-raised);border:1px solid var(--wand-subtle-line);border-radius:5px;padding:5px}
   .map{padding:0;background:#181620;border:1px solid #ffffff24;border-radius:7px;width:100%;min-width:0;overflow:hidden;line-height:0;cursor:crosshair}
   svg{display:block;width:100%;height:auto;max-height:75vh}
   .cell-mask{image-rendering:pixelated}
-  p{font-size:11px;color:#b9abc7;margin:0}
+  p{font-size:11px;color:var(--wand-muted);margin:0}
 </style>
