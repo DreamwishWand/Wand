@@ -2,10 +2,15 @@ export const STORAGE_KEY='dreamwishwand.explore.moodboards.v1';
 export interface ExploreItem {
   itemId:number;
   names:Readonly<Record<string,string|null>>;
-  nativeCategory:'Furniture'|'Trimming';
+  nativeCategory:'Furniture'|'Trimming'|'Building'|'Skin'|'Environment';
   subtype:number;
   tags:readonly (readonly ['color'|'furnitureStyle'|'furnitureKind',string])[];
   universes:readonly number[];
+  universeStatus?:'source_linked'|'unresolved_source'|'no_universe_in_verified_tag_fields';
+  iconGuid?:string|null;
+  sourceSetItemId?:number|null;
+  sourceSetNames?:Readonly<Record<string,string|null>>;
+  prefabGuid?:string|null;
 }
 export interface BoardGroup {id:string;name:string}
 export interface BoardEntry {itemId:number;groupId:string|null}

@@ -199,6 +199,40 @@ function validLinks(links,byId,menus){
     (c.sourceRecipeItemId==null||byId.has(c.sourceRecipeItemId))&&
     (c.sourceSetItemId==null||byId.has(c.sourceSetItemId)));
 }
+/** Build-time source census; do not infer design similarity from these counts. */
+function exploreThemeCensus(explore,byId){
+  const counts=values=>Object.fromEntries([...values.reduce((m,k)=>m.set(k,(m.get(k)??0)+1),new Map())].sort((a,b)=>b[1]-a[1]||String(a[0]).localeCompare(String(b[0]))));
+  for(const universe of [2000500023,2000500017]){
+    const items=explore.filter(r=>r.universes.includes(universe));
+    const groups=new Map();
+    const styles=new Map();
+    for(const item of items){
+      if(item.sourceSetItemId!==null){
+        const set=groups.get(item.sourceSetItemId)??[];set.push(item);groups.set(item.sourceSetItemId,set);
+      }
+      for(const style of new Set(item.tags.filter(([k])=>k==='furnitureStyle').map(([,v])=>v))){
+        const list=styles.get(style)??[];list.push(item);styles.set(style,list);
+      }
+    }
+    const styleCount=item=>new Set(item.tags.filter(([k])=>k==='furnitureStyle').map(([,v])=>v)).size;
+    const namedSets=[...groups].sort((a,b)=>b[1].length-a[1].length||a[0]-b[0]).slice(0,18).map(([id,list])=>({
+      id,label:byId.get(id)?.names?.en??null,count:list.length,
+      categories:counts(list.map(r=>r.nativeCategory)),
+      sample:list.map(r=>r.names.en).filter(Boolean).slice(0,5)
+    }));
+    const styleSummary=[...styles].sort((a,b)=>b[1].length-a[1].length).map(([style,list])=>({
+      style,count:list.length,sample:list.map(r=>r.names.en).filter(Boolean).slice(0,6)
+    }));
+    console.log('EXPLORE_THEME_CENSUS '+JSON.stringify({universe,total:items.length,
+      byCategory:counts(items.map(r=>r.nativeCategory)),
+      withSet:items.filter(r=>r.sourceSetItemId!==null).length,
+      distinctSets:groups.size,setsWithMultipleItems:[...groups.values()].filter(g=>g.length>1).length,
+      setsWithMultipleNativeCategories:[...groups.values()].filter(g=>new Set(g.map(i=>i.nativeCategory)).size>1).length,
+      styleCoverage:items.filter(r=>styleCount(r)>0).length,
+      multipleStyles:items.filter(r=>styleCount(r)>1).length,styleSummary,namedSets}));
+  }
+}
+
 export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFiles){
   const e=entry.complete;
   if(!e)return;
@@ -256,6 +290,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
     definitionScopeItems:[],browseItems:[],
     universeTags:source.universeTags,worldTags:source.worldTags,
     gameRuntimeMembershipVerified:false};
+  const explore=[];
   const names={};
   for(const l of LOCALES)names[l]=[];
   for(const r of rows){
@@ -299,6 +334,21 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
     if(type.name==='ActivityItem')f.activityTypeItems.push([i,type.subtypeCode,type.subtypeName]);
     const tags=r.tags.filter(t=>FACETS.has(t.facet)).map(t=>[t.facet,t.key]);
     if(tags.length)f.items.push([i,tags]);
+    // Source-complete decorative candidates: never require Collection membership.
+    // Exclude quest requests, blockers and character/mount skins, not a
+    // statement of legal placement or player ownership.
+    if((type.name==='Furniture'&&[0,1,2,3,7,8,9].includes(type.subtypeCode))||
+       (type.name==='Trimming'&&[0,1].includes(type.subtypeCode))||
+       (type.name==='Building'&&[0,1,2,3,4,5].includes(type.subtypeCode))||
+       (type.name==='Skin'&&[1,2,3,6].includes(type.subtypeCode))||
+       (type.name==='Environment'&&(r.iconGuid||Object.values(r.names).some(Boolean)))){
+      explore.push({itemId:i,names:r.names,nativeCategory:type.name,subtype:type.subtypeCode,
+        tags:tags.filter(t=>['color','furnitureStyle','furnitureKind'].includes(t[0])),
+        universes:r.universeTagIds,universeStatus:r.universeSourceStatus,iconGuid:r.iconGuid,
+        sourceSetItemId:r.sourceSetItemId,
+        sourceSetNames:r.sourceSetItemId===null?{}:byId.get(r.sourceSetItemId)?.names??{},
+        prefabGuid:r.artwork.prefabGuid??null});
+    }
     const codes=sourceCodes(r);if(codes.length)f.categoryItems.push([i,codes]);
     if(r.universeTagIds.length){
       f.universeSourceTagItems.push([i,r.universeTagIds]);
@@ -328,6 +378,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
     ['universeSourceItemCount','universeSourceItems'],['universeSourceTagCount','universeSourceTagItems'],
     ['universeSourceStatusItemCount','universeSourceStatusItems'],['worldSourceTagCount','worldSourceTagItems'],
     ['browseItemCount','browseItems']])f[key]=f[count].length;
+  exploreThemeCensus(explore,byId);
   const index={schema:'wand.item-master.release@1',scope:'complete',version:e.release,target:source.target,
     count:e.count,bucketCount:256,archiveSha256:e.archiveSha256,
     sourceFilesVerified:source.sourceFilesVerified,sourceFilesSha256:source.sourceFilesSha256,
@@ -357,6 +408,8 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
       const key=i.toString(16).padStart(2,'0'),path='id/'+key+'.json';
       index.shards[path]=write(path,{schema:'wand.item-master.shard@1',bucket:key,items:buckets[i]},buckets[i].length);
     }
+    write('explore.json',{schema:'wand.explore.catalog@2',release:e.release,items:explore,
+      universeTags:source.universeTags},explore.length);
     index.assets['collection-facets.json']=write('collection-facets.json',f,f.sourceItemCount);
     for(const l of LOCALES)index.assets['locale/'+l+'.json']=write('locale/'+l+'.json',
       {schema:'wand.item-master.complete-browse-names@1',release:e.release,locale:l,items:names[l]},names[l].length);
