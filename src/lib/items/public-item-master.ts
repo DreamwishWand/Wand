@@ -8,6 +8,9 @@
  * Original tags are facts; Collection source candidates are NOT proof of
  * visible game-screen membership or availability.
  */
+import {createItemFieldReader,type ItemFieldReader} from './item-field-reader.ts';
+export type {ItemFieldValue,ItemFieldScalar,ItemFieldInfo,ItemFieldProjection,ItemFieldMatch} from './item-field-reader.ts';
+
 export const ITEM_MASTER_RELEASE = 'steam-1.26.2-item-id-master-v1' as const;
 export const ITEM_MASTER_INDEX_PATH =
   'ddv/item-master/steam-1.26.2/index.json' as const;
@@ -300,7 +303,7 @@ export interface PublicItemMaster<T extends ItemMasterRecord|CompleteItemMasterR
   getItem(itemId: number): Promise<T | null>;
   getItems(itemIds: readonly number[]): Promise<(T | null)[]>;
 }
-export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemMasterRecord> {
+export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemMasterRecord>, ItemFieldReader {
   /** Collection-only projection; fetch neither all shards nor all languages. */
   getCollectionFacets(): Promise<CompleteItemMasterFacets>;
   getBrowseNames(locale: ItemMasterLocale): Promise<readonly (readonly [number,string])[]>;
@@ -687,6 +690,7 @@ export async function openPublicItemMaster(
   }
   return Object.freeze({
     ...common,
+    ...createItemFieldReader(m.count,m.assets,asset),
     async getCollectionFacets():Promise<CompleteItemMasterFacets>{
       const value=await asset('collection-facets.json');
       assert(isObject(value)&&value.schema==='wand.collection.db01-complete-source-facets@1'&&
