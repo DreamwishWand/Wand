@@ -230,10 +230,10 @@ test('large reviewed structures retain mission order, source identities and byte
   const requests=[];
   const db=await openPublicItemMaster('',async url=>{requests.push(url);return fetcher(url)},{scope:'complete'});
   const fields=db.release.reviewedStructureCoverage.fields;
-  assert.equal(Object.keys(fields).length,147);
-  assert.equal(Object.values(fields).reduce((s,f)=>s+f.itemCount,0),8719);
-  assert.equal(Object.values(fields).reduce((s,f)=>s+f.occurrences,0),17312);
-  assert.equal(Object.values(fields).reduce((s,f)=>s+f.leafCount,0),288442);
+  assert.equal(Object.keys(fields).length,157);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.itemCount,0),12734);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.occurrences,0),25857);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.leafCount,0),303415);
   assert.equal(fields['Mission.Steps'].occurrences,7878);
   const catalog=await db.getFieldCatalog();
   const column=catalog.find(f=>f.field==='source.Steps');
@@ -304,4 +304,28 @@ test('mixed structures retain exact localization keys, inert formulas and map en
   assert.equal(mail.values['source.SendMailbox'].Villager,10000103);
   assert((await db.getItemReferences(50000212,'incoming')).some(([id,p])=>id===40001920&&p==='source.Mannequin.EmptyMannequinClothes[0].Value'));
   assert((await db.getItemReferences(1520000968,'outgoing')).some(([id,p])=>id===10000103&&p==='source.SendMailbox.Villager'));
+});
+
+
+test('overloaded native declarations preserve complete original results and formula table keys',async()=>{
+  const db=await openPublicItemMaster('',fetcher,{scope:'complete'});
+  const fields=db.release.reviewedStructureCoverage.fields;
+  assert.equal(Object.keys(fields).filter(k=>k.includes('@')).length,10);
+  assert.equal(fields['ActivityData.Result@CraftingRecipeItemData.Types.ResultInstance'].itemCount,1318);
+  assert.equal(fields['ActivityData.Result@ItemWithState'].itemCount,663);
+  assert.equal(fields['ActivityData.Ingredients@RepeatedField<RecipeItemData.Types.Ingredient>'].occurrences,2056);
+  const [craft,recipe,fishing,other,price,profession,landscape]=await db.getItemFields(
+    [2050300153,2050000004,2050400000,2050100000,2100000000,2100300000,40200025],
+    ['source.Result','source.Ingredients','source.Locations','source.TablesOfValues','source.SubGrid']);
+  assert.deepEqual(craft.values['source.Result'],{Amount:1,ItemID:31500101,State:{ConsummableData:{Amount:1,ItemID:150100003}}});
+  assert.deepEqual(recipe.values['source.Ingredients'],[{ItemID:31100053},{ItemID:31100001},{ItemID:30200045},{ItemID:30200090}]);
+  assert.deepEqual(fishing.values['source.Locations'],[{Scene:1540000101},{Scene:1540000000}]);
+  assert.deepEqual(other.values['source.Result'],{ItemID:31000029});
+  assert.deepEqual(price.values['source.TablesOfValues'][0].Values[0],{EquationValue:6,Key:'1'});
+  assert.deepEqual(price.values['source.TablesOfValues'][1].Values[0],{EquationValue:2,Key:'2000100009'});
+  assert.deepEqual(profession.values['source.TablesOfValues'],[{DefaultValue:30,VariableName:'PercentagePointsPerLevel'},{DefaultValue:10,VariableName:'PercentagePointsPerSplashLevel'}]);
+  assert.deepEqual(landscape.values['source.SubGrid'],{SubGrid:{SubGridDataPath:'GridData/Furniture/NonIP_SetLess/BrickCorner01-GridData.json'}});
+  assert((await db.getItemReferences(150100003,'incoming')).some(([id,p])=>id===2050300153&&p==='source.Result.State.ConsummableData.ItemID'));
+  assert((await db.getItemReferences(1540000101,'incoming')).some(([id,p])=>id===2050400000&&p==='source.Locations[0].Scene'));
+  assert((await db.getItemReferences(2100000000,'outgoing')).some(([id,p])=>id===2000100009&&p==='source.TablesOfValues[1].Values[0].Key'));
 });
