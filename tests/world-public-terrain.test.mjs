@@ -57,3 +57,37 @@ test('published world release: every regional digest, raster and scope identity'
  }
  assert.equal(count,207);assert.equal(total,2985814);
 });
+
+import {worldTransformEligible,draftSavedMapTransform} from '../src/lib/world/saved-map-transform.ts';
+test('subgrid summary survives the local terrain receipt and blocks unsupported parent edits',()=>{
+ const grid=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(path,'utf8'))).grids[0];
+ const scopes=[{key:grid.key,witness:{nativeGridId:grid.gridIdNative,nativeSizeX:grid.sizeX,nativeSizeY:grid.sizeY,tessellationFactor:1}}];
+ const rows=[{localOrdinal:1,localGridOrdinal:1,itemId:'40000001',recordKind:'full',x:1,y:2,orientation:'GridOrientation_Down',coordinatesObserved:true}];
+ const raw={contract:'wand.db05.db04-terrain-session@1',rows,bindings:[{localOrdinal:1,sourceRefIndex:0,savedFactor:1,sourceLocalCoordinateMappingVerified:true,subgrid:{status:'resolved_full',objectCount:3}}],sourceCoverageComplete:false,effectivePlacementVerified:false,worldCoordinatesVerified:false,placementLegalityVerified:false,saveWritingAuthorized:false};
+ const receipt=projectTerrainSession(raw,scopes)[0].receipt;
+ const definitions=publicShapeDefinitions([[40000001,{SizeX:2,SizeY:1,Layers:[0,16],AcceptedFloorTypesFlag:4}]],[[40000001,'Furniture']],[[40000001,'Table']]);
+ const map=buildSavedShapeMap(publicShapeSource(grid,definitions),grid.layoutId,grid.gridIdNative,receipt.points);
+ assert.deepEqual(map.objects[0].subgrid,{status:'resolved_full',objectCount:3});
+ assert.equal(worldTransformEligible(map.objects[0]),false);
+ assert.equal(draftSavedMapTransform(map.objects[0],3,4,'GridOrientation_Down'),null);
+ assert.equal(worldTransformEligible({...map.objects[0],subgrid:null}),true);
+ assert.throws(()=>projectTerrainSession({...raw,bindings:[{...raw.bindings[0],subgrid:{status:'resolved_full',objectCount:-1}}]},scopes));
+});
+
+import {projectNativeEditRestrictions} from '../src/lib/world/native-edit-restrictions.ts';
+import {worldMoveEligible,worldRotateEligible} from '../src/lib/world/saved-map-transform.ts';
+test('canonical DB01 restrictions are action-specific and never infer conditional permission',()=>{
+ const grid=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(path,'utf8'))).grids[0];
+ const restrictions={CanMove:{Value:false},CanRotate:{Value:true},CanBeRemoved:{Conditions:{_unresolvedFields:[2]}}};
+ assert.deepEqual(projectNativeEditRestrictions(restrictions),{move:'denied',rotate:'allowedFlag',remove:'conditional'});
+ const definitions=publicShapeDefinitions([[40000001,{SizeX:2,SizeY:1,Layers:[0,16],AcceptedFloorTypesFlag:4}]],[[40000001,'Furniture']],[[40000001,'Table']],[[40000001,restrictions]]);
+ const map=buildSavedShapeMap(publicShapeSource(grid,definitions),grid.layoutId,grid.gridIdNative,[{localOrdinal:1,localGridOrdinal:1,itemId:'40000001',x:1,y:2,orientation:'GridOrientation_Down'}]);
+ const o=map.objects[0];
+ assert.equal(worldMoveEligible(o),false);
+ assert.equal(worldRotateEligible(o),true);
+ assert.equal(draftSavedMapTransform(o,3,4,'GridOrientation_Down'),null);
+ assert.ok(draftSavedMapTransform(o,1,2,'GridOrientation_Left'));
+ assert.equal(worldTransformEligible({...o,editRestrictions:{select:'conditional'}}),false);
+ assert.equal(worldRotateEligible({...o,editRestrictions:{rotate:'denied'}}),false);
+ assert.deepEqual(projectNativeEditRestrictions({CanMove:{},CanRotate:{Value:true,Conditions:{}}}),{rotate:'conditional'});
+});

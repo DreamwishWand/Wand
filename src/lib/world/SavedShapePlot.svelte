@@ -10,9 +10,10 @@
 
   import {emptyWorldTimeline,currentWorldEdits,travelWorldTimeline,projectWorldEdits,stageWorldEdit,WORLD_BATCH_LIMIT} from './saved-map-batch.ts';
   import {savedDraftOverlap,OVERLAP_COLORS} from './saved-draft-overlap.ts';
-  import {CARDINAL_ORIENTATIONS,isCardinal,worldTransformEligible,draftSavedMapTransform,exclusiveAnchorClass,exclusiveAnchorConflict} from './saved-map-transform.ts';
+  import {CARDINAL_ORIENTATIONS,isCardinal,worldTransformEligible,worldMoveEligible,worldRotateEligible,draftSavedMapTransform,exclusiveAnchorClass,exclusiveAnchorConflict} from './saved-map-transform.ts';
   import {savedGridObjects,savedShapesAt,visibleSavedObjects,type SavedShapeMap,type SavedShapeObject} from './saved-shape-map.ts';
   import {MAP_LAYER_COLORS,MAP_LAYER_LABELS,mapPainterOrder,matchesSelectionLayer,type MapSelectionLayer} from './source-map-layers.ts';
+  import {nativeActionBlocked} from './native-edit-restrictions.ts';
   import {sourceOrientationAngle,type SourceObjectShape} from './source-object-map.ts';
   export let map:SavedShapeMap;
   export let file:File|null=null;
@@ -82,7 +83,7 @@
   $: matchIds=new Set(matches.map(o=>o.localOrdinal));
   function setSearch(value:string){query=value;visibleResults=60;searchOpen=true;}
   function selectFromSearch(o:SavedShapeObject){if(busy)return;selected=o.localOrdinal;hits=[o];cameraState=objectFocus(map,o,extent,maxZoom);searchOpen=false;}
-  function rotateDraft(delta:number){if(busy||exclusiveClass||!isCardinal(draftOrientation))return;draftOrientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(draftOrientation)+delta+4)%4];}
+  function rotateDraft(delta:number){if(busy||!worldRotateEligible(chosen)||!isCardinal(draftOrientation))return;draftOrientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(draftOrientation)+delta+4)%4];}
   function keyMap(event:KeyboardEvent){
     if(busy)return;
     if(event.key==='Escape'){resetDraft(chosen);return;}
@@ -90,7 +91,7 @@
     if(event.key.toLowerCase()==='r'){event.preventDefault();rotateDraft(event.shiftKey?-1:1);return;}
     if(event.key==='Enter'&&editPlan&&!placing){event.preventDefault();stageCurrent();return;}
     const delta:Record<string,[number,number]>={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]};
-    const d=delta[event.key];if(d&&draftX!==undefined&&draftY!==undefined){event.preventDefault();draftX+=d[0];draftY+=d[1];}
+    const d=delta[event.key];if(d&&worldMoveEligible(chosen)&&draftX!==undefined&&draftY!==undefined){event.preventDefault();draftX+=d[0];draftY+=d[1];}
   }
   let editWorker:Worker|null=null;
   let editEpoch=0;
@@ -229,7 +230,7 @@
   function pick(event:MouseEvent){
     if(gesture.consumeClick())return;
     const point=pointerCell(event);if(!point||event.detail===0||busy)return;
-    if(placing&&chosen){draftX=point.x;draftY=point.y;placing=false;hoverPoint=null;cancelEdit();return;}
+    if(placing&&chosen&&worldMoveEligible(chosen)){draftX=point.x;draftY=point.y;placing=false;hoverPoint=null;cancelEdit();return;}
     hits=savedShapesAt(effectiveMap,activeOrdinal,point.x,point.y);
     selected=hits.find(o=>matchesSelectionLayer(o,layer))?.localOrdinal??null;
   }
@@ -300,6 +301,10 @@
             {#if o.orientationCode!==null}<path d="M0 -.32L.19 .13L0 .04L-.19 .13Z" transform={'translate(.5 .5) rotate('+sourceOrientationAngle(o.orientationCode)+')'} fill="#fff"/>{/if}
           {:else}<circle class="unknown-shape" cx=".5" cy=".5" r=".24" fill="#ddd" stroke="#fff" stroke-width="1" vector-effect="non-scaling-stroke"/>{/if}
           {#if o.surfaceCapable}<circle cx=".78" cy=".22" r=".13" fill="#dbc2f6"/>{/if}
+          {#if nativeActionBlocked(o.editRestrictions,'move')||nativeActionBlocked(o.editRestrictions,'select')}<g class="saved-restricted-marker" transform="translate(.5 .5)" fill="none" stroke="#e7cf94" stroke-width=".09"><rect x="-.23" y="-.05" width=".46" height=".34" rx=".04"/><path d="M-.14 -.05v-.12a.14 .14 0 0 1 .28 0v.12"/></g>{/if}
+          {#if o.subgrid}<g class="saved-subgrid-marker" transform="translate(.5 .5)" fill="none" stroke="#f0d494" stroke-width=".09">
+            <rect x="-.30" y="-.30" width=".60" height=".60" rx=".08"/><rect x="-.16" y="-.16" width=".32" height=".32" rx=".04"/>
+          </g>{/if}
         </g>
       {/each}
       {#if showDraft}
@@ -320,13 +325,20 @@
     {/each}
   </div>{/if}
   {#if chosen}<p class="selected-saved-object">{worldObjectName(chosen,names)} ／ ({chosen.x}, {chosen.y}) ／ {chosen.orientation??'向き不明'}</p>{/if}
+  {#if chosen?.subgrid}<p class="subgrid-status" role="status">{chosen.subgrid.status==='resolved_full'?`子Grid内の配置 ${chosen.subgrid.objectCount}件`:'子Gridの参照先未確認'}。親家具の単独移動・回転は未対応。</p>{/if}
+  {#if chosen&&!chosen.subgrid&&(nativeActionBlocked(chosen.editRestrictions,'select')||nativeActionBlocked(chosen.editRestrictions,'move')||nativeActionBlocked(chosen.editRestrictions,'rotate'))}
+    <p class="subgrid-status" role="status">ゲーム原本の編集制限：{nativeActionBlocked(chosen.editRestrictions,'select')?'編集対象外':[
+      nativeActionBlocked(chosen.editRestrictions,'move')?'移動不可または条件未確認':'',
+      nativeActionBlocked(chosen.editRestrictions,'rotate')?'回転不可または条件未確認':''
+    ].filter(Boolean).join('・')}</p>
+  {/if}
   {#if chosen&&file&&worldTransformEligible(chosen)}
     <div class="transform-controls">
       <div class="controls">
-        <button type="button" aria-pressed={placing} disabled={busy} on:click={()=>{placing=!placing;hoverPoint=null;}}>{placing?'移動先を選択中':'マップで移動先を選択'}</button>
-        <label>X <input type="number" aria-label="移動先X" bind:value={draftX} step="1" disabled={busy}/></label>
-        <label>Y <input type="number" aria-label="移動先Y" bind:value={draftY} step="1" disabled={busy}/></label>
-        {#if !exclusiveClass&&isCardinal(chosen.orientation)}<button type="button" aria-label="左回転" disabled={busy} on:click={()=>rotateDraft(-1)}>↶</button><button type="button" aria-label="右回転" disabled={busy} on:click={()=>rotateDraft(1)}>↷</button><label>向き <select aria-label="編集後の向き" bind:value={draftOrientation} disabled={busy}>
+        <button type="button" aria-pressed={placing} disabled={busy||!worldMoveEligible(chosen)} on:click={()=>{placing=!placing;hoverPoint=null;}}>{placing?'移動先を選択中':'マップで移動先を選択'}</button>
+        <label>X <input type="number" aria-label="移動先X" bind:value={draftX} step="1" disabled={busy||!worldMoveEligible(chosen)}/></label>
+        <label>Y <input type="number" aria-label="移動先Y" bind:value={draftY} step="1" disabled={busy||!worldMoveEligible(chosen)}/></label>
+        {#if worldRotateEligible(chosen)}<button type="button" aria-label="左回転" disabled={busy} on:click={()=>rotateDraft(-1)}>↶</button><button type="button" aria-label="右回転" disabled={busy} on:click={()=>rotateDraft(1)}>↷</button><label>向き <select aria-label="編集後の向き" bind:value={draftOrientation} disabled={busy}>
           {#each CARDINAL_ORIENTATIONS as direction}<option value={direction}>{['上','右','下','左'][CARDINAL_ORIENTATIONS.indexOf(direction)]}</option>{/each}
         </select></label>{/if}
         <button type="button" disabled={busy||!editPlan} on:click={()=>resetDraft(chosen)}>元に戻す</button>
@@ -347,7 +359,7 @@
       {#if editPlan}<button type="button" disabled={busy||placing||committedConflict} on:click={stageCurrent}>配置変更を追加</button>{/if}
       {#if stageError}<p role="alert">{stageError}</p>{/if}
     </div>
-  {:else if chosen&&file}<p>この種類または形状未確認のオブジェクトは現在の編集対象外です。</p>{/if}
+  {:else if chosen&&file&&!chosen.subgrid}<p>この種類または形状未確認のオブジェクトは現在の編集対象外です。</p>{/if}
   {#if staged.length||timeline.snapshots.length>1}
     <div class="world-edit-history">
       <div class="controls">
@@ -381,6 +393,8 @@
   .origin-tools small{color:var(--wand-muted);font-size:11px}
   .origin-swatch{display:inline-block;background:#4bddcd;width:.8em;height:.8em;border-radius:2px;vertical-align:baseline}
   .placement-origin-overlay{pointer-events:none}
+  .subgrid-status{color:var(--wand-text);border-inline-start:3px solid #d8b96b;padding-inline-start:6px}
+  .saved-subgrid-marker,.saved-restricted-marker{pointer-events:none}
   .overlap-key{display:flex;flex-wrap:wrap;gap:8px;font-size:12px}
   .saved-overlap-cell,.exclusive-anchor-conflict{pointer-events:none}
   .exclusive-warning{color:var(--wand-text);font-weight:650;border-inline-start:3px solid #ef5350;padding-inline-start:6px}
