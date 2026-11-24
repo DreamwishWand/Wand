@@ -39,11 +39,286 @@ const GROUPED_ROOTS=new Set<CollectionTopCategory>([
 export function collectionUsesSubcategories(root:CollectionTopCategory,groups:readonly CollectionSubcategory[]):boolean{
   return GROUPED_ROOTS.has(root)&&groups.length>1;
 }
+// UI fallback for the 27 observed original furniture-kind keys; original
+// localized Tag names take precedence whenever the source contains them.
+const LOCALES=['ja','en','fr','it','de','es-ES','zh-CN','pt-BR'];
+const KIND_LABELS:Readonly<Record<string,readonly string[]>>={
+  "Essential": [
+    "必需品",
+    "Essentials",
+    "Essentiels",
+    "Essenziali",
+    "Grundausstattung",
+    "Esenciales",
+    "必需品",
+    "Essenciais"
+  ],
+  "Storage": [
+    "収納",
+    "Storage",
+    "Rangement",
+    "Contenitori",
+    "Aufbewahrung",
+    "Almacenamiento",
+    "储物",
+    "Armazenamento"
+  ],
+  "Decor": [
+    "装飾",
+    "Decor",
+    "Décoration",
+    "Decorazioni",
+    "Dekoration",
+    "Decoración",
+    "装饰",
+    "Decoração"
+  ],
+  "Misc": [
+    "その他の家具",
+    "Miscellaneous",
+    "Divers",
+    "Varie",
+    "Sonstiges",
+    "Varios",
+    "杂项",
+    "Diversos"
+  ],
+  "Seating": [
+    "座席",
+    "Seating",
+    "Sièges",
+    "Sedute",
+    "Sitzmöbel",
+    "Asientos",
+    "座椅",
+    "Assentos"
+  ],
+  "Wall": [
+    "壁面家具",
+    "Wall furniture",
+    "Meubles muraux",
+    "Mobili da parete",
+    "Wandmöbel",
+    "Muebles de pared",
+    "墙面家具",
+    "Móveis de parede"
+  ],
+  "Appliance": [
+    "家電",
+    "Appliances",
+    "Électroménager",
+    "Elettrodomestici",
+    "Haushaltsgeräte",
+    "Electrodomésticos",
+    "家电",
+    "Eletrodomésticos"
+  ],
+  "Lighting": [
+    "照明",
+    "Lighting",
+    "Éclairage",
+    "Illuminazione",
+    "Beleuchtung",
+    "Iluminación",
+    "照明",
+    "Iluminação"
+  ],
+  "Table": [
+    "テーブル",
+    "Tables",
+    "Tables",
+    "Tavoli",
+    "Tische",
+    "Mesas",
+    "桌子",
+    "Mesas"
+  ],
+  "Art": [
+    "アート",
+    "Art",
+    "Art",
+    "Arte",
+    "Kunst",
+    "Arte",
+    "艺术",
+    "Arte"
+  ],
+  "Bed": [
+    "ベッド",
+    "Beds",
+    "Lits",
+    "Letti",
+    "Betten",
+    "Camas",
+    "床",
+    "Camas"
+  ],
+  "Rug": [
+    "ラグ",
+    "Rugs",
+    "Tapis",
+    "Tappeti",
+    "Teppiche",
+    "Alfombras",
+    "地毯",
+    "Tapetes"
+  ],
+  "Utility": [
+    "機能家具",
+    "Utility",
+    "Utilitaires",
+    "Utilità",
+    "Nutzmöbel",
+    "Utilidad",
+    "功能家具",
+    "Utilidades"
+  ],
+  "Foliage": [
+    "植物",
+    "Foliage",
+    "Végétation",
+    "Vegetazione",
+    "Pflanzen",
+    "Vegetación",
+    "植物",
+    "Vegetação"
+  ],
+  "Electronic": [
+    "電子機器",
+    "Electronics",
+    "Électronique",
+    "Elettronica",
+    "Elektronik",
+    "Electrónica",
+    "电子设备",
+    "Eletrônicos"
+  ],
+  "Trimming": [
+    "内装材",
+    "Trimming",
+    "Revêtements",
+    "Rivestimenti",
+    "Verkleidungen",
+    "Revestimientos",
+    "饰面",
+    "Revestimentos"
+  ],
+  "Window": [
+    "窓",
+    "Windows",
+    "Fenêtres",
+    "Finestre",
+    "Fenster",
+    "Ventanas",
+    "窗户",
+    "Janelas"
+  ],
+  "CeilingDecoration": [
+    "天井装飾",
+    "Ceiling decorations",
+    "Décorations de plafond",
+    "Decorazioni da soffitto",
+    "Deckendekoration",
+    "Decoración de techo",
+    "天花板装饰",
+    "Decoração de teto"
+  ],
+  "Landscaping": [
+    "景観",
+    "Landscaping",
+    "Paysage",
+    "Paesaggio",
+    "Landschaft",
+    "Paisajismo",
+    "景观",
+    "Paisagismo"
+  ],
+  "Pathing": [
+    "道",
+    "Paths",
+    "Chemins",
+    "Sentieri",
+    "Wege",
+    "Caminos",
+    "道路",
+    "Caminhos"
+  ],
+  "Rocks": [
+    "岩",
+    "Rocks",
+    "Rochers",
+    "Rocce",
+    "Felsen",
+    "Rocas",
+    "岩石",
+    "Rochas"
+  ],
+  "Trees": [
+    "木",
+    "Trees",
+    "Arbres",
+    "Alberi",
+    "Bäume",
+    "Árboles",
+    "树木",
+    "Árvores"
+  ],
+  "Ride": [
+    "乗り物",
+    "Rides",
+    "Manèges",
+    "Attrazioni",
+    "Fahrgeschäfte",
+    "Atracciones",
+    "游乐设施",
+    "Atrações"
+  ],
+  "Underbrush": [
+    "下草",
+    "Underbrush",
+    "Sous-bois",
+    "Sottobosco",
+    "Unterholz",
+    "Maleza",
+    "灌木丛",
+    "Vegetação rasteira"
+  ],
+  "Fencing": [
+    "フェンス",
+    "Fences",
+    "Clôtures",
+    "Recinzioni",
+    "Zäune",
+    "Vallas",
+    "围栏",
+    "Cercas"
+  ],
+  "Door": [
+    "ドア",
+    "Doors",
+    "Portes",
+    "Porte",
+    "Türen",
+    "Puertas",
+    "门",
+    "Portas"
+  ],
+  "Floor": [
+    "床",
+    "Floor",
+    "Sol",
+    "Pavimento",
+    "Boden",
+    "Suelo",
+    "地面",
+    "Piso"
+  ]
+};
 const UNSET:Readonly<Record<string,string>>={ja:'種類未設定',en:'Type not specified',fr:'Type non spécifié',it:'Tipo non specificato',de:'Typ nicht angegeben','es-ES':'Tipo sin especificar','zh-CN':'未指定类型','pt-BR':'Tipo não especificado'};
 export function collectionFurnitureKindLabel(locale:string,key:string,source?:CollectionDb01Index|null):string|null{
   if(!key.startsWith('furniture-kind:'))return null;
   const tag=key.slice('furniture-kind:'.length);
   if(tag==='__unset__')return UNSET[locale]??UNSET.en;
   const names=source?.furnitureKindLabels?.get(tag);
-  return names?.[locale]??names?.en??tag.replace(/^(?:F_|C_)/,'').replace(/([a-z])([A-Z])/g,'$1 $2');
+  return names?.[locale]??KIND_LABELS[tag]?.[LOCALES.indexOf(locale)]??names?.en??KIND_LABELS[tag]?.[1]??tag.replace(/^(?:F_|C_)/,'').replace(/([a-z])([A-Z])/g,'$1 $2');
 }
