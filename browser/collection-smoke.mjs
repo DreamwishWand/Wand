@@ -292,16 +292,35 @@ try{
   await portal.locator('.header-language-button').click();
   await portal.locator('.language-popover').getByRole('button',{name:'日本語'}).click();
 
-  await portal.getByRole('button',{name:'黄昏の日の出'}).click();
+  assert.equal(await themeChoices.evaluateAll(nodes=>nodes.every(node=>!node.hasAttribute('title')&&!node.textContent.trim())),true,
+    'theme choices are icon-only; accessible names remain available');
+  const assertLightThemeSelection=async (name,expectedBackground)=>{
+    const button=portal.getByRole('button',{name,exact:true});
+    await button.hover();
+    await portal.waitForFunction(({name,bg})=>{
+      const selected=document.querySelector('.shell-theme-option[aria-pressed="true"]');
+      if(!selected||selected.getAttribute('aria-label')!==name)return false;
+      const style=getComputedStyle(selected);
+      return style.backgroundColor===bg&&style.color==='rgb(255, 255, 255)';
+    },{name,bg:expectedBackground});
+    assert.equal(await portal.locator('.shell-theme-option.active').count(),1);
+    await portal.locator('.header-language-button').hover();
+    assert.equal(await button.evaluate(node=>getComputedStyle(node).backgroundColor),expectedBackground);
+  };
+  await portal.getByRole('button',{name:'夜明け'}).click();
   assert.equal(await portal.evaluate(()=>document.documentElement.dataset.wandTheme),'dawn');
   assert.equal(await portal.evaluate(()=>getComputedStyle(document.documentElement).colorScheme),'light');
   assert.equal(await portal.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--wand-bg').trim()),'#EDE8F8');
   assert.deepEqual(await themeChoices.evaluateAll(nodes=>nodes.map(node=>node.getAttribute('aria-pressed'))),
     ['true','false','false']);
-  await portal.getByRole('button',{name:'太陽に照らされた透き通るサンゴ礁'}).click();
+  await assertLightThemeSelection('夜明け','rgb(103, 80, 153)');
+  await portal.getByRole('button',{name:'真昼'}).click();
   assert.equal(await portal.evaluate(()=>document.documentElement.dataset.wandTheme),'coral');
   assert.equal(await portal.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--wand-bg').trim()),'#E5F8FD');
-  await portal.getByRole('button',{name:'魔法の夜空'}).click();
+  assert.deepEqual(await themeChoices.evaluateAll(nodes=>nodes.map(node=>node.getAttribute('aria-pressed'))),
+    ['false','true','false']);
+  await assertLightThemeSelection('真昼','rgb(8, 109, 145)');
+  await portal.getByRole('button',{name:'真夜中'}).click();
   assert.equal(await portal.evaluate(()=>document.documentElement.dataset.wandTheme),'night');
   assert.equal(await portal.evaluate(()=>getComputedStyle(document.documentElement).colorScheme),'dark');
   assert.equal(await portal.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--wand-bg').trim()),'#04143B');

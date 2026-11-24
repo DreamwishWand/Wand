@@ -11,9 +11,9 @@ export const UI_LANGUAGES=[
 ] as const;
 export type WandLanguage=typeof UI_LANGUAGES[number]['code'];
 export const UI_THEMES=[
-  {code:'dawn',label:'黄昏の日の出',short:'日の出',icon:'sunrise'},
-  {code:'coral',label:'太陽に照らされた透き通るサンゴ礁',short:'サンゴ礁',icon:'sun'},
-  {code:'night',label:'魔法の夜空',short:'夜空',icon:'moon-star'}
+  {code:'dawn',label:'夜明け',short:'夜明け',icon:'sunrise'},
+  {code:'coral',label:'真昼',short:'真昼',icon:'sun'},
+  {code:'night',label:'真夜中',short:'真夜中',icon:'moon-star'}
 ] as const;
 export type WandTheme=typeof UI_THEMES[number]['code'];
 export function isWandTheme(value:unknown):value is WandTheme{

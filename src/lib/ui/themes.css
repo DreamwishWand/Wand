@@ -101,7 +101,8 @@ body{background:var(--wand-halo),var(--wand-bg);color:var(--wand-text)}
   width:40px;min-width:40px;height:40px;min-height:40px;
   position:relative;border-radius:8px;transition:background .12s,box-shadow .12s
 }
-:root .site-shell .shell-theme-option.active{
+:root .site-shell .shell-theme-option.active,
+:root .site-shell .shell-theme-option.active:hover:not(:disabled){
   background:var(--wand-menu);border-color:var(--wand-accent);
   color:var(--wand-header-text);
   box-shadow:0 1px 5px #0002,inset 0 0 0 1px var(--wand-accent-strong)
@@ -109,6 +110,16 @@ body{background:var(--wand-halo),var(--wand-bg);color:var(--wand-text)}
 :root .site-shell .shell-theme-option.active::after{
   content:'';position:absolute;bottom:2px;left:35%;right:35%;
   height:2px;background:var(--wand-accent-strong);border-radius:2px
+}
+/* Light palettes require a solid, high-contrast selected segment.
+   Preserve the selected state on hover as well as after pointer exit. */
+:root:is([data-wand-theme='dawn'],[data-wand-theme='coral']) .site-shell .shell-theme-option.active,
+:root:is([data-wand-theme='dawn'],[data-wand-theme='coral']) .site-shell .shell-theme-option.active:hover:not(:disabled){
+  background:var(--wand-accent-strong);border-color:var(--wand-accent-strong);
+  color:var(--wand-accent-contrast);box-shadow:none
+}
+:root:is([data-wand-theme='dawn'],[data-wand-theme='coral']) .site-shell .shell-theme-option.active::after{
+  background:currentColor
 }
 /* A content-sized two-column menu, with no blank space to the right of the names. */
 :root .site-shell .language-popover{

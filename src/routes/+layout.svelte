@@ -384,7 +384,7 @@
           {#each UI_THEMES as item (item.code)}
             <button class="header-icon-button shell-theme-option" type="button"
               class:active={uiTheme===item.code}
-              aria-label={copy.themes[item.code]} title={copy.themes[item.code]}
+              aria-label={copy.themes[item.code]}
               aria-pressed={uiTheme===item.code}
               on:click={()=>switchTheme(item.code)}>
               <WandIcon name={item.icon} size={22}/>
