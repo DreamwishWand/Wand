@@ -23,7 +23,7 @@ export interface SavedShapeMap {
   readonly actualOccupancyVerified:false;readonly savedSourceCoordinateEquivalenceVerified:false;
 }
 export function parseSavedShapePoints(input:unknown):SavedNumericPoint[]{
-  if(!Array.isArray(input)||input.length>2000)throw new TypeError('DB04_SAVE_SHAPE_POINTS_INVALID');
+  if(!Array.isArray(input)||input.length>20000)throw new TypeError('DB04_SAVE_SHAPE_POINTS_INVALID');
   const seen=new Set<number>();
   return input.map(row=>{
     if(!record(row)||!uint(row.localOrdinal)||row.localOrdinal===0||seen.has(row.localOrdinal)||

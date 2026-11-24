@@ -1,12 +1,15 @@
 <script lang="ts">
   import {emptyWorldTimeline,currentWorldEdits} from './saved-map-batch.ts';
   import SavedShapePlot from './SavedShapePlot.svelte';
+  import type {TerrainBinding} from './terrain-binding.ts';
   import type {SavedShapeMap} from './saved-shape-map.ts';
   import type {SavedGridSourceCandidates} from './saved-grid-source-candidates.ts';
   export let receipt:SavedGridSourceCandidates|null=null;
   export let shapeMap:SavedShapeMap|null=null;
   export let file:File|null=null;
   export let timeline=emptyWorldTimeline();
+  export let terrain:TerrainBinding|null=null;
+  export let compact=false;
   export let available=false;
   export let working=false;
   export let errorMessage='';
@@ -63,12 +66,12 @@
 </script>
 
 <div class="saved-candidate-view" aria-label="セーブ内の原本参照候補">
-  <div class="actions">
+  {#if !compact}<div class="actions">
     <h2>現在のセーブの座標</h2>
     <button type="button" on:click={onCompare} disabled={!available||working}>
       {working?'照合中…':'選択Gridと照合'}
     </button>
-  </div>
+  </div>{/if}
   {#if !shapeMap&&currentWorldEdits(timeline).length}
     <p class="note">セーブ全体の配置変更 {currentWorldEdits(timeline).length}件を保持しています。</p>
   {/if}
@@ -79,20 +82,20 @@
   {:else if errorMessage}
     <p role="alert" class="note">{errorMessage}</p>
   {:else if receipt}
-    <div class="summary">
+    {#if !compact}<div class="summary">
       <span>原本参照パス一致候補 <strong>{n(receipt.matchedRecordCount)}件</strong></span>
       <span>表示座標 <strong>{n(receipt.displayedCount)}件</strong></span>
       {#if receipt.outsideSourceNumericEnvelopeCount>0}
         <span>原本数値範囲外 <strong>{n(receipt.outsideSourceNumericEnvelopeCount)}件</strong></span>
       {/if}
-    </div>
+    </div>{/if}
     {#if receipt.points.length>0}
-      {#if shapeMap}<SavedShapePlot map={shapeMap} {file} bind:timeline/>
+      {#if shapeMap}<SavedShapePlot map={shapeMap} {file} {terrain} {compact} bind:timeline/>
       {:else if new Set(receipt.points.map(p=>p.localGridOrdinal)).size===1}<div class="numeric-map">
         <canvas use:draw={receipt}
           aria-label="セーブ内の参照パス一致候補のX/Y数値座標図。地形図ではありません"></canvas>
       </div>{:else}<p class="note">複数のセーブGridの座標は個別の形状図で確認できます。</p>{/if}
-      <p class="axis">セーブ記録のX/Y数値座標。原本地形の座標には投影していません。</p>
+      {#if !compact}<p class="axis">セーブ記録のX/Y数値座標。原本地形の座標には投影していません。</p>{/if}
       {#if receipt.dataSampled}
         <p class="note">表示数に上限があるため、座標図は先頭の一部を示しています。</p>
       {/if}
@@ -105,7 +108,7 @@
     {#if receipt.sourceReferenceCount>1}
       <p class="note">原本内で同じ参照パスを複数のGridが共有しています。Gridの識別ができないため候補を表示していません。</p>
     {/if}
-    <p class="warning">参照パスが一致しても、セーブ座標と原本Grid座標の一致、配置状態、衝突判定、設置許可は<strong>未検証</strong>です。原本地形に重ねたり、空きマス数として計上したりしません。</p>
+    {#if !compact}<p class="warning">参照パスが一致しても、セーブ座標と原本Grid座標の一致、配置状態、衝突判定、設置許可は<strong>未検証</strong>です。原本地形に重ねたり、空きマス数として計上したりしません。</p>{/if}
   {/if}
 </div>
 

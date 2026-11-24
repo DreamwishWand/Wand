@@ -17,3 +17,20 @@ test('public DB01 geometry uses canonical fields and no fallback shape for missi
  assert.equal(map.shapes['40000001:8'].cellCount,2);assert.equal(map.objects[0].name,'Table');assert.equal(map.objects[1].shapeKey,null);
  assert.equal(map.savedSourceCoordinateEquivalenceVerified,false);
 });
+
+import {terrainFloorAt,terrainWarnings,projectTerrainSession} from '../src/lib/world/terrain-binding.ts';
+test('native factor mapping and per-cell outside/mismatched floor evidence',()=>{
+ const t={raster:{sizeX:2,sizeY:2,nativeFloorValues:Uint32Array.from([4,512,4,4])},factor:2,verifiedGridOrdinals:[1]};
+ assert.equal(terrainFloorAt(t,1,0),4);assert.equal(terrainFloorAt(t,2,0),512);
+ assert.equal(terrainFloorAt(t,-1,0),null);assert.equal(terrainFloorAt(t,4,0),null);
+ const shape={width:4,height:1,cellCount:4,runs:[{x:0,y:0,width:4}],path:'',acceptedFloorTypesFlag:4};
+ assert.deepEqual(terrainWarnings(t,shape,1,0),[{x:2,y:0,width:2,reason:'floor-mismatch'},{x:4,y:0,width:1,reason:'outside'}]);
+});
+test('one terrain session distributes complete local rows by exact public witness index',()=>{
+ const scopes=[{key:'A',witness:{nativeGridId:0,nativeSizeX:10,nativeSizeY:10,tessellationFactor:1}},{key:'B',witness:{nativeGridId:1,nativeSizeX:4,nativeSizeY:4,tessellationFactor:2}}];
+ const rows=[{localOrdinal:1,localGridOrdinal:1,itemId:'40005160',recordKind:'full',x:1,y:2,orientation:'GridOrientation_Down',coordinatesObserved:true},{localOrdinal:2,localGridOrdinal:2,itemId:'40005160',recordKind:'full',x:8,y:1,orientation:null,coordinatesObserved:true}];
+ const raw={contract:'wand.db05.db04-terrain-session@1',rows,bindings:[{localOrdinal:1,sourceRefIndex:0,savedFactor:1,sourceLocalCoordinateMappingVerified:true},{localOrdinal:2,sourceRefIndex:1,savedFactor:1,sourceLocalCoordinateMappingVerified:false}],sourceCoverageComplete:false,effectivePlacementVerified:false,worldCoordinatesVerified:false,placementLegalityVerified:false,saveWritingAuthorized:false};
+ const result=projectTerrainSession(raw,scopes);assert.deepEqual(result[0].verifiedGridOrdinals,[1]);assert.deepEqual(result[1].verifiedGridOrdinals,[]);
+ assert.equal(result[1].receipt.outsideSourceNumericEnvelopeCount,1);assert.equal(result[0].receipt.points[0].x,1);
+ assert.throws(()=>projectTerrainSession({...raw,bindings:[{...raw.bindings[1],sourceLocalCoordinateMappingVerified:true}]},scopes));
+});

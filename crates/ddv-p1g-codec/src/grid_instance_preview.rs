@@ -396,6 +396,21 @@ pub(super) fn saved_grid_instances_json(source:&[u8])->Result<String,CodecError>
 pub(super) fn saved_db04_object_source_context_json(
     profile:&[u8],witness:&str
 )->Result<String,CodecError>{
+    saved_db04_source_projection(profile,witness,false)
+}
+/// One local Save scan for all public source Grid witnesses. Only ephemeral
+/// ordinals and public witness indices leave this function. Native GetFloorType
+/// divides the saved position by TessellationFactor; Contains rejects negatives
+/// and coordinates >= source dimensions * factor. The pinned Grid constructor
+/// initializes an omitted TessellationFactor to 1.
+pub(super) fn saved_db04_terrain_session_json(
+    profile:&[u8],witness:&str
+)->Result<String,CodecError>{
+    saved_db04_source_projection(profile,witness,true)
+}
+fn saved_db04_source_projection(
+    profile:&[u8],witness:&str,terrain_session:bool
+)->Result<String,CodecError>{
     if witness.is_empty()||witness.len()>16*1024*1024{
         return Err(CodecError::Bounds);
     }
@@ -478,6 +493,7 @@ pub(super) fn saved_db04_object_source_context_json(
     let collection=root.get("World").and_then(|v|v.get("GridCollection"))
         .and_then(Value::as_object);
     let mut out=Vec::with_capacity(scan.private_targets.len());
+    let mut bindings=Vec::new();
     for (i,(target,xy)) in scan.private_targets.iter().enumerate(){
         let scope=match target.kind{
             GridObjectKind::Full=>"Grids",
@@ -530,6 +546,29 @@ pub(super) fn saved_db04_object_source_context_json(
         };
         let unique=if matches.len()==1{Some(matches[0])}else{None};
         let dimensions=unique.and_then(|r|r.size);
+        if terrain_session{
+            // Only FULL grids with a unique exact path pair and matching
+            // factor are eligible for source-local terrain projection.
+            // Diff records do not imply reconstructed effective placement.
+            if status=="full_exact_source_path_candidate"{
+                if let Some(source)=unique{
+                    let witness_index=sources.iter().position(|r|std::ptr::eq(r,source))
+                        .ok_or(CodecError::Json)?;
+                    let factor=match grid.and_then(|g|g.get("TessellationFactor")){
+                        None=>Some(1u32), // native constructor default
+                        Some(v)=>v.as_u64().and_then(|v|u32::try_from(v).ok())
+                    };
+                    let aligned=matches!(factor,Some(1|2))&&factor==source.tessellation&&source.size.is_some();
+                    bindings.push(serde_json::json!({
+                        "localOrdinal":i+1,
+                        "sourceRefIndex":witness_index,
+                        "savedFactor":factor,
+                        "sourceLocalCoordinateMappingVerified":aligned
+                    }));
+                }
+            }
+            continue;
+        }
         // This does NOT assert that Save coordinates equal native source
         // anchor coordinates. A point can numerically fall within/outside
         // a source envelope even when the coordinate spaces are unrelated.
@@ -562,6 +601,18 @@ pub(super) fn saved_db04_object_source_context_json(
             "sourceAnchorEnvelopeHeight":source_anchor_envelope.map(|p|p.1),
             "savedPositionNumericRelation":numeric_relation
         }));
+    }
+    if terrain_session{
+        return serde_json::to_string(&serde_json::json!({
+            "contract":"wand.db05.db04-terrain-session@1",
+            "rows":scan.rows,
+            "bindings":bindings,
+            "sourceCoverageComplete":false,
+            "effectivePlacementVerified":false,
+            "worldCoordinatesVerified":false,
+            "placementLegalityVerified":false,
+            "saveWritingAuthorized":false
+        })).map_err(|_|CodecError::Json);
     }
     serde_json::to_string(&serde_json::json!({
         "contract":"wand.db05.db04-grid-object-source-context@2",
@@ -816,5 +867,26 @@ mod tests{
         let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"1".into(),
             object_id:"1".into(),item_id:40100001};
         assert!(validate_exclusive_grid_moves(source,&[(&target,(3,0))]).is_err());
+    }
+}
+
+#[cfg(test)]
+mod terrain_session_tests{
+    use super::*;
+    #[test]
+    fn terrain_session_uses_exact_paths_and_native_default_factor(){
+        let save=br#"{"World":{"GridCollection":{"Grids":{
+          "1":{"GridDefaultLayoutPath":"SceneLayouts/Test.json","GridDataPath":"GridData/Test.json","Objects":{"1":{"ItemID":40005160,"X":0,"Y":1,"Orientation":"GridOrientation_Down"}}},
+          "2":{"GridDefaultLayoutPath":"SceneLayouts/Test.json","GridDataPath":"GridData/Test.json","TessellationFactor":2,"Objects":{"2":{"ItemID":40005160,"X":2,"Y":3}}},
+          "3":{"GridDefaultLayoutPath":"SceneLayouts/Other.json","GridDataPath":"GridData/Test.json","Objects":{"3":{"ItemID":40005160,"X":0,"Y":0}}}
+        }}}}"#;
+        let witness=r#"{"contract":"wand.db05.db04-object-source-witness@1","gridRefs":[{"layoutId":"SceneLayouts/Test.json","gridDataPath":"GridData/Test.json","nativeGridId":0,"nativeSizeX":10,"nativeSizeY":10,"tessellationFactor":1}]}"#;
+        let r:Value=serde_json::from_str(&saved_db04_terrain_session_json(save,witness).unwrap()).unwrap();
+        assert_eq!(r["rows"].as_array().unwrap().len(),3);
+        assert_eq!(r["bindings"].as_array().unwrap().len(),2);
+        assert_eq!(r["bindings"][0]["savedFactor"],1);
+        assert_eq!(r["bindings"][0]["sourceLocalCoordinateMappingVerified"],true);
+        assert_eq!(r["bindings"][1]["sourceLocalCoordinateMappingVerified"],false);
+        assert!(!r.to_string().contains("SceneLayouts/"));
     }
 }
