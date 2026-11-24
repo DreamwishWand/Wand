@@ -1,4 +1,7 @@
 <script lang="ts">
+ import RoadDesignControls from './RoadDesignControls.svelte';
+ import {roadPitch,roadStroke,snapRoadPoint,ROAD_STROKE_LIMIT,type RoadTool,type RoadPoint} from './road-design.ts';
+ import {planRoadDesign,commitRoadDesign} from './design-layout.ts';
  import MapCameraControls from './MapCameraControls.svelte';
  import {worldShortcut,worldShortcutTarget,NUDGE} from './world-shortcuts.ts';
  import {designClipboard,pasteDesign,canPasteDesign,removeDesignGroup,transformDesignGroup,type DesignClipItem} from './design-layout.ts';
@@ -52,6 +55,15 @@
  type Cell={x:number;y:number};
  type DirectDrag={id:number;start:Cell;end:Cell;clientX:number;clientY:number;ids:number[];add:boolean;kind:'move'|'marquee';moved:boolean};
  let direct:DirectDrag|null=null,suppressDirectClick=false,spacePan=false;
+ let roadTool:RoadTool='brush',roadDrag:{id:number;points:RoadPoint[];overflow:boolean}|null=null;
+ $: pitch=roadPitch(placing,grid?.factor??0);
+ $: roadEnabled=Boolean(pitch&&!symmetry);
+ $: roadPreview=roadEnabled&&pitch&&roadDrag&&!roadDrag.overflow?roadStroke(roadDrag.points,roadTool,pitch):null;
+ $: roadPlan=roadPreview&&placing&&grid?planRoadDesign(timeline,placing,roadPreview,grid.factor,width,height,roadTool==='erase'):null;
+ function setRoadTool(tool:RoadTool){roadDrag=null;roadTool=tool;}
+ function startRoad(e:PointerEvent){if(!pitch)return;const p=cell(e);if(!p)return;roadDrag={id:e.pointerId,points:[snapRoadPoint(p,pitch)],overflow:false};try{(e.currentTarget as Element).setPointerCapture(e.pointerId);}catch{/* no capture */}e.preventDefault();}
+ function followRoad(e:PointerEvent){if(!roadDrag||!pitch||roadDrag.overflow)return;const p=cell(e);if(!p)return;const point=snapRoadPoint(p,pitch),last=roadDrag.points[roadDrag.points.length-1];if(last?.x===point.x&&last.y===point.y)return;const points=roadTool==='brush'||roadTool==='erase'?[...roadDrag.points,point]:[roadDrag.points[0],point];roadDrag={...roadDrag,points,overflow:points.length>ROAD_STROKE_LIMIT};}
+ function finishRoad(e:PointerEvent,confirm:boolean){if(roadDrag?.id!==e.pointerId)return false;followRoad(e);const drag=roadDrag;roadDrag=null;suppressDirectClick=true;if(confirm&&cell(e)&&placing&&grid&&pitch&&!drag.overflow){const points=roadStroke(drag.points,roadTool,pitch);save(points?commitRoadDesign(timeline,placing,points,grid.factor,width,height,roadTool==='erase'):null);}return true;}
  $: dragPlan=direct?.moved&&direct.kind==='move'?transformDesignGroup(timeline,direct.ids,definitions,direct.end.x-direct.start.x,direct.end.y-direct.start.y,0,width,height):null;
  let symmetryOpen=false,symmetry:DesignSymmetry|null=null,symmetryPicking=false;
  let alignmentOpen=false,alignmentAction:MapAlignment|null=null;
@@ -119,7 +131,7 @@
  }
  onDestroy(()=>subscribed?.removeEventListener('message',receive));
  $: if(grid?.key!==lastGrid){
-   lastGrid=grid?.key??'';symmetry=null;symmetryPicking=false;direct=null;spacePan=false;groupIds=[];pasting=[];pastePending=[];pasteRequest=0;lastPoint=null;importEpoch++;reading=false;pendingImport=null;selected=null;placing=null;hover=null;moveMode=false;loadingShape=false;shapeId=0;error='';camera=defaultMapCamera();
+   lastGrid=grid?.key??'';roadDrag=null;symmetry=null;symmetryPicking=false;direct=null;spacePan=false;groupIds=[];pasting=[];pastePending=[];pasteRequest=0;lastPoint=null;importEpoch++;reading=false;pendingImport=null;selected=null;placing=null;hover=null;moveMode=false;loadingShape=false;shapeId=0;error='';camera=defaultMapCamera();
  }
  $: if(active&&grid&&worker&&locale!==catalogLocale)requestCatalog(grid,locale,worker);
  function requestCatalog(g:PublicTerrainGridRef,language:WandLanguage,w:Worker){
@@ -208,7 +220,7 @@
    if(!grid||!next){error='配置範囲・編集制限・同種の道やフェンスの重複を確認してください。';return;}
    layouts={...layouts,[grid.key]:next};error='';
  }
- function cancel(){symmetryPicking=false;alignmentAction=null;direct=null;placing=null;moveMode=false;hover=null;shapeId=0;loadingShape=false;error='';pasting=[];pastePending=[];pasteRequest=0;}
+ function cancel(){roadDrag=null;symmetryPicking=false;alignmentAction=null;direct=null;placing=null;moveMode=false;hover=null;shapeId=0;loadingShape=false;error='';pasting=[];pastePending=[];pasteRequest=0;}
  function travel(delta:-1|1){cancel();selected=null;groupIds=[];save(travelDesign(timeline,delta));}
  function rotate(delta:number){
    alignmentAction=null;
@@ -244,7 +256,7 @@
  $: symmetricPlacementPlan=symmetry&&symmetricOriginal.length?symmetryPlan(timeline,symmetricOriginal,definitions,symmetry,true,width,height):null;
  $: symmetryPreviewItems=symmetricOriginal.length?symmetricPreview:symmetricSelectedPreview;
  $: symmetryPreviewValid=symmetricOriginal.length?Boolean(symmetricPlacementPlan):Boolean(symmetricSelectedPlan);
- function changeSymmetry(next:DesignSymmetry|null){symmetry=next;symmetryPicking=false;alignmentAction=null;direct=null;moveMode=false;}
+ function changeSymmetry(next:DesignSymmetry|null){roadDrag=null;symmetry=next;symmetryPicking=false;alignmentAction=null;direct=null;moveMode=false;}
  function mirrorSelected(){if(!symmetricSelectedPlan||busyImport)return;save(commitSymmetry(timeline,symmetricSelectedPlan,definitions,width,height));}
  function placeWithSymmetry(x:number,y:number,items:readonly SymmetryItem[]){
   if(!symmetry)return false;
@@ -265,6 +277,7 @@
  }
  function placeAt(x:number,y:number){
   if(!placing)return;
+  if(roadEnabled&&pitch&&grid){save(commitRoadDesign(timeline,placing,[snapRoadPoint({x,y},pitch)],grid.factor,width,height,roadTool==='erase'));return;}
   if(!placeWithSymmetry(x,y,[{itemId:placing.itemId,x,y,orientation}]))save(placeDesign(timeline,placing,x,y,orientation,width,height));
  }
 
@@ -300,6 +313,7 @@
    suppressDirectClick=false;
    if(busyImport)return;
    if(e.button===1||spacePan||e.pointerType==='touch'){gesture.begin(e,camera.zoom>1);return;}
+   if(e.button===0&&roadEnabled&&!symmetryPicking){startRoad(e);return;}
    if(e.button!==0||placing||moveMode||pasting.length||pasteRequest||alignmentAction||symmetryPicking)return;
    const p=cell(e);if(!p)return;
    const hit=hitAt(p),add=e.ctrlKey||e.metaKey||e.shiftKey;
@@ -309,6 +323,7 @@
  function follow(e:PointerEvent){
    const p=gesture.move(e,svg,extent,camera);if(p){camera=p;return;}
    lastPoint=cell(e);
+   if(roadDrag?.id===e.pointerId){followRoad(e);return;}
    if(direct?.id===e.pointerId){
      if(!direct.moved&&Math.hypot(e.clientX-direct.clientX,e.clientY-direct.clientY)<5)return;
      if(!direct.moved){try{(e.currentTarget as Element).setPointerCapture(e.pointerId);}catch{/* pointer ended */}}
@@ -318,7 +333,7 @@
    if(placing||moveMode||pasting.length)hover=lastPoint;
  }
  function endDirect(e:PointerEvent,commit:boolean){
-   gesture.end(e);if(direct?.id!==e.pointerId)return;
+   gesture.end(e);if(finishRoad(e,commit))return;if(direct?.id!==e.pointerId)return;
    const drag=direct;direct=null;
    if(!drag.moved)return;suppressDirectClick=true;
    if(!commit||!cell(e))return;
@@ -343,7 +358,7 @@
    if(action==='paste'){if(clipboard.length){e.preventDefault();beginPaste(clipboard);}return;}
    if(action==='duplicate'){if(selectedIds.size){e.preventDefault();duplicate();}return;}
    if(action==='select-all'){e.preventDefault();cancel();selected=null;groupIds=objects.filter(o=>layerSelectable(layerState,o)&&matchesSelectionLayer(o,layer)&&!nativeActionBlocked(o.editRestrictions,'select')).map(o=>o.localOrdinal);return;}
-   if(action==='cancel'){e.preventDefault();if(symmetryPicking){symmetryPicking=false;return;}if(alignmentAction){alignmentAction=null;return;}cancel();selected=null;groupIds=[];return;}
+   if(action==='cancel'){e.preventDefault();if(roadDrag){roadDrag=null;return;}if(symmetryPicking){symmetryPicking=false;return;}if(alignmentAction){alignmentAction=null;return;}cancel();selected=null;groupIds=[];return;}
    if(action==='confirm'){if(e.target instanceof HTMLElement&&e.target.closest('button:not(.design-plot)'))return;if(alignmentAction&&alignmentPlan){e.preventDefault();commitAlignment();return;}if(symmetry&&symmetricSelectedPlan){e.preventDefault();mirrorSelected();return;}if(pasting.length&&hover){e.preventDefault();commitPaste(hover.x,hover.y);}else if(placing&&hover){e.preventDefault();placeAt(hover.x,hover.y);}return;}
    if(action==='zoom-in'||action==='zoom-out'||action==='fit'){e.preventDefault();camera=action==='fit'?defaultMapCamera():zoomMapCamera(camera,camera.zoom*(action==='zoom-in'?2:.5),maxZoom);return;}
    if(action==='rotate-left'||action==='rotate-right'){if(selectedIds.size||placing){e.preventDefault();rotate(action==='rotate-left'?1:3);}return;}
@@ -393,6 +408,7 @@
    <div class="design-messages">{#if busyImport}<p role="status">{words[5]}</p>{/if}
    {#if loadingShape}<p role="status">形状を読み込み中…</p>{/if}
    {#if error}<p role="alert">{error}</p>{/if}</div>
+   {#if roadEnabled}<div class="road-tools-overlay"><RoadDesignControls {locale} tool={roadTool} valid={!roadDrag||Boolean(roadPlan)} added={roadPlan?.add.length??0} removed={roadPlan?.remove.length??0} onChange={setRoadTool}/></div>{/if}
    {#if symmetryOpen}<div class="design-symmetry-panel"><WorldSymmetryControls {locale} value={symmetry} {width} {height} picking={symmetryPicking} count={symmetricSelection.length} valid={Boolean(symmetricSelectedPlan)} busy={busyImport} onChange={changeSymmetry} onPick={()=>symmetryPicking=!symmetryPicking} onMirror={mirrorSelected}/></div>{/if}
    {#if layersOpen}<div class="design-layer-panel"><WorldLayerControls {locale} state={layerState} disabled={busyImport} onChange={applyLayers}/></div>{/if}
    {#if alignmentOpen&&selectedIds.size>=2}<div class="design-alignment-panel"><WorldAlignmentControls {locale} count={selectedIds.size} selected={alignmentAction} valid={Boolean(alignmentPlan)} busy={busyImport} onPick={pickAlignment} onCommit={commitAlignment} onCancel={()=>alignmentAction=null}/></div>{/if}
@@ -439,7 +455,8 @@
       {/each}
      {/if}
      {#if hover&&pasting.length}{#each pasting as p,i}{@const shape=definitions.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4]}{#if shape}<path class="design-paste-ghost" d={shape.path} transform={'translate('+(hover.x+p.dx)+' '+(hover.y+p.dy)+')'} fill={(symmetry?Boolean(symmetricPlacementPlan):pasteValid)?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}{/each}{/if}
-     {#if hover&&ghostShape}<path class="design-ghost" d={ghostShape.path} transform={'translate('+hover.x+' '+hover.y+')'} fill={(symmetry&&placing?Boolean(symmetricPlacementPlan):ghostValid)?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>
+     {#if roadDrag&&roadPreview&&pitch}{#each roadPreview as p (p.x+':'+p.y)}<rect class="road-stroke-ghost" x={p.x} y={p.y} width={pitch} height={pitch} fill={roadPlan&&roadTool!=='erase'?'#4bddcd':'#ef5350'} fill-opacity=".55" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/each}{/if}
+     {#if hover&&ghostShape&&!roadEnabled}<path class="design-ghost" d={ghostShape.path} transform={'translate('+hover.x+' '+hover.y+')'} fill={(symmetry&&placing?Boolean(symmetricPlacementPlan):ghostValid)?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>
       {#if ghostGeometry&&showWorldArtwork({layer:ghostGeometry.layer,shapeKey:null},ghostShape,cellPixels)&&images.has(ghostGeometry.itemId)}<WorldObjectArtwork href={images.get(ghostGeometry.itemId)!} x={hover.x} y={hover.y} width={ghostShape.width} height={ghostShape.height} opacity={.55}/>{/if}
       {#if cellPixels>=5}<path d="M0 -.32L.19 .13L0 .04L-.19 .13Z" transform={'translate('+(hover.x+.5)+' '+(hover.y+.5)+') rotate('+sourceOrientationAngle(ghostOrientation*4)+')'} fill="#fff" pointer-events="none"/>{/if}
      {/if}
@@ -484,6 +501,7 @@
  @media(max-width:700px){.design-workspace{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(0,2fr)}.design-item img{width:44px;height:44px}}
  .design-workspace,.design-map-side,.design-map-frame{position:absolute;inset:0;display:block;min-height:0;min-width:0;overflow:hidden;border-radius:0}.design-workspace{isolation:isolate}
  aside{position:absolute;z-index:5;top:104px;bottom:38px;left:6px;width:clamp(170px,19vw,300px);border-radius:6px;box-shadow:0 2px 8px #0003}aside[hidden]{display:none}
+ .road-tools-overlay{position:absolute;z-index:7;left:50%;top:96px;transform:translateX(-50%);max-width:calc(100% - 12px)}
  .design-symmetry-panel{position:absolute;z-index:9;right:6px;top:104px;width:min(250px,calc(100% - 12px));max-height:calc(100% - 145px);overflow:auto;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;box-shadow:0 3px 14px #0004}
  .design-layer-panel{position:absolute;z-index:9;right:6px;top:104px;width:min(220px,calc(100% - 12px));max-height:calc(100% - 145px);overflow:auto;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;box-shadow:0 3px 14px #0004}
  .design-alignment-panel{position:absolute;z-index:8;right:6px;top:104px;width:min(300px,calc(100% - 12px));background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;padding:6px;box-shadow:0 3px 14px #0004}

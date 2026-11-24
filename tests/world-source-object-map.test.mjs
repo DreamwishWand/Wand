@@ -417,3 +417,20 @@ test('exact line and point symmetry reflects source row runs and direction; no f
  assert.equal(reflectedDesignItem(p,{...g,shapes:{'40000001:0':asymmetric}},v),null);
  const road={...g,itemId:40100001,layer:'ground'};assert.equal(reflectedDesignItem({...p,itemId:road.itemId},road,v),null);
 });
+
+import {roadPitch,roadStroke,snapRoadPoint} from '../src/lib/world/road-design.ts';
+import {planRoadDesign,commitRoadDesign} from '../src/lib/world/design-layout.ts';
+test('cardinal road strokes use source-matched pitch and atomic design history',()=>{
+ const shape={width:4,height:4,runs:[0,1,2,3].map(y=>({x:0,y,width:4})),cellCount:16,path:'M0 0h4v4h-4Z'};
+ const g={itemId:40100068,name:'Path_MainStreet',layer:'ground',surfaceCapable:false,shapes:{'40100068:8':shape}};
+ assert.equal(roadPitch(g,2),4);assert.equal(roadPitch(g,1),null);assert.equal(roadPitch({...g,name:'Unknown'},2),null);
+ assert.deepEqual(snapRoadPoint({x:7,y:11},4),{x:4,y:8});
+ const points=[{x:4,y:4},{x:12,y:12}];
+ assert.equal(roadStroke(points,'line',4).length,3);assert.equal(roadStroke(points,'outline',4).length,8);assert.equal(roadStroke(points,'fill',4).length,9);assert.equal(roadStroke(points,'brush',4).length,5);
+ assert.equal(roadStroke([{x:0,y:0},{x:400,y:400}],'fill',4),null);
+ const start=emptyDesign(),cells=roadStroke(points,'fill',4),next=commitRoadDesign(start,g,cells,2,40,40);
+ assert.equal(currentDesign(next).length,9);assert.deepEqual(currentDesign(travelDesign(next,-1)),[]);assert.equal(commitRoadDesign(next,g,cells,2,40,40),next);
+ const erased=commitRoadDesign(next,g,[{x:4,y:4}],2,40,40,true);assert.equal(currentDesign(erased).length,8);assert.equal(currentDesign(travelDesign(erased,-1)).length,9);
+ assert.equal(planRoadDesign(next,g,[{x:40,y:40}],2,40,40),null);
+ const other={...g,itemId:40100069,shapes:{'40100069:8':shape}};assert.equal(planRoadDesign(next,other,[{x:4,y:4}],2,40,40),null);
+});
