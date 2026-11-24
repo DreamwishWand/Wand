@@ -24,6 +24,7 @@ struct Scan {
     sampled:bool,
     rows:Vec<Value>,
     private_targets:Vec<(GridCoordinateTarget,Option<(i32,i32)>)>,
+    subgrid_parents:HashSet<usize>,
 }
 
 fn key_id(key:&str)->Option<u64>{
@@ -81,6 +82,9 @@ fn project_objects(
         // Index is per-open-document only, not a stable instance identifier,
         // writer handle, real grid key or gameplay object ID.
         let ordinal=scan.rows.len()+1;
+        if obj.get("State").and_then(|s|s.get("SubGrid")).is_some(){
+            scan.subgrid_parents.insert(ordinal);
+        }
         scan.private_targets.push((GridCoordinateTarget{
             kind:if modified{GridObjectKind::DiffModified}else{GridObjectKind::Full},
             grid_id:grid_id.to_owned(),object_id:key.to_owned(),item_id
@@ -333,7 +337,7 @@ pub(super) fn resolve_grid_mixed_targets(
         let observed_orientation=scan.rows.get(ordinal-1)
             .and_then(|row|row.get("orientation")).and_then(Value::as_str);
         if target.item_id!=*item||xy!=&Some(*expected)||
-           kind!=observed_kind||
+           scan.subgrid_parents.contains(ordinal)||kind!=observed_kind||
            orientation.as_ref().is_some_and(|o|Some(o.as_str())!=observed_orientation){
             return Err(CodecError::Json);
         }
@@ -407,6 +411,23 @@ pub(super) fn saved_db04_terrain_session_json(
     profile:&[u8],witness:&str
 )->Result<String,CodecError>{
     saved_db04_source_projection(profile,witness,true)
+}
+// Never expose private Grid keys. A resolved full child is a structural
+// reference, not proof of support height or world-space transforms.
+fn local_subgrid_summary(collection:Option<&Map<String,Value>>,parent:Option<&Map<String,Value>>,object_key:&str,parent_grid_key:&str)->Option<Value>{
+    let sub=parent?.get("Objects")?.get(object_key)?.get("State")?.get("SubGrid")?;
+    let unknown=||serde_json::json!({"status":"unresolved","objectCount":null});
+    let Some(id)=sub.get("GridID").and_then(Value::as_u64) else{return Some(unknown());};
+    let key=id.to_string();
+    if key==parent_grid_key{return Some(unknown());}
+    let Some(c)=collection else{return Some(unknown());};
+    if c.get("DiffGrids").and_then(|v|v.get(&key)).is_some(){return Some(unknown());}
+    let Some(grid)=c.get("Grids").and_then(|v|v.get(&key)).and_then(|v|valid_grid(&key,v)) else{return Some(unknown());};
+    let count=match grid.get("Objects"){
+        None=>0,
+        Some(v)=>match v.as_object(){Some(o)=>o.len(),None=>return Some(unknown())}
+    };
+    Some(serde_json::json!({"status":"resolved_full","objectCount":count}))
 }
 fn saved_db04_source_projection(
     profile:&[u8],witness:&str,terrain_session:bool
@@ -563,7 +584,8 @@ fn saved_db04_source_projection(
                         "localOrdinal":i+1,
                         "sourceRefIndex":witness_index,
                         "savedFactor":factor,
-                        "sourceLocalCoordinateMappingVerified":aligned
+                        "sourceLocalCoordinateMappingVerified":aligned,
+                        "subgrid":local_subgrid_summary(collection,grid,&target.object_id,&target.grid_id)
                     }));
                 }
             }
@@ -888,5 +910,24 @@ mod terrain_session_tests{
         assert_eq!(r["bindings"][0]["sourceLocalCoordinateMappingVerified"],true);
         assert_eq!(r["bindings"][1]["sourceLocalCoordinateMappingVerified"],false);
         assert!(!r.to_string().contains("SceneLayouts/"));
+    }
+    #[test]
+    fn subgrid_parent_is_local_structural_evidence_and_mixed_edit_guard(){
+        let save=br#"{"World":{"GridCollection":{"Grids":{
+          "1":{"GridDefaultLayoutPath":"SceneLayouts/Test.json","GridDataPath":"GridData/Test.json","Objects":{
+            "1":{"ItemID":40005160,"X":0,"Y":1,"State":{"SubGrid":{"GridID":99}}},
+            "2":{"ItemID":40005160,"X":2,"Y":3,"State":{"SubGrid":{"GridID":88}}},
+            "3":{"ItemID":40005160,"X":4,"Y":5}}},
+          "99":{"Objects":{"7":{"ItemID":40005160,"X":0,"Y":0}}}
+        }}}}"#;
+        let witness=r#"{"contract":"wand.db05.db04-object-source-witness@1","gridRefs":[{"layoutId":"SceneLayouts/Test.json","gridDataPath":"GridData/Test.json","nativeGridId":0,"nativeSizeX":10,"nativeSizeY":10,"tessellationFactor":1}]}"#;
+        let r:Value=serde_json::from_str(&saved_db04_terrain_session_json(save,witness).unwrap()).unwrap();
+        assert_eq!(r["bindings"][0]["subgrid"],serde_json::json!({"status":"resolved_full","objectCount":1}));
+        assert_eq!(r["bindings"][1]["subgrid"],serde_json::json!({"status":"unresolved","objectCount":null}));
+        assert!(r["bindings"][2]["subgrid"].is_null());
+        assert!(!r.to_string().contains("GridID"));
+        assert!(resolve_grid_mixed_targets(save,&[(1,40005160,(0,1),"full".into(),None)]).is_err());
+        assert!(resolve_grid_mixed_targets(save,&[(2,40005160,(2,3),"full".into(),None)]).is_err());
+        assert!(resolve_grid_mixed_targets(save,&[(3,40005160,(4,5),"full".into(),None)]).is_ok());
     }
 }
