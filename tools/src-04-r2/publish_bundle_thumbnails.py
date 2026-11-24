@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Publish locally generated bundle thumbnails; no copy, delete or original rewrite."""
 import argparse
+from bundle_thumbnails import collect, source_rows, SOURCE_BUNDLE
 import hashlib
 import io
 import json
@@ -59,6 +60,7 @@ def validate(root):
 def census(s3):
     public={}
     canonical={}
+    legacy_keys={}
     args={"Bucket":BUCKET,"MaxKeys":1000}
     pages=0
     while True:
@@ -72,11 +74,13 @@ def census(s3):
                 public.setdefault(m[1],set()).add(s)
             else:
                 m=LEGACY.fullmatch(k)
-                if m and m[1]==m[2][:2]: public.setdefault(m[2],set()).add(s)
+                if m and m[1]==m[2][:2]:
+                    public.setdefault(m[2],set()).add(s)
+                    legacy_keys.setdefault(m[2],[]).append((k,s))
         print(f"  LIST page {pages}/{MAX_LIST}",flush=True)
         if not page.get("IsTruncated"): break
         args["ContinuationToken"]=page["NextContinuationToken"]
-    return public,canonical,pages
+    return public,canonical,pages,legacy_keys
 
 def plan(pairs,thumbs,public,canonical):
     eligible=set()
@@ -134,11 +138,51 @@ def main():
     from botocore.config import Config
     s3=boto3.client("s3",region_name="auto",endpoint_url=f"https://{account}.r2.cloudflarestorage.com",config=Config(retries={"total_max_attempts":1},connect_timeout=10,read_timeout=30,max_pool_connections=8))
     check("IfNoneMatch" in s3.meta.service_model.operation_model("PutObject").input_shape.members,"Installed boto3 lacks conditional PutObject; update boto3 before publication")
-    public,canonical,pages=census(s3)
+    public,canonical,pages,legacy_keys=census(s3)
+    # Local original names may be decoded-pixel hashes rather than encoded hashes.
+    source_root=root.parent
+    manifests=sorted(p for p in (source_root/"manifests").rglob("*") if p.is_file() and p.suffix in (".jsonl",".json"))
+    sources=collect(source_root,manifests)
+    check(set(sources)==set(pairs),"Local source/thumbnail index mismatch")
+    audit=[]
+    matched_legacy=0
+    head_count=0
+    names={}
+    for manifest in manifests:
+        for row in source_rows(manifest):
+            if not isinstance(row,dict) or not str(row.get("bundlePath","")).replace("\\","/").endswith("/"+SOURCE_BUNDLE): continue
+            v=row.get("original")
+            if isinstance(v,dict) and v.get("sha256") in pairs:
+                name=row.get("objectName")
+                if isinstance(name,str) and name:
+                    names.setdefault(v["sha256"],set()).add(name)
+    for sha,(o,t) in pairs.items():
+        src=sources[sha]
+        check(all(src[k]==o[k] for k in ("sha256","bytes","width","height")),"Source index metadata mismatch")
+        pixel=src["path"].stem
+        matches=[]
+        if o["bytes"] not in public.get(sha,set()):
+            # Only exact source filename + size candidates; do not scan unrelated objects.
+            for k,size in legacy_keys.get(pixel,[]):
+                if size==o["bytes"]:
+                    head_count+=1
+                    check(head_count<=2099,"Legacy HEAD budget exceeded")
+                    h=s3.head_object(Bucket=BUCKET,Key=k)
+                    if h.get("Metadata",{}).get("sha256")==sha and h.get("ContentLength")==size and h.get("ContentType")=="image/webp":
+                        public.setdefault(sha,set()).add(size)
+                        matches.append(k)
+                        matched_legacy+=1
+                        break
+        audit.append({"originalSha256":sha,"thumbnailSha256":t["sha256"],"originalBytes":o["bytes"],"thumbnailBytes":t["bytes"],"assetNames":sorted(names.get(sha,set())),"localOriginalFilenameHash":pixel,"publicOriginalFound":o["bytes"] in public.get(sha,set()),"verifiedLegacyMatches":matches})
+    (root/"thumbnail-original-coverage.json").write_text(json.dumps({"schema":"wand.media.bundle-original-coverage@1","rows":audit},ensure_ascii=False,indent=2),encoding="utf-8")
     existing,pending,skipped=plan(pairs,thumbs,public,canonical)
-    summary={"sourcePromoArtHashes":len(pairs),"uniqueCandidates":len(thumbs),"originalNotFoundPublicByHashAndSize":skipped,"eligibleUniqueThumbnails":len(existing)+len(pending),"existingCanonicalCandidates":len(existing),"newUploadUpperBound":len(pending),"newBytesUpperBound":sum(v["bytes"] for v in pending.values()),"listRequests":pages,"classAUpperBound":pages+len(pending),"classBUpperBound":len(existing)+len(pending),"deleteRequests":0,"bundleIdMappingVerified":False}
+    summary={"sourcePromoArtHashes":len(pairs),"uniqueCandidates":len(thumbs),"originalNotFoundPublicByHashAndSize":skipped,"eligibleUniqueThumbnails":len(existing)+len(pending),"existingCanonicalCandidates":len(existing),"newUploadUpperBound":len(pending),"newBytesUpperBound":sum(v["bytes"] for v in pending.values()),"listRequests":pages,"classAUpperBound":pages+len(pending),"legacyOriginalHeads":head_count,"legacyOriginalMatches":matched_legacy,"classBUpperBound":head_count+len(existing)+len(pending),"deleteRequests":0,"bundleIdMappingVerified":False}
     print(json.dumps(summary,indent=2),flush=True)
     (root/"thumbnail-publication-plan-summary.json").write_text(json.dumps(summary,indent=2),encoding="utf-8")
+    if not existing and not pending:
+        print("No verified public original matches; no uploads. Return thumbnail-original-coverage.json for source selection.",flush=True)
+        (root/"thumbnail-publication-report.json").write_text(json.dumps({**summary,"status":"blocked_no_eligible_originals","verifiedThumbnails":0,"cdnVerified":False},indent=2),encoding="utf-8")
+        return
     if input("Check account-wide remaining R2 free allowance. Type UPLOAD to publish only these candidates: ")!="UPLOAD":
         print("Read-only plan complete. No writes.",flush=True);return
     verified=publish(s3,root,existing,pending)
