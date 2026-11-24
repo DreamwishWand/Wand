@@ -1044,7 +1044,7 @@ try{
   await publicWorld.locator('.media-map-overlay .cell-mask').waitFor({timeout:20000});
   const worldSave={GameInfo:{Version:1262},Player:{},World:{GridCollection:{Grids:{
     "101":{ID:101,GridDefaultLayoutPath:'SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json',
-      GridDataPath:'GridData/Villages/Village04-MeadowLevel-GridData.json',
+      GridDataPath:'GridData/Villages/Village04-MeadowLevel-GridData.json',NextGridObjectID:10,
       Objects:{"1":{ID:1,ItemID:40005160,X:4,Y:5,Orientation:'GridOrientation_Down'},
         "4":{ID:4,ItemID:40005160,X:9,Y:5,Orientation:'GridOrientation_Down'}}},
     "102":{ID:102,GridDefaultLayoutPath:'SceneLayouts/Village04/DefaultVillageLayout01-UrbanGrids.json',
@@ -1110,6 +1110,22 @@ try{
   assert.equal(await publicPlot.locator('.group-selected').count(),2);
   await publicPlot.getByRole('button',{name:'複数選択',exact:true}).click();
   await publicPlot.getByRole('button',{name:'閉じる',exact:true}).click();
+  // Structural rehearsal must validate the local candidate without making
+  // any downloadable Save or modifying the current placement.
+  await publicPlot.getByLabel('配置済み家具を検索').focus();
+  await publicPlot.locator('.object-results button').first().click();
+  await publicPlot.getByLabel('移動先X').fill('12');
+  await publicPlot.getByRole('button',{name:'複製を検証',exact:true}).click();
+  await publicPlot.locator('.structure-result').waitFor({timeout:20000});
+  assert.match(await publicPlot.locator('.structure-result').innerText(),/複製の構造検証に成功/);
+  assert.equal(await publicPlot.getByRole('link',{name:'編集済みコピーを保存'}).count(),0);
+  assert.equal(await publicPlot.getByRole('button',{name:'変更を検証',exact:true}).isDisabled(),true);
+  await publicPlot.getByRole('button',{name:'プレビュー解除'}).click();
+  await publicPlot.getByRole('button',{name:'元に戻す'}).click();
+  await publicPlot.getByRole('button',{name:'削除を検証',exact:true}).click();
+  await publicPlot.locator('.structure-remove-ghost').waitFor({timeout:20000});
+  assert.equal(await publicPlot.locator('.saved-object').count(),2);
+  await publicPlot.getByRole('button',{name:'プレビュー解除'}).click();
   // All three root themes recolor service chrome without recoloring the map.
   const themeResults=await page.evaluate(()=>{
     const root=document.documentElement,original=root.getAttribute('data-wand-theme');
