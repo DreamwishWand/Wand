@@ -25,7 +25,7 @@ const UNLINKED_EMPTY=UNLINKED_EMPTY_LAYOUT+'#grid=0';
 const GRAPH_URL='http://127.0.0.1:4178/Wand/world/preview/';
 
 /** Entirely synthetic original-world ZIP, created in this test only. */
-function syntheticTerrainZip(decodedFloor=false){
+function syntheticTerrainZip(decodedFloor=false,factor=1){
   const gridPaths=['GridData/Village04/Beach.json',
     'GridData/OffGridBuildings/Detached.json'];
   const layouts=[
@@ -60,13 +60,13 @@ function syntheticTerrainZip(decodedFloor=false){
     })),
     layouts:layouts.map(([layoutId,gridIdNative,gridDataPath])=>({
       layoutId,layoutKind:'nativeGridCollection',defaultObjectCount:1,
-      nativeGridEntries:[{gridIdNative,gridDataPath,tessellationFactor:1,
+      nativeGridEntries:[{gridIdNative,gridDataPath,tessellationFactor:factor,
         defaultObjectCount:1}]
     })),
     layoutObjects:layouts.map(([layoutId,gridIdNative],i)=>({
       layoutObjectId:layoutId+'#grid='+gridIdNative+'#object=1',
       layoutId,gridIdNative,gridObjectIdNative:1,
-      itemId:100,x:4+i,y:5,
+      itemId:100,x:factor===2?18+i:4+i,y:5,
       orientationCode:i===0?8:4,worldCoordinatesVerified:false,
       fixedImmovableVerified:false
     }))
@@ -923,6 +923,22 @@ try{
     })),
   });
   await candidates.locator('canvas').waitFor({state:'detached',timeout:20000});
+
+  // Factor two source anchors are visible at their own integer coordinates,
+  // without a fabricated terrain projection or placement preview.
+  await page.locator('.world-toolbar input[type=file]').setInputFiles({
+    name:'synthetic-factor-two.zip',mimeType:'application/zip',
+    buffer:syntheticTerrainZip(true,2).archive
+  });
+  await mapPanel.getByRole('button',{name:'簡略マップ',exact:true}).click({timeout:20000});
+  await mapPanel.locator('.source-map-object').waitFor({timeout:20000});
+  assert.match(await mapPanel.innerText(),/原本の配置座標専用図/);
+  assert.equal(await mapPanel.locator('svg').getAttribute('viewBox'),'0 0 32 32');
+  assert.equal(await mapPanel.locator('.source-map-object').getAttribute('transform'),'translate(18 5)');
+  assert.equal(await mapPanel.locator('.cell-mask').count(),0);
+  assert.equal(await mapPanel.locator('.placement-cell').count(),0);
+  assert.equal(await mapPanel.locator('.object-shape').count(),1);
+  await mapPanel.getByRole('button',{name:'簡略マップを閉じる'}).click();
 
   // Reject a wrong original game version without showing previously loaded
   // source records. The test fixture is entirely synthetic and local.

@@ -124,6 +124,7 @@
   let terrainRasterRequestId=-1;
   let terrainRasterLoading=false;
   let mediaMapActive=false;
+  let mediaTerrainMapActive=false;
   let terrainRasterStatus='';
   let regionAtlas:SourceRegionAtlasPage|null=null;
   let regionAtlasRequestId=-1;
@@ -1438,7 +1439,7 @@
           raster={activeTerrainRaster} candidates={floorWindowResult}
           objectMap={activeTerrainRaster?terrainRasterEnvelope?.objectMap??null:null}
           selectedItemId={selectedFloorItem?.itemId??null} orientationCode={floorOrientationCode}
-          bind:active={mediaMapActive} canNavigate={canNavigateTerrainRaster}
+          bind:active={mediaMapActive} bind:terrainMapActive={mediaTerrainMapActive} canNavigate={canNavigateTerrainRaster}
           onNavigate={jumpToTerrainRasterCell} onInspect={inspectFloorLayerAt}/>
         {#if activeTerrainRaster&&!mediaMapActive}
           <NativeTerrainGridOverview raster={activeTerrainRaster}
@@ -1462,7 +1463,7 @@
           onCompare={compareSelectedSaveToGrid}/>
         <NativeTerrainFloorMatchPanel
           matches={floorItemMatches} selected={selectedFloorItem}
-          result={floorMatchResult} windowResult={floorWindowResult} externalMap={mediaMapActive}
+          result={floorMatchResult} windowResult={floorWindowResult} externalMap={mediaTerrainMapActive}
           orientationCode={floorOrientationCode}
           onOrientationChange={changeFloorOrientation}
           onInspect={inspectFloorLayerAt}

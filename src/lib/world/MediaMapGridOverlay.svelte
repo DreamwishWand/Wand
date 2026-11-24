@@ -4,7 +4,7 @@
     imagePixelToUnboundedGridCell,type MapCalibration,type GridMapBinding,type GridMapIdentity}
     from './media-map-calibration.ts';
   import {MAP_LAYER_LABELS,MAP_LAYER_COLORS,mapPainterOrder,prioritizeMapHits,matchesSelectionLayer,type MapSelectionLayer} from './source-map-layers.ts';
-  import {sourceObjectsAt,sourceOrientationAngle,type SourceObjectMap,type SourceMapObject} from './source-object-map.ts';
+  import {sourceObjectsAt,sourceOrientationAngle,sourceShapeIntersections,type SourceObjectMap,type SourceMapObject} from './source-object-map.ts';
   import {nativeSourceFloorTint} from './native-terrain-canvas.ts';
   import {previewSourceCells,previewCellColor,gridLinePath,type GridPoint,type PreviewShape} from './source-placement-preview.ts';
   import type {NativeFloorWindowResult} from './native-floor-rectangle-window.ts';
@@ -17,6 +17,7 @@
   export let selectedItemId:number|null=null;
   export let orientationCode=8;
   export let active=false;
+  export let terrainMapActive=false;
   export let canNavigate=false;
   export let onNavigate:(x:number,y:number)=>void;
   export let onInspect:(x:number,y:number)=>void;
@@ -92,17 +93,23 @@
         !e.message.startsWith('DB04_')?e.message:'マップの座標対応情報を読み込めません。';
     }finally{if(id===revision)loading=false;}
   }
-  $: binding=selection&&raster&&raster.sizeX===selection.sizeX&&raster.sizeY===selection.sizeY?
-    (schematic?{...selection,gridToImage:[1,0,0,1,0,0] as const}:
-      asset?findMapBinding(asset.calibration,selection):null):null;
-  $: active=Boolean(binding&&raster&&(schematic||asset));
-  $: imageWidth=schematic?raster?.sizeX??1:asset?.calibration.image.width??1;
-  $: imageHeight=schematic?raster?.sizeY??1:asset?.calibration.image.height??1;
-  $: camera=[(centerX-.5/zoom)*imageWidth,(centerY-.5/zoom)*imageHeight,imageWidth/zoom,imageHeight/zoom].join(' ');
-  $: activeObjects=objectMap?.status==='source_default_geometry'&&selection&&
+  $: scopedObjects=objectMap?.status==='source_default_geometry'&&selection&&
     objectMap.layoutId===selection.layoutId&&objectMap.gridIdNative===selection.nativeGridId&&
     objectMap.gridDataPath===selection.gridDataPath?objectMap:null;
+  $: anchorSpace=Boolean(schematic&&scopedObjects?.gridFactor===2);
+  $: binding=selection&&raster&&raster.sizeX===selection.sizeX&&raster.sizeY===selection.sizeY?
+    (schematic?{...selection,sizeX:anchorSpace?scopedObjects?.sizeX??selection.sizeX:selection.sizeX,
+      sizeY:anchorSpace?scopedObjects?.sizeY??selection.sizeY:selection.sizeY,
+      gridToImage:[1,0,0,1,0,0] as const}:
+      asset?findMapBinding(asset.calibration,selection):null):null;
+  $: active=Boolean(binding&&raster&&(schematic||asset));
+  $: terrainMapActive=active&&!anchorSpace;
+  $: imageWidth=schematic?binding?.sizeX??1:asset?.calibration.image.width??1;
+  $: imageHeight=schematic?binding?.sizeY??1:asset?.calibration.image.height??1;
+  $: camera=[(centerX-.5/zoom)*imageWidth,(centerY-.5/zoom)*imageHeight,imageWidth/zoom,imageHeight/zoom].join(' ');
+  $: activeObjects=scopedObjects&&(scopedObjects.gridFactor===1||anchorSpace)?scopedObjects:null;
   $: selectedObject=activeObjects?.objects.find(o=>o.id===selectedObjectId)??null;
+  $: intersections=activeObjects&&selectedObject?sourceShapeIntersections(activeObjects,selectedObject):[];
   $: orderedObjects=activeObjects?mapPainterOrder(activeObjects.objects):[];
   $: orderedHits=prioritizeMapHits(hits,selectionLayer);
   $: availableLayers=(Object.keys(MAP_LAYER_LABELS) as MapSelectionLayer[]).filter(layer=>layer==='all'||orderedObjects.some(o=>matchesSelectionLayer(o,layer)));
@@ -129,7 +136,7 @@
     return {width:result.boundingWidth,height:result.boundingHeight,
       cells:result.mappedShape,acceptedFloorTypesFlag:result.acceptedFloorTypesFlag};
   }
-  $: shape=getShape(candidates,selection,selectedItemId,orientationCode);
+  $: shape=anchorSpace?null:getShape(candidates,selection,selectedItemId,orientationCode);
   $: lines=binding?gridLinePath(binding.sizeX,binding.sizeY):'';
   $: cells=active&&raster&&shape&&origin?previewSourceCells(shape,raster,origin):[];
   $: warningCount=cells.filter(c=>c.evidence!=='unknown').length;
@@ -149,7 +156,7 @@
     ctx.putImageData(data,0,0);
     return canvas.toDataURL('image/png');
   }
-  $: maskUrl=active&&raster?buildMask(raster,candidateMask):'';
+  $: maskUrl=terrainMapActive&&raster?buildMask(raster,candidateMask):'';
   function mapPoint(event:MouseEvent,unbounded:boolean):GridPoint|null{
     if(!svg||!binding)return null;
     const screen=svg.getScreenCTM();if(!screen)return null;
@@ -173,7 +180,7 @@
     if(cell){
       hits=showObjects&&activeObjects?sourceObjectsAt(activeObjects,cell.x,cell.y):[];
       selectedObjectId=hits.find(o=>matchesSelectionLayer(o,selectionLayer))?.id??null;
-      if(hits.length===0&&canNavigate)onNavigate(cell.x,cell.y);
+      if(hits.length===0&&canNavigate&&!anchorSpace)onNavigate(cell.x,cell.y);
     }
   }
   function keyboardMap(event:KeyboardEvent){
@@ -268,7 +275,8 @@
         </g>
       </svg>
     </button>
-    {#if schematic}<p>原本Gridの簡略図（ワールド上の位置・地形画像は未対応）。</p>{/if}
+    {#if anchorSpace}<p>原本の配置座標専用図（地形・MEDIA座標とは未照合）。</p>
+    {:else if schematic}<p>原本Gridの簡略図（ワールド上の位置・地形画像は未対応）。</p>{/if}
     {#if showObjects&&activeObjects}
       <p>原本の初期配置 {activeObjects.objects.length}/{activeObjects.totalCount}件
         {#if activeObjects.unresolvedCount}・形状不明 {activeObjects.unresolvedCount}件{/if}
@@ -287,7 +295,19 @@
         <p class="selected-object">{selectedObject.name??'名称未確認'} ／ ({selectedObject.x}, {selectedObject.y})
           ／ {selectedObject.orientationName??('向き '+selectedObject.orientationCode)}
           ／ {selectedObject.shapeKey?(activeObjects.shapes[selectedObject.shapeKey].cellCount+' 原本形状マス'):'形状未確認'}</p>
+        {#if intersections.length}
+          <div class="object-picker" role="group" aria-label="選択した形状に重なる原本オブジェクト">
+            {#each intersections as overlap (overlap.object.id)}
+              <button type="button" on:click={()=>selectedObjectId=overlap.object.id}>
+                {overlap.object.name??'名称未確認'} · {MAP_LAYER_LABELS[overlap.object.layer]} · {overlap.cells}マス
+              </button>
+            {/each}
+          </div>
+          <p>形状の重なりのみ。上下関係や衝突の確定判定ではありません。</p>
+        {/if}
       {/if}
+    {:else if showObjects&&scopedObjects?.gridFactor===2&&!schematic}
+      <button type="button" class="anchor-open" on:click={()=>{schematic=true;hits=[];selectedObjectId=null;resetCamera();}}>配置座標専用図を開く</button>
     {:else if showObjects&&objectMap?.status==='incompatible_grid_factor'}
       <p>Gridの座標倍率が未対応のため、初期配置を重ねていません。</p>
     {/if}
@@ -302,8 +322,8 @@
       </div>
       <p>赤：床属性不一致・原本Grid範囲外。灰：ゲーム内配置判定未確認。クリックで固定、矢印キーで移動。</p>
     {/if}
-    <p>{candidateMask?'緑：家具形状と床属性の一致候補':'地形属性マスク'}。原本GridData座標のみ。
-      読み込んだ座標対応情報の正しさと実際の設置可否は未検証です。</p>
+    {#if !anchorSpace}<p>{candidateMask?'緑：家具形状と床属性の一致候補':'地形属性マスク'}。原本GridData座標のみ。
+      読み込んだ座標対応情報の正しさと実際の設置可否は未検証です。</p>{/if}
   {:else if asset}
     <p>選択中のGridに対応する座標情報がありません。</p>
   {/if}
@@ -319,7 +339,7 @@
   .cell-mask{image-rendering:pixelated}
   .grid-lines,.placement-cell,.source-map-object{pointer-events:none}
   .camera-tools,.object-picker,.layer-tools{display:flex;flex-wrap:wrap;gap:5px}
-  .camera-tools button,.object-picker button,.layer-tools button{font:inherit;font-size:12px;color:inherit;background:#ffffff12;border:1px solid #ffffff30;border-radius:5px;padding:5px 8px}
+  .camera-tools button,.object-picker button,.layer-tools button,.anchor-open{font:inherit;font-size:12px;color:inherit;background:#ffffff12;border:1px solid #ffffff30;border-radius:5px;padding:5px 8px}
   .object-picker .chosen,.layer-tools .chosen{border-color:#9cc9f3;background:#6c9bc944}
   .selected-object{color:#d6eaff}
   .preview-tools{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:12px}
