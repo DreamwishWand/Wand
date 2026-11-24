@@ -294,6 +294,17 @@ try{
 
   assert.equal(await themeChoices.evaluateAll(nodes=>nodes.every(node=>!node.hasAttribute('title')&&!node.textContent.trim())),true,
     'theme choices are icon-only; accessible names remain available');
+  const assertInactiveThemesBorderless=async()=>{
+    await portal.locator('.header-language-button').hover();
+    await portal.waitForFunction(()=>{
+      const inactive=[...document.querySelectorAll('.shell-theme-option[aria-pressed="false"]')];
+      return inactive.length===2&&inactive.every(node=>{
+        const style=getComputedStyle(node);
+        return style.borderTopColor==='rgba(0, 0, 0, 0)'&&
+          style.backgroundColor==='rgba(0, 0, 0, 0)'&&style.boxShadow==='none';
+      });
+    });
+  };
   const assertLightThemeSelection=async (name,expectedBackground)=>{
     const button=portal.getByRole('button',{name,exact:true});
     await button.hover();
@@ -314,18 +325,21 @@ try{
   assert.deepEqual(await themeChoices.evaluateAll(nodes=>nodes.map(node=>node.getAttribute('aria-pressed'))),
     ['true','false','false']);
   await assertLightThemeSelection('夜明け','rgb(103, 80, 153)');
+  await assertInactiveThemesBorderless();
   await portal.getByRole('button',{name:'真昼'}).click();
   assert.equal(await portal.evaluate(()=>document.documentElement.dataset.wandTheme),'coral');
   assert.equal(await portal.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--wand-bg').trim()),'#E5F8FD');
   assert.deepEqual(await themeChoices.evaluateAll(nodes=>nodes.map(node=>node.getAttribute('aria-pressed'))),
     ['false','true','false']);
   await assertLightThemeSelection('真昼','rgb(8, 109, 145)');
+  await assertInactiveThemesBorderless();
   await portal.getByRole('button',{name:'真夜中'}).click();
   assert.equal(await portal.evaluate(()=>document.documentElement.dataset.wandTheme),'night');
   assert.equal(await portal.evaluate(()=>getComputedStyle(document.documentElement).colorScheme),'dark');
   assert.equal(await portal.evaluate(()=>getComputedStyle(document.documentElement).getPropertyValue('--wand-bg').trim()),'#04143B');
   assert.deepEqual(await themeChoices.evaluateAll(nodes=>nodes.map(node=>node.getAttribute('aria-pressed'))),
     ['false','false','true']);
+  await assertInactiveThemesBorderless();
   await portal.reload();
   await portal.waitForFunction(()=>document.documentElement.dataset.wandTheme==='night');
   await portal.evaluate(()=>localStorage.setItem('dreamwishwand.ui.theme.v1','light'));
