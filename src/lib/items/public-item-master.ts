@@ -1,9 +1,9 @@
 /**
  * Read-only public item master for Collection, Explore and World Editor.
- * Item ID is the only join key. Every source release is version-isolated and
- * independent of player saves. The selected release index is the only eager
- * request for explicit versions; "current" first resolves a small version
- * catalog. Exact-ID reads fetch one verified shard; batch reads are bounded.
+ * Item ID is the persistent identity, independent of source version or saves.
+ * Normal consumers openCurrentItemDatabase(); internally a manifest selects
+ * the current verified projection. Historical snapshot reads are compatibility
+ * tools. Exact-ID reads fetch one verified shard; batch reads are bounded.
  *
  * Original tags are facts; Collection source candidates are NOT proof of
  * visible game-screen membership or availability.
@@ -27,6 +27,8 @@ export interface ItemMasterOpenOptions {
 export interface CompleteItemMasterOpenOptions {
   readonly gameVersion?: string;
   readonly scope: 'complete';
+  /** Internal current product storage, not a game-version choice. */
+  readonly contentAddressed?: true;
 }
 export interface ItemMasterCompleteRelease {
   readonly release: string;
@@ -475,6 +477,17 @@ async function checkedJson(url:string, meta?:Readonly<{bytes?:number;sha256?:str
   }
   return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
 }
+/**
+ * Normal product entry point: one current canonical database, all native IDs.
+ * Game version is provenance selected internally, not a consumer argument.
+ * Explicit version/scope reads below are retained only for compatibility.
+ */
+export function openCurrentItemDatabase(
+  basePath:string='',fetcher:typeof fetch=fetch
+):Promise<PublicCompleteItemMaster>{
+  return openPublicItemMaster(basePath,fetcher,{scope:'complete',gameVersion:'current',contentAddressed:true});
+}
+
 export function openPublicItemMaster(
   basePath: string|undefined, fetcher: typeof fetch|undefined,
   options: CompleteItemMasterOpenOptions
@@ -567,9 +580,14 @@ export async function openPublicItemMaster(
   if(scope==='expanded'&&selected)assert(selected.expanded,'EXPANDED_RELEASE_NOT_PUBLISHED');
   if(scope==='complete'&&selected)assert(selected.complete,'COMPLETE_RELEASE_NOT_PUBLISHED');
   const selectedView=scope==='complete'?selected?.complete:scope==='expanded'?selected?.expanded:selected;
-  const root = base + '/ddv/item-master/steam-' + gameVersion +
-    (scope==='base'?'':'-'+scope);
+  const contentAddressed='contentAddressed' in options&&options.contentAddressed===true;
+  assert(!contentAddressed||scope==='complete'&&options.gameVersion==='current','INVALID_CURRENT_STORAGE');
+  const root = base + '/ddv/item-master/' + (contentAddressed?'current':'steam-'+gameVersion+
+    (scope==='base'?'':'-'+scope));
   const release = await checkedJson(root+'/index.json',undefined,fetcher);
+  assert(!contentAddressed||isObject(release)&&release.storage==='content-addressed-current@1','INVALID_CURRENT_STORAGE');
+  const objectUrl=(path:string,pin:Readonly<{sha256:string}>)=>contentAddressed
+    ?base+'/ddv/item-master/objects/'+pin.sha256+'.json':root+'/'+path;
   assert(isObject(release) &&
     release.schema === 'wand.item-master.release@1' &&
     typeof release.version === 'string' &&
@@ -724,7 +742,7 @@ export async function openPublicItemMaster(
     const previous = cache.get(path);
     if (previous) return previous;
     const task = (async()=>{
-      const raw = await checkedJson(root+'/'+path,meta(path),fetcher);
+      const raw = await checkedJson(objectUrl(path,meta(path)),meta(path),fetcher);
       assert(isObject(raw) && raw.schema === 'wand.item-master.shard@1' &&
         raw.bucket === path.slice(3,5) && Array.isArray(raw.items) &&
         raw.items.length === meta(path).count,'INVALID_SHARD');
@@ -747,9 +765,9 @@ export async function openPublicItemMaster(
     const meta=m.assets?.[path];
     assert(meta&&Number.isSafeInteger(meta.bytes)&&meta.bytes>0&&meta.bytes<=MAX_SHARD_BYTES&&
       SHA.test(meta.sha256)&&Number.isSafeInteger(meta.count)&&meta.count>=0,'INVALID_ASSET_METADATA');
-    const task=checkedJson(root+'/'+path,meta,fetcher).then(value=>{
-      assert(isObject(value)&&value.release===m.version,'ASSET_RELEASE_MISMATCH');
-      return deepFreeze(value);
+    const task=checkedJson(objectUrl(path,meta),meta,fetcher).then(value=>{
+      assert(isObject(value)&&value.release===(contentAddressed?'wand.item-master.current':m.version),'ASSET_RELEASE_MISMATCH');
+      return deepFreeze(contentAddressed?{...value,release:m.version}:value);
     });
     assetCache.set(path,task);
     try{return await task;}catch(e){assetCache.delete(path);throw e;}
