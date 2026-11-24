@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {sourceMapLayer,sourceSurfaceCapable,matchesSelectionLayer,mapPainterOrder,prioritizeMapHits} from '../src/lib/world/source-map-layers.ts';
 import {savedDraftOverlap} from '../src/lib/world/saved-draft-overlap.ts';
-import {draftSavedMapTransform,worldTransformEligible} from '../src/lib/world/saved-map-transform.ts';
+import {draftSavedMapTransform,worldTransformEligible,exclusiveAnchorClass,exclusiveAnchorConflict} from '../src/lib/world/saved-map-transform.ts';
 import {buildSavedShapeMap,savedGridObjects,savedShapesAt} from '../src/lib/world/saved-shape-map.ts';
 import {buildSourceObjectMap,sourceObjectsAt,sourceOrientationAngle,sourceShapeIntersections} from '../src/lib/world/source-object-map.ts';
 const L='SceneLayouts/Village04/Fixture.json',P='GridData/Village04/Fixture.json';
@@ -91,7 +91,7 @@ test('saved shape candidates use saved anchors and exact cardinal strings, never
   assert.equal(map.actualOccupancyVerified,false);
 });
 
-test('map transform creates existing Rust mixed plan; road and fence remain disabled',()=>{
+test('map transform creates existing Rust mixed plan; only recognized exclusive anchors can move',()=>{
   const o={localOrdinal:3,localGridOrdinal:1,itemId:'40000001',x:2,y:3,orientation:'GridOrientation_Up',shapeKey:'40000001:0',layer:'furniture',surfaceCapable:false};
   assert.deepEqual(draftSavedMapTransform(o,-4,8,'GridOrientation_Right'),{localOrdinal:3,itemId:'40000001',recordKind:'full',expectedX:2,expectedY:3,replacementX:-4,replacementY:8,expectedOrientation:'GridOrientation_Up',replacementOrientation:'GridOrientation_Right'});
   assert.equal(draftSavedMapTransform(o,2,3,o.orientation),null);
@@ -99,6 +99,11 @@ test('map transform creates existing Rust mixed plan; road and fence remain disa
   assert.equal(draftSavedMapTransform(o,2,3,'West'),null);
   assert.equal(worldTransformEligible({...o,layer:'ground'}),false);
   assert.equal(worldTransformEligible({...o,layer:'fence'}),false);
+  const road={...o,itemId:'40100001',layer:'ground',shapeKey:null};
+  assert.equal(worldTransformEligible(road),true);
+  assert.equal(draftSavedMapTransform(road,4,5,road.orientation).replacementX,4);
+  assert.equal(draftSavedMapTransform(road,4,5,'GridOrientation_Right'),null);
+  assert.equal(worldTransformEligible({...road,layer:'other'}),false);
   assert.equal(worldTransformEligible({...o,shapeKey:null}),false);
 });
 
@@ -120,4 +125,20 @@ test('saved draft colors only intersecting mapped cells, excludes self and other
   assert.equal(savedDraftOverlap(surface,surface.objects[0],shape,0,1).counts['support-unknown'],1);
   const overlap={...map,objects:map.objects.map(o=>o.localOrdinal===2?{...o,layer:'furniture'}:o)};
   assert.equal(savedDraftOverlap(overlap,overlap.objects[0],shape,0,1).counts['shape-overlap'],1);
+});
+
+test('exclusive anchor feedback matches type arithmetic even for unrenderable peers',()=>{
+  const road={localOrdinal:1,localGridOrdinal:1,itemId:'40100001',x:0,y:0,orientation:null,layer:'ground',shapeKey:null};
+  const peer={...road,localOrdinal:2,itemId:'40100002',x:2,y:1,layer:'other'};
+  const fence={...road,localOrdinal:3,itemId:'40700001',x:3,y:1,layer:'fence'};
+  const otherGrid={...road,localOrdinal:4,localGridOrdinal:2,x:4,y:1};
+  const furniture={...road,localOrdinal:5,itemId:'40000001',x:5,y:1,layer:'furniture'};
+  const map={objects:[road,peer,fence,otherGrid,furniture]};
+  assert.equal(exclusiveAnchorClass('50100001'),null);
+  assert.equal(exclusiveAnchorConflict(map,road,2,1),true);
+  assert.equal(exclusiveAnchorConflict(map,road,3,1),false);
+  assert.equal(exclusiveAnchorConflict(map,road,4,1),false);
+  assert.equal(exclusiveAnchorConflict(map,road,5,1),false);
+  assert.equal(exclusiveAnchorConflict(map,furniture,2,1),false);
+  assert.equal(exclusiveAnchorConflict(map,road,0,0),false);
 });

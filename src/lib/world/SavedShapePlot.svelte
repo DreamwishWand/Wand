@@ -1,7 +1,7 @@
 <script lang="ts">
   import {onDestroy} from 'svelte';
   import {savedDraftOverlap,OVERLAP_COLORS} from './saved-draft-overlap.ts';
-  import {CARDINAL_ORIENTATIONS,isCardinal,worldTransformEligible,draftSavedMapTransform} from './saved-map-transform.ts';
+  import {CARDINAL_ORIENTATIONS,isCardinal,worldTransformEligible,draftSavedMapTransform,exclusiveAnchorClass,exclusiveAnchorConflict} from './saved-map-transform.ts';
   import {savedGridObjects,savedShapesAt,type SavedShapeMap,type SavedShapeObject} from './saved-shape-map.ts';
   import {MAP_LAYER_COLORS,MAP_LAYER_LABELS,mapPainterOrder,matchesSelectionLayer,type MapSelectionLayer} from './source-map-layers.ts';
   import {sourceOrientationAngle} from './source-object-map.ts';
@@ -27,12 +27,15 @@
   $: draftShape=chosen&&draftCode!==null?map.shapes[chosen.itemId+':'+draftCode]:null;
   $: previewX=placing&&hoverPoint?hoverPoint.x:draftX;
   $: previewY=placing&&hoverPoint?hoverPoint.y:draftY;
-  $: showDraft=Boolean((placing||editPlan)&&draftShape&&Number.isInteger(previewX)&&Number.isInteger(previewY));
+  $: exclusiveClass=chosen?exclusiveAnchorClass(chosen.itemId):null;
+  $: showDraft=Boolean((placing||editPlan)&&(draftShape||exclusiveClass)&&Number.isInteger(previewX)&&Number.isInteger(previewY));
+  $: anchorConflict=showDraft&&exclusiveAnchorConflict(map,chosen,previewX,previewY);
+  $: committedConflict=exclusiveAnchorConflict(map,chosen,draftX,draftY);
   $: overlap=showDraft&&chosen&&draftShape&&previewX!==undefined&&previewY!==undefined? savedDraftOverlap(map,chosen,draftShape,previewX,previewY):null;
   $: if(!file)cancelEdit();
   async function runEdit(exporting:boolean){
     const source=file,plan=editPlan,signature=draftSignature;
-    if(!source||!plan||busy||source.size<1||source.size>32*1024*1024||
+    if(!source||!plan||busy||committedConflict||source.size<1||source.size>32*1024*1024||
       (exporting&&checkedSignature!==signature))return;
     const sourceName=source.name;
     const epoch=++editEpoch;busy=true;editError='';
@@ -146,12 +149,14 @@
           {#if o.surfaceCapable}<circle cx=".78" cy=".22" r=".13" fill="#dbc2f6"/>{/if}
         </g>
       {/each}
-      {#if showDraft&&draftShape}
-        <path class="saved-draft-shape" d={draftShape.path} transform={'translate('+previewX+' '+previewY+')'} fill="#a7b1bf" fill-opacity=".62" stroke="#fff" stroke-width="1.5" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>
+      {#if showDraft}
+        {#if draftShape}<path class="saved-draft-shape" d={draftShape.path} transform={'translate('+previewX+' '+previewY+')'} fill="#a7b1bf" fill-opacity=".62" stroke="#fff" stroke-width="1.5" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>
+        {:else}<circle class="saved-draft-anchor" cx={Number(previewX)+.5} cy={Number(previewY)+.5} r=".3" fill="#a7b1bf" stroke="#fff" stroke-width="1.5" vector-effect="non-scaling-stroke"/>{/if}
         {#if overlap}{#each overlap.runs as run (run.x+','+run.y)}
           <rect class="saved-overlap-cell" data-evidence={run.evidence} x={run.x} y={run.y} width={run.width} height="1"
             fill={OVERLAP_COLORS[run.evidence]} fill-opacity=".8" stroke={OVERLAP_COLORS[run.evidence]} stroke-width="1" vector-effect="non-scaling-stroke"/>
         {/each}{/if}
+        {#if anchorConflict}<rect class="exclusive-anchor-conflict" x={previewX} y={previewY} width="1" height="1" fill="#ef5350" fill-opacity=".9" stroke="#fff" stroke-width="2" vector-effect="non-scaling-stroke"/>{/if}
       {/if}
     </svg>
   </button>
@@ -167,11 +172,13 @@
         <button type="button" aria-pressed={placing} disabled={busy} on:click={()=>{placing=!placing;hoverPoint=null;}}>{placing?'移動先を選択中':'マップで移動先を選択'}</button>
         <label>X <input type="number" aria-label="移動先X" bind:value={draftX} step="1" disabled={busy}/></label>
         <label>Y <input type="number" aria-label="移動先Y" bind:value={draftY} step="1" disabled={busy}/></label>
-        {#if isCardinal(chosen.orientation)}<label>向き <select aria-label="編集後の向き" bind:value={draftOrientation} disabled={busy}>
+        {#if !exclusiveClass&&isCardinal(chosen.orientation)}<label>向き <select aria-label="編集後の向き" bind:value={draftOrientation} disabled={busy}>
           {#each CARDINAL_ORIENTATIONS as direction}<option value={direction}>{['上','右','下','左'][CARDINAL_ORIENTATIONS.indexOf(direction)]}</option>{/each}
         </select></label>{/if}
         <button type="button" disabled={busy||!editPlan} on:click={()=>resetDraft(chosen)}>元に戻す</button>
       </div>
+      {#if anchorConflict}<p class="exclusive-warning" role="status">同種の{exclusiveClass==='ground'?'道・地面':'フェンス'}が同じ座標にあります。移動できません。</p>{/if}
+      {#if exclusiveClass}<p>基準座標のみ移動。接続形状・向きは変更しません。未表示の配置もRustで検査します。</p>{/if}
       {#if overlap}
         <div class="overlap-key" aria-label="形状の重なり候補">
           {#if overlap.counts['shape-overlap']}<span style:color={OVERLAP_COLORS['shape-overlap']}>重なり候補 {overlap.counts['shape-overlap']}マス</span>{/if}
@@ -183,8 +190,8 @@
       {/if}
       <p>色は原本形状による重なり候補です。配置許可とは別で、他の家具・小物・景観は削除・自動移動しません。</p>
       {#if editPlan}<div class="controls">
-        <button type="button" disabled={busy||placing} on:click={()=>runEdit(false)}>変更を検証</button>
-        {#if checkedSignature===draftSignature}<button type="button" disabled={busy||placing} on:click={()=>runEdit(true)}>実験的な編集コピーを作成</button>{/if}
+        <button type="button" disabled={busy||placing||committedConflict} on:click={()=>runEdit(false)}>変更を検証</button>
+        {#if checkedSignature===draftSignature}<button type="button" disabled={busy||placing||committedConflict} on:click={()=>runEdit(true)}>実験的な編集コピーを作成</button>{/if}
       </div>{/if}
       {#if busy}<p role="status">ローカル処理中…</p>{/if}
       {#if editError}<p role="alert">{editError}</p>{/if}
@@ -197,7 +204,8 @@
   .saved-shape-plot{display:grid;gap:6px;min-width:0}
   .controls{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
   .overlap-key{display:flex;flex-wrap:wrap;gap:8px;font-size:12px}
-  .saved-overlap-cell{pointer-events:none}
+  .saved-overlap-cell,.exclusive-anchor-conflict{pointer-events:none}
+  .exclusive-warning{color:#ef5350}
   .transform-controls{display:grid;gap:8px;padding:8px;border:1px solid #ffffff35;border-radius:5px}
   input{width:90px;max-width:100%;font:inherit;color:inherit;background:transparent;border:1px solid #ffffff35;padding:4px;border-radius:4px}
   button,select{font:inherit;color:inherit;background:transparent;border:1px solid #ffffff35;border-radius:5px;padding:5px;font-size:12px}
