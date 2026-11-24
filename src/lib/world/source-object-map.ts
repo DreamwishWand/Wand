@@ -44,9 +44,10 @@ export function createSourceGeometryCache(source:unknown,factor:1|2){
     let e=itemEvidence.get(itemId);
     if(!e){e=getOriginalGridAreaEvidence(source,itemId);itemEvidence.set(itemId,e);}
     const definition=definitions.get(String(itemId));
+    const restrictions=sourceEditRestrictions(definition);
     const identity={name:record(definition)&&typeof definition.nativeName==='string'?definition.nativeName:null,
       layer:sourceMapLayer(e.nativeType,itemId,e.acceptedFloorTypesFlag),
-      surfaceCapable:sourceSurfaceCapable(e.acceptedFloorTypesFlag),editRestrictions:sourceEditRestrictions(definition)};
+      surfaceCapable:sourceSurfaceCapable(e.acceptedFloorTypesFlag),...(Object.keys(restrictions).length?{editRestrictions:restrictions}:{})};
     if(orientationCode===null)return {...identity,shapeKey:null};
     const key=itemId+':'+orientationCode;
     let shape=cache.get(key);
