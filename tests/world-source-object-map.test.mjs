@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {sourceMapLayer,sourceSurfaceCapable,matchesSelectionLayer,mapPainterOrder,prioritizeMapHits} from '../src/lib/world/source-map-layers.ts';
+import {defaultMapCamera,maxMapZoom,zoomMapCamera,panMapCamera,mapCameraViewBox} from '../src/lib/world/map-camera.ts';
 import {emptyWorldTimeline,currentWorldEdits,projectWorldEdits,stageWorldEdit,travelWorldTimeline} from '../src/lib/world/saved-map-batch.ts';
 import {savedDraftOverlap} from '../src/lib/world/saved-draft-overlap.ts';
 import {draftSavedMapTransform,worldTransformEligible,exclusiveAnchorClass,exclusiveAnchorConflict} from '../src/lib/world/saved-map-transform.ts';
@@ -177,4 +178,16 @@ test('one Save timeline spans multiple Grid receipts, rejects stale local identi
   assert.equal(projectWorldEdits(stale,currentWorldEdits(t)).objects[0].x,99);
   assert.equal(stageWorldEdit(stale,t,21,100,0,'GridOrientation_Down',''),null);
   assert.equal(currentWorldEdits(travelWorldTimeline(t,-1)).length,20);
+});
+
+test('map camera zooms about cursor, clamps pan, and supports large Grid magnification',()=>{
+  const full=defaultMapCamera();
+  const c=zoomMapCamera(full,2,64,.25,.75);
+  assert.deepEqual(c,{zoom:2,x:.375,y:.625});
+  const extent={x:-10,y:20,w:100,h:80};
+  assert.equal(mapCameraViewBox(c,extent),'2.5 50 50 40');
+  assert.deepEqual(panMapCamera(c,-20,20),{zoom:2,x:.25,y:.75});
+  assert.deepEqual(zoomMapCamera(c,1,64),full);
+  assert.equal(maxMapZoom(8192),1024);
+  assert.equal(maxMapZoom(16),64);
 });
