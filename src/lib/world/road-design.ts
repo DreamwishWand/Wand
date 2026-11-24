@@ -1,0 +1,37 @@
+/** Logical cardinal path cells. The v1.25 native pitch contract is used
+ * only for design previews whose current source shape matches it. */
+import type {DesignItemGeometry} from './design-layout.ts';
+import {nativeActionBlocked} from './native-edit-restrictions.ts';
+import {exclusiveAnchorClass} from './saved-map-transform.ts';
+export type RoadTool='brush'|'line'|'outline'|'fill'|'erase';
+export type RoadPoint={readonly x:number;readonly y:number};
+export const ROAD_STROKE_LIMIT=5000;
+export function roadPitch(g:DesignItemGeometry|null|undefined,factor:number):number|null{
+ if(!g||exclusiveAnchorClass(String(g.itemId))!=='ground'||g.layer!=='ground'||nativeActionBlocked(g.editRestrictions,'select')||!/^Path_/i.test(g.name??'')||!(factor===1||factor===2))return null;
+ const pitch=2*factor,s=g.shapes[g.itemId+':8'];
+ return s&&s.width===pitch&&s.height===pitch&&s.cellCount===pitch*pitch&&s.runs.length===pitch&&s.runs.every((r,i)=>r.x===0&&r.y===i&&r.width===pitch)?pitch:null;
+}
+export function snapRoadPoint(p:RoadPoint,pitch:number):RoadPoint{return {x:Math.floor(p.x/pitch)*pitch,y:Math.floor(p.y/pitch)*pitch};}
+export function roadStroke(points:readonly RoadPoint[],tool:RoadTool,pitch:number):RoadPoint[]|null{
+ if(!points.length||points.length>ROAD_STROKE_LIMIT||!Number.isSafeInteger(pitch)||pitch<=0||!points.every(p=>Number.isSafeInteger(p.x)&&Number.isSafeInteger(p.y)&&p.x%pitch===0&&p.y%pitch===0))return null;
+ const result=new Map<string,RoadPoint>();
+ const add=(p:RoadPoint)=>{result.set(p.x+':'+p.y,p);return result.size<=ROAD_STROKE_LIMIT;};
+ const a=points[0],b=points[points.length-1];
+ function cardinal(start:RoadPoint,end:RoadPoint){
+  let x=start.x,y=start.y;if(Math.abs(end.x-x)/pitch+Math.abs(end.y-y)/pitch>=ROAD_STROKE_LIMIT||!add({x,y}))return false;
+  while(x!==end.x||y!==end.y){if(x!==end.x)x+=Math.sign(end.x-x)*pitch;else y+=Math.sign(end.y-y)*pitch;if(!add({x,y}))return false;}return true;
+ }
+ if(tool==='outline'||tool==='fill'){
+  const left=Math.min(a.x,b.x),right=Math.max(a.x,b.x),top=Math.min(a.y,b.y),bottom=Math.max(a.y,b.y),w=(right-left)/pitch+1,h=(bottom-top)/pitch+1;
+  if((tool==='fill'?w*h:w===1||h===1?w*h:2*w+2*h-4)>ROAD_STROKE_LIMIT)return null;
+  if(tool==='fill'){for(let y=top;y<=bottom;y+=pitch)for(let x=left;x<=right;x+=pitch)if(!add({x,y}))return null;}
+  else if(!cardinal({x:left,y:top},{x:right,y:top})||!cardinal({x:right,y:top},{x:right,y:bottom})||!cardinal({x:right,y:bottom},{x:left,y:bottom})||!cardinal({x:left,y:bottom},{x:left,y:top}))return null;
+ }else if(tool==='line'){
+  const target=Math.abs(b.x-a.x)>=Math.abs(b.y-a.y)?{x:b.x,y:a.y}:{x:a.x,y:b.y};
+  if(!cardinal(a,target))return null;
+ }else{
+  if(!add(a))return null;
+  for(let i=1;i<points.length;i++)if(!cardinal(points[i-1],points[i]))return null;
+ }
+ return [...result.values()];
+}

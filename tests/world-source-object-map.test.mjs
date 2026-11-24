@@ -396,3 +396,41 @@ test('map layer visibility and edit lock remain independent and buildings use na
  assert.equal(layerSelectable(state,furniture),true);assert.equal(worldLayer(building),'building');assert.equal(worldLayer(fixed),'fixed');
  assert.equal(worldLayer({layer:'other'}),'other');
 });
+
+import {reflectedDesignItem,symmetricDesignItems,symmetryPlan,commitSymmetry} from '../src/lib/world/design-symmetry.ts';
+test('exact line and point symmetry reflects source row runs and direction; no fabricated chiral orientation',()=>{
+ const rect={width:2,height:1,runs:[{x:0,y:0,width:2}],cellCount:2,path:'M0 0h2v1h-2Z'};
+ const g={itemId:40000001,name:'A',layer:'furniture',surfaceCapable:false,shapes:{'40000001:0':rect,'40000001:8':rect}};
+ const p={itemId:g.itemId,x:3,y:4,orientation:0},v={mode:'vertical',x2:20,y2:20};
+ assert.deepEqual(reflectedDesignItem(p,g,v),{...p,x:15});
+ assert.deepEqual(reflectedDesignItem(p,g,{...v,mode:'horizontal'}),{...p,y:15,orientation:2});
+ assert.deepEqual(reflectedDesignItem(p,g,{...v,mode:'point'}),{...p,x:15,y:15,orientation:2});
+ assert.deepEqual(reflectedDesignItem({...p,x:9},g,v),{...p,x:9});
+ const defs=new Map([[g.itemId,g]]);
+ assert.equal(symmetricDesignItems([{...p,x:9}],defs,v,true).length,1);
+ assert.equal(symmetricDesignItems([{...p,x:9}],defs,v,false,[{...p,x:9}]).length,0);
+ const t=emptyDesign(),plan=symmetryPlan(t,[p],defs,v,true,20,20);assert.equal(plan.length,2);
+ const next=commitSymmetry(t,plan,defs,20,20);assert.equal(currentDesign(next).length,2);
+ assert.deepEqual(currentDesign(travelDesign(next,-1)),[]);
+ assert.equal(symmetryPlan(t,[p],defs,{...v,x2:1},true,20,20),null);
+ const asymmetric={...rect,width:3,height:2,cellCount:3,runs:[{x:0,y:0,width:2},{x:0,y:1,width:1}]};
+ assert.equal(reflectedDesignItem(p,{...g,shapes:{'40000001:0':asymmetric}},v),null);
+ const road={...g,itemId:40100001,layer:'ground'};assert.equal(reflectedDesignItem({...p,itemId:road.itemId},road,v),null);
+});
+
+import {roadPitch,roadStroke,snapRoadPoint} from '../src/lib/world/road-design.ts';
+import {planRoadDesign,commitRoadDesign} from '../src/lib/world/design-layout.ts';
+test('cardinal road strokes use source-matched pitch and atomic design history',()=>{
+ const shape={width:4,height:4,runs:[0,1,2,3].map(y=>({x:0,y,width:4})),cellCount:16,path:'M0 0h4v4h-4Z'};
+ const g={itemId:40100068,name:'Path_MainStreet',layer:'ground',surfaceCapable:false,shapes:{'40100068:8':shape}};
+ assert.equal(roadPitch(g,2),4);assert.equal(roadPitch(g,1),null);assert.equal(roadPitch({...g,name:'Unknown'},2),null);
+ assert.deepEqual(snapRoadPoint({x:7,y:11},4),{x:4,y:8});
+ const points=[{x:4,y:4},{x:12,y:12}];
+ assert.equal(roadStroke(points,'line',4).length,3);assert.equal(roadStroke(points,'outline',4).length,8);assert.equal(roadStroke(points,'fill',4).length,9);assert.equal(roadStroke(points,'brush',4).length,5);
+ assert.equal(roadStroke([{x:0,y:0},{x:400,y:400}],'fill',4),null);
+ const start=emptyDesign(),cells=roadStroke(points,'fill',4),next=commitRoadDesign(start,g,cells,2,40,40);
+ assert.equal(currentDesign(next).length,9);assert.deepEqual(currentDesign(travelDesign(next,-1)),[]);assert.equal(commitRoadDesign(next,g,cells,2,40,40),next);
+ const erased=commitRoadDesign(next,g,[{x:4,y:4}],2,40,40,true);assert.equal(currentDesign(erased).length,8);assert.equal(currentDesign(travelDesign(erased,-1)).length,9);
+ assert.equal(planRoadDesign(next,g,[{x:40,y:40}],2,40,40),null);
+ const other={...g,itemId:40100069,shapes:{'40100069:8':shape}};assert.equal(planRoadDesign(next,other,[{x:4,y:4}],2,40,40),null);
+});
