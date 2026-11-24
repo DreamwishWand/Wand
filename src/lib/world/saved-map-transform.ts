@@ -1,3 +1,4 @@
+import {nativeActionBlocked} from './native-edit-restrictions.ts';
 import type {SavedShapeMap,SavedShapeObject} from './saved-shape-map.ts';
 export const CARDINAL_ORIENTATIONS=['GridOrientation_Up','GridOrientation_Right','GridOrientation_Down','GridOrientation_Left'] as const;
 export type Cardinal=typeof CARDINAL_ORIENTATIONS[number];
@@ -12,11 +13,21 @@ export function exclusiveAnchorClass(itemId:string):'ground'|'fence'|null{
   const subtype=Math.floor((id%10_000_000)/100_000);
   return subtype===1?'ground':subtype===7?'fence':null;
 }
-export function worldTransformEligible(o:SavedShapeObject|null):boolean{
+function worldTransformKindEligible(o:SavedShapeObject|null):boolean{
   if(!o||o.subgrid||!Number.isSafeInteger(Number(o.itemId))||Number(o.itemId)<=0)return false;
   const exclusive=exclusiveAnchorClass(o.itemId);
   if(exclusive)return o.layer===exclusive;
   return o.shapeKey!==null&&['furniture','surface','landscape'].includes(o.layer);
+}
+export function worldMoveEligible(o:SavedShapeObject|null):boolean{
+  return worldTransformKindEligible(o)&&!nativeActionBlocked(o?.editRestrictions,'select')&&!nativeActionBlocked(o?.editRestrictions,'move');
+}
+export function worldRotateEligible(o:SavedShapeObject|null):boolean{
+  return worldTransformKindEligible(o)&&!exclusiveAnchorClass(o!.itemId)&&isCardinal(o!.orientation)&&
+    !nativeActionBlocked(o?.editRestrictions,'select')&&!nativeActionBlocked(o?.editRestrictions,'rotate');
+}
+export function worldTransformEligible(o:SavedShapeObject|null):boolean{
+  return worldMoveEligible(o)||worldRotateEligible(o);
 }
 export function exclusiveAnchorConflict(map:SavedShapeMap,o:SavedShapeObject|null,x:unknown,y:unknown):boolean{
   if(!o||!int32(x)||!int32(y)||(x===o.x&&y===o.y))return false;
@@ -30,7 +41,8 @@ export function draftSavedMapTransform(o:SavedShapeObject|null,x:number|undefine
   const moved=x!==o.x||y!==o.y;
   const turned=orientation!==o.orientation;
   // Preserve exact orientation on road/fence moves until connection/edge semantics are verified.
-  if(turned&&(exclusiveAnchorClass(o.itemId)||!isCardinal(o.orientation)||!isCardinal(orientation)))return null;
+  if(moved&&!worldMoveEligible(o))return null;
+  if(turned&&(!worldRotateEligible(o)||!isCardinal(orientation)))return null;
   if(!moved&&!turned)return null;
   return {localOrdinal:o.localOrdinal,itemId:o.itemId,recordKind:'full' as const,
     expectedX:o.x,expectedY:o.y,replacementX:moved?x:null,replacementY:moved?y:null,
