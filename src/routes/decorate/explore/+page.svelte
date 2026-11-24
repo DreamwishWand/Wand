@@ -24,7 +24,7 @@
   let releases=$state.raw<ReleaseGroup[]>([]);
   let variantChoices=$state<Record<string,number>>({}),variantReview=$state<ExploreItem[]>([]);
   let sourceUniverses=$state.raw<{tagId:number;key:string;names:Record<string,string|null>}[]>([]);
-  let shelfLimits=$state<Record<string,number>>({});
+  let shelfLimits=$state<Record<string,number>>({}),seriesLimits=$state<Record<string,number>>({});
   let selectionMode=$state(false),selectedIds=$state<number[]>([]);
   const nameOf=(i:ExploreItem)=>i.names[locale]??i.names.en??t('名称未確認','Unnamed item');
   const byId=$derived(new Map(items.map(i=>[i.itemId,i])));
@@ -68,6 +68,7 @@
     const label=g.names?.[locale]??g.names?.en??g.label;
     if(g.kind==='unclassified')return t('未分類','Unclassified')+' · '+collectionTopCategoryLabel(locale,g.label as Family);
     const style=g.styleKeys?.map(k=>collectionDb01TagLabel(locale,k)).join(' · ');
+    if(g.kind==='style')return t('スタイル候補','Style matches')+' · '+(style??'');
     return label?(style?label+' · '+style:label):style??nameOf(g.items[0]);
   }
   function displayed(d:DesignTile){return d.items.find(i=>i.itemId===variantChoices[d.key])??d.items[0];}
@@ -75,7 +76,7 @@
   function pickVariant(d:DesignTile,i:ExploreItem){variantChoices={...variantChoices,[d.key]:i.itemId};showReview(i,d.items);}
 
   const filterCount=$derived(filters.families.length+filters.universes.length+facets.reduce((n,k)=>n+filters.tags[k].length,0));
-  function resetBrowse(){limit=100;groupLimit=8;shelfLimits={};focused=null;focusedSeries=null;}
+  function resetBrowse(){limit=100;groupLimit=8;shelfLimits={};seriesLimits={};focused=null;focusedSeries=null;}
   function toggleFamily(key:Family){filters.families=filters.families.includes(key)?filters.families.filter(x=>x!==key):[...filters.families,key];resetBrowse();}
   function toggleUniverse(key:string){filters.universes=filters.universes.includes(key)?filters.universes.filter(x=>x!==key):[...filters.universes,key];resetBrowse();}
   function toggleFacet(key:Facet,value:string){const list=filters.tags[key];filters.tags[key]=list.includes(value)?list.filter(x=>x!==value):[...list,value];resetBrowse();}
@@ -92,6 +93,7 @@
   }
   function showUniverse(key:string,series:string|null=null){focused=key;focusedSeries=series;allGrid=false;limit=100;}
   function goBack(){if(focusedSeries!==null){focusedSeries=null;limit=100;}else{focused=null;allGrid=false;}}
+  function moreSeries(node:HTMLElement,key:string){const observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)){seriesLimits={...seriesLimits,[key]:(seriesLimits[key]??12)+12};}},{rootMargin:'350px'});observer.observe(node);return {destroy:()=>observer.disconnect()};}
   function chooseItem(id:number){if(active)toggle(id);else boardsOpen=true;}
   function save(next:BoardState){if(!ready||storageFailed)return;try{
     if(localStorage.getItem(STORAGE_KEY)!==storageRaw)throw Error('CONFLICT');
@@ -160,9 +162,7 @@
       {#if focused!==null||allGrid}
         <div class="shelf-heading"><button class="icon-button back" aria-label={t('戻る','Back')} onclick={goBack}><WandIcon name="arrow"/></button><h2>{focused!==null?universeName(focused):t('すべて','All items')}{#if focusedGroup} · {seriesName(focusedGroup)}{/if}</h2><span class="spacer"></span><button class="icon-button" aria-label={t('複数選択','Multi-select')} aria-pressed={selectionMode} onclick={()=>{selectionMode=!selectionMode;selectedIds=[];}}><WandIcon name="check"/></button></div>
         {#if focused!==null&&isLargeUniverse(focused)&&focusedSeries===null}
-          {#each focusedGroups as group (group.key)}
-            {@render seriesRow(focused,group)}
-          {/each}
+          {@render seriesList(focused,focusedGroups)}
         {:else}
           <div class="tiles">{#each gridDesigns.slice(0,limit) as design (design.key)}{@render designTile(design)}{/each}</div>
           {#if gridDesigns.length>limit}<div use:more class="sentinel"></div>{/if}
@@ -172,9 +172,7 @@
           <section class="shelf" class:large-universe={isLargeUniverse(key)}>
             <div class="shelf-heading"><button class="universe-heading" onclick={()=>showUniverse(key)}>{universeName(key)} <span aria-hidden="true">›</span></button><span class="spacer"></span>{#if !isLargeUniverse(key)}<button class="icon-button" aria-label={t('次へ','Next')} onclick={e=>stepShelf(e,key,list.length)}><WandIcon name="arrow" size={17}/></button>{/if}</div>
             {#if isLargeUniverse(key)}
-              {#each visibleSeries.get(key)??[] as group (group.key)}
-                {@render seriesRow(key,group)}
-              {/each}
+              {@render seriesList(key,visibleSeries.get(key)??[])}
             {:else}
               <div class="shelf-items" onscroll={e=>scrollShelf(e,key,list.length)}>
                 {#each list.slice(0,shelfLimits[key]??32) as item (item.itemId)}{@render itemTile(item)}{/each}
@@ -221,6 +219,14 @@
   </aside>
   {/if}
   </div>
+  {#snippet seriesList(universe:string,groups:SeriesShelf[])}
+    {#each groups.slice(0,seriesLimits[universe]??12) as group (group.key)}
+      {@render seriesRow(universe,group)}
+    {/each}
+    {#if groups.length>(seriesLimits[universe]??12)}
+      {#key seriesLimits[universe]??12}<div use:moreSeries={universe} class="sentinel"></div>{/key}
+    {/if}
+  {/snippet}
   {#snippet seriesRow(universe:string,group:SeriesShelf)}
     {@const shelfKey=universe+':'+group.key}
     {@const designs=designTiles(group.items)}

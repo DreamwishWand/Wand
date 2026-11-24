@@ -11,14 +11,16 @@ export interface SeriesShelf{
 const THEMES:Readonly<Record<number,readonly {key:string;ja:string;en:string;pattern:RegExp}[]>>={
   2040000158:[{key:'gaming',ja:'ゲーミング',en:'Gaming',pattern:/^(?:Gamer |Dreamlight Gaming )/i}],
   2040000278:[{key:'night-thorn',ja:'夜のトゲ・ゲームルーム',en:'Night Thorn arcade',pattern:/^Night Thorn /i}],
-  2040000330:[{key:'alpine',ja:'アルプス風',en:'Alpine',pattern:/\bAlpine\b/i}],
+  2040000330:[{key:'alpine',ja:'アルプス風',en:'Alpine',pattern:/\bAlpine\b/i},{key:'equestrian',ja:'乗馬・牧場',en:'Equestrian',pattern:/\b(?:Tack Rack|Saddle Rack|Horse Stall|Hitching Post|Wagon Wheel)\b/i}],
   2040000246:[{key:'books',ja:'本・物語',en:'Books & storybooks',pattern:/\b(?:Bookish|Storybook)\b/i},{key:'party',ja:'パーティー',en:'Party',pattern:/\b(?:Party|Disco)\b/i}],
   2040000385:[{key:'shipyard',ja:'海賊・造船所',en:'Pirates & shipyards',pattern:/\b(?:Shipyard|Pirate Ship|Shipwreck|Bell Buoy|Treasure Map)\b/i}],
   2040000390:[{key:'woodland',ja:'森のパッチワーク',en:'Woodland',pattern:/\b(?:Woodland|Honeyleaf)\b/i}],
-  2040000361:[{key:'meadow',ja:'平和の草原・ジオラマ',en:'Peaceful Meadow',pattern:/\bPeaceful Meadow\b/i}],
+  2040000361:[{key:'meadow',ja:'平和の草原・ジオラマ',en:'Peaceful Meadow',pattern:/\bPeaceful Meadow\b/i},{key:'topiary',ja:'トピアリー',en:'Topiary',pattern:/\bTopiary\b/i}],
   2040000402:[{key:'observatory',ja:'天文台・星空',en:'Observatory',pattern:/\b(?:Observatory|Armillary Sphere|Stargazer)\b/i}],
   2040000235:[{key:'concert',ja:'コンサート',en:'Concert',pattern:/\b(?:Rock Concert|Rock Drum|Stage Fireworks)\b/i}],
-  2040000377:[{key:'stadium',ja:'古代のスタジアム',en:'Ancient Stadium',pattern:/\bAncient Stadium\b/i}]
+  2040000377:[{key:'stadium',ja:'古代のスタジアム',en:'Ancient Stadium',pattern:/\bAncient Stadium\b/i}],
+  2040000298:[{key:'anniversary',ja:'ディズニーランド70周年',en:'Disneyland 70th anniversary',pattern:/\bDisneyland 70th Anniversary\b/i}],
+  2040000076:[{key:'nautical',ja:'航海・船舶',en:'Nautical',pattern:/\b(?:Nautical-Themed|Helm Bookshelf|Ship Coffee Table)\b/i}]
 };
 const coherent=new Set([2040000081,2040000103,2040000104,2040000105,2040000107,2040000108,2040000278]);
 const styles=(i:ExploreItem)=>[...new Set(i.tags.filter(([k])=>k==='furnitureStyle').map(([,v])=>v))].sort();
@@ -73,24 +75,41 @@ export function seriesShelves(items:readonly ExploreItem[],releases:readonly Rel
 export interface DesignTile{key:string;items:ExploreItem[]}
 const COLOR=/^(?:black|white|blue|red|green|pink|purple|yellow|orange|gray|grey|brown|beige|tan|pale gray|pale grey|dark wood|medium wood|pale wood|light wood|wooden|gold|silver) /i;
 function colorKeys(i:ExploreItem){return [...new Set(i.tags.filter(([k])=>k==='color').map(([,v])=>v))].sort().join('|');}
-function designKey(i:ExploreItem):string|null{
-  const n=name(i),base=n.replace(COLOR,'').trim(),colors=colorKeys(i);
-  // No name-only merging: original shared prefab, same native type/set,
-  // exact non-color tags and a distinct explicit color are all required.
-  if(!i.prefabGuid||!i.sourceSetItemId||base===n||!base||!colors)return null;
-  return [i.prefabGuid,i.sourceSetItemId,i.nativeCategory,i.subtype,base.toLowerCase(),
+function nativeColorStem(i:ExploreItem,prefix:string):string|null{
+  if(!i.nativeKey||!i.footprintSignature)return null;
+  const tokens=i.nativeKey.replace(/([a-z0-9])([A-Z])/g,'$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const words=prefix.toLowerCase().trim().split(/\s+/);
+  // Only an explicit identical color token sequence in the source key
+  // establishes an independent alternative to a shared prefab.
+  const positions=tokens.flatMap((_,idx)=>words.every((w,j)=>tokens[idx+j]===w)?[idx]:[]);
+  if(positions.length!==1||tokens.length<=words.length)return null;
+  const idx=positions[0];
+  return [...tokens.slice(0,idx),...tokens.slice(idx+words.length)].join('_')+':'+i.footprintSignature;
+}
+function designKeys(i:ExploreItem):string[]{
+  const n=name(i),prefix=n.match(COLOR)?.[0],base=n.replace(COLOR,'').trim(),colors=colorKeys(i);
+  if(!i.sourceSetItemId||!prefix||!base||!colors)return [];
+  const shared=[i.sourceSetItemId,i.nativeCategory,i.subtype,base.toLowerCase(),
     JSON.stringify(i.tags.filter(([k])=>k!=='color').map(([k,v])=>k+':'+v).sort())].join(':');
+  const keys:string[]=[];
+  if(i.prefabGuid)keys.push('prefab:'+i.prefabGuid+':'+shared);
+  const stem=nativeColorStem(i,prefix);
+  if(stem)keys.push('native:'+stem+':'+shared);
+  return keys;
 }
 export function designTiles(items:readonly ExploreItem[]):DesignTile[]{
   const candidates=new Map<string,ExploreItem[]>();
-  for(const i of items){const k=designKey(i);if(k){const a=candidates.get(k)??[];a.push(i);candidates.set(k,a);}}
+  for(const i of items)for(const k of designKeys(i)){const a=candidates.get(k)??[];a.push(i);candidates.set(k,a);}
   const out:DesignTile[]=[],seen=new Set<number>();
   for(const i of items){
     if(seen.has(i.itemId))continue;
-    const k=designKey(i),a=k?candidates.get(k):undefined;
-    const variants=a&&a.length>1&&new Set(a.map(colorKeys)).size===a.length?a:[i];
+    let variants=[i],chosen='item:'+i.itemId;
+    for(const k of designKeys(i)){
+      const a=(candidates.get(k)??[]).filter(v=>!seen.has(v.itemId));
+      if(a.length>variants.length&&new Set(a.map(colorKeys)).size===a.length){variants=a;chosen='design:'+k;}
+    }
     for(const v of variants)seen.add(v.itemId);
-    out.push({key:variants.length>1?'design:'+k:'item:'+i.itemId,items:variants});
+    out.push({key:chosen,items:variants});
   }
   return out;
 }
