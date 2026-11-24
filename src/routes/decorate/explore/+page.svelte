@@ -245,7 +245,7 @@
     {@render itemTile(item,design)}
   {/snippet}
   {#snippet itemTile(item:ExploreItem,design?:DesignTile)}
-    <article class="catalog-tile" class:inBoard={activeIds.has(item.itemId)}>
+    <article class="catalog-tile" data-item-id={item.itemId} class:inBoard={activeIds.has(item.itemId)}>
       <button class="item" aria-label={nameOf(item)} title={nameOf(item)} aria-pressed={selectionMode?selectedIds.includes(item.itemId):undefined} onclick={()=>selectionMode?selectItem(item.itemId):showReview(item,design)}><span class="art"><ItemArtwork itemId={item.itemId} sourcePath={images[String(item.itemId)]??null}/></span><span class="visually-hidden">{nameOf(item)}</span></button>
       <button class="tile-favorite" aria-label={t('お気に入り','Favorite')} aria-pressed={favoriteIds.has(item.itemId)} disabled={!ready||storageFailed} onclick={()=>save(toggleFavorite(boards,item.itemId))}><WandIcon name="star" size={16}/></button>
       {#if design&&design.items.length>1}

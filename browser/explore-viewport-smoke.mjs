@@ -23,6 +23,8 @@ try{
  const total=Number(await catalog.getAttribute('data-explore-total'));
  const initial=Number(await catalog.getAttribute('data-explore-revealed'));
  const initialCards=await cards.count();
+ const ownedId=Number(await cards.first().getAttribute('data-item-id'));
+ assert.ok(Number.isSafeInteger(ownedId)&&ownedId>0);
  const initialHeight=await catalog.evaluate(e=>e.getBoundingClientRect().height);
  assert.ok(total>500);
  assert.ok(initial>0&&initial<200,'initial revealed count '+initial+'/'+total);
@@ -68,6 +70,16 @@ try{
  await page.reload();
  await page.locator('.site-header .explore-service-toolbar').waitFor();
  assert.equal(await page.locator('[data-scope="indoor"]').getAttribute('aria-pressed'),'true');
+ await page.evaluate(id=>localStorage.setItem('dreamwishwand.collection.local.v1',JSON.stringify({schema:'wand.collection.local@1',active:'local-1',workspaces:[{id:'local-1',name:'Test',entries:{[id]:{status:'owned'},'99999999':{discovered:true}}}]})),ownedId);
+ await page.reload();
+ await page.locator('.site-header .explore-service-toolbar').waitFor();
+ const ownedButton=page.getByRole('button',{name:/所有済みのみ|Owned only/});
+ await page.waitForFunction(()=>{const b=document.querySelector('.explore-service-toolbar button[aria-label="所有済みのみ"],.explore-service-toolbar button[aria-label="Owned only"]');return b&&!b.disabled;});
+ await page.locator('[data-scope="all"]').click();
+ await ownedButton.click();
+ await page.waitForFunction(()=>Number(document.querySelector('.catalog')?.getAttribute('data-explore-total'))>0&&Number(document.querySelector('.catalog')?.getAttribute('data-explore-total'))<10);
+ await cards.first().waitFor();
+ assert.ok((await cards.evaluateAll(es=>es.map(e=>Number(e.dataset.itemId)))).every(id=>id===ownedId),'only positive ownership is shown');
  assert.deepEqual(errors,[]);
  console.log('EXPLORE_PROGRESSIVE '+JSON.stringify({total,initial,initialCards,initialHeight,after,desktopColumns:firstColumns}));
 }finally{await browser?.close();server.kill();}
