@@ -113,3 +113,10 @@ export function designTiles(items:readonly ExploreItem[]):DesignTile[]{
   }
   return out;
 }
+
+/** A series determines adjacency only. No separate visual shelf or row break. */
+export function orderedSeriesDesigns(groups:readonly SeriesShelf[]):DesignTile[]{
+  return groups.flatMap(group=>designTiles(group.items).map(tile=>({
+    ...tile,key:group.key+':'+tile.key
+  })));
+}

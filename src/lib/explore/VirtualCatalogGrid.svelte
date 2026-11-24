@@ -3,10 +3,10 @@
   import type {DesignTile} from './series';
   import {catalogGridLayout} from './viewport-grid';
   import CatalogWindowChunk from './CatalogWindowChunk.svelte';
-  let {items,tile,columns}:{items:readonly DesignTile[];tile:Snippet<[DesignTile]>;columns?:number}=$props();
+  let {items,tile}:{items:readonly DesignTile[];tile:Snippet<[DesignTile]>}=$props();
   let width=$state(0);
   // Use the actual catalog column width (including moodboard and mobile).
-  let layout=$derived(catalogGridLayout(width,items.length,width<600?78:94,columns));
+  let layout=$derived(catalogGridLayout(width,items.length,width<600?78:94));
 </script>
 <div class="virtual-grid" data-explore-grid data-total={items.length} data-columns={layout.columns} bind:clientWidth={width}>
   {#each layout.chunks as chunk (chunk.start)}
