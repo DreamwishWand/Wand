@@ -776,6 +776,15 @@ try{
   assert.equal(backup.workspaces[0].entries['99999999'].discovered,true);
   assert.equal(backup.workspaces[0].entries['40005160'].quantity,7);
   assert.equal(backup.workspaces[0].entries['40005160'].status,'missing');
+  // Quantity is editable directly on a card, with no detail panel.
+  const quantityControl=page.locator('.item-card[data-item-id="40005160"] .item-quantity-input');
+  await quantityControl.waitFor();
+  await quantityControl.fill('8');await quantityControl.press('Enter');
+  await page.waitForFunction(()=>document.querySelector('.item-quantity-input')?.value==='8'&&!document.querySelector('.item-quantity-input')?.disabled);
+  assert.equal((await readLocalState(page)).workspaces[0].entries['40005160'].quantity,8);
+  await quantityControl.fill('7');await quantityControl.press('Enter');
+  await page.waitForFunction(()=>document.querySelector('.item-quantity-input')?.value==='7'&&!document.querySelector('.item-quantity-input')?.disabled);
+  assert.equal((await readLocalState(page)).workspaces[0].entries['40005160'].quantity,7);
   // Default missing and explicit missing share the same filter.
   await page.getByRole('button',{name:/フィルター/}).click();
   const statusControls=page.getByRole('group',{name:'収集状況（手動記録）'});
