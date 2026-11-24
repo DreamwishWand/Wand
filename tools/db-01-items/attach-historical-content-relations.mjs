@@ -28,7 +28,7 @@ const groups={
 };
 const pins={
   'recipe-results-1.26.2.json':'ee767b8808f9bef078234d978c3893b5a9649050c7ccf8ee460bd3a32ef02f0e',
-  'activity-result-paths-1.26.2.json':'97d02a35dbe78dab637f4eda7d6fdf61cf528bb77aab6f484483a5cf542eebbb',
+  'activity-result-paths-1.26.2.json':'97d02a35dbe78dab637f4eda7d6fdf61cf528bb77aab6f684483a5cf542eebbb',
   'native-stall-slots-1.26.2.json':'ef18e94df460d7bd5c768ebc720c48425570ac549a49ebdac00ade34e5468d2a',
   'native-loot-candidates-1.26.2.json':'fba1d8163c30156941b108ce2ba37544f32e9c7d419f4c2b1f126b017c470a00'
 };
