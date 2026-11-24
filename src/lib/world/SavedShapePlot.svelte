@@ -1,4 +1,6 @@
 <script lang="ts">
+ import MapCameraControls from './MapCameraControls.svelte';
+
   import {onMount,onDestroy} from 'svelte';
   import {terrainWarnings,type TerrainBinding} from './terrain-binding.ts';
   import {nativeSourceFloorTint} from './native-terrain-canvas.ts';
@@ -310,21 +312,12 @@
     selected=hits.find(o=>matchesSelectionLayer(o,layer))?.localOrdinal??null;
   }
 </script>
-<div class="saved-shape-plot">
-  <div class="controls">
+<div class="saved-shape-plot" class:compact>
+  <div class="controls grid-controls">
     {#if ordinals.length>1}
       <label>セーブ内Grid <select value={activeOrdinal} on:change={e=>chooseGrid(Number(e.currentTarget.value))}>
         {#each ordinals as id}<option value={id}>Grid {id}</option>{/each}
       </select></label>
-    {/if}
-    <button type="button" aria-label="セーブ図を拡大" on:click={()=>changeZoom(zoom*2)} disabled={zoom>=maxZoom}>＋</button>
-    <button type="button" aria-label="セーブ図を縮小" on:click={()=>changeZoom(zoom/2)} disabled={zoom===1}>−</button>
-    <button type="button" on:click={resetCamera}>全体</button>
-    {#if zoom>1}
-      <button type="button" aria-label="左へ移動" on:click={()=>pan(-.4,0)}>←</button>
-      <button type="button" aria-label="右へ移動" on:click={()=>pan(.4,0)}>→</button>
-      <button type="button" aria-label="上へ移動" on:click={()=>pan(0,-.4)}>↑</button>
-      <button type="button" aria-label="下へ移動" on:click={()=>pan(0,.4)}>↓</button>
     {/if}
   </div>
   <div class="controls" role="group" aria-label="セーブ図の選択レイヤー">
@@ -357,7 +350,7 @@
       </div>
     {/if}
   </div>
-  <button type="button" class="plot" class:zoomed={zoom>1} aria-label="セーブ内の形状候補を選択"
+  <div class="saved-map-frame"><button type="button" class="plot" class:zoomed={zoom>1} aria-label="セーブ内の形状候補を選択"
     on:click={pick} on:wheel|nonpassive={wheel} on:pointerdown={startPan} on:pointermove={follow}
     on:pointerup={finishPan} on:pointercancel={finishPan} on:pointerleave={()=>{gesture.leave();hoverPoint=null;}} on:keydown={keyMap}>
     <svg bind:this={svg} {viewBox} aria-hidden="true">
@@ -405,7 +398,8 @@
         {#if anchorConflict}<rect class="exclusive-anchor-conflict" x={previewX} y={previewY} width="1" height="1" fill="#ef5350" fill-opacity=".9" stroke="#fff" stroke-width="2" vector-effect="non-scaling-stroke"/>{/if}
       {/if}
     </svg>
-  </button>
+  </button><MapCameraControls {zoom} {maxZoom} onZoom={changeZoom} onFit={resetCamera} onPan={pan}/></div>
+  <div class="saved-inspector">
   {#if hits.length}<div class="controls" role="group" aria-label="重なるセーブ内オブジェクト">
     {#each hits as hit (hit.localOrdinal)}
       <button type="button" aria-pressed={groupMode?groupSet.has(hit.localOrdinal):selected===hit.localOrdinal} disabled={groupMode&&!worldMoveEligible(hit)} on:click={()=>{if(groupMode)toggleGroup(hit);else selected=hit.localOrdinal;}}>{worldObjectName(hit,names)}</button>
@@ -498,8 +492,10 @@
   {#if editError}<p role="alert">{editError}</p>{/if}
   {#if copyUrl}<a href={copyUrl} download={copyName}>編集済みコピーを保存</a>{/if}
   {#if !compact}<p>原本定義による形状候補（原本Grid倍率 {map.sourceGridFactor??'不明'}）。丸印は形状不明。実際の占有・上下関係は未確認。</p>{:else}<p>{activeTerrain?'原本地形と配置を同じローカル座標で表示。':'地形との座標対応未確認。'}形状・重複は候補、ゲーム内ロード未確認。</p>{/if}
+  </div>
 </div>
 <style>
+  .saved-map-frame{position:relative;min-height:0;min-width:0}.grid-controls:empty{display:none}.saved-inspector{display:grid;gap:5px;align-content:start;min-width:0}.compact.saved-shape-plot{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;position:relative;overflow:hidden}.compact .saved-map-frame{flex:1 1 auto;overflow:hidden}.compact .plot,.compact .plot svg{height:100%;max-height:none}.compact .saved-inspector{flex:0 1 auto;max-height:30%;overflow:auto;padding:3px}.compact .object-results{max-height:22dvh}
   .saved-shape-plot{display:grid;gap:6px;min-width:0}
   .controls{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
   .origin-tools small{color:var(--wand-muted);font-size:11px}
