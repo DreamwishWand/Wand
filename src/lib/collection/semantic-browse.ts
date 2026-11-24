@@ -13,6 +13,7 @@ const MEAL_ORDER=['appetizer','entree','dessert'];
 const MEAL_LABELS:Readonly<Record<string,readonly string[]>>={
   appetizer:['前菜','Appetizers','Entrées','Antipasti','Vorspeisen','Entrantes','开胃菜','Entradas'],
   entree:['メインディッシュ','Entrées','Plats principaux','Piatti principali','Hauptgerichte','Platos principales','主菜','Pratos principais'],
+  QuestMeal:['クエスト料理','Quest meals','Plats de quête','Piatti di missione','Questgerichte','Platos de misión','任务餐点','Refeições de missão'],
   dessert:['デザート','Desserts','Desserts','Dolci','Nachspeisen','Postres','甜点','Sobremesas'],
   [MEAL_UNKNOWN]:['種類未分類','Type unspecified','Type non spécifié','Tipo non specificato','Typ nicht angegeben','Tipo sin especificar','未指定类型','Tipo não especificado']
 };
@@ -20,7 +21,7 @@ const MEAL_LOCALES=['ja','en','fr','it','de','es-ES','zh-CN','pt-BR'];
 function mealKey(tag:string):string{
   const normalized=tag.replace(/[^a-z]/gi,'').toLowerCase();
   if(['appetizer','appetizers','starter','starters'].includes(normalized))return 'appetizer';
-  if(['entree','entrees','maincourse','maincourses','maindish'].includes(normalized))return 'entree';
+  if(['dinner','entree','entrees','maincourse','maincourses','maindish'].includes(normalized))return 'entree';
   if(['dessert','desserts'].includes(normalized))return 'dessert';
   return tag;
 }
