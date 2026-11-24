@@ -1066,7 +1066,7 @@ try{
   await originOverlay.waitFor({timeout:30000});
   assert.equal(await originOverlay.getAttribute('width'),'196');
   assert.equal(await originOverlay.getAttribute('height'),'100');
-  assert.match(await originOverlay.getAttribute('href'),/^data:image\\/png;base64,/);
+  assert.ok((await originOverlay.getAttribute('href')).startsWith('data:image/png;base64,'));
   await publicPlot.getByRole('button',{name:'右回転',exact:true}).click();
   await publicPlot.locator('.placement-origin-overlay').waitFor({timeout:30000});
   await publicPlot.getByRole('button',{name:'配置候補マス',exact:true}).click();
