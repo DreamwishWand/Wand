@@ -222,7 +222,9 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
       explore.push({itemId:i,names:r.names,nativeCategory:type.name,subtype:type.subtypeCode,
         tags:tags.filter(t=>['color','furnitureStyle','furnitureKind'].includes(t[0])),
         universes:r.universeTagIds,universeStatus:r.universeSourceStatus,iconGuid:r.iconGuid,
-        sourceSetItemId:r.sourceSetItemId});
+        sourceSetItemId:r.sourceSetItemId,
+        sourceSetNames:r.sourceSetItemId===null?{}:byId.get(r.sourceSetItemId)?.names??{},
+        prefabGuid:r.artwork.prefabGuid??null});
     }
     const codes=sourceCodes(r);if(codes.length)f.categoryItems.push([i,codes]);
     if(r.universeTagIds.length){
