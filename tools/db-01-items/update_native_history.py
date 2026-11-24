@@ -5,6 +5,8 @@ changed files, retains history even for absent definitions, and never equates
 source presence with player availability or DLC membership. No network or upload.
 """
 import argparse
+import base64
+import zlib
 import hashlib
 import gzip
 import json
@@ -119,6 +121,69 @@ def apply_content_assignments(history, active, scan_sha, assignments, assignment
                      contentReleaseEvidenceSha256=evidence,contentAssignmentSha256=assignments_sha)
         seen.add(item_id)
 
+def corpus_digest(source_hashes):
+    return digest(json.dumps(source_hashes,sort_keys=True,separators=(",",":")).encode())
+
+def historical_seed(active, source_hashes):
+    # Only the exact verified current original corpus may initialize the
+    # historical census. No game version string alone permits this inference.
+    corpus=corpus_digest(source_hashes)
+    if corpus!="1f336ebb22061b588008d004e725bb7d56bd5cd6da1765520efd2aad4c115744":
+        return {}
+    repo=Path(__file__).resolve().parents[2]
+    h=json.loads((repo/"data/ddv/item-master/historical-source-delta-steam-1253-1262.json").read_bytes())
+    check(h["schema"]=="wand.db01.historical-source-delta@1" and h["platform"]=="Steam"
+          and h["sourceCensus"]==39,"HISTORICAL_DELTA")
+    before,expansion,hotfix=h["snapshots"]
+    encode=lambda rows: json.dumps(rows,separators=(",",":")).encode()
+    current=sorted(active)
+    check(hotfix["sourceCorpusSha256"]==corpus and len(current)==hotfix["definitionCount"]
+          and digest(encode(current))==hotfix["itemIdsSha256"],"HISTORICAL_CURRENT_IDS")
+    d=h["delta1253to1261"];fix=h["delta1261to1262"]
+    runs=json.loads(zlib.decompress(base64.b64decode(d["newIdRuns"],validate=True)))
+    check(isinstance(runs,list) and len(runs)%2==0 and len(runs)<=10000,"HISTORICAL_RUNS")
+    added=[];last=0
+    for gap,n in zip(runs[::2],runs[1::2]):
+        check(type(gap) is int and gap>0 and type(n) is int and n>0 and len(added)+n<=3254,"HISTORICAL_RUN")
+        start=last+gap
+        added.extend(range(start,start+n));last=start+n-1
+    check(len(added)==3254 and digest(encode(added))==
+          "ec995d4f8253312dc6990f38c1e5ba8ccbbf42e3c7b0d14fb4e5ac76868ba7c3","HISTORICAL_NEW_IDS")
+    hot=set(fix["newIds"]);added=set(added)
+    check(hot=={2130007038} and not hot&added and (hot|added).issubset(active),"HISTORICAL_HOTFIX")
+    at1261=sorted(set(active)-hot)
+    at1253=sorted((set(at1261)-added)|set(d["absentIds"]))
+    check(len(at1261)==expansion["definitionCount"] and digest(encode(at1261))==expansion["itemIdsSha256"]
+          and len(at1253)==before["definitionCount"] and digest(encode(at1253))==before["itemIdsSha256"],
+          "HISTORICAL_PREVIOUS_IDS")
+    shop=h["shopObservation"]
+    shopdoc=pinned_json(repo/shop["sourcePath"],shop["sourceSha256"])
+    shopids={int(x[0]) for offer in shopdoc["offers"] for x in offer[5]}
+    check(sorted(added&shopids)==shop["newItemIds"] and shopdoc["source"]["snapshotKey"]==shop["snapshotKey"],
+          "HISTORICAL_SHOP_IDS")
+    result={}
+    for item_id in set(at1253)|set(active):
+        ishot=item_id in hot;isnew=item_id in added
+        target=hotfix if ishot else expansion if isnew else before
+        prior=expansion if ishot else before if isnew else None
+        key=active[item_id][1][1].lower() if item_id in active else ""
+        result[item_id]={
+            "firstObservedVersion":target["version"],"introducedVersion":target["version"] if prior else None,
+            "introducedAfterVersion":prior["version"] if prior else None,
+            "introducedAfterSourceScanSha256":None,"introducedSourceScanSha256":None,
+            "introducedAfterSourceCorpusSha256":prior["sourceCorpusSha256"] if prior else None,
+            "introducedSourceCorpusSha256":target["sourceCorpusSha256"] if prior else None,
+            "sourceReleaseId":"hotfix.1.26.2" if ishot else "dlc.the-keepsake-sea" if isnew else None,
+            "sourceReleaseKind":"hotfix" if ishot else "paid_dlc" if isnew else None,
+            "contentReleaseId":None,"contentReleaseKind":None,"contentDlcType":None,
+            "contentReleaseEvidenceSha256":None,"contentAssignmentSha256":None,
+            "nativeContentMarker":("expansion04" if "expansion04" in key else "update26" if "update26" in key else None) if isnew else None,
+            "introductionShopSnapshot":shop["snapshotKey"] if item_id in shop["newItemIds"] else None,
+            "lastObservedVersion":"1.26.2" if item_id in active else "1.25.3",
+            "presentInCurrentSource":item_id in active
+        }
+    return result
+
 def update(root, scan, scan_sha, previous=None, previous_sha=None, content_release=None,
            bootstrap_archive=None, source_release_kind=None, assignments=None, assignments_sha=None):
     root = Path(root).resolve(strict=True)
@@ -158,6 +223,16 @@ def update(root, scan, scan_sha, previous=None, previous_sha=None, content_relea
         for field in ("sourceReleaseId","sourceReleaseKind","contentReleaseId","contentReleaseKind",
                       "contentDlcType","contentReleaseEvidenceSha256","contentAssignmentSha256"):
             entry.setdefault(field,None)
+    if old and old["gameVersion"]=="1.26.2":
+        seed=historical_seed(prior_active,old["sourceFilesSha256"])
+        for item_id,record in seed.items():
+            prior=history.get(item_id,{})
+            # Existing reviewed content assignments survive only when their
+            # introduction interval agrees with the exact historical evidence.
+            reviewed={k:prior[k] for k in ("contentReleaseId","contentReleaseKind","contentDlcType",
+                "contentReleaseEvidenceSha256","contentAssignmentSha256") if k in prior} if (
+                prior.get("contentAssignmentSha256") and prior.get("introducedVersion")==record["introducedVersion"]) else {}
+            history[item_id]={**prior,**record,**reviewed}
     current, active = {}, {}
     decoded, reused = [], []
     for category, source in sorted(sources.items()):
@@ -178,6 +253,9 @@ def update(root, scan, scan_sha, previous=None, previous_sha=None, content_relea
             check(row[0] not in active, "CROSS_CATEGORY_ID_COLLISION")
             active[row[0]] = (category,row)
         current[category] = {"sha256":sha, "frames":rows}
+    current_hashes={cat:entry["sha256"] for cat,entry in current.items()}
+    if not old and version=="1.26.2":
+        history.update(historical_seed(active,current_hashes))
     added, modified, returned = [], [], []
     for item_id,(cat,row) in active.items():
         previous_row = prior_active.get(item_id)
@@ -189,15 +267,18 @@ def update(root, scan, scan_sha, previous=None, previous_sha=None, content_relea
                      "introducedAfterVersion":old["gameVersion"] if old else None,
                      "introducedAfterSourceScanSha256":old["sourceScanSha256"] if old else None,
                      "introducedSourceScanSha256":scan_sha if old else None,
+                     "introducedAfterSourceCorpusSha256":corpus_digest(old["sourceFilesSha256"]) if old else None,
+                     "introducedSourceCorpusSha256":corpus_digest(current_hashes) if old else None,
                      "sourceReleaseId":source_release_id if old else None,
                      "sourceReleaseKind":source_kind if old else None,
                      "contentReleaseId":None,"contentReleaseKind":None,"contentDlcType":None,
-                     "contentReleaseEvidenceSha256":None,"contentAssignmentSha256":None}
+                     "contentReleaseEvidenceSha256":None,"contentAssignmentSha256":None,
+                     "nativeContentMarker":None,"introductionShopSnapshot":None}
             history[item_id] = entry
             added.append(item_id)
-        elif previous_row is None:
+        elif previous_row is None and old:
             returned.append(item_id)
-        elif (previous_row[0],previous_row[1][1],previous_row[1][2]) != (cat,row[1],row[2]):
+        elif previous_row is not None and (previous_row[0],previous_row[1][1],previous_row[1][2]) != (cat,row[1],row[2]):
             modified.append(item_id)
         entry["lastObservedVersion"] = version
         entry["presentInCurrentSource"] = True
@@ -221,9 +302,10 @@ def public_history(ledger):
     return {"schema":"wand.db01.item-introduction@1","target":{"platform":"Steam","gameVersion":ledger["gameVersion"]},
             "sourceFilesSha256":ledger["sourceFilesSha256"],
             "sourceScanSha256":ledger["sourceScanSha256"],
-            "items":[[int(k),{field:v[field] for field in (
+            "items":[[int(k),{field:v.get(field) for field in (
                 "firstObservedVersion","introducedVersion","introducedAfterVersion",
-                "introducedAfterSourceScanSha256","introducedSourceScanSha256","sourceReleaseId","sourceReleaseKind",
+                "introducedAfterSourceScanSha256","introducedSourceScanSha256","introducedAfterSourceCorpusSha256",
+                "introducedSourceCorpusSha256","nativeContentMarker","introductionShopSnapshot","sourceReleaseId","sourceReleaseKind",
                 "contentReleaseId","contentReleaseKind","contentDlcType","contentReleaseEvidenceSha256",
                 "contentAssignmentSha256")}]
                 for k,v in ledger["history"].items() if v["presentInCurrentSource"]]}
