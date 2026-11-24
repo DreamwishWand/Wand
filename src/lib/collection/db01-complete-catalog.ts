@@ -1,4 +1,4 @@
-import {openPublicItemMaster,ITEM_MASTER_LOCALES,type CompleteItemMasterFacets,type ItemMasterUniverseStatus} from '../items/public-item-master.ts';
+import {openPublicItemMaster,ITEM_MASTER_LOCALES,type CompleteItemMasterFacets,type ItemMasterUniverseStatus,type PublicCompleteItemMaster} from '../items/public-item-master.ts';
 import {collectionSourceRoot,type CollectionTopCategory} from './category-hierarchy.ts';
 import {COLLECTION_DB01_FACETS,COLLECTION_DB01_SUBMENUS,type CollectionDb01Index,type CollectionDb01Pair,type CollectionDb01SubmenuCode,type CollectionDb01NativeSubtype,type CollectionDb01ActivityType} from './db01-native-facets.ts';
 
@@ -27,9 +27,36 @@ const stock=new Set<CollectionTopCategory>(['ingredients','foraging','fish','gem
 function add<K,V>(map:Map<K,V[]>,key:K,value:V):void{
   const list=map.get(key)??[];list.push(value);map.set(key,list);
 }
+/** DB-01 v2's explicitly verified collectible native classes. A missing
+ * v3 browse candidate does not mean that an item of these classes is internal:
+ * v3's definitionScope is based on original CollectionSet candidate links.
+ * Recover these IDs through the canonical selective-field API, not a second DB. */
+const supplementalFamilies=new Set(['Companion','Makeup','Character','MemoryShard','BoardGame',
+  'Skin','Tool','MountGear','PhotoMode','AvatarFeature','Environment']);
+export interface CollectionSupplement {
+  readonly itemId:number;readonly iconGuid:string;readonly names:Record<string,string>;
+}
+export async function loadCollectionSupplement(master:PublicCompleteItemMaster,source:CompleteItemMasterFacets):Promise<readonly CollectionSupplement[]>{
+  const existing=new Set(source.browseItems.map(row=>row[0]));
+  const candidateIds=source.nativeSubtypeItems.filter(([id,type,code])=>
+    !existing.has(id)&&supplementalFamilies.has(type)&&collectionSourceRoot(type,code,[])!==null
+  ).map(row=>row[0]);
+  if(!candidateIds.length)return [];
+  const icons=await master.getItemFields(candidateIds,['iconGuid']);
+  const missing=icons.flatMap(row=>row&&typeof row.values.iconGuid==='string'&&/^[a-f0-9]{32}$/.test(row.values.iconGuid)
+    ?[{itemId:row.itemId,iconGuid:row.values.iconGuid,names:{} as Record<string,string>}]:[]);
+  if(!missing.length)return [];
+  const names=await master.getItemFields(missing.map(row=>row.itemId),ITEM_MASTER_LOCALES.map(locale=>'names.'+locale));
+  for(const [i,row] of names.entries())if(row)
+    for(const locale of ITEM_MASTER_LOCALES){
+      const value=row.values['names.'+locale];
+      if(typeof value==='string'&&value.length)missing[i].names[locale]=value;
+    }
+  return missing;
+}
 /** Only item-like definitions with a known Collection destination enter the
  * user-facing catalog. Source relations retain their original native types. */
-export function projectCompleteCollection(source:CompleteItemMasterFacets):CollectionDb01Index{
+export function projectCompleteCollection(source:CompleteItemMasterFacets,supplement:readonly CollectionSupplement[]=[]):CollectionDb01Index{
   const nativeSubtypeByItem=new Map<number,CollectionDb01NativeSubtype>();
   const itemsByNativeSubtype=new Map<string,number[]>();
   const nativeSubtypeNames=new Map<string,string|null>();
@@ -48,17 +75,21 @@ export function projectCompleteCollection(source:CompleteItemMasterFacets):Colle
   const universeSourceStatusByItem=new Map<number,ItemMasterUniverseStatus>();
   const iconGuidByItem=new Map<number,string>();
   const allowed=new Map(source.browseItems.map(row=>[row[0],row]));
+  const extra=new Map(supplement.map(row=>[row.itemId,row]));
   const candidateMenus=new Map(source.categoryItems);
+  const recipeResults=new Set(source.craftingRecipeResultItems.map(row=>row[0]));
   for(const [id,type,code,name] of source.nativeSubtypeItems){
-    const row=allowed.get(id);if(!row)continue;
+    const row=allowed.get(id);const supplemental=extra.get(id);
+    if(!row&&!(supplemental&&supplementalFamilies.has(type)))continue;
     const codes=(candidateMenus.get(id)??[]).filter(x=>menus.has(x)) as CollectionDb01SubmenuCode[];
-    const root=collectionSourceRoot(type,code,codes);
+    const root=collectionSourceRoot(type,code,codes,recipeResults.has(id));
     if(!root)continue;
     rootsByItem.set(id,root);add(itemsByRoot,root,id);
     nativeSubtypeByItem.set(id,{nativeType:type,code,nativeName:name});
     const key=type+':'+code;
     add(itemsByNativeSubtype,key,id);nativeSubtypeNames.set(key,name);
-    if(row[3])iconGuidByItem.set(id,row[3]);
+    const icon=row?.[3]??supplemental?.iconGuid;
+    if(icon)iconGuidByItem.set(id,icon);
     if(codes.length){categoriesByItem.set(id,codes);for(const c of codes)add(itemsByCategory,c,id);}
     if(type==='ActivityItem'){
       activityTypesByItem.set(id,{code,nativeName:name});add(itemsByActivityType,code,id);activityTypeNames.set(code,name);
@@ -93,14 +124,37 @@ export function projectCompleteCollection(source:CompleteItemMasterFacets):Colle
     nativeSubtypeByItem,itemsByNativeSubtype,nativeSubtypeNames,universesByItem,itemsByUniverse,
     universeTagIdsByItem,itemsByUniverseTagId,rootsByItem,itemsByRoot,universeSourceStatusByItem,iconGuidByItem};
 }
+/** Original FurnitureFunctionTagItemData identities, not guessed localized
+ * category names. Fetch only the source key and eight name fields. */
+async function loadFurnitureKindLabels(master:PublicCompleteItemMaster,source:CompleteItemMasterFacets):
+Promise<ReadonlyMap<string,Readonly<Record<string,string>>>>{
+  const used=new Set(source.items.flatMap(([,tags])=>tags.filter(([f])=>f==='furnitureKind').map(([,key])=>key)));
+  const ids=source.nativeSubtypeItems.filter(([,type,code])=>type==='Tag'&&code===3).map(([id])=>id);
+  const labels=new Map<string,Readonly<Record<string,string>>>();
+  if(!ids.length||!used.size)return labels;
+  const rows=await master.getItemFields(ids,['nativeKey',...ITEM_MASTER_LOCALES.map(l=>'names.'+l)]);
+  for(const row of rows){
+    if(!row||typeof row.values.nativeKey!=='string'||!used.has(row.values.nativeKey))continue;
+    const names:Record<string,string>={};
+    for(const l of ITEM_MASTER_LOCALES){
+      const value=row.values['names.'+l];if(typeof value==='string'&&value.length)names[l]=value;
+    }
+    labels.set(row.values.nativeKey,names);
+  }
+  return labels;
+}
 const cached=new Map<string,Promise<CollectionCompleteCatalog>>();
-export function loadCompleteCollection(base:string):Promise<CollectionCompleteCatalog>{
-  const existing=cached.get(base);if(existing)return existing;
+export function loadCompleteCollection(base:string,fetcher:typeof fetch=fetch):Promise<CollectionCompleteCatalog>{
+  const useCache=fetcher===fetch;
+  const existing=useCache?cached.get(base):undefined;if(existing)return existing;
   const task=(async()=>{
-    const master=await openPublicItemMaster(base,fetch,{scope:'complete'});
+    const master=await openPublicItemMaster(base,fetcher,{scope:'complete',gameVersion:'current'});
     const source=await master.getCollectionFacets();
-    const index=projectCompleteCollection(source);
-    const names=new Map<number,Record<string,string>>();
+    const [supplement,furnitureKindLabels]=await Promise.all([
+      loadCollectionSupplement(master,source),loadFurnitureKindLabels(master,source)
+    ]);
+    const index={...projectCompleteCollection(source,supplement),furnitureKindLabels};
+    const names=new Map<number,Record<string,string>>(supplement.map(row=>[row.itemId,{...row.names}]));
     await Promise.all(ITEM_MASTER_LOCALES.map(async locale=>{
       for(const [id,name] of await master.getBrowseNames(locale)){
         if(!index.rootsByItem!.has(id))continue;
@@ -119,6 +173,6 @@ export function loadCompleteCollection(base:string):Promise<CollectionCompleteCa
     }
     return {index,rows,release:master.release.version};
   })();
-  cached.set(base,task);void task.catch(()=>{if(cached.get(base)===task)cached.delete(base);});
+  if(useCache){cached.set(base,task);void task.catch(()=>{if(cached.get(base)===task)cached.delete(base);});}
   return task;
 }

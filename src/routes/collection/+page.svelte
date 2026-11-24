@@ -13,6 +13,7 @@
     from '$lib/collection/browse-layout.ts';
   import {COLLECTION_UNIVERSE_TAG_BY_ID,COLLECTION_UNIVERSE_TAG_NAMES}
     from '$lib/collection/universe-tag-names.ts';
+  import {collectionSubcategories,collectionUsesSubcategories,collectionFurnitureKindLabel,type CollectionSubcategory} from '$lib/collection/subcategories.ts';
   import {loadCompleteCollection} from '$lib/collection/db01-complete-catalog.ts';
   import {COLLECTION_TOP_CATEGORIES} from '$lib/collection/category-hierarchy.ts';
   import {buildWorldBrowseIndex,countOwnedInWorldScope,type WorldBrowseScope} from '$lib/collection/world-browse-index.ts';
@@ -126,6 +127,7 @@
     total:number;owned:number
   }[]=[];
   let sourceGroupsCacheKey='';
+  let scopedSubcategories:readonly CollectionSubcategory[]=[];
   let universeSections:{facet:CollectionFacet;items:CollectionItem[]}[]=[];
   let worldFilter='';
   let universeFilter='';
@@ -163,7 +165,7 @@
   $: workspace=state.workspaces.find(x=>x.id===state.active)??state.workspaces[0];
   $: entries=workspace?.entries??{};
   $: selectionLabel=sourceNativeSubtype!==null
-    ?nativeSubtypeLabel(locale,sourceNativeSubtype,
+    ?collectionFurnitureKindLabel(locale,sourceNativeSubtype,sourceIndex)??nativeSubtypeLabel(locale,sourceNativeSubtype,
         sourceIndex?.nativeSubtypeNames.get(sourceNativeSubtype)??null)
     :sourceActivityType!==null
       ?sourceActivityTypeLabel(locale,sourceActivityType,
@@ -352,6 +354,8 @@
       const worldIds=tag?worldScope?.itemIds??[]:null;
       worldScopedItemCount=worldIds?.length??null;
       rootCounts=worldScope?.rootCounts??new Map();
+      scopedSubcategories=sourceIndex?.rootsByItem&&sourceTopCategory!==null
+        ?collectionSubcategories(sourceIndex,sourceTopCategory,worldScope):[];
       const completeNative=!!sourceIndex&&sourceIndex.nativeSubtypeByItem.size===sourceIndex.sourceItemCount;
       // The category-only path needs no individual runtime.item() calls.
       // Native membership and totals were built once from the exact source index.
@@ -409,14 +413,14 @@
           '|'+(sourceChoices.worldContextTag??'')+'|'+(sourceUniverseSelection??'');
         if(key!==sourceGroupsCacheKey){
           const ids=sourceNativeSubtype!==null
-            ?sourceIndex.itemsByNativeSubtype.get(sourceNativeSubtype)??[]
+            ?scopedSubcategories.find(group=>group.key===sourceNativeSubtype)?.ids??sourceIndex.itemsByNativeSubtype.get(sourceNativeSubtype)??[]
             :sourceActivityType!==null
               ?sourceIndex.itemsByActivityType.get(sourceActivityType)??[]
               :selected?queryAllCollectionRows({
                 ...currentFilter(0,200),status:'all',search:'',
                 favoriteOnly:false,nameStatus:'all',expansion:''
               }).map(row=>row.itemId):sourceTopCategory!==null
-                ?[...sourceIndex.itemsByNativeSubtype].flatMap(([key,ids])=>
+                ?sourceIndex.itemsByRoot?.get(sourceTopCategory)??[...sourceIndex.itemsByNativeSubtype].flatMap(([key,ids])=>
                   collectionTopCategory(key)===sourceTopCategory?[...ids]:[])
                 :worldScope?.itemIds??[...sourceIndex.byItem.keys()];
           sourceFacetGroups=collectionDb01Groups(sourceIndex,ids);
@@ -454,7 +458,9 @@
         const activityIds=sourceActivityType===null?null:
           sourceIndex?.itemsByActivityType.get(sourceActivityType)??[];
         const nativeIds=sourceNativeSubtype===null?null:
+          scopedSubcategories.find(group=>group.key===sourceNativeSubtype)?.ids??
           sourceIndex?.itemsByNativeSubtype.get(sourceNativeSubtype)??[];
+        const nativeIdSet=nativeIds?new Set(nativeIds):null;
         const topIds=sourceTopCategory===null?null:
           sourceIndex?.itemsByRoot?.get(sourceTopCategory)??
           [...(sourceIndex?.itemsByNativeSubtype??[])].flatMap(([key,ids])=>
@@ -479,9 +485,7 @@
           (!universeIdSet||universeIdSet.has(item.itemId))&&
           (sourceActivityType===null||
             sourceIndex?.activityTypesByItem.get(item.itemId)?.code===sourceActivityType)&&
-          (sourceNativeSubtype===null||
-            (sourceIndex?.nativeSubtypeByItem.get(item.itemId)?.nativeType+':'+
-              sourceIndex?.nativeSubtypeByItem.get(item.itemId)?.code)===sourceNativeSubtype)&&
+          (!nativeIdSet||nativeIdSet.has(item.itemId))&&
           (!acquisitionFilter||
             (acquisitionIndex?.getItem(item.itemId).categories.includes(acquisitionFilter)??false))&&
           (selected===''||item.family===selected)&&
@@ -866,7 +870,10 @@
   function chooseTopCategory(id:CollectionTopCategory):void{
     if(!topCategoryCards.some(card=>card.id===id&&card.total>0))return;
     sourceTopCategory=id;sourceActivityType=null;sourceNativeSubtype=null;
-    const hasSubcategories=['furniture','clothing','appearance','roads-fences','interior'].includes(id);
+    const hasSubcategories=sourceIndex?.rootsByItem
+      ?collectionUsesSubcategories(id,collectionSubcategories(sourceIndex,id,
+        worldBrowseIndex.get(sourceChoices.worldContextTag??'')))
+      :['furniture','clothing','appearance','roads-fences','interior'].includes(id);
     selected='';browsingAllItems=!hasSubcategories;search='';status='all';favoriteOnly=false;
     nameStatus='all';expansion='';acquisitionFilter='';
     sourceChoices=sourceChoices.worldContextTag?{worldContextTag:sourceChoices.worldContextTag}:{};
@@ -884,7 +891,7 @@
     resetView();
   }
   function chooseNativeSubtype(key:string):void{
-    if(!sourceIndex?.itemsByNativeSubtype.has(key))return;
+    if(!sourceIndex?.itemsByNativeSubtype.has(key)&&!scopedSubcategories.some(group=>group.key===key))return;
     sourceActivityType=null;
     sourceNativeSubtype=key;
     selected='';browsingAllItems=false;
@@ -932,7 +939,7 @@
     worldFilter='';
     sourceUniverseSelection=sourceIndex&&id?id:null;
     universeFilter=sourceIndex?'':id;
-    sourceChoices=sourceIndex&&id&&id!==COLLECTION_UNIVERSE_UNTAGGED&&
+    sourceChoices=sourceIndex&&id&&id!==COLLECTION_UNIVERSE_UNTAGGED&&id!==COLLECTION_UNIVERSE_UNRESOLVED&&
       !COLLECTION_UNIVERSE_TAG_BY_ID.has(Number(id))
       ?{disneyUniverse:id}:{};
     sourceFacetGroups=[];sourceGroupsCacheKey='';resetView();
@@ -1585,10 +1592,17 @@
                     <span>{group.total?group.total.toLocaleString(locale)+' '+copy.countUnit:'—'}</span>
                   </button>
                 {/each}
+              {:else if sourceIndex?.rootsByItem}
+                {#each scopedSubcategories as group (group.key)}
+                  <button type="button" class="facet-card collection-native-subtype"
+                    data-native-subtype={group.key} on:click={()=>chooseNativeSubtype(group.key)}>
+                    <span class="facet-flourish" aria-hidden="true"><WandIcon name={categoryPictogram[group.nativeType]??'collection'} size={22}/></span>
+                    <strong>{collectionFurnitureKindLabel(locale,group.key,sourceIndex)??nativeSubtypeLabel(locale,group.key,group.nativeName)}</strong>
+                    <span>{group.total.toLocaleString(locale)} {copy.countUnit}</span>
+                  </button>
+                {/each}
               {:else if sourceIndex&&sourceIndex.nativeSubtypeByItem.size===sourceIndex.sourceItemCount}
-                {#each sourceNativeSubtypeCards.filter(type=>sourceIndex?.rootsByItem
-                  ?(sourceIndex.itemsByNativeSubtype.get(type.key)??[]).some(id=>sourceIndex?.rootsByItem?.get(id)===sourceTopCategory)
-                  :collectionTopCategory(type.key)===sourceTopCategory) as type (type.key)}
+                {#each sourceNativeSubtypeCards.filter(type=>collectionTopCategory(type.key)===sourceTopCategory) as type (type.key)}
                   <button type="button" class="facet-card collection-native-subtype"
                     data-native-subtype={type.key}
                     on:click={()=>chooseNativeSubtype(type.key)}>
@@ -1615,8 +1629,8 @@
                   </button>
                 {/each}
               {/if}
-              {#each sourceActivityTypeCards.filter(type=>(!sourceIndex||sourceIndex.nativeSubtypeByItem.size!==sourceIndex.sourceItemCount)||
-                (sourceTopCategory!==null&&collectionTopCategory('ActivityItem:'+type.code)===sourceTopCategory)) as type (type.code)}
+              {#each sourceActivityTypeCards.filter(type=>!sourceIndex?.rootsByItem&&((!sourceIndex||sourceIndex.nativeSubtypeByItem.size!==sourceIndex.sourceItemCount)||
+                (sourceTopCategory!==null&&collectionTopCategory('ActivityItem:'+type.code)===sourceTopCategory))) as type (type.code)}
                 <button type="button" class="facet-card collection-native-activity"
                   data-source-type={type.code}
                   on:click={()=>chooseActivityType(type.code)}>

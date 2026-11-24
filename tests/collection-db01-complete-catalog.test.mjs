@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {projectCompleteCollection} from '../src/lib/collection/db01-complete-catalog.ts';
+import {projectCompleteCollection,loadCompleteCollection} from '../src/lib/collection/db01-complete-catalog.ts';
+import {collectionSubcategories} from '../src/lib/collection/subcategories.ts';
 import {buildWorldBrowseIndex} from '../src/lib/collection/world-browse-index.ts';
 import {collectionSourceRoot,COLLECTION_TOP_CATEGORIES} from '../src/lib/collection/category-hierarchy.ts';
 import {collectionUniverseIds,COLLECTION_UNIVERSE_UNTAGGED,COLLECTION_UNIVERSE_UNRESOLVED} from '../src/lib/collection/browse-layout.ts';
@@ -46,4 +47,59 @@ test('native taxonomy retains semantic distinctions rather than assigning every 
   assert.equal(collectionSourceRoot('Skin',5,[]),'buildings');
   assert.equal(collectionSourceRoot('ActivityItem',12,[]),null);
   assert.equal(collectionSourceRoot('ActivityItem',16,[9]),'gems');
+});
+
+test('Report complete source coverage by native subtype, including excluded item candidates',async()=>{
+  const source=JSON.parse(await readFile(path,'utf8'));
+  const index=projectCompleteCollection(source);
+  const scopes=new Map(source.definitionScopeItems),browse=new Map(source.browseItems.map(r=>[r[0],r]));
+  const types=new Map(source.nativeSubtypeItems.map(r=>[r[0],r]));
+  const menus=new Map(source.categoryItems), recipes=new Map(source.craftingRecipeResultItems);
+  const summary=new Map();
+  for(const [id,type,code,name] of source.nativeSubtypeItems){
+    const key=type+':'+code+':'+(name??'');
+    const row=summary.get(key)??{total:0,browse:0,excluded:0,recipes:0,withMenu:0,nonBrowse:0,samples:[]};
+    row.total++;if(browse.has(id))row.browse++;else row.nonBrowse++;
+    if(!index.rootsByItem.has(id)&&browse.has(id)){
+      row.excluded++;if(recipes.has(id))row.recipes++;if(menus.has(id))row.withMenu++;
+      if(row.samples.length<3)row.samples.push([id,scopes.get(id),menus.get(id)??[]]);
+    }
+    summary.set(key,row);
+  }
+  console.log('COLLECTION_CATEGORY_GAPS '+JSON.stringify([...summary].filter(([,v])=>v.excluded||v.browse)));
+  console.log('COLLECTION_EXHIBITION '+JSON.stringify(source.categoryItems.filter(([,codes])=>codes.includes(19)).map(([id,codes])=>[id,types.get(id),codes,scopes.get(id)])));
+  const furnitureKinds=new Map();
+  for(const [id,tags] of source.items)if(index.rootsByItem.get(id)==='furniture')
+    for(const [facet,key] of tags)if(facet==='furnitureKind')furnitureKinds.set(key,(furnitureKinds.get(key)??0)+1);
+  console.log('COLLECTION_FURNITURE_KINDS '+JSON.stringify([...furnitureKinds]));
+});
+
+test('all verified collectible native classes are recovered from canonical source fields',async()=>{
+  const fetcher=async url=>new Response(await readFile('static/'+url.replace(/^\/Wand\//,'')),{status:200});
+  const source=JSON.parse(await readFile(path,'utf8'));
+  const full=await loadCompleteCollection('/Wand',fetcher);
+  const index=full.index;
+  assert.equal(index.sourceItemCount,full.rows.length);
+  const base=projectCompleteCollection(source);
+  assert(index.sourceItemCount>=base.sourceItemCount);
+  for(const id of base.rootsByItem.keys())assert(index.rootsByItem.has(id));
+  const worlds=buildWorldBrowseIndex(index);
+  for(const [key,scope] of worlds){
+    for(const root of COLLECTION_TOP_CATEGORIES){
+      const groups=collectionSubcategories(index,root.id,scope);
+      const actual=new Set(groups.flatMap(group=>group.ids));
+      const expected=(index.itemsByRoot.get(root.id)??[]).filter(id=>scope.itemIdSet.has(id));
+      assert.equal(actual.size,expected.length);
+      assert(expected.every(id=>actual.has(id)));
+      assert(groups.every(group=>group.ids.length===group.total&&group.total>0));
+    }
+  }
+  const furniture=collectionSubcategories(index,'furniture',worlds.get(''));
+  assert(furniture.filter(group=>group.key.startsWith('furniture-kind:')).length>5);
+  assert(!furniture.some(group=>group.key==='Furniture:0'));
+  console.log('COLLECTION_FINAL_CATEGORY_CENSUS '+JSON.stringify({
+    population:index.sourceItemCount,additional:index.sourceItemCount-base.sourceItemCount,
+    roots:COLLECTION_TOP_CATEGORIES.map(row=>[row.id,index.itemsByRoot.get(row.id)?.length??0]),
+    furniture:furniture.map(row=>[row.key,row.total])
+  }));
 });
