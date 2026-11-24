@@ -13,7 +13,7 @@ export function exclusiveAnchorClass(itemId:string):'ground'|'fence'|null{
   return subtype===1?'ground':subtype===7?'fence':null;
 }
 export function worldTransformEligible(o:SavedShapeObject|null):boolean{
-  if(!o||!Number.isSafeInteger(Number(o.itemId))||Number(o.itemId)<=0)return false;
+  if(!o||o.subgrid||!Number.isSafeInteger(Number(o.itemId))||Number(o.itemId)<=0)return false;
   const exclusive=exclusiveAnchorClass(o.itemId);
   if(exclusive)return o.layer===exclusive;
   return o.shapeKey!==null&&['furniture','surface','landscape'].includes(o.layer);
