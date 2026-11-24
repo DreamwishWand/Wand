@@ -1,0 +1,36 @@
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import {chromium} from 'playwright';
+const url='http://127.0.0.1:4177/Wand/decorate/explore/';
+const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','preview','--host','127.0.0.1','--port','4177','--strictPort'],{env:{...process.env,BASE_PATH:'/Wand'},stdio:'pipe'});
+let output='',browser;
+server.stdout.on('data',d=>output+=d);server.stderr.on('data',d=>output+=d);
+try{
+ for(let i=0;i<100;i++){try{if((await fetch(url)).ok)break;}catch{}if(i===99)throw Error(output);await new Promise(r=>setTimeout(r,200));}
+ browser=await chromium.launch({headless:true});
+ const page=await browser.newPage({viewport:{width:1280,height:720}});
+ const errors=[];page.on('pageerror',e=>errors.push(String(e)));
+ await page.goto(url);
+ const cards=page.locator('.catalog-tile');
+ await cards.first().waitFor({timeout:30000});
+ const total=await page.locator('[data-explore-grid]').evaluateAll(es=>es.reduce((n,e)=>n+Number(e.dataset.total),0));
+ const initial=await cards.count();
+ assert.ok(total>500,'real catalog is substantial');
+ assert.ok(initial>0&&initial<Math.min(total,300),'only nearby cards mount at initial view: '+initial+'/'+total);
+ const first=page.locator('[data-explore-chunk]').first();
+ const last=page.locator('[data-explore-chunk]').last();
+ await last.scrollIntoViewIfNeeded();
+ await page.waitForFunction(()=>{const chunks=document.querySelectorAll('[data-explore-chunk]');return chunks.length>1&&chunks[chunks.length-1].getAttribute('data-mounted')==='true'&&chunks[0].getAttribute('data-mounted')==='false';});
+ assert.ok(await cards.count()<300,'far scroll keeps DOM bounded');
+ await first.scrollIntoViewIfNeeded();
+ await page.waitForFunction(()=>document.querySelector('[data-explore-chunk]')?.getAttribute('data-mounted')==='true');
+ const firstColumns=Number(await page.locator('[data-explore-grid]').first().getAttribute('data-columns'));
+ await page.getByRole('button',{name:/ムードボード|Moodboards/,exact:true}).click();
+ await page.waitForFunction(n=>Number(document.querySelector('[data-explore-grid]')?.getAttribute('data-columns'))<n,firstColumns);
+ await page.getByRole('button',{name:/閉じる|Close/,exact:true}).last().click();
+ await page.setViewportSize({width:390,height:844});
+ await page.waitForFunction(()=>Number(document.querySelector('[data-explore-grid]')?.getAttribute('data-columns'))<=5);
+ assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),'no horizontal page overflow');
+ assert.deepEqual(errors,[]);
+ console.log('EXPLORE_VIEWPORT '+JSON.stringify({total,initial,desktopColumns:firstColumns}));
+}finally{await browser?.close();server.kill();}
