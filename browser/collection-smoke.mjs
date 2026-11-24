@@ -480,8 +480,9 @@ try{
     assert.ok((await page.locator('.result-count').innerText()).includes(rootIds.length.toLocaleString('ja')));
     const id=Number(await page.locator('.item-card').first().getAttribute('data-item-id'));
     assert.ok(rootIds.includes(id));
-    if(['furniture','clothing','ingredients','crafting','mounts'].includes(parent))
+    if(['furniture','clothing','ingredients','crafting','mounts','meals'].includes(parent))
       assert.ok(await page.locator('.collection-item-universe-heading').count()>0,'inline category-specific group headings');
+    if(parent==='meals')assert.ok(await page.locator('.collection-item-world-heading').count()>0,'meal kind contains world groups');
     await returnRoot();
   }
   const furnitureCard=page.locator('[data-top-category="furniture"]');
