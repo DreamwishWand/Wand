@@ -476,3 +476,23 @@ test('native acquisition candidates expose original reward and output occurrence
   }
   assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
 });
+
+
+test('canonical introduction attributes distinguish proven earlier presence from unknown release',async()=>{
+  const requests=[];
+  const db=await openPublicItemMaster('',async url=>{requests.push(url);return fetcher(url)},{scope:'complete'});
+  const fields=['history.firstObservedVersion','history.introducedVersion','history.introducedAfterVersion',
+    'history.contentReleaseId','history.observationEvidence'];
+  const rows=await db.getItemFields([40005160,2130000001,99999999],fields);
+  assert.equal(rows[0].values['history.firstObservedVersion'],'1.26.1');
+  assert.equal(rows[0].values['history.observationEvidence'],'sha_identical_earlier_source');
+  assert.equal(rows[0].values['history.introducedVersion'],null);
+  assert.equal(rows[1].values['history.firstObservedVersion'],'1.26.2');
+  assert.equal(rows[1].values['history.observationEvidence'],'current_source_only');
+  assert.equal(rows[1].values['history.introducedVersion'],null);
+  assert.equal(rows[2],null);
+  assert.equal((await db.findItemIdsByField('history.firstObservedVersion',{kind:'equals',value:'1.26.1'})).length,33627);
+  assert.equal((await db.findItemIdsByField('history.introducedVersion',{kind:'equals',value:null})).length,39067);
+  assert.deepEqual(await db.findItemIdsByField('history.introducedVersion',{kind:'equals',value:'1.26.2'}),[]);
+  assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
+});

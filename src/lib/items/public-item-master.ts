@@ -35,6 +35,7 @@ export interface ItemMasterCompleteRelease {
   readonly count: number;
   readonly archiveSha256: string;
   readonly parts: number;
+  readonly introductionHistorySha256?: string;
   readonly attributesSha256?: string;
   readonly nativeSupplementSha256?: string;
   readonly referenceAttributesSha256?: string;
@@ -267,6 +268,7 @@ export interface ItemMasterRelease {
   readonly count: number;
   readonly scope?: 'expanded'|'complete';
   readonly archiveSha256?: string;
+  readonly introductionHistorySha256?: string;
   readonly attributesSha256?: string;
   readonly sourceAttributeCoverage?: NativeSourceAttributeCoverage;
   readonly nativeSupplementSha256?: string;
@@ -546,6 +548,7 @@ export async function openPublicItemMaster(
           typeof c.archiveSha256==='string'&&SHA.test(c.archiveSha256)&&
           typeof c.parts==='number'&&Number.isSafeInteger(c.parts)&&c.parts>0&&c.parts<=100,
           'INVALID_COMPLETE_RELEASE');
+        assert(c.introductionHistorySha256===undefined||typeof c.introductionHistorySha256==='string'&&SHA.test(c.introductionHistorySha256),'INVALID_INTRODUCTION_HISTORY_DIGEST');
         assert(c.attributesSha256===undefined||
           typeof c.attributesSha256==='string'&&SHA.test(c.attributesSha256),'INVALID_ATTRIBUTE_DIGEST');
         assert(c.nativeSupplementSha256===undefined||
@@ -623,6 +626,8 @@ export async function openPublicItemMaster(
       release.sourceFilesVerified===Object.keys(release.sourceFilesSha256).length&&
       Object.values(release.sourceFilesSha256).every(v=>typeof v==='string'&&SHA.test(v)),
       'INVALID_COMPLETE_RELEASE');
+    assert((!selected||release.introductionHistorySha256===selected.complete?.introductionHistorySha256)&&
+      (release.introductionHistorySha256===undefined||typeof release.introductionHistorySha256==='string'&&SHA.test(release.introductionHistorySha256)), 'INVALID_INTRODUCTION_HISTORY_RELEASE');
     assert((!selected||release.attributesSha256===selected.complete?.attributesSha256)&&
       (release.attributesSha256===undefined||typeof release.attributesSha256==='string'&&
         SHA.test(release.attributesSha256)&&isObject(release.sourceAttributeCoverage)&&

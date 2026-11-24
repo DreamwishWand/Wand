@@ -841,7 +841,62 @@ function nativeAcquisitionRole(category,path){
   if(category==='LootTable'&&/^source\.Rewards\.SubLootTables\[\d+\]\.(?:Items\[\d+\]|ItemsConditional\[\d+\]\.Item)\.ItemID$/.test(path))return 'loot_table_candidate';
   return null;
 }
-function writeFieldColumns(rows,release,write,assets){
+// Earlier source-presence evidence: the audited 1.26.1 -> 1.26.2
+// recovery proved all 38 non-Condition source files byte identical.
+// Bound the inference to the exact full current archive and known census.
+function introductionHistory(project,e,version,source,rows){
+  const sameArchive=e.archiveSha256==='b659cfc12b3a1363395e595bc5bb6be76ef1da63b6003c3a785556adc3a6831d'&&
+    version==='1.26.2'&&source.sourceFilesVerified===39&&
+    rows.filter(r=>r.nativeCategory!=='Condition').length===33627;
+  check(sameArchive||e.introductionHistorySha256!==undefined,'INTRODUCTION_HISTORY_REQUIRED');
+  let prior=new Map();
+  if(e.introductionHistorySha256!==undefined){
+    check(SHA.test(e.introductionHistorySha256),'INTRODUCTION_HISTORY_PIN');
+    const bytes=readFileSync(join(project,'data/ddv/item-master','introduction-history-steam-'+version+'.json'));
+    check(hash(bytes)===e.introductionHistorySha256,'INTRODUCTION_HISTORY_SHA');
+    const h=JSON.parse(bytes);
+    check(h.schema==='wand.db01.item-introduction@1'&&h.target?.platform==='Steam'&&h.target?.gameVersion===version&&
+      SHA.test(h.sourceScanSha256)&&Object.keys(h.sourceFilesSha256??{}).length===source.sourceFilesVerified&&
+      Object.entries(source.sourceFilesSha256).every(([k,v])=>h.sourceFilesSha256[k]===v)&&
+      Array.isArray(h.items)&&h.items.length===rows.length,'INTRODUCTION_HISTORY_SOURCE');
+    const ver=v=>typeof v==='string'&&/^\d+\.\d+\.\d+$/.test(v);
+    const order=(x,y)=>{const a=x.split('.').map(Number),b=y.split('.').map(Number);return a[0]-b[0]||a[1]-b[1]||a[2]-b[2];};
+    for(const [id,v] of h.items){
+      check(ID(id)&&!prior.has(id)&&v&&ver(v.firstObservedVersion)&&order(v.firstObservedVersion,version)<=0&&
+        (v.introducedVersion===null&&v.introducedAfterVersion===null&&
+          v.introducedAfterSourceScanSha256===null&&v.introducedSourceScanSha256===null&&v.contentReleaseId===null||
+         ver(v.introducedVersion)&&v.introducedVersion===v.firstObservedVersion&&ver(v.introducedAfterVersion)&&
+          order(v.introducedAfterVersion,v.introducedVersion)<=0&&
+          SHA.test(v.introducedAfterSourceScanSha256)&&SHA.test(v.introducedSourceScanSha256)&&
+          v.introducedAfterSourceScanSha256!==v.introducedSourceScanSha256&&
+          (v.contentReleaseId===null||typeof v.contentReleaseId==='string'&&/^[A-Za-z0-9_.-]{1,128}$/.test(v.contentReleaseId))),
+        'INTRODUCTION_HISTORY_ROW');
+      prior.set(id,v);
+    }
+    check(rows.every(r=>prior.has(r.itemId)),'INTRODUCTION_HISTORY_ID_CENSUS');
+  }
+  return new Map(rows.map(row=>{
+    const old=prior.get(row.itemId);
+    const historical=sameArchive&&row.nativeCategory!=='Condition';
+    const defaultVersion=historical?'1.26.1':version;
+    let observed=old?.firstObservedVersion??defaultVersion;
+    // If the verified older presence contradicts an alleged newer introduction,
+    // retain the earlier presence and clear the unsupported introduction claim.
+    if(historical&&observed==='1.26.2')observed='1.26.1';
+    const intro=old?.introducedVersion===observed?old:null;
+    return [row.itemId,{
+      firstObservedVersion:observed,
+      introducedVersion:intro?.introducedVersion??null,
+      introducedAfterVersion:intro?.introducedAfterVersion??null,
+      introducedAfterSourceScanSha256:intro?.introducedAfterSourceScanSha256??null,
+      introducedSourceScanSha256:intro?.introducedSourceScanSha256??null,
+      contentReleaseId:intro?.contentReleaseId??null,
+      observationEvidence:historical&&observed==='1.26.1'?'sha_identical_earlier_source':
+        old&&observed===old.firstObservedVersion?'pinned_native_history':'current_source_only'
+    }];
+  }));
+}
+function writeFieldColumns(rows,release,write,assets,history){
   const columns=new Map();
   const split=new Set(['names','artwork','itemType','nativeProperties','sourceAttributes']);
   const add=(field,id,value)=>{
@@ -861,6 +916,7 @@ function writeFieldColumns(rows,release,write,assets){
     }
   };
   for(const row of rows){
+    for(const [key,value] of Object.entries(history.get(row.itemId)))add('history.'+key,row.itemId,value);
     for(const [key,value] of Object.entries(row)){
       if(!split.has(key)){add(key,row.itemId,value);continue;}
       const prefix=key==='nativeProperties'||key==='sourceAttributes'?'source':key;
@@ -1131,6 +1187,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
   exploreThemeCensus(explore,byId);
   const index={schema:'wand.item-master.release@1',scope:'complete',version:e.release,target:source.target,
     count:e.count,bucketCount:256,archiveSha256:e.archiveSha256,
+    ...(e.introductionHistorySha256?{introductionHistorySha256:e.introductionHistorySha256}:{}),
     sourceFilesVerified:source.sourceFilesVerified,sourceFilesSha256:source.sourceFilesSha256,
     sourceItemsSha256:source.sourceItemsSha256,sourceIl2cppDumpSha256:source.sourceIl2cppDumpSha256,
     coverage:{...source.coverage,itemNamesVerified:source.coverage.nameVerified,
@@ -1187,7 +1244,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
         check(index.assets[path].bytes<=16*1024*1024,'LINKED_TEXT_BLOCK_TOO_LARGE');
       }
     }
-    writeFieldColumns(rows,e.release,write,index.assets);
+    writeFieldColumns(rows,e.release,write,index.assets,introductionHistory(project,e,version,source,rows));
     write('index.json',index,index.count);
     installProjectionStage(stage,destination);
     console.log('DB-01 projection reuse:',JSON.stringify(stats));
