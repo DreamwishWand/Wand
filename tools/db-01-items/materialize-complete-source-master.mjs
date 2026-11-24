@@ -695,6 +695,52 @@ function loadLocalizations(project,e,version,source,byId){
   return {translations:l.translations,coverage:{itemCount:l.count,keyCount:l.keyCount,
     allLocalesKeyCount:all,fieldCounts:l.fieldCounts,localeCounts:l.localeCounts,evidence:l.evidence}};
 }
+// Namespace bucketing keeps the text keys of one quest together while bounding
+// the per-language read size. It is stable across updates and independent of IDs.
+function linkedTextBucket(key){
+  const ns=key.split('.',1)[0];
+  let h=2166136261;
+  for(let i=0;i<ns.length;i++)h=Math.imul(h^ns.charCodeAt(i),16777619);
+  return (h&63).toString(16).padStart(2,'0');
+}
+function loadLinkedLocalizations(project,e,version,source,byId,legacy){
+  const config=e.linkedLocalizations;
+  if(config===undefined)return undefined;
+  check(config&&Object.keys(config).length===LOCALES.length&&LOCALES.every(l=>SHA.test(config[l])),'LINKED_LOCALIZATION_CONFIG');
+  const candidates=new Set();
+  function visit(v){
+    if(typeof v==='string'){candidates.add(v);return;}
+    if(Array.isArray(v)){for(const x of v)visit(x);return;}
+    if(v!==null&&typeof v==='object')for(const x of Object.values(v))visit(x);
+  }
+  for(const row of byId.values()){
+    visit(row.nativeProperties);visit(row.sourceAttributes);
+  }
+  let referenceKeys=null;
+  const translations={},sourceArchiveHashes={},localeCounts={};
+  for(const locale of LOCALES){
+    const bytes=readFileSync(join(project,'data/ddv/item-master','linked-localizations-steam-'+version+'-'+locale+'.json'));
+    check(hash(bytes)===config[locale],'LINKED_LOCALIZATION_SHA_'+locale);
+    const a=JSON.parse(bytes.toString('utf8'));
+    check(a.schema==='wand.item-master.linked-localizations@1'&&a.gameVersion===version&&a.locale===locale&&
+      a.sourceItemsSha256===source.sourceItemsSha256&&a.sourceIl2cppDumpSha256===source.sourceIl2cppDumpSha256&&
+      SHA.test(a.sourceArchiveSha256)&&(!legacy||a.sourceArchiveSha256===legacy.coverage.evidence[locale].archiveSha256)&&
+      ID(a.count)&&typeof a.packed==='string'&&a.packed.length<=16*1024*1024,'LINKED_LOCALIZATION_RELEASE');
+    const values=JSON.parse(inflateSync(Buffer.from(a.packed,'base64'),{maxOutputLength:64*1024*1024}).toString('utf8'));
+    check(values&&typeof values==='object'&&!Array.isArray(values)&&Object.keys(values).length===a.count,'LINKED_LOCALIZATION_COUNT');
+    const keys=Object.keys(values);
+    for(const key of keys){
+      const v=values[key];
+      check(candidates.has(key)&&key.length<=1024&&typeof v==='string'&&v.trim().length>0&&v.length<=8192,'LINKED_LOCALIZATION_VALUE_'+key);
+      const previous=legacy?.translations[locale]?.[key];
+      if(previous!==undefined)check(previous===v,'LINKED_LOCALIZATION_CONFLICT_'+key);
+    }
+    if(referenceKeys===null)referenceKeys=new Set(keys);
+    else check(keys.length===referenceKeys.size&&keys.every(k=>referenceKeys.has(k)),'LINKED_LOCALIZATION_LOCALE_CENSUS');
+    translations[locale]=values;sourceArchiveHashes[locale]=a.sourceArchiveSha256;localeCounts[locale]=keys.length;
+  }
+  return {translations,coverage:{keyCount:referenceKeys.size,allLocalesKeyCount:referenceKeys.size,localeCounts,sourceArchiveHashes,bucketCount:64}};
+}
 // Service-neutral, sparse columns compiled from the canonical complete rows.
  // The source namespace combines decoded native scalar and structured fields.
  // Explicit null/false/zero/empty values are retained; absent fields are omitted.
@@ -854,6 +900,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
   // localized-text coverage; do not imply every newly exposed key is translated.
   const localizations=loadLocalizations(project,e,version,source,byId);
   const reviewedRootScalarCoverage=attachReviewedRootScalars(project,e,version,source,byId);
+  const linkedLocalizations=loadLinkedLocalizations(project,e,version,source,byId,localizations);
   // Verify no existing public definition is lost or silently replaced.
   for(const [path,raw] of baseFiles){
     if(!path.startsWith('id/'))continue;
@@ -1000,6 +1047,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
     ...(reviewedStructureCoverage?{reviewedStructure:e.reviewedStructure,reviewedStructureCoverage}:{}),
     ...(reviewedRootScalarCoverage?{reviewedRootScalars:e.reviewedRootScalars,reviewedRootScalarCoverage}:{}),
     ...(localizations?{localizationSha256:e.localization.sha256,localizationCoverage:localizations.coverage}:{}),
+    ...(linkedLocalizations?{linkedLocalizations:e.linkedLocalizations,linkedLocalizationCoverage:linkedLocalizations.coverage}:{}),
     shards:{},assets:{}};
   const root=join(project,'static/ddv/item-master');
   mkdirSync(root,{recursive:true});
@@ -1029,6 +1077,15 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
       const entries=Object.entries(localizations.translations[locale]);
       const path='text/'+locale+'.json';
       index.assets[path]=write(path,{schema:'wand.item-master.localized-text@1',release:e.release,locale,items:entries},entries.length);
+    }
+    if(linkedLocalizations)for(const locale of LOCALES){
+      const buckets=Array.from({length:64},()=>[]);
+      for(const [k,v] of Object.entries(linkedLocalizations.translations[locale]))buckets[parseInt(linkedTextBucket(k),16)].push([k,v]);
+      for(const [i,items] of buckets.entries()){
+        const bucket=i.toString(16).padStart(2,'0'),path='linked-text/'+locale+'/'+bucket+'.json';
+        index.assets[path]=write(path,{schema:'wand.item-master.linked-text-block@1',release:e.release,locale,bucket,items},items.length);
+        check(index.assets[path].bytes<=16*1024*1024,'LINKED_TEXT_BLOCK_TOO_LARGE');
+      }
     }
     writeFieldColumns(rows,e.release,write,index.assets);
     writeFileSync(join(stage,'index.json'),json(index));
