@@ -11,7 +11,7 @@
  import WorldLayerControls from './WorldLayerControls.svelte';
  import WorldObjectArtwork from './WorldObjectArtwork.svelte';
  import {worldArtwork,mapCellPixels,showWorldArtwork} from './world-artwork.ts';
- import {openPublicItemMaster} from '../items/public-item-master.ts';
+ import {openPublicItemMaster,type PublicCompleteItemMaster} from '../items/public-item-master.ts';
  import {bindMainland,mainlandExtent,mainlandTerrainHits,type MainlandGrid} from './mainland-world-coordinates.ts';
  import {nativeSourceFloorTint} from './native-terrain-canvas.ts';
  import {defaultMapCamera,maxMapZoom,mapCameraViewBox,mapViewportBounds,zoomMapCamera,panMapCamera,wheelMapCamera,createMapPanGesture} from './map-camera.ts';
@@ -57,7 +57,7 @@
  $: cellPixels=mapCellPixels(viewport,mapWidth,mapHeight);
  $: chosen=allObjects.find(p=>p.object.localOrdinal===selected)??null;
  let artwork=new Map<number,string>(),artworkPending=new Set<number>(),names=new Map<number,string>(),nameEpoch=0;
- let master:ReturnType<typeof openPublicItemMaster>|null=null;
+ let master:Promise<PublicCompleteItemMaster>|null=null;
  function loadArtwork(items:readonly MainlandSavedObject[]){for(const p of items){const id=Number(p.object.itemId);if(artworkPending.has(id))continue;artworkPending.add(id);void worldArtwork(base,id).then(u=>{if(u)artwork=new Map(artwork).set(id,u);}).catch(()=>{});}}
  $: if(saveMode&&mapWidth&&mapHeight)loadArtwork(visibleObjects.filter(p=>showWorldArtwork(p.object,p.shape,cellPixels/p.factor)));
  $: if(saveMode)void loadNames(locale);
