@@ -873,6 +873,17 @@ try{
   assert.notEqual(await mapPanel.locator('svg').getAttribute('viewBox'),originalViewBox);
   await mapPanel.getByRole('button',{name:'全体',exact:true}).click();
   assert.equal(await mapPanel.locator('svg').getAttribute('viewBox'),originalViewBox);
+  await mapPanel.locator('svg').scrollIntoViewIfNeeded();
+  await mapPanel.locator('svg').hover();
+  await page.mouse.wheel(0,-120);
+  await page.waitForFunction(({initial})=>document.querySelector('.media-map-overlay svg')?.getAttribute('viewBox')!==initial,{initial:originalViewBox});
+  const beforePan=await mapPanel.locator('svg').getAttribute('viewBox');
+  const rect=await mapPanel.locator('svg').boundingBox();
+  await page.mouse.move(rect.x+rect.width/2,rect.y+rect.height/2);
+  await page.mouse.down();await page.mouse.move(rect.x+rect.width/2+20,rect.y+rect.height/2,{steps:4});await page.mouse.up();
+  assert.notEqual(await mapPanel.locator('svg').getAttribute('viewBox'),beforePan);
+  assert.match(await mapPanel.locator('.selected-object').innerText(),/SyntheticSourceObject/);
+  await mapPanel.getByRole('button',{name:'全体',exact:true}).click();
   await mapPanel.getByRole('button',{name:'解除'}).click();
   await mapPanel.locator('svg').waitFor({state:'detached'});
   await mapPanel.getByRole('button',{name:'簡略マップ',exact:true}).click();

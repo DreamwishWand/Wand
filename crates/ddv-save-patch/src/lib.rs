@@ -4,9 +4,10 @@
 //! including unknown members, order, whitespace and number spellings, is borrowed.
 //! Callers must retain their strict external P1G/JSON Codec and enforce all
 //! game-specific constraints before any future export implementation.
-use std::collections::HashSet;
+use std::collections::{HashMap,HashSet};
 use std::ops::Range;
 
+pub const MAX_GRID_MIXED_EDITS:usize=512;
 const MAX_PROFILE_BYTES: usize = 128 * 1024 * 1024;
 const MAX_DEPTH: usize = 256;
 const MAX_OBJECT_KEYS: usize = 1_000_000;
@@ -65,7 +66,7 @@ pub struct QuantityDraft {
     pub export_authorized: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum Segment {
     Key(String),
     Index(usize),
@@ -93,6 +94,7 @@ struct JsonLocator<'a> {
     signed: Option<(Range<usize>, i32)>,
     string_path:Option<Vec<Segment>>,
     observed_string:Option<(Range<usize>,String)>,
+    capture:HashMap<Vec<Segment>,Option<Range<usize>>>,
 }
 
 impl<'a> JsonLocator<'a> {
@@ -121,7 +123,7 @@ impl<'a> JsonLocator<'a> {
         Ok(Self { source, bytes: source.as_bytes(), pos: 0, depth: 0,
             amount_path, item_path, amount: None, item: None,
             signed_path:None,signed:None,
-            string_path:None,observed_string:None })
+            string_path:None,observed_string:None,capture:HashMap::new() })
     }
 
     fn space(&mut self) {
@@ -272,6 +274,11 @@ impl<'a> JsonLocator<'a> {
             b'-' | b'0'..=b'9' => { self.number()?; },
             _ => return Err(PatchError::InvalidDocument)
         }
+        if !self.capture.is_empty(){
+            if let Some(span)=self.capture.get_mut(path.as_slice()){
+                if span.replace(start..self.pos).is_some(){return Err(PatchError::AmbiguousTarget);}
+            }
+        }
         let is_signed=self.signed_path.as_ref()
             .is_some_and(|p|p.as_slice()==path.as_slice());
         if is_signed{
@@ -351,7 +358,7 @@ pub fn validate_json_without_edit(source: &str) -> Result<(), PatchError> {
         amount_path: vec![Segment::Index(usize::MAX)],
         item_path: None, amount: None, item: None,
         signed_path:None,signed:None,
-        string_path:None,observed_string:None,
+        string_path:None,observed_string:None,capture:HashMap::new(),
     };
     parser.walk_complete()
 }
@@ -437,7 +444,7 @@ impl<'a> JsonLocator<'a>{
             amount_path:vec![Segment::Index(usize::MAX)],
             item_path:Some(item_path),amount:None,item:None,
             signed_path:Some(prefix),signed:None,
-            string_path:None,observed_string:None
+            string_path:None,observed_string:None,capture:HashMap::new()
         })
     }
     fn grid_orientation(source:&'a str,target:&GridCoordinateTarget)
@@ -587,66 +594,88 @@ pub struct GridMixedEdit {
     pub orientation:Option<(String,String)>,
 }
 
-/// Apply 1..=16 distinct coordinate-only, rotation-only, or combined
-/// Grid edits as a single all-or-nothing in-memory JSON draft.
-/// Every edit resolves an existing native object and verifies original
-/// ItemID + X/Y (+ Orientation for rotation) before any bytes are written.
-/// The only rewritten tokens are exact X/Y/Orientation of chosen objects.
+/// Apply up to MAX_GRID_MIXED_EDITS distinct existing-object mutations.
+/// Capture exact scalar token spans in ONE strict original-document walk.
+/// Validate every original field and assemble one output only after all
+/// edits pass. No intermediate full-document clones or repeated scans.
 pub fn preview_existing_grid_mixed_batch(
     source:&str,edits:&[GridMixedEdit]
 )->Result<GridCoordinateDraft,PatchError>{
     if source.is_empty()||source.len()>MAX_PROFILE_BYTES||
-       edits.is_empty()||edits.len()>16{
+       edits.is_empty()||edits.len()>MAX_GRID_MIXED_EDITS{
         return Err(PatchError::InvalidTarget);
     }
     let mut seen=HashSet::new();
+    let mut parser=JsonLocator::grid_axis(source,&edits[0].target,"X")?;
+    parser.signed_path=None;parser.item_path=None;
+    let mut fields=Vec::with_capacity(edits.len());
     for edit in edits{
         if !seen.insert((edit.target.kind,edit.target.grid_id.as_str(),
-             edit.target.object_id.as_str()))||
+            edit.target.object_id.as_str()))||
            (edit.position.is_none()&&edit.orientation.is_none()){
             return Err(PatchError::AmbiguousTarget);
         }
-        // Even for a rotation-only change require the original coordinate
-        // fields (and ItemID) to be exactly as observed in the opened Save.
-        let checked=preview_existing_grid_coordinates(
-            source,edit.target.clone(),edit.expected,
-            edit.position.unwrap_or(edit.expected)
-        )?;
-        if checked.changed!=edit.position.is_some()||
-           !checked.untouched_bytes_preserved||
-           checked.writer_authorized||checked.export_authorized{
-            return Err(PatchError::InvalidTarget);
-        }
+        if edit.position==Some(edit.expected){return Err(PatchError::InvalidTarget);}
         if let Some((before,after))=&edit.orientation{
-            let checked=preview_existing_grid_orientation(
-                source,edit.target.clone(),before,after
-            )?;
-            if !checked.changed||!checked.untouched_bytes_preserved||
-               checked.writer_authorized||checked.export_authorized{
+            if before==after||!OBSERVED_CARDINAL_ORIENTATIONS.contains(&before.as_str())||
+                !OBSERVED_CARDINAL_ORIENTATIONS.contains(&after.as_str()){
                 return Err(PatchError::InvalidTarget);
             }
         }
+        let locator=JsonLocator::grid_axis(source,&edit.target,"X")?;
+        let x=locator.signed_path.ok_or(PatchError::InvalidTarget)?;
+        let item=locator.item_path.ok_or(PatchError::InvalidTarget)?;
+        let mut y=x.clone();*y.last_mut().ok_or(PatchError::InvalidTarget)?=k("Y");
+        let mut orientation=x.clone();*orientation.last_mut().ok_or(PatchError::InvalidTarget)?=k("Orientation");
+        for p in [&x,&y,&item]{parser.capture.insert(p.clone(),None);}
+        if edit.orientation.is_some(){parser.capture.insert(orientation.clone(),None);}
+        fields.push((x,y,item,orientation));
     }
-    // All preconditions passed against immutable original; these scoped
-    // per-object edits cannot overlap because private native IDs are unique.
-    let mut candidate=source.to_owned();
-    for edit in edits{
-        if let Some(next)=edit.position{
-            candidate=preview_existing_grid_coordinates(
-                &candidate,edit.target.clone(),edit.expected,next
-            )?.patched_json;
+    parser.walk_complete()?;
+    let span=|path:&Vec<Segment>|->Result<Range<usize>,PatchError>{
+        parser.capture.get(path).and_then(|r|r.clone()).ok_or(PatchError::MissingTarget)
+    };
+    let mut replacements:Vec<(Range<usize>,String)>=Vec::with_capacity(edits.len()*3);
+    for (edit,(xp,yp,ip,op)) in edits.iter().zip(&fields){
+        let xr=span(xp)?;let yr=span(yp)?;let ir=span(ip)?;
+        let item=source[ir].parse::<u64>().map_err(|_|PatchError::NonIntegerTarget)?;
+        if item>MAX_SAFE_JSON_INTEGER{return Err(PatchError::NonIntegerTarget);}
+        if item!=edit.target.item_id{return Err(PatchError::ItemMismatch);}
+        let x=source[xr.clone()].parse::<i32>().map_err(|_|PatchError::NonIntegerTarget)?;
+        let y=source[yr.clone()].parse::<i32>().map_err(|_|PatchError::NonIntegerTarget)?;
+        if (x,y)!=edit.expected{return Err(PatchError::CoordinateMismatch);}
+        if let Some((nx,ny))=edit.position{
+            // Preserve an unchanged axis token verbatim, even when moving
+            // along the other axis (e.g. lexical "-0").
+            if nx!=x{replacements.push((xr,nx.to_string()));}
+            if ny!=y{replacements.push((yr,ny.to_string()));}
         }
         if let Some((before,after))=&edit.orientation{
-            candidate=preview_existing_grid_orientation(
-                &candidate,edit.target.clone(),before,after
-            )?.patched_json;
+            let range=span(op)?;
+            let actual:String=serde_json::from_str(&source[range.clone()])
+                .map_err(|_|PatchError::MissingTarget)?;
+            if &actual!=before{return Err(PatchError::OrientationMismatch);}
+            replacements.push((range,format!("\"{}\"",after)));
         }
     }
-    Ok(GridCoordinateDraft{
-        patched_json:candidate,changed:true,
-        untouched_bytes_preserved:true,
-        writer_authorized:false,export_authorized:false
-    })
+    replacements.sort_unstable_by_key(|(r,_)|r.start);
+    let mut last=0usize;
+    let mut final_len=source.len();
+    for (r,value) in &replacements{
+        if r.start<last{return Err(PatchError::AmbiguousTarget);}
+        final_len=final_len.checked_sub(r.len()).and_then(|n|n.checked_add(value.len()))
+            .ok_or(PatchError::InvalidDocument)?;
+        last=r.end;
+    }
+    if final_len>MAX_PROFILE_BYTES{return Err(PatchError::InvalidDocument);}
+    let mut candidate=String::with_capacity(final_len);
+    last=0;
+    for (r,value) in replacements{
+        candidate.push_str(&source[last..r.start]);candidate.push_str(&value);last=r.end;
+    }
+    candidate.push_str(&source[last..]);
+    Ok(GridCoordinateDraft{patched_json:candidate,changed:true,
+        untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
 }
 
 /// One optimistic-concurrency checked change to an existing GridObject.
@@ -1051,6 +1080,33 @@ mod tests {
             Some(PatchError::DuplicateKey));
         assert_eq!(preview_existing_grid_mixed_batch(original,&[]).err(),
             Some(PatchError::InvalidTarget));
+    }
+
+    #[test]
+    fn mixed_batch_scales_to_512_preserving_unselected_and_unchanged_tokens(){
+        let mut source=String::from(r#"{"World":{"GridCollection":{"Grids":{"101":{"Objects":{"#);
+        let mut edits=Vec::new();
+        for i in 1..=512{
+            if i>1{source.push(',');}
+            source.push_str(&format!(r#""{i}":{{"ItemID":77,"X":-0,"Y":{i},"Orientation":"GridOrientation_Up","Opaque":2.00e+1}}"#));
+            edits.push(GridMixedEdit{target:GridCoordinateTarget{kind:GridObjectKind::Full,
+                grid_id:"101".into(),object_id:i.to_string(),item_id:77},
+                expected:(0,i),position:Some((0,i+1000)),
+                orientation:Some(("GridOrientation_Up".into(),"GridOrientation_Left".into()))});
+        }
+        source.push_str(r#","999":{"ItemID":77,"X":0,"Y":1,"Future":"\u3053"}}}}}}}"#);
+        let result=preview_existing_grid_mixed_batch(&source,&edits).unwrap();
+        let json:serde_json::Value=serde_json::from_str(&result.patched_json).unwrap();
+        let rows=&json["World"]["GridCollection"]["Grids"]["101"]["Objects"];
+        assert_eq!(rows["512"]["Y"],1512);
+        assert_eq!(rows["1"]["Orientation"],"GridOrientation_Left");
+        assert_eq!(result.patched_json.matches(r#""X":-0"#).count(),512);
+        assert_eq!(result.patched_json.matches(r#""Opaque":2.00e+1"#).count(),512);
+        assert!(result.patched_json.contains(r#""999":{"ItemID":77,"X":0,"Y":1,"Future":"\u3053"}"#));
+        let mut stale=edits.clone();stale[511].expected.1=0;
+        assert_eq!(preview_existing_grid_mixed_batch(&source,&stale).err(),Some(PatchError::CoordinateMismatch));
+        let mut too_many=edits.clone();too_many.push(edits[0].clone());
+        assert_eq!(preview_existing_grid_mixed_batch(&source,&too_many).err(),Some(PatchError::InvalidTarget));
     }
 
     #[test]

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {sourceMapLayer,sourceSurfaceCapable,matchesSelectionLayer,mapPainterOrder,prioritizeMapHits} from '../src/lib/world/source-map-layers.ts';
+import {defaultMapCamera,maxMapZoom,zoomMapCamera,panMapCamera,mapCameraViewBox} from '../src/lib/world/map-camera.ts';
 import {emptyWorldTimeline,currentWorldEdits,projectWorldEdits,stageWorldEdit,travelWorldTimeline} from '../src/lib/world/saved-map-batch.ts';
 import {savedDraftOverlap} from '../src/lib/world/saved-draft-overlap.ts';
 import {draftSavedMapTransform,worldTransformEligible,exclusiveAnchorClass,exclusiveAnchorConflict} from '../src/lib/world/saved-map-transform.ts';
@@ -161,4 +162,32 @@ test('stage multiple moves, re-edit original expected values, undo and redo with
   const reverted=stageWorldEdit(m,t3,1,0,0,'GridOrientation_Down','');
   assert.equal(currentWorldEdits(reverted).length,1);
   assert.equal(m.objects[0].x,0);
+});
+
+test('one Save timeline spans multiple Grid receipts, rejects stale local identity, exceeds previous cap',()=>{
+  const point=(localOrdinal,localGridOrdinal,x)=>({localOrdinal,localGridOrdinal,x,y:0,orientation:'GridOrientation_Down',itemId:'100'});
+  const first=buildSavedShapeMap(fixture(),L,7,Array.from({length:20},(_,i)=>point(i+1,1,i*4)));
+  const second=buildSavedShapeMap(fixture(),L,7,[point(21,2,3)]);
+  let t=emptyWorldTimeline();
+  for(const o of first.objects){t=stageWorldEdit(first,t,o.localOrdinal,o.x+1,0,o.orientation,'');assert.ok(t);}
+  t=stageWorldEdit(second,t,21,4,0,'GridOrientation_Down','景観');
+  assert.equal(currentWorldEdits(t).length,21);
+  assert.equal(projectWorldEdits(first,currentWorldEdits(t)).objects[19].x,77);
+  assert.equal(projectWorldEdits(second,currentWorldEdits(t)).objects[0].x,4);
+  const stale={...second,objects:[{...second.objects[0],x:99}]};
+  assert.equal(projectWorldEdits(stale,currentWorldEdits(t)).objects[0].x,99);
+  assert.equal(stageWorldEdit(stale,t,21,100,0,'GridOrientation_Down',''),null);
+  assert.equal(currentWorldEdits(travelWorldTimeline(t,-1)).length,20);
+});
+
+test('map camera zooms about cursor, clamps pan, and supports large Grid magnification',()=>{
+  const full=defaultMapCamera();
+  const c=zoomMapCamera(full,2,64,.25,.75);
+  assert.deepEqual(c,{zoom:2,x:.375,y:.625});
+  const extent={x:-10,y:20,w:100,h:80};
+  assert.equal(mapCameraViewBox(c,extent),'2.5 50 50 40');
+  assert.deepEqual(panMapCamera(c,-20,20),{zoom:2,x:.25,y:.75});
+  assert.deepEqual(zoomMapCamera(c,1,64),full);
+  assert.equal(maxMapZoom(8192),1024);
+  assert.equal(maxMapZoom(16),64);
 });

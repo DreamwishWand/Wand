@@ -7,6 +7,7 @@
   import MediaMapGridOverlay from '$lib/world/MediaMapGridOverlay.svelte';
   import NativeTerrainGridOverview from '$lib/world/NativeTerrainGridOverview.svelte';
   import NativeTerrainFloorMatchPanel from '$lib/world/NativeTerrainFloorMatchPanel.svelte';
+  import {emptyWorldTimeline} from '$lib/world/saved-map-batch.ts';
   import type {SavedShapeMap} from '$lib/world/saved-shape-map.ts';
   import SavedGridSourceCandidates from '$lib/world/SavedGridSourceCandidates.svelte';
   import type {
@@ -148,6 +149,7 @@
   let floorLayerInspectionError='';
   let savedSourceCandidates:SaveCandidateResult|null=null;
   let savedShapeMap:SavedShapeMap|null=null;
+  let worldTimeline=emptyWorldTimeline();
   let savedShapeRequest=-1;
   let saveComparisonWorker:Worker|null=null;
   let saveComparisonLoading=false;
@@ -410,6 +412,7 @@
   // A new/closed Save invalidates every previously projected local ordinal.
   $: if($localSaveSession.revision!==selectedSaveRevision){
     selectedSaveRevision=$localSaveSession.revision;
+    worldTimeline=emptyWorldTimeline();
     clearSavedSourceComparison();
   }
   function compareSelectedSaveToGrid(){
@@ -486,6 +489,7 @@
       file,filename:file.name,query});
   }
   function stop() {
+    worldTimeline=emptyWorldTimeline();
     requestId++;
     clearSavedSourceComparison();
     terrainRasterRequestId=-1;
@@ -1470,7 +1474,7 @@
         {:else if terrainRasterStatus}
           <p class="note">原本地形全体図：{terrainRasterStatus}</p>
         {/if}
-        <SavedGridSourceCandidates shapeMap={savedShapeMap} file={$localSaveSession.file}
+        <SavedGridSourceCandidates shapeMap={savedShapeMap} file={$localSaveSession.file} bind:timeline={worldTimeline}
           receipt={savedSourceCandidates?.viewKey===selectedViewKey&&
             savedSourceCandidates.nativeGridId===Number(selectedGridId)&&
             saveComparisonRevision===$localSaveSession.revision
