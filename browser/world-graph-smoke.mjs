@@ -1045,7 +1045,8 @@ try{
   const worldSave={GameInfo:{Version:1262},Player:{},World:{GridCollection:{Grids:{
     "101":{ID:101,GridDefaultLayoutPath:'SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json',
       GridDataPath:'GridData/Villages/Village04-MeadowLevel-GridData.json',
-      Objects:{"1":{ID:1,ItemID:40005160,X:4,Y:5,Orientation:'GridOrientation_Down'}}},
+      Objects:{"1":{ID:1,ItemID:40005160,X:4,Y:5,Orientation:'GridOrientation_Down'},
+        "4":{ID:4,ItemID:40005160,X:9,Y:5,Orientation:'GridOrientation_Down'}}},
     "102":{ID:102,GridDefaultLayoutPath:'SceneLayouts/Village04/DefaultVillageLayout01-UrbanGrids.json',
       GridDataPath:'GridData/Villages/Village04-UrbanLevel-GridData.json',TessellationFactor:2,
       Objects:{"2":{ID:2,ItemID:40005160,X:7,Y:6,Orientation:'GridOrientation_Down'}}}
@@ -1071,6 +1072,26 @@ try{
   await publicPlot.locator('.placement-origin-overlay').waitFor({timeout:30000});
   await publicPlot.getByRole('button',{name:'配置候補マス',exact:true}).click();
   await originOverlay.waitFor({state:'detached'});
+  // Real public map: select two objects, translate both, undo/redo as one
+  // transaction and validate the batch through the existing Rust writer.
+  await publicPlot.getByRole('button',{name:'複数選択',exact:true}).click();
+  await publicPlot.getByLabel('配置済み家具を検索').focus();
+  await publicPlot.locator('.object-results button').nth(0).click();
+  await publicPlot.locator('.object-results button').nth(1).click();
+  assert.equal(await publicPlot.locator('.group-selected').count(),2);
+  await publicPlot.getByLabel('一括移動X').fill('2');
+  await publicPlot.locator('.group-draft-shape').first().waitFor();
+  assert.equal(await publicPlot.locator('.group-draft-shape').count(),2);
+  await publicPlot.getByRole('button',{name:'一括移動を追加',exact:true}).click();
+  assert.deepEqual(await publicPlot.locator('.group-selected').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('transform')).sort()),['translate(11 5)','translate(6 5)']);
+  await publicPlot.getByLabel('配置変更を取り消す').click();
+  assert.deepEqual(await publicPlot.locator('.group-selected').evaluateAll(nodes=>nodes.map(n=>n.getAttribute('transform')).sort()),['translate(4 5)','translate(9 5)']);
+  await publicPlot.getByLabel('配置変更をやり直す').click();
+  await publicPlot.getByRole('button',{name:'一括変更を検証',exact:true}).click();
+  await publicPlot.getByRole('button',{name:'実験的な編集コピーを作成'}).waitFor({timeout:20000});
+  await publicPlot.getByRole('button',{name:'全変更を取り消す'}).click();
+  await publicPlot.getByRole('button',{name:'複数選択',exact:true}).click();
+  await publicPlot.getByRole('button',{name:'閉じる',exact:true}).click();
   // All three root themes recolor service chrome without recoloring the map.
   const themeResults=await page.evaluate(()=>{
     const root=document.documentElement,original=root.getAttribute('data-wand-theme');
