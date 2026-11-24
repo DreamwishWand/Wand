@@ -25,7 +25,7 @@ const UNLINKED_EMPTY=UNLINKED_EMPTY_LAYOUT+'#grid=0';
 const GRAPH_URL='http://127.0.0.1:4178/Wand/world/preview/';
 
 /** Entirely synthetic original-world ZIP, created in this test only. */
-function syntheticTerrainZip(decodedFloor=false,factor=1){
+function syntheticTerrainZip(decodedFloor=false,factor=1,exclusive=false){
   const gridPaths=['GridData/Village04/Beach.json',
     'GridData/OffGridBuildings/Detached.json'];
   const layouts=[
@@ -71,6 +71,7 @@ function syntheticTerrainZip(decodedFloor=false,factor=1){
       fixedImmovableVerified:false
     }))
   };
+  if(exclusive)sources.objects.push({itemId:40100001,nativeType:'Furniture',nativeName:'SyntheticRoad',footprint:{...sources.objects[0].footprint}});
   const entries=new Map(Object.entries(sources).map(([key,value])=>
     [key+'.json',Buffer.from(JSON.stringify(value))]));
   entries.set('report.json',Buffer.from(
@@ -941,6 +942,35 @@ try{
     })),
   });
   await candidates.locator('.saved-shape-plot').waitFor({state:'detached',timeout:20000});
+
+  // Road anchor duplication is visible and blocked; a distinct coordinate
+  // still reaches the Rust-backed copy path.
+  await page.locator('.world-toolbar input[type=file]').setInputFiles({
+    name:'synthetic-exclusive.zip',mimeType:'application/zip',
+    buffer:syntheticTerrainZip(true,1,true).archive
+  });
+  const roadSave=structuredClone(syntheticSave);
+  roadSave.World.GridCollection.Grids['777'].Objects={
+    '1':{ID:1,ItemID:40100001,X:4,Y:5,Orientation:'GridOrientation_Up'},
+    '2':{ID:2,ItemID:40100001,X:8,Y:5,Orientation:'GridOrientation_Up'}
+  };
+  await saveChooser.setInputFiles({name:'synthetic-road-save.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(roadSave))});
+  await candidates.getByRole('button',{name:'選択Gridと照合'}).click({timeout:20000});
+  const roadPlot=candidates.locator('.saved-shape-plot');
+  await roadPlot.locator('.saved-object').first().waitFor({timeout:20000});
+  await roadPlot.locator('svg').scrollIntoViewIfNeeded();
+  const roadPosition=await roadPlot.locator('svg').evaluate(svg=>{
+    const p=new DOMPoint(4.5,5.5).matrixTransform(svg.getScreenCTM());return {x:p.x,y:p.y};});
+  await page.mouse.click(roadPosition.x,roadPosition.y);
+  await roadPlot.getByLabel('移動先X').fill('8');
+  await roadPlot.locator('.exclusive-anchor-conflict').waitFor();
+  assert.equal(await roadPlot.getByRole('button',{name:'変更を検証'}).isDisabled(),true);
+  assert.equal(await roadPlot.getByLabel('編集後の向き').count(),0);
+  await roadPlot.getByLabel('移動先X').fill('6');
+  await roadPlot.locator('.exclusive-anchor-conflict').waitFor({state:'detached'});
+  await roadPlot.getByRole('button',{name:'変更を検証'}).click();
+  await roadPlot.getByRole('button',{name:'実験的な編集コピーを作成'}).click({timeout:20000});
+  await roadPlot.getByRole('link',{name:'編集済みコピーを保存'}).waitFor({timeout:20000});
 
   // Factor two source anchors are visible at their own integer coordinates,
   // without a fabricated terrain projection or placement preview.
