@@ -47,3 +47,28 @@ test('native taxonomy retains semantic distinctions rather than assigning every 
   assert.equal(collectionSourceRoot('ActivityItem',12,[]),null);
   assert.equal(collectionSourceRoot('ActivityItem',16,[9]),'gems');
 });
+
+test('Report complete source coverage by native subtype, including excluded item candidates',async()=>{
+  const source=JSON.parse(await readFile(path,'utf8'));
+  const index=projectCompleteCollection(source);
+  const scopes=new Map(source.definitionScopeItems),browse=new Map(source.browseItems.map(r=>[r[0],r]));
+  const types=new Map(source.nativeSubtypeItems.map(r=>[r[0],r]));
+  const menus=new Map(source.categoryItems), recipes=new Map(source.craftingRecipeResultItems);
+  const summary=new Map();
+  for(const [id,type,code,name] of source.nativeSubtypeItems){
+    const key=type+':'+code+':'+(name??'');
+    const row=summary.get(key)??{total:0,browse:0,excluded:0,recipes:0,withMenu:0,nonBrowse:0,samples:[]};
+    row.total++;if(browse.has(id))row.browse++;else row.nonBrowse++;
+    if(!index.rootsByItem.has(id)&&browse.has(id)){
+      row.excluded++;if(recipes.has(id))row.recipes++;if(menus.has(id))row.withMenu++;
+      if(row.samples.length<3)row.samples.push([id,scopes.get(id),menus.get(id)??[]]);
+    }
+    summary.set(key,row);
+  }
+  console.log('COLLECTION_CATEGORY_GAPS '+JSON.stringify([...summary].filter(([,v])=>v.excluded||v.browse||[''].includes('nonexistent'))));
+  console.log('COLLECTION_EXHIBITION '+JSON.stringify(source.categoryItems.filter(([,codes])=>codes.includes(19)).map(([id,codes])=>[id,types.get(id),codes,scopes.get(id)])));
+  const furnitureKinds=new Map();
+  for(const [id,tags] of source.items)if(index.rootsByItem.get(id)==='furniture')
+    for(const [facet,key] of tags)if(facet==='furnitureKind')furnitureKinds.set(key,(furnitureKinds.get(key)??0)+1);
+  console.log('COLLECTION_FURNITURE_KINDS '+JSON.stringify([...furnitureKinds]));
+});
