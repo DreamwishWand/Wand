@@ -4,7 +4,7 @@
 import {createSourceGeometryCache,type SourceObjectShape} from './source-object-map.ts';
 import {getSourceAnchorDomain} from './native-anchor-domain.ts';
 import type {MapObjectLayer} from './source-map-layers.ts';
-import type {SavedNumericPoint} from './saved-grid-source-candidates.ts';
+import {parseSavedSubgridSummary,type SavedNumericPoint} from './saved-grid-source-candidates.ts';
 const record=(v:unknown):v is Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const uint=(v:unknown):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=0&&v<=0xffffffff;
 const int32=(v:unknown):v is number=>typeof v==='number'&&Number.isInteger(v)&&v>=-2147483648&&v<=2147483647;
@@ -33,7 +33,7 @@ export function parseSavedShapePoints(input:unknown):SavedNumericPoint[]{
       throw new TypeError('DB04_SAVE_SHAPE_POINT_INVALID');
     seen.add(row.localOrdinal);
     return {localOrdinal:row.localOrdinal,localGridOrdinal:row.localGridOrdinal,itemId:row.itemId,
-      x:row.x,y:row.y,orientation:row.orientation as string|null};
+      x:row.x,y:row.y,orientation:row.orientation as string|null,...(row.subgrid===undefined?{}:{subgrid:parseSavedSubgridSummary(row.subgrid)})};
   });
 }
 export function buildSavedShapeMap(source:unknown,layoutId:string,gridIdNative:number,input:unknown):SavedShapeMap{
