@@ -261,6 +261,29 @@ function numericTree(value,depth=0,guidPath=null,condition=false,structure=null)
   }
   return n;
 }
+// Compare source trees by value, not by JSON object key serialization order.
+// Array order, missing keys and explicit zero/false remain significant.
+function equalSourceTree(a,b){
+  if(a===b)return true;
+  if(a===null||b===null||typeof a!=='object'||typeof b!=='object')return false;
+  if(Array.isArray(a)||Array.isArray(b))return Array.isArray(a)&&Array.isArray(b)&&
+    a.length===b.length&&a.every((v,i)=>equalSourceTree(v,b[i]));
+  const keys=Object.keys(a);
+  return keys.length===Object.keys(b).length&&keys.every(k=>Object.hasOwn(b,k)&&equalSourceTree(a[k],b[k]));
+}
+function agreesWithPriorMessage(label,prior,value){
+  if(equalSourceTree(prior,value))return true;
+  // The original narrow crafting Result decoder deliberately omitted field 3
+  // (ItemState). Only replace that explicitly marked omission, never other data.
+  if(label==='ActivityData.Result@CraftingRecipeItemData.Types.ResultInstance'&&
+    prior&&typeof prior==='object'&&!Array.isArray(prior)&&
+    equalSourceTree(prior._unresolvedFields,[3])&&Object.hasOwn(value,'State')){
+    const {_unresolvedFields,...oldKnown}=prior;
+    const {State,...newKnown}=value;
+    return equalSourceTree(oldKnown,newKnown);
+  }
+  return false;
+}
 function attachReviewedMessages(project,e,version,source,byId,grouped=false,structureBase=null){
   const structural=structureBase!==null;
   const digest=structural?e.reviewedStructure?.[structureBase]:grouped?e.reviewedMessageGroupsSha256:e.reviewedMessagesSha256;
@@ -296,7 +319,7 @@ function attachReviewedMessages(project,e,version,source,byId,grouped=false,stru
         (repeated?Array.isArray(value)&&value.length>0&&value.every(message):message(value)),'MESSAGE_OWNER');
       occurrences+=repeated?value.length:1;leafCount+=numericTree(value,0,key,entry.declaredType==='ConditionsList',structural?{paths:policy.stringPaths[label],patterns:policy.patterns}:null);
       const props=row.sourceAttributes??(row.sourceAttributes={});
-      check(!Object.hasOwn(props,key)||JSON.stringify(props[key])===JSON.stringify(value),'MESSAGE_CONFLICT');
+      check(!Object.hasOwn(props,key)||agreesWithPriorMessage(label,props[key],value),'MESSAGE_CONFLICT_'+label+'_'+id);
       props[key]=value;
     }
     check(occurrences===entry.occurrences&&leafCount===entry.leafCount,'MESSAGE_CENSUS');
@@ -516,6 +539,14 @@ function buildReferenceColumns(rows){
         check(categories.get(value)==='Clothing','MANNEQUIN_CLOTHING_REFERENCE');emit(value,path);
       }else if(row.nativeCategory==='ConditionalEvent'&&path==='source.SendMailbox.Villager'){
         if(value!==0){check(categories.get(value)==='Character','MAILBOX_VILLAGER_REFERENCE');emit(value,path);}
+      }else if(row.nativeCategory==='Formula'&&/^source\.TablesOfValues\[\d+\]\.Values\[\d+\]\.Key$/.test(path)&&typeof value==='string'&&/^[1-9]\d*$/.test(value)){
+        const tableIndex=Number(path.match(/^source\.TablesOfValues\[(\d+)\]/)[1]);
+        const table=row.sourceAttributes?.TablesOfValues?.[tableIndex];
+        const target=Number(value);
+        // Only ID-bearing fields, not numeric enum keys or literal amounts.
+        if(/^Tags\//.test(table?.FieldName??'')){check(categories.get(target)==='Tag','FORMULA_TAG_REFERENCE');emit(target,path);}
+        else if(table?.FieldName==='Building'){check(categories.get(target)==='Building','FORMULA_BUILDING_REFERENCE');emit(target,path);}
+        else if(['Item','TargetItem.Item','TargetMealItem'].includes(table?.FieldName)){if(ids.has(target))emit(target,path);}
       }else if(/ItemIds?$/i.test(name))emit(value,path);
       else if(row.nativeCategory==='DutyAch'&&/^source\.Milestones\[\d+\]\.RewardItem$/.test(path)){
         check(ID(value)&&ids.has(value),'MILESTONE_REWARD_TARGET');emit(value,path);
