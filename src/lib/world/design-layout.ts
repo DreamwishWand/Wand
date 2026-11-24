@@ -125,12 +125,25 @@ export function designClipboard(t:DesignTimeline,ids:readonly number[]):DesignCl
  const x=Math.min(...chosen.map(p=>p.x)),y=Math.min(...chosen.map(p=>p.y));
  return chosen.map(p=>({itemId:p.itemId,dx:p.x-x,dy:p.y-y,orientation:p.orientation}));
 }
-export function pasteDesign(t:DesignTimeline,clip:readonly DesignClipItem[],defs:ReadonlyMap<number,DesignItemGeometry>,x:number,y:number,width:number,height:number):DesignTimeline|null{
+function pasteCandidates(t:DesignTimeline,clip:readonly DesignClipItem[],defs:ReadonlyMap<number,DesignItemGeometry>,x:number,y:number,width:number,height:number):DesignPlacement[]|null{
  const old=currentDesign(t);if(!clip.length||old.length+clip.length>DESIGN_LIMIT||!Number.isSafeInteger(t.nextId+clip.length))return null;
+ const occupied=new Set<string>();
+ for(const p of old){const kind=exclusiveAnchorClass(String(p.itemId));if(kind)occupied.add(kind+':'+p.x+':'+p.y);}
  const added:DesignPlacement[]=[];
- for(const p of clip){const g=defs.get(p.itemId),candidate={id:t.nextId+added.length,itemId:p.itemId,x:x+p.dx,y:y+p.dy,orientation:p.orientation};
-  if(!g||!designCandidateValid([...old,...added],candidate,g,width,height))return null;added.push(candidate);}
- return commit(t,[...old,...added],t.nextId+added.length);
+ for(const p of clip){
+  const g=defs.get(p.itemId),candidate={id:t.nextId+added.length,itemId:p.itemId,x:x+p.dx,y:y+p.dy,orientation:p.orientation};
+  if(!g||!designCandidateValid([],candidate,g,width,height))return null;
+  const kind=exclusiveAnchorClass(String(candidate.itemId));if(kind){const key=kind+':'+candidate.x+':'+candidate.y;if(occupied.has(key))return null;occupied.add(key);}
+  added.push(candidate);
+ }
+ return added;
+}
+export function canPasteDesign(t:DesignTimeline,clip:readonly DesignClipItem[],defs:ReadonlyMap<number,DesignItemGeometry>,x:number,y:number,width:number,height:number):boolean{
+ return pasteCandidates(t,clip,defs,x,y,width,height)!==null;
+}
+export function pasteDesign(t:DesignTimeline,clip:readonly DesignClipItem[],defs:ReadonlyMap<number,DesignItemGeometry>,x:number,y:number,width:number,height:number):DesignTimeline|null{
+ const added=pasteCandidates(t,clip,defs,x,y,width,height);
+ return added?commit(t,[...currentDesign(t),...added],t.nextId+added.length):null;
 }
 export function removeDesignGroup(t:DesignTimeline,ids:readonly number[],defs:ReadonlyMap<number,DesignItemGeometry>):DesignTimeline|null{
  const set=new Set(ids),old=currentDesign(t),chosen=old.filter(p=>set.has(p.id));

@@ -1,7 +1,7 @@
 <script lang="ts">
  import MapCameraControls from './MapCameraControls.svelte';
  import {worldShortcut,worldShortcutTarget,NUDGE} from './world-shortcuts.ts';
- import {designClipboard,pasteDesign,removeDesignGroup,transformDesignGroup,type DesignClipItem} from './design-layout.ts';
+ import {designClipboard,pasteDesign,canPasteDesign,removeDesignGroup,transformDesignGroup,type DesignClipItem} from './design-layout.ts';
 
  import {onDestroy} from 'svelte';
  import type {PublicTerrainGridRef} from './public-terrain-projection.ts';
@@ -10,7 +10,7 @@
  import {nativeSourceFloorTint} from './native-terrain-canvas.ts';
  import type {WandLanguage} from '../ui/preferences.ts';
  import {itemMedia} from '../media/item-media.ts';
- import {emptyDesign,currentDesign,travelDesign,placeDesign,transformDesign,removeDesign,designCandidateValid,designShapeMap,serializeDesign,parseDesign,restoreDesign,designItemCounts,DESIGN_FILE_LIMIT,type DesignPlacement,type DesignCatalogItem,type DesignItemGeometry,type DesignTimeline} from './design-layout.ts';
+ import {emptyDesign,currentDesign,travelDesign,placeDesign,transformDesign,designCandidateValid,designShapeMap,serializeDesign,parseDesign,restoreDesign,designItemCounts,DESIGN_FILE_LIMIT,type DesignPlacement,type DesignCatalogItem,type DesignItemGeometry,type DesignTimeline} from './design-layout.ts';
  import {defaultMapCamera,maxMapZoom,zoomMapCamera,panMapCamera,mapCameraViewBox,mapViewportBounds,wheelMapCamera,createMapPanGesture} from './map-camera.ts';
  import {mapPainterOrder,MAP_LAYER_COLORS,MAP_LAYER_LABELS,matchesSelectionLayer,type MapSelectionLayer} from './source-map-layers.ts';
  import {savedShapesAt,visibleSavedObjects} from './saved-shape-map.ts';
@@ -105,7 +105,7 @@
      pasteRequest=0;const clip=pastePending;pastePending=[];
      if(!active||!grid||d.kind!=='design-shapes'||d.key!==grid.key||!Array.isArray(d.result))return;
      const factor=String(grid.factor),incoming=new Map<number,DesignItemGeometry>((d.result as DesignItemGeometry[]).map(g=>[g.itemId,g]));
-     if(clip.some(p=>!incoming.has(p.itemId)&&!definitions.has(p.itemId)))return;
+     if(clip.some(p=>!incoming.has(p.itemId)&&!definitions.has(p.itemId))){error='配置形状を取得できませんでした。';return;}
      cache={...cache,[factor]:new Map([...(cache[factor]??new Map<number,DesignItemGeometry>()),...incoming])};pasting=clip;hover=lastPoint;return;
    }
    if(pendingImport&&d?.requestId===pendingImport.id){
@@ -117,7 +117,7 @@
      if(!next){error=words[3];return;}
      const factor=String(grid.factor);
      cache={...cache,[factor]:new Map([...(cache[factor]??new Map<number,DesignItemGeometry>()),...incoming])};
-     selected=null;cancel();save(next);return;
+     selected=null;groupIds=[];cancel();save(next);return;
    }
    if(d?.requestId===catalogId){
      catalogLoading=false;
@@ -177,6 +177,7 @@
  function cancel(){placing=null;moveMode=false;hover=null;shapeId=0;loadingShape=false;error='';pasting=[];pastePending=[];pasteRequest=0;}
  function travel(delta:-1|1){cancel();selected=null;groupIds=[];save(travelDesign(timeline,delta));}
  function rotate(delta:number){
+   if(pasting.length)return;
    if(groupIds.length){save(transformDesignGroup(timeline,groupIds,definitions,0,0,-delta,width,height));return;}
    if(placing){if(!nativeActionBlocked(placing.editRestrictions,'rotate')&&!exclusiveAnchorClass(String(placing.itemId)))orientation=(orientation+delta+4)%4;return;}
    if(chosen&&chosenGeometry)save(transformDesign(timeline,chosen.id,chosenGeometry,chosen.x,chosen.y,(chosen.orientation+delta+4)%4,width,height));
@@ -197,7 +198,7 @@
    const ids=currentDesign(next).slice(-pasting.length).map(o=>o.id);save(next);cancel();
    selected=ids.length===1?ids[0]:null;groupIds=ids.length>1?ids:[];
  }
- $: pasteValid=Boolean(hover&&pasting.length&&pasteDesign(timeline,pasting,definitions,hover.x,hover.y,width,height));
+ $: pasteValid=Boolean(hover&&pasting.length&&canPasteDesign(timeline,pasting,definitions,hover.x,hover.y,width,height));
 
  function cell(e:MouseEvent){
    const m=svg?.getScreenCTM();if(!m)return null;
@@ -237,7 +238,7 @@
    if(action==='duplicate'){if(selectedIds.size){e.preventDefault();duplicate();}return;}
    if(action==='select-all'){e.preventDefault();cancel();selected=null;groupIds=placements.filter(p=>!nativeActionBlocked(definitions.get(p.itemId)?.editRestrictions,'select')).map(p=>p.id);return;}
    if(action==='cancel'){e.preventDefault();cancel();selected=null;groupIds=[];return;}
-   if(action==='confirm'){if(pasting.length&&hover){e.preventDefault();commitPaste(hover.x,hover.y);}else if(placing&&hover){e.preventDefault();save(placeDesign(timeline,placing,hover.x,hover.y,orientation,width,height));}return;}
+   if(action==='confirm'){if(e.target instanceof HTMLElement&&e.target.closest('button:not(.design-plot)'))return;if(pasting.length&&hover){e.preventDefault();commitPaste(hover.x,hover.y);}else if(placing&&hover){e.preventDefault();save(placeDesign(timeline,placing,hover.x,hover.y,orientation,width,height));}return;}
    if(action==='zoom-in'||action==='zoom-out'||action==='fit'){e.preventDefault();camera=action==='fit'?defaultMapCamera():zoomMapCamera(camera,camera.zoom*(action==='zoom-in'?2:.5),maxZoom);return;}
    if(action==='rotate-left'||action==='rotate-right'){if(selectedIds.size||placing){e.preventDefault();rotate(action==='rotate-left'?1:3);}return;}
    if(action==='delete'){if(selectedIds.size){e.preventDefault();remove();}return;}

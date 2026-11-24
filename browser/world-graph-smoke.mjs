@@ -1085,6 +1085,11 @@ try{
   assert.equal(await design.locator('.design-object').count(),1);
   await page.keyboard.press('Control+y');
   assert.equal(await design.locator('.design-object').count(),2);
+  await page.keyboard.press('Control+a');
+  await page.keyboard.press('Meta+x');
+  assert.equal(await design.locator('.design-object').count(),0);
+  await page.keyboard.press('Meta+z');
+  assert.equal(await design.locator('.design-object').count(),2);
   await page.keyboard.press('Control+Shift+z');
   await page.keyboard.press('Meta+z');
   assert.equal(await design.locator('.design-object').count(),1);

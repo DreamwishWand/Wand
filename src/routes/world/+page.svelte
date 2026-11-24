@@ -1,4 +1,5 @@
 <script lang="ts">
+  import WorldShortcutHelp from '$lib/world/WorldShortcutHelp.svelte';
   import {onMount,onDestroy} from 'svelte';
   import {base} from '$app/paths';
   import {localSaveSession} from '$lib/ui/local-save-session';
@@ -120,6 +121,7 @@
     </select>
     {#if !designMode&&shapeMap&&!terrainDisplayed}<button type="button" aria-pressed={showSeparateTerrain} on:click={()=>showSeparateTerrain=!showSeparateTerrain}>{showSeparateTerrain?'配置図':'地形図'}</button>{/if}
   </nav></div>
+  <WorldShortcutHelp {locale} {designMode}/>
   {#if loading}<p class="workspace-message" role="status">地形読み込み中…</p>{/if}
   {#if error}<p class="workspace-message" role="alert">{error}</p>{/if}
   {#if selected&&raster&&!designMode}
@@ -153,7 +155,7 @@
   .note,p{font-size:11px;color:var(--wand-muted);margin:0}
   @media(max-width:700px){nav button,nav select{font-size:12px;padding:4px 6px}}
  .world-workspace{padding:0;gap:0;position:relative;isolation:isolate}
- .world-navigation{position:absolute;z-index:12;top:6px;left:6px;right:6px;display:flex;align-items:center;gap:5px;pointer-events:none}.world-navigation>*{pointer-events:auto}
+ .world-navigation{position:absolute;z-index:12;top:6px;left:6px;right:50px;display:flex;align-items:center;gap:5px;pointer-events:none}.world-navigation>*{pointer-events:auto}
  .navigation-toggle{display:grid;place-items:center;width:38px;height:38px;flex:none;background:var(--wand-menu);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:6px}.navigation-toggle svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linejoin:round}.navigation-toggle:focus-visible{outline:2px solid var(--wand-focus)}
  nav{max-width:calc(100% - 43px);padding:3px;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px}nav[hidden]{display:none}
  .workspace-message{position:absolute;z-index:13;top:52px;left:8px;padding:6px;background:var(--wand-card);border-radius:5px}
