@@ -49,10 +49,11 @@ export function projectCompleteCollection(source:CompleteItemMasterFacets):Colle
   const iconGuidByItem=new Map<number,string>();
   const allowed=new Map(source.browseItems.map(row=>[row[0],row]));
   const candidateMenus=new Map(source.categoryItems);
+  const recipeResults=new Set(source.craftingRecipeResultItems.map(row=>row[0]));
   for(const [id,type,code,name] of source.nativeSubtypeItems){
     const row=allowed.get(id);if(!row)continue;
     const codes=(candidateMenus.get(id)??[]).filter(x=>menus.has(x)) as CollectionDb01SubmenuCode[];
-    const root=collectionSourceRoot(type,code,codes);
+    const root=collectionSourceRoot(type,code,codes,recipeResults.has(id));
     if(!root)continue;
     rootsByItem.set(id,root);add(itemsByRoot,root,id);
     nativeSubtypeByItem.set(id,{nativeType:type,code,nativeName:name});
