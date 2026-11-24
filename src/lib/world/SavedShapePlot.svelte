@@ -1,5 +1,6 @@
 <script lang="ts">
   import {onDestroy} from 'svelte';
+  import {savedDraftOverlap,OVERLAP_COLORS} from './saved-draft-overlap.ts';
   import {CARDINAL_ORIENTATIONS,isCardinal,worldTransformEligible,draftSavedMapTransform} from './saved-map-transform.ts';
   import {savedGridObjects,savedShapesAt,type SavedShapeMap,type SavedShapeObject} from './saved-shape-map.ts';
   import {MAP_LAYER_COLORS,MAP_LAYER_LABELS,mapPainterOrder,matchesSelectionLayer,type MapSelectionLayer} from './source-map-layers.ts';
@@ -9,17 +10,25 @@
   let editWorker:Worker|null=null;
   let editEpoch=0;
   let busy=false,editError='',copyUrl='',copyName='',checkedSignature='';
-  let draftX=0,draftY=0,draftOrientation:string|null=null,placing=false;
+  let draftX:number|undefined=0,draftY:number|undefined=0,draftOrientation:string|null=null,placing=false;
+  let hoverPoint:{x:number;y:number}|null=null;
+  let previousFile:File|null=null;
+  function checkFile(value:File|null){if(previousFile!==value){previousFile=value;cancelEdit();placing=false;hoverPoint=null;}}
+  $: checkFile(file);
   let draftTarget:SavedShapeObject|null=null;
   function cancelEdit(){editEpoch++;editWorker?.terminate();editWorker=null;busy=false;checkedSignature='';editError='';if(copyUrl)URL.revokeObjectURL(copyUrl);copyUrl='';}
   onDestroy(cancelEdit);
-  function resetDraft(o:SavedShapeObject|null){cancelEdit();draftTarget=o;placing=false;draftX=o?.x??0;draftY=o?.y??0;draftOrientation=o?.orientation??null;}
+  function resetDraft(o:SavedShapeObject|null){cancelEdit();draftTarget=o;placing=false;hoverPoint=null;draftX=o?.x??0;draftY=o?.y??0;draftOrientation=o?.orientation??null;}
   $: if(chosen!==draftTarget)resetDraft(chosen);
   $: editPlan=draftSavedMapTransform(chosen,draftX,draftY,draftOrientation);
   $: draftSignature=editPlan?JSON.stringify(editPlan):'';
   $: if(checkedSignature&&checkedSignature!==draftSignature)cancelEdit();
   $: draftCode=isCardinal(draftOrientation)?CARDINAL_ORIENTATIONS.indexOf(draftOrientation)*4:null;
   $: draftShape=chosen&&draftCode!==null?map.shapes[chosen.itemId+':'+draftCode]:null;
+  $: previewX=placing&&hoverPoint?hoverPoint.x:draftX;
+  $: previewY=placing&&hoverPoint?hoverPoint.y:draftY;
+  $: showDraft=Boolean((placing||editPlan)&&draftShape&&Number.isInteger(previewX)&&Number.isInteger(previewY));
+  $: overlap=showDraft&&chosen&&draftShape&&previewX!==undefined&&previewY!==undefined? savedDraftOverlap(map,chosen,draftShape,previewX,previewY):null;
   $: if(!file)cancelEdit();
   async function runEdit(exporting:boolean){
     const source=file,plan=editPlan,signature=draftSignature;
@@ -82,11 +91,20 @@
   function changeZoom(n:number){zoom=Math.max(1,Math.min(64,n));cx=Math.max(.5/zoom,Math.min(1-.5/zoom,cx));cy=Math.max(.5/zoom,Math.min(1-.5/zoom,cy));}
   function pan(dx:number,dy:number){cx=Math.max(.5/zoom,Math.min(1-.5/zoom,cx+dx/zoom));cy=Math.max(.5/zoom,Math.min(1-.5/zoom,cy+dy/zoom));}
   function chooseLayer(l:MapSelectionLayer){layer=l;selected=hits.find(o=>matchesSelectionLayer(o,l))?.localOrdinal??null;}
+  function pointerCell(event:MouseEvent){
+    const matrix=svg?.getScreenCTM();if(!matrix)return null;
+    const p=new DOMPoint(event.clientX,event.clientY).matrixTransform(matrix.inverse());
+    const x=Math.floor(p.x),y=Math.floor(p.y);
+    return Number.isSafeInteger(x)&&Number.isSafeInteger(y)&&x>=-2147483648&&x<=2147483647&&y>=-2147483648&&y<=2147483647?{x,y}:null;
+  }
+  function follow(event:PointerEvent){
+    if(!placing||busy||event.pointerType==='touch')return;
+    const p=pointerCell(event);if(p&&(p.x!==hoverPoint?.x||p.y!==hoverPoint?.y))hoverPoint=p;
+  }
   function pick(event:MouseEvent){
-    const matrix=svg?.getScreenCTM();if(!matrix||event.detail===0)return;
-    const point=new DOMPoint(event.clientX,event.clientY).matrixTransform(matrix.inverse());
-    if(placing&&chosen){draftX=Math.floor(point.x);draftY=Math.floor(point.y);placing=false;cancelEdit();return;}
-    hits=savedShapesAt(map,ordinal,Math.floor(point.x),Math.floor(point.y));
+    const point=pointerCell(event);if(!point||event.detail===0||busy)return;
+    if(placing&&chosen){draftX=point.x;draftY=point.y;placing=false;hoverPoint=null;cancelEdit();return;}
+    hits=savedShapesAt(map,ordinal,point.x,point.y);
     selected=hits.find(o=>matchesSelectionLayer(o,layer))?.localOrdinal??null;
   }
 </script>
@@ -110,7 +128,7 @@
   <div class="controls" role="group" aria-label="セーブ図の選択レイヤー">
     {#each layers as l}<button type="button" aria-pressed={layer===l} on:click={()=>chooseLayer(l)}>{MAP_LAYER_LABELS[l]}</button>{/each}
   </div>
-  <button type="button" class="plot" aria-label="セーブ内の形状候補を選択" on:click={pick}>
+  <button type="button" class="plot" aria-label="セーブ内の形状候補を選択" on:click={pick} on:pointermove={follow} on:pointerleave={()=>hoverPoint=null}>
     <svg bind:this={svg} {viewBox} aria-hidden="true">
       <defs><pattern id="saved-shape-cells" width="1" height="1" patternUnits="userSpaceOnUse">
         <path d="M1 0H0V1" fill="none" stroke="#8f9aa8" stroke-opacity=".35" stroke-width=".04"/>
@@ -128,8 +146,12 @@
           {#if o.surfaceCapable}<circle cx=".78" cy=".22" r=".13" fill="#dbc2f6"/>{/if}
         </g>
       {/each}
-      {#if editPlan&&draftShape}
-        <path class="saved-draft-shape" d={draftShape.path} transform={'translate('+draftX+' '+draftY+')'} fill="#a7b1bf" fill-opacity=".62" stroke="#fff" stroke-width="1.5" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>
+      {#if showDraft&&draftShape}
+        <path class="saved-draft-shape" d={draftShape.path} transform={'translate('+previewX+' '+previewY+')'} fill="#a7b1bf" fill-opacity=".62" stroke="#fff" stroke-width="1.5" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>
+        {#if overlap}{#each overlap.runs as run (run.x+','+run.y)}
+          <rect class="saved-overlap-cell" data-evidence={run.evidence} x={run.x} y={run.y} width={run.width} height="1"
+            fill={OVERLAP_COLORS[run.evidence]} fill-opacity=".8" stroke={OVERLAP_COLORS[run.evidence]} stroke-width="1" vector-effect="non-scaling-stroke"/>
+        {/each}{/if}
       {/if}
     </svg>
   </button>
@@ -142,7 +164,7 @@
   {#if chosen&&file&&worldTransformEligible(chosen)}
     <div class="transform-controls">
       <div class="controls">
-        <button type="button" aria-pressed={placing} disabled={busy} on:click={()=>placing=!placing}>{placing?'移動先を選択中':'マップで移動先を選択'}</button>
+        <button type="button" aria-pressed={placing} disabled={busy} on:click={()=>{placing=!placing;hoverPoint=null;}}>{placing?'移動先を選択中':'マップで移動先を選択'}</button>
         <label>X <input type="number" aria-label="移動先X" bind:value={draftX} step="1" disabled={busy}/></label>
         <label>Y <input type="number" aria-label="移動先Y" bind:value={draftY} step="1" disabled={busy}/></label>
         {#if isCardinal(chosen.orientation)}<label>向き <select aria-label="編集後の向き" bind:value={draftOrientation} disabled={busy}>
@@ -150,10 +172,19 @@
         </select></label>{/if}
         <button type="button" disabled={busy||!editPlan} on:click={()=>resetDraft(chosen)}>元に戻す</button>
       </div>
-      <p>選択した1件のみ変更します。重なりや支持関係は未検証で、他の家具・小物は自動移動しません。配置の警告はゲーム内で確認してください。</p>
+      {#if overlap}
+        <div class="overlap-key" aria-label="形状の重なり候補">
+          {#if overlap.counts['shape-overlap']}<span style:color={OVERLAP_COLORS['shape-overlap']}>重なり候補 {overlap.counts['shape-overlap']}マス</span>{/if}
+          {#if overlap.counts['landscape-overlap']}<span style:color={OVERLAP_COLORS['landscape-overlap']}>景観と重なる {overlap.counts['landscape-overlap']}マス</span>{/if}
+          {#if overlap.counts['support-unknown']}<span style:color={OVERLAP_COLORS['support-unknown']}>上下関係不明 {overlap.counts['support-unknown']}マス</span>{/if}
+          {#if overlap.counts['ground-overlap']}<span>道・地面 {overlap.counts['ground-overlap']}マス</span>{/if}
+        </div>
+        {#if overlap.unresolvedObjects||overlap.truncated}<p>形状不明・未評価のオブジェクトがあります。</p>{/if}
+      {/if}
+      <p>色は原本形状による重なり候補です。配置許可とは別で、他の家具・小物・景観は削除・自動移動しません。</p>
       {#if editPlan}<div class="controls">
-        <button type="button" disabled={busy} on:click={()=>runEdit(false)}>変更を検証</button>
-        {#if checkedSignature===draftSignature}<button type="button" disabled={busy} on:click={()=>runEdit(true)}>実験的な編集コピーを作成</button>{/if}
+        <button type="button" disabled={busy||placing} on:click={()=>runEdit(false)}>変更を検証</button>
+        {#if checkedSignature===draftSignature}<button type="button" disabled={busy||placing} on:click={()=>runEdit(true)}>実験的な編集コピーを作成</button>{/if}
       </div>{/if}
       {#if busy}<p role="status">ローカル処理中…</p>{/if}
       {#if editError}<p role="alert">{editError}</p>{/if}
@@ -165,6 +196,8 @@
 <style>
   .saved-shape-plot{display:grid;gap:6px;min-width:0}
   .controls{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+  .overlap-key{display:flex;flex-wrap:wrap;gap:8px;font-size:12px}
+  .saved-overlap-cell{pointer-events:none}
   .transform-controls{display:grid;gap:8px;padding:8px;border:1px solid #ffffff35;border-radius:5px}
   input{width:90px;max-width:100%;font:inherit;color:inherit;background:transparent;border:1px solid #ffffff35;padding:4px;border-radius:4px}
   button,select{font:inherit;color:inherit;background:transparent;border:1px solid #ffffff35;border-radius:5px;padding:5px;font-size:12px}

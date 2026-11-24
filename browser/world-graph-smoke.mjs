@@ -907,7 +907,12 @@ try{
     const position=await savedPlot.locator('svg').evaluate(svg=>{
       const p=new DOMPoint(4.5,5.5).matrixTransform(svg.getScreenCTM());return {x:p.x,y:p.y};});
     await page.mouse.click(position.x,position.y);
+    await savedPlot.getByLabel('移動先X').fill('17');
+    await savedPlot.getByLabel('移動先Y').fill('3');
+    await savedPlot.locator('.saved-overlap-cell[data-evidence="shape-overlap"]').first().waitFor();
+    await savedPlot.getByLabel('移動先Y').fill('5');
     await savedPlot.getByLabel('移動先X').fill('6');
+    await savedPlot.locator('.saved-overlap-cell').first().waitFor({state:'detached'});
     await savedPlot.getByLabel('編集後の向き').selectOption('GridOrientation_Right');
     await savedPlot.locator('.saved-draft-shape').waitFor();
     await savedPlot.getByRole('button',{name:'変更を検証'}).click();

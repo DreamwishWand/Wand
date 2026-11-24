@@ -9,7 +9,7 @@ export function worldTransformEligible(o:SavedShapeObject|null):boolean{
   return !!o&&o.shapeKey!==null&&['furniture','surface','landscape'].includes(o.layer)&&
     Number.isSafeInteger(Number(o.itemId))&&Number(o.itemId)>0;
 }
-export function draftSavedMapTransform(o:SavedShapeObject|null,x:number,y:number,orientation:string|null){
+export function draftSavedMapTransform(o:SavedShapeObject|null,x:number|undefined,y:number|undefined,orientation:string|null){
   if(!o||!worldTransformEligible(o)||!int32(x)||!int32(y))return null;
   const moved=x!==o.x||y!==o.y;
   const turned=orientation!==o.orientation;
