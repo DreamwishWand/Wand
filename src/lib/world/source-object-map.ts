@@ -26,20 +26,23 @@ export interface SourceObjectMap {
   readonly layoutId:string;readonly gridIdNative:number;readonly gridDataPath:string|null;
   readonly objects:readonly SourceMapObject[];readonly shapes:Readonly<Record<string,SourceObjectShape>>;
   readonly totalCount:number;readonly unresolvedCount:number;readonly omittedCount:number;
+  readonly gridFactor:1|2|null;readonly sizeX:number|null;readonly sizeY:number|null;
   readonly actualOccupancyVerified:false;readonly supportRelationsVerified:false;
 }
 export function buildSourceObjectMap(source:unknown,layoutId:string,gridIdNative:number):SourceObjectMap{
   const empty=(status:SourceObjectMap['status'],gridDataPath:string|null=null):SourceObjectMap=>
     ({status,layoutId,gridIdNative,gridDataPath,objects:[],shapes:{},totalCount:0,
-      unresolvedCount:0,omittedCount:0,actualOccupancyVerified:false,supportRelationsVerified:false});
+      unresolvedCount:0,omittedCount:0,gridFactor:null,sizeX:null,sizeY:null,actualOccupancyVerified:false,supportRelationsVerified:false});
   if(!record(source)||!record(source.manifest)||!(source.objects instanceof Map)||
     !(source.layoutObjectsByGrid instanceof Map))throw new TypeError('DB04_OBJECT_MAP_SOURCE_INVALID');
   if(source.manifest.platform!=='Steam'||source.manifest.gameVersion!=='1.26.2')return empty('unavailable');
   const domain=getSourceAnchorDomain(source,layoutId,gridIdNative);
   if(!domain)return empty('unavailable');
-  if(domain.tessellationFactor!==1||domain.status!=='raw_grid_dimensions_only')
+  if(domain.status==='tessellation_coordinate_relation_unverified'||
+    (domain.tessellationFactor!==1&&domain.tessellationFactor!==2))
     return {...empty('incompatible_grid_factor',domain.gridDataPath),totalCount:domain.defaultObjectCount,
       omittedCount:domain.defaultObjectCount};
+  const factor=domain.tessellationFactor as 1|2;
   const rows=source.layoutObjectsByGrid.get(layoutId)?.get(gridIdNative)??[];
   if(!Array.isArray(rows)||rows.length!==domain.defaultObjectCount)
     throw new TypeError('DB04_OBJECT_MAP_COUNT_INVALID');
@@ -63,13 +66,13 @@ export function buildSourceObjectMap(source:unknown,layoutId:string,gridIdNative
     if(shape===undefined){
       shape=null;
       if(e.status==='source_raw_gridarea_available'&&e.rawSizeX&&e.rawSizeY){
-        const {width,height}=getOriginalGridAreaDisplayDimensions(e.rawSizeX,e.rawSizeY,row.orientationCode,1);
+        const {width,height}=getOriginalGridAreaDisplayDimensions(e.rawSizeX,e.rawSizeY,row.orientationCode,factor);
         if(width>0&&height>0&&work+width*height<=1_000_000){
           work+=width*height;
           const mask=new Uint8Array(width*height);
           for(let y=0;y<height;y+=16)for(let x=0;x<width;x+=16){
             const local=getOriginalGridAreaLocalWindow(source,row.itemId,row.orientationCode,x,y,
-              Math.min(16,width-x),Math.min(16,height-y),1);
+              Math.min(16,width-x),Math.min(16,height-y),factor);
             if(local.status!=='source_native_local_layers'||!local.rows)
               throw new TypeError('DB04_OBJECT_MAP_SHAPE_INVALID');
             for(let dy=0;dy<local.rows.length;dy++)for(let dx=0;dx<local.rows[dy].length;dx++)
@@ -99,6 +102,7 @@ export function buildSourceObjectMap(source:unknown,layoutId:string,gridIdNative
   }
   return {status:'source_default_geometry',layoutId,gridIdNative,gridDataPath:domain.gridDataPath,
     objects,shapes,totalCount:rows.length,unresolvedCount,omittedCount:rows.length-objects.length,
+    gridFactor:factor,sizeX:domain.anchorSizeX,sizeY:domain.anchorSizeY,
     actualOccupancyVerified:false,supportRelationsVerified:false};
 }
 /** Exact mapped shape hit test; keep ALL objects at the same point. Unknown
@@ -115,3 +119,32 @@ export function sourceObjectsAt(map:SourceObjectMap,x:number,y:number):SourceMap
 /** Relative orientation cue only; 8 is the original reference direction.
  * A visual rotation marker is not a mesh's actual facing vector. */
 export function sourceOrientationAngle(code:number){return (code-8)*22.5;}
+
+/** Mapped source-shape intersections, not actual support links or collision.
+ * Compute only for a selected object. Row runs are sorted by local y/x. */
+export interface SourceShapeIntersection {
+  readonly object:SourceMapObject;readonly cells:number;
+}
+export function sourceShapeIntersections(map:SourceObjectMap,selected:SourceMapObject):SourceShapeIntersection[]{
+  const a=selected.shapeKey?map.shapes[selected.shapeKey]:null;
+  if(!a)return [];
+  const result:SourceShapeIntersection[]=[];
+  for(const other of map.objects){
+    if(other.id===selected.id||!other.shapeKey)continue;
+    const b=map.shapes[other.shapeKey];
+    if(!b||selected.x+a.width<=other.x||other.x+b.width<=selected.x||
+      selected.y+a.height<=other.y||other.y+b.height<=selected.y)continue;
+    let i=0,j=0,cells=0;
+    while(i<a.runs.length&&j<b.runs.length){
+      const ar=a.runs[i],br=b.runs[j];
+      const ay=selected.y+ar.y,by=other.y+br.y;
+      if(ay<by){i++;continue;}if(ay>by){j++;continue;}
+      const ax=selected.x+ar.x,bx=other.x+br.x;
+      const ae=ax+ar.width,be=bx+br.width;
+      cells+=Math.max(0,Math.min(ae,be)-Math.max(ax,bx));
+      if(ae<=be)i++;if(be<=ae)j++;
+    }
+    if(cells)result.push({object:other,cells});
+  }
+  return result;
+}

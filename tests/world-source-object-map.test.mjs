@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {sourceMapLayer,sourceSurfaceCapable,matchesSelectionLayer,mapPainterOrder,prioritizeMapHits} from '../src/lib/world/source-map-layers.ts';
-import {buildSourceObjectMap,sourceObjectsAt,sourceOrientationAngle} from '../src/lib/world/source-object-map.ts';
+import {buildSourceObjectMap,sourceObjectsAt,sourceOrientationAngle,sourceShapeIntersections} from '../src/lib/world/source-object-map.ts';
 const L='SceneLayouts/Village04/Fixture.json',P='GridData/Village04/Fixture.json';
 const row=(id,itemId,x,y,orientationCode)=>({layoutId:L,gridIdNative:7,gridObjectIdNative:id,itemId,x,y,orientationCode});
 function fixture(factor=1,version='1.26.2'){
@@ -31,8 +31,15 @@ test('deduplicate shapes by item and direction, keep all overlapping instance id
   assert.equal(sourceOrientationAngle(8),0);
   assert.equal(sourceOrientationAngle(12),90);
 });
-test('do not map incompatible factor or newer unverified version onto raw terrain',()=>{
-  assert.equal(buildSourceObjectMap(fixture(2),L,7).status,'incompatible_grid_factor');
+test('factor two keeps a separate scaled anchor domain and mapped geometry',()=>{
+  const map=buildSourceObjectMap(fixture(2),L,7);
+  assert.equal(map.status,'source_default_geometry');
+  assert.equal(map.gridFactor,2);
+  assert.deepEqual([map.sizeX,map.sizeY],[20,20]);
+  assert.equal(map.shapes['100:8'].cellCount,8);
+  assert.deepEqual([map.shapes['100:4'].width,map.shapes['100:4'].height],[2,4]);
+  assert.deepEqual(sourceObjectsAt(map,4,3).map(o=>o.id),[0,1]);
+  assert.equal(buildSourceObjectMap(fixture(3),L,7).status,'incompatible_grid_factor');
   assert.equal(buildSourceObjectMap(fixture(1,'1.27.0'),L,7).status,'unavailable');
 });
 
@@ -52,4 +59,13 @@ test('source-native layers preserve all objects and surface capability is not ac
   assert.equal(sourceMapLayer(null,40700001,4096),'other');
   assert.equal(sourceMapLayer('Furniture',40000001,null),'furniture');
   assert.equal(buildSourceObjectMap(fixture(),L,7).supportRelationsVerified,false);
+});
+
+test('intersection counts retain overlapping instance identity and exclude unmapped anchors',()=>{
+  for(const factor of [1,2]){
+    const map=buildSourceObjectMap(fixture(factor),L,7);
+    const overlaps=sourceShapeIntersections(map,map.objects[0]);
+    assert.deepEqual(overlaps.map(x=>[x.object.id,x.cells]),[[1,2*factor*factor]]);
+    assert.deepEqual(sourceShapeIntersections(map,map.objects[3]),[]);
+  }
 });
