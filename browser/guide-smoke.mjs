@@ -971,7 +971,7 @@ try {
   assert.match(await star.locator('.reward-entry .reward-name').innerText(),/Lieutenant Monkey/);
   await rewardTier.selectOption('free');
   assert.equal(await star.locator('.reward-entry').count(),0,'free tier excludes premium monkey');
-  assert.match(await star.getByRole('status').innerText(),/一致する報酬はありません/);
+  assert.match(await star.getByRole('status').filter({hasText:'一致する報酬はありません。'}).innerText(),/一致する報酬はありません/);
   await rewardTier.selectOption('premium');
   assert.equal(await star.locator('.reward-entry').count(),1,'premium tier shows premium monkey');
   await rewardSearch.fill('80100000');
