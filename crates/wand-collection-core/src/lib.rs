@@ -383,6 +383,7 @@ pub struct CollectionEngine {
     db00_relations: Vec<(u64,u64)>,
     owner_local_complete: bool,
     public_native_itemlist: bool,
+    public_complete_collection: bool,
 }
 
 impl Default for CollectionEngine {
@@ -398,6 +399,7 @@ impl Default for CollectionEngine {
             db00_relations: Vec::new(),
             owner_local_complete: false,
             public_native_itemlist: false,
+            public_complete_collection: false,
         }
     }
 }
@@ -411,6 +413,7 @@ impl CollectionEngine {
         self.db00_mode = false;
         self.owner_local_complete = false;
         self.public_native_itemlist = false;
+        self.public_complete_collection = false;
         self.db00_sources.clear();
         self.db00_releases.clear();
         self.db00_relations.clear();
@@ -486,7 +489,8 @@ impl CollectionEngine {
         self.db00_mode=true;
         self.owner_local_complete=visibility=="private"
             && published.id=="db01-steam-1-26-2-owner-local-complete";
-        self.public_native_itemlist=public_native_itemlist||public_complete_collection;
+        self.public_native_itemlist=public_native_itemlist;
+        self.public_complete_collection=public_complete_collection;
         self.db00_sources=sources;
         self.db00_releases=releases;
         self.db00_relations.clear();
@@ -521,6 +525,13 @@ impl CollectionEngine {
                     return Err("COLLECTION_DB00_NATIVE_NAMES_INVALID".into());
                 }
             }
+            if self.public_complete_collection {
+                let valid_labels=row.names.values().all(|v|!v.trim().is_empty()&&v.len()<=512);
+                if !valid_labels || !(name_verified && row.names.len()==LOCALES.len()
+                    || row.name_status=="unverified" && row.names.len()<LOCALES.len()) {
+                    return Err("COLLECTION_DB01_COMPLETE_NAMES_INVALID".into());
+                }
+            }
             if owner_local {
                 // A verified name requires every locale. Only the SHA-pinned
                 // complete owner-local release may contain *unnamed* source IDs.
@@ -535,7 +546,7 @@ impl CollectionEngine {
             }
             let id=row.id.parse::<u64>().map_err(|_|"COLLECTION_DB00_ITEM_ID")?;
             if !ids.insert(id) || self.lookup.contains_key(&id)
-                || (!owner_local && !self.public_native_itemlist && !name_verified)
+                || (!owner_local && !self.public_native_itemlist && !self.public_complete_collection && !name_verified)
                 || row.names.keys().any(|l|!LOCALES.contains(&l.as_str()))
                 || row.source_refs.is_empty()
                 || row.source_refs.iter().any(|r|!self.db00_sources.contains(r))
@@ -649,12 +660,12 @@ impl CollectionEngine {
     }
     fn item_json(&self, index: &Index, item: &Item, loc: usize) -> Value {
         let entry = self.entry(item.id);
-        let label = if !item.name_verified {
+        let label = if !item.name_verified && !self.public_complete_collection {
             UNKNOWN_NAME_LABELS[loc].to_string()
         } else {
             item.labels.get(loc).filter(|s| !s.is_empty())
                 .or_else(|| item.labels.iter().find(|s| !s.is_empty()))
-                .cloned().unwrap_or_else(|| format!("Item {}", item.id))
+                .cloned().unwrap_or_else(|| if self.public_complete_collection {UNKNOWN_NAME_LABELS[loc].to_string()} else {format!("Item {}", item.id)})
         };
         json!({
             "itemId":item.id,
