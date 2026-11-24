@@ -182,3 +182,39 @@ test('field column integrity failure rejects and retries without falling back to
   assert.equal((await m.getItemFields([40005160],['names.ja']))[0].values['names.ja'],'ガラスの靴');
   assert(!requests.some(x=>x.includes('/id/')));
 });
+
+
+test('selective DB-01 fields and DB-02 links are independently lazy and preserve missing definitions',async()=>{
+  const {fetcher,requests}=site();
+  const db=await openPublicItemDetails('/Wand',fetcher);
+  const ids=[40005160,2130000001,99999999,40005160];
+  const fields=['names.ja','iconGuid','nativeCategory'];
+  const initial=await db.getSelectedItems(ids,fields);
+  assert.equal(initial[0].values['names.ja'],'ガラスの靴');
+  assert.equal(initial[1].values.nativeCategory,'Condition');
+  assert.equal(initial[1].values.iconGuid,null);
+  assert.equal(initial[2],null);
+  assert.deepEqual(initial[0],initial[3]);
+  assert(!Object.hasOwn(initial[0],'acquisition'));
+  assert(!Object.hasOwn(initial[0],'sourceRelations'));
+  assert(!requests.some(url=>url.includes('/acquisition/')));
+  const onlySources=await db.getSelectedItems(ids,fields,{sourceRelations:true});
+  assert.equal(onlySources[0].sourceRelations.itemId,'40005160');
+  assert(!Object.hasOwn(onlySources[0],'acquisition'));
+  assert(!requests.some(url=>url.includes('db01-item-acquisition-')));
+  const onlyAcquisition=await db.getSelectedItems(ids,fields,{acquisition:true});
+  assert.equal(onlyAcquisition[0].acquisition.itemId,'40005160');
+  assert(!Object.hasOwn(onlyAcquisition[0],'sourceRelations'));
+  const both=await db.getSelectedItems(ids,fields,{sourceRelations:true,acquisition:true});
+  assert.deepEqual(both[0].sourceRelations.categories,both[0].acquisition.categories);
+  assert.equal(both[0].currentAvailabilityVerified,false);
+  assert.equal(both[2],null);
+  assert(Object.isFrozen(both)&&Object.isFrozen(both[0])&&Object.isFrozen(both[0].values));
+  assert.equal(requests.filter(url=>url.includes('db01-item-acquisition-')).length,1);
+  assert.equal(requests.filter(url=>url.includes('db01-item-source-relations-')).length,1);
+  assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')||url.includes('/fields/names.en/')));
+  const fresh=site();
+  const freshDb=await openPublicItemDetails('/Wand',fresh.fetcher);
+  assert.deepEqual(await freshDb.getSelectedItems([99999999],fields,{sourceRelations:true,acquisition:true}),[null]);
+  assert(!fresh.requests.some(url=>url.includes('/acquisition/')));
+});
