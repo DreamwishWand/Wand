@@ -3,6 +3,7 @@
   import {base} from '$app/paths';
   import {localSaveSession} from '$lib/ui/local-save-session';
   import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences';
+  import DecorationDesign from '$lib/world/DecorationDesign.svelte';
   import MediaMapGridOverlay from '$lib/world/MediaMapGridOverlay.svelte';
   import SavedGridSourceCandidates from '$lib/world/SavedGridSourceCandidates.svelte';
   import {emptyWorldTimeline} from '$lib/world/saved-map-batch.ts';
@@ -13,6 +14,8 @@
   type Grid=Omit<PublicTerrainGrid,'data'|'palette'|'counts'|'sha256'>&{scope:string};
   type Raster={sizeX:number;sizeY:number;nativeFloorValues:Uint32Array};
   let worker:Worker|null=null,compare:Worker|null=null;
+  let designMode=false;
+  function nextDesignRequest(){return ++request;}
   let request=0,indexRequest=0,terrainRequest=0,shapeRequest=0,compareRequest=0;
   let grids:Grid[]=[],key='Meadow',worldScope='Village04',raster:Raster|null=null;
   $: scopes=[...new Set(grids.map(g=>g.scope))];
@@ -107,7 +110,7 @@
 </script>
 <svelte:head><title>World Editor · Dreamwish Wand</title></svelte:head>
 <section class="world-workspace">
-  <header><h1>World Editor <small>β</small></h1><a href={base+'/world/preview/'}>開発用原本ツール</a></header>
+  <header><h1>World Editor <small>β</small></h1><div class="mode-switch"><button type="button" aria-pressed={!designMode} on:click={()=>designMode=false}>セーブ編集</button><button type="button" aria-pressed={designMode} on:click={()=>designMode=true}>装飾設計</button></div><a href={base+'/world/preview/'}>開発用原本ツール</a></header>
   <nav aria-label="ワールド選択">
     <select aria-label="ワールド" value={worldScope} on:change={e=>chooseScope(e.currentTarget.value)}>
       {#each scopes as scope}<option value={scope}>{scopeNames[scope]??scope}</option>{/each}
@@ -118,7 +121,7 @@
   </nav>
   {#if loading}<p role="status">地形読み込み中…</p>{/if}
   {#if error}<p role="alert">{error}</p>{/if}
-  {#if selected&&raster}
+  {#if selected&&raster&&!designMode}
     <div class="workspace-grid">
       {#if !shapeMap||!terrainDisplayed}<div class="terrain-side">
         <MediaMapGridOverlay initialSchematic compact
@@ -131,15 +134,17 @@
         onCompare={()=>openSaveSession($localSaveSession.file,grids)}/>
     </div>
   {/if}
-  <p class="note">地形対応が確認できないGridは別図で表示します。</p>
+  <DecorationDesign active={designMode} grid={selected} {raster} {worker} {locale} nextRequest={nextDesignRequest}/>
+  {#if !designMode}<p class="note">地形対応が確認できないGridは別図で表示します。</p>{/if}
 </section>
 <style>
   .world-workspace{padding:12px;min-width:0;display:grid;gap:8px}
   header{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
   h1{font-size:18px;margin:0}small,a,.note{font-size:12px;color:var(--wand-muted,#b9abc7)}
   nav{display:flex;flex-wrap:wrap;gap:5px}
-  nav button,nav select{font:inherit;padding:6px 10px;color:inherit;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:6px}
-  nav button[aria-pressed=true]{border-color:var(--wand-accent);background:var(--wand-header-hover);color:var(--wand-text);box-shadow:inset 0 0 0 1px var(--wand-accent)}
+  .mode-switch{display:flex;gap:4px}
+  .mode-switch button,nav button,nav select{font:inherit;padding:6px 10px;color:inherit;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:6px}
+  .mode-switch button[aria-pressed=true],nav button[aria-pressed=true]{border-color:var(--wand-accent);background:var(--wand-header-hover);color:var(--wand-text);box-shadow:inset 0 0 0 1px var(--wand-accent)}
   nav button:not([aria-pressed=true]):hover{background:var(--wand-header-hover)}
   nav button:focus-visible,nav select:focus-visible{outline:2px solid var(--wand-focus);outline-offset:2px}
   .workspace-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:start}

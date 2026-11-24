@@ -1042,6 +1042,33 @@ try{
   const publicWorld=page.locator('.world-workspace');
   await publicWorld.getByRole('button',{name:'Peaceful Meadow',exact:true}).waitFor({timeout:20000});
   await publicWorld.locator('.media-map-overlay .cell-mask').waitFor({timeout:20000});
+  // No Save is needed to create a source-shaped design and retain it when
+  // switching areas or returning to the Save editor.
+  await publicWorld.getByRole('button',{name:'装飾設計',exact:true}).click();
+  const design=publicWorld.locator('.design-workspace');
+  await design.locator('.design-item').first().waitFor({timeout:30000});
+  await design.getByLabel('配置カテゴリ').selectOption('furniture');
+  await design.locator('.design-item').first().click();
+  await design.getByRole('button',{name:'配置終了'}).waitFor({timeout:30000});
+  const designSvg=design.locator('svg');
+  async function designClick(x,y){
+    const p=await designSvg.evaluate((svg,xy)=>{const pt=new DOMPoint(xy[0],xy[1]).matrixTransform(svg.getScreenCTM());return {x:pt.x,y:pt.y};},[x,y]);
+    await page.mouse.click(p.x,p.y);
+  }
+  await designClick(10.5,10.5);
+  await design.locator('.design-object').first().waitFor();
+  await design.getByRole('button',{name:'配置終了'}).click();
+  await design.getByLabel('設計を取り消す').click();
+  assert.equal(await design.locator('.design-object').count(),0);
+  await design.getByLabel('設計をやり直す').click();
+  assert.equal(await design.locator('.design-object').count(),1);
+  await publicWorld.getByRole('button',{name:'Plaza',exact:true}).click();
+  await design.locator('.design-plot').waitFor({timeout:20000});
+  assert.equal(await design.locator('.design-object').count(),0);
+  await publicWorld.getByRole('button',{name:'Peaceful Meadow',exact:true}).click();
+  await design.locator('.design-object').first().waitFor({timeout:20000});
+  await publicWorld.getByRole('button',{name:'セーブ編集',exact:true}).click();
+  await publicWorld.locator('.media-map-overlay .cell-mask').waitFor({timeout:20000});
   const worldSave={GameInfo:{Version:1262},Player:{},World:{GridCollection:{Grids:{
     "101":{ID:101,GridDefaultLayoutPath:'SceneLayouts/Village04/DefaultVillageLayout01-MeadowGrids.json',
       GridDataPath:'GridData/Villages/Village04-MeadowLevel-GridData.json',NextGridObjectID:10,
