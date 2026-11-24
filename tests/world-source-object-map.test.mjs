@@ -254,3 +254,25 @@ test('group rotation uses native cardinal direction and rotated bounding dimensi
  assert.deepEqual(back.map(o=>[o.x,o.y,o.orientation]),[[2,3,'GridOrientation_Down'],[8,6,'GridOrientation_Down']]);
  assert.equal(groupTargets(m,[a,{...b,editRestrictions:{rotate:'denied'}}],0,0,1),null);
 });
+
+import {emptyDesign,currentDesign,placeDesign,transformDesign,removeDesign,travelDesign,designShapeMap} from '../src/lib/world/design-layout.ts';
+test('independent decoration design retains unique local IDs and reversible changes',()=>{
+ const shape={width:2,height:1,runs:[{x:0,y:0,width:2}],cellCount:2,path:'M0 0h2v1h-2Z'};
+ const g={itemId:40000001,name:'Furniture',layer:'furniture',surfaceCapable:false,shapes:{'40000001:8':shape,'40000001:4':{...shape,width:1,height:2}}};
+ let t=emptyDesign();
+ t=placeDesign(t,g,1,2,2,10,10);assert.ok(t);
+ t=placeDesign(t,g,4,2,2,10,10);assert.ok(t);
+ assert.deepEqual(currentDesign(t).map(o=>o.id),[1,2]);
+ const moved=transformDesign(t,1,g,3,3,1,10,10);assert.ok(moved);
+ assert.deepEqual(currentDesign(moved)[0],{id:1,itemId:40000001,x:3,y:3,orientation:1});
+ assert.deepEqual(currentDesign(travelDesign(moved,-1)),currentDesign(t));
+ const removed=removeDesign(moved,1,g);assert.equal(currentDesign(removed).length,1);
+ const again=placeDesign(removed,g,2,2,2,10,10);assert.equal(currentDesign(again).at(-1).id,3);
+ assert.equal(placeDesign(t,g,9,0,2,10,10),null);
+ assert.equal(transformDesign(t,1,{...g,editRestrictions:{move:'denied'}},2,3,2,10,10),null);
+ const map=designShapeMap(currentDesign(t),new Map([[g.itemId,g]]),{layoutId:'L',gridIdNative:1,gridDataPath:'D',factor:1});
+ assert.equal(map.objects.length,2);assert.equal(map.objects[0].shapeKey,'40000001:8');
+ const road={...g,itemId:40100001,layer:'ground',shapes:{'40100001:8':shape}};
+ const r=placeDesign(emptyDesign(),road,0,0,2,10,10);
+ assert.equal(placeDesign(r,road,0,0,2,10,10),null);
+});
