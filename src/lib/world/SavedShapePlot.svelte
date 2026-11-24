@@ -1,5 +1,9 @@
 <script lang="ts">
-  import {onDestroy} from 'svelte';
+  import {onMount,onDestroy} from 'svelte';
+  import {base} from '$app/paths';
+  import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences';
+  import {openPublicItemMaster,type PublicCompleteItemMaster} from '$lib/items/public-item-master';
+  import {searchSavedObjects,worldObjectName,objectFocus,type WorldNames} from './world-object-search.ts';
   import {defaultMapCamera,maxMapZoom,zoomMapCamera,panMapCamera,mapCameraViewBox,wheelMapCamera,createMapPanGesture} from './map-camera.ts';
 
   import {emptyWorldTimeline,currentWorldEdits,travelWorldTimeline,projectWorldEdits,stageWorldEdit,WORLD_BATCH_LIMIT} from './saved-map-batch.ts';
@@ -10,6 +14,33 @@
   import {sourceOrientationAngle} from './source-object-map.ts';
   export let map:SavedShapeMap;
   export let file:File|null=null;
+  let locale:WandLanguage='ja';
+  let names:WorldNames=new Map();
+  let master:Promise<PublicCompleteItemMaster>|null=null;
+  let nameEpoch=0,query='',searchOpen=false,visibleResults=60;
+  async function loadNames(language:WandLanguage){
+    const epoch=++nameEpoch;
+    try{
+      master??=openPublicItemMaster(base,fetch,{scope:'complete',gameVersion:'1.26.2'});
+      const rows=await (await master).getBrowseNames(language);
+      if(epoch===nameEpoch)names=new Map(rows);
+    }catch{if(epoch===nameEpoch){names=new Map();master=null;}}
+  }
+  onMount(()=>{const unwatch=watchWandLanguage(next=>{locale=next;void loadNames(next);});return()=>{nameEpoch++;unwatch();};});
+  $: matches=searchSavedObjects(objects,names,query,layer);
+  $: matchIds=new Set(matches.map(o=>o.localOrdinal));
+  function setSearch(value:string){query=value;visibleResults=60;searchOpen=true;}
+  function selectFromSearch(o:SavedShapeObject){if(busy)return;selected=o.localOrdinal;hits=[o];cameraState=objectFocus(map,o,extent,maxZoom);searchOpen=false;}
+  function rotateDraft(delta:number){if(busy||exclusiveClass||!isCardinal(draftOrientation))return;draftOrientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(draftOrientation)+delta+4)%4];}
+  function keyMap(event:KeyboardEvent){
+    if(busy)return;
+    if(event.key==='Escape'){resetDraft(chosen);return;}
+    if(!chosen||!file||!worldTransformEligible(chosen))return;
+    if(event.key.toLowerCase()==='r'){event.preventDefault();rotateDraft(event.shiftKey?-1:1);return;}
+    if(event.key==='Enter'&&editPlan&&!placing){event.preventDefault();stageCurrent();return;}
+    const delta:Record<string,[number,number]>={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]};
+    const d=delta[event.key];if(d&&draftX!==undefined&&draftY!==undefined){event.preventDefault();draftX+=d[0];draftY+=d[1];}
+  }
   let editWorker:Worker|null=null;
   let editEpoch=0;
   let busy=false,editError='',copyUrl='',copyName='',checkedSignature='';
@@ -168,9 +199,25 @@
   <div class="controls" role="group" aria-label="セーブ図の選択レイヤー">
     {#each layers as l}<button type="button" aria-pressed={layer===l} on:click={()=>chooseLayer(l)}>{MAP_LAYER_LABELS[l]}</button>{/each}
   </div>
+  <div class="object-search">
+    <input type="search" aria-label="配置済み家具を検索" placeholder="配置済み家具を検索" value={query} on:input={e=>setSearch(e.currentTarget.value)} on:focus={()=>searchOpen=true}/>
+    <button type="button" aria-expanded={searchOpen} on:click={()=>searchOpen=!searchOpen}>{searchOpen?'閉じる':'一覧'}</button>
+    {#if query}<button type="button" aria-label="検索を解除" on:click={()=>setSearch('')}>×</button>{/if}
+    {#if searchOpen}
+      <div class="object-results">
+        {#each matches.slice(0,visibleResults) as o (o.localOrdinal)}
+          <button type="button" aria-pressed={selected===o.localOrdinal} on:click={()=>selectFromSearch(o)}>
+            <span>{worldObjectName(o,names)}</span><small>{o.x}, {o.y}</small>
+          </button>
+        {/each}
+        {#if !matches.length}<p>該当する配置なし</p>{/if}
+        {#if matches.length>visibleResults}<button type="button" on:click={()=>visibleResults+=60}>続きを表示</button>{/if}
+      </div>
+    {/if}
+  </div>
   <button type="button" class="plot" class:zoomed={zoom>1} aria-label="セーブ内の形状候補を選択"
     on:click={pick} on:wheel|nonpassive={wheel} on:pointerdown={startPan} on:pointermove={follow}
-    on:pointerup={finishPan} on:pointercancel={finishPan} on:pointerleave={()=>{gesture.leave();hoverPoint=null;}}>
+    on:pointerup={finishPan} on:pointercancel={finishPan} on:pointerleave={()=>{gesture.leave();hoverPoint=null;}} on:keydown={keyMap}>
     <svg bind:this={svg} {viewBox} aria-hidden="true">
       <defs><pattern id="saved-shape-cells" width="1" height="1" patternUnits="userSpaceOnUse">
         <path d="M1 0H0V1" fill="none" stroke="#8f9aa8" stroke-opacity=".35" stroke-width=".04"/>
@@ -179,7 +226,7 @@
       {#if extent.w/zoom<160&&extent.h/zoom<160}<rect x={extent.x} y={extent.y} width={extent.w} height={extent.h} fill="url(#saved-shape-cells)"/>{/if}
       {#each objects as o (o.localOrdinal)}
         {@const shape=o.shapeKey?map.shapes[o.shapeKey]:null}
-        <g class="saved-object" class:staged-object={stagedOrdinals.has(o.localOrdinal)} data-local-ordinal={o.localOrdinal} transform={'translate('+o.x+' '+o.y+')'}>
+        <g class="saved-object" class:staged-object={stagedOrdinals.has(o.localOrdinal)} class:search-dim={Boolean(query.trim())&&!matchIds.has(o.localOrdinal)&&selected!==o.localOrdinal} data-local-ordinal={o.localOrdinal} transform={'translate('+o.x+' '+o.y+')'}>
           {#if shape}
             <path class="saved-object-shape" d={shape.path} fill={MAP_LAYER_COLORS[o.layer]} fill-opacity={selected===o.localOrdinal?.85:matchesSelectionLayer(o,layer)?.48:.24}
               stroke={selected===o.localOrdinal?'#fff':MAP_LAYER_COLORS[o.layer]} stroke-width="1" vector-effect="non-scaling-stroke"/>
@@ -201,17 +248,17 @@
   </button>
   {#if hits.length}<div class="controls" role="group" aria-label="重なるセーブ内オブジェクト">
     {#each hits as hit (hit.localOrdinal)}
-      <button type="button" aria-pressed={selected===hit.localOrdinal} on:click={()=>selected=hit.localOrdinal}>{hit.name??'Item '+hit.itemId}</button>
+      <button type="button" aria-pressed={selected===hit.localOrdinal} on:click={()=>selected=hit.localOrdinal}>{worldObjectName(hit,names)}</button>
     {/each}
   </div>{/if}
-  {#if chosen}<p class="selected-saved-object">{chosen.name??'Item '+chosen.itemId} ／ ({chosen.x}, {chosen.y}) ／ {chosen.orientation??'向き不明'}</p>{/if}
+  {#if chosen}<p class="selected-saved-object">{worldObjectName(chosen,names)} ／ ({chosen.x}, {chosen.y}) ／ {chosen.orientation??'向き不明'}</p>{/if}
   {#if chosen&&file&&worldTransformEligible(chosen)}
     <div class="transform-controls">
       <div class="controls">
         <button type="button" aria-pressed={placing} disabled={busy} on:click={()=>{placing=!placing;hoverPoint=null;}}>{placing?'移動先を選択中':'マップで移動先を選択'}</button>
         <label>X <input type="number" aria-label="移動先X" bind:value={draftX} step="1" disabled={busy}/></label>
         <label>Y <input type="number" aria-label="移動先Y" bind:value={draftY} step="1" disabled={busy}/></label>
-        {#if !exclusiveClass&&isCardinal(chosen.orientation)}<label>向き <select aria-label="編集後の向き" bind:value={draftOrientation} disabled={busy}>
+        {#if !exclusiveClass&&isCardinal(chosen.orientation)}<button type="button" aria-label="左回転" disabled={busy} on:click={()=>rotateDraft(-1)}>↶</button><button type="button" aria-label="右回転" disabled={busy} on:click={()=>rotateDraft(1)}>↷</button><label>向き <select aria-label="編集後の向き" bind:value={draftOrientation} disabled={busy}>
           {#each CARDINAL_ORIENTATIONS as direction}<option value={direction}>{['上','右','下','左'][CARDINAL_ORIENTATIONS.indexOf(direction)]}</option>{/each}
         </select></label>{/if}
         <button type="button" disabled={busy||!editPlan} on:click={()=>resetDraft(chosen)}>元に戻す</button>
@@ -267,6 +314,12 @@
   .exclusive-warning{color:#ef5350}
   .world-edit-history{display:grid;gap:5px;border:1px solid #ffffff35;border-radius:5px;padding:8px}
   .staged-list{display:grid;gap:4px;max-height:180px;overflow:auto;min-width:0}
+  .object-search{display:flex;gap:5px;flex-wrap:wrap}
+  .object-search input{flex:1;width:auto;min-width:120px}
+  .object-results{flex-basis:100%;max-height:220px;overflow:auto;display:grid;gap:3px}
+  .object-results button{display:flex;justify-content:space-between;gap:8px;text-align:left}
+  .object-results small{opacity:.65;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .search-dim{opacity:.22}
   .staged-warning{color:#efc23e}
   .staged-object{opacity:.9}
   .transform-controls{display:grid;gap:8px;padding:8px;border:1px solid #ffffff35;border-radius:5px}

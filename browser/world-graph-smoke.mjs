@@ -915,6 +915,12 @@ try{
     assert.equal(await candidates.locator('.saved-object-shape').count(),2);
     assert.equal(await candidates.locator('.saved-object').first().getAttribute('transform'),'translate(4 5)');
     const savedPlot=candidates.locator('.saved-shape-plot');
+    await savedPlot.getByLabel('配置済み家具を検索').fill('SyntheticSourceObject');
+    await savedPlot.locator('.object-results button').first().click();
+    await savedPlot.locator('.selected-saved-object').waitFor();
+    await savedPlot.getByLabel('検索を解除').click();
+    await savedPlot.getByRole('button',{name:'閉じる',exact:true}).click();
+    await savedPlot.getByRole('button',{name:'全体',exact:true}).click();
     await savedPlot.locator('svg').scrollIntoViewIfNeeded();
     const position=await savedPlot.locator('svg').evaluate(svg=>{
       const p=new DOMPoint(4.5,5.5).matrixTransform(svg.getScreenCTM());return {x:p.x,y:p.y};});
@@ -937,8 +943,11 @@ try{
     assert.equal(await savedPlot.locator('.saved-object[data-local-ordinal="1"]').getAttribute('transform'),'translate(4 5)');
     await savedPlot.getByRole('button',{name:'配置変更をやり直す'}).click();
     assert.equal(await savedPlot.locator('.saved-object[data-local-ordinal="1"]').getAttribute('transform'),'translate(6 5)');
-    const second=await savedPlot.locator('svg').evaluate(svg=>{const p=new DOMPoint(17.5,3.5).matrixTransform(svg.getScreenCTM());return {x:p.x,y:p.y};});
-    await page.mouse.click(second.x,second.y);
+    // Undo/redo buttons may scroll the map out of view. Select the second
+    // object through the new placed-object picker instead of stale screen coordinates.
+    await savedPlot.getByLabel('配置済み家具を検索').fill('SyntheticSourceObject');
+    await savedPlot.locator('.object-results button').filter({hasText:'17, 3'}).click();
+    await savedPlot.locator('.selected-saved-object').filter({hasText:'(17, 3)'}).waitFor();
     await savedPlot.getByLabel('移動先X').fill('14');
     await savedPlot.getByRole('button',{name:'配置変更を追加'}).click();
     assert.equal(await savedPlot.locator('.staged-edit').count(),2);
