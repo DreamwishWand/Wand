@@ -347,7 +347,13 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
         universes:r.universeTagIds,universeStatus:r.universeSourceStatus,iconGuid:r.iconGuid,
         sourceSetItemId:r.sourceSetItemId,
         sourceSetNames:r.sourceSetItemId===null?{}:byId.get(r.sourceSetItemId)?.names??{},
-        prefabGuid:r.artwork.prefabGuid??null});
+        prefabGuid:r.artwork.prefabGuid??null,nativeKey:r.nativeKey,
+        footprintSignature:r.sourceAttributes?.GridAreaData&&
+          Number.isSafeInteger(r.sourceAttributes.GridAreaData.SizeX)&&
+          Number.isSafeInteger(r.sourceAttributes.GridAreaData.SizeY)&&
+          Array.isArray(r.sourceAttributes.GridAreaData.Layers)&&
+          !r.sourceAttributes.GridAreaData._unresolvedFields?.length
+          ?hash(json(r.sourceAttributes.GridAreaData)):null});
     }
     const codes=sourceCodes(r);if(codes.length)f.categoryItems.push([i,codes]);
     if(r.universeTagIds.length){

@@ -39,6 +39,14 @@ test('current DB-01 projection preserves all special-universe IDs through series
   assert.ok(groups.length>1);
   const byKind={};for(const g of groups)byKind[g.kind]=(byKind[g.kind]??0)+g.items.length;
   const variants=groups.flatMap(g=>designTiles(g.items)).filter(t=>t.items.length>1);
-  console.log('EXPLORE_SERIES_CENSUS '+JSON.stringify({universe,total:rows.length,shelves:groups.length,byKind,variantGroups:variants.length,variantItems:variants.reduce((n,t)=>n+t.items.length,0)}));
+  console.log('EXPLORE_SERIES_CENSUS '+JSON.stringify({universe,total:rows.length,shelves:groups.length,byKind,variantGroups:variants.length,variantItems:variants.reduce((n,t)=>n+t.items.length,0),sampleVariants:variants.slice(0,5).map(t=>t.items.map(i=>i.names.en)),sourceKeySamples:rows.filter(i=>/^(?:Black|White|Dark Wood|Pale Wood) /i.test(i.names.en??'')).slice(0,12).map(i=>({name:i.names.en,key:i.nativeKey,footprint:!!i.footprintSignature,prefab:!!i.prefabGuid}))}));
  }
+});
+
+test('distinct prefab color variants require exact original key stem and full matching footprint',()=>{
+ const a=item(1,'Black Dining Table',2040000103,[],'Furniture',{nativeKey:'DiningTable_Black',footprintSignature:'grid1',prefabGuid:'a',tags:[['color','Black'],['furnitureKind','Table']]});
+ const b=item(2,'White Dining Table',2040000103,[],'Furniture',{nativeKey:'DiningTable_White',footprintSignature:'grid1',prefabGuid:'b',tags:[['color','White'],['furnitureKind','Table']]});
+ assert.deepEqual(designTiles([a,b]).map(t=>t.items.map(i=>i.itemId)),[[1,2]]);
+ assert.equal(designTiles([a,{...b,footprintSignature:'grid2'}]).length,2);
+ assert.equal(designTiles([a,{...b,nativeKey:'Different_White'}]).length,2);
 });
