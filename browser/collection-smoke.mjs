@@ -615,7 +615,7 @@ try{
   await page.waitForFunction(()=>document.querySelector('.item-card-copy strong')?.textContent?.trim()==='Glass Shoe');
   await setItemLanguage('日本語');
   await page.waitForFunction(()=>document.querySelector('.item-card-copy strong')?.textContent?.trim()==='ガラスの靴');
-  assert.match(await page.locator('.item-card').first().innerText(),/家具|Furniture/);
+  assert.equal(await page.locator('.item-card-copy strong').first().innerText(),'ガラスの靴');
   // A local favorite must be searchable independently of ownership and persist
   // through Rust/WASM -> IndexedDB. Unstarring the only match removes it.
   const starFilter=page.getByRole('button',{name:'お気に入りのみ表示'});
