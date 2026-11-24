@@ -329,3 +329,33 @@ test('overloaded native declarations preserve complete original results and form
   assert((await db.getItemReferences(1540000101,'incoming')).some(([id,p])=>id===2050400000&&p==='source.Locations[0].Scene'));
   assert((await db.getItemReferences(2100000000,'outgoing')).some(([id,p])=>id===2000100009&&p==='source.TablesOfValues[1].Values[0].Key'));
 });
+
+
+test('full root scalar source census preserves signed values, explicit presence, ordered tags and asset keys',async()=>{
+  const requests=[];
+  const db=await openPublicItemMaster('',async url=>{requests.push(url);return fetcher(url)},{scope:'complete'});
+  const c=db.release.reviewedRootScalarCoverage;
+  assert.equal(c.groupCount,557);
+  assert.equal(c.fieldPairs,206619);
+  assert.equal(c.occurrences,206968);
+  assert.equal(c.leafCount,261397);
+  assert.equal(c.identityOccurrences,78134);
+  assert.equal(c.existingPairs+c.addedPairs,c.fieldPairs);
+  assert(c.addedPairs>0);
+  const [character,crop,negative,mission,furniture,clothes]=await db.getItemFields(
+    [10000001,30400010,30400025,2070000620,40000059,50000212],
+    ['source.BoardGameAIConfig','source.GlotID','source.Tags','source.HarvestPrefabAddress',
+     'source.NumberOfGrowthPeriods','source.HasGrowthBoost','source.AvailableDescription',
+     'source.IntroDialogue','source.IconAddress','source.MaleIconAddress']);
+  assert.equal(character.values['source.BoardGameAIConfig'],'DefaultAI');
+  assert.equal(character.values['source.GlotID'],508889);
+  assert.deepEqual(character.values['source.Tags'],[2000500051,2001200066]);
+  assert.equal(crop.values['source.HarvestPrefabAddress'],'guid:0ec80682be37fd24e80be3ee553693c9');
+  assert.equal(crop.values['source.HasGrowthBoost'],true);
+  assert.equal(negative.values['source.NumberOfGrowthPeriods'],-1);
+  assert.equal(mission.values['source.AvailableDescription'],'Story/MRQS010_Welcome.Story!MRQS010_Welcome_AvailableDescription');
+  assert.equal(mission.values['source.IntroDialogue'],'guid:80e4636849f13d840bc645e3061ef3ea');
+  assert.deepEqual(furniture.values['source.Tags'],[2000300000,2000300003,2000700008,2000200001,2000200000,2000400003,2000400006,2000700000,2001200028]);
+  assert.equal(clothes.values['source.MaleIconAddress'],'guid:e3509f066e496c64f8a846856c181020');
+  assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
+});
