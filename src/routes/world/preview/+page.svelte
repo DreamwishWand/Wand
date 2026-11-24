@@ -7,6 +7,7 @@
   import MediaMapGridOverlay from '$lib/world/MediaMapGridOverlay.svelte';
   import NativeTerrainGridOverview from '$lib/world/NativeTerrainGridOverview.svelte';
   import NativeTerrainFloorMatchPanel from '$lib/world/NativeTerrainFloorMatchPanel.svelte';
+  import type {SavedShapeMap} from '$lib/world/saved-shape-map.ts';
   import SavedGridSourceCandidates from '$lib/world/SavedGridSourceCandidates.svelte';
   import type {
     SourceGridQuery,SavedGridSourceCandidates as SaveCandidateResult
@@ -146,6 +147,8 @@
   let floorLayerInspecting=false;
   let floorLayerInspectionError='';
   let savedSourceCandidates:SaveCandidateResult|null=null;
+  let savedShapeMap:SavedShapeMap|null=null;
+  let savedShapeRequest=-1;
   let saveComparisonWorker:Worker|null=null;
   let saveComparisonLoading=false;
   let saveComparisonError='';
@@ -398,6 +401,7 @@
     saveComparisonWorker?.terminate();
     saveComparisonWorker=null;
     savedSourceCandidates=null;
+    savedShapeMap=null;savedShapeRequest=-1;
     saveComparisonLoading=false;
     saveComparisonError='';
     saveComparisonRevision=-1;
@@ -469,6 +473,11 @@
         return;
       }
       savedSourceCandidates=receipt;
+      if(worker&&receipt.points.length){
+        savedShapeRequest=++requestId;
+        worker.postMessage({command:'saved-shapes',requestId:savedShapeRequest,
+          viewKey:receipt.viewKey,gridIdNative:receipt.nativeGridId,points:receipt.points});
+      }
     }
     own.onmessage=event=>done(event.data);
     own.onerror=event=>{event.preventDefault();done({kind:'error'});};
@@ -885,6 +894,17 @@
     owned.onmessage = (message:MessageEvent) => {
       if (owned !== worker) return;
       const result = message.data;
+      if(result?.kind==='saved-shapes'||(result?.kind==='error'&&result.requestId===savedShapeRequest)){
+        if(result.requestId!==savedShapeRequest||!savedSourceCandidates||
+          saveComparisonRevision!==$localSaveSession.revision)return;
+        const map=result.result as SavedShapeMap|undefined;
+        const layout=layouts.find(v=>v.viewKey===selectedViewKey);
+        const grid=layout?.grids.find(g=>String(g.gridIdNative)===selectedGridId);
+        if(result.kind==='saved-shapes'&&map&&map.layoutId===layout?.layoutId&&
+          map.gridIdNative===grid?.gridIdNative&&map.gridDataPath===grid?.gridDataPath&&
+          map.objects.length===savedSourceCandidates.points.length)savedShapeMap=map;
+        return;
+      }
       if(result?.kind==='floor-layer-inspect'||
          (result?.kind==='error'&&
           result.requestId===floorLayerInspectionRequestId)){
@@ -1450,7 +1470,7 @@
         {:else if terrainRasterStatus}
           <p class="note">原本地形全体図：{terrainRasterStatus}</p>
         {/if}
-        <SavedGridSourceCandidates
+        <SavedGridSourceCandidates shapeMap={savedShapeMap}
           receipt={savedSourceCandidates?.viewKey===selectedViewKey&&
             savedSourceCandidates.nativeGridId===Number(selectedGridId)&&
             saveComparisonRevision===$localSaveSession.revision

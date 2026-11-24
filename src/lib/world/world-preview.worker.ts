@@ -8,6 +8,8 @@
 import { openLocalWorldZip } from './local-snapshot.ts';
 import { WorldSourceLoadEpoch } from './world-source-load-epoch.ts';
 import { getNativeTerrainWindow,getNativeTerrainRaster } from './native-terrain-preview.ts';
+import {buildSavedShapeMap,parseSavedShapePoints} from './saved-shape-map.ts';
+import type {SavedNumericPoint} from './saved-grid-source-candidates.ts';
 import {buildSourceObjectMap} from './source-object-map.ts';
 import {getNativeRegionGridAtlasPage} from './native-region-grid-atlas.ts';
 import {searchNativeFloorItems,getNativeFloorMatchResult} from './native-floor-match.ts';
@@ -42,6 +44,7 @@ type Request =
       viewKey:string;gridIdNative:number;itemId:number;orientationCode:number }
   | { command:'floor-layer-inspect';requestId:number;viewKey:string;
       gridIdNative:number;x:number;y:number }
+  | { command:'saved-shapes';requestId:number;viewKey:string;gridIdNative:number;points:SavedNumericPoint[] }
   | { command:'terrain-raster'; requestId:number; viewKey:string; gridIdNative:number }
   | { command:'region-atlas'; requestId:number; regionKey:string;offset:number }
   | { command:'view'; requestId:number; viewKey:string;
@@ -171,6 +174,10 @@ function parseRequest(data:unknown): Request {
     data.offset<=65536)
     return {command:'region-atlas',requestId,
       regionKey:data.regionKey,offset:data.offset};
+  if(data.command==='saved-shapes'&&typeof data.viewKey==='string'&&data.viewKey.length>0&&
+    data.viewKey.length<=2048&&nonnegative(data.gridIdNative)&&data.gridIdNative<=0xffffffff)
+    return {command:'saved-shapes',requestId,viewKey:data.viewKey,gridIdNative:data.gridIdNative,
+      points:parseSavedShapePoints(data.points)};
   if(data.command==='terrain-raster'&&
       typeof data.viewKey==='string'&&data.viewKey.length>0&&
       data.viewKey.length<=2048&&
@@ -301,6 +308,12 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
         message.x,message.y);
       worker.postMessage({kind:'floor-layer-inspect',requestId,result});
       return;
+    }
+    if(message.command==='saved-shapes'){
+      if(!sourceView.grids.some(g=>g.gridIdNative===message.gridIdNative))
+        throw new TypeError('DB04_SAVE_SHAPE_GRID_MISSING');
+      const result=buildSavedShapeMap(catalog,sourceView.layoutId,message.gridIdNative,message.points);
+      worker.postMessage({kind:'saved-shapes',requestId,result});return;
     }
     if(message.command==='terrain-raster'){
       const grid=sourceView.grids.find(

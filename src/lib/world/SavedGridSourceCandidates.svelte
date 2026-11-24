@@ -1,6 +1,9 @@
 <script lang="ts">
+  import SavedShapePlot from './SavedShapePlot.svelte';
+  import type {SavedShapeMap} from './saved-shape-map.ts';
   import type {SavedGridSourceCandidates} from './saved-grid-source-candidates.ts';
   export let receipt:SavedGridSourceCandidates|null=null;
+  export let shapeMap:SavedShapeMap|null=null;
   export let available=false;
   export let working=false;
   export let errorMessage='';
@@ -78,10 +81,11 @@
       {/if}
     </div>
     {#if receipt.points.length>0}
-      <div class="numeric-map">
+      {#if shapeMap}<SavedShapePlot map={shapeMap}/>
+      {:else}<div class="numeric-map">
         <canvas use:draw={receipt}
           aria-label="セーブ内の参照パス一致候補のX/Y数値座標図。地形図ではありません"></canvas>
-      </div>
+      </div>{/if}
       <p class="axis">セーブ記録のX/Y数値座標。原本地形の座標には投影していません。</p>
       {#if receipt.dataSampled}
         <p class="note">表示数に上限があるため、座標図は先頭の一部を示しています。</p>
