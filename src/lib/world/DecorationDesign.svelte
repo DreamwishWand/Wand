@@ -6,7 +6,7 @@
  import {nativeSourceFloorTint} from './native-terrain-canvas.ts';
  import type {WandLanguage} from '../ui/preferences.ts';
  import {itemMedia} from '../media/item-media.ts';
- import {emptyDesign,currentDesign,travelDesign,placeDesign,transformDesign,removeDesign,designCandidateValid,designShapeMap,type DesignCatalogItem,type DesignItemGeometry,type DesignTimeline} from './design-layout.ts';
+ import {emptyDesign,currentDesign,travelDesign,placeDesign,transformDesign,removeDesign,designCandidateValid,designShapeMap,serializeDesign,parseDesign,restoreDesign,designItemCounts,DESIGN_FILE_LIMIT,type DesignPlacement,type DesignCatalogItem,type DesignItemGeometry,type DesignTimeline} from './design-layout.ts';
  import {defaultMapCamera,maxMapZoom,zoomMapCamera,panMapCamera,mapCameraViewBox,mapViewportBounds,wheelMapCamera,createMapPanGesture} from './map-camera.ts';
  import {mapPainterOrder,MAP_LAYER_COLORS,MAP_LAYER_LABELS,matchesSelectionLayer,type MapSelectionLayer} from './source-map-layers.ts';
  import {savedShapesAt,visibleSavedObjects} from './saved-shape-map.ts';
@@ -28,12 +28,52 @@
  let camera=defaultMapCamera(),svg:SVGSVGElement;
  const gesture=createMapPanGesture();
  let subscribed:Worker|null=null,lastGrid='';
+ let importInput:HTMLInputElement,showCounts=false,reading=false,importEpoch=0;
+ let pendingImport:{id:number;key:string;placements:DesignPlacement[];timeline:DesignTimeline}|null=null;
+ const labels={
+  ja:['保存','読み込み','必要な家具','設計を読み込めませんでした。対象エリアと家具の形状を確認してください。','現在のエリアの設計を置き換えますか？','読み込み中…'],
+  en:['Save design','Open design','Required items','Unable to open design. Check the area and item geometry.','Replace the current area design?','Opening…'],
+  fr:['Enregistrer','Ouvrir','Objets nécessaires','Impossible d’ouvrir le plan. Vérifiez la zone et les objets.','Remplacer le plan de la zone ?','Ouverture…'],
+  it:['Salva','Apri','Oggetti necessari','Impossibile aprire il progetto. Controlla area e oggetti.','Sostituire il progetto dell’area?','Apertura…'],
+  de:['Speichern','Öffnen','Benötigte Objekte','Entwurf konnte nicht geöffnet werden. Bereich und Objekte prüfen.','Entwurf dieses Bereichs ersetzen?','Wird geöffnet…'],
+  'es-ES':['Guardar','Abrir','Objetos necesarios','No se pudo abrir el diseño. Comprueba la zona y los objetos.','¿Reemplazar el diseño de esta zona?','Abriendo…'],
+  'zh-CN':['保存设计','打开设计','所需物品','无法打开设计，请检查区域和物品形状。','替换当前区域的设计？','正在打开…'],
+  'pt-BR':['Salvar','Abrir','Itens necessários','Não foi possível abrir o projeto. Verifique a área e os itens.','Substituir o projeto da área?','Abrindo…']
+ } as const;
+ $: words=labels[locale]??labels.en;
+ $: busyImport=reading||pendingImport!==null;
+ $: counts=designItemCounts(placements);
+ $: names=new Map(catalog.map(o=>[o.itemId,o.name]));
+ $: if(active)loadImages([...counts.keys()].map(itemId=>({itemId})));
+ function exportFile(){
+  if(!grid)return;
+  const url=URL.createObjectURL(new Blob([serializeDesign(timeline,grid)],{type:'application/json'}));
+  const a=document.createElement('a');a.href=url;a.download='wand-world-design-'+grid.key.replace(/[^a-zA-Z0-9_-]/g,'_')+'.json';a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+ }
+ async function importFile(event:Event){
+  const input=event.currentTarget as HTMLInputElement,file=input.files?.[0];input.value='';
+  if(!file||!grid||!worker||busyImport)return;
+  const target=grid,original=timeline,own=worker,epoch=++importEpoch;
+  reading=true;error='';
+  try{
+   if(file.size>DESIGN_FILE_LIMIT)throw Error('size');
+   const incoming=parseDesign(await file.text(),target);
+   if(epoch!==importEpoch||grid?.key!==target.key||timeline!==original||worker!==own||!active)return;
+   if(currentDesign(original).length&&!window.confirm(words[4]))return;
+   cancel();
+   const id=nextRequest();
+   pendingImport={id,key:target.key,placements:incoming,timeline:original};
+   own.postMessage({command:'design-shapes',requestId:id,key:target.key,itemIds:[...new Set(incoming.map(p=>p.itemId))]});
+  }catch{if(epoch===importEpoch){pendingImport=null;error=words[3];}}
+  finally{if(epoch===importEpoch)reading=false;}
+ }
  const normalize=(s:string)=>s.normalize('NFKC').toLocaleLowerCase().trim();
  $: terms=normalize(query).split(/\s+/).filter(Boolean);
  $: filtered=catalog.filter(o=>(layer==='all'||o.layer===layer)&&terms.every(t=>normalize(o.name).includes(t)));
  $: visibleCatalog=filtered.slice(0,limit);
  $: if(active)loadImages(visibleCatalog);
- async function loadImages(items:DesignCatalogItem[]){
+ async function loadImages(items:readonly {itemId:number}[]){
    for(const o of items){
      if(imagePending.has(o.itemId))continue;
      imagePending.add(o.itemId);
@@ -45,7 +85,7 @@
  }
  onDestroy(()=>subscribed?.removeEventListener('message',receive));
  $: if(grid?.key!==lastGrid){
-   lastGrid=grid?.key??'';selected=null;placing=null;hover=null;moveMode=false;loadingShape=false;shapeId=0;error='';camera=defaultMapCamera();
+   lastGrid=grid?.key??'';importEpoch++;reading=false;pendingImport=null;selected=null;placing=null;hover=null;moveMode=false;loadingShape=false;shapeId=0;error='';camera=defaultMapCamera();
  }
  $: if(active&&grid&&worker&&locale!==catalogLocale)requestCatalog(grid,locale,worker);
  function requestCatalog(g:PublicTerrainGridRef,language:WandLanguage,w:Worker){
@@ -54,6 +94,17 @@
  }
  function receive(e:MessageEvent){
    const d=e.data;
+   if(pendingImport&&d?.requestId===pendingImport.id){
+     const pending=pendingImport;pendingImport=null;
+     if(!grid||!active||grid.key!==pending.key||timeline!==pending.timeline)return;
+     if(d.kind!=='design-shapes'||d.key!==grid.key||!Array.isArray(d.result)){error=words[3];return;}
+     const incoming=new Map<number,DesignItemGeometry>((d.result as DesignItemGeometry[]).map(g=>[g.itemId,g]));
+     const next=restoreDesign(timeline,pending.placements,incoming,width,height);
+     if(!next){error=words[3];return;}
+     const factor=String(grid.factor);
+     cache={...cache,[factor]:new Map([...(cache[factor]??new Map<number,DesignItemGeometry>()),...incoming])};
+     selected=null;cancel();save(next);return;
+   }
    if(d?.requestId===catalogId){
      catalogLoading=false;
      if(d.kind==='design-catalog'&&Array.isArray(d.items)){catalog=d.items;limit=80;}
@@ -69,7 +120,7 @@
    }
  }
  function chooseItem(id:number){
-   if(!worker||!grid)return;
+   if(!worker||!grid||busyImport)return;
    const g=definitions.get(id);
    if(g){placing=g;orientation=2;selected=null;moveMode=false;hover=null;error='';shapeId=0;loadingShape=false;return;}
    shapeId=nextRequest();loadingShape=true;error='';placing=null;moveMode=false;hover=null;
@@ -122,7 +173,7 @@
    return x>=0&&y>=0&&x<width&&y<height?{x,y}:null;
  }
  function pick(e:MouseEvent){
-   if(gesture.consumeClick()||e.detail===0)return;
+   if(busyImport||gesture.consumeClick()||e.detail===0)return;
    const p=cell(e);if(!p)return;
    if(placing){save(placeDesign(timeline,placing,p.x,p.y,orientation,width,height));return;}
    if(moveMode&&chosen&&chosenGeometry){
@@ -138,6 +189,7 @@
    if(placing||moveMode)hover=cell(e);
  }
  function keys(e:KeyboardEvent){
+   if(busyImport)return;
    if(e.key==='Escape'){cancel();return;}
    if(e.key.toLowerCase()==='r'){e.preventDefault();rotate(e.shiftKey?1:3);return;}
    if(e.key==='Delete'){e.preventDefault();remove();return;}
@@ -167,18 +219,23 @@
   </aside>
   <div class="design-map-side">
    <div class="design-controls">
+    <input class="file-input" type="file" accept=".json,application/json" bind:this={importInput} on:change={importFile}/>
+    <button type="button" disabled={busyImport} on:click={exportFile}>{words[0]}</button>
+    <button type="button" disabled={busyImport||!worker} on:click={()=>importInput.click()}>{words[1]}</button>
+    <button type="button" aria-pressed={showCounts} on:click={()=>showCounts=!showCounts}>{words[2]}</button>
     <button type="button" aria-label="設計を拡大" disabled={camera.zoom>=maxZoom} on:click={()=>camera=zoomMapCamera(camera,camera.zoom*2,maxZoom)}>＋</button>
     <button type="button" aria-label="設計を縮小" disabled={camera.zoom===1} on:click={()=>camera=zoomMapCamera(camera,camera.zoom/2,maxZoom)}>−</button>
     <button type="button" on:click={()=>camera=defaultMapCamera()}>全体</button>
-    <button type="button" aria-label="設計を取り消す" disabled={timeline.cursor===0} on:click={()=>travel(-1)}>↶</button>
-    <button type="button" aria-label="設計をやり直す" disabled={timeline.cursor===timeline.snapshots.length-1} on:click={()=>travel(1)}>↷</button>
-    <button type="button" aria-label="設計の左回転" disabled={!placing&&!chosenGeometry} on:click={()=>rotate(1)}>⟲</button>
-    <button type="button" aria-label="設計の右回転" disabled={!placing&&!chosenGeometry} on:click={()=>rotate(3)}>⟳</button>
-    <button type="button" aria-pressed={moveMode} disabled={!chosenGeometry||nativeActionBlocked(chosenGeometry.editRestrictions,'move')} on:click={()=>{placing=null;moveMode=!moveMode;hover=null;}}>移動</button>
-    <button type="button" disabled={!chosenGeometry} on:click={duplicate}>複製</button>
-    <button type="button" disabled={!chosenGeometry||nativeActionBlocked(chosenGeometry.editRestrictions,'remove')} on:click={remove}>削除</button>
-    {#if placing||moveMode}<button type="button" on:click={cancel}>配置終了</button>{/if}
+    <button type="button" aria-label="設計を取り消す" disabled={busyImport||timeline.cursor===0} on:click={()=>travel(-1)}>↶</button>
+    <button type="button" aria-label="設計をやり直す" disabled={busyImport||timeline.cursor===timeline.snapshots.length-1} on:click={()=>travel(1)}>↷</button>
+    <button type="button" aria-label="設計の左回転" disabled={busyImport||!placing&&!chosenGeometry} on:click={()=>rotate(1)}>⟲</button>
+    <button type="button" aria-label="設計の右回転" disabled={busyImport||!placing&&!chosenGeometry} on:click={()=>rotate(3)}>⟳</button>
+    <button type="button" aria-pressed={moveMode} disabled={busyImport||!chosenGeometry||nativeActionBlocked(chosenGeometry.editRestrictions,'move')} on:click={()=>{placing=null;moveMode=!moveMode;hover=null;}}>移動</button>
+    <button type="button" disabled={busyImport||!chosenGeometry} on:click={duplicate}>複製</button>
+    <button type="button" disabled={busyImport||!chosenGeometry||nativeActionBlocked(chosenGeometry.editRestrictions,'remove')} on:click={remove}>削除</button>
+    {#if (placing||moveMode)&&!busyImport}<button type="button" on:click={cancel}>配置終了</button>{/if}
    </div>
+   {#if busyImport}<p role="status">{words[5]}</p>{/if}
    {#if loadingShape}<p role="status">形状を読み込み中…</p>{/if}
    {#if error}<p role="alert">{error}</p>{/if}
    <button class="design-plot" type="button" aria-label="装飾設計マップ" on:click={pick} on:keydown={keys}
@@ -204,11 +261,22 @@
     {:else if chosen}<strong>{catalog.find(o=>o.itemId===chosen?.itemId)?.name??chosenGeometry?.name}</strong>{/if}
     {#if warnings.length}<span>地形属性不一致候補</span>{/if}
    </div>
+   {#if showCounts}
+    <div class="design-counts" aria-label={words[2]}>
+     {#each [...counts.entries()].sort((a,b)=>(names.get(a[0])??'').localeCompare(names.get(b[0])??'',locale)) as [itemId,count] (itemId)}
+      <div class="count-row">{#if images.has(itemId)}<img src={images.get(itemId)} alt="" loading="lazy"/>{/if}<span>{names.get(itemId)??definitions.get(itemId)?.name??'—'}</span><strong>×{count}</strong></div>
+     {/each}
+    </div>
+   {/if}
    <small>セーブ未使用の独立した設計。地形・形状はゲーム原本に基づく候補。ゲーム内の配置可否は未確認です。</small>
   </div>
  </div>
 {/if}
 <style>
+ .file-input{display:none}
+ .design-counts{max-height:24vh;overflow:auto;display:grid;gap:3px}
+ .count-row{display:flex;align-items:center;gap:6px;background:var(--wand-card);padding:4px 8px;border-radius:4px}
+ .count-row img{width:32px;height:32px;object-fit:contain}.count-row span{flex:1;overflow-wrap:anywhere}
  .design-workspace{display:grid;grid-template-columns:minmax(170px,240px) minmax(0,1fr);gap:8px;min-width:0}
  aside,.design-map-side{display:grid;gap:6px;min-width:0;align-content:start}
  input,select,button{font:inherit;background:var(--wand-menu);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:5px;padding:5px}

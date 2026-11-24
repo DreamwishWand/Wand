@@ -68,3 +68,52 @@ export function designShapeMap(placements:readonly DesignPlacement[],definitions
  return {layoutId:grid.layoutId,gridIdNative:grid.gridIdNative,gridDataPath:grid.gridDataPath,sourceGridFactor:grid.factor,
   objects,shapes,actualOccupancyVerified:false,savedSourceCoordinateEquivalenceVerified:false};
 }
+
+/** Local design document, not a game Save or native/Wand Preset slot. */
+export interface DesignGridIdentity {
+ readonly key:string;readonly layoutId:string;readonly gridDataPath:string;
+ readonly gridIdNative:number;readonly sizeX:number;readonly sizeY:number;readonly factor:1|2;
+}
+export const DESIGN_FILE_LIMIT=1_000_000;
+const identityKeys=['key','layoutId','gridDataPath','gridIdNative','sizeX','sizeY','factor'] as const;
+function gridIdentity(grid:DesignGridIdentity):DesignGridIdentity {
+ return {key:grid.key,layoutId:grid.layoutId,gridDataPath:grid.gridDataPath,gridIdNative:grid.gridIdNative,sizeX:grid.sizeX,sizeY:grid.sizeY,factor:grid.factor};
+}
+export function serializeDesign(t:DesignTimeline,grid:DesignGridIdentity):string{
+ return JSON.stringify({schema:'wand.world-design@1',grid:gridIdentity(grid),placements:currentDesign(t).map(({id,itemId,x,y,orientation})=>({id,itemId,x,y,orientation}))});
+}
+const record=(value:unknown):value is Record<string,unknown>=>value!==null&&typeof value==='object'&&!Array.isArray(value);
+const bounded=(n:unknown,min:number,max:number):n is number=>typeof n==='number'&&Number.isSafeInteger(n)&&n>=min&&n<=max;
+export function parseDesign(text:string,grid:DesignGridIdentity):DesignPlacement[]{
+ if(text.length>DESIGN_FILE_LIMIT)throw Error('DESIGN_FILE_LIMIT');
+ const value:unknown=JSON.parse(text);
+ if(!record(value)||value.schema!=='wand.world-design@1'||!record(value.grid)||!Array.isArray(value.placements)||value.placements.length>DESIGN_LIMIT)throw Error('DESIGN_FILE_INVALID');
+ const source=value.grid;
+ if(!identityKeys.every(key=>source[key]===grid[key]))throw Error('DESIGN_GRID_MISMATCH');
+ const ids=new Set<number>();
+ return value.placements.map(p=>{
+  if(!record(p)||!bounded(p.id,1,Number.MAX_SAFE_INTEGER-1)||ids.has(p.id)||!bounded(p.itemId,1,0xffffffff)||
+     !bounded(p.x,0,grid.sizeX*grid.factor-1)||!bounded(p.y,0,grid.sizeY*grid.factor-1)||!bounded(p.orientation,0,3))throw Error('DESIGN_PLACEMENT_INVALID');
+  ids.add(p.id);return {id:p.id,itemId:p.itemId,x:p.x,y:p.y,orientation:p.orientation};
+ });
+}
+/** Restore as one undoable edit after resolving every footprint from the current DB.
+ * Never trust geometry, restrictions or arbitrary paths supplied by a document. */
+export function restoreDesign(t:DesignTimeline,placements:readonly DesignPlacement[],definitions:ReadonlyMap<number,DesignItemGeometry>,width:number,height:number):DesignTimeline|null{
+ if(placements.length>DESIGN_LIMIT)return null;
+ const ids=new Set<number>(),exclusive=new Set<string>();
+ let nextId=t.nextId;
+ for(const p of placements){
+  const geometry=definitions.get(p.itemId);
+  if(!geometry||!bounded(p.id,1,Number.MAX_SAFE_INTEGER-1)||ids.has(p.id)||!bounded(p.orientation,0,3)||!designCandidateValid([],p,geometry,width,height))return null;
+  ids.add(p.id);nextId=Math.max(nextId,p.id+1);
+  const kind=exclusiveAnchorClass(String(p.itemId));
+  if(kind){const key=kind+':'+p.x+':'+p.y;if(exclusive.has(key))return null;exclusive.add(key);}
+ }
+ return commit(t,placements.map(p=>({...p})),nextId);
+}
+export function designItemCounts(placements:readonly DesignPlacement[]):Map<number,number>{
+ const counts=new Map<number,number>();
+ for(const p of placements)counts.set(p.itemId,(counts.get(p.itemId)??0)+1);
+ return counts;
+}
