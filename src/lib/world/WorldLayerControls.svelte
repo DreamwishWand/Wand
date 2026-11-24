@@ -6,8 +6,8 @@
  export let disabled=false;
  export let onChange:(value:WorldLayerState)=>void;
  const words={
- ja:['レイヤー','家具','建物・家','景観・樹木','支持面専用','道・地面','フェンス','固定物','その他・未分類','表示','非表示','ロック','ロック解除','リセット'],
- en:['Layers','Furniture','Buildings & houses','Landscaping','Surface-only','Paths & ground','Fences','Fixed objects','Other / unclassified','Show','Hide','Lock','Unlock','Reset'],
+ ja:['レイヤー','家具','建物・家','景観・樹木','支持面専用','道・地面','フェンス','固定・保護物','その他・未分類','表示','非表示','ロック','ロック解除','リセット'],
+ en:['Layers','Furniture','Buildings & houses','Landscaping','Surface-only','Paths & ground','Fences','Fixed / protected objects','Other / unclassified','Show','Hide','Lock','Unlock','Reset'],
  fr:['Calques','Meubles','Bâtiments et maisons','Paysage','Surfaces','Chemins et sol','Clôtures','Objets fixes','Autres / non classés','Afficher','Masquer','Verrouiller','Déverrouiller','Réinitialiser'],
  it:['Livelli','Mobili','Edifici e case','Paesaggio','Superfici','Sentieri e terreno','Recinzioni','Oggetti fissi','Altro / non classificato','Mostra','Nascondi','Blocca','Sblocca','Ripristina'],
  de:['Ebenen','Möbel','Gebäude und Häuser','Landschaft','Oberflächen','Wege und Boden','Zäune','Feste Objekte','Sonstiges / unbekannt','Anzeigen','Ausblenden','Sperren','Entsperren','Zurücksetzen'],

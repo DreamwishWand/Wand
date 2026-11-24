@@ -27,7 +27,9 @@
  export let active=false;
  export let layerState:WorldLayerState=defaultWorldLayers();
  let layersOpen=false;
- function applyLayers(next:WorldLayerState){if(busyImport)return;cancel();selected=null;groupIds=[];layerState=next;}
+ let seenLayers=layerState;
+ function applyLayers(next:WorldLayerState){if(busyImport)return;layerState=next;}
+ $: if(layerState!==seenLayers){seenLayers=layerState;cancel();selected=null;groupIds=[];}
  export let grid:PublicTerrainGridRef|null=null;
  export let raster:TerrainRaster|null=null;
  export let worker:Worker|null=null;

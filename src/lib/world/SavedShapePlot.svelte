@@ -30,7 +30,9 @@
   export let compact=false;
   export let layerState:WorldLayerState=defaultWorldLayers();
   let layersOpen=false;
-  function applyLayers(next:WorldLayerState){if(busy)return;cancelEdit();clearStructure();clearGroup();selected=null;hits=[];resetDraft(null);layerState=next;}
+  let seenLayers=layerState;
+  function applyLayers(next:WorldLayerState){if(busy)return;layerState=next;}
+  $: if(layerState!==seenLayers){seenLayers=layerState;cancelEdit();clearStructure();clearGroup();selected=null;hits=[];resetDraft(null);}
   let toolsOpen=true,inspectorOpen=true;
   let root:HTMLDivElement;
   let mapWidth=0,mapHeight=0;
