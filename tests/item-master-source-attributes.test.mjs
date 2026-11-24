@@ -230,10 +230,10 @@ test('large reviewed structures retain mission order, source identities and byte
   const requests=[];
   const db=await openPublicItemMaster('',async url=>{requests.push(url);return fetcher(url)},{scope:'complete'});
   const fields=db.release.reviewedStructureCoverage.fields;
-  assert.equal(Object.keys(fields).length,120);
-  assert.equal(Object.values(fields).reduce((s,f)=>s+f.itemCount,0),7449);
-  assert.equal(Object.values(fields).reduce((s,f)=>s+f.occurrences,0),16042);
-  assert.equal(Object.values(fields).reduce((s,f)=>s+f.leafCount,0),284111);
+  assert.equal(Object.keys(fields).length,147);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.itemCount,0),8719);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.occurrences,0),17312);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.leafCount,0),288442);
   assert.equal(fields['Mission.Steps'].occurrences,7878);
   const catalog=await db.getFieldCatalog();
   const column=catalog.find(f=>f.field==='source.Steps');
@@ -280,4 +280,28 @@ test('expanded numeric structures preserve source definitions and related IDs',a
   assert.deepEqual(mission.values['source.NoOutro'],{});
   assert((await db.getItemReferences(2001100001,'incoming')).some(([id,p])=>id===40000462&&p==='source.CraftingStation.CraftingRecipeTypes[0]'));
   assert((await db.getItemReferences(40800001,'outgoing')).some(([id,p])=>id===80000003&&p==='source.AutoCooker.ActionCost.Id'));
+});
+
+
+test('mixed structures retain exact localization keys, inert formulas and map entry presence',async()=>{
+  const db=await openPublicItemMaster('',fetcher,{scope:'complete'});
+  const f=db.release.reviewedStructureCoverage.fields;
+  assert.equal(f['Furniture.Mannequin'].itemCount,6);
+  assert.equal(f['Profession.IconOverrides'].itemCount,10);
+  assert.equal(f['Mission.Any'].itemCount,475);
+  assert.equal(f['ConditionalEvent.SendMailbox'].itemCount,207);
+  const [mannequin,profession,soft,hard,mission,mail]=await db.getItemFields(
+    [40001920,1500100000,80000000,80100000,2070000620,1520000968],
+    ['source.Mannequin.EmptyMannequinClothes','source.IconOverrides','source.HardCurrencyConversionTiers','source.SkipTimerTiers','source.Any','source.SendMailbox']);
+  assert.deepEqual(mannequin.values['source.Mannequin.EmptyMannequinClothes'],[{Value:50000212},{Key:1,Value:50100077}]);
+  assert.deepEqual(profession.values['source.IconOverrides'],[{Value:'guid:7763bdca09de6c14aa942b506f9c3d89'}]);
+  assert.deepEqual(soft.values['source.HardCurrencyConversionTiers'],[{ConversionEquation:'Ceil({Amount} * 0.1)'}]);
+  assert.deepEqual(hard.values['source.SkipTimerTiers'],[{ConversionEquation:'Max(1, 4 * ({Minutes}^0.82))'}]);
+  assert.deepEqual(mission.values['source.Any'],{
+    CompletedRequestDescription:'Story/MRQS010_Welcome.Story!MRQS010_Welcome_Any_CompletedRequestDescription',
+    OutroDialogue:'guid:405d1303929ba4c4ab80b8b0ddf4feb3'
+  });
+  assert.equal(mail.values['source.SendMailbox'].Villager,10000103);
+  assert((await db.getItemReferences(50000212,'incoming')).some(([id,p])=>id===40001920&&p==='source.Mannequin.EmptyMannequinClothes[0].Value'));
+  assert((await db.getItemReferences(1520000968,'outgoing')).some(([id,p])=>id===10000103&&p==='source.SendMailbox.Villager'));
 });
