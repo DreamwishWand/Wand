@@ -929,13 +929,21 @@ function introductionHistory(project,e,version,source,rows){
     const ver=v=>typeof v==='string'&&/^\d+\.\d+\.\d+$/.test(v);
     const order=(x,y)=>{const a=x.split('.').map(Number),b=y.split('.').map(Number);return a[0]-b[0]||a[1]-b[1]||a[2]-b[2];};
     for(const [id,v] of h.items){
+      const hashPair=(x,y)=>typeof x==='string'&&typeof y==='string'&&SHA.test(x)&&SHA.test(y)&&x!==y;
+      const scanPair=hashPair(v?.introducedAfterSourceScanSha256,v?.introducedSourceScanSha256);
+      const corpusPair=hashPair(v?.introducedAfterSourceCorpusSha256,v?.introducedSourceCorpusSha256);
+      check(v&&((v.introducedAfterSourceScanSha256==null&&v.introducedSourceScanSha256==null)||scanPair)&&
+        ((v.introducedAfterSourceCorpusSha256==null&&v.introducedSourceCorpusSha256==null)||corpusPair)&&
+        (v.nativeContentMarker==null||['expansion04','update26'].includes(v.nativeContentMarker))&&
+        (v.introductionShopSnapshot==null||v.introductionShopSnapshot==='Shop20261118'&&
+          v.introducedVersion==='1.26.1'),'INTRODUCTION_COMPARISON_EVIDENCE');
       check(ID(id)&&!prior.has(id)&&v&&ver(v.firstObservedVersion)&&order(v.firstObservedVersion,version)<=0&&
         (v.introducedVersion===null&&v.introducedAfterVersion===null&&
-          v.introducedAfterSourceScanSha256===null&&v.introducedSourceScanSha256===null&&v.contentReleaseId===null||
+          v.introducedAfterSourceScanSha256===null&&v.introducedSourceScanSha256===null&&
+          !corpusPair&&v.contentReleaseId===null||
          ver(v.introducedVersion)&&v.introducedVersion===v.firstObservedVersion&&ver(v.introducedAfterVersion)&&
           order(v.introducedAfterVersion,v.introducedVersion)<=0&&
-          SHA.test(v.introducedAfterSourceScanSha256)&&SHA.test(v.introducedSourceScanSha256)&&
-          v.introducedAfterSourceScanSha256!==v.introducedSourceScanSha256&&
+          (scanPair||corpusPair)&&
           (v.contentReleaseId===null||typeof v.contentReleaseId==='string'&&/^[A-Za-z0-9_.-]{1,128}$/.test(v.contentReleaseId))),
         'INTRODUCTION_HISTORY_ROW');
       const releaseId=x=>typeof x==='string'&&/^[A-Za-z0-9_.-]{1,128}$/.test(x);
