@@ -1114,6 +1114,51 @@ try {
   await badRewards.getByRole('alert').waitFor({timeout:20000});
   assert.match(await badRewards.getByRole('alert').innerText(),/fingerprint/);
   await badRewards.close();
+  // Theme selection must recolor actual service surfaces, not only the header.
+  // An isolated context leaves the existing data and locale smoke tests untouched.
+  const themePage=await browser.newPage({viewport:{width:1280,height:800}});
+  const themedSurfaces=[
+    ['collection/','.collection-workspace','--wand-bg'],
+    ['guide/','.timeline-panel','--wand-surface'],
+    ['guide/quests/','.searchbar input','--wand-control'],
+    ['guide/characters/','.controls input','--wand-control'],
+    ['guide/events/','.event-guide .search','--wand-control'],
+    ['guide/star-path/','.starpath .search input','--wand-control'],
+    ['guide/systems/','.system-search','--wand-control'],
+    ['guide/source/','.guide-public-entry','--wand-surface-raised'],
+    ['world/preview/','.world-panel','--wand-surface'],
+    ['save/','.editor-empty','--wand-surface-raised'],
+    ['save/diagnostics/','.local-picker','--wand-surface']
+  ];
+  for(const [route,selector,token] of themedSurfaces){
+    await themePage.goto('http://127.0.0.1:4177/Wand/'+route,{waitUntil:'domcontentloaded'});
+    const surface=themePage.locator(selector).first();
+    await surface.waitFor({state:'attached',timeout:30000});
+    const actualColors=[];
+    for(const [index,theme] of ['dawn','coral','night'].entries()){
+      await themePage.locator('.shell-theme-option').nth(index).click();
+      await themePage.waitForFunction(theme=>document.documentElement.dataset.wandTheme===theme,theme);
+      const colors=await surface.evaluate((node,token)=>{
+        const probe=document.createElement('div');
+        probe.style.cssText='position:absolute;visibility:hidden;background:var('+token+');color:var(--wand-text)';
+        document.body.append(probe);
+        const actual=getComputedStyle(node).backgroundColor;
+        const expected=getComputedStyle(probe).backgroundColor;
+        probe.style.background='var(--wand-bg)';
+        const canvasExpected=getComputedStyle(probe).backgroundColor;
+        const canvasActual=getComputedStyle(document.querySelector('.site-main')).backgroundColor;
+        probe.remove();
+        return {actual,expected,canvasActual,canvasExpected};
+      },token);
+      assert.equal(colors.actual,colors.expected,route+' '+theme+' service surface follows '+token);
+      assert.equal(colors.canvasActual,colors.canvasExpected,route+' '+theme+' canvas follows theme');
+      actualColors.push(colors.actual);
+    }
+    assert.equal(new Set(actualColors).size,3,route+' must distinguish all three themes');
+  }
+  await themePage.close();
+  console.log('Shared theme: all implemented service routes follow the three active palettes');
+
   console.log('Public Star Path: 2 source-pinned seasons, 185 tasks, reward pages, mobile and SHA tamper rejection passed');
   console.log('Public Guide browser: verified static index, lazy details, multi-language labels, target IDs, mobile layout, tamper rejection, quest deep links and history passed');
 } finally {
