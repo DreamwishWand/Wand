@@ -5,6 +5,8 @@ import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {openPublicItemMaster} from '../src/lib/items/public-item-master.ts';
 import {openPublicItemDetails} from '../src/lib/items/public-item-details.ts';
+import {createPublicItemMediaReader} from '../src/lib/items/public-item-media.ts';
+import {publicImageKey} from '../src/lib/media/public-image-key.ts';
 
 const root='static/ddv/item-master/steam-1.26.2-complete';
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -217,4 +219,49 @@ test('selective DB-01 fields and DB-02 links are independently lazy and preserve
   const freshDb=await openPublicItemDetails('/Wand',fresh.fetcher);
   assert.deepEqual(await freshDb.getSelectedItems([99999999],fields,{sourceRelations:true,acquisition:true}),[null]);
   assert(!fresh.requests.some(url=>url.includes('/acquisition/')));
+});
+
+
+test('DB-01 media join is version isolated and uses only SRC-04 published Item ID mapping',async()=>{
+  const local=site(),master=await openPublicItemMaster('/Wand',local.fetcher,{scope:'complete'});
+  const before=local.requests.length;
+  const fail=async()=>{throw Error('unexpected media request')};
+  const unpublished=createPublicItemMediaReader(master,undefined,fail);
+  assert.equal(unpublished.status,'unpublished');
+  assert.deepEqual(await unpublished.getItemImages([40005160,99999999]),[null,null]);
+  const origin='https://media.dreamwishwand.com',sha='a'.repeat(64);
+  const pack=value=>{const bytes=Buffer.from(JSON.stringify(value));return {bytes,pin:{sha256:digest(bytes),bytes:bytes.length}}};
+  const files={},data=new Map();
+  const itemId=40005160;
+  const bucket=(itemId%256).toString(16).padStart(2,'0');
+  for(let i=0;i<256;i++){
+    const key=i.toString(16).padStart(2,'0'),path='id/'+key+'.json';
+    const items=key===bucket?[{id:itemId,original:{key:publicImageKey('original',sha),width:256,height:128},
+      thumbnail:{key:publicImageKey('thumbnail',sha),width:128,height:64}}]:[];
+    const p=pack({schema:'wand.media.distribution-shard@1',bucket:key,items});
+    files[path]={...p.pin,count:items.length};data.set(path,p.bytes);
+  }
+  const manifest=pack({schema:'wand.media.distribution@1',gameVersion:'steam-1.26.2',releaseState:'published',
+    bucketCount:256,totalItems:1,files,cachePolicy:'immutable_content_addressed_media'});
+  data.set('manifest.json',manifest.bytes);
+  const config={state:'published',publicationAuthorized:true,publicReadbackVerified:true,
+    origin,gameVersion:'steam-1.26.2',manifest:manifest.pin};
+  const mismatch=createPublicItemMediaReader(master,{...config,gameVersion:'steam-1.26.3'},fail);
+  assert.equal(mismatch.status,'version_mismatch');
+  assert.deepEqual(await mismatch.getItemImages([itemId]),[null]);
+  assert.equal(local.requests.length,before,'inactive media must not load DB fields');
+  const root=origin+'/index/items/'+config.gameVersion+'/'+config.manifest.sha256+'/';
+  const calls=[];
+  const media=createPublicItemMediaReader(master,config,async url=>{
+    calls.push(url);assert(url.startsWith(root));return new Response(data.get(url.slice(root.length)));
+  });
+  assert.equal(media.status,'published');
+  const rows=await media.getItemImages([itemId,2130000001,99999999,itemId]);
+  assert.equal(rows[0].sha256,sha);
+  assert.equal(rows[1],null);assert.equal(rows[2],null);assert.equal(rows[3],rows[0]);
+  assert.equal((await media.getItemImage(itemId,'original')).width,256);
+  assert.equal(calls.length,2);
+  assert(Object.isFrozen(rows));
+  assert(!local.requests.some(url=>url.includes('/id/')||url.includes('/locale/')));
+  await assert.rejects(media.getItemImages([0]),/INVALID_IDS/);
 });
