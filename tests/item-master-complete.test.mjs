@@ -4,7 +4,9 @@ import {readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {openPublicItemMaster,openCurrentItemDatabase} from '../src/lib/items/public-item-master.ts';
-import {openPublicItemDetails} from '../src/lib/items/public-item-details.ts';
+import {openPublicItemDetails,openCurrentItemDetails} from '../src/lib/items/public-item-details.ts';
+import {parseDb01ItemAcquisition} from '../src/lib/acquisition/db01-item-acquisition.ts';
+import {parseDb01ItemSourceRelations} from '../src/lib/acquisition/db01-item-source-relations.ts';
 import {createPublicItemMediaReader} from '../src/lib/items/public-item-media.ts';
 import {publicImageKey} from '../src/lib/media/public-image-key.ts';
 
@@ -281,4 +283,69 @@ test('normal product reads the complete current database without a game version 
   assert.equal((await current.getItem(40005160)).names.en,'Glass Shoe');
   assert(requests.slice(2).every(url=>/\/item-master\/objects\/[a-f0-9]{64}\.json$/.test(url)));
   assert(!requests.some(url=>url.includes('/id/')));
+});
+
+
+test('canonical acquisition projections reproduce all admitted source records and preserve source-only coverage',async()=>{
+  const {fetcher,requests}=site();
+  const master=await openCurrentItemDatabase('/Wand',fetcher);
+  const a=await readFile('static/acquisition/public/db01-item-acquisition-1.26.2.json');
+  const b=await readFile('static/acquisition/public/db01-item-source-relations-1.26.2.json');
+  const original=parseDb01ItemAcquisition(JSON.parse(a));
+  const links=parseDb01ItemSourceRelations(JSON.parse(b));
+  const meta=master.release.acquisitionProjection;
+  assert.equal(meta.sourceGameVersion,master.release.target.gameVersion);
+  assert.equal(meta.summarySha256,digest(a));
+  assert.equal(meta.relationsSha256,digest(b));
+  assert.equal(meta.coverageComplete,false);
+  const ids=new Set((await master.getFieldRows('itemId')).map(x=>x[0]));
+  const sourceSummaries=original.listItemIds().map(Number);
+  const sourceLinks=links.listItemIds().map(Number);
+  const summaries=await master.getFieldRows('acquisition.summary');
+  const relations=await master.getFieldRows('acquisition.sourceRelations');
+  assert.deepEqual(summaries.map(x=>x[0]),sourceSummaries.filter(i=>ids.has(i)));
+  assert.deepEqual(relations.map(x=>x[0]),sourceLinks.filter(i=>ids.has(i)));
+  assert.equal(meta.summaryCount,summaries.length);
+  assert.equal(meta.relationCount,relations.length);
+  assert.equal(meta.sourceOnlySummaryCount,sourceSummaries.length-summaries.length);
+  assert.equal(meta.sourceOnlyRelationCount,sourceLinks.length-relations.length);
+  assert.equal(meta.sourceLinks,15444);
+  for(const [i,v] of summaries)assert.deepEqual(v,original.getItem(i));
+  for(const [i,v] of relations)assert.deepEqual(v,links.getItem(i));
+  for(const category of original.categoryOrder){
+    const expected=original.listItemIds(category).map(Number).filter(i=>ids.has(i));
+    assert.deepEqual(await master.findItemIdsByField('acquisition.categories',{kind:'contains',value:category}),expected);
+  }
+  assert(!requests.some(url=>url.includes('/acquisition/public/')));
+});
+
+test('current selected details use narrow same-revision acquisition columns, not whole legacy handoffs',async()=>{
+  const {fetcher,requests}=site();
+  const db=await openCurrentItemDetails('/Wand',fetcher);
+  const manifest=JSON.parse(await readFile('static/ddv/item-master/current/index.json'));
+  const object=path=>'/Wand/ddv/item-master/objects/'+manifest.assets[path].sha256+'.json';
+  const fieldObjects=field=>Object.keys(manifest.assets)
+    .filter(p=>p.startsWith('fields/'+field+'/')).map(object);
+  const summaryObjects=fieldObjects('acquisition.summary');
+  const relationObjects=fieldObjects('acquisition.sourceRelations');
+  assert(summaryObjects.length>1&&relationObjects.length>1);
+  const ids=[30000031,31700021,99999999,30000031];
+  const fields=['nativeCategory'];
+  const initial=await db.getSelectedItems(ids,fields);
+  assert.equal(initial[0].values.nativeCategory,'ActivityItem');
+  assert(!requests.some(u=>summaryObjects.includes(u)||relationObjects.includes(u)));
+  const only=await db.getSelectedItems([ids[0]],fields,{acquisition:true});
+  assert.equal(only[0].acquisition.itemId,String(ids[0]));
+  assert(only[0].acquisition.categories.includes('ordinary_gameplay'));
+  assert.equal(only[0].acquisitionStatus,'current');
+  assert(!requests.some(u=>relationObjects.includes(u)));
+  assert(requests.filter(u=>summaryObjects.includes(u)).length<summaryObjects.length);
+  const both=await db.getSelectedItems(ids,fields,{acquisition:true,sourceRelations:true});
+  assert(both[0].sourceRelations.links.some(l=>l.sourceId==='2050300095'&&l.role==='crafting_result'));
+  assert(both[1].sourceRelations.links.some(l=>l.sourceId==='2050300095'&&l.role==='recipe_ingredient_item'));
+  assert.equal(both[2],null);
+  assert.deepEqual(both[0],both[3]);
+  assert.deepEqual(both[0].sourceRelations.categories,both[0].acquisition.categories);
+  assert(!requests.some(u=>u.includes('/acquisition/public/')));
+  assert(requests.filter(u=>relationObjects.includes(u)).length<relationObjects.length);
 });
