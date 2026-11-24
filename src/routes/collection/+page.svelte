@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import { base } from '$app/paths';
+  import CollectionSourceMarks from '$lib/collection/CollectionSourceMarks.svelte';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
   import ItemMasterDetails from '$lib/collection/ItemMasterDetails.svelte';
   import {
@@ -612,6 +613,7 @@
       ?loadCompleteCollection(base).then(catalog=>catalog.index):loadCollectionDb01Facets(base)).then(index=>{
       if(generation!==sourceGeneration||!canUseDb01SourceFacets())return;
       sourceIndex=index;worldBrowseIndex=buildWorldBrowseIndex(index);sourceGroupsCacheKey='';
+      ensureAcquisitionIndex();
       const sourceGroups=collectionDb01Groups(index,[...index.byItem.keys()]);
       sourceUniverseOptions=COLLECTION_UNIVERSE_TAG_NAMES.map(row=>({
         key:String(row.id),
@@ -635,7 +637,7 @@
     const generation=sourceGeneration;
     const task=loadDb01ItemAcquisitionHandoff(base).then(index=>{
       if(generation!==sourceGeneration||!canUseDb01SourceFacets())return;
-      acquisitionIndex=index;refresh();
+      acquisitionIndex=index;if(acquisitionFilter)refresh();
     }).catch(()=>{
       if(generation===sourceGeneration)acquisitionLoadError=canUseDb01SourceFacets();
     }).finally(()=>{if(acquisitionLoad===task)acquisitionLoad=null;});
@@ -1482,7 +1484,9 @@
                         <span class="item-icon" aria-hidden="true">
                           <ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null}/>
                         </span>
-                        <span class="item-card-copy"><strong title={item.label}>{item.label}</strong></span>
+                        <span class="item-card-copy"><strong title={item.label}>{item.label}</strong>
+                          <CollectionSourceMarks index={acquisitionIndex} itemId={item.itemId} {locale}/>
+                        </span>
                       </button>
                       <button type="button" class="item-state-toggle"
                         disabled={Boolean(storeError)} class:owned={entries[String(item.itemId)]?.status==='owned'}
@@ -1556,7 +1560,9 @@
                         aria-pressed={selectionMode?selectedIds.includes(item.itemId):selectedItemId===item.itemId}
                         aria-label={selectionMode?`${item.label}${copy.itemSelect}`:`${item.label}${copy.itemDetails}`}>
                         <span class="item-icon" aria-hidden="true">{#if selectionMode}{selectedIds.includes(item.itemId)?'☑':'☐'}{:else}<ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null} />{/if}</span>
-                        <span class="item-card-copy"><strong title={item.label}>{item.label}</strong></span>
+                        <span class="item-card-copy"><strong title={item.label}>{item.label}</strong>
+                          <CollectionSourceMarks index={acquisitionIndex} itemId={item.itemId} {locale}/>
+                        </span>
                       </button>
                       <button type="button" class="item-state-toggle" disabled={Boolean(storeError)||selectionMode}
                         class:owned={entries[String(item.itemId)]?.status==='owned'}
@@ -1737,6 +1743,7 @@
   .item-card-body{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:3px;width:100%;text-align:center;padding:0;min-width:0}
   .item-icon{width:100%;height:76px;border-radius:4px;background:transparent;padding:3px;box-sizing:border-box}
   .item-card-copy{width:100%;display:block;min-height:30px;flex:0}
+  .item-card-copy :global(.collection-source-marks){margin-top:3px}
   .item-card-copy strong{font-size:11px;line-height:1.25;white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .item-state-toggle{position:absolute;right:4px;top:4px;width:24px;height:24px;z-index:1;border-radius:5px;background:var(--wand-menu);color:var(--wand-text);border-color:var(--wand-line)}
   .item-state-toggle.owned{background:var(--wand-accent,#37855d);color:var(--wand-accent-contrast,#fff)}
