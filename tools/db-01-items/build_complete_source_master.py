@@ -54,8 +54,8 @@ def vals(row,n,w):return [v for f,t,v in row if f==n and t==w]
 def scalar(row,n,w,default=None):
  a=vals(row,n,w);check(len(a)<=1,'DUPLICATE_FIELD_'+str(n));return a[0] if a else default
 
-def zipdata(root,key):
- z=zipfile.ZipFile(root/FILES[key]);m=json.loads(z.read('manifest.json'))
+def zipdata(root,key,files=FILES):
+ z=zipfile.ZipFile(root/files[key]);m=json.loads(z.read('manifest.json'))
  for n,x in m['files'].items():
   b=z.read(n);check(len(b)==x['bytes'] and digest(b)==x['sha256'],'ARCHIVE_SHARD_'+key+'_'+n)
  return z,m
@@ -97,17 +97,28 @@ def typed_value(value,wire,typ,enums):
  if typ=='double' and wire==1:return struct.unpack('<d',value)[0]
  return None
 
-def build(root):
+def build(root, inputs=None):
+ # The existing filenames are a historical convenience, not the product
+ # identity. Future original-derived inputs are selected via a private
+ # manifest and still checked against their original archive provenance.
+ inputs=inputs or {}
+ files=inputs.get('archives',FILES)
+ check(set(files)==set(FILES),'INPUT_ARCHIVES')
+ for value in [*files.values(),inputs.get('base','wand-item-master-steam-1.26.2.zip'),
+   inputs.get('extension','item-master-collectible-extension-1.26.2.json'),
+   inputs.get('scope','COLLECTION_SCOPE_v1.26.2_WORLD_UNIVERSE_EVIDENCE_PRIVATE_20261122.zip'),
+   inputs.get('scopeMember','collection-scope-labels-private-steam-v1.26.2.json')]:
+  check(isinstance(value,str) and re.fullmatch(r'[A-Za-z0-9_.-]+',value) and value not in ('.','..'),'INPUT_PATH')
  zs={};ms={}
- for k in FILES:zs[k],ms[k]=zipdata(root,k)
+ for k in FILES:zs[k],ms[k]=zipdata(root,k,files)
  cm=ms['catalog'];check(cm['fullCorpusParsed'] and cm['sourceFilesVerified']==cm['sourceFilesTotal'],'INCOMPLETE_CATALOG')
  for k,m in ms.items():check((m['platform'],m['gameVersion'],m['sourceItemsSha256'])==(cm['platform'],cm['gameVersion'],cm['sourceItemsSha256']),'SOURCE_VERSION_'+k)
  dump=(root/'dump.cs').read_bytes();dump_hash=digest(dump);check(dump_hash==ms['types']['sourceIl2cppDumpSha256'],'DUMP_SHA');sch=schemas(dump.decode('utf8'))
  cat,typ,tags=map(lambda k:ids(zs[k]),('catalog','types','tags'));check(set(cat)==set(typ)==set(tags) and len(cat)==cm['definitions'],'CENSUS')
- basez=zipfile.ZipFile(root/'wand-item-master-steam-1.26.2.zip');bi=json.loads(basez.read('index.json'));base={}
+ basez=zipfile.ZipFile(root/inputs.get('base','wand-item-master-steam-1.26.2.zip'));bi=json.loads(basez.read('index.json'));base={}
  for n,m in bi['shards'].items():
   b=basez.read(n);check(digest(b)==m['sha256'] and len(b)==m['bytes'],'BASE_DIGEST');base.update((r['itemId'],r) for r in json.loads(b)['items'])
- ext=json.loads((root/'item-master-collectible-extension-1.26.2.json').read_bytes());check(ext['sourceItemsSha256']==cm['sourceItemsSha256'] and ext['baseCount']==len(base),'EXTENSION_IDENTITY');old={**base,**{r['itemId']:r for r in ext['items']}}
+ ext=json.loads((root/inputs.get('extension','item-master-collectible-extension-1.26.2.json')).read_bytes());check(ext['sourceItemsSha256']==cm['sourceItemsSha256'] and ext['baseCount']==len(base),'EXTENSION_IDENTITY');old={**base,**{r['itemId']:r for r in ext['items']}}
  # Reuse all verified original Collection selectors, not a UI crosswalk.
  menus=json.loads(zs['direct'].read('menus.json'));menu_by_id={r['setId']:r for r in menus}
  positive=collections.defaultdict(list);negative=collections.defaultdict(list);ledger=[]
@@ -194,8 +205,8 @@ def build(root):
  tag_ids={i:r['nativeKey'] for i,r in cat.items() if r['nativeCategory']=='Tag'}
  world_keys={'IsDreamlightValley','IsEternityIsle','IsStorybookVale','IsWishBlossomMountains','isSeaOfSecrets','isHoneywood','isUnderwaterScene'}
  universe_dictionary={i:key for i,key in tag_ids.items() if 2000500000<=i<2000600000}
- scopezip=zipfile.ZipFile(root/'COLLECTION_SCOPE_v1.26.2_WORLD_UNIVERSE_EVIDENCE_PRIVATE_20261122.zip')
- labels=json.loads(scopezip.read('collection-scope-labels-private-steam-v1.26.2.json'))
+ scopezip=zipfile.ZipFile(root/inputs.get('scope','COLLECTION_SCOPE_v1.26.2_WORLD_UNIVERSE_EVIDENCE_PRIVATE_20261122.zip'))
+ labels=json.loads(scopezip.read(inputs.get('scopeMember','collection-scope-labels-private-steam-v1.26.2.json')))
  check(labels['sourceTagSha256']==source_hashes['Tag'] and labels['gameVersion']==cm['gameVersion'],'LABEL_SOURCE')
  universe_labels={v['tagId']:v['names'] for v in labels['universes'] if v['tagId'] in universe_dictionary and universe_dictionary[v['tagId']]==v['id']}
  world_labels={v['tagId']:v['names'] for v in labels['worlds'] if tag_ids.get(v['tagId'])==v['id']}
@@ -224,5 +235,5 @@ def build(root):
  return result
 
 def main():
- p=argparse.ArgumentParser();p.add_argument('--input',type=Path,required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args();d=build(a.input);body=json.dumps(d,ensure_ascii=False,separators=(',',':'),allow_nan=False).encode();out=gzip.compress(body,compresslevel=9,mtime=0);a.output.write_bytes(out);print(json.dumps({'coverage':d['coverage'],'bytes':len(out),'sha256':digest(out)},ensure_ascii=False))
+ p=argparse.ArgumentParser();p.add_argument('--input',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--inputs-manifest',type=Path);a=p.parse_args();d=build(a.input,json.loads(a.inputs_manifest.read_bytes()) if a.inputs_manifest else None);body=json.dumps(d,ensure_ascii=False,separators=(',',':'),allow_nan=False).encode();out=gzip.compress(body,compresslevel=9,mtime=0);a.output.write_bytes(out);print(json.dumps({'coverage':d['coverage'],'bytes':len(out),'sha256':digest(out)},ensure_ascii=False))
 if __name__=='__main__':main()
