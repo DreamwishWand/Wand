@@ -436,3 +436,62 @@ test('building skins retain exact target selectors separately from browse design
     assert.equal(byId.get(id).universeAssociation?.universeTagId,association.applied?association.universeTagId:undefined);
   }
 });
+
+
+test('original ProtoDB individual friendship rewards and configured store facts are selectable by Item ID',async()=>{
+  const {fetcher,requests}=site();
+  const master=await openCurrentItemDatabase('/Wand',fetcher);
+  const byItem=await master.getFieldRows('acquisition.additionalSources');
+  const byOwner=await master.getFieldRows('acquisition.individualFriendshipRewards');
+  assert.equal(byItem.length,867);
+  assert.equal(byOwner.length,323);
+  const counts={};let missingAmount=0;
+  const tuples=new Set();
+  for(const [id,links] of byItem)for(const l of links){
+    counts[l.kind]=(counts[l.kind]??0)+1;
+    assert.equal(l.currentAvailabilityVerified,false);
+    assert.match(l.sourceProtoDbSha256,/^[a-f0-9]{64}$/);
+    if(l.kind==='character_friendship_reward'||l.kind==='pet_friendship_reward'){
+      if(l.amount===null)missingAmount++;
+      const key=JSON.stringify([id,l.sourceId,l.level,l.amount,l.kind]);
+      assert(!tuples.has(key));tuples.add(key);
+    }
+  }
+  assert.deepEqual(counts,{character_friendship_reward:720,pet_friendship_reward:482,
+    configured_store_display:141,pre_dlc_store_list_member:76,design_challenge_catalog_unlock:31});
+  assert.equal(missingAmount,1);
+  assert.equal(tuples.size,1202);
+  for(const [owner,links] of byOwner)for(const l of links){
+    assert.equal(l.sourceId,owner);
+    assert(tuples.delete(JSON.stringify([l.itemId,owner,l.level,l.amount,l.kind])));
+  }
+  assert.equal(tuples.size,0);
+  const facts=new Map(byItem);
+  assert(facts.get(40001995).some(l=>l.kind==='character_friendship_reward'&&l.sourceId===10000007&&l.level===2&&l.amount===1));
+  assert(facts.get(40004121).some(l=>l.kind==='pet_friendship_reward'&&l.sourceId===120000148&&l.level===5&&l.amount===1));
+  assert(facts.get(40000628).some(l=>l.kind==='configured_store_display'&&l.sourcePosition===0&&l.sourceField==='FurnituresToDisplay'));
+  assert(facts.get(40000365).some(l=>l.kind==='pre_dlc_store_list_member'&&l.sourcePosition===0));
+  assert(facts.get(40005517).some(l=>l.kind==='design_challenge_catalog_unlock'&&l.sourceId==='DreamSnap150_LegendaryMoments'));
+  const previous=new Map(await master.getFieldRows('acquisition.categories'));
+  const effective=new Map(await master.getFieldRows('acquisition.effectiveCategories'));
+  const rewardIds=new Set(byItem.filter(([,links])=>links.some(l=>
+    (l.kind==='character_friendship_reward'||l.kind==='pet_friendship_reward')&&l.amount!==null)).map(([id])=>id));
+  assert.equal(rewardIds.size,620);
+  const expected=new Set([...previous.keys(),...rewardIds]);
+  assert.deepEqual([...effective.keys()], [...expected].sort((a,b)=>a-b));
+  for(const id of expected){
+    const old=previous.get(id)??[];
+    const want=rewardIds.has(id)&&!old.includes('ordinary_gameplay')?['ordinary_gameplay',...old]:old;
+    assert.deepEqual(effective.get(id),want);
+  }
+  const newlyClassified=[...rewardIds].filter(id=>!previous.get(id)?.length);
+  assert(newlyClassified.length>0);
+  const db=await openCurrentItemDetails('/Wand',fetcher);
+  const [selected]=await db.getSelectedItems([newlyClassified[0]],['nativeCategory'],{acquisition:true,sourceRelations:true});
+  assert(selected.effectiveCategories.includes('ordinary_gameplay'));
+  assert(selected.additionalSources.some(l=>l.kind.endsWith('friendship_reward')));
+  const filtered=await db.listItemIdsByAcquisition('ordinary_gameplay');
+  assert(filtered.includes(newlyClassified[0]));
+  assert.deepEqual(filtered,[...effective].filter(([,cats])=>cats.includes('ordinary_gameplay')).map(([id])=>id));
+  assert(!requests.some(u=>u.includes('/acquisition/public/')));
+});
