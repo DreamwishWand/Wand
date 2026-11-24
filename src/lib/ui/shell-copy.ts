@@ -56,7 +56,7 @@ ja:{
   saveInvalid:"対応するセーブファイルを選択してください",
   saveDrop:"ここにセーブファイルをドロップ",
   moreActions:"その他の操作",
-  themes:{dawn:'黄昏の日の出',coral:'太陽に照らされた透き通るサンゴ礁',night:'魔法の夜空'},
+  themes:{dawn:'夜明け',coral:'真昼',night:'真夜中'},
   tutorials:{
     home:{title:'Wandの使い方',steps:['利用するサービスのタイルを選びます。','準備中のタイルは選択できません。','ホームボタンでサービス一覧へ戻れます。','Collectionはセーブなしでも利用できます。']},
     collection:{title:'Collection',steps:['アイテムを検索するかカテゴリを選択します。下へスクロールすると続きを自動表示します。','アイテムを選んで所持状況・お気に入り・所持数を記録できます。','ヘッダーの読み込みからセーブを選択すると、確認できた発見・所持状態が手動記録に優先されます。','ヘッダーからCollection記録をバックアップ・復元できます。元のゲームセーブは変更しません。']},
@@ -101,7 +101,7 @@ en:{
   saveInvalid:"Select a supported save file",
   saveDrop:"Drop a save file here",
   moreActions:"More actions",
-  themes:{dawn:'Soft lavender sunrise',coral:'Sunlit coral reef',night:'Magical night sky'},
+  themes:{dawn:'Dawn',coral:'Noon',night:'Midnight'},
   tutorials:{
     home:{title:'Using Wand',steps:['Choose a service tile.','Unavailable tiles cannot be opened.','Use Home to return to the service list.','Collection works without a save file.']},
     collection:{title:'Collection',steps:['Search for items or choose a category. Scroll to load more.','Select an item to record ownership, favorites or quantity.','Loading a save file takes precedence over manual discovery and ownership records when verified.','Back up or restore Collection records from the header. Your original game save is never modified.']},
@@ -146,7 +146,7 @@ fr:{
   saveInvalid:"Sélectionnez une sauvegarde compatible",
   saveDrop:"Déposez une sauvegarde ici",
   moreActions:"Plus d’actions",
-  themes:{dawn:'Aube lavande',coral:'Récif corallien ensoleillé',night:'Ciel nocturne magique'},
+  themes:{dawn:'Aube',coral:'Midi',night:'Minuit'},
   tutorials:{
     home:{title:'Utiliser Wand',steps:['Choisissez une vignette de service.','Les services en préparation ne sont pas accessibles.','Utilisez Accueil pour revenir à la liste des services.','Collection fonctionne sans sauvegarde.']},
     collection:{title:'Collection',steps:['Recherchez un objet ou une catégorie. Faites défiler pour afficher la suite.','Sélectionnez un objet pour enregistrer sa possession, ses favoris ou sa quantité.','Lors du chargement, les données de sauvegarde vérifiées priment sur les saisies manuelles.','Exportez ou restaurez Collection depuis l’en-tête. La sauvegarde du jeu reste intacte.']},
@@ -191,7 +191,7 @@ it:{
   saveInvalid:"Seleziona un salvataggio supportato",
   saveDrop:"Trascina qui un salvataggio",
   moreActions:"Altre azioni",
-  themes:{dawn:'Alba lavanda',coral:'Barriera corallina al sole',night:'Cielo notturno magico'},
+  themes:{dawn:'Alba',coral:'Mezzogiorno',night:'Mezzanotte'},
   tutorials:{
     home:{title:'Come usare Wand',steps:['Scegli un riquadro del servizio.','I servizi in preparazione non sono disponibili.','Usa Home per tornare all’elenco dei servizi.','Collection funziona anche senza salvataggio.']},
     collection:{title:'Collection',steps:['Cerca un oggetto o scegli una categoria. Scorri per caricare altri risultati.','Seleziona un oggetto per registrare possesso, preferiti o quantità.','Caricando un salvataggio, i dati verificati prevalgono su quelli manuali.','Esporta o ripristina Collection dall’intestazione. Il salvataggio originale non cambia.']},
@@ -236,7 +236,7 @@ de:{
   saveInvalid:"Unterstützte Spielstanddatei auswählen",
   saveDrop:"Spielstand hier ablegen",
   moreActions:"Weitere Aktionen",
-  themes:{dawn:'Lavendelfarbene Morgendämmerung',coral:'Sonnenbeschienenes Korallenriff',night:'Magischer Nachthimmel'},
+  themes:{dawn:'Morgendämmerung',coral:'Mittag',night:'Mitternacht'},
   tutorials:{
     home:{title:'Wand verwenden',steps:['Wähle eine Dienst-Kachel.','Noch nicht verfügbare Kacheln lassen sich nicht öffnen.','Über Home gelangst du zur Dienstübersicht.','Collection funktioniert ohne Spielstand.']},
     collection:{title:'Collection',steps:['Suche nach Gegenständen oder wähle eine Kategorie. Scrolle für weitere Einträge.','Wähle einen Gegenstand, um Besitz, Favoriten und Menge zu speichern.','Beim Laden haben bestätigte Spielstanddaten Vorrang vor manuellen Einträgen.','Sichere oder stelle Collection über die Kopfzeile wieder her. Der originale Spielstand bleibt unverändert.']},
@@ -281,7 +281,7 @@ de:{
   saveInvalid:"Selecciona un archivo de partida compatible",
   saveDrop:"Suelta aquí una partida guardada",
   moreActions:"Más acciones",
-  themes:{dawn:'Amanecer lavanda',coral:'Arrecife de coral soleado',night:'Cielo nocturno mágico'},
+  themes:{dawn:'Amanecer',coral:'Mediodía',night:'Medianoche'},
   tutorials:{
     home:{title:'Cómo usar Wand',steps:['Elige un servicio.','Los servicios en preparación no están disponibles.','Usa Inicio para volver a la lista de servicios.','Collection funciona sin partida guardada.']},
     collection:{title:'Collection',steps:['Busca objetos o elige una categoría. Desplázate para cargar más.','Selecciona un objeto para registrar posesión, favoritos o cantidad.','Al cargar una partida, los datos verificados prevalecen sobre los registros manuales.','Exporta o restaura Collection desde la cabecera. La partida original no se modifica.']},
@@ -326,7 +326,7 @@ de:{
   saveInvalid:"请选择支持的存档文件",
   saveDrop:"将存档文件拖放到此处",
   moreActions:"更多操作",
-  themes:{dawn:'淡紫色黎明',coral:'阳光下的珊瑚礁',night:'魔法夜空'},
+  themes:{dawn:'黎明',coral:'正午',night:'午夜'},
   tutorials:{
     home:{title:'Wand 使用指南',steps:['选择要使用的服务卡片。','尚未开放的服务无法进入。','通过主页按钮返回服务列表。','Collection 无需存档也可以使用。']},
     collection:{title:'Collection',steps:['搜索物品或选择分类。向下滚动可加载更多内容。','选择物品以记录拥有状态、收藏及数量。','加载存档后，已验证的发现和拥有状态优先于手动记录。','可在页眉备份或恢复 Collection 记录。不会修改原始游戏存档。']},
@@ -371,7 +371,7 @@ de:{
   saveInvalid:"Selecione um arquivo de save compatível",
   saveDrop:"Solte um save aqui",
   moreActions:"Mais ações",
-  themes:{dawn:'Amanhecer lavanda',coral:'Recife de coral ensolarado',night:'Céu noturno mágico'},
+  themes:{dawn:'Amanhecer',coral:'Meio-dia',night:'Meia-noite'},
   tutorials:{
     home:{title:'Como usar o Wand',steps:['Escolha um serviço.','Serviços em preparação ainda não podem ser abertos.','Use Início para voltar à lista de serviços.','A Collection funciona sem arquivo de save.']},
     collection:{title:'Collection',steps:['Pesquise itens ou escolha uma categoria. Role para carregar mais.','Selecione um item para registrar posse, favoritos ou quantidade.','Ao carregar um save, os dados verificados prevalecem sobre os registros manuais.','Faça backup ou restaure a Collection pelo cabeçalho. O save original não é modificado.']},
