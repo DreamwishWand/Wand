@@ -922,7 +922,6 @@ try{
     'world tabs open scoped category cards, not an immediate flat item grid');
   const scopedFamily=page.locator('.collection-detail-category-grid .facet-card:not([disabled])').first();
   await scopedFamily.click();
-  await page.locator('.collection-categories-heading button.subtle-button').click();
   await page.locator('.item-card').first().waitFor({timeout:15000});
   await page.locator('.breadcrumbs').getByRole('button',{name:'カテゴリ'}).click();
   await page.locator('.collection-detail-category-grid .facet-card').first().waitFor();
@@ -935,8 +934,7 @@ try{
   const facet=page.locator('.facet-card').filter({hasText:/家具|Furniture/}).first();
   try {
     await facet.click({timeout:10000});
-    await page.locator('.collection-categories-heading button.subtle-button').click();
-  } catch (error) {
+    } catch (error) {
     console.error('COLLECTION_FACET_DEBUG',await page.locator('body').innerText());
     console.error('COLLECTION_FACET_ERRORS',browserErrors);
     throw error;
