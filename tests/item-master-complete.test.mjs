@@ -509,7 +509,12 @@ test('catalog purchase predicates and generator exclusions are independently sou
   assert.equal(mission.length,217);
   assert.equal(new Set(mission.flatMap(([,r])=>r.relatedConditions.filter(x=>x.kind.startsWith('Mission')).map(x=>x.targetItemId))).size,75);
   assert.equal(all.filter(([,r])=>r.prerequisite?.kind==='mission_completed').length,198);
-  assert.equal(all.filter(([,r])=>r.prerequisite?.kind==='mission_step_completed').length,18);
+  assert.equal(all.filter(([,r])=>r.prerequisite?.kind==='mission_step_completed').length,16);
+  // Two original MissionStepStatus records omit StepID entirely.
+  // Do not substitute zero or imply a known step in the product.
+  const unspecified=mission.filter(([,r])=>r.prerequisite===null&&r.relatedConditions.some(
+    l=>l.kind==='MissionStepStatus'&&l.commonConditionPath.length===0&&!Object.hasOwn(l.predicate,'StepID')));
+  assert.deepEqual(unspecified.map(([id])=>id),[40005570,40005644]);
   for(const [,r] of all){
     assert.equal(r.storeMembershipVerified,false);
     assert.equal(r.currentAvailabilityVerified,false);
