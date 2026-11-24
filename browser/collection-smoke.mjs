@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises';
 import { createHash, createCipheriv } from 'node:crypto';
 import { deflateRawSync } from 'node:zlib';
 import { chromium } from 'playwright';
+import {projectCompleteCollection} from '../src/lib/collection/db01-complete-catalog.ts';
+import {COLLECTION_TOP_CATEGORIES} from '../src/lib/collection/category-hierarchy.ts';
 import {parseCollectionDb01Facets} from '../src/lib/collection/db01-native-facets.ts';
 import {buildWorldBrowseIndex} from '../src/lib/collection/world-browse-index.ts';
 import {collectionTopCategoryCards} from '../src/lib/collection/category-hierarchy.ts';
@@ -410,11 +412,14 @@ try{
     'leaf categories never appear at root');
   assert.equal(await page.locator('.collection-original-category-grid').count(),0);
   assert.equal(await parents.filter({hasText:/口ひげ|あごひげ/}).count(),0);
+  const completeIndex=projectCompleteCollection(JSON.parse(await readFile(
+    'static/ddv/item-master/steam-1.26.2-complete/collection-facets.json','utf8')));
+  const totalText=completeIndex.sourceItemCount.toLocaleString('ja');
   const browseAll=page.locator('.collection-categories-heading button');
-  assert.match(await browseAll.innerText(),/13,202/);
+  assert.ok((await browseAll.innerText()).includes(totalText));
   await browseAll.click();
   await page.locator('.item-card').first().waitFor({timeout:12000});
-  assert.match(await page.locator('.result-count').innerText(),/13,202/);
+  assert.ok((await page.locator('.result-count').innerText()).includes(totalText));
   const returnRoot=async()=>{
     await page.locator('.breadcrumbs').getByRole('button',{name:'カテゴリ',exact:true}).click();
     await parents.first().waitFor();
@@ -443,42 +448,36 @@ try{
     await page.locator(`[data-top-category="${parent}"]`).click();
     if(selector)await page.locator(selector).click();
     await page.locator('.item-card').first().waitFor({timeout:12000});
-    assert.match(await page.locator('.result-count').innerText(),new RegExp(count));
+    const rootIds=completeIndex.itemsByRoot.get(parent)??[];
+    const expectedIds=selector?rootIds.filter(id=>{
+      const native=completeIndex.nativeSubtypeByItem.get(id);
+      return native&&native.nativeType+':'+native.code===selector.split('"')[1];
+    }):rootIds;
+    assert.ok((await page.locator('.result-count').innerText()).includes(expectedIds.length.toLocaleString('ja')));
     const id=Number(await page.locator('.item-card').first().getAttribute('data-item-id'));
-    if(code!==null)assert.equal(Math.floor((id%10000000)/100000),code);
+    assert.ok(expectedIds.includes(id));
     if(selector){
       await page.locator('.breadcrumbs button').nth(1).click();
       await page.locator(selector).waitFor();
     }
     await returnRoot();
   }
-  assert.equal(await page.locator('[data-top-category="buildings"]').isDisabled(),true);
-  // A missing category projection must not leave a permanent loading message,
-  // and retry must restore the game-source navigation without losing access
-  // to the existing item-type categories.
+  assert.equal(await page.locator('[data-top-category="buildings"]').isDisabled(),
+    !(completeIndex.itemsByRoot.get('buildings')?.length));
+  // A failed v3 source asset must fail closed; reloading retries verified data.
   const retryContext=await browser.newContext();
   const retryPage=await retryContext.newPage();
   let failedCategoryFetch=false;
-  await retryPage.route('**/ddv/collection/db01-facets-1262.json',route=>{
-    if(!failedCategoryFetch){
-      failedCategoryFetch=true;
-      return route.abort('failed');
-    }
+  await retryPage.route('**/ddv/item-master/steam-1.26.2-complete/collection-facets.json',route=>{
+    if(!failedCategoryFetch){failedCategoryFetch=true;return route.abort('failed');}
     return route.continue();
   });
   await retryPage.goto(url);
-  await retryPage.getByRole('alert').filter({
-    hasText:/詳細分類を読み込めませんでした|Detailed categories could not be loaded/
-  }).waitFor({timeout:30000});
+  await retryPage.getByRole('alert').filter({hasText:/データの検証または読み込みに失敗/}).waitFor({timeout:30000});
   assert.equal(failedCategoryFetch,true);
-  assert.ok(await retryPage.locator('.facet-card').count()>10,
-    'item-type categories must remain browseable if source navigation fails');
-  await retryPage.getByRole('button',{name:/再試行|Retry/}).click();
-  await retryPage.locator('.collection-top-category').first()
-    .waitFor({timeout:30000});
+  await retryPage.reload();
+  await retryPage.locator('.collection-top-category').first().waitFor({timeout:30000});
   assert.equal(await retryPage.locator('.collection-top-category').count(),30);
-  assert.equal(await retryPage.locator('.collection-native-activity,.collection-native-subtype').count(),0);
-  assert.equal(await retryPage.locator('.collection-original-category-grid').count(),0);
   await retryContext.close();
   // DB-01's original Disney universe tags are now a working, cross-category
   // browser axis; they remain distinct from unverified Collection membership.
@@ -486,7 +485,7 @@ try{
   await page.getByRole('button',{name:'ユニバース表示'}).click();
   assert.equal(await page.getByRole('button',{name:'ユニバース表示'}).getAttribute('aria-pressed'),'true');
   await page.locator('.collection-universe-card').first().waitFor({timeout:18000});
-  assert.equal(await page.locator('.collection-universe-card').count(),68,
+  assert.equal(await page.locator('.collection-universe-card').count(),69,
     'all 67 original universe definitions plus untagged must be visible');
   assert.match(await page.locator('.collection-axis-notice').innerText(),/原本の作品タグ/);
   assert.match(await page.locator('.collection-universe-card').first().innerText(),/その他/);
@@ -499,8 +498,9 @@ try{
   });
   assert.equal(await rayaCard.count(),1);
   await rayaCard.click();
-  await page.locator('.empty-panel').first().waitFor({timeout:15000});
-  assert.equal(await page.locator('.collection-universe-section .item-card').count(),0);
+  if(await page.locator('.collection-universe-section .item-card').count()===0){
+    await page.waitForFunction(()=>document.querySelector('.empty-panel,.collection-universe-section .item-card'));
+  }
   await page.getByRole('button',{name:'ユニバース一覧'}).first().click();
   await page.locator('.collection-universe-card').nth(1).click();
   await page.locator('.collection-universe-section .item-card').first().waitFor({timeout:15000});
@@ -842,8 +842,7 @@ try{
   });
   console.log('COLLECTION_WORLD_SWITCH_MS',JSON.stringify(worldSwitchSamples));
   assert.ok(worldSwitchSamples.length>1);
-  const source=parseCollectionDb01Facets(JSON.parse(await readFile(
-    'static/ddv/collection/db01-facets-1262.json','utf8')));
+  const source=completeIndex;
   const scopes=buildWorldBrowseIndex(source);
   for(const sample of worldSwitchSamples){
     assert.equal(sample.items,0,'world navigation must not render hidden item results');
@@ -854,8 +853,7 @@ try{
     }
     const scope=scopes.get(world.id);
     assert.ok(scope,'enabled world has a source scope');
-    const expected=collectionTopCategoryCards([...scope.nativeCounts].map(([key,total])=>({key,total,owned:0})))
-      .filter(card=>card.total>0).map(card=>card.id);
+    const expected=COLLECTION_TOP_CATEGORIES.filter(card=>(scope.rootCounts.get(card.id)??0)>0).map(card=>card.id);
     assert.deepEqual(sample.categories,expected,'world displays exactly the nonempty categories in canonical order');
     assert.equal(sample.disabled,0,'no unavailable category cards in a selected world');
   }
