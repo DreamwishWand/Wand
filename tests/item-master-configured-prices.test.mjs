@@ -23,8 +23,18 @@ test('configured price overrides preserve all original public rows without claim
     assert.equal(value.currentSellPriceVerified,false);
     assert(Object.isFrozen(value));
     counts[value.status]=(counts[value.status]??0)+1;
-    if(value.status==='amount_configured')assert.equal(typeof value.amount,'number');
-    else assert.equal(value.amount,null);
+    if(value.status==='amount_configured'){
+      assert.equal(typeof value.amount,'number');
+      assert.deepEqual(value.nativePurchaseOverride,{
+        kind:'matching_currency_explicit_override',currencyItemId:value.priceCurrencyItemId,
+        amount:value.amount,nativeLookupBranchVerified:true,precedesPriceProviders:true,
+        liveTransactionVerified:false,sourceGameVersion:'1.26.2'
+      });
+      assert(Object.isFrozen(value.nativePurchaseOverride));
+    }else{
+      assert.equal(value.amount,null);
+      assert.equal(value.nativePurchaseOverride,null);
+    }
   }
   assert.deepEqual(counts,{amount_configured:1156,empty:7053,currency_only:20});
   const amountValues=values.filter(v=>v.status==='amount_configured');
@@ -44,4 +54,25 @@ test('configured price overrides preserve all original public rows without claim
   assert.equal(other.status,'not_recorded');
   assert.deepEqual(repeat,priced);
   assert(!requests.some(url=>url.includes('/acquisition/public/')||url.includes('/id/')||url.includes('/locale/')));
+});
+
+
+test('native furniture display type gate is a structural filter, not shop membership',async()=>{
+  const db=await openCurrentItemDatabase('',async url=>new Response(await readFile('static'+url),{status:200}));
+  const gate=await db.getFieldRows('acquisition.furnitureDisplayTypeGate');
+  assert.equal(gate.length,6188);
+  const passed=gate.filter(([,value])=>value===true);
+  assert.equal(passed.length,5288);
+  assert.equal(gate.filter(([,value])=>value===false).length,900);
+  const types=new Map(await db.getFieldRows('itemType.subtypeCode'));
+  const categories=new Map(await db.getFieldRows('nativeCategory'));
+  for(const [id,value] of gate){
+    assert.equal(categories.get(id),'Furniture');
+    assert.equal(value,[0,3].includes(types.get(id)));
+  }
+  assert.deepEqual(await db.findItemIdsByField('acquisition.furnitureDisplayTypeGate',{kind:'equals',value:true}),
+    passed.map(([id])=>id));
+  const row=await db.getItemFields([40000047],['acquisition.furnitureDisplayTypeGate','acquisition.catalogFacts']);
+  assert.equal(row[0].values['acquisition.furnitureDisplayTypeGate'],true);
+  assert.equal(row[0].values['acquisition.catalogFacts'].storeMembershipVerified,false);
 });
