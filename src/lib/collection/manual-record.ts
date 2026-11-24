@@ -22,14 +22,14 @@ export function collectionQuantityPatch(value:string):Pick<CollectionEntry,'quan
   return {quantity};
 }
 const OVERWRITE:Readonly<Record<string,string>>={
-  ja:'現在のコレクションに記録があります。セーブファイルから確認できる収集状況で既存の記録を上書きしますか？ 確認できない項目は変更しません。',
-  en:'This collection already has records. Overwrite existing collection progress with verified save data? Unverified fields will remain unchanged.',
-  fr:'Cette collection contient déjà des données. Remplacer la progression existante par les données vérifiées de la sauvegarde ? Les champs non vérifiés restent inchangés.',
-  it:'La collezione contiene già dati. Sovrascrivere i progressi con i dati verificati del salvataggio? I campi non verificati restano invariati.',
-  de:'Diese Sammlung enthält bereits Einträge. Vorhandenen Fortschritt mit verifizierten Spielstanddaten überschreiben? Nicht verifizierte Felder bleiben unverändert.',
-  'es-ES':'Esta colección ya contiene registros. ¿Sobrescribir el progreso con los datos verificados de la partida? Los campos no verificados no cambiarán.',
-  'zh-CN':'当前收藏已有记录。是否用存档中已验证的收藏进度覆盖现有记录？未验证的字段不会更改。',
-  'pt-BR':'Esta coleção já contém registros. Sobrescrever o progresso com os dados verificados do salvamento? Os campos não verificados permanecerão inalterados.'
+  "ja": "セーブファイルの情報で既存の手動入力データを上書きしますか？",
+  "en": "Overwrite manual records with save data?",
+  "fr": "Remplacer les données manuelles par la sauvegarde ?",
+  "it": "Sovrascrivere i dati manuali con il salvataggio?",
+  "de": "Manuelle Einträge mit Spielstanddaten überschreiben?",
+  "es-ES": "¿Sobrescribir los datos manuales con la partida guardada?",
+  "zh-CN": "使用存档数据覆盖手动记录？",
+  "pt-BR": "Sobrescrever os registros manuais com os dados do salvamento?"
 };
 export function collectionOverwriteMessage(locale:string):string{
   return OVERWRITE[locale]??OVERWRITE.en;
