@@ -2,6 +2,7 @@
  * supported objects, runtime overrides, collision or placement legality.
  * Built once per selected Grid in the World worker; shared shapes are
  * deduplicated per Item ID and orientation. Row runs preserve holes. */
+import {sourceEditRestrictions,type NativeEditRestrictions} from './native-edit-restrictions.ts';
 import {sourceMapLayer,sourceSurfaceCapable,type MapObjectLayer} from './source-map-layers.ts';
 import {getSourceAnchorDomain} from './native-anchor-domain.ts';
 import {getOriginalGridAreaEvidence} from './native-gridarea-evidence.ts';
@@ -20,7 +21,7 @@ export interface SourceMapObject {
   readonly id:number;readonly itemId:number;readonly name:string|null;
   readonly x:number;readonly y:number;readonly orientationCode:number;
   readonly orientationName:string|null;readonly shapeKey:string|null;
-  readonly layer:MapObjectLayer;readonly surfaceCapable:boolean;
+  readonly layer:MapObjectLayer;readonly surfaceCapable:boolean;readonly editRestrictions?:NativeEditRestrictions;
 }
 export interface SourceObjectMap {
   readonly status:'source_default_geometry'|'unavailable'|'incompatible_grid_factor';
@@ -45,7 +46,7 @@ export function createSourceGeometryCache(source:unknown,factor:1|2){
     const definition=definitions.get(String(itemId));
     const identity={name:record(definition)&&typeof definition.nativeName==='string'?definition.nativeName:null,
       layer:sourceMapLayer(e.nativeType,itemId,e.acceptedFloorTypesFlag),
-      surfaceCapable:sourceSurfaceCapable(e.acceptedFloorTypesFlag)};
+      surfaceCapable:sourceSurfaceCapable(e.acceptedFloorTypesFlag),editRestrictions:sourceEditRestrictions(definition)};
     if(orientationCode===null)return {...identity,shapeKey:null};
     const key=itemId+':'+orientationCode;
     let shape=cache.get(key);
