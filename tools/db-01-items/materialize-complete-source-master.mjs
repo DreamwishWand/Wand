@@ -13,6 +13,7 @@ import {loadAcquisitionColumns} from './acquisition-columns.mjs';
 import {loadStallCharacterRelations} from './stall-character-relations.mjs';
 import {loadBuildingSkinRelations} from './building-skin-relations.mjs';
 import {loadProtoDbAcquisition} from './protodb-acquisition.mjs';
+import {buildCatalogFacts} from './catalog-acquisition-facts.mjs';
 
 const hash=b=>createHash('sha256').update(b).digest('hex');
 const SHA=/^[0-9a-f]{64}$/;
@@ -1014,7 +1015,7 @@ function introductionHistory(project,e,version,source,rows){
     }];
   }));
 }
-function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition){
+function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts){
   const columns=new Map();
   const split=new Set(['names','artwork','itemType','nativeProperties','sourceAttributes']);
   const add=(field,id,value)=>{
@@ -1034,6 +1035,17 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     }
   };
   for(const row of rows){
+    const catalog=catalogFacts.facts.get(row.itemId);
+    if(catalog){
+      add('acquisition.catalogFacts',row.itemId,catalog);
+      add('acquisition.generatorExcluded',row.itemId,catalog.generatorExcluded);
+      if(catalog.exclusionFlags.length)add('acquisition.generatorRelatedFlags',row.itemId,catalog.exclusionFlags);
+      if(catalog.gateStatus==='configured_source_gate')add('acquisition.catalogGate',row.itemId,catalog.catalogVisibilityConditions);
+      const refs=[...new Set(catalog.relatedConditions.filter(r=>r.resolved).map(r=>r.targetItemId))].sort((a,b)=>a-b);
+      if(refs.length)add('acquisition.catalogGateRelatedItemIds',row.itemId,refs);
+    }
+    const gateDependents=catalogFacts.dependents.get(row.itemId);
+    if(gateDependents?.length)add('acquisition.catalogGateDependents',row.itemId,gateDependents);
     const stall=stallRelations.get(row.itemId);
     if(stall){
       add('building.stallEmployeeItemIds',row.itemId,stall.employees);
@@ -1097,7 +1109,7 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
     const blocks=[];
     // Frequently inspected acquisition details use smaller blocks; category
     // columns retain the compact bulk-filter layout.
-    const narrow=['acquisition.summary','acquisition.sourceRelations','acquisition.additionalSources','acquisition.individualFriendshipRewards'].includes(field);
+    const narrow=['acquisition.summary','acquisition.sourceRelations','acquisition.additionalSources','acquisition.individualFriendshipRewards','acquisition.catalogFacts','acquisition.catalogGateDependents'].includes(field);
     const rowLimit=narrow?256:4096,byteLimit=narrow?128*1024:1024*1024;
     // Bound bytes as well as row count; large mission step arrays stay atomic.
     for(let start=0;start<entries.length;){
@@ -1350,6 +1362,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
   exploreThemeCensus(explore,byId);
   const acquisition=loadAcquisitionColumns(project,version,e.acquisitionProjection,rows);
   const protoAcquisition=loadProtoDbAcquisition(project,source,byId);
+  const catalogFacts=buildCatalogFacts(source,rows);
   console.log('DB01_FRIENDSHIP_NEW_CLASSIFICATION '+JSON.stringify({
     additionalOrdinaryGameplay:[...protoAcquisition.byItem].filter(([id,links])=>links.some(l=>l.amount!==null)&&!acquisition?.summary.get(id)?.categories.includes('ordinary_gameplay')).length,
     previouslyUnclassified:[...protoAcquisition.byItem].filter(([id,links])=>links.some(l=>l.amount!==null)&&!acquisition?.summary.get(id)?.classified).length}));
@@ -1413,7 +1426,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
         check(index.assets[path].bytes<=16*1024*1024,'LINKED_TEXT_BLOCK_TOO_LARGE');
       }
     }
-    writeFieldColumns(rows,e.release,write,index.assets,attachHistoricalContentOrigin(project,source,introductionHistory(project,e,version,source,rows)),acquisition,stallRelations,skinRelations,protoAcquisition);
+    writeFieldColumns(rows,e.release,write,index.assets,attachHistoricalContentOrigin(project,source,introductionHistory(project,e,version,source,rows)),acquisition,stallRelations,skinRelations,protoAcquisition,catalogFacts);
     write('index.json',index,index.count);
     installProjectionStage(stage,destination);
     console.log('DB-01 projection reuse:',JSON.stringify(stats));

@@ -495,3 +495,51 @@ test('original ProtoDB individual friendship rewards and configured store facts 
   assert.deepEqual(filtered,[...effective].filter(([,cats])=>cats.includes('ordinary_gameplay')).map(([id])=>id));
   assert(!requests.some(u=>u.includes('/acquisition/public/')));
 });
+
+
+test('catalog purchase predicates and generator exclusions are independently source-backed, not store grants',async()=>{
+  const {fetcher,requests}=site();
+  const master=await openCurrentItemDatabase('/Wand',fetcher);
+  const all=await master.getFieldRows('acquisition.catalogFacts');
+  assert.equal(all.length,7694);
+  assert.equal(all.filter(([,r])=>r.generatorExcluded===true).length,3646);
+  assert.equal(all.filter(([,r])=>r.flagsKnown&&!r.exclusionFlags.length).length,2742);
+  assert.equal(all.filter(([,r])=>r.gateStatus==='configured_source_gate').length,590);
+  const mission=all.filter(([,r])=>r.relatedConditions.some(x=>x.kind.startsWith('Mission')));
+  assert.equal(mission.length,217);
+  assert.equal(new Set(mission.flatMap(([,r])=>r.relatedConditions.filter(x=>x.kind.startsWith('Mission')).map(x=>x.targetItemId))).size,75);
+  assert.equal(all.filter(([,r])=>r.prerequisite?.kind==='mission_completed').length,198);
+  assert.equal(all.filter(([,r])=>r.prerequisite?.kind==='mission_step_completed').length,16);
+  // Two original MissionStepStatus records omit StepID entirely.
+  // Do not substitute zero or imply a known step in the product.
+  const unspecified=mission.filter(([,r])=>r.prerequisite===null&&r.relatedConditions.some(
+    l=>l.kind==='MissionStepStatus'&&l.commonConditionPath.length===0&&!Object.hasOwn(l.predicate,'StepID')));
+  assert.deepEqual(unspecified.map(([id])=>id),[40005570,40005644]);
+  for(const [,r] of all){
+    assert.equal(r.storeMembershipVerified,false);
+    assert.equal(r.currentAvailabilityVerified,false);
+  }
+  const map=new Map(all);
+  assert.equal(map.get(40000047).generatorExcluded,true);
+  assert.deepEqual(map.get(40000047).catalogVisibilityConditions,{});
+  assert.equal(map.get(40002683).generatorExcluded,false);
+  assert.deepEqual(map.get(40002683).prerequisite,{kind:'mission_completed',missionItemId:2070001040});
+  assert.deepEqual(map.get(40005031).prerequisite,{kind:'mission_step_completed',missionItemId:2070001347,stepId:16});
+  assert.deepEqual(map.get(50000440).catalogVisibilityConditions,{UnlockedByDesignChallenge:'DreamSnap154_ExplosionsOfColor'});
+  assert.equal(map.get(50000440).prerequisite,null);
+  const composite=map.get(40006825);
+  assert.equal(composite.prerequisite,null);
+  assert(composite.relatedConditions.some(r=>r.targetItemId===2130006851&&r.kind==='CommonConditions'));
+  assert(composite.relatedConditions.some(r=>r.kind==='MissionStepStatus'&&r.commonConditionPath.includes(2130006851)));
+  const reverse=new Map(await master.getFieldRows('acquisition.catalogGateDependents'));
+  for(const [id,r] of all)for(const l of r.relatedConditions.filter(l=>l.resolved)){
+    assert(reverse.get(l.targetItemId).some(x=>x.itemId===id&&x.sourcePath===l.sourcePath&&x.kind===l.kind));
+  }
+  const excluded=await master.findItemIdsByField('acquisition.generatorExcluded',{kind:'equals',value:true});
+  assert.deepEqual(excluded,all.filter(([,r])=>r.generatorExcluded===true).map(([id])=>id));
+  const db=await openCurrentItemDetails('/Wand',fetcher);
+  const [selected,absent]=await db.getSelectedItems([40002683,99999999],['nativeCategory'],{sourceRelations:true});
+  assert.deepEqual(selected.catalogFacts,map.get(40002683));
+  assert.equal(absent,null);
+  assert(!requests.some(u=>u.includes('/acquisition/public/')));
+});

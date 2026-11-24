@@ -88,7 +88,27 @@ export type AdditionalItemSource = Readonly<{
   sourceProtoDbSha256:string;
   currentAvailabilityVerified:false;
 }>;
+export interface CatalogAcquisitionFacts {
+  readonly generatorExcluded:boolean|null;
+  readonly syncOnline:boolean|null;
+  readonly hidden:boolean|null;
+  readonly onlineCategoryCode:number|null;
+  readonly exclusionFlags:readonly string[];
+  readonly flagsKnown:boolean;
+  readonly gateStatus:'empty_source_gate'|'configured_source_gate';
+  readonly catalogVisibilityConditions:Readonly<Record<string,unknown>>;
+  readonly relatedConditions:readonly Readonly<{
+    targetItemId:number;kind:string;sourcePath:string;predicate:Readonly<Record<string,unknown>>;
+    commonConditionPath:readonly number[];resolved:boolean;
+  }>[];
+  readonly prerequisite:Readonly<{kind:'mission_completed';missionItemId:number}
+    |{kind:'mission_step_completed';missionItemId:number;stepId:number}>|null;
+  readonly storeMembershipVerified:false;
+  readonly currentAvailabilityVerified:false;
+}
 export interface PublicSelectedItem extends ItemFieldProjection {
+  /** Original catalog predicates, not proof of store membership or live stock. */
+  readonly catalogFacts?:Readonly<CatalogAcquisitionFacts>;
   /** Current source-derived categories including individual friendship rewards.
    * Legacy acquisition.categories retains its independently pinned census. */
   readonly effectiveCategories?:readonly GameNativeItemCategory[];
@@ -326,6 +346,7 @@ export async function openPublicItemDetails(
           const catalog=new Set((await reader.getFieldCatalog()).map(f=>f.field));
           if(selection.acquisition&&catalog.has('acquisition.effectiveCategories'))selectedFields.push('acquisition.effectiveCategories');
           if(selection.sourceRelations&&catalog.has('acquisition.additionalSources'))selectedFields.push('acquisition.additionalSources');
+          if(selection.sourceRelations&&catalog.has('acquisition.catalogFacts'))selectedFields.push('acquisition.catalogFacts');
         }
         const knownIds=[...new Set(projected.flatMap(row=>row?[row.itemId]:[]))];
         const metadata=selectedFields.length
@@ -361,7 +382,10 @@ export async function openPublicItemDetails(
             :undefined;
           return Object.freeze({...row,...(acquisition?{acquisition}:{}),
             ...(sourceRelations?{sourceRelations}:{}),...(effectiveCategories?{effectiveCategories}:{}),
-            ...(additionalSources?{additionalSources}:{}),acquisitionStatus:status,currentAvailabilityVerified:false as const});
+            ...(additionalSources?{additionalSources}:{}),
+            ...(selection.sourceRelations&&values?.['acquisition.catalogFacts']?{
+              catalogFacts:values['acquisition.catalogFacts'] as unknown as Readonly<CatalogAcquisitionFacts>
+            }:{}),acquisitionStatus:status,currentAvailabilityVerified:false as const});
         }));
       }
       const [origins,index]=await Promise.all([
