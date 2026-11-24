@@ -1049,18 +1049,21 @@ try{
   await design.locator('.design-item').first().waitFor({timeout:30000});
   const frame=design.locator('.design-map-frame');
   const frameBox=await frame.boundingBox(),workspaceBox=await publicWorld.boundingBox();
-  assert.ok(frameBox.height>workspaceBox.height*.6,'map must occupy most of workspace height');
+  assert.ok(Math.abs(frameBox.height-workspaceBox.height)<2,'map must fill workspace height');
+  assert.ok(Math.abs(frameBox.width-workspaceBox.width)<2,'map must fill workspace width');
   const initialView=await design.locator('.design-plot > svg').getAttribute('viewBox');
   await frame.getByRole('button',{name:'拡大',exact:true}).click();
   assert.notEqual(await design.locator('.design-plot > svg').getAttribute('viewBox'),initialView);
   await frame.getByRole('button',{name:'全体表示',exact:true}).click();
   assert.equal(await design.locator('.design-plot > svg').getAttribute('viewBox'),initialView);
   await design.getByRole('button',{name:'家具パレット'}).click();
-  assert.ok((await frame.boundingBox()).width>frameBox.width);
+  assert.equal((await frame.boundingBox()).width,frameBox.width);
+  assert.equal(await design.locator('aside').isVisible(),false);
   await design.getByRole('button',{name:'家具パレット'}).click();
   await design.getByLabel('配置カテゴリ').selectOption('furniture');
   await design.locator('.design-item').first().click();
   await design.getByRole('button',{name:'配置終了'}).waitFor({timeout:30000});
+  await design.getByRole('button',{name:'家具パレット'}).click();
   const designSvg=design.locator('.design-plot > svg');
   async function designClick(x,y){
     const p=await designSvg.evaluate((svg,xy)=>{const pt=new DOMPoint(xy[0],xy[1]).matrixTransform(svg.getScreenCTM());return {x:pt.x,y:pt.y};},[x,y]);
@@ -1073,6 +1076,32 @@ try{
   assert.equal(await design.locator('.design-object').count(),0);
   await design.getByLabel('設計をやり直す').click();
   assert.equal(await design.locator('.design-object').count(),1);
+  await designClick(10.5,10.5);
+  await page.keyboard.press('Control+c');
+  await page.keyboard.press('Meta+v');
+  await designClick(20.5,20.5);
+  assert.equal(await design.locator('.design-object').count(),2);
+  await page.keyboard.press('Meta+z');
+  assert.equal(await design.locator('.design-object').count(),1);
+  await page.keyboard.press('Control+y');
+  assert.equal(await design.locator('.design-object').count(),2);
+  await page.keyboard.press('Control+a');
+  await page.keyboard.press('Meta+x');
+  assert.equal(await design.locator('.design-object').count(),0);
+  await page.keyboard.press('Meta+z');
+  assert.equal(await design.locator('.design-object').count(),2);
+  await page.keyboard.press('Control+Shift+z');
+  assert.equal(await design.locator('.design-object').count(),0);
+  await page.keyboard.press('Meta+z');
+  assert.equal(await design.locator('.design-object').count(),2);
+  await page.keyboard.press('Control+z');
+  assert.equal(await design.locator('.design-object').count(),1);
+  const designScreen=async(x,y)=>designSvg.evaluate((svg,xy)=>{const p=new DOMPoint(...xy).matrixTransform(svg.getScreenCTM());return {x:p.x,y:p.y};},[x,y]);
+  const from=await designScreen(10.5,10.5),to=await designScreen(14.5,13.5);
+  await page.mouse.move(from.x,from.y);await page.mouse.down();await page.mouse.move(to.x,to.y,{steps:5});await page.mouse.up();
+  assert.equal(await design.locator('.design-object').first().getAttribute('transform'),'translate(14 13)');
+  await page.keyboard.press('Control+z');
+  assert.equal(await design.locator('.design-object').first().getAttribute('transform'),'translate(10 10)');
   await publicWorld.getByLabel('エリア',{exact:true}).selectOption({label:'Plaza'});
   await design.locator('.design-plot').waitFor({timeout:20000});
   assert.equal(await design.locator('.design-object').count(),0);
@@ -1141,10 +1170,21 @@ try{
   const plotSvg=publicPlot.locator('.plot > svg');
   async function groupClick(x,y){
     const p=await plotSvg.evaluate((svg,xy)=>{const pt=new DOMPoint(xy[0],xy[1]).matrixTransform(svg.getScreenCTM());return {x:pt.x,y:pt.y};},[x,y]);
+    assert.ok(await plotSvg.evaluate((svg,p)=>svg.parentElement.contains(document.elementFromPoint(p.x,p.y)),p),'range selection point must be reachable on map');
     await page.mouse.click(p.x,p.y);
   }
+  await publicPlot.getByRole('button',{name:'検索・レイヤー'}).click();
+  await publicPlot.getByRole('button',{name:'編集パネル'}).click();
+  await publicWorld.getByRole('button',{name:'ワールド選択',exact:true}).click();
+  await publicPlot.getByRole('button',{name:'全体表示',exact:true}).click();
+  await publicPlot.getByRole('button',{name:'拡大',exact:true}).click();
+  await publicPlot.getByRole('button',{name:'拡大',exact:true}).click();
+  for(let i=0;i<4;i++){await publicPlot.getByRole('button',{name:'左へ移動',exact:true}).click();await publicPlot.getByRole('button',{name:'上へ移動',exact:true}).click();}
   await groupClick(3.5,4.5);
   await groupClick(10.5,6.5);
+  await publicWorld.getByRole('button',{name:'ワールド選択',exact:true}).click();
+  await publicPlot.getByRole('button',{name:'検索・レイヤー'}).click();
+  await publicPlot.getByRole('button',{name:'編集パネル'}).click();
   assert.equal(await publicPlot.locator('.group-selected').count(),2);
   await publicPlot.getByRole('button',{name:'複数選択',exact:true}).click();
   await publicPlot.getByRole('button',{name:'閉じる',exact:true}).click();

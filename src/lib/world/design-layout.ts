@@ -117,3 +117,61 @@ export function designItemCounts(placements:readonly DesignPlacement[]):Map<numb
  for(const p of placements)counts.set(p.itemId,(counts.get(p.itemId)??0)+1);
  return counts;
 }
+
+/** Clipboard carries only synthetic design data; no OS clipboard or Save bytes. */
+export interface DesignClipItem{readonly itemId:number;readonly dx:number;readonly dy:number;readonly orientation:number}
+export function designClipboard(t:DesignTimeline,ids:readonly number[]):DesignClipItem[]{
+ const chosen=currentDesign(t).filter(p=>ids.includes(p.id));if(!chosen.length)return [];
+ const x=Math.min(...chosen.map(p=>p.x)),y=Math.min(...chosen.map(p=>p.y));
+ return chosen.map(p=>({itemId:p.itemId,dx:p.x-x,dy:p.y-y,orientation:p.orientation}));
+}
+function pasteCandidates(t:DesignTimeline,clip:readonly DesignClipItem[],defs:ReadonlyMap<number,DesignItemGeometry>,x:number,y:number,width:number,height:number):DesignPlacement[]|null{
+ const old=currentDesign(t);if(!clip.length||old.length+clip.length>DESIGN_LIMIT||!Number.isSafeInteger(t.nextId+clip.length))return null;
+ const occupied=new Set<string>();
+ for(const p of old){const kind=exclusiveAnchorClass(String(p.itemId));if(kind)occupied.add(kind+':'+p.x+':'+p.y);}
+ const added:DesignPlacement[]=[];
+ for(const p of clip){
+  const g=defs.get(p.itemId),candidate={id:t.nextId+added.length,itemId:p.itemId,x:x+p.dx,y:y+p.dy,orientation:p.orientation};
+  if(!g||!designCandidateValid([],candidate,g,width,height))return null;
+  const kind=exclusiveAnchorClass(String(candidate.itemId));if(kind){const key=kind+':'+candidate.x+':'+candidate.y;if(occupied.has(key))return null;occupied.add(key);}
+  added.push(candidate);
+ }
+ return added;
+}
+export function canPasteDesign(t:DesignTimeline,clip:readonly DesignClipItem[],defs:ReadonlyMap<number,DesignItemGeometry>,x:number,y:number,width:number,height:number):boolean{
+ return pasteCandidates(t,clip,defs,x,y,width,height)!==null;
+}
+export function pasteDesign(t:DesignTimeline,clip:readonly DesignClipItem[],defs:ReadonlyMap<number,DesignItemGeometry>,x:number,y:number,width:number,height:number):DesignTimeline|null{
+ const added=pasteCandidates(t,clip,defs,x,y,width,height);
+ return added?commit(t,[...currentDesign(t),...added],t.nextId+added.length):null;
+}
+export function removeDesignGroup(t:DesignTimeline,ids:readonly number[],defs:ReadonlyMap<number,DesignItemGeometry>):DesignTimeline|null{
+ const set=new Set(ids),old=currentDesign(t),chosen=old.filter(p=>set.has(p.id));
+ if(!chosen.length||chosen.length!==set.size||chosen.some(p=>!defs.has(p.itemId)||nativeActionBlocked(defs.get(p.itemId)?.editRestrictions,'remove')))return null;
+ return commit(t,old.filter(p=>!set.has(p.id)));
+}
+export function transformDesignGroup(t:DesignTimeline,ids:readonly number[],defs:ReadonlyMap<number,DesignItemGeometry>,dx:number,dy:number,turns:number,width:number,height:number):DesignTimeline|null{
+ const set=new Set(ids),old=currentDesign(t),chosen=old.filter(p=>set.has(p.id));
+ if(!chosen.length||chosen.length!==set.size||![dx,dy,turns].every(Number.isSafeInteger))return null;
+ const turn=((turns%4)+4)%4;
+ if(!dx&&!dy&&!turn)return null;
+ const left=Math.min(...chosen.map(p=>p.x)),top=Math.min(...chosen.map(p=>p.y));
+ const shape=(p:DesignPlacement)=>defs.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4];
+ if(chosen.some(p=>!shape(p)))return null;
+ const w=Math.max(...chosen.map(p=>p.x+shape(p)!.width))-left,h=Math.max(...chosen.map(p=>p.y+shape(p)!.height))-top;
+ const rest=old.filter(p=>!set.has(p.id)),updated=new Map<number,DesignPlacement>();
+ for(const p of chosen){
+  const g=defs.get(p.itemId)!,s=shape(p)!;let x=p.x,y=p.y;
+  if(turn){
+   if(nativeActionBlocked(g.editRestrictions,'rotate')||exclusiveAnchorClass(String(p.itemId)))return null;
+   const u=x-left,v=y-top;
+   if(turn===1){x=left+h-v-s.height;y=top+u;}else if(turn===2){x=left+w-u-s.width;y=top+h-v-s.height;}else{x=left+v;y=top+w-u-s.width;}
+  }
+  x+=dx;y+=dy;
+  if((x!==p.x||y!==p.y)&&nativeActionBlocked(g.editRestrictions,'move'))return null;
+  const next={...p,x,y,orientation:(p.orientation-turn+4)%4},n=shape(next);
+  if(!n||n.width!==(turn%2?s.height:s.width)||n.height!==(turn%2?s.width:s.height)||!designCandidateValid([...rest,...updated.values()],next,g,width,height))return null;
+  updated.set(p.id,next);
+ }
+ return commit(t,old.map(p=>updated.get(p.id)??p));
+}

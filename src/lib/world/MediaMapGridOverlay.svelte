@@ -353,4 +353,5 @@
   .preview-tools{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:12px}
   .preview-tools button{font:inherit;color:inherit;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:5px;padding:5px}
   p{font-size:11px;color:var(--wand-muted);margin:0}
+ .media-map-overlay.compact{position:absolute;inset:0;margin:0;display:block}.compact .terrain-map-frame{position:absolute;inset:0}.compact .map,.compact .map svg{border:0;border-radius:0}.compact .map-tools,.compact .layer-tools{position:absolute;z-index:5;top:52px;left:6px;background:var(--wand-card);padding:5px;border-radius:5px}.compact .layer-tools{top:90px}
 </style>
