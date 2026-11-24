@@ -31,7 +31,7 @@
   const universeNames=$derived(new Map([...sourceUniverses.map(u=>[String(u.tagId),{label:u.names[locale]??u.names.en??u.key,sort:u.names[locale]??u.names.en??u.key}] as const),...COLLECTION_UNIVERSE_TAG_NAMES.map(u=>[String(u.id),{label:u.names[locale],sort:locale==='ja'?u.jaReading:u.names[locale]}] as const)]));
   function universeName(key:string){return key==='none'?t('ユニバースなし','No universe'):key==='unknown'?t('ユニバース未確認','Universe unconfirmed'):universeNames.get(key)?.label??t('ユニバース未確認','Universe unconfirmed');}
   function sortUniverse(a:string,b:string){
-    const rank=(key:string)=>key==='unknown'?3:key==='none'?2:universeNames.get(key)?.label==='Dreamlight Valley'||universeNames.get(key)?.label==='ドリームライトバレー'?1:0;
+    const rank=(key:string)=>key==='unknown'?3:key==='none'?2:key==='2000500023'?1:0;
     return rank(a)-rank(b)||(universeNames.get(a)?.sort??a).localeCompare(universeNames.get(b)?.sort??b,locale);
   }
   const allGroups=$derived(groupItems(items));
