@@ -396,3 +396,24 @@ test('map layer visibility and edit lock remain independent and buildings use na
  assert.equal(layerSelectable(state,furniture),true);assert.equal(worldLayer(building),'building');assert.equal(worldLayer(fixed),'fixed');
  assert.equal(worldLayer({layer:'other'}),'other');
 });
+
+import {reflectedDesignItem,symmetricDesignItems,symmetryPlan,commitSymmetry} from '../src/lib/world/design-symmetry.ts';
+test('exact line and point symmetry reflects source row runs and direction; no fabricated chiral orientation',()=>{
+ const rect={width:2,height:1,runs:[{x:0,y:0,width:2}],cellCount:2,path:'M0 0h2v1h-2Z'};
+ const g={itemId:40000001,name:'A',layer:'furniture',surfaceCapable:false,shapes:{'40000001:0':rect,'40000001:8':rect}};
+ const p={itemId:g.itemId,x:3,y:4,orientation:0},v={mode:'vertical',x2:20,y2:20};
+ assert.deepEqual(reflectedDesignItem(p,g,v),{...p,x:15});
+ assert.deepEqual(reflectedDesignItem(p,g,{...v,mode:'horizontal'}),{...p,y:15,orientation:2});
+ assert.deepEqual(reflectedDesignItem(p,g,{...v,mode:'point'}),{...p,x:15,y:15,orientation:2});
+ assert.deepEqual(reflectedDesignItem({...p,x:9},g,v),{...p,x:9});
+ const defs=new Map([[g.itemId,g]]);
+ assert.equal(symmetricDesignItems([{...p,x:9}],defs,v,true).length,1);
+ assert.equal(symmetricDesignItems([{...p,x:9}],defs,v,false,[{...p,x:9}]).length,0);
+ const t=emptyDesign(),plan=symmetryPlan(t,[p],defs,v,true,20,20);assert.equal(plan.length,2);
+ const next=commitSymmetry(t,plan,defs,20,20);assert.equal(currentDesign(next).length,2);
+ assert.deepEqual(currentDesign(travelDesign(next,-1)),[]);
+ assert.equal(symmetryPlan(t,[p],defs,{...v,x2:1},true,20,20),null);
+ const asymmetric={...rect,width:3,height:2,cellCount:3,runs:[{x:0,y:0,width:2},{x:0,y:1,width:1}]};
+ assert.equal(reflectedDesignItem(p,{...g,shapes:{'40000001:0':asymmetric}},v),null);
+ const road={...g,itemId:40100001,layer:'ground'};assert.equal(reflectedDesignItem({...p,itemId:road.itemId},road,v),null);
+});

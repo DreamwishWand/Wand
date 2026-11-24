@@ -14,6 +14,8 @@
  import WorldLayerControls from './WorldLayerControls.svelte';
  import {defaultWorldLayers,layerVisible,layerSelectable,type WorldLayerState} from './world-layer-state.ts';
  import WorldObjectArtwork from './WorldObjectArtwork.svelte';
+ import WorldSymmetryControls from './WorldSymmetryControls.svelte';
+ import {symmetricDesignItems,symmetryPlan,commitSymmetry,type DesignSymmetry,type SymmetryItem} from './design-symmetry.ts';
  import WorldAlignmentControls from './WorldAlignmentControls.svelte';
  import {alignmentTargets,type MapAlignment} from './map-alignment.ts';
  import {alignDesign} from './design-layout.ts';
@@ -51,6 +53,7 @@
  type DirectDrag={id:number;start:Cell;end:Cell;clientX:number;clientY:number;ids:number[];add:boolean;kind:'move'|'marquee';moved:boolean};
  let direct:DirectDrag|null=null,suppressDirectClick=false,spacePan=false;
  $: dragPlan=direct?.moved&&direct.kind==='move'?transformDesignGroup(timeline,direct.ids,definitions,direct.end.x-direct.start.x,direct.end.y-direct.start.y,0,width,height):null;
+ let symmetryOpen=false,symmetry:DesignSymmetry|null=null,symmetryPicking=false;
  let alignmentOpen=false,alignmentAction:MapAlignment|null=null;
  $: alignmentPreview=alignmentAction&&map?alignmentTargets(map,objects.filter(o=>selectedIds.has(o.localOrdinal)),alignmentAction):null;
  $: alignmentPlan=alignmentAction&&map?alignDesign(timeline,map,[...selectedIds],definitions,alignmentAction,width,height):null;
@@ -116,7 +119,7 @@
  }
  onDestroy(()=>subscribed?.removeEventListener('message',receive));
  $: if(grid?.key!==lastGrid){
-   lastGrid=grid?.key??'';direct=null;spacePan=false;groupIds=[];pasting=[];pastePending=[];pasteRequest=0;lastPoint=null;importEpoch++;reading=false;pendingImport=null;selected=null;placing=null;hover=null;moveMode=false;loadingShape=false;shapeId=0;error='';camera=defaultMapCamera();
+   lastGrid=grid?.key??'';symmetry=null;symmetryPicking=false;direct=null;spacePan=false;groupIds=[];pasting=[];pastePending=[];pasteRequest=0;lastPoint=null;importEpoch++;reading=false;pendingImport=null;selected=null;placing=null;hover=null;moveMode=false;loadingShape=false;shapeId=0;error='';camera=defaultMapCamera();
  }
  $: if(active&&grid&&worker&&locale!==catalogLocale)requestCatalog(grid,locale,worker);
  function requestCatalog(g:PublicTerrainGridRef,language:WandLanguage,w:Worker){
@@ -205,7 +208,7 @@
    if(!grid||!next){error='配置範囲・編集制限・同種の道やフェンスの重複を確認してください。';return;}
    layouts={...layouts,[grid.key]:next};error='';
  }
- function cancel(){alignmentAction=null;direct=null;placing=null;moveMode=false;hover=null;shapeId=0;loadingShape=false;error='';pasting=[];pastePending=[];pasteRequest=0;}
+ function cancel(){symmetryPicking=false;alignmentAction=null;direct=null;placing=null;moveMode=false;hover=null;shapeId=0;loadingShape=false;error='';pasting=[];pastePending=[];pasteRequest=0;}
  function travel(delta:-1|1){cancel();selected=null;groupIds=[];save(travelDesign(timeline,delta));}
  function rotate(delta:number){
    alignmentAction=null;
@@ -226,12 +229,44 @@
    worker.postMessage({command:'design-shapes',requestId:pasteRequest,key:grid.key,itemIds:[...new Set(clip.map(p=>p.itemId))]});
  }
  function commitPaste(x:number,y:number){
+   if(placeWithSymmetry(x,y,pasting.map(p=>({itemId:p.itemId,x:x+p.dx,y:y+p.dy,orientation:p.orientation}))))return;
    const next=pasteDesign(timeline,pasting,definitions,x,y,width,height);
    if(!next){save(null);return;}
    const ids=currentDesign(next).slice(-pasting.length).map(o=>o.id);save(next);cancel();
    selected=ids.length===1?ids[0]:null;groupIds=ids.length>1?ids:[];
  }
  $: pasteValid=Boolean(hover&&pasting.length&&canPasteDesign(timeline,pasting,definitions,hover.x,hover.y,width,height));
+ $: symmetricSelection=symmetry&&selectedIds.size&&!placing&&!pasting.length&&!moveMode?placements.filter(p=>selectedIds.has(p.id)):[];
+ $: symmetricSelectedPreview=symmetry&&symmetricSelection.length?symmetricDesignItems(symmetricSelection,definitions,symmetry,false,placements):null;
+ $: symmetricSelectedPlan=symmetry&&symmetricSelection.length?symmetryPlan(timeline,symmetricSelection,definitions,symmetry,false,width,height):null;
+ $: symmetricOriginal=hover&&placing?[{itemId:placing.itemId,x:hover.x,y:hover.y,orientation}]:hover&&pasting.length?pasting.map(p=>({itemId:p.itemId,x:hover!.x+p.dx,y:hover!.y+p.dy,orientation:p.orientation})):[];
+ $: symmetricPreview=symmetry&&symmetricOriginal.length?symmetricDesignItems(symmetricOriginal,definitions,symmetry,true,placements):null;
+ $: symmetricPlacementPlan=symmetry&&symmetricOriginal.length?symmetryPlan(timeline,symmetricOriginal,definitions,symmetry,true,width,height):null;
+ $: symmetryPreviewItems=symmetricOriginal.length?symmetricPreview:symmetricSelectedPreview;
+ $: symmetryPreviewValid=symmetricOriginal.length?Boolean(symmetricPlacementPlan):Boolean(symmetricSelectedPlan);
+ function changeSymmetry(next:DesignSymmetry|null){symmetry=next;symmetryPicking=false;alignmentAction=null;direct=null;moveMode=false;}
+ function mirrorSelected(){if(!symmetricSelectedPlan||busyImport)return;save(commitSymmetry(timeline,symmetricSelectedPlan,definitions,width,height));}
+ function placeWithSymmetry(x:number,y:number,items:readonly SymmetryItem[]){
+  if(!symmetry)return false;
+  const plan=symmetryPlan(timeline,items,definitions,symmetry,true,width,height);
+  if(!plan){save(null);return true;}
+  const next=commitSymmetry(timeline,plan,definitions,width,height);
+  if(!next){save(null);return true;}
+  save(next);
+  if(pasting.length){const ids=currentDesign(next).slice(-plan.length).map(p=>p.id);cancel();selected=ids.length===1?ids[0]:null;groupIds=ids.length>1?ids:[];}
+  return true;
+ }
+ function setSymmetryFromPointer(e:MouseEvent){
+  if(!symmetry||!svg)return;
+  const m=svg.getScreenCTM();if(!m)return;
+  const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(m.inverse());
+  if(p.x<0||p.y<0||p.x>width||p.y>height)return;
+  symmetry={...symmetry,x2:Math.round(p.x*2),y2:Math.round(p.y*2)};symmetryPicking=false;
+ }
+ function placeAt(x:number,y:number){
+  if(!placing)return;
+  if(!placeWithSymmetry(x,y,[{itemId:placing.itemId,x,y,orientation}]))save(placeDesign(timeline,placing,x,y,orientation,width,height));
+ }
 
  function cell(e:MouseEvent){
    const m=svg?.getScreenCTM();if(!m)return null;
@@ -242,9 +277,10 @@
    if(alignmentAction){alignmentAction=null;return;}
    if(suppressDirectClick){suppressDirectClick=false;return;}
    if(busyImport||gesture.consumeClick()||e.detail===0)return;
+   if(symmetryPicking){setSymmetryFromPointer(e);return;}
    const p=cell(e);if(!p)return;lastPoint=p;
    if(pasting.length){commitPaste(p.x,p.y);return;}
-   if(placing){save(placeDesign(timeline,placing,p.x,p.y,orientation,width,height));return;}
+   if(placing){placeAt(p.x,p.y);return;}
    if(moveMode&&chosen&&chosenGeometry){
      const next=transformDesign(timeline,chosen.id,chosenGeometry,p.x,p.y,chosen.orientation,width,height);
      if(next){save(next);moveMode=false;hover=null;}else if(p.x!==chosen.x||p.y!==chosen.y)save(null);return;
@@ -264,7 +300,7 @@
    suppressDirectClick=false;
    if(busyImport)return;
    if(e.button===1||spacePan||e.pointerType==='touch'){gesture.begin(e,camera.zoom>1);return;}
-   if(e.button!==0||placing||moveMode||pasting.length||pasteRequest||alignmentAction)return;
+   if(e.button!==0||placing||moveMode||pasting.length||pasteRequest||alignmentAction||symmetryPicking)return;
    const p=cell(e);if(!p)return;
    const hit=hitAt(p),add=e.ctrlKey||e.metaKey||e.shiftKey;
    direct={id:e.pointerId,start:p,end:p,clientX:e.clientX,clientY:e.clientY,ids:hit?(selectedIds.has(hit.localOrdinal)?[...selectedIds]:[hit.localOrdinal]):[],kind:hit?'move':'marquee',add,moved:false};
@@ -307,8 +343,8 @@
    if(action==='paste'){if(clipboard.length){e.preventDefault();beginPaste(clipboard);}return;}
    if(action==='duplicate'){if(selectedIds.size){e.preventDefault();duplicate();}return;}
    if(action==='select-all'){e.preventDefault();cancel();selected=null;groupIds=objects.filter(o=>layerSelectable(layerState,o)&&matchesSelectionLayer(o,layer)&&!nativeActionBlocked(o.editRestrictions,'select')).map(o=>o.localOrdinal);return;}
-   if(action==='cancel'){e.preventDefault();if(alignmentAction){alignmentAction=null;return;}cancel();selected=null;groupIds=[];return;}
-   if(action==='confirm'){if(e.target instanceof HTMLElement&&e.target.closest('button:not(.design-plot)'))return;if(alignmentAction&&alignmentPlan){e.preventDefault();commitAlignment();return;}if(pasting.length&&hover){e.preventDefault();commitPaste(hover.x,hover.y);}else if(placing&&hover){e.preventDefault();save(placeDesign(timeline,placing,hover.x,hover.y,orientation,width,height));}return;}
+   if(action==='cancel'){e.preventDefault();if(symmetryPicking){symmetryPicking=false;return;}if(alignmentAction){alignmentAction=null;return;}cancel();selected=null;groupIds=[];return;}
+   if(action==='confirm'){if(e.target instanceof HTMLElement&&e.target.closest('button:not(.design-plot)'))return;if(alignmentAction&&alignmentPlan){e.preventDefault();commitAlignment();return;}if(symmetry&&symmetricSelectedPlan){e.preventDefault();mirrorSelected();return;}if(pasting.length&&hover){e.preventDefault();commitPaste(hover.x,hover.y);}else if(placing&&hover){e.preventDefault();placeAt(hover.x,hover.y);}return;}
    if(action==='zoom-in'||action==='zoom-out'||action==='fit'){e.preventDefault();camera=action==='fit'?defaultMapCamera():zoomMapCamera(camera,camera.zoom*(action==='zoom-in'?2:.5),maxZoom);return;}
    if(action==='rotate-left'||action==='rotate-right'){if(selectedIds.size||placing){e.preventDefault();rotate(action==='rotate-left'?1:3);}return;}
    if(action==='delete'){if(selectedIds.size){e.preventDefault();remove();}return;}
@@ -337,7 +373,7 @@
   </aside>
   <div class="design-map-side">
    <div class="design-controls">
-    <button type="button" aria-label={locale==='ja'?'レイヤー':'Layers'} title={locale==='ja'?'レイヤー':'Layers'} aria-pressed={layersOpen} on:click={()=>{layersOpen=!layersOpen;if(layersOpen){alignmentOpen=false;alignmentAction=null;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 16l9 5 9-5"/></svg></button>
+    <button type="button" aria-label={locale==='ja'?'レイヤー':'Layers'} title={locale==='ja'?'レイヤー':'Layers'} aria-pressed={layersOpen} on:click={()=>{layersOpen=!layersOpen;if(layersOpen){symmetryOpen=false;alignmentOpen=false;alignmentAction=null;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 16l9 5 9-5"/></svg></button>
     <button type="button" aria-label="家具パレット" title="家具パレット" aria-pressed={paletteOpen} on:click={()=>paletteOpen=!paletteOpen}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v16H3zM9 4v16"/></svg></button>
     <input class="file-input" type="file" accept=".json,application/json" bind:this={importInput} on:change={importFile}/>
     <button type="button" disabled={busyImport} on:click={exportFile}>{words[0]}</button>
@@ -348,7 +384,8 @@
     <button type="button" aria-label="設計の左回転" disabled={busyImport||!placing&&!selectedIds.size} on:click={()=>rotate(1)}>⟲</button>
     <button type="button" aria-label="設計の右回転" disabled={busyImport||!placing&&!selectedIds.size} on:click={()=>rotate(3)}>⟳</button>
     <button type="button" aria-pressed={moveMode} disabled={busyImport||!chosenGeometry||nativeActionBlocked(chosenGeometry.editRestrictions,'move')} on:click={()=>{placing=null;moveMode=!moveMode;hover=null;}}>移動</button>
-    <button type="button" disabled={busyImport||selectedIds.size<2} aria-label={locale==='ja'?'整列・均等配置':'Align and distribute'} aria-pressed={alignmentOpen} on:click={()=>{alignmentOpen=!alignmentOpen;alignmentAction=null;if(alignmentOpen)layersOpen=false;}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3v18M7 5h8v5H7zM7 14h13v5H7z"/></svg></button>
+    <button type="button" disabled={busyImport||selectedIds.size<2} aria-label={locale==='ja'?'整列・均等配置':'Align and distribute'} aria-pressed={alignmentOpen} on:click={()=>{alignmentOpen=!alignmentOpen;alignmentAction=null;if(alignmentOpen){layersOpen=false;symmetryOpen=false;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3v18M7 5h8v5H7zM7 14h13v5H7z"/></svg></button>
+    <button type="button" disabled={busyImport} aria-label={locale==='ja'?'対称編集':'Symmetry'} aria-pressed={Boolean(symmetry)||symmetryOpen} on:click={()=>{symmetryOpen=!symmetryOpen;if(symmetryOpen){layersOpen=false;alignmentOpen=false;alignmentAction=null;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M9 6 3 12l6 6ZM15 6l6 6-6 6Z"/></svg></button>
     <button type="button" disabled={busyImport||!selectedIds.size} on:click={duplicate}>複製</button>
     <button type="button" disabled={busyImport||!selectedIds.size} on:click={remove}>削除</button>
     {#if (placing||moveMode||pasting.length)&&!busyImport}<button type="button" on:click={cancel}>配置終了</button>{/if}
@@ -356,6 +393,7 @@
    <div class="design-messages">{#if busyImport}<p role="status">{words[5]}</p>{/if}
    {#if loadingShape}<p role="status">形状を読み込み中…</p>{/if}
    {#if error}<p role="alert">{error}</p>{/if}</div>
+   {#if symmetryOpen}<div class="design-symmetry-panel"><WorldSymmetryControls {locale} value={symmetry} {width} {height} picking={symmetryPicking} count={symmetricSelection.length} valid={Boolean(symmetricSelectedPlan)} busy={busyImport} onChange={changeSymmetry} onPick={()=>symmetryPicking=!symmetryPicking} onMirror={mirrorSelected}/></div>{/if}
    {#if layersOpen}<div class="design-layer-panel"><WorldLayerControls {locale} state={layerState} disabled={busyImport} onChange={applyLayers}/></div>{/if}
    {#if alignmentOpen&&selectedIds.size>=2}<div class="design-alignment-panel"><WorldAlignmentControls {locale} count={selectedIds.size} selected={alignmentAction} valid={Boolean(alignmentPlan)} busy={busyImport} onPick={pickAlignment} onCommit={commitAlignment} onCancel={()=>alignmentAction=null}/></div>{/if}
    <div class="design-map-frame"><button class="design-plot" type="button" aria-label="装飾設計マップ" bind:clientWidth={mapWidth} bind:clientHeight={mapHeight} on:click={pick}
@@ -377,6 +415,16 @@
        </g>
       {/if}
      {/each}
+     {#if symmetry}
+      {#if symmetry.mode==='vertical'}<path class="symmetry-axis" d={'M'+symmetry.x2/2+' 0V'+height} stroke="#f5cf70" stroke-dasharray="6 4" stroke-width="1.5" vector-effect="non-scaling-stroke" pointer-events="none"/>
+      {:else if symmetry.mode==='horizontal'}<path class="symmetry-axis" d={'M0 '+symmetry.y2/2+'H'+width} stroke="#f5cf70" stroke-dasharray="6 4" stroke-width="1.5" vector-effect="non-scaling-stroke" pointer-events="none"/>
+      {:else}<circle class="symmetry-center" cx={symmetry.x2/2} cy={symmetry.y2/2} r={6/Math.max(cellPixels,1)} stroke="#f5cf70" fill="none" stroke-width="2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/if}
+     {/if}
+     {#if symmetryPreviewItems}
+      {#each symmetryPreviewItems as p}{@const shape=definitions.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4]}
+       {#if shape}<path class="symmetry-ghost" d={shape.path} transform={'translate('+p.x+' '+p.y+')'} fill={symmetryPreviewValid?'#4bddcd':'#ef5350'} fill-opacity=".6" stroke="#f5cf70" stroke-dasharray="4 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/if}
+      {/each}
+     {/if}
      {#if alignmentPreview}
       {#each alignmentPreview as o (o.ordinal)}{@const shape=o.shapeKey?map?.shapes[o.shapeKey]:null}
        {#if shape}<path class="alignment-ghost" d={shape.path} transform={'translate('+o.x+' '+o.y+')'} fill={alignmentPlan?'#4bddcd':'#ef5350'} fill-opacity=".45" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/if}
@@ -390,8 +438,8 @@
        {#if shape}<path class="design-drag-ghost" d={shape.path} transform={'translate('+(o.x+direct.end.x-direct.start.x)+' '+(o.y+direct.end.y-direct.start.y)+')'} fill={dragPlan?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}
       {/each}
      {/if}
-     {#if hover&&pasting.length}{#each pasting as p,i}{@const shape=definitions.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4]}{#if shape}<path class="design-paste-ghost" d={shape.path} transform={'translate('+(hover.x+p.dx)+' '+(hover.y+p.dy)+')'} fill={pasteValid?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}{/each}{/if}
-     {#if hover&&ghostShape}<path class="design-ghost" d={ghostShape.path} transform={'translate('+hover.x+' '+hover.y+')'} fill={ghostValid?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>
+     {#if hover&&pasting.length}{#each pasting as p,i}{@const shape=definitions.get(p.itemId)?.shapes[p.itemId+':'+p.orientation*4]}{#if shape}<path class="design-paste-ghost" d={shape.path} transform={'translate('+(hover.x+p.dx)+' '+(hover.y+p.dy)+')'} fill={(symmetry?Boolean(symmetricPlacementPlan):pasteValid)?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>{/if}{/each}{/if}
+     {#if hover&&ghostShape}<path class="design-ghost" d={ghostShape.path} transform={'translate('+hover.x+' '+hover.y+')'} fill={(symmetry&&placing?Boolean(symmetricPlacementPlan):ghostValid)?'#b9c7d6':'#ef5350'} fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>
       {#if ghostGeometry&&showWorldArtwork({layer:ghostGeometry.layer,shapeKey:null},ghostShape,cellPixels)&&images.has(ghostGeometry.itemId)}<WorldObjectArtwork href={images.get(ghostGeometry.itemId)!} x={hover.x} y={hover.y} width={ghostShape.width} height={ghostShape.height} opacity={.55}/>{/if}
       {#if cellPixels>=5}<path d="M0 -.32L.19 .13L0 .04L-.19 .13Z" transform={'translate('+(hover.x+.5)+' '+(hover.y+.5)+') rotate('+sourceOrientationAngle(ghostOrientation*4)+')'} fill="#fff" pointer-events="none"/>{/if}
      {/if}
@@ -436,6 +484,7 @@
  @media(max-width:700px){.design-workspace{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(0,2fr)}.design-item img{width:44px;height:44px}}
  .design-workspace,.design-map-side,.design-map-frame{position:absolute;inset:0;display:block;min-height:0;min-width:0;overflow:hidden;border-radius:0}.design-workspace{isolation:isolate}
  aside{position:absolute;z-index:5;top:104px;bottom:38px;left:6px;width:clamp(170px,19vw,300px);border-radius:6px;box-shadow:0 2px 8px #0003}aside[hidden]{display:none}
+ .design-symmetry-panel{position:absolute;z-index:9;right:6px;top:104px;width:min(250px,calc(100% - 12px));max-height:calc(100% - 145px);overflow:auto;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;box-shadow:0 3px 14px #0004}
  .design-layer-panel{position:absolute;z-index:9;right:6px;top:104px;width:min(220px,calc(100% - 12px));max-height:calc(100% - 145px);overflow:auto;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;box-shadow:0 3px 14px #0004}
  .design-alignment-panel{position:absolute;z-index:8;right:6px;top:104px;width:min(300px,calc(100% - 12px));background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;padding:6px;box-shadow:0 3px 14px #0004}
  .design-plot{border:0;border-radius:0}
