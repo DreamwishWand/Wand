@@ -3,10 +3,11 @@
  * Public assets contain sanitized source facts, never source binaries or saves.
  * Old v1/v2 releases remain compatibility views; v3 has every native ID.
  */
-import {readFileSync,writeFileSync,mkdirSync,mkdtempSync,renameSync,rmSync} from 'node:fs';
-import {join,dirname} from 'node:path';
+import {readFileSync,mkdirSync,mkdtempSync,rmSync} from 'node:fs';
+import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {gunzipSync,inflateSync} from 'node:zlib';
+import {createProjectionWriter,installProjectionStage} from './reuse-public-projections.mjs';
 
 const hash=b=>createHash('sha256').update(b).digest('hex');
 const SHA=/^[0-9a-f]{64}$/;
@@ -1133,12 +1134,9 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
   const root=join(project,'static/ddv/item-master');
   mkdirSync(root,{recursive:true});
   const stage=mkdtempSync(join(root,'.complete-'));
+  const destination=join(root,'steam-'+version+'-complete');
   try{
-    const write=(path,value,count)=>{
-      const bytes=json(value);mkdirSync(dirname(join(stage,path)),{recursive:true});
-      writeFileSync(join(stage,path),bytes);
-      return {count,bytes:bytes.length,sha256:hash(bytes)};
-    };
+    const {write,stats}=createProjectionWriter(root,stage,destination);
     for(let i=0;i<256;i++){
       const key=i.toString(16).padStart(2,'0'),path='id/'+key+'.json';
       index.shards[path]=write(path,{schema:'wand.item-master.shard@1',bucket:key,items:buckets[i]},buckets[i].length);
@@ -1169,9 +1167,9 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
       }
     }
     writeFieldColumns(rows,e.release,write,index.assets);
-    writeFileSync(join(stage,'index.json'),json(index));
-    const destination=join(root,'steam-'+version+'-complete');
-    rmSync(destination,{recursive:true,force:true});renameSync(stage,destination);
+    write('index.json',index,index.count);
+    installProjectionStage(stage,destination);
+    console.log('DB-01 projection reuse:',JSON.stringify(stats));
   }catch(err){rmSync(stage,{recursive:true,force:true});throw err;}
   console.log('DB-01 complete-source master:',rows.length,'definitions,',source.coverage.nativeCategoryCount,'native classes,',source.coverage.sourceSelectorCount,'resolved source selectors');
 }
