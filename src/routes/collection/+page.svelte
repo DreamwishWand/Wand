@@ -14,6 +14,7 @@
   import {COLLECTION_UNIVERSE_TAG_BY_ID,COLLECTION_UNIVERSE_TAG_NAMES}
     from '$lib/collection/universe-tag-names.ts';
   import {collectionSubcategories,collectionUsesSubcategories,collectionFurnitureKindLabel,type CollectionSubcategory} from '$lib/collection/subcategories.ts';
+  import {makeCollectionBrowseOrder,collectionUniverseRootSection,collectionRootUsesUniverse,type CollectionBrowseOrder} from '$lib/collection/semantic-browse.ts';
   import {loadCompleteCollection} from '$lib/collection/db01-complete-catalog.ts';
   import {COLLECTION_TOP_CATEGORIES} from '$lib/collection/category-hierarchy.ts';
   import {buildWorldBrowseIndex,countOwnedInWorldScope,type WorldBrowseScope} from '$lib/collection/world-browse-index.ts';
@@ -128,6 +129,9 @@
   }[]=[];
   let sourceGroupsCacheKey='';
   let scopedSubcategories:readonly CollectionSubcategory[]=[];
+  let browseOrder:CollectionBrowseOrder|null=null;
+  let browseOrderSource:CollectionDb01Index|null=null;
+  let browseOrderKey='';
   let universeSections:{facet:CollectionFacet;items:CollectionItem[]}[]=[];
   let worldFilter='';
   let universeFilter='';
@@ -475,6 +479,11 @@
           (candidateIds?candidateIds.flatMap(id=>{
             try{return [runtime!.item(id,locale)];}catch{return [];}
           }):queryAllCollectionRows(currentFilter(0,200)));
+        const orderKey=locale+'|'+(sourceUniverseSelection!==null?'universe':'world');
+        if(sourceIndex&&(browseOrderSource!==sourceIndex||browseOrderKey!==orderKey)){
+          browseOrder=makeCollectionBrowseOrder(sourceIndex,locale,sourceUniverseSelection!==null);
+          browseOrderSource=sourceIndex;browseOrderKey=orderKey;
+        }
         sourceAllMatching=candidates.filter(item=>
           (sourceTopCategory===null||(()=>{
             const native=sourceIndex?.nativeSubtypeByItem.get(item.itemId);
@@ -500,10 +509,10 @@
               ?sourceIndex.universesByItem.get(item.itemId)?.includes(key)===true
               :collectionDb01Matches(
                 sourceIndex,item.itemId,facet as CollectionDb01Facet,key))))
-          .sort((a,b)=>sourceUniverseSelection!==null
-            ?a.itemId-b.itemId:
-            Number(b.nameVerified)-Number(a.nameVerified)||
-              a.label.localeCompare(b.label,locale)||a.itemId-b.itemId);
+          .sort(sourceIndex?.rootsByItem&&browseOrder
+            ?browseOrder.compare
+            :(a,b)=>sourceUniverseSelection!==null?a.itemId-b.itemId:
+              Number(b.nameVerified)-Number(a.nameVerified)||a.label.localeCompare(b.label,locale)||a.itemId-b.itemId);
         if(viewAxis==='universe'&&sourceUniverseSelection!==null&&!selected&&
           sourceActivityType===null&&!search.trim()&&status==='all'&&
           !favoriteOnly&&!expansion&&!acquisitionFilter){
@@ -535,10 +544,13 @@
     const groups=groupCollectionUniverseItems(sourceAllMatching,item=>{
       const native=sourceIndex?.nativeSubtypeByItem.get(item.itemId);
       if(native){
-        const id=sourceIndex?.rootsByItem?.get(item.itemId)??collectionTopCategory(native.nativeType+':'+native.code);
-        return id===null
-          ?{id:'unresolved',label:locale==='ja'?'分類未確定':'Unclassified',rank:999}
-          :{id,label:collectionTopCategoryLabel(locale,id),rank:collectionTopCategoryRank(id)};
+        const semantic=sourceIndex?collectionUniverseRootSection(sourceIndex,item.itemId):null;
+        const id=semantic?.root??collectionTopCategory(native.nativeType+':'+native.code);
+        if(id===null)return {id:'unresolved',label:locale==='ja'?'分類未確定':'Unclassified',rank:999};
+        const part=semantic?.part;
+        return {id:part?part:id,
+          label:part?collectionTopCategoryLabel(locale,id)+' · '+(collectionFurnitureKindLabel(locale,part,sourceIndex)??''):collectionTopCategoryLabel(locale,id),
+          rank:collectionTopCategoryRank(id)*10+(semantic?.rankOffset??0)};
       }
       const activity=sourceIndex?.activityTypesByItem.get(item.itemId);
       const id=activity?'activity-'+activity.code:item.family;
@@ -547,7 +559,7 @@
           categoryLabel(locale,item.family),
         rank:activity?100+activity.code:Math.max(0,facets.findIndex(f=>f.id===item.family))
       };
-    },visible);
+    },visible,sourceIndex?.rootsByItem&&browseOrder?browseOrder.compare:undefined);
     universeSections=groups.map(section=>({
       facet:{id:section.id,label:section.label,total:section.total,owned:0},
       items:[...section.items]
@@ -1470,7 +1482,7 @@
                         <span class="item-icon" aria-hidden="true">
                           <ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null}/>
                         </span>
-                        <span class="item-card-copy"><strong>{item.label}</strong></span>
+                        <span class="item-card-copy"><strong title={item.label}>{item.label}</strong></span>
                       </button>
                       <button type="button" class="item-state-toggle"
                         disabled={Boolean(storeError)} class:owned={entries[String(item.itemId)]?.status==='owned'}
@@ -1533,14 +1545,18 @@
               </div>
             {:else}
               <div class="items-grid">
-                  {#each visibleItems as item (item.itemId)}
+                  {#each visibleItems as item,idx (item.itemId)}
+                    {#if viewAxis==='world'&&collectionRootUsesUniverse(sourceTopCategory)&&browseOrder&&
+                      (idx===0||browseOrder.universeKey(item.itemId)!==browseOrder.universeKey(visibleItems[idx-1].itemId))}
+                      <h3 class="collection-item-universe-heading">{browseOrder.universeLabel(browseOrder.universeKey(item.itemId))}</h3>
+                    {/if}
                     <div class="item-card" data-item-id={item.itemId} class:current={selectedItemId===item.itemId} class:bulk-selected={selectedIds.includes(item.itemId)}>
                       <button type="button" class="item-card-body"
                         on:click={(event)=>selectionMode?toggleSelected(item.itemId):void showItem(item.itemId,event)}
                         aria-pressed={selectionMode?selectedIds.includes(item.itemId):selectedItemId===item.itemId}
                         aria-label={selectionMode?`${item.label}${copy.itemSelect}`:`${item.label}${copy.itemDetails}`}>
                         <span class="item-icon" aria-hidden="true">{#if selectionMode}{selectedIds.includes(item.itemId)?'☑':'☐'}{:else}<ItemArtwork itemId={item.itemId} sourcePath={gameImageMap[String(item.itemId)]??null} />{/if}</span>
-                        <span class="item-card-copy"><strong>{item.label}</strong><span>{displayItemCategory(item)}</span></span>
+                        <span class="item-card-copy"><strong title={item.label}>{item.label}</strong></span>
                       </button>
                       <button type="button" class="item-state-toggle" disabled={Boolean(storeError)||selectionMode}
                         class:owned={entries[String(item.itemId)]?.status==='owned'}
@@ -1712,3 +1728,20 @@
     </div>
   {/if}
 </section>
+
+<style>
+  /* Image-first Collection tiles. Shared shell theme remains authoritative. */
+  .items-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,114px),1fr));gap:6px;align-items:stretch}
+  .item-card{position:relative;display:flex;min-width:0;min-height:0;padding:5px;gap:0;align-items:stretch;border-radius:7px;
+    background:var(--wand-panel);border-color:var(--wand-line);color:var(--wand-text)}
+  .item-card-body{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:3px;width:100%;text-align:center;padding:0;min-width:0}
+  .item-icon{width:100%;height:76px;border-radius:4px;background:transparent;padding:3px;box-sizing:border-box}
+  .item-card-copy{width:100%;display:block;min-height:30px;flex:0}
+  .item-card-copy strong{font-size:11px;line-height:1.25;white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .item-state-toggle{position:absolute;right:4px;top:4px;width:24px;height:24px;z-index:1;border-radius:5px;background:var(--wand-menu);color:var(--wand-text);border-color:var(--wand-line)}
+  .item-state-toggle.owned{background:var(--wand-accent,#37855d);color:var(--wand-on-accent,#fff)}
+  .item-card.current,.item-card.bulk-selected{border-color:var(--wand-accent)}
+  .collection-item-universe-heading{grid-column:1/-1;font-size:12px;font-weight:600;margin:8px 0 0;line-height:1.3;color:inherit}
+  .collection-universe-section-head{margin-bottom:5px}
+  @media(max-width:540px){.items-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,94px),1fr));gap:4px}.item-icon{height:64px}.item-card{padding:4px}.item-card-copy strong{font-size:10px}.item-state-toggle{width:22px;height:22px}}
+</style>
