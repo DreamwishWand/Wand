@@ -1096,7 +1096,7 @@ try{
   const beforeCancelledImport=await readLocalState(page);
   let declined=false;
   page.once('dialog',async dialog=>{
-    assert.match(dialog.message(),/既存の記録を上書き/);
+    assert.match(dialog.message(),/既存の手動入力データを上書き/);
     declined=true;await dialog.dismiss();
   });
   await page.locator('input[aria-label="DDVのセーブファイルを選択"]')
@@ -1109,7 +1109,7 @@ try{
   await page.locator('input[aria-label="DDVのセーブファイルを選択"]')
     .setInputFiles({name:'synthetic.profile',
       mimeType:'application/octet-stream',buffer:fixture});
-  await page.getByRole('status').filter({hasText:'セーブの発見履歴'}).first().waitFor({timeout:25000});
+  await page.getByRole('status').filter({hasText:'セーブの情報を反映しました。'}).first().waitFor({timeout:25000});
   assert.ok(saveWasmAssets.some(asset=>asset.status===200),
     'Collection real P1G Worker must load native Rust ddv_p1g_codec WASM');
   const afterSaveDownload=page.waitForEvent('download');
@@ -1132,7 +1132,7 @@ try{
   assert.equal(stateAfter['40003256'],undefined);
   assert.equal(stateAfter['99999999'].discovered,true);
   assert.equal(await page.getByRole('alert').filter({hasText:'do-not-leak'}).count(),0);
-  assert.match(await page.getByRole('status').filter({hasText:'セーブの発見履歴'}).first().innerText(),/所持 5件/);
+  assert.match(await page.getByRole('status').filter({hasText:'セーブの情報を反映しました。'}).first().innerText(),/セーブの情報を反映しました/);
   // Headless reader imports native state without visible diagnostics.
   assert.equal(await page.locator('.saved-store-preview,.empty-inspector').count(),0);
   await ownershipSearch.fill('40005160');
@@ -1250,7 +1250,7 @@ try{
   await page.getByRole('button',{name:'セーブファイル管理'}).waitFor();
   await page.locator('.portal-card').filter({hasText:'Collection'}).first().click();
   await waitForLocalState(page,{item:'40005160',status:'owned'});
-  await page.getByRole('status').filter({hasText:'セーブの発見履歴'}).first().waitFor({timeout:30000});
+  await page.getByRole('status').filter({hasText:'セーブの情報を反映しました。'}).first().waitFor({timeout:30000});
   await page.getByRole('button',{name:'セーブファイル管理'}).click();
   await page.locator('.shell-save-status').getByText(/解析済み/).waitFor({timeout:15000});
   await page.getByRole('button',{name:'ファイルを閉じる'}).click();
