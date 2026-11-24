@@ -9,8 +9,8 @@ type PublicLookup=(id:number)=>Promise<{url:string}|null>;
 export function createWorldArtworkLookup(base:string,fetcher:typeof fetch=fetch,published:PublicLookup=id=>itemMedia.getItemImage(id)){
  let legacy:Promise<HistoricalIndex>|null=null;
  const cache=new Map<number,Promise<string|null>>();
- function historical(){
-  return legacy??=fetcher(base+'/ddv/collection/item-images-r39.json',{credentials:'same-origin'}).then(async r=>{
+ function historical():Promise<HistoricalIndex>{
+  return legacy??=fetcher(base+'/ddv/collection/item-images-r39.json',{credentials:'same-origin'}).then(async (r):Promise<HistoricalIndex>=>{
    if(!r.ok||r.redirected)return {};
    const d:unknown=await r.json();
    if(!d||typeof d!=='object'||!('schema' in d)||d.schema!=='wand.collection.item-images.r39@1'||!('items' in d)||!d.items||typeof d.items!=='object'||Array.isArray(d.items))return {};
