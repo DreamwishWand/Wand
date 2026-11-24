@@ -30,6 +30,7 @@ export interface ItemMasterCompleteRelease {
   readonly count: number;
   readonly archiveSha256: string;
   readonly parts: number;
+  readonly attributesSha256?: string;
 }
 export interface ItemMasterExpandedRelease {
   readonly release: string;
@@ -113,6 +114,44 @@ export interface ItemMasterRecord {
 export type ItemDefinitionScope = 'source_candidate' | 'item_definition' | 'other_definition';
 /** Canonical source record, not necessarily an obtainable item. A null icon
  * or name is valid and does not prevent resolving the native source ID. */
+export type NativeSourceValue = number|boolean|string|readonly NativeSourceValue[]|NativeSourceObject;
+export interface NativeSourceObject {readonly [key:string]:NativeSourceValue|undefined}
+export interface NativeSourceAttributes extends NativeSourceObject {
+  readonly GridAreaData?: Readonly<{
+    SizeX?:number; SizeY?:number; Layers?:readonly number[];
+    AcceptedFloorTypesFlag?:number; StrideOverride?:number;
+    _unresolvedFields?:readonly number[];
+  }>;
+  readonly PriceOverride?: Readonly<{
+    Currency?:number; Price?:Readonly<{Id?:number;Amount?:number}>;
+    _unresolvedFields?:readonly number[];
+  }>;
+  readonly Result?: Readonly<{ItemID?:number;Amount?:number;_unresolvedFields?:readonly number[]}>;
+  readonly ResultItemID?: number;
+  readonly Ingredients?: readonly Readonly<{
+    ItemID?:number; Amount?:number; Any?:number;
+    ValidItemsList?:Readonly<{List?:readonly number[]}>;
+    TagsList?:Readonly<{List?:readonly number[]}>;
+    _unresolvedFields?:readonly number[];
+  }>[];
+  readonly Description?:string;
+  readonly DescriptionText?:string;
+  readonly DisplayName?:string;
+  readonly ManaRecovered?:number;
+  readonly CatalogVisibilityConditions?:NativeSourceObject;
+  readonly GridEditRestriction?:NativeSourceObject;
+  readonly AppearWhen?:NativeSourceObject;
+}
+export interface NativeSourceAttributeCoverage {
+  readonly itemCount:number;
+  readonly fieldCount:number;
+  readonly fieldOccurrences:number;
+  readonly fields:Readonly<Record<string,number>>;
+  readonly unmappedSourceClassCount:Readonly<Record<string,number>>;
+  readonly allOriginalFieldSemanticsVerified:false;
+  readonly gridLayerOccupancyVerified:false;
+  readonly runtimePriceVerified:false;
+}
 export interface CompleteItemMasterRecord extends Omit<ItemMasterRecord,
   'iconGuid'|'artwork'|'universeTagIds'|'universeSourceStatus'> {
   readonly iconGuid: string | null;
@@ -137,6 +176,10 @@ export interface CompleteItemMasterRecord extends Omit<ItemMasterRecord,
   /** Observed field number, wire type and occurrence count, including unknown fields. */
   readonly observedFields: readonly (readonly [number,number,number])[];
   readonly nativeProperties: Readonly<Record<string,number|boolean>>;
+  /** Additional explicitly present original fields; absence is not a default.
+   * Grid layer values do not establish occupancy, PriceOverride is not live pricing.
+   * _unresolvedFields lists nested field numbers not decoded. */
+  readonly sourceAttributes?: NativeSourceAttributes;
 }
 export interface ItemMasterAsset {
   readonly count: number;
@@ -191,6 +234,8 @@ export interface ItemMasterRelease {
   readonly count: number;
   readonly scope?: 'expanded'|'complete';
   readonly archiveSha256?: string;
+  readonly attributesSha256?: string;
+  readonly sourceAttributeCoverage?: NativeSourceAttributeCoverage;
   readonly sourceFilesVerified?: number;
   readonly sourceFilesSha256?: Readonly<Record<string,string>>;
   readonly sourceItemsSha256?: string;
@@ -276,6 +321,14 @@ function deepFreeze<T>(value:T):T {
   }
   return value;
 }
+function validSourceValue(v:unknown,depth=0):boolean{
+  if(depth>16)return false;
+  if(typeof v==='boolean'||typeof v==='string'||typeof v==='number'&&Number.isFinite(v))return true;
+  if(Array.isArray(v))return v.every(x=>validSourceValue(x,depth+1));
+  return isObject(v)&&Object.entries(v).every(([k,x])=>
+    /^[A-Za-z_][A-Za-z0-9_]*$/.test(k)&&!['__proto__','constructor','prototype'].includes(k)&&
+    validSourceValue(x,depth+1));
+}
 function validRecord(raw:unknown, bucket:string, complete:boolean): raw is ItemMasterRecord|CompleteItemMasterRecord {
   if (!isObject(raw) || !ID(raw.itemId) || pathFor(raw.itemId) !== bucket ||
       typeof raw.nativeCategory !== 'string' ||
@@ -314,6 +367,8 @@ function validRecord(raw:unknown, bucket:string, complete:boolean): raw is ItemM
     isObject(v)&&ID(v.setId)&&Number.isInteger(v.groupIndex)&&typeof v.evidence==='string');
   if(!links(raw.collectionSourceCandidates))return false;
   if(!complete)return true;
+  if(raw.sourceAttributes!==undefined&&(!isObject(raw.sourceAttributes)||
+    !validSourceValue(raw.sourceAttributes)))return false;
   const validIds=(v:unknown)=>Array.isArray(v)&&v.every(ID)&&new Set(v).size===v.length;
   if(!isObject(artwork)||!Object.values(artwork).every(v=>typeof v==='string'&&GUID.test(v))||
     !validIds(raw.universeTagIds)||!validIds(raw.universeDirectTagIds)||
@@ -407,6 +462,8 @@ export async function openPublicItemMaster(
           typeof c.archiveSha256==='string'&&SHA.test(c.archiveSha256)&&
           typeof c.parts==='number'&&Number.isSafeInteger(c.parts)&&c.parts>0&&c.parts<=100,
           'INVALID_COMPLETE_RELEASE');
+        assert(c.attributesSha256===undefined||
+          typeof c.attributesSha256==='string'&&SHA.test(c.attributesSha256),'INVALID_ATTRIBUTE_DIGEST');
       }
       unique.add(entry.gameVersion);
     }
@@ -457,6 +514,12 @@ export async function openPublicItemMaster(
       release.sourceFilesVerified===Object.keys(release.sourceFilesSha256).length&&
       Object.values(release.sourceFilesSha256).every(v=>typeof v==='string'&&SHA.test(v)),
       'INVALID_COMPLETE_RELEASE');
+    assert((!selected||release.attributesSha256===selected.complete?.attributesSha256)&&
+      (release.attributesSha256===undefined||typeof release.attributesSha256==='string'&&
+        SHA.test(release.attributesSha256)&&isObject(release.sourceAttributeCoverage)&&
+        release.sourceAttributeCoverage.allOriginalFieldSemanticsVerified===false&&
+        release.sourceAttributeCoverage.gridLayerOccupancyVerified===false&&
+        release.sourceAttributeCoverage.runtimePriceVerified===false),'INVALID_ATTRIBUTE_RELEASE');
   }else assert(release.scope===undefined,'UNEXPECTED_EXPANDED_RELEASE');
   const source = release as unknown as ItemMasterRelease;
   // The caller may share this reader with Collection, Explorer and Save.
