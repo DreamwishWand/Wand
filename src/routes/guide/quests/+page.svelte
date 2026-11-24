@@ -2,12 +2,14 @@
   import GuideCommunityHelp from '$lib/guide/GuideCommunityHelp.svelte';
   import {onMount} from 'svelte';
   import WandIcon from '$lib/ui/WandIcon.svelte';
+  import QuestGiverIcon from '$lib/guide/QuestGiverIcon.svelte';
+  import {isQuestGroupSection,questBrowseGroupId,questBrowseGroups} from '$lib/guide/quest-browse-groups.ts';
   import {base} from '$app/paths';
   import {watchWandLanguage} from '$lib/ui/preferences';
   import {autoAppend} from '$lib/ui/auto-append';
   import {collectWindow} from '$lib/ui/collect-window.mjs';
   import {verifyPublicQuestIndex,filterPublicQuests,publicQuestSection,publicQuestStoryArc,
-    publicQuestNativeOrder,publicFriendshipCharacters,findPublicQuestByLink,loadPublicQuestPart,formatPublicGuideText,
+    publicQuestNativeOrder,findPublicQuestByLink,loadPublicQuestPart,formatPublicGuideText,
     type PublicQuestIndex,type PublicQuestPart,type PublicQuestIndexRow,type PublicQuestDetailRow,
     type PublicQuestObjective,type PublicGuideNames,type PublicQuestSection,type PublicQuestStoryArc
   } from '$lib/guide/public-guide.ts';
@@ -43,6 +45,7 @@
   let query='';
   let locale='ja';
   let character='';
+  let browseGroup='';
   let section:PublicQuestSection='story';
   let unclassifiedOpen=false;
   let storyArc:PublicQuestStoryArc='valley';
@@ -97,6 +100,9 @@
   $: selectedGroupId=selectedRow?.groupId??null;
   $: selectedTargetRefs=selectedQuestId
     ?targetMatches.filter(row=>row.questId===selectedQuestId):[];
+  $: browseGroups=catalog&&isQuestGroupSection(section)?questBrowseGroups(catalog,section,locale,relatedEventSource):[];
+  $: activeGroup=browseGroups.find(group=>group.id===browseGroup)??browseGroups[0]??null;
+  $: groupedBrowse=!!activeGroup&&!query.trim()&&!rewardFocus&&!targetMatches.length&&!matchedRewardNames;
   $: filtered=catalog?(rewardFocus
     ?{total:rewardFocus.questIds.length,
       rows:catalog.quests.filter((row:any)=>rewardFocus.questIds.includes(row.id))}
@@ -106,12 +112,12 @@
       :matchedRewardNames
         ?{total:matchedRewardNames.questIds.length,
           rows:catalog.quests.filter((row:any)=>matchedRewardNames?.questIds.includes(row.id))}
+        :groupedBrowse&&activeGroup?{total:activeGroup.rows.length,rows:activeGroup.rows.slice(0,limit)}
         :collectWindow((offset:number,batch:number)=>filterPublicQuests(catalog!,{
-      query:query.slice(0,120),locale,character,objective,
+      query:query.slice(0,120),locale,character:query.trim()?'':character,objective,
       section:query.trim()?'all':section,
       arc:section==='story'&&!query.trim()?storyArc:'all',offset,limit:batch
     }),limit,'rows')):{total:0,rows:[]};
-  $: friendshipCharacters=catalog?publicFriendshipCharacters(catalog,locale):[];
   // Native Mission group association, not an unlock prerequisite or chronological link.
   $: questConditions=selectedRow&&conditionIndex?conditionIndex.getQuest(selectedRow.id):null;
   $: linkedEventRefs=selectedRow&&relatedEventIndex
@@ -158,16 +164,16 @@
   }
   function selectSection(next:PublicQuestSection){
     if(section===next)return;
-    section=next;character='';storyArc='valley';objective='';query='';
+    section=next;character='';browseGroup='';storyArc='valley';objective='';query='';
     setSearch();resetBrowsedSelection();
   }
   function selectArc(next:PublicQuestStoryArc){
     if(storyArc===next)return;
     storyArc=next;limit=40;resetBrowsedSelection();
   }
-  function selectCharacter(next:string){
-    if(character===next)return;
-    character=next;limit=40;resetBrowsedSelection();
+  function selectBrowseGroup(next:string){
+    if(activeGroup?.id===next&&!query.trim()&&!rewardFocus&&!targetMatches.length)return;
+    browseGroup=next;character='';query='';setSearch();resetBrowsedSelection();
   }
   function targetStep(questId:string,numberOfSteps:number):number{
     const step=publicQuestStepIndex(window.location.search,questId,numberOfSteps);
@@ -250,7 +256,7 @@
         section=publicQuestSection(row);
         if(section==='special'||section==='tutorial')unclassifiedOpen=true;
         if(section==='story')storyArc=publicQuestStoryArc(row)??'valley';
-        character=section==='friendship'?row.characterId:'';
+        character='';browseGroup=questBrowseGroupId(row);
       }
       if(selectedRow?.id!==row.id)void openQuest(row,false);
       else if(selected) {
@@ -400,10 +406,9 @@
       {#each [
         ['story','ストーリークエスト'],['realm','世界クエスト'],
         ['friendship','友情クエスト'],['event','イベントクエスト'],
-        ['daily','デイリークエスト'],['premium','ドリームパッククエスト'],
-        ['all','すべて']
+        ['premium','ドリームパッククエスト'],['daily','デイリークエスト']
       ] as [key,name]}
-        <button class:chosen={section===key} on:click={()=>selectSection(key as PublicQuestSection)}
+        <button class:chosen={section===key} class:secondary={key==='daily'} on:click={()=>selectSection(key as PublicQuestSection)}
           aria-pressed={section===key}>{name}</button>
       {/each}
     </nav>
@@ -447,16 +452,14 @@
     {:else if targetReverseError}
       <small class="condition-warning">目標アイテムの逆引きデータは読み込めませんでした。</small>
     {/if}
-    <div class="workspace" class:with-character-rail={section==='friendship'}>
-      {#if section==='friendship'}
-        <nav class="character-rail" aria-label="フレンドシップクエストのキャラクター">
-          <button class:chosen={character===''} aria-pressed={character===''}
-            on:click={()=>selectCharacter('')}>すべてのキャラクター
-            <small>341</small></button>
-          {#each friendshipCharacters as member (member.id)}
-            <button class:chosen={character===member.id} aria-pressed={character===member.id}
-              on:click={()=>selectCharacter(member.id)}>
-              <span>{member.name}</span><small>{member.quests}</small>
+    <div class="workspace" class:with-character-rail={isQuestGroupSection(section)&&!query.trim()&&!rewardFocus&&!targetMatches.length&&!matchedRewardNames}>
+      {#if isQuestGroupSection(section)&&!query.trim()&&!rewardFocus&&!targetMatches.length&&!matchedRewardNames}
+        <nav class="character-rail" class:group-rail={section!=='friendship'} aria-label={section==='friendship'?'フレンドシップクエストのキャラクター':section==='realm'?'世界':section==='event'?'イベント':'ドリームパック'}>
+          {#each browseGroups as group (group.id)}
+            <button class:chosen={activeGroup?.id===group.id} aria-pressed={activeGroup?.id===group.id}
+              data-group={group.id} on:click={()=>selectBrowseGroup(group.id)}>
+              {#if group.characterId}<span class="quest-avatar" aria-hidden="true"><QuestGiverIcon characterId={group.characterId} name={group.name}/></span>{:else}<WandIcon name={section==='realm'?'world':'calendar'} size={18}/>{/if}
+              <span class="group-name">{group.name}</span><small>{group.rows.length}</small>
             </button>
           {/each}
         </nav>
@@ -465,13 +468,14 @@
         <p class="count">{filtered.total.toLocaleString()}件のクエスト</p>
         {#each filtered.rows as row (row.id)}
           <button class:active={selectedRow?.id===row.id} class="quest-row" title={'クエストID '+row.id} on:click={()=>openQuest(row)}>
-            <strong>{questName(row,locale)}</strong>
+            <span class="quest-avatar" aria-hidden="true"><QuestGiverIcon characterId={row.characterId} name={characterName(row.characterId,locale)}/></span>
+            <span class="quest-row-text"><strong>{questName(row,locale)}</strong>
             <small>
               {#if publicQuestSection(row)==='story'}
                 {publicQuestNativeOrder(row)===null?'関連クエスト':'メインクエストライン'} ·
               {/if}
               {characterName(row.characterId,locale)}
-            </small>
+            </small></span>
           </button>
         {/each}
         {#if filtered.total>limit}<div class="auto-sentinel" use:autoAppend={{hasMore:()=>filtered.total>limit,load:()=>limit+=40}} role="status" aria-label="スクロールでクエストを追加表示"></div>{/if}
@@ -739,7 +743,12 @@
   .character-rail small{color:#bfa6d1;font-size:11px}
   .results,.detail{background:#1d1628;border:1px solid #4c3d5e;border-radius:15px;padding:15px;min-width:0}
   .count{font-size:12px;color:#bea9ce;margin:1px 4px 12px}
-  .quest-row{display:flex;flex-direction:column;align-items:start;text-align:left;width:100%;max-width:100%;min-width:0;box-sizing:border-box;gap:5px;padding:13px 14px;border:1px solid transparent;border-radius:9px;background:none;color:inherit;cursor:pointer}
+  .quest-row{display:flex;flex-direction:row;align-items:center;text-align:left;width:100%;max-width:100%;min-width:0;box-sizing:border-box;gap:10px;padding:9px 10px;border:1px solid transparent;border-radius:9px;background:none;color:inherit;cursor:pointer}
+  .quest-avatar{display:grid;place-items:center;flex:0 0 36px;width:36px;height:36px;background:var(--wand-pill-bg);border-radius:8px;overflow:hidden}
+  .character-rail .quest-avatar{flex-basis:30px;width:30px;height:30px}
+  .group-name,.quest-row-text{flex:1;min-width:0;overflow-wrap:anywhere}
+  .quest-row-text{display:grid;gap:3px}
+  .quest-sections button.secondary:not(.chosen){background:transparent;color:var(--wand-muted);border-color:var(--wand-line)}
   .quest-row:hover,.quest-row.active{background:#302440;border-color:#654b85}
   .quest-row strong,.quest-row small{display:block;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;white-space:normal}
   .quest-row strong{font-size:14px}.quest-row small{color:#aa9cb7;font-size:11px}
