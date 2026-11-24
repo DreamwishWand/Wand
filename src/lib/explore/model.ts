@@ -11,6 +11,8 @@ export interface ExploreItem {
   sourceSetItemId?:number|null;
   sourceSetNames?:Readonly<Record<string,string|null>>;
   prefabGuid?:string|null;
+  nativeKey?:string;
+  footprintSignature?:string|null;
 }
 export interface BoardGroup {id:string;name:string}
 export interface BoardEntry {itemId:number;groupId:string|null}

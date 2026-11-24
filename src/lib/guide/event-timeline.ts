@@ -163,3 +163,33 @@ export function guideTimelineRows(
   }
   return rows;
 }
+
+/** Separate CHC projection. Unknown times stay day-only; no invented duration.
+ * Day-only intervals include their final civil day. Point markers are centered
+ * on date-only cells and exact at confirmed instants. */
+export function guideAnnouncementMarker(
+  schedule:import('./community-announcements.ts').AnnouncementSchedule,
+  point:boolean,range:GuideTimelineWindow
+):{left:number;width:number;point:boolean}|null{
+  try{
+    const {start,end}=schedule;
+    if(!start&&!end)return null;
+    function boundary(date:NonNullable<typeof start>,finish:boolean){
+      if(date.precision==='day')return localDayStart(finish?nextCivil(date.value):date.value,range.timeZone);
+      const ms=Date.parse(date.value);
+      if(!Number.isFinite(ms))throw Error('instant');
+      return ms;
+    }
+    if(point||!start||!end){
+      const date=start??end!;
+      const time=boundary(date,false);
+      if(time<range.startMs||time>=range.endMs)return null;
+      const left=date.precision==='day'?(positionOf(time,range)+positionOf(boundary(date,true),range))/2:positionOf(time,range);
+      return {left,width:0,point:true};
+    }
+    const from=boundary(start,false),to=boundary(end,true);
+    if(to<=from)return null;
+    const result=clip('limited',from,to,range);
+    return result?{left:result.left,width:result.width,point:false}:null;
+  }catch{return null;}
+}

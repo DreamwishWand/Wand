@@ -124,3 +124,80 @@ test('reviewed root arrays preserve all source values, order and repeats in the 
   assert((await db.getItemReferences(31200032,'incoming')).some(([id,path])=>id===2070000628&&path==='source.ItemsToDeleteAfterMission[0]'));
   assert((await db.getItemReferences(1510000002,'outgoing')).some(([id,path])=>id===1510100005&&path==='source.Slots[1]'));
 });
+
+
+test('reviewed message trees retain presence, ordered rewards and nested source fields',async()=>{
+  const requests=[];
+  const db=await openPublicItemMaster('',async url=>{requests.push(url);return fetcher(url)},{scope:'complete'});
+  const fields=db.release.reviewedMessageCoverage.fields;
+  assert.equal(Object.keys(fields).length,10);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.itemCount,0),3286);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.occurrences,0),4567);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.leafCount,0),9832);
+  const [crop,empty,nanos,village,mission,ach,event,request]=await db.getItemFields([
+    30400010,30400120,30400128,40200003,2070000672,2110100001,2010000003,31500016
+  ],['source.GrowthPeriod','source.ProductionPeriod.Nanos','source.VillageArea',
+     'source.RewardsXP.Currency','source.Milestones','source.IntervalData','source.ItemList','source.DefaultItem']);
+  assert.deepEqual(crop.values['source.GrowthPeriod'],{Seconds:900});
+  assert.deepEqual(empty.values['source.GrowthPeriod'],{});
+  assert.equal(nanos.values['source.ProductionPeriod.Nanos'],1000000);
+  assert.deepEqual(village.values['source.VillageArea'],{UseField:true,VillageArea:0});
+  assert.deepEqual(mission.values['source.RewardsXP.Currency'],[{Amount:{Max:500,Min:500},CurrencyId:80000000}]);
+  assert.deepEqual(ach.values['source.Milestones'].map(x=>x.Milestone),[25,400,1100,2000,4500]);
+  assert.deepEqual(event.values['source.IntervalData'],{TimeOfDay:{TimeOfDay:[{Hour:5}]}});
+  assert.deepEqual(event.values['source.ItemList'].Items.map(x=>x.Weight),[2,2,2,1]);
+  assert.deepEqual(request.values['source.DefaultItem'],{Amount:1,ItemID:130000079,State:{MemoryShardIndex:0}});
+  assert((await db.getItemReferences(2110100001,'outgoing')).some(([id,p])=>id===80300000&&p==='source.Milestones[4].RewardItem'));
+  assert((await db.getItemReferences(80000000,'incoming')).some(([id,p])=>id===2070000672&&p==='source.RewardsXP.Currency[0].CurrencyId'));
+  assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
+});
+
+
+test('category-qualified source groups retain schedule and selector structure and reward references',async()=>{
+  const requests=[];
+  const db=await openPublicItemMaster('',async url=>{requests.push(url);return fetcher(url)},{scope:'complete'});
+  const fields=db.release.reviewedMessageGroupCoverage.fields;
+  assert.equal(Object.keys(fields).length,7);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.itemCount,0),2043);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.occurrences,0),3926);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.leafCount,0),27695);
+  assert.notEqual(fields['Character.DailySchedule'].declaredType,fields['Companion.DailySchedule'].declaredType);
+  const [character,companion,empty,mission]=await db.getItemFields([10000001,120100000,2070000620,2070000628],[
+    'source.DailySchedule','source.FavoriteItem.Item.Item.Item','source.LikeItem.FilterGenerator.CropType','source.AdditionnalRewards'
+  ]);
+  assert.equal(character.values['source.DailySchedule'].length,7);
+  assert.deepEqual(character.values['source.DailySchedule'][0].Schedule[0],{End:5,Location:{Anywhere:{}},Start:3,Type:8});
+  assert.deepEqual(companion.values['source.DailySchedule'][0],{Schedule:[{End:24,Start:12}]});
+  assert.deepEqual(companion.values['source.DailySchedule'][2],{});
+  assert.equal(companion.values['source.FavoriteItem.Item.Item.Item'],30200000);
+  assert.equal(companion.values['source.LikeItem.FilterGenerator.CropType'],2);
+  assert.deepEqual(empty.values['source.AdditionnalRewards'],{});
+  assert.deepEqual(mission.values['source.AdditionnalRewards'].SubLootTables[0],{Items:[{ItemID:30400064}],Max:2,Min:2});
+  assert((await db.getItemReferences(30200000,'incoming')).some(([id,p])=>id===120100000&&p==='source.FavoriteItem.Item.Item.Item'));
+  assert((await db.getItemReferences(2070000628,'outgoing')).some(([id,p])=>id===30400064&&p==='source.AdditionnalRewards.SubLootTables[0].Items[0].ItemID'));
+  assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
+});
+
+
+test('all original loot tables and facility upgrades retain conditions, costs, GUIDs and source links',async()=>{
+  const requests=[];
+  const db=await openPublicItemMaster('',async url=>{requests.push(url);return fetcher(url)},{scope:'complete'});
+  const coverage=db.release.reviewedMessageGroupCoverage.fields;
+  assert.equal(coverage['LootTable.Rewards'].itemCount,960);
+  assert.equal(coverage['LootTable.Rewards'].leafCount,11694);
+  assert.equal(coverage['Building.UpgradeInfo'].itemCount,323);
+  assert.equal(coverage['Building.UpgradeInfo'].occurrences,604);
+  assert.equal(coverage['Building.UpgradeInfo'].leafCount,4476);
+  const [loot,building]=await db.getItemFields([2090000000,20000011],['source.Rewards.SubLootTables','source.UpgradeInfo']);
+  assert.deepEqual(loot.values['source.Rewards.SubLootTables'],[
+    {Items:[{ItemID:80000000}],Max:300,Min:100,Weight:70},
+    {Max:1,Min:1,Types_:[{Clothing:{}},{Furniture:{FurnitureItemType:0}},{Furniture:{FurnitureItemType:7}}],Weight:30}
+  ]);
+  assert.deepEqual(building.values['source.UpgradeInfo'],[{Cost:{Id:80000000},Level:1,PrefabAddress:'guid:577885985cca7724b89c231693ed8eb1',UpgradeDialogueAddress:'guid:ac6c6b1b23a68124faed83172ac2e3b3'}]);
+  const outgoing=await db.getItemReferences(20100002,'outgoing');
+  assert(outgoing.some(([id,p])=>id===2090000006&&p.endsWith('.Fishing.FishLootTableItemID')));
+  assert((await db.getItemReferences(20000011,'outgoing')).some(([id,p])=>id===80000000&&p==='source.UpgradeInfo[0].Cost.Id'));
+  assert((await db.getItemReferences(2090000339,'outgoing')).some(([id,p])=>id===2070001328&&p==='source.Rewards.SubLootTables[0].ItemsConditional[0].Conditions.Conditions[0].MissionStatus.Mission'));
+  assert((await db.getItemReferences(31000022,'incoming')).some(([id,p])=>id===2090000523&&p==='source.Rewards.SubLootTables[0].Items[0].State.MealData.IngredientsUsed[0]'));
+  assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
+});
