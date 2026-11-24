@@ -17,6 +17,10 @@ try{
  const initial=await cards.count();
  assert.ok(total>500,'real catalog is substantial');
  assert.ok(initial>0&&initial<Math.min(total,300),'only nearby cards mount at initial view: '+initial+'/'+total);
+ const special=page.locator('[data-series-block-grid]').first();
+ await special.scrollIntoViewIfNeeded();
+ await page.waitForFunction(()=>{const grid=document.querySelector('[data-series-block-grid]');if(!grid)return false;const blocks=[...grid.querySelectorAll('[data-series-block]')];return blocks.some((a,i)=>i>0&&Math.abs(a.getBoundingClientRect().top-blocks[i-1].getBoundingClientRect().top)<2);});
+ assert.ok(await special.locator('[data-series-block]').count()>1,'multiple series blocks');
  const first=page.locator('[data-explore-chunk]').first();
  const last=page.locator('[data-explore-chunk]').last();
  await last.scrollIntoViewIfNeeded();
@@ -30,6 +34,7 @@ try{
  await page.getByRole('button',{name:/閉じる|Close/,exact:true}).last().click();
  await page.setViewportSize({width:390,height:844});
  await page.waitForFunction(()=>Number(document.querySelector('[data-explore-grid]')?.getAttribute('data-columns'))<=5);
+ await page.waitForFunction(()=>[...document.querySelectorAll('[data-series-block-grid]')].every(g=>[...g.querySelectorAll('[data-series-block]')].every(b=>Number(b.getAttribute('data-span'))<=Number(g.getAttribute('data-columns')))));
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),'no horizontal page overflow');
  assert.deepEqual(errors,[]);
  console.log('EXPLORE_VIEWPORT '+JSON.stringify({total,initial,desktopColumns:firstColumns}));
