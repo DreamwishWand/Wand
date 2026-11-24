@@ -1,5 +1,6 @@
 <script lang="ts">
  import MapCameraControls from './MapCameraControls.svelte';
+ import {worldShortcut,worldShortcutTarget} from './world-shortcuts.ts';
 
   import {onMount,onDestroy} from 'svelte';
   import {terrainWarnings,type TerrainBinding} from './terrain-binding.ts';
@@ -22,6 +23,7 @@
   export let terrain:TerrainBinding|null=null;
   export let compact=false;
   let toolsOpen=true,inspectorOpen=true;
+  let root:HTMLDivElement;
   export let terrainDisplayed=false;
   $: activeTerrain=terrain&&terrain.verifiedGridOrdinals.includes(activeOrdinal)?terrain:null;
   $: terrainUrl=activeTerrain?terrainImage(activeTerrain):'';
@@ -108,7 +110,12 @@
   }
   function rotateDraft(delta:number){if(busy||!worldRotateEligible(chosen)||!isCardinal(draftOrientation))return;draftOrientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(draftOrientation)+delta+4)%4];}
   function keyMap(event:KeyboardEvent){
-    if(busy)return;
+    if(busy||!worldShortcutTarget(event,root))return;
+    const action=worldShortcut(event);if(!action)return;
+    if(action==='undo'||action==='redo'){event.preventDefault();if(action==='undo'&&(placing||editPlan||pendingDraft)){if(groupMode){groupDX=0;groupDY=0;groupTurns=0;placing=false;hoverPoint=null;}else resetDraft(chosen);}else travel(action==='undo'?-1:1);return;}
+    if(action==='select-all'&&file){event.preventDefault();const ids=objects.filter(o=>worldMoveEligible(o)&&matchesSelectionLayer(o,layer)).map(o=>o.localOrdinal);if(ids.length>WORLD_BATCH_LIMIT){stageError='選択上限 '+WORLD_BATCH_LIMIT+'件';return;}cancelEdit();clearGroup();groupMode=true;selected=null;hits=[];groupIds=ids;return;}
+    if(action==='zoom-in'||action==='zoom-out'||action==='fit'){event.preventDefault();if(action==='fit')resetCamera();else changeZoom(zoom*(action==='zoom-in'?2:.5));return;}
+    if(event.ctrlKey||event.metaKey||event.altKey)return;
     if(groupMode){
       if(event.key==='Escape'){clearGroup();return;}
       if(event.key==='Enter'){event.preventDefault();stageGroup();return;}
@@ -308,12 +315,14 @@
       hits=savedShapesAt(effectiveMap,activeOrdinal,point.x,point.y);
       const hit=hits.find(o=>matchesSelectionLayer(o,layer)&&worldMoveEligible(o));if(hit)toggleGroup(hit);return;
     }
+    if(!placing&&(event.metaKey||event.ctrlKey||event.shiftKey)&&file){const hit=savedShapesAt(effectiveMap,activeOrdinal,point.x,point.y).find(o=>matchesSelectionLayer(o,layer)&&worldMoveEligible(o));if(hit){const prev=chosen;clearGroup();groupMode=true;selected=null;if(prev&&worldMoveEligible(prev)&&prev.localOrdinal!==hit.localOrdinal)groupIds=[prev.localOrdinal];toggleGroup(hit);return;}}
     if(placing&&chosen&&worldMoveEligible(chosen)){draftX=point.x;draftY=point.y;placing=false;hoverPoint=null;cancelEdit();return;}
     hits=savedShapesAt(effectiveMap,activeOrdinal,point.x,point.y);
     selected=hits.find(o=>matchesSelectionLayer(o,layer))?.localOrdinal??null;
   }
 </script>
-<div class="saved-shape-plot" class:compact>
+<svelte:window on:keydown={e=>{if(compact)keyMap(e);}}/>
+<div class="saved-shape-plot" class:compact bind:this={root}>
   {#if compact}<button type="button" class="saved-tools-toggle" aria-expanded={toolsOpen} aria-label="検索・レイヤー" title="検索・レイヤー" on:click={()=>toolsOpen=!toolsOpen}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18M8 3v6M16 9v6M10 15v6"/></svg></button>{/if}
   <div class="saved-tools" hidden={compact&&!toolsOpen}>
   <div class="controls grid-controls">
@@ -356,7 +365,7 @@
   </div>
   <div class="saved-map-frame"><button type="button" class="plot" class:zoomed={zoom>1} aria-label="セーブ内の形状候補を選択"
     on:click={pick} on:wheel|nonpassive={wheel} on:pointerdown={startPan} on:pointermove={follow}
-    on:pointerup={finishPan} on:pointercancel={finishPan} on:pointerleave={()=>{gesture.leave();hoverPoint=null;}} on:keydown={keyMap}>
+    on:pointerup={finishPan} on:pointercancel={finishPan} on:pointerleave={()=>{gesture.leave();hoverPoint=null;}} on:keydown={e=>{if(!compact)keyMap(e);}}>
     <svg bind:this={svg} {viewBox} aria-hidden="true">
       <defs><pattern id="saved-shape-cells" width="1" height="1" patternUnits="userSpaceOnUse">
         <path d="M1 0H0V1" fill="none" stroke="#8f9aa8" stroke-opacity=".35" stroke-width=".04"/>

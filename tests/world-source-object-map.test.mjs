@@ -302,3 +302,29 @@ test('local design file round trip, exact grid identity, current geometry, atomi
  const road={...g,itemId:40100001,layer:'ground',shapes:{'40100001:8':shape}};
  assert.equal(restoreDesign(emptyDesign(),parsed.map(p=>({...p,itemId:road.itemId,x:0,y:0})),new Map([[road.itemId,road]]),10,10),null);
 });
+
+import {designClipboard,pasteDesign,removeDesignGroup,transformDesignGroup} from '../src/lib/world/design-layout.ts';
+import {worldShortcut} from '../src/lib/world/world-shortcuts.ts';
+test('desktop shortcut mapping accepts Control and Command without swallowing unrelated modifiers or IME',()=>{
+ const key=(key,more={})=>worldShortcut({key,ctrlKey:false,metaKey:false,shiftKey:false,altKey:false,isComposing:false,repeat:false,...more});
+ for(const modifier of ['ctrlKey','metaKey']){
+  for(const [k,a] of [['c','copy'],['x','cut'],['v','paste'],['d','duplicate'],['a','select-all'],['z','undo'],['y','redo']])assert.equal(key(k,{[modifier]:true}),a);
+  assert.equal(key('Z',{[modifier]:true,shiftKey:true}),'redo');
+ }
+ assert.equal(key('Backspace'),'delete');assert.equal(key('ArrowLeft'),'left');assert.equal(key('+',{shiftKey:true}),'zoom-in');
+ assert.equal(key('c',{ctrlKey:true,isComposing:true}),null);assert.equal(key('c',{ctrlKey:true,altKey:true}),null);assert.equal(key('w',{metaKey:true}),null);
+ assert.equal(key('z',{ctrlKey:true,repeat:true}),null);assert.equal(key('r',{ctrlKey:true}),null);
+});
+test('copy/paste and cut preserve relative coordinates and orientations with atomic group history',()=>{
+ const shape={width:2,height:1,runs:[{x:0,y:0,width:2}],cellCount:2,path:'M0 0h2v1h-2Z'};
+ const g={itemId:40000001,name:'Furniture',layer:'furniture',surfaceCapable:false,shapes:{'40000001:8':shape,'40000001:4':{...shape,width:1,height:2}}};
+ const defs=new Map([[g.itemId,g]]);let t=placeDesign(emptyDesign(),g,1,2,2,20,20);t=placeDesign(t,g,4,3,1,20,20);
+ const clip=designClipboard(t,[1,2]);assert.deepEqual(clip.map(p=>[p.dx,p.dy,p.orientation]),[[0,0,2],[3,1,1]]);
+ const pasted=pasteDesign(t,clip,defs,10,10,20,20);assert.ok(pasted);
+ assert.deepEqual(currentDesign(pasted).slice(2).map(p=>[p.id,p.x,p.y,p.orientation]),[[3,10,10,2],[4,13,11,1]]);
+ assert.deepEqual(currentDesign(travelDesign(pasted,-1)),currentDesign(t));assert.equal(pasteDesign(t,clip,defs,19,19,20,20),null);
+ const cut=removeDesignGroup(pasted,[3,4],defs);assert.deepEqual(currentDesign(cut),currentDesign(t));
+ assert.equal(removeDesignGroup(t,[1,2],new Map([[g.itemId,{...g,editRestrictions:{remove:'denied'}}]])),null);
+ const moved=transformDesignGroup(t,[1,2],defs,1,1,0,20,20);assert.deepEqual(currentDesign(moved).map(p=>[p.x,p.y]),[[2,3],[5,4]]);
+ assert.deepEqual(currentDesign(travelDesign(moved,-1)),currentDesign(t));
+});

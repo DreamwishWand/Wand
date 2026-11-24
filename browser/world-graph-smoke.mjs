@@ -1076,6 +1076,18 @@ try{
   assert.equal(await design.locator('.design-object').count(),0);
   await design.getByLabel('設計をやり直す').click();
   assert.equal(await design.locator('.design-object').count(),1);
+  await designClick(10.5,10.5);
+  await page.keyboard.press('Control+c');
+  await page.keyboard.press('Meta+v');
+  await designClick(20.5,20.5);
+  assert.equal(await design.locator('.design-object').count(),2);
+  await page.keyboard.press('Meta+z');
+  assert.equal(await design.locator('.design-object').count(),1);
+  await page.keyboard.press('Control+y');
+  assert.equal(await design.locator('.design-object').count(),2);
+  await page.keyboard.press('Control+Shift+z');
+  await page.keyboard.press('Meta+z');
+  assert.equal(await design.locator('.design-object').count(),1);
   await publicWorld.getByLabel('エリア',{exact:true}).selectOption({label:'Plaza'});
   await design.locator('.design-plot').waitFor({timeout:20000});
   assert.equal(await design.locator('.design-object').count(),0);
