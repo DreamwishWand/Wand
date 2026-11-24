@@ -165,7 +165,7 @@
   $: workspace=state.workspaces.find(x=>x.id===state.active)??state.workspaces[0];
   $: entries=workspace?.entries??{};
   $: selectionLabel=sourceNativeSubtype!==null
-    ?collectionFurnitureKindLabel(locale,sourceNativeSubtype)??nativeSubtypeLabel(locale,sourceNativeSubtype,
+    ?collectionFurnitureKindLabel(locale,sourceNativeSubtype,sourceIndex)??nativeSubtypeLabel(locale,sourceNativeSubtype,
         sourceIndex?.nativeSubtypeNames.get(sourceNativeSubtype)??null)
     :sourceActivityType!==null
       ?sourceActivityTypeLabel(locale,sourceActivityType,
@@ -1597,7 +1597,7 @@
                   <button type="button" class="facet-card collection-native-subtype"
                     data-native-subtype={group.key} on:click={()=>chooseNativeSubtype(group.key)}>
                     <span class="facet-flourish" aria-hidden="true"><WandIcon name={categoryPictogram[group.nativeType]??'collection'} size={22}/></span>
-                    <strong>{collectionFurnitureKindLabel(locale,group.key)??nativeSubtypeLabel(locale,group.key,group.nativeName)}</strong>
+                    <strong>{collectionFurnitureKindLabel(locale,group.key,sourceIndex)??nativeSubtypeLabel(locale,group.key,group.nativeName)}</strong>
                     <span>{group.total.toLocaleString(locale)} {copy.countUnit}</span>
                   </button>
                 {/each}
