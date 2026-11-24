@@ -76,11 +76,8 @@ try {
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),true,
     'mobile full quest list with long untranslated/native names must wrap without horizontal overflow');
   await chooseLanguage(page,'ja');
-  // The new Story-first home intentionally does not blend Village/Realm
-  // quests into the main narrative. Generic original-ID search uses All.
-  await page.getByRole('button',{name:'すべて',exact:true}).first().click();
-  await page.waitForFunction(()=>
-    document.querySelector('.count')?.textContent?.includes('733件'));
+  // Normal browsing never displays an unfiltered all-quest list; search spans categories.
+  assert.equal(await page.locator('.quest-sections button').filter({hasText:/^すべて$/}).count(),0);
 
   // Original-native selector ID 30000031 resolves through the published,
   // exact current Steam 1.26.2 names, without requiring an owner source archive.
@@ -124,18 +121,32 @@ try {
     /ドリームライトバレーへようこそ/,
     'the first screen must follow the source-numbered original Valley story');
   assert.equal(await browse.locator('.story-arcs button').count(),6);
+  assert.equal(await browse.locator('.quest-row').count(),43);
+  assert.equal(await browse.locator('.flow-list:not(.related-flow) .quest-row').count(),31);
+  assert.equal(await browse.locator('.related-flow .quest-row').count(),12);
+  assert.equal(await browse.locator('.auto-sentinel').count(),0);
+  await browse.locator('.story-quest-row').first().click();
+  await browse.getByRole('button',{name:'一覧順で次のクエスト'}).click();
+  await browse.waitForFunction(()=>document.querySelector('.story-neighbor-position')?.textContent?.includes('2 / 31'));
+  assert.match(await browse.locator('.quest-row.active').innerText(),/王家のツール/);
+  await browse.getByRole('button',{name:'一覧順で前のクエスト'}).click();
+  assert.match(await browse.locator('.quest-row.active').innerText(),/ドリームライトバレーへようこそ/);
   await browse.getByRole('button',{name:'時間の裂け目',exact:true}).click();
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('30件'));
   await browse.getByRole('button',{name:'思い出の海',exact:true}).click();
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('25件'));
   await browse.getByRole('button',{name:'世界クエスト',exact:true}).click();
-  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('61件'));
+  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('1件'));
+  assert.equal(await browse.locator('.group-rail button').count(),14);
+  await browse.locator('.group-rail button[data-group="LionKing"]').click();
+  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('6件'));
+  assert.equal(await browse.locator('.quest-row .quest-avatar').count(),6);
   assert.equal(await browse.locator('.story-arcs').count(),0,
     'Realm quests must not be mixed into Story arcs');
   await browse.getByRole('button',{name:'友情クエスト',exact:true}).click();
-  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('341件'));
-  assert.equal(await browse.locator('.character-rail button').count(),78,
-    'exactly 77 source-native Village quest characters plus All');
+  await browse.locator('.character-rail button').first().waitFor();
+  assert.equal(await browse.locator('.character-rail button').count(),77,
+    'exactly 77 source-native Village quest characters, no All');
   await browse.locator('.character-rail button').filter({hasText:'グーフィー'}).first().click();
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('5件'));
   assert.match(await browse.locator('.quest-row').first().innerText(),/温かい歓迎/,
@@ -144,18 +155,20 @@ try {
   assert.equal(await browse.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),true,
     'character roster remains within the mobile viewport');
   await browse.getByRole('button',{name:'イベントクエスト',exact:true}).click();
-  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('66件'));
+  await browse.locator('.group-rail button[data-group="Spring"]').click();
+  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('2件'));
+  assert.equal(await browse.locator('.group-rail button').count(),10);
   await browse.getByRole('button',{name:'デイリークエスト',exact:true}).click();
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('9件'));
   await browse.locator('.quest-unclassified summary').click();
   await browse.getByRole('button',{name:'追加クエスト',exact:true}).click();
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('70件'));
   await browse.getByRole('button',{name:'ドリームパッククエスト',exact:true}).click();
-  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('19件'));
+  await browse.locator('.group-rail button').first().waitFor();
+  assert.equal(await browse.locator('.group-rail button').count(),7);
   await browse.getByRole('button',{name:'導入用',exact:true}).click();
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('1件'));
-  await browse.getByRole('button',{name:'すべて',exact:true}).first().click();
-  await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('733件'));
+  assert.equal(await browse.locator('.quest-sections button').filter({hasText:/^すべて$/}).count(),0);
   await browse.getByRole('textbox',{name:'クエスト名・IDを検索'}).fill('2070000793');
   await browse.waitForFunction(()=>document.querySelector('.count')?.textContent?.includes('1件'));
   assert.match(await browse.locator('.quest-row').first().innerText(),
@@ -245,9 +258,8 @@ try {
   assert.equal(await targetDeep.locator('.quest-row').count(),16,
     'source Item-ID reverse search groups duplicate objective references per Quest');
   await targetSearch.fill('');
-  await targetDeep.getByRole('button',{name:'すべて',exact:true}).first().click();
-  await targetDeep.waitForFunction(()=>
-    document.querySelector('.count')?.textContent?.includes('733件'));
+  await targetDeep.getByRole('button',{name:'ストーリークエスト',exact:true}).click();
+  assert.equal(await targetDeep.locator('.quest-sections button').filter({hasText:/^すべて$/}).count(),0);
   assert.equal(await targetDeep.locator('.reward-focus').count(),0,
     'normal Quest search restores all results without stale Item-ID deep-link focus');
   assert.equal(await targetDeep.evaluate(()=>
@@ -341,9 +353,8 @@ try {
   await namedReward.waitForFunction(()=>!
     document.querySelector('.reward-focus')?.textContent?.includes('報酬名に一致する'));
   await rewardNameInput.fill('');
-  await namedReward.getByRole('button',{name:'すべて',exact:true}).first().click();
-  await namedReward.waitForFunction(()=>
-    document.querySelector('.count')?.textContent?.includes('733件'));
+  await namedReward.getByRole('button',{name:'ストーリークエスト',exact:true}).click();
+  assert.equal(await namedReward.locator('.quest-sections button').filter({hasText:/^すべて$/}).count(),0);
   assert.deepEqual(namedRewardErrors,[],namedRewardErrors.join('\\n'));
   await namedReward.close();
 
