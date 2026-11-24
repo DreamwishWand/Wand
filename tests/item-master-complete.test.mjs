@@ -349,3 +349,50 @@ test('current selected details use narrow same-revision acquisition columns, not
   assert(!requests.some(u=>u.includes('/acquisition/public/')));
   assert(requests.filter(u=>relationObjects.includes(u)).length<relationObjects.length);
 });
+
+
+test('stall character associations are source-backed and only named families supply browse universe fallbacks',async()=>{
+  const {fetcher}=site();
+  const master=await openCurrentItemDatabase('/Wand',fetcher);
+  const staff=await master.getFieldRows('building.stallEmployeeItemIds');
+  const unlock=await master.getFieldRows('building.stallUnlockWithItemId');
+  const related=await master.getFieldRows('building.characterAssociations');
+  assert.equal(staff.length,90);
+  assert.equal(staff.filter(([,v])=>v.some(i=>i>0)).length,56);
+  assert.equal(unlock.filter(([,v])=>v!==null).length,5);
+  assert.equal(related.length,58);
+  const ids=[20100031,20100056,20100057,20100069,20100075,20100103];
+  const fields=['universeTagIds','browse.universeTagIds','browse.universeAssociation',
+    'building.stallEmployeeItemIds','building.stallUnlockWithItemId','building.characterAssociations'];
+  const rows=await master.getItemFields([...ids,20100000,20100045,20100086,20100013,20100003],fields);
+  const catalog=JSON.parse(await readFile(join(root,'explore.json'),'utf8'));
+  const byId=new Map(catalog.items.map(i=>[i.itemId,i]));
+  for(const row of rows.slice(0,6)){
+    assert.deepEqual(row.values['building.stallEmployeeItemIds'],[10000115]);
+    assert.deepEqual(row.values['building.characterAssociations'],[{characterItemId:10000115,
+      employee:true,unlockCondition:false,universeTagIds:[2000500061]}]);
+    const original=row.values.universeTagIds;
+    const candidate=row.values['browse.universeAssociation'];
+    assert.equal(candidate.kind,'named_stall_character_association');
+    assert.equal(candidate.universeTagId,2000500061);
+    assert.equal(candidate.applied,original.length===0);
+    const effective=original.length?original:[2000500061];
+    assert.deepEqual(row.values['browse.universeTagIds'],effective);
+    assert.deepEqual(byId.get(row.itemId).universes,effective);
+    assert.deepEqual((await master.getItem(row.itemId)).universeTagIds,original);
+  }
+  for(const row of rows.slice(6)){
+    assert.equal(row.values['browse.universeAssociation'],undefined);
+    assert.deepEqual(byId.get(row.itemId).universes,row.values.universeTagIds);
+  }
+  assert.deepEqual(rows[6].values['building.stallEmployeeItemIds'],[10000004]);
+  assert.deepEqual(rows[7].values['building.characterAssociations'],[{characterItemId:10000130,
+    employee:false,unlockCondition:true,universeTagIds:[2000500048]}]);
+  assert.deepEqual(rows[9].values['building.stallEmployeeItemIds'],[0]);
+  assert.deepEqual(rows[10].values['building.stallEmployeeItemIds'],[]);
+  assert.equal(rows[10].values['building.stallUnlockWithItemId'],null);
+  const all=await master.getFieldRows('browse.universeAssociation');
+  assert.equal(all.length,20);
+  for(const [id,association] of all)assert.equal(byId.get(id).universeAssociation?.universeTagId,
+    association.applied?association.universeTagId:undefined);
+});

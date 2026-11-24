@@ -10,6 +10,7 @@ import {gunzipSync,inflateSync} from 'node:zlib';
 import {createProjectionWriter,installProjectionStage} from './reuse-public-projections.mjs';
 import {attachHistoricalContentOrigin} from './attach-historical-content-origin.mjs';
 import {loadAcquisitionColumns} from './acquisition-columns.mjs';
+import {loadStallCharacterRelations} from './stall-character-relations.mjs';
 
 const hash=b=>createHash('sha256').update(b).digest('hex');
 const SHA=/^[0-9a-f]{64}$/;
@@ -1011,7 +1012,7 @@ function introductionHistory(project,e,version,source,rows){
     }];
   }));
 }
-function writeFieldColumns(rows,release,write,assets,history,acquisition){
+function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRelations){
   const columns=new Map();
   const split=new Set(['names','artwork','itemType','nativeProperties','sourceAttributes']);
   const add=(field,id,value)=>{
@@ -1031,6 +1032,16 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition){
     }
   };
   for(const row of rows){
+    const stall=stallRelations.get(row.itemId);
+    if(stall){
+      add('building.stallEmployeeItemIds',row.itemId,stall.employees);
+      add('building.stallUnlockWithItemId',row.itemId,stall.unlock);
+      if(stall.associations.length)add('building.characterAssociations',row.itemId,stall.associations);
+      if(stall.relatedUniverseTagIds.length)add('building.relatedCharacterUniverseTagIds',row.itemId,stall.relatedUniverseTagIds);
+      if(stall.candidate)add('browse.universeAssociation',row.itemId,{...stall.candidate,applied:stall.applied});
+    }
+    const browseUniverses=stall?.applied?[stall.candidate.universeTagId]:row.universeTagIds;
+    if(browseUniverses.length)add('browse.universeTagIds',row.itemId,browseUniverses);
     if(acquisition){
       const summary=acquisition.summary.get(row.itemId);
       const relations=acquisition.relations.get(row.itemId);
@@ -1220,6 +1231,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
     universeTags:source.universeTags,worldTags:source.worldTags,
     gameRuntimeMembershipVerified:false};
   const explore=[];
+  const stallRelations=loadStallCharacterRelations(project,source,byId);
   const names={};
   for(const l of LOCALES)names[l]=[];
   for(const r of rows){
@@ -1273,7 +1285,10 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
        (type.name==='Environment'&&(r.iconGuid||Object.values(r.names).some(Boolean)))){
       explore.push({itemId:i,names:r.names,nativeCategory:type.name,subtype:type.subtypeCode,
         tags:tags.filter(t=>['color','furnitureStyle','furnitureKind'].includes(t[0])),
-        universes:r.universeTagIds,universeStatus:r.universeSourceStatus,iconGuid:r.iconGuid,
+        universes:stallRelations.get(i)?.applied?[stallRelations.get(i).candidate.universeTagId]:r.universeTagIds,
+        universeStatus:stallRelations.get(i)?.applied?'source_linked':r.universeSourceStatus,
+        ...(stallRelations.get(i)?.applied?{universeAssociation:stallRelations.get(i).candidate,
+          originalUniverseStatus:r.universeSourceStatus}:{}),iconGuid:r.iconGuid,
         sourceSetItemId:r.sourceSetItemId,
         sourceSetNames:r.sourceSetItemId===null?{}:byId.get(r.sourceSetItemId)?.names??{},
         prefabGuid:r.artwork.prefabGuid??null,nativeKey:r.nativeKey,
@@ -1375,7 +1390,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
         check(index.assets[path].bytes<=16*1024*1024,'LINKED_TEXT_BLOCK_TOO_LARGE');
       }
     }
-    writeFieldColumns(rows,e.release,write,index.assets,attachHistoricalContentOrigin(project,source,introductionHistory(project,e,version,source,rows)),acquisition);
+    writeFieldColumns(rows,e.release,write,index.assets,attachHistoricalContentOrigin(project,source,introductionHistory(project,e,version,source,rows)),acquisition,stallRelations);
     write('index.json',index,index.count);
     installProjectionStage(stage,destination);
     console.log('DB-01 projection reuse:',JSON.stringify(stats));
