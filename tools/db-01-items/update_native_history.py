@@ -6,6 +6,7 @@ source presence with player availability or DLC membership. No network or upload
 """
 import argparse
 import hashlib
+import gzip
 import json
 import os
 from pathlib import Path
@@ -73,7 +74,7 @@ def decode(raw, category):
         rows.append([item_id, key.decode("utf8"), digest(raw[offset:offset+length]), offset, length])
     return rows
 
-def update(root, scan, scan_sha, previous=None, previous_sha=None, content_release=None):
+def update(root, scan, scan_sha, previous=None, previous_sha=None, content_release=None, bootstrap_archive=None):
     root = Path(root).resolve(strict=True)
     version, version_sha, sources = parse_scan(root, scan, scan_sha)
     old = pinned_json(previous, previous_sha) if previous else None
@@ -84,6 +85,18 @@ def update(root, scan, scan_sha, previous=None, previous_sha=None, content_relea
         check(tuple(map(int,version.split("."))) >= tuple(map(int,old["gameVersion"].split("."))),
               "VERSION_REGRESSION")
         check(set(old["sources"]).issubset(sources), "SOURCE_COVERAGE_LOST")
+    earlier_presence = set()
+    if bootstrap_archive:
+        check(not old and version=="1.26.2","BOOTSTRAP_VERSION")
+        packed=Path(bootstrap_archive).read_bytes()
+        check(digest(packed)=="b659cfc12b3a1363395e595bc5bb6be76ef1da63b6003c3a785556adc3a6831d",
+              "BOOTSTRAP_ARCHIVE_PIN")
+        master=json.loads(gzip.decompress(packed))
+        check(master["target"]=={"platform":"Steam","gameVersion":"1.26.2"}
+              and master["sourceFilesSha256"]=={cat:entry["sha256"] for cat,entry in sources.items()},
+              "BOOTSTRAP_SOURCE")
+        earlier_presence={r["itemId"] for r in master["items"] if r["nativeCategory"]!="Condition"}
+        check(len(earlier_presence)==33627,"BOOTSTRAP_CENSUS")
     prior_files = old["sources"] if old else {}
     prior_active = {r[0]: (cat,r) for cat, entry in prior_files.items() for r in entry["frames"]}
     history = {int(k):dict(v) for k,v in (old["history"].items() if old else [])}
@@ -114,7 +127,7 @@ def update(root, scan, scan_sha, previous=None, previous_sha=None, content_relea
         if entry is None:
             # A newly observed definition after a complete comparison is
             # source introduction evidence, not proof of an original release date.
-            entry = {"firstObservedVersion":version, "introducedVersion":version if old else None,
+            entry = {"firstObservedVersion":"1.26.1" if item_id in earlier_presence else version, "introducedVersion":version if old else None,
                      "introducedAfterVersion":old["gameVersion"] if old else None,
                      "introducedAfterSourceScanSha256":old["sourceScanSha256"] if old else None,
                      "introducedSourceScanSha256":scan_sha if old else None,
@@ -173,6 +186,7 @@ def main():
     p.add_argument("--previous",type=Path)
     p.add_argument("--previous-sha256")
     p.add_argument("--content-release-id")
+    p.add_argument("--bootstrap-1262-archive",type=Path,help="Concatenated exact verified complete-source .json.gz archive; only initial 1.26.2 inventory")
     p.add_argument("--ledger",type=Path,required=True)
     p.add_argument("--public-history",type=Path,required=True)
     a = p.parse_args()
@@ -183,9 +197,10 @@ def main():
     for path in (a.ledger,a.public_history):
         resolved=path.resolve()
         check(not resolved.is_relative_to(root) and resolved!=a.scan.resolve()
-              and (not a.previous or resolved!=a.previous.resolve()),"OUTPUT_OVERLAPS_INPUT")
+              and (not a.previous or resolved!=a.previous.resolve())
+              and (not a.bootstrap_1262_archive or resolved!=a.bootstrap_1262_archive.resolve()),"OUTPUT_OVERLAPS_INPUT")
     check(a.ledger.resolve()!=a.public_history.resolve(),"OUTPUT_COLLISION")
-    ledger=update(a.game,a.scan,a.scan_sha256,a.previous,a.previous_sha256,a.content_release_id)
+    ledger=update(a.game,a.scan,a.scan_sha256,a.previous,a.previous_sha256,a.content_release_id,a.bootstrap_1262_archive)
     print(json.dumps({"ledgerSha256":write_atomic(a.ledger,ledger),
                       "publicHistorySha256":write_atomic(a.public_history,public_history(ledger)),
                       "decodedCategories":ledger["delta"]["decodedCategories"],
