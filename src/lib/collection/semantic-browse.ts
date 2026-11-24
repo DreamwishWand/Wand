@@ -65,7 +65,7 @@ export function makeCollectionBrowseOrder(source:CollectionDb01Index,locale:stri
     const k={root:root===undefined?999:collectionTopCategoryRank(root),universe,world,
       w:usesWorld&&!selectedWorld?worldRanks.get(world)??999:0,
       u:!universeSelected&&usesUniverse?ranks.get(universe)??999:0,
-      part:mount?collectionMountPart(nativeKey):character&&child&&!parent?1:0,
+      part:mount?collectionMountPart(nativeKey):0,
       entity,set,style:styleKeys(source,id),native:type?.code??0,child};
     cached.set(id,k);return k;
   }
