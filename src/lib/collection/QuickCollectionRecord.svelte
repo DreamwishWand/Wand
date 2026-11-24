@@ -7,7 +7,6 @@
   export let copy:Readonly<Record<CollectionInterfaceKey,string>>;
   export let disabled=false;
   export let onToggle:()=>void;
-  export let onDiscovery:()=>void;
   export let onQuantity:(value:string)=>void;
 
   function finishQuantity(event:Event):void{
@@ -24,11 +23,6 @@
     aria-label={item.label+(entry.status==='owned'?copy.markMissing:copy.markOwned)}
     title={entry.status==='owned'?copy.ownedTip:copy.missingTip}
     on:change={onToggle}/>
-  {#if item.stateSemantic.includes('DISCOVERY')||entry.discovered!==undefined}
-    <input type="checkbox" class="item-discovery-toggle" checked={entry.discovered===true}
-      {disabled} aria-label={item.label+' · '+copy.discovered} title={copy.discovered}
-      on:change={onDiscovery}/>
-  {/if}
   {#if collectionHasQuantity(item)}
     <input type="number" class="item-quantity-input" min="0" max="999999" step="1" inputmode="numeric"
       value={entry.quantity??0} {disabled}
@@ -42,9 +36,9 @@
   {/if}
 </div>
 <style>
-  .quick-record{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:5px;padding:4px 6px;flex-shrink:0}
+  .quick-record{display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:0;flex-shrink:0}
   .quick-record input[type="checkbox"]{appearance:auto;width:19px;height:19px;min-width:19px;margin:0;cursor:pointer;accent-color:var(--wand-accent,#6584b7)}
   .quick-record input[type="checkbox"]:disabled{cursor:default;opacity:.55}
-  .item-quantity-input{box-sizing:border-box;width:64px;min-width:0;min-height:26px;padding:2px 4px;text-align:right;font:inherit;color:inherit;background:transparent;border:1px solid currentColor;border-radius:5px}
+  .item-quantity-input{box-sizing:border-box;width:48px;min-width:0;min-height:26px;padding:2px 4px;text-align:right;font:inherit;color:inherit;background:transparent;border:1px solid currentColor;border-radius:5px}
   .item-quantity-input:disabled{opacity:.55}
 </style>
