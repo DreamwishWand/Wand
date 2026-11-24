@@ -1,8 +1,61 @@
 <script lang="ts">
+  import {onDestroy} from 'svelte';
+  import {CARDINAL_ORIENTATIONS,isCardinal,worldTransformEligible,draftSavedMapTransform} from './saved-map-transform.ts';
   import {savedGridObjects,savedShapesAt,type SavedShapeMap,type SavedShapeObject} from './saved-shape-map.ts';
   import {MAP_LAYER_COLORS,MAP_LAYER_LABELS,mapPainterOrder,matchesSelectionLayer,type MapSelectionLayer} from './source-map-layers.ts';
   import {sourceOrientationAngle} from './source-object-map.ts';
   export let map:SavedShapeMap;
+  export let file:File|null=null;
+  let editWorker:Worker|null=null;
+  let editEpoch=0;
+  let busy=false,editError='',copyUrl='',copyName='',checkedSignature='';
+  let draftX=0,draftY=0,draftOrientation:string|null=null,placing=false;
+  let draftTarget:SavedShapeObject|null=null;
+  function cancelEdit(){editEpoch++;editWorker?.terminate();editWorker=null;busy=false;checkedSignature='';editError='';if(copyUrl)URL.revokeObjectURL(copyUrl);copyUrl='';}
+  onDestroy(cancelEdit);
+  function resetDraft(o:SavedShapeObject|null){cancelEdit();draftTarget=o;placing=false;draftX=o?.x??0;draftY=o?.y??0;draftOrientation=o?.orientation??null;}
+  $: if(chosen!==draftTarget)resetDraft(chosen);
+  $: editPlan=draftSavedMapTransform(chosen,draftX,draftY,draftOrientation);
+  $: draftSignature=editPlan?JSON.stringify(editPlan):'';
+  $: if(checkedSignature&&checkedSignature!==draftSignature)cancelEdit();
+  $: draftCode=isCardinal(draftOrientation)?CARDINAL_ORIENTATIONS.indexOf(draftOrientation)*4:null;
+  $: draftShape=chosen&&draftCode!==null?map.shapes[chosen.itemId+':'+draftCode]:null;
+  $: if(!file)cancelEdit();
+  async function runEdit(exporting:boolean){
+    const source=file,plan=editPlan,signature=draftSignature;
+    if(!source||!plan||busy||source.size<1||source.size>32*1024*1024||
+      (exporting&&checkedSignature!==signature))return;
+    const epoch=++editEpoch;busy=true;editError='';
+    if(copyUrl)URL.revokeObjectURL(copyUrl);copyUrl='';
+    let bytes:Uint8Array|null=null;
+    try{
+      bytes=new Uint8Array(await source.arrayBuffer());
+      if(epoch!==editEpoch||file!==source||draftSignature!==signature)return;
+      const worker=new Worker(new URL('../save/save-amount-preview.worker.ts',import.meta.url),{type:'module'});
+      editWorker=worker;
+      function finish(value:unknown){
+        const r=value as {kind?:string;bytes?:Uint8Array;receipt?:Record<string,unknown>};
+        worker.terminate();
+        if(epoch!==editEpoch||file!==source||draftSignature!==signature){r?.bytes?.fill(0);return;}
+        editWorker=null;busy=false;
+        const receipt=r?.receipt;
+        if(!exporting&&r?.kind==='result'&&receipt?.contract==='wand.db05.grid-mixed-batch-preview@1'&&
+          receipt.changedCount===1&&receipt.lexicalBytesPreserved===true&&receipt.reopenVerified===true&&receipt.exportAuthorized===false){checkedSignature=signature;return;}
+        if(exporting&&r?.kind==='copy'&&r.bytes instanceof Uint8Array&&r.bytes.byteLength>0&&r.bytes.byteLength<=32*1024*1024&&
+          receipt?.contract==='wand.db05.experimental-copy@1'&&receipt.copyBytes===r.bytes.byteLength&&receipt.originalUnchanged===true&&
+          receipt.independentReopenVerified===true&&receipt.experimentalCopyOnly===true&&receipt.productionWriterAuthorized===false){
+          try{copyUrl=URL.createObjectURL(new Blob([r.bytes.buffer as ArrayBuffer],{type:'application/octet-stream'}));
+            const dot=source.name.lastIndexOf('.');copyName=dot>0?source.name.slice(0,dot)+'-world-edited'+source.name.slice(dot):source.name+'-world-edited';}
+          catch{editError='コピーを生成できませんでした。';}finally{r.bytes.fill(0);}return;
+        }
+        r?.bytes?.fill(0);checkedSignature='';editError='セーブの変更を検証できませんでした。';
+      }
+      worker.onmessage=e=>finish(e.data);worker.onerror=e=>{e.preventDefault();finish({kind:'error'});};worker.onmessageerror=()=>finish({kind:'error'});
+      const request={command:exporting?'export-grid-mixed-batch-copy':'preview-grid-mixed-batch',format:source.name.toLowerCase().endsWith('.json')?'json':'auto',bytes,edits:[plan]};
+      worker.postMessage(exporting?{...request,allowExperimentalCopy:true}:request,[bytes.buffer]);bytes=null;
+    }catch{if(epoch===editEpoch){editWorker?.terminate();editWorker=null;busy=false;checkedSignature='';editError='セーブの処理に失敗しました。';}}
+    finally{if(bytes?.byteLength)bytes.fill(0);if(epoch===editEpoch&&!editWorker)busy=false;}
+  }
   let ordinal=0,selected:number|null=null,hits:SavedShapeObject[]=[];
   let layer:MapSelectionLayer='all';
   let zoom=1,cx=.5,cy=.5;
@@ -31,6 +84,7 @@
   function pick(event:MouseEvent){
     const matrix=svg?.getScreenCTM();if(!matrix||event.detail===0)return;
     const point=new DOMPoint(event.clientX,event.clientY).matrixTransform(matrix.inverse());
+    if(placing&&chosen){draftX=Math.floor(point.x);draftY=Math.floor(point.y);placing=false;cancelEdit();return;}
     hits=savedShapesAt(map,ordinal,Math.floor(point.x),Math.floor(point.y));
     selected=hits.find(o=>matchesSelectionLayer(o,layer))?.localOrdinal??null;
   }
@@ -73,6 +127,9 @@
           {#if o.surfaceCapable}<circle cx=".78" cy=".22" r=".13" fill="#dbc2f6"/>{/if}
         </g>
       {/each}
+      {#if editPlan&&draftShape}
+        <path class="saved-draft-shape" d={draftShape.path} transform={'translate('+draftX+' '+draftY+')'} fill="#a7b1bf" fill-opacity=".62" stroke="#fff" stroke-width="1.5" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>
+      {/if}
     </svg>
   </button>
   {#if hits.length}<div class="controls" role="group" aria-label="重なるセーブ内オブジェクト">
@@ -81,11 +138,34 @@
     {/each}
   </div>{/if}
   {#if chosen}<p class="selected-saved-object">{chosen.name??'Item '+chosen.itemId} ／ ({chosen.x}, {chosen.y}) ／ {chosen.orientation??'向き不明'}</p>{/if}
+  {#if chosen&&file&&worldTransformEligible(chosen)}
+    <div class="transform-controls">
+      <div class="controls">
+        <button type="button" aria-pressed={placing} disabled={busy} on:click={()=>placing=!placing}>{placing?'移動先を選択中':'マップで移動先を選択'}</button>
+        <label>X <input type="number" aria-label="移動先X" bind:value={draftX} step="1" disabled={busy}/></label>
+        <label>Y <input type="number" aria-label="移動先Y" bind:value={draftY} step="1" disabled={busy}/></label>
+        {#if isCardinal(chosen.orientation)}<label>向き <select aria-label="編集後の向き" bind:value={draftOrientation} disabled={busy}>
+          {#each CARDINAL_ORIENTATIONS as direction}<option value={direction}>{['上','右','下','左'][CARDINAL_ORIENTATIONS.indexOf(direction)]}</option>{/each}
+        </select></label>{/if}
+        <button type="button" disabled={busy||!editPlan} on:click={()=>resetDraft(chosen)}>元に戻す</button>
+      </div>
+      <p>選択した1件のみ変更します。重なりや支持関係は未検証で、他の家具・小物は自動移動しません。配置の警告はゲーム内で確認してください。</p>
+      {#if editPlan}<div class="controls">
+        <button type="button" disabled={busy} on:click={()=>runEdit(false)}>変更を検証</button>
+        {#if checkedSignature===draftSignature}<button type="button" disabled={busy} on:click={()=>runEdit(true)}>実験的な編集コピーを作成</button>{/if}
+      </div>{/if}
+      {#if busy}<p role="status">ローカル処理中…</p>{/if}
+      {#if editError}<p role="alert">{editError}</p>{/if}
+      {#if copyUrl}<a href={copyUrl} download={copyName}>編集済みコピーを保存</a>{/if}
+    </div>
+  {:else if chosen&&file}<p>この種類または形状未確認のオブジェクトは現在の編集対象外です。</p>{/if}
   <p>原本定義による形状候補（原本Grid倍率 {map.sourceGridFactor??'不明'}）。丸印は形状不明。実際の占有・上下関係は未確認。</p>
 </div>
 <style>
   .saved-shape-plot{display:grid;gap:6px;min-width:0}
   .controls{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+  .transform-controls{display:grid;gap:8px;padding:8px;border:1px solid #ffffff35;border-radius:5px}
+  input{width:90px;max-width:100%;font:inherit;color:inherit;background:transparent;border:1px solid #ffffff35;padding:4px;border-radius:4px}
   button,select{font:inherit;color:inherit;background:transparent;border:1px solid #ffffff35;border-radius:5px;padding:5px;font-size:12px}
   button[aria-pressed=true]{border-color:#a7cfed;background:#a7cfed33}
   button:disabled{opacity:.4}

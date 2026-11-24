@@ -29,6 +29,7 @@ on:
       - 'src/lib/world/source-placement-preview.ts'
       - 'src/lib/world/source-object-map.ts'
       - 'src/lib/world/saved-shape-map.ts'
+      - 'src/lib/world/saved-map-transform.ts'
       - 'src/lib/world/SavedShapePlot.svelte'
       - 'src/lib/world/source-map-layers.ts'
       - 'tests/world-source-object-map.test.mjs'
