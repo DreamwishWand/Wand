@@ -1049,18 +1049,21 @@ try{
   await design.locator('.design-item').first().waitFor({timeout:30000});
   const frame=design.locator('.design-map-frame');
   const frameBox=await frame.boundingBox(),workspaceBox=await publicWorld.boundingBox();
-  assert.ok(frameBox.height>workspaceBox.height*.6,'map must occupy most of workspace height');
+  assert.ok(Math.abs(frameBox.height-workspaceBox.height)<2,'map must fill workspace height');
+  assert.ok(Math.abs(frameBox.width-workspaceBox.width)<2,'map must fill workspace width');
   const initialView=await design.locator('.design-plot > svg').getAttribute('viewBox');
   await frame.getByRole('button',{name:'拡大',exact:true}).click();
   assert.notEqual(await design.locator('.design-plot > svg').getAttribute('viewBox'),initialView);
   await frame.getByRole('button',{name:'全体表示',exact:true}).click();
   assert.equal(await design.locator('.design-plot > svg').getAttribute('viewBox'),initialView);
   await design.getByRole('button',{name:'家具パレット'}).click();
-  assert.ok((await frame.boundingBox()).width>frameBox.width);
+  assert.equal((await frame.boundingBox()).width,frameBox.width);
+  assert.equal(await design.locator('aside').isVisible(),false);
   await design.getByRole('button',{name:'家具パレット'}).click();
   await design.getByLabel('配置カテゴリ').selectOption('furniture');
   await design.locator('.design-item').first().click();
   await design.getByRole('button',{name:'配置終了'}).waitFor({timeout:30000});
+  await design.getByRole('button',{name:'家具パレット'}).click();
   const designSvg=design.locator('.design-plot > svg');
   async function designClick(x,y){
     const p=await designSvg.evaluate((svg,xy)=>{const pt=new DOMPoint(xy[0],xy[1]).matrixTransform(svg.getScreenCTM());return {x:pt.x,y:pt.y};},[x,y]);
@@ -1143,8 +1146,12 @@ try{
     const p=await plotSvg.evaluate((svg,xy)=>{const pt=new DOMPoint(xy[0],xy[1]).matrixTransform(svg.getScreenCTM());return {x:pt.x,y:pt.y};},[x,y]);
     await page.mouse.click(p.x,p.y);
   }
+  await publicPlot.getByRole('button',{name:'検索・レイヤー'}).click();
+  await publicPlot.getByRole('button',{name:'編集パネル'}).click();
   await groupClick(3.5,4.5);
   await groupClick(10.5,6.5);
+  await publicPlot.getByRole('button',{name:'検索・レイヤー'}).click();
+  await publicPlot.getByRole('button',{name:'編集パネル'}).click();
   assert.equal(await publicPlot.locator('.group-selected').count(),2);
   await publicPlot.getByRole('button',{name:'複数選択',exact:true}).click();
   await publicPlot.getByRole('button',{name:'閉じる',exact:true}).click();

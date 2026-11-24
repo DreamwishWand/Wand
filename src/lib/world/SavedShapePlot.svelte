@@ -21,6 +21,7 @@
   export let file:File|null=null;
   export let terrain:TerrainBinding|null=null;
   export let compact=false;
+  let toolsOpen=true,inspectorOpen=true;
   export let terrainDisplayed=false;
   $: activeTerrain=terrain&&terrain.verifiedGridOrdinals.includes(activeOrdinal)?terrain:null;
   $: terrainUrl=activeTerrain?terrainImage(activeTerrain):'';
@@ -313,6 +314,8 @@
   }
 </script>
 <div class="saved-shape-plot" class:compact>
+  {#if compact}<button type="button" class="saved-tools-toggle" aria-expanded={toolsOpen} aria-label="検索・レイヤー" title="検索・レイヤー" on:click={()=>toolsOpen=!toolsOpen}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18M8 3v6M16 9v6M10 15v6"/></svg></button>{/if}
+  <div class="saved-tools" hidden={compact&&!toolsOpen}>
   <div class="controls grid-controls">
     {#if ordinals.length>1}
       <label>セーブ内Grid <select value={activeOrdinal} on:change={e=>chooseGrid(Number(e.currentTarget.value))}>
@@ -349,6 +352,7 @@
         {#if matches.length>visibleResults}<button type="button" on:click={()=>visibleResults+=60}>続きを表示</button>{/if}
       </div>
     {/if}
+  </div>
   </div>
   <div class="saved-map-frame"><button type="button" class="plot" class:zoomed={zoom>1} aria-label="セーブ内の形状候補を選択"
     on:click={pick} on:wheel|nonpassive={wheel} on:pointerdown={startPan} on:pointermove={follow}
@@ -399,7 +403,8 @@
       {/if}
     </svg>
   </button><MapCameraControls {zoom} {maxZoom} onZoom={changeZoom} onFit={resetCamera} onPan={pan}/></div>
-  <div class="saved-inspector">
+  {#if compact}<button type="button" class="saved-inspector-toggle" aria-label="編集パネル" title="編集パネル" aria-expanded={inspectorOpen} on:click={()=>inspectorOpen=!inspectorOpen}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v16H3zM3 15h18M8 8h8M8 11h5"/></svg></button>{/if}
+  <div class="saved-inspector" hidden={compact&&!inspectorOpen}>
   {#if hits.length}<div class="controls" role="group" aria-label="重なるセーブ内オブジェクト">
     {#each hits as hit (hit.localOrdinal)}
       <button type="button" aria-pressed={groupMode?groupSet.has(hit.localOrdinal):selected===hit.localOrdinal} disabled={groupMode&&!worldMoveEligible(hit)} on:click={()=>{if(groupMode)toggleGroup(hit);else selected=hit.localOrdinal;}}>{worldObjectName(hit,names)}</button>
@@ -491,8 +496,9 @@
   {#if busy}<p role="status">ローカル処理中…</p>{/if}
   {#if editError}<p role="alert">{editError}</p>{/if}
   {#if copyUrl}<a href={copyUrl} download={copyName}>編集済みコピーを保存</a>{/if}
-  {#if !compact}<p>原本定義による形状候補（原本Grid倍率 {map.sourceGridFactor??'不明'}）。丸印は形状不明。実際の占有・上下関係は未確認。</p>{:else}<p>{activeTerrain?'原本地形と配置を同じローカル座標で表示。':'地形との座標対応未確認。'}形状・重複は候補、ゲーム内ロード未確認。</p>{/if}
+  {#if !compact}<p>原本定義による形状候補（原本Grid倍率 {map.sourceGridFactor??'不明'}）。丸印は形状不明。実際の占有・上下関係は未確認。</p>{/if}
   </div>
+  {#if compact}<p class="map-safety-status">{activeTerrain?'':'地形との座標対応未確認。'}形状・重複は候補、ゲーム内ロード未確認。</p>{/if}
 </div>
 <style>
   .saved-map-frame{position:relative;min-height:0;min-width:0}.grid-controls:empty{display:none}.saved-inspector{display:grid;gap:5px;align-content:start;min-width:0}.compact.saved-shape-plot{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;position:relative;overflow:hidden}.compact .saved-map-frame{flex:1 1 auto;overflow:hidden}.compact .plot,.compact .plot svg{height:100%;max-height:none}.compact .saved-inspector{flex:0 1 auto;max-height:30%;overflow:auto;padding:3px}.compact .object-results{max-height:22dvh}
@@ -530,4 +536,10 @@
   .plot.zoomed{touch-action:none}
   svg{display:block;width:100%;height: min(75vh, 720px)}
   p{margin:0;font-size:11px;overflow-wrap:anywhere}
+ .saved-tools{display:grid;gap:5px;min-width:0}.saved-inspector[hidden],.saved-tools[hidden]{display:none}
+ .compact.saved-shape-plot{display:block}.compact .saved-map-frame{position:absolute;inset:0}.compact .plot,.compact .plot svg{border:0;border-radius:0}
+ .compact .saved-tools,.compact .saved-inspector{position:absolute;z-index:5;padding:5px;overflow:auto;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;box-shadow:0 2px 8px #0003}
+ .compact .saved-tools{top:52px;left:48px;width:min(560px,calc(100% - 60px));max-height:40%}.compact .saved-inspector{bottom:36px;left:48px;width:min(560px,calc(100% - 110px));max-height:38%}.compact .saved-inspector:empty{display:none}.compact .object-results{max-height:20dvh}
+ .saved-tools-toggle,.saved-inspector-toggle{position:absolute;left:6px;z-index:6;width:38px;height:38px;display:grid;place-items:center}.saved-tools-toggle{top:52px}.saved-inspector-toggle{bottom:36px}.saved-tools-toggle svg,.saved-inspector-toggle svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+ .map-safety-status{position:absolute;z-index:5;bottom:6px;left:6px;max-width:calc(100% - 65px);padding:4px 6px;background:var(--wand-card);border-radius:5px}
 </style>

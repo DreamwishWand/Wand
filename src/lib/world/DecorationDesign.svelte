@@ -203,7 +203,7 @@
  function more(e:Event){const el=e.currentTarget as HTMLElement;if(el.scrollTop+el.clientHeight>=el.scrollHeight-160)limit=Math.min(filtered.length,limit+80);}
 </script>
 {#if active&&grid&&raster}
- <div class="design-workspace" class:paletteClosed={!paletteOpen}>
+ <div class="design-workspace">
   <aside aria-label="配置する家具" hidden={!paletteOpen}>
    <input type="search" aria-label="家具を検索" placeholder="家具を検索" bind:value={query} on:input={()=>limit=80}/>
    <select aria-label="配置カテゴリ" bind:value={layer} on:change={()=>limit=80}>
@@ -236,9 +236,9 @@
     <button type="button" disabled={busyImport||!chosenGeometry||nativeActionBlocked(chosenGeometry.editRestrictions,'remove')} on:click={remove}>削除</button>
     {#if (placing||moveMode)&&!busyImport}<button type="button" on:click={cancel}>配置終了</button>{/if}
    </div>
-   {#if busyImport}<p role="status">{words[5]}</p>{/if}
+   <div class="design-messages">{#if busyImport}<p role="status">{words[5]}</p>{/if}
    {#if loadingShape}<p role="status">形状を読み込み中…</p>{/if}
-   {#if error}<p role="alert">{error}</p>{/if}
+   {#if error}<p role="alert">{error}</p>{/if}</div>
    <div class="design-map-frame"><button class="design-plot" type="button" aria-label="装飾設計マップ" on:click={pick} on:keydown={keys}
     on:wheel|nonpassive={e=>camera=wheelMapCamera(e,svg,extent,camera,maxZoom)}
     on:pointerdown={e=>gesture.begin(e,camera.zoom>1&&(!placing&&!moveMode||e.shiftKey||e.button===1))}
@@ -257,10 +257,11 @@
     </svg>
    </button><MapCameraControls zoom={camera.zoom} {maxZoom} onZoom={value=>camera=zoomMapCamera(camera,value,maxZoom)} onFit={()=>camera=defaultMapCamera()} onPan={(dx,dy)=>camera=panMapCamera(camera,dx/camera.zoom,dy/camera.zoom)}/></div>
    <div class="design-status">
-    <span>{placements.length}件</span>
+
     {#if placing}<strong>{catalog.find(o=>o.itemId===placing?.itemId)?.name??placing.name} · 配置先を選択</strong>
     {:else if chosen}<strong>{catalog.find(o=>o.itemId===chosen?.itemId)?.name??chosenGeometry?.name}</strong>{/if}
     {#if warnings.length}<span>地形属性不一致候補</span>{/if}
+    <small>ゲーム内の配置可否は未確認</small>
    </div>
    {#if showCounts}
     <div class="design-counts" aria-label={words[2]}>
@@ -269,7 +270,7 @@
      {/each}
     </div>
    {/if}
-   <small title="地形・形状はゲーム原本に基づく候補。">ゲーム内の配置可否は未確認</small>
+
   </div>
  </div>
 {/if}
@@ -278,7 +279,7 @@
  .design-counts{max-height:24vh;overflow:auto;display:grid;gap:3px}
  .count-row{display:flex;align-items:center;gap:6px;background:var(--wand-card);padding:4px 8px;border-radius:4px}
  .count-row img{width:32px;height:32px;object-fit:contain}.count-row span{flex:1;overflow-wrap:anywhere}
- .design-workspace{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:clamp(170px,19vw,300px) minmax(0,1fr);gap:4px;min-width:0;overflow:hidden}.design-workspace.paletteClosed{grid-template-columns:minmax(0,1fr)}aside[hidden]{display:none}
+ .design-workspace{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:clamp(170px,19vw,300px) minmax(0,1fr);gap:4px;min-width:0;overflow:hidden}aside[hidden]{display:none}
  aside,.design-map-side{display:flex;flex-direction:column;gap:4px;min-width:0;min-height:0;overflow:hidden}aside{padding:4px;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:5px}
  input,select,button{font:inherit;background:var(--wand-menu);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:5px;padding:5px}
  button[aria-pressed=true]{border-color:var(--wand-accent);background:var(--wand-header-hover)}
@@ -290,5 +291,14 @@
  .design-map-frame{flex:1 1 auto;min-height:0;min-width:0;position:relative;overflow:hidden;border-radius:5px}.design-plot{padding:0;overflow:hidden;display:block;cursor:crosshair;touch-action:none;width:100%;height:100%;background:#27313a}.tool-icon{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;vertical-align:middle}
  .design-plot svg{display:block;width:100%;height:100%}
  small,.design-status{font-size:12px;color:var(--wand-muted)}
- @media(max-width:700px){.design-workspace{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(0,2fr)}.design-workspace.paletteClosed{grid-template-rows:minmax(0,1fr)}.design-item img{width:44px;height:44px}}
+ @media(max-width:700px){.design-workspace{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(0,2fr)}.design-item img{width:44px;height:44px}}
+ .design-workspace,.design-map-side,.design-map-frame{position:absolute;inset:0;display:block;min-height:0;min-width:0;overflow:hidden;border-radius:0}.design-workspace{isolation:isolate}
+ aside{position:absolute;z-index:5;top:104px;bottom:38px;left:6px;width:clamp(170px,19vw,300px);border-radius:6px;box-shadow:0 2px 8px #0003}aside[hidden]{display:none}
+ .design-plot{border:0;border-radius:0}
+ .design-controls,.design-status{position:absolute;z-index:6;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;padding:4px;max-width:calc(100% - 12px)}
+ .design-controls{top:52px;left:6px;overflow-x:auto;flex-wrap:nowrap;white-space:nowrap}.design-controls button{flex:none;min-height:34px}
+ .design-status{bottom:6px;left:6px;max-width:calc(100% - 65px)}.design-status small{white-space:nowrap}
+ .design-messages{position:absolute;z-index:7;top:104px;right:6px;max-width:calc(100% - 12px);background:var(--wand-card);border-radius:5px}.design-messages:empty{display:none}.design-messages p{margin:0;padding:6px;font-size:12px}
+ .design-counts{position:absolute;z-index:5;top:104px;right:6px;width:min(300px,70%);max-height:55%;padding:4px;border:1px solid var(--wand-line);border-radius:6px;background:var(--wand-card);box-shadow:0 2px 8px #0003}
+ @media(max-width:700px){aside{top:auto;bottom:38px;left:6px;width:calc(100% - 65px);height:min(31%,220px)}.design-controls button{min-height:36px}}
 </style>

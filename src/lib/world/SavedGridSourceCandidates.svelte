@@ -129,4 +129,5 @@
   .numeric-map canvas{display:block;max-width:100%;height:auto;width:520px;image-rendering:auto}
   .axis,.note,.warning{font-size:11px;line-height:1.6;color:var(--wand-muted);margin:0;overflow-wrap:anywhere}
   .warning{color:var(--wand-text)}
+ .saved-candidate-view.compact{position:relative}.compact:has(.saved-shape-plot)>.note{position:absolute;z-index:6;right:60px;bottom:6px;max-width:45%;padding:4px;background:var(--wand-card);border-radius:5px}
 </style>
