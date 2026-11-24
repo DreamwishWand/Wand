@@ -6,9 +6,10 @@
  export let width:number;
  export let height:number;
  export let opacity=.92;
+ export let flipY=false;
  let failed=false,previous='';
  $: if(href!==previous){previous=href;failed=false;}
 </script>
 {#if href&&!failed}
- <image class="world-object-artwork" {href} x={x+width*.06} y={y+height*.06} width={width*.88} height={height*.88} preserveAspectRatio="xMidYMid meet" {opacity} pointer-events="none" on:error={()=>failed=true}/>
+ <image class="world-object-artwork" {href} x={x+width*.06} y={y+height*.06} width={width*.88} height={height*.88} transform={flipY?'translate(0 '+(2*y+height)+') scale(1 -1)':undefined} preserveAspectRatio="xMidYMid meet" {opacity} pointer-events="none" on:error={()=>failed=true}/>
 {/if}

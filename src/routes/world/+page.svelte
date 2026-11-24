@@ -5,6 +5,7 @@
   import {base} from '$app/paths';
   import {localSaveSession} from '$lib/ui/local-save-session';
   import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences';
+  import type {MainlandDesignFrame} from '$lib/world/mainland-design-frame.ts';
   import MainlandOverview from '$lib/world/MainlandOverview.svelte';
   import DecorationDesign from '$lib/world/DecorationDesign.svelte';
   import MediaMapGridOverlay from '$lib/world/MediaMapGridOverlay.svelte';
@@ -19,6 +20,12 @@
   let worker:Worker|null=null,compare:Worker|null=null;
   let designMode=false,showSeparateTerrain=false,navigationOpen=true,overviewOpen=false;
   const overviewLabels={ja:'本島全体マップ',en:'Mainland map',fr:'Carte de la vallée',it:'Mappa della valle',de:'Karte des Tals','es-ES':'Mapa del valle','zh-CN':'主岛地图','pt-BR':'Mapa do vale'} as const;
+  const editWorldLabels={ja:'本島全体編集',en:'Edit mainland',fr:'Modifier la vallée',it:'Modifica la valle',de:'Tal bearbeiten','es-ES':'Editar el valle','zh-CN':'编辑主岛','pt-BR':'Editar vale'} as const;
+  let mainlandEditing=false,mainlandFrame:MainlandDesignFrame|null=null,mainlandRequest=0,mainlandError=false;
+  function toggleMainland(){
+    mainlandEditing=!mainlandEditing;overviewOpen=false;
+    if(mainlandEditing&&!mainlandFrame&&worker&&!mainlandRequest){mainlandError=false;mainlandRequest=++request;worker.postMessage({command:'mainland-design-terrain',requestId:mainlandRequest});}
+  }
   let layerState=defaultWorldLayers();
   function nextDesignRequest(){return ++request;}
   let request=0,indexRequest=0,terrainRequest=0,shapeRequest=0,compareRequest=0;
@@ -80,7 +87,7 @@
       sourceRefs:[{layoutId:grid.layoutId,gridDataPath:grid.gridDataPath,nativeGridId:grid.gridIdNative,nativeSizeX:grid.sizeX,nativeSizeY:grid.sizeY,tessellationFactor:grid.factor}]}))});
   }
   function openGrid(next:Grid){
-    overviewOpen=false;key=next.key;worldScope=next.scope;showSeparateTerrain=false;raster=null;cell=null;loading=true;error='';
+    overviewOpen=false;mainlandEditing=false;key=next.key;worldScope=next.scope;showSeparateTerrain=false;raster=null;cell=null;loading=true;error='';
     terrainRequest=++request;
     worker?.postMessage({command:'terrain',requestId:terrainRequest,key:next.key});
     selectSaveGrid(next);
@@ -95,6 +102,7 @@
         const first=grids.find(g=>g.key===key)??grids[0];
         openSaveSession($localSaveSession.file,grids);if(first)openGrid(first);return;
       }
+      if(mainlandRequest&&value.requestId===mainlandRequest){mainlandRequest=0;if(value.kind==='mainland-design-terrain'&&value.frame?.owners instanceof Uint8Array&&value.frame?.raster?.nativeFloorValues instanceof Uint32Array)mainlandFrame=value.frame;else mainlandError=true;return;}
       if(value.requestId===terrainRequest&&value.kind==='terrain'&&value.key===key){
         raster={sizeX:value.sizeX,sizeY:value.sizeY,nativeFloorValues:value.nativeFloorValues};loading=false;return;
       }
@@ -120,9 +128,10 @@
     <select aria-label="ワールド" value={worldScope} on:change={e=>chooseScope(e.currentTarget.value)}>
       {#each scopes as scope}<option value={scope}>{scopeNames[scope]??scope}</option>{/each}
     </select>
-    <select aria-label="エリア" value={key} on:change={e=>{const next=regionGrids.find(g=>g.key===e.currentTarget.value);if(next)openGrid(next);}}>
+    {#if !(designMode&&mainlandEditing)}<select aria-label="エリア" value={key} on:change={e=>{const next=regionGrids.find(g=>g.key===e.currentTarget.value);if(next)openGrid(next);}}>
       {#each regionGrids as grid (grid.key)}<option value={grid.key}>{label(grid)}</option>{/each}
-    </select>
+    </select>{/if}
+    {#if designMode&&worldScope==='Village04'&&regionGrids.length===8}<button type="button" aria-pressed={mainlandEditing} on:click={toggleMainland}>{editWorldLabels[locale]}</button>{/if}
     {#if worldScope==='Village04'&&regionGrids.length===8}<button type="button" aria-pressed={overviewOpen} aria-label={overviewLabels[locale]} title={overviewLabels[locale]} on:click={()=>overviewOpen=!overviewOpen}>{overviewLabels[locale]}</button>{/if}
     {#if !designMode&&shapeMap&&!terrainDisplayed}<button type="button" aria-pressed={showSeparateTerrain} on:click={()=>showSeparateTerrain=!showSeparateTerrain}>{showSeparateTerrain?'配置図':'地形図'}</button>{/if}
   </nav></div>
@@ -142,7 +151,8 @@
         onCompare={()=>openSaveSession($localSaveSession.file,grids)}/></div>
     </div>
   {/if}
-  <DecorationDesign bind:layerState active={designMode&&!overviewOpen} grid={selected} {raster} {worker} {locale} nextRequest={nextDesignRequest}/>
+  {#if designMode&&mainlandEditing&&!mainlandFrame}<p class="workspace-message" role={mainlandError?'alert':'status'}>{mainlandError?(locale==='ja'?'本島の地形を読み込めませんでした。':'Unable to load mainland terrain.'):(locale==='ja'?'本島の地形読み込み中…':'Loading mainland terrain…')}</p>{/if}
+  <DecorationDesign bind:layerState active={designMode&&!overviewOpen&&(!mainlandEditing||Boolean(mainlandFrame))} grid={selected} raster={mainlandEditing?mainlandFrame?.raster??null:raster} worldFrame={mainlandEditing?mainlandFrame:null} {worker} {locale} nextRequest={nextDesignRequest}/>
 
   {#if overviewOpen&&worldScope==='Village04'}<MainlandOverview grids={regionGrids} {worker} {locale} nextRequest={nextDesignRequest} label={k=>english[k]??k} onChoose={k=>{const g=regionGrids.find(g=>g.key===k);if(g)openGrid(g);}} onClose={()=>overviewOpen=false}/>{/if}
 </section>

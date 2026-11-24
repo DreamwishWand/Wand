@@ -1,3 +1,5 @@
+import {composeMainlandDesignFrame} from './mainland-design-frame.ts';
+import type {TerrainRaster} from './terrain-binding.ts';
 import {createSourceGeometryCache} from './source-object-map.ts';
 import {fenceBaseDefinition} from './fence-design.ts';
 import {sourceMapLayer} from './source-map-layers.ts';
@@ -56,6 +58,20 @@ scope.onmessage=async({data})=>{
       if(!response.ok)throw Error('source');
       release=parsePublicTerrainRelease(await response.json());
       scope.postMessage({kind:'index',requestId:id,grids:release.entries.flatMap(region=>region.grids.map(g=>({...g,scope:region.scope}))) });
+      return;
+    }
+    if(data.command==='mainland-design-terrain'){
+      const region=release?.entries.find(r=>r.scope==='Village04');if(!region)throw Error('mainland source');
+      wasmReady??=init(wasmUrl).catch(e=>{wasmReady=null;throw e;});
+      const [bundle]=await Promise.all([loadBundle(region),wasmReady]);
+      const rasters=new Map<string,TerrainRaster>();
+      for(const g of bundle.grids){
+        const bytes=Uint8Array.from(atob(g.data),c=>c.charCodeAt(0));
+        const values=decode_public_terrain(bytes,Uint32Array.from(g.palette),Uint32Array.from(g.counts),g.sizeX,g.sizeY,g.sha256);
+        rasters.set(g.key,{sizeX:g.sizeX,sizeY:g.sizeY,nativeFloorValues:values});
+      }
+      const frame=composeMainlandDesignFrame(region.grids,rasters);
+      scope.postMessage({kind:'mainland-design-terrain',requestId:id,frame},[frame.owners.buffer,frame.raster.nativeFloorValues.buffer]);
       return;
     }
     const region=release?.entries.find(r=>r.grids.some(g=>g.key===data.key));

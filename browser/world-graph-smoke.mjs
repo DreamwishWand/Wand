@@ -1051,6 +1051,17 @@ try{
   assert.equal(await overview.locator('.mainland-terrain').count(),8);
   assert.equal(await overview.locator('.mainland-terrain[data-area="Meadow"]').getAttribute('transform'),'translate(-122 98) scale(1 -1)');
   await overview.getByRole('button',{name:'閉じる',exact:true}).click();
+  await publicWorld.getByRole('button',{name:'本島全体編集',exact:true}).click();
+  const mainland=publicWorld.locator('.design-workspace.mainland-design');
+  await mainland.locator('.design-coordinate-space > image').waitFor({timeout:30000});
+  assert.equal(await publicWorld.getByLabel('エリア',{exact:true}).count(),0);
+  const mainlandView=await mainland.locator('.design-plot > svg').getAttribute('viewBox');
+  assert.ok(Number(mainlandView.split(' ')[2])>400);
+  await mainland.getByRole('button',{name:'拡大',exact:true}).click();
+  assert.notEqual(await mainland.locator('.design-plot > svg').getAttribute('viewBox'),mainlandView);
+  await mainland.getByRole('button',{name:'全体表示',exact:true}).click();
+  assert.equal(await mainland.locator('.design-plot > svg').getAttribute('viewBox'),mainlandView);
+  await publicWorld.getByRole('button',{name:'本島全体編集',exact:true}).click();
   const design=publicWorld.locator('.design-workspace');
   await design.locator('.design-item').first().waitFor({timeout:30000});
   const frame=design.locator('.design-map-frame');
