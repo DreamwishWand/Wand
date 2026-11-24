@@ -1,4 +1,5 @@
 <script lang="ts">
+  import GuideCommunityHelp from '$lib/guide/GuideCommunityHelp.svelte';
   import {onMount} from 'svelte';
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {base} from '$app/paths';
@@ -687,6 +688,7 @@
               </details>
             {/if}
           {/if}
+          <GuideCommunityHelp kind="quest" id={selectedRow.id}/>
         {/if}
       </section>
     </div>

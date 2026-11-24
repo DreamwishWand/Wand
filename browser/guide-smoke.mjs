@@ -173,6 +173,13 @@ try {
   await direct.goto(url+'?quest=2070000620',{waitUntil:'domcontentloaded'});
   await direct.locator('.detail .step').first().waitFor({timeout:20000});
   assert.match(await direct.locator('.detail-header').innerText(),/ドリームライトバレーへようこそ/);
+  const questHelp=direct.locator('.guide-community');
+  assert.equal(await questHelp.getAttribute('data-subject-kind'),'quest');
+  assert.equal(await questHelp.getAttribute('data-subject-id'),'2070000620');
+  assert.equal(await questHelp.locator('button:disabled').count(),3);
+  assert.equal(await questHelp.locator('a').count(),0);
+  assert.match(await questHelp.innerText(),/準備中/);
+
   assert.equal(await direct.locator('.quest-permalink').getAttribute('href'),'/Wand/guide/quests/?quest=2070000620');
   assert.equal(await direct.locator('.detail .step').count(),1,'one step initially visible to avoid wall of text');
   assert.match(await direct.locator('.detail .step h3').innerText(),/ステップ 1/);

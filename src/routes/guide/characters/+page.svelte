@@ -1,4 +1,5 @@
 <script lang="ts">
+  import GuideCommunityHelp from '$lib/guide/GuideCommunityHelp.svelte';
   import {onMount} from 'svelte';
   import {base} from '$app/paths';
   import {watchWandLanguage,type WandLanguage} from '$lib/ui/preferences';
@@ -136,6 +137,7 @@
           {:else}
             <p class="empty">この索引には直接関連付けられたクエストがありません。ゲーム内にクエストが存在しないことを意味しません。</p>
           {/if}
+          {#if !selected.internal}<GuideCommunityHelp kind="character" id={selected.id}/>{/if}
         {:else}
           <p class="empty">左の一覧から名称を選択すると、原本で直接関連付けられたクエストを表示します。</p>
         {/if}

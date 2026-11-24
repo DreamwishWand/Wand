@@ -1,4 +1,5 @@
 <script lang="ts">
+  import GuideCommunityHelp from '$lib/guide/GuideCommunityHelp.svelte';
   import {onMount} from 'svelte';
   import {base} from '$app/paths';
   import WandIcon from '$lib/ui/WandIcon.svelte';
@@ -116,6 +117,7 @@
             <WandIcon name="arrow" size={17}/>
           </a>
         {/if}
+        <GuideCommunityHelp kind="system" id={chosen.topic.id}/>
       </aside>
     {/if}
   </div>
@@ -146,7 +148,7 @@
   .topic-buttons button{display:flex;align-items:center;justify-content:space-between;gap:7px;min-height:44px;padding:10px 12px;background:#2c223a;border:1px solid #473750;border-radius:8px;font:inherit;font-size:12px;text-align:left;color:#eee4f6;cursor:pointer}
   .topic-buttons button:hover,.topic-buttons button.active{border-color:#b08cda;background:#513969}
   .topic-buttons button :global(svg){transform:rotate(-90deg);flex-shrink:0}
-  .topic-detail{position:relative;flex:0 0 min(31%,370px);box-sizing:border-box;padding:20px 18px;border:1px solid #6d5482;background:#2a1f38;border-radius:11px;min-width:0}
+  .topic-detail{overflow-y:auto;position:relative;flex:0 0 min(31%,370px);box-sizing:border-box;padding:20px 18px;border:1px solid #6d5482;background:#2a1f38;border-radius:11px;min-width:0}
   .topic-detail> :global(svg){color:#dab1f4}
   .topic-detail h2{font-size:21px;line-height:1.3;margin:13px 0 7px}
   .group-label{font-size:12px;color:#b9a4cb}
