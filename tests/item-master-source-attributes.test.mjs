@@ -157,10 +157,10 @@ test('category-qualified source groups retain schedule and selector structure an
   const requests=[];
   const db=await openPublicItemMaster('',async url=>{requests.push(url);return fetcher(url)},{scope:'complete'});
   const fields=db.release.reviewedMessageGroupCoverage.fields;
-  assert.equal(Object.keys(fields).length,7);
-  assert.equal(Object.values(fields).reduce((s,f)=>s+f.itemCount,0),2043);
-  assert.equal(Object.values(fields).reduce((s,f)=>s+f.occurrences,0),3926);
-  assert.equal(Object.values(fields).reduce((s,f)=>s+f.leafCount,0),27695);
+  assert.equal(Object.keys(fields).length,37);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.itemCount,0),18177);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.occurrences,0),20060);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.leafCount,0),63120);
   assert.notEqual(fields['Character.DailySchedule'].declaredType,fields['Companion.DailySchedule'].declaredType);
   const [character,companion,empty,mission]=await db.getItemFields([10000001,120100000,2070000620,2070000628],[
     'source.DailySchedule','source.FavoriteItem.Item.Item.Item','source.LikeItem.FilterGenerator.CropType','source.AdditionnalRewards'
@@ -199,5 +199,28 @@ test('all original loot tables and facility upgrades retain conditions, costs, G
   assert((await db.getItemReferences(20000011,'outgoing')).some(([id,p])=>id===80000000&&p==='source.UpgradeInfo[0].Cost.Id'));
   assert((await db.getItemReferences(2090000339,'outgoing')).some(([id,p])=>id===2070001328&&p==='source.Rewards.SubLootTables[0].ItemsConditional[0].Conditions.Conditions[0].MissionStatus.Mission'));
   assert((await db.getItemReferences(31000022,'incoming')).some(([id,p])=>id===2090000523&&p==='source.Rewards.SubLootTables[0].Items[0].State.MealData.IngredientsUsed[0]'));
+  assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
+});
+
+
+test('all source ConditionsList groups retain native trees and audited cross references',async()=>{
+  const requests=[];
+  const db=await openPublicItemMaster('',async url=>{requests.push(url);return fetcher(url)},{scope:'complete'});
+  const fields=Object.values(db.release.reviewedMessageGroupCoverage.fields).filter(f=>f.declaredType==='ConditionsList');
+  assert.equal(fields.length,30);
+  assert.equal(fields.reduce((s,f)=>s+f.itemCount,0),16134);
+  assert.equal(fields.reduce((s,f)=>s+f.leafCount,0),35425);
+  const [condition,keyhole,available,unlock,companion]=await db.getItemFields([2130000001,2130000119,2070000620,2070000628,120100056],[
+    'source.Conditions.Conditions','source.AvailableConditions.Conditions','source.UnlockConditions','source.AppearanceConditions.Conditions'
+  ]);
+  assert.deepEqual(condition.values['source.Conditions.Conditions'],[{MissionStepStatus:{Mission:2070000651,Status:5,StepID:2}}]);
+  assert.deepEqual(keyhole.values['source.Conditions.Conditions'],[{KeyholeStatus:{Keyhole:'1b4144b0-8285-477b-b1d0-9db454592b97',Status:3}}]);
+  assert.deepEqual(available.values['source.AvailableConditions.Conditions'],[{PlayerLevel:{PlayerLevel:1}},{RealmUnlocked:{Universe:2000500019}}]);
+  assert.deepEqual(available.values['source.UnlockConditions'],{});
+  assert.deepEqual(unlock.values['source.UnlockConditions'],{Conditions:[{CurrentVillage:{VillageScene:1540000000}}]});
+  assert.deepEqual(companion.values['source.AppearanceConditions.Conditions'],[{MissionStepStatus:{Mission:2070001046,Status:4}}]);
+  assert((await db.getItemReferences(2070000651,'incoming')).some(([id,p])=>id===2130000001&&p==='source.Conditions.Conditions[0].MissionStepStatus.Mission'));
+  assert((await db.getItemReferences(2070000620,'outgoing')).some(([id,p])=>id===2000500019&&p==='source.AvailableConditions.Conditions[1].RealmUnlocked.Universe'));
+  assert((await db.getItemReferences(120100056,'outgoing')).some(([id,p])=>id===2070001046&&p==='source.AppearanceConditions.Conditions[0].MissionStepStatus.Mission'));
   assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
 });
