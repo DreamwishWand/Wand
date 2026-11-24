@@ -17,9 +17,13 @@ export function zoomMapCamera(camera:MapCamera,zoom:number,max:number,anchorX=ca
 export function panMapCamera(camera:MapCamera,dx:number,dy:number):MapCamera{
   return {...camera,x:clamp(camera.x+dx,camera.zoom),y:clamp(camera.y+dy,camera.zoom)};
 }
+export function mapViewportBounds(camera:MapCamera,extent:MapExtent):MapExtent{
+  return {x:extent.x+(camera.x-.5/camera.zoom)*extent.w,y:extent.y+(camera.y-.5/camera.zoom)*extent.h,
+    w:extent.w/camera.zoom,h:extent.h/camera.zoom};
+}
 export function mapCameraViewBox(camera:MapCamera,extent:MapExtent):string{
-  return [extent.x+(camera.x-.5/camera.zoom)*extent.w,extent.y+(camera.y-.5/camera.zoom)*extent.h,
-    extent.w/camera.zoom,extent.h/camera.zoom].join(' ');
+  const {x,y,w,h}=mapViewportBounds(camera,extent);
+  return [x,y,w,h].join(' ');
 }
 function normalizedScreenPoint(svg:SVGSVGElement,extent:MapExtent,x:number,y:number){
   const ctm=svg?.getScreenCTM();if(!ctm||!extent.w||!extent.h)return null;
