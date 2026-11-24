@@ -34,14 +34,14 @@ The only accepted release format is a **curated, public, source-backed Guide sub
   "items":{
     "<verified-four-category-item-id>":{
       "thumbnail":{
-        "key":"media/steam-v1.26.2/thumbnail/<2-hex>/<sha256>.webp",
+        "key":"thumbnail/<2-hex>/<sha256>.webp",
         "sha256":"<64-hex-encoded-webp-sha256>",
         "bytes":1,
         "width":128,
         "height":128
       },
       "original":{
-        "key":"media/steam-v1.26.2/original/<2-hex>/<sha256>.webp",
+        "key":"original/<2-hex>/<sha256>.webp",
         "sha256":"<64-hex-encoded-webp-sha256>",
         "bytes":1,
         "width":512,

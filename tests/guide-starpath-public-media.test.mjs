@@ -11,8 +11,8 @@ import {
 const snapshot=async()=>verifyPublicStarpath(JSON.parse(await readFile(
   new URL('../static/guide/public/starpath-cache-2026-11-22.json',import.meta.url))));
 const HASH_A='a'.repeat(64),HASH_B='b'.repeat(64);
-const thumbnail={key:`media/steam-v1.26.2/thumbnail/aa/${HASH_A}.webp`,sha256:HASH_A,bytes:4567,width:100,height:94};
-const original={key:`media/steam-v1.26.2/original/bb/${HASH_B}.webp`,sha256:HASH_B,bytes:19922,width:512,height:476};
+const thumbnail={key:`thumbnail/aa/${HASH_A}.webp`,sha256:HASH_A,bytes:4567,width:100,height:94};
+const original={key:`original/bb/${HASH_B}.webp`,sha256:HASH_B,bytes:19922,width:512,height:476};
 const manifest=()=>({
   schema:'wand.db03.starpath-public-media@1',
   target:{platform:'Steam',gameVersion:'1.26.2',

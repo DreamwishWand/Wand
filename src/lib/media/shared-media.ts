@@ -47,7 +47,7 @@ function validImage(value:unknown):value is SharedMediaImage {
 }
 export function sharedMediaUrl(origin:string,image:SharedMediaImage):string {
   assert(validImage(image),'invalid image');
-  return publicOrigin(origin)+'/media/shared/original/'+image.sha256.slice(0,2)+'/'+image.sha256+'.webp';
+  return publicOrigin(origin)+'/original/'+image.sha256.slice(0,2)+'/'+image.sha256+'.webp';
 }
 export function parseSharedMediaIndex(doc:unknown,group:SharedMediaGroup,version:string,count:number):ReadonlyMap<string,readonly SharedMediaImage[]> {
   assert(record(doc)&&Object.keys(doc).sort().join(',')==='entries,gameVersion,group,schema'&&

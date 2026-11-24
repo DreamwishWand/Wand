@@ -69,7 +69,7 @@ export interface StarpathMediaRelease{
 type ByteResponse=Pick<Response,'ok'|'arrayBuffer'>;
 const ID=/^[1-9][0-9]{0,15}$/;
 const SHA=/^[a-f0-9]{64}$/;
-const KEY=/^media\/steam-v1\.26\.2\/(thumbnail|original)\/([a-f0-9]{2})\/([a-f0-9]{64})\.webp$/;
+const KEY=/^(?:media\/steam-v1\.26\.2\/)?(thumbnail|original)\/([a-f0-9]{2})\/([a-f0-9]{64})\.webp$/;
 const RELEASE_SCHEMA='wand.db03.starpath-public-media@1' as const;
 const DB01_RELEASE='steam-1.26.2-native-itemlist-v1' as const;
 const MEDIA_VERSION='steam-v1.26.2' as const;

@@ -33,7 +33,7 @@ const imageData={
 };
 const variants=Object.fromEntries(Object.entries(imageData).map(([kind,v])=>{
   const hash=sha(v.bytes);
-  return [kind,{key:`media/steam-v1.26.2/${kind}/${hash.slice(0,2)}/${hash}.webp`,
+  return [kind,{key:`${kind}/${hash.slice(0,2)}/${hash}.webp`,
     width:v.width,height:v.height,bytes:v.bytes.length,sha256:hash}];
 }));
 const plan=()=>({
@@ -80,7 +80,7 @@ function publicFetch({bad=false,type='image/webp'}={}){
   const expected=new Map(Object.entries(variants).map(([kind,v])=>[v.key,imageData[kind].bytes]));
   const seen=[];
   const fetcher=async (url,opts)=>{
-    assert.match(url,/^https:\/\/media\.dreamwishwand\.com\/media\/steam-v1\.26\.2\//);
+    assert.match(url,/^https:\/\/media\.dreamwishwand\.com\/(?:thumbnail|original)\//);
     assert.equal(opts.redirect,'error');
     assert.equal(opts.credentials,'omit');
     seen.push(url);
