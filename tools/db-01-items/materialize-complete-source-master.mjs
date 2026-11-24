@@ -308,6 +308,15 @@ function buildReferenceColumns(rows){
         if(value!==0){
           check(categories.get(value)==='ActivityItem','COMPANION_SELECTOR_TARGET');emit(value,path);
         }
+      }else if(row.nativeCategory==='Building'&&/^source\.UpgradeInfo\[\d+\]\.Cost\.Id$/.test(path)){
+        check(['Currency','ActivityItem'].includes(categories.get(value)),'UPGRADE_COST_TARGET');
+        emit(value,path);
+      }else if(row.nativeCategory==='LootTable'&&/^source\.Rewards\.SubLootTables\[\d+\]\.(?:ItemsConditional\[\d+\]\.Conditions|AvailableWhen)\.Conditions\[\d+\]\.Mission(?:Status|ObjectiveStatus|StepStatus)\.Mission$/.test(path)){
+        check(categories.get(value)==='Mission','LOOT_MISSION_TARGET');
+        emit(value,path);
+      }else if(row.nativeCategory==='LootTable'&&/^source\.Rewards\.SubLootTables\[\d+\]\.Items\[\d+\]\.State\.MealData\.IngredientsUsed\[\d+\]$/.test(path)){
+        check(categories.get(value)==='ActivityItem','LOOT_INGREDIENT_TARGET');
+        emit(value,path);
       }else if(/ItemIds?$/i.test(name))emit(value,path);
       else if(row.nativeCategory==='DutyAch'&&/^source\.Milestones\[\d+\]\.RewardItem$/.test(path)){
         check(ID(value)&&ids.has(value),'MILESTONE_REWARD_TARGET');emit(value,path);
