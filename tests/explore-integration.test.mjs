@@ -12,12 +12,14 @@ test('Decorate keeps two surfaces; moodboard management is inside Explore',()=>{
   assert.doesNotMatch(explore,/mode===|mode='boards'/);
 });
 
-test('Explore uses one wrapping catalog grid; universes and series are never horizontally paginated',()=>{
+test('all catalog views use one viewport-windowed wrapping grid without independent scrolling',()=>{
   assert.match(explore,/\{#each shelves as \[key,list\] \(key\)\}/);
-  assert.match(explore,/\{#each list as item \(item.itemId\)\}/);
   assert.match(explore,/\{#each groups as group \(group.key\)\}/);
-  assert.match(explore,/\{#each designs as design \(design.key\)\}/);
-  assert.match(explore,/\{#each gridDesigns as design \(design.key\)\}/);
-  assert.match(explore,/\.catalog \.tiles\{grid-template-columns:repeat\(auto-fill,/);
+  assert.equal((explore.match(/<VirtualCatalogGrid /g)??[]).length,3);
   assert.doesNotMatch(explore,/scrollShelf|stepShelf|shelfLimits|seriesLimits|groupLimit|grid-auto-flow:column|overflow-x:auto|use:more/);
+  const grid=readFileSync(new URL('../src/lib/explore/VirtualCatalogGrid.svelte',import.meta.url),'utf8');
+  const chunk=readFileSync(new URL('../src/lib/explore/CatalogWindowChunk.svelte',import.meta.url),'utf8');
+  assert.match(grid,/layout.chunks as chunk/);
+  assert.match(chunk,/\{#if visible\|\|focusWithin\}/);
+  assert.match(chunk,/items.slice\(chunk.start,chunk.end\)/);
 });

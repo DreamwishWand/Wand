@@ -3,6 +3,7 @@
   import WandIcon from '$lib/ui/WandIcon.svelte';
   import {base} from '$app/paths';
   import ItemArtwork from '$lib/collection/ItemArtwork.svelte';
+  import VirtualCatalogGrid from '$lib/explore/VirtualCatalogGrid.svelte';
   import {COLLECTION_UNIVERSE_TAG_NAMES} from '$lib/collection/universe-tag-names';
   import {FAMILIES,FACETS,emptyFilters,groupItems,matches,compareItems,isLargeUniverse,universeRank,type ExploreFilters,type Facet,type Family} from '$lib/explore/browse';
   import {seriesShelves,designTiles,type SeriesShelf,type DesignTile,type ReleaseGroup} from '$lib/explore/series';
@@ -150,7 +151,7 @@
         {#if focused!==null&&isLargeUniverse(focused)&&focusedSeries===null}
           {@render seriesList(focused,focusedGroups)}
         {:else}
-          <div class="tiles">{#each gridDesigns as design (design.key)}{@render designTile(design)}{/each}</div>
+          <VirtualCatalogGrid items={gridDesigns} tile={designTile}/>
         {/if}
       {:else}
         {#each shelves as [key,list] (key)}
@@ -159,8 +160,8 @@
             {#if isLargeUniverse(key)}
               {@render seriesList(key,visibleSeries.get(key)??[])}
             {:else}
-              <div class="tiles shelf-items">
-                {#each list as item (item.itemId)}{@render itemTile(item)}{/each}
+              <div class="shelf-items">
+                <VirtualCatalogGrid items={list.map(item=>({key:'item:'+item.itemId,items:[item]}))} tile={designTile}/>
               </div>
             {/if}
           </section>
@@ -212,8 +213,8 @@
     {@const designs=designTiles(group.items)}
     <section class="shelf-row" data-series-kind={group.kind}>
       <div class="shelf-heading"><button class="category-heading" onclick={()=>showUniverse(universe,group.key)}>{seriesName(group)} <span aria-hidden="true">›</span></button></div>
-      <div class="tiles shelf-items">
-        {#each designs as design (design.key)}{@render designTile(design)}{/each}
+      <div class="shelf-items">
+        <VirtualCatalogGrid items={designs} tile={designTile}/>
       </div>
     </section>
   {/snippet}
@@ -284,11 +285,7 @@
   .universe-heading{background:none;border:0;padding:4px 0;font-size:1rem;font-weight:650;cursor:pointer;text-align:left}
   .universe-heading span{color:var(--wand-muted);margin-left:4px}
   .shelf-items{padding:3px 0 7px;min-width:0}
-  .catalog .tiles{grid-template-columns:repeat(auto-fill,minmax(min(100%,94px),1fr));gap:6px}
-  /* Off-screen sections keep their place in the single page. No item limits,
-     independent scroll containers, or mandatory expansion clicks. */
-  .shelf-items{content-visibility:auto;contain-intrinsic-size:auto 400px}
-  .catalog-tile{position:relative;min-width:0;aspect-ratio:1;border:1px solid var(--wand-line);border-radius:8px;background:var(--wand-visual-bg);overflow:hidden}
+  .catalog-tile{box-sizing:border-box;height:100%;position:relative;min-width:0;aspect-ratio:1;border:1px solid var(--wand-line);border-radius:8px;background:var(--wand-visual-bg);overflow:hidden}
   .catalog-tile.inBoard{border-color:var(--wand-accent);box-shadow:inset 0 0 0 1px var(--wand-accent)}
   .catalog-tile .item{width:100%;height:100%;padding:6px}.catalog-tile .art{height:100%;min-height:0}
   .variants-button{position:absolute;right:3px;bottom:3px;display:flex;align-items:center;gap:2px;font-size:10px;background:var(--wand-menu);padding:3px;border:0;border-radius:5px;cursor:pointer}
@@ -300,5 +297,5 @@
   .visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
   @media(pointer:coarse){.tile-favorite{opacity:1}}
   @media(max-width:780px){.boards{top:auto;bottom:0;left:0;right:0;width:100%;box-sizing:border-box;max-height:58dvh;border-left:0;border-top:1px solid var(--wand-line);border-radius:12px 12px 0 0}.workspace.withBoards{padding-bottom:58dvh}.active-name{display:none}}
-  @media(max-width:600px){.decorate{padding:8px}.tiles{grid-template-columns:repeat(auto-fill,minmax(90px,1fr))}.art{height:70px}.catalog .tiles{grid-template-columns:repeat(auto-fill,minmax(min(100%,78px),1fr))}.toolbar h1{margin:0}.toolbar .icon-button{min-width:32px}}
+  @media(max-width:600px){.decorate{padding:8px}.tiles{grid-template-columns:repeat(auto-fill,minmax(90px,1fr))}.art{height:70px}.toolbar h1{margin:0}.toolbar .icon-button{min-width:32px}}
 </style>
