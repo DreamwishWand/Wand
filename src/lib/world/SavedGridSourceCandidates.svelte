@@ -82,10 +82,10 @@
     </div>
     {#if receipt.points.length>0}
       {#if shapeMap}<SavedShapePlot map={shapeMap}/>
-      {:else}<div class="numeric-map">
+      {:else if new Set(receipt.points.map(p=>p.localGridOrdinal)).size===1}<div class="numeric-map">
         <canvas use:draw={receipt}
           aria-label="セーブ内の参照パス一致候補のX/Y数値座標図。地形図ではありません"></canvas>
-      </div>{/if}
+      </div>{:else}<p class="note">複数のセーブGridの座標は個別の形状図で確認できます。</p>{/if}
       <p class="axis">セーブ記録のX/Y数値座標。原本地形の座標には投影していません。</p>
       {#if receipt.dataSampled}
         <p class="note">表示数に上限があるため、座標図は先頭の一部を示しています。</p>

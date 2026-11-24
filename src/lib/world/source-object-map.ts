@@ -33,6 +33,7 @@ export interface SourceObjectMap {
  * One bounded cache per request; no duplicated orientation algorithm. */
 export function createSourceGeometryCache(source:unknown,factor:1|2){
   if(!record(source)||!(source.objects instanceof Map))throw new TypeError('DB04_GEOMETRY_SOURCE_INVALID');
+  const definitions=source.objects;
   const shapes:Record<string,SourceObjectShape>={};
   const cache=new Map<string,SourceObjectShape|null>();
   const itemEvidence=new Map<number,ReturnType<typeof getOriginalGridAreaEvidence>>();
@@ -40,7 +41,7 @@ export function createSourceGeometryCache(source:unknown,factor:1|2){
   function resolve(itemId:number,orientationCode:number|null){
     let e=itemEvidence.get(itemId);
     if(!e){e=getOriginalGridAreaEvidence(source,itemId);itemEvidence.set(itemId,e);}
-    const definition=source.objects.get(String(itemId));
+    const definition=definitions.get(String(itemId));
     const identity={name:record(definition)&&typeof definition.nativeName==='string'?definition.nativeName:null,
       layer:sourceMapLayer(e.nativeType,itemId,e.acceptedFloorTypesFlag),
       surfaceCapable:sourceSurfaceCapable(e.acceptedFloorTypesFlag)};
