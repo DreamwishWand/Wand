@@ -1,8 +1,9 @@
 <script lang="ts">
+ import NetworkStyleControls from './NetworkStyleControls.svelte';
  import RoadDesignControls from './RoadDesignControls.svelte';
- import {roadPitch,roadStroke,snapRoadPoint,ROAD_STROKE_LIMIT,type RoadTool,type RoadPoint} from './road-design.ts';
+ import {roadComponent,roadPitch,roadStroke,snapRoadPoint,ROAD_STROKE_LIMIT,type RoadTool,type RoadPoint} from './road-design.ts';
  import {fencePitch,fenceDesignEdges,fenceComponent} from './fence-design.ts';
- import {planRoadDesign,commitRoadDesign,planFenceDesign,commitFenceDesign} from './design-layout.ts';
+ import {planRoadDesign,commitRoadDesign,planFenceDesign,commitFenceDesign,replaceDesignNetwork} from './design-layout.ts';
  import MapCameraControls from './MapCameraControls.svelte';
  import {worldShortcut,worldShortcutTarget,NUDGE} from './world-shortcuts.ts';
  import {designClipboard,pasteDesign,canPasteDesign,removeDesignGroup,transformDesignGroup,type DesignClipItem} from './design-layout.ts';
@@ -72,7 +73,18 @@
  $: previewFenceEdgeKeys=new Set(previewFenceEdges?.map(e=>e.key)??[]);
  $: removedFenceEdges=previewFenceEdges?fenceEdges.filter(e=>!previewFenceEdgeKeys.has(e.key)):[];
  function commitNetwork(points:readonly RoadPoint[]){if(!placing||!grid||fenceDrawing&&legacyFence){save(null);return;}save((fenceDrawing?commitFenceDesign:commitRoadDesign)(timeline,placing,points,grid.factor,width,height,roadTool==='erase'));}
- function selectFenceNetwork(){if(!grid||selected===null)return;const ids=fenceComponent(placements,definitions,grid.factor,selected);if(!ids.length||ids.some(id=>{const p=placements.find(p=>p.id===id);return !p||!layerSelectable(layerState,definitions.get(p.itemId)!);}))return;groupIds=ids;selected=null;}
+ let networkSeed:number|null=null,networkTarget=0,networkRequest=0,networkLoading=false;
+ $: networkRoot=networkSeed===null?null:placements.find(p=>p.id===networkSeed)??null;
+ $: networkSource=networkRoot?definitions.get(networkRoot.itemId):null;
+ $: networkIds=networkRoot&&networkSource&&grid?(networkSource.layer==='fence'?fenceComponent:roadComponent)(placements,definitions,grid.factor,networkRoot.id):[];
+ $: networkOptions=networkSource?catalog.filter(o=>o.itemId!==networkSource?.itemId&&o.layer===networkSource?.layer&&layerSelectable(layerState,o)):[];
+ $: networkGeometry=definitions.get(networkTarget);
+ $: networkPlan=networkRoot&&networkGeometry&&grid&&networkSource&&layerSelectable(layerState,networkSource)&&layerSelectable(layerState,networkGeometry)?replaceDesignNetwork(timeline,networkRoot.id,networkGeometry,definitions,grid.factor,width,height):null;
+ function closeNetworkStyle(){networkSeed=null;networkTarget=0;networkRequest=0;networkLoading=false;}
+ function selectNetwork(openStyle=false){if(!grid||selected===null||!chosenGeometry)return;const seed=selected,ids=(chosenGeometry.layer==='fence'?fenceComponent:roadComponent)(placements,definitions,grid.factor,seed);if(!ids.length||ids.some(id=>{const p=placements.find(p=>p.id===id),g=p?definitions.get(p.itemId):null;return !g||!layerSelectable(layerState,g);}))return;cancel();groupIds=ids.length>1?ids:[];selected=ids.length===1?ids[0]:null;if(openStyle){networkSeed=seed;alignmentOpen=false;layersOpen=false;symmetryOpen=false;}}
+ function changeNetworkTarget(id:number){networkTarget=id;networkRequest=0;networkLoading=false;if(!id||definitions.has(id)||!worker||!grid)return;networkRequest=nextRequest();networkLoading=true;worker.postMessage({command:'design-shape',requestId:networkRequest,key:grid.key,itemId:id});}
+ function confirmNetworkStyle(){if(!networkPlan)return;save(networkPlan);closeNetworkStyle();}
+ function sampleNetwork(){const id=chosen?.itemId;if(id===undefined)return;cancel();chooseItem(id);}
  function setRoadTool(tool:RoadTool){roadDrag=null;roadTool=tool;}
  function startRoad(e:PointerEvent){if(!pitch)return;const p=cell(e);if(!p)return;roadDrag={id:e.pointerId,points:[snapRoadPoint(p,pitch)],overflow:false};try{(e.currentTarget as Element).setPointerCapture(e.pointerId);}catch{/* no capture */}e.preventDefault();}
  function followRoad(e:PointerEvent){if(!roadDrag||!pitch||roadDrag.overflow)return;const p=cell(e);if(!p)return;const point=snapRoadPoint(p,pitch),last=roadDrag.points[roadDrag.points.length-1];if(last?.x===point.x&&last.y===point.y)return;const points=roadTool==='brush'||roadTool==='erase'?[...roadDrag.points,point]:[roadDrag.points[0],point];roadDrag={...roadDrag,points,overflow:points.length>ROAD_STROKE_LIMIT};}
@@ -144,7 +156,7 @@
  }
  onDestroy(()=>subscribed?.removeEventListener('message',receive));
  $: if(grid?.key!==lastGrid){
-   lastGrid=grid?.key??'';roadDrag=null;symmetry=null;symmetryPicking=false;direct=null;spacePan=false;groupIds=[];pasting=[];pastePending=[];pasteRequest=0;lastPoint=null;importEpoch++;reading=false;pendingImport=null;selected=null;placing=null;hover=null;moveMode=false;loadingShape=false;shapeId=0;error='';camera=defaultMapCamera();
+   lastGrid=grid?.key??'';closeNetworkStyle();roadDrag=null;symmetry=null;symmetryPicking=false;direct=null;spacePan=false;groupIds=[];pasting=[];pastePending=[];pasteRequest=0;lastPoint=null;importEpoch++;reading=false;pendingImport=null;selected=null;placing=null;hover=null;moveMode=false;loadingShape=false;shapeId=0;error='';camera=defaultMapCamera();
  }
  $: if(active&&grid&&worker&&locale!==catalogLocale)requestCatalog(grid,locale,worker);
  function requestCatalog(g:PublicTerrainGridRef,language:WandLanguage,w:Worker){
@@ -153,6 +165,7 @@
  }
  function receive(e:MessageEvent){
    const d=e.data;
+   if(networkRequest&&d?.requestId===networkRequest){networkRequest=0;networkLoading=false;if(active&&grid&&d.kind==='design-shape'&&d.key===grid.key&&d.result?.itemId===networkTarget){const key=String(grid.factor),g=d.result as DesignItemGeometry;cache={...cache,[key]:new Map(cache[key]??[]).set(g.itemId,g)};}return;}
    if(pasteRequest&&d?.requestId===pasteRequest){
      pasteRequest=0;const clip=pastePending;pastePending=[];
      if(!active||!grid||d.kind!=='design-shapes'||d.key!==grid.key||!Array.isArray(d.result))return;
@@ -191,7 +204,7 @@
  }
  function chooseItem(id:number){
    if(!worker||!grid||busyImport)return;
-   groupIds=[];pasting=[];pastePending=[];pasteRequest=0;
+   closeNetworkStyle();groupIds=[];pasting=[];pastePending=[];pasteRequest=0;
    const g=definitions.get(id);
    if(g){if(!layerSelectable(layerState,g))return;if(g.layer==='fence'&&!fencePitch(g,grid.factor)){error='Fence geometry is not supported.';return;}if(roadPitch(g,grid.factor)||fencePitch(g,grid.factor)){symmetry=null;symmetryPicking=false;}placing=g;orientation=2;selected=null;moveMode=false;hover=null;error='';shapeId=0;loadingShape=false;return;}
    shapeId=nextRequest();loadingShape=true;error='';placing=null;moveMode=false;hover=null;
@@ -235,7 +248,7 @@
    if(!grid||!next){error='配置範囲・編集制限・同種の道やフェンスの重複を確認してください。';return;}
    layouts={...layouts,[grid.key]:next};error='';
  }
- function cancel(){roadDrag=null;symmetryPicking=false;alignmentAction=null;direct=null;placing=null;moveMode=false;hover=null;shapeId=0;loadingShape=false;error='';pasting=[];pastePending=[];pasteRequest=0;}
+ function cancel(){closeNetworkStyle();roadDrag=null;symmetryPicking=false;alignmentAction=null;direct=null;placing=null;moveMode=false;hover=null;shapeId=0;loadingShape=false;error='';pasting=[];pastePending=[];pasteRequest=0;}
  function travel(delta:-1|1){cancel();selected=null;groupIds=[];save(travelDesign(timeline,delta));}
  function rotate(delta:number){
    alignmentAction=null;
@@ -303,6 +316,7 @@
    return x>=0&&y>=0&&x<width&&y<height?{x,y}:null;
  }
  function pick(e:MouseEvent){
+   if(networkSeed!==null){closeNetworkStyle();return;}
    if(alignmentAction){alignmentAction=null;return;}
    if(suppressDirectClick){suppressDirectClick=false;return;}
    if(busyImport||gesture.consumeClick()||e.detail===0)return;
@@ -330,7 +344,7 @@
    if(busyImport)return;
    if(e.button===1||spacePan||e.pointerType==='touch'){gesture.begin(e,camera.zoom>1);return;}
    if(e.button===0&&roadEnabled&&!symmetryPicking){startRoad(e);return;}
-   if(e.button!==0||placing||moveMode||pasting.length||pasteRequest||alignmentAction||symmetryPicking)return;
+   if(e.button!==0||placing||moveMode||pasting.length||pasteRequest||alignmentAction||symmetryPicking||networkSeed!==null)return;
    const p=cell(e);if(!p)return;
    const hit=hitAt(p),add=e.ctrlKey||e.metaKey||e.shiftKey;
    direct={id:e.pointerId,start:p,end:p,clientX:e.clientX,clientY:e.clientY,ids:hit?(selectedIds.has(hit.localOrdinal)?[...selectedIds]:[hit.localOrdinal]):[],kind:hit?'move':'marquee',add,moved:false};
@@ -366,6 +380,7 @@
    if(!active||busyImport||!worldShortcutTarget(e,root))return;
    if(e.code==='Space'&&e.target instanceof HTMLElement&&e.target.closest('.design-plot')){e.preventDefault();spacePan=true;return;}
    const action=worldShortcut(e);if(!action)return;
+   if(networkSeed!==null){if(action==='cancel'){e.preventDefault();closeNetworkStyle();return;}if(action==='confirm'&&e.target instanceof HTMLElement&&e.target.closest('.design-plot')){e.preventDefault();confirmNetworkStyle();return;}if(action!=='undo'&&action!=='redo'&&action!=='zoom-in'&&action!=='zoom-out'&&action!=='fit')return;}
    if(action==='undo'||action==='redo'){e.preventDefault();travel(action==='undo'?-1:1);return;}
    if(action==='copy'||action==='cut'){
      if(!selectedIds.size)return;const clip=designClipboard(timeline,[...selectedIds]);if(!clip.length)return;
@@ -388,7 +403,7 @@
  <div class="design-workspace" bind:this={root}>
   <aside aria-label="配置する家具" hidden={!paletteOpen}>
    <input type="search" aria-label="家具を検索" placeholder="家具を検索" bind:value={query} on:input={()=>limit=80}/>
-   <select aria-label="配置カテゴリ" bind:value={layer} on:change={()=>{limit=80;selected=null;groupIds=[];}}>
+   <select aria-label="配置カテゴリ" bind:value={layer} on:change={()=>{closeNetworkStyle();limit=80;selected=null;groupIds=[];}}>
     {#each ['all','furniture','surface','landscape','ground','fence'] as l}<option value={l}>{MAP_LAYER_LABELS[l as MapSelectionLayer]}</option>{/each}
    </select>
    {#if catalogLoading}<p role="status">家具を読み込み中…</p>{:else if catalogError}<p role="alert">{catalogError}</p><button type="button" on:click={()=>worker&&grid&&requestCatalog(grid,locale,worker)}>再読み込み</button>{/if}
@@ -404,7 +419,7 @@
   </aside>
   <div class="design-map-side">
    <div class="design-controls">
-    <button type="button" aria-label={locale==='ja'?'レイヤー':'Layers'} title={locale==='ja'?'レイヤー':'Layers'} aria-pressed={layersOpen} on:click={()=>{layersOpen=!layersOpen;if(layersOpen){symmetryOpen=false;alignmentOpen=false;alignmentAction=null;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 16l9 5 9-5"/></svg></button>
+    <button type="button" aria-label={locale==='ja'?'レイヤー':'Layers'} title={locale==='ja'?'レイヤー':'Layers'} aria-pressed={layersOpen} on:click={()=>{closeNetworkStyle();layersOpen=!layersOpen;if(layersOpen){symmetryOpen=false;alignmentOpen=false;alignmentAction=null;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 16l9 5 9-5"/></svg></button>
     <button type="button" aria-label="家具パレット" title="家具パレット" aria-pressed={paletteOpen} on:click={()=>paletteOpen=!paletteOpen}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v16H3zM9 4v16"/></svg></button>
     <input class="file-input" type="file" accept=".json,application/json" bind:this={importInput} on:change={importFile}/>
     <button type="button" disabled={busyImport} on:click={exportFile}>{words[0]}</button>
@@ -415,9 +430,13 @@
     <button type="button" aria-label="設計の左回転" disabled={busyImport||!placing&&!selectedIds.size} on:click={()=>rotate(1)}>⟲</button>
     <button type="button" aria-label="設計の右回転" disabled={busyImport||!placing&&!selectedIds.size} on:click={()=>rotate(3)}>⟳</button>
     <button type="button" aria-pressed={moveMode} disabled={busyImport||!chosenGeometry||nativeActionBlocked(chosenGeometry.editRestrictions,'move')} on:click={()=>{placing=null;moveMode=!moveMode;hover=null;}}>移動</button>
-    <button type="button" disabled={busyImport||selectedIds.size<2} aria-label={locale==='ja'?'整列・均等配置':'Align and distribute'} aria-pressed={alignmentOpen} on:click={()=>{alignmentOpen=!alignmentOpen;alignmentAction=null;if(alignmentOpen){layersOpen=false;symmetryOpen=false;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3v18M7 5h8v5H7zM7 14h13v5H7z"/></svg></button>
-    <button type="button" disabled={busyImport} aria-label={locale==='ja'?'対称編集':'Symmetry'} aria-pressed={Boolean(symmetry)||symmetryOpen} on:click={()=>{symmetryOpen=!symmetryOpen;if(symmetryOpen){layersOpen=false;alignmentOpen=false;alignmentAction=null;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M9 6 3 12l6 6ZM15 6l6 6-6 6Z"/></svg></button>
-    {#if chosenGeometry?.layer==='fence'&&grid&&fencePitch(chosenGeometry,grid.factor)}<button type="button" title={locale==='ja'?'接続フェンスを選択':'Select connected fence'} aria-label={locale==='ja'?'接続フェンスを選択':'Select connected fence'} on:click={selectFenceNetwork}><svg class="tool-icon" viewBox="0 0 24 24"><path d="M5 5h14v14H5zM5 12h14M12 5v14"/></svg></button>{/if}
+    <button type="button" disabled={busyImport||selectedIds.size<2} aria-label={locale==='ja'?'整列・均等配置':'Align and distribute'} aria-pressed={alignmentOpen} on:click={()=>{closeNetworkStyle();alignmentOpen=!alignmentOpen;alignmentAction=null;if(alignmentOpen){layersOpen=false;symmetryOpen=false;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3v18M7 5h8v5H7zM7 14h13v5H7z"/></svg></button>
+    <button type="button" disabled={busyImport} aria-label={locale==='ja'?'対称編集':'Symmetry'} aria-pressed={Boolean(symmetry)||symmetryOpen} on:click={()=>{closeNetworkStyle();symmetryOpen=!symmetryOpen;if(symmetryOpen){layersOpen=false;alignmentOpen=false;alignmentAction=null;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M9 6 3 12l6 6ZM15 6l6 6-6 6Z"/></svg></button>
+    {#if chosenGeometry&&grid&&(roadPitch(chosenGeometry,grid.factor)||fencePitch(chosenGeometry,grid.factor))}
+     <button type="button" title={locale==='ja'?'接続範囲を選択':'Select connected network'} aria-label={locale==='ja'?'接続範囲を選択':'Select connected network'} on:click={()=>selectNetwork()}><svg class="tool-icon" viewBox="0 0 24 24"><path d="M5 5h14v14H5zM5 12h14M12 5v14"/></svg></button>
+     <button type="button" title={locale==='ja'?'スタイル置換':'Replace style'} aria-label={locale==='ja'?'スタイル置換':'Replace style'} on:click={()=>selectNetwork(true)}><svg class="tool-icon" viewBox="0 0 24 24"><path d="M3 7h17l-4-4M21 17H4l4 4M20 7l-4 4M4 17l4-4"/></svg></button>
+     <button type="button" title={locale==='ja'?'スポイト':'Sample style'} aria-label={locale==='ja'?'スポイト':'Sample style'} on:click={sampleNetwork}><svg class="tool-icon" viewBox="0 0 24 24"><path d="m14 5 5 5M11 8l7-5 3 3-5 7M12 8 4 16l-1 5 5-1 8-8"/></svg></button>
+    {/if}
     <button type="button" disabled={busyImport||!selectedIds.size} on:click={duplicate}>複製</button>
     <button type="button" disabled={busyImport||!selectedIds.size} on:click={remove}>削除</button>
     {#if (placing||moveMode||pasting.length)&&!busyImport}<button type="button" on:click={cancel}>配置終了</button>{/if}
@@ -425,6 +444,7 @@
    <div class="design-messages">{#if busyImport}<p role="status">{words[5]}</p>{/if}
    {#if loadingShape}<p role="status">形状を読み込み中…</p>{/if}
    {#if error}<p role="alert">{error}</p>{/if}</div>
+   {#if networkSeed!==null}<div class="network-style-panel"><NetworkStyleControls {locale} count={networkIds.length} options={networkOptions} value={networkTarget} loading={networkLoading} valid={Boolean(networkPlan)} onChange={changeNetworkTarget} onConfirm={confirmNetworkStyle} onCancel={closeNetworkStyle}/></div>{/if}
    {#if roadEnabled}<div class="road-tools-overlay"><RoadDesignControls {locale} fence={fenceDrawing} tool={roadTool} valid={!(fenceDrawing&&legacyFence)&&(!roadDrag||Boolean(roadPlan))} added={roadPlan?.add.length??0} removed={roadPlan?.remove.length??0} onChange={setRoadTool}/></div>{/if}
    {#if symmetryOpen}<div class="design-symmetry-panel"><WorldSymmetryControls {locale} value={symmetry} {width} {height} picking={symmetryPicking} count={symmetricSelection.length} valid={Boolean(symmetricSelectedPlan)} busy={busyImport} onChange={changeSymmetry} onPick={()=>symmetryPicking=!symmetryPicking} onMirror={mirrorSelected}/></div>{/if}
    {#if layersOpen}<div class="design-layer-panel"><WorldLayerControls {locale} state={layerState} disabled={busyImport} onChange={applyLayers}/></div>{/if}
@@ -441,7 +461,7 @@
      {#each visible as o (o.localOrdinal)}
       {@const shape=o.shapeKey?map?.shapes[o.shapeKey]:null}
       {#if shape}
-       <g class="design-object" data-design-id={o.localOrdinal} transform={'translate('+o.x+' '+o.y+')'}>
+       <g class="design-object" data-design-id={o.localOrdinal} data-item-id={o.itemId} transform={'translate('+o.x+' '+o.y+')'}>
         <path class="design-object-shape" d={shape.path} fill={MAP_LAYER_COLORS[o.layer]} fill-opacity={selectedIds.has(o.localOrdinal)?.86:.65} stroke={selectedIds.has(o.localOrdinal)?'#fff':MAP_LAYER_COLORS[o.layer]} stroke-width="1" vector-effect="non-scaling-stroke"/>
         {#if showWorldArtwork(o,shape,cellPixels)&&images.has(Number(o.itemId))}<WorldObjectArtwork href={images.get(Number(o.itemId))!} width={shape.width} height={shape.height}/>{/if}
         {#if o.orientationCode!==null&&cellPixels>=5&&o.layer!=='ground'&&o.layer!=='fence'}<path class="design-orientation" d="M0 -.32L.19 .13L0 .04L-.19 .13Z" transform={'translate(.5 .5) rotate('+sourceOrientationAngle(o.orientationCode)+')'} fill="#fff" stroke="#28333c" stroke-width=".035" pointer-events="none"/>{/if}
@@ -452,6 +472,9 @@
       {#if Math.max(edge.from.x,edge.to.x)>=viewport.x-1&&Math.min(edge.from.x,edge.to.x)<=viewport.x+viewport.w+1&&Math.max(edge.from.y,edge.to.y)>=viewport.y-1&&Math.min(edge.from.y,edge.to.y)<=viewport.y+viewport.h+1}<path class="design-fence-edge" d={'M'+edge.from.x+' '+edge.from.y+'L'+edge.to.x+' '+edge.to.y} stroke={previewFenceEdges&&!originalFenceEdgeKeys.has(edge.key)?'#4bddcd':selectedIds.has(edge.a)&&selectedIds.has(edge.b)?'#fff':'#e5d2b1'} stroke-width={Math.max(.25,edge.pitch*.28)} stroke-linecap="round" pointer-events="none"/>{/if}
      {/each}
      {#each removedFenceEdges as edge (edge.key)}<path class="design-fence-removed-edge" d={'M'+edge.from.x+' '+edge.from.y+'L'+edge.to.x+' '+edge.to.y} stroke="#ef5350" stroke-width={Math.max(.25,edge.pitch*.28)} stroke-dasharray="3 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/each}
+     {#if networkPlan&&networkGeometry}
+      {#each currentDesign(networkPlan).filter(p=>networkIds.includes(p.id)) as p (p.id)}{@const shape=networkGeometry.shapes[p.itemId+':8']}{#if shape}<path class="network-style-ghost" d={shape.path} transform={'translate('+p.x+' '+p.y+')'} fill="#4bddcd" fill-opacity=".65" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke" pointer-events="none"/>{/if}{/each}
+     {/if}
      {#if symmetry}
       {#if symmetry.mode==='vertical'}<path class="symmetry-axis" d={'M'+symmetry.x2/2+' 0V'+height} stroke="#f5cf70" stroke-dasharray="6 4" stroke-width="1.5" vector-effect="non-scaling-stroke" pointer-events="none"/>
       {:else if symmetry.mode==='horizontal'}<path class="symmetry-axis" d={'M0 '+symmetry.y2/2+'H'+width} stroke="#f5cf70" stroke-dasharray="6 4" stroke-width="1.5" vector-effect="non-scaling-stroke" pointer-events="none"/>
@@ -522,6 +545,7 @@
  @media(max-width:700px){.design-workspace{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(0,2fr)}.design-item img{width:44px;height:44px}}
  .design-workspace,.design-map-side,.design-map-frame{position:absolute;inset:0;display:block;min-height:0;min-width:0;overflow:hidden;border-radius:0}.design-workspace{isolation:isolate}
  aside{position:absolute;z-index:5;top:104px;bottom:38px;left:6px;width:clamp(170px,19vw,300px);border-radius:6px;box-shadow:0 2px 8px #0003}aside[hidden]{display:none}
+ .network-style-panel{position:absolute;z-index:9;right:6px;top:104px;width:min(250px,calc(100% - 12px));background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;box-shadow:0 3px 14px #0004}
  .road-tools-overlay{position:absolute;z-index:7;left:50%;top:96px;transform:translateX(-50%);max-width:calc(100% - 12px)}
  .design-symmetry-panel{position:absolute;z-index:9;right:6px;top:104px;width:min(250px,calc(100% - 12px));max-height:calc(100% - 145px);overflow:auto;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;box-shadow:0 3px 14px #0004}
  .design-layer-panel{position:absolute;z-index:9;right:6px;top:104px;width:min(220px,calc(100% - 12px));max-height:calc(100% - 145px);overflow:auto;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;box-shadow:0 3px 14px #0004}

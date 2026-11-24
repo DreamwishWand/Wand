@@ -458,3 +458,20 @@ test('fence design uses current source-matched Base identities and connected car
  assert.equal(planFenceDesign(next,h,[{x:4,y:4}],2,30,30),null);
  assert.equal(planFenceDesign(next,g,[{x:1,y:0}],2,30,30),null);
 });
+
+import {roadComponent} from '../src/lib/world/road-design.ts';
+import {replaceDesignNetwork} from '../src/lib/world/design-layout.ts';
+test('connected road style replacement keeps exact cell positions and is one history entry',()=>{
+ const shape={width:2,height:2,runs:[{x:0,y:0,width:2},{x:0,y:1,width:2}],cellCount:4,path:'M0 0h2v2h-2Z'};
+ const a={itemId:40100068,name:'Path_MainStreet',layer:'ground',surfaceCapable:false,shapes:{'40100068:8':shape}};
+ const b={...a,itemId:40100035,name:'Path_Brick',shapes:{'40100035:8':shape}};
+ const defs=new Map([[a.itemId,a],[b.itemId,b]]);
+ const base=commitRoadDesign(emptyDesign(),a,[{x:0,y:0},{x:2,y:0},{x:4,y:0},{x:12,y:12}],1,30,30);
+ assert.deepEqual(roadComponent(currentDesign(base),defs,1,1),[1,2,3]);
+ const next=replaceDesignNetwork(base,1,b,defs,1,30,30);
+ assert.deepEqual(currentDesign(next).map(p=>[p.id,p.itemId,p.x,p.y]),[[1,b.itemId,0,0],[2,b.itemId,2,0],[3,b.itemId,4,0],[4,a.itemId,12,12]]);
+ assert.deepEqual(currentDesign(travelDesign(next,-1)),currentDesign(base));
+ const adjacent=commitRoadDesign(base,b,[{x:6,y:0}],1,30,30);
+ assert.equal(replaceDesignNetwork(adjacent,1,b,defs,1,30,30),null);
+ assert.equal(replaceDesignNetwork(base,1,a,defs,1,30,30),null);
+});
