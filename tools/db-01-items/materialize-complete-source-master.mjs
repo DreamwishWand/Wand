@@ -304,7 +304,11 @@ function buildReferenceColumns(rows){
         for(const [key,part] of Object.entries(value))walk(part,path+'.'+key,key);
         return;
       }
-      if(/ItemIds?$/i.test(name))emit(value,path);
+      if(row.nativeCategory==='Companion'&&/^(?:source\.(?:FavoriteItem|LikeItem))\.(?:Item\.(?:Item|ItemIngredient)\.Item|ItemList\.(?:Item|ItemIngredient)\.ItemList\.List\[\d+\]\.Item)$/.test(path)){
+        if(value!==0){
+          check(categories.get(value)==='ActivityItem','COMPANION_SELECTOR_TARGET');emit(value,path);
+        }
+      }else if(/ItemIds?$/i.test(name))emit(value,path);
       else if(row.nativeCategory==='DutyAch'&&/^source\.Milestones\[\d+\]\.RewardItem$/.test(path)){
         check(ID(value)&&ids.has(value),'MILESTONE_REWARD_TARGET');emit(value,path);
       }else if(row.nativeCategory==='Mission'&&/^source\.RewardsXP\.Currency\[\d+\]\.CurrencyId$/.test(path)){
