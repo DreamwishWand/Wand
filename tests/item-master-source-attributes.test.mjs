@@ -388,3 +388,30 @@ test('complete original root message census preserves legacy grid, catalog and c
   assert.deepEqual(empty.values['source.ItemList'],{});
   assert((await db.getItemReferences(30200018,'incoming')).some(([id,p])=>id===2120000015&&p==='source.Groups[0].CollectionsByItem[0].ItemList[0]'));
 });
+
+
+test('explicit source relations link quest owners, price currencies and Collection tag predicates',async()=>{
+  const requests=[];
+  const db=await openPublicItemMaster('',async url=>{requests.push(url);return fetcher(url)},{scope:'complete'});
+  const categoryRows=await db.getFieldRows('nativeCategory');
+  const categories=new Map(categoryRows);
+  const owners=await db.getFieldRows('source.OwnerCharacter');
+  const example=owners.find(([id,target])=>categories.get(id)==='Mission'&&categories.get(target)==='Character');
+  assert(example,'original quest must have a canonical character owner');
+  const [missionId,owner]=example;
+  const [mission,price,group,unknown,repeat]=await db.getItemsReferences(
+    [missionId,40000047,2120000015,99999999,40000047],'outgoing');
+  assert.equal(unknown,null);
+  assert.deepEqual(repeat,price);
+  assert(mission.some(([id,path])=>id===owner&&path==='source.OwnerCharacter'));
+  assert(price.some(([id,path])=>id===80000000&&path==='source.PriceOverride.Price.Id'));
+  assert(group.some(([id,path])=>id===2001200013&&path==='source.Groups[0].CollectionsByType[0].ActivityItem.ByGameplayTag'));
+  const reverse=await db.getItemsReferences([owner,80000000,2001200013],'incoming');
+  assert(reverse[0].some(([id,path])=>id===missionId&&path==='source.OwnerCharacter'));
+  assert(reverse[1].some(([id,path])=>id===40000047&&path==='source.PriceOverride.Price.Id'));
+  assert(reverse[2].some(([id,path])=>id===2120000015&&path==='source.Groups[0].CollectionsByType[0].ActivityItem.ByGameplayTag'));
+  assert(Object.isFrozen(reverse)&&Object.isFrozen(reverse[0]));
+  assert.deepEqual(await db.getItemsReferences([],'incoming'),[]);
+  await assert.rejects(db.getItemsReferences([40000047],'both'),/INVALID_REFERENCE_DIRECTION/);
+  assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
+});

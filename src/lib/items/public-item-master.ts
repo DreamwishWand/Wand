@@ -343,6 +343,8 @@ export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemM
   getSourceRelations(): Promise<CompleteItemMasterRelations>;
   /** Source-declared links in published canonical fields, not a proof of acquisition. */
   getItemReferences(itemId:number,direction:ItemReferenceDirection):Promise<readonly ItemReferenceOccurrence[]|null>;
+  /** Ordered batch lookup, preserving duplicates, unknown IDs and empty edge lists. */
+  getItemsReferences(itemIds:readonly number[],direction:ItemReferenceDirection):Promise<readonly (readonly ItemReferenceOccurrence[]|null)[]>;
 }
 const SHA = /^[0-9a-f]{64}$/;
 const GAME_VERSION = /^[0-9]+\.[0-9]+\.[0-9]+$/;
@@ -861,19 +863,25 @@ export async function openPublicItemMaster(
       row.map(([field,key])=>[field,{key,text:found.get(key)??null}])
     ))));
   }
-  return Object.freeze({
-    ...common,
-    ...fieldReader,
-    async getItemReferences(id:number,direction:ItemReferenceDirection):Promise<readonly ItemReferenceOccurrence[]|null>{
-      assert(direction==='incoming'||direction==='outgoing','INVALID_REFERENCE_DIRECTION');
-      const field='references.'+direction;
-      const result=(await fieldReader.getItemFields([id],[field]))[0];
+  async function itemReferences(ids:readonly number[],direction:ItemReferenceDirection):Promise<readonly (readonly ItemReferenceOccurrence[]|null)[]>{
+    assert(direction==='incoming'||direction==='outgoing','INVALID_REFERENCE_DIRECTION');
+    const field='references.'+direction;
+    const results=await fieldReader.getItemFields(ids,[field]);
+    return Object.freeze(results.map(result=>{
       if(result===null)return null;
       const value=result.values[field]??[];
       assert(Array.isArray(value)&&value.every(v=>Array.isArray(v)&&v.length===2&&ID(v[0])&&
         typeof v[1]==='string'&&v[1].length>0),'INVALID_REFERENCE_OCCURRENCE');
       return deepFreeze(value as unknown as readonly ItemReferenceOccurrence[]);
+    }));
+  }
+  return Object.freeze({
+    ...common,
+    ...fieldReader,
+    async getItemReferences(id:number,direction:ItemReferenceDirection){
+      return (await itemReferences([id],direction))[0];
     },
+    getItemsReferences:itemReferences,
     async getCollectionFacets():Promise<CompleteItemMasterFacets>{
       const value=await asset('collection-facets.json');
       assert(isObject(value)&&value.schema==='wand.collection.db01-complete-source-facets@1'&&
