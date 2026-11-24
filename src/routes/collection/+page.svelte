@@ -720,7 +720,17 @@
     observer.observe(node);
     return {destroy:()=>observer.disconnect()};
   }
-  async function commit(action:()=>Promise<void>,description:HistoryDescription,repair=false):Promise<void>{
+  function refreshEditedItem(id:number):void{
+    if(!runtime||status!=='all'||favoriteOnly){refresh();return;}
+    // State-only changes cannot alter the visible item IDs/order under an
+    // unfiltered status view. Avoid repeating source-wide search/sort.
+    state=runtime.state;overall=runtime.progress;facets=runtime.facets('category',locale);
+    const item=runtime.item(id,locale);
+    const patch=(items:CollectionItem[])=>items.map(row=>row.itemId===id?item:row);
+    filtered=patch(filtered);sourceAllMatching=patch(sourceAllMatching);
+    universeSections=universeSections.map(section=>({...section,items:patch(section.items)}));
+  }
+  async function commit(action:()=>Promise<void>,description:HistoryDescription,repair=false,changedId?:number):Promise<void>{
     if(!runtime||busy||saveReadInProgress||editHistory.isTraveling()||(storeError&&!repair))return;
     const before=runtime.state;
     busy=true;editHistory.beginCollectionEdit();
@@ -728,7 +738,7 @@
       await action();
       editHistory.recordCollection(before,runtime.state,description);
       storeError='';
-      refresh();
+      if(changedId!==undefined)refreshEditedItem(changedId);else refresh();
       infoMessage='ブラウザ内のCollection記録を更新しました。DDVセーブファイルは変更していません。';
     }catch(error){storeError=error instanceof Error?error.message:String(error);}
     finally{busy=false;editHistory.endCollectionEdit();}
@@ -770,25 +780,25 @@
   function changeEntry(change:Record<string,unknown>):void{
     if(selectedItem&&runtime){
       const id=selectedItem.itemId;
-      void commit(()=>runtime!.setEntry(id,change),describeEntry(id,change));
+      void commit(()=>runtime!.setEntry(id,change),describeEntry(id,change),false,id);
     }
   }
   function toggleItemStatus(id:number):void{
     if(!runtime||busy||saveReadInProgress)return;
     const current=entries[String(id)]?.status;
     const patch={status:current==='owned'?'missing' as const:'owned' as const};
-    void commit(()=>runtime!.setEntry(id,patch),describeEntry(id,patch));
+    void commit(()=>runtime!.setEntry(id,patch),describeEntry(id,patch),false,id);
   }
   function changeItemQuantity(id:number,value:string):void{
     if(!runtime||busy||saveReadInProgress)return;
     const patch=collectionQuantityPatch(value);
     if(!patch||entries[String(id)]?.quantity===patch.quantity)return;
-    void commit(()=>runtime!.setEntry(id,patch),describeEntry(id,patch));
+    void commit(()=>runtime!.setEntry(id,patch),describeEntry(id,patch),false,id);
   }
   function toggleItemDiscovery(id:number):void{
     if(!runtime||busy||saveReadInProgress)return;
     const patch={discovered:entries[String(id)]?.discovered!==true};
-    void commit(()=>runtime!.setEntry(id,patch),describeEntry(id,patch));
+    void commit(()=>runtime!.setEntry(id,patch),describeEntry(id,patch),false,id);
   }
   async function showItem(id:number,event:MouseEvent):Promise<void>{
     inspectorTrigger=event.currentTarget as HTMLElement;
