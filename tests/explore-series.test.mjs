@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {seriesShelves,designTiles} from '../src/lib/explore/series.ts';
+import {seriesShelves,designTiles,orderedSeriesDesigns} from '../src/lib/explore/series.ts';
 const item=(id,en,set,style=[],nativeCategory='Furniture',extra={})=>({itemId:id,names:{en},nativeCategory,subtype:0,tags:style.map(s=>['furnitureStyle',s]),universes:[2000500017],sourceSetItemId:set,...extra});
 test('exact offer first, real cohesive set across categories, mixed set split by theme/style, every ID reachable',()=>{
  const rows=[item(1,'Table',2040000081),item(2,'Stall',2040000081,[],'Building'),item(3,'Bookish Tiles',2040000246),item(4,'Party Disco Ball',2040000246),item(5,'Old Chair',2040000076,['Rustic']),item(6,'Modern Chair',2040000076,['Modern']),item(7,'Unknown',null),item(8,'Offer light',null),item(9,'Offer rug',null)];
@@ -49,4 +49,12 @@ test('distinct prefab color variants require exact original key stem and full ma
  assert.deepEqual(designTiles([a,b]).map(t=>t.items.map(i=>i.itemId)),[[1,2]]);
  assert.equal(designTiles([a,{...b,footprintSignature:'grid2'}]).length,2);
  assert.equal(designTiles([a,{...b,nativeKey:'Different_White'}]).length,2);
+});
+
+test('series adjacency survives continuous grid layout without duplicate or omitted IDs',()=>{
+ const a=item(1,'A',2040000081),b=item(2,'B',2040000081),c=item(3,'C',2040000103),d=item(4,'D',2040000103);
+ const groups=[{key:'a',kind:'set',items:[a,b]},{key:'b',kind:'set',items:[c,d]}];
+ const tiles=orderedSeriesDesigns(groups);
+ assert.deepEqual(tiles.flatMap(t=>t.items.map(i=>i.itemId)),[1,2,3,4]);
+ assert.equal(new Set(tiles.map(t=>t.key)).size,4);
 });
