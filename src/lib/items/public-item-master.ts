@@ -31,6 +31,7 @@ export interface ItemMasterCompleteRelease {
   readonly archiveSha256: string;
   readonly parts: number;
   readonly attributesSha256?: string;
+  readonly localization?: Readonly<{parts:number;sha256:string}>;
 }
 export interface ItemMasterExpandedRelease {
   readonly release: string;
@@ -142,6 +143,25 @@ export interface NativeSourceAttributes extends NativeSourceObject {
   readonly GridEditRestriction?:NativeSourceObject;
   readonly AppearWhen?:NativeSourceObject;
 }
+export const ITEM_LOCALIZED_TEXT_FIELDS =
+  ['Description','DescriptionText','EvolvingDescription','PluralDisplayName'] as const;
+export type ItemLocalizedTextField = (typeof ITEM_LOCALIZED_TEXT_FIELDS)[number];
+export interface ItemLocalizedText {
+  readonly key: string;
+  /** Original text in the requested language. Missing keys are never guessed. */
+  readonly text: string|null;
+}
+export type ItemLocalizedTextRecord = Readonly<Partial<Record<ItemLocalizedTextField,Readonly<ItemLocalizedText>>>>;
+export interface ItemLocalizationCoverage {
+  readonly itemCount:number;
+  readonly keyCount:number;
+  readonly allLocalesKeyCount:number;
+  readonly fieldCounts:Readonly<Partial<Record<ItemLocalizedTextField,number>>>;
+  readonly localeCounts:Readonly<Record<ItemMasterLocale,number>>;
+  readonly evidence:Readonly<Record<ItemMasterLocale,Readonly<{
+    archiveSha256:string; members:Readonly<Record<string,string>>
+  }>>>;
+}
 export interface NativeSourceAttributeCoverage {
   readonly itemCount:number;
   readonly fieldCount:number;
@@ -236,6 +256,8 @@ export interface ItemMasterRelease {
   readonly archiveSha256?: string;
   readonly attributesSha256?: string;
   readonly sourceAttributeCoverage?: NativeSourceAttributeCoverage;
+  readonly localizationSha256?: string;
+  readonly localizationCoverage?: ItemLocalizationCoverage;
   readonly sourceFilesVerified?: number;
   readonly sourceFilesSha256?: Readonly<Record<string,string>>;
   readonly sourceItemsSha256?: string;
@@ -282,6 +304,10 @@ export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemM
   /** Collection-only projection; fetch neither all shards nor all languages. */
   getCollectionFacets(): Promise<CompleteItemMasterFacets>;
   getBrowseNames(locale: ItemMasterLocale): Promise<readonly (readonly [number,string])[]>;
+  /** Resolve description and other original text fields for one ItemID.
+   * Loads only the requested language, never the full eight-language corpus. */
+  getLocalizedItemText(itemId:number,locale:ItemMasterLocale):Promise<ItemLocalizedTextRecord|null>;
+  getLocalizedItemsText(itemIds:readonly number[],locale:ItemMasterLocale):Promise<readonly (ItemLocalizedTextRecord|null)[]>;
   getSourceRelations(): Promise<CompleteItemMasterRelations>;
 }
 const SHA = /^[0-9a-f]{64}$/;
@@ -464,6 +490,11 @@ export async function openPublicItemMaster(
           'INVALID_COMPLETE_RELEASE');
         assert(c.attributesSha256===undefined||
           typeof c.attributesSha256==='string'&&SHA.test(c.attributesSha256),'INVALID_ATTRIBUTE_DIGEST');
+        if(c.localization!==undefined){
+          const l=c.localization;
+          assert(isObject(l)&&typeof l.parts==='number'&&Number.isSafeInteger(l.parts)&&l.parts>0&&l.parts<=100&&
+            typeof l.sha256==='string'&&SHA.test(l.sha256),'INVALID_LOCALIZATION_METADATA');
+        }
       }
       unique.add(entry.gameVersion);
     }
@@ -520,6 +551,11 @@ export async function openPublicItemMaster(
         release.sourceAttributeCoverage.allOriginalFieldSemanticsVerified===false&&
         release.sourceAttributeCoverage.gridLayerOccupancyVerified===false&&
         release.sourceAttributeCoverage.runtimePriceVerified===false),'INVALID_ATTRIBUTE_RELEASE');
+    assert((!selected||release.localizationSha256===selected.complete?.localization?.sha256)&&
+      (release.localizationSha256===undefined||
+        typeof release.localizationSha256==='string'&&SHA.test(release.localizationSha256)&&
+        isObject(release.localizationCoverage)&&isObject(release.localizationCoverage.localeCounts)),
+      'INVALID_LOCALIZATION_RELEASE');
   }else assert(release.scope===undefined,'UNEXPECTED_EXPANDED_RELEASE');
   const source = release as unknown as ItemMasterRelease;
   // The caller may share this reader with Collection, Explorer and Save.
@@ -614,6 +650,41 @@ export async function openPublicItemMaster(
     }
   };
   if(scope!=='complete')return Object.freeze(common);
+  const localeCache=new Map<ItemMasterLocale,Promise<ReadonlyMap<string,string>>>();
+  async function localizedTable(locale:ItemMasterLocale):Promise<ReadonlyMap<string,string>>{
+    const cached=localeCache.get(locale);
+    if(cached)return cached;
+    const path='text/'+locale+'.json';
+    const task=(async()=>{
+      const v=await asset(path);
+      assert(isObject(v)&&v.schema==='wand.item-master.localized-text@1'&&v.locale===locale&&
+        Array.isArray(v.items)&&v.items.length===m.assets?.[path]?.count&&
+        v.items.length===m.localizationCoverage?.localeCounts[locale],'INVALID_LOCALIZED_TEXT');
+      const table=new Map<string,string>();
+      for(const pair of v.items){
+        assert(Array.isArray(pair)&&pair.length===2&&typeof pair[0]==='string'&&pair[0].length>0&&
+          typeof pair[1]==='string'&&pair[1].trim().length>0&&pair[1].length<=8192&&
+          !table.has(pair[0]),'INVALID_LOCALIZED_TEXT_ROW');
+        table.set(pair[0],pair[1]);
+      }
+      return table as ReadonlyMap<string,string>;
+    })();
+    localeCache.set(locale,task);
+    try{return await task;}catch(err){localeCache.delete(locale);throw err;}
+  }
+  async function localizedItems(ids:readonly number[],locale:ItemMasterLocale):Promise<readonly (ItemLocalizedTextRecord|null)[]>{
+    assert(ITEM_MASTER_LOCALES.includes(locale),'INVALID_LOCALE');
+    const records=await common.getItems(ids) as (CompleteItemMasterRecord|null)[];
+    const keys=records.map(record=>record===null?null:
+      record.nativeCategory==='Dialogue'?[]:ITEM_LOCALIZED_TEXT_FIELDS.flatMap(field=>{
+        const key=record.sourceAttributes?.[field];
+        return typeof key==='string'?[[field,key] as const]:[];
+      }));
+    const table=keys.some(row=>row!==null&&row.length>0)?await localizedTable(locale):null;
+    return Object.freeze(keys.map(row=>row===null?null:deepFreeze(Object.fromEntries(
+      row.map(([field,key])=>[field,{key,text:table?.get(key)??null}])
+    ))));
+  }
   return Object.freeze({
     ...common,
     async getCollectionFacets():Promise<CompleteItemMasterFacets>{
@@ -633,6 +704,10 @@ export async function openPublicItemMaster(
         'INVALID_BROWSE_NAMES');
       return value.items as (readonly [number,string])[];
     },
+    async getLocalizedItemText(id:number,locale:ItemMasterLocale):Promise<ItemLocalizedTextRecord|null>{
+      return (await localizedItems([id],locale))[0]??null;
+    },
+    getLocalizedItemsText:localizedItems,
     async getSourceRelations():Promise<CompleteItemMasterRelations>{
       const value=await asset('source-relations.json');
       assert(isObject(value)&&value.schema==='wand.item-master.complete-source-relations@1'&&
