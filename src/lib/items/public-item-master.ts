@@ -41,6 +41,7 @@ export interface ItemMasterCompleteRelease {
   readonly reviewedMessageGroupsSha256?: string;
   readonly reviewedStructure?: Readonly<Record<'reviewed-structure'|'reviewed-quest-steps',string>>;
   readonly reviewedRootScalars?: readonly string[];
+  readonly linkedLocalizations?: Readonly<Record<ItemMasterLocale,string>>;
   readonly localization?: Readonly<{parts:number;sha256:string}>;
 }
 export interface ItemMasterExpandedRelease {
@@ -278,10 +279,12 @@ export interface ItemMasterRelease {
   readonly reviewedMessageGroupCoverage?: Readonly<{fields:Readonly<Record<string,Readonly<{itemCount:number;occurrences:number;leafCount:number;category:string;declaredType:string}>>>;runtimeSemanticsVerified:false}>;
   readonly reviewedStructure?: Readonly<Record<'reviewed-structure'|'reviewed-quest-steps',string>>;
   readonly reviewedRootScalars?: readonly string[];
+  readonly linkedLocalizations?: Readonly<Record<ItemMasterLocale,string>>;
   readonly reviewedRootScalarCoverage?: Readonly<{groupCount:number;itemCount:number;fieldPairs:number;occurrences:number;leafCount:number;existingPairs:number;addedPairs:number;identityOccurrences:number;runtimeSemanticsVerified:false}>;
   readonly reviewedStructureCoverage?: Readonly<{fields:Readonly<Record<string,Readonly<{itemCount:number;occurrences:number;leafCount:number;category:string;declaredType:string}>>>;runtimeSemanticsVerified:false}>;
   readonly localizationSha256?: string;
   readonly localizationCoverage?: ItemLocalizationCoverage;
+  readonly linkedLocalizationCoverage?: Readonly<{keyCount:number;allLocalesKeyCount:number;localeCounts:Readonly<Record<ItemMasterLocale,number>>;sourceArchiveHashes:Readonly<Record<ItemMasterLocale,string>>;bucketCount:64}>;
   readonly sourceFilesVerified?: number;
   readonly sourceFilesSha256?: Readonly<Record<string,string>>;
   readonly sourceItemsSha256?: string;
@@ -335,6 +338,8 @@ export interface PublicCompleteItemMaster extends PublicItemMaster<CompleteItemM
    * Loads only the requested language, never the full eight-language corpus. */
   getLocalizedItemText(itemId:number,locale:ItemMasterLocale):Promise<ItemLocalizedTextRecord|null>;
   getLocalizedItemsText(itemIds:readonly number[],locale:ItemMasterLocale):Promise<readonly (ItemLocalizedTextRecord|null)[]>;
+  /** Resolve exact source keys (including nested quest/event keys) in order. Missing keys are null. */
+  getLocalizedKeys(keys:readonly string[],locale:ItemMasterLocale):Promise<readonly (string|null)[]>;
   getSourceRelations(): Promise<CompleteItemMasterRelations>;
   /** Source-declared links in published canonical fields, not a proof of acquisition. */
   getItemReferences(itemId:number,direction:ItemReferenceDirection):Promise<readonly ItemReferenceOccurrence[]|null>;
@@ -532,6 +537,8 @@ export async function openPublicItemMaster(
         assert(c.reviewedStructure===undefined||isObject(c.reviewedStructure)&&Object.keys(c.reviewedStructure).length===2&&
           ['reviewed-structure','reviewed-quest-steps'].every(k=>typeof (c.reviewedStructure as Record<string,unknown>)[k]==='string'&&SHA.test(String((c.reviewedStructure as Record<string,unknown>)[k]))),'INVALID_STRUCTURE_DIGESTS');
         assert(c.reviewedRootScalars===undefined||Array.isArray(c.reviewedRootScalars)&&c.reviewedRootScalars.length>0&&c.reviewedRootScalars.length<=100&&c.reviewedRootScalars.every(x=>typeof x==='string'&&SHA.test(x)),'INVALID_ROOT_SCALAR_DIGESTS');
+        assert(c.linkedLocalizations===undefined||isObject(c.linkedLocalizations)&&Object.keys(c.linkedLocalizations).length===ITEM_MASTER_LOCALES.length&&
+          ITEM_MASTER_LOCALES.every(l=>typeof (c.linkedLocalizations as Record<string,unknown>)[l]==='string'&&SHA.test(String((c.linkedLocalizations as Record<string,unknown>)[l]))),'INVALID_LINKED_LOCALIZATION_DIGESTS');
         if(c.localization!==undefined){
           const l=c.localization;
           assert(isObject(l)&&typeof l.parts==='number'&&Number.isSafeInteger(l.parts)&&l.parts>0&&l.parts<=100&&
@@ -652,6 +659,18 @@ export async function openPublicItemMaster(
           const v=(release.reviewedRootScalarCoverage as Record<string,unknown>)[k];return typeof v==='number'&&Number.isSafeInteger(v)&&v>=0;
         })&&Number(release.reviewedRootScalarCoverage.existingPairs)+Number(release.reviewedRootScalarCoverage.addedPairs)===release.reviewedRootScalarCoverage.fieldPairs&&
         release.reviewedRootScalarCoverage.identityOccurrences===Number(release.count)*2&&release.reviewedRootScalarCoverage.runtimeSemanticsVerified===false),'INVALID_ROOT_SCALAR_RELEASE');
+    assert((!selected||JSON.stringify(release.linkedLocalizations)===JSON.stringify(selected.complete?.linkedLocalizations))&&
+      (release.linkedLocalizations===undefined||isObject(release.linkedLocalizations)&&
+        Object.keys(release.linkedLocalizations).length===ITEM_MASTER_LOCALES.length&&
+        ITEM_MASTER_LOCALES.every(l=>typeof (release.linkedLocalizations as Record<string,unknown>)[l]==='string'&&SHA.test(String((release.linkedLocalizations as Record<string,unknown>)[l])))&&
+        isObject(release.linkedLocalizationCoverage)&&ID(release.linkedLocalizationCoverage.keyCount)&&
+        release.linkedLocalizationCoverage.allLocalesKeyCount===release.linkedLocalizationCoverage.keyCount&&release.linkedLocalizationCoverage.bucketCount===64&&
+        isObject(release.linkedLocalizationCoverage.localeCounts)&&isObject(release.linkedLocalizationCoverage.sourceArchiveHashes)&&
+        ITEM_MASTER_LOCALES.every(l=>{
+          const c=release.linkedLocalizationCoverage as Record<string,unknown>;
+          return (c.localeCounts as Record<string,unknown>)[l]===c.keyCount&&
+            typeof (c.sourceArchiveHashes as Record<string,unknown>)[l]==='string'&&SHA.test(String((c.sourceArchiveHashes as Record<string,unknown>)[l]));
+        })),'INVALID_LINKED_LOCALIZATION_RELEASE');
     assert((!selected||release.localizationSha256===selected.complete?.localization?.sha256)&&
       (release.localizationSha256===undefined||
         typeof release.localizationSha256==='string'&&SHA.test(release.localizationSha256)&&
@@ -773,6 +792,42 @@ export async function openPublicItemMaster(
     localeCache.set(locale,task);
     try{return await task;}catch(err){localeCache.delete(locale);throw err;}
   }
+  const linkedCache=new Map<string,Promise<ReadonlyMap<string,string>>>();
+  function linkedBucket(key:string):string{
+    const ns=key.split('.',1)[0];let h=2166136261;
+    for(let i=0;i<ns.length;i++)h=Math.imul(h^ns.charCodeAt(i),16777619);
+    return (h&63).toString(16).padStart(2,'0');
+  }
+  async function linkedTable(locale:ItemMasterLocale,bucket:string):Promise<ReadonlyMap<string,string>>{
+    const path='linked-text/'+locale+'/'+bucket+'.json';
+    const previous=linkedCache.get(path);if(previous)return previous;
+    const task=(async()=>{
+      const v=await asset(path);
+      assert(isObject(v)&&v.schema==='wand.item-master.linked-text-block@1'&&v.locale===locale&&v.bucket===bucket&&
+        Array.isArray(v.items)&&v.items.length===m.assets?.[path]?.count,'INVALID_LINKED_TEXT_BLOCK');
+      const table=new Map<string,string>();
+      for(const pair of v.items){
+        assert(Array.isArray(pair)&&pair.length===2&&typeof pair[0]==='string'&&pair[0].length>0&&pair[0].length<=1024&&
+          linkedBucket(pair[0])===bucket&&typeof pair[1]==='string'&&pair[1].trim().length>0&&pair[1].length<=8192&&!table.has(pair[0]),'INVALID_LINKED_TEXT_ROW');
+        table.set(pair[0],pair[1]);
+      }
+      return table as ReadonlyMap<string,string>;
+    })();
+    linkedCache.set(path,task);
+    try{return await task;}catch(err){linkedCache.delete(path);throw err;}
+  }
+  async function getLocalizedKeys(keys:readonly string[],locale:ItemMasterLocale):Promise<readonly (string|null)[]>{
+    assert(ITEM_MASTER_LOCALES.includes(locale),'INVALID_LOCALE');
+    assert(Array.isArray(keys)&&keys.length<=10000&&keys.every(k=>typeof k==='string'&&k.length>0&&k.length<=1024),'INVALID_LOCALIZATION_KEYS');
+    if(!keys.length)return Object.freeze([]);
+    if(!m.linkedLocalizationCoverage){
+      const table=m.localizationCoverage?await localizedTable(locale):null;
+      return Object.freeze(keys.map(k=>table?.get(k)??null));
+    }
+    const groups=[...new Set(keys.map(linkedBucket))],tables=new Map<string,ReadonlyMap<string,string>>();
+    for(let i=0;i<groups.length;i+=8)await Promise.all(groups.slice(i,i+8).map(async b=>{tables.set(b,await linkedTable(locale,b));}));
+    return Object.freeze(keys.map(k=>tables.get(linkedBucket(k))?.get(k)??null));
+  }
   const fieldReader=createItemFieldReader(m.count,m.assets,asset);
   async function localizedItems(ids:readonly number[],locale:ItemMasterLocale):Promise<readonly (ItemLocalizedTextRecord|null)[]>{
     assert(ITEM_MASTER_LOCALES.includes(locale),'INVALID_LOCALE');
@@ -795,9 +850,15 @@ export async function openPublicItemMaster(
           return typeof key==='string'?[[field,key] as const]:[];
         }));
     }
-    const table=keys.some(row=>row!==null&&row.length>0)?await localizedTable(locale):null;
+    // Resolve unique original keys via the same sparse API used by nested fields.
+    const requested=[...new Set(keys.flatMap(row=>row?.map(([,key])=>key)??[]))];
+    const found=new Map<string,string|null>();
+    for(let i=0;i<requested.length;i+=10000){
+      const batch=requested.slice(i,i+10000),values=await getLocalizedKeys(batch,locale);
+      batch.forEach((k,j)=>found.set(k,values[j]));
+    }
     return Object.freeze(keys.map(row=>row===null?null:deepFreeze(Object.fromEntries(
-      row.map(([field,key])=>[field,{key,text:table?.get(key)??null}])
+      row.map(([field,key])=>[field,{key,text:found.get(key)??null}])
     ))));
   }
   return Object.freeze({
@@ -834,6 +895,7 @@ export async function openPublicItemMaster(
       return (await localizedItems([id],locale))[0]??null;
     },
     getLocalizedItemsText:localizedItems,
+    getLocalizedKeys,
     async getSourceRelations():Promise<CompleteItemMasterRelations>{
       const value=await asset('source-relations.json');
       assert(isObject(value)&&value.schema==='wand.item-master.complete-source-relations@1'&&
