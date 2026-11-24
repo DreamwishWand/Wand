@@ -1564,8 +1564,13 @@
               <div class="items-grid">
                   {#each visibleItems as item,idx (item.itemId)}
                     {@const heading=browseOrder?.group(item.itemId,sourceTopCategory)}
-                    {#if viewAxis==='world'&&heading&&(idx===0||heading.key!==browseOrder?.group(visibleItems[idx-1].itemId,sourceTopCategory)?.key)}
+                    {@const subgroup=browseOrder?.subgroup(item.itemId,sourceTopCategory)}
+                    {@const newHeading=idx===0||heading?.key!==browseOrder?.group(visibleItems[idx-1].itemId,sourceTopCategory)?.key}
+                    {#if viewAxis==='world'&&heading&&newHeading}
                       <h3 class="collection-item-universe-heading">{heading.label}</h3>
+                    {/if}
+                    {#if viewAxis==='world'&&subgroup&&(newHeading||subgroup.key!==browseOrder?.subgroup(visibleItems[idx-1].itemId,sourceTopCategory)?.key)}
+                      <h4 class="collection-item-world-heading">{subgroup.label}</h4>
                     {/if}
                     <div class="item-card" data-item-id={item.itemId} class:current={selectedItemId===item.itemId} class:bulk-selected={selectedIds.includes(item.itemId)}>
                       <button type="button" class="item-card-body"
@@ -1767,6 +1772,7 @@
   .item-card.current,.item-card.bulk-selected{border-color:var(--wand-accent)}
   .collection-category-progress{display:flex;align-items:center;justify-content:space-between;gap:5px;width:100%;font-variant-numeric:tabular-nums}
   .collection-category-percent{color:var(--wand-text);font-weight:600}
+  .collection-item-world-heading{grid-column:1/-1;font-size:11px;font-weight:500;color:var(--wand-muted);margin:3px 0 0;line-height:1.25}
   .collection-item-universe-heading{grid-column:1/-1;font-size:12px;font-weight:600;margin:8px 0 0;line-height:1.3;color:inherit}
   .collection-universe-section-head{margin-bottom:5px}
   @media(max-width:540px){.items-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,94px),1fr));gap:4px}.item-icon{height:64px}.item-card{padding:4px}.item-card-copy strong{font-size:10px}.item-state-toggle{width:22px;height:22px}}
