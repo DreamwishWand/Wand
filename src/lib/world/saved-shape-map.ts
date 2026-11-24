@@ -67,3 +67,16 @@ export function savedShapesAt(map:SavedShapeMap,ordinal:number,x:number,y:number
     return shape?shape.runs.some(r=>r.y===dy&&dx>=r.x&&dx<r.x+r.width):dx===0&&dy===0;
   });
 }
+
+/** Render only objects intersecting the current camera window. Keep painter order,
+ * a small overscan for strokes/anchors, and the active selection. Search, picking,
+ * overlap checks and the writer still use the complete Grid. */
+export function visibleSavedObjects(objects:readonly SavedShapeObject[],shapes:SavedShapeMap['shapes'],
+    view:{x:number;y:number;w:number;h:number},selected:number|null):SavedShapeObject[]{
+  const left=view.x-1,top=view.y-1,right=view.x+view.w+1,bottom=view.y+view.h+1;
+  return objects.filter(o=>{
+    if(o.localOrdinal===selected)return true;
+    const shape=o.shapeKey?shapes[o.shapeKey]:null;
+    return o.x<right&&o.y<bottom&&o.x+(shape?.width??1)>left&&o.y+(shape?.height??1)>top;
+  });
+}

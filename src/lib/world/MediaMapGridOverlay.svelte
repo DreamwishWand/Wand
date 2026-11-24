@@ -346,17 +346,19 @@
   .map-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px}
   .file-label{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;max-width:100%}
   input[type=file]{max-width:100%;min-width:0;width:240px;font:inherit}
-  .map-tools button{font:inherit;color:inherit;background:#ffffff12;border:1px solid #ffffff30;border-radius:5px;padding:5px}
-  .map{padding:0;background:#181620;border:1px solid #ffffff24;border-radius:7px;width:100%;min-width:0;overflow:hidden;line-height:0;cursor:crosshair}
+  .map-tools button{font:inherit;color:inherit;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:5px;padding:5px}
+  .map{padding:0;background:#181620;border:1px solid var(--wand-line);border-radius:7px;width:100%;min-width:0;overflow:hidden;line-height:0;cursor:crosshair}
   .map.zoomed{touch-action:none}
   svg{display:block;width:100%;height:auto;max-height:75vh}
   .cell-mask{image-rendering:pixelated}
   .grid-lines,.placement-cell,.source-map-object{pointer-events:none}
   .camera-tools,.object-picker,.layer-tools{display:flex;flex-wrap:wrap;gap:5px}
-  .camera-tools button,.object-picker button,.layer-tools button,.anchor-open{font:inherit;font-size:12px;color:inherit;background:#ffffff12;border:1px solid #ffffff30;border-radius:5px;padding:5px 8px}
-  .object-picker .chosen,.layer-tools .chosen{border-color:#9cc9f3;background:#6c9bc944}
-  .selected-object{color:#d6eaff}
+  .camera-tools button,.object-picker button,.layer-tools button,.anchor-open{font:inherit;font-size:12px;color:inherit;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:5px;padding:5px 8px}
+  .object-picker .chosen,.layer-tools .chosen{border-color:var(--wand-accent);background:var(--wand-header-hover);color:var(--wand-text);box-shadow:inset 0 0 0 1px var(--wand-accent)}
+  .selected-object{color:var(--wand-text)}
+  button:not(:disabled):not(.map):not(.chosen):hover{background:var(--wand-header-hover)}
+  button:focus-visible,input:focus-visible{outline:2px solid var(--wand-focus);outline-offset:2px}
   .preview-tools{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:12px}
-  .preview-tools button{font:inherit;color:inherit;background:#ffffff12;border:1px solid #ffffff30;border-radius:5px;padding:5px}
-  p{font-size:11px;color:#b9abc7;margin:0}
+  .preview-tools button{font:inherit;color:inherit;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:5px;padding:5px}
+  p{font-size:11px;color:var(--wand-muted);margin:0}
 </style>

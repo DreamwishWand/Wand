@@ -10,6 +10,7 @@
   export let timeline=emptyWorldTimeline();
   export let terrain:TerrainBinding|null=null;
   export let compact=false;
+  export let terrainDisplayed=false;
   export let available=false;
   export let working=false;
   export let errorMessage='';
@@ -65,7 +66,7 @@
   }
 </script>
 
-<div class="saved-candidate-view" aria-label="セーブ内の原本参照候補">
+<div class="saved-candidate-view" class:compact aria-label="セーブ内の原本参照候補">
   {#if !compact}<div class="actions">
     <h2>現在のセーブの座標</h2>
     <button type="button" on:click={onCompare} disabled={!available||working}>
@@ -90,7 +91,7 @@
       {/if}
     </div>{/if}
     {#if receipt.points.length>0}
-      {#if shapeMap}<SavedShapePlot map={shapeMap} {file} {terrain} {compact} bind:timeline/>
+      {#if shapeMap}<SavedShapePlot map={shapeMap} {file} {terrain} {compact} bind:timeline bind:terrainDisplayed/>
       {:else if new Set(receipt.points.map(p=>p.localGridOrdinal)).size===1}<div class="numeric-map">
         <canvas use:draw={receipt}
           aria-label="セーブ内の参照パス一致候補のX/Y数値座標図。地形図ではありません"></canvas>
@@ -113,16 +114,19 @@
 </div>
 
 <style>
-  .saved-candidate-view{margin:15px 0;display:grid;gap:11px;padding:13px;min-width:0;max-width:100%;background:#191524;border:1px solid #ffffff30;border-radius:10px}
+  .saved-candidate-view{margin:15px 0;display:grid;gap:11px;padding:13px;min-width:0;max-width:100%;background:var(--wand-card);color:var(--wand-text);border:1px solid var(--wand-line);border-radius:10px}
+  .saved-candidate-view.compact{margin:0;padding:0;background:none;border:0;border-radius:0;gap:6px}
   .actions{display:flex;justify-content:space-between;align-items:center;gap:9px;flex-wrap:wrap}
-  h2{font-size:14px;margin:0;color:#f0e5fa}
-  .actions button{border:1px solid #b398ce;background:#372548;color:#f4e5ff;padding:8px 11px;border-radius:8px;font:inherit;font-size:12px}
+  h2{font-size:14px;margin:0;color:var(--wand-text)}
+  .actions button{border:1px solid var(--wand-line);background:var(--wand-menu);color:var(--wand-text);padding:8px 11px;border-radius:8px;font:inherit;font-size:12px}
   .actions button:not(:disabled){cursor:pointer}
+  .actions button:not(:disabled):hover{background:var(--wand-header-hover)}
+  .actions button:focus-visible{outline:2px solid var(--wand-focus);outline-offset:2px}
   .actions button:disabled{opacity:.55}
-  .summary{display:flex;gap:9px 16px;flex-wrap:wrap;font-size:11px;color:#c7bad5}
-  .summary strong{color:#f3e5fb;font-size:13px;font-variant-numeric:tabular-nums}
+  .summary{display:flex;gap:9px 16px;flex-wrap:wrap;font-size:11px;color:var(--wand-muted)}
+  .summary strong{color:var(--wand-text);font-size:13px;font-variant-numeric:tabular-nums}
   .numeric-map{display:grid;place-items:center;min-width:0;background:#10121d;border-radius:7px;padding:7px}
   .numeric-map canvas{display:block;max-width:100%;height:auto;width:520px;image-rendering:auto}
-  .axis,.note,.warning{font-size:11px;line-height:1.6;color:#afa0bf;margin:0;overflow-wrap:anywhere}
-  .warning{color:#d2b8c8}
+  .axis,.note,.warning{font-size:11px;line-height:1.6;color:var(--wand-muted);margin:0;overflow-wrap:anywhere}
+  .warning{color:var(--wand-text)}
 </style>

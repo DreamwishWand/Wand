@@ -22,6 +22,7 @@
   let boundOrdinals:readonly number[]=[];
   let sourceFile:File|null=null;
   let terrainBinding:TerrainBinding|null=null;
+  let terrainDisplayed=false;
   $: terrainBinding=selected&&raster&&boundOrdinals.length?{raster,factor:selected.factor,verifiedGridOrdinals:boundOrdinals}:null;
   let loading=true,comparing=false,error='',compareError='',locale:WandLanguage='ja';
   let cell:{x:number;y:number;value:number}|null=null;
@@ -41,9 +42,9 @@
   }
   const scopeNames:Record<string,string>={Village04:'Dreamlight Valley',VillageExpansion01:'Eternity Isle',VillageExpansion02:'Storybook Vale',VillageExpansion03:'Wishblossom Ranch',VillageExpansion04:'Expansion 4',VillageExpansion04UnderwaterAreas:'Underwater areas',VillageWinnieDLC:'Honeywood',FloatingIslands:'Floating Islands'};
   function chooseScope(value:string){worldScope=value;const first=grids.find(g=>g.scope===value);if(first)openGrid(first);}
-  function clearCompare(){compare?.terminate();compare=null;compareRequest++;shapeRequest=-1;receipt=null;shapeMap=null;boundOrdinals=[];sessions=[];comparing=false;compareError='';}
+  function clearCompare(){terrainDisplayed=false;compare?.terminate();compare=null;compareRequest++;shapeRequest=-1;receipt=null;shapeMap=null;boundOrdinals=[];sessions=[];comparing=false;compareError='';}
   function selectSaveGrid(grid:Grid|null){
-    shapeRequest=-1;receipt=null;shapeMap=null;boundOrdinals=[];compareError='';
+    terrainDisplayed=false;shapeRequest=-1;receipt=null;shapeMap=null;boundOrdinals=[];compareError='';
     if(!grid||!sourceFile){comparing=false;return;}
     if(compare){comparing=true;return;}
     const scoped=sessions.find(s=>s.receipt.viewKey===grid.key);
@@ -119,13 +120,13 @@
   {#if error}<p role="alert">{error}</p>{/if}
   {#if selected&&raster}
     <div class="workspace-grid">
-      {#if !shapeMap||!terrainBinding}<div class="terrain-side">
+      {#if !shapeMap||!terrainDisplayed}<div class="terrain-side">
         <MediaMapGridOverlay initialSchematic compact
           selection={{platform:'Steam',gameVersion:'1.26.2',regionKey:selected.scope,viewKey:selected.key,layoutId:selected.layoutId,nativeGridId:selected.gridIdNative,gridDataPath:selected.gridDataPath,sizeX:selected.sizeX,sizeY:selected.sizeY}}
           {raster} canNavigate onNavigate={selectCell} onInspect={selectCell}/>
         <p class="note">原本地形・各マスの属性。設置可否は未確定。{cell?' ('+cell.x+', '+cell.y+')':''}</p>
       </div>{/if}
-      <SavedGridSourceCandidates compact shapeMap={shapeMap} terrain={terrainBinding} file={$localSaveSession.file} bind:timeline
+      <SavedGridSourceCandidates compact shapeMap={shapeMap} terrain={terrainBinding} file={$localSaveSession.file} bind:timeline bind:terrainDisplayed
         {receipt} available={Boolean($localSaveSession.file)} working={comparing} errorMessage={compareError}
         onCompare={()=>openSaveSession($localSaveSession.file,grids)}/>
     </div>
@@ -137,8 +138,10 @@
   header{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
   h1{font-size:18px;margin:0}small,a,.note{font-size:12px;color:var(--wand-muted,#b9abc7)}
   nav{display:flex;flex-wrap:wrap;gap:5px}
-  nav button,nav select{font:inherit;padding:6px 10px;color:inherit;background:var(--wand-panel,#292337);border:1px solid var(--wand-line,#66577c);border-radius:6px}
-  nav button[aria-pressed=true]{border-color:var(--wand-accent,#d1b8ff)}
+  nav button,nav select{font:inherit;padding:6px 10px;color:inherit;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:6px}
+  nav button[aria-pressed=true]{border-color:var(--wand-accent);background:var(--wand-header-hover);color:var(--wand-text);box-shadow:inset 0 0 0 1px var(--wand-accent)}
+  nav button:not([aria-pressed=true]):hover{background:var(--wand-header-hover)}
+  nav button:focus-visible,nav select:focus-visible{outline:2px solid var(--wand-focus);outline-offset:2px}
   .workspace-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:start}
   .terrain-side{min-width:0}.note{margin:0}
   @media(max-width:850px){.workspace-grid{grid-template-columns:minmax(0,1fr)}}

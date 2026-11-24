@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {sourceMapLayer,sourceSurfaceCapable,matchesSelectionLayer,mapPainterOrder,prioritizeMapHits} from '../src/lib/world/source-map-layers.ts';
 import {worldObjectName,searchSavedObjects,objectFocus} from '../src/lib/world/world-object-search.ts';
-import {defaultMapCamera,maxMapZoom,zoomMapCamera,panMapCamera,mapCameraViewBox} from '../src/lib/world/map-camera.ts';
+import {defaultMapCamera,maxMapZoom,zoomMapCamera,panMapCamera,mapCameraViewBox,mapViewportBounds} from '../src/lib/world/map-camera.ts';
 import {emptyWorldTimeline,currentWorldEdits,projectWorldEdits,stageWorldEdit,travelWorldTimeline} from '../src/lib/world/saved-map-batch.ts';
 import {savedDraftOverlap} from '../src/lib/world/saved-draft-overlap.ts';
 import {draftSavedMapTransform,worldTransformEligible,exclusiveAnchorClass,exclusiveAnchorConflict} from '../src/lib/world/saved-map-transform.ts';
-import {buildSavedShapeMap,savedGridObjects,savedShapesAt} from '../src/lib/world/saved-shape-map.ts';
+import {buildSavedShapeMap,savedGridObjects,savedShapesAt,visibleSavedObjects} from '../src/lib/world/saved-shape-map.ts';
 import {buildSourceObjectMap,sourceObjectsAt,sourceOrientationAngle,sourceShapeIntersections} from '../src/lib/world/source-object-map.ts';
 const L='SceneLayouts/Village04/Fixture.json',P='GridData/Village04/Fixture.json';
 const row=(id,itemId,x,y,orientationCode)=>({layoutId:L,gridIdNative:7,gridObjectIdNative:id,itemId,x,y,orientationCode});
@@ -204,4 +204,15 @@ test('placed-object search uses exact localized names with source fallback and f
   const c=objectFocus(map,map.objects[0],{x:0,y:0,w:100,h:100},64);
   assert.equal(c.zoom,12.5);
   assert.equal(c.x,.11);assert.equal(c.y,.205);
+});
+
+test('saved viewport retains partially visible footprints, overscan and selection without filtering search',()=>{
+  const p=(localOrdinal,x,y,itemId='100')=>({localOrdinal,localGridOrdinal:1,x,y,orientation:'GridOrientation_Down',itemId});
+  const m=buildSavedShapeMap(fixture(),L,7,[p(1,8,10),p(2,12,12),p(3,35,35),p(4,40,40,'999'),p(5,14,13,'999')]);
+  const view=mapViewportBounds({zoom:4,x:.375,y:.375},{x:0,y:0,w:40,h:40});
+  assert.deepEqual(view,{x:10,y:10,w:10,h:10});
+  assert.deepEqual(visibleSavedObjects(m.objects,m.shapes,view,4).map(o=>o.localOrdinal),[1,2,4,5]);
+  assert.deepEqual(visibleSavedObjects(m.objects,m.shapes,view,null).map(o=>o.localOrdinal),[1,2,5]);
+  assert.equal(searchSavedObjects(m.objects,new Map(),'','all').length,5);
+  assert.equal(savedShapesAt(m,1,35,35)[0].localOrdinal,3);
 });
