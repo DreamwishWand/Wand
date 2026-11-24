@@ -362,7 +362,30 @@ export type NativeAcquisitionCandidate=readonly [sourceItemId:number,role:Native
  * Distinguish absence, an explicit empty message, currency-only and amount.
  * A currency in Price is kept independent of the outer Currency override.
  */
+/** Source-defined result of the audited native matching-currency lookup.
+ * Not proof that a player may purchase the item, that a particular shop
+ * stocks it, or that any transaction was observed.
+ */
+export interface NativeExplicitPurchaseOverride {
+  readonly kind:'matching_currency_explicit_override';
+  readonly currencyItemId:number;
+  readonly amount:number;
+  readonly nativeLookupBranchVerified:true;
+  readonly precedesPriceProviders:true;
+  readonly liveTransactionVerified:false;
+  readonly sourceGameVersion:'1.26.2';
+}
+function hasAuditedNativePurchaseRule(release:ItemMasterRelease):boolean {
+  return release.target.platform==='Steam'&&release.target.gameVersion==='1.26.2'&&
+    release.sourceIl2cppDumpSha256==='0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08'&&
+    release.sourceFilesSha256?.Furniture==='cde1b6e4dd37085e829c2e4548b89091bbf8d543cee92e6031b2f5bddc794196'&&
+    release.sourceFilesSha256?.Clothing==='a327869947785d3bbe0455b6132873b63878cb6cbb8dbd4cd00f76b294d1e946';
+}
+const AUDITED_PRICE_OVERRIDE_CLASSES=new Set(['FurnitureItemData','ClothingItemData',
+  'FenceAndRoadItemData','LandscapingItemData']);
 export interface ConfiguredItemPriceOverride {
+  /** Conditional result of the audited native purchase lookup, independent of current stock. */
+  readonly nativePurchaseOverride:Readonly<NativeExplicitPurchaseOverride>|null;
   readonly itemId:number;
   readonly status:'not_recorded'|'empty'|'currency_only'|'amount_configured'|'incomplete';
   readonly overrideCurrencyItemId:number|null;
@@ -967,7 +990,9 @@ export async function openPublicItemMaster(
     async getConfiguredPriceOverrides(ids:readonly number[]){
       const field='source.PriceOverride' as const;
       const catalog=await fieldReader.getFieldCatalog();
-      const rows=await fieldReader.getItemFields(ids,catalog.some(x=>x.field===field)?[field]:['itemId']);
+      const nativeRule=hasAuditedNativePurchaseRule(m)&&catalog.some(x=>x.field==='sourceClass');
+      const fields=catalog.some(x=>x.field===field)?[field,...(nativeRule?['sourceClass']:[])]:['itemId'];
+      const rows=await fieldReader.getItemFields(ids,fields);
       return Object.freeze(rows.map(row=>{
         if(row===null)return null;
         const raw=row.values[field];
@@ -985,11 +1010,19 @@ export async function openPublicItemMaster(
         const unexpected=Object.keys(override).some(k=>k!=='Currency'&&k!=='Price')||
           Object.keys(cost).some(k=>k!=='Id'&&k!=='Amount');
         const status:ConfiguredItemPriceOverride['status']=!exists?'not_recorded':
-          unexpected?'incomplete':price!==undefined
+          unexpected||currency!==undefined&&price!==undefined?'incomplete':price!==undefined
             ?(priceCurrency!==undefined&&amount!==undefined?'amount_configured':'incomplete')
             :currency!==undefined?'currency_only':'empty';
+        const nativePurchaseOverride:Readonly<NativeExplicitPurchaseOverride>|null=
+          nativeRule&&status==='amount_configured'&&typeof row.values.sourceClass==='string'&&
+          AUDITED_PRICE_OVERRIDE_CLASSES.has(row.values.sourceClass)&&ID(priceCurrency)&&
+          typeof amount==='number'&&Number.isSafeInteger(amount)&&amount>=0&&amount<=2147483647
+            ?Object.freeze({kind:'matching_currency_explicit_override',currencyItemId:priceCurrency,
+              amount,nativeLookupBranchVerified:true,precedesPriceProviders:true,
+              liveTransactionVerified:false,sourceGameVersion:'1.26.2'})
+            :null;
         return Object.freeze({
-          itemId:row.itemId,status,overrideCurrencyItemId:currency??null,
+          nativePurchaseOverride,itemId:row.itemId,status,overrideCurrencyItemId:currency??null,
           priceCurrencyItemId:priceCurrency??null,amount:amount??null,
           sourceField:field,currentPurchasePriceVerified:false as const,
           currentRepurchasePriceVerified:false as const,currentSellPriceVerified:false as const
