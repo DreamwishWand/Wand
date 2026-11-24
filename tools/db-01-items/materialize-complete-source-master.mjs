@@ -285,6 +285,11 @@ function buildReferenceColumns(rows){
         return;
       }
       if(/ItemIds?$/i.test(name))emit(value,path);
+      else if(row.nativeCategory==='DutyAch'&&/^source\.Milestones\[\d+\]\.RewardItem$/.test(path)){
+        check(ID(value)&&ids.has(value),'MILESTONE_REWARD_TARGET');emit(value,path);
+      }else if(row.nativeCategory==='Mission'&&/^source\.RewardsXP\.Currency\[\d+\]\.CurrencyId$/.test(path)){
+        check(categories.get(value)==='Currency','MISSION_CURRENCY_TARGET');emit(value,path);
+      }
     };
     for(const props of [row.nativeProperties,row.sourceAttributes??{}]){
       for(const [key,value] of Object.entries(props)){
