@@ -89,3 +89,22 @@ test('world grouping and progress preserve exact scoped Item IDs',async()=>{
     assert(all.progressTotals.get(root)<ids.length,'cosmetics do not inflate base entity completion');
   }
 });
+
+test('meals use one contiguous kind section, then contiguous world sections',async()=>{
+  const {index}=await loadCompleteCollection('/Wand',fetcher);
+  const ids=index.itemsByRoot.get('meals')??[];
+  const order=makeCollectionBrowseOrder(index,'ja',false);
+  const sorted=ids.map(itemId=>({itemId})).sort(order.compare);
+  const groups=new Map();let lastKind='',lastWorld='';
+  for(const row of sorted){
+    const kind=order.group(row.itemId,'meals').key;
+    const world=order.subgroup(row.itemId,'meals').key;
+    if(kind!==lastKind){assert(!groups.has(kind),'meal kinds must not repeat');groups.set(kind,new Set());lastKind=kind;lastWorld='';}
+    if(world!==lastWorld){assert(!groups.get(kind).has(world),'world must not repeat within kind');groups.get(kind).add(world);lastWorld=world;}
+  }
+  assert.equal(new Set(sorted.map(row=>row.itemId)).size,ids.length);
+  assert(groups.size>=3,'source must distinguish at least three meal types');
+  const scoped=makeCollectionBrowseOrder(index,'ja',false,'IsDreamlightValley');
+  assert(sorted.every(row=>scoped.subgroup(row.itemId,'meals')===null));
+  console.log('COLLECTION_MEAL_GROUPS '+JSON.stringify([...groups].map(([kind,worlds])=>[kind,[...worlds]])));
+});
