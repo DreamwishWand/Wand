@@ -7,7 +7,9 @@ on:
       - 'src/lib/world/**'
       - 'crates/wand-world-core/**'
       - 'crates/wand-world-core/**'
-      - 'src/routes/world/preview/**'
+      - 'src/routes/world/**'
+      - 'static/ddv/world/**'
+      - 'tests/world-public-terrain.test.mjs'
       - 'tests/world.test.mjs'
       - 'tests/world-local-snapshot.test.mjs'
       - 'tests/world-preview-views.test.mjs'
@@ -66,7 +68,9 @@ on:
     paths:
       - 'tools/db-04-world/**'
       - 'src/lib/world/**'
-      - 'src/routes/world/preview/**'
+      - 'src/routes/world/**'
+      - 'static/ddv/world/**'
+      - 'tests/world-public-terrain.test.mjs'
       - 'tests/world.test.mjs'
       - 'tests/world-local-snapshot.test.mjs'
       - 'tests/world-preview-views.test.mjs'
@@ -116,6 +120,8 @@ jobs:
         with:
           node-version: '22'
       - uses: dtolnay/rust-toolchain@stable
+      - name: Test published mainland terrain projection
+        run: node --experimental-strip-types --test tests/world-public-terrain.test.mjs
       - name: Test Rust World archive verifier
         run: cargo test --manifest-path crates/wand-world-core/Cargo.toml
       - name: Install pinned native disassembler for synthetic CI fixtures

@@ -1,7 +1,7 @@
 //! Local-only original DB-04 ZIP reader. This is NOT a Save codec,
 //! a native-source authenticity proof, or a World placement validator.
 //! All byte processing, decompression and source SHA-256 checks are in Rust.
-use flate2::read::DeflateDecoder;
+use flate2::read::{DeflateDecoder,ZlibDecoder};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -429,8 +429,54 @@ impl Default for WasmWorldZipReader {
     fn default() -> Self { Self::new() }
 }
 
+/// Public source-derived Y-major palette projection. It is not a runtime
+/// occupancy map or a universal furniture permission bitmap.
+fn decode_terrain_projection(compressed:&[u8],palette:&[u32],counts:&[u32],
+    sx:u32,sy:u32,sha:&str)->DecodeResult<Vec<u32>>{
+    let cells=(sx as usize).checked_mul(sy as usize).ok_or_else(||bad("terrain dimensions"))?;
+    if sx==0||sy==0||cells>250_000||palette.is_empty()||palette.len()>256||
+        counts.len()!=palette.len()||palette.windows(2).any(|v|v[0]>=v[1])||
+        counts.iter().map(|v|*v as u64).sum::<u64>()!=cells as u64||
+        compressed.is_empty()||compressed.len()>1_000_000||sha.len()!=64{
+        return Err(bad("invalid terrain projection"));
+    }
+    let mut indices=Vec::with_capacity(cells);
+    ZlibDecoder::new(compressed).take(cells as u64+1).read_to_end(&mut indices)
+        .map_err(|_|bad("terrain inflate failed"))?;
+    if indices.len()!=cells||format!("{:x}",Sha256::digest(&indices))!=sha{
+        return Err(bad("terrain digest or size mismatch"));
+    }
+    let mut observed=vec![0u32;palette.len()];
+    let mut raster=Vec::with_capacity(cells);
+    for i in indices{
+        let index=i as usize;
+        let value=*palette.get(index).ok_or_else(||bad("terrain palette index"))?;
+        observed[index]+=1;raster.push(value);
+    }
+    if observed!=counts{return Err(bad("terrain histogram mismatch"));}
+    Ok(raster)
+}
+#[wasm_bindgen]
+pub fn decode_public_terrain(compressed:&[u8],palette:&[u32],counts:&[u32],
+    sx:u32,sy:u32,sha:&str)->Result<Vec<u32>,JsValue>{
+    decode_terrain_projection(compressed,palette,counts,sx,sy,sha)
+        .map_err(|e|JsValue::from_str(&e))
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn public_terrain_rejects_invalid_digest_and_histogram(){
+        use std::io::Write;
+        let indices=[0u8,1,1,0,2,1];
+        let mut encoder=flate2::write::ZlibEncoder::new(Vec::new(),flate2::Compression::best());
+        encoder.write_all(&indices).unwrap();let bytes=encoder.finish().unwrap();
+        let hash=format!("{:x}",Sha256::digest(indices));
+        assert_eq!(decode_terrain_projection(&bytes,&[0,4,512],&[2,3,1],3,2,&hash).unwrap(),vec![0,4,4,0,512,4]);
+        assert!(decode_terrain_projection(&bytes,&[0,4,512],&[3,2,1],3,2,&hash).is_err());
+        assert!(decode_terrain_projection(&bytes,&[0,4,512],&[2,3,1],3,2,&"0".repeat(64)).is_err());
+    }
+
     use super::*;
 
     #[test]

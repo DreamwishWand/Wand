@@ -18,6 +18,8 @@
   export let objectMap:SourceObjectMap|null=null;
   export let selectedItemId:number|null=null;
   export let orientationCode=8;
+  export let initialSchematic=false;
+  export let compact=false;
   export let active=false;
   export let terrainMapActive=false;
   export let canNavigate=false;
@@ -28,7 +30,7 @@
   let svg:SVGSVGElement;
   let shown=true,loading=false,error='';
   let revision=0;
-  let schematic=false,showObjects=true;
+  let schematic=initialSchematic,showObjects=true;
   let selectionLayer:MapSelectionLayer='all';
   let selectedObjectId:number|null=null;
   let hits:SourceMapObject[]=[];
@@ -208,16 +210,16 @@
 
 <div class="media-map-overlay">
   <div class="map-tools">
-    <label class="file-label">マップ画像と座標対応JSON
+    {#if !compact}<label class="file-label">マップ画像と座標対応JSON
       <input type="file" multiple accept=".webp,.json" on:change={load} aria-label="MEDIAマップと座標対応JSON"/>
-    </label>
+    </label>{/if}
     {#if asset}
       <button type="button" on:click={reset}>解除</button>
     {/if}
-    {#if raster}<button type="button" on:click={()=>{schematic=!schematic;resetCamera();}}>{schematic?'簡略マップを閉じる':'簡略マップ'}</button>{/if}
+    {#if raster&&!compact}<button type="button" on:click={()=>{schematic=!schematic;resetCamera();}}>{schematic?'簡略マップを閉じる':'簡略マップ'}</button>{/if}
     {#if active}
       <label><input type="checkbox" bind:checked={shown}/> マス表示</label>
-      <label><input type="checkbox" bind:checked={showObjects}/> 原本オブジェクト</label>
+      {#if !compact}<label><input type="checkbox" bind:checked={showObjects}/> 原本オブジェクト</label>{/if}
     {/if}
   </div>
   {#if loading}<p role="status">マップ読み込み中…</p>
@@ -287,7 +289,7 @@
       </svg>
     </button>
     {#if anchorSpace}<p>原本の配置座標専用図（地形・MEDIA座標とは未照合）。</p>
-    {:else if schematic}<p>原本Gridの簡略図（ワールド上の位置・地形画像は未対応）。</p>{/if}
+    {:else if schematic&&!compact}<p>原本Gridの簡略図（ワールド上の位置・地形画像は未対応）。</p>{/if}
     {#if showObjects&&activeObjects}
       <p>原本の初期配置 {activeObjects.objects.length}/{activeObjects.totalCount}件
         {#if activeObjects.unresolvedCount}・形状不明 {activeObjects.unresolvedCount}件{/if}
@@ -333,7 +335,7 @@
       </div>
       <p>赤：床属性不一致・原本Grid範囲外。灰：ゲーム内配置判定未確認。クリックで固定、矢印キーで移動。</p>
     {/if}
-    {#if !anchorSpace}<p>{candidateMask?'緑：家具形状と床属性の一致候補':'地形属性マスク'}。原本GridData座標のみ。
+    {#if !anchorSpace&&!compact}<p>{candidateMask?'緑：家具形状と床属性の一致候補':'地形属性マスク'}。原本GridData座標のみ。
       読み込んだ座標対応情報の正しさと実際の設置可否は未検証です。</p>{/if}
   {:else if asset}
     <p>選択中のGridに対応する座標情報がありません。</p>
