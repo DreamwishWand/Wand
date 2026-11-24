@@ -30,7 +30,22 @@ export interface CompleteItemMasterOpenOptions {
   /** Internal current product storage, not a game-version choice. */
   readonly contentAddressed?: true;
 }
+export interface ItemMasterAcquisitionPins {
+  readonly summarySha256:string;
+  readonly relationsSha256:string;
+}
+export interface ItemMasterAcquisitionProjection extends ItemMasterAcquisitionPins {
+  readonly sourceGameVersion:string;
+  readonly summaryCount:number;
+  readonly relationCount:number;
+  readonly sourceOnlySummaryCount:number;
+  readonly sourceOnlyRelationCount:number;
+  readonly sourceLinks:number;
+  readonly currentAvailabilityVerified:false;
+  readonly coverageComplete:false;
+}
 export interface ItemMasterCompleteRelease {
+  readonly acquisitionProjection?:Readonly<ItemMasterAcquisitionPins>;
   readonly release: string;
   readonly count: number;
   readonly archiveSha256: string;
@@ -262,6 +277,7 @@ export interface CompleteItemMasterRelations {
   readonly gameRuntimeMembershipVerified: false;
 }
 export interface ItemMasterRelease {
+  readonly acquisitionProjection?:Readonly<ItemMasterAcquisitionProjection>;
   readonly schema: 'wand.item-master.release@1';
   readonly version: string;
   readonly target: Readonly<{platform:'Steam';gameVersion:string}>;
@@ -548,6 +564,11 @@ export async function openPublicItemMaster(
           typeof c.archiveSha256==='string'&&SHA.test(c.archiveSha256)&&
           typeof c.parts==='number'&&Number.isSafeInteger(c.parts)&&c.parts>0&&c.parts<=100,
           'INVALID_COMPLETE_RELEASE');
+        assert(c.acquisitionProjection===undefined||isObject(c.acquisitionProjection)&&
+          Object.keys(c.acquisitionProjection).length===2&&
+          typeof c.acquisitionProjection.summarySha256==='string'&&SHA.test(c.acquisitionProjection.summarySha256)&&
+          typeof c.acquisitionProjection.relationsSha256==='string'&&SHA.test(c.acquisitionProjection.relationsSha256),
+          'INVALID_ACQUISITION_PINS');
         assert(c.introductionHistorySha256===undefined||typeof c.introductionHistorySha256==='string'&&SHA.test(c.introductionHistorySha256),'INVALID_INTRODUCTION_HISTORY_DIGEST');
         assert(c.attributesSha256===undefined||
           typeof c.attributesSha256==='string'&&SHA.test(c.attributesSha256),'INVALID_ATTRIBUTE_DIGEST');
@@ -626,6 +647,19 @@ export async function openPublicItemMaster(
       release.sourceFilesVerified===Object.keys(release.sourceFilesSha256).length&&
       Object.values(release.sourceFilesSha256).every(v=>typeof v==='string'&&SHA.test(v)),
       'INVALID_COMPLETE_RELEASE');
+    const ap=release.acquisitionProjection;
+    const pins=selected?.complete?.acquisitionProjection;
+    assert((!selected||Boolean(ap)===Boolean(pins))&&
+      (ap===undefined||isObject(ap)&&ap.sourceGameVersion===gameVersion&&
+        typeof ap.summarySha256==='string'&&SHA.test(ap.summarySha256)&&
+        typeof ap.relationsSha256==='string'&&SHA.test(ap.relationsSha256)&&
+        (!pins||ap.summarySha256===pins.summarySha256&&ap.relationsSha256===pins.relationsSha256)&&
+        [ap.summaryCount,ap.relationCount,ap.sourceOnlySummaryCount,ap.sourceOnlyRelationCount,ap.sourceLinks].every(
+          v=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=0)&&
+        typeof ap.summaryCount==='number'&&ap.summaryCount<=release.count&&
+        typeof ap.relationCount==='number'&&ap.relationCount<=release.count&&
+        ap.currentAvailabilityVerified===false&&ap.coverageComplete===false),
+      'INVALID_ACQUISITION_PROJECTION');
     assert((!selected||release.introductionHistorySha256===selected.complete?.introductionHistorySha256)&&
       (release.introductionHistorySha256===undefined||typeof release.introductionHistorySha256==='string'&&SHA.test(release.introductionHistorySha256)), 'INVALID_INTRODUCTION_HISTORY_RELEASE');
     assert((!selected||release.attributesSha256===selected.complete?.attributesSha256)&&
