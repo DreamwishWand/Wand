@@ -2,6 +2,7 @@
  * A generator flag is not a proof of Scrooge's store membership. Catalog
  * visibility predicates are not grants. Reuse canonical decoded fields only.
  */
+import {buildPurchaseCurrencyFacts} from './purchase-currency-facts.mjs';
 const check=(ok,code)=>{if(!ok)throw Error('DB01_CATALOG_FACTS_'+code)};
 const families={FurnitureItemData:'Furniture',ClothingItemData:'Clothing',TrimmingItemData:'Trimming'};
 const missionKinds=new Set(['MissionAvailable','MissionCompleted','MissionOngoing','MissionStatus',
@@ -124,5 +125,5 @@ export function buildCatalogFacts(source,rows){
       missionIds.size===75,'ORIGINAL_CENSUS_'+JSON.stringify({...totals,missions:missionIds.size}));
   }
   console.log('DB01_CATALOG_FACTS '+JSON.stringify({...totals,missions:missionIds.size}));
-  return {facts,dependents};
+  return {facts,dependents,purchaseCurrencies:buildPurchaseCurrencyFacts(source,rows)};
 }

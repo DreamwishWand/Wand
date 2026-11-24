@@ -1050,6 +1050,11 @@ function writeFieldColumns(rows,release,write,assets,history,acquisition,stallRe
       const refs=[...new Set(catalog.relatedConditions.filter(r=>r.resolved).map(r=>r.targetItemId))].sort((a,b)=>a-b);
       if(refs.length)add('acquisition.catalogGateRelatedItemIds',row.itemId,refs);
     }
+    const purchaseCurrency=catalogFacts.purchaseCurrencies.get(row.itemId);
+    if(purchaseCurrency){
+      add('acquisition.purchaseCurrencySelection',row.itemId,purchaseCurrency);
+      if(purchaseCurrency.serializedFieldPresent)add('acquisition.defaultCurrencyItemId',row.itemId,purchaseCurrency.defaultCurrencyItemId);
+    }
     const gateDependents=catalogFacts.dependents.get(row.itemId);
     if(gateDependents?.length)add('acquisition.catalogGateDependents',row.itemId,gateDependents);
     const stall=stallRelations.get(row.itemId);
