@@ -36,6 +36,7 @@ export interface ItemMasterCompleteRelease {
   readonly attributesSha256?: string;
   readonly nativeSupplementSha256?: string;
   readonly referenceAttributesSha256?: string;
+  readonly reviewedRootArraysSha256?: string;
   readonly localization?: Readonly<{parts:number;sha256:string}>;
 }
 export interface ItemMasterExpandedRelease {
@@ -265,6 +266,8 @@ export interface ItemMasterRelease {
   readonly nativeSupplementCoverage?: Readonly<{strideOverrideCount:number;runtimeSemanticsVerified:false}>;
   readonly referenceAttributesSha256?: string;
   readonly referenceAttributeCoverage?: Readonly<{fields:Readonly<Record<string,number>>;runtimeSemanticsVerified:false}>;
+  readonly reviewedRootArraysSha256?: string;
+  readonly reviewedRootArrayCoverage?: Readonly<{fields:Readonly<Record<string,Readonly<{itemCount:number;valueCount:number;category:string;elementType:string}>>>;runtimeSemanticsVerified:false}>;
   readonly localizationSha256?: string;
   readonly localizationCoverage?: ItemLocalizationCoverage;
   readonly sourceFilesVerified?: number;
@@ -508,6 +511,8 @@ export async function openPublicItemMaster(
           typeof c.nativeSupplementSha256==='string'&&SHA.test(c.nativeSupplementSha256),'INVALID_NATIVE_SUPPLEMENT_DIGEST');
         assert(c.referenceAttributesSha256===undefined||
           typeof c.referenceAttributesSha256==='string'&&SHA.test(c.referenceAttributesSha256),'INVALID_REFERENCE_ATTRIBUTE_DIGEST');
+        assert(c.reviewedRootArraysSha256===undefined||
+          typeof c.reviewedRootArraysSha256==='string'&&SHA.test(c.reviewedRootArraysSha256),'INVALID_ROOT_ARRAY_DIGEST');
         if(c.localization!==undefined){
           const l=c.localization;
           assert(isObject(l)&&typeof l.parts==='number'&&Number.isSafeInteger(l.parts)&&l.parts>0&&l.parts<=100&&
@@ -582,6 +587,15 @@ export async function openPublicItemMaster(
         isObject(release.referenceAttributeCoverage.fields)&&
         Object.values(release.referenceAttributeCoverage.fields).every(n=>typeof n==='number'&&Number.isSafeInteger(n)&&n>=0&&n<=Number(release.count))&&
         release.referenceAttributeCoverage.runtimeSemanticsVerified===false),'INVALID_REFERENCE_ATTRIBUTE_RELEASE');
+    assert((!selected||release.reviewedRootArraysSha256===selected.complete?.reviewedRootArraysSha256)&&
+      (release.reviewedRootArraysSha256===undefined||typeof release.reviewedRootArraysSha256==='string'&&
+        SHA.test(release.reviewedRootArraysSha256)&&isObject(release.reviewedRootArrayCoverage)&&
+        isObject(release.reviewedRootArrayCoverage.fields)&&
+        Object.values(release.reviewedRootArrayCoverage.fields).every(f=>isObject(f)&&
+          typeof f.itemCount==='number'&&Number.isSafeInteger(f.itemCount)&&f.itemCount>0&&f.itemCount<=Number(release.count)&&
+          typeof f.valueCount==='number'&&Number.isSafeInteger(f.valueCount)&&f.valueCount>=f.itemCount&&
+          typeof f.category==='string'&&typeof f.elementType==='string')&&
+        release.reviewedRootArrayCoverage.runtimeSemanticsVerified===false),'INVALID_ROOT_ARRAY_RELEASE');
     assert((!selected||release.localizationSha256===selected.complete?.localization?.sha256)&&
       (release.localizationSha256===undefined||
         typeof release.localizationSha256==='string'&&SHA.test(release.localizationSha256)&&

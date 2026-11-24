@@ -6,7 +6,7 @@
 import {readFileSync,writeFileSync,mkdirSync,mkdtempSync,renameSync,rmSync} from 'node:fs';
 import {join,dirname} from 'node:path';
 import {createHash} from 'node:crypto';
-import {gunzipSync} from 'node:zlib';
+import {gunzipSync,inflateSync} from 'node:zlib';
 
 const hash=b=>createHash('sha256').update(b).digest('hex');
 const SHA=/^[0-9a-f]{64}$/;
@@ -121,10 +121,91 @@ function attachReferenceAttributes(project,e,version,source,byId){
   }
   return {fields,runtimeSemanticsVerified:false};
 }
+// Reviewed packed numeric arrays. The source's type and category are
+// retained; a numeric enum code is not a gameplay interpretation.
+const REVIEWED_ROOT_ARRAYS={
+  Areas:['RecurringEvent','VillageAreaType'],
+  AreasToConsider:['RecurringEvent','VillageAreaType'],
+  AssignablePets:['Character','int'],
+  BoardGameFigurineItemIDs:['Character','int'],
+  Duties:['DutyAch','int'],
+  ForbiddenProfessions:['Character','int'],
+  ForcedAvailableScheduleTypes:['Character','ScheduleType'],
+  HangoutPreferredActivities:['Profession','HangoutActivityType'],
+  IncompatibleWith:['Clothing','ClothingItemType'],
+  ItemsToCheck:['RecurringEvent','int'],
+  ItemsToDeleteAfterMission:['Mission','int'],
+  Locations:['ActivityData','VillageAreaType'],
+  NecessaryCharactersInVillage:['Dialogue','int'],
+  OtherItemsIDs:['Skin','int'],
+  PossibleFlowers:['RecurringEvent','int'],
+  PreferredItemDifficulties:['Character','PreferredItemDifficulty'],
+  SignatureItems:['Character','int'],
+  SlotLootTableItemID:['Building','int'],
+  Slots:['Preference','int'],
+  StallEmployeeItemsIDs:['Skin','int'],
+  StallItemsIDs:['Skin','int'],
+  VillageAreas:['ActivityItem','VillageAreaType']
+};
+function attachReviewedRootArrays(project,e,version,source,byId){
+  if(e.reviewedRootArraysSha256===undefined)return undefined;
+  check(SHA.test(e.reviewedRootArraysSha256),'ROOT_ARRAY_DIGEST');
+  const bytes=readFileSync(join(project,'data/ddv/item-master','reviewed-root-arrays-steam-'+version+'.json'));
+  check(hash(bytes)===e.reviewedRootArraysSha256,'ROOT_ARRAY_SHA');
+  const a=JSON.parse(bytes.toString('utf8'));
+  check(a.schema==='wand.item-master.reviewed-root-arrays@1'&&a.gameVersion===version&&
+    a.sourceItemsSha256===source.sourceItemsSha256&&a.sourceIl2cppDumpSha256===source.sourceIl2cppDumpSha256&&
+    a.fields&&typeof a.fields==='object'&&!Array.isArray(a.fields),'ROOT_ARRAY_RELEASE');
+  const fields={};
+  for(const [key,entry] of Object.entries(a.fields)){
+    const review=Object.hasOwn(REVIEWED_ROOT_ARRAYS,key)?REVIEWED_ROOT_ARRAYS[key]:null;
+    check(review&&entry&&entry.category===review[0]&&entry.elementType===review[1]&&
+      Number.isSafeInteger(entry.count)&&entry.count>0&&entry.count<=byId.size&&
+      Number.isSafeInteger(entry.valueCount)&&entry.valueCount>=entry.count&&
+      typeof entry.packed==='string'&&entry.packed.length<=16*1024*1024,'ROOT_ARRAY_FIELD');
+    const decoded=JSON.parse(inflateSync(Buffer.from(entry.packed,'base64'),{maxOutputLength:32*1024*1024}).toString('utf8'));
+    check(Array.isArray(decoded)&&decoded.length===2&&Number.isSafeInteger(decoded[0])&&
+      decoded[0]>=0&&decoded[0]<=2147483647&&Array.isArray(decoded[1])&&decoded[1].length===entry.count,'ROOT_ARRAY_PAYLOAD');
+    const [base,rows]=decoded;
+    let id=0,valueCount=0;
+    for(const parts of rows){
+      check(Array.isArray(parts)&&parts.length>=2&&ID(parts[0]),'ROOT_ARRAY_ROW');
+      id+=parts[0];
+      const row=byId.get(id);
+      check(ID(id)&&row?.nativeCategory===entry.category&&!Object.hasOwn(row.nativeProperties,key)&&
+        parts.slice(1).every(v=>Number.isSafeInteger(v)&&v>=0&&v<=2147483647-base),'ROOT_ARRAY_VALUE');
+      const values=parts.slice(1).map(v=>v+base),props=row.sourceAttributes??(row.sourceAttributes={});
+      check(!Object.hasOwn(props,key)||JSON.stringify(props[key])===JSON.stringify(values),'ROOT_ARRAY_CONFLICT');
+      props[key]=values;valueCount+=values.length;
+    }
+    check(valueCount===entry.valueCount,'ROOT_ARRAY_VALUE_COUNT');
+    fields[key]={itemCount:entry.count,valueCount,category:entry.category,elementType:entry.elementType};
+  }
+  return {fields,runtimeSemanticsVerified:false};
+}
 // Source-declared ItemID-named numeric fields only. Membership in the same
 // release is required. Do not infer a reference from an arbitrary integer.
+// Reviewed root integer arrays whose names do not always end in ItemID.
+// The owner and target category checks are derived from the same source corpus.
+const REVIEWED_ROOT_REFERENCE_TARGETS={
+  AssignablePets:['Companion','Character'],
+  BoardGameFigurineItemIDs:['BoardGame'],
+  Duties:['DutyAch'],
+  ForbiddenProfessions:['Profession'],
+  ItemsToCheck:['ActivityItem'],
+  ItemsToDeleteAfterMission:['ActivityItem','Furniture'],
+  NecessaryCharactersInVillage:['Character'],
+  OtherItemsIDs:['Building'],
+  PossibleFlowers:['ActivityItem'],
+  SignatureItems:['Clothing','Furniture','Skin','ActivityItem','Tool'],
+  SlotLootTableItemID:['LootTable'],
+  Slots:['Preference'],
+  StallEmployeeItemsIDs:['Character'],
+  StallItemsIDs:['Building']
+};
 function buildReferenceColumns(rows){
-  const ids=new Set(rows.map(r=>r.itemId));
+  const categories=new Map(rows.map(r=>[r.itemId,r.nativeCategory]));
+  const ids=new Set(categories.keys());
   const incoming=new Map(),outgoing=new Map();
   const add=(map,id,edge)=>{
     let list=map.get(id);if(!list){list=[];map.set(id,list);}list.push(edge);
@@ -144,7 +225,18 @@ function buildReferenceColumns(rows){
       if(/ItemIds?$/i.test(name))emit(value,path);
     };
     for(const props of [row.nativeProperties,row.sourceAttributes??{}]){
-      for(const [key,value] of Object.entries(props))walk(value,'source.'+key,key);
+      for(const [key,value] of Object.entries(props)){
+        const path='source.'+key;
+        const reviewed=Object.hasOwn(REVIEWED_ROOT_REFERENCE_TARGETS,key)&&
+          REVIEWED_ROOT_ARRAYS[key][0]===row.nativeCategory&&Array.isArray(value)&&value.every(Number.isSafeInteger);
+        if(reviewed){
+          for(const [i,target] of value.entries()){
+            if(target===0)continue;
+            check(REVIEWED_ROOT_REFERENCE_TARGETS[key].includes(categories.get(target)),'REVIEWED_REFERENCE_TARGET');
+            emit(target,path+'['+i+']');
+          }
+        }else walk(value,path,key);
+      }
     }
     // Already verified native tag fields and Set references are separate
     // canonical evidence. Do not relabel these as acquisition or ownership.
@@ -332,6 +424,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
   const sourceAttributeCoverage=attachAttributes(project,e,version,source,byId);
   const nativeSupplementCoverage=attachNativeSupplement(project,e,version,source,byId);
   const referenceAttributeCoverage=attachReferenceAttributes(project,e,version,source,byId);
+  const reviewedRootArrayCoverage=attachReviewedRootArrays(project,e,version,source,byId);
   const localizations=loadLocalizations(project,e,version,source,byId);
   // Verify no existing public definition is lost or silently replaced.
   for(const [path,raw] of baseFiles){
@@ -467,6 +560,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
     ...(sourceAttributeCoverage?{attributesSha256:e.attributesSha256,sourceAttributeCoverage}:{}),
     ...(nativeSupplementCoverage?{nativeSupplementSha256:e.nativeSupplementSha256,nativeSupplementCoverage}:{}),
     ...(referenceAttributeCoverage?{referenceAttributesSha256:e.referenceAttributesSha256,referenceAttributeCoverage}:{}),
+    ...(reviewedRootArrayCoverage?{reviewedRootArraysSha256:e.reviewedRootArraysSha256,reviewedRootArrayCoverage}:{}),
     ...(localizations?{localizationSha256:e.localization.sha256,localizationCoverage:localizations.coverage}:{}),
     shards:{},assets:{}};
   const root=join(project,'static/ddv/item-master');

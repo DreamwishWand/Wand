@@ -91,3 +91,36 @@ test('source ItemID references are bidirectional and lazy, with paths and valid 
   assert(!requests.some(url=>url.includes('/id/')||url.includes('/text/')||url.includes('/locale/')));
   await assert.rejects(db.getItemReferences(30000031,'other'),/INVALID_REFERENCE_DIRECTION/);
 });
+
+
+test('reviewed root arrays preserve all source values, order and repeats in the common master',async()=>{
+  const requests=[];
+  const db=await openPublicItemMaster('',async url=>{requests.push(url);return fetcher(url)},{scope:'complete'});
+  const fields=db.release.reviewedRootArrayCoverage.fields;
+  assert.equal(Object.keys(fields).length,22);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.itemCount,0),2219);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.valueCount,0),5145);
+  assert.equal(fields.IncompatibleWith.elementType,'ClothingItemType');
+  assert.equal(fields.Locations.elementType,'VillageAreaType');
+  const values=await db.getItemFields([10000001,20100000,50000094,2070000628,2050100000,1510000002],[
+    'source.PreferredItemDifficulties','source.BoardGameFigurineItemIDs',
+    'source.SlotLootTableItemID','source.IncompatibleWith','source.ItemsToDeleteAfterMission',
+    'source.Locations','source.Slots'
+  ]);
+  assert.deepEqual(values[0].values['source.PreferredItemDifficulties'],[1,2,3]);
+  assert.deepEqual(values[0].values['source.BoardGameFigurineItemIDs'],Array(5).fill(180000035));
+  assert.deepEqual(values[1].values['source.SlotLootTableItemID'],[2090000056,2090000052,2090000057,2090000052,2090000058,2090000052]);
+  assert.deepEqual(values[2].values['source.IncompatibleWith'],[13]);
+  assert.deepEqual(values[3].values['source.ItemsToDeleteAfterMission'],[31200032]);
+  assert.deepEqual(values[4].values['source.Locations'],[6]);
+  assert.deepEqual(values[5].values['source.Slots'],[1510100005,1510100005,1510100007]);
+  assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
+  const reverse=await db.findItemIdsByField('source.BoardGameFigurineItemIDs',{kind:'contains',value:180000035});
+  assert(reverse.includes(10000001));
+  const links=await db.getItemReferences(10000001,'outgoing');
+  assert(links.some(([id,path])=>id===180000035&&path==='source.BoardGameFigurineItemIDs[0]'));
+  assert(links.some(([id,path])=>id===180000035&&path==='source.BoardGameFigurineItemIDs[4]'));
+  assert(links.some(([id,path])=>id===50600110&&path==='source.SignatureItems[0]'));
+  assert((await db.getItemReferences(31200032,'incoming')).some(([id,path])=>id===2070000628&&path==='source.ItemsToDeleteAfterMission[0]'));
+  assert((await db.getItemReferences(1510000002,'outgoing')).some(([id,path])=>id===1510100005&&path==='source.Slots[1]'));
+});
