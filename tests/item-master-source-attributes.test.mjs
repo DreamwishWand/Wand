@@ -151,3 +151,29 @@ test('reviewed message trees retain presence, ordered rewards and nested source 
   assert((await db.getItemReferences(80000000,'incoming')).some(([id,p])=>id===2070000672&&p==='source.RewardsXP.Currency[0].CurrencyId'));
   assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
 });
+
+
+test('category-qualified source groups retain schedule and selector structure and reward references',async()=>{
+  const requests=[];
+  const db=await openPublicItemMaster('',async url=>{requests.push(url);return fetcher(url)},{scope:'complete'});
+  const fields=db.release.reviewedMessageGroupCoverage.fields;
+  assert.equal(Object.keys(fields).length,5);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.itemCount,0),760);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.occurrences,0),2362);
+  assert.equal(Object.values(fields).reduce((s,f)=>s+f.leafCount,0),11525);
+  assert.notEqual(fields['Character.DailySchedule'].declaredType,fields['Companion.DailySchedule'].declaredType);
+  const [character,companion,empty,mission]=await db.getItemFields([10000001,120100000,2070000620,2070000628],[
+    'source.DailySchedule','source.FavoriteItem.Item.Item.Item','source.LikeItem.FilterGenerator.CropType','source.AdditionnalRewards'
+  ]);
+  assert.equal(character.values['source.DailySchedule'].length,7);
+  assert.deepEqual(character.values['source.DailySchedule'][0].Schedule[0],{End:5,Location:{Anywhere:{}},Start:3,Type:8});
+  assert.deepEqual(companion.values['source.DailySchedule'][0],{Schedule:[{End:24,Start:12}]});
+  assert.deepEqual(companion.values['source.DailySchedule'][2],{});
+  assert.equal(companion.values['source.FavoriteItem.Item.Item.Item'],30200000);
+  assert.equal(companion.values['source.LikeItem.FilterGenerator.CropType'],2);
+  assert.deepEqual(empty.values['source.AdditionnalRewards'],{});
+  assert.deepEqual(mission.values['source.AdditionnalRewards'].SubLootTables[0],{Items:[{ItemID:30400064}],Max:2,Min:2});
+  assert((await db.getItemReferences(30200000,'incoming')).some(([id,p])=>id===120100000&&p==='source.FavoriteItem.Item.Item.Item'));
+  assert((await db.getItemReferences(2070000628,'outgoing')).some(([id,p])=>id===30400064&&p==='source.AdditionnalRewards.SubLootTables[0].Items[0].ItemID'));
+  assert(!requests.some(url=>url.includes('/id/')||url.includes('/locale/')||url.includes('/text/')));
+});

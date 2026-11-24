@@ -197,31 +197,51 @@ const REVIEWED_MESSAGES={
   ItemList:['RecurringEvent','ItemSpawningRecurringEventItemData.Types.ItemAndWeightList'],
   DefaultItem:['ActivityItem','ItemInstance']
 };
-function numericTree(value,depth=0){
+// Category-qualified reviews permit distinct native schemas for one field name.
+const REVIEWED_MESSAGE_GROUPS={
+  'LootTable.Rewards':['LootTable','Rewards','LootTable'],
+  'Mission.AdditionnalRewards':['Mission','AdditionnalRewards','LootTable'],
+  'Character.DailySchedule':['Character','DailySchedule','RepeatedField<CharacterItemData.Types.DailyScheduleData>'],
+  'Companion.DailySchedule':['Companion','DailySchedule','RepeatedField<CritterItemData.Types.DailyScheduleData>'],
+  'Companion.FavoriteItem':['Companion','FavoriteItem','ItemSelector'],
+  'Companion.LikeItem':['Companion','LikeItem','ItemSelector'],
+  'Building.UpgradeInfo':['Building','UpgradeInfo','RepeatedField<UpgradeData>']
+};
+const REVIEWED_GUID_PATHS=new Set(['UpgradeInfo.PrefabAddress','UpgradeInfo.Store.InteriorPrefabAddress','UpgradeInfo.UpgradeDialogueAddress']);
+function numericTree(value,depth=0,guidPath=null){
+  if(typeof value==='string'){
+    check(REVIEWED_GUID_PATHS.has(guidPath)&&/^guid:[0-9a-f]{32}$/.test(value),'MESSAGE_GUID');
+    return 1;
+  }
   check(depth<=16,'MESSAGE_DEPTH');
   if(typeof value==='boolean'||typeof value==='number'&&Number.isFinite(value)&&Math.abs(value)<2**53)return 1;
-  if(Array.isArray(value))return value.reduce((n,v)=>n+numericTree(v,depth+1),0);
+  if(Array.isArray(value))return value.reduce((n,v)=>n+numericTree(v,depth+1,guidPath),0);
   check(value!==null&&typeof value==='object','MESSAGE_VALUE');
   let n=0;
   for(const [k,v] of Object.entries(value)){
     check(/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)&&!['__proto__','constructor','prototype'].includes(k),'MESSAGE_KEY');
-    n+=numericTree(v,depth+1);
+    n+=numericTree(v,depth+1,guidPath===null?null:guidPath+'.'+k);
   }
   return n;
 }
-function attachReviewedMessages(project,e,version,source,byId){
-  if(e.reviewedMessagesSha256===undefined)return undefined;
-  check(SHA.test(e.reviewedMessagesSha256),'MESSAGE_DIGEST');
-  const bytes=readFileSync(join(project,'data/ddv/item-master','reviewed-messages-steam-'+version+'.json'));
-  check(hash(bytes)===e.reviewedMessagesSha256,'MESSAGE_SHA');
+function attachReviewedMessages(project,e,version,source,byId,grouped=false){
+  const digest=grouped?e.reviewedMessageGroupsSha256:e.reviewedMessagesSha256;
+  const base=grouped?'reviewed-message-groups':'reviewed-messages';
+  if(digest===undefined)return undefined;
+  check(SHA.test(digest),'MESSAGE_DIGEST');
+  const bytes=readFileSync(join(project,'data/ddv/item-master',base+'-steam-'+version+'.json'));
+  check(hash(bytes)===digest,'MESSAGE_SHA');
   const a=JSON.parse(bytes.toString('utf8'));
-  check(a.schema==='wand.item-master.reviewed-messages@1'&&a.gameVersion===version&&
+  check(a.schema==='wand.item-master.'+base+'@1'&&a.gameVersion===version&&
     a.sourceItemsSha256===source.sourceItemsSha256&&a.sourceIl2cppDumpSha256===source.sourceIl2cppDumpSha256&&
     a.fields&&typeof a.fields==='object'&&!Array.isArray(a.fields),'MESSAGE_RELEASE');
   const fields={};
-  for(const [key,entry] of Object.entries(a.fields)){
-    const review=Object.hasOwn(REVIEWED_MESSAGES,key)?REVIEWED_MESSAGES[key]:null;
-    check(review&&entry&&entry.category===review[0]&&entry.declaredType===review[1]&&
+  for(const [label,entry] of Object.entries(a.fields)){
+    const reviews=grouped?REVIEWED_MESSAGE_GROUPS:REVIEWED_MESSAGES;
+    const review=Object.hasOwn(reviews,label)?reviews[label]:null;
+    const key=grouped?review?.[1]:label;
+    check(review&&entry&&entry.category===review[0]&&entry.declaredType===review[grouped?2:1]&&
+      (!grouped||entry.field===key)&&
       ID(entry.count)&&entry.count<=byId.size&&Number.isSafeInteger(entry.occurrences)&&entry.occurrences>=entry.count&&
       Number.isSafeInteger(entry.leafCount)&&entry.leafCount>=0&&typeof entry.packed==='string'&&entry.packed.length<=16*1024*1024,
       'MESSAGE_FIELD');
@@ -235,13 +255,13 @@ function attachReviewedMessages(project,e,version,source,byId){
       id+=pair[0];const row=byId.get(id),value=pair[1];
       check(ID(id)&&row?.nativeCategory===entry.category&&!Object.hasOwn(row.nativeProperties,key)&&
         (repeated?Array.isArray(value)&&value.length>0&&value.every(message):message(value)),'MESSAGE_OWNER');
-      occurrences+=repeated?value.length:1;leafCount+=numericTree(value);
+      occurrences+=repeated?value.length:1;leafCount+=numericTree(value,0,label==='Building.UpgradeInfo'?'UpgradeInfo':null);
       const props=row.sourceAttributes??(row.sourceAttributes={});
       check(!Object.hasOwn(props,key)||JSON.stringify(props[key])===JSON.stringify(value),'MESSAGE_CONFLICT');
       props[key]=value;
     }
     check(occurrences===entry.occurrences&&leafCount===entry.leafCount,'MESSAGE_CENSUS');
-    fields[key]={itemCount:entry.count,occurrences,leafCount,category:entry.category,declaredType:entry.declaredType};
+    fields[label]={itemCount:entry.count,occurrences,leafCount,category:entry.category,declaredType:entry.declaredType};
   }
   return {fields,runtimeSemanticsVerified:false};
 }
@@ -284,7 +304,11 @@ function buildReferenceColumns(rows){
         for(const [key,part] of Object.entries(value))walk(part,path+'.'+key,key);
         return;
       }
-      if(/ItemIds?$/i.test(name))emit(value,path);
+      if(row.nativeCategory==='Companion'&&/^(?:source\.(?:FavoriteItem|LikeItem))\.(?:Item\.(?:Item|ItemIngredient)\.Item|ItemList\.(?:Item|ItemIngredient)\.ItemList\.List\[\d+\]\.Item)$/.test(path)){
+        if(value!==0){
+          check(categories.get(value)==='ActivityItem','COMPANION_SELECTOR_TARGET');emit(value,path);
+        }
+      }else if(/ItemIds?$/i.test(name))emit(value,path);
       else if(row.nativeCategory==='DutyAch'&&/^source\.Milestones\[\d+\]\.RewardItem$/.test(path)){
         check(ID(value)&&ids.has(value),'MILESTONE_REWARD_TARGET');emit(value,path);
       }else if(row.nativeCategory==='Mission'&&/^source\.RewardsXP\.Currency\[\d+\]\.CurrencyId$/.test(path)){
@@ -493,6 +517,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
   const referenceAttributeCoverage=attachReferenceAttributes(project,e,version,source,byId);
   const reviewedRootArrayCoverage=attachReviewedRootArrays(project,e,version,source,byId);
   const reviewedMessageCoverage=attachReviewedMessages(project,e,version,source,byId);
+  const reviewedMessageGroupCoverage=attachReviewedMessages(project,e,version,source,byId,true);
   const localizations=loadLocalizations(project,e,version,source,byId);
   // Verify no existing public definition is lost or silently replaced.
   for(const [path,raw] of baseFiles){
@@ -636,6 +661,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
     ...(referenceAttributeCoverage?{referenceAttributesSha256:e.referenceAttributesSha256,referenceAttributeCoverage}:{}),
     ...(reviewedRootArrayCoverage?{reviewedRootArraysSha256:e.reviewedRootArraysSha256,reviewedRootArrayCoverage}:{}),
     ...(reviewedMessageCoverage?{reviewedMessagesSha256:e.reviewedMessagesSha256,reviewedMessageCoverage}:{}),
+    ...(reviewedMessageGroupCoverage?{reviewedMessageGroupsSha256:e.reviewedMessageGroupsSha256,reviewedMessageGroupCoverage}:{}),
     ...(localizations?{localizationSha256:e.localization.sha256,localizationCoverage:localizations.coverage}:{}),
     shards:{},assets:{}};
   const root=join(project,'static/ddv/item-master');
