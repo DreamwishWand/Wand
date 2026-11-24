@@ -657,36 +657,36 @@
 {/if}
 
 <style>
-  .saved-store-preview { margin:20px 0; padding:22px; border:1px solid rgba(150,126,190,.32); border-radius:18px; background:rgba(133,106,161,.065); }
+  .saved-store-preview { margin:20px 0; padding:22px; border:1px solid var(--wand-subtle-line); border-radius:18px; background:var(--wand-surface-raised); }
   .store-head { display:flex; gap:20px; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; }
   .store-head h2 { font-size:1.2rem; margin:.3rem 0 .35rem; }
   .store-head p,.store-import p,.store-warning { font-size:.83rem; line-height:1.65; opacity:.85; max-width:78ch; margin:.35rem 0 .65rem; }
   .store-eyebrow { font-size:.68rem; letter-spacing:.12em; opacity:.7; }
-  .store-clear,.store-more { border:1px solid #947aa7; border-radius:9px; padding:.55rem .85rem; background:transparent; color:inherit; cursor:pointer; }
+  .store-clear,.store-more { border:1px solid var(--wand-line); border-radius:9px; padding:.55rem .85rem; background:transparent; color:inherit; cursor:pointer; }
   .store-import { display:none; } /* Save chooser is in the global toolbar. */
   .auto-sentinel {min-height:22px;margin:14px 0;}
   .store-file { display:inline-flex; flex-direction:column; gap:6px; font-size:.8rem; font-weight:600; }
   .store-file input { font-size:.8rem; max-width:240px; }
-  .store-error { color:#b9515a; }
-  .store-caveat { padding:10px 12px; border-left:3px solid #9874af; background:rgba(126,88,156,.09); font-size:.85rem; }
+  .store-error { color:var(--wand-danger); }
+  .store-caveat { padding:10px 12px; border-left:3px solid var(--wand-line); background:var(--wand-surface-raised); font-size:.85rem; }
   .store-metrics { display:flex; flex-wrap:wrap; gap:10px 18px; margin:14px 0 10px; font-size:.83rem; }
   .store-metrics strong { font-variant-numeric:tabular-nums; }
   .store-warning { font-size:.76rem; }
   .store-controls { display:flex; gap:14px; flex-wrap:wrap; align-items:center; margin:14px 0 8px; font-size:.8rem; }
-  .store-controls input[type='search'] { padding:9px 10px; border:1px solid rgba(134,108,158,.5); border-radius:9px; color:inherit; background:transparent; max-width:280px; }
-  .private-db01-import {display:flex; flex-wrap:wrap; align-items:center; gap:10px; border:1px dashed rgba(134,108,158,.45); padding:12px; border-radius:10px; margin:12px 0;}
+  .store-controls input[type='search'] { padding:9px 10px; border:1px solid var(--wand-subtle-line); border-radius:9px; color:inherit; background:transparent; max-width:280px; }
+  .private-db01-import {display:flex; flex-wrap:wrap; align-items:center; gap:10px; border:1px dashed var(--wand-subtle-line); padding:12px; border-radius:10px; margin:12px 0;}
   .private-db01-import p{width:100%;margin:0;font-size:.76rem;opacity:.8;}
   .store-items { display:grid; grid-template-columns:repeat(auto-fill,minmax(215px,1fr)); gap:8px; margin-top:12px; }
-  .store-item { display:flex; gap:10px; align-items:center; padding:10px; border:1px solid rgba(141,112,170,.2); border-radius:10px; min-width:0; }
+  .store-item { display:flex; gap:10px; align-items:center; padding:10px; border:1px solid var(--wand-subtle-line); border-radius:10px; min-width:0; }
   .store-art { width:54px; height:54px; flex:none; }
   .store-detail { min-width:0; display:flex; flex-direction:column; gap:4px; }
   .store-detail strong { overflow-wrap:anywhere; font-size:.84rem; }
   .store-detail small { opacity:.72; font-size:.72rem; }
   .store-more { margin-top:14px; }
-  .saved-collection-section { margin-top:20px; padding-top:18px; border-top:1px solid rgba(150,126,190,.3); }
+  .saved-collection-section { margin-top:20px; padding-top:18px; border-top:1px solid var(--wand-subtle-line); }
   .saved-collection-section h3 {font-size:1rem; margin:0 0 8px;}
   .saved-collection-section .store-caveat small {display:block;margin-top:6px;opacity:.75;font-size:.72rem;}
-  .save-shape-diagnostics {padding:10px 12px;border:1px solid rgba(150,126,190,.23);border-radius:10px;margin:12px 0;}
+  .save-shape-diagnostics {padding:10px 12px;border:1px solid var(--wand-subtle-line);border-radius:10px;margin:12px 0;}
   .save-shape-diagnostics h4 {font-size:.83rem;margin:0 0 6px;}
   .save-shape-diagnostics p {font-size:.75rem;opacity:.8;margin:0 0 8px;line-height:1.6;}
   .save-shape-diagnostics .store-metrics {margin:0 0 10px;}
