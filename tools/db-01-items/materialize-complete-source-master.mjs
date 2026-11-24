@@ -848,6 +848,7 @@ function introductionHistory(project,e,version,source,rows){
   const sameArchive=e.archiveSha256==='b659cfc12b3a1363395e595bc5bb6be76ef1da63b6003c3a785556adc3a6831d'&&
     version==='1.26.2'&&source.sourceFilesVerified===39&&
     rows.filter(r=>r.nativeCategory!=='Condition').length===33627;
+  check(sameArchive||e.introductionHistorySha256!==undefined,'INTRODUCTION_HISTORY_REQUIRED');
   let prior=new Map();
   if(e.introductionHistorySha256!==undefined){
     check(SHA.test(e.introductionHistorySha256),'INTRODUCTION_HISTORY_PIN');
@@ -1186,6 +1187,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
   exploreThemeCensus(explore,byId);
   const index={schema:'wand.item-master.release@1',scope:'complete',version:e.release,target:source.target,
     count:e.count,bucketCount:256,archiveSha256:e.archiveSha256,
+    ...(e.introductionHistorySha256?{introductionHistorySha256:e.introductionHistorySha256}:{}),
     sourceFilesVerified:source.sourceFilesVerified,sourceFilesSha256:source.sourceFilesSha256,
     sourceItemsSha256:source.sourceItemsSha256,sourceIl2cppDumpSha256:source.sourceIl2cppDumpSha256,
     coverage:{...source.coverage,itemNamesVerified:source.coverage.nameVerified,
