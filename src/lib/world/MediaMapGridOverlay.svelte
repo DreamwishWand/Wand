@@ -354,7 +354,7 @@
   .grid-lines,.placement-cell,.source-map-object{pointer-events:none}
   .camera-tools,.object-picker,.layer-tools{display:flex;flex-wrap:wrap;gap:5px}
   .camera-tools button,.object-picker button,.layer-tools button,.anchor-open{font:inherit;font-size:12px;color:inherit;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:5px;padding:5px 8px}
-  .object-picker .chosen,.layer-tools .chosen{border-color:var(--wand-accent-strong);background:var(--wand-accent-strong);color:var(--wand-accent-contrast)}
+  .object-picker .chosen,.layer-tools .chosen{border-color:var(--wand-accent);background:var(--wand-header-hover);color:var(--wand-text);box-shadow:inset 0 0 0 1px var(--wand-accent)}
   .selected-object{color:var(--wand-text)}
   button:not(:disabled):not(.map):not(.chosen):hover{background:var(--wand-header-hover)}
   button:focus-visible,input:focus-visible{outline:2px solid var(--wand-focus);outline-offset:2px}
