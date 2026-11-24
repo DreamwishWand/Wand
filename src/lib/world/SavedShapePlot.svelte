@@ -344,12 +344,12 @@
   .object-results button{display:flex;justify-content:space-between;gap:8px;text-align:left}
   .object-results small{opacity:.65;font-variant-numeric:tabular-nums;white-space:nowrap}
   .search-dim{opacity:.22}
-  .staged-warning{color:var(--wand-accent-strong);font-weight:600}
+  .staged-warning{color:var(--wand-text);font-weight:600;border-inline-start:3px solid #efc23e;padding-inline-start:6px}
   .staged-object{opacity:.9}
   .transform-controls{display:grid;gap:8px;padding:8px;border:1px solid var(--wand-line);background:var(--wand-card);border-radius:5px}
   input{width:90px;max-width:100%;font:inherit;color:inherit;background:var(--wand-menu);border:1px solid var(--wand-line);padding:4px;border-radius:4px}
   button,select{font:inherit;color:inherit;background:var(--wand-menu);border:1px solid var(--wand-line);border-radius:5px;padding:5px;font-size:12px}
-  button[aria-pressed=true]{border-color:var(--wand-accent-strong);background:var(--wand-accent-strong);color:var(--wand-accent-contrast)}
+  button[aria-pressed=true]{border-color:var(--wand-accent);background:var(--wand-header-hover);color:var(--wand-text);box-shadow:inset 0 0 0 1px var(--wand-accent)}
   button:not(:disabled):not(.plot):not([aria-pressed=true]):hover{background:var(--wand-header-hover)}
   button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--wand-focus);outline-offset:2px}
   button:disabled{opacity:.4}
