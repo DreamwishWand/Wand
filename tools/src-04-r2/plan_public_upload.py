@@ -11,6 +11,10 @@ from pathlib import Path
 from stage_media_v2 import collect, audit, SHA_RE, require, DEFAULT_OUT, EXPECTED_ITEMS, EXPECTED_GUIDS, SOURCE_ITEMS_SHA
 
 
+PUBLIC_CACHE_CONTROL = "public, max-age=31536000, immutable"
+PUBLIC_CONTENT_TYPE = "image/webp"
+
+
 def image_key(sha):
     require(isinstance(sha,str) and SHA_RE.fullmatch(sha), "PUBLIC_SHA")
     return f"images/{sha}.webp"
@@ -43,7 +47,9 @@ def plan_upload(files, inventory):
         else:
             pending.append(obj)
     return {"schema":"wand.media.direct-upload-plan@1","networkRequests":0,
-            "publicationAuthorized":False,"uniqueImages":len(objects),
+            "publicationAuthorized":False,"contentType":PUBLIC_CONTENT_TYPE,
+            "cacheControl":PUBLIC_CACHE_CONTROL,"storageClass":"STANDARD",
+            "uniqueImages":len(objects),
             "reusedImages":reused,"newUploads":len(pending),
             "newBytes":sum(obj["bytes"] for obj in pending),
             "objects":pending}

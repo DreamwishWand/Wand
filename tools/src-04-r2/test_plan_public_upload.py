@@ -13,6 +13,9 @@ class UploadPlanTests(unittest.TestCase):
         self.assertEqual(r["newBytes"],100)
         self.assertEqual(r["objects"][0]["key"],image_key(a))
         self.assertEqual(r["networkRequests"],0)
+        self.assertEqual(r["cacheControl"],"public, max-age=31536000, immutable")
+        self.assertEqual(r["contentType"],"image/webp")
+        self.assertEqual(r["storageClass"],"STANDARD")
         self.assertEqual(plan_upload(files,{image_key(a):100,image_key(b):200})["newUploads"],0)
     def test_conflicting_receipt_or_dimensions_rejected(self):
         a="a"*64
