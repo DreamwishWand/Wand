@@ -7,7 +7,7 @@ export type RoadTool='brush'|'line'|'outline'|'fill'|'erase';
 export type RoadPoint={readonly x:number;readonly y:number};
 export const ROAD_STROKE_LIMIT=5000;
 export function roadPitch(g:DesignItemGeometry|null|undefined,factor:number):number|null{
- if(!g||exclusiveAnchorClass(String(g.itemId))!=='ground'||g.layer!=='ground'||nativeActionBlocked(g.editRestrictions,'select')||!/^Path_/i.test(g.name??'')||!(factor===1||factor===2))return null;
+ if(!g||exclusiveAnchorClass(String(g.itemId))!=='ground'||g.layer!=='ground'||nativeActionBlocked(g.editRestrictions,'select')||!/^(?:Path|Road)_/i.test(g.name??'')||!(factor===1||factor===2))return null;
  const pitch=2*factor,s=g.shapes[g.itemId+':8'];
  return s&&s.width===pitch&&s.height===pitch&&s.cellCount===pitch*pitch&&s.runs.length===pitch&&s.runs.every((r,i)=>r.x===0&&r.y===i&&r.width===pitch)?pitch:null;
 }

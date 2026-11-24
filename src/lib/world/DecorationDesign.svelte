@@ -1,7 +1,8 @@
 <script lang="ts">
  import RoadDesignControls from './RoadDesignControls.svelte';
  import {roadPitch,roadStroke,snapRoadPoint,ROAD_STROKE_LIMIT,type RoadTool,type RoadPoint} from './road-design.ts';
- import {planRoadDesign,commitRoadDesign} from './design-layout.ts';
+ import {fencePitch,fenceDesignEdges,fenceComponent} from './fence-design.ts';
+ import {planRoadDesign,commitRoadDesign,planFenceDesign,commitFenceDesign} from './design-layout.ts';
  import MapCameraControls from './MapCameraControls.svelte';
  import {worldShortcut,worldShortcutTarget,NUDGE} from './world-shortcuts.ts';
  import {designClipboard,pasteDesign,canPasteDesign,removeDesignGroup,transformDesignGroup,type DesignClipItem} from './design-layout.ts';
@@ -56,14 +57,22 @@
  type DirectDrag={id:number;start:Cell;end:Cell;clientX:number;clientY:number;ids:number[];add:boolean;kind:'move'|'marquee';moved:boolean};
  let direct:DirectDrag|null=null,suppressDirectClick=false,spacePan=false;
  let roadTool:RoadTool='brush',roadDrag:{id:number;points:RoadPoint[];overflow:boolean}|null=null;
- $: pitch=roadPitch(placing,grid?.factor??0);
+ $: fenceDrawing=Boolean(fencePitch(placing,grid?.factor??0));
+ $: pitch=roadPitch(placing,grid?.factor??0)??fencePitch(placing,grid?.factor??0);
  $: roadEnabled=Boolean(pitch&&!symmetry);
+ $: if(fenceDrawing&&roadTool==='fill')roadTool='brush';
  $: roadPreview=roadEnabled&&pitch&&roadDrag&&!roadDrag.overflow?roadStroke(roadDrag.points,roadTool,pitch):null;
- $: roadPlan=roadPreview&&placing&&grid?planRoadDesign(timeline,placing,roadPreview,grid.factor,width,height,roadTool==='erase'):null;
+ $: legacyFence=placements.some(p=>exclusiveAnchorClass(String(p.itemId))==='fence'&&!fencePitch(definitions.get(p.itemId),grid?.factor??0));
+ $: roadPlan=roadPreview&&placing&&grid&&!(fenceDrawing&&legacyFence)?(fenceDrawing?planFenceDesign:planRoadDesign)(timeline,placing,roadPreview,grid.factor,width,height,roadTool==='erase'):null;
+ $: fenceEdges=grid&&layerVisible(layerState,{layer:'fence'})?fenceDesignEdges(placements,definitions,grid.factor):[];
+ $: previewFenceEdges=fenceDrawing&&roadPlan&&grid?fenceDesignEdges([...placements.filter(p=>!roadPlan!.remove.includes(p.id)),...roadPlan.add],definitions,grid.factor):null;
+ $: fenceDrawEdges=previewFenceEdges??fenceEdges;
+ function commitNetwork(points:readonly RoadPoint[]){if(!placing||!grid||fenceDrawing&&legacyFence){save(null);return;}save((fenceDrawing?commitFenceDesign:commitRoadDesign)(timeline,placing,points,grid.factor,width,height,roadTool==='erase'));}
+ function selectFenceNetwork(){if(!grid||selected===null)return;const ids=fenceComponent(placements,definitions,grid.factor,selected);if(!ids.length||ids.some(id=>{const p=placements.find(p=>p.id===id);return !p||!layerSelectable(layerState,definitions.get(p.itemId)!);}))return;groupIds=ids;selected=null;}
  function setRoadTool(tool:RoadTool){roadDrag=null;roadTool=tool;}
  function startRoad(e:PointerEvent){if(!pitch)return;const p=cell(e);if(!p)return;roadDrag={id:e.pointerId,points:[snapRoadPoint(p,pitch)],overflow:false};try{(e.currentTarget as Element).setPointerCapture(e.pointerId);}catch{/* no capture */}e.preventDefault();}
  function followRoad(e:PointerEvent){if(!roadDrag||!pitch||roadDrag.overflow)return;const p=cell(e);if(!p)return;const point=snapRoadPoint(p,pitch),last=roadDrag.points[roadDrag.points.length-1];if(last?.x===point.x&&last.y===point.y)return;const points=roadTool==='brush'||roadTool==='erase'?[...roadDrag.points,point]:[roadDrag.points[0],point];roadDrag={...roadDrag,points,overflow:points.length>ROAD_STROKE_LIMIT};}
- function finishRoad(e:PointerEvent,confirm:boolean){if(roadDrag?.id!==e.pointerId)return false;followRoad(e);const drag=roadDrag;roadDrag=null;suppressDirectClick=true;if(confirm&&cell(e)&&placing&&grid&&pitch&&!drag.overflow){const points=roadStroke(drag.points,roadTool,pitch);save(points?commitRoadDesign(timeline,placing,points,grid.factor,width,height,roadTool==='erase'):null);}return true;}
+ function finishRoad(e:PointerEvent,confirm:boolean){if(roadDrag?.id!==e.pointerId)return false;followRoad(e);const drag=roadDrag;roadDrag=null;suppressDirectClick=true;if(confirm&&cell(e)&&placing&&grid&&pitch&&!drag.overflow){const points=roadStroke(drag.points,roadTool,pitch);if(points)commitNetwork(points);else save(null);}return true;}
  $: dragPlan=direct?.moved&&direct.kind==='move'?transformDesignGroup(timeline,direct.ids,definitions,direct.end.x-direct.start.x,direct.end.y-direct.start.y,0,width,height):null;
  let symmetryOpen=false,symmetry:DesignSymmetry|null=null,symmetryPicking=false;
  let alignmentOpen=false,alignmentAction:MapAlignment|null=null;
@@ -171,6 +180,8 @@
      const key=String(grid.factor);
      cache={...cache,[key]:new Map(cache[key]??[]).set(g.itemId,g)};
      if(!layerSelectable(layerState,g))return;
+     if(g.layer==='fence'&&!fencePitch(g,grid.factor)){error='Fence geometry is not supported.';return;}
+     if(roadPitch(g,grid.factor)||fencePitch(g,grid.factor)){symmetry=null;symmetryPicking=false;}
      placing=g;orientation=2;selected=null;moveMode=false;hover=null;error='';
    }
  }
@@ -178,7 +189,7 @@
    if(!worker||!grid||busyImport)return;
    groupIds=[];pasting=[];pastePending=[];pasteRequest=0;
    const g=definitions.get(id);
-   if(g){if(!layerSelectable(layerState,g))return;placing=g;orientation=2;selected=null;moveMode=false;hover=null;error='';shapeId=0;loadingShape=false;return;}
+   if(g){if(!layerSelectable(layerState,g))return;if(g.layer==='fence'&&!fencePitch(g,grid.factor)){error='Fence geometry is not supported.';return;}if(roadPitch(g,grid.factor)||fencePitch(g,grid.factor)){symmetry=null;symmetryPicking=false;}placing=g;orientation=2;selected=null;moveMode=false;hover=null;error='';shapeId=0;loadingShape=false;return;}
    shapeId=nextRequest();loadingShape=true;error='';placing=null;moveMode=false;hover=null;
    worker.postMessage({command:'design-shape',requestId:shapeId,key:grid.key,itemId:id});
  }
@@ -277,7 +288,8 @@
  }
  function placeAt(x:number,y:number){
   if(!placing)return;
-  if(roadEnabled&&pitch&&grid){save(commitRoadDesign(timeline,placing,[snapRoadPoint({x,y},pitch)],grid.factor,width,height,roadTool==='erase'));return;}
+  if(placing.layer==='fence'&&!roadEnabled){save(null);return;}
+  if(roadEnabled&&pitch&&grid){commitNetwork([snapRoadPoint({x,y},pitch)]);return;}
   if(!placeWithSymmetry(x,y,[{itemId:placing.itemId,x,y,orientation}]))save(placeDesign(timeline,placing,x,y,orientation,width,height));
  }
 
@@ -367,7 +379,7 @@
  }
  function more(e:Event){const el=e.currentTarget as HTMLElement;if(el.scrollTop+el.clientHeight>=el.scrollHeight-160)limit=Math.min(filtered.length,limit+80);}
 </script>
-<svelte:window on:keydown={keys} on:keyup={endSpace} on:blur={()=>{spacePan=false;direct=null;}}/>
+<svelte:window on:keydown={keys} on:keyup={endSpace} on:blur={()=>{spacePan=false;direct=null;roadDrag=null;}}/>
 {#if active&&grid&&raster}
  <div class="design-workspace" bind:this={root}>
   <aside aria-label="配置する家具" hidden={!paletteOpen}>
@@ -401,6 +413,7 @@
     <button type="button" aria-pressed={moveMode} disabled={busyImport||!chosenGeometry||nativeActionBlocked(chosenGeometry.editRestrictions,'move')} on:click={()=>{placing=null;moveMode=!moveMode;hover=null;}}>移動</button>
     <button type="button" disabled={busyImport||selectedIds.size<2} aria-label={locale==='ja'?'整列・均等配置':'Align and distribute'} aria-pressed={alignmentOpen} on:click={()=>{alignmentOpen=!alignmentOpen;alignmentAction=null;if(alignmentOpen){layersOpen=false;symmetryOpen=false;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3v18M7 5h8v5H7zM7 14h13v5H7z"/></svg></button>
     <button type="button" disabled={busyImport} aria-label={locale==='ja'?'対称編集':'Symmetry'} aria-pressed={Boolean(symmetry)||symmetryOpen} on:click={()=>{symmetryOpen=!symmetryOpen;if(symmetryOpen){layersOpen=false;alignmentOpen=false;alignmentAction=null;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M9 6 3 12l6 6ZM15 6l6 6-6 6Z"/></svg></button>
+    {#if chosenGeometry?.layer==='fence'&&grid&&fencePitch(chosenGeometry,grid.factor)}<button type="button" title={locale==='ja'?'接続フェンスを選択':'Select connected fence'} aria-label={locale==='ja'?'接続フェンスを選択':'Select connected fence'} on:click={selectFenceNetwork}><svg class="tool-icon" viewBox="0 0 24 24"><path d="M5 5h14v14H5zM5 12h14M12 5v14"/></svg></button>{/if}
     <button type="button" disabled={busyImport||!selectedIds.size} on:click={duplicate}>複製</button>
     <button type="button" disabled={busyImport||!selectedIds.size} on:click={remove}>削除</button>
     {#if (placing||moveMode||pasting.length)&&!busyImport}<button type="button" on:click={cancel}>配置終了</button>{/if}
@@ -408,7 +421,7 @@
    <div class="design-messages">{#if busyImport}<p role="status">{words[5]}</p>{/if}
    {#if loadingShape}<p role="status">形状を読み込み中…</p>{/if}
    {#if error}<p role="alert">{error}</p>{/if}</div>
-   {#if roadEnabled}<div class="road-tools-overlay"><RoadDesignControls {locale} tool={roadTool} valid={!roadDrag||Boolean(roadPlan)} added={roadPlan?.add.length??0} removed={roadPlan?.remove.length??0} onChange={setRoadTool}/></div>{/if}
+   {#if roadEnabled}<div class="road-tools-overlay"><RoadDesignControls {locale} fence={fenceDrawing} tool={roadTool} valid={!(fenceDrawing&&legacyFence)&&(!roadDrag||Boolean(roadPlan))} added={roadPlan?.add.length??0} removed={roadPlan?.remove.length??0} onChange={setRoadTool}/></div>{/if}
    {#if symmetryOpen}<div class="design-symmetry-panel"><WorldSymmetryControls {locale} value={symmetry} {width} {height} picking={symmetryPicking} count={symmetricSelection.length} valid={Boolean(symmetricSelectedPlan)} busy={busyImport} onChange={changeSymmetry} onPick={()=>symmetryPicking=!symmetryPicking} onMirror={mirrorSelected}/></div>{/if}
    {#if layersOpen}<div class="design-layer-panel"><WorldLayerControls {locale} state={layerState} disabled={busyImport} onChange={applyLayers}/></div>{/if}
    {#if alignmentOpen&&selectedIds.size>=2}<div class="design-alignment-panel"><WorldAlignmentControls {locale} count={selectedIds.size} selected={alignmentAction} valid={Boolean(alignmentPlan)} busy={busyImport} onPick={pickAlignment} onCommit={commitAlignment} onCancel={()=>alignmentAction=null}/></div>{/if}
@@ -421,6 +434,9 @@
      <rect width={width} height={height} fill="#27313a"/>
      {#if terrainUrl}<image href={terrainUrl} width={width} height={height} preserveAspectRatio="none" style="image-rendering:pixelated"/>{/if}
      {#if width/camera.zoom<160&&height/camera.zoom<160}<rect width={width} height={height} fill="url(#design-grid)"/>{/if}
+     {#each fenceDrawEdges as edge (edge.key)}
+      {#if Math.max(edge.from.x,edge.to.x)>=viewport.x-1&&Math.min(edge.from.x,edge.to.x)<=viewport.x+viewport.w+1&&Math.max(edge.from.y,edge.to.y)>=viewport.y-1&&Math.min(edge.from.y,edge.to.y)<=viewport.y+viewport.h+1}<path class="design-fence-edge" d={'M'+edge.from.x+' '+edge.from.y+'L'+edge.to.x+' '+edge.to.y} stroke={previewFenceEdges?'#4bddcd':'#c1b3a4'} stroke-width={Math.max(.25,edge.pitch*.28)} stroke-linecap="round" pointer-events="none"/>{/if}
+     {/each}
      {#each visible as o (o.localOrdinal)}
       {@const shape=o.shapeKey?map?.shapes[o.shapeKey]:null}
       {#if shape}
