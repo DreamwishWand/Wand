@@ -73,10 +73,11 @@ export function floodRoadRegion(seed:RoadPoint,g:DesignItemGeometry,terrain:Terr
  for(const p of placements)if(exclusiveAnchorClass(String(p.itemId))==='ground'){
   if(p.orientation!==2||p.x%pitch||p.y%pitch)return null;blocked.add(key(p.x,p.y));
  }
+ const step:number=pitch;
  function signature(x:number,y:number){
-  if(x<0||y<0||x+pitch>width||y+pitch>height||blocked.has(key(x,y)))return null;
+  if(x<0||y<0||x+step>width||y+step>height||blocked.has(key(x,y)))return null;
   const result:number[]=[];
-  for(let dy=0;dy<pitch;dy+=terrain.factor)for(let dx=0;dx<pitch;dx+=terrain.factor){
+  for(let dy=0;dy<step;dy+=terrain.factor)for(let dx=0;dx<step;dx+=terrain.factor){
    const floor=terrainFloorAt(terrain,x+dx,y+dy);
    if(floor===null||floor===0||shape.acceptedFloorTypesFlag!==undefined&&(floor&shape.acceptedFloorTypesFlag)===0)return null;
    result.push(floor);
