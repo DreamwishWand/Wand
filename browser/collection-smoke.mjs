@@ -482,7 +482,7 @@ try{
     assert.ok(rootIds.includes(id));
     if(['furniture','clothing','ingredients','crafting','mounts','meals'].includes(parent))
       assert.ok(await page.locator('.collection-item-universe-heading').count()>0,'inline category-specific group headings');
-    if(parent==='meals')assert.ok(await page.locator('.collection-item-world-heading').count()>0,'meal kind contains world groups');
+    if(parent==='meals')assert.equal(await page.locator('.collection-item-world-heading').count(),0,'world sorting must not introduce headings or grid breaks');
     await returnRoot();
   }
   const furnitureCard=page.locator('[data-top-category="furniture"]');
