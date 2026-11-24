@@ -112,3 +112,31 @@ test('all eight original mainland GridScript paths resolve exact source origins 
  const hit=mainlandTerrainHits([meadow],new Map([[meadow.key,raster]]),-117.75,91.75);assert.equal(hit[0].key,'Meadow');
  assert.deepEqual(mainlandTerrainHits([meadow],new Map([[meadow.key,raster]]),-116.75,91.75),[]);
 });
+
+import {composeMainlandDesignFrame,mainlandFrameOffset,resolveMainlandDesign,mainlandItemsValid,validatedMainlandPlan,serializeMainlandDesign,parseMainlandDesign,mainlandImportMatches} from '../src/lib/world/mainland-design-frame.ts';
+import {emptyDesign,placeDesign,transformDesign,currentDesign,travelDesign} from '../src/lib/world/design-layout.ts';
+test('actual mainland terrain resolves two distinct native areas in one local design history and portable file',()=>{
+ const bundle=parsePublicTerrainBundle(JSON.parse(fs.readFileSync(path,'utf8')));
+ const rasters=new Map(bundle.grids.map(g=>[g.key,{sizeX:g.sizeX,sizeY:g.sizeY,nativeFloorValues:Uint32Array.from(inflateSync(Buffer.from(g.data,'base64')),i=>g.palette[i])}]));
+ const f=composeMainlandDesignFrame(bundle.grids,rasters),shape={width:1,height:1,cellCount:1,runs:[{x:0,y:0,width:1}],path:'M0 0h1v1H0Z'};
+ const g={itemId:40005160,name:'Fixture',layer:'furniture',surfaceCapable:false,shapes:{'40005160:8':shape}};
+ const defs=new Map([[g.itemId,g]]),w=f.raster.sizeX,h=f.raster.sizeY;
+ const locations=f.grids.map((grid,i)=>{const index=f.owners.indexOf(i+1);assert(index>=0);return {grid,x:index%w,y:Math.floor(index/w)};});
+ const a=locations.find(p=>p.grid.key==='Urban'),b=locations.find(p=>p.grid.key==='Meadow');
+ assert.equal(resolveMainlandDesign(f,a.x,a.y,shape).grid.key,'Urban');
+ assert.equal(resolveMainlandDesign(f,b.x,b.y,shape).grid.key,'Meadow');
+ const blank=f.owners.indexOf(0);assert(blank>=0);assert.equal(resolveMainlandDesign(f,blank%w,Math.floor(blank/w),shape),null);
+ const start=emptyDesign(),one=validatedMainlandPlan(f,start,placeDesign(start,g,a.x,a.y,2,w,h),defs);
+ assert(one);const moved=validatedMainlandPlan(f,one,transformDesign(one,1,g,b.x,b.y,2,w,h),defs);
+ assert(moved);assert.equal(resolveMainlandDesign(f,currentDesign(moved)[0].x,currentDesign(moved)[0].y,shape).grid.key,'Meadow');
+ assert.deepEqual(currentDesign(travelDesign(moved,-1)),currentDesign(one));
+ const two=validatedMainlandPlan(f,moved,placeDesign(moved,g,a.x,a.y,2,w,h),defs);assert(two);
+ const sourceAreas=new Map(),imported=parseMainlandDesign(serializeMainlandDesign(f,two,defs),f,sourceAreas).sort((a,b)=>a.id-b.id);
+ assert.deepEqual(imported,currentDesign(two));assert.equal(mainlandImportMatches(f,imported,defs,sourceAreas),true);
+ sourceAreas.set(1,'Urban');assert.equal(mainlandImportMatches(f,imported,defs,sourceAreas),false);
+ assert.equal(validatedMainlandPlan(f,two,placeDesign(two,g,blank%w,Math.floor(blank/w),2,w,h),defs),null);
+ const offset=mainlandFrameOffset(f,a.grid);assert.equal(resolveMainlandDesign(f,a.x,a.y,shape).x,a.x-offset.x);
+ const boundaryShape={width:2,height:1,cellCount:2,runs:[{x:0,y:0,width:2}],path:'M0 0h2v1H0Z'};
+ const modified={...f,owners:f.owners.slice()};modified.owners[a.y*w+a.x+1]=255;
+ assert.equal(resolveMainlandDesign(modified,a.x,a.y,boundaryShape),null);
+});

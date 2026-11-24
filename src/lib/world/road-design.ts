@@ -3,7 +3,9 @@
 import type {DesignItemGeometry} from './design-layout.ts';
 import {nativeActionBlocked} from './native-edit-restrictions.ts';
 import {exclusiveAnchorClass} from './saved-map-transform.ts';
-export type RoadTool='brush'|'line'|'outline'|'fill'|'erase';
+export type RoadTool='brush'|'line'|'outline'|'fill'|'erase'|'flood'|'erase-line'|'erase-rect';
+export const roadErase=(tool:RoadTool)=>tool==='erase'||tool==='erase-line'||tool==='erase-rect';
+export const roadFreehand=(tool:RoadTool)=>tool==='brush'||tool==='erase';
 export type RoadPoint={readonly x:number;readonly y:number};
 export const ROAD_STROKE_LIMIT=5000;
 export function roadPitch(g:DesignItemGeometry|null|undefined,factor:number):number|null{
@@ -14,6 +16,8 @@ export function roadPitch(g:DesignItemGeometry|null|undefined,factor:number):num
 export function snapRoadPoint(p:RoadPoint,pitch:number):RoadPoint{return {x:Math.floor(p.x/pitch)*pitch,y:Math.floor(p.y/pitch)*pitch};}
 export function roadStroke(points:readonly RoadPoint[],tool:RoadTool,pitch:number):RoadPoint[]|null{
  if(!points.length||points.length>ROAD_STROKE_LIMIT||!Number.isSafeInteger(pitch)||pitch<=0||!points.every(p=>Number.isSafeInteger(p.x)&&Number.isSafeInteger(p.y)&&p.x%pitch===0&&p.y%pitch===0))return null;
+ if(tool==='flood')return null; // requires explicit terrain and occupancy
+ if(tool==='erase-line')tool='line';else if(tool==='erase-rect')tool='fill';
  const result=new Map<string,RoadPoint>();
  const add=(p:RoadPoint)=>{result.set(p.x+':'+p.y,p);return result.size<=ROAD_STROKE_LIMIT;};
  const a=points[0],b=points[points.length-1];
@@ -50,4 +54,44 @@ export function roadComponent(placements:readonly import('./design-layout.ts').D
   const n=nodes.get((p.x+dx)+':'+(p.y+dy));if(n&&!seen.has(n.id)){seen.add(n.id);queue.push(n);}
  }}
  return [...seen];
+}
+
+import {terrainFloorAt,type TerrainBinding} from './terrain-binding.ts';
+import type {DesignPlacement} from './design-layout.ts';
+/** Flood fill the connected empty road-cell region with the same exact
+ * original terrain signature. Existing ground items, map bounds, zero or
+ * incompatible floor values and changed terrain signatures are boundaries.
+ * This is a local design tool, not runtime placement authorization.
+ * Oversize fills fail closed (no truncated partial fill). */
+export function floodRoadRegion(seed:RoadPoint,g:DesignItemGeometry,terrain:TerrainBinding,placements:readonly DesignPlacement[]):RoadPoint[]|null{
+ const pitch=roadPitch(g,terrain.factor),shape=g.shapes[g.itemId+':8'];
+ if(!pitch||!shape||!Number.isSafeInteger(seed.x)||!Number.isSafeInteger(seed.y)||seed.x%pitch||seed.y%pitch)return null;
+ const width=terrain.raster.sizeX*terrain.factor,height=terrain.raster.sizeY*terrain.factor;
+ const blocked=new Set<string>(),key=(x:number,y:number)=>x+':'+y;
+ // Source-ground footprints can be unusual; callers supply only recognized
+ // cardinal ground design records for this operation.
+ for(const p of placements)if(exclusiveAnchorClass(String(p.itemId))==='ground'){
+  if(p.orientation!==2||p.x%pitch||p.y%pitch)return null;blocked.add(key(p.x,p.y));
+ }
+ const step:number=pitch;
+ function signature(x:number,y:number){
+  if(x<0||y<0||x+step>width||y+step>height||blocked.has(key(x,y)))return null;
+  const result:number[]=[];
+  for(let dy=0;dy<step;dy+=terrain.factor)for(let dx=0;dx<step;dx+=terrain.factor){
+   const floor=terrainFloorAt(terrain,x+dx,y+dy);
+   if(floor===null||floor===0||shape.acceptedFloorTypesFlag!==undefined&&(floor&shape.acceptedFloorTypesFlag)===0)return null;
+   result.push(floor);
+  }
+  return result.join(',');
+ }
+ const reference=signature(seed.x,seed.y);if(reference===null)return null;
+ const seen=new Set([key(seed.x,seed.y)]),result:RoadPoint[]=[seed];
+ for(let i=0;i<result.length;i++){
+  const p=result[i];for(const [dx,dy] of [[pitch,0],[-pitch,0],[0,pitch],[0,-pitch]]){
+   const x=p.x+dx,y=p.y+dy,k=key(x,y);if(seen.has(k))continue;seen.add(k);
+   if(signature(x,y)!==reference)continue;
+   if(result.length>=ROAD_STROKE_LIMIT)return null;result.push({x,y});
+  }
+ }
+ return result;
 }
