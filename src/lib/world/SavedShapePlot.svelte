@@ -8,7 +8,7 @@
   import {searchSavedObjects,worldObjectName,objectFocus,type WorldNames} from './world-object-search.ts';
   import {defaultMapCamera,maxMapZoom,zoomMapCamera,panMapCamera,mapCameraViewBox,mapViewportBounds,wheelMapCamera,createMapPanGesture} from './map-camera.ts';
 
-  import {emptyWorldTimeline,currentWorldEdits,travelWorldTimeline,projectWorldEdits,stageWorldEdit,WORLD_BATCH_LIMIT} from './saved-map-batch.ts';
+  import {emptyWorldTimeline,currentWorldEdits,travelWorldTimeline,projectWorldEdits,stageWorldEdit,stageWorldGroupMove,WORLD_BATCH_LIMIT} from './saved-map-batch.ts';
   import {savedDraftOverlap,OVERLAP_COLORS} from './saved-draft-overlap.ts';
   import {CARDINAL_ORIENTATIONS,isCardinal,worldTransformEligible,worldMoveEligible,worldRotateEligible,draftSavedMapTransform,exclusiveAnchorClass,exclusiveAnchorConflict} from './saved-map-transform.ts';
   import {savedGridObjects,savedShapesAt,visibleSavedObjects,type SavedShapeMap,type SavedShapeObject} from './saved-shape-map.ts';
@@ -82,10 +82,33 @@
   $: matches=searchSavedObjects(objects,names,query,layer);
   $: matchIds=new Set(matches.map(o=>o.localOrdinal));
   function setSearch(value:string){query=value;visibleResults=60;searchOpen=true;}
-  function selectFromSearch(o:SavedShapeObject){if(busy)return;selected=o.localOrdinal;hits=[o];cameraState=objectFocus(map,o,extent,maxZoom);searchOpen=false;}
+  function selectFromSearch(o:SavedShapeObject){if(busy)return;if(groupMode){toggleGroup(o);return;}selected=o.localOrdinal;hits=[o];cameraState=objectFocus(map,o,extent,maxZoom);searchOpen=false;}
+  let groupMode=false,groupIds:number[]=[],groupDX:number|undefined=0,groupDY:number|undefined=0;
+  $: groupSet=new Set(groupIds);
+  $: groupObjects=objects.filter(o=>groupSet.has(o.localOrdinal));
+  $: groupPlan=groupMode&&groupDX!==undefined&&groupDY!==undefined?
+    stageWorldGroupMove(map,timeline,groupIds,groupDX,groupDY,'一括移動：衝突・上下関係は未判定'):null;
+  function clearGroup(){groupIds=[];groupDX=0;groupDY=0;placing=false;hoverPoint=null;}
+  function toggleGroupMode(){if(busy)return;cancelEdit();clearGroup();groupMode=!groupMode;selected=null;hits=[];}
+  function toggleGroup(o:SavedShapeObject){
+    if(!worldMoveEligible(o)||o.localGridOrdinal!==activeOrdinal)return;
+    if(groupIds.includes(o.localOrdinal))groupIds=groupIds.filter(id=>id!==o.localOrdinal);
+    else if(groupIds.length<WORLD_BATCH_LIMIT)groupIds=[...groupIds,o.localOrdinal];
+    groupDX=0;groupDY=0;placing=false;hoverPoint=null;cancelEdit();
+  }
+  function stageGroup(){
+    if(busy||!groupPlan||placing)return;
+    cancelEdit();timeline=groupPlan;groupDX=0;groupDY=0;stageError='';
+  }
   function rotateDraft(delta:number){if(busy||!worldRotateEligible(chosen)||!isCardinal(draftOrientation))return;draftOrientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(draftOrientation)+delta+4)%4];}
   function keyMap(event:KeyboardEvent){
     if(busy)return;
+    if(groupMode){
+      if(event.key==='Escape'){clearGroup();return;}
+      if(event.key==='Enter'){event.preventDefault();stageGroup();return;}
+      const d:Record<string,[number,number]>={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]};
+      const step=d[event.key];if(step&&groupIds.length>=2){event.preventDefault();groupDX=(groupDX??0)+step[0];groupDY=(groupDY??0)+step[1];}return;
+    }
     if(event.key==='Escape'){resetDraft(chosen);return;}
     if(!chosen||!file||!worldTransformEligible(chosen))return;
     if(event.key.toLowerCase()==='r'){event.preventDefault();rotateDraft(event.shiftKey?-1:1);return;}
@@ -104,7 +127,7 @@
   $: effectiveMap=projectWorldEdits(map,staged);
   function clearTimeline(){timeline=emptyWorldTimeline();stageError='';}
   let previousFile:File|null=null;
-  function checkFile(value:File|null){if(previousFile!==value){previousFile=value;cancelEdit();stageError='';placing=false;hoverPoint=null;}}
+  function checkFile(value:File|null){if(previousFile!==value){previousFile=value;cancelEdit();stageError='';clearGroup();groupMode=false;}}
   $: checkFile(file);
   let draftTarget:SavedShapeObject|null=null;
   function cancelEdit(){editEpoch++;editWorker?.terminate();editWorker=null;busy=false;checkedSignature='';editError='';if(copyUrl)URL.revokeObjectURL(copyUrl);copyUrl='';}
@@ -117,7 +140,7 @@
   $: editPlan=draftSavedMapTransform(chosen,draftX,draftY,draftOrientation);
   $: exportPlans=staged.length?staged.map(e=>e.plan):editPlan?[editPlan]:[];
   $: draftSignature=exportPlans.length?JSON.stringify(exportPlans):'';
-  $: pendingDraft=staged.length>0&&editPlan!==null;
+  $: pendingDraft=groupMode?Boolean((groupDX??0)||(groupDY??0)):staged.length>0&&editPlan!==null;
   function stageCurrent(){
     if(!chosen||busy||placing||!editPlan||committedConflict)return;
     const overlapWarning=overlap?[overlap.counts['shape-overlap']?'重なり候補 '+overlap.counts['shape-overlap']+'マス':'',
@@ -130,7 +153,7 @@
     if(!next){stageError='編集を追加できません。最大'+WORLD_BATCH_LIMIT+'件です。';return;}
     cancelEdit();timeline=next;stageError='';
   }
-  function travel(delta:-1|1){if(busy)return;cancelEdit();timeline=travelWorldTimeline(timeline,delta);stageError='';}
+  function travel(delta:-1|1){if(busy)return;cancelEdit();timeline=travelWorldTimeline(timeline,delta);groupDX=0;groupDY=0;stageError='';}
   function resetStaged(){if(busy)return;cancelEdit();clearTimeline();}
   $: if(checkedSignature&&checkedSignature!==draftSignature)cancelEdit();
   $: draftCode=isCardinal(draftOrientation)?CARDINAL_ORIENTATIONS.indexOf(draftOrientation)*4:null;
@@ -189,9 +212,9 @@
   let previous:SavedShapeMap|null=null;
   $: ordinals=[...new Set(map.objects.map(o=>o.localGridOrdinal))];
   function resetCamera(){cameraState=defaultMapCamera();}
-  function chooseGrid(n:number){ordinal=n;selected=null;hits=[];layer='all';resetCamera();}
+  function chooseGrid(n:number){clearGroup();groupMode=false;ordinal=n;selected=null;hits=[];layer='all';resetCamera();}
   $: if(map!==previous){
-    previous=map;cancelEdit();stageError='';
+    previous=map;cancelEdit();stageError='';clearGroup();groupMode=false;
     ordinal=map.objects[0]?.localGridOrdinal??0;selected=null;hits=[];layer='all';cameraState=defaultMapCamera();
   }
   $: activeOrdinal=ordinals.includes(ordinal)?ordinal:ordinals[0]??0;
@@ -215,7 +238,7 @@
   function wheel(event:WheelEvent){cameraState=wheelMapCamera(event,svg,extent,cameraState,maxZoom);}
   function startPan(event:PointerEvent){gesture.begin(event,zoom>1&&(!placing||event.shiftKey||event.button===1||event.pointerType==='touch'));}
   function finishPan(event:PointerEvent){gesture.end(event);}
-  function chooseLayer(l:MapSelectionLayer){layer=l;selected=hits.find(o=>matchesSelectionLayer(o,l))?.localOrdinal??null;}
+  function chooseLayer(l:MapSelectionLayer){layer=l;if(!groupMode)selected=hits.find(o=>matchesSelectionLayer(o,l))?.localOrdinal??null;}
   function pointerCell(event:MouseEvent){
     const matrix=svg?.getScreenCTM();if(!matrix)return null;
     const p=new DOMPoint(event.clientX,event.clientY).matrixTransform(matrix.inverse());
@@ -230,6 +253,11 @@
   function pick(event:MouseEvent){
     if(gesture.consumeClick())return;
     const point=pointerCell(event);if(!point||event.detail===0||busy)return;
+    if(groupMode){
+      if(placing&&groupObjects.length>=2){const anchor=groupObjects[0];groupDX=point.x-anchor.x;groupDY=point.y-anchor.y;placing=false;hoverPoint=null;return;}
+      hits=savedShapesAt(effectiveMap,activeOrdinal,point.x,point.y);
+      const hit=hits.find(o=>matchesSelectionLayer(o,layer)&&worldMoveEligible(o));if(hit)toggleGroup(hit);return;
+    }
     if(placing&&chosen&&worldMoveEligible(chosen)){draftX=point.x;draftY=point.y;placing=false;hoverPoint=null;cancelEdit();return;}
     hits=savedShapesAt(effectiveMap,activeOrdinal,point.x,point.y);
     selected=hits.find(o=>matchesSelectionLayer(o,layer))?.localOrdinal??null;
@@ -254,6 +282,7 @@
   </div>
   <div class="controls" role="group" aria-label="セーブ図の選択レイヤー">
     {#each layers as l}<button type="button" aria-pressed={layer===l} on:click={()=>chooseLayer(l)}>{MAP_LAYER_LABELS[l]}</button>{/each}
+    {#if file}<button type="button" aria-pressed={groupMode} disabled={busy} on:click={toggleGroupMode}>複数選択</button>{/if}
   </div>
   {#if originAvailable}
     <div class="controls origin-tools">
@@ -272,7 +301,7 @@
     {#if searchOpen}
       <div class="object-results">
         {#each matches.slice(0,visibleResults) as o (o.localOrdinal)}
-          <button type="button" aria-pressed={selected===o.localOrdinal} on:click={()=>selectFromSearch(o)}>
+          <button type="button" aria-pressed={groupMode?groupSet.has(o.localOrdinal):selected===o.localOrdinal} disabled={groupMode&&!worldMoveEligible(o)} on:click={()=>selectFromSearch(o)}>
             <span>{worldObjectName(o,names)}</span><small>{o.x}, {o.y}</small>
           </button>
         {/each}
@@ -294,10 +323,10 @@
       {#if extent.w/zoom<160&&extent.h/zoom<160}<rect x={extent.x} y={extent.y} width={extent.w} height={extent.h} fill="url(#saved-shape-cells)"/>{/if}
       {#each visibleObjects as o (o.localOrdinal)}
         {@const shape=o.shapeKey?map.shapes[o.shapeKey]:null}
-        <g class="saved-object" class:staged-object={stagedOrdinals.has(o.localOrdinal)} class:search-dim={Boolean(query.trim())&&!matchIds.has(o.localOrdinal)&&selected!==o.localOrdinal&&o.layer!=='ground'&&o.layer!=='fence'} data-local-ordinal={o.localOrdinal} transform={'translate('+o.x+' '+o.y+')'}>
+        <g class="saved-object" class:staged-object={stagedOrdinals.has(o.localOrdinal)} class:group-selected={groupSet.has(o.localOrdinal)} class:search-dim={Boolean(query.trim())&&!matchIds.has(o.localOrdinal)&&selected!==o.localOrdinal&&!groupSet.has(o.localOrdinal)&&o.layer!=='ground'&&o.layer!=='fence'} data-local-ordinal={o.localOrdinal} transform={'translate('+o.x+' '+o.y+')'}>
           {#if shape}
-            <path class="saved-object-shape" d={shape.path} fill={MAP_LAYER_COLORS[o.layer]} fill-opacity={selected===o.localOrdinal?.85:(matchesSelectionLayer(o,layer)||o.layer==='ground'||o.layer==='fence')?.48:.24}
-              stroke={selected===o.localOrdinal?'#fff':MAP_LAYER_COLORS[o.layer]} stroke-width="1" vector-effect="non-scaling-stroke"/>
+            <path class="saved-object-shape" d={shape.path} fill={MAP_LAYER_COLORS[o.layer]} fill-opacity={(selected===o.localOrdinal||groupSet.has(o.localOrdinal))?.85:(matchesSelectionLayer(o,layer)||o.layer==='ground'||o.layer==='fence')?.48:.24}
+              stroke={selected===o.localOrdinal||groupSet.has(o.localOrdinal)?'#fff':MAP_LAYER_COLORS[o.layer]} stroke-width="1" vector-effect="non-scaling-stroke"/>
             {#if o.orientationCode!==null}<path d="M0 -.32L.19 .13L0 .04L-.19 .13Z" transform={'translate(.5 .5) rotate('+sourceOrientationAngle(o.orientationCode)+')'} fill="#fff"/>{/if}
           {:else}<circle class="unknown-shape" cx=".5" cy=".5" r=".24" fill="#ddd" stroke="#fff" stroke-width="1" vector-effect="non-scaling-stroke"/>{/if}
           {#if o.surfaceCapable}<circle cx=".78" cy=".22" r=".13" fill="#dbc2f6"/>{/if}
@@ -307,6 +336,15 @@
           </g>{/if}
         </g>
       {/each}
+      {#if groupMode&&(placing||groupDX||groupDY)}
+        {@const dx=placing&&hoverPoint&&groupObjects.length?hoverPoint.x-groupObjects[0].x:groupDX??0}
+        {@const dy=placing&&hoverPoint&&groupObjects.length?hoverPoint.y-groupObjects[0].y:groupDY??0}
+        {#each groupObjects as o (o.localOrdinal)}
+          {@const shape=o.shapeKey?map.shapes[o.shapeKey]:null}
+          {#if shape}<path class="group-draft-shape" d={shape.path} transform={'translate('+(o.x+dx)+' '+(o.y+dy)+')'} fill="#a7b1bf" fill-opacity=".55" stroke="#fff" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>
+          {:else}<circle class="group-draft-anchor" cx={o.x+dx+.5} cy={o.y+dy+.5} r=".3" fill="#a7b1bf" stroke="#fff" vector-effect="non-scaling-stroke"/>{/if}
+        {/each}
+      {/if}
       {#if showDraft}
         {#if draftShape}<path class="saved-draft-shape" d={draftShape.path} transform={'translate('+previewX+' '+previewY+')'} fill="#a7b1bf" fill-opacity=".62" stroke="#fff" stroke-width="1.5" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>
         {:else}<circle class="saved-draft-anchor" cx={Number(previewX)+.5} cy={Number(previewY)+.5} r=".3" fill="#a7b1bf" stroke="#fff" stroke-width="1.5" vector-effect="non-scaling-stroke"/>{/if}
@@ -321,9 +359,20 @@
   </button>
   {#if hits.length}<div class="controls" role="group" aria-label="重なるセーブ内オブジェクト">
     {#each hits as hit (hit.localOrdinal)}
-      <button type="button" aria-pressed={selected===hit.localOrdinal} on:click={()=>selected=hit.localOrdinal}>{worldObjectName(hit,names)}</button>
+      <button type="button" aria-pressed={groupMode?groupSet.has(hit.localOrdinal):selected===hit.localOrdinal} disabled={groupMode&&!worldMoveEligible(hit)} on:click={()=>{if(groupMode)toggleGroup(hit);else selected=hit.localOrdinal;}}>{worldObjectName(hit,names)}</button>
     {/each}
   </div>{/if}
+  {#if groupMode}
+    <div class="controls group-controls" role="group" aria-label="一括移動">
+      <strong>{groupIds.length}件選択</strong>
+      <button type="button" disabled={busy||!groupIds.length} on:click={clearGroup}>選択解除</button>
+      <button type="button" aria-pressed={placing} disabled={busy||groupIds.length<2} on:click={()=>{placing=!placing;hoverPoint=null;}}>{placing?'一括移動先を選択中':'一括移動先を選択'}</button>
+      <label>ΔX <input type="number" aria-label="一括移動X" bind:value={groupDX} step="1" disabled={busy||groupIds.length<2}/></label>
+      <label>ΔY <input type="number" aria-label="一括移動Y" bind:value={groupDY} step="1" disabled={busy||groupIds.length<2}/></label>
+      <button type="button" disabled={busy||placing||!groupPlan} on:click={stageGroup}>一括移動を追加</button>
+    </div>
+    {#if (groupDX||groupDY)&&!groupPlan}<p role="status">移動先・編集制限・最大件数を確認してください。</p>{/if}
+  {/if}
   {#if chosen}<p class="selected-saved-object">{worldObjectName(chosen,names)} ／ ({chosen.x}, {chosen.y}) ／ {chosen.orientation??'向き不明'}</p>{/if}
   {#if chosen?.subgrid}<p class="subgrid-status" role="status">{chosen.subgrid.status==='resolved_full'?`子Grid内の配置 ${chosen.subgrid.objectCount}件`:'子Gridの参照先未確認'}。親家具の単独移動・回転は未対応。</p>{/if}
   {#if chosen&&!chosen.subgrid&&(nativeActionBlocked(chosen.editRestrictions,'select')||nativeActionBlocked(chosen.editRestrictions,'move')||nativeActionBlocked(chosen.editRestrictions,'rotate'))}
@@ -394,6 +443,9 @@
   .origin-swatch{display:inline-block;background:#4bddcd;width:.8em;height:.8em;border-radius:2px;vertical-align:baseline}
   .placement-origin-overlay{pointer-events:none}
   .subgrid-status{color:var(--wand-text);border-inline-start:3px solid #d8b96b;padding-inline-start:6px}
+  .group-draft-shape,.group-draft-anchor{pointer-events:none}
+  .group-controls{border-block:1px solid var(--wand-border);padding-block:5px}
+  .group-selected .unknown-shape{stroke:#fff;stroke-width:3}
   .saved-subgrid-marker,.saved-restricted-marker{pointer-events:none}
   .overlap-key{display:flex;flex-wrap:wrap;gap:8px;font-size:12px}
   .saved-overlap-cell,.exclusive-anchor-conflict{pointer-events:none}
