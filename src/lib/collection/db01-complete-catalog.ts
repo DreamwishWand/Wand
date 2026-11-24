@@ -124,6 +124,25 @@ export function projectCompleteCollection(source:CompleteItemMasterFacets,supple
     nativeSubtypeByItem,itemsByNativeSubtype,nativeSubtypeNames,universesByItem,itemsByUniverse,
     universeTagIdsByItem,itemsByUniverseTagId,rootsByItem,itemsByRoot,universeSourceStatusByItem,iconGuidByItem};
 }
+/** Original FurnitureFunctionTagItemData identities, not guessed localized
+ * category names. Fetch only the source key and eight name fields. */
+async function loadFurnitureKindLabels(master:PublicCompleteItemMaster,source:CompleteItemMasterFacets):
+Promise<ReadonlyMap<string,Readonly<Record<string,string>>>>{
+  const used=new Set(source.items.flatMap(([,tags])=>tags.filter(([f])=>f==='furnitureKind').map(([,key])=>key)));
+  const ids=source.nativeSubtypeItems.filter(([,type,code])=>type==='Tag'&&code===3).map(([id])=>id);
+  const labels=new Map<string,Readonly<Record<string,string>>>();
+  if(!ids.length||!used.size)return labels;
+  const rows=await master.getItemFields(ids,['nativeKey',...ITEM_MASTER_LOCALES.map(l=>'names.'+l)]);
+  for(const row of rows){
+    if(!row||typeof row.values.nativeKey!=='string'||!used.has(row.values.nativeKey))continue;
+    const names:Record<string,string>={};
+    for(const l of ITEM_MASTER_LOCALES){
+      const value=row.values['names.'+l];if(typeof value==='string'&&value.length)names[l]=value;
+    }
+    labels.set(row.values.nativeKey,names);
+  }
+  return labels;
+}
 const cached=new Map<string,Promise<CollectionCompleteCatalog>>();
 export function loadCompleteCollection(base:string,fetcher:typeof fetch=fetch):Promise<CollectionCompleteCatalog>{
   const useCache=fetcher===fetch;
@@ -131,8 +150,10 @@ export function loadCompleteCollection(base:string,fetcher:typeof fetch=fetch):P
   const task=(async()=>{
     const master=await openPublicItemMaster(base,fetcher,{scope:'complete',gameVersion:'current'});
     const source=await master.getCollectionFacets();
-    const supplement=await loadCollectionSupplement(master,source);
-    const index=projectCompleteCollection(source,supplement);
+    const [supplement,furnitureKindLabels]=await Promise.all([
+      loadCollectionSupplement(master,source),loadFurnitureKindLabels(master,source)
+    ]);
+    const index={...projectCompleteCollection(source,supplement),furnitureKindLabels};
     const names=new Map<number,Record<string,string>>(supplement.map(row=>[row.itemId,{...row.names}]));
     await Promise.all(ITEM_MASTER_LOCALES.map(async locale=>{
       for(const [id,name] of await master.getBrowseNames(locale)){
