@@ -191,6 +191,50 @@ fn scan_grid_instances(source:&[u8])->Result<(Scan,&'static str),CodecError>{
     Ok((scan,status))
 }
 
+/// DB-04 Owner contract: two roads (GroundAlteration) or two fences
+/// cannot share an identical anchor in one Grid. This is NOT a general
+/// placement/collision check. Source enum identities and decimal ItemID
+/// fields come from DB-01's Steam 1.26.2 native classification.
+/// Only check coordinates of changed targets, with the final batch
+/// positions applied together (a swap must not fail transiently).
+fn exclusive_anchor_class(item_id:u64)->Option<u64>{
+    if item_id/10_000_000!=4{return None;}
+    match (item_id%10_000_000)/100_000{
+        1=>Some(1),7=>Some(7),_=>None
+    }
+}
+pub(super) fn validate_exclusive_grid_moves(
+    profile:&[u8],moves:&[(&GridCoordinateTarget,(i32,i32))]
+)->Result<(),CodecError>{
+    let exclusive=moves.iter().filter(|(target,_)|
+        exclusive_anchor_class(target.item_id).is_some()
+    ).collect::<Vec<_>>();
+    if exclusive.is_empty(){return Ok(());}
+    // A DiffGrid's effective objects include unseen original defaults.
+    // Do not authorize moving an exclusive record until that base is joined.
+    if exclusive.iter().any(|(target,_)|target.kind!=GridObjectKind::Full){
+        return Err(CodecError::Json);
+    }
+    let (scan,_)=scan_grid_instances(profile)?;
+    if scan.sampled||scan.invalid>0{return Err(CodecError::Json);}
+    for (target,destination) in exclusive{
+        let class=exclusive_anchor_class(target.item_id);
+        for (other,original) in &scan.private_targets{
+            if other.kind!=target.kind||other.grid_id!=target.grid_id||
+                other.object_id==target.object_id||
+                exclusive_anchor_class(other.item_id)!=class{continue;}
+            let final_xy=moves.iter().find(|(m,_)|m.kind==other.kind&&
+                m.grid_id==other.grid_id&&m.object_id==other.object_id)
+                .map(|(_,xy)|*xy).or(*original);
+            // An incomplete same-class coordinate cannot prove uniqueness.
+            if final_xy.is_none()||final_xy==Some(*destination){
+                return Err(CodecError::Json);
+            }
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn resolve_grid_coordinate_target(
     profile:&[u8],ordinal:usize,expected_item:u64,
     expected:(i32,i32),record_kind:&str
@@ -718,5 +762,48 @@ mod tests{
         assert_eq!(v["rows"].as_array().unwrap().len(),1);
         assert_eq!(v["rows"][0]["coordinatesObserved"],false);
         assert_eq!(v["rows"][0]["orientation"],Value::Null);
+    }
+
+    #[test]
+    fn exclusive_anchor_moves_reject_same_class_only_with_atomic_final_positions(){
+        let source=br#"{"World":{"GridCollection":{"Grids":{
+          "101":{"Objects":{
+            "1":{"ItemID":40100001,"X":0,"Y":0},
+            "2":{"ItemID":40100002,"X":1,"Y":0},
+            "3":{"ItemID":40700001,"X":2,"Y":0},
+            "4":{"ItemID":40700002,"X":3,"Y":0},
+            "5":{"ItemID":40000001,"X":4,"Y":0},
+            "6":{"ItemID":40100003,"X":8,"Y":0},
+            "7":{"ItemID":40100004,"X":8,"Y":0}}},
+          "102":{"Objects":{"1":{"ItemID":40100002,"X":9,"Y":0}}}
+        },"DiffGrids":{"201":{"ModifiedObjects":{
+          "1":{"ItemID":40100001,"X":0,"Y":0}}}}}}}"#;
+        let t=|id:&str,item_id:u64|GridCoordinateTarget{kind:GridObjectKind::Full,
+            grid_id:"101".into(),object_id:id.into(),item_id};
+        let road=t("1",40100001);let road2=t("2",40100002);
+        let fence=t("3",40700001);let furniture=t("5",40000001);
+        assert!(validate_exclusive_grid_moves(source,&[(&road,(1,0))]).is_err());
+        assert!(validate_exclusive_grid_moves(source,&[(&fence,(3,0))]).is_err());
+        assert!(validate_exclusive_grid_moves(source,&[(&road,(8,0))]).is_err());
+        assert!(validate_exclusive_grid_moves(source,&[(&road,(2,0))]).is_ok());
+        assert!(validate_exclusive_grid_moves(source,&[(&road,(4,0))]).is_ok());
+        assert!(validate_exclusive_grid_moves(source,&[(&road,(9,0))]).is_ok());
+        assert!(validate_exclusive_grid_moves(source,&[(&furniture,(1,0))]).is_ok());
+        assert!(validate_exclusive_grid_moves(source,&[(&road,(1,0)),(&road2,(0,0))]).is_ok());
+        assert!(validate_exclusive_grid_moves(source,&[(&road,(5,0)),(&road2,(5,0))]).is_err());
+        let diff=GridCoordinateTarget{kind:GridObjectKind::DiffModified,grid_id:"201".into(),
+            object_id:"1".into(),item_id:40100001};
+        assert!(validate_exclusive_grid_moves(source,&[(&diff,(5,0))]).is_err());
+        assert_eq!(exclusive_anchor_class(50100001),None);
+        assert_eq!(exclusive_anchor_class(40200001),None);
+    }
+    #[test]
+    fn exclusive_move_requires_known_other_same_class_coordinates(){
+        let source=br#"{"World":{"GridCollection":{"Grids":{"1":{"Objects":{
+          "1":{"ItemID":40100001,"X":0,"Y":0},"2":{"ItemID":40100002,"X":2}
+        }}}}}}"#;
+        let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"1".into(),
+            object_id:"1".into(),item_id:40100001};
+        assert!(validate_exclusive_grid_moves(source,&[(&target,(3,0))]).is_err());
     }
 }

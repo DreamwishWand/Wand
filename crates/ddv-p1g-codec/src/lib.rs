@@ -1372,6 +1372,8 @@ mod browser_amount_preview {
             ).map_err(|_|fail("DB05_GRID_EDIT_STALE_OR_AMBIGUOUS"))?;
             let json=std::str::from_utf8(original)
                 .map_err(|_|fail("DB05_GRID_EDIT_INVALID_UTF8"))?;
+            grid_instance_preview::validate_exclusive_grid_moves(original,&[(&target,p.replacement)])
+                .map_err(|_|fail("DB05_GRID_EXCLUSIVE_ANCHOR_CONFLICT_OR_UNRESOLVED"))?;
             let draft=preview_existing_grid_coordinates(
                 json,target,p.expected,p.replacement
             ).map_err(|_|fail("DB05_GRID_EDIT_STALE_OR_INVALID"))?;
@@ -1424,6 +1426,9 @@ mod browser_amount_preview {
                 GridCoordinateEdit{target,expected:p.expected,
                     replacement:p.replacement}
             ).collect::<Vec<_>>();
+            let moves=edits.iter().map(|e|(&e.target,e.replacement)).collect::<Vec<_>>();
+            grid_instance_preview::validate_exclusive_grid_moves(original,&moves)
+                .map_err(|_|fail("DB05_GRID_EXCLUSIVE_ANCHOR_CONFLICT_OR_UNRESOLVED"))?;
             let draft=preview_existing_grid_coordinate_batch(json,&edits)
                 .map_err(|_|fail("DB05_GRID_BATCH_STALE_OR_INVALID"))?;
             if !draft.changed||!draft.untouched_bytes_preserved||
@@ -1504,6 +1509,8 @@ mod browser_amount_preview {
             ).map_err(|_|fail("DB05_GRID_TRANSFORM_STALE_OR_AMBIGUOUS"))?;
             let json=std::str::from_utf8(original)
                 .map_err(|_|fail("DB05_GRID_TRANSFORM_UTF8_INVALID"))?;
+            grid_instance_preview::validate_exclusive_grid_moves(original,&[(&target,p.replacement)])
+                .map_err(|_|fail("DB05_GRID_EXCLUSIVE_ANCHOR_CONFLICT_OR_UNRESOLVED"))?;
             let draft=preview_existing_grid_transform(
                 json,target,p.expected,p.replacement,
                 &o.expected_orientation,&o.replacement_orientation
@@ -1555,6 +1562,9 @@ mod browser_amount_preview {
                     orientation:p.orientation.clone()
                 }
             ).collect::<Vec<_>>();
+            let moves=edits.iter().filter_map(|e|e.position.map(|xy|(&e.target,xy))).collect::<Vec<_>>();
+            grid_instance_preview::validate_exclusive_grid_moves(original,&moves)
+                .map_err(|_|fail("DB05_GRID_EXCLUSIVE_ANCHOR_CONFLICT_OR_UNRESOLVED"))?;
             let draft=preview_existing_grid_mixed_batch(json,&edits)
                 .map_err(|_|fail("DB05_GRID_MIXED_STALE_OR_INVALID"))?;
             if !draft.changed||!draft.untouched_bytes_preserved||
@@ -1623,6 +1633,9 @@ mod browser_amount_preview {
                     orientation:p.orientation.clone()
                 }
             ).collect::<Vec<_>>();
+            let moves=edits.iter().filter_map(|e|e.position.map(|xy|(&e.target,xy))).collect::<Vec<_>>();
+            grid_instance_preview::validate_exclusive_grid_moves(original,&moves)
+                .map_err(|_|fail("DB05_GRID_EXCLUSIVE_ANCHOR_CONFLICT_OR_UNRESOLVED"))?;
             let mut grid_draft=preview_existing_grid_mixed_batch(source,&edits)
                 .map_err(|_|fail("DB05_GRID_QUANTITY_GRID_INVALID"))?;
             if !grid_draft.changed||!grid_draft.untouched_bytes_preserved||
