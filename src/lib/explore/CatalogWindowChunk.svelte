@@ -12,7 +12,7 @@
     if(!(event.relatedTarget instanceof Node)||!(event.currentTarget as HTMLElement).contains(event.relatedTarget))focusWithin=false;
   }
 </script>
-<div class="window-chunk" data-explore-chunk={chunk.start} data-mounted={visible||focusWithin}
+<div class="window-chunk" data-explore-chunk={chunk.start} data-chunk-end={chunk.end} data-mounted={visible||focusWithin}
   style:height={chunk.height+'px'} use:observeCatalogChunk={(value)=>visible=value}
   onfocusin={()=>focusWithin=true} onfocusout={lostFocus}>
   {#if visible||focusWithin}

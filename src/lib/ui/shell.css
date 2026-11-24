@@ -271,3 +271,15 @@
   .site-shell .header-preference-tools{gap:2px;padding-left:1px;border-left:0}
   .site-shell .site-actions{gap:1px}
 }
+
+/* Route-hosted context controls share the sticky shell, not a second page bar. */
+.site-shell .header-service-toolbar{flex:1 1 auto;min-width:0;display:flex;align-items:center}
+.explore-shell .header-spacer{flex:0;min-width:0}
+@media(min-width:1101px){.explore-shell .shell-current{display:none}}
+@media(max-width:1100px){
+  .site-shell.explore-shell{--shell-height:108px}
+  .site-shell.explore-shell .site-header{height:var(--shell-height);min-height:var(--shell-height);flex-wrap:wrap;align-content:center;row-gap:2px}
+  .site-shell.explore-shell .header-spacer{flex:1}
+  .site-shell.explore-shell .header-service-toolbar{order:4;flex:0 0 100%;width:100%;min-height:42px}
+  .site-shell.explore-shell .site-actions{margin-left:auto}
+}

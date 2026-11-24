@@ -1,6 +1,7 @@
 <script lang="ts">
   import '../app.css';
   import '$lib/ui/shell.css';
+  import ServiceToolbarHost from '$lib/ui/ServiceToolbarHost.svelte';
   import '$lib/ui/themes.css';
   import {base} from '$app/paths';
   import {page} from '$app/stores';
@@ -202,7 +203,8 @@
     };
   });
   $: route=$page.url.pathname.replace(/\/+$/,'')||'/';
-  $: service=route.includes('/collection')?'collection':
+  $: service=route.includes('/decorate/explore')?'explore':
+    route.includes('/collection')?'collection':
     route.includes('/guide/star-path')?'starpath':
     route.includes('/guide/characters')?'characters':
     route.includes('/guide')?'guide':
@@ -251,12 +253,13 @@
     if(focusContextSearch())event.preventDefault();
   }
 }}/>
-<div class="site-shell">
+<div class="site-shell" class:explore-shell={service==='explore'}>
   <header class="site-header">
     <span class="shell-brand-mark" aria-hidden="true"><img src="{base}/DreamwishWand.svg" alt="" width="34" height="34" /></span>
     <a class="header-home-button" href="{base}/" aria-label={copy.home} title={copy.home}><WandIcon name="home" size={21}/></a>
     {#if service==='home'}<span class="shell-home-brand">Dreamwish Wand</span>{/if}
-    {#if service!=='home'}<span class="shell-current">{service==='collection'?'Collection':service==='starpath'?'Star Path':service==='characters'?'Characters':service==='guide'?'Guide':service==='world'?'World':'Save'}</span>{/if}
+    {#if service!=='home'}<span class="shell-current">{service==='explore'?'Explore':service==='collection'?'Collection':service==='starpath'?'Star Path':service==='characters'?'Characters':service==='guide'?'Guide':service==='world'?'World':'Save'}</span>{/if}
+    {#if service==='explore'}<ServiceToolbarHost/>{/if}
     <div class="header-spacer"></div>
     <div class="site-actions" aria-label={copy.pageActions}>
       {#if service==='world'}
@@ -295,7 +298,7 @@
           </div>
         </div>
       {/if}
-      {#if !historyOpen}
+      {#if !historyOpen&&service!=='explore'}
       <div class="shell-undo-redo" role="group" aria-label={copy.history}>
         <button type="button" class="header-icon-button" aria-label={copy.historyUndo}
           title={copy.historyUndo} disabled={service!=='collection'||$historyView.busy||$historyView.cursor===0}

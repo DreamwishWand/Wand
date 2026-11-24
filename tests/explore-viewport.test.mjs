@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {catalogGridLayout,GRID_GAP,WINDOW_ROWS,catalogPrefix} from '../src/lib/explore/viewport-grid.ts';
+import {catalogGridLayout,GRID_GAP,WINDOW_ROWS} from '../src/lib/explore/viewport-grid.ts';
 test('window geometry preserves every item and total scroll height at desktop, board and phone widths',()=>{
  for(const width of [320,480,800,1280,1920])for(const count of [0,1,2,57,2200,8000]){
   const l=catalogGridLayout(width,count,width<600?78:94);
@@ -13,12 +13,11 @@ test('window geometry preserves every item and total scroll height at desktop, b
  }
  assert.deepEqual(catalogGridLayout(0,8000).chunks,[]);
 });
-
-test('one global reveal budget crosses universe boundaries without preloading later sections',()=>{
- const sections=[['a',[1,2,3]],['b',[4,5,6,7]],['c',Array.from({length:9000},(_,i)=>i+8)]];
- assert.deepEqual(catalogPrefix(sections,2),[['a',[1,2]]]);
- assert.deepEqual(catalogPrefix(sections,5),[['a',[1,2,3]],['b',[4,5]]]);
- assert.deepEqual(catalogPrefix(sections,8),[['a',[1,2,3]],['b',[4,5,6,7]],['c',[8]]]);
- assert.equal(catalogPrefix(sections,0).length,0);
- assert.equal(catalogPrefix(sections,10000).flatMap(([,items])=>items).length,9007);
+test('all section height is known without revealing preceding cards',()=>{
+ const sizes=[57,2200,8000];
+ const grids=sizes.map(n=>catalogGridLayout(1280,n));
+ assert.equal(grids.reduce((sum,g)=>sum+g.chunks.reduce((n,c)=>n+c.end-c.start,0),0),sizes.reduce((a,b)=>a+b,0));
+ const last=grids[2].chunks.at(-1);
+ assert.equal(last.end,8000);
+ assert.ok(grids[2].height>50000);
 });

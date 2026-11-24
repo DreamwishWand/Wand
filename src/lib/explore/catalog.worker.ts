@@ -1,5 +1,6 @@
 import type {ExploreItem} from './model';
 import type {ReleaseGroup} from './series';
+import {openPublicItemMaster,type ItemMasterTagLabel} from '../items/public-item-master';
 import {loadPinnedPublicNativeShopSnapshot,loadPinnedHistoricalNativeShopSnapshot} from '../acquisition/public-native-shop';
 import {loadPublicStarpath} from '../guide/public-starpath';
 interface Request {base:string}
@@ -20,9 +21,10 @@ self.onmessage=async(event:MessageEvent<Request>)=>{
     if(!release||data.schema!==(complete?'wand.explore.catalog@2':'wand.explore.catalog@1')||data.release!==(complete?.release??release.release)||!Array.isArray(data.items))throw Error('INVALID_CATALOG');
     const items:ExploreItem[]=data.items;
     if(items.some(i=>!Number.isSafeInteger(i.itemId)||i.itemId<=0||!i.names||!Array.isArray(i.universes)||!Array.isArray(i.tags)||!(i.nativeCategory==='Furniture'&&[0,1,2,3,7,8,9].includes(i.subtype)||i.nativeCategory==='Trimming'&&[0,1].includes(i.subtype)||i.nativeCategory==='Building'&&[0,1,2,3,4,5].includes(i.subtype)||i.nativeCategory==='Skin'&&[1,2,3,6].includes(i.subtype)||i.nativeCategory==='Environment')))throw Error('INVALID_ITEM');
-    const [current,archive,starpath]=await Promise.allSettled([
+    const [current,archive,starpath,facetResult]=await Promise.allSettled([
       loadPinnedPublicNativeShopSnapshot(base),loadPinnedHistoricalNativeShopSnapshot(base),
-      loadPublicStarpath(base+'/guide/public/starpath-cache-2026-11-22.json')
+      loadPublicStarpath(base+'/guide/public/starpath-cache-2026-11-22.json'),
+      complete?openPublicItemMaster(base,fetch,{scope:'complete',gameVersion:version}).then(master=>master.getCollectionFacets()):Promise.resolve(null)
     ]);
     const releases:ReleaseGroup[]=[];
     const offers=new Map<string,ReleaseGroup>();
@@ -37,6 +39,15 @@ self.onmessage=async(event:MessageEvent<Request>)=>{
       const ids=[...new Set([...season.rewardPages,...season.bonusPages].flatMap(p=>p.rewards.map(r=>Number(r.itemId))))];
       releases.push({key:'season:'+season.id,label:season.title,kind:'season',ids});
     }
-    self.postMessage({items,universeTags:data.universeTags??[],releases});
+    let worldTags:readonly ItemMasterTagLabel[]=[];
+    let enriched=items;
+    if(facetResult.status==='fulfilled'&&facetResult.value){
+      const facets=facetResult.value;
+      worldTags=facets.worldTags;
+      const keys=new Map(worldTags.map(row=>[row.tagId,row.key]));
+      const worlds=new Map(facets.worldSourceTagItems.map(([id,tags])=>[id,tags.flatMap(tag=>{const key=keys.get(tag);return key?[key]:[];})]));
+      enriched=items.map(i=>({...i,worlds:worlds.get(i.itemId)??[]}));
+    }
+    self.postMessage({items:enriched,universeTags:data.universeTags??[],worldTags,releases});
   }catch{self.postMessage({error:true});}
 };
