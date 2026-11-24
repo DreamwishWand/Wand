@@ -834,6 +834,8 @@ try{
     'matrix(3 0 0 -3 10 60)');
   assert.match(await mapPanel.innerText(),/家具形状と床属性の一致候補/);
   assert.equal(await mapPanel.locator('.grid-lines').count(),1);
+  assert.equal(await mapPanel.locator('.source-map-object').count(),1);
+  assert.equal(await mapPanel.locator('.source-map-object .object-shape').count(),1);
   const clickCell=async(x,y)=>{
     await mapPanel.locator('svg').scrollIntoViewIfNeeded();
     const p=await mapPanel.locator('svg').evaluate((svg,[x,y])=>{
@@ -857,8 +859,21 @@ try{
   await mapPanel.locator('svg .cell-mask').waitFor({state:'detached'});
   assert.equal(await mapPanel.locator('.grid-lines').count(),1);
   assert.equal(await mapPanel.locator('.placement-cell').count(),4);
+  await floorPanel.getByRole('button',{name:'家具の選択を解除'}).click();
+  await clickCell(4,5);
+  await mapPanel.locator('.selected-object').waitFor();
+  assert.match(await mapPanel.locator('.selected-object').innerText(),/SyntheticSourceObject/);
+  const originalViewBox=await mapPanel.locator('svg').getAttribute('viewBox');
+  await mapPanel.getByRole('button',{name:'拡大',exact:true}).click();
+  assert.notEqual(await mapPanel.locator('svg').getAttribute('viewBox'),originalViewBox);
+  await mapPanel.getByRole('button',{name:'全体',exact:true}).click();
+  assert.equal(await mapPanel.locator('svg').getAttribute('viewBox'),originalViewBox);
   await mapPanel.getByRole('button',{name:'解除'}).click();
   await mapPanel.locator('svg').waitFor({state:'detached'});
+  await mapPanel.getByRole('button',{name:'簡略マップ',exact:true}).click();
+  await mapPanel.locator('.source-map-object').waitFor();
+  assert.match(await mapPanel.innerText(),/原本Gridの簡略図/);
+  await mapPanel.getByRole('button',{name:'簡略マップを閉じる'}).click();
 
   // Source/GridData path match with a generated local Save remains a
   // SEPARATE numeric plot; it is never painted as original terrain occupancy.

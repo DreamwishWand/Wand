@@ -3,6 +3,7 @@
   import {localSaveSession} from '$lib/ui/local-save-session';
   import {autoAppend} from '$lib/ui/auto-append';
   import NativeGraphExplorer from '$lib/world/NativeGraphExplorer.svelte';
+  import type {SourceObjectMap} from '$lib/world/source-object-map.ts';
   import MediaMapGridOverlay from '$lib/world/MediaMapGridOverlay.svelte';
   import NativeTerrainGridOverview from '$lib/world/NativeTerrainGridOverview.svelte';
   import NativeTerrainFloorMatchPanel from '$lib/world/NativeTerrainFloorMatchPanel.svelte';
@@ -91,6 +92,7 @@
   type TerrainRasterEnvelope = {
     viewKey:string;gridIdNative:number;gridDataPath:string;
     raster:TerrainRaster;
+    objectMap:SourceObjectMap|null;
   };
   type ViewResult = {
     page: PageResult; markers: Array<{x:number;y:number;count:number}>;
@@ -991,7 +993,10 @@
            (raster as TerrainRaster).nativeFloorValues instanceof Uint32Array) {
           terrainRasterEnvelope={viewKey:selected.viewKey,
             gridIdNative:grid.gridIdNative,gridDataPath:grid.gridDataPath,
-            raster:raster as TerrainRaster};
+            raster:raster as TerrainRaster,
+            objectMap:result.objectMap?.layoutId===selected.layoutId&&
+              result.objectMap?.gridIdNative===grid.gridIdNative&&
+              result.objectMap?.gridDataPath===grid.gridDataPath?result.objectMap:null};
           terrainRasterStatus='';
         }else{
           terrainRasterEnvelope=null;
@@ -1431,6 +1436,7 @@
               layoutId:selectedLayout.layoutId,nativeGridId:selectedGrid.gridIdNative,
               gridDataPath:selectedGrid.gridDataPath,sizeX:selectedGrid.sizeX,sizeY:selectedGrid.sizeY}:null}
           raster={activeTerrainRaster} candidates={floorWindowResult}
+          objectMap={activeTerrainRaster?terrainRasterEnvelope?.objectMap??null:null}
           selectedItemId={selectedFloorItem?.itemId??null} orientationCode={floorOrientationCode}
           bind:active={mediaMapActive} canNavigate={canNavigateTerrainRaster}
           onNavigate={jumpToTerrainRasterCell} onInspect={inspectFloorLayerAt}/>

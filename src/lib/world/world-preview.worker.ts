@@ -8,6 +8,7 @@
 import { openLocalWorldZip } from './local-snapshot.ts';
 import { WorldSourceLoadEpoch } from './world-source-load-epoch.ts';
 import { getNativeTerrainWindow,getNativeTerrainRaster } from './native-terrain-preview.ts';
+import {buildSourceObjectMap} from './source-object-map.ts';
 import {getNativeRegionGridAtlasPage} from './native-region-grid-atlas.ts';
 import {searchNativeFloorItems,getNativeFloorMatchResult} from './native-floor-match.ts';
 import {
@@ -306,10 +307,13 @@ worker.onmessage = async ({data}:MessageEvent<unknown>):Promise<void> => {
         item=>item.gridIdNative===message.gridIdNative);
       if(!grid)throw new TypeError('Unknown original source Grid ID');
       const result=getNativeTerrainRaster(catalog,grid.gridDataPath);
+      let objectMap=null;
+      try{objectMap=buildSourceObjectMap(catalog,sourceView.layoutId,grid.gridIdNative);}
+      catch{/* A malformed object definition must not hide valid terrain. */}
       worker.postMessage({
         kind:'terrain-raster',requestId,viewKey:sourceView.viewKey,
         gridIdNative:message.gridIdNative,gridDataPath:grid.gridDataPath,
-        result
+        result,objectMap
       });
       return;
     }
