@@ -1,5 +1,6 @@
 <script lang="ts">
   import {emptyWorldTimeline,currentWorldEdits} from './saved-map-batch.ts';
+  import {defaultWorldLayers,type WorldLayerState} from './world-layer-state.ts';
   import SavedShapePlot from './SavedShapePlot.svelte';
   import type {TerrainBinding} from './terrain-binding.ts';
   import type {SavedShapeMap} from './saved-shape-map.ts';
@@ -10,6 +11,7 @@
   export let timeline=emptyWorldTimeline();
   export let terrain:TerrainBinding|null=null;
   export let compact=false;
+  export let layerState:WorldLayerState=defaultWorldLayers();
   export let terrainDisplayed=false;
   export let available=false;
   export let working=false;
@@ -91,7 +93,7 @@
       {/if}
     </div>{/if}
     {#if receipt.points.length>0}
-      {#if shapeMap}<SavedShapePlot map={shapeMap} {file} {terrain} {compact} bind:timeline bind:terrainDisplayed/>
+      {#if shapeMap}<SavedShapePlot map={shapeMap} {file} {terrain} {compact} bind:timeline bind:terrainDisplayed bind:layerState/>
       {:else if new Set(receipt.points.map(p=>p.localGridOrdinal)).size===1}<div class="numeric-map">
         <canvas use:draw={receipt}
           aria-label="セーブ内の参照パス一致候補のX/Y数値座標図。地形図ではありません"></canvas>

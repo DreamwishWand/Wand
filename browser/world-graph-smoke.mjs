@@ -1110,6 +1110,16 @@ try{
   assert.equal(await design.locator('.design-object').first().getAttribute('transform'),'translate(14 13)');
   await page.keyboard.press('Control+z');
   assert.equal(await design.locator('.design-object').first().getAttribute('transform'),'translate(10 10)');
+  await design.getByRole('button',{name:'レイヤー',exact:true}).click();
+  await design.getByRole('button',{name:'ロック 家具',exact:true}).click();
+  await page.keyboard.press('Control+a');await page.keyboard.press('Delete');
+  assert.equal(await design.locator('.design-object').count(),1);
+  await design.getByRole('button',{name:'非表示 家具',exact:true}).click();
+  assert.equal(await design.locator('.design-object').count(),0);
+  await design.getByRole('button',{name:'表示 家具',exact:true}).click();
+  assert.equal(await design.locator('.design-object').count(),1);
+  await design.getByRole('button',{name:'ロック解除 家具',exact:true}).click();
+  await design.getByRole('button',{name:'レイヤー',exact:true}).click();
   await publicWorld.getByLabel('エリア',{exact:true}).selectOption({label:'Plaza'});
   await design.locator('.design-plot').waitFor({timeout:20000});
   assert.equal(await design.locator('.design-object').count(),0);

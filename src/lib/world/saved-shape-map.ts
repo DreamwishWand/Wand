@@ -13,7 +13,7 @@ const CARDINAL:Readonly<Record<string,number>>=Object.freeze({
   GridOrientation_Up:0,GridOrientation_Right:4,GridOrientation_Down:8,GridOrientation_Left:12});
 export interface SavedShapeObject extends SavedNumericPoint{
   readonly shapeKey:string|null;readonly name:string|null;
-  readonly layer:MapObjectLayer;readonly surfaceCapable:boolean;readonly editRestrictions?:NativeEditRestrictions;
+  readonly layer:MapObjectLayer;readonly surfaceCapable:boolean;readonly editRestrictions?:NativeEditRestrictions;readonly nativeType?:'Building';
   readonly orientationCode:number|null;
 }
 export interface SavedShapeMap {

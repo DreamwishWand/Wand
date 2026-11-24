@@ -7,6 +7,8 @@
   import {nativeSourceFloorTint} from './native-terrain-canvas.ts';
   import {base} from '$app/paths';
   import {worldArtwork,mapCellPixels,showWorldArtwork,visibleWorldArtworkIds} from './world-artwork.ts';
+  import WorldLayerControls from './WorldLayerControls.svelte';
+  import {defaultWorldLayers,layerVisible,layerSelectable,type WorldLayerState} from './world-layer-state.ts';
   import WorldObjectArtwork from './WorldObjectArtwork.svelte';
   import WorldAlignmentControls from './WorldAlignmentControls.svelte';
   import {alignmentTargets,type MapAlignment} from './map-alignment.ts';
@@ -26,6 +28,9 @@
   export let file:File|null=null;
   export let terrain:TerrainBinding|null=null;
   export let compact=false;
+  export let layerState:WorldLayerState=defaultWorldLayers();
+  let layersOpen=false;
+  function applyLayers(next:WorldLayerState){if(busy)return;cancelEdit();clearStructure();clearGroup();selected=null;hits=[];resetDraft(null);layerState=next;}
   let toolsOpen=true,inspectorOpen=true;
   let root:HTMLDivElement;
   let mapWidth=0,mapHeight=0;
@@ -94,7 +99,7 @@
     }catch{if(epoch===nameEpoch){names=new Map();master=null;}}
   }
   onMount(()=>{const unwatch=watchWandLanguage(next=>{locale=next;void loadNames(next);});return()=>{nameEpoch++;unwatch();};});
-  $: matches=searchSavedObjects(objects,names,query,layer);
+  $: matches=searchSavedObjects(objects.filter(o=>layerSelectable(layerState,o)),names,query,layer);
   $: matchIds=new Set(matches.map(o=>o.localOrdinal));
   function setSearch(value:string){query=value;visibleResults=60;searchOpen=true;}
   function selectFromSearch(o:SavedShapeObject){if(busy)return;if(groupMode){toggleGroup(o);return;}selected=o.localOrdinal;hits=[o];cameraState=objectFocus(map,o,extent,maxZoom);searchOpen=false;}
@@ -111,7 +116,7 @@
   function clearGroup(){alignmentAction=null;alignmentOpen=false;groupIds=[];groupDX=0;groupDY=0;groupTurns=0;placing=false;hoverPoint=null;rangeMode=false;rangeStart=null;rangeEnd=null;}
   function toggleGroupMode(){if(busy)return;cancelEdit();clearGroup();groupMode=!groupMode;selected=null;hits=[];if(groupMode)resetCamera();}
   function toggleGroup(o:SavedShapeObject){
-    if(!worldMoveEligible(o)||o.localGridOrdinal!==activeOrdinal)return;
+    if(!layerSelectable(layerState,o)||!worldMoveEligible(o)||o.localGridOrdinal!==activeOrdinal)return;
     if(groupIds.includes(o.localOrdinal))groupIds=groupIds.filter(id=>id!==o.localOrdinal);
     else if(groupIds.length<WORLD_BATCH_LIMIT)groupIds=[...groupIds,o.localOrdinal];
     alignmentAction=null;groupDX=0;groupDY=0;groupTurns=0;placing=false;hoverPoint=null;cancelEdit();
@@ -125,7 +130,7 @@
     if(busy||!worldShortcutTarget(event,root))return;
     const action=worldShortcut(event);if(!action)return;
     if(action==='undo'||action==='redo'){event.preventDefault();if(action==='undo'&&(placing||editPlan||pendingDraft)){if(groupMode){alignmentAction=null;groupDX=0;groupDY=0;groupTurns=0;placing=false;hoverPoint=null;}else resetDraft(chosen);}else travel(action==='undo'?-1:1);return;}
-    if(action==='select-all'&&file){event.preventDefault();const ids=objects.filter(o=>worldMoveEligible(o)&&matchesSelectionLayer(o,layer)&&(!query.trim()||matchIds.has(o.localOrdinal))).map(o=>o.localOrdinal);if(ids.length>WORLD_BATCH_LIMIT){stageError='選択上限 '+WORLD_BATCH_LIMIT+'件';return;}cancelEdit();clearGroup();groupMode=true;selected=null;hits=[];groupIds=ids;return;}
+    if(action==='select-all'&&file){event.preventDefault();const ids=objects.filter(o=>layerSelectable(layerState,o)&&worldMoveEligible(o)&&matchesSelectionLayer(o,layer)&&(!query.trim()||matchIds.has(o.localOrdinal))).map(o=>o.localOrdinal);if(ids.length>WORLD_BATCH_LIMIT){stageError='選択上限 '+WORLD_BATCH_LIMIT+'件';return;}cancelEdit();clearGroup();groupMode=true;selected=null;hits=[];groupIds=ids;return;}
     if(action==='zoom-in'||action==='zoom-out'||action==='fit'){event.preventDefault();if(action==='fit')resetCamera();else changeZoom(zoom*(action==='zoom-in'?2:.5));return;}
     if(event.ctrlKey||event.metaKey||event.altKey)return;
     if(action==='confirm'&&event.target instanceof HTMLElement&&event.target.closest('button:not(.plot)'))return;
@@ -294,7 +299,7 @@
   $: maxZoom=maxMapZoom(Math.max(extent.w,extent.h));
   $: viewBox=mapCameraViewBox(cameraState,extent);
   $: viewport=mapViewportBounds(cameraState,extent);
-  $: visibleObjects=visibleSavedObjects(objects,map.shapes,viewport,selected);
+  $: visibleObjects=visibleSavedObjects(objects.filter(o=>layerVisible(layerState,o)),map.shapes,viewport,selected);
   $: cellPixels=mapCellPixels(viewport,mapWidth,mapHeight);
   $: if(mapWidth&&mapHeight)loadArtwork(visibleWorldArtworkIds(visibleObjects,map.shapes,cellPixels));
   $: if(searchOpen)loadArtwork(matches.slice(0,visibleResults).map(o=>Number(o.itemId)).filter(id=>Number.isSafeInteger(id)&&id>0));
@@ -303,7 +308,7 @@
   function wheel(event:WheelEvent){cameraState=wheelMapCamera(event,svg,extent,cameraState,maxZoom);}
   function startPan(event:PointerEvent){gesture.begin(event,zoom>1&&(!placing||event.shiftKey||event.button===1||event.pointerType==='touch'));}
   function finishPan(event:PointerEvent){gesture.end(event);}
-  function chooseLayer(l:MapSelectionLayer){layer=l;if(!groupMode)selected=hits.find(o=>matchesSelectionLayer(o,l))?.localOrdinal??null;}
+  function chooseLayer(l:MapSelectionLayer){layer=l;if(groupMode){clearGroup();cancelEdit();}else selected=hits.find(o=>layerSelectable(layerState,o)&&matchesSelectionLayer(o,l))?.localOrdinal??null;}
   function pointerCell(event:MouseEvent){
     const matrix=svg?.getScreenCTM();if(!matrix)return null;
     const p=new DOMPoint(event.clientX,event.clientY).matrixTransform(matrix.inverse());
@@ -322,18 +327,18 @@
     if(groupMode){
       if(rangeMode){
         if(!rangeStart){rangeStart=point;rangeEnd=point;return;}
-        const ids=savedShapesInRect(effectiveMap,activeOrdinal,rangeStart,point).filter(o=>worldMoveEligible(o)&&matchesSelectionLayer(o,layer)).map(o=>o.localOrdinal);
+        const ids=savedShapesInRect(effectiveMap,activeOrdinal,rangeStart,point).filter(o=>layerSelectable(layerState,o)&&worldMoveEligible(o)&&matchesSelectionLayer(o,layer)).map(o=>o.localOrdinal);
         const merged=[...new Set([...groupIds,...ids])];
         if(merged.length>WORLD_BATCH_LIMIT){stageError='選択上限 '+WORLD_BATCH_LIMIT+'件';}else{groupIds=merged;stageError='';}
         alignmentAction=null;groupDX=0;groupDY=0;groupTurns=0;rangeMode=false;rangeStart=null;rangeEnd=null;cancelEdit();return;
       }
       if(placing&&groupObjects.length>=2){const anchor=groupObjects[0];groupDX=point.x-anchor.x;groupDY=point.y-anchor.y;placing=false;hoverPoint=null;return;}
-      hits=savedShapesAt(effectiveMap,activeOrdinal,point.x,point.y);
-      const hit=hits.find(o=>matchesSelectionLayer(o,layer)&&worldMoveEligible(o));if(hit)toggleGroup(hit);return;
+      hits=savedShapesAt(effectiveMap,activeOrdinal,point.x,point.y).filter(o=>layerSelectable(layerState,o));
+      const hit=hits.find(o=>layerSelectable(layerState,o)&&matchesSelectionLayer(o,layer)&&worldMoveEligible(o));if(hit)toggleGroup(hit);return;
     }
-    if(!placing&&(event.metaKey||event.ctrlKey||event.shiftKey)&&file){const hit=savedShapesAt(effectiveMap,activeOrdinal,point.x,point.y).find(o=>matchesSelectionLayer(o,layer)&&worldMoveEligible(o));if(hit){const prev=chosen;clearGroup();groupMode=true;selected=null;if(prev&&worldMoveEligible(prev)&&prev.localOrdinal!==hit.localOrdinal)groupIds=[prev.localOrdinal];toggleGroup(hit);return;}}
+    if(!placing&&(event.metaKey||event.ctrlKey||event.shiftKey)&&file){const hit=savedShapesAt(effectiveMap,activeOrdinal,point.x,point.y).find(o=>layerSelectable(layerState,o)&&matchesSelectionLayer(o,layer)&&worldMoveEligible(o));if(hit){const prev=chosen;clearGroup();groupMode=true;selected=null;if(prev&&worldMoveEligible(prev)&&prev.localOrdinal!==hit.localOrdinal)groupIds=[prev.localOrdinal];toggleGroup(hit);return;}}
     if(placing&&chosen&&worldMoveEligible(chosen)){draftX=point.x;draftY=point.y;placing=false;hoverPoint=null;cancelEdit();return;}
-    hits=savedShapesAt(effectiveMap,activeOrdinal,point.x,point.y);
+    hits=savedShapesAt(effectiveMap,activeOrdinal,point.x,point.y).filter(o=>layerSelectable(layerState,o));
     selected=hits.find(o=>matchesSelectionLayer(o,layer))?.localOrdinal??null;
   }
 </script>
@@ -349,9 +354,11 @@
     {/if}
   </div>
   <div class="controls" role="group" aria-label="セーブ図の選択レイヤー">
+    <button type="button" aria-label={locale==='ja'?'レイヤー':'Layers'} aria-pressed={layersOpen} on:click={()=>layersOpen=!layersOpen}>{locale==='ja'?'レイヤー':'Layers'}</button>
     {#each layers as l}<button type="button" aria-pressed={layer===l} on:click={()=>chooseLayer(l)}>{MAP_LAYER_LABELS[l]}</button>{/each}
     {#if file}<button type="button" aria-pressed={groupMode} disabled={busy} on:click={toggleGroupMode}>複数選択</button>{/if}
   </div>
+  {#if layersOpen}<WorldLayerControls {locale} state={layerState} disabled={busy} onChange={applyLayers}/>{/if}
   {#if originAvailable}
     <div class="controls origin-tools">
       <button type="button" aria-pressed={showOrigins} on:click={()=>showOrigins=!showOrigins}>配置候補マス</button>

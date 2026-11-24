@@ -11,6 +11,8 @@
  import type {WandLanguage} from '../ui/preferences.ts';
  import {base} from '$app/paths';
  import {worldArtwork,mapCellPixels,showWorldArtwork,visibleWorldArtworkIds} from './world-artwork.ts';
+ import WorldLayerControls from './WorldLayerControls.svelte';
+ import {defaultWorldLayers,layerVisible,layerSelectable,type WorldLayerState} from './world-layer-state.ts';
  import WorldObjectArtwork from './WorldObjectArtwork.svelte';
  import WorldAlignmentControls from './WorldAlignmentControls.svelte';
  import {alignmentTargets,type MapAlignment} from './map-alignment.ts';
@@ -23,6 +25,9 @@
  import {nativeActionBlocked} from './native-edit-restrictions.ts';
  import {exclusiveAnchorClass} from './saved-map-transform.ts';
  export let active=false;
+ export let layerState:WorldLayerState=defaultWorldLayers();
+ let layersOpen=false;
+ function applyLayers(next:WorldLayerState){if(busyImport)return;cancel();selected=null;groupIds=[];layerState=next;}
  export let grid:PublicTerrainGridRef|null=null;
  export let raster:TerrainRaster|null=null;
  export let worker:Worker|null=null;
@@ -94,7 +99,7 @@
  }
  const normalize=(s:string)=>s.normalize('NFKC').toLocaleLowerCase().trim();
  $: terms=normalize(query).split(/\s+/).filter(Boolean);
- $: filtered=catalog.filter(o=>(layer==='all'||o.layer===layer)&&terms.every(t=>normalize(o.name).includes(t)));
+ $: filtered=catalog.filter(o=>layerSelectable(layerState,o)&&(layer==='all'||o.layer===layer)&&terms.every(t=>normalize(o.name).includes(t)));
  $: visibleCatalog=filtered.slice(0,limit);
  $: if(active&&paletteOpen)loadImages(visibleCatalog);
  async function loadImages(items:readonly {itemId:number}[]){
@@ -123,7 +128,8 @@
      if(!active||!grid||d.kind!=='design-shapes'||d.key!==grid.key||!Array.isArray(d.result))return;
      const factor=String(grid.factor),incoming=new Map<number,DesignItemGeometry>((d.result as DesignItemGeometry[]).map(g=>[g.itemId,g]));
      if(clip.some(p=>!incoming.has(p.itemId)&&!definitions.has(p.itemId))){error='配置形状を取得できませんでした。';return;}
-     cache={...cache,[factor]:new Map([...(cache[factor]??new Map<number,DesignItemGeometry>()),...incoming])};pasting=clip;hover=lastPoint;return;
+     cache={...cache,[factor]:new Map([...(cache[factor]??new Map<number,DesignItemGeometry>()),...incoming])};
+     if(clip.some(p=>{const g=incoming.get(p.itemId)??definitions.get(p.itemId);return !g||!layerSelectable(layerState,g);})){error=locale==='ja'?'非表示またはロック中のレイヤーです。':'The layer is hidden or locked.';return;}pasting=clip;hover=lastPoint;return;
    }
    if(pendingImport&&d?.requestId===pendingImport.id){
      const pending=pendingImport;pendingImport=null;
@@ -147,6 +153,7 @@
      const g=d.result as DesignItemGeometry;
      const key=String(grid.factor);
      cache={...cache,[key]:new Map(cache[key]??[]).set(g.itemId,g)};
+     if(!layerSelectable(layerState,g))return;
      placing=g;orientation=2;selected=null;moveMode=false;hover=null;error='';
    }
  }
@@ -154,7 +161,7 @@
    if(!worker||!grid||busyImport)return;
    groupIds=[];pasting=[];pastePending=[];pasteRequest=0;
    const g=definitions.get(id);
-   if(g){placing=g;orientation=2;selected=null;moveMode=false;hover=null;error='';shapeId=0;loadingShape=false;return;}
+   if(g){if(!layerSelectable(layerState,g))return;placing=g;orientation=2;selected=null;moveMode=false;hover=null;error='';shapeId=0;loadingShape=false;return;}
    shapeId=nextRequest();loadingShape=true;error='';placing=null;moveMode=false;hover=null;
    worker.postMessage({command:'design-shape',requestId:shapeId,key:grid.key,itemId:id});
  }
@@ -170,7 +177,7 @@
  $: maxZoom=maxMapZoom(Math.max(width,height));
  $: viewBox=mapCameraViewBox(camera,extent);
  $: viewport=mapViewportBounds(camera,extent);
- $: visible=map?visibleSavedObjects(objects,map.shapes,viewport,selected):[];
+ $: visible=map?visibleSavedObjects(objects.filter(o=>layerVisible(layerState,o)),map.shapes,viewport,selected):[];
  $: cellPixels=mapCellPixels(viewport,mapWidth,mapHeight);
  $: if(active&&map)loadImages(visibleWorldArtworkIds(visible,map.shapes,cellPixels).map(itemId=>({itemId})));
  $: if(active&&placing)loadImages([{itemId:placing.itemId}]);
@@ -209,6 +216,7 @@
  function remove(){const next=removeDesignGroup(timeline,[...selectedIds],definitions);if(next){save(next);selected=null;groupIds=[];cancel();}}
  function beginPaste(clip:DesignClipItem[]){
    if(!clip.length||!grid||busyImport)return;
+   if(clip.some(p=>{const g=definitions.get(p.itemId);return g&&!layerSelectable(layerState,g);})){error=locale==='ja'?'非表示またはロック中のレイヤーです。':'The layer is hidden or locked.';return;}
    cancel();selected=null;groupIds=[];
    if(clip.every(p=>definitions.has(p.itemId))){pasting=clip;hover=lastPoint;return;}
    if(!worker)return;
@@ -241,14 +249,14 @@
    }
    const hits=map?savedShapesAt(map,1,p.x,p.y):[];
    const ordered=mapPainterOrder(hits).reverse();
-   const id=ordered.find(o=>matchesSelectionLayer(o,layer))?.localOrdinal??null;
+   const id=ordered.find(o=>layerSelectable(layerState,o)&&matchesSelectionLayer(o,layer))?.localOrdinal??null;
    if((e.ctrlKey||e.metaKey||e.shiftKey)&&id!==null){
      const ids=new Set(selectedIds);if(ids.has(id))ids.delete(id);else ids.add(id);
      groupIds=[...ids];selected=null;
    }else{groupIds=[];selected=id;}
  }
  function hitAt(p:Cell){
-   return map?mapPainterOrder(savedShapesAt(map,1,p.x,p.y)).reverse().find(o=>matchesSelectionLayer(o,layer)):undefined;
+   return map?mapPainterOrder(savedShapesAt(map,1,p.x,p.y)).reverse().find(o=>layerSelectable(layerState,o)&&matchesSelectionLayer(o,layer)):undefined;
  }
  function startDirect(e:PointerEvent){
    suppressDirectClick=false;
@@ -277,7 +285,7 @@
    if(!drag.moved)return;suppressDirectClick=true;
    if(!commit||!cell(e))return;
    if(drag.kind==='marquee'){
-     const ids=map?savedShapesInRect(map,1,drag.start,drag.end).filter(o=>matchesSelectionLayer(o,layer)&&!nativeActionBlocked(o.editRestrictions,'select')).map(o=>o.localOrdinal):[];
+     const ids=map?savedShapesInRect(map,1,drag.start,drag.end).filter(o=>layerSelectable(layerState,o)&&matchesSelectionLayer(o,layer)&&!nativeActionBlocked(o.editRestrictions,'select')).map(o=>o.localOrdinal):[];
      groupIds=[...new Set([...(drag.add?[...selectedIds]:[]),...ids])];selected=null;return;
    }
    const dx=drag.end.x-drag.start.x,dy=drag.end.y-drag.start.y;
@@ -296,7 +304,7 @@
    }
    if(action==='paste'){if(clipboard.length){e.preventDefault();beginPaste(clipboard);}return;}
    if(action==='duplicate'){if(selectedIds.size){e.preventDefault();duplicate();}return;}
-   if(action==='select-all'){e.preventDefault();cancel();selected=null;groupIds=objects.filter(o=>matchesSelectionLayer(o,layer)&&!nativeActionBlocked(o.editRestrictions,'select')).map(o=>o.localOrdinal);return;}
+   if(action==='select-all'){e.preventDefault();cancel();selected=null;groupIds=objects.filter(o=>layerSelectable(layerState,o)&&matchesSelectionLayer(o,layer)&&!nativeActionBlocked(o.editRestrictions,'select')).map(o=>o.localOrdinal);return;}
    if(action==='cancel'){e.preventDefault();if(alignmentAction){alignmentAction=null;return;}cancel();selected=null;groupIds=[];return;}
    if(action==='confirm'){if(e.target instanceof HTMLElement&&e.target.closest('button:not(.design-plot)'))return;if(alignmentAction&&alignmentPlan){e.preventDefault();commitAlignment();return;}if(pasting.length&&hover){e.preventDefault();commitPaste(hover.x,hover.y);}else if(placing&&hover){e.preventDefault();save(placeDesign(timeline,placing,hover.x,hover.y,orientation,width,height));}return;}
    if(action==='zoom-in'||action==='zoom-out'||action==='fit'){e.preventDefault();camera=action==='fit'?defaultMapCamera():zoomMapCamera(camera,camera.zoom*(action==='zoom-in'?2:.5),maxZoom);return;}
@@ -327,6 +335,7 @@
   </aside>
   <div class="design-map-side">
    <div class="design-controls">
+    <button type="button" aria-label={locale==='ja'?'レイヤー':'Layers'} title={locale==='ja'?'レイヤー':'Layers'} aria-pressed={layersOpen} on:click={()=>{layersOpen=!layersOpen;if(layersOpen){alignmentOpen=false;alignmentAction=null;}}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 16l9 5 9-5"/></svg></button>
     <button type="button" aria-label="家具パレット" title="家具パレット" aria-pressed={paletteOpen} on:click={()=>paletteOpen=!paletteOpen}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v16H3zM9 4v16"/></svg></button>
     <input class="file-input" type="file" accept=".json,application/json" bind:this={importInput} on:change={importFile}/>
     <button type="button" disabled={busyImport} on:click={exportFile}>{words[0]}</button>
@@ -337,7 +346,7 @@
     <button type="button" aria-label="設計の左回転" disabled={busyImport||!placing&&!selectedIds.size} on:click={()=>rotate(1)}>⟲</button>
     <button type="button" aria-label="設計の右回転" disabled={busyImport||!placing&&!selectedIds.size} on:click={()=>rotate(3)}>⟳</button>
     <button type="button" aria-pressed={moveMode} disabled={busyImport||!chosenGeometry||nativeActionBlocked(chosenGeometry.editRestrictions,'move')} on:click={()=>{placing=null;moveMode=!moveMode;hover=null;}}>移動</button>
-    <button type="button" disabled={busyImport||selectedIds.size<2} aria-label={locale==='ja'?'整列・均等配置':'Align and distribute'} aria-pressed={alignmentOpen} on:click={()=>{alignmentOpen=!alignmentOpen;alignmentAction=null;}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3v18M7 5h8v5H7zM7 14h13v5H7z"/></svg></button>
+    <button type="button" disabled={busyImport||selectedIds.size<2} aria-label={locale==='ja'?'整列・均等配置':'Align and distribute'} aria-pressed={alignmentOpen} on:click={()=>{alignmentOpen=!alignmentOpen;alignmentAction=null;if(alignmentOpen)layersOpen=false;}}><svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3v18M7 5h8v5H7zM7 14h13v5H7z"/></svg></button>
     <button type="button" disabled={busyImport||!selectedIds.size} on:click={duplicate}>複製</button>
     <button type="button" disabled={busyImport||!selectedIds.size} on:click={remove}>削除</button>
     {#if (placing||moveMode||pasting.length)&&!busyImport}<button type="button" on:click={cancel}>配置終了</button>{/if}
@@ -345,6 +354,7 @@
    <div class="design-messages">{#if busyImport}<p role="status">{words[5]}</p>{/if}
    {#if loadingShape}<p role="status">形状を読み込み中…</p>{/if}
    {#if error}<p role="alert">{error}</p>{/if}</div>
+   {#if layersOpen}<div class="design-layer-panel"><WorldLayerControls {locale} state={layerState} disabled={busyImport} onChange={applyLayers}/></div>{/if}
    {#if alignmentOpen&&selectedIds.size>=2}<div class="design-alignment-panel"><WorldAlignmentControls {locale} count={selectedIds.size} selected={alignmentAction} valid={Boolean(alignmentPlan)} busy={busyImport} onPick={pickAlignment} onCommit={commitAlignment} onCancel={()=>alignmentAction=null}/></div>{/if}
    <div class="design-map-frame"><button class="design-plot" type="button" aria-label="装飾設計マップ" bind:clientWidth={mapWidth} bind:clientHeight={mapHeight} on:click={pick}
     on:wheel|nonpassive={e=>camera=wheelMapCamera(e,svg,extent,camera,maxZoom)}
@@ -424,6 +434,7 @@
  @media(max-width:700px){.design-workspace{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(0,2fr)}.design-item img{width:44px;height:44px}}
  .design-workspace,.design-map-side,.design-map-frame{position:absolute;inset:0;display:block;min-height:0;min-width:0;overflow:hidden;border-radius:0}.design-workspace{isolation:isolate}
  aside{position:absolute;z-index:5;top:104px;bottom:38px;left:6px;width:clamp(170px,19vw,300px);border-radius:6px;box-shadow:0 2px 8px #0003}aside[hidden]{display:none}
+ .design-layer-panel{position:absolute;z-index:9;right:6px;top:104px;width:min(220px,calc(100% - 12px));max-height:calc(100% - 145px);overflow:auto;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;box-shadow:0 3px 14px #0004}
  .design-alignment-panel{position:absolute;z-index:8;right:6px;top:104px;width:min(300px,calc(100% - 12px));background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;padding:6px;box-shadow:0 3px 14px #0004}
  .design-plot{border:0;border-radius:0}
  .design-controls,.design-status{position:absolute;z-index:6;background:var(--wand-card);border:1px solid var(--wand-line);border-radius:6px;padding:4px;max-width:calc(100% - 12px)}

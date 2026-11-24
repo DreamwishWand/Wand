@@ -385,3 +385,14 @@ test('alignment/distribution uses occupied-cell edges, preserves orientations an
  const odd={...m,objects:m.objects.map(o=>o.localOrdinal===3?{...o,x:o.x+1}:o)};
  assert.equal(alignmentTargets(odd,odd.objects,'distribute-x'),null);
 });
+
+import {defaultWorldLayers,toggleWorldLayer,worldLayer,layerVisible,layerSelectable} from '../src/lib/world/world-layer-state.ts';
+test('map layer visibility and edit lock remain independent and buildings use native identity',()=>{
+ const road={layer:'ground'},furniture={layer:'furniture'},building={layer:'other',nativeType:'Building'},fixed={layer:'furniture',editRestrictions:{select:'denied'}};
+ let state=toggleWorldLayer(defaultWorldLayers(),'ground','locked');
+ assert.equal(layerVisible(state,road),true);assert.equal(layerSelectable(state,road),false);
+ state=toggleWorldLayer(state,'ground','hidden');assert.equal(layerVisible(state,road),false);
+ state=toggleWorldLayer(state,'ground','hidden');assert.equal(layerVisible(state,road),true);assert.equal(layerSelectable(state,road),false);
+ assert.equal(layerSelectable(state,furniture),true);assert.equal(worldLayer(building),'building');assert.equal(worldLayer(fixed),'fixed');
+ assert.equal(worldLayer({layer:'other'}),'other');
+});

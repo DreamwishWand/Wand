@@ -1,4 +1,5 @@
 <script lang="ts">
+  import {defaultWorldLayers} from '$lib/world/world-layer-state.ts';
   import WorldShortcutHelp from '$lib/world/WorldShortcutHelp.svelte';
   import {onMount,onDestroy} from 'svelte';
   import {base} from '$app/paths';
@@ -16,6 +17,7 @@
   type Raster={sizeX:number;sizeY:number;nativeFloorValues:Uint32Array};
   let worker:Worker|null=null,compare:Worker|null=null;
   let designMode=false,showSeparateTerrain=false,navigationOpen=true;
+  let layerState=defaultWorldLayers();
   function nextDesignRequest(){return ++request;}
   let request=0,indexRequest=0,terrainRequest=0,shapeRequest=0,compareRequest=0;
   let grids:Grid[]=[],key='Meadow',worldScope='Village04',raster:Raster|null=null;
@@ -132,12 +134,12 @@
           {raster} canNavigate onNavigate={selectCell} onInspect={selectCell}/>
         <p class="note">原本地形・設置可否未確定。{cell?' ('+cell.x+', '+cell.y+')':''}</p>
       </div>{/if}
-      <div class="save-side" class:inactiveMap={Boolean(shapeMap)&&!terrainDisplayed&&showSeparateTerrain} class:hasShape={Boolean(shapeMap)}><SavedGridSourceCandidates compact shapeMap={shapeMap} terrain={terrainBinding} file={$localSaveSession.file} bind:timeline bind:terrainDisplayed
+      <div class="save-side" class:inactiveMap={Boolean(shapeMap)&&!terrainDisplayed&&showSeparateTerrain} class:hasShape={Boolean(shapeMap)}><SavedGridSourceCandidates compact shapeMap={shapeMap} terrain={terrainBinding} file={$localSaveSession.file} bind:timeline bind:terrainDisplayed bind:layerState
         {receipt} available={Boolean($localSaveSession.file)} working={comparing} errorMessage={compareError}
         onCompare={()=>openSaveSession($localSaveSession.file,grids)}/></div>
     </div>
   {/if}
-  <DecorationDesign active={designMode} grid={selected} {raster} {worker} {locale} nextRequest={nextDesignRequest}/>
+  <DecorationDesign bind:layerState active={designMode} grid={selected} {raster} {worker} {locale} nextRequest={nextDesignRequest}/>
 
 </section>
 <style>
