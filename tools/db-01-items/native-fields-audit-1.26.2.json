@@ -1,0 +1,33 @@
+{
+  "schema": "wand.db01.native-fields.private@1",
+  "platform": "Steam",
+  "gameVersion": "1.26.2",
+  "sourceItemsSha256": "de579d94fa10258249c9c477075110d0bcf001a0d865a15ded039efb3616c8f0",
+  "sourceIl2cppDumpSha256": "0ebf1de44c236a59703a5f09aa702f2acf2369e77b9f399ea792db58a0270d08",
+  "sourceFiles": 39,
+  "itemCount": 39067,
+  "mappedRootClasses": 113,
+  "unmappedItems": 177,
+  "fieldOccurrences": 1156343,
+  "rootOccurrences": 366559,
+  "distinctClassPaths": 12431,
+  "statusCounts": {
+    "declared_float": 1523,
+    "declared_message": 441591,
+    "declared_utf8": 192863,
+    "fixed32_grid_layers": 11325,
+    "packed_varint_wire_values": 18218,
+    "unresolved": 1835,
+    "varint_wire_value": 488988
+  },
+  "rootStatusCounts": {
+    "declared_float": 392,
+    "declared_message": 81283,
+    "declared_utf8": 118042,
+    "packed_varint_wire_values": 15905,
+    "unresolved": 1264,
+    "varint_wire_value": 149673
+  },
+  "publicationAuthorized": false,
+  "runtimeSemanticsVerified": false
+}
