@@ -1577,7 +1577,7 @@
             <div class="facet-grid collection-detail-category-grid"
               aria-label={locale==='ja'?'アイテムの詳細カテゴリー':'Detailed item categories'}>
               {#if sourceIndex?.nativeSubtypeByItem.size===13202&&sourceTopCategory===null}
-                {#each topCategoryCards as group (group.id)}
+                {#each topCategoryCards.filter(group=>!(worldFilter||sourceChoices.worldContextTag)||group.total>0) as group (group.id)}
                   <button type="button" class="facet-card collection-top-category"
                     data-top-category={group.id} disabled={group.total===0}
                     on:click={()=>chooseTopCategory(group.id)}>
