@@ -1733,13 +1733,13 @@
   /* Image-first Collection tiles. Shared shell theme remains authoritative. */
   .items-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,114px),1fr));gap:6px;align-items:stretch}
   .item-card{position:relative;display:flex;min-width:0;min-height:0;padding:5px;gap:0;align-items:stretch;border-radius:7px;
-    background:var(--wand-panel);border-color:var(--wand-line);color:var(--wand-text)}
+    background:var(--wand-card);border-color:var(--wand-line);color:var(--wand-text)}
   .item-card-body{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:3px;width:100%;text-align:center;padding:0;min-width:0}
   .item-icon{width:100%;height:76px;border-radius:4px;background:transparent;padding:3px;box-sizing:border-box}
   .item-card-copy{width:100%;display:block;min-height:30px;flex:0}
   .item-card-copy strong{font-size:11px;line-height:1.25;white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .item-state-toggle{position:absolute;right:4px;top:4px;width:24px;height:24px;z-index:1;border-radius:5px;background:var(--wand-menu);color:var(--wand-text);border-color:var(--wand-line)}
-  .item-state-toggle.owned{background:var(--wand-accent,#37855d);color:var(--wand-on-accent,#fff)}
+  .item-state-toggle.owned{background:var(--wand-accent,#37855d);color:var(--wand-accent-contrast,#fff)}
   .item-card.current,.item-card.bulk-selected{border-color:var(--wand-accent)}
   .collection-item-universe-heading{grid-column:1/-1;font-size:12px;font-weight:600;margin:8px 0 0;line-height:1.3;color:inherit}
   .collection-universe-section-head{margin-bottom:5px}
