@@ -74,7 +74,7 @@ export function groupTargets(map:SavedShapeMap,objects:readonly SavedShapeObject
    if(turn===1){x=left+h-v-s.height;y=top+u;}
    else if(turn===2){x=left+w-u-s.width;y=top+h-v-s.height;}
    else{x=left+v;y=top+w-u-s.width;}
-   const index=(CARDINAL_ORIENTATIONS.indexOf(o.orientation as typeof CARDINAL_ORIENTATIONS[number])+turn)%4;
+   const index=(CARDINAL_ORIENTATIONS.indexOf(o.orientation as typeof CARDINAL_ORIENTATIONS[number])-turn+4)%4;
    orientation=CARDINAL_ORIENTATIONS[index];shapeKey=o.itemId+':'+index*4;
    const next=map.shapes[shapeKey];
    if(!next||next.width!==(turn%2?s.height:s.width)||next.height!==(turn%2?s.width:s.height))return null;
