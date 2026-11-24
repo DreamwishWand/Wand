@@ -271,6 +271,58 @@ function equalSourceTree(a,b){
   const keys=Object.keys(a);
   return keys.length===Object.keys(b).length&&keys.every(k=>Object.hasOwn(b,k)&&equalSourceTree(a[k],b[k]));
 }
+// A complete, separately digest-pinned census of root scalar fields. Existing
+// canonical projections must agree with the original; no silent replacement.
+const ROOT_SCALAR_STRING_FIELDS=new Set('DisplayName IconAddress PrefabAddress DialogueAssetAddress UpdateVersion Description MaleIconAddress MalePrefabAddress AvailableDescription Weathers ImageAddress MaskDataAddress CompletedStoryDescription StartRequestButton IntroDialogue Title MaterialAddress UnlockDialogueAddress CollectionName TimeOfDay DefaultGridLayoutTypeName DefaultGridLayoutPath AlternativeIconAddress PerksPreset AvatarIconAddress DescriptionText SceneName CameraConfig SaplingPrefabAddress HarvestPrefabAddress BoardGameAIConfig HtmlColor RewardAnimationPrefabAddress MaleMakeupAddress FemaleMakeupAddress DefaultSkinIconAddress ShopData MinigameData SpecialMiningRockMaterialAddress LockedPrefabAddress PuzzleTemplateAddress BlurredIconAddress Category ExcludedItemSets Equation PluralDisplayName BurningStateVFXPrefabAddress PremadeDecorationPresetsPath EditCameraConfig SprintVfx SignatureOverrideIcon MaleGownClipAddress MaleClipAddress MaleGownClipAddress FemaleGownClipAddress FemaleClipAddress SpriteSquareAddress SpritePortraitAddress SpriteLandscapeAddress IncludedItemSets SpriteAddress MachineIconAddress EvolvingDescription TimeOfDays DescriptionUnlocked DescriptionLocked ComplexitySettings SpecificTo ExclusivePhotoPoses PortraitAddress ObjectType DescriptionSucceed DescriptionNarrative DescriptionCompleted EventName AccessoryPrefabAddress ExcludedLanguages CostTable'.split(' '));
+const ROOT_SCALAR_TEXT=/^[A-Za-z0-9_./!:#, \\+*(){}\[\]^%<>=?&|\-'\u00a0\u00c0-\u024f]{1,512}$/;
+function attachReviewedRootScalars(project,e,version,source,byId){
+  const digests=e.reviewedRootScalars;
+  if(digests===undefined)return undefined;
+  check(Array.isArray(digests)&&digests.length>0&&digests.length<=100&&digests.every(x=>SHA.test(x)),'ROOT_SCALAR_DIGESTS');
+  const groups=new Set(),seen=new Map();
+  let pairs=0,occurrences=0,leaves=0,added=0,existing=0;
+  for(const [part,digest] of digests.entries()){
+    const bytes=readFileSync(join(project,'data/ddv/item-master','reviewed-root-scalars-steam-'+version+'.part'+part+'.json'));
+    check(hash(bytes)===digest,'ROOT_SCALAR_SHA_'+part);
+    const a=JSON.parse(bytes.toString('utf8'));
+    check(a.schema==='wand.item-master.reviewed-root-scalars@1'&&a.gameVersion===version&&
+      a.sourceItemsSha256===source.sourceItemsSha256&&a.sourceIl2cppDumpSha256===source.sourceIl2cppDumpSha256&&
+      a.fields&&typeof a.fields==='object'&&!Array.isArray(a.fields),'ROOT_SCALAR_RELEASE');
+    for(const [label,g] of Object.entries(a.fields)){
+      const {category,field,declaredType,count,occurrences:occ,leafCount,packed}=g;
+      check(label===category+'.'+field+'@'+declaredType&&!groups.has(label)&&
+        /^[A-Za-z_][A-Za-z0-9_]*$/.test(field)&&!['ID','Name','__proto__','constructor','prototype'].includes(field)&&
+        /^(?:[A-Za-z_][\w.]*|RepeatedField<[A-Za-z_][\w.]*>)$/.test(declaredType)&&
+        ID(count)&&count<=byId.size&&Number.isSafeInteger(occ)&&occ>=count&&Number.isSafeInteger(leafCount)&&leafCount>=0&&
+        typeof packed==='string'&&packed.length<=16*1024*1024,'ROOT_SCALAR_GROUP');
+      groups.add(label);
+      const rows=JSON.parse(inflateSync(Buffer.from(packed,'base64'),{maxOutputLength:32*1024*1024}).toString('utf8'));
+      check(Array.isArray(rows)&&rows.length===count,'ROOT_SCALAR_ROWS');
+      const repeated=declaredType.startsWith('RepeatedField<'),type=repeated?declaredType.slice(14,-1):declaredType;
+      const valid=v=>type==='string'?typeof v==='string'&&ROOT_SCALAR_STRING_FIELDS.has(field)&&ROOT_SCALAR_TEXT.test(v):
+        type==='bool'?typeof v==='boolean':type==='float'||type==='double'?typeof v==='number'&&Number.isFinite(v):
+        Number.isSafeInteger(v)&&(type==='uint'?v>=0&&v<=0xffffffff:type==='ulong'?v>=0:type==='long'||v>=-0x80000000&&v<=0x7fffffff);
+      let id=0,n=0;
+      for(const pair of rows){
+        check(Array.isArray(pair)&&pair.length===2&&ID(pair[0]),'ROOT_SCALAR_ROW');
+        id+=pair[0];const row=byId.get(id),value=pair[1];
+        check(ID(id)&&row?.nativeCategory===category&&(repeated?Array.isArray(value)&&value.every(valid):valid(value)),'ROOT_SCALAR_VALUE_'+label+'_'+id);
+        let keys=seen.get(id);if(!keys){keys=new Set();seen.set(id,keys);}
+        check(!keys.has(field),'ROOT_SCALAR_DUPLICATE');keys.add(field);
+        const props=row.sourceAttributes??(row.sourceAttributes={});
+        const hasNative=Object.hasOwn(row.nativeProperties,field),hasSource=Object.hasOwn(props,field);
+        check(!(hasNative&&hasSource),'ROOT_SCALAR_DUPLICATE_PRIOR');
+        if(hasNative||hasSource){
+          check(equalSourceTree(hasNative?row.nativeProperties[field]:props[field],value),'ROOT_SCALAR_CONFLICT_'+label+'_'+id);
+          existing++;
+        }else{props[field]=value;added++;}
+        n+=repeated?value.length:1;
+      }
+      check(n===leafCount,'ROOT_SCALAR_LEAVES');pairs+=count;occurrences+=occ;leaves+=n;
+    }
+  }
+  return {groupCount:groups.size,itemCount:seen.size,fieldPairs:pairs,occurrences,leafCount:leaves,existingPairs:existing,addedPairs:added,identityOccurrences:byId.size*2,runtimeSemanticsVerified:false};
+}
 function agreesWithPriorMessage(label,prior,value){
   if(equalSourceTree(prior,value))return true;
   // The original narrow crafting Result decoder deliberately omitted field 3
@@ -773,7 +825,11 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
     check(!Object.keys(other.fields).some(key=>Object.hasOwn(quest.fields,key)),'STRUCTURE_DUPLICATE');
     reviewedStructureCoverage={fields:{...other.fields,...quest.fields},runtimeSemanticsVerified:false};
   }
+  // Legacy localization archive was built from the original attribute projection.
+  // Verify that exact census before adding new source keys, which need their own
+  // localized-text coverage; do not imply every newly exposed key is translated.
   const localizations=loadLocalizations(project,e,version,source,byId);
+  const reviewedRootScalarCoverage=attachReviewedRootScalars(project,e,version,source,byId);
   // Verify no existing public definition is lost or silently replaced.
   for(const [path,raw] of baseFiles){
     if(!path.startsWith('id/'))continue;
@@ -918,6 +974,7 @@ export function materializeCompleteSourceMaster(project,entry,baseRelease,baseFi
     ...(reviewedMessageCoverage?{reviewedMessagesSha256:e.reviewedMessagesSha256,reviewedMessageCoverage}:{}),
     ...(reviewedMessageGroupCoverage?{reviewedMessageGroupsSha256:e.reviewedMessageGroupsSha256,reviewedMessageGroupCoverage}:{}),
     ...(reviewedStructureCoverage?{reviewedStructure:e.reviewedStructure,reviewedStructureCoverage}:{}),
+    ...(reviewedRootScalarCoverage?{reviewedRootScalars:e.reviewedRootScalars,reviewedRootScalarCoverage}:{}),
     ...(localizations?{localizationSha256:e.localization.sha256,localizationCoverage:localizations.coverage}:{}),
     shards:{},assets:{}};
   const root=join(project,'static/ddv/item-master');
