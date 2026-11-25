@@ -314,10 +314,14 @@ test('same-style cardinal road cells select only their source grid and translate
  assert.equal(mainlandSavedGroupDraft([a,b],grids,rasters,new Map([[g.key,occupied]]),emptyWorldTimeline(),2,0).next,null);
 });
 
-import {supportTerrainRow,supportFreeEdit,parseSupportTree} from '../src/lib/world/subgrid-local.ts';
+import {supportTerrainRow,supportFreeEdit,parseSupportTree,supportStockPlacement,supportStockPickup} from '../src/lib/world/subgrid-local.ts';
 test('support cells use original L-shaped shelf raster, masks, factors and sibling footprints',()=>{
  const catalog=JSON.parse(fs.readFileSync(new URL('../static/ddv/world/steam-1.26.2/support-terrain.json',import.meta.url),'utf8'));
- assert.equal(catalog.grids.length,11);
+ assert.equal(catalog.grids.length,47);
+ assert.equal(new Set(catalog.grids.map(g=>g[0])).size,47);
+ assert.equal(catalog.grids.reduce((n,g)=>n+g[4].length,0),1143);
+ for(const [path,x,y,sha,cells] of catalog.grids){assert.equal(cells.length,x*y);assert.match(sha,/^[a-f0-9]{64}$/);assert.ok(supportTerrainRow(catalog,path));}
+ const pool=supportTerrainRow(catalog,'GridData/Furniture/NonIP_SetLess/Ingroundpool01-GridData.json');assert.deepEqual([...pool.nativeFloorValues].flatMap((n,i)=>n===0?[i]:[]),[20,21]);
  const sourcePath='GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json';
  const raster=supportTerrainRow(catalog,sourcePath);
  assert.deepEqual([...raster.nativeFloorValues],[4096,4096,4096,0]);
@@ -335,4 +339,10 @@ test('support cells use original L-shaped shelf raster, masks, factors and sibli
  assert.equal(supportFreeEdit(tree,shapes,allowed,raster,0,3,0,'GridOrientation_Left'),null);
  assert.equal(supportFreeEdit(tree,{...shapes,'40000001:8':{...cell,acceptedFloorTypesFlag:512}},allowed,raster,0,2,0,'GridOrientation_Down'),null);
  assert.equal(supportTerrainRow(catalog,'GridData/Unknown.json'),null);
+ assert.ok(supportStockPlacement(tree,shapes,raster,40000001,1,2,0,'GridOrientation_Down'));
+ assert.equal(supportStockPlacement(tree,shapes,raster,40000001,1,0,2,'GridOrientation_Down'),null);
+ assert.equal(supportStockPlacement(tree,shapes,raster,40000001,1,2,2,'GridOrientation_Down'),null);
+ assert.equal(supportStockPlacement(tree,shapes,raster,40000001,0,2,0,'GridOrientation_Down'),null);
+ assert.deepEqual(supportStockPickup(tree,0,new Map([[40000001,0]]),allowed),{action:'pickup',itemId:40000001,expectedStock:0,index:0,expectedX:0,expectedY:0,expectedOrientation:'GridOrientation_Down'});
+ assert.equal(supportStockPickup(tree,0,new Map(),allowed),null);
 });
