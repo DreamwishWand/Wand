@@ -6,6 +6,7 @@
 //! game-specific constraints before any future export implementation.
 use std::collections::{HashMap,HashSet};
 use std::ops::Range;
+pub mod fence_topology;
 
 pub const MAX_GRID_MIXED_EDITS:usize=512;
 const MAX_PROFILE_BYTES: usize = 128 * 1024 * 1024;
