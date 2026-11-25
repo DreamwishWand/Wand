@@ -123,6 +123,22 @@ scope.onmessage=async({data})=>{
         return baseShape.acceptedFloorTypesFlag;
       };
       const mask=verifyFamily(data.itemId);
+      let diagonalVerified=false;
+      try{
+        const f=fenceFamily(data.itemId)!;
+        for(let k=1;k<=4;k++){
+          const id=f.diagExt[k-1],d=definitions.get(String(id));
+          const name=String(d?.nativeName??'').toLowerCase().replace(/[^a-z0-9]/g,'');
+          const fp=d?.footprint as {sizeX?:number;sizeY?:number}|null|undefined;
+          if(d?.nativeType!=='Furniture'||!name.includes(f.name.toLowerCase().replace(/[^a-z0-9]/g,''))||!name.includes('diag')||!name.includes('ext')||fp?.sizeX!==k||fp?.sizeY!==k)throw Error('diagonal family');
+          for(const code of [8,12]){
+            const item=cache.resolve(id,code),shape=item.shapeKey?cache.shapes[item.shapeKey]:null;
+            if(!shape||item.layer!=='fence'||shape.width!==k*q||shape.height!==k*q||shape.acceptedFloorTypesFlag!==mask||nativeActionBlocked(item.editRestrictions,'select'))throw Error('diagonal shape');
+          }
+        }
+        diagonalVerified=true;
+      }catch{/* Cardinal mode remains available. */}
+
       const options:number[]=[];
       if(data.replacement===undefined){for(const f of fenceFamilyCandidates){if(f.base===data.itemId)continue;try{if(verifyFamily(f.base)===mask)options.push(f.base);}catch{/* Not current-source verified; omit. */}}}
       const localized=new Map(await (await getMaster()).getBrowseNames(data.locale as WandLanguage));
@@ -132,7 +148,7 @@ scope.onmessage=async({data})=>{
         if(data.replacement===data.itemId||verifyFamily(data.replacement)!==mask)throw Error('replacement mask');
         replacementVerified=true;
       }
-      scope.postMessage({kind:'fence-family',requestId:id,key:grid.key,itemId:data.itemId,factor:q,verified:true,replacement:data.replacement,replacementVerified,replacementOptions});return;
+      scope.postMessage({kind:'fence-family',requestId:id,key:grid.key,itemId:data.itemId,factor:q,verified:true,replacement:data.replacement,replacementVerified,replacementOptions,diagonalVerified});return;
     }
     if(data.command==='design-catalog'){
       const locale=data.locale as WandLanguage;
