@@ -642,7 +642,7 @@ pub(super) fn support_child_candidate(profile:&[u8],plan:&Value)->Result<ddv_sav
      !ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&old)||!ddv_save_patch::OBSERVED_CARDINAL_ORIENTATIONS.contains(&new)||
      if swap{before==after||old!=new}else if terrain.is_some(){before==after&&old==new}else{before!=after||old==new}{return Err(bad);}
   if let Some((sx,sy,factor,cells))=&terrain{
-   let valid=|(x,y):(i32,i32)|x>=0&&y>=0&&(x as usize)/factor<*sx&&(y as usize)/factor<*sy&&cells[(y as usize)/factor*sx+(x as usize)/factor].as_u64().is_some_and(|n|n!=0);
+   let valid=|(x,y):(i32,i32)|x>=0&&y>=0&&(x as usize)/ *factor<*sx&&(y as usize)/ *factor<*sy&&cells[(y as usize)/ *factor* *sx+(x as usize)/ *factor].as_u64().is_some_and(|n|n!=0);
    if !valid(before)||!valid(after)||objects.iter().any(|(other,o)|other!=id&&o.as_object().and_then(observed_coordinates)==Some(after)){return Err(bad);}
   }
   if objects.values().filter(|o|o.as_object().and_then(observed_coordinates)==Some(before)).count()!=1{return Err(bad);}
@@ -1188,6 +1188,23 @@ mod terrain_session_tests{
         root["World"]["GridCollection"]["Grids"]["21"]=other;
         root["World"]["GridCollection"]["Grids"]["21"]["ID"]=serde_json::json!(21);
         assert!(resolve_plain_grid_destination(&serde_json::to_vec(&root).unwrap(),&witness).is_err());
+    }
+    #[test]
+    fn support_free_move_uses_exact_source_raster_and_rejects_holes(){
+        let save=br#"{"GameInfo":{"Version":643},"Player":{"Marker":1e2},"World":{"GridCollection":{"Grids":{
+          "7":{"ID":7,"Objects":{"1":{"ID":1,"ItemID":40005160,"X":4,"Y":6,"Orientation":"GridOrientation_Down","State":{"SubGrid":{"GridID":8}}}}},
+          "8":{"ID":8,"GridDataPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","TessellationFactor":2,"Objects":{"1":{"ID":1,"ItemID":40005161,"X":0,"Y":0,"Orientation":"GridOrientation_Down","State":null}}}
+        }}}}"#;
+        let mut plan=serde_json::json!({"localOrdinal":1,"itemId":40005160,"expectedX":4,"expectedY":6,"path":[],"terrainPath":"GridData/Furniture/NonIP_SetLess/CornerWallShelf01-GridData.json","edits":[{"index":0,"itemId":40005161,"expectedX":0,"expectedY":0,"expectedOrientation":"GridOrientation_Down","x":2,"y":0,"orientation":"GridOrientation_Left"}]});
+        let draft=support_child_candidate(save,&plan).unwrap();
+        let mut expected:Value=serde_json::from_slice(save).unwrap();
+        expected["World"]["GridCollection"]["Grids"]["8"]["Objects"]["1"]["X"]=Value::from(2);
+        expected["World"]["GridCollection"]["Grids"]["8"]["Objects"]["1"]["Orientation"]=Value::from("GridOrientation_Left");
+        assert_eq!(serde_json::from_str::<Value>(&draft.patched_json).unwrap(),expected);
+        assert!(draft.patched_json.contains("\"Marker\":1e2"));
+        plan["edits"][0]["y"]=Value::from(2);assert!(support_child_candidate(save,&plan).is_err());
+        plan["edits"][0]["y"]=Value::from(4);assert!(support_child_candidate(save,&plan).is_err());
+        plan["edits"][0]["y"]=Value::from(0);plan["terrainPath"]=Value::from("GridData/Furniture/NonIP_SetLess/Table01-GridData.json");assert!(support_child_candidate(save,&plan).is_err());
     }
     #[test]
     fn child_rotation_and_swap_change_only_selected_scalars(){
