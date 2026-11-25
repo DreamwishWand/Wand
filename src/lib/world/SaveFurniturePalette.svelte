@@ -51,7 +51,7 @@
  function begin(id:number,duplicate:MainlandSavedObject|null=null){
   if(blocked||!canStart||!open||!file||!worker||!ordinaryFurniture(id)||(counts?.get(id)??0)<1)return;
   cancel();onBegin();itemId=id;source=duplicate;orientation=duplicate&&CARDINAL_ORIENTATIONS.includes(duplicate.object.orientation as Cardinal)?duplicate.object.orientation as Cardinal:'GridOrientation_Down';placing=true;
-  const seen=new Set<number>();for(const g of grids){if(seen.has(g.factor)||duplicate&&g.factor!==duplicate.factor)continue;seen.add(g.factor);const requestId=nextRequest();shapeRequests.set(requestId,{factor:g.factor,key:g.key});worker.postMessage({command:'design-shape',key:g.key,itemId:id,requestId});}shapeRequests=new Map(shapeRequests);
+  const seen=new Set<number>();for(const g of grids){if(seen.has(g.factor))continue;seen.add(g.factor);const requestId=nextRequest();shapeRequests.set(requestId,{factor:g.factor,key:g.key});worker.postMessage({command:'design-shape',key:g.key,itemId:id,requestId});}shapeRequests=new Map(shapeRequests);
  }
  function pickup(){if(blocked||!canStart||!stockSourceEligible(chosen)||!counts?.has(Number(chosen.object.itemId)))return;const q=stockPickup(chosen);if(!q)return;cancel();onBegin();candidate=q;validate();}
  export function hover(p:{x:number;y:number}|null){if(placing&&!candidate)point=p;}
