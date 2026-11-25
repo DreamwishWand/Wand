@@ -26,6 +26,7 @@ class MemorySourceTests(unittest.TestCase):
             self.assertEqual(list(rows),[130000001,130000004])
             self.assertEqual(source[0],"1.26.2")
             self.assertEqual(len(targets(rows)),3)
+            self.assertEqual(targets(rows)["1"*32],{"Texture2D"})
             self.assertEqual(targets(rows)["3"*32],{"MemoryShardMaskData"})
 
     def test_reject_incomplete(self):
@@ -44,7 +45,7 @@ class MemorySourceTests(unittest.TestCase):
         from types import SimpleNamespace as N
         tex=N(type=N(name="Texture2D"))
         other=N(name="CAB-abc",objects={5:tex})
-        own=N(externals=[N(path="archive:/CAB-abc/CAB-abc")],objects={})
+        own=N(name="CAB-own",externals=[N(path="archive:/CAB-abc/CAB-abc")],objects={})
         obj=N(assets_file=own)
         tree={"Mask":{"m_FileID":1,"m_PathID":5}}
         self.assertIs(pointer(tree,"Mask",obj,[own,other],"Texture2D"),tex)
