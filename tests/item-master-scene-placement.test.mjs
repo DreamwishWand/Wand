@@ -52,3 +52,26 @@ test('all serialized CanPlace definitions are counted separately from custom res
   }
   assert.deepEqual(count,{Furniture:{place:290,custom:7},Building:{place:164,custom:40}});
 });
+
+test('compact ordinary scope hints and sparse fields agree with the source scene reader for every projected item',async()=>{
+  const db=await openCurrentItemDatabase('',async url=>new Response(await readFile('static'+url),{status:200}));
+  const contexts=await db.getFieldRows('placement.sourceContext');
+  const scopeRows=new Map(await db.getFieldRows('placement.sourceOrdinaryScopeHint'));
+  const source=await createScenePlacementReader(db).getForOrdinaryDecorationModes(contexts.map(([id])=>id));
+  assert.equal(scopeRows.size,contexts.length);
+  for(const [i,[id,c]] of contexts.entries()){
+    assert.equal(source[i].itemId,id);
+    assert.deepEqual(c.ordinaryScope,{
+      scopeHint:source[i].scopeHint,
+      roomFloorWallCandidate:source[i].roomFloorWallCandidate,
+      terrainCandidate:source[i].terrainCandidate
+    });
+    assert.equal(scopeRows.get(id),source[i].scopeHint);
+    assert.equal(source[i].placementLegalityVerified,false);
+  }
+  const scenes=await db.findItemIdsByField('nativeCategory',{kind:'equals',value:'Scene'});
+  const rows=await db.getItemFields(scenes,['source.SceneType','source.Tags']);
+  assert.equal(rows.length,194);
+  assert.equal(rows.filter(r=>r.values['source.SceneType']!==undefined).length,193);
+  assert.equal(rows.filter(r=>r.values['source.Tags']?.length).length,5);
+});
