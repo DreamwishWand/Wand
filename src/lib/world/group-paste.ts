@@ -7,6 +7,8 @@ import {mainlandTerrainHits,type MainlandGrid} from './mainland-world-coordinate
 import type {TerrainRaster} from './terrain-binding.ts';
 import {nativeActionBlocked} from './native-edit-restrictions.ts';
 import {writable} from 'svelte/store';
+import {reflectedDesignItem,type SymmetryMode} from './design-symmetry.ts';
+import type {SourceObjectShape} from './source-object-map.ts';
 /** Half-cell coordinates and canonical item IDs only. No native Save IDs,
  * bytes, state, or system clipboard. Remains in this tab across world views. */
 export const worldFurnitureClipboard=writable<readonly DesignClipItem[]>([]);
@@ -50,14 +52,35 @@ export function rotateFurnitureGroup(clip:readonly DesignClipItem[],defs:GroupGe
  }
  return rotateDesignClipboard(clip,scaled,turn);
 }
+/** Physical bounds on the common half-cell lattice, used for Scene anchor
+ * snapping. A target factor must have source-derived geometry. */
+export function groupSceneOrigin(clip:readonly DesignClipItem[],defs:GroupGeometry,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,p:{x:number;y:number},anchor:'corner'|'center'){
+ if(anchor==='corner')return p;
+ const hits=mainlandTerrainHits(grids,rasters,p.x,p.y);if(hits.length!==1)return null;
+ const g=hits[0];let width=0,height=0;
+ for(const item of clip){const s=defs.get(item.itemId)?.get(g.factor)?.shapes[item.itemId+':'+item.orientation*4];if(!s)return null;width=Math.max(width,item.dx/2+s.width/g.factor);height=Math.max(height,item.dy/2+s.height/g.factor);}
+ if(!width||!height)return null;
+ const x=2*g.origin.position[0]+Math.floor((p.x-2*g.origin.position[0])*g.factor)/g.factor;
+ const y=-2*g.origin.position[2]-Math.floor((-p.y-2*g.origin.position[2])*g.factor)/g.factor;
+ return {x:x-Math.floor((width*g.factor-1)/2)/g.factor+.001,y:y+Math.floor((height*g.factor-1)/2)/g.factor-.001};
+}
 export function groupPasteCandidate(clip:readonly DesignClipItem[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,stock:ReadonlyMap<number,number>,objects:readonly MainlandSavedObject[],omitted:number,wx:number,wy:number):GroupPasteCandidate|null{
  if(!clip.length||clip.length>WORLD_BATCH_LIMIT||!groupStockAvailable(clip,stock)||!Number.isFinite(wx)||!Number.isFinite(wy))return null;
  const hits=mainlandTerrainHits(grids,rasters,wx,wy);if(hits.length!==1)return null;
  const g=hits[0],baseX=2*g.origin.position[0]+Math.floor((wx-2*g.origin.position[0])*g.factor)/g.factor,baseY=-2*g.origin.position[2]-Math.floor((-wy-2*g.origin.position[2])*g.factor)/g.factor;
+ const poses=clip.map(p=>({itemId:p.itemId,x:baseX+p.dx/2,y:baseY-p.dy/2,orientation:p.orientation}));
+ if(clip.some(p=>![p.dx,p.dy,p.orientation].every(Number.isSafeInteger)||p.dx<0||p.dy<0||p.orientation<0||p.orientation>3))return null;
+ return groupAbsoluteCandidate(poses,grids,rasters,defs,stock,objects,omitted);
+}
+export interface WorldGroupPose{itemId:number;x:number;y:number;orientation:number}
+export interface WorldSymmetryAxis{mode:SymmetryMode;x:number;y:number}
+/** All poses share map coordinates; each independently resolves its exact
+ * source Grid. The bounding rectangle's empty corner need not be on land. */
+export function groupAbsoluteCandidate(poses:readonly WorldGroupPose[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,stock:ReadonlyMap<number,number>,objects:readonly MainlandSavedObject[],omitted:number):GroupPasteCandidate|null{
+ if(!poses.length||poses.length>WORLD_BATCH_LIMIT||!groupStockAvailable(poses.map(p=>({itemId:p.itemId,dx:0,dy:0,orientation:p.orientation})),stock))return null;
  const rows:GroupPasteRow[]=[],ghosts:StockCandidate[]=[],anchors=new Set<string>();
- for(const p of clip){
-  if(![p.dx,p.dy,p.orientation].every(Number.isSafeInteger)||p.dx<0||p.dy<0||p.orientation<0||p.orientation>3)return null;
-  const x=baseX+p.dx/2,y=baseY-p.dy/2,geo=defs.get(p.itemId);if(!geo)return null;
+ for(const p of poses){
+  const {x,y}=p,geo=defs.get(p.itemId);if(!geo||!Number.isSafeInteger(x*2)||!Number.isSafeInteger(y*2)||!Number.isInteger(p.orientation)||p.orientation<0||p.orientation>3)return null;
   const target=mainlandTerrainHits(grids,rasters,x+.001,y-.001);if(target.length!==1)return null;
   const t=target[0],lx=(x-2*t.origin.position[0])*t.factor,ly=(-y-2*t.origin.position[2])*t.factor;
   if(!Number.isSafeInteger(lx)||!Number.isSafeInteger(ly))return null;
@@ -76,6 +99,42 @@ export function groupPasteCandidate(clip:readonly DesignClipItem[],grids:readonl
  }
  return {rows,ghosts};
 }
+/** Compare exact occupied cells after normalization to half-map-unit cells.
+ * This is only footprint/orientation symmetry, not a mirrored mesh. */
+function physicalRuns(shape:SourceObjectShape,factor:number){
+ const scale=2/factor;
+ return shape.runs.flatMap(r=>Array.from({length:scale},(_,i)=>[r.y*scale+i,r.x*scale,r.width*scale])).sort((a,b)=>a[0]-b[0]||a[1]-b[1]).map(r=>r.join(':')).join(';');
+}
+export function savedWorldGroupPoses(items:readonly MainlandSavedObject[]):WorldGroupPose[]|null{
+ if(!captureFurnitureGroup(items))return null;
+ return items.map(p=>({itemId:Number(p.object.itemId),x:p.x,y:p.y,orientation:CARDINAL_ORIENTATIONS.indexOf(p.object.orientation as Cardinal)}));
+}
+export function symmetricWorldCandidate(original:readonly WorldGroupPose[],axis:WorldSymmetryAxis,includeOriginal:boolean,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,defs:GroupGeometry,stock:ReadonlyMap<number,number>,objects:readonly MainlandSavedObject[],omitted:number):GroupPasteCandidate|null{
+ if(!original.length||original.length>WORLD_BATCH_LIMIT||!Number.isSafeInteger(axis.x*4)||!Number.isSafeInteger(axis.y*4))return null;
+ const out:WorldGroupPose[]=[],poses=new Set<string>(),anchors=new Map<string,string>();
+ const key=(p:WorldGroupPose)=>p.itemId+':'+p.x+':'+p.y+':'+p.orientation;
+ const anchor=(p:WorldGroupPose)=>p.x+':'+p.y;
+ const existing=new Set(objects.map(p=>key({itemId:Number(p.object.itemId),x:p.x,y:p.y,orientation:CARDINAL_ORIENTATIONS.indexOf(p.object.orientation as Cardinal)})));
+ function add(p:WorldGroupPose){
+  const k=key(p),a=anchor(p);if(existing.has(k)||poses.has(k))return true;
+  if(anchors.has(a))return false;anchors.set(a,k);poses.add(k);out.push(p);return true;
+ }
+ if(includeOriginal)for(const p of original)if(!add(p))return null;
+ for(const p of original){
+  const source=mainlandTerrainHits(grids,rasters,p.x+.001,p.y-.001);if(source.length!==1)return null;
+  const g=source[0],def=defs.get(p.itemId)?.get(g.factor);if(!def)return null;
+  const native=reflectedDesignItem({itemId:p.itemId,x:p.x*g.factor,y:-p.y*g.factor,orientation:p.orientation},def,{mode:axis.mode,x2:axis.x*2*g.factor,y2:-axis.y*2*g.factor});
+  if(!native)return null;
+  const next={...native,x:native.x/g.factor,y:-native.y/g.factor};
+  const dest=mainlandTerrainHits(grids,rasters,next.x+.001,next.y-.001);if(dest.length!==1)return null;
+  const a=def.shapes[p.itemId+':'+native.orientation*4],b=defs.get(p.itemId)?.get(dest[0].factor)?.shapes[p.itemId+':'+native.orientation*4];
+  if(!a||!b||a.width/g.factor!==b.width/dest[0].factor||a.height/g.factor!==b.height/dest[0].factor||physicalRuns(a,g.factor)!==physicalRuns(b,dest[0].factor)||!add(next))return null;
+ }
+ return groupAbsoluteCandidate(out,grids,rasters,defs,stock,objects,omitted);
+}
+export function groupCandidatePoses(candidate:GroupPasteCandidate):WorldGroupPose[]{
+ return candidate.ghosts.map((p,i)=>({itemId:Number(candidate.rows[i].itemId),x:p.x,y:p.y,orientation:CARDINAL_ORIENTATIONS.indexOf(candidate.rows[i].orientation)}));
+}
 export function groupCutPlan(cut:readonly CutWitness[],candidate:GroupPasteCandidate){
  if(cut.length!==candidate.rows.length)return null;
  const rows=candidate.rows.map((p,i)=>{const {area,...r}=cut[i];return {...r,...p};});
@@ -90,6 +149,19 @@ export const groupCutWords={
  'es-ES':['Cortar','Cortado (originales hasta pegar)','Mover muebles','Origen no disponible.'],
  'zh-CN':['剪切','已剪切（粘贴前保留原物品）','移动家具','无法确认原物品。'],
  'pt-BR':['Recortar','Recortado (originais mantidos até colar)','Mover móveis','Origem indisponível.']
+} as const;
+export const groupSceneWords={
+ ja:['必要アイテム','所持数不足','Sceneを開けません。','現在の編集では一度に配置可能な家具数を超えています。'],
+ en:['Required items','Insufficient stock','Cannot open this Scene.','This Scene exceeds the current single-placement limit.'],
+ fr:['Objets requis','Stock insuffisant','Impossible d’ouvrir la scène.','La scène dépasse la limite de placement.'],
+ it:['Oggetti richiesti','Scorte insufficienti','Impossibile aprire la scena.','La scena supera il limite di posizionamento.'],
+ de:['Benötigte Objekte','Bestand nicht ausreichend','Szene kann nicht geöffnet werden.','Szene überschreitet das Platzierungslimit.'],
+ 'es-ES':['Objetos necesarios','Inventario insuficiente','No se puede abrir la escena.','La escena supera el límite de colocación.'],
+ 'zh-CN':['所需物品','库存不足','无法打开场景。','场景超过单次放置上限。'],
+ 'pt-BR':['Itens necessários','Estoque insuficiente','Não é possível abrir a cena.','A cena excede o limite de posicionamento.']
+} as const;
+export const groupSymmetryWords={
+ ja:['対称編集','対称複製'],en:['Symmetry','Mirror selection'],fr:['Symétrie','Dupliquer en miroir'],it:['Simmetria','Duplica simmetricamente'],de:['Symmetrie','Auswahl spiegeln'],'es-ES':['Simetría','Duplicar selección en espejo'],'zh-CN':['对称编辑','对称复制所选物品'],'pt-BR':['Simetria','Duplicar seleção em espelho']
 } as const;
 export const groupPasteWords={
  ja:['家具をコピー','貼り付け','複製','コピー済み','配置先をクリック','在庫または配置先を確認できません。','形状・在庫を確認中…','配置を確認','取消','左回転','右回転'],
