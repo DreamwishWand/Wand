@@ -38,6 +38,7 @@ import {
 } from '../acquisition/db01-item-source-relations.ts';
 
 import {readItemAcquisitionSourceDetails,type ItemAcquisitionSourceDetails} from './public-item-acquisition-details.ts';
+import {readItemTaxonomyDetails,type ItemTaxonomyDetails} from './public-item-taxonomy-details.ts';
 
 export const PUBLIC_ITEM_DETAILS_CONTRACT =
   'wand.db01.public-item-details@1' as const;
@@ -155,6 +156,8 @@ export interface PublicItemDetailsClient {
   getAcquisitionCoverage(): Promise<Readonly<Db01ItemAcquisitionCoverage>>;
   /** Resolve source evidence and original localized identities without sidecars. */
   getItemAcquisitionSourceDetails(itemIds:readonly number[],locale:ItemMasterLocale):Promise<readonly (Readonly<ItemAcquisitionSourceDetails>|null)[]>;
+  /** Canonical source tags, series, worlds and browse universe with one locale. */
+  getItemTaxonomyDetails(itemIds:readonly number[],locale:ItemMasterLocale):Promise<readonly (Readonly<ItemTaxonomyDetails>|null)[]>;
   getItemPriceDetails(itemIds:readonly number[],locale:ItemMasterLocale):Promise<readonly (Readonly<ItemPriceDetails>|null)[]>;
   /** Select only needed canonical fields and optional existing DB-02 links. */
   getSelectedItems(itemIds:readonly number[],fields:readonly string[],
@@ -365,6 +368,9 @@ export async function openPublicItemDetails(
         :Object.freeze((await sidecar()).listItemIds(category).map(id=>Number(id)));
       idLists.set(category, ids);
       return ids;
+    },
+    async getItemTaxonomyDetails(itemIds:readonly number[],locale:ItemMasterLocale){
+      return readItemTaxonomyDetails(await complete(),itemIds,locale);
     },
     async getItemAcquisitionSourceDetails(itemIds:readonly number[],locale:ItemMasterLocale){
       return readItemAcquisitionSourceDetails(await complete(),itemIds,locale);
