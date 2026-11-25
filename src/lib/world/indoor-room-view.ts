@@ -3,6 +3,8 @@
 export type IndoorGridStatus='full'|'unresolved'|'shared'|'diff';
 export interface IndoorItem{itemId:number;quantity:number}
 import type {SourceObjectShape} from "./source-object-map.ts";
+import {CARDINAL_ORIENTATIONS} from './saved-map-transform.ts';
+import {supportChildEdits,type SupportTree,type SupportChildEdit} from './subgrid-local.ts';
 export interface IndoorPosition{itemId:number;x:number;y:number;orientationCode:0|4|8|12|null}
 export interface IndoorSurface{kind:'floor'|'wall';ordinal:number;wallPosition:number|null;finish:number|null;gridStatus:IndoorGridStatus;items:IndoorItem[];positions:IndoorPosition[];factor:1|2|null;missingPositions:number}
 export interface IndoorRoom{ordinal:number;house:number;floor:number;name:string;ceiling:number|null;surfaces:IndoorSurface[]}
@@ -82,3 +84,48 @@ export const positionWords={
 } as const;
 
 export const indoorShapeWords={ja:'原本の家具形状（実際の占有状態・部屋境界は未確認）',en:'Source item shapes; actual occupancy and room bounds unverified',fr:'Formes originales ; occupation et limites non vérifiées',it:'Forme originali; occupazione e limiti non verificati',de:'Originalformen; Belegung und Raumgrenzen ungeprüft','es-ES':'Formas originales; ocupación y límites sin verificar','zh-CN':'原始家具形状；实际占用及房间边界未验证','pt-BR':'Formas originais; ocupação e limites não verificados'} as const;
+
+export interface IndoorPickup{index:number;itemId:number;expectedX:number;expectedY:number;expectedOrientation:string;expectedStock:number}
+export function indoorEditableTree(face:IndoorSurface|null):SupportTree|null{
+ if(!face||face.gridStatus!=='full'||!face.factor||face.missingPositions||face.positions.length>5000)return null;
+ return {factor:face.factor,sourcePath:null,objects:face.positions.map(p=>({itemId:p.itemId,x:p.x,y:p.y,orientation:p.orientationCode===null?'Unknown':CARDINAL_ORIENTATIONS[p.orientationCode/4],child:null}))};
+}
+function indoorShape(o:SupportTree['objects'][number],shapes:Readonly<Record<string,SourceObjectShape>>){
+ return shapes[o.itemId+':'+CARDINAL_ORIENTATIONS.indexOf(o.orientation as typeof CARDINAL_ORIENTATIONS[number])*4];
+}
+function indoorClear(t:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,index:number):boolean{
+ const a=t.objects[index],s=a&&indoorShape(a,shapes);if(!a||!s||s.cellCount>65536)return false;
+ for(let i=0;i<t.objects.length;i++){
+  if(i===index)continue;const b=t.objects[i],q=indoorShape(b,shapes);if(!q||a.x===b.x&&a.y===b.y)return false;
+  if(a.x+s.width<=b.x||b.x+q.width<=a.x||a.y+s.height<=b.y||b.y+q.height<=a.y)continue;
+  // Compare horizontal runs directly, never enumerate every occupied cell.
+  const byY=new Map<number,typeof q.runs[number][]>();
+  for(const run of q.runs){const y=b.y+run.y;const rows=byY.get(y)??[];rows.push(run);byY.set(y,rows);}
+  for(const run of s.runs)if((byY.get(a.y+run.y)??[]).some(other=>a.x+run.x<b.x+other.x+other.width&&b.x+other.x<a.x+run.x+run.width))return false;
+ }
+ return true;
+}
+export function indoorFurnitureEdits(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,first:number,second:number|null,turn:-1|1):SupportChildEdit[]|null{
+ const tree=indoorEditableTree(face);if(!tree)return null;
+ const edits=supportChildEdits(tree,shapes,allowed,first,second,turn);
+ return edits&&edits.every(e=>indoorClear(tree,shapes,e.index))?edits:null;
+}
+export function indoorSwapPartners(face:IndoorSurface|null,shapes:Readonly<Record<string,SourceObjectShape>>,allowed:ReadonlySet<number>,first:number):number[]{
+ const t=indoorEditableTree(face);if(!t||!t.objects[first]||!indoorClear(t,shapes,first))return [];
+ return t.objects.flatMap((_,i)=>supportChildEdits(t,shapes,allowed,first,i,1)&&indoorClear(t,shapes,i)?[i]:[]);
+}
+export function indoorPickup(face:IndoorSurface|null,index:number,removable:ReadonlySet<number>,stock:ReadonlyMap<number,number>):IndoorPickup|null{
+ const t=indoorEditableTree(face),o=t?.objects[index];if(!t||!o||Math.floor(o.itemId/100000)!==400||!removable.has(o.itemId)||!CARDINAL_ORIENTATIONS.includes(o.orientation as typeof CARDINAL_ORIENTATIONS[number])||t.objects.filter(p=>p.x===o.x&&p.y===o.y).length!==1)return null;
+ const n=stock.get(o.itemId);if(n===undefined||n>=2147483647)return null;
+ return {index,itemId:o.itemId,expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation,expectedStock:n};
+}
+export const indoorEditWords={
+ ja:['家具編集','個別の家具を選択','占有形状が変わらない回転・交換に対応。自由配置には原本の部屋地形が必要です。','インベントリへ戻す','編集を確認','編集済みコピーを作成できませんでした。'],
+ en:['Edit furniture','Select an individual object','Rotation and swaps preserve occupied shapes. Free placement requires original room terrain.','Return to inventory','Review edit','Unable to create edited copy.'],
+ fr:['Modifier les meubles','Sélectionner un objet','Rotation et échange sans changer la forme occupée. Le placement libre nécessite le terrain original.','Ranger dans l’inventaire','Vérifier','Impossible de créer la copie.'],
+ it:['Modifica mobili','Seleziona un oggetto','Rotazione e scambio a ingombro invariato. Il posizionamento libero richiede il terreno originale.','Riponi nell’inventario','Verifica','Impossibile creare la copia.'],
+ de:['Möbel bearbeiten','Einzelnes Objekt wählen','Drehung und Tausch bei gleicher Belegung. Freie Platzierung benötigt Originalgelände.','Ins Inventar zurück','Prüfen','Kopie konnte nicht erstellt werden.'],
+ 'es-ES':['Editar muebles','Selecciona un objeto','Giros e intercambios con la misma ocupación. La colocación libre requiere el terreno original.','Devolver al inventario','Revisar','No se pudo crear la copia.'],
+ 'zh-CN':['编辑家具','选择单件家具','支持占用形状不变的旋转和交换。自由放置需要原始房间地形。','收回库存','确认编辑','无法创建编辑副本。'],
+ 'pt-BR':['Editar móveis','Selecionar um objeto','Rotação e troca sem mudar a ocupação. A colocação livre requer o terreno original.','Devolver ao inventário','Revisar','Não foi possível criar a cópia.']
+} as const;
