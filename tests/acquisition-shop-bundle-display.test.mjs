@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {loadPinnedPublicNativeShopSnapshot,loadPinnedHistoricalNativeShopSnapshot} from '../src/lib/acquisition/public-native-shop.ts';
+import {loadPinnedPublicNativeShopSnapshot,loadPinnedHistoricalNativeShopSnapshot,loadPinnedShopBundleSources} from '../src/lib/acquisition/public-native-shop.ts';
 import {createShopBundleDisplay} from '../src/lib/acquisition/shop-bundle-display.ts';
 import {openPublicItemMaster} from '../src/lib/items/public-item-master.ts';
 import {createPublicItemMediaReader} from '../src/lib/items/public-item-media.ts';
@@ -63,4 +63,21 @@ test('real Item DB can supply native fallback names without private cache or ima
   assert.equal(hero.name.text,expected??null);
   assert.equal(hero.name.source,expected?'native_item_display_name':'missing');
   assert.equal(view.historicalCoverageComplete,false);
+});
+
+test('four original-backed sources feed one price-free catalog and retain changed bundle contents',async()=>{
+  const sources=await loadPinnedShopBundleSources('/Wand',fetcher);
+  const read={async getItemFields(ids,fields){return ids.map(itemId=>({itemId,values:{[fields[0]]:'Item '+itemId}}));}};
+  const view=await createShopBundleDisplay(sources,read,'en',{async getItemImages(ids){return ids.map(()=>null);}});
+  assert.equal(view.records.length,111);
+  assert.equal(new Set(view.records.map(r=>r.nativeOfferId)).size,81);
+  assert.equal(new Set(view.records.flatMap(r=>r.components.map(p=>p.itemId))).size,256);
+  assert.equal(new Set(view.presetRecords.map(r=>r.nativeOfferId)).size,72);
+  assert.equal(view.getOfferAppearances('MegaBundle_SummerSeason').length,2);
+  assert(view.getOfferAppearances('MegaBundle_RedRidingHood').some(x=>x.components.length===10));
+  assert(view.getOfferAppearances('VanityBundle_0001').length>1);
+  for(const r of view.records)assert(!Object.hasOwn(r,'observedWindow'));
+  const bad=async url=>{const res=await fetcher(url);if(!url.includes('shop-bundles-Shop20260923'))return res;
+    const bytes=new Uint8Array(await res.arrayBuffer());bytes[10]^=1;return new Response(bytes);};
+  await assert.rejects(loadPinnedShopBundleSources('/Wand',bad),/CATALOG_SHA/);
 });

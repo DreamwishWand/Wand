@@ -4,7 +4,7 @@
  * Do not infer a localized dedicated title from the Item name or offer ID.
  * No new database, code availability claim, or unverified artwork activation.
  */
-import {hasPinnedPublicNativeShopEvidence,type PinnedPublicNativeShopIndex} from './public-native-shop.ts';
+import {hasPinnedShopCatalogEvidence,type ShopCatalogSource} from './public-native-shop.ts';
 import type {ItemMasterLocale,PublicCompleteItemMaster} from '../items/public-item-master.ts';
 import type {PublicItemMediaReader} from '../items/public-item-media.ts';
 
@@ -15,9 +15,9 @@ type NameReader=Pick<PublicCompleteItemMaster,'getItemFields'>;
 type MediaReader=Pick<PublicItemMediaReader,'getItemImages'>;
 
 export async function createShopBundleDisplay(
-  snapshots:readonly PinnedPublicNativeShopIndex[],items:NameReader,locale:ItemMasterLocale,media:MediaReader
+  snapshots:readonly ShopCatalogSource[],items:NameReader,locale:ItemMasterLocale,media:MediaReader
 ){
-  if(!snapshots.length||!snapshots.every(hasPinnedPublicNativeShopEvidence)||
+  if(!snapshots.length||!snapshots.every(hasPinnedShopCatalogEvidence)||
     new Set(snapshots.map(s=>s.snapshotKey)).size!==snapshots.length)throw new TypeError('SHOP_SOURCE_REQUIRED');
   const appearances=snapshots.flatMap(s=>s.offers
     .map(offer=>({snapshotKey:s.snapshotKey,offer})));
