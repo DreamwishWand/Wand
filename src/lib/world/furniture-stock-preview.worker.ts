@@ -7,8 +7,8 @@ const scope=self as unknown as {onmessage:((e:MessageEvent)=>void)|null;postMess
 scope.onmessage=async({data})=>{
  let bytes:Uint8Array|null=null,wasm:WasmAmountPreview|null=null,copy:Uint8Array|null=null;
  try{
-  const pickup=data?.command==='group-pickup-export',paste=data?.command==='group-paste-export';
-  const exporting=data?.command==='furniture-stock-export'||pickup||paste;
+  const pickup=data?.command==='group-pickup-export',paste=data?.command==='group-paste-export',cut=data?.command==='group-cut-export';
+  const exporting=data?.command==='furniture-stock-export'||pickup||paste||cut;
   if(exporting&&(!testSaveExportEnabled(self.location)||data.allowExperimentalCopy!==true))throw Error('test-only');
   if((!exporting&&data?.command!=='furniture-stock-preview')||!(data.file instanceof File)||data.file.size<1||data.file.size>32*1024*1024||!data.plan||typeof data.plan!=='object')throw Error('request');
   bytes=new Uint8Array(await data.file.arrayBuffer());await init(wasmUrl);
@@ -16,7 +16,7 @@ scope.onmessage=async({data})=>{
   for(let i=0;i<bytes.length;i+=1048576)wasm.append_chunk(bytes.subarray(i,i+1048576));
   wasm.finish_open();
   if(exporting){
-   const length=pickup?wasm.prepare_group_pickup_experimental_copy(JSON.stringify(data.plan),true):paste?wasm.prepare_group_paste_experimental_copy(JSON.stringify(data.plan),true):wasm.prepare_furniture_stock_experimental_copy(JSON.stringify(data.plan),JSON.stringify(data.destination??null),true);
+   const length=cut?wasm.prepare_group_cut_experimental_copy(JSON.stringify(data.plan),true):pickup?wasm.prepare_group_pickup_experimental_copy(JSON.stringify(data.plan),true):paste?wasm.prepare_group_paste_experimental_copy(JSON.stringify(data.plan),true):wasm.prepare_furniture_stock_experimental_copy(JSON.stringify(data.plan),JSON.stringify(data.destination??null),true);
    if(!Number.isSafeInteger(length)||length<1||length>32*1024*1024)throw Error('copy size');
    copy=new Uint8Array(length);
    for(let i=0;i<length;i+=1048576){const n=Math.min(1048576,length-i),part=wasm.take_copy_chunk(n);if(part.byteLength!==n){part.fill(0);throw Error('copy chunk');}copy.set(part,i);part.fill(0);}
