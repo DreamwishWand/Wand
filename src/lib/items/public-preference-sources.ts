@@ -85,11 +85,7 @@ export function createPreferenceSourceReader(db:PublicCompleteItemMaster){
     }
     return task;
   }
-  async function getForCharacters(ids:readonly number[]):Promise<readonly (Readonly<CharacterPreferenceResult>|null)[]>{
-    input(ids);const catalog=await index();
-    if(!catalog)return Object.freeze((await db.getItemFields(ids,['itemId'])).map(r=>r?Object.freeze({itemId:r.itemId,status:'not_indexed' as const,definition:null}):null));
-    const rows=await db.getItemFields(ids,['sourceClass',primary,fallback,...(catalog.has('source.PreferredItemDifficulties')?['source.PreferredItemDifficulties']:[])]);
-    const profileIds=unique(rows.flatMap(r=>r?.values.sourceClass==='CharacterItemData'?[r.values[primary],r.values[fallback]].filter(id):[]));
+  async function readProfiles(profileIds:readonly number[]){
     const profiles=new Map<number,readonly number[]>();
     for(const row of await db.getItemFields(profileIds,['sourceClass',slots])){
       check(row?.values.sourceClass==='PreferenceProfileItemData','PROFILE_JOIN');
@@ -108,6 +104,29 @@ export function createPreferenceSourceReader(db:PublicCompleteItemMaster){
         return Object.freeze({slotIndex,poolItemId,pool});
       }))}));
     }
+    return definitions;
+  }
+  async function getForProfiles(ids:readonly number[]){
+    input(ids);const catalog=await index();
+    const rows=await db.getItemFields(ids,catalog?['sourceClass']:['itemId']);
+    const definitions=catalog?await readProfiles(unique(rows.flatMap(r=>r?.values.sourceClass==='PreferenceProfileItemData'?[r.itemId]:[]))):new Map<number,Readonly<PreferenceProfileDefinition>>();
+    return Object.freeze(rows.map(r=>r?Object.freeze({itemId:r.itemId,
+      status:!catalog?'not_indexed' as const:r.values.sourceClass==='PreferenceProfileItemData'?'indexed' as const:'not_profile' as const,
+      definition:definitions.get(r.itemId)??null}):null));
+  }
+  async function getForPools(ids:readonly number[]){
+    input(ids);const catalog=await index();
+    const rows=await db.getItemFields(ids,catalog?['sourceClass',...groupNames.map(g=>'source.'+g)]:['itemId']);
+    return Object.freeze(rows.map(r=>r?Object.freeze({itemId:r.itemId,
+      status:!catalog?'not_indexed' as const:r.values.sourceClass==='PreferencePoolItemData'?'indexed' as const:'not_pool' as const,
+      definition:catalog&&r.values.sourceClass==='PreferencePoolItemData'?Object.freeze({poolItemId:r.itemId,rules:Object.freeze(groupNames.map(g=>rule(g,r.values['source.'+g]))),dailySelectionVerified:false as const}):null}):null));
+  }
+  async function getForCharacters(ids:readonly number[]):Promise<readonly (Readonly<CharacterPreferenceResult>|null)[]>{
+    input(ids);const catalog=await index();
+    if(!catalog)return Object.freeze((await db.getItemFields(ids,['itemId'])).map(r=>r?Object.freeze({itemId:r.itemId,status:'not_indexed' as const,definition:null}):null));
+    const rows=await db.getItemFields(ids,['sourceClass',primary,fallback,...(catalog.has('source.PreferredItemDifficulties')?['source.PreferredItemDifficulties']:[])]);
+    const profileIds=unique(rows.flatMap(r=>r?.values.sourceClass==='CharacterItemData'?[r.values[primary],r.values[fallback]].filter(id):[]));
+    const definitions=await readProfiles(profileIds);
     return Object.freeze(rows.map(row=>{
       if(!row)return null;
       const status:CharacterPreferenceResult['status']=!catalog?'not_indexed':row.values.sourceClass==='CharacterItemData'?'indexed':'not_character';
@@ -160,5 +179,5 @@ export function createPreferenceSourceReader(db:PublicCompleteItemMaster){
           sourcePath,itemIndex:Number(m[3]),characterSlots:poolContexts.get(poolItemId)??Object.freeze([])})];
       })),filterMembershipVerified:false as const,dailySelectionVerified:false as const})));
   }
-  return Object.freeze({release,getForCharacters,getForItems});
+  return Object.freeze({release,getForCharacters,getForProfiles,getForPools,getForItems});
 }
