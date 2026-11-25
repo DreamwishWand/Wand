@@ -346,6 +346,72 @@ pub(super) fn resolve_grid_mixed_targets(
     Ok(out)
 }
 
+/// Inbound identity classification from the archived native grid identity
+/// dependency investigation (v1.24.13): SpawnedObjects is active remap,
+/// GridObjectsCollected/GridObjectIdsCollected is historical, linked entrance
+/// is a cache, gardening pairs and implicit sapling links are active.
+/// Re-scan the actual opened profile; a positive match never grants writes.
+/// Unrecognized identity-like fields are classified conservatively.
+#[derive(Default)]
+pub(super) struct GridIdentityDependencies{
+    pub active:usize,pub historical:usize,pub navigation:usize,pub related:usize,pub unknown:usize
+}
+impl GridIdentityDependencies{
+    pub fn blocking(&self)->usize{self.active+self.navigation+self.related+self.unknown}
+}
+pub(super) fn grid_identity_dependencies(profile:&[u8],target:&GridCoordinateTarget)->Result<GridIdentityDependencies,CodecError>{
+    let root:Value=serde_json::from_slice(profile).map_err(|_|CodecError::Json)?;
+    let grid=key_id(&target.grid_id).ok_or(CodecError::Json)?;
+    let object=key_id(&target.object_id).ok_or(CodecError::Json)?;
+    let mut out=GridIdentityDependencies::default();
+    // Iterative scan with explicit depth and node bounds. No private path,
+    // identifier or arbitrary field name leaves the Worker.
+    type Flags=(bool,bool,bool,bool);
+    let mut stack=vec![(&root,(false,false,false,false),None::<u64>,0usize)];
+    let mut visited=0usize;
+    while let Some((v,flags,owning,depth))=stack.pop(){
+        visited+=1;
+        if depth>256||visited>2_000_000{return Err(CodecError::Bounds);}
+        match v{
+            Value::Object(o)=>{
+                let normal=|s:&str|s.to_ascii_lowercase().replace('_',"");
+                let mut grid_values=Vec::new();let mut object_values=Vec::new();
+                for (key,value) in o{
+                    let k=normal(key);
+                    if k=="gridid"{grid_values.push(value.as_u64());}
+                    if k=="gridobjectid"{object_values.push(value.as_u64());}
+                }
+                if object_values.iter().any(|v|*v==Some(object)){
+                    if grid_values.iter().any(|v|*v==Some(grid)){
+                        if flags.0{out.active+=1;}else if flags.1{out.historical+=1;}else if flags.2{out.navigation+=1;}else if flags.3{out.active+=1;}else{out.unknown+=1;}
+                    }else if grid_values.is_empty()||grid_values.iter().any(Option::is_none){out.unknown+=1;}
+                }
+                for (key,value) in o{
+                    let k=normal(key);
+                    if k=="saplinggridobjectid"&&value.as_u64()==Some(object)&&owning.is_none_or(|g|g==grid){out.related+=1;}
+                    else if k!="gridobjectid"&&k!="nextgridobjectid"&&k!="saplinggridobjectid"&&k.contains("gridobjectid")&&value.as_u64()==Some(object){out.unknown+=1;}
+                    let next=(flags.0||k=="spawnedobjects",flags.1||k=="gridobjectscollected"||k=="gridobjectidscollected",flags.2||k=="lastusedlinkedenvironmententer",flags.3||k.contains("gardeningburningstate"));
+                    // Owning Grid context is recognized only for exact
+                    // full/diff map key+embedded ID. Do not infer from a generic ID.
+                    if k=="grids"||k=="diffgrids"{
+                        if let Some(map)=value.as_object(){
+                            for (id,entry) in map{
+                                let context=key_id(id).filter(|n|entry.get("ID").and_then(Value::as_u64)==Some(*n));
+                                stack.push((entry,next,context,depth+2));
+                            }
+                            continue;
+                        }
+                    }
+                    stack.push((value,next,owning,depth+1));
+                }
+            },
+            Value::Array(rows)=>for row in rows{stack.push((row,flags,owning,depth+1));},
+            _=>{}
+        }
+    }
+    Ok(out)
+}
+
 /// Resolve a transfer destination without exposing native Save IDs.
 pub(super) fn resolve_plain_grid_destination(profile:&[u8],witness:&Value)->Result<ddv_save_patch::PlainGridDestination,CodecError>{
     let o=witness.as_object().ok_or(CodecError::Json)?;
@@ -935,6 +1001,13 @@ mod terrain_session_tests{
         assert_eq!(r["bindings"][0]["sourceLocalCoordinateMappingVerified"],true);
         assert_eq!(r["bindings"][1]["sourceLocalCoordinateMappingVerified"],false);
         assert!(!r.to_string().contains("SceneLayouts/"));
+    }
+    #[test]
+    fn dependency_scan_distinguishes_historical_active_and_unknown_addresses(){
+        let profile=br#"{"World":{"GridCollection":{"Grids":{"10":{"ID":10,"NextGridObjectID":2,"Objects":{"2":{"ID":2,"ItemID":40005160},"7":{"ID":7,"State":{"TreeAndBush":{"SaplingGridObjectID":2}}}}},"20":{"ID":20,"Objects":{"7":{"ID":7,"State":{"TreeAndBush":{"SaplingGridObjectID":2}}}}}}},"Events":{"SpawnedObjects":[{"GridID":10,"GridObjectID":2},{"GridID":20,"GridObjectID":2}]}},"Player":{"Achievements":{"GridObjectsCollected":[{"GridId":10,"GridObjectId":2}]},"LastUsedLinkedEnvironmentEnter":{"1":{"GridID":10,"GridObjectID":2}},"Unknown":{"GridID":10,"GridObjectID":2}}}"#;
+        let target=GridCoordinateTarget{kind:GridObjectKind::Full,grid_id:"10".into(),object_id:"2".into(),item_id:40005160};
+        let r=grid_identity_dependencies(profile,&target).unwrap();
+        assert_eq!((r.active,r.historical,r.navigation,r.related,r.unknown),(1,1,1,1,1));assert_eq!(r.blocking(),4);
     }
     #[test]
     fn transfer_destination_resolves_empty_full_grid_and_rejects_ambiguity(){

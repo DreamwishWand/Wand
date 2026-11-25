@@ -1557,6 +1557,11 @@ mod browser_amount_preview {
             };
             let target=grid_instance_preview::resolve_grid_mixed_targets(original,&[(ordinal,item,expected,"full".to_owned(),None)])
                 .map_err(|_|fail("DB05_GRID_STRUCTURE_STALE"))?.pop().ok_or_else(invalid)?;
+            if matches!(action,ddv_save_patch::PlainGridStructureAction::Remove){
+                let dependencies=grid_instance_preview::grid_identity_dependencies(original,&target)
+                    .map_err(|_|fail("DB05_GRID_STRUCTURE_DEPENDENCIES_UNRESOLVED"))?;
+                if dependencies.blocking()>0{return Err(fail("DB05_GRID_STRUCTURE_DEPENDENCY_BLOCKED"));}
+            }
             let json=std::str::from_utf8(original).map_err(|_|invalid())?;
             let mut draft=ddv_save_patch::preview_plain_grid_structure(json,&target,expected,action)
                 .map_err(|_|fail("DB05_GRID_STRUCTURE_UNSUPPORTED"))?;
@@ -1587,6 +1592,9 @@ mod browser_amount_preview {
             };
             let target=grid_instance_preview::resolve_grid_mixed_targets(original,&[(ordinal,item,expected,"full".to_owned(),Some(text("expectedOrientation")?.to_owned()))])
                 .map_err(|_|fail("DB05_GRID_TRANSFER_STALE"))?.pop().ok_or_else(invalid)?;
+            let dependencies=grid_instance_preview::grid_identity_dependencies(original,&target)
+                .map_err(|_|fail("DB05_GRID_TRANSFER_DEPENDENCIES_UNRESOLVED"))?;
+            if dependencies.blocking()>0{return Err(fail("DB05_GRID_TRANSFER_DEPENDENCY_BLOCKED"));}
             let dest=grid_instance_preview::resolve_plain_grid_destination(original,o.get("destination").ok_or_else(invalid)?)
                 .map_err(|_|fail("DB05_GRID_TRANSFER_DESTINATION_UNRESOLVED"))?;
             let json=std::str::from_utf8(original).map_err(|_|invalid())?;

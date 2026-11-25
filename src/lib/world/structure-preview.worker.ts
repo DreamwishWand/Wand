@@ -17,6 +17,6 @@ scope.onmessage=async({data})=>{
   if(r?.contract!==(transfer?'wand.db05.grid-transfer-preview@1':'wand.db05.grid-structure-preview@1')||r.changed!==true||r.lexicalBytesPreserved!==true||
      r.structureValidated!==true||r.exportAuthorized!==false||r.runtimeReferencesVerified!==false)throw Error('receipt');
   scope.postMessage({kind:transfer?'transfer-preview':'structure-preview',validated:true});
- }catch{scope.postMessage({kind:'structure-preview-error'});}
+ }catch(e){const code=e instanceof Error?e.message:typeof e==='string'?e:'';scope.postMessage({kind:'structure-preview-error',dependencyBlocked:code.includes('DEPENDENCY_BLOCKED')});}
  finally{bytes?.fill(0);wasm?.close();wasm?.free();}
 };
