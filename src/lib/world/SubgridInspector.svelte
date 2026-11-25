@@ -12,6 +12,7 @@
  import {commitWorldCheckpoint} from '../ui/local-save-session';
  import {CARDINAL_ORIENTATIONS,isCardinal} from './saved-map-transform.ts';
  import {worldArtwork} from './world-artwork.ts';
+ import {worldShortcut,NUDGE} from './world-shortcuts.ts';
  export let open=false,parent:MainlandSavedObject|null=null,file:File|null=null,worker:Worker|null=null;
  export let grids:readonly MainlandGrid[]=[],rasters:ReadonlyMap<string,TerrainRaster>=new Map();
  export let names:ReadonlyMap<number,string>=new Map(),base='',locale:WandLanguage='en';
@@ -37,6 +38,7 @@
  $: freeEligible=!!terrain&&!!tree&&selected>=0&&!!tree.objects[selected]&&!tree.objects[selected].child&&editable.has(tree.objects[selected].itemId)&&isCardinal(tree.objects[selected].orientation);
  $: partners=tree&&selected>=0?tree.objects.map((_,i)=>supportChildEdits(tree!,shapes,editable,selected,i,1)?i:-1).filter(i=>i>=0):[];
  $: mapInteractive=!!tree&&!loading&&!copy&&!placing&&!ghost&&!edits&&!stockDraft&&!stockOpen;
+ $: mapKeyboard=mapInteractive||!!tree&&!loading&&!copy&&!placing&&!ghost&&(!!edits||!!stockDraft);
  $: hoverPreview=hoverCell&&mapInteractive&&canMove&&tree&&terrain&&(free||stockPlacing)?previewAt(tree,shapes,editable,terrain,hoverCell,free,selected,stockPlacing,stockId,stockOrientation,counts):null;
  $: extent=tree&&terrain?{x:-.5,y:-.5,w:terrain.sizeX*tree.factor+1,h:terrain.sizeY*tree.factor+1}:tree?supportExtent(tree,shapes):{x:0,y:0,w:1,h:1};
  $: if(open!==activeOpen||file!==activeFile||(parent?.object.localOrdinal??0)!==activeOrdinal)refresh(open,file,parent);
@@ -89,6 +91,33 @@
   if(stockPlacing){const plan=supportStockPlacement(tree,shapes,terrain,stockId,counts.get(stockId)??0,q.x,q.y,stockOrientation);error=!plan;if(plan){stockDraft=plan;stockPlacing=false;hoverCell=null;}return;}
   if(selected<0)return;const o=tree.objects[selected];const next=supportFreeEdit(tree,shapes,editable,terrain,selected,q.x,q.y,o.orientation);error=!next;if(next){edits=next;freeDraft=true;free=false;hoverCell=null;}
  }
+ function mapKeys(e:KeyboardEvent){
+  if(!mapKeyboard||!tree||e.isComposing)return;
+  if(!e.ctrlKey&&!e.metaKey&&!e.altKey&&(e.key==='['||e.key===']')&&mapInteractive&&!free&&!stockPlacing&&!swap){
+   if(tree.objects.length){const delta=e.key==='['?-1:1;selectChild(selected<0?(delta>0?0:tree.objects.length-1):(selected+delta+tree.objects.length)%tree.objects.length);e.preventDefault();}return;
+  }
+  const action=worldShortcut(e);if(!action)return;
+  if(action==='cancel'){
+   if(stockPlacing||stockDraft)cancelStock();
+   else if(edits||swap||free){edits=null;swap=false;free=false;freeDraft=false;}
+   else selected=-1;
+   hoverCell=null;error=false;e.preventDefault();return;
+  }
+  if(!canMove)return;
+  if(action==='confirm'&&(edits||stockDraft)){e.preventDefault();validateChild();return;}
+  const turn=action==='rotate-left'?-1:action==='rotate-right'?1:0;
+  if(turn&&stockPlacing){stockOrientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(stockOrientation)+turn+4)%4];e.preventDefault();return;}
+  const delta=NUDGE[action],o=tree.objects[selected];
+  if(!o||!isCardinal(o.orientation)||stockPlacing||stockDraft||swap||edits&&(!freeDraft||edits.length!==1)||(!turn&&!delta))return;
+  e.preventDefault();hoverCell=null;
+  if(!terrain){if(turn&&!edits)beginChild(turnCandidate(tree,shapes,editable,terrain,selected,turn as -1|1));return;}
+  const previous=edits?.[0],x=(previous?.x??o.x)+(delta?.[0]??0),y=(previous?.y??o.y)+(delta?.[1]??0);
+  const current=previous?.orientation??o.orientation;if(!isCardinal(current))return;
+  const orientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(current)+turn+4)%4];
+  if(x===o.x&&y===o.y&&orientation===o.orientation){edits=null;freeDraft=false;error=false;return;}
+  const next=supportFreeEdit(tree,shapes,editable,terrain,selected,x,y,orientation);
+  error=!next;if(next){edits=next;freeDraft=true;free=false;}
+ }
  function validateChild(){
   if(!canMove||(!edits&&!stockDraft)||!file||file!==activeFile||!parent||own||!open)return;
   const source=file,chosen=edits,stock=stockDraft;loading=true;error=false;clearCopy();
@@ -115,7 +144,7 @@
   {#if tree}
    <div class="support-heading">{#if stack.length>1}<button type="button" disabled={!mapInteractive||free||swap||stockPlacing} on:click={back}>{words[11]}</button>{/if}<strong>{words[1]}</strong></div>
    {#if tree.objects.length||terrain}
-    <button type="button" class="support-map-button" disabled={!mapInteractive} aria-label={free||stockPlacing?sw[1]:cw[6]} on:click={pickChild} on:pointermove={hoverChild} on:pointerleave={()=>hoverCell=null}><svg bind:this={supportSvg} class="support-map" viewBox={extent.x+' '+extent.y+' '+extent.w+' '+extent.h} aria-label={words[1]} role="img">
+    <button type="button" class="support-map-button" disabled={!mapKeyboard} aria-label={free||stockPlacing?sw[1]:cw[6]} aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown R Shift+R Escape Enter" on:keydown={mapKeys} on:click={pickChild} on:pointermove={hoverChild} on:pointerleave={()=>hoverCell=null}><svg bind:this={supportSvg} class="support-map" viewBox={extent.x+' '+extent.y+' '+extent.w+' '+extent.h} aria-label={words[1]} role="img">
      {#if terrain}{#each Array.from(terrain.nativeFloorValues) as cell,i}<rect x={(i%terrain.sizeX)*tree.factor} y={Math.floor(i/terrain.sizeX)*tree.factor} width={tree.factor} height={tree.factor} fill={cell?'#6ba98b':'#8b5555'} fill-opacity=".35" stroke="currentColor" stroke-opacity=".3" vector-effect="non-scaling-stroke"/>{/each}{/if}
      {#each tree.objects as o,i}
       {@const change=edits?.find(e=>e.index===i)}
