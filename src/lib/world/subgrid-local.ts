@@ -21,7 +21,7 @@ export function parseSupportTree(value:unknown):SupportTree{
 }
 export function supportShapeKey(o:SupportObject){return isCardinal(o.orientation)?o.itemId+':'+CARDINAL_ORIENTATIONS.indexOf(o.orientation)*4:null;}
 export function supportItems(tree:SupportTree){
- return tree.objects.flatMap(o=>{const key=supportShapeKey(o);return key?[{itemId:o.itemId,orientationCode:Number(key.split(':')[1])}]:[]});
+ return tree.objects.flatMap(o=>{return isCardinal(o.orientation)?[0,4,8,12].map(orientationCode=>({itemId:o.itemId,orientationCode})):[]});
 }
 export function supportExtent(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>){
  let left=0,top=0,right=1,bottom=1;
@@ -52,4 +52,33 @@ export const supportWords={
  'es-ES':['Objetos sobre muebles','Disposición local','Mover mueble con contenido','Pulsa destino','Crear copia de prueba','Aplicar a partida de trabajo','Descargar copia','Cerrar','Cuadrícula hija no disponible.','Vacío','Coordenadas locales.','Atrás','Cargando'],
  'zh-CN':['家具上的物品','支撑面内布局','移动家具及其物品','点击目的地','创建保留层级的测试副本','应用到工作存档','下载副本','关闭','子网格不可用。','无物品','本地坐标布局。','返回','加载中'],
  'pt-BR':['Objetos sobre móveis','Layout local','Mover móvel com conteúdo','Clique no destino','Criar cópia de teste','Aplicar ao save de trabalho','Baixar cópia','Fechar','Grade filha indisponível.','Vazio','Coordenadas locais.','Voltar','Carregando']
+} as const;
+
+export interface SupportChildEdit{index:number;itemId:number;expectedX:number;expectedY:number;expectedOrientation:string;x:number;y:number;orientation:string}
+function sameFootprint(a:SourceObjectShape|undefined,b:SourceObjectShape|undefined){
+ return !!a&&!!b&&a.width===b.width&&a.height===b.height&&a.acceptedFloorTypesFlag!==undefined&&a.acceptedFloorTypesFlag===b.acceptedFloorTypesFlag&&a.cellCount===b.cellCount&&a.runs.length===b.runs.length&&a.runs.every((r,i)=>r.x===b.runs[i].x&&r.y===b.runs[i].y&&r.width===b.runs[i].width);
+}
+export function supportChildEdits(tree:SupportTree,shapes:Readonly<Record<string,SourceObjectShape>>,editable:ReadonlySet<number>,first:number,second:number|null,turn:-1|1):SupportChildEdit[]|null{
+ const a=tree.objects[first],b=second===null?null:tree.objects[second];
+ const eligible=(o:SupportObject|undefined)=>!!o&&!o.child&&Math.floor(o.itemId/100000)===400&&editable.has(o.itemId)&&isCardinal(o.orientation);
+ if(!eligible(a))return null;
+ const shape=(o:SupportObject)=>shapes[supportShapeKey(o)??''];
+ const edit=(o:SupportObject,index:number,x:number,y:number,orientation:string):SupportChildEdit=>({index,itemId:o.itemId,expectedX:o.x,expectedY:o.y,expectedOrientation:o.orientation,x,y,orientation});
+ if(second!==null){
+  if(!b||!eligible(b)||second===first||a.x===b.x&&a.y===b.y||!sameFootprint(shape(a),shape(b)))return null;
+  return [edit(a,first,b.x,b.y,a.orientation),edit(b,second,a.x,a.y,b.orientation)];
+ }
+ const orientation=CARDINAL_ORIENTATIONS[(CARDINAL_ORIENTATIONS.indexOf(a.orientation as typeof CARDINAL_ORIENTATIONS[number])+turn+4)%4];
+ if(!sameFootprint(shape(a),shapes[a.itemId+':'+CARDINAL_ORIENTATIONS.indexOf(orientation)*4]))return null;
+ return [edit(a,first,a.x,a.y,orientation)];
+}
+export const childEditWords={
+ ja:['左回転','右回転','位置を交換','交換相手を選択','占有セルが変わらない操作のみ','編集を確認','小物を選択'],
+ en:['Rotate left','Rotate right','Swap positions','Select swap partner','Only unchanged occupied cells','Review edit','Select object'],
+ fr:['Tourner à gauche','Tourner à droite','Échanger les positions','Choisir un objet','Cellules occupées inchangées','Vérifier','Choisir un objet'],
+ it:['Ruota a sinistra','Ruota a destra','Scambia posizioni','Scegli oggetto','Celle occupate invariate','Verifica','Seleziona oggetto'],
+ de:['Links drehen','Rechts drehen','Positionen tauschen','Tauschobjekt wählen','Unveränderte belegte Zellen','Prüfen','Objekt wählen'],
+ 'es-ES':['Girar a la izquierda','Girar a la derecha','Intercambiar posiciones','Elegir objeto','Celdas ocupadas sin cambios','Revisar','Seleccionar objeto'],
+ 'zh-CN':['向左旋转','向右旋转','交换位置','选择交换对象','仅限占用格不变的操作','确认编辑','选择物品'],
+ 'pt-BR':['Girar à esquerda','Girar à direita','Trocar posições','Escolher objeto','Células ocupadas inalteradas','Revisar','Selecionar objeto']
 } as const;
