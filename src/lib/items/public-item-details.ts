@@ -180,8 +180,14 @@ export async function openPublicItemDetails(
   fetcher: typeof fetch = fetch,
   options: ItemMasterOpenOptions = {},
 ): Promise<PublicItemDetailsClient> {
-  const master = await openPublicItemMaster(basePath, fetcher, options);
-  const acquisitionStatus=master.release.target.gameVersion===PUBLIC_ITEM_DETAILS_SOURCE_VERSION
+  // The normal current reader must pin one immutable complete manifest.
+  // Reopening the registry lazily can select a different revision even when
+  // the game version is unchanged (for example an in-version DLC release).
+  const currentMaster=options.gameVersion==='current'&&options.scope===undefined
+    ?await openCurrentItemDatabase(basePath,fetcher):null;
+  const master=currentMaster??await openPublicItemMaster(basePath, fetcher, options);
+  const legacyAcquisitionCompatible=master.release.target.gameVersion===PUBLIC_ITEM_DETAILS_SOURCE_VERSION;
+  const acquisitionStatus=(currentMaster?Boolean(currentMaster.release.acquisitionProjection):legacyAcquisitionCompatible)
     ?'current' as const:'pending_update' as const;
   // Compatibility-only explicit historical reads retain their strict contract.
   // Current product reads may still use the canonical attributes during a
@@ -193,7 +199,7 @@ export async function openPublicItemDetails(
   let sidecarTask: Promise<Db01ItemAcquisitionIndex> | null = null;
   let sourcesTask: Promise<Db01ItemSourceRelations> | null = null;
   let allSourceItemIds: readonly number[] | null = null;
-  let completeTask: Promise<PublicCompleteItemMaster>|null=null;
+  let completeTask: Promise<PublicCompleteItemMaster>|null=currentMaster?Promise.resolve(currentMaster):null;
   const combined = new Map<number, Readonly<PublicItemDetails>>();
   const combinedWithSources = new Map<number, Readonly<PublicItemDetailsWithSources>>();
   const idLists = new Map<GameNativeItemCategory | undefined, readonly number[]>();
@@ -241,7 +247,7 @@ export async function openPublicItemDetails(
     }));
   }
   function sidecar(): Promise<Db01ItemAcquisitionIndex> {
-    if(acquisitionStatus!=='current')return Promise.reject(new TypeError('DB01_PUBLIC_DETAILS_SOURCE_HANDOFF_VERSION_NOT_PUBLISHED'));
+    if(!legacyAcquisitionCompatible||acquisitionStatus!=='current')return Promise.reject(new TypeError('DB01_PUBLIC_DETAILS_SOURCE_HANDOFF_VERSION_NOT_PUBLISHED'));
     if (sidecarTask) return sidecarTask;
     const task = loadDb01ItemAcquisitionHandoff(publicBase, fetcher)
       .then(index => {
@@ -257,7 +263,7 @@ export async function openPublicItemDetails(
     return task;
   }
   function sources(): Promise<Db01ItemSourceRelations> {
-    if(acquisitionStatus!=='current')return Promise.reject(new TypeError('DB01_PUBLIC_DETAILS_SOURCE_HANDOFF_VERSION_NOT_PUBLISHED'));
+    if(!legacyAcquisitionCompatible||acquisitionStatus!=='current')return Promise.reject(new TypeError('DB01_PUBLIC_DETAILS_SOURCE_HANDOFF_VERSION_NOT_PUBLISHED'));
     if (sourcesTask) return sourcesTask;
     const task = loadDb01ItemSourceRelations(publicBase, fetcher)
       .then(index => {
