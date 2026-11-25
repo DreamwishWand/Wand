@@ -788,6 +788,93 @@ pub fn preview_plain_grid_structure(
     Ok(GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
 }
 
+/// Destination witness for a private transfer rehearsal. Native IDs stay
+/// inside Rust; callers must resolve these from the current Save and exact
+/// original world source, never infer them from an area label.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct PlainGridDestination {
+    pub grid_id:String,
+    pub layout_path:String,
+    pub data_path:String,
+    pub tessellation:u32,
+    pub size:(u32,u32),
+}
+fn full_grid_scope(layout:&str)->Option<&str>{
+    let (scope,leaf)=layout.strip_prefix("SceneLayouts/")?.split_once('/')?;
+    (!scope.is_empty()&&!leaf.is_empty()&&leaf.ends_with(".json")&&!layout.contains("..")&&!layout.contains('\\')).then_some(scope)
+}
+/// Build one private remove+insert candidate, allocating only from the
+/// destination's explicit monotonically increasing counter. This is NOT
+/// runtime reference closure, item eligibility, or Save export authority.
+/// Source records with any state/unknown fields are rejected, not truncated.
+pub fn preview_plain_grid_transfer(
+    source:&str,target:&GridCoordinateTarget,expected:(i32,i32),
+    destination:&PlainGridDestination,replacement:(i32,i32),
+    orientation:&str,
+)->Result<GridCoordinateDraft,PatchError>{
+    if source.is_empty()||source.len()>MAX_PROFILE_BYTES||target.kind!=GridObjectKind::Full||
+       target.grid_id==destination.grid_id||!valid_id(&destination.grid_id)||
+       destination.grid_id.starts_with('0')||
+       !matches!(destination.tessellation,1|2)||
+       destination.size.0==0||destination.size.1==0||
+       destination.size.0>65536||destination.size.1>65536||
+       !OBSERVED_CARDINAL_ORIENTATIONS.contains(&orientation)||
+       replacement.0<0||replacement.1<0||
+       replacement.0 as u32>=destination.size.0*destination.tessellation||
+       replacement.1 as u32>=destination.size.1*destination.tessellation{
+        return Err(PatchError::InvalidTarget);
+    }
+    let root:serde_json::Value=serde_json::from_str(source).map_err(|_|PatchError::InvalidDocument)?;
+    let collection=root.get("World").and_then(|v|v.get("GridCollection")).ok_or(PatchError::MissingTarget)?;
+    let grids=collection.get("Grids").and_then(|v|v.as_object()).ok_or(PatchError::MissingTarget)?;
+    let from=grids.get(&target.grid_id).and_then(|v|v.as_object()).ok_or(PatchError::MissingTarget)?;
+    let to=grids.get(&destination.grid_id).and_then(|v|v.as_object()).ok_or(PatchError::MissingTarget)?;
+    let from_layout=from.get("GridDefaultLayoutPath").and_then(|v|v.as_str()).ok_or(PatchError::MissingTarget)?;
+    let to_scope=full_grid_scope(&destination.layout_path).ok_or(PatchError::InvalidTarget)?;
+    if from.get("ID").and_then(|v|v.as_u64())!=target.grid_id.parse::<u64>().ok()||
+       full_grid_scope(from_layout)!=Some(to_scope)||
+       !destination.data_path.starts_with("GridData/")||
+       !destination.data_path.ends_with(".json")||destination.data_path.contains("..")||destination.data_path.contains('\\')||
+       (from_layout==destination.layout_path&&from.get("GridDataPath").and_then(|v|v.as_str())==Some(destination.data_path.as_str()))||
+       to.get("GridDefaultLayoutPath").and_then(|v|v.as_str())!=Some(destination.layout_path.as_str())||
+       to.get("GridDataPath").and_then(|v|v.as_str())!=Some(destination.data_path.as_str())||
+       to.get("ID").and_then(|v|v.as_u64())!=destination.grid_id.parse::<u64>().ok()||
+       to.get("TessellationFactor").map_or(Some(1),|v|v.as_u64())!=Some(destination.tessellation as u64)||
+       grids.values().filter(|g|g.get("GridDefaultLayoutPath").and_then(|v|v.as_str())==Some(destination.layout_path.as_str())&&
+          g.get("GridDataPath").and_then(|v|v.as_str())==Some(destination.data_path.as_str())).count()!=1||
+       collection.get("DiffGrids").is_some_and(|v|v.as_object().is_none_or(|g|g.contains_key(&target.grid_id)||g.contains_key(&destination.grid_id))){
+        return Err(PatchError::AmbiguousTarget);
+    }
+    // The existing removal contract proves the source is a plain, exact
+    // five-field record, and the byte locator rejects duplicate JSON keys.
+    let removed=preview_plain_grid_structure(source,target,expected,PlainGridStructureAction::Remove)?;
+    let intermediate=removed.patched_json;
+    let mut locator=JsonLocator::grid_axis(&intermediate,target,"X")?;
+    locator.signed_path=None;locator.item_path=None;
+    let prefix=vec![k("World"),k("GridCollection"),k("Grids"),k(&destination.grid_id)];
+    let mut objects=prefix.clone();objects.push(k("Objects"));
+    let mut counter=prefix;counter.push(k("NextGridObjectID"));
+    locator.capture.insert(objects.clone(),None);locator.capture.insert(counter.clone(),None);locator.walk_complete()?;
+    let span=|p:&Vec<Segment>|locator.capture.get(p).and_then(|v|v.clone()).ok_or(PatchError::MissingTarget);
+    let mr=span(&objects)?;let cr=span(&counter)?;
+    let map:serde_json::Map<String,serde_json::Value>=serde_json::from_str(&intermediate[mr.clone()]).map_err(|_|PatchError::InvalidDocument)?;
+    let next=intermediate[cr.clone()].parse::<u32>().map_err(|_|PatchError::NonIntegerTarget)?;
+    if map.len()>=100_000||next==0||map.iter().any(|(key,obj)|key.parse::<u32>().ok().is_none_or(|n|n==0||n.to_string()!=*key||n>=next||obj.get("ID").and_then(|v|v.as_u64())!=Some(n as u64))){
+        return Err(PatchError::AmbiguousTarget);
+    }
+    let following=next.checked_add(1).ok_or(PatchError::InvalidTarget)?;
+    let member=format!("{}\"{}\":{{\"ID\":{},\"ItemID\":{},\"X\":{},\"Y\":{},\"Orientation\":\"{}\"}}",
+        if map.is_empty(){""}else{","},next,next,target.item_id,replacement.0,replacement.1,orientation);
+    let mut replacements=[(mr.end-1..mr.end-1,member),(cr,following.to_string())];
+    replacements.sort_unstable_by_key(|(r,_)|r.start);
+    let mut candidate=String::new();let mut last=0;
+    for (r,v) in replacements{if r.start<last{return Err(PatchError::AmbiguousTarget);}candidate.push_str(&intermediate[last..r.start]);candidate.push_str(&v);last=r.end;}
+    candidate.push_str(&intermediate[last..]);
+    if candidate.len()>MAX_PROFILE_BYTES{return Err(PatchError::InvalidDocument);}
+    validate_json_without_edit(&candidate)?;
+    Ok(GridCoordinateDraft{patched_json:candidate,changed:true,untouched_bytes_preserved:true,writer_authorized:false,export_authorized:false})
+}
+
 /// One optimistic-concurrency checked change to an existing GridObject.
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub struct GridCoordinateEdit {
@@ -1446,6 +1533,27 @@ mod structural_tests{
   let single=SOURCE.replace(", \"7\": { \"ID\":7,\"ItemID\":40000002,\"State\":{\"Storage\":{}}}","");
   let d=preview_plain_grid_structure(&single,&target(),(1,2),PlainGridStructureAction::Remove).unwrap();
   assert!(d.patched_json.contains("\"Objects\":{}"));
+ }
+ #[test]
+ fn structural_transfer_allocates_destination_id_and_keeps_other_bytes(){
+  let source=r#"{"Player":{"unknown":1e2},"World":{"GridCollection":{"Grids":{"10":{"ID":10,"GridDefaultLayoutPath":"SceneLayouts/Village04/A.json","NextGridObjectID":8,"Objects":{"2":{"ID":2,"ItemID":40000001,"X":1,"Y":2,"Orientation":"GridOrientation_Down"}}},"20":{"ID":20,"GridDefaultLayoutPath":"SceneLayouts/Village04/B.json","GridDataPath":"GridData/B.json","NextGridObjectID":3,"Objects":{}}},"DiffGrids":{}}}}"#;
+  let dest=PlainGridDestination{grid_id:"20".into(),layout_path:"SceneLayouts/Village04/B.json".into(),data_path:"GridData/B.json".into(),tessellation:1,size:(20,20)};
+  let draft=preview_plain_grid_transfer(source,&target(),(1,2),&dest,(5,6),"GridOrientation_Right").unwrap();
+  let v:serde_json::Value=serde_json::from_str(&draft.patched_json).unwrap();
+  let grids=&v["World"]["GridCollection"]["Grids"];
+  assert_eq!(grids["10"]["Objects"],serde_json::json!({}));
+  assert_eq!(grids["10"]["NextGridObjectID"],8);
+  assert_eq!(grids["20"]["NextGridObjectID"],4);
+  assert_eq!(grids["20"]["Objects"]["3"],serde_json::json!({"ID":3,"ItemID":40000001,"X":5,"Y":6,"Orientation":"GridOrientation_Right"}));
+  assert!(draft.patched_json.contains(r#""unknown":1e2"#));
+  assert!(!draft.writer_authorized&&!draft.export_authorized);
+  assert!(preview_plain_grid_transfer(source,&target(),(1,2),&dest,(20,6),"GridOrientation_Right").is_err());
+  let stale=source.replace(r#""NextGridObjectID":3"#,r#""NextGridObjectID":0"#);
+  assert!(preview_plain_grid_transfer(&stale,&target(),(1,2),&dest,(5,6),"GridOrientation_Right").is_err());
+  let state=source.replace(r#""Y":2"#,r#""Y":2,"State":{}"#);
+  assert!(preview_plain_grid_transfer(&state,&target(),(1,2),&dest,(5,6),"GridOrientation_Right").is_err());
+  let wrong=PlainGridDestination{layout_path:"SceneLayouts/VillageExpansion01/B.json".into(),..dest.clone()};
+  assert!(preview_plain_grid_transfer(source,&target(),(1,2),&wrong,(5,6),"GridOrientation_Right").is_err());
  }
  #[test]
  fn structural_drafts_reject_stale_counter_state_and_non_cardinal(){

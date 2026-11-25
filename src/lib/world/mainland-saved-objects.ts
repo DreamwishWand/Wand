@@ -4,7 +4,8 @@
  * objects. Projection is read-only; existing local Rust edit route remains
  * authoritative. */
 import {mainlandMapAnchor,mainlandTerrainHits,type MainlandGrid} from './mainland-world-coordinates.ts';
-import {projectWorldEdits,stageWorldEdit,currentWorldEdits,type WorldEditTimeline,type WorldStagedEdit} from './saved-map-batch.ts';
+import {projectWorldEdits,stageWorldEdit,currentWorldEdits,WORLD_BATCH_LIMIT,WORLD_HISTORY_LIMIT,groupTargets,type GroupTarget,type WorldEditTimeline,type WorldStagedEdit} from './saved-map-batch.ts';
+import {alignmentTargets,type MapAlignment} from './map-alignment.ts';
 import type {SavedShapeMap,SavedShapeObject} from './saved-shape-map.ts';
 import type {SourceObjectShape} from './source-object-map.ts';
 import {terrainWarnings,type TerrainRaster,type TerrainScopeReceipt} from './terrain-binding.ts';
@@ -106,4 +107,70 @@ export function mainlandSavedCell(p:MainlandSavedObject):{x:number;z:number}|nul
 export function mainlandSavedDraftAtCell(p:MainlandSavedObject,grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,maps:ReadonlyMap<string,SavedShapeMap>,timeline:WorldEditTimeline,x:number,z:number,orientation:string|null){
  if(!Number.isSafeInteger(x)||!Number.isSafeInteger(z)||!mainlandSavedCell(p))return null;
  return mainlandSavedDraft(p,grids,rasters,maps,timeline,(x+.5)/p.factor,-(z+.5)/p.factor,orientation);
+}
+
+/** Shared map-coordinate translation. Every object retains its original
+ * native Grid and cell lattice. All targets are staged locally or none. */
+export function mainlandGroupFactor(items:readonly MainlandSavedObject[]):1|2{
+ return items.length&&items.every(p=>p.factor===2)?2:1;
+}
+export interface MainlandGroupDraft{
+ readonly ghosts:readonly {object:MainlandSavedObject;draft:MainlandSavedDraft|null;x:number;y:number}[];
+ readonly next:WorldEditTimeline|null;
+}
+export function mainlandSavedGroupDraft(items:readonly MainlandSavedObject[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,maps:ReadonlyMap<string,SavedShapeMap>,timeline:WorldEditTimeline,dx:number,dz:number):MainlandGroupDraft{
+ const factor=mainlandGroupFactor(items);
+ const ghosts: {object:MainlandSavedObject;draft:MainlandSavedDraft|null;x:number;y:number}[]=[];
+ const invalid={ghosts,next:null};
+ if(items.length<2||items.length>WORLD_BATCH_LIMIT||!Number.isSafeInteger(dx)||!Number.isSafeInteger(dz)||(!dx&&!dz)||new Set(items.map(p=>p.object.localOrdinal)).size!==items.length)return invalid;
+ let working=timeline,valid=true;
+ for(const p of items){
+  const pos=mainlandSavedCell(p),x=p.x+dx/factor,y=p.y-dz/factor;
+  const q=pos&&mainlandSavedMoveEligible(p)?mainlandSavedDraftAtCell(p,grids,rasters,maps,working,pos.x+dx*p.factor/factor,pos.z+dz*p.factor/factor,p.object.orientation):null;
+  ghosts.push({object:p,draft:q,x,y});
+  if(!q?.next)valid=false;else working=q.next;
+ }
+ if(!valid)return invalid;
+ const last=working.snapshots[working.cursor];
+ const snapshots=[...timeline.snapshots.slice(0,timeline.cursor+1),last].slice(-(WORLD_HISTORY_LIMIT+1));
+ return {ghosts,next:{snapshots,cursor:snapshots.length-1}};
+}
+
+/** Reuse the established scoped group transform on a shared logical world
+ * lattice. Rotation/align requires a uniform native resolution; mixed
+ * resolutions retain translation support. No rounding to foreign cells. */
+export function mainlandSavedAdvancedDraft(items:readonly MainlandSavedObject[],grids:readonly MainlandGrid[],rasters:ReadonlyMap<string,TerrainRaster>,maps:ReadonlyMap<string,SavedShapeMap>,timeline:WorldEditTimeline,action:MapAlignment|number):MainlandGroupDraft{
+ const invalid:MainlandGroupDraft={ghosts:[],next:null};
+ if(items.length<2||items.length>WORLD_BATCH_LIMIT||new Set(items.map(p=>p.object.localOrdinal)).size!==items.length||items.some(p=>!mainlandSavedMoveEligible(p)||p.factor!==items[0].factor))return invalid;
+ const factor=items[0].factor,shapes:Record<string,SourceObjectShape>={},objects:SavedShapeObject[]=[];
+ for(const p of items){
+  const pos=mainlandSavedCell(p),map=maps.get(p.area);
+  if(!pos||!map||!p.object.shapeKey)return invalid;
+  for(const code of [0,4,8,12]){
+   const key=p.object.itemId+':'+code,shape=map.shapes[key];
+   if(!shape)continue;
+   if(shapes[key]&&(shapes[key].width!==shape.width||shapes[key].height!==shape.height||shapes[key].path!==shape.path))return invalid;
+   shapes[key]=shape;
+  }
+  objects.push({...p.object,x:pos.x,y:pos.z,localGridOrdinal:1});
+ }
+ const first=maps.get(items[0].area)!;
+ const worldMap:SavedShapeMap={...first,objects,shapes};
+ const targets:GroupTarget[]|null=typeof action==='number'?groupTargets(worldMap,objects,0,0,action):alignmentTargets(worldMap,objects,action);
+ if(!targets)return invalid;
+ const byId=new Map(items.map(p=>[p.object.localOrdinal,p]));
+ const ghosts: {object:MainlandSavedObject;draft:MainlandSavedDraft|null;x:number;y:number}[]=[];
+ let working=timeline,valid=true,changed=false;
+ for(const target of targets){
+  const p=byId.get(target.ordinal)!;
+  const pos=mainlandSavedCell(p)!;
+  if(pos.x===target.x&&pos.z===target.y&&p.object.orientation===target.orientation)continue;
+  changed=true;
+  const q=mainlandSavedDraftAtCell(p,grids,rasters,maps,working,target.x,target.y,target.orientation);
+  ghosts.push({object:p,draft:q,x:target.x/factor,y:-target.y/factor});
+  if(!q?.next)valid=false;else working=q.next;
+ }
+ if(!valid||!changed)return {ghosts,next:null};
+ const snapshots=[...timeline.snapshots.slice(0,timeline.cursor+1),working.snapshots[working.cursor]].slice(-(WORLD_HISTORY_LIMIT+1));
+ return {ghosts,next:{snapshots,cursor:snapshots.length-1}};
 }

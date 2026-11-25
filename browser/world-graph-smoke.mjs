@@ -1305,6 +1305,18 @@ try{
   await wholeSave.locator('.mainland-map').focus();
   await page.keyboard.press('BracketRight');
   await wholeSave.getByRole('button',{name:'精密配置',exact:true}).waitFor();
+  await wholeSave.getByRole('button',{name:'複数選択',exact:true}).click();
+  await wholeSave.getByRole('button',{name:'配置検索',exact:true}).click();
+  const groupResults=wholeSave.locator('.overview-results button');
+  await groupResults.nth(1).waitFor();
+  // Select exactly two entries, independent of the previously focused item.
+  await wholeSave.locator('.mainland-map').focus();
+  await page.keyboard.press('Control+a');
+  const groupForm=wholeSave.locator('.overview-precise');
+  await groupForm.getByLabel('ΔX',{exact:true}).fill('5000');
+  assert.equal(await groupForm.getByRole('button',{name:'一括移動',exact:true}).isDisabled(),true);
+  await groupForm.getByRole('button',{name:'選択解除',exact:true}).click();
+  await wholeSave.getByRole('button',{name:'複数選択',exact:true}).click();
   await wholeSave.getByRole('button',{name:'閉じる',exact:true}).click();
   // Choose a source-backed furniture record through the normal picker and
   // compute the full terrain-origin raster with the real WASM Worker.
