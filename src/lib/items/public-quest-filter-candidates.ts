@@ -3,6 +3,9 @@
  * inherited tags, state, randomized selectors and unlock conditions can change it.
  */
 import type {PublicCompleteItemMaster,ItemFieldValue,ItemFieldFilter} from './public-item-master.ts';
+import {createCurrentActivityEvidenceReader,readFishingFilterFacts,type IngredientDefinitionEvidence} from './public-activity-evidence.ts';
+import type {QuestObjectiveItemSelector} from './public-quest-objective-items.ts';
+type FishingFilterEvidence=NonNullable<Awaited<ReturnType<ReturnType<typeof createCurrentActivityEvidenceReader>['getFishingFilterEvidence']>>[number]>;
 
 type Obj=Readonly<Record<string,ItemFieldValue>>;
 const obj=(v:unknown):v is Obj=>v!==null&&typeof v==='object'&&!Array.isArray(v);
@@ -27,6 +30,9 @@ export interface QuestFilterCandidate {
   readonly starRatingMatch:boolean|null;
   /** Match of only the reviewed source-definition predicates, never a live requirement. */
   readonly reviewedDefinitionMatch:boolean|null;
+  /** Additional source evidence, not folded into native eligibility. */
+  readonly ingredientEvidence:Readonly<IngredientDefinitionEvidence>|null;
+  readonly fishingEvidence:Readonly<FishingFilterEvidence>|null;
 }
 export interface QuestFilterCandidateResult {
   readonly facts:Readonly<QuestFilterFacts>;
@@ -92,6 +98,7 @@ function matchDirectTags(facts:QuestFilterFacts,tags:readonly number[]|null):boo
 export function createQuestFilterCandidateReader(db:PublicCompleteItemMaster){
   const verified=db.release.target.platform==='Steam'&&db.release.sourceFilesSha256?.Mission===MISSION_SHA&&
     db.release.sourceIl2cppDumpSha256===DUMP_SHA;
+  const activity=createCurrentActivityEvidenceReader(db);
   type PoolRow={itemId:number;tagIds:readonly number[]|null;stars:number|null};
   const pools=new Map<string,Promise<readonly PoolRow[]>>();
   function pool(type:number,subtype:number|null){
@@ -121,6 +128,20 @@ export function createQuestFilterCandidateReader(db:PublicCompleteItemMaster){
     const catalog=new Set((await db.getFieldCatalog()).map(f=>f.field));
     const indexed=verified&&['itemType.code','itemType.subtypeCode','tags','source.StarRating'].every(f=>catalog.has(f));
     const rows=indexed?await pool(facts.itemTypeCode,facts.activitySubtypeCode):[];
+    const fishingFacts=readFishingFilterFacts(raw);
+    const useFishing=fishingFacts.location.status!=='inactive'||fishingFacts.rarity.status!=='inactive';
+    const useIngredients=facts.ingredientTypeReferences.length>0;
+    const ingredientRows=new Map<number,Readonly<IngredientDefinitionEvidence>>();
+    const fishingRows=new Map<number,Readonly<FishingFilterEvidence>>();
+    for(let start=0;start<rows.length&&(useIngredients||useFishing);start+=10000){
+      const ids=rows.slice(start,start+10000).map(r=>r.itemId);
+      const [ingredients,fishing]=await Promise.all([
+        useIngredients?activity.getIngredientDefinitionEvidence(ids,facts.ingredientTypeReferences):[],
+        useFishing?activity.getFishingFilterEvidence(ids,raw):[]
+      ]);
+      for(const row of ingredients)if(row)ingredientRows.set(row.itemId,row);
+      for(const row of fishing)if(row)fishingRows.set(row.itemId,row);
+    }
     const candidates=rows.map(r=>{
       const directTagMatch=matchDirectTags(facts,r.tagIds);
       const starRatingMatch=facts.minimumMealStars===null?true:r.stars===null?null:r.stars>=facts.minimumMealStars;
@@ -128,11 +149,20 @@ export function createQuestFilterCandidateReader(db:PublicCompleteItemMaster){
       // discard any type-matched item from the source pool on that basis.
       const reviewedDefinitionMatch=directTagMatch===false||starRatingMatch===false?false:
         directTagMatch===true&&starRatingMatch===true?true:null;
-      return Object.freeze({itemId:r.itemId,directTagMatch,starRatingMatch,reviewedDefinitionMatch});
+      return Object.freeze({itemId:r.itemId,directTagMatch,starRatingMatch,reviewedDefinitionMatch,
+        ingredientEvidence:ingredientRows.get(r.itemId)??null,fishingEvidence:fishingRows.get(r.itemId)??null});
     });
     return Object.freeze({facts,status:indexed?'source_definition_candidates' as const:'not_indexed' as const,
       candidates:Object.freeze(candidates),directTagFallbackVerified:false as const,nativeFilterVerified:false as const,
       runtimeRequirementVerified:false as const});
   }
-  return Object.freeze({release:db.release,resolve});
+  async function resolveObjectiveSelector(selector:Readonly<QuestObjectiveItemSelector>){
+    check(selector.selectorMode==='FilterGenerator','OBJECTIVE_FILTER_REQUIRED');
+    const raw=selector.originalSelector;
+    const inner=raw.ItemToGive;
+    const filter=raw.FilterGenerator??(obj(inner)?inner.FilterGenerator:undefined);
+    check(obj(filter),'OBJECTIVE_FILTER');
+    return resolve(filter);
+  }
+  return Object.freeze({release:db.release,resolve,resolveObjectiveSelector});
 }
